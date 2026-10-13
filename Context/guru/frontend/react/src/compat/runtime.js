@@ -4,6 +4,9 @@ import {resolveRoute} from '../app/routes';
 import {customPages} from '../app/custom-pages';
 import {LIB} from './catalogue.js';
 import {libraryScope,inLibraryScope} from '../services/library-scope';
+import {instrumentControls} from '../services/instrument-controls';
+import {buildStrategyIndicators} from '../services/strategy-indicators';
+import {indicatorControlsHTML,mountStrategyIndicators} from '../services/strategy-indicator-charts';
 const CURATED_AUTHOR_IDS=new Set(LIB.map(author=>author.id));
 
 /* Report controls use recorded engine results; unavailable inputs stay empty. */
@@ -798,6 +801,7 @@ const gateBadge = v => v.gate?.verdict === 'table_compared' ? '<span class="gb u
   : v.gate?.verdict === 'unverified' ? '<span class="gb un" title="A source comparison is recorded; independent rule and trade verification remains incomplete">Not verified vs book</span>' : '';
 const OPEN_FROM = { SPX: '2014-01-01', NDX: '2001-01-01', DJI: '2016-01-01' };
 function gateNotice(v, tk) {
+  if(v.instrument_policy?.source_rule_reviewed)return `<div class="rnote" data-rule-review><b>Source rules reviewed · computed market application.</b> Selected trade ledgers matched an independent reference calculation. ${esc(v.instrument_policy.source_basis)} ${v.gate?.book?`<details><summary>Earlier source-study comparison</summary><p>${esc(v.gate.book)}</p><p>${esc(v.gate.note)}</p><p>Original book-study reproduction remains unverified; these figures are separate from this computed backtest.</p></details>`:''}</div>`;
   const g = v.gate; if (!g) return '';
   const clamp = g.open_from && OPEN_FROM[tk] ? `<p><b>Results on ${esc(LABEL[tk] || tk)} start ${OPEN_FROM[tk]}.</b> This rule trades at the open, and this index's opening prices before then mostly equal the previous close, so they are not real opens.</p>` : '';
   if (g.verdict === 'table_compared') return `<div class="rnote gate un"><b>Published-table comparison; source reproduction not certified.</b><p>Book: ${esc(g.book)}</p><p>Ours: ${esc(g.ours)}</p>${clamp}</div>`;
@@ -1132,18 +1136,20 @@ function readRoute() {
   // Use each source-qualified basket only with the market engine that admitted it.
   if(S.region==='us'&&TICK_US){API=API_US;BASKETS=BASKETS_US;}else{S.region='in';API=API_IN;BASKETS=BASKETS_IN;}
   const pool=S.region==='us'?TICK_ALL_US:TICK_ALL_IN, indices=S.region==='us'?TICK_US:TICK_IN;
-  const basket=BASKETS.find(b=>b.id===S.basket);
-  TICKERS=S.basket&&basket?.symbols?.length?pool.filter(t=>basket.symbols.includes(t.ticker)):indices;
-  if(S.basket&&S.tk==='ALL')S.tk=TICKERS[0]?.ticker||S.tk;
-  if(S.tk!=='ALL'&&!TICKERS.some(t=>t.ticker===S.tk))S.tk=TICKERS[0]?.ticker||S.tk;
   const chosen=R.name==='strategy'?ALLCAT.find(v=>v.id===R.id):null;
   const types=chosen?.instrument_policy?.allowed_types||[];
+  const etfOnly=S.region==='us'&&types.includes('etf')&&!types.includes('index')&&!types.includes('individual_stock');
+  const basket=BASKETS.find(b=>b.id===S.basket);
+  TICKERS=S.basket&&basket?.symbols?.length?pool.filter(t=>basket.symbols.includes(t.ticker)):etfOnly?TICK_ALL_US.filter(t=>['SPY','QQQ','MDY','IWM','SMH','DIA'].includes(t.ticker)):indices;
+  if(S.basket&&S.tk==='ALL')S.tk=TICKERS[0]?.ticker||S.tk;
+  if(S.tk!=='ALL'&&!TICKERS.some(t=>t.ticker===S.tk))S.tk=TICKERS[0]?.ticker||S.tk;
   const explicit=new URLSearchParams(q);
   if(chosen && types.includes('individual_stock') && !types.includes('index') && !S.basket && (!explicit.has('tk')||!explicit.get('tk'))) {
     const preferred=BASKETS.find(b=>b.id===(S.region==='us'?'us_sp500':chosen.instrument_policy.preferred_basket||'nifty50'));
     if(preferred?.symbols.length) {S.basket=preferred.id;TICKERS=pool.filter(t=>preferred.symbols.includes(t.ticker));S.tk=TICKERS[0]?.ticker||S.tk;}
   }
-  if(chosen && types.length===1 && types[0]==='index' && S.basket) {S.basket='';TICKERS=S.region==='us'?TICK_US:TICK_IN;S.tk=TICKERS[0]?.ticker||S.tk;}
+  // Preserve explicit basket URLs: the readiness gate explains incompatible instruments.
+  // Silent substitution back to an index made basket clicks appear stuck.
   if(chosen && S.region==='us' && types.includes('etf') && !types.includes('index') && !S.basket) {
     TICKERS=TICK_ALL_US.filter(t=>['SPY','QQQ','MDY','IWM','SMH','DIA'].includes(t.ticker));
     if(!TICKERS.some(t=>t.ticker===S.tk))S.tk=TICKERS[0]?.ticker||S.tk;
@@ -1348,7 +1354,8 @@ async function bookShelf(g) {
 const BOOK_BLURB = { stc9: 'TradingMarkets Swing Trading College IX (2010) · 14 sessions: the 4 Keys, R3, TPS, 5x5x5, H10 and the market-timing rules (RSI, DMI, %b, VIX, end of month).' };
 
 // ---------------------------------------------------------------- 4. one strategy (the main app's strategy panel, nothing else)
-const RUNS = {}, OHLC = {};
+const RUNS = {}, OHLC = {}, FULL_OHLC={};
+const fullOhlc=(tk,api=API)=>{const key=api+'|'+tk;return FULL_OHLC[key]||(FULL_OHLC[key]=fetch(api+'/ohlc?'+new URLSearchParams({ticker:tk}),{signal:AbortSignal.timeout(30000)}).then(async r=>{if(!r.ok)throw Error('Full chart history unavailable');return r.json();}).catch(error=>{delete FULL_OHLC[key];throw error;}));};
 const ohlc = (tk, tf = 'D') => OHLC[tk + tf] || (OHLC[tk + tf] = fetch(`data/ohlc-${tk.replace(/\s/g, '')}${tf === 'D' ? '' : '-' + tf}.json`).then(r => r.ok ? r.json() : null).catch(() => null));
 let TF = 'D';
 const runData = (id, tk, from = '', to = '', cost = '0', p = '', api = API,execution=VaultUI.costState(S)) => { const k = [api, id, tk, from, to, cost, p,execution.slippage,execution.rollover].join('|');
@@ -1359,8 +1366,11 @@ const runData = (id, tk, from = '', to = '', cost = '0', p = '', api = API,execu
 let BASKETS=[],BASKETS_IN=[],BASKETS_US=[],TICK_ALL_IN=[];
 function basketChoices(){const past=BASKETS.find(b=>b.id===S.basket)?.universe==='current_plus_past';return S.region==='us'?[['us_sp500','S&P 500'],['us_nasdaq100','Nasdaq 100'],['us_dow30','Dow Jones'],['us_russell2000','Russell 2000']].map(([id,name])=>[id+(past?'_past':''),name]):[['nse500','NSE 500'],['nifty50','Nifty 50'],['midcap100','Midcap100'],['allfo','All F&O']];}
 function marketControls(v,tk){
- const indices=S.region==='us'?TICK_US:TICK_IN,basket=BASKETS.find(b=>b.id===S.basket),past=basket?.universe==='current_plus_past';
- return `<div class="sw research-controls" data-market-controls><div class="swg"><span class="swl">Market</span>${regionToggle()}</div><div class="swg"><span class="swl">Index</span><div class="join sm">${(indices||[]).map(t=>`<a class="join-item ${!S.basket&&t.ticker===tk?'active':''}" href="${href(R.path,{...S,basket:'',tk:t.ticker,from:'',to:''})}">${esc(LABEL[t.ticker]||t.ticker)}</a>`).join('')}</div></div><div class="swg" data-selector-panel><span class="swl">Basket</span><div class="join sm">${basketChoices().map(([key,name])=>`<button type="button" class="join-item ${S.basket===key?'active':''}" data-basket="${key}">${esc(name)}</button>`).join('')}</div></div>${S.region==='us'&&S.basket?`<label class="dfield">Universe <select id="basket-universe"><option value="current" ${past?'':'selected'}>Source-listed current</option><option value="current_plus_past" ${past?'selected':''}>Current &amp; Past research collection</option></select></label>`:''}<div class="control-run"><button class="dbtn primary sm" type="submit" form="period">Run backtest</button>${v.status==='live'?`<a class="dbtn sm back-btn" id="open-optimization" href="${href('/'+(R.optim?'s':'o')+'/'+encodeURIComponent(v.id),{...S})}">${R.optim?'Back to backtest':'Optimization'}</a>`:''}</div></div>`;
+ const indices=S.region==='us'?TICK_US:TICK_IN,basket=BASKETS.find(b=>b.id===S.basket),past=basket?.universe==='current_plus_past',controls=instrumentControls(v.instrument_policy);
+ const etfs=S.region==='us'&&controls.etf?TICK_ALL_US.filter(t=>['SPY','QQQ','MDY','IWM','SMH','DIA'].includes(t.ticker)):[];
+ const indexButtons=(indices||[]).map(t=>controls.index?`<a class="join-item ${!S.basket&&t.ticker===tk?'active':''}" href="${href(R.path,{...S,basket:'',tk:t.ticker,from:'',to:''})}">${esc(LABEL[t.ticker]||t.ticker)}</a>`:`<button type="button" class="join-item" disabled title="${esc(controls.note)}">${esc(LABEL[t.ticker]||t.ticker)}</button>`).join('');
+ const basketButtons=basketChoices().map(([key,name])=>{const entry=BASKETS.find(b=>b.id===key),missing=!entry?.symbols?.length;return `<button type="button" class="join-item ${S.basket===key?'active':''}" data-basket="${key}" ${!controls.basket||missing?`disabled title="${esc(!controls.basket?controls.note:'No admitted constituent prices are available for this basket.')}"`:''}>${esc(name)}</button>`;}).join('');
+ return `<div class="sw research-controls" data-market-controls><div class="swg"><span class="swl">Market</span>${regionToggle()}</div><div class="swg"><span class="swl">Index</span><div class="join sm">${indexButtons}</div></div>${etfs.length?`<div class="swg"><span class="swl">ETF</span><div class="join sm">${etfs.map(t=>`<a class="join-item ${!S.basket&&t.ticker===tk?'active':''}" href="${href(R.path,{...S,basket:'',tk:t.ticker,from:'',to:''})}">${esc(t.ticker)}</a>`).join('')}</div></div>`:''}<div class="swg" data-selector-panel><span class="swl">Basket</span><div class="join sm">${basketButtons}</div></div>${S.region==='us'&&S.basket?`<label class="dfield">Universe <select id="basket-universe"><option value="current" ${past?'':'selected'}>Source-listed current</option><option value="current_plus_past" ${past?'selected':''}>Current &amp; Past research collection</option></select></label>`:''}<div class="control-run"><button class="dbtn primary sm" type="submit" form="period">Run backtest</button>${v.status==='live'?`<a class="dbtn sm back-btn" id="open-optimization" href="${href('/'+(R.optim?'s':'o')+'/'+encodeURIComponent(v.id),{...S})}">${R.optim?'Back to backtest':'Optimization'}</a>`:''}</div></div>${controls.note?`<p class="instrument-note" data-instrument-note>${esc(controls.note)}</p>`:''}`;
 }
 function varyingControls(v,tk) {
  const fam=CAT.filter(x=>x.family===v.family),basket=BASKETS.find(b=>b.id===S.basket);
@@ -1412,9 +1422,10 @@ async function viewStrategy() {
   if (!d || d.error) return withheldStrategy(v,tk,crumbs,switches,{status:'unavailable',note:apiError(d?.error || 'No response from the calculation engine',tk)});
   const s = d.stats, cl = v.claim, vd = verdictOf(s), closed = d.trades.filter(t => !t.open), chk = closed.map(exitCheck).filter(Boolean), pass = chk.filter(x => x.ok).length;
   const tiles = [['Net Profit',s.net_profit,x=>pct(x,2,true),'Sum of closed-trade net returns',cls(s.net_profit)],['Avg net pnl',s.avg_net_pnl??s.avg_trade,x=>pct(x,2,true),'Per closed trade',cls(s.avg_trade)],['No. of trades',s.trades,x=>fx(x,0),'Closed positions'],['Win Rate',s.win_rate,x=>pct(x,1),'Closed trades'],['Expectancy',s.expectancy_ratio,x=>fx(x),'Per unit of average loss'],['MaxDD',s.max_dd,x=>pct(x,2),'Largest equity decline','neg'],['Sharpe',s.sharpe,x=>fx(x),'Daily returns · rf = 0']];
-  const px=optimization?null:d.ohlc||await ohlc(tk);
+  const px=optimization?null:await fullOhlc(tk,runApi).catch(async()=>d.ohlc||await ohlc(tk));
   if(generation!==busy)return '';
-  STRAT = { d, v, tk, tiles, px };
+  STRAT = { d, v, tk, tiles, px, indicatorParameters:{...bookDefaults(v.id),...decodeP(selection.p)} };
+  STRAT.indicators=buildStrategyIndicators({id:v.id,prices:px,fullHistory:px?.full_history===true,parameters:STRAT.indicatorParameters});
   if(R.optim) return `${crumbs}<section class="box"><div class="st-head"><h1 class="st">Optimization · ${esc(v.family_name)}</h1><a class="dbtn sm back-btn" href="${href('/s/'+encodeURIComponent(v.id),{...S})}">${VaultUI.ICON.back} Back to strategy</a></div><p class="rnote">${esc(LABEL[tk])} · ${esc(v.name)}. Parameter searches are research; selected settings and before/after displays do not establish an untouched holdout. Net profit sums closed-trade net returns; CAGR and risk measures use the separate compounded model.</p>${gateNotice(v,tk)}${experimentNotice(v,d)}${switches}${periodPanel(tk,d)}${optimBanner(v)}</section>${await optimSection(v,tk,d,true)}`;
   return `${crumbs}
     <section class="box"><div class="st-head"><h1 class="st">${esc(v.family_name)}</h1>${VaultUI.toolbar()}</div>
@@ -1427,7 +1438,7 @@ async function viewStrategy() {
       <div class="chart-tools"><button class="dbtn sm" data-chart-snapshot="c-eq">Download PNG</button><button class="dbtn sm" data-report-export="equity">Download Excel</button></div><div class="lwc" id="c-eq"></div><div id="equity-navigator" class="equity-navigator"><div class="year-shortcuts"><button class="dbtn sm" data-equity-year="all">All years</button>${[...new Set(d.dates.map(x=>x.slice(0,4)))].map(y=>`<button class="dbtn sm" data-equity-year="${y}">${y}</button>`).join('')}</div><label>Start <input type="range" data-range="start" min="0" aria-label="Equity range start"></label><label>End <input type="range" data-range="end" min="0" aria-label="Equity range end"></label><output></output></div><div class="cap">Strategy ${d.equity[d.equity.length - 1].toFixed(2)}× · buy &amp; hold ${d.bh[d.bh.length - 1].toFixed(2)}× · drag to zoom, hover for values</div></section>
     <section class="box"><div class="box-h">Price &amp; signals · ${esc(LABEL[tk])} <span class="legend"><span><i class="mk up"></i>Buy / cover</span><span><i class="mk ex"></i>Sell / short</span><span><i class="zk win"></i>Winning trade</span><span><i class="zk loss"></i>Losing trade</span><span><i class="zk open"></i>Open</span><span class="muted">shaded from entry day to exit day · zoom in for each return</span>
         <span class="join sm">${[["D", "Daily"], ["W", "Weekly"], ["M", "Monthly"]].map(([k, t]) => `<button class="join-item ${TF === k ? "active" : ""}" data-tf="${k}">${t}</button>`).join("")}</span><span class="join sm"><button class="join-item active" id="px3">Last 3 years</button><button class="join-item" id="px1">Last year</button><button class="join-item" id="pxall">Show all</button></span></span></div>
-      <div class="pxread" id="pxread">Hover the chart: open, high, low, close and the trade you were in.</div><div class="chart-tools"><button class="dbtn sm" data-chart-snapshot="c-px">Download PNG</button></div><div class="lwc px" id="c-px"></div></section>
+      <div class="pxread" id="pxread">Hover the chart: open, high, low, close and the trade you were in.</div><div class="chart-tools"><button class="dbtn sm" data-chart-snapshot="c-px">Download PNG</button></div><div class="lwc px" id="c-px"></div>${indicatorControlsHTML(STRAT.indicators)}</section>
     <div class="two"><section class="box"><div class="box-h">Drawdown <small>worst ${pct(s.max_dd, 1)} · ${fx(s.max_dd_days, 0)} days under water</small></div><div class="chart-tools"><button class="dbtn sm" data-chart-snapshot="c-dd">Download PNG</button></div><div class="bkc" id="c-dd"></div></section>
       <section class="box"><div class="box-h">Calendar-year returns <span class="legend"><span><i class="sw-box" style="background:var(--blue)"></i>Strategy</span><span><i class="sw-box" style="background:var(--bh)"></i>Buy &amp; hold</span></span></div><div class="chart-tools"><button class="dbtn sm" data-chart-snapshot="c-yr">Download PNG</button></div><div class="bkc" id="c-yr"></div></section></div>
     ${VaultUI.benchmarkHTML(d,isUS()?'SPX':'NIFTY 50',await ohlc(isUS()?'SPX':'NIFTY 50'))}${VaultUI.detailHTML(d)}
@@ -1436,7 +1447,7 @@ async function viewStrategy() {
 
     ${await optimSection(v, tk, d, false)}`;
 }
-let STRAT = null, CHARTS = [], METRIC_ANIMATIONS = [];
+let STRAT = null, CHARTS = [], METRIC_ANIMATIONS = [],INDICATOR_CHARTS=null;
 function finishMetricAnimations(){METRIC_ANIMATIONS.forEach(a=>a.stop?.());METRIC_ANIMATIONS=[];if(!STRAT?.tiles)return;document.querySelectorAll('[data-tile]').forEach(el=>{const tile=STRAT.tiles[+el.dataset.tile];if(tile)el.textContent=tile[2](tile[1]);});}
 
 // ---------------------------------------------------------------- Bklit-style interactive SVG charts (gradient area, crosshair + tooltip, spring bars)
@@ -1500,7 +1511,10 @@ function heatTable(d) {
 }
 async function drawSignals(tf) {
   const el = $('#c-px'); if (!el || !STRAT) return; const { d } = STRAT;
-  const px = tf === 'D' ? STRAT.px : STRAT.d.ohlc?VaultReport.aggregate(STRAT.px,tf):await ohlc(STRAT.tk, tf);
+  const generation=busy,snapshot=STRAT;
+  const px = tf === 'D' ? STRAT.px : STRAT.px?.full_history||STRAT.d.ohlc?VaultReport.aggregate(STRAT.px,tf):await ohlc(STRAT.tk, tf);
+  if(generation!==busy||snapshot!==STRAT||tf!==TF||!el.isConnected)return;
+  INDICATOR_CHARTS?.dispose();INDICATOR_CHARTS=null;
   if (PXCH) { try { PXCH.__ro?.disconnect(); PXCH.remove(); } catch (e) {} CHARTS = CHARTS.filter(c => c.ch !== PXCH); PXCH = null; } el.innerHTML = '';
   if (!px || !window.LightweightCharts) { el.innerHTML = '<div class="empty">Price data not available for this index.</div>'; return; }
   document.querySelectorAll('[data-tf]').forEach(b => b.classList.toggle('active', b.dataset.tf === tf));
@@ -1554,6 +1568,8 @@ async function drawSignals(tf) {
     if (tf === 'D') { const tr = d.trades.find(t => barOf[t.legs[0][0]] <= b && b <= (t.open ? n - 1 : barOf[t.exit_i])); tradeTxt = tr ? `in trade ${tr.entry} to ${tr.open ? 'open' : tr.exit}: <b class="${cls(tr.ret)}">${pct(tr.ret, 2, true)}</b>${tr.legs.length > 1 ? ` (${tr.legs.length} pieces)` : ''}` : '<span class="muted">no position</span>'; }
     else { const g = perBar[b]; tradeTxt = g ? `${g.in.length} entr${g.in.length === 1 ? 'y' : 'ies'} · ${g.out.length} exit${g.out.length === 1 ? '' : 's'}${g.out.length ? `: <b class="${cls(g.out.reduce((a, t) => a * (1 + t.ret), 1) - 1)}">${pct(g.out.reduce((a, t) => a * (1 + t.ret), 1) - 1, 2, true)}</b> combined` : ''}` : '<span class="muted">no trades in this candle</span>'; }
     $('#pxread').innerHTML = `<b>${what}${px.d[b]}</b> O ${f(px.o[b])} · H ${f(px.h[b])} · L ${f(px.l[b])} · C <b>${f(px.c[b])}</b> <span class="${cls(chg)}">${pct(chg, 2, true)}</span> · ${tradeTxt}`; });
+  const model=buildStrategyIndicators({id:STRAT.v.id,prices:STRAT.px,fullHistory:STRAT.px?.full_history===true,parameters:STRAT.indicatorParameters,displayDates:px.d});
+  INDICATOR_CHARTS=mountStrategyIndicators({root:document.querySelector('[data-strategy-indicators]'),chart:ch,priceSeries:cs,result:model,library:L,pricePoints:px.d.map((time,i)=>({time,value:px.c[i]})),chartOptions:{layout:{attributionLogo:false,background:{color:cv('--panel')},textColor:cv('--ink3'),fontFamily:getComputedStyle(document.body).fontFamily,fontSize:11},grid:{vertLines:{visible:false},horzLines:{color:cv('--rule')}},timeScale:{borderColor:cv('--steel')},crosshair:{mode:L.CrosshairMode.Normal}}});
 }
 const safe = (name, f) => { try { f(); } catch (e) { console.warn(name, e); } };
 function drawStrategy() {
@@ -1614,6 +1630,7 @@ async function render() {
 }
 let pendingFocus=null;
 function cleanupCharts(){
+  INDICATOR_CHARTS?.dispose();INDICATOR_CHARTS=null;
   METRIC_ANIMATIONS.forEach(animation=>animation.stop?.());METRIC_ANIMATIONS=[];
   CHARTS.forEach(({ch})=>{try{ch.__ro?.disconnect();ch.remove();}catch{}});CHARTS=[];PXCH=null;
 }
@@ -1631,7 +1648,7 @@ document.addEventListener('click', e => {
   if (!e.target.closest('details.dd')) document.querySelectorAll('details.dd[open]').forEach(d => d.removeAttribute('open'));
   const lb=e.target.closest('[data-library-set]');if(lb){e.preventDefault();return setState(Object.fromEntries(new URLSearchParams(lb.dataset.librarySet)));}
   const hb = e.target.closest('[data-heat]'); if (hb && STRAT) { HEAT_DESC = hb.dataset.heat === 'desc'; $('#heatbox').innerHTML = heatTable(STRAT.d); document.querySelectorAll('[data-heat]').forEach(x => x.classList.toggle('active', x === hb)); return; }
-  const basketButton=e.target.closest('[data-basket]');if(basketButton){const key=basketButton.dataset.basket,basket=BASKETS.find(b=>b.id===key);return setState({basket:key,tk:key&&['ready','partial'].includes(basket?.price_status)?basket.symbols[0]:(S.region==='us'?'SPX':'NIFTY 50'),from:'',to:''});}
+  const basketButton=e.target.closest('[data-basket]');if(basketButton){if(basketButton.disabled)return;const key=basketButton.dataset.basket,basket=BASKETS.find(b=>b.id===key);return setState({basket:key,tk:key&&['ready','partial'].includes(basket?.price_status)&&basket.symbols.length?basket.symbols[0]:(S.region==='us'?'SPX':'NIFTY 50'),from:'',to:''});}
   const tfb = e.target.closest('[data-tf]'); if (tfb) { TF = tfb.dataset.tf; drawSignals(TF); return; }
   if(e.target.closest('.source-pdfs'))return;
   const t = e.target.closest('[data-set], [data-fam], [data-book], [data-guru], [data-guru-strats], [data-sort]'); if (!t) return;

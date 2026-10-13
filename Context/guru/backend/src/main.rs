@@ -460,7 +460,7 @@ fn catalogue_json(guru: &str) -> String {
         .map(|d| {
             let gated = gate::get(d.id);
             let (status, why) = match d.status {
-                Status::Live if gated.is_some_and(|g| g.verdict == "withheld") => ("not_testable", gated.map_or("", |g| g.reason)),
+                Status::Live if gated.is_some_and(|g| g.verdict == "withheld") && !instrument_policy::reviewed_cash_rule(d) => ("not_testable", gated.map_or("", |g| g.reason)),
                 Status::Live if instrument_policy::policy(d).requirement=="source_review_required" => ("not_testable", "Source-specific rules and required instrument have not completed admission review; no backtest is published."),
                 Status::Live => ("live", ""),
                 Status::NeedsData(w) => ("needs_data", w),
@@ -563,6 +563,19 @@ fn select_context<'a>(st:&'a State,q:&BTreeMap<String,String>)->Result<SelectedC
     Err(format!("unknown ticker {ticker}"))
 }
 fn source_provenance(st:&State,q:&BTreeMap<String,String>)->String{st.baskets.provenance_json(q.get("ticker").map(String::as_str).unwrap_or(BENCHMARK)).unwrap_or("null".into())}
+/// Read-only chart history from the same admitted source used by strategy calculations.
+/// It intentionally retains pre-period bars so indicators can use the engine's warmup.
+fn chart_ohlc_json(st:&State,q:&BTreeMap<String,String>)->Result<String,String>{
+    fn arr(out:&mut String,values:&mut impl Iterator<Item=String>){out.push('[');for (i,value) in values.enumerate(){if i>0{out.push(',');}out.push_str(&value);}out.push(']');}
+    fn source_num(v:f64)->String{if v.is_finite(){v.to_string()}else{"null".into()}}
+    let selected=select_context(st,q)?;
+    let rows=match &selected {SelectedContext::Preloaded(ctx)=>ctx.r,SelectedContext::Native{rows,..}=>rows.as_slice()};
+    if rows.is_empty(){return Err("Chart source has no admitted prices".into());}
+    let mut out=format!("{{\"ticker\":\"{}\",\"full_history\":true,\"provenance\":{},\"d\":",esc(&rows[0].ticker),source_provenance(st,q));
+    arr(&mut out,&mut rows.iter().map(|r|format!("\"{}\"",r.date)));
+    for (name,field) in [("o",0),("h",1),("l",2),("c",3)]{let _=write!(out,",\"{name}\":");arr(&mut out,&mut rows.iter().map(|r|source_num([r.open,r.high,r.low,r.close][field])));}
+    out.push_str(",\"v\":");arr(&mut out,&mut rows.iter().map(|r|r.volume.map_or("null".into(),source_num)));out.push('}');Ok(out)
+}
 fn native_admission(ctx:&Ctx,def:&connors::StrategyDef,from:usize,to:usize,selected:&SelectedContext,st:&State,q:&BTreeMap<String,String>)->Option<readiness::Issue>{
     let Some(evidence)=selected.evidence() else {return instrument_policy::check(def,&ctx.r[0].ticker,false)};
     if let Some(issue)=instrument_policy::check_native(def,&ctx.r[0].ticker,evidence){return Some(issue);}
@@ -1038,6 +1051,7 @@ fn handle(mut stream: TcpStream, st: Arc<State>) {
         Err(e) => respond(s, "400 Bad Request", "text/plain; charset=utf-8", e.as_bytes()),
     };
     match path.as_str() {
+        "/api/ohlc" => json(chart_ohlc_json(&st,&q), &mut stream),
         "/api/tickers" => {
             let mut items: Vec<String> = st
                 .ctxs
@@ -1206,6 +1220,28 @@ mod tests {
     }
     fn accounting_query()->BTreeMap<String,String>{
         BTreeMap::from([("ticker".into(),"SPX".into()),("id".into(),"ch_65sma3cc".into()),("_guru".into(),"chande".into()),("cost".into(),"3".into()),("slippage".into(),"2".into())])
+    }
+    #[test]
+    fn chart_ohlc_keeps_full_admitted_warmup_and_rejects_unknown_symbols(){
+        let state=accounting_state();let mut q=accounting_query();
+        q.insert("from".into(),"2020-03-01".into());
+        q.insert("to".into(),"2020-03-10".into());
+        let full=chart_ohlc_json(&state,&q).unwrap();
+        assert!(full.contains("\"full_history\":true"));
+        assert!(full.contains("2020-01-01"));
+        assert!(full.contains("2020-03-24"));
+        assert!(full.contains("\"ticker\":\"SPX\""));
+        assert!(full.contains("\"o\":[100.5,101.5"));
+        q.insert("ticker".into(),"../../unknown.csv".into());
+        assert!(chart_ohlc_json(&state,&q).is_err());
+    }
+    #[test]
+    fn chart_source_prices_preserve_indicator_precision(){
+        let rows:&'static [Row]=Box::leak((1..=3).map(|i|Row{ticker:"SPX".into(),date:format!("2020-01-0{i}"),open:100.123456789,high:101.,low:99.,close:100.234567891,volume:None}).collect::<Vec<_>>().into_boxed_slice());
+        let mut state=accounting_state();state.ctxs.insert("SPX".into(),Ctx::new(rows,rows,&[]));
+        let json=chart_ohlc_json(&state,&accounting_query()).unwrap();
+        assert!(json.contains("100.123456789"));assert!(json.contains("100.234567891"));
+        assert!(json.contains("\"v\":[null,null,null]"));
     }
     #[test]
     fn execution_costs_are_validated_consistently_at_every_endpoint(){

@@ -2,6 +2,7 @@ pub fn allowed_engine_path(path: &str) -> bool {
     matches!(
         path,
         "tickers"
+            | "ohlc"
             | "gurus"
             | "guru/connors/strategies"
             | "guru/connors/summary"
@@ -41,6 +42,7 @@ mod tests {
     #[test]
     fn engine_routes_are_allowlisted_and_read_only() {
         assert!(allowed_engine_path("tickers"));
+        assert!(allowed_engine_path("ohlc"));
         assert!(allowed_engine_path("guru/connors/run"));
         assert!(allowed_engine_path("guru/connors/readiness"));
         assert!(allowed_engine_path("guru/connors/optimize"));

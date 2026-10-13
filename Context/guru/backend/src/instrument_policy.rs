@@ -27,6 +27,12 @@ fn portfolio(basis: &'static str)->Policy {requirement("portfolio", &[], basis)}
 fn review()->Policy {requirement("source_review_required", &[], "Instrument population and executable rule requirements have not been independently reviewed for this specific source rule. Book titles, keywords, code availability and prior verification badges are not evidence of instrument compatibility.")}
 fn member(id:&str,ids:&[&str])->bool {ids.contains(&id)}
 
+/// Exact-source rules independently compared with the compiled runner on four
+/// real series. Admission is for declared price-return research, not source-study reproduction.
+pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
+    def.book=="kftsm" && member(def.id,&["kftsm_ma","kftsm_exp","kftsm_lrs","kftsm_ndb","kftsm_bb_ma","kftsm_ma_pct_band","kftsm_ma_tr_band","kftsm_triple_smooth","kftsm_vol_breakout","kftsm_keltner","kftsm_hh_ma","kftsm_hh_cross","kftsm_hh_channel","kftsm_mod_3ma","kftsm_4_9_18","kftsm_month_end","kftsm_hirsch"])
+}
+
 /// Reviewed keys include both the book and the exact rule identifier. Adding a
 /// method to a familiar book cannot inherit admission without a source review.
 pub fn policy(def:&StrategyDef)->Policy {
@@ -45,6 +51,10 @@ pub fn policy(def:&StrategyDef)->Policy {
     p
 }
 fn base_policy(def:&StrategyDef)->Policy {
+    if reviewed_cash_rule(def) {
+        let allowed=if matches!(def.id,"kftsm_month_end"|"kftsm_hirsch"){&["index","etf"][..]}else{&["index","etf","individual_stock"][..]};
+        let mut p=requirement("declared_ohlc_adaptation", allowed, "Kaufman, New Trading Systems and Methods Fourth Edition (2005), reviewed book sections and companion CD. Source rules/defaults and selected independent trade-ledger checks are recorded in library/kaufman/REVIEW-2026-10-13.md. Actual selected cash/ETF prices are a declared research application. Flat at the test start, full source warmup, one position per symbol, no portfolio sizing. Cash-index short exposure is hypothetical; source futures dollars, financing, dividends and original study performance are not reproduced.");p.market_adaptation=true;return p;
+    }
     let id=def.id;
     match def.book {
         "stc9" if member(id,&["f1a","f3a","f4a","f4c","f4d","rsi2_5d"]) => stock("STC IX Session 1 foundation studies concern a pooled US individual-stock population. A native single-stock run uses one actual constituent at a time; it does not reproduce the pooled published counts, universe or performance."),
@@ -156,6 +166,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     fn escape(s:&str)->String {s.chars().flat_map(|c|match c {'"'=>"\\\"".chars().collect::<Vec<_>>(),'\\'=>"\\\\".chars().collect(),'\n'=>"\\n".chars().collect(),'\r'=>"\\r".chars().collect(),'\t'=>"\\t".chars().collect(),c if c.is_control()=>format!("\\u{:04x}",c as u32).chars().collect(),c=>vec![c]}).collect()}
     let mut json=format!("{{\"requirement\":\"{}\",\"allowed_types\":[{}],\"preferred_basket\":{},\"execution_scope\":\"{}\",\"source_basis\":\"{}\",\"market_adaptation\":{},\"source_performance_reproduced\":false,\"limitations\":\"Compatibility is only an instrument check. Required source filters, data, currency/tick units, corporate actions, fill ordering and accounting must pass separate checks. Current constituent snapshots do not establish historical membership; retrospective selection has survivorship bias.\"}}",p.requirement,p.allowed_types.iter().map(|s|format!("\"{s}\"")).collect::<Vec<_>>().join(","),p.preferred_basket.map_or("null".into(),|s|format!("\"{s}\"")),p.execution_scope,escape(p.source_basis),p.market_adaptation);
     json.pop();
+    json.push_str(&format!(",\"source_rule_reviewed\":{},\"independent_selected_ledger_checked\":{}",reviewed_cash_rule(def),reviewed_cash_rule(def)));
     let currency_admitted=if p.native_currency_constraint.is_some(){"false"}else if p.allowed_types.contains(&"individual_stock"){"true"}else{"null"};
     json.push_str(&format!(",\"source_price_unit\":{},\"native_india_currency_admitted\":{currency_admitted},\"native_currency_constraint\":{}}}",p.source_price_unit.map_or("null".into(),|s|format!("\"{}\"",escape(s))),p.native_currency_constraint.map_or("null".into(),|s|format!("\"{}\"",escape(s)))));
     json
@@ -168,6 +179,17 @@ mod tests {
     fn def(id: &'static str, book: &'static str) -> StrategyDef {
         StrategyDef { id, book, name: "Test", group: "Test", session: 0, dir: "Long", status: Status::Live,
             needs_volume: false, needs_vix: false, needs_series: &[], rules: &[], notes: "", claim: None }
+    }
+    #[test]
+    fn reviewed_kaufman_rules_use_explicit_cash_adaptations_without_opening_other_methods(){
+        let reviewed=def("kftsm_ma","kftsm");
+        assert!(check(&reviewed,"NIFTY 50",false).is_none());
+        assert!(check(&reviewed,"SPY",false).is_none());
+        assert!(check(&reviewed,"RELIANCE",true).is_none());
+        assert!(metadata_json(&reviewed).contains("\"source_rule_reviewed\":true"));
+        assert!(metadata_json(&reviewed).contains("\"source_performance_reproduced\":false"));
+        assert_eq!(policy(&def("kftsm_parabolic","kftsm")).requirement,"source_review_required");
+        assert_eq!(policy(&def("kftsm_ma","another_book")).requirement,"source_review_required");
     }
     #[test]
     fn stock_studies_require_validated_individual_stock_and_keep_snapshot_limits() {

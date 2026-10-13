@@ -1,8 +1,9 @@
 //! Perry J. Kaufman, New Trading Systems and Methods, 4th ed. (Wiley 2005, Books24x7 print, 942 PDF pages)
 //! and its companion CD of TradeStation code (TSM4 CD/ChapterNN/TSM(S|F) *.txt). Page refs are PDF pages.
-//! Only systems whose rules (and numbers) the book or its CD code states exactly are Live; the rest carry the
-//! reason. Every default is the book's literal value; readings the book leaves open are labelled.
-//! Sources, testability table, book-vs-ours and the independent oracle: library/kftsm/.
+//! Catalogue Live denotes an implemented runner; live API admission requires a separate source review.
+//! Seventeen methods reviewed 2026-10-13 have independent actual-data ledger checks. Defaults omitted
+//! by the source, fill assumptions and instrument adaptations remain explicit, never source-study claims.
+//! Review and independent oracle: library/kaufman/REVIEW-2026-10-13.md and its scripts/ directory.
 use crate::connors::{sma, true_range, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "kftsm";
@@ -24,7 +25,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|\"EXP=EXP[1]+s*(close-EXP[1]) ... BUY if EXPchange > 0, SELL if EXPchange < 0\" (Table 8.2, p.278)",
             "E|KEXP (printed p.287) / TSMExpSignal (CD): Exp = SmoothedAverage(close,period); change = (Exp - Exp[1])*100/close[1]; buy/sell at close when change[lag] > filter / < -filter",
             "X|Always in the market, reverse on the opposite signal, no stops (p.278)",
-        ], "Default smoothing = the book's own code, TradeStation SmoothedAverage (first value = n-bar average, then (prev*(n-1)+close)/n). p.kind=1 uses s = 2/(n+1) (the Ch 7 conversion, p.278 'when 2/(n + 1) is used'), p.kind=2 uses s = 1/(n+1) (the CD spreadsheet code, TSM(E) Trend systems.txt). Period: the CD system input is 0 (must be set) and the book gives no single value; 20 is used, the companion MA/LRS/NDB CD default [book silent]."),
+        ], "The CD calls TradeStation SmoothedAverage; this research convention seeds its first full value with the n-bar mean, then uses (prev*(n-1)+close)/n. The supplied call does not specify platform MaxBarsBack or initialization history, so this convention is declared rather than certified platform parity. p.kind=1 uses s = 2/(n+1) (the Ch 7 conversion, p.278 'when 2/(n + 1) is used'), p.kind=2 uses s = 1/(n+1) (the CD spreadsheet code, TSM(E) Trend systems.txt). Period: the CD system input is 0 (must be set) and the book gives no single value; 20 is used, the companion MA/LRS/NDB CD default [book silent]."),
         d("kftsm_lrs", "Linear regression slope", "Ch 8 · Comparison of major trend systems", "Long/Short", Live, &[
             "E|\"LRS = (n*Sum(x*c) - Sum(x)*Sum(c)) / (n*Sum(x*x) - Sum(x)*Sum(x)) ... BUY if LRS > 0, SELL if LRS < 0\" (Table 8.2, p.278)",
             "E|TSMLRslope + TSMLRSsignal (CD Ch08; printed KLRS/KLRSignal p.287-288): buy/sell at close when slope[lag] > filter / < -filter. TSM LinReg slope inputs period(20), filter(0), lag(0)",
@@ -130,11 +131,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|\"2. A buy signal occurred on an upwards penetration of the moving average by the closing price; a sell signal occurred on a downward penetration\" \"1. The trend calculation used the closing price only.\" (p.747)",
             "X|\"3. The model is always in the market.\" (p.747)",
             "F|\"4. A trade cannot be executed when the day's high and low price are the same.\" (p.747)",
-        ], "No single period is given: Table 21.5 (p.748) lists the best period per market; default 35 = the S&P 500 row (1986-1996: 200 trades, 68 profitable, 34%) [fitted to the book's own table]. Orders at the close."),
+        ], "No single period is given: Table 21.5 (p.748) lists the best period per market; default 35 = the S&P 500 row (1986-1996: 200 trades, 68 profitable, 34%) [fitted to the book's own table]. Orders at the close on a crossing event; a cross on a high=low day is ignored, without a delayed fill. This research window starts flat and waits for its first eligible crossing, rather than inventing a pre-window position."),
         d("kftsm_hh_cross", "Hochheimer two moving average crossover", "Ch 21 · Comprehensive studies", "Long/Short", Live, &[
             "E|\"2. A buy signal occurred when the short-term average moved above the long-term average; a sell signal occurred when the short-term average moved below the long term.\" (p.749)",
             "X|\"3. The model was always in the market.\" \"4. If the high and low prices of the day were equal ... no trading signals were generated.\" (p.749)",
-        ], "Default 17/25 = Table 21.9 S&P 500 row (1996-2003: 154 trades, 42 profitable); Nasdaq 100 row 13/60 (59 trades, 22 profitable) (p.752)."),
+        ], "Default 17/25 = Table 21.9 S&P 500 row (1996-2003: 154 trades, 42 profitable); Nasdaq 100 row 13/60 (59 trades, 22 profitable) (p.752). Orders at the close on a crossing event; a cross on a high=low day is ignored, without a delayed fill. The selected research window starts flat until its first eligible crossing."),
         d("kftsm_hh_channel", "Hochheimer closing-price channel (N-day breakout)", "Ch 21 · Comprehensive studies", "Long/Short", Live, &[
             "E|\"The penetration, which causes a buy or sell signal, occurs if the daily price closes above or below the high or low, respectively, of the previous N days.\" (p.752)",
             "X|Always in (reversal), as the other Hochheimer models",
@@ -197,6 +198,30 @@ pub fn catalogue() -> Vec<StrategyDef> {
 }
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
+    // Reviewed source-distinct systems each count once. Chapter headings remain
+    // presentation groups; a threshold, parameter set or extra market run does
+    // not create another method. Pending systems keep their historical groups.
+    let reviewed = match id {
+        "kftsm_ma" => Some(("kftsm_ma", "Moving average trendline direction", "")),
+        "kftsm_exp" => Some(("kftsm_exp", "Exponential smoothing trendline direction", "")),
+        "kftsm_lrs" => Some(("kftsm_lrs", "Linear regression slope", "")),
+        "kftsm_ndb" => Some(("kftsm_ndb", "N-day breakout with close confirmation", "")),
+        "kftsm_bb_ma" => Some(("kftsm_bb_ma", "Moving average with Bollinger bands", "")),
+        "kftsm_ma_pct_band" => Some(("kftsm_ma_pct_band", "Moving average with percent bands", "")),
+        "kftsm_ma_tr_band" => Some(("kftsm_ma_tr_band", "Moving average with true-range bands", "")),
+        "kftsm_triple_smooth" => Some(("kftsm_triple_smooth", "Triple exponential smoothing", "")),
+        "kftsm_vol_breakout" => Some(("kftsm_vol_breakout", "Volatility breakout", "")),
+        "kftsm_keltner" => Some(("kftsm_keltner", "Keltner ten-day moving average rule", "")),
+        "kftsm_hh_ma" => Some(("kftsm_hh_ma", "Hochheimer single moving average", "")),
+        "kftsm_hh_cross" => Some(("kftsm_hh_cross", "Hochheimer two-average crossover", "")),
+        "kftsm_hh_channel" => Some(("kftsm_hh_channel", "Hochheimer closing-price breakout", "")),
+        "kftsm_mod_3ma" => Some(("kftsm_mod_3ma", "Modified three-average confirmation", "")),
+        "kftsm_4_9_18" => Some(("kftsm_4_9_18", "Four-nine-eighteen confirmation", "")),
+        "kftsm_month_end" => Some(("kftsm_month_end", "Month-end effect", "")),
+        "kftsm_hirsch" => Some(("kftsm_hirsch", "Hirsch November–April", "")),
+        _ => None,
+    };
+    if reviewed.is_some() { return reviewed; }
     Some(match id {
         "kftsm_ma" => ("kftsm_trend6", "Six major trend systems", "Moving average"),
         "kftsm_exp" => ("kftsm_trend6", "Six major trend systems", "Exponential smoothing"),
@@ -415,9 +440,33 @@ pub fn moon_days(x: &Ctx) -> Vec<i8> {
 
 // ---------------------------------------------------------------- run
 
+/// Validate before allocating indicator windows or converting floating parameters to usize.
+/// Integer bar counts must remain integers; fractional filters remain continuous.
+pub fn validate(id: &str, p: &Params) -> Option<String> {
+    let schema = params(id)?;
+    for (key, &value) in p {
+        let Some(def) = schema.iter().find(|d| d.key == key) else {
+            return Some(format!("Unknown Kaufman TSM parameter: {key}"));
+        };
+        let integer = matches!(key.as_str(), "period" | "lag" | "kind" | "printed" | "rev" |
+            "len1" | "len2" | "len3" | "length" | "vlag" | "osc1" | "osc2" | "ntrend" |
+            "length1" | "length2" | "length3" | "hold" | "stop_ref" | "weeks" | "per2" |
+            "fast" | "slow" | "fstoch" | "holddays" | "day" | "exit_day" | "in_month" | "out_month");
+        if !value.is_finite() || value < def.min || value > def.max || (integer && value.fract() != 0.) {
+            return Some(format!("Kaufman TSM parameter {key} must be {}from {} to {}",
+                if integer { "an integer " } else { "finite " }, def.min, def.max));
+        }
+    }
+    if matches!(id, "kftsm_hh_cross") {
+        let value = |key: &str| p.get(key).copied().unwrap_or_else(|| schema.iter().find(|d|d.key==key).unwrap().def);
+        if value("fast") >= value("slow") { return Some("Fast MA must be shorter than slow MA".into()); }
+    }
+    None
+}
+
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let schema = params(id)?;
-    if from > to || to >= x.r.len() { return None; }
+    if from > to || to >= x.r.len() || validate(id, p).is_some() { return None; }
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(0., |d| d.def));
     let u = |k: &str| g(k).round().max(0.) as usize;
     let n = x.r.len();
@@ -616,7 +665,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let mut b = Bk::new(x, from, to);
             for i in from..=to {
                 if h[i] == l[i] { continue; }
-                if c[i] > ma[i] { b.at_close(i, 1, "close above MA"); } else if c[i] < ma[i] { b.at_close(i, -1, "close below MA"); }
+                if crosses_above(c, &ma, i) { b.at_close(i, 1, "close crossed above MA"); }
+                else if crosses_below(c, &ma, i) { b.at_close(i, -1, "close crossed below MA"); }
             }
             b.done()
         }
@@ -625,7 +675,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let mut b = Bk::new(x, from, to);
             for i in from..=to {
                 if h[i] == l[i] { continue; }
-                if f[i] > s[i] { b.at_close(i, 1, "fast above slow"); } else if f[i] < s[i] { b.at_close(i, -1, "fast below slow"); }
+                if crosses_above(&f, &s, i) { b.at_close(i, 1, "fast MA crossed above slow MA"); }
+                else if crosses_below(&f, &s, i) { b.at_close(i, -1, "fast MA crossed below slow MA"); }
             }
             b.done()
         }
@@ -1012,5 +1063,45 @@ mod tests {
         assert_eq!(ts[0].dir, 1.); assert_eq!(ts[0].legs[0].i, 5);
         assert!(ts.iter().all(|t| t.exit_px >= x.l[t.exit_i] && t.exit_px <= x.h[t.exit_i]));
         assert_eq!(ts[1].dir, -1.);
+    }
+    #[test]
+    fn hochheimer_locked_bar_cross_is_not_filled_later_as_an_above_average_state() {
+        let mut r = rows(9);
+        let closes = [100., 100., 90., 80., 100., 100., 50., 50., 50.];
+        for (row, &close) in r.iter_mut().zip(&closes) {
+            row.open=close; row.close=close; row.high=close+1.; row.low=close-1.;
+        }
+        r[4].high=100.; r[4].low=100.; // upward cross is not executable
+        let x = Ctx::new(&r, &r, &[]);
+        let ts=run("kftsm_hh_ma", &x, 3, 8, &Params::from([("period".into(), 2.)])).unwrap();
+        assert_eq!(ts.len(), 1);
+        assert_eq!(ts[0].legs[0].i, 6); assert_eq!(ts[0].dir, -1.);
+        assert!(ts[0].open);
+    }
+    #[test]
+    fn hochheimer_two_average_cross_waits_after_a_locked_signal() {
+        let mut r=rows(10);
+        let closes=[100.,100.,90.,80.,100.,100.,100.,50.,50.,50.];
+        for (row,&close) in r.iter_mut().zip(&closes) {
+            row.open=close; row.close=close; row.high=close+1.; row.low=close-1.;
+        }
+        r[5].high=100.; r[5].low=100.;
+        let x=Ctx::new(&r,&r,&[]);
+        let p=Params::from([("fast".into(),2.),("slow".into(),3.)]);
+        let ts=run("kftsm_hh_cross",&x,4,9,&p).unwrap();
+        assert_eq!(ts.len(),1);
+        assert_eq!(ts[0].legs[0].i,7); assert_eq!(ts[0].dir,-1.);
+    }
+    #[test]
+    fn invalid_parameters_are_rejected_before_window_allocation() {
+        let r=rows(60); let x=Ctx::new(&r,&r,&[]);
+        for value in [f64::NAN, f64::INFINITY, -1., 0., 2.5, 1_000_000.] {
+            let p=Params::from([("period".into(),value)]);
+            assert!(validate("kftsm_ma",&p).is_some());
+            assert!(run("kftsm_ma",&x,0,59,&p).is_none());
+        }
+        assert!(validate("kftsm_ma",&Params::from([("unknown".into(),1.)])).is_some());
+        assert!(validate("kftsm_hh_cross",&Params::from([("fast".into(),25.),("slow".into(),17.)])).is_some());
+        assert!(validate("kftsm_ma",&Params::from([("filter".into(),0.15)])).is_none());
     }
 }

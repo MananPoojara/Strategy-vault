@@ -36,7 +36,7 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
         Status::Live => {}
     }
     if let Some(g) = crate::gate::get(def.id) {
-        if g.verdict == "withheld" {
+        if g.verdict == "withheld" && !crate::instrument_policy::reviewed_cash_rule(def) {
             return issue("not_testable", format!("Withheld by the accuracy check: {} No results are published.", g.reason));
         }
         if let (Some(allowed), Some(row)) = (g.allowed, ctx.r.get(from)) {
