@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+branch=$(git symbolic-ref --quiet --short HEAD)
+if [ "$branch" = main ]; then
+  echo 'Direct commits to main are disabled. Use Manan or your own development branch.' >&2
+  exit 1
+fi
+python3 scripts/check_upload.py --staged

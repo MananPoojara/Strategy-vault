@@ -1,0 +1,7 @@
+# Used only while collecting integration-test coverage; normal deployment excludes it.
+services:
+  auth:
+    environment:
+      NODE_V8_COVERAGE: /coverage
+    volumes:
+      - ${VAULT_RUNTIME_ROOT}/coverage:/coverage

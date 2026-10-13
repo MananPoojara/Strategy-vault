@@ -1,0 +1,13 @@
+{
+    auto_https off
+    admin off
+}
+:8080 {
+    @compressible {
+        not path /api/app/books/files/*
+    }
+    encode @compressible gzip
+    reverse_proxy gateway:8181 {
+        header_up X-Vault-Client-IP {remote_host}
+    }
+}

@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Strategy Library · Larry Connors (full detail)</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="vendor/fonts.css">
+<link rel="stylesheet" href="vendor/fonts-options.css">
+<!-- Base layout = the real app's stylesheet; the skins below only restyle it. -->
+<link rel="stylesheet" href="styles.css?v=lib1">
+<style>
+/* ================================================================
+   Library skins over the full app. Every feature comes from app.js;
+   these rules change only the look. Skin = body[data-skin].
+   ================================================================ */
+
+.two > .box:only-child { grid-column: 1 / -1; }
+
+/* ---------- skin switcher (floating) */
+.skinbar { position: fixed; z-index: 100; right: 18px; bottom: 18px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; max-width: calc(100vw - 36px);
+  background: #ffffffee; backdrop-filter: blur(10px); border: 1px solid #d5d7dc; border-radius: 99px; padding: 6px 8px 6px 14px; box-shadow: 0 8px 26px #0000002a; font: 12px "IBM Plex Sans", sans-serif; }
+.skinbar b { font-weight: 600; margin-right: 4px; color: #333; }
+.skinbar button { border: 1px solid #d5d7dc; background: #fff; color: #222; border-radius: 99px; padding: 5px 12px; font: 500 12px "IBM Plex Sans", sans-serif; cursor: pointer; }
+.skinbar button.on { background: #111; color: #fff; border-color: #111; }
+
+/* ---------- 3D objects shared by the skins */
+.lib-shelf { display: none; margin: 4px 0 34px; }
+.lib-shelf .row { display: flex; align-items: flex-end; gap: 6px; padding: 0 24px; perspective: 1400px; min-height: 320px; }
+.lib-shelf .plank { height: 24px; border-radius: 2px; }
+.lib-shelf .cap { font-size: 12px; margin-top: 8px; opacity: .75; }
+.b3 { --w: 58px; --h: 280px; --d: 200px; position: relative; width: var(--w); height: var(--h); transform-style: preserve-3d; transform-origin: bottom left; transition: transform .8s cubic-bezier(.2,.8,.2,1); cursor: pointer; flex: none; }
+.b3 .sp, .b3 .cv { position: absolute; top: 0; height: 100%; backface-visibility: hidden; }
+.b3 .sp { left: 0; width: var(--w); background: var(--c); color: var(--foil); display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 16px 0 14px; box-shadow: inset 4px 0 6px -3px #ffffff40, inset -6px 0 8px -4px #00000055; }
+.b3 .sp::before, .b3 .sp::after { content: ""; position: absolute; left: 6px; right: 6px; height: 2px; border-top: 1px solid var(--foil); border-bottom: 1px solid var(--foil); opacity: .7; }
+.b3 .sp::before { top: 30px; } .b3 .sp::after { bottom: 36px; }
+.b3 .t { writing-mode: vertical-rl; transform: rotate(180deg); font: 600 17px/1 "Newsreader", serif; white-space: nowrap; margin-top: 30px; }
+.b3 .a { font: 500 10px/1.15 "IBM Plex Sans", sans-serif; text-align: center; opacity: .85; }
+.b3.live .sp { box-shadow: inset 4px 0 6px -3px #ffffff40, inset -6px 0 8px -4px #00000055, 0 0 0 2px var(--foil); }
+.b3 .cv { left: var(--w); width: var(--d); transform-origin: left center; transform: rotateY(90deg); background: var(--c); color: var(--foil); padding: 20px 18px; display: flex; flex-direction: column; gap: 8px; box-shadow: inset 8px 0 12px -6px #00000066; }
+.b3 .cv .ph { width: 100%; height: 118px; overflow: hidden; border: 2px solid var(--foil); } .b3 .cv .ph img { width: 100%; height: 100%; object-fit: cover; filter: grayscale(1) sepia(.15); }
+.b3 .cv h4 { margin: 0; font: 600 21px/1.05 "Newsreader", serif; } .b3 .cv p { margin: 0; font: 11px/1.4 "IBM Plex Sans", sans-serif; opacity: .85; }
+.b3:hover { transform: translateY(-16px) translateX(28px) rotateY(-72deg); z-index: 5; }
+.b3.lean { transform: rotateZ(-7deg); margin-left: 18px; } .b3.lean:hover { transform: translateY(-16px) translateX(28px) rotateY(-72deg); }
+
+.lib-cover { display: none; --w: 200px; --h: 284px; --t: 30px; position: relative; width: var(--w); height: var(--h); perspective: 900px; flex: none; }
+.lib-cover .bb { position: absolute; inset: 0; transform-style: preserve-3d; transform: rotateY(-30deg); transition: transform .9s cubic-bezier(.2,.8,.2,1); }
+.lib-cover:hover .bb { transform: rotateY(-6deg); }
+.lib-cover .fr { position: absolute; inset: 0; background: var(--cover, #1f3a5f); color: var(--foil, #e8d39a); border-radius: 2px 6px 6px 2px; padding: 20px 18px; display: flex; flex-direction: column; justify-content: space-between; transform: translateZ(calc(var(--t) / 2)); box-shadow: inset 6px 0 10px -4px #00000055; overflow: hidden; }
+.lib-cover .fr::before { content: ""; position: absolute; inset: 12px; border: 1px solid currentColor; opacity: .45; pointer-events: none; }
+.lib-cover .pg { position: absolute; top: 4px; left: calc(var(--w) - var(--t) / 2 - 3px); width: var(--t); height: calc(var(--h) - 8px); transform: rotateY(90deg); background: repeating-linear-gradient(90deg, #fbfbfb 0 2px, #dcdcdc 2px 3px); }
+.lib-cover .bk { position: absolute; inset: 0; background: var(--cover, #1f3a5f); border-radius: 2px 6px 6px 2px; transform: translateZ(calc(var(--t) / -2)); box-shadow: -14px 14px 34px #00000033; }
+.lib-cover .ph { width: 100%; height: 120px; overflow: hidden; border: 2px solid currentColor; } .lib-cover .ph img { width: 100%; height: 100%; object-fit: cover; filter: grayscale(1); }
+.lib-cover h4 { margin: 0; font: 600 25px/1.02 "Newsreader", serif; } .lib-cover small { font: 11px/1.4 "IBM Plex Sans", sans-serif; opacity: .85; }
+
+/* ================================================================ 1. BOOKSHELF */
+body[data-skin="shelf"] { --foil: #e8d39a; background: radial-gradient(1000px 520px at 50% -10%, #fff7e6, transparent 70%), #f1f2f4; color: #1d2330; font-family: "IBM Plex Sans", sans-serif; }
+body[data-skin="shelf"] .topbar { background: #ffffffd9; border-bottom: 1px solid #d9dbe0; }
+body[data-skin="shelf"] .wordmark { font: 600 21px "Newsreader", serif; letter-spacing: 0; }
+body[data-skin="shelf"] .hero { border-bottom: 1px solid #d9dbe0; }
+body[data-skin="shelf"] .hero h1 { font: 600 clamp(48px, 6vw, 84px)/1 "Newsreader", serif; letter-spacing: -.02em; }
+body[data-skin="shelf"] .lede, body[data-skin="shelf"] .g-tag { font: italic 21px/1.45 "Newsreader", serif; color: #4a5162; }
+body[data-skin="shelf"] .portrait { border: 0; padding: 0; width: 220px; height: 220px; border-radius: 50%; overflow: hidden; box-shadow: 0 0 0 4px #fff, 0 0 0 6px #b58a3a, 0 14px 34px #0002; }
+body[data-skin="shelf"] .portrait .pframe img { filter: grayscale(1) sepia(.2); }
+body[data-skin="shelf"] .strip dd, body[data-skin="shelf"] .lc-stats dd { font: 600 32px "Newsreader", serif; }
+body[data-skin="shelf"] .section-h, body[data-skin="shelf"] .box-h, body[data-skin="shelf"] .sheet-title h2 { font-family: "Newsreader", serif; font-weight: 600; letter-spacing: 0; }
+body[data-skin="shelf"] .sheet-title h2 { font-size: 32px; }
+body[data-skin="shelf"] .box, body[data-skin="shelf"] .list-col, body[data-skin="shelf"] .toolbar, body[data-skin="shelf"] .legend-card { background: #fff; border: 1px solid #e1e3e8; border-top: 3px solid #1f3a5f; border-radius: 10px; box-shadow: 0 6px 20px #1d23300d; }
+body[data-skin="shelf"] .gallery { border: 0; gap: 18px; }
+body[data-skin="shelf"] .metric b { font: 600 30px "Newsreader", serif; }
+body[data-skin="shelf"] .seg button.on, body[data-skin="shelf"] .btn.primary { background: #1f3a5f; border-color: #1f3a5f; }
+body[data-skin="shelf"] .tab.on { border-color: #b58a3a; }
+body[data-skin="shelf"] .li.on { border-left-color: #b58a3a; background: #fbf6ea; }
+body[data-skin="shelf"] .verdict { border-left-color: #b58a3a; background: #fbf8f0; font-family: "Newsreader", serif; font-size: 16px; }
+body[data-skin="shelf"] .rcol { background: #fbfbfc; }
+body[data-skin="shelf"] .lib-shelf { display: block; }
+body[data-skin="shelf"] .lib-shelf .plank { background: linear-gradient(180deg, #e2cfa9, #caa972 60%, #a98652); box-shadow: 0 16px 24px -10px #6b4f2a66; }
+body[data-skin="shelf"] .guilloche { display: none; }
+body[data-skin="shelf"] { --chart-bg: #ffffff; }
+
+/* ================================================================ 2. HARDCOVER (paper + contents) */
+body[data-skin="hard"] { --foil: #e8d39a; background: #f5f5f3; color: #1a1a1a; font-family: "Newsreader", Georgia, serif; }
+body[data-skin="hard"]::before { content: ""; position: fixed; inset: 0; z-index: -1; opacity: .35; pointer-events: none; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 .35 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+body[data-skin="hard"] .topbar { background: #f5f5f3e6; border-bottom: 1px solid #1a1a1a; }
+body[data-skin="hard"] .wordmark { font: italic 600 22px "Newsreader", serif; letter-spacing: 0; }
+body[data-skin="hard"] .cat, body[data-skin="hard"] .status, body[data-skin="hard"] .toolbar, body[data-skin="hard"] .meta, body[data-skin="hard"] table, body[data-skin="hard"] .li-sub, body[data-skin="hard"] .metric span, body[data-skin="hard"] .metric i { font-family: "IBM Plex Sans", sans-serif; }
+body[data-skin="hard"] .hero h1 { font: 600 clamp(48px, 6vw, 88px)/1 "Newsreader", serif; }
+body[data-skin="hard"] .g-tag, body[data-skin="hard"] .lede { font: italic 23px/1.45 "Newsreader", serif; color: #444; }
+body[data-skin="hard"] .guru-head { grid-template-columns: 220px minmax(0, 1fr); }
+body[data-skin="hard"] .guru-head .portrait { display: none; }
+body[data-skin="hard"] .guru-head .lib-cover { display: block; grid-row: 1; grid-column: 1; }
+body[data-skin="hard"] .guru-head .hero-copy { grid-column: 2; }
+body[data-skin="hard"] .box, body[data-skin="hard"] .list-col, body[data-skin="hard"] .toolbar { background: transparent; border: 0; border-top: 2px solid #1a1a1a; border-radius: 0; box-shadow: none; padding-left: 0; padding-right: 0; }
+body[data-skin="hard"] .box-h, body[data-skin="hard"] .sheet-title h2, body[data-skin="hard"] .section-h { font-family: "Newsreader", serif; font-weight: 600; }
+body[data-skin="hard"] .box-h { font-size: 22px; }
+body[data-skin="hard"] .metric b, body[data-skin="hard"] .strip dd { font: 600 30px "Newsreader", serif; }
+body[data-skin="hard"] .li { display: grid; border-bottom: 1px dotted #bbb; }
+body[data-skin="hard"] .li-name { font: 17px "Newsreader", serif; }
+body[data-skin="hard"] .li.on { background: #fff; border-left-color: #1a1a1a; }
+body[data-skin="hard"] .verdict { font: italic 17px/1.6 "Newsreader", serif; background: transparent; border-left: 2px solid #1a1a1a; }
+body[data-skin="hard"] .rcol { background: transparent; } body[data-skin="hard"] .rgrid { border-left: 0; }
+body[data-skin="hard"] .legend-card { background: #fff; }
+body[data-skin="hard"] .guilloche { display: none; }
+body[data-skin="hard"] { --chart-bg: #f5f5f3; --cover: #1f3a5f; }
+
+/* ================================================================ 3. OPEN BOOK (panels as pages) */
+body[data-skin="open"] { background: radial-gradient(1400px 800px at 50% 20%, #f7f6f2, #dedcd5); color: #222; font-family: "Newsreader", Georgia, serif; }
+body[data-skin="open"] .topbar { background: #f7f6f2e6; border-bottom: 1px solid #cfccc4; }
+body[data-skin="open"] .wordmark { font: 600 21px "Newsreader", serif; letter-spacing: 0; }
+body[data-skin="open"] .cat, body[data-skin="open"] .status, body[data-skin="open"] .toolbar, body[data-skin="open"] table, body[data-skin="open"] .metric span, body[data-skin="open"] .metric i, body[data-skin="open"] .li-sub, body[data-skin="open"] .meta { font-family: "IBM Plex Sans", sans-serif; }
+body[data-skin="open"] .hero { border: 0; background: linear-gradient(90deg, #fdfcf9 48%, #e9e6de 50%, #fdfcf9 52%); border-radius: 8px; margin-top: 26px; box-shadow: 0 24px 40px #0000001f; padding-top: 48px; padding-bottom: 48px; }
+body[data-skin="open"] .hero h1 { font: 600 clamp(44px, 5.4vw, 78px)/1 "Newsreader", serif; }
+body[data-skin="open"] .g-tag, body[data-skin="open"] .lede { font: 19px/1.7 "Newsreader", serif; color: #333; }
+body[data-skin="open"] .g-tag::first-letter, body[data-skin="open"] .lede::first-letter { float: left; font-size: 60px; line-height: .85; padding: 6px 8px 0 0; font-weight: 600; color: #8a6a2f; }
+body[data-skin="open"] .portrait { border: 1px solid #ccc; background: #fff; padding: 6px; }
+body[data-skin="open"] .box, body[data-skin="open"] .list-col, body[data-skin="open"] .toolbar, body[data-skin="open"] .legend-card { background: linear-gradient(270deg, #fdfcf9 92%, #efece5); border: 0; border-radius: 0 8px 8px 0; box-shadow: -3px 0 0 #e9e6de, 0 14px 30px #00000017; }
+body[data-skin="open"] .list-col { background: linear-gradient(90deg, #fdfcf9 92%, #efece5); border-radius: 8px 0 0 8px; }
+body[data-skin="open"] .gallery { border: 0; gap: 22px; }
+body[data-skin="open"] .box-h, body[data-skin="open"] .sheet-title h2, body[data-skin="open"] .section-h { font-family: "Newsreader", serif; font-weight: 600; }
+body[data-skin="open"] .box-h { font-size: 21px; }
+body[data-skin="open"] .metric b, body[data-skin="open"] .strip dd { font: 600 30px "Newsreader", serif; }
+body[data-skin="open"] .verdict { font: 17px/1.7 "Newsreader", serif; background: transparent; border: 0; padding: 0; }
+body[data-skin="open"] .verdict::first-letter { float: left; font-size: 46px; line-height: .85; padding: 4px 6px 0 0; color: #8a6a2f; font-weight: 600; }
+body[data-skin="open"] .seg button.on, body[data-skin="open"] .btn.primary { background: #3a2f1d; border-color: #3a2f1d; }
+body[data-skin="open"] .li.on { border-left-color: #8a6a2f; background: #fff; }
+body[data-skin="open"] .tab.on { border-color: #8a6a2f; }
+body[data-skin="open"] .rcol { background: transparent; }
+body[data-skin="open"] .guilloche { display: none; }
+body[data-skin="open"] { --chart-bg: #fdfcf9; }
+
+/* ================================================================ 4. CARD CATALOGUE */
+body[data-skin="cards"] { background: #eceef1; color: #262a33; font-family: "IBM Plex Mono", monospace; }
+body[data-skin="cards"] .topbar { background: #e3e6eae6; border-bottom: 1px solid #c9ced6; }
+body[data-skin="cards"] .wordmark { font: 600 17px "IBM Plex Mono", monospace; letter-spacing: 0; }
+body[data-skin="cards"] .wordmark::after { content: "/"; }
+body[data-skin="cards"] .hero { border: 0; margin-top: 22px; background: linear-gradient(180deg, #d9dde3, #c9ced6); border: 1px solid #b7bdc7; border-radius: 6px; box-shadow: inset 0 1px 0 #fff, 0 10px 24px #00000014; padding-top: 36px; padding-bottom: 36px; }
+body[data-skin="cards"] .hero h1 { font: 600 clamp(36px, 4.6vw, 64px)/1.05 "IBM Plex Mono", monospace; letter-spacing: -.03em; }
+body[data-skin="cards"] .hero-copy { background: #fbfaf6; border: 3px solid #9aa1ad; border-radius: 3px; padding: 18px 22px; }
+body[data-skin="cards"] .g-tag, body[data-skin="cards"] .lede { font: italic 17px/1.5 "Newsreader", serif; color: #3a404c; }
+body[data-skin="cards"] .portrait { border: 4px solid #fff; padding: 0; transform: rotate(-2.5deg); box-shadow: 0 4px 12px #0003; }
+body[data-skin="cards"] .box, body[data-skin="cards"] .list-col, body[data-skin="cards"] .legend-card { background: #fffdf7; border: 0; border-radius: 3px; box-shadow: 0 1px 2px #0002, 0 8px 18px #0000000f; }
+body[data-skin="cards"] .box, body[data-skin="cards"] .legend-card { position: relative; }
+body[data-skin="cards"] .box::before, body[data-skin="cards"] .legend-card::before { content: ""; position: absolute; left: 0; right: 0; top: 52px; border-top: 1.5px solid #d45b5b; opacity: .7; pointer-events: none; }
+body[data-skin="cards"] .box { background-image: linear-gradient(#fffdf7 60px, transparent 60px), repeating-linear-gradient(#fffdf7 0 27px, #dbe7f1 27px 28px); }
+body[data-skin="cards"] .gallery { border: 0; gap: 22px; }
+body[data-skin="cards"] .toolbar { background: #fbfaf6; border: 1px solid #c9ced6; border-radius: 4px; }
+body[data-skin="cards"] .box-h, body[data-skin="cards"] .sheet-title h2, body[data-skin="cards"] .section-h, body[data-skin="cards"] .metric b, body[data-skin="cards"] .strip dd { font-family: "IBM Plex Mono", monospace; letter-spacing: -.02em; }
+body[data-skin="cards"] .metric b { font-size: 26px; }
+body[data-skin="cards"] .verdict { background: #fffdf7; border: 2px dashed #9aa1ad; border-left-width: 2px; font-size: 13px; }
+body[data-skin="cards"] .li { border-bottom: 1px solid #dbe7f1; } body[data-skin="cards"] .li.on { border-left-color: #d45b5b; background: #fff; }
+body[data-skin="cards"] .seg button.on, body[data-skin="cards"] .btn.primary { background: #262a33; border-color: #262a33; }
+body[data-skin="cards"] .tab.on { border-color: #d45b5b; }
+body[data-skin="cards"] .rcol { background: transparent; }
+body[data-skin="cards"] .checkline { font-family: "IBM Plex Mono", monospace; }
+body[data-skin="cards"] .guilloche { display: none; }
+body[data-skin="cards"] { --chart-bg: #fffdf7; }
+
+/* ================================================================ 5. STEEL LIBRARY (the chosen look + books) */
+body[data-skin="steel"] { --foil: #e9e9e9; }
+body[data-skin="steel"] .lib-shelf { display: block; }
+body[data-skin="steel"] .lib-shelf .plank { height: 18px; background: linear-gradient(180deg, #f7f7f7, #c9c9ca 50%, #a9a9ab); border: 1px solid #9a9a9c; box-shadow: 0 12px 20px -10px #0005; }
+body[data-skin="steel"] .guru-head { grid-template-columns: minmax(0, 1fr) 210px 260px; }
+body[data-skin="steel"] .guru-head .lib-cover { display: block; --cover: #1b1b1c; --foil: #e9e9e9; }
+body[data-skin="steel"] .lib-cover h4 { font: 800 22px/1 "Archivo", sans-serif; font-stretch: 115%; }
+body[data-skin="steel"] { --chart-bg: #f4f4f4; }
+
+@media (max-width: 980px) {
+  body[data-skin] .guru-head { grid-template-columns: 1fr !important; }
+  body[data-skin] .guru-head .lib-cover, body[data-skin] .guru-head .hero-copy { grid-column: auto !important; }
+  .skinbar { border-radius: 14px; }
+}
+</style>
+</head>
+<body data-skin="shelf">
+<header class="topbar">
+  <a class="wordmark" href="#/">STRATEGY VAULT</a>
+  <nav class="cats" aria-label="Categories">
+    <a class="cat on" href="#/" aria-current="page">Guru's</a>
+    <span class="cat off" title="Your company's research, coming next">YT Strategies <em>soon</em></span>
+  </nav>
+  <span class="status" id="status" aria-live="polite"></span>
+</header>
+
+<!-- Guru's: gallery of legends -->
+<main class="page" id="view-gallery" hidden>
+  <section class="hero gallery-hero">
+    <div class="guilloche" id="gal-guilloche" aria-hidden="true"></div>
+    <div class="hero-copy">
+      <h1>Guru's</h1>
+      <p class="lede">Trading legends, their books turned into exact rules, and every rule tested on Indian index data. Nothing paraphrased, nothing curve-fitted.</p>
+    </div>
+  </section>
+  <dl class="strip" id="vault-counts"></dl>
+  <div class="lib-shelf" id="lib-shelf"></div>
+  <h2 class="section-h">Legends in the vault</h2>
+  <div class="gallery" id="gallery"></div>
+</main>
+
+<!-- One legend -->
+<main class="page" id="view-guru" hidden>
+  <nav class="crumbs"><a href="#/">Guru's</a><span>/</span><span id="crumb-name"></span></nav>
+  <section class="hero guru-head">
+    <div class="guilloche" id="g-guilloche" aria-hidden="true"></div>
+    <div class="hero-copy">
+      <h1 id="g-name"></h1>
+      <p id="g-tag" class="g-tag"></p>
+      <p id="g-book" class="g-book"></p>
+    </div>
+    <div class="lib-cover" id="lib-cover"></div>
+    <div class="portrait" id="g-portrait"></div>
+  </section>
+  <dl class="strip" id="g-facts"></dl>
+
+  <form class="toolbar" id="runbar">
+    <div class="seg idx" id="tickers" role="radiogroup" aria-label="Index"></div>
+    <label>From <input type="date" id="from"></label>
+    <label>To <input type="date" id="to"></label>
+    <label title="Transaction cost in basis points, charged on entry and again on exit">Cost <input type="number" id="cost" value="0" min="0" step="1"> bps</label>
+    <button type="submit" class="btn primary">Run backtests</button>
+  </form>
+
+  <nav class="tabs" role="tablist">
+    <button type="button" role="tab" data-tab="strategies" class="tab on">Strategies</button>
+    <button type="button" role="tab" data-tab="compare" class="tab">Book vs India</button>
+    <button type="button" role="tab" data-tab="thesis" class="tab">Thesis</button>
+    <button type="button" role="tab" data-tab="blocked" class="tab">Not testable <span id="blocked-n" class="count"></span></button>
+  </nav>
+
+  <section class="panel-tab" id="tab-strategies">
+    <div class="split">
+      <div class="list-col">
+        <div class="list-tools">
+          <input type="search" id="q" placeholder="Filter strategies" aria-label="Filter strategies">
+          <select id="sort" aria-label="Sort strategies">
+            <option value="book">Course order</option>
+            <option value="sharpe">Sharpe</option>
+            <option value="cagr">CAGR</option>
+            <option value="win_rate">Win rate</option>
+            <option value="profit_factor">Profit factor</option>
+            <option value="trades">Trades</option>
+          </select>
+        </div>
+        <div class="list" id="list"></div>
+      </div>
+      <div class="sheet" id="sheet"></div>
+    </div>
+  </section>
+  <section class="panel-tab" id="tab-compare" hidden></section>
+  <section class="panel-tab" id="tab-thesis" hidden></section>
+  <section class="panel-tab" id="tab-blocked" hidden></section>
+</main>
+
+<footer class="foot">Library edition of the Strategy Vault: same rules, stats and charts as the main app, computed in Rust on NSE index data. Charts by <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts</a>.</footer>
+
+<div class="skinbar" id="skinbar" role="radiogroup" aria-label="Library skin"><b>Skin</b></div>
+
+<script src="vendor/lightweight-charts-4.2.0.js"></script>
+<script src="app.js?v=lib1"></script>
+<script>
+// ------------------------------------------------------------------
+// Library skins on top of the unchanged app. app.js provides every
+// feature; this script only (1) swaps chart colours per skin,
+// (2) adds the 3D shelf / hardcover, (3) re-renders on skin change.
+// ------------------------------------------------------------------
+const SKINS = {
+  shelf: { label: 'Bookshelf', c: { blue: '#1f3a5f', orange: '#b58a3a', red: '#b4473f', ink: '#1d2330', ink2: '#4a5162', ink3: '#7b8292', rule: '#d9dbe0', rule2: '#eceef2' } },
+  hard:  { label: 'Hardcover', c: { blue: '#1f3a5f', orange: '#9a948a', red: '#a8322c', ink: '#1a1a1a', ink2: '#555', ink3: '#888', rule: '#cfcfcf', rule2: '#e6e6e3' } },
+  open:  { label: 'Open Book', c: { blue: '#8a6a2f', orange: '#9fa6b2', red: '#a8322c', ink: '#222', ink2: '#555', ink3: '#8b877d', rule: '#d8d3c8', rule2: '#ece8df' } },
+  cards: { label: 'Card Catalogue', c: { blue: '#2f6b4a', orange: '#9aa1ad', red: '#c0453f', ink: '#262a33', ink2: '#5d6472', ink3: '#7d8594', rule: '#c9ced6', rule2: '#dbe7f1' } },
+  steel: { label: 'Steel Library', c: { blue: '#2f5a8f', orange: '#8a90a0', red: '#c43c3c', ink: '#090909', ink2: '#636466', ink3: '#8b8d93', rule: '#b0b0b1', rule2: '#dcdcdd' } },
+};
+const PREVIEW_SPINES = [
+  ['Linda Raschke', 'Street Smarts', '#7a2e2e'], ['Mark Minervini', 'Trade Like a Wizard', '#2f5140'],
+  ['Nicolas Darvas', 'How I Made $2,000,000', '#8a6a2f'], ["William O'Neil", 'How to Make Money in Stocks', '#4a5563'], ['Jesse Livermore', 'How to Trade in Stocks', '#5b3b5e'],
+];
+
+// charts: the app hard-codes a panel background; give each skin its own.
+// (The library object is frozen, so wrap the app's baseChart instead.)
+const _baseChart = baseChart;
+baseChart = function (el, opts) {
+  const ch = _baseChart(el, opts);
+  const bg = getComputedStyle(document.body).getPropertyValue('--chart-bg').trim() || '#ffffff';
+  ch.applyOptions({ layout: { background: { color: bg }, textColor: C.ink3 }, grid: { horzLines: { color: C.rule2 }, vertLines: { visible: false } } });
+  return ch;
+};
+
+function spine(title, author, color, cls, cover) {
+  return `<div class="b3 ${cls}" style="--c:${color};--h:${248 + (title.length * 7) % 58}px;--w:${52 + (title.length * 3) % 16}px"><div class="sp"><span class="t">${esc(title)}</span><span class="a">${esc(author)}</span></div><div class="cv">${cover}</div></div>`;
+}
+function drawShelf() {
+  const g = S.guru; if (!g) return;
+  const steel = document.body.dataset.skin === 'steel';
+  const live = spine(g.name, 'Swing Trading College IX', steel ? '#1b1b1c' : '#1f3a5f', 'live',
+    `<div class="ph"><img src="img/gurus/${g.id}.jpg" alt=""></div><h4>${esc(g.name)}</h4><p>${esc(g.book)}</p><p>Click to open</p>`);
+  const others = PREVIEW_SPINES.map(([n, b, c], k) => spine(n, b, steel ? ['#3a3a3c', '#58585b', '#2c2c2e', '#6b6b6e', '#444446'][k] : c, k === 3 ? 'lean' : '', `<h4>${esc(n)}</h4><p>${esc(b)}</p><p>Layout preview · not converted yet</p>`)).join('');
+  $('#lib-shelf').innerHTML = `<div class="row">${live}${others}</div><div class="plank"></div><div class="cap">Hover a book to pull it out. Only ${esc(g.name)} is converted so far; the others show how the shelf fills up.</div>`;
+  $('#lib-shelf .b3.live').onclick = () => { location.hash = `#/${g.id}`; };
+}
+function drawCover() {
+  const g = S.guru; if (!g || $('#lib-cover').innerHTML) return;
+  $('#lib-cover').innerHTML = `<div class="bb"><div class="bk"></div><div class="pg"></div><div class="fr"><div class="ph"><img src="img/gurus/${g.id}.jpg" alt=""></div><div><h4>Swing Trading College IX</h4><small>${esc(g.name)} · 2010 · 14 sessions</small></div></div></div>`;
+}
+
+// hook the app's renderers (they are plain global functions)
+const _gallery = renderGallery, _head = renderGuruHead;
+renderGallery = function () { _gallery(); drawShelf(); };
+renderGuruHead = function () { _head(); drawCover(); };
+
+function applySkin(name, rerender) {
+  if (!SKINS[name]) name = 'shelf';
+  document.body.dataset.skin = name;
+  Object.assign(C, SKINS[name].c);
+  try { localStorage.setItem('vault-skin', name); } catch (e) {}
+  document.querySelectorAll('#skinbar button').forEach(b => b.classList.toggle('on', b.dataset.s === name));
+  if (!rerender || !S.guru) return;
+  if (!$('#view-gallery').hidden) renderGallery();
+  else { renderList(); if (S.sel) openStrategy(S.sel, false); }
+}
+$('#skinbar').insertAdjacentHTML('beforeend', Object.entries(SKINS).map(([k, v]) => `<button type="button" data-s="${k}">${v.label}</button>`).join(''));
+$('#skinbar').querySelectorAll('button').forEach(b => b.onclick = () => applySkin(b.dataset.s, true));
+let start = new URLSearchParams(location.search).get('skin');
+try { start = start || localStorage.getItem('vault-skin'); } catch (e) {}
+applySkin(start || 'shelf', false);
+</script>
+</body>
+</html>

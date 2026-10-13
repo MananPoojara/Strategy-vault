@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Strategy Vault · Guru's</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="vendor/fonts.css?v=24">
+<link rel="stylesheet" href="vendor/fonts-options.css?v=24">
+<link rel="stylesheet" href="styles.css?v=24">
+</head>
+<body>
+<header class="topbar">
+  <a class="wordmark" href="#/">STRATEGY VAULT</a>
+  <nav class="cats" aria-label="Categories">
+    <a class="cat on" href="#/" aria-current="page">Guru's</a>
+    <span class="cat off" title="Your company's research, coming next">YT Strategies <em>soon</em></span>
+  </nav>
+  <span class="status" id="status" aria-live="polite"></span>
+</header>
+
+<!-- Guru's: gallery of legends -->
+<main class="page" id="view-gallery" hidden>
+  <section class="hero gallery-hero">
+    <div class="guilloche" id="gal-guilloche" aria-hidden="true"></div>
+    <div class="hero-copy">
+      <h1>Guru's</h1>
+      <p class="lede">Trading legends, their books turned into exact rules, and every rule tested on Indian index data. Nothing paraphrased, nothing curve-fitted.</p>
+    </div>
+  </section>
+  <dl class="strip" id="vault-counts"></dl>
+  <h2 class="section-h">Legends in the vault</h2>
+  <div class="gallery" id="gallery"></div>
+</main>
+
+<!-- One legend -->
+<main class="page" id="view-guru" hidden>
+  <nav class="crumbs"><a href="#/">Guru's</a><span>/</span><span id="crumb-name"></span></nav>
+  <section class="hero guru-head">
+    <div class="guilloche" id="g-guilloche" aria-hidden="true"></div>
+    <div class="hero-copy">
+      <h1 id="g-name"></h1>
+      <p id="g-tag" class="g-tag"></p>
+      <p id="g-book" class="g-book"></p>
+    </div>
+    <div class="portrait" id="g-portrait"></div>
+  </section>
+  <dl class="strip" id="g-facts"></dl>
+
+  <form class="toolbar" id="runbar">
+    <div class="seg idx" id="tickers" role="radiogroup" aria-label="Index"></div>
+    <label>From <input type="date" id="from"></label>
+    <label>To <input type="date" id="to"></label>
+    <label title="Transaction cost in basis points, charged on entry and again on exit">Cost <input type="number" id="cost" value="0" min="0" step="1"> bps</label>
+    <button type="submit" class="btn primary">Run backtests</button>
+  </form>
+
+  <nav class="tabs" role="tablist">
+    <button type="button" role="tab" data-tab="strategies" class="tab on">Strategies</button>
+    <button type="button" role="tab" data-tab="compare" class="tab">Book vs India</button>
+    <button type="button" role="tab" data-tab="thesis" class="tab">Thesis</button>
+    <button type="button" role="tab" data-tab="blocked" class="tab">Not testable <span id="blocked-n" class="count"></span></button>
+  </nav>
+
+  <section class="panel-tab" id="tab-strategies">
+    <div class="split">
+      <div class="list-col">
+        <div class="list-tools">
+          <input type="search" id="q" placeholder="Filter strategies" aria-label="Filter strategies">
+          <select id="sort" aria-label="Sort strategies">
+            <option value="book">Course order</option>
+            <option value="sharpe">Sharpe</option>
+            <option value="cagr">CAGR</option>
+            <option value="win_rate">Win rate</option>
+            <option value="profit_factor">Profit factor</option>
+            <option value="trades">Trades</option>
+          </select>
+        </div>
+        <div class="list" id="list"></div>
+      </div>
+      <div class="sheet" id="sheet"></div>
+    </div>
+  </section>
+  <section class="panel-tab" id="tab-compare" hidden></section>
+  <section class="panel-tab" id="tab-thesis" hidden></section>
+  <section class="panel-tab" id="tab-blocked" hidden></section>
+</main>
+
+<footer class="foot">Rules transcribed from the books and computed in Rust on NSE index data. Charts by <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts</a>.</footer>
+
+<script src="vendor/lightweight-charts-4.2.0.js"></script>
+<script src="app.js?v=24"></script>
+</body>
+</html>

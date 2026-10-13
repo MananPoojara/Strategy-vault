@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+git config core.hooksPath .githooks
+chmod +x .githooks/pre-commit .githooks/pre-push
+printf '%s\n' 'Installed branch and upload checks for this checkout.'

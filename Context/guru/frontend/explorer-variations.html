@@ -1,0 +1,703 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Explorer Variations · Strategy Vault</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="vendor/fonts.css">
+<link rel="stylesheet" href="vendor/fonts-options.css">
+<style>
+:root { --bg: #e9e9e9; --panel: #f6f6f6; --card: #fbfbfb; --ink: #090909; --ink2: #5f6166; --ink3: #8b8d93; --steel: #b9b9ba; --rule: #dcdcdd;
+  --blue: #2f5a8f; --blue-soft: #e4ebf4; --red: #c43c3c; --green: #2e7d4f; --font: "Archivo", "IBM Plex Sans", system-ui, sans-serif; }
+* { box-sizing: border-box; }
+html, body { margin: 0; overflow-x: clip; }
+body { background: linear-gradient(180deg, #f3f3f3, var(--bg) 520px) no-repeat, var(--bg); color: var(--ink); font: 14px/1.5 var(--font); }
+button, input, select { font: inherit; color: inherit; }
+a { color: inherit; }
+.num, td.n { font-variant-numeric: tabular-nums; }
+.pos { color: var(--green); } .neg { color: var(--red); } .muted { color: var(--ink3); }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+.topbar { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 30px; height: 58px; padding: 0 32px; background: rgb(242 242 242 / .92); backdrop-filter: blur(8px); border-bottom: 1px solid var(--steel); }
+.wordmark { font-weight: 800; font-stretch: 125%; font-size: 18px; text-decoration: none; }
+.cats { display: flex; gap: 22px; font-size: 14px; } .cats a { text-decoration: none; color: var(--ink2); } .cats a.on { color: var(--ink); font-weight: 700; }
+.cats em { font-style: normal; font-size: 11px; margin-left: 6px; padding: 1px 7px; border: 1px solid var(--steel); color: var(--ink3); }
+.status { margin-left: auto; font-size: 12px; color: var(--ink2); }
+
+.page { max-width: 1320px; margin: 0 auto; padding: 0 32px 60px; }
+.crumbs { font-size: 13px; color: var(--ink2); padding: 18px 0 0; } .crumbs a { cursor: pointer; text-decoration: none; } .crumbs a:hover { text-decoration: underline; } .crumbs b { color: var(--ink); font-weight: 600; }
+.hero { display: grid; grid-template-columns: 1fr 460px; gap: 36px; align-items: center; padding: 18px 0 22px; }
+.hero h1 { font-weight: 800; font-stretch: 112%; font-size: clamp(34px, 4vw, 50px); line-height: 1.02; letter-spacing: -.02em; margin: 0 0 12px; }
+.hero p { margin: 0; color: var(--ink2); font-size: 15.5px; max-width: 640px; }
+.tree { display: flex; flex-wrap: wrap; gap: 0; margin-top: 18px; border: 1px solid var(--steel); width: fit-content; background: var(--card); }
+.tree button { border: 0; background: none; padding: 9px 16px; cursor: pointer; text-align: left; border-right: 1px solid var(--rule); }
+.tree button:last-child { border-right: 0; } .tree button b { display: block; font-size: 20px; font-weight: 700; line-height: 1.1; } .tree button span { font-size: 11.5px; color: var(--ink2); }
+.tree button.on { background: var(--ink); color: #fff; } .tree button.on span { color: #cfd0d3; }
+.tree i { font-style: normal; color: var(--ink3); align-self: center; padding: 0 2px; }
+
+.dist { background: var(--card); border: 1px solid var(--steel); padding: 16px 18px 12px; }
+.dist .h { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; } .dist .h b { font-size: 14px; } .dist .h span { font: 600 11px "IBM Plex Mono", monospace; color: var(--ink3); letter-spacing: .04em; }
+.dist .foot { display: flex; justify-content: space-between; font-size: 12px; color: var(--blue); margin-top: 6px; }
+
+.controls { border-top: 1px solid var(--steel); padding-top: 14px; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.lab { font-size: 11.5px; font-weight: 600; color: var(--ink2); letter-spacing: .03em; text-transform: uppercase; margin-right: 2px; }
+.seg { display: inline-flex; border: 1px solid var(--steel); background: var(--card); }
+.seg button { border: 0; border-right: 1px solid var(--rule); background: none; padding: 7px 13px; cursor: pointer; font-size: 13px; white-space: nowrap; }
+.seg button:last-child { border-right: 0; } .seg button.on { background: var(--ink); color: #fff; } .seg button small { color: var(--ink3); margin-left: 4px; font-size: 11px; } .seg button.on small { color: #bbb; }
+.seg button.soon { color: var(--ink3); }
+.tabs { display: flex; gap: 26px; border-bottom: 1px solid var(--steel); margin: 6px 0 14px; overflow-x: auto; }
+.tabs button { border: 0; background: none; padding: 10px 0; cursor: pointer; font-size: 14.5px; color: var(--ink2); border-bottom: 2.5px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+.tabs button.on { color: var(--ink); font-weight: 700; border-color: var(--ink); } .tabs button small { font-weight: 500; color: var(--ink3); margin-left: 5px; font-size: 11.5px; }
+.tabnote { font-size: 13px; color: var(--ink2); margin: -6px 0 12px; }
+.search { flex: 1 1 280px; position: relative; } .search input { width: 100%; padding: 9px 12px 9px 34px; border: 1px solid var(--steel); background: var(--card); }
+.search::before { content: "⌕"; position: absolute; left: 11px; top: 50%; transform: translateY(-52%); color: var(--ink3); font-size: 18px; }
+.sel { position: relative; } .sel select { appearance: none; padding: 8px 30px 8px 11px; border: 1px solid var(--steel); background: var(--card); cursor: pointer; min-width: 120px; font-size: 13px; }
+.sel::after { content: "▾"; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--ink3); font-size: 11px; }
+.sel select.set { border-color: var(--ink); background: #fff; font-weight: 600; }
+.view { margin-left: auto; } .view button { display: inline-flex; gap: 6px; align-items: center; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; min-height: 26px; margin-bottom: 8px; font-size: 12.5px; }
+.chip { display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--ink); background: #fff; padding: 2px 4px 2px 9px; }
+.chip button { border: 0; background: none; cursor: pointer; padding: 0 4px; font-size: 14px; line-height: 1; }
+.clear { border: 0; background: none; color: var(--blue); cursor: pointer; text-decoration: underline; font-size: 12.5px; }
+.count { font-size: 13px; color: var(--ink2); margin: 2px 0 12px; } .count b { color: var(--ink); }
+
+/* grid */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+.card { background: var(--card); border: 1px solid var(--steel); padding: 16px 18px 14px; display: flex; flex-direction: column; gap: 10px; position: relative; transition: border-color .15s, box-shadow .15s; }
+.card:hover { border-color: var(--ink); box-shadow: 0 6px 18px #0000000f; }
+.card.preview { background: transparent; border-style: dashed; color: var(--ink2); }
+.card .rank { font: 500 12px "IBM Plex Mono", monospace; color: var(--ink3); display: flex; justify-content: space-between; align-items: center; }
+.card h3 { margin: 0; font-size: 17px; line-height: 1.25; font-weight: 700; } .card .by { font-size: 12.5px; color: var(--ink2); margin-top: -6px; }
+.kpis { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--rule); padding-top: 8px; }
+.kpis div + div { border-left: 1px solid var(--rule); padding-left: 10px; } .kpis span { display: block; font: 600 10.5px "IBM Plex Mono", monospace; color: var(--ink3); letter-spacing: .05em; text-transform: uppercase; }
+.kpis b { font-size: 20px; font-weight: 700; } .kpis b.p { color: var(--blue); font-size: 22px; } .kpis i { display: block; font-style: normal; font-size: 11px; color: var(--ink3); }
+.tags { display: flex; gap: 6px; flex-wrap: wrap; } .tag { font-size: 11.5px; border: 1px solid var(--rule); padding: 1px 8px; border-radius: 99px; background: #fff; white-space: nowrap; }
+.tag.link { cursor: pointer; border-color: var(--blue); color: var(--blue); }
+.stamp { font: 700 10px "IBM Plex Mono", monospace; border: 1.5px solid currentColor; padding: 0 6px; letter-spacing: .04em; }
+.btns { display: flex; gap: 8px; margin-top: auto; } .btn { flex: 1; text-align: center; border: 1px solid var(--blue); color: var(--blue); background: #fff; padding: 7px 10px; cursor: pointer; text-decoration: none; font-weight: 600; font-size: 13px; }
+.btn.solid { background: var(--blue); color: #fff; } .btn:hover { filter: brightness(.95); }
+details.rules { font-size: 12.5px; } details.rules summary { cursor: pointer; color: var(--ink2); } details.rules ul { margin: 6px 0 0; padding-left: 18px; } details.rules li { margin: 2px 0; }
+details.rules .t { font: 700 10px "IBM Plex Mono", monospace; color: var(--ink3); margin-right: 4px; }
+.cover { display: flex; gap: 14px; align-items: center; }
+.cover .bk { width: 64px; height: 88px; flex: none; background: var(--c); color: #e8d39a; padding: 8px 6px; font: 600 9.5px/1.15 "Newsreader", serif; display: flex; flex-direction: column; justify-content: space-between; box-shadow: inset 4px 0 6px -3px #0006, 2px 3px 6px #0002; border-radius: 1px 3px 3px 1px; }
+.cover .bk.pv { background: repeating-linear-gradient(135deg, #d8d8d9 0 6px, #e4e4e5 6px 12px); color: var(--ink3); }
+.cover .ph { width: 72px; height: 72px; flex: none; border-radius: 50%; overflow: hidden; background: #ddd; display: grid; place-items: center; font: 700 22px var(--font); color: var(--ink3); }
+.cover .ph img { width: 100%; height: 100%; object-fit: cover; filter: grayscale(1); }
+.strip text { font: 10px "IBM Plex Mono", monospace; fill: var(--ink3); }
+
+/* table */
+.tbl { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--steel); font-size: 13px; }
+.tbl th { text-align: left; font: 600 10.5px "IBM Plex Mono", monospace; letter-spacing: .05em; text-transform: uppercase; color: var(--ink3); padding: 10px 10px; border-bottom: 1px solid var(--steel); background: #f0f0f0; white-space: nowrap; cursor: pointer; user-select: none; }
+.tbl th.on { color: var(--blue); } .tbl th.nosort { cursor: default; }
+.tbl td { padding: 9px 10px; border-bottom: 1px solid var(--rule); vertical-align: middle; } .tbl tr:hover td { background: #fff; }
+.tbl td.n, .tbl th.n { text-align: right; } .tbl td.n { font-family: "IBM Plex Mono", monospace; font-size: 12.5px; }
+.tbl td.p { color: var(--blue); font-weight: 700; } .tbl .nm b { display: block; font-size: 13.5px; } .tbl .nm span { font-size: 12px; color: var(--ink2); }
+.tbl tr.preview td { color: var(--ink3); font-style: italic; } .tbl .rk { color: var(--ink3); font-family: "IBM Plex Mono", monospace; }
+.tbl .go { border: 1px solid var(--blue); color: var(--blue); background: #fff; padding: 4px 10px; cursor: pointer; font-weight: 600; font-size: 12px; text-decoration: none; white-space: nowrap; }
+.sep { grid-column: 1 / -1; font-size: 12.5px; color: var(--ink2); border-top: 1px dashed var(--steel); padding-top: 10px; margin-top: 4px; }
+.empty { border: 1px dashed var(--steel); padding: 40px; text-align: center; color: var(--ink2); background: var(--card); }
+.empty b { display: block; color: var(--ink); font-size: 17px; margin-bottom: 6px; }
+.loading { padding: 40px; text-align: center; color: var(--ink2); }
+@media (max-width: 1000px) { .hero { grid-template-columns: 1fr; } .page, .topbar { padding-left: 16px; padding-right: 16px; } .view { margin-left: 0; } .tblwrap { overflow-x: auto; } }
+/* ================= variations */
+.lpick { position: sticky; top: 58px; z-index: 25; background: rgb(250 250 250 / .95); backdrop-filter: blur(8px); border-bottom: 1px solid var(--steel); padding: 10px 32px 8px; }
+.lpick .in { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; max-width: 1320px; margin: 0 auto; }
+.lpick .lt { font-weight: 800; font-size: 13px; letter-spacing: .02em; }
+#lay { display: flex; gap: 6px; flex-wrap: wrap; } #lay button { border: 1px solid var(--steel); background: #fff; padding: 6px 12px; cursor: pointer; font-size: 13px; font-weight: 600; }
+#lay button.on { background: var(--ink); color: #fff; border-color: var(--ink); } #lay .orig { font-size: 12.5px; color: var(--blue); margin-left: 6px; }
+#ldesc { max-width: 1320px; margin: 6px auto 0; font-size: 13px; color: var(--ink2); } #ldesc b { color: var(--ink); }
+#stage { padding-top: 22px; transition: opacity .15s; }
+.topbar2 { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 4px 0 12px; } .bar .cnt { font-size: 13px; color: var(--ink2); margin-right: auto; } .bar .cnt b { color: var(--ink); }
+.note { font-size: 12.5px; color: var(--ink2); margin: -4px 0 14px; }
+.pills { display: flex; gap: 6px; flex-wrap: wrap; } .pills button { border: 1px solid var(--steel); background: #fff; border-radius: 99px; padding: 6px 13px; cursor: pointer; font-size: 13px; }
+.pills button.on { background: var(--blue); color: #fff; border-color: var(--blue); }
+.chips { margin: 0 0 10px; }
+.lab { font-size: 11.5px; font-weight: 600; color: var(--ink2); text-transform: uppercase; letter-spacing: .03em; }
+
+/* 1 facets */
+.L1 { display: grid; grid-template-columns: 270px 1fr; gap: 28px; align-items: start; }
+.side { position: sticky; top: 150px; max-height: calc(100vh - 170px); overflow: auto; background: var(--card); border: 1px solid var(--steel); padding: 14px; }
+.side .search { display: block; margin-bottom: 8px; }
+.fg { border-top: 1px solid var(--rule); padding: 10px 0 6px; } .fg:first-of-type { border-top: 0; }
+.fg h4 { margin: 0 0 6px; font: 700 11px var(--font); letter-spacing: .06em; text-transform: uppercase; color: var(--ink2); }
+.fi { display: flex; width: 100%; justify-content: space-between; align-items: center; gap: 8px; border: 0; background: none; padding: 4px 6px 4px 24px; cursor: pointer; font-size: 13px; text-align: left; position: relative; }
+.fi::before { content: ""; position: absolute; left: 4px; width: 12px; height: 12px; border: 1.5px solid var(--steel); background: #fff; }
+.fi.on::before { background: var(--ink); border-color: var(--ink); box-shadow: inset 0 0 0 2px #fff; } .fi.on { font-weight: 700; }
+.fi:hover { background: #f0f0f0; } .fi b { font: 500 11.5px "IBM Plex Mono", monospace; color: var(--ink3); } .fi.zero { color: var(--ink3); }
+
+/* 2 columns */
+.L2 { display: grid; grid-template-columns: 210px 250px 270px 1fr; border: 1px solid var(--steel); background: var(--card); min-height: 560px; }
+.col { border-right: 1px solid var(--steel); overflow: auto; max-height: 820px; } .col h4 { margin: 0; padding: 10px 12px; font: 700 11px var(--font); letter-spacing: .06em; text-transform: uppercase; color: var(--ink2); border-bottom: 1px solid var(--rule); position: sticky; top: 0; background: #f0f0f0; }
+.col h4 small { text-transform: none; letter-spacing: 0; font-weight: 500; }
+.ci { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; width: 100%; border: 0; border-bottom: 1px solid var(--rule); background: none; padding: 9px 12px; text-align: left; cursor: pointer; position: relative; }
+.ci:hover { background: #fff; } .ci.on { background: var(--ink); color: #fff; } .ci.on small, .ci.on b { color: #ddd; } .ci.dim { color: var(--ink3); }
+.ci .nm { font-size: 13px; font-weight: 600; line-height: 1.25; } .ci small { display: block; font-weight: 400; font-size: 11.5px; color: var(--ink2); margin-top: 2px; }
+.ci b { font: 600 12.5px "IBM Plex Mono", monospace; color: var(--blue); align-self: center; }
+.ci i { grid-column: 1 / -1; height: 3px; background: linear-gradient(90deg, var(--blue) calc(var(--f) * 100%), var(--rule) 0); margin-top: 4px; }
+.ci.on i { background: linear-gradient(90deg, #fff calc(var(--f) * 100%), #555 0); }
+.pane { padding: 14px 16px; min-width: 0; } .pane .grid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+
+/* 3 leaderboard */
+.leagues { border-bottom: 2px solid var(--ink); margin-bottom: 14px; } .league { display: flex; gap: 0; overflow-x: auto; }
+.league button { border: 0; background: none; padding: 12px 22px 10px; cursor: pointer; font-weight: 800; font-stretch: 112%; font-size: 20px; color: var(--ink3); white-space: nowrap; }
+.league button.on { color: var(--ink); background: linear-gradient(transparent 85%, var(--ink) 85%); }
+.podium { display: grid; grid-template-columns: 1fr 1.15fr 1fr; gap: 14px; align-items: end; margin: 6px 0 22px; }
+.pd { display: flex; flex-direction: column; align-items: center; text-align: center; text-decoration: none; padding: 16px 12px 0; background: var(--card); border: 1px solid var(--steel); }
+.pd .medal { width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 20px; color: #fff; background: #8b8d93; margin-bottom: 8px; }
+.pd.p1 .medal { background: #b8902f; width: 52px; height: 52px; font-size: 24px; } .pd.p3 .medal { background: #9a6a45; }
+.pd b { font-size: 16px; line-height: 1.2; } .pd small { font-size: 12px; color: var(--ink2); margin-top: 3px; } .pd em { font-style: normal; font-weight: 800; font-size: 30px; color: var(--blue); margin-top: 8px; } .pd .lbl { font-size: 11px; color: var(--ink3); }
+.pd .step { width: calc(100% + 24px); margin-top: 12px; background: repeating-linear-gradient(135deg, #dfe6ef 0 8px, #e9eef5 8px 16px); height: 40px; border-top: 1px solid var(--steel); }
+.pd.p1 .step { height: 80px; } .pd.p2 .step { height: 56px; } .pd:hover { border-color: var(--ink); }
+.rest { font-size: 15px; margin: 6px 0 10px; }
+.grp { margin-bottom: 26px; } .gh { display: flex; align-items: baseline; gap: 12px; border-bottom: 1px solid var(--ink); padding-bottom: 6px; margin-bottom: 12px; } .gh h3 { margin: 0; font-size: 19px; } .gh span { color: var(--ink2); font-size: 13px; } .gh .go { margin-left: auto; }
+
+/* 4 matrix */
+.legend { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--ink2); } .legend i { width: 140px; height: 10px; border: 1px solid var(--rule); } .legend em { font-style: normal; margin-left: 6px; }
+.tbl.heat td.hc { text-align: center; font-weight: 600; border-left: 2px solid #fff; } .tbl.heat td.hc a { color: inherit; text-decoration: none; } .tbl.heat tr.gr td { background: #ececec; font: 700 11.5px var(--font); letter-spacing: .03em; text-transform: uppercase; color: var(--ink2); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+.tile { background: var(--card); border: 1px solid var(--steel); padding: 12px; } .tile h4 { margin: 0; font-size: 14.5px; line-height: 1.25; } .tile small { color: var(--ink2); font-size: 11.5px; }
+.mini { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; margin: 10px 0 8px; } .mc { padding: 7px 8px; text-decoration: none; border: 1px solid var(--rule); } .mc span { display: block; font-size: 10.5px; opacity: .85; } .mc b { font: 700 15px "IBM Plex Mono", monospace; }
+.foot2 { display: flex; justify-content: space-between; font-size: 12px; color: var(--ink2); }
+
+/* 5 map */
+.L5 { display: grid; grid-template-columns: 1fr 360px; gap: 18px; align-items: start; }
+.plot { background: var(--card); border: 1px solid var(--steel); padding: 10px; } .scatter text { font: 11px "IBM Plex Mono", monospace; fill: var(--ink3); } .scatter .ax { font: 600 12px var(--font); fill: var(--ink2); } .scatter .q { font: 600 12px var(--font); fill: var(--blue); }
+.scatter .lab2 { font: 600 11px var(--font); fill: var(--ink); } .dot { cursor: pointer; transition: fill-opacity .15s; } .dot:hover { fill-opacity: .9; } .dot.on { fill-opacity: 1; stroke: var(--ink); stroke-width: 3; }
+.legend2 { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--ink2); padding: 4px 6px 0; } .legend2 i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; }
+.hint2 { border: 1px dashed var(--steel); padding: 24px; color: var(--ink2); font-size: 13px; background: var(--card); } .hint2 b { display: block; color: var(--ink); font-size: 16px; margin-bottom: 4px; }
+
+/* 6 query */
+.qbar { display: flex; align-items: center; border: 2px solid var(--ink); background: #fff; } .qi { padding: 0 12px; font-size: 18px; color: var(--ink3); }
+.qbar input { flex: 1; border: 0; padding: 14px 4px; font: 500 16px "IBM Plex Mono", monospace; outline: none; background: none; }
+.qgo { border: 0; background: var(--ink); color: #fff; padding: 0 26px; align-self: stretch; font-weight: 700; cursor: pointer; }
+.qhelp { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--ink2); margin: 8px 0 14px; }
+.qhelp code { font: 12px "IBM Plex Mono", monospace; background: #fff; border: 1px solid var(--rule); padding: 2px 6px; cursor: pointer; } .qhelp code:hover { border-color: var(--ink); }
+.qerr { color: var(--red); font-size: 13px; margin: -6px 0 12px; }
+.presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-bottom: 18px; }
+.pre { text-align: left; border: 1px solid var(--steel); background: var(--card); padding: 12px 14px; cursor: pointer; } .pre b { display: block; font-size: 14px; } .pre span { font-size: 12px; color: var(--ink2); }
+.pre:hover { border-color: var(--ink); } .pre.on { background: var(--ink); color: #fff; border-color: var(--ink); } .pre.on span { color: #ccc; }
+@media (max-width: 1100px) { .L1, .L5 { grid-template-columns: 1fr; } .side { position: static; max-height: none; } .L2 { grid-template-columns: 1fr; } .col { max-height: 260px; border-right: 0; border-bottom: 1px solid var(--steel); } .podium { grid-template-columns: 1fr; } .lpick { padding: 10px 16px; } }
+
+</style>
+</head>
+<body>
+<header class="topbar"><a class="wordmark" href="./">STRATEGY VAULT</a><nav class="cats"><a class="on" href="#">Guru's</a><a>YT Strategies<em>soon</em></a></nav><div class="status" id="status"></div></header>
+<div class="lpick"><div class="in"><span class="lt">Explorer variations</span><nav id="lay"></nav></div><p id="ldesc"></p></div>
+<main class="page" id="stage"><div class="loading">Loading the vault from the Rust API…</div></main>
+<script>
+const API = new URLSearchParams(location.search).get('api') || `http://${location.hostname || 'localhost'}:8090`;
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const pct = (v, d = 1, s = false) => v == null || !isFinite(v) ? '–' : (s && v > 0 ? '+' : '') + (v * 100).toFixed(d) + '%';
+const fx = (v, d = 2) => v == null || !isFinite(v) ? '–' : v.toFixed(d);
+const cls = v => v == null ? '' : v >= 0 ? 'pos' : 'neg';
+const med = a => { const s = a.filter(isFinite).sort((x, y) => x - y), n = s.length; return n ? (n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2) : null; };
+const LABEL = { 'NIFTY 50': 'Nifty 50', NIFTYBANK: 'Bank Nifty', NIFTYIT: 'Nifty IT', NIFTYMIDCAP100: 'Midcap 100' };
+const CLOTH = ['#1f3a5f', '#7a2e2e', '#2f5140', '#8a6a2f', '#4a5563', '#5b3b5e'];
+
+// ---------------------------------------------------------------- the library (hierarchy: guru → book → strategy → variant)
+// Only Connors / Swing Trading College IX is converted. The rest are clearly marked previews (no numbers) so the layout
+// shows how the vault grows; they become live automatically once their strategies exist in the API.
+const LIB = [
+  { id: 'connors', name: 'Larry Connors', photo: 'img/gurus/connors.jpg', books: [
+    { id: 'stc9', title: 'Swing Trading College IX', year: 2010, live: true },
+    { id: 'stts', title: 'Short Term Trading Strategies That Work', year: 2008 },
+    { id: 'hpetf', title: 'High Probability ETF Trading', year: 2009 }] },
+  { id: 'raschke', name: 'Linda Raschke', books: [{ id: 'smarts', title: 'Street Smarts', year: 1995 }] },
+  { id: 'minervini', name: 'Mark Minervini', books: [{ id: 'wizard', title: 'Trade Like a Stock Market Wizard', year: 2013 }, { id: 'champion', title: 'Think & Trade Like a Champion', year: 2017 }] },
+  { id: 'oneil', name: "William O'Neil", books: [{ id: 'canslim', title: 'How to Make Money in Stocks', year: 1988 }] },
+  { id: 'darvas', name: 'Nicolas Darvas', books: [{ id: 'darvas2m', title: 'How I Made $2,000,000 in the Stock Market', year: 1960 }] },
+  { id: 'livermore', name: 'Jesse Livermore', books: [{ id: 'howtotrade', title: 'How to Trade in Stocks', year: 1940 }] },
+];
+const BOOK = {}; LIB.forEach(g => g.books.forEach((b, k) => { b.guru = g; b.c = CLOTH[(LIB.indexOf(g) * 2 + k) % CLOTH.length]; BOOK[b.id] = b; }));
+const GURU = Object.fromEntries(LIB.map(g => [g.id, g]));
+
+// ---------------------------------------------------------------- state (kept in the URL hash so any view can be shared)
+const DEF = { mode: 'strategies', market: 'india', tk: 'NIFTY 50', tab: 'sharpe', q: '', guru: '', book: '', style: '', dir: '', hold: '', verdict: '', min: '0', family: '', sort: 'primary', view: 'grid' };
+let S = { ...DEF };
+const readHash = () => { const q = new URLSearchParams(location.hash.slice(1)); S = { ...DEF }; for (const k in DEF) if (q.has(k)) S[k] = q.get(k); };
+const writeHash = () => { const q = new URLSearchParams(); for (const k in DEF) if (S[k] !== DEF[k]) q.set(k, S[k]); history.replaceState(null, '', '#' + q); };
+
+let CAT = [], TICKERS = [], GURUS_API = [];
+const SUM = {}; // `${tk}|${from}|${to}` -> { id: {stats, spark} }
+async function getSum(tk, from = '', to = '') {
+  const k = `${tk}|${from}|${to}`;
+  const url = `${API}/api/guru/connors/summary?` + new URLSearchParams({ ticker: tk, from, to });
+  const load = async (tries = 3) => { try { const a = await (await fetch(url)).json(); return Object.fromEntries(a.map(r => [r.id, r])); }
+    catch (e) { if (tries <= 1) { delete SUM[k]; throw e; } await new Promise(r => setTimeout(r, 300)); return load(tries - 1); } };
+  return SUM[k] || (SUM[k] = load());
+}
+// "before the book" numbers come from the per-strategy endpoint: the summary endpoint crashes when the end date
+// is before the first India VIX bar (VIX strategies), while /run answers that case cleanly.
+const PRE = {};
+function preMap(tk, to) {
+  const k = `${tk}|${to}`;
+  if (PRE[k]) return PRE[k];
+  const ids = CAT.filter(v => v.status === 'live' && !v.needs_vix).map(v => v.id), out = {}; // VIX data starts after 2009: nothing to ask
+  let i = 0;
+  const worker = async () => { while (i < ids.length) { const id = ids[i++];
+    try { const r = await fetch(`${API}/api/guru/connors/run?` + new URLSearchParams({ id, ticker: tk, to })); if (r.ok) out[id] = { stats: (await r.json()).stats }; } catch (e) { /* leave missing */ } } };
+  return PRE[k] = Promise.all(Array.from({ length: 6 }, worker)).then(() => out);
+}
+const lastOf = tk => TICKERS.find(t => t.ticker === tk)?.last || '2026-05-15';
+const shiftYears = (d, y) => { const t = new Date(d); t.setFullYear(t.getFullYear() - y); return t.toISOString().slice(0, 10); };
+
+// tabs: which data window each one uses and which number it ranks by
+const PUB = 2010;
+const TABS = {
+  trending: { name: 'Trending', note: 'Ranked by the return of the last 12 months on the selected index: what is working right now.',
+    win: tk => ({ from: shiftYears(lastOf(tk), 1), to: '' }), extra: () => ({ from: '', to: '' }),
+    metric: { label: '12M return', get: r => r.s.total_return, fmt: v => pct(v, 1, true), bins: [-.1, -.05, 0, .05, .1, .2] }, keep: r => r.s.trades > 0 },
+  sharpe: { name: 'Top Sharpe', note: 'Full history on the selected index, ranked by Sharpe ratio (rf = 0, daily, √252).',
+    win: () => ({ from: '', to: '' }), metric: { label: 'Sharpe', get: r => r.s.sharpe, fmt: v => fx(v), bins: [0, .25, .5, .75, 1, 1.5] } },
+  working: { name: 'Still working?', note: `Out-of-sample check: Sharpe since the book was published (${PUB}) next to Sharpe before it. A strategy that only worked before publication has decayed.`,
+    win: () => ({ from: `${PUB}-01-01`, to: '' }), pre: `${PUB - 1}-12-31`,
+    metric: { label: `Sharpe since ${PUB}`, get: r => r.s.sharpe, fmt: v => fx(v), bins: [0, .25, .5, .75, 1, 1.5] } },
+  sig: { name: 'Significant', note: 'Only rule sets whose average trade is statistically significant: t-stat ≥ 2 with at least 30 closed trades.',
+    win: () => ({ from: '', to: '' }), metric: { label: 't-stat', get: r => r.s.t_stat, fmt: v => fx(v), bins: [2, 2.5, 3, 4, 5, 6] }, keep: r => r.s.t_stat >= 2 && r.s.trades >= 30 },
+  awaiting: { name: 'Awaiting data', note: 'Rules transcribed from the book that cannot be tested yet: they need data the vault does not have (TRIN breadth, options chains, single stocks).' },
+};
+const SORTS = { primary: 'Tab ranking', sharpe: 'Sharpe', cagr: 'CAGR', maxdd: 'Smallest drawdown', win: 'Win rate', pf: 'Profit factor', trades: 'Most trades', t: 't-stat', name: 'Name (A–Z)', course: 'Order in the book' };
+const sortVal = (r, k) => ({ primary: TABS[S.tab].metric?.get(r), sharpe: r.s.sharpe, cagr: r.s.cagr, maxdd: r.s.max_dd, win: r.s.win_rate, pf: r.s.profit_factor, trades: r.s.trades, t: r.s.t_stat }[k]);
+function sortRows(rows) {
+  const k = S.sort;
+  if (k === 'name') return rows.sort((a, b) => a.v.family_name.localeCompare(b.v.family_name));
+  if (k === 'course') return rows.sort((a, b) => a.v.ord - b.v.ord);
+  return rows.sort((a, b) => (sortVal(b, k) ?? -1e9) - (sortVal(a, k) ?? -1e9));
+}
+const verdictOf = s => s.trades < 30 ? { k: 'thin', t: 'THIN DATA', c: '#8a3a2e' } : s.t_stat >= 2 ? { k: 'sig', t: 'SIGNIFICANT', c: '#2e7d4f' } : { k: 'none', t: 'NO EDGE', c: '#6b6f78' };
+const holdOf = s => s.avg_bars <= 5 ? 'short' : s.avg_bars <= 20 ? 'swing' : 'long';
+const HOLD = { short: '≤ 5 bars', swing: '6–20 bars', long: '> 20 bars' };
+
+// ---------------------------------------------------------------- rows: one per (variant × index) after market, tab and filters
+async function rows(S = getS()) { // state can be passed in (facet counts, matrix, columns)
+  if (S.market !== 'india') return [];
+  const T = TABS[S.tab], tks = S.tk === 'ALL' ? TICKERS.map(t => t.ticker) : [S.tk];
+  const qq = S.q.trim().toLowerCase();
+  const textOk = v => !qq || `${v.name} ${v.family_name} ${v.variant || ''} ${v.group} ${v.dir} ${BOOK[v.book].title} ${GURU[v.guru].name} ${(v.rules || []).join(' ')}`.toLowerCase().includes(qq);
+  const metaOk = v => textOk(v) && (!S.guru || v.guru === S.guru) && (!S.book || v.book === S.book) && (!S.style || v.style === S.style) && (!S.dir || v.dir === S.dir) && (!S.family || v.family === S.family);
+  if (S.tab === 'awaiting') return CAT.filter(v => v.status !== 'live' && metaOk(v)).map(v => ({ v, tk: null, s: null }));
+  const out = [];
+  for (const tk of tks) {
+    const w = T.win(tk), main = await getSum(tk, w.from, w.to), ex = T.extra ? T.extra(tk) : null, extra = ex ? await getSum(tk, ex.from, ex.to) : T.pre ? await preMap(tk, T.pre) : null;
+    for (const v of CAT) {
+      if (v.status !== 'live' || !metaOk(v)) continue;
+      const m = main[v.id]; if (!m?.stats || !m.stats.trades) continue; // no data (volume rules on Nifty IT) or no closed trades in the window
+      const r = { v, tk, s: m.stats, sp: m.spark, x: extra?.[v.id]?.stats || null, w };
+      if (T.keep && !T.keep(r)) continue;
+      if (S.hold && holdOf(r.s) !== S.hold) continue;
+      if (S.verdict && verdictOf(r.s).k !== S.verdict) continue;
+      if (r.s.trades < +S.min) continue;
+      out.push(r);
+    }
+  }
+  return sortRows(out);
+}
+
+// ---------------------------------------------------------------- small charts
+function spark(r, w = 300, h = 86) {
+  const a = r.sp || []; if (a.length < 2) return '';
+  const L = Math.log, lo = Math.min(...a.map(L)), hi = Math.max(...a.map(L)), n = a.length;
+  const X = i => i / (n - 1) * w, Y = v => h - 4 - (L(v) - lo) / ((hi - lo) || 1) * (h - 10);
+  const P = a.map((v, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join('');
+  const end = new Date(r.w.to || lastOf(r.tk)), start = new Date(end - r.s.years * 365.25 * 864e5);
+  const f = (new Date(`${PUB}-01-01`) - start) / (end - start);
+  const mark = f > .03 && f < .97 ? `<rect x="${f * w}" y="0" width="${(1 - f) * w}" height="${h}" fill="var(--blue-soft)" opacity=".55"/><line x1="${f * w}" x2="${f * w}" y1="0" y2="${h}" stroke="var(--blue)" stroke-dasharray="3 3" stroke-width="1"/>` : '';
+  const small = w < 200; // table rows: no axis labels, the dashed line still marks the book
+  return `<svg viewBox="0 0 ${w} ${h + (small ? 0 : 14)}" width="100%" class="strip" role="img" aria-label="Equity curve${mark ? `; shaded part is after the book (${PUB})` : ''}">${mark}<path d="${P}L${w},${h}L0,${h}Z" fill="var(--blue)" opacity=".08"/><path d="${P}" fill="none" stroke="var(--blue)" stroke-width="1.6"/>
+    ${small ? '' : `<text x="0" y="${h + 12}">${start.getFullYear()}</text>${mark ? `<text x="${f * w}" y="${h + 12}" text-anchor="middle" fill="var(--blue)">book ${PUB} →</text>` : ''}<text x="${w}" y="${h + 12}" text-anchor="end">${end.getFullYear()}</text>`}</svg>`;
+}
+// strip plot: every strategy of a guru/book as a dot on the tab's metric axis
+function stripPlot(vals, w = 300, h = 34) {
+  const M = TABS[S.tab].metric; if (!vals.length || !M) return '';
+  const b = M.bins, lo = Math.min(b[0], ...vals), hi = Math.max(b[b.length - 1], ...vals), X = v => 6 + (v - lo) / ((hi - lo) || 1) * (w - 12);
+  return `<svg viewBox="0 0 ${w} ${h + 12}" width="100%" class="strip" role="img" aria-label="Spread of ${esc(M.label)}"><line x1="6" x2="${w - 6}" y1="${h / 2}" y2="${h / 2}" stroke="var(--rule)"/>
+    ${vals.map((v, i) => `<circle cx="${X(v).toFixed(1)}" cy="${h / 2 + ((i % 3) - 1) * 6}" r="4" fill="var(--blue)" opacity=".55"/>`).join('')}
+    <line x1="${X(med(vals))}" x2="${X(med(vals))}" y1="3" y2="${h - 3}" stroke="var(--ink)" stroke-width="1.5"/>
+    <text x="6" y="${h + 10}">${M.fmt(lo)}</text><text x="${w / 2}" y="${h + 10}" text-anchor="middle" fill="var(--ink)">| median ${M.fmt(med(vals))} · each dot = one strategy</text><text x="${w - 6}" y="${h + 10}" text-anchor="end">${M.fmt(hi)}</text></svg>`;
+}
+function distBox(rs) {
+  const M = TABS[S.tab].metric;
+  if (!M || !rs.length) return `<div class="h"><b>Where this view sits</b><span>${rs.length} RESULTS</span></div><div class="muted" style="font-size:13px;padding:20px 0">${S.tab === 'awaiting' ? 'No numbers yet: these rules need data the vault does not have.' : 'Nothing to chart for this selection.'}</div>`;
+  const b = M.bins, edges = [-Infinity, ...b, Infinity], vals = rs.map(M.get), cnt = Array(edges.length - 1).fill(0);
+  vals.forEach(v => { for (let i = 0; i < cnt.length; i++) if (v >= edges[i] && v < edges[i + 1]) { cnt[i]++; break; } });
+  const mx = Math.max(...cnt), W = 420, H = 86, bw = W / cnt.length, md = med(vals);
+  const lbl = i => i === 0 ? `<${M.fmt(b[0])}` : i === cnt.length - 1 ? `≥${M.fmt(b[b.length - 1])}` : `${M.fmt(edges[i])}–${M.fmt(edges[i + 1])}`;
+  const mi = cnt.findIndex((_, i) => md >= edges[i] && md < edges[i + 1]);
+  const top = rs.slice(0, 12).map(M.get);
+  return `<div class="h"><b>Where this view sits</b><span>${rs.length} RESULTS · ${S.tk === 'ALL' ? 'ALL INDICES' : esc(LABEL[S.tk]).toUpperCase()}</span></div>
+    <svg viewBox="0 0 ${W} ${H + 18}" width="100%" class="strip" role="img" aria-label="Distribution of ${esc(M.label)}">${cnt.map((c, i) => { const hh = c / (mx || 1) * (H - 16); const inTop = top.some(v => v >= edges[i] && v < edges[i + 1]);
+      return `<rect x="${i * bw + 2}" y="${H - hh}" width="${bw - 4}" height="${Math.max(1, hh)}" fill="${inTop ? 'var(--blue)' : '#dfe6ef'}"><title>${lbl(i)}: ${c}</title></rect><text x="${i * bw + bw / 2}" y="${H + 14}" text-anchor="middle">${lbl(i)}</text>${c ? `<text x="${i * bw + bw / 2}" y="${H - hh - 3}" text-anchor="middle" fill="var(--ink)">${c}</text>` : ''}`; }).join('')}
+      ${mi >= 0 ? `<line x1="${mi * bw + bw / 2}" x2="${mi * bw + bw / 2}" y1="0" y2="${H}" stroke="var(--ink)" stroke-dasharray="2 2"/>` : ''}</svg>
+    <div class="foot"><span>Dashed line = median ${M.fmt(md)} · top 12 shown first: ${M.label} ${M.fmt(Math.min(...top))} to ${M.fmt(Math.max(...top))}</span><span>dark = where they sit</span></div>`;
+}
+
+// ---------------------------------------------------------------- shared pieces
+const appLink = r => `./#/connors/${encodeURIComponent(r.v.id)}`;
+const RTAG = { F: 'IF', E: 'ENTRY', A: 'ADD', X: 'EXIT' };
+const rulesList = v => `<details class="rules"><summary>Rules as written in the book</summary><ul>${(v.rules || []).map(x => { const [t, ...rest] = x.split('|'); return `<li><span class="t">${RTAG[t] || ''}</span>${esc(rest.join('|') || x)}</li>`; }).join('')}</ul></details>`;
+const kpiTriplet = r => {
+  const M = TABS[S.tab].metric, s = r.s;
+  const second = S.tab === 'working' ? `<div><span>Before ${PUB}</span><b>${fx(r.x?.sharpe)}</b><i>${r.x ? (r.x.sharpe > 0 && s.sharpe > 0 ? 'still working' : s.sharpe > 0 ? 'works since book' : r.x.sharpe > 0 ? 'decayed' : 'never worked') : r.v.needs_vix ? 'no India VIX before 2010' : 'no trades before'}</i></div>`
+    : S.tab === 'trending' ? `<div><span>Sharpe (full)</span><b>${fx(r.x?.sharpe)}</b><i>${fx(r.s.trades, 0)} trades in 12M</i></div>`
+    : `<div><span>CAGR</span><b class="${cls(s.cagr)}">${pct(s.cagr, 1, true)}</b><i>B&amp;H ${pct(s.bh_cagr, 1, true)}</i></div>`;
+  return `<div class="kpis"><div><span>${esc(M.label)}</span><b class="p">${M.fmt(M.get(r))}</b><i>${S.tab === 'sig' ? 'Sharpe ' + fx(s.sharpe) : 'win ' + pct(s.win_rate, 0)}</i></div>${second}<div><span>Max DD</span><b>${pct(Math.abs(s.max_dd), 1)}</b><i>${fx(s.trades, 0)} trades</i></div></div>`;
+};
+const byline = v => `${esc(GURU[v.guru].name)} · ${esc(BOOK[v.book].title)} (${BOOK[v.book].year}) · Session ${v.session}`;
+
+// ---------------------------------------------------------------- MODES
+function viewStrategies(rs, perVariant) {
+  // strategies = one entry per family (best variant by the current sort); variants = every rule set
+  let list = rs;
+  if (!perVariant) { const seen = new Map(); for (const r of rs) { const k = r.v.family; if (!seen.has(k)) seen.set(k, { ...r, all: [] }); seen.get(k).all.push(r); } list = [...seen.values()]; }
+  const nVar = r => r.all ? new Set(r.all.map(x => x.v.id)).size : 1, nIdx = r => r.all ? new Set(r.all.map(x => x.tk)).size : 1;
+  const title = r => perVariant ? `${esc(r.v.family_name)}` : esc(r.v.family_name);
+  const sub = r => perVariant && r.v.variant ? `<b style="font-weight:600">${esc(r.v.variant)}</b> · ` : '';
+  if (S.tab === 'awaiting') return awaiting(rs);
+  if (S.view === 'table') {
+    const M = TABS[S.tab].metric, th = (k, t, n) => `<th class="${n ? 'n' : ''} ${S.sort === k ? 'on' : ''}" data-sort="${k}">${t}</th>`;
+    return `<div class="tblwrap"><table class="tbl"><thead><tr><th class="nosort">#</th>${th('name', 'Strategy')}<th class="nosort">Style</th>${S.tk === 'ALL' ? '<th class="nosort">Index</th>' : ''}<th class="nosort">Hold</th><th class="nosort">Equity</th>${th('primary', esc(M.label), 1)}${S.tab === 'working' ? `<th class="n nosort">Before ${PUB}</th>` : S.tab === 'trending' ? '<th class="n nosort">Sharpe (full)</th>' : ''}${th('cagr', 'CAGR', 1)}${th('maxdd', 'Max DD', 1)}${th('win', 'Win', 1)}${th('trades', 'Trades', 1)}${th('t', 't', 1)}<th class="nosort"></th></tr></thead><tbody>
+      ${list.map((r, i) => `<tr><td class="rk">${i + 1}</td><td class="nm"><b>${title(r)}</b><span>${sub(r)}${byline(r.v)}${!perVariant && nVar(r) > 1 ? ` · <a href="#" data-fam="${esc(r.v.family)}">${nVar(r)} variants</a>` : ''}</span></td><td>${esc(r.v.style)}<br><span class="muted">${r.v.dir}</span></td>${S.tk === 'ALL' ? `<td>${esc(LABEL[r.tk])}</td>` : ''}<td>${HOLD[holdOf(r.s)]}</td><td style="width:150px">${spark(r, 150, 34)}</td>
+        <td class="n p">${M.fmt(M.get(r))}</td>${S.tab === 'working' || S.tab === 'trending' ? `<td class="n">${fx(r.x?.sharpe)}</td>` : ''}<td class="n ${cls(r.s.cagr)}">${pct(r.s.cagr, 1, true)}</td><td class="n">${pct(Math.abs(r.s.max_dd), 1)}</td><td class="n">${pct(r.s.win_rate, 0)}</td><td class="n">${fx(r.s.trades, 0)}</td><td class="n">${fx(r.s.t_stat)}</td><td><a class="go" href="${appLink(r)}" target="_blank">Backtest</a></td></tr>`).join('')}
+      </tbody></table></div>`;
+  }
+  return `<div class="grid">${list.map((r, i) => { const vd = verdictOf(r.s); return `<article class="card">
+      <div class="rank"><span>#${i + 1}${S.tk === 'ALL' ? ' · ' + esc(LABEL[r.tk]) : ''}</span><span class="stamp" style="color:${vd.c}">${vd.t}</span></div>
+      <h3>${title(r)}</h3><div class="by">${sub(r)}${byline(r.v)}</div>
+      ${spark(r)}${kpiTriplet(r)}
+      <div class="tags"><span class="tag">⏱ ${HOLD[holdOf(r.s)]}</span><span class="tag">${esc(r.v.style)}</span><span class="tag">${r.v.dir}</span>${!perVariant && nVar(r) > 1 ? `<span class="tag link" data-fam="${esc(r.v.family)}">${nVar(r)} variants →</span>` : ''}${!perVariant && S.tk === 'ALL' && nIdx(r) > 1 ? `<span class="tag">best of ${nIdx(r)} indices</span>` : ''}</div>
+      ${rulesList(r.v)}
+      <div class="btns"><a class="btn solid" href="${appLink(r)}" target="_blank">Full backtest</a><button class="btn" data-book="${r.v.book}">Book</button><button class="btn" data-guru="${r.v.guru}">Guru</button></div>
+    </article>`; }).join('')}</div>`;
+}
+function awaiting(rs) {
+  if (S.view === 'table') return `<div class="tblwrap"><table class="tbl"><thead><tr><th class="nosort">#</th><th class="nosort">Strategy</th><th class="nosort">Style</th><th class="nosort">Why it is waiting</th></tr></thead><tbody>${rs.map((r, i) => `<tr><td class="rk">${i + 1}</td><td class="nm"><b>${esc(r.v.family_name)}</b><span>${r.v.variant ? esc(r.v.variant) + ' · ' : ''}${byline(r.v)}</span></td><td>${esc(r.v.style)}</td><td>${esc(r.v.status_note || r.v.status)}</td></tr>`).join('')}</tbody></table></div>`;
+  return `<div class="grid">${rs.map((r, i) => `<article class="card"><div class="rank"><span>#${i + 1}</span><span class="stamp" style="color:#8a6a2f">AWAITING DATA</span></div><h3>${esc(r.v.family_name)}</h3><div class="by">${r.v.variant ? esc(r.v.variant) + ' · ' : ''}${byline(r.v)}</div><p style="margin:0;font-size:13px">${esc(r.v.status_note || r.v.status)}</p><div class="tags"><span class="tag">${esc(r.v.style)}</span><span class="tag">${r.v.dir}</span></div>${rulesList(r.v)}</article>`).join('')}</div>`;
+}
+function groupBy(rs, key) { const m = new Map(); for (const r of rs) { const k = key(r); if (!m.has(k)) m.set(k, []); m.get(k).push(r); } return m; }
+function summarise(list) {
+  const M = TABS[S.tab].metric, fams = groupBy(list, r => r.v.family);
+  const bestPerFam = [...fams.values()].map(a => a[0]); // rows already sorted
+  return { fams: fams.size, variants: new Set(list.map(r => r.v.id)).size, best: list[0], vals: M ? bestPerFam.map(M.get) : [], sig: bestPerFam.filter(r => r.s && verdictOf(r.s).k === 'sig').length };
+}
+function viewBooks(rs) {
+  const M = TABS[S.tab].metric, g = groupBy(rs, r => r.v.book);
+  const live = [...g.entries()].map(([id, list]) => ({ b: BOOK[id], ...summarise(list) }));
+  const filteredOnlyByHierarchy = !S.q && !S.style && !S.dir && !S.hold && !S.verdict && S.min === '0' && !S.family;
+  const previews = filteredOnlyByHierarchy ? Object.values(BOOK).filter(b => !b.live && (!S.guru || b.guru.id === S.guru) && !S.book) : [];
+  if (S.view === 'table') return `<div class="tblwrap"><table class="tbl"><thead><tr><th class="nosort">#</th><th class="nosort">Book</th><th class="nosort">Guru</th><th class="n nosort">Year</th><th class="n nosort">Strategies</th><th class="n nosort">Rule sets</th><th class="nosort">Best strategy</th><th class="n nosort">Best ${M ? esc(M.label) : ''}</th><th class="n nosort">Median</th><th class="n nosort">Significant</th><th class="nosort"></th></tr></thead><tbody>
+    ${live.map((x, i) => `<tr><td class="rk">${i + 1}</td><td class="nm"><b>${esc(x.b.title)}</b></td><td>${esc(x.b.guru.name)}</td><td class="n">${x.b.year}</td><td class="n">${x.fams}</td><td class="n">${x.variants}</td><td>${x.best ? esc(x.best.v.family_name) : '–'}</td><td class="n p">${M && x.best?.s ? M.fmt(M.get(x.best)) : '–'}</td><td class="n">${M ? M.fmt(med(x.vals)) : '–'}</td><td class="n">${x.sig}</td><td><button class="go" data-book="${x.b.id}">Strategies →</button></td></tr>`).join('')}
+    ${previews.map(b => `<tr class="preview"><td class="rk">–</td><td class="nm"><b>${esc(b.title)}</b></td><td>${esc(b.guru.name)}</td><td class="n">${b.year}</td><td colspan="7">Not converted yet</td></tr>`).join('')}</tbody></table></div>`;
+  return `<div class="grid">${live.map((x, i) => `<article class="card"><div class="rank"><span>#${i + 1}</span><span>${x.fams} strategies · ${x.variants} rule sets</span></div>
+      <div class="cover"><div class="bk" style="--c:${x.b.c}"><span>${esc(x.b.title)}</span><span>${x.b.year}</span></div><div><h3>${esc(x.b.title)}</h3><div class="by" style="margin:2px 0 0">${esc(x.b.guru.name)} · ${x.b.year}</div></div></div>
+      ${stripPlot(x.vals)}
+      <div class="kpis"><div><span>Best ${M ? esc(M.label) : ''}</span><b class="p">${M && x.best?.s ? M.fmt(M.get(x.best)) : '–'}</b><i>${x.best ? esc(x.best.v.family_name) : ''}</i></div><div><span>Median</span><b>${M ? M.fmt(med(x.vals)) : '–'}</b><i>across strategies</i></div><div><span>Significant</span><b>${x.sig}</b><i>of ${x.fams}</i></div></div>
+      <div class="btns"><button class="btn solid" data-book="${x.b.id}">Open book · ${x.fams} strategies</button></div></article>`).join('')}
+    ${previews.length ? `<div class="sep">Coming as more books are converted (layout preview, no numbers yet)</div>` + previews.map(b => `<article class="card preview"><div class="cover"><div class="bk pv"><span>${esc(b.title)}</span><span>${b.year}</span></div><div><h3>${esc(b.title)}</h3><div class="by" style="margin:2px 0 0">${esc(b.guru.name)} · ${b.year}</div></div></div><p style="margin:0;font-size:13px">Not converted yet: strategies, stats and charts appear here once its rules are coded in Rust.</p></article>`).join('') : ''}</div>`;
+}
+function viewGurus(rs) {
+  const M = TABS[S.tab].metric, g = groupBy(rs, r => r.v.guru);
+  const live = [...g.entries()].map(([id, list]) => ({ g: GURU[id], ...summarise(list), books: new Set(list.map(r => r.v.book)).size }));
+  const filteredOnlyByHierarchy = !S.q && !S.style && !S.dir && !S.hold && !S.verdict && S.min === '0' && !S.family && !S.book;
+  const previews = filteredOnlyByHierarchy ? LIB.filter(x => !g.has(x.id) && (!S.guru || x.id === S.guru)) : [];
+  const face = x => x.photo ? `<div class="ph"><img src="${x.photo}" alt=""></div>` : `<div class="ph">${x.name.split(' ').map(w => w[0]).join('')}</div>`;
+  if (S.view === 'table') return `<div class="tblwrap"><table class="tbl"><thead><tr><th class="nosort">#</th><th class="nosort">Guru</th><th class="n nosort">Books</th><th class="n nosort">Converted</th><th class="n nosort">Strategies</th><th class="nosort">Best strategy</th><th class="n nosort">Best ${M ? esc(M.label) : ''}</th><th class="n nosort">Median</th><th class="n nosort">Significant</th><th class="nosort"></th></tr></thead><tbody>
+    ${live.map((x, i) => `<tr><td class="rk">${i + 1}</td><td class="nm"><b>${esc(x.g.name)}</b></td><td class="n">${x.g.books.length}</td><td class="n">${x.books}</td><td class="n">${x.fams}</td><td>${x.best ? esc(x.best.v.family_name) : '–'}</td><td class="n p">${M && x.best?.s ? M.fmt(M.get(x.best)) : '–'}</td><td class="n">${M ? M.fmt(med(x.vals)) : '–'}</td><td class="n">${x.sig}</td><td><button class="go" data-guru="${x.g.id}">Books →</button></td></tr>`).join('')}
+    ${previews.map(x => `<tr class="preview"><td class="rk">–</td><td class="nm"><b>${esc(x.name)}</b></td><td class="n">${x.books.length}</td><td class="n">0</td><td colspan="6">Not converted yet</td></tr>`).join('')}</tbody></table></div>`;
+  return `<div class="grid">${live.map((x, i) => `<article class="card"><div class="rank"><span>#${i + 1}</span><span>${x.g.books.length} books · ${x.books} converted</span></div>
+      <div class="cover">${face(x.g)}<div><h3>${esc(x.g.name)}</h3><div class="by" style="margin:2px 0 0">${esc(GURUS_API.find(a => a.id === x.g.id)?.tagline || '')}</div></div></div>
+      ${stripPlot(x.vals)}
+      <div class="kpis"><div><span>Best ${M ? esc(M.label) : ''}</span><b class="p">${M && x.best?.s ? M.fmt(M.get(x.best)) : '–'}</b><i>${x.best ? esc(x.best.v.family_name) : ''}</i></div><div><span>Strategies</span><b>${x.fams}</b><i>${x.variants} rule sets</i></div><div><span>Significant</span><b>${x.sig}</b><i>of ${x.fams}</i></div></div>
+      <div class="btns"><button class="btn solid" data-guru="${x.g.id}">Books →</button><button class="btn" data-guru-strats="${x.g.id}">All strategies</button></div></article>`).join('')}
+    ${previews.length ? `<div class="sep">Coming as more books are converted (layout preview, no numbers yet)</div>` + previews.map(x => `<article class="card preview"><div class="cover">${face(x)}<div><h3>${esc(x.name)}</h3><div class="by" style="margin:2px 0 0">${x.books.map(b => esc(b.title)).join(' · ')}</div></div></div><p style="margin:0;font-size:13px">Not converted yet.</p></article>`).join('') : ''}</div>`;
+}
+
+// ================================================================ VARIATIONS
+// Same engine (rows, tabs, filters, grid/table renderers); each layout arranges the controls and results differently.
+const LAYOUTS = {
+  facets:  { name: '1. Facet sidebar', desc: 'Shop-style: every filter lives in a left sidebar with live counts next to each value, so you see how many strategies each choice leaves before clicking. Results on the right.' },
+  columns: { name: '2. Library columns', desc: 'Finder-style drill-down: Gurus → Books → Strategies as side-by-side columns; the right pane shows whatever is selected (all strategies, or one strategy’s variants).' },
+  league:  { name: '3. Leaderboard', desc: 'Ranking first: a podium for the top 3, then the table; “Group by” splits the ranking into mini-leaderboards per guru, book, style, index, holding period or direction.' },
+  matrix:  { name: '4. Market matrix', desc: 'Every strategy against every Indian index at once, coloured by the tab’s number: spot what works everywhere vs. only on one index. Rows grouped by guru › book.' },
+  map:     { name: '5. Risk–reward map', desc: 'Each strategy is a dot: left = smaller drawdown, up = better on the tab’s number, size = trades. Click a dot to pin its card; the list underneath follows the same filters.' },
+  query:   { name: '6. Query bar + saved views', desc: 'Power-user mode: type a query like  tab:trending index:all dir:short hold:short  or click a saved view. Every control is a token you can read, edit and share.' },
+};
+DEF.layout = 'facets'; DEF.group = ''; DEF.pick = '';
+const getS = () => S;
+const FIELD = { guru: r => r.v.guru, book: r => r.v.book, style: r => r.v.style, dir: r => r.v.dir, hold: r => r.s && holdOf(r.s), verdict: r => r.s && verdictOf(r.s).k, tk: r => r.tk, family: r => r.v.family };
+const distinct = (rs, f) => new Set(rs.map(f)).size;
+const famCount = rs => distinct(rs, r => r.v.family);
+const VERD = { sig: 'Significant (t ≥ 2)', none: 'No edge', thin: 'Thin data (< 30 trades)' };
+const MODES = { gurus: 'Gurus', books: 'Books', strategies: 'Strategies', variants: 'Rule variants' };
+const famBest = rs => [...groupBy(rs, r => r.v.family).values()].map(a => a[0]);
+
+// ---------------------------------------------------------------- shared control snippets (data-set="key=value&key2=value")
+const ds = o => esc(new URLSearchParams(o).toString());
+const seg = (key, items, cur, extra = '') => `<div class="seg ${extra}">${items.map(([v, t, sub]) => `<button data-set="${ds({ [key]: v })}" class="${cur === v ? 'on' : ''}">${t}${sub != null ? `<small>${sub}</small>` : ''}</button>`).join('')}</div>`;
+const modeSeg = () => seg('mode', Object.entries(MODES), S.mode);
+const marketSeg = () => seg('market', [['india', 'India'], ['global', 'Global', 'soon'], ['stocks', 'Stocks', 'soon']], S.market);
+const indexSeg = () => S.market !== 'india' ? '' : seg('tk', [...TICKERS.map(t => [t.ticker, LABEL[t.ticker]]), ['ALL', 'All indices']], S.tk);
+const tabPills = (cls = 'pills') => `<div class="${cls}">${Object.entries(TABS).map(([k, t]) => `<button data-set="${ds({ tab: k, sort: 'primary' })}" class="${S.tab === k ? 'on' : ''}">${t.name}</button>`).join('')}</div>`;
+const viewSeg = () => seg('view', [['grid', '▦ Grid'], ['table', '☰ Table']], S.view, 'view');
+const sortSel = () => `<label class="sel"><select data-key="sort" aria-label="Sort by">${Object.entries(SORTS).map(([k, t]) => `<option value="${k}" ${S.sort === k ? 'selected' : ''}>${k === 'primary' ? `Sort: ${TABS[S.tab].metric?.label || 'tab'}` : 'Sort: ' + t}</option>`).join('')}</select></label>`;
+const selBox = (key, label, list) => `<label class="sel"><select data-key="${key}" aria-label="${label}" class="${S[key] && S[key] !== '0' ? 'set' : ''}"><option value="">${label}</option>${list.map(([v, t]) => `<option value="${esc(v)}" ${S[key] === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>`;
+const filterSelects = (keys = ['guru', 'book', 'style', 'dir', 'hold', 'verdict', 'min']) => keys.map(k => ({
+  guru: () => selBox('guru', 'Guru: all', LIB.map(g => [g.id, g.name])),
+  book: () => selBox('book', 'Book: all', Object.values(BOOK).filter(b => !S.guru || b.guru.id === S.guru).map(b => [b.id, b.title + (b.live ? '' : ' (soon)')])),
+  style: () => selBox('style', 'Style: all', [...new Set(CAT.map(v => v.style))].map(x => [x, x])),
+  dir: () => selBox('dir', 'Direction: all', [['Long', 'Long'], ['Short', 'Short']]),
+  hold: () => selBox('hold', 'Holding: any', Object.entries(HOLD)),
+  verdict: () => selBox('verdict', 'Verdict: any', Object.entries(VERD)),
+  min: () => selBox('min', 'Min trades: any', [['10', '≥ 10 trades'], ['30', '≥ 30 trades'], ['100', '≥ 100 trades']]),
+}[k]())).join('');
+const searchBox = (ph = 'Search strategies, books, gurus…') => `<label class="search"><input id="q" type="search" value="${esc(S.q)}" placeholder="${ph}"></label>`;
+function chipsHtml() {
+  const c = (k, t) => `<span class="chip">${esc(t)}<button data-set="${ds({ [k]: k === 'min' ? '0' : '' })}" aria-label="Remove">×</button></span>`;
+  const on = [S.guru && c('guru', 'Guru: ' + GURU[S.guru].name), S.book && c('book', 'Book: ' + BOOK[S.book].title), S.family && c('family', 'Strategy: ' + (CAT.find(v => v.family === S.family)?.family_name || '')),
+    S.style && c('style', S.style), S.dir && c('dir', S.dir), S.hold && c('hold', 'Holding ' + HOLD[S.hold]), S.verdict && c('verdict', VERD[S.verdict]), S.min !== '0' && c('min', '≥ ' + S.min + ' trades'), S.q && c('q', '“' + S.q + '”')].filter(Boolean);
+  return on.length ? `<div class="chips">${on.join('')}<button class="clear" data-set="${ds({ q: '', guru: '', book: '', style: '', dir: '', hold: '', verdict: '', min: '0', family: '' })}">Clear all</button></div>` : '';
+}
+const countLine = rs => `<b>${famCount(rs)}</b> strategies · <b>${distinct(rs, r => r.v.id)}</b> rule variants · ${S.market === 'india' ? (S.tk === 'ALL' ? 'all indices' : esc(LABEL[S.tk])) : S.market} · ${TABS[S.tab].name}`;
+const results = rs => {
+  if (S.market !== 'india') return `<div class="empty"><b>${S.market === 'global' ? 'Global markets' : 'Single stocks'}: no data loaded yet</b>The same gurus, books and strategies appear here once that data is in the Rust backend.</div>`;
+  const pv = S.book && !BOOK[S.book].live ? BOOK[S.book].title : S.guru && !GURU[S.guru].books.some(b => b.live) ? GURU[S.guru].name : '';
+  if (pv && !rs.length) return `<div class="empty"><b>${esc(pv)}: not converted yet</b>Its strategies, stats and charts appear here once its rules are coded in Rust.</div>`;
+  if (!rs.length && (S.mode === 'strategies' || S.mode === 'variants')) return `<div class="empty"><b>Nothing matches</b>Remove a filter or switch tab.</div>`;
+  return S.mode === 'gurus' ? viewGurus(rs) : S.mode === 'books' ? viewBooks(rs) : viewStrategies(rs, S.mode === 'variants');
+};
+const without = (...keys) => ({ ...S, ...Object.fromEntries(keys.map(k => [k, k === 'min' ? '0' : ''])) });
+
+// ---------------------------------------------------------------- 1. FACET SIDEBAR
+async function Lfacets(rs) {
+  const facet = async (key, title, values) => {
+    const base = await rows(without(key)), f = FIELD[key], cnt = {};
+    famBest(base).forEach(r => { const v = f(r); cnt[v] = (cnt[v] || 0) + 1; });
+    return `<div class="fg"><h4>${title}</h4>${values.map(([v, t]) => `<button class="fi ${S[key] === v ? 'on' : ''} ${cnt[v] ? '' : 'zero'}" data-set="${ds({ [key]: S[key] === v ? '' : v })}"><span>${esc(t)}</span><b>${cnt[v] || 0}</b></button>`).join('')}</div>`;
+  };
+  const tkCnt = {}; if (S.market === 'india') for (const r of await rows({ ...S, tk: 'ALL' })) (tkCnt[r.tk] ||= new Set()).add(r.v.family);
+  const side = `<aside class="side">${searchBox('Search…')}
+    <div class="fg"><h4>Browse by</h4>${Object.entries(MODES).map(([k, t]) => `<button class="fi ${S.mode === k ? 'on' : ''}" data-set="${ds({ mode: k })}"><span>${t}</span></button>`).join('')}</div>
+    <div class="fg"><h4>Market</h4>${[['india', 'India'], ['global', 'Global (soon)'], ['stocks', 'Stocks (soon)']].map(([k, t]) => `<button class="fi ${S.market === k ? 'on' : ''}" data-set="${ds({ market: k })}"><span>${t}</span></button>`).join('')}</div>
+    ${S.market === 'india' ? `<div class="fg"><h4>Index</h4>${[...TICKERS.map(t => [t.ticker, LABEL[t.ticker]]), ['ALL', 'All indices']].map(([k, t]) => `<button class="fi ${S.tk === k ? 'on' : ''}" data-set="${ds({ tk: k })}"><span>${t}</span><b>${k === 'ALL' ? '' : tkCnt[k]?.size || 0}</b></button>`).join('')}</div>` : ''}
+    <div class="fg"><h4>Rank by</h4>${Object.entries(TABS).map(([k, t]) => `<button class="fi ${S.tab === k ? 'on' : ''}" data-set="${ds({ tab: k, sort: 'primary' })}"><span>${t.name}</span></button>`).join('')}</div>
+    ${S.market === 'india' ? [await facet('guru', 'Guru', LIB.map(g => [g.id, g.name])), await facet('book', 'Book', Object.values(BOOK).map(b => [b.id, b.title])),
+      await facet('style', 'Style', [...new Set(CAT.map(v => v.style))].map(x => [x, x])), await facet('dir', 'Direction', [['Long', 'Long'], ['Short', 'Short']]),
+      S.tab === 'awaiting' ? '' : await facet('hold', 'Holding period', Object.entries(HOLD)), S.tab === 'awaiting' ? '' : await facet('verdict', 'Verdict', Object.entries(VERD))].join('') : ''}
+    <div class="fg"><h4>Minimum trades</h4>${[['0', 'Any'], ['10', '≥ 10'], ['30', '≥ 30'], ['100', '≥ 100']].map(([k, t]) => `<button class="fi ${S.min === k ? 'on' : ''}" data-set="${ds({ min: k })}"><span>${t}</span></button>`).join('')}</div></aside>`;
+  return `<div class="L1">${side}<section><div class="bar"><div class="cnt">${countLine(rs)}</div>${sortSel()}${viewSeg()}</div>${chipsHtml()}<p class="note">${TABS[S.tab].note}</p>${results(rs)}</section></div>`;
+}
+
+// ---------------------------------------------------------------- 2. LIBRARY COLUMNS
+async function Lcolumns(rs) {
+  const M = TABS[S.tab].metric;
+  const col = (title, items, emptyMsg) => `<div class="col"><h4>${title}</h4>${items.length ? items.join('') : `<p class="muted" style="padding:8px 12px;font-size:12.5px">${emptyMsg}</p>`}</div>`;
+  const item = (set, on, name, sub, val, frac, dim) => `<button class="ci ${on ? 'on' : ''} ${dim ? 'dim' : ''}" data-set="${ds(set)}"><span class="nm">${esc(name)}<small>${sub}</small></span>${val != null ? `<b>${val}</b>` : ''}${frac != null ? `<i style="--f:${Math.max(0, Math.min(1, frac))}"></i>` : ''}</button>`;
+  const scale = vals => { const lo = Math.min(0, ...vals), hi = Math.max(...vals, 1e-9); return v => (v - lo) / ((hi - lo) || 1); };
+  const g0 = await rows(without('guru', 'book', 'family')), b0 = await rows(without('book', 'family')), s0 = await rows(without('family'));
+  const gB = groupBy(g0, r => r.v.guru), bB = groupBy(b0, r => r.v.book), sB = famBest(s0);
+  const gv = M ? [...gB.values()].map(a => M.get(a[0])) : [], sc1 = scale(gv);
+  const gurus = LIB.map(g => { const a = gB.get(g.id); return item({ guru: S.guru === g.id ? '' : g.id, book: '', family: '' }, S.guru === g.id, g.name, a ? `${famCount(a)} strategies` : 'not converted yet', a && M ? M.fmt(M.get(a[0])) : null, a && M ? sc1(M.get(a[0])) : null, !a); });
+  const books = Object.values(BOOK).filter(b => !S.guru || b.guru.id === S.guru).map(b => { const a = bB.get(b.id); return item({ book: S.book === b.id ? '' : b.id, guru: b.guru.id, family: '' }, S.book === b.id, b.title, `${esc(b.guru.name)} · ${b.year}${a ? ` · ${famCount(a)} strategies` : ' · soon'}`, a && M ? M.fmt(M.get(a[0])) : null, a && M ? sc1(M.get(a[0])) : null, !a); });
+  const sc3 = scale(M ? sB.map(M.get) : [0]);
+  const strats = sB.map(r => item({ family: S.family === r.v.family ? '' : r.v.family }, S.family === r.v.family, r.v.family_name, `${esc(r.v.style)} · ${r.v.dir}`, M ? M.fmt(M.get(r)) : null, M ? sc3(M.get(r)) : null));
+  const sel = S.family ? `Variants of ${esc(CAT.find(v => v.family === S.family)?.family_name)}` : S.book ? `All strategies in ${esc(BOOK[S.book].title)}` : S.guru ? `All strategies by ${esc(GURU[S.guru].name)}` : 'All strategies';
+  const keepMode = S.mode; S.mode = S.family ? 'variants' : 'strategies'; const body = results(rs); S.mode = keepMode;
+  return `<div class="topbar2">${marketSeg()}${indexSeg()}${tabPills()}</div>
+    <div class="topbar2">${searchBox()}${filterSelects(['style', 'dir', 'hold', 'verdict', 'min'])}${sortSel()}${viewSeg()}</div>
+    <div class="L2">${col('Gurus', gurus)}${col('Books', books)}${col(`Strategies <small>${M ? '· ' + esc(M.label) : ''}</small>`, strats, 'Nothing here for these filters.')}
+      <section class="pane"><div class="bar"><div class="cnt"><b>${sel}</b> · ${countLine(rs)}</div></div>${S.market === 'india' ? `<p class="note">${TABS[S.tab].note}</p>` : ''}${body}</section></div>`;
+}
+
+// ---------------------------------------------------------------- 3. LEADERBOARD
+const GROUPS = { '': 'No grouping', guru: 'Guru', book: 'Book', style: 'Style', tk: 'Index', hold: 'Holding', dir: 'Direction' };
+const groupName = (k, v) => ({ guru: () => GURU[v]?.name, book: () => BOOK[v]?.title, tk: () => LABEL[v], hold: () => HOLD[v] }[k]?.() ?? v);
+async function Lleague(rs) {
+  const M = TABS[S.tab].metric, strat = S.mode === 'strategies' || S.mode === 'variants';
+  const list = S.mode === 'variants' ? rs : famBest(rs);
+  const podium = strat && M && list.length >= 3 && S.view === 'grid' ? `<div class="podium">${[1, 0, 2].map(i => { const r = list[i]; return `<a class="pd p${i + 1}" href="${appLink(r)}" target="_blank"><span class="medal">${i + 1}</span><b>${esc(r.v.family_name)}</b><small>${r.v.variant ? esc(r.v.variant.split(' · ')[0]) + ' · ' : ''}${S.tk === 'ALL' ? esc(LABEL[r.tk]) + ' · ' : ''}${esc(GURU[r.v.guru].name)}</small><em>${M.fmt(M.get(r))}</em><span class="lbl">${esc(M.label)}</span><div class="step"></div></a>`; }).join('')}</div>` : '';
+  let body;
+  if (S.group && strat && S.tab !== 'awaiting') {
+    const g = groupBy(rs, r => FIELD[S.group](r));
+    const blocks = [...g.entries()].map(([k, a]) => { const fb = S.mode === 'variants' ? a : famBest(a); return { k, a, fb, top: M ? M.get(fb[0]) : 0 }; }).sort((x, y) => y.top - x.top);
+    const keep = S.view; body = blocks.map(b => `<section class="grp"><div class="gh"><h3>${esc(groupName(S.group, b.k))}</h3><span>${famCount(b.a)} strategies · best ${M ? M.fmt(b.top) : '–'}</span><button class="go" data-set="${ds({ [S.group === 'tk' ? 'tk' : S.group]: b.k, group: '' })}">Only this →</button></div>${viewStrategies(S.mode === 'variants' ? b.a.slice(0, 6) : b.a.filter(r => new Set(b.fb.slice(0, 6).map(x => x.v.family)).has(r.v.family)), S.mode === 'variants')}</section>`).join('');
+    S.view = keep;
+  } else body = (podium ? `<h3 class="rest">Full ranking</h3>` : '') + results(rs);
+  return `<div class="leagues">${tabPills('league')}</div>
+    <div class="topbar2">${modeSeg()}${marketSeg()}${indexSeg()}</div>
+    <div class="topbar2">${searchBox()}${filterSelects(['guru', 'style', 'dir', 'hold', 'min'])}${strat ? `<span class="lab">Group by</span>${seg('group', Object.entries(GROUPS), S.group)}` : ''}${sortSel()}${viewSeg()}</div>
+    ${chipsHtml()}<div class="bar"><div class="cnt">${countLine(rs)}</div></div>${podium}${body}`;
+}
+
+// ---------------------------------------------------------------- 4. MARKET MATRIX
+async function Lmatrix() {
+  const M = TABS[S.tab].metric;
+  if (S.market !== 'india' || !M) return `<div class="topbar2">${marketSeg()}${tabPills()}</div>${S.tab === 'awaiting' ? `<p class="note">${TABS.awaiting.note}</p>` + results(await rows()) : results([])}`;
+  const all = await rows({ ...S, tk: 'ALL' }), tks = TICKERS.map(t => t.ticker);
+  const key = { gurus: r => r.v.guru, books: r => r.v.book, strategies: r => r.v.family, variants: r => r.v.id }[S.mode];
+  const name = { gurus: k => GURU[k].name, books: k => BOOK[k].title, strategies: k => CAT.find(v => v.family === k).family_name, variants: k => { const v = CAT.find(x => x.id === k); return `${v.family_name}${v.variant ? ' · ' + v.variant.split(' · ')[0] : ''}`; } }[S.mode];
+  const agg = (S.mode === 'gurus' || S.mode === 'books') ? a => med(famBest(a).map(M.get)) : a => M.get(a[0]); // best variant per cell; median of strategies for gurus/books
+  const G = groupBy(all, key);
+  const lines = [...G.entries()].map(([k, a]) => { const byTk = groupBy(a, r => r.tk), cells = tks.map(t => byTk.get(t) ? { v: agg(byTk.get(t)), r: byTk.get(t)[0] } : null);
+    const vals = cells.filter(Boolean).map(c => c.v); return { k, a, cells, avg: vals.reduce((x, y) => x + y, 0) / (vals.length || 1), pos: vals.filter(v => v > (S.tab === 'sig' ? 2 : 0)).length, n: vals.length, r0: a[0] }; });
+  lines.sort(S.sort === 'name' ? (x, y) => name(x.k).localeCompare(name(y.k)) : S.sort === 'course' ? (x, y) => x.r0.v.ord - y.r0.v.ord : (x, y) => y.avg - x.avg);
+  const [lo, hi] = { trending: [-.15, .15], sharpe: [-.5, 1], working: [-.5, 1], sig: [0, 5] }[S.tab];
+  const col = v => { if (v == null) return 'transparent'; const t = Math.max(-1, Math.min(1, v >= 0 ? v / hi : -v / lo)); return t >= 0 ? `color-mix(in srgb, #2f5a8f ${Math.round(12 + t * 70)}%, #fff)` : `color-mix(in srgb, #c43c3c ${Math.round(12 + -t * 60)}%, #fff)`; };
+  const ink = v => v != null && Math.abs(v >= 0 ? v / hi : v / lo) > .6 ? '#fff' : 'var(--ink)';
+  const groupKey = l => S.mode === 'gurus' ? '' : `${GURU[l.r0.v.guru].name} › ${BOOK[l.r0.v.book].title}`;
+  const cellLink = c => c && (S.mode === 'strategies' || S.mode === 'variants') ? appLink(c.r) : null;
+  let body;
+  if (S.view === 'table') {
+    const byG = groupBy(lines, groupKey);
+    body = `<div class="tblwrap"><table class="tbl heat"><thead><tr><th class="nosort">${{ gurus: 'Guru', books: 'Book', strategies: 'Strategy', variants: 'Rule variant' }[S.mode]}</th>${tks.map(t => `<th class="n nosort">${esc(LABEL[t])}</th>`).join('')}<th class="n nosort">Average</th><th class="n nosort">Works on</th></tr></thead><tbody>
+      ${[...byG.entries()].map(([g, ls]) => `${g ? `<tr class="gr"><td colspan="${tks.length + 3}">${esc(g)}</td></tr>` : ''}${ls.map(l => `<tr><td class="nm"><b>${esc(name(l.k))}</b>${S.mode === 'strategies' ? `<span>${esc(l.r0.v.style)} · ${l.r0.v.dir}</span>` : ''}</td>${l.cells.map(c => `<td class="n hc" style="background:${col(c?.v)};color:${ink(c?.v)}">${c ? (cellLink(c) ? `<a href="${cellLink(c)}" target="_blank">${M.fmt(c.v)}</a>` : M.fmt(c.v)) : '<span class="muted">n/a</span>'}</td>`).join('')}<td class="n"><b>${M.fmt(l.avg)}</b></td><td class="n">${l.pos} / ${l.n}</td></tr>`).join('')}`).join('')}</tbody></table></div>`;
+  } else {
+    body = `<div class="tiles">${lines.map(l => `<article class="tile"><h4>${esc(name(l.k))}</h4><small>${esc(groupKey(l) || `${famCount(l.a)} strategies`)}</small>
+      <div class="mini">${l.cells.map((c, i) => `<${cellLink(c) ? `a href="${cellLink(c)}" target="_blank"` : 'div'} class="mc" style="background:${col(c?.v)};color:${ink(c?.v)}"><span>${esc(LABEL[tks[i]])}</span><b>${c ? M.fmt(c.v) : 'n/a'}</b></${cellLink(c) ? 'a' : 'div'}>`).join('')}</div>
+      <div class="foot2"><span>avg <b>${M.fmt(l.avg)}</b></span><span>works on <b>${l.pos}/${l.n}</b> indices</span></div></article>`).join('')}</div>`;
+  }
+  const legend = `<div class="legend"><span>${M.fmt(lo)}</span><i style="background:linear-gradient(90deg, ${col(lo)}, #fff, ${col(hi)})"></i><span>${M.fmt(hi)}+</span><em>${esc(M.label)}${S.mode === 'gurus' || S.mode === 'books' ? ' (median of strategies)' : ' (best variant)'}</em></div>`;
+  return `<div class="topbar2">${modeSeg()}${tabPills()}</div><div class="topbar2">${searchBox()}${filterSelects(['guru', 'book', 'style', 'dir', 'hold', 'min'])}${sortSel()}${viewSeg()}</div>${chipsHtml()}
+    <div class="bar"><div class="cnt"><b>${lines.length}</b> ${MODES[S.mode].toLowerCase()} × <b>${tks.length}</b> indices · ${TABS[S.tab].name}</div>${legend}</div><p class="note">${TABS[S.tab].note} Columns are the four Indian indices; “works on” counts indices where it is ${S.tab === 'sig' ? 'significant' : 'positive'}.</p>${body}`;
+}
+
+// ---------------------------------------------------------------- 5. RISK–REWARD MAP
+async function Lmap(rs) {
+  const M = TABS[S.tab].metric;
+  if (!M || S.market !== 'india') return `<div class="topbar2">${marketSeg()}${tabPills()}</div>${results(rs)}`;
+  const pts = S.mode === 'variants' ? rs : famBest(rs), W = 860, H = 420, P = { l: 56, r: 20, t: 20, b: 44 };
+  const xs = pts.map(r => Math.abs(r.s.max_dd)), ys = pts.map(M.get);
+  const xmax = Math.max(.05, ...xs) * 1.08, ylo = Math.min(0, ...ys), yhi = Math.max(...ys, .01), pad = (yhi - ylo) * .08;
+  const X = v => P.l + v / xmax * (W - P.l - P.r), Y = v => H - P.b - (v - ylo + pad) / (yhi - ylo + 2 * pad) * (H - P.t - P.b);
+  const colorBy = S.mode === 'gurus' ? r => CLOTH[LIB.findIndex(g => g.id === r.v.guru) % 6] : S.mode === 'books' ? r => BOOK[r.v.book].c : r => verdictOf(r.s).c;
+  const tmax = Math.max(...pts.map(r => r.s.trades), 1), rad = r => 4 + Math.sqrt(r.s.trades / tmax) * 14;
+  const pid = r => `${r.v.id}|${r.tk}`, pick = pts.find(r => pid(r) === S.pick);
+  const ticks = n => Array.from({ length: n + 1 }, (_, i) => i / n);
+  const svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" class="scatter" role="img" aria-label="Risk versus ${esc(M.label)}">
+    <rect x="${P.l}" y="${P.t}" width="${(W - P.l - P.r) / 2}" height="${(Y(ylo) - P.t) / 2 + 0}" fill="#e9f0f7" opacity=".6"/><text x="${P.l + 8}" y="${P.t + 16}" class="q">Low drawdown · high ${esc(M.label)}</text>
+    ${ticks(5).map(f => `<line x1="${X(f * xmax)}" x2="${X(f * xmax)}" y1="${P.t}" y2="${H - P.b}" stroke="#e3e3e4"/><text x="${X(f * xmax)}" y="${H - P.b + 16}" text-anchor="middle">${pct(f * xmax, 0)}</text>`).join('')}
+    ${ticks(4).map(f => { const v = ylo - pad + f * (yhi - ylo + 2 * pad); return `<line x1="${P.l}" x2="${W - P.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="#e3e3e4"/><text x="${P.l - 8}" y="${Y(v) + 4}" text-anchor="end">${M.fmt(v)}</text>`; }).join('')}
+    ${ylo < 0 ? `<line x1="${P.l}" x2="${W - P.r}" y1="${Y(0)}" y2="${Y(0)}" stroke="#999" stroke-dasharray="3 3"/>` : ''}
+    <text x="${(W + P.l) / 2}" y="${H - 6}" text-anchor="middle" class="ax">Max drawdown → (left is safer)</text><text x="14" y="${(H - P.b) / 2}" text-anchor="middle" class="ax" transform="rotate(-90 14 ${(H - P.b) / 2})">${esc(M.label)} ↑</text>
+    ${pts.slice().sort((a, b) => b.s.trades - a.s.trades).map(r => `<circle class="dot ${pick && pid(r) === S.pick ? 'on' : ''}" data-set="${ds({ pick: pid(r) === S.pick ? '' : pid(r) })}" cx="${X(Math.abs(r.s.max_dd)).toFixed(1)}" cy="${Y(M.get(r)).toFixed(1)}" r="${rad(r).toFixed(1)}" fill="${colorBy(r)}" fill-opacity=".55" stroke="${colorBy(r)}"><title>${esc(r.v.family_name)}${r.v.variant ? ' · ' + esc(r.v.variant) : ''}${S.tk === 'ALL' ? ' · ' + esc(LABEL[r.tk]) : ''}
+${esc(M.label)} ${M.fmt(M.get(r))} · max DD ${pct(Math.abs(r.s.max_dd), 1)} · ${r.s.trades} trades</title></circle>`).join('')}
+    ${pts.slice(0, 6).map(r => `<text x="${X(Math.abs(r.s.max_dd)) + rad(r) + 3}" y="${Y(M.get(r)) + 4}" class="lab2">${esc(r.v.family_name.length > 22 ? r.v.family_name.slice(0, 21) + '…' : r.v.family_name)}</text>`).join('')}</svg>`;
+  const legend = S.mode === 'gurus' ? LIB.filter(g => rs.some(r => r.v.guru === g.id)).map((g, i) => `<span><i style="background:${CLOTH[LIB.indexOf(g) % 6]}"></i>${esc(g.name)}</span>`).join('')
+    : S.mode === 'books' ? [...new Set(rs.map(r => r.v.book))].map(b => `<span><i style="background:${BOOK[b].c}"></i>${esc(BOOK[b].title)}</span>`).join('')
+    : `<span><i style="background:#2e7d4f"></i>Significant</span><span><i style="background:#6b6f78"></i>No edge</span><span><i style="background:#8a3a2e"></i>Thin data</span>`;
+  const keep = S.mode; S.mode = S.mode === 'variants' ? 'variants' : 'strategies';
+  const kv = S.view; S.view = 'grid'; const card = pick ? viewStrategies([pick], true).replace('<div class="grid">', '<div>') : `<div class="hint2"><b>Click a dot</b>Its full card appears here. Bigger dots traded more; the shaded corner is where you want to be.</div>`;
+  S.view = kv; const list = results(rs); S.mode = keep;
+  return `<div class="topbar2">${seg('mode', [['strategies', 'Strategies'], ['variants', 'Rule variants'], ['books', 'Colour by book'], ['gurus', 'Colour by guru']], S.mode)}${marketSeg()}${indexSeg()}${tabPills()}</div>
+    <div class="topbar2">${searchBox()}${filterSelects(['guru', 'book', 'style', 'dir', 'hold', 'min'])}</div>${chipsHtml()}
+    <div class="L5"><div class="plot">${svg}<div class="legend2">${legend}<span class="muted">· dot size = trades</span></div></div><aside>${card}</aside></div>
+    <div class="bar" style="margin-top:18px"><div class="cnt">${countLine(rs)}</div>${sortSel()}${viewSeg()}</div>${list}`;
+}
+
+// ---------------------------------------------------------------- 6. QUERY BAR + SAVED VIEWS
+const QKEYS = ['tab', 'index', 'mode', 'guru', 'book', 'style', 'dir', 'hold', 'verdict', 'min', 'sort', 'view'];
+function toQuery() {
+  const t = [];
+  const add = (k, v) => t.push(`${k}:${/\s/.test(v) ? `"${v}"` : v}`);
+  if (S.tab !== DEF.tab) add('tab', S.tab); if (S.market !== 'india') add('market', S.market); else if (S.tk !== DEF.tk) add('index', S.tk === 'ALL' ? 'all' : LABEL[S.tk]);
+  if (S.mode !== DEF.mode) add('mode', S.mode); if (S.guru) add('guru', S.guru); if (S.book) add('book', S.book); if (S.style) add('style', S.style); if (S.dir) add('dir', S.dir.toLowerCase());
+  if (S.hold) add('hold', S.hold); if (S.verdict) add('verdict', S.verdict); if (S.min !== '0') add('min', S.min); if (S.family) add('family', S.family); if (S.sort !== 'primary') add('sort', S.sort); if (S.view !== 'grid') add('view', S.view);
+  if (S.q) t.push(/\s/.test(S.q) ? `"${S.q}"` : S.q);
+  return t.join(' ');
+}
+function fromQuery(text) {
+  const n = { ...DEF, layout: S.layout }, words = [], bad = [];
+  for (const m of text.matchAll(/(\w+):"([^"]*)"|(\w+):(\S+)|"([^"]*)"|(\S+)/g)) {
+    const k = (m[1] || m[3] || '').toLowerCase(), v = m[2] ?? m[4];
+    if (!k) { words.push(m[5] ?? m[6]); continue; }
+    const lv = v.toLowerCase();
+    if (k === 'tab' && TABS[lv]) n.tab = lv;
+    else if (k === 'index') n.tk = lv === 'all' ? 'ALL' : (TICKERS.find(t => t.ticker.toLowerCase() === lv || (LABEL[t.ticker] || '').toLowerCase() === lv || (LABEL[t.ticker] || '').toLowerCase().replace(/\s/g, '') === lv.replace(/\s/g, ''))?.ticker || (bad.push(m[0]), n.tk));
+    else if (k === 'market' && ['india', 'global', 'stocks'].includes(lv)) n.market = lv;
+    else if (k === 'mode' && MODES[lv]) n.mode = lv;
+    else if (k === 'guru') n.guru = LIB.find(g => g.id === lv || g.name.toLowerCase().includes(lv))?.id || (bad.push(m[0]), '');
+    else if (k === 'book') n.book = Object.values(BOOK).find(b => b.id === lv || b.title.toLowerCase().includes(lv))?.id || (bad.push(m[0]), '');
+    else if (k === 'style') n.style = [...new Set(CAT.map(x => x.style))].find(x => x.toLowerCase().includes(lv)) || (bad.push(m[0]), '');
+    else if (k === 'dir' && ['long', 'short'].includes(lv)) n.dir = lv === 'long' ? 'Long' : 'Short';
+    else if (k === 'hold' && HOLD[lv]) n.hold = lv;
+    else if (k === 'verdict' && VERD[lv]) n.verdict = lv;
+    else if (k === 'min' && /^\d+$/.test(v)) n.min = v;
+    else if (k === 'family') n.family = v;
+    else if (k === 'sort' && SORTS[lv]) n.sort = lv;
+    else if (k === 'view' && ['grid', 'table'].includes(lv)) n.view = lv;
+    else bad.push(m[0]);
+  }
+  n.q = words.join(' ');
+  return { n, bad };
+}
+const PRESETS = [
+  ['Working right now', 'Best last-12-month return on Nifty 50', { tab: 'trending' }],
+  ['Edge on every index', 'Significant rule sets across all four indices, as a table', { tab: 'sig', tk: 'ALL', view: 'table' }],
+  ['Survived the book', 'Out-of-sample since 2010 with at least 30 trades', { tab: 'working', min: '30' }],
+  ['Short-side ideas', 'Strategies that sell short', { dir: 'Short' }],
+  ['Quick, shallow trades', '≤ 5-bar holds sorted by smallest drawdown', { hold: 'short', sort: 'maxdd', min: '30' }],
+  ['Book by book', 'Every book with its best and median strategy', { mode: 'books' }],
+  ['Bank Nifty leaders', 'Top Sharpe on Bank Nifty', { tk: 'NIFTYBANK' }],
+  ['Needs more data', 'Rules that cannot be tested yet', { tab: 'awaiting' }],
+];
+let QERR = [];
+async function Lquery(rs) {
+  const q = toQuery();
+  return `<div class="qbar"><span class="qi">⌘</span><input id="query" value="${esc(q)}" placeholder="e.g.  tab:trending index:all dir:short hold:short sort:maxdd  rsi" spellcheck="false"><button class="qgo" id="qrun">Run</button></div>
+    <div class="qhelp">${QKEYS.map(k => `<code data-ins="${k}:">${k}:</code>`).join('')}<span>· free words search names and rules · <code data-ins='index:all '>index:all</code> <code data-ins='tab:working '>tab:working</code> <code data-ins='verdict:sig '>verdict:sig</code></span></div>
+    ${QERR.length ? `<p class="qerr">Not understood: ${QERR.map(esc).join(', ')}</p>` : ''}
+    <div class="presets">${PRESETS.map(([t, d, o]) => { const on = Object.entries(o).every(([k, v]) => S[k] === v) && Object.keys(DEF).filter(k => !(k in o) && !['layout', 'pick', 'group'].includes(k)).every(k => S[k] === DEF[k]); return `<button class="pre ${on ? 'on' : ''}" data-set="${ds({ ...Object.fromEntries(Object.keys(DEF).filter(k => !['layout'].includes(k)).map(k => [k, DEF[k]])), ...o })}"><b>${t}</b><span>${d}</span></button>`; }).join('')}</div>
+    <div class="bar"><div class="cnt">${countLine(rs)}</div>${viewSeg()}</div><p class="note">${TABS[S.tab].note}</p>${results(rs)}`;
+}
+
+// ---------------------------------------------------------------- render + events
+let busy2 = 0;
+async function render() {
+  writeHash(); const my = ++busy2;
+  document.querySelectorAll('#lay button').forEach(b => b.classList.toggle('on', b.dataset.l === S.layout));
+  $('#ldesc').innerHTML = `<b>${LAYOUTS[S.layout].name}.</b> ${LAYOUTS[S.layout].desc}`;
+  $('#status').textContent = S.market === 'india' ? `India · ${S.tk === 'ALL' ? 'all indices' : LABEL[S.tk]} · ${TABS[S.tab].name}` : `${S.market} · no data yet`;
+  $('#stage').style.opacity = .55;
+  const rs = await rows();
+  const html = await { facets: Lfacets, columns: Lcolumns, league: Lleague, matrix: Lmatrix, map: Lmap, query: Lquery }[S.layout](rs);
+  if (my !== busy2) return;
+  const hadFocus = document.activeElement?.id; const pos = document.activeElement?.selectionStart;
+  $('#stage').innerHTML = html; $('#stage').style.opacity = 1;
+  if (hadFocus && $('#' + hadFocus)) { const el = $('#' + hadFocus); el.focus(); try { el.setSelectionRange(pos, pos); } catch (e) {} }
+}
+const set = patch => { Object.assign(S, patch); if ('guru' in patch && !('book' in patch) && S.book && BOOK[S.book].guru.id !== S.guru) S.book = ''; render(); };
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-set], [data-l], [data-ins], #qrun, button, a, .tag, th'); if (!t) return;
+  const d = t.dataset;
+  if (d.l) return set({ layout: d.l, pick: '' });
+  if (d.set != null) { e.preventDefault(); return set(Object.fromEntries(new URLSearchParams(d.set))); }
+  if (d.ins) { const i = $('#query'); i.value = (i.value.trim() + ' ' + d.ins).trimStart(); i.focus(); return; }
+  if (t.id === 'qrun') { const { n, bad } = fromQuery($('#query').value); QERR = bad; S = n; return render(); }
+  // links from the shared grid/table renderers
+  if (d.sort) return set({ sort: d.sort });
+  if (d.fam) { e.preventDefault(); return set({ family: d.fam, mode: 'variants' }); }
+  if (d.book) return set({ book: d.book, guru: BOOK[d.book].guru.id, mode: 'strategies' });
+  if (d.guru) return set({ guru: d.guru, book: '', mode: 'books' });
+  if (d.guruStrats) return set({ guru: d.guruStrats, book: '', mode: 'strategies' });
+});
+document.addEventListener('change', e => { const k = e.target.dataset?.key; if (k) set({ [k]: e.target.value || (k === 'min' ? '0' : '') }); });
+let qt2; document.addEventListener('input', e => { if (e.target.id !== 'q') return; clearTimeout(qt2); qt2 = setTimeout(() => set({ q: e.target.value }), 250); });
+document.addEventListener('keydown', e => { if (e.target.id === 'query' && e.key === 'Enter') $('#qrun').click(); });
+addEventListener('hashchange', () => { readHash(); render(); });
+
+(async function init() {
+  try {
+    const get = async u => (await fetch(API + u)).json();
+    const [cat, tk, gurus] = await Promise.all([get('/api/guru/connors/strategies'), get('/api/tickers'), get('/api/gurus')]);
+    TICKERS = tk; GURUS_API = gurus;
+    CAT = cat.map((v, i) => ({ ...v, ord: i, guru: 'connors', book: 'stc9', style: v.group.split(' · ')[0] }));
+    $('#lay').innerHTML = Object.entries(LAYOUTS).map(([k, l]) => `<button data-l="${k}">${l.name}</button>`).join('') + `<a href="vault-explorer.html" class="orig">Original catalogue ↗</a>`;
+    readHash(); render();
+  } catch (e) { $('#stage').innerHTML = `<div class="empty"><b>Could not reach the Rust API</b>${esc(API)}: ${esc(e.message)}</div>`; }
+})();
+
+</script>
+</body>
+</html>

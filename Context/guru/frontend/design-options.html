@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design Options · Strategy Vault</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="vendor/fonts.css">
+<link rel="stylesheet" href="vendor/fonts-options.css">
+<style>
+* { box-sizing: border-box; }
+html, body { margin: 0; overflow-x: clip; }
+body { font: 14px/1.5 "IBM Plex Sans", system-ui, sans-serif; background: #fff; color: #111; }
+[hidden] { display: none !important; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* ---------- picker (outside the designs) */
+.picker { position: sticky; top: 0; z-index: 50; background: #ffffffee; backdrop-filter: blur(10px); border-bottom: 1px solid #e3e6ec; padding: 12px 24px; display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+.picker h1 { font: 600 15px/1 "IBM Plex Sans"; margin: 0; }
+.picker nav { display: flex; gap: 6px; flex-wrap: wrap; }
+.picker button { border: 1px solid #dfe3ea; background: #fff; border-radius: 99px; padding: 6px 14px; font: 500 13px "IBM Plex Sans"; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+.picker button.on { background: #111; color: #fff; border-color: #111; }
+.picker button i { display: inline-flex; gap: 2px; }
+.picker button i b { width: 9px; height: 9px; border-radius: 50%; display: block; }
+.spec { flex-basis: 100%; display: grid; grid-template-columns: repeat(5, auto); gap: 4px 28px; font-size: 12px; color: #555; justify-content: start; }
+.spec div b { display: block; font-weight: 600; color: #111; }
+.sw { display: inline-block; width: 16px; height: 16px; border-radius: 4px; vertical-align: middle; margin-right: 3px; border: 1px solid #0001; }
+.hint { font-size: 12px; color: #777; margin-left: auto; }
+
+.opt { position: relative; min-height: calc(100vh - 110px); overflow: hidden; isolation: isolate; }
+.frame { position: relative; max-width: 1400px; margin: 0 auto; padding: 0 36px 48px; }
+.face-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.preview-note { font-size: 11px; opacity: .7; }
+@media (prefers-reduced-motion: reduce) { .opt *, .opt::before, .opt::after { animation: none !important; } }
+
+/* ======================= 1. BRASS VAULT ======================= */
+.o1 { --paper:#f3f5f9; --ink:#0e1a33; --ink2:#4a5873; --ink3:#8793a8; --brass:#b7862f; --brass2:#d9b56a; --blue:#2a78d6; --red:#e34948; --rule:#dfe4ec;
+  background: radial-gradient(60vw 50vh at 12% 8%, #2a78d61a, transparent 60%), radial-gradient(50vw 45vh at 88% 18%, #b7862f1f, transparent 60%), var(--paper); color: var(--ink); font-family: "IBM Plex Sans"; }
+.o1::before { content: ""; position: absolute; inset: -20%; z-index: -1; background: radial-gradient(35vw 30vh at 30% 40%, #b7862f14, transparent 70%), radial-gradient(30vw 30vh at 75% 65%, #2a78d614, transparent 70%); animation: o1drift 30s ease-in-out infinite alternate; }
+@keyframes o1drift { to { transform: translate3d(6%, 4%, 0) scale(1.08); } }
+.o1 .nav { display: flex; gap: 28px; align-items: center; height: 60px; border-bottom: 1px solid var(--rule); margin: 0 -36px 0; padding: 0 36px; background: #ffffffc4; backdrop-filter: blur(12px); }
+.o1 .brand { font: 600 20px "Newsreader"; }
+.o1 .nav a { color: var(--ink2); font-size: 14px; } .o1 .nav a.on { color: var(--ink); font-weight: 500; border-bottom: 2px solid var(--brass); padding-bottom: 18px; margin-top: 20px; }
+.o1 .hero { display: flex; gap: 70px; align-items: center; padding: 70px 0 56px 60px; }
+.o1 .medal { position: relative; width: 190px; height: 190px; flex: none; }
+.o1 .medal svg { position: absolute; inset: -36%; width: 172%; height: 172%; }
+.o1 .medal .face { position: absolute; inset: 0; border-radius: 50%; overflow: hidden; box-shadow: 0 0 0 4px #fff, 0 0 0 6px var(--brass), 0 14px 40px #0e1a3340; }
+.o1 h2 { font: 600 64px/1 "Newsreader"; margin: 0 0 12px; letter-spacing: -.02em; }
+.o1 .tag { font: 500 22px/1.45 "Newsreader"; max-width: 46ch; margin: 0 0 20px; }
+.o1 .facts { display: flex; gap: 0; } .o1 .facts div { padding-right: 28px; margin-right: 28px; border-right: 1px solid var(--rule); } .o1 .facts div:last-child { border: 0; }
+.o1 .facts span { font-size: 12px; color: var(--ink3); display: block; } .o1 .facts b { font: 600 32px "Newsreader"; }
+.o1 .grid { display: grid; grid-template-columns: 380px 1fr; gap: 22px; }
+.o1 .card { background: #ffffffd0; backdrop-filter: blur(10px); border: 1px solid var(--rule); border-radius: 16px; box-shadow: 0 4px 16px #0e1a330a; }
+.o1 .li { display: grid; grid-template-columns: 1fr auto 70px; gap: 12px; align-items: center; padding: 12px 18px; border-left: 3px solid transparent; }
+.o1 .li.on { background: linear-gradient(90deg, #f6efe1, transparent); border-left-color: var(--brass); }
+.o1 .li small { display: block; color: var(--ink3); font-size: 12px; }
+.o1 .sheet { padding: 24px; }
+.o1 .kpis { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--rule); margin: 16px 0; }
+.o1 .kpis div { padding: 14px 16px 0 0; } .o1 .kpis div + div { padding-left: 16px; border-left: 1px solid var(--rule); }
+.o1 .kpis span { font-size: 12px; color: var(--ink2); display: block; } .o1 .kpis b { font-size: 28px; font-weight: 600; }
+.o1 .legends { display: flex; gap: 12px; margin: 22px 0 0; flex-wrap: wrap; }
+.o1 .chip { display: flex; gap: 10px; align-items: center; background: #ffffffc0; border: 1px solid var(--rule); border-radius: 99px; padding: 5px 16px 5px 5px; font-size: 13px; }
+.o1 .chip .m { width: 30px; height: 30px; border-radius: 50%; overflow: hidden; background: var(--ink); color: #f3e6c8; display: grid; place-items: center; font: 600 12px "Newsreader"; box-shadow: 0 0 0 2px var(--brass); }
+.o1 .chip.p { opacity: .6; border-style: dashed; }
+.dial line, .dial circle { stroke: #b7862f; } .dial text { fill: #b7862f; font: 500 6px "IBM Plex Sans"; } .dial .bolt { fill: #d9b56a; stroke: none; }
+.dial .spin { transform-origin: 100px 100px; animation: spin 120s linear infinite; } .dial .rev { transform-origin: 100px 100px; animation: spin 80s linear infinite reverse; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ======================= 2. STEEL DEPOSIT ======================= */
+.o2 { --bg:#e9e9e9; --ink:#090909; --ink2:#636466; --slate:#7d8395; --steel:#b0b0b1; --pos:#1f5fbf; --neg:#c43c3c;
+  background: var(--bg); color: var(--ink); font-family: "Archivo"; }
+.o2::before { content: ""; position: absolute; inset: 0; z-index: -1; background: repeating-linear-gradient(90deg, #0000 0 2px, #ffffff22 2px 3px), linear-gradient(180deg, #f2f2f2, #e2e2e2); }
+.o2::after { content: ""; position: absolute; top: 0; bottom: 0; width: 40%; z-index: -1; left: -40%; background: linear-gradient(100deg, transparent, #ffffff99 45%, #ffffffcc 50%, #ffffff99 55%, transparent); animation: o2sheen 9s ease-in-out infinite; }
+@keyframes o2sheen { 0% { left: -40%; } 60%, 100% { left: 110%; } }
+.o2 .nav { display: flex; justify-content: space-between; align-items: center; height: 64px; border-bottom: 2px solid var(--ink); }
+.o2 .brand { font-weight: 800; font-stretch: 125%; font-size: 18px; letter-spacing: -.01em; }
+.o2 .nav nav { display: flex; gap: 22px; font-size: 14px; color: var(--ink2); } .o2 .nav nav a.on { color: var(--ink); font-weight: 700; }
+.o2 .hero { display: grid; grid-template-columns: 1fr 260px; gap: 40px; align-items: end; padding: 56px 0 34px; border-bottom: 1px solid var(--steel); }
+.o2 h2 { font-weight: 800; font-stretch: 125%; font-size: 104px; line-height: .9; letter-spacing: -.04em; margin: 0 0 22px; }
+.o2 .tag { font-size: 20px; font-stretch: 90%; max-width: 40ch; margin: 0; color: var(--ink2); }
+.o2 .portrait { width: 260px; height: 300px; border: 2px solid var(--ink); padding: 8px; background: #f5f5f5; }
+.o2 .portrait img { filter: grayscale(1) contrast(1.05); }
+.o2 .strip { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid var(--steel); }
+.o2 .strip div { padding: 18px 0; } .o2 .strip span { font-size: 12px; color: var(--ink2); display: block; } .o2 .strip b { font-size: 34px; font-weight: 700; font-stretch: 110%; }
+.o2 h3 { font-weight: 700; font-stretch: 110%; font-size: 22px; margin: 34px 0 16px; }
+.o2 .boxes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border-top: 2px solid var(--ink); border-left: 1px solid var(--steel); }
+.o2 .box { border-right: 1px solid var(--steel); border-bottom: 1px solid var(--steel); padding: 20px 22px; background: #f4f4f4cc; position: relative; }
+.o2 .box .no { font-size: 12px; color: var(--slate); font-weight: 600; }
+.o2 .box .keyhole { position: absolute; right: 20px; top: 20px; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--steel); }
+.o2 .box h4 { font-size: 17px; font-weight: 600; margin: 6px 0 12px; min-height: 44px; }
+.o2 .box .row { display: flex; justify-content: space-between; align-items: end; }
+.o2 .box .big { font-size: 38px; font-weight: 700; font-stretch: 112%; line-height: 1; } .o2 .box .big small { font-size: 12px; font-weight: 500; color: var(--ink2); display: block; font-stretch: 100%; margin-top: 4px; }
+.o2 .legends { display: flex; gap: 0; margin-top: 30px; border: 1px solid var(--steel); }
+.o2 .legends div { flex: 1; padding: 12px 16px; border-right: 1px solid var(--steel); font-weight: 600; } .o2 .legends div:last-child { border: 0; } .o2 .legends .p { color: var(--slate); font-weight: 500; }
+
+/* ======================= 3. PERIWINKLE GLASS ======================= */
+.o3 { --bg:#f3f4f6; --ink:#050506; --ink2:#4e5263; --peri:#b5ccfc; --violet:#9473a8; --indigo:#6575a8; --lav:#aaa5b5; --pos:#4f6fd6; --neg:#d0587a;
+  background: var(--bg); color: var(--ink); font-family: "Manrope"; }
+.o3 .blob { position: absolute; z-index: -1; border-radius: 50%; filter: blur(70px); opacity: .75; }
+.o3 .b1 { width: 520px; height: 520px; background: var(--peri); left: -120px; top: 60px; animation: o3a 22s ease-in-out infinite alternate; }
+.o3 .b2 { width: 420px; height: 420px; background: #d6c3e3; right: -80px; top: 220px; animation: o3b 26s ease-in-out infinite alternate; }
+.o3 .b3 { width: 360px; height: 360px; background: #c9d6ff; left: 40%; bottom: -120px; animation: o3a 30s ease-in-out infinite alternate-reverse; }
+@keyframes o3a { to { transform: translate(140px, 80px) scale(1.15); } } @keyframes o3b { to { transform: translate(-160px, -60px) scale(.9); } }
+.o3 .nav { display: flex; justify-content: space-between; align-items: center; margin: 22px 0 26px; background: #ffffff8c; backdrop-filter: blur(18px); border: 1px solid #ffffffcc; border-radius: 20px; padding: 12px 18px; }
+.o3 .brand { font-weight: 800; font-size: 17px; } .o3 .nav nav { display: flex; gap: 6px; }
+.o3 .nav nav a { padding: 7px 14px; border-radius: 12px; font-size: 14px; color: var(--ink2); font-weight: 600; } .o3 .nav nav a.on { background: var(--ink); color: #fff; }
+.o3 .bento { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.o3 .g { background: #ffffffa6; backdrop-filter: blur(22px) saturate(1.3); border: 1px solid #ffffffd9; border-radius: 24px; padding: 22px; box-shadow: 0 10px 30px #6575a81a; }
+.o3 .hero { grid-column: span 2; grid-row: span 2; display: flex; flex-direction: column; justify-content: space-between; min-height: 330px; }
+.o3 .hero .who { display: flex; gap: 16px; align-items: center; }
+.o3 .hero .pic { width: 84px; height: 84px; border-radius: 26px; overflow: hidden; box-shadow: 0 8px 24px #6575a840; }
+.o3 h2 { font-size: 40px; font-weight: 800; letter-spacing: -.03em; margin: 0; line-height: 1.05; }
+.o3 .tag { font-size: 20px; font-weight: 600; line-height: 1.4; margin: 18px 0; color: var(--ink2); }
+.o3 .pill { display: inline-block; background: #ffffffcc; border-radius: 99px; padding: 4px 12px; font-size: 12px; font-weight: 600; color: var(--indigo); }
+.o3 .kpi span { font-size: 13px; color: var(--ink2); font-weight: 600; } .o3 .kpi b { display: block; font-size: 38px; font-weight: 800; letter-spacing: -.03em; margin-top: 6px; }
+.o3 .kpi.accent { background: linear-gradient(135deg, #6575a8, #9473a8); color: #fff; } .o3 .kpi.accent span { color: #e8e3f5; }
+.o3 .eq { grid-column: span 4; }
+.o3 .list { grid-column: span 2; } .o3 .legs { grid-column: span 2; }
+.o3 .li { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #e8eaf2; } .o3 .li:last-child { border: 0; }
+.o3 .li small { display: block; color: var(--ink2); font-size: 12px; }
+.o3 .leg { display: flex; align-items: center; gap: 12px; padding: 9px 0; } .o3 .leg .m { width: 38px; height: 38px; border-radius: 12px; background: var(--indigo); color: #fff; display: grid; place-items: center; font-weight: 800; overflow: hidden; }
+.o3 .leg.p { opacity: .55; }
+.o3 h3 { font-size: 15px; font-weight: 700; margin: 0 0 10px; }
+
+/* ======================= 4. PRIVATE BANK ======================= */
+.o4 { --bg:#e8e6ed; --ink:#0f0e0e; --ink2:#46393b; --mid:#666367; --rose:#9f7775; --mauve:#a8989a; --pos:#46607f; --neg:#9f3f3b;
+  background: var(--bg); color: var(--ink); font-family: "Instrument Sans"; }
+.o4 .lines { position: absolute; inset: 0; z-index: -1; width: 100%; height: 100%; opacity: .5; }
+.o4 .lines path { fill: none; stroke: var(--rose); stroke-width: 1.2; stroke-dasharray: 2600; stroke-dashoffset: 2600; animation: o4draw 14s ease-in-out infinite; }
+.o4 .lines path:nth-child(2) { stroke: var(--mauve); animation-delay: 3s; opacity: .7; } .o4 .lines path:nth-child(3) { stroke: #c9bfc7; animation-delay: 6s; }
+@keyframes o4draw { 0% { stroke-dashoffset: 2600; } 55%, 75% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: -2600; } }
+.o4 .nav { display: flex; justify-content: space-between; align-items: center; height: 70px; }
+.o4 .brand { font: 400 28px "Instrument Serif"; } .o4 .nav nav { display: flex; gap: 26px; font-size: 14px; color: var(--mid); } .o4 .nav nav a.on { color: var(--ink); text-decoration: underline; text-decoration-color: var(--rose); text-underline-offset: 6px; }
+.o4 .split { display: grid; grid-template-columns: 400px 1fr; gap: 56px; align-items: start; padding-top: 18px; }
+.o4 .side { position: sticky; top: 130px; }
+.o4 .portrait { width: 100%; aspect-ratio: 4/4.6; border-radius: 220px 220px 18px 18px; overflow: hidden; box-shadow: 0 30px 60px #46393b33; }
+.o4 h2 { font: 400 66px/.95 "Instrument Serif"; margin: 28px 0 14px; letter-spacing: -.01em; }
+.o4 .tag { font: italic 400 24px/1.35 "Instrument Serif"; color: var(--ink2); margin: 0 0 22px; }
+.o4 .facts { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid #0f0e0e33; padding-top: 14px; }
+.o4 .facts span { font-size: 12px; color: var(--mid); display: block; } .o4 .facts b { font: 400 36px "Instrument Serif"; }
+.o4 h3 { font: 400 34px "Instrument Serif"; margin: 26px 0 8px; }
+.o4 .ledger { border-top: 1px solid var(--ink); }
+.o4 .row { display: grid; grid-template-columns: 1fr 90px 90px 80px 90px; gap: 14px; align-items: center; padding: 16px 0; border-bottom: 1px solid #0f0e0e22; }
+.o4 .row.head { font-size: 12px; color: var(--mid); padding: 10px 0; }
+.o4 .row .n { text-align: right; font-variant-numeric: tabular-nums; }
+.o4 .row .name { font-size: 16px; } .o4 .row .name small { display: block; font-size: 12px; color: var(--mid); }
+.o4 .feature { background: #f7f5f8cc; border-radius: 18px; padding: 24px; margin-top: 26px; box-shadow: 0 10px 30px #46393b14; }
+.o4 .legends { display: flex; gap: 22px; margin-top: 28px; flex-wrap: wrap; font: 400 20px "Instrument Serif"; } .o4 .legends .p { color: var(--mid); }
+
+/* ======================= 5. EMERALD LEDGER ======================= */
+.o5 { --bg:#f4f8f5; --ink:#10231c; --ink2:#4c5f57; --em:#1f7a5c; --em2:#2fa27a; --mint:#dcefe5; --pos:#1f7a5c; --neg:#c2453c; --rule:#d5e3da;
+  background: var(--bg); color: var(--ink); font-family: "IBM Plex Sans"; }
+.o5::before { content: ""; position: absolute; inset: 0; z-index: -1; background-image: radial-gradient(#1f7a5c26 1px, transparent 1.5px); background-size: 22px 22px; animation: o5pulse 6s ease-in-out infinite; }
+@keyframes o5pulse { 50% { opacity: .35; } }
+.o5 .tape { margin: 0 -36px; background: var(--ink); color: #cfe9dc; font: 500 13px "IBM Plex Mono"; white-space: nowrap; overflow: hidden; }
+.o5 .tape div { display: inline-block; padding: 9px 0; animation: o5tape 60s linear infinite; }
+.o5 .tape span { margin: 0 22px; } .o5 .tape .up { color: #7fe0b0; } .o5 .tape .dn { color: #ff9a8f; }
+@keyframes o5tape { to { transform: translateX(-50%); } }
+.o5 .nav { display: flex; justify-content: space-between; align-items: center; height: 58px; border-bottom: 1px solid var(--rule); }
+.o5 .brand { font: 600 16px "IBM Plex Mono"; color: var(--em); } .o5 .nav nav { display: flex; gap: 20px; font-size: 14px; color: var(--ink2); } .o5 .nav nav a.on { color: var(--ink); font-weight: 600; }
+.o5 .head { display: flex; gap: 20px; align-items: center; padding: 28px 0 22px; }
+.o5 .head .pic { width: 64px; height: 64px; border-radius: 12px; overflow: hidden; outline: 2px solid var(--em); outline-offset: 3px; }
+.o5 h2 { font-size: 30px; font-weight: 600; margin: 0; letter-spacing: -.01em; } .o5 .tag { margin: 2px 0 0; color: var(--ink2); }
+.o5 .head .facts { margin-left: auto; display: flex; gap: 26px; font-family: "IBM Plex Mono"; } .o5 .facts span { font-size: 11px; color: var(--ink2); display: block; } .o5 .facts b { font-size: 24px; color: var(--em); font-weight: 500; }
+.o5 .cols { display: grid; grid-template-columns: 1fr 420px; gap: 22px; }
+.o5 .panel { background: #fff; border: 1px solid var(--rule); border-radius: 10px; }
+.o5 table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.o5 th { text-align: left; font-weight: 500; color: var(--ink2); font-size: 12px; padding: 10px 14px; border-bottom: 1px solid var(--rule); background: #f8fbf9; }
+.o5 td { padding: 11px 14px; border-bottom: 1px solid #eaf1ec; } .o5 td.n, .o5 th.n { text-align: right; font-family: "IBM Plex Mono"; }
+.o5 .bar { height: 6px; border-radius: 3px; background: var(--mint); position: relative; width: 110px; } .o5 .bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: var(--em); }
+.o5 .dumb { position: relative; width: 120px; height: 12px; } .o5 .dumb::before { content: ""; position: absolute; left: 0; right: 0; top: 5px; height: 2px; background: #e4ece7; }
+.o5 .dumb i { position: absolute; top: 1px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; } .o5 .dumb .bk { background: #9fb3aa; } .o5 .dumb .in { background: var(--em); }
+.o5 .panel h3 { font-size: 14px; margin: 0; padding: 14px 16px; border-bottom: 1px solid var(--rule); font-weight: 600; }
+.o5 .legends { display: flex; gap: 10px; flex-wrap: wrap; padding: 14px 16px; } .o5 .legends span { font: 500 12px "IBM Plex Mono"; border: 1px solid var(--rule); border-radius: 6px; padding: 5px 9px; } .o5 .legends .p { color: var(--ink2); border-style: dashed; }
+
+@media (max-width: 1000px) {
+  .spec { grid-template-columns: 1fr 1fr; }
+  .o1 .hero, .o2 .hero, .o4 .split, .o5 .cols { display: block; } .o1 .grid { grid-template-columns: 1fr; } .o1 .hero { padding-left: 50px; }
+  .o2 h2 { font-size: 60px; } .o2 .boxes { grid-template-columns: 1fr; } .o3 .bento { grid-template-columns: 1fr 1fr; } .o3 .hero, .o3 .eq, .o3 .list, .o3 .legs { grid-column: span 2; }
+  .o4 .side { position: static; } .o4 .row { grid-template-columns: 1fr 70px 70px; } .o4 .row > :nth-child(4), .o4 .row > :nth-child(5) { display: none; }
+}
+</style>
+</head>
+<body>
+<header class="picker">
+  <h1>Strategy Vault: 5 design directions</h1>
+  <nav id="pick"></nav>
+  <span class="hint">Keys 1–5 or ← → to switch · real data from the Rust API</span>
+  <div class="spec" id="spec"></div>
+</header>
+<main id="stage"></main>
+
+<script>
+const API = new URLSearchParams(location.search).get('api') || `http://${location.hostname || 'localhost'}:8090`;
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const pct = (v, d = 1, s = false) => v == null ? '–' : (s && v > 0 ? '+' : '') + (v * 100).toFixed(d) + '%';
+const fx = (v, d = 2) => v == null ? '–' : v.toFixed(d);
+const PHOTO = 'img/gurus/connors.jpg';
+const PREVIEW = ['Linda Raschke', 'Mark Minervini', 'Nicolas Darvas', "William O'Neil"];
+
+const OPTIONS = [
+  { name: 'Brass Vault', sw: ['#f3f5f9', '#0e1a33', '#b7862f', '#2a78d6'], fonts: 'Newsreader + IBM Plex Sans', anim: 'Rotating vault dial + drifting light', layout: 'Medallion hero, list + tear sheet', ref: 'Current app, refined' },
+  { name: 'Steel Deposit', sw: ['#e9e9e9', '#090909', '#7d8395', '#b0b0b1'], fonts: 'Archivo (wide display)', anim: 'Brushed-metal sheen sweep', layout: 'Editorial hero, deposit-box grid', ref: 'Dribbble · VaultX (Achraf Elkaami)' },
+  { name: 'Periwinkle Glass', sw: ['#f3f4f6', '#b5ccfc', '#9473a8', '#6575a8'], fonts: 'Manrope', anim: 'Floating blurred colour blobs', layout: 'Bento grid of frosted cards', ref: 'Dribbble · Crypto Investment App (Nixtio)' },
+  { name: 'Private Bank', sw: ['#e8e6ed', '#0f0e0e', '#9f7775', '#a8989a'], fonts: 'Instrument Serif + Sans', anim: 'Price lines drawing themselves', layout: 'Sticky portrait column + ledger', ref: 'Dribbble · Asset Management Dashboard (Extej)' },
+  { name: 'Emerald Ledger', sw: ['#f4f8f5', '#10231c', '#1f7a5c', '#dcefe5'], fonts: 'IBM Plex Sans + Mono', anim: 'Live ticker tape + dot-grid pulse', layout: 'Data-first leaderboard terminal', ref: 'Behance · Investor Hub / Finora case studies' },
+];
+
+function sparkPath(vals, w, h, pad = 2) {
+  const lo = Math.min(...vals), hi = Math.max(...vals), n = vals.length;
+  return vals.map((v, i) => `${i ? 'L' : 'M'}${(pad + i / (n - 1) * (w - 2 * pad)).toFixed(1)},${(h - pad - (v - lo) / ((hi - lo) || 1) * (h - 2 * pad)).toFixed(1)}`).join('');
+}
+function spark(vals, w, h, col) {
+  if (!vals || vals.length < 2) return '';
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><path d="${sparkPath(vals, w, h)}" fill="none" stroke="${col}" stroke-width="1.8" stroke-linejoin="round"/></svg>`;
+}
+function area(vals, w, h, col, fill) {
+  const p = sparkPath(vals, w, h, 4);
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" preserveAspectRatio="none" style="display:block;height:${h}px"><path d="${p}L${w - 4},${h}L4,${h}Z" fill="${fill}"/><path d="${p}" fill="none" stroke="${col}" stroke-width="2.2" vector-effect="non-scaling-stroke"/></svg>`;
+}
+function photo(alt) { return `<img class="face-img" src="${PHOTO}" alt="${esc(alt)}">`; }
+function dial() {
+  let t = '', nums = '';
+  for (let k = 0; k < 120; k++) { const a = k * 3 * Math.PI / 180, L = k % 10 === 0, r1 = L ? 86 : 90; t += `<line x1="${100 + r1 * Math.sin(a)}" y1="${100 - r1 * Math.cos(a)}" x2="${100 + 95 * Math.sin(a)}" y2="${100 - 95 * Math.cos(a)}" stroke-width="${L ? 1.1 : .5}"/>`; }
+  for (let k = 0; k < 12; k++) { const a = k * 30 * Math.PI / 180; nums += `<text x="${100 + 78 * Math.sin(a)}" y="${100 - 78 * Math.cos(a) + 2.5}" text-anchor="middle">${k * 5}</text>`; }
+  return `<svg viewBox="0 0 200 200" class="dial"><g class="spin"><circle cx="100" cy="100" r="98" fill="none" stroke-width=".6"/>${t}${nums}<circle cx="100" cy="100" r="70" fill="none" stroke-width=".5" stroke-dasharray="1 3"/></g><g class="rev"><circle cx="100" cy="100" r="62" fill="none" stroke-width=".8"/>${Array.from({ length: 8 }, (_, k) => { const a = k * 45 * Math.PI / 180; return `<circle class="bolt" cx="${100 + 62 * Math.sin(a)}" cy="${100 - 62 * Math.cos(a)}" r="2.2"/>`; }).join('')}</g></svg>`;
+}
+
+// ---------------------------------------------------------------- the five designs
+function o1(D) {
+  const b = D.best;
+  return `<section class="opt o1"><div class="frame">
+    <div class="nav"><span class="brand">Strategy Vault</span><a class="on">Guru's</a><a>YT Strategies</a></div>
+    <div class="hero"><div class="medal">${dial()}<div class="face">${photo(D.g.name)}</div></div>
+      <div><h2>${esc(D.g.name)}</h2><p class="tag">${esc(D.g.tagline)}</p>
+      <div class="facts"><div><span>Strategies</span><b>${D.g.strategies}</b></div><div><span>Tested on Nifty 50</span><b>${D.live}</b></div><div><span>Significant (t ≥ 2)</span><b>${D.sig}</b></div></div>
+      <div class="legends"><span class="chip"><span class="m">${photo('')}</span>${esc(D.g.name)}</span>${PREVIEW.map(n => `<span class="chip p"><span class="m">${n.split(' ').map(w => w[0]).join('')}</span>${esc(n)}</span>`).join('')}</div></div></div>
+    <div class="grid"><div class="card">${D.top.map((r, k) => `<div class="li${k ? '' : ' on'}"><div>${esc(r.c.name)}<small>${fx(r.s.trades, 0)} trades · ${pct(r.s.win_rate, 0)} win</small></div><b class="num">${pct(r.s.cagr, 1, true)}</b>${spark(r.spark, 70, 26, '#2a78d6')}</div>`).join('')}</div>
+      <div class="card sheet"><div style="font-size:24px;font-weight:600">${esc(b.c.name)}</div><div style="color:#4a5873;font-size:13px">${esc(b.c.group)} · Nifty 50</div>
+        <div class="kpis"><div><span>CAGR</span><b>${pct(b.s.cagr, 2, true)}</b></div><div><span>Sharpe</span><b>${fx(b.s.sharpe)}</b></div><div><span>Max drawdown</span><b style="color:#e34948">${pct(b.s.max_dd, 1)}</b></div><div><span>Win rate</span><b>${pct(b.s.win_rate, 1)}</b></div></div>
+        ${area(b.spark, 800, 190, '#2a78d6', '#2a78d614')}</div></div>
+  </div></section>`;
+}
+
+function o2(D) {
+  return `<section class="opt o2"><div class="frame">
+    <div class="nav"><span class="brand">STRATEGY VAULT</span><nav><a class="on">Guru's</a><a>YT Strategies</a></nav></div>
+    <div class="hero"><div><h2>${esc(D.g.name)}</h2><p class="tag">${esc(D.g.tagline)}</p></div><div class="portrait">${photo(D.g.name)}</div></div>
+    <div class="strip"><div><span>Strategies catalogued</span><b>${D.g.strategies}</b></div><div><span>Tested on Nifty 50</span><b>${D.live}</b></div><div><span>Statistically significant</span><b>${D.sig}</b></div><div><span>Best Sharpe</span><b>${fx(D.best.s.sharpe)}</b></div></div>
+    <h3>Deposit boxes, ranked by Sharpe</h3>
+    <div class="boxes">${D.top.map(r => `<div class="box"><span class="keyhole"></span><div class="no">Box ${String(r.no).padStart(2, '0')} · ${esc(r.c.group.replace('Market Timing · ', ''))}</div><h4>${esc(r.c.name)}</h4>
+      <div class="row"><div class="big">${fx(r.s.sharpe)}<small>Sharpe · ${pct(r.s.cagr, 1, true)} CAGR · ${pct(r.s.win_rate, 0)} win</small></div>${spark(r.spark, 110, 44, '#090909')}</div></div>`).join('')}</div>
+    <div class="legends"><div>${esc(D.g.name)}</div>${PREVIEW.map(n => `<div class="p">${esc(n)} <span class="preview-note">preview</span></div>`).join('')}</div>
+  </div></section>`;
+}
+
+function o3(D) {
+  const b = D.best;
+  return `<section class="opt o3"><span class="blob b1"></span><span class="blob b2"></span><span class="blob b3"></span><div class="frame">
+    <div class="nav"><span class="brand">Strategy Vault</span><nav><a class="on">Guru's</a><a>YT Strategies</a></nav></div>
+    <div class="bento">
+      <div class="g hero"><div class="who"><div class="pic">${photo(D.g.name)}</div><div><span class="pill">Legend · Swing trading</span><h2>${esc(D.g.name)}</h2></div></div>
+        <p class="tag">${esc(D.g.tagline)}</p><div style="font-size:13px;color:#4e5263">${esc(D.g.book)}</div></div>
+      <div class="g kpi accent"><span>Strategies tested</span><b>${D.live}<small style="font-size:18px;opacity:.8"> / ${D.g.strategies}</small></b></div>
+      <div class="g kpi"><span>Significant edges</span><b>${D.sig}</b></div>
+      <div class="g kpi"><span>Best Sharpe</span><b>${fx(b.s.sharpe)}</b><span>${esc(b.c.name)}</span></div>
+      <div class="g kpi"><span>Best CAGR</span><b>${pct(D.bestCagr.s.cagr, 1, true)}</b><span>${esc(D.bestCagr.c.name)}</span></div>
+      <div class="g eq"><h3>${esc(b.c.name)}, equity on Nifty 50</h3>${area(b.spark, 1200, 170, '#6575a8', '#b5ccfc55')}</div>
+      <div class="g list"><h3>Top strategies</h3>${D.top.slice(0, 5).map(r => `<div class="li"><div>${esc(r.c.name)}<small>${fx(r.s.trades, 0)} trades · Sharpe ${fx(r.s.sharpe)}</small></div>${spark(r.spark, 80, 28, '#9473a8')}</div>`).join('')}</div>
+      <div class="g legs"><h3>Legends in the vault</h3><div class="leg"><span class="m">${photo('')}</span><b>${esc(D.g.name)}</b></div>${PREVIEW.map(n => `<div class="leg p"><span class="m">${n.split(' ').map(w => w[0]).join('')}</span>${esc(n)} <span class="preview-note">· preview</span></div>`).join('')}</div>
+    </div>
+  </div></section>`;
+}
+
+function o4(D) {
+  const b = D.best, W = 1600, H = 900;
+  const wave = (seed, amp, y0) => { let p = `M0,${y0}`, y = y0; for (let x = 20; x <= W; x += 20) { y += Math.sin(x / 90 + seed) * amp * .35 + (Math.sin(x * 12.9898 + seed) * 43758.5453 % 1) * amp * .5 - amp * .2; p += `L${x},${y.toFixed(1)}`; } return p; };
+  return `<section class="opt o4"><svg class="lines" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><path d="${wave(1, 14, 620)}"/><path d="${wave(4, 10, 700)}"/><path d="${wave(7, 18, 520)}"/></svg><div class="frame">
+    <div class="nav"><span class="brand">Strategy Vault</span><nav><a class="on">Guru's</a><a>YT Strategies</a></nav></div>
+    <div class="split"><aside class="side"><div class="portrait">${photo(D.g.name)}</div><h2>${esc(D.g.name)}</h2><p class="tag">${esc(D.g.tagline)}</p>
+      <div class="facts"><div><span>Strategies</span><b>${D.g.strategies}</b></div><div><span>Tested</span><b>${D.live}</b></div><div><span>Significant</span><b>${D.sig}</b></div></div></aside>
+      <div><h3>The ledger</h3><div class="ledger"><div class="row head"><span>Strategy</span><span class="n">CAGR</span><span class="n">Sharpe</span><span class="n">Win</span><span class="n">Max DD</span></div>
+        ${D.top.map(r => `<div class="row"><span class="name">${esc(r.c.name)}<small>${esc(r.c.group)} · ${fx(r.s.trades, 0)} trades</small></span><span class="n">${pct(r.s.cagr, 1, true)}</span><span class="n">${fx(r.s.sharpe)}</span><span class="n">${pct(r.s.win_rate, 0)}</span><span class="n" style="color:#9f3f3b">${pct(r.s.max_dd, 1)}</span></div>`).join('')}</div>
+        <div class="feature"><div style="font:400 26px 'Instrument Serif'">${esc(b.c.name)}</div><div style="color:#666367;font-size:13px;margin-bottom:10px">Growth of ₹1 on Nifty 50 · Sharpe ${fx(b.s.sharpe)}</div>${area(b.spark, 900, 170, '#9f7775', '#9f777522')}</div>
+        <div class="legends"><span>${esc(D.g.name)}</span>${PREVIEW.map(n => `<span class="p">${esc(n)}</span>`).join('')}<span class="preview-note" style="font:12px 'Instrument Sans'">others: layout preview</span></div></div></div>
+  </div></section>`;
+}
+
+function o5(D) {
+  const items = D.all.map(r => `<span>${esc(r.c.name)} <span class="${r.s.cagr >= 0 ? 'up' : 'dn'}">${pct(r.s.cagr, 2, true)}</span> · Sh ${fx(r.s.sharpe)} · ${pct(r.s.win_rate, 0)} win</span>`).join('');
+  const maxSh = Math.max(...D.top.map(r => r.s.sharpe));
+  const X = v => `${Math.max(0, Math.min(100, (v - .3) / .7 * 100))}%`;
+  return `<section class="opt o5"><div class="frame">
+    <div class="tape"><div>${items}${items}</div></div>
+    <div class="nav"><span class="brand">strategy_vault</span><nav><a class="on">Guru's</a><a>YT Strategies</a></nav></div>
+    <div class="head"><div class="pic">${photo(D.g.name)}</div><div><h2>${esc(D.g.name)}</h2><p class="tag">${esc(D.g.tagline)}</p></div>
+      <div class="facts"><div><span>strategies</span><b>${D.g.strategies}</b></div><div><span>tested</span><b>${D.live}</b></div><div><span>t ≥ 2</span><b>${D.sig}</b></div></div></div>
+    <div class="cols"><div class="panel"><table><thead><tr><th>Strategy</th><th>Sharpe</th><th>Win rate: book ● vs India ●</th><th class="n">CAGR</th><th class="n">Max DD</th><th class="n">Trades</th></tr></thead><tbody>
+      ${D.top.map(r => { const bw = parseFloat(String(r.c.claim?.win || '').replace(/[^\d.]/g, '')) / 100; return `<tr><td>${esc(r.c.name)}</td><td><div class="bar"><i style="width:${Math.max(0, r.s.sharpe / maxSh * 100)}%"></i></div><span style="font:12px 'IBM Plex Mono'">${fx(r.s.sharpe)}</span></td>
+      <td><div class="dumb">${bw ? `<i class="bk" style="left:${X(bw)}"></i>` : ''}<i class="in" style="left:${X(r.s.win_rate)}"></i></div></td><td class="n" style="color:${r.s.cagr >= 0 ? '#1f7a5c' : '#c2453c'}">${pct(r.s.cagr, 2, true)}</td><td class="n" style="color:#c2453c">${pct(r.s.max_dd, 1)}</td><td class="n">${fx(r.s.trades, 0)}</td></tr>`; }).join('')}
+    </tbody></table></div>
+    <div><div class="panel"><h3>${esc(D.best.c.name)} · equity</h3><div style="padding:12px">${area(D.best.spark, 400, 160, '#1f7a5c', '#1f7a5c1c')}</div></div>
+      <div class="panel" style="margin-top:16px"><h3>Legends</h3><div class="legends"><span>${esc(D.g.name)}</span>${PREVIEW.map(n => `<span class="p">${esc(n)}</span>`).join('')}</div></div></div></div>
+  </div></section>`;
+}
+
+// ---------------------------------------------------------------- boot
+const RENDER = [o1, o2, o3, o4, o5];
+let D, cur = 0;
+async function init() {
+  const get = async u => (await fetch(API + u)).json();
+  const [gurus, cat, sum] = await Promise.all([get('/api/gurus'), get('/api/guru/connors/strategies'), get('/api/guru/connors/summary?ticker=NIFTY%2050')]);
+  const byId = Object.fromEntries(sum.map(r => [r.id, r]));
+  const live = cat.filter(c => c.status === 'live');
+  const all = live.map((c, k) => ({ c, no: k + 1, s: byId[c.id]?.stats, spark: byId[c.id]?.spark })).filter(r => r.s && r.s.trades);
+  const solid = all.filter(r => r.s.trades >= 30).sort((a, b) => b.s.sharpe - a.s.sharpe);
+  D = { g: gurus[0], all, top: solid.slice(0, 6), best: solid[0], bestCagr: [...solid].sort((a, b) => b.s.cagr - a.s.cagr)[0], live: sum.filter(r => r.stats).length, sig: all.filter(r => r.s.t_stat >= 2).length };
+  $('#pick').innerHTML = OPTIONS.map((o, k) => `<button data-k="${k}"><i>${o.sw.map(c => `<b style="background:${c}"></b>`).join('')}</i>${k + 1}. ${o.name}</button>`).join('');
+  $('#pick').querySelectorAll('button').forEach(b => b.onclick = () => show(+b.dataset.k));
+  document.addEventListener('keydown', e => { if (e.key >= '1' && e.key <= '5') show(+e.key - 1); if (e.key === 'ArrowRight') show((cur + 1) % 5); if (e.key === 'ArrowLeft') show((cur + 4) % 5); });
+  window.addEventListener('hashchange', () => { const k = +location.hash.slice(1) - 1; if (k !== cur && k >= 0 && k < 5) show(k); });
+  show(+(location.hash.slice(1) || 1) - 1);
+}
+function show(k) {
+  cur = k; history.replaceState(null, '', '#' + (k + 1));
+  document.querySelectorAll('#pick button').forEach(b => b.classList.toggle('on', +b.dataset.k === k));
+  const o = OPTIONS[k];
+  $('#spec').innerHTML = `<div><b>Colours</b>${o.sw.map(c => `<span class="sw" style="background:${c}" title="${c}"></span>`).join('')} <span style="font-family:'IBM Plex Mono';font-size:11px">${o.sw.join(' ')}</span></div><div><b>Type</b>${o.fonts}</div><div><b>Background animation</b>${o.anim}</div><div><b>Layout</b>${o.layout}</div><div><b>Reference</b>${o.ref}</div>`;
+  $('#stage').innerHTML = RENDER[k](D);
+  window.scrollTo(0, 0);
+}
+init().catch(e => { $('#stage').innerHTML = `<p style="padding:40px">Could not reach the Rust API at ${API}: ${esc(e.message)}</p>`; });
+</script>
+</body>
+</html>

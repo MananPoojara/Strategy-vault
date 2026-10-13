@@ -1,0 +1,57 @@
+/* Full-page palettes retain the existing type and card geometry. */
+:root[data-theme="midnight"] {--bg:#0d1727;--panel:#132135;--card:#182940;--ink:#edf5fd;--ink2:#bdd0e2;--ink3:#91acc5;--steel:#36516d;--rule:#263d56;--blue:#65bce9;--blue-soft:#203d57;--chart:#52c6dc;--bh:#dfb276;--green:#66d3a7;--red:#f48292;--top-grad:#182a43;--topbar:#0e1b2d;--guil:#387e9b33;--thead:#1c3048;--hover:#223b56;}
+:root[data-theme="forest"] {--bg:#eef4ed;--panel:#fbfdf9;--card:#fff;--ink:#183629;--ink2:#466354;--ink3:#718e7e;--steel:#bfd2c3;--rule:#dbe8dd;--blue:#357552;--blue-soft:#e0efe3;--chart:#3c9470;--bh:#bd9359;--green:#237e4c;--red:#bd4552;--top-grad:#e0eddf;--topbar:#f6fbf4;--guil:#35755220;--thead:#eaf3e8;--hover:#e2eee1;}
+:root[data-theme="sand"] {--bg:#f6f0e5;--panel:#fffdf8;--card:#fffcf5;--ink:#3e2b22;--ink2:#7d5d4a;--ink3:#967c69;--steel:#d7c5ad;--rule:#eadfcc;--blue:#ae582c;--blue-soft:#f5e0ca;--chart:#bf7b35;--bh:#84968c;--green:#3c8057;--red:#b63b35;--top-grad:#f1e5d2;--topbar:#fffcf5;--guil:#a9712824;--thead:#f4e9d9;--hover:#f1e4cf;}
+:root[data-theme="plum"] {--bg:#f6edf3;--panel:#fefbfe;--card:#fff;--ink:#3b2337;--ink2:#75526d;--ink3:#977a90;--steel:#d9c2d2;--rule:#eedde8;--blue:#874678;--blue-soft:#f0ddec;--chart:#a46197;--bh:#9a9e73;--green:#258368;--red:#c44369;--top-grad:#f0deeb;--topbar:#fefbfe;--guil:#87467822;--thead:#f2e5ee;--hover:#f0e0eb;}
+:root[data-theme="cobalt"] {--bg:#edf2fc;--panel:#fbfcff;--card:#fff;--ink:#172a51;--ink2:#465e8c;--ink3:#7284aa;--steel:#c2cee6;--rule:#dce4f5;--blue:#315ad6;--blue-soft:#e1e9fc;--chart:#4e7ade;--bh:#ad9577;--green:#267d67;--red:#c64557;--top-grad:#e2eafa;--topbar:#fbfcff;--guil:#315ad622;--thead:#e9effb;--hover:#dfe8fc;}
+:root[data-theme] {color-scheme:light;}
+:root[data-theme="midnight"] {color-scheme:dark;}
+:root[data-theme] :is(.period,.dbtn,.dd-btn,.dd.set .dd-btn,.lbtn,.tbl .go,.obar input,.osel select,.dfield input,.dfield select,.dselect select,.dselect select.set,.sel select.set,textarea,.tag,.btn,.chip,.dsearch input,.sel select,.search input,.menu,.cc-det,.cc-xlsx,.annotation-editor input) {background-color:var(--card);color:var(--ink);}
+:root[data-theme] :is(.tbl th,.tbl.tl th) {background:var(--thead);color:var(--ink);}
+:root[data-theme] :is(.join-item.active,.dbtn.primary,.btn.solid) {background:var(--blue);color:var(--bg);}
+:root[data-theme] :is(.legend-card,.bookcard,.box,.dist,.card,.verdict,.rgrid,.rnote,.pxread) {background-color:var(--panel);border-color:var(--steel);}
+:root[data-theme] :is(.join,.join.sm,.seg,.dcheck input) {background-color:var(--card);}
+:root[data-theme] :is(.tbl tbody tr:hover,.tbl tr:hover td,.lr:hover,.legend-card.live:hover,.join-item:hover) {background:var(--hover);}
+.print-only {display:none;}
+.page-actions {display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px;padding:14px 0 0;}
+.page-actions [role=status] {color:var(--ink2);font-size:12px;max-width:460px;}
+.page-actions input {max-width:100%;width:350px;padding:5px;background:var(--card);border:1px solid var(--steel);}
+#annotation-badges {display:flex;gap:7px;flex-wrap:wrap;margin-top:8px;}
+.annotation-editor {display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+.annotation-editor[hidden] {display:none;}
+.annotation-editor label {display:flex;align-items:center;gap:8px;}
+.annotation-editor input:not([type=checkbox]) {padding:7px;border:1px solid var(--steel);border-radius:var(--r-field);min-width:260px;}
+.ceo-badge {border:1px solid var(--blue);background:var(--blue-soft);color:var(--blue);}
+.variant-basket {margin-top:12px;align-items:flex-start;}
+.variant-basket .swg {flex-wrap:wrap;}
+.variant-basket .join {flex-wrap:wrap;}
+.metrics {grid-template-columns:repeat(7,minmax(0,1fr));}
+.metric b {font-size:28px;}
+.chart-tools,.detail-tools {display:flex;justify-content:flex-end;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0;}
+.equity-navigator {padding:12px;border:1px solid var(--rule);background:var(--card);margin-top:12px;border-radius:var(--r-field);display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;}
+.equity-navigator label {display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink2);}
+.equity-navigator input {width:100%;accent-color:var(--blue);cursor:ew-resize;}
+.equity-navigator output {grid-column:1/-1;font-size:12px;color:var(--ink2);}
+.year-shortcuts {grid-column:1/-1;display:flex;overflow-x:auto;gap:5px;padding-bottom:5px;}
+.year-shortcuts button {flex:none;}
+.detailed-stats summary {cursor:pointer;font-weight:700;font-size:15px;}
+.detailed-stats summary span {float:right;font-weight:400;font-size:12px;color:var(--ink2);}
+.detailed-stats:not([open]) {padding-top:16px;padding-bottom:16px;}
+.heat-scroll {overflow-x:auto;}
+.heat-scroll .heat2 {min-width:900px;}
+.research-author {text-decoration:none;}
+@media(max-width:1200px){.topbar{height:auto;min-height:58px;flex-wrap:wrap;gap:12px;padding-top:10px;padding-bottom:10px;}.metrics{grid-template-columns:repeat(4,minmax(0,1fr));}.status{margin-left:0;}.themes{margin-left:auto;}}
+@media(max-width:650px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr));}.metric b{font-size:25px;}.page-actions{justify-content:flex-start;}.equity-navigator{grid-template-columns:1fr;}.detailed-stats summary span{float:none;display:block;}.themes{margin-left:0;}.annotation-editor input:not([type=checkbox]){min-width:0;width:100%;}.annotation-editor label{max-width:100%;}.variant-basket .join-item{padding-left:8px;padding-right:8px;}.topbar .cats{gap:12px;}}
+@media print {
+ @page {size:A4 landscape;margin:12mm;}
+ :root[data-theme] {color-scheme:light;--top-grad:#ffffff;--bg:#ffffff;--panel:#ffffff;--card:#ffffff;--ink:#15333c;--ink2:#46626b;--ink3:#637d85;--steel:#cbd9dd;--rule:#e3edef;--blue:#146781;--blue-soft:#e8f3f6;--green:#007a56;--red:#b62c44;--thead:#edf5f7;--hover:#f3f8f9;}
+ html,body {overflow:visible!important;background:white!important;color:#15333c!important;print-color-adjust:exact;-webkit-print-color-adjust:exact;}
+ .topbar {position:static;background:white!important;backdrop-filter:none;}
+ .topbar :is(.account-tools,.themes,.status),.page-actions,.annotation-editor,.chart-tools,.detail-tools,.equity-navigator,.period :is(input,button,a),.variant-basket,.flipov,.zone-ov {display:none!important;}
+ .period,.dbtn,button {display:none!important;}.print-only {display:block;font-size:12px;color:#46626b;margin:12px 0;}
+ .page {padding:0;max-width:100%;}.box {break-inside:avoid;background:white!important;border-color:#cbd9dd!important;}
+ .tlog,.heat-scroll {max-height:none!important;overflow:visible!important;}
+ .tbl {font-size:8px!important;table-layout:auto;}.tbl td,.tbl th,.tbl.tl td {font-size:8px!important;padding:4px!important;white-space:normal!important;}
+ .tbl.tl th {position:static;}.heat2 {min-width:0!important;}.two {break-inside:avoid;}.lwc {height:300px;}.metrics {grid-template-columns:repeat(7,1fr);}.metric b {font-size:20px;}
+ .bookcard,.card {break-inside:avoid;}details {overflow:visible;}a {text-decoration:none;}.detailed-stats summary span {float:none;margin-left:15px;}
+}

@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Theme Library · Strategy Vault</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="vendor/fonts.css">
+<link rel="stylesheet" href="vendor/fonts-options.css">
+<link rel="stylesheet" href="vendor/fonts-hand.css">
+<!-- Base layout = the real app's stylesheet; the skins below only restyle it. -->
+<link rel="stylesheet" href="styles.css?v=themes1">
+<style>
+/* ================================================================
+   Library skins over the full app. Every feature comes from app.js;
+   these rules change only the look. Skin = body[data-skin].
+   ================================================================ */
+
+.two > .box:only-child { grid-column: 1 / -1; }
+
+/* ---------- skin switcher (floating) */
+.skinbar { position: fixed; z-index: 100; right: 18px; bottom: 18px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; max-width: calc(100vw - 36px);
+  background: #ffffffee; backdrop-filter: blur(10px); border: 1px solid #d5d7dc; border-radius: 99px; padding: 6px 8px 6px 14px; box-shadow: 0 8px 26px #0000002a; font: 12px "IBM Plex Sans", sans-serif; }
+.skinbar b { font-weight: 600; margin-right: 4px; color: #333; }
+.skinbar button { border: 1px solid #d5d7dc; background: #fff; color: #222; border-radius: 99px; padding: 5px 12px; font: 500 12px "IBM Plex Sans", sans-serif; cursor: pointer; }
+.skinbar button.on { background: #111; color: #fff; border-color: #111; }
+
+/* ---------- 3D objects shared by the skins */
+.lib-shelf { display: none; margin: 4px 0 34px; }
+.lib-shelf .row { display: flex; align-items: flex-end; gap: 6px; padding: 0 24px; perspective: 1400px; min-height: 320px; }
+.lib-shelf .plank { height: 24px; border-radius: 2px; }
+.lib-shelf .cap { font-size: 12px; margin-top: 8px; opacity: .75; }
+.b3 { --w: 58px; --h: 280px; --d: 200px; position: relative; width: var(--w); height: var(--h); transform-style: preserve-3d; transform-origin: bottom left; transition: transform .8s cubic-bezier(.2,.8,.2,1); cursor: pointer; flex: none; }
+.b3 .sp, .b3 .cv { position: absolute; top: 0; height: 100%; backface-visibility: hidden; }
+.b3 .sp { left: 0; width: var(--w); background: var(--c); color: var(--foil); display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 16px 0 14px; box-shadow: inset 4px 0 6px -3px #ffffff40, inset -6px 0 8px -4px #00000055; }
+.b3 .sp::before, .b3 .sp::after { content: ""; position: absolute; left: 6px; right: 6px; height: 2px; border-top: 1px solid var(--foil); border-bottom: 1px solid var(--foil); opacity: .7; }
+.b3 .sp::before { top: 30px; } .b3 .sp::after { bottom: 36px; }
+.b3 .t { writing-mode: vertical-rl; transform: rotate(180deg); font: 600 17px/1 "Newsreader", serif; white-space: nowrap; margin-top: 30px; }
+.b3 .a { font: 500 10px/1.15 "IBM Plex Sans", sans-serif; text-align: center; opacity: .85; }
+.b3.live .sp { box-shadow: inset 4px 0 6px -3px #ffffff40, inset -6px 0 8px -4px #00000055, 0 0 0 2px var(--foil); }
+.b3 .cv { left: var(--w); width: var(--d); transform-origin: left center; transform: rotateY(90deg); background: var(--c); color: var(--foil); padding: 20px 18px; display: flex; flex-direction: column; gap: 8px; box-shadow: inset 8px 0 12px -6px #00000066; }
+.b3 .cv .ph { width: 100%; height: 118px; overflow: hidden; border: 2px solid var(--foil); } .b3 .cv .ph img { width: 100%; height: 100%; object-fit: cover; filter: grayscale(1) sepia(.15); }
+.b3 .cv h4 { margin: 0; font: 600 21px/1.05 "Newsreader", serif; } .b3 .cv p { margin: 0; font: 11px/1.4 "IBM Plex Sans", sans-serif; opacity: .85; }
+.b3:hover { transform: translateY(-16px) translateX(28px) rotateY(-72deg); z-index: 5; }
+.b3.lean { transform: rotateZ(-7deg); margin-left: 18px; } .b3.lean:hover { transform: translateY(-16px) translateX(28px) rotateY(-72deg); }
+
+.lib-cover { display: none; --w: 200px; --h: 284px; --t: 30px; position: relative; width: var(--w); height: var(--h); perspective: 900px; flex: none; }
+.lib-cover .bb { position: absolute; inset: 0; transform-style: preserve-3d; transform: rotateY(-30deg); transition: transform .9s cubic-bezier(.2,.8,.2,1); }
+.lib-cover:hover .bb { transform: rotateY(-6deg); }
+.lib-cover .fr { position: absolute; inset: 0; background: var(--cover, #1f3a5f); color: var(--foil, #e8d39a); border-radius: 2px 6px 6px 2px; padding: 20px 18px; display: flex; flex-direction: column; justify-content: space-between; transform: translateZ(calc(var(--t) / 2)); box-shadow: inset 6px 0 10px -4px #00000055; overflow: hidden; }
+.lib-cover .fr::before { content: ""; position: absolute; inset: 12px; border: 1px solid currentColor; opacity: .45; pointer-events: none; }
+.lib-cover .pg { position: absolute; top: 4px; left: calc(var(--w) - var(--t) / 2 - 3px); width: var(--t); height: calc(var(--h) - 8px); transform: rotateY(90deg); background: repeating-linear-gradient(90deg, #fbfbfb 0 2px, #dcdcdc 2px 3px); }
+.lib-cover .bk { position: absolute; inset: 0; background: var(--cover, #1f3a5f); border-radius: 2px 6px 6px 2px; transform: translateZ(calc(var(--t) / -2)); box-shadow: -14px 14px 34px #00000033; }
+.lib-cover .ph { width: 100%; height: 120px; overflow: hidden; border: 2px solid currentColor; } .lib-cover .ph img { width: 100%; height: 100%; object-fit: cover; filter: grayscale(1); }
+.lib-cover h4 { margin: 0; font: 600 25px/1.02 "Newsreader", serif; } .lib-cover small { font: 11px/1.4 "IBM Plex Sans", sans-serif; opacity: .85; }
+
+/* ================================================================ 1. BOOKSHELF */
+body[data-skin="shelf"] { --foil: #e8d39a; background: radial-gradient(1000px 520px at 50% -10%, #fff7e6, transparent 70%), #f1f2f4; color: #1d2330; font-family: "IBM Plex Sans", sans-serif; }
+body[data-skin="shelf"] .topbar { background: #ffffffd9; border-bottom: 1px solid #d9dbe0; }
+body[data-skin="shelf"] .wordmark { font: 600 21px "Newsreader", serif; letter-spacing: 0; }
+body[data-skin="shelf"] .hero { border-bottom: 1px solid #d9dbe0; }
+body[data-skin="shelf"] .hero h1 { font: 600 clamp(48px, 6vw, 84px)/1 "Newsreader", serif; letter-spacing: -.02em; }
+body[data-skin="shelf"] .lede, body[data-skin="shelf"] .g-tag { font: italic 21px/1.45 "Newsreader", serif; color: #4a5162; }
+body[data-skin="shelf"] .portrait { border: 0; padding: 0; width: 220px; height: 220px; border-radius: 50%; overflow: hidden; box-shadow: 0 0 0 4px #fff, 0 0 0 6px #b58a3a, 0 14px 34px #0002; }
+body[data-skin="shelf"] .portrait .pframe img { filter: grayscale(1) sepia(.2); }
+body[data-skin="shelf"] .strip dd, body[data-skin="shelf"] .lc-stats dd { font: 600 32px "Newsreader", serif; }
+body[data-skin="shelf"] .section-h, body[data-skin="shelf"] .box-h, body[data-skin="shelf"] .sheet-title h2 { font-family: "Newsreader", serif; font-weight: 600; letter-spacing: 0; }
+body[data-skin="shelf"] .sheet-title h2 { font-size: 32px; }
+body[data-skin="shelf"] .box, body[data-skin="shelf"] .list-col, body[data-skin="shelf"] .toolbar, body[data-skin="shelf"] .legend-card { background: #fff; border: 1px solid #e1e3e8; border-top: 3px solid #1f3a5f; border-radius: 10px; box-shadow: 0 6px 20px #1d23300d; }
+body[data-skin="shelf"] .gallery { border: 0; gap: 18px; }
+body[data-skin="shelf"] .metric b { font: 600 30px "Newsreader", serif; }
+body[data-skin="shelf"] .seg button.on, body[data-skin="shelf"] .btn.primary { background: #1f3a5f; border-color: #1f3a5f; }
+body[data-skin="shelf"] .tab.on { border-color: #b58a3a; }
+body[data-skin="shelf"] .li.on { border-left-color: #b58a3a; background: #fbf6ea; }
+body[data-skin="shelf"] .verdict { border-left-color: #b58a3a; background: #fbf8f0; font-family: "Newsreader", serif; font-size: 16px; }
+body[data-skin="shelf"] .rcol { background: #fbfbfc; }
+body[data-skin="shelf"] .lib-shelf { display: block; }
+body[data-skin="shelf"] .lib-shelf .plank { background: linear-gradient(180deg, #e2cfa9, #caa972 60%, #a98652); box-shadow: 0 16px 24px -10px #6b4f2a66; }
+body[data-skin="shelf"] .guilloche { display: none; }
+body[data-skin="shelf"] { --chart-bg: #ffffff; }
+
+/* ================================================================ 2. HARDCOVER (paper + contents) */
+body[data-skin="hard"] { --foil: #e8d39a; background: #f5f5f3; color: #1a1a1a; font-family: "Newsreader", Georgia, serif; }
+body[data-skin="hard"]::before { content: ""; position: fixed; inset: 0; z-index: -1; opacity: .35; pointer-events: none; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 .35 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+body[data-skin="hard"] .topbar { background: #f5f5f3e6; border-bottom: 1px solid #1a1a1a; }
+body[data-skin="hard"] .wordmark { font: italic 600 22px "Newsreader", serif; letter-spacing: 0; }
+body[data-skin="hard"] .cat, body[data-skin="hard"] .status, body[data-skin="hard"] .toolbar, body[data-skin="hard"] .meta, body[data-skin="hard"] table, body[data-skin="hard"] .li-sub, body[data-skin="hard"] .metric span, body[data-skin="hard"] .metric i { font-family: "IBM Plex Sans", sans-serif; }
+body[data-skin="hard"] .hero h1 { font: 600 clamp(48px, 6vw, 88px)/1 "Newsreader", serif; }
+body[data-skin="hard"] .g-tag, body[data-skin="hard"] .lede { font: italic 23px/1.45 "Newsreader", serif; color: #444; }
+body[data-skin="hard"] .guru-head { grid-template-columns: 220px minmax(0, 1fr); }
+body[data-skin="hard"] .guru-head .portrait { display: none; }
+body[data-skin="hard"] .guru-head .lib-cover { display: block; grid-row: 1; grid-column: 1; }
+body[data-skin="hard"] .guru-head .hero-copy { grid-column: 2; }
+body[data-skin="hard"] .box, body[data-skin="hard"] .list-col, body[data-skin="hard"] .toolbar { background: transparent; border: 0; border-top: 2px solid #1a1a1a; border-radius: 0; box-shadow: none; padding-left: 0; padding-right: 0; }
+body[data-skin="hard"] .box-h, body[data-skin="hard"] .sheet-title h2, body[data-skin="hard"] .section-h { font-family: "Newsreader", serif; font-weight: 600; }
+body[data-skin="hard"] .box-h { font-size: 22px; }
+body[data-skin="hard"] .metric b, body[data-skin="hard"] .strip dd { font: 600 30px "Newsreader", serif; }
+body[data-skin="hard"] .li { display: grid; border-bottom: 1px dotted #bbb; }
+body[data-skin="hard"] .li-name { font: 17px "Newsreader", serif; }
+body[data-skin="hard"] .li.on { background: #fff; border-left-color: #1a1a1a; }
+body[data-skin="hard"] .verdict { font: italic 17px/1.6 "Newsreader", serif; background: transparent; border-left: 2px solid #1a1a1a; }
+body[data-skin="hard"] .rcol { background: transparent; } body[data-skin="hard"] .rgrid { border-left: 0; }
+body[data-skin="hard"] .legend-card { background: #fff; }
+body[data-skin="hard"] .guilloche { display: none; }
+body[data-skin="hard"] { --chart-bg: #f5f5f3; --cover: #1f3a5f; }
+
+/* ================================================================ 3. OPEN BOOK (panels as pages) */
+body[data-skin="open"] { background: radial-gradient(1400px 800px at 50% 20%, #f7f6f2, #dedcd5); color: #222; font-family: "Newsreader", Georgia, serif; }
+body[data-skin="open"] .topbar { background: #f7f6f2e6; border-bottom: 1px solid #cfccc4; }
+body[data-skin="open"] .wordmark { font: 600 21px "Newsreader", serif; letter-spacing: 0; }
+body[data-skin="open"] .cat, body[data-skin="open"] .status, body[data-skin="open"] .toolbar, body[data-skin="open"] table, body[data-skin="open"] .metric span, body[data-skin="open"] .metric i, body[data-skin="open"] .li-sub, body[data-skin="open"] .meta { font-family: "IBM Plex Sans", sans-serif; }
+body[data-skin="open"] .hero { border: 0; background: linear-gradient(90deg, #fdfcf9 48%, #e9e6de 50%, #fdfcf9 52%); border-radius: 8px; margin-top: 26px; box-shadow: 0 24px 40px #0000001f; padding-top: 48px; padding-bottom: 48px; }
+body[data-skin="open"] .hero h1 { font: 600 clamp(44px, 5.4vw, 78px)/1 "Newsreader", serif; }
+body[data-skin="open"] .g-tag, body[data-skin="open"] .lede { font: 19px/1.7 "Newsreader", serif; color: #333; }
+body[data-skin="open"] .g-tag::first-letter, body[data-skin="open"] .lede::first-letter { float: left; font-size: 60px; line-height: .85; padding: 6px 8px 0 0; font-weight: 600; color: #8a6a2f; }
+body[data-skin="open"] .portrait { border: 1px solid #ccc; background: #fff; padding: 6px; }
+body[data-skin="open"] .box, body[data-skin="open"] .list-col, body[data-skin="open"] .toolbar, body[data-skin="open"] .legend-card { background: linear-gradient(270deg, #fdfcf9 92%, #efece5); border: 0; border-radius: 0 8px 8px 0; box-shadow: -3px 0 0 #e9e6de, 0 14px 30px #00000017; }
+body[data-skin="open"] .list-col { background: linear-gradient(90deg, #fdfcf9 92%, #efece5); border-radius: 8px 0 0 8px; }
+body[data-skin="open"] .gallery { border: 0; gap: 22px; }
+body[data-skin="open"] .box-h, body[data-skin="open"] .sheet-title h2, body[data-skin="open"] .section-h { font-family: "Newsreader", serif; font-weight: 600; }
+body[data-skin="open"] .box-h { font-size: 21px; }
+body[data-skin="open"] .metric b, body[data-skin="open"] .strip dd { font: 600 30px "Newsreader", serif; }
+body[data-skin="open"] .verdict { font: 17px/1.7 "Newsreader", serif; background: transparent; border: 0; padding: 0; }
+body[data-skin="open"] .verdict::first-letter { float: left; font-size: 46px; line-height: .85; padding: 4px 6px 0 0; color: #8a6a2f; font-weight: 600; }
+body[data-skin="open"] .seg button.on, body[data-skin="open"] .btn.primary { background: #3a2f1d; border-color: #3a2f1d; }
+body[data-skin="open"] .li.on { border-left-color: #8a6a2f; background: #fff; }
+body[data-skin="open"] .tab.on { border-color: #8a6a2f; }
+body[data-skin="open"] .rcol { background: transparent; }
+body[data-skin="open"] .guilloche { display: none; }
+body[data-skin="open"] { --chart-bg: #fdfcf9; }
+
+/* ================================================================ 4. CARD CATALOGUE */
+body[data-skin="cards"] { background: #eceef1; color: #262a33; font-family: "IBM Plex Mono", monospace; }
+body[data-skin="cards"] .topbar { background: #e3e6eae6; border-bottom: 1px solid #c9ced6; }
+body[data-skin="cards"] .wordmark { font: 600 17px "IBM Plex Mono", monospace; letter-spacing: 0; }
+body[data-skin="cards"] .wordmark::after { content: "/"; }
+body[data-skin="cards"] .hero { border: 0; margin-top: 22px; background: linear-gradient(180deg, #d9dde3, #c9ced6); border: 1px solid #b7bdc7; border-radius: 6px; box-shadow: inset 0 1px 0 #fff, 0 10px 24px #00000014; padding-top: 36px; padding-bottom: 36px; }
+body[data-skin="cards"] .hero h1 { font: 600 clamp(36px, 4.6vw, 64px)/1.05 "IBM Plex Mono", monospace; letter-spacing: -.03em; }
+body[data-skin="cards"] .hero-copy { background: #fbfaf6; border: 3px solid #9aa1ad; border-radius: 3px; padding: 18px 22px; }
+body[data-skin="cards"] .g-tag, body[data-skin="cards"] .lede { font: italic 17px/1.5 "Newsreader", serif; color: #3a404c; }
+body[data-skin="cards"] .portrait { border: 4px solid #fff; padding: 0; transform: rotate(-2.5deg); box-shadow: 0 4px 12px #0003; }
+body[data-skin="cards"] .box, body[data-skin="cards"] .list-col, body[data-skin="cards"] .legend-card { background: #fffdf7; border: 0; border-radius: 3px; box-shadow: 0 1px 2px #0002, 0 8px 18px #0000000f; }
+body[data-skin="cards"] .box, body[data-skin="cards"] .legend-card { position: relative; }
+body[data-skin="cards"] .box::before, body[data-skin="cards"] .legend-card::before { content: ""; position: absolute; left: 0; right: 0; top: 52px; border-top: 1.5px solid #d45b5b; opacity: .7; pointer-events: none; }
+body[data-skin="cards"] .box { background-image: linear-gradient(#fffdf7 60px, transparent 60px), repeating-linear-gradient(#fffdf7 0 27px, #dbe7f1 27px 28px); }
+body[data-skin="cards"] .gallery { border: 0; gap: 22px; }
+body[data-skin="cards"] .toolbar { background: #fbfaf6; border: 1px solid #c9ced6; border-radius: 4px; }
+body[data-skin="cards"] .box-h, body[data-skin="cards"] .sheet-title h2, body[data-skin="cards"] .section-h, body[data-skin="cards"] .metric b, body[data-skin="cards"] .strip dd { font-family: "IBM Plex Mono", monospace; letter-spacing: -.02em; }
+body[data-skin="cards"] .metric b { font-size: 26px; }
+body[data-skin="cards"] .verdict { background: #fffdf7; border: 2px dashed #9aa1ad; border-left-width: 2px; font-size: 13px; }
+body[data-skin="cards"] .li { border-bottom: 1px solid #dbe7f1; } body[data-skin="cards"] .li.on { border-left-color: #d45b5b; background: #fff; }
+body[data-skin="cards"] .seg button.on, body[data-skin="cards"] .btn.primary { background: #262a33; border-color: #262a33; }
+body[data-skin="cards"] .tab.on { border-color: #d45b5b; }
+body[data-skin="cards"] .rcol { background: transparent; }
+body[data-skin="cards"] .checkline { font-family: "IBM Plex Mono", monospace; }
+body[data-skin="cards"] .guilloche { display: none; }
+body[data-skin="cards"] { --chart-bg: #fffdf7; }
+
+/* ================================================================ 5. STEEL LIBRARY (the chosen look + books) */
+body[data-skin="steel"] { --foil: #e9e9e9; }
+body[data-skin="steel"] .lib-shelf { display: block; }
+body[data-skin="steel"] .lib-shelf .plank { height: 18px; background: linear-gradient(180deg, #f7f7f7, #c9c9ca 50%, #a9a9ab); border: 1px solid #9a9a9c; box-shadow: 0 12px 20px -10px #0005; }
+body[data-skin="steel"] .guru-head { grid-template-columns: minmax(0, 1fr) 210px 260px; }
+body[data-skin="steel"] .guru-head .lib-cover { display: block; --cover: #1b1b1c; --foil: #e9e9e9; }
+body[data-skin="steel"] .lib-cover h4 { font: 800 22px/1 "Archivo", sans-serif; font-stretch: 115%; }
+body[data-skin="steel"] { --chart-bg: #f4f4f4; }
+
+@media (max-width: 980px) {
+  body[data-skin] .guru-head { grid-template-columns: 1fr !important; }
+  body[data-skin] .guru-head .lib-cover, body[data-skin] .guru-head .hero-copy { grid-column: auto !important; }
+  .skinbar { border-radius: 14px; }
+}
+/* ================================================================ 15 more book themes (token overrides) */
+body[data-gen="1"] { font-family: var(--s-body); } body[data-gen="1"] .guilloche { display: none; } body[data-gen="1"] .rcol { background: transparent; }
+body[data-gen="1"] .hero h1, body[data-gen="1"] .box-h, body[data-gen="1"] .sheet-title h2, body[data-gen="1"] .section-h, body[data-gen="1"] .legend-card h3, body[data-gen="1"] .wordmark { font-family: var(--s-head); font-weight: var(--s-hw); font-stretch: 100%; }
+body[data-gen="1"] .metric b, body[data-gen="1"] .strip dd, body[data-gen="1"] .lc-stats dd, body[data-gen="1"] .li-val { font-family: var(--s-num); font-stretch: 100%; }
+body[data-gen="1"] .lede, body[data-gen="1"] .g-tag { font-family: var(--s-body); font-stretch: 100%; }
+body[data-gen="1"] .box, body[data-gen="1"] .list-col, body[data-gen="1"] .toolbar, body[data-gen="1"] .legend-card { border-radius: var(--s-radius); }
+body[data-gen="1"] .seg button.on, body[data-gen="1"] .btn.primary { background: var(--s-accent); border-color: var(--s-accent); color: #fff; }
+body[data-gen="1"] .tab.on { border-color: var(--s-accent); } body[data-gen="1"] .li.on { border-left-color: var(--s-accent); background: var(--panel); }
+body[data-gen="1"] .verdict { border-left-color: var(--s-accent); }
+body[data-skin="leather"] { --bg:#efe6d6; --panel:#fbf6ec; --ink:#2b1d14; --ink-2:#6b5848; --ink-3:#94826f; --steel:#c9b79c; --rule-2:#e6dac6; --blue:#6e1f1f; --red:#a8322c; --s-accent:#6e1f1f; --s-head:"Newsreader", serif; --s-hw:600; --s-num:"Newsreader", serif; --s-body:"IBM Plex Sans", sans-serif; --s-radius:6px; --chart-bg:#fbf6ec; background:#efe6d6; color:#2b1d14; }
+body[data-skin="leather"] .topbar { background: #3a2418; border-bottom: 3px solid #c9a24f; }
+body[data-skin="leather"] .topbar, body[data-skin="leather"] .wordmark, body[data-skin="leather"] .cat, body[data-skin="leather"] .cat.on, body[data-skin="leather"] .status { color: #e8d39a; }
+body[data-skin="leather"] .box, body[data-skin="leather"] .list-col, body[data-skin="leather"] .toolbar, body[data-skin="leather"] .legend-card { border-top: 4px solid #6e1f1f; box-shadow: inset 0 3px 0 #c9a24f, 0 8px 22px #3a24181a; }
+body[data-skin="leather"] .hero h1 { color: #6e1f1f; } body[data-skin="leather"] .portrait { border: 3px solid #c9a24f; }
+body[data-skin="penguin"] { --bg:#f7f5f0; --panel:#ffffff; --ink:#1b1b1b; --ink-2:#555555; --ink-3:#8a8a8a; --steel:#d8d4cb; --rule-2:#ece8df; --blue:#e8762b; --red:#c43c3c; --s-accent:#e8762b; --s-head:"Archivo", sans-serif; --s-hw:800; --s-num:"Archivo", sans-serif; --s-body:"IBM Plex Sans", sans-serif; --s-radius:0; --chart-bg:#ffffff; background:#f7f5f0; color:#1b1b1b; }
+body[data-skin="penguin"] .topbar { background: #e8762b; border-bottom: 0; }
+body[data-skin="penguin"] .topbar, body[data-skin="penguin"] .wordmark, body[data-skin="penguin"] .cat, body[data-skin="penguin"] .cat.on, body[data-skin="penguin"] .status { color: #fff; }
+body[data-skin="penguin"] .hero { border-top: 26px solid #e8762b; border-bottom: 26px solid #e8762b; margin-top: 18px; }
+body[data-skin="penguin"] .box, body[data-skin="penguin"] .list-col, body[data-skin="penguin"] .toolbar, body[data-skin="penguin"] .legend-card { border-top: 10px solid #e8762b; }
+body[data-skin="notebook"] { --bg:#d9c7a3; --panel:#fbfaf5; --ink:#1f2a44; --ink-2:#4a5470; --ink-3:#7a829a; --steel:#b9a986; --rule-2:#e6e1d1; --blue:#1f2a44; --red:#c0453f; --s-accent:#1f2a44; --s-head:"Caveat", cursive; --s-hw:700; --s-num:"IBM Plex Mono", monospace; --s-body:"IBM Plex Sans", sans-serif; --s-radius:6px; --chart-bg:#fbfaf5; background:#d9c7a3; color:#1f2a44; }
+body[data-skin="notebook"] .box, body[data-skin="notebook"] .list-col, body[data-skin="notebook"] .legend-card { background-image: linear-gradient(#dbe6f2 1px, transparent 1px), linear-gradient(90deg, #dbe6f2 1px, transparent 1px); background-size: 20px 20px; background-color: #fbfaf5; }
+body[data-skin="notebook"] .hero h1 { font-size: clamp(56px, 8vw, 110px); } body[data-skin="notebook"] .box-h { font-size: 26px; } body[data-skin="notebook"] .sheet-title h2 { font-size: 40px; }
+body[data-skin="notebook"] .topbar { background: #c4b08a; border-bottom: 2px solid #1f2a44; }
+body[data-skin="journal"] { --bg:#e7e2d6; --panel:#fbf9f3; --ink:#24324d; --ink-2:#4d5a73; --ink-3:#7d8597; --steel:#c9c2b0; --rule-2:#e6e0d2; --blue:#c0453f; --red:#c0453f; --s-accent:#c0453f; --s-head:"Caveat", cursive; --s-hw:700; --s-num:"IBM Plex Mono", monospace; --s-body:"Newsreader", serif; --s-radius:4px; --chart-bg:#fbf9f3; background:#e7e2d6; color:#24324d; }
+body[data-skin="journal"] .box, body[data-skin="journal"] .legend-card { background-image: linear-gradient(90deg, transparent 34px, #e6a0a0 34px 35.5px, transparent 35.5px), repeating-linear-gradient(transparent 0 27px, #c9d8ea 27px 28px); background-color: #fbf9f3; padding-left: 46px; }
+body[data-skin="journal"] .hero h1 { font-size: clamp(56px, 8vw, 110px); } body[data-skin="journal"] .box-h { font-size: 26px; } body[data-skin="journal"] .sheet-title h2 { font-size: 40px; }
+body[data-skin="ledger"] { --bg:#dfe6dc; --panel:#f6faf2; --ink:#1d3a2a; --ink-2:#4f6b58; --ink-3:#7b9183; --steel:#b9cdb4; --rule-2:#d6e6d0; --blue:#2f5a3d; --red:#b43a34; --s-accent:#2f5a3d; --s-head:"Newsreader", serif; --s-hw:600; --s-num:"IBM Plex Mono", monospace; --s-body:"IBM Plex Sans", sans-serif; --s-radius:0; --chart-bg:#f6faf2; background:#dfe6dc; color:#1d3a2a; }
+B td + td, B th + th { border-left: 1px solid #e3a3a3; } B tr:nth-child(even) td { background: #eef6ea; }
+B th { border-top: 2px solid #2f5a3d; border-bottom: 2px solid #2f5a3d; color: #2f5a3d; }
+body[data-skin="ledger"] .box, body[data-skin="ledger"] .list-col, body[data-skin="ledger"] .toolbar, body[data-skin="ledger"] .legend-card { border: 1px solid #b9cdb4; border-top: 3px double #2f5a3d; }
+body[data-skin="encyclo"] { --bg:#f4f1ea; --panel:#fffdf8; --ink:#14213d; --ink-2:#4a5873; --ink-3:#8793a8; --steel:#d6cdb6; --rule-2:#ece6d8; --blue:#1f2f5c; --red:#a8322c; --s-accent:#1f2f5c; --s-head:"Newsreader", serif; --s-hw:600; --s-num:"Newsreader", serif; --s-body:"Newsreader", serif; --s-radius:2px; --chart-bg:#fffdf8; background:#f4f1ea; color:#14213d; }
+body[data-skin="encyclo"] .topbar { background: #1f2f5c; border-bottom: 3px solid #b08a3c; }
+body[data-skin="encyclo"] .topbar, body[data-skin="encyclo"] .wordmark, body[data-skin="encyclo"] .cat, body[data-skin="encyclo"] .cat.on, body[data-skin="encyclo"] .status { color: #e8d39a; }
+body[data-skin="encyclo"] .box, body[data-skin="encyclo"] .list-col, body[data-skin="encyclo"] .toolbar, body[data-skin="encyclo"] .legend-card { border-top: 3px double #b08a3c; }
+body[data-skin="encyclo"] .verdict { columns: 2; column-gap: 28px; }
+body[data-skin="encyclo"] .metric span, body[data-skin="encyclo"] .li-sub, B table, body[data-skin="encyclo"] .meta { font-family: "IBM Plex Sans", sans-serif; }
+body[data-skin="pink"] { --bg:#fff1e5; --panel:#fff7ef; --ink:#33302e; --ink-2:#66605c; --ink-3:#8f8782; --steel:#e2cfbd; --rule-2:#f2e2d2; --blue:#0d7680; --red:#cc0000; --s-accent:#0d7680; --s-head:"Newsreader", serif; --s-hw:600; --s-num:"Newsreader", serif; --s-body:"IBM Plex Sans", sans-serif; --s-radius:0; --chart-bg:#fff7ef; background:#fff1e5; color:#33302e; }
+body[data-skin="pink"] .topbar { background: #fff1e5; border-bottom: 3px solid #33302e; } body[data-skin="pink"] .wordmark { font-size: 24px; letter-spacing: 0; }
+body[data-skin="pink"] .box, body[data-skin="pink"] .list-col, body[data-skin="pink"] .toolbar, body[data-skin="pink"] .legend-card { border: 0; border-top: 1px solid #33302e; box-shadow: none; }
+body[data-skin="pink"] .hero { border-bottom: 3px double #33302e; }
+body[data-skin="parchment"] { --bg:#e9dcbf; --panel:#f5ead0; --ink:#3b2a17; --ink-2:#6a5539; --ink-3:#94805f; --steel:#cdb88f; --rule-2:#e3d3b0; --blue:#7a2e2e; --red:#7a2e2e; --s-accent:#7a2e2e; --s-head:"Newsreader", serif; --s-hw:600; --s-num:"Newsreader", serif; --s-body:"Newsreader", serif; --s-radius:3px; --chart-bg:#f5ead0; background:#e9dcbf; color:#3b2a17; }
+body[data-skin="parchment"] { background: radial-gradient(1200px 700px at 50% 20%, #f2e7cc, #dcc79c) fixed; }
+body[data-skin="parchment"] .verdict::first-letter, body[data-skin="parchment"] .g-tag::first-letter { float: left; font: 600 50px/.85 "Newsreader", serif; color: #fff; background: #7a2e2e; padding: 6px 8px; margin: 4px 8px 0 0; border: 2px solid #c9a24f; }
+body[data-skin="parchment"] .hero h1 { font-style: italic; color: #7a2e2e; } body[data-skin="parchment"] .box, body[data-skin="parchment"] .list-col, body[data-skin="parchment"] .legend-card { box-shadow: inset 0 0 40px #c9a77a55; }
+body[data-skin="dewey"] { --bg:#e7e3d8; --panel:#fbf8ee; --ink:#2e2a22; --ink-2:#5f584a; --ink-3:#8a8272; --steel:#c8c1ae; --rule-2:#e6e0cf; --blue:#8a2b2b; --red:#8a2b2b; --s-accent:#8a2b2b; --s-head:"IBM Plex Mono", monospace; --s-hw:600; --s-num:"IBM Plex Mono", monospace; --s-body:"IBM Plex Mono", monospace; --s-radius:3px; --chart-bg:#fbf8ee; background:#e7e3d8; color:#2e2a22; }
+body[data-skin="dewey"] .box { position: relative; }
+body[data-skin="dewey"] .box::after { content: ""; position: absolute; left: 50%; bottom: 8px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: #e7e3d8; box-shadow: inset 0 1px 2px #0003; }
+body[data-skin="dewey"] .hero h1 { letter-spacing: -.04em; text-transform: uppercase; font-size: clamp(36px, 5vw, 66px); }
+body[data-skin="pulp"] { --bg:#f1e3b8; --panel:#fbf1d2; --ink:#1c1c1c; --ink-2:#4b4636; --ink-3:#7a7360; --steel:#d6c48e; --rule-2:#eadbad; --blue:#c1272d; --red:#c1272d; --s-accent:#c1272d; --s-head:"Archivo", sans-serif; --s-hw:800; --s-num:"Archivo", sans-serif; --s-body:"IBM Plex Sans", sans-serif; --s-radius:0; --chart-bg:#fbf1d2; background:#f1e3b8; color:#1c1c1c; }
+body[data-skin="pulp"] .hero h1 { text-transform: uppercase; color: #c1272d; text-shadow: 3px 3px 0 #1c1c1c; }
+body[data-skin="pulp"] .box, body[data-skin="pulp"] .list-col, body[data-skin="pulp"] .toolbar, body[data-skin="pulp"] .legend-card { border: 2px solid #1c1c1c; border-top: 8px solid #c1272d; box-shadow: 5px 5px 0 #1c1c1c; }
+body[data-skin="pulp"] .box-h, body[data-skin="pulp"] .sheet-title h2 { text-transform: uppercase; }
+body[data-skin="paper"] { --bg:#ffffff; --panel:#ffffff; --ink:#000000; --ink-2:#333333; --ink-3:#666666; --steel:#999999; --rule-2:#e5e5e5; --blue:#000000; --red:#b00000; --s-accent:#000000; --s-head:"Newsreader", serif; --s-hw:600; --s-num:"Newsreader", serif; --s-body:"Newsreader", serif; --s-radius:0; --chart-bg:#ffffff; background:#ffffff; color:#000000; }
+body[data-skin="paper"] .box, body[data-skin="paper"] .list-col, body[data-skin="paper"] .toolbar, body[data-skin="paper"] .legend-card { border: 0; border-top: 1px solid #000; box-shadow: none; }
+B #sheet { counter-reset: sec; } B #sheet .box-h { counter-increment: sec; } B #sheet .box-h::before { content: counter(sec) ". "; }
+body[data-skin="paper"] .hero h1 { font-weight: 500; font-size: clamp(40px, 5vw, 64px); } body[data-skin="paper"] .g-tag, body[data-skin="paper"] .lede { font-style: italic; }
+body[data-skin="moleskine"] { --bg:#ece9e2; --panel:#fbf9f4; --ink:#1a1a1a; --ink-2:#555555; --ink-3:#888888; --steel:#d6d2c8; --rule-2:#ebe7de; --blue:#1a1a1a; --red:#b4473f; --s-accent:#1a1a1a; --s-head:"Instrument Serif", serif; --s-hw:400; --s-num:"Instrument Serif", serif; --s-body:"Instrument Sans", sans-serif; --s-radius:12px; --chart-bg:#fbf9f4; background:#ece9e2; color:#1a1a1a; }
+body[data-skin="moleskine"] .list-col, body[data-skin="moleskine"] .box { box-shadow: 0 10px 26px #00000014; } body[data-skin="moleskine"] .box { position: relative; }
+body[data-skin="moleskine"] .box::after { content: ""; position: absolute; top: -2px; bottom: -2px; right: 22px; width: 7px; background: #1a1a1a; border-radius: 3px; opacity: .85; pointer-events: none; }
+body[data-skin="moleskine"] .hero h1 { font-size: clamp(56px, 7vw, 100px); } body[data-skin="moleskine"] .metric b, body[data-skin="moleskine"] .strip dd { font-size: 36px; }
+body[data-skin="bunko"] { --bg:#f3efe6; --panel:#fbf8f1; --ink:#2b2b2b; --ink-2:#5c5850; --ink-3:#8a857a; --steel:#d8d1c2; --rule-2:#ebe5d8; --blue:#c0392b; --red:#c0392b; --s-accent:#c0392b; --s-head:"Newsreader", serif; --s-hw:600; --s-num:"Newsreader", serif; --s-body:"IBM Plex Sans", sans-serif; --s-radius:2px; --chart-bg:#fbf8f1; background:#f3efe6; color:#2b2b2b; }
+body[data-skin="bunko"] .hero-copy { position: relative; }
+body[data-skin="bunko"] .hero-copy::after { content: "\9451"; position: absolute; right: 0; top: 0; width: 64px; height: 64px; border: 3px solid #c0392b; color: #c0392b; display: grid; place-items: center; font: 600 34px serif; transform: rotate(-6deg); opacity: .85; }
+body[data-skin="bunko"] .box, body[data-skin="bunko"] .list-col, body[data-skin="bunko"] .toolbar, body[data-skin="bunko"] .legend-card { border: 1px solid #d8d1c2; border-top: 2px solid #c0392b; }
+body[data-skin="deco"] { --bg:#f2efe6; --panel:#fbfaf4; --ink:#1e2a26; --ink-2:#4d5a55; --ink-3:#7f8a85; --steel:#cfc3a0; --rule-2:#e8e2cf; --blue:#1f5c4a; --red:#a8322c; --s-accent:#1f5c4a; --s-head:"Instrument Serif", serif; --s-hw:400; --s-num:"Instrument Serif", serif; --s-body:"IBM Plex Sans", sans-serif; --s-radius:0; --chart-bg:#fbfaf4; background:#f2efe6; color:#1e2a26; }
+body[data-skin="deco"] .topbar { background: #1f5c4a; border-bottom: 3px solid #b8963e; }
+body[data-skin="deco"] .topbar, body[data-skin="deco"] .wordmark, body[data-skin="deco"] .cat, body[data-skin="deco"] .cat.on, body[data-skin="deco"] .status { color: #f2e6c4; }
+body[data-skin="deco"] .box, body[data-skin="deco"] .list-col, body[data-skin="deco"] .toolbar, body[data-skin="deco"] .legend-card { border: 1px solid #b8963e; box-shadow: inset 0 0 0 4px #fbfaf4, inset 0 0 0 5px #b8963e; }
+body[data-skin="deco"] .hero h1, body[data-skin="deco"] .box-h, body[data-skin="deco"] .sheet-title h2, body[data-skin="deco"] .section-h { text-transform: uppercase; letter-spacing: .1em; }
+body[data-skin="deco"] .hero h1 { font-size: clamp(40px, 5.4vw, 74px); }
+body[data-skin="binder"] { --bg:#e9edf2; --panel:#ffffff; --ink:#1f2937; --ink-2:#4b5563; --ink-3:#9ca3af; --steel:#d1d5db; --rule-2:#e5e7eb; --blue:#2563eb; --red:#dc2626; --s-accent:#2563eb; --s-head:"Manrope", sans-serif; --s-hw:800; --s-num:"Manrope", sans-serif; --s-body:"Manrope", sans-serif; --s-radius:10px; --chart-bg:#ffffff; background:#e9edf2; color:#1f2937; }
+body[data-skin="binder"] .box { padding-left: 52px; background-image: radial-gradient(circle at 22px 50px, #e9edf2 0 7px, #c4cad3 7.5px 8.5px, transparent 9px), radial-gradient(circle at 22px calc(100% - 50px), #e9edf2 0 7px, #c4cad3 7.5px 8.5px, transparent 9px); background-repeat: no-repeat; }
+body[data-skin="binder"] .tab { border-radius: 10px 10px 0 0; padding: 8px 14px; background: #dbe3ee; margin-right: 4px; border-bottom: 0; }
+body[data-skin="binder"] .tab:nth-child(2) { background: #fde68a; } body[data-skin="binder"] .tab:nth-child(3) { background: #bbf7d0; } body[data-skin="binder"] .tab:nth-child(4) { background: #fecaca; }
+body[data-skin="binder"] .tab.on { background: #fff; box-shadow: 0 -3px 0 #2563eb inset; }
+
+/* ---------------- per-theme 3D book objects: shelf of spines + cover on every theme */
+body .lib-shelf { display: block; } body .lib-shelf .plank { background: var(--plank, linear-gradient(180deg,#e2cfa9,#caa972 60%,#a98652)); box-shadow: 0 16px 24px -10px #0005; }
+body[data-gen="1"] .guru-head, body[data-skin="open"] .guru-head, body[data-skin="cards"] .guru-head { grid-template-columns: minmax(0, 1fr) 210px 260px; }
+body[data-gen="1"] .guru-head .lib-cover, body[data-skin="open"] .guru-head .lib-cover, body[data-skin="cards"] .guru-head .lib-cover { display: block; }
+body[data-skin="open"] .lib-cover { --cover: #8a6a2f; --foil: #fdfcf9; } body[data-skin="cards"] .lib-cover { --cover: #9aa1ad; --foil: #fffdf7; }
+body[data-skin="open"] { --plank: linear-gradient(180deg,#d8cfbd,#b8ad96); } body[data-skin="cards"] { --plank: linear-gradient(180deg,#c9ced6,#9aa1ad); } body[data-skin="hard"] { --plank: linear-gradient(180deg,#d9d6cf,#b8b4aa); }
+body[data-skin="leather"] { --plank: linear-gradient(180deg,#6b4a2e,#4a3020); } body[data-skin="leather"] .lib-cover { --cover: #5a1a1a; --foil: #e8d39a; } body[data-skin="leather"] .lib-cover .fr { color: #e8d39a; } body[data-skin="leather"] .b3 { --foil: #e8d39a; }
+body[data-skin="leather"] .lib-cover .fr { background: radial-gradient(circle at 30% 20%, #7a2a2a, #4a1414); box-shadow: inset 0 0 0 6px #4a1414, inset 0 0 0 8px #c9a24f, inset 6px 0 10px -4px #0008; }
+body[data-skin="penguin"] { --plank: linear-gradient(180deg,#f3f3f3,#d8d8d8); } body[data-skin="penguin"] .lib-cover { --cover: #ffffff; --foil: #1b1b1b; } body[data-skin="penguin"] .lib-cover .fr { color: #1b1b1b; } body[data-skin="penguin"] .b3 { --foil: #1b1b1b; }
+body[data-skin="penguin"] .lib-cover .fr { background: linear-gradient(#e8762b 0 24%, #fff 24% 76%, #e8762b 76%); color: #1b1b1b; } body[data-skin="penguin"] .lib-cover .fr::before { display: none; } body[data-skin="penguin"] .lib-cover .ph { height: 96px; border-color: #1b1b1b; } body[data-skin="penguin"] .lib-cover h4 { font: 800 21px/1 "Archivo", sans-serif; }
+body[data-skin="notebook"] { --plank: linear-gradient(180deg,#b9a986,#9a8a68); } body[data-skin="notebook"] .lib-cover { --cover: #c4a878; --foil: #1f2a44; } body[data-skin="notebook"] .lib-cover .fr { color: #1f2a44; } body[data-skin="notebook"] .b3 { --foil: #1f2a44; }
+body[data-skin="notebook"] .lib-cover .fr { background: #c4a878; } body[data-skin="notebook"] .lib-cover .fr::after { content: ""; position: absolute; top: 0; bottom: 0; right: 28px; width: 9px; background: #1f2a44; border-radius: 2px; } body[data-skin="notebook"] .lib-cover h4 { font: 700 30px/1 "Caveat", cursive; }
+body[data-skin="journal"] { --plank: linear-gradient(180deg,#8a7a62,#6a5a44); } body[data-skin="journal"] .lib-cover { --cover: #24324d; --foil: #fbf9f3; } body[data-skin="journal"] .lib-cover .fr { color: #fbf9f3; } body[data-skin="journal"] .b3 { --foil: #fbf9f3; }
+body[data-skin="journal"] .lib-cover .fr::after { content: ""; position: absolute; top: 0; bottom: 0; right: 26px; width: 8px; background: #c0453f; border-radius: 2px; } body[data-skin="journal"] .lib-cover h4 { font: 700 30px/1 "Caveat", cursive; }
+body[data-skin="ledger"] { --plank: linear-gradient(180deg,#5a6b55,#3d4b39); } body[data-skin="ledger"] .lib-cover { --cover: #1d3a2a; --foil: #e8d39a; } body[data-skin="ledger"] .lib-cover .fr { color: #e8d39a; } body[data-skin="ledger"] .b3 { --foil: #e8d39a; }
+body[data-skin="ledger"] .lib-cover .fr { box-shadow: inset 0 0 0 10px #1d3a2a, inset 0 0 0 11px #e8d39a; } body[data-skin="ledger"] .lib-cover .ph { display: none; } body[data-skin="ledger"] .lib-cover .fr > div:last-child { background: #f6faf2; color: #1d3a2a; padding: 10px; border: 1px solid #e8d39a; } body[data-skin="ledger"] .lib-cover h4 { font-family: "IBM Plex Mono", monospace; font-size: 18px; }
+body[data-skin="encyclo"] { --plank: linear-gradient(180deg,#7a6a52,#5a4a36); } body[data-skin="encyclo"] .lib-cover { --cover: #1f2f5c; --foil: #e8d39a; } body[data-skin="encyclo"] .lib-cover .fr { color: #e8d39a; } body[data-skin="encyclo"] .b3 { --foil: #e8d39a; }
+body[data-skin="encyclo"] .lib-cover .fr { background: linear-gradient(#1f2f5c 0 8%, #b08a3c 8% 10%, #1f2f5c 10% 90%, #b08a3c 90% 92%, #1f2f5c 92%); }
+body[data-skin="pink"] { --plank: linear-gradient(180deg,#e2cfbd,#cbb59f); } body[data-skin="pink"] .lib-cover { --cover: #fff1e5; --foil: #33302e; } body[data-skin="pink"] .lib-cover .fr { color: #33302e; } body[data-skin="pink"] .b3 { --foil: #1b1b1b; }
+body[data-skin="pink"] .lib-cover .fr { border: 1px solid #33302e; } body[data-skin="pink"] .lib-cover .fr::before { inset: 10px 10px auto 10px; height: 0; border: 0; border-top: 3px double #33302e; } body[data-skin="pink"] .lib-cover h4 { font: 600 24px/1 "Newsreader", serif; } body[data-skin="pink"] .b3 .sp { color: #33302e; }
+body[data-skin="parchment"] { --plank: linear-gradient(180deg,#6b4a2e,#4a3020); } body[data-skin="parchment"] .lib-cover { --cover: #4a2e1a; --foil: #e8c87a; } body[data-skin="parchment"] .lib-cover .fr { color: #e8c87a; } body[data-skin="parchment"] .b3 { --foil: #e8c87a; }
+body[data-skin="parchment"] .lib-cover .fr { background: radial-gradient(circle at 40% 30%, #6a4428, #3a2212); } body[data-skin="parchment"] .lib-cover .fr::after { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 0 0, #c9a24f 0 14px, transparent 15px), radial-gradient(circle at 100% 0, #c9a24f 0 14px, transparent 15px), radial-gradient(circle at 0 100%, #c9a24f 0 14px, transparent 15px), radial-gradient(circle at 100% 100%, #c9a24f 0 14px, transparent 15px); pointer-events: none; }
+body[data-skin="dewey"] { --plank: linear-gradient(180deg,#a8a090,#8a8272); } body[data-skin="dewey"] .lib-cover { --cover: #8a8272; --foil: #fbf8ee; } body[data-skin="dewey"] .lib-cover .fr { color: #fbf8ee; } body[data-skin="dewey"] .b3 { --foil: #fbf8ee; }
+body[data-skin="dewey"] .lib-cover h4 { font-family: "IBM Plex Mono", monospace; font-size: 18px; } body[data-skin="dewey"] .lib-cover .fr > div:last-child::before { content: "QA 76.9 C67"; display: block; font: 600 11px "IBM Plex Mono"; margin-bottom: 6px; }
+body[data-skin="pulp"] { --plank: linear-gradient(180deg,#7a6a40,#5a4a2a); } body[data-skin="pulp"] .lib-cover { --cover: #c1272d; --foil: #fbf1d2; } body[data-skin="pulp"] .lib-cover .fr { color: #fbf1d2; } body[data-skin="pulp"] .b3 { --foil: #fbf1d2; }
+body[data-skin="pulp"] .lib-cover .fr { border: 4px solid #1c1c1c; } body[data-skin="pulp"] .lib-cover .fr::before { display: none; } body[data-skin="pulp"] .lib-cover h4 { font: 800 24px/1 "Archivo", sans-serif; text-transform: uppercase; text-shadow: 2px 2px 0 #1c1c1c; } body[data-skin="pulp"] .lib-cover .ph img { filter: grayscale(1) contrast(1.4) sepia(.4); }
+body[data-skin="paper"] { --plank: linear-gradient(180deg,#e5e5e5,#cfcfcf); } body[data-skin="paper"] .lib-cover { --cover: #ffffff; --foil: #000000; } body[data-skin="paper"] .lib-cover .fr { color: #000000; } body[data-skin="paper"] .b3 { --foil: #1b1b1b; }
+body[data-skin="paper"] .lib-cover .fr { border: 1px solid #000; text-align: center; } body[data-skin="paper"] .lib-cover .fr::before { display: none; } body[data-skin="paper"] .lib-cover h4 { font: 600 20px/1.15 "Newsreader", serif; } body[data-skin="paper"] .b3 .sp { color: #000; border: 1px solid #0003; }
+body[data-skin="moleskine"] { --plank: linear-gradient(180deg,#d6d2c8,#bdb8ad); } body[data-skin="moleskine"] .lib-cover { --cover: #1a1a1a; --foil: #ece9e2; } body[data-skin="moleskine"] .lib-cover .fr { color: #ece9e2; } body[data-skin="moleskine"] .b3 { --foil: #ece9e2; }
+body[data-skin="moleskine"] .lib-cover .fr { border-radius: 4px 14px 14px 4px; } body[data-skin="moleskine"] .lib-cover .fr::before { display: none; } body[data-skin="moleskine"] .lib-cover .fr::after { content: ""; position: absolute; top: 0; bottom: 0; right: 24px; width: 8px; background: #000; box-shadow: 0 0 0 1px #333; } body[data-skin="moleskine"] .lib-cover h4 { font: 400 26px/1 "Instrument Serif", serif; }
+body[data-skin="bunko"] { --plank: linear-gradient(180deg,#c9b99a,#a8987a); } body[data-skin="bunko"] .lib-cover { --cover: #f3efe6; --foil: #2b2b2b; } body[data-skin="bunko"] .lib-cover .fr { color: #2b2b2b; } body[data-skin="bunko"] .b3 { --foil: #1b1b1b; }
+body[data-skin="bunko"] .lib-cover .fr::after { content: "\9451"; position: absolute; right: 14px; bottom: 14px; width: 40px; height: 40px; border: 2px solid #c0392b; color: #c0392b; display: grid; place-items: center; font: 600 22px serif; } body[data-skin="bunko"] .lib-cover h4 { font-size: 22px; } body[data-skin="bunko"] .b3 .sp { color: #2b2b2b; }
+body[data-skin="deco"] { --plank: linear-gradient(180deg,#3a3a3a,#1e1e1e); } body[data-skin="deco"] .lib-cover { --cover: #1f5c4a; --foil: #e8cf8a; } body[data-skin="deco"] .lib-cover .fr { color: #e8cf8a; } body[data-skin="deco"] .b3 { --foil: #e8cf8a; }
+body[data-skin="deco"] .lib-cover .fr { background: repeating-conic-gradient(from 0deg at 50% 100%, #1f5c4a 0 6deg, #1a5040 6deg 12deg); box-shadow: inset 0 0 0 8px #1f5c4a, inset 0 0 0 9px #e8cf8a, inset 0 0 0 13px #1f5c4a, inset 0 0 0 14px #e8cf8a; } body[data-skin="deco"] .lib-cover .fr::before { display: none; } body[data-skin="deco"] .lib-cover h4 { font: 400 22px/1.05 "Instrument Serif", serif; text-transform: uppercase; letter-spacing: .1em; }
+body[data-skin="binder"] { --plank: linear-gradient(180deg,#d1d5db,#9ca3af); } body[data-skin="binder"] .lib-cover { --cover: #2563eb; --foil: #ffffff; } body[data-skin="binder"] .lib-cover .fr { color: #ffffff; } body[data-skin="binder"] .b3 { --foil: #ffffff; }
+body[data-skin="binder"] .lib-cover .fr { border-radius: 4px 10px 10px 4px; padding-left: 34px; } body[data-skin="binder"] .lib-cover .fr::before { inset: 0 auto 0 0; width: 22px; border: 0; opacity: 1; background: radial-gradient(circle at 11px 25%, #e5e7eb 0 6px, #6b7280 6.5px 7.5px, transparent 8px), radial-gradient(circle at 11px 50%, #e5e7eb 0 6px, #6b7280 6.5px 7.5px, transparent 8px), radial-gradient(circle at 11px 75%, #e5e7eb 0 6px, #6b7280 6.5px 7.5px, transparent 8px); } body[data-skin="binder"] .lib-cover h4 { font: 800 22px/1.05 "Manrope", sans-serif; }
+/* ---------------- theme dock */
+.dock { position: fixed; z-index: 120; top: 0; right: 0; bottom: 0; width: 258px; background: #ffffff; border-left: 1px solid #d5d7dc; box-shadow: -10px 0 30px #0000001a; display: flex; flex-direction: column; font: 13px "IBM Plex Sans", sans-serif; color: #1d2330; transition: transform .3s; }
+.dock.min { transform: translateX(258px); }
+.dock .dh { padding: 14px 14px 10px; border-bottom: 1px solid #e5e7eb; } .dock .dh b { font: 600 15px "IBM Plex Sans"; display: block; } .dock .dh span { font-size: 12px; color: #6b7280; }
+.dock .dl { overflow: auto; padding: 8px; display: grid; gap: 6px; align-content: start; }
+.dock .th { display: grid; grid-template-columns: 54px 1fr; gap: 10px; align-items: center; padding: 6px; border: 1px solid #e5e7eb; border-radius: 8px; cursor: pointer; background: #fff; text-align: left; font: inherit; color: inherit; }
+.dock .th:hover { border-color: #9ca3af; } .dock .th.on { border-color: #111; box-shadow: 0 0 0 2px #111 inset; }
+.dock .sw { position: relative; height: 40px; border-radius: 5px; overflow: hidden; border: 1px solid #0001; display: grid; place-items: center; font-size: 17px; font-weight: 700; }
+.dock .sw i { position: absolute; left: 0; right: 0; top: 0; height: 9px; }
+.dock .th b { display: block; font-weight: 600; font-size: 13px; } .dock .th small { color: #6b7280; font-size: 11px; line-height: 1.3; display: block; }
+.dock .tg { position: absolute; left: -38px; top: 14px; width: 38px; height: 40px; border: 1px solid #d5d7dc; border-right: 0; border-radius: 8px 0 0 8px; background: #fff; cursor: pointer; font: 600 16px sans-serif; box-shadow: -4px 2px 10px #0000001a; }
+body.has-dock { padding-right: 258px; } body.has-dock.dock-min { padding-right: 0; }
+.dock .df { padding: 10px 14px; border-top: 1px solid #e5e7eb; font-size: 11.5px; color: #6b7280; }
+@media (max-width: 980px) { .dock { top: auto; left: 0; width: auto; height: 150px; border-left: 0; border-top: 1px solid #d5d7dc; } .dock .dl { grid-auto-flow: column; grid-auto-columns: 220px; } .dock.min { transform: translateY(150px); } .dock .tg { left: auto; right: 14px; top: -38px; border-radius: 8px 8px 0 0; border: 1px solid #d5d7dc; border-bottom: 0; } body.has-dock { padding-right: 0; padding-bottom: 150px; } }
+</style>
+</head>
+<body data-skin="shelf" class="has-dock">
+<header class="topbar">
+  <a class="wordmark" href="#/">STRATEGY VAULT</a>
+  <nav class="cats" aria-label="Categories">
+    <a class="cat on" href="#/" aria-current="page">Guru's</a>
+    <span class="cat off" title="Your company's research, coming next">YT Strategies <em>soon</em></span>
+  </nav>
+  <span class="status" id="status" aria-live="polite"></span>
+</header>
+
+<!-- Guru's: gallery of legends -->
+<main class="page" id="view-gallery" hidden>
+  <section class="hero gallery-hero">
+    <div class="guilloche" id="gal-guilloche" aria-hidden="true"></div>
+    <div class="hero-copy">
+      <h1>Guru's</h1>
+      <p class="lede">Trading legends, their books turned into exact rules, and every rule tested on Indian index data. Nothing paraphrased, nothing curve-fitted.</p>
+    </div>
+  </section>
+  <dl class="strip" id="vault-counts"></dl>
+  <div class="lib-shelf" id="lib-shelf"></div>
+  <h2 class="section-h">Legends in the vault</h2>
+  <div class="gallery" id="gallery"></div>
+</main>
+
+<!-- One legend -->
+<main class="page" id="view-guru" hidden>
+  <nav class="crumbs"><a href="#/">Guru's</a><span>/</span><span id="crumb-name"></span></nav>
+  <section class="hero guru-head">
+    <div class="guilloche" id="g-guilloche" aria-hidden="true"></div>
+    <div class="hero-copy">
+      <h1 id="g-name"></h1>
+      <p id="g-tag" class="g-tag"></p>
+      <p id="g-book" class="g-book"></p>
+    </div>
+    <div class="lib-cover" id="lib-cover"></div>
+    <div class="portrait" id="g-portrait"></div>
+  </section>
+  <dl class="strip" id="g-facts"></dl>
+
+  <form class="toolbar" id="runbar">
+    <div class="seg idx" id="tickers" role="radiogroup" aria-label="Index"></div>
+    <label>From <input type="date" id="from"></label>
+    <label>To <input type="date" id="to"></label>
+    <label title="Transaction cost in basis points, charged on entry and again on exit">Cost <input type="number" id="cost" value="0" min="0" step="1"> bps</label>
+    <button type="submit" class="btn primary">Run backtests</button>
+  </form>
+
+  <nav class="tabs" role="tablist">
+    <button type="button" role="tab" data-tab="strategies" class="tab on">Strategies</button>
+    <button type="button" role="tab" data-tab="compare" class="tab">Book vs India</button>
+    <button type="button" role="tab" data-tab="thesis" class="tab">Thesis</button>
+    <button type="button" role="tab" data-tab="blocked" class="tab">Not testable <span id="blocked-n" class="count"></span></button>
+  </nav>
+
+  <section class="panel-tab" id="tab-strategies">
+    <div class="split">
+      <div class="list-col">
+        <div class="list-tools">
+          <input type="search" id="q" placeholder="Filter strategies" aria-label="Filter strategies">
+          <select id="sort" aria-label="Sort strategies">
+            <option value="book">Course order</option>
+            <option value="sharpe">Sharpe</option>
+            <option value="cagr">CAGR</option>
+            <option value="win_rate">Win rate</option>
+            <option value="profit_factor">Profit factor</option>
+            <option value="trades">Trades</option>
+          </select>
+        </div>
+        <div class="list" id="list"></div>
+      </div>
+      <div class="sheet" id="sheet"></div>
+    </div>
+  </section>
+  <section class="panel-tab" id="tab-compare" hidden></section>
+  <section class="panel-tab" id="tab-thesis" hidden></section>
+  <section class="panel-tab" id="tab-blocked" hidden></section>
+</main>
+
+<footer class="foot">Library edition of the Strategy Vault: same rules, stats and charts as the main app, computed in Rust on NSE index data. Charts by <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts</a>.</footer>
+
+<aside class="dock" id="dock" aria-label="Theme library"><button class="tg" id="dtg" type="button" title="Hide / show themes">&rsaquo;</button>
+  <div class="dh"><b>Theme library &middot; <span id="dn"></span></b><span>Click a theme: the whole app redraws in it, with every stat and chart.</span></div>
+  <div class="dl" id="skinbar" role="radiogroup"></div>
+  <div class="df">Alt + &larr; / &rarr; cycles themes. Your choice is remembered.</div></aside>
+
+<script src="vendor/lightweight-charts-4.2.0.js"></script>
+<script src="app.js?v=themes1"></script>
+<script>
+// ------------------------------------------------------------------
+// Library skins on top of the unchanged app. app.js provides every
+// feature; this script only (1) swaps chart colours per skin,
+// (2) adds the 3D shelf / hardcover, (3) re-renders on skin change.
+// ------------------------------------------------------------------
+const SKINS = {
+  shelf: { label: 'Bookshelf', c: { blue: '#1f3a5f', orange: '#b58a3a', red: '#b4473f', ink: '#1d2330', ink2: '#4a5162', ink3: '#7b8292', rule: '#d9dbe0', rule2: '#eceef2' } },
+  hard:  { label: 'Hardcover', c: { blue: '#1f3a5f', orange: '#9a948a', red: '#a8322c', ink: '#1a1a1a', ink2: '#555', ink3: '#888', rule: '#cfcfcf', rule2: '#e6e6e3' } },
+  open:  { label: 'Open Book', c: { blue: '#8a6a2f', orange: '#9fa6b2', red: '#a8322c', ink: '#222', ink2: '#555', ink3: '#8b877d', rule: '#d8d3c8', rule2: '#ece8df' } },
+  cards: { label: 'Card Catalogue', c: { blue: '#2f6b4a', orange: '#9aa1ad', red: '#c0453f', ink: '#262a33', ink2: '#5d6472', ink3: '#7d8594', rule: '#c9ced6', rule2: '#dbe7f1' } },
+  steel: { label: 'Steel Library', c: { blue: '#2f5a8f', orange: '#8a90a0', red: '#c43c3c', ink: '#090909', ink2: '#636466', ink3: '#8b8d93', rule: '#b0b0b1', rule2: '#dcdcdd' } },
+};
+SKINS.shelf.desc = 'Wooden shelf, 3D spines, gold ring'; SKINS.shelf.sw = ['#1f3a5f', '#ffffff', 'Aa'];
+SKINS.hard.desc = 'Paper texture, 3D hardcover'; SKINS.hard.sw = ['#1f3a5f', '#f5f5f3', 'Aa'];
+SKINS.open.desc = 'Pages, spine shading, drop caps'; SKINS.open.sw = ['#8a6a2f', '#fdfcf9', 'Aa'];
+SKINS.cards.desc = 'Drawer label, lined index cards'; SKINS.cards.sw = ['#d45b5b', '#fffdf7', 'Aa'];
+SKINS.steel.desc = 'Steel Deposit + guilloche, 3D cover'; SKINS.steel.sw = ['#090909', '#f4f4f4', 'Aa'];
+SKINS.leather = { label: 'Leather & Gilt', desc: 'Oxblood leather, gilt rules, cream paper', gen: true, sw: ['#6e1f1f', '#fbf6ec', 'Aa'], c: { blue: '#6e1f1f', orange: '#a89070', red: '#a8322c', ink: '#2b1d14', ink2: '#6b5848', ink3: '#94826f', rule: '#c9b79c', rule2: '#e6dac6' } };
+SKINS.penguin = { label: 'Penguin Classic', desc: 'Orange bands, white cover, bold sans', gen: true, sw: ['#e8762b', '#ffffff', 'Aa'], c: { blue: '#e8762b', orange: '#9a948a', red: '#c43c3c', ink: '#1b1b1b', ink2: '#555555', ink3: '#8a8a8a', rule: '#d8d4cb', rule2: '#ece8df' } };
+SKINS.notebook = { label: 'Field Notebook', desc: 'Kraft cover, grid paper, handwriting', gen: true, sw: ['#c4b08a', '#fbfaf5', 'Aa'], c: { blue: '#1f2a44', orange: '#a89a78', red: '#c0453f', ink: '#1f2a44', ink2: '#4a5470', ink3: '#7a829a', rule: '#b9a986', rule2: '#dbe6f2' } };
+SKINS.journal = { label: 'Trade Journal', desc: 'Lined paper, red margin, handwriting', gen: true, sw: ['#c0453f', '#fbf9f3', 'Aa'], c: { blue: '#24324d', orange: '#a59c8a', red: '#c0453f', ink: '#24324d', ink2: '#4d5a73', ink3: '#7d8597', rule: '#c9c2b0', rule2: '#c9d8ea' } };
+SKINS.ledger = { label: 'Accounting Ledger', desc: 'Green-ruled ledger, red-ink losses', gen: true, sw: ['#2f5a3d', '#f6faf2', '12'], c: { blue: '#2f5a3d', orange: '#9ab29f', red: '#b43a34', ink: '#1d3a2a', ink2: '#4f6b58', ink3: '#7b9183', rule: '#b9cdb4', rule2: '#d6e6d0' } };
+SKINS.encyclo = { label: 'Encyclopedia', desc: 'Navy and gold, two-column serif', gen: true, sw: ['#1f2f5c', '#fffdf8', 'Aa'], c: { blue: '#1f2f5c', orange: '#b0a58a', red: '#a8322c', ink: '#14213d', ink2: '#4a5873', ink3: '#8793a8', rule: '#d6cdb6', rule2: '#ece6d8' } };
+SKINS.pink = { label: 'Financial Paper', desc: 'Salmon newsprint, serif, teal data', gen: true, sw: ['#0d7680', '#fff1e5', 'Aa'], c: { blue: '#0d7680', orange: '#b3a395', red: '#cc0000', ink: '#33302e', ink2: '#66605c', ink3: '#8f8782', rule: '#e2cfbd', rule2: '#f2e2d2' } };
+SKINS.parchment = { label: 'Manuscript', desc: 'Aged parchment, illuminated capitals', gen: true, sw: ['#7a2e2e', '#f5ead0', 'Aa'], c: { blue: '#7a2e2e', orange: '#a8916a', red: '#7a2e2e', ink: '#3b2a17', ink2: '#6a5539', ink3: '#94805f', rule: '#cdb88f', rule2: '#e3d3b0' } };
+SKINS.dewey = { label: 'Dewey Index', desc: 'Library card stock, typewriter', gen: true, sw: ['#8a2b2b', '#fbf8ee', 'Aa'], c: { blue: '#8a2b2b', orange: '#a59d8a', red: '#8a2b2b', ink: '#2e2a22', ink2: '#5f584a', ink3: '#8a8272', rule: '#c8c1ae', rule2: '#e6e0cf' } };
+SKINS.pulp = { label: 'Pulp Paperback', desc: 'Yellowed paper, red titles, hard shadows', gen: true, sw: ['#c1272d', '#fbf1d2', 'AA'], c: { blue: '#c1272d', orange: '#8f8463', red: '#c1272d', ink: '#1c1c1c', ink2: '#4b4636', ink3: '#7a7360', rule: '#d6c48e', rule2: '#eadbad' } };
+SKINS.paper = { label: 'Academic Paper', desc: 'SSRN-style: white, serif, numbered sections', gen: true, sw: ['#000000', '#ffffff', '§1'], c: { blue: '#000000', orange: '#999999', red: '#b00000', ink: '#000000', ink2: '#333333', ink3: '#666666', rule: '#999999', rule2: '#e5e5e5' } };
+SKINS.moleskine = { label: 'Moleskine', desc: 'Soft cream, elastic band, elegant serif', gen: true, sw: ['#1a1a1a', '#fbf9f4', 'Aa'], c: { blue: '#1a1a1a', orange: '#9a958b', red: '#b4473f', ink: '#1a1a1a', ink2: '#555555', ink3: '#888888', rule: '#d6d2c8', rule2: '#ebe7de' } };
+SKINS.bunko = { label: 'Bunko', desc: 'Washi paper, vermilion seal', gen: true, sw: ['#c0392b', '#fbf8f1', '鑑'], c: { blue: '#c0392b', orange: '#a59d8f', red: '#c0392b', ink: '#2b2b2b', ink2: '#5c5850', ink3: '#8a857a', rule: '#d8d1c2', rule2: '#ebe5d8' } };
+SKINS.deco = { label: 'Art Deco Library', desc: 'Emerald and gold, geometric frames', gen: true, sw: ['#1f5c4a', '#fbfaf4', 'Aa'], c: { blue: '#1f5c4a', orange: '#b8a77a', red: '#a8322c', ink: '#1e2a26', ink2: '#4d5a55', ink3: '#7f8a85', rule: '#cfc3a0', rule2: '#e8e2cf' } };
+SKINS.binder = { label: 'Ring Binder', desc: 'Index tabs, punched holes, clean sans', gen: true, sw: ['#2563eb', '#ffffff', 'Aa'], c: { blue: '#2563eb', orange: '#9ca3af', red: '#dc2626', ink: '#1f2937', ink2: '#4b5563', ink3: '#9ca3af', rule: '#d1d5db', rule2: '#e5e7eb' } };
+SKINS.leather.spines = ['#5a1a1a', '#3a2418', '#6e3b1f', '#2e3b2a', '#4a2a3a'];
+SKINS.penguin.spines = ['#e8762b', '#e8762b', '#2e7d8c', '#c43c3c', '#7a8b3a'];
+SKINS.notebook.spines = ['#c4a878', '#b59a6a', '#a88c5c', '#d0b98a', '#8f7a52'];
+SKINS.journal.spines = ['#24324d', '#c0453f', '#3a5a40', '#5a4a6a', '#2d4f5c'];
+SKINS.ledger.spines = ['#1d3a2a', '#2f5a3d', '#5a1f1f', '#1d3a2a', '#3a4a2a'];
+SKINS.encyclo.spines = ['#1f2f5c', '#1f2f5c', '#1f2f5c', '#1f2f5c', '#1f2f5c'];
+SKINS.pink.spines = ['#fff1e5', '#ffe4cc', '#f5d6bc', '#fff1e5', '#ead2bb'];
+SKINS.parchment.spines = ['#4a2e1a', '#5a1f1f', '#3a3a1a', '#2a2a3a', '#5a3a1a'];
+SKINS.dewey.spines = ['#8a8272', '#6b6455', '#8a2b2b', '#5f584a', '#9a917e'];
+SKINS.pulp.spines = ['#c1272d', '#1c1c1c', '#d98a1f', '#c1272d', '#2a4a7a'];
+SKINS.paper.spines = ['#f4f4f4', '#e8e8e8', '#ffffff', '#ececec', '#f8f8f8'];
+SKINS.moleskine.spines = ['#1a1a1a', '#2a2a2a', '#7a2e2e', '#1f3a5f', '#1a1a1a'];
+SKINS.bunko.spines = ['#f3efe6', '#c0392b', '#e8e2d4', '#2b2b2b', '#d8cfbd'];
+SKINS.deco.spines = ['#1f5c4a', '#1e2a26', '#b8963e', '#1f5c4a', '#2a4a5c'];
+SKINS.binder.spines = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#7c3aed'];
+const PREVIEW_SPINES = [
+  ['Linda Raschke', 'Street Smarts', '#7a2e2e'], ['Mark Minervini', 'Trade Like a Wizard', '#2f5140'],
+  ['Nicolas Darvas', 'How I Made $2,000,000', '#8a6a2f'], ["William O'Neil", 'How to Make Money in Stocks', '#4a5563'], ['Jesse Livermore', 'How to Trade in Stocks', '#5b3b5e'],
+];
+
+// charts: the app hard-codes a panel background; give each skin its own.
+// (The library object is frozen, so wrap the app's baseChart instead.)
+const _baseChart = baseChart;
+baseChart = function (el, opts) {
+  const ch = _baseChart(el, opts);
+  const bg = getComputedStyle(document.body).getPropertyValue('--chart-bg').trim() || '#ffffff';
+  ch.applyOptions({ layout: { background: { color: bg }, textColor: C.ink3 }, grid: { horzLines: { color: C.rule2 }, vertLines: { visible: false } } });
+  return ch;
+};
+
+function spine(title, author, color, cls, cover) {
+  return `<div class="b3 ${cls}" style="--c:${color};--h:${248 + (title.length * 7) % 58}px;--w:${52 + (title.length * 3) % 16}px"><div class="sp"><span class="t">${esc(title)}</span><span class="a">${esc(author)}</span></div><div class="cv">${cover}</div></div>`;
+}
+function drawShelf() {
+  const g = S.guru; if (!g) return;
+  const steel = document.body.dataset.skin === 'steel';
+  const sk = SKINS[document.body.dataset.skin] || {}, pal = sk.spines;
+  const live = spine(g.name, 'Swing Trading College IX', steel ? '#1b1b1c' : pal ? pal[0] : '#1f3a5f', 'live',
+    `<div class="ph"><img src="img/gurus/${g.id}.jpg" alt=""></div><h4>${esc(g.name)}</h4><p>${esc(g.book)}</p><p>Click to open</p>`);
+  const others = PREVIEW_SPINES.map(([n, b, c], k) => spine(n, b, steel ? ['#3a3a3c', '#58585b', '#2c2c2e', '#6b6b6e', '#444446'][k] : pal ? pal[(k + 1) % pal.length] : c, k === 3 ? 'lean' : '', `<h4>${esc(n)}</h4><p>${esc(b)}</p><p>Layout preview · not converted yet</p>`)).join('');
+  $('#lib-shelf').innerHTML = `<div class="row">${live}${others}</div><div class="plank"></div><div class="cap">Hover a book to pull it out. Only ${esc(g.name)} is converted so far; the others show how the shelf fills up.</div>`;
+  $('#lib-shelf .b3.live').onclick = () => { location.hash = `#/${g.id}`; };
+}
+function drawCover() {
+  const g = S.guru; if (!g || $('#lib-cover').innerHTML) return;
+  $('#lib-cover').innerHTML = `<div class="bb"><div class="bk"></div><div class="pg"></div><div class="fr"><div class="ph"><img src="img/gurus/${g.id}.jpg" alt=""></div><div><h4>Swing Trading College IX</h4><small>${esc(g.name)} · 2010 · 14 sessions</small></div></div></div>`;
+}
+
+// hook the app's renderers (they are plain global functions)
+const _gallery = renderGallery, _head = renderGuruHead;
+renderGallery = function () { _gallery(); drawShelf(); };
+renderGuruHead = function () { _head(); drawCover(); };
+
+function applySkin(name, rerender) {
+  if (!SKINS[name]) name = 'shelf';
+  document.body.dataset.skin = name;
+  document.body.dataset.gen = SKINS[name].gen ? '1' : '';
+  const dn = $('#dn'); if (dn) dn.textContent = `${Object.keys(SKINS).indexOf(name) + 1}/${Object.keys(SKINS).length} ${SKINS[name].label}`;
+  Object.assign(C, SKINS[name].c);
+  try { localStorage.setItem('vault-skin', name); } catch (e) {}
+  document.querySelectorAll('#skinbar button').forEach(b => b.classList.toggle('on', b.dataset.s === name));
+  try { history.replaceState(null, '', location.pathname + '?skin=' + name + location.hash); } catch (e) {}
+  if (!rerender || !S.guru) return;
+  if (!$('#view-gallery').hidden) renderGallery();
+  else { renderList(); if (S.sel) openStrategy(S.sel, false); }
+}
+$('#skinbar').insertAdjacentHTML('beforeend', Object.entries(SKINS).map(([k, v], i) => `<button type="button" class="th" data-s="${k}"><span class="sw" style="background:${v.sw[1]};color:${v.sw[0]}"><i style="background:${v.sw[0]}"></i>${esc(v.sw[2])}</span><span><b>${i + 1}. ${esc(v.label)}</b><small>${esc(v.desc)}</small></span></button>`).join(''));
+$('#dtg').onclick = () => { $('#dock').classList.toggle('min'); document.body.classList.toggle('dock-min'); $('#dtg').innerHTML = $('#dock').classList.contains('min') ? '&lsaquo;' : '&rsaquo;'; S.charts.forEach(ch => ch.applyOptions({ width: ch._el.clientWidth })); };
+addEventListener('keydown', e => { if (!e.altKey || !['ArrowLeft', 'ArrowRight'].includes(e.key)) return; e.preventDefault(); const ks = Object.keys(SKINS), i = ks.indexOf(document.body.dataset.skin); applySkin(ks[(i + (e.key === 'ArrowRight' ? 1 : ks.length - 1)) % ks.length], true); });
+$('#skinbar').querySelectorAll('button').forEach(b => b.onclick = () => applySkin(b.dataset.s, true));
+let start = new URLSearchParams(location.search).get('skin');
+try { start = start || localStorage.getItem('vault-skin'); } catch (e) {}
+applySkin(start || 'shelf', false);
+</script>
+</body>
+</html>

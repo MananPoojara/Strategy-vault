@@ -1,0 +1,56 @@
+import test from 'node:test';
+import {projectLegacy} from './legacy-response.mjs';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
+import { homedir } from 'node:os';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+const appDirectory=fileURLToPath(new URL('..',import.meta.url));
+const envFile=process.env.VAULT_ENV_FILE || `${homedir()}/.cache/strategy-vault-webapp/.env`;
+const env=Object.fromEntries((await readFile(envFile,'utf8')).split('\n').filter(x=>x&&!x.startsWith('#')).map(x=>{const i=x.indexOf('=');return[x.slice(0,i),x.slice(i+1)];}));
+const base=process.env.VAULT_TEST_URL || env.VAULT_PUBLIC_URL;
+async function call(path,{cookie='',method='GET',body,origin=base,headers={}}={}){
+ const response=await fetch(base+path,{method,headers:{...(cookie?{Cookie:cookie}:{}),...(method!=='GET'?{Origin:origin}:{}),...headers},body,redirect:'manual'});
+ const text=await response.text();return{status:response.status,headers:response.headers,text,json:()=>JSON.parse(text)};
+}
+async function signIn(email,password){const response=await call('/api/auth/sign-in/email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password})});assert.equal(response.status,200,response.text);return response.headers.getSetCookie().map(x=>x.split(';')[0]).join('; ');}
+const fixture=randomBytes(5).toString('hex'),key=`smoke.${fixture}`,password=randomBytes(20).toString('hex');
+const emails=['viewer','researcher'].map(role=>`${role}.${fixture}@smoke.vault.local`);
+let admin,viewer,researcher;
+await test('Full-stack authentication, permissions, persistence and engine compatibility',async t=>{
+ try {
+  await t.test('health checks database and both engines',async()=>assert.equal((await call('/healthz')).status,200));
+  await t.test('page redirects and engine requires authentication',async()=>{assert.equal((await call('/')).status,303);assert.equal((await call('/api/in/tickers')).status,401);assert.equal((await call('/api/app/me')).status,401);assert.equal((await call('/internal/session')).status,401);assert.equal((await call('/login.html')).status,200);});
+  await t.test('public signup is closed',async()=>assert.equal((await call('/api/auth/sign-up/email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'Unauthorized',email:'invalid@vault.local',password})})).status,403));
+  await t.test('incorrect login is rejected',async()=>assert.equal((await call('/api/auth/sign-in/email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:env.VAULT_ADMIN_EMAIL,password:'wrong-password-123'})})).status,401));
+  await t.test('administrator can sign in and receives an HttpOnly cookie',async()=>{admin=await signIn(env.VAULT_ADMIN_EMAIL,env.VAULT_ADMIN_PASSWORD);const me=await call('/api/app/me',{cookie:admin});assert.equal(me.status,200);assert.equal(me.json().user.role,'admin');const login=await call('/api/auth/sign-in/email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:env.VAULT_ADMIN_EMAIL,password:env.VAULT_ADMIN_PASSWORD})});assert.match(login.headers.get('set-cookie'),/httponly/i);assert.match(login.headers.get('set-cookie'),/samesite=lax/i);});
+  await t.test('administrator can create viewer and researcher accounts',async()=>{for(const [i,role] of ['viewer','researcher'].entries()){const result=await call('/api/app/admin/users',{cookie:admin,method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:`Smoke ${role}`,email:emails[i],password,role})});assert.equal(result.status,201,result.text);assert.equal(result.json().role,role);}viewer=await signIn(emails[0],password);researcher=await signIn(emails[1],password);});
+  await t.test('account creation validates roles and passwords',async()=>{const result=await call('/api/app/admin/users',{cookie:admin,method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'Invalid',email:'invalid@vault.local',password:'short',role:'owner'})});assert.equal(result.status,400);});
+  await t.test('non-administrators cannot provision or list accounts',async()=>{assert.equal((await call('/api/app/admin/users',{cookie:viewer})).status,403);assert.equal((await call('/admin.html',{cookie:researcher})).status,403);assert.equal((await call('/api/app/admin/users',{cookie:researcher,method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).status,403);});
+  await t.test('notes are database backed and shared with readers',async()=>{const saved=await call('/api/in/notes?key='+key,{cookie:researcher,method:'POST',headers:{'Content-Type':'text/plain'},body:'Research conclusion ✓'});assert.equal(saved.status,200,saved.text);assert.equal((await call('/api/in/notes?key='+key,{cookie:admin})).text,'Research conclusion ✓');assert.equal((await call('/api/us/notes?key='+key,{cookie:viewer})).text,'Research conclusion ✓');});
+  await t.test('viewer cannot change conclusions or optimize',async()=>{assert.equal((await call('/api/in/notes?key='+key,{cookie:viewer,method:'POST',body:'Overwrite'})).status,403);assert.equal((await call('/api/in/guru/connors/optimize?id=f1a&ticker=NIFTY+50',{cookie:viewer})).status,403);assert.equal((await call('/api/in/notes?key='+key,{cookie:admin})).text,'Research conclusion ✓');});
+  await t.test('write requests reject absent and foreign origins',async()=>{for(const origin of ['https://untrusted.example','']){assert.equal((await call('/api/in/notes?key='+key,{cookie:admin,method:'POST',origin,body:'Overwrite'})).status,403);}assert.equal((await call('/api/in/guru/connors/optimize?id=f1a',{cookie:admin,headers:{'sec-fetch-site':'cross-site'}})).status,403);});
+  await t.test('notes reject path traversal',async()=>assert.equal((await call('/api/in/notes?key=..%2Fsecret',{cookie:admin})).status,400));
+  await t.test('settings persist separately for each account',async()=>{const result=await call('/api/app/settings',{cookie:researcher,method:'PUT',headers:{'Content-Type':'application/json'},body:'{"theme":"lagoon"}'});assert.equal(result.status,200);assert.equal((await call('/api/app/me',{cookie:researcher})).json().settings.theme,'lagoon');assert.equal((await call('/api/app/me',{cookie:viewer})).json().settings.theme,'aqua');const view=await call('/api/app/settings',{cookie:researcher,method:'PUT',headers:{'Content-Type':'application/json'},body:'{"lastView":"#/strategies?region=us"}'});assert.equal(view.status,200);const settings=(await call('/api/app/me',{cookie:researcher})).json().settings;assert.equal(settings.theme,'lagoon');assert.equal(settings.lastView,'#/strategies?region=us');assert.equal((await call('/api/app/settings',{cookie:admin,method:'PUT',headers:{'Content-Type':'application/json'},body:'{"theme":"invalid"}'})).status,400);});
+  await t.test('new whole-page themes persist in PostgreSQL',async()=>{const result=await call('/api/app/settings',{cookie:researcher,method:'PUT',headers:{'Content-Type':'application/json'},body:'{"theme":"midnight"}'});assert.equal(result.status,200,result.text);assert.equal((await call('/api/app/me',{cookie:researcher})).json().settings.theme,'midnight');});
+  await t.test('tags are shared and CEO recommendations require administrator permission',async()=>{
+    const path='/api/app/annotations?key='+key,write=(cookie,body,origin=base)=>call(path,{cookie,method:'PUT',origin,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    assert.equal((await call(path)).status,401);assert.equal((await write(viewer,{tags:['Reviewed']})).status,403);assert.equal((await write(researcher,{tags:[],ceo:true})).status,403);
+    assert.equal((await write(admin,{tags:['Reviewed'],ceo:true})).status,200);assert.equal((await write(researcher,{tags:['Needs audit']})).status,200);
+    const data=(await call(path,{cookie:viewer})).json();assert.equal(data.ceo,true);assert.deepEqual(data.tags,['Needs audit']);
+    assert.equal((await write(admin,{tags:['x'.repeat(41)]})).status,400);assert.equal((await write(admin,{tags:[]},'https://invalid.example')).status,403);
+  });
+  await t.test('gateway rejects unknown routes and mutations to engines',async()=>{assert.equal((await call('/api/in/not-an-endpoint',{cookie:admin})).status,404);assert.equal((await call('/api/xx/tickers',{cookie:admin})).status,400);assert.equal((await call('/api/in/tickers',{cookie:admin,method:'POST',body:'{}'})).status,405);});
+  const manifest=JSON.parse(await readFile(new URL('../verification/reference/manifest.json',import.meta.url),'utf8'));
+  for(const record of manifest) await t.test(`Existing Rust response stays unchanged: ${record.file}`,async()=>{const response=await call(`/api/${record.market}/`+record.path.slice('/api/'.length),{cookie:viewer});assert.equal(response.status,200,response.text);const expected=JSON.parse(await readFile(new URL('../verification/reference/'+record.file,import.meta.url),'utf8'));assert.deepEqual(projectLegacy(response.json(),expected),expected);});
+  await t.test('non-finite parameters and excessive grids are rejected',async()=>{for(const query of ['p.trend=NaN','g.hold=0:inf:1','g.hold=1:1000000:1','g.trend=1:1000:1&g.hold=1:1000:1']){assert.equal((await call('/api/in/guru/connors/optimize?id=f1a&ticker=NIFTY+50&'+query,{cookie:researcher})).status,400);}});
+  await t.test('small optimization works within the CPU limit',async()=>{const result=await call('/api/in/guru/connors/optimize?id=f1a&ticker=NIFTY+50&from=2020-01-01&to=2025-12-31&g.hold=4:5:1&slim=1',{cookie:researcher});assert.equal(result.status,200,result.text);assert.equal(result.json().combos,2);assert.ok(result.json().threads<=2);});
+  await t.test('optimization is limited to one request across markets',async()=>{const suffix='/guru/connors/optimize?id=f1a&from=2020-01-01&to=2025-12-31&g.trend=100:300:1&g.hold=2:10:1&slim=1';const responses=await Promise.all([call('/api/in'+suffix+'&ticker=NIFTY+50',{cookie:researcher}),call('/api/us'+suffix+'&ticker=SPY',{cookie:researcher})]);assert.deepEqual(responses.map(r=>r.status).sort(),[200,429]);const rejected=responses.find(r=>r.status===429);assert.equal(rejected.headers.get('retry-after'),'5');});
+  await t.test('session expires immediately after sign out',async()=>{assert.equal((await call('/api/auth/sign-out',{cookie:viewer,method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).status,200);assert.equal((await call('/api/in/tickers',{cookie:viewer})).status,401);});
+ } finally {
+  // Only fixtures with the random suffix belonging to this run are removed.
+  const sql=`DELETE FROM vault_annotations WHERE entity_key='${key}'; DELETE FROM vault_note_history WHERE note_key='${key}'; DELETE FROM vault_notes WHERE note_key='${key}'; DELETE FROM vault_audit WHERE entity='${key}' OR entity IN (SELECT id FROM "user" WHERE email IN ('${emails.join("','")}')); DELETE FROM "user" WHERE email IN ('${emails.join("','")}');`;
+  execFileSync('docker',['compose','--project-directory',appDirectory,'--env-file',envFile,'exec','-T','postgres','psql','-U','vault','-d','vault','-v','ON_ERROR_STOP=1','-c',sql],{stdio:['ignore','pipe','pipe']});
+ }
+});

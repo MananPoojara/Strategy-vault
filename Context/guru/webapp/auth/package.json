@@ -1,0 +1,16 @@
+{
+  "name": "strategy-vault-auth",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.mjs",
+    "bootstrap": "node src/bootstrap.mjs",
+    "test": "node --test ../tests/contracts.test.mjs"
+  },
+  "dependencies": {
+    "@hono/node-server": "2.1.4",
+    "better-auth": "1.7.7",
+    "hono": "4.13.13",
+    "pg": "8.16.3"
+  }
+}

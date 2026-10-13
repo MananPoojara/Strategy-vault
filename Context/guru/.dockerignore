@@ -1,0 +1,13 @@
+webapp/auth/node_modules
+webapp/gateway/target
+webapp/.env
+webapp/.env.*
+webapp/verification
+webapp/backups
+*.log
+
+frontend/data
+frontend/react/node_modules
+frontend/react/dist
+frontend/react/public
+frontend/react/coverage

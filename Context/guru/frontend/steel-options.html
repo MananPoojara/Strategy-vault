@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Steel Deposit · background options</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="vendor/fonts.css">
+<link rel="stylesheet" href="vendor/fonts-options.css">
+<style>
+* { box-sizing: border-box; }
+html, body { margin: 0; overflow-x: clip; }
+body { font: 14px/1.5 "IBM Plex Sans", system-ui, sans-serif; background: #fff; color: #111; }
+
+/* ---------- picker */
+.picker { position: sticky; top: 0; z-index: 50; background: #ffffffee; backdrop-filter: blur(10px); border-bottom: 1px solid #e3e6ec; padding: 12px 24px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.picker h1 { font: 600 15px/1 "IBM Plex Sans"; margin: 0; }
+.picker nav { display: flex; gap: 6px; flex-wrap: wrap; }
+.picker button { border: 1px solid #dfe3ea; background: #fff; border-radius: 99px; padding: 6px 14px; font: 500 13px "IBM Plex Sans"; cursor: pointer; }
+.picker button.on { background: #111; color: #fff; border-color: #111; }
+.picker .desc { flex-basis: 100%; font-size: 13px; color: #555; }
+.picker .desc b { color: #111; }
+.hint { font-size: 12px; color: #777; margin-left: auto; }
+
+/* ---------- Steel Deposit (unchanged layout, type, colours) */
+.opt { --bg:#e9e9e9; --ink:#090909; --ink2:#636466; --slate:#7d8395; --steel:#b0b0b1; --brass:#a88240;
+  position: relative; min-height: calc(100vh - 90px); overflow: hidden; isolation: isolate; background: var(--bg); color: var(--ink); font-family: "Archivo"; }
+.bg { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
+.frame { position: relative; max-width: 1400px; margin: 0 auto; padding: 0 36px 56px; }
+.face-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.nav { display: flex; justify-content: space-between; align-items: center; height: 64px; border-bottom: 2px solid var(--ink); }
+.brand { font-weight: 800; font-stretch: 125%; font-size: 18px; letter-spacing: -.01em; }
+.nav nav { display: flex; gap: 22px; font-size: 14px; color: var(--ink2); } .nav nav a.on { color: var(--ink); font-weight: 700; }
+.hero { display: grid; grid-template-columns: 1fr 260px; gap: 40px; align-items: end; padding: 56px 0 34px; border-bottom: 1px solid var(--steel); }
+h2 { font-weight: 800; font-stretch: 125%; font-size: 104px; line-height: .9; letter-spacing: -.04em; margin: 0 0 22px; }
+.tag { font-size: 20px; font-stretch: 90%; max-width: 40ch; margin: 0; color: var(--ink2); }
+.portrait { width: 260px; height: 300px; border: 2px solid var(--ink); padding: 8px; background: #f5f5f5; }
+.portrait img { filter: grayscale(1) contrast(1.05); }
+.strip { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid var(--steel); }
+.strip div { padding: 18px 0; } .strip span { font-size: 12px; color: var(--ink2); display: block; } .strip b { font-size: 34px; font-weight: 700; font-stretch: 110%; }
+h3 { font-weight: 700; font-stretch: 110%; font-size: 22px; margin: 34px 0 16px; }
+.boxes { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 2px solid var(--ink); border-left: 1px solid var(--steel); }
+.box { border-right: 1px solid var(--steel); border-bottom: 1px solid var(--steel); padding: 20px 22px; background: #f4f4f4d9; position: relative; }
+.box .no { font-size: 12px; color: var(--slate); font-weight: 600; }
+.box .keyhole { position: absolute; right: 20px; top: 20px; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--steel); }
+.box h4 { font-size: 17px; font-weight: 600; margin: 6px 0 12px; min-height: 44px; }
+.box .row { display: flex; justify-content: space-between; align-items: end; }
+.box .big { font-size: 38px; font-weight: 700; font-stretch: 112%; line-height: 1; } .box .big small { font-size: 12px; font-weight: 500; color: var(--ink2); display: block; font-stretch: 100%; margin-top: 4px; }
+.legends { display: flex; margin-top: 30px; border: 1px solid var(--steel); background: #f4f4f4b3; }
+.legends div { flex: 1; padding: 12px 16px; border-right: 1px solid var(--steel); font-weight: 600; } .legends div:last-child { border: 0; } .legends .p { color: var(--slate); font-weight: 500; }
+.legends .p small { font-size: 11px; opacity: .7; }
+
+/* ===== A. Machined steel: engine-turned swirl finish, drifting very slowly ===== */
+.bgA { background:
+  repeating-radial-gradient(circle at 0 0, #0000 0 5px, #ffffff66 5px 6px, #0000 6px 11px),
+  repeating-radial-gradient(circle at 100% 100%, #0000 0 5px, #00000008 5px 6px, #0000 6px 11px),
+  linear-gradient(180deg, #f1f1f1, #e2e2e2);
+  background-size: 44px 44px, 44px 44px, 100% 100%; animation: aDrift 90s linear infinite; }
+@keyframes aDrift { to { background-position: 44px 44px, -44px -44px, 0 0; } }
+.bgA::after { content: ""; position: absolute; inset: 0; background: radial-gradient(90% 70% at 50% 0%, #ffffff80, transparent 70%); }
+
+/* ===== B. Plates & rivets: steel panels, slight parallax with the mouse ===== */
+.bgB { --px: 0px; --py: 0px; background:
+  radial-gradient(circle at 16px 16px, #ffffffcc 0 1.2px, #a3a3a5 1.6px 3.6px, #7e7e80 3.8px 4.4px, transparent 4.8px),
+  radial-gradient(circle at calc(100% - 16px) 16px, #ffffffcc 0 1.2px, #a3a3a5 1.6px 3.6px, #7e7e80 3.8px 4.4px, transparent 4.8px),
+  radial-gradient(circle at 16px calc(100% - 16px), #ffffffcc 0 1.2px, #a3a3a5 1.6px 3.6px, #7e7e80 3.8px 4.4px, transparent 4.8px),
+  radial-gradient(circle at calc(100% - 16px) calc(100% - 16px), #ffffffcc 0 1.2px, #a3a3a5 1.6px 3.6px, #7e7e80 3.8px 4.4px, transparent 4.8px),
+  linear-gradient(90deg, #0000001a 1px, #ffffff80 1px 2px, transparent 2px),
+  linear-gradient(180deg, #0000001a 1px, #ffffff80 1px 2px, transparent 2px),
+  linear-gradient(160deg, #f3f3f3, #dedede);
+  background-size: 480px 320px, 480px 320px, 480px 320px, 480px 320px, 480px 320px, 480px 320px, 100% 100%;
+  background-position: var(--px) var(--py), var(--px) var(--py), var(--px) var(--py), var(--px) var(--py), var(--px) var(--py), var(--px) var(--py), 0 0;
+  transition: background-position .6s ease-out; }
+
+/* ===== C. Guilloché: security-print rosettes, one turn every 6 minutes ===== */
+.bgC { background: linear-gradient(180deg, #f0f0f0, #e3e3e3); }
+.bgC svg { position: absolute; width: 900px; height: 900px; right: -220px; top: -160px; animation: cSpin 360s linear infinite; opacity: .9; }
+.bgC svg.small { width: 520px; height: 520px; left: -200px; right: auto; top: auto; bottom: -180px; animation-direction: reverse; opacity: .6; }
+.bgC path { fill: none; stroke: #0909091c; stroke-width: .6; }
+@keyframes cSpin { to { transform: rotate(360deg); } }
+
+/* ===== D. Locking bolts: slide in once on load, then still ===== */
+.bgD { background: linear-gradient(180deg, #f0f0f0, #e3e3e3); }
+.bolt { position: absolute; height: 26px; border-radius: 13px; background: linear-gradient(180deg, #fbfbfb, #cfcfd1 55%, #b9b9bb); box-shadow: inset 0 -1px 0 #0000001a, 0 1px 2px #0000001f; opacity: .8; }
+.bolt::after { content: ""; position: absolute; top: 4px; width: 18px; height: 18px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #e7cf9a, var(--brass)); }
+.bolt.l { left: -10px; animation: boltL 1.1s cubic-bezier(.2,.9,.25,1.15) both; } .bolt.l::after { right: 4px; }
+.bolt.r { right: -10px; animation: boltR 1.1s cubic-bezier(.2,.9,.25,1.15) both; } .bolt.r::after { left: 4px; }
+@keyframes boltL { from { transform: translateX(-110%); } }
+@keyframes boltR { from { transform: translateX(110%); } }
+
+/* ===== E. Spotlight: brushed grain + soft light that follows the cursor ===== */
+.bgE { --mx: 75%; --my: 30%; background:
+  radial-gradient(620px 460px at var(--mx) var(--my), #ffffff, #ffffffb3 30%, transparent 72%),
+  repeating-linear-gradient(0deg, #0000 0 2px, #ffffff1f 2px 3px, #0000 3px 5px),
+  linear-gradient(180deg, #dcdcdc, #cfcfcf); }
+.bgE::after { content: ""; position: absolute; inset: 0; opacity: .18; mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 .6 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+
+@media (prefers-reduced-motion: reduce) { .bg, .bg *, .bg::after { animation: none !important; transition: none !important; } }
+@media (max-width: 1000px) { .hero { display: block; } h2 { font-size: 58px; } .boxes { grid-template-columns: 1fr; } .strip { grid-template-columns: 1fr 1fr; } .portrait { margin-top: 24px; } }
+</style>
+</head>
+<body>
+<header class="picker">
+  <h1>Steel Deposit: background options</h1>
+  <nav id="pick"></nav>
+  <span class="hint">Keys 1–5 or ← → · same layout, type and colours in all five</span>
+  <p class="desc" id="desc"></p>
+</header>
+<main id="stage"></main>
+
+<script>
+const API = new URLSearchParams(location.search).get('api') || `http://${location.hostname || 'localhost'}:8090`;
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const pct = (v, d = 1, s = false) => v == null ? '–' : (s && v > 0 ? '+' : '') + (v * 100).toFixed(d) + '%';
+const fx = (v, d = 2) => v == null ? '–' : v.toFixed(d);
+const PREVIEW = ['Linda Raschke', 'Mark Minervini', 'Nicolas Darvas', "William O'Neil"];
+
+const BGS = [
+  { key: 'A', name: 'A. Machined steel', desc: 'An engine-turned swirl finish, like the polished inside of a vault door. It drifts one tile every 90 seconds, so it is barely perceptible.', html: () => '' },
+  { key: 'B', name: 'B. Plates & rivets', desc: 'Bolted steel panels with seams and rivets. Nothing moves on its own; the plates shift a few pixels as you move the mouse, which gives depth without distraction.', html: () => '' },
+  { key: 'C', name: 'C. Guilloché', desc: 'Fine security-print rosettes, the engraving used on banknotes and share certificates. They turn one full circle every 6 minutes.', html: () => guilloche(900, 'big') + guilloche(520, 'small') },
+  { key: 'D', name: 'D. Locking bolts', desc: 'When the page opens, steel bolts slide in from both edges and lock, like a vault closing. It happens once; after that the page is completely still.', html: bolts },
+  { key: 'E', name: 'E. Spotlight', desc: 'Brushed-steel grain with a soft light that follows your cursor, as if you are looking into the vault with a torch. It moves only when you move.', html: () => '' },
+];
+
+function sparkPath(vals, w, h, pad = 2) {
+  const lo = Math.min(...vals), hi = Math.max(...vals), n = vals.length;
+  return vals.map((v, i) => `${i ? 'L' : 'M'}${(pad + i / (n - 1) * (w - 2 * pad)).toFixed(1)},${(h - pad - (v - lo) / ((hi - lo) || 1) * (h - 2 * pad)).toFixed(1)}`).join('');
+}
+const spark = (v, w, h) => v && v.length > 1 ? `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><path d="${sparkPath(v, w, h)}" fill="none" stroke="#090909" stroke-width="1.8" stroke-linejoin="round"/></svg>` : '';
+
+// hypotrochoid rosettes, the basis of guilloché engraving
+function guilloche(size, cls) {
+  const paths = [];
+  for (const [R, r, d, turns] of [[80, 23, 60, 23], [74, 19, 48, 19], [66, 29, 40, 29]]) {
+    let p = '';
+    for (let k = 0; k <= 2400; k++) {
+      const t = k / 2400 * Math.PI * 2 * turns;
+      const x = (R - r) * Math.cos(t) + d * Math.cos((R - r) / r * t), y = (R - r) * Math.sin(t) - d * Math.sin((R - r) / r * t);
+      p += `${k ? 'L' : 'M'}${(100 + x * .7).toFixed(2)},${(100 + y * .7).toFixed(2)}`;
+    }
+    paths.push(`<path d="${p}"/>`);
+  }
+  return `<svg class="${cls}" viewBox="0 0 200 200">${paths.join('')}</svg>`;
+}
+
+function bolts() {
+  // matched pairs, like the locking bars of a vault door; they end in the side margins
+  let h = '';
+  [170, 330, 490, 650, 810].forEach((top, k) => {
+    const d = (.15 + k * .09).toFixed(2);
+    h += `<span class="bolt l" style="top:${top}px;width:max(40px, calc((100vw - 1400px) / 2 + 18px));animation-delay:${d}s"></span>`;
+    h += `<span class="bolt r" style="top:${top}px;width:max(40px, calc((100vw - 1400px) / 2 + 18px));animation-delay:${d}s"></span>`;
+  });
+  return h;
+}
+
+function steel(D, bg) {
+  return `<section class="opt"><div class="bg bg${bg.key}" id="bg">${bg.html()}</div><div class="frame">
+    <div class="nav"><span class="brand">STRATEGY VAULT</span><nav><a class="on">Guru's</a><a>YT Strategies</a></nav></div>
+    <div class="hero"><div><h2>${esc(D.g.name)}</h2><p class="tag">${esc(D.g.tagline)}</p></div><div class="portrait"><img class="face-img" src="img/gurus/connors.jpg" alt="${esc(D.g.name)}"></div></div>
+    <div class="strip"><div><span>Strategies catalogued</span><b>${D.g.strategies}</b></div><div><span>Tested on Nifty 50</span><b>${D.live}</b></div><div><span>Statistically significant</span><b>${D.sig}</b></div><div><span>Best Sharpe</span><b>${fx(D.top[0].s.sharpe)}</b></div></div>
+    <h3>Deposit boxes, ranked by Sharpe</h3>
+    <div class="boxes">${D.top.map(r => `<div class="box"><span class="keyhole"></span><div class="no">Box ${String(r.no).padStart(2, '0')} · ${esc(r.c.group.replace('Market Timing · ', ''))}</div><h4>${esc(r.c.name)}</h4>
+      <div class="row"><div class="big">${fx(r.s.sharpe)}<small>Sharpe · ${pct(r.s.cagr, 1, true)} CAGR · ${pct(r.s.win_rate, 0)} win</small></div>${spark(r.spark, 110, 44)}</div></div>`).join('')}</div>
+    <div class="legends"><div>${esc(D.g.name)}</div>${PREVIEW.map(n => `<div class="p">${esc(n)} <small>preview</small></div>`).join('')}</div>
+  </div></section>`;
+}
+
+let D, cur = 0;
+async function init() {
+  const get = async u => (await fetch(API + u)).json();
+  const [gurus, cat, sum] = await Promise.all([get('/api/gurus'), get('/api/guru/connors/strategies'), get('/api/guru/connors/summary?ticker=NIFTY%2050')]);
+  const byId = Object.fromEntries(sum.map(r => [r.id, r]));
+  const all = cat.filter(c => c.status === 'live').map((c, k) => ({ c, no: k + 1, s: byId[c.id]?.stats, spark: byId[c.id]?.spark })).filter(r => r.s && r.s.trades);
+  D = { g: gurus[0], top: all.filter(r => r.s.trades >= 30).sort((a, b) => b.s.sharpe - a.s.sharpe).slice(0, 6), live: sum.filter(r => r.stats).length, sig: all.filter(r => r.s.t_stat >= 2).length };
+  $('#pick').innerHTML = BGS.map((b, k) => `<button data-k="${k}">${b.name}</button>`).join('');
+  $('#pick').querySelectorAll('button').forEach(b => b.onclick = () => show(+b.dataset.k));
+  document.addEventListener('keydown', e => { if (e.key >= '1' && e.key <= '5') show(+e.key - 1); if (e.key === 'ArrowRight') show((cur + 1) % 5); if (e.key === 'ArrowLeft') show((cur + 4) % 5); });
+  window.addEventListener('hashchange', () => { const k = +location.hash.slice(1) - 1; if (k !== cur && k >= 0 && k < 5) show(k); });
+  // mouse-driven effects (B parallax, E spotlight); nothing runs while the mouse is still
+  document.addEventListener('mousemove', e => {
+    const bg = $('#bg'); if (!bg) return;
+    const r = bg.getBoundingClientRect();
+    if (bg.classList.contains('bgB')) { bg.style.setProperty('--px', `${((e.clientX / innerWidth) - .5) * -14}px`); bg.style.setProperty('--py', `${((e.clientY / innerHeight) - .5) * -10}px`); }
+    if (bg.classList.contains('bgE')) { bg.style.setProperty('--mx', `${e.clientX - r.left}px`); bg.style.setProperty('--my', `${e.clientY - r.top}px`); }
+  });
+  show(+(location.hash.slice(1) || 1) - 1);
+}
+function show(k) {
+  cur = k; history.replaceState(null, '', '#' + (k + 1));
+  document.querySelectorAll('#pick button').forEach(b => b.classList.toggle('on', +b.dataset.k === k));
+  $('#desc').innerHTML = `<b>${BGS[k].name}.</b> ${BGS[k].desc}`;
+  $('#stage').innerHTML = steel(D, BGS[k]);
+}
+init().catch(e => { $('#stage').innerHTML = `<p style="padding:40px">Could not reach the Rust API at ${API}: ${esc(e.message)}</p>`; });
+</script>
+</body>
+</html>

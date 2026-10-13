@@ -1,0 +1,132 @@
+name: strategy-vault
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: vault
+      POSTGRES_USER: vault
+      POSTGRES_PASSWORD: ${VAULT_DB_PASSWORD:?Run scripts/setup.py first}
+    command: [postgres, -c, max_connections=30, -c, shared_buffers=64MB]
+    volumes: [vault_database:/var/lib/postgresql]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U vault -d vault"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    cpus: 0.5
+    mem_limit: 512m
+    restart: unless-stopped
+  auth:
+    build:
+      context: ..
+      dockerfile: webapp/infra/auth.Dockerfile
+      secrets: [build_ca]
+    environment:
+      DATABASE_URL: postgresql://vault:${VAULT_DB_PASSWORD}@postgres:5432/vault
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+      VAULT_INTERNAL_TOKEN: ${VAULT_INTERNAL_TOKEN}
+      VAULT_PUBLIC_URL: ${VAULT_PUBLIC_URL}
+      VAULT_ALLOWED_ORIGINS: ${VAULT_ALLOWED_ORIGINS:-}
+      VAULT_ADMIN_EMAIL: ${VAULT_ADMIN_EMAIL}
+      VAULT_ADMIN_NAME: ${VAULT_ADMIN_NAME}
+      VAULT_ADMIN_PASSWORD: ${VAULT_ADMIN_PASSWORD}
+      VAULT_NOTES_DIR: /app/import-notes
+      VAULT_BOOKS_DIR: /app/books
+      VAULT_BOOK_MANIFEST: /app/book-index.json
+      NODE_ENV: production
+      AUTH_BIND: 0.0.0.0
+      AUTH_PORT: 8102
+    volumes:
+      - ${VAULT_RUNTIME_ROOT}/notes:/app/import-notes:ro
+      - type: bind
+        source: ${VAULT_RUNTIME_ROOT}/books
+        target: /app/books
+        read_only: true
+      - type: bind
+        source: ${VAULT_RUNTIME_ROOT}/book-index.json
+        target: /app/book-index.json
+        read_only: true
+    depends_on:
+      postgres: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8102/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    cpus: 0.5
+    mem_limit: 384m
+    restart: unless-stopped
+  engine-in:
+    build:
+      context: ..
+      dockerfile: webapp/infra/engine.Dockerfile
+    image: ${VAULT_ENGINE_IMAGE:-strategy-vault-engine:local}
+    command: [/data/idx_data.csv, '8090', /data/india_vix, /data/extra_data/india]
+    environment:
+      VAULT_BASKET_DATA_DIR: /basket-data
+    volumes:
+      - '${VAULT_RUNTIME_ROOT}/data:/data:ro'
+      - '${VAULT_BASKET_DATA_ROOT:-/home/server/.cache/strategy-vault/market-data}:/basket-data:ro'
+    cpus: 2
+    cpuset: '${VAULT_CPUSET:-0,1}'
+    mem_limit: 1g
+    restart: unless-stopped
+  engine-us:
+    image: ${VAULT_ENGINE_IMAGE:-strategy-vault-engine:local}
+    command: [/data/us_data.csv, '8090', /data/us_vix, /data/extra_data/us]
+    environment:
+      VAULT_BASKET_DATA_DIR: /us-basket-data
+    volumes:
+      - '${VAULT_RUNTIME_ROOT}/data:/data:ro'
+      - '${VAULT_US_BASKET_DATA_ROOT:-/home/server/.cache/strategy-vault/us-market-data}:/us-basket-data:ro'
+    cpus: 2
+    cpuset: '${VAULT_CPUSET:-0,1}'
+    mem_limit: 1g
+    restart: unless-stopped
+  gateway:
+    build:
+      context: ..
+      dockerfile: webapp/infra/gateway.Dockerfile
+      secrets: [build_ca]
+    environment:
+      VAULT_AUTH_URL: http://auth:8102
+      VAULT_ENGINE_IN: http://engine-in:8090
+      VAULT_ENGINE_US: http://engine-us:8090
+      VAULT_INTERNAL_TOKEN: ${VAULT_INTERNAL_TOKEN}
+      VAULT_FRONTEND: /app/frontend
+      VAULT_PUBLIC: /app/public
+      VAULT_BIND: 0.0.0.0:8181
+    volumes:
+      - '${VAULT_FRONTEND_DATA_ROOT:-${VAULT_RUNTIME_ROOT}/frontend-data}:/app/frontend/data:ro'
+    depends_on:
+      auth: {condition: service_healthy}
+      engine-in: {condition: service_started}
+      engine-us: {condition: service_started}
+    healthcheck:
+      test: [CMD, vault-webapp, --healthcheck]
+      interval: 10s
+      timeout: 12s
+      retries: 12
+    cpus: 0.5
+    mem_limit: 512m
+    restart: unless-stopped
+  web:
+    image: caddy:2-alpine
+    volumes: ['${VAULT_RUNTIME_ROOT}/Caddyfile:/etc/caddy/Caddyfile:ro']
+    ports: ['${VAULT_BIND_HOST:-127.0.0.1}:${VAULT_PORT:-8180}:8080']
+    depends_on:
+      gateway: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:8080/healthz]
+      interval: 10s
+      timeout: 12s
+      retries: 12
+    cpus: 0.25
+    mem_limit: 128m
+    restart: unless-stopped
+volumes:
+  vault_database:
+
+secrets:
+  build_ca:
+    file: ${VAULT_RUNTIME_ROOT}/build-ca.crt

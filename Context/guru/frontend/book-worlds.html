@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Book Worlds · Strategy Vault</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="vendor/fonts.css">
+<link rel="stylesheet" href="vendor/fonts-options.css">
+<link rel="stylesheet" href="vendor/fonts-hand.css">
+<style>
+* { box-sizing: border-box; }
+html, body { margin: 0; overflow-x: clip; }
+body { font: 14px/1.5 "IBM Plex Sans", system-ui, sans-serif; background: #f3f4f6; color: #1d2330; }
+:root { --foil: #e8d39a; }
+.pos { color: #2f6b4a; } .neg { color: #b43a34; }
+button { font: inherit; color: inherit; }
+.picker { position: sticky; top: 0; z-index: 80; background: #ffffffee; backdrop-filter: blur(10px); border-bottom: 1px solid #e3e6ec; padding: 10px 20px; }
+.picker .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.picker h1 { font: 600 15px/1 "IBM Plex Sans"; margin: 0; white-space: nowrap; }
+.picker nav { display: flex; gap: 5px; flex-wrap: wrap; }
+.picker nav button { border: 1px solid #dfe3ea; background: #fff; border-radius: 99px; padding: 5px 11px; font-size: 12.5px; font-weight: 500; cursor: pointer; }
+.picker nav button.on { background: #111; color: #fff; border-color: #111; }
+.ctl { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 8px; font-size: 12.5px; } .ctl select, .ctl input { font: inherit; padding: 3px 6px; border: 1px solid #cfd4dc; border-radius: 4px; background: #fff; } .ctl button { border: 0; background: #111; color: #fff; padding: 5px 14px; border-radius: 4px; font-weight: 600; cursor: pointer; }
+.picker .desc { margin: 6px 0 0; font-size: 13px; color: #555; } .picker .desc b { color: #111; }
+.world { position: relative; min-height: calc(100vh - 92px); isolation: isolate; }
+.pad { padding: 26px 32px 60px; } .wrap { max-width: 1320px; margin: 0 auto; }
+h2.wt { font: 600 36px/1.05 "Newsreader", serif; margin: 0 0 4px; } p.ws { margin: 0 0 20px; color: #5b6272; font-size: 14.5px; }
+.loading { padding: 50px; text-align: center; font: italic 18px "Newsreader", serif; color: #777; }
+.modal { position: fixed; inset: 0; z-index: 90; background: #0007; display: none; align-items: flex-start; justify-content: center; padding: 30px 20px; overflow: auto; }
+.modal.on { display: flex; animation: fade .3s; }
+@keyframes fade { from { opacity: 0; } }
+.close { position: sticky; top: 0; float: right; margin: -10px -10px 0 0; z-index: 5; width: 36px; height: 36px; border-radius: 50%; border: 0; background: #111; color: #fff; font-size: 18px; cursor: pointer; }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition-duration: .01s !important; } }
+
+/* ==================================================================
+   THE TEAR SHEET: every stat, styled by the world through variables
+   ================================================================== */
+.sheet { --pp: #fff; --ink: #1d2330; --ink2: #5b6272; --ac: #1f3a5f; --rule: #e3e1db; --hf: "Newsreader", serif; --nf: "Newsreader", serif; --bf: "IBM Plex Sans", sans-serif;
+  background: var(--pp); color: var(--ink); font-family: var(--bf); padding: 26px 30px; }
+.sheet.cols { columns: 2; column-gap: 46px; column-rule: 1px solid var(--rule); }
+.sheet .sec { break-inside: avoid; margin-bottom: 18px; }
+.sheet .wide { column-span: all; }
+.sheet h2 { font: 600 30px/1.08 var(--hf); margin: 0 0 4px; color: var(--hc, var(--ink)); }
+.sheet h3 { font: 600 15px/1.2 var(--hf); margin: 0 0 8px; color: var(--hc, var(--ink)); padding-bottom: 4px; border-bottom: 1.5px solid var(--ink); }
+.sheet .meta { font-size: 12.5px; color: var(--ink2); }
+.sheet .stamp { display: inline-block; transform: rotate(-4deg); border: 2px solid currentColor; padding: 0 8px; font: 700 11px "IBM Plex Mono", monospace; margin-left: 8px; }
+.sheet .vbtn { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0 0; } .sheet .vbtn button { border: 1px solid var(--rule); background: transparent; padding: 2px 9px; font-size: 11.5px; cursor: pointer; }
+.sheet .vbtn button.on { background: var(--ac); color: #fff; border-color: var(--ac); }
+.sheet .kp { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1.5px solid var(--ink); }
+.sheet .kp div { padding: 7px 8px 6px 0; border-bottom: 1px solid var(--rule); } .sheet .kp div:nth-child(3n+2), .sheet .kp div:nth-child(3n) { padding-left: 8px; border-left: 1px solid var(--rule); }
+.sheet .kp span { display: block; font-size: 10.5px; color: var(--ink2); } .sheet .kp b { font: 600 21px/1.15 var(--nf); } .sheet .kp i { display: block; font-style: normal; font-size: 10.5px; color: var(--ink2); }
+.sheet .verdict { font-size: 13.5px; line-height: 1.55; margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--ac); background: color-mix(in srgb, var(--ac) 7%, transparent); }
+.sheet .rl { font-size: 13px; line-height: 1.45; margin: 2px 0; } .sheet .rl.o { font-weight: 600; } .sheet .lb { font: 700 10px var(--bf); letter-spacing: .04em; color: var(--ink2); margin-top: 8px; }
+.sheet .lb i { display: inline-block; width: 8px; height: 8px; margin-right: 5px; }
+.sheet table { width: 100%; border-collapse: collapse; font-size: 11.5px; } .sheet th { text-align: left; font-weight: 600; color: var(--ink2); border-bottom: 1px solid var(--ink); padding: 3px 4px; }
+.sheet td { padding: 3px 4px; border-bottom: 1px solid var(--rule); white-space: nowrap; } .sheet .n { text-align: right; font-family: "IBM Plex Mono", monospace; } .sheet tr.b td { font-weight: 600; }
+.sheet .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; font-size: 12px; } .sheet .stats div { display: flex; justify-content: space-between; border-bottom: 1px solid var(--rule); padding: 3px 0; } .sheet .stats span { color: var(--ink2); } .sheet .stats b { font-family: "IBM Plex Mono", monospace; font-weight: 500; }
+.sheet .cap { font-size: 10.5px; color: var(--ink2); margin-top: 2px; }
+.sheet .heat td { text-align: center; font-size: 9.5px; padding: 2px 0; border: 1px solid var(--pp); } .sheet .heat th { text-align: center; font-size: 9.5px; padding: 1px; }
+.sheet .log { max-height: 340px; overflow: auto; } .sheet .log td { font-size: 11px; } .sheet .log .ok { color: #2f6b4a; } .sheet .log .bad { color: #b43a34; font-weight: 700; }
+.sheet .check { font-size: 12px; color: #2f6b4a; margin-bottom: 6px; }
+.sheet svg text { font-family: "IBM Plex Mono", monospace; }
+
+/* ---------------- shared 3D spine */
+.b3 { --w: 54px; --h: 270px; position: relative; width: var(--w); height: var(--h); transform-style: preserve-3d; transform-origin: bottom left; transition: transform .7s cubic-bezier(.2,.8,.2,1); cursor: pointer; flex: none; }
+.b3 .sp { position: absolute; inset: 0; background: var(--c); color: var(--f, var(--foil)); display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 12px 0; box-shadow: inset 3px 0 5px -2px #ffffff40, inset -5px 0 7px -3px #00000066; overflow: hidden; }
+.b3 .sp::before, .b3 .sp::after { content: ""; position: absolute; left: 6px; right: 6px; height: 2px; border-top: 1px solid currentColor; border-bottom: 1px solid currentColor; opacity: .65; } .b3 .sp::before { top: 26px; } .b3 .sp::after { bottom: 30px; }
+.b3 .t { writing-mode: vertical-rl; transform: rotate(180deg); font: 600 13px/1 "Newsreader", serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-height: calc(var(--h) - 92px); margin-top: 34px; }
+.b3 .s { font: 600 9.5px "IBM Plex Mono", monospace; }
+.b3:hover { transform: translateY(-14px); }
+
+/* ================================================================== 1 WOODEN BOOKSHELF */
+.w1 { background: radial-gradient(1000px 520px at 50% -10%, #fff7e6, transparent 70%), #f1f2f4; }
+.w1 .case { background: linear-gradient(180deg, #8a6844, #6e5233); padding: 16px 16px 0; border-radius: 6px 6px 0 0; box-shadow: 0 20px 40px #0003; }
+.w1 .inner { background: linear-gradient(180deg, #3a2b1c, #4a3824); padding: 26px 22px 0; box-shadow: inset 0 10px 20px #0006; }
+.w1 .row { display: flex; align-items: flex-end; gap: 4px; flex-wrap: wrap; row-gap: 0; }
+.w1 .plank { height: 20px; margin: 0 -22px; background: linear-gradient(180deg, #caa972, #a98652 60%, #876741); }
+.w1 .bookopen { width: min(1240px, 100%); background: linear-gradient(90deg, #f7f3ea 49.6%, #d9d2c2 50%, #f7f3ea 50.4%); border-radius: 6px; box-shadow: 0 30px 60px #0006; padding: 14px; }
+.w1 .bookopen .sheet { background: transparent; --pp: transparent; --rule: #ddd3bf; }
+
+/* ================================================================== 2 COVERFLOW */
+.w2 { background: linear-gradient(180deg, #f6f6f8, #e2e4ea); }
+.w2 .flow { position: relative; height: 330px; perspective: 1100px; }
+.w2 .it { position: absolute; left: 50%; top: 10px; width: 200px; height: 280px; margin-left: -100px; transition: transform .7s cubic-bezier(.2,.8,.2,1), opacity .7s; cursor: pointer; }
+.w2 .it .f { position: absolute; inset: 0; background: var(--c); color: var(--foil); border-radius: 3px 8px 8px 3px; padding: 18px 16px; display: flex; flex-direction: column; justify-content: space-between; box-shadow: inset 8px 0 10px -6px #0007; -webkit-box-reflect: below 6px linear-gradient(transparent 72%, #ffffff40); }
+.w2 .it h4 { margin: 0; font: 600 22px/1.05 "Newsreader", serif; } .w2 .it .big { font: 600 34px "Newsreader", serif; } .w2 .it small { font-size: 11px; opacity: .85; }
+.w2 .nav2 { display: flex; justify-content: center; gap: 10px; margin: 18px 0; } .w2 .nav2 button { border: 1px solid #222; background: #fff; padding: 6px 14px; font-weight: 600; cursor: pointer; }
+.w2 .sheet { border-radius: 12px; box-shadow: 0 10px 30px #0000000f; }
+
+/* ================================================================== 4 RIBBON BOOKMARKS */
+.w4 { background: radial-gradient(1000px 600px at 50% 10%, #f8f7f3, #dcdad3); }
+.w4 .closed { position: relative; width: 340px; height: 470px; margin: 10px auto 0; }
+.w4 .cov { position: absolute; inset: 0; background: #1f3a5f; color: var(--foil); border-radius: 3px 10px 10px 3px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 12px; box-shadow: inset 10px 0 18px -8px #0008, 0 24px 40px #0003; transform-origin: left center; transition: transform 1s; }
+.w4 .cov::before { content: ""; position: absolute; inset: 16px; border: 1.5px solid #e8d39a88; }
+.w4 .cov .ph { width: 140px; height: 140px; border-radius: 50%; overflow: hidden; border: 3px solid var(--foil); } .w4 .cov img { width: 100%; height: 100%; object-fit: cover; filter: grayscale(1) sepia(.2); }
+.w4 .cov h3 { margin: 0; font: 600 34px "Newsreader", serif; }
+.w4 .ribbons { position: absolute; top: 100%; left: 30px; right: 30px; display: flex; justify-content: center; gap: 7px; }
+.w4 .rb { width: 18px; height: var(--h); background: var(--c); cursor: pointer; transition: height .3s; position: relative; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% calc(100% - 8px), 0 100%); }
+.w4 .rb:hover { height: calc(var(--h) + 30px); }
+.w4 .rb span { position: absolute; top: 10px; left: 50%; transform: translateX(-50%) rotate(180deg); writing-mode: vertical-rl; font: 600 9px "IBM Plex Sans"; color: #fff; white-space: nowrap; }
+.w4 .bookopen { width: min(1240px, 100%); background: linear-gradient(90deg, #fdfcf9 49.6%, #e2ddd2 50%, #fdfcf9 50.4%); border-radius: 6px; box-shadow: 0 30px 60px #0006; padding: 14px; position: relative; }
+.w4 .bookopen .sheet { background: transparent; --pp: transparent; --ac: #8a6a2f; }
+.w4 .bookopen .tied { position: absolute; top: -6px; width: 22px; height: 120px; background: var(--c); clip-path: polygon(0 0, 100% 0, 100% 100%, 50% calc(100% - 8px), 0 100%); left: calc(50% + 40px); }
+
+/* ================================================================== 5 THUMB INDEX */
+.w5 { background: #e9e7e1; }
+.w5 .book { position: relative; max-width: 1200px; margin: 0 auto; padding-right: 116px; }
+.w5 .pages { background: linear-gradient(90deg, #fdfcf9 49.6%, #e6e1d6 50%, #fdfcf9 50.4%); border-radius: 8px; box-shadow: 0 24px 34px #0000002a; min-height: 640px; }
+.w5 .pages .sheet { background: transparent; --pp: transparent; --ac: var(--tc, #1f3a5f); }
+.w5 .tabs { position: absolute; right: 0; top: 20px; display: flex; flex-direction: column; gap: 3px; width: 128px; }
+.w5 .tab { padding: 6px 8px 6px 22px; border-radius: 0 9px 9px 0; background: var(--c); color: #fff; font: 600 10.5px/1.15 "IBM Plex Sans"; cursor: pointer; transition: transform .2s; box-shadow: 3px 3px 7px #0002; text-align: left; border: 0; }
+.w5 .tab:hover, .w5 .tab.on { transform: translateX(10px); }
+
+/* ================================================================== 6 STACK OF BOOKS */
+.w6 { background: radial-gradient(900px 500px at 30% 0%, #fff7e8, transparent 70%), #f1f2f4; }
+.w6 .stack { display: flex; flex-direction: column-reverse; align-items: flex-start; max-width: 1000px; margin: 0 auto; padding-left: 30px; }
+.w6 .hb { position: relative; height: 40px; width: var(--w); margin-left: var(--x); background: var(--c); color: var(--foil); border-radius: 3px; display: flex; align-items: center; gap: 12px; padding: 0 16px; cursor: pointer; transition: transform .4s; box-shadow: inset 0 3px 0 #ffffff24, inset 0 -4px 0 #0000002e, 0 2px 0 #00000026; border: 0; text-align: left; }
+.w6 .hb .n { font: 600 15px "Newsreader", serif; white-space: nowrap; } .w6 .hb .m { font: 11px "IBM Plex Mono"; opacity: .9; margin-left: auto; white-space: nowrap; }
+.w6 .hb:hover, .w6 .hb.on { transform: translateX(40px); }
+.w6 .floor { height: 12px; max-width: 1060px; margin: 0 auto 26px; background: linear-gradient(180deg, #caa972, #a98652); }
+.w6 .sheet { max-width: 1100px; margin: 0 auto; box-shadow: 0 14px 34px #0000001a; border-top: 6px solid var(--ac); }
+
+/* ================================================================== 7 CARD CATALOGUE DRAWER */
+.w7 { background: #eceef1; }
+.w7 .drawer { position: relative; max-width: 1100px; margin: 0 auto; background: linear-gradient(180deg, #d9dde3, #c3c9d2); border: 1px solid #b7bdc7; border-radius: 8px; padding: 22px 26px 26px; box-shadow: inset 0 1px 0 #fff, 0 14px 30px #00000017; }
+.w7 .label { display: inline-block; background: #fbfaf6; border: 3px solid #9aa1ad; padding: 6px 16px; font: 600 15px "IBM Plex Mono"; margin-bottom: 14px; }
+.w7 .fan { display: flex; gap: 6px; flex-wrap: wrap; }
+.w7 .tabc { background: #fffdf7; border: 0; border-radius: 4px 4px 0 0; padding: 8px 10px 26px; font: 600 11.5px "IBM Plex Mono"; cursor: pointer; box-shadow: 0 1px 2px #0002; transition: transform .2s; max-width: 150px; text-align: left; }
+.w7 .tabc:hover, .w7 .tabc.on { transform: translateY(-8px); }
+.w7 .tabc.on { background: #fff; outline: 2px solid #d45b5b; }
+.w7 .sheet { --pp: #fffdf7; --hf: "IBM Plex Mono", monospace; --nf: "IBM Plex Mono", monospace; --bf: "IBM Plex Mono", monospace; --ac: #d45b5b; max-width: 1100px; margin: 18px auto 0; border-radius: 4px; box-shadow: 0 8px 24px #0000001a; background-image: linear-gradient(#fffdf7 80px, transparent 80px), repeating-linear-gradient(#fffdf7 0 23px, #e4edf5 23px 24px); position: relative; }
+.w7 .sheet::after { content: ""; position: absolute; bottom: 10px; left: 50%; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%; background: #eceef1; box-shadow: inset 0 1px 2px #0003; }
+
+/* ================================================================== 11 NEWSPAPER */
+.w11 { background: #ece6dc; }
+.w11 .paper { max-width: 1240px; margin: 0 auto; background: #fbf8f1; padding: 22px 30px 30px; box-shadow: 0 16px 40px #0000001f; font-family: "Newsreader", serif; }
+.w11 .mast { text-align: center; border-bottom: 3px double #222; padding-bottom: 8px; } .w11 .mast h2 { font: 600 58px/1 "Newsreader", serif; margin: 0; letter-spacing: -.01em; }
+.w11 .mast .dl { display: flex; justify-content: space-between; font: 12px "IBM Plex Sans"; border-top: 1px solid #222; margin-top: 8px; padding-top: 4px; }
+.w11 .front { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid #222; }
+.w11 .story { padding: 10px 12px; border-right: 1px solid #ccc; border-bottom: 1px solid #ddd; cursor: pointer; text-align: left; background: transparent; border-top: 0; border-left: 0; }
+.w11 .story:hover { background: #f2ece0; } .w11 .story.on { background: #efe6d3; }
+.w11 .story b { display: block; font: 600 18px/1.15 "Newsreader", serif; margin-bottom: 4px; } .w11 .story span { font-size: 12px; color: #555; }
+.w11 .sheet { --pp: transparent; --hf: "Newsreader", serif; --nf: "Newsreader", serif; --bf: "Newsreader", serif; --ac: #8a1f1f; padding: 18px 0 0; }
+.w11 .sheet h2 { font-size: 44px; text-align: center; } .w11 .sheet .meta { text-align: center; }
+
+/* ================================================================== 12 ENCYCLOPEDIA VOLUMES */
+.w12 { background: #f4f1ea; }
+.w12 .shelf { background: linear-gradient(180deg, #5a4a36, #3e3224); padding: 26px 24px 0; border-radius: 6px 6px 0 0; }
+.w12 .row { display: flex; align-items: flex-end; gap: 3px; justify-content: center; }
+.w12 .vol { width: 62px; height: 290px; background: linear-gradient(#1f2f5c 0 7%, #b08a3c 7% 8.5%, #1f2f5c 8.5% 86%, #b08a3c 86% 87.5%, #1f2f5c 87.5%); color: #e8d39a; border: 0; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 26px 0 30px; box-shadow: inset 3px 0 5px -2px #ffffff30, inset -5px 0 7px -3px #0008; transition: transform .3s; }
+.w12 .vol:hover, .w12 .vol.on { transform: translateY(-16px); }
+.w12 .vol b { font: 600 20px "Newsreader", serif; } .w12 .vol span { writing-mode: vertical-rl; transform: rotate(180deg); font: 600 12px "Newsreader", serif; white-space: nowrap; overflow: hidden; max-height: 170px; }
+.w12 .plank { height: 18px; margin: 0 -24px; background: linear-gradient(180deg, #8a6a44, #5a4428); }
+.w12 .sheet { --pp: #fffdf8; --hc: #1f2f5c; --ac: #1f2f5c; max-width: 1240px; margin: 22px auto 0; border-top: 3px double #b08a3c; border-bottom: 3px double #b08a3c; box-shadow: 0 10px 30px #0000000f; }
+.w12 .sheet h2::before { content: attr(data-vol); display: block; font: 600 12px "IBM Plex Sans"; color: #b08a3c; letter-spacing: .08em; }
+
+/* ================================================================== 13 ACCOUNTING LEDGER */
+.w13 { background: #dfe3dc; }
+.w13 .lbook { max-width: 1240px; margin: 0 auto; background: #2a4a35; padding: 14px; border-radius: 10px; box-shadow: 0 20px 40px #0003; }
+.w13 .tabsl { display: flex; gap: 3px; flex-wrap: wrap; padding: 0 6px; }
+.w13 .tabsl button { background: #e9f1e4; border: 0; border-radius: 6px 6px 0 0; padding: 6px 9px; font: 600 11px "IBM Plex Mono"; cursor: pointer; color: #2f5a3d; }
+.w13 .tabsl button.on { background: #f6faf2; color: #1d3a2a; }
+.w13 .sheet { --pp: #f6faf2; --ink: #1d3a2a; --ink2: #4f6b58; --ac: #2f5a3d; --rule: #b9dcc4; --nf: "IBM Plex Mono", monospace; --hf: "Newsreader", serif; border-radius: 0 0 4px 4px; }
+.w13 .sheet td + td, .w13 .sheet th + th { border-left: 1px solid #e3a3a3; } .w13 .sheet tr:nth-child(even) td { background: #eef6ea; }
+.w13 .sheet th { border-top: 2px solid #2f5a3d; border-bottom: 2px solid #2f5a3d; color: #2f5a3d; }
+
+/* ================================================================== 14 TRADE JOURNAL NOTEBOOK */
+.w14 { background: #e4e1da; }
+.w14 .nb { position: relative; max-width: 1240px; margin: 0 auto; background: #2b2b2b; padding: 10px; border-radius: 14px; box-shadow: 0 24px 40px #00000040; }
+.w14 .band { position: absolute; top: -6px; bottom: -6px; right: 30px; width: 14px; background: #1a1a1a; border-radius: 4px; z-index: 3; }
+.w14 .stickies { position: absolute; left: -10px; top: 40px; display: flex; flex-direction: column; gap: 4px; z-index: 2; transform: translateX(-100%); }
+.w14 .stk { width: 130px; padding: 5px 8px; background: var(--c); font: 700 15px/1.05 "Caveat", cursive; cursor: pointer; border: 0; text-align: left; transform: rotate(-1deg); box-shadow: 2px 3px 6px #0002; color: #333; }
+.w14 .stk.on { transform: translateX(8px) rotate(0); }
+.w14 .sheet { --pp: #fbf9f3; --hf: "Caveat", cursive; --ink: #24324d; --ac: #c0453f; border-radius: 8px; padding-left: 60px;
+  background-image: linear-gradient(90deg, transparent 44px, #e6a0a0 44px 45.5px, transparent 45.5px), repeating-linear-gradient(transparent 0 25px, #c9d8ea 25px 26px); }
+.w14 .sheet h2 { font-size: 46px; } .w14 .sheet h3 { font-size: 24px; border-bottom: 0; }
+.w14 .wrapnb { margin-left: 150px; }
+
+/* ================================================================== 15 FILING CABINET */
+.w15 { background: #e5e7ea; }
+.w15 .cab { max-width: 640px; margin: 0 auto; background: linear-gradient(180deg, #b9bec6, #9aa0aa); padding: 12px; border-radius: 6px; box-shadow: 0 20px 40px #0003; }
+.w15 .drw { background: linear-gradient(180deg, #d2d6dc, #b3b8c0); border: 1px solid #8d939c; border-radius: 4px; margin-bottom: 10px; transition: margin .4s; }
+.w15 .drw .face { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; cursor: pointer; }
+.w15 .drw .lab { background: #fbfaf6; border: 2px solid #7d838c; padding: 3px 12px; font: 600 13px "IBM Plex Mono"; }
+.w15 .drw .handle { width: 90px; height: 16px; border-radius: 8px; background: linear-gradient(180deg, #f2f2f2, #8d939c); box-shadow: 0 2px 4px #0003; }
+.w15 .drw .folders { display: none; padding: 6px 14px 16px; gap: 6px; flex-wrap: wrap; background: #8d939c; }
+.w15 .drw.open { margin: 0 -40px 10px; } .w15 .drw.open .folders { display: flex; }
+.w15 .fld { background: #e9c98a; border: 0; border-radius: 6px 6px 0 0; padding: 8px 12px 16px; font: 600 12px "IBM Plex Sans"; cursor: pointer; box-shadow: 0 2px 4px #0003; }
+.w15 .fld.on { background: #f3d9a4; transform: translateY(-6px); }
+.w15 .folder { max-width: 1240px; margin: 26px auto 0; background: #e9c98a; padding: 30px 14px 14px; border-radius: 4px 14px 4px 4px; position: relative; box-shadow: 0 16px 34px #0000002a; }
+.w15 .folder::before { content: attr(data-tab); position: absolute; top: -24px; left: 30px; background: #e9c98a; padding: 4px 18px; border-radius: 8px 8px 0 0; font: 600 13px "IBM Plex Sans"; }
+.w15 .folder .sheet { --ac: #8a5a1a; box-shadow: 0 2px 6px #0002; }
+
+/* ================================================================== 16 READING TABLE */
+.w16 { background: radial-gradient(900px 600px at 50% 0%, #fff3d6 0%, transparent 60%), linear-gradient(180deg, #7a5532, #5a3b22); }
+.w16 .lamp { position: absolute; left: 50%; top: 0; width: 900px; height: 600px; margin-left: -450px; background: radial-gradient(closest-side, #fff4d633, transparent); pointer-events: none; z-index: 0; }
+.w16 .tablebook { position: relative; z-index: 1; max-width: 1260px; margin: 0 auto; perspective: 2400px; }
+.w16 .spread { background: linear-gradient(90deg, #fdfcf9 49.6%, #e2ddd2 50%, #fdfcf9 50.4%); border-radius: 6px; box-shadow: 0 40px 60px #0007; padding: 14px; transform: rotateX(8deg); transform-origin: bottom; transition: opacity .4s, transform .5s; }
+.w16 .spread.turn { opacity: 0; transform: rotateX(8deg) rotateY(-12deg); }
+.w16 .spread .sheet { background: transparent; --pp: transparent; --ac: #8a6a2f; }
+.w16 .arr { display: flex; justify-content: center; gap: 12px; margin: 0 0 16px; position: relative; z-index: 1; }
+.w16 .arr button { border: 1px solid #f3e6c8; background: #3a2616; color: #f3e6c8; padding: 7px 14px; font-weight: 600; cursor: pointer; }
+.w16 .arr span { color: #f3e6c8; align-self: center; font: 13px "IBM Plex Sans"; }
+.w16 h2.wt, .w16 p.ws { color: #f3e6c8; }
+
+/* ================================================================== THE ORIGINAL 5 (framed) */
+.orig { background: #f3f4f6; }
+.orig iframe { display: block; width: 100%; height: calc(100vh - 140px); min-height: 620px; border: 0; border-bottom: 1px solid #dfe3ea; }
+.origsheet { max-width: 1320px; margin: 0 auto; padding: 22px 32px 60px; }
+.ohead { font-size: 14px; color: #5b6272; margin-bottom: 10px; } .ohead b { color: #111; } .ohead a { margin-left: 12px; color: #1f3a5f; }
+
+/* one stats style everywhere: worlds differ by representation, not by colour */
+.world .sheet { --pp: #fff !important; --ink: #1d2330 !important; --ink2: #5b6272 !important; --ac: #1f3a5f !important; --rule: #e3e1db !important; --hc: #1d2330 !important;
+  --hf: "Newsreader", serif !important; --nf: "Newsreader", serif !important; --bf: "IBM Plex Sans", sans-serif !important; background: #fff !important; padding: 26px 30px !important; border-radius: 6px; }
+.world .sheet h2 { font-size: 30px !important; text-align: left !important; } .world .sheet h3 { font-size: 15px !important; border-bottom: 1.5px solid var(--ink) !important; } .world .sheet .meta { text-align: left !important; }
+.world .sheet td + td, .world .sheet th + th { border-left: 0 !important; } .world .sheet tr:nth-child(even) td { background: none !important; } .world .sheet th { border-top: 0 !important; border-bottom: 1px solid var(--ink) !important; color: var(--ink2) !important; }
+.world .sheet .heat td { border: 1px solid #fff !important; } .w7 .sheet::after { display: none; }
+@media (max-width: 1000px) { .sheet.cols { columns: 1; } .w11 .front { grid-template-columns: 1fr 1fr; } .w14 .wrapnb { margin-left: 0; } .w14 .stickies { position: static; transform: none; flex-direction: row; flex-wrap: wrap; } .w5 .book { padding-right: 0; } .w5 .tabs { position: static; flex-direction: row; flex-wrap: wrap; width: auto; } }
+</style>
+</head>
+<body>
+<header class="picker"><div class="row"><h1>Book Worlds</h1><nav id="pick"></nav></div><form class="ctl" id="ctl"><select id="ct"></select><label>From <input type="date" id="cf"></label><label>To <input type="date" id="cto"></label><label>Cost <input type="number" id="cc" min="0" step="1" style="width:64px"> bps</label><button>Run</button></form><p class="desc" id="desc"></p></header>
+<main id="stage"></main>
+<div class="modal" id="modal"><div id="mbody" class="world" style="width:100%;display:flex;justify-content:center"></div></div>
+
+<script>
+const API = new URLSearchParams(location.search).get('api') || `http://${location.hostname || 'localhost'}:8090`;
+// index, dates and cost come from the page URL (?ticker=&from=&to=&cost=), same parameters as the main app
+const RQ = new URLSearchParams([...new URLSearchParams(location.search)].filter(([k]) => ['ticker', 'from', 'to', 'cost'].includes(k))); if (!RQ.get('ticker')) RQ.set('ticker', 'NIFTY 50');
+const LABEL = { 'NIFTY 50': 'Nifty 50', NIFTYBANK: 'Bank Nifty', NIFTYIT: 'Nifty IT', NIFTYMIDCAP100: 'Midcap 100' }[RQ.get('ticker')] || RQ.get('ticker');
+const RANGE = LABEL + (RQ.get('from') || RQ.get('to') ? `, ${RQ.get('from') || 'start'} to ${RQ.get('to') || 'end'}` : ', full history');
+const COST = +RQ.get('cost') > 0 ? `at ${+RQ.get('cost')} bps a side` : 'at zero cost';
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const pct = (v, d = 1, s = false) => v == null ? '–' : (s && v > 0 ? '+' : '') + (v * 100).toFixed(d) + '%';
+const fx = (v, d = 2) => v == null ? '–' : v.toFixed(d);
+const cls = v => v == null ? '' : v >= 0 ? 'pos' : 'neg';
+const PHOTO = 'img/gurus/connors.jpg';
+const CLOTH = ['#1f3a5f', '#7a2e2e', '#2f5140', '#8a6a2f', '#4a5563', '#5b3b5e', '#2d4f5c', '#6b3f2a'];
+let D = null; const RUNS = {}; let cleanup = [];
+const run = async id => RUNS[id] || (RUNS[id] = await (await fetch(`${API}/api/guru/connors/run?id=${id}&${RQ}`)).json());
+const verdictOf = s => s.trades < 30 ? { t: 'THIN DATA', c: '#7a2e2e' } : s.t_stat >= 2 ? { t: 'SIGNIFICANT', c: '#2f6b4a' } : { t: 'NO EDGE', c: '#4a5563' };
+
+// ------------------------------------------------------------------ charts (SVG)
+function eqChart(d, w = 520, h = 150) {
+  const st = Math.max(1, Math.floor(d.equity.length / 260)), e = d.equity.filter((_, i) => i % st === 0), b = d.bh.filter((_, i) => i % st === 0), dt = d.dates.filter((_, i) => i % st === 0);
+  const L = Math.log, all = e.concat(b).map(L), lo = Math.min(...all), hi = Math.max(...all), n = e.length, X = i => 34 + i / (n - 1) * (w - 38), Y = v => h - 14 - (L(v) - lo) / ((hi - lo) || 1) * (h - 22);
+  const P = v => v.map((x, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(x).toFixed(1)}`).join('');
+  const yrs = [...new Set(dt.map(t => t.slice(0, 4)))].filter((_, k, a) => k % Math.ceil(a.length / 6) === 0);
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%"><line x1="34" x2="${w - 4}" y1="${Y(1)}" y2="${Y(1)}" stroke="currentColor" stroke-opacity=".25" stroke-dasharray="3 3"/>
+    <text x="0" y="${Y(Math.exp(hi)) + 8}" font-size="9" fill="currentColor" fill-opacity=".6">${Math.exp(hi).toFixed(1)}×</text><text x="0" y="${Y(1) + 3}" font-size="9" fill="currentColor" fill-opacity=".6">1×</text>
+    ${yrs.map(y => { const i = dt.findIndex(t => t.startsWith(y)); return `<text x="${X(i)}" y="${h - 2}" font-size="9" fill="currentColor" fill-opacity=".55" text-anchor="middle">${y}</text>`; }).join('')}
+    <path d="${P(b)}" fill="none" stroke="#a8a297" stroke-width="1.3"/><path d="${P(e)}" fill="none" stroke="var(--ac)" stroke-width="2"/></svg>`;
+}
+function ddChart(d, w = 520, h = 60) {
+  const st = Math.max(1, Math.floor(d.equity.length / 260)); let pk = -1; const dd = d.equity.filter((_, i) => i % st === 0).map(v => { pk = Math.max(pk, v); return v / pk - 1; });
+  const lo = Math.min(...dd, -.01), n = dd.length, P = dd.map((x, i) => `${i ? 'L' : 'M'}${(34 + i / (n - 1) * (w - 38)).toFixed(1)},${(2 + x / lo * (h - 6)).toFixed(1)}`).join('');
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%"><text x="0" y="${h - 4}" font-size="9" fill="currentColor" fill-opacity=".6">${(lo * 100).toFixed(0)}%</text><path d="${P}L${w - 4},2L34,2Z" fill="#b43a3426"/><path d="${P}" fill="none" stroke="#b43a34" stroke-width="1.1"/></svg>`;
+}
+function periods(d, len) { const o = {}; let base = d.equity[0], key = d.dates[0].slice(0, len); d.dates.forEach((t, i) => { const k = t.slice(0, len); if (k !== key) { o[key] = d.equity[i - 1] / base - 1; base = d.equity[i - 1]; key = k; } }); o[key] = d.equity[d.equity.length - 1] / base - 1; return o; }
+function yearBars(d, w = 520, h = 80) {
+  const s = periods(d, 4), b = periods({ dates: d.dates, equity: d.bh }, 4), ks = Object.keys(s), mx = Math.max(.01, ...ks.map(k => Math.max(Math.abs(s[k]), Math.abs(b[k])))), bw = (w - 30) / ks.length, Y = v => h / 2 - v / mx * (h / 2 - 4);
+  return `<svg viewBox="0 0 ${w} ${h + 12}" width="100%"><line x1="30" x2="${w}" y1="${h / 2}" y2="${h / 2}" stroke="currentColor" stroke-opacity=".3"/>${ks.map((k, i) => { const x = 30 + i * bw; return `<rect x="${x + 1}" y="${Math.min(Y(s[k]), h / 2)}" width="${Math.max(1, bw / 2 - 1)}" height="${Math.max(.5, Math.abs(Y(s[k]) - h / 2))}" fill="${s[k] >= 0 ? 'var(--ac)' : '#b43a34'}"/><rect x="${x + bw / 2}" y="${Math.min(Y(b[k]), h / 2)}" width="${Math.max(1, bw / 2 - 1)}" height="${Math.max(.5, Math.abs(Y(b[k]) - h / 2))}" fill="#a8a297"/>${i % 5 === 0 ? `<text x="${x + bw / 2}" y="${h + 10}" font-size="8.5" text-anchor="middle" fill="currentColor" fill-opacity=".55">${k}</text>` : ''}`; }).join('')}</svg>`;
+}
+function heat(d) {
+  const m = periods(d, 7), ys = periods(d, 4), cap = Math.max(.01, ...Object.values(m).map(Math.abs)), M = 'JFMAMJJASOND';
+  const bg = v => v == null ? 'transparent' : Math.abs(v) < 1e-9 ? 'color-mix(in srgb, currentColor 6%, transparent)' : `color-mix(in srgb, ${v > 0 ? 'var(--ac)' : '#b43a34'} ${Math.round((Math.min(1, Math.abs(v) / cap) * .75 + .12) * 100)}%, transparent)`;
+  return `<table class="heat"><tr><th></th>${[...M].map(x => `<th>${x}</th>`).join('')}<th>Yr</th></tr>${Object.keys(ys).reverse().map(y => `<tr><th>${y.slice(2)}</th>${[...M].map((_, k) => { const v = m[`${y}-${String(k + 1).padStart(2, '0')}`]; return `<td style="background:${bg(v)}" title="${y}-${k + 1}: ${v == null ? '–' : pct(v, 2, true)}">${v == null || Math.abs(v) < 1e-9 ? '' : (v * 100).toFixed(0)}</td>`; }).join('')}<td class="${cls(ys[y])}"><b>${(ys[y] * 100).toFixed(0)}</b></td></tr>`).join('')}</table>`;
+}
+function hist(rets, w = 520, h = 80) {
+  if (!rets.length) return '<div class="cap">No closed trades.</div>';
+  const lo = Math.min(...rets), hi = Math.max(...rets), nb = Math.min(30, Math.max(8, Math.ceil(Math.sqrt(rets.length) * 1.4))), bw0 = (hi - lo) / nb || .001, c = Array(nb).fill(0);
+  rets.forEach(r => c[Math.min(nb - 1, Math.floor((r - lo) / bw0))]++); const mx = Math.max(...c), bw = (w - 10) / nb;
+  return `<svg viewBox="0 0 ${w} ${h + 12}" width="100%">${c.map((v, k) => { const mid = lo + (k + .5) * bw0, bh = v / mx * (h - 4); return `<rect x="${5 + k * bw + 1}" y="${h - bh}" width="${bw - 2}" height="${bh}" fill="${mid >= 0 ? 'var(--ac)' : '#b43a34'}"><title>${pct(lo + k * bw0)} to ${pct(lo + (k + 1) * bw0)}: ${v}</title></rect>`; }).join('')}<text x="5" y="${h + 10}" font-size="9" fill="currentColor" fill-opacity=".6">${pct(lo, 1)}</text><text x="${w - 5}" y="${h + 10}" font-size="9" text-anchor="end" fill="currentColor" fill-opacity=".6">${pct(hi, 1)}</text></svg>`;
+}
+
+// ------------------------------------------------------------------ rules, checks
+function rulesHtml(c) {
+  const sec = { F: [], E: [], A: [], X: [] };
+  for (const r of c.rules) { const [t, ...x] = r.split('|'); (sec[t] || sec.E).push(x.join('|')); }
+  const o = r => /^(Buy|Short|Sell|Cover|Next day|No other signal|Once|After|Stop)/.test(r);
+  const b = (t, col, it) => it.length ? `<div class="lb"><i style="background:${col}"></i>${t}</div>${it.map(r => `<div class="rl ${o(r) ? 'o' : ''}">${o(r) ? '→ ' : '· '}${esc(r)}</div>`).join('')}` : '';
+  return b('CONDITIONS', '#555', sec.F) + b('ENTRY', 'var(--ac)', sec.E) + b('SCALE-IN', '#8b93a1', sec.A) + b(sec.X.length > 1 ? 'EXIT (FIRST TO HAPPEN)' : 'EXIT', '#b43a34', sec.X);
+}
+function exitCheck(t) {
+  const x = t.at_exit, r = t.reason, f1 = n => n == null ? '–' : n.toFixed(1), sg = n => (n > 0 ? '+' : '') + n.toFixed(2) + '%';
+  let m = r.match(/^RSI\((\d)\) ([<>]) (\d+)/); if (m) { const th = +m[3]; return { ok: m[2] === '>' ? x.rsi2 > th : x.rsi2 < th, text: `RSI(2) ${f1(x.rsi2)}` }; }
+  if (r === '5 bars held') return { ok: t.bars === 5, text: `${t.bars} bars` };
+  if (r.startsWith('Close > 5-day SMA')) return { ok: x.vs_sma5 > 0, text: `${sg(x.vs_sma5)} vs 5-SMA` };
+  if (r.startsWith('Close < 5-day SMA')) return { ok: x.vs_sma5 < 0, text: `${sg(x.vs_sma5)} vs 5-SMA` };
+  if (r.includes('below 200-day SMA')) return { ok: x.vs_sma200 <= -1.5, text: `${sg(x.vs_sma200)} vs 200-SMA` };
+  if (r.includes('above 200-day SMA')) return { ok: x.vs_sma200 >= 1.5, text: `${sg(x.vs_sma200)} vs 200-SMA` };
+  if (r.startsWith('Close ≥ 5% profit')) { const g = x.close / t.avg_px - 1; return { ok: g >= .05, text: `${sg(g * 100)} vs entry` }; }
+  return null;
+}
+
+// ------------------------------------------------------------------ THE TEAR SHEET (all stats)
+function sheetHtml(f, c, d, o = {}) {
+  const s = d.stats, v = verdictOf(s), cl = c.claim, closed = d.trades.filter(t => !t.open), chk = closed.map(exitCheck).filter(Boolean), pass = chk.filter(x => x.ok).length;
+  const vt = f.variants.length > 1 ? `<div class="sec"><h3>Variants in the course</h3><table><tr><th>Variant</th><th class="n">Trades</th><th class="n">Win</th><th class="n">CAGR</th><th class="n">Sharpe</th><th class="n">t</th></tr>${f.variants.map(x => { const ss = D.sum[x.id]?.stats; return `<tr class="${x.id === c.id ? 'b' : ''}"><td>${esc(x.variant)}</td>${ss ? `<td class="n">${fx(ss.trades, 0)}</td><td class="n">${pct(ss.win_rate, 0)}</td><td class="n ${cls(ss.cagr)}">${pct(ss.cagr, 1, true)}</td><td class="n">${fx(ss.sharpe)}</td><td class="n">${fx(ss.t_stat)}</td>` : '<td colspan="5" class="n">no data</td>'}</tr>`; }).join('')}</table></div>` : '';
+  const stats = [['Total return', pct(s.total_return, 1, true)], ['B&H total', pct(s.bh_total, 1, true)], ['Volatility', pct(s.vol, 1)], ['Sortino', fx(s.sortino)], ['MAR', fx(s.mar)], ['Days under water', fx(s.max_dd_days, 0)], ['CAGR / exposure', s.exposure ? pct(s.cagr / s.exposure, 1, true) : '–'], ['Capital deployed', pct(s.avg_deployed, 0)], ['Expectancy', pct(s.avg_trade, 3)], ['Median trade', pct(s.median_trade, 3)], ['Avg win', pct(s.avg_win)], ['Avg loss', pct(s.avg_loss)], ['Payoff', fx(s.payoff)], ['Losing streak', fx(s.max_consec_losses, 0)], ['Best trade', pct(s.best, 1, true)], ['Worst trade', pct(s.worst, 1)], ['Avg bars held', fx(s.avg_bars, 1)], ['Trades / year', fx(s.trades_per_year, 1)]];
+  return `<div class="sheet ${o.cols === false ? '' : 'cols'}" style="${o.style || ''}">
+   <div class="sec wide"><h2 data-vol="${esc(o.vol || '')}">${esc(f.name)}</h2><div class="meta">${c.dir} · ${esc(c.group)} · Session ${c.session}${c.variant ? ` · <b>${esc(c.variant)}</b>` : ''} · ${esc(LABEL)}, ${d.dates[0]} to ${d.dates[d.dates.length - 1]}<span class="stamp" style="color:${v.c}">${v.t}</span></div>
+     ${f.variants.length > 1 ? `<div class="vbtn">${f.variants.map(x => `<button data-v="${x.id}" class="${x.id === c.id ? 'on' : ''}">${esc(x.variant.split(' · ')[0])}</button>`).join('')}</div>` : ''}</div>
+   <div class="sec"><div class="kp"><div><span>CAGR</span><b class="${cls(s.cagr)}">${pct(s.cagr, 2, true)}</b><i>B&amp;H ${pct(s.bh_cagr, 1, true)}</i></div><div><span>Sharpe</span><b>${fx(s.sharpe)}</b><i>t = ${fx(s.t_stat)}</i></div><div><span>Max DD</span><b class="neg">${pct(s.max_dd, 1)}</b><i>B&amp;H ${pct(s.bh_max_dd, 0)}</i></div><div><span>Win rate</span><b>${pct(s.win_rate, 1)}</b><i>book ${cl ? esc(cl.win) : '–'}</i></div><div><span>Profit factor</span><b>${fx(s.profit_factor)}</b><i>payoff ${fx(s.payoff)}</i></div><div><span>Closed trades</span><b>${fx(s.trades, 0)}</b><i>${pct(s.exposure, 0)} in market</i></div></div>
+     <p class="verdict">${fx(s.trades, 0)} trades in ${fx(s.years, 1)} years; ${pct(s.cagr, 2, true)} a year vs ${pct(s.bh_cagr, 2, true)} buy &amp; hold; worst drawdown ${pct(s.max_dd, 1)}. ${s.trades < 30 ? 'Too few trades to judge.' : Math.abs(s.t_stat) >= 2 ? 'The average trade is statistically significant.' : 'The average trade is not statistically significant.'}${cl ? ` Book win rate ${esc(cl.win)} vs ${pct(s.win_rate, 1)} here.` : ''}</p></div>
+   <div class="sec"><h3>Rules (as taught)</h3>${rulesHtml(c)}${c.notes ? `<div class="cap" style="margin-top:6px">${esc(c.notes)}</div>` : ''}</div>
+   ${vt}
+   <div class="sec"><h3>Equity vs buy &amp; hold (log)</h3>${eqChart(d)}<div class="cap">Strategy ${d.equity[d.equity.length - 1].toFixed(2)}× · buy &amp; hold ${d.bh[d.bh.length - 1].toFixed(2)}× (grey)</div><h3 style="margin-top:10px">Drawdown</h3>${ddChart(d)}</div>
+   <div class="sec"><h3>Calendar-year returns</h3>${yearBars(d)}<div class="cap">Strategy (colour) vs buy &amp; hold (grey)</div></div>
+   <div class="sec"><h3>Trade returns</h3>${hist(closed.map(t => t.ret))}</div>
+   <div class="sec"><h3>Monthly returns (%)</h3>${heat(d)}</div>
+   <div class="sec"><h3>All statistics</h3><div class="stats">${stats.map(([k, x]) => `<div><span>${k}</span><b class="${String(x).startsWith('-') ? 'neg' : ''}">${x}</b></div>`).join('')}</div></div>
+   <div class="sec"><h3>Book vs ${esc(LABEL)}</h3><table><tr><th></th><th class="n">Book</th><th class="n">${esc(LABEL)}</th></tr><tr><td>Trades</td><td class="n">${cl ? esc(cl.trades) : '–'}</td><td class="n">${fx(s.trades, 0)}</td></tr><tr><td>Win rate</td><td class="n">${cl ? esc(cl.win) : '–'}</td><td class="n">${pct(s.win_rate, 1)}</td></tr><tr><td>Avg trade</td><td class="n">${cl ? esc(cl.avg) : '–'}</td><td class="n">${pct(s.avg_trade)}</td></tr><tr><td>Avg hold</td><td class="n">${cl ? esc(cl.hold) : '–'}</td><td class="n">${fx(s.avg_bars, 1)} bars</td></tr></table><div class="cap">${cl ? esc(cl.period) : 'The course gives no statistics.'}</div></div>
+   <div class="sec wide"><h3>Trade log (${d.trades.length} trades, newest first)</h3><div class="check">✓ Exit rule re-checked on ${chk.length} of ${closed.length} closed trades: ${pass} pass${pass < chk.length ? `, ${chk.length - pass} fail` : ''}.</div>
+     <div class="log"><table><tr><th>#</th><th>Entry</th><th>Signal</th><th>Exit</th><th>Reason</th><th class="n">Pcs</th><th class="n">Avg in</th><th class="n">Out</th><th class="n">Bars</th><th class="n">Return</th></tr>${d.trades.map((t, k) => ({ t, k })).reverse().map(({ t, k }) => { const x = t.open ? null : exitCheck(t); return `<tr><td>${k + 1}</td><td>${t.entry}</td><td>RSI ${fx(t.at_entry.rsi2, 1)}</td><td>${t.open ? 'open' : t.exit}</td><td>${esc(t.reason)}${x ? ` <span class="${x.ok ? 'ok' : 'bad'}">${x.ok ? '✓' : '✗'} ${x.text}</span>` : ''}</td><td class="n">${t.legs.length}</td><td class="n">${fx(t.avg_px)}</td><td class="n">${fx(t.exit_px)}</td><td class="n">${t.bars}</td><td class="n ${cls(t.ret)}">${pct(t.ret, 2, true)}</td></tr>`; }).join('')}</table></div></div>
+  </div>`;
+}
+// render a full sheet into an element; variant buttons re-render in place
+async function sheetInto(el, f, vid, o = {}) {
+  el.innerHTML = '<div class="loading">Opening the book…</div>';
+  const c = f.variants.find(x => x.id === vid) || f.best.c, d = await run(c.id);
+  el.innerHTML = sheetHtml(f, c, d, o);
+  el.querySelectorAll('.vbtn button').forEach(b => b.onclick = () => sheetInto(el, f, b.dataset.v, o));
+}
+function modal(html, after) { $('#mbody').innerHTML = html; $('#modal').classList.add('on'); after?.(); }
+$('#modal').addEventListener('click', e => { if (e.target.id === 'modal' || e.target.classList.contains('close')) $('#modal').classList.remove('on'); });
+addEventListener('keydown', e => { if (e.key === 'Escape') $('#modal').classList.remove('on'); });
+const spine = (f, i, col, h) => { const s = f.s; return `<div class="b3" data-i="${i}" style="--c:${col};--h:${h || 230 + (i * 37 % 5) * 12}px;--w:${48 + Math.round(Math.min(.6, s.exposure) * 40)}px"><div class="sp"><span class="t">${esc(f.name)}</span><span class="s">${fx(s.sharpe)}</span></div></div>`; };
+const head = (t, s) => `<h2 class="wt">${t}</h2><p class="ws">${s}</p>`;
+
+// ================================================================== WORLDS
+// the original 5 (book-masterworks.html) shown as they were, with the complete sheet underneath
+const ORIG = (k, name, desc) => ({ name, desc: desc + ' The complete statistics for the strategy you pick appear below the frame.',
+  render: () => `<section class="world orig"><iframe src="${esc(`book-masterworks.html?embed=1&${location.search.slice(1)}#${k}`)}" title="${esc(name)}"></iframe><div class="origsheet"><div class="ohead">Complete statistics: <b id="oname"></b> <a href="#" id="otop">↑ back to the book</a></div><div id="os"></div></div></section>`,
+  after: () => {
+    let shown = null; const open = id => { const f = D.fams.find(x => x.id === id); if (!f || id === shown) return; shown = id; $('#oname').textContent = f.name; sheetInto($('#os'), f); };
+    const msg = e => { if (e.data && e.data.fam) open(e.data.fam); }; addEventListener('message', msg); cleanup.push(() => removeEventListener('message', msg));
+    $('#otop').onclick = e => { e.preventDefault(); scrollTo({ top: 0, behavior: 'smooth' }); };
+    open(D.fams[0].id);
+  } });
+const W = [
+ ORIG(1, 'The Reading Room (WebGL)', 'The original 3D room: hover to lift a book, click to pull it out; the panel shows its key stats.'),
+ ORIG(2, 'The Shelf Is the Chart', 'The original data shelf: height = trades, thickness = time in market, cloth = verdict, gold band = Sharpe. Click a book.'),
+ ORIG(3, 'Scroll Story', 'The original scroll story: scroll inside the frame and the book turns one page per strategy.'),
+ ORIG(4, 'The Complete Edition', 'The original page-curl book: drag a corner; every strategy is a spread.'),
+ ORIG(5, 'Rolodex', 'The original card wheel: scroll or drag it, or use the arrows.'),
+ { name: 'Wooden Bookshelf', desc: 'Every strategy is a cloth-bound book; thickness = time in market, number on the spine = Sharpe. Click a book: it opens as a two-page spread with the full tear sheet.',
+   render: () => `<section class="world w1 pad"><div class="wrap">${head('The Bookshelf', 'Click any book to open it.')}<div class="case"><div class="inner"><div class="row">${D.fams.map((f, i) => spine(f, i, CLOTH[i % 8])).join('')}</div><div class="plank"></div></div></div></div></section>`,
+   after: () => document.querySelectorAll('.w1 .b3').forEach(b => b.onclick = () => { const f = D.fams[+b.dataset.i]; modal(`<div class="bookopen"><button class="close">×</button><div id="ms"></div></div>`, () => sheetInto($('#ms'), f)); }) },
+ { name: 'Coverflow', desc: 'Books in a 3D carousel with reflections. The centred book\'s complete tear sheet is shown underneath.',
+   render: () => `<section class="world w2 pad"><div class="wrap">${head('Coverflow', 'Click a book or use the arrows; ← → keys work too.')}<div class="flow" id="flow">${D.fams.map((f, i) => `<div class="it" data-i="${i}"><div class="f" style="--c:${CLOTH[i % 8]}"><small>Chapter ${i + 1} · Session ${f.session}</small><div><div class="big">${fx(f.s.sharpe)}</div><small>Sharpe</small></div><h4>${esc(f.name)}</h4></div></div>`).join('')}</div><div class="nav2"><button id="cp">← Previous</button><button id="cn">Next →</button></div><div id="cs"></div></div></section>`,
+   after: () => { const its = [...document.querySelectorAll('.w2 .it')]; let cur = -1; const go = k => { k = Math.max(0, Math.min(its.length - 1, k)); if (k === cur) return; cur = k; its.forEach((el, i) => { const d = i - k, a = Math.abs(d); el.style.transform = d === 0 ? 'translateZ(70px)' : `translateX(${d * 105 + Math.sign(d) * 60}px) rotateY(${-Math.sign(d) * 58}deg) translateZ(${-a * 30}px)`; el.style.zIndex = 100 - a; el.style.opacity = a > 5 ? 0 : 1; }); sheetInto($('#cs'), D.fams[k]); }; its.forEach(el => el.onclick = () => go(+el.dataset.i)); $('#cp').onclick = () => go(cur - 1); $('#cn').onclick = () => go(cur + 1); const kd = e => { if (e.key === 'ArrowRight') go(cur + 1); if (e.key === 'ArrowLeft') go(cur - 1); }; addEventListener('keydown', kd); cleanup.push(() => removeEventListener('keydown', kd)); go(0); } },
+ { name: 'Ribbon Bookmarks', desc: 'A closed book with a satin ribbon per strategy. Pull a ribbon: the cover swings open at that strategy\'s spread, ribbon still in the gutter.',
+   render: () => `<section class="world w4 pad"><div class="wrap">${head('Ribbon Bookmarks', 'Click a ribbon to open the book at that chapter.')}<div class="closed"><div class="cov"><div class="ph"><img src="${PHOTO}" alt=""></div><h3>Larry Connors</h3><div>Swing Trading College IX</div><small>${D.fams.length} ribbons</small></div><div class="ribbons">${D.fams.map((f, i) => `<div class="rb" data-i="${i}" style="--c:${CLOTH[i % 8]};--h:${70 + (i * 23) % 50}px" title="${esc(f.name)}"><span>${esc(f.name.split(' (')[0])}</span></div>`).join('')}</div></div><div style="height:150px"></div></div></section>`,
+   after: () => document.querySelectorAll('.w4 .rb').forEach(r => r.onclick = () => { const i = +r.dataset.i, f = D.fams[i]; $('.w4 .cov').style.transform = 'rotateY(-80deg)'; setTimeout(() => { modal(`<div class="w4"><div class="bookopen"><div class="tied" style="--c:${CLOTH[i % 8]}"></div><button class="close">×</button><div id="ms"></div></div></div>`, () => sheetInto($('#ms'), f)); $('.w4 .cov').style.transform = ''; }, 450); }) },
+ { name: 'Thumb Index', desc: 'A reference book with a dictionary thumb-index: one coloured tab per strategy cut into the page edge. Click a tab to open that section.',
+   render: () => `<section class="world w5 pad"><div class="wrap">${head('Thumb Index', 'Click a tab on the right edge of the book.')}<div class="book"><div class="pages" id="tp"></div><div class="tabs">${D.fams.map((f, i) => `<button class="tab" data-i="${i}" style="--c:${CLOTH[i % 8]}">${esc(f.name)}</button>`).join('')}</div></div></div></section>`,
+   after: () => { const open = i => { document.querySelectorAll('.w5 .tab').forEach(t => t.classList.toggle('on', +t.dataset.i === i)); $('#tp').style.setProperty('--tc', CLOTH[i % 8]); sheetInto($('#tp'), D.fams[i]); }; document.querySelectorAll('.w5 .tab').forEach(t => t.onclick = () => open(+t.dataset.i)); open(0); } },
+ { name: 'Stack of Books', desc: 'A pile of books on their sides, widest = most trades. Click a spine: it slides out and its tear sheet opens below the pile.',
+   render: () => { const so = [...D.fams.keys()].sort((a, b) => D.fams[b].s.trades - D.fams[a].s.trades); return `<section class="world w6 pad"><div class="wrap">${head('Stack of Books', 'Ordered by number of trades. Click a spine.')}<div class="stack">${so.map((i, r) => `<button class="hb" data-i="${i}" style="--c:${CLOTH[r % 8]};--w:${520 + (so.length - r) * 22}px;--x:${(r * 37) % 60}px"><span class="n">${esc(D.fams[i].name)}</span><span class="m">${pct(D.fams[i].s.cagr, 1, true)} · Sharpe ${fx(D.fams[i].s.sharpe)} · ${fx(D.fams[i].s.trades, 0)} trades</span></button>`).join('')}</div><div class="floor"></div><div id="ss"></div></div></section>`; },
+   after: () => { const open = i => { document.querySelectorAll('.w6 .hb').forEach(b => b.classList.toggle('on', +b.dataset.i === i)); sheetInto($('#ss'), D.fams[i], null, { style: `--ac:${CLOTH[[...D.fams.keys()].sort((a, b) => D.fams[b].s.trades - D.fams[a].s.trades).indexOf(i) % 8]}` }); }; document.querySelectorAll('.w6 .hb').forEach(b => b.onclick = () => open(+b.dataset.i)); open(0); } },
+ { name: 'Card Catalogue', desc: 'A library drawer of index cards, one per strategy. Lift a card: it comes out of the drawer as a full typed index card.',
+   render: () => `<section class="world w7 pad"><div class="wrap">${head('Card Catalogue', 'Click a card tab in the drawer.')}<div class="drawer"><div class="label">CONNORS, Larry · ${D.fams.length} cards</div><div class="fan">${D.fams.map((f, i) => `<button class="tabc" data-i="${i}">CON ${String(f.session).padStart(2, '0')}.${String(i + 1).padStart(2, '0')}<br>${esc(f.name)}</button>`).join('')}</div></div><div id="ks"></div></div></section>`,
+   after: () => { const open = i => { document.querySelectorAll('.w7 .tabc').forEach(b => b.classList.toggle('on', +b.dataset.i === i)); sheetInto($('#ks'), D.fams[i]); }; document.querySelectorAll('.w7 .tabc').forEach(b => b.onclick = () => open(+b.dataset.i)); open(0); } },
+ { name: 'The Newspaper', desc: 'The Strategy Times: every strategy is a front-page story with its Sharpe as the subhead. Click a story to read the full article: the tear sheet set in newspaper columns.',
+   render: () => `<section class="world w11 pad"><div class="paper"><div class="mast"><h2>The Strategy Times</h2><div class="dl"><span>Larry Connors edition</span><span>${esc(RANGE)}</span><span>${D.fams.length} stories</span></div></div><div class="front">${D.fams.map((f, i) => `<button class="story" data-i="${i}"><b>${esc(f.name)}</b><span>${verdictOf(f.s).t} · Sharpe ${fx(f.s.sharpe)} · ${pct(f.s.cagr, 1, true)} a year</span></button>`).join('')}</div><div id="ns"></div></div></section>`,
+   after: () => { const open = i => { document.querySelectorAll('.w11 .story').forEach(b => b.classList.toggle('on', +b.dataset.i === i)); sheetInto($('#ns'), D.fams[i]); }; document.querySelectorAll('.w11 .story').forEach(b => b.onclick = () => open(+b.dataset.i)); open(0); } },
+ { name: 'Encyclopedia Volumes', desc: 'A matched set of navy-and-gilt volumes, one per strategy, numbered like an encyclopedia. Pull a volume to read its entry.',
+   render: () => `<section class="world w12 pad"><div class="wrap">${head('The Encyclopedia', 'Click a volume.')}<div class="shelf"><div class="row">${D.fams.map((f, i) => `<button class="vol" data-i="${i}"><b>${['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII', 'XIII', 'XIV', 'XV', 'XVI'][i]}</b><span>${esc(f.name)}</span></button>`).join('')}</div><div class="plank"></div></div><div id="es"></div></div></section>`,
+   after: () => { const R = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII', 'XIII', 'XIV', 'XV', 'XVI']; const open = i => { document.querySelectorAll('.w12 .vol').forEach(b => b.classList.toggle('on', +b.dataset.i === i)); sheetInto($('#es'), D.fams[i], null, { vol: `VOLUME ${R[i]}` }); }; document.querySelectorAll('.w12 .vol').forEach(b => b.onclick = () => open(+b.dataset.i)); open(0); } },
+ { name: 'Accounting Ledger', desc: 'A green clothbound ledger with folio tabs. Each strategy is a folio ruled in green with red-ink margins.',
+   render: () => `<section class="world w13 pad"><div class="lbook"><div class="tabsl">${D.fams.map((f, i) => `<button data-i="${i}">Folio ${i + 1}</button>`).join('')}</div><div id="ls"></div></div></section>`,
+   after: () => { const open = i => { document.querySelectorAll('.w13 .tabsl button').forEach(b => b.classList.toggle('on', +b.dataset.i === i)); sheetInto($('#ls'), D.fams[i]); }; document.querySelectorAll('.w13 .tabsl button').forEach(b => b.onclick = () => open(+b.dataset.i)); open(0); } },
+ { name: 'Trade Journal', desc: 'A black notebook with an elastic band and sticky-note tabs. Each strategy is written up on lined paper with a red margin.',
+   render: () => `<section class="world w14 pad"><div class="wrapnb"><div class="nb"><div class="band"></div><div class="stickies">${D.fams.map((f, i) => `<button class="stk" data-i="${i}" style="--c:${['#fff1a8', '#ffd1dc', '#c9f2d0', '#cfe4ff', '#ffe0b3'][i % 5]}">${esc(f.name)}</button>`).join('')}</div><div id="js"></div></div></div></section>`,
+   after: () => { const open = i => { document.querySelectorAll('.w14 .stk').forEach(b => b.classList.toggle('on', +b.dataset.i === i)); sheetInto($('#js'), D.fams[i]); }; document.querySelectorAll('.w14 .stk').forEach(b => b.onclick = () => open(+b.dataset.i)); open(0); } },
+ { name: 'Filing Cabinet', desc: 'A steel filing cabinet with one drawer per strategy group. Pull a drawer, pick a folder, and it opens as a manila folder holding the tear sheet.',
+   render: () => { const G = [...new Set(D.fams.map(f => f.group))]; return `<section class="world w15 pad"><div class="wrap">${head('The Filing Cabinet', 'Click a drawer, then a folder.')}<div class="cab">${G.map(g => `<div class="drw"><div class="face"><span class="lab">${esc(g)}</span><span class="handle"></span></div><div class="folders">${D.fams.map((f, i) => f.group === g ? `<button class="fld" data-i="${i}">${esc(f.name)}</button>` : '').join('')}</div></div>`).join('')}</div><div id="fs"></div></div></section>`; },
+   after: () => { document.querySelectorAll('.w15 .drw .face').forEach(fc => fc.onclick = () => { const d = fc.parentElement, was = d.classList.contains('open'); document.querySelectorAll('.w15 .drw').forEach(x => x.classList.remove('open')); if (!was) d.classList.add('open'); }); const open = i => { document.querySelectorAll('.w15 .fld').forEach(b => b.classList.toggle('on', +b.dataset.i === i)); $('#fs').innerHTML = `<div class="folder" data-tab="${esc(D.fams[i].name)}"><div id="fsi"></div></div>`; sheetInto($('#fsi'), D.fams[i]); }; document.querySelectorAll('.w15 .fld').forEach(b => b.onclick = () => open(+b.dataset.i)); document.querySelector('.w15 .drw').classList.add('open'); open(0); } },
+ { name: 'Reading Table', desc: 'One open book lying on a lamplit wooden desk. Turn the pages with the arrows (or ← →) to move from chapter to chapter.',
+   render: () => `<section class="world w16 pad"><div class="lamp"></div><div class="wrap" style="position:relative;z-index:1">${head('The Reading Table', 'An open book on the desk. Use the arrows to turn the page.')}</div><div class="arr"><button id="tp_">← Previous chapter</button><span id="tpos"></span><button id="tn_">Next chapter →</button></div><div class="tablebook"><div class="spread" id="tsp"><div id="tss"></div></div></div></section>`,
+   after: () => { let cur = -1; const go = k => { k = Math.max(0, Math.min(D.fams.length - 1, k)); if (k === cur) return; const first = cur < 0; cur = k; $('#tpos').textContent = `Chapter ${k + 1} of ${D.fams.length}: ${D.fams[k].name}`; const sp = $('#tsp'); if (first) { sheetInto($('#tss'), D.fams[k]); return; } sp.classList.add('turn'); setTimeout(() => { sheetInto($('#tss'), D.fams[k]).then(() => sp.classList.remove('turn')); }, 380); }; $('#tp_').onclick = () => go(cur - 1); $('#tn_').onclick = () => go(cur + 1); const kd = e => { if (e.key === 'ArrowRight') go(cur + 1); if (e.key === 'ArrowLeft') go(cur - 1); }; addEventListener('keydown', kd); cleanup.push(() => removeEventListener('keydown', kd)); go(0); } },
+];
+
+// ------------------------------------------------------------------ boot
+let cur = 0;
+async function init() {
+  const get = async u => (await fetch(API + u)).json();
+  const [tickers, gurus, cat, sum] = await Promise.all([get('/api/tickers'), get('/api/gurus'), get('/api/guru/connors/strategies'), get(`/api/guru/connors/summary?${RQ}`)]);
+  const byId = Object.fromEntries(sum.map(r => [r.id, r])), fams = [], seen = {};
+  for (const c of cat.filter(c => c.status === 'live')) {
+    const r = byId[c.id];
+    const f = seen[c.family] || (seen[c.family] = fams[fams.push({ id: c.family, name: c.family_name, session: c.session, group: c.group.split(' · ')[0], variants: [], best: null }) - 1]);
+    f.variants.push(c); if (r?.stats && (!f.best || r.stats.sharpe > f.best.s.sharpe)) f.best = { c, s: r.stats };
+  }
+  const live = fams.filter(f => f.best); live.forEach(f => f.s = f.best.s);
+  D = { g: gurus[0], fams: live, sum: byId };
+  const tk = tickers.find(t => t.ticker === RQ.get('ticker')) || tickers[0], setRange = t => { $('#cf').min = $('#cto').min = t.first; $('#cf').max = $('#cto').max = t.last; $('#cf').value = t.first; $('#cto').value = t.last; };
+  $('#ct').innerHTML = tickers.map(t => `<option value="${esc(t.ticker)}">${esc({ 'NIFTY 50': 'Nifty 50', NIFTYBANK: 'Bank Nifty', NIFTYIT: 'Nifty IT', NIFTYMIDCAP100: 'Midcap 100' }[t.ticker] || t.ticker)}${t.has_volume ? '' : ' (no volume)'}</option>`).join('');
+  $('#ct').value = tk.ticker; setRange(tk); if (RQ.get('from')) $('#cf').value = RQ.get('from'); if (RQ.get('to')) $('#cto').value = RQ.get('to'); $('#cc').value = RQ.get('cost') || 0;
+  $('#ct').onchange = () => setRange(tickers.find(t => t.ticker === $('#ct').value));
+  $('#ctl').onsubmit = e => { e.preventDefault(); const q = new URLSearchParams(location.search); q.set('ticker', $('#ct').value); q.set('from', $('#cf').value); q.set('to', $('#cto').value); q.set('cost', $('#cc').value || 0); location.search = q; };
+  $('#pick').innerHTML = W.map((w, k) => `<button data-k="${k}">${k + 1}. ${w.name}</button>`).join('');
+  $('#pick').querySelectorAll('button').forEach(b => b.onclick = () => show(+b.dataset.k));
+  addEventListener('hashchange', () => { const k = +location.hash.slice(1) - 1; if (k !== cur && k >= 0 && k < W.length) show(k); });
+  show(Math.max(0, Math.min(W.length - 1, +(location.hash.slice(1) || 1) - 1)));
+}
+function show(k) {
+  cleanup.forEach(f => { try { f(); } catch (e) {} }); cleanup = []; $('#modal').classList.remove('on');
+  cur = k; history.replaceState(null, '', '#' + (k + 1)); scrollTo(0, 0);
+  document.querySelectorAll('#pick button').forEach(b => b.classList.toggle('on', +b.dataset.k === k));
+  $('#desc').innerHTML = `<b>${k + 1}. ${W[k].name}.</b> ${W[k].desc}`;
+  $('#stage').innerHTML = W[k].render();
+  W[k].after?.();
+}
+init().catch(e => { $('#stage').innerHTML = `<p style="padding:40px">Could not reach the Rust API at ${API}: ${esc(e.message)}</p>`; });
+</script>
+</body>
+</html>

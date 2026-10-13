@@ -1,0 +1,846 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vault Screener · Strategy Vault</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="vendor/fonts.css">
+<link rel="stylesheet" href="vendor/fonts-options.css">
+<style>
+:root { --bg: #e9e9e9; --panel: #f6f6f6; --card: #fbfbfb; --ink: #090909; --ink2: #5f6166; --ink3: #8b8d93; --steel: #b9b9ba; --rule: #dcdcdd;
+  --blue: #2f5a8f; --blue-soft: #e4ebf4; --red: #c43c3c; --green: #2e7d4f; --font: "Archivo", "IBM Plex Sans", system-ui, sans-serif; }
+* { box-sizing: border-box; }
+html, body { margin: 0; overflow-x: clip; }
+body { background: linear-gradient(180deg, #f3f3f3, var(--bg) 520px) no-repeat, var(--bg); color: var(--ink); font: 14px/1.5 var(--font); }
+button, input, select { font: inherit; color: inherit; }
+a { color: inherit; }
+.num, td.n { font-variant-numeric: tabular-nums; }
+.pos { color: var(--green); } .neg { color: var(--red); } .muted { color: var(--ink3); }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+.topbar { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 30px; height: 58px; padding: 0 32px; background: rgb(242 242 242 / .92); backdrop-filter: blur(8px); border-bottom: 1px solid var(--steel); }
+.wordmark { font-weight: 800; font-stretch: 125%; font-size: 18px; text-decoration: none; }
+.cats { display: flex; gap: 22px; font-size: 14px; } .cats a { text-decoration: none; color: var(--ink2); } .cats a.on { color: var(--ink); font-weight: 700; }
+.cats em { font-style: normal; font-size: 11px; margin-left: 6px; padding: 1px 7px; border: 1px solid var(--steel); color: var(--ink3); }
+.status { margin-left: auto; font-size: 12px; color: var(--ink2); }
+
+.page { max-width: 1320px; margin: 0 auto; padding: 0 32px 60px; }
+.crumbs { font-size: 13px; color: var(--ink2); padding: 18px 0 0; } .crumbs a { cursor: pointer; text-decoration: none; } .crumbs a:hover { text-decoration: underline; } .crumbs b { color: var(--ink); font-weight: 600; }
+.hero { display: grid; grid-template-columns: 1fr 460px; gap: 36px; align-items: center; padding: 18px 0 22px; }
+.hero h1 { font-weight: 800; font-stretch: 112%; font-size: clamp(34px, 4vw, 50px); line-height: 1.02; letter-spacing: -.02em; margin: 0 0 12px; }
+.hero p { margin: 0; color: var(--ink2); font-size: 15.5px; max-width: 640px; }
+.tree { display: flex; flex-wrap: wrap; gap: 0; margin-top: 18px; border: 1px solid var(--steel); width: fit-content; background: var(--card); }
+.tree button { border: 0; background: none; padding: 9px 16px; cursor: pointer; text-align: left; border-right: 1px solid var(--rule); }
+.tree button:last-child { border-right: 0; } .tree button b { display: block; font-size: 20px; font-weight: 700; line-height: 1.1; } .tree button span { font-size: 11.5px; color: var(--ink2); }
+.tree button.on { background: var(--ink); color: #fff; } .tree button.on span { color: #cfd0d3; }
+.tree i { font-style: normal; color: var(--ink3); align-self: center; padding: 0 2px; }
+
+.dist { background: var(--card); border: 1px solid var(--steel); padding: 16px 18px 12px; }
+.dist .h { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; } .dist .h b { font-size: 14px; } .dist .h span { font: 600 11px "IBM Plex Mono", monospace; color: var(--ink3); letter-spacing: .04em; }
+.dist .foot { display: flex; justify-content: space-between; font-size: 12px; color: var(--blue); margin-top: 6px; }
+
+.controls { border-top: 1px solid var(--steel); padding-top: 14px; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.lab { font-size: 11.5px; font-weight: 600; color: var(--ink2); letter-spacing: .03em; text-transform: uppercase; margin-right: 2px; }
+.seg { display: inline-flex; border: 1px solid var(--steel); background: var(--card); }
+.seg button { border: 0; border-right: 1px solid var(--rule); background: none; padding: 7px 13px; cursor: pointer; font-size: 13px; white-space: nowrap; }
+.seg button:last-child { border-right: 0; } .seg button.on { background: var(--ink); color: #fff; } .seg button small { color: var(--ink3); margin-left: 4px; font-size: 11px; } .seg button.on small { color: #bbb; }
+.seg button.soon { color: var(--ink3); }
+.tabs { display: flex; gap: 26px; border-bottom: 1px solid var(--steel); margin: 6px 0 14px; overflow-x: auto; }
+.tabs button { border: 0; background: none; padding: 10px 0; cursor: pointer; font-size: 14.5px; color: var(--ink2); border-bottom: 2.5px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+.tabs button.on { color: var(--ink); font-weight: 700; border-color: var(--ink); } .tabs button small { font-weight: 500; color: var(--ink3); margin-left: 5px; font-size: 11.5px; }
+.tabnote { font-size: 13px; color: var(--ink2); margin: -6px 0 12px; }
+.search { flex: 1 1 280px; position: relative; } .search input { width: 100%; padding: 9px 12px 9px 34px; border: 1px solid var(--steel); background: var(--card); }
+.search::before { content: "⌕"; position: absolute; left: 11px; top: 50%; transform: translateY(-52%); color: var(--ink3); font-size: 18px; }
+.sel { position: relative; } .sel select { appearance: none; padding: 8px 30px 8px 11px; border: 1px solid var(--steel); background: var(--card); cursor: pointer; min-width: 120px; font-size: 13px; }
+.sel::after { content: "▾"; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--ink3); font-size: 11px; }
+.sel select.set { border-color: var(--ink); background: #fff; font-weight: 600; }
+.view { margin-left: auto; } .view button { display: inline-flex; gap: 6px; align-items: center; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; min-height: 26px; margin-bottom: 8px; font-size: 12.5px; }
+.chip { display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--ink); background: #fff; padding: 2px 4px 2px 9px; }
+.chip button { border: 0; background: none; cursor: pointer; padding: 0 4px; font-size: 14px; line-height: 1; }
+.clear { border: 0; background: none; color: var(--blue); cursor: pointer; text-decoration: underline; font-size: 12.5px; }
+.count { font-size: 13px; color: var(--ink2); margin: 2px 0 12px; } .count b { color: var(--ink); }
+
+/* grid */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+.card { background: var(--card); border: 1px solid var(--steel); padding: 16px 18px 14px; display: flex; flex-direction: column; gap: 10px; position: relative; transition: border-color .15s, box-shadow .15s; }
+.card:hover { border-color: var(--ink); box-shadow: 0 6px 18px #0000000f; }
+.card.preview { background: transparent; border-style: dashed; color: var(--ink2); }
+.card .rank { font: 500 12px "IBM Plex Mono", monospace; color: var(--ink3); display: flex; justify-content: space-between; align-items: center; }
+.card h3 { margin: 0; font-size: 17px; line-height: 1.25; font-weight: 700; } .card .by { font-size: 12.5px; color: var(--ink2); margin-top: -6px; }
+.kpis { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--rule); padding-top: 8px; }
+.kpis div + div { border-left: 1px solid var(--rule); padding-left: 10px; } .kpis span { display: block; font: 600 10.5px "IBM Plex Mono", monospace; color: var(--ink3); letter-spacing: .05em; text-transform: uppercase; }
+.kpis b { font-size: 20px; font-weight: 700; } .kpis b.p { color: var(--blue); font-size: 22px; } .kpis i { display: block; font-style: normal; font-size: 11px; color: var(--ink3); }
+.tags { display: flex; gap: 6px; flex-wrap: wrap; } .tag { font-size: 11.5px; border: 1px solid var(--rule); padding: 1px 8px; border-radius: 99px; background: #fff; white-space: nowrap; }
+.tag.link { cursor: pointer; border-color: var(--blue); color: var(--blue); }
+.stamp { font: 700 10px "IBM Plex Mono", monospace; border: 1.5px solid currentColor; padding: 0 6px; letter-spacing: .04em; }
+.btns { display: flex; gap: 8px; margin-top: auto; } .btn { flex: 1; text-align: center; border: 1px solid var(--blue); color: var(--blue); background: #fff; padding: 7px 10px; cursor: pointer; text-decoration: none; font-weight: 600; font-size: 13px; }
+.btn.solid { background: var(--blue); color: #fff; } .btn:hover { filter: brightness(.95); }
+details.rules { font-size: 12.5px; } details.rules summary { cursor: pointer; color: var(--ink2); } details.rules ul { margin: 6px 0 0; padding-left: 18px; } details.rules li { margin: 2px 0; }
+details.rules .t { font: 700 10px "IBM Plex Mono", monospace; color: var(--ink3); margin-right: 4px; }
+.cover { display: flex; gap: 14px; align-items: center; }
+.cover .bk { width: 64px; height: 88px; flex: none; background: var(--c); color: #e8d39a; padding: 8px 6px; font: 600 9.5px/1.15 "Newsreader", serif; display: flex; flex-direction: column; justify-content: space-between; box-shadow: inset 4px 0 6px -3px #0006, 2px 3px 6px #0002; border-radius: 1px 3px 3px 1px; }
+.cover .bk.pv { background: repeating-linear-gradient(135deg, #d8d8d9 0 6px, #e4e4e5 6px 12px); color: var(--ink3); }
+.cover .ph { width: 72px; height: 72px; flex: none; border-radius: 50%; overflow: hidden; background: #ddd; display: grid; place-items: center; font: 700 22px var(--font); color: var(--ink3); }
+.cover .ph img { width: 100%; height: 100%; object-fit: cover; filter: grayscale(1); }
+.strip text { font: 10px "IBM Plex Mono", monospace; fill: var(--ink3); }
+
+/* table */
+.tbl { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--steel); font-size: 13px; }
+.tbl th { text-align: left; font: 600 10.5px "IBM Plex Mono", monospace; letter-spacing: .05em; text-transform: uppercase; color: var(--ink3); padding: 10px 10px; border-bottom: 1px solid var(--steel); background: #f0f0f0; white-space: nowrap; cursor: pointer; user-select: none; }
+.tbl th.on { color: var(--blue); } .tbl th.nosort { cursor: default; }
+.tbl td { padding: 9px 10px; border-bottom: 1px solid var(--rule); vertical-align: middle; } .tbl tr:hover td { background: #fff; }
+.tbl td.n, .tbl th.n { text-align: right; } .tbl td.n { font-family: "IBM Plex Mono", monospace; font-size: 12.5px; }
+.tbl td.p { color: var(--blue); font-weight: 700; } .tbl .nm b { display: block; font-size: 13.5px; } .tbl .nm span { font-size: 12px; color: var(--ink2); }
+.tbl tr.preview td { color: var(--ink3); font-style: italic; } .tbl .rk { color: var(--ink3); font-family: "IBM Plex Mono", monospace; }
+.tbl .go { border: 1px solid var(--blue); color: var(--blue); background: #fff; padding: 4px 10px; cursor: pointer; font-weight: 600; font-size: 12px; text-decoration: none; white-space: nowrap; }
+.sep { grid-column: 1 / -1; font-size: 12.5px; color: var(--ink2); border-top: 1px dashed var(--steel); padding-top: 10px; margin-top: 4px; }
+.empty { border: 1px dashed var(--steel); padding: 40px; text-align: center; color: var(--ink2); background: var(--card); }
+.empty b { display: block; color: var(--ink); font-size: 17px; margin-bottom: 6px; }
+.loading { padding: 40px; text-align: center; color: var(--ink2); }
+@media (max-width: 1000px) { .hero { grid-template-columns: 1fr; } .page, .topbar { padding-left: 16px; padding-right: 16px; } .view { margin-left: 0; } .tblwrap { overflow-x: auto; } }
+/* ================= vault screener */
+#app { max-width: 1400px; margin: 0 auto; padding: 0 28px 60px; }
+.lab { margin: 14px 0 10px; border: 1px dashed #9aa6b8; background: #f3f6fa; padding: 8px 12px; font-size: 12.5px; }
+.li2 { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; } .li2 + .li2 { margin-top: 6px; } .li2 label { display: flex; gap: 6px; align-items: center; font-weight: 600; color: var(--ink2); }
+.lab .seg button { padding: 4px 9px; font-size: 12px; } .lab .hide { margin-left: auto; border: 0; background: none; cursor: pointer; color: var(--ink2); }
+.pres button { border: 1px solid #c3cbd6; background: #fff; padding: 4px 10px; cursor: pointer; font-size: 12px; border-radius: 99px; } .pres button.on { background: var(--blue); color: #fff; border-color: var(--blue); }
+.labfab { position: fixed; right: 18px; bottom: 18px; z-index: 70; border: 1px solid var(--ink); background: #fff; padding: 8px 14px; cursor: pointer; font-weight: 700; box-shadow: 0 6px 18px #0002; }
+.seg { display: inline-flex; border: 1px solid var(--steel); background: var(--card); } .seg button { border: 0; border-right: 1px solid var(--rule); background: none; padding: 6px 11px; cursor: pointer; font-size: 12.5px; white-space: nowrap; } .seg button:last-child { border-right: 0; } .seg button.on { background: var(--ink); color: #fff; }
+
+/* navbar with dropdown / mega menus */
+.navbar { display: flex; gap: 4px; align-items: center; border: 1px solid var(--steel); background: var(--card); padding: 4px 6px; margin: 10px 0 8px; position: relative; z-index: 40; flex-wrap: wrap; }
+.dd { position: relative; } .dd summary { list-style: none; cursor: pointer; padding: 8px 12px; font-size: 13.5px; font-weight: 600; white-space: nowrap; user-select: none; } .dd summary::-webkit-details-marker { display: none; }
+.dd summary::after { content: " ▾"; color: var(--ink3); font-size: 11px; } .dd[open] summary { background: var(--ink); color: #fff; } .dd.set summary b { color: var(--blue); } .dd[open].set summary b { color: #cfe0f5; }
+.pop { position: absolute; left: 0; top: 100%; min-width: 230px; background: #fff; border: 1px solid var(--ink); box-shadow: 0 14px 30px #0002; padding: 6px 0; z-index: 50; max-height: 70vh; overflow: auto; }
+.pi { display: flex; justify-content: space-between; gap: 16px; padding: 6px 14px; cursor: pointer; font-size: 13px; text-decoration: none; } .pi:hover { background: #f1f1f1; } .pi.on { font-weight: 700; background: #eef3f9; } .pi i { font-style: normal; color: var(--ink3); font-family: "IBM Plex Mono", monospace; font-size: 11.5px; }
+.pi.zero, .li.zero { color: var(--ink3); } .pi.soon, .li.soon { color: var(--ink3); font-style: italic; }
+.megap { display: grid; grid-template-columns: repeat(3, 250px); gap: 6px 18px; padding: 14px 16px; } .mg { display: flex; flex-direction: column; gap: 2px; }
+.gn { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; padding: 4px 0; cursor: pointer; } .gn img, .gn .ini { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; filter: grayscale(1); background: #ddd; display: grid; place-items: center; font-size: 10px; color: var(--ink2); }
+.bn { display: block; padding: 3px 0 3px 34px; font-size: 13px; cursor: pointer; } .bn small { display: block; color: var(--ink3); font-size: 11px; } .bn.soon { color: var(--ink3); } .gn.on, .bn.on { color: var(--blue); } .gn:hover, .bn:hover { text-decoration: underline; }
+.allg { grid-column: 1 / -1; border-top: 1px solid var(--rule); padding-top: 8px; font-size: 13px; color: var(--blue); cursor: pointer; }
+.search.nb { margin-left: auto; flex: 0 1 320px; } .search.nb input { padding: 7px 10px 7px 32px; }
+.filterbar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; position: relative; z-index: 35; } .filterbar .dd summary { border: 1px solid var(--steel); background: var(--card); padding: 6px 11px; font-weight: 500; font-size: 13px; } .filterbar .dd.set summary { border-color: var(--ink); background: #fff; }
+
+/* layout body */
+.body { display: grid; grid-template-columns: 250px 1fr; gap: 26px; align-items: start; margin-top: 8px; } .nav-top .body { grid-template-columns: 1fr; }
+.sidebar { position: sticky; top: 70px; max-height: calc(100vh - 86px); overflow: auto; padding-right: 6px; font-size: 13px; }
+.sidebar .search { display: block; margin-bottom: 10px; } .refine { font: 800 15px var(--font); margin: 4px 0 2px; }
+.sg { border-top: 1px solid var(--steel); padding: 10px 0 8px; } .sg h4 { margin: 0 0 5px; font-size: 13.5px; font-weight: 800; }
+.li { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0 2px 12px; cursor: pointer; text-decoration: none; color: var(--ink2); position: relative; } .li:hover { color: var(--ink); text-decoration: underline; }
+.li.on { color: var(--ink); font-weight: 700; } .li.on::before { content: "▸"; position: absolute; left: 0; color: var(--blue); } .li i { font-style: normal; color: var(--ink3); font-family: "IBM Plex Mono", monospace; font-size: 11px; }
+.reset { display: inline-block; margin-top: 10px; color: var(--blue); cursor: pointer; font-size: 13px; text-decoration: underline; }
+.mainc { min-width: 0; }
+.rh h1 { margin: 2px 0 4px; font-weight: 800; font-stretch: 110%; font-size: 30px; letter-spacing: -.01em; } .rh p { margin: 0 0 10px; color: var(--ink2); font-size: 13.5px; max-width: 900px; } .rh .crumb { font-size: 12.5px; color: var(--ink2); } .rh .crumb a { cursor: pointer; text-decoration: underline; }
+.rtools { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; } .rtools .lab3 { font-size: 12px; font-weight: 700; color: var(--ink2); } .rtools .sel { margin-left: auto; } .chk { font-size: 13px; display: flex; gap: 6px; align-items: center; cursor: pointer; }
+.chips { margin-bottom: 10px; }
+
+/* results */
+.grid.g2 { grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); } .card { cursor: pointer; } .card.open, .lr.open, .tbl tr.open td { outline: 2px solid var(--blue); outline-offset: -2px; background: #f2f6fb; }
+.card h3 small, .lt b small, .nm b small { font-weight: 500; color: var(--ink2); }
+.tbl.st tbody tr { cursor: pointer; } .tbl.st th[data-set] { cursor: pointer; } .tbl.st th[data-set]:hover { color: var(--ink); }
+.list { border: 1px solid var(--steel); background: var(--card); } .lr { display: grid; grid-template-columns: 28px 120px 1fr auto auto; gap: 14px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--rule); cursor: pointer; }
+.lr:hover { background: #fff; } .ln { font: 12px "IBM Plex Mono", monospace; color: var(--ink3); } .lt b { display: block; font-size: 14px; } .lt small { display: block; font-size: 12px; color: var(--ink2); } .lt .rl { display: block; font-size: 12px; color: var(--ink); margin-top: 2px; }
+.lk { display: flex; gap: 14px; } .lk span { display: flex; flex-direction: column; font: 600 9.5px "IBM Plex Mono", monospace; color: var(--ink3); text-transform: uppercase; letter-spacing: .04em; } .lk b { font: 700 15px var(--font); color: var(--ink); text-transform: none; } .lk b.p { color: var(--blue); }
+.open-split .lr { grid-template-columns: 22px 1fr auto; } .open-split .lr .sp, .open-split .lr .lk span:nth-child(n+3), .open-split .lr .stamp { display: none; }
+
+/* strategy page */
+.det { --ac: var(--blue); background: #fff; border: 1px solid var(--steel); padding: 18px 22px 22px; }
+.det h1 { margin: 6px 0 2px; font-weight: 800; font-stretch: 110%; font-size: 30px; line-height: 1.1; } .dby { color: var(--ink2); font-size: 13.5px; }
+.dnav { display: flex; align-items: center; gap: 12px; font-size: 12.5px; color: var(--ink2); } .dnav a { cursor: pointer; } .dnav .crumb a { text-decoration: underline; } .dnav .back { font-weight: 700; color: var(--blue); text-decoration: none; }
+.dnav .pn { margin-left: auto; display: flex; gap: 6px; align-items: center; } .dnav .pn button { border: 1px solid var(--steel); background: #fff; padding: 3px 9px; cursor: pointer; font-size: 12px; } .dnav .pn em { font-style: normal; font-family: "IBM Plex Mono", monospace; }
+.dnav .x { border: 0; background: var(--ink); color: #fff; width: 30px; height: 30px; font-size: 18px; cursor: pointer; }
+.vtabs { display: flex; gap: 4px; flex-wrap: wrap; margin: 10px 0 2px; } .vtabs button { border: 1px solid var(--steel); background: #fff; padding: 3px 10px; cursor: pointer; font-size: 12px; } .vtabs button.on { background: var(--blue); color: #fff; border-color: var(--blue); } .vtabs button.off { color: var(--ink3); border-style: dashed; }
+.vdesc { font-size: 12.5px; color: var(--ink2); }
+.verd { margin: 12px 0 14px; padding: 10px 12px; border-left: 3px solid var(--vc); background: #f6f7f9; font-size: 13.5px; } .verd .stamp { margin-right: 6px; }
+.dgrid { display: grid; grid-template-columns: 1fr 300px; gap: 26px; } .det.narrow .dgrid { grid-template-columns: 1fr; } .det.narrow .dside { order: -1; }
+.dmain section { margin-bottom: 20px; } .dmain h3 { font-size: 15px; margin: 0 0 8px; padding-bottom: 4px; border-bottom: 1.5px solid var(--ink); } .dmain h5 { margin: 8px 0 2px; font: 700 11px "IBM Plex Mono", monospace; color: var(--ink2); letter-spacing: .05em; text-transform: uppercase; }
+.dmain ul { margin: 0; padding-left: 18px; font-size: 13.5px; } .dmain p { font-size: 13.5px; margin: 0 0 6px; } .claim { background: #f6f7f9; padding: 8px 10px; }
+.cap { font-size: 11px; color: var(--ink2); } .det svg text { font-family: "IBM Plex Mono", monospace; }
+.mt { width: 100%; border-collapse: collapse; font-size: 12.5px; } .mt th { text-align: left; color: var(--ink2); font-weight: 600; border-bottom: 1px solid var(--ink); padding: 4px 6px; } .mt td { padding: 4px 6px; border-bottom: 1px solid var(--rule); } .mt .n { text-align: right; font-family: "IBM Plex Mono", monospace; } .mt tr.b td { font-weight: 700; background: #f2f6fb; }
+.more { display: inline-block; margin-top: 6px; font-size: 12.5px; color: var(--blue); }
+.dside .box { border: 1px solid var(--steel); background: var(--panel); padding: 12px 14px; margin-bottom: 12px; } .dside h4 { margin: 0 0 8px; font-size: 13.5px; font-weight: 800; }
+.dside dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 0; font-size: 12.5px; } .dside dt { color: var(--ink2); } .dside dd { margin: 0; text-align: right; font-weight: 600; }
+.rel { display: block; padding: 6px 0; border-top: 1px solid var(--rule); cursor: pointer; } .rel:first-of-type { border-top: 0; } .rel b { display: block; font-size: 13px; } .rel span { font-size: 12px; color: var(--ink2); } .rel:hover b { text-decoration: underline; }
+.btn.wide { display: block; text-align: center; }
+
+/* where the strategy opens */
+.pagedet .det { border: 0; padding: 4px 0 0; background: transparent; }
+.scrim { position: fixed; inset: 0; background: #0005; z-index: 80; animation: fade .2s; }
+.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(760px, 94vw); z-index: 90; overflow: auto; background: #fff; box-shadow: -20px 0 40px #0003; animation: slide .25s ease-out; }
+.drawer .det { border: 0; }
+.modal2 { position: fixed; z-index: 90; left: 50%; top: 4vh; transform: translateX(-50%); width: min(1100px, 94vw); max-height: 92vh; overflow: auto; background: #fff; box-shadow: 0 30px 60px #0005; animation: fade .2s; }
+.modal2 .det { border: 0; } .modal2 .det.narrow .dgrid { grid-template-columns: 1fr 280px; } .modal2 .det.narrow .dside { order: 0; }
+.splitw { display: grid; grid-template-columns: minmax(330px, 40%) 1fr; gap: 18px; align-items: start; } .splitr { position: sticky; top: 70px; max-height: calc(100vh - 86px); overflow: auto; }
+.splitl .grid.g2 { grid-template-columns: 1fr; }
+.inl { grid-column: 1 / -1; margin: 6px 0 10px; animation: fade .25s; } tr.inl > td { padding: 8px; background: #eef2f7; } tr.inl .det { box-shadow: inset 0 0 0 1px var(--steel); }
+.list .inl { margin: 0; padding: 8px; background: #eef2f7; border-bottom: 1px solid var(--rule); }
+@keyframes fade { from { opacity: 0; } } @keyframes slide { from { transform: translateX(40px); opacity: 0; } }
+@media (max-width: 1050px) { .body, .splitw, .dgrid, .modal2 .det.narrow .dgrid { grid-template-columns: 1fr; } .sidebar, .splitr { position: static; max-height: none; } .megap { grid-template-columns: 1fr; } #app { padding: 0 16px 40px; } .lr { grid-template-columns: 22px 1fr; } .lr .sp, .lr .lk, .lr .stamp { display: none; } }
+
+/* ================= v2: same scale and weight as the main app */
+body { font-size: 14px; }
+/* hero (copied from the app's look: guilloché, huge expanded name, framed portrait, KPI strip) */
+.vhero { position: relative; isolation: isolate; overflow: hidden; margin-inline: calc(50% - 50vw); display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 40px; align-items: end; padding: 34px max(28px, calc(50vw - 50%)) 34px; border-bottom: 1px solid var(--steel); }
+.vhero.solo { grid-template-columns: 1fr; }
+.vhero .hero-copy { position: relative; min-width: 0; }
+.vhero h1 { font-weight: 800; font-stretch: 125%; font-size: clamp(52px, 7vw, 104px); line-height: .92; letter-spacing: -.04em; margin: 14px 0 20px; }
+.vhero .lede { font-size: 20px; font-stretch: 90%; line-height: 1.45; max-width: 44ch; margin: 0; color: var(--ink2); }
+.vhero .g-book { margin: 12px 0 0; font-size: 13px; color: var(--ink3); }
+.vcrumbs { font-size: 13px; color: var(--ink2); } .vcrumbs a { cursor: pointer; text-decoration: none; } .vcrumbs a:hover { text-decoration: underline; }
+.guilloche { position: absolute; z-index: -1; width: 1000px; height: 1000px; right: -430px; top: -330px; pointer-events: none; }
+.guilloche svg { width: 100%; height: 100%; animation: engrave 360s linear infinite; } .guilloche path { fill: none; stroke: rgb(9 9 9 / .075); stroke-width: .55; }
+@keyframes engrave { to { transform: rotate(360deg); } }
+.portrait { width: 260px; height: 300px; border: 2px solid var(--ink); padding: 8px; background: var(--panel); }
+.pframe { position: relative; width: 100%; height: 100%; overflow: hidden; background: #d9d9da; display: grid; place-items: center; }
+.pframe img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: grayscale(1) contrast(1.05); } .pframe span { font-weight: 800; font-stretch: 125%; font-size: 40px; color: var(--ink2); }
+.vstrip { display: grid; grid-template-columns: repeat(4, 1fr); margin: 0 0 22px; border-bottom: 1px solid var(--steel); }
+.vstrip div { padding: 18px 0; } .vstrip dt { font-size: 12px; color: var(--ink2); } .vstrip dd { margin: 0; font-size: 34px; font-weight: 700; font-stretch: 110%; line-height: 1.15; }
+
+/* floating layout panel (closed by default) */
+.lab { position: fixed; right: 18px; bottom: 18px; z-index: 75; width: min(620px, calc(100vw - 36px)); margin: 0; background: #fff; border: 2px solid var(--ink); box-shadow: 0 18px 40px #0003; padding: 12px 14px; font-size: 13px; }
+.lab .li2 label { font-size: 12.5px; } .labfab { font-size: 13.5px; padding: 10px 16px; }
+
+/* navigation */
+.navbar { border: 1px solid var(--steel); border-top: 2px solid var(--ink); background: var(--panel); padding: 6px 8px; margin: 4px 0 14px; }
+.dd summary { font-size: 14.5px; padding: 9px 13px; } .pi { font-size: 14px; padding: 7px 16px; } .pi i { font-size: 12px; }
+.bn { font-size: 14px; } .gn { font-size: 15px; }
+.filterbar .dd summary { font-size: 14px; padding: 8px 12px; }
+.sidebar { font-size: 14px; } .sg h4 { font-size: 15px; } .refine { font-size: 17px; } .li { padding: 3px 0 3px 14px; } .li i { font-size: 12px; font-family: var(--font); }
+.search input { font-size: 14px; }
+
+/* results header like the app's section heading */
+.rh h1 { font-size: 30px; font-stretch: 110%; } .rh p { font-size: 14.5px; } .rh .crumb { font-size: 13px; }
+.rtools { margin-bottom: 14px; } .seg button { font-size: 13.5px; padding: 7px 12px; } .chk { font-size: 14px; }
+.chip { font-size: 13px; }
+
+/* table: app-style numbers (bold Archivo, not thin mono), black-topped panel, roomier rows */
+.tbl.st { border: 1px solid var(--steel); border-top: 2px solid var(--ink); background: var(--panel); font-size: 14px; }
+.tbl.st th { font: 600 12.5px var(--font); letter-spacing: 0; text-transform: none; color: var(--ink2); background: transparent; padding: 12px 12px; border-bottom: 1px solid var(--ink); }
+.tbl.st th.on { color: var(--ink); text-decoration: underline; }
+.tbl.st td { padding: 13px 12px; } .tbl.st td.n { font: 700 15.5px var(--font); font-stretch: 105%; } .tbl.st td.p { font-size: 19px; color: var(--blue); }
+.tbl.st .nm b { font-size: 15.5px; } .tbl.st .nm span { font-size: 12.5px; } .tbl.st .rk { font: 600 13px var(--font); }
+.tcurve { width: 150px; margin-left: auto; }
+
+/* cards and list */
+.card { border: 1px solid var(--steel); border-top: 2px solid var(--ink); background: var(--panel); padding: 18px 20px 16px; }
+.card h3 { font-size: 19px; } .card .by { font-size: 13px; } .kpis b { font-size: 26px; font-stretch: 110%; } .kpis b.p { font-size: 28px; } .kpis span { font: 600 12px var(--font); text-transform: none; letter-spacing: 0; color: var(--ink2); }
+.tag { font-size: 12.5px; padding: 2px 9px; } .card .rank { font: 600 13px var(--font); }
+.list { border: 1px solid var(--steel); border-top: 2px solid var(--ink); background: var(--panel); } .lr { padding: 14px 16px; gap: 18px; }
+.lt b { font-size: 16px; } .lt small { font-size: 13px; } .lt .rl { font-size: 13.5px; }
+.lk span { font: 600 12px var(--font); text-transform: none; letter-spacing: 0; color: var(--ink2); } .lk b { font-size: 20px; font-stretch: 105%; }
+.stamp { font-size: 11px; }
+
+/* strategy page: big title, app metric tiles, black-topped boxes */
+.det { padding: 22px 26px 26px; background: #fff; border: 1px solid var(--steel); border-top: 2px solid var(--ink); }
+.det h1 { font-size: clamp(32px, 3.6vw, 46px); letter-spacing: -.02em; margin: 10px 0 6px; } .dby { font-size: 15px; } .dnav { font-size: 13.5px; }
+.vtabs button { font-size: 13.5px; padding: 5px 12px; } .vdesc { font-size: 14px; margin-top: 4px; }
+.verd { font-size: 15px; padding: 12px 14px; }
+.metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); margin: 4px 0 22px; border-top: 1px solid var(--steel); border-bottom: 1px solid var(--steel); }
+.metric { padding: 16px 14px 12px 0; min-width: 0; } .metric + .metric { padding-left: 16px; border-left: 1px solid var(--steel); }
+.metric span { display: block; font-size: 12.5px; color: var(--ink2); } .metric b { display: block; font-size: 32px; font-weight: 700; font-stretch: 110%; line-height: 1.15; letter-spacing: -.01em; }
+.metric i { font-style: normal; font-size: 12.5px; color: var(--ink3); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.det.narrow .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); } .det.narrow .metric:nth-child(4) { border-left: 0; padding-left: 0; } .det.narrow .metric:nth-child(n+4) { border-top: 1px solid var(--steel); }
+.dmain section { background: var(--panel); border: 1px solid var(--steel); border-top: 2px solid var(--ink); padding: 18px 20px; margin-bottom: 18px; }
+.dmain h3, .box-h { font-size: 16.5px; font-weight: 700; font-stretch: 105%; border-bottom: 0; padding: 0; margin: 0 0 12px; } .box-h { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; } .box-h .chk { font-size: 13px; font-weight: 400; }
+.dmain ul, .dmain p { font-size: 14.5px; } .dmain h5 { font-size: 11.5px; }
+.lwc { height: 360px; width: 100%; } .det.narrow .lwc { height: 300px; } .cap { font-size: 12px; margin-top: 4px; }
+.mt { font-size: 14px; } .mt th { font-size: 12.5px; } .mt .n { font: 700 14.5px var(--font); }
+.dside .box { border: 1px solid var(--steel); border-top: 2px solid var(--ink); padding: 16px 18px; } .dside h4 { font-size: 16px; } .dside dl { font-size: 14px; gap: 6px 12px; } .dside dd { font-weight: 700; }
+.rel b { font-size: 14.5px; } .rel span { font-size: 13px; } .btn.wide { padding: 12px; font-size: 14.5px; }
+@media (max-width: 1050px) { .vhero { grid-template-columns: 1fr; } .portrait { width: 200px; height: 230px; } .vstrip { grid-template-columns: 1fr 1fr; } .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); } .guilloche { width: 560px; height: 560px; right: -220px; top: -120px; } }
+.dgrid { grid-template-columns: minmax(0, 1fr) 350px; } .dside dl { grid-template-columns: auto 1fr; } .dside dd { text-wrap: balance; }
+/* rankings as site-level tabs in the navbar */
+.rtabs { display: flex; align-items: center; gap: 2px; margin-left: 10px; padding-left: 12px; border-left: 1px solid var(--steel); flex-wrap: wrap; }
+.rtabs .rlab { font-size: 11px; font-weight: 700; color: var(--ink3); text-transform: uppercase; letter-spacing: .05em; margin-right: 6px; }
+.rt { border: 0; background: none; padding: 9px 11px; cursor: pointer; font-size: 14.5px; font-weight: 600; color: var(--ink2); border-bottom: 2.5px solid transparent; }
+.rt:hover { color: var(--ink); } .rt.on { color: var(--ink); border-bottom-color: var(--ink); }
+.dd.cur summary { color: var(--ink); } .dd.cur summary b { color: var(--blue); }
+.unf { color: var(--blue); cursor: pointer; text-decoration: underline; margin-left: 4px; }
+
+</style>
+</head>
+<body>
+<header class="topbar"><a class="wordmark" href="./">STRATEGY VAULT</a><nav class="cats"><a class="on" href="#">Guru's</a><a>YT Strategies<em>soon</em></a></nav><div class="status">Screener · <a href="explorer-variations.html">variations</a> · <a href="vault-explorer.html">catalogue</a></div></header>
+<div id="app"><div class="loading">Loading the vault from the Rust API…</div></div>
+<script src="vendor/lightweight-charts-4.2.0.js"></script>
+<script>
+const API = new URLSearchParams(location.search).get('api') || `http://${location.hostname || 'localhost'}:8090`;
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const pct = (v, d = 1, s = false) => v == null || !isFinite(v) ? '–' : (s && v > 0 ? '+' : '') + (v * 100).toFixed(d) + '%';
+const fx = (v, d = 2) => v == null || !isFinite(v) ? '–' : v.toFixed(d);
+const cls = v => v == null ? '' : v >= 0 ? 'pos' : 'neg';
+const med = a => { const s = a.filter(isFinite).sort((x, y) => x - y), n = s.length; return n ? (n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2) : null; };
+const LABEL = { 'NIFTY 50': 'Nifty 50', NIFTYBANK: 'Bank Nifty', NIFTYIT: 'Nifty IT', NIFTYMIDCAP100: 'Midcap 100' };
+const CLOTH = ['#1f3a5f', '#7a2e2e', '#2f5140', '#8a6a2f', '#4a5563', '#5b3b5e'];
+
+// ---------------------------------------------------------------- the library (hierarchy: guru → book → strategy → variant)
+// Only Connors / Swing Trading College IX is converted. The rest are clearly marked previews (no numbers) so the layout
+// shows how the vault grows; they become live automatically once their strategies exist in the API.
+const LIB = [
+  { id: 'connors', name: 'Larry Connors', photo: 'img/gurus/connors.jpg', books: [
+    { id: 'stc9', title: 'Swing Trading College IX', year: 2010, live: true },
+    { id: 'stts', title: 'Short Term Trading Strategies That Work', year: 2008 },
+    { id: 'hpetf', title: 'High Probability ETF Trading', year: 2009 }] },
+  { id: 'raschke', name: 'Linda Raschke', books: [{ id: 'smarts', title: 'Street Smarts', year: 1995 }] },
+  { id: 'minervini', name: 'Mark Minervini', books: [{ id: 'wizard', title: 'Trade Like a Stock Market Wizard', year: 2013 }, { id: 'champion', title: 'Think & Trade Like a Champion', year: 2017 }] },
+  { id: 'oneil', name: "William O'Neil", books: [{ id: 'canslim', title: 'How to Make Money in Stocks', year: 1988 }] },
+  { id: 'darvas', name: 'Nicolas Darvas', books: [{ id: 'darvas2m', title: 'How I Made $2,000,000 in the Stock Market', year: 1960 }] },
+  { id: 'livermore', name: 'Jesse Livermore', books: [{ id: 'howtotrade', title: 'How to Trade in Stocks', year: 1940 }] },
+];
+const BOOK = {}; LIB.forEach(g => g.books.forEach((b, k) => { b.guru = g; b.c = CLOTH[(LIB.indexOf(g) * 2 + k) % CLOTH.length]; BOOK[b.id] = b; }));
+const GURU = Object.fromEntries(LIB.map(g => [g.id, g]));
+
+// ---------------------------------------------------------------- state (kept in the URL hash so any view can be shared)
+const DEF = { mode: 'strategies', market: 'india', tk: 'NIFTY 50', tab: 'sharpe', q: '', guru: '', book: '', style: '', dir: '', hold: '', verdict: '', min: '0', family: '', sort: 'primary', view: 'grid' };
+let S = { ...DEF };
+const readHash = () => { const q = new URLSearchParams(location.hash.slice(1)); S = { ...DEF }; for (const k in DEF) if (q.has(k)) S[k] = q.get(k); };
+const writeHash = () => { const q = new URLSearchParams(); for (const k in DEF) if (S[k] !== DEF[k]) q.set(k, S[k]); history.replaceState(null, '', '#' + q); };
+
+let CAT = [], TICKERS = [], GURUS_API = [];
+const SUM = {}; // `${tk}|${from}|${to}` -> { id: {stats, spark} }
+async function getSum(tk, from = '', to = '') {
+  const k = `${tk}|${from}|${to}`;
+  const url = `${API}/api/guru/connors/summary?` + new URLSearchParams({ ticker: tk, from, to });
+  const load = async (tries = 3) => { try { const a = await (await fetch(url)).json(); return Object.fromEntries(a.map(r => [r.id, r])); }
+    catch (e) { if (tries <= 1) { delete SUM[k]; throw e; } await new Promise(r => setTimeout(r, 300)); return load(tries - 1); } };
+  return SUM[k] || (SUM[k] = load());
+}
+// "before the book" numbers come from the per-strategy endpoint: the summary endpoint crashes when the end date
+// is before the first India VIX bar (VIX strategies), while /run answers that case cleanly.
+const PRE = {};
+function preMap(tk, to) {
+  const k = `${tk}|${to}`;
+  if (PRE[k]) return PRE[k];
+  const ids = CAT.filter(v => v.status === 'live' && !v.needs_vix).map(v => v.id), out = {}; // VIX data starts after 2009: nothing to ask
+  let i = 0;
+  const worker = async () => { while (i < ids.length) { const id = ids[i++];
+    try { const r = await fetch(`${API}/api/guru/connors/run?` + new URLSearchParams({ id, ticker: tk, to })); if (r.ok) out[id] = { stats: (await r.json()).stats }; } catch (e) { /* leave missing */ } } };
+  return PRE[k] = Promise.all(Array.from({ length: 6 }, worker)).then(() => out);
+}
+const lastOf = tk => TICKERS.find(t => t.ticker === tk)?.last || '2026-05-15';
+const shiftYears = (d, y) => { const t = new Date(d); t.setFullYear(t.getFullYear() - y); return t.toISOString().slice(0, 10); };
+
+// tabs: which data window each one uses and which number it ranks by
+const PUB = 2010;
+const TABS = {
+  trending: { name: 'Trending', note: 'Ranked by the return of the last 12 months on the selected index: what is working right now.',
+    win: tk => ({ from: shiftYears(lastOf(tk), 1), to: '' }), extra: () => ({ from: '', to: '' }),
+    metric: { label: '12M return', get: r => r.s.total_return, fmt: v => pct(v, 1, true), bins: [-.1, -.05, 0, .05, .1, .2] }, keep: r => r.s.trades > 0 },
+  sharpe: { name: 'Top Sharpe', note: 'Full history on the selected index, ranked by Sharpe ratio (rf = 0, daily, √252).',
+    win: () => ({ from: '', to: '' }), metric: { label: 'Sharpe', get: r => r.s.sharpe, fmt: v => fx(v), bins: [0, .25, .5, .75, 1, 1.5] } },
+  working: { name: 'Still working?', note: `Out-of-sample check: Sharpe since the book was published (${PUB}) next to Sharpe before it. A strategy that only worked before publication has decayed.`,
+    win: () => ({ from: `${PUB}-01-01`, to: '' }), pre: `${PUB - 1}-12-31`,
+    metric: { label: `Sharpe since ${PUB}`, get: r => r.s.sharpe, fmt: v => fx(v), bins: [0, .25, .5, .75, 1, 1.5] } },
+  sig: { name: 'Significant', note: 'Only rule sets whose average trade is statistically significant: t-stat ≥ 2 with at least 30 closed trades.',
+    win: () => ({ from: '', to: '' }), metric: { label: 't-stat', get: r => r.s.t_stat, fmt: v => fx(v), bins: [2, 2.5, 3, 4, 5, 6] }, keep: r => r.s.t_stat >= 2 && r.s.trades >= 30 },
+  awaiting: { name: 'Awaiting data', note: 'Rules transcribed from the book that cannot be tested yet: they need data the vault does not have (TRIN breadth, options chains, single stocks).' },
+};
+const SORTS = { primary: 'Tab ranking', sharpe: 'Sharpe', cagr: 'CAGR', maxdd: 'Smallest drawdown', win: 'Win rate', pf: 'Profit factor', trades: 'Most trades', t: 't-stat', name: 'Name (A–Z)', course: 'Order in the book' };
+const sortVal = (r, k) => ({ primary: TABS[S.tab].metric?.get(r), sharpe: r.s.sharpe, cagr: r.s.cagr, maxdd: r.s.max_dd, win: r.s.win_rate, pf: r.s.profit_factor, trades: r.s.trades, t: r.s.t_stat }[k]);
+function sortRows(rows) {
+  const k = S.sort;
+  if (k === 'name') return rows.sort((a, b) => a.v.family_name.localeCompare(b.v.family_name));
+  if (k === 'course') return rows.sort((a, b) => a.v.ord - b.v.ord);
+  return rows.sort((a, b) => (sortVal(b, k) ?? -1e9) - (sortVal(a, k) ?? -1e9));
+}
+const verdictOf = s => s.trades < 30 ? { k: 'thin', t: 'THIN DATA', c: '#8a3a2e' } : s.t_stat >= 2 ? { k: 'sig', t: 'SIGNIFICANT', c: '#2e7d4f' } : { k: 'none', t: 'NO EDGE', c: '#6b6f78' };
+const holdOf = s => s.avg_bars <= 5 ? 'short' : s.avg_bars <= 20 ? 'swing' : 'long';
+const HOLD = { short: '≤ 5 bars', swing: '6–20 bars', long: '> 20 bars' };
+
+// ---------------------------------------------------------------- rows: one per (variant × index) after market, tab and filters
+async function rows(S = getS()) { // state can be passed in (counts, related)
+  if (S.market !== 'india') return [];
+  const T = TABS[S.tab], tks = S.tk === 'ALL' ? TICKERS.map(t => t.ticker) : [S.tk];
+  const qq = S.q.trim().toLowerCase();
+  const textOk = v => !qq || `${v.name} ${v.family_name} ${v.variant || ''} ${v.group} ${v.dir} ${BOOK[v.book].title} ${GURU[v.guru].name} ${(v.rules || []).join(' ')}`.toLowerCase().includes(qq);
+  const metaOk = v => textOk(v) && (!S.guru || v.guru === S.guru) && (!S.book || v.book === S.book) && (!S.style || v.style === S.style) && (!S.dir || v.dir === S.dir) && (!S.family || v.family === S.family);
+  if (S.tab === 'awaiting') return CAT.filter(v => v.status !== 'live' && metaOk(v)).map(v => ({ v, tk: null, s: null }));
+  const out = [];
+  for (const tk of tks) {
+    const w = T.win(tk), main = await getSum(tk, w.from, w.to), ex = T.extra ? T.extra(tk) : null, extra = ex ? await getSum(tk, ex.from, ex.to) : T.pre ? await preMap(tk, T.pre) : null;
+    for (const v of CAT) {
+      if (v.status !== 'live' || !metaOk(v)) continue;
+      const m = main[v.id]; if (!m?.stats || !m.stats.trades) continue; // no data (volume rules on Nifty IT) or no closed trades in the window
+      const r = { v, tk, s: m.stats, sp: m.spark, x: extra?.[v.id]?.stats || null, w };
+      if (T.keep && !T.keep(r)) continue;
+      if (S.hold && holdOf(r.s) !== S.hold) continue;
+      if (S.verdict && verdictOf(r.s).k !== S.verdict) continue;
+      if (r.s.trades < +S.min) continue;
+      out.push(r);
+    }
+  }
+  return sortRows(out);
+}
+
+// ---------------------------------------------------------------- small charts
+function spark(r, w = 300, h = 86) {
+  const a = r.sp || []; if (a.length < 2) return '';
+  const L = Math.log, lo = Math.min(...a.map(L)), hi = Math.max(...a.map(L)), n = a.length;
+  const X = i => i / (n - 1) * w, Y = v => h - 4 - (L(v) - lo) / ((hi - lo) || 1) * (h - 10);
+  const P = a.map((v, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join('');
+  const end = new Date(r.w.to || lastOf(r.tk)), start = new Date(end - r.s.years * 365.25 * 864e5);
+  const f = (new Date(`${PUB}-01-01`) - start) / (end - start);
+  const mark = f > .03 && f < .97 ? `<rect x="${f * w}" y="0" width="${(1 - f) * w}" height="${h}" fill="var(--blue-soft)" opacity=".55"/><line x1="${f * w}" x2="${f * w}" y1="0" y2="${h}" stroke="var(--blue)" stroke-dasharray="3 3" stroke-width="1"/>` : '';
+  const small = w < 200; // table rows: no axis labels, the dashed line still marks the book
+  return `<svg viewBox="0 0 ${w} ${h + (small ? 0 : 14)}" width="100%" class="strip" role="img" aria-label="Equity curve${mark ? `; shaded part is after the book (${PUB})` : ''}">${mark}<path d="${P}L${w},${h}L0,${h}Z" fill="var(--blue)" opacity=".08"/><path d="${P}" fill="none" stroke="var(--blue)" stroke-width="1.6"/>
+    ${small ? '' : `<text x="0" y="${h + 12}">${start.getFullYear()}</text>${mark ? `<text x="${f * w}" y="${h + 12}" text-anchor="middle" fill="var(--blue)">book ${PUB} →</text>` : ''}<text x="${w}" y="${h + 12}" text-anchor="end">${end.getFullYear()}</text>`}</svg>`;
+}
+// strip plot: every strategy of a guru/book as a dot on the tab's metric axis
+function stripPlot(vals, w = 300, h = 34) {
+  const M = TABS[S.tab].metric; if (!vals.length || !M) return '';
+  const b = M.bins, lo = Math.min(b[0], ...vals), hi = Math.max(b[b.length - 1], ...vals), X = v => 6 + (v - lo) / ((hi - lo) || 1) * (w - 12);
+  return `<svg viewBox="0 0 ${w} ${h + 12}" width="100%" class="strip" role="img" aria-label="Spread of ${esc(M.label)}"><line x1="6" x2="${w - 6}" y1="${h / 2}" y2="${h / 2}" stroke="var(--rule)"/>
+    ${vals.map((v, i) => `<circle cx="${X(v).toFixed(1)}" cy="${h / 2 + ((i % 3) - 1) * 6}" r="4" fill="var(--blue)" opacity=".55"/>`).join('')}
+    <line x1="${X(med(vals))}" x2="${X(med(vals))}" y1="3" y2="${h - 3}" stroke="var(--ink)" stroke-width="1.5"/>
+    <text x="6" y="${h + 10}">${M.fmt(lo)}</text><text x="${w / 2}" y="${h + 10}" text-anchor="middle" fill="var(--ink)">| median ${M.fmt(med(vals))} · each dot = one strategy</text><text x="${w - 6}" y="${h + 10}" text-anchor="end">${M.fmt(hi)}</text></svg>`;
+}
+function distBox(rs) {
+  const M = TABS[S.tab].metric;
+  if (!M || !rs.length) return `<div class="h"><b>Where this view sits</b><span>${rs.length} RESULTS</span></div><div class="muted" style="font-size:13px;padding:20px 0">${S.tab === 'awaiting' ? 'No numbers yet: these rules need data the vault does not have.' : 'Nothing to chart for this selection.'}</div>`;
+  const b = M.bins, edges = [-Infinity, ...b, Infinity], vals = rs.map(M.get), cnt = Array(edges.length - 1).fill(0);
+  vals.forEach(v => { for (let i = 0; i < cnt.length; i++) if (v >= edges[i] && v < edges[i + 1]) { cnt[i]++; break; } });
+  const mx = Math.max(...cnt), W = 420, H = 86, bw = W / cnt.length, md = med(vals);
+  const lbl = i => i === 0 ? `<${M.fmt(b[0])}` : i === cnt.length - 1 ? `≥${M.fmt(b[b.length - 1])}` : `${M.fmt(edges[i])}–${M.fmt(edges[i + 1])}`;
+  const mi = cnt.findIndex((_, i) => md >= edges[i] && md < edges[i + 1]);
+  const top = rs.slice(0, 12).map(M.get);
+  return `<div class="h"><b>Where this view sits</b><span>${rs.length} RESULTS · ${S.tk === 'ALL' ? 'ALL INDICES' : esc(LABEL[S.tk]).toUpperCase()}</span></div>
+    <svg viewBox="0 0 ${W} ${H + 18}" width="100%" class="strip" role="img" aria-label="Distribution of ${esc(M.label)}">${cnt.map((c, i) => { const hh = c / (mx || 1) * (H - 16); const inTop = top.some(v => v >= edges[i] && v < edges[i + 1]);
+      return `<rect x="${i * bw + 2}" y="${H - hh}" width="${bw - 4}" height="${Math.max(1, hh)}" fill="${inTop ? 'var(--blue)' : '#dfe6ef'}"><title>${lbl(i)}: ${c}</title></rect><text x="${i * bw + bw / 2}" y="${H + 14}" text-anchor="middle">${lbl(i)}</text>${c ? `<text x="${i * bw + bw / 2}" y="${H - hh - 3}" text-anchor="middle" fill="var(--ink)">${c}</text>` : ''}`; }).join('')}
+      ${mi >= 0 ? `<line x1="${mi * bw + bw / 2}" x2="${mi * bw + bw / 2}" y1="0" y2="${H}" stroke="var(--ink)" stroke-dasharray="2 2"/>` : ''}</svg>
+    <div class="foot"><span>Dashed line = median ${M.fmt(md)} · top 12 shown first: ${M.label} ${M.fmt(Math.min(...top))} to ${M.fmt(Math.max(...top))}</span><span>dark = where they sit</span></div>`;
+}
+
+// ---------------------------------------------------------------- shared pieces
+const appLink = r => `./#/connors/${encodeURIComponent(r.v.id)}`;
+const RTAG = { F: 'IF', E: 'ENTRY', A: 'ADD', X: 'EXIT' };
+const rulesList = v => `<details class="rules"><summary>Rules as written in the book</summary><ul>${(v.rules || []).map(x => { const [t, ...rest] = x.split('|'); return `<li><span class="t">${RTAG[t] || ''}</span>${esc(rest.join('|') || x)}</li>`; }).join('')}</ul></details>`;
+const kpiTriplet = r => {
+  const M = TABS[S.tab].metric, s = r.s;
+  const second = S.tab === 'working' ? `<div><span>Before ${PUB}</span><b>${fx(r.x?.sharpe)}</b><i>${r.x ? (r.x.sharpe > 0 && s.sharpe > 0 ? 'still working' : s.sharpe > 0 ? 'works since book' : r.x.sharpe > 0 ? 'decayed' : 'never worked') : r.v.needs_vix ? 'no India VIX before 2010' : 'no trades before'}</i></div>`
+    : S.tab === 'trending' ? `<div><span>Sharpe (full)</span><b>${fx(r.x?.sharpe)}</b><i>${fx(r.s.trades, 0)} trades in 12M</i></div>`
+    : `<div><span>CAGR</span><b class="${cls(s.cagr)}">${pct(s.cagr, 1, true)}</b><i>B&amp;H ${pct(s.bh_cagr, 1, true)}</i></div>`;
+  return `<div class="kpis"><div><span>${esc(M.label)}</span><b class="p">${M.fmt(M.get(r))}</b><i>${S.tab === 'sig' ? 'Sharpe ' + fx(s.sharpe) : 'win ' + pct(s.win_rate, 0)}</i></div>${second}<div><span>Max DD</span><b>${pct(Math.abs(s.max_dd), 1)}</b><i>${fx(s.trades, 0)} trades</i></div></div>`;
+};
+const byline = v => `${esc(GURU[v.guru].name)} · ${esc(BOOK[v.book].title)} (${BOOK[v.book].year}) · Session ${v.session}`;
+
+// ---------------------------------------------------------------- MODES
+function viewStrategies(rs, perVariant) {
+  // strategies = one entry per family (best variant by the current sort); variants = every rule set
+  let list = rs;
+  if (!perVariant) { const seen = new Map(); for (const r of rs) { const k = r.v.family; if (!seen.has(k)) seen.set(k, { ...r, all: [] }); seen.get(k).all.push(r); } list = [...seen.values()]; }
+  const nVar = r => r.all ? new Set(r.all.map(x => x.v.id)).size : 1, nIdx = r => r.all ? new Set(r.all.map(x => x.tk)).size : 1;
+  const title = r => perVariant ? `${esc(r.v.family_name)}` : esc(r.v.family_name);
+  const sub = r => perVariant && r.v.variant ? `<b style="font-weight:600">${esc(r.v.variant)}</b> · ` : '';
+  if (S.tab === 'awaiting') return awaiting(rs);
+  if (S.view === 'table') {
+    const M = TABS[S.tab].metric, th = (k, t, n) => `<th class="${n ? 'n' : ''} ${S.sort === k ? 'on' : ''}" data-sort="${k}">${t}</th>`;
+    return `<div class="tblwrap"><table class="tbl"><thead><tr><th class="nosort">#</th>${th('name', 'Strategy')}<th class="nosort">Style</th>${S.tk === 'ALL' ? '<th class="nosort">Index</th>' : ''}<th class="nosort">Hold</th><th class="nosort">Equity</th>${th('primary', esc(M.label), 1)}${S.tab === 'working' ? `<th class="n nosort">Before ${PUB}</th>` : S.tab === 'trending' ? '<th class="n nosort">Sharpe (full)</th>' : ''}${th('cagr', 'CAGR', 1)}${th('maxdd', 'Max DD', 1)}${th('win', 'Win', 1)}${th('trades', 'Trades', 1)}${th('t', 't', 1)}<th class="nosort"></th></tr></thead><tbody>
+      ${list.map((r, i) => `<tr><td class="rk">${i + 1}</td><td class="nm"><b>${title(r)}</b><span>${sub(r)}${byline(r.v)}${!perVariant && nVar(r) > 1 ? ` · <a href="#" data-fam="${esc(r.v.family)}">${nVar(r)} variants</a>` : ''}</span></td><td>${esc(r.v.style)}<br><span class="muted">${r.v.dir}</span></td>${S.tk === 'ALL' ? `<td>${esc(LABEL[r.tk])}</td>` : ''}<td>${HOLD[holdOf(r.s)]}</td><td style="width:150px">${spark(r, 150, 34)}</td>
+        <td class="n p">${M.fmt(M.get(r))}</td>${S.tab === 'working' || S.tab === 'trending' ? `<td class="n">${fx(r.x?.sharpe)}</td>` : ''}<td class="n ${cls(r.s.cagr)}">${pct(r.s.cagr, 1, true)}</td><td class="n">${pct(Math.abs(r.s.max_dd), 1)}</td><td class="n">${pct(r.s.win_rate, 0)}</td><td class="n">${fx(r.s.trades, 0)}</td><td class="n">${fx(r.s.t_stat)}</td><td><a class="go" href="${appLink(r)}" target="_blank">Backtest</a></td></tr>`).join('')}
+      </tbody></table></div>`;
+  }
+  return `<div class="grid">${list.map((r, i) => { const vd = verdictOf(r.s); return `<article class="card">
+      <div class="rank"><span>#${i + 1}${S.tk === 'ALL' ? ' · ' + esc(LABEL[r.tk]) : ''}</span><span class="stamp" style="color:${vd.c}">${vd.t}</span></div>
+      <h3>${title(r)}</h3><div class="by">${sub(r)}${byline(r.v)}</div>
+      ${spark(r)}${kpiTriplet(r)}
+      <div class="tags"><span class="tag">⏱ ${HOLD[holdOf(r.s)]}</span><span class="tag">${esc(r.v.style)}</span><span class="tag">${r.v.dir}</span>${!perVariant && nVar(r) > 1 ? `<span class="tag link" data-fam="${esc(r.v.family)}">${nVar(r)} variants →</span>` : ''}${!perVariant && S.tk === 'ALL' && nIdx(r) > 1 ? `<span class="tag">best of ${nIdx(r)} indices</span>` : ''}</div>
+      ${rulesList(r.v)}
+      <div class="btns"><a class="btn solid" href="${appLink(r)}" target="_blank">Full backtest</a><button class="btn" data-book="${r.v.book}">Book</button><button class="btn" data-guru="${r.v.guru}">Guru</button></div>
+    </article>`; }).join('')}</div>`;
+}
+function awaiting(rs) {
+  if (S.view === 'table') return `<div class="tblwrap"><table class="tbl"><thead><tr><th class="nosort">#</th><th class="nosort">Strategy</th><th class="nosort">Style</th><th class="nosort">Why it is waiting</th></tr></thead><tbody>${rs.map((r, i) => `<tr><td class="rk">${i + 1}</td><td class="nm"><b>${esc(r.v.family_name)}</b><span>${r.v.variant ? esc(r.v.variant) + ' · ' : ''}${byline(r.v)}</span></td><td>${esc(r.v.style)}</td><td>${esc(r.v.status_note || r.v.status)}</td></tr>`).join('')}</tbody></table></div>`;
+  return `<div class="grid">${rs.map((r, i) => `<article class="card"><div class="rank"><span>#${i + 1}</span><span class="stamp" style="color:#8a6a2f">AWAITING DATA</span></div><h3>${esc(r.v.family_name)}</h3><div class="by">${r.v.variant ? esc(r.v.variant) + ' · ' : ''}${byline(r.v)}</div><p style="margin:0;font-size:13px">${esc(r.v.status_note || r.v.status)}</p><div class="tags"><span class="tag">${esc(r.v.style)}</span><span class="tag">${r.v.dir}</span></div>${rulesList(r.v)}</article>`).join('')}</div>`;
+}
+function groupBy(rs, key) { const m = new Map(); for (const r of rs) { const k = key(r); if (!m.has(k)) m.set(k, []); m.get(k).push(r); } return m; }
+function summarise(list) {
+  const M = TABS[S.tab].metric, fams = groupBy(list, r => r.v.family);
+  const bestPerFam = [...fams.values()].map(a => a[0]); // rows already sorted
+  return { fams: fams.size, variants: new Set(list.map(r => r.v.id)).size, best: list[0], vals: M ? bestPerFam.map(M.get) : [], sig: bestPerFam.filter(r => r.s && verdictOf(r.s).k === 'sig').length };
+}
+function viewBooks(rs) {
+  const M = TABS[S.tab].metric, g = groupBy(rs, r => r.v.book);
+  const live = [...g.entries()].map(([id, list]) => ({ b: BOOK[id], ...summarise(list) }));
+  const filteredOnlyByHierarchy = !S.q && !S.style && !S.dir && !S.hold && !S.verdict && S.min === '0' && !S.family;
+  const previews = filteredOnlyByHierarchy ? Object.values(BOOK).filter(b => !b.live && (!S.guru || b.guru.id === S.guru) && !S.book) : [];
+  if (S.view === 'table') return `<div class="tblwrap"><table class="tbl"><thead><tr><th class="nosort">#</th><th class="nosort">Book</th><th class="nosort">Guru</th><th class="n nosort">Year</th><th class="n nosort">Strategies</th><th class="n nosort">Rule sets</th><th class="nosort">Best strategy</th><th class="n nosort">Best ${M ? esc(M.label) : ''}</th><th class="n nosort">Median</th><th class="n nosort">Significant</th><th class="nosort"></th></tr></thead><tbody>
+    ${live.map((x, i) => `<tr><td class="rk">${i + 1}</td><td class="nm"><b>${esc(x.b.title)}</b></td><td>${esc(x.b.guru.name)}</td><td class="n">${x.b.year}</td><td class="n">${x.fams}</td><td class="n">${x.variants}</td><td>${x.best ? esc(x.best.v.family_name) : '–'}</td><td class="n p">${M && x.best?.s ? M.fmt(M.get(x.best)) : '–'}</td><td class="n">${M ? M.fmt(med(x.vals)) : '–'}</td><td class="n">${x.sig}</td><td><button class="go" data-book="${x.b.id}">Strategies →</button></td></tr>`).join('')}
+    ${previews.map(b => `<tr class="preview"><td class="rk">–</td><td class="nm"><b>${esc(b.title)}</b></td><td>${esc(b.guru.name)}</td><td class="n">${b.year}</td><td colspan="7">Not converted yet</td></tr>`).join('')}</tbody></table></div>`;
+  return `<div class="grid">${live.map((x, i) => `<article class="card"><div class="rank"><span>#${i + 1}</span><span>${x.fams} strategies · ${x.variants} rule sets</span></div>
+      <div class="cover"><div class="bk" style="--c:${x.b.c}"><span>${esc(x.b.title)}</span><span>${x.b.year}</span></div><div><h3>${esc(x.b.title)}</h3><div class="by" style="margin:2px 0 0">${esc(x.b.guru.name)} · ${x.b.year}</div></div></div>
+      ${stripPlot(x.vals)}
+      <div class="kpis"><div><span>Best ${M ? esc(M.label) : ''}</span><b class="p">${M && x.best?.s ? M.fmt(M.get(x.best)) : '–'}</b><i>${x.best ? esc(x.best.v.family_name) : ''}</i></div><div><span>Median</span><b>${M ? M.fmt(med(x.vals)) : '–'}</b><i>across strategies</i></div><div><span>Significant</span><b>${x.sig}</b><i>of ${x.fams}</i></div></div>
+      <div class="btns"><button class="btn solid" data-book="${x.b.id}">Open book · ${x.fams} strategies</button></div></article>`).join('')}
+    ${previews.length ? `<div class="sep">Coming as more books are converted (layout preview, no numbers yet)</div>` + previews.map(b => `<article class="card preview"><div class="cover"><div class="bk pv"><span>${esc(b.title)}</span><span>${b.year}</span></div><div><h3>${esc(b.title)}</h3><div class="by" style="margin:2px 0 0">${esc(b.guru.name)} · ${b.year}</div></div></div><p style="margin:0;font-size:13px">Not converted yet: strategies, stats and charts appear here once its rules are coded in Rust.</p></article>`).join('') : ''}</div>`;
+}
+function viewGurus(rs) {
+  const M = TABS[S.tab].metric, g = groupBy(rs, r => r.v.guru);
+  const live = [...g.entries()].map(([id, list]) => ({ g: GURU[id], ...summarise(list), books: new Set(list.map(r => r.v.book)).size }));
+  const filteredOnlyByHierarchy = !S.q && !S.style && !S.dir && !S.hold && !S.verdict && S.min === '0' && !S.family && !S.book;
+  const previews = filteredOnlyByHierarchy ? LIB.filter(x => !g.has(x.id) && (!S.guru || x.id === S.guru)) : [];
+  const face = x => x.photo ? `<div class="ph"><img src="${x.photo}" alt=""></div>` : `<div class="ph">${x.name.split(' ').map(w => w[0]).join('')}</div>`;
+  if (S.view === 'table') return `<div class="tblwrap"><table class="tbl"><thead><tr><th class="nosort">#</th><th class="nosort">Guru</th><th class="n nosort">Books</th><th class="n nosort">Converted</th><th class="n nosort">Strategies</th><th class="nosort">Best strategy</th><th class="n nosort">Best ${M ? esc(M.label) : ''}</th><th class="n nosort">Median</th><th class="n nosort">Significant</th><th class="nosort"></th></tr></thead><tbody>
+    ${live.map((x, i) => `<tr><td class="rk">${i + 1}</td><td class="nm"><b>${esc(x.g.name)}</b></td><td class="n">${x.g.books.length}</td><td class="n">${x.books}</td><td class="n">${x.fams}</td><td>${x.best ? esc(x.best.v.family_name) : '–'}</td><td class="n p">${M && x.best?.s ? M.fmt(M.get(x.best)) : '–'}</td><td class="n">${M ? M.fmt(med(x.vals)) : '–'}</td><td class="n">${x.sig}</td><td><button class="go" data-guru="${x.g.id}">Books →</button></td></tr>`).join('')}
+    ${previews.map(x => `<tr class="preview"><td class="rk">–</td><td class="nm"><b>${esc(x.name)}</b></td><td class="n">${x.books.length}</td><td class="n">0</td><td colspan="6">Not converted yet</td></tr>`).join('')}</tbody></table></div>`;
+  return `<div class="grid">${live.map((x, i) => `<article class="card"><div class="rank"><span>#${i + 1}</span><span>${x.g.books.length} books · ${x.books} converted</span></div>
+      <div class="cover">${face(x.g)}<div><h3>${esc(x.g.name)}</h3><div class="by" style="margin:2px 0 0">${esc(GURUS_API.find(a => a.id === x.g.id)?.tagline || '')}</div></div></div>
+      ${stripPlot(x.vals)}
+      <div class="kpis"><div><span>Best ${M ? esc(M.label) : ''}</span><b class="p">${M && x.best?.s ? M.fmt(M.get(x.best)) : '–'}</b><i>${x.best ? esc(x.best.v.family_name) : ''}</i></div><div><span>Strategies</span><b>${x.fams}</b><i>${x.variants} rule sets</i></div><div><span>Significant</span><b>${x.sig}</b><i>of ${x.fams}</i></div></div>
+      <div class="btns"><button class="btn solid" data-guru="${x.g.id}">Books →</button><button class="btn" data-guru-strats="${x.g.id}">All strategies</button></div></article>`).join('')}
+    ${previews.length ? `<div class="sep">Coming as more books are converted (layout preview, no numbers yet)</div>` + previews.map(x => `<article class="card preview"><div class="cover">${face(x)}<div><h3>${esc(x.name)}</h3><div class="by" style="margin:2px 0 0">${x.books.map(b => esc(b.title)).join(' · ')}</div></div></div><p style="margin:0;font-size:13px">Not converted yet.</p></article>`).join('') : ''}</div>`;
+}
+
+// ---- charts (same as book-worlds.html)
+function eqChart(d, w = 520, h = 150) {
+  const st = Math.max(1, Math.floor(d.equity.length / 260)), e = d.equity.filter((_, i) => i % st === 0), b = d.bh.filter((_, i) => i % st === 0), dt = d.dates.filter((_, i) => i % st === 0);
+  const L = Math.log, all = e.concat(b).map(L), lo = Math.min(...all), hi = Math.max(...all), n = e.length, X = i => 34 + i / (n - 1) * (w - 38), Y = v => h - 14 - (L(v) - lo) / ((hi - lo) || 1) * (h - 22);
+  const P = v => v.map((x, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(x).toFixed(1)}`).join('');
+  const yrs = [...new Set(dt.map(t => t.slice(0, 4)))].filter((_, k, a) => k % Math.ceil(a.length / 6) === 0);
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%"><line x1="34" x2="${w - 4}" y1="${Y(1)}" y2="${Y(1)}" stroke="currentColor" stroke-opacity=".25" stroke-dasharray="3 3"/>
+    <text x="0" y="${Y(Math.exp(hi)) + 8}" font-size="9" fill="currentColor" fill-opacity=".6">${Math.exp(hi).toFixed(1)}×</text><text x="0" y="${Y(1) + 3}" font-size="9" fill="currentColor" fill-opacity=".6">1×</text>
+    ${yrs.map(y => { const i = dt.findIndex(t => t.startsWith(y)); return `<text x="${X(i)}" y="${h - 2}" font-size="9" fill="currentColor" fill-opacity=".55" text-anchor="middle">${y}</text>`; }).join('')}
+    <path d="${P(b)}" fill="none" stroke="#a8a297" stroke-width="1.3"/><path d="${P(e)}" fill="none" stroke="var(--ac)" stroke-width="2"/></svg>`;
+}
+function ddChart(d, w = 520, h = 60) {
+  const st = Math.max(1, Math.floor(d.equity.length / 260)); let pk = -1; const dd = d.equity.filter((_, i) => i % st === 0).map(v => { pk = Math.max(pk, v); return v / pk - 1; });
+  const lo = Math.min(...dd, -.01), n = dd.length, P = dd.map((x, i) => `${i ? 'L' : 'M'}${(34 + i / (n - 1) * (w - 38)).toFixed(1)},${(2 + x / lo * (h - 6)).toFixed(1)}`).join('');
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%"><text x="0" y="${h - 4}" font-size="9" fill="currentColor" fill-opacity=".6">${(lo * 100).toFixed(0)}%</text><path d="${P}L${w - 4},2L34,2Z" fill="#b43a3426"/><path d="${P}" fill="none" stroke="#b43a34" stroke-width="1.1"/></svg>`;
+}
+function periods(d, len) { const o = {}; let base = d.equity[0], key = d.dates[0].slice(0, len); d.dates.forEach((t, i) => { const k = t.slice(0, len); if (k !== key) { o[key] = d.equity[i - 1] / base - 1; base = d.equity[i - 1]; key = k; } }); o[key] = d.equity[d.equity.length - 1] / base - 1; return o; }
+function yearBars(d, w = 520, h = 80) {
+  const s = periods(d, 4), b = periods({ dates: d.dates, equity: d.bh }, 4), ks = Object.keys(s), mx = Math.max(.01, ...ks.map(k => Math.max(Math.abs(s[k]), Math.abs(b[k])))), bw = (w - 30) / ks.length, Y = v => h / 2 - v / mx * (h / 2 - 4);
+  return `<svg viewBox="0 0 ${w} ${h + 12}" width="100%"><line x1="30" x2="${w}" y1="${h / 2}" y2="${h / 2}" stroke="currentColor" stroke-opacity=".3"/>${ks.map((k, i) => { const x = 30 + i * bw; return `<rect x="${x + 1}" y="${Math.min(Y(s[k]), h / 2)}" width="${Math.max(1, bw / 2 - 1)}" height="${Math.max(.5, Math.abs(Y(s[k]) - h / 2))}" fill="${s[k] >= 0 ? 'var(--ac)' : '#b43a34'}"/><rect x="${x + bw / 2}" y="${Math.min(Y(b[k]), h / 2)}" width="${Math.max(1, bw / 2 - 1)}" height="${Math.max(.5, Math.abs(Y(b[k]) - h / 2))}" fill="#a8a297"/>${i % 5 === 0 ? `<text x="${x + bw / 2}" y="${h + 10}" font-size="8.5" text-anchor="middle" fill="currentColor" fill-opacity=".55">${k}</text>` : ''}`; }).join('')}</svg>`;
+}
+function heat(d) {
+  const m = periods(d, 7), ys = periods(d, 4), cap = Math.max(.01, ...Object.values(m).map(Math.abs)), M = 'JFMAMJJASOND';
+  const bg = v => v == null ? 'transparent' : Math.abs(v) < 1e-9 ? 'color-mix(in srgb, currentColor 6%, transparent)' : `color-mix(in srgb, ${v > 0 ? 'var(--ac)' : '#b43a34'} ${Math.round((Math.min(1, Math.abs(v) / cap) * .75 + .12) * 100)}%, transparent)`;
+  return `<table class="heat"><tr><th></th>${[...M].map(x => `<th>${x}</th>`).join('')}<th>Yr</th></tr>${Object.keys(ys).reverse().map(y => `<tr><th>${y.slice(2)}</th>${[...M].map((_, k) => { const v = m[`${y}-${String(k + 1).padStart(2, '0')}`]; return `<td style="background:${bg(v)}" title="${y}-${k + 1}: ${v == null ? '–' : pct(v, 2, true)}">${v == null || Math.abs(v) < 1e-9 ? '' : (v * 100).toFixed(0)}</td>`; }).join('')}<td class="${cls(ys[y])}"><b>${(ys[y] * 100).toFixed(0)}</b></td></tr>`).join('')}</table>`;
+}
+function hist(rets, w = 520, h = 80) {
+  if (!rets.length) return '<div class="cap">No closed trades.</div>';
+  const lo = Math.min(...rets), hi = Math.max(...rets), nb = Math.min(30, Math.max(8, Math.ceil(Math.sqrt(rets.length) * 1.4))), bw0 = (hi - lo) / nb || .001, c = Array(nb).fill(0);
+  rets.forEach(r => c[Math.min(nb - 1, Math.floor((r - lo) / bw0))]++); const mx = Math.max(...c), bw = (w - 10) / nb;
+  return `<svg viewBox="0 0 ${w} ${h + 12}" width="100%">${c.map((v, k) => { const mid = lo + (k + .5) * bw0, bh = v / mx * (h - 4); return `<rect x="${5 + k * bw + 1}" y="${h - bh}" width="${bw - 2}" height="${bh}" fill="${mid >= 0 ? 'var(--ac)' : '#b43a34'}"><title>${pct(lo + k * bw0)} to ${pct(lo + (k + 1) * bw0)}: ${v}</title></rect>`; }).join('')}<text x="5" y="${h + 10}" font-size="9" fill="currentColor" fill-opacity=".6">${pct(lo, 1)}</text><text x="${w - 5}" y="${h + 10}" font-size="9" text-anchor="end" fill="currentColor" fill-opacity=".6">${pct(hi, 1)}</text></svg>`;
+}
+
+
+// ================================================================ VAULT SCREENER · layout lab
+// Three independent choices = 45 permutations: where navigation lives × how results look × how a strategy opens.
+const NAVS = { side: 'Sidebar', top: 'Top navbar', both: 'Navbar + sidebar' };
+const RESS = { grid: '▦ Grid', table: '☰ Table', list: '≡ List' };
+const OPENS = { page: 'Full page', drawer: 'Side drawer', split: 'Split view', inline: 'Expand in place', modal: 'Pop-up' };
+const PRESETS = [
+  ['Quantpedia classic', 'Navbar menus + sidebar filters, table with column views, strategy opens as its own page', { nav: 'both', res: 'table', open: 'page' }],
+  ['Analyst workstation', 'All filters in the sidebar; compact list left, strategy right', { nav: 'side', res: 'list', open: 'split' }],
+  ['Browse & peek', 'Filters as top-bar dropdowns, cards, strategy slides in from the right', { nav: 'top', res: 'grid', open: 'drawer' }],
+  ['Spreadsheet', 'Sidebar + table; a row expands in place to show the strategy', { nav: 'side', res: 'table', open: 'inline' }],
+  ['Gallery', 'Top navbar, cards, strategy in a pop-up', { nav: 'top', res: 'grid', open: 'modal' }],
+  ['Reader', 'Navbar + sidebar, compact list, strategy as its own page', { nav: 'both', res: 'list', open: 'page' }],
+];
+Object.assign(DEF, { nav: 'both', res: 'table', open: 'page', cols: 'overview', perf: '', dd: '', shp: '', s: '', every: '', lab: '0', ctx: 'rank' });
+const ctxOf = () => S.ctx === 'guru' && S.guru ? 'guru' : 'rank';
+const AUTHOR = (g, b = '') => ({ guru: g, book: b, ctx: 'guru', tab: 'sharpe', sort: 'primary', family: '', s: '' });
+const RANK = t => ({ tab: t, sort: 'primary', ctx: 'rank', guru: '', book: '', family: '', s: '' });
+const getS = () => S;
+const famBest = rs => [...groupBy(rs, r => r.v.family).values()].map(a => a[0]);
+const distinct = (rs, f) => new Set(rs.map(f)).size;
+const ds = o => esc(new URLSearchParams(o).toString());
+const VERD = { sig: 'Significant (t ≥ 2)', none: 'No edge', thin: 'Thin data (< 30 trades)' };
+
+// buckets that old Quantpedia had as filters (performance, volatility/drawdown) + Sharpe
+const PERF = { neg: ['Negative', v => v < 0], low: ['0 – 2% a year', v => v >= 0 && v < .02], mid: ['2 – 5% a year', v => v >= .02 && v < .05], high: ['Over 5% a year', v => v >= .05] };
+const DDB = { a: ['Under 10%', v => v < .1], b: ['10 – 20%', v => v >= .1 && v < .2], c: ['20 – 30%', v => v >= .2 && v < .3], d: ['Over 30%', v => v >= .3] };
+const SHB = { neg: ['Below 0', v => v < 0], a: ['0 – 0.25', v => v >= 0 && v < .25], b: ['0.25 – 0.5', v => v >= .25 && v < .5], c: ['Above 0.5', v => v >= .5] };
+const pick = (B, v) => Object.keys(B).find(k => B[k][1](v));
+const KEYFN = { guru: r => r.v.guru, book: r => r.v.book, style: r => r.v.style, dir: r => r.v.dir, hold: r => r.s && holdOf(r.s), verdict: r => r.s && verdictOf(r.s).k,
+  perf: r => r.s && pick(PERF, r.s.cagr), dd: r => r.s && pick(DDB, Math.abs(r.s.max_dd)), shp: r => r.s && pick(SHB, r.s.sharpe) };
+
+const SORTX = { primary: ['Ranking of the tab', r => TABS[S.tab].metric?.get(r)], cagr: ['CAGR', r => r.s.cagr], sharpe: ['Sharpe', r => r.s.sharpe], sortino: ['Sortino', r => r.s.sortino], mar: ['MAR', r => r.s.mar],
+  maxdd: ['Smallest drawdown', r => r.s.max_dd], vol: ['Lowest volatility', r => -r.s.vol], win: ['Win rate', r => r.s.win_rate], pf: ['Profit factor', r => r.s.profit_factor], trades: ['Most trades', r => r.s.trades],
+  t: ['t-stat', r => r.s.t_stat], avg: ['Average trade', r => r.s.avg_trade], name: ['Name (A–Z)'], course: ['Order in the book'] };
+function sortX(rs, k) {
+  if (!rs.length || !rs[0].s) return rs;
+  if (k === 'name') return rs.sort((a, b) => a.v.family_name.localeCompare(b.v.family_name) || a.v.ord - b.v.ord);
+  if (k === 'course') return rs.sort((a, b) => a.v.ord - b.v.ord);
+  const f = (SORTX[k] || SORTX.primary)[1]; return rs.sort((a, b) => (f(b) ?? -1e9) - (f(a) ?? -1e9));
+}
+async function rowsX(st = S) {
+  if (st.market !== 'india') return [];
+  let rs = await rows({ ...st, sort: 'primary' });
+  if (st.tab !== 'awaiting') rs = rs.filter(r => (!st.perf || KEYFN.perf(r) === st.perf) && (!st.dd || KEYFN.dd(r) === st.dd) && (!st.shp || KEYFN.shp(r) === st.shp));
+  return sortX(rs, st.sort);
+}
+const without = k => ({ ...S, [k]: k === 'min' ? '0' : '', ...(k === 'guru' ? { book: '' } : {}) });
+async function counts(k) {
+  if (k === 'tab' || k === 'author' || S.market !== 'india') return null;
+  if (k === 'tk') { const c = {}; for (const [t, l] of groupBy(await rowsX({ ...S, tk: 'ALL' }), r => r.tk)) c[t] = distinct(l, r => r.v.family); return c; }
+  if (k === 'min') { const b = await rowsX(without('min')), c = {}; for (const n of ['10', '30', '100']) c[n] = distinct(b.filter(r => r.s && r.s.trades >= +n), r => r.v.family); return c; }
+  const c = {}; famBest(await rowsX(without(k))).forEach(r => { const v = KEYFN[k](r); if (v != null) c[v] = (c[v] || 0) + 1; }); return c;
+}
+
+// ---------------------------------------------------------------- filter groups (one definition, rendered as sidebar links or top dropdowns)
+const FILTERS = {
+  tab: { t: 'Ranking (all gurus)', noAll: true, cur: () => ctxOf() === 'rank' ? S.tab : '', vals: () => Object.entries(TABS).map(([k, x]) => [k, x.name]), set: v => RANK(v) },
+  tk: { t: 'Market', noAll: true, cur: () => S.market !== 'india' ? '@' + S.market : S.tk,
+    vals: () => [...TICKERS.map(t => [t.ticker, LABEL[t.ticker]]), ['ALL', 'All Indian indices'], ['@global', 'Global markets · soon'], ['@stocks', 'Single stocks · soon']],
+    set: v => v.startsWith('@') ? { market: v.slice(1) } : { market: 'india', tk: v } },
+  guru: { t: 'Guru', vals: () => LIB.map(g => [g.id, g.name]), set: v => ({ guru: v, book: '' }) },
+  author: { t: 'Author pages', noAll: true, cur: () => ctxOf() === 'guru' ? S.guru : '', vals: () => LIB.map(g => [g.id, g.name]), set: v => AUTHOR(v) },
+  book: { t: 'Book', vals: () => Object.values(BOOK).filter(b => !S.guru || b.guru.id === S.guru).map(b => [b.id, b.title]) },
+  style: { t: 'Style', vals: () => [...new Set(CAT.map(v => v.style))].map(x => [x, x]) },
+  dir: { t: 'Direction', vals: () => [['Long', 'Long'], ['Short', 'Short']] },
+  hold: { t: 'Holding period', vals: () => Object.entries(HOLD) },
+  perf: { t: 'Performance', vals: () => Object.entries(PERF).map(([k, v]) => [k, v[0]]) },
+  dd: { t: 'Max drawdown', vals: () => Object.entries(DDB).map(([k, v]) => [k, v[0]]) },
+  shp: { t: 'Sharpe', vals: () => Object.entries(SHB).map(([k, v]) => [k, v[0]]) },
+  verdict: { t: 'Confidence', vals: () => Object.entries(VERD) },
+  min: { t: 'Trades', zero: '0', vals: () => [['10', '≥ 10 trades'], ['30', '≥ 30 trades'], ['100', '≥ 100 trades']] },
+};
+const curOf = k => FILTERS[k].cur ? FILTERS[k].cur() : S[k];
+const isSet = k => { const c = curOf(k), F = FILTERS[k]; return !F.noAll && c && c !== (F.zero || ''); };
+const setFor = (k, v) => { const F = FILTERS[k], c = curOf(k); if (!F.noAll && c === v) return { [k]: F.zero || '' }; return F.set ? F.set(v) : { [k]: v }; };
+function itemsHtml(k, cnt, cls) {
+  const F = FILTERS[k], c = curOf(k);
+  const all = F.noAll ? '' : `<a class="${cls} ${isSet(k) ? '' : 'on'}" data-set="${ds({ [k]: F.zero || '', ...(k === 'guru' ? { book: '' } : {}) })}">All</a>`;
+  return all + F.vals().map(([v, t]) => { const n = cnt?.[v]; return `<a class="${cls} ${c === v ? 'on' : ''} ${cnt && !n && !v.startsWith('@') && v !== 'ALL' ? 'zero' : ''} ${v.startsWith('@') ? 'soon' : ''}" data-set="${ds(setFor(k, v))}">${esc(t)}${n != null ? `<i>${n}</i>` : ''}</a>`; }).join('');
+}
+const sideGroup = (k, cnt) => `<div class="sg"><h4>${FILTERS[k].t}</h4>${itemsHtml(k, cnt, 'li')}</div>`;
+function dropGroup(k, cnt) {
+  const F = FILTERS[k], c = curOf(k), on = F.vals().find(([v]) => v === c);
+  return `<details class="dd ${isSet(k) ? 'set' : ''}"><summary>${F.t}${isSet(k) || F.noAll ? `: <b>${esc(on?.[1] || '')}</b>` : ''}</summary><div class="pop">${itemsHtml(k, cnt, 'pi')}</div></details>`;
+}
+const megaGurus = () => `<details class="dd mega ${ctxOf() === 'guru' ? 'set cur' : ''}"><summary>Guru's${ctxOf() === 'guru' ? `: <b>${esc(GURU[S.guru].name)}${S.book ? ' › ' + esc(BOOK[S.book].title) : ''}</b>` : ''}</summary><div class="pop megap">
+  ${LIB.map(g => `<div class="mg"><a class="gn ${ctxOf() === 'guru' && S.guru === g.id && !S.book ? 'on' : ''}" data-set="${ds(AUTHOR(g.id))}">${g.photo ? `<img src="${g.photo}" alt="">` : `<span class="ini">${g.name.split(' ').map(w => w[0]).join('')}</span>`}${esc(g.name)}</a>
+    ${g.books.map(b => `<a class="bn ${ctxOf() === 'guru' && S.book === b.id ? 'on' : ''} ${b.live ? '' : 'soon'}" data-set="${ds(AUTHOR(g.id, b.id))}">${esc(b.title)}<small>${b.year}${b.live ? '' : ' · not converted yet'}</small></a>`).join('')}</div>`).join('')}
+  <a class="allg" data-set="${ds(RANK(S.tab === 'awaiting' ? 'sharpe' : S.tab))}">All gurus and books →</a></div></details>`;
+
+// ---------------------------------------------------------------- results
+const NAV_KEYS = { side: ['tab', 'author', 'tk', 'guru', 'book', 'style', 'dir', 'hold', 'perf', 'dd', 'shp', 'verdict', 'min'], both: ['guru', 'book', 'dir', 'hold', 'perf', 'dd', 'shp', 'verdict', 'min'], top: [] };
+const DROP_KEYS = ['guru', 'book', 'dir', 'hold', 'perf', 'dd', 'shp', 'verdict', 'min'];
+const COLS = {
+  overview: ['Overview', [['CAGR', r => `<span class="${cls(r.s.cagr)}">${pct(r.s.cagr, 2, true)}</span>`, 'cagr', 1], ['Sharpe', r => fx(r.s.sharpe), 'sharpe', 1], ['Max DD', r => `<span class="neg">${pct(r.s.max_dd, 1)}</span>`, 'maxdd', 1], ['Win', r => pct(r.s.win_rate, 0), 'win', 1], ['Trades', r => fx(r.s.trades, 0), 'trades', 1], ['Equity', r => `<div class="tcurve">${spark(r, 150, 34)}</div>`]]],
+  risk: ['Risk & return', [['CAGR', r => pct(r.s.cagr, 2, true), 'cagr', 1], ['Volatility', r => pct(r.s.vol, 1), 'vol', 1], ['Sharpe', r => fx(r.s.sharpe), 'sharpe', 1], ['Sortino', r => fx(r.s.sortino), 'sortino', 1], ['MAR', r => fx(r.s.mar), 'mar', 1], ['Max DD', r => pct(Math.abs(r.s.max_dd), 1), 'maxdd', 1], ['Days under water', r => fx(r.s.max_dd_days, 0), null, 1], ['B&H CAGR', r => pct(r.s.bh_cagr, 1, true), null, 1]]],
+  trades: ['Trade stats', [['Trades', r => fx(r.s.trades, 0), 'trades', 1], ['Per year', r => fx(r.s.trades_per_year, 1), null, 1], ['Win', r => pct(r.s.win_rate, 0), 'win', 1], ['Avg trade', r => pct(r.s.avg_trade, 2), 'avg', 1], ['Payoff', r => fx(r.s.payoff), null, 1], ['Profit f.', r => fx(r.s.profit_factor), 'pf', 1], ['Avg bars', r => fx(r.s.avg_bars, 1), null, 1], ['In market', r => pct(r.s.exposure, 0), null, 1], ['t', r => fx(r.s.t_stat), 't', 1]]],
+  book: ['Book vs India', [['Book: trades', r => esc(r.v.claim?.trades || '–'), null, 1], ['India: trades', r => fx(r.s.trades, 0), null, 1], ['Book: win', r => esc(r.v.claim?.win || '–'), null, 1], ['India: win', r => pct(r.s.win_rate, 1), null, 1], ['Book: avg', r => esc(r.v.claim?.avg || '–'), null, 1], ['India: avg', r => pct(r.s.avg_trade, 2), null, 1]]],
+};
+const nVar = new Map();
+const itemTitle = r => `${esc(r.v.family_name)}${S.every && r.v.variant ? `<small> · ${esc(r.v.variant.split(' · ')[0])}</small>` : ''}`;
+const by2 = r => `${S.guru ? '' : esc(GURU[r.v.guru].name) + ' · '}Session ${r.v.session} · ${esc(r.v.style)} · ${r.v.dir}`;
+const ruleLine = v => { const e = (v.rules || []).find(x => x.startsWith('E|')), x = (v.rules || []).find(x => x.startsWith('X|')); return [e && 'Entry: ' + e.slice(2), x && 'Exit: ' + x.slice(2)].filter(Boolean).map(esc).join(' · '); };
+const isOpen = r => S.s && CAT.find(v => v.id === S.s)?.family === r.v.family && (!S.every || S.s === r.v.id);
+function resultsHtml(items) {
+  if (S.market !== 'india') return `<div class="empty"><b>${S.market === 'global' ? 'Global markets' : 'Single stocks'}: no data loaded yet</b>Every guru, book and strategy will be listed here once that data is in the Rust backend.</div>`;
+  if (!items.length) { const pv = S.book && !BOOK[S.book].live ? BOOK[S.book].title : S.guru && !GURU[S.guru].books.some(b => b.live) ? GURU[S.guru].name : '';
+    return `<div class="empty"><b>${pv ? esc(pv) + ': not converted yet' : 'No strategy matches'}</b>${pv ? 'Its strategies appear here once its rules are coded in Rust.' : 'Loosen a filter or press Reset all.'}</div>`; }
+  if (S.tab === 'awaiting') return `<div class="list">${items.map(r => `<div class="lr ${isOpen(r) ? 'open' : ''}" data-open="${r.v.id}"><div class="lt"><b>${esc(r.v.family_name)}</b><small>${r.v.variant ? esc(r.v.variant) + ' · ' : ''}${by2(r)}</small><span class="rl">${esc(r.v.status_note || r.v.status)}</span></div><span class="stamp" style="color:#8a6a2f">AWAITING DATA</span></div>`).join('')}</div>`;
+  const M = TABS[S.tab].metric;
+  if (S.res === 'grid') return `<div class="grid g2">${items.map((r, i) => { const vd = verdictOf(r.s); return `<article class="card ${isOpen(r) ? 'open' : ''}" data-open="${r.v.id}" tabindex="0">
+      <div class="rank"><span>#${i + 1}${S.tk === 'ALL' ? ' · ' + esc(LABEL[r.tk]) : ''}</span><span class="stamp" style="color:${vd.c}">${vd.t}</span></div><h3>${itemTitle(r)}</h3><div class="by">${by2(r)}</div>${spark(r, 300, 70)}
+      <div class="kpis"><div><span>${esc(M.label)}</span><b class="p">${M.fmt(M.get(r))}</b></div><div><span>CAGR</span><b class="${cls(r.s.cagr)}">${pct(r.s.cagr, 1, true)}</b></div><div><span>Max DD</span><b>${pct(Math.abs(r.s.max_dd), 1)}</b></div></div>
+      <div class="tags"><span class="tag">${HOLD[holdOf(r.s)]}</span><span class="tag">${esc(r.v.style)}</span><span class="tag">${r.v.dir}</span>${!S.every && nVar.get(r.v.family) > 1 ? `<span class="tag">${nVar.get(r.v.family)} variants</span>` : ''}</div></article>`; }).join('')}</div>`;
+  if (S.res === 'list') return `<div class="list">${items.map((r, i) => { const vd = verdictOf(r.s); return `<div class="lr ${isOpen(r) ? 'open' : ''}" data-open="${r.v.id}" tabindex="0"><span class="ln">${i + 1}</span><div class="sp">${spark(r, 120, 34)}</div>
+      <div class="lt"><b>${itemTitle(r)}</b><small>${by2(r)}${S.tk === 'ALL' ? ' · ' + esc(LABEL[r.tk]) : ''}</small><span class="rl">${ruleLine(r.v)}</span></div>
+      <div class="lk"><span>${esc(M.label)}<b class="p">${M.fmt(M.get(r))}</b></span><span>CAGR<b class="${cls(r.s.cagr)}">${pct(r.s.cagr, 1, true)}</b></span><span>Max DD<b>${pct(Math.abs(r.s.max_dd), 1)}</b></span><span>Trades<b>${fx(r.s.trades, 0)}</b></span></div><span class="stamp" style="color:${vd.c}">${vd.t}</span></div>`; }).join('')}</div>`;
+  const cols = COLS[S.cols][1].filter(([t]) => t !== M.label), th = (t, k, n) => `<th class="${n ? 'n' : ''} ${k ? '' : 'nosort'} ${k && S.sort === k ? 'on' : ''}" ${k ? `data-set="${ds({ sort: k })}"` : ''}>${t}</th>`;
+  return `<div class="tblwrap"><table class="tbl st"><thead><tr><th class="nosort">#</th>${th('Title of strategy', 'name')}${th(esc(M.label), 'primary', 1)}${cols.map(([t, , k, n]) => th(t, k, n)).join('')}</tr></thead><tbody>
+    ${items.map((r, i) => `<tr class="${isOpen(r) ? 'open' : ''}" data-open="${r.v.id}" tabindex="0"><td class="rk">${i + 1}</td><td class="nm"><b>${itemTitle(r)}</b><span>${by2(r)}${!S.every && nVar.get(r.v.family) > 1 ? ` · ${nVar.get(r.v.family)} variants` : ''}</span></td><td class="n p">${M.fmt(M.get(r))}</td>${cols.map(([, f, , n]) => `<td class="${n ? 'n' : ''}">${f(r)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+}
+
+// ---------------------------------------------------------------- strategy page (opens as page / drawer / split / inline / pop-up)
+const RUN = {}, PEND = {};
+let CHARTS = [];
+function drawCharts() {
+  CHARTS.forEach(c => { try { c.ch.remove(); } catch (e) {} }); CHARTS = [];
+  if (!window.LightweightCharts) return;
+  const L = LightweightCharts, fmt = { type: 'custom', formatter: v => v.toFixed(2) + '×', minMove: 0.01 };
+  document.querySelectorAll('.lwc').forEach(el => {
+    const d = PEND[el.dataset.k]; if (!d) return;
+    const ch = L.createChart(el, { width: el.clientWidth, height: el.clientHeight, layout: { attributionLogo: false, background: { color: '#f4f4f4' }, textColor: '#8b8d93', fontFamily: getComputedStyle(document.body).fontFamily, fontSize: 11 },
+      grid: { vertLines: { visible: false }, horzLines: { color: '#e4e4e5' } }, rightPriceScale: { borderColor: '#cfcfd0', mode: L.PriceScaleMode.Logarithmic }, timeScale: { borderColor: '#cfcfd0', minBarSpacing: 0.01 },
+      crosshair: { mode: L.CrosshairMode.Normal }, handleScale: { axisPressedMouseMove: false } });
+    const bh = ch.addLineSeries({ color: '#b0a48a', lineWidth: 2, priceFormat: fmt, lastValueVisible: false, priceLineVisible: false });
+    const st = ch.addLineSeries({ color: '#2f5a8f', lineWidth: 2, priceFormat: fmt, priceLineVisible: false });
+    bh.setData(d.dates.map((t, i) => ({ time: t, value: d.bh[i] }))); st.setData(d.dates.map((t, i) => ({ time: t, value: d.equity[i] })));
+    ch.timeScale().fitContent(); CHARTS.push({ ch, el });
+    const cb = el.parentElement.querySelector('[data-bh]'); if (cb) cb.onchange = () => bh.applyOptions({ visible: cb.checked });
+  });
+}
+addEventListener('resize', () => CHARTS.forEach(({ ch, el }) => ch.resize(el.clientWidth, el.clientHeight)));
+const runData = (id, tk) => RUN[id + '|' + tk] || (RUN[id + '|' + tk] = fetch(`${API}/api/guru/connors/run?` + new URLSearchParams({ id, ticker: tk })).then(r => r.ok ? r.json() : null).catch(() => null));
+async function detailHtml(id, items, narrow) {
+  const v = CAT.find(x => x.id === id); if (!v) return `<article class="det"><div class="dnav">${S.open === 'page' ? `<a class="back" data-set="${ds({ s: '' })}">← Back to results</a>` : `<span class="pn"></span><button class="x" data-set="${ds({ s: '' })}" aria-label="Close">×</button>`}</div><div class="empty"><b>This strategy is not in the vault</b>The link may be old. Pick one from the results.</div></article>`;
+  const fam = CAT.filter(x => x.family === v.family), g = GURU[v.guru], b = BOOK[v.book];
+  const idx = items.findIndex(r => r.v.family === v.family && (!S.every || r.v.id === id)), prev = items[idx - 1], next = items[idx + 1];
+  const closeBtn = S.open === 'page' ? '' : `<button class="x" data-set="${ds({ s: '' })}" aria-label="Close">×</button>`;
+  const nav = `<div class="dnav">${S.open === 'page' ? `<a class="back" data-set="${ds({ s: '' })}">← Back to results</a>` : ''}<span class="crumb"><a data-set="${ds(RANK('sharpe'))}">Guru's</a> › <a data-set="${ds(AUTHOR(g.id))}">${esc(g.name)}</a> › <a data-set="${ds(AUTHOR(g.id, b.id))}">${esc(b.title)}</a></span>
+    <span class="pn">${prev ? `<button data-open="${prev.v.id}" data-keep="1">‹ Prev</button>` : ''}${idx >= 0 ? `<em>${idx + 1} / ${items.length}</em>` : ''}${next ? `<button data-open="${next.v.id}" data-keep="1">Next ›</button>` : ''}</span>${closeBtn}</div>`;
+  const rulesBlock = () => { const sec = { F: [], E: [], A: [], X: [] }; (v.rules || []).forEach(x => { const [t, ...r] = x.split('|'); (sec[t] || sec.E).push(r.join('|')); });
+    return [['Conditions', sec.F], ['Entry', sec.E], ['Scale-in', sec.A], [sec.X.length > 1 ? 'Exit (first to happen)' : 'Exit', sec.X]].filter(([, a]) => a.length).map(([t, a]) => `<h5>${t}</h5><ul>${a.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`).join(''); };
+  const head = `${nav}<h1>${esc(v.family_name)}</h1><div class="dby">${esc(g.name)} · <i>${esc(b.title)}</i> (${b.year}) · Session ${v.session} · ${esc(v.style)} · ${v.dir}</div>
+    ${fam.length > 1 ? `<div class="vtabs">${fam.map(x => `<button data-open="${x.id}" data-keep="1" class="${x.id === id ? 'on' : ''} ${x.status !== 'live' ? 'off' : ''}">${esc((x.variant || x.name).split(' · ')[0])}</button>`).join('')}</div><div class="vdesc">${esc(v.variant || '')}</div>` : ''}`;
+  if (v.status !== 'live') return `<article class="det ${narrow ? 'narrow' : ''}">${head}<div class="dgrid"><div class="dmain"><section><h3>Why there are no results yet</h3><p>${esc(v.status_note || v.status)}</p></section><section><h3>Rules as written in the book</h3>${rulesBlock()}</section></div></div></article>`;
+  const tkC = S.tk === 'ALL' || S.market !== 'india' ? 'NIFTY 50' : S.tk;
+  let d = await runData(id, tkC), shownTk = tkC;
+  if (!d && tkC !== 'NIFTY 50') { d = await runData(id, 'NIFTY 50'); shownTk = 'NIFTY 50'; }
+  if (!d) return `<article class="det ${narrow ? 'narrow' : ''}">${head}<div class="empty"><b>No backtest available</b>The API returned no result for this rule set.</div></article>`;
+  PEND[`${id}|${shownTk}`] = d;
+  const s = d.stats, vd = verdictOf(s), cl = v.claim;
+  const sums = await Promise.all(TICKERS.map(t => getSum(t.ticker)));
+  const perIdx = TICKERS.map((t, i) => ({ t: t.ticker, st: sums[i][id]?.stats || null }));
+  const rel = famBest((await rowsX({ ...S, style: v.style, family: '', q: '', guru: '', book: '' }))).filter(r => r.v.family !== v.family).slice(0, 4);
+  const det = [['Guru', esc(g.name)], ['Book', `${esc(b.title)} (${b.year})`], ['Session', v.session], ['Style', esc(v.style)], ['Direction', v.dir], ['Markets traded', 'Indian indices'], ['Backtest', `${esc(LABEL[shownTk])} · ${d.dates[0].slice(0, 4)}–${d.dates[d.dates.length - 1].slice(0, 4)}`],
+    ['Avg holding', `${fx(s.avg_bars, 1)} bars`], ['Performance', `<b class="${cls(s.cagr)}">${pct(s.cagr, 2, true)}</b>/yr`], ['Volatility', pct(s.vol, 1)], ['Max drawdown', pct(Math.abs(s.max_dd), 1)], ['Sharpe ratio', fx(s.sharpe)], ['Sortino', fx(s.sortino)],
+    ['t-stat', fx(s.t_stat)], ['Trades', `${fx(s.trades, 0)} · ${fx(s.trades_per_year, 1)}/yr`], ['Win rate', pct(s.win_rate, 1)], ['Profit factor', fx(s.profit_factor)], ['Time in market', pct(s.exposure, 0)], ['Buy & hold CAGR', pct(s.bh_cagr, 1, true)]];
+  const last = d.trades.slice(-10).reverse();
+  return `<article class="det ${narrow ? 'narrow' : ''}">${head}
+    <div class="verd" style="--vc:${vd.c}"><span class="stamp" style="color:${vd.c}">${vd.t}</span> ${fx(s.trades, 0)} trades in ${fx(s.years, 1)} years on ${esc(LABEL[shownTk])}: ${pct(s.cagr, 2, true)} a year vs ${pct(s.bh_cagr, 2, true)} buy &amp; hold, worst drawdown ${pct(Math.abs(s.max_dd), 1)}. ${s.trades < 30 ? 'Too few trades to judge.' : s.t_stat >= 2 ? 'The average trade is statistically significant.' : 'The average trade is not statistically significant.'}${shownTk !== tkC ? ` <i>(No result on ${esc(LABEL[tkC])}; showing Nifty 50.)</i>` : ''}</div>
+    <div class="metrics">${[['CAGR', pct(s.cagr, 2, true), `Buy &amp; hold ${pct(s.bh_cagr, 2, true)}`, cls(s.cagr)], ['Sharpe (rf = 0)', fx(s.sharpe), `Sortino ${fx(s.sortino)}`], ['Max drawdown', pct(s.max_dd, 1), `Buy &amp; hold ${pct(s.bh_max_dd, 1)}`, 'neg'],
+      ['Win rate', pct(s.win_rate, 1), cl ? `Book ${esc(cl.win)}` : `${fx(s.trades, 0)} closed trades`], ['Profit factor', fx(s.profit_factor), `Payoff ${fx(s.payoff)}`], ['Closed trades', fx(s.trades, 0), `t-stat ${fx(s.t_stat)}`]].map(([k, x, i, c]) => `<div class="metric"><span>${k}</span><b class="${c || ''}">${x}</b><i>${i}</i></div>`).join('')}</div>
+    <div class="dgrid"><div class="dmain">
+      ${v.notes || cl ? `<section><h3>From the book</h3>${v.notes ? `<p>${esc(v.notes)}</p>` : ''}${cl ? `<p class="claim">The book reports <b>${esc(cl.trades)}</b> trades, <b>${esc(cl.win)}</b> winners, <b>${esc(cl.avg)}</b> average trade, held <b>${esc(cl.hold)}</b> <span class="muted">(${esc(cl.period)})</span>. On ${esc(LABEL[shownTk])}: ${fx(s.trades, 0)} trades, ${pct(s.win_rate, 1)} winners, ${pct(s.avg_trade, 2)} average, ${fx(s.avg_bars, 1)} bars.</p>` : ''}</section>` : ''}
+      <section><h3>Simple trading strategy</h3>${rulesBlock()}</section>
+      <section><div class="box-h"><span>Equity growth of ₹1 · ${esc(LABEL[shownTk])}</span><label class="chk"><input type="checkbox" data-bh checked> Compare with buy &amp; hold</label></div><div class="lwc" data-k="${id}|${shownTk}"></div><div class="cap">Log scale · strategy ${d.equity[d.equity.length - 1].toFixed(2)}× · buy &amp; hold ${d.bh[d.bh.length - 1].toFixed(2)}× · drag to zoom, hover for values</div>
+        <h3 style="margin-top:16px">Drawdown</h3>${ddChart(d, 520, 90)}</section>
+      <section><h3>Calendar-year returns</h3>${yearBars(d, 520, 120)}<div class="cap">Strategy (blue up / red down) vs buy &amp; hold (grey)</div></section>
+      <section><h3>On every Indian index</h3><table class="mt"><tr><th>Index</th><th class="n">CAGR</th><th class="n">Sharpe</th><th class="n">Max DD</th><th class="n">Win</th><th class="n">Trades</th><th class="n">t</th></tr>${perIdx.map(p => `<tr class="${p.t === shownTk ? 'b' : ''}"><td>${esc(LABEL[p.t])}</td>${p.st ? `<td class="n ${cls(p.st.cagr)}">${pct(p.st.cagr, 2, true)}</td><td class="n">${fx(p.st.sharpe)}</td><td class="n">${pct(Math.abs(p.st.max_dd), 1)}</td><td class="n">${pct(p.st.win_rate, 0)}</td><td class="n">${fx(p.st.trades, 0)}</td><td class="n">${fx(p.st.t_stat)}</td>` : '<td colspan="6" class="muted">no result (data not available for this index)</td>'}</tr>`).join('')}</table></section>
+      <section><h3>Last ${last.length} trades</h3><table class="mt"><tr><th>Entry</th><th>Exit</th><th>Why it exited</th><th class="n">Bars</th><th class="n">Return</th></tr>${last.map(t => `<tr><td>${t.entry}</td><td>${t.open ? 'open' : t.exit}</td><td>${esc(t.reason)}</td><td class="n">${t.bars}</td><td class="n ${cls(t.ret)}">${pct(t.ret, 2, true)}</td></tr>`).join('')}</table><a class="more" href="./#/connors/${encodeURIComponent(id)}" target="_blank">Full trade log with exit checks in the app ↗</a></section>
+    </div><aside class="dside">
+      <div class="box"><h4>Strategy details</h4><dl>${det.map(([k, x]) => `<dt>${k}</dt><dd>${x}</dd>`).join('')}</dl></div>
+      <div class="box"><h4>Keywords</h4><div class="tags">${[v.style, v.dir, HOLD[holdOf(s)], v.needs_vix ? 'India VIX' : '', v.needs_volume ? 'volume' : '', /RSI/.test(v.rules.join(' ')) ? 'RSI(2)' : '', /scale|Scale/.test(v.rules.join(' ')) ? 'scale-in' : ''].filter(Boolean).map(k => `<span class="tag">${esc(k)}</span>`).join('')}</div></div>
+      ${rel.length ? `<div class="box"><h4>Related strategies</h4>${rel.map(r => `<a class="rel" data-open="${r.v.id}" data-keep="1"><b>${esc(r.v.family_name)}</b><span>Sharpe ${fx(r.s.sharpe)} · ${pct(r.s.cagr, 1, true)}</span></a>`).join('')}</div>` : ''}
+      <a class="btn solid wide" href="./#/connors/${encodeURIComponent(id)}" target="_blank">Open in the full app ↗</a></aside></div></article>`;
+}
+
+// ---------------------------------------------------------------- hero (same look as the main app)
+const GUILL = (() => { const paths = [[80, 23, 60, 23], [74, 19, 48, 19], [66, 29, 40, 29]].map(([R, r, d, turns]) => { let p = ''; for (let k = 0; k <= 2400; k++) { const t = k / 2400 * Math.PI * 2 * turns, x = (R - r) * Math.cos(t) + d * Math.cos((R - r) / r * t), y = (R - r) * Math.sin(t) - d * Math.sin((R - r) / r * t); p += `${k ? 'L' : 'M'}${(100 + x * .7).toFixed(2)},${(100 + y * .7).toFixed(2)}`; } return `<path d="${p}"/>`; }); return `<svg viewBox="0 0 200 200">${paths.join('')}</svg>`; })();
+async function heroHtml(all) {
+  if (ctxOf() === 'rank') return rankHero(all);
+  const tk = S.tk === 'ALL' || S.market !== 'india' ? 'NIFTY 50' : S.tk, sum = await getSum(tk);
+  const live = CAT.filter(v => v.status === 'live' && (!S.guru || v.guru === S.guru) && (!S.book || v.book === S.book));
+  const st = live.map(v => sum[v.id]?.stats).filter(Boolean), big = st.filter(x => x.trades >= 30);
+  const best = big.length ? Math.max(...big.map(x => x.sharpe)) : null, sig = st.filter(x => x.t_stat >= 2).length; // same definition as the main app
+  const g = GURU[S.guru], api = g && GURUS_API.find(a => a.id === g.id), b = S.book && BOOK[S.book];
+  const fams = new Set(CAT.filter(v => (!S.guru || v.guru === S.guru) && (!S.book || v.book === S.book)).map(v => v.family)).size;
+  const strip = g && !g.books.some(x => x.live) ? '' : `<dl class="vstrip"><div><dt>${S.guru ? 'Strategies in the ' + (b ? 'book' : 'course') : 'Strategies converted'}</dt><dd>${fams}</dd></div><div><dt>Rule variants tested on ${esc(LABEL[tk])}</dt><dd>${st.length}</dd></div><div><dt>Variants with t ≥ 2</dt><dd>${sig}</dd></div><div><dt>Best Sharpe (30+ trades)</dt><dd>${fx(best)}</dd></div></dl>`;
+  return `<section class="vhero"><div class="guilloche" aria-hidden="true">${GUILL}</div><div class="hero-copy"><div class="vcrumbs"><a data-set="${ds(RANK('sharpe'))}">Guru's</a> / ${b ? `<a data-set="${ds(AUTHOR(g.id))}">${esc(g.name)}</a> / ${esc(b.title)}` : esc(g.name)}</div>
+      <h1>${esc(b ? b.title : g.name)}</h1><p class="lede">${esc(b ? `${g.name} · ${b.year}` : api?.tagline || 'Not converted yet: the books are listed below.')}</p><p class="g-book">${esc(api?.book || g.books.map(x => x.title).join(' · '))}</p></div>
+    <div class="portrait"><div class="pframe">${g.photo ? `<img src="${g.photo}" alt="${esc(g.name)}">` : ''}<span>${g.name.split(' ').map(w => w[0]).join('')}</span></div></div></section>${strip}`;
+}
+function rankHero(all) {
+  const T = TABS[S.tab], M = T.metric, ok = all.filter(r => r.s), fb = famBest(ok); // awaiting-data rows have no stats
+  const third = { trending: () => ['Positive in the last 12 months', fb.filter(r => r.s.total_return > 0).length], sharpe: () => ['Variants with t ≥ 2', ok.filter(r => r.s.t_stat >= 2).length],
+    working: () => ['Positive since the book', fb.filter(r => r.s.sharpe > 0).length], sig: () => ['Variants with t ≥ 2', ok.length], awaiting: () => ['Waiting for data', all.length] }[S.tab]();
+  const fourth = M && ok.length ? [`Best ${M.label}`, M.fmt(Math.max(...ok.map(M.get)))] : ['Books affected', distinct(all, r => r.v.book)];
+  const mk = S.market !== 'india' ? (S.market === 'global' ? 'Global markets' : 'Single stocks') : S.tk === 'ALL' ? 'all Indian indices' : LABEL[S.tk];
+  return `<section class="vhero solo"><div class="guilloche" aria-hidden="true">${GUILL}</div><div class="hero-copy"><div class="vcrumbs">Rankings · all gurus and books</div><h1>${esc(T.name)}</h1><p class="lede">${esc(T.note)}</p>
+    <p class="g-book">Across ${LIB.length} gurus and ${Object.keys(BOOK).length} books · ${esc(mk)}${S.guru ? ` · filtered to <b>${esc(GURU[S.guru].name)}</b> <a class="unf" data-set="${ds({ guru: '', book: '' })}">show all gurus</a>` : ''}</p></div></section>
+    <dl class="vstrip"><div><dt>Strategies in this ranking</dt><dd>${distinct(all, r => r.v.family)}</dd></div><div><dt>Rule variants</dt><dd>${distinct(all, r => r.v.id)}</dd></div><div><dt>${third[0]}</dt><dd>${third[1]}</dd></div><div><dt>${fourth[0]}</dt><dd>${fourth[1]}</dd></div></dl>`;
+}
+
+// ---------------------------------------------------------------- page assembly
+let busy3 = 0, backScroll = 0;
+async function render() {
+  if (S.ctx === 'guru' && S.guru && S.tab !== 'sharpe') S.tab = 'sharpe';
+  writeHash(); const my = ++busy3;
+  const all = await rowsX();
+  nVar.clear(); for (const [f, a] of groupBy(all, r => r.v.family)) nVar.set(f, distinct(a, r => r.v.id));
+  const items = S.every || S.tab === 'awaiting' ? all : famBest(all);
+  const sideKeys = NAV_KEYS[S.nav], need = [...new Set([...sideKeys, ...(S.nav === 'top' ? DROP_KEYS : []), ...(S.nav !== 'side' ? ['tk'] : [])])];
+  const cnt = {}; for (const k of need) cnt[k] = await counts(k);
+  if (my !== busy3) return;
+  const M = TABS[S.tab].metric, hero = S.open === 'page' && S.s ? '' : await heroHtml(all);
+  if (my !== busy3) return;
+  const lab = S.lab === '1' ? `<div class="lab"><div class="li2"><b>Layout lab</b><span class="muted">${Object.keys(NAVS).length * Object.keys(RESS).length * Object.keys(OPENS).length} combinations</span>
+      <label>Navigation ${seg2('nav', NAVS)}</label><label>Results ${seg2('res', RESS)}</label><label>Open a strategy ${seg2('open', OPENS)}</label><button class="hide" data-set="${ds({ lab: '0' })}">Hide ×</button></div>
+      <div class="li2 pres"><span class="muted">Presets:</span>${PRESETS.map(([t, d, o]) => `<button class="${Object.entries(o).every(([k, x]) => S[k] === x) ? 'on' : ''}" title="${esc(d)}" data-set="${ds(o)}">${t}</button>`).join('')}</div></div>` : `<button class="labfab" data-set="${ds({ lab: '1' })}">⚙ Layout</button>`;
+  const rtabs = `<span class="rtabs"><span class="rlab">Rankings · all gurus</span>${Object.entries(TABS).map(([k, t]) => `<button class="rt ${ctxOf() === 'rank' && S.tab === k ? 'on' : ''}" data-set="${ds(RANK(k))}">${t.name}</button>`).join('')}</span>`;
+  const navbar = S.nav === 'side' ? '' : `<nav class="navbar">${megaGurus()}${rtabs}${dropGroup('tk', cnt.tk)}${dropGroup('style', S.nav === 'top' ? await counts('style') : null)}<label class="search nb"><input id="q" type="search" value="${esc(S.q)}" placeholder="Search strategies, rules, books…"></label></nav>`;
+  const filterbar = S.nav === 'top' ? `<div class="filterbar">${DROP_KEYS.map(k => dropGroup(k, cnt[k])).join('')}</div>` : '';
+  const side = S.nav === 'top' ? '' : `<aside class="sidebar">${S.nav === 'side' ? `<label class="search"><input id="q" type="search" value="${esc(S.q)}" placeholder="Search…"></label>` : '<div class="refine">Refine results</div>'}${sideKeys.map(k => sideGroup(k, cnt[k])).join('')}<a class="reset" data-set="${ds(resetAll())}">Reset all filters</a></aside>`;
+  const ctx = ctxOf(), title = ctx === 'guru' ? (S.book ? esc(BOOK[S.book].title) : `Strategies by ${esc(GURU[S.guru].name)}`) : `${S.tab === 'awaiting' ? 'Awaiting data' : TABS[S.tab].name + ' strategies'}${S.guru ? ` · ${esc(GURU[S.guru].name)}` : ''}${S.book ? ` · ${esc(BOOK[S.book].title)}` : ''}`;
+  const head = `<div class="rh"><div><div class="crumb">${ctx === 'guru' ? `<a data-set="${ds(RANK('sharpe'))}">Guru's</a> › ${S.book ? `<a data-set="${ds(AUTHOR(S.guru))}">${esc(GURU[S.guru].name)}</a> › ${esc(BOOK[S.book].title)}` : esc(GURU[S.guru].name)} · full history` : `Rankings › ${esc(TABS[S.tab].name)} · all gurus and books${S.guru ? ' (filtered)' : ''}`}</div><h1>${title}</h1>
+      <p>We’ve found <b>${distinct(all, r => r.v.family)}</b> strategies (<b>${distinct(all, r => r.v.id)}</b> rule variants) ${S.market === 'india' ? `on <b>${S.tk === 'ALL' ? 'all Indian indices' : esc(LABEL[S.tk])}</b>` : ''}. ${TABS[S.tab].note}</p></div></div>
+    <div class="rtools">${S.res === 'table' && S.tab !== 'awaiting' ? `<span class="lab3">Change your view</span>${seg2('cols', Object.fromEntries(Object.entries(COLS).map(([k, x]) => [k, x[0]])))}` : ''}
+      <label class="chk"><input type="checkbox" ${S.every ? 'checked' : ''} data-toggle="every"> Every rule variant</label>
+      <label class="sel"><select data-key="sort" aria-label="Sort">${Object.entries(SORTX).map(([k, [t]]) => `<option value="${k}" ${S.sort === k ? 'selected' : ''}>Sort: ${k === 'primary' ? (M?.label || t) : t}</option>`).join('')}</select></label>${seg2('res', RESS)}</div>${chips()}`;
+  const split = S.open === 'split' && S.market === 'india' && items.length && S.tab !== 'awaiting' ? (S.s || items[0].v.id) : '';
+  const showPage = S.open === 'page' && S.s;
+  const main = showPage ? `<div id="detail" class="pagedet"><div class="loading">Opening strategy…</div></div>`
+    : split ? `<div class="splitw"><div class="splitl">${head}${resultsHtml(items)}</div><div class="splitr" id="detail"><div class="loading">Opening strategy…</div></div></div>` : head + resultsHtml(items);
+  $('#app').className = `nav-${S.nav} res-${S.res} open-${S.open}`;
+  $('#app').innerHTML = `${lab}${hero}${navbar}${filterbar}<div class="body">${side}<main class="mainc">${main}</main></div>
+    ${!showPage && S.s && (S.open === 'drawer' || S.open === 'modal') ? `<div class="scrim" data-set="${ds({ s: '' })}"></div><div class="${S.open === 'drawer' ? 'drawer' : 'modal2'}" id="detail"><div class="loading">Opening strategy…</div></div>` : ''}`;
+  restoreFocus();
+  const sid = showPage ? S.s : split || S.s;
+  if (sid && S.market === 'india') {
+    const html = await detailHtml(sid, items, S.open !== 'page'); if (my !== busy3) return;
+    if (S.open === 'inline' && !showPage) placeInline(sid, html); else if ($('#detail')) $('#detail').innerHTML = html;
+    drawCharts();
+  }
+}
+function placeInline(id, html) {
+  const fam = CAT.find(v => v.id === id)?.family, el = [...document.querySelectorAll('[data-open]')].find(e => !e.closest('.det') && (S.every ? e.dataset.open === id : CAT.find(v => v.id === e.dataset.open)?.family === fam));
+  if (!el) return;
+  if (el.tagName === 'TR') { const tr = document.createElement('tr'); tr.className = 'inl'; tr.innerHTML = `<td colspan="${el.children.length}">${html}</td>`; el.after(tr); }
+  else if (el.classList.contains('card')) { let last = el; for (let n = el.nextElementSibling; n && n.offsetTop === el.offsetTop; n = n.nextElementSibling) last = n; const dv = document.createElement('div'); dv.className = 'inl'; dv.innerHTML = html; last.after(dv); }
+  else { const dv = document.createElement('div'); dv.className = 'inl'; dv.innerHTML = html; el.after(dv); }
+  const box = document.querySelector('.inl'); if (box && box.getBoundingClientRect().top > innerHeight * .8) box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+const seg2 = (key, map) => `<span class="seg">${Object.entries(map).map(([k, t]) => `<button data-set="${ds({ [key]: k })}" class="${S[key] === k ? 'on' : ''}">${t}</button>`).join('')}</span>`;
+const resetAll = () => ({ q: '', guru: '', book: '', style: '', dir: '', hold: '', verdict: '', min: '0', family: '', perf: '', dd: '', shp: '', s: '' });
+function chips() {
+  const keys = [...(ctxOf() === 'guru' ? [] : ['guru', 'book']), 'style', 'dir', 'hold', 'perf', 'dd', 'shp', 'verdict', 'min'].filter(isSet); // on an author page the author is the page, not a filter
+  const lab = k => { const F = FILTERS[k], c = curOf(k); return `${F.t}: ${F.vals().find(([v]) => v === c)?.[1] || c}`; };
+  const on = keys.map(k => `<span class="chip">${esc(lab(k))}<button data-set="${ds(setFor(k, curOf(k)))}" aria-label="Remove">×</button></span>`);
+  if (S.q) on.push(`<span class="chip">“${esc(S.q)}”<button data-set="${ds({ q: '' })}" aria-label="Remove">×</button></span>`);
+  return on.length ? `<div class="chips">${on.join('')}<button class="clear" data-set="${ds(resetAll())}">Reset all</button></div>` : '';
+}
+let focusState = null;
+function restoreFocus() { if (!focusState) return; const el = document.getElementById(focusState.id); if (el) { el.focus(); try { el.setSelectionRange(focusState.pos, focusState.pos); } catch (e) {} } focusState = null; }
+
+// ---------------------------------------------------------------- events
+const set = patch => {
+  const wasPage = S.open === 'page' && S.s;
+  Object.assign(S, patch);
+  if (S.ctx === 'guru' && !S.guru) S.ctx = 'rank';
+  if (S.ctx === 'guru' && S.tab !== 'sharpe') S.tab = 'sharpe';
+  if ('guru' in patch && !('book' in patch) && S.book && BOOK[S.book]?.guru.id !== S.guru) S.book = '';
+  if (!('s' in patch) && !('res' in patch) && !('open' in patch) && !('lab' in patch) && !('nav' in patch)) S.s = S.open === 'split' ? S.s : ''; // a new filter closes the open strategy
+  render().then(() => { if (S.open === 'page' && S.s && !wasPage) { backScroll = scrollY; scrollTo(0, 0); } else if (wasPage && !S.s) scrollTo(0, backScroll); });
+};
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-set], [data-open], .dd summary'); if (!t) return;
+  if (t.tagName === 'SUMMARY') { const me = t.parentElement; document.querySelectorAll('details.dd[open]').forEach(d => d !== me && d.removeAttribute('open')); return; }
+  e.preventDefault();
+  if (t.dataset.set != null) return set(Object.fromEntries(new URLSearchParams(t.dataset.set)));
+  const id = t.dataset.open, keep = t.dataset.keep;
+  if (!keep && S.s === id && S.open !== 'page') return set({ s: '' }); // toggle close
+  if (S.open === 'inline' || S.open === 'split') { Object.assign(S, { s: id }); return render(); }
+  set({ s: id });
+});
+document.addEventListener('click', e => { if (!e.target.closest('details.dd')) document.querySelectorAll('details.dd[open]').forEach(d => d.removeAttribute('open')); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { if (document.querySelector('details.dd[open]')) return document.querySelectorAll('details.dd[open]').forEach(d => d.removeAttribute('open')); if (S.s) set({ s: '' }); }
+  if (e.key === 'Enter' && e.target.dataset?.open) e.target.click();
+});
+document.addEventListener('change', e => { const k = e.target.dataset?.key, tg = e.target.dataset?.toggle; if (k) set({ [k]: e.target.value }); if (tg) set({ [tg]: e.target.checked ? '1' : '' }); });
+let qt3; document.addEventListener('input', e => { if (e.target.id !== 'q') return; clearTimeout(qt3); qt3 = setTimeout(() => { focusState = { id: 'q', pos: e.target.selectionStart }; set({ q: e.target.value }); }, 250); });
+addEventListener('hashchange', () => { readHash(); render(); });
+
+(async function init() {
+  try {
+    const get = async u => (await fetch(API + u)).json();
+    const [cat, tk, gurus] = await Promise.all([get('/api/guru/connors/strategies'), get('/api/tickers'), get('/api/gurus')]);
+    TICKERS = tk; GURUS_API = gurus;
+    CAT = cat.map((v, i) => ({ ...v, ord: i, guru: 'connors', book: 'stc9', style: v.group.split(' · ')[0] }));
+    readHash(); render();
+  } catch (e) { $('#app').innerHTML = `<div class="empty"><b>Could not reach the Rust API</b>${esc(API)}: ${esc(e.message)}</div>`; }
+})();
+
+</script>
+</body>
+</html>

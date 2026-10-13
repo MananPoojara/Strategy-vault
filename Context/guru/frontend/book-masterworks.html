@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Book masterworks · Strategy Vault</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="vendor/fonts.css">
+<link rel="stylesheet" href="vendor/fonts-options.css">
+<style>
+* { box-sizing: border-box; }
+html, body { margin: 0; overflow-x: clip; }
+body { font: 14px/1.5 "IBM Plex Sans", system-ui, sans-serif; background: #fff; color: #1d2330; }
+:root { --foil: #e8d39a; --gold: #8a6a2f; --paper: #fdfcf9; --sig: #2f5140; --none: #4a5563; --thin: #7a2e2e; }
+.pos { color: #2f6b4a; } .neg { color: #b43a34; }
+.picker { position: sticky; top: 0; z-index: 60; background: #ffffffee; backdrop-filter: blur(10px); border-bottom: 1px solid #e3e6ec; padding: 12px 24px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.embed .picker { display: none; }
+.picker h1 { font: 600 15px/1 "IBM Plex Sans"; margin: 0; }
+.picker nav { display: flex; gap: 6px; flex-wrap: wrap; }
+.picker button { border: 1px solid #dfe3ea; background: #fff; border-radius: 99px; padding: 6px 13px; font: 500 13px "IBM Plex Sans"; cursor: pointer; }
+.picker button.on { background: #111; color: #fff; border-color: #111; }
+.picker .desc { flex-basis: 100%; font-size: 13px; color: #555; margin: 0; } .picker .desc b { color: #111; } .picker .desc a { color: #555; }
+.opt { position: relative; isolation: isolate; }
+.pad { padding: 30px 36px 70px; } .wrap { max-width: 1260px; margin: 0 auto; }
+h2.t { font: 600 40px/1.05 "Newsreader", serif; margin: 0 0 6px; letter-spacing: -.01em; }
+p.s { margin: 0 0 22px; color: #5b6272; font-size: 15px; max-width: 72ch; }
+.kv { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1.5px solid currentColor; }
+.kv div { padding: 8px 10px 6px 0; } .kv div + div { padding-left: 10px; border-left: 1px solid #00000018; }
+.kv span { display: block; font: 11px "IBM Plex Sans"; opacity: .7; } .kv b { font: 600 22px "Newsreader", serif; }
+.rl { font-size: 13px; line-height: 1.45; margin: 2px 0; } .rl.o { font-weight: 600; } .lbl { font: 700 10px "IBM Plex Sans"; opacity: .65; margin-top: 8px; letter-spacing: .03em; }
+.stamp { display: inline-block; transform: rotate(-5deg); border: 2px solid currentColor; padding: 1px 8px; font: 700 11px "IBM Plex Mono"; }
+@media (prefers-reduced-motion: reduce) { .opt *, .opt *::before, .opt *::after { transition-duration: .01s !important; animation: none !important; } }
+
+/* ---------------- 1. READING ROOM (WebGL) */
+.m1 { background: #2a2420; color: #f3ead8; height: calc(100vh - 96px); min-height: 620px; display: grid; grid-template-columns: 1fr 380px; }
+.m1 .gl { position: relative; overflow: hidden; } .m1 canvas { display: block; width: 100%; height: 100%; cursor: pointer; }
+.m1 .hint { position: absolute; left: 24px; bottom: 20px; font-size: 13px; color: #d9c9a8; background: #0006; padding: 6px 12px; border-radius: 99px; }
+.m1 .title { position: absolute; left: 28px; top: 22px; } .m1 .title h2 { font: 600 34px "Newsreader", serif; margin: 0; color: #f3ead8; } .m1 .title p { margin: 2px 0 0; color: #cdbb98; font-size: 14px; }
+.m1 .panel { background: #f7f1e4; color: #2a2420; padding: 26px 26px; overflow: auto; box-shadow: -10px 0 30px #0005; }
+.m1 .panel h3 { font: 600 28px/1.08 "Newsreader", serif; margin: 4px 0 6px; } .m1 .panel .k { font: 600 11px "IBM Plex Sans"; color: var(--gold); }
+.m1 .panel .meta { font-size: 12px; color: #7a6a52; margin-bottom: 12px; }
+.m1 .empty { color: #7a6a52; font: italic 18px/1.5 "Newsreader"; margin-top: 30px; }
+
+/* ---------------- 2. THE SHELF IS THE CHART */
+.m2 { background: radial-gradient(1100px 600px at 50% -10%, #fff7e6, transparent 70%), #eef0f2; }
+.m2 .legend { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin: 0 0 24px; }
+.m2 .legend div { background: #fff; border: 1px solid #e1e3e8; border-radius: 10px; padding: 10px 12px; font-size: 12.5px; color: #4a5162; }
+.m2 .legend b { display: block; font: 600 14px "Newsreader", serif; color: #1d2330; margin-bottom: 2px; }
+.m2 .sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: -2px; margin: 0 4px 0 8px; }
+.m2 .case { background: linear-gradient(180deg, #8a6844, #6e5233); padding: 14px 14px 0; border-radius: 6px 6px 0 0; box-shadow: 0 20px 40px #0003; }
+.m2 .shelf { position: relative; background: linear-gradient(180deg, #3a2b1c, #4a3824 70%); padding: 18px 20px 0; margin-bottom: 14px; box-shadow: inset 0 10px 20px #0006; }
+.m2 .shelf .lab { position: absolute; left: 12px; top: 6px; font: 600 11px "IBM Plex Sans"; color: #e8d39a; background: #0005; padding: 1px 8px; border-radius: 3px; }
+.m2 .row { display: flex; align-items: flex-end; gap: 4px; min-height: 330px; padding: 22px 8px 0; perspective: 1400px; }
+.m2 .plank { height: 18px; margin: 0 -20px; background: linear-gradient(180deg, #caa972, #a98652 60%, #876741); }
+.m2 .b3 { position: relative; width: var(--w); height: var(--h); transform-style: preserve-3d; transform-origin: bottom left; transition: transform .7s cubic-bezier(.2,.8,.2,1); cursor: pointer; flex: none; }
+.m2 .b3 .sp, .m2 .b3 .cv { position: absolute; top: 0; height: 100%; backface-visibility: hidden; }
+.m2 .b3 .sp { left: 0; width: var(--w); background: var(--c); color: var(--foil); display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 10px 0; box-shadow: inset 3px 0 5px -2px #ffffff40, inset -5px 0 7px -3px #00000066; overflow: hidden; }
+.m2 .b3.short .sp { background: repeating-linear-gradient(135deg, var(--c) 0 10px, color-mix(in srgb, var(--c) 80%, #000) 10px 14px); }
+.m2 .b3 .band { position: absolute; left: 0; right: 0; top: 34%; height: var(--band); background: linear-gradient(180deg, #f3dfa6, #c9a24f); box-shadow: 0 1px 0 #0004; }
+.m2 .b3 .t { writing-mode: vertical-rl; transform: rotate(180deg); font: 600 13px/1 "Newsreader", serif; white-space: nowrap; overflow: hidden; max-height: calc(var(--h) - 40px); position: relative; z-index: 1; }
+.m2 .b3 .s { font: 600 9px "IBM Plex Mono"; position: relative; z-index: 1; }
+.m2 .b3 .cv { left: var(--w); width: 230px; transform-origin: left center; transform: rotateY(90deg); background: #fbf8f0; color: #2a2420; padding: 14px; font-size: 12px; box-shadow: inset 8px 0 12px -6px #0005; }
+.m2 .b3 .cv h4 { margin: 0 0 4px; font: 600 17px/1.1 "Newsreader", serif; }
+.m2 .b3 .cv { opacity: 0; transition: opacity .2s .1s; }
+.m2 .b3:hover .cv { opacity: 1; }
+.m2 .b3:hover { transform: translateY(-14px) translateX(24px) rotateY(-70deg); z-index: 5; }
+.m2 .plaque { flex: none; align-self: flex-end; margin: 0 10px 0 14px; height: 120px; width: 26px; border-radius: 3px; background: linear-gradient(90deg, #c9a24f, #f3dfa6 50%, #b68f3e); color: #3a2b1c; display: grid; place-items: center; box-shadow: 2px 2px 6px #0006; }
+.m2 .plaque span { writing-mode: vertical-rl; transform: rotate(180deg); font: 700 11px 'IBM Plex Sans'; white-space: nowrap; }
+
+/* ---------------- 3. SCROLL STORY */
+.m3 { background: #f3f1ec; }
+.m3 .track { position: relative; }
+.m3 .sticky { position: sticky; top: 96px; height: calc(100vh - 96px); display: grid; grid-template-columns: 1.1fr 1fr; align-items: center; gap: 30px; padding: 0 5vw; overflow: hidden; }
+.m3 .scene { perspective: 2200px; display: grid; place-items: center; }
+.m3 .book { position: relative; width: 300px; height: 420px; transform-style: preserve-3d; transition: transform .9s cubic-bezier(.3,.7,.2,1); }
+.m3 .face { position: absolute; inset: 0; backface-visibility: hidden; border-radius: 2px 8px 8px 2px; }
+.m3 .cover { transform-origin: left center; transform-style: preserve-3d; transition: transform 1s cubic-bezier(.3,.7,.2,1); position: absolute; inset: 0; z-index: 50; }
+.m3 .cover .f { background: #1f3a5f; color: var(--foil); padding: 30px 24px; display: flex; flex-direction: column; align-items: center; text-align: center; justify-content: center; gap: 12px; box-shadow: inset 8px 0 14px -6px #0008; }
+.m3 .cover .f::before { content: ""; position: absolute; inset: 14px; border: 1px solid #e8d39a77; }
+.m3 .cover .f .ph { width: 130px; height: 130px; border-radius: 50%; overflow: hidden; border: 3px solid var(--foil); } .m3 .cover .f img { width: 100%; height: 100%; object-fit: cover; filter: grayscale(1) sepia(.2); }
+.m3 .cover .f h3 { margin: 0; font: 600 34px/1.05 "Newsreader"; }
+.m3 .cover .b { transform: rotateY(180deg); background: #1f3a5f; border-radius: 8px 2px 2px 8px; }
+.m3 .spine { position: absolute; left: -22px; top: 0; width: 44px; height: 100%; transform: rotateY(-90deg); transform-origin: right center; background: #193150; color: var(--foil); display: grid; place-items: center; }
+.m3 .spine span { writing-mode: vertical-rl; transform: rotate(180deg); font: 600 15px "Newsreader"; }
+.m3 .block { position: absolute; inset: 4px 0 4px 4px; background: repeating-linear-gradient(90deg, #fbfbfb 0 2px, #e0ddd5 2px 3px); transform: translateZ(-18px); border-radius: 0 6px 6px 0; }
+.m3 .leaf { position: absolute; inset: 3px 3px 3px 0; transform-origin: left center; transform-style: preserve-3d; transition: transform 1s cubic-bezier(.3,.7,.2,1); }
+.m3 .leaf .p { position: absolute; inset: 0; backface-visibility: hidden; background: var(--paper); padding: 26px 22px; border-radius: 0 6px 6px 0; box-shadow: inset 12px 0 16px -12px #0003; font-family: "Newsreader", serif; overflow: hidden; }
+.m3 .leaf .p.bk { transform: rotateY(180deg); border-radius: 6px 0 0 6px; box-shadow: inset -12px 0 16px -12px #0003; }
+.m3 .leaf.turned { transform: rotateY(-178deg); }
+.m3 .leaf .p h4 { margin: 0 0 6px; font: 600 22px/1.1 "Newsreader"; } .m3 .leaf .p .big { font: 600 54px/1 "Newsreader"; margin: 18px 0 2px; } .m3 .leaf .p small { font: 11px "IBM Plex Sans"; color: #888; }
+.m3 .story { max-width: 520px; }
+.m3 .story .k { font: 600 12px "IBM Plex Sans"; color: var(--gold); } .m3 .story h3 { font: 600 40px/1.05 "Newsreader", serif; margin: 6px 0 10px; }
+.m3 .story p { font: 17px/1.65 "Newsreader", serif; color: #333; }
+.m3 .rail { position: absolute; right: 22px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 6px; }
+.m3 .rail i { width: 8px; height: 8px; border-radius: 50%; background: #c9c3b4; transition: transform .3s, background .3s; } .m3 .rail i.on { background: var(--gold); transform: scale(1.5); }
+.m3 .step { height: 100vh; }
+
+/* ---------------- 4. COMPLETE EDITION (StPageFlip + full charts) */
+.m4 { background: radial-gradient(1300px 700px at 50% 20%, #f3f1ec, #d4d1c9); }
+.m4 .stage { display: flex; justify-content: center; } .m4 #flip4 { box-shadow: 0 30px 50px #0000002e; }
+.m4 .page { background: var(--paper); padding: 28px 30px 30px; overflow: hidden; color: #222; font-family: "Newsreader", serif; }
+.m4 .page.hard { background: #1f3a5f; color: var(--foil); }
+.m4 .page .in { height: 100%; display: flex; flex-direction: column; }
+.m4 .page.hard .in { border: 1.5px solid #e8d39a88; padding: 26px; align-items: center; justify-content: center; text-align: center; gap: 12px; }
+.m4 .page.hard .ph { width: 150px; height: 150px; border-radius: 50%; overflow: hidden; border: 3px solid var(--foil); } .m4 .page.hard img { width: 100%; height: 100%; object-fit: cover; filter: grayscale(1) sepia(.2); }
+.m4 .page h3 { font: 600 26px/1.05 "Newsreader"; margin: 0 0 4px; } .m4 .page.hard h3 { font-size: 40px; }
+.m4 .page .k { font: 600 10.5px "IBM Plex Sans"; color: var(--gold); margin-bottom: 4px; }
+.m4 .page .run { display: flex; justify-content: space-between; font: italic 11px "Newsreader"; color: #999; margin-bottom: 10px; }
+.m4 .page .folio { margin-top: auto; font: 10px "IBM Plex Sans"; color: #999; text-align: center; }
+.m4 .page .cap { font: 10.5px "IBM Plex Sans"; color: #888; margin: 2px 0 8px; }
+.m4 .page table { width: 100%; border-collapse: collapse; font: 11px "IBM Plex Sans"; } .m4 .page th { text-align: left; font-weight: 500; color: #888; border-bottom: 1px solid #ccc; padding: 3px; } .m4 .page td { padding: 3px; border-bottom: 1px dotted #ddd; } .m4 .page .n { text-align: right; font-family: "IBM Plex Mono"; } .m4 .page tr.b td { font-weight: 600; }
+.m4 .page .kv b { font-size: 19px; }
+.m4 .page .mini { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 12px; font: 11px "IBM Plex Sans"; margin-top: 6px; } .m4 .page .mini span { color: #888; } .m4 .page .mini b { font-family: "IBM Plex Mono"; font-weight: 500; float: right; }
+.m4 .ctrl { display: flex; justify-content: center; gap: 14px; align-items: center; margin-top: 18px; font: 13px "IBM Plex Sans"; }
+.m4 .ctrl button, .m4 .ctrl select { border: 1px solid #222; background: #fff; padding: 7px 12px; font: 600 13px "IBM Plex Sans"; cursor: pointer; }
+.m4 .loading { text-align: center; padding: 120px 0; font: italic 20px "Newsreader"; color: #666; }
+
+/* ---------------- 5. ROLODEX */
+.m5 { background: linear-gradient(180deg, #e9ebee, #d5d9df); }
+.m5 .rig { display: grid; grid-template-columns: 1fr 360px; gap: 30px; align-items: center; }
+.m5 .drum { position: relative; height: 520px; overflow: hidden; perspective: 1600px; -webkit-mask-image: linear-gradient(transparent, #000 18%, #000 82%, transparent); mask-image: linear-gradient(transparent, #000 18%, #000 82%, transparent); display: grid; place-items: center; cursor: grab; user-select: none; }
+.m5 .drum:active { cursor: grabbing; }
+.m5 .wheel { position: relative; width: 520px; height: 150px; transform-style: preserve-3d; transition: transform .6s cubic-bezier(.2,.8,.2,1); }
+.m5 .card { position: absolute; inset: 0; backface-visibility: hidden; background: #fffdf7; border-radius: 6px; padding: 16px 20px; box-shadow: 0 2px 6px #0002;
+  background-image: linear-gradient(#fffdf7 40px, transparent 40px), repeating-linear-gradient(#fffdf7 0 23px, #d7e4ef 23px 24px); font-family: "IBM Plex Mono", monospace; font-size: 12px; }
+.m5 .card::before { content: ""; position: absolute; left: 0; right: 0; top: 40px; border-top: 1.5px solid #d45b5b; }
+.m5 .card::after { content: ""; position: absolute; bottom: -1px; left: 50%; width: 120px; margin-left: -60px; height: 14px; border-radius: 14px 14px 0 0; background: #d5d9df; }
+.m5 .card h4 { margin: 0; font: 600 18px/1.2 "IBM Plex Sans"; } .m5 .card .call { position: absolute; right: 18px; top: 16px; color: #7d8594; font-size: 11px; }
+.m5 .card .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0 18px; margin-top: 10px; line-height: 24px; }
+.m5 .card { padding: 12px 20px; } .m5 .card .grid span { color: #7d8594; } .m5 .card .grid b { float: right; font-weight: 500; }
+.m5 .axle, .m5 .knob { display: none; }
+.m5 .axle { position: absolute; width: 640px; height: 18px; border-radius: 9px; background: linear-gradient(180deg, #f3f3f3, #9a9ea6); box-shadow: 0 4px 10px #0003; z-index: -1; }
+.m5 .knob { position: absolute; right: calc(50% - 360px); width: 56px; height: 56px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fafafa, #8f949c); box-shadow: 0 6px 14px #0004; }
+.m5 .side { background: #fff; border-radius: 12px; padding: 20px 22px; box-shadow: 0 10px 30px #0000000f; }
+.m5 .side h3 { font: 600 26px/1.1 "Newsreader", serif; margin: 0 0 6px; } .m5 .side .meta { font-size: 12px; color: #6b7280; margin-bottom: 10px; }
+.m5 .btns { display: flex; gap: 10px; justify-content: center; margin-top: 10px; } .m5 .btns button { border: 1px solid #222; background: #fff; padding: 7px 14px; font: 600 13px "IBM Plex Sans"; cursor: pointer; }
+
+@media (max-width: 1000px) { .m1 { grid-template-columns: 1fr; height: auto; } .m1 .gl { height: 60vh; } .m3 .sticky { grid-template-columns: 1fr; } .m5 .rig { grid-template-columns: 1fr; } .m2 .legend { grid-template-columns: 1fr 1fr; } }
+</style>
+</head>
+<body>
+<header class="picker"><h1>Book masterworks</h1><nav id="pick"></nav><p class="desc" id="desc"></p></header>
+<main id="stage"></main>
+
+<script src="vendor/three-0.149.min.js"></script>
+<script src="vendor/page-flip.browser.js"></script>
+<script>
+if (new URLSearchParams(location.search).has('embed')) document.documentElement.classList.add('embed');
+const notify = id => { if (parent !== window) parent.postMessage({ fam: id }, '*'); };
+document.addEventListener('click', e => { const b = e.target.closest('.m2 .b3[data-f]'); if (b) notify(b.dataset.f); });
+// index, dates and cost come from the page URL (?ticker=&from=&to=&cost=), same parameters as the main app
+const RQ = new URLSearchParams([...new URLSearchParams(location.search)].filter(([k]) => ['ticker', 'from', 'to', 'cost'].includes(k))); if (!RQ.get('ticker')) RQ.set('ticker', 'NIFTY 50');
+const LABEL = { 'NIFTY 50': 'Nifty 50', NIFTYBANK: 'Bank Nifty', NIFTYIT: 'Nifty IT', NIFTYMIDCAP100: 'Midcap 100' }[RQ.get('ticker')] || RQ.get('ticker');
+const RANGE = LABEL + (RQ.get('from') || RQ.get('to') ? `, ${RQ.get('from') || 'start'} to ${RQ.get('to') || 'end'}` : ', full history');
+const COST = +RQ.get('cost') > 0 ? `at ${+RQ.get('cost')} bps a side` : 'at zero cost';
+const API = new URLSearchParams(location.search).get('api') || `http://${location.hostname || 'localhost'}:8090`;
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const pct = (v, d = 1, s = false) => v == null ? '–' : (s && v > 0 ? '+' : '') + (v * 100).toFixed(d) + '%';
+const fx = (v, d = 2) => v == null ? '–' : v.toFixed(d);
+const cls = v => v == null ? '' : v >= 0 ? 'pos' : 'neg';
+const PHOTO = 'img/gurus/connors.jpg';
+const CLOTH = ['#1f3a5f', '#7a2e2e', '#2f5140', '#8a6a2f', '#4a5563', '#5b3b5e', '#2d4f5c', '#6b3f2a'];
+const verdict = s => s.trades < 30 ? { t: 'THIN DATA', c: '#7a2e2e' } : s.t_stat >= 2 ? { t: 'SIGNIFICANT', c: '#2f5140' } : { t: 'NO EDGE', c: '#4a5563' };
+const kv = s => `<div class="kv"><div><span>CAGR</span><b class="${cls(s.cagr)}">${pct(s.cagr, 2, true)}</b></div><div><span>Sharpe</span><b>${fx(s.sharpe)}</b></div><div><span>Max DD</span><b class="neg">${pct(s.max_dd, 1)}</b></div><div><span>Win · trades</span><b>${pct(s.win_rate, 0)} · ${fx(s.trades, 0)}</b></div></div>`;
+function spark(v, w, h, col, fill) {
+  if (!v || v.length < 2) return '';
+  const lo = Math.min(...v), hi = Math.max(...v), n = v.length, P = v.map((x, i) => `${i ? 'L' : 'M'}${(1 + i / (n - 1) * (w - 2)).toFixed(1)},${(h - 1 - (x - lo) / ((hi - lo) || 1) * (h - 2)).toFixed(1)}`).join('');
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="display:block">${fill ? `<path d="${P}L${w - 1},${h}L1,${h}Z" fill="${fill}"/>` : ''}<path d="${P}" fill="none" stroke="${col}" stroke-width="1.8"/></svg>`;
+}
+function rules(c) {
+  const sec = { F: [], E: [], A: [], X: [] };
+  for (const r of c.rules) { const [t, ...x] = r.split('|'); (sec[t] || sec.E).push(x.join('|')); }
+  const o = r => /^(Buy|Short|Sell|Cover|Next day|No other signal|Once|After|Stop)/.test(r);
+  const b = (t, it) => it.length ? `<div class="lbl">${t}</div>${it.map(r => `<div class="rl ${o(r) ? 'o' : ''}">${o(r) ? '→ ' : '· '}${esc(r)}</div>`).join('')}` : '';
+  return b('CONDITIONS', sec.F) + b('ENTRY', sec.E) + b('SCALE-IN', sec.A) + b(sec.X.length > 1 ? 'EXIT (FIRST TO HAPPEN)' : 'EXIT', sec.X);
+}
+let cleanup = [];
+const onCleanup = f => cleanup.push(f);
+
+const V = [
+  { name: '1. The Reading Room (WebGL)', render: m1, after: m1after, desc: 'A real 3D room rendered with <a href="https://threejs.org" target="_blank">Three.js</a> (MIT, saved in the project): 14 books on a lit wooden shelf with real shadows. Move the mouse to look around, hover to lift a book, click to pull it out and turn its cover; the panel shows its full stats. After mintdotgg/bookshelf and BkashJEE/repo-shelf.' },
+  { name: '2. The Shelf Is the Chart', render: m2, desc: 'A bookshelf you can read as a chart: height = number of trades, thickness = time in market, cloth colour = verdict, gold band = Sharpe, striped cloth = short strategies, one shelf per course session. Hover a book to pull it out.' },
+  { name: '3. Scroll Story', render: m3, after: m3after, desc: 'Scroll the page: the book turns from its spine to its cover, opens, and turns one page per strategy while the facing panel tells that chapter. Scroll-driven, no buttons.' },
+  { name: '4. The Complete Edition', render: m4, after: m4after, desc: 'The page-curl book (<a href="https://github.com/Nodlik/StPageFlip" target="_blank">StPageFlip</a>) upgraded: every strategy is a full spread with rules and variants on the left, and equity vs buy &amp; hold, drawdown, calendar-year returns and trade stats on the right. Drag a corner to turn.' },
+  { name: '5. Rolodex', render: m5, after: m5after, desc: 'A 3D spinning card wheel. Scroll over it, drag it, or use the arrows; the front card and the side panel show that strategy in full.' },
+];
+
+// ================================================================ 1. READING ROOM
+function m1(D) {
+  return `<section class="opt m1"><div class="gl" id="gl"><div class="title"><h2>The Reading Room</h2><p>${esc(D.g.name)} · ${D.fams.length} volumes</p></div><div class="hint">Move to look · hover to lift · click a book to read it</div></div>
+    <aside class="panel" id="rpanel"><div class="k">Larry Connors · Swing Trading College IX</div><h3>Choose a volume</h3><p class="empty">Each book is one strategy. Its spine colour is the verdict on ${esc(LABEL)}: green = significant edge, slate = no edge, oxblood = too few trades.</p></aside></section>`;
+}
+function texSpine(f, color) {
+  const c = document.createElement('canvas'); c.width = 128; c.height = 1024; const x = c.getContext('2d');
+  x.fillStyle = color; x.fillRect(0, 0, 128, 1024);
+  const g = x.createLinearGradient(0, 0, 128, 0); g.addColorStop(0, '#ffffff22'); g.addColorStop(.5, '#00000000'); g.addColorStop(1, '#00000044'); x.fillStyle = g; x.fillRect(0, 0, 128, 1024);
+  x.strokeStyle = '#e8d39a'; x.lineWidth = 3; [90, 98, 930, 938].forEach(y => { x.beginPath(); x.moveTo(12, y); x.lineTo(116, y); x.stroke(); });
+  x.save(); x.translate(76, 860); x.rotate(-Math.PI / 2); x.fillStyle = '#e8d39a'; x.font = '600 50px Newsreader, Georgia, serif';
+  let t = f.name; while (x.measureText(t).width > 740 && t.length > 4) t = t.slice(0, -2); if (t !== f.name) t += '…'; x.fillText(t, 0, 0); x.restore();
+  x.fillStyle = '#e8d39a'; x.font = '600 30px IBM Plex Mono, monospace'; x.textAlign = 'center'; x.fillText(fx(f.s.sharpe), 64, 975);
+  const tx = new THREE.CanvasTexture(c); tx.encoding = THREE.sRGBEncoding; tx.anisotropy = 4; return tx;
+}
+function texCover(f, color, img) {
+  const c = document.createElement('canvas'); c.width = 512; c.height = 768; const x = c.getContext('2d');
+  x.fillStyle = color; x.fillRect(0, 0, 512, 768); x.strokeStyle = '#e8d39a99'; x.lineWidth = 3; x.strokeRect(24, 24, 464, 720);
+  if (img && img.complete && img.naturalWidth) { x.save(); x.beginPath(); x.arc(256, 210, 110, 0, Math.PI * 2); x.clip(); x.filter = 'grayscale(1)'; x.drawImage(img, 146, 100, 220, 220); x.restore(); x.beginPath(); x.arc(256, 210, 110, 0, Math.PI * 2); x.strokeStyle = '#e8d39a'; x.lineWidth = 5; x.stroke(); }
+  x.fillStyle = '#e8d39a'; x.textAlign = 'center'; x.font = '600 46px Newsreader, Georgia, serif';
+  const words = f.name.split(' '); let line = '', y = 410; const lines = [];
+  for (const w of words) { if (x.measureText(line + w).width > 420) { lines.push(line); line = ''; } line += w + ' '; } lines.push(line);
+  lines.slice(0, 4).forEach(l => { x.fillText(l.trim(), 256, y); y += 52; });
+  x.font = '500 22px IBM Plex Sans, sans-serif'; x.fillText(`Sharpe ${fx(f.s.sharpe)} · CAGR ${pct(f.s.cagr, 1, true)}`, 256, 690);
+  const tx = new THREE.CanvasTexture(c); tx.encoding = THREE.sRGBEncoding; return tx;
+}
+function m1after() {
+  const host = $('#gl'), W = () => host.clientWidth, H = () => host.clientHeight;
+  const renderer = new THREE.WebGLRenderer({ antialias: true }); renderer.setPixelRatio(Math.min(2, devicePixelRatio)); renderer.setSize(W(), H());
+  renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; renderer.outputEncoding = THREE.sRGBEncoding;
+  host.prepend(renderer.domElement);
+  const scene = new THREE.Scene(); scene.background = new THREE.Color('#2a2420'); scene.fog = new THREE.Fog('#2a2420', 14, 26);
+  const cam = new THREE.PerspectiveCamera(38, W() / H(), .1, 100); cam.position.set(0, 1.9, 10.5);
+  scene.add(new THREE.HemisphereLight('#fff3dc', '#2a2420', .55));
+  const lamp = new THREE.SpotLight('#ffe2b0', 1.25, 30, Math.PI / 5, .45, 1.2); lamp.position.set(-3, 7, 7); lamp.castShadow = true; lamp.shadow.mapSize.set(2048, 2048); lamp.shadow.bias = -.0005; scene.add(lamp); scene.add(lamp.target);
+  const fill = new THREE.DirectionalLight('#b8c8ff', .25); fill.position.set(5, 3, 6); scene.add(fill);
+  const wood = new THREE.MeshStandardMaterial({ color: '#7a5a38', roughness: .75 }), dark = new THREE.MeshStandardMaterial({ color: '#4a3622', roughness: .9 });
+  const wall = new THREE.Mesh(new THREE.PlaneGeometry(40, 20), new THREE.MeshStandardMaterial({ color: '#4b3d33', roughness: 1 })); wall.position.set(0, 3, -1.2); wall.receiveShadow = true; scene.add(wall);
+  const back = new THREE.Mesh(new THREE.BoxGeometry(9.6, 4.2, .1), dark); back.position.set(0, 1.4, -.65); back.receiveShadow = true; scene.add(back);
+  const shelf = new THREE.Mesh(new THREE.BoxGeometry(9.8, .16, 1.5), wood); shelf.position.set(0, -.62, 0); shelf.receiveShadow = true; shelf.castShadow = true; scene.add(shelf);
+  const top = shelf.clone(); top.position.y = 3.45; scene.add(top);
+  [-4.9, 4.9].forEach(xp => { const side = new THREE.Mesh(new THREE.BoxGeometry(.16, 4.25, 1.5), wood); side.position.set(xp, 1.42, 0); side.castShadow = side.receiveShadow = true; scene.add(side); });
+  const img = new Image(); img.src = PHOTO;
+  const pages = new THREE.MeshStandardMaterial({ color: '#efe6d2', roughness: .95 });
+  const books = [], thick = D.fams.map(f => .38 + Math.min(.32, f.s.exposure * .5));
+  let xCur = -(thick.reduce((a, b) => a + b + .03, 0) + .5) / 2;
+  D.fams.forEach((f, i) => {
+    const v = verdict(f.s), color = v.c, th = thick[i], hh = 2.45 + (i * 37 % 5) * .1, dp = 1.2;
+    const mats = [new THREE.MeshStandardMaterial({ map: texCover(f, color, img), roughness: .7 }), new THREE.MeshStandardMaterial({ color, roughness: .7 }), pages, pages, new THREE.MeshStandardMaterial({ map: texSpine(f, color), roughness: .6 }), new THREE.MeshStandardMaterial({ color, roughness: .7 })];
+    const m = new THREE.Mesh(new THREE.BoxGeometry(th, hh, dp), mats); m.castShadow = m.receiveShadow = true;
+    xCur += th / 2 + .03; m.position.set(xCur, -.54 + hh / 2, .05); xCur += th / 2;
+    m.userData = { i, home: m.position.clone(), lift: 0, out: 0, rotY: 0 }; scene.add(m); books.push(m);
+    if (i === 2 || i === 9) xCur += .25;
+  });
+  img.onload = () => books.forEach(b => { b.material[0].map = texCover(D.fams[b.userData.i], verdict(D.fams[b.userData.i].s).c, img); b.material[0].needsUpdate = true; });
+  const ray = new THREE.Raycaster(), mouse = new THREE.Vector2(); let hover = null, sel = null, mx = 0, my = 0;
+  const pick = e => { const r = renderer.domElement.getBoundingClientRect(); mouse.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); mx = mouse.x; my = mouse.y; ray.setFromCamera(mouse, cam); const h = ray.intersectObjects(books)[0]; return h ? h.object : null; };
+  renderer.domElement.addEventListener('mousemove', e => { hover = pick(e); });
+  renderer.domElement.addEventListener('click', e => { const b = pick(e); sel = (b && b !== sel) ? b : null; panel(sel); });
+  function panel(b) {
+    if (!b) { $('#rpanel').innerHTML = `<div class="k">Larry Connors · Swing Trading College IX</div><h3>Choose a volume</h3><p class="empty">Click any book on the shelf.</p>`; return; }
+    const f = D.fams[b.userData.i], c = f.best.c, v = verdict(f.s); notify(f.id);
+    $('#rpanel').innerHTML = `<div class="k">Volume ${b.userData.i + 1} · Session ${c.session}</div><h3>${esc(f.name)}</h3><div class="meta">${esc(c.variant || c.dir)}${f.n > 1 ? ` · best of ${f.n} variants` : ''} <span class="stamp" style="color:${v.c};margin-left:6px">${v.t}</span></div>
+      ${kv(f.s)}<div style="margin:12px 0">${spark(f.best.spark, 320, 110, '#8a6a2f', '#8a6a2f18')}</div><div style="font-size:12px;color:#7a6a52">${fx(f.s.trades, 0)} trades · profit factor ${fx(f.s.profit_factor)} · t = ${fx(f.s.t_stat)} · ${pct(f.s.exposure, 0)} in market</div>${rules(c)}`;
+  }
+  let raf, alive = true;
+  const loop = () => {
+    if (!alive) return;
+    cam.position.x += (mx * 1.2 - cam.position.x) * .05; cam.position.y += (1.9 + my * .5 - cam.position.y) * .05; cam.lookAt(0, 1.2, 0);
+    books.forEach(b => {
+      const u = b.userData, wantLift = b === hover && b !== sel ? .22 : 0, wantOut = b === sel ? 1 : 0;
+      u.lift += (wantLift - u.lift) * .15; u.out += (wantOut - u.out) * .08;
+      b.position.set(u.home.x * (1 - u.out), u.home.y + u.lift + u.out * .55, u.home.z + u.out * 3.4);
+      b.rotation.y = -u.out * Math.PI / 2 * .92;
+    });
+    renderer.render(scene, cam); raf = requestAnimationFrame(loop);
+  };
+  loop();
+  const rs = () => { renderer.setSize(W(), H()); cam.aspect = W() / H(); cam.updateProjectionMatrix(); }; addEventListener('resize', rs);
+  onCleanup(() => { alive = false; cancelAnimationFrame(raf); removeEventListener('resize', rs); renderer.dispose(); });
+}
+
+// ================================================================ 2. THE SHELF IS THE CHART
+function m2(D) {
+  const sessions = [...new Set(D.fams.map(f => f.session))];
+  const book = (f, i) => {
+    const v = verdict(f.s), h = Math.round(110 + 62 * Math.log10(f.s.trades + 1)), w = Math.round(26 + 70 * Math.min(1, f.s.exposure)), band = Math.max(0, Math.round(f.s.sharpe * 36));
+    return `<div data-f="${f.id}" class="b3 ${f.best.c.dir === 'Short' ? 'short' : ''}" style="--c:${v.c};--h:${h}px;--w:${w}px;--band:${band}px"><div class="sp">${band ? '<div class="band"></div>' : ''}<span class="t">${esc(f.name)}</span><span class="s">${fx(f.s.sharpe, 1)}</span></div>
+      <div class="cv"><h4>${esc(f.name)}</h4><div style="color:#7a6a52;margin-bottom:6px">${esc(f.best.c.variant || f.best.c.dir)} · <b style="color:${v.c}">${v.t}</b></div>${kv(f.s)}<div style="margin-top:8px">${spark(f.best.spark, 200, 48, '#8a6a2f')}</div><div style="margin-top:6px;color:#7a6a52">${fx(f.s.trades, 0)} trades · ${pct(f.s.exposure, 0)} in market</div></div></div>`;
+  };
+  return `<section class="opt m2 pad"><div class="wrap"><h2 class="t">The Shelf Is the Chart</h2><p class="s">Every visual property of each book is a number. Read the whole course at a glance, then hover a book for the detail.</p>
+    <div class="legend"><div><b>Height = trades</b>taller books traded more (log scale): 1 trade → short, 785 → tall.</div><div><b>Thickness = time in market</b>thin books sit in cash most of the time.</div>
+      <div><b>Cloth = verdict</b><span class="sw" style="background:var(--sig)"></span>significant<span class="sw" style="background:var(--none)"></span>no edge<span class="sw" style="background:var(--thin)"></span>thin data</div><div><b>Gold band = Sharpe</b>wider band, better risk-adjusted return. Striped cloth = short strategy.</div></div>
+    <div class="case"><div class="shelf"><span class="lab">Larry Connors · Swing Trading College IX · brass plaques mark the course sessions</span><div class="row">${sessions.map(se => `<div class="plaque"><span>Session ${se}</span></div>${D.fams.filter(f => f.session === se).map(book).join('')}`).join('')}</div><div class="plank"></div></div></div></div></section>`;
+}
+
+// ================================================================ 3. SCROLL STORY
+function m3(D) {
+  const n = D.fams.length;
+  const leaves = D.fams.map((f, i) => { const v = verdict(f.s); return `<div class="leaf" data-k="${i}" style="z-index:${n - i}"><div class="p"><small>Chapter ${i + 1}</small><h4>${esc(f.name)}</h4><div class="big ${cls(f.s.cagr)}">${fx(f.s.sharpe)}</div><small>Sharpe on ${esc(LABEL)}</small><div style="margin-top:16px">${spark(f.best.spark, 250, 110, v.c)}</div><div style="margin-top:12px"><span class="stamp" style="color:${v.c}">${v.t}</span></div></div><div class="p bk"><small>Rules</small>${rules(f.best.c)}</div></div>`; }).join('');
+  return `<section class="opt m3"><div class="track" style="height:${(n + 3) * 100}vh"><div class="sticky">
+    <div class="scene"><div class="book" id="sbook"><div class="block"></div>${leaves}<div class="cover" id="scover"><div class="face f"><div class="ph"><img src="${PHOTO}" alt=""></div><h3>${esc(D.g.name)}</h3><div>Swing Trading College IX</div></div><div class="face b"></div></div><div class="spine"><span>${esc(D.g.name)} · Swing Trading College IX</span></div></div></div>
+    <div class="story" id="story"></div>
+    <div class="rail" id="rail">${Array.from({ length: n + 2 }, () => '<i></i>').join('')}</div>
+  </div></div></section>`;
+}
+function m3after() {
+  const n = D.fams.length, track = $('.m3 .track');
+  let last = -1;
+  const tell = st => {
+    if (st === last) return; last = st;
+    document.querySelectorAll('#rail i').forEach((d, k) => d.classList.toggle('on', k === Math.min(st, n + 1)));
+    if (st === 0) $('#story').innerHTML = `<div class="k">Scroll to open</div><h3>${esc(D.g.name)}</h3><p>${esc(D.g.book)}. ${n} strategies, every rule transcribed and tested on ${esc(RANGE)}.</p><p style="color:#888">Keep scrolling: the book turns, opens, and reads itself one chapter at a time.</p>`;
+    else if (st === 1) $('#story').innerHTML = `<div class="k">The thesis</div><h3>${esc(D.g.tagline)}</h3>${D.g.thesis.slice(0, 3).map(t => `<p><b>${esc(t.title)}.</b> ${esc(t.body)}</p>`).join('')}`;
+    else { const i = Math.min(n - 1, st - 2), f = D.fams[i], v = verdict(f.s); notify(f.id); $('#story').innerHTML = `<div class="k">Chapter ${i + 1} of ${n} · Session ${f.session}</div><h3>${esc(f.name)}</h3><p style="margin-bottom:10px">${esc(f.best.c.variant || f.best.c.dir)}${f.n > 1 ? ` · best of ${f.n} variants` : ''} <span class="stamp" style="color:${v.c};margin-left:8px">${v.t}</span></p>${kv(f.s)}<p style="font-size:15px;margin-top:14px">${fx(f.s.trades, 0)} trades in ${fx(f.s.years, 1)} years, in the market ${pct(f.s.exposure, 0)} of the time. Buy &amp; hold made ${pct(f.s.bh_cagr, 1, true)} a year over the same window; t = ${fx(f.s.t_stat)}.</p>`; }
+  };
+  const onScroll = () => {
+    const r = track.getBoundingClientRect(), total = track.offsetHeight - innerHeight, p = Math.max(0, Math.min(1, -r.top / total)) * (n + 2);
+    const st = Math.floor(p);
+    $('#sbook').style.transform = `rotateY(${p < 1 ? 70 - p * 70 : 0}deg) translateX(${p >= 1 ? 150 : 0}px)`;
+    $('#scover').style.transform = `rotateY(${p >= 1.5 ? -178 : 0}deg)`;
+    document.querySelectorAll('.m3 .leaf').forEach(l => { const k = +l.dataset.k; const t = p >= k + 3; l.classList.toggle('turned', t); l.style.zIndex = t ? 100 + k : n - k; });
+    tell(st);
+  };
+  addEventListener('scroll', onScroll, { passive: true }); onScroll();
+  onCleanup(() => removeEventListener('scroll', onScroll));
+}
+
+// ================================================================ 4. COMPLETE EDITION
+let PF4 = null;
+function m4() { return `<section class="opt m4 pad"><div class="wrap"><div id="ce" class="loading">Fetching every strategy's full backtest from the Rust API…</div></div></section>`; }
+function chartEq(d, w, h) {
+  const step = Math.max(1, Math.floor(d.equity.length / 220)), e = d.equity.filter((_, i) => i % step === 0), b = d.bh.filter((_, i) => i % step === 0);
+  const all = e.concat(b).map(Math.log), lo = Math.min(...all), hi = Math.max(...all), n = e.length;
+  const P = v => v.map((x, i) => `${i ? 'L' : 'M'}${(i / (n - 1) * w).toFixed(1)},${(h - 2 - (Math.log(x) - lo) / ((hi - lo) || 1) * (h - 4)).toFixed(1)}`).join('');
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="display:block"><path d="${P(b)}" fill="none" stroke="#b9b3a6" stroke-width="1.3"/><path d="${P(e)}" fill="none" stroke="#1f3a5f" stroke-width="1.8"/></svg>`;
+}
+function chartDD(d, w, h) {
+  const step = Math.max(1, Math.floor(d.equity.length / 220)); let pk = -1; const dd = d.equity.filter((_, i) => i % step === 0).map(v => { pk = Math.max(pk, v); return v / pk - 1; });
+  const lo = Math.min(...dd, -.01), n = dd.length, P = dd.map((x, i) => `${i ? 'L' : 'M'}${(i / (n - 1) * w).toFixed(1)},${(x / lo * (h - 2)).toFixed(1)}`).join('');
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="display:block"><path d="${P}L${w},0L0,0Z" fill="#b43a3426"/><path d="${P}" fill="none" stroke="#b43a34" stroke-width="1.2"/></svg>`;
+}
+function chartYears(d, w, h) {
+  const y = {}; let base = d.equity[0], key = d.dates[0].slice(0, 4);
+  d.dates.forEach((t, i) => { const k = t.slice(0, 4); if (k !== key) { y[key] = d.equity[i - 1] / base - 1; base = d.equity[i - 1]; key = k; } }); y[key] = d.equity[d.equity.length - 1] / base - 1;
+  const ks = Object.keys(y), mx = Math.max(.01, ...ks.map(k => Math.abs(y[k]))), bw = w / ks.length;
+  return `<svg viewBox="0 0 ${w} ${h + 12}" width="100%" style="display:block"><line x1="0" x2="${w}" y1="${h / 2}" y2="${h / 2}" stroke="#ccc"/>${ks.map((k, i) => { const v = y[k], bh = Math.abs(v) / mx * (h / 2 - 2); return `<rect x="${i * bw + 1}" y="${v >= 0 ? h / 2 - bh : h / 2}" width="${Math.max(1, bw - 2)}" height="${Math.max(.5, bh)}" fill="${v >= 0 ? '#2f6b4a' : '#b43a34'}"/>${i % 5 === 0 ? `<text x="${i * bw + bw / 2}" y="${h + 10}" font-size="8" text-anchor="middle" fill="#999" font-family="IBM Plex Sans">${k}</text>` : ''}`; }).join('')}</svg>`;
+}
+async function m4after() {
+  const details = await Promise.all(D.fams.map(f => fetch(`${API}/api/guru/connors/run?id=${f.best.c.id}&${RQ}`).then(r => r.json())));
+  if (!$('#ce')) return;
+  const pages = [];
+  pages.push(`<div class="page hard"><div class="in"><div class="ph"><img src="${PHOTO}" alt=""></div><h3>${esc(D.g.name)}</h3><div>Swing Trading College IX · The Complete Edition</div><small>${D.fams.length} strategies · full results on ${esc(LABEL)}</small></div></div>`);
+  pages.push(`<div class="page"><div class="in"><div class="k">Contents</div><h3>${D.fams.length} strategies</h3><table><thead><tr><th>Strategy</th><th class="n">Page</th><th class="n">Sharpe</th></tr></thead><tbody>${D.fams.map((f, i) => `<tr><td>${esc(f.name)}</td><td class="n">${4 + i * 2}</td><td class="n">${fx(f.s.sharpe)}</td></tr>`).join('')}</tbody></table><div class="folio">ii</div></div></div>`);
+  pages.push(`<div class="page"><div class="in"><div class="k">How to read a chapter</div><h3>Left: the rules. Right: the results.</h3><p style="font-size:14px;line-height:1.6">Each strategy is one spread. The left page holds the rules exactly as taught, plus the variants. The right page holds what happened on ${esc(RANGE)}, ${COST}: key numbers, equity against buy &amp; hold (log scale), drawdown, calendar-year returns and trade statistics.</p><p style="font-size:14px;line-height:1.6">Stamps: <b>SIGNIFICANT</b> means t ≥ 2; <b>NO EDGE</b> means the average trade could be luck; <b>THIN DATA</b> means fewer than 30 trades.</p><div class="folio">iii</div></div></div>`);
+  D.fams.forEach((f, i) => {
+    const c = f.best.c, s = f.s, d = details[i], v = verdict(s);
+    const vt = f.n > 1 ? `<div class="lbl" style="margin-top:12px">VARIANTS</div><table><thead><tr><th>Variant</th><th class="n">Trades</th><th class="n">CAGR</th><th class="n">Sharpe</th></tr></thead><tbody>${f.variants.map(x => `<tr class="${x.c.id === c.id ? 'b' : ''}"><td>${esc(x.c.variant)}</td><td class="n">${fx(x.s.trades, 0)}</td><td class="n">${pct(x.s.cagr, 1, true)}</td><td class="n">${fx(x.s.sharpe)}</td></tr>`).join('')}</tbody></table>` : '';
+    pages.push(`<div class="page"><div class="in"><div class="run"><span>Chapter ${i + 1}</span><span>Session ${c.session}</span></div><div class="k">${esc(c.dir)} · ${esc(c.group)}</div><h3>${esc(f.name)}</h3><div class="cap">${esc(c.variant || '')}${f.n > 1 ? ` · best of ${f.n} variants` : ''}</div>${rules(c)}${vt}<div class="folio">${4 + i * 2}</div></div></div>`);
+    pages.push(`<div class="page"><div class="in"><div class="run"><span>Results on ${esc(LABEL)}</span><span class="stamp" style="color:${v.c};font-style:normal">${v.t}</span></div>${kv(s)}
+      <div class="lbl" style="margin-top:10px">EQUITY VS BUY &amp; HOLD (LOG)</div>${chartEq(d, 420, 120)}<div class="cap">${d.dates[0]} → ${d.dates[d.dates.length - 1]} · strategy ${d.equity[d.equity.length - 1].toFixed(2)}× · buy &amp; hold ${d.bh[d.bh.length - 1].toFixed(2)}×</div>
+      <div class="lbl">DRAWDOWN</div>${chartDD(d, 420, 44)}<div class="lbl" style="margin-top:6px">CALENDAR-YEAR RETURNS</div>${chartYears(d, 420, 60)}
+      <div class="mini"><span>Profit factor <b>${fx(s.profit_factor)}</b></span><span>Payoff <b>${fx(s.payoff)}</b></span><span>t-stat <b>${fx(s.t_stat)}</b></span><span>Avg trade <b>${pct(s.avg_trade, 2)}</b></span><span>Exposure <b>${pct(s.exposure, 0)}</b></span><span>Sortino <b>${fx(s.sortino)}</b></span></div><div class="folio">${5 + i * 2}</div></div></div>`);
+  });
+  pages.push(`<div class="page hard"><div class="in"><h3 style="font-size:26px;font-style:italic">“${esc(D.g.tagline)}”</h3><small>The Strategy Vault · computed in Rust</small></div></div>`);
+  if (pages.length % 2) pages.splice(pages.length - 1, 0, `<div class="page"><div class="in"><div class="k">Notes</div><p style="font-size:13px">Rules transcribed from the course; results on ${esc(RANGE)}, ${COST}.</p></div></div>`);
+  $('#ce').outerHTML = `<div class="stage"><div id="flip4">${pages.join('')}</div></div><div class="ctrl"><button id="p4">← Previous</button><select id="j4"><option value="">Jump to chapter…</option>${D.fams.map((f, i) => `<option value="${3 + i * 2}">${i + 1}. ${esc(f.name)}</option>`).join('')}</select><button id="n4">Next →</button></div>`;
+  PF4 = new St.PageFlip($('#flip4'), { width: 500, height: 700, size: 'stretch', minWidth: 320, maxWidth: 560, minHeight: 440, maxHeight: 780, showCover: true, maxShadowOpacity: .45, mobileScrollSupport: false, flippingTime: 900 });
+  PF4.loadFromHTML(document.querySelectorAll('#flip4 .page'));
+  PF4.on('flip', e => { const i = Math.floor((e.data - 3) / 2); if (i >= 0 && i < D.fams.length) notify(D.fams[i].id); });
+  $('#p4').onclick = () => PF4.flipPrev(); $('#n4').onclick = () => PF4.flipNext();
+  $('#j4').onchange = e => { if (e.target.value) PF4.flip(+e.target.value); e.target.value = ''; };
+  onCleanup(() => { try { PF4.destroy(); } catch (e) {} PF4 = null; });
+}
+
+// ================================================================ 5. ROLODEX
+let RX = 0;
+function m5(D) {
+  const n = D.fams.length, R = Math.round(75 / Math.tan(Math.PI / n)) + 6;
+  return `<section class="opt m5 pad"><div class="wrap"><h2 class="t">Rolodex</h2><p class="s">Scroll over the wheel, drag it, or use the arrows.</p>
+    <div class="rig"><div><div class="drum" id="drum"><div class="axle"></div><div class="wheel" id="wheel">${D.fams.map((f, i) => { const s = f.s; return `<div class="card" style="transform:rotateX(${-i * 360 / n}deg) translateZ(${R}px)"><span class="call">CON ${String(f.session).padStart(2, '0')}.${String(i + 1).padStart(2, '0')}</span><h4>${esc(f.name)}</h4>
+      <div class="grid"><div><span>CAGR</span><b class="${cls(s.cagr)}">${pct(s.cagr, 2, true)}</b></div><div><span>Sharpe</span><b>${fx(s.sharpe)}</b></div><div><span>t-stat</span><b>${fx(s.t_stat)}</b></div><div><span>Max DD</span><b class="neg">${pct(s.max_dd, 1)}</b></div><div><span>Win</span><b>${pct(s.win_rate, 0)}</b></div><div><span>Trades</span><b>${fx(s.trades, 0)}</b></div><div><span>Exposure</span><b>${pct(s.exposure, 0)}</b></div><div><span>PF</span><b>${fx(s.profit_factor)}</b></div><div><span>Verdict</span><b style="color:${verdict(s).c}">${verdict(s).t.split(' ')[0]}</b></div></div></div>`; }).join('')}</div><div class="knob"></div></div>
+      <div class="btns"><button id="rup">▲ Previous</button><button id="rdn">Next ▼</button></div></div><aside class="side" id="rside"></aside></div></div></section>`;
+}
+function m5after() {
+  const n = D.fams.length, wheel = $('#wheel');
+  const go = k => {
+    RX = (k % n + n) % n; wheel.style.transform = `rotateX(${RX * 360 / n}deg)`;
+    const f = D.fams[RX]; notify(f.id);
+    $('#rside').innerHTML = `<h3>${esc(f.name)}</h3><div class="meta">${esc(f.best.c.variant || f.best.c.dir)}${f.n > 1 ? ` · best of ${f.n} variants` : ''} · Session ${f.session}</div>${spark(f.best.spark, 320, 100, '#1f3a5f', '#1f3a5f14')}<div style="margin-top:10px">${rules(f.best.c)}</div>`;
+  };
+  let acc = 0; const wh = e => { e.preventDefault(); acc += e.deltaY; if (Math.abs(acc) > 60) { go(RX + Math.sign(acc)); acc = 0; } };
+  $('#drum').addEventListener('wheel', wh, { passive: false });
+  let y0 = null; $('#drum').onpointerdown = e => { y0 = e.clientY; }; addEventListener('pointerup', () => y0 = null);
+  $('#drum').onpointermove = e => { if (y0 == null) return; if (Math.abs(e.clientY - y0) > 50) { go(RX + (e.clientY < y0 ? 1 : -1)); y0 = e.clientY; } };
+  $('#rup').onclick = () => go(RX - 1); $('#rdn').onclick = () => go(RX + 1);
+  go(RX);
+}
+
+// ================================================================ boot
+let D, cur = 0;
+async function init() {
+  const get = async u => (await fetch(API + u)).json();
+  const [gurus, cat, sum] = await Promise.all([get('/api/gurus'), get('/api/guru/connors/strategies'), get('/api/guru/connors/summary?' + RQ)]);
+  const byId = Object.fromEntries(sum.map(r => [r.id, r]));
+  const fams = [], seen = {};
+  for (const c of cat.filter(c => c.status === 'live')) {
+    const r = byId[c.id]; if (!r?.stats) continue;
+    const f = seen[c.family] || (seen[c.family] = fams[fams.push({ id: c.family, name: c.family_name, session: c.session, n: 0, best: null, variants: [] }) - 1]);
+    f.n++; f.variants.push({ c, s: r.stats }); if (!f.best || r.stats.sharpe > f.best.s.sharpe) f.best = { c, s: r.stats, spark: r.spark };
+  }
+  fams.forEach(f => f.s = f.best.s);
+  D = { g: gurus[0], fams };
+  $('#pick').innerHTML = V.map((v, k) => `<button data-k="${k}">${v.name}</button>`).join('');
+  $('#pick').querySelectorAll('button').forEach(b => b.onclick = () => show(+b.dataset.k));
+  addEventListener('keydown', e => { if (e.key >= '1' && e.key <= String(V.length)) show(+e.key - 1); });
+  addEventListener('hashchange', () => { const k = +location.hash.slice(1) - 1; if (k !== cur && k >= 0 && k < V.length) show(k); });
+  show(Math.max(0, Math.min(V.length - 1, +(location.hash.slice(1) || 1) - 1)));
+}
+function show(k) {
+  cleanup.forEach(f => { try { f(); } catch (e) {} }); cleanup = [];
+  cur = k; history.replaceState(null, '', '#' + (k + 1)); scrollTo(0, 0);
+  document.querySelectorAll('#pick button').forEach(b => b.classList.toggle('on', +b.dataset.k === k));
+  $('#desc').innerHTML = `<b>${V[k].name}.</b> ${V[k].desc}`;
+  $('#stage').innerHTML = V[k].render(D);
+  V[k].after?.();
+}
+init().catch(e => { $('#stage').innerHTML = `<p style="padding:40px">Could not reach the Rust API at ${API}: ${esc(e.message)}</p>`; });
+</script>
+</body>
+</html>

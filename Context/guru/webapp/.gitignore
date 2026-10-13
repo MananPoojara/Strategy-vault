@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.example
+auth/node_modules/
+gateway/target/
+verification/screenshots/
+verification/test-results/
+verification/credentials*
+backups/
+__pycache__/

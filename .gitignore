@@ -1,0 +1,63 @@
+# Private runtime and environment
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+administrator.txt
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+# Dependencies and build artifacts
+**/node_modules/
+**/target/
+**/dist/
+**/coverage/
+**/__pycache__/
+*.pyc
+*.log
+.playwright-mcp/
+# The React public directory is reproduced from the existing licensed assets.
+Context/guru/frontend/react/public/
+# Private source material, market data, generated outputs and conversations
+/Books/
+/Global Bhavcopy/
+/extra_data/
+/india_vix/
+/raw/
+/outputs/
+/verification/
+/deliverables/
+/claude-conversations/
+/.claude/
+/conversation.md
+*.csv
+*.tsv
+*.parquet
+*.duckdb
+*.sqlite
+*.sqlite3
+*.db
+*.xlsx
+*.xls
+*.xlsm
+*.pdf
+*.epub
+*.djvu
+*.chm
+*.doc
+*.docx
+*.mp3
+*.mp4
+*.zip
+*.rar
+*.7z
+**/frontend/data/
+Context/guru/notes/
+Context/guru/webapp/backups/
+Context/guru/webapp/verification/
+/library/market-data/
+/library/us-market-data/
