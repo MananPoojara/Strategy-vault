@@ -121,10 +121,23 @@ The release sequence is:
    actual runtime index/ETF and stock datasets mounted read-only. Compare all
    three guru catalogues against the current engine. Newly live methods,
    newly reviewed policies or wider instrument admissions must all belong to
-   the exact approved IDs; existing live methods cannot disappear.
+   the exact approved IDs; existing live methods cannot disappear. Unapproved
+   methods must keep exactly the same allowed instrument types, including
+   against accidental narrowing of stock/index/ETF support.
 6. Test reviewed readiness and actual-price runs on the specified instruments.
    Ready runs must return consistent equity dates and a trade ledger; blocked
-   instruments must reject run results.
+   instruments must reject run results. Also rerun previously live methods in
+   each touched book on deduplicated market/ticker/date windows from the smoke
+   cases. Exact approved IDs are excluded so an independently verified
+   intentional correction may change their results. Baseline-ready unapproved
+   methods must remain ready and preserve their dates, trade ledgers, net/gross
+   equity, statistics, benchmark and cost calculation fields. Timing and source
+   provenance metadata are excluded from these calculation hashes. Compact
+   before/after SHA-256 evidence stays in the private result, rather than
+   copying full data payloads into Git. This regression is capped at 200
+   method/window cases across both markets; larger batches are held for a
+   smaller review. Baseline cases already blocked for required data are counted
+   separately and do not produce invented backtests.
 7. Recheck source cleanliness, fetch the reviewed local commit, fast-forward
    it on `Manan`, scan the public files and push without force. A concurrent
    remote update causes a held release.

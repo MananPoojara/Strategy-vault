@@ -162,7 +162,9 @@ def check_catalogue_changes(before, after, approved):
     for method, item in new.items():
         previous = old.get(method, {})
         p, q = previous.get("instrument_policy", {}), item.get("instrument_policy", {})
-        widened = set(q.get("allowed_types", [])) - set(p.get("allowed_types", []))
+        old_types, new_types = set(p.get("allowed_types", [])), set(q.get("allowed_types", []))
+        require(method in approved or old_types == new_types, "Candidate changed an unapproved method's allowed instrument types")
+        widened = new_types - old_types
         newly_live = item.get("status") == "live" and previous.get("status") != "live"
         newly_reviewed = q.get("source_rule_reviewed") is True and p.get("source_rule_reviewed") is not True
         if widened or newly_live or newly_reviewed:
@@ -228,8 +230,71 @@ def catalogue(base):
     for guru in ("connors", "ross", "chande"):
         code, rows = get_json(base, "/api/guru/" + guru + "/strategies")
         require(code == 200 and isinstance(rows, list), "Engine catalogue is unavailable")
-        output.extend(rows)
+        output.extend({**row, "_publisher_guru": guru} for row in rows)
     return output
+
+
+def touched_book_ids(candidate, review):
+    """Use both versions' BOOK constants so an accidental identity edit cannot hide regression targets."""
+    books = set()
+    pattern = r'\bconst\s+BOOK\s*:\s*&(?:\x27static\s+)?str\s*=\s*"([a-zA-Z0-9_-]+)"'
+    for name in review["approved_files"]:
+        if "/backend/src/books/" not in name:
+            continue
+        path = Path(candidate) / name
+        texts = [path.read_text()]
+        if git(candidate, "ls-tree", "--name-only", review["base_commit"], "--", name):
+            texts.append(git(candidate, "show", review["base_commit"] + ":" + name))
+        found = set().union(*(set(re.findall(pattern, text)) for text in texts))
+        require(found, "Changed book helper has no explicit BOOK constant; define an explicit wider regression review")
+        books.update(found)
+    return books
+
+
+def stable_run_hash(payload):
+    require(isinstance(payload, dict) and all(name in payload for name in ("dates", "trades", "equity", "stats", "gross_equity", "gross_stats")),
+            "Existing-method regression backtest lacks stable calculation fields")
+    fields = ("dates", "close", "trades", "equity", "stats", "gross_equity", "gross_stats", "bh",
+              "benchmark_symbol", "benchmark_stats", "costs", "model_initial_equity", "ohlc", "accounting_basis")
+    stable = {name: payload[name] for name in fields if name in payload}
+    return hashlib.sha256(json.dumps(stable, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
+
+
+def compare_existing_runs(baseline_base, candidate_base, baseline_rows, cases, touched_books, approved_ids, *, max_cases=200):
+    """Compare old live methods in touched books on deduplicated actual instrument windows."""
+    contexts = {}
+    for case in cases:
+        query = {key: case["query"].get(key, "") for key in ("ticker", "from", "to")}
+        key = (case["market"], query["ticker"], query["from"], query["to"])
+        contexts.setdefault(key, query)
+    previous = {row["id"]: row for row in baseline_rows if row.get("status") == "live" and
+                row.get("book") in touched_books and row["id"] not in approved_ids}
+    require(len(previous) * len(contexts) <= max_cases, "Existing-method regression exceeds its bounded case limit; split the reviewed batch")
+    checks, skipped = [], 0
+    for method, row in sorted(previous.items()):
+        guru = row.get("_publisher_guru", "connors")
+        route = "/api/guru/" + guru
+        for context in contexts.values():
+            query = {**context, "id": method, "cost": "0", "slippage": "0", "rollover": "0"}
+            code, ready = get_json(baseline_base, route + "/readiness", query)
+            require(code == 200 and isinstance(ready, dict), "Existing-method baseline readiness failed")
+            status = {item["id"]: item["status"] for item in ready.get("strategies", [])}.get(method)
+            require(status is not None, "Existing-method baseline readiness omitted the exact method")
+            if status != "ready":
+                skipped += 1
+                continue
+            code, candidate_ready = get_json(candidate_base, route + "/readiness", query)
+            actual = {item["id"]: item["status"] for item in candidate_ready.get("strategies", [])}.get(method) if isinstance(candidate_ready, dict) else None
+            require(code == 200 and actual == "ready", "An unapproved existing method lost actual-instrument readiness")
+            before_code, before = get_json(baseline_base, route + "/run", query)
+            after_code, after = get_json(candidate_base, route + "/run", query)
+            require(before_code == after_code == 200, "Existing-method actual-data backtest failed")
+            before_hash, after_hash = stable_run_hash(before), stable_run_hash(after)
+            require(before_hash == after_hash, "An unapproved existing method's trades, statistics or equity changed")
+            checks.append({"method_id": method, "ticker": context["ticker"], "from": context["from"], "to": context["to"],
+                           "trade_records": len(before["trades"]), "baseline_sha256": before_hash, "candidate_sha256": after_hash})
+    return {"checked_cases": len(checks), "skipped_not_ready": skipped, "context_count": len(contexts),
+            "previous_live_methods": len(previous), "planned_cases": len(previous) * len(contexts), "checks": checks}
 
 
 def smoke(base, cases, catalogue_rows):
@@ -353,9 +418,13 @@ def publish(candidate, repo, review_path, result_path, runtime_env, *, deploy=Fa
         stage = "candidate_api_validation"
         api_evidence, newly_admitted = [], set()
         before_catalogues, after_catalogues = [], []
+        existing_regressions = []
+        remaining_regression_cases = 200
+        touched_books = touched_book_ids(candidate, review)
         for market in ("india", "us"):
             cases = [case for case in review["smoke_cases"] if case["market"] == market]
-            baseline = catalogue(live_base(commands, ids[market]))
+            baseline_base = live_base(commands, ids[market])
+            baseline = catalogue(baseline_base)
             before_catalogues.extend(baseline)
             name = "vault-reviewed-" + uuid.uuid4().hex[:12]
             temporary_names.append(name)
@@ -364,10 +433,16 @@ def publish(candidate, repo, review_path, result_path, runtime_env, *, deploy=Fa
             after_catalogues.extend(current)
             newly_admitted |= check_catalogue_changes(baseline, current, set(review["method_ids"]))
             api_evidence.extend(smoke(base, cases, current))
+            regression = compare_existing_runs(baseline_base, base, baseline, cases, touched_books,
+                                               set(review["method_ids"]), max_cases=remaining_regression_cases)
+            remaining_regression_cases -= regression["planned_cases"]
+            existing_regressions.append({"market": market, **regression})
             commands.run(["docker", "rm", "-f", name], stage="candidate-cleanup")
             temporary_names.remove(name)
-        require(newly_admitted == set(review["method_ids"]), "Approved methods do not exactly match newly admitted method IDs")
+        candidate_live_ids = {row["id"] for row in after_catalogues if row.get("status") == "live"}
+        require(set(review["method_ids"]) <= candidate_live_ids, "An approved method is not admitted by the candidate catalogue")
         report["candidate_api_checks"] = api_evidence
+        report["existing_method_regression"] = existing_regressions
         validate_candidate(candidate, repo, review)
         stage = "source_publication"
         remote = git(repo, "ls-remote", "origin", "refs/heads/Manan").split()
@@ -398,7 +473,7 @@ def publish(candidate, repo, review_path, result_path, runtime_env, *, deploy=Fa
             commands.run(["docker", "tag", image, configured], stage="persist-reviewed-image-alias")
             report.update(status="published", deployed=True, admitted=True, live_api_checks=live_checks,
                           engine_image=image, rollback_image=rollback,
-                          admitted_method_ids=sorted(newly_admitted), reviewed_variant_count=len(newly_admitted),
+                          admitted_method_ids=sorted(newly_admitted), reviewed_variant_count=len(review["method_ids"]),
                           summary="Independent source and actual-trade checks passed; reviewed Manan source and engine-only deployment are live.")
             report.update(admission_counts(before_catalogues, after_catalogues))
         except (Held, OSError, subprocess.TimeoutExpired, ValueError) as error:

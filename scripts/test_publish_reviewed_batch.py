@@ -30,7 +30,7 @@ class PublicationGates(unittest.TestCase):
         self.path = "Context/guru/backend/src/books/testbook.rs"
         target = self.repo / self.path
         target.parent.mkdir(parents=True)
-        target.write_text("// baseline source\n")
+        target.write_text('pub const BOOK: &str = "testbook";\n// baseline source\n')
         git(self.repo, "add", ".")
         git(self.repo, "commit", "-m", "baseline")
         self.base = git(self.repo, "rev-parse", "HEAD")
@@ -38,7 +38,7 @@ class PublicationGates(unittest.TestCase):
         git(self.root, "clone", "--quiet", str(self.repo), str(self.candidate))
         git(self.candidate, "config", "user.email", "queue-test@example.invalid")
         git(self.candidate, "config", "user.name", "Queue test")
-        (self.candidate / self.path).write_text("// reviewed source change\n")
+        (self.candidate / self.path).write_text('pub const BOOK: &str = "testbook";\n// reviewed source change\n')
         git(self.candidate, "add", ".")
         git(self.candidate, "commit", "-m", "reviewed source")
         self.commit = git(self.candidate, "rev-parse", "HEAD")
@@ -143,7 +143,7 @@ class PublicationGates(unittest.TestCase):
                      "library/author/scripts/reference.py"):
             self.assertTrue(publisher.allowed_file(path), path)
 
-    def simulated_publication(self, *, deploy=True, fail_stage=None, fail_live=False):
+    def simulated_publication(self, *, deploy=True, fail_stage=None, fail_live=False, existing_method=False):
         """Mock release infrastructure, retain actual precondition Git histories."""
         review_path = self.root / "review.json"
         review_path.write_text(json.dumps(self.review))
@@ -173,6 +173,8 @@ class PublicationGates(unittest.TestCase):
 
         old = [{"id": "test_rule", "status": "not_testable", "instrument_policy": {"allowed_types": []}}]
         new = [{"id": "test_rule", "status": "live", "instrument_policy": {"allowed_types": ["index"]}}]
+        if existing_method:
+            old = new
         calls = 0
         def smoke(*_):
             nonlocal calls
@@ -226,6 +228,14 @@ class PublicationGates(unittest.TestCase):
         self.assertFalse(report["deployed"])
         self.assertFalse(report["admitted"])
         self.assertNotIn("deploy-engines-only", stages)
+
+    def test_verified_existing_method_correction_can_publish_with_zero_new_family_count(self):
+        code, report, stages = self.simulated_publication(existing_method=True)
+        self.assertEqual(code, 0)
+        self.assertTrue(report["admitted"])
+        self.assertEqual(report["reviewed_variant_count"], 1)
+        self.assertEqual(report["admitted_family_count"], 0)
+        self.assertEqual(report["admitted_variant_count"], 0)
 
     def test_zero_matching_rust_tests_holds_publication(self):
         code, report, stages = self.simulated_publication(fail_stage="focused-rust")
@@ -305,6 +315,57 @@ class PublicationGates(unittest.TestCase):
         self.review["ledger_reports"][0]["sha256"] = publisher.sha256(self.ledger)
         with self.assertRaisesRegex(publisher.Held, "Rust source hashes"):
             publisher.validate_review(self.review, self.candidate)
+
+    def test_unapproved_instrument_type_narrowing_is_held(self):
+        before = [{"id": "existing", "status": "live", "instrument_policy": {"allowed_types": ["index", "individual_stock"]}}]
+        after = [{"id": "existing", "status": "live", "instrument_policy": {"allowed_types": ["index"]}}]
+        with self.assertRaisesRegex(publisher.Held, "allowed instrument types"):
+            publisher.check_catalogue_changes(before, after, {"test_rule"})
+
+    def regression_fixture(self):
+        row = {"id": "existing", "book": "testbook", "status": "live", "_publisher_guru": "connors"}
+        case = self.review["smoke_cases"][0]
+        ready = (200, {"strategies": [{"id": "existing", "status": "ready"}]})
+        run = {"dates": ["2020-01-01", "2020-01-02"], "trades": [{"ret": 0.1}],
+               "equity": [1, 1.1], "stats": {"trades": 1}, "gross_equity": [1, 1.1],
+               "gross_stats": {"trades": 1}, "ms": 1, "provenance": {"source": "old"}}
+        return row, case, ready, run
+
+    def test_unchanged_catalogue_cannot_hide_old_trade_ledger_mutation(self):
+        row, case, ready, run = self.regression_fixture()
+        changed = {**run, "trades": [{"ret": 0.2}]}
+        with mock.patch.object(publisher, "get_json", side_effect=[ready, ready, (200, run), (200, changed)]):
+            with self.assertRaisesRegex(publisher.Held, "trades, statistics or equity changed"):
+                publisher.compare_existing_runs("old", "new", [row], [case], {"testbook"}, {"test_rule"})
+
+    def test_regression_deduplicates_windows_ignores_timing_and_retains_hash_evidence(self):
+        row, case, ready, run = self.regression_fixture()
+        same = {**run, "ms": 99, "provenance": {"source": "new"}}
+        duplicate = {**case, "method_id": "another-approved", "query": {**case["query"], "p.ma": "14"}}
+        with mock.patch.object(publisher, "get_json", side_effect=[ready, ready, (200, run), (200, same)]) as api:
+            report = publisher.compare_existing_runs("old", "new", [row], [case, duplicate], {"testbook"}, {"test_rule"})
+        self.assertEqual(api.call_count, 4)
+        self.assertEqual(report["context_count"], 1)
+        self.assertEqual(report["checked_cases"], 1)
+        self.assertEqual(report["checks"][0]["baseline_sha256"], report["checks"][0]["candidate_sha256"])
+        self.assertEqual(len(report["checks"][0]["baseline_sha256"]), 64)
+
+    def test_exact_approved_method_corrections_are_excluded_from_old_method_regression(self):
+        row, case, ready, run = self.regression_fixture()
+        with mock.patch.object(publisher, "get_json") as api:
+            report = publisher.compare_existing_runs("old", "new", [row], [case], {"testbook"}, {"existing"})
+        self.assertEqual(report["checked_cases"], 0)
+        api.assert_not_called()
+
+    def test_baseline_not_ready_cases_skip_runs_and_case_limit_holds(self):
+        row, case, ready, run = self.regression_fixture()
+        held = (200, {"strategies": [{"id": "existing", "status": "needs_data"}]})
+        with mock.patch.object(publisher, "get_json", return_value=held) as api:
+            report = publisher.compare_existing_runs("old", "new", [row], [case], {"testbook"}, set())
+        self.assertEqual(report["skipped_not_ready"], 1)
+        self.assertEqual(api.call_count, 1)
+        with self.assertRaisesRegex(publisher.Held, "bounded case limit"):
+            publisher.compare_existing_runs("old", "new", [row], [case], {"testbook"}, set(), max_cases=0)
 
 
 if __name__ == "__main__":
