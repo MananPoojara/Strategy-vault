@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 MODULE = Path(__file__).with_name("publish_reviewed_batch.py")
 spec = importlib.util.spec_from_file_location("publish_reviewed_batch", MODULE)
@@ -43,10 +44,14 @@ class PublicationGates(unittest.TestCase):
         self.commit = git(self.candidate, "rev-parse", "HEAD")
         self.source = self.root / "private-source.txt"
         self.source.write_text("temporary source identity")
+        self.ohlc = self.root / "private-market-data.txt"
+        self.ohlc.write_text("temporary operational market-file identity")
         self.ledger = self.root / "private-ledger.json"
         self.ledger.write_text(json.dumps({"source_reviewed": True, "implementation_ready": True,
             "ledger_checked": True, "checked_trades": 2,
-            "checks": [{"method": "test_rule", "row_mismatches": 0, "actual_records": 2}]}))
+            "rust_module_sha256": {str(self.candidate / self.path): publisher.sha256(self.candidate / self.path)},
+            "checks": [{"method": "test_rule", "row_mismatches": 0, "actual_records": 2, "expected_records": 2,
+                        "ohlc_path": str(self.ohlc), "ohlc_sha256": publisher.sha256(self.ohlc)}]}))
         self.review = {"schema_version": 1, "reviewer_id": "independent-review-job", "conversion_session_id": "conversion-job",
             "candidate_commit": self.commit, "base_commit": self.base,
             "approved_files": [self.path], "method_ids": ["test_rule"],
@@ -137,6 +142,169 @@ class PublicationGates(unittest.TestCase):
         for path in (self.path, "Context/guru/backend/src/instrument_policy.rs", "docs/BOOK-REVIEW.md",
                      "library/author/scripts/reference.py"):
             self.assertTrue(publisher.allowed_file(path), path)
+
+    def simulated_publication(self, *, deploy=True, fail_stage=None, fail_live=False):
+        """Mock release infrastructure, retain actual precondition Git histories."""
+        review_path = self.root / "review.json"
+        review_path.write_text(json.dumps(self.review))
+        result_path = self.root / "result.json"
+        runtime = self.root / "runtime"
+        runtime.mkdir(exist_ok=True)
+        env_path = self.root / "runtime.env"
+        env_path.write_text("VAULT_RUNTIME_ROOT=" + str(runtime) + "\n")
+        stages = []
+
+        def command(argv, **kwargs):
+            stage = kwargs.get("stage")
+            stages.append(stage)
+            if stage == fail_stage:
+                raise publisher.Held("Infrastructure test failure")
+            if stage == "previous-image":
+                return "sha256:" + "a" * 64
+            if stage == "focused-rust":
+                return "running 1 test\ntest result: ok"
+            return ""
+
+        original_git = publisher.git
+        def git_call(repo, *args):
+            if args[0] == "ls-remote":
+                return self.base + "\trefs/heads/Manan"
+            return original_git(repo, *args)
+
+        old = [{"id": "test_rule", "status": "not_testable", "instrument_policy": {"allowed_types": []}}]
+        new = [{"id": "test_rule", "status": "live", "instrument_policy": {"allowed_types": ["index"]}}]
+        calls = 0
+        def smoke(*_):
+            nonlocal calls
+            calls += 1
+            if fail_live and calls > 2:
+                raise publisher.Held("Live API test failure")
+            return [{"method_id": "test_rule", "readiness": "ready"}]
+
+        with mock.patch.object(publisher, "Commands") as commands, mock.patch.object(publisher, "git", side_effect=git_call), \
+             mock.patch.object(publisher, "engine_ids", return_value={"india": "in-id", "us": "us-id"}), \
+             mock.patch.object(publisher, "live_base", return_value="http://127.0.0.1:1"), \
+             mock.patch.object(publisher, "temporary_engine", return_value="http://127.0.0.1:1"), \
+             mock.patch.object(publisher, "catalogue", side_effect=[old, new, old, new, new, new]), \
+             mock.patch.object(publisher, "smoke", side_effect=smoke), mock.patch.object(publisher, "wait_api"):
+            commands.return_value.run.side_effect = command
+            code = publisher.publish(self.candidate, self.repo, review_path, result_path, env_path, deploy=deploy)
+        return code, json.loads(result_path.read_text()), stages
+
+    def test_successful_deployment_counts_only_validated_ids(self):
+        code, report, stages = self.simulated_publication()
+        self.assertEqual(code, 0)
+        self.assertTrue(report["source_uploaded"])
+        self.assertTrue(report["deployed"])
+        self.assertTrue(report["admitted"])
+        self.assertEqual(report["admitted_method_ids"], ["test_rule"])
+        self.assertEqual(report["admitted_method_count"], 1)
+        self.assertIn("deploy-engines-only", stages)
+        self.assertNotIn("restore-previous-engines", stages)
+
+    def test_failed_runtime_validation_restores_engines_but_retains_source(self):
+        code, report, stages = self.simulated_publication(fail_live=True)
+        self.assertEqual(code, 1)
+        self.assertTrue(report["source_uploaded"])
+        self.assertTrue(report["rollback_restored"])
+        self.assertFalse(report["admitted"])
+        self.assertEqual(report["admitted_method_count"], 0)
+        self.assertIn("restore-previous-engines", stages)
+
+    def test_failed_push_does_not_touch_runtime(self):
+        code, report, stages = self.simulated_publication(fail_stage="push-manan")
+        self.assertEqual(code, 1)
+        self.assertFalse(report["source_uploaded"])
+        self.assertFalse(report["admitted"])
+        self.assertNotIn("deploy-engines-only", stages)
+        self.assertNotIn("restore-previous-engines", stages)
+
+    def test_source_only_publication_requires_explicit_deployment_flag(self):
+        code, report, stages = self.simulated_publication(deploy=False)
+        self.assertEqual(code, 0)
+        self.assertTrue(report["source_uploaded"])
+        self.assertFalse(report["deployed"])
+        self.assertFalse(report["admitted"])
+        self.assertNotIn("deploy-engines-only", stages)
+
+    def test_zero_matching_rust_tests_holds_publication(self):
+        code, report, stages = self.simulated_publication(fail_stage="focused-rust")
+        self.assertEqual(code, 1)
+        self.assertEqual(report["failed_stage"], "real_data_tests")
+        self.assertNotIn("push-manan", stages)
+
+    def test_ready_and_incompatible_smoke_cases_check_actual_api_shape(self):
+        ready = self.review["smoke_cases"][0]
+        blocked = {**ready, "expected_readiness": "needs_data", "instrument_kind": "individual_stock"}
+        rows = [{"id": "test_rule", "instrument_policy": {"allowed_types": ["index"]}}]
+        responses = [(200, {"strategies": [{"id": "test_rule", "status": "ready"}]}),
+                     (200, {"dates": ["2020-01-01"], "equity": [1], "trades": []}),
+                     (200, {"strategies": [{"id": "test_rule", "status": "needs_data"}]}),
+                     (400, "Required data unavailable")]
+        with mock.patch.object(publisher, "get_json", side_effect=responses):
+            results = publisher.smoke("http://example.invalid", [ready, blocked], rows)
+        self.assertEqual(results[0]["trade_records"], 0)
+        self.assertTrue(results[1]["blocked"])
+        invalid = [responses[0], (200, {"dates": ["2020-01-01"], "equity": [], "trades": []})]
+        with mock.patch.object(publisher, "get_json", side_effect=invalid):
+            with self.assertRaisesRegex(publisher.Held, "equity"):
+                publisher.smoke("http://example.invalid", [ready], rows)
+
+    def test_catalogue_and_engine_loading_contract(self):
+        with mock.patch.object(publisher, "get_json", return_value=(200, [{"id": "test_rule"}])):
+            self.assertEqual(len(publisher.catalogue("http://example.invalid")), 3)
+            publisher.wait_api("http://example.invalid")
+        with mock.patch.object(publisher, "get_json", return_value=(500, "server error")):
+            with self.assertRaises(publisher.Held):
+                publisher.catalogue("http://example.invalid")
+
+    def test_commands_keep_output_private_and_reject_failed_command(self):
+        import sys
+        commands = publisher.Commands(self.root / "private-command-logs")
+        output = commands.run([sys.executable, "-c", "print('operational test output')"], stage="fixture")
+        self.assertEqual(output, "operational test output")
+        with self.assertRaises(publisher.Held):
+            commands.run([sys.executable, "-c", "raise SystemExit(3)"], stage="failing-fixture")
+        self.assertEqual((self.root / "private-command-logs" / "001-fixture.log").stat().st_mode & 0o777, 0o600)
+
+    def test_temporary_engine_uses_read_only_real_input_locations_and_limits(self):
+        runtime = self.root / "runtime"
+        (runtime / "data").mkdir(parents=True)
+        (runtime / "data" / "idx_data.csv").write_text("temporary operational file identity")
+        basket = self.root / "basket"
+        basket.mkdir()
+        commands = mock.Mock()
+        commands.run.side_effect = ["temporary-container", "12345"]
+        with mock.patch.object(publisher, "wait_api"):
+            base = publisher.temporary_engine(commands, "candidate-test", "india", {
+                "VAULT_RUNTIME_ROOT": str(runtime), "VAULT_BASKET_DATA_ROOT": str(basket)}, "owned-temp")
+        argv = commands.run.call_args_list[0].args[0]
+        self.assertIn("768m", argv)
+        self.assertIn("--read-only", argv)
+        self.assertTrue(any(arg.endswith(":/data:ro") for arg in argv))
+        self.assertEqual(base, "http://127.0.0.1:12345")
+
+    def test_threshold_and_direction_variants_do_not_inflate_family_counts(self):
+        old = [{"id": "old_long", "book": "book", "family": "existing", "status": "live"}]
+        new = old + [
+            {"id": "old_short", "book": "book", "family": "existing", "status": "live"},
+            {"id": "new_long", "book": "book", "family": "new_method", "status": "live"},
+            {"id": "new_short", "book": "book", "family": "new_method", "status": "live"}]
+        counts = publisher.admission_counts(old, new)
+        self.assertEqual(counts["admitted_variant_count"], 3)
+        self.assertEqual(counts["admitted_family_count"], 1)
+        self.assertEqual(counts["admitted_method_count"], 1)
+
+    def test_changed_actual_data_or_missing_rust_identity_holds_ledger(self):
+        self.ohlc.write_text("modified operational data identity")
+        with self.assertRaisesRegex(publisher.Held, "market-data hash"):
+            publisher.validate_review(self.review, self.candidate)
+        payload = json.loads(self.ledger.read_text())
+        payload["rust_module_sha256"] = {}
+        self.ledger.write_text(json.dumps(payload))
+        self.review["ledger_reports"][0]["sha256"] = publisher.sha256(self.ledger)
+        with self.assertRaisesRegex(publisher.Held, "Rust source hashes"):
+            publisher.validate_review(self.review, self.candidate)
 
 
 if __name__ == "__main__":
