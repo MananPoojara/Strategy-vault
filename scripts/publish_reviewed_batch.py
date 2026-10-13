@@ -59,6 +59,20 @@ def allowed_file(name):
     return False
 
 
+def candidate_source(candidate, name):
+    relative = PurePosixPath(name)
+    require(not relative.is_absolute() and ".." not in relative.parts,
+            "Candidate source must remain inside the isolated repository")
+    root = Path(candidate).resolve()
+    path = root
+    for component in relative.parts:
+        path /= component
+        require(not path.is_symlink(), "Candidate source must be a regular file, not a symlink")
+    require(path.is_file() and path.resolve().is_relative_to(root),
+            "Candidate source must be a regular file inside the isolated repository")
+    return path
+
+
 def validate_review(review, candidate):
     require(review.get("schema_version") == 1, "Unsupported review schema")
     require(review.get("reviewer_id") and review.get("conversion_session_id") and
@@ -79,7 +93,7 @@ def validate_review(review, candidate):
     hashes = review.get("candidate_hashes")
     require(isinstance(hashes, dict) and hashes, "Reviewed candidate hashes are missing")
     for name, digest in hashes.items():
-        require(allowed_file(name) and (Path(candidate) / name).is_file() and sha256(Path(candidate) / name) == digest, "Reviewed candidate hash changed or path is prohibited")
+        require(allowed_file(name) and sha256(candidate_source(candidate, name)) == digest, "Reviewed candidate hash changed or path is prohibited")
     reports = review.get("ledger_reports")
     require(isinstance(reports, list) and reports, "Independent ledger reports are required")
     checked, covered = 0, set()
@@ -107,7 +121,7 @@ def validate_review(review, candidate):
             path_parts = Path(name).parts
             require("Context" in path_parts, "Ledger Rust source has no identifiable repository path")
             relative = Path(*path_parts[path_parts.index("Context"):])
-            require((Path(candidate) / relative).is_file() and sha256(Path(candidate) / relative) == digest,
+            require(sha256(candidate_source(candidate, relative.as_posix())) == digest,
                     "Independent ledger was checked against different candidate Rust source")
             covered_modules.add(relative.as_posix())
         touched_books = {name for name in review.get("approved_files", []) if "/src/books/" in name and name.endswith(".rs")}
@@ -146,6 +160,9 @@ def validate_candidate(candidate, repo, review):
     for record in records:
         status, name = record.split("\t", 1)
         require(status in {"A", "M"} and allowed_file(name), "Candidate changes a prohibited file or deletes existing source")
+        mode = git(candidate, "ls-tree", commit, "--", name).split()[0]
+        require(mode in {"100644", "100755"}, "Candidate changes must contain regular source files")
+        candidate_source(candidate, name)
         changed.append(name)
     require(changed and set(changed) == set(review.get("approved_files", [])) == set(review.get("candidate_hashes", {})), "Review must name the exact changed file set")
     validate_review(review, candidate)

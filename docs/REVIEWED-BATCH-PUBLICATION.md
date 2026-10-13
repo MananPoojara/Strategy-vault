@@ -4,6 +4,11 @@
 independent review. It does not interpret books or substitute a successful
 agent response for source or trade verification.
 
+Sandboxed reviewers keep Git metadata read-only. The host
+[prepares and finalizes their candidate](SANDBOXED-REVIEW-HANDOFF.md) after
+validating the independent review's exact source and evidence hashes; it does
+not grant the reviewer deployment access.
+
 The isolated candidate and authoritative checkout must both be clean. The
 authoritative branch must be `Manan`. The candidate contains exactly one
 commit whose parent is the current authoritative HEAD. A stale base is held
@@ -107,6 +112,8 @@ Only additions/modifications to these source paths are allowed:
 No frontend, authentication, gateway, deployment configuration, raw data,
 books, binary files, source deletion or unrelated Rust infrastructure changes
 are accepted. Those require a separate development review.
+Changed files must be regular Git blobs inside the candidate, with no symlink
+in the file path. A matching hash reached through an external link is rejected.
 
 The release sequence is:
 

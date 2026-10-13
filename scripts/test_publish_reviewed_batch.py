@@ -70,6 +70,25 @@ class PublicationGates(unittest.TestCase):
     def test_matching_clean_single_commit_is_accepted(self):
         self.assertEqual(publisher.validate_candidate(self.candidate, self.repo, self.review), [self.path])
 
+    def test_new_allowed_source_symlink_cannot_pass_clean_history_validation(self):
+        name = "Context/guru/backend/src/books/newlink.rs"
+        (self.candidate / name).symlink_to(self.source)
+        git(self.candidate, "add", name)
+        git(self.candidate, "commit", "--amend", "--no-edit")
+        self.review["candidate_commit"] = git(self.candidate, "rev-parse", "HEAD")
+        self.review["approved_files"].append(name)
+        self.review["candidate_hashes"][name] = publisher.sha256(self.source)
+        with self.assertRaisesRegex(publisher.Held, "regular source files"):
+            publisher.validate_candidate(self.candidate, self.repo, self.review)
+
+    def test_source_hashes_cannot_follow_a_symlinked_parent_directory(self):
+        outside = self.root / "outside-source"
+        outside.mkdir()
+        (outside / "reference.py").write_text("# outside the candidate\n")
+        (self.candidate / "library").symlink_to(outside, target_is_directory=True)
+        with self.assertRaisesRegex(publisher.Held, "symlink"):
+            publisher.candidate_source(self.candidate, "library/reference.py")
+
     def test_dirty_authoritative_checkout_is_held(self):
         (self.repo / self.path).write_text("another developer is editing")
         with self.assertRaisesRegex(publisher.Held, "clean"):

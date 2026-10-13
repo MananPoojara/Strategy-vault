@@ -24,4 +24,5 @@ jobs:
       - run: npm --prefix Context/guru/frontend/react run build
       - run: npm --prefix Context/guru/frontend/react run test:coverage
       - run: node scripts/test_frontend_helpers.mjs
+      - run: python3 -m unittest discover -s scripts -p 'test_*.py'
       - run: python3 scripts/check_upload.py
