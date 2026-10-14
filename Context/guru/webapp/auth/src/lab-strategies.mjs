@@ -1,9 +1,9 @@
 // Saved indicators-lab strategies (spec §3): per-user drafts, admin review, frozen YT Strategies snapshots.
-import { roleAllows, LabRequestError, LAB_PUBLISHABLE_MARKETS, LAB_STATUSES, labAction, labCanRead, validateLabStrategy, validateLabVersion, validateLabNote } from './contracts.mjs';
+import { roleAllows, LabRequestError, LAB_PUBLISHABLE_MARKETS, LAB_STATUSES, labAction, labCanRead, validateLabStrategy, sameLabOrigin, validateLabVersion, validateLabNote } from './contracts.mjs';
 
 const BASE = '/api/app/lab/strategies';
 const ID = ':id{[1-9][0-9]{0,8}}';
-const COLUMNS = `s.id, s.owner, u.name AS "ownerName", s.name, s.spec, s.market, s.instrument, s.status, s.version,
+const COLUMNS = `s.id, s.owner, u.name AS "ownerName", s.name, s.spec, s.origin, s.market, s.instrument, s.status, s.version,
   s.submitted_at AS "submittedAt", s.reviewed_at AS "reviewedAt", s.review_note AS "reviewNote", s.created_at AS "createdAt", s.updated_at AS "updatedAt"`;
 const FROM = 'FROM lab_strategy s JOIN "user" u ON u.id = s.owner';
 const TRANSITIONS = {
@@ -39,7 +39,7 @@ export function registerLabStrategies(app, pool) {
   const reread = async (client, id) => view((await client.query(`SELECT ${COLUMNS} ${FROM} WHERE s.id=$1`, [id])).rows[0]);
   const audit = (client, user, action, id) => client.query('INSERT INTO vault_audit (actor_id,action,entity) VALUES ($1,$2,$3)', [user.id, `lab.${action}`, `lab_strategy:${id}`]);
   const insert = async (client, user, data, action) => {
-    const id = (await client.query('INSERT INTO lab_strategy (owner,name,spec,market,instrument) VALUES ($1,$2,$3::jsonb,$4,$5) RETURNING id', [user.id, data.name, JSON.stringify(data.spec), data.market, data.instrument])).rows[0].id;
+    const id = (await client.query('INSERT INTO lab_strategy (owner,name,spec,market,instrument,origin) VALUES ($1,$2,$3::jsonb,$4,$5,$6::jsonb) RETURNING id', [user.id, data.name, JSON.stringify(data.spec), data.market, data.instrument, data.origin ? JSON.stringify(data.origin) : null])).rows[0].id;
     await audit(client, user, action, id);
     return reread(client, id);
   };
@@ -51,7 +51,7 @@ export function registerLabStrategies(app, pool) {
     return c.json(result.rows.map(view));
   }));
   app.get(`${BASE}/published`, route(async c => {
-    const result = await pool.query(`SELECT v.id AS "snapshotId", v.strategy_id AS id, v.version, v.name, v.spec, v.market, v.instrument, u.name AS "ownerName", v.published_at AS "publishedAt"
+    const result = await pool.query(`SELECT v.id AS "snapshotId", v.strategy_id AS id, v.version, v.name, v.spec, v.spec->'origin' AS origin, v.market, v.instrument, u.name AS "ownerName", v.published_at AS "publishedAt"
       FROM lab_strategy_version v LEFT JOIN "user" u ON u.id = v.owner ORDER BY v.published_at DESC LIMIT 200`);
     return c.json(result.rows);
   }));
@@ -81,6 +81,7 @@ export function registerLabStrategies(app, pool) {
     const version = validateLabVersion(input.version), data = validateLabStrategy(input);
     return c.json(await locked(Number(c.req.param('id')), async (client, row) => {
       labAction(row, user, 'update', version);
+      if (!sameLabOrigin(row.origin, data.origin)) throw new LabRequestError('A strategy keeps the book template it was customized from (spec.origin); start a new customization instead.');
       await client.query("UPDATE lab_strategy SET name=$2, spec=$3::jsonb, market=$4, instrument=$5, status='draft', version=version+1, updated_at=now() WHERE id=$1", [row.id, data.name, JSON.stringify(data.spec), data.market, data.instrument]);
       await audit(client, user, 'update', row.id);
       return reread(client, row.id);

@@ -178,3 +178,14 @@ test('customized lab specs carry a book-template origin of a fixed shape',async(
  assert.ok(sameLabOrigin(null,undefined)&&sameLabOrigin(LAB_ORIGIN,{template_version:1,method:'rsi2_4',book:'stc9'}));
  assert.ok(!sameLabOrigin(LAB_ORIGIN,null)&&!sameLabOrigin(LAB_ORIGIN,{...LAB_ORIGIN,template_version:2}));
 });
+
+test('origin migration only adds a nullable column and runs after 002',async()=>{
+ const {readFile}=await import('node:fs/promises');
+ const sql=await readFile(new URL('../db/003-lab-origin.sql',import.meta.url),'utf8');
+ const statements=sql.split('\n').filter(l=>l.trim()&&!l.trim().startsWith('--')).join(' ').split(';').map(s=>s.trim()).filter(Boolean);
+ assert.equal(statements.length,1);
+ assert.match(statements[0],/^ALTER TABLE lab_strategy ADD COLUMN IF NOT EXISTS origin jsonb\s+CHECK \(origin IS NULL OR /);
+ assert.doesNotMatch(sql,/\b(DROP|DELETE|UPDATE|TRUNCATE|INSERT|NOT NULL DEFAULT)\b/i);
+ const bootstrap=await readFile(new URL('../auth/src/bootstrap.mjs',import.meta.url),'utf8');
+ assert.ok(bootstrap.indexOf('003-lab-origin.sql')>bootstrap.indexOf('002-lab-strategies.sql')&&bootstrap.indexOf('002-lab-strategies.sql')>0);
+});

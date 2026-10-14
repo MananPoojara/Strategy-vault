@@ -11,10 +11,12 @@ const SPEC = { v: 1, entry: { all: [] }, exit: { any: [] } };
 const USERS = { owner: { id: 'u1', role: 'researcher' }, other: { id: 'u2', role: 'researcher' }, viewer: { id: 'u3', role: 'viewer' }, admin: { id: 'u4', role: 'admin' } };
 
 function harness(rows = {}) {
-  const log = [], sqls = [];
+  const log = [], sqls = [], args = [];
   const query = async (sql, params = []) => {
     log.push(sql.trim().split(/\s+/)[0]);
     sqls.push(sql);
+    args.push(params);
+    if (/RETURNING id/.test(sql)) return { rows: [{ id: 9 }], rowCount: 1 };
     if (/^SELECT/.test(sql.trim()) && /WHERE s\.id=\$1/.test(sql)) return { rows: rows[params[0]] ? [rows[params[0]]] : [], rowCount: rows[params[0]] ? 1 : 0 };
     return { rows: [], rowCount: 0 };
   };
@@ -23,7 +25,7 @@ function harness(rows = {}) {
   app.use('*', async (c, next) => { c.set('user', USERS[c.req.header('x-test-user')]); await next(); });
   registerLabStrategies(app, pool);
   const call = (user, method, path, body) => app.request(`/api/app/lab/strategies${path}`, { method, headers: { 'x-test-user': user, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
-  return { log, sqls, call };
+  return { log, sqls, args, call };
 }
 const row = fields => ({ id: 7, owner: 'u1', ownerName: 'Owner', name: 'RSI dip', spec: SPEC, market: 'in', instrument: 'NIFTY 50', status: 'draft', version: 3, ...fields });
 
@@ -123,4 +125,35 @@ test('route SQL never updates or deletes a published snapshot', async () => {
   assert.doesNotMatch(source, /UPDATE\s+lab_strategy_version/i);
   assert.doesNotMatch(source, /DELETE\s+FROM\s+lab_strategy_version/i);
   assert.doesNotMatch(source, /TRUNCATE/i);
+});
+
+const ORIGIN = { book: 'stc9', method: 'rsi2_4', template_version: 1 };
+test('a customized strategy stores its origin, and an edit cannot change it', async () => {
+  const created = harness();
+  assert.equal((await created.call('owner', 'POST', '', { name: 'My RSI(2)', spec: { ...SPEC, origin: ORIGIN }, market: 'us', instrument: 'SPY' })).status, 201);
+  const insert = created.sqls.findIndex(sql => /INSERT INTO lab_strategy \(owner,name,spec,market,instrument,origin\)/.test(sql));
+  assert.equal(created.args[insert][5], JSON.stringify(ORIGIN));
+  const plain = harness();
+  await plain.call('owner', 'POST', '', { name: 'Mine', spec: SPEC, market: 'us', instrument: 'SPY' });
+  assert.equal(plain.args[plain.sqls.findIndex(sql => /INSERT INTO lab_strategy \(/.test(sql))][5], null);
+  const variant = harness({ 7: row({ spec: { ...SPEC, origin: ORIGIN }, origin: ORIGIN }) });
+  for (const spec of [SPEC, { ...SPEC, origin: { ...ORIGIN, method: 'rsi4_25' } }]) {
+    const response = await variant.call('owner', 'PUT', '/7', { version: 3, name: 'B', spec, market: 'us', instrument: 'SPY' });
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /keeps the book template/);
+  }
+  assert.ok(!variant.log.includes('UPDATE'));
+  assert.equal((await variant.call('owner', 'PUT', '/7', { version: 3, name: 'B', spec: { ...SPEC, origin: ORIGIN, exit: { any: [], stop_loss: { pct: 5 } } }, market: 'us', instrument: 'SPY' })).status, 200);
+  assert.ok(variant.log.includes('UPDATE'));
+  const fresh = harness({ 7: row() });
+  assert.equal((await fresh.call('owner', 'PUT', '/7', { version: 3, name: 'B', spec: { ...SPEC, origin: ORIGIN }, market: 'us', instrument: 'SPY' })).status, 400, 'origin is set at creation only');
+  assert.ok(!fresh.log.includes('UPDATE'));
+});
+
+test('duplicating a variant keeps its origin and YT Strategies lists the origin of each snapshot', async () => {
+  const { sqls, args, call } = harness({ 7: row({ status: 'published', spec: { ...SPEC, origin: ORIGIN }, origin: ORIGIN }) });
+  assert.equal((await call('other', 'POST', '/7/duplicate')).status, 201);
+  assert.equal(args[sqls.findIndex(sql => /INSERT INTO lab_strategy \(/.test(sql))][5], JSON.stringify(ORIGIN));
+  await call('viewer', 'GET', '/published');
+  assert.ok(sqls.some(sql => /v\.spec->'origin' AS origin/.test(sql)));
 });
