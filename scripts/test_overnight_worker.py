@@ -12,6 +12,7 @@ from unittest import mock
 import contextlib
 import fcntl
 import io
+import resource
 
 MODULE = Path(__file__).with_name("overnight_worker.py")
 spec = importlib.util.spec_from_file_location("overnight_worker", MODULE)
@@ -148,6 +149,111 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(result["cores"], 1)
         self.assertEqual(result["memory"], 256 * 1024 * 1024)
         self.assertEqual(result["threads"], "1")
+
+    def trusted_publisher_job(self):
+        checkout = MODULE.resolve().parent.parent
+        self.job.update(kind="source_review", memory_mode="resident", cwd=str(checkout))
+        self.job["argv"] = [sys.executable, str(checkout / "scripts/publish_reviewed_batch.py"),
+                            "--candidate", str(self.root / "candidate"), "--repo", str(checkout),
+                            "--review", str(self.state / "review.json"), "--result", str(self.result),
+                            "--runtime-env", str(self.state / "runtime.env")]
+        return {"memory_max_bytes": 3 * 1024 ** 3, "swap_max_bytes": 0, "cgroup_path": "/test-service"}
+
+    def test_resident_mode_is_only_accepted_for_trusted_publisher_in_bounded_cgroup(self):
+        limits = self.trusted_publisher_job()
+        self.write_manifest()
+        with mock.patch.object(worker, "cgroup_memory_limits", return_value=limits):
+            manifest = worker.load_manifest(self.manifest, self.state)
+        self.assertEqual(manifest["jobs"][0]["memory_mode"], "resident")
+        for override in (None, {**limits, "memory_max_bytes": None},
+                         {**limits, "memory_max_bytes": 4 * 1024 ** 3}, {**limits, "swap_max_bytes": None}):
+            with self.subTest(override=override), mock.patch.object(worker, "cgroup_memory_limits", return_value=override):
+                with self.assertRaisesRegex(ValueError, "cgroup"):
+                    worker.load_manifest(self.manifest, self.state)
+
+    def test_generic_python_jobs_cannot_disable_address_space_limit(self):
+        self.job["memory_mode"] = "resident"
+        self.write_manifest()
+        with self.assertRaisesRegex(ValueError, "trusted publisher"):
+            worker.load_manifest(self.manifest, self.state)
+        self.job["memory_mode"] = "disabled"
+        self.write_manifest()
+        with self.assertRaisesRegex(ValueError, "memory_mode"):
+            worker.load_manifest(self.manifest, self.state)
+
+    def test_trusted_publisher_resident_mode_still_terminates_at_job_rss_budget(self):
+        limits = self.trusted_publisher_job()
+        self.write_manifest()
+        # Keep process execution operational, while testing the trusted-job gate
+        # against its real argv before substituting a harmless sleeping child.
+        real_popen = worker.subprocess.Popen
+        def harmless_child(argv, **kwargs):
+            return real_popen([sys.executable, "-c", "import time;time.sleep(30)"], **kwargs)
+        with mock.patch.object(worker, "cgroup_memory_limits", return_value=limits), \
+             mock.patch.object(worker.subprocess, "Popen", side_effect=harmless_child), \
+             mock.patch.object(worker, "descendant_rss_bytes", return_value=2048 * 1024 ** 2 + 1):
+            self.assertEqual(worker.run(self.manifest, self.state, min_available_mb=0, poll_seconds=0.02), 1)
+        item = worker.read_status(self.state)["jobs"]["book-method"]
+        self.assertEqual(item["error"], "Job resident memory limit")
+        self.assertEqual(item["memory_mode"], "resident")
+
+    def test_resident_mode_omits_only_virtual_limit_in_actual_child(self):
+        limits = self.trusted_publisher_job()
+        self.write_manifest()
+        real_popen = worker.subprocess.Popen
+        code = "import resource,json,pathlib;pathlib.Path(" + repr(str(self.result)) + ").write_text(json.dumps({'virtual_limit':resource.getrlimit(resource.RLIMIT_AS)[0],'cpu_limit':resource.getrlimit(resource.RLIMIT_CPU)[0],'core_limit':resource.getrlimit(resource.RLIMIT_CORE)[0]}))"
+        def harmless_child(argv, **kwargs):
+            return real_popen([sys.executable, "-c", code], **kwargs)
+        with mock.patch.object(worker, "cgroup_memory_limits", return_value=limits), mock.patch.object(worker.subprocess, "Popen", side_effect=harmless_child):
+            self.assertEqual(worker.run(self.manifest, self.state, min_available_mb=0, poll_seconds=0.02), 0)
+        result = worker.read_status(self.state)["jobs"]["book-method"]["result"]
+        self.assertEqual(result["virtual_limit"], resource.getrlimit(resource.RLIMIT_AS)[0])
+        self.assertGreater(result["cpu_limit"], 0)
+        self.assertEqual(result["core_limit"], 0)
+
+    def test_cgroup_limit_probe_uses_tighter_ancestor_and_preserves_swap_protection(self):
+        cgroups = self.root / "cgroups"
+        unit = cgroups / "parent" / "unit"
+        unit.mkdir(parents=True)
+        (unit / "memory.max").write_text("max")
+        (unit / "memory.swap.max").write_text("max")
+        (unit.parent / "memory.max").write_text(str(3 * 1024 ** 3))
+        (unit.parent / "memory.swap.max").write_text("0")
+        membership = self.root / "membership"
+        membership.write_text("0::/parent/unit\n")
+        limits = worker.cgroup_memory_limits(cgroups, membership)
+        self.assertEqual(limits["memory_max_bytes"], 3 * 1024 ** 3)
+        self.assertEqual(limits["swap_max_bytes"], 0)
+        membership.write_text("1:memory:/legacy\n")
+        self.assertIsNone(worker.cgroup_memory_limits(cgroups, membership))
+
+    def test_resident_publisher_cannot_redirect_authoritative_repo_or_python_script(self):
+        self.trusted_publisher_job()
+        self.job["argv"][self.job["argv"].index("--repo") + 1] = str(self.root)
+        self.write_manifest()
+        with self.assertRaisesRegex(ValueError, "authoritative checkout"):
+            worker.load_manifest(self.manifest, self.state)
+        self.trusted_publisher_job()
+        self.job["argv"][1] = str(self.state / "publish_reviewed_batch.py")
+        self.write_manifest()
+        with self.assertRaisesRegex(ValueError, "trusted publisher"):
+            worker.load_manifest(self.manifest, self.state)
+
+    def test_resident_publisher_cannot_raise_two_gib_job_budget(self):
+        limits = self.trusted_publisher_job()
+        self.write_manifest()
+        with mock.patch.object(worker, "cgroup_memory_limits", return_value=limits), \
+             mock.patch.object(worker.subprocess, "Popen") as process:
+            self.assertEqual(worker.run(self.manifest, self.state, memory_mb=2049, min_available_mb=0, poll_seconds=0.02), 1)
+        process.assert_not_called()
+        self.assertIn("2 GiB", worker.read_status(self.state)["jobs"]["book-method"]["error"])
+
+    def test_duplicate_publisher_repo_argument_is_rejected(self):
+        self.trusted_publisher_job()
+        self.job["argv"].extend(["--repo", str(MODULE.resolve().parent.parent)])
+        self.write_manifest()
+        with self.assertRaisesRegex(ValueError, "one explicit --repo"):
+            worker.load_manifest(self.manifest, self.state)
 
     def test_cli_status_and_stop(self):
         self.writes_result()

@@ -44,11 +44,18 @@ def git(repo, *args):
     return process.stdout.strip()
 
 
+BOOK_HELPERS = {
+    "Context/guru/backend/src/books/hbqts/reviewed.rs": "Context/guru/backend/src/books/hbqts.rs",
+}
+
+
 def allowed_file(name):
     path = PurePosixPath(name)
     if path.is_absolute() or ".." in path.parts:
         return False
     if re.fullmatch(r"Context/guru/backend/src/books/[a-zA-Z0-9_]+\.rs", name):
+        return True
+    if name in BOOK_HELPERS:
         return True
     if name in {"Context/guru/backend/src/instrument_policy.rs", "Context/guru/backend/src/readiness.rs"}:
         return True
@@ -96,7 +103,7 @@ def validate_review(review, candidate):
         require(allowed_file(name) and sha256(candidate_source(candidate, name)) == digest, "Reviewed candidate hash changed or path is prohibited")
     reports = review.get("ledger_reports")
     require(isinstance(reports, list) and reports, "Independent ledger reports are required")
-    checked, covered = 0, set()
+    checked, covered, all_compiled_modules = 0, set(), set()
     for entry in reports:
         path = Path(entry.get("path", ""))
         require(path.is_absolute() and path.is_file() and sha256(path) == entry.get("sha256"), "Independent ledger report hash changed")
@@ -126,6 +133,10 @@ def validate_review(review, candidate):
             covered_modules.add(relative.as_posix())
         touched_books = {name for name in review.get("approved_files", []) if "/src/books/" in name and name.endswith(".rs")}
         require(covered_modules & touched_books, "Independent ledger has no reviewed candidate book module")
+        all_compiled_modules.update(covered_modules)
+    touched_books = {name for name in review.get("approved_files", []) if "/src/books/" in name and name.endswith(".rs")}
+    require(touched_books <= all_compiled_modules,
+            "Independent ledger must hash every changed book module, including nested helpers")
     require(covered == set(methods) and checked == review["checked_trades"], "Independent ledger method coverage or trade count differs from review")
     focused = review.get("focused_tests")
     require(isinstance(focused, list) and focused and all(isinstance(name, str) and re.fullmatch(r"[a-zA-Z0-9_:]+", name) for name in focused), "Focused Rust tests are required")
@@ -258,6 +269,7 @@ def touched_book_ids(candidate, review):
     for name in review["approved_files"]:
         if "/backend/src/books/" not in name:
             continue
+        name = BOOK_HELPERS.get(name, name)
         path = Path(candidate) / name
         texts = [path.read_text()]
         if git(candidate, "ls-tree", "--name-only", review["base_commit"], "--", name):
@@ -416,7 +428,10 @@ def publish(candidate, repo, review_path, result_path, runtime_env, *, deploy=Fa
                       candidate_commit=review["candidate_commit"], method_ids=review["method_ids"])
         commands.run(["python3", str(repo / "scripts/check_upload.py"), "--env-file", str(runtime_env)], cwd=candidate, stage="candidate-upload-scan")
         stage = "real_data_tests"
-        env = {**os.environ, "VAULT_IDX": str(Path(settings["VAULT_RUNTIME_ROOT"]) / "data/idx_data.csv"), "CARGO_BUILD_JOBS": "2", "RAYON_NUM_THREADS": "1", "CARGO_TARGET_DIR": str(result_path.parent / "release-cargo-target")}
+        env = {**os.environ, "VAULT_IDX": str(Path(settings["VAULT_RUNTIME_ROOT"]) / "data/idx_data.csv"),
+               "CARGO_BUILD_JOBS": "1", "CARGO_INCREMENTAL": "0", "CARGO_PROFILE_DEV_DEBUG": "0",
+               "CARGO_PROFILE_TEST_DEBUG": "0", "RAYON_NUM_THREADS": "1",
+               "CARGO_TARGET_DIR": str(result_path.parent / "release-cargo-target")}
         cargo = ["cargo", "test", "--locked", "--manifest-path", str(candidate / "Context/guru/backend/Cargo.toml")]
         for test in review["focused_tests"]:
             output = commands.run(cargo + [test, "--", "--test-threads=1"], cwd=candidate, env=env, timeout=900, stage="focused-rust")

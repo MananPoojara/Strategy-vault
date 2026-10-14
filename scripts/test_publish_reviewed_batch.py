@@ -89,6 +89,34 @@ class PublicationGates(unittest.TestCase):
         with self.assertRaisesRegex(publisher.Held, "symlink"):
             publisher.candidate_source(self.candidate, "library/reference.py")
 
+    def test_only_named_bandy_helper_is_allowed_and_uses_its_owner_book(self):
+        helper = "Context/guru/backend/src/books/hbqts/reviewed.rs"
+        owner = self.candidate / "Context/guru/backend/src/books/hbqts.rs"
+        owner.write_text('pub const BOOK: &str = "hbqts";\n')
+        path = self.candidate / helper
+        path.parent.mkdir()
+        path.write_text("// interpreted helper\n")
+        self.assertTrue(publisher.allowed_file(helper))
+        self.assertFalse(publisher.allowed_file("Context/guru/backend/src/books/hbqts/other.rs"))
+        self.assertFalse(publisher.allowed_file("Context/guru/backend/src/books/other/reviewed.rs"))
+        self.assertEqual(publisher.touched_book_ids(self.candidate,
+                         {"approved_files": [helper], "base_commit": self.base}), {"hbqts"})
+
+    def test_ledger_must_hash_every_changed_book_module_including_helper(self):
+        helper = "Context/guru/backend/src/books/hbqts/reviewed.rs"
+        path = self.candidate / helper
+        path.parent.mkdir()
+        path.write_text("// interpreted helper\n")
+        self.review["approved_files"].append(helper)
+        self.review["candidate_hashes"][helper] = publisher.sha256(path)
+        with self.assertRaisesRegex(publisher.Held, "every changed book module"):
+            publisher.validate_review(self.review, self.candidate)
+        ledger = json.loads(self.ledger.read_text())
+        ledger["rust_module_sha256"][str(path)] = publisher.sha256(path)
+        self.ledger.write_text(json.dumps(ledger))
+        self.review["ledger_reports"][0]["sha256"] = publisher.sha256(self.ledger)
+        publisher.validate_review(self.review, self.candidate)
+
     def test_dirty_authoritative_checkout_is_held(self):
         (self.repo / self.path).write_text("another developer is editing")
         with self.assertRaisesRegex(publisher.Held, "clean"):
@@ -181,6 +209,10 @@ class PublicationGates(unittest.TestCase):
             if stage == "previous-image":
                 return "sha256:" + "a" * 64
             if stage == "focused-rust":
+                self.assertEqual(kwargs["env"]["CARGO_BUILD_JOBS"], "1")
+                self.assertEqual(kwargs["env"]["CARGO_INCREMENTAL"], "0")
+                self.assertEqual(kwargs["env"]["CARGO_PROFILE_TEST_DEBUG"], "0")
+                self.assertEqual(kwargs["env"]["CARGO_PROFILE_DEV_DEBUG"], "0")
                 return "running 1 test\ntest result: ok"
             return ""
 

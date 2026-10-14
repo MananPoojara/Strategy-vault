@@ -71,7 +71,9 @@ method/instrument case. The union of methods must equal `method_ids`, and the
 sum of record counts must equal `checked_trades`. A nonempty
 `rust_module_sha256` map is required; every recorded module must match the
 candidate source, including at least one reviewed book module changed in the
-candidate. An old code proof or changed market file is held.
+candidate. Across the reports, every changed book module must have its exact
+compiled-source hash, including nested helpers. An old code proof or changed
+market file is held.
 
 Each smoke case has:
 
@@ -104,6 +106,7 @@ limitations. No original book result is inferred from a new instrument run.
 Only additions/modifications to these source paths are allowed:
 
 - `Context/guru/backend/src/books/*.rs`
+- The explicitly reviewed Bandy helper `Context/guru/backend/src/books/hbqts/reviewed.rs`
 - `Context/guru/backend/src/instrument_policy.rs`
 - `Context/guru/backend/src/readiness.rs`
 - Markdown review documents under `docs/`

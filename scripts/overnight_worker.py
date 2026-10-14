@@ -15,6 +15,7 @@ from pathlib import Path
 import re
 import resource
 import signal
+import shutil
 import subprocess
 import sys
 import time
@@ -46,6 +47,59 @@ def atomic_json(path, value):
 
 def inside(path, parent):
     return Path(path).resolve().is_relative_to(Path(parent).resolve())
+
+
+def cgroup_memory_limits(cgroup_root=Path("/sys/fs/cgroup"), membership_file=Path("/proc/self/cgroup")):
+    """Read effective cgroup-v2 hard limits, including tighter ancestor limits."""
+    try:
+        membership = next(line[3:] for line in Path(membership_file).read_text().splitlines() if line.startswith("0::"))
+        root = Path(cgroup_root).resolve()
+        current = (root / membership.lstrip("/")).resolve()
+        if not current.is_relative_to(root):
+            return None
+        memory, swap = [], []
+        paths = [current, *(parent for parent in current.parents if parent.is_relative_to(root))]
+        for directory in paths:
+            for filename, values in (("memory.max", memory), ("memory.swap.max", swap)):
+                path = directory / filename
+                if path.is_file():
+                    value = path.read_text().strip()
+                    if value != "max":
+                        parsed = int(value)
+                        if parsed < 0:
+                            return None
+                        values.append(parsed)
+        return {"memory_max_bytes": min(memory) if memory else None,
+                "swap_max_bytes": min(swap) if swap else None, "cgroup_path": membership}
+    except (OSError, ValueError, StopIteration):
+        return None
+
+
+def validate_memory_mode(job):
+    mode = job.get("memory_mode", "address_space")
+    if mode not in {"address_space", "resident"}:
+        raise ValueError("memory_mode must be address_space or resident")
+    if mode != "resident":
+        return None
+    argv = job["argv"]
+    checkout = Path(__file__).resolve().parent.parent
+    executable = shutil.which(argv[0])
+    script = (Path(job["cwd"]) / argv[1]).resolve() if len(argv) > 1 else None
+    if (job["kind"] != "source_review" or not executable or
+            Path(executable).resolve() != Path(sys.executable).resolve() or
+            script != checkout / "scripts/publish_reviewed_batch.py"):
+        raise ValueError("Resident memory mode is restricted to the trusted publisher")
+    if argv.count("--repo") != 1:
+        raise ValueError("Resident trusted publisher requires one explicit --repo")
+    index = argv.index("--repo")
+    if index + 1 >= len(argv) or Path(argv[index + 1]).resolve() != checkout:
+        raise ValueError("Resident trusted publisher must use the authoritative checkout")
+    limits = cgroup_memory_limits()
+    hard_limit = limits.get("memory_max_bytes") if limits else None
+    if (not isinstance(hard_limit, int) or not 0 < hard_limit <= 3 * 1024 ** 3 or
+            limits.get("swap_max_bytes") != 0):
+        raise ValueError("Resident publisher requires a cgroup hard memory cap at most 3 GiB and zero swap")
+    return limits
 
 
 def validate_agent(job, state_dir):
@@ -119,6 +173,7 @@ def load_manifest(path, state_dir):
                 raise ValueError("Provenance requires an explicit " + name + " list")
         if job["kind"] == "agent_conversion":
             validate_agent(job, state_dir)
+        validate_memory_mode(job)
     return manifest
 
 
@@ -273,11 +328,19 @@ def execute(job, state_dir, item, state, *, memory_mb, cpu_cores, poll_seconds, 
         os.chmod(log_path, 0o600)
         input_handle = open(job["stdin_file"], "rb") if job.get("stdin_file") else subprocess.DEVNULL
         try:
+            cgroup_limits = validate_memory_mode(job)
+            if job.get("memory_mode") == "resident" and memory_mb > 2048:
+                raise ValueError("Resident publisher job RSS budget must stay at or below 2 GiB")
+            address_space = (job.get("memory_mode", "address_space") != "resident" and
+                             job["kind"] != "agent_conversion" and Path(job["argv"][0]).name not in {"node", "nodejs"})
+            item["memory_mode"] = "address_space" if address_space else "resident"
+            item["memory_limits"] = {"job_rss_bytes": memory_mb * 1024 * 1024, "cgroup": cgroup_limits,
+                                     "address_space_limited": address_space}
             process = subprocess.Popen(job["argv"], cwd=job["cwd"], stdin=input_handle,
                                        stdout=log, stderr=subprocess.STDOUT, env=env,
                                        start_new_session=True,
                                        preexec_fn=child_limits(memory_mb, cpu_cores, job.get("timeout_seconds", 600),
-                                                              address_space=job["kind"] != "agent_conversion" and Path(job["argv"][0]).name not in {"node", "nodejs"}))
+                                                              address_space=address_space))
             item["pid"] = process.pid
             save_status(state_dir, state)
             failure = None
