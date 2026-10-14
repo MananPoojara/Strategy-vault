@@ -26,7 +26,7 @@ fn price(b: &Bars, id: &str) -> Option<Result<Vec<f64>, LabError>> {
         "hl2" => b.hl2(),
         "hlc3" => b.hlc3(),
         "ohlc4" => b.ohlc4(),
-        "volume" => return Some(b.volume.clone().ok_or_else(|| LabError::NeedsData("volume: this instrument's admitted data has no volume".into()))),
+        "volume" => return Some(b.volume.clone().ok_or_else(|| LabError::NeedsData("volume: volume is missing on some admitted bars of this instrument".into()))),
         _ => return None,
     }))
 }
@@ -45,7 +45,7 @@ pub fn series(fr: &Frames, cache: &mut Cache, s: &SeriesRef) -> Result<Vec<f64>,
                 None => {
                     let def = catalogue::get(&s.id).ok_or_else(|| LabError::Invalid(format!("unknown series '{}'", s.id)))?;
                     let o = Rc::new(catalogue::run(&def, b, &s.params).map_err(|e| match e.as_str() {
-                        "needs volume" => LabError::NeedsData(format!("{}: needs volume; this instrument's admitted data has none", def.name)),
+                        "needs volume" => LabError::NeedsData(format!("{}: needs volume, which is missing on some admitted bars of this instrument", def.name)),
                         "needs intraday data" => LabError::NeedsData(format!("{}: needs intraday data", def.name)),
                         _ => LabError::Invalid(format!("{}: {e}", def.id)),
                     })?);

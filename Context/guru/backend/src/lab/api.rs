@@ -340,7 +340,7 @@ mod tests {
             (q(&[("to", "2031-01-01")]), "needs_data", "exceeds admitted data"),
             (q(&[("from", "2015-02-30")]), "invalid", "valid YYYY-MM-DD"),
             (q(&[("rollover", "4")]), "needs_data", "contract"),
-            (q(&[("spec", &SPEC.replace("\"close\"},\"op\"", "\"obv\"},\"op\""))]), "needs_data", "needs volume"),
+            (q(&[("spec", &SPEC.replace("\"close\"},\"op\"", "\"obv\"},\"op\""))]), "needs_data", "volume, which is missing on some admitted bars"),
             (q(&[("spec", &SPEC.replace("\"v\":1,", "\"v\":1,\"execution\":{\"cost_bps\":9},"))]), "invalid", "differs from the cost query"),
         ];
         for (query, status, needle) in cases {
