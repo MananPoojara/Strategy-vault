@@ -131,10 +131,17 @@ mod tests {
             for s in run(d, &bars, &Params::new()).unwrap() { assert!(s.iter().all(|v| !v.is_infinite()), "{} produced inf on flat prices", d.id); }
         }
     }
-    #[test] fn short_history_all_nan() {
-        let bars = walk(3, 9, true);
-        for d in all().iter().filter(|d| d.compute.is_some() && d.first.iter().all(|&f| f >= 3)) {
-            for s in run(d, &bars, &Params::new()).unwrap() { assert!(s.iter().all(|v| v.is_nan()), "{}", d.id); }
+    #[test] fn short_history_never_panics() {
+        for len in [0usize, 1, 3] {
+            let bars = walk(len, 9, true);
+            for d in all().iter().filter(|d| d.compute.is_some()) {
+                let out = run(d, &bars, &Params::new()).unwrap_or_else(|e| panic!("{}: {e}", d.id));
+                assert_eq!(out.len(), d.outputs.len(), "{}: output count", d.id);
+                for (k, s) in out.iter().enumerate() {
+                    assert_eq!(s.len(), len, "{}.{} length", d.id, d.outputs[k]);
+                    if !d.sparse { for i in 0..d.first[k].min(len) { assert!(s[i].is_nan(), "{}.{} value at warm-up bar {i}", d.id, d.outputs[k]); } }
+                }
+            }
         }
     }
     #[test] fn defaults_resolve_for_all() { for d in all() { defaults(&d); } }
