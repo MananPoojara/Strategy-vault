@@ -191,8 +191,9 @@ pub fn run_json(st: &State, q: &Query) -> Result<String, LabError> {
     let (kind, instrument) = instrument(&selected, &ctx.r[0].ticker);
     known_type(kind, &ctx.r[0].ticker)?;
     origin_admits(origin.as_ref(), kind, &ctx.r[0].ticker)?;
-    let (label, origin) = labelled(origin.as_ref());
+    let (label, origin) = labelled(origin.as_ref(), spec.origin.as_ref().map_or(0, |o| o.version));
     let (from, to, start) = window(ctx, q)?;
+    bars_clean(ctx, from, to)?;
     let costs = accounting::Costs::parse(q)?;
     costs.ensure_rollover()?;
     let cost = costs.side_rate();
@@ -222,8 +223,9 @@ pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> {
     let (kind, instrument) = instrument(&selected, &ctx.r[0].ticker);
     known_type(kind, &ctx.r[0].ticker)?;
     origin_admits(origin.as_ref(), kind, &ctx.r[0].ticker)?;
-    let (label, origin) = labelled(origin.as_ref());
+    let (label, origin) = labelled(origin.as_ref(), spec.origin.as_ref().map_or(0, |o| o.version));
     let (from, to, start) = window(ctx, q)?;
+    bars_clean(ctx, from, to)?;
     let costs = accounting::Costs::parse(q)?;
     costs.ensure_rollover()?;
     let cost = costs.side_rate();
@@ -328,7 +330,22 @@ pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> {
 fn origin_of(spec: &Spec) -> Result<Option<StrategyDef>, LabError> {
     let Some(o) = &spec.origin else { return Ok(None) };
     let found = templates::template(&o.method).filter(|t| o.version <= t.version).and(templates::method(&o.method)).filter(|d| d.book == o.book);
-    found.map(Some).ok_or_else(|| LabError::Invalid(format!("origin names no book template ({} · {} · version {})", o.book, o.method, o.version)))
+    let d = found.ok_or_else(|| LabError::Invalid(format!("origin names no book template ({} · {} · version {})", o.book, o.method, o.version)))?;
+    demoted(templates::unavailable(&d)).map(|_| Some(d))
+}
+/// A variant of a method the book no longer admits (demoted) is refused; `why` is templates::unavailable().
+fn demoted(why: Option<String>) -> Result<(), LabError> {
+    why.map_or(Ok(()), |w| Err(LabError::NeedsData(format!("the book method behind this variant is not available for Customize: {w}"))))
+}
+/// Same predicate as the book's own check (readiness::check): every bar in the window must be a valid OHLC bar.
+fn bars_clean(ctx: &Ctx, from: usize, to: usize) -> Result<(), LabError> {
+    for r in &ctx.r[from..=to] {
+        let why = if ![r.open, r.high, r.low, r.close].iter().all(|n| n.is_finite() && *n > 0.0) { "non-positive or missing price" }
+            else if r.low > r.high { "low above the high" } else if r.open < r.low { "open below the low" } else if r.open > r.high { "open above the high" }
+            else if r.close < r.low { "close below the low" } else if r.close > r.high { "close above the high" } else { continue };
+        return Err(LabError::NeedsData(format!("{}: invalid bar on {} ({why}); choose a window after it", r.ticker, r.date)));
+    }
+    Ok(())
 }
 /// A variant keeps its book method's instrument admission: stock methods on actual stocks, ETF methods on ETF prices.
 fn origin_admits(d: Option<&StrategyDef>, kind: &str, ticker: &str) -> Result<(), LabError> {
@@ -341,10 +358,10 @@ fn method_json(d: &StrategyDef) -> String {
     format!("{{\"id\":\"{}\",\"name\":\"{}\",\"book\":\"{}\",\"group\":\"{}\",\"dir\":\"{}\"}}", esc(d.id), esc(d.name), esc(d.book), esc(d.group), esc(d.dir))
 }
 /// The run label and the `origin` JSON (null for a plain lab strategy).
-fn labelled(d: Option<&StrategyDef>) -> (String, String) {
+fn labelled(d: Option<&StrategyDef>, version: impl std::fmt::Display) -> (String, String) {
     match d {
         None => (LABEL.into(), "null".into()),
-        Some(d) => (templates::variant_label(d), format!("{{\"method\":{},\"template_version\":{}}}", method_json(d), templates::template(d.id).map_or(0, |t| t.version))),
+        Some(d) => (templates::variant_label(d), format!("{{\"method\":{},\"template_version\":{}}}", method_json(d), version)),
     }
 }
 pub fn templates_json() -> String {
@@ -398,7 +415,7 @@ pub fn fidelity_json(st: &State, q: &Query) -> Result<String, LabError> {
     Ok(format!(
         "{{\"label\":\"{}\",\"kind\":\"lab_template_fidelity\",\"method\":{},\"template_version\":{},\"instrument\":{instrument},\"from\":\"{}\",\"to\":\"{}\",\"book_trades\":{},\"template_trades\":{},\"matched\":{},\"reproduces\":{},\"differences_total\":{},\"differences\":{diffs},\"note\":\"{}\"}}",
         fidelity::FIDELITY_LABEL, method_json(&d), t.version, ctx.r[from].date, ctx.r[to].date, book.len(), lab.len(), c.matched,
-        c.matched == book.len() && c.matched == lab.len(), c.diffs.len(), fidelity::FIDELITY_NOTE))
+        fidelity::reproduces(book.len(), lab.len(), c.matched), c.diffs.len(), fidelity::note(book.len(), lab.len())))
 }
 /// RANK_STATS metrics without an is_ PART_COLS column: shown in-sample so the ranked numbers are visible.
 fn extra_rank_cols() -> Vec<&'static str> {
@@ -419,10 +436,11 @@ mod tests {
     use super::*;
     use crate::Row;
 
-    fn state(n: usize, ticker: &str, volume: bool) -> State {
+    fn state(n: usize, ticker: &str, volume: bool) -> State { state_bad(n, ticker, volume, usize::MAX) }
+    fn state_bad(n: usize, ticker: &str, volume: bool, bad: usize) -> State {
         let rows: &'static [Row] = Box::leak((0..n).map(|i| {
             let c = 100. + (i as f64 * 0.3).sin() * 8. + i as f64 * 0.02;
-            Row { ticker: ticker.into(), date: format!("{}-{:02}-{:02}", 2015 + i / 336, 1 + (i / 28) % 12, 1 + i % 28), open: c - 0.2, high: c + 1., low: c - 1., close: c, volume: volume.then_some(1000.) }
+            Row { ticker: ticker.into(), date: format!("{}-{:02}-{:02}", 2015 + i / 336, 1 + (i / 28) % 12, 1 + i % 28), open: if i == bad { c - 2. } else { c - 0.2 }, high: c + 1., low: c - 1., close: c, volume: volume.then_some(1000.) }
         }).collect::<Vec<_>>().into_boxed_slice());
         State { ctxs: BTreeMap::from([(ticker.into(), Ctx::new(rows, rows, &[]))]), baskets: Default::default(), vix: vec![], market_extra: Default::default() }
     }
@@ -485,6 +503,26 @@ mod tests {
         let v = crate::lab::json::parse(&j).unwrap();
         assert!(v.get("stats").and_then(|s| s.get("trades")).and_then(|t| t.as_f64()).unwrap() > 5.);
         assert!(!j.contains("\"gate\"") && !j.contains("\"claim\"") && !j.contains("\"readiness\""));
+    }
+    #[test] fn invalid_bar_in_window_withholds_runs_and_optimizations() {
+        let st = state_bad(400, "SPX", false, 100); // index 100 -> 2015-04-17 (open below the low)
+        let date = st.ctxs["SPX"].r[100].date.clone();
+        for e in [run_json(&st, &q(&[("from", "2015-02-01")])).unwrap_err(), optimize_json(&st, &q(&[("from", "2015-02-01")])).unwrap_err()] {
+            assert_eq!(e.status(), "needs_data");
+            assert!(e.message().contains(&format!("SPX: invalid bar on {date} (open below the low)")), "{}", e.message());
+        }
+        let after = st.ctxs["SPX"].r[110].date.clone();
+        assert!(run_json(&st, &q(&[("from", after.as_str())])).is_ok());
+        assert!(series_json(&st, &q(&[("id", "close")])).is_ok());
+    }
+    #[test] fn demoted_and_stale_origins_are_refused_and_echo_the_spec_version() {
+        let e = demoted(Some("not admitted".into())).unwrap_err();
+        assert_eq!(e.status(), "needs_data");
+        assert!(e.message().contains("not available for Customize: not admitted"));
+        assert!(demoted(None).is_ok());
+        let d = templates::method(templates::TEMPLATES[0].method).unwrap();
+        assert!(labelled(Some(&d), 1).1.ends_with("\"template_version\":1}"));
+        assert_eq!(labelled(None, 1).1, "null");
     }
     #[test] fn errors_are_typed_and_name_the_problem() {
         let st = state(400, "SPX", false);

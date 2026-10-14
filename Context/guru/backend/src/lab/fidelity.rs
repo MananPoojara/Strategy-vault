@@ -13,6 +13,11 @@ pub fn same(a: &Trade, b: &Trade) -> bool {
     a.dir == b.dir && a.legs.len() == 1 && b.legs.len() == 1 && a.legs[0].i == b.legs[0].i && same_px(a.legs[0].px, b.legs[0].px)
         && a.exit_i == b.exit_i && same_px(a.exit_px, b.exit_px) && a.open == b.open
 }
+/// Two empty lists compare nothing: that is not a reproduction.
+pub fn reproduces(book: usize, lab: usize, matched: usize) -> bool { book > 0 && matched == book && matched == lab }
+pub fn note(book: usize, lab: usize) -> String {
+    if book == 0 && lab == 0 { format!("{FIDELITY_NOTE} No trades in this window to compare.") } else { FIDELITY_NOTE.into() }
+}
 pub struct Comparison<'a> { pub matched: usize, pub diffs: Vec<(Option<&'a Trade>, Option<&'a Trade>)> }
 /// Pairs trades by entry bar (both lists are chronological and non-overlapping).
 pub fn compare<'a>(book: &'a [Trade], lab: &'a [Trade]) -> Comparison<'a> {
@@ -37,6 +42,10 @@ mod tests {
     use super::*;
     use crate::connors::Leg;
     fn t(e: usize, x: usize, px: f64) -> Trade { Trade { dir: 1., legs: vec![Leg { i: e, px: 100., w: 1. }], exit_i: x, exit_px: px, reason: String::new(), entry_kind: "close", signal_i: x, open: false, exits: vec![] } }
+    #[test] fn empty_against_empty_does_not_reproduce() {
+        assert!(!reproduces(0, 0, 0) && reproduces(2, 2, 2) && !reproduces(2, 3, 2));
+        assert!(note(0, 0).contains("No trades in this window to compare") && !note(1, 1).contains("No trades"));
+    }
     #[test] fn pairs_by_entry_bar_and_names_each_difference() {
         let book = [t(1, 3, 110.), t(5, 7, 105.), t(9, 10, 99.)];
         let lab = [t(1, 3, 110. + 1e-12), t(5, 8, 105.), t(12, 14, 101.)];
