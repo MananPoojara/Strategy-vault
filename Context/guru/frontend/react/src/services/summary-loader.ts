@@ -98,7 +98,7 @@ function errorMessage(value: unknown): string {
 async function responseMessage(response: ResponseLike): Promise<string> {
   try {
     const body = await response.text();
-    try {return errorMessage(JSON.parse(body)) || clean(body);}
+    try {return errorMessage(JSON.parse(body));}
     catch {return clean(body);}
   } catch {return '';}
 }
