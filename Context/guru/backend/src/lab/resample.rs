@@ -34,6 +34,12 @@ fn key(date: &str, tf: Tf) -> i64 {
         Tf::M => date[0..4].parse::<i64>().unwrap_or(0) * 12 + date[5..7].parse::<i64>().unwrap_or(0),
     }
 }
+/// Calendar period of a "YYYY-MM-DD" date: 1 = week (Monday–Sunday), 2 = month, 3 = quarter, 4 = year.
+pub fn period_key(date: &str, anchor: usize) -> i64 {
+    let num = |r: std::ops::Range<usize>| date.get(r).and_then(|s| s.parse::<i64>().ok()).unwrap_or(0);
+    let (y, m) = (num(0..4), num(5..7));
+    match anchor { 1 => key(date, Tf::W), 2 => y * 12 + m, 3 => y * 4 + (m - 1).div_euclid(3), _ => y }
+}
 pub fn resample(d: &Bars, tf: Tf) -> Bars {
     if tf == Tf::D { let mut b = d.clone(); b.end = (0..d.len()).collect(); return b; }
     let mut out = Bars::default();
@@ -75,6 +81,14 @@ mod tests {
             b.date.push(d.to_string()); b.open.push(*c); b.high.push(c + 1.); b.low.push(c - 1.); b.close.push(*c); b.end.push(i);
         }
         b
+    }
+    #[test] fn period_keys_split_weeks_months_quarters_years() {
+        assert_eq!(period_key("2024-01-07", 1), period_key("2024-01-01", 1)); // Sunday closes the Monday week
+        assert_ne!(period_key("2024-01-07", 1), period_key("2024-01-08", 1));
+        assert_ne!(period_key("2024-01-31", 2), period_key("2024-02-01", 2));
+        assert_eq!(period_key("2024-01-15", 3), period_key("2024-03-31", 3));
+        assert_ne!(period_key("2024-03-31", 3), period_key("2024-04-01", 3));
+        assert_ne!(period_key("2023-12-31", 4), period_key("2024-01-01", 4));
     }
     #[test] fn civil_round_trips() { for d in ["2021-01-04", "2024-02-29", "2000-03-01", "2020-01-01"] { assert_eq!(civil(day_number(d)), d); } }
     #[test] fn day_number_epoch() { assert_eq!(day_number("1970-01-01"), 0); assert_eq!(day_number("2024-03-01"), 19783); }

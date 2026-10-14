@@ -24,11 +24,13 @@ fn check_dir(dir: &Path) -> Result<usize, String> {
         let header: Vec<&str> = lines.next().ok_or_else(|| at("empty file"))?.split(',').collect();
         let vol_col = header.iter().position(|h| h.eq_ignore_ascii_case("volume"));
         let first_out = 5 + vol_col.is_some() as usize;
-        let rows: Vec<Vec<f64>> = lines.map(|l| l.split(',').skip(1).map(|x| x.trim().parse().unwrap_or(f64::NAN)).collect()).collect();
+        let lines: Vec<&str> = lines.collect();
+        let times: Vec<&str> = lines.iter().map(|l| l.split(',').next().unwrap_or("")).collect();
+        let rows: Vec<Vec<f64>> = lines.iter().map(|l| l.split(',').skip(1).map(|x| x.trim().parse().unwrap_or(f64::NAN)).collect()).collect();
         if rows.iter().any(|r| r.len() < first_out - 1 + def.outputs.len()) { return Err(at("row has too few columns")); }
         if rows.is_empty() { return Err(at("no data rows")); }
         let mut b = Bars::default();
-        for (i, r) in rows.iter().enumerate() { b.date.push(format!("{i}")); b.open.push(r[0]); b.high.push(r[1]); b.low.push(r[2]); b.close.push(r[3]); b.end.push(i); }
+        for (i, r) in rows.iter().enumerate() { b.date.push(date_of(times[i], i)); b.open.push(r[0]); b.high.push(r[1]); b.low.push(r[2]); b.close.push(r[3]); b.end.push(i); }
         if let Some(vc) = vol_col { b.volume = Some(rows.iter().map(|r| r[vc - 1]).collect()); }
         let got = run(&def, &b, &prm).map_err(|e| at(&format!("{e:?}")))?;
         for (k, series) in got.iter().enumerate() {
@@ -43,6 +45,13 @@ fn check_dir(dir: &Path) -> Result<usize, String> {
         checked += 1;
     }
     Ok(checked)
+}
+
+/// Bar date from the export's time column: ISO date, or unix seconds (UTC day); otherwise a stand-in date.
+fn date_of(t: &str, i: usize) -> String {
+    let t = t.trim();
+    if t.len() >= 10 && t.as_bytes()[4] == b'-' && t.as_bytes()[7] == b'-' { return t[..10].to_string(); }
+    match t.parse::<i64>() { Ok(s) => super::resample::civil(s.div_euclid(86_400)), Err(_) => super::resample::civil(i as i64) }
 }
 
 #[test]
@@ -81,4 +90,10 @@ fn parity_harness_rejects_empty_and_all_blank_fixtures() {
     std::fs::remove_dir_all(&base).ok();
     assert!(e.is_err_and(|m| m.contains("sma__length=2.csv") && m.contains("no data rows")));
     assert!(b.is_err_and(|m| m.contains("sma__length=2.csv") && m.contains("sma")));
+}
+
+#[test] fn parity_dates_come_from_the_time_column() {
+    assert_eq!(date_of("2024-01-05", 0), "2024-01-05");
+    assert_eq!(date_of("1704412800", 0), "2024-01-05");
+    assert_eq!(date_of("x", 3), "1970-01-04");
 }

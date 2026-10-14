@@ -30,6 +30,7 @@ pub mod trend;
 pub mod vol2;
 pub mod volatility;
 pub mod volume;
+pub mod volume2;
 #[cfg(test)]
 pub mod testdata;
 #[cfg(test)]

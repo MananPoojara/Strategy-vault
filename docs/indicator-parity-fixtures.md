@@ -96,6 +96,10 @@ CSV files kept outside Git; without them the parity test passes and prints "skip
 | chop_zone | length=30, ema_length=34 | angle, zone |
 | rwi | min_length=9, max_length=40 | hi, lo, rwi |
 | asi | limit=10 | asi |
+| klinger | fast=34, slow=55, signal=13 | kvo, signal |
+| vol | length=20 | volume, ma |
+| vwap_period | anchor=1, mult=1 | vwap, upper, lower |
+| twap | anchor=1 | twap |
 | cci | length=20 | cci |
 | mom | length=10 | mom |
 | roc | length=9 | roc |
