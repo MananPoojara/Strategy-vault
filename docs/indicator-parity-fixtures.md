@@ -89,6 +89,13 @@ CSV files kept outside Git; without them the parity test passes and prints "skip
 | volatility_zt | length=10, days=252 | vol |
 | volatility_ohlc | length=10, days=252 | vol |
 | bbtrend | short=20, long=50, mult=2 | bbtrend |
+| chande_kroll | p=10, x=1, q=9 | stop_long, stop_short |
+| chandelier | length=22, mult=3, use_close=1 | long_stop, short_stop, direction |
+| vstop | length=20, factor=2 | stop, direction |
+| wilder_vi | length=7, mult=3 | sar, direction |
+| chop_zone | length=30, ema_length=34 | angle, zone |
+| rwi | min_length=9, max_length=40 | hi, lo, rwi |
+| asi | limit=10 | asi |
 | cci | length=20 | cci |
 | mom | length=10 | mom |
 | roc | length=9 | roc |

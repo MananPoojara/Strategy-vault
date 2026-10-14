@@ -23,6 +23,7 @@ pub mod series;
 pub mod simulate;
 pub mod sources;
 pub mod stats;
+pub mod stops;
 pub mod templates;
 pub mod ta;
 pub mod trend;
