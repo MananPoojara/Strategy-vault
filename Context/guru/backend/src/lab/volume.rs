@@ -92,8 +92,8 @@ pub const DEFS: &[IndicatorDef] = &[
     def("pvo", "Percentage Volume Oscillator", PVO, &["pvo", "signal", "hist"], Placement::Pane, "100*(ema(v,fast)-ema(v,slow))/ema(v,slow); signal=ema(pvo); hist=pvo-signal", &[25, 33, 33], pvo),
     def("efi", "Elder's Force Index", &[len("length", "Length", 13.)], &["efi"], Placement::Pane, "ema((close-close[1])*volume,n)", &[13], efi),
     def("eom", "Ease of Movement", EOM, &["eom"], Placement::Pane, "sma(divisor*change(hl2)*(high-low)/volume,n); zero volume -> NaN", &[14], eom),
-    def("nvi", "Negative Volume Index", EMA255, &["nvi", "signal"], Placement::Pane, "start 1000; volume<prev volume -> prev*(1+dClose/close[1]) else prev; signal=ema(nvi)", &[0, 254], nvi),
-    def("pvi", "Positive Volume Index", EMA255, &["pvi", "signal"], Placement::Pane, "start 1000; volume>prev volume -> prev*(1+dClose/close[1]) else prev; signal=ema(pvi)", &[0, 254], pvi),
+    def("nvi", "Negative Volume Index", EMA255, &["nvi", "signal"], Placement::Pane, "starts at 1000 like TradingView's chart built-in (= 1000 × ta.nvi); volume<prev volume -> prev*(1+dClose/close[1]) else prev; signal=ema(nvi)", &[0, 254], nvi),
+    def("pvi", "Positive Volume Index", EMA255, &["pvi", "signal"], Placement::Pane, "starts at 1000 like TradingView's chart built-in (= 1000 × ta.pvi); volume>prev volume -> prev*(1+dClose/close[1]) else prev; signal=ema(pvi)", &[0, 254], pvi),
     listed("vwap", "VWAP", &[], &["vwap"], Needs { volume: true, intraday: true }, "session-anchored sum(hlc3*v)/sum(v); needs intraday bars (listed only)", &[usize::MAX]),
     listed("opening_range", "Opening Range", &[ParamSpec { min: 1., max: 120., ..len("minutes", "Minutes", 15.) }], &["high", "low"], Needs { volume: false, intraday: true }, "high/low of the first N minutes of the session; needs intraday bars (listed only)", &[usize::MAX, usize::MAX]),
 ];

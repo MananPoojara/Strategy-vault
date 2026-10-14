@@ -42,6 +42,8 @@ pub fn resample(d: &Bars, tf: Tf) -> Bars {
     out.volume = d.volume.as_ref().map(|_| vol);
     out
 }
+/// Spreads higher-timeframe values onto daily bars. The last, possibly in-progress week/month shows the value
+/// from its latest available daily bar (causal, but it can change when the period completes).
 pub fn expand(values: &[f64], htf: &Bars, n: usize) -> Vec<f64> {
     let mut out = vec![f64::NAN; n];
     for w in 0..htf.len() {
@@ -71,6 +73,16 @@ mod tests {
         assert_eq!(w.end, vec![0, 3, 4]);
         assert_eq!(w.open, vec![1., 2., 5.]); assert_eq!(w.close, vec![1., 4., 5.]);
         assert_eq!(w.high, vec![2., 5., 6.]); assert_eq!(w.low, vec![0., 1., 4.]);
+    }
+    #[test] fn week_across_year_boundary() {
+        let d = daily(&["2024-12-30", "2024-12-31", "2025-01-01", "2025-01-02", "2025-01-03", "2025-01-06"], &[1., 2., 3., 4., 5., 6.]);
+        assert_eq!(resample(&d, Tf::W).end, vec![4, 5]);
+    }
+    #[test] fn daily_is_identity_and_parse() {
+        let d = daily(&["2024-01-05", "2024-01-08"], &[1., 2.]);
+        let r = resample(&d, Tf::D);
+        assert_eq!(r.close, d.close); assert_eq!(r.end, vec![0, 1]);
+        assert_eq!((Tf::parse("D"), Tf::parse("W"), Tf::parse("M"), Tf::parse("X")), (Some(Tf::D), Some(Tf::W), Some(Tf::M), None));
     }
     #[test] fn monthly_groups() {
         let d = daily(&["2024-01-30", "2024-01-31", "2024-02-01"], &[1., 2., 3.]);
