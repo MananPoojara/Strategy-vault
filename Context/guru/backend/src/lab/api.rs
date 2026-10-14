@@ -225,7 +225,6 @@ pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> {
         Ok(all.into_iter().map(|r| r.1).collect())
     })?;
     // Ranking exactly as the book optimizer (main.rs optimize(): trade-rate floor, outcome columns, conclude_rank).
-    let col = |name: &str| dims.len() + crate::FULL_COLS.iter().position(|c| *c == name).unwrap();
     let nd = dims.len();
     let ndisp = crate::FULL_COLS.len() + split.map_or(0, |_| 2 * crate::PART_COLS.len());
     let ti = crate::FULL_COLS.iter().position(|c| *c == "trades").unwrap();
