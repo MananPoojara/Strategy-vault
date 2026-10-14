@@ -95,7 +95,7 @@ pub const DEFS: &[IndicatorDef] = &[
     def("nvi", "Negative Volume Index", EMA255, &["nvi", "signal"], Placement::Pane, "start 1000; volume<prev volume -> prev*(1+dClose/close[1]) else prev; signal=ema(nvi)", &[0, 254], nvi),
     def("pvi", "Positive Volume Index", EMA255, &["pvi", "signal"], Placement::Pane, "start 1000; volume>prev volume -> prev*(1+dClose/close[1]) else prev; signal=ema(pvi)", &[0, 254], pvi),
     listed("vwap", "VWAP", &[], &["vwap"], Needs { volume: true, intraday: true }, "session-anchored sum(hlc3*v)/sum(v); needs intraday bars (listed only)", &[usize::MAX]),
-    listed("opening_range", "Opening Range", &[len("minutes", "Minutes", 15.)], &["high", "low"], Needs { volume: false, intraday: true }, "high/low of the first N minutes of the session; needs intraday bars (listed only)", &[usize::MAX, usize::MAX]),
+    listed("opening_range", "Opening Range", &[ParamSpec { min: 1., max: 120., ..len("minutes", "Minutes", 15.) }], &["high", "low"], Needs { volume: false, intraday: true }, "high/low of the first N minutes of the session; needs intraday bars (listed only)", &[usize::MAX, usize::MAX]),
 ];
 
 #[cfg(test)]
@@ -105,6 +105,13 @@ mod tests {
     fn with(rows: &[(f64, f64, f64, f64)], v: &[f64]) -> crate::lab::bars::Bars { let mut b = from_ohlc(rows); b.volume = Some(v.to_vec()); b }
     fn go(id: &str, b: &crate::lab::bars::Bars, kv: &[(&str, f64)]) -> Vec<Vec<f64>> {
         run(&get(id).unwrap(), b, &kv.iter().map(|(k, v)| (k.to_string(), *v)).collect::<Params>()).unwrap()
+    }
+    #[test] fn opening_range_minutes_bounded() {
+        use crate::lab::catalogue::resolve_params;
+        let d = get("opening_range").unwrap();
+        let pm = |m: f64| -> Params { [("minutes".to_string(), m)].into_iter().collect() };
+        assert!(resolve_params(&d, &pm(120.)).is_ok());
+        assert!(resolve_params(&d, &pm(121.)).unwrap_err().contains("minutes"));
     }
     #[test] fn obv_starts_at_bar1() {
         let b = with(&[(1., 1., 1., 1.), (2., 2., 2., 2.), (1.5, 1.5, 1.5, 1.5)], &[10., 20., 30.]);
