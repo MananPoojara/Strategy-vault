@@ -55,6 +55,14 @@ CSV files kept outside Git; without them the parity test passes and prints "skip
 | apz | length=50, mult=2 | basis, upper, lower |
 | alligator | jaw_length=13, teeth_length=8, lips_length=5, jaw_offset=8, teeth_offset=5, lips_offset=3 | jaw, teeth, lips |
 | median | length=3, atr_length=14, mult=2 | median, upper, lower, ema |
+| linreg_slope | length=14 | slope |
+| linreg_intercept | length=14 | intercept |
+| tsf | length=14 | tsf |
+| stderr | length=14 | stderr |
+| se_bands | length=21, mult=2, smooth=3 | basis, upper, lower |
+| trend_strength | length=14 | tsi |
+| rci | length=10 | rci |
+| rci_ribbon | short=10, middle=30, long=50 | short, middle, long |
 | cci | length=20 | cci |
 | mom | length=10 | mom |
 | roc | length=9 | roc |
