@@ -24,7 +24,7 @@ const indices = [{ticker: 'SPX'}, {ticker: 'NDX'}, {ticker: 'DJI'}];
 const indianIndices = [{ticker: 'NIFTY 50'}, {ticker: 'NIFTYBANK'}, {ticker: 'NIFTYMIDCAP100'}];
 const usStock = {ticker: 'basket:us_sp500:AAPL'}, indiaStock = {ticker: 'basket:nifty50:RELIANCE'};
 
-function routeHarness(types, hash = '#/s/reviewed?region=us&tk=SPX') {
+function routeHarness(types, hash = '#/s/reviewed?region=us&tk=SPX', duplicates = false) {
   let selectedHash = hash;
   const location = {};
   Object.defineProperty(location, 'hash', {
@@ -37,7 +37,7 @@ function routeHarness(types, hash = '#/s/reviewed?region=us&tk=SPX') {
     GURU: {connors: {}}, BOOK: {}, S: {}, R: {},
     API_IN: '/api', API_US: '/api/us', API: '',
     TICK_IN: indianIndices, TICK_US: indices,
-    TICK_ALL_IN: [...indianIndices, indiaStock],
+    TICK_ALL_IN: [...indianIndices, ...(duplicates?[{ticker:'basket:allfo:RELIANCE'}]:[]), indiaStock],
     TICK_ALL_US: [...indices, ...etfSymbols.map(ticker => ({ticker})), usStock],
     TICKERS: [], BASKETS: [],
     BASKETS_IN: [{id: 'nifty50', symbols: [indiaStock.ticker]}],
@@ -116,4 +116,11 @@ test('explicit native basket URLs stay intact even when the readiness gate must 
     assert.equal(app.S.tk, usStock.ticker);
     assert.ok(!app.ALLCAT[0].instrument_policy.allowed_types.includes('individual_stock'));
   }
+});
+
+test('a stock default retains its preferred price source when other baskets list the same symbol', () => {
+  const app=routeHarness(['individual_stock'],'#/s/reviewed?region=in',true);
+  assert.equal(app.S.tk,indiaStock.ticker);
+  assert.equal(app.S.run_scope,'single');
+  assert.deepEqual(Array.from(app.TICKERS,item=>item.ticker),[indiaStock.ticker]);
 });

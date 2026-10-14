@@ -1174,16 +1174,16 @@ function readRoute() {
   const etfs=S.region==='us'?TICK_ALL_US.filter(t=>['SPY','QQQ','MDY','IWM','SMH','DIA'].includes(t.ticker)):[];
   const basket=BASKETS.find(b=>b.id===S.basket);
   const explicit=new URLSearchParams(q),isDetail=R.name==='strategy';
+  if(chosen && types.includes('individual_stock') && !types.includes('index') && !types.includes('etf')
+    && !explicit.get('tk') && S.run_scope==='single') {
+    const preferred=BASKETS.find(b=>b.id===(S.region==='us'?'us_sp500':chosen.instrument_policy.preferred_basket||'nifty50'));
+    S.tk=pool.find(t=>preferred?.symbols?.includes(t.ticker))?.ticker||S.tk;
+  }
   const stocks=isDetail&&types.includes('individual_stock')?stockChoices(pool,S.tk):[];
   TICKERS=isDetail&&S.run_scope==='single'
     ? [...instrumentTickers(chosen?.instrument_policy,indices,etfs),...stocks]
     : S.basket&&basket?.symbols?.length?pool.filter(t=>basket.symbols.includes(t.ticker))
     : instrumentTickers(['home','guru','all'].includes(R.name)?{allowed_types:['index','etf']}:chosen?.instrument_policy,indices,etfs);
-  if(chosen && types.includes('individual_stock') && !types.includes('index') && !types.includes('etf')
-    && !explicit.get('tk') && S.run_scope==='single') {
-    const preferred=BASKETS.find(b=>b.id===(S.region==='us'?'us_sp500':chosen.instrument_policy.preferred_basket||'nifty50'));
-    S.tk=pool.find(t=>preferred?.symbols?.includes(t.ticker))?.ticker||stocks[0]?.ticker||S.tk;
-  }
   // Keep an explicitly named, admitted source even when its instrument is
   // incompatible. The readiness gate explains the mismatch without replacing it.
   const explicitStock=isDetail&&S.run_scope==='single'&&explicit.get('tk')?.startsWith('basket:')?pool.find(t=>t.ticker===S.tk):null;
