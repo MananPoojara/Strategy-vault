@@ -190,10 +190,13 @@ pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> {
         let c = series::compile(s, &fr, cache)?;
         let stats = crate::financial_stats(ctx, &backtest(ctx, &c, &fr.d, from, to, cost)?, costs);
         let mut out: Vec<f64> = crate::FULL_COLS.iter().map(|k| stats[k]).collect();
-        for (a, b) in split.map(|s| [(from, s - 1), (s, to)]).into_iter().flatten() {
+        let mut ins = Vec::new();
+        for (n, (a, b)) in split.map(|s| [(from, s - 1), (s, to)]).into_iter().flatten().enumerate() {
             let part = crate::financial_stats(ctx, &backtest(ctx, &c, &fr.d, a, b, cost)?, costs);
             out.extend(crate::PART_COLS.iter().map(|k| part[k]));
+            if n == 0 { ins = crate::FULL_COLS.iter().map(|k| part[k]).collect(); }
         }
+        out.extend(ins); // trailing in-sample copy of FULL_COLS: ranking basis only, never displayed
         Ok(out)
     };
     let base = metrics(&mut Cache::new(), &spec)?;
@@ -223,13 +226,22 @@ pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> {
     })?;
     // Ranking exactly as the book optimizer (main.rs optimize(): trade-rate floor, outcome columns, conclude_rank).
     let col = |name: &str| dims.len() + crate::FULL_COLS.iter().position(|c| *c == name).unwrap();
-    let yrs = crate::years(ctx, from, to);
-    let base_tpy = base[crate::FULL_COLS.iter().position(|c| *c == "trades").unwrap()] / yrs;
+    let nd = dims.len();
+    let ndisp = crate::FULL_COLS.len() + split.map_or(0, |_| 2 * crate::PART_COLS.len());
+    let ti = crate::FULL_COLS.iter().position(|c| *c == "trades").unwrap();
+    // With a split the ranking reads the in-sample window only; oos_ columns are display-only.
+    let rank_rows: Vec<Vec<f64>> = rows_v.iter().map(|r| rank_basis(r, nd, ndisp, split.is_some())).collect();
+    let base_rank = rank_basis(&[vec![0.0; nd], base.clone()].concat(), nd, ndisp, split.is_some());
+    let yrs = crate::years(ctx, from, split.map_or(to, |s| s - 1));
+    let base_tpy = base_rank[nd + ti] / yrs;
     let per_year = (base_tpy * 0.5).clamp(crate::MIN_PER_YEAR.0, crate::MIN_PER_YEAR.1);
     let min_trades = (per_year * yrs).ceil().max(crate::MIN_TRADES);
     let defs: Vec<f64> = dims.iter().map(|d| rules::current(&spec, &d.target)).collect();
-    let outcome_cols: Vec<usize> = (dims.len()..dims.len() + 16).chain(dims.len() + crate::FULL_COLS.len()..rows_v.first().map_or(0, Vec::len)).collect();
-    let (rank_json, pool) = crate::conclude_rank_with_outcomes(&rows_v, col("trades"), &crate::RANK_STATS.map(|(k, _)| col(k)), min_trades, per_year, &defs, Some(&outcome_cols));
+    let outcome_cols: Vec<usize> = (nd..nd + 16).chain(nd + crate::FULL_COLS.len()..nd + ndisp).collect();
+    let col = |name: &str| nd + crate::FULL_COLS.iter().position(|c| *c == name).unwrap();
+    let (rank_json, pool) = crate::conclude_rank_with_outcomes(&rank_rows, col("trades"), &crate::RANK_STATS.map(|(k, _)| col(k)), min_trades, per_year, &defs, Some(&outcome_cols));
+    let rows_v: Vec<Vec<f64>> = rows_v.into_iter().map(|mut r| { r.truncate(nd + ndisp); r }).collect();
+    let base = &base[..ndisp];
     let slim = q.get("slim").is_some_and(|v| v == "1");
     let row_s = |r: &Vec<f64>| arr(r.iter().map(|v| crate::num(*v)));
     let rows = if slim { String::new() } else { rows_v.iter().map(row_s).collect::<Vec<_>>().join(",") };
@@ -239,9 +251,14 @@ pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> {
     for part in split.map(|_| ["is_", "oos_"]).into_iter().flatten() { cols.extend(crate::PART_COLS.iter().map(|c| format!("{part}{c}"))); }
     let dims_json = arr(dims.iter().map(|d| format!("{{\"path\":\"{}\",\"values\":{}}}", esc(&d.path), arr(d.values.iter().map(|v| crate::num(*v))))));
     Ok(format!(
-        "{{\"label\":\"{LABEL}\",\"kind\":\"lab_optimization\",\"instrument\":{instrument},\"from\":\"{}\",\"to\":\"{}\",\"split\":{},\"combos\":{combos},\"threads\":{threads},\"ms\":{},\"dims\":{dims_json},\"cols\":{},\"base\":{},\"rank\":{rank_json},\"picked\":{{{picked}}},\"rows\":[{rows}],\"costs\":{},\"provenance\":{}}}",
+        "{{\"label\":\"{LABEL}\",\"kind\":\"lab_optimization\",\"instrument\":{instrument},\"from\":\"{}\",\"to\":\"{}\",\"split\":{},\"combos\":{combos},\"threads\":{threads},\"ms\":{},\"dims\":{dims_json},\"cols\":{},\"base\":{},\"ranked_on\":\"{}\",\"rank\":{rank_json},\"picked\":{{{picked}}},\"rows\":[{rows}],\"costs\":{},\"provenance\":{}}}",
         dates[from], dates[to], split.map_or("null".into(), |s| format!("\"{}\"", dates[s])), t0.elapsed().as_millis(),
-        quoted(cols.iter().map(String::as_str)), arr(base.iter().map(|v| crate::num(*v))), costs.json(), crate::source_provenance(st, q)))
+        quoted(cols.iter().map(String::as_str)), arr(base.iter().map(|v| crate::num(*v))), if split.is_some() { "in_sample" } else { "full" }, costs.json(), crate::source_provenance(st, q)))
+}
+/// Ranking input for one grid row: with a split, the in-sample FULL_COLS (trailing block) replace the full-window ones.
+fn rank_basis(row: &[f64], nd: usize, ndisp: usize, split: bool) -> Vec<f64> {
+    if !split { return row[..nd + ndisp].to_vec(); }
+    [&row[..nd], &row[nd + ndisp..], &row[nd + crate::FULL_COLS.len()..nd + ndisp]].concat()
 }
 #[cfg(test)]
 mod tests {
@@ -361,5 +378,20 @@ mod tests {
         assert!(optimize_json(&st, &q(&[("split", "2015-01-05")])).unwrap_err().message().contains("split"));
         let none = SPEC.split(",\"optimize\"").next().unwrap().to_string() + "}";
         assert!(optimize_json(&st, &q(&[("spec", &none)])).unwrap_err().message().contains("no parameter ranges"));
+    }
+    #[test] fn split_ranks_on_the_in_sample_columns_only() {
+        let n = crate::FULL_COLS.len();
+        let row: Vec<f64> = [vec![1.], (0..n).map(|i| i as f64).collect(), vec![9.; 14], (0..n).map(|i| 100. + i as f64).collect()].concat();
+        let r = rank_basis(&row, 1, n + 14, true);
+        assert_eq!((r[0], r[1], r[n]), (1., 100., 100. + (n - 1) as f64));
+        assert_eq!(r.len(), 1 + n + 14);
+        assert_eq!(rank_basis(&row[..1 + n + 14], 1, n + 14, false), row[..1 + n + 14].to_vec());
+    }
+    #[test] fn ranked_on_follows_the_split() {
+        let st = state(700, "SPX", false);
+        let with = optimize_json(&st, &q(&[("split", "2016-06-01")])).unwrap();
+        assert!(with.contains("\"ranked_on\":\"in_sample\"") && with.contains("\"split\":\"2016-06-01\""));
+        let none = optimize_json(&st, &q(&[])).unwrap();
+        assert!(none.contains("\"ranked_on\":\"full\"") && none.contains("\"split\":null") && !none.contains("is_total_return") && !none.contains("oos_"));
     }
 }
