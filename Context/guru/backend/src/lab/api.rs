@@ -249,7 +249,7 @@ pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> {
     let per_year = (base_tpy * 0.5).clamp(crate::MIN_PER_YEAR.0, crate::MIN_PER_YEAR.1);
     let min_trades = (per_year * yrs).ceil().max(crate::MIN_TRADES);
     let defs: Vec<f64> = dims.iter().map(|d| rules::current(&spec, &d.target)).collect();
-    let outcome_cols: Vec<usize> = (nd..nd + 16).chain(nd + crate::FULL_COLS.len()..nd + ndisp).collect();
+    let outcome_cols = outcome_cols(nd, ndisp, split.is_some());
     let col = |name: &str| nd + crate::FULL_COLS.iter().position(|c| *c == name).unwrap();
     let (rank_json, pool) = crate::conclude_rank_with_outcomes(&rank_rows, col("trades"), &crate::RANK_STATS.map(|(k, _)| col(k)), min_trades, per_year, &defs, Some(&outcome_cols));
     let rows_v: Vec<Vec<f64>> = rows_v.into_iter().map(|mut r| { r.truncate(nd + ndisp); r }).collect();
@@ -266,6 +266,11 @@ pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> {
         "{{\"label\":\"{LABEL}\",\"kind\":\"lab_optimization\",\"instrument\":{instrument},\"from\":\"{}\",\"to\":\"{}\",\"start\":{start},\"split\":{},\"combos\":{combos},\"threads\":{threads},\"ms\":{},\"dims\":{dims_json},\"cols\":{},\"base\":{},\"ranked_on\":\"{}\",\"rank\":{rank_json},\"picked\":{{{picked}}},\"rows\":[{rows}],\"costs\":{},\"provenance\":{}}}",
         dates[from], dates[to], split.map_or("null".into(), |s| format!("\"{}\"", dates[s])), t0.elapsed().as_millis(),
         quoted(cols.iter().map(String::as_str)), arr(base.iter().map(|v| crate::num(*v))), if split.is_some() { "in_sample" } else { "full" }, costs.json(), crate::source_provenance(st, q)))
+}
+/// Dedup identity columns of a rank row. With a split: in-sample full stats + is_ part stats (oos_ is display-only).
+fn outcome_cols(nd: usize, ndisp: usize, split: bool) -> Vec<usize> {
+    let part_end = if split { nd + crate::FULL_COLS.len() + crate::PART_COLS.len() } else { nd + ndisp };
+    (nd..nd + 16).chain(nd + crate::FULL_COLS.len()..part_end).collect()
 }
 /// Ranking input for one grid row: with a split, the in-sample FULL_COLS (trailing block) replace the full-window ones.
 fn rank_basis(row: &[f64], nd: usize, ndisp: usize, split: bool) -> Vec<f64> {
@@ -420,6 +425,13 @@ mod tests {
         assert_eq!((r[0], r[1], r[n]), (1., 100., 100. + (n - 1) as f64));
         assert_eq!(r.len(), 1 + n + 14);
         assert_eq!(rank_basis(&row[..1 + n + 14], 1, n + 14, false), row[..1 + n + 14].to_vec());
+    }
+    #[test] fn split_dedup_ignores_oos_columns() {
+        let (f, p) = (crate::FULL_COLS.len(), crate::PART_COLS.len());
+        let c = outcome_cols(2, f + 2 * p, true);
+        assert_eq!(c.len(), 16 + p);
+        assert!(c.iter().all(|&i| i < 2 + f + p));
+        assert_eq!(outcome_cols(2, f, false).len(), 16);
     }
     #[test] fn ranked_on_follows_the_split() {
         let st = state(700, "SPX", false);
