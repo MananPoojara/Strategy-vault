@@ -15,6 +15,7 @@ pub mod markets;
 pub mod ma;
 pub mod ma2;
 pub mod momentum;
+pub mod osc2;
 pub mod price;
 pub mod resample;
 pub mod rules;

@@ -69,6 +69,13 @@ CSV files kept outside Git; without them the parity test passes and prints "skip
 | skewness | length=20 | skew |
 | kurtosis | length=20 | kurt |
 | majority_rule | length=14 | pct |
+| bop | - | bop |
+| bbp | length=13 | bbp, bull, bear |
+| accel_osc | fast=5, slow=34, smooth=5 | ac |
+| price_osc | fast=10, slow=21, exponential=0 | po |
+| woodies_cci | length=14, turbo=6 | cci, turbo |
+| rmi | length=20, momentum=5 | rmi |
+| cg_osc | length=10 | cg, trigger |
 | cci | length=20 | cci |
 | mom | length=10 | mom |
 | roc | length=9 | roc |
