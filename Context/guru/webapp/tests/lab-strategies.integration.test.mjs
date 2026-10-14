@@ -10,10 +10,12 @@ import { fileURLToPath } from 'node:url';
 const { VAULT_ENV_FILE: envFile, VAULT_COMPOSE_PROJECT: project } = process.env;
 // Skips (never fails) unless both variables are set; the live project name is always refused.
 const enabled = Boolean(envFile && project);
-if (project === 'strategy-vault') throw new Error('Set VAULT_ENV_FILE and VAULT_COMPOSE_PROJECT to an isolated dev stack; the live project "strategy-vault" is refused.');
+if (project !== undefined && !/^strategy-vault-dev-[a-z0-9-]+$/.test(project)) throw new Error(`VAULT_COMPOSE_PROJECT must name an isolated dev stack (strategy-vault-dev-<name>); "${project}" is refused.`);
 const appDirectory = fileURLToPath(new URL('..', import.meta.url));
 const env = enabled ? Object.fromEntries((await readFile(envFile, 'utf8')).split('\n').filter(x => x && !x.startsWith('#')).map(x => { const i = x.indexOf('='); return [x.slice(0, i), x.slice(i + 1)]; })) : {};
 const base = process.env.VAULT_TEST_URL || env.VAULT_PUBLIC_URL;
+// The live deployment is never a test target, whatever env file is passed.
+if (enabled && new URL(base).hostname === '192.168.4.30') throw new Error(`${base} is the live deployment; point VAULT_ENV_FILE at your dev runtime.`);
 async function call(path, { cookie = '', method = 'GET', body, origin = base } = {}) {
   const response = await fetch(base + path, { method, headers: { ...(cookie ? { Cookie: cookie } : {}), ...(method !== 'GET' ? { Origin: origin, 'Content-Type': 'application/json' } : {}) }, body: body === undefined ? undefined : JSON.stringify(body), redirect: 'manual' });
   const text = await response.text();
@@ -97,9 +99,9 @@ await test('saved lab strategies: ownership, versions, review and frozen YT snap
       assert.equal(crypto.publishable, false);
       const refused = await call(`${S}/${crypto.id}/submit`, { cookie: owner, method: 'POST', body: { version: 1 } });
       assert.equal(refused.status, 400); assert.match(refused.json().error, /provisional/);
-      // Neither can be published directly from a draft; the status guard or the provisional guard refuses it.
+      // A draft cannot be published directly (status guard, 409); submitting one is where the provisional guard answers 400.
       const gl = (await call(S, { cookie: owner, method: 'POST', body: { name: 'FTSE dip', spec: SPEC, market: 'gl', instrument: 'UKX' } })).json();
-      for (const strategy of [crypto, gl]) assert.ok([400, 409].includes((await call(`${S}/${strategy.id}/publish`, { cookie: admin, method: 'POST', body: { version: 1 } })).status));
+      for (const strategy of [crypto, gl]) assert.equal((await call(`${S}/${strategy.id}/publish`, { cookie: admin, method: 'POST', body: { version: 1 } })).status, 409);
       assert.equal((await call(`${S}/${gl.id}/submit`, { cookie: owner, method: 'POST', body: { version: 1 } })).status, 400);
     });
     await t.test('two simultaneous saves of one version: one wins, one conflicts', async () => {
@@ -114,6 +116,7 @@ await test('saved lab strategies: ownership, versions, review and frozen YT snap
     // Only this run's fixture users and their strategies are removed.
     const users = `SELECT id FROM "user" WHERE email IN ('${emails.join("','")}')`;
     const sql = `DELETE FROM vault_audit WHERE actor_id IN (${users}) OR entity IN (${users}) OR entity IN (SELECT 'lab_strategy:'||id FROM lab_strategy WHERE owner IN (${users})); DELETE FROM lab_strategy_version WHERE strategy_id IN (SELECT id FROM lab_strategy WHERE owner IN (${users})); DELETE FROM "user" WHERE email IN ('${emails.join("','")}');`;
-    execFileSync('docker', ['compose', '-p', project, '--project-directory', appDirectory, '--env-file', envFile, 'exec', '-T', 'postgres', 'psql', '-U', 'vault', '-d', 'vault', '-v', 'ON_ERROR_STOP=1', '-c', sql], { stdio: ['ignore', 'pipe', 'pipe'] });
+    try { execFileSync('docker', ['compose', '-p', project, '--project-directory', appDirectory, '--env-file', envFile, 'exec', '-T', 'postgres', 'psql', '-U', 'vault', '-d', 'vault', '-v', 'ON_ERROR_STOP=1', '-c', sql], { stdio: ['ignore', 'pipe', 'pipe'] }); }
+    catch (error) { console.error(`cleanup failed; remove ${emails.join(', ')} by hand:`, error.message); } // keep the original assertion failure visible
   }
 });
