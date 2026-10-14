@@ -9,7 +9,7 @@ use super::rules::{self, LabError, LABEL};
 use super::series::{self, Cache, Compiled, Frames};
 use super::rules::Spec;
 use super::simulate::simulate;
-use super::templates;
+use super::{fidelity, templates};
 use crate::{accounting, connors::{Ctx, StrategyDef}, instrument_policy, trade_validation, State};
 use std::collections::BTreeMap;
 use std::net::TcpStream;
@@ -46,6 +46,9 @@ pub fn route(path: &str, st: &State, q: &Query) -> Option<Result<String, LabErro
         "/api/lab/run" => run_json,
         "/api/lab/optimize" => optimize_json,
         "/api/lab/instruments" => |st, _| Ok(markets::instruments_json(st)),
+        "/api/lab/templates" => |_, _| Ok(templates_json()),
+        "/api/lab/template" => template_json,
+        "/api/lab/fidelity" => fidelity_json,
         _ => return None,
     };
     Some(guarded(|| f(st, q)))
@@ -343,6 +346,59 @@ fn labelled(d: Option<&StrategyDef>) -> (String, String) {
         None => (LABEL.into(), "null".into()),
         Some(d) => (templates::variant_label(d), format!("{{\"method\":{},\"template_version\":{}}}", method_json(d), templates::template(d.id).map_or(0, |t| t.version))),
     }
+}
+pub fn templates_json() -> String {
+    let all = crate::connors::catalogue();
+    let live = all.iter().filter(|d| templates::book_status(d).0 == "live").count();
+    let items = arr(templates::TEMPLATES.iter().filter_map(|t| templates::method(t.method).map(|d| {
+        let p = instrument_policy::policy(&d);
+        format!("{{\"method\":{},\"template_version\":{},\"requirement\":\"{}\",\"allowed_types\":{}}}", method_json(&d), t.version, p.requirement, quoted(p.allowed_types.iter().copied()))
+    })));
+    format!("{{\"label\":\"{}\",\"methods\":{},\"admitted\":{live},\"templates\":{items}}}", templates::TEMPLATE_LABEL, all.len())
+}
+pub fn template_json(_: &State, q: &Query) -> Result<String, LabError> {
+    let id = q.get("method").ok_or_else(|| LabError::Invalid("method is required".into()))?;
+    let d = templates::method(id).ok_or_else(|| LabError::Invalid(format!("unknown book method {id}")))?;
+    let head = format!("{{\"label\":\"{}\",\"method\":{}", templates::TEMPLATE_LABEL, method_json(&d));
+    if let Some(why) = templates::unavailable(&d) { return Ok(format!("{head},\"status\":\"unavailable\",\"reason\":\"{}\"}}", esc(&why))); }
+    let t = templates::template(id).expect("available means templated");
+    let p = instrument_policy::policy(&d);
+    Ok(format!("{head},\"status\":\"available\",\"instrument\":{{\"requirement\":\"{}\",\"allowed_types\":{}}},\"template\":{{\"version\":{},\"spec\":{},\"notes\":{}}}}}",
+        p.requirement, quoted(p.allowed_types.iter().copied()), t.version, t.spec, quoted(templates::COMMON_NOTES.iter().copied())))
+}
+/// Unmodified template vs the book engine on the book's own admitted window and default parameters (spec §6).
+/// Display only: one book run and one lab run on one instrument; book code is only called.
+pub fn fidelity_json(st: &State, q: &Query) -> Result<String, LabError> {
+    let id = q.get("method").ok_or_else(|| LabError::Invalid("method is required".into()))?;
+    let d = templates::method(id).ok_or_else(|| LabError::Invalid(format!("unknown book method {id}")))?;
+    if let Some(why) = templates::unavailable(&d) { return Err(LabError::Unsupported(format!("Customize not available — {why}"))); }
+    if q.keys().any(|k| k.starts_with("p.")) { return Err(LabError::Invalid("the fidelity check uses the book's default parameters; remove p.* settings".into())); }
+    let t = templates::template(id).expect("available means templated");
+    let selected = select(st, q)?;
+    let held = selected.context(st);
+    let ticker = &held.r[0].ticker;
+    // engine-gl data are provisional TradingView exports; book methods are not admitted on them
+    if markets::gl(ticker).is_some() { return Err(LabError::NeedsData("book methods do not run on provisional data".into())); }
+    let (kind, instrument) = instrument(&selected, ticker);
+    origin_admits(Some(&d), kind, ticker)?;
+    let (ctx, from, to, _) = crate::resolve_context(&held, q)?;
+    let none = crate::connors::Params::new();
+    if let Some(i) = crate::readiness::check(ctx, &d, from, to, &none).or_else(|| crate::native_admission(ctx, &d, from, to, &selected, st, q)) {
+        return Err(LabError::NeedsData(format!("the book method is not admitted on this instrument and window ({}: {}); no comparison is shown", i.status, i.note)));
+    }
+    let from = crate::window_start(ctx, &d, from).filter(|&f| f < to).ok_or_else(|| LabError::NeedsData("required volatility-index data does not cover this period".into()))?;
+    let book = crate::connors::run(id, ctx, from, to, &none).ok_or_else(|| LabError::Invalid("book implementation unavailable".into()))?;
+    let fr = Frames::new(Bars::from_rows(ctx.r));
+    let lab = simulate(&series::compile(&templates::parsed(t), &fr, &mut Cache::new())?, &fr.d, from, to);
+    let c = fidelity::compare(&book, &lab);
+    let tj = |t: Option<&crate::connors::Trade>| t.map_or("null".into(), |t| format!(
+        "{{\"entry\":\"{}\",\"exit\":\"{}\",\"entry_px\":{},\"exit_px\":{},\"dir\":{},\"legs\":{},\"open\":{}}}",
+        ctx.r[t.legs[0].i].date, ctx.r[t.exit_i].date, crate::num(t.legs[0].px), crate::num(t.exit_px), t.dir, t.legs.len(), t.open));
+    let diffs = arr(c.diffs.iter().take(fidelity::MAX_DIFFS).map(|(b, l)| format!("{{\"book\":{},\"template\":{}}}", tj(*b), tj(*l))));
+    Ok(format!(
+        "{{\"label\":\"{}\",\"kind\":\"lab_template_fidelity\",\"method\":{},\"template_version\":{},\"instrument\":{instrument},\"from\":\"{}\",\"to\":\"{}\",\"book_trades\":{},\"template_trades\":{},\"matched\":{},\"reproduces\":{},\"differences_total\":{},\"differences\":{diffs},\"note\":\"{}\"}}",
+        fidelity::FIDELITY_LABEL, method_json(&d), t.version, ctx.r[from].date, ctx.r[to].date, book.len(), lab.len(), c.matched,
+        c.matched == book.len() && c.matched == lab.len(), c.diffs.len(), fidelity::FIDELITY_NOTE))
 }
 /// RANK_STATS metrics without an is_ PART_COLS column: shown in-sample so the ranked numbers are visible.
 fn extra_rank_cols() -> Vec<&'static str> {
@@ -653,6 +709,54 @@ mod tests {
             assert!(body.starts_with("{\"provisional\":true,\"provisional_note\":\"Provisional · TradingView export"), "{m}");
             crate::lab::json::parse(&body).unwrap();
             if s == "200 OK" { assert!(body.contains(&format!("\"label\":\"{}\",\"kind\":\"lab_simulation\",\"origin\":{{", templates::variant_label(&d)))); }
+        }
+    }
+    #[test] fn template_routes_list_explain_and_refuse() {
+        let st = state(50, "SPX", false);
+        let list = route("/api/lab/templates", &st, &q(&[])).unwrap().unwrap();
+        let v = crate::lab::json::parse(&list).unwrap();
+        let crate::lab::json::Json::Arr(items) = v.get("templates").unwrap() else { panic!() };
+        assert_eq!(items.len(), templates::TEMPLATES.len());
+        assert!(list.starts_with(&format!("{{\"label\":\"{}\"", templates::TEMPLATE_LABEL)) && !list.contains("\"claim\"") && !list.contains("\"gate\""));
+        let one = template_json(&st, &q(&[("method", "rsi2_4")])).unwrap();
+        let v = crate::lab::json::parse(&one).unwrap();
+        assert_eq!(v.get("status").unwrap().as_str(), Some("available"));
+        assert!(one.contains("\"allowed_types\":[") && one.contains("\"notes\":["));
+        let crate::lab::json::Json::Obj(_) = v.get("template").unwrap().get("spec").unwrap() else { panic!("spec is embedded JSON") };
+        let no = template_json(&st, &q(&[("method", "r3")])).unwrap();
+        assert!(no.contains("\"status\":\"unavailable\"") && no.contains("scale-in"), "{no}");
+        assert_eq!(template_json(&st, &q(&[("method", "nope")])).unwrap_err().message(), "unknown book method nope");
+        assert_eq!(template_json(&st, &q(&[])).unwrap_err().status(), "invalid");
+    }
+    #[test] fn fidelity_compares_the_template_with_the_book_engine() {
+        let st = state(700, "SPX", false);
+        let j = fidelity_json(&st, &q(&[("method", "r25_rsi25_basic_no_filter")])).unwrap();
+        let v = crate::lab::json::parse(&j).unwrap();
+        let n = |k: &str| v.get(k).and_then(|x| x.as_f64()).unwrap();
+        assert!(n("book_trades") > 3., "{j}");
+        assert_eq!((n("matched"), n("template_trades"), v.get("reproduces"), n("differences_total")), (n("book_trades"), n("book_trades"), Some(&crate::lab::json::Json::Bool(true)), 0.));
+        assert!(j.starts_with(&format!("{{\"label\":\"{}\",\"kind\":\"lab_template_fidelity\"", fidelity::FIDELITY_LABEL)) && j.contains("does not verify"));
+        assert_eq!(fidelity_json(&st, &q(&[("method", "r3")])).unwrap_err().status(), "unsupported");
+        assert_eq!(fidelity_json(&st, &q(&[("method", "rsi2_4"), ("p.rsi_lt", "5")])).unwrap_err().status(), "invalid");
+        let e = fidelity_json(&st, &q(&[("method", "f1a")])).unwrap_err();
+        assert_eq!(e.status(), "needs_data", "{e:?}");
+    }
+    #[test] fn template_bodies_carry_no_verdict_keys_and_fidelity_refuses_provisional_data() {
+        let st = state(700, "SPX", false);
+        let bodies = [templates_json(), template_json(&st, &q(&[("method", "rsi2_4")])).unwrap(), template_json(&st, &q(&[("method", "r3")])).unwrap(),
+            fidelity_json(&st, &q(&[("method", "r25_rsi25_basic_no_filter")])).unwrap()];
+        for b in &bodies { for k in ["\"claim\"", "\"gate\"", "\"readiness\""] { assert!(!b.contains(k), "{k} in {}", &b[..120]); } }
+        assert_eq!(fidelity_json(&st, &q(&[("method", "r3")])).unwrap_err().message(), format!("Customize not available — {}", templates::unavailable(&templates::method("r3").unwrap()).unwrap()));
+        // the book engine never runs on provisional (engine-gl) data; the template routes stay provisional-marked there
+        let gl = state(700, "CRYPTO:BTCUSD", false);
+        let e = fidelity_json(&gl, &q(&[("ticker", "CRYPTO:BTCUSD"), ("method", "r25_rsi25_basic_no_filter")])).unwrap_err();
+        assert_eq!((e.status(), e.message()), ("needs_data", "book methods do not run on provisional data"));
+        for (path, extra, status) in [("/api/lab/templates", vec![], "200 OK"), ("/api/lab/template", vec![("method", "rsi2_4")], "200 OK"),
+            ("/api/lab/fidelity", vec![("ticker", "CRYPTO:BTCUSD"), ("method", "r25_rsi25_basic_no_filter")], "400 Bad Request")] {
+            let (s, body) = response(Some("gl"), path, &gl, &q(&extra));
+            assert_eq!(s, status, "{path}: {body}");
+            assert!(body.starts_with("{\"provisional\":true,\"provisional_note\":\"Provisional · TradingView export"), "{path}");
+            crate::lab::json::parse(&body).unwrap();
         }
     }
 }
