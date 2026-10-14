@@ -9,7 +9,8 @@ use super::rules::{self, LabError, LABEL};
 use super::series::{self, Cache, Compiled, Frames};
 use super::rules::Spec;
 use super::simulate::simulate;
-use crate::{accounting, connors::Ctx, instrument_policy, trade_validation, State};
+use super::templates;
+use crate::{accounting, connors::{Ctx, StrategyDef}, instrument_policy, trade_validation, State};
 use std::collections::BTreeMap;
 use std::net::TcpStream;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -179,12 +180,15 @@ fn backtest(ctx: &Ctx, c: &Compiled, d: &Bars, from: usize, to: usize, cost: f64
 pub fn run_json(st: &State, q: &Query) -> Result<String, LabError> {
     if q.get("split").is_some_and(|s| !s.is_empty()) { return Err(LabError::Invalid("split applies to /api/lab/optimize only".into())); }
     let spec = spec_of(q)?;
+    let origin = origin_of(&spec)?;
     let q = &with_spec_cost(q, &spec)?;
     let selected = select(st, q)?;
     let held = selected.context(st);
     let ctx: &Ctx = &held;
     let (kind, instrument) = instrument(&selected, &ctx.r[0].ticker);
     known_type(kind, &ctx.r[0].ticker)?;
+    origin_admits(origin.as_ref(), kind, &ctx.r[0].ticker)?;
+    let (label, origin) = labelled(origin.as_ref());
     let (from, to, start) = window(ctx, q)?;
     let costs = accounting::Costs::parse(q)?;
     costs.ensure_rollover()?;
@@ -194,12 +198,12 @@ pub fn run_json(st: &State, q: &Query) -> Result<String, LabError> {
     let run = backtest(ctx, &compiled, &fr.d, from, to, cost)?;
     let gross = crate::Run { trades: run.trades.clone(), from, to, equity: crate::equity_curve(&ctx.c, &run.trades, from, to, 0.), bh: run.bh.clone() };
     let trades = arr(run.trades.iter().map(|t| format!(
-        "{{\"entry\":\"{}\",\"exit\":\"{}\",\"entry_i\":{},\"exit_i\":{},\"entry_px\":{},\"exit_px\":{},\"ret\":{},\"bars\":{},\"open\":{},\"signal\":\"{}\",\"reason\":\"{}\"}}",
+        "{{\"entry\":\"{}\",\"exit\":\"{}\",\"entry_i\":{},\"exit_i\":{},\"entry_px\":{},\"exit_px\":{},\"ret\":{},\"bars\":{},\"open\":{},\"signal\":\"{}\",\"reason\":\"{}\",\"dir\":{},\"entry_kind\":\"{}\"}}",
         ctx.r[t.legs[0].i].date, ctx.r[t.exit_i].date, t.legs[0].i - from, t.exit_i - from, crate::num(t.legs[0].px), crate::num(t.exit_px),
-        crate::num(t.ret(cost)), t.exit_i - t.legs[0].i, t.open, ctx.r[t.signal_i].date, esc(&t.reason))));
+        crate::num(t.ret(cost)), t.exit_i - t.legs[0].i, t.open, ctx.r[t.signal_i].date, esc(&t.reason), t.dir, t.entry_kind)));
     Ok(format!(
-        "{{\"label\":\"{LABEL}\",\"kind\":\"lab_simulation\",\"instrument\":{instrument},\"from\":\"{}\",\"to\":\"{}\",\"start\":{start},\"dates\":{},\"close\":{},\"equity\":{},\"gross_equity\":{},\"bh\":{},\"trades\":{trades},\"stats\":{},\"gross_stats\":{},\"costs\":{},\"provenance\":{}}}",
-        ctx.r[from].date, ctx.r[to].date, quoted((from..=to).map(|k| ctx.r[k].date.as_str())), arr((from..=to).map(|k| crate::num(ctx.c[k]))),
+        "{{\"label\":\"{}\",\"kind\":\"lab_simulation\",\"origin\":{origin},\"instrument\":{instrument},\"from\":\"{}\",\"to\":\"{}\",\"start\":{start},\"dates\":{},\"close\":{},\"equity\":{},\"gross_equity\":{},\"bh\":{},\"trades\":{trades},\"stats\":{},\"gross_stats\":{},\"costs\":{},\"provenance\":{}}}",
+        esc(&label), ctx.r[from].date, ctx.r[to].date, quoted((from..=to).map(|k| ctx.r[k].date.as_str())), arr((from..=to).map(|k| crate::num(ctx.c[k]))),
         arr(run.equity.iter().map(|v| crate::num(*v))), arr(gross.equity.iter().map(|v| crate::num(*v))), arr(run.bh.iter().map(|v| crate::num(*v))),
         crate::stats_json(&lab_stats(ctx, &run, costs)), crate::stats_json(&gross_stats(ctx, &gross)), costs.json(), crate::source_provenance(st, q)))
 }
@@ -207,12 +211,15 @@ pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> {
     let t0 = std::time::Instant::now();
     let spec = spec_of(q)?;
     if spec.optimize.is_empty() { return Err(LabError::Invalid("optimize lists no parameter ranges".into())); }
+    let origin = origin_of(&spec)?;
     let q = &with_spec_cost(q, &spec)?;
     let selected = select(st, q)?;
     let held = selected.context(st);
     let ctx: &Ctx = &held;
     let (kind, instrument) = instrument(&selected, &ctx.r[0].ticker);
     known_type(kind, &ctx.r[0].ticker)?;
+    origin_admits(origin.as_ref(), kind, &ctx.r[0].ticker)?;
+    let (label, origin) = labelled(origin.as_ref());
     let (from, to, start) = window(ctx, q)?;
     let costs = accounting::Costs::parse(q)?;
     costs.ensure_rollover()?;
@@ -310,9 +317,32 @@ pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> {
     if split.is_some() { cols.extend(extra_rank_cols().iter().map(|c| format!("is_{c}"))); }
     let dims_json = arr(dims.iter().map(|d| format!("{{\"path\":\"{}\",\"values\":{}}}", esc(&d.path), arr(d.values.iter().map(|v| crate::num(*v))))));
     Ok(format!(
-        "{{\"label\":\"{LABEL}\",\"kind\":\"lab_optimization\",\"instrument\":{instrument},\"from\":\"{}\",\"to\":\"{}\",\"start\":{start},\"split\":{},\"combos\":{combos},\"threads\":{threads},\"ms\":{},\"dims\":{dims_json},\"cols\":{},\"base\":{},\"ranked_on\":\"{}\",\"rank\":{rank_json},\"picked\":{{{picked}}},\"rows\":[{rows}],\"costs\":{},\"provenance\":{}}}",
-        dates[from], dates[to], split.map_or("null".into(), |s| format!("\"{}\"", dates[s])), t0.elapsed().as_millis(),
+        "{{\"label\":\"{}\",\"kind\":\"lab_optimization\",\"origin\":{origin},\"instrument\":{instrument},\"from\":\"{}\",\"to\":\"{}\",\"start\":{start},\"split\":{},\"combos\":{combos},\"threads\":{threads},\"ms\":{},\"dims\":{dims_json},\"cols\":{},\"base\":{},\"ranked_on\":\"{}\",\"rank\":{rank_json},\"picked\":{{{picked}}},\"rows\":[{rows}],\"costs\":{},\"provenance\":{}}}",
+        esc(&label), dates[from], dates[to], split.map_or("null".into(), |s| format!("\"{}\"", dates[s])), t0.elapsed().as_millis(),
         quoted(cols.iter().map(String::as_str)), arr(base.iter().map(|v| crate::num(*v))), if split.is_some() { "in_sample" } else { "full" }, costs.json(), crate::source_provenance(st, q)))
+}
+/// A spec with `origin` is a customized book template: the template must exist (same book, version not newer).
+fn origin_of(spec: &Spec) -> Result<Option<StrategyDef>, LabError> {
+    let Some(o) = &spec.origin else { return Ok(None) };
+    let found = templates::template(&o.method).filter(|t| o.version <= t.version).and(templates::method(&o.method)).filter(|d| d.book == o.book);
+    found.map(Some).ok_or_else(|| LabError::Invalid(format!("origin names no book template ({} · {} · version {})", o.book, o.method, o.version)))
+}
+/// A variant keeps its book method's instrument admission: stock methods on actual stocks, ETF methods on ETF prices.
+fn origin_admits(d: Option<&StrategyDef>, kind: &str, ticker: &str) -> Result<(), LabError> {
+    let Some(d) = d else { return Ok(()) };
+    let allowed = instrument_policy::policy(d).allowed_types;
+    if allowed.contains(&kind) { return Ok(()); }
+    Err(LabError::NeedsData(format!("{ticker} ({kind}): variants of {} · {} run on {} only (no index or other substitute)", d.book, d.name, allowed.join(", "))))
+}
+fn method_json(d: &StrategyDef) -> String {
+    format!("{{\"id\":\"{}\",\"name\":\"{}\",\"book\":\"{}\",\"group\":\"{}\",\"dir\":\"{}\"}}", esc(d.id), esc(d.name), esc(d.book), esc(d.group), esc(d.dir))
+}
+/// The run label and the `origin` JSON (null for a plain lab strategy).
+fn labelled(d: Option<&StrategyDef>) -> (String, String) {
+    match d {
+        None => (LABEL.into(), "null".into()),
+        Some(d) => (templates::variant_label(d), format!("{{\"method\":{},\"template_version\":{}}}", method_json(d), templates::template(d.id).map_or(0, |t| t.version))),
+    }
 }
 /// RANK_STATS metrics without an is_ PART_COLS column: shown in-sample so the ranked numbers are visible.
 fn extra_rank_cols() -> Vec<&'static str> {
@@ -587,5 +617,42 @@ mod tests {
             assert_eq!(r.get("status").unwrap().as_str(), Some(if t == "IG:DAX" { "ready" } else { "needs_data" }), "{t}");
         }
         assert!(j.contains("\"first\":\"2015-01-01\"") && j.contains("\"tradable_from\":null"));
+    }
+    // ---- Customize (spec 2026-10-16)
+    fn spec_of_template(m: &str) -> String { templates::template(m).unwrap().spec.to_string() }
+    #[test] fn variant_runs_carry_the_variant_label_and_the_methods_instrument_rule() {
+        let st = state(700, "SPX", false);
+        let j = run_json(&st, &q(&[("spec", &spec_of_template("r25_rsi25_basic_no_filter"))])).unwrap();
+        let d = templates::method("r25_rsi25_basic_no_filter").unwrap();
+        assert!(j.starts_with(&format!("{{\"label\":\"{}\",\"kind\":\"lab_simulation\",\"origin\":{{\"method\":{{\"id\":\"r25_rsi25_basic_no_filter\"", templates::variant_label(&d))), "{}", &j[..300]);
+        assert!(j.contains("\"dir\":1,\"entry_kind\":\"close\""));
+        assert!(!j.contains("\"gate\"") && !j.contains("\"claim\"") && !j.contains("\"readiness\""));
+        // f1a is a stock method: an index never stands in for a stock
+        let e = run_json(&st, &q(&[("spec", &spec_of_template("f1a"))])).unwrap_err();
+        assert_eq!(e.status(), "needs_data");
+        assert!(e.message().starts_with("SPX (index): variants of stc9") && e.message().contains("individual_stock only"), "{}", e.message());
+        let bad = spec_of_template("rsi2_4");
+        for (from, to) in [("\"method\":\"rsi2_4\"", "\"method\":\"r3\""), ("\"template_version\":1", "\"template_version\":2"), ("\"book\":\"stc9\"", "\"book\":\"spmt\"")] {
+            let e = run_json(&st, &q(&[("spec", &bad.replace(from, to))])).unwrap_err();
+            assert!(e.message().starts_with("origin names no book template"), "{}", e.message());
+        }
+        // optimize keeps the variant label and the instrument rule
+        let grid = |m: &str| { let t = spec_of_template(m); format!("{},\"optimize\":[{{\"path\":\"exit.any[0].rhs.value\",\"from\":50,\"to\":60,\"step\":5}}]}}", &t[..t.len() - 1]) };
+        let o = optimize_json(&st, &q(&[("spec", &grid("r25_rsi25_basic_no_filter"))])).unwrap();
+        assert!(o.starts_with(&format!("{{\"label\":\"{}\",\"kind\":\"lab_optimization\",\"origin\":{{", templates::variant_label(&d))), "{}", &o[..200]);
+        assert_eq!(optimize_json(&st, &q(&[("spec", &grid("f1a").replace("exit.any[0].rhs.value\",\"from\":50,\"to\":60", "exit.any[0].rhs.value\",\"from\":3,\"to\":6"))])).unwrap_err().status(), "needs_data");
+        // plain lab specs keep the v1 label and a null origin
+        assert!(run_json(&st, &q(&[])).unwrap().contains(&format!("\"label\":\"{LABEL}\",\"kind\":\"lab_simulation\",\"origin\":null")));
+    }
+    #[test] fn engine_gl_variant_bodies_still_carry_the_provisional_flag() {
+        let st = state(700, "SPX", false);
+        let d = templates::method("r25_rsi25_basic_no_filter").unwrap();
+        for (m, status) in [("r25_rsi25_basic_no_filter", "200 OK"), ("f1a", "400 Bad Request")] {
+            let (s, body) = response(Some("gl"), "/api/lab/run", &st, &q(&[("spec", &spec_of_template(m))]));
+            assert_eq!(s, status, "{m}: {}", &body[..200.min(body.len())]);
+            assert!(body.starts_with("{\"provisional\":true,\"provisional_note\":\"Provisional · TradingView export"), "{m}");
+            crate::lab::json::parse(&body).unwrap();
+            if s == "200 OK" { assert!(body.contains(&format!("\"label\":\"{}\",\"kind\":\"lab_simulation\",\"origin\":{{", templates::variant_label(&d)))); }
+        }
     }
 }
