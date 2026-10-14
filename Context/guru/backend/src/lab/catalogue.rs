@@ -118,7 +118,6 @@ mod tests {
         }
     }
     #[test]
-    #[ignore = "enabled in Task 9"]
     fn intraday_indicators_are_listed_not_computed() {
         for d in all().iter().filter(|d| d.needs.intraday) { assert!(d.compute.is_none(), "{}", d.id); }
         assert!(get("vwap").is_some() && get("opening_range").is_some());
