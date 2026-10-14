@@ -38,7 +38,7 @@ impl Pos {
         }
         if d * (adverse - stop) <= 0. { return Some((stop, why.into())); }
         // On a limit-fill bar the high/low may precede the fill, so only the (adverse) stop is assumed reachable.
-        if !self.limit_bar && d * (favour - self.target) >= 0. { return Some((self.target, "exit.target".into())); }
+        if !(self.limit_bar && self.e == i) && d * (favour - self.target) >= 0. { return Some((self.target, "exit.target".into())); }
         None
     }
 }
@@ -218,13 +218,15 @@ mod tests {
         // entry close 102.5 → stop 100.45, target 105.575
         let mut b = bars();
         b.low[4] = 100.;
-        let t = simulate(&with(&[2], &[], exec.clone()), &b, 0, 9);
-        assert_eq!((t[0].exit_i, t[0].exit_px, t[0].reason.as_str()), (4, 100.45, "exit.stop_loss"));
+        let t = simulate(&with(&[2, 4], &[], exec.clone()), &b, 0, 9);
+        assert_eq!((t.len(), t[0].exit_i, t[0].signal_i), (1, 4, 4));
+        assert_eq!((t[0].exit_px, t[0].reason.as_str()), (100.45, "exit.stop_loss"));
         let t = simulate(&with(&[2], &[], exec.clone()), &bars(), 0, 9); // highs reach 105.575 on bar 5 (high 106)
         assert_eq!((t[0].exit_i, t[0].exit_px, t[0].reason.as_str()), (5, 105.575, "exit.target"));
         let mut g = bars();
         g.open[3] = 99.; g.low[3] = 98.; // gap through the stop
-        assert_eq!((simulate(&with(&[2], &[], exec.clone()), &g, 0, 9)[0].exit_px), 99.);
+        let t = simulate(&with(&[2], &[], exec.clone()), &g, 0, 9);
+        assert_eq!((t[0].exit_px, t[0].reason.as_str()), (99., "exit.stop_loss (gap at the open)"));
         let mut g = bars();
         g.open[3] = 107.; g.high[3] = 108.; // gap through the target
         let t = simulate(&with(&[2], &[], exec), &g, 0, 9);
@@ -247,6 +249,10 @@ mod tests {
         let t = simulate(&with(&[2], &[], exec), &b, 0, 9);
         assert_eq!((t[0].exit_i, t[0].reason.as_str()), (3, "exit.stop_loss"));
         assert!((t[0].exit_px - 100.46025).abs() < 1e-9);
+        let mut b = bars();
+        b.low[3] = 101.; b.open[4] = 102.; b.low[4] = 101.9; // after the fill bar the target is live again
+        let t = simulate(&with(&[2], &[], Exec { limit: Some(Dist::Pct(1.)), stop_loss: Some(Dist::Pct(1.)), target: Some(Dist::Pct(1.)), exit_fill: Fill::Close, ..Exec::default() }), &b, 0, 9);
+        assert_eq!((t[0].exit_i, t[0].reason.as_str()), (4, "exit.target"));
     }
     #[test] fn trailing_level_comes_from_bars_already_closed() {
         let exec = Exec { trailing: Some(Dist::Pct(2.)), ..close_fill() };
@@ -288,6 +294,40 @@ mod tests {
         assert_eq!((t[0].legs[0].i, t[0].exit_i, t[0].reason.as_str()), (3, 3, "exit.stop_loss"));
         assert!((t[0].exit_px - 101.97).abs() < 1e-9);
     }
+    #[test] fn trailing_atr_is_read_at_the_previous_close() {
+        let mut c = with(&[2], &[], Exec { trailing: Some(Dist::Atr { mult: 1., length: 14 }), ..close_fill() });
+        c.atr.insert(14, vec![f64::NAN, f64::NAN, 1., 1., 50., 50., 50., 50., 50., 50.]);
+        let t = simulate(&c, &bars(), 0, 9);
+        assert_eq!((t[0].exit_i, t[0].exit_px, t[0].reason.as_str()), (4, 103., "exit.trailing"));
+    }
+    #[test] fn the_tighter_of_stop_and_trailing_wins() {
+        let exec = Exec { stop_loss: Some(Dist::Pct(2.)), trailing: Some(Dist::Pct(1.)), ..close_fill() };
+        let mut b = bars();
+        b.low[4] = 102.5;
+        let t = simulate(&with(&[2], &[], exec), &b, 0, 9);
+        assert_eq!((t[0].exit_i, t[0].reason.as_str()), (4, "exit.trailing"));
+        assert!((t[0].exit_px - 102.96).abs() < 1e-9);
+    }
+    #[test] fn a_limit_fill_bars_high_does_not_raise_the_trailing_best() {
+        let exec = Exec { limit: Some(Dist::Pct(1.)), trailing: Some(Dist::Pct(2.)), exit_fill: Fill::Close, ..Exec::default() };
+        let mut b = bars();
+        b.low[3] = 101.; b.low[4] = 101.5;
+        let t = simulate(&with(&[2], &[], exec), &b, 0, 9);
+        assert_eq!((t[0].legs[0].i, t[0].open), (3, true));
+    }
+    #[test] fn short_trailing_tracks_lows() {
+        let exec = Exec { short: true, trailing: Some(Dist::Pct(2.)), ..close_fill() };
+        let t = simulate(&with(&[2], &[], exec), &bars(), 0, 9);
+        assert_eq!((t[0].exit_i, t[0].reason.as_str()), (4, "exit.trailing"));
+        assert!((t[0].exit_px - 104.04).abs() < 1e-9);
+    }
+    #[test] fn price_exits_come_before_close_rule_exits() {
+        let exec = Exec { stop_loss: Some(Dist::Pct(2.)), ..close_fill() };
+        let mut b = bars();
+        b.low[4] = 100.;
+        let t = simulate(&with(&[2], &[4], exec), &b, 0, 9);
+        assert_eq!((t[0].exit_i, t[0].exit_px, t[0].reason.as_str()), (4, 100.45, "exit.stop_loss"));
+    }
     #[test] fn future_bars_never_change_past_trades() {
         use crate::lab::series::{compile, Cache, Frames};
         let specs = [
@@ -302,7 +342,7 @@ mod tests {
             let run = |b: &Bars| simulate(&compile(&spec, &Frames::new(b.clone()), &mut Cache::new()).unwrap(), b, 0, b.len() - 1);
             let want = run(&full);
             assert!(want.len() > 3, "{text}: only {} trades", want.len());
-            for k in [120usize, 233, 351] {
+            for k in 30usize..398 {
                 let mut alt = full.clone();
                 for i in k + 1..alt.len() { for v in [&mut alt.open, &mut alt.high, &mut alt.low, &mut alt.close] { v[i] *= 0.7; } }
                 let done = |t: &[Trade]| fills(&t.iter().filter(|t| !t.open && t.exit_i <= k).cloned().collect::<Vec<_>>());
