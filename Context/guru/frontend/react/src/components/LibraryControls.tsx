@@ -114,15 +114,19 @@ export function LibraryControls({
         <div className="library-market">
           <div className="join sm" aria-label="Market">
             {[
+              ["all", "All"],
               ["in", "India"],
               ["us", "US"],
             ].map(([key, label]) => (
               <button
                 key={key}
-                className={`join-item ${state.region === key ? "active" : ""}`}
+                className={`join-item ${model.market === key ? "active" : ""}`}
+                aria-pressed={model.market === key}
+                title={key === "all" ? "Browse both markets; results use the selected test data." : undefined}
                 disabled={key === "us" && !model.usAvailable}
                 onClick={() =>
-                  window.VaultRuntime.patch({
+                  key === "all" ? patch({library_market: "all"}) : patch({
+                    library_market: key,
                     region: key,
                     basket: "",
                     tk: key === "us" ? "SPX" : "NIFTY 50",
@@ -137,7 +141,7 @@ export function LibraryControls({
           </div>
         </div>
         <label className="library-sort library-context">
-          Test data{" "}
+          {model.market === "all" ? `Test data (${state.region === "us" ? "US" : "India"})` : "Test data"}{" "}
           <select
             id="library-instrument"
             aria-label="Backtest data"

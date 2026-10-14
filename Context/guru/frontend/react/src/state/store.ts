@@ -1,5 +1,6 @@
 import type { ReadingModel } from "../pages/ReadingPage";
 import type { Route } from "../app/routes";
+import type { LibraryMarket } from "../services/library-market";
 export interface ViewSnapshot {
   revision: number;
   loading: boolean;
@@ -50,6 +51,7 @@ export interface AuthorCard {
   sharpe: string | null;
 }
 export interface HomeModel {
+  market: LibraryMarket;
   implementedMethods: number;
   enabledVariants: number;
   implementedBooks: number;

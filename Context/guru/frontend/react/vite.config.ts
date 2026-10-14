@@ -32,6 +32,7 @@ export default defineConfig({
         "src/state/store.ts",
         "src/services/api.ts",
         "src/services/library-scope.ts",
+        "src/services/library-market.ts",
         "src/services/instrument-controls.ts",
         "src/services/strategy-indicators.ts",
         "src/app/routes.ts",

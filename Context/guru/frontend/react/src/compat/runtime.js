@@ -4,6 +4,7 @@ import {resolveRoute} from '../app/routes';
 import {customPages} from '../app/custom-pages';
 import {LIB} from './catalogue.js';
 import {libraryScope,inLibraryScope} from '../services/library-scope';
+import {libraryMarket,libraryMarketVariants} from '../services/library-market';
 import {instrumentControls,instrumentTickers} from '../services/instrument-controls';
 import {buildStrategyIndicators} from '../services/strategy-indicators';
 import {indicatorControlsHTML,mountStrategyIndicators} from '../services/strategy-indicator-charts';
@@ -1112,7 +1113,7 @@ function exitCheck(t) {
 // ================================================================ FULL VARIANT 1
 // Routes:  #/  landing (legends)  ·  #/guru/<id>  author grid  ·  #/strategies  all gurus  ·  #/s/<id>  one strategy
 // Filters live in a top navbar of dropdowns (DaisyUI-style); animation by motion.dev; charts in the Bklit style.
-DEF.view = 'grid'; DEF.region = 'in'; DEF.from = ''; DEF.to = ''; DEF.cost = '0'; DEF.slippage='0'; DEF.rollover='0'; DEF.basket=''; DEF.p = ''; DEF.library_scope='trading'; DEF.library_q=''; DEF.library_view='authors'; DEF.library_sort='default'; DEF.book_category=''; DEF.library_limit='24'; DEF.library_page='1'; DEF.source_page='1'; // p = custom strategy settings 'key:value,…' (empty = the book's) // custom backtest period, kept in the link
+DEF.view = 'grid'; DEF.region = 'in'; DEF.from = ''; DEF.to = ''; DEF.cost = '0'; DEF.slippage='0'; DEF.rollover='0'; DEF.basket=''; DEF.p = ''; DEF.library_scope='trading'; DEF.library_market=''; DEF.library_q=''; DEF.library_view='authors'; DEF.library_sort='default'; DEF.book_category=''; DEF.library_limit='24'; DEF.library_page='1'; DEF.source_page='1'; // p = custom strategy settings 'key:value,…' (empty = the book's) // custom backtest period, kept in the link
 const getS = () => S;
 const MO = window.Motion, CALM = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const anim = (el, kf, o) => { if (MO && !CALM && el && (el.length === undefined || el.length)) try { return MO.animate(el, kf, o); } catch (e) {} };
@@ -1155,8 +1156,8 @@ function readRoute() {
 // Market-specific variants (NSE breadth on India, NYSE breadth on the US) are shown only on their own market.
 let ALLCAT = [];
 const foreignTo = (v, us) => (v.needs_series || []).some(n => us ? /^NSE_/.test(n) : /^NYSE_/.test(n));
-const marketCat = () => ALLCAT.filter(v => !foreignTo(v, S.region === 'us'));
-const href = (path, st = {}) => { const q = new URLSearchParams(); if (S.region === 'us' && !('region' in st)) q.set('region', 'us'); for (const k in st) if (st[k] !== DEF[k] && st[k] != null && !(path.startsWith('/guru/') && k === 'guru')) q.set(k, st[k]); const s = q.toString(); return '#' + path + (s ? '?' + s : ''); };
+const marketCat = () => libraryMarketVariants(ALLCAT,libraryMarket(S,R.name));
+const href = (path, st = {}) => { const q = new URLSearchParams(),catalogue=path==='/'||path==='/strategies'||path.startsWith('/guru/')||path.startsWith('/source/'); if (S.region === 'us' && !('region' in st)) q.set('region', 'us'); if(catalogue&&S.library_market&&!('library_market' in st))q.set('library_market',S.library_market); for (const k in st) if (st[k] !== DEF[k] && st[k] != null && !(path.startsWith('/guru/') && k === 'guru') && (k!=='library_market'||catalogue)) q.set(k, st[k]); const s = q.toString(); return '#' + path + (s ? '?' + s : ''); };
 const go = (path, st) => { location.hash = href(path, st).slice(1); };
 const setState = patch => { const st = { ...S, ...patch }; if ('guru' in patch && !('book' in patch) && st.book && BOOK[st.book]?.guru.id !== st.guru) st.book = ''; go(R.path, st); };
 const guruLink = id => href('/guru/' + id, {view:'grid',tk:S.tk,basket:S.basket,from:S.from,to:S.to});
@@ -1718,7 +1719,7 @@ async function homeModel(){
  const bookCards=books.slice(offset,offset+24).map(record=>{const b=record.book||record.source||record;return {id:record.id,kind:record.kind,title:record.title,author:record.kind==='source'&&record.source?.author_metadata&&record.source.author_metadata!=='?'?record.source.author_metadata+' · '+record.authorName:record.authorName,summary:record.kind==='catalogue'?readingSummary(record.author||GURU[record.authorId],b):b.summary||'Original reading material indexed from the source vault. Content and objective rules still need review.',year:String(record.year||'Edition year unconfirmed'),scope:libraryScope(record,CURATED_AUTHOR_IDS),categories:libraryScope(record,CURATED_AUTHOR_IDS)==='trading'?record.categories:[],href:record.kind==='catalogue'?href('/guru/'+record.authorId,{view:'grid',book:record.id,tk:S.tk,basket:S.basket}):href('/source/'+encodeURIComponent(record.id),{guru:record.authorId}),live:!!b.live};});
  const indices=S.region==='us'?TICK_US:TICK_IN;
  const enabled=ALLCAT.filter(variant=>variant.status==='live');
- return {implementedMethods:new Set(enabled.map(variant=>variant.book+':'+variant.family)).size,enabledVariants:enabled.length,implementedBooks:new Set(enabled.map(variant=>variant.book)).size,authors:scopeAuthorIds.size,curatedAuthors:CURATED_AUTHOR_IDS.size,scope:S.library_scope,inventoryGroups:LIB.length,inventoryEntries:inventoryRecords.length,entries:allRecords.length,families:h.tested,symbol:LABEL[h.tk]||h.tk,symbolCount:TICKERS.length,basket:!!S.basket,authorCards,bookCards,page:{page,pages,total,key:'library_page',label:S.library_view==='books'?'books':'authors'},query:S.library_q,category:S.book_category,view:S.library_view,indices:(indices||[]).map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),baskets:BASKETS.map(b=>({id:b.id,name:b.name,symbols:b.symbols||[]})),symbols:TICKERS.map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),usAvailable:!!TICK_US,guilloche:GUILL,connorsLink:guruLink('connors'),strategiesLink:href('/strategies',{tk:S.tk,basket:S.basket})};
+ return {market:libraryMarket(S),implementedMethods:new Set(enabled.map(variant=>variant.book+':'+variant.family)).size,enabledVariants:enabled.length,implementedBooks:new Set(enabled.map(variant=>variant.book)).size,authors:scopeAuthorIds.size,curatedAuthors:CURATED_AUTHOR_IDS.size,scope:S.library_scope,inventoryGroups:LIB.length,inventoryEntries:inventoryRecords.length,entries:allRecords.length,families:h.tested,symbol:LABEL[h.tk]||h.tk,symbolCount:TICKERS.length,basket:!!S.basket,authorCards,bookCards,page:{page,pages,total,key:'library_page',label:S.library_view==='books'?'books':'authors'},query:S.library_q,category:S.book_category,view:S.library_view,indices:(indices||[]).map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),baskets:BASKETS.map(b=>({id:b.id,name:b.name,symbols:b.symbols||[]})),symbols:TICKERS.map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),usAvailable:!!TICK_US,guilloche:GUILL,connorsLink:guruLink('connors'),strategiesLink:href('/strategies',{tk:S.tk,basket:S.basket})};
 }
 let startup;
 window.VaultRuntime={
