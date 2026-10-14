@@ -11,10 +11,15 @@ use super::simulate::simulate;
 use crate::{accounting, connors::Ctx, instrument_policy, trade_validation, State};
 use std::collections::BTreeMap;
 use std::net::TcpStream;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Arc;
 
 type Query = BTreeMap<String, String>;
 /// Wall-clock bound for one lab optimization (the gateway allows 600 s).
 const OPT_SECONDS: u64 = 300;
+const STOPPED: &str = "optimization stopped after another combination failed";
+#[cfg(test)]
+thread_local! { static LAST_DONE: std::cell::RefCell<Option<Arc<AtomicUsize>>> = const { std::cell::RefCell::new(None) }; }
 
 pub fn serve(stream: &mut TcpStream, path: &str, st: &State, q: &Query) {
     match route(path, st, q) {
@@ -216,25 +221,43 @@ pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> {
     let base = metrics(&mut Cache::new(), &spec)?;
     let threads = std::thread::available_parallelism().map_or(4, |n| n.get()).min(combos);
     // Rows in mixed-radix order (last dimension fastest), as the book optimizer (main.rs optimize()).
+    let (stop, done) = (AtomicBool::new(false), Arc::new(AtomicUsize::new(0)));
+    #[cfg(test)]
+    LAST_DONE.with(|d| *d.borrow_mut() = Some(done.clone()));
     let rows_v: Vec<Vec<f64>> = std::thread::scope(|sc| -> Result<Vec<Vec<f64>>, LabError> {
         let hs: Vec<_> = (0..threads).map(|t| {
-            let (metrics, spec) = (&metrics, &spec);
+            let (metrics, spec, stop, done) = (&metrics, &spec, &stop, &done);
             sc.spawn(move || {
                 let mut cache = Cache::new();
                 (t..combos).step_by(threads).map(|k| {
+                    // first error or timeout in any worker stops the others promptly
+                    if stop.load(Ordering::Relaxed) { return Err(LabError::Invalid(STOPPED.into())); }
                     if t0.elapsed().as_secs() >= OPT_SECONDS {
+                        stop.store(true, Ordering::Relaxed);
                         return Err(LabError::Invalid(format!("optimization stopped after {OPT_SECONDS} s; narrow the grid. No partial ranking is published.")));
                     }
                     let (mut r, mut vals) = (k, vec![0.0; dims.len()]);
                     for (j, d) in dims.iter().enumerate().rev() { vals[j] = d.values[r % d.values.len()]; r /= d.values.len(); }
                     let s = rules::apply(spec, dims, &vals);
-                    vals.extend(metrics(&mut cache, &s)?);
+                    #[cfg(test)]
+                    if vals[0] == 77. { stop.store(true, Ordering::Relaxed); return Err(LabError::Invalid("test hook: combination failed".into())); }
+                    vals.extend(metrics(&mut cache, &s).inspect_err(|_| stop.store(true, Ordering::Relaxed))?);
+                    done.fetch_add(1, Ordering::Relaxed);
                     Ok((k, vals))
                 }).collect::<Result<Vec<_>, LabError>>()
             })
         }).collect();
         let mut all: Vec<(usize, Vec<f64>)> = Vec::new();
-        for h in hs { all.extend(h.join().map_err(|_| LabError::Invalid("optimization worker failed; no result is published".into()))??); }
+        let mut first_err: Option<LabError> = None;
+        for h in hs {
+            match h.join().map_err(|_| LabError::Invalid("optimization worker failed; no result is published".into()))? {
+                Ok(v) => all.extend(v),
+                // keep the real failure, not the "stopped" echo workers return after the stop flag is set
+                Err(e) if first_err.is_none() || first_err.as_ref().is_some_and(|f| f.message() == STOPPED) => first_err = Some(e),
+                Err(_) => {}
+            }
+        }
+        if let Some(e) = first_err { return Err(e); }
         all.sort_by_key(|r| r.0);
         Ok(all.into_iter().map(|r| r.1).collect())
     })?;
@@ -456,6 +479,15 @@ mod tests {
         assert!(r0[i].as_f64().is_some() || matches!(r0[i], crate::lab::json::Json::Null));
         assert_ne!(i, rank_mar);
         assert!(!optimize_json(&st, &q(&[])).unwrap().contains("is_mar"));
+    }
+    #[test] fn one_failed_combo_stops_the_grid() {
+        let st = state(700, "SPX", false);
+        // test hook fails the first combo (length 77); the other combos must not all run
+        let spec = SPEC.replace("\"from\":3,\"to\":7,\"step\":2", "\"from\":77,\"to\":1076,\"step\":1");
+        let e = optimize_json(&st, &q(&[("spec", &spec)])).unwrap_err();
+        assert!(e.message().contains("test hook"), "{}", e.message());
+        let done = LAST_DONE.with(|d| d.borrow().as_ref().unwrap().load(Ordering::Relaxed));
+        assert!(done < 1500, "{done} of 3000 combos still ran");
     }
     #[test] fn ranked_on_follows_the_split() {
         let st = state(700, "SPX", false);
