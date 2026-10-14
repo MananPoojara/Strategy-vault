@@ -440,7 +440,7 @@ Templates, variants and fidelity responses never contain `claim`, `gate` or `rea
   reproduces the book engine on four fixtures (non-vacuous), catalogue status mirror equals the guru
   catalogue for all 4,365 methods, every admitted method has a template or a named reason; API —
   template list/detail/unavailable, variant label and instrument rule, origin errors, fidelity N/N on a
-  synthetic index, fidelity refusals. Planning count: 690 → 714 engine tests on `d165472`.
+  synthetic index, fidelity refusals. Planning count: 690 → 719 engine tests on `d165472` (29 new).
 - **Gateway:** allowlist test for the three routes (6 → 7 tests).
 - **Auth (`node --test`):** origin shape and `sameLabOrigin`; 003 migration additive and ordered after
   002; routes store origin, refuse an origin change on edit, keep it on duplicate, list it for snapshots
