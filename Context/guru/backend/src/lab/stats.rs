@@ -55,7 +55,7 @@ fn se_bands(b: &Bars, prm: &Params) -> Output {
 fn corr_w(w: &[f64]) -> f64 {
     let nf = w.len() as f64; let (mk, my) = ((nf + 1.) / 2., w.iter().sum::<f64>() / nf);
     let (mut num, mut vk, mut vy) = (0., 0., 0.);
-    for (j, y) in w.iter().enumerate() { let dk = (j + 1) as f64 - mk; let dy = y - my; num += dk * dy; vk += dk * dk; vy += dy * dy; }
+    for (j, y) in w.iter().enumerate() { let dk = (j + 1) as f64 - mk; let dy = snap(y - my); num += dk * dy; vk += dk * dk; vy += dy * dy; }
     div(num, (vk * vy).sqrt())
 }
 fn trend_strength(b: &Bars, prm: &Params) -> Output { Ok(vec![rolling(&b.close, n(prm, "length"), corr_w)]) }
@@ -98,12 +98,14 @@ fn zscore(b: &Bars, prm: &Params) -> Output {
     let k = n(prm, "length"); let (m, s) = (ta::sma(&b.close, k), ta::stdev(&b.close, k));
     Ok(vec![(0..b.len()).map(|i| div(b.close[i] - m[i], s[i])).collect()])
 }
+/// A flat window's mean is not exact in floating point; snap tiny deviations to 0 like `ta::stdev` so it reads as flat.
+fn snap(d: f64) -> f64 { if d.abs() <= 1e-10 { 0. } else { d } }
 fn moment(x: &[f64], k: usize, pow: i32) -> Vec<f64> {
     rolling(x, k, |w| {
         let nf = w.len() as f64; let m = w.iter().sum::<f64>() / nf;
-        let sd = (w.iter().map(|v| (v - m).powi(2)).sum::<f64>() / nf).sqrt();
+        let sd = (w.iter().map(|v| snap(v - m).powi(2)).sum::<f64>() / nf).sqrt();
         if sd == 0. { return NA; }
-        let r = w.iter().map(|v| (v - m).powi(pow)).sum::<f64>() / nf / sd.powi(pow);
+        let r = w.iter().map(|v| snap(v - m).powi(pow)).sum::<f64>() / nf / sd.powi(pow);
         if pow == 4 { r - 3. } else { r }
     })
 }
@@ -181,6 +183,14 @@ mod tests {
         assert_series(&one("skewness", &[("length", 4.)]), &[N, N, N, 0.0, -0.28629553356, 0.440866714177, 0.353461337519, 0.05239638633]);
         assert_series(&one("kurtosis", &[("length", 4.)]), &[N, N, N, -1.36, -1.234304760038, -1.0, -1.022679189323, -1.571600570393]);
         assert!(go("skewness", &closes(&[2.; 4]), &[("length", 3.)])[0][3].is_nan());
+    }
+    #[test] fn flat_windows_are_nan_not_rounding_noise() {
+        let t = closes(&[0.1; 6]); // sum([0.1; 3]) / 3 != 0.1 in floating point
+        for id in ["skewness", "kurtosis", "trend_strength"] { assert!(go(id, &t, &[("length", 3.)])[0].iter().all(|v| v.is_nan()), "{id}"); }
+    }
+    #[test] fn nearest_rank_rounds_up_and_ties_are_not_up_days() {
+        assert_series(&go("percentile", &closes(&[4., 3., 2., 1.]), &[("length", 4.), ("pct", 30.), ("variant", 1.)])[0], &[N, N, N, 2.]); // ceil(1.2) = rank 2
+        assert_series(&go("majority_rule", &closes(&[1., 1., 2., 2.]), &[("length", 3.)])[0], &[N, N, N, 33.333333333333]);
     }
     #[test] fn majority_rule_len3() { assert_series(&one("majority_rule", &[("length", 3.)]), &[N, N, N, 66.666666666667, 33.333333333333, 33.333333333333, 66.666666666667, 100.0]); }
     #[test] fn rules_reach_distribution() { for (id, out) in [("percentrank", "rank"), ("percentile", "percentile"), ("kurtosis", "kurt")] { compiles(id, out).unwrap(); } }
