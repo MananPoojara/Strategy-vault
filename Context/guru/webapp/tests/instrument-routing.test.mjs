@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
 import vm from 'node:vm';
-import {instrumentTickers} from '../../frontend/react/src/services/instrument-controls.ts';
+import {instrumentTickers, instrumentControls} from '../../frontend/react/src/services/instrument-controls.ts';
+import {stockChoices,positionLimit} from '../../frontend/react/src/services/stock-selection.ts';
 
 // Run the production route parser and click transition, rather than a duplicate
 // implementation. These checks cover navigation; backend readiness remains the
@@ -32,7 +33,7 @@ function routeHarness(types, hash = '#/s/reviewed?region=us&tk=SPX') {
   });
   const definition = {id: 'reviewed', book: 'stc9', instrument_policy: {allowed_types: types, preferred_basket: 'nifty50'}};
   const context = vm.createContext({
-    location, URLSearchParams, instrumentTickers,
+    location, URLSearchParams, instrumentTickers, instrumentControls, stockChoices, positionLimit,
     GURU: {connors: {}}, BOOK: {}, S: {}, R: {},
     API_IN: '/api', API_US: '/api/us', API: '',
     TICK_IN: indianIndices, TICK_US: indices,
@@ -98,10 +99,11 @@ test('mixed-method Indian links retain admitted local index navigation', () => {
   assert.ok(app.TICKERS.every(item => !etfSymbols.includes(item.ticker)));
 });
 
-test('stock-only navigation selects the actual market basket and a native stock', () => {
+test('stock-only navigation selects a native stock without claiming a combined basket result', () => {
   for (const [region, basket, ticker] of [['in', 'nifty50', indiaStock.ticker], ['us', 'us_sp500', usStock.ticker]]) {
     const app = routeHarness(['individual_stock'], `#/s/reviewed?region=${region}`);
-    assert.equal(app.S.basket, basket);
+    assert.equal(app.S.basket, '');
+    assert.equal(app.S.run_scope, 'single');
     assert.equal(app.S.tk, ticker);
     assert.deepEqual(Array.from(app.TICKERS, item => item.ticker), [ticker]);
   }

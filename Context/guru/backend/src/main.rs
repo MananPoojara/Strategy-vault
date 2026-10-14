@@ -7,6 +7,7 @@ mod readiness;
 mod gate;
 mod accounting;
 mod baskets;
+mod basket_portfolio;
 mod instrument_policy;
 mod trade_validation;
 
@@ -426,6 +427,9 @@ fn benchmark_stats(ctx:&Ctx,run:&Run)->BTreeMap<&'static str,f64>{
 fn num(v: f64) -> String {
     if v.is_finite() { format!("{}", (v * 1e6).round() / 1e6) } else { "null".into() }
 }
+fn full_precision_trade_return(v:f64)->String{
+    if v.is_finite(){v.to_string()}else{"null".into()}
+}
 fn esc(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
@@ -729,9 +733,9 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         let ledger=accounting::TradeLedger::new(ctx,t,allocation,costs);allocation*=1.+t.ret(cost);
         let legs: Vec<String> = t.legs.iter().map(|l| format!("[{},{},{}]", l.i - from, num(l.px), num(l.w))).collect();
         format!(
-            "{{\"dir\":{},\"legs\":[{}],\"entry\":\"{}\",\"exit\":\"{}\",\"exit_i\":{},\"exit_px\":{},\"avg_px\":{},\"ret\":{},\"bars\":{},\"open\":{},\"reason\":\"{}\",\"entry_kind\":\"{}\",\"at_entry\":{},\"at_exit\":{},\"signal\":\"{}\",\"exits\":[{}],\"accounting\":{}}}",
+            "{{\"dir\":{},\"legs\":[{}],\"entry\":\"{}\",\"exit\":\"{}\",\"exit_i\":{},\"exit_px\":{},\"avg_px\":{},\"ret\":{},\"ret_full_precision\":{},\"bars\":{},\"open\":{},\"reason\":\"{}\",\"entry_kind\":\"{}\",\"at_entry\":{},\"at_exit\":{},\"signal\":\"{}\",\"exits\":[{}],\"accounting\":{}}}",
             t.dir, legs.join(","), ctx.r[t.legs[0].i].date, ctx.r[t.exit_i].date, t.exit_i - from, num(t.exit_px),
-            num(t.avg_px()), num(t.ret(cost)), t.exit_i - t.legs[0].i, t.open, esc(&t.reason), t.entry_kind,
+            num(t.avg_px()), num(t.ret(cost)), full_precision_trade_return(t.ret(cost)), t.exit_i - t.legs[0].i, t.open, esc(&t.reason), t.entry_kind,
             snapshot(ctx, t.legs[0].i, custom.as_ref()), snapshot(ctx, t.signal_i, custom.as_ref()), ctx.r[t.signal_i].date,
             t.exits.iter().map(|(i, px, f)| format!("[{},{},{}]", i - from, num(*px), num(*f))).collect::<Vec<_>>().join(","),ledger.json()
         )
@@ -748,6 +752,16 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     let _ = write!(o, ",\"model_initial_equity\":1,\"stats\":{},\"gross_stats\":{},\"benchmark_symbol\":\"{}\",\"benchmark_stats\":{},\"costs\":{},\"accounting_basis\":\"Return-only report. The normalized compounding model begins at unit equity 1 before the first event. The first daily model return is equity[0]/1 - 1, including an initial fee or loss, and risk/drawdown reports retain that initial event. Net profit/closed_return_sum sums actual closed-trade net percentage returns and equals unrounded avg_net_pnl times closed trades. Open marks are excluded from that sum. total_return/compounded_return and charts use a separately labelled sequential unit-exposure compounding model including open liquidation estimates. No sized portfolio result is implied. Gross equity/stats independently compound the same fills at zero cost. Ledger gross/fee/slippage returns use the actual net pretrade allocation, so ledger_gross_return minus fee_return minus slippage_return reconciles net total_return. Open trades include modeled liquidation costs. No monetary sizing, statutory tax schedule or verified futures roll events are supplied.\"}}", stats_json(&financial_stats(ctx, &run, costs)),stats_json(&stats(ctx,&gross,0.)),esc(&ctx.r[from].ticker),stats_json(&benchmark_stats(ctx,&run)),costs.json());
     if def.book==books::chande::BOOK {o.pop();let _=write!(o,",\"experiment\":{}}}",experiment_json(id));}
     Ok(o)
+}
+
+/// Basket jobs use their own bounded, fail-fast permit. The shared single-stock
+/// strategy engine and its calculation guards are unchanged.
+fn basket_json(st:&State,q:&BTreeMap<String,String>,stream:&mut TcpStream){
+    match basket_portfolio::run(st,q){
+        Ok(body)=>respond(stream,"200 OK","application/json; charset=utf-8",body.as_bytes()),
+        Err(note) if note.starts_with("busy:")=>respond(stream,"429 Too Many Requests","text/plain; charset=utf-8",note.as_bytes()),
+        Err(note)=>respond(stream,"400 Bad Request","text/plain; charset=utf-8",note.as_bytes()),
+    }
 }
 
 fn params_json(guru: &str) -> String {
@@ -1075,6 +1089,7 @@ fn handle(mut stream: TcpStream, st: Arc<State>) {
         "/api/guru/connors/readiness" => json(readiness_json(&st, &owned_query(&q,"connors")), &mut stream),
         "/api/guru/connors/summary" => json(summary(&st, &owned_query(&q,"connors")), &mut stream),
         "/api/guru/connors/run" => json(detail(&st, &owned_query(&q,"connors")), &mut stream),
+        "/api/guru/connors/basket-run" => basket_json(&st,&owned_query(&q,"connors"),&mut stream),
         "/api/guru/connors/params" => json(Ok(params_json("connors")), &mut stream),
         "/api/guru/connors/optimize" => json(optimize(&st, &owned_query(&q,"connors")), &mut stream),
         "/api/guru/chande/strategies" => json(Ok(catalogue_json("chande")), &mut stream),
@@ -1082,11 +1097,13 @@ fn handle(mut stream: TcpStream, st: Arc<State>) {
         "/api/guru/chande/readiness" => json(readiness_json(&st, &owned_query(&q,"chande")), &mut stream),
         "/api/guru/chande/summary" => json(summary(&st, &owned_query(&q,"chande")), &mut stream),
         "/api/guru/chande/run" => json(detail(&st, &owned_query(&q,"chande")), &mut stream),
+        "/api/guru/chande/basket-run" => basket_json(&st,&owned_query(&q,"chande"),&mut stream),
         "/api/guru/chande/optimize" => json(optimize(&st, &owned_query(&q,"chande")), &mut stream),
         "/api/guru/ross/strategies" => json(Ok(catalogue_json("ross")), &mut stream),
         "/api/guru/ross/readiness" => json(readiness_json(&st, &owned_query(&q,"ross")), &mut stream),
         "/api/guru/ross/summary" => json(summary(&st, &owned_query(&q,"ross")), &mut stream),
         "/api/guru/ross/run" => json(detail(&st, &owned_query(&q,"ross")), &mut stream),
+        "/api/guru/ross/basket-run" => basket_json(&st,&owned_query(&q,"ross"),&mut stream),
         "/api/guru/ross/params" => json(Ok(params_json("ross")), &mut stream),
         "/api/guru/ross/optimize" => json(optimize(&st, &owned_query(&q,"ross")), &mut stream),
         "/api/notes" => match note_path(&q) {
@@ -1180,6 +1197,14 @@ mod tests {
         let run=detail(&state,&q).unwrap();assert!(run.contains("\"currency\":\"USD\"")&&run.contains("\"benchmark_symbol\":\"AAPL\""));assert!(!run.contains("999999"));
         q.insert("id".into(),"r3".into());assert!(detail(&state,&q).unwrap_err().contains("index"));
         q.insert("id".into(),"hpetf_3dhl_long".into());assert!(detail(&state,&q).unwrap_err().contains("ETF"));
+    }
+    #[test]
+    fn detail_publishes_full_trade_return_precision_without_changing_legacy_rounding(){
+        let (_fixture,state,q)=native_us_fixture();let selected=select_context(&state,&q).unwrap();let held=selected.context(&state);let (ctx,from,to,cost)=resolve_context(&held,&q).unwrap();
+        let run=backtest(ctx,"f1a",from,to,cost,&Params::new()).unwrap();let t=run.trades.iter().find(|t|!t.open).expect("fixture needs a closed actual source trade");let value=t.ret(cost);
+        assert_ne!(num(value),value.to_string(),"fixture must exercise rounding loss");let body=detail(&state,&q).unwrap();
+        assert!(body.contains(&format!("\"ret\":{},\"ret_full_precision\":{}",num(value),value)));
+        assert_eq!(full_precision_trade_return(f64::NAN),"null");assert_eq!(full_precision_trade_return(f64::INFINITY),"null");
     }
     #[test]
     fn native_requested_coverage_is_not_silently_extended_or_shortened(){

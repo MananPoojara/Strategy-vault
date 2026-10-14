@@ -8,18 +8,21 @@ pub fn allowed_engine_path(path: &str) -> bool {
             | "guru/connors/summary"
             | "guru/connors/readiness"
             | "guru/connors/run"
+            | "guru/connors/basket-run"
             | "guru/connors/params"
             | "guru/connors/optimize"
             | "guru/ross/strategies"
             | "guru/ross/summary"
             | "guru/ross/readiness"
             | "guru/ross/run"
+            | "guru/ross/basket-run"
             | "guru/ross/params"
             | "guru/ross/optimize"
             | "guru/chande/strategies"
             | "guru/chande/summary"
             | "guru/chande/readiness"
             | "guru/chande/run"
+            | "guru/chande/basket-run"
             | "guru/chande/params"
             | "guru/chande/optimize"
     )
@@ -46,7 +49,7 @@ mod tests {
         assert!(allowed_engine_path("guru/connors/run"));
         assert!(allowed_engine_path("guru/connors/readiness"));
         assert!(allowed_engine_path("guru/connors/optimize"));
-        for route in ["strategies","summary","readiness","run","params","optimize"] {
+        for route in ["strategies","summary","readiness","run","basket-run","params","optimize"] {
             assert!(allowed_engine_path(&format!("guru/ross/{route}")));
             assert!(allowed_engine_path(&format!("guru/chande/{route}")));
         }
@@ -110,12 +113,29 @@ mod numeric_tests {
             ("g.two", "1:1000:1")
         ])));
     }
+    #[test]
+    fn basket_capacity_membership_and_all_execution_costs_are_bounded(){
+        assert!(safe_engine_numbers(&params(&[("max_positions","20"),("membership","current"),("slippage","2"),("rollover","0")])));
+        assert!(safe_engine_numbers(&params(&[("max_positions","100"),("membership","past")])));
+        for pair in [("max_positions","0"),("max_positions","101"),("max_positions","2.5"),("max_positions","-1"),("membership","alive"),("slippage","NaN"),("rollover","inf")]{
+            assert!(!safe_engine_numbers(&params(&[pair])),"{pair:?}");
+        }
+        assert!(!allowed_engine_path("guru/other/basket-run"));
+        assert!(allowed_engine_path("guru/connors/basket-run"));
+        assert!(!is_optimization_path("guru/connors/basket-run"));
+    }
 }
 
 pub fn safe_engine_numbers(params: &std::collections::BTreeMap<String, String>) -> bool {
     let mut combinations = 1usize;
     for (key, value) in params {
-        if key.starts_with("p.") || key == "cost" {
+        if key == "max_positions" && !value.parse::<usize>().is_ok_and(|n|(1..=100).contains(&n)) {
+            return false;
+        }
+        if key == "membership" && !matches!(value.as_str(),"current"|"past") {
+            return false;
+        }
+        if key.starts_with("p.") || matches!(key.as_str(),"cost"|"slippage"|"rollover") {
             if !value
                 .parse::<f64>()
                 .is_ok_and(|n| n.is_finite() && n.abs() <= 1_000_000.0)
