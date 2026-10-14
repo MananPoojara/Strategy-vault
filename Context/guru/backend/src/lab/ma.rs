@@ -12,6 +12,10 @@ fn ema(b: &Bars, prm: &Params) -> Output { Ok(vec![ta::ema(&b.close, n(prm, "len
 fn wma(b: &Bars, prm: &Params) -> Output { Ok(vec![ta::wma(&b.close, n(prm, "length"))]) }
 fn smma(b: &Bars, prm: &Params) -> Output { Ok(vec![ta::rma(&b.close, n(prm, "length"))]) }
 fn lsma(b: &Bars, prm: &Params) -> Output { Ok(vec![ta::linreg(&b.close, n(prm, "length"), 0)]) }
+fn swma(b: &Bars, _: &Params) -> Output {
+    let c = &b.close;
+    Ok(vec![(0..c.len()).map(|i| if i < 3 { ta::NA } else { (c[i - 3] + 2. * c[i - 2] + 2. * c[i - 1] + c[i]) / 6. }).collect()])
+}
 fn vwma(b: &Bars, prm: &Params) -> Output {
     let v = b.volume.as_ref().ok_or("needs volume")?;
     let n = n(prm, "length");
@@ -91,6 +95,7 @@ pub const DEFS: &[IndicatorDef] = &[
     def("ema", &["ema"], "Exponential Moving Average", LEN9, NO, "ema(close, length), seeded with the SMA of the first length values", &[8], ema),
     def("wma", &["wma"], "Weighted Moving Average", LEN9, NO, "wma(close, length)", &[8], wma),
     def("smma", &["smma"], "Smoothed Moving Average", &[len("length", "Length", 7.)], NO, "rma(close, length) (Wilder smoothing)", &[6], smma),
+    def("swma", &["swma"], "Symmetrically Weighted Moving Average", &[], NO, "(x[3] + 2·x[2] + 2·x[1] + x)/6 of close (TradingView ta.swma)", &[3], swma),
     def("vwma", &["vwma"], "Volume Weighted Moving Average", &[len("length", "Length", 20.)], Needs { volume: true, intraday: false }, "sma(close*volume, length) / sma(volume, length)", &[19], vwma),
     def("hma", &["hma"], "Hull Moving Average", &[ParamSpec { min: 2., ..len("length", "Length", 9.) }], NO, "wma(2*wma(close, floor(length/2)) - wma(close, length), floor(sqrt(length)))", &[10], hma),
     def("alma", &["alma"], "Arnaud Legoux Moving Average", &[len("length", "Length", 9.), real("offset", "Offset", 0.85, 0., 1., 0.05), real("sigma", "Sigma", 6., 0.5, 50., 0.5)], NO,
@@ -111,6 +116,7 @@ mod tests {
     fn with(k: &str, v: f64) -> Params { let mut p = Params::new(); p.insert(k.into(), v); p }
     #[test] fn sma_len3() { assert_series(&run(&get("sma").unwrap(), &closes(&[1., 2., 3., 4.]), &with("length", 3.)).unwrap()[0], &[N, N, 2., 3.]); }
     #[test] fn ema_len2_sma_seed() { assert_series(&run(&get("ema").unwrap(), &closes(&[1., 2., 3.]), &with("length", 2.)).unwrap()[0], &[N, 1.5, 2.5]); }
+    #[test] fn swma_weights() { assert_series(&run(&get("swma").unwrap(), &closes(&[1., 2., 3., 4., 5.]), &Params::new()).unwrap()[0], &[N, N, N, 2.5, 3.5]); }
     #[test] fn hma_len4_constant_input() { // any MA of a constant is the constant
         assert_series(&run(&get("hma").unwrap(), &closes(&[5.; 6]), &with("length", 4.)).unwrap()[0], &[N, N, N, N, 5., 5.]);
     }
