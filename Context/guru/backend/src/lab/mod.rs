@@ -12,6 +12,7 @@ pub mod json;
 pub mod listed;
 pub mod markets;
 pub mod ma;
+pub mod ma2;
 pub mod momentum;
 pub mod price;
 pub mod resample;

@@ -43,6 +43,13 @@ CSV files kept outside Git; without them the parity test passes and prints "skip
 | ad_ratio | - | ratio |
 | cvi | - | cvi |
 | trin | - | trin |
+| ma_ribbon | type=0, len1=20, len2=50, len3=100, len4=200 | ma1, ma2, ma3, ma4 |
+| ma_cross | fast=9, slow=21, fast_type=0, slow_type=0 | fast, slow, cross |
+| gmma | - | e3, e5, e8, e10, e12, e15, e30, e35, e40, e45, e50, e60 |
+| hamming_ma | length=10 | hamming |
+| ama | alpha=0.1 | ama |
+| ama2 | alpha=0.1, feedback=0.9 | ama2 |
+| iir2 | f0=0.2, f1=1.4, f2=-0.6 | iir2 |
 | cci | length=20 | cci |
 | mom | length=10 | mom |
 | roc | length=9 | roc |
