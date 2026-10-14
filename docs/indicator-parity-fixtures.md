@@ -24,6 +24,7 @@ CSV files kept outside Git; without them the parity test passes and prints "skip
 | sma | length=9 | sma |
 | ema | length=9 | ema |
 | wma | length=9 | wma |
+| swma | - | swma |
 | smma | length=7 | smma |
 | vwma | length=20 | vwma |
 | hma | length=9 | hma |
@@ -98,14 +99,35 @@ LAB_TV_FIXTURES=/path/to/fixtures CARGO_BUILD_JOBS=2 cargo test lab::parity -- -
 
 Values are compared at 1e-6 relative tolerance because exports are rounded to display precision.
 
-## Already verified on TradingView
+## Verification status
 
-EMA uses an SMA seed. First bars with a value: EMA5 bar 4, RSI14 bar 14, ATR14 bar 13,
-DI+ bar 14, ADX bar 27, MFI14 bar 13, CMO9 bar 9, OBV bar 1, HMA9 bar 10, MACD bars 25 and 33,
-Stoch RSI %K bar 17, SAR bar 1 (SWIGGY start values), Supertrend(10,3) bar 9.
+Phase 1 ships this harness with fixtures pending; no indicator should be described as TradingView-matched until its fixture passes.
+
+1. Value-verified on TradingView:
+   - EMA seeded with the SMA of the first n values (0 differences over 475 bars).
+   - SAR's first four NSE:SWIGGY bars (na, 391, 391, 392.968).
+2. First-bar-verified only (the first bar with a value matches; later values are not compared):
+   EMA5 bar 4, RSI14 14, ATR14 13, DI+ 14, ADX 27, MFI14 13, CMO9 9, OBV 1, HMA9 10, MACD 25 and 33,
+   Stoch RSI %K 17, SAR 1, Supertrend(10,3) 9.
+3. Everything else: values are NOT yet verified against TradingView. Every indicator in the table above is
+   unverified unless it is listed in group 1.
+
+## Export pitfalls
+
+- TradingView's Supertrend shows 0 on bar 0; blank that cell.
+- Ichimoku spans and the Pivots built-in are plotted with offsets. Export them from a small Pine script that
+  plots the `ta.*` value with no offset.
+- Volume must be column 5 when present.
+- Delete extra plots.
+- The time column is ignored.
 
 ## Still needing a fixture
 
 Keltner, TSI, TRIX, DPO, Fisher, KST, Aroon (tie direction), highest/lowest tie rules,
-Ichimoku, Connors RSI, MFI values, Ultimate Oscillator, ALMA, KAMA, McGinley,
-Chaikin Oscillator, PVO, EOM, NVI/PVI.
+Ichimoku (spans are exported as plotted, calculated displacement-1 bars earlier), Connors RSI, MFI values,
+Ultimate Oscillator, ALMA, KAMA, McGinley, Chaikin Oscillator, PVO, EOM, NVI/PVI,
+SAR with an outside bar at the start (bar-1 reversal), SWMA.
+
+## Scope notes
+
+Bars since moves to the Phase 2 rule builder (it takes a condition, not a price series).
