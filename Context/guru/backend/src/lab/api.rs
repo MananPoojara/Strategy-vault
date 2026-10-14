@@ -13,6 +13,8 @@ use std::collections::BTreeMap;
 use std::net::TcpStream;
 
 type Query = BTreeMap<String, String>;
+/// Wall-clock bound for one lab optimization (the gateway allows 600 s).
+const OPT_SECONDS: u64 = 300;
 
 pub fn serve(stream: &mut TcpStream, path: &str, st: &State, q: &Query) {
     match route(path, st, q) {
@@ -29,6 +31,7 @@ pub fn route(path: &str, st: &State, q: &Query) -> Option<Result<String, LabErro
         "/api/lab/catalogue" => |_, _| Ok(catalogue_json()),
         "/api/lab/series" => series_json,
         "/api/lab/run" => run_json,
+        "/api/lab/optimize" => optimize_json,
         _ => return None,
     };
     Some(guarded(|| f(st, q)))
@@ -160,6 +163,86 @@ pub fn run_json(st: &State, q: &Query) -> Result<String, LabError> {
         arr(run.equity.iter().map(|v| crate::num(*v))), arr(gross.equity.iter().map(|v| crate::num(*v))), arr(run.bh.iter().map(|v| crate::num(*v))),
         crate::stats_json(&crate::financial_stats(ctx, &run, costs)), crate::stats_json(&crate::stats(ctx, &gross, 0.)), costs.json(), crate::source_provenance(st, q)))
 }
+pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> {
+    let t0 = std::time::Instant::now();
+    let spec = spec_of(q)?;
+    if spec.optimize.is_empty() { return Err(LabError::Invalid("optimize lists no parameter ranges".into())); }
+    let q = &with_spec_cost(q, &spec)?;
+    let selected = select(st, q)?;
+    let held = selected.context(st);
+    let ctx: &Ctx = &held;
+    let (kind, instrument) = instrument(&selected, &ctx.r[0].ticker);
+    known_type(kind, &ctx.r[0].ticker)?;
+    let (from, to) = window(ctx, q)?;
+    let costs = accounting::Costs::parse(q)?;
+    costs.ensure_rollover()?;
+    let cost = costs.side_rate();
+    let dates: Vec<&str> = ctx.r.iter().map(|r| r.date.as_str()).collect();
+    let split = match q.get("split").filter(|s| !s.is_empty()) {
+        None => None,
+        Some(s) => Some(Some(dates.partition_point(|d| *d < s.as_str())).filter(|&k| k > from + 20 && k + 20 < to)
+            .ok_or_else(|| LabError::Invalid("split must leave more than 20 bars on each side of the range".into()))?),
+    };
+    let fr = Frames::new(Bars::from_rows(ctx.r));
+    let dims = &spec.optimize;
+    let combos: usize = dims.iter().map(|d| d.values.len()).product();
+    let metrics = |cache: &mut Cache, s: &Spec| -> Result<Vec<f64>, LabError> {
+        let c = series::compile(s, &fr, cache)?;
+        let stats = crate::financial_stats(ctx, &backtest(ctx, &c, &fr.d, from, to, cost)?, costs);
+        let mut out: Vec<f64> = crate::FULL_COLS.iter().map(|k| stats[k]).collect();
+        for (a, b) in split.map(|s| [(from, s - 1), (s, to)]).into_iter().flatten() {
+            let part = crate::financial_stats(ctx, &backtest(ctx, &c, &fr.d, a, b, cost)?, costs);
+            out.extend(crate::PART_COLS.iter().map(|k| part[k]));
+        }
+        Ok(out)
+    };
+    let base = metrics(&mut Cache::new(), &spec)?;
+    let threads = std::thread::available_parallelism().map_or(4, |n| n.get()).min(combos);
+    // Rows in mixed-radix order (last dimension fastest), as the book optimizer (main.rs optimize()).
+    let rows_v: Vec<Vec<f64>> = std::thread::scope(|sc| -> Result<Vec<Vec<f64>>, LabError> {
+        let hs: Vec<_> = (0..threads).map(|t| {
+            let (metrics, spec) = (&metrics, &spec);
+            sc.spawn(move || {
+                let mut cache = Cache::new();
+                (t..combos).step_by(threads).map(|k| {
+                    if t0.elapsed().as_secs() >= OPT_SECONDS {
+                        return Err(LabError::Invalid(format!("optimization stopped after {OPT_SECONDS} s; narrow the grid. No partial ranking is published.")));
+                    }
+                    let (mut r, mut vals) = (k, vec![0.0; dims.len()]);
+                    for (j, d) in dims.iter().enumerate().rev() { vals[j] = d.values[r % d.values.len()]; r /= d.values.len(); }
+                    let s = rules::apply(spec, dims, &vals);
+                    vals.extend(metrics(&mut cache, &s)?);
+                    Ok((k, vals))
+                }).collect::<Result<Vec<_>, LabError>>()
+            })
+        }).collect();
+        let mut all: Vec<(usize, Vec<f64>)> = Vec::new();
+        for h in hs { all.extend(h.join().map_err(|_| LabError::Invalid("optimization worker failed; no result is published".into()))??); }
+        all.sort_by_key(|r| r.0);
+        Ok(all.into_iter().map(|r| r.1).collect())
+    })?;
+    // Ranking exactly as the book optimizer (main.rs optimize(): trade-rate floor, outcome columns, conclude_rank).
+    let col = |name: &str| dims.len() + crate::FULL_COLS.iter().position(|c| *c == name).unwrap();
+    let yrs = crate::years(ctx, from, to);
+    let base_tpy = base[crate::FULL_COLS.iter().position(|c| *c == "trades").unwrap()] / yrs;
+    let per_year = (base_tpy * 0.5).clamp(crate::MIN_PER_YEAR.0, crate::MIN_PER_YEAR.1);
+    let min_trades = (per_year * yrs).ceil().max(crate::MIN_TRADES);
+    let defs: Vec<f64> = dims.iter().map(|d| rules::current(&spec, &d.target)).collect();
+    let outcome_cols: Vec<usize> = (dims.len()..dims.len() + 16).chain(dims.len() + crate::FULL_COLS.len()..rows_v.first().map_or(0, Vec::len)).collect();
+    let (rank_json, pool) = crate::conclude_rank_with_outcomes(&rows_v, col("trades"), &crate::RANK_STATS.map(|(k, _)| col(k)), min_trades, per_year, &defs, Some(&outcome_cols));
+    let slim = q.get("slim").is_some_and(|v| v == "1");
+    let row_s = |r: &Vec<f64>| arr(r.iter().map(|v| crate::num(*v)));
+    let rows = if slim { String::new() } else { rows_v.iter().map(row_s).collect::<Vec<_>>().join(",") };
+    let picked = if slim { pool.iter().map(|&i| format!("\"{i}\":{}", row_s(&rows_v[i]))).collect::<Vec<_>>().join(",") } else { String::new() };
+    let mut cols: Vec<String> = dims.iter().map(|d| d.path.clone()).collect();
+    cols.extend(crate::FULL_COLS.iter().map(|c| c.to_string()));
+    for part in split.map(|_| ["is_", "oos_"]).into_iter().flatten() { cols.extend(crate::PART_COLS.iter().map(|c| format!("{part}{c}"))); }
+    let dims_json = arr(dims.iter().map(|d| format!("{{\"path\":\"{}\",\"values\":{}}}", esc(&d.path), arr(d.values.iter().map(|v| crate::num(*v))))));
+    Ok(format!(
+        "{{\"label\":\"{LABEL}\",\"kind\":\"lab_optimization\",\"instrument\":{instrument},\"from\":\"{}\",\"to\":\"{}\",\"split\":{},\"combos\":{combos},\"threads\":{threads},\"ms\":{},\"dims\":{dims_json},\"cols\":{},\"base\":{},\"rank\":{rank_json},\"picked\":{{{picked}}},\"rows\":[{rows}],\"costs\":{},\"provenance\":{}}}",
+        dates[from], dates[to], split.map_or("null".into(), |s| format!("\"{}\"", dates[s])), t0.elapsed().as_millis(),
+        quoted(cols.iter().map(String::as_str)), arr(base.iter().map(|v| crate::num(*v))), costs.json(), crate::source_provenance(st, q)))
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -259,5 +342,24 @@ mod tests {
             assert!(r.is_err() || r.is_ok(), "never unwinds");
             if let Err(e) = r { assert_ne!(e.message(), "internal error while evaluating this request; no result is published"); }
         }
+    }
+    #[test] fn optimize_ranks_like_the_book_optimizer() {
+        let st = state(700, "SPX", false);
+        let j = optimize_json(&st, &q(&[("split", "2016-06-01")])).unwrap();
+        let v = crate::lab::json::parse(&j).unwrap();
+        assert_eq!(v.get("combos").and_then(|c| c.as_f64()), Some(9.));
+        assert!(j.starts_with(&format!("{{\"label\":\"{LABEL}\",\"kind\":\"lab_optimization\"")));
+        assert!(j.contains("\"cols\":[\"entry.all[0].rhs.p.length\",\"exit.any[0].rhs.value\",\"total_return\""));
+        assert!(j.contains("\"is_total_return\"") && j.contains("\"oos_t_stat\""));
+        let crate::lab::json::Json::Arr(rows) = v.get("rows").unwrap() else { panic!() };
+        assert_eq!(rows.len(), 9);
+        // first row = first value of every dimension, last dimension fastest
+        assert!(j.contains("\"rows\":[[3,2,") && j.contains("[3,3,"));
+        assert!(v.get("rank").and_then(|r| r.get("eligible")).is_some());
+        let big = SPEC.replace("\"from\":3,\"to\":7,\"step\":2", "\"from\":1,\"to\":1000,\"step\":1").replace("\"from\":2,\"to\":4", "\"from\":1,\"to\":100");
+        assert!(optimize_json(&st, &q(&[("spec", &big)])).unwrap_err().message().contains("more than 50000"));
+        assert!(optimize_json(&st, &q(&[("split", "2015-01-05")])).unwrap_err().message().contains("split"));
+        let none = SPEC.split(",\"optimize\"").next().unwrap().to_string() + "}";
+        assert!(optimize_json(&st, &q(&[("spec", &none)])).unwrap_err().message().contains("no parameter ranges"));
     }
 }
