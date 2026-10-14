@@ -174,7 +174,13 @@ fn dims(spec: &Spec, v: &Json) -> Result<Vec<Dim>, LabError> {
         if out.iter().any(|d| d.target == target) { return Err(inv(format!("{at}.path '{path}' is listed twice"))); }
         let num = |k: &str| it.get(k).and_then(Json::as_f64).ok_or_else(|| inv(format!("{at}.{k} must be a number")));
         // Same grid rule as the book optimizer (main.rs grid(): ≤ 1000 values, 1e-9 rounding).
-        let values = crate::grid(&format!("{}:{}:{}", num("from")?, num("to")?, num("step")?)).map_err(|e| inv(format!("{at}: {e}")))?;
+        let (from, to, step) = (num("from")?, num("to")?, num("step")?);
+        // crate::grid overflows on huge or tiny-step ranges, so bound them before calling it.
+        if ![from, to, step].iter().all(|x| x.is_finite()) || step <= 0. || to < from || (to - from) / step > 1000. {
+            return Err(inv(format!("{at}.path '{path}': bad range {from}:{to}:{step}; need finite from <= to, step > 0 and at most 1000 values")));
+        }
+        let values = crate::grid(&format!("{from}:{to}:{step}")).map_err(|e| inv(format!("{at}: {e}")))?;
+        if values.is_empty() || values.iter().any(|x| !x.is_finite()) { return Err(inv(format!("{at}.path '{path}': bad range, no values"))); }
         for &x in &values { check_value(spec, &target, x).map_err(|e| inv(format!("{at}: {e}")))?; }
         combos = combos.saturating_mul(values.len());
         if combos > crate::MAX_COMBOS { return Err(inv(format!("optimize gives more than {} combinations; narrow a range or raise a step", crate::MAX_COMBOS))); }
@@ -336,6 +342,14 @@ mod tests {
         assert!(err(&twice).message().contains("listed twice"));
         let value = parse_spec(&with("entry.all[0].lhs.p.length\",\"from\":2,\"to\":6", "entry.all[0].rhs.value\",\"from\":5,\"to\":15")).unwrap();
         assert_eq!((value.optimize[0].values.len(), current(&value, &value.optimize[0].target)), (11, 10.));
+    }
+    #[test] fn unbounded_optimize_ranges_are_rejected() {
+        for (f, t, st) in ["0,1e30,1", "-1e308,1e308,1", "0,1,1e-300"].iter().map(|r| { let v: Vec<&str> = r.split(',').collect(); (v[0], v[1], v[2]) }) {
+            let e = err(&with("\"from\":2,\"to\":6,\"step\":1", &format!("\"from\":{f},\"to\":{t},\"step\":{st}")));
+            assert_eq!(e.status(), "invalid");
+            assert!(e.message().contains("bad range"), "{:?}", e.message());
+        }
+        assert_eq!(parse_spec(EXAMPLE).unwrap().optimize[0].values.len(), 5);
     }
     #[test] fn engine_errors_map_to_types() {
         assert_eq!(LabError::from("needs_data: no VIX".to_string()), LabError::NeedsData("no VIX".into()));
