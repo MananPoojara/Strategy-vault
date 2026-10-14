@@ -5,6 +5,7 @@
 //! formulas follow TradingView built-in chart indicators (see each definition string).
 pub mod bars;
 pub mod catalogue;
+pub mod json;
 pub mod ma;
 pub mod momentum;
 pub mod price;
