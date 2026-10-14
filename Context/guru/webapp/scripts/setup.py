@@ -2,6 +2,7 @@
 """Prepare only the selected datasets and generate secrets without overwriting them."""
 from pathlib import Path
 import os, secrets, shutil
+import stage_gl
 app = Path(__file__).resolve().parents[1]
 root = Path(os.environ.get('VAULT_SOURCE_ROOT', str(app.parents[2])))
 runtime = Path(os.environ.get('VAULT_RUNTIME_ROOT', str(Path.home()/'.cache/strategy-vault-webapp')))
@@ -18,6 +19,7 @@ for source, target in [
     if not source.exists(): raise SystemExit(f'Missing required data: {source}')
     if source.is_dir(): shutil.copytree(source,target,dirs_exist_ok=True)
     else: shutil.copy2(source,target)
+for note in stage_gl.stage(root, data/'gl'/'gl_data.csv'): print(f'engine-gl: {note}')
 for item in [data, *data.rglob('*')]: item.chmod(0o755 if item.is_dir() else 0o644)
 frontend_data=root/'Context/guru/frontend/data'
 if frontend_data.is_dir():
