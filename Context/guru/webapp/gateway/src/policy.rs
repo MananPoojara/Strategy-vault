@@ -27,6 +27,9 @@ pub fn allowed_engine_path(path: &str) -> bool {
             | "lab/run"
             | "lab/optimize"
             | "lab/instruments"
+            | "lab/templates"
+            | "lab/template"
+            | "lab/fidelity"
     )
 }
 pub fn is_optimization_path(path:&str)->bool {
@@ -227,6 +230,16 @@ mod lab_tests {
         assert!(is_lab_optimization_path("lab/optimize"));
         assert!(!is_lab_optimization_path("lab/run"));
         assert!(!is_optimization_path("lab/optimize"), "existing book list stays unchanged");
+    }
+    #[test]
+    fn customize_routes_are_allowlisted_reads() {
+        for route in ["templates", "template", "fidelity"] {
+            let path = format!("lab/{route}");
+            assert!(allowed_engine_path(&path));
+            assert!(!is_lab_optimization_path(&path) && !is_optimization_path(&path));
+            assert_eq!(lab_spec_problem(&path, &BTreeMap::new()), None, "no spec is sent: the engine uses its own template");
+        }
+        assert!(!allowed_engine_path("lab/templates/x"));
     }
     #[test]
     fn lab_specs_are_bounded_before_the_engine() {
