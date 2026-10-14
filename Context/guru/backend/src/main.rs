@@ -9,6 +9,7 @@ mod accounting;
 mod baskets;
 mod instrument_policy;
 mod trade_validation;
+mod lab;
 
 use connors::{Ctx, Params, Status, Trade};
 use std::collections::BTreeMap;
