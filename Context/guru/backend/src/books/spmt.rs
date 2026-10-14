@@ -16,6 +16,33 @@ use std::rc::Rc;
 
 pub const BOOK: &str = "spmt";
 
+/// Exact daily source contracts reviewed in library/connors-spmt/REVIEW.md.
+/// These are SPMT variants of existing STC IX ideas, not twenty new algorithms.
+pub const REVIEWED_DAILY: &[&str] = &[
+    "spmt_eom_co", "spmt_eom_rsi", "spmt_eom_cc", "spmt_rsi2_4", "spmt_rsi4_25",
+    "spmt_rsi_div8", "spmt_rsi_div2", "spmt_rsi_1", "spmt_rsi_2", "spmt_rsi_3",
+    "spmt_pctb_1", "spmt_pctb_2", "spmt_price", "spmt_dmi_1", "spmt_dmi_2",
+    "spmt_dmi_3", "spmt_dmi_4", "spmt_dmi_5", "spmt_short_4up", "spmt_short_strong",
+];
+pub fn reviewed_daily(id: &str) -> bool { REVIEWED_DAILY.contains(&id) }
+
+/// The approved batch supplies price series only. A partially observed signal
+/// basket must never silently become the source's complete basket.
+pub fn hold_reason(id: &str) -> Option<&'static str> {
+    match id {
+        "spmt_vix200" | "spmt_vix2" | "spmt_vix4" | "spmt_vix7" | "spmt_vix8" |
+        "spmt_short_vix53" | "spmt_short_vix101" => Some("SPMT requires verified exchange-specific volatility-index inputs and complete lookback coverage. This batch did not verify CBOE VIX or a declared India VIX adaptation; daily OHLC of SPY/Nifty cannot replace them."),
+        "spmt_trin_1" | "spmt_trin_2" | "spmt_trin_3" | "spmt_trin_4" | "spmt_trin_5" |
+        "spmt_nyse_adv" | "spmt_tick" => Some("SPMT requires verified NYSE TRIN/advancers/TICK, or an explicitly reviewed exchange adaptation, with full lookback coverage. Generic auxiliary columns and OHLC cannot supply these inputs."),
+        "spmt_multi5" | "spmt_multi9" | "spmt_mts" => Some("The complete SPMT signal basket needs VIX, TRIN, advancers and TICK. Counting only available price signals changes the strategy. Signal recurrence, allocation and contract accounting also require independent review; the partial basket is held."),
+        "spmt_eom_und" => Some("Pages 168-169 show an options-entry signal and one next-open exit example, but do not specify the general exit threshold. The existing underlying runner infers RSI(2)>65. It is retained as an unverified interpretation, not a complete daily contract or options P&L."),
+        "spmt_eom_puts" | "spmt_put_sale" | "spmt_itm_calls" => Some("Actual option contracts, strikes, expiries, premiums and position accounting are missing. Underlying returns cannot establish options P&L."),
+        "spmt_dt_gapdown" | "spmt_dt_unch" | "spmt_dt_gapup" => Some("Intraday methods are outside the approved daily batch. Actual 15-minute execution data and source-supported entry/stop ordering are required; invented ticks, currency conversions and daily paths are held."),
+        "spmt_discretion" => Some("The source leaves ranking and allocation discretionary; a complete mechanical portfolio contract is unavailable."),
+        _ => None,
+    }
+}
+
 /// The book's 30 long Market Timing signals in RadarScreen order (p.241), then the 4 short signals.
 const LONG: &[&str] = &[
     "spmt_eom_co", "spmt_eom_rsi", "spmt_eom_cc", "spmt_rsi_1", "spmt_rsi_2", "spmt_rsi_3", "spmt_rsi2_4", "spmt_rsi4_25", "spmt_rsi_div8",
@@ -314,6 +341,26 @@ fn all(i: usize, d: usize, f: impl Fn(usize) -> bool) -> bool {
     i + 1 >= d && (i + 1 - d..=i).all(f)
 }
 
+/// Dominant positive directional move with a subtraction-roundoff tie budget.
+/// Equal decimal high/low moves can differ after f64 subtraction. Treat only
+/// differences within the input arithmetic's error bound as ties, not as +DM.
+/// This fixes the source convention locally; STC IX's shared DMI is untouched.
+fn positive_dm(today: &crate::Row, prior: &crate::Row) -> f64 {
+    let up = today.high - prior.high;
+    let down = prior.low - today.low;
+    let error = f64::EPSILON * (today.high.abs() + prior.high.abs() + prior.low.abs() + today.low.abs());
+    if up > 0.0 && up - down > error { up } else { 0.0 }
+}
+
+fn daily_pdi(rows: &[crate::Row], n: usize) -> Vec<f64> {
+    let mut dm = vec![f64::NAN; rows.len()];
+    let mut tr = true_range(rows);
+    if !tr.is_empty() { tr[0] = f64::NAN; }
+    for i in 1..rows.len() { dm[i] = positive_dm(&rows[i], &rows[i - 1]); }
+    let (sm, st) = (wilder(&dm, n), wilder(&tr, n));
+    sm.iter().zip(st).map(|(&m, t)| if t > 0.0 { 100.0 * m / t } else { f64::NAN }).collect()
+}
+
 /// Full entry condition (trend filter included) of one single-signal strategy.
 fn cond<'a>(id: &str, x: &'a Ctx, g: &dyn Fn(&str) -> f64) -> Option<Cond<'a>> {
     let u = |k: &str| g(k).round().max(1.0) as usize;
@@ -330,7 +377,9 @@ fn cond<'a>(id: &str, x: &'a Ctx, g: &dyn Fn(&str) -> f64) -> Option<Cond<'a>> {
             }
             "short_strong" => {
                 let (rs, rise, gt) = (own(x.rsi_n(u("rsi_n"))), g("rise") / 100.0, g("rsi_gt"));
-                Box::new(move |i| i >= 2 && c[i] / c[i - 2] - 1.0 > rise && rs[i] > gt)
+                // Compare the price with the percentage boundary directly:
+                // 103/100-1 can round above .03 and accept exact equality.
+                Box::new(move |i| i >= 2 && c[i] > c[i - 2] * (1.0 + rise) && rs[i] > gt)
             }
             "short_vix53" | "short_vix101" => {
                 let (rs, s, d, gt) = (own(x.rsi_n(u("rsi_n"))), x.vix.stretched(-g("stretch")), u("days"), g("rsi_gt"));
@@ -410,7 +459,7 @@ fn cond<'a>(id: &str, x: &'a Ctx, g: &dyn Fn(&str) -> f64) -> Option<Cond<'a>> {
             None => never,
         },
         "dmi_1" | "dmi_2" | "dmi_3" | "dmi_4" | "dmi_5" => {
-            let (di, d, t) = (own(x.pdi_n(u("di_n"))), u("days"), g("di_lt"));
+            let (di, d, t) = (Rc::new(daily_pdi(x.r, u("di_n"))), u("days"), g("di_lt"));
             Box::new(move |i| all(i, d, |k| di[k] < t) && cap(i))
         }
         "nyse_adv" => match x.series("ADV") {
@@ -443,6 +492,9 @@ fn cond<'a>(id: &str, x: &'a Ctx, g: &dyn Fn(&str) -> f64) -> Option<Cond<'a>> {
 /// One single-signal strategy, one position at a time, entries and exits on the close.
 fn single(id: &str, x: &Ctx, from: usize, to: usize, g: &dyn Fn(&str) -> f64) -> Option<Vec<Trade>> {
     let e = cond(id, x, g)?;
+    if reviewed_daily(id) {
+        return Some(daily_closes(id, x, from, to, g, &*e));
+    }
     let u = |k: &str| g(k).round().max(1.0) as usize;
     let c = &x.c;
     if id.starts_with("spmt_short_") {
@@ -456,6 +508,48 @@ fn single(id: &str, x: &Ctx, from: usize, to: usize, g: &dyn Fn(&str) -> f64) ->
         (rs[i] > ex).then(|| if next_open { Exit::NextOpen(format!("RSI({n}) > {ex}, out next open")) } else { Exit::Close(format!("RSI({n}) > {ex}")) })
     };
     Some(simulate(x, &Spec { dir: 1.0, weights: &[1.0], entry: &|i| e(i).then_some(Entry::Close), add: &no_add, exit: &exit }, from, to))
+}
+
+/// Close-only source execution, scoped here rather than changing the shared
+/// simulator. A signal on the final close is a real open position; it is not
+/// silently discarded because the research window has ended. No entry on an
+/// exit close, one position per method, and no forced terminal liquidation.
+fn daily_closes(id: &str, x: &Ctx, from: usize, to: usize, g: &dyn Fn(&str) -> f64, entry: &dyn Fn(usize) -> bool) -> Vec<Trade> {
+    if from > to || to >= x.r.len() { return vec![]; }
+    let short = id.starts_with("spmt_short_");
+    let n = g(if short { "ma" } else { "rsi_n" }).round().max(1.0) as usize;
+    let values = if short { own(x.sma_n(n)) } else { own(x.rsi_n(n)) };
+    let threshold = if short { 0.0 } else { g("exit_rsi") };
+    let mut cur: Option<Trade> = None;
+    let mut out = Vec::new();
+    for i in from..=to {
+        if let Some(t) = cur.as_mut() {
+            let exit = if short { x.c[i] < values[i] } else { values[i] > threshold };
+            if exit {
+                t.exit_i = i; t.exit_px = x.c[i]; t.signal_i = i;
+                t.reason = if short { format!("Close < {n}-day SMA") } else { format!("RSI({n}) > {threshold}") };
+                out.push(cur.take().unwrap());
+            }
+        } else if entry(i) {
+            cur = Some(Trade { dir: if short { -1.0 } else { 1.0 },
+                legs: vec![Leg { i, px: x.c[i], w: 1.0 }], exit_i: i, exit_px: x.c[i],
+                reason: String::new(), entry_kind: "close", signal_i: i, open: false, exits: vec![] });
+        }
+    }
+    if let Some(mut t) = cur {
+        t.exit_i = to; t.exit_px = x.c[to]; t.signal_i = to;
+        t.open = true; t.reason = "open".into(); out.push(t);
+    }
+    out
+}
+
+/// Audit raw setup conditions as well as filled records. The separate Python
+/// oracle checks held-position signals, warmup and final-bar handling.
+pub fn daily_signals(id: &str, x: &Ctx, p: &Params) -> Option<Vec<bool>> {
+    if !reviewed_daily(id) { return None; }
+    let g = getter(id, p);
+    let e = cond(id, x, &g)?;
+    Some((0..x.r.len()).map(e).collect())
 }
 
 /// Signals per bar from a set of single strategies (book parameters): new entries (raw = false) or raw entry conditions.
@@ -772,14 +866,24 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         _ => "",
     };
     let (fid, name) = match b {
-        _ if b.starts_with("eom") => ("spmt_eom", "SPMT · End of the Month"),
-        _ if b.starts_with("rsi") => ("spmt_rsi", "SPMT · RSI Strategies"),
+        "eom_co" => ("spmt_eom_red", "SPMT · EOM Close below Open"),
+        "eom_rsi" => ("spmt_eom_rsi", "SPMT · EOM RSI"),
+        "eom_cc" | "eom_und" => ("spmt_eom_down", "SPMT · EOM Lower Closes"),
+        "eom_puts" => ("spmt_options", "SPMT · Options"),
+        "rsi_div8" | "rsi_div2" => ("spmt_rsi_divergence", "SPMT · RSI Divergence"),
+        "rsi_1" | "rsi_2" | "rsi_3" => ("spmt_rsi_sum", "SPMT · Cumulative RSI"),
+        "rsi2_4" | "rsi4_25" => ("spmt_rsi_level", "SPMT · RSI Level"),
         _ if b.starts_with("vix") => ("spmt_vix", "SPMT · VIX Strategies"),
-        _ if b.starts_with("pctb") || b == "price" => ("spmt_pctb", "SPMT · %b & Price Strategies"),
+        "pctb_1" => ("spmt_pctb_rsi", "SPMT · %b with RSI"),
+        "pctb_2" => ("spmt_pctb_range", "SPMT · %b with Range Location"),
+        "price" => ("spmt_price", "SPMT · Red Bars with Range Location"),
         _ if b.starts_with("trin") => ("spmt_trin", "SPMT · TRIN Strategies"),
         _ if b.starts_with("dmi") => ("spmt_dmi", "SPMT · DMI Strategies"),
-        _ if b.starts_with("short") => ("spmt_short", "SPMT · Short Strategies"),
-        "nyse_adv" | "tick" => ("spmt_breadth", "SPMT · NYSE Breadth"),
+        "short_4up" => ("spmt_short_up", "SPMT · Consecutive Up Closes"),
+        "short_strong" => ("spmt_short_return", "SPMT · Strong Return with RSI"),
+        "short_vix53" | "short_vix101" => ("spmt_short_vix", "SPMT · VIX Short"),
+        "nyse_adv" => ("spmt_adv", "SPMT · NYSE Advancers RSI"),
+        "tick" => ("spmt_tick", "SPMT · NYSE TICK"),
         "multi5" | "multi9" | "mts" => ("spmt_mts", "SPMT · Market Timing System"),
         _ if b.starts_with("dt_") => ("spmt_dt", "SPMT · Day Trading"),
         "put_sale" | "itm_calls" => ("spmt_options", "SPMT · Options"),
@@ -792,6 +896,103 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn daily_rows(n: usize) -> Vec<crate::Row> {
+        (0..n).map(|i| crate::Row { ticker: "SPY".into(), date: format!("2020-01-{:02}", i + 1),
+            open: 101.0, high: 102.0, low: 99.0, close: 100.0, volume: None }).collect()
+    }
+
+    #[test]
+    fn daily_final_close_signal_is_an_open_position() {
+        let r = daily_rows(3);
+        let mut x = Ctx::new(&r, &r, &[]);
+        x.ma200 = vec![110.0, 110.0, 90.0];
+        x.rsi2 = vec![50.0, 50.0, 3.0];
+        let t = run("spmt_rsi2_4", &x, 0, 2, &Params::new()).unwrap();
+        assert_eq!(t.len(), 1);
+        assert_eq!(t[0].legs[0].i, 2);
+        assert!(t[0].open);
+        assert_eq!(t[0].entry_kind, "close");
+    }
+
+    #[test]
+    fn daily_strict_entry_exit_thresholds_and_sequential_positions() {
+        let r = daily_rows(6);
+        let mut x = Ctx::new(&r, &r, &[]);
+        x.ma200 = vec![90.0; 6];
+        x.rsi2 = vec![4.0, 3.0, 2.0, 65.0, 65.001, 3.0];
+        let t = run("spmt_rsi2_4", &x, 0, 5, &Params::new()).unwrap();
+        assert_eq!(t.len(), 2);
+        assert_eq!((t[0].legs[0].i, t[0].exit_i), (1, 4));
+        assert!(!t[0].open);
+        assert!(t[1].open);
+    }
+
+    #[test]
+    fn daily_eom_calendar_gate_cap_and_no_exit_bar_reentry() {
+        let mut r = daily_rows(4);
+        for (i, row) in r.iter_mut().enumerate() { row.date = format!("2020-01-{}", 24 + i); }
+        let mut x = Ctx::new(&r, &r, &[]);
+        x.ma200 = vec![90.0; 4];
+        x.rsi2 = vec![65.0, 65.0, 66.0, 65.0];
+        x.red_bars = vec![2; 4];
+        let t = run("spmt_eom_co", &x, 0, 3, &Params::new()).unwrap();
+        assert_eq!((t[0].legs[0].i, t[0].exit_i), (1, 2));
+        assert_eq!(t[1].legs[0].i, 3);
+    }
+
+    #[test]
+    fn daily_warmup_cannot_enter_and_zero_range_cannot_be_bottom() {
+        let r = daily_rows(3);
+        let x = Ctx::new(&r, &r, &[]);
+        assert!(run("spmt_dmi_1", &x, 0, 2, &Params::new()).unwrap().is_empty());
+        let mut r = daily_rows(4);
+        r[3].open = 100.0; r[3].high = 100.0; r[3].low = 100.0;
+        let mut x = Ctx::new(&r, &r, &[]);
+        x.ma200 = vec![90.0; 4]; x.rsi2 = vec![70.0, 70.0, 70.0, 20.0]; x.red_bars = vec![3; 4];
+        assert!(run("spmt_price", &x, 0, 3, &Params::new()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn daily_distinct_predicates_have_distinct_families() {
+        assert_ne!(family_of("spmt_price").unwrap().0, family_of("spmt_pctb_2").unwrap().0);
+        assert_ne!(family_of("spmt_rsi_div2").unwrap().0, family_of("spmt_rsi_2").unwrap().0);
+        assert_eq!(family_of("spmt_dmi_1").unwrap().0, family_of("spmt_dmi_5").unwrap().0);
+    }
+
+    #[test]
+    fn daily_directional_ties_do_not_create_positive_dm() {
+        let mut r = daily_rows(2);
+        r[0].high = 199.26; r[0].low = 197.95;
+        r[1].high = 199.69; r[1].low = 197.52;
+        assert_eq!(positive_dm(&r[1], &r[0]), 0.0);
+        r[1].high += 0.00001;
+        assert!(positive_dm(&r[1], &r[0]) > 0.43);
+    }
+
+    #[test]
+    fn daily_short_accepts_ma_equality_but_covers_only_strictly_below() {
+        let r = daily_rows(4);
+        let mut x = Ctx::new(&r, &r, &[]);
+        x.ma200 = vec![110.0; 4]; x.ma5 = vec![100.0, 100.0, 99.999, 100.001];
+        x.up_closes = vec![4; 4];
+        let t = run("spmt_short_4up", &x, 0, 3, &Params::new()).unwrap();
+        assert_eq!(t.len(), 1); assert_eq!(t[0].dir, -1.0);
+        assert_eq!((t[0].legs[0].i, t[0].exit_i), (0, 3)); assert!(!t[0].open);
+        let t = run("spmt_short_4up", &x, 0, 2, &Params::new()).unwrap();
+        assert!(t[0].open);
+    }
+
+    #[test]
+    fn daily_strong_short_three_percent_equality_does_not_enter() {
+        let mut r = daily_rows(3);
+        r[0].close = 100.0; r[1].close = 101.0; r[2].close = 103.0;
+        let mut x = Ctx::new(&r, &r, &[]);
+        x.ma200 = vec![200.0; 3]; x.ma5 = vec![50.0; 3]; x.rsi2 = vec![90.0; 3];
+        assert!(!daily_signals("spmt_short_strong", &x, &Params::new()).unwrap()[2]);
+        x.c[2] = 103.00001;
+        assert!(daily_signals("spmt_short_strong", &x, &Params::new()).unwrap()[2]);
+    }
 
     fn bars(v: &[(f64, f64, f64, f64)]) -> Vec<Bar> {
         v.iter().map(|&(o, h, l, c)| Bar { o, h, l, c }).collect()

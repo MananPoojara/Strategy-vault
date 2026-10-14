@@ -27,11 +27,16 @@ fn portfolio(basis: &'static str)->Policy {requirement("portfolio", &[], basis)}
 fn review()->Policy {requirement("source_review_required", &[], "Instrument population and executable rule requirements have not been independently reviewed for this specific source rule. Book titles, keywords, code availability and prior verification badges are not evidence of instrument compatibility.")}
 fn member(id:&str,ids:&[&str])->bool {ids.contains(&id)}
 
-/// Exact-source rules independently compared with the compiled runner on four
-/// real series. Admission is for declared price-return research, not source-study reproduction.
+/// Exact source-rule IDs reviewed against selected real-price ledgers.
+/// Each batch retains its instrument and readiness limits; original studies are not reproduced.
 pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
-    (def.book=="hbqts" && member(def.id,&["hbqts_ma5_25","hbqts_ma1_36","hbqts_limit_entry","hbqts_fixed_interval","hbqts_profit_target","hbqts_entry_id1","hbqts_bb_breakout","hbqts_cgo","hbqts_stoch_rsi","hbqts_dpo","hbqts_dom","hbqts_macd_daily","hbqts_cmo"])) ||
-    (def.book=="kftsm" && member(def.id,&["kftsm_ma","kftsm_exp","kftsm_lrs","kftsm_ndb","kftsm_bb_ma","kftsm_ma_pct_band","kftsm_ma_tr_band","kftsm_triple_smooth","kftsm_vol_breakout","kftsm_keltner","kftsm_hh_ma","kftsm_hh_cross","kftsm_hh_channel","kftsm_mod_3ma","kftsm_4_9_18","kftsm_month_end","kftsm_hirsch"]))
+    ((def.book=="hbqts" && member(def.id,&["hbqts_ma5_25","hbqts_ma1_36","hbqts_limit_entry","hbqts_fixed_interval","hbqts_profit_target","hbqts_entry_id1","hbqts_bb_breakout","hbqts_cgo","hbqts_stoch_rsi","hbqts_dpo","hbqts_dom","hbqts_macd_daily","hbqts_cmo"])) ||
+    (def.book=="kftsm" && member(def.id,&["kftsm_ma","kftsm_exp","kftsm_lrs","kftsm_ndb","kftsm_bb_ma","kftsm_ma_pct_band","kftsm_ma_tr_band","kftsm_triple_smooth","kftsm_vol_breakout","kftsm_keltner","kftsm_hh_ma","kftsm_hh_cross","kftsm_hh_channel","kftsm_mod_3ma","kftsm_4_9_18","kftsm_month_end","kftsm_hirsch"]))) || reviewed_adaptive_rule(def)
+        || (def.book=="spmt" && crate::books::spmt::reviewed_daily(def.id))
+        || (def.book=="chbta2" && member(def.id,&["ch_bta2_ma_stack","ch_bta2_65sma_ravi"]))
+}
+fn reviewed_adaptive_rule(def:&StrategyDef)->bool {
+    def.book=="kftsm" && member(def.id,&["kftsm_kama","kftsm_adapt_exp","kftsm_vidya","kftsm_adapt_r2","kftsm_adapt_rsi","kftsm_swg","kftsm_swing","kftsm_raschke_first_cross","kftsm_outside_day","kftsm_fc_bb_abx"])
 }
 
 /// Reviewed keys include both the book and the exact rule identifier. Adding a
@@ -60,12 +65,29 @@ fn base_policy(def:&StrategyDef)->Policy {
         let mut p=stock("Bandy QTS (2007), exact companion AFL and both local errata reviewed in library/bandy/REVIEW-2026-10-13.md. Bounded individual-stock research on actual AAPL and RELIANCE; these samples do not establish historical source-population membership. Literal signal timing and defaults with declared indicator seeds; full-history arrays and chronological ledgers independently checked. No source portfolio sizing or reported performance is reproduced. Independent source review and final compiled-ledger evidence are recorded there; publisher acceptance remains required.");
         p.market_adaptation=true;return p;
     }
+    if def.book=="spmt" && crate::books::spmt::reviewed_daily(def.id) {
+        let mut p=requirement("declared_index_timing", &["index","etf"], "S&P Market Timing Course (2007), exact daily rules reviewed in library/connors-spmt/REVIEW.md and source-based independent SPY/Nifty ledgers. SPY uses actual ETF prices; cash-index timing is a declared research application and cash-index shorts are hypothetical exposure. Indicator initialization, one sequential position and flat test start are explicit research conventions. These retained STC IX duplicates do not add new algorithms. No E-mini contract dollars, option P&L, portfolio allocation or book-performance reproduction is claimed.");
+        p.market_adaptation=true; return p;
+    }
+    if def.book=="chbta2" && member(def.id,&["ch_bta2_ma_stack","ch_bta2_65sma_ravi"]) {
+        let mut p=requirement("declared_ohlc_adaptation", &["index","etf","individual_stock"], "Chande, Beyond Technical Analysis (1997), printed pp.20-21 and pp.80,94-97,99. Only the exact stop-free SMA-agreement and RAVI-filtered reversal contracts were source-reviewed and checked against independent chronological ledgers; see library/chande/REVIEW-2026-10-13.md. Actual selected prices are a declared research application, flat at the test start with available historical warmup and one position per symbol. Cash-index short exposure is hypothetical. No futures dollar stops/costs, contract ticks/rollovers, portfolio allocation or source performance are reproduced. Other Chande IDs remain under their existing policy.");
+        p.market_adaptation=true;return p;
+    }
     if reviewed_cash_rule(def) {
         let allowed=if matches!(def.id,"kftsm_month_end"|"kftsm_hirsch"){&["index","etf"][..]}else{&["index","etf","individual_stock"][..]};
-        let mut p=requirement("declared_ohlc_adaptation", allowed, "Kaufman, New Trading Systems and Methods Fourth Edition (2005), reviewed book sections and companion CD. Source rules/defaults and selected independent trade-ledger checks are recorded in library/kaufman/REVIEW-2026-10-13.md. Actual selected cash/ETF prices are a declared research application. Flat at the test start, full source warmup, one position per symbol, no portfolio sizing. Cash-index short exposure is hypothetical; source futures dollars, financing, dividends and original study performance are not reproduced.");p.market_adaptation=true;return p;
+        let basis=if reviewed_adaptive_rule(def) {
+            "Kaufman, New Trading Systems and Methods Fourth Edition (2005), reviewed book sections and companion CD. Source contracts/defaults and selected-baseline-ledger-check scope are recorded in library/kaufman/REVIEW-2026-10-13-ADAPTIVE.md. Actual selected index/ETF/stock prices are a declared research application. Flat at the test start, actual warmup, one position per symbol, no portfolio sizing. Initial-history conventions, zero-division handling, causal close/next-open orders and outside-day zero-offset stop approximation remain declared assumptions. Cash-index short exposure is hypothetical; source futures dollars, financing, dividends and original study performance are not reproduced."
+        } else {
+            "Kaufman, New Trading Systems and Methods Fourth Edition (2005), reviewed book sections and companion CD. Source rules/defaults and selected independent trade-ledger checks are recorded in library/kaufman/REVIEW-2026-10-13.md. Actual selected cash/ETF prices are a declared research application. Flat at the test start, full source warmup, one position per symbol, no portfolio sizing. Cash-index short exposure is hypothetical; source futures dollars, financing, dividends and original study performance are not reproduced."
+        };
+        let mut p=requirement("declared_ohlc_adaptation", allowed, basis);p.market_adaptation=true;return p;
     }
     let id=def.id;
     match def.book {
+        "ehrs" if id=="ehrs_sinetrend" => {
+            let mut p=requirement("declared_ohlc_adaptation", &["index","etf","individual_stock"], "Ehlers Rocket Science for Traders p.119 identifies Fig.12.1 (pp.120-123) as a complete theoretical automatic signal system before adding the separate Treasury-bond dollar stop. Source code is reviewed in library/ehlers/REVIEW-2026-10-13.md. Selected actual daily OHLC is a declared research application; configurable MaxBarsBack50 and next-open fills are explicit conventions. No dollar stops, original futures contracts, roll history, portfolio or source-study performance are reproduced. Cash-index short exposure is hypothetical.");p.market_adaptation=true;p
+        },
+        "ehmd" if id=="ehmd_mama" => stock("Ehlers MESA Adaptive Moving Averages, S&C19:9 pp.30-35, explicitly tests a long-only MAMA/FAMA crossover on100 stocks. Review and independent ledgers: library/ehlers/REVIEW-2026-10-13.md. Actual individual stocks are required. One selected stock is not the original unnamed100-stock population; configurable MaxBarsBack50 and next-open execution are declared research conventions, and the pooled source performance is not reproduced."),
         "stc9" if member(id,&["f1a","f3a","f4a","f4c","f4d","rsi2_5d"]) => stock("STC IX Session 1 foundation studies concern a pooled US individual-stock population. A native single-stock run uses one actual constituent at a time; it does not reproduce the pooled published counts, universe or performance."),
         "stc9" if member(id,&["tps_stocks","x555","h10"]) => stock("STC IX Sessions 2-3 specify stocks with volatility, ADX and Liquidity Filter population restrictions. Actual constituent OHLC/volume is necessary; this type check does not supply missing liquidity denominators, historical membership or portfolio slots."),
         "stc9" if id=="r3" => index("STC IX Session 1 R3 explicitly uses an index; the reference is the S&P 500. A selected Indian index is a separate market application."),
@@ -156,6 +178,9 @@ pub fn check_native_market_inputs(def:&StrategyDef,evidence:&NativeEvidence,benc
     None
 }
 fn check_selected(p:Policy,ticker:&str,selected:&str)->Option<Issue> {
+    if p.requirement=="declared_index_timing" && selected=="etf" && ticker!="SPY" {
+        return Some(Issue{status:"needs_data",note:"The reviewed SPMT ETF signal instrument is actual SPY. Other ETFs require a declared and separately reviewed adaptation; they cannot silently replace SPY.".into()});
+    }
     if p.allowed_types.contains(&selected) {return None;}
     let (status,explanation)=match p.requirement {
         "source_review_required" => ("not_testable","Source review required before publishing this method on any instrument."),
@@ -204,6 +229,42 @@ mod tests {
         assert!(!reviewed_cash_rule(&def("hbqts_ma5_25","another_book")));
     }
     #[test]
+    fn spmt_review_is_exact_and_does_not_admit_stock_or_other_etf_substitutes() {
+        for &id in crate::books::spmt::REVIEWED_DAILY {
+            let d=def(id,"spmt");
+            assert!(reviewed_cash_rule(&d));
+            assert!(check(&d,"SPY",false).is_none());
+            assert!(check(&d,"NIFTY 50",false).is_none());
+            assert!(check(&d,"AAPL",true).is_some());
+            assert!(check(&d,"RELIANCE",true).is_some());
+            assert!(check(&d,"QQQ",false).is_some());
+            assert!(!reviewed_cash_rule(&def(id,"stc9")));
+        }
+        for id in ["spmt_vix200","spmt_multi5","spmt_tick","spmt_eom_und","spmt_future_method"] {
+            assert!(!reviewed_cash_rule(&def(id,"spmt")));
+            assert!(check(&def(id,"spmt"),"SPY",false).is_some());
+        }
+    }
+    #[test]
+    fn reviewed_chande_keys_are_exact_and_do_not_open_dollar_or_indicator_methods() {
+        for id in ["ch_bta2_ma_stack", "ch_bta2_65sma_ravi"] {
+            let d=def(id,"chbta2");
+            assert!(reviewed_cash_rule(&d));
+            assert!(check(&d,"NIFTY 50",false).is_none());
+            assert!(check(&d,"SPY",false).is_none());
+            assert!(check(&d,"RELIANCE",true).is_none());
+            assert!(!reviewed_cash_rule(&def(id,"chntt")));
+            assert!(policy(&d).source_basis.contains("Chande"));
+        }
+        for (id,book) in [("ch_bta2_65sma_ravi_x14","chbta2"),("ch_bta2_bottom_fish","chbta2"),("ch_ntt_vidya_cmo","chntt"),("ch_ntt_to_buy","chntt")] {
+            let d=def(id,book);
+            assert!(!reviewed_cash_rule(&d));
+            assert!(check(&d,"NIFTY 50",false).is_some());
+        }
+        assert!(check(&def("ch_65sma3cc","ch_bta"),"NIFTY 50",false).is_none());
+        assert!(check(&def("ch_cbpb_time","ch_bta"),"SPY",false).is_none());
+    }
+    #[test]
     fn reviewed_kaufman_rules_use_explicit_cash_adaptations_without_opening_other_methods(){
         let reviewed=def("kftsm_ma","kftsm");
         assert!(check(&reviewed,"NIFTY 50",false).is_none());
@@ -213,6 +274,32 @@ mod tests {
         assert!(metadata_json(&reviewed).contains("\"source_performance_reproduced\":false"));
         assert_eq!(policy(&def("kftsm_parabolic","kftsm")).requirement,"source_review_required");
         assert_eq!(policy(&def("kftsm_ma","another_book")).requirement,"source_review_required");
+    }
+    #[test]
+    fn adaptive_batch_review_is_exact_id_and_keeps_intraday_and_other_source_holds() {
+        for id in ["kftsm_kama","kftsm_adapt_exp","kftsm_vidya","kftsm_adapt_r2","kftsm_adapt_rsi","kftsm_swg","kftsm_swing","kftsm_raschke_first_cross","kftsm_outside_day","kftsm_fc_bb_abx"] {
+            let d=def(id,"kftsm");
+            for (symbol,native) in [("NIFTY 50",false),("SPY",false),("RELIANCE",true)] {
+                assert!(check(&d,symbol,native).is_none());
+            }
+            assert!(check_native(&d,"AAPL",&NativeEvidence::us_test_fixture()).is_none());
+            let json=metadata_json(&d);
+            assert!(json.contains("\"source_rule_reviewed\":true"));
+            assert!(json.contains("\"source_performance_reproduced\":false"));
+            assert!(json.contains("selected-baseline-ledger-check"));
+            assert_eq!(policy(&def(id,"another_book")).requirement,"source_review_required");
+            // These price-return adaptations never admit contract or premium P&L.
+            for ticker in ["NIFTY FUTURE", "SPY OPTION", "NIFTYMIDCAPSELECT"] {
+                assert_eq!(check(&d,ticker,false).unwrap().status,"needs_data");
+            }
+        }
+        for id in ["kftsm_parabolic","kftsm_donchian_4wk","kftsm_pf","kftsm_moon","kftsm_multi_tf","kftsm_new_adaptive_method"] {
+            let d=def(id,"kftsm");
+            assert_eq!(policy(&d).requirement,"source_review_required");
+            assert!(metadata_json(&d).contains("\"source_rule_reviewed\":false"));
+        }
+        assert!(check(&def("kftsm_hirsch","kftsm"),"RELIANCE",true).is_some());
+        assert!(check(&def("kftsm_month_end","kftsm"),"RELIANCE",true).is_some());
     }
     #[test]
     fn stock_studies_require_validated_individual_stock_and_keep_snapshot_limits() {
@@ -334,6 +421,19 @@ mod tests {
         // Existing admission API has no client currency argument and preserves
         // Indian defaults even if a client adds a misleading ticker suffix.
         assert!(check(&def("afactor_baseline","afactor"),"RELIANCE?currency=USD",true).unwrap().note.contains("INR"));
+    }
+    #[test]
+    fn ehlers_review_is_exact_and_mama_requires_actual_stock() {
+        let mama=def("ehmd_mama","ehmd");
+        for ticker in ["NIFTY 50","SPY"] {assert!(check(&mama,ticker,false).is_some());}
+        assert!(check(&mama,"RELIANCE",true).is_none());
+        assert!(check_native(&mama,"AAPL",&NativeEvidence::us_test_fixture()).is_none());
+        let st=def("ehrs_sinetrend","ehrs");
+        for ticker in ["NIFTY 50","SPY"] {assert!(check(&st,ticker,false).is_none());}
+        for (id,book) in [("ehrs_sinetrend_cp115","ehrs"),("ehrs_zerolag","ehrs"),("ehmd_lms_zerolag","ehmd"),("ehmd_new_unreviewed","ehmd")] {
+            assert_eq!(policy(&def(id,book)).requirement,"source_review_required");
+        }
+        assert_eq!(policy(&def("ehmd_mama","other_book")).requirement,"source_review_required");
     }
     #[test]
     fn us_stock_filters_require_us_source_benchmark_and_cboe_vix_context() {

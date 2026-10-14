@@ -1,15 +1,16 @@
-//! John F. Ehlers, *Rocket Science for Traders* (Wiley, 2001). Source + checks: library/ehrs/.
-//! The only complete trading systems in the book are the SineTrend Automatic System (ch. 12,
-//! Fig. 12.1/12.4) and the intraday ZeroLag system (ch. 16, needs intraday bars).
+//! John F. Ehlers, *Rocket Science for Traders* (Wiley, 2001). Source + checks: library/ehlers/.
+//! This module implements the SineTrend Automatic System (ch.12, Fig.12.1/12.4).
+//! The intraday ZeroLag system (ch.16) remains held for actual intraday bars.
 //! EasyLanguage is reproduced bar-for-bar with TradeStation conventions:
-//! MaxBarsBack = 50 (code first runs on bar 50, CurrentBar = 1 there; series variables are 0
+//! MaxBarsBack is explicit (research default 50; not printed in the reviewed source).
+//! Code first runs at index MaxBarsBack, CurrentBar = 1 there; series variables are 0
 //! before that), ArcTangent/Sine/Cosine in degrees, `Buy`/`Sell` = TS2000i stop-and-reverse
 //! orders filled "next bar at market" (the next open), `Crosses Over/Under` per the TS
 //! definition (skips bars where the two values are equal). Also used by ehmd (MAMA).
 use crate::connors::{claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "ehrs";
-/// TradeStation default MaxBarsBack for strategies.
+/// Declared research MaxBarsBack, not a recovered author platform setting.
 pub const MBB: usize = 50;
 
 pub fn atan_d(x: f64) -> f64 { x.atan().to_degrees() }
@@ -35,15 +36,20 @@ pub fn cross_under(a: &[f64], b: &[f64], i: usize) -> bool {
 pub struct Homodyne { pub price: Vec<f64>, pub smooth: Vec<f64>, pub i1: Vec<f64>, pub q1: Vec<f64>, pub smooth_period: Vec<f64> }
 
 pub fn homodyne(x: &Ctx) -> Homodyne {
+    homodyne_with_mbb(x, MBB)
+}
+
+pub fn homodyne_with_mbb(x: &Ctx, mbb: usize) -> Homodyne {
+    assert!(mbb >= 6);
     let n = x.c.len();
     let price: Vec<f64> = (0..n).map(|i| (x.h[i] + x.l[i]) / 2.).collect();
     let z = || vec![0f64; n];
     let (mut sm, mut de, mut i1, mut q1, mut ji, mut jq) = (z(), z(), z(), z(), z(), z());
     let (mut i2, mut q2, mut re, mut im, mut per, mut sp) = (z(), z(), z(), z(), z(), z());
     let fir = |a: &[f64], i: usize| 0.0962 * a[i] + 0.5769 * a[i - 2] - 0.5769 * a[i - 4] - 0.0962 * a[i - 6];
-    for i in MBB..n {
+    for i in mbb..n {
         per[i] = per[i - 1]; // series variables keep their value until assigned
-        if i - MBB + 1 <= 5 { continue; } // If CurrentBar > 5 then begin
+        if i - mbb + 1 <= 5 { continue; } // If CurrentBar > 5 then begin
         let p = &price;
         sm[i] = (4. * p[i] + 3. * p[i - 1] + 2. * p[i - 2] + p[i - 3]) / 10.;
         let g = 0.075 * per[i - 1] + 0.54;
@@ -98,7 +104,16 @@ pub fn next_open_sim(x: &Ctx, from: usize, to: usize, mut sig: impl FnMut(usize,
 pub struct SineTrend { pub smooth: Vec<f64>, pub trendline: Vec<f64>, pub sine: Vec<f64>, pub lead: Vec<f64>, pub trend: Vec<i8> }
 
 pub fn sinetrend(x: &Ctx, cyc_part: f64) -> SineTrend {
-    let hd = homodyne(x);
+    // Preserve the authoritative implementation for unapproved legacy IDs.
+    sinetrend_state(x, cyc_part, MBB, false)
+}
+
+pub fn sinetrend_with_mbb(x: &Ctx, cyc_part: f64, mbb: usize) -> SineTrend {
+    sinetrend_state(x, cyc_part, mbb, true)
+}
+
+fn sinetrend_state(x: &Ctx, cyc_part: f64, mbb: usize, reviewed: bool) -> SineTrend {
+    let hd = homodyne_with_mbb(x, mbb);
     let n = x.c.len();
     let (p, sm, sp) = (&hd.price, &hd.smooth, &hd.smooth_period);
     let mut dcphase = vec![0f64; n];
@@ -106,9 +121,13 @@ pub fn sinetrend(x: &Ctx, cyc_part: f64) -> SineTrend {
     let mut tl = vec![0f64; n];
     let mut trend = vec![0i8; n];
     let mut days = 0f64;
-    let (mut sine, mut lead) = (vec![0f64; n], vec![sin_d(45.); n]);
-    for i in MBB..n {
-        let cb = i - MBB + 1;
+    // DCSine and LeadSine are Vars(0), assigned only inside CurrentBar > 5.
+    // The DaysInTrend expression instead crosses Sine(DCPhase) and Sine(DCPhase+45)
+    // directly; its historical values before the gate are 0 and sin(45).
+    let (mut sine, mut lead) = (vec![0f64; n], vec![if reviewed { 0. } else { sin_d(45.) }; n]);
+    let (mut phase_sine, mut phase_lead) = (vec![0f64; n], vec![sin_d(45.); n]);
+    for i in mbb..n {
+        let cb = i - mbb + 1;
         dcphase[i] = dcphase[i - 1];
         itrend[i] = itrend[i - 1];
         tl[i] = tl[i - 1];
@@ -136,11 +155,14 @@ pub fn sinetrend(x: &Ctx, cyc_part: f64) -> SineTrend {
             tl[i] = (4. * itrend[i] + 3. * itrend[i - 1] + 2. * itrend[i - 2] + itrend[i - 3]) / 10.;
             if cb < 12 { tl[i] = p[i]; }
         }
+        if reviewed && cb <= 5 { continue; }
         sine[i] = sin_d(dcphase[i]);
         lead[i] = sin_d(dcphase[i] + 45.);
+        phase_sine[i] = sine[i];
+        phase_lead[i] = lead[i];
         if cb <= 5 { continue; }
         let mut t: i8 = 1;
-        if cross_over(&sine, &lead, i) || cross_under(&sine, &lead, i) { days = 0.; t = 0; }
+        if cross_over(&phase_sine, &phase_lead, i) || cross_under(&phase_sine, &phase_lead, i) { days = 0.; t = 0; }
         days += 1.;
         if days < 0.5 * sp[i] { t = 0; }
         let d = dcphase[i] - dcphase[i - 1];
@@ -172,7 +194,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim };
     vec![
         d("ehrs_sinetrend", "SineTrend Automatic System (Fig. 12.1)", Status::Live, RULES,
-          "Book test: back-adjusted T-Bond futures 9 Jul 1984 - 16 Jun 2000 with a $1,000 money-management stop (Fig. 12.2). Run here on the index (vault convention). CycPart = 1 reproduces Fig. 12.1's ITrend exactly. TS MaxBarsBack 50 assumed. The dollar money-management stop is NOT applied: an index has no contract multiplier and no point substitute is invented.",
+          "Source p.119 calls Fig.12.1 a complete theoretical automatic system before adding a $1,000 stop for the Treasury-bond study. This run uses that signal code on selected actual daily OHLC as a declared research application, without the separate dollar stop or futures accounting. CycPart=1. MaxBarsBack=50 is an explicit configurable research setting, not printed author metadata. Zero state persists before CurrentBar>5; next-open fills; flat at selected start; terminal positions stay open. Book figures are separate and are not reproduced. Review: library/ehlers/REVIEW-2026-10-13.md.",
           claim("233", "40.77%", "$398.61", "20 bars win / 5 bars loss", "T-Bonds 9 Jul 1984-16 Jun 2000, $1,000 stop")),
         d("ehrs_sinetrend_trend", "SineTrend · Trend Mode only (Fig. 12.3)", Status::Live, RULES_TREND,
           "Fig. 12.3 test (T-Bonds, $1,000 stop). Author calls it \"simply awful\" - kept to show the Cycle Mode contribution.",
@@ -232,17 +254,46 @@ fn variant(id: &str) -> Option<(f64, bool)> {
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let (cp, _) = variant(id)?;
-    Some(vec![ParamDef { key: "cyc_part", label: "CycPart (trendline length / dominant cycle)", def: cp, min: 0.5, max: 1.5, step: 0.05 }])
+    if id != "ehrs_sinetrend" {
+        return Some(vec![ParamDef { key: "cyc_part", label: "CycPart (trendline length / dominant cycle)", def: cp, min: 0.5, max: 1.5, step: 0.05 }]);
+    }
+    Some(vec![ParamDef { key: "cyc_part", label: "CycPart (trendline length / dominant cycle)", def: cp, min: 1., max: 1.5, step: 0.05 },
+        ParamDef { key: "max_bars_back", label: "MaxBarsBack (declared research setting)", def: MBB.max((cp * 50. + 0.5).trunc() as usize - 1) as f64, min: 50., max: 250., step: 1. }])
+}
+
+pub fn validate(id: &str, p: &Params) -> Option<String> {
+    if id != "ehrs_sinetrend" { return None; }
+    let schema = params(id)?;
+    for (key, value) in p {
+        let Some(d) = schema.iter().find(|d| d.key == key) else { return Some(format!("Unknown SineTrend parameter: {key}")); };
+        if !value.is_finite() || !(d.min..=d.max).contains(value) { return Some(format!("Invalid SineTrend parameter: {key}")); }
+    }
+    let get = |k| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).unwrap().def);
+    let mbb = get("max_bars_back");
+    if mbb.fract() != 0. || mbb < (get("cyc_part") * 50. + 0.5).trunc() - 1. {
+        return Some("MaxBarsBack must be an integer covering the maximum source Price[count] reference.".into());
+    }
+    None
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let (cp_def, trend_only) = variant(id)?;
     let cp = p.get("cyc_part").copied().unwrap_or(cp_def);
-    if !(0.5..=1.5).contains(&cp) || p.keys().any(|k| k != "cyc_part") || from >= to || to >= x.c.len() { return None; }
-    let st = sinetrend(x, cp);
-    let (sm, tl) = (&st.smooth, &st.trendline);
-    Some(next_open_sim(x, from, to, |i, pos| {
-        if i < MBB + 5 { return None; }
+    if id != "ehrs_sinetrend" {
+        if !(0.5..=1.5).contains(&cp) || p.keys().any(|k| k != "cyc_part") || from >= to || to >= x.c.len() { return None; }
+        let st = sinetrend(x, cp);
+        return Some(next_open_sim(x, from, to, |i, pos| sinetrend_order(&st, i, pos, trend_only, MBB)));
+    }
+    if validate(id, p).is_some() || from >= to || to >= x.c.len() { return None; }
+    let mbb = p.get("max_bars_back").copied().unwrap_or(MBB.max((cp_def * 50. + 0.5).trunc() as usize - 1) as f64) as usize;
+    let st = sinetrend_with_mbb(x, cp, mbb);
+    Some(next_open_sim(x, from, to, |i, pos| sinetrend_order(&st, i, pos, trend_only, mbb)))
+}
+
+/// The same order predicate is exposed for auditing signals that lack a next bar.
+pub fn sinetrend_order(st: &SineTrend, i: usize, pos: i8, trend_only: bool, mbb: usize) -> Option<(i8, &'static str)> {
+        if i < mbb + 5 { return None; }
+        let (sm, tl) = (&st.smooth, &st.trendline);
         let mut order: Option<(i8, &'static str)> = None;
         if st.trend[i] == 1 {
             if st.trend[i - 1] == 0 {
@@ -256,7 +307,6 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             if cross_under(&st.lead, &st.sine, i) { order = Some((-1, "Cycle mode: LeadSine crosses under Sine · sell")); }
         }
         order
-    }))
 }
 
 #[cfg(test)]
@@ -270,6 +320,47 @@ mod tests {
     fn ts_crossing_skips_equal_bars() {
         let a = [1., 2., 2., 3.]; let b = [2., 2., 2., 2.];
         assert!(cross_over(&a, &b, 3)); assert!(!cross_over(&a, &b, 1));
+        assert!(cross_under(&b, &a, 3));
+        assert!(!cross_over(&[0.,0.,1.], &[0.,0.,0.], 2));
+        assert!(!cross_over(&[1.,2.,3.], &[0.,2.,2.], 2));
+    }
+    #[test]
+    fn source_zero_state_and_current_bar_gate_are_preserved() {
+        let r=rows(100, |_|100.);let x=Ctx::new(&r,&r,&[]);
+        let st=sinetrend_with_mbb(&x,1.,60);
+        assert!(st.sine[..65].iter().chain(&st.lead[..65]).all(|v|*v==0.));
+        assert!(st.smooth[..65].iter().all(|v|*v==0.));
+        assert_eq!(st.smooth[65],100.);
+        assert_eq!(st.trendline[65],100.);
+        assert_eq!(atan_d(1.),45.);assert!((sin_d(90.)-1.).abs()<1e-15);
+    }
+    #[test]
+    fn unapproved_variants_retain_authoritative_startup_and_parameters() {
+        let r=rows(100, |_|100.);let x=Ctx::new(&r,&r,&[]);
+        let legacy=sinetrend(&x,1.15);
+        assert!(legacy.lead[..55].iter().all(|v|*v==sin_d(45.)));
+        for id in ["ehrs_sinetrend_trend","ehrs_sinetrend_cp115","ehrs_sinetrend_cp115_trend","ehrs_sinetrend_cp110"] {
+            let schema=params(id).unwrap();assert_eq!(schema.len(),1);
+            assert_eq!(schema[0].key,"cyc_part");assert_eq!(schema[0].min,0.5);
+            assert!(run(id,&x,60,99,&Params::from([("max_bars_back".into(),60.)])).is_none());
+        }
+    }
+    #[test]
+    fn next_open_orders_reverse_once_and_terminal_signal_has_no_fill() {
+        let r=rows(5, |i|100.+i as f64);let x=Ctx::new(&r,&r,&[]);
+        let t=next_open_sim(&x,0,4,|i,_|Some((if i<2 {1} else {-1},"test")));
+        assert_eq!(t.len(),2);assert_eq!(t[0].legs[0].i,1);
+        assert_eq!(t[0].exit_i,3);assert_eq!(t[0].exit_px,x.o[3]);
+        assert_eq!(t[1].legs[0].i,3);assert!(t[1].open);assert_eq!(t[1].exit_px,x.c[4]);
+        let empty=next_open_sim(&x,0,4,|i,_|if i==4 {Some((1,"unfilled"))} else {None});
+        assert!(empty.is_empty());
+    }
+    #[test]
+    fn sinetrend_rejects_invalid_platform_settings() {
+        for p in [Params::from([("max_bars_back".into(),50.5)]),Params::from([("cyc_part".into(),f64::NAN)]),
+            Params::from([("cyc_part".into(),1.5),("max_bars_back".into(),50.)]),Params::from([("unknown".into(),1.)])] {
+            assert!(validate("ehrs_sinetrend",&p).is_some());
+        }
     }
     #[test]
     fn homodyne_measures_a_pure_20_bar_cycle() {

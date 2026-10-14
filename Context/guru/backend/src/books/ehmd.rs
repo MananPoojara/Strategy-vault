@@ -1,20 +1,24 @@
 //! John Ehlers - MESA 98/2000 article set ("Mesa Misc. Articles") + "MESA Adaptive Moving
-//! Averages", Stocks & Commodities V.19:9 (2001). Source + checks: library/ehmd/.
-//! TradeStation conventions (MaxBarsBack 50, degrees, next-bar market fills, TS crossings)
+//! Averages", Stocks & Commodities V.19:9 (2001). Source + checks: library/ehlers/.
+//! Explicit research MaxBarsBack, degrees, next-bar market fills, TS crossings
 //! and the Hilbert homodyne core are shared with ehrs (Rocket Science for Traders).
-use super::ehrs::{atan_d, cross_over, cross_under, homodyne, next_open_sim, MBB};
+use super::ehrs::{atan_d, cross_over, cross_under, homodyne_with_mbb, next_open_sim, MBB};
 use crate::connors::{claim, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "ehmd";
 
 /// MAMA / FAMA exactly as the S&C sidebar (alpha also capped at FastLimit, a no-op since DeltaPhase >= 1).
 pub fn mama(x: &Ctx, fast: f64, slow: f64) -> (Vec<f64>, Vec<f64>) {
-    let hd = homodyne(x);
+    mama_with_mbb(x, fast, slow, MBB)
+}
+
+pub fn mama_with_mbb(x: &Ctx, fast: f64, slow: f64, mbb: usize) -> (Vec<f64>, Vec<f64>) {
+    let hd = homodyne_with_mbb(x, mbb);
     let n = x.c.len();
     let (mut phase, mut m, mut f) = (vec![0f64; n], vec![0f64; n], vec![0f64; n]);
-    for i in MBB..n {
+    for i in mbb..n {
         phase[i] = phase[i - 1]; m[i] = m[i - 1]; f[i] = f[i - 1];
-        if i - MBB + 1 <= 5 { continue; }
+        if i - mbb + 1 <= 5 { continue; }
         if hd.i1[i] != 0. { phase[i] = atan_d(hd.q1[i] / hd.i1[i]); }
         let mut dp = phase[i - 1] - phase[i];
         if dp < 1. { dp = 1.; }
@@ -82,7 +86,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
           &["F|MAMA/FAMA per the article's EasyLanguage: Price = (H+L)/2, FastLimit = .5, SlowLimit = .05; alpha = FastLimit/DeltaPhase (DeltaPhase = Phase[1] - Phase, floored at 1), bounded by SlowLimit; MAMA = alpha*Price + (1-alpha)*MAMA[1]; FAMA = .5*alpha*MAMA + (1-.5*alpha)*FAMA[1]. (S&C sidebar; RSFT Fig. 17.1)",
             "E|\"I tested the MAMA crossover system ... taking long side trades only\": buy when MAMA crosses over FAMA (fill next open).",
             "X|Exit the long when MAMA crosses under FAMA (fill next open)."],
-          "Book silent on order type: TradeStation default next-bar market order used. Crossing direction (MAMA above FAMA = long) is the reading of 'crossover system' with MAMA as the fast line. Book tested 100 unnamed US stocks, 1 share each - run here on the index (vault convention); the per-share P&L cannot be compared.",
+          "The article explicitly tests a long-only MAMA/FAMA crossover on 100 stocks. This research run uses one actual stock at a time, with MAMA above FAMA as the long crossing and the opposite crossing as exit. Next-open market fills are a declared execution convention: the supplied code plots indicators and does not specify orders. MaxBarsBack=50 is an explicit configurable research setting, not printed author metadata. Source Vars(0) and CurrentBar>5 are preserved. Flat at selected start, one position, terminal positions stay open. No stock universe, portfolio sizing or source-study performance is reproduced. Review: library/ehlers/REVIEW-2026-10-13.md.",
           claim("1317 (100 stocks)", "37.5%", "$4.86/share gross", "~4.4 trades/yr/stock", "2 Jan 1998-2 Jan 2001, 100 stocks")),
         d("ehmd_laguerre_rsi", "Laguerre RSI 20/80", "Time Warp - Without Space Travel", "Long/Short", Status::Live,
           &["F|Laguerre RSI, gamma = .5: L0 = (1-gamma)*Close + gamma*L0[1]; L1 = -gamma*L0 + L0[1] + gamma*L1[1]; L2, L3 likewise; RSI = CU/(CU+CD) over the four Laguerre elements. (Fig. 9)",
@@ -130,7 +134,8 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     Some(match id {
-        "ehmd_mama" => vec![p("fast_limit", "FastLimit", 0.5, 0.1, 0.9, 0.05), p("slow_limit", "SlowLimit", 0.05, 0.01, 0.2, 0.01)],
+        "ehmd_mama" => vec![p("fast_limit", "FastLimit", 0.5, 0.1, 0.9, 0.05), p("slow_limit", "SlowLimit", 0.05, 0.01, 0.2, 0.01),
+            p("max_bars_back", "MaxBarsBack (declared research setting)", 50., 50., 250., 1.)],
         "ehmd_laguerre_rsi" => vec![p("gamma", "Laguerre damping gamma", 0.5, 0.1, 0.9, 0.05), p("lower", "Buy level", 0.2, 0.05, 0.4, 0.05),
             p("upper", "Sell level", 0.8, 0.6, 0.95, 0.05), p("long_only", "Long only (1 = 'sell' only exits; not the default reading)", 0., 0., 1., 1.)],
         "ehmd_lms_zerolag" => vec![p("length", "LMS Length", 10., 4., 25., 1.)],
@@ -138,19 +143,29 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     })
 }
 
+pub fn validate(id: &str, p: &Params) -> Option<String> {
+    if id != "ehmd_mama" { return None; }
+    let schema = params(id).unwrap();
+    for (key, value) in p {
+        let Some(d) = schema.iter().find(|d| d.key == key) else { return Some(format!("Unknown MAMA parameter: {key}")); };
+        if !value.is_finite() || !(d.min..=d.max).contains(value) { return Some(format!("Invalid MAMA parameter: {key}")); }
+    }
+    let get = |k| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).unwrap().def);
+    if get("slow_limit") > get("fast_limit") { return Some("SlowLimit must not exceed FastLimit.".into()); }
+    if get("max_bars_back").fract() != 0. { return Some("MaxBarsBack must be an integer.".into()); }
+    None
+}
+
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let schema = params(id)?;
-    if from >= to || to >= x.c.len() { return None; }
+    if validate(id, p).is_some() || from >= to || to >= x.c.len() { return None; }
     for (k, v) in p { let d = schema.iter().find(|d| d.key == k)?; if !(d.min..=d.max).contains(v) { return None; } }
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).unwrap().def);
-    let start = MBB + 5;
+    let mbb = if id == "ehmd_mama" { g("max_bars_back") as usize } else { MBB };
     Some(match id {
         "ehmd_mama" => {
-            let (m, f) = mama(x, g("fast_limit"), g("slow_limit"));
-            next_open_sim(x, from, to, |i, _| {
-                if i < start { None } else if cross_over(&m, &f, i) { Some((1, "MAMA crosses over FAMA · buy")) }
-                else if cross_under(&m, &f, i) { Some((0, "MAMA crosses under FAMA · exit")) } else { None }
-            })
+            let (m, f) = mama_with_mbb(x, g("fast_limit"), g("slow_limit"), mbb);
+            next_open_sim(x, from, to, |i, _| mama_order(&m, &f, i, mbb))
         }
         "ehmd_laguerre_rsi" => {
             let r = laguerre_rsi(x, g("gamma"));
@@ -175,10 +190,30 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     })
 }
 
+pub fn mama_order(m: &[f64], f: &[f64], i: usize, mbb: usize) -> Option<(i8, &'static str)> {
+    if i < mbb + 5 { None } else if cross_over(m, f, i) { Some((1, "MAMA crosses over FAMA · buy")) }
+    else if cross_under(m, f, i) { Some((0, "MAMA crosses under FAMA · exit")) } else { None }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::Row;
+    #[test]
+    fn mama_zero_seed_waits_for_source_current_bar_gate() {
+        let r:Vec<Row>=(0..100).map(|i|Row {ticker:"T".into(),date:i.to_string(),open:100.,high:101.,low:99.,close:100.,volume:None}).collect();
+        let x=Ctx::new(&r,&r,&[]);let (m,f)=mama_with_mbb(&x,0.5,0.05,60);
+        assert!(m[..65].iter().chain(&f[..65]).all(|v|*v==0.));
+        assert_eq!(m[65],50.);assert_eq!(f[65],12.5);
+        assert!(mama_order(&m,&f,65,60).is_none()); // no earlier opposite inequality
+    }
+    #[test]
+    fn mama_rejects_fractional_mbb_nonfinite_and_inverted_alpha_limits() {
+        for p in [Params::from([("max_bars_back".into(),50.5)]),Params::from([("fast_limit".into(),f64::NAN)]),
+            Params::from([("fast_limit".into(),0.1),("slow_limit".into(),0.2)]),Params::from([("unknown".into(),1.)])] {
+            assert!(validate("ehmd_mama",&p).is_some());
+        }
+    }
     #[test]
     fn mama_long_only_and_laguerre_bounds() {
         let r: Vec<Row> = (0..500).map(|i| { let c = 100. + 8. * (i as f64 / 9.).sin() + 0.02 * i as f64;

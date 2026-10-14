@@ -1,9 +1,9 @@
 //! Tushar Chande, "Beyond Technical Analysis" (Wiley 1997), COMPLETE edition: every fully specified system
 //! that books/chande.rs (built from a partial copy) does not already have. chande.rs keeps ch_65sma3cc and the
 //! CB-PB family; nothing here repeats them. Source + page per rule: library/chbta2/README.md.
-//! Book tests use futures contracts with dollar initial stops. A dollar stop is a test setting that needs the
-//! contract's point value; it is exposed as `stop_pts` (index points, 0 = off) and is ON by default only where the
-//! book itself gives the S&P point value ($500 per full S&P point, printed p.134).
+//! Reviewed stop-free price contracts: library/chande/REVIEW-2026-10-13.md.
+//! Other historical runners below remain outside that review. Futures dollars, points and ticks require
+//! actual contract data; their old generic point parameters do not establish a cash-market adaptation.
 use crate::connors::{dmi, sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "chbta2";
@@ -190,14 +190,20 @@ pub fn catalogue() -> Vec<StrategyDef> {
         needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim: None };
     use Status::*;
     vec![
+        d("ch_bta2_ma_stack", "Multiple short SMAs versus 65-day SMA", "Ch 2 · Number of rules", "Long/Short", Live, &[
+            "E|Buy on the close when both the 3-day and 4-day simple averages are above the 65-day average; short with the symmetric inequalities (printed p.20).",
+            "X|Opposing full agreement exits and reverses; mixed agreement holds the current position (pp.20-21, discussion of delayed entries and exits).",
+            "F|The printed 3-, 4-, 5-, 6-, 7-day variant adds short averages to the same condition (p.20).",
+            "X|The example explicitly uses no initial stop (pp.20-21)."],
+            "Reviewed price-return research contract, printed pp.20-21 (PDF pp.29-30). Defaults first=3, count=2, slow=65 are printed; count=5 is the printed 3-through-7 variant. Other lookbacks are configurable research variants. Flat at the test start, one position per actual symbol, close orders include the final observed close; the terminal position is marked open. No futures dollar costs or contract sizing are reproduced."),
         d("ch_bta2_65sma_ravi", "65sma-3cc with RAVI filter", "Ch 4 · 65sma-3cc system", "Long/Short", Live, &[
             "F|\"The RAVI is the absolute percentage difference between the 7-day and 65-day simple moving averages of the daily close\" (p.94); RAVI = Absolute value (100 x (7-SMA - 65-SMA)/65-SMA) (p.41)",
             "E|\"The filtered model could generate a buy signal only if RAVI was greater than one and there were three consecutive closes above the 65sma\" (p.96); sells symmetric (p.96)",
             "E|Entry \"at the market on the open of the next trading day after the close of the day the signal is received\" (p.80); entry signals are also the opposite exit (always in the market, p.97)",
             "F|Barrier 1.0 (Fig 4.17, p.96); 1.5 (Fig 4.18, p.97) and 0.5 (Table 4.4, p.98) are labelled options",
             "X|Tests use a \"one-way\" model: no back-to-back long or short trades (p.80, p.99)",
-            "X|Table 4.4 adds a $1,000 initial stop [not modelled by default: stop_pts]"],
-            "Printed pp.93-99. Index instead of futures contract. stop_pts=2 reproduces Table 4.4's $1,000 S&P stop ($500/point). Table 4.4 S&P-500 4/82-7/95 (barrier 0.5, $1,000 stop): 80 trades, 10 winners."),
+            "X|Reviewed version is the stop-free, always-invested filtered model in Figures 4.17-4.18, pp.96-97, using the base reversal execution from p.80. Table 4.4's separate $1,000-stop experiment is held."],
+            "Reviewed printed pp.80,94-97,99. Defaults SMA=65, confirm=3, fast=7, RAVI>1.0. Flat at test start; actual selected cash/ETF/stock prices are a declared research application. No dollar stop, contract tick, rollover, portfolio sizing or book performance is reproduced. A legacy nonzero stop_pts request is rejected; changing the RAVI threshold remains a variant of this family."),
         d("ch_bta2_65sma_ravi_x14", "65sma-3cc + RAVI 0.5 + 14-day exit", "Ch 4 · 65sma-3cc system", "Long/Short", Live, &[
             "E|65sma-3cc entries (three consecutive closes above/below the 65-day SMA, next open) filtered by RAVI > 0.5 (p.100)",
             "X|\"if long, we would exit a trade tomorrow on the open if today's close is lower than the lowest low of the last 14 days\" (p.100); shorts symmetric (highest high)",
@@ -332,6 +338,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
     Some(match id {
+        "ch_bta2_ma_stack" => ("ch_ma_stack", "Multiple short SMAs versus long SMA", "All-average agreement"),
         "ch_bta2_65sma_ravi" => ("ch_reversal", "65sma-3cc reversal", "RAVI filter"),
         "ch_bta2_65sma_ravi_x14" => ("ch_reversal", "65sma-3cc reversal", "RAVI 0.5 + 14-day exit"),
         "ch_bta2_65sma_stop" => ("ch_reversal", "65sma-3cc reversal", "$1,000 stop · Data missing"),
@@ -373,7 +380,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let cc = || p("confirm", "Consecutive closes", 3., 2., 5., 1.);
     let ravi = |d| p("ravi", "RAVI barrier (%)", d, 0., 3., 0.5);
     Some(match id {
-        "ch_bta2_65sma_ravi" => vec![sma_n(), cc(), p("fast", "RAVI short SMA", 7., 5., 10., 1.), ravi(1.0), stop(0.)],
+        "ch_bta2_ma_stack" => vec![p("first", "First short SMA length", 3., 2., 10., 1.),
+            p("count", "Number of consecutive short SMAs", 2., 2., 5., 1.), p("slow", "Long SMA length", 65., 10., 200., 1.)],
+        "ch_bta2_65sma_ravi" => vec![sma_n(), cc(), p("fast", "RAVI short SMA", 7., 5., 10., 1.), ravi(1.0)],
         "ch_bta2_65sma_ravi_x14" => vec![sma_n(), cc(), p("fast", "RAVI short SMA", 7., 5., 10., 1.), ravi(0.5),
             p("exit_n", "Exit: close beyond N-day extreme", 14., 5., 30., 1.), stop(0.)],
         "ch_bta2_tat" => vec![p("n", "Breakout days", 25., 10., 40., 5.), p("adx", "ADX length", 18., 10., 30., 2.),
@@ -402,9 +411,30 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     })
 }
 
+/// Only these exact contracts have been checked by the independent source-based oracle.
+/// Legacy cash-point stops cannot be enabled through a parameter left in an old request.
+pub fn validate_reviewed(id: &str, p: &Params) -> Option<String> {
+    if !matches!(id, "ch_bta2_ma_stack" | "ch_bta2_65sma_ravi") { return None; }
+    if p.get("stop_pts").is_some_and(|v| !v.is_finite() || *v != 0.) {
+        return Some("The reviewed Chande contract has no initial stop. Futures dollar stops cannot be supplied as cash/index points; actual contract data and a separate review are required.".into());
+    }
+    let schema = params(id).unwrap();
+    for d in &schema {
+        if let Some(v) = p.get(d.key) {
+            if !v.is_finite() || *v < d.min || *v > d.max || (d.key != "ravi" && v.fract() != 0.) {
+                return Some(format!("Invalid reviewed Chande parameter {}: use a finite value in [{}, {}]{}.", d.key, d.min, d.max, if d.key == "ravi" { "" } else { " and an integer lookback" }));
+            }
+        }
+    }
+    if id == "ch_bta2_ma_stack" && getp(&schema, p, "first") + getp(&schema, p, "count") - 1. >= getp(&schema, p, "slow") {
+        return Some("Each short SMA must be shorter than the long SMA.".into());
+    }
+    None
+}
+
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let schema = params(id)?;
-    if from > to || to >= x.r.len() { return None; }
+    if from > to || to >= x.r.len() || validate_reviewed(id, p).is_some() { return None; }
     let g = |k: &str| getp(&schema, p, k);
     let u = |k: &str| (g(k).round().max(1.)) as usize;
     let nan = f64::NAN;
@@ -420,6 +450,27 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let hold_exit = |h: usize| move |i: usize, q: &Pos| (i >= q.i + h).then(|| format!("Close of day {h} in the trade"));
     let rng: Vec<f64> = (0..n).map(|i| x.h[i] - x.l[i]).collect();
     Some(match id {
+        "ch_bta2_ma_stack" => {
+            let slow = sma(&x.c, u("slow"));
+            let short: Vec<_> = (u("first")..u("first") + u("count")).map(|k| sma(&x.c, k)).collect();
+            let mut out = vec![];
+            let mut pos: Option<Pos> = None;
+            // These are on-close orders, so the final bar can also fill. A mixed
+            // set of averages holds the position; it is not an exit condition.
+            for i in from..=to {
+                let dir = if short.iter().all(|v| v[i] > slow[i]) { 1. }
+                    else if short.iter().all(|v| v[i] < slow[i]) { -1. } else { 0. };
+                if dir == 0. || pos.as_ref().is_some_and(|q| q.dir == dir) { continue; }
+                if let Some(q) = pos.take() { out.push(done(q, i, x.c[i], "Opposing SMA agreement · close reversal", i)); }
+                pos = Some(Pos { dir, i, px: x.c[i], kind: "close" });
+            }
+            if let Some(q) = pos {
+                let mut t = done(q, to, x.c[to], "open", to);
+                t.open = true;
+                out.push(t);
+            }
+            out
+        }
         "ch_bta2_65sma_ravi" | "ch_bta2_65sma_ravi_x14" => {
             let (ma, fast) = (sma(&x.c, u("sma")), sma(&x.c, u("fast")));
             let (k, bar) = (u("confirm"), g("ravi"));
@@ -575,6 +626,57 @@ mod tests {
     use crate::Row;
     fn rows(c: &[f64]) -> Vec<Row> {
         c.iter().enumerate().map(|(i, &v)| Row { ticker: "T".into(), date: format!("2000-01-{:02}", i % 28 + 1), open: v, high: v + 1., low: v - 1., close: v, volume: None }).collect()
+    }
+    #[test]
+    fn reviewed_stack_holds_mixed_agreement_and_reverses_at_final_close() {
+        let mut c = vec![100.; 12];
+        c.extend([140., 100., 80., 70.]);
+        let r = rows(&c);
+        let x = Ctx::new(&r, &r, &[]);
+        let p = Params::from([("first".into(), 2.), ("count".into(), 2.), ("slow".into(), 10.)]);
+        let t = run("ch_bta2_ma_stack", &x, 0, 15, &p).unwrap();
+        assert_eq!(t.len(), 2);
+        assert_eq!((t[0].legs[0].i, t[0].exit_i, t[0].exit_px), (12, 15, 70.));
+        assert_eq!((t[1].dir, t[1].legs[0].i, t[1].open), (-1., 15, true));
+        assert_eq!(t[1].entry_kind, "close");
+        assert!(run("ch_bta2_ma_stack", &x, 0, 8, &p).unwrap().is_empty());
+    }
+    #[test]
+    fn reviewed_equality_is_neutral_and_cash_stops_are_rejected() {
+        let r = rows(&vec![100.; 90]);
+        let x = Ctx::new(&r, &r, &[]);
+        for id in ["ch_bta2_ma_stack", "ch_bta2_65sma_ravi"] {
+            assert!(run(id, &x, 0, 89, &Params::new()).unwrap().is_empty());
+            assert!(run(id, &x, 0, 89, &Params::from([("stop_pts".into(), 2.)])).is_none());
+            assert!(run(id, &x, 0, 89, &Params::from([("stop_pts".into(), f64::NAN)])).is_none());
+        }
+        assert!(validate_reviewed("ch_bta2_ma_stack", &Params::from([("count".into(), 2.5)])).is_some());
+    }
+    #[test]
+    fn reviewed_ravi_fills_only_the_next_observed_open_and_does_not_use_prestart_orders() {
+        let mut c = vec![100.; 74];
+        c[70] = 110.; c[71] = 120.; c[72] = 130.; c[73] = 140.;
+        let mut r = rows(&c);
+        r[73].open = 135.; r[73].low = 134.; r[73].high = 141.;
+        let x = Ctx::new(&r, &r, &[]);
+        assert!(run("ch_bta2_65sma_ravi", &x, 0, 72, &Params::new()).unwrap().is_empty());
+        let t = run("ch_bta2_65sma_ravi", &x, 0, 73, &Params::new()).unwrap();
+        assert_eq!(t.len(), 1);
+        assert_eq!((t[0].legs[0].i, t[0].legs[0].px, t[0].open), (73, 135., true));
+        assert_eq!(t[0].entry_kind, "open");
+        assert!(run("ch_bta2_65sma_ravi", &x, 73, 73, &Params::new()).unwrap().is_empty());
+    }
+    #[test]
+    fn reviewed_ravi_barrier_is_strict_at_equality_and_on_each_side() {
+        let mut c = vec![100.; 74];
+        c[70] = 102.; c[71] = 103.; c[72] = 104.; c[73] = 105.;
+        let r = rows(&c); let x = Ctx::new(&r, &r, &[]);
+        let fast=sma(&x.c,7); let slow=sma(&x.c,65);
+        let level=(100.*(fast[72]-slow[72])/slow[72]).abs();
+        for (barrier, count) in [(level,0), (level+1e-9,0), (level-1e-9,1)] {
+            let p=Params::from([("ravi".into(),barrier)]);
+            assert_eq!(run("ch_bta2_65sma_ravi",&x,0,73,&p).unwrap().len(),count);
+        }
     }
     #[test]
     fn long_bomb_buys_above_high_and_exits_below_prior_low() {

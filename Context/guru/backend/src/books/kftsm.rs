@@ -3,8 +3,9 @@
 //! Catalogue Live denotes an implemented runner; live API admission requires a separate source review.
 //! Seventeen methods reviewed 2026-10-13 have independent actual-data ledger checks. Defaults omitted
 //! by the source, fill assumptions and instrument adaptations remain explicit, never source-study claims.
-//! Review and independent oracle: library/kaufman/REVIEW-2026-10-13.md and its scripts/ directory.
-use crate::connors::{sma, true_range, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
+//! Review and independent oracles: library/kaufman/REVIEW-2026-10-13.md,
+//! library/kaufman/REVIEW-2026-10-13-ADAPTIVE.md and their scripts/ directory.
+use crate::connors::{rsi, sma, true_range, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "kftsm";
 
@@ -61,7 +62,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|\"IF CLOSE CROSSES ABOVE outupper THEN BUY 2 CONTRACTS NEXT BAR AT MARKET\" outupper = BollingerBand(close,21,2); short mirror (TSM FC Bollinger ABX, F. Cavasino, CD Ch08)",
             "X|\"IF CLOSE CROSSES BELOW inupper THEN EXITLONG 1 CONTRACT NEXT BAR AT MARKET\" inupper = BollingerBand(close,21,1)",
             "X|\"IF CLOSE CROSSES BELOW mavg THEN EXITLONG 1 CONTRACT NEXT BAR AT MARKET\" mavg = Average(close,21)",
-        ], "Two contracts = one full position split in halves (each exit closes 0.5). An entry signal in the held direction is ignored (TradeStation default, no pyramiding)."),
+        ], "CD length21, outer2 SD, inner1 SD. Two contracts are represented by equal halves of a single research allocation; this is not contract-dollar accounting. No pyramiding. Inner and midpoint crossings each close one remaining half at the next open; simultaneous crossings close both. An opposite entry closes any remainder and starts two new halves at that open. A terminal remainder is marked, not liquidated; its final exit piece is a mark identified by open=true. A final-close signal has no next-open fill. Independent selected-baseline ledger scope: library/kaufman/REVIEW-2026-10-13-ADAPTIVE.md."),
         d("kftsm_ma_pct_band", "Moving average with percent bands", "Ch 8 · Bands and channels", "Long/Short", Live, &[
             "E|\"if close > ma + band then buy on close; if close < ma - band then sell on close\" band = ma*pcband/100 (TSM MA percent bands, CD Ch08, period(20), pcband(2.0)); p.267-268",
             "X|Reversal: always in once started",
@@ -83,7 +84,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "F|osc = MA(3) - MA(10), trend = MA(osc,16); after trend crosses above 0 (below 0) wait for the first pullback (TSM Raschke 1st Cross, CD Ch08; p.276)",
             "E|\"if owait = 0 and fastosc[1] > trend and fastosc <= trend then owait = -1; if owait = -1 and low > low[1] then buy on close\" (short mirror with high < high[1])",
             "X|\"X1. close t-1 > close t-2 close of bar turns up (confirms trend) X2. close t < close t-1 X3. exit long\" (p.276) = CD stage logic",
-        ], "Defaults osc1 3, osc2 10, ntrend 16, vfilter 0 (CD). The printed S1 line (p.276) repeats the B1 inequality; the CD code (fastosc[1] < trend and fastosc >= trend) is used. Kaufman: 'Although Raschke does not discuss exits, a likely exit rule ...' - the exit is Kaufman's suggestion, coded as in the CD."),
+        ], "CD defaults3/10/16, vfilter0; unused nvlty is omitted because its volatility test is commented out. The printed S1 typo is resolved by the CD >= comparison. Exit is Kaufman's suggested completion, not an exit supplied by Raschke. State comparisons use the position before today's close orders; a simultaneous opposite entry and old-position exit resolve as one reversal at that same close. Flat at the selected start; prior bars warm setup state. Only selected-baseline source-rule/ledger verification is claimed."),
         d("kftsm_keltner", "Keltner 10-day moving average rule", "Ch 8 · Applications of single trends", "Long/Short", Live, &[
             "E|\"a 10-day moving average based on the average of the daily high, low, and closing prices, with a band on each side formed from the 10-day moving average of the high-low range. A buy signal occurs on penetration of the upper band and a sell signal when the lower band is broken; positions are always reversed.\" (p.273)",
             "F|Penetration = close: \"Buy (close out shorts and go long) when the price penetrates (closes above) the upper band\" (Rules for using bands, p.269)",
@@ -99,7 +100,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|\"1. Buy on the close of an outside day if the close is above the prior high; sell if the close is below the prior low.\" (Arnold, p.125)",
             "X|\"2. If buying, place a stop-loss just below the low of the outside day; if selling, place the stop just above the high.\" (p.125)",
             "X|\"3. Close out the position on the close three days after entry.\" (p.125)",
-        ], "Defaults = the text: prior range 1 day, hold 3 (the CD note: 'The default values in the text are length=1 and hold=3'; the CD code itself uses length(2), hold(2) and a stop at the prior range low: p.length=2 p.hold=2 p.stop_ref=1). 'Just below' read as: stop triggers when price trades below the outside day's low, filled at that low or the open if gapped [tick size not given]. Stop checked from the day after entry, before the time exit. An opposite signal reverses (CD 'sell on close'); a same-direction signal is ignored."),
+        ], "Reviewed baseline follows PDF125: length1, hold3, outside-day extreme stop. Entry is at the completed outside day's close; its stop first becomes active next day, so the entry day's earlier low/high cannot stop it. The omitted tick offset is explicitly adapted to strict penetration with boundary fill, or observed open if gapped. Stop precedes the later close/time orders. Same-direction signals do not pyramid or reset the holding clock/stop; opposite close signals reverse. length/hold/stop_ref variations are research variants: stop_ref1 changes the boundary to the prior range, but does not claim literal CD parity (CD2/2 also resets entrybar on repeated signals)."),
         d("kftsm_donchian_4wk", "Donchian Four-Week Rule", "Ch 5 · N-day breakout", "Long/Short", Live, &[
             "E|\"1. Go long (and cover shorts) when the current price exceeds the highs of the previous four full calendar weeks.\" (p.177)",
             "E|\"2. Sell short (and liquidate longs) when the current price falls below the lows of the previous four full calendar weeks.\" (p.177)",
@@ -110,22 +111,27 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "F|KAMA = KAMA[1] + sc*(close - KAMA[1]); sc = [ER*(fastest - slowest) + slowest]^2, fastest = 2/(2+1), slowest = 2/(30+1), ER over 10 periods (p.603-605; TSMKAMA CD Ch17: fastend .666, slowend .0645)",
             "E|\"if currentbar > period+5 and absvalue(change) > sdfilter*SD and absvalue(trend - trend[1]) > mfilter then: if trend > trend[1] and signal <> 1 then buy on close; if trend < trend[1] and signal <> -1 then sell on close\" change = trend - trend[1], SD = stddev(change[1],20) (TSM Adaptive systems, CD Ch17, system(1), period(10), mfilter(0), sdfilter(.1))",
             "X|Always in the market: a position is closed only by the opposite signal, which reverses it (the code's only exit; no stop or target is given)",
-        ], "Defaults = CD inputs ('This filter is initially set to .1'). TradeStation StdDev = population. Always in once started."),
+        ], "CD driver defaults period10, sdfilter.1, mfilter0; CD function constants.666/.0645, not rounded prose replacements. First observed close seed; unavailable initial ER history uses ER1. The CD assumes platform prehistory/MaxBarsBack that is not supplied: this initial-history convention is declared. Zero noise retains the CD ER1. Filter SD is population SD of the previous20 trend changes, excluding today's change. Nonzero mfilter is an instrument-local point research threshold, not a converted USD amount. Selected baselines only, no original-study reproduction."),
         d("kftsm_adapt_exp", "Adaptive driver: exponential benchmark", "Ch 17 · Adaptive techniques", "Long/Short", Live, &[
             "F|\"system = 0, exponential smoothing benchmark\": trend = SmoothedAverage(close,period) (TSM Adaptive systems, CD Ch17)",
             "E|Same standard-deviation-filtered direction rules as kftsm_kama",
             "X|Always in the market: a position is closed only by the opposite signal, which reverses it (the code's only exit; no stop or target is given)",
-        ], "Defaults = CD inputs (period 10, sdfilter .1)."),
+        ], "CD driver period10, sdfilter.1, mfilter0. SmoothedAverage has no supplied platform initialization: first full-period mean and alpha1/period are the declared engine convention. Previous20 trend changes supply the population SD filter. This filtered driver is distinct from the unfiltered Chapter8 benchmark. Selected-baseline verification only."),
         d("kftsm_vidya", "Adaptive driver: Chande VIDYA", "Ch 17 · Adaptive techniques", "Long/Short", Live, &[
             "F|VIDYA = k*sc*close + (1 - k*sc)*VIDYA[1], k = stddev(close,period)/stddev(close,histper), sc = 2/(period+1) (TSMVIDYA, CD Ch17; p.606)",
             "E|system = 3, TSMVIDYA(period, per2) with the kftsm_kama direction rules (TSM Adaptive systems, period(10), per2(50), sdfilter(.1))",
             "X|Always in the market: a position is closed only by the opposite signal, which reverses it (the code's only exit; no stop or target is given)",
-        ], "Defaults = CD inputs."),
+        ], "CD driver period10, per2=50, sdfilter.1, mfilter0. Full historical volatility window is required; first complete window seeds with its observed close and earlier values stay unavailable. Later zero historical variance carries the prior trend without a signal (declared 0/0 convention). No volatility-ratio clipping. histper must exceed period. The CD has no MaxBarsBack settings, so initial-history parity with TradeStation is not certified. Selected-baseline verification only."),
         d("kftsm_adapt_r2", "Adaptive driver: correlation R2 trend", "Ch 17 · Adaptive techniques", "Long/Short", Live, &[
             "F|AR2 = AR2[1] + R2*(close - AR2[1]), R2 = power(correlation(currentbar, close, period), 2) (TSMAdaptiveR2, CD Ch17)",
             "E|system = 2 with the kftsm_kama direction rules (TSM Adaptive systems, period(10), sdfilter(.1))",
             "X|Always in the market: a position is closed only by the opposite signal, which reverses it (the code's only exit; no stop or target is given)",
-        ], "CD function used (the printed Method 1 on p.608 uses (r+1)/2 instead of r^2; the driver calls the CD function)."),
+        ], "CD function uses squared Pearson price/time correlation, not the printed (r+1)/2 or residual-series variant on PDF608. Until a full correlation window exists, observed closes seed the trend; zero price variance uses R2=0 and carries the prior trend. These unavailable-history/degeneracy conventions are explicit; original MaxBarsBack parity is not certified. Driver defaults10/.1/0 and previous20-change population SD filter. Selected-baseline verification only."),
+        d("kftsm_adapt_rsi", "Adaptive driver extension: Wilder RSI trend", "Ch 17 · Adaptive techniques", "Long/Short", Live, &[
+            "F|TSMAdaptiveRSI (CD Ch17): sc = absvalue(RSI(close,period)/100 - .5)*2; ARSI = ARSI[1] + sc*(close - ARSI[1]); first bar ARSI=close (PDF608-609)",
+            "E|The CD Adaptive systems introduction explicitly describes adding Adaptive RSI by inserting its function call into the driver. Apply the same prior20-change SD filter and close direction orders as the supplied four systems.",
+            "X|Close reversal on the next opposite eligible trend change; no added stop, target, sizing or portfolio rule.",
+        ], "Author-described driver extension, not a fifth selector supplied in the CD system. Configurable period10/sdfilter.1/mfilter0 inherit the driver defaults; the printed indicator uses20. Reuse engine Wilder RSI: first n actual changes seed gain/loss means; flat gain/loss gives RSI50. ARSI starts at the first close and carries until RSI exists. These absent-platform-history/zero-loss conventions are explicit, not TradeStation initialization parity. Selected-baseline verification only."),
         // ------------------------------------------------ Ch 21 Hochheimer studies and CD crossovers
         d("kftsm_hh_ma", "Hochheimer single moving average (close penetration)", "Ch 21 · Comprehensive studies", "Long/Short", Live, &[
             "E|\"2. A buy signal occurred on an upwards penetration of the moving average by the closing price; a sell signal occurred on a downward penetration\" \"1. The trend calculation used the closing price only.\" (p.747)",
@@ -219,6 +225,16 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "kftsm_4_9_18" => Some(("kftsm_4_9_18", "Four-nine-eighteen confirmation", "")),
         "kftsm_month_end" => Some(("kftsm_month_end", "Month-end effect", "")),
         "kftsm_hirsch" => Some(("kftsm_hirsch", "Hirsch November–April", "")),
+        "kftsm_kama" => Some(("kftsm_kama", "KAMA with CD change filter", "")),
+        "kftsm_adapt_exp" => Some(("kftsm_adapt_exp", "Exponential benchmark with CD change filter", "")),
+        "kftsm_vidya" => Some(("kftsm_vidya", "VIDYA with CD change filter", "")),
+        "kftsm_adapt_r2" => Some(("kftsm_adapt_r2", "Squared-correlation adaptive driver", "")),
+        "kftsm_adapt_rsi" => Some(("kftsm_adapt_rsi", "Wilder-RSI adaptive driver extension", "")),
+        "kftsm_swg" => Some(("kftsm_swg", "Close-scaled swing breakout", "")),
+        "kftsm_swing" => Some(("kftsm_swing", "Extremum-scaled percent swing", "")),
+        "kftsm_raschke_first_cross" => Some(("kftsm_raschke_first_cross", "First Cross with Kaufman exit", "")),
+        "kftsm_outside_day" => Some(("kftsm_outside_day", "Outside day with outside close", "")),
+        "kftsm_fc_bb_abx" => Some(("kftsm_fc_bb_abx", "Two-band half-position profit taking", "")),
         _ => None,
     };
     if reviewed.is_some() { return reviewed; }
@@ -266,7 +282,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "kftsm_parabolic" => vec![p("afmin", "Starting AF", 0.02, 0.01, 0.1, 0.01), p("afinc", "AF increment", 0.02, 0.01, 0.1, 0.01), p("afmax", "Maximum AF", 0.2, 0.05, 0.5, 0.01)],
         "kftsm_outside_day" => vec![p("length", "Prior range (days)", 1., 1., 5., 1.), p("hold", "Exit on the close N days after entry", 3., 1., 10., 1.), p("stop_ref", "Stop: 0 outside day's extreme (text), 1 prior range (CD code)", 0., 0., 1., 1.)],
         "kftsm_donchian_4wk" => vec![p("weeks", "Calendar weeks", 4., 1., 12., 1.)],
-        "kftsm_kama" | "kftsm_adapt_exp" | "kftsm_adapt_r2" => adapt(vec![]),
+        "kftsm_kama" | "kftsm_adapt_exp" | "kftsm_adapt_r2" | "kftsm_adapt_rsi" => adapt(vec![]),
         "kftsm_vidya" => adapt(vec![p("per2", "VIDYA history period", 50., 10., 200., 1.)]),
         "kftsm_hh_ma" => vec![p("period", "MA period", 35., 2., 200., 1.)],
         "kftsm_hh_cross" => vec![p("fast", "Fast MA", 17., 2., 100., 1.), p("slow", "Slow MA", 25., 3., 250., 1.)],
@@ -461,6 +477,15 @@ pub fn validate(id: &str, p: &Params) -> Option<String> {
         let value = |key: &str| p.get(key).copied().unwrap_or_else(|| schema.iter().find(|d|d.key==key).unwrap().def);
         if value("fast") >= value("slow") { return Some("Fast MA must be shorter than slow MA".into()); }
     }
+    if matches!(id, "kftsm_vidya" | "kftsm_raschke_first_cross") {
+        let value = |key: &str| p.get(key).copied().unwrap_or_else(|| schema.iter().find(|d|d.key==key).unwrap().def);
+        if id == "kftsm_vidya" && value("per2") <= value("period") {
+            return Some("VIDYA historical period must exceed the recent period".into());
+        }
+        if id == "kftsm_raschke_first_cross" && value("osc1") >= value("osc2") {
+            return Some("First Cross fast MA must be shorter than slow MA".into());
+        }
+    }
     None
 }
 
@@ -650,12 +675,13 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "kftsm_parabolic" => parabolic(x, from, to, g("afmin"), g("afinc"), g("afmax")),
         "kftsm_outside_day" => outside_day(x, from, to, u("length").max(1), u("hold").max(1), u("stop_ref") == 1),
         "kftsm_donchian_4wk" => donchian_weeks(x, from, to, u("weeks").max(1) as i64),
-        "kftsm_kama" | "kftsm_adapt_exp" | "kftsm_vidya" | "kftsm_adapt_r2" => {
+        "kftsm_kama" | "kftsm_adapt_exp" | "kftsm_vidya" | "kftsm_adapt_r2" | "kftsm_adapt_rsi" => {
             let pn = u("period").max(1);
             let tr = match id {
                 "kftsm_kama" => kama(c, pn),
                 "kftsm_adapt_exp" => smoothed(c, pn),
                 "kftsm_vidya" => vidya(c, pn, u("per2").max(2)),
+                "kftsm_adapt_rsi" => adapt_rsi(c, pn),
                 _ => adapt_r2(c, pn),
             };
             adaptive_driver(x, from, to, &tr, pn, g("sdfilter"), g("mfilter"))
@@ -718,7 +744,7 @@ fn fc_abx(x: &Ctx, from: usize, to: usize, pn: usize, k: f64) -> Vec<Trade> {
     let finish = |mut t: Trade, why: &str| -> Trade {
         let tot: f64 = t.exits.iter().map(|e| e.2).sum();
         t.exit_px = t.exits.iter().map(|e| e.1 * e.2).sum::<f64>() / tot;
-        t.exit_i = t.exits.last().unwrap().0; t.signal_i = t.exit_i; t.reason = why.into();
+        t.exit_i = t.exits.last().unwrap().0; t.signal_i = t.exit_i.saturating_sub(1); t.reason = why.into();
         if t.exits.len() == 1 { t.exits.clear(); }
         t
     };
@@ -747,6 +773,7 @@ fn fc_abx(x: &Ctx, from: usize, to: usize, pn: usize, k: f64) -> Vec<Trade> {
         close_part(&mut t, to, c[to], left as f64 / 2.);
         let mut t = finish(t, "open");
         t.open = true;
+        t.signal_i = to; // terminal mark, not a next-open liquidation signal
         out.push(t);
     }
     out
@@ -835,7 +862,9 @@ fn outside_day(x: &Ctx, from: usize, to: usize, len: usize, hold: usize, code_st
         let (rh, rl) = (hi(h, i - len, i), lo(l, i - len, i));
         if h[i] > rh && l[i] < rl {
             let d = if c[i] > rh { 1 } else if c[i] < rl { -1 } else { 0 };
-            if d != 0 && d != b.pos() && i < to {
+            if d != 0 && d != b.pos() {
+                // A final-close reversal still liquidates the held position.
+                // Bk suppresses only the new entry outside [from, to).
                 b.at_close(i, d, "opposite outside day");
                 entry = i;
                 stop = match (d, code_stop) { (1, false) => l[i], (1, true) => rl, (_, false) => h[i], _ => rh };
@@ -889,7 +918,12 @@ fn vidya(c: &[f64], pn: usize, hp: usize) -> Vec<f64> {
     let sc = 2. / (pn as f64 + 1.);
     for i in 0..n {
         let (s1, s2) = (sd_at(c, pn, i), sd_at(c, hp, i));
-        v[i] = if i < pn || !s2.is_finite() || s2 == 0. || i == 0 { c[i] } else { let k = s1 / s2; k * sc * c[i] + (1. - k * sc) * v[i - 1] };
+        // The unavailable historical volatility window cannot become a close-based
+        // trading signal. Seed once, then explicitly carry through the 0/0 case.
+        if !s1.is_finite() || !s2.is_finite() { continue; }
+        v[i] = if i == 0 || !v[i - 1].is_finite() { c[i] }
+            else if s2 == 0. { v[i - 1] }
+            else { let k = s1 / s2; k * sc * c[i] + (1. - k * sc) * v[i - 1] };
     }
     v
 }
@@ -906,6 +940,20 @@ fn adapt_r2(c: &[f64], pn: usize) -> Vec<f64> {
         a[i] = a[i - 1] + r * r * (c[i] - a[i - 1]);
     }
     a
+}
+fn adapt_rsi(c: &[f64], pn: usize) -> Vec<f64> {
+    let strength = rsi(c, pn);
+    let mut trend = vec![f64::NAN; c.len()];
+    if c.is_empty() { return trend; }
+    trend[0] = c[0];
+    for i in 1..c.len() {
+        trend[i] = trend[i - 1]; // missing RSI prehistory is not a fabricated RSI
+        if strength[i].is_finite() {
+            let sc = (strength[i] / 100. - 0.5).abs() * 2.;
+            trend[i] += sc * (c[i] - trend[i - 1]);
+        }
+    }
+    trend
 }
 fn adaptive_driver(x: &Ctx, from: usize, to: usize, tr: &[f64], pn: usize, sdf: f64, mf: f64) -> Vec<Trade> {
     let n = tr.len();
@@ -1103,5 +1151,102 @@ mod tests {
         assert!(validate("kftsm_ma",&Params::from([("unknown".into(),1.)])).is_some());
         assert!(validate("kftsm_hh_cross",&Params::from([("fast".into(),25.),("slow".into(),17.)])).is_some());
         assert!(validate("kftsm_ma",&Params::from([("filter".into(),0.15)])).is_none());
+    }
+    #[test]
+    fn vidya_requires_history_and_does_not_substitute_price_for_zero_variance() {
+        let mut r=rows(85);
+        for (i,row) in r.iter_mut().enumerate() {
+            let v=if i<25 {100.+i as f64} else {125.};
+            row.open=v;row.close=v;row.high=v+1.;row.low=v-1.;
+        }
+        let x=Ctx::new(&r,&r,&[]);
+        let v=vidya(&x.c,10,50);
+        assert!(v[..49].iter().all(|n|n.is_nan()));
+        assert_eq!(v[49],x.c[49]);
+        assert_eq!(v[84],v[83]);
+        assert!(run("kftsm_vidya",&x,0,48,&Params::new()).unwrap().is_empty());
+        assert!(run("kftsm_vidya",&x,49,84,&Params::new()).unwrap().is_empty());
+        assert!(validate("kftsm_vidya",&Params::from([("period".into(),20.),("per2".into(),20.)])).is_some());
+    }
+    #[test]
+    fn adaptive_filter_is_strict_and_uses_only_prior_changes() {
+        let r=rows(33);let x=Ctx::new(&r,&r,&[]);
+        let mut trend=vec![100.;33];
+        for i in 1..30 {trend[i]=trend[i-1]+if i%2==0 {1.} else {-1.};}
+        trend[30]=trend[29]+1.;trend[31]=trend[30];trend[32]=trend[31];
+        // Previous twenty changes are exactly ten +1 and ten -1, population SD1.
+        assert!(adaptive_driver(&x,30,32,&trend,10,1.,0.).is_empty());
+        assert!(adaptive_driver(&x,30,32,&trend,10,0.,1.).is_empty());
+        trend[30]=trend[29]+1.000001;trend[31]=trend[30];trend[32]=trend[31];
+        let ts=adaptive_driver(&x,30,32,&trend,10,1.,0.);
+        assert_eq!(ts.len(),1);assert_eq!(ts[0].legs[0].i,30);assert!(ts[0].open);
+    }
+    #[test]
+    fn outside_day_close_entry_precedes_next_day_stop_and_gaps_use_observed_open() {
+        let mut r=rows(8);
+        r[2].open=100.;r[2].high=110.;r[2].low=90.;r[2].close=109.;
+        // The entry day's low90 is earlier than its close order; no same-bar stop.
+        r[3].open=110.;r[3].high=112.;r[3].low=90.;r[3].close=111.; // equality is not penetration
+        r[4].open=85.;r[4].high=89.;r[4].low=84.;r[4].close=86.;
+        let x=Ctx::new(&r,&r,&[]);let ts=run("kftsm_outside_day",&x,1,7,&Params::new()).unwrap();
+        assert_eq!(ts.len(),1);assert_eq!(ts[0].legs[0].i,2);assert_eq!(ts[0].exit_i,4);
+        assert_eq!(ts[0].exit_px,85.);assert_eq!(ts[0].entry_kind,"close");
+        // A fresh qualifying close on the final bar has no invented post-window trade.
+        r[7].high=120.;r[7].low=80.;r[7].close=119.;
+        let x=Ctx::new(&r,&r,&[]);let ts=run("kftsm_outside_day",&x,7,7,&Params::new()).unwrap();
+        assert!(ts.is_empty());
+    }
+    #[test]
+    fn percent_swing_both_extremes_uses_source_close_order_priority() {
+        let mut r=rows(6);
+        for (i,(hh,ll,cc)) in [(101.,99.,100.),(110.,100.,105.),(109.,95.,100.),(120.,90.,110.),(111.,100.,105.),(111.,100.,105.)].into_iter().enumerate() {
+            r[i].open=cc;r[i].high=hh;r[i].low=ll;r[i].close=cc;
+        }
+        let x=Ctx::new(&r,&r,&[]);let ts=run("kftsm_swing",&x,3,5,&Params::new()).unwrap();
+        // Both established levels are crossed on bar3. The source long IF comes
+        // before the short ELSE, and both are close orders, not ordered stop fills.
+        assert_eq!(ts[0].dir,1.);assert_eq!(ts[0].legs[0].i,3);assert_eq!(ts[0].legs[0].px,110.);
+    }
+    #[test]
+    fn outside_day_final_opposite_close_liquidates_without_new_entry() {
+        let mut r=rows(4);
+        for (i,(oo,hh,ll,cc)) in [(100.,101.,99.,100.),(101.,105.,98.,104.),(104.,106.,100.,105.),(104.,107.,99.,99.5)].into_iter().enumerate() {
+            r[i].open=oo;r[i].high=hh;r[i].low=ll;r[i].close=cc;
+        }
+        let x=Ctx::new(&r,&r,&[]);
+        let ts=run("kftsm_outside_day",&x,0,3,&Params::new()).unwrap();
+        assert_eq!(ts.len(),1);assert_eq!(ts[0].dir,1.);
+        assert_eq!(ts[0].legs[0].i,1);assert_eq!(ts[0].exit_i,3);
+        assert_eq!(ts[0].exit_px,99.5);assert!(!ts[0].open);
+        assert_eq!(ts[0].reason,"opposite outside day");
+    }
+    #[test]
+    fn abx_final_close_signal_is_unfilled_but_prior_signal_fills_final_open() {
+        let mut r=rows(24);
+        r[23].open=120.;r[23].high=121.;r[23].low=119.;r[23].close=120.;
+        let x=Ctx::new(&r,&r,&[]);let p=Params::from([("period".into(),5.)]);
+        assert!(run("kftsm_fc_bb_abx",&x,0,23,&p).unwrap().is_empty());
+        // At nsd1 the outlier crosses; default nsd2 on five bars can equal the
+        // band's upper edge, so use a valid explicitly requested parameter.
+        let p=Params::from([("period".into(),5.),("nsd".into(),1.)]);
+        assert!(run("kftsm_fc_bb_abx",&x,0,23,&p).unwrap().is_empty());
+        r.push(Row{ticker:"T".into(),date:days_to(10981),open:123.,high:125.,low:122.,close:124.,volume:None});
+        let x=Ctx::new(&r,&r,&[]);let ts=run("kftsm_fc_bb_abx",&x,0,24,&p).unwrap();
+        assert_eq!(ts.len(),1);assert_eq!(ts[0].legs[0].i,24);assert_eq!(ts[0].legs[0].px,123.);
+        assert!(ts[0].open);assert_eq!(ts[0].exit_px,124.);assert_eq!(ts[0].entry_kind,"open");
+    }
+    #[test]
+    fn first_cross_rejects_inverted_oscillator_lengths() {
+        assert!(validate("kftsm_raschke_first_cross",&Params::from([("osc1".into(),10.),("osc2".into(),5.)])).is_some());
+    }
+    #[test]
+    fn adaptive_rsi_waits_for_actual_wilder_history_and_handles_flat_prices() {
+        let prices:Vec<f64>=(0..32).map(|i|100.+i as f64).collect();
+        let trend=adapt_rsi(&prices,10);
+        assert!(trend[..10].iter().all(|v|*v==100.));
+        assert_eq!(trend[10],110.); // ten actual rising changes => RSI100, sc1
+        assert_eq!(trend[31],131.);
+        let r=rows(50);let x=Ctx::new(&r,&r,&[]);
+        assert!(run("kftsm_adapt_rsi",&x,0,49,&Params::new()).unwrap().is_empty());
     }
 }
