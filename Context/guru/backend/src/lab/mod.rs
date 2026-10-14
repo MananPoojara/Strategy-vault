@@ -20,6 +20,7 @@ pub mod osc2;
 pub mod patterns;
 pub mod periods;
 pub mod price;
+pub mod ratings;
 pub mod resample;
 pub mod rules;
 pub mod series;

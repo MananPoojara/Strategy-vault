@@ -167,6 +167,7 @@ CSV files kept outside Git; without them the parity test passes and prints "skip
 | ao | fast=5, slow=34 | ao |
 | ppo | fast=12, slow=26, signal=9 | ppo, signal, hist |
 | trix | length=18 | trix |
+| tech_ratings | — | ma, osc, all |
 | kst | roc1=10, roc2=15, roc3=20, roc4=30, sma1=10, sma2=10, sma3=10, sma4=15, signal=9 | kst, signal |
 | dpo | length=21 | dpo |
 | coppock | wma=10, long=14, short=11 | coppock |
