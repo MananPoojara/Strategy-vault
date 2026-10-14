@@ -70,11 +70,45 @@ mod tests {
             assert_eq!(up[0][299], 1.0, "every MA below price in a steady rise (volume {volume})");
         }
         let down = go("tech_ratings", &series(0.99, true), &[]);
-        assert!((down[0][299] + 13. / 15.).abs() < 1e-12, "HMA overshoots in a steady fall: 13 sells, 1 buy of 15 → {}", down[0][299]);
+        assert!((down[0][299] + 13. / 15.).abs() < 1e-12, "HMA overshoots in a steady fall: 14 sells, 1 buy (HMA) of 15 votes → {}", down[0][299]);
     }
     #[test] fn overall_is_the_mean_of_the_groups() {
         let o = go("tech_ratings", &crate::lab::testdata::walk(400, 3, true), &[]);
         for i in 199..400 { assert!(close_eq(o[2][i], (o[0][i] + o[1][i]) / 2.) && !(o[1][i].abs() > 1.), "bar {i}"); }
     }
     #[test] fn rules_reach_ratings() { compiles("tech_ratings", "all").unwrap(); }
+    /// Recomputes the 11 oscillator votes from the component series with the TradingView help rules and compares the group mean.
+    #[test] fn oscillator_votes_match_an_independent_recomputation() {
+        use crate::lab::testdata::walk;
+        let b = walk(1000, 5, true);
+        let g = |id: &str, kv: &[(&str, f64)]| go(id, &b, kv);
+        let (rsi, st, cci, dmi, ao) = (g("rsi", &[]).remove(0), g("stoch", &[("k", 14.), ("smooth_k", 3.), ("d", 3.)]), g("cci", &[]).remove(0), g("dmi", &[]), g("ao", &[]).remove(0));
+        let (mom, macd, sr, wr, bbp, uo) = (g("mom", &[]).remove(0), g("macd", &[]), g("stochrsi", &[]), g("willr", &[]).remove(0), g("bbp", &[]), g("uo", &[]).remove(0));
+        let trend = g("sma", &[("length", 50.)]).remove(0);
+        let o = go("tech_ratings", &b, &[]);
+        let v = |buy: bool, sell: bool| if buy { 1. } else if sell { -1. } else { 0. };
+        let (mut mixed, mut nonzero) = (0, 0);
+        for i in 200..1000 {
+            let c = b.close[i];
+            let votes = [
+                v(rsi[i] < 30. && rsi[i] > rsi[i - 1], rsi[i] > 70. && rsi[i] < rsi[i - 1]),
+                v(st[0][i] < 20. && st[1][i] < 20. && st[0][i] > st[1][i], st[0][i] > 80. && st[1][i] > 80. && st[0][i] < st[1][i]),
+                v(cci[i] < -100. && cci[i] > cci[i - 1], cci[i] > 100. && cci[i] < cci[i - 1]),
+                v(dmi[0][i] > dmi[1][i] && dmi[2][i] > 20. && dmi[2][i] > dmi[2][i - 1], dmi[0][i] < dmi[1][i] && dmi[2][i] > 20. && dmi[2][i] < dmi[2][i - 1]),
+                v((ao[i] > 0. && ao[i - 1] <= 0.) || (ao[i] > 0. && ao[i - 1] > 0. && ao[i] > ao[i - 1] && ao[i - 1] < ao[i - 2]),
+                  (ao[i] < 0. && ao[i - 1] >= 0.) || (ao[i] < 0. && ao[i - 1] < 0. && ao[i] < ao[i - 1] && ao[i - 1] > ao[i - 2])),
+                v(mom[i] > mom[i - 1], mom[i] < mom[i - 1]),
+                v(macd[0][i] > macd[1][i], macd[0][i] < macd[1][i]),
+                v(c < trend[i] && sr[0][i] < 20. && sr[1][i] < 20. && sr[0][i] > sr[1][i], c > trend[i] && sr[0][i] > 80. && sr[1][i] > 80. && sr[0][i] < sr[1][i]),
+                v(wr[i] < -80. && wr[i] > wr[i - 1], wr[i] > -20. && wr[i] < wr[i - 1]),
+                v(c > trend[i] && bbp[2][i] < 0. && bbp[2][i] > bbp[2][i - 1], c < trend[i] && bbp[1][i] > 0. && bbp[1][i] < bbp[1][i - 1]),
+                v(uo[i] > 70., uo[i] < 30.),
+            ];
+            let want = votes.iter().sum::<f64>() / 11.;
+            assert!(close_eq(o[1][i], want), "bar {i}: osc {} vs {want}, votes {votes:?}", o[1][i]);
+            if votes.contains(&1.) && votes.contains(&-1.) { mixed += 1; }
+            if want.abs() > 0.2 { nonzero += 1; }
+        }
+        assert!(mixed > 5 && nonzero > 5, "series must exercise buys and sells: mixed {mixed}, nonzero {nonzero}");
+    }
 }
