@@ -3,7 +3,7 @@
 use super::bars::Bars;
 use super::catalogue;
 use super::resample::{self, Tf};
-use super::rules::{Cond, LabError, Op, Operand, SeriesRef, Spec};
+use super::rules::{Cond, Dist, Exec, LabError, Op, Operand, SeriesRef, Spec};
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
@@ -90,7 +90,15 @@ impl RCond {
         }
     }
 }
-pub struct Compiled { pub entry: Vec<RCond>, pub exit: Vec<RCond> }
+pub struct Compiled { pub entry: Vec<RCond>, pub exit: Vec<RCond>, pub exec: Exec, pub atr: BTreeMap<usize, Vec<f64>> }
+impl Compiled {
+    /// Long, market orders at the next open, no price exits (the v1 defaults).
+    pub fn new(entry: Vec<RCond>, exit: Vec<RCond>) -> Compiled { Compiled { entry, exit, exec: Exec::default(), atr: BTreeMap::new() } }
+    /// Price distance of `d` from `px`, using ATR at bar `k` (a bar whose close is already known). NaN while ATR warms up.
+    pub fn dist(&self, d: Dist, px: f64, k: usize) -> f64 {
+        match d { Dist::Pct(p) => px * p / 100., Dist::Atr { mult, length } => self.atr.get(&length).map_or(f64::NAN, |a| mult * a[k]) }
+    }
+}
 
 fn val(o: &Operand, fr: &Frames, cache: &mut Cache) -> Result<Val, LabError> {
     Ok(match o { Operand::Series(s) => Val::Arr(series(fr, cache, s)?), Operand::Value(x) => Val::Const(*x), Operand::BarsHeld => Val::Held })
@@ -99,7 +107,16 @@ fn list(cs: &[Cond], at: &str, fr: &Frames, cache: &mut Cache) -> Result<Vec<RCo
     cs.iter().enumerate().map(|(k, c)| Ok(RCond { lhs: val(&c.lhs, fr, cache)?, op: c.op, rhs: val(&c.rhs, fr, cache)?, label: format!("{at}[{k}]: {}", describe(c)) })).collect()
 }
 pub fn compile(spec: &Spec, fr: &Frames, cache: &mut Cache) -> Result<Compiled, LabError> {
-    Ok(Compiled { entry: list(&spec.entry, "entry.all", fr, cache)?, exit: list(&spec.exit, "exit.any", fr, cache)? })
+    let mut c = Compiled { entry: list(&spec.entry, "entry.all", fr, cache)?, exit: list(&spec.exit, "exit.any", fr, cache)?, exec: spec.exec.clone(), atr: BTreeMap::new() };
+    let x = &spec.exec;
+    for d in [x.limit, x.stop_loss, x.target, x.trailing].into_iter().flatten() {
+        if let Dist::Atr { length, .. } = d {
+            if c.atr.contains_key(&length) { continue; }
+            let r = SeriesRef { id: "atr".into(), params: [("length".to_string(), length as f64)].into(), tf: Tf::D, out: 0, offset: 0 };
+            c.atr.insert(length, series(fr, cache, &r)?);
+        }
+    }
+    Ok(c)
 }
 
 /// Human-readable condition, recorded as a trade's exit reason, e.g. `rsi(length=2) crosses_above 70`.
