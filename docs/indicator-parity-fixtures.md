@@ -76,6 +76,12 @@ CSV files kept outside Git; without them the parity test passes and prints "skip
 | woodies_cci | length=14, turbo=6 | cci, turbo |
 | rmi | length=20, momentum=5 | rmi |
 | cg_osc | length=10 | cg, trigger |
+| pmo | length1=35, length2=20, signal=10 | pmo, signal |
+| special_k | signal1=100, signal2=100 | sk, signal |
+| smi_ergodic | long=20, short=5, signal=5 | smi, signal, osc |
+| smi | k=10, d=3, ema=3 | smi, signal |
+| rvgi | length=10 | rvi, signal |
+| rvi | length=10, ema=14 | rvi |
 | cci | length=20 | cci |
 | mom | length=10 | mom |
 | roc | length=9 | roc |
