@@ -26,6 +26,7 @@ pub fn allowed_engine_path(path: &str) -> bool {
             | "lab/series"
             | "lab/run"
             | "lab/optimize"
+            | "lab/instruments"
     )
 }
 pub fn is_optimization_path(path:&str)->bool {
@@ -247,6 +248,35 @@ mod lab_tests {
         ] {
             let problem = lab_spec_problem("lab/optimize", &q(spec)).unwrap_or_else(|| panic!("accepted {spec}"));
             assert!(problem.contains(why), "{why}: {problem}");
+        }
+    }
+}
+
+/// Engine markets: India and US serve every allowlisted path; `gl` (engine-gl: provisional global and crypto
+/// TradingView exports) serves indicator-lab paths only, because book strategies have no admission rules for that data.
+pub fn engine_market_allows(market: &str, path: &str) -> bool {
+    match market {
+        "in" | "us" => true,
+        "gl" => path.starts_with("lab/"),
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod gl_tests {
+    use super::*;
+    #[test]
+    fn global_and_crypto_reach_lab_routes_only() {
+        for path in ["lab/catalogue", "lab/series", "lab/run", "lab/optimize", "lab/instruments"] {
+            assert!(allowed_engine_path(path) && engine_market_allows("gl", path), "{path}");
+            assert!(engine_market_allows("in", path) && engine_market_allows("us", path));
+        }
+        for path in ["tickers", "ohlc", "gurus", "guru/connors/run", "guru/connors/optimize", "guru/chande/summary", "notes"] {
+            assert!(!engine_market_allows("gl", path), "{path}");
+            assert!(engine_market_allows("in", path) && engine_market_allows("us", path), "{path}");
+        }
+        for market in ["crypto", "GL", "", "eu", "in/../gl"] {
+            assert!(!engine_market_allows(market, "lab/run"), "{market}");
         }
     }
 }

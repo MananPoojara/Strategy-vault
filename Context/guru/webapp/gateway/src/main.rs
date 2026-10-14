@@ -20,6 +20,7 @@ struct App {
     auth: String,
     india: String,
     us: String,
+    gl: String,
     internal_token: String,
     frontend: PathBuf,
     public: PathBuf,
@@ -222,7 +223,7 @@ async fn engine_proxy(
     uri: Uri,
     request: Request<Body>,
 ) -> Response {
-    if !matches!(market.as_str(), "in" | "us") || !policy::valid_query(uri.query()) {
+    if !policy::engine_market_allows(&market, &path) || !policy::valid_query(uri.query()) {
         return error(StatusCode::BAD_REQUEST, "Invalid market or query.");
     }
     let user = match session(&app, request.headers()).await {
@@ -300,7 +301,7 @@ async fn engine_proxy(
             return response;
         }
     };
-    let engine = if market == "in" { &app.india } else { &app.us };
+    let engine = match market.as_str() { "in" => &app.india, "gl" => &app.gl, _ => &app.us };
     proxy(
         &app,
         with_query(&format!("{engine}/api/{path}"), &uri),
@@ -428,6 +429,7 @@ async fn main() {
         auth: env("VAULT_AUTH_URL", "http://127.0.0.1:8102"),
         india: env("VAULT_ENGINE_IN", "http://127.0.0.1:8090"),
         us: env("VAULT_ENGINE_US", "http://127.0.0.1:8091"),
+        gl: env("VAULT_ENGINE_GL", "http://127.0.0.1:8092"),
         internal_token: std::env::var("VAULT_INTERNAL_TOKEN")
             .expect("VAULT_INTERNAL_TOKEN is required"),
         frontend: PathBuf::from(env("VAULT_FRONTEND", "../frontend")),
