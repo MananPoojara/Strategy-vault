@@ -1,0 +1,91 @@
+//! Daily → weekly / monthly bars. Weeks run Monday–Sunday; a higher-timeframe value becomes usable on the
+//! last daily bar of its period, after that bar's close (AmiBroker expandLast, TradingView expr[1]+lookahead).
+use super::bars::Bars;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Tf { D, W, M }
+impl Tf {
+    pub fn parse(s: &str) -> Option<Tf> { match s { "D" => Some(Tf::D), "W" => Some(Tf::W), "M" => Some(Tf::M), _ => None } }
+}
+pub fn day_number(date: &str) -> i64 {
+    let (y, m, d): (i64, i64, i64) = (date[0..4].parse().unwrap_or(1970), date[5..7].parse().unwrap_or(1), date[8..10].parse().unwrap_or(1));
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * (m + if m > 2 { -3 } else { 9 }) + 2) / 5 + d - 1;
+    era * 146_097 + (yoe * 365 + yoe / 4 - yoe / 100 + doy) - 719_468
+}
+fn key(date: &str, tf: Tf) -> i64 {
+    match tf {
+        Tf::D => day_number(date),
+        Tf::W => { let n = day_number(date); n - (n + 3).rem_euclid(7) } // 1970-01-01 was a Thursday
+        Tf::M => date[0..4].parse::<i64>().unwrap_or(0) * 12 + date[5..7].parse::<i64>().unwrap_or(0),
+    }
+}
+pub fn resample(d: &Bars, tf: Tf) -> Bars {
+    if tf == Tf::D { let mut b = d.clone(); b.end = (0..d.len()).collect(); return b; }
+    let mut out = Bars::default();
+    let mut vol: Vec<f64> = Vec::new();
+    let mut last: Option<i64> = None;
+    for i in 0..d.len() {
+        let k = key(&d.date[i], tf);
+        let v = d.volume.as_ref().map(|v| v[i]).unwrap_or(0.);
+        if last != Some(k) {
+            out.date.push(d.date[i].clone()); out.open.push(d.open[i]); out.high.push(d.high[i]);
+            out.low.push(d.low[i]); out.close.push(d.close[i]); out.end.push(i); vol.push(v); last = Some(k);
+        } else {
+            let j = out.len() - 1;
+            out.date[j] = d.date[i].clone(); out.high[j] = out.high[j].max(d.high[i]); out.low[j] = out.low[j].min(d.low[i]);
+            out.close[j] = d.close[i]; out.end[j] = i; vol[j] += v;
+        }
+    }
+    out.volume = d.volume.as_ref().map(|_| vol);
+    out
+}
+pub fn expand(values: &[f64], htf: &Bars, n: usize) -> Vec<f64> {
+    let mut out = vec![f64::NAN; n];
+    for w in 0..htf.len() {
+        let to = if w + 1 < htf.len() { htf.end[w + 1] } else { n };
+        for slot in out.iter_mut().take(to).skip(htf.end[w]) { *slot = values[w]; }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lab::testdata::assert_series;
+    fn daily(dates: &[&str], closes: &[f64]) -> Bars {
+        let mut b = Bars::default();
+        for (i, (d, c)) in dates.iter().zip(closes).enumerate() {
+            b.date.push(d.to_string()); b.open.push(*c); b.high.push(c + 1.); b.low.push(c - 1.); b.close.push(*c); b.end.push(i);
+        }
+        b
+    }
+    #[test] fn day_number_epoch() { assert_eq!(day_number("1970-01-01"), 0); assert_eq!(day_number("2024-03-01"), 19783); }
+    #[test] fn weekly_groups_by_monday_and_dates_last_day() {
+        // Fri 2024-01-05, Mon 08, Tue 09, Fri 12 (holiday-short week), Mon 15
+        let d = daily(&["2024-01-05", "2024-01-08", "2024-01-09", "2024-01-12", "2024-01-15"], &[1., 2., 3., 4., 5.]);
+        let w = resample(&d, Tf::W);
+        assert_eq!(w.date, vec!["2024-01-05", "2024-01-12", "2024-01-15"]);
+        assert_eq!(w.end, vec![0, 3, 4]);
+        assert_eq!(w.open, vec![1., 2., 5.]); assert_eq!(w.close, vec![1., 4., 5.]);
+        assert_eq!(w.high, vec![2., 5., 6.]); assert_eq!(w.low, vec![0., 1., 4.]);
+    }
+    #[test] fn monthly_groups() {
+        let d = daily(&["2024-01-30", "2024-01-31", "2024-02-01"], &[1., 2., 3.]);
+        assert_eq!(resample(&d, Tf::M).end, vec![1, 2]);
+    }
+    #[test] fn expand_never_looks_ahead() {
+        let d = daily(&["2024-01-05", "2024-01-08", "2024-01-09", "2024-01-12", "2024-01-15"], &[1., 2., 3., 4., 5.]);
+        let w = resample(&d, Tf::W);
+        // weekly value of week 2 (close 4) is not visible on Mon 08 / Tue 09, only from Fri 12
+        assert_series(&expand(&w.close, &w, d.len()), &[1., 1., 1., 4., 5.]);
+    }
+    #[test] fn volume_sums_and_none_stays_none() {
+        let mut d = daily(&["2024-01-08", "2024-01-09"], &[1., 2.]);
+        assert!(resample(&d, Tf::W).volume.is_none());
+        d.volume = Some(vec![10., 5.]);
+        assert_eq!(resample(&d, Tf::W).volume, Some(vec![15.]));
+    }
+}
