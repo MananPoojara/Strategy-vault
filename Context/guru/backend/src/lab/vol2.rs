@@ -1,6 +1,6 @@
 //! Volatility family II (TradingView / AmiBroker built-ins, Phase 6). Formulas: see each definition string.
 use super::bars::Bars;
-use super::catalogue::{len, n, p, real, IndicatorDef, Needs, Output, ParamSpec, Params, Placement};
+use super::catalogue::{int, len, n, p, real, IndicatorDef, Needs, Output, ParamSpec, Params, Placement};
 use super::ta::{self, NA};
 
 const CAT: &str = "Volatility";
@@ -13,7 +13,8 @@ const fn def(id: &'static str, name: &'static str, params: &'static [ParamSpec],
 const PN: Placement = Placement::Pane;
 const NO: Needs = Needs::NONE;
 const CV: &[ParamSpec] = &[len("length", "Length", 10.), len("roc", "Rate of change length", 10.)];
-const MI: &[ParamSpec] = &[len("ema", "EMA length", 9.), len("length", "Sum length", 10.)];
+const MI: &[ParamSpec] = &[int("ema", "EMA length", 9., 2., 2000.), len("length", "Sum length", 10.)];
+const UL: &[ParamSpec] = &[int("length", "Length", 14., 2., 2000.)];
 const L14: &[ParamSpec] = &[len("length", "Length", 14.)];
 const VZ: &[ParamSpec] = &[len("length", "Length", 10.), ParamSpec { max: 366., ..len("days", "Days per year", 252.) }];
 const BT: &[ParamSpec] = &[len("short", "Short length", 20.), len("long", "Long length", 50.), real("mult", "Multiplier", 2., 0.1, 10., 0.1)];
@@ -54,12 +55,12 @@ fn bbtrend(b: &Bars, prm: &Params) -> Output {
 }
 
 pub const DEFS: &[IndicatorDef] = &[
-    def("chaikin_vol", "Chaikin Volatility", CV, &["cv"], PN, NO, "e = ema(high − low, length); 100·(e − e[roc])/e[roc]", &[19], false, chaikin_vol),
+    def("chaikin_vol", "Chaikin Volatility", CV, &["cv"], PN, NO, "e = ema(high − low, length); 100·(e − e[roc])/e[roc] (declared defaults length 10, roc 10)", &[19], false, chaikin_vol),
     def("mass_index", "Mass Index", MI, &["mi"], PN, NO, "e1 = ema(high − low, ema); e2 = ema(e1, ema); sum(e1/e2, length)", &[25], false, mass_index),
-    def("ulcer", "Ulcer Index", L14, &["ulcer"], PN, NO, "dd = 100·(close − highest(close, n))/highest(close, n); √sma(dd², n)", &[26], false, ulcer),
+    def("ulcer", "Ulcer Index", UL, &["ulcer"], PN, NO, "dd = 100·(close − highest(close, n))/highest(close, n); √sma(dd², n)", &[26], false, ulcer),
     def("adr", "Average Daily Range", L14, &["adr"], PN, NO, "sma(high − low, n) (= mean high − mean low; declared default 14)", &[13], false, adr),
-    def("volatility_zt", "Volatility Zero Trend Close-to-Close", VZ, &["vol"], PN, NO, "100·√(days·sma(r², n)), r = ln(close/close[1]); non-positive prices → NaN", &[10], false, volatility_zt),
-    def("volatility_ohlc", "Volatility O-H-L-C", VZ, &["vol"], PN, NO, "Garman–Klass (declared): 100·√(days·sma(0.5·ln(h/l)² − (2·ln 2 − 1)·ln(c/o)², n)); a negative mean or non-positive price → NaN", &[9], false, volatility_ohlc),
+    def("volatility_zt", "Volatility Zero Trend Close-to-Close", VZ, &["vol"], PN, NO, "100·√(days·sma(r², n)), r = ln(close/close[1]); non-positive prices → NaN (declared defaults length 10, days 252)", &[10], false, volatility_zt),
+    def("volatility_ohlc", "Volatility O-H-L-C", VZ, &["vol"], PN, NO, "Garman–Klass (declared): 100·√(days·sma(0.5·ln(h/l)² − (2·ln 2 − 1)·ln(c/o)², n)); a negative mean or non-positive price → NaN (declared defaults length 10, days 252)", &[9], false, volatility_ohlc),
     def("bbtrend", "BBTrend", BT, &["bbtrend"], PN, NO, "100·(|lower_s − lower_l| − |upper_s − upper_l|)/basis_s with Bollinger(close, short/long, mult) (population stdev)", &[49], false, bbtrend),
 ];
 

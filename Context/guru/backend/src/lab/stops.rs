@@ -106,12 +106,16 @@ fn rwi(b: &Bars, prm: &Params) -> Output {
     let (lo_n, hi_n) = (n(prm, "min_length"), n(prm, "max_length"));
     if lo_n > hi_n { return Err("min_length must not exceed max_length".into()); }
     let t = ta::tr(b, true); let len = b.len();
-    let atrs: Vec<Vec<f64>> = (lo_n..=hi_n).map(|k| ta::sma(&t, k)).collect();
+    // O(1) sma(tr, k) from one prefix sum; a NaN TR (bad data) falls back to ta::sma's window compaction
+    let clean = t.iter().all(|v| !v.is_nan());
+    let pre: Vec<f64> = std::iter::once(0.).chain(t.iter().scan(0., |s, v| { *s += v; Some(*s) })).collect();
+    let atrs: Vec<Vec<f64>> = if clean { vec![] } else { (lo_n..=hi_n).map(|k| ta::sma(&t, k)).collect() };
+    let atr_at = |j: usize, k: usize, i: usize| if clean { (pre[i + 1] - pre[i + 1 - k]) / k as f64 } else { atrs[j][i] };
     let (mut h, mut l, mut r) = (vec![NA; len], vec![NA; len], vec![NA; len]);
     for i in hi_n..len {
         let (mut bh, mut bl) = (NA, NA);
         for (j, k) in (lo_n..=hi_n).enumerate() {
-            let d = atrs[j][i] * (k as f64).sqrt();
+            let d = atr_at(j, k, i) * (k as f64).sqrt();
             let (x, y) = (div(b.high[i] - b.low[i - k], d), div(b.high[i - k] - b.low[i], d));
             if !x.is_nan() { bh = if bh.is_nan() { x } else { bh.max(x) }; }
             if !y.is_nan() { bl = if bl.is_nan() { y } else { bl.max(y) }; }
@@ -139,10 +143,10 @@ pub const DEFS: &[IndicatorDef] = &[
     def("chande_kroll", "Chande Kroll Stop", CK, &["stop_long", "stop_short"], PR, NO, "fhs = highest(high, p) − x·atr(p); fls = lowest(low, p) + x·atr(p); stop_short = highest(fhs, q); stop_long = lowest(fls, q) (window restarts after NaN, as ta.highest)", &[9, 9], false, chande_kroll),
     def("chandelier", "Chandelier Exit", CH, &["long_stop", "short_stop", "direction"], PR, NO, "long = highest(close or high, n) − mult·atr(n), ratcheted up while close[1] > long[1]; short = lowest(close or low, n) + mult·atr(n), ratcheted down while close[1] < short[1]; direction +1 when close > short[1], −1 when close < long[1], else unchanged (starts +1)", &[21, 21, 21], false, chandelier),
     def("vstop", "Volatility Stop", VS, &["stop", "direction"], PR, NO, "TradingView pine_vstop on close: atrM = atr(n)·factor (tr before the ATR exists); trailing max/min of close since the last flip; stop = max(stop, max − atrM) in an uptrend, min(stop, min + atrM) in a downtrend; flip when close crosses the stop", &[0, 0], false, vstop),
-    def("wilder_vi", "Volatility Index (Wilder)", WV, &["sar", "direction"], PR, NO, "Wilder Volatility System (declared): ARC = mult·atr(length); SIC = extreme close since the trend began; sar = SIC − ARC (long) / SIC + ARC (short); reverse when close crosses the previous sar; starts long", &[6, 6], false, wilder_vi),
-    def("chop_zone", "Chop Zone", CZ, &["angle", "zone"], PN, NO, "span = 25/(highest(high, length) − lowest(low, length))·lowest(low, length); y = (ema[1] − ema)/hlc3·span; angle = ±round(degrees(acos(1/√(1 + y²)))), negative when y > 0; zone 4…−4 by thresholds 5, 3.57, 2.14, 0.71 (else 0)", &[34, 34], false, chop_zone),
+    def("wilder_vi", "Volatility Index (Wilder)", WV, &["sar", "direction"], PR, NO, "Wilder Volatility System (declared): ARC = mult·atr(length); SIC = extreme close since the trend began; sar = SIC − ARC (long) / SIC + ARC (short); reverse when close crosses the previous sar; starts long (declared defaults length 7, mult 3)", &[6, 6], false, wilder_vi),
+    def("chop_zone", "Chop Zone", CZ, &["angle", "zone"], PN, NO, "span = 25/(highest(high, length) − lowest(low, length))·lowest(low, length); y = (ema[1] − ema)/hlc3·span; angle = ±round(degrees(acos(1/√(1 + y²)))), negative when y > 0; zone 4…−4 by thresholds 5, 3.57, 2.14, 0.71 (else 0) (declared defaults length 30, ema_length 34)", &[34, 34], false, chop_zone),
     def("rwi", "Random Walk Index", RW, &["hi", "lo", "rwi"], PN, NO, "for n in min..=max: (high − low[n])/(sma(tr, n)·√n) and (high[n] − low)/(sma(tr, n)·√n); hi/lo = max over n (NaN terms skipped); rwi = hi − lo; min_length > max_length → invalid (AmiBroker RWIHi/RWILo/RWI)", &[40, 40, 40], false, rwi),
-    def("asi", "Accumulative Swing Index", AS, &["asi"], PN, NO, "Wilder: K = max(|h − c1|, |l − c1|); R from the largest of |h − c1|, |l − c1|, h − l (with 0.25·|c1 − o1|); SI = 50·(c − c1 + 0.5(c − o) + 0.25(c1 − o1))/R·K/limit (R = 0 → 0); asi = cumulative SI from bar 1", &[1], false, asi),
+    def("asi", "Accumulative Swing Index", AS, &["asi"], PN, NO, "Wilder: K = max(|h − c1|, |l − c1|); R from the largest of |h − c1|, |l − c1|, h − l (with 0.25·|c1 − o1|); SI = 50·(c − c1 + 0.5(c − o) + 0.25(c1 − o1))/R·K/limit (R = 0 → 0); asi = cumulative SI from bar 1 (declared default limit 10)", &[1], false, asi),
 ];
 
 #[cfg(test)]
@@ -181,6 +185,24 @@ mod tests {
         assert_series(&o[0], &[N, N, N, 1.131135221269, 0.590471866217, 0.094280904158, 0.942809041582, 1.649915822769]);
         assert_series(&o[1], &[N, N, N, 0.585191818913, 1.219149622735, 1.272792206136, 0.654330305082, 0.0]);
         assert_series(&o[2], &[N, N, N, 0.545943402356, -0.628677756519, -1.178511301978, 0.2884787365, 1.649915822769]);
+    }
+    #[test] fn chandelier_direction_uses_previous_bar_stops() {
+        // flat bars: tr = |dc|. Bar 2: prev long stop 10 > close 9 > current long stop 8 (ratchet off since close[1] <= 10)
+        let o = go("chandelier", &crate::lab::testdata::closes(&[10., 10., 9.]), &[("length", 1.), ("mult", 1.), ("use_close", 1.)]);
+        assert_series(&o[0], &[10., 10., 8.]);
+        assert_series(&o[1], &[10., 10., 10.]);
+        assert_series(&o[2], &[1., 1., -1.]);
+    }
+    #[test] fn rwi_wide_range_matches_sma_path() {
+        let b = crate::lab::testdata::walk(3000, 7, false);
+        let o = go("rwi", &b, &[("min_length", 1.), ("max_length", 2000.)]);
+        let t = crate::lab::ta::tr(&b, true);
+        let (k, i) = (1500usize, 2500usize);
+        let d = crate::lab::ta::sma(&t, k)[i] * (k as f64).sqrt();
+        let x = (b.high[i] - b.low[i - k]) / d;
+        assert!(o[0][i] >= x - 1e-12 && !o[2][i].is_nan());
+        let o2 = go("rwi", &b, &[("min_length", 1500.), ("max_length", 1500.)]);
+        assert!(crate::lab::testdata::close_eq(o2[0][i], x));
     }
     #[test] fn rwi_rejects_min_above_max() {
         let p: Params = [("min_length".to_string(), 10.), ("max_length".to_string(), 5.)].into_iter().collect();
