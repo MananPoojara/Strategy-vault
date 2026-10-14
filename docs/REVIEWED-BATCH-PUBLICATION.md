@@ -148,6 +148,14 @@ The release sequence is:
    method/window cases across both markets; larger batches are held for a
    smaller review. Baseline cases already blocked for required data are counted
    separately and do not produce invented backtests.
+   A baseline-ready method can still reach a calculation guard when its actual
+   ledger is evaluated. An existing HTTP 400 `calculation_unavailable:` response
+   passes regression only if the candidate preserves the exact status and error
+   body. These cases have separate hashed `withheld_checks` evidence and a
+   `checked_withheld_cases` count; they never count as successful backtests.
+   Changed guards, unexpected successful results and all other runtime errors
+   hold publication. Date parameters omitted by the reviewed context remain
+   omitted, preserving the API's default history window.
 7. Recheck source cleanliness, fetch the reviewed local commit, fast-forward
    it on `Manan`, scan the public files and push without force. A concurrent
    remote update causes a held release.

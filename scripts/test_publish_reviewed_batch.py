@@ -418,6 +418,44 @@ class PublicationGates(unittest.TestCase):
         with self.assertRaisesRegex(publisher.Held, "bounded case limit"):
             publisher.compare_existing_runs("old", "new", [row], [case], {"testbook"}, set(), max_cases=0)
 
+    def test_existing_calculation_unavailable_requires_the_identical_candidate_guard(self):
+        row, case, ready, run = self.regression_fixture()
+        error = "calculation_unavailable: Trade 4: return implies nonpositive normalized equity without a supported bankruptcy/margin model. No performance is published."
+        with mock.patch.object(publisher, "get_json", side_effect=[ready, ready, (400, error), (400, error)]):
+            report = publisher.compare_existing_runs("old", "new", [row], [case], {"testbook"}, set())
+        self.assertEqual(report["checked_cases"], 0)
+        self.assertEqual(report["checked_withheld_cases"], 1)
+        proof = report["withheld_checks"][0]
+        self.assertEqual(proof["method_id"], "existing")
+        self.assertEqual(proof["http_status"], 400)
+        self.assertEqual(proof["baseline_sha256"], proof["candidate_sha256"])
+
+    def test_existing_calculation_guard_cannot_change_or_start_publishing(self):
+        row, case, ready, run = self.regression_fixture()
+        error = "calculation_unavailable: Trade 4: nonpositive normalized equity."
+        for candidate in [(200, run), (500, error), (400, error.replace("Trade 4", "Trade 5"))]:
+            with self.subTest(candidate=candidate):
+                with mock.patch.object(publisher, "get_json", side_effect=[ready, ready, (400, error), candidate]):
+                    with self.assertRaisesRegex(publisher.Held, "calculation guard changed"):
+                        publisher.compare_existing_runs("old", "new", [row], [case], {"testbook"}, set())
+
+    def test_other_matching_runtime_errors_are_still_publication_failures(self):
+        row, case, ready, run = self.regression_fixture()
+        for error in [(400, "invalid date"), (500, "calculation_unavailable: unavailable"),
+                      (400, {"error": "calculation_unavailable"})]:
+            with self.subTest(error=error):
+                with mock.patch.object(publisher, "get_json", side_effect=[ready, ready, error, error]):
+                    with self.assertRaisesRegex(publisher.Held, "actual-data backtest failed"):
+                        publisher.compare_existing_runs("old", "new", [row], [case], {"testbook"}, set())
+
+    def test_regression_preserves_omitted_date_parameters(self):
+        row, case, ready, run = self.regression_fixture()
+        with mock.patch.object(publisher, "get_json", side_effect=[ready, ready, (200, run), (200, run)]) as api:
+            publisher.compare_existing_runs("old", "new", [row], [case], {"testbook"}, set())
+        for call in api.call_args_list:
+            self.assertNotIn("from", call.args[2])
+            self.assertNotIn("to", call.args[2])
+
 
 if __name__ == "__main__":
     unittest.main()

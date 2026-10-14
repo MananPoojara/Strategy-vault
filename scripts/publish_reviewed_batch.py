@@ -293,13 +293,13 @@ def compare_existing_runs(baseline_base, candidate_base, baseline_rows, cases, t
     """Compare old live methods in touched books on deduplicated actual instrument windows."""
     contexts = {}
     for case in cases:
-        query = {key: case["query"].get(key, "") for key in ("ticker", "from", "to")}
-        key = (case["market"], query["ticker"], query["from"], query["to"])
+        query = {key: case["query"][key] for key in ("ticker", "from", "to") if key in case["query"]}
+        key = (case["market"], query["ticker"], query.get("from"), query.get("to"))
         contexts.setdefault(key, query)
     previous = {row["id"]: row for row in baseline_rows if row.get("status") == "live" and
                 row.get("book") in touched_books and row["id"] not in approved_ids}
     require(len(previous) * len(contexts) <= max_cases, "Existing-method regression exceeds its bounded case limit; split the reviewed batch")
-    checks, skipped = [], 0
+    checks, withheld_checks, skipped = [], [], 0
     for method, row in sorted(previous.items()):
         guru = row.get("_publisher_guru", "connors")
         route = "/api/guru/" + guru
@@ -317,12 +317,22 @@ def compare_existing_runs(baseline_base, candidate_base, baseline_rows, cases, t
             require(code == 200 and actual == "ready", "An unapproved existing method lost actual-instrument readiness")
             before_code, before = get_json(baseline_base, route + "/run", query)
             after_code, after = get_json(candidate_base, route + "/run", query)
+            if before_code == 400 and isinstance(before, str) and before.startswith("calculation_unavailable:"):
+                require(after_code == before_code and after == before,
+                        "An unapproved existing method's calculation guard changed")
+                error_hash = hashlib.sha256(before.encode()).hexdigest()
+                withheld_checks.append({"method_id": method, "ticker": context["ticker"],
+                                       "from": context.get("from"), "to": context.get("to"),
+                                       "http_status": before_code, "baseline_sha256": error_hash,
+                                       "candidate_sha256": error_hash})
+                continue
             require(before_code == after_code == 200, "Existing-method actual-data backtest failed")
             before_hash, after_hash = stable_run_hash(before), stable_run_hash(after)
             require(before_hash == after_hash, "An unapproved existing method's trades, statistics or equity changed")
-            checks.append({"method_id": method, "ticker": context["ticker"], "from": context["from"], "to": context["to"],
+            checks.append({"method_id": method, "ticker": context["ticker"], "from": context.get("from"), "to": context.get("to"),
                            "trade_records": len(before["trades"]), "baseline_sha256": before_hash, "candidate_sha256": after_hash})
-    return {"checked_cases": len(checks), "skipped_not_ready": skipped, "context_count": len(contexts),
+    return {"checked_cases": len(checks), "checked_withheld_cases": len(withheld_checks),
+            "withheld_checks": withheld_checks, "skipped_not_ready": skipped, "context_count": len(contexts),
             "previous_live_methods": len(previous), "planned_cases": len(previous) * len(contexts), "checks": checks}
 
 
