@@ -656,3 +656,17 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod origin_admission_tests {
+    use super::*;
+    #[test] fn variants_keep_their_methods_instrument_types() {
+        let stock = templates::method("f1a").unwrap();
+        assert!(origin_admits(Some(&stock), "individual_stock", "RELIANCE").is_ok(), "a stock method's variant runs on an actual stock");
+        assert!(origin_admits(Some(&stock), "index", "SPX").is_err());
+        let etf = templates::method("hpetf_rsi75_short").unwrap();
+        assert!(origin_admits(Some(&etf), "etf", "SPY").is_ok());
+        assert!(origin_admits(Some(&etf), "index", "SPX").is_err(), "an index never stands in for an ETF");
+        assert!(origin_admits(None, "index", "SPX").is_ok(), "plain lab strategies have no admission rule");
+    }
+}
