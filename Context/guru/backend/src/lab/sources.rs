@@ -243,6 +243,13 @@ pub const SOURCES: &[(&str, &str, &str)] = &[
     ("vol", "Volume", ""),
     ("vwap_period", "VWAP (anchor Week/Month/Quarter/Year)", ""),
     ("twap", "Time Weighted Average Price", ""),
+    ("pivots_std", "Pivot Points Standard", ""),
+    ("mtp", "Multi-Time Period Charts", ""),
+    ("performance", "Performance", ""),
+    ("calendar", "", "DayOfWeek; Day; Month; Year; DayOfYear; BarIndex"),
+    ("moon_phases", "Moon Phases", ""),
+    ("highest_bars", "ta.highestbars (Pine)", "HHVBars; HighestBars"),
+    ("lowest_bars", "ta.lowestbars (Pine)", "LLVBars; LowestBars"),
 ];
 /// (TradingView names, AmiBroker names) of an id; empty strings when the id has no row.
 pub fn names(id: &str) -> (&'static str, &'static str) { SOURCES.iter().find(|r| r.0 == id).map_or(("", ""), |r| (r.1, r.2)) }

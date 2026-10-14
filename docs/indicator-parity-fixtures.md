@@ -100,6 +100,13 @@ CSV files kept outside Git; without them the parity test passes and prints "skip
 | vol | length=20 | volume, ma |
 | vwap_period | anchor=1, mult=1 | vwap, upper, lower |
 | twap | anchor=1 | twap |
+| pivots_std | type=0, period=1 | p, r1, r2, r3, r4, r5, s1, s2, s3, s4, s5 |
+| mtp | period=1 | open, high, low, prev_high, prev_low, prev_close |
+| performance | - | w1, m1, m3, m6, ytd, y1 |
+| calendar | - | dow, day, month, year, doy, bar_index |
+| moon_phases | - | new_moon, full_moon |
+| highest_bars | length=20 | bars |
+| lowest_bars | length=20 | bars |
 | cci | length=20 | cci |
 | mom | length=10 | mom |
 | roc | length=9 | roc |
