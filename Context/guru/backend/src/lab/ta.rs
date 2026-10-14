@@ -38,7 +38,7 @@ pub fn wma(x: &[f64], n: usize) -> Vec<f64> {
     compact(x, n, |w| w.iter().enumerate().map(|(j, v)| v * (j + 1) as f64).sum::<f64>() / den)
 }
 pub fn stdev(x: &[f64], n: usize) -> Vec<f64> {
-    compact(x, n, |w| { let m = w.iter().sum::<f64>() / n as f64; (w.iter().map(|v| (v - m).powi(2)).sum::<f64>() / n as f64).sqrt() })
+    compact(x, n, |w| { let m = w.iter().sum::<f64>() / n as f64; (w.iter().map(|v| { let d = v - m; if d.abs() <= 1e-10 { 0. } else { d * d } }).sum::<f64>() / n as f64).sqrt() })
 }
 pub fn dev(x: &[f64], n: usize) -> Vec<f64> {
     compact(x, n, |w| { let m = w.iter().sum::<f64>() / n as f64; w.iter().map(|v| (v - m).abs()).sum::<f64>() / n as f64 })
@@ -100,6 +100,7 @@ mod tests {
     }
     #[test] fn rma_wilder() { assert_series(&rma(&[1., 2., 3., 4.], 2), &[N, 1.5, 2.25, 3.125]); }
     #[test] fn wma_linear_weights() { assert_series(&wma(&[1., 2., 3.], 3), &[N, N, (1. + 4. + 9.) / 6.]); }
+    #[test] fn stdev_flat_window_is_exactly_zero() { assert!(stdev(&[1017.3; 20], 20)[19] == 0.); }
     #[test] fn stdev_is_population() { assert_series(&stdev(&[1., 3.], 2), &[N, 1.]); }
     #[test] fn highest_lowest_window() {
         assert_series(&highest(&[3., 1., 2., 5.], 2), &[N, 3., 2., 5.]);

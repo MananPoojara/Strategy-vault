@@ -125,7 +125,8 @@ mod tests {
     }
     #[test] fn flat_series_never_inf() {
         let mut bars = walk(300, 5, true);
-        for i in 0..bars.len() { bars.open[i] = 50.; bars.high[i] = 50.; bars.low[i] = 50.; bars.close[i] = 50.; }
+        for i in 0..bars.len() { bars.open[i] = 1017.3; bars.high[i] = 1017.3; bars.low[i] = 1017.3; bars.close[i] = 1017.3; }
+        bars.volume = Some(vec![1000.; bars.len()]);
         for d in all().iter().filter(|d| d.compute.is_some()) {
             for s in run(d, &bars, &Params::new()).unwrap() { assert!(s.iter().all(|v| !v.is_infinite()), "{} produced inf on flat prices", d.id); }
         }
