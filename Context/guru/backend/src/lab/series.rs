@@ -13,7 +13,7 @@ impl Frames {
     pub fn new(d: Bars) -> Frames { let (w, m) = (resample::resample(&d, Tf::W), resample::resample(&d, Tf::M)); Frames { d, w, m } }
     pub fn bars(&self, tf: Tf) -> &Bars { match tf { Tf::D => &self.d, Tf::W => &self.w, Tf::M => &self.m } }
 }
-/// Indicator outputs on their own timeframe, keyed by (id, tf, resolved params). One per request / optimizer thread.
+/// Indicator outputs on their own timeframe, keyed by instrument fingerprint, id, tf and resolved params. One per request (per instrument) / optimizer thread.
 pub type Cache = BTreeMap<String, Rc<Vec<Vec<f64>>>>;
 const CACHE_CAP: usize = 64;
 
@@ -37,7 +37,9 @@ pub fn series(fr: &Frames, cache: &mut Cache, s: &SeriesRef) -> Result<Vec<f64>,
     let raw = match price(b, &s.id) {
         Some(r) => r?,
         None => {
-            let key = format!("{}|{:?}|{:?}", s.id, s.tf, s.params);
+            let d = &fr.d; // instrument fingerprint: closes too, since two instruments can share a calendar
+            let fp = |v: Option<&f64>| v.map_or(0, |x| x.to_bits());
+            let key = format!("{}|{:?}|{:?}|{}|{:?}|{:?}|{}|{}", s.id, s.tf, s.params, d.len(), d.date.first(), d.date.last(), fp(d.close.first()), fp(d.close.last()));
             let outs = match cache.get(&key) {
                 Some(o) => o.clone(),
                 None => {
@@ -53,7 +55,7 @@ pub fn series(fr: &Frames, cache: &mut Cache, s: &SeriesRef) -> Result<Vec<f64>,
                     o
                 }
             };
-            outs[s.out].clone()
+            outs.get(s.out).ok_or_else(|| LabError::Invalid(format!("{}: unknown output {}", s.id, s.out)))?.clone()
         }
     };
     // Offset counts bars of the operand's own timeframe (W offset 1 = the previous completed week).
@@ -229,6 +231,20 @@ mod tests {
                 }
             }
         }
+    }
+    #[test] fn one_cache_across_instruments_never_leaks_values() {
+        let (a, b) = (Frames::new(walk(300, 1, true)), Frames::new(walk(300, 2, true)));
+        let r = sref("sma", Tf::D, 0, 0);
+        let mut shared = Cache::new();
+        let (ya, yb) = (series(&a, &mut shared, &r).unwrap(), series(&b, &mut shared, &r).unwrap());
+        assert_series(&ya, &series(&a, &mut Cache::new(), &r).unwrap());
+        assert_series(&yb, &series(&b, &mut Cache::new(), &r).unwrap());
+        assert!(ya.iter().zip(&yb).any(|(x, y)| !close_eq(*x, *y)));
+    }
+    #[test] fn out_of_range_output_is_invalid_not_a_panic() {
+        let fr = Frames::new(business_days(60, false));
+        let e = series(&fr, &mut Cache::new(), &sref("sma", Tf::D, 5, 0)).unwrap_err();
+        assert_eq!(e.status(), "invalid");
     }
     #[test] fn compile_labels_conditions() {
         let spec = parse_spec(r#"{"v":1,"entry":{"all":[{"lhs":{"s":"macd","out":"signal","tf":"W","offset":1},"op":"<","rhs":{"value":0}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":3}}]}}"#).unwrap();
