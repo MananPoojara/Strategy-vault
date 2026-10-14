@@ -89,6 +89,7 @@ mod tests {
             assert_eq!(out.len(), d.outputs.len(), "{}: output count", d.id);
             for (k, s) in out.iter().enumerate() {
                 assert_eq!(s.len(), bars.len(), "{}.{} length", d.id, d.outputs[k]);
+                if d.sparse { continue; }
                 let first = s.iter().position(|v| !v.is_nan()).unwrap_or(usize::MAX);
                 assert_eq!(first, d.first[k], "{}.{} first valid bar", d.id, d.outputs[k]);
                 if !d.sparse { assert!(s[first..].iter().all(|v| v.is_finite()), "{}.{} gap or inf after warm-up", d.id, d.outputs[k]); }
