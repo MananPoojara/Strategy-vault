@@ -251,7 +251,11 @@ async fn engine_proxy(
     if !policy::safe_engine_numbers(&query) {
         return error(StatusCode::BAD_REQUEST,"Use finite parameter values and a grid of at most 50,000 combinations, with at most 1,000 values per setting.");
     }
+    if let Some(problem) = policy::lab_spec_problem(&path, &query) {
+        return error(StatusCode::BAD_REQUEST, problem);
+    }
     let optimizing = policy::is_optimization_path(&path);
+    let optimizing = optimizing || policy::is_lab_optimization_path(&path);
     if optimizing && !policy::can_optimize(&user.role) {
         return error(
             StatusCode::FORBIDDEN,
