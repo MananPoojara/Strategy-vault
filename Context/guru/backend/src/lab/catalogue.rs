@@ -74,7 +74,6 @@ mod tests {
         }
     }
     #[test]
-    #[ignore = "enabled in Task 5"]
     fn resolve_params_rejects_bad_input() {
         let d = get("sma").unwrap();
         let mut g = Params::new();
