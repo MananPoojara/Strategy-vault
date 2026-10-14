@@ -50,6 +50,11 @@ CSV files kept outside Git; without them the parity test passes and prints "skip
 | ama | alpha=0.1 | ama |
 | ama2 | alpha=0.1, feedback=0.9 | ama2 |
 | iir2 | f0=0.2, f1=1.4, f2=-0.6 | iir2 |
+| envelope | length=20, percent=10, exponential=0 | basis, upper, lower |
+| ma_channel | upper_length=20, lower_length=20 | upper, lower |
+| apz | length=50, mult=2 | basis, upper, lower |
+| alligator | jaw_length=13, teeth_length=8, lips_length=5, jaw_offset=8, teeth_offset=5, lips_offset=3 | jaw, teeth, lips |
+| median | length=3, atr_length=14, mult=2 | median, upper, lower, ema |
 | cci | length=20 | cci |
 | mom | length=10 | mom |
 | roc | length=9 | roc |
