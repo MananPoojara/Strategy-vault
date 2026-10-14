@@ -1,16 +1,13 @@
 //! Howard B. Bandy, *Quantitative Trading Systems: Practical Methods for Design, Testing and Validation* (Blue Owl, 2007).
-//! Every Live strategy is the book's AmiBroker (AFL) code (companion "Book Code" files = the printed figures).
-//! Source, page references and checks: library/hbqts/README.md.
-//!
-//! AmiBroker semantics used throughout (book p.65-66, p.88, p.132): signals are evaluated on each bar; with
-//! `SetTradeDelays(0,0,0,0)` / the book's settings "all Prices set to Close and all Delays set to 0" orders execute at the
-//! CLOSE of the signal bar unless the code sets BuyPrice/SellPrice; custom prices outside the bar's range are moved to the
-//! nearest bar boundary (the backtester's range check); exits are processed before entries on a bar; one position at a time;
-//! `ApplyStop` exits intraday at the stop price (gap = open), active from the bar after entry, amount fixed at entry
-//! (volatile = False). The book tested US stocks / funds / T-bonds; the vault runs the same rules on the selected index
-//! (instrument swap only). The book's position sizing (percent of equity) is replaced by the vault's full allocation except
-//! where the code scales in/out (legs and exits keep the book's fractions).
+//! Catalogue status alone does not establish rule, instrument or accounting readiness.
+//! The bounded companion-code review is documented in library/bandy/REVIEW-2026-10-13.md.
+//! Its exact IDs route through `reviewed`, which preserves formula-array history and
+//! source timing with declared indicator initialization and single-symbol research limits.
+//! Other legacy translations remain outside that review; their sizing and stop conventions
+//! must not be generalized to the reviewed subset or certified from these checks.
 use crate::connors::{dmi, rsi, true_range, wilder, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
+#[path = "hbqts/reviewed.rs"]
+pub mod reviewed;
 
 pub const BOOK: &str = "hbqts";
 
@@ -185,7 +182,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
     const G11: &str = "Ch.11-13 Seasonality, patterns, anticipation";
     const G14: &str = "Ch.14-17 Sectors, rotation, portfolios, filters";
     const G20: &str = "Ch.20-22, App. A Walk forward, Monte Carlo, metrics";
-    vec![
+    let mut definitions = vec![
         def!("hbqts_ma3_20", "Example trading system: 3/20 MA crossover (Fig 6.8)", G5, "Long", Live,
             &["E|FMA = MA(C,3); SMA = MA(C,20); Buy = Cross(FMA, SMA) (p.64)", "X|Sell = Cross(SMA, FMA) (p.64)", "F|Settings: Buy/Sell price Close, delay 0, positions Long (p.65-66)"], STK),
         def!("hbqts_ma5_25", "Enter at market: 5/25 MA crossover on the close (Fig 7.1)", G5, "Long", Live,
@@ -309,8 +306,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
         def!("hbqts_zscore_diffusion", "Z-score diffusion index of energy stocks (Fig 17.13, 17.15)", G14, "Long", NeedsData("the component stocks of XLE and the book's ExampleZScore plug-in composite"),
             &["E|Buy = Cross(DEMA(avg z-score,20), DEMA(...,3)) (p.237-240)"], ""),
         def!("hbqts_cmo", "CMO oscillator crossover with 6-day exit (Fig 20.2)", G20, "Long", Live,
-            &["F|CMO(21) = 100 x (SumUp - SumDown)/(SumUp + SumDown); CMOAvg = DEMA(CMO, 96); Trigger = DEMA(CMOAvg, 3) (p.262)",
-              "E|Buy = Cross(CMOAvg, Trigger) at the close (p.262)", "X|Sell = Cross(Trigger, CMOAvg) OR BarsSince(Buy) >= 6 (p.262)"],
+            &["F|CMO(21) = 100 x (SumUp - SumDown)/(SumUp + SumDown); CMOAvg = DEMA(CMO, 96); Trigger = DEMA(CMOAvg, 3) (p.263)",
+              "E|Buy = Cross(CMOAvg, Trigger) at the close (p.264)", "X|Sell = Cross(Trigger, CMOAvg) OR BarsSince(Buy) >= 6; then ExRem(Buy,Sell), ExRem(Sell,Buy) (p.264)"],
             "Defaults = the Optimize() defaults printed in the code (21, 96)."),
         def!("hbqts_noise0", "Add-noise test system at zero noise: close vs EMA(4), hold 1 (Fig 22.7)", G20, "Long", Live,
             &["E|MA1 = DEMA(NoisyClose,1) (= the close); MA2 = EMA(NoisyClose,4); Buy = Cross(MA1, MA2) (p.304)", "X|Sell = BarsSince(Buy) >= 1 (p.304)",
@@ -327,12 +324,37 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["E|fast = 11, slow = 50 (Optimize defaults); Buy = Cross(MA(C,11), MA(C,50)) (p.318)", "X|Sell = Cross(MA(C,50), MA(C,11)) (p.318)"], ""),
         def!("hbqts_dema16_8", "Objective-function example: DEMA 16/8 cross, hold 1 (Fig A.7)", G20, "Long", Live,
             &["E|fast = 16, slow = 8 (Optimize defaults); Buy = Cross(DEMA(C,16), DEMA(C,8)) (p.322)", "X|Sell = Cross(DEMA(C,8), DEMA(C,16)) OR BarsSince(Buy) >= 1 (p.322)"], ""),
-    ]
+    ];
+    for d in &mut definitions {
+        if reviewed::IDS.contains(&d.id) {
+            d.notes = "Source-reviewed companion AFL research contract: library/bandy/REVIEW-2026-10-13.md. Actual individual stocks only; selected AAPL/RELIANCE ledgers are independent symbol checks, not the book's universe or portfolio. Literal source defaults, explicit seed/Null conventions, no copied performance, sizing, dividends or financing. Open positions remain open. Independent source and actual-ledger review is documented there; deterministic publisher admission remains pending.";
+        }
+        if d.id=="hbqts_cmo" {
+            d.notes="Source Figure20.2, printed pp263-264, uses XLB ETF for walk-forward testing. This reviewed default-rule application requires actual ETFs and checks SPY; it does not reproduce XLB's optimized walk-forward results. No stock or cash-index substitute, pooled sizing or book performance. See library/bandy/REVIEW-2026-10-13.md; independent source and actual-ledger review is documented there; deterministic publisher admission remains pending.";
+        }
+    }
+    definitions
 }
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
     if !id.starts_with("hbqts_") { return None; }
     let d = catalogue().into_iter().find(|d| d.id == id)?;
+    let reviewed_family = match id {
+        "hbqts_ma5_25" | "hbqts_ma1_36" => Some(("hbqts_ma", "Bandy QTS · simple moving average crossover")),
+        "hbqts_limit_entry" => Some(("hbqts_limit_entry", "Bandy QTS · one-day limit entry")),
+        "hbqts_fixed_interval" => Some(("hbqts_fixed_interval", "Bandy QTS · fixed interval entry")),
+        "hbqts_profit_target" => Some(("hbqts_profit_target", "Bandy QTS · profit target only")),
+        "hbqts_entry_id1" => Some(("hbqts_entry_id1", "Bandy QTS · moving average entry with timed exit")),
+        "hbqts_bb_breakout" => Some(("hbqts_bb_breakout", "Bandy QTS · Bollinger band breakout")),
+        "hbqts_cgo" => Some(("hbqts_cgo", "Bandy QTS · center of gravity oscillator")),
+        "hbqts_stoch_rsi" => Some(("hbqts_stoch_rsi", "Bandy QTS · stochastic RSI")),
+        "hbqts_dpo" => Some(("hbqts_dpo", "Bandy QTS · detrended price oscillator")),
+        "hbqts_dom" => Some(("hbqts_dom", "Bandy QTS · calendar day of month")),
+        "hbqts_macd_daily" => Some(("hbqts_macd_daily", "Bandy QTS · daily MACD permission filter")),
+        "hbqts_cmo" => Some(("hbqts_cmo", "Bandy QTS · CMO oscillator")),
+        _ => None,
+    };
+    if let Some((key, name)) = reviewed_family { return Some((key, name, d.name)); }
     let f: (&'static str, &'static str) = if id.contains("ma") && !id.contains("macd") || id == "hbqts_dema16_8" || id == "hbqts_equity_alloc" {
         ("hbqts_ma", "Bandy QTS · moving average crossovers")
     } else if ["hbqts_dom", "hbqts_tdom", "hbqts_opex", "hbqts_moon"].contains(&id) {
@@ -427,6 +449,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     if !id.starts_with("hbqts_") { return None; }
     let schema = params(id)?;
     if from >= to || to >= x.r.len() { return Some(vec![]); }
+    if reviewed::IDS.contains(&id) { return reviewed::run(id, x, from, to, p); }
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
     let u = |k: &str| g(k).round().max(1.0) as usize;
     let side = if schema.iter().any(|d| d.key == "side") { g("side").round().clamp(0.0, 2.0) as u8 } else { 1 };

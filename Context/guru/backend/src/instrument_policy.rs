@@ -30,7 +30,8 @@ fn member(id:&str,ids:&[&str])->bool {ids.contains(&id)}
 /// Exact-source rules independently compared with the compiled runner on four
 /// real series. Admission is for declared price-return research, not source-study reproduction.
 pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
-    def.book=="kftsm" && member(def.id,&["kftsm_ma","kftsm_exp","kftsm_lrs","kftsm_ndb","kftsm_bb_ma","kftsm_ma_pct_band","kftsm_ma_tr_band","kftsm_triple_smooth","kftsm_vol_breakout","kftsm_keltner","kftsm_hh_ma","kftsm_hh_cross","kftsm_hh_channel","kftsm_mod_3ma","kftsm_4_9_18","kftsm_month_end","kftsm_hirsch"])
+    (def.book=="hbqts" && member(def.id,&["hbqts_ma5_25","hbqts_ma1_36","hbqts_limit_entry","hbqts_fixed_interval","hbqts_profit_target","hbqts_entry_id1","hbqts_bb_breakout","hbqts_cgo","hbqts_stoch_rsi","hbqts_dpo","hbqts_dom","hbqts_macd_daily","hbqts_cmo"])) ||
+    (def.book=="kftsm" && member(def.id,&["kftsm_ma","kftsm_exp","kftsm_lrs","kftsm_ndb","kftsm_bb_ma","kftsm_ma_pct_band","kftsm_ma_tr_band","kftsm_triple_smooth","kftsm_vol_breakout","kftsm_keltner","kftsm_hh_ma","kftsm_hh_cross","kftsm_hh_channel","kftsm_mod_3ma","kftsm_4_9_18","kftsm_month_end","kftsm_hirsch"]))
 }
 
 /// Reviewed keys include both the book and the exact rule identifier. Adding a
@@ -51,6 +52,14 @@ pub fn policy(def:&StrategyDef)->Policy {
     p
 }
 fn base_policy(def:&StrategyDef)->Policy {
+    if def.book=="hbqts" && reviewed_cash_rule(def) {
+        if def.id=="hbqts_cmo" {
+            let mut p=etf("QTS Figure20.2, printed pp263-264, was used on XLB, an actual Materials ETF. The bounded reviewed ledger uses actual SPY ETF prices as a declared ETF research application with literal companion defaults, not the source XLB walk-forward study or its optimized results. Individual stocks and cash indices cannot substitute for ETF prices. See library/bandy/REVIEW-2026-10-13.md.");
+            p.market_adaptation=true;return p;
+        }
+        let mut p=stock("Bandy QTS (2007), exact companion AFL and both local errata reviewed in library/bandy/REVIEW-2026-10-13.md. Bounded individual-stock research on actual AAPL and RELIANCE; these samples do not establish historical source-population membership. Literal signal timing and defaults with declared indicator seeds; full-history arrays and chronological ledgers independently checked. No source portfolio sizing or reported performance is reproduced. Independent source review and final compiled-ledger evidence are recorded there; publisher acceptance remains required.");
+        p.market_adaptation=true;return p;
+    }
     if reviewed_cash_rule(def) {
         let allowed=if matches!(def.id,"kftsm_month_end"|"kftsm_hirsch"){&["index","etf"][..]}else{&["index","etf","individual_stock"][..]};
         let mut p=requirement("declared_ohlc_adaptation", allowed, "Kaufman, New Trading Systems and Methods Fourth Edition (2005), reviewed book sections and companion CD. Source rules/defaults and selected independent trade-ledger checks are recorded in library/kaufman/REVIEW-2026-10-13.md. Actual selected cash/ETF prices are a declared research application. Flat at the test start, full source warmup, one position per symbol, no portfolio sizing. Cash-index short exposure is hypothetical; source futures dollars, financing, dividends and original study performance are not reproduced.");p.market_adaptation=true;return p;
@@ -179,6 +188,20 @@ mod tests {
     fn def(id: &'static str, book: &'static str) -> StrategyDef {
         StrategyDef { id, book, name: "Test", group: "Test", session: 0, dir: "Long", status: Status::Live,
             needs_volume: false, needs_vix: false, needs_series: &[], rules: &[], notes: "", claim: None }
+    }
+    #[test]
+    fn reviewed_bandy_ids_require_real_stocks_and_do_not_open_held_methods() {
+        for id in ["hbqts_ma5_25","hbqts_ma1_36","hbqts_limit_entry","hbqts_fixed_interval","hbqts_profit_target","hbqts_entry_id1","hbqts_bb_breakout","hbqts_cgo","hbqts_stoch_rsi","hbqts_dpo","hbqts_dom","hbqts_macd_daily"] {
+            let d=def(id,"hbqts");assert!(reviewed_cash_rule(&d));
+            assert!(check(&d,"RELIANCE",true).is_none());assert!(check(&d,"AAPL",true).is_none());
+            assert!(check(&d,"NIFTY 50",false).is_some());assert!(check(&d,"SPY",false).is_some());
+        }
+        let cmo=def("hbqts_cmo","hbqts");assert!(reviewed_cash_rule(&cmo));assert!(check(&cmo,"SPY",false).is_none());
+        assert!(check(&cmo,"NIFTY 50",false).is_some());assert!(check(&cmo,"AAPL",true).is_some());
+        for id in ["hbqts_apz","hbqts_stop_entry","hbqts_common_signal","hbqts_rotation"] {
+            let d=def(id,"hbqts");assert!(!reviewed_cash_rule(&d));assert_eq!(policy(&d).requirement,"source_review_required");
+        }
+        assert!(!reviewed_cash_rule(&def("hbqts_ma5_25","another_book")));
     }
     #[test]
     fn reviewed_kaufman_rules_use_explicit_cash_adaptations_without_opening_other_methods(){
