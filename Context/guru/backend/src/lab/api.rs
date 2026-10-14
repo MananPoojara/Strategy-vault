@@ -3,6 +3,7 @@
 use super::bars::Bars;
 use super::catalogue::{self, Placement};
 use super::json::esc;
+use super::markets;
 use super::resample::Tf;
 use super::rules::{self, LabError, LABEL};
 use super::series::{self, Cache, Compiled, Frames};
@@ -22,11 +23,17 @@ const STOPPED: &str = "optimization stopped after another combination failed";
 thread_local! { static LAST_DONE: std::cell::RefCell<Option<Arc<AtomicUsize>>> = const { std::cell::RefCell::new(None) }; }
 
 pub fn serve(stream: &mut TcpStream, path: &str, st: &State, q: &Query) {
-    match route(path, st, q) {
-        None => crate::respond(stream, "404 Not Found", "application/json; charset=utf-8", not_found_json(path).as_bytes()),
-        Some(Ok(body)) => crate::respond(stream, "200 OK", "application/json; charset=utf-8", body.as_bytes()),
-        Some(Err(e)) => crate::respond(stream, "400 Bad Request", "application/json; charset=utf-8", e.json().as_bytes()),
-    }
+    let (status, body) = response(markets::engine_market().as_deref(), path, st, q);
+    crate::respond(stream, status, "application/json; charset=utf-8", body.as_bytes());
+}
+/// HTTP status and body of one lab request; on engine-gl (`market` "gl") every body carries the provisional flag.
+pub fn response(market: Option<&str>, path: &str, st: &State, q: &Query) -> (&'static str, String) {
+    let (status, body) = match route(path, st, q) {
+        None => ("404 Not Found", not_found_json(path)),
+        Some(Ok(body)) => ("200 OK", body),
+        Some(Err(e)) => ("400 Bad Request", e.json()),
+    };
+    (status, if market == Some("gl") { markets::mark_provisional(&body) } else { body })
 }
 pub fn not_found_json(path: &str) -> String {
     format!("{{\"status\":\"not_found\",\"error\":\"unknown lab route {}\",\"label\":\"{LABEL}\"}}", esc(path))
@@ -37,6 +44,7 @@ pub fn route(path: &str, st: &State, q: &Query) -> Option<Result<String, LabErro
         "/api/lab/series" => series_json,
         "/api/lab/run" => run_json,
         "/api/lab/optimize" => optimize_json,
+        "/api/lab/instruments" => |st, _| Ok(markets::instruments_json(st)),
         _ => return None,
     };
     Some(guarded(|| f(st, q)))
@@ -68,6 +76,7 @@ pub fn catalogue_json() -> String {
 
 /// Instrument identity from the server's own data (never from the query): type, native flag, market, currency.
 fn instrument(selected: &crate::SelectedContext, ticker: &str) -> (&'static str, String) {
+    if let Some(m) = markets::gl(ticker) { return (m.kind, m.json()); }
     let native = selected.native();
     let kind = instrument_policy::selected_type(ticker, native);
     let market = selected.evidence().map(|e| e.market()).or_else(|| crate::preloaded_market(ticker));
@@ -77,6 +86,7 @@ fn instrument(selected: &crate::SelectedContext, ticker: &str) -> (&'static str,
 }
 /// Only an unknown ticker is the caller's mistake; every other selection error is a data gap.
 fn select_error(e: String) -> LabError {
+    if let Some(m) = e.strip_prefix("unknown ticker ").and_then(markets::gl) { return LabError::NeedsData(markets::not_staged(m.ticker)); }
     if e.starts_with("unknown ticker ") { LabError::Invalid(e) } else { LabError::NeedsData(e.trim_start_matches("needs_data:").trim().into()) }
 }
 fn select<'a>(st: &'a State, q: &Query) -> Result<crate::SelectedContext<'a>, LabError> {
@@ -120,7 +130,8 @@ fn window(ctx: &Ctx, q: &Query) -> Result<(usize, usize, String), LabError> {
     if q.get("to").is_some_and(|t| !t.is_empty() && t > last) { return Err(LabError::NeedsData(format!("to exceeds admitted data ending {last}; the range is not silently shortened"))); }
     let (_, mut from, to, _) = crate::resolve_context(ctx, q)?;
     let mut start = "null".to_string();
-    if let Some(cut) = crate::gate::real_open_from(&ctx.r[0].ticker) {
+    let gl_cut = markets::gl(&ctx.r[0].ticker).and_then(|m| markets::tradable_from(ctx.r, m.continuous));
+    if let Some(cut) = crate::gate::real_open_from(&ctx.r[0].ticker).or(gl_cut.as_deref()) {
         let (ticker, stale) = (&ctx.r[0].ticker, format!("opens before {cut} are stale"));
         let k = ctx.r.partition_point(|r| r.date.as_str() < cut);
         if q.get("from").is_some_and(|f| !f.is_empty() && f.as_str() < cut) { return Err(LabError::NeedsData(format!("{stale} for {ticker}; choose from >= {cut}"))); }
@@ -144,6 +155,17 @@ fn with_spec_cost(q: &Query, spec: &Spec) -> Result<Query, LabError> {
         }
     }
     Ok(q)
+}
+/// Book statistics (read-only) rescaled to the instrument's own bar frequency (lab/markets.rs annualise).
+fn lab_stats(ctx: &Ctx, run: &crate::Run, costs: accounting::Costs) -> BTreeMap<&'static str, f64> {
+    let mut s = crate::financial_stats(ctx, run, costs);
+    markets::annualise(&mut s, markets::bars_per_year(&ctx.r[0].ticker));
+    s
+}
+fn gross_stats(ctx: &Ctx, run: &crate::Run) -> BTreeMap<&'static str, f64> {
+    let mut s = crate::stats(ctx, run, 0.);
+    markets::annualise(&mut s, markets::bars_per_year(&ctx.r[0].ticker));
+    s
 }
 fn backtest(ctx: &Ctx, c: &Compiled, d: &Bars, from: usize, to: usize, cost: f64) -> Result<crate::Run, LabError> {
     let trades = simulate(c, d, from, to);
@@ -179,7 +201,7 @@ pub fn run_json(st: &State, q: &Query) -> Result<String, LabError> {
         "{{\"label\":\"{LABEL}\",\"kind\":\"lab_simulation\",\"instrument\":{instrument},\"from\":\"{}\",\"to\":\"{}\",\"start\":{start},\"dates\":{},\"close\":{},\"equity\":{},\"gross_equity\":{},\"bh\":{},\"trades\":{trades},\"stats\":{},\"gross_stats\":{},\"costs\":{},\"provenance\":{}}}",
         ctx.r[from].date, ctx.r[to].date, quoted((from..=to).map(|k| ctx.r[k].date.as_str())), arr((from..=to).map(|k| crate::num(ctx.c[k]))),
         arr(run.equity.iter().map(|v| crate::num(*v))), arr(gross.equity.iter().map(|v| crate::num(*v))), arr(run.bh.iter().map(|v| crate::num(*v))),
-        crate::stats_json(&crate::financial_stats(ctx, &run, costs)), crate::stats_json(&crate::stats(ctx, &gross, 0.)), costs.json(), crate::source_provenance(st, q)))
+        crate::stats_json(&lab_stats(ctx, &run, costs)), crate::stats_json(&gross_stats(ctx, &gross)), costs.json(), crate::source_provenance(st, q)))
 }
 pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> {
     let t0 = std::time::Instant::now();
@@ -206,11 +228,11 @@ pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> {
     let combos: usize = dims.iter().map(|d| d.values.len()).product();
     let metrics = |cache: &mut Cache, s: &Spec| -> Result<Vec<f64>, LabError> {
         let c = series::compile(s, &fr, cache)?;
-        let stats = crate::financial_stats(ctx, &backtest(ctx, &c, &fr.d, from, to, cost)?, costs);
+        let stats = lab_stats(ctx, &backtest(ctx, &c, &fr.d, from, to, cost)?, costs);
         let mut out: Vec<f64> = crate::FULL_COLS.iter().map(|k| stats[k]).collect();
         let mut ins = Vec::new();
         for (n, (a, b)) in split.map(|s| [(from, s - 1), (s, to)]).into_iter().flatten().enumerate() {
-            let part = crate::financial_stats(ctx, &backtest(ctx, &c, &fr.d, a, b, cost)?, costs);
+            let part = lab_stats(ctx, &backtest(ctx, &c, &fr.d, a, b, cost)?, costs);
             out.extend(crate::PART_COLS.iter().map(|k| part[k]));
             if n == 0 { ins = crate::FULL_COLS.iter().map(|k| part[k]).collect(); }
         }
@@ -495,5 +517,75 @@ mod tests {
         assert!(with.contains("\"ranked_on\":\"in_sample\"") && with.contains("\"split\":\"2016-06-01\""));
         let none = optimize_json(&st, &q(&[])).unwrap();
         assert!(none.contains("\"ranked_on\":\"full\"") && none.contains("\"split\":null") && !none.contains("is_total_return") && !none.contains("oos_"));
+    }
+    fn num_at(j: &str, path: &[&str]) -> f64 {
+        let v = crate::lab::json::parse(j).unwrap();
+        path.iter().fold(&v, |v, k| v.get(k).unwrap()).as_f64().unwrap_or_else(|| panic!("{path:?} is null"))
+    }
+    #[test] fn gl_instruments_are_labelled_provisional_and_annualised_by_their_own_calendar() {
+        let (spx, btc) = (run_json(&state(800, "SPX", false), &q(&[])).unwrap(), run_json(&state(800, "CRYPTO:BTCUSD", false), &q(&[("ticker", "CRYPTO:BTCUSD")])).unwrap());
+        assert!(btc.contains(&format!("\"instrument\":{}", markets::gl("CRYPTO:BTCUSD").unwrap().json())), "{}", &btc[..400]);
+        assert!(btc.contains("\"provisional\":true") && btc.contains("\"label\":\"Provisional · TradingView export CRYPTO:BTCUSD, daily\"") && btc.contains("\"bars_per_year\":365"));
+        assert!(!spx.contains("provisional"), "India/US lab output is unchanged");
+        let f = (365f64 / 252.).sqrt();
+        for path in [&["stats", "sharpe"][..], &["stats", "vol"], &["stats", "gross_sharpe"], &["gross_stats", "sharpe"]] {
+            let (a, b) = (num_at(&spx, path), num_at(&btc, path));
+            assert!((b - a * f).abs() <= 2e-6 * (1. + b.abs()), "{path:?}: {a} vs {b}");
+        }
+        for path in [&["stats", "cagr"][..], &["stats", "trades"], &["stats", "max_dd"], &["stats", "trades_per_year"]] { assert_eq!(num_at(&spx, path), num_at(&btc, path), "{path:?}"); }
+        let o = optimize_json(&state(800, "CRYPTO:BTCUSD", false), &q(&[("ticker", "CRYPTO:BTCUSD")])).unwrap();
+        assert!(o.contains("\"provisional\":true") && o.contains("\"kind\":\"lab_optimization\""));
+    }
+    #[test] fn gl_data_gaps_are_needs_data_and_unknown_tickers_stay_invalid() {
+        let st = state(400, "SPX", false);
+        for t in ["HSI:HSI", "CRYPTO:ETHUSD"] {
+            let e = run_json(&st, &q(&[("ticker", t)])).unwrap_err();
+            assert_eq!(e.status(), "needs_data");
+            assert!(e.message().contains(t) && e.message().contains("not staged"), "{}", e.message());
+        }
+        assert_eq!(run_json(&st, &q(&[("ticker", "HSI:NOPE")])).unwrap_err().status(), "invalid");
+        let e = run_json(&state(400, "TVC:CAC40", false), &q(&[("ticker", "TVC:CAC40"), ("spec", r#"{"v":1,"entry":{"all":[{"lhs":{"s":"obv"},"op":">","rhs":{"value":0}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":3}}]}}"#)])).unwrap_err();
+        assert_eq!(e.status(), "needs_data", "{}", e.message());
+    }
+    #[test] fn gl_close_only_years_move_the_start() {
+        // HSI:HSI rows start 2015 (state()); make 2015 close-only so next-open fills begin 2016-01-01.
+        let rows: &'static [Row] = Box::leak((0..700).map(|i| {
+            let c = 100. + (i as f64 * 0.3).sin() * 8. + i as f64 * 0.02;
+            let date = format!("{}-{:02}-{:02}", 2015 + i / 336, 1 + (i / 28) % 12, 1 + i % 28);
+            let (o, h, l) = if i < 336 { (c, c, c) } else { (c - 0.2, c + 1., c - 1.) };
+            Row { ticker: "HSI:HSI".into(), date, open: o, high: h, low: l, close: c, volume: None }
+        }).collect::<Vec<_>>().into_boxed_slice());
+        let st = State { ctxs: BTreeMap::from([("HSI:HSI".into(), Ctx::new(rows, rows, &[]))]), baskets: Default::default(), vix: vec![], market_extra: Default::default() };
+        let hsi = |extra: &[(&str, &str)]| { let mut x = q(&[("ticker", "HSI:HSI")]); for (k, v) in extra { x.insert(k.to_string(), v.to_string()); } x };
+        let j = run_json(&st, &hsi(&[])).unwrap();
+        assert!(j.contains("\"start\":{\"date\":\"2016-01-01\",\"reason\":\"opens before 2016-01-01 are stale\"}"), "{}", &j[..600]);
+        let e = run_json(&st, &hsi(&[("from", "2015-06-01")])).unwrap_err();
+        assert!(e.status() == "needs_data" && e.message().contains("choose from >= 2016-01-01"), "{}", e.message());
+        assert!(markets::instruments_json(&st).contains("\"tradable_from\":\"2016-01-01\""));
+    }
+    #[test] fn engine_gl_responses_all_carry_the_provisional_flag() {
+        let st = state(400, "CRYPTO:BTCUSD", false);
+        let cases = [("/api/lab/catalogue", q(&[]), "200 OK"), ("/api/lab/run", q(&[("ticker", "CRYPTO:BTCUSD")]), "200 OK"),
+            ("/api/lab/run", q(&[("ticker", "CRYPTO:BTCUSD"), ("spec", "{")]), "400 Bad Request"), ("/api/lab/run", q(&[("ticker", "HSI:HSI")]), "400 Bad Request"),
+            ("/api/lab/instruments", q(&[]), "200 OK"), ("/api/lab/nope", q(&[]), "404 Not Found")];
+        for (path, query, status) in cases {
+            let (s, body) = response(Some("gl"), path, &st, &query);
+            assert_eq!(s, status, "{path}: {body}");
+            assert!(body.starts_with("{\"provisional\":true,\"provisional_note\":\"Provisional · TradingView export"), "{path}: {}", &body[..80.min(body.len())]);
+            crate::lab::json::parse(&body).unwrap();
+            let (_, plain) = response(None, path, &st, &query);
+            assert!(!plain.starts_with("{\"provisional\""), "India/US engines are not marked");
+        }
+    }
+    #[test] fn instruments_route_lists_ready_and_missing_gl_data() {
+        let j = route("/api/lab/instruments", &state(400, "IG:DAX", false), &q(&[])).unwrap().unwrap();
+        let v = crate::lab::json::parse(&j).unwrap();
+        let Some(crate::lab::json::Json::Arr(rows)) = v.get("instruments") else { panic!("{j}") };
+        assert_eq!(rows.len(), markets::GL.len());
+        for r in rows {
+            let t = r.get("instrument").unwrap().get("ticker").unwrap().as_str().unwrap();
+            assert_eq!(r.get("status").unwrap().as_str(), Some(if t == "IG:DAX" { "ready" } else { "needs_data" }), "{t}");
+        }
+        assert!(j.contains("\"first\":\"2015-01-01\"") && j.contains("\"tradable_from\":null"));
     }
 }
