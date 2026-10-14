@@ -64,8 +64,12 @@ fn instrument(selected: &crate::SelectedContext, ticker: &str) -> (&'static str,
     (kind, format!("{{\"ticker\":\"{}\",\"type\":\"{kind}\",\"native\":{native},\"market\":{},\"currency\":{}}}",
         esc(ticker), opt(market.map(|m| m.code())), opt(market.map(|m| m.currency()))))
 }
+/// Only an unknown ticker is the caller's mistake; every other selection error is a data gap.
+fn select_error(e: String) -> LabError {
+    if e.starts_with("unknown ticker ") { LabError::Invalid(e) } else { LabError::NeedsData(e.trim_start_matches("needs_data:").trim().into()) }
+}
 fn select<'a>(st: &'a State, q: &Query) -> Result<crate::SelectedContext<'a>, LabError> {
-    crate::select_context(st, q).map_err(LabError::from)
+    crate::select_context(st, q).map_err(select_error)
 }
 pub fn series_json(st: &State, q: &Query) -> Result<String, LabError> {
     let id = q.get("id").ok_or_else(|| LabError::Invalid("id is required".into()))?;
@@ -124,6 +128,12 @@ mod tests {
         let st = state(50, "SPX", false);
         let e = series_json(&st, &q(&[("id", "close"), ("ticker", "NOPE")])).unwrap_err();
         assert_eq!((e.status(), e.message()), ("invalid", "unknown ticker NOPE"));
+    }
+    #[test] fn select_errors_map_by_prefix() {
+        assert_eq!(select_error("unknown ticker X".into()).status(), "invalid");
+        assert_eq!(select_error("Native source CSV unavailable".into()).status(), "needs_data");
+        let e = select_error("needs_data: Native requested from must be a valid date".into());
+        assert_eq!((e.status(), e.message()), ("needs_data", "Native requested from must be a valid date"));
     }
     #[test] fn panics_become_typed_errors() {
         assert_eq!(guarded(|| panic!("boom")).unwrap_err().status(), "invalid");
