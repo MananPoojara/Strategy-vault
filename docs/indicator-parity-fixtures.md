@@ -141,6 +141,21 @@ CSV files kept outside Git; without them the parity test passes and prints "skip
 | cdl_spinning_top_white | - | signal |
 | cdl_tweezer_bottom | trend=0 | signal |
 | cdl_tweezer_top | trend=0 | signal |
+| cdl_abandoned_baby_bear | trend=0 | signal |
+| cdl_abandoned_baby_bull | trend=0 | signal |
+| cdl_downside_tasuki_gap | trend=0 | signal |
+| cdl_upside_tasuki_gap | trend=0 | signal |
+| cdl_evening_doji_star | trend=0 | signal |
+| cdl_evening_star | trend=0 | signal |
+| cdl_morning_doji_star | trend=0 | signal |
+| cdl_morning_star | trend=0 | signal |
+| cdl_falling_three_methods | trend=0 | signal |
+| cdl_rising_three_methods | trend=0 | signal |
+| cdl_three_black_crows | - | signal |
+| cdl_three_white_soldiers | - | signal |
+| cdl_tri_star_bear | trend=0 | signal |
+| cdl_tri_star_bull | trend=0 | signal |
+| cdl_all | trend=0 | bullish, bearish, neutral |
 | cci | length=20 | cci |
 | mom | length=10 | mom |
 | roc | length=9 | roc |

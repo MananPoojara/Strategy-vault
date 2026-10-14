@@ -1,6 +1,5 @@
 //! Candlestick patterns (TradingView built-ins). Formulas: TradingView "All Candlestick Patterns" (Pine v4), Decision 20.
 use super::bars::Bars;
-#[allow(unused_imports)]
 use super::catalogue::{get, int, n, p, run, IndicatorDef, Needs, Output, ParamSpec, Params, Placement};
 use super::ta;
 
@@ -85,6 +84,49 @@ pattern!(spinning_top_white, |f, b, i| spin(&f, i) && f.white[i]);
 pattern!(tweezer_bottom, trend, |f, b, i| i >= 1 && f.up[i - 1] && (!f.dojib[i] || (f.hus[i] && f.hds[i])) && (b.low[i] - b.low[i - 1]).abs() <= f.avg[i] * 0.05 && f.black[i - 1] && f.white[i] && f.long[i - 1]);
 pattern!(tweezer_top, trend, |f, b, i| i >= 1 && f.up[i - 1] && (!f.dojib[i] || (f.hus[i] && f.hds[i])) && (b.high[i] - b.high[i - 1]).abs() <= f.avg[i] * 0.05 && f.white[i - 1] && f.black[i] && f.long[i - 1]);
 
+pattern!(abandoned_baby_bear, trend, |f, b, i| i >= 2 && f.up[i - 2] && f.white[i - 2] && f.dojib[i - 1] && b.high[i - 2] < b.low[i - 1] && f.black[i] && b.low[i - 1] > b.high[i]);
+pattern!(abandoned_baby_bull, trend, |f, b, i| i >= 2 && f.dn[i - 2] && f.black[i - 2] && f.dojib[i - 1] && b.low[i - 2] > b.high[i - 1] && f.white[i] && b.high[i - 1] < b.low[i]);
+pattern!(downside_tasuki_gap, trend, |f, b, i| i >= 2 && f.long[i - 2] && f.small[i - 1] && f.dn[i] && f.black[i - 2] && f.bh[i - 1] < f.bl[i - 2] && f.black[i - 1] && f.white[i] && f.bh[i] <= f.bl[i - 2] && f.bh[i] >= f.bh[i - 1]);
+pattern!(upside_tasuki_gap, trend, |f, b, i| i >= 2 && f.long[i - 2] && f.small[i - 1] && f.up[i] && f.white[i - 2] && f.bl[i - 1] > f.bh[i - 2] && f.white[i - 1] && f.black[i] && f.bl[i] >= f.bh[i - 2] && f.bl[i] <= f.bl[i - 1]);
+pattern!(evening_doji_star, trend, |f, b, i| i >= 2 && f.long[i - 2] && f.dojib[i - 1] && f.long[i] && f.up[i] && f.white[i - 2] && f.bl[i - 1] > f.bh[i - 2] && f.black[i] && f.bl[i] <= f.mid[i - 2] && f.bl[i] > f.bl[i - 2] && f.bl[i - 1] > f.bh[i]);
+pattern!(evening_star, trend, |f, b, i| i >= 2 && f.long[i - 2] && f.small[i - 1] && f.long[i] && f.up[i] && f.white[i - 2] && f.bl[i - 1] > f.bh[i - 2] && f.black[i] && f.bl[i] <= f.mid[i - 2] && f.bl[i] > f.bl[i - 2] && f.bl[i - 1] > f.bh[i]);
+pattern!(morning_doji_star, trend, |f, b, i| i >= 2 && f.long[i - 2] && f.dojib[i - 1] && f.long[i] && f.dn[i] && f.black[i - 2] && f.bh[i - 1] < f.bl[i - 2] && f.white[i] && f.bh[i] >= f.mid[i - 2] && f.bh[i] < f.bh[i - 2] && f.bh[i - 1] < f.bl[i]);
+pattern!(morning_star, trend, |f, b, i| i >= 2 && f.long[i - 2] && f.small[i - 1] && f.long[i] && f.dn[i] && f.black[i - 2] && f.bh[i - 1] < f.bl[i - 2] && f.white[i] && f.bh[i] >= f.mid[i - 2] && f.bh[i] < f.bh[i - 2] && f.bh[i - 1] < f.bl[i]);
+pattern!(falling_three_methods, trend, |f, b, i| i >= 4 && f.dn[i - 4] && f.long[i - 4] && f.black[i - 4]
+    && (1..=3).all(|j| f.small[i - j] && f.white[i - j] && b.open[i - j] > b.low[i - 4] && b.close[i - j] < b.high[i - 4]) && f.long[i] && f.black[i] && b.close[i] < b.close[i - 4]);
+pattern!(rising_three_methods, trend, |f, b, i| i >= 4 && f.up[i - 4] && f.long[i - 4] && f.white[i - 4]
+    && (1..=3).all(|j| f.small[i - j] && f.black[i - j] && b.open[i - j] < b.high[i - 4] && b.close[i - j] > b.low[i - 4]) && f.long[i] && f.white[i] && b.close[i] > b.close[i - 4]);
+pattern!(three_black_crows, |f, b, i| i >= 2 && (0..3).all(|j| f.long[i - j] && f.black[i - j] && f.rng[i - j] * 0.05 > f.ds[i - j])
+    && b.close[i] < b.close[i - 1] && b.close[i - 1] < b.close[i - 2] && b.open[i] > b.close[i - 1] && b.open[i] < b.open[i - 1] && b.open[i - 1] > b.close[i - 2] && b.open[i - 1] < b.open[i - 2]);
+pattern!(three_white_soldiers, |f, b, i| i >= 2 && (0..3).all(|j| f.long[i - j] && f.white[i - j] && f.rng[i - j] * 0.05 > f.us[i - j])
+    && b.close[i] > b.close[i - 1] && b.close[i - 1] > b.close[i - 2] && b.open[i] < b.close[i - 1] && b.open[i] > b.open[i - 1] && b.open[i - 1] < b.close[i - 2] && b.open[i - 1] > b.open[i - 2]);
+pattern!(tri_star_bear, trend, |f, b, i| i >= 2 && f.doji[i - 2] && f.doji[i - 1] && f.doji[i] && f.up[i - 2] && f.bh[i - 2] < f.bl[i - 1] && f.bl[i - 1] > f.bh[i]);
+pattern!(tri_star_bull, trend, |f, b, i| i >= 2 && f.doji[i - 2] && f.doji[i - 1] && f.doji[i] && f.dn[i - 2] && f.bl[i - 2] > f.bh[i - 1] && f.bh[i - 1] < f.bl[i]);
+
+/// TradingView classification used by "All Candlestick Patterns": +1 bullish, −1 bearish, 0 neutral.
+const KIND: &[(&str, i8)] = &[
+    ("cdl_abandoned_baby_bull", 1), ("cdl_doji_star_bull", 1), ("cdl_dragonfly_doji", 1), ("cdl_engulfing_bull", 1), ("cdl_hammer", 1), ("cdl_harami_bull", 1),
+    ("cdl_harami_cross_bull", 1), ("cdl_inverted_hammer", 1), ("cdl_kicking_bull", 1), ("cdl_long_lower_shadow", 1), ("cdl_marubozu_white", 1), ("cdl_morning_doji_star", 1),
+    ("cdl_morning_star", 1), ("cdl_piercing", 1), ("cdl_rising_three_methods", 1), ("cdl_rising_window", 1), ("cdl_three_white_soldiers", 1), ("cdl_tri_star_bull", 1),
+    ("cdl_tweezer_bottom", 1), ("cdl_upside_tasuki_gap", 1),
+    ("cdl_abandoned_baby_bear", -1), ("cdl_dark_cloud_cover", -1), ("cdl_doji_star_bear", -1), ("cdl_downside_tasuki_gap", -1), ("cdl_engulfing_bear", -1),
+    ("cdl_evening_doji_star", -1), ("cdl_evening_star", -1), ("cdl_falling_three_methods", -1), ("cdl_falling_window", -1), ("cdl_gravestone_doji", -1),
+    ("cdl_hanging_man", -1), ("cdl_harami_bear", -1), ("cdl_harami_cross_bear", -1), ("cdl_kicking_bear", -1), ("cdl_long_upper_shadow", -1),
+    ("cdl_marubozu_black", -1), ("cdl_on_neck", -1), ("cdl_shooting_star", -1), ("cdl_three_black_crows", -1), ("cdl_tri_star_bear", -1), ("cdl_tweezer_top", -1),
+    ("cdl_doji", 0), ("cdl_spinning_top_black", 0), ("cdl_spinning_top_white", 0),
+];
+fn all_patterns(b: &Bars, prm: &Params) -> Output {
+    let (tp, none): (Params, Params) = ([("trend".to_string(), p(prm, "trend"))].into_iter().collect(), Params::new());
+    let mut out = vec![vec![0.; b.len()]; 3];
+    for (id, kind) in KIND {
+        let d = get(id).expect("pattern id is in the catalogue");
+        let s = run(&d, b, if d.params.is_empty() { &none } else { &tp })?.remove(0);
+        let k = match kind { 1 => 0, -1 => 1, _ => 2 };
+        for i in 0..b.len() { out[k][i] += s[i]; }
+    }
+    Ok(out)
+}
+
 macro_rules! cdl {
     ($id:expr, $name:expr, $params:expr, $f:expr) => {
         IndicatorDef { id: $id, name: $name, category: CAT, params: $params, outputs: &["signal"], placement: Placement::Pane, needs: Needs::NONE,
@@ -123,6 +165,23 @@ pub const DEFS: &[IndicatorDef] = &[
     cdl!("cdl_spinning_top_white", "Spinning Top White", &[], spinning_top_white),
     cdl!("cdl_tweezer_bottom", "Tweezer Bottom - Bullish", TREND, tweezer_bottom),
     cdl!("cdl_tweezer_top", "Tweezer Top - Bearish", TREND, tweezer_top),
+    cdl!("cdl_abandoned_baby_bear", "Abandoned Baby - Bearish", TREND, abandoned_baby_bear),
+    cdl!("cdl_abandoned_baby_bull", "Abandoned Baby - Bullish", TREND, abandoned_baby_bull),
+    cdl!("cdl_downside_tasuki_gap", "Downside Tasuki Gap - Bearish", TREND, downside_tasuki_gap),
+    cdl!("cdl_upside_tasuki_gap", "Upside Tasuki Gap - Bullish", TREND, upside_tasuki_gap),
+    cdl!("cdl_evening_doji_star", "Evening Doji Star - Bearish", TREND, evening_doji_star),
+    cdl!("cdl_evening_star", "Evening Star - Bearish", TREND, evening_star),
+    cdl!("cdl_morning_doji_star", "Morning Doji Star - Bullish", TREND, morning_doji_star),
+    cdl!("cdl_morning_star", "Morning Star - Bullish", TREND, morning_star),
+    cdl!("cdl_falling_three_methods", "Falling Three Methods - Bearish", TREND, falling_three_methods),
+    cdl!("cdl_rising_three_methods", "Rising Three Methods - Bullish", TREND, rising_three_methods),
+    cdl!("cdl_three_black_crows", "Three Black Crows - Bearish", &[], three_black_crows),
+    cdl!("cdl_three_white_soldiers", "Three White Soldiers - Bullish", &[], three_white_soldiers),
+    cdl!("cdl_tri_star_bear", "Tri Star - Bearish", TREND, tri_star_bear),
+    cdl!("cdl_tri_star_bull", "Tri Star - Bullish", TREND, tri_star_bull),
+    IndicatorDef { id: "cdl_all", name: "All Candlestick Patterns", category: CAT, params: TREND, outputs: &["bullish", "bearish", "neutral"],
+        placement: Placement::Pane, needs: Needs::NONE, definition: "All Candlestick Patterns: number of the 44 TradingView patterns completing on this bar, by kind (bullish, bearish, neutral)",
+        first: &[0, 0, 0], sparse: false, compute: Some(all_patterns), note: "" },
 ];
 
 #[cfg(test)]
@@ -181,4 +240,27 @@ mod tests {
         assert_eq!(*go("cdl_hammer", &case(&[(11., 11.1, 9.6, 11.1)]), &[])[0].last().unwrap(), 0.);
     }
     #[test] fn rules_reach_candles() { compiles("cdl_engulfing_bull", "signal").unwrap(); compiles("cdl_doji", "signal").unwrap(); }
+    const CASES_II: &[(&str, &[(f64, f64, f64, f64)])] = &[
+        ("cdl_abandoned_baby_bear", &[(10.0, 13.2, 9.9, 13.0), (13.5, 13.6, 13.4, 13.5), (13.0, 13.1, 10.0, 10.5)]),
+        ("cdl_abandoned_baby_bull", &[(13.0, 13.1, 9.9, 10.0), (9.5, 9.6, 9.4, 9.5), (10.0, 13.0, 9.9, 12.5)]),
+        ("cdl_downside_tasuki_gap", &[(13.0, 13.1, 10.9, 11.0), (10.5, 10.6, 9.9, 10.0), (10.2, 10.8, 10.1, 10.7)]),
+        ("cdl_evening_doji_star", &[(10.0, 13.1, 9.9, 13.0), (13.5, 13.7, 13.3, 13.5), (13.2, 13.25, 11.2, 11.4)]),
+        ("cdl_evening_star", &[(10.0, 13.1, 9.9, 13.0), (13.4, 13.8, 13.3, 13.6), (13.2, 13.25, 11.2, 11.4)]),
+        ("cdl_falling_three_methods", &[(14.0, 14.1, 11.0, 11.2), (11.3, 11.9, 11.2, 11.8), (11.8, 12.4, 11.7, 12.3), (12.3, 12.9, 12.2, 12.8), (12.8, 12.9, 10.4, 10.5)]),
+        ("cdl_morning_doji_star", &[(13.0, 13.1, 9.9, 10.0), (9.5, 9.7, 9.3, 9.5), (9.8, 12.0, 9.75, 11.9)]),
+        ("cdl_morning_star", &[(13.0, 13.1, 9.9, 10.0), (9.6, 9.8, 9.2, 9.4), (9.8, 12.0, 9.75, 11.9)]),
+        ("cdl_rising_three_methods", &[(11.0, 14.1, 10.9, 14.0), (13.9, 14.0, 13.2, 13.3), (13.3, 13.4, 12.6, 12.7), (12.7, 12.8, 12.1, 12.2), (12.3, 15.1, 12.2, 15.0)]),
+        ("cdl_three_black_crows", &[(14.0, 14.01, 11.99, 12.0), (12.5, 12.51, 10.49, 10.5), (11.0, 11.01, 8.99, 9.0)]),
+        ("cdl_three_white_soldiers", &[(9.0, 11.01, 8.99, 11.0), (10.5, 12.51, 10.49, 12.5), (12.0, 14.01, 11.99, 14.0)]),
+        ("cdl_tri_star_bear", &[(11.0, 11.6, 10.4, 11.01), (12.0, 12.6, 11.4, 12.01), (11.0, 11.6, 10.4, 11.01)]),
+        ("cdl_tri_star_bull", &[(11.0, 11.6, 10.4, 11.01), (10.0, 10.6, 9.4, 10.01), (11.0, 11.6, 10.4, 11.01)]),
+        ("cdl_upside_tasuki_gap", &[(10.0, 12.1, 9.9, 12.0), (12.5, 13.1, 12.4, 13.0), (12.8, 12.9, 12.2, 12.3)]),
+    ];
+    #[test] fn each_multi_bar_pattern_fires_on_its_case() { for (id, rows) in CASES_II { assert_eq!(last(id, rows), 1., "{id}"); } }
+    #[test] fn all_patterns_counts_by_kind() {
+        let count = |rows: &[(f64, f64, f64, f64)]| { let o = go("cdl_all", &case(rows), &[("trend", 2.)]); (o[0][o[0].len() - 1], o[1][o[1].len() - 1], o[2][o[2].len() - 1]) };
+        assert_eq!(count(CASES_II[0].1), (0., 4., 0.)); // abandoned baby bear + evening doji star + evening star + falling window
+        assert_eq!(count(&[(11., 11.1, 9.6, 11.1)]), (2., 1., 0.)); // hammer + long lower shadow; hanging man (no trend rule)
+        assert_eq!(count(&[(11., 11.6, 10.4, 11.02)]), (0., 0., 1.)); // doji
+    }
 }

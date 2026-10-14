@@ -264,6 +264,21 @@ pub const SOURCES: &[(&str, &str, &str)] = &[
     ("cdl_marubozu_white", "Marubozu White - Bullish", ""), ("cdl_on_neck", "On Neck - Bearish", ""), ("cdl_piercing", "Piercing - Bullish", ""),
     ("cdl_rising_window", "Rising Window - Bullish", ""), ("cdl_shooting_star", "Shooting Star - Bearish", ""), ("cdl_spinning_top_black", "Spinning Top Black", ""),
     ("cdl_spinning_top_white", "Spinning Top White", ""), ("cdl_tweezer_bottom", "Tweezer Bottom - Bullish", ""), ("cdl_tweezer_top", "Tweezer Top - Bearish", ""),
+    ("cdl_abandoned_baby_bear", "Abandoned Baby - Bearish", ""),
+    ("cdl_abandoned_baby_bull", "Abandoned Baby - Bullish", ""),
+    ("cdl_downside_tasuki_gap", "Downside Tasuki Gap - Bearish", ""),
+    ("cdl_upside_tasuki_gap", "Upside Tasuki Gap - Bullish", ""),
+    ("cdl_evening_doji_star", "Evening Doji Star - Bearish", ""),
+    ("cdl_evening_star", "Evening Star - Bearish", ""),
+    ("cdl_morning_doji_star", "Morning Doji Star - Bullish", ""),
+    ("cdl_morning_star", "Morning Star - Bullish", ""),
+    ("cdl_falling_three_methods", "Falling Three Methods - Bearish", ""),
+    ("cdl_rising_three_methods", "Rising Three Methods - Bullish", ""),
+    ("cdl_three_black_crows", "Three Black Crows - Bearish", ""),
+    ("cdl_three_white_soldiers", "Three White Soldiers - Bullish", ""),
+    ("cdl_tri_star_bear", "Tri Star - Bearish", ""),
+    ("cdl_tri_star_bull", "Tri Star - Bullish", ""),
+    ("cdl_all", "All Candlestick Patterns", ""),
 ];
 /// (TradingView names, AmiBroker names) of an id; empty strings when the id has no row.
 pub fn names(id: &str) -> (&'static str, &'static str) { SOURCES.iter().find(|r| r.0 == id).map_or(("", ""), |r| (r.1, r.2)) }
