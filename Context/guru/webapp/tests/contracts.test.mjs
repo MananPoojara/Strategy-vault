@@ -173,7 +173,7 @@ test('customized lab specs carry a book-template origin of a fixed shape',async(
  const spec={...LAB_SPEC,origin:LAB_ORIGIN};
  assert.deepEqual(validateLabStrategy({name:'My RSI(2)',spec,market:'us',instrument:'SPY'}),{name:'My RSI(2)',spec,market:'us',instrument:'SPY',origin:LAB_ORIGIN});
  assert.equal(validateLabOrigin(undefined),null);
- for(const origin of [null,[],'stc9',{book:'stc9',method:'rsi2_4'},{...LAB_ORIGIN,extra:1},{...LAB_ORIGIN,method:'rsi 2'},{...LAB_ORIGIN,book:''},{...LAB_ORIGIN,template_version:0},{...LAB_ORIGIN,template_version:1.5},{...LAB_ORIGIN,template_version:'1'}])
+ for(const origin of [null,[],'stc9',{book:'stc9',method:'rsi2_4'},{...LAB_ORIGIN,extra:1},{...LAB_ORIGIN,method:'rsi 2'},{...LAB_ORIGIN,book:''},{...LAB_ORIGIN,template_version:0},{...LAB_ORIGIN,template_version:1.5},{...LAB_ORIGIN,template_version:'1'},{...LAB_ORIGIN,book:['stc9']},{...LAB_ORIGIN,book:123},{...LAB_ORIGIN,method:['rsi2_4']}])
   assert.throws(()=>validateLabStrategy({name:'A',spec:{...LAB_SPEC,origin},market:'us',instrument:'SPY'}),/origin must be/);
  assert.ok(sameLabOrigin(null,undefined)&&sameLabOrigin(LAB_ORIGIN,{template_version:1,method:'rsi2_4',book:'stc9'}));
  assert.ok(!sameLabOrigin(LAB_ORIGIN,null)&&!sameLabOrigin(LAB_ORIGIN,{...LAB_ORIGIN,template_version:2}));
