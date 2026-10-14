@@ -1,6 +1,6 @@
-//! Chande & Kroll, "The New Technical Trader" (Wiley 1994). Only two complete trading rules are printed:
-//! the CMO-driven VIDYA system (ch.8) and the thrust-oscillator buy signal (ch.6, Table 6.2). Every other
-//! indicator chapter gives options ("you could ...") without one order type/exit; those are listed NotTestable.
+//! Chande & Kroll, "The New Technical Trader" (Wiley 1994). The CMO-driven VIDYA system (ch.8) needs
+//! actual futures ticks and its dollar stop. The thrust-oscillator table (ch.6) is a buy-signal event study
+//! without an executable exit. Neither is ready on the available price-only cash series.
 //! Uses the small engine in chbta2.rs. Source + page per rule: library/chntt/README.md.
 use crate::books::chbta2::{getp, none_exit, no_trail, run_sys, Kind, Pos, Sys};
 use crate::connors::{sma, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
@@ -18,7 +18,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
     let to_rules: &'static [&'static str] = &[
         "F|\"MT = (AI*AV - DI*DV)\" ... \"TO = (AI*AV - DI*DV)/(AI*AV + DI*DV) * 100\"; \"The multiplication by 100 is optional\" (eq. 6.3, 6.5, p.146); AI/DI = advancing/declining issues, AV/DV = advancing/declining volume (p.144)",
         "E|\"we first calculated TO and then plotted a 21-day simple moving average of the TO, adding a second 13-day exponential moving average of this SMA. A buy signal occurs when the 21-day SMA of TO goes below -0.3 then crosses above its own 13-day EMA. We enter the market on the close the next day.\" (p.157)",
-        "X|No exit rule: Table 6.2 reports the gain 3, 6, 12 and 24 months after each buy (p.157). Default hold = 3 months (first column); 6/12/24 are the book's other columns."];
+        "X|No exit rule: Table 6.2 reports the gain 3, 6, 12 and 24 months after each buy (p.157). Those observation horizons are not orders; the historical months runner is held."];
     vec![
         d("ch_ntt_vidya_cmo", "CMO-driven VIDYA system", "Ch 8 · How to use this book", "Long/Short", Live, &[], &[
             "F|\"|CMO| = |(2*RSI9 - 100)/100|, A = t*|CMO| (t <= 0.5), VIDYA = A * Close + (1-A) * VIDYA[1]\" (eq. 8.1, p.180); RSI = System Writer's unsmoothed 9-day RSI (p.180)",
@@ -26,12 +26,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|\"1. The rule to open long positions. If the close of today and yesterday are both above the VIDYA of today, then buy tomorrow on a buy stop order. Place the order 1 tick above today's high.\" (p.181)",
             "E|\"2. The rule to short positions. If the close of today and the close of yesterday are both below the VIDYA of today, then sell tomorrow on a sell stop order. Place the order 1 tick below today's low.\" (p.181-183)",
             "X|\"We won't use any specific exit strategy in testing the model, which means a long entry signal will exit a short trade and vice versa.\" (p.183)",
-            "X|\"$1,500 initial stop\" (p.183) [futures; stop_pts, off by default]"],
-            "Printed pp.179-189. Unsmoothed RSI9 = 100*Su/(Su+Sd) over the last 9 close changes, so |CMO| = |Su-Sd|/(Su+Sd). VIDYA is seeded with the close of the bar before the first CMO (Table 3.7). 1 tick = 0.01 index point. Book results are Swiss franc futures only (Tables 8.2-8.4: 33 trades 36% won 5/83-5/88; 27 trades 37% won 6/88-4/93); no index result to compare."),
+            "X|\"$1,500 initial stop\" (p.183), in futures contract dollars; held until actual contract inputs and causal fills are verified."],
+            "Printed pp.179-189; reviewed order/stop pages pp.180-183 are PDF spreads 101-102. Unsmoothed RSI9 implies |CMO|=|Su-Sd|/(Su+Sd) over 9 changes and t=0.1. One source contract tick is not a generic 0.01 cash-index point. The closing-basis suggestion for stocks does not define a replacement for the dollar stop. Historical runner retained for inspection; no prepared result or source-performance claim."),
         d("ch_ntt_to_buy", "Thrust oscillator buy signal (NYSE breadth)", "Ch 6 · Market thrust", "Long", Live, NYSE, to_rules,
-            "Printed pp.143-159, Table 6.2 (DJIA buys 1980-90). Run on DJI/SPX with NYSE_ADV_DEC (issues and volume). Signals while a position is open are skipped (one position at a time); the book's table is an event study, so its overlapping Oct-1990 signal is compared separately in the README. Exit on the close of the first bar on/after the entry date + N calendar months."),
+            "Printed pp.143-159, Table 6.2, reviewed PDF spread 89 (pp.156-157). NYSE breadth inputs are required for the buy signal. No source exit or sequential account is supplied; the historical hold-month runner is retained for inspection and held."),
         d("ch_ntt_to_buy_nse", "Thrust oscillator buy signal (NSE breadth)", "Ch 6 · Market thrust", "Long", Live, NSE, to_rules,
-            "India mapping: NSE_ADV_DEC (NSE equity advances/declines and their volumes) instead of NYSE; same rule, run on NIFTY indices."),
+            "Historical India mapping retained for inspection. No actual NSE breadth input or missing source exit is invented; held."),
         nt("ch_ntt_vidya_close", "VIDYA close crossover (std-dev VIDYA)", "Ch 3 · VIDYA",
             "VIDYA's volatility index k = sigma(x days)/sigma(reference) is left open (x and the reference are 'for example' choices), and order type/fill is not given.",
             &["E|\"Or, you can go long when prices close above VIDYA, and go short when prices close below VIDYA.\" (p.55)"], "Printed pp.49-72. The fully specified VIDYA system is ch_ntt_vidya_cmo."),

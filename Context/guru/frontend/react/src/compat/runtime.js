@@ -5,6 +5,8 @@ import {customPages} from '../app/custom-pages';
 import {LIB} from './catalogue.js';
 import {libraryScope,inLibraryScope} from '../services/library-scope';
 import {libraryMarket,libraryMarketVariants} from '../services/library-market';
+import {orderAuthors} from '../services/author-order';
+import {chooseBacktestContext,referenceBacktestContexts} from '../services/library-backtest-context';
 import {instrumentControls,instrumentTickers} from '../services/instrument-controls';
 import {buildStrategyIndicators} from '../services/strategy-indicators';
 import {indicatorControlsHTML,mountStrategyIndicators} from '../services/strategy-indicator-charts';
@@ -833,21 +835,22 @@ let CAT = [], TICKERS = [], GURUS_API = [], TICK_ALL_US = [];
 const TRUST = window.VaultTruth;
 const READINESS = {};
 async function getReadiness(tk, from = '', to = '', id = '', parameters = {}) {
-  if(!id&&!guruIds().length)return {};
+  const api=API,owners=id?[ownerOf(id)]:guruIds(),variants=[...CAT];
+  if(!owners.length)return {};
   const query = new URLSearchParams({ticker:tk,from,to,cost:S.cost||'0',...VaultUI.costState(S),...(id?{id}:{})});
   const settings=typeof parameters==='string'?decodeP(parameters):parameters;
   for(const [key,value] of Object.entries(settings)) query.set('p.'+key,value);
-  const key = API + '|' + (id ? ownerOf(id) : 'all') + '?' + query;
+  const key = api + '|' + (id ? owners[0] : 'all') + '?' + query;
   if(!READINESS[key]) READINESS[key] = (async () => {
     try {
-      const data=await Promise.all((id?[ownerOf(id)]:guruIds()).map(async guru=>{
-        const response=await fetch(API+'/guru/'+guru+'/readiness?'+query);
+      const data=await Promise.all(owners.map(async guru=>{
+        const response=await fetch(api+'/guru/'+guru+'/readiness?'+query);
         if(!response.ok) throw new Error(await response.text());
         return (await response.json()).strategies;
       }));
       return Object.fromEntries(data.flat().map(item=>[item.id,item]));
     } catch(error) {
-      return Object.fromEntries((id?CAT.filter(v=>v.id===id):CAT).map(v=>[v.id,{id:v.id,status:'unavailable',note:'Data readiness could not be established for this period. Results are withheld. '+error.message}]));
+      return Object.fromEntries((id?variants.filter(v=>v.id===id):variants).map(v=>[v.id,{id:v.id,status:'unavailable',note:'Data readiness could not be established for this period. Results are withheld. '+error.message}]));
     }
   })();
   return READINESS[key];
@@ -921,7 +924,7 @@ async function rows(S = getS()) {
   }
   const out = [];
   for (const tk of tks) {
-    const w = T.win(tk), main = await getSum(tk, w.from, w.to), ex = T.extra ? T.extra(tk) : null, extra = ex ? await getSum(tk, ex.from, ex.to) : T.pre ? await preMap(tk, T.pre) : null;
+    const w = S.tab==='sharpe'&&(S.from||S.to)?{from:S.from||'',to:S.to||''}:T.win(tk), main = await getSum(tk, w.from, w.to), ex = T.extra ? T.extra(tk) : null, extra = ex ? await getSum(tk, ex.from, ex.to) : T.pre ? await preMap(tk, T.pre) : null;
     for (const v of CAT) {
       if (v.status !== 'live' || !metaOk(v)) continue;
       const m = main[v.id]; if (!m?.stats || !m.stats.trades) continue; // no data (volume rules on Nifty IT) or no closed trades in the window
@@ -1141,7 +1144,7 @@ function readRoute() {
   const types=chosen?.instrument_policy?.allowed_types||[];
   const etfs=S.region==='us'?TICK_ALL_US.filter(t=>['SPY','QQQ','MDY','IWM','SMH','DIA'].includes(t.ticker)):[];
   const basket=BASKETS.find(b=>b.id===S.basket);
-  TICKERS=S.basket&&basket?.symbols?.length?pool.filter(t=>basket.symbols.includes(t.ticker)):instrumentTickers(chosen?.instrument_policy,indices,etfs);
+  TICKERS=S.basket&&basket?.symbols?.length?pool.filter(t=>basket.symbols.includes(t.ticker)):instrumentTickers(['home','guru','all'].includes(R.name)?{allowed_types:['index','etf']}:chosen?.instrument_policy,indices,etfs);
   if(S.basket&&S.tk==='ALL')S.tk=TICKERS[0]?.ticker||S.tk;
   if(S.tk!=='ALL'&&!TICKERS.some(t=>t.ticker===S.tk))S.tk=TICKERS[0]?.ticker||S.tk;
   const explicit=new URLSearchParams(q);
@@ -1186,16 +1189,16 @@ window.openGuru = (id, ev) => {
     <div><h2>${esc(g.name)}</h2>${gTag(g) ? `<p class="gm-tag">${esc(gTag(g))}</p>` : ''}
       <h4>Books and reading sources · ${entryCounts.total} indexed entries</h4>
       <ul>${books.map(b => `<li><b>${esc(b.title)}</b> <small>(${esc(String(b.year||'Edition unconfirmed'))})</small>${b.kind==='source'?'<span>Reading source · rules and performance reviewed separately</span>':b.book?.blurb?`<span>${esc(b.book.blurb)}</span>`:''}</li>`).join('')}</ul>${entries.length>books.length?`<p>${entries.length-books.length} more entries in this author’s library.</p>`:''}
-      <dl class="lc-stats"><div><dt>Library entries</dt><dd>${entryCounts.total}</dd><small>${entryCounts.catalogue} catalogue entries · ${entryCounts.reading} reading sources</small></div><div><dt>Strategies</dt><dd>${gs?.fams??new Set(CAT.filter(v=>v.guru===g.id).map(v=>v.family)).size}</dd></div><div><dt>Available backtests</dt><dd>${gs?.tested??0}</dd><small>${gs?.booksTested??0} books on this selection</small></div>${gs?.best?`<div><dt>Best modeled Sharpe</dt><dd>${fx(gs.best.s.sharpe)}</dd></div>`:''}</dl>
+      <dl class="lc-stats"><div><dt>Library entries</dt><dd>${entryCounts.total}</dd><small>${entryCounts.catalogue} catalogue entries · ${entryCounts.reading} reading sources</small></div><div><dt>Strategies</dt><dd>${gs?.fams??new Set(CAT.filter(v=>v.guru===g.id).map(v=>v.family)).size}</dd></div><div><dt>Available backtests</dt><dd>${gs?.tested??0}</dd><small>${gs?.booksTested??0} books on ${esc(LABEL[gs?.tk]||gs?.tk||S.tk)}</small></div>${gs?.best?`<div><dt>Best modeled Sharpe</dt><dd>${fx(gs.best.s.sharpe)}</dd></div>`:''}</dl>
       ${!gs?.best?'<p class="rnote">No eligible result for a Sharpe comparison on this selection.</p>':''}${gs?.best ? `<p class="gm-tag" style="margin:12px 0 0;font-size:13px">Highest modeled Sharpe on ${esc(LABEL[gs.tk] || gs.tk)}: ${esc(gs.best.v.family_name)}${gs.best.v.variant ? ' · ' + esc(gs.best.v.variant) : ''}</p>` : ''}
-      <div class="gm-foot"><a class="dbtn primary" href="${guruLink(g.id)}" onclick="closeGuru()">Open the vault</a><button type="button" class="dbtn ghost" onclick="closeGuru()">Close</button></div></div></div>`;
+      <div class="gm-foot"><a class="dbtn primary" href="${gs?.href||guruLink(g.id)}" onclick="closeGuru()">Open the vault</a><button type="button" class="dbtn ghost" onclick="closeGuru()">Close</button></div></div></div>`;
   el.addEventListener('click', e => { if (e.target === el) closeGuru(); });
   document.body.appendChild(el); document.body.style.overflow = 'hidden'; el.querySelector('.gm-x').focus();
 };
 window.closeGuru = () => { document.querySelectorAll('.gmodal').forEach(m => m.remove()); document.body.style.overflow = ''; };
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeGuru(); });
 async function heroStats(guru, book) {
-  const tk = S.tk === 'ALL' || S.market !== 'india' ? TICKERS[0].ticker : S.tk, sum = await getSum(tk);
+  const tk = S.tk === 'ALL' || S.market !== 'india' ? TICKERS[0].ticker : S.tk, sum = await getSum(tk,S.from||'',S.to||'');
   const inScope = v => (!guru || v.guru === guru) && (!book || v.book === book);
   const st = CAT.filter(v => v.status === 'live' && inScope(v)).map(v => ({ v, s: sum[v.id]?.stats })).filter(x => TRUST.hasResult(sum[x.v.id]));
   const best = st.filter(x => x.s.trades >= 20 && Number.isFinite(x.s.sharpe)).sort((a, b) => b.s.sharpe - a.s.sharpe)[0];
@@ -1223,7 +1226,7 @@ function libraryBookResults(records){
   const found=VaultLibraryBrowser.search(records,{query:S.library_q,category:S.book_category,sort:S.library_sort}),page=Math.max(1,Math.min(Math.ceil(found.length/24)||1,+S.library_page||1)),start=(page-1)*24;
   return `<div class="library-result-count"><h2 class="section-h">Books &amp; reading sources</h2><span>${found.length} indexed entries${S.library_q?` matching “${esc(S.library_q)}”`:''}</span></div>${found.length?`<div class="library-book-grid">${found.slice(start,start+24).map(libraryBookCard).join('')}</div>${libraryPagination(found.length,page,'library_page','books')}`:libraryEmpty()}`;
 }
-function libraryBookCard(record){const b=record.book||record.source||record,link=record.kind==='catalogue'?href('/guru/'+record.authorId,{view:'grid',book:record.id,tk:S.tk,basket:S.basket}):href('/source/'+encodeURIComponent(record.id),{guru:record.authorId}),isRule=record.categories.includes('rule-based');return `<article class="library-book" data-library-book="${esc(record.id)}"><span class="library-book-kind">${record.kind==='catalogue'?'Catalogue book entry':'Reading source · identity review'}</span><p class="library-book-author">${esc(record.kind==='source'&&record.source?.author_metadata&&record.source.author_metadata!=='?'?record.source.author_metadata+' · '+record.authorName:record.authorName)}</p><h3><a href="${link}">${esc(record.title)}</a></h3>${categoryTags(b,record.kind)}<p class="library-book-summary">${esc(record.kind==='catalogue'?readingSummary(record.author||GURU[record.authorId],b):b.summary||'Original reading material indexed from the source vault. Content and objective rules still need review.')}</p><div class="library-book-foot"><span>${record.year||'Edition year unconfirmed'}</span><a href="${link}">${isRule&&b.live?'Open book & rules':'Open reading page'} <span aria-hidden="true">↗</span></a></div></article>`;}
+function libraryBookCard(record){const b=record.book||record.source||record,link=record.kind==='catalogue'?href('/guru/'+record.authorId,{view:'grid',book:record.id,tk:S.tk,basket:S.basket,from:S.from,to:S.to}):href('/source/'+encodeURIComponent(record.id),{guru:record.authorId}),isRule=record.categories.includes('rule-based');return `<article class="library-book" data-library-book="${esc(record.id)}"><span class="library-book-kind">${record.kind==='catalogue'?'Catalogue book entry':'Reading source · identity review'}</span><p class="library-book-author">${esc(record.kind==='source'&&record.source?.author_metadata&&record.source.author_metadata!=='?'?record.source.author_metadata+' · '+record.authorName:record.authorName)}</p><h3><a href="${link}">${esc(record.title)}</a></h3>${categoryTags(b,record.kind)}<p class="library-book-summary">${esc(record.kind==='catalogue'?readingSummary(record.author||GURU[record.authorId],b):b.summary||'Original reading material indexed from the source vault. Content and objective rules still need review.')}</p><div class="library-book-foot"><span>${record.year||'Edition year unconfirmed'}</span><a href="${link}">${isRule&&b.live?'Open book & rules':'Open reading page'} <span aria-hidden="true">↗</span></a></div></article>`;}
 function readingBookPage(g,b,source=null){if(!g||!b)return '<div class="empty"><b>Reading entry unavailable</b>This source is not in the current index.</div>';const title=b.title||'Reading source',sources=source?[source]:bookSources(g,b),links=sourcePdfLinks(sources),credit=b.author_credit||source?.source_identity?.credit||source?.author_metadata||(source?(b.source_author&&b.source_author!=='?'?`Recorded source author: ${b.source_author}`:'Individual author unconfirmed'):g.name);return `<nav class="crumbs"><a href="#/">Guru’s</a><span>/</span>${GURU[g.id]?`<a href="${guruLink(g.id)}">${esc(g.name)}</a>`:`<span>${esc(g.name)}</span>`}<span>/</span><span>${esc(title)}</span></nav><section class="box reading-page" data-reading-page="${esc(b.id)}"><div class="reading-book-cover" aria-hidden="true"><span>${esc(credit)}</span><strong>${esc(title)}</strong><small>${source?(source.source_identity?.year||'Source edition unconfirmed'):bookYear(b)}</small></div><div class="reading-book-copy"><span class="olabel">Reading library</span><h1>${esc(title)}</h1><p class="reading-credit">${esc(credit)} · ${source?(source.source_identity?.year||'Edition year unconfirmed'):bookYear(b)}</p>${categoryTags(b,source?'source':'catalogue')}<p class="lede">${esc(source?b.summary||'This reading source is indexed from the vault. A detailed content summary and mechanical rule review are still pending.':readingSummary(g,b))}</p><div class="reading-status"><strong>Read the source</strong><p>${g.id==='pristine'?'Complete entry, exit, management and execution rules have not yet been independently reviewed.':'This page is for reading and source review. Topic classification does not establish a backtested trading system.'} No performance figures are attributed to this reading entry.</p></div>${b.publisher_source?`<p><a class="olink" href="${esc(b.publisher_source)}" target="_blank" rel="noopener">Publisher’s book record</a></p>`:''}${links||'<p class="rnote">Data missing: a verified local reading copy is not available for this entry.</p>'}</div></section>${readingReviewHTML(source||bookSources(g,b).find(x=>x.review))}${source?`<section class="box"><div class="box-h">Source record</div><p>${esc(source.count_basis||'An indexed source-title candidate, not a certified count of distinct authored books.')}</p><ul>${(source.files||[]).map(f=>`<li>${esc(f.filename)}</li>`).join('')}</ul></section>`:''}`;}
 function sourceReadingPage(){const record=libraryRecords().find(r=>r.kind==='source'&&r.id===R.id),indexed=SOURCE_ROW_BY_ID.get(R.id);return record?readingBookPage(record.author||{id:record.authorId,name:record.authorName},record.source,record.source):indexed?readingBookPage(indexed.author,indexed.source,indexed.source):'<div class="empty"><b>Reading source unavailable</b>This source is not in the current index.</div>';}
 
@@ -1320,6 +1323,7 @@ async function viewList() {
       <section class="ghero"><div class="guilloche" aria-hidden="true">${GUILL}</div><div class="ghero-copy"><h1>${esc(b ? b.title : g.name)}</h1><p class="lede">${esc(b ? `${g.name} · ${bookYear(b)}` : api?.tagline || g.tagline || 'Reading library · objective strategy review pending')}</p><p class="gbook">${esc(b ? (b.blurb || BOOK_BLURB[b.id] || '') : g.books.filter(x => x.live).map(x => `${x.title} (${bookYear(x)})`).join(' · '))}</p></div><figure class="guru-portrait"><div class="portrait ${g.id==='ross'?'portrait-ross':''}">${pframe(g)}</div>${g.photoSource?`<figcaption class="photo-credit">Photo: <a href="${esc(g.photoSource)}" target="_blank" rel="noopener noreferrer">Trading Educators</a></figcaption>`:''}</figure></section>
       ${g.id==='ross'?`<dl class="lstrip" data-source-counts><div><dt>Source methods</dt><dd>${h.fams}</dd></div><div><dt>Directional references</dt><dd>${CAT.filter(v=>v.guru==='ross'&&(!b||v.book===b.id)).length}</dd></div><div><dt>Implemented backtests</dt><dd>0</dd></div><div><dt>Requirements</dt><dd style="font-size:16px">Data missing · Rules unresolved</dd></div></dl>`:g.books.some(x => x.live) ? `<dl class="lstrip"><div><dt>${b ? `Strategies in the ${b.id === 'stc9' ? 'course' : 'book'}` : `Strategies across ${g.books.filter(x => x.live).length} books`}</dt><dd data-count="${h.fams}">${h.fams}</dd></div><div><dt>Rule variants tested on ${esc(LABEL[h.tk])}</dt><dd data-count="${h.variants}">${h.variants}</dd></div><div><dt>Variants with t ≥ 2</dt><dd data-count="${h.sig}">${h.sig}</dd></div>${h.best?`<div><dt>Best modeled Sharpe (20+ trades)</dt><dd>${fx(h.best.s.sharpe)}</dd></div>`:''}</dl>` : ''}`;
   } else head = `<nav class="crumbs"><a href="#/">Guru's</a><span>/</span><span>All strategies</span></nav><section class="ahero"><h1>All strategies</h1><p class="lede">Explore the catalogued book rules on the selected India or US instrument. Available backtests and unavailable strategies are listed separately; book figures are reference claims.</p></section>`;
+  if(S.from||S.to)head+=`<p class="rnote" data-list-period><b>Selected results period:</b> ${esc(S.from||'First available bar')} to ${esc(S.to||'Latest available bar')}. Top Sharpe results and linked backtests use this window.</p>`;
   if(R.name==='guru' && R.id==='chande' && S.book) head+=experimentNotice({guru:'chande'},null);
   if(R.name==='guru' && S.book) head+=readingReviewHTML(bookSources(GURU[R.id],BOOK[S.book]).find(x=>x.review));
   if(R.name==='guru'&&S.book&&!BOOK[S.book]?.live)return readingBookPage(GURU[R.id],BOOK[S.book]);
@@ -1346,7 +1350,7 @@ async function bookShelf(g) {
         ${g.id==='ross'?'<p><b>Data missing · Rules unresolved</b></p>':`<dl class="bc-stats"><div><dt>Rule variants</dt><dd>${h.variants}</dd></div><div><dt>Significant (t ≥ 2)</dt><dd>${h.sig}</dd></div>${h.best?`<div><dt>Best modeled Sharpe</dt><dd>${fx(h.best.s.sharpe)}</dd></div>`:''}</dl>`}
         ${h.best ? `<p class="bc-top">Highest modeled Sharpe: <b>${esc(h.best.v.family_name)}</b>${h.best.v.variant ? ' · ' + esc(h.best.v.variant) : ''}</p>` : ''}
         ${sourcePdfLinks(bookSources(g,b))}${bookSources(g,b).find(x=>x.review)?`<a class="dbtn sm" href="${href('/source/'+bookSources(g,b).find(x=>x.review).id,{guru:g.id,tk:S.tk,basket:S.basket})}">Read content review</a>`:''}<span class="dbtn primary sm">Open book</span></div></article>`
-      : `<article class="bookcard pv" data-book="${b.id}" role="button" tabindex="0">${cover(b, false)}<div class="bc-body"><span class="olabel">${bookYear(b)} · Reading material</span><h3>${esc(b.title)}</h3><p class="bc-blurb">${esc(readingSummary(g,b))}</p>${categoryTags(b)}${sourcePdfLinks(bookSources(g,b))}<a class="dbtn sm" href="${href('/guru/'+g.id,{view:'grid',book:b.id,tk:S.tk,basket:S.basket})}">Open reading page</a></div></article>`; }).join('')}</div>${sourceBookShelf(g)}`;
+      : `<article class="bookcard pv" data-book="${b.id}" role="button" tabindex="0">${cover(b, false)}<div class="bc-body"><span class="olabel">${bookYear(b)} · Reading material</span><h3>${esc(b.title)}</h3><p class="bc-blurb">${esc(readingSummary(g,b))}</p>${categoryTags(b)}${sourcePdfLinks(bookSources(g,b))}<a class="dbtn sm" href="${href('/guru/'+g.id,{view:'grid',book:b.id,tk:S.tk,basket:S.basket,from:S.from,to:S.to})}">Open reading page</a></div></article>`; }).join('')}</div>${sourceBookShelf(g)}`;
 }
 const BOOK_BLURB = { stc9: 'TradingMarkets Swing Trading College IX (2010) · 14 sessions: the 4 Keys, R3, TPS, 5x5x5, H10 and the market-timing rules (RSI, DMI, %b, VIX, end of month).' };
 
@@ -1406,7 +1410,7 @@ async function viewStrategy() {
   if (v) bookCtx(v.book);
   if (!v) return `<nav class="crumbs"><a href="#/">Guru's</a></nav><div class="empty"><b>This strategy is not in the vault</b>The link may be old.</div>`;
   const g = GURU[v.guru], b = BOOK[v.book], fam = CAT.filter(x => x.family === v.family), tk = S.tk === 'ALL' ? TICKERS[0].ticker : S.tk;
-  const crumbs = `<nav class="crumbs"><a href="#/">Guru's</a><span>/</span><a href="${guruLink(g.id)}">${esc(g.name)}</a><span>/</span><a href="${href('/guru/' + g.id, {view:'grid',book:b.id,tk:S.tk,basket:S.basket})}">${esc(b.title)}</a><span>/</span><span>${esc(v.family_name)}</span><a class="back" href="${LIST_HASH || guruLink(g.id)}">Back to strategies</a></nav>`;
+  const crumbs = `<nav class="crumbs"><a href="#/">Guru's</a><span>/</span><a href="${guruLink(g.id)}">${esc(g.name)}</a><span>/</span><a href="${href('/guru/' + g.id, {view:'grid',book:b.id,tk:S.tk,basket:S.basket,from:S.from,to:S.to})}">${esc(b.title)}</a><span>/</span><span>${esc(v.family_name)}</span><a class="back" href="${LIST_HASH || guruLink(g.id)}">Back to strategies</a></nav>`;
   const switches = marketControls(v,tk);
   const selectedBasket=BASKETS.find(b=>b.id===S.basket);
   if(S.basket&&(!['ready','partial'].includes(selectedBasket?.price_status)||!selectedBasket.symbols.includes(tk)))return withheldStrategy(v,tk,crumbs,switches,{status:'needs_data',note:selectedBasket?.note||'Data missing: verified constituent prices and universe coverage for this basket are not available. Index prices cannot substitute for basket constituents.'});
@@ -1618,6 +1622,7 @@ async function render() {
       else html=R.name==='saved'?viewSaved():R.name==='strategy'?await viewStrategy():await viewList();
     }
     if(my!==busy)return;
+    if(home)HOME_STATS=home.authorStats;
     cleanupCharts();
     const focus=document.activeElement?.id,pos=document.activeElement?.selectionStart;
     pendingFocus={id:focus,pos};
@@ -1654,9 +1659,9 @@ document.addEventListener('click', e => {
   if (d.set != null) return setState(Object.fromEntries(new URLSearchParams(d.set)));
   if (d.fam) return setState({ family: d.fam, mode: 'variants' });
   if (d.sort) return setState({ sort: d.sort });
-  if (d.book) return go('/guru/' + BOOK[d.book].guru.id, {view:'grid',book:d.book,tk:S.tk,basket:S.basket, ...(BOOK[d.book].guru.id==='ross'?{tab:'awaiting'}:{}) });
-  if (d.guru) return go('/guru/'+d.guru,{view:'grid',tk:S.tk,basket:S.basket});
-  if (d.guruStrats) return go('/guru/'+d.guruStrats,{view:'grid',tk:S.tk,basket:S.basket});
+  if (d.book) return go('/guru/' + BOOK[d.book].guru.id, {view:'grid',book:d.book,tk:S.tk,basket:S.basket,from:S.from,to:S.to, ...(BOOK[d.book].guru.id==='ross'?{tab:'awaiting'}:{}) });
+  if (d.guru) return go('/guru/'+d.guru,{view:'grid',tk:S.tk,basket:S.basket,from:S.from,to:S.to});
+  if (d.guruStrats) return go('/guru/'+d.guruStrats,{view:'grid',tk:S.tk,basket:S.basket,from:S.from,to:S.to});
 });
 document.addEventListener('submit', e => { if(e.target.id==='library-search-form'){e.preventDefault();return setState({library_q:document.getElementById('library-query').value.trim(),library_limit:'24',library_page:'1',source_page:'1'});}if (e.target.id !== 'period') return; e.preventDefault();
   const fd = new FormData(e.target), t = TICKERS.find(x => x.ticker === (S.tk === 'ALL' ? TICKERS[0].ticker : S.tk)), from = fd.get('from'), to = fd.get('to'), cost = '0',slippage=String(Math.max(0,+fd.get('slippage')||0)),rollover=String(Math.max(0,+fd.get('rollover')||0));
@@ -1699,27 +1704,43 @@ async function initializeRuntime(account) {
 
 
 async function homeModel(){
- const h=await heroStats(),readiness=await getReadiness(h.tk),inventoryRecords=libraryRecords(),allRecords=inventoryRecords.filter(record=>inLibraryScope(libraryScope(record,CURATED_AUTHOR_IDS),S.library_scope)),scopeAuthorIds=new Set(allRecords.map(record=>record.authorId)),scopeAuthors=LIB.filter(author=>scopeAuthorIds.has(author.id)),authors=VaultLibraryBrowser.matchingAuthors(scopeAuthors,allRecords,S.library_q,S.book_category),live=LIB.filter(g=>g.books.some(b=>b.live));
- const scoped=Object.fromEntries(await Promise.all(live.map(async g=>[g.id,await heroStats(g.id)])));HOME_STATS=scoped;
- const summary=await getSum(h.tk),states=Object.fromEntries(LIB.map(g=>[g.id,VaultLibraryDiscovery.authorAvailability(g.books.map(b=>b.id),CAT,summary,readiness)]));
+ const h=await heroStats(),readiness=await getReadiness(h.tk,S.from||'',S.to||''),inventoryRecords=libraryRecords(),allRecords=inventoryRecords.filter(record=>inLibraryScope(libraryScope(record,CURATED_AUTHOR_IDS),S.library_scope)),scopeAuthorIds=new Set(allRecords.map(record=>record.authorId)),scopeAuthors=LIB.filter(author=>scopeAuthorIds.has(author.id)),authors=VaultLibraryBrowser.matchingAuthors(scopeAuthors,allRecords,S.library_q,S.book_category),live=LIB.filter(g=>g.books.some(b=>b.live));
+ const scoped=Object.fromEntries(await Promise.all(live.map(async g=>[g.id,await heroStats(g.id)])));
+ const summary=await getSum(h.tk,S.from||'',S.to||''),states=Object.fromEntries(LIB.map(g=>[g.id,VaultLibraryDiscovery.authorAvailability(g.books.map(b=>b.id),CAT,summary,readiness)]));
  if(states.pristine){states.pristine.title='Rule review pending';states.pristine.text='Original Pristine books are readable. Complete trading rules and execution assumptions still need review; no verified strategy is registered.';}
  const scopedRecords=groupBy(allRecords,record=>record.authorId),scopeCounts=new Map([...scopedRecords].map(([id,records])=>[id,{total:records.length,catalogue:records.filter(record=>record.kind==='catalogue').length,reading:records.filter(record=>record.kind==='source').length}]));
- const ids=new Set(live.map(g=>g.id)),positions=new Map(LIB.map((g,i)=>[g.id,i]));let list=[...authors];
- if(S.library_sort==='name'||S.library_sort==='name-desc')list.sort((a,b)=>a.name.localeCompare(b.name)*(S.library_sort==='name'?1:-1));
- else if(S.library_sort==='books')list.sort((a,b)=>(scopeCounts.get(b.id)?.total||0)-(scopeCounts.get(a.id)?.total||0)||a.name.localeCompare(b.name));
- else if(S.library_sort==='available')list.sort((a,b)=>(scoped[b.id]?.tested||0)-(scoped[a.id]?.tested||0)||a.name.localeCompare(b.name));
- else list.sort((a,b)=>Number(ids.has(b.id))-Number(ids.has(a.id))||positions.get(a.id)-positions.get(b.id));
+ const pool=S.region==='us'?TICK_ALL_US:TICK_ALL_IN,etfs=S.region==='us'?TICK_ALL_US.filter(t=>['SPY','QQQ','MDY','IWM','SMH','DIA'].includes(t.ticker)):[];
+ const selected={region:S.region,tk:h.tk,basket:S.basket,label:LABEL[h.tk]||h.tk,kind:S.basket?'stock':etfs.some(t=>t.ticker===h.tk)?'ETF':'index',from:S.from||'',to:S.to||''};
+ // Discover compatible measured results on at most one stock and one ETF.
+ // This never runs an entire basket or treats admissions as backtest results.
+ const references=[];
+ if(S.library_view!=='books'&&authors.some(g=>!states[g.id].availableFamilies&&CAT.some(v=>v.guru===g.id&&v.status==='live'&&v.instrument_policy?.allowed_types?.some(type=>['individual_stock','etf'].includes(type))))) {
+  for(const context of referenceBacktestContexts(S.region,BASKETS,pool,etfs)) {
+   try {const sample=await getSum(context.tk,context.from,context.to),ready=await getReadiness(context.tk,context.from,context.to);references.push({context,summary:sample,readiness:ready});}
+   catch { /* No successful measured summary: leave the selected context honest. */ }
+  }
+ }
+ const contexts=Object.fromEntries(authors.map(g=>{
+  const selectedResult={context:selected,availability:states[g.id],summary,readiness};
+  const alternatives=references.map(sample=>({...sample,availability:VaultLibraryDiscovery.authorAvailability(g.books.map(b=>b.id),CAT,sample.summary,sample.readiness)}));
+  return [g.id,chooseBacktestContext(selectedResult,alternatives)];
+ }));
+ const list=orderAuthors(authors,{sort:S.library_sort,counts:Object.fromEntries([...scopeCounts].map(([id,c])=>[id,c.total])),availability:Object.fromEntries(Object.entries(contexts).map(([id,c])=>[id,c.availability])),positions:Object.fromEntries(LIB.map((g,i)=>[g.id,i]))});
  const books=S.library_view==='books'?VaultLibraryBrowser.search(allRecords,{query:S.library_q,category:S.book_category,sort:S.library_sort}):[];
  const total=S.library_view==='books'?books.length:list.length,pages=Math.max(1,Math.ceil(total/24)),page=Math.max(1,Math.min(pages,+S.library_page||1)),offset=(page-1)*24;
  const authorCards=list.slice(offset,offset+24).map(g=>{
-  const counts=scopeCounts.get(g.id)||{total:0,catalogue:0,reading:0},state=states[g.id],gs=scoped[g.id],matching=VaultLibraryBrowser.search(scopedRecords.get(g.id)||[],{query:S.library_q,category:S.book_category});
+  const counts=scopeCounts.get(g.id)||{total:0,catalogue:0,reading:0},result=contexts[g.id],state=result.availability,context=result.context,changed=context!==selected,matching=VaultLibraryBrowser.search(scopedRecords.get(g.id)||[],{query:S.library_q,category:S.book_category});
   const preview=matching.length?matching.slice(0,2):(g.books.some(b=>b.live)?g.books.filter(b=>b.live):g.books).slice(0,2);
-  return {id:g.id,curated:CURATED_AUTHOR_IDS.has(g.id),name:['?','unknown','anonymous'].includes(g.name?.trim().toLowerCase())?'Source credit awaiting review':g.name,href:href('/guru/'+g.id,{view:'grid',book_category:S.book_category,tk:S.tk,basket:S.basket}),photo:photoOf(g),initials:initials(g.name),tagline:gTag(g),preview:preview.map(b=>b.title).join(' · ')+(matching.length>2?` · +${matching.length-2} more`:''),entries:counts.total,catalogue:counts.catalogue,reading:counts.reading,families:gs?.fams??new Set(CAT.filter(v=>v.guru===g.id).map(v=>v.family)).size,available:state.availableFamilies,status:state.status,statusTitle:state.title,statusText:state.text,sharpe:gs?.best&&Number.isFinite(gs.best.s.sharpe)?fx(gs.best.s.sharpe):null};
+  const availableIDs=new Set(state.variantReasons.filter(v=>v.status==='available').map(v=>v.id));
+  const best=CAT.filter(v=>v.guru===g.id&&availableIDs.has(v.id)).map(v=>({v,s:result.summary[v.id]?.stats})).filter(row=>TRUST.hasResult(result.summary[row.v.id])&&row.s.trades>=20&&Number.isFinite(row.s.sharpe)).sort((a,b)=>b.s.sharpe-a.s.sharpe)[0];
+  const link=href('/guru/'+g.id,{view:'grid',book:'',book_category:S.book_category,region:context.region,tk:context.tk,basket:context.basket,from:context.from,to:context.to,tab:'sharpe'});
+  scoped[g.id]={...scoped[g.id],tk:context.tk,tested:state.availableFamilies,booksTested:new Set(state.variantReasons.filter(v=>v.status==='available').map(v=>v.book)).size,best,href:link};
+  return {id:g.id,curated:CURATED_AUTHOR_IDS.has(g.id),name:['?','unknown','anonymous'].includes(g.name?.trim().toLowerCase())?'Source credit awaiting review':g.name,href:link,photo:photoOf(g),initials:initials(g.name),tagline:gTag(g),preview:preview.map(b=>b.title).join(' · ')+(matching.length>2?` · +${matching.length-2} more`:''),entries:counts.total,catalogue:counts.catalogue,reading:counts.reading,families:state.familyCount,available:state.availableFamilies,availableContext:state.availableFamilies?`${context.label} · ${context.kind} · ${context.region==='us'?'US':'India'}${context.from||context.to?' · '+(context.from||'First available bar')+' to '+(context.to||'Latest available bar'):''}`:undefined,contextChanged:changed,openLabel:changed?`Open ${context.kind} backtests`:'Open the vault',status:state.status,statusTitle:state.title,statusText:state.text,sharpe:best?fx(best.s.sharpe):null};
  });
- const bookCards=books.slice(offset,offset+24).map(record=>{const b=record.book||record.source||record;return {id:record.id,kind:record.kind,title:record.title,author:record.kind==='source'&&record.source?.author_metadata&&record.source.author_metadata!=='?'?record.source.author_metadata+' · '+record.authorName:record.authorName,summary:record.kind==='catalogue'?readingSummary(record.author||GURU[record.authorId],b):b.summary||'Original reading material indexed from the source vault. Content and objective rules still need review.',year:String(record.year||'Edition year unconfirmed'),scope:libraryScope(record,CURATED_AUTHOR_IDS),categories:libraryScope(record,CURATED_AUTHOR_IDS)==='trading'?record.categories:[],href:record.kind==='catalogue'?href('/guru/'+record.authorId,{view:'grid',book:record.id,tk:S.tk,basket:S.basket}):href('/source/'+encodeURIComponent(record.id),{guru:record.authorId}),live:!!b.live};});
+ const bookCards=books.slice(offset,offset+24).map(record=>{const b=record.book||record.source||record;return {id:record.id,kind:record.kind,title:record.title,author:record.kind==='source'&&record.source?.author_metadata&&record.source.author_metadata!=='?'?record.source.author_metadata+' · '+record.authorName:record.authorName,summary:record.kind==='catalogue'?readingSummary(record.author||GURU[record.authorId],b):b.summary||'Original reading material indexed from the source vault. Content and objective rules still need review.',year:String(record.year||'Edition year unconfirmed'),scope:libraryScope(record,CURATED_AUTHOR_IDS),categories:libraryScope(record,CURATED_AUTHOR_IDS)==='trading'?record.categories:[],href:record.kind==='catalogue'?href('/guru/'+record.authorId,{view:'grid',book:record.id,tk:S.tk,basket:S.basket,from:S.from,to:S.to}):href('/source/'+encodeURIComponent(record.id),{guru:record.authorId}),live:!!b.live};});
  const indices=S.region==='us'?TICK_US:TICK_IN;
  const enabled=ALLCAT.filter(variant=>variant.status==='live');
- return {market:libraryMarket(S),implementedMethods:new Set(enabled.map(variant=>variant.book+':'+variant.family)).size,enabledVariants:enabled.length,implementedBooks:new Set(enabled.map(variant=>variant.book)).size,authors:scopeAuthorIds.size,curatedAuthors:CURATED_AUTHOR_IDS.size,scope:S.library_scope,inventoryGroups:LIB.length,inventoryEntries:inventoryRecords.length,entries:allRecords.length,families:h.tested,symbol:LABEL[h.tk]||h.tk,symbolCount:TICKERS.length,basket:!!S.basket,authorCards,bookCards,page:{page,pages,total,key:'library_page',label:S.library_view==='books'?'books':'authors'},query:S.library_q,category:S.book_category,view:S.library_view,indices:(indices||[]).map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),baskets:BASKETS.map(b=>({id:b.id,name:b.name,symbols:b.symbols||[]})),symbols:TICKERS.map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),usAvailable:!!TICK_US,guilloche:GUILL,connorsLink:guruLink('connors'),strategiesLink:href('/strategies',{tk:S.tk,basket:S.basket})};
+ return {authorStats:scoped,market:libraryMarket(S),implementedMethods:new Set(enabled.map(variant=>variant.book+':'+variant.family)).size,enabledVariants:enabled.length,implementedBooks:new Set(enabled.map(variant=>variant.book)).size,authors:scopeAuthorIds.size,curatedAuthors:CURATED_AUTHOR_IDS.size,scope:S.library_scope,inventoryGroups:LIB.length,inventoryEntries:inventoryRecords.length,entries:allRecords.length,families:h.tested,symbol:LABEL[h.tk]||h.tk,symbolCount:TICKERS.length,basket:!!S.basket,authorCards,bookCards,page:{page,pages,total,key:'library_page',label:S.library_view==='books'?'books':'authors'},query:S.library_q,category:S.book_category,view:S.library_view,etfs:etfs.map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),indices:(indices||[]).map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),baskets:BASKETS.map(b=>({id:b.id,name:b.name,symbols:b.symbols||[]})),symbols:TICKERS.map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),usAvailable:!!TICK_US,guilloche:GUILL,connorsLink:guruLink('connors'),strategiesLink:href('/strategies',{tk:S.tk,basket:S.basket})};
 }
 let startup;
 window.VaultRuntime={

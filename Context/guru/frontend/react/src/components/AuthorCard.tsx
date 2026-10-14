@@ -62,12 +62,18 @@ export function AuthorCard({
           <dd>{author.families}</dd>
         </div>
         <div>
-          <dt title="Results on the selected instrument; original book performance is not certified">
+          <dt title={`Measured results on ${author.availableContext || "the selected instrument"}; original book performance is not certified`}>
             Backtests available
           </dt>
           <dd>{author.available}</dd>
         </div>
       </dl>
+      {author.availableContext ? (
+        <p className="lc-result-context" data-backtest-context={author.id}>
+          <strong>{author.availableContext}</strong>
+          {author.contextChanged ? <span>Opens this dataset; no results on the selected test data.</span> : null}
+        </p>
+      ) : null}
       <p className="lc-coverage availability-copy" title={author.statusText}>
         {author.statusText}
       </p>
@@ -85,7 +91,7 @@ export function AuthorCard({
           </span>
         )}
         <b className="lc-open">
-          Open the vault <span aria-hidden="true">↗</span>
+          {author.openLabel || "Open the vault"} <span aria-hidden="true">↗</span>
         </b>
       </div>
     </a>

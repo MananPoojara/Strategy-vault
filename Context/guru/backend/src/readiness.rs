@@ -17,6 +17,19 @@ fn event_column(name: &str) -> bool {
 }
 
 pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -> Option<Issue> {
+    if def.book=="spmt" {
+        if let Some(note)=books::spmt::hold_reason(def.id) {return issue("needs_data",note);}
+    }
+    if def.book=="chbta2" && matches!(def.id,"ch_bta2_ma_stack"|"ch_bta2_65sma_ravi") {
+        if let Some(note)=books::chbta2::validate_reviewed(def.id,p) {return issue("not_testable",note);}
+    }
+    if matches!((def.book,def.id),("ehrs","ehrs_sinetrend")|("ehmd","ehmd_mama")) {
+        let invalid=if def.book=="ehrs" {books::ehrs::validate(def.id,p)} else {books::ehmd::validate(def.id,p)};
+        if let Some(note)=invalid {return issue("not_testable",note);}
+        let mbb=p.get("max_bars_back").copied().unwrap_or(50.) as usize;
+        if from<mbb+5 {return issue("needs_data","The selected Ehlers start lacks actual MaxBarsBack plus CurrentBar>5 warmup. Earlier observed bars must remain loaded; no indicator history is invented.");}
+        if ctx.r.iter().take(from).any(|r| ![r.open,r.high,r.low,r.close].iter().all(|v|v.is_finite()&&*v>0.) || r.low>r.high || r.open<r.low || r.open>r.high || r.close<r.low || r.close>r.high) {return issue("needs_data","Ehlers recursive indicator warmup contains invalid OHLC. No earlier prices are repaired or filled.");}
+    }
     if def.id=="atm00_fourplay" {return issue("calculation_unavailable","Fourplay's source uses fixed100-share legs in a30-stock portfolio and stated starting equity. The current runner substitutes full unit exposure and pyramids above that supported allocation. Stock routing alone cannot establish source sizing, margin or financing; results are withheld until portfolio accounting is validated.");}
     if def.id=="tdperl_rebo" {return issue("needs_data","REBO requires source-supported stop/reversal sequencing. Daily OHLC cannot order both touched stop levels, and the current runner's one-reversal-per-day/skip-both-hit choices are not established by the reviewed source. Intraday execution evidence is required; no modeled path is published as fact.");}
     if def.id=="ss_turtle_soup" {return issue("needs_data","Turtle Soup's recovery entry must follow the new low/high break. The current daily-bar runner uses final extrema to qualify entry and set its stop without establishing that sequence. Intraday or source-supported causal execution data is required.");}
@@ -98,6 +111,18 @@ mod tests {
     }
     fn definition(id: &str) -> StrategyDef { crate::connors::catalogue().into_iter().find(|d| d.id==id).unwrap() }
     #[test]
+    fn spmt_partial_auxiliary_basket_and_inferred_options_exit_stay_held() {
+        let r=rows();let mut ctx=Ctx::new(&r,&r,&r);
+        for name in ["TRIN","ADV","TICK"] {ctx.extra.insert(name.into(),vec![1.0;r.len()]);}
+        for id in ["spmt_multi5","spmt_multi9","spmt_mts","spmt_vix200","spmt_trin_1","spmt_nyse_adv","spmt_tick","spmt_eom_und","spmt_eom_puts","spmt_dt_gapdown"] {
+            assert_eq!(check(&ctx,&definition(id),0,4,&Params::new()).unwrap().status,"needs_data");
+        }
+        // Printed performance mismatch alone is not an executable-rule gap.
+        for id in ["spmt_rsi2_4","spmt_rsi4_25","spmt_rsi_1"] {
+            assert!(check(&ctx,&definition(id),0,4,&Params::new()).is_none());
+        }
+    }
+    #[test]
     fn real_underlying_prices_can_be_backtested() {
         let r=rows();let ctx=Ctx::new(&r,&r,&[]);
         assert!(check(&ctx,&definition("f1a"),0,4,&Params::new()).is_none());
@@ -132,6 +157,19 @@ mod tests {
         assert!(check(&ctx,&def,0,1,&Params::new()).is_none());
     }
     #[test]
+    fn reviewed_chande_rejects_legacy_cash_stops_and_keeps_ntt_held() {
+        let r=rows();let ctx=Ctx::new(&r,&r,&[]);
+        for id in ["ch_bta2_ma_stack","ch_bta2_65sma_ravi"] {
+            let def=definition(id);
+            assert!(check(&ctx,&def,0,4,&Params::new()).is_none());
+            let p=Params::from([("stop_pts".into(),4.)]);
+            assert!(check(&ctx,&def,0,4,&p).unwrap().note.contains("Futures dollar stops"));
+        }
+        for id in ["ch_ntt_vidya_cmo","ch_ntt_to_buy","ch_ntt_to_buy_nse"] {
+            assert!(crate::instrument_policy::check(&definition(id),"NIFTY 50",false).is_some());
+        }
+    }
+    #[test]
     fn volume_is_required_on_each_day_and_prices_must_be_valid() {
         let mut r=rows();r[2].volume=None;let ctx=Ctx::new(&r,&r,&[]);
         let mut def=definition("f1a");def.needs_volume=true;
@@ -146,6 +184,19 @@ mod tests {
         assert!(check(&ctx,&definition("f1a"),0,9,&Params::new()).is_some());
         assert!(check(&ctx,&definition("f1a"),9,10,&Params::new()).is_some());
         assert_eq!(check(&ctx,&definition("oiss_intraday_exit_variant"),0,4,&Params::new()).unwrap().status,"not_testable");
+    }
+    #[test]
+    fn ehlers_exact_ids_require_real_valid_warmup_and_valid_platform_settings() {
+        let mut r:Vec<Row>=(0..100).map(|i|Row{ticker:"AAPL".into(),date:format!("{i:05}"),open:100.,high:101.,low:99.,close:100.,volume:None}).collect();
+        for id in ["ehrs_sinetrend","ehmd_mama"] {
+            let ctx=Ctx::new(&r,&r,&[]);let d=definition(id);
+            assert_eq!(check(&ctx,&d,50,99,&Params::new()).unwrap().status,"needs_data");
+            assert!(check(&ctx,&d,60,99,&Params::new()).is_none());
+            let bad=Params::from([("max_bars_back".into(),50.5)]);
+            assert_eq!(check(&ctx,&d,60,99,&bad).unwrap().status,"not_testable");
+        }
+        r[2].close=f64::NAN;let ctx=Ctx::new(&r,&r,&[]);
+        assert!(check(&ctx,&definition("ehmd_mama"),60,99,&Params::new()).unwrap().note.contains("warmup"));
     }
     #[test]
     fn volatility_data_must_cover_the_period_and_its_internal_days() {

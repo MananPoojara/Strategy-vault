@@ -45,6 +45,9 @@ export interface AuthorCard {
   reading: number;
   families: number;
   available: number;
+  availableContext?: string;
+  contextChanged?: boolean;
+  openLabel?: string;
   status: string;
   statusTitle: string;
   statusText: string;
@@ -72,6 +75,7 @@ export interface HomeModel {
   category: string;
   view: string;
   indices: { ticker: string; name: string }[];
+  etfs?: { ticker: string; name: string }[];
   baskets: { id: string; name: string; symbols: string[] }[];
   symbols: { ticker: string; name: string }[];
   usAvailable: boolean;

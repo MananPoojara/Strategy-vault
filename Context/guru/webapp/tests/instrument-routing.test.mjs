@@ -72,6 +72,17 @@ test('ETF-only links retain actual ETFs and do not offer cash indices', () => {
   }
 });
 
+test('library ETF selectors and Bandy links retain the actual ETF outside a strategy route', () => {
+  for (const path of ['/', '/guru/connors', '/strategies']) {
+    for (const ticker of etfSymbols) {
+      const app = routeHarness(['index'], `#${path}?region=us&tk=${ticker}`);
+      assert.equal(app.S.tk, ticker);
+      assert.ok(app.TICKERS.some(item => item.ticker === 'SPX'));
+      assert.ok(app.TICKERS.some(item => item.ticker === ticker));
+    }
+  }
+});
+
 test('index-only and unresolved policies retain index navigation without claiming ETF compatibility', () => {
   for (const types of [['index'], []]) {
     const app = routeHarness(types, '#/s/reviewed?region=us&tk=QQQ');

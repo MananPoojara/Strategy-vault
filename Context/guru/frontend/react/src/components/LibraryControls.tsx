@@ -13,6 +13,7 @@ export function LibraryControls({
   model: HomeModel;
   state: Record<string, string>;
 }) {
+  const etfs = state.region === "us" ? model.etfs || [] : [];
   const patch = (next: Record<string, string>) =>
     window.VaultRuntime.patch({
       ...next,
@@ -72,7 +73,9 @@ export function LibraryControls({
               patch({ library_sort: event.target.value });
             }}
           >
-            <option value="default">Catalogue order</option>
+            <option value="default">
+              {model.view === "books" ? "Catalogue order" : "Backtests first"}
+            </option>
             <option value="name">
               {model.view === "books" ? "Title" : "Author"} A–Z
             </option>
@@ -177,6 +180,15 @@ export function LibraryControls({
                 </option>
               ))}
             </optgroup>
+            {etfs.length > 0 && (
+              <optgroup label="ETFs">
+                {etfs.map((etf) => (
+                  <option key={etf.ticker} value={`i:${etf.ticker}`}>
+                    {etf.name}
+                  </option>
+                ))}
+              </optgroup>
+            )}
             <optgroup label="Stock baskets — independent symbol">
               {model.baskets.map((basket) => (
                 <option
