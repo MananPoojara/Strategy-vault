@@ -5,8 +5,10 @@ use super::catalogue::{self, Placement};
 use super::json::esc;
 use super::resample::Tf;
 use super::rules::{self, LabError, LABEL};
-use super::series::{self, Cache, Frames};
-use crate::{connors::Ctx, instrument_policy, State};
+use super::series::{self, Cache, Compiled, Frames};
+use super::rules::Spec;
+use super::simulate::simulate;
+use crate::{accounting, connors::Ctx, instrument_policy, trade_validation, State};
 use std::collections::BTreeMap;
 use std::net::TcpStream;
 
@@ -26,6 +28,7 @@ pub fn route(path: &str, st: &State, q: &Query) -> Option<Result<String, LabErro
     let f: fn(&State, &Query) -> Result<String, LabError> = match path {
         "/api/lab/catalogue" => |_, _| Ok(catalogue_json()),
         "/api/lab/series" => series_json,
+        "/api/lab/run" => run_json,
         _ => return None,
     };
     Some(guarded(|| f(st, q)))
@@ -94,6 +97,69 @@ pub fn series_json(st: &State, q: &Query) -> Result<String, LabError> {
     Ok(format!("{{\"label\":\"{LABEL}\",\"instrument\":{instrument},\"id\":\"{}\",\"tf\":\"{:?}\",\"params\":{{{params}}},\"outputs\":{},\"dates\":{},\"series\":{{{}}},\"provenance\":{}}}",
         esc(id), tf, quoted(outputs.iter().copied()), quoted(ctx.r.iter().map(|r| r.date.as_str())), values.join(","), crate::source_provenance(st, q)))
 }
+fn known_type(kind: &str, ticker: &str) -> Result<(), LabError> {
+    if kind == "unknown" { return Err(LabError::NeedsData(format!("{ticker}: instrument type is not established (index, ETF or catalogued stock); no lab result is published"))); }
+    Ok(())
+}
+/// Requested dates must be real and inside admitted coverage; nothing is filled or silently shortened.
+fn window(ctx: &Ctx, q: &Query) -> Result<(usize, usize), LabError> {
+    for key in ["from", "to", "split"] {
+        if q.get(key).is_some_and(|v| !v.is_empty() && !crate::baskets::valid_date(v)) { return Err(LabError::Invalid(format!("{key} must be a valid YYYY-MM-DD date"))); }
+    }
+    let (first, last) = (&ctx.r[0].date, &ctx.r[ctx.r.len() - 1].date);
+    if q.get("from").is_some_and(|f| !f.is_empty() && f < first) { return Err(LabError::NeedsData(format!("from precedes admitted data starting {first}; no earlier prices are filled"))); }
+    if q.get("to").is_some_and(|t| !t.is_empty() && t > last) { return Err(LabError::NeedsData(format!("to exceeds admitted data ending {last}; the range is not silently shortened"))); }
+    let (_, from, to, _) = crate::resolve_context(ctx, q)?;
+    Ok((from, to))
+}
+fn spec_of(q: &Query) -> Result<Spec, LabError> { rules::parse_spec(q.get("spec").ok_or_else(|| LabError::Invalid("spec is required".into()))?) }
+/// execution.cost_bps (saved with a strategy) and the `cost` query must agree; one of them may be absent.
+fn with_spec_cost(q: &Query, spec: &Spec) -> Result<Query, LabError> {
+    let mut q = q.clone();
+    if let Some(c) = spec.cost_bps {
+        match q.get("cost").map(|v| v.parse::<f64>()) {
+            None => { q.insert("cost".into(), c.to_string()); }
+            Some(Ok(v)) if v == c => {}
+            _ => return Err(LabError::Invalid(format!("execution.cost_bps ({c}) differs from the cost query; send one value"))),
+        }
+    }
+    Ok(q)
+}
+fn backtest(ctx: &Ctx, c: &Compiled, d: &Bars, from: usize, to: usize, cost: f64) -> Result<crate::Run, LabError> {
+    let trades = simulate(c, d, from, to);
+    trade_validation::check(&trades, from, to, cost)?;
+    let equity = crate::equity_curve(&ctx.c, &trades, from, to, cost);
+    if equity.iter().any(|v| !v.is_finite() || *v <= 0.) { return Err(LabError::Invalid("calculation_unavailable: nonpositive or nonfinite equity; no result is published".into())); }
+    let bh = (from..=to).map(|k| ctx.c[k] / ctx.c[from]).collect();
+    Ok(crate::Run { trades, from, to, equity, bh })
+}
+
+pub fn run_json(st: &State, q: &Query) -> Result<String, LabError> {
+    let spec = spec_of(q)?;
+    let q = &with_spec_cost(q, &spec)?;
+    let selected = select(st, q)?;
+    let held = selected.context(st);
+    let ctx: &Ctx = &held;
+    let (kind, instrument) = instrument(&selected, &ctx.r[0].ticker);
+    known_type(kind, &ctx.r[0].ticker)?;
+    let (from, to) = window(ctx, q)?;
+    let costs = accounting::Costs::parse(q)?;
+    costs.ensure_rollover()?;
+    let cost = costs.side_rate();
+    let fr = Frames::new(Bars::from_rows(ctx.r));
+    let compiled = series::compile(&spec, &fr, &mut Cache::new())?;
+    let run = backtest(ctx, &compiled, &fr.d, from, to, cost)?;
+    let gross = crate::Run { trades: run.trades.clone(), from, to, equity: crate::equity_curve(&ctx.c, &run.trades, from, to, 0.), bh: run.bh.clone() };
+    let trades = arr(run.trades.iter().map(|t| format!(
+        "{{\"entry\":\"{}\",\"exit\":\"{}\",\"entry_i\":{},\"exit_i\":{},\"entry_px\":{},\"exit_px\":{},\"ret\":{},\"bars\":{},\"open\":{},\"signal\":\"{}\",\"reason\":\"{}\"}}",
+        ctx.r[t.legs[0].i].date, ctx.r[t.exit_i].date, t.legs[0].i - from, t.exit_i - from, crate::num(t.legs[0].px), crate::num(t.exit_px),
+        crate::num(t.ret(cost)), t.exit_i - t.legs[0].i, t.open, ctx.r[t.signal_i].date, esc(&t.reason))));
+    Ok(format!(
+        "{{\"label\":\"{LABEL}\",\"kind\":\"lab_simulation\",\"instrument\":{instrument},\"from\":\"{}\",\"to\":\"{}\",\"dates\":{},\"close\":{},\"equity\":{},\"gross_equity\":{},\"bh\":{},\"trades\":{trades},\"stats\":{},\"gross_stats\":{},\"costs\":{},\"provenance\":{}}}",
+        ctx.r[from].date, ctx.r[to].date, quoted((from..=to).map(|k| ctx.r[k].date.as_str())), arr((from..=to).map(|k| crate::num(ctx.c[k]))),
+        arr(run.equity.iter().map(|v| crate::num(*v))), arr(gross.equity.iter().map(|v| crate::num(*v))), arr(run.bh.iter().map(|v| crate::num(*v))),
+        crate::stats_json(&crate::financial_stats(ctx, &run, costs)), crate::stats_json(&crate::stats(ctx, &gross, 0.)), costs.json(), crate::source_provenance(st, q)))
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -155,5 +221,43 @@ mod tests {
         query.insert("p.fast".into(), "0".into());
         assert!(series_json(&st, &query).unwrap_err().message().contains("fast must be between"));
         assert_eq!(series_json(&st, &q(&[("id", "close"), ("tf", "Q")])).unwrap_err().message(), "tf must be D, W or M");
+    }
+    #[test] fn run_is_labelled_simulated_and_reuses_book_accounting() {
+        let st = state(400, "SPX", false);
+        let j = run_json(&st, &q(&[("from", "2015-02-01")])).unwrap();
+        assert!(j.starts_with(&format!("{{\"label\":\"{LABEL}\",\"kind\":\"lab_simulation\"")), "{}", &j[..200]);
+        assert!(j.contains("\"instrument\":{\"ticker\":\"SPX\",\"type\":\"index\",\"native\":false,\"market\":\"us\",\"currency\":\"USD\"}"));
+        assert!(j.contains("\"reason\":\"exit.any[0]: bars_held >= 3\"") && j.contains("\"fees_bps\":5"));
+        let v = crate::lab::json::parse(&j).unwrap();
+        assert!(v.get("stats").and_then(|s| s.get("trades")).and_then(|t| t.as_f64()).unwrap() > 5.);
+        assert!(!j.contains("\"gate\"") && !j.contains("\"claim\"") && !j.contains("\"readiness\""));
+    }
+    #[test] fn errors_are_typed_and_name_the_problem() {
+        let st = state(400, "SPX", false);
+        let cases: Vec<(Query, &str, &str)> = vec![
+            (q(&[("spec", "{")]), "invalid", "not valid JSON"),
+            (q(&[("ticker", "NOPE")]), "invalid", "unknown ticker NOPE"),
+            (q(&[("from", "2014-01-01")]), "needs_data", "precedes admitted data"),
+            (q(&[("to", "2031-01-01")]), "needs_data", "exceeds admitted data"),
+            (q(&[("from", "2015-02-30")]), "invalid", "valid YYYY-MM-DD"),
+            (q(&[("rollover", "4")]), "needs_data", "contract"),
+            (q(&[("spec", &SPEC.replace("\"close\"},\"op\"", "\"obv\"},\"op\""))]), "needs_data", "needs volume"),
+            (q(&[("spec", &SPEC.replace("\"v\":1,", "\"v\":1,\"execution\":{\"cost_bps\":9},"))]), "invalid", "differs from the cost query"),
+        ];
+        for (query, status, needle) in cases {
+            let e = run_json(&st, &query).unwrap_err();
+            assert_eq!(e.status(), status, "{e:?}");
+            assert!(e.message().contains(needle), "{needle:?} not in {:?}", e.message());
+        }
+        let unknown = state(400, "MYSTERY", false);
+        assert_eq!(run_json(&unknown, &q(&[("ticker", "MYSTERY")])).unwrap_err().status(), "needs_data");
+    }
+    #[test] fn degenerate_windows_are_errors_not_panics() {
+        let st = state(400, "SPX", false);
+        for (f, t) in [("2015-03-01", "2015-03-01"), ("2015-03-01", "2015-02-01"), ("2015-03-01", "2015-03-02")] {
+            let r = guarded(|| run_json(&st, &q(&[("from", f), ("to", t)])));
+            assert!(r.is_err() || r.is_ok(), "never unwinds");
+            if let Err(e) = r { assert_ne!(e.message(), "internal error while evaluating this request; no result is published"); }
+        }
     }
 }
