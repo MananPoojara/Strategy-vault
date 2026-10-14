@@ -15,3 +15,5 @@ pub mod volatility;
 pub mod volume;
 #[cfg(test)]
 pub mod testdata;
+#[cfg(test)]
+pub mod parity;
