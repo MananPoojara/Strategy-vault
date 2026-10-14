@@ -6,6 +6,7 @@
 pub mod api;
 pub mod bars;
 pub mod catalogue;
+pub mod fidelity;
 pub mod json;
 pub mod markets;
 pub mod ma;
