@@ -36,7 +36,7 @@ CSV files kept outside Git; without them the parity test passes and prints "skip
 | mcginley | length=14 | mg |
 | rsi | length=14 | rsi |
 | macd | fast=12, slow=26, signal=9 | macd, signal, hist |
-| stoch | k=14, smooth_k=1, d=3 | k, d |
+| stoch | k=14, smooth_k=1, d=3, variant=0 | k, d |
 | stochrsi | k=3, d=3, rsi_length=14, stoch_length=14 | k, d |
 | breadth | - | advances, declines, unchanged, adv_volume, dec_volume, unch_volume |
 | adl | - | adl |
@@ -166,7 +166,7 @@ CSV files kept outside Git; without them the parity test passes and prints "skip
 | uo | fast=7, mid=14, slow=28 | uo |
 | ao | fast=5, slow=34 | ao |
 | ppo | fast=12, slow=26, signal=9 | ppo, signal, hist |
-| trix | length=18 | trix |
+| trix | length=18, variant=0 | trix |
 | tech_ratings | — | ma, osc, all |
 | kst | roc1=10, roc2=15, roc3=20, roc4=30, sma1=10, sma2=10, sma3=10, sma4=15, signal=9 | kst, signal |
 | dpo | length=21 | dpo |

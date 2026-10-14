@@ -1,6 +1,6 @@
 //! Momentum / oscillator family (TradingView built-ins).
 use super::bars::Bars;
-use super::catalogue::{len, n, IndicatorDef, Needs, Output, ParamSpec, Params, Placement};
+use super::catalogue::{int, len, n, p, IndicatorDef, Needs, Output, ParamSpec, Params, Placement};
 use super::ta::{self, NA};
 
 const CAT: &str = "Momentum";
@@ -33,8 +33,11 @@ fn macd(b: &Bars, prm: &Params) -> Output { Ok(macd_like(&b.close, n(prm, "fast"
 fn ppo(b: &Bars, prm: &Params) -> Output { Ok(macd_like(&b.close, n(prm, "fast"), n(prm, "slow"), n(prm, "signal"), true)) }
 fn stoch(b: &Bars, prm: &Params) -> Output {
     let k = n(prm, "k");
-    let raw = stoch_s(&b.close, &ta::highest(&b.high, k), &ta::lowest(&b.low, k));
-    let kk = ta::sma(&raw, n(prm, "smooth_k"));
+    let (hh, ll) = (ta::highest(&b.high, k), ta::lowest(&b.low, k));
+    let kk = if p(prm, "variant") == 1. {
+        let sk = n(prm, "smooth_k");
+        zip(&ta::sum(&zip(&b.close, &ll, |c, l| c - l), sk), &ta::sum(&zip(&hh, &ll, |h, l| h - l), sk), |a, d| div(100. * a, d))
+    } else { ta::sma(&stoch_s(&b.close, &hh, &ll), n(prm, "smooth_k")) };
     let d = ta::sma(&kk, n(prm, "d"));
     Ok(vec![kk, d])
 }
@@ -97,6 +100,10 @@ fn ao(b: &Bars, prm: &Params) -> Output {
 }
 fn trix(b: &Bars, prm: &Params) -> Output {
     let l = n(prm, "length");
+    if p(prm, "variant") == 1. {
+        let e = ta::ema(&ta::ema(&ta::ema(&b.close, l), l), l);
+        return Ok(vec![(0..e.len()).map(|i| if i == 0 { NA } else { div(100. * (e[i] - e[i - 1]), e[i - 1]) }).collect()]);
+    }
     let ln: Vec<f64> = b.close.iter().map(|&c| if c > 0. { c.ln() } else { NA }).collect();
     let e = ta::ema(&ta::ema(&ta::ema(&ln, l), l), l);
     Ok(vec![ta::change(&e, 1).iter().map(|d| 10000. * d).collect()])
@@ -168,8 +175,8 @@ const MACD: &[ParamSpec] = &[len("fast", "Fast length", 12.), len("slow", "Slow 
 pub const DEFS: &[IndicatorDef] = &[
     def("rsi", &["rsi"], "Relative Strength Index", LEN14, NO, "up=rma(max(change,0)), dn=rma(max(-change,0)); dn==0 -> 100, up==0 -> 0, else 100-100/(1+up/dn)", &[14], rsi),
     def("macd", &["macd", "signal", "hist"], "MACD", MACD, NO, "macd=ema(close,fast)-ema(close,slow); signal=ema(macd,signal); hist=macd-signal", &[25, 33, 33], macd),
-    def("stoch", &["k", "d"], "Stochastic", &[len("k", "%K length", 14.), len("smooth_k", "%K smoothing", 1.), len("d", "%D smoothing", 3.)], NO,
-        "raw=100*(close-lowest(low,k))/(highest(high,k)-lowest(low,k)) (NaN if range 0); k=sma(raw,smooth_k); d=sma(k,d)", &[13, 15], stoch),
+    def("stoch", &["k", "d"], "Stochastic", &[len("k", "%K length", 14.), len("smooth_k", "%K smoothing", 1.), len("d", "%D smoothing", 3.), int("variant", "Variant (0 TradingView, 1 AmiBroker ratio of sums)", 0., 0., 1.)], NO,
+        "raw=100*(close-lowest(low,k))/(highest(high,k)-lowest(low,k)) (NaN if range 0); k=sma(raw,smooth_k); d=sma(k,d); variant 1 (AmiBroker StochK/StochD, standard ratio-of-sums form; unverified): k = 100·sum(close − lowest(low, k), smooth_k)/sum(highest(high, k) − lowest(low, k), smooth_k); d = sma(k, d)", &[13, 15], stoch),
     def("stochrsi", &["k", "d"], "Stochastic RSI", &[len("k", "%K smoothing", 3.), len("d", "%D smoothing", 3.), len("rsi_length", "RSI length", 14.), len("stoch_length", "Stochastic length", 14.)], NO,
         "r=rsi(close,rsi_length); k=sma(100*(r-lowest(r,s))/(highest(r,s)-lowest(r,s)),k) with highest/lowest window restarting after NaN; d=sma(k,d)", &[17, 19], stochrsi),
     def("cci", &["cci"], "Commodity Channel Index", &[len("length", "Length", 20.)], NO, "(hlc3-sma(hlc3,n))/(0.015*dev(hlc3,n)); dev 0 -> NaN", &[19], cci),
@@ -185,7 +192,7 @@ pub const DEFS: &[IndicatorDef] = &[
         "bp=close-min(low,close[1]); tr=max(high,close[1])-min(low,close[1]); A_k=sum(bp,k)/sum(tr,k); 100*(4*A_fast+2*A_mid+A_slow)/7", &[28], uo),
     def("ao", &["ao"], "Awesome Oscillator", &[len("fast", "Fast length", 5.), len("slow", "Slow length", 34.)], NO, "sma(hl2,fast)-sma(hl2,slow)", &[33], ao),
     def("ppo", &["ppo", "signal", "hist"], "Percentage Price Oscillator", MACD, NO, "100*(ema(close,fast)-ema(close,slow))/ema(close,slow); signal=ema(ppo,signal); hist=ppo-signal", &[25, 33, 33], ppo),
-    def("trix", &["trix"], "TRIX", &[len("length", "Length", 18.)], NO, "10000*change(ema(ema(ema(ln(close),n),n),n))", &[52], trix),
+    def("trix", &["trix"], "TRIX", &[len("length", "Length", 18.), int("variant", "Variant (0 TradingView log ×10000, 1 AmiBroker percent ROC)", 0., 0., 1.)], NO, "10000*change(ema(ema(ema(ln(close),n),n),n)); variant 1 (AmiBroker TRIX, standard form; unverified): 100·(e − e[1])/e[1], e = ema(ema(ema(close, n), n), n) (no log)", &[52], trix),
     def("kst", &["kst", "signal"], "Know Sure Thing", &[len("roc1", "ROC 1", 10.), len("roc2", "ROC 2", 15.), len("roc3", "ROC 3", 20.), len("roc4", "ROC 4", 30.),
         len("sma1", "SMA 1", 10.), len("sma2", "SMA 2", 10.), len("sma3", "SMA 3", 10.), len("sma4", "SMA 4", 15.), len("signal", "Signal length", 9.)], NO,
         "sum_j j*sma(roc(close,roc_j),sma_j), j=1..4; signal=sma(kst,signal)", &[44, 52], kst),
@@ -200,7 +207,7 @@ pub const DEFS: &[IndicatorDef] = &[
 #[cfg(test)]
 mod tests {
     use super::streak;
-    use crate::lab::{catalogue::{run, get, Params}, testdata::{assert_series, from_ohlc}};
+    use crate::lab::{catalogue::{run, get, Params}, testdata::{assert_series, d1, from_ohlc, go, walk}};
     const N: f64 = f64::NAN;
     fn closes(c: &[f64]) -> crate::lab::bars::Bars { from_ohlc(&c.iter().map(|&x| (x, x, x, x)).collect::<Vec<_>>()) }
     fn with(k: &str, v: f64) -> Params { let mut p = Params::new(); p.insert(k.into(), v); p }
@@ -238,5 +245,31 @@ mod tests {
     }
     #[test] fn connors_streak() {
         assert_series(&streak(&[1., 1., 2., 3., 2., 2., 1., 0.5]), &[-1., 0., 1., 2., -1., 0., -1., -2.]);
+    }
+    /// Values captured at the commit before the `variant` parameter existed: the default meaning must never change.
+    #[test] fn defaults_are_pinned_to_pre_variant_values() {
+        let b = walk(1000, 5, true);
+        let at = |id: &str, kv: &[(&str, f64)], o: usize| [20usize, 57, 300, 999].map(|i| go(id, &b, kv)[o][i]);
+        let pin = |got: [f64; 4], want: [f64; 4]| for (g, w) in got.iter().zip(want) { assert!((g.is_nan() && w.is_nan()) || (g - w).abs() < 1e-12, "{g} vs {w}"); };
+        pin(at("stoch", &[], 0), [16.593143227045697, 80.57663186472233, 43.25793326011815, 19.842984755584773]);
+        pin(at("stoch", &[], 1), [10.007393087031415, 68.76198329929049, 47.1421167722645, 34.4545533649469]);
+        pin(at("stoch", &[("smooth_k", 3.)], 0), [10.007393087031415, 68.76198329929049, 47.1421167722645, 34.4545533649469]);
+        pin(at("stoch", &[("smooth_k", 3.)], 1), [8.280758363728102, 65.68237906273644, 46.284972944724665, 38.89603509018648]);
+        pin(at("trix", &[], 0), [f64::NAN, -4.8194953290003895, -41.15304281852694, 2.857914402154549]);
+    }
+    #[test] fn stoch_variant_ab_is_ratio_of_sums() {
+        let o = go("stoch", &d1(), &[("k", 3.), ("smooth_k", 2.), ("d", 2.), ("variant", 1.)]);
+        assert_series(&o[0], &[N, N, N, 66.666666666667, 24.0, 28.846153846154, 71.153846153846, 91.666666666667]);
+        assert_series(&o[1], &[N, N, N, N, 45.333333333333, 26.423076923077, 50.0, 81.410256410256]);
+    }
+    #[test] fn trix_variant_ab_is_percent_roc() {
+        assert_series(&go("trix", &d1(), &[("length", 2.), ("variant", 1.)])[0], &[N, N, N, N, -3.045537340619, -1.317602264472, 2.716080720904, 4.83106113651]);
+    }
+    #[test] fn variant_zero_is_unchanged() {
+        let b = walk(300, 5, true);
+        for id in ["stoch", "trix"] {
+            let (a, z) = (go(id, &b, &[]), go(id, &b, &[("variant", 0.)]));
+            for (x, y) in a.iter().zip(&z) { assert_series(x, y); }
+        }
     }
 }
