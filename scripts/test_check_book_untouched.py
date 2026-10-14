@@ -58,6 +58,18 @@ class BookGuard(unittest.TestCase):
         (self.repo / "Context/guru/backend/src/connors.rs").write_text("fn a() { }\n")
         self.assertTrue(any("connors.rs" in v for v in guard.check(self.repo, "Manan")))
 
+    def test_rename_out_of_protected_path_fails(self):
+        src = self.repo / "Context/guru/backend/src"
+        (src / "lab").mkdir()
+        git(self.repo, "mv", "Context/guru/backend/src/books/x.rs", "Context/guru/backend/src/lab/x.rs")
+        git(self.repo, "commit", "-q", "-m", "rename")
+        self.assertTrue(any("books/x.rs" in v for v in guard.check(self.repo, "Manan")))
+
+    def test_untracked_new_file_in_protected_path_fails(self):
+        p = self.repo / "Context/guru/backend/src/books/new.rs"
+        p.write_text("fn n() {}\n")
+        self.assertTrue(any("books/new.rs" in v for v in guard.check(self.repo, "Manan")))
+
 
 if __name__ == "__main__":
     unittest.main()

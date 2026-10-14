@@ -27,7 +27,10 @@ def git(repo, *args):
 
 def check(repo, base):
     mb = git(repo, "merge-base", base, "HEAD").strip()
-    changed = [p for p in git(repo, "diff", "--name-only", mb).splitlines() if p]
+    # --no-renames: a rename out of a protected path must show the protected source path as deleted.
+    # ls-files --others: untracked new files under protected paths count as changes too.
+    changed = [p for p in git(repo, "diff", "--no-renames", "--name-only", mb).splitlines() if p]
+    changed += [p for p in git(repo, "ls-files", "--others", "--exclude-standard").splitlines() if p]
     problems = [f"protected file changed: {p}" for p in changed if p.startswith(PROTECTED)]
     for path in ADDITIVE_ONLY:
         diff = git(repo, "diff", "-U0", mb, "--", path)
