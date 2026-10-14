@@ -16,9 +16,10 @@ const NONE: &[ParamSpec] = &[];
 const L13: &[ParamSpec] = &[len("length", "Length", 13.)];
 const AC: &[ParamSpec] = &[len("fast", "Fast", 5.), len("slow", "Slow", 34.), len("smooth", "Smoothing", 5.)];
 const PO: &[ParamSpec] = &[len("fast", "Fast", 10.), len("slow", "Slow", 21.), int("exponential", "Exponential (0 SMA, 1 EMA)", 0., 0., 1.)];
-const WC: &[ParamSpec] = &[len("length", "Length", 14.), len("turbo", "Turbo length", 6.)];
+const WC: &[ParamSpec] = &[int("length", "Length", 14., 2., 2000.), int("turbo", "Turbo length", 6., 2., 2000.)]; // length 1: zero mean deviation
 const RM: &[ParamSpec] = &[len("length", "Length", 20.), len("momentum", "Momentum", 5.)];
 const L10: &[ParamSpec] = &[len("length", "Length", 10.)];
+const CG: &[ParamSpec] = &[int("length", "Length", 10., 2., 2000.)]; // length 1: constant −1
 
 fn zip(a: &[f64], b: &[f64], f: impl Fn(f64, f64) -> f64) -> Vec<f64> { a.iter().zip(b).map(|(&x, &y)| f(x, y)).collect() }
 pub(super) fn cci_s(x: &[f64], k: usize) -> Vec<f64> {
@@ -59,11 +60,11 @@ fn cg_osc(b: &Bars, prm: &Params) -> Output {
     let trig = (0..cg.len()).map(|i| if i == 0 { NA } else { cg[i - 1] }).collect();
     Ok(vec![cg, trig])
 }
-const PM: &[ParamSpec] = &[len("length1", "Length 1", 35.), len("length2", "Length 2", 20.), len("signal", "Signal", 10.)];
+const PM: &[ParamSpec] = &[int("length1", "Length 1", 35., 2., 2000.), int("length2", "Length 2", 20., 2., 2000.), len("signal", "Signal", 10.)]; // length 1: smoothing factor 2/1 overshoots
 const SKP: &[ParamSpec] = &[len("signal1", "Signal 1", 100.), len("signal2", "Signal 2", 100.)];
 const SE: &[ParamSpec] = &[len("long", "Long", 20.), len("short", "Short", 5.), len("signal", "Signal", 5.)];
 const SM: &[ParamSpec] = &[len("k", "%K length", 10.), len("d", "%D length", 3.), len("ema", "EMA length", 3.)];
-const RV: &[ParamSpec] = &[len("length", "Length", 10.), len("ema", "EMA length", 14.)];
+const RV: &[ParamSpec] = &[int("length", "Length", 10., 2., 2000.), len("ema", "EMA length", 14.)]; // length 1: zero stdev
 
 fn roc_s(x: &[f64], k: usize) -> Vec<f64> { (0..x.len()).map(|i| if i >= k { div(100. * (x[i] - x[i - k]), x[i - k]) } else { NA }).collect() }
 /// DecisionPoint custom smoothing: SMA seed, then alpha = 2/L (not 2/(L+1)).
@@ -124,7 +125,7 @@ pub const DEFS: &[IndicatorDef] = &[
     def("price_osc", "Price Oscillator", PO, &["po"], PN, NO, "100·(ma(close, fast) − ma(close, slow))/ma(close, slow), ma = sma (ema if exponential = 1; AmiBroker OscP = exponential 1)", &[20], false, price_osc),
     def("woodies_cci", "Woodies CCI", WC, &["cci", "turbo"], PN, NO, "cci of close (not hlc3) over length and over turbo: (close − sma)/(0.015·mean absolute deviation); zero deviation → NaN", &[13, 5], false, woodies_cci),
     def("rmi", "Relative Momentum Index", RM, &["rmi"], PN, NO, "up = max(close − close[m], 0), dn = max(close[m] − close, 0); RSI formula on rma(up, n), rma(dn, n) (dn 0 → 100, up 0 → 0) (AmiBroker RMI; rma seeded as TradingView)", &[24], false, rmi),
-    def("cg_osc", "Center of Gravity (Ehlers)", L10, &["cg", "trigger"], PN, NO, "cg = −Σ_{i=0}^{n−1}(i+1)·hl2[t−i] / Σ hl2[t−i]; trigger = cg[1] (declared Ehlers form for Bandy's CGOscillator)", &[9, 10], false, cg_osc),
+    def("cg_osc", "Center of Gravity (Ehlers)", CG, &["cg", "trigger"], PN, NO, "cg = −Σ_{i=0}^{n−1}(i+1)·hl2[t−i] / Σ hl2[t−i]; trigger = cg[1] (declared Ehlers form for Bandy's CGOscillator)", &[9, 10], false, cg_osc),
     def("pmo", "Price Momentum Oscillator", PM, &["pmo", "signal"], PN, NO, "roc1 = 100·(close/close[1] − 1); csf(x, L): seeded with sma(x, L) at its first value, then s += (x − s)·2/L; pmo = csf(10·csf(roc1, length1), length2); signal = ema(pmo, signal) (seed declared)", &[54, 63], false, pmo),
     def("special_k", "Pring's Special K", SKP, &["sk", "signal"], PN, NO, "Σ w·sma(roc(close, r), m) over (r, m, w) = (10,10,1), (15,10,2), (20,10,3), (30,15,4), (40,50,1), (65,65,2), (75,75,3), (100,100,4), (195,130,1), (265,130,2), (390,130,3), (530,195,4); signal = sma(sma(sk, signal1), signal2)", &[724, 922], false, special_k),
     def("smi_ergodic", "SMI Ergodic", SE, &["smi", "signal", "osc"], PN, NO, "smi = ema(ema(Δclose, long), short)/ema(ema(|Δclose|, long), short) (ta.tsi ratio, not ×100); signal = ema(smi, signal); osc = smi − signal (Indicator + Oscillator)", &[24, 28, 28], false, smi_ergodic),
