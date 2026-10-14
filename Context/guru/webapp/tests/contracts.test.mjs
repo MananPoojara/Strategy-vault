@@ -166,3 +166,15 @@ test('lab migration is additive, re-runnable and keeps provisional markets out o
  const bootstrap=await readFile(new URL('../auth/src/bootstrap.mjs',import.meta.url),'utf8');
  assert.ok(bootstrap.indexOf('001-app.sql')>0&&bootstrap.indexOf('002-lab-strategies.sql')>bootstrap.indexOf('001-app.sql'));
 });
+
+const LAB_ORIGIN={book:'stc9',method:'rsi2_4',template_version:1};
+test('customized lab specs carry a book-template origin of a fixed shape',async()=>{
+ const {validateLabStrategy,validateLabOrigin,sameLabOrigin}=await import('../auth/src/contracts.mjs');
+ const spec={...LAB_SPEC,origin:LAB_ORIGIN};
+ assert.deepEqual(validateLabStrategy({name:'My RSI(2)',spec,market:'us',instrument:'SPY'}),{name:'My RSI(2)',spec,market:'us',instrument:'SPY',origin:LAB_ORIGIN});
+ assert.equal(validateLabOrigin(undefined),null);
+ for(const origin of [null,[],'stc9',{book:'stc9',method:'rsi2_4'},{...LAB_ORIGIN,extra:1},{...LAB_ORIGIN,method:'rsi 2'},{...LAB_ORIGIN,book:''},{...LAB_ORIGIN,template_version:0},{...LAB_ORIGIN,template_version:1.5},{...LAB_ORIGIN,template_version:'1'}])
+  assert.throws(()=>validateLabStrategy({name:'A',spec:{...LAB_SPEC,origin},market:'us',instrument:'SPY'}),/origin must be/);
+ assert.ok(sameLabOrigin(null,undefined)&&sameLabOrigin(LAB_ORIGIN,{template_version:1,method:'rsi2_4',book:'stc9'}));
+ assert.ok(!sameLabOrigin(LAB_ORIGIN,null)&&!sameLabOrigin(LAB_ORIGIN,{...LAB_ORIGIN,template_version:2}));
+});

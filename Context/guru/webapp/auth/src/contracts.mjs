@@ -56,10 +56,25 @@ export function validateLabStrategy(body) {
   for (const part of ['entry', 'exit']) {
     if (!spec[part] || typeof spec[part] !== 'object' || Array.isArray(spec[part])) throw new LabRequestError(`Rule spec needs ${part} rules.`);
   }
+  const origin = validateLabOrigin(spec.origin);
   if (!LAB_MARKETS.has(body.market)) throw new LabRequestError('Market must be in, us, gl or crypto.');
   const instrument = typeof body.instrument === 'string' ? body.instrument.trim() : '';
   if (!instrument || instrument.length > 64 || CONTROL.test(instrument)) throw new LabRequestError('Instrument must be 1–64 characters.');
-  return { name, spec, market: body.market, instrument };
+  return { name, spec, market: body.market, instrument, ...(origin ? { origin } : {}) };
+}
+
+// Customize (spec 2026-10-16 §7): spec.origin names the book template a variant came from. Shape only here;
+// the engine checks that the template exists and keeps the book method's instrument rule.
+const ORIGIN_ID = /^[A-Za-z0-9_]{1,80}$/;
+export function validateLabOrigin(origin) {
+  if (origin === undefined) return null;
+  const ok = origin && typeof origin === 'object' && !Array.isArray(origin) && Object.keys(origin).sort().join() === 'book,method,template_version'
+    && ORIGIN_ID.test(origin.book) && ORIGIN_ID.test(origin.method) && Number.isSafeInteger(origin.template_version) && origin.template_version >= 1 && origin.template_version <= 1000;
+  if (!ok) throw new LabRequestError('Rule spec origin must be {book, method, template_version} from a book template.');
+  return { book: origin.book, method: origin.method, template_version: origin.template_version };
+}
+export function sameLabOrigin(a, b) {
+  return (a?.book ?? null) === (b?.book ?? null) && (a?.method ?? null) === (b?.method ?? null) && (a?.template_version ?? null) === (b?.template_version ?? null);
 }
 
 export function validateLabVersion(version) {
