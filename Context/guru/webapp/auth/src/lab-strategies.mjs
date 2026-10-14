@@ -7,7 +7,7 @@ const COLUMNS = `s.id, s.owner, u.name AS "ownerName", s.name, s.spec, s.market,
   s.submitted_at AS "submittedAt", s.reviewed_at AS "reviewedAt", s.review_note AS "reviewNote", s.created_at AS "createdAt", s.updated_at AS "updatedAt"`;
 const FROM = 'FROM lab_strategy s JOIN "user" u ON u.id = s.owner';
 const TRANSITIONS = {
-  submit: "status='submitted', submitted_at=now()",
+  submit: "status='submitted', submitted_at=now(), reviewed_by=NULL, reviewed_at=NULL, review_note=NULL", // a resubmission must not show the old rejection note
   withdraw: "status='draft', submitted_at=NULL",
   publish: "status='published', reviewed_by=$2, reviewed_at=now(), review_note=$3",
   reject: "status='rejected', reviewed_by=$2, reviewed_at=now(), review_note=$3",

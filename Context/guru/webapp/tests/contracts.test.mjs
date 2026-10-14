@@ -68,7 +68,7 @@ test('lab strategies accept a trimmed name, a v1 spec object, a lab market and a
  assert.deepEqual(validateLabStrategy({name:'  RSI dip ',spec:LAB_SPEC,market:'crypto',instrument:' BTCUSD ',extra:1}),{name:'RSI dip',spec:LAB_SPEC,market:'crypto',instrument:'BTCUSD'});
  for(const body of [null,[],{...{spec:LAB_SPEC,market:'in',instrument:'X'},name:'   '},{name:'x'.repeat(121),spec:LAB_SPEC,market:'in',instrument:'X'},{name:'a\nb',spec:LAB_SPEC,market:'in',instrument:'X'},
   {name:'A',spec:'{"v":1}',market:'in',instrument:'X'},{name:'A',spec:[],market:'in',instrument:'X'},{name:'A',spec:{...LAB_SPEC,v:2},market:'in',instrument:'X'},{name:'A',spec:{v:1,entry:LAB_SPEC.entry},market:'in',instrument:'X'},{name:'A',spec:{v:1,entry:[],exit:{}},market:'in',instrument:'X'},
-  {name:'A',spec:LAB_SPEC,market:'eu',instrument:'X'},{name:'A',spec:LAB_SPEC,market:'in',instrument:''},{name:'A',spec:LAB_SPEC,market:'in',instrument:'x'.repeat(65)}]) assert.throws(()=>validateLabStrategy(body),{status:400});
+  {name:'A',spec:LAB_SPEC,market:'eu',instrument:'X'},{name:'A',spec:LAB_SPEC,market:'in',instrument:''},{name:'A',spec:LAB_SPEC,market:'in',instrument:'x'.repeat(65)},{name:'A',spec:{...LAB_SPEC,note:'a\u0000b'},market:'in',instrument:'X'}]) assert.throws(()=>validateLabStrategy(body),{status:400});
 });
 
 test('lab specs over 8 KB are refused before storage',async()=>{

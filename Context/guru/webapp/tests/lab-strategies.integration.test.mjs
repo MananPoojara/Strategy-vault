@@ -6,6 +6,7 @@ import { readFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { basename, dirname, resolve } from 'node:path';
 
 const { VAULT_ENV_FILE: envFile, VAULT_COMPOSE_PROJECT: project } = process.env;
 // Skips (never fails) unless both variables are set; the live project name is always refused.
@@ -14,8 +15,9 @@ if (project !== undefined && !/^strategy-vault-dev-[a-z0-9-]+$/.test(project)) t
 const appDirectory = fileURLToPath(new URL('..', import.meta.url));
 const env = enabled ? Object.fromEntries((await readFile(envFile, 'utf8')).split('\n').filter(x => x && !x.startsWith('#')).map(x => { const i = x.indexOf('='); return [x.slice(0, i), x.slice(i + 1)]; })) : {};
 const base = process.env.VAULT_TEST_URL || env.VAULT_PUBLIC_URL;
-// The live deployment is never a test target, whatever env file is passed.
-if (enabled && new URL(base).hostname === '192.168.4.30') throw new Error(`${base} is the live deployment; point VAULT_ENV_FILE at your dev runtime.`);
+// Live and dev stacks share hosts and differ by port and runtime dir: the env file must sit in ~/.cache/<project>/ and the live port 8180 is refused.
+if (enabled && basename(dirname(resolve(envFile))) !== project) throw new Error(`VAULT_ENV_FILE must be the ${project} runtime's own .env (~/.cache/${project}/.env); cleanup runs in that project.`);
+if (enabled && new URL(base).port === '8180') throw new Error(`${base} uses the live port 8180; point VAULT_ENV_FILE at your dev runtime.`);
 async function call(path, { cookie = '', method = 'GET', body, origin = base } = {}) {
   const response = await fetch(base + path, { method, headers: { ...(cookie ? { Cookie: cookie } : {}), ...(method !== 'GET' ? { Origin: origin, 'Content-Type': 'application/json' } : {}) }, body: body === undefined ? undefined : JSON.stringify(body), redirect: 'manual' });
   const text = await response.text();

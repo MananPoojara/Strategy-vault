@@ -49,7 +49,9 @@ export function validateLabStrategy(body) {
   if (!name || name.length > 120 || CONTROL.test(name)) throw new LabRequestError('Name must be 1–120 characters.');
   const spec = body.spec;
   if (!spec || typeof spec !== 'object' || Array.isArray(spec)) throw new LabRequestError('Rule spec must be a JSON object.');
-  if (Buffer.byteLength(JSON.stringify(spec)) > LAB_SPEC_BYTES) throw new LabRequestError('Rule spec is larger than 8 KB.');
+  const json = JSON.stringify(spec);
+  if (Buffer.byteLength(json) > LAB_SPEC_BYTES) throw new LabRequestError('Rule spec is larger than 8 KB.');
+  if (json.includes('\\u0000')) throw new LabRequestError('Rule spec cannot contain NUL characters.'); // PostgreSQL jsonb rejects \u0000
   if (spec.v !== 1) throw new LabRequestError('Rule spec version must be 1.');
   for (const part of ['entry', 'exit']) {
     if (!spec[part] || typeof spec[part] !== 'object' || Array.isArray(spec[part])) throw new LabRequestError(`Rule spec needs ${part} rules.`);
