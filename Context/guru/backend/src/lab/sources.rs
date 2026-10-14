@@ -254,6 +254,16 @@ pub const SOURCES: &[(&str, &str, &str)] = &[
     ("rsi_divergence", "RSI divergence indicator", ""),
     ("ad_ratio_bars", "Advance/Decline Ratio (Bars); Advance/Decline (charting library)", ""),
     ("bar_patterns", "", "GapUp; GapDown; Inside; Outside"),
+    ("cdl_dark_cloud_cover", "Dark Cloud Cover - Bearish", ""), ("cdl_doji", "Doji", ""), ("cdl_doji_star_bear", "Doji Star - Bearish", ""),
+    ("cdl_doji_star_bull", "Doji Star - Bullish", ""), ("cdl_dragonfly_doji", "Dragonfly Doji - Bullish", ""), ("cdl_engulfing_bear", "Engulfing - Bearish", ""),
+    ("cdl_engulfing_bull", "Engulfing - Bullish", ""), ("cdl_falling_window", "Falling Window - Bearish", ""), ("cdl_gravestone_doji", "Gravestone Doji - Bearish", ""),
+    ("cdl_hammer", "Hammer - Bullish", ""), ("cdl_hanging_man", "Hanging Man - Bearish", ""), ("cdl_harami_bear", "Harami - Bearish", ""),
+    ("cdl_harami_bull", "Harami - Bullish", ""), ("cdl_harami_cross_bear", "Harami Cross - Bearish", ""), ("cdl_harami_cross_bull", "Harami Cross - Bullish", ""),
+    ("cdl_inverted_hammer", "Inverted Hammer - Bullish", ""), ("cdl_kicking_bear", "Kicking - Bearish", ""), ("cdl_kicking_bull", "Kicking - Bullish", ""),
+    ("cdl_long_lower_shadow", "Long Lower Shadow - Bullish", ""), ("cdl_long_upper_shadow", "Long Upper Shadow - Bearish", ""), ("cdl_marubozu_black", "Marubozu Black - Bearish", ""),
+    ("cdl_marubozu_white", "Marubozu White - Bullish", ""), ("cdl_on_neck", "On Neck - Bearish", ""), ("cdl_piercing", "Piercing - Bullish", ""),
+    ("cdl_rising_window", "Rising Window - Bullish", ""), ("cdl_shooting_star", "Shooting Star - Bearish", ""), ("cdl_spinning_top_black", "Spinning Top Black", ""),
+    ("cdl_spinning_top_white", "Spinning Top White", ""), ("cdl_tweezer_bottom", "Tweezer Bottom - Bullish", ""), ("cdl_tweezer_top", "Tweezer Top - Bearish", ""),
 ];
 /// (TradingView names, AmiBroker names) of an id; empty strings when the id has no row.
 pub fn names(id: &str) -> (&'static str, &'static str) { SOURCES.iter().find(|r| r.0 == id).map_or(("", ""), |r| (r.1, r.2)) }

@@ -6,6 +6,7 @@
 pub mod api;
 pub mod bars;
 pub mod bands;
+pub mod candles;
 pub mod breadth;
 pub mod catalogue;
 pub mod fidelity;

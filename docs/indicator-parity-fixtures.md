@@ -111,6 +111,36 @@ CSV files kept outside Git; without them the parity test passes and prints "skip
 | rsi_divergence | length=14, lbr=5, lbl=5, range_upper=60, range_lower=5 | bull, hidden_bull, bear, hidden_bear |
 | ad_ratio_bars | length=9 | ratio |
 | bar_patterns | - | gap_up, gap_down, inside, outside |
+| cdl_dark_cloud_cover | trend=0 | signal |
+| cdl_doji | - | signal |
+| cdl_doji_star_bear | trend=0 | signal |
+| cdl_doji_star_bull | trend=0 | signal |
+| cdl_dragonfly_doji | - | signal |
+| cdl_engulfing_bear | trend=0 | signal |
+| cdl_engulfing_bull | trend=0 | signal |
+| cdl_falling_window | trend=0 | signal |
+| cdl_gravestone_doji | - | signal |
+| cdl_hammer | trend=0 | signal |
+| cdl_hanging_man | trend=0 | signal |
+| cdl_harami_bear | trend=0 | signal |
+| cdl_harami_bull | trend=0 | signal |
+| cdl_harami_cross_bear | trend=0 | signal |
+| cdl_harami_cross_bull | trend=0 | signal |
+| cdl_inverted_hammer | trend=0 | signal |
+| cdl_kicking_bear | - | signal |
+| cdl_kicking_bull | - | signal |
+| cdl_long_lower_shadow | - | signal |
+| cdl_long_upper_shadow | - | signal |
+| cdl_marubozu_black | - | signal |
+| cdl_marubozu_white | - | signal |
+| cdl_on_neck | trend=0 | signal |
+| cdl_piercing | trend=0 | signal |
+| cdl_rising_window | trend=0 | signal |
+| cdl_shooting_star | trend=0 | signal |
+| cdl_spinning_top_black | - | signal |
+| cdl_spinning_top_white | - | signal |
+| cdl_tweezer_bottom | trend=0 | signal |
+| cdl_tweezer_top | trend=0 | signal |
 | cci | length=20 | cci |
 | mom | length=10 | mom |
 | roc | length=9 | roc |
@@ -206,6 +236,8 @@ SAR with an outside bar at the start (bar-1 reversal), SWMA.
 Bars since moves to the Phase 2 rule builder (it takes a condition, not a price series).
 
 Breadth fixtures need the market's advance/decline data, not the chart symbol; compare against TradingView `ADVN.NS`/`DECN.NS` style symbols only after confirming they match NSE_ADV_DEC (pending).
+
+Candlestick patterns: export with a Pine script plotting `pattern ? 1 : 0` per pattern; TradingView draws labels, not a series.
 
 ## Listed only (no fixture possible)
 
