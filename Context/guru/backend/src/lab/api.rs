@@ -14,10 +14,13 @@ type Query = BTreeMap<String, String>;
 
 pub fn serve(stream: &mut TcpStream, path: &str, st: &State, q: &Query) {
     match route(path, st, q) {
-        None => crate::respond(stream, "404 Not Found", "text/plain", b"not found"),
+        None => crate::respond(stream, "404 Not Found", "application/json; charset=utf-8", not_found_json(path).as_bytes()),
         Some(Ok(body)) => crate::respond(stream, "200 OK", "application/json; charset=utf-8", body.as_bytes()),
         Some(Err(e)) => crate::respond(stream, "400 Bad Request", "application/json; charset=utf-8", e.json().as_bytes()),
     }
+}
+pub fn not_found_json(path: &str) -> String {
+    format!("{{\"status\":\"not_found\",\"error\":\"unknown lab route {}\",\"label\":\"{LABEL}\"}}", esc(path))
 }
 pub fn route(path: &str, st: &State, q: &Query) -> Option<Result<String, LabError>> {
     let f: fn(&State, &Query) -> Result<String, LabError> = match path {
@@ -62,7 +65,7 @@ fn instrument(selected: &crate::SelectedContext, ticker: &str) -> (&'static str,
         esc(ticker), opt(market.map(|m| m.code())), opt(market.map(|m| m.currency()))))
 }
 fn select<'a>(st: &'a State, q: &Query) -> Result<crate::SelectedContext<'a>, LabError> {
-    crate::select_context(st, q).map_err(|e| LabError::NeedsData(e.trim_start_matches("needs_data:").trim().into()))
+    crate::select_context(st, q).map_err(LabError::from)
 }
 pub fn series_json(st: &State, q: &Query) -> Result<String, LabError> {
     let id = q.get("id").ok_or_else(|| LabError::Invalid("id is required".into()))?;
@@ -112,6 +115,15 @@ mod tests {
         for d in catalogue::all() { assert!(j.contains(&format!("{{\"id\":\"{}\"", d.id)), "{}", d.id); }
         assert!(j.contains("\"id\":\"vwap\"") && j.contains("\"intraday\":true") && j.contains("\"first\":[null]"));
         assert!(crate::lab::json::parse(&j).is_ok());
+    }
+    #[test] fn unknown_route_is_labelled_json_and_unknown_ticker_is_invalid() {
+        let j = not_found_json("/api/lab/no\"pe");
+        let v = crate::lab::json::parse(&j).unwrap();
+        assert_eq!(v.get("status").unwrap().as_str(), Some("not_found"));
+        assert!(j.contains(LABEL));
+        let st = state(50, "SPX", false);
+        let e = series_json(&st, &q(&[("id", "close"), ("ticker", "NOPE")])).unwrap_err();
+        assert_eq!((e.status(), e.message()), ("invalid", "unknown ticker NOPE"));
     }
     #[test] fn panics_become_typed_errors() {
         assert_eq!(guarded(|| panic!("boom")).unwrap_err().status(), "invalid");
