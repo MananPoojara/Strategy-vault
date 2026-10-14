@@ -1034,6 +1034,7 @@ fn handle(mut stream: TcpStream, st: Arc<State>) {
     let mut parts = head.split_whitespace();
     let (method, target) = (parts.next().unwrap_or(""), parts.next().unwrap_or("/"));
     let (path, q) = query(target);
+    if !lab::markets::engine_route_allowed(lab::markets::engine_market().as_deref(), &path) { return respond(&mut stream, "404 Not Found", "application/json; charset=utf-8", lab::markets::refused_json(&path).as_bytes()); }
     if method == "POST" && path == "/api/notes" {
         let r = note_path(&q).and_then(|f| {
             let tmp = format!("{f}.tmp");
