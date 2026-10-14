@@ -1090,6 +1090,7 @@ fn handle(mut stream: TcpStream, st: Arc<State>) {
         "/api/guru/ross/run" => json(detail(&st, &owned_query(&q,"ross")), &mut stream),
         "/api/guru/ross/params" => json(Ok(params_json("ross")), &mut stream),
         "/api/guru/ross/optimize" => json(optimize(&st, &owned_query(&q,"ross")), &mut stream),
+        p if p.starts_with("/api/lab/") => lab::api::serve(&mut stream, p, &st, &q),
         "/api/notes" => match note_path(&q) {
             Ok(f) => respond(&mut stream, "200 OK", "text/plain; charset=utf-8", &std::fs::read(f).unwrap_or_default()),
             Err(e) => respond(&mut stream, "400 Bad Request", "text/plain", e.as_bytes()),

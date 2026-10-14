@@ -3,6 +3,7 @@
 //! nothing here is read by connors.rs, books/* or the admission files.
 //! Conventions: series are Vec<f64> aligned to bars; f64::NAN = no value; comparisons with NaN are false;
 //! formulas follow TradingView built-in chart indicators (see each definition string).
+pub mod api;
 pub mod bars;
 pub mod catalogue;
 pub mod json;
