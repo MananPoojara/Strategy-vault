@@ -7,6 +7,7 @@ export async function bootstrap() {
   const migrations = await getMigrations(auth.options);
   await migrations.runMigrations();
   await pool.query(await readFile(new URL('../../db/001-app.sql', import.meta.url), 'utf8').catch(() => readFile(new URL('../../../db/001-app.sql', import.meta.url), 'utf8')));
+  await pool.query(await readFile(new URL('../../db/002-lab-strategies.sql', import.meta.url), 'utf8').catch(() => readFile(new URL('../../../db/002-lab-strategies.sql', import.meta.url), 'utf8')));
   const email = process.env.VAULT_ADMIN_EMAIL?.trim().toLowerCase();
   const password = process.env.VAULT_ADMIN_PASSWORD;
   if (email && password) {

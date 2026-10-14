@@ -153,3 +153,14 @@ test('mutating lab actions require a version and unknown actions are refused',as
  assert.throws(()=>labAction(LAB_ROW,LAB_USERS.owner,'toString',3),{status:400,message:/unknown action/});
  assert.equal(validateLabNote('',false),null);
 });
+
+test('lab migration is additive, re-runnable and keeps provisional markets out of published snapshots',async()=>{
+ const {readFile}=await import('node:fs/promises');const {LAB_PUBLISHABLE_MARKETS,LAB_MARKETS}=await import('../auth/src/contracts.mjs');
+ const sql=await readFile(new URL('../db/002-lab-strategies.sql',import.meta.url),'utf8');
+ assert.doesNotMatch(sql,/^\s*(DROP|ALTER|DELETE|UPDATE|TRUNCATE|INSERT)\b/im);
+ for(const statement of sql.match(/CREATE\s+(TABLE|INDEX)\s+\S+/gi)) assert.match(statement,/IF$/i);
+ const checks=[...sql.matchAll(/market IN \(([^)]*)\)/g)].map(m=>m[1].replace(/'/g,'').split(','));
+ assert.deepEqual(checks,[[...LAB_MARKETS],[...LAB_PUBLISHABLE_MARKETS]]);
+ const bootstrap=await readFile(new URL('../auth/src/bootstrap.mjs',import.meta.url),'utf8');
+ assert.ok(bootstrap.indexOf('001-app.sql')>0&&bootstrap.indexOf('002-lab-strategies.sql')>bootstrap.indexOf('001-app.sql'));
+});
