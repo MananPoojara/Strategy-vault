@@ -127,9 +127,15 @@ rule, data needs (volume / intraday), TradingView definition notes, and a parity
 - **Listed as `needs data`:** VWAP / anchored VWAP, volume profile, opening range (OPEN-n high/low), anything
   intraday, breadth, fundamentals.
 
-Known pitfalls from the formula research to settle by parity tests: EMA seed (SMA of first n vs first
-value), chart vs `ta.*` variants (Keltner, TSI ×100, TRIX, DPO), ATR first bar (bar 13), na-window rules,
-SAR start, Stoch RSI first bar, population stdev, crossover strictness.
+Verified on TradingView itself on 2026-10-14 (Pine v6 probe, NSE:SWIGGY daily from its first listed bar,
+475 bars): `ta.ema` seeds with the SMA of the first n values (0 differences vs SMA seed, 42 vs first-value
+seed); first non-na bar: EMA5 4, RSI14 14, ATR14 13, DI+ 14, ADX 27, MFI14 13, CMO9 9, OBV 1, HMA9 10,
+MACD 25 / signal 33, Stoch RSI %K 17 (partial-window rule), SAR 1, Supertrend(10,3) 9 (bar 0 shows a 0
+artefact). Parabolic SAR's initial direction follows **highs** (high[1] > high[0] → long, SAR = low[0]),
+not closes as the reference example states: bars O/H/L/C 420/465.8/391/456, 473.15/489.4/418.6/430.7,
+416.1/438.7/410.4/420.1, 424/430.9/408.85/412.45 give SAR na, 391, 391, 392.968 (clip to the last two lows).
+Still to settle by parity fixtures: chart vs `ta.*` variants (Keltner, TSI ×100, TRIX, DPO), na-window
+rules on derived series, highest/lowest tie rules, Heikin Ashi seed.
 
 ## 6. UI (match the current theme)
 
