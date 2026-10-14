@@ -149,28 +149,33 @@ mod tests {
         let mut b = walk(n, 21, with_volume);
         let (mut day, mut k) = (resample::day_number("2021-01-04"), 0); // a Monday
         while k < n {
-            if (day + 3).rem_euclid(7) < 5 { b.date[k] = civil(day); k += 1; }
+            if (day + 3).rem_euclid(7) < 5 { b.date[k] = resample::civil(day); k += 1; }
             day += 1;
         }
         b
-    }
-    fn civil(z: i64) -> String {
-        let z = z + 719_468;
-        let era = z.div_euclid(146_097);
-        let doe = z - era * 146_097;
-        let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-        let mp = (5 * doy + 2) / 153;
-        let d = doy - (153 * mp + 2) / 5 + 1;
-        let m = if mp < 10 { mp + 3 } else { mp - 9 };
-        format!("{:04}-{m:02}-{d:02}", yoe + era * 400 + i64::from(m <= 2))
     }
     fn sref(id: &str, tf: Tf, out: usize, offset: usize) -> SeriesRef {
         let params = catalogue::get(id).map_or(Params::new(), |d| resolve_params(&d, &Params::new()).unwrap());
         SeriesRef { id: id.into(), params, tf, out, offset }
     }
 
-    #[test] fn civil_round_trips() { for d in ["2021-01-04", "2024-02-29", "2000-03-01"] { assert_eq!(civil(resample::day_number(d)), d); } }
+    #[test] fn every_computed_indicator_is_reachable_from_a_rule() {
+        for d in all().iter().filter(|d| d.compute.is_some()) {
+            let out = d.outputs[d.outputs.len() - 1];
+            if let Err(e) = crate::lab::testdata::compiles(d.id, out) { panic!("{}.{out}: {} {}", d.id, e.status(), e.message()); }
+        }
+    }
+    #[test] fn listed_entries_refuse_with_their_note() {
+        for (id, status) in [("vwap", "needs_data"), ("cvd", "needs_data"), ("correlation", "needs_data"), ("dividend_yield", "needs_data"),
+            ("open_interest", "needs_data"), ("onchain_hash_rate", "needs_data"), ("zigzag", "unsupported"), ("peak", "unsupported"),
+            ("rob_booker_reversal", "unsupported"), ("fir", "unsupported"), ("seasonality", "unsupported")] {
+            let d = catalogue::get(id).unwrap();
+            let e = crate::lab::testdata::compiles(id, d.outputs[0]).unwrap_err();
+            assert_eq!(e.status(), status, "{id}");
+            assert!(e.message().contains(d.note), "{id}: {}", e.message());
+        }
+        for d in all().iter().filter(|d| d.compute.is_none()) { assert!(crate::lab::testdata::compiles(d.id, d.outputs[0]).is_err(), "{}", d.id); }
+    }
     #[test] fn weekly_operand_is_visible_only_after_the_week_closes() {
         let fr = Frames::new(business_days(30, false));
         let w = series(&fr, &mut Cache::new(), &sref("close", Tf::W, 0, 0)).unwrap();

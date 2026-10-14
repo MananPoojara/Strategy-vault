@@ -9,7 +9,12 @@ pub enum Placement { Price, Pane }
 #[derive(Clone, Copy, Debug)]
 pub struct ParamSpec { pub key: &'static str, pub label: &'static str, pub default: f64, pub min: f64, pub max: f64, pub step: f64, pub integer: bool }
 #[derive(Clone, Copy, Debug, Default)]
-pub struct Needs { pub volume: bool, pub intraday: bool }
+pub struct Needs { pub volume: bool, pub intraday: bool, pub breadth: bool, pub second_symbol: bool, pub fundamentals: bool, pub derivatives: bool, pub onchain: bool }
+impl Needs {
+    pub const NONE: Needs = Needs { volume: false, intraday: false, breadth: false, second_symbol: false, fundamentals: false, derivatives: false, onchain: false };
+    /// Data the lab does not hold for every market (volume is per instrument and checked at run time).
+    pub const fn any_data(&self) -> bool { self.intraday || self.breadth || self.second_symbol || self.fundamentals || self.derivatives || self.onchain }
+}
 #[derive(Clone, Copy)]
 pub struct IndicatorDef {
     pub id: &'static str, pub name: &'static str, pub category: &'static str,
@@ -20,16 +25,21 @@ pub struct IndicatorDef {
     /// Outputs that are legitimately NaN after warm-up (e.g. pivots between pivots).
     pub sparse: bool,
     pub compute: Option<fn(&Bars, &Params) -> Output>,
+    /// Why a listed-only entry is not computed ("not available yet — needs …"); empty for computed entries.
+    pub note: &'static str,
 }
 /// Integer length parameter helper used by the family files.
 pub const fn len(key: &'static str, label: &'static str, default: f64) -> ParamSpec {
     ParamSpec { key, label, default, min: 1., max: 2000., step: 1., integer: true }
 }
+pub const fn int(key: &'static str, label: &'static str, default: f64, min: f64, max: f64) -> ParamSpec {
+    ParamSpec { key, label, default, min, max, step: 1., integer: true }
+}
 pub const fn real(key: &'static str, label: &'static str, default: f64, min: f64, max: f64, step: f64) -> ParamSpec {
     ParamSpec { key, label, default, min, max, step, integer: false }
 }
 pub fn all() -> Vec<IndicatorDef> {
-    [super::ma::DEFS, super::momentum::DEFS, super::trend::DEFS, super::volatility::DEFS, super::volume::DEFS, super::price::DEFS].concat()
+    [super::ma::DEFS, super::momentum::DEFS, super::trend::DEFS, super::volatility::DEFS, super::volume::DEFS, super::price::DEFS, super::listed::DEFS].concat()
 }
 pub fn get(id: &str) -> Option<IndicatorDef> { all().into_iter().find(|d| d.id == id) }
 pub fn resolve_params(def: &IndicatorDef, given: &Params) -> Result<Params, String> {
@@ -49,7 +59,7 @@ pub fn run(def: &IndicatorDef, bars: &Bars, given: &Params) -> Output {
     let params = resolve_params(def, given)?;
     if def.needs.intraday { return Err("needs intraday data".into()); }
     if def.needs.volume && bars.volume.is_none() { return Err("needs volume".into()); }
-    let f = def.compute.ok_or_else(|| "computed by a later batch".to_string())?;
+    let f = def.compute.ok_or_else(|| if def.note.is_empty() { "computed by a later batch".to_string() } else { def.note.to_string() })?;
     f(bars, &params)
 }
 pub fn p(params: &Params, key: &str) -> f64 { *params.get(key).unwrap_or_else(|| panic!("parameter {key} not declared")) }
@@ -59,6 +69,24 @@ pub fn n(params: &Params, key: &str) -> usize { p(params, key) as usize }
 mod tests {
     use super::*;
     use crate::lab::testdata::{close_eq, walk};
+    /// Breadth indicators need market breadth on the bars; Task 2 tests them with testdata::with_breadth.
+    fn computable(d: &IndicatorDef) -> bool { d.compute.is_some() && !d.needs.breadth }
+    #[test] fn listed_entries_carry_a_note() {
+        for d in all() {
+            if d.compute.is_some() { assert!(d.note.is_empty(), "{}: computed entries have no note", d.id); continue; }
+            assert!(!d.note.is_empty(), "{}: listed entry without a note", d.id);
+            if d.needs.any_data() { assert!(d.note.starts_with("not available yet — needs"), "{}: {}", d.id, d.note); }
+        }
+    }
+    #[test] fn sources_cover_every_indicator_once() {
+        use crate::lab::sources::SOURCES;
+        let ids: Vec<&str> = all().iter().map(|d| d.id).collect();
+        for (id, tv, ab) in SOURCES {
+            assert!(ids.contains(id), "sources row for unknown id {id}");
+            assert!(!tv.is_empty() || !ab.is_empty() || *id == "opening_range", "{id}: no TradingView or AmiBroker name");
+        }
+        for id in &ids { assert_eq!(SOURCES.iter().filter(|r| r.0 == *id).count(), 1, "{id}: exactly one sources row"); }
+    }
     fn defaults(d: &IndicatorDef) -> Params { resolve_params(d, &Params::new()).unwrap() }
 
     #[test] fn ids_unique_and_params_sane() {
@@ -83,8 +111,8 @@ mod tests {
         g.clear(); g.insert("bogus".into(), 1.); assert!(resolve_params(&d, &g).unwrap_err().contains("bogus"));
     }
     #[test] fn every_indicator_length_warmup_and_no_gaps() {
-        let bars = walk(700, 7, true);
-        for d in all().iter().filter(|d| d.compute.is_some()) {
+        let bars = walk(1000, 7, true);
+        for d in all().iter().filter(|d| computable(d)) {
             let out = run(d, &bars, &Params::new()).unwrap_or_else(|e| panic!("{}: {e}", d.id));
             assert_eq!(out.len(), d.outputs.len(), "{}: output count", d.id);
             for (k, s) in out.iter().enumerate() {
@@ -98,7 +126,7 @@ mod tests {
     }
     #[test] fn every_indicator_is_causal() {
         let bars = walk(400, 11, true);
-        for d in all().iter().filter(|d| d.compute.is_some()) {
+        for d in all().iter().filter(|d| computable(d)) {
             let full = run(d, &bars, &Params::new()).unwrap();
             for cut in [150usize, 271, 399] {
                 let mut pre = bars.clone();
@@ -127,14 +155,14 @@ mod tests {
         let mut bars = walk(300, 5, true);
         for i in 0..bars.len() { bars.open[i] = 1017.3; bars.high[i] = 1017.3; bars.low[i] = 1017.3; bars.close[i] = 1017.3; }
         bars.volume = Some(vec![1000.; bars.len()]);
-        for d in all().iter().filter(|d| d.compute.is_some()) {
+        for d in all().iter().filter(|d| computable(d)) {
             for s in run(d, &bars, &Params::new()).unwrap() { assert!(s.iter().all(|v| !v.is_infinite()), "{} produced inf on flat prices", d.id); }
         }
     }
     #[test] fn short_history_never_panics() {
         for len in [0usize, 1, 3] {
             let bars = walk(len, 9, true);
-            for d in all().iter().filter(|d| d.compute.is_some()) {
+            for d in all().iter().filter(|d| computable(d)) {
                 let out = run(d, &bars, &Params::new()).unwrap_or_else(|e| panic!("{}: {e}", d.id));
                 assert_eq!(out.len(), d.outputs.len(), "{}: output count", d.id);
                 for (k, s) in out.iter().enumerate() {

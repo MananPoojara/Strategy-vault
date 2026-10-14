@@ -4,7 +4,7 @@ use super::catalogue::{len, n, IndicatorDef, Needs, Output, ParamSpec, Params, P
 use super::ta::{self, NA};
 
 const CAT: &str = "Momentum";
-const NO: Needs = Needs { volume: false, intraday: false };
+const NO: Needs = Needs::NONE;
 
 fn zip(a: &[f64], b: &[f64], f: impl Fn(f64, f64) -> f64) -> Vec<f64> { a.iter().zip(b).map(|(&x, &y)| f(x, y)).collect() }
 fn div(a: f64, b: f64) -> f64 { if b == 0. { NA } else { a / b } }
@@ -160,7 +160,7 @@ fn crsi(b: &Bars, prm: &Params) -> Output {
 }
 
 const fn def(id: &'static str, out: &'static [&'static str], name: &'static str, params: &'static [ParamSpec], needs: Needs, definition: &'static str, first: &'static [usize], f: fn(&Bars, &Params) -> Output) -> IndicatorDef {
-    IndicatorDef { id, name, category: CAT, params, outputs: out, placement: Placement::Pane, needs, definition, first, sparse: false, compute: Some(f) }
+    IndicatorDef { id, name, category: CAT, params, outputs: out, placement: Placement::Pane, needs, definition, first, sparse: false, compute: Some(f), note: "" }
 }
 const LEN14: &[ParamSpec] = &[len("length", "Length", 14.)];
 const MACD: &[ParamSpec] = &[len("fast", "Fast length", 12.), len("slow", "Slow length", 26.), len("signal", "Signal length", 9.)];
@@ -176,7 +176,7 @@ pub const DEFS: &[IndicatorDef] = &[
     def("mom", &["mom"], "Momentum", &[len("length", "Length", 10.)], NO, "close - close[n]", &[10], mom),
     def("roc", &["roc"], "Rate of Change", &[len("length", "Length", 9.)], NO, "100*(close-close[n])/close[n]", &[9], roc),
     def("willr", &["willr"], "Williams %R", LEN14, NO, "100*(close-highest(high,n))/(highest(high,n)-lowest(low,n)); NaN if range 0", &[13], willr),
-    def("mfi", &["mfi"], "Money Flow Index", LEN14, Needs { volume: true, intraday: false },
+    def("mfi", &["mfi"], "Money Flow Index", LEN14, Needs { volume: true, ..Needs::NONE },
         "src=hlc3; up=sum(v*(change<=0?0:src),n), dn=sum(v*(change>=0?0:src),n) (bar 0 counts in both); dn==0 -> 100 else 100-100/(1+up/dn)", &[13], mfi),
     def("tsi", &["tsi", "signal"], "True Strength Index", &[len("long", "Long length", 25.), len("short", "Short length", 13.), len("signal", "Signal length", 13.)], NO,
         "100*ema(ema(change,long),short)/ema(ema(|change|,long),short); signal=ema(tsi,signal)", &[37, 49], tsi),

@@ -131,3 +131,9 @@ SAR with an outside bar at the start (bar-1 reversal), SWMA.
 ## Scope notes
 
 Bars since moves to the Phase 2 rule builder (it takes a condition, not a price series).
+
+## Listed only (no fixture possible)
+
+Entries with `computed:false` in the catalogue (second instrument, intraday/tick, fundamentals, derivatives, on-chain,
+drawings, look-ahead functions, unpublished formulas, user coefficient filters) have no fixture. Their catalogue `note`
+says why. A rule or chart using one returns `needs_data` or `unsupported` with that note.

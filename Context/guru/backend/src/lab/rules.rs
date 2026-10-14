@@ -222,8 +222,11 @@ pub fn series_ref(at: &str, id: &str, given: &Params, tf: Tf, out: Option<&str>,
         return Ok(SeriesRef { id: id.into(), params: Params::new(), tf, out: 0, offset });
     }
     let def = catalogue::get(id).ok_or_else(|| inv(format!("{at}.s: unknown series '{id}'")))?;
-    if def.needs.intraday { return Err(LabError::NeedsData(format!("{at}: {} needs intraday data, which is not admitted", def.name))); }
-    if def.compute.is_none() { return Err(LabError::Unsupported(format!("{at}: {} is listed but not computed yet", def.name))); }
+    if def.needs.intraday { return Err(LabError::NeedsData(format!("{at}: {}: {}", def.name, def.note))); }
+    if def.compute.is_none() {
+        let msg = format!("{at}: {}: {}", def.name, def.note);
+        return Err(if def.needs.any_data() { LabError::NeedsData(msg) } else { LabError::Unsupported(msg) });
+    }
     let params = catalogue::resolve_params(&def, given).map_err(|e| inv(format!("{at}.p: {e}")))?;
     let out = match out {
         None => 0,

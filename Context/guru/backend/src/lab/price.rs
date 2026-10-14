@@ -3,7 +3,7 @@ use super::bars::Bars;
 use super::catalogue::{len, n, IndicatorDef, Needs, Output, ParamSpec, Params, Placement};
 use super::ta::{self, NA};
 
-const NEEDS: Needs = Needs { volume: false, intraday: false };
+const NEEDS: Needs = Needs::NONE;
 
 fn highest(b: &Bars, prm: &Params) -> Output { Ok(vec![ta::highest(&b.high, n(prm, "length"))]) }
 fn lowest(b: &Bars, prm: &Params) -> Output { Ok(vec![ta::lowest(&b.low, n(prm, "length"))]) }
@@ -27,7 +27,7 @@ const LEN1: &[ParamSpec] = &[len("length", "Length", 1.)];
 const LR: &[ParamSpec] = &[len("left", "Left bars", 5.), len("right", "Right bars", 5.)];
 
 const fn def(id: &'static str, name: &'static str, params: &'static [ParamSpec], out: &'static [&'static str], placement: Placement, definition: &'static str, first: &'static [usize], sparse: bool, f: fn(&Bars, &Params) -> Output) -> IndicatorDef {
-    IndicatorDef { id, name, category: "Price functions", params, outputs: out, placement, needs: NEEDS, definition, first, sparse, compute: Some(f) }
+    IndicatorDef { id, name, category: "Price functions", params, outputs: out, placement, needs: NEEDS, definition, first, sparse, compute: Some(f), note: "" }
 }
 
 pub const DEFS: &[IndicatorDef] = &[

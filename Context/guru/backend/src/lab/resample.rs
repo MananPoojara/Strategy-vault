@@ -7,6 +7,18 @@ pub enum Tf { D, W, M }
 impl Tf {
     pub fn parse(s: &str) -> Option<Tf> { match s { "D" => Some(Tf::D), "W" => Some(Tf::W), "M" => Some(Tf::M), _ => None } }
 }
+/// Day number (days since 1970-01-01) → "YYYY-MM-DD" (proleptic Gregorian).
+pub fn civil(z: i64) -> String {
+    let z = z + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    format!("{:04}-{m:02}-{d:02}", yoe + era * 400 + i64::from(m <= 2))
+}
 pub fn day_number(date: &str) -> i64 {
     let (y, m, d): (i64, i64, i64) = (date[0..4].parse().unwrap_or(1970), date[5..7].parse().unwrap_or(1), date[8..10].parse().unwrap_or(1));
     let y = if m <= 2 { y - 1 } else { y };
@@ -64,6 +76,7 @@ mod tests {
         }
         b
     }
+    #[test] fn civil_round_trips() { for d in ["2021-01-04", "2024-02-29", "2000-03-01", "2020-01-01"] { assert_eq!(civil(day_number(d)), d); } }
     #[test] fn day_number_epoch() { assert_eq!(day_number("1970-01-01"), 0); assert_eq!(day_number("2024-03-01"), 19783); }
     #[test] fn weekly_groups_by_monday_and_dates_last_day() {
         // Fri 2024-01-05, Mon 08, Tue 09, Fri 12 (holiday-short week), Mon 15

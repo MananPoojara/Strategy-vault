@@ -4,7 +4,7 @@ use super::catalogue::{len, n, p, real, IndicatorDef, Needs, Output, ParamSpec, 
 use super::ta::{self, NA};
 
 const CAT: &str = "Trend";
-const NO: Needs = Needs { volume: false, intraday: false };
+const NO: Needs = Needs::NONE;
 
 fn div(a: f64, b: f64) -> f64 { if b == 0. { NA } else { a / b } }
 
@@ -119,7 +119,7 @@ fn chop(b: &Bars, prm: &Params) -> Output {
 }
 
 const fn def(id: &'static str, name: &'static str, params: &'static [ParamSpec], outputs: &'static [&'static str], placement: Placement, definition: &'static str, first: &'static [usize], f: fn(&Bars, &Params) -> Output) -> IndicatorDef {
-    IndicatorDef { id, name, category: CAT, params, outputs, placement, needs: NO, definition, first, sparse: false, compute: Some(f) }
+    IndicatorDef { id, name, category: CAT, params, outputs, placement, needs: NO, definition, first, sparse: false, compute: Some(f), note: "" }
 }
 const LEN14: &[ParamSpec] = &[len("length", "Length", 14.)];
 

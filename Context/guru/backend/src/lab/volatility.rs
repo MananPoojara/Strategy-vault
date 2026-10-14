@@ -4,7 +4,7 @@ use super::catalogue::{len, n, p, real, IndicatorDef, Needs, Output, ParamSpec, 
 use super::ta::{self, NA};
 
 const CAT: &str = "Volatility";
-const NO: Needs = Needs { volume: false, intraday: false };
+const NO: Needs = Needs::NONE;
 
 fn div(a: f64, b: f64) -> f64 { if b == 0. { NA } else { a / b } }
 /// [basis, upper, lower] = sma(c,n) +- mult*stdev(c,n)
@@ -41,7 +41,7 @@ fn hv(b: &Bars, prm: &Params) -> Output {
 }
 
 const fn def(id: &'static str, out: &'static [&'static str], name: &'static str, params: &'static [ParamSpec], placement: Placement, definition: &'static str, first: &'static [usize], f: fn(&Bars, &Params) -> Output) -> IndicatorDef {
-    IndicatorDef { id, name, category: CAT, params, outputs: out, placement, needs: NO, definition, first, sparse: false, compute: Some(f) }
+    IndicatorDef { id, name, category: CAT, params, outputs: out, placement, needs: NO, definition, first, sparse: false, compute: Some(f), note: "" }
 }
 const BB: &[ParamSpec] = &[len("length", "Length", 20.), real("mult", "Multiplier", 2., 0.1, 10., 0.1)];
 const L20: &[ParamSpec] = &[len("length", "Length", 20.)];

@@ -4,7 +4,7 @@ use super::catalogue::{len, n, p, real, IndicatorDef, Needs, Output, ParamSpec, 
 use super::ta::{self, NA};
 
 const CAT: &str = "Volume";
-const V: Needs = Needs { volume: true, intraday: false };
+const V: Needs = Needs { volume: true, ..Needs::NONE };
 
 fn div(a: f64, b: f64) -> f64 { if b == 0. { NA } else { a / b } }
 fn vol(b: &Bars) -> &[f64] { b.volume.as_deref().unwrap_or(&[]) }
@@ -73,10 +73,10 @@ fn nvi(b: &Bars, prm: &Params) -> Output { vindex(b, prm, false) }
 fn pvi(b: &Bars, prm: &Params) -> Output { vindex(b, prm, true) }
 
 const fn def(id: &'static str, name: &'static str, params: &'static [ParamSpec], out: &'static [&'static str], placement: Placement, definition: &'static str, first: &'static [usize], f: fn(&Bars, &Params) -> Output) -> IndicatorDef {
-    IndicatorDef { id, name, category: CAT, params, outputs: out, placement, needs: V, definition, first, sparse: false, compute: Some(f) }
+    IndicatorDef { id, name, category: CAT, params, outputs: out, placement, needs: V, definition, first, sparse: false, compute: Some(f), note: "" }
 }
-const fn listed(id: &'static str, name: &'static str, params: &'static [ParamSpec], out: &'static [&'static str], needs: Needs, definition: &'static str, first: &'static [usize]) -> IndicatorDef {
-    IndicatorDef { id, name, category: CAT, params, outputs: out, placement: Placement::Price, needs, definition, first, sparse: false, compute: None }
+const fn listed(id: &'static str, name: &'static str, params: &'static [ParamSpec], out: &'static [&'static str], needs: Needs, definition: &'static str, first: &'static [usize], note: &'static str) -> IndicatorDef {
+    IndicatorDef { id, name, category: CAT, params, outputs: out, placement: Placement::Price, needs, definition, first, sparse: false, compute: None, note }
 }
 const FS: &[ParamSpec] = &[len("fast", "Fast length", 3.), len("slow", "Slow length", 10.)];
 const PVO: &[ParamSpec] = &[len("fast", "Fast length", 12.), len("slow", "Slow length", 26.), len("signal", "Signal length", 9.)];
@@ -94,8 +94,8 @@ pub const DEFS: &[IndicatorDef] = &[
     def("eom", "Ease of Movement", EOM, &["eom"], Placement::Pane, "sma(divisor*change(hl2)*(high-low)/volume,n); zero volume -> NaN", &[14], eom),
     def("nvi", "Negative Volume Index", EMA255, &["nvi", "signal"], Placement::Pane, "starts at 1000 like TradingView's chart built-in (= 1000 × ta.nvi); volume<prev volume -> prev*(1+dClose/close[1]) else prev; signal=ema(nvi)", &[0, 254], nvi),
     def("pvi", "Positive Volume Index", EMA255, &["pvi", "signal"], Placement::Pane, "starts at 1000 like TradingView's chart built-in (= 1000 × ta.pvi); volume>prev volume -> prev*(1+dClose/close[1]) else prev; signal=ema(pvi)", &[0, 254], pvi),
-    listed("vwap", "VWAP", &[], &["vwap"], Needs { volume: true, intraday: true }, "session-anchored sum(hlc3*v)/sum(v); needs intraday bars (listed only)", &[usize::MAX]),
-    listed("opening_range", "Opening Range", &[ParamSpec { min: 1., max: 120., ..len("minutes", "Minutes", 15.) }], &["high", "low"], Needs { volume: false, intraday: true }, "high/low of the first N minutes of the session; needs intraday bars (listed only)", &[usize::MAX, usize::MAX]),
+    listed("vwap", "VWAP", &[], &["vwap"], Needs { volume: true, intraday: true, ..Needs::NONE }, "session-anchored sum(hlc3*v)/sum(v); needs intraday bars (listed only)", &[usize::MAX], "not available yet — needs intraday bars, which are not admitted"),
+    listed("opening_range", "Opening Range", &[ParamSpec { min: 1., max: 120., ..len("minutes", "Minutes", 15.) }], &["high", "low"], Needs { intraday: true, ..Needs::NONE }, "high/low of the first N minutes of the session; needs intraday bars (listed only)", &[usize::MAX, usize::MAX], "not available yet — needs intraday bars, which are not admitted"),
 ];
 
 #[cfg(test)]

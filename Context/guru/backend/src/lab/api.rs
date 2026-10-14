@@ -65,13 +65,14 @@ fn quoted<'a>(it: impl Iterator<Item = &'a str>) -> String { arr(it.map(|s| form
 
 pub fn catalogue_json() -> String {
     let defs = catalogue::all().into_iter().map(|d| {
+        let (tv, ab) = super::sources::names(d.id);
         let params = arr(d.params.iter().map(|p| format!(
             "{{\"key\":\"{}\",\"label\":\"{}\",\"default\":{},\"min\":{},\"max\":{},\"step\":{},\"integer\":{}}}",
             p.key, esc(p.label), full(p.default), full(p.min), full(p.max), full(p.step), p.integer)));
         format!(
-            "{{\"id\":\"{}\",\"name\":\"{}\",\"category\":\"{}\",\"placement\":\"{}\",\"needs\":{{\"volume\":{},\"intraday\":{}}},\"computed\":{},\"params\":{params},\"outputs\":{},\"first\":{},\"sparse\":{},\"definition\":\"{}\"}}",
-            d.id, esc(d.name), esc(d.category), if d.placement == Placement::Price { "price" } else { "pane" }, d.needs.volume, d.needs.intraday,
-            d.compute.is_some(), quoted(d.outputs.iter().copied()), arr(d.first.iter().map(|&f| if f == usize::MAX { "null".into() } else { f.to_string() })), d.sparse, esc(d.definition))
+            "{{\"id\":\"{}\",\"name\":\"{}\",\"category\":\"{}\",\"placement\":\"{}\",\"needs\":{{\"volume\":{},\"intraday\":{},\"breadth\":{},\"second_symbol\":{},\"fundamentals\":{},\"derivatives\":{},\"onchain\":{}}},\"computed\":{},\"params\":{params},\"outputs\":{},\"first\":{},\"sparse\":{},\"definition\":\"{}\",\"note\":\"{}\",\"tv\":\"{}\",\"ab\":\"{}\"}}",
+            d.id, esc(d.name), esc(d.category), if d.placement == Placement::Price { "price" } else { "pane" }, d.needs.volume, d.needs.intraday, d.needs.breadth, d.needs.second_symbol, d.needs.fundamentals, d.needs.derivatives, d.needs.onchain,
+            d.compute.is_some(), quoted(d.outputs.iter().copied()), arr(d.first.iter().map(|&f| if f == usize::MAX { "null".into() } else { f.to_string() })), d.sparse, esc(d.definition), esc(d.note), esc(tv), esc(ab))
     });
     format!(
         "{{\"label\":\"{LABEL}\",\"price_sources\":{},\"operators\":{},\"timeframes\":[\"D\",\"W\",\"M\"],\"max_conditions\":{},\"max_spec_bytes\":{},\"max_combos\":{},\"indicators\":{}}}",
@@ -451,6 +452,14 @@ mod tests {
         q
     }
 
+    #[test] fn catalogue_lists_notes_needs_and_sources() {
+        let j = catalogue_json();
+        assert!(crate::lab::json::parse(&j).is_ok());
+        assert!(j.contains("\"id\":\"cvd\"") && j.contains("\"note\":\"not available yet — needs intraday (lower-timeframe/tick) bars\""));
+        assert!(j.contains("\"tv\":\"Relative Strength Index (RSI)\"") && j.contains("\"ab\":\"RSI; RSIa on close"));
+        assert!(j.contains("\"needs\":{\"volume\":false,\"intraday\":false,\"breadth\":false,\"second_symbol\":false,\"fundamentals\":false,\"derivatives\":false,\"onchain\":false}"));
+        assert!(j.contains("\"id\":\"correlation\"") && j.contains("\"second_symbol\":true"));
+    }
     #[test] fn catalogue_lists_every_indicator_with_label() {
         let j = catalogue_json();
         assert!(j.starts_with(&format!("{{\"label\":\"{LABEL}\"")));
