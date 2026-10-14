@@ -22,6 +22,17 @@ jobs:
       - run: npm --prefix Context/guru/frontend/react ci --no-audit --no-fund
       - run: npm --prefix Context/guru/webapp/auth ci --no-audit --no-fund
       - run: npm --prefix Context/guru/frontend/react run build
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install browser test dependencies
+        timeout-minutes: 5
+        run: |
+          python -m pip install --disable-pip-version-check playwright==1.60.0
+          python -m playwright install --with-deps chromium
+      - name: Test author discovery and ETF navigation in Chromium
+        timeout-minutes: 3
+        run: python scripts/test_author_discovery_browser.py
       - run: npm --prefix Context/guru/frontend/react run test:coverage
       - run: node scripts/test_frontend_helpers.mjs
       - run: python3 -m unittest discover -s scripts -p 'test_*.py'

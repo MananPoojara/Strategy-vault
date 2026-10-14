@@ -51,6 +51,14 @@ test('unsupported calculation is not relabelled as absent data and unknown polic
  const result=availability(['one'],[def('a')],{a:{blocked:'Nonpositive normalized equity: this model cannot publish results.',readiness:'calculation_unavailable'}},{});assert.equal(result.status,'no_eligible_results');assert.equal(result.counts.needs_data,0);
  const unknown=def('a');unknown.instrument_policy.requirement='new_unreviewed_type';assert.equal(availability(['one'],[unknown],{a:measured()},{}).status,'source_review');
 });
+test('reviewed declared index timing needs actual measured results and still respects ETF restrictions',()=>{
+ const method=def('spmt_reviewed','one','timing','declared_index_timing');
+ method.instrument_policy.allowed_types=['index','etf'];
+ assert.equal(availability(['one'],[method],{spmt_reviewed:measured()},{spmt_reviewed:{status:'ready'}}).availableFamilies,1);
+ assert.equal(availability(['one'],[method],{}, {spmt_reviewed:{status:'ready'}}).availableFamilies,0);
+ assert.equal(availability(['one'],[method],{spmt_reviewed:measured()}, {spmt_reviewed:{status:'needs_data',note:'Actual SPY ETF prices are required; the selected ETF is QQQ.'}}).availableFamilies,0);
+ assert.equal(availability(['one'],[method],{spmt_reviewed:measured()}, {spmt_reviewed:{status:'not_testable',note:'Source review required.'}}).availableFamilies,0);
+});
 test('unsupported source declarations or empty admitted types cannot be rescued by old stats',()=>{
  const stopped=def('a');stopped.status='not_testable';assert.equal(availability(['one'],[stopped],{a:measured()},{}).status,'source_review');
  const missing=def('a');missing.instrument_policy={requirement:'futures',allowed_types:[],source_basis:'Actual dated futures contract prices are required.'};assert.equal(availability(['one'],[missing],{a:measured()},{}).status,'needs_data');

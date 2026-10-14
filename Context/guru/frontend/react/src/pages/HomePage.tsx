@@ -110,6 +110,10 @@ export function HomePage({ snapshot }: { snapshot: ViewSnapshot }) {
         </p>
       </details>
       <LibraryControls model={model} state={snapshot.state} />
+      {model.view === "authors" ? <p className="library-backtest-note">
+        Authors with measured backtests appear first by default. Each card names its dataset;
+        stock and ETF backtest links open that instrument and period.
+      </p> : null}
       <div id="library-results" aria-live="polite">
         <div className="library-result-count">
           <h2 className="section-h">
