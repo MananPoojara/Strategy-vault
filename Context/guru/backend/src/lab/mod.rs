@@ -26,6 +26,7 @@ pub mod stats;
 pub mod templates;
 pub mod ta;
 pub mod trend;
+pub mod vol2;
 pub mod volatility;
 pub mod volume;
 #[cfg(test)]

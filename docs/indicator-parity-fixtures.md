@@ -82,6 +82,13 @@ CSV files kept outside Git; without them the parity test passes and prints "skip
 | smi | k=10, d=3, ema=3 | smi, signal |
 | rvgi | length=10 | rvi, signal |
 | rvi | length=10, ema=14 | rvi |
+| chaikin_vol | length=10, roc=10 | cv |
+| mass_index | ema=9, length=10 | mi |
+| ulcer | length=14 | ulcer |
+| adr | length=14 | adr |
+| volatility_zt | length=10, days=252 | vol |
+| volatility_ohlc | length=10, days=252 | vol |
+| bbtrend | short=20, long=50, mult=2 | bbtrend |
 | cci | length=20 | cci |
 | mom | length=10 | mom |
 | roc | length=9 | roc |
