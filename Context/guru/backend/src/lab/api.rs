@@ -209,6 +209,7 @@ pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> {
             out.extend(crate::PART_COLS.iter().map(|k| part[k]));
             if n == 0 { ins = crate::FULL_COLS.iter().map(|k| part[k]).collect(); }
         }
+        if split.is_some() { out.extend(extra_rank_cols().iter().map(|k| ins[crate::FULL_COLS.iter().position(|c| c == k).unwrap()])); } // visible is_ ranked values
         out.extend(ins); // trailing in-sample copy of FULL_COLS: ranking basis only, never displayed
         Ok(out)
     };
@@ -239,7 +240,7 @@ pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> {
     })?;
     // Ranking exactly as the book optimizer (main.rs optimize(): trade-rate floor, outcome columns, conclude_rank).
     let nd = dims.len();
-    let ndisp = crate::FULL_COLS.len() + split.map_or(0, |_| 2 * crate::PART_COLS.len());
+    let ndisp = crate::FULL_COLS.len() + split.map_or(0, |_| 2 * crate::PART_COLS.len() + extra_rank_cols().len());
     let ti = crate::FULL_COLS.iter().position(|c| *c == "trades").unwrap();
     // With a split the ranking reads the in-sample window only; oos_ columns are display-only.
     let rank_rows: Vec<Vec<f64>> = rows_v.iter().map(|r| rank_basis(r, nd, ndisp, split.is_some())).collect();
@@ -261,11 +262,16 @@ pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> {
     let mut cols: Vec<String> = dims.iter().map(|d| d.path.clone()).collect();
     cols.extend(crate::FULL_COLS.iter().map(|c| c.to_string()));
     for part in split.map(|_| ["is_", "oos_"]).into_iter().flatten() { cols.extend(crate::PART_COLS.iter().map(|c| format!("{part}{c}"))); }
+    if split.is_some() { cols.extend(extra_rank_cols().iter().map(|c| format!("is_{c}"))); }
     let dims_json = arr(dims.iter().map(|d| format!("{{\"path\":\"{}\",\"values\":{}}}", esc(&d.path), arr(d.values.iter().map(|v| crate::num(*v))))));
     Ok(format!(
         "{{\"label\":\"{LABEL}\",\"kind\":\"lab_optimization\",\"instrument\":{instrument},\"from\":\"{}\",\"to\":\"{}\",\"start\":{start},\"split\":{},\"combos\":{combos},\"threads\":{threads},\"ms\":{},\"dims\":{dims_json},\"cols\":{},\"base\":{},\"ranked_on\":\"{}\",\"rank\":{rank_json},\"picked\":{{{picked}}},\"rows\":[{rows}],\"costs\":{},\"provenance\":{}}}",
         dates[from], dates[to], split.map_or("null".into(), |s| format!("\"{}\"", dates[s])), t0.elapsed().as_millis(),
         quoted(cols.iter().map(String::as_str)), arr(base.iter().map(|v| crate::num(*v))), if split.is_some() { "in_sample" } else { "full" }, costs.json(), crate::source_provenance(st, q)))
+}
+/// RANK_STATS metrics without an is_ PART_COLS column: shown in-sample so the ranked numbers are visible.
+fn extra_rank_cols() -> Vec<&'static str> {
+    crate::RANK_STATS.iter().map(|(k, _)| *k).filter(|k| !crate::PART_COLS.contains(k)).collect()
 }
 /// Dedup identity columns of a rank row. With a split: in-sample full stats + is_ part stats (oos_ is display-only).
 fn outcome_cols(nd: usize, ndisp: usize, split: bool) -> Vec<usize> {
@@ -432,6 +438,24 @@ mod tests {
         assert_eq!(c.len(), 16 + p);
         assert!(c.iter().all(|&i| i < 2 + f + p));
         assert_eq!(outcome_cols(2, f, false).len(), 16);
+    }
+    #[test] fn split_shows_in_sample_ranked_values() {
+        let st = state(700, "SPX", false);
+        let j = optimize_json(&st, &q(&[("split", "2016-06-01")])).unwrap();
+        let v = crate::lab::json::parse(&j).unwrap();
+        let crate::lab::json::Json::Arr(cols) = v.get("cols").unwrap() else { panic!() };
+        let names: Vec<&str> = cols.iter().filter_map(|c| c.as_str()).collect();
+        for k in ["is_mar", "is_monthly_thickness", "is_expectancy_ratio"] { assert_eq!(names.iter().filter(|n| **n == k).count(), 1, "{k}"); }
+        assert_eq!(names.iter().filter(|n| **n == "is_cagr").count(), 1);
+        let crate::lab::json::Json::Arr(rows) = v.get("rows").unwrap() else { panic!() };
+        let crate::lab::json::Json::Arr(r0) = &rows[0] else { panic!() };
+        let crate::lab::json::Json::Arr(base) = v.get("base").unwrap() else { panic!() };
+        assert_eq!((r0.len(), base.len() + 2), (names.len(), names.len()));
+        let i = names.iter().position(|n| *n == "is_mar").unwrap();
+        let rank_mar = names.iter().position(|n| *n == "mar").unwrap();
+        assert!(r0[i].as_f64().is_some() || matches!(r0[i], crate::lab::json::Json::Null));
+        assert_ne!(i, rank_mar);
+        assert!(!optimize_json(&st, &q(&[])).unwrap().contains("is_mar"));
     }
     #[test] fn ranked_on_follows_the_split() {
         let st = state(700, "SPX", false);
