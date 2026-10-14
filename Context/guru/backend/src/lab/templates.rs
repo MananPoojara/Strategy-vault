@@ -32,9 +32,9 @@ pub fn book_status(d: &StrategyDef) -> (&'static str, &'static str) {
 }
 /// Why a method has no template ("Customize not available — <reason>"); None when it has one.
 pub fn unavailable(d: &StrategyDef) -> Option<String> {
-    if template(d.id).is_some() { return None; }
     let (status, why) = book_status(d);
-    if status != "live" { return Some(format!("the book method is not admitted for backtesting ({status}): {why}")); }
+    if status != "live" { return Some(format!("the book method is not admitted for backtesting ({status}): {why}")); } // checked first: a demoted method never keeps its template
+    if template(d.id).is_some() { return None; }
     let named = NO_TEMPLATE.iter().find(|(id, _)| *id == d.id).map(|(_, r)| *r);
     let two_sided = (d.dir != "Long" && d.dir != "Short").then_some(TWO_SIDED);
     Some(named.or(two_sided).unwrap_or(NOT_YET).to_string())
