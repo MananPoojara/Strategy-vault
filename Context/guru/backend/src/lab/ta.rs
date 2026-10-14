@@ -112,4 +112,25 @@ mod tests {
     }
     #[test] fn linreg_fits_line_exactly() { assert_series(&linreg(&[1., 3., 5.], 3, 0), &[N, N, 5.]); }
     #[test] fn dev_mean_absolute() { assert_series(&dev(&[1., 3.], 2), &[N, 1.]); }
+    #[test] fn highest_resets_after_nan_with_partial_window() {
+        assert_series(&highest(&[3., N, 1., 2., 5.], 2), &[N, N, 1., 2., 5.]);
+        assert_series(&lowest(&[3., N, 4., 2., 5.], 2), &[N, N, 4., 2., 2.]);
+    }
+    #[test] fn ema_skips_leading_and_interior_nan() {
+        assert_series(&ema(&[N, 1., 2., 3.], 2), &[N, N, 1.5, 2.5]);
+        assert_series(&ema(&[1., 2., N, 3.], 2), &[N, 1.5, N, 2.5]);
+    }
+    #[test] fn rma_skips_interior_nan() { assert_series(&rma(&[1., 2., N, 3.], 2), &[N, 1.5, N, 2.25]); }
+    #[test] fn change_and_nz() {
+        assert_series(&change(&[1., 4., 9.], 2), &[N, N, 8.]);
+        assert_eq!(nz(N), 0.0);
+        assert_eq!(nz(2.), 2.0);
+    }
+    #[test] fn linreg_non_collinear_and_offset() {
+        assert_series(&linreg(&[1., 2., 4.], 3, 0), &[N, N, 23. / 6.]);
+        assert_series(&linreg(&[1., 2., 4.], 3, 1), &[N, N, 7. / 3.]);
+    }
+    #[test] fn linreg_nan_in_window_is_bar_counted() {
+        assert_series(&linreg(&[1., N, 3., 5., 7.], 2, 0), &[N, N, N, 5., 7.]);
+    }
 }
