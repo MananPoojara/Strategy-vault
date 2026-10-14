@@ -138,6 +138,7 @@ fn backtest(ctx: &Ctx, c: &Compiled, d: &Bars, from: usize, to: usize, cost: f64
 }
 
 pub fn run_json(st: &State, q: &Query) -> Result<String, LabError> {
+    if q.get("split").is_some_and(|s| !s.is_empty()) { return Err(LabError::Invalid("split applies to /api/lab/optimize only".into())); }
     let spec = spec_of(q)?;
     let q = &with_spec_cost(q, &spec)?;
     let selected = select(st, q)?;
@@ -350,6 +351,10 @@ mod tests {
         }
         let unknown = state(400, "MYSTERY", false);
         assert_eq!(run_json(&unknown, &q(&[("ticker", "MYSTERY")])).unwrap_err().status(), "needs_data");
+    }
+    #[test] fn run_rejects_split() {
+        let e = run_json(&state(400, "SPX", false), &q(&[("split", "2015-06-01")])).unwrap_err();
+        assert_eq!((e.status(), e.message()), ("invalid", "split applies to /api/lab/optimize only"));
     }
     #[test] fn degenerate_windows_are_errors_not_panics() {
         let st = state(400, "SPX", false);
