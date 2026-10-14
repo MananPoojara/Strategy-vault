@@ -106,6 +106,21 @@ await test('saved lab strategies: ownership, versions, review and frozen YT snap
       for (const strategy of [crypto, gl]) assert.equal((await call(`${S}/${strategy.id}/publish`, { cookie: admin, method: 'POST', body: { version: 1 } })).status, 409);
       assert.equal((await call(`${S}/${gl.id}/submit`, { cookie: owner, method: 'POST', body: { version: 1 } })).status, 400);
     });
+    await t.test('a customized variant keeps its origin through edit, copy and publish', async () => {
+      const ORIGIN = { book: 'stc9', method: 'rsi2_4', template_version: 1 };
+      const spec = { ...SPEC, origin: ORIGIN };
+      const variant = (await call(S, { cookie: owner, method: 'POST', body: { name: 'My RSI(2)', spec, market: 'us', instrument: 'SPY' } })).json();
+      assert.deepEqual(variant.origin, ORIGIN);
+      const dropped = await call(`${S}/${variant.id}`, { cookie: owner, method: 'PUT', body: { version: 1, name: 'x', spec: SPEC, market: 'us', instrument: 'SPY' } });
+      assert.equal(dropped.status, 400); assert.match(dropped.json().error, /keeps the book template/);
+      const edited = (await call(`${S}/${variant.id}`, { cookie: owner, method: 'PUT', body: { version: 1, name: 'My RSI(2) + stop', spec: { ...spec, exit: { ...SPEC.exit, stop_loss: { pct: 5 } } }, market: 'us', instrument: 'SPY' } })).json();
+      assert.deepEqual([edited.version, edited.origin], [2, ORIGIN]);
+      assert.deepEqual((await call(`${S}/${variant.id}/duplicate`, { cookie: owner, method: 'POST' })).json().origin, ORIGIN);
+      assert.equal((await call(`${S}/${variant.id}/submit`, { cookie: owner, method: 'POST', body: { version: 2 } })).status, 200);
+      assert.equal((await call(`${S}/${variant.id}/publish`, { cookie: admin, method: 'POST', body: { version: 2 } })).status, 200);
+      const snapshot = (await call(`${S}/published`, { cookie: viewer })).json().find(s => s.id === variant.id);
+      assert.deepEqual(snapshot.origin, ORIGIN);
+    });
     await t.test('two simultaneous saves of one version: one wins, one conflicts', async () => {
       const draft = (await call(S, { cookie: owner, method: 'POST', body: { name: 'Race', spec: SPEC, market: 'us', instrument: 'SPY' } })).json();
       const save = name => call(`${S}/${draft.id}`, { cookie: owner, method: 'PUT', body: { version: 1, name, spec: SPEC, market: 'us', instrument: 'SPY' } });
