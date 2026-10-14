@@ -105,15 +105,27 @@ fn known_type(kind: &str, ticker: &str) -> Result<(), LabError> {
     Ok(())
 }
 /// Requested dates must be real and inside admitted coverage; nothing is filled or silently shortened.
-fn window(ctx: &Ctx, q: &Query) -> Result<(usize, usize), LabError> {
+/// Also returns the `start` disclosure JSON: lab fills use the next open, which is stale for some indices before a known date.
+fn window(ctx: &Ctx, q: &Query) -> Result<(usize, usize, String), LabError> {
     for key in ["from", "to", "split"] {
         if q.get(key).is_some_and(|v| !v.is_empty() && !crate::baskets::valid_date(v)) { return Err(LabError::Invalid(format!("{key} must be a valid YYYY-MM-DD date"))); }
     }
     let (first, last) = (&ctx.r[0].date, &ctx.r[ctx.r.len() - 1].date);
     if q.get("from").is_some_and(|f| !f.is_empty() && f < first) { return Err(LabError::NeedsData(format!("from precedes admitted data starting {first}; no earlier prices are filled"))); }
     if q.get("to").is_some_and(|t| !t.is_empty() && t > last) { return Err(LabError::NeedsData(format!("to exceeds admitted data ending {last}; the range is not silently shortened"))); }
-    let (_, from, to, _) = crate::resolve_context(ctx, q)?;
-    Ok((from, to))
+    let (_, mut from, to, _) = crate::resolve_context(ctx, q)?;
+    let mut start = "null".to_string();
+    if let Some(cut) = crate::gate::real_open_from(&ctx.r[0].ticker) {
+        let (ticker, stale) = (&ctx.r[0].ticker, format!("opens before {cut} are stale"));
+        let k = ctx.r.partition_point(|r| r.date.as_str() < cut);
+        if q.get("from").is_some_and(|f| !f.is_empty() && f.as_str() < cut) { return Err(LabError::NeedsData(format!("{stale} for {ticker}; choose from >= {cut}"))); }
+        if k > from {
+            if k >= to { return Err(LabError::NeedsData(format!("{stale} for {ticker} and no admitted bar follows; no lab result is published"))); }
+            from = k;
+            start = format!("{{\"date\":\"{}\",\"reason\":\"{}\"}}", ctx.r[k].date, stale);
+        }
+    }
+    Ok((from, to, start))
 }
 fn spec_of(q: &Query) -> Result<Spec, LabError> { rules::parse_spec(q.get("spec").ok_or_else(|| LabError::Invalid("spec is required".into()))?) }
 /// execution.cost_bps (saved with a strategy) and the `cost` query must agree; one of them may be absent.
@@ -146,7 +158,7 @@ pub fn run_json(st: &State, q: &Query) -> Result<String, LabError> {
     let ctx: &Ctx = &held;
     let (kind, instrument) = instrument(&selected, &ctx.r[0].ticker);
     known_type(kind, &ctx.r[0].ticker)?;
-    let (from, to) = window(ctx, q)?;
+    let (from, to, start) = window(ctx, q)?;
     let costs = accounting::Costs::parse(q)?;
     costs.ensure_rollover()?;
     let cost = costs.side_rate();
@@ -159,7 +171,7 @@ pub fn run_json(st: &State, q: &Query) -> Result<String, LabError> {
         ctx.r[t.legs[0].i].date, ctx.r[t.exit_i].date, t.legs[0].i - from, t.exit_i - from, crate::num(t.legs[0].px), crate::num(t.exit_px),
         crate::num(t.ret(cost)), t.exit_i - t.legs[0].i, t.open, ctx.r[t.signal_i].date, esc(&t.reason))));
     Ok(format!(
-        "{{\"label\":\"{LABEL}\",\"kind\":\"lab_simulation\",\"instrument\":{instrument},\"from\":\"{}\",\"to\":\"{}\",\"dates\":{},\"close\":{},\"equity\":{},\"gross_equity\":{},\"bh\":{},\"trades\":{trades},\"stats\":{},\"gross_stats\":{},\"costs\":{},\"provenance\":{}}}",
+        "{{\"label\":\"{LABEL}\",\"kind\":\"lab_simulation\",\"instrument\":{instrument},\"from\":\"{}\",\"to\":\"{}\",\"start\":{start},\"dates\":{},\"close\":{},\"equity\":{},\"gross_equity\":{},\"bh\":{},\"trades\":{trades},\"stats\":{},\"gross_stats\":{},\"costs\":{},\"provenance\":{}}}",
         ctx.r[from].date, ctx.r[to].date, quoted((from..=to).map(|k| ctx.r[k].date.as_str())), arr((from..=to).map(|k| crate::num(ctx.c[k]))),
         arr(run.equity.iter().map(|v| crate::num(*v))), arr(gross.equity.iter().map(|v| crate::num(*v))), arr(run.bh.iter().map(|v| crate::num(*v))),
         crate::stats_json(&crate::financial_stats(ctx, &run, costs)), crate::stats_json(&crate::stats(ctx, &gross, 0.)), costs.json(), crate::source_provenance(st, q)))
@@ -174,7 +186,7 @@ pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> {
     let ctx: &Ctx = &held;
     let (kind, instrument) = instrument(&selected, &ctx.r[0].ticker);
     known_type(kind, &ctx.r[0].ticker)?;
-    let (from, to) = window(ctx, q)?;
+    let (from, to, start) = window(ctx, q)?;
     let costs = accounting::Costs::parse(q)?;
     costs.ensure_rollover()?;
     let cost = costs.side_rate();
@@ -251,7 +263,7 @@ pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> {
     for part in split.map(|_| ["is_", "oos_"]).into_iter().flatten() { cols.extend(crate::PART_COLS.iter().map(|c| format!("{part}{c}"))); }
     let dims_json = arr(dims.iter().map(|d| format!("{{\"path\":\"{}\",\"values\":{}}}", esc(&d.path), arr(d.values.iter().map(|v| crate::num(*v))))));
     Ok(format!(
-        "{{\"label\":\"{LABEL}\",\"kind\":\"lab_optimization\",\"instrument\":{instrument},\"from\":\"{}\",\"to\":\"{}\",\"split\":{},\"combos\":{combos},\"threads\":{threads},\"ms\":{},\"dims\":{dims_json},\"cols\":{},\"base\":{},\"ranked_on\":\"{}\",\"rank\":{rank_json},\"picked\":{{{picked}}},\"rows\":[{rows}],\"costs\":{},\"provenance\":{}}}",
+        "{{\"label\":\"{LABEL}\",\"kind\":\"lab_optimization\",\"instrument\":{instrument},\"from\":\"{}\",\"to\":\"{}\",\"start\":{start},\"split\":{},\"combos\":{combos},\"threads\":{threads},\"ms\":{},\"dims\":{dims_json},\"cols\":{},\"base\":{},\"ranked_on\":\"{}\",\"rank\":{rank_json},\"picked\":{{{picked}}},\"rows\":[{rows}],\"costs\":{},\"provenance\":{}}}",
         dates[from], dates[to], split.map_or("null".into(), |s| format!("\"{}\"", dates[s])), t0.elapsed().as_millis(),
         quoted(cols.iter().map(String::as_str)), arr(base.iter().map(|v| crate::num(*v))), if split.is_some() { "in_sample" } else { "full" }, costs.json(), crate::source_provenance(st, q)))
 }
@@ -351,6 +363,24 @@ mod tests {
         }
         let unknown = state(400, "MYSTERY", false);
         assert_eq!(run_json(&unknown, &q(&[("ticker", "MYSTERY")])).unwrap_err().status(), "needs_data");
+    }
+    #[test] fn stale_index_opens_move_or_refuse_the_start() {
+        let st = state(700, "DJI", false); // DJI opens are stale before 2016-01-01; rows start 2015
+        let e = run_json(&st, &q(&[("ticker", "DJI"), ("from", "2015-06-01")])).unwrap_err();
+        assert_eq!(e.status(), "needs_data");
+        assert!(e.message().contains("2016-01-01") && e.message().contains("DJI"), "{}", e.message());
+        let j = run_json(&st, &q(&[("ticker", "DJI")])).unwrap();
+        let v = crate::lab::json::parse(&j).unwrap();
+        assert!(v.get("from").unwrap().as_str().unwrap() >= "2016-01-01");
+        assert_eq!(v.get("start").unwrap().get("reason").unwrap().as_str(), Some("opens before 2016-01-01 are stale"));
+        assert_eq!(v.get("start").unwrap().get("date"), v.get("from"));
+        let o = optimize_json(&st, &q(&[("ticker", "DJI")])).unwrap();
+        assert!(o.contains("\"start\":{\"date\":\"2016-01-01\"") || o.contains("\"reason\":\"opens before 2016-01-01 are stale\""));
+        assert!(run_json(&st, &q(&[("ticker", "DJI"), ("from", "2016-02-01")])).unwrap().contains("\"start\":null"));
+        let short = state(100, "DJI", false); // all bars precede the cut
+        assert_eq!(run_json(&short, &q(&[("ticker", "DJI")])).unwrap_err().status(), "needs_data");
+        let ok = run_json(&state(400, "SPX", false), &q(&[])).unwrap();
+        assert!(ok.contains("\"start\":null"));
     }
     #[test] fn run_rejects_split() {
         let e = run_json(&state(400, "SPX", false), &q(&[("split", "2015-06-01")])).unwrap_err();
