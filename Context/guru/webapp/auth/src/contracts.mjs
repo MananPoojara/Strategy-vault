@@ -66,7 +66,7 @@ export function validateLabVersion(version) {
 }
 
 export function validateLabNote(note, required) {
-  if (note === undefined || note === null) {
+  if (note === undefined || note === null || (note === '' && !required)) {
     if (required) throw new LabRequestError('Give a reason for the rejection (1–1000 characters).');
     return null;
   }
@@ -80,7 +80,7 @@ export function labCanRead(row, user) {
 }
 
 const LAB_ACTIONS = {
-  duplicate: { role: 'write' },
+  duplicate: { role: 'write', to: 'draft' },
   update: { role: 'write', owner: true, from: ['draft', 'rejected'], to: 'draft', verb: 'edited' },
   delete: { role: 'write', owner: true, from: ['draft', 'rejected'], verb: 'deleted' },
   submit: { role: 'write', owner: true, from: ['draft', 'rejected'], to: 'submitted', verb: 'submitted', publishable: true },
@@ -91,12 +91,15 @@ const LAB_ACTIONS = {
 
 // Decides one action on a locked row; returns the next status or throws with the HTTP status to send.
 export function labAction(row, user, action, version) {
+  if (!Object.hasOwn(LAB_ACTIONS, action)) throw new LabRequestError('unknown action', 400);
   const rule = LAB_ACTIONS[action];
   if (!labCanRead(row, user)) throw new LabRequestError('Strategy not found.', 404);
   if (!roleAllows(user.role, rule.role)) throw new LabRequestError(rule.role === 'admin' ? 'Administrator access required' : 'Researcher access required', 403);
+  if (action === 'duplicate' && row.owner !== user.id && row.status !== 'published') throw new LabRequestError('Only the owner can duplicate an unpublished strategy', 403);
   if (rule.owner && row.owner !== user.id) throw new LabRequestError('Only the owner can change this strategy.', 403);
   if (rule.from && !rule.from.includes(row.status)) throw new LabRequestError(`A ${row.status} strategy cannot be ${rule.verb}.`, 409);
-  if (version !== undefined && version !== row.version) throw new LabRequestError(`This strategy changed since you opened it (now version ${row.version}). Reload before saving.`, 409);
+  if (action !== 'duplicate' && (version === undefined || version === null)) throw new LabRequestError('version required', 400);
+  if (version !== undefined && version !== null && version !== row.version) throw new LabRequestError(`This strategy changed since you opened it (now version ${row.version}). Reload before saving.`, 409);
   if (rule.publishable && !LAB_PUBLISHABLE_MARKETS.has(row.market)) throw new LabRequestError('Global and crypto data are provisional TradingView exports; strategies on them cannot go to YT Strategies until licensed data replaces them.', 400);
   return rule.to ?? row.status;
 }

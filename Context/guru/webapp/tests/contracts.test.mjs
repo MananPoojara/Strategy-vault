@@ -100,7 +100,7 @@ test('another user cannot read or change a draft; published strategies are reada
  assert.equal(labCanRead(undefined,LAB_USERS.admin),false);
  const published={...LAB_ROW,status:'published'};
  for(const user of Object.values(LAB_USERS)) assert.equal(labCanRead(published,user),true);
- assert.equal(labAction(published,LAB_USERS.other,'duplicate'),'published');
+ assert.equal(labAction(published,LAB_USERS.other,'duplicate'),'draft');
  assert.throws(()=>labAction(published,LAB_USERS.viewer,'duplicate'),{status:403});
  assert.throws(()=>labAction(LAB_ROW,LAB_USERS.admin,'update',3),{status:403,message:/owner/});
 });
@@ -138,4 +138,18 @@ test('global and crypto strategies cannot be submitted or published to YT Strate
   assert.equal(labAction({...LAB_ROW,market},LAB_USERS.owner,'update',3),'draft');
  }
  assert.equal(labAction({...LAB_ROW,market:'us'},LAB_USERS.owner,'submit',3),'submitted');
+});
+
+test('duplicate always yields a draft, only for owners or published rows',async()=>{
+ const {labAction}=await import('../auth/src/contracts.mjs');
+ assert.equal(labAction({...LAB_ROW,status:'submitted'},LAB_USERS.owner,'duplicate'),'draft');
+ assert.throws(()=>labAction(LAB_ROW,LAB_USERS.admin,'duplicate'),{status:403,message:/Only the owner can duplicate an unpublished strategy/});
+});
+
+test('mutating lab actions require a version and unknown actions are refused',async()=>{
+ const {labAction,validateLabNote}=await import('../auth/src/contracts.mjs');
+ for(const [action,user,status] of [['update',LAB_USERS.owner,'draft'],['delete',LAB_USERS.owner,'draft'],['submit',LAB_USERS.owner,'draft'],['withdraw',LAB_USERS.owner,'submitted'],['publish',LAB_USERS.admin,'submitted'],['reject',LAB_USERS.admin,'submitted']])
+  for(const v of [undefined,null]) assert.throws(()=>labAction({...LAB_ROW,status},user,action,v),{status:400,message:/version required/});
+ assert.throws(()=>labAction(LAB_ROW,LAB_USERS.owner,'toString',3),{status:400,message:/unknown action/});
+ assert.equal(validateLabNote('',false),null);
 });
