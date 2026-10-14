@@ -11,6 +11,7 @@ pub mod momentum;
 pub mod price;
 pub mod resample;
 pub mod rules;
+pub mod series;
 pub mod ta;
 pub mod trend;
 pub mod volatility;
