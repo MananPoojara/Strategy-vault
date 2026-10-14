@@ -70,6 +70,17 @@ class BookGuard(unittest.TestCase):
         p.write_text("fn n() {}\n")
         self.assertTrue(any("books/new.rs" in v for v in guard.check(self.repo, "Manan")))
 
+    def test_compare_base_is_branch_point_not_base_tip(self):
+        branch_point = git(self.repo, "rev-parse", "Manan")
+        git(self.repo, "switch", "-q", "Manan")
+        self.commit("Context/guru/backend/src/lab/later.rs", "pub mod later;\n")
+        git(self.repo, "switch", "-q", "Nandini")
+        self.assertEqual(guard.compare_base(self.repo, "Manan"), branch_point)
+
+    def test_preloaded_tickers_drops_basket_rows(self):
+        rows = [{"ticker": "NIFTY 50"}, {"ticker": "BKT", "basket": ["A", "B"]}, {"ticker": "RELIANCE"}]
+        self.assertEqual(guard.preloaded_tickers(rows), ["NIFTY 50", "RELIANCE"])
+
 
 if __name__ == "__main__":
     unittest.main()

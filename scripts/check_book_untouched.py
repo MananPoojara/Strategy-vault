@@ -4,7 +4,7 @@
 Checks (always): no edit to protected paths; only added lines in additive-only files.
 Optional --engine-compare: build base and HEAD engines and compare book catalogue/summary JSON hashes.
 """
-import argparse, hashlib, io, json, os, socket, subprocess, sys, tarfile, tempfile, time, urllib.request
+import argparse, hashlib, io, json, os, socket, subprocess, sys, tarfile, tempfile, time, urllib.parse, urllib.request
 from pathlib import Path
 
 PROTECTED = (
@@ -25,8 +25,18 @@ def git(repo, *args):
     return subprocess.check_output(["git", "-C", str(repo), *args], text=True)
 
 
+def compare_base(repo, base):
+    # Branch point: newer commits on base must not count as changes on this branch.
+    return git(repo, "merge-base", base, "HEAD").strip()
+
+
+def preloaded_tickers(tickers_json):
+    # Basket rows are not single preloaded tickers, so they get no summary hash.
+    return [row["ticker"] for row in tickers_json if "basket" not in row]
+
+
 def check(repo, base):
-    mb = git(repo, "merge-base", base, "HEAD").strip()
+    mb = compare_base(repo, base)
     # --no-renames: a rename out of a protected path must show the protected source path as deleted.
     # ls-files --others: untracked new files under protected paths count as changes too.
     changed = [p for p in git(repo, "diff", "--no-renames", "--name-only", mb).splitlines() if p]
@@ -58,13 +68,17 @@ def engine_hashes(src_dir, csv, vix, extra):
                 break
             except OSError:
                 time.sleep(0.5)
+        tickers = preloaded_tickers(json.loads(urllib.request.urlopen(f"http://127.0.0.1:{port}/api/tickers", timeout=60).read()))
+        routes = [("strategies", "strategies")]  # (key, URL path) pairs
+        for t in tickers:
+            routes.append((f"summary?ticker={t}", f"summary?ticker={urllib.parse.quote(t)}"))
         out = {}
         for g in GURUS:
-            for route in ("strategies", "summary?ticker=NIFTY%2050"):
+            for key, route in routes:
                 body = urllib.request.urlopen(f"http://127.0.0.1:{port}/api/guru/{g}/{route}", timeout=600).read()
                 if not body:
                     raise RuntimeError(f"empty response for {g}/{route}")
-                out[f"{g}/{route}"] = hashlib.sha256(body).hexdigest()
+                out[f"{g}/{key}"] = hashlib.sha256(body).hexdigest()
         return out
     finally:
         proc.terminate()
@@ -74,7 +88,7 @@ def engine_hashes(src_dir, csv, vix, extra):
 def compare_engines(repo, base, csv, vix, extra):
     # Plain export of the base commit into a temp folder (no git worktree, per user preference).
     with tempfile.TemporaryDirectory() as tmp:
-        archive = subprocess.run(["git", "-C", str(repo), "archive", base], capture_output=True, check=True).stdout
+        archive = subprocess.run(["git", "-C", str(repo), "archive", compare_base(repo, base)], capture_output=True, check=True).stdout
         with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
             tar.extractall(tmp, filter="data")
         before = engine_hashes(tmp, csv, vix, extra)
