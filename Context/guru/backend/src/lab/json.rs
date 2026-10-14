@@ -56,7 +56,10 @@ impl Parser<'_> {
                     self.ws();
                     if self.b.get(self.i) != Some(&b'"') { return self.err("expected a quoted key"); }
                     let k = self.string()?;
-                    if kv.iter().any(|(x, _)| *x == k) { return Err(format!("duplicate key '{k}'")); }
+                    if kv.iter().any(|(x, _)| *x == k) {
+                        let shown: String = k.chars().take(64).collect();
+                        return Err(format!("duplicate key '{shown}' at byte {}", self.i));
+                    }
                     self.ws();
                     if self.b.get(self.i) != Some(&b':') { return self.err("expected ':'"); }
                     self.i += 1;
@@ -89,16 +92,33 @@ impl Parser<'_> {
             Some(b't') => self.lit("true", Json::Bool(true)),
             Some(b'f') => self.lit("false", Json::Bool(false)),
             Some(b'n') => self.lit("null", Json::Null),
-            Some(c) if *c == b'-' || c.is_ascii_digit() => {
-                let start = self.i;
-                while self.i < self.b.len() && matches!(self.b[self.i], b'0'..=b'9' | b'-' | b'+' | b'.' | b'e' | b'E') { self.i += 1; }
-                let s = std::str::from_utf8(&self.b[start..self.i]).unwrap_or("");
-                match s.parse::<f64>() {
-                    Ok(n) if n.is_finite() => Ok(Json::Num(n)),
-                    _ => Err(format!("invalid number '{s}' at byte {start}")),
-                }
-            }
+            Some(c) if *c == b'-' || c.is_ascii_digit() => self.number(),
             Some(_) => self.err("unexpected character"),
+        }
+    }
+    /// Strict JSON grammar: -? (0 | [1-9][0-9]*) (\.[0-9]+)? ([eE][+-]?[0-9]+)?, then finite f64.
+    fn number(&mut self) -> Result<Json, String> {
+        let start = self.i;
+        let digits = |p: &mut Self| { let s = p.i; while p.b.get(p.i).is_some_and(u8::is_ascii_digit) { p.i += 1; } p.i > s };
+        if self.b.get(self.i) == Some(&b'-') { self.i += 1; }
+        match self.b.get(self.i) {
+            Some(b'0') => self.i += 1,
+            Some(b'1'..=b'9') => { digits(self); }
+            _ => return self.err("invalid number"),
+        }
+        if self.b.get(self.i) == Some(&b'.') {
+            self.i += 1;
+            if !digits(self) { return self.err("invalid number"); }
+        }
+        if matches!(self.b.get(self.i), Some(b'e' | b'E')) {
+            self.i += 1;
+            if matches!(self.b.get(self.i), Some(b'+' | b'-')) { self.i += 1; }
+            if !digits(self) { return self.err("invalid number"); }
+        }
+        let s = std::str::from_utf8(&self.b[start..self.i]).unwrap_or("");
+        match s.parse::<f64>() {
+            Ok(n) if n.is_finite() => Ok(Json::Num(n)),
+            _ => Err(format!("number out of range '{s}' at byte {start}")),
         }
     }
     fn string(&mut self) -> Result<String, String> {
@@ -116,7 +136,8 @@ impl Parser<'_> {
                         b'"' => out.push(b'"'), b'\\' => out.push(b'\\'), b'/' => out.push(b'/'),
                         b'b' => out.push(8), b'f' => out.push(12), b'n' => out.push(b'\n'), b'r' => out.push(b'\r'), b't' => out.push(b'\t'),
                         b'u' => {
-                            let hex = self.b.get(self.i..self.i + 4).and_then(|h| std::str::from_utf8(h).ok()).and_then(|h| u32::from_str_radix(h, 16).ok());
+                            let hex = self.b.get(self.i..self.i + 4).filter(|h| h.iter().all(u8::is_ascii_hexdigit))
+                                .and_then(|h| std::str::from_utf8(h).ok()).and_then(|h| u32::from_str_radix(h, 16).ok());
                             // shortcut: surrogate pairs (non-BMP \u escapes) are rejected; spec ids and keys are ASCII.
                             let Some(ch) = hex.and_then(char::from_u32) else { return self.err("unsupported \\u escape") };
                             self.i += 4;
@@ -143,9 +164,15 @@ mod tests {
         if let Json::Obj(kv) = &v { assert_eq!(kv.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>(), ["v", "a", "o"]); }
     }
     #[test] fn rejects_malformed_input_without_panicking() {
-        for bad in ["", "{", "[1,]", "{\"a\":1,}", "{\"a\" 1}", "{\"a\":1}x", "\"abc", "{\"a\":1,\"a\":2}", "1e999", "-", "nul", "[\"\\ud800\"]", "\"a\u{1}\"", "{a:1}", "\"\\x\""] {
+        for bad in ["", "{", "[1,]", "{\"a\":1,}", "{\"a\" 1}", "{\"a\":1}x", "\"abc", "{\"a\":1,\"a\":2}", "1e999", "-", "nul", "[\"\\ud800\"]", "\"a\u{1}\"", "{a:1}", "\"\\x\"",
+            "01", "00", "-01", "1.", "-.5", "1.e2", "+1", "1e", "1e+", "\"\\u+123\"", "\"\\u 123\""] {
             assert!(parse(bad).is_err(), "{bad:?} should fail");
         }
+        for good in ["0", "-0", "1.5", "1e5", "1E+5", "-2.5e-3"] {
+            assert!(matches!(parse(good), Ok(Json::Num(_))), "{good:?} should parse");
+        }
+        let long = format!("{{\"{0}\":1,\"{0}\":2}}", "k".repeat(200));
+        assert!(parse(&long).unwrap_err().len() < 100, "duplicate-key error must cap the echoed key");
     }
     #[test] fn depth_is_bounded() {
         assert!(parse(&"[".repeat(17).chars().chain("]".repeat(17).chars()).collect::<String>()).is_err());
