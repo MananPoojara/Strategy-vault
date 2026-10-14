@@ -10,6 +10,7 @@ pub mod ma;
 pub mod momentum;
 pub mod price;
 pub mod resample;
+pub mod rules;
 pub mod ta;
 pub mod trend;
 pub mod volatility;
