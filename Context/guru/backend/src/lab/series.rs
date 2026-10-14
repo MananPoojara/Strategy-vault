@@ -46,6 +46,7 @@ pub fn series(fr: &Frames, cache: &mut Cache, s: &SeriesRef) -> Result<Vec<f64>,
                     let def = catalogue::get(&s.id).ok_or_else(|| LabError::Invalid(format!("unknown series '{}'", s.id)))?;
                     let o = Rc::new(catalogue::run(&def, b, &s.params).map_err(|e| match e.as_str() {
                         "needs volume" => LabError::NeedsData(format!("{}: needs volume, which is missing on some admitted bars of this instrument", def.name)),
+                        "needs breadth" => LabError::NeedsData(format!("{}: needs market breadth (advances/declines) on daily bars; this market or timeframe has none", def.name)),
                         "needs intraday data" => LabError::NeedsData(format!("{}: needs intraday data", def.name)),
                         _ => LabError::Invalid(format!("{}: {e}", def.id)),
                     })?);
@@ -142,7 +143,7 @@ mod tests {
     use super::*;
     use crate::lab::catalogue::{all, resolve_params, Params};
     use crate::lab::rules::parse_spec;
-    use crate::lab::testdata::{assert_series, close_eq, walk};
+    use crate::lab::testdata::{assert_series, close_eq, walk, with_breadth};
 
     /// Real calendar days (weekends skipped) so W/M grouping matches an exchange calendar.
     pub fn business_days(n: usize, with_volume: bool) -> Bars {
@@ -196,17 +197,15 @@ mod tests {
     }
     #[test] fn signals_never_use_later_bars() {
         // Every catalogue indicator on D, W and M: truncating the data never changes an earlier daily value.
-        let full_bars = business_days(420, true);
+        let full_bars = with_breadth(business_days(420, true));
         let full = Frames::new(full_bars.clone());
         for d in all().iter().filter(|d| d.compute.is_some()) {
             for tf in [Tf::D, Tf::W, Tf::M] {
                 let r = sref(d.id, tf, d.outputs.len() - 1, 0);
+                if d.needs.breadth && tf != Tf::D { assert_eq!(series(&full, &mut Cache::new(), &r).unwrap_err().status(), "needs_data"); continue; }
                 let want = series(&full, &mut Cache::new(), &r).unwrap();
                 for cut in [97usize, 203, 311] {
-                    let mut pre = full_bars.clone();
-                    for v in [&mut pre.open, &mut pre.high, &mut pre.low, &mut pre.close] { v.truncate(cut); }
-                    pre.date.truncate(cut); pre.end.truncate(cut);
-                    if let Some(v) = pre.volume.as_mut() { v.truncate(cut); }
+                    let pre = crate::lab::testdata::cut(&full_bars, cut);
                     let got = series(&Frames::new(pre), &mut Cache::new(), &r).unwrap();
                     // The final bar of the cut may sit inside an unfinished week/month, so only bars before it must match.
                     for i in 0..cut - 1 { assert!(close_eq(got[i], want[i]), "{} {tf:?} bar {i} changes when bars after {cut} exist", d.id); }
@@ -240,7 +239,7 @@ mod tests {
         assert!(cache.len() <= CACHE_CAP);
     }
     #[test] fn every_indicator_at_parameter_bounds_never_panics() {
-        for bars in [business_days(3, true), business_days(300, true)] {
+        for bars in [with_breadth(business_days(3, true)), with_breadth(business_days(300, true))] {
             let fr = Frames::new(bars);
             for d in all().iter().filter(|d| d.compute.is_some()) {
                 let picks: [fn(&catalogue::ParamSpec) -> f64; 2] = [|p| p.min, |p| p.max];
@@ -248,6 +247,7 @@ mod tests {
                     let params: Params = d.params.iter().map(|p| (p.key.to_string(), pick(p))).collect();
                     for tf in [Tf::D, Tf::W, Tf::M] {
                         let r = SeriesRef { id: d.id.into(), params: params.clone(), tf, out: 0, offset: 0 };
+                        if d.needs.breadth && tf != Tf::D { assert_eq!(series(&fr, &mut Cache::new(), &r).unwrap_err().status(), "needs_data"); continue; }
                         assert_eq!(series(&fr, &mut Cache::new(), &r).unwrap().len(), fr.d.len(), "{} {tf:?}", d.id);
                     }
                 }

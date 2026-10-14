@@ -108,7 +108,7 @@ pub fn series_json(st: &State, q: &Query) -> Result<String, LabError> {
     let held = selected.context(st);
     let ctx: &Ctx = &held;
     let (_, instrument) = instrument(&selected, &ctx.r[0].ticker);
-    let fr = Frames::new(Bars::from_rows(ctx.r));
+    let fr = Frames::new(Bars::from_ctx(ctx));
     let outputs: Vec<&str> = catalogue::get(id).map_or(vec![id.as_str()], |d| d.outputs.to_vec());
     let mut cache = Cache::new();
     let mut values = Vec::new();
@@ -198,7 +198,7 @@ pub fn run_json(st: &State, q: &Query) -> Result<String, LabError> {
     let costs = accounting::Costs::parse(q)?;
     costs.ensure_rollover()?;
     let cost = costs.side_rate();
-    let fr = Frames::new(Bars::from_rows(ctx.r));
+    let fr = Frames::new(Bars::from_ctx(ctx));
     let compiled = series::compile(&spec, &fr, &mut Cache::new())?;
     let run = backtest(ctx, &compiled, &fr.d, from, to, cost)?;
     let gross = crate::Run { trades: run.trades.clone(), from, to, equity: crate::equity_curve(&ctx.c, &run.trades, from, to, 0.), bh: run.bh.clone() };
@@ -236,7 +236,7 @@ pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> {
         Some(s) => Some(Some(dates.partition_point(|d| *d < s.as_str())).filter(|&k| k > from + 20 && k + 20 < to)
             .ok_or_else(|| LabError::Invalid("split must leave more than 20 bars on each side of the range".into()))?),
     };
-    let fr = Frames::new(Bars::from_rows(ctx.r));
+    let fr = Frames::new(Bars::from_ctx(ctx));
     let dims = &spec.optimize;
     let combos: usize = dims.iter().map(|d| d.values.len()).product();
     let metrics = |cache: &mut Cache, s: &Spec| -> Result<Vec<f64>, LabError> {
@@ -406,7 +406,7 @@ pub fn fidelity_json(st: &State, q: &Query) -> Result<String, LabError> {
     }
     let from = crate::window_start(ctx, &d, from).filter(|&f| f < to).ok_or_else(|| LabError::NeedsData("required volatility-index data does not cover this period".into()))?;
     let book = crate::connors::run(id, ctx, from, to, &none).ok_or_else(|| LabError::Invalid("book implementation unavailable".into()))?;
-    let fr = Frames::new(Bars::from_rows(ctx.r));
+    let fr = Frames::new(Bars::from_ctx(ctx));
     let lab = simulate(&series::compile(&templates::parsed(t), &fr, &mut Cache::new())?, &fr.d, from, to);
     let c = fidelity::compare(&book, &lab);
     let tj = |t: Option<&crate::connors::Trade>| t.map_or("null".into(), |t| format!(

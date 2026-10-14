@@ -39,7 +39,7 @@ pub const fn real(key: &'static str, label: &'static str, default: f64, min: f64
     ParamSpec { key, label, default, min, max, step, integer: false }
 }
 pub fn all() -> Vec<IndicatorDef> {
-    [super::ma::DEFS, super::momentum::DEFS, super::trend::DEFS, super::volatility::DEFS, super::volume::DEFS, super::price::DEFS, super::listed::DEFS].concat()
+    [super::ma::DEFS, super::momentum::DEFS, super::trend::DEFS, super::volatility::DEFS, super::volume::DEFS, super::price::DEFS, super::listed::DEFS, super::breadth::DEFS].concat()
 }
 pub fn get(id: &str) -> Option<IndicatorDef> { all().into_iter().find(|d| d.id == id) }
 pub fn resolve_params(def: &IndicatorDef, given: &Params) -> Result<Params, String> {
@@ -59,6 +59,7 @@ pub fn run(def: &IndicatorDef, bars: &Bars, given: &Params) -> Output {
     let params = resolve_params(def, given)?;
     if def.needs.intraday { return Err("needs intraday data".into()); }
     if def.needs.volume && bars.volume.is_none() { return Err("needs volume".into()); }
+    if def.needs.breadth && bars.breadth.is_none() { return Err("needs breadth".into()); }
     let f = def.compute.ok_or_else(|| if def.note.is_empty() { "computed by a later batch".to_string() } else { def.note.to_string() })?;
     f(bars, &params)
 }

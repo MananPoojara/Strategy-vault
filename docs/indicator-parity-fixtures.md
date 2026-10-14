@@ -38,6 +38,11 @@ CSV files kept outside Git; without them the parity test passes and prints "skip
 | macd | fast=12, slow=26, signal=9 | macd, signal, hist |
 | stoch | k=14, smooth_k=1, d=3 | k, d |
 | stochrsi | k=3, d=3, rsi_length=14, stoch_length=14 | k, d |
+| breadth | - | advances, declines, unchanged, adv_volume, dec_volume, unch_volume |
+| adl | - | adl |
+| ad_ratio | - | ratio |
+| cvi | - | cvi |
+| trin | - | trin |
 | cci | length=20 | cci |
 | mom | length=10 | mom |
 | roc | length=9 | roc |
@@ -131,6 +136,8 @@ SAR with an outside bar at the start (bar-1 reversal), SWMA.
 ## Scope notes
 
 Bars since moves to the Phase 2 rule builder (it takes a condition, not a price series).
+
+Breadth fixtures need the market's advance/decline data, not the chart symbol; compare against TradingView `ADVN.NS`/`DECN.NS` style symbols only after confirming they match NSE_ADV_DEC (pending).
 
 ## Listed only (no fixture possible)
 

@@ -1,4 +1,4 @@
-use super::bars::Bars;
+use super::bars::{Bars, Breadth};
 use super::catalogue::{get, run};
 use super::resample::{civil, day_number};
 use super::rules::{parse_spec, LabError};
@@ -43,7 +43,7 @@ pub fn go(id: &str, b: &Bars, kv: &[(&str, f64)]) -> Vec<Vec<f64>> {
 /// A one-condition long rule on `id.out`, compiled on 300 synthetic days with volume: proves a rule can reach the series.
 pub fn compiles(id: &str, out: &str) -> Result<(), LabError> {
     let spec = parse_spec(&format!(r#"{{"v":1,"entry":{{"all":[{{"lhs":{{"s":"{id}","out":"{out}"}},"op":">","rhs":{{"value":0}}}}]}},"exit":{{"any":[{{"lhs":{{"s":"bars_held"}},"op":">=","rhs":{{"value":1}}}}]}}}}"#))?;
-    compile(&spec, &Frames::new(walk(300, 4, true)), &mut Cache::new()).map(|_| ())
+    compile(&spec, &Frames::new(with_breadth(walk(300, 4, true))), &mut Cache::new()).map(|_| ())
 }
 pub fn close_eq(a: f64, b: f64) -> bool {
     (a.is_nan() && b.is_nan()) || (a - b).abs() <= 1e-9 * a.abs().max(b.abs()).max(1.)
@@ -53,4 +53,20 @@ pub fn assert_series(got: &[f64], want: &[f64]) {
     for (i, (g, w)) in got.iter().zip(want).enumerate() {
         assert!(close_eq(*g, *w), "index {i}: got {g}, want {w}");
     }
+}
+/// Deterministic synthetic breadth (no zeros, no gaps) for any bars.
+pub fn with_breadth(mut b: Bars) -> Bars {
+    let n = b.len();
+    let f = |k: usize, m: f64| -> Vec<f64> { (0..n).map(|i| 400. + ((i * k) % 97) as f64 * m).collect() };
+    b.breadth = Some(Breadth { adv: f(37, 5.), dec: f(53, 4.), unch: vec![50.; n], adv_vol: f(41, 1e4), dec_vol: f(59, 1e4), unch_vol: vec![1e3; n] });
+    b
+}
+/// The first `n` bars (all columns, breadth included).
+pub fn cut(b: &Bars, n: usize) -> Bars {
+    let mut p = b.clone();
+    for v in [&mut p.open, &mut p.high, &mut p.low, &mut p.close] { v.truncate(n); }
+    p.date.truncate(n); p.end.truncate(n);
+    if let Some(v) = p.volume.as_mut() { v.truncate(n); }
+    if let Some(r) = p.breadth.as_mut() { for v in [&mut r.adv, &mut r.dec, &mut r.unch, &mut r.adv_vol, &mut r.dec_vol, &mut r.unch_vol] { v.truncate(n); } }
+    p
 }
