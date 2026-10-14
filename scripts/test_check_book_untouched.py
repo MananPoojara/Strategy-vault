@@ -98,6 +98,8 @@ class BookGuard(unittest.TestCase):
         self.assertEqual(guard.optimize_route("chande", [{"id": "d", "status": "live"}], {"d": [{"key": "k", "def": 0.1, "step": 0.2}]})[0],
                          "chande/optimize?id=d&g.k=0.1:0.3:0.2")
         self.assertIsNone(guard.optimize_route("ross", catalogue, {}))
+        self.assertIsNone(guard.optimize_route("connors", catalogue, params, runnable={"a", "b"}))
+        self.assertEqual(guard.optimize_route("connors", catalogue, params, runnable={"c"})[0][:20], "connors/optimize?id=")
 
     def test_optimizer_timing_is_not_hashed(self):
         a = guard.stable("connors/optimize?id=c", b'{"id":"c","ms":12,"rows":[[1]]}')
@@ -110,6 +112,18 @@ class BookGuard(unittest.TestCase):
         rows = [{"ticker": "NIFTY 50"}, {"ticker": "basket:b:Z", "basket": "b"}, {"ticker": "basket:a:Y", "basket": "a"},
                 {"ticker": "basket:a:X", "basket": "a"}, {"ticker": "basket:c:W", "basket": "c"}]
         self.assertEqual(guard.basket_tickers(rows), ["basket:a:X", "basket:a:Y", "basket:b:Z"])
+
+    def test_coverage_counts_split_ok_and_refused_by_route_kind(self):
+        st = {"connors/strategies": 200, "connors/params": 200, "connors/summary?ticker=NIFTY 50": 200,
+              "connors/summary?ticker=basket:a:X": 400, "connors/run?id=a": 200, "connors/run?id=b": 400,
+              "connors/readiness?id=a": 200, "connors/optimize?id=a&g.k=1:2:1": 200}
+        self.assertEqual(guard.coverage_counts(st), {
+            "strategies": (1, 0), "params": (1, 0), "summary": (1, 0), "basket": (0, 1),
+            "run": (1, 1), "readiness": (1, 0), "optimize": (1, 0)})
+
+    def test_optimize_must_return_200(self):
+        st = {"connors/optimize?id=a": 200, "chande/optimize?id=d": 400, "chande/run?id=d": 400}
+        self.assertEqual(guard.optimize_problems(st), ["optimize not run on HEAD: chande returned HTTP 400"])
 
 
 if __name__ == "__main__":

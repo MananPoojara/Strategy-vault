@@ -78,9 +78,10 @@ def strategy_routes(guru, catalogue, ticker="NIFTY 50"):
     return out
 
 
-def optimize_route(guru, catalogue, params, ticker="NIFTY 50"):
-    """One two-value grid (default and default + step of the first parameter) for the first live strategy with params."""
-    live = {row["id"] for row in catalogue if row.get("status") == "live"}
+def optimize_route(guru, catalogue, params, ticker="NIFTY 50", runnable=None):
+    """One two-value grid (default and default + step of the first parameter) for the first live strategy with params
+    (and, when given, whose default run succeeded, so the optimizer is really exercised)."""
+    live = {row["id"] for row in catalogue if row.get("status") == "live" and (runnable is None or row["id"] in runnable)}
     for sid, defs in params.items():
         if sid in live and defs:
             p = defs[0]
@@ -107,6 +108,30 @@ def basket_tickers(tickers_json, limit=3):
     return sorted(row["ticker"] for row in tickers_json if "basket" in row)[:limit]
 
 
+def route_kind(key):
+    if key.endswith("/strategies"):
+        return "strategies"
+    if key.endswith("/params"):
+        return "params"
+    if "/summary?ticker=basket:" in key:
+        return "basket"
+    return key.split("/", 1)[1].split("?", 1)[0]
+
+
+def coverage_counts(statuses):
+    """{route kind: (200 count, non-200 count)} so a vacuous pass of equal refusals is visible."""
+    out = {}
+    for key, status in statuses.items():
+        ok, bad = out.get(route_kind(key), (0, 0))
+        out[route_kind(key)] = (ok + (status == 200), bad + (status != 200))
+    return out
+
+
+def optimize_problems(statuses):
+    return [f"optimize not run on HEAD: {k.split('/')[0]} returned HTTP {s}"
+            for k, s in statuses.items() if route_kind(k) == "optimize" and s != 200]
+
+
 def engine_hashes(src_dir, csv, vix, extra):
     env = dict(os.environ, CARGO_BUILD_JOBS="2")
     subprocess.run(["cargo", "build", "--release", "--manifest-path", f"{src_dir}/Context/guru/backend/Cargo.toml"], check=True, env=env)
@@ -127,12 +152,13 @@ def engine_hashes(src_dir, csv, vix, extra):
             tickers += basket_tickers(tickers_json)
         else:
             notes.append("basket summary skipped: VAULT_BASKET_DATA_DIR is not set")
-        out = {}
+        out, statuses = {}, {}
 
         def put(key, route):
             status, body = fetch(f"{api}/guru/{route}")
             if not body:
                 raise RuntimeError(f"empty response for {route}")
+            statuses[key] = status
             out[key] = hashlib.sha256(f"{status}\n".encode() + stable(key, body)).hexdigest()
             return body
 
@@ -143,12 +169,13 @@ def engine_hashes(src_dir, csv, vix, extra):
                 put(f"{g}/summary?ticker={t}", f"{g}/summary?ticker={urllib.parse.quote(t)}")
             for key, route in strategy_routes(g, catalogue):
                 put(key, f"{g}/{route}")
-            opt = optimize_route(g, catalogue, params)
+            runnable = {k.split("id=", 1)[1] for k, v in statuses.items() if k.startswith(f"{g}/run?id=") and v == 200}
+            opt = optimize_route(g, catalogue, params, runnable=runnable)
             if opt:
                 put(opt[0], f"{g}/{opt[1]}")
             else:
                 notes.append(f"{g}: no live strategy with parameters; optimize not hashed")
-        return out, notes
+        return out, statuses, notes
     finally:
         proc.terminate()
         proc.wait()
@@ -160,9 +187,13 @@ def compare_engines(repo, base, csv, vix, extra):
         archive = subprocess.run(["git", "-C", str(repo), "archive", compare_base(repo, base)], capture_output=True, check=True).stdout
         with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
             tar.extractall(tmp, filter="data")
-        before, _ = engine_hashes(tmp, csv, vix, extra)
-    after, notes = engine_hashes(repo, csv, vix, extra)
-    return [f"book output changed: {k}" for k in before if before[k] != after.get(k)], notes + [f"hashed {len(before)} book responses"]
+        before, _, _ = engine_hashes(tmp, csv, vix, extra)
+    after, statuses, notes = engine_hashes(repo, csv, vix, extra)
+    notes += [f"{k}: {ok} ok / {bad} non-200" for k, (ok, bad) in coverage_counts(statuses).items()]
+    notes += [f"hashed {len(before)} book responses",
+              "run/readiness use default params on NIFTY 50; stock-only methods are covered only by their refusal response unless basket data is configured"]
+    problems = [f"book output changed: {k}" for k in before if before[k] != after.get(k)]
+    return problems + optimize_problems(statuses), notes
 
 
 def main():
