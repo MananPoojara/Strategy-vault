@@ -63,3 +63,7 @@ test('unsupported source declarations or empty admitted types cannot be rescued 
  const stopped=def('a');stopped.status='not_testable';assert.equal(availability(['one'],[stopped],{a:measured()},{}).status,'source_review');
  const missing=def('a');missing.instrument_policy={requirement:'futures',allowed_types:[],source_basis:'Actual dated futures contract prices are required.'};assert.equal(availability(['one'],[missing],{a:measured()},{}).status,'needs_data');
 });
+test('a failed request remains unavailable even when its note records the known price history',()=>{
+ const result=availability(['one'],[def('a')],{a:{blocked:'Some backtests could not be loaded. Available history: 2000-01-03 to 2020-09-11.',readiness:'unavailable'}},{a:{status:'ready'}});
+ assert.equal(result.status,'no_eligible_results');assert.equal(result.counts.needs_data,0);assert.equal(result.availableVariants,0);
+});

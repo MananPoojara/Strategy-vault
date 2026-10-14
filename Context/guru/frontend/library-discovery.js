@@ -31,6 +31,7 @@
   const stockOnly=policy.requirement==='individual_stock'||policy.allowed_types?.length===1&&policy.allowed_types[0]==='individual_stock';
   if(!known)return {status:'source_review',note:note||'Source instrument requirements have not been reviewed for this method.'};
   if(status){
+   if(status==='unavailable')return {status:'no_eligible_results',note:note||'The request could not be completed for this selection.'};
    if(uncertainty.test(note))return {status:'source_review',note};
    if(stockOnly&&stockMismatch.test(note))return {status:'needs_stock_basket',note};
    if(status==='needs_data'||dataGap.test(note))return {status:'needs_data',note:note||'Required input data is unavailable.'};

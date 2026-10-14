@@ -3,6 +3,8 @@ import {vaultStore} from '../state/store';
 import {resolveRoute} from '../app/routes';
 import {customPages} from '../app/custom-pages';
 import {LIB} from './catalogue.js';
+import {loadOwnerRows} from '../services/summary-loader';
+import {bookContext} from '../services/book-context';
 import {libraryScope,inLibraryScope} from '../services/library-scope';
 import {libraryMarket,libraryMarketVariants} from '../services/library-market';
 import {orderAuthors} from '../services/author-order';
@@ -712,7 +714,12 @@ const rgba_ = (hex, a) => { const h = hex.replace('#', ''); return `rgba(${parse
 let API = window.VAULT_APP ? '/api/in' : (new URLSearchParams(location.search).get('api') || `http://${location.hostname || 'localhost'}:8090`).replace(/\/$/, '') + '/api';
 const API_IN = API, API_US = window.VAULT_APP ? '/api/us' : `http://${location.hostname || 'localhost'}:8091/api`, BOOKCTX = { stc9: ['1995-01-01', '2009-12-31', 2010], etfss: ['2000-01-03', '2004-06-16', 2004], pctb: ['1994-01-03', '2004-06-30', 2004], rsi25: ['1993-01-29', '2003-12-31', 2004], spmt: ['1997-09-09', '2006-11-30', 2007], vixr: ['1993-01-28', '2001-08-06', 2001], otvt: ['1993-01-28', '1997-10-01', 1999], ptjmt: ['1993-01-28', '1997-10-31', 1999], ats: ['1993-01-28', '1997-10-31', 1998], hfm: ['1993-01-29', '1994-12-31', 1995], btp: ['1993-01-29', '1999-12-31', 1999], ptjdt: ['1993-01-29', '1999-12-31', 1999], ws5: ['1993-01-29', '2003-06-30', 2003], cwin: ['1994-01-03', '2002-12-31', 2003], ss: ['1993-01-29', '1995-12-31', 1996], oiss: ['1993-01-29', '2004-06-30', 2004], lrd: ['1995-01-01', '1996-12-31', 2001], alpha: ['1993-01-29', '2018-12-31', 2020], ststw: ['1995-01-03', '2007-12-31', 2008], hpetf: ['1993-01-29', '2008-12-31', 2009], hmrw: ['1993-01-29', '2011-12-31', 2012], radge: ['1993-01-29', '2011-12-31', 2012], covel: ['1993-01-29', '2006-12-31', 2007], tharp: ['1993-01-29', '1998-12-31', 1999], afactor: ['2000-01-03', '2004-12-31', 2005] }; // US default window = each book's own test period, + publication year
 let BOOK_FROM = '1995-01-01', BOOK_TO = '2009-12-31';
-const bookCtx = id => { [BOOK_FROM, BOOK_TO, PUB] = id?.startsWith('jr_') ? ['', '', BOOK[id]?.year || null] : BOOKCTX[id] || BOOKCTX.stc9; };
+const bookCtx = id => {
+ [BOOK_FROM,BOOK_TO,PUB]=bookContext(id,BOOKCTX,BOOK);
+ TABS.working.pre=PUB?`${PUB-1}-12-31`:undefined;
+ TABS.working.metric.label=PUB?`Sharpe since ${PUB}`:'Publication year unconfirmed';
+ TABS.working.note=PUB?`Compare Sharpe since publication (${PUB}) with the period before it. Missing history remains unavailable; this is a research comparison, not a certified holdout.`:'The publication year is not established for this book.';
+};
 const srcOf = v => v.guru === 'ross' ? (sourceEvidence(v)?.pages || 'Source reference') : v.session ? `Session ${v.session}` : 'Part III';
 let TICK_IN = [], TICK_US = null;
 const IN_INDICES = ['NIFTY 50', 'NIFTYBANK', 'NIFTYMIDCAP100'], US_INDICES = ['SPX', 'NDX', 'DJI']; // the Indian indices the vault shows (Nifty IT and Midcap Select are left out)
@@ -833,47 +840,61 @@ const writeHash = () => { const q = new URLSearchParams(); for (const k in DEF) 
 
 let CAT = [], TICKERS = [], GURUS_API = [], TICK_ALL_US = [];
 const TRUST = window.VaultTruth;
-const READINESS = {};
-async function getReadiness(tk, from = '', to = '', id = '', parameters = {}) {
-  const api=API,owners=id?[ownerOf(id)]:guruIds(),variants=[...CAT];
-  if(!owners.length)return {};
-  const query = new URLSearchParams({ticker:tk,from,to,cost:S.cost||'0',...VaultUI.costState(S),...(id?{id}:{})});
-  const settings=typeof parameters==='string'?decodeP(parameters):parameters;
-  for(const [key,value] of Object.entries(settings)) query.set('p.'+key,value);
-  const key = api + '|' + (id ? owners[0] : 'all') + '?' + query;
-  if(!READINESS[key]) READINESS[key] = (async () => {
-    try {
-      const data=await Promise.all(owners.map(async guru=>{
-        const response=await fetch(api+'/guru/'+guru+'/readiness?'+query);
-        if(!response.ok) throw new Error(await response.text());
-        return (await response.json()).strategies;
-      }));
-      return Object.fromEntries(data.flat().map(item=>[item.id,item]));
-    } catch(error) {
-      return Object.fromEntries((id?variants.filter(v=>v.id===id):variants).map(v=>[v.id,{id:v.id,status:'unavailable',note:'Data readiness could not be established for this period. Results are withheld. '+error.message}]));
-    }
-  })();
-  return READINESS[key];
+function summaryContext(tk,from='',to='') {
+ const ticker=[...TICK_ALL_IN,...TICK_ALL_US].find(item=>item.ticker===tk);
+ return {ticker:tk,label:LABEL[tk]||ticker?.symbol||tk,from,to,first:ticker?.first,last:ticker?.last};
 }
-const SUM = {}; // `${tk}|${from}|${to}` -> { id: {stats, spark} }
+const summaryKey=(api,tk,from='',to='')=>`${api}|${tk}|${from}|${to}`;
+const SUMMARY_ISSUES={},READINESS={},SUM={},SUM_FAILURE_GENERATION={},READINESS_FAILURE_GENERATION={};
+const ownedDefinitions=(variants,owner,id='')=>variants.filter(v=>(v.api||ownerOf(v.id))===owner&&(!id||v.id===id));
+const summaryIssues=(tk,from='',to='')=>SUMMARY_ISSUES[summaryKey(API,tk,from,to)]||[];
+async function getReadiness(tk, from = '', to = '', id = '', parameters = {}) {
+ const api=API,owners=id?[ownerOf(id)]:guruIds(),variants=[...ALLCAT],generation=busy;
+ if(!owners.length)return {};
+ const query=new URLSearchParams({ticker:tk,from,to,cost:S.cost||'0',...VaultUI.costState(S),...(id?{id}:{})});
+ const settings=typeof parameters==='string'?decodeP(parameters):parameters;
+ for(const [key,value] of Object.entries(settings))query.set('p.'+key,value);
+ const key=api+'|'+(id?owners[0]:'all')+'?'+query,context=summaryContext(tk,from,to);
+ // Failed requests are shared within a render, then retried on the next user navigation.
+ if(READINESS_FAILURE_GENERATION[key]!=null&&READINESS_FAILURE_GENERATION[key]!==generation)delete READINESS[key];
+ return READINESS[key]||(READINESS[key]=(async()=>{
+  const outcomes=await Promise.all(owners.map(owner=>loadOwnerRows({owner,definitions:ownedDefinitions(variants,owner,id),context,url:api+'/guru/'+owner+'/readiness?'+query,kind:'readiness',fetcher:fetch,wait:ms=>new Promise(resolve=>setTimeout(resolve,ms))})));
+  if(outcomes.some(outcome=>outcome.issue))READINESS_FAILURE_GENERATION[key]=generation;else delete READINESS_FAILURE_GENERATION[key];
+  return Object.fromEntries(outcomes.flatMap(outcome=>outcome.rows).map(row=>[row.id,row]));
+ })());
+}
 async function getSum(tk, from = '', to = '') {
-  const api=API,owners=guruIds();if(!owners.length)return {};
-  const k = `${api}|${tk}|${from}|${to}`;
-  const query = new URLSearchParams({ ticker: tk, from, to });
-  const load = async (tries = 3) => { try { const sets=await Promise.all(owners.map(async guru=>{const r=await fetch(`${api}/guru/${guru}/summary?`+query);if(!r.ok)throw new Error(await r.text());return r.json();})); return Object.fromEntries(sets.flat().map(r => [r.id, r])); }
-    catch (e) { if (tries <= 1) { delete SUM[k]; throw e; } await new Promise(r => setTimeout(r, 300)); return load(tries - 1); } };
-  return SUM[k] || (SUM[k] = load());
+ const api=API,owners=guruIds(),variants=[...ALLCAT],generation=busy;
+ if(!owners.length)return {};
+ const key=summaryKey(api,tk,from,to),context=summaryContext(tk,from,to),query=new URLSearchParams({ticker:tk,from,to});
+ if(SUM_FAILURE_GENERATION[key]!=null&&SUM_FAILURE_GENERATION[key]!==generation)delete SUM[key];
+ return SUM[key]||(SUM[key]=(async()=>{
+  const outcomes=await Promise.all(owners.map(owner=>loadOwnerRows({owner,definitions:ownedDefinitions(variants,owner),context,url:api+'/guru/'+owner+'/summary?'+query,kind:'summary',fetcher:fetch,wait:ms=>new Promise(resolve=>setTimeout(resolve,ms))})));
+  SUMMARY_ISSUES[key]=outcomes.flatMap(outcome=>outcome.issue?[outcome.issue]:[]);
+  if(outcomes.some(outcome=>outcome.issue))SUM_FAILURE_GENERATION[key]=generation;else delete SUM_FAILURE_GENERATION[key];
+  return Object.fromEntries(outcomes.flatMap(outcome=>outcome.rows).map(row=>[row.id,row]));
+ })());
+}
+function summaryNoticeHTML(issues) {
+ if(!issues.length)return '';
+ const notes=[...new Set(issues.map(issue=>issue.note))],dates=issues.some(issue=>['empty_range','invalid_range'].includes(issue.kind));
+ return `<section class="summary-unavailable" data-summary-unavailable role="status"><strong>Data coverage</strong>${notes.map(note=>`<p>${esc(note)}</p>`).join('')}${dates?`<a class="dbtn sm" data-summary-reset-dates href="${href(R.path,{...S,from:'',to:'',tab:'sharpe'})}">Use available history</a>`:''}</section>`;
+}
+function listSummaryIssues() {
+ if(S.tab==='awaiting')return [];
+ const tab=TABS[S.tab],tickers=S.tk==='ALL'?TICKERS.map(item=>item.ticker):[S.tk];
+ return tickers.flatMap(tk=>{const window=S.tab==='sharpe'&&(S.from||S.to)?{from:S.from||'',to:S.to||''}:tab.win(tk);return summaryIssues(tk,window.from,window.to);});
 }
 // "before the book" numbers come from the per-strategy endpoint: the summary endpoint crashes when the end date
 // is before the first India VIX bar (VIX strategies), while /run answers that case cleanly.
 const PRE = {};
 function preMap(tk, to) {
-  const k = `${API}|${tk}|${to}`;
+  const api=API,k = `${api}|${tk}|${to}`;
   if (PRE[k]) return PRE[k];
   const ids = CAT.filter(v => v.status === 'live' && !v.needs_vix).map(v => v.id), out = {}; // VIX data starts after 2009: nothing to ask
   let i = 0;
   const worker = async () => { while (i < ids.length) { const id = ids[i++];
-    try { const r = await fetch(enginePath(id,'run')+'?' + new URLSearchParams({ id, ticker: tk, to })); if (r.ok) out[id] = { stats: (await r.json()).stats }; } catch (e) { /* leave missing */ } } };
+    try { const r = await fetch(enginePath(id,'run',api)+'?' + new URLSearchParams({ id, ticker: tk, to })); if (r.ok) out[id] = { stats: (await r.json()).stats }; } catch (e) { /* leave missing */ } } };
   return PRE[k] = Promise.all(Array.from({ length: 6 }, worker)).then(() => out);
 }
 const lastOf = tk => TICKERS.find(t => t.ticker === tk)?.last || '2026-05-15';
@@ -983,7 +1004,7 @@ const RTAG = { F: 'IF', E: 'ENTRY', A: 'ADD', X: 'EXIT' };
 const rulesList = v => `<details class="rules"><summary>Rules as written in the book</summary><ul>${(v.rules || []).map(x => { const [t, ...rest] = x.split('|'); return `<li><span class="t">${RTAG[t] || ''}</span>${esc(rest.join('|') || x)}</li>`; }).join('')}</ul></details>`;
 const kpiTriplet = r => {
   const M = TABS[S.tab].metric, s = r.s;
-  const second = S.tab === 'working' ? `<div><span>Before ${PUB}</span><b>${fx(r.x?.sharpe)}</b><i>${r.x ? (r.x.sharpe > 0 && s.sharpe > 0 ? 'still working' : s.sharpe > 0 ? 'works since book' : r.x.sharpe > 0 ? 'decayed' : 'never worked') : r.v.needs_vix ? 'no India VIX before 2010' : 'no trades before'}</i></div>`
+  const second = S.tab === 'working' ? `<div><span>Before ${PUB}</span><b>${fx(r.x?.sharpe)}</b><i>${r.x ? (r.x.sharpe > 0 && s.sharpe > 0 ? 'still working' : s.sharpe > 0 ? 'works since book' : r.x.sharpe > 0 ? 'decayed' : 'never worked') : 'Before-book result unavailable'}</i></div>`
     : S.tab === 'trending' ? `<div><span>Sharpe (full)</span><b>${fx(r.x?.sharpe)}</b><i>${fx(r.s.trades, 0)} trades in 12M</i></div>`
     : `<div><span>CAGR</span><b class="${cls(s.cagr)}">${pct(s.cagr, 1, true)}</b><i>B&amp;H ${pct(s.bh_cagr, 1, true)}</i></div>`;
   return `<div class="kpis"><div><span>${esc(M.label)}</span><b class="p">${M.fmt(M.get(r))}</b><i>${S.tab === 'sig' ? 'Sharpe ' + fx(s.sharpe) : 'win ' + pct(s.win_rate, 0)}</i></div>${second}<div><span>Max DD</span><b class="neg">${pct(s.max_dd, 1)}</b><i>${fx(s.trades, 0)} trades</i></div></div>`;
@@ -1327,8 +1348,8 @@ async function viewList() {
   if(R.name==='guru' && R.id==='chande' && S.book) head+=experimentNotice({guru:'chande'},null);
   if(R.name==='guru' && S.book) head+=readingReviewHTML(bookSources(GURU[R.id],BOOK[S.book]).find(x=>x.review));
   if(R.name==='guru'&&S.book&&!BOOK[S.book]?.live)return readingBookPage(GURU[R.id],BOOK[S.book]);
-  if (R.name === 'guru' && !S.book) return `${head}${R.id==='ross'?rossResearchNotice():R.id==='chande'?experimentNotice({guru:'chande'},null):''}${libraryFiltersHTML(true)}${await bookShelf(GURU[R.id])}`;
-  return `${head}${await filterBar()}${resultsBar(rs)}<div id="results">${resultsHtml(rs)}</div>`;
+  if (R.name === 'guru' && !S.book) return `${head}${summaryNoticeHTML(listSummaryIssues())}${R.id==='ross'?rossResearchNotice():R.id==='chande'?experimentNotice({guru:'chande'},null):''}${libraryFiltersHTML(true)}${await bookShelf(GURU[R.id])}`;
+  return `${head}${await filterBar()}${summaryNoticeHTML(listSummaryIssues())}${resultsBar(rs)}<div id="results">${resultsHtml(rs)}</div>`;
 }
 // A guru's books as covers; opening one shows its strategies.
 function rossResearchNotice() {
@@ -1740,7 +1761,7 @@ async function homeModel(){
  const bookCards=books.slice(offset,offset+24).map(record=>{const b=record.book||record.source||record;return {id:record.id,kind:record.kind,title:record.title,author:record.kind==='source'&&record.source?.author_metadata&&record.source.author_metadata!=='?'?record.source.author_metadata+' · '+record.authorName:record.authorName,summary:record.kind==='catalogue'?readingSummary(record.author||GURU[record.authorId],b):b.summary||'Original reading material indexed from the source vault. Content and objective rules still need review.',year:String(record.year||'Edition year unconfirmed'),scope:libraryScope(record,CURATED_AUTHOR_IDS),categories:libraryScope(record,CURATED_AUTHOR_IDS)==='trading'?record.categories:[],href:record.kind==='catalogue'?href('/guru/'+record.authorId,{view:'grid',book:record.id,tk:S.tk,basket:S.basket,from:S.from,to:S.to}):href('/source/'+encodeURIComponent(record.id),{guru:record.authorId}),live:!!b.live};});
  const indices=S.region==='us'?TICK_US:TICK_IN;
  const enabled=ALLCAT.filter(variant=>variant.status==='live');
- return {authorStats:scoped,market:libraryMarket(S),implementedMethods:new Set(enabled.map(variant=>variant.book+':'+variant.family)).size,enabledVariants:enabled.length,implementedBooks:new Set(enabled.map(variant=>variant.book)).size,authors:scopeAuthorIds.size,curatedAuthors:CURATED_AUTHOR_IDS.size,scope:S.library_scope,inventoryGroups:LIB.length,inventoryEntries:inventoryRecords.length,entries:allRecords.length,families:h.tested,symbol:LABEL[h.tk]||h.tk,symbolCount:TICKERS.length,basket:!!S.basket,authorCards,bookCards,page:{page,pages,total,key:'library_page',label:S.library_view==='books'?'books':'authors'},query:S.library_q,category:S.book_category,view:S.library_view,etfs:etfs.map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),indices:(indices||[]).map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),baskets:BASKETS.map(b=>({id:b.id,name:b.name,symbols:b.symbols||[]})),symbols:TICKERS.map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),usAvailable:!!TICK_US,guilloche:GUILL,connorsLink:guruLink('connors'),strategiesLink:href('/strategies',{tk:S.tk,basket:S.basket})};
+ return {summaryIssues:summaryIssues(h.tk,S.from||'',S.to||''),authorStats:scoped,market:libraryMarket(S),implementedMethods:new Set(enabled.map(variant=>variant.book+':'+variant.family)).size,enabledVariants:enabled.length,implementedBooks:new Set(enabled.map(variant=>variant.book)).size,authors:scopeAuthorIds.size,curatedAuthors:CURATED_AUTHOR_IDS.size,scope:S.library_scope,inventoryGroups:LIB.length,inventoryEntries:inventoryRecords.length,entries:allRecords.length,families:h.tested,symbol:LABEL[h.tk]||h.tk,symbolCount:TICKERS.length,basket:!!S.basket,authorCards,bookCards,page:{page,pages,total,key:'library_page',label:S.library_view==='books'?'books':'authors'},query:S.library_q,category:S.book_category,view:S.library_view,etfs:etfs.map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),indices:(indices||[]).map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),baskets:BASKETS.map(b=>({id:b.id,name:b.name,symbols:b.symbols||[]})),symbols:TICKERS.map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),usAvailable:!!TICK_US,guilloche:GUILL,connorsLink:guruLink('connors'),strategiesLink:href('/strategies',{tk:S.tk,basket:S.basket})};
 }
 let startup;
 window.VaultRuntime={

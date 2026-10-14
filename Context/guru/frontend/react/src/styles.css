@@ -13,6 +13,9 @@ a { color: inherit; }
 .lc-result-context strong, .lc-result-context span { display: block; }
 .lc-result-context span { color: var(--ink2); font-size: 11px; }
 .library-backtest-note { margin: 8px 0 16px; color: var(--ink2); font-size: 12px; }
+.summary-unavailable { margin: 14px 0; padding: 14px 16px; border-left: 3px solid var(--blue); background: var(--panel); color: var(--ink2); font-size: 13px; }
+.summary-unavailable strong { color: var(--ink); }
+.summary-unavailable p { margin: 6px 0 10px; }
 
 .topbar { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 30px; height: 58px; padding: 0 32px; background: var(--topbar); backdrop-filter: blur(8px); border-bottom: 1px solid var(--steel); }
 .wordmark { font-weight: 800; font-stretch: 125%; font-size: 18px; text-decoration: none; }

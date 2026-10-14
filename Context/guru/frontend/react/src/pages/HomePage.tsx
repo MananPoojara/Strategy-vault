@@ -4,6 +4,7 @@ import { AuthorCard } from "../components/AuthorCard";
 import { BookCard } from "../components/BookCard";
 import { Pagination } from "../components/Pagination";
 import { ResearchMarkup } from "../components/ResearchMarkup";
+import { DataCoverageNotice } from "../components/DataCoverageNotice";
 export function HomePage({ snapshot }: { snapshot: ViewSnapshot }) {
   const model = snapshot.home;
   if (!model) return null;
@@ -110,6 +111,7 @@ export function HomePage({ snapshot }: { snapshot: ViewSnapshot }) {
         </p>
       </details>
       <LibraryControls model={model} state={snapshot.state} />
+      <DataCoverageNotice issues={model.summaryIssues} />
       {model.view === "authors" ? <p className="library-backtest-note">
         Authors with measured backtests appear first by default. Each card names its dataset;
         stock and ETF backtest links open that instrument and period.

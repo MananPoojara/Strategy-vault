@@ -32,7 +32,7 @@ const FROM = '2024-01-01', TO = '2025-12-31';
 const SAMPLE_FROM = '2010-01-01', SAMPLE_TO = '2020-09-11';
 const measured = (sharpe = 0.5) => ({stats: {trades: 30, net_profit: 0.1, sharpe, t_stat: 2}, spark: [1, 1.1]});
 
-function fixture({selected = NIFTY, allUnmeasured = false, selectedStockFamilies = 0} = {}) {
+function fixture({selected = NIFTY, allUnmeasured = false, selectedStockFamilies = 0, issues = []} = {}) {
   // These are test-only records for route/count behavior, not strategy or price results.
   const authors = [
     {id: 'connors', name: 'Larry Connors', books: [{id: 'stc9', title: 'Swing Trading College', live: true}]},
@@ -73,6 +73,7 @@ function fixture({selected = NIFTY, allUnmeasured = false, selectedStockFamilies
       return grouped;
     },
     getS: () => state,
+    summaryIssues: () => issues,
     getSum: async (tk, from = '', to = '') => {
       calls.push({kind: 'summary', tk, from, to});
       if (allUnmeasured) return {};
@@ -200,6 +201,18 @@ test('live registrations and admitted prices without measured summaries invent n
     assert.equal(q.get('to'), TO);
   }
   assert.equal(model.authorCards.find(card => card.id === 'reading').status, 'reading_only');
+});
+
+test('coverage issues remain attached to the home model while reading authors stay navigable', async () => {
+  const issues = [{owner: 'connors', status: 'needs_data', kind: 'empty_range', note: 'The selected period has fewer than two usable price bars. Choose another period.'}];
+  const f = fixture({allUnmeasured: true, issues}), model = await f.production.homeModel();
+  assert.equal(model.summaryIssues, issues);
+  assert.ok(model.authorCards.every(card => card.available === 0));
+  const reading = model.authorCards.find(card => card.id === 'reading');
+  assert.equal(reading.status, 'reading_only');
+  assert.ok(reading.href.startsWith('#/guru/reading?'));
+  assert.equal(queryOf(reading.href).get('from'), FROM);
+  assert.equal(queryOf(reading.href).get('to'), TO);
 });
 
 test('production heroStats requests the exact selected period for both overall and author summaries', async () => {
