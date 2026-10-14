@@ -129,7 +129,8 @@ mod tests {
         let bars = walk(400, 11, true);
         for d in all().iter().filter(|d| computable(d)) {
             let full = run(d, &bars, &Params::new()).unwrap();
-            for cut in [150usize, 271, 399] {
+            // many cut points: a sparse lookahead (e.g. a fractal written on its pivot bar) only shows when a cut lands right after it
+            for cut in (30usize..400).step_by(2) {
                 let mut pre = bars.clone();
                 for v in [&mut pre.open, &mut pre.high, &mut pre.low, &mut pre.close] { v.truncate(cut); }
                 pre.date.truncate(cut); pre.end.truncate(cut);
@@ -140,6 +141,17 @@ mod tests {
                 }
             }
         }
+    }
+    #[test] fn catalogue_matches_the_phase6_master_list() {
+        let defs = all();
+        assert_eq!(defs.len(), 299, "Phase 6 master list: 66 Batch A + 233 new");
+        assert_eq!(defs.iter().filter(|d| d.compute.is_some()).count(), 183);
+        assert_eq!(defs.iter().filter(|d| d.compute.is_none()).count(), 116);
+        let mut c = std::collections::BTreeMap::new();
+        for (_, tv, ab) in crate::lab::sources::SOURCES {
+            *c.entry(match (tv.is_empty(), ab.is_empty()) { (false, false) => "both", (false, true) => "tv", (true, false) => "ab", _ => "lab" }).or_insert(0) += 1;
+        }
+        assert_eq!((c["tv"], c["ab"], c["both"], c["lab"]), (234, 23, 41, 1));
     }
     #[test] fn volume_indicators_refuse_without_volume() {
         let bars = walk(300, 3, false);
