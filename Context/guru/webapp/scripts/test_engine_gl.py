@@ -65,5 +65,33 @@ class StageGl(unittest.TestCase):
             self.assertNotIn(left_out, sources, "admitted US indices are not duplicated; unresolved identities are not staged")
 
 
+class EngineGlCompose(unittest.TestCase):
+    def setUp(self):
+        import yaml  # PyYAML; the phase gate machine has it
+        self.compose = yaml.safe_load((REPO / "Context/guru/webapp/compose.yaml").read_text())
+        self.services = self.compose["services"]
+
+    def test_engine_gl_reuses_the_engine_image_with_only_staged_gl_data_read_only(self):
+        gl, us = self.services["engine-gl"], self.services["engine-us"]
+        self.assertEqual(self.compose["name"], "strategy-vault")
+        self.assertEqual(gl["image"], us["image"], "same engine image; no fork of strategy calculations")
+        self.assertNotIn("build", gl)
+        self.assertNotIn("ports", gl, "reachable only through the gateway")
+        self.assertEqual(gl["environment"], {"VAULT_LAB_MARKET": "gl"})
+        self.assertEqual(gl["command"][:2], ["/data/gl/gl_data.csv", "8090"])
+        self.assertEqual(gl["volumes"], ["${VAULT_RUNTIME_ROOT}/data/gl:/data/gl:ro"])
+        self.assertLessEqual(gl["cpus"], 2)
+        self.assertIn("mem_limit", gl)
+
+    def test_gateway_routes_gl_to_engine_gl(self):
+        gateway = self.services["gateway"]
+        self.assertEqual(gateway["environment"]["VAULT_ENGINE_GL"], "http://engine-gl:8090")
+        self.assertEqual(gateway["depends_on"]["engine-gl"], {"condition": "service_started"})
+
+    def test_setup_stages_gl_data_before_fixing_permissions(self):
+        setup = (REPO / "Context/guru/webapp/scripts/setup.py").read_text()
+        self.assertLess(setup.index("stage_gl.stage(root, data/'gl'/'gl_data.csv')"), setup.index("for item in [data, *data.rglob('*')]"))
+
+
 if __name__ == "__main__":
     unittest.main()

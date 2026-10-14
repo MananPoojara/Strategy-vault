@@ -83,6 +83,18 @@ services:
     cpuset: '${VAULT_CPUSET:-0,1}'
     mem_limit: 1g
     restart: unless-stopped
+  engine-gl:
+    # Provisional global/crypto TradingView exports (staged by scripts/setup.py); lab routes only, never publishable.
+    image: ${VAULT_ENGINE_IMAGE:-strategy-vault-engine:local}
+    command: [/data/gl/gl_data.csv, '8090', /data/gl/no-vix, /data/gl/no-extra]
+    environment:
+      VAULT_LAB_MARKET: gl
+    volumes:
+      - '${VAULT_RUNTIME_ROOT}/data/gl:/data/gl:ro'
+    cpus: 1
+    cpuset: '${VAULT_CPUSET:-0,1}'
+    mem_limit: 512m
+    restart: unless-stopped
   gateway:
     build:
       context: ..
@@ -92,6 +104,7 @@ services:
       VAULT_AUTH_URL: http://auth:8102
       VAULT_ENGINE_IN: http://engine-in:8090
       VAULT_ENGINE_US: http://engine-us:8090
+      VAULT_ENGINE_GL: http://engine-gl:8090
       VAULT_INTERNAL_TOKEN: ${VAULT_INTERNAL_TOKEN}
       VAULT_FRONTEND: /app/frontend
       VAULT_PUBLIC: /app/public
@@ -102,6 +115,7 @@ services:
       auth: {condition: service_healthy}
       engine-in: {condition: service_started}
       engine-us: {condition: service_started}
+      engine-gl: {condition: service_started}
     healthcheck:
       test: [CMD, vault-webapp, --healthcheck]
       interval: 10s
