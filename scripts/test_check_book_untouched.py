@@ -81,6 +81,36 @@ class BookGuard(unittest.TestCase):
         rows = [{"ticker": "NIFTY 50"}, {"ticker": "BKT", "basket": ["A", "B"]}, {"ticker": "RELIANCE"}]
         self.assertEqual(guard.preloaded_tickers(rows), ["NIFTY 50", "RELIANCE"])
 
+    def test_strategy_routes_cover_every_id_with_run_and_readiness(self):
+        routes = guard.strategy_routes("connors", [{"id": "f1a"}, {"id": "r 3"}])
+        self.assertEqual(routes, [
+            ("connors/run?id=f1a", "run?id=f1a&ticker=NIFTY%2050"),
+            ("connors/readiness?id=f1a", "readiness?id=f1a&ticker=NIFTY%2050"),
+            ("connors/run?id=r 3", "run?id=r%203&ticker=NIFTY%2050"),
+            ("connors/readiness?id=r 3", "readiness?id=r%203&ticker=NIFTY%2050"),
+        ])
+
+    def test_optimize_route_uses_first_live_strategy_with_params(self):
+        catalogue = [{"id": "a", "status": "not_testable"}, {"id": "b", "status": "live"}, {"id": "c", "status": "live"}]
+        params = {"a": [{"key": "x", "def": 1, "step": 1}], "b": [], "c": [{"key": "trend", "def": 200, "step": 25}, {"key": "hold", "def": 5, "step": 1}]}
+        self.assertEqual(guard.optimize_route("connors", catalogue, params),
+                         ("connors/optimize?id=c&g.trend=200:225:25", "optimize?id=c&ticker=NIFTY%2050&g.trend=200:225:25"))
+        self.assertEqual(guard.optimize_route("chande", [{"id": "d", "status": "live"}], {"d": [{"key": "k", "def": 0.1, "step": 0.2}]})[0],
+                         "chande/optimize?id=d&g.k=0.1:0.3:0.2")
+        self.assertIsNone(guard.optimize_route("ross", catalogue, {}))
+
+    def test_optimizer_timing_is_not_hashed(self):
+        a = guard.stable("connors/optimize?id=c", b'{"id":"c","ms":12,"rows":[[1]]}')
+        b = guard.stable("connors/optimize?id=c", b'{"rows":[[1]],"ms":95,"id":"c"}')
+        self.assertEqual(a, b)
+        self.assertEqual(guard.stable("connors/run?id=c", b'{"ms":1}'), b'{"ms":1}')
+        self.assertEqual(guard.stable("connors/optimize?id=c", b"not json"), b"not json")
+
+    def test_basket_tickers_are_bounded_and_sorted(self):
+        rows = [{"ticker": "NIFTY 50"}, {"ticker": "basket:b:Z", "basket": "b"}, {"ticker": "basket:a:Y", "basket": "a"},
+                {"ticker": "basket:a:X", "basket": "a"}, {"ticker": "basket:c:W", "basket": "c"}]
+        self.assertEqual(guard.basket_tickers(rows), ["basket:a:X", "basket:a:Y", "basket:b:Z"])
+
 
 if __name__ == "__main__":
     unittest.main()

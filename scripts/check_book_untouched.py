@@ -2,9 +2,10 @@
 """Fail when a branch changes book strategies or their results (indicators lab spec §2a).
 
 Checks (always): no edit to protected paths; only added lines in additive-only files.
-Optional --engine-compare: build base and HEAD engines and compare book catalogue/summary JSON hashes.
+Optional --engine-compare: build base and HEAD engines and compare hashes of book catalogue, params, summary,
+run and readiness (every strategy, NIFTY 50, default parameters) and one small optimize grid per guru.
 """
-import argparse, hashlib, io, json, os, socket, subprocess, sys, tarfile, tempfile, time, urllib.parse, urllib.request
+import argparse, hashlib, io, json, os, socket, subprocess, sys, tarfile, tempfile, time, urllib.error, urllib.parse, urllib.request
 from pathlib import Path
 
 PROTECTED = (
@@ -56,6 +57,56 @@ def free_port():
         return s.getsockname()[1]
 
 
+def fetch(url, timeout=600):
+    """(HTTP status, body). A blocked strategy's 400 message is book output too, so error bodies are kept."""
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as r:
+            return r.status, r.read()
+    except urllib.error.HTTPError as e:
+        return e.code, e.read()
+
+
+def strategy_routes(guru, catalogue, ticker="NIFTY 50"):
+    """(hash key, URL path) for run and readiness of every strategy id, default parameters, one ticker."""
+    t = urllib.parse.quote(ticker)
+    out = []
+    for row in catalogue:
+        sid = row["id"]
+        q = urllib.parse.quote(sid)
+        out.append((f"{guru}/run?id={sid}", f"run?id={q}&ticker={t}"))
+        out.append((f"{guru}/readiness?id={sid}", f"readiness?id={q}&ticker={t}"))
+    return out
+
+
+def optimize_route(guru, catalogue, params, ticker="NIFTY 50"):
+    """One two-value grid (default and default + step of the first parameter) for the first live strategy with params."""
+    live = {row["id"] for row in catalogue if row.get("status") == "live"}
+    for sid, defs in params.items():
+        if sid in live and defs:
+            p = defs[0]
+            grid = f"{p['def']:.12g}:{p['def'] + p['step']:.12g}:{p['step']:.12g}"
+            return (f"{guru}/optimize?id={sid}&g.{p['key']}={grid}",
+                    f"optimize?id={urllib.parse.quote(sid)}&ticker={urllib.parse.quote(ticker)}&g.{p['key']}={grid}")
+    return None
+
+
+def stable(key, body):
+    """Optimizer responses carry their run time in "ms"; drop it so equal results hash equal."""
+    if "/optimize?" not in key:
+        return body
+    try:
+        data = json.loads(body)
+    except ValueError:
+        return body
+    data.pop("ms", None)
+    return json.dumps(data, sort_keys=True).encode()
+
+
+def basket_tickers(tickers_json, limit=3):
+    # Bounded: a few catalogued stocks, never the whole basket corpus.
+    return sorted(row["ticker"] for row in tickers_json if "basket" in row)[:limit]
+
+
 def engine_hashes(src_dir, csv, vix, extra):
     env = dict(os.environ, CARGO_BUILD_JOBS="2")
     subprocess.run(["cargo", "build", "--release", "--manifest-path", f"{src_dir}/Context/guru/backend/Cargo.toml"], check=True, env=env)
@@ -68,18 +119,36 @@ def engine_hashes(src_dir, csv, vix, extra):
                 break
             except OSError:
                 time.sleep(0.5)
-        tickers = preloaded_tickers(json.loads(urllib.request.urlopen(f"http://127.0.0.1:{port}/api/tickers", timeout=60).read()))
-        routes = [("strategies", "strategies")]  # (key, URL path) pairs
-        for t in tickers:
-            routes.append((f"summary?ticker={t}", f"summary?ticker={urllib.parse.quote(t)}"))
+        api = f"http://127.0.0.1:{port}/api"
+        tickers_json = json.loads(fetch(f"{api}/tickers", 60)[1])
+        tickers = preloaded_tickers(tickers_json)
+        notes = []
+        if os.environ.get("VAULT_BASKET_DATA_DIR"):
+            tickers += basket_tickers(tickers_json)
+        else:
+            notes.append("basket summary skipped: VAULT_BASKET_DATA_DIR is not set")
         out = {}
+
+        def put(key, route):
+            status, body = fetch(f"{api}/guru/{route}")
+            if not body:
+                raise RuntimeError(f"empty response for {route}")
+            out[key] = hashlib.sha256(f"{status}\n".encode() + stable(key, body)).hexdigest()
+            return body
+
         for g in GURUS:
-            for key, route in routes:
-                body = urllib.request.urlopen(f"http://127.0.0.1:{port}/api/guru/{g}/{route}", timeout=600).read()
-                if not body:
-                    raise RuntimeError(f"empty response for {g}/{route}")
-                out[f"{g}/{key}"] = hashlib.sha256(body).hexdigest()
-        return out
+            catalogue = json.loads(put(f"{g}/strategies", f"{g}/strategies"))
+            params = json.loads(put(f"{g}/params", f"{g}/params"))
+            for t in tickers:
+                put(f"{g}/summary?ticker={t}", f"{g}/summary?ticker={urllib.parse.quote(t)}")
+            for key, route in strategy_routes(g, catalogue):
+                put(key, f"{g}/{route}")
+            opt = optimize_route(g, catalogue, params)
+            if opt:
+                put(opt[0], f"{g}/{opt[1]}")
+            else:
+                notes.append(f"{g}: no live strategy with parameters; optimize not hashed")
+        return out, notes
     finally:
         proc.terminate()
         proc.wait()
@@ -91,9 +160,9 @@ def compare_engines(repo, base, csv, vix, extra):
         archive = subprocess.run(["git", "-C", str(repo), "archive", compare_base(repo, base)], capture_output=True, check=True).stdout
         with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
             tar.extractall(tmp, filter="data")
-        before = engine_hashes(tmp, csv, vix, extra)
-    after = engine_hashes(repo, csv, vix, extra)
-    return [f"book output changed: {k}" for k in before if before[k] != after.get(k)]
+        before, _ = engine_hashes(tmp, csv, vix, extra)
+    after, notes = engine_hashes(repo, csv, vix, extra)
+    return [f"book output changed: {k}" for k in before if before[k] != after.get(k)], notes + [f"hashed {len(before)} book responses"]
 
 
 def main():
@@ -104,11 +173,13 @@ def main():
     a = ap.parse_args()
     repo = Path(git(Path.cwd(), "rev-parse", "--show-toplevel").strip())
     problems = check(repo, a.base)
+    notes = []
     if a.engine_compare:
         if not (a.csv and a.vix and a.extra):
             ap.error("--engine-compare needs --csv, --vix and --extra (read-only data paths)")
-        problems += compare_engines(repo, a.base, a.csv, a.vix, a.extra)
-    print(json.dumps({"base": a.base, "engine_compared": a.engine_compare, "problems": problems}, indent=2))
+        changed, notes = compare_engines(repo, a.base, a.csv, a.vix, a.extra)
+        problems += changed
+    print(json.dumps({"base": a.base, "engine_compared": a.engine_compare, "notes": notes, "problems": problems}, indent=2))
     sys.exit(1 if problems else 0)
 
 
