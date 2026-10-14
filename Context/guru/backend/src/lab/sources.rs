@@ -250,6 +250,10 @@ pub const SOURCES: &[(&str, &str, &str)] = &[
     ("moon_phases", "Moon Phases", ""),
     ("highest_bars", "ta.highestbars (Pine)", "HHVBars; HighestBars"),
     ("lowest_bars", "ta.lowestbars (Pine)", "LLVBars; LowestBars"),
+    ("fractals", "Williams fractal indicator; Williams Fractal", ""),
+    ("rsi_divergence", "RSI divergence indicator", ""),
+    ("ad_ratio_bars", "Advance/Decline Ratio (Bars); Advance/Decline (charting library)", ""),
+    ("bar_patterns", "", "GapUp; GapDown; Inside; Outside"),
 ];
 /// (TradingView names, AmiBroker names) of an id; empty strings when the id has no row.
 pub fn names(id: &str) -> (&'static str, &'static str) { SOURCES.iter().find(|r| r.0 == id).map_or(("", ""), |r| (r.1, r.2)) }

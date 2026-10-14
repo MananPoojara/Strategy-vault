@@ -107,6 +107,10 @@ CSV files kept outside Git; without them the parity test passes and prints "skip
 | moon_phases | - | new_moon, full_moon |
 | highest_bars | length=20 | bars |
 | lowest_bars | length=20 | bars |
+| fractals | periods=2 | up, down |
+| rsi_divergence | length=14, lbr=5, lbl=5, range_upper=60, range_lower=5 | bull, hidden_bull, bear, hidden_bear |
+| ad_ratio_bars | length=9 | ratio |
+| bar_patterns | - | gap_up, gap_down, inside, outside |
 | cci | length=20 | cci |
 | mom | length=10 | mom |
 | roc | length=9 | roc |

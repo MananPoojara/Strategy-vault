@@ -8,17 +8,17 @@ const NEEDS: Needs = Needs::NONE;
 fn highest(b: &Bars, prm: &Params) -> Output { Ok(vec![ta::highest(&b.high, n(prm, "length"))]) }
 fn lowest(b: &Bars, prm: &Params) -> Output { Ok(vec![ta::lowest(&b.low, n(prm, "length"))]) }
 fn change(b: &Bars, prm: &Params) -> Output { Ok(vec![ta::change(&b.close, n(prm, "length"))]) }
-/// Pivot at p = t - right, reported on bar t: ties on the left allowed, ties on the right cancel.
-fn pivot(x: &[f64], prm: &Params, high: bool) -> Output {
-    let (left, right) = (n(prm, "left"), n(prm, "right"));
+/// Pivot at p = t - right, reported on bar t: ties on the left allowed, ties on the right cancel (ta.pivothigh/low).
+pub(super) fn pivots(x: &[f64], left: usize, right: usize, high: bool) -> Vec<f64> {
     let beats = |a: f64, b: f64, strict: bool| if high { if strict { a > b } else { a >= b } } else if strict { a < b } else { a <= b };
-    Ok(vec![(0..x.len()).map(|t| {
+    (0..x.len()).map(|t| {
         if t < right || t - right < left { return NA; }
         let p = t - right;
         let ok = x[p - left..p].iter().all(|&v| beats(x[p], v, false)) && x[p + 1..=t].iter().all(|&v| beats(x[p], v, true));
         if ok { x[p] } else { NA }
-    }).collect()])
+    }).collect()
 }
+fn pivot(x: &[f64], prm: &Params, high: bool) -> Output { Ok(vec![pivots(x, n(prm, "left"), n(prm, "right"), high)]) }
 fn pivot_high(b: &Bars, prm: &Params) -> Output { pivot(&b.high, prm, true) }
 fn pivot_low(b: &Bars, prm: &Params) -> Output { pivot(&b.low, prm, false) }
 
