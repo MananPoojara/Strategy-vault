@@ -206,6 +206,12 @@ pub const SOURCES: &[(&str, &str, &str)] = &[
     ("trend_strength", "Trend Strength Index", ""),
     ("rci", "Rank Correlation Index (RCI)", ""),
     ("rci_ribbon", "RCI Ribbon", ""),
+    ("percentrank", "ta.percentrank (Pine)", "PercentRank (variant=1)"),
+    ("percentile", "ta.percentile_linear_interpolation; ta.percentile_nearest_rank (Pine)", "Percentile; Median (variant=1, pct=50)"),
+    ("zscore", "", "zscore / ExampleZScore (Bandy QTS book functions)"),
+    ("skewness", "", "Skewness"),
+    ("kurtosis", "", "Kurtosis"),
+    ("majority_rule", "Majority Rule", ""),
 ];
 /// (TradingView names, AmiBroker names) of an id; empty strings when the id has no row.
 pub fn names(id: &str) -> (&'static str, &'static str) { SOURCES.iter().find(|r| r.0 == id).map_or(("", ""), |r| (r.1, r.2)) }

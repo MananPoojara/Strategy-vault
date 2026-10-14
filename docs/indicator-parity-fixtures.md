@@ -63,6 +63,12 @@ CSV files kept outside Git; without them the parity test passes and prints "skip
 | trend_strength | length=14 | tsi |
 | rci | length=10 | rci |
 | rci_ribbon | short=10, middle=30, long=50 | short, middle, long |
+| percentrank | length=20, variant=0 | rank |
+| percentile | length=20, pct=50, variant=0 | percentile |
+| zscore | length=20 | z |
+| skewness | length=20 | skew |
+| kurtosis | length=20 | kurt |
+| majority_rule | length=14 | pct |
 | cci | length=20 | cci |
 | mom | length=10 | mom |
 | roc | length=9 | roc |

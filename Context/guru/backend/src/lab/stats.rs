@@ -17,6 +17,11 @@ const L14: &[ParamSpec] = &[int("length", "Length", 14., 2., 2000.)];
 const L14S: &[ParamSpec] = &[int("length", "Length", 14., 3., 2000.)];
 const SEB: &[ParamSpec] = &[int("length", "Length", 21., 3., 2000.), real("mult", "Multiplier", 2., 0.1, 10., 0.1), len("smooth", "Smoothing", 3.)];
 const RCI: &[ParamSpec] = &[int("length", "Length", 10., 2., 2000.)];
+const PR: &[ParamSpec] = &[len("length", "Length", 20.), int("variant", "Variant (0 TradingView, 1 AmiBroker)", 0., 0., 1.)];
+const PCT: &[ParamSpec] = &[len("length", "Length", 20.), real("pct", "Percentile", 50., 0., 100., 1.), int("variant", "Variant (0 interpolated, 1 nearest rank)", 0., 0., 1.)];
+const L20: &[ParamSpec] = &[len("length", "Length", 20.)];
+const M20: &[ParamSpec] = &[int("length", "Length", 20., 2., 2000.)];
+const L14N: &[ParamSpec] = &[len("length", "Length", 14.)];
 const RIB: &[ParamSpec] = &[int("short", "Short", 10., 2., 2000.), int("middle", "Middle", 30., 2., 2000.), int("long", "Long", 50., 2., 2000.)];
 
 /// Least squares over w with k = 1..n (oldest → newest): y = alpha + slope·k.
@@ -75,6 +80,41 @@ fn rci_s(x: &[f64], n: usize) -> Vec<f64> {
 fn rci(b: &Bars, prm: &Params) -> Output { Ok(vec![rci_s(&b.close, n(prm, "length"))]) }
 fn rci_ribbon(b: &Bars, prm: &Params) -> Output { Ok(["short", "middle", "long"].iter().map(|k| rci_s(&b.close, n(prm, k))).collect()) }
 
+fn percentrank(b: &Bars, prm: &Params) -> Output {
+    let (k, strict, x) = (n(prm, "length"), p(prm, "variant") == 1., &b.close);
+    Ok(vec![(0..x.len()).map(|i| if i < k || x[i].is_nan() { NA } else {
+        100. * x[i - k..i].iter().filter(|&&v| if strict { v < x[i] } else { v <= x[i] }).count() as f64 / k as f64
+    }).collect()])
+}
+fn percentile(b: &Bars, prm: &Params) -> Output {
+    let (k, pct, nearest) = (n(prm, "length"), p(prm, "pct"), p(prm, "variant") == 1.);
+    Ok(vec![rolling(&b.close, k, |w| {
+        let mut s = w.to_vec(); s.sort_by(|a, b| a.total_cmp(b));
+        if nearest { s[((pct / 100. * k as f64).ceil() as usize).clamp(1, k) - 1] }
+        else { let pos = pct / 100. * (k as f64 - 1.); let lo = pos.floor() as usize; let hi = (lo + 1).min(k - 1); s[lo] + (s[hi] - s[lo]) * (pos - lo as f64) }
+    })])
+}
+fn zscore(b: &Bars, prm: &Params) -> Output {
+    let k = n(prm, "length"); let (m, s) = (ta::sma(&b.close, k), ta::stdev(&b.close, k));
+    Ok(vec![(0..b.len()).map(|i| div(b.close[i] - m[i], s[i])).collect()])
+}
+fn moment(x: &[f64], k: usize, pow: i32) -> Vec<f64> {
+    rolling(x, k, |w| {
+        let nf = w.len() as f64; let m = w.iter().sum::<f64>() / nf;
+        let sd = (w.iter().map(|v| (v - m).powi(2)).sum::<f64>() / nf).sqrt();
+        if sd == 0. { return NA; }
+        let r = w.iter().map(|v| (v - m).powi(pow)).sum::<f64>() / nf / sd.powi(pow);
+        if pow == 4 { r - 3. } else { r }
+    })
+}
+fn skewness(b: &Bars, prm: &Params) -> Output { Ok(vec![moment(&b.close, n(prm, "length"), 3)]) }
+fn kurtosis(b: &Bars, prm: &Params) -> Output { Ok(vec![moment(&b.close, n(prm, "length"), 4)]) }
+fn majority_rule(b: &Bars, prm: &Params) -> Output {
+    let k = n(prm, "length"); let c = &b.close;
+    let up: Vec<f64> = (0..c.len()).map(|i| if i == 0 { NA } else if c[i] > c[i - 1] { 1. } else { 0. }).collect();
+    Ok(vec![ta::sum(&up, k).iter().map(|s| 100. * s / k as f64).collect()])
+}
+
 pub const DEFS: &[IndicatorDef] = &[
     def("linreg_slope", "Linear Regression Slope", L14, &["slope"], PN, NO, "least-squares slope of close per bar over length bars", &[13], false, linreg_slope),
     def("linreg_intercept", "Linear Regression Intercept", L14, &["intercept"], PN, NO, "AmiBroker LinRegIntercept: a in a + b·k, k = 1..n oldest→newest (= fitted end value − slope·n)", &[13], false, linreg_intercept),
@@ -84,6 +124,12 @@ pub const DEFS: &[IndicatorDef] = &[
     def("trend_strength", "Trend Strength Index", L14, &["tsi"], PN, NO, "Pearson correlation of close with bar index over length; zero variance → NaN (declared default 14)", &[13], false, trend_strength),
     def("rci", "Rank Correlation Index", RCI, &["rci"], PN, NO, "Spearman: time rank 1 = newest bar, price rank 1 = highest close (ties share the average rank); 100·(1 − 6Σd²/(n(n²−1)))", &[9], false, rci),
     def("rci_ribbon", "RCI Ribbon", RIB, &["short", "middle", "long"], PN, NO, "rci(close, short), rci(close, middle), rci(close, long)", &[9, 29, 49], false, rci_ribbon),
+    def("percentrank", "Percent Rank", PR, &["rank"], PN, NO, "100·(count of the previous length closes ≤ close)/length (TradingView ta.percentrank); variant 1: strictly lower (AmiBroker PercentRank)", &[20], false, percentrank),
+    def("percentile", "Percentile", PCT, &["percentile"], P, NO, "sorted window of the last length closes: variant 0 linear interpolation at position (n−1)·pct/100 (TradingView ta.percentile_linear_interpolation, AmiBroker Percentile); variant 1 nearest rank ceil(pct/100·n) (minimum 1) (ta.percentile_nearest_rank; AmiBroker Median = pct 50)", &[19], false, percentile),
+    def("zscore", "Z-Score (Bandy)", L20, &["z"], PN, NO, "(close − sma(close, n))/stdev(close, n) (population); zero stdev → NaN", &[19], false, zscore),
+    def("skewness", "Skewness", M20, &["skew"], PN, NO, "population skewness of close: mean((x − m)³)/σ³ (AmiBroker Skewness, population = True); σ = 0 → NaN", &[19], false, skewness),
+    def("kurtosis", "Kurtosis", M20, &["kurt"], PN, NO, "population excess kurtosis: mean((x − m)⁴)/σ⁴ − 3 (AmiBroker Kurtosis, population = True); σ = 0 → NaN", &[19], false, kurtosis),
+    def("majority_rule", "Majority Rule", L14N, &["pct"], PN, NO, "100·(number of bars with close > close[1] in the last length bars)/length (declared; charting-library formula unpublished)", &[14], false, majority_rule),
 ];
 
 #[cfg(test)]
@@ -112,4 +158,30 @@ mod tests {
     }
     #[test] fn flat_window_has_no_trend_strength() { assert!(go("trend_strength", &closes(&[5.; 4]), &[("length", 3.)])[0][3].is_nan()); }
     #[test] fn rules_reach_regression() { for (id, out) in [("linreg_slope", "slope"), ("se_bands", "lower"), ("rci_ribbon", "long")] { compiles(id, out).unwrap(); } }
+    #[test] fn percentrank_variant_counts_ties_differently() {
+        assert_series(&one("percentrank", &[("length", 3.), ("variant", 0.)]), &[N, N, N, 33.333333333333, 0.0, 33.333333333333, 100.0, 100.0]);
+        let t = closes(&[1., 2., 2., 2.]);
+        assert_series(&go("percentrank", &t, &[("length", 3.), ("variant", 0.)])[0], &[N, N, N, 100.]);
+        assert_series(&go("percentrank", &t, &[("length", 3.), ("variant", 1.)])[0], &[N, N, N, 33.333333333333]);
+    }
+    #[test] fn percentile_interpolated_and_nearest_rank() {
+        assert_series(&one("percentile", &[("length", 4.), ("pct", 50.), ("variant", 0.)]), &[N, N, N, 11.25, 11.25, 10.9, 10.9, 11.35]);
+        assert_series(&one("percentile", &[("length", 4.), ("pct", 50.), ("variant", 1.)]), &[N, N, N, 11.0, 11.0, 10.8, 10.8, 10.8]);
+        assert_series(&one("percentile", &[("length", 4.), ("pct", 30.), ("variant", 0.)]), &[N, N, N, 10.95, 10.92, 10.74, 10.74, 10.74]);
+    }
+    #[test] fn percentile_bounds_pick_min_and_max() {
+        let t = closes(&[3., 1., 2.]);
+        assert_series(&go("percentile", &t, &[("length", 3.), ("pct", 0.), ("variant", 0.)])[0], &[N, N, 1.]);
+        assert_series(&go("percentile", &t, &[("length", 3.), ("pct", 0.), ("variant", 1.)])[0], &[N, N, 1.]);
+        assert_series(&go("percentile", &t, &[("length", 3.), ("pct", 100.), ("variant", 1.)])[0], &[N, N, 3.]);
+        assert_series(&go("percentile", &t, &[("length", 3.), ("pct", 100.), ("variant", 0.)])[0], &[N, N, 3.]);
+    }
+    #[test] fn moments_and_zscore() {
+        assert_series(&one("zscore", &[("length", 3.)]), &[N, N, 1.06904496765, -1.224744871392, -1.176964698553, 0.392232270276, 1.325838426669, 1.124803176665]);
+        assert_series(&one("skewness", &[("length", 4.)]), &[N, N, N, 0.0, -0.28629553356, 0.440866714177, 0.353461337519, 0.05239638633]);
+        assert_series(&one("kurtosis", &[("length", 4.)]), &[N, N, N, -1.36, -1.234304760038, -1.0, -1.022679189323, -1.571600570393]);
+        assert!(go("skewness", &closes(&[2.; 4]), &[("length", 3.)])[0][3].is_nan());
+    }
+    #[test] fn majority_rule_len3() { assert_series(&one("majority_rule", &[("length", 3.)]), &[N, N, N, 66.666666666667, 33.333333333333, 33.333333333333, 66.666666666667, 100.0]); }
+    #[test] fn rules_reach_distribution() { for (id, out) in [("percentrank", "rank"), ("percentile", "percentile"), ("kurtosis", "kurt")] { compiles(id, out).unwrap(); } }
 }
