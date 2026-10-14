@@ -147,6 +147,9 @@ mod tests {
         let exec = Exec { limit: Some(Dist::Pct(1.)), exit_fill: Fill::Close, ..Exec::default() };
         // bar 2 close 102.5 → limit 101.475; bar 3 low 102 does not touch: the order expires (no carry-over)
         assert!(simulate(&with(&[2], &[6], exec.clone()), &bars(), 0, 9).is_empty());
+        let mut late = bars();
+        late.low[4] = 101.; // a later touch must not fill an expired order
+        assert!(simulate(&with(&[2], &[6], exec.clone()), &late, 0, 9).is_empty());
         let mut b = bars();
         b.low[3] = 101.;
         let t = simulate(&with(&[2], &[6], exec.clone()), &b, 0, 9);
@@ -155,6 +158,8 @@ mod tests {
         assert_eq!(simulate(&with(&[2], &[6], exec.clone()), &b, 0, 9)[0].legs[0].px, 100.5);
         // short limits sit above the close and fill on the high
         let mut s = bars();
+        s.high[3] = 103.5; // the low (102) is below the limit, but only the high counts for a short
+        assert!(simulate(&with(&[2], &[6], Exec { short: true, ..exec.clone() }), &s, 0, 9).is_empty());
         s.high[3] = 104.;
         let t = simulate(&with(&[2], &[6], Exec { short: true, ..exec }), &s, 0, 9);
         assert_eq!((t[0].dir, t[0].legs[0].px), (-1., 103.525));
@@ -162,6 +167,7 @@ mod tests {
     #[test] fn a_limit_fill_bar_can_exit_at_its_close_and_blocks_a_new_order() {
         let mut b = bars();
         b.low[3] = 101.;
+        b.low[4] = 102.; // would touch a limit placed from bar 3 (102.465) if one were allowed
         let exec = Exec { limit: Some(Dist::Pct(1.)), exit_fill: Fill::Close, ..Exec::default() };
         let t = simulate(&with(&[2, 3], &[3], exec), &b, 0, 9);
         assert_eq!(fills(&t), vec![(3, 101.475, 3, 103.5)]); // no new limit from bar 3's entry signal
