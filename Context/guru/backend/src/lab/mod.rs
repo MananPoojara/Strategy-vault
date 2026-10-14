@@ -16,6 +16,7 @@ pub mod resample;
 pub mod rules;
 pub mod series;
 pub mod simulate;
+pub mod templates;
 pub mod ta;
 pub mod trend;
 pub mod volatility;
