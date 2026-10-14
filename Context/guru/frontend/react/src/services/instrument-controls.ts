@@ -1,4 +1,11 @@
 export interface InstrumentPolicy { allowed_types?: string[] }
+
+/** A visible ETF button must remain a valid route choice alongside supported indices. */
+export function instrumentTickers<T extends {ticker: string}>(policy: InstrumentPolicy | undefined, indices: T[], etfs: T[]): T[] {
+  const controls = instrumentControls(policy);
+  return controls.etf ? controls.index ? [...indices, ...etfs] : etfs : indices;
+}
+
 /** Navigation follows reviewed types; an unresolved policy still uses the API's admission gate. */
 export function instrumentControls(policy?: InstrumentPolicy) {
   const types = policy?.allowed_types || [];

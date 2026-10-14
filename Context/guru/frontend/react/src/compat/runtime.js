@@ -4,7 +4,7 @@ import {resolveRoute} from '../app/routes';
 import {customPages} from '../app/custom-pages';
 import {LIB} from './catalogue.js';
 import {libraryScope,inLibraryScope} from '../services/library-scope';
-import {instrumentControls} from '../services/instrument-controls';
+import {instrumentControls,instrumentTickers} from '../services/instrument-controls';
 import {buildStrategyIndicators} from '../services/strategy-indicators';
 import {indicatorControlsHTML,mountStrategyIndicators} from '../services/strategy-indicator-charts';
 const CURATED_AUTHOR_IDS=new Set(LIB.map(author=>author.id));
@@ -1138,9 +1138,9 @@ function readRoute() {
   const pool=S.region==='us'?TICK_ALL_US:TICK_ALL_IN, indices=S.region==='us'?TICK_US:TICK_IN;
   const chosen=R.name==='strategy'?ALLCAT.find(v=>v.id===R.id):null;
   const types=chosen?.instrument_policy?.allowed_types||[];
-  const etfOnly=S.region==='us'&&types.includes('etf')&&!types.includes('index')&&!types.includes('individual_stock');
+  const etfs=S.region==='us'?TICK_ALL_US.filter(t=>['SPY','QQQ','MDY','IWM','SMH','DIA'].includes(t.ticker)):[];
   const basket=BASKETS.find(b=>b.id===S.basket);
-  TICKERS=S.basket&&basket?.symbols?.length?pool.filter(t=>basket.symbols.includes(t.ticker)):etfOnly?TICK_ALL_US.filter(t=>['SPY','QQQ','MDY','IWM','SMH','DIA'].includes(t.ticker)):indices;
+  TICKERS=S.basket&&basket?.symbols?.length?pool.filter(t=>basket.symbols.includes(t.ticker)):instrumentTickers(chosen?.instrument_policy,indices,etfs);
   if(S.basket&&S.tk==='ALL')S.tk=TICKERS[0]?.ticker||S.tk;
   if(S.tk!=='ALL'&&!TICKERS.some(t=>t.ticker===S.tk))S.tk=TICKERS[0]?.ticker||S.tk;
   const explicit=new URLSearchParams(q);
@@ -1150,10 +1150,6 @@ function readRoute() {
   }
   // Preserve explicit basket URLs: the readiness gate explains incompatible instruments.
   // Silent substitution back to an index made basket clicks appear stuck.
-  if(chosen && S.region==='us' && types.includes('etf') && !types.includes('index') && !S.basket) {
-    TICKERS=TICK_ALL_US.filter(t=>['SPY','QQQ','MDY','IWM','SMH','DIA'].includes(t.ticker));
-    if(!TICKERS.some(t=>t.ticker===S.tk))S.tk=TICKERS[0]?.ticker||S.tk;
-  }
   CAT = marketCat();
 }
 // Market-specific variants (NSE breadth on India, NYSE breadth on the US) are shown only on their own market.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { instrumentControls } from '../src/services/instrument-controls';
+import { instrumentControls, instrumentTickers } from '../src/services/instrument-controls';
 
 describe('compatible instrument controls', () => {
   it('explains and disables stock baskets for an index method', () => {
@@ -32,5 +32,31 @@ describe('compatible instrument controls', () => {
       expect(controls.etf).toBe(false);
       expect(controls.note).toBe('');
     }
+  });
+});
+
+describe('route ticker choices match visible instrument controls', () => {
+  const indices = [{ticker: 'SPX'}, {ticker: 'NDX'}, {ticker: 'DJI'}];
+  const etfs = ['SPY', 'QQQ', 'MDY', 'IWM', 'SMH'].map(ticker => ({ticker}));
+
+  it('retains every visible ETF choice for an index/ETF method', () => {
+    const choices = instrumentTickers({allowed_types: ['index', 'etf']}, indices, etfs);
+    for (const ticker of etfs) expect(choices).toContain(ticker);
+    expect(choices).toContain(indices[0]);
+  });
+
+  it('retains ETF choices when individual stocks are also supported', () => {
+    const choices = instrumentTickers({allowed_types: ['index', 'etf', 'individual_stock']}, indices, etfs);
+    expect(choices).toContain(etfs[1]);
+    expect(choices).toContain(indices[0]);
+  });
+
+  it('keeps an ETF-only method on actual ETF choices', () => {
+    expect(instrumentTickers({allowed_types: ['etf']}, indices, etfs)).toEqual(etfs);
+  });
+
+  it('does not offer ETF choices for index-only or unresolved policies', () => {
+    expect(instrumentTickers({allowed_types: ['index']}, indices, etfs)).toEqual(indices);
+    expect(instrumentTickers(undefined, indices, etfs)).toEqual(indices);
   });
 });
