@@ -64,9 +64,14 @@ it("a failed run clears the previous result", async () => {
   const { host } = await go("#/indicators?tk=NIFTY%2050");
   await run(host);
   expect(host.querySelector("[data-lab-result]")).not.toBeNull();
+  const tables = host.querySelector("[data-lab-result-tables]")!;
+  expect(tables).not.toBeNull();
+  expect(tables.closest("[data-lab-result], .two")).toBeNull(); // a full-width row below the rules/backtest pair
+  expect(host.querySelector(".two [data-lab-result]")).not.toBeNull();
   runAnswer = () => jsonResponse({ status: "needs_data", error: "NIFTY 50: invalid OHLC bar on 2001-03-02", label: catalogueFixture.label }, 400);
   await run(host);
   expect(host.querySelector("[data-lab-result]")).toBeNull();
+  expect(host.querySelector("[data-lab-result-tables]")).toBeNull();
   expect(host.textContent).toContain("NIFTY 50: invalid OHLC bar on 2001-03-02");
 });
 

@@ -1,4 +1,5 @@
-.lab-library { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; }
+/* Stays in view under the 58px sticky topbar while the long main column scrolls; the list scrolls inside it. */
+.lab-library { position: sticky; top: calc(58px + env(safe-area-inset-top, 0px) + 12px); max-height: calc(100vh - 58px - env(safe-area-inset-top, 0px) - 24px); overflow: auto; }
 .lab-library ul { margin: 4px 0 10px; padding: 0; }
 .lab-library li { list-style: none; display: flex; align-items: flex-start; gap: 6px; padding: 2px 0; }
 .lab-library li > button[data-lab-item] { flex: 1; min-width: 0; text-align: left; font: 500 13px var(--font); color: var(--ink); background: none; border: 0; padding: 4px 2px; cursor: pointer; }
@@ -11,4 +12,4 @@
 .lab-detail pre { white-space: pre-wrap; background: var(--panel); padding: 8px; font: 400 12px "IBM Plex Mono", monospace; color: var(--ink); }
 .lab-detail dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; }
 .lab-detail dt { color: var(--ink2); font-weight: 600; } .lab-detail dd { margin: 0; }
-@media (max-width: 900px) { .lab-library { position: static; max-height: none; } }
+@media (max-width: 900px) { .lab-library { position: static; max-height: 60vh; } }

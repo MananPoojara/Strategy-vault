@@ -5,6 +5,7 @@
 .lab-result .metrics .metric, .lab-result .metrics .metric + .metric { padding: 12px; border: 1px solid var(--rule); border-left: 1px solid var(--rule); }
 .lab-result .metric b { font-size: 22px; overflow-wrap: anywhere; }
 .lab-legend { margin-top: 14px; }
+.lab-result-tables > :first-child { margin-top: 0; }
 .lab-monthly { margin-top: 18px; overflow-x: auto; }
 .lab-trades { margin-top: 18px; display: grid; gap: 8px; }
 .lab-trades .lab-row { justify-content: space-between; }

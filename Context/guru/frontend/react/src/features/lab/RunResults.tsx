@@ -35,11 +35,10 @@ export function drawdown(equity: number[]): number[] {
 const sign = (v: number | null | undefined) => (typeof v === "number" ? (v > 0 ? "n pos" : v < 0 ? "n neg" : "n") : "n");
 
 export function RunResults({ result, market }: { result: RunResult; market: SavedMarket }) {
-  const { instrument, stats, costs, trades } = result;
+  const { instrument, stats, costs } = result;
   const equityRef = useRef<HTMLDivElement>(null);
   const ddRef = useRef<HTMLDivElement>(null);
   const themeKey = useThemeKey();
-  const report = window.VaultReport;
 
   useEffect(() => {
     if (!equityRef.current || !ddRef.current) return;
@@ -60,22 +59,6 @@ export function RunResults({ result, market }: { result: RunResult; market: Save
     return () => { eq?.dispose(); dd?.dispose(); };
   }, [result, themeKey]);
 
-  const monthly = report && result.equity.length ? report.monthly({ dates: result.dates, equity: result.equity.map((v) => v / result.equity[0]) }) : null;
-  const rows = tradeRows(trades);
-
-  const download = () => {
-    if (!report) return;
-    const blob = new Blob([report.csv([HEADER, ...rows])], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `lab-${instrument.ticker}-${result.from}-${result.to}.csv`;
-    document.body.append(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  };
-
   return (
     <section className="box lab-result" data-lab-result>
       <h2 className="box-h">Backtest <small>{result.from} → {result.to} · {instrument.name ?? instrument.ticker}</small></h2>
@@ -93,7 +76,32 @@ export function RunResults({ result, market }: { result: RunResult; market: Save
       </div>
       <div className="lwc" data-lab-equity ref={equityRef} />
       <div className="lwc" data-lab-drawdown ref={ddRef} />
+    </section>
+  );
+}
 
+/** Monthly returns and tradesheet: a full-width row under the rules/backtest pair. */
+export function RunTables({ result }: { result: RunResult }) {
+  const { instrument, trades } = result;
+  const report = window.VaultReport;
+  const monthly = report && result.equity.length ? report.monthly({ dates: result.dates, equity: result.equity.map((v) => v / result.equity[0]) }) : null;
+  const rows = tradeRows(trades);
+
+  const download = () => {
+    if (!report) return;
+    const blob = new Blob([report.csv([HEADER, ...rows])], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `lab-${instrument.ticker}-${result.from}-${result.to}.csv`;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <section className="box lab-result-tables" data-lab-result-tables>
       {monthly && (
         <div className="tblwrap lab-monthly">
           <table className="tbl">

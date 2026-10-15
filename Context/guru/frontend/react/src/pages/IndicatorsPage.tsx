@@ -14,7 +14,7 @@ import { LibraryRail } from "../features/lab/LibraryRail";
 import { IndicatorDetail } from "../features/lab/IndicatorDetail";
 import { Workbench } from "../features/lab/Workbench";
 import { RuleBuilder, type RunSettings } from "../features/lab/RuleBuilder";
-import { RunResults } from "../features/lab/RunResults";
+import { RunResults, RunTables } from "../features/lab/RunResults";
 import { OptimizePanel } from "../features/lab/OptimizePanel";
 import { CustomizePanel } from "../features/lab/CustomizePanel";
 import { SavedStrategies } from "../features/lab/SavedStrategies";
@@ -212,6 +212,7 @@ function IndicatorsLab() {
               : running ? <Loading text="Running the backtest…" /> : null}
           </Part>
         </div>
+        {result && !runError && <Part><RunTables result={result} /></Part>}
         <Part key={`${market}|${ticker}`}>{/* a ticker change remounts it: an optimization belongs to one instrument */}
           <OptimizePanel spec={state.spec} catalogue={cat} market={savedMarketValue} role={role} dates={result?.dates ?? []}
             onOptimize={(spec, split) => lab.optimize(market, spec, {

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import { act } from "react";
-import { RunResults, drawdown, kpiItems, tradeRows } from "../src/features/lab/RunResults";
+import { RunResults, RunTables, drawdown, kpiItems, tradeRows } from "../src/features/lab/RunResults";
 import { PROVISIONAL_NOTE } from "../src/features/lab/labels";
 import { mount, runFixture, unmount } from "./fixtures/lab";
 
@@ -42,14 +43,14 @@ it("tradesheet: newest first, side, fill, open trade and friendly reasons", () =
 
 it("caps the table at 200 rows and points to the CSV", async () => {
   const many = { ...runFixture, trades: Array.from({ length: 205 }, () => runFixture.trades[0]) };
-  const host = await mount(<RunResults result={many} market="in" />);
+  const host = await mount(<RunTables result={many} />);
   expect(host.querySelectorAll("table.tl tbody tr")).toHaveLength(200);
   expect(host.textContent).toContain("205 trades · newest first");
   expect(host.textContent).toContain("5 older trades are in the CSV.");
 });
 
 it("no trades shows the fixed copy", async () => {
-  const host = await mount(<RunResults result={{ ...runFixture, trades: [] }} market="in" />);
+  const host = await mount(<RunTables result={{ ...runFixture, trades: [] }} />);
   expect(host.textContent).toContain("No trades. The entry conditions never lined up on this instrument.");
   expect(host.querySelector("table.tl")).toBeNull();
 });
@@ -60,7 +61,7 @@ it("CSV download uses VaultReport.csv with every trade and the file name", async
   const names: string[] = [];
   const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) { names.push(this.download); });
   const many = { ...runFixture, trades: Array.from({ length: 205 }, () => runFixture.trades[0]) };
-  const host = await mount(<RunResults result={many} market="in" />);
+  const host = await mount(<RunTables result={many} />);
   await act(async () => [...host.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "Download CSV")!.click());
   const rows = (window.VaultReport!.csv as ReturnType<typeof vi.fn>).mock.calls[0][0] as string[][];
   expect(rows[0][0]).toBe("Entry date");
@@ -72,7 +73,7 @@ it("CSV download uses VaultReport.csv with every trade and the file name", async
 });
 
 it("monthly table from VaultReport; table and CSV button absent without it", async () => {
-  let host = await mount(<RunResults result={runFixture} market="in" />);
+  let host = await mount(<RunTables result={runFixture} />);
   expect((window.VaultReport!.monthly as ReturnType<typeof vi.fn>).mock.calls[0][0].equity[0]).toBe(1);
   const cells = [...host.querySelectorAll(".lab-monthly tbody td")].map((td) => td.textContent);
   expect(cells[0]).toBe("2024");
@@ -80,13 +81,13 @@ it("monthly table from VaultReport; table and CSV button absent without it", asy
   expect(cells[13]).toBe("5.0%");
   await unmount();
   delete window.VaultReport;
-  host = await mount(<RunResults result={runFixture} market="in" />);
+  host = await mount(<RunTables result={runFixture} />);
   expect(host.querySelector(".lab-monthly")).toBeNull();
   expect([...host.querySelectorAll("button")].some((b) => b.textContent === "Download CSV")).toBe(false);
 });
 
 it("monthly normalizes equity to start at 1", async () => {
-  await mount(<RunResults result={{ ...runFixture, equity: runFixture.equity.map((v) => v * 2) }} market="in" />);
+  await mount(<RunTables result={{ ...runFixture, equity: runFixture.equity.map((v) => v * 2) }} />);
   expect((window.VaultReport!.monthly as ReturnType<typeof vi.fn>).mock.calls[0][0].equity).toEqual(runFixture.equity);
 });
 
@@ -116,4 +117,23 @@ it("provisional strip on gl and drawdown math", async () => {
   expect(host.querySelector("[data-lab-provisional]")?.textContent).toContain(PROVISIONAL_NOTE);
   expect(host.querySelector("[data-lab-provisional]")?.textContent).toContain("HSI:HSI");
   expect(drawdown([1, 2, 1, 3]).map((v) => Number(v.toFixed(2)))).toEqual([0, 0, -0.5, 0]);
+});
+
+it("monthly table and tradesheet live in RunTables, outside the backtest summary box", async () => {
+  const summary = await mount(<RunResults result={runFixture} market="in" />);
+  expect(summary.querySelector("[data-lab-result] .lab-monthly, [data-lab-result] .lab-trades, [data-lab-result] table")).toBeNull();
+  expect([...summary.querySelectorAll("button")].some((b) => b.textContent === "Download CSV")).toBe(false);
+  await unmount();
+  const host = await mount(<RunTables result={runFixture} />);
+  const box = host.querySelector("section[data-lab-result-tables]")!;
+  expect(box.querySelector("[data-lab-result]")).toBeNull();
+  expect(box.querySelector(".lab-monthly")).not.toBeNull();
+  expect(box.querySelector(".lab-trades table.tl")).not.toBeNull();
+  expect([...box.querySelectorAll("button")].some((b) => b.textContent === "Download CSV")).toBe(true);
+});
+
+it("library rail is sticky below the topbar, with a static bounded stacked layout", () => {
+  const css = readFileSync("src/features/lab/library.css", "utf8");
+  expect(css).toMatch(/\.lab-library \{[^}]*position: sticky;[^}]*top: calc\(58px \+ env\(safe-area-inset-top[^}]*max-height: calc\(100vh[^}]*overflow: auto;/);
+  expect(css).toMatch(/@media \(max-width: 900px\) \{ \.lab-library \{ position: static; max-height: 60vh;/);
 });
