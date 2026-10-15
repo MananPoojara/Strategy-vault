@@ -97,75 +97,208 @@ pub struct Target { pub path: String, pub slot: Option<Slot> }
 pub enum Fill { NextOpen, Close }
 /// A price distance: percent of a reference price, or a multiple of ATR(length) read at a bar already closed.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Dist { Pct(f64), Atr { mult: f64, length: usize } }
+pub enum Dist { Pct(f64), Atr { mult: f64, length: usize }, Points(f64) }
 /// The price-order settings an optimize path can address (`entry.limit.pct`, `exit.stop_loss.atr`, ...).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Slot { Limit, StopLoss, Target, Trailing }
+pub enum Slot { Limit, StopLoss, Target, Trailing, Stop, Activate, BreakevenAfter, TakeProfit(usize) }
+pub const MAX_TAKE_PROFITS: usize = 3;
+pub const MAX_VALID_BARS: usize = 20;
+pub const MAX_DELAY: usize = 10;
+pub const MAX_POINTS: f64 = 1e9;
+/// What the other side's entry does while a position is open (`direction: both`, spec §6.1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Opposite { Reverse, Exit, Ignore }
 #[derive(Clone, Debug, PartialEq)]
-pub struct Exec { pub short: bool, pub fill: Fill, pub exit_fill: Fill, pub limit: Option<Dist>, pub stop_loss: Option<Dist>, pub target: Option<Dist>, pub trailing: Option<Dist> }
+pub struct Exec {
+    pub short: bool, pub fill: Fill, pub exit_fill: Fill, pub limit: Option<Dist>, pub stop_loss: Option<Dist>, pub target: Option<Dist>, pub trailing: Option<Dist>, pub opposite: Opposite,
+    /// Phase 7 orders (spec §6.1): a stop entry, absolute order levels from operands (`at`), how many bars an order rests,
+    /// the next-open delay in bars, and edge-only entries.
+    pub stop: Option<Dist>, pub limit_at: Option<Operand>, pub stop_at: Option<Operand>, pub valid_bars: usize, pub delay: usize, pub edge: bool,
+    /// Phase 7 exits (spec §6.1): trailing activation, breakeven (after, plus), partial take-profits (level, fraction of the
+    /// initial position), the bars before rule exits count, and the TradingView intrabar path instead of stop-first.
+    pub trail_activate: Option<Dist>, pub breakeven: Option<(Dist, Option<Dist>)>, pub take_profits: Vec<(Dist, f64)>, pub min_bars: usize, pub ohlc_path: bool,
+}
 impl Default for Exec {
-    fn default() -> Self { Exec { short: false, fill: Fill::NextOpen, exit_fill: Fill::NextOpen, limit: None, stop_loss: None, target: None, trailing: None } }
+    fn default() -> Self {
+        Exec { short: false, fill: Fill::NextOpen, exit_fill: Fill::NextOpen, limit: None, stop_loss: None, target: None, trailing: None, opposite: Opposite::Reverse,
+               stop: None, limit_at: None, stop_at: None, valid_bars: 1, delay: 1, edge: false,
+               trail_activate: None, breakeven: None, take_profits: vec![], min_bars: 0, ohlc_path: false }
+    }
 }
 impl Exec {
-    pub fn slot(&self, s: Slot) -> Option<Dist> { match s { Slot::Limit => self.limit, Slot::StopLoss => self.stop_loss, Slot::Target => self.target, Slot::Trailing => self.trailing } }
-    fn slot_mut(&mut self, s: Slot) -> &mut Option<Dist> { match s { Slot::Limit => &mut self.limit, Slot::StopLoss => &mut self.stop_loss, Slot::Target => &mut self.target, Slot::Trailing => &mut self.trailing } }
+    pub fn slot(&self, s: Slot) -> Option<Dist> {
+        match s {
+            Slot::Limit => self.limit, Slot::StopLoss => self.stop_loss, Slot::Target => self.target, Slot::Trailing => self.trailing, Slot::Stop => self.stop,
+            Slot::Activate => self.trail_activate, Slot::BreakevenAfter => self.breakeven.map(|b| b.0), Slot::TakeProfit(k) => self.take_profits.get(k).map(|t| t.0),
+        }
+    }
+    fn slot_mut(&mut self, s: Slot) -> Option<&mut Dist> {
+        match s {
+            Slot::Limit => self.limit.as_mut(), Slot::StopLoss => self.stop_loss.as_mut(), Slot::Target => self.target.as_mut(), Slot::Trailing => self.trailing.as_mut(),
+            Slot::Stop => self.stop.as_mut(), Slot::Activate => self.trail_activate.as_mut(), Slot::BreakevenAfter => self.breakeven.as_mut().map(|b| &mut b.0),
+            Slot::TakeProfit(k) => self.take_profits.get_mut(k).map(|t| &mut t.0),
+        }
+    }
+    fn put(&mut self, s: Slot, d: Dist) {
+        match s { Slot::Limit => self.limit = Some(d), Slot::StopLoss => self.stop_loss = Some(d), Slot::Target => self.target = Some(d), Slot::Trailing => self.trailing = Some(d), Slot::Stop => self.stop = Some(d), _ => {} }
+    }
+    /// A limit, stop or stop-limit entry order (the entry rests instead of filling at market).
+    pub fn has_order(&self) -> bool { self.limit.is_some() || self.stop.is_some() || self.limit_at.is_some() || self.stop_at.is_some() }
 }
 /// Lineage of a customized book template (`origin` in the spec). Checked against the template catalogue by the API.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Origin { pub book: String, pub method: String, pub version: u32 }
 /// Slot, spec path, largest pct. A limit may sit at the signal close (0%); stop-loss, target and trailing need pct > 0.
-const SLOTS: [(Slot, &str, f64); 4] = [(Slot::Limit, "entry.limit", 50.), (Slot::StopLoss, "exit.stop_loss", 99.), (Slot::Target, "exit.target", 1000.), (Slot::Trailing, "exit.trailing", 99.)];
+const SLOTS: [(Slot, &str, f64); 5] = [(Slot::Limit, "entry.limit", 50.), (Slot::StopLoss, "exit.stop_loss", 99.), (Slot::Target, "exit.target", 1000.), (Slot::Trailing, "exit.trailing", 99.), (Slot::Stop, "entry.stop", 50.)];
 pub const MAX_ATR_MULT: f64 = 50.;
 pub const MAX_ATR_LENGTH: usize = 500;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Dim { pub path: String, pub target: Target, pub values: Vec<f64> }
 #[derive(Clone, Debug, PartialEq)]
-pub struct Spec { pub entry: Vec<Node>, pub exit: Vec<Node>, pub cost_bps: Option<f64>, pub optimize: Vec<Dim>, pub exec: Exec, pub origin: Option<Origin> }
+pub struct Spec { pub entry: Vec<Node>, pub exit: Vec<Node>, pub cost_bps: Option<f64>, pub optimize: Vec<Dim>, pub exec: Exec, pub origin: Option<Origin>, pub short_side: Option<Box<Side>> }
+/// The short side of a `direction: both` spec: its own rule lists and price orders (exec.short = true).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Side { pub entry: Vec<Node>, pub exit: Vec<Node>, pub exec: Exec }
 
 pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
     if text.len() > MAX_SPEC_BYTES { return Err(inv(format!("spec is {} bytes; the limit is {MAX_SPEC_BYTES}", text.len()))); }
     let root = json::parse(text).map_err(|e| inv(format!("spec is not valid JSON: {e}")))?;
-    fields(&root, "spec", &["v", "direction", "origin", "entry", "exit", "execution", "optimize"], &["short", "portfolio", "scale_in"])?;
+    fields(&root, "spec", &["v", "direction", "origin", "entry", "exit", "short_side", "execution", "optimize"], &["short", "portfolio", "scale_in"])?;
     if root.get("v").and_then(Json::as_f64) != Some(1.) { return Err(inv("v must be 1")); }
     let mut exec = Exec::default();
-    match root.get("direction") {
-        None => {}
-        Some(Json::Str(d)) if d == "long" => {}
-        Some(Json::Str(d)) if d == "short" => exec.short = true,
-        _ => return Err(inv("direction must be \"long\" or \"short\"")),
-    }
+    let both = match root.get("direction") {
+        None => false,
+        Some(Json::Str(d)) if d == "long" => false,
+        Some(Json::Str(d)) if d == "short" => { exec.short = true; false }
+        Some(Json::Str(d)) if d == "both" => true,
+        _ => return Err(inv("direction must be \"long\", \"short\" or \"both\"")),
+    };
     let origin = root.get("origin").map(origin).transpose()?;
-    let entry_obj = root.get("entry").ok_or_else(|| inv("entry is required"))?;
-    fields(entry_obj, "entry", &["all", "limit"], &["stop", "scale_in"])?;
-    let exit_obj = root.get("exit").ok_or_else(|| inv("exit is required"))?;
-    fields(exit_obj, "exit", &["any", "stop_loss", "target", "trailing"], &[])?;
-    for (slot, at, hi) in SLOTS {
-        let obj = if slot == Slot::Limit { entry_obj } else { exit_obj };
-        if let Some(v) = obj.get(at.split_once('.').unwrap().1) { *exec.slot_mut(slot) = Some(dist(v, at, hi)?); }
-    }
-    let price_exit = exec.stop_loss.is_some() || exec.target.is_some() || exec.trailing.is_some();
     let mut budget = Budget::default();
-    let entry = conds(entry_obj.get("all"), "entry.all", false, false, &mut budget)?;
-    let exit = conds(exit_obj.get("any"), "exit.any", true, price_exit, &mut budget)?;
-    if entry.len() + exit.len() > MAX_CONDITIONS {
-        return Err(inv(format!("{} conditions; the limit is {MAX_CONDITIONS}", entry.len() + exit.len())));
-    }
+    let (entry, exit) = side(root.get("entry"), root.get("exit"), "", &mut exec, &mut budget)?;
+    let mut short_side = match (both, root.get("short_side")) {
+        (true, Some(s)) => {
+            fields(s, "short_side", &["entry", "exit"], &[])?;
+            let mut x = Exec { short: true, ..Exec::default() };
+            let (entry, exit) = side(s.get("entry"), s.get("exit"), "short_side.", &mut x, &mut budget)?;
+            Some(Box::new(Side { entry, exit, exec: x }))
+        }
+        (true, None) => return Err(inv("direction \"both\" needs short_side with the short entry and exit rules")),
+        (false, Some(_)) => return Err(inv("short_side applies to direction \"both\" only")),
+        (false, None) => None,
+    };
     let mut cost_bps = None;
     if let Some(ex) = root.get("execution") {
-        fields(ex, "execution", &["fill", "exit_fill", "cost_bps"], &["limit", "stop"])?;
+        fields(ex, "execution", &["fill", "exit_fill", "cost_bps", "opposite", "delay_bars", "entry_on", "intrabar"], &["limit", "stop"])?;
+        exec.ohlc_path = match ex.get("intrabar").map(Json::as_str) {
+            None | Some(Some("stop_first")) => false,
+            Some(Some("ohlc_path")) => true,
+            _ => return Err(inv("execution.intrabar must be \"stop_first\" or \"ohlc_path\"")),
+        };
         if let Some(f) = ex.get("fill") { exec.fill = fill(f, "execution.fill")?; exec.exit_fill = exec.fill; }
         if let Some(f) = ex.get("exit_fill") { exec.exit_fill = fill(f, "execution.exit_fill")?; }
-        if exec.limit.is_some() && ex.get("fill").is_some() {
-            return Err(inv("execution.fill applies to market entries; entry.limit already fills on the bar after the signal, so remove execution.fill"));
+        let ordered = exec.has_order() || short_side.as_ref().is_some_and(|s| s.exec.has_order());
+        if ordered && ex.get("fill").is_some() {
+            return Err(inv("execution.fill applies to market entries; entry.limit and entry.stop orders fill on the bars after the signal, so remove execution.fill"));
         }
+        if let Some(n) = ex.get("delay_bars") {
+            if exec.fill != Fill::NextOpen || exec.exit_fill != Fill::NextOpen { return Err(inv("execution.delay_bars applies to next_open fills only")); }
+            exec.delay = n.as_f64().filter(|n| n.fract() == 0. && (1. ..=MAX_DELAY as f64).contains(n))
+                .ok_or_else(|| inv(format!("execution.delay_bars must be a whole number from 1 to {MAX_DELAY}")))? as usize;
+        }
+        exec.edge = match ex.get("entry_on").map(Json::as_str) {
+            None | Some(Some("level")) => false,
+            Some(Some("edge")) => true,
+            _ => return Err(inv("execution.entry_on must be \"level\" or \"edge\"")),
+        };
         if let Some(c) = ex.get("cost_bps") {
             cost_bps = Some(c.as_f64().filter(|c| (0. ..=5000.).contains(c)).ok_or_else(|| inv("execution.cost_bps must be a number from 0 to 5000"))?);
         }
+        if let Some(o) = ex.get("opposite") {
+            if !both { return Err(inv("execution.opposite applies to direction \"both\" only")); }
+            exec.opposite = match o.as_str() {
+                Some("reverse") => Opposite::Reverse, Some("exit") => Opposite::Exit, Some("ignore") => Opposite::Ignore,
+                _ => return Err(inv("execution.opposite must be \"reverse\", \"exit\" or \"ignore\"")),
+            };
+        }
     }
-    let mut spec = Spec { entry, exit, cost_bps, optimize: vec![], exec, origin };
+    if let Some(s) = short_side.as_mut() {
+        (s.exec.fill, s.exec.exit_fill, s.exec.opposite, s.exec.delay, s.exec.edge, s.exec.ohlc_path) = (exec.fill, exec.exit_fill, exec.opposite, exec.delay, exec.edge, exec.ohlc_path);
+    }
+    let mut spec = Spec { entry, exit, cost_bps, optimize: vec![], exec, origin, short_side };
     if let Some(o) = root.get("optimize") { spec.optimize = dims(&spec, o)?; }
     Ok(spec)
 }
+
+/// One side's rule lists and price orders; `pre` is "" (the long side, or the only side) or "short_side.".
+fn side(entry: Option<&Json>, exit: Option<&Json>, pre: &str, exec: &mut Exec, b: &mut Budget) -> Result<(Vec<Node>, Vec<Node>), LabError> {
+    let entry_obj = entry.ok_or_else(|| inv(format!("{pre}entry is required")))?;
+    fields(entry_obj, &format!("{pre}entry"), &["all", "limit", "stop", "valid_bars"], &["scale_in"])?;
+    let exit_obj = exit.ok_or_else(|| inv(format!("{pre}exit is required")))?;
+    fields(exit_obj, &format!("{pre}exit"), &["any", "stop_loss", "target", "trailing", "breakeven", "take_profits", "min_bars"], &[])?;
+    for (slot, at, hi) in SLOTS {
+        let order = matches!(slot, Slot::Limit | Slot::Stop);
+        let Some(v) = (if order { entry_obj } else { exit_obj }).get(at.split_once('.').unwrap().1) else { continue };
+        if slot == Slot::Trailing {
+            if let Some(a) = v.get("activate") { exec.trail_activate = Some(dist(a, &format!("{pre}exit.trailing.activate"), 1000.)?); }
+            exec.put(slot, dist(&without(v, "activate"), &format!("{pre}{at}"), hi)?);
+            continue;
+        }
+        if v.get("at").is_none() { exec.put(slot, dist(v, &format!("{pre}{at}"), hi)?); continue; }
+        // an absolute level: the operand's value at the signal bar (entry orders only)
+        if !order { return Err(inv(format!("{pre}{at}.at is for entry orders (entry.limit, entry.stop)"))); }
+        fields(v, &format!("{pre}{at}"), &["at"], &[])?;
+        let o = operand(v.get("at"), &format!("{pre}{at}.at"), false, b)?;
+        if slot == Slot::Limit { exec.limit_at = Some(o); } else { exec.stop_at = Some(o); }
+    }
+    if let Some(n) = entry_obj.get("valid_bars") {
+        if !exec.has_order() { return Err(inv(format!("{pre}entry.valid_bars applies to entry.limit or entry.stop orders"))); }
+        exec.valid_bars = n.as_f64().filter(|n| n.fract() == 0. && (1. ..=MAX_VALID_BARS as f64).contains(n))
+            .ok_or_else(|| inv(format!("{pre}entry.valid_bars must be a whole number from 1 to {MAX_VALID_BARS}")))? as usize;
+    }
+    if let Some(v) = exit_obj.get("breakeven") {
+        let at = format!("{pre}exit.breakeven");
+        fields(v, &at, &["after", "plus"], &[])?;
+        let after = dist(v.get("after").ok_or_else(|| inv(format!("{at}.after is required")))?, &format!("{at}.after"), 1000.)?;
+        if v.get("plus").is_some_and(|p| p.get("at").is_some()) { return Err(inv(format!("{at}.plus takes pct|atr|points; `at` levels are not supported"))); }
+        let plus = v.get("plus").map(|p| dist(p, &format!("{at}.plus"), 1000.)).transpose()?;
+        breakeven_order(after, plus, &at).map_err(inv)?;
+        exec.breakeven = Some((after, plus));
+    }
+    if let Some(v) = exit_obj.get("take_profits") {
+        let at = format!("{pre}exit.take_profits");
+        let Json::Arr(items) = v else { return Err(inv(format!("{at} must be a list"))) };
+        if items.is_empty() || items.len() > MAX_TAKE_PROFITS { return Err(inv(format!("{at} needs 1 to {MAX_TAKE_PROFITS} levels"))); }
+        for (k, it) in items.iter().enumerate() {
+            let a = format!("{at}[{k}]");
+            let size = it.get("size").and_then(Json::as_f64).filter(|s| *s > 0. && *s < 1.)
+                .ok_or_else(|| inv(format!("{a}.size must be a fraction above 0 and below 1 of the initial position")))?;
+            exec.take_profits.push((dist(&without(it, "size"), &a, 1000.)?, size));
+        }
+        if exec.take_profits.iter().map(|t| t.1).sum::<f64>() >= 1. { return Err(inv(format!("{at} sizes must add up to less than 1; the rest exits by the other rules"))); }
+    }
+    if let Some(n) = exit_obj.get("min_bars") { exec.min_bars = whole(Some(n), &format!("{pre}exit.min_bars"), 0)?; }
+    let price_exit = exec.stop_loss.is_some() || exec.target.is_some() || exec.trailing.is_some() || exec.breakeven.is_some();
+    let entry = conds(entry_obj.get("all"), &format!("{pre}entry.all"), false, false, b)?;
+    let exit = conds(exit_obj.get("any"), &format!("{pre}exit.any"), true, price_exit, b)?;
+    if entry.len() + exit.len() > MAX_CONDITIONS {
+        return Err(inv(format!("{}{} conditions; the limit is {MAX_CONDITIONS}", if pre.is_empty() { "" } else { "short_side: " }, entry.len() + exit.len())));
+    }
+    Ok((entry, exit))
+}
+
+/// In the same units the moved stop (`plus`) must stay short of the level that arms it (`after`); `at` is the breakeven path.
+fn breakeven_order(after: Dist, plus: Option<Dist>, at: &str) -> Result<(), String> {
+    let pair = match (after, plus) {
+        (Dist::Pct(a), Some(Dist::Pct(p))) | (Dist::Points(a), Some(Dist::Points(p))) => Some((a, p)),
+        (Dist::Atr { mult: a, length: n }, Some(Dist::Atr { mult: p, length: m })) if n == m => Some((a, p)),
+        _ => None,
+    };
+    match pair { Some((a, p)) if p >= a => Err(format!("{at}.plus ({p}) must be below {at}.after ({a})")), _ => Ok(()) }
+}
+
+/// `v` without one key (`trailing.activate`, `take_profits[k].size` sit next to a distance).
+fn without(v: &Json, key: &str) -> Json { match v { Json::Obj(kv) => Json::Obj(kv.iter().filter(|(k, _)| k != key).cloned().collect()), _ => v.clone() } }
 
 fn fields(v: &Json, at: &str, allowed: &[&str], reserved: &[&str]) -> Result<(), LabError> {
     let Json::Obj(kv) = v else { return Err(inv(format!("{at} must be an object"))) };
@@ -186,14 +319,20 @@ fn fill(v: &Json, at: &str) -> Result<Fill, LabError> {
 }
 /// `{"pct": p}` or `{"atr": m, "atr_length": n}` (n defaults to 14).
 fn dist(v: &Json, at: &str, hi: f64) -> Result<Dist, LabError> {
-    fields(v, at, &["pct", "atr", "atr_length"], &[])?;
-    match (v.get("pct"), v.get("atr")) {
-        (Some(p), None) if v.get("atr_length").is_none() => {
-            let min = if at == "entry.limit" { "from 0" } else { "above 0" };
-            p.as_f64().filter(|p| *p <= hi && (*p > 0. || (*p == 0. && at == "entry.limit"))).map(Dist::Pct)
+    fields(v, at, &["pct", "atr", "atr_length", "points"], &[])?;
+    // an entry order may sit at the signal close (0); exits need a positive distance
+    let order = at.ends_with("entry.limit") || at.ends_with("entry.stop");
+    let min = if order { "from 0" } else { "above 0" };
+    match (v.get("pct"), v.get("atr"), v.get("points")) {
+        (Some(p), None, None) if v.get("atr_length").is_none() => {
+            p.as_f64().filter(|p| *p <= hi && (*p > 0. || (*p == 0. && order))).map(Dist::Pct)
                 .ok_or_else(|| inv(format!("{at}.pct must be a number {min} and at most {hi}")))
         }
-        (None, Some(m)) => {
+        (None, None, Some(p)) if v.get("atr_length").is_none() => {
+            p.as_f64().filter(|p| *p <= MAX_POINTS && (*p > 0. || (*p == 0. && order))).map(Dist::Points)
+                .ok_or_else(|| inv(format!("{at}.points must be a number {min} and at most {MAX_POINTS}")))
+        }
+        (None, Some(m), None) => {
             let mult = m.as_f64().filter(|m| *m > 0. && *m <= MAX_ATR_MULT).ok_or_else(|| inv(format!("{at}.atr must be a number above 0 and at most {MAX_ATR_MULT}")))?;
             let length = match v.get("atr_length") {
                 None => 14,
@@ -202,7 +341,7 @@ fn dist(v: &Json, at: &str, hi: f64) -> Result<Dist, LabError> {
             };
             Ok(Dist::Atr { mult, length })
         }
-        _ => Err(inv(format!("{at} needs exactly one of pct or atr (atr_length goes with atr)"))),
+        _ => Err(inv(format!("{at} needs exactly one of pct or atr, or points (atr_length goes with atr)"))),
     }
 }
 fn origin(v: &Json) -> Result<Origin, LabError> {
@@ -473,17 +612,36 @@ fn dims(spec: &Spec, v: &Json) -> Result<Vec<Dim>, LabError> {
     Ok(out)
 }
 
+/// The execution settings a path addresses: the short side's for `short_side.…`, otherwise the spec's.
+fn exec_of<'a>(s: &'a Spec, path: &str) -> Option<&'a Exec> { if path.starts_with("short_side.") { s.short_side.as_ref().map(|x| &x.exec) } else { Some(&s.exec) } }
+fn exec_mut<'a>(s: &'a mut Spec, path: &str) -> Option<&'a mut Exec> { if path.starts_with("short_side.") { s.short_side.as_mut().map(|x| &mut x.exec) } else { Some(&mut s.exec) } }
+
+/// The price-order slot a path (without `short_side.`) addresses: (slot, slot path, field, largest pct).
+fn slot_at(rest: &str) -> Option<(Slot, String, String, f64)> {
+    if let Some(r) = rest.strip_prefix("exit.take_profits[") {
+        let (k, f) = r.split_once("].")?;
+        let k: usize = k.parse().ok()?;
+        return Some((Slot::TakeProfit(k), format!("exit.take_profits[{k}]"), f.into(), 1000.));
+    }
+    [(Slot::Activate, "exit.trailing.activate", 1000.), (Slot::BreakevenAfter, "exit.breakeven.after", 1000.)].into_iter().chain(SLOTS)
+        .find_map(|(s, at, hi)| rest.strip_prefix(&format!("{at}.")).filter(|f| !f.starts_with("at.")).map(|f| (s, at.to_string(), f.to_string(), hi)))
+}
+
 fn target(spec: &Spec, path: &str) -> Result<Target, String> {
-    if let Some((slot, at, _)) = SLOTS.iter().find(|(_, at, _)| path.starts_with(&format!("{at}."))) {
-        let field = &path[at.len() + 1..];
-        return match (spec.exec.slot(*slot), field) {
-            (Some(Dist::Pct(_)), "pct") | (Some(Dist::Atr { .. }), "atr") => Ok(Target { path: path.into(), slot: Some(*slot) }),
+    let rest = path.strip_prefix("short_side.").unwrap_or(path);
+    if rest == "entry.stop.at" || rest == "entry.limit.at" {
+        return Err(format!("{rest} is a level operand; optimize a number inside it ({rest}.value, {rest}.p.<key> or a whole-number field)"));
+    }
+    if let Some((slot, at, field, _)) = slot_at(rest) {
+        let exec = exec_of(spec, path).ok_or("the spec has no short_side")?;
+        return match (exec.slot(slot), field.as_str()) {
+            (Some(Dist::Pct(_)), "pct") | (Some(Dist::Atr { .. }), "atr") | (Some(Dist::Points(_)), "points") => Ok(Target { path: path.into(), slot: Some(slot) }),
             (None, _) => Err(format!("the spec has no {at}")),
-            _ => Err(format!("{at} is set by {}; optimize that field", if matches!(spec.exec.slot(*slot), Some(Dist::Pct(_))) { "pct" } else { "atr" })),
+            (Some(d), _) => Err(format!("{at} is set by {}; optimize that field", match d { Dist::Pct(_) => "pct", Dist::Atr { .. } => "atr", Dist::Points(_) => "points" })),
         };
     }
-    if !path.starts_with("entry.all[") && !path.starts_with("exit.any[") {
-        return Err("must start with entry.all[i], exit.any[i], entry.limit, exit.stop_loss, exit.target or exit.trailing".into());
+    if !["entry.all[", "exit.any[", "entry.limit.at.", "entry.stop.at."].iter().any(|p| rest.starts_with(p)) {
+        return Err("must start with entry.all[i], exit.any[i], entry.limit, entry.limit.at, entry.stop, entry.stop.at, exit.stop_loss, exit.target, exit.trailing, exit.trailing.activate, exit.breakeven.after, exit.take_profits[k] (each also under short_side.)".into());
     }
     let (mut found, mut near) = (false, None::<String>);
     walk(&mut spec.clone(), &mut |p, k| match k {
@@ -494,8 +652,13 @@ fn target(spec: &Spec, path: &str) -> Result<Target, String> {
     });
     if found { return Ok(Target { path: path.into(), slot: None }); }
     if let Some(m) = near { return Err(m); }
-    let beyond = |list: &str, n: usize| path.strip_prefix(list).and_then(|r| r.split_once(']')).and_then(|(i, _)| i.parse::<usize>().ok()).is_some_and(|i| i >= n);
-    if beyond("entry.all[", spec.entry.len()) || beyond("exit.any[", spec.exit.len()) { return Err("no condition at that index".into()); }
+    let (entry, exit) = match (path.starts_with("short_side."), &spec.short_side) {
+        (false, _) => (spec.entry.len(), spec.exit.len()),
+        (true, Some(s)) => (s.entry.len(), s.exit.len()),
+        (true, None) => return Err("the spec has no short_side".into()),
+    };
+    let beyond = |list: &str, n: usize| rest.strip_prefix(list).and_then(|r| r.split_once(']')).and_then(|(i, _)| i.parse::<usize>().ok()).is_some_and(|i| i >= n);
+    if beyond("entry.all[", entry) || beyond("exit.any[", exit) { return Err("no condition at that index".into()); }
     Err("names no number in the spec (paths end in .value, .p.<key> or a whole-number field: bars, within, of, at_least)".into())
 }
 
@@ -505,6 +668,16 @@ enum Knob<'a> { Value(&'a mut f64), Param(&'a mut SeriesRef, String), Whole(&'a 
 fn walk(s: &mut Spec, f: &mut dyn FnMut(String, Knob)) {
     for (k, n) in s.entry.iter_mut().enumerate() { walk_node(n, &format!("entry.all[{k}]"), f); }
     for (k, n) in s.exit.iter_mut().enumerate() { walk_node(n, &format!("exit.any[{k}]"), f); }
+    for (pre, x) in [("", &mut s.exec)] { walk_levels(x, pre, f); }
+    if let Some(x) = s.short_side.as_mut() {
+        for (k, n) in x.entry.iter_mut().enumerate() { walk_node(n, &format!("short_side.entry.all[{k}]"), f); }
+        for (k, n) in x.exit.iter_mut().enumerate() { walk_node(n, &format!("short_side.exit.any[{k}]"), f); }
+        walk_levels(&mut x.exec, "short_side.", f);
+    }
+}
+fn walk_levels(x: &mut Exec, pre: &str, f: &mut dyn FnMut(String, Knob)) {
+    if let Some(o) = x.limit_at.as_mut() { walk_operand(o, &format!("{pre}entry.limit.at"), f); }
+    if let Some(o) = x.stop_at.as_mut() { walk_operand(o, &format!("{pre}entry.stop.at"), f); }
 }
 fn walk_node(n: &mut Node, at: &str, f: &mut dyn FnMut(String, Knob)) {
     match n {
@@ -574,7 +747,7 @@ fn consistent_operand(o: &Operand) -> Result<(), String> {
 
 fn set(s: &mut Spec, t: &Target, x: f64) {
     if let Some(slot) = t.slot {
-        match s.exec.slot_mut(slot) { Some(Dist::Pct(p)) => *p = x, Some(Dist::Atr { mult, .. }) => *mult = x, None => {} }
+        match exec_mut(s, &t.path).and_then(|e| e.slot_mut(slot)) { Some(Dist::Pct(p) | Dist::Points(p)) => *p = x, Some(Dist::Atr { mult, .. }) => *mult = x, None => {} }
         return;
     }
     walk(s, &mut |p, k| if p == t.path {
@@ -588,9 +761,22 @@ fn set(s: &mut Spec, t: &Target, x: f64) {
 }
 fn check_value(spec: &Spec, t: &Target, x: f64) -> Result<(), String> {
     if let Some(slot) = t.slot {
-        let (_, at, hi) = SLOTS.iter().find(|(s, _, _)| *s == slot).unwrap();
-        let ok = match spec.exec.slot(slot) { Some(Dist::Pct(_)) => x <= *hi && (x > 0. || (x == 0. && slot == Slot::Limit)), _ => x > 0. && x <= MAX_ATR_MULT };
-        return if ok { Ok(()) } else { Err(format!("{at} value {x} is out of range")) };
+        let (_, at, _, hi) = slot_at(t.path.strip_prefix("short_side.").unwrap_or(&t.path)).unwrap();
+        let order = matches!(slot, Slot::Limit | Slot::Stop);
+        let ok = match exec_of(spec, &t.path).and_then(|e| e.slot(slot)) {
+            Some(Dist::Pct(_)) => x <= hi && (x > 0. || (x == 0. && order)),
+            Some(Dist::Points(_)) => x <= MAX_POINTS && (x > 0. || (x == 0. && order)),
+            _ => x > 0. && x <= MAX_ATR_MULT,
+        };
+        if !ok { return Err(format!("{at} value {x} is out of range")); }
+        if slot == Slot::BreakevenAfter {
+            let mut s = spec.clone();
+            set(&mut s, t, x);
+            if let Some((after, plus)) = exec_of(&s, &t.path).and_then(|e| e.breakeven) {
+                return breakeven_order(after, plus, at.strip_suffix(".after").unwrap_or(&at)).map_err(|e| format!("{} value {x}: {e}", t.path));
+            }
+        }
+        return Ok(());
     }
     let mut s = spec.clone();
     set(&mut s, t, x);
@@ -604,7 +790,11 @@ fn check_value(spec: &Spec, t: &Target, x: f64) -> Result<(), String> {
         };
     });
     res?;
-    s.entry.iter().chain(&s.exit).try_for_each(consistent)
+    let short = s.short_side.as_ref().map(|x| x.entry.iter().chain(&x.exit));
+    s.entry.iter().chain(&s.exit).chain(short.into_iter().flatten()).try_for_each(consistent)?;
+    let execs = std::iter::once(&s.exec).chain(s.short_side.as_ref().map(|x| &x.exec));
+    let levels = execs.flat_map(|e| [&e.limit_at, &e.stop_at]).flatten().try_for_each(consistent_operand);
+    levels
 }
 /// Every catalogue or price series id the rule lists read, nested ones included.
 pub fn series_ids(spec: &Spec) -> Vec<String> {
@@ -614,7 +804,7 @@ pub fn series_ids(spec: &Spec) -> Vec<String> {
 }
 /// The spec's own value at an optimize target (the "base" setting the ranking prefers on ties).
 pub fn current(spec: &Spec, t: &Target) -> f64 {
-    if let Some(slot) = t.slot { return match spec.exec.slot(slot) { Some(Dist::Pct(p)) => p, Some(Dist::Atr { mult, .. }) => mult, None => f64::NAN }; }
+    if let Some(slot) = t.slot { return match exec_of(spec, &t.path).and_then(|e| e.slot(slot)) { Some(Dist::Pct(p) | Dist::Points(p)) => p, Some(Dist::Atr { mult, .. }) => mult, None => f64::NAN }; }
     let mut v = f64::NAN;
     walk(&mut spec.clone(), &mut |p, k| if p == t.path {
         match k {
@@ -698,7 +888,6 @@ mod tests {
     #[test] fn reserved_fields_are_unsupported() {
         for (text, needle) in [
             (with(r#""v": 1,"#, r#""v": 1, "portfolio": {"max_open": 3},"#), "spec.portfolio"),
-            (with(r#""all": ["#, r#""stop": {"pct": 1}, "all": ["#), "entry.stop"),
             (with(r#""fill": "next_open""#, r#""fill": "limit""#), "execution.fill 'limit'"),
             (with(r#""fill": "next_open""#, r#""fill": "stop""#), "execution.fill 'stop'"),
             (with(r#""v": 1,"#, r#""v": 1, "scale_in": [],"#), "spec.scale_in"),
@@ -728,7 +917,7 @@ mod tests {
     }
     #[test] fn customize_fields_are_bounded_and_named() {
         for (text, needle) in [
-            (with(r#""direction": "long""#, r#""direction": "both""#), "direction must be"),
+            (with(r#""direction": "long""#, r#""direction": "sideways""#), "direction must be"),
             (with(r#""fill": "next_open""#, r#""fill": "open""#), "execution.fill must be"),
             (with(r#""fill": "next_open""#, r#""exit_fill": "later""#), "execution.exit_fill must be"),
             (with(r#""all": ["#, r#""limit": {"pct": 3}, "all": ["#), "remove execution.fill"),
@@ -952,5 +1141,145 @@ mod tests {
         let nth = |to: u32| format!(r#"{},"optimize":[{{"path":"entry.all[0].lhs.nth","from":1,"to":{to},"step":1}}]}}"#, &vw[..vw.len() - 1]);
         assert!(parse_spec(&nth(20)).is_ok());
         assert!(err(&nth(21)).message().contains("nth (21) must be a whole number from 1 to 20"));
+    }
+
+    // ---- Phase 7: two-sided specs (spec §6.1)
+    const BOTH: &str = r#"{"v":1,"direction":"both",
+      "entry":{"all":[{"lhs":{"s":"sma","p":{"length":5}},"op":"crosses_above","rhs":{"s":"sma","p":{"length":20}}}]},"exit":{"any":[],"stop_loss":{"pct":5}},
+      "short_side":{"entry":{"all":[{"lhs":{"s":"sma","p":{"length":5}},"op":"crosses_below","rhs":{"s":"sma","p":{"length":20}}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":10}}],"target":{"pct":8}}},
+      "execution":{"opposite":"exit"}}"#;
+    #[test] fn two_sided_specs_parse_and_validate() {
+        let s = parse_spec(BOTH).unwrap();
+        let x = s.short_side.as_ref().unwrap();
+        assert!(!s.exec.short && x.exec.short);
+        assert_eq!((s.exec.stop_loss, x.exec.target, x.exec.stop_loss), (Some(Dist::Pct(5.)), Some(Dist::Pct(8.)), None));
+        assert_eq!((s.exec.opposite, x.exec.opposite, x.exec.fill), (Opposite::Exit, Opposite::Exit, Fill::NextOpen));
+        assert_eq!(x.exit[0].cmp().unwrap().lhs, Operand::BarsHeld);
+        assert_eq!(parse_spec(&BOTH.replace(r#"{"opposite":"exit"}"#, "{}")).unwrap().exec.opposite, Opposite::Reverse);
+        let no_short = r#"{"v":1,"direction":"both","entry":{"all":[{"lhs":{"s":"close"},"op":">","rhs":{"value":1}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":1}}]}}"#;
+        for (text, needle) in [
+            (BOTH.replace(r#""direction":"both","#, ""), "short_side applies to direction \"both\" only"),
+            (no_short.to_string(), "needs short_side"),
+            (no_short.replace(r#""direction":"both","#, "").replace(r#"{"value":1}}]}}"#, r#"{"value":1}}]},"execution":{"opposite":"exit"}}"#), "execution.opposite applies to direction \"both\" only"),
+            (BOTH.replace(r#""direction":"both""#, r#""direction":"sideways""#), "\"long\", \"short\" or \"both\""),
+            (BOTH.replace(r#""opposite":"exit""#, r#""opposite":"flip""#), "execution.opposite must be"),
+            (BOTH.replace(r#""target":{"pct":8}"#, r#""target":{"pct":0}"#), "short_side.exit.target.pct must be a number above 0"),
+            (BOTH.replace(r#""crosses_below""#, r#""below""#), "short_side.entry.all[0].op"),
+        ] {
+            let e = err(&text);
+            assert!(e.message().contains(needle), "{needle:?} not in {:?}", e.message());
+        }
+    }
+    /// Every place an operand can appear reaches `series_ids` (the api's `adaptations` note reads it).
+    #[test] fn series_ids_reach_every_operand_location() {
+        let sl = r#"{"lhs":{"s":"sessions_left","out":"m"},"op":"<","rhs":{"value":2}}"#;
+        let short_entry = BOTH.replacen(r#"{"lhs":{"s":"sma","p":{"length":5}},"op":"crosses_below""#, &format!(r#"{sl},{{"lhs":{{"s":"sma","p":{{"length":5}}}},"op":"crosses_below""#), 1);
+        let short_exit = BOTH.replacen(r#""exit":{"any":[{"lhs":{"s":"bars_held"}"#, &format!(r#""exit":{{"any":[{sl},{{"lhs":{{"s":"bars_held"}}"#), 1);
+        // entry order levels (`at`), on the only side and on the short side
+        let stop_at = with(r#""all": ["#, r#""stop": {"at": {"s":"sessions_left","out":"m"}}, "all": ["#).replace(r#""fill": "next_open", "#, "");
+        let short_limit_at = BOTH.replacen(r#""short_side":{"entry":{"#, r#""short_side":{"entry":{"limit":{"at":{"max":[{"s":"high"},{"s":"sessions_left","out":"m"}]}},"#, 1);
+        for text in [short_entry, short_exit, stop_at, short_limit_at] {
+            assert!(text.contains("sessions_left"));
+            assert!(series_ids(&parse_spec(&text).unwrap()).iter().any(|id| id == "sessions_left"), "{text}");
+        }
+    }
+    #[test] fn optimize_reaches_the_short_side() {
+        let text = format!(r#"{},"optimize":[{{"path":"short_side.exit.target.pct","from":4,"to":8,"step":2}},{{"path":"short_side.entry.all[0].rhs.p.length","from":10,"to":30,"step":10}},{{"path":"exit.stop_loss.pct","from":1,"to":2,"step":1}}]}}"#, &BOTH[..BOTH.len() - 1]);
+        let s = parse_spec(&text).unwrap();
+        assert_eq!(s.optimize.iter().map(|d| current(&s, &d.target)).collect::<Vec<_>>(), vec![8., 20., 5.]);
+        let t = apply(&s, &s.optimize, &[4., 30., 1.]);
+        let x = t.short_side.as_ref().unwrap();
+        let Operand::Series(r) = &x.entry[0].cmp().unwrap().rhs else { panic!() };
+        assert_eq!((x.exec.target, r.params["length"], t.exec.stop_loss), (Some(Dist::Pct(4.)), 30., Some(Dist::Pct(1.))));
+        assert!(err(&text.replace("short_side.exit.target.pct", "short_side.exit.stop_loss.pct")).message().contains("the spec has no exit.stop_loss"));
+        assert!(err(&text.replace("short_side.entry.all[0]", "short_side.entry.all[3]")).message().contains("no condition at that index"));
+    }
+
+    // ---- Phase 7: entry orders (spec §6.1)
+    #[test] fn entry_orders_parse_and_validate() {
+        let no_fill = |s: &str| s.replace(r#""fill": "next_open", "#, "");
+        let s = parse_spec(&no_fill(&with(r#""all": ["#, r#""stop": {"points": 2.5}, "limit": {"at": {"s":"highest","p":{"length":5}}}, "valid_bars": 3, "all": ["#))).unwrap();
+        assert_eq!((s.exec.stop, s.exec.valid_bars, s.exec.limit), (Some(Dist::Points(2.5)), 3, None));
+        assert!(matches!(&s.exec.limit_at, Some(Operand::Series(r)) if r.id == "highest"));
+        let s = parse_spec(&with(r#""fill": "next_open", "cost_bps": 12"#, r#""fill": "next_open", "delay_bars": 2, "entry_on": "edge""#)).unwrap();
+        assert_eq!((s.exec.delay, s.exec.edge, s.exec.valid_bars), (2, true, 1));
+        for (text, needle) in [
+            (with(r#""all": ["#, r#""stop": {"pct": 1}, "all": ["#), "remove execution.fill"),
+            (with(r#""all": ["#, r#""valid_bars": 2, "all": ["#), "entry.valid_bars applies to entry.limit or entry.stop orders"),
+            (no_fill(&with(r#""all": ["#, r#""stop": {"pct": 1}, "valid_bars": 21, "all": ["#)), "valid_bars must be a whole number from 1 to 20"),
+            (no_fill(&with(r#""all": ["#, r#""stop": {"pct": 1, "points": 2}, "all": ["#)), "exactly one of pct or atr, or points"),
+            (with(r#""any": ["#, r#""stop_loss": {"at": {"s":"low"}}, "any": ["#), "exit.stop_loss.at is for entry orders"),
+            (with(r#""any": ["#, r#""stop_loss": {"points": 0}, "any": ["#), "exit.stop_loss.points must be a number above 0"),
+            (with(r#""cost_bps": 12"#, r#""cost_bps": 12, "delay_bars": 0"#), "delay_bars must be a whole number from 1 to 10"),
+            (with(r#""fill": "next_open""#, r#""fill": "close", "delay_bars": 2"#), "delay_bars applies to next_open fills only"),
+            (with(r#""cost_bps": 12"#, r#""cost_bps": 12, "entry_on": "rising""#), "entry_on must be"),
+        ] {
+            let e = err(&text);
+            assert!(e.message().contains(needle), "{needle:?} not in {:?}", e.message());
+        }
+        let opt = no_fill(&with(r#""all": ["#, r#""stop": {"at": {"s":"highest","p":{"length":5}}}, "limit": {"points": 1}, "all": ["#))
+            .replace(r#"[ {"path":"entry.all[0].lhs.p.length","from":2,"to":6,"step":1} ]"#, r#"[ {"path":"entry.stop.at.p.length","from":3,"to":9,"step":3}, {"path":"entry.limit.points","from":0,"to":2,"step":1} ]"#);
+        let s = parse_spec(&opt).unwrap();
+        assert_eq!(s.optimize.iter().map(|d| current(&s, &d.target)).collect::<Vec<_>>(), vec![5., 1.]);
+        let t = apply(&s, &s.optimize, &[9., 0.]);
+        assert!(matches!(&t.exec.stop_at, Some(Operand::Series(r)) if r.params["length"] == 9.));
+        assert_eq!(t.exec.limit, Some(Dist::Points(0.)));
+        // a node inside an `at` level stays consistent under optimize, on either side
+        let vw = r#"{"value_when":{"lhs":{"s":"close"},"op":">","rhs":{"s":"open"}},"of":{"s":"high"},"nth":2}"#;
+        let lvl = no_fill(&with(r#""all": ["#, &format!(r#""stop": {{"at": {vw}}}, "all": ["#)))
+            .replace(r#"[ {"path":"entry.all[0].lhs.p.length","from":2,"to":6,"step":1} ]"#, r#"[ {"path":"entry.stop.at.nth","from":1,"to":TO,"step":1} ]"#);
+        assert!(parse_spec(&lvl.replace("TO", "20")).is_ok());
+        assert!(err(&lvl.replace("TO", "21")).message().contains("nth (21) must be a whole number from 1 to 20"));
+        let short = BOTH.replacen(r#""short_side":{"entry":{"#, &format!(r#""short_side":{{"entry":{{"stop":{{"at":{vw}}},"#), 1);
+        let short = format!(r#"{},"optimize":[{{"path":"short_side.entry.stop.at.nth","from":19,"to":21,"step":1}}]}}"#, &short[..short.len() - 1]);
+        assert!(err(&short).message().contains("nth (21) must be a whole number from 1 to 20"));
+    }
+
+    // ---- Phase 7: exits (spec §6.1)
+    #[test] fn exits_parse_validate_and_reach_optimize() {
+        let s = parse_spec(&with(r#""any": ["#, r#""trailing": {"pct": 8, "activate": {"atr": 2}}, "breakeven": {"after": {"pct": 3}, "plus": {"points": 0.5}}, "take_profits": [{"pct": 5, "size": 0.5}, {"atr": 4, "size": 0.25}], "min_bars": 2, "any": ["#)
+            .replace(r#""cost_bps": 12"#, r#""cost_bps": 12, "intrabar": "ohlc_path""#)).unwrap();
+        assert_eq!((s.exec.trailing, s.exec.trail_activate), (Some(Dist::Pct(8.)), Some(Dist::Atr { mult: 2., length: 14 })));
+        assert_eq!(s.exec.breakeven, Some((Dist::Pct(3.), Some(Dist::Points(0.5)))));
+        assert_eq!(s.exec.take_profits, vec![(Dist::Pct(5.), 0.5), (Dist::Atr { mult: 4., length: 14 }, 0.25)]);
+        assert_eq!((s.exec.min_bars, s.exec.ohlc_path), (2, true));
+        for (text, needle) in [
+            (with(r#""any": ["#, r#""take_profits": [{"pct": 5, "size": 0.6}, {"pct": 9, "size": 0.4}], "any": ["#), "sizes must add up to less than 1"),
+            (with(r#""any": ["#, r#""take_profits": [{"pct": 5}], "any": ["#), "exit.take_profits[0].size must be a fraction"),
+            (with(r#""any": ["#, r#""take_profits": [{"pct": 1, "size": 0.1}, {"pct": 2, "size": 0.1}, {"pct": 3, "size": 0.1}, {"pct": 4, "size": 0.1}], "any": ["#), "needs 1 to 3 levels"),
+            (with(r#""any": ["#, r#""breakeven": {"plus": {"pct": 1}}, "any": ["#), "exit.breakeven.after is required"),
+            (with(r#""any": ["#, r#""trailing": {"pct": 8, "activate": {"pct": 0}}, "any": ["#), "exit.trailing.activate.pct must be a number above 0"),
+            (with(r#""any": ["#, r#""min_bars": 1.5, "any": ["#), "exit.min_bars must be a whole number from 0"),
+            (with(r#""cost_bps": 12"#, r#""cost_bps": 12, "intrabar": "random""#), "execution.intrabar must be"),
+        ] {
+            let e = err(&text);
+            assert!(e.message().contains(needle), "{needle:?} not in {:?}", e.message());
+        }
+        let opt = with(r#""any": ["#, r#""trailing": {"pct": 8, "activate": {"pct": 2}}, "breakeven": {"after": {"pct": 3}}, "take_profits": [{"pct": 5, "size": 0.5}], "any": ["#)
+            .replace(r#"[ {"path":"entry.all[0].lhs.p.length","from":2,"to":6,"step":1} ]"#, r#"[ {"path":"exit.trailing.activate.pct","from":1,"to":3,"step":1}, {"path":"exit.breakeven.after.pct","from":2,"to":4,"step":1}, {"path":"exit.take_profits[0].pct","from":4,"to":6,"step":1}, {"path":"exit.trailing.pct","from":6,"to":8,"step":2} ]"#);
+        let s = parse_spec(&opt).unwrap();
+        assert_eq!(s.optimize.iter().map(|d| current(&s, &d.target)).collect::<Vec<_>>(), vec![2., 3., 5., 8.]);
+        let t = apply(&s, &s.optimize, &[1., 4., 6., 6.]);
+        assert_eq!((t.exec.trail_activate, t.exec.breakeven.unwrap().0, t.exec.take_profits[0].0, t.exec.trailing), (Some(Dist::Pct(1.)), Dist::Pct(4.), Dist::Pct(6.), Some(Dist::Pct(6.))));
+        assert!(err(&opt.replace("exit.take_profits[0].pct", "exit.take_profits[1].pct")).message().contains("the spec has no exit.take_profits[1]"));
+        // fix round 1: breakeven.plus below after (same units), no `at` for plus, precise optimize paths
+        for (text, needle) in [
+            (with(r#""any": ["#, r#""breakeven": {"after": {"pct": 2}, "plus": {"pct": 2}}, "any": ["#), "exit.breakeven.plus (2) must be below exit.breakeven.after (2)"),
+            (with(r#""any": ["#, r#""breakeven": {"after": {"pct": 2}, "plus": {"at": {"s":"low"}}}, "any": ["#), "exit.breakeven.plus takes pct|atr|points; `at` levels are not supported"),
+            (opt.replace("exit.take_profits[0].pct", "exit.nowhere.pct"), "entry.stop, entry.stop.at, exit.stop_loss, exit.target, exit.trailing, exit.trailing.activate, exit.breakeven.after, exit.take_profits[k]"),
+        ] {
+            let e = err(&text);
+            assert!(e.message().contains(needle), "{needle:?} not in {:?}", e.message());
+        }
+        assert!(parse_spec(&with(r#""any": ["#, r#""breakeven": {"after": {"pct": 2}, "plus": {"points": 3}}, "any": ["#)).is_ok()); // units differ: not compared
+        // fix round 2: the optimizer cannot move after to or below plus
+        let be = with(r#""any": ["#, r#""breakeven": {"after": {"pct": 3}, "plus": {"pct": 2}}, "any": ["#)
+            .replace(r#"[ {"path":"entry.all[0].lhs.p.length","from":2,"to":6,"step":1} ]"#, r#"[ {"path":"exit.breakeven.after.pct","from":FROM,"to":4,"step":1} ]"#);
+        assert!(parse_spec(&be.replace("FROM", "3")).is_ok());
+        let e = err(&be.replace("FROM", "1"));
+        assert!(e.message().contains("exit.breakeven.after.pct") && e.message().contains("plus (2) must be below exit.breakeven.after (1)"), "{}", e.message());
+        let at = with(r#""all": ["#, r#""stop": {"at": {"s":"highest","p":{"length":5}}}, "all": ["#).replace(r#""fill": "next_open", "#, "")
+            .replace(r#""entry.all[0].lhs.p.length""#, r#""entry.stop.at""#);
+        assert!(err(&at).message().contains("entry.stop.at is a level operand; optimize a number inside it"), "{}", err(&at).message());
     }
 }

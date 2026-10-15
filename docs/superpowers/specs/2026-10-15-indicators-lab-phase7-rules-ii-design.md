@@ -298,8 +298,10 @@ simulator field is needed.
 
 **Distance `D`** is `{"pct":p}`, `{"atr":m,"atr_length":n}` (v1), or one of the new forms: `{"points":x}`
 (price units), `{"ticks":n}` (futures only: n × the contract tick) and `{"at":operand}`. The `at` form is for
-entry orders and `breakeven.plus` only, and gives an absolute level taken from an operand's value at the
-signal bar. An example is a channel-breakout stop entry at `highest(high,5)`.
+entry orders (`entry.limit`, `entry.stop`) only, and gives an absolute level taken from an operand's value at the
+signal bar. An example is a channel-breakout stop entry at `highest(high,5)`. `breakeven.plus` takes
+pct | atr | points; an `at` level there is refused (ruling 2026-10-15, batch 3 review), and `plus` must be below
+`after` when both use the same units.
 
 | Field | Meaning | Platform reference |
 |---|---|---|
@@ -308,7 +310,7 @@ signal bar. An example is a channel-breakout stop entry at `highest(high,5)`.
 | both entries true while flat | **no entry** (ambiguous) | AB "Buy beats Short"; Pine depends on code order (§13 item 20) |
 | always in | `direction: both`, `opposite: reverse`, empty exits | AFL `Short = Sell; Cover = Buy;` |
 | `entry.stop` | stop (breakout) entry above the signal close for a long (below for a short), or at an `at` level; fills when the high reaches it, at the worse of open and level | Pine `strategy.entry(stop=)`; AFL `BuyPrice = Max(O, level)` |
-| `entry.stop` + `entry.limit` | stop-limit: the stop arms a limit (§6.2) | Pine `strategy.entry(stop=, limit=)` |
+| `entry.stop` + `entry.limit` | stop-limit: the stop arms a limit (§6.2). A limit given as a distance (pct / points / atr) always sits below the signal close for a long (above for a short), so such a stop-limit fills only after a gap through the stop; use an `at` limit for the usual buy stop-limit (limit ≥ stop) | Pine `strategy.entry(stop=, limit=)` |
 | `entry.valid_bars` | how many bars a stop / limit / stop-limit order rests (1..20; default 1 = v1) | Pine orders persist until cancelled; GTC-N |
 | `execution.delay_bars` | next-open market orders fill at the open of bar i+k (1..10; default 1) | AB `SetTradeDelays(k,…)` |
 | `execution.entry_on: edge` | enter only on a bar where the entry rule set turns true (it was false or unknown on the previous bar) | Pine `crossover`-style triggers |
@@ -368,15 +370,29 @@ only when no order for that side is resting.
 
 While flat, both sides can rest an order at once; a channel breakout rests a long stop and a short stop. When
 only one is touched, it fills, and the other keeps resting as a reversal order. When both are touched on one
-bar, nothing fills, in either intrabar mode, because daily bars cannot show which came first. Pine's re-issued entry (for example a channel breakout whose stop moves each bar) is
+bar, nothing fills, in either intrabar mode, because daily bars cannot show which came first.
+
+**Mixed sides** (one side market entries, the other side orders; ruling 2026-10-15, batch 3 review). When both
+sides' entries fire on one flat bar and either is a market side, nothing is placed that bar (the ambiguous
+rule). When an order rests on one side and the other side's market entry fires, the market entry wins and the
+resting order is cancelled. Under `opposite: exit | ignore` a resting order of the other side never acts while a
+position is open: it is cancelled when the position opens.
+
+**Delayed exits** (`delay_bars` ≥ 2) belong to the position they were set for. A price exit or a reversal order
+that closes that position first cancels the pending exit, and a pending reversal entry whose closing half was
+already done this way fills as a plain entry. Pine's re-issued entry (for example a channel breakout whose stop moves each bar) is
 `valid_bars: 1`, re-placed every bar.
 
 ### 6.3 Same-bar ordering: one default, one cheap option
 
 | Mode | Rule | Who does this |
 |---|---|---|
-| `stop_first` (**default**, unchanged from Customize) | Adverse events first: the protective level, then reversal orders on the adverse side, then favourable events (target, take-profits). A stop and a target inside one bar resolve to the stop. Trailing and breakeven levels use bars that have already closed. | AmiBroker fixed stop priority (loss → profit → trailing → N-bar); conservative |
-| `ohlc_path` | TradingView's broker-emulator path: if the open is nearer the high, O → H → L → C, otherwise O → L → H → C (a tie takes O → L → H → C). The first level the path reaches fills first. | TradingView Strategy Tester without Bar Magnifier |
+| `stop_first` (**default**, unchanged from Customize) | Levels gapped through at the open fill there first. Then adverse events (the protective level and a reversal stop / stop-limit of the other side) in the order a move from the open reaches them, nearest first (price must cross the nearer level first; a tie takes the protective level; ruling 2026-10-15, batch 3 fix round 2); then favourable events (take-profits, target, a reversal limit) in the same nearest-first order. A stop and a target inside one bar resolve to the stop; no take-profit is booked on a bar whose adverse event fills. Trailing and breakeven levels use bars that have already closed. | AmiBroker fixed stop priority (loss → profit → trailing → N-bar); conservative |
+| `ohlc_path` | TradingView's broker-emulator path: if the open is nearer the high, O → H → L → C, otherwise O → L → H → C (a tie takes O → L → H → C). The first level the path reaches fills first: reversal stops / stop-limits sit with the protective level on the adverse leg, reversal limits with the take-profits and target on the favourable leg. Within a leg the level nearest the open fills first, as in `stop_first`. | TradingView Strategy Tester without Bar Magnifier |
+
+A reversal stop-limit is ranked with the adverse events even when its stop triggers at the open and it fills at its
+limit later in the bar (for a short: a fill above the open, after the price came back up). This is a declared
+simplification: daily bars cannot place that return inside the path, and its fill price is the limit either way.
 
 The option is cheap: it only reorders the candidate events inside one bar. A limit-fill bar still never takes
 the target (Customize rule), and a close-fill entry is still not price-checked on its own bar, in both modes.

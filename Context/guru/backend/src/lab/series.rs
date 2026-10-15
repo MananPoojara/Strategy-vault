@@ -109,13 +109,20 @@ impl RCond {
         }
     }
 }
-pub struct Compiled { pub entry: Vec<RCond>, pub exit: Vec<RCond>, pub exec: Exec, pub atr: BTreeMap<usize, Vec<f64>> }
+/// A compiled side. `other` is the short side of a `direction: both` spec; `cost` is the run's cost per side
+/// (fraction), used by equity-level rules (spec §6.5).
+/// `limit_at` / `stop_at` hold the daily values of `entry.limit.at` / `entry.stop.at` operands.
+pub struct Compiled {
+    pub entry: Vec<RCond>, pub exit: Vec<RCond>, pub exec: Exec, pub atr: BTreeMap<usize, Vec<f64>>, pub other: Option<Box<Compiled>>, pub cost: f64,
+    pub limit_at: Option<Vec<f64>>, pub stop_at: Option<Vec<f64>>,
+}
 impl Compiled {
     /// Long, market orders at the next open, no price exits (the v1 defaults).
-    pub fn new(entry: Vec<RCond>, exit: Vec<RCond>) -> Compiled { Compiled { entry, exit, exec: Exec::default(), atr: BTreeMap::new() } }
+    pub fn new(entry: Vec<RCond>, exit: Vec<RCond>) -> Compiled { Compiled { entry, exit, exec: Exec::default(), atr: BTreeMap::new(), other: None, cost: 0., limit_at: None, stop_at: None } }
+    pub fn has_order(&self) -> bool { self.exec.has_order() }
     /// Price distance of `d` from `px`, using ATR at bar `k` (a bar whose close is already known). NaN while ATR warms up.
     pub fn dist(&self, d: Dist, px: f64, k: usize) -> f64 {
-        match d { Dist::Pct(p) => px * p / 100., Dist::Atr { mult, length } => self.atr.get(&length).map_or(f64::NAN, |a| mult * a[k]) }
+        match d { Dist::Pct(p) => px * p / 100., Dist::Atr { mult, length } => self.atr.get(&length).map_or(f64::NAN, |a| mult * a[k]), Dist::Points(p) => p }
     }
 }
 
@@ -310,9 +317,17 @@ pub fn mask(n: &Node, fr: &Frames, cache: &mut Cache) -> Result<Vec<f64>, LabErr
     })
 }
 pub fn compile(spec: &Spec, fr: &Frames, cache: &mut Cache) -> Result<Compiled, LabError> {
-    let mut c = Compiled { entry: list(&spec.entry, "entry.all", fr, cache)?, exit: list(&spec.exit, "exit.any", fr, cache)?, exec: spec.exec.clone(), atr: BTreeMap::new() };
-    let x = &spec.exec;
-    for d in [x.limit, x.stop_loss, x.target, x.trailing].into_iter().flatten() {
+    let mut c = side(&spec.entry, &spec.exit, &spec.exec, "", fr, cache)?;
+    if let Some(s) = &spec.short_side { c.other = Some(Box::new(side(&s.entry, &s.exit, &s.exec, "short_side.", fr, cache)?)); }
+    Ok(c)
+}
+fn side(entry: &[Node], exit: &[Node], x: &Exec, pre: &str, fr: &Frames, cache: &mut Cache) -> Result<Compiled, LabError> {
+    let mut c = Compiled { entry: list(entry, &format!("{pre}entry.all"), fr, cache)?, exit: list(exit, &format!("{pre}exit.any"), fr, cache)?, ..Compiled::new(vec![], vec![]) };
+    c.exec = x.clone();
+    c.limit_at = x.limit_at.as_ref().map(|o| arr(o, fr, cache)).transpose()?;
+    c.stop_at = x.stop_at.as_ref().map(|o| arr(o, fr, cache)).transpose()?;
+    let later = x.breakeven.iter().flat_map(|b| [Some(b.0), b.1]).chain(x.take_profits.iter().map(|t| Some(t.0)));
+    for d in [x.limit, x.stop_loss, x.target, x.trailing, x.stop, x.trail_activate].into_iter().chain(later).flatten() {
         if let Dist::Atr { length, .. } = d {
             if c.atr.contains_key(&length) { continue; }
             let r = SeriesRef { id: "atr".into(), params: [("length".to_string(), length as f64)].into(), tf: Tf::D, out: 0, offset: 0 };
