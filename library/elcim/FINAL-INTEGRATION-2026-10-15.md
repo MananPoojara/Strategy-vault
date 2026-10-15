@@ -1,0 +1,9 @@
+# Elder protected Impulse — final integration scope
+
+The candidate-stage admission/status statements in [the original source review](REVIEW-2026-10-15.md) and [the initial backend review](INDEPENDENT-BACKEND-REVIEW-2026-10-15.md) record the state at those earlier reviews. They remain historical evidence; they are not a live deployment status display. A catalogue entry, source review or private backend acceptance alone does not publish a result.
+
+The final integration covers one existing strategy entry, `elcim_impulse`, on actual individual stocks. It preserves the independently accepted protected account executor, SHA256 `819cc093b121d2a95836894b25c605fe737e745249f594e79f4ab1ad96645eea`, and adds source-account-aware presentation and exports, exact parameter/instrument admission, and bounded API/input validation. Actual calculated dates and the difference between weighted trade returns and account equity are displayed explicitly. Other Elder fragments, indices, ETFs, baskets, changed settings and original book performance inherit no approval.
+
+This remains a declared research composition: daily Impulse, completed-week EMA26 confirmation, next-observed-open execution, fixed SafeZone10/2 worksheet protection and mandatory cost-aware 2%/6% monthly account-risk rules. The source's discretionary turning-point lookback/reset choice is not implemented or claimed to be reproduced. Actual shorts remain hypothetical price exposure; no funded monetary capital, brokerage borrow availability, share-lot execution or printed source-study performance is asserted.
+
+Final normal publication is controlled by the release owner after independent integration acceptance and source-bound API/browser checks. This document does not itself claim deployment or authorize publication. The release owner binds the final commit, reviewed evidence and eventual deployment outcome separately.
