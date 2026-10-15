@@ -47,10 +47,11 @@ for (const [name, width, theme] of views) {
   checks.label = await evaluate(`[...document.querySelectorAll('[data-server-label]')].some(e => e.textContent === 'User-defined indicator strategy · simulated · not a book method')`);
   if (name === "desktop-steel") {
     checks.chip = (await click(`[data-lab-item="rsi"]`)) && (await waitFor(`!!document.querySelector('[data-lab-chip]')`));
-    checks.run = (await click(`[data-lab-action="run"]`)) && (await waitFor(`!!document.querySelector('[data-lab-result], [data-lab-error]')`, 120000));
+    // Scoped waits: the saved-strategies 503 notice is already on the page and must not end the wait early.
+    checks.run = (await click(`[data-lab-action="run"]`)) && (await waitFor(`!!document.querySelector('[data-lab-result], [data-lab-error]:not([data-lab-saved] *):not([data-lab-optimize] *)')`, 120000));
     checks.runOk = await evaluate(`!!document.querySelector('[data-lab-result]')`);
     checks.optimize = (await click(`[data-lab-dim] input[type=checkbox]`)) && (await click(`[data-lab-action="optimize"]`))
-      && (await waitFor(`!!document.querySelector('[data-lab-optimize-result], [data-lab-error]')`, 300000));
+      && (await waitFor(`!!document.querySelector('[data-lab-optimize-result], [data-lab-optimize] [data-lab-error]')`, 300000));
     checks.optimizeOk = await evaluate(`!!document.querySelector('[data-lab-optimize-result]')`);
   }
   checks.noHorizontalScroll = await evaluate(`document.documentElement.scrollWidth <= innerWidth + 1`);
@@ -61,6 +62,13 @@ for (const [name, width, theme] of views) {
 }
 await send("Page.navigate", { url: `${base}/#/yt-strategies` });
 report.push({ name: "yt-strategies", checks: { rendered: await waitFor(`!!document.querySelector('[data-lab-page="yt-strategies"] [data-lab-error], [data-lab-page="yt-strategies"] .lab-card, [data-lab-page="yt-strategies"] .empty')`) }, pageErrors: [] });
-ws.close(); chrome.kill(); rmSync(profile, { recursive: true, force: true });
+// Chrome keeps writing its profile until it exits; removing it earlier fails with ENOTEMPTY and hides the report.
+ws.close();
+if (chrome.exitCode === null && chrome.signalCode === null) {
+  const exited = new Promise((resolve) => chrome.once("exit", resolve));
+  chrome.kill(); await exited;
+}
+// Its helper processes outlive the main one for a moment, so retry the removal for a few seconds.
+for (let i = 0; i < 20; i++) { try { rmSync(profile, { recursive: true, force: true }); break; } catch { await sleep(250); } }
 console.log(JSON.stringify(report, null, 2));
 process.exit(report.every((r) => !r.pageErrors.length && Object.values(r.checks).every(Boolean)) ? 0 : 1);
