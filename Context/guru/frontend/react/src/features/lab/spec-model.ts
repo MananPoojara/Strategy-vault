@@ -115,6 +115,7 @@ export const withOptimize = (spec: Spec, dims: OptimizeDim[]): Spec => (dims.len
 export const specBytes = (spec: Spec) => new TextEncoder().encode(JSON.stringify(spec)).length;
 // Engine cap 8192 bytes; the gateway caps the URL-encoded query at 16384, so keep margins for ticker/dates.
 const MAX_BYTES = 7500, MAX_ENCODED = 15000;
+export const specTooLong = (spec: Spec) => specBytes(spec) > MAX_BYTES || new URLSearchParams({ spec: JSON.stringify(spec) }).toString().length > MAX_ENCODED;
 
 function distProblems(label: string, d: Dist, [lo, hi]: [number, number], zeroOk: boolean): string[] {
   if ("pct" in d)
@@ -148,8 +149,7 @@ export function specProblems(spec: Spec, cat: Catalogue): string[] {
     const d = orderOf(spec, order.key);
     if (d) out.push(...distProblems(order.label, d, order.pct, order.zeroOk));
   }
-  const json = JSON.stringify(spec);
-  if (specBytes(spec) > MAX_BYTES || new URLSearchParams({ spec: json }).toString().length > MAX_ENCODED) out.push(COPY.tooLong);
+  if (specTooLong(spec)) out.push(COPY.tooLong);
   return out;
 }
 

@@ -207,3 +207,15 @@ it("the Now row shows the settings that were optimized, not later edits", async 
   await act(async () => update({ spec: setAt(defaultSpec(), P, 60) }));
   expect(rowCells(host, 0)[1]).toBe("50");
 });
+
+it("blocks Optimize when the spec with dims is too long, and explains a hold-back without a run", async () => {
+  const long = { ...defaultSpec(), name: "x".repeat(7600) } as Spec;
+  const host = await mount(<OptimizePanel {...base} spec={long} dates={[]} onOptimize={vi.fn()} />);
+  await tick(host, "entry.all[0].rhs.p.length");
+  expect(host.textContent).toContain("These rules are too long to send.");
+  expect(host.querySelector<HTMLButtonElement>('[data-lab-action="optimize"]')!.disabled).toBe(true);
+  const split = host.querySelector<HTMLSelectElement>('select[aria-label="Held back"]')!;
+  await act(async () => { split.value = "30"; split.dispatchEvent(new Event("change", { bubbles: true })); });
+  expect(host.textContent).toContain("Run a backtest first to set the hold-back date.");
+  expect(host.textContent).not.toContain("Not enough history");
+});

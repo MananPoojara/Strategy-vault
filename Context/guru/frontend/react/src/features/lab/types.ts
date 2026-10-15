@@ -120,5 +120,5 @@ export interface StrategyDraft { name: string; spec: Spec; market: SavedMarket; 
 export type EngineStatus = "invalid" | "unsupported" | "needs_data" | "not_found";
 export interface LabErrorFields {
   message: string; status: number; kind: "engine" | "gateway" | "auth";
-  engineStatus?: EngineStatus; label?: string; provisionalNote?: string; retryAfter?: number;
+  engineStatus?: EngineStatus; label?: string; provisionalNote?: string; retryAfter?: number; read?: boolean;
 }

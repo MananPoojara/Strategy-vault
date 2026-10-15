@@ -54,6 +54,16 @@ for (const [name, width, theme] of views) {
       && (await waitFor(`!!document.querySelector('[data-lab-optimize-result], [data-lab-optimize] [data-lab-error]')`, 300000));
     checks.optimizeOk = await evaluate(`!!document.querySelector('[data-lab-optimize-result]')`);
   }
+  if (name === "mobile-aqua") { // many-parameter chip: its last input and remove button must stay on screen
+    checks.ribbonChip = (await click(`[data-lab-item="ma_ribbon"]`)) && (await waitFor(`!!document.querySelector('[data-lab-chip]')`));
+  }
+  // No element may extend past the viewport unless a horizontal-scroll container holds it.
+  checks.noOverflowingElement = await evaluate(`(() => {
+    const scrolls = (el) => { for (let n = el.parentElement; n; n = n.parentElement) if (/auto|scroll/.test(getComputedStyle(n).overflowX)) return true; return false; };
+    const bad = [...document.body.querySelectorAll('*')].filter((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.right > innerWidth + 1 && !scrolls(el); });
+    if (bad.length) console.warn(bad.slice(0, 5).map((e) => e.tagName + '.' + e.className).join(' | '));
+    return bad.length === 0;
+  })()`);
   checks.noHorizontalScroll = await evaluate(`document.documentElement.scrollWidth <= innerWidth + 1`);
   checks.noVerified = await evaluate(`!/\\bverified\\b|TradingView-matched/i.test(document.body.innerText)`);
   const shot = await send("Page.captureScreenshot", { format: "png", captureBeyondViewport: true });

@@ -85,6 +85,10 @@ function IndicatorsLab() {
     dispatch({ type: "ticker", ticker: next });
   }, [options, ticker, market]);
 
+  useEffect(() => { // an unknown ?tf= falls back to daily once the catalogue is known
+    if (cat && !cat.timeframes.includes(state.tf)) dispatch({ type: "tf", tf: "D" });
+  }, [cat, state.tf]);
+
   useEffect(() => {
     writeLabQuery({ region: market, tk: ticker, tf: state.tf, range: state.range });
   }, [market, ticker, state.tf, state.range]);

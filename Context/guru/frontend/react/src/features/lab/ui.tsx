@@ -38,7 +38,7 @@ export function ErrorNotice({ error, market, instrumentLabel, onRetry }: {
     return () => clearInterval(id);
   }, [until]);
   const wait = until ? Math.max(0, Math.ceil((until - Date.now()) / 1000)) : 0;
-  const heading = (e.engineStatus && HEADINGS[e.engineStatus]) || (e.kind === "auth" ? "Not saved" : "Request refused");
+  const heading = (e.engineStatus && HEADINGS[e.engineStatus]) || (e.kind === "auth" ? (e.read ? "Could not load" : "Not saved") : "Request refused");
   return (
     <div className="empty lab-error" role="alert" data-lab-error>
       <b>{heading}</b>

@@ -1,4 +1,5 @@
 .lab-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.lab-chips .chip { flex-wrap: wrap; max-width: 100%; }
 .lab-chips .chip input { width: 64px; }
 .lab-chips .chip input, .lab-chips .chip select { background: var(--card); color: var(--ink); border: 1px solid var(--rule); }
 .lab-chips .chip:has(.lab-error) { flex-wrap: wrap; border-radius: var(--r-field); padding-right: 11px; padding-bottom: 8px; }

@@ -43,3 +43,9 @@ it("keeps server labels verbatim and adds the unavailable prefix once", () => {
   expect(unavailableText("the method is not admitted")).toBe("Customize not available — the method is not admitted");
   expect(unavailableText("Customize not available — x")).toBe("Customize not available — x");
 });
+
+it("always writes region, so an India link survives a US research region", () => {
+  const h = labHash("/indicators", { region: "in" }, "#/indicators");
+  expect(h).toContain("region=in");
+  expect(readLabQuery(h).region).toBe("in");
+});

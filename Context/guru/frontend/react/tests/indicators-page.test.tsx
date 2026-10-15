@@ -51,6 +51,13 @@ it("renders the catalogue label, library and default instrument; saved-strategy 
   expect(host.querySelectorAll("[data-lab-item]")).toHaveLength(catalogueFixture.indicators.length);
   expect(host.querySelector<HTMLSelectElement>(".lab-toolbar select")!.value).toBe("NIFTY 50");
   expect(host.querySelector("[data-lab-saved] [data-lab-error]")?.textContent).toContain("auth service");
+  expect(host.querySelector("[data-lab-saved] [data-lab-error]")?.textContent).toContain("Could not load");
+  expect(host.querySelector("[data-lab-saved] [data-lab-error]")?.textContent).not.toContain("Not saved");
+});
+
+it("an unknown ?tf= falls back to daily once the catalogue loads", async () => {
+  await go("#/indicators?tf=Q");
+  expect(location.hash).not.toContain("tf=");
 });
 
 it("a failed run clears the previous result", async () => {

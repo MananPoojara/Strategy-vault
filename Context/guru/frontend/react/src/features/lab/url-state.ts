@@ -2,7 +2,8 @@ import { resolveRoute } from "../../app/routes";
 import type { ChartRange, Market } from "./types";
 
 export interface LabQuery { region: Market; tk: string; tf: string; range: ChartRange; customize: string; strategy: string; published: string }
-const DEFAULTS: LabQuery = { region: "in", tk: "", tf: "D", range: "3Y", customize: "", strategy: "", published: "" };
+// region is never omitted: the research region may differ from the default, so a shared India link must say so.
+const DEFAULTS: Partial<LabQuery> = { tk: "", tf: "D", range: "3Y", customize: "", strategy: "", published: "" };
 
 export function readLabQuery(hash = location.hash): LabQuery {
   const q = resolveRoute(hash).query;

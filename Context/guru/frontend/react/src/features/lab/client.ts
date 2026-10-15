@@ -10,7 +10,7 @@ export class LabError extends ApiError implements LabErrorFields {
     message: string, status: number,
     readonly kind: LabErrorFields["kind"],
     readonly engineStatus?: EngineStatus, readonly label?: string,
-    readonly provisionalNote?: string, readonly retryAfter?: number,
+    readonly provisionalNote?: string, readonly retryAfter?: number, readonly read = false,
   ) {
     super(message, status);
     this.name = "LabError";
@@ -35,6 +35,7 @@ export async function labRequest<T>(path: string, init: RequestInit = {}): Promi
       path.startsWith("/api/app/") ? "auth" : engineStatus ? "engine" : "gateway",
       engineStatus, typeof body?.label === "string" ? body.label : undefined,
       typeof body?.provisional_note === "string" ? body.provisional_note : undefined, retryAfter,
+      (init.method ?? "GET").toUpperCase() === "GET",
     );
   }
   if (body === null) throw new LabError("The server returned an unreadable response.", response.status, "gateway");

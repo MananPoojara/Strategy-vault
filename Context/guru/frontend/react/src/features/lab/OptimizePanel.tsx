@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { COPY } from "./labels";
 import { int, num, pct } from "./format";
-import { comboCount, optimizablePaths, type OptimizableSetting, setAt, splitDate, valuesCount, withOptimize } from "./spec-model";
+import { comboCount, optimizablePaths, type OptimizableSetting, setAt, specTooLong, splitDate, valuesCount, withOptimize } from "./spec-model";
 import { ErrorNotice, isProvisional, Loading, ProvisionalStrip, ServerLabel } from "./ui";
 import type { Catalogue, OptimizeDim, OptimizeResult, Role, SavedMarket, Spec } from "./types";
 import "./optimize.css";
@@ -62,7 +62,8 @@ export function OptimizePanel(props: {
   const combos = comboCount(dims);
   const tooBig = dims.some((d) => valuesCount(d) > MAX_VALUES) || combos > catalogue.max_combos;
   const split = heldBack ? splitDate(dates, heldBack) : null;
-  const disabled = running !== null || retryUntil > 0 || combos === 0 || tooBig || (heldBack > 0 && split === null);
+  const tooLong = dims.length > 0 && specTooLong(withOptimize(spec, dims));
+  const disabled = tooLong || running !== null || retryUntil > 0 || combos === 0 || tooBig || (heldBack > 0 && split === null);
 
   const toggle = (s: OptimizableSetting, on: boolean) => setSel((cur) => {
     const next = { ...cur };
@@ -132,7 +133,8 @@ export function OptimizePanel(props: {
         <button type="button" className="dbtn primary" data-lab-action="optimize" disabled={disabled}
           onClick={() => run([withOptimize(spec, dims), split])}>Run optimization</button>
       </div>
-      {heldBack > 0 && <p className="cap">{split ? COPY.splitLine(heldBack, split) : "Not enough history for this split."}</p>}
+      {tooLong && <p className="rnote">{COPY.tooLong}</p>}
+      {heldBack > 0 && <p className="cap">{split ? COPY.splitLine(heldBack, split) : dates.length ? "Not enough history for this split." : "Run a backtest first to set the hold-back date."}</p>}
       <p className="cap">Variants tried this session: {tried.toLocaleString("en-US")}</p>
       {running !== null && <><Loading text={`Optimizing… ${Math.floor((Date.now() - running) / 1000)} s`} /><p className="cap">{COPY.optimizeLimit}</p></>}
       {error !== null && <ErrorNotice error={error} market={market} instrumentLabel={instrumentLabel}
