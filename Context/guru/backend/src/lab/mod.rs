@@ -39,3 +39,5 @@ pub mod volume2;
 pub mod testdata;
 #[cfg(test)]
 pub mod parity;
+#[cfg(test)]
+pub mod pinned;

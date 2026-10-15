@@ -9,7 +9,13 @@ pub const MAX_CONDITIONS: usize = 12;
 pub const MAX_SPEC_BYTES: usize = 8192;
 pub const MAX_OFFSET: usize = 1000;
 pub const PRICE_SOURCES: &[&str] = &["open", "high", "low", "close", "hl2", "hlc3", "ohlc4", "volume"];
-pub const OPERATORS: &[&str] = &["crosses_above", "crosses_below", ">", "<", ">=", "<="];
+pub const OPERATORS: &[&str] = &["crosses_above", "crosses_below", ">", "<", ">=", "<=", "=", "!=", "crosses", "between", "outside", "rising", "falling"];
+/// Group kinds a rule list may hold besides comparisons (spec §4.1).
+pub const NODE_KINDS: &[&str] = &["all", "any", "not", "at_least", "then"];
+/// Whole-spec bounds (spec §4.3): comparisons, and comparisons + groups + expressions, over every rule list.
+pub const MAX_LEAVES: usize = 40;
+pub const MAX_NODES: usize = 120;
+pub const MAX_STEPS: usize = 4;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum LabError { Invalid(String), Unsupported(String), NeedsData(String) }
@@ -31,16 +37,47 @@ impl From<String> for LabError {
 fn inv(m: impl Into<String>) -> LabError { LabError::Invalid(m.into()) }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Op { CrossesAbove, CrossesBelow, Gt, Lt, Ge, Le }
+pub enum Op { CrossesAbove, CrossesBelow, Gt, Lt, Ge, Le, Eq, Ne, Crosses }
 #[derive(Clone, Debug, PartialEq)]
 pub struct SeriesRef { pub id: String, pub params: Params, pub tf: Tf, pub out: usize, pub offset: usize }
 #[derive(Clone, Debug, PartialEq)]
-pub enum Operand { Series(SeriesRef), Value(f64), BarsHeld }
+pub enum Operand { Series(SeriesRef), Value(f64), BarsHeld, Expr(Box<Expr>) }
+/// Expression operands (spec §4.1), evaluated on the daily bars.
+pub const EXPRESSIONS: &[&str] = &["add", "sub", "mul", "div", "min", "max", "pct", "abs", "ref", "sum", "avg", "highest", "lowest", "change"];
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Bin { Add, Sub, Mul, Div, Min, Max, Pct }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Win { Sum, Avg, Highest, Lowest, Change }
+impl Bin { pub fn key(self) -> &'static str { EXPRESSIONS[self as usize] } }
+impl Win { pub fn key(self) -> &'static str { EXPRESSIONS[9 + self as usize] } }
+#[derive(Clone, Debug, PartialEq)]
+pub enum Expr {
+    Bin(Bin, Operand, Operand),
+    Abs(Operand),
+    Ref(Operand, usize),
+    Win(Win, Operand, usize),
+}
 #[derive(Clone, Debug, PartialEq)]
 pub struct Cond { pub lhs: Operand, pub op: Op, pub rhs: Operand }
-/// Where an optimize path points: entry/exit list, condition index, side, and parameter key (None = `value`).
+/// One entry of a rule list (spec §4.1). `Cmp` is the v1 condition; the other kinds are Phase 7.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Target { pub exit: bool, pub cond: usize, pub rhs: bool, pub param: Option<String>, pub slot: Option<Slot> }
+pub enum Node {
+    Cmp(Cond),
+    Range { x: Operand, lo: Operand, hi: Operand, outside: bool },
+    Trend { x: Operand, bars: usize, rising: bool },
+    All(Vec<Node>),
+    Any(Vec<Node>),
+    Not(Box<Node>),
+    AtLeast { k: usize, of: usize, when: Box<Node> },
+    Then { steps: Vec<Node>, within: usize },
+}
+impl Node {
+    /// The v1 comparison, when this node is one.
+    pub fn cmp(&self) -> Option<&Cond> { if let Node::Cmp(c) = self { Some(c) } else { None } }
+}
+/// Where an optimize path points: a price-order slot, or a number inside a rule list addressed by its spec path.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Target { pub path: String, pub slot: Option<Slot> }
 /// Market orders fill at the next bar's open (default) or at the signal bar's own close (the book convention).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Fill { NextOpen, Close }
@@ -69,7 +106,7 @@ pub const MAX_ATR_LENGTH: usize = 500;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Dim { pub path: String, pub target: Target, pub values: Vec<f64> }
 #[derive(Clone, Debug, PartialEq)]
-pub struct Spec { pub entry: Vec<Cond>, pub exit: Vec<Cond>, pub cost_bps: Option<f64>, pub optimize: Vec<Dim>, pub exec: Exec, pub origin: Option<Origin> }
+pub struct Spec { pub entry: Vec<Node>, pub exit: Vec<Node>, pub cost_bps: Option<f64>, pub optimize: Vec<Dim>, pub exec: Exec, pub origin: Option<Origin> }
 
 pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
     if text.len() > MAX_SPEC_BYTES { return Err(inv(format!("spec is {} bytes; the limit is {MAX_SPEC_BYTES}", text.len()))); }
@@ -93,8 +130,9 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
         if let Some(v) = obj.get(at.split_once('.').unwrap().1) { *exec.slot_mut(slot) = Some(dist(v, at, hi)?); }
     }
     let price_exit = exec.stop_loss.is_some() || exec.target.is_some() || exec.trailing.is_some();
-    let entry = conds(entry_obj.get("all"), "entry.all", false, false)?;
-    let exit = conds(exit_obj.get("any"), "exit.any", true, price_exit)?;
+    let mut budget = Budget::default();
+    let entry = conds(entry_obj.get("all"), "entry.all", false, false, &mut budget)?;
+    let exit = conds(exit_obj.get("any"), "exit.any", true, price_exit, &mut budget)?;
     if entry.len() + exit.len() > MAX_CONDITIONS {
         return Err(inv(format!("{} conditions; the limit is {MAX_CONDITIONS}", entry.len() + exit.len())));
     }
@@ -163,40 +201,114 @@ fn origin(v: &Json) -> Result<Origin, LabError> {
     Ok(Origin { book, method, version })
 }
 
-fn conds(v: Option<&Json>, at: &str, exit: bool, may_be_empty: bool) -> Result<Vec<Cond>, LabError> {
+/// Counts comparisons and nodes while a spec is parsed (spec §4.3).
+#[derive(Default)]
+struct Budget { leaves: usize, nodes: usize }
+impl Budget {
+    fn take(&mut self, leaf: bool) -> Result<(), LabError> {
+        self.nodes += 1;
+        if leaf { self.leaves += 1; }
+        if self.leaves > MAX_LEAVES { return Err(inv(format!("more than {MAX_LEAVES} comparisons in the spec; the limit is {MAX_LEAVES}"))); }
+        if self.nodes > MAX_NODES { return Err(inv(format!("more than {MAX_NODES} comparisons, groups and expressions in the spec; the limit is {MAX_NODES}"))); }
+        Ok(())
+    }
+}
+
+fn conds(v: Option<&Json>, at: &str, exit: bool, may_be_empty: bool, b: &mut Budget) -> Result<Vec<Node>, LabError> {
     let Some(Json::Arr(items)) = v else { return Err(inv(format!("{at} must be a list of conditions"))) };
     if items.is_empty() && !may_be_empty { return Err(inv(format!("{at} needs at least one condition{}", if exit { " (or a stop_loss, target or trailing exit)" } else { "" }))); }
     if items.len() > MAX_CONDITIONS { return Err(inv(format!("{at} has {} conditions; the limit is {MAX_CONDITIONS}", items.len()))); }
-    items.iter().enumerate().map(|(i, c)| cond(c, &format!("{at}[{i}]"), exit)).collect()
+    items.iter().enumerate().map(|(i, c)| node(c, &format!("{at}[{i}]"), exit, b)).collect()
 }
 
-fn cond(v: &Json, at: &str, exit: bool) -> Result<Cond, LabError> {
+/// One rule-list entry. `held` allows bars_held: top-level exit comparisons only, because every other node is a precomputed array.
+fn node(v: &Json, at: &str, held: bool, b: &mut Budget) -> Result<Node, LabError> {
+    if v.get("lhs").is_some() { return leaf(v, at, held, b); }
+    b.take(false)?;
+    let list = |key: &str, b: &mut Budget| -> Result<Vec<Node>, LabError> {
+        let Some(Json::Arr(items)) = v.get(key) else { return Err(inv(format!("{at}.{key} must be a list"))) };
+        if items.is_empty() { return Err(inv(format!("{at}.{key} needs at least one entry"))); }
+        items.iter().enumerate().map(|(i, c)| node(c, &format!("{at}.{key}[{i}]"), false, b)).collect()
+    };
+    if v.get("all").is_some() { fields(v, at, &["all"], &[])?; return Ok(Node::All(list("all", b)?)); }
+    if v.get("any").is_some() { fields(v, at, &["any"], &[])?; return Ok(Node::Any(list("any", b)?)); }
+    if let Some(n) = v.get("not") { fields(v, at, &["not"], &[])?; return Ok(Node::Not(Box::new(node(n, &format!("{at}.not"), false, b)?))); }
+    if v.get("at_least").is_some() {
+        fields(v, at, &["at_least", "of", "when"], &[])?;
+        let (k, of) = (whole(v.get("at_least"), &format!("{at}.at_least"), 1)?, whole(v.get("of"), &format!("{at}.of"), 1)?);
+        if k > of { return Err(inv(format!("{at}: at_least ({k}) cannot exceed of ({of})"))); }
+        let when = v.get("when").ok_or_else(|| inv(format!("{at}.when is required")))?;
+        return Ok(Node::AtLeast { k, of, when: Box::new(node(when, &format!("{at}.when"), false, b)?) });
+    }
+    if v.get("then").is_some() {
+        fields(v, at, &["then", "within"], &[])?;
+        let steps = list("then", b)?;
+        if !(2..=MAX_STEPS).contains(&steps.len()) { return Err(inv(format!("{at}.then needs 2 to {MAX_STEPS} steps"))); }
+        let within = whole(v.get("within"), &format!("{at}.within"), 1)?;
+        if within + 1 < steps.len() { return Err(inv(format!("{at}: within ({within}) is shorter than the {} steps need ({}); the sequence could never complete", steps.len(), steps.len() - 1))); }
+        return Ok(Node::Then { steps, within });
+    }
+    Err(inv(format!("{at} must be a comparison (lhs, op, rhs) or a group ({})", NODE_KINDS.join(", "))))
+}
+
+/// A whole number from `min` to MAX_OFFSET (window lengths, counts, sequence spans).
+fn whole(v: Option<&Json>, at: &str, min: usize) -> Result<usize, LabError> {
+    v.and_then(Json::as_f64).filter(|n| n.fract() == 0. && *n >= min as f64 && *n <= MAX_OFFSET as f64).map(|n| n as usize)
+        .ok_or_else(|| inv(format!("{at} must be a whole number from {min} to {MAX_OFFSET}")))
+}
+
+fn leaf(v: &Json, at: &str, held: bool, b: &mut Budget) -> Result<Node, LabError> {
+    b.take(true)?;
+    let side = |k: &str, b: &mut Budget| operand(v.get(k), &format!("{at}.{k}"), false, b);
+    match v.get("op").and_then(Json::as_str) {
+        Some(op @ ("between" | "outside")) => {
+            fields(v, at, &["lhs", "op", "lo", "hi"], &[])?;
+            let (x, lo, hi) = (side("lhs", b)?, side("lo", b)?, side("hi", b)?);
+            if let (Operand::Value(l), Operand::Value(h)) = (&lo, &hi) { if l > h { return Err(inv(format!("{at}: lo ({l}) is above hi ({h}); {op} would be {}", if op == "between" { "never true" } else { "always true" }))); } }
+            Ok(Node::Range { x, lo, hi, outside: op == "outside" })
+        }
+        Some(op @ ("rising" | "falling")) => {
+            fields(v, at, &["lhs", "op", "bars"], &[])?;
+            Ok(Node::Trend { x: side("lhs", b)?, bars: whole(v.get("bars"), &format!("{at}.bars"), 1)?, rising: op == "rising" })
+        }
+        _ => cond(v, at, held, b).map(Node::Cmp),
+    }
+}
+
+fn cond(v: &Json, at: &str, held: bool, b: &mut Budget) -> Result<Cond, LabError> {
     fields(v, at, &["lhs", "op", "rhs"], &[])?;
     let op = match v.get("op").and_then(Json::as_str) {
         Some("crosses_above") => Op::CrossesAbove,
         Some("crosses_below") => Op::CrossesBelow,
+        Some("crosses") => Op::Crosses,
         Some(">") => Op::Gt,
         Some("<") => Op::Lt,
         Some(">=") => Op::Ge,
         Some("<=") => Op::Le,
+        Some("=") => Op::Eq,
+        Some("!=") => Op::Ne,
         _ => return Err(inv(format!("{at}.op must be one of {}", OPERATORS.join(", ")))),
     };
-    let lhs = operand(v.get("lhs"), &format!("{at}.lhs"), exit)?;
-    let rhs = operand(v.get("rhs"), &format!("{at}.rhs"), exit)?;
+    let lhs = operand(v.get("lhs"), &format!("{at}.lhs"), held, b)?;
+    let rhs = operand(v.get("rhs"), &format!("{at}.rhs"), held, b)?;
     if matches!((&lhs, &rhs), (Operand::Value(_), Operand::Value(_))) { return Err(inv(format!("{at} compares two numbers; use at least one series"))); }
     Ok(Cond { lhs, op, rhs })
 }
 
-fn operand(v: Option<&Json>, at: &str, exit: bool) -> Result<Operand, LabError> {
+fn operand(v: Option<&Json>, at: &str, held: bool, b: &mut Budget) -> Result<Operand, LabError> {
     let v = v.ok_or_else(|| inv(format!("{at} is required")))?;
     if v.get("value").is_some() {
         fields(v, at, &["value"], &[])?;
         return v.get("value").and_then(Json::as_f64).map(Operand::Value).ok_or_else(|| inv(format!("{at}.value must be a number")));
     }
+    if let Some(e) = expr(v, at, b)? { return Ok(Operand::Expr(Box::new(e))); }
+    if v.get("symbol").is_some() {
+        return Err(LabError::Unsupported(format!("{at}.symbol: operands from another symbol (AmiBroker Foreign, TradingView request.security on another ticker) arrive in Phase 8")));
+    }
     fields(v, at, &["s", "p", "tf", "out", "offset"], &[])?;
     let id = v.get("s").and_then(Json::as_str).ok_or_else(|| inv(format!("{at}.s must name a series (or give a value)")))?;
     if id == "bars_held" {
-        if !exit { return Err(inv(format!("{at}: bars_held is only available in exit conditions"))); }
+        if !held { return Err(inv(format!("{at}: bars_held is only available as a plain comparison at the top level of the exit list (not inside a group, range, trend or expression)"))); }
         if ["p", "tf", "out", "offset"].iter().any(|k| v.get(k).is_some()) { return Err(inv(format!("{at}: bars_held takes no p, tf, out or offset"))); }
         return Ok(Operand::BarsHeld);
     }
@@ -213,6 +325,36 @@ fn operand(v: Option<&Json>, at: &str, exit: bool) -> Result<Operand, LabError> 
     }
     let out = match v.get("out") { None => None, Some(o) => Some(o.as_str().ok_or_else(|| inv(format!("{at}.out must be a string")))?) };
     series_ref(at, id, &given, tf, out, offset).map(Operand::Series)
+}
+
+/// An expression operand (spec §4.1), or None when `v` is a series operand.
+fn expr(v: &Json, at: &str, b: &mut Budget) -> Result<Option<Expr>, LabError> {
+    let Json::Obj(kv) = v else { return Ok(None) };
+    if kv.iter().any(|(k, _)| EXPRESSIONS.contains(&k.as_str())) && v.get("symbol").is_some() {
+        return Err(LabError::Unsupported(format!("{at}.symbol: operands from another symbol (AmiBroker Foreign, TradingView request.security on another ticker) arrive in Phase 8")));
+    }
+    let Some(key) = kv.iter().map(|(k, _)| k.as_str()).find(|k| EXPRESSIONS.contains(k)) else { return Ok(None) };
+    b.take(false)?;
+    let sub = |k: &str, b: &mut Budget| operand(v.get(k), &format!("{at}.{k}"), false, b);
+    Ok(Some(match key {
+        "add" | "sub" | "mul" | "div" | "min" | "max" | "pct" => {
+            fields(v, at, &[key], &[])?;
+            let pair = || inv(format!("{at}.{key} must be a list of two operands"));
+            let Some(Json::Arr(xs)) = v.get(key) else { return Err(pair()) };
+            if xs.len() != 2 { return Err(pair()); }
+            let (l, r) = (operand(Some(&xs[0]), &format!("{at}.{key}[0]"), false, b)?, operand(Some(&xs[1]), &format!("{at}.{key}[1]"), false, b)?);
+            if matches!((&l, &r), (Operand::Value(_), Operand::Value(_))) { return Err(inv(format!("{at}.{key} combines two numbers; use at least one series"))); }
+            let op = [Bin::Add, Bin::Sub, Bin::Mul, Bin::Div, Bin::Min, Bin::Max, Bin::Pct].into_iter().find(|o| o.key() == key).unwrap();
+            Expr::Bin(op, l, r)
+        }
+        "abs" => { fields(v, at, &["abs"], &[])?; Expr::Abs(sub("abs", b)?) }
+        "ref" => { fields(v, at, &["ref", "bars"], &[])?; Expr::Ref(sub("ref", b)?, whole(v.get("bars"), &format!("{at}.bars"), 0)?) }
+        _ => {
+            fields(v, at, &[key, "bars"], &[])?;
+            let w = [Win::Sum, Win::Avg, Win::Highest, Win::Lowest, Win::Change].into_iter().find(|w| w.key() == key).unwrap();
+            Expr::Win(w, sub(key, b)?, whole(v.get("bars"), &format!("{at}.bars"), 1)?)
+        }
+    }))
 }
 
 /// Validates one series operand against the catalogue (shared by rule specs and /api/lab/series).
@@ -259,6 +401,14 @@ fn dims(spec: &Spec, v: &Json) -> Result<Vec<Dim>, LabError> {
         if combos > crate::MAX_COMBOS { return Err(inv(format!("optimize gives more than {} combinations; narrow a range or raise a step", crate::MAX_COMBOS))); }
         out.push(Dim { path: path.into(), target, values });
     }
+    // at_least and of may both be optimized: the worst pairing must still be a valid node.
+    for a in &out {
+        let Some(base) = a.path.strip_suffix(".at_least") else { continue };
+        let of_path = format!("{base}.of");
+        let Some(o) = out.iter().find(|d| d.path == of_path) else { continue };
+        let (hi, lo) = (a.values.iter().copied().fold(f64::MIN, f64::max), o.values.iter().copied().fold(f64::MAX, f64::min));
+        if hi > lo { return Err(inv(format!("optimize '{}' reaches {hi} but '{of_path}' reaches down to {lo}; at_least cannot exceed of", a.path))); }
+    }
     Ok(out)
 }
 
@@ -266,50 +416,91 @@ fn target(spec: &Spec, path: &str) -> Result<Target, String> {
     if let Some((slot, at, _)) = SLOTS.iter().find(|(_, at, _)| path.starts_with(&format!("{at}."))) {
         let field = &path[at.len() + 1..];
         return match (spec.exec.slot(*slot), field) {
-            (Some(Dist::Pct(_)), "pct") | (Some(Dist::Atr { .. }), "atr") => Ok(Target { exit: false, cond: 0, rhs: false, param: None, slot: Some(*slot) }),
+            (Some(Dist::Pct(_)), "pct") | (Some(Dist::Atr { .. }), "atr") => Ok(Target { path: path.into(), slot: Some(*slot) }),
             (None, _) => Err(format!("the spec has no {at}")),
             _ => Err(format!("{at} is set by {}; optimize that field", if matches!(spec.exec.slot(*slot), Some(Dist::Pct(_))) { "pct" } else { "atr" })),
         };
     }
-    let (exit, rest) = match (path.strip_prefix("entry.all["), path.strip_prefix("exit.any[")) {
-        (Some(r), _) => (false, r),
-        (_, Some(r)) => (true, r),
-        _ => return Err("must start with entry.all[i], exit.any[i], entry.limit, exit.stop_loss, exit.target or exit.trailing".into()),
-    };
-    let (idx, rest) = rest.split_once("].").ok_or("expected ].lhs or ].rhs")?;
-    let cond: usize = idx.parse().map_err(|_| "condition index must be a whole number")?;
-    let c = (if exit { &spec.exit } else { &spec.entry }).get(cond).ok_or("no condition at that index")?;
-    let (rhs, field) = match (rest.strip_prefix("lhs."), rest.strip_prefix("rhs.")) {
-        (Some(f), _) => (false, f),
-        (_, Some(f)) => (true, f),
-        _ => return Err("expected lhs or rhs".into()),
-    };
-    match (if rhs { &c.rhs } else { &c.lhs }, field) {
-        (Operand::Value(_), "value") => Ok(Target { exit, cond, rhs, param: None, slot: None }),
-        (Operand::Series(s), f) if f.starts_with("p.") => {
-            let def = catalogue::get(&s.id).ok_or("price sources have no parameters")?;
-            let key = &f[2..];
-            if !def.params.iter().any(|p| p.key == key) { return Err(format!("{} has no parameter '{key}'", def.id)); }
-            Ok(Target { exit, cond, rhs, param: Some(key.into()), slot: None })
+    if !path.starts_with("entry.all[") && !path.starts_with("exit.any[") {
+        return Err("must start with entry.all[i], exit.any[i], entry.limit, exit.stop_loss, exit.target or exit.trailing".into());
+    }
+    let (mut found, mut near) = (false, None::<String>);
+    walk(&mut spec.clone(), &mut |p, k| match k {
+        Knob::Series(r) => if let Some(key) = path.strip_prefix(&format!("{p}.p.")) {
+            near = Some(catalogue::get(&r.id).map_or("price sources have no parameters".into(), |d| format!("{} has no parameter '{key}'", d.id)));
+        },
+        _ => found |= p == path,
+    });
+    if found { return Ok(Target { path: path.into(), slot: None }); }
+    if let Some(m) = near { return Err(m); }
+    let beyond = |list: &str, n: usize| path.strip_prefix(list).and_then(|r| r.split_once(']')).and_then(|(i, _)| i.parse::<usize>().ok()).is_some_and(|i| i >= n);
+    if beyond("entry.all[", spec.entry.len()) || beyond("exit.any[", spec.exit.len()) { return Err("no condition at that index".into()); }
+    Err("names no number in the spec (paths end in .value, .p.<key> or a whole-number field: bars, within, of, at_least)".into())
+}
+
+/// A number an optimize path can reach inside a rule list; `Series` is reported for error messages only.
+enum Knob<'a> { Value(&'a mut f64), Param(&'a mut SeriesRef, String), Whole(&'a mut usize), Shift(&'a mut usize), Series(&'a SeriesRef) }
+/// Visits every optimizable number in the rule lists with its spec path (`entry.all[0].lhs.p.length`, `exit.any[1].rhs.value`, `….bars`).
+fn walk(s: &mut Spec, f: &mut dyn FnMut(String, Knob)) {
+    for (k, n) in s.entry.iter_mut().enumerate() { walk_node(n, &format!("entry.all[{k}]"), f); }
+    for (k, n) in s.exit.iter_mut().enumerate() { walk_node(n, &format!("exit.any[{k}]"), f); }
+}
+fn walk_node(n: &mut Node, at: &str, f: &mut dyn FnMut(String, Knob)) {
+    match n {
+        Node::Cmp(c) => { walk_operand(&mut c.lhs, &format!("{at}.lhs"), f); walk_operand(&mut c.rhs, &format!("{at}.rhs"), f); }
+        Node::Range { x, lo, hi, .. } => { walk_operand(x, &format!("{at}.lhs"), f); walk_operand(lo, &format!("{at}.lo"), f); walk_operand(hi, &format!("{at}.hi"), f); }
+        Node::Trend { x, bars, .. } => { walk_operand(x, &format!("{at}.lhs"), f); f(format!("{at}.bars"), Knob::Whole(bars)); }
+        Node::All(v) => for (k, c) in v.iter_mut().enumerate() { walk_node(c, &format!("{at}.all[{k}]"), f) },
+        Node::Any(v) => for (k, c) in v.iter_mut().enumerate() { walk_node(c, &format!("{at}.any[{k}]"), f) },
+        Node::Not(c) => walk_node(c, &format!("{at}.not"), f),
+        Node::AtLeast { k, of, when } => { f(format!("{at}.at_least"), Knob::Whole(k)); f(format!("{at}.of"), Knob::Whole(of)); walk_node(when, &format!("{at}.when"), f); }
+        Node::Then { steps, within } => {
+            for (k, c) in steps.iter_mut().enumerate() { walk_node(c, &format!("{at}.then[{k}]"), f); }
+            f(format!("{at}.within"), Knob::Whole(within));
         }
-        _ => Err("must end in .value (a number operand) or .p.<key> (an indicator parameter)".into()),
+    }
+}
+fn walk_operand(o: &mut Operand, at: &str, f: &mut dyn FnMut(String, Knob)) {
+    match o {
+        Operand::Value(x) => f(format!("{at}.value"), Knob::Value(x)),
+        Operand::Series(r) => {
+            f(at.to_string(), Knob::Series(r));
+            let keys: Vec<String> = r.params.keys().cloned().collect();
+            for k in keys { f(format!("{at}.p.{k}"), Knob::Param(&mut *r, k)); }
+        }
+        Operand::BarsHeld => {}
+        Operand::Expr(e) => match &mut **e {
+            Expr::Bin(op, l, r) => { walk_operand(l, &format!("{at}.{}[0]", op.key()), f); walk_operand(r, &format!("{at}.{}[1]", op.key()), f); }
+            Expr::Abs(x) => walk_operand(x, &format!("{at}.abs"), f),
+            Expr::Ref(x, n) => { walk_operand(x, &format!("{at}.ref"), f); f(format!("{at}.bars"), Knob::Shift(n)); }
+            Expr::Win(w, x, n) => { walk_operand(x, &format!("{at}.{}", w.key()), f); f(format!("{at}.bars"), Knob::Whole(n)); }
+        },
+    }
+}
+/// `at_least` never exceeds `of` (also after an optimize value is applied).
+fn consistent(n: &Node) -> Result<(), String> {
+    match n {
+        Node::AtLeast { k, of, .. } if k > of => Err(format!("at_least ({k}) cannot exceed of ({of})")),
+        Node::Then { steps, within } if *within + 1 < steps.len() => Err(format!("within ({within}) is shorter than the {} steps need ({})", steps.len(), steps.len() - 1)),
+        Node::AtLeast { when, .. } | Node::Not(when) => consistent(when),
+        Node::All(v) | Node::Any(v) | Node::Then { steps: v, .. } => v.iter().try_for_each(consistent),
+        _ => Ok(()),
     }
 }
 
-fn operand_mut<'a>(s: &'a mut Spec, t: &Target) -> &'a mut Operand {
-    let c = if t.exit { &mut s.exit[t.cond] } else { &mut s.entry[t.cond] };
-    if t.rhs { &mut c.rhs } else { &mut c.lhs }
-}
 fn set(s: &mut Spec, t: &Target, x: f64) {
     if let Some(slot) = t.slot {
         match s.exec.slot_mut(slot) { Some(Dist::Pct(p)) => *p = x, Some(Dist::Atr { mult, .. }) => *mult = x, None => {} }
         return;
     }
-    match (operand_mut(s, t), &t.param) {
-        (Operand::Value(v), None) => *v = x,
-        (Operand::Series(r), Some(k)) => { r.params.insert(k.clone(), x); }
-        _ => {}
-    }
+    walk(s, &mut |p, k| if p == t.path {
+        match k {
+            Knob::Value(v) => *v = x,
+            Knob::Param(r, key) => { r.params.insert(key, x); }
+            Knob::Whole(n) | Knob::Shift(n) => *n = x as usize,
+            Knob::Series(_) => {}
+        }
+    });
 }
 fn check_value(spec: &Spec, t: &Target, x: f64) -> Result<(), String> {
     if let Some(slot) = t.slot {
@@ -319,20 +510,31 @@ fn check_value(spec: &Spec, t: &Target, x: f64) -> Result<(), String> {
     }
     let mut s = spec.clone();
     set(&mut s, t, x);
-    match operand_mut(&mut s, t) {
-        Operand::Series(r) => catalogue::resolve_params(&catalogue::get(&r.id).ok_or("unknown series")?, &r.params).map(|_| ()),
-        _ => Ok(()),
-    }
+    let mut res = Ok(());
+    walk(&mut s, &mut |p, k| if p == t.path {
+        res = match k {
+            Knob::Param(r, _) => catalogue::get(&r.id).ok_or_else(|| "unknown series".to_string()).and_then(|d| catalogue::resolve_params(&d, &r.params).map(|_| ())),
+            Knob::Shift(_) if x.fract() != 0. || x < 0. || x > MAX_OFFSET as f64 => Err(format!("{} must be a whole number from 0 to {MAX_OFFSET}, not {x}", t.path)),
+            Knob::Whole(_) if x.fract() != 0. || x < 1. || x > MAX_OFFSET as f64 => Err(format!("{} must be a whole number from 1 to {MAX_OFFSET}, not {x}", t.path)),
+            _ => Ok(()),
+        };
+    });
+    res?;
+    s.entry.iter().chain(&s.exit).try_for_each(consistent)
 }
 /// The spec's own value at an optimize target (the "base" setting the ranking prefers on ties).
 pub fn current(spec: &Spec, t: &Target) -> f64 {
     if let Some(slot) = t.slot { return match spec.exec.slot(slot) { Some(Dist::Pct(p)) => p, Some(Dist::Atr { mult, .. }) => mult, None => f64::NAN }; }
-    let mut s = spec.clone();
-    match (operand_mut(&mut s, t), &t.param) {
-        (Operand::Value(v), None) => *v,
-        (Operand::Series(r), Some(k)) => r.params.get(k).copied().unwrap_or(f64::NAN),
-        _ => f64::NAN,
-    }
+    let mut v = f64::NAN;
+    walk(&mut spec.clone(), &mut |p, k| if p == t.path {
+        match k {
+            Knob::Value(x) => v = *x,
+            Knob::Param(r, key) => v = r.params.get(&key).copied().unwrap_or(f64::NAN),
+            Knob::Whole(n) | Knob::Shift(n) => v = *n as f64,
+            Knob::Series(_) => {}
+        }
+    });
+    v
 }
 /// The spec with one grid combination applied (values in `dims` order; validated when the spec was parsed).
 pub fn apply(spec: &Spec, dims: &[Dim], values: &[f64]) -> Spec {
@@ -359,18 +561,18 @@ mod tests {
     #[test] fn spec_example_round_trips() {
         let s = parse_spec(EXAMPLE).unwrap();
         assert_eq!((s.entry.len(), s.exit.len(), s.cost_bps), (2, 2, Some(12.)));
-        let Operand::Series(r) = &s.entry[1].rhs else { panic!() };
+        let Operand::Series(r) = &s.entry[1].cmp().unwrap().rhs else { panic!() };
         assert_eq!((r.id.as_str(), r.tf, r.params["length"]), ("sma", Tf::W, 40.));
-        assert_eq!(s.exit[1].lhs, Operand::BarsHeld);
+        assert_eq!(s.exit[1].cmp().unwrap().lhs, Operand::BarsHeld);
         assert_eq!(s.optimize[0].values, vec![2., 3., 4., 5., 6.]);
         assert_eq!(current(&s, &s.optimize[0].target), 2.);
         let t = apply(&s, &s.optimize, &[5.]);
-        let Operand::Series(r) = &t.entry[0].lhs else { panic!() };
+        let Operand::Series(r) = &t.entry[0].cmp().unwrap().lhs else { panic!() };
         assert_eq!(r.params["length"], 5.);
     }
     #[test] fn defaults_fill_params_tf_and_output() {
         let s = parse_spec(&with(r#"{"s":"close","tf":"D"}"#, r#"{"s":"macd","out":"signal"}"#)).unwrap();
-        let Operand::Series(r) = &s.entry[1].lhs else { panic!() };
+        let Operand::Series(r) = &s.entry[1].cmp().unwrap().lhs else { panic!() };
         assert_eq!((r.tf, r.out, r.params["fast"], r.params["slow"]), (Tf::D, 1, 12., 26.));
     }
     #[test] fn malformed_input_is_invalid_and_names_the_field() {
@@ -384,7 +586,7 @@ mod tests {
             (with(r#""rhs": {"value":10}"#, r#""rhs": {"value":10,"offset":1}"#), "unknown field 'offset' in entry.all[0].rhs"),
             (with(r#"{"s":"close","tf":"D"}"#, r#"{"s":"close","offset":-1}"#), "entry.all[1].lhs.offset"),
             (with(r#"{"s":"close","tf":"D"}"#, r#"{"s":"close","offset":1.5}"#), "entry.all[1].lhs.offset"),
-            (with(r#"{"s":"close","tf":"D"}"#, r#"{"s":"bars_held"}"#), "only available in exit"),
+            (with(r#"{"s":"close","tf":"D"}"#, r#"{"s":"bars_held"}"#), "only available as a plain comparison"),
             (with(r#"{"s":"rsi","p":{"length":2},"tf":"D"}"#, r#"{"value":3}"#), "compares two numbers"),
             (with(r#"{"s":"close","tf":"D"}"#, r#"{"s":"macd","out":"sig"}"#), "macd has outputs macd, signal, hist"),
             (with(r#""entry""#, r#""entri""#), "unknown field 'entri' in spec"),
@@ -497,5 +699,136 @@ mod tests {
         assert_eq!(LabError::from("empty date range".to_string()).status(), "invalid");
         let j = LabError::Invalid("bad \"x\"\n".into()).json();
         assert!(j.starts_with("{\"status\":\"invalid\",\"error\":\"bad \\\"x\\\"\\u000a\",\"label\":\"User-defined indicator strategy"), "{j}");
+    }
+
+    // ---- Phase 7: nodes (spec §4.1–§4.3)
+    const ONE_EXIT: &str = r#"{"v":1,"entry":{"all":[NODE]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":5}}]}}"#;
+    #[test] fn nodes_parse_and_name_their_fields() {
+        let s = parse_spec(r#"{"v":1,"entry":{"all":[
+            {"any":[{"lhs":{"s":"close"},"op":"=","rhs":{"value":1}},{"not":{"lhs":{"s":"close"},"op":"crosses","rhs":{"s":"open"}}}]},
+            {"lhs":{"s":"rsi"},"op":"between","lo":{"value":20},"hi":{"value":40}},
+            {"lhs":{"s":"close"},"op":"rising","bars":3},
+            {"at_least":3,"of":5,"when":{"lhs":{"s":"close"},"op":">","rhs":{"s":"open"}}},
+            {"then":[{"lhs":{"s":"rsi"},"op":"<","rhs":{"value":30}},{"lhs":{"s":"rsi"},"op":">","rhs":{"value":50}}],"within":10}]},
+            "exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":5}}]}}"#).unwrap();
+        assert!(matches!(&s.entry[0], Node::Any(v) if matches!(&v[1], Node::Not(_))));
+        assert!(matches!(&s.entry[1], Node::Range { outside: false, .. }));
+        assert!(matches!(&s.entry[2], Node::Trend { bars: 3, rising: true, .. }));
+        assert!(matches!(&s.entry[3], Node::AtLeast { k: 3, of: 5, .. }));
+        assert!(matches!(&s.entry[4], Node::Then { within: 10, .. }));
+        for (node, needle) in [
+            (r#"{"all":[]}"#, "entry.all[0].all needs at least one entry"),
+            (r#"{"at_least":4,"of":3,"when":{"lhs":{"s":"close"},"op":">","rhs":{"value":1}}}"#, "at_least (4) cannot exceed of (3)"),
+            (r#"{"then":[{"lhs":{"s":"close"},"op":">","rhs":{"value":1}}],"within":3}"#, "then needs 2 to 4 steps"),
+            (r#"{"lhs":{"s":"close"},"op":"rising","bars":0}"#, "entry.all[0].bars must be a whole number from 1"),
+            (r#"{"lhs":{"s":"close"},"op":"between","lo":{"value":1}}"#, "entry.all[0].hi is required"),
+            (r#"{"lhs":{"s":"close"},"op":"between","lo":{"value":1},"hi":{"value":2},"rhs":{"value":3}}"#, "unknown field 'rhs' in entry.all[0]"),
+            (r#"{"not":{"lhs":{"s":"bars_held"},"op":">","rhs":{"value":1}}}"#, "only available as a plain comparison"),
+            (r#"{"maybe":[]}"#, "must be a comparison (lhs, op, rhs) or a group (all, any, not, at_least, then)"),
+        ] {
+            let e = err(&ONE_EXIT.replace("NODE", node));
+            assert_eq!(e.status(), "invalid", "{node}");
+            assert!(e.message().contains(needle), "{needle:?} not in {:?}", e.message());
+        }
+        // bars_held stays a top-level exit operand: inside an exit group it is refused
+        let grouped = ONE_EXIT.replace("NODE", r#"{"lhs":{"s":"close"},"op":">","rhs":{"value":1}}"#)
+            .replace(r#""any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":5}}]"#, r#""any":[{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":5}}]}]"#);
+        assert!(err(&grouped).message().contains("only available as a plain comparison"));
+    }
+    #[test] fn whole_spec_bounds_count_nested_comparisons_and_nodes() {
+        let c = r#"{"lhs":{"s":"close"},"op":">","rhs":{"value":1}}"#;
+        let group = |n: usize| format!(r#"{{"all":[{}]}}"#, vec![c; n].join(","));
+        let spec = |items: Vec<String>| format!(r#"{{"v":1,"entry":{{"all":[{}]}},"exit":{{"any":[{c}]}}}}"#, items.join(","));
+        assert!(parse_spec(&spec(vec![group(13), group(13), group(13)])).is_ok()); // 39 nested + 1 exit = 40 comparisons
+        assert!(err(&spec(vec![group(13), group(13), group(14)])).message().contains("more than 40 comparisons"));
+        let nots = format!("{}{c}{}", r#"{"not":"#.repeat(10), "}".repeat(10)); // 11 nodes, 1 comparison
+        assert!(err(&spec(vec![nots; 11])).message().contains("more than 120 comparisons, groups and expressions"));
+        // exactly 120 nodes (119 in entry + 1 in exit) pass, 121 are refused
+        let chain = |n: usize| format!("{}{c}{}", r#"{"not":"#.repeat(n - 1), "}".repeat(n - 1));
+        let mut ok: Vec<String> = vec![chain(11); 10];
+        ok.push(chain(9));
+        assert!(parse_spec(&spec(ok.clone())).is_ok());
+        ok.pop();
+        ok.push(chain(10));
+        assert!(err(&spec(ok)).message().contains("more than 120 comparisons, groups and expressions"));
+    }
+    #[test] fn optimize_reaches_numbers_inside_nodes() {
+        let text = r#"{"v":1,"entry":{"all":[{"any":[{"lhs":{"s":"rsi","p":{"length":2}},"op":"<","rhs":{"value":10}}]},{"at_least":2,"of":3,"when":{"lhs":{"s":"close"},"op":"rising","bars":2}}]},
+            "exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":5}}]},
+            "optimize":[{"path":"entry.all[0].any[0].rhs.value","from":5,"to":15,"step":5},{"path":"entry.all[0].any[0].lhs.p.length","from":2,"to":3,"step":1},{"path":"entry.all[1].when.bars","from":1,"to":3,"step":1},{"path":"entry.all[1].at_least","from":1,"to":3,"step":1}]}"#;
+        let s = parse_spec(text).unwrap();
+        assert_eq!(s.optimize.iter().map(|d| current(&s, &d.target)).collect::<Vec<_>>(), vec![10., 2., 2., 2.]);
+        let t = apply(&s, &s.optimize, &[15., 3., 3., 1.]);
+        let Node::Any(v) = &t.entry[0] else { panic!() };
+        let c = v[0].cmp().unwrap();
+        let Operand::Series(r) = &c.lhs else { panic!() };
+        assert_eq!((&c.rhs, r.params["length"]), (&Operand::Value(15.), 3.));
+        assert!(matches!(&t.entry[1], Node::AtLeast { k: 1, of: 3, when } if matches!(**when, Node::Trend { bars: 3, .. })));
+        let one = |path: &str, from: f64, to: f64| text.split(r#""optimize":"#).next().unwrap().to_string()
+            + &format!(r#""optimize":[{{"path":"{path}","from":{from},"to":{to},"step":1}}]}}"#);
+        for (path, from, to, needle) in [
+            ("entry.all[1].at_least", 1., 4., "at_least (4) cannot exceed of (3)"),
+            ("entry.all[1].when.bars", 0., 2., "entry.all[1].when.bars must be a whole number from 1"),
+            ("entry.all[0].any[3].rhs.value", 1., 2., "names no number in the spec"),
+            ("entry.all[0].any[0].lhs.p.len", 1., 2., "rsi has no parameter 'len'"),
+            ("entry.all[2].lhs.p.length", 1., 2., "no condition at that index"),
+        ] {
+            let e = err(&one(path, from, to));
+            assert!(e.message().contains(needle), "{path}: {needle:?} not in {:?}", e.message());
+        }
+    }
+
+    #[test] fn optimizer_keeps_node_dimensions_consistent_and_useless_nodes_are_refused() {
+        let base = r#"{"v":1,"entry":{"all":[{"at_least":2,"of":3,"when":{"lhs":{"s":"close"},"op":">","rhs":{"value":1}}},{"then":[{"lhs":{"s":"close"},"op":">","rhs":{"value":1}},{"lhs":{"s":"close"},"op":"<","rhs":{"value":9}},{"lhs":{"s":"close"},"op":">","rhs":{"value":2}}],"within":4}]},
+            "exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":5}}]},"optimize":[OPT]}"#;
+        let d = |p: &str, f: f64, t: f64| format!(r#"{{"path":"{p}","from":{f},"to":{t},"step":1}}"#);
+        let run = |opts: Vec<String>| parse_spec(&base.replace("OPT", &opts.join(",")));
+        // each dimension is valid alone, but the worst pairing is not
+        let e = run(vec![d("entry.all[0].at_least", 1., 3.), d("entry.all[0].of", 2., 4.)]).unwrap_err();
+        assert!(e.message().contains("entry.all[0].at_least") && e.message().contains("entry.all[0].of"), "{}", e.message());
+        assert!(run(vec![d("entry.all[0].at_least", 1., 2.), d("entry.all[0].of", 2., 4.)]).is_ok());
+        // within below steps-1 is refused value by value
+        assert!(run(vec![d("entry.all[1].within", 2., 5.)]).is_ok());
+        assert!(run(vec![d("entry.all[1].within", 1., 5.)]).unwrap_err().message().contains("within"));
+        // a ref shift may be optimized down to 0
+        let r = r#"{"v":1,"entry":{"all":[{"lhs":{"s":"close"},"op":">","rhs":{"ref":{"s":"close"},"bars":2}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":5}}]},"optimize":[{"path":"entry.all[0].rhs.bars","from":0,"to":3,"step":1}]}"#;
+        assert!(parse_spec(r).is_ok());
+        for (node, needle, status) in [
+            (r#"{"lhs":{"s":"close"},"op":"between","lo":{"value":5},"hi":{"value":2}}"#, "lo (5) is above hi (2)", "invalid"),
+            (r#"{"lhs":{"s":"close"},"op":"outside","lo":{"value":5},"hi":{"value":2}}"#, "lo (5) is above hi (2)", "invalid"),
+            (r#"{"then":[{"lhs":{"s":"close"},"op":">","rhs":{"value":1}},{"lhs":{"s":"close"},"op":">","rhs":{"value":1}},{"lhs":{"s":"close"},"op":">","rhs":{"value":1}}],"within":1}"#, "within (1) is shorter", "invalid"),
+            (r#"{"lhs":{"add":[{"value":1},{"value":2}]},"op":">","rhs":{"value":1}}"#, "combines two numbers", "invalid"),
+            (r#"{"lhs":{"abs":{"s":"close"},"symbol":"X"},"op":">","rhs":{"value":1}}"#, "arrive in Phase 8", "unsupported"),
+        ] {
+            let e = err(&ONE_EXIT.replace("NODE", node));
+            assert_eq!(e.status(), status, "{node}");
+            assert!(e.message().contains(needle), "{needle:?} not in {:?}", e.message());
+        }
+    }
+
+    // ---- Phase 7: expressions (spec §4.1)
+    #[test] fn expressions_parse_validate_and_reach_optimize() {
+        let s = parse_spec(&ONE_EXIT.replace("NODE", r#"{"lhs":{"sum":{"s":"rsi","p":{"length":2}},"bars":3},"op":"<","rhs":{"mul":[{"s":"atr"},{"value":2}]}}"#)).unwrap();
+        let c = s.entry[0].cmp().unwrap();
+        assert!(matches!(&c.lhs, Operand::Expr(e) if matches!(**e, Expr::Win(Win::Sum, Operand::Series(_), 3))));
+        assert!(matches!(&c.rhs, Operand::Expr(e) if matches!(**e, Expr::Bin(Bin::Mul, Operand::Series(_), Operand::Value(_)))));
+        for (lhs, needle, status) in [
+            (r#"{"add":[{"value":1}]}"#, "entry.all[0].lhs.add must be a list of two operands", "invalid"),
+            (r#"{"sum":{"s":"close"}}"#, "entry.all[0].lhs.bars must be a whole number from 1", "invalid"),
+            (r#"{"sum":{"s":"close"},"bars":3,"x":1}"#, "unknown field 'x' in entry.all[0].lhs", "invalid"),
+            (r#"{"ref":{"s":"close"},"bars":-1}"#, "entry.all[0].lhs.bars must be a whole number from 0", "invalid"),
+            (r#"{"abs":{"s":"bars_held"}}"#, "only available as a plain comparison", "invalid"),
+            (r#"{"s":"close","symbol":"NIFTY BANK"}"#, "arrive in Phase 8", "unsupported"),
+        ] {
+            let e = err(&ONE_EXIT.replace("NODE", &format!(r#"{{"lhs":{lhs},"op":">","rhs":{{"value":1}}}}"#)));
+            assert_eq!(e.status(), status, "{lhs}");
+            assert!(e.message().contains(needle), "{needle:?} not in {:?}", e.message());
+        }
+        let base = ONE_EXIT.replace("NODE", r#"{"lhs":{"sum":{"s":"rsi","p":{"length":2}},"bars":3},"op":"<","rhs":{"add":[{"s":"close"},{"value":5}]}}"#);
+        let text = format!(r#"{},"optimize":[{{"path":"entry.all[0].lhs.bars","from":2,"to":4,"step":1}},{{"path":"entry.all[0].lhs.sum.p.length","from":2,"to":3,"step":1}},{{"path":"entry.all[0].rhs.add[1].value","from":1,"to":9,"step":4}}]}}"#, &base[..base.len() - 1]);
+        let s = parse_spec(&text).unwrap();
+        assert_eq!(s.optimize.iter().map(|d| current(&s, &d.target)).collect::<Vec<_>>(), vec![3., 2., 5.]);
+        let t = apply(&s, &s.optimize, &[4., 3., 9.]);
+        assert_eq!(crate::lab::series::describe(t.entry[0].cmp().unwrap()), "sum(rsi(length=3), 4) < add(close, 9)");
     }
 }

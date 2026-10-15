@@ -138,9 +138,12 @@ crosses, the whole window for `rising`, and the `lo`/`hi` bounds. The rules are:
 - `all` is false if any child is false, otherwise unknown if any child is unknown, otherwise true;
 - `any` is true if any child is true, otherwise unknown if any child is unknown, otherwise false;
 - `not` of unknown is unknown;
-- the counting nodes (`at_least`, `count`, `then`, `bars_since`, `value_when`, `*_since`) treat unknown as
-  "not true". `at_least` and `count` are unknown until m (n) bars exist, and `then` is unknown while its last step
-  is unknown.
+- the counting nodes follow Kleene three-valued logic, so a warm-up never turns into a false that a `not` could
+  flip: `at_least k of m` is true if the true bars in the last m reach k, false if true plus unknown bars cannot
+  reach k, otherwise unknown, and unknown until m bars exist; `then` is true when a chain is found, otherwise
+  unknown if any step was unknown on a bar of the last `within`+1 bars (and its last step is true), otherwise false,
+  and unknown while its last step is unknown; `count`, `bars_since`, `value_when` and the `*_since` operands follow
+  the same rule (a missing answer that an unknown bar could have changed is unknown, not 0 or "never").
 
 At the top of a rule list, unknown counts as **false**, so a node never fires during warm-up. A top-level v1
 comparison keeps its exact v1 code path, where NaN gives false. Example: `not(close > sma(200))` does not fire

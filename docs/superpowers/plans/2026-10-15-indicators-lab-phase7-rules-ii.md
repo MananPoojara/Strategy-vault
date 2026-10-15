@@ -1236,6 +1236,8 @@ With permission: `git add Context/guru/backend/src/lab && git commit -m "feat(la
 
 Spec §4.1. Implements the AmiBroker/Pine state functions as expressions over a node: `bars_since` (0 on the true bar), `value_when` (nth 1..20), `highest_since` and `lowest_since` (from the latest true bar, inclusive, skipping NaN), and `count` over n bars.
 
+> **Rule (fix round 1, spec §4.2):** `count`, `bars_since`, `value_when` and `highest/lowest_since` must follow the same Kleene rule as `at_least` and `then`: when an unknown bar in the lookback could have changed the answer, the result is NaN (unknown), never 0 or "not found". A `not` over such an operand must stay unknown through warm-up. Add the matching warm-up test (sma 200 over 300 bars) for each.
+
 **Files:**
 - Modify: `Context/guru/backend/src/lab/rules.rs`
 - Modify: `Context/guru/backend/src/lab/series.rs`
