@@ -1,6 +1,6 @@
 //! Perry J. Kaufman, *A Short Course in Technical Trading* (Wiley 2003, 339 PDF pages, text layer).
 //! Page refs: printed page (PDF page = printed + 13). Catalogue Live is not source admission.
-//! Only the three exact configurations below have a bounded stock research contract;
+//! Only the exact configurations named below have a bounded stock research contract;
 //! source choices and execution conventions are separate from book-reported results.
 use crate::connors::{sma, true_range, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
@@ -9,6 +9,18 @@ pub const BOOK: &str = "kfsc";
 /// Exact bounded research configurations; other catalogue entries inherit no review.
 pub const REVIEWED_STOCK_IDS: &[&str] = &["kfsc_two_ma","kfsc_pct_band","kfsc_bollinger"];
 pub fn reviewed_stock_rule(id: &str) -> bool {REVIEWED_STOCK_IDS.contains(&id)}
+/// Additional isolated research candidates. Public deployment still requires
+/// independent source/ledger review and a separate normal integration release.
+pub const MOMENTUM_STOCK_IDS: &[&str] = &["kfsc_macd","kfsc_dsm"];
+pub fn reviewed_momentum_rule(id:&str)->bool {MOMENTUM_STOCK_IDS.contains(&id)}
+pub fn validate_momentum(id:&str,p:&Params)->Option<&'static str> {
+    if !reviewed_momentum_rule(id) {return None;}
+    let schema=params(id)?;
+    if p.iter().any(|(key,value)|!value.is_finite() || !schema.iter().any(|s|s.key==key && s.def==*value)) {
+        return Some("This bounded Short Course momentum application covers only the exact literal printed MACD constants .0476/.0243/.10 or 10-day momentum double-smoothed with .0476, using the declared full-history seed, turn/crossing and idealized same-close conventions. Changed, unknown, nonfinite or legacy reciprocal settings require separate source and ledger review.");
+    }
+    None
+}
 pub fn validate_reviewed(id: &str, p: &Params) -> Option<&'static str> {
     if !reviewed_stock_rule(id) {return None;}
     let schema=params(id)?;
@@ -42,22 +54,22 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|\"and sell when one trendline turns down (the fast one will always turn down before the slow one).\" (p.124)",
         ], "Source convention: select 80/10 from the Amazon example (Fig8.2 p.124), rather than universal mandatory periods. Up/down compares today's full SMA with yesterday's (p.52); equality holds and either falling SMA exits, including slow-first cases. Long/cash only on actual individual stocks. Completed-close same-close fills are an idealized research convention: p.70 recommends preclose calculation. Flat test start, full observed warmup, one position; terminal-close entries remain open. Original Amazon chart, population and performance are not reproduced."),
         // ------------------------------------------------ Ch 14 momentum and MACD
-        d("kfsc_macd", "MACD signal-line crossover (Kaufman 20/40/9)", "Ch 14 · Momentum and MACD", "Long/Short", Live, &[
+        d("kfsc_macd", "MACD crossover (literal .0476/.0243/.10)", "Ch 14 · Momentum and MACD", "Long/Short", Live, &[
             "F|\"slow = 40 and fast = 20 ... Step 2. Calculate the slow trendline using the smoothing value .0243. Step 3. Calculate the fast trendline using the smoothing value .0476. Step 4. The MACD line ... is calculated as the fast trendline minus the slow trendline. Step 5. The signal line is the 9-day smoothing (using a percentage of .10) of the MACD line.\" (p.204)",
             "E|\"Buy when the MACD line (faster) crosses above the signal line (slower). Sell when the MACD line crosses below the signal line.\" (p.205)",
-            "X|Always in: the opposite crossover reverses (MACD 'as a trend indicator', p.205)",
-        ], "Defaults = the printed constants .0476/.0243/.10, i.e. 1/(n+1) for n = 20, 40, 9 (the text's general formula 2/(n+1) would give .0952/.0488/.20; p.kind=1 uses it). Smoothings seeded with the first value. Close-based, orders at the close."),
+            "X|Declared research convention: a subsequent opposite crossing closes the current position and reverses; this is not a printed portfolio or capital model.",
+        ], "Source convention: choose the literal printed .0476/.0243/.10 (p.204), which do not equal either the stated 2/(N+1) formula or exact 1/(N+1). The book calls the example 20/40/9; these labels do not override its selected literal constants. First actual source close seeds fast/slow; their difference and signal begin at zero. All supplied earlier history is retained, not reset at the test start. First subsequent crossing enters from a flat selected start, equality holds, opposite crossing reverses; terminal-close entries remain open. Completed-close same-close fills are idealized (p.70 recommends preclose calculation). Actual stocks only; shorts are hypothetical without certified borrow/margin/financing. No discretionary divergence/resistance filter, original AOL chart performance, game capital or portfolio is reproduced."),
         // ------------------------------------------------ Ch 15 overbought/oversold
-        d("kfsc_stoch", "Slow stochastic 80/20 crossover", "Ch 15 · Overbought/oversold", "Long/Short", Live, &[
+        d("kfsc_stoch", "Slow stochastic timing and regime selection", "Ch 15 · Overbought/oversold", "Long/Short", NotTestable("The source selects buy/sell directions using a sideways/up/down regime but gives no objective regime classifier (p.220,222-223). Raw oscillator timing alone is not the full strategy."), &[
             "F|Raw %K = 100 × (close − lowest low of past N days)/(high − low range of past N days) (p.216); %K-slow (%D) = 3-day average of %K; %D-slow = 3-day average of %K-slow (Fig 15.2, p.217)",
             "E|\"1. After the smoothed stochastic %K-slow has moved above the 80 percent line, sell when the %K-slow line crosses the %D-slow line moving down. 2. After the smoothed stochastic %K-slow has moved below the 20 percent line, buy when the %K-slow line crosses the %D-slow line moving up.\" (p.219)",
             "X|\"In a sideways market use both buy and sell signals\" (p.222): a buy closes a short and goes long, a sell closes a long and goes short",
-        ], "N = 10: the book's worked 10-day stochastic (Fig 15.2, Nokia). The prose says the range is 'not including today', but every %K printed in Fig 15.2 uses the 10 days ending today (e.g. 18 Jan 1996: high 2.30, low 2.07, close 2.29 -> 95.7); the printed numbers are followed, p.prior=1 gives the prose reading. 'After ... moved above 80' = the first %K-slow down-cross since %K-slow was last above 80 ('the first time after the faster line has been above 80', p.220). The trend-filtered variant (trade only with the trend, p.220-222) has no defined trend and is not coded. Orders at the close."),
+        ], "Reading/timing component, not a verified backtest. The Nokia table (p.217) uses a 10-observation range including today, conflicting with the explicit preceding-range prose. The first qualifying threshold excursion/crossing also needs a precise re-arm convention. More materially, p.222 permits both directions in a sideways market but restricts directions in trends; the book supplies no mechanical regime classifier. An unfiltered two-way backtest would omit that condition. Legacy illustrative code and parameter alternatives inherit no source admission; no chart results are claimed."),
         d("kfsc_dsm", "Double-smoothed 10-day momentum (Blau)", "Ch 15 · Double smoothing", "Long/Short", Live, &[
             "F|\"1. Calculate the values of the 10-day momentum. 2. Smooth the momentum values using a 20-day percentage smoothing. 3. Smooth the values in step 2 using a 20-day percentage smoothing.\" (p.231); 20-day smoothing = .0476 (p.231)",
             "E|\"It is now possible to use the simple turns in the trendline for buy and sell signals\" (p.231); Fig 15.14: \"Buy when it turns up / Sell when indicator turns down\"",
-            "X|Always in: the opposite turn reverses",
-        ], "Smoothing constant .0476 as printed (= 1/(20+1)); p.kind=1 uses 2/(n+1). Smoothings seeded with the first momentum value. Orders at the close."),
+            "X|Declared research convention: an opposite confirmed turn closes and reverses; a flat selected start waits for a new turn.",
+        ], "Source convention: choose the explicit 10-day current-minus-prior momentum and two literal .0476 passes (p.231-232), not exact 1/21 and not the 1-day alternative. First actual 10-day momentum seeds both passes; all source history is retained. A turn changes the previous nonzero slope direction; equality holds, and the first observed slope only initializes direction. A flat selected start waits for the next genuine turn; opposite turns reverse. Terminal close entries remain open. Completed-close same-close fills are idealized (p.70); stock shorts are hypothetical without certified borrow/margin/financing. The generic first-difference sign wording on p.202 conflicts with the current-minus-prior examples on p.201; that sign choice is disclosed. Original Microsoft chart, discretionary combined methods, game risk/capital and portfolio are not reproduced."),
         // ------------------------------------------------ Ch 17 volatility
         d("kfsc_hv_day", "High-volatility day continuation", "Ch 17 · Volatility", "Long/Short", Live, &[
             "F|\"If today's true range (the range including the previous close) is more than twice the average [of the 65-day true range], then we have a high-volatility day.\" (p.250-251)",
@@ -126,9 +138,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "kfsc_pct_band" => vec![p("period", "Selected source MA period", 20., 20., 20., 1.), p("pct", "Selected band (%): upper MA×1.05, lower MA/1.05", 5., 5., 5., 1.)],
         "kfsc_bollinger" => vec![p("period", "Selected source MA / sample-SD period", 20., 20., 20., 1.), p("nsd", "Selected price-level sample SDs (literal Excel formula)", 2., 2., 2., 1.)],
         "kfsc_two_ma" => vec![p("slow", "Selected example slow SMA", 80., 80., 80., 1.), p("fast", "Selected example fast SMA", 10., 10., 10., 1.)],
-        "kfsc_macd" => vec![p("fast", "Fast period", 20., 2., 60., 1.), p("slow", "Slow period", 40., 5., 120., 1.), p("signal", "Signal period", 9., 2., 30., 1.), p("kind", "Constant: 0 = 1/(n+1) as printed, 1 = 2/(n+1)", 0., 0., 1., 1.)],
+        "kfsc_macd" => vec![p("alpha_fast", "Literal printed fast smoothing (formula conflict)", 0.0476, 0.0476, 0.0476, 0.0001), p("alpha_slow", "Literal printed slow smoothing (formula conflict)", 0.0243, 0.0243, 0.0243, 0.0001), p("alpha_signal", "Literal printed MACD signal smoothing", 0.10, 0.10, 0.10, 0.01)],
         "kfsc_stoch" => vec![p("period", "Stochastic days N", 10., 3., 40., 1.), p("prior", "Range: 0 = N days to today (Fig 15.2 numbers), 1 = N days before today (prose)", 0., 0., 1., 1.), p("over", "Overbought line", 80., 50., 95., 1.), p("under", "Oversold line", 20., 5., 50., 1.)],
-        "kfsc_dsm" => vec![p("mom", "Momentum days", 10., 1., 40., 1.), p("smooth", "Smoothing period (each pass)", 20., 2., 60., 1.), p("kind", "Constant: 0 = 1/(n+1) (.0476 printed), 1 = 2/(n+1)", 0., 0., 1., 1.)],
+        "kfsc_dsm" => vec![p("mom", "Selected source momentum days", 10., 10., 10., 1.), p("alpha", "Literal printed smoothing, each pass", 0.0476, 0.0476, 0.0476, 0.0001)],
         "kfsc_hv_day" => vec![p("atr", "Average true range days", 65., 10., 130., 1.), p("factor", "High-volatility factor (x average TR)", 2., 1., 4., 0.1), p("zone", "Close zone (fraction of range from the extreme)", 0.1, 0.05, 0.3, 0.05), p("atr_lag", "0 = average includes today, 1 = previous days", 0., 0., 1., 1.)],
         _ => {
             if catalogue().iter().any(|d| d.id == id) { vec![] } else { return None }
@@ -190,6 +202,36 @@ fn expo(v: &[f64], a: f64) -> Vec<f64> {
         out[i] = prev;
     }
     out
+}
+struct MacdStates {fast:Vec<f64>,slow:Vec<f64>,macd:Vec<f64>,signal:Vec<f64>,histogram:Vec<f64>,events:Vec<i8>}
+/// Literal step2/3/5 constants on printed204, deliberately not either reciprocal
+/// interpretation of the inconsistent step1 period formula. First close seeds
+/// both price smoothings; the resulting difference/signal begin at zero.
+fn literal_macd_states(c:&[f64])->MacdStates {
+    let fast=expo(c,0.0476);let slow=expo(c,0.0243);
+    let macd:Vec<f64>=fast.iter().zip(&slow).map(|(f,s)|f-s).collect();
+    let signal=expo(&macd,0.10);let histogram:Vec<f64>=macd.iter().zip(&signal).map(|(m,s)|m-s).collect();
+    let mut events=vec![0;c.len()];
+    for i in 1..c.len() {
+        if histogram[i]>0. && histogram[i-1]<=0. {events[i]=1;}
+        else if histogram[i]<0. && histogram[i-1]>=0. {events[i]=-1;}
+    }
+    MacdStates {fast,slow,macd,signal,histogram,events}
+}
+struct DsmStates {momentum:Vec<f64>,first:Vec<f64>,second:Vec<f64>,events:Vec<i8>}
+/// Printed231/232 selected10-day momentum, double literal .0476. A turn changes
+/// the last nonzero slope. Ties retain that direction; the first observed slope
+/// initializes direction, rather than inventing a prior turn at a test start.
+fn literal_dsm_states(c:&[f64])->DsmStates {
+    let momentum:Vec<f64>=(0..c.len()).map(|i|if i>=10 {c[i]-c[i-10]} else {f64::NAN}).collect();
+    let first=expo(&momentum,0.0476);let second=expo(&first,0.0476);
+    let mut events=vec![0;c.len()];let mut direction=0;
+    for i in 11..c.len() {
+        if !second[i].is_finite() || !second[i-1].is_finite() {continue;}
+        let next=if second[i]>second[i-1] {1} else if second[i]<second[i-1] {-1} else {0};
+        if next!=0 {if direction!=0 && next!=direction {events[i]=next;}direction=next;}
+    }
+    DsmStates {momentum,first,second,events}
 }
 /// Excel STDEV (sample, n-1) of v[i+1-n..=i].
 fn sd_sample(v: &[f64], n: usize, i: usize) -> f64 {
@@ -257,12 +299,12 @@ fn band_ct(x: &Ctx, from: usize, to: usize, lo: &[f64], mid: &[f64], up: &[f64])
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let schema = params(id)?;
     if validate_reviewed(id,p).is_some() {return None;}
+    if validate_momentum(id,p).is_some() {return None;}
     if from > to || to >= x.r.len() { return None; }
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(0., |d| d.def));
     let u = |k: &str| g(k).round().max(0.) as usize;
     let n = x.r.len();
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
-    let k_of = |nn: usize| if u("kind") == 1 { 2. / (nn as f64 + 1.) } else { 1. / (nn as f64 + 1.) };
     Some(match id {
         "kfsc_pct_band" => {
             let ma = avg_n(c, u("period").max(1));
@@ -292,13 +334,10 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             b.done()
         }
         "kfsc_macd" => {
-            let (fe, se) = (expo(c, k_of(u("fast").max(1))), expo(c, k_of(u("slow").max(1))));
-            let m: Vec<f64> = (0..n).map(|i| fe[i] - se[i]).collect();
-            let s = expo(&m, k_of(u("signal").max(1)));
-            let mut b = Bk::new(x, from, to);
+            let state=literal_macd_states(c);let mut b=Bk::source_close(x,from,to);
             for i in from.max(1)..=to {
-                if m[i] > s[i] && m[i - 1] <= s[i - 1] { b.at_close(i, 1, "MACD crossed above signal"); }
-                else if m[i] < s[i] && m[i - 1] >= s[i - 1] { b.at_close(i, -1, "MACD crossed below signal"); }
+                if state.events[i]==1 {b.at_close(i,1,"MACD crossed above signal");}
+                else if state.events[i]==-1 {b.at_close(i,-1,"MACD crossed below signal");}
             }
             b.done()
         }
@@ -319,15 +358,10 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             b.done()
         }
         "kfsc_dsm" => {
-            let mn = u("mom").max(1);
-            let a = k_of(u("smooth").max(1));
-            let m: Vec<f64> = (0..n).map(|i| if i >= mn { c[i] - c[i - mn] } else { f64::NAN }).collect();
-            let e2 = expo(&expo(&m, a), a);
-            let mut b = Bk::new(x, from, to);
-            for i in from.max(1)..=to {
-                if !(e2[i].is_finite() && e2[i - 1].is_finite()) { continue; }
-                if e2[i] > e2[i - 1] { b.at_close(i, 1, "double-smoothed momentum turned up"); }
-                else if e2[i] < e2[i - 1] { b.at_close(i, -1, "double-smoothed momentum turned down"); }
+            let state=literal_dsm_states(c);let mut b=Bk::source_close(x,from,to);
+            for i in from.max(12)..=to {
+                if state.events[i]==1 {b.at_close(i,1,"double-smoothed momentum turned up");}
+                else if state.events[i]==-1 {b.at_close(i,-1,"double-smoothed momentum turned down");}
             }
             b.done()
         }
@@ -355,6 +389,84 @@ mod tests {
     use crate::Row;
     fn mk(hlc: &[(f64, f64, f64)]) -> Vec<Row> {
         hlc.iter().enumerate().map(|(i, &(h, l, c))| Row { ticker: "T".into(), date: format!("1996-01-{:02}", i + 1), open: c, high: h, low: l, close: c, volume: None }).collect()
+    }
+    #[test]
+    fn literal_momentum_constants_and_first_two_steps_match_printed_choices() {
+        let s=literal_macd_states(&[100.,110.,90.]);
+        for (got,want) in [(s.fast[1],100.476),(s.slow[1],100.243),(s.signal[1],0.0233),
+            (s.fast[2],99.9773424),(s.slow[2],99.9940951),(s.signal[2],0.01929473)] {
+            assert!((got-want).abs()<1e-12,"{got} vs {want}");
+        }
+        assert_eq!(s.events,vec![0,1,-1]);
+        assert!((s.fast[1]-(100.+10./21.)).abs()>1e-5);
+    }
+    #[test]
+    fn dsm_uses_actual_turns_not_every_rising_bar_and_preserves_terminal_entry() {
+        let mut values=vec![100.;10];values.extend([110.,90.,130.,60.]);
+        let s=literal_dsm_states(&values);
+        assert!((s.first[11]-9.048).abs()<1e-12);
+        assert!((s.second[11]-9.9546848).abs()<1e-12);
+        assert!((s.second[12]-9.95899880704).abs()<1e-12);
+        assert_eq!(&s.events[10..],&[0,0,1,-1]);
+        let r=mk(&values.iter().map(|&v|(v,v,v)).collect::<Vec<_>>());let x=Ctx::new(&r,&r,&[]);
+        let t=run("kfsc_dsm",&x,11,13,&Params::new()).unwrap();assert_eq!(t.len(),2);
+        assert_eq!((t[0].legs[0].i,t[0].exit_i,t[0].dir,t[0].open),(12,13,1.,false));
+        assert_eq!((t[1].legs[0].i,t[1].exit_i,t[1].dir,t[1].open),(13,13,-1.,true));
+        let s=literal_dsm_states(&[100.;30]);assert!(s.events.iter().all(|&e|e==0));
+    }
+    #[test]
+    fn macd_reverses_at_terminal_close_without_a_synthetic_exit() {
+        let r=mk(&[(100.,100.,100.),(110.,110.,110.),(90.,90.,90.)]);let x=Ctx::new(&r,&r,&[]);
+        let t=run("kfsc_macd",&x,1,2,&Params::new()).unwrap();assert_eq!(t.len(),2);
+        assert_eq!((t[0].legs[0].i,t[0].exit_i,t[0].dir,t[0].open),(1,2,1.,false));
+        assert_eq!((t[1].legs[0].i,t[1].exit_i,t[1].dir,t[1].open),(2,2,-1.,true));
+    }
+    #[test]
+    fn momentum_contract_is_exact_and_stochastic_remains_a_reading_component() {
+        for &id in MOMENTUM_STOCK_IDS {
+            assert!(validate_momentum(id,&Params::new()).is_none());
+            for s in params(id).unwrap() {
+                assert_eq!((s.min,s.max),(s.def,s.def));
+                assert!(validate_momentum(id,&Params::from([(s.key.into(),s.def)])).is_none());
+                for value in [s.def+1e-10,s.def+1.,f64::NAN,f64::INFINITY] {
+                    assert!(validate_momentum(id,&Params::from([(s.key.into(),value)])).is_some());
+                }
+            }
+            for key in ["kind","fill","unknown","fast","smooth"] {
+                assert!(validate_momentum(id,&Params::from([(key.into(),0.)])).is_some());
+            }
+        }
+        let stoch=catalogue().into_iter().find(|d|d.id=="kfsc_stoch").unwrap();
+        assert!(matches!(stoch.status,Status::NotTestable(note) if note.contains("regime classifier")));
+        assert!(!reviewed_momentum_rule(stoch.id));assert!(!reviewed_stock_rule(stoch.id));
+    }
+    #[test]
+    fn momentum_prefix_states_are_causal_without_resetting_full_history() {
+        let c:Vec<f64>=(0..100).map(|i|100.+((i*37)%29) as f64).collect();
+        let macd=literal_macd_states(&c);let dsm=literal_dsm_states(&c);
+        for end in 14..c.len() {
+            let m=literal_macd_states(&c[..=end]);let d=literal_dsm_states(&c[..=end]);
+            assert_eq!(m.events,macd.events[..=end]);assert_eq!(m.histogram,macd.histogram[..=end]);
+            assert_eq!(d.events,dsm.events[..=end]);assert_eq!(d.second[10..],dsm.second[10..=end]);
+        }
+    }
+    #[test]
+    #[ignore = "Private bounded actual-stock state audit: explicit CSV/OUT paths required"]
+    fn dump_actual_momentum_source_states() {
+        use std::io::Write;
+        let input=std::env::var("KFSC_MOM_AUDIT_CSV").expect("explicit private input CSV required");
+        let output=std::env::var("KFSC_MOM_AUDIT_OUT").expect("explicit private output CSV required");
+        assert_ne!(input,output);let text=std::fs::read_to_string(input).unwrap();let mut lines=text.lines();
+        let header=crate::parse_csv_fields(lines.next().unwrap());
+        let date=header.iter().position(|s|s=="date").unwrap();let close=header.iter().position(|s|s=="close").unwrap();
+        let rows:Vec<Vec<String>>=lines.filter(|s|!s.trim().is_empty()).map(crate::parse_csv_fields).collect();
+        let c:Vec<f64>=rows.iter().map(|r|r[close].parse().unwrap()).collect();assert!(c.iter().all(|v|v.is_finite() && *v>0.));
+        let m=literal_macd_states(&c);let d=literal_dsm_states(&c);
+        let mut f=std::io::BufWriter::new(std::fs::File::create(output).unwrap());
+        writeln!(f,"date,close,fast,slow,macd,signal,histogram,macd_event,momentum,first,second,dsm_event").unwrap();
+        for i in 0..c.len() {
+            writeln!(f,"{},{:.17},{:.17},{:.17},{:.17},{:.17},{:.17},{},{:.17},{:.17},{:.17},{}",rows[i][date],c[i],m.fast[i],m.slow[i],m.macd[i],m.signal[i],m.histogram[i],m.events[i],d.momentum[i],d.first[i],d.second[i],d.events[i]).unwrap();
+        }
     }
     #[test]
     fn reviewed_short_course_accepts_only_exact_finite_source_choices() {
