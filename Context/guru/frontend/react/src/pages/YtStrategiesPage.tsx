@@ -3,7 +3,6 @@ import { strategies } from "../features/lab/client";
 import { COPY } from "../features/lab/labels";
 import type { PublishedStrategy } from "../features/lab/types";
 import { ErrorNotice, LabErrorBoundary, Loading } from "../features/lab/ui";
-import { labHash } from "../features/lab/url-state";
 
 type Load = { items: PublishedStrategy[] } | { error: unknown } | null;
 
@@ -27,9 +26,10 @@ function PublishedList() {
         <article key={s.snapshotId} className="box lab-card">
           <h2>{s.name}</h2>
           {s.origin && <span className="tag">Customized from {s.origin.book} · {s.origin.method}</span>}
-          <p>{s.ownerName ?? "Former member"} · {s.market === "in" ? "India" : "US"} · {s.instrument}</p>
-          <p>{s.spec.entry.all.length} entry / {s.spec.exit.any.length} exit · published {s.publishedAt.slice(0, 10)}</p>
-          <a className="dbtn sm" href={labHash("/indicators", { region: s.market, tk: s.instrument, published: String(s.snapshotId) }, "#/indicators")}>
+          <p className="rnote">{s.ownerName ?? "Former member"} · {s.market === "in" ? "India" : "US"} · {s.instrument}</p>
+          <p className="rnote">{s.spec.entry.all.length} entry / {s.spec.exit.any.length} exit · published {s.publishedAt.slice(0, 10)}</p>
+          {/* region is always written: labHash would drop the default "in", and the lab falls back to the research region. */}
+          <a className="dbtn sm" href={`#/indicators?${new URLSearchParams({ region: s.market, tk: s.instrument, published: String(s.snapshotId) })}`}>
             Open in lab
           </a>
         </article>

@@ -15,20 +15,34 @@ it("lists published strategies newest first with open-in-lab links and variant b
   expect(cards[0].textContent).toContain("Customized from ststw · rsi2_4");
   expect(cards[0].textContent).toContain("Former member");
   expect(cards[0].querySelector("a")!.getAttribute("href")).toBe("#/indicators?region=us&tk=SPY&published=12");
-  expect(cards[1].querySelector("a")!.getAttribute("href")).toBe("#/indicators?tk=NIFTY+50&published=11");
+  expect(cards[1].querySelector("a")!.getAttribute("href")).toBe("#/indicators?region=in&tk=NIFTY+50&published=11");
   expect(host.textContent).toContain("not a book method and not a verification");
 });
 
 it("shows rule counts, owner, market and publish date; no badge without origin", async () => {
-  vi.stubGlobal("fetch", fetchRouter([["/api/app/lab/strategies/published", () => jsonResponse(publishedFixture)]]));
+  const s = publishedFixture[0].spec;
+  const c = s.exit.any[0];
+  const ema = { ...publishedFixture[0], spec: { ...s, entry: { all: [s.entry.all[0]] }, exit: { any: [c, c] } } };
+  vi.stubGlobal("fetch", fetchRouter([["/api/app/lab/strategies/published", () => jsonResponse([ema])]]));
   const host = await mount(<YtStrategiesPage />);
   await flush();
-  const ema = [...host.querySelectorAll(".lab-card")][1];
-  const s = publishedFixture[0].spec;
-  expect(ema.textContent).toContain("Nandini · India · NIFTY 50");
-  expect(ema.textContent).toContain(`${s.entry.all.length} entry / ${s.exit.any.length} exit · published 2026-10-13`);
-  expect(ema.querySelector(".tag")).toBeNull();
+  const card = host.querySelector(".lab-card")!;
+  expect(card.textContent).toContain("Nandini · India · NIFTY 50");
+  expect(card.textContent).toContain("1 entry / 2 exit · published 2026-10-13");
+  expect(card.querySelector(".tag")).toBeNull();
   expect(host.querySelector('[data-lab-page="yt-strategies"]')).not.toBeNull();
+});
+
+it("shows a loading state until the list arrives", async () => {
+  let release!: (r: Response) => void;
+  vi.stubGlobal("fetch", fetchRouter([["/api/app/lab/strategies/published", () => new Promise<Response>((r) => { release = r; })]]));
+  const host = await mount(<YtStrategiesPage />);
+  expect(host.textContent).toContain("Loading YT Strategies");
+  expect(host.querySelector(".lab-card")).toBeNull();
+  release(jsonResponse(publishedFixture));
+  await flush();
+  expect(host.textContent).not.toContain("Loading YT Strategies");
+  expect(host.querySelectorAll(".lab-card")).toHaveLength(2);
 });
 
 it("empty and error states", async () => {
