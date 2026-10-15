@@ -1,0 +1,7 @@
+.lab-result .lwc { height: auto; margin-top: 10px; background: var(--panel); }
+.lab-result .metrics { margin-top: 12px; }
+.lab-legend { margin-top: 14px; }
+.lab-monthly { margin-top: 18px; }
+.lab-trades { margin-top: 18px; display: grid; gap: 8px; }
+.lab-trades .lab-row { justify-content: space-between; }
+.lab-trades .box-h { margin: 0; font-size: 16px; }
