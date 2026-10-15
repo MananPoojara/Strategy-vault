@@ -148,7 +148,9 @@ class QuietHandler(SimpleHTTPRequestHandler):
 
 
 class Fixtures:
-    def __init__(self, *, range_errors=False, failed_owners=(), valid_chande=False):
+    def __init__(self, *, range_errors=False, failed_owners=(), valid_chande=False, snapshot_contract=False):
+        self.snapshot_contract = snapshot_contract
+        self.snapshot_mode = "mismatched"
         self.requests = []
         self.range_errors = range_errors
         self.failed_owners = set(failed_owners)
@@ -213,6 +215,17 @@ class Fixtures:
             payload = fixture_basket(query)
         elif path.endswith("/run"):
             payload = fixture_run(query.get("ticker", [INDIA_STOCK])[0])
+            if self.snapshot_contract:
+                first, second = payload["trades"][:2]
+                first.update(reason="Close < 50-day SMA", signal=first["exit"],
+                    at_exit={"date": first["exit"], "vs_ma_p": -1.0,
+                             "ma_period": 50 if self.snapshot_mode == "matching" else 5, "ma_kind": "SMA"})
+                second.update(reason="RSI(14) > 70", signal=second["exit"],
+                    at_exit={"date": second["exit"], "rsi_p": 78.0, "rsi_period": 14, "rsi_kind": "Wilder"})
+                if self.snapshot_mode == "unlabelled":
+                    first["at_exit"].pop("ma_period")
+                    second["at_exit"].pop("rsi_kind")
+
         elif path.endswith("/ohlc") or path.startswith("/data/ohlc-"):
             payload = fixture_prices()
         elif path.endswith(("/summary", "/readiness")):
@@ -619,6 +632,27 @@ async def book_loading_flow(page, base, fixtures, expect):
     finally:
         fixtures.price_gate.set()
 
+async def labelled_snapshot_checks(page, base, fixtures, expect):
+    # Deliberately artificial context verifies display contracts, never source or market performance.
+    await page.goto(base + "/#/s/hbqts_ma5_25?" + urlencode({"tk": INDIA_STOCK,
+        "from": "2010-01-04", "to": "2010-01-15"}), wait_until="domcontentloaded")
+    table = page.locator("#tradesheet")
+    await expect(table.locator('[data-exit-check="unavailable"]')).to_have_count(1)
+    await expect(table.locator('[data-exit-check="available"]')).to_have_text("RSI(14) 78.0")
+    await expect(page.locator('[data-tile="0"]')).to_have_text("+10.00%")
+    await expect(table.locator("tbody tr")).to_have_count(3)
+    fixtures.snapshot_mode = "matching"
+    await page.reload(wait_until="domcontentloaded")
+    await expect(table.locator('[data-exit-check="unavailable"]')).to_have_count(0)
+    await expect(table.locator('[data-exit-check="available"]')).to_have_count(2)
+    await expect(table).to_contain_text("-1.00% vs SMA(50)")
+    await expect(page.locator('[data-tile="0"]')).to_have_text("+10.00%")
+    fixtures.snapshot_mode = "unlabelled"
+    await page.reload(wait_until="domcontentloaded")
+    await expect(table.locator('[data-exit-check="unavailable"]')).to_have_count(2)
+    await expect(table.locator('[data-exit-check="available"]')).to_have_count(0)
+    await expect(table.locator("thead th")).to_have_count(17)
+
 
 async def smoke(dist):
     from playwright.async_api import async_playwright, expect
@@ -642,6 +676,8 @@ async def smoke(dist):
                         (strategy_basket_controls, Fixtures()),
                         (basket_price_recovery, Fixtures()),
                         (book_loading_flow, LoadingFixtures()),
+
+                        (labelled_snapshot_checks, Fixtures(snapshot_contract=True)),
                     ]
                     for journey, fixtures in cases:
                         # Each journey owns its browser context and runtime caches.

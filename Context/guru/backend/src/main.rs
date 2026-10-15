@@ -686,14 +686,43 @@ fn summary(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     Ok(format!("[{}]", rows.join(",")))
 }
 
-/// Indicator values on one bar, so a trade's entry and exit can be checked by hand.
-/// With custom settings (`p`), the same facts at the custom periods are added as rsi_p / vs_ma_p / vs_trend_p.
-fn snapshot(ctx: &Ctx, i: usize, p: Option<&[Vec<f64>; 3]>) -> String {
+/// Typed diagnostic periods come from the method's effective schema defaults.
+/// An unlabelled or differently typed moving average is not an SMA rule check.
+struct DiagnosticSeries {
+    rsi: Option<(usize, Vec<f64>)>,
+    ma: Option<(usize, Vec<f64>)>,
+    trend: Option<(usize, Vec<f64>)>,
+}
+fn diagnostic_series(ctx: &Ctx, id: &str, p: &Params) -> DiagnosticSeries {
+    let schema = connors::params(id);
+    let period = |key: &str, kind: &str| {
+        let def = schema.iter().find(|item| item.key == key)?;
+        if !def.label.to_ascii_lowercase().contains(kind) { return None; }
+        let value = p.get(key).copied().unwrap_or(def.def);
+        // Diagnostic bounds do not alter the strategy's own parameter checks or calculations.
+        if !value.is_finite() || !(1.0..=10_000.0).contains(&value) { return None; }
+        Some(value.round().max(1.0) as usize)
+    };
+    DiagnosticSeries {
+        rsi: period("rsi_n", "rsi").map(|n| (n, ctx.rsi_n(n).into_owned())),
+        ma: period("ma", "sma").map(|n| (n, ctx.sma_n(n).into_owned())),
+        trend: period("trend", "sma").map(|n| (n, ctx.sma_n(n).into_owned())),
+    }
+}
+
+/// Completed-bar context labelled by actual date, indicator kind and period.
+/// This describes a bar; it does not certify the source strategy or execution price.
+fn snapshot(ctx: &Ctx, i: usize, series: &DiagnosticSeries) -> String {
+    if i >= ctx.r.len() { return "null".into(); }
     let pct = |a: f64, b: f64| num((a / b - 1.0) * 100.0);
-    let extra = p.map_or(String::new(), |[r, m, t]| format!(",\"rsi_p\":{},\"vs_ma_p\":{},\"vs_trend_p\":{}", num(r[i]), pct(ctx.c[i], m[i]), pct(ctx.c[i], t[i])));
+    let period = |value: &Option<(usize, Vec<f64>)>| value.as_ref().map_or("null".into(), |(n, _)| n.to_string());
+    let kind = |value: &Option<(usize, Vec<f64>)>, name: &str| if value.is_some() { format!("\"{name}\"") } else { "null".into() };
+    let rsi = series.rsi.as_ref().map_or("null".into(), |(_, values)| num(values[i]));
+    let distance = |value: &Option<(usize, Vec<f64>)>| value.as_ref().map_or("null".into(), |(_, values)| pct(ctx.c[i], values[i]));
     format!(
-        "{{\"close\":{},\"rsi2\":{},\"vs_sma200\":{},\"vs_sma5\":{},\"vix_rsi2\":{}{extra}}}",
-        num(ctx.c[i]), num(ctx.rsi2[i]), pct(ctx.c[i], ctx.ma200[i]), pct(ctx.c[i], ctx.ma5[i]), num(ctx.vix.rsi2.get(i).copied().unwrap_or(f64::NAN))
+        "{{\"date\":\"{}\",\"close\":{},\"rsi2\":{},\"vs_sma200\":{},\"vs_sma5\":{},\"vix_rsi2\":{},\"rsi_p\":{},\"rsi_period\":{},\"rsi_kind\":{},\"vs_ma_p\":{},\"ma_period\":{},\"ma_kind\":{},\"vs_trend_p\":{},\"trend_period\":{},\"trend_kind\":{},\"basis\":\"Completed daily close indicator context; not a source-rule or execution-price verification\"}}",
+        esc(&ctx.r[i].date), num(ctx.c[i]), num(ctx.rsi2[i]), pct(ctx.c[i], ctx.ma200[i]), pct(ctx.c[i], ctx.ma5[i]), num(ctx.vix.rsi2.get(i).copied().unwrap_or(f64::NAN)),
+        rsi, period(&series.rsi), kind(&series.rsi, "Wilder"), distance(&series.ma), period(&series.ma), kind(&series.ma, "SMA"), distance(&series.trend), period(&series.trend), kind(&series.trend, "SMA")
     )
 }
 
@@ -711,8 +740,7 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     costs.ensure_rollover()?;
     let from = window_start(ctx, def, from).filter(|&f| f < to).ok_or("Required volatility-index data does not cover this period")?;
     let run = backtest(ctx, id, from, to, cost, &p)?;
-    let per = |k: &str, d: f64| p.get(k).copied().unwrap_or(d).round().max(1.0) as usize;
-    let custom = (!p.is_empty()).then(|| [ctx.rsi_n(per("rsi_n", 2.0)).into_owned(), ctx.sma_n(per("ma", 5.0)).into_owned(), ctx.sma_n(per("trend", 200.0)).into_owned()]);
+    let diagnostics = diagnostic_series(ctx, id, &p);
     let mut o = String::with_capacity(1 << 20);
     let arr = |v: &mut String, it: &mut dyn Iterator<Item = String>| {
         v.push('[');
@@ -736,7 +764,7 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
             "{{\"dir\":{},\"legs\":[{}],\"entry\":\"{}\",\"exit\":\"{}\",\"exit_i\":{},\"exit_px\":{},\"avg_px\":{},\"ret\":{},\"ret_full_precision\":{},\"bars\":{},\"open\":{},\"reason\":\"{}\",\"entry_kind\":\"{}\",\"at_entry\":{},\"at_exit\":{},\"signal\":\"{}\",\"exits\":[{}],\"accounting\":{}}}",
             t.dir, legs.join(","), ctx.r[t.legs[0].i].date, ctx.r[t.exit_i].date, t.exit_i - from, num(t.exit_px),
             num(t.avg_px()), num(t.ret(cost)), full_precision_trade_return(t.ret(cost)), t.exit_i - t.legs[0].i, t.open, esc(&t.reason), t.entry_kind,
-            snapshot(ctx, t.legs[0].i, custom.as_ref()), snapshot(ctx, t.signal_i, custom.as_ref()), ctx.r[t.signal_i].date,
+            snapshot(ctx, t.legs[0].i, &diagnostics), snapshot(ctx, t.signal_i, &diagnostics), ctx.r[t.signal_i].date,
             t.exits.iter().map(|(i, px, f)| format!("[{},{},{}]", i - from, num(*px), num(*f))).collect::<Vec<_>>().join(","),ledger.json()
         )
     }));
@@ -1191,6 +1219,44 @@ mod tests {
             assert!(readiness::check(&ctx,d,0,3,&Params::new()).is_some());
         }
     }
+
+    #[test]
+    fn diagnostic_snapshot_burns_schema_default_is_independent_of_fill_query_presence() {
+        let (_fixture,state,q)=native_us_fixture();let selected=select_context(&state,&q).unwrap();let ctx=selected.context(&state);
+        let base=diagnostic_series(&ctx,"sbma_sma50_long",&Params::new());
+        let fill=diagnostic_series(&ctx,"sbma_sma50_long",&Params::from([("fill".into(),1.)]));
+        let explicit=diagnostic_series(&ctx,"sbma_sma50_long",&Params::from([("ma".into(),50.),("fill".into(),1.)]));
+        assert_eq!(base.ma.as_ref().unwrap().0,50);assert!(base.rsi.is_none()&&base.trend.is_none());
+        assert_eq!(snapshot(&ctx,210,&base),snapshot(&ctx,210,&fill));assert_eq!(snapshot(&ctx,210,&base),snapshot(&ctx,210,&explicit));
+        let expected=ctx.c[161..=210].iter().sum::<f64>()/50.;assert!((base.ma.as_ref().unwrap().1[210]-expected).abs()<1e-10);
+        let json=snapshot(&ctx,210,&base);assert!(json.contains("\"ma_period\":50,")&&json.contains("\"ma_kind\":\"SMA\"")&&json.contains("\"date\":"));
+    }
+    #[test]
+    fn diagnostic_snapshot_held_short_has_200_period_without_opening_admission() {
+        let (_fixture,state,mut q)=native_us_fixture();let selected=select_context(&state,&q).unwrap();let ctx=selected.context(&state);
+        let base=diagnostic_series(&ctx,"sbma_sma200_short",&Params::new());
+        let explicit=diagnostic_series(&ctx,"sbma_sma200_short",&Params::from([("ma".into(),200.)]));
+        assert_eq!(base.ma.as_ref().unwrap().0,200);assert_eq!(snapshot(&ctx,210,&base),snapshot(&ctx,210,&explicit));
+        let expected=ctx.c[11..=210].iter().sum::<f64>()/200.;assert!((base.ma.as_ref().unwrap().1[210]-expected).abs()<1e-10);
+        q.insert("id".into(),"sbma_sma200_short".into());assert!(detail(&state,&q).is_err());
+    }
+    #[test]
+    fn diagnostic_snapshot_labels_rsi_and_sma_overrides_and_excludes_unknown_keys() {
+        let (_fixture,state,q)=native_us_fixture();let selected=select_context(&state,&q).unwrap();let ctx=selected.context(&state);
+        let custom=diagnostic_series(&ctx,"rsi2_5d",&Params::from([("rsi_n".into(),4.),("ma".into(),10.),("trend".into(),100.)]));
+        assert_eq!(custom.rsi.as_ref().unwrap().0,4);assert_eq!(custom.ma.as_ref().unwrap().0,10);assert_eq!(custom.trend.as_ref().unwrap().0,100);
+        let json=snapshot(&ctx,210,&custom);assert!(json.contains("\"rsi_period\":4,")&&json.contains("\"rsi_kind\":\"Wilder\""));
+        let unrelated=diagnostic_series(&ctx,"sbma_x_5s20s",&Params::from([("ma".into(),50.),("rsi_n".into(),14.)]));
+        assert!(unrelated.ma.is_none()&&unrelated.rsi.is_none()&&unrelated.trend.is_none());
+    }
+    #[test]
+    fn diagnostic_snapshot_invalid_periods_and_unavailable_dates_fail_closed() {
+        let (_fixture,state,q)=native_us_fixture();let selected=select_context(&state,&q).unwrap();let ctx=selected.context(&state);
+        for ma in [f64::NAN,f64::INFINITY,0.,-1.,10001.] {assert!(diagnostic_series(&ctx,"sbma_sma50_long",&Params::from([("ma".into(),ma)])).ma.is_none());}
+        let series=diagnostic_series(&ctx,"sbma_sma50_long",&Params::new());
+        assert_eq!(snapshot(&ctx,ctx.r.len(),&series),"null");assert!(snapshot(&ctx,0,&series).contains("\"vs_ma_p\":null,"));
+    }
+
 
     struct NativeFixture(std::path::PathBuf);
     impl Drop for NativeFixture{fn drop(&mut self){let _=std::fs::remove_dir_all(&self.0);}}
