@@ -248,6 +248,7 @@ pub const SOURCES: &[(&str, &str, &str)] = &[
     ("performance", "Performance", ""),
     ("calendar", "", "DayOfWeek; Day; Month; Year; DayOfYear; BarIndex"),
     ("session", "", "no built-in; AFL idiom BarsSince(Month() != Ref(Month(), -1)) + 1"),
+    ("expiry", "", "published futures expiry and scheduled-session calendar; no built-in AFL equivalent"),
     ("sessions_left", "", "no built-in; AFL idiom with a holiday list"),
     ("moon_phases", "Moon Phases", ""),
     ("highest_bars", "ta.highestbars (Pine)", "HHVBars; HighestBars"),

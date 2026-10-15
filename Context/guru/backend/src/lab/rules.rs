@@ -97,10 +97,17 @@ pub struct Target { pub path: String, pub slot: Option<Slot> }
 pub enum Fill { NextOpen, Close }
 /// A price distance: percent of a reference price, or a multiple of ATR(length) read at a bar already closed.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Dist { Pct(f64), Atr { mult: f64, length: usize }, Points(f64) }
+pub enum Dist { Pct(f64), Atr { mult: f64, length: usize }, Points(f64), Ticks(f64) }
 /// The price-order settings an optimize path can address (`entry.limit.pct`, `exit.stop_loss.atr`, ...).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Slot { Limit, StopLoss, Target, Trailing, Stop, Activate, BreakevenAfter, TakeProfit(usize) }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Roll { DaysBefore(usize), Volume, OpenInterest, None }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Adjust { Forward, Ratio, None }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Futures { pub roll: Roll, pub adjust: Adjust }
+pub const MAX_TICKS: f64 = 100_000.;
 pub const MAX_TAKE_PROFITS: usize = 3;
 pub const MAX_LEGS: usize = 5;
 /// Which price a scale-in leg needs relative to the previous leg: any, better (averaging down a long), or worse (adding to strength).
@@ -147,14 +154,14 @@ pub struct Exec {
     /// re-entry rules: cooldown (bars, after which exits), at most `count` entries per calendar period (anchor 1 W … 4 Y), risk
     pub cooldown: Option<(usize, After)>, pub max_trades: Option<(usize, usize)>, pub risk: Risk,
     /// money mode (spec §7.4): starting capital and declared costs
-    pub capital: Option<f64>, pub costs: MoneyCosts,
+    pub capital: Option<f64>, pub costs: MoneyCosts, pub futures: Option<Futures>,
 }
 impl Default for Exec {
     fn default() -> Self {
         Exec { short: false, fill: Fill::NextOpen, exit_fill: Fill::NextOpen, limit: None, stop_loss: None, target: None, trailing: None, opposite: Opposite::Reverse,
                stop: None, limit_at: None, stop_at: None, valid_bars: 1, delay: 1, edge: false,
                trail_activate: None, breakeven: None, take_profits: vec![], min_bars: 0, ohlc_path: false, scale_in: None, sizing: Sizing::Full,
-               cooldown: None, max_trades: None, risk: Risk::default(), capital: None, costs: MoneyCosts::default() }
+               cooldown: None, max_trades: None, risk: Risk::default(), capital: None, costs: MoneyCosts::default(), futures: None }
     }
 }
 impl Exec {
@@ -221,11 +228,8 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
     };
     let mut cost_bps = None;
     if let Some(ex) = root.get("execution") {
-        // shortcut: every futures request is refused here (no contract data is admitted, spec §7.3); Task 14 adds the model
-        if ex.get("instrument").and_then(|v| v.get("kind")).and_then(Json::as_str) == Some("futures") {
-            return Err(LabError::NeedsData(super::model::FUTURES.into()));
-        }
-        fields(ex, "execution", &["fill", "exit_fill", "cost_bps", "opposite", "delay_bars", "entry_on", "intrabar", "sizing", "cooldown", "max_trades", "risk", "capital", "costs"], &["limit", "stop"])?;
+        fields(ex, "execution", &["fill", "exit_fill", "cost_bps", "opposite", "delay_bars", "entry_on", "intrabar", "sizing", "cooldown", "max_trades", "risk", "capital", "costs", "instrument"], &["limit", "stop"])?;
+        if let Some(v) = ex.get("instrument") { exec.futures = instrument(v)?; }
         if let Some(c) = ex.get("capital") {
             exec.capital = Some(c.as_f64().filter(|c| c.is_finite() && *c > 0. && *c <= MAX_CAPITAL).ok_or_else(|| inv(format!("execution.capital must be a number above 0 and at most {MAX_CAPITAL}")))?);
             if ex.get("cost_bps").is_some() { return Err(inv("money mode takes costs from execution.costs; remove execution.cost_bps")); }
@@ -310,6 +314,13 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
     if let Some(s) = short_side.as_mut() {
         (s.exec.fill, s.exec.exit_fill, s.exec.opposite, s.exec.delay, s.exec.edge, s.exec.ohlc_path) = (exec.fill, exec.exit_fill, exec.opposite, exec.delay, exec.edge, exec.ohlc_path);
     }
+    let execs: Vec<&Exec> = std::iter::once(&exec).chain(short_side.as_ref().map(|s| &s.exec)).collect();
+    if exec.futures.is_none() && execs.iter().any(|x| distances(x).iter().any(|d| matches!(d, Dist::Ticks(_)))) {
+        return Err(inv("ticks need a futures contract's tick size (execution.instrument kind futures)"));
+    }
+    if exec.futures.is_some() && execs.iter().any(|x| x.scale_in.is_some() || !x.take_profits.is_empty()) {
+        return Err(inv("futures runs do not combine with scale_in or take_profits yet"));
+    }
     let mut spec = Spec { entry, exit, cost_bps, optimize: vec![], exec, origin, short_side };
     if let Some(o) = root.get("optimize") { spec.optimize = dims(&spec, o)?; }
     Ok(spec)
@@ -376,6 +387,43 @@ fn side(entry: Option<&Json>, exit: Option<&Json>, pre: &str, exec: &mut Exec, b
     Ok((entry, exit))
 }
 
+fn instrument(v: &Json) -> Result<Option<Futures>, LabError> {
+    fields(v, "execution.instrument", &["kind", "roll", "adjust"], &[])?;
+    if v.get("kind").is_some_and(|v|v.as_str().is_none()) {return Err(inv("execution.instrument.kind must be cash or futures"));}
+    if v.get("adjust").is_some_and(|v|v.as_str().is_none()) {return Err(inv("execution.instrument.adjust must be forward, ratio or none"));}
+    match v.get("kind").and_then(Json::as_str) {
+        None | Some("cash") if v.get("roll").is_none() && v.get("adjust").is_none() => Ok(None),
+        None | Some("cash") => Err(inv("execution.instrument roll and adjust apply to kind futures")),
+        Some("futures") => {
+            let roll = match v.get("roll") {
+                None => Roll::DaysBefore(1),
+                Some(Json::Str(s)) if s == "none" => Roll::None,
+                Some(r) => {
+                    fields(r, "execution.instrument.roll", &["days_before_expiry", "on"], &[])?;
+                    match (r.get("days_before_expiry"), r.get("on").and_then(Json::as_str)) {
+                        (Some(n), None) => Roll::DaysBefore(whole(Some(n), "execution.instrument.roll.days_before_expiry", 0)?),
+                        (None, Some("volume")) => Roll::Volume,
+                        (None, Some("open_interest")) => Roll::OpenInterest,
+                        _ => return Err(inv("execution.instrument.roll must be none, days_before_expiry or on volume/open_interest")),
+                    }
+                }
+            };
+            let adjust = match v.get("adjust").and_then(Json::as_str) {
+                None | Some("forward") => Adjust::Forward, Some("ratio") => Adjust::Ratio, Some("none") => Adjust::None,
+                Some("back") => return Err(LabError::Unsupported("back adjustment rewrites earlier prices (lookahead); use forward, ratio or none".into())),
+                _ => return Err(inv("execution.instrument.adjust must be forward, ratio or none")),
+            };
+            Ok(Some(Futures { roll, adjust }))
+        }
+        _ => Err(inv("execution.instrument.kind must be cash or futures")),
+    }
+}
+fn distances(x: &Exec) -> Vec<Dist> {
+    [x.limit,x.stop_loss,x.target,x.trailing,x.stop,x.trail_activate].into_iter().flatten()
+        .chain(x.breakeven.iter().flat_map(|b|[Some(b.0),b.1]).flatten())
+        .chain(x.take_profits.iter().map(|t|t.0)).collect()
+}
+
 fn money_costs(v: &Json) -> Result<MoneyCosts, LabError> {
     fields(v, "execution.costs", &["commission", "slippage", "taxes", "borrow_pct_year"], &[])?;
     let num = |v: Option<&Json>, at: &str, hi: f64| -> Result<f64, LabError> {
@@ -424,7 +472,7 @@ fn scale_in(v: &Json, at: &str) -> Result<ScaleIn, LabError> {
 /// In the same units the moved stop (`plus`) must stay short of the level that arms it (`after`); `at` is the breakeven path.
 fn breakeven_order(after: Dist, plus: Option<Dist>, at: &str) -> Result<(), String> {
     let pair = match (after, plus) {
-        (Dist::Pct(a), Some(Dist::Pct(p))) | (Dist::Points(a), Some(Dist::Points(p))) => Some((a, p)),
+        (Dist::Pct(a), Some(Dist::Pct(p))) | (Dist::Points(a), Some(Dist::Points(p))) | (Dist::Ticks(a), Some(Dist::Ticks(p))) => Some((a, p)),
         (Dist::Atr { mult: a, length: n }, Some(Dist::Atr { mult: p, length: m })) if n == m => Some((a, p)),
         _ => None,
     };
@@ -453,10 +501,15 @@ fn fill(v: &Json, at: &str) -> Result<Fill, LabError> {
 }
 /// `{"pct": p}` or `{"atr": m, "atr_length": n}` (n defaults to 14).
 fn dist(v: &Json, at: &str, hi: f64) -> Result<Dist, LabError> {
-    fields(v, at, &["pct", "atr", "atr_length", "points"], &[])?;
+    fields(v, at, &["pct", "atr", "atr_length", "points", "ticks"], &[])?;
     // an entry order may sit at the signal close (0); exits need a positive distance
     let order = at.ends_with("entry.limit") || at.ends_with("entry.stop");
     let min = if order { "from 0" } else { "above 0" };
+    if let Some(t) = v.get("ticks") {
+        if ["pct","atr","atr_length","points"].iter().any(|k|v.get(k).is_some()) { return Err(inv(format!("{at} needs one distance unit"))); }
+        return t.as_f64().filter(|n|n.is_finite() && n.fract()==0. && *n<=MAX_TICKS && (*n>0. || (*n==0. && order))).map(Dist::Ticks)
+            .ok_or_else(||inv(format!("{at}.ticks must be a whole number {min} and at most {MAX_TICKS}")));
+    }
     match (v.get("pct"), v.get("atr"), v.get("points")) {
         (Some(p), None, None) if v.get("atr_length").is_none() => {
             p.as_f64().filter(|p| *p <= hi && (*p > 0. || (*p == 0. && order))).map(Dist::Pct)
@@ -769,9 +822,9 @@ fn target(spec: &Spec, path: &str) -> Result<Target, String> {
     if let Some((slot, at, field, _)) = slot_at(rest) {
         let exec = exec_of(spec, path).ok_or("the spec has no short_side")?;
         return match (exec.slot(slot), field.as_str()) {
-            (Some(Dist::Pct(_)), "pct") | (Some(Dist::Atr { .. }), "atr") | (Some(Dist::Points(_)), "points") => Ok(Target { path: path.into(), slot: Some(slot) }),
+            (Some(Dist::Pct(_)), "pct") | (Some(Dist::Atr { .. }), "atr") | (Some(Dist::Points(_)), "points") | (Some(Dist::Ticks(_)), "ticks") => Ok(Target { path: path.into(), slot: Some(slot) }),
             (None, _) => Err(format!("the spec has no {at}")),
-            (Some(d), _) => Err(format!("{at} is set by {}; optimize that field", match d { Dist::Pct(_) => "pct", Dist::Atr { .. } => "atr", Dist::Points(_) => "points" })),
+            (Some(d), _) => Err(format!("{at} is set by {}; optimize that field", match d { Dist::Pct(_) => "pct", Dist::Atr { .. } => "atr", Dist::Points(_) => "points", Dist::Ticks(_) => "ticks" })),
         };
     }
     if !["entry.all[", "exit.any[", "entry.limit.at.", "entry.stop.at.", "entry.scale_in.", "execution.sizing."].iter().any(|p| rest.starts_with(p)) {
@@ -887,7 +940,7 @@ fn consistent_operand(o: &Operand) -> Result<(), String> {
 
 fn set(s: &mut Spec, t: &Target, x: f64) {
     if let Some(slot) = t.slot {
-        match exec_mut(s, &t.path).and_then(|e| e.slot_mut(slot)) { Some(Dist::Pct(p) | Dist::Points(p)) => *p = x, Some(Dist::Atr { mult, .. }) => *mult = x, None => {} }
+        match exec_mut(s, &t.path).and_then(|e| e.slot_mut(slot)) { Some(Dist::Pct(p) | Dist::Points(p) | Dist::Ticks(p)) => *p = x, Some(Dist::Atr { mult, .. }) => *mult = x, None => {} }
         return;
     }
     walk(s, &mut |p, k| if p == t.path {
@@ -905,6 +958,7 @@ fn check_value(spec: &Spec, t: &Target, x: f64) -> Result<(), String> {
         let order = matches!(slot, Slot::Limit | Slot::Stop);
         let ok = match exec_of(spec, &t.path).and_then(|e| e.slot(slot)) {
             Some(Dist::Pct(_)) => x <= hi && (x > 0. || (x == 0. && order)),
+            Some(Dist::Ticks(_)) => x.fract() == 0. && x <= MAX_TICKS && (x > 0. || (x == 0. && order)),
             Some(Dist::Points(_)) => x <= MAX_POINTS && (x > 0. || (x == 0. && order)),
             _ => x > 0. && x <= MAX_ATR_MULT,
         };
@@ -945,7 +999,7 @@ pub fn series_ids(spec: &Spec) -> Vec<String> {
 }
 /// The spec's own value at an optimize target (the "base" setting the ranking prefers on ties).
 pub fn current(spec: &Spec, t: &Target) -> f64 {
-    if let Some(slot) = t.slot { return match exec_of(spec, &t.path).and_then(|e| e.slot(slot)) { Some(Dist::Pct(p) | Dist::Points(p)) => p, Some(Dist::Atr { mult, .. }) => mult, None => f64::NAN }; }
+    if let Some(slot) = t.slot { return match exec_of(spec, &t.path).and_then(|e| e.slot(slot)) { Some(Dist::Pct(p) | Dist::Points(p) | Dist::Ticks(p)) => p, Some(Dist::Atr { mult, .. }) => mult, None => f64::NAN }; }
     let mut v = f64::NAN;
     walk(&mut spec.clone(), &mut |p, k| if p == t.path {
         match k {

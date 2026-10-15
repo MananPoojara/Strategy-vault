@@ -263,9 +263,14 @@ fn adaptations<'a>(mut ids: impl Iterator<Item = &'a str>) -> String {
     if !ids.any(|id| super::periods::USES_SESSION_DATES.contains(&id)) { return String::new(); }
     format!(",\"adaptations\":[\"{}\"]", esc(super::periods::SESSION_DATES_NOTE))
 }
+fn futures_refusal(spec: &Spec, q: &Query) -> Result<(),LabError> {
+    if spec.exec.futures.is_some() { return Err(LabError::NeedsData(format!("futures contract data for {} is not admitted: lot, tick, point value, margin, expiry, scheduled calendar and contract OHLC are required; a cash index or ETF is never used as a stand-in",q.get("ticker").map_or("the instrument",String::as_str)))); }
+    Ok(())
+}
 pub fn run_json(st: &State, q: &Query) -> Result<String, LabError> {
     if q.get("split").is_some_and(|s| !s.is_empty()) { return Err(LabError::Invalid("split applies to /api/lab/optimize only".into())); }
     let spec = spec_of(q)?;
+    futures_refusal(&spec,q)?;
     let origin = origin_of(&spec)?;
     let q = &with_spec_cost(q, &spec)?;
     let selected = select(st, q)?;
@@ -314,6 +319,7 @@ pub fn run_json(st: &State, q: &Query) -> Result<String, LabError> {
 pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> {
     let t0 = std::time::Instant::now();
     let spec = spec_of(q)?;
+    futures_refusal(&spec,q)?;
     if spec.optimize.is_empty() { return Err(LabError::Invalid("optimize lists no parameter ranges".into())); }
     let origin = origin_of(&spec)?;
     let q = &with_spec_cost(q, &spec)?;
@@ -969,10 +975,10 @@ mod tests {
         assert!(j.contains("\"legs\":[[\"") && j.contains("\"weight\":") && model(&j).contains("closed-trade drawdown reached 1%"), "{}", model(&j));
         // futures: no contract data is admitted, on any ticker, for run and optimize
         let fut = SPEC.replace(r#""v":1,"#, r#""v":1,"execution":{"instrument":{"kind":"futures"}},"#);
-        for tk in ["SPX", "SPY"] {
+        for tk in ["SPX", "SPY", "NIFTY 50", "CRYPTO:BTCUSD", "NOPE"] {
             let st = state(400, tk, false);
             for e in [run_json(&st, &q(&[("ticker", tk), ("spec", &fut)])).unwrap_err(), optimize_json(&st, &q(&[("ticker", tk), ("spec", &fut)])).unwrap_err()] {
-                assert!(e.status() == "needs_data" && e.message().contains("never used as a stand-in"), "{e:?}");
+                assert!(e.status() == "needs_data" && e.message().contains(tk) && e.message().contains("never used as a stand-in"), "{e:?}");
             }
         }
     }

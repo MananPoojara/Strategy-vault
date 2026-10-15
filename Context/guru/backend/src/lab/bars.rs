@@ -12,6 +12,8 @@ pub struct Bars {
     pub end: Vec<usize>,
     /// Daily breadth of the market (from extra_data `<MARKET>_ADV_DEC.csv`); None on W/M bars and markets without it.
     pub breadth: Option<Breadth>,
+    /// Published contract metadata, aligned daily; absent for cash bars.
+    pub expiry: Option<Vec<String>>, pub expiry_sessions: Option<Vec<f64>>,
 }
 
 /// Market breadth of the instrument's market, aligned to its daily bars (NaN = no value that day).
@@ -33,7 +35,7 @@ impl Bars {
             close: rows.iter().map(|r| r.close).collect(),
             volume,
             end: (0..rows.len()).collect(),
-            breadth: None,
+            breadth: None, expiry: None, expiry_sessions: None,
         }
     }
     /// Daily bars plus the market's advance/decline series when the engine loaded `<MARKET>_ADV_DEC.csv`.

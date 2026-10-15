@@ -486,7 +486,7 @@ Every run and optimize response gains
 `execution.instrument.kind: "futures"` switches on the model in a new module, `lab/futures.rs`:
 
 - **Contract:** symbol, expiry date, lot size (units per lot), tick size, point value (currency per point per
-  unit; 1 for NSE), daily bars (OHLC, volume, OI) and initial margin %. The chain is a list ordered by expiry.
+  unit; 1 for NSE), daily bars (OHLC, volume, OI), initial margin %, and a published scheduled-session calendar independent of observed price rows. The chain is a list ordered by expiry.
   Lot sizes are **per contract**, because NSE contracts of one underlying can carry different lot sizes at the
   same time.
 - **Roll rule** (`instrument.roll`):
@@ -494,7 +494,7 @@ Every run and optimize response gains
   - `{"on":"volume"}` / `{"on":"open_interest"}` rolls at the first close where the next contract's volume
     (OI) exceeds the front's.
   - `"none"` means no roll: an open position is force-closed at the expiry close (reason `expiry`).
-  - The default is `{"days_before_expiry":1}`.
+  - The default is `{"days_before_expiry":1}`. Dates come from the scheduled calendar, never the last observed bar. Missing required calendars, prices, volume or OI answer `needs_data`; malformed lengths, dates, terms or OHLC are refused.
 - **Continuous series for signals** (`instrument.adjust`):
   - `forward` (default): additive. Each later contract is shifted onto the earlier series by old close − new
     close on the roll day. Earlier bars never change when a later roll arrives, so the series is causal.
@@ -509,17 +509,19 @@ Every run and optimize response gains
   that bar: actual = (continuous − offset) ÷ factor for that bar's segment. A roll inside a trade splits it into two trades: the old contract is closed at the roll-day
   close and the new contract opened at the same close (`entry_kind: roll`). Both legs pay costs, so roll costs
   are explicit.
-- **Orders** are rounded to the contract tick (nearest). `ticks` distances use the contract tick.
-- **Sizing.** `units` is in **lots**. `value` and `pct_equity` are sized on initial margin; `risk_pct` uses
-  stop points × lot × point value. Every size is rounded down to whole lots.
+- **Orders** (including stored protective, trailing and breakeven levels) round to the current contract tick in actual-price coordinates, then map to the signal series. `ticks` distances use that contract tick. Percent distances reference the actual price, not the additive adjustment.
+- **Sizing.** `units` is in **lots**. `value` and `pct_equity` are sized on initial margin. `risk_pct` is explicitly refused until actual stop distance × lot × point value is integrated with the money ledger. Every size is rounded down to whole lots. A roll preserves the prior actual unit quantity, rounded down to the incoming lot and affordable margin; allocation weights are preserved, never reset to one or compounded anew per piece.
 - **Margin and mark-to-market.** Equity is marked at every close, which is equivalent to daily settlement
   without interest. Initial margin must be ≤ equity at entry, otherwise the quantity shrinks. If equity at a
-  close is below the required margin (maintenance = initial, declared), the position is liquidated at the next
+  close (using the piece contract's actual close, raw entry and paid entry costs, including on an incoming roll day) is below the required margin (maintenance = initial, declared), the position is liquidated at the next
   open (reason `margin_call`) and trading stops (`events`).
-- **Expiry operands** (§5.2) come from the chain.
+- **Expiry operands** (§5.2) use scheduled exchange sessions remaining (including declared exchange holidays), not assumed weekdays; outside daily futures bars they answer `needs_data`.
 - **Limits for now:**
   - futures runs do not combine with scale-in or take-profits;
-  - roll `none` force-closes at the expiry close, so it needs `exit_fill: close`;
+  - roll `none` force-closes at expiry regardless of rule `min_bars` or fill choice, clears pending/resting entries before expiry-day fills, and cannot reopen on that day. It emits no roll records. The final contract also closes at expiry;
+  - ratio-adjusted price orders/exits are refused pending state re-basing; ratio market/rule strategies remain supported;
+  - leveraged risk sizing, pauses, cooldown and max-trades gates are refused pending integration with actual booked fills/P&L; unit returns never claim to be money-aware futures risk;
+  - resting limit reversals are refused until their original order classification survives into the money ledger; legacy `cost_bps` must be replaced with declared `costs`;
   - `ticks` distances and tick slippage are futures-only.
 - **Real requests.** No futures contract data is admitted (§3.1). Any request with `kind: futures` answers
   400 `needs_data`: "futures contract data for <ticker> (contract chain with expiries, lot sizes and tick size)

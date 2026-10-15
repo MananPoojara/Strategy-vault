@@ -62,6 +62,7 @@ fn series_mode(fr: &Frames, cache: &mut Cache, s: &SeriesRef, mode: Expand) -> R
                     let o = Rc::new(catalogue::run(&def, b, &s.params).map_err(|e| match e.as_str() {
                         "needs volume" => LabError::NeedsData(format!("{}: needs volume, which is missing on some admitted bars of this instrument", def.name)),
                         "needs breadth" => LabError::NeedsData(format!("{}: needs market breadth (advances/declines) on daily bars; this market or timeframe has none", def.name)),
+                        "needs contract data" => LabError::NeedsData(format!("{}: needs admitted futures contract metadata",def.name)),
                         "needs intraday data" => LabError::NeedsData(format!("{}: needs intraday data", def.name)),
                         _ => LabError::Invalid(format!("{}: {e}", def.id)),
                     })?);
@@ -115,15 +116,27 @@ impl RCond {
 pub struct Compiled {
     pub entry: Vec<RCond>, pub exit: Vec<RCond>, pub exec: Exec, pub atr: BTreeMap<usize, Vec<f64>>, pub other: Option<Box<Compiled>>, pub cost: f64,
     pub limit_at: Option<Vec<f64>>, pub stop_at: Option<Vec<f64>>,
+    /// (actual tick, forward offset, ratio factor) per execution bar; empty for cash.
+    pub grid: Vec<(f64,f64,f64)>, pub expiry_bar: Vec<bool>,
 }
 impl Compiled {
     /// Long, market orders at the next open, no price exits (the v1 defaults).
-    pub fn new(entry: Vec<RCond>, exit: Vec<RCond>) -> Compiled { Compiled { entry, exit, exec: Exec::default(), atr: BTreeMap::new(), other: None, cost: 0., limit_at: None, stop_at: None } }
+    pub fn new(entry: Vec<RCond>, exit: Vec<RCond>) -> Compiled { Compiled { entry, exit, exec: Exec::default(), atr: BTreeMap::new(), other: None, cost: 0., limit_at: None, stop_at: None, grid: vec![], expiry_bar: vec![] } }
     pub fn has_order(&self) -> bool { self.exec.has_order() }
     /// Price distance of `d` from `px`, using ATR at bar `k` (a bar whose close is already known). NaN while ATR warms up.
     pub fn dist(&self, d: Dist, px: f64, k: usize) -> f64 {
-        match d { Dist::Pct(p) => px * p / 100., Dist::Atr { mult, length } => self.atr.get(&length).map_or(f64::NAN, |a| mult * a[k]), Dist::Points(p) => p }
+        self.dist_at(d,px,k,k)
     }
+    pub fn dist_at(&self, d: Dist, px: f64, source: usize, at: usize) -> f64 {
+        let (_,off,factor)=self.grid.get(at).copied().unwrap_or((0.,0.,1.));
+        match d { Dist::Pct(p) => (px-off)*p/100., Dist::Atr { mult,length } => self.atr.get(&length).map_or(f64::NAN,|a|mult*a[source]), Dist::Points(p) => p*factor,
+            Dist::Ticks(t) => self.grid.get(at).map_or(f64::NAN,|g|t*g.0*g.2) }
+
+    }
+    pub fn round_at(&self, i: usize, px: f64) -> f64 {
+        self.grid.get(i).map_or(px, |&(tick,off,factor)| (((px-off)/factor/tick).round()*tick)*factor+off)
+    }
+
 }
 
 fn val(o: &Operand, fr: &Frames, cache: &mut Cache) -> Result<Val, LabError> {
@@ -412,7 +425,7 @@ mod tests {
     }
 
     #[test] fn every_computed_indicator_is_reachable_from_a_rule() {
-        for d in all().iter().filter(|d| d.compute.is_some()) {
+        for d in all().iter().filter(|d| d.compute.is_some() && !d.needs.derivatives) {
             let out = d.outputs[d.outputs.len() - 1];
             if let Err(e) = crate::lab::testdata::compiles(d.id, out) { panic!("{}.{out}: {} {}", d.id, e.status(), e.message()); }
         }
@@ -453,7 +466,7 @@ mod tests {
         for d in all().iter().filter(|d| d.compute.is_some() && !crate::lab::periods::USES_SESSION_DATES.contains(&d.id)) {
             for tf in [Tf::D, Tf::W, Tf::M, Tf::Q, Tf::Y, Tf::Days(5)] {
                 let r = sref(d.id, tf, d.outputs.len() - 1, 0);
-                if d.needs.breadth && tf != Tf::D { assert_eq!(series(&full, &mut Cache::new(), &r).unwrap_err().status(), "needs_data"); continue; }
+                if (d.needs.breadth && tf != Tf::D) || d.needs.derivatives { assert_eq!(series(&full, &mut Cache::new(), &r).unwrap_err().status(), "needs_data"); continue; }
                 let want = series(&full, &mut Cache::new(), &r).unwrap();
                 for cut in (60..400usize).step_by(7) {
                     let pre = crate::lab::testdata::cut(&full_bars, cut);
@@ -498,7 +511,7 @@ mod tests {
                     let params: Params = d.params.iter().map(|p| (p.key.to_string(), pick(p))).collect();
                     for tf in [Tf::D, Tf::W, Tf::M, Tf::Q, Tf::Y, Tf::Days(5)] {
                         let r = SeriesRef { id: d.id.into(), params: params.clone(), tf, out: 0, offset: 0 };
-                        if d.needs.breadth && tf != Tf::D { assert_eq!(series(&fr, &mut Cache::new(), &r).unwrap_err().status(), "needs_data"); continue; }
+                        if (d.needs.breadth && tf != Tf::D) || d.needs.derivatives { assert_eq!(series(&fr, &mut Cache::new(), &r).unwrap_err().status(), "needs_data"); continue; }
                         assert_eq!(series(&fr, &mut Cache::new(), &r).unwrap().len(), fr.d.len(), "{} {tf:?}", d.id);
                     }
                 }

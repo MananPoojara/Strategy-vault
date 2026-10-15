@@ -43,3 +43,5 @@ pub mod testdata;
 pub mod parity;
 #[cfg(test)]
 pub mod pinned;
+
+pub mod futures;

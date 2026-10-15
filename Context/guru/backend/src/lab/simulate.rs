@@ -26,7 +26,7 @@ struct Pos {
 impl Pos {
     /// Levels are fixed from the entry price and ATR at `sig`, the bar whose close produced the order.
     fn open(c: &Compiled, i: usize, px: f64, sig: usize, kind: &'static str, d: f64) -> Pos {
-        let lvl = |x: Option<Dist>, side: f64| x.map_or(f64::NAN, |x| px + side * d * c.dist(x, px, sig));
+        let lvl = |x: Option<Dist>, side: f64| x.map_or(f64::NAN, |x| c.round_at(i, px + side * d * c.dist_at(x, px, sig, i)));
         let x = &c.exec;
         let stop = lvl(x.stop_loss, -1.);
         // unit-mode size: a fraction of one unit (money mode re-sizes in lab/ledger.rs); 0 = cannot size (risk without a stop level)
@@ -38,7 +38,7 @@ impl Pos {
         let w = base * x.scale_in.as_ref().map_or(1., |s| s.legs[0]);
         Pos { e: i, px, kind, stop, target: lvl(x.target, 1.), best: px, limit_bar: kind == "limit", w, base, adds: vec![], last: (i, px),
               arm: lvl(x.trail_activate, 1.), be_after: lvl(x.breakeven.map(|b| b.0), 1.),
-              be: x.breakeven.map_or(f64::NAN, |b| b.1.map_or(px, |p| px + d * c.dist(p, px, sig))),
+              be: x.breakeven.map_or(f64::NAN, |b| b.1.map_or(px, |p| c.round_at(i, px + d * c.dist_at(p, px, sig, i)))),
               tps: x.take_profits.iter().map(|&(t, size)| (lvl(Some(t), 1.), size, false)).collect(), out: vec![] }
     }
     /// The trade, with the scale-out ledger when take-profits filled: pieces plus the final exit, exit_px their weighted average.
@@ -57,18 +57,19 @@ impl Pos {
     fn price_exit(&mut self, c: &Compiled, b: &Bars, i: usize, d: f64, rev: Option<(f64, bool)>) -> Option<Hit> {
         // Trailing and breakeven levels from the best price through the previous bar and ATR at the previous close: known before bar i opens.
         let armed = |at: f64| !at.is_nan() && d * (self.best - at) >= 0.;
-        let trail = c.exec.trailing.filter(|_| self.arm.is_nan() || armed(self.arm)).map_or(f64::NAN, |t| self.best - d * c.dist(t, self.best, i - 1));
-        let be = if armed(self.be_after) { self.be } else { f64::NAN };
+        let trail = c.exec.trailing.filter(|_| self.arm.is_nan() || armed(self.arm)).map_or(f64::NAN, |t| c.round_at(i, self.best - d * c.dist_at(t, self.best, i - 1, i)));
+        let be = if armed(self.be_after) { c.round_at(i,self.be) } else { f64::NAN };
         // the protective level is the tightest of stop-loss, trailing and breakeven (ties keep the earlier name)
-        let (stop, why) = [(self.stop, "exit.stop_loss"), (trail, "exit.trailing"), (be, "exit.breakeven")].into_iter()
+        let (stop, why) = [(c.round_at(i,self.stop), "exit.stop_loss"), (trail, "exit.trailing"), (be, "exit.breakeven")].into_iter()
             .filter(|(l, _)| !l.is_nan()).fold((f64::NAN, ""), |a, (l, w)| if a.0.is_nan() || d * (l - a.0) > 0. { (l, w) } else { a });
+        let target=c.round_at(i,self.target);
         let (o, adverse, favour) = (b.open[i], if d > 0. { b.low[i] } else { b.high[i] }, if d > 0. { b.high[i] } else { b.low[i] });
         // the path starts at the open: levels gapped through fill there (protective, adverse reversal, take-profits, target, limit reversal)
         if self.e < i {
             if d * (o - stop) <= 0. { return Some(Hit::Exit(o, format!("{why} (gap at the open)"))); }
             if rev.is_some_and(|(px, adv)| adv && px == o) { return Some(Hit::Reverse); }
             self.take(i, |l| d * (o - l) >= 0., Some(o));
-            if d * (o - self.target) >= 0. { return Some(Hit::Exit(o, "exit.target (gap at the open)".into())); }
+            if d * (o - target) >= 0. { return Some(Hit::Exit(o, "exit.target (gap at the open)".into())); }
             if rev.is_some_and(|(px, adv)| !adv && px == o) { return Some(Hit::Reverse); }
         }
         // On a limit-fill bar the high/low may precede the fill, so only adverse events are assumed reachable.
@@ -81,7 +82,7 @@ impl Pos {
         let mut fav: Vec<(f64, u8, usize)> = vec![];
         if favour_ok {
             fav.extend(self.tps.iter().enumerate().filter(|(_, t)| !t.2 && d * (favour - t.0) >= 0.).map(|(k, t)| (t.0, 2, k)));
-            if d * (favour - self.target) >= 0. { fav.push((self.target, 3, 0)); }
+            if d * (favour - target) >= 0. { fav.push((target, 3, 0)); }
             if let Some((px, false)) = rev { fav.push((px, 4, 0)); }
         }
         // inside each group the level a move from the open reaches first comes first, in both modes (ties by rank)
@@ -119,17 +120,19 @@ impl Order {
     /// Fill price, entry kind and whether the bar's favourable extreme may precede the fill (limit-type fills), or None.
     /// A long limit fills when the low reaches it (at the better of open and limit); a long stop when the high reaches it
     /// (at the worse of open and stop); a stop-limit fills only where daily bars prove it (spec §6.2). Shorts mirror.
-    fn fill(&self, b: &Bars, i: usize, d: f64) -> Option<(f64, &'static str, bool)> {
+    fn fill(&self, c: &Compiled, b: &Bars, i: usize, d: f64) -> Option<(f64, &'static str, bool)> {
+        let rounded=Order {limit:c.round_at(i,self.limit),stop:c.round_at(i,self.stop),..*self};
+        let this=&rounded;
         let (o, down, up) = (b.open[i], if d > 0. { b.low[i] } else { b.high[i] }, if d > 0. { b.high[i] } else { b.low[i] });
-        let reaches_limit = |p: f64| d * (p - self.limit) <= 0.;
-        let reaches_stop = |p: f64| d * (p - self.stop) >= 0.;
-        match (self.limit.is_nan(), self.stop.is_nan()) {
-            (false, true) => reaches_limit(down).then(|| (if d > 0. { o.min(self.limit) } else { o.max(self.limit) }, "limit", true)),
-            (true, false) => reaches_stop(up).then(|| (if d > 0. { o.max(self.stop) } else { o.min(self.stop) }, "stop", false)),
+        let reaches_limit = |p: f64| d * (p - this.limit) <= 0.;
+        let reaches_stop = |p: f64| d * (p - this.stop) >= 0.;
+        match (this.limit.is_nan(), this.stop.is_nan()) {
+            (false, true) => reaches_limit(down).then(|| (if d > 0. { o.min(this.limit) } else { o.max(this.limit) }, "limit", true)),
+            (true, false) => reaches_stop(up).then(|| (if d > 0. { o.max(this.stop) } else { o.min(this.stop) }, "stop", false)),
             (false, false) if reaches_stop(o) => {
-                if reaches_limit(o) { Some((o, "stop_limit", false)) } else if reaches_limit(down) { Some((self.limit, "stop_limit", true)) } else { None }
+                if reaches_limit(o) { Some((o, "stop_limit", false)) } else if reaches_limit(down) { Some((this.limit, "stop_limit", true)) } else { None }
             }
-            (false, false) => (reaches_stop(up) && reaches_limit(self.stop)).then_some((self.stop, "stop_limit", false)),
+            (false, false) => (reaches_stop(up) && reaches_limit(this.stop)).then_some((this.stop, "stop_limit", false)),
             (true, true) => None,
         }
     }
@@ -192,7 +195,7 @@ pub fn simulate_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<T
         let limit = side.limit_at.as_ref().map(|a| a[i]).or(side.exec.limit.map(|l| close - d * side.dist(l, close, i)));
         let stop = side.stop_at.as_ref().map(|a| a[i]).or(side.exec.stop.map(|st| close + d * side.dist(st, close, i)));
         (limit.map_or(true, f64::is_finite) && stop.map_or(true, f64::is_finite))
-            .then_some(Order { side: s, sig: i, limit: limit.unwrap_or(f64::NAN), stop: stop.unwrap_or(f64::NAN), until: i + side.exec.valid_bars })
+            .then_some(Order { side: s, sig: i, limit: side.round_at(i, limit.unwrap_or(f64::NAN)), stop: side.round_at(i, stop.unwrap_or(f64::NAN)), until: i + side.exec.valid_bars })
     };
     let mut trades = Vec::new();
     let mut pos: Option<(usize, Pos)> = None; // (side, position)
@@ -203,6 +206,8 @@ pub fn simulate_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<T
     // equity-level state from closed trades (spec §6.5): loss streak, compounded closed equity and its peak, pause, stop
     let (mut events, mut risk) = (Vec::new(), RiskState::new());
     for i in from..=to {
+        let expiry = c.expiry_bar.get(i).copied().unwrap_or(false);
+        if expiry { pending_entry = None; pending_add = None; orders = [None,None]; }
         let mut closed_at_open = false;
         if pending_exit.as_ref().is_some_and(|e| e.1 == i) {
             let (sig, _, why) = pending_exit.take().unwrap();
@@ -226,7 +231,7 @@ pub fn simulate_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<T
         if pos.is_none() {
             // resting orders while flat: one fill opens a position (the other side's order keeps resting); two fills on one
             // bar are ambiguous on daily bars and fill nothing
-            let filled: Vec<(Order, (f64, &'static str, bool))> = orders.iter().flatten().filter_map(|o| o.fill(b, i, dir(o.side)).map(|f| (*o, f))).collect();
+            let filled: Vec<(Order, (f64, &'static str, bool))> = orders.iter().flatten().filter_map(|o| o.fill(sides[o.side], b, i, dir(o.side)).map(|f| (*o, f))).collect();
             if let [(o, (px, kind, limit_bar))] = filled.as_slice() {
                 orders[o.side] = None;
                 let mut p = Pos::open(sides[o.side], i, *px, o.sig, kind, dir(o.side));
@@ -239,7 +244,7 @@ pub fn simulate_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<T
             let (s, d) = (*s, dir(*s));
             // the other side's resting order is a reversal order under `opposite: reverse` only; a limit fills on the
             // favourable side, a stop or stop-limit on the adverse side
-            let rev = orders[1 - s.min(1)].filter(|o| o.side != s && x.opposite == Opposite::Reverse).and_then(|o| o.fill(b, i, dir(o.side)).map(|f| (o, f)));
+            let rev = orders[1 - s.min(1)].filter(|o| o.side != s && x.opposite == Opposite::Reverse).and_then(|o| o.fill(sides[o.side], b, i, dir(o.side)).map(|f| (o, f)));
             match p.price_exit(sides[s], b, i, d, rev.map(|(_, (px, kind, _))| (px, kind != "limit"))) {
                 Some(Hit::Exit(px, why)) => {
                     trades.push(pos.take().unwrap().1.trade(i, px, why, i, d));
@@ -265,6 +270,10 @@ pub fn simulate_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<T
         }
         for o in orders.iter_mut() { if o.is_some_and(|o| i >= o.until) { *o = None; } }
         let last = i == to;
+        if expiry {
+            if let Some((s,p))=pos.take() {trades.push(p.trade(i,b.close[i],"expiry".into(),i,dir(s)));}
+            pending_exit=None;
+        }
         if let (Some((s, p)), None) = (&pos, &pending_exit) { // a pending (delayed) exit is not re-placed
             let s = *s;
             // rule exits count from min_bars after the fill (price exits stay active)
@@ -282,6 +291,7 @@ pub fn simulate_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<T
         }
         risk.record(c, b, &trades, &mut events);
         if last { break; } // final-bar realized exits still update risk; no new signal is taken
+        if expiry { continue; } // expiry cannot reopen or retain a future entry
         // New positions are gated by trades already closed on this bar; closing is always allowed.
         let risk_block = risk.paused(i);
         let blocked = risk.blocked(c, b, &trades, &pos, i);

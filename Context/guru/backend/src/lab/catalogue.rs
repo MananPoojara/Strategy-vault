@@ -39,7 +39,7 @@ pub const fn real(key: &'static str, label: &'static str, default: f64, min: f64
     ParamSpec { key, label, default, min, max, step, integer: false }
 }
 pub fn all() -> Vec<IndicatorDef> {
-    [super::ma::DEFS, super::momentum::DEFS, super::trend::DEFS, super::volatility::DEFS, super::volume::DEFS, super::price::DEFS, super::listed::DEFS, super::breadth::DEFS, super::ma2::DEFS, super::bands::DEFS, super::stats::DEFS, super::osc2::DEFS, super::vol2::DEFS, super::stops::DEFS, super::volume2::DEFS, super::periods::DEFS, super::patterns::DEFS, super::candles::DEFS, super::ratings::DEFS].concat()
+    [super::ma::DEFS, super::momentum::DEFS, super::trend::DEFS, super::volatility::DEFS, super::volume::DEFS, super::price::DEFS, super::listed::DEFS, super::breadth::DEFS, super::ma2::DEFS, super::bands::DEFS, super::stats::DEFS, super::osc2::DEFS, super::vol2::DEFS, super::stops::DEFS, super::volume2::DEFS, super::periods::DEFS, super::patterns::DEFS, super::candles::DEFS, super::ratings::DEFS, super::futures::DEFS].concat()
 }
 pub fn get(id: &str) -> Option<IndicatorDef> { all().into_iter().find(|d| d.id == id) }
 pub fn resolve_params(def: &IndicatorDef, given: &Params) -> Result<Params, String> {
@@ -59,6 +59,7 @@ pub fn run(def: &IndicatorDef, bars: &Bars, given: &Params) -> Output {
     let params = resolve_params(def, given)?;
     if def.needs.intraday { return Err("needs intraday data".into()); }
     if def.needs.volume && bars.volume.is_none() { return Err("needs volume".into()); }
+    if def.needs.derivatives && def.compute.is_some() && bars.expiry.is_none() { return Err("needs contract data".into()); }
     if def.needs.breadth && bars.breadth.is_none() { return Err("needs breadth".into()); }
     let f = def.compute.ok_or_else(|| if def.note.is_empty() { "computed by a later batch".to_string() } else { def.note.to_string() })?;
     f(bars, &params)
@@ -71,7 +72,7 @@ mod tests {
     use super::*;
     use crate::lab::testdata::{close_eq, walk};
     /// Breadth indicators need market breadth on the bars; Task 2 tests them with testdata::with_breadth.
-    fn computable(d: &IndicatorDef) -> bool { d.compute.is_some() && !d.needs.breadth }
+    fn computable(d: &IndicatorDef) -> bool { d.compute.is_some() && !d.needs.breadth && !d.needs.derivatives }
     #[test] fn listed_entries_carry_a_note() {
         for d in all() {
             if d.compute.is_some() { assert!(d.note.is_empty(), "{}: computed entries have no note", d.id); continue; }
@@ -145,14 +146,14 @@ mod tests {
     }
     #[test] fn catalogue_matches_the_phase6_master_list() {
         let defs = all();
-        assert_eq!(defs.len(), 301, "Phase 6 master list: 66 Batch A + 233 new; Phase 7: session, sessions_left");
-        assert_eq!(defs.iter().filter(|d| d.compute.is_some()).count(), 185);
+        assert_eq!(defs.len(), 302, "Phase 6 master list: 66 Batch A + 233 new; Phase 7: session, sessions_left, expiry");
+        assert_eq!(defs.iter().filter(|d| d.compute.is_some()).count(), 186);
         assert_eq!(defs.iter().filter(|d| d.compute.is_none()).count(), 116);
         let mut c = std::collections::BTreeMap::new();
         for (_, tv, ab) in crate::lab::sources::SOURCES {
             *c.entry(match (tv.is_empty(), ab.is_empty()) { (false, false) => "both", (false, true) => "tv", (true, false) => "ab", _ => "lab" }).or_insert(0) += 1;
         }
-        assert_eq!((c["tv"], c["ab"], c["both"], c["lab"]), (234, 25, 41, 1));
+        assert_eq!((c["tv"], c["ab"], c["both"], c["lab"]), (234, 26, 41, 1));
     }
     #[test] fn volume_indicators_refuse_without_volume() {
         let bars = walk(300, 3, false);
