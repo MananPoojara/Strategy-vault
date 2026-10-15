@@ -647,20 +647,18 @@ exit, needs_data on real requests).
 
 ### 10.3 Documented-example fixtures (reproduced exactly)
 
-Each fixture writes the published rules as a lab spec, runs it on a crafted OHLC fixture, and checks the trade
-list against expected values computed by hand from the **platform's documented semantics**:
+Each fixture writes a documented pattern as a lab spec, runs it on crafted OHLC, and checks expected trades computed by hand under declared lab semantics. These are not exported platform parity fixtures. E1 deliberately uses SMA(3) instead of the guide's EMA(45), and E3 declares bars_held >= 5 with close entry/exit fills:
 
 | # | Source | Rules | Lab features |
 |---|---|---|---|
 | E1 | AmiBroker guide, Backtesting ("`Short = Sell; Cover = Buy;`" stop-and-reverse), https://www.amibroker.com/guide/h_backtest.html, with `SetTradeDelays(1,1,1,1)` and `BuyPrice = Open` | MA cross stop-and-reverse | both, reverse, next_open |
 | E2 | AmiBroker KB "Handling limit orders in the backtester", https://www.amibroker.com/kb/2014/11/26/handling-limit-orders-in-the-backtester/ | `Buy = cond AND L < limit; BuyPrice = Min(O, limit)` | limit, gap at open |
 | E3 | AmiBroker `ApplyStop` (https://www.amibroker.com/guide/afl/applystop.html): `stopTypeNBar` with `stopModeBars` 5, and `stopTypeLoss` with `stopModePercent` and ExitAtStop 1 | N-bar exit, percent stop, gap through stop at open | bars_held, stop_loss |
-| E4 | TradingView built-in "Channel BreakOut Strategy" | stop entries at highest(high,5) + tick / lowest(low,5) − tick, reversing | both, always in, stop `at`, two resting orders, reversal orders |
-| E5 | TradingView built-in "Consecutive Up/Down Strategy" | 3 rising closes → long, 3 falling closes → short | `at_least` / `count`, reverse at next open |
+| E4 | TradingView official "Channel BreakOut Strategy", https://www.tradingview.com/support/solutions/43000599828-channel-breakout-strategy/ | stop entries at highest(high,5) + tick / lowest(low,5) − tick, reversing | both, always in, stop `at`, two resting orders, reversal orders |
+| E5 | TradingView official "Consecutive Up/Down Strategy", https://www.tradingview.com/support/solutions/43000599836-consecutive-up-down-strategy/ | 3 rising closes → long, 3 falling closes → short | strict rising/falling, reverse at next open |
 | E6 | Pine User Manual, Strategies, `strategy.exit` with `profit` / `loss` in ticks and `trail_points` / `trail_offset`, https://www.tradingview.com/pine-script-docs/concepts/strategies/ | bracket and trailing on a futures fixture | ticks, trailing activate, ohlc_path |
 
-The Pine sources of E4 and E5 are TradingView built-ins whose code is visible in the Pine editor. The plan
-quotes them from memory, and the implementer must compare the quote with the editor text before committing.
+The official E4 and E5 pages include their Pine sources, checked 2026-10-15. E4 uses the close[length] long guard, highest high / lowest low bands plus/minus one tick (length 5); E5 uses consecutive strict up/down counts of 3. No Pine editor or platform trade export was used.
 Fixture bars are chosen so that no bar is ambiguous between the two intrabar modes, except where the test
 exercises exactly that difference (E6 runs both modes).
 

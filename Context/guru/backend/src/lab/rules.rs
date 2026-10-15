@@ -214,12 +214,12 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
     };
     let origin = root.get("origin").map(origin).transpose()?;
     let mut budget = Budget::default();
-    let (entry, exit) = side(root.get("entry"), root.get("exit"), "", &mut exec, &mut budget)?;
+    let (entry, exit) = side(root.get("entry"), root.get("exit"), "", both, &mut exec, &mut budget)?;
     let mut short_side = match (both, root.get("short_side")) {
         (true, Some(s)) => {
             fields(s, "short_side", &["entry", "exit"], &[])?;
             let mut x = Exec { short: true, ..Exec::default() };
-            let (entry, exit) = side(s.get("entry"), s.get("exit"), "short_side.", &mut x, &mut budget)?;
+            let (entry, exit) = side(s.get("entry"), s.get("exit"), "short_side.", true, &mut x, &mut budget)?;
             Some(Box::new(Side { entry, exit, exec: x }))
         }
         (true, None) => return Err(inv("direction \"both\" needs short_side with the short entry and exit rules")),
@@ -314,6 +314,11 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
     if let Some(s) = short_side.as_mut() {
         (s.exec.fill, s.exec.exit_fill, s.exec.opposite, s.exec.delay, s.exec.edge, s.exec.ohlc_path) = (exec.fill, exec.exit_fill, exec.opposite, exec.delay, exec.edge, exec.ohlc_path);
     }
+    // An exitless side relies on the opposite entry to reverse its position.
+    let exitless = |x: &Exec, e: &[Node]| e.is_empty() && x.stop_loss.is_none() && x.target.is_none() && x.trailing.is_none() && x.breakeven.is_none();
+    if both && exec.opposite != Opposite::Reverse && (exitless(&exec,&exit) || short_side.as_ref().is_some_and(|s|exitless(&s.exec,&s.exit))) {
+        return Err(inv("a side without exit rules (always in) needs execution.opposite \"reverse\""));
+    }
     let execs: Vec<&Exec> = std::iter::once(&exec).chain(short_side.as_ref().map(|s| &s.exec)).collect();
     if exec.futures.is_none() && execs.iter().any(|x| distances(x).iter().any(|d| matches!(d, Dist::Ticks(_)))) {
         return Err(inv("ticks need a futures contract's tick size (execution.instrument kind futures)"));
@@ -327,7 +332,7 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
 }
 
 /// One side's rule lists and price orders; `pre` is "" (the long side, or the only side) or "short_side.".
-fn side(entry: Option<&Json>, exit: Option<&Json>, pre: &str, exec: &mut Exec, b: &mut Budget) -> Result<(Vec<Node>, Vec<Node>), LabError> {
+fn side(entry: Option<&Json>, exit: Option<&Json>, pre: &str, both: bool, exec: &mut Exec, b: &mut Budget) -> Result<(Vec<Node>, Vec<Node>), LabError> {
     let entry_obj = entry.ok_or_else(|| inv(format!("{pre}entry is required")))?;
     fields(entry_obj, &format!("{pre}entry"), &["all", "limit", "stop", "valid_bars", "scale_in"], &[])?;
     if let Some(v) = entry_obj.get("scale_in") { exec.scale_in = Some(scale_in(v, &format!("{pre}entry.scale_in"))?); }
@@ -380,7 +385,7 @@ fn side(entry: Option<&Json>, exit: Option<&Json>, pre: &str, exec: &mut Exec, b
     }
     let price_exit = exec.stop_loss.is_some() || exec.target.is_some() || exec.trailing.is_some() || exec.breakeven.is_some();
     let entry = conds(entry_obj.get("all"), &format!("{pre}entry.all"), false, false, b)?;
-    let exit = conds(exit_obj.get("any"), &format!("{pre}exit.any"), true, price_exit, b)?;
+    let exit = conds(exit_obj.get("any"), &format!("{pre}exit.any"), true, price_exit || both, b)?;
     if entry.len() + exit.len() > MAX_CONDITIONS {
         return Err(inv(format!("{}{} conditions; the limit is {MAX_CONDITIONS}", if pre.is_empty() { "" } else { "short_side: " }, entry.len() + exit.len())));
     }
@@ -1543,4 +1548,17 @@ mod tests {
         assert!(err(&with(r#""cost_bps": 12"#, r#""cost_bps": 12, "capital": 5000"#)).message().contains("remove execution.cost_bps"));
         assert!(err(&with(r#""cost_bps": 12"#, r#""cost_bps": 12, "costs": {}"#)).message().contains("applies to money mode"));
     }
+    #[test] fn always_in_specs_need_reversal() {
+        let always = r#"{"v":1,"direction":"both","entry":{"all":[{"lhs":{"s":"close"},"op":"crosses_above","rhs":{"s":"sma","p":{"length":3}}}]},"exit":{"any":[]},"short_side":{"entry":{"all":[{"lhs":{"s":"close"},"op":"crosses_below","rhs":{"s":"sma","p":{"length":3}}}]},"exit":{"any":[]}}}"#;
+        assert!(parse_spec(always).unwrap().exit.is_empty());
+        for opposite in ["exit","ignore"] {
+            let text=always.replacen("\"v\":1,", &format!("\"v\":1,\"execution\":{{\"opposite\":\"{opposite}\"}},"),1);
+            assert!(err(&text).message().contains("needs execution.opposite \"reverse\""));
+        }
+        let protected = always.replace("\"any\":[]", "\"any\":[],\"stop_loss\":{\"pct\":2}");
+        assert!(parse_spec(&protected.replacen("\"v\":1,", "\"v\":1,\"execution\":{\"opposite\":\"ignore\"},",1)).is_ok(), "protective exits let both sides stand alone");
+        let single=r#"{"v":1,"entry":{"all":[{"lhs":{"s":"close"},"op":">","rhs":{"value":1}}]},"exit":{"any":[]}}"#;
+        assert!(err(single).message().contains("needs at least one condition"));
+    }
+
 }

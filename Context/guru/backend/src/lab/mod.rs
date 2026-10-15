@@ -45,3 +45,6 @@ pub mod parity;
 pub mod pinned;
 
 pub mod futures;
+
+#[cfg(test)]
+pub mod examples;
