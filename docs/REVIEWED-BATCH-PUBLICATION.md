@@ -33,6 +33,16 @@ has authorized correct strategy work and unattended deployment in this
 session; the explicit flag records the chosen action in the reviewed queue.
 The script never changes global approvals or publishes credentials.
 
+Supporting source changes are bounded separately from strategy modules.
+`main.rs` may change only inside its final `#[cfg(test)] mod tests` module;
+its production prefix must remain byte-identical. `gate.rs` may update records
+only for the exact independently approved method IDs and add tests. Existing
+records cannot disappear; its struct and production lookup helpers must stay
+identical. Changes to production API handling or shared calculations require
+their own implementation and review, rather than entering through a strategy
+metadata publication. These checks inspect the actual before/after Git source,
+in addition to the review's full file hashes.
+
 ## Independent review contract
 
 The private review is a JSON object with these required fields:
