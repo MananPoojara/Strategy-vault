@@ -9,12 +9,21 @@ separately where needed to preserve the existing quote basis. Unknown auxiliary
 membership and open-interest values are left unknown.
 
 The same official session was reconciled with the other supplied Indian stock
-sources. The first promoted snapshot repairs 632 distinct cache files covering
-486 stock symbols; separate copies used by different baskets are counted as
-files, not additional stocks. Eighteen files failed identity, quote-basis or
-corporate-action qualification and remain unchanged. Existing same-company
+sources. The promoted snapshots repair 647 distinct cache files covering
+499 stock symbols; separate copies used by different baskets are counted as
+files, not additional stocks. Three files still require a source-compatible
+demerger adjustment and remain unchanged: HEGAM, TRIVENI and VEDL. Split/bonus
+adjustments use primary share-action terms and declared numeric representation;
+they do not assert recovery of the absent original vendor bytes. Existing same-company
 history from the broader source also restores the previously omitted BEL and
 TRENT prefixes without replacing any existing Nifty-source observation.
+
+The additional action-qualified batch received a separate immutable-snapshot
+review. It checked every changed observation against the primary quote and action
+terms, preserved all existing quotation bytes, and resolved an old/new IRB ISIN
+through an original clearing-exchange circular. The live API then matched all 75
+OHLCV fields across the 15 newly repaired files. No historical-authenticity or
+membership certification flag was upgraded.
 
 The runtime dataset is a new read-only source snapshot. Composite source receipts
 retain original native-file identities and counts, the official supplement, and
