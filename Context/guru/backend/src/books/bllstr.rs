@@ -1,7 +1,7 @@
 //! W. Brock, J. Lakonishok & B. LeBaron, "Simple Technical Trading Rules and the Stochastic Properties of
 //! Stock Returns", Journal of Finance 47(5), Dec 1992, p.1731-1764. Book id `bllstr`.
 //! Source copy: Books/William Brock/BROCK W. - Simple Technical Trading Rules ... .pdf. Transcription and
-//! verification: library/bllstr/. All 26 printed rules (Tables II-IV) are Live, one catalogue entry each,
+//! verification: library/bllstr/. All 26 printed specifications are catalogued; source admission is separate,
 //! with the paper's own (short, long, band) as defaults. Signals use the day's close; the position is taken
 //! at that close ("Define date t to be a buy signal if P_t > MA_t,L ... purchase ... P_t", eq. A6-A8;
 //! fn 21: "a buy signal on Wednesday ... Wednesday as is used for all the tests").
@@ -61,6 +61,22 @@ const TRB_RULES: &[&str] = &[
 ];
 const NOTE: &str = "Paper data: DJIA daily closes 1897-1986, no dividends (fn 10); results are conditional mean returns per buy/sell day (VMA) or per 10-day signal (FMA/TRB), not an equity curve. Only closing prices are used (the DJIA series has no OHLC). Long/short is the default because the paper scores buy and sell periods symmetrically (\"moves out of the market or sells short\", p.1738); p.sell_short=0 runs the stated \"moves out of the market\" alternative. The vault's DJI starts 1970, so the 1897-1986 tables cannot be reproduced; the rules are checked on DJI 1987-1996 against Sullivan, Timmermann & White (1999) Table III. India = run on the index instead of the DJIA.";
 
+/// Only these exact catalogue IDs were source-reviewed; complete numerical evidence covers their defaults.
+pub fn reviewed_daily_index(id: &str) -> bool {
+    matches!(id, "bllstr_vma_1_50_0" | "bllstr_fma_1_50_0")
+}
+const REVIEWED_VMA_RULES: &[&str] = &[
+    "F|Source pp1735-1736 and A7,p1759: compare the actual index close with its current-inclusive 50-close arithmetic mean; reviewed defaults are short 1, long 50, band 0.",
+    "E|Strictly above the mean classifies buy; strictly below classifies sell. The declared account enters or reverses at the observed signal close and starts flat at the requested test boundary.",
+    "X|The preserved platform account closes on a changed classification; exact equality classifies zero and exits. No new position opens solely on the final requested close. These are declared operational conventions.",
+];
+const REVIEWED_FMA_RULES: &[&str] = &[
+    "F|Source pp1735-1736 and A6-A7,p1759: actual index close and current-inclusive 50-close mean; strict prior/current opposite inequalities, reviewed defaults 1/50/0.",
+    "E|A strict crossing from below buys; a strict crossing from above sells. Signal-close fills are an idealized research assumption. One shared ten-observation exclusion clock covers both directions.",
+    "X|Close ten actual observations after entry; ignore competing signals through that exit observation and permit new signals at t+11. Flat start, boundary reset and no fresh final-close position are declared conventions; terminal holdings remain marked open.",
+];
+const REVIEWED_NOTE: &str = "Independently reviewed defaults and complete Nifty 2000-2026 ledger scope: library/bllstr/REVIEW-2026-10-15.md. This is a declared application to actual cash-index close prices, not original Dow 1897-1986 reproduction, executable index trading or source statistical significance. The paper's conditional log-return observations remain separate from simple closed-trade sums and compounded account equity. Cash-index short exposure is hypothetical; no dividends, borrow or financing are modeled. Preserved platform costs are per-side normalized-allocation deductions with estimated liquidation costs on marked-open holdings, not the private candidate's actual-price-notional fee adapter. Only finite exact default parameters are admitted: short MA 1, long MA 50, band 0%, sell_short 1 and FMA hold 10. Changed or unknown parameters remain held pending separate source and ledger review. Other index datasets are declared research applications outside this complete-default numerical evidence. The other 24 catalogue IDs receive no admission from these two reviewed contracts.";
+
 pub fn catalogue() -> Vec<StrategyDef> {
     T.iter().map(|&(id, name, f, ..)| {
         let (group, rules) = match f {
@@ -68,8 +84,13 @@ pub fn catalogue() -> Vec<StrategyDef> {
             Fam::Fma => ("Table III · Fixed-length moving average (FMA)", FMA_RULES),
             Fam::Trb => ("Table IV · Trading range break (TRB)", TRB_RULES),
         };
+        let rules = match id {
+            "bllstr_vma_1_50_0" => REVIEWED_VMA_RULES,
+            "bllstr_fma_1_50_0" => REVIEWED_FMA_RULES,
+            _ => rules,
+        };
         StrategyDef { id, name, group, session: 0, dir: "Long/Short", status: Status::Live, needs_volume: false, needs_vix: false,
-            needs_series: &[], book: BOOK, rules, notes: NOTE, claim: claim(id) }
+            needs_series: &[], book: BOOK, rules, notes: if reviewed_daily_index(id) { REVIEWED_NOTE } else { NOTE }, claim: claim(id) }
     }).collect()
 }
 

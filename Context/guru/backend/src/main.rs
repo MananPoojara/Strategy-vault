@@ -1169,6 +1169,29 @@ fn main() {
 mod tests {
     use super::*;
 
+    #[test]
+    fn reviewed_index_methods_keep_distinct_open_and_close_data_windows() {
+        let r:Vec<Row>=["2013-12-30","2013-12-31","2014-01-02","2014-01-03"].into_iter().map(|date|Row {
+            ticker:"SPX".into(),date:date.into(),open:100.,high:101.,low:99.,close:100.,volume:None,
+        }).collect();
+        let ctx=Ctx::new(&r,&r,&[]);
+        let cat=connors::catalogue();
+        let radge=cat.iter().find(|d|d.id=="radge_oc_long").unwrap();
+        assert_eq!(window_start(&ctx,radge,0),Some(2));
+        for id in ["bllstr_vma_1_50_0","bllstr_fma_1_50_0"] {
+            let d=cat.iter().find(|d|d.id==id).unwrap();
+            assert_eq!(window_start(&ctx,d,0),Some(0));
+            assert!(instrument_policy::reviewed_cash_rule(d));
+        }
+        let metadata=catalogue_json("connors");
+        for id in ["radge_oc_long","bllstr_vma_1_50_0","bllstr_fma_1_50_0"] {assert!(metadata.contains(id));}
+        for id in ["radge_oc_long_stop","radge_oc_short_stop"] {
+            let d=cat.iter().find(|d|d.id==id).unwrap();
+            assert!(!instrument_policy::reviewed_cash_rule(d));
+            assert!(readiness::check(&ctx,d,0,3,&Params::new()).is_some());
+        }
+    }
+
     struct NativeFixture(std::path::PathBuf);
     impl Drop for NativeFixture{fn drop(&mut self){let _=std::fs::remove_dir_all(&self.0);}}
     fn native_us_fixture()->(NativeFixture,State,BTreeMap<String,String>){

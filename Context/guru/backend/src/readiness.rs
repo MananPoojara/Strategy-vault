@@ -17,6 +17,21 @@ fn event_column(name: &str) -> bool {
 }
 
 pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -> Option<Issue> {
+    if def.book==books::bllstr::BOOK && books::bllstr::reviewed_daily_index(def.id) {
+        // An admitted zero-band ID must not expose a held band/holding/direction
+        // variant through query parameters. Keep the reviewed contract explicit.
+        let valid=|(key,value):(&String,&f64)| value.is_finite() && match key.as_str() {
+            "short_ma" => *value==1.,
+            "long_ma" => *value==50.,
+            "band_pct" => *value==0.,
+            "sell_short" => *value==1.,
+            "hold" if def.id=="bllstr_fma_1_50_0" => *value==10.,
+            _ => false,
+        };
+        if !p.iter().all(valid) {
+            return issue("not_testable","This reviewed Brock admission covers only short MA 1, long MA 50, band 0%, sell_short 1 and, for FMA, a 10-observation hold. Changed or unknown parameters await separate source and ledger review; they cannot inherit default verification.");
+        }
+    }
     if def.book=="sbma" && matches!(def.id,"sbma_sma50_long"|"sbma_x_5s20s") {
         let fill=p.get("fill").copied().unwrap_or(0.);
         if ![0.,1.].contains(&fill) {return issue("not_testable","Reviewed Burns fill must be 0 (idealized same-close research) or 1 (next actual open).");}
@@ -60,6 +75,9 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
         }
         if let (Some(allowed), Some(row)) = (g.allowed, ctx.r.get(from)) {
             if !allowed.contains(&row.ticker.as_str()) {
+                if def.book=="radge" && def.id=="radge_oc_long" {
+                    return issue("not_testable",format!("This independently checked plain open-to-close research application is limited to NIFTY 50 and policy-qualified SPX prices. {} is outside that reviewed symbol scope; no result is published.",row.ticker));
+                }
                 return issue("not_testable", format!("Not published on {}: this rule uses fixed point or dollar amounts set for {}; on this instrument they would not mean what the book meant. {}", row.ticker, if allowed.is_empty() { "an instrument this vault does not hold".to_string() } else { allowed.join(", ") }, g.reason));
             }
         }
@@ -130,6 +148,36 @@ mod tests {
             ("sbma_x_5s20s","fast",6.),("sbma_x_5s20s","slow",21.),("sbma_x_5s20s","always_in",1.)] {
             let d=definition(id);let p=Params::from([(key.into(),value)]);
             assert_eq!(check(&ctx,&d,0,4,&p).unwrap().status,"not_testable");
+        }
+    }
+    #[test]
+    fn reviewed_brock_accepts_only_finite_exact_source_defaults() {
+        let r=rows();let ctx=Ctx::new(&r,&r,&[]);
+        for id in ["bllstr_vma_1_50_0","bllstr_fma_1_50_0"] {
+            let d=definition(id);assert!(check(&ctx,&d,0,4,&Params::new()).is_none());
+            let defaults=crate::connors::params(id).into_iter().map(|p|(p.key.to_string(),p.def)).collect();
+            assert!(check(&ctx,&d,0,4,&defaults).is_none());
+        }
+    }
+    #[test]
+    fn reviewed_brock_parameters_cannot_reach_held_source_variants() {
+        let r=rows();let ctx=Ctx::new(&r,&r,&[]);
+        for id in ["bllstr_vma_1_50_0","bllstr_fma_1_50_0"] {
+            let d=definition(id);
+            for (key,value) in [("short_ma",2.),("short_ma",1.1),("long_ma",150.),("band_pct",1.),
+                ("band_pct",-0.01),("sell_short",0.),("sell_short",0.5),("unknown",1.),("fill",1.)] {
+                let e=check(&ctx,&d,0,4,&Params::from([(key.into(),value)])).expect("changed or unknown parameter must not inherit default source admission");
+                assert_eq!(e.status,"not_testable");assert!(e.note.contains("reviewed"));
+            }
+            for key in ["short_ma","long_ma","band_pct","sell_short"] {
+                for value in [f64::NAN,f64::INFINITY,f64::NEG_INFINITY] {
+                    assert_eq!(check(&ctx,&d,0,4,&Params::from([(key.into(),value)])).unwrap().status,"not_testable");
+                }
+            }
+        }
+        let d=definition("bllstr_fma_1_50_0");
+        for hold in [9.,10.1,11.,f64::NAN,f64::INFINITY] {
+            assert_eq!(check(&ctx,&d,0,4,&Params::from([("hold".into(),hold)])).unwrap().status,"not_testable");
         }
     }
     #[test]
