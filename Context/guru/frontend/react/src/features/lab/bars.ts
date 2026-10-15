@@ -61,3 +61,15 @@ export function rangeStart(dates: string[], range: ChartRange): string | null {
   const from = last.toISOString().slice(0, 10);
   return dates.find((d) => d >= from) ?? null;
 }
+
+/** Per-bar trade colour (undefined outside trades); open trades run to the last bar, unmapped dates are skipped. */
+export function tradeSpans(trades: { entry: string; exit: string; open: boolean; ret: number | null }[], dateIndex: Map<string, number>, barOf: number[], bars: number,
+  color: (t: { open: boolean; ret: number | null }) => string) {
+  const shade: (string | undefined)[] = new Array(bars);
+  for (const t of trades) {
+    const a = barOf[dateIndex.get(t.entry) ?? -1], b = t.open ? bars - 1 : barOf[dateIndex.get(t.exit) ?? -1];
+    if (a === undefined || b === undefined) continue;
+    for (let i = a; i <= b; i++) shade[i] = color(t);
+  }
+  return shade;
+}

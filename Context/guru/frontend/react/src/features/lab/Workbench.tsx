@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { aggregate, booleanMarkers, candles, isBooleanOutput, linePoints, ohlcFromSeries, rangeStart } from "./bars";
-import { createLabChart, PALETTE, syncPanes, useThemeKey, type SyncedPane } from "./charts";
+import { aggregate, booleanMarkers, candles, isBooleanOutput, linePoints, ohlcFromSeries, rangeStart, tradeSpans } from "./bars";
+import { createLabChart, PALETTE, syncPanes, tint, useThemeKey, type SyncedPane } from "./charts";
 import { COPY } from "./labels";
 import type { Catalogue, ChartRange, IndicatorParam, SavedMarket, SeriesResponse, Trade } from "./types";
 import { ErrorNotice, isProvisional, ProvisionalStrip } from "./ui";
@@ -26,6 +26,7 @@ type Disposable = NonNullable<ReturnType<typeof createLabChart>>;
 export function Workbench({ market, ticker, tf, range, catalogue, chips, trades, loadSeries, onChipChange, onChipRemove, instrumentLabel, comparisonOptions = [], onChipVsChange }: WorkbenchProps) {
   const priceRef = useRef<HTMLDivElement>(null);
   const panesRef = useRef<HTMLDivElement>(null);
+  const tipRef = useRef<HTMLDivElement>(null);
   const themeKey = useThemeKey();
   const [ohlcError, setOhlcError] = useState<unknown>(null);
   const [chipErrors, setChipErrors] = useState<Record<string, unknown>>({});
@@ -80,25 +81,45 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
       if (!price) return;
       disposers.push(price);
       const { chart, colors } = price;
-      const candleSeries = chart.addCandlestickSeries({
-        upColor: colors.green, borderUpColor: colors.green, wickUpColor: colors.green,
-        downColor: colors.red, borderDownColor: colors.red, wickDownColor: colors.red, priceLineVisible: false,
+      // The house renderer takes daily bar indices, including every scale-in leg.
+      // Unknown dates remain unmapped: never invent a price bar for an action.
+      const dateIndex = new Map(daily.d.map((date, i) => [date, i]));
+      let period = 0;
+      const barOf = daily.d.map((date) => {
+        while (period < px.d.length - 1 && px.d[period] < date) period++;
+        return period;
       });
-      candleSeries.setData(candles(px));
+      // Trade spans sit behind the price on their own hidden scale: green won, red lost, grey still open.
+      if (trades?.length && chart.addHistogramSeries) {
+        const shade = tradeSpans(trades, dateIndex, barOf, px.d.length, (t) => tint(t.open ? colors.ink3 : (t.ret ?? 0) >= 0 ? colors.green : colors.red, 0.14));
+        const spans = chart.addHistogramSeries({ priceScaleId: "lab-trades", priceLineVisible: false, lastValueVisible: false });
+        chart.priceScale?.("lab-trades").applyOptions({ scaleMargins: { top: 0, bottom: 0 }, visible: false });
+        spans.setData(px.d.map((time, i) => (shade[i] ? { time, value: 1, color: shade[i] } : { time })));
+      }
+      const priceSeries = asLine
+        ? chart.addLineSeries({ color: colors.ink, lineWidth: 1, priceLineVisible: false })
+        : chart.addCandlestickSeries({
+          upColor: colors.green, borderUpColor: colors.green, wickUpColor: colors.green,
+          downColor: colors.red, borderDownColor: colors.red, wickDownColor: colors.red, priceLineVisible: false,
+        });
+      priceSeries.setData(asLine ? px.d.map((time, i) => ({ time, value: px.c[i] })) : candles(px));
       const markers: Marker[] = [];
-      const charts: SyncedPane[] = [{ chart, el: priceRef.current, series: candleSeries }];
+      const readouts: { label: string; values: Map<string, number | null> }[] = [];
+      const charts: SyncedPane[] = [{ chart, el: priceRef.current, series: priceSeries }];
       drawn.forEach(({ chip, ind, index }, i) => {
         const part = chipParts[i];
         if (part.status !== "fulfilled") return;
         const res = part.value;
         const color = colors[PALETTE[index % PALETTE.length]];
         let target = ind.placement === "price" ? chart : null;
+        const settings = ind.params.filter((p) => p.key !== "variant").map((p) => chip.params[p.key] ?? p.default).join(", ");
         res.outputs.forEach((out) => {
           const values = res.series[out] ?? [];
           if (isBooleanOutput(values)) {
             markers.push(...booleanMarkers(res.dates, values, `${ind.name}${res.outputs.length > 1 ? "." + out : ""}`, color, keep));
             return;
           }
+          readouts.push({ label: `${ind.name}${res.outputs.length > 1 ? "." + out : ""}${settings ? " " + settings : ""}`, values: new Map(res.dates.map((d, k) => [d, values[k]])) });
           if (!target) {
             // A pane chart is created only when the chip has a line to draw; boolean-only chips mark the price chart.
             const host = ([...panesRef.current!.children] as HTMLElement[]).find((el) => el.dataset.labPane === chip.key);
@@ -114,14 +135,6 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
           target.addLineSeries({ color, lineWidth: 2, priceLineVisible: false, lastValueVisible: false }).setData(linePoints(res.dates, values, keep));
         });
       });
-      // The house renderer takes daily bar indices, including every scale-in leg.
-      // Unknown dates remain unmapped: never invent a price bar for an action.
-      const dateIndex = new Map(daily.d.map((date, i) => [date, i]));
-      let period = 0;
-      const barOf = daily.d.map((date) => {
-        while (period < px.d.length - 1 && px.d[period] < date) period++;
-        return period;
-      });
       const actionTrades = (trades ?? []).map((trade) => ({
         dir: trade.dir, open: trade.open, exit_i: dateIndex.get(trade.exit) ?? -1,
         legs: (trade.legs?.length ? trade.legs : [[trade.entry, trade.entry_px ?? 0, trade.weight ?? 1] as [string, number, number]])
@@ -132,18 +145,34 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
       markers.push(...actions.filter((marker) => priceDates.has(marker.time)));
       const last = px.d[px.d.length - 1];
       if (keep && last) markers.push({ time: last, position: "aboveBar", shape: "square", color: colors.ink3, text: "in progress" });
-      candleSeries.setMarkers?.(markers.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0)));
+      priceSeries.setMarkers?.(markers.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0)));
       const from = rangeStart(px.d, range) ?? px.d[0]; // "All" is an explicit range too, so panes with different warm-up start together
       for (const { chart: ch } of charts) {
         if (from && last) ch.timeScale().setVisibleRange({ from, to: last });
         else ch.timeScale().fitContent();
       }
       unsync = syncPanes(charts);
+      const at = new Map(px.d.map((d, i) => [d, i]));
+      const num = (v: number) => v.toFixed(2);
+      chart.subscribeCrosshairMove?.((param) => {
+        const tip = tipRef.current, host = priceRef.current;
+        const i = param.time ? at.get(param.time) : undefined;
+        if (!tip || !host) return;
+        if (i === undefined || !param.point) { tip.hidden = true; return; }
+        tip.textContent = [param.time, `O ${num(px.o[i])}  H ${num(px.h[i])}`, `L ${num(px.l[i])}  C ${num(px.c[i])}`,
+          ...readouts.flatMap(({ label, values }) => { const v = values.get(param.time!); return v == null || !Number.isFinite(v) ? [] : [`${label}  ${num(v)}`]; })].join("\n");
+        tip.hidden = false;
+        const w = tip.offsetWidth, h = tip.offsetHeight;
+        tip.style.left = `${param.point.x + 16 + w > host.clientWidth ? Math.max(0, param.point.x - 16 - w) : param.point.x + 16}px`;
+        tip.style.top = `${Math.max(4, Math.min(param.point.y - h / 2, 420 - h - 4))}px`;
+      });
     })();
-    return () => { live = false; unsync?.(); disposers.forEach((d) => d.dispose()); };
+    return () => { live = false; unsync?.(); disposers.forEach((d) => d.dispose()); if (tipRef.current) tipRef.current.hidden = true; };
     // loadSeries and find are read fresh per run; chips are tracked by their canonical key.
   }, [market, ticker, tf, range, chipsKey, trades, themeKey, catalogue, comparisonsKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Thousands of daily candles turn into noise: 3Y and All daily ranges draw a close line.
+  const asLine = tf === "D" && range !== "1Y";
   const panes = chips.filter((c) => find(c.id)?.placement === "pane" && !pairProblem(c));
   return (
     <section className="box lab-workbench">
@@ -159,20 +188,23 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
       ) : <p className="cap">{COPY.noChips}</p>}
       {ohlcError !== null && <ErrorNotice error={ohlcError} market={market} instrumentLabel={instrumentLabel} />}
       <div hidden={ohlcError !== null}>
-        <div className="lwc px" ref={priceRef} data-lab-chart role="img" aria-label={`${ticker} price chart`} />
+        <div className="lab-price">
+          <div className="lwc px" ref={priceRef} data-lab-chart role="img" aria-label={`${ticker} price chart`} />
+          <div className="lab-tip" ref={tipRef} hidden aria-hidden="true" />
+        </div>
         <div ref={panesRef}>
           {panes.map((c) => (
             <div key={c.key} className="lab-pane" data-lab-pane={c.key} role="img" aria-label={`${find(c.id)?.name ?? c.id} chart`} />
           ))}
         </div>
       </div>
-      <p className="cap">{COPY.chartNote}</p>
+      <p className="cap">{asLine && "Long daily ranges are drawn as a close line; 1Y shows candles. "}{COPY.chartNote}</p>
       {foreignNotes.map(note=><p className="cap" role="note" key={note}>{note}</p>)}
       {adaptations.map((note) => <p className="rnote" role="note" data-lab-adaptations key={note}>{note}</p>)}
       {tf !== "D" && <p className="cap">{COPY.inProgress(tf)}</p>}
       {!!trades?.length && (
         <p className="cap">
-          <span style={{ color: "var(--green)" }}>↑ Buy</span> · <span style={{ color: "var(--red)" }}>↓ Sell</span>. Arrows show backtest actions; smaller arrows show added legs.{tf !== "D" && " Trades run on daily bars and are mapped onto this timeframe."}
+          <span style={{ color: "var(--green)" }}>↑ Buy</span> · <span style={{ color: "var(--red)" }}>↓ Sell</span>. Arrows show backtest actions; smaller arrows show added legs. Shaded spans are trades: green won, red lost, grey still open.{tf !== "D" && " Trades run on daily bars and are mapped onto this timeframe."}
         </p>
       )}
     </section>

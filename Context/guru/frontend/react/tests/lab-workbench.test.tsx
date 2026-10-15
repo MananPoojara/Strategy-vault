@@ -39,8 +39,15 @@ const chips: Chip[] = [
 ];
 const props = { market: "in" as const, ticker: "NIFTY 50", tf: "D", range: "All" as const, catalogue: cat, chips, loadSeries: load, onChipChange: vi.fn(), onChipRemove: vi.fn() };
 
+it("draws a close line for long daily ranges", async () => {
+  await mount(<Workbench {...props} chips={[]} />);
+  await flush();
+  expect(charts[0].kinds[0]).toBe("line");
+  expect(charts[0].series[0].setData.mock.calls[0][0]).toHaveLength(6);
+});
+
 it("draws candles, overlays with gaps, boolean markers and a pane; a failing chip stays local", async () => {
-  const host = await mount(<Workbench {...props} />);
+  const host = await mount(<Workbench {...props} range="1Y" />);
   await flush();
   const price = charts[0];
   expect(price.kinds[0]).toBe("candle");

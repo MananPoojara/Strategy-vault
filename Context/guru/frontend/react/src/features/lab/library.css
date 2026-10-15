@@ -1,16 +1,25 @@
 /* Stays in view under the 58px sticky topbar while the long main column scrolls; the list scrolls inside it. */
 .lab-library { position: sticky; top: calc(58px + env(safe-area-inset-top, 0px) + 12px); max-height: calc(100vh - 58px - env(safe-area-inset-top, 0px) - 24px); overflow: auto; }
-.lab-library ul { margin: 4px 0 10px; padding: 0; }
-.lab-library li { list-style: none; display: flex; align-items: flex-start; gap: 6px; padding: 2px 0; }
-.lab-library li > button[data-lab-item] { flex: 1; min-width: 0; text-align: left; font: 500 13px var(--font); color: var(--ink); background: none; border: 0; padding: 4px 2px; cursor: pointer; }
-.lab-library li > button[data-lab-item] small { display: block; color: var(--ink3); font-weight: 400; }
+.lab-library ul { margin: 0 0 4px; padding: 0; }
+.lab-library li { list-style: none; display: flex; align-items: center; gap: 6px; padding: 0 2px; }
+.lab-library li:hover { background: var(--panel); }
+.lab-library li > button[data-lab-item] { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; text-align: left; font: 500 13px var(--font); color: var(--ink); background: none; border: 0; padding: 4px 2px; cursor: pointer; }
+.lab-library li > button[data-lab-item] b { flex: 0 1 auto; max-width: 62%; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lab-library li > button[data-lab-item] small { flex: 1 1 0; min-width: 0; color: var(--ink3); font-weight: 400; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lab-library li > button[data-lab-item]:disabled, .lab-library button[disabled] { color: var(--ink3); cursor: not-allowed; }
-.lab-library summary, .lab-library .lab-group-h { cursor: pointer; font-weight: 600; color: var(--ink2); padding: 4px 0; }
-.lab-library .lab-group-h { display: block; width: 100%; text-align: left; font-size: inherit; font-family: inherit; background: none; border: 0; }
+.lab-library .tag { flex: none; font: 600 10px "IBM Plex Mono", monospace; letter-spacing: .04em; text-transform: uppercase; padding: 1px 5px; border: 1px solid var(--steel); border-radius: 0; color: var(--ink3); background: none; white-space: nowrap; }
+.lab-library .tag.on { border-color: var(--blue); color: var(--blue); }
+.lab-library .tag.warn { border-color: var(--red); color: var(--red); }
+.lab-library li > .dbtn.sm { flex: none; padding: 1px 7px; font-size: 11.5px; line-height: 1.4; }
+.lab-library summary { cursor: pointer; font-weight: 600; color: var(--ink2); padding: 4px 0; }
+.lab-library summary small { color: var(--ink3); font-weight: 400; }
+.lab-library .lab-group-h { display: flex; align-items: baseline; gap: 2px; width: 100%; text-align: left; font: 600 11px var(--font); letter-spacing: .06em; text-transform: uppercase; color: var(--ink2); background: none; border: 0; padding: 10px 2px 4px; cursor: pointer; }
+.lab-library .lab-group-h small { margin-left: auto; font: 600 11px "IBM Plex Mono", monospace; color: var(--ink3); letter-spacing: 0; }
 .lab-library .lab-group-h::before { content: "\25B8"; display: inline-block; width: 1.1em; }
 .lab-library .lab-group-h[aria-expanded="true"]::before { content: "\25BE"; }
 .lab-library .lab-group-h:focus-visible { outline: none; box-shadow: var(--ring); }
-.lab-library summary small, .lab-library .lab-group-h small { color: var(--ink3); font-weight: 400; }
+.lab-lib-foot { margin: 8px 0 0; padding-top: 8px; border-top: 1px solid var(--rule); font-size: 12px; color: var(--ink2); line-height: 1.7; }
+.lab-lib-foot .tag { margin-right: 2px; }
 .lab-library input[type=search] { width: 100%; box-sizing: border-box; font: 500 13px var(--font); padding: 6px 8px; margin: 6px 0 8px; border: 1px solid var(--steel); border-radius: var(--r-field); background: var(--card); color: var(--ink); }
 .lab-toolbar .dfield select { max-width: 100%; }
 .lab-detail pre { white-space: pre-wrap; background: var(--panel); padding: 8px; font: 400 12px "IBM Plex Mono", monospace; color: var(--ink); }

@@ -28,3 +28,6 @@
 @media (max-width: 1100px) { .lab-result-charts { grid-template-columns: minmax(0, 1fr); gap: 20px; } }
 
 .lab-result .lab-chart-empty { display: grid; place-content: center; color: var(--ink2); font-size: 13px; }
+/* Beside the rules the results column is narrow: stack equity and drawdown by the column's own width. */
+.lab-result { container-type: inline-size; }
+@container (max-width: 760px) { .lab-result-charts { grid-template-columns: minmax(0, 1fr); gap: 20px; } }

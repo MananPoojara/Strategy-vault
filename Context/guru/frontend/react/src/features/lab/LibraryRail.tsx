@@ -3,6 +3,8 @@ import { availability, groupByCategory, searchIndicators } from "./catalogue";
 import type { Catalogue, Indicator, Market, Timeframe } from "./types";
 import "./library.css";
 
+/** Short ids read as the familiar abbreviation (SMA, RSI, MACD); longer ids keep the full name. */
+const shortName = (ind: Indicator) => (/^[a-z0-9]{2,6}$/.test(ind.id) ? ind.id.toUpperCase() : ind.name);
 const narrow = () => typeof window !== "undefined" && !!window.matchMedia?.("(max-width: 900px)").matches;
 
 export function LibraryRail({ catalogue, market, hasVolume, tf, onAdd, onRead }: {
@@ -22,10 +24,10 @@ export function LibraryRail({ catalogue, market, hasVolume, tf, onAdd, onRead }:
   const count = `${catalogue.indicators.length} indicators`;
   const groups = groupByCategory(searchIndicators(catalogue.indicators, query));
   const searching = query.trim() !== "";
-  const isOpen = (category: string) => (searching ? !searchShut.has(category) : !!manual[category]);
+  const isOpen = (category: string) => (searching ? !searchShut.has(category) : manual[category] ?? true);
   const toggle = (category: string) => searching
     ? setSearchShut((s) => { const n = new Set(s); if (!n.delete(category)) n.add(category); return n; })
-    : setManual((m) => ({ ...m, [category]: !m[category] }));
+    : setManual((m) => ({ ...m, [category]: !(m[category] ?? true) }));
   const body = (
     <>
       <input type="search" value={query} onChange={(e) => { setQuery(e.target.value); setSearchShut(new Set()); }}
@@ -41,10 +43,11 @@ export function LibraryRail({ catalogue, market, hasVolume, tf, onAdd, onRead }:
               const { ok, reason } = availability(ind, { market, hasVolume, tf, maxForeign: catalogue.max_foreign });
               return (
                 <li key={ind.id}>
-                  <button type="button" data-lab-item={ind.id} disabled={!ok} title={reason} onClick={() => onAdd(ind)}>
-                    {ind.name} <span className="tag">{ok ? ind.placement : "needs data"}</span>
-                    {(!ok || ind.needs.second_symbol) && <small>{reason}</small>}
-                  </button>{" "}
+                  <button type="button" data-lab-item={ind.id} disabled={!ok} title={ok ? ind.definition : reason} onClick={() => onAdd(ind)}>
+                    <b title={ind.name}>{shortName(ind)}</b>
+                    <small>{!ok || ind.needs.second_symbol ? reason : ind.definition}</small>
+                  </button>
+                  <span className={`tag${ok ? " on" : ind.needs.volume && !hasVolume ? " warn" : ""}`}>{ok ? "chart" : ind.needs.volume && !hasVolume ? "volume" : "needs data"}</span>
                   <button type="button" className="dbtn ghost sm" aria-label={`About ${ind.name}`} onClick={() => onRead(ind)}>i</button>
                 </li>
               );
@@ -52,6 +55,7 @@ export function LibraryRail({ catalogue, market, hasVolume, tf, onAdd, onRead }:
           </ul>
         </div>
       ))}
+      <p className="lab-lib-foot"><span className="tag on">chart</span> adds it to the chart · <span className="tag">needs data</span> listed, not available yet · <b>i</b> formula and sources</p>
     </>
   );
   return (

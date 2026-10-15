@@ -8,13 +8,15 @@ export interface LabChartApi {
   addCandlestickSeries(options: Record<string, unknown>): LabSeriesApi;
   addLineSeries(options: Record<string, unknown>): LabSeriesApi;
   addAreaSeries(options: Record<string, unknown>): LabSeriesApi;
+  addHistogramSeries?(options: Record<string, unknown>): LabSeriesApi;
+  priceScale?(id: string): { applyOptions(options: Record<string, unknown>): void };
   timeScale(): {
     fitContent(): void; getVisibleRange?(): { from: string; to: string } | null; setVisibleRange(range: { from: string; to: string }): void;
     subscribeVisibleTimeRangeChange?(handler: (range: { from: string; to: string } | null) => void): void;
     unsubscribeVisibleTimeRangeChange?(handler: (range: { from: string; to: string } | null) => void): void;
   };
-  subscribeCrosshairMove?(handler: (param: { time?: string }) => void): void;
-  unsubscribeCrosshairMove?(handler: (param: { time?: string }) => void): void;
+  subscribeCrosshairMove?(handler: (param: { time?: string; point?: { x: number; y: number } }) => void): void;
+  unsubscribeCrosshairMove?(handler: (param: { time?: string; point?: { x: number; y: number } }) => void): void;
   setCrosshairPosition?(price: number, time: string, series: LabSeriesApi): void;
   clearCrosshairPosition?(): void;
   applyOptions(options: Record<string, unknown>): void;

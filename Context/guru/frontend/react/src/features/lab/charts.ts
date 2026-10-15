@@ -14,6 +14,13 @@ export function themeColors(el: HTMLElement): ChartColors {
   };
 }
 
+/** A translucent version of a theme colour (#rrggbb or rgb()); any other format gives no tint rather than a solid fill. */
+export function tint(color: string, alpha: number) {
+  if (/^#[0-9a-f]{6}$/i.test(color)) return color + Math.round(alpha * 255).toString(16).padStart(2, "0");
+  const rgb = /^rgb\((.+)\)$/.exec(color);
+  return rgb ? `rgba(${rgb[1]}, ${alpha})` : "transparent";
+}
+
 /** Lab pages bypass VaultRuntime.cleanup, so every chart owns its resize observer and removal. */
 export function createLabChart(el: HTMLElement, height: number, options: Record<string, unknown> = {}, library: LabChartLibrary | undefined = window.LightweightCharts) {
   if (!library) return null;

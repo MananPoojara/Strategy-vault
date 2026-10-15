@@ -36,8 +36,9 @@
 .lab-caps-warn { color: var(--red); }
 .lab-settings { margin-top: 0; }
 
-/* Complex indicator rules retain the full editor width, including after a run. */
+/* After a run: rules beside the backtest on wide screens (as in the lab mockup); narrower screens stack them. */
 .lab-two[data-lab-layout="stacked"] { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+@media (min-width: 1280px) { .lab-two[data-lab-layout="stacked"] { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); } }
 .lab-rules .lab-sides { grid-template-columns: minmax(0, 1fr); gap: 18px; }
 .lab-rules .lab-cond { gap: 8px 10px; padding: 10px 0; }
 .lab-rules .lab-operand { gap: 6px 8px; }

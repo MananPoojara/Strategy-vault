@@ -100,26 +100,25 @@ it("toolbar has no provisional strip on in/us", async () => {
   }
 });
 
-it("rail groups start collapsed; a search expands only matching groups and clearing restores the manual choices", async () => {
+it("rail groups start open; a search shows only matching groups and clearing restores the manual choices", async () => {
   const host = await mount(<LibraryRail catalogue={cat} market="in" hasVolume={false} tf="D" onAdd={() => {}} onRead={() => {}} />);
   const heads = () => [...host.querySelectorAll<HTMLButtonElement>(".lab-group-h")];
-  const open = () => heads().filter((h) => h.getAttribute("aria-expanded") === "true").map((h) => h.textContent);
+  const shut = () => heads().filter((h) => h.getAttribute("aria-expanded") === "false").map((h) => h.textContent);
   const type = async (v: string) => {
     const search = host.querySelector<HTMLInputElement>('input[aria-label="Search indicators"]')!;
     await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, v); search.dispatchEvent(new Event("input", { bubbles: true })); });
   };
   expect(heads().length).toBeGreaterThan(1);
-  expect(open()).toEqual([]);
-  expect(host.querySelectorAll("ul[hidden]")).toHaveLength(heads().length);
+  expect(shut()).toEqual([]);
+  expect(host.querySelector("ul[hidden]")).toBeNull();
   await act(async () => heads()[0].click());
-  const manual = open();
+  const manual = shut();
   expect(manual).toHaveLength(1);
   await type("ta.rsi");
   expect(heads()).toHaveLength(1); // only the group holding a match is shown, and it is open
-  expect(open()).toHaveLength(1);
-  expect(host.querySelector("ul[hidden]")).toBeNull();
+  expect(shut()).toEqual([]);
   await type("");
-  expect(open()).toEqual(manual);
+  expect(shut()).toEqual(manual);
 });
 
 it("enables the admitted daily pairs only when foreign capability is advertised", () => {
