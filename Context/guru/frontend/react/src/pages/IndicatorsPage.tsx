@@ -50,6 +50,8 @@ function IndicatorsLab() {
   const [templateError, setTemplateError] = useState<unknown>(null);
   const [openError, setOpenError] = useState<unknown>(null);
   const runSeq = useRef(0);
+  const opened = useRef<string | null>(null); // instrument of the row or snapshot just opened
+  const [swapNote, setSwapNote] = useState("");
   const { market, ticker } = state;
 
   useEffect(() => { getAccount().then((a) => setRole(a.user.role), () => {}); }, []); // the App shell handles sign-in
@@ -77,7 +79,10 @@ function IndicatorsLab() {
   useEffect(() => {
     if (!options || options.some((o) => o.ticker === ticker && !o.disabled)) return;
     const next = defaultTicker(market, options);
-    if (next !== undefined && next !== ticker) dispatch({ type: "ticker", ticker: next });
+    if (next === undefined || next === ticker) return;
+    if (opened.current === ticker) setSwapNote(`${ticker} is not available here; showing ${next || "no instrument"}.`);
+    opened.current = null;
+    dispatch({ type: "ticker", ticker: next });
   }, [options, ticker, market]);
 
   useEffect(() => {
@@ -103,12 +108,16 @@ function IndicatorsLab() {
     lab.template(market, customize).then((t) => {
       if (cancelled) return;
       setTemplate(t);
-      if (t.status === "available") { clearRun(); dispatch({ type: "open", row: null, spec: t.template.spec }); }
+      if (t.status === "available") {
+        clearRun(); dispatch({ type: "open", row: null, spec: t.template.spec });
+        writeLabQuery({ strategy: "", published: "" }); // only now has the template replaced the open row
+      }
     }, (e: unknown) => !cancelled && setTemplateError(e));
     return () => { cancelled = true; };
   }, [market, customize]);
 
   const openRow = useCallback((row: LabStrategy) => {
+    opened.current = row.instrument; setSwapNote("");
     dispatch({ type: "market", market: row.market === "crypto" ? "gl" : row.market });
     dispatch({ type: "ticker", ticker: row.instrument });
     dispatch({ type: "open", row, spec: row.spec });
@@ -125,6 +134,7 @@ function IndicatorsLab() {
         if (cancelled) return;
         const snap = list.find((p) => p.snapshotId === Number(query.published));
         if (!snap) { setOpenError(new Error(`Published strategy ${query.published} was not found.`)); return; }
+        opened.current = snap.instrument; setSwapNote("");
         dispatch({ type: "market", market: snap.market });
         dispatch({ type: "ticker", ticker: snap.instrument });
         dispatch({ type: "open", row: null, spec: snap.spec });
@@ -135,12 +145,14 @@ function IndicatorsLab() {
 
   const changeMarket = (m: Market) => {
     if (m === market) return;
+    opened.current = null; setSwapNote("");
     dispatch({ type: "market", market: m });
     setCustomize(""); setReading(null); setOpenError(null);
     writeLabQuery({ customize: "", strategy: "", published: "" });
   };
 
   const run = async (spec: Spec = state.spec) => {
+    if (!ticker) return; // no selectable instrument on this market
     const n = ++runSeq.current;
     setResult(null); setRunError(null); setRunning(true);
     try {
@@ -196,7 +208,7 @@ function IndicatorsLab() {
               : running ? <Loading text="Running the backtest…" /> : null}
           </Part>
         </div>
-        <Part>
+        <Part key={`${market}|${ticker}`}>{/* a ticker change remounts it: an optimization belongs to one instrument */}
           <OptimizePanel spec={state.spec} catalogue={cat} market={savedMarketValue} role={role} dates={result?.dates ?? []}
             onOptimize={(spec, split) => lab.optimize(market, spec, {
               ticker, from: settings.from || undefined, to: settings.to || undefined, ...runQuery(spec, settings.fees, settings.slippage), split,
@@ -207,7 +219,7 @@ function IndicatorsLab() {
         <Part>
           <CustomizePanel market={savedMarketValue} ticker={ticker} selected={customize}
             templates={templates} templatesError={templatesError} template={template} templateError={templateError}
-            onSelect={(id) => { setCustomize(id); writeLabQuery({ customize: id, strategy: "", published: "" }); }}
+            onSelect={(id) => { setCustomize(id); writeLabQuery({ customize: id }); }}
             onClear={() => { setCustomize(""); writeLabQuery({ customize: "" }); }}
             loadFidelity={(id, tk) => lab.fidelity(market, id, tk, settings.from || undefined, settings.to || undefined)} />
         </Part>
@@ -228,9 +240,10 @@ function IndicatorsLab() {
         {cat && <ServerLabel text={cat.label} />}
       </header>
       <Toolbar market={market} onMarket={changeMarket} options={options ?? []} ticker={ticker}
-        onTicker={(t) => dispatch({ type: "ticker", ticker: t })} tf={state.tf} timeframes={cat?.timeframes ?? ["D", "W", "M"]}
+        onTicker={(t) => { opened.current = null; setSwapNote(""); dispatch({ type: "ticker", ticker: t }); }} tf={state.tf} timeframes={cat?.timeframes ?? ["D", "W", "M"]}
         onTf={(tf) => dispatch({ type: "tf", tf })} range={state.range} onRange={(range) => dispatch({ type: "range", range })}
         provisionalNote={glNote} />
+      {swapNote && <p className="rnote" data-lab-swap>{swapNote}</p>}
       {work}
     </div>
   );
