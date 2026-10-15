@@ -650,10 +650,15 @@ fn checked_params_of(q: &BTreeMap<String, String>) -> Result<Params,String> {
             // Keep malformed syntax and ordinary legacy errors with grid().
             if let Ok(values)=text.split(':').map(|v|v.trim().parse::<f64>()).collect::<Result<Vec<_>,_>>() {
                 if values.iter().any(|v|!v.is_finite()) {return Err(unreviewed());}
+                if let [value]=values[..] {
+                    if value!=setting.def {return Err(unreviewed());}
+                }
                 if let [lo,hi,step]=values[..] {
                     if step>0. && hi>=lo {
                         let steps=((hi-lo)/step+1e-9).floor();
                         if !steps.is_finite() || steps>999. {return Err(unreviewed());}
+                        // Exact review applies before grid() rounds to 1e-9.
+                        if (0..=steps as usize).any(|k|lo+k as f64*step!=setting.def) {return Err(unreviewed());}
                     }
                 }
             }
@@ -1259,6 +1264,18 @@ mod tests {
             for spec in [cp.to_string(),format!("{cp}:{cp}:0.05"),format!("{cp}:{cp}:1e-300")] {
                 let query=BTreeMap::from([("id".into(),id.into()),("g.cyc_part".into(),spec)]);
                 assert!(checked_params_of(&query).is_ok());
+            }
+        }
+    }
+
+    #[test]
+    fn reviewed_ehlers_grid_rejects_raw_values_that_only_round_to_defaults() {
+        for id in ["ehrs_sinetrend_trend","ehrs_sinetrend_cp115","ehrs_sinetrend_cp115_trend"] {
+            let cp=if id=="ehrs_sinetrend_trend" {"1.00000000001"} else {"1.15000000001"};
+            let mbb=if id=="ehrs_sinetrend_trend" {"50.00000000001"} else {"57.00000000001"};
+            for (key,value) in [("g.cyc_part",cp.to_string()),("g.cyc_part",format!("{cp}:{cp}:0.05")),("g.max_bars_back",mbb.to_string())] {
+                let query=BTreeMap::from([("id".into(),id.into()),(key.into(),value)]);
+                assert!(checked_params_of(&query).is_err(),"{id}: {key}");
             }
         }
     }
