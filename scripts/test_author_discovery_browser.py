@@ -256,6 +256,32 @@ class Fixtures:
                             body=json.dumps(payload))
 
 
+class LoadingFixtures(Fixtures):
+    """Explicitly delayed synthetic requests exercise real React loading boundaries."""
+    def __init__(self):
+        super().__init__()
+        self.trace = []
+        self.fail_run = False
+        self.price_gate = asyncio.Event()
+        self.price_gate.set()
+
+    async def route(self, route):
+        path = urlparse(route.request.url).path
+        delay = (.25 if path == "/api/app/me" else .12 if path.startswith("/data/") and "ohlc" not in path
+                 else .3 if path.endswith(("/summary", "/run")) else .1 if path.endswith("/readiness") else 0)
+        event = {"path": path, "start": asyncio.get_running_loop().time()}
+        self.trace.append(event)
+        if delay:
+            await asyncio.sleep(delay)
+        if path.endswith("/ohlc"):
+            await self.price_gate.wait()
+        if self.fail_run and path.endswith("/run"):
+            await route.fulfill(status=400, content_type="text/plain", body="Synthetic loading-contract calculation unavailable")
+        else:
+            await super().route(route)
+        event["end"] = asyncio.get_running_loop().time()
+
+
 async def stock_discovery(page, base, fixtures, expect):
     await page.goto(base + "/#/", wait_until="domcontentloaded")
     bandy = page.locator('[data-library-author="bandy"]')
@@ -309,7 +335,7 @@ async def empty_range_recovery(page, base, fixtures, expect):
     await expect(notice).to_be_visible()
     await expect(notice).to_contain_text("RELIANCE")
     await expect(notice).to_contain_text("2020-09-11")
-    selected_count = page.locator(".library-summary > div").filter(has_text="Backtest families").locator("dd")
+    selected_count = page.locator(".library-summary > div").filter(has_text="Strategies with").locator("dd")
     await expect(selected_count).to_have_text("0")
 
     # A range failure must not prevent using the filters or opening a book.
@@ -325,7 +351,7 @@ async def empty_range_recovery(page, base, fixtures, expect):
     assert current.get("tk") == [INDIA_STOCK] and current.get("basket") == ["nifty50"], current
     assert not current.get("from") and not current.get("to"), current
     await expect(page.locator("[data-summary-unavailable]")).to_have_count(0)
-    await expect(page.locator(".library-summary > div").filter(has_text="Backtest families").locator("dd")).to_have_text("11")
+    await expect(page.locator(".library-summary > div").filter(has_text="Strategies with").locator("dd")).to_have_text("11")
 
     select = page.get_by_label("Backtest data", exact=True)
     await expect(select).to_be_visible()
@@ -354,7 +380,7 @@ async def partial_owner_failure(page, base, fixtures, expect):
     await expect(chande).to_be_visible()
     await expect(chande.locator(".lc-stats > div").filter(has_text="Backtests available").locator("dd")).to_have_text("1")
     await expect(connors.locator(".lc-stats > div").filter(has_text="Backtests available").locator("dd")).to_have_text("0")
-    await expect(page.locator(".library-summary > div").filter(has_text="Backtest families").locator("dd")).to_have_text("1")
+    await expect(page.locator(".library-summary > div").filter(has_text="Strategies with").locator("dd")).to_have_text("1")
     notice = page.locator("[data-summary-unavailable]")
     await expect(notice).to_be_visible()
     await expect(notice).to_contain_text("Nifty 50")
@@ -542,6 +568,58 @@ async def basket_price_recovery(page, base, fixtures, expect):
     await expect(page.locator('[data-price-recovery]')).to_have_count(0)
 
 
+async def book_loading_flow(page, base, fixtures, expect):
+    await page.goto(base + "/#/", wait_until="domcontentloaded")
+    await expect(page.locator("#main [data-book-loader] .bflip")).to_be_visible()
+    await expect(page.locator("#main [data-book-loader] .bpg")).to_have_count(3)
+    await expect(page.locator('[data-library-author="bandy"]')).to_be_visible()
+    await expect(page.locator("[data-book-loader]")).to_have_count(0)
+    metadata = [event for event in fixtures.trace if event["path"].startswith("/data/") and "ohlc" not in event["path"]]
+    first_end = min(event["end"] for event in metadata)
+    assert sum(event["start"] < first_end for event in metadata) >= 4, metadata
+
+    # Opening a reading-only book with fresh dates must not calculate unrelated strategies.
+    begin = len(fixtures.requests)
+    await page.evaluate("hash => location.hash = hash", "/guru/tharp?book=tharp_super_trader&from=2011-01-01&to=2012-01-01")
+    await expect(page.locator('[data-reading-page="tharp_super_trader"]')).to_be_visible()
+    assert not any(item["path"].endswith(("/summary", "/run", "/readiness")) for item in fixtures.requests[begin:])
+    begin = len(fixtures.requests)
+    await page.evaluate("hash => location.hash = hash", "/guru/tharp?from=2013-01-01&to=2014-01-01")
+    await expect(page.locator('[data-book="tharp_super_trader"]')).to_be_visible()
+    assert not any(item["path"].endswith(("/summary", "/run", "/readiness")) for item in fixtures.requests[begin:])
+
+    # The unchanged artwork animates while a real SPA request is pending.
+    target = "/s/hbqts_ma5_25?" + urlencode({"tk": INDIA_STOCK, "from": "2010-01-04", "to": "2010-01-15"})
+    await page.evaluate("hash => location.hash = hash", target)
+    await expect(page.locator("#flipov [data-book-loader] .bflip")).to_be_visible()
+    assert await page.locator("#flipov .bpg").first.evaluate("el => getComputedStyle(el).animationName") == "bflip"
+    await expect(page.locator('[data-tile="0"]')).to_have_text("+10.00%")
+    await expect(page.locator("[data-book-loader]")).to_have_count(0)
+
+    # A late result from a cancelled route cannot leave the overlay stuck or replace Saved.
+    target += "&slippage=1"
+    async with page.expect_request(lambda request: urlparse(request.url).path.endswith("/run")):
+        await page.evaluate("hash => location.hash = hash", target)
+    await expect(page.locator("#flipov [data-book-loader]")).to_be_visible()
+    async with page.expect_response(lambda response: urlparse(response.url).path.endswith("/run")):
+        await page.evaluate("() => location.hash = '/saved'")
+        await expect(page.locator('[data-react-page="saved"]')).to_be_visible()
+        await expect(page.locator("[data-book-loader]")).to_have_count(0)
+    await expect(page.locator('[data-react-page="saved"]')).to_be_visible()
+
+    fixtures.fail_run = True
+    fixtures.price_gate.clear()
+    try:
+        # A failed calculation must appear even while an optional chart request is pending.
+        failure = "/s/hbqts_ma5_25?" + urlencode({"tk": INDIA_OTHER_STOCK, "slippage": "2"})
+        await page.evaluate("hash => location.hash = hash", failure)
+        await expect(page.locator('[data-backtest-state]')).to_be_visible()
+        await expect(page.locator("[data-book-loader]")).to_have_count(0)
+        await expect(page.locator('[data-tile]')).to_have_count(0)
+    finally:
+        fixtures.price_gate.set()
+
+
 async def smoke(dist):
     from playwright.async_api import async_playwright, expect
     server = ThreadingHTTPServer(("127.0.0.1", 0), partial(QuietHandler, directory=str(dist)))
@@ -563,6 +641,7 @@ async def smoke(dist):
                         (strategy_settings_and_stock, Fixtures()),
                         (strategy_basket_controls, Fixtures()),
                         (basket_price_recovery, Fixtures()),
+                        (book_loading_flow, LoadingFixtures()),
                     ]
                     for journey, fixtures in cases:
                         # Each journey owns its browser context and runtime caches.

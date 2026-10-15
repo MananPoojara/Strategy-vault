@@ -12,6 +12,7 @@ import {
   type Account,
 } from "../services/api";
 import { AppHeader } from "../components/AppHeader";
+import { BookLoader } from "../components/BookLoader";
 import { ResearchMarkup } from "../components/ResearchMarkup";
 import { HomePage } from "../pages/HomePage";
 import { SavedPage } from "../pages/SavedPage";
@@ -131,7 +132,7 @@ export function App() {
         account={account}
         snapshot={snapshot}
       />
-      <main className="page" id="main">
+      <main className="page" id="main" aria-busy={snapshot.loading && !Custom && !sessionError && !snapshot.error}>
         {sessionError ? (
           <div className="empty" role="alert">
             <b>Could not load your account</b>
@@ -147,12 +148,12 @@ export function App() {
         ) : snapshot.revision && snapshot.route ? (
           <ResearchRoute key={snapshot.revision} snapshot={snapshot} />
         ) : (
-          <div className="loading">Loading the vault from the Rust API…</div>
+          <BookLoader message="Loading the vault…" />
         )}
       </main>
-      {snapshot.loading && snapshot.revision > 0 && !Custom && (
-        <div className="flipov" id="flipov" role="status">
-          <div className="loading">Loading the selected research…</div>
+      {snapshot.loading && snapshot.revision > 0 && !Custom && !sessionError && !snapshot.error && (
+        <div className="flipov" id="flipov">
+          <BookLoader message="Loading the selected research…" />
         </div>
       )}
     </>

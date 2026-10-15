@@ -1352,10 +1352,12 @@ function resultsHtml(rs) {
 
 // ---------------------------------------------------------------- 3. author page and all-strategies page
 async function viewList() {
-  const rs = await rows();
+  if(R.name==='guru'&&S.book&&BOOK[S.book]&&!BOOK[S.book].live)return readingBookPage(GURU[R.id],BOOK[S.book]);
+  // Author shelves use their book statistics, never the ranked strategy rows.
+  const rs = R.name==='guru'&&!S.book ? [] : await rows();
   let head;
   if (R.name === 'guru') {
-    const g = GURU[R.id], api = GURUS_API.find(a => a.id === g.id), b = S.book && BOOK[S.book], h = await heroStats(g.id, S.book);
+    const g = GURU[R.id], api = GURUS_API.find(a => a.id === g.id), b = S.book && BOOK[S.book], h = g.books.some(book=>book.live) ? await heroStats(g.id,S.book) : {fams:new Set(CAT.filter(v=>v.guru===g.id).map(v=>v.family)).size};
     head = `<nav class="crumbs"><a href="#/">Guru's</a><span>/</span>${b ? `<a href="${guruLink(g.id)}">${esc(g.name)}</a><span>/</span><span>${esc(b.title)}</span>` : `<span>${esc(g.name)}</span>`}</nav>
       <section class="ghero"><div class="guilloche" aria-hidden="true">${GUILL}</div><div class="ghero-copy"><h1>${esc(b ? b.title : g.name)}</h1><p class="lede">${esc(b ? `${g.name} · ${bookYear(b)}` : api?.tagline || g.tagline || 'Reading library · objective strategy review pending')}</p><p class="gbook">${esc(b ? (b.blurb || BOOK_BLURB[b.id] || '') : g.books.filter(x => x.live).map(x => `${x.title} (${bookYear(x)})`).join(' · '))}</p></div><figure class="guru-portrait"><div class="portrait ${g.id==='ross'?'portrait-ross':''}">${pframe(g)}</div>${g.photoSource?`<figcaption class="photo-credit">Photo: <a href="${esc(g.photoSource)}" target="_blank" rel="noopener noreferrer">Trading Educators</a></figcaption>`:''}</figure></section>
       ${g.id==='ross'?`<dl class="lstrip" data-source-counts><div><dt>Source methods</dt><dd>${h.fams}</dd></div><div><dt>Directional references</dt><dd>${CAT.filter(v=>v.guru==='ross'&&(!b||v.book===b.id)).length}</dd></div><div><dt>Implemented backtests</dt><dd>0</dd></div><div><dt>Requirements</dt><dd style="font-size:16px">Data missing · Rules unresolved</dd></div></dl>`:g.books.some(x => x.live) ? `<dl class="lstrip"><div><dt>${b ? `Strategies in the ${b.id === 'stc9' ? 'course' : 'book'}` : `Strategies across ${g.books.filter(x => x.live).length} books`}</dt><dd data-count="${h.fams}">${h.fams}</dd></div><div><dt>Rule variants tested on ${esc(LABEL[h.tk])}</dt><dd data-count="${h.variants}">${h.variants}</dd></div><div><dt>Variants with t ≥ 2</dt><dd data-count="${h.sig}">${h.sig}</dd></div>${h.best?`<div><dt>Best modeled Sharpe (20+ trades)</dt><dd>${fx(h.best.s.sharpe)}</dd></div>`:''}</dl>` : ''}`;
@@ -1495,14 +1497,16 @@ async function viewStrategy() {
   const availability=(await getReadiness(tk,selection.from,selection.to,v.id,selection.p))[v.id] || {status:'unavailable',note:'The data requirements could not be verified.'};
   if(generation!==busy)return '';
   if(availability.status!=='ready') return withheldStrategy(v,tk,crumbs,switches,availability);
-  await optSchema();
-  const d = await runData(v.id, tk, selection.from, selection.to, selection.cost, selection.p,runApi,VaultUI.costState(selection));
+  const schemaRequest=optSchema(),chartRequest=optimization?Promise.resolve(null):fullOhlc(tk,runApi).catch(()=>null);
+  const d=await runData(v.id,tk,selection.from,selection.to,selection.cost,selection.p,runApi,VaultUI.costState(selection));
   if(generation!==busy)return '';
   if (!d || d.error) return withheldStrategy(v,tk,crumbs,switches,{status:'unavailable',note:apiError(d?.error || 'No response from the calculation engine',tk)});
+  await schemaRequest;
+  if(generation!==busy)return '';
   const s = d.stats, cl = v.claim, vd = verdictOf(s), closed = d.trades.filter(t => !t.open), chk = closed.map(exitCheck).filter(Boolean), pass = chk.filter(x => x.ok).length;
   const display=returnDisplay(d,selection.report_mode);
   const tiles = [['Net Profit',display.value,x=>pct(x,2,true),display.reportMode,cls(display.value)],['Avg net pnl',s.avg_net_pnl??s.avg_trade,x=>pct(x,2,true),'Per closed trade',cls(s.avg_trade)],['No. of trades',s.trades,x=>fx(x,0),'Closed positions'],['Win Rate',s.win_rate,x=>pct(x,1),'Closed trades'],['Expectancy',s.expectancy_ratio,x=>fx(x),'Per unit of average loss'],['MaxDD',s.max_dd,x=>pct(x,2),'Largest equity decline','neg'],['Sharpe',s.sharpe,x=>fx(x),'Daily returns · rf = 0']];
-  const px=optimization?null:await fullOhlc(tk,runApi).catch(async()=>d.ohlc||await ohlc(tk));
+  const px=optimization?null:(await chartRequest)||d.ohlc||await ohlc(tk);
   if(generation!==busy)return '';
   STRAT = { d, v, tk, tiles, px, display, indicatorParameters:{...bookDefaults(v.id),...decodeP(selection.p)} };
   STRAT.indicators=buildStrategyIndicators({id:v.id,prices:px,fullHistory:px?.full_history===true,parameters:STRAT.indicatorParameters});
@@ -1769,14 +1773,15 @@ async function initializeRuntime(account) {
     try { const u = await (await fetch(API_US + '/tickers')).json(); TICK_ALL_US=u;u.forEach(t=>{if(!LABEL[t.ticker])LABEL[t.ticker]=t.symbol||t.ticker.split(':').at(-1);}); TICK_US = US_INDICES.map(k => u.find(t => t.ticker === k)).filter(Boolean); if (!TICK_US.length) TICK_US = null; } catch (e) { TICK_US = null; }
     ALLCAT = cat.map((v, i) => ({ ...v, ord: i, book: v.book || 'stc9', style: v.group.split(' · ')[0] })); CAT = marketCat();
     Object.values(BOOK).forEach(b => { if (CAT.some(v => v.book === b.id)) b.live = true; });
-    for(const [file,region] of [['baskets.json','in'],['baskets-us.json','us']]){try{const response=await fetch('data/'+file);if(response.ok){const data=await response.json(),pool=region==='us'?TICK_ALL_US:TICK_ALL_IN,keys=new Set(pool.map(t=>t.ticker)),items=(Array.isArray(data)?data:data.baskets||[]).map(b=>({...b,symbols:(b.symbols||[]).filter(key=>keys.has(key))}));if(region==='us')BASKETS_US=items;else BASKETS_IN=items;}}catch{}}
-    try{const coverage=await fetch('data/book-coverage.json');if(coverage.ok)BOOK_COVERAGE=await coverage.json();}catch{}
-    try{const pristine=await fetch('data/pristine-reading-index.json');if(pristine.ok){const data=await pristine.json(),entries=(data.entries||[]).map(b=>({...b,author_metadata:b.source_author,years_reported:b.year?[String(b.year)]:[]}));BOOK_COVERAGE.authors.pristine={id:'pristine',name:'Pristine Trading',source_titles:entries,catalogue_books:GURU.pristine.books.map(b=>({id:b.id,title:b.title,summary:b.blurb})),counts:{catalogue_books:3,source_title_candidates:entries.length,local_pdf_files:(data.counts?.source_locations||0)},note:'Three curated reading entries, plus related Pristine manuals and articles with their recorded author credits. Source-title candidates, document versions and split materials are not independently verified distinct authored books. Original source bytes were preserved; complete trading-rule review is pending.'};}}
-    catch{}
-    try{const files=await fetch('data/book-file-index.json');if(files.ok)BOOK_FILE_INDEX=await files.json();}catch{}
-    try{const categories=await fetch('data/book-categories.json');if(categories.ok)BOOK_CATEGORIES=await categories.json();}catch{}
-    try{const inventory=await fetch('data/research-share-library.json');if(inventory.ok)mergeResearchLibrary(await inventory.json());}catch{}
-    try{const reviews=await fetch('data/tharp-source-review.json');if(reviews.ok)applyReadingReviews(await reviews.json());}catch{}
+    const metadataFiles=['baskets.json','baskets-us.json','book-coverage.json','pristine-reading-index.json','book-file-index.json','book-categories.json','research-share-library.json','tharp-source-review.json'];
+    const metadata=await Promise.all(metadataFiles.map(async file=>{try{const response=await fetch('data/'+file);return response.ok?await response.json():null;}catch{return null;}}));
+    for(const [offset,region] of [[0,'in'],[1,'us']]){try{const data=metadata[offset];if(data){const pool=region==='us'?TICK_ALL_US:TICK_ALL_IN,keys=new Set(pool.map(t=>t.ticker)),items=(Array.isArray(data)?data:data.baskets||[]).map(b=>({...b,symbols:(b.symbols||[]).filter(key=>keys.has(key))}));if(region==='us')BASKETS_US=items;else BASKETS_IN=items;}}catch{}}
+    if(metadata[2])BOOK_COVERAGE=metadata[2];
+    try{const data=metadata[3];if(data){const entries=(data.entries||[]).map(b=>({...b,author_metadata:b.source_author,years_reported:b.year?[String(b.year)]:[]}));BOOK_COVERAGE.authors.pristine={id:'pristine',name:'Pristine Trading',source_titles:entries,catalogue_books:GURU.pristine.books.map(b=>({id:b.id,title:b.title,summary:b.blurb})),counts:{catalogue_books:3,source_title_candidates:entries.length,local_pdf_files:(data.counts?.source_locations||0)},note:'Three curated reading entries, plus related Pristine manuals and articles with their recorded author credits. Source-title candidates, document versions and split materials are not independently verified distinct authored books. Original source bytes were preserved; complete trading-rule review is pending.'};}}catch{}
+    if(metadata[4])BOOK_FILE_INDEX=metadata[4];
+    if(metadata[5])BOOK_CATEGORIES=metadata[5];
+    try{if(metadata[6])mergeResearchLibrary(metadata[6]);}catch{}
+    try{if(metadata[7])applyReadingReviews(metadata[7]);}catch{}
     finalizeReadingIndex();
     readRoute(); render();
   } catch (error) { vaultStore.fail(vaultStore.begin('/'),error.message||'Could not reach the calculation engine.'); }
@@ -1785,7 +1790,9 @@ async function initializeRuntime(account) {
 
 
 async function homeModel(){
- const h=await heroStats(),readiness=await getReadiness(h.tk,S.from||'',S.to||''),inventoryRecords=libraryRecords(),allRecords=inventoryRecords.filter(record=>inLibraryScope(libraryScope(record,CURATED_AUTHOR_IDS),S.library_scope)),scopeAuthorIds=new Set(allRecords.map(record=>record.authorId)),scopeAuthors=LIB.filter(author=>scopeAuthorIds.has(author.id)),authors=VaultLibraryBrowser.matchingAuthors(scopeAuthors,allRecords,S.library_q,S.book_category),live=LIB.filter(g=>g.books.some(b=>b.live));
+ const selectedTicker=S.tk==='ALL'||S.market!=='india'?TICKERS[0].ticker:S.tk;
+ const [h,readiness]=await Promise.all([heroStats(),getReadiness(selectedTicker,S.from||'',S.to||'')]);
+ const inventoryRecords=libraryRecords(),allRecords=inventoryRecords.filter(record=>inLibraryScope(libraryScope(record,CURATED_AUTHOR_IDS),S.library_scope)),scopeAuthorIds=new Set(allRecords.map(record=>record.authorId)),scopeAuthors=LIB.filter(author=>scopeAuthorIds.has(author.id)),authors=VaultLibraryBrowser.matchingAuthors(scopeAuthors,allRecords,S.library_q,S.book_category),live=LIB.filter(g=>g.books.some(b=>b.live));
  const scoped=Object.fromEntries(await Promise.all(live.map(async g=>[g.id,await heroStats(g.id)])));
  const summary=await getSum(h.tk,S.from||'',S.to||''),states=Object.fromEntries(LIB.map(g=>[g.id,VaultLibraryDiscovery.authorAvailability(g.books.map(b=>b.id),CAT,summary,readiness)]));
  if(states.pristine){states.pristine.title='Rule review pending';states.pristine.text='Original Pristine books are readable. Complete trading rules and execution assumptions still need review; no verified strategy is registered.';}

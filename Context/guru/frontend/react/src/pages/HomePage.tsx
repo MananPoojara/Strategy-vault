@@ -51,8 +51,8 @@ export function HomePage({ snapshot }: { snapshot: ViewSnapshot }) {
               : "Entries in this view",
             model.entries,
           ],
-          ["Implemented methods", model.implementedMethods],
-          [`Backtest families on ${model.symbol}`, model.families],
+          ["Enabled strategy entries", model.implementedMethods],
+          [`Strategies with ${model.symbol} backtests`, model.families],
           [model.basket ? "Basket symbols" : "Indices", model.symbolCount],
         ].map(([label, value]) => (
           <div key={label}>
@@ -78,7 +78,7 @@ export function HomePage({ snapshot }: { snapshot: ViewSnapshot }) {
         </p>
         <dl className="coverage-totals">
           <div>
-            <dt>Enabled methods</dt>
+            <dt>Enabled strategy entries</dt>
             <dd>{model.implementedMethods}</dd>
           </div>
           <div>
@@ -103,8 +103,9 @@ export function HomePage({ snapshot }: { snapshot: ViewSnapshot }) {
           </div>
         </dl>
         <p>
-          Implemented methods counts enabled book-specific families; it does not
-          certify original rules or published studies. Source groups are
+          Main strategy entries group their parameter versions. The same idea
+          credited to different books can count separately. Enabled code does not
+          certify source rules or reproduce an original published study. Source groups are
           recorded credits and collections, not a certified count of distinct
           authors. Screened titles are candidates; unreviewed relevance remains
           available in its own view.
