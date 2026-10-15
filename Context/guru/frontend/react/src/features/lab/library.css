@@ -5,11 +5,16 @@
 .lab-library li > button[data-lab-item] { flex: 1; min-width: 0; text-align: left; font: 500 13px var(--font); color: var(--ink); background: none; border: 0; padding: 4px 2px; cursor: pointer; }
 .lab-library li > button[data-lab-item] small { display: block; color: var(--ink3); font-weight: 400; }
 .lab-library li > button[data-lab-item]:disabled, .lab-library button[disabled] { color: var(--ink3); cursor: not-allowed; }
-.lab-library summary { cursor: pointer; font-weight: 600; color: var(--ink2); padding: 4px 0; }
-.lab-library summary small { color: var(--ink3); font-weight: 400; }
+.lab-library summary, .lab-library .lab-group-h { cursor: pointer; font-weight: 600; color: var(--ink2); padding: 4px 0; }
+.lab-library .lab-group-h { display: block; width: 100%; text-align: left; font-size: inherit; font-family: inherit; background: none; border: 0; }
+.lab-library .lab-group-h::before { content: "\25B8"; display: inline-block; width: 1.1em; }
+.lab-library .lab-group-h[aria-expanded="true"]::before { content: "\25BE"; }
+.lab-library .lab-group-h:focus-visible { outline: none; box-shadow: var(--ring); }
+.lab-library summary small, .lab-library .lab-group-h small { color: var(--ink3); font-weight: 400; }
 .lab-library input[type=search] { width: 100%; box-sizing: border-box; font: 500 13px var(--font); padding: 6px 8px; margin: 6px 0 8px; border: 1px solid var(--steel); border-radius: var(--r-field); background: var(--card); color: var(--ink); }
 .lab-toolbar .dfield select { max-width: 100%; }
 .lab-detail pre { white-space: pre-wrap; background: var(--panel); padding: 8px; font: 400 12px "IBM Plex Mono", monospace; color: var(--ink); }
 .lab-detail dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; }
 .lab-detail dt { color: var(--ink2); font-weight: 600; } .lab-detail dd { margin: 0; }
 @media (max-width: 900px) { .lab-library { position: static; max-height: 60vh; } }
+.lab-toolbar { padding-top: 10px; padding-bottom: 10px; }

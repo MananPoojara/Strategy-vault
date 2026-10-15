@@ -9,6 +9,8 @@ export function LibraryRail({ catalogue, market, hasVolume, tf, onAdd, onRead }:
   catalogue: Catalogue; market: Market; hasVolume: boolean; tf: Timeframe; onAdd(ind: Indicator): void; onRead(ind: Indicator): void;
 }) {
   const [query, setQuery] = useState("");
+  const [manual, setManual] = useState<Record<string, boolean>>({}); // the user's own open/closed choices, kept across searches
+  const [searchShut, setSearchShut] = useState<Set<string>>(new Set()); // groups closed by hand while a search is showing
   const [mobile, setMobile] = useState(narrow);
   useEffect(() => {
     const mq = window.matchMedia?.("(max-width: 900px)");
@@ -19,15 +21,22 @@ export function LibraryRail({ catalogue, market, hasVolume, tf, onAdd, onRead }:
   }, []);
   const count = `${catalogue.indicators.length} indicators`;
   const groups = groupByCategory(searchIndicators(catalogue.indicators, query));
+  const searching = query.trim() !== "";
+  const isOpen = (category: string) => (searching ? !searchShut.has(category) : !!manual[category]);
+  const toggle = (category: string) => searching
+    ? setSearchShut((s) => { const n = new Set(s); if (!n.delete(category)) n.add(category); return n; })
+    : setManual((m) => ({ ...m, [category]: !m[category] }));
   const body = (
     <>
-      <input type="search" value={query} onChange={(e) => setQuery(e.target.value)}
+      <input type="search" value={query} onChange={(e) => { setQuery(e.target.value); setSearchShut(new Set()); }}
         placeholder="Search name, id, TradingView or AmiBroker name" aria-label="Search indicators" />
       {groups.length === 0 && <div className="empty">No indicator matches "{query}".</div>}
       {groups.map(([category, list]) => (
-        <details open key={category}>
-          <summary>{category} <small>{list.length}</small></summary>
-          <ul>
+        <div className="lab-group" key={category}>
+          <button type="button" className="lab-group-h" aria-expanded={isOpen(category)} onClick={() => toggle(category)}>
+            {category} <small>{list.length}</small>
+          </button>
+          <ul hidden={!isOpen(category)}>
             {list.map((ind) => {
               const { ok, reason } = availability(ind, { market, hasVolume, tf });
               return (
@@ -41,7 +50,7 @@ export function LibraryRail({ catalogue, market, hasVolume, tf, onAdd, onRead }:
               );
             })}
           </ul>
-        </details>
+        </div>
       ))}
     </>
   );

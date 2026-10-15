@@ -114,16 +114,16 @@ export function OptimizePanel(props: {
                         value={d ? d[k] : k === "step" ? s.step : s.current} onChange={(e) => edit(s.path, k, e.target.value)} />
                     </span></td>
                   ))}
-                  <td>{d ? valuesCount(d).toLocaleString("en-US") : ""}</td>
+                  <td className="lab-dim-values">{d ? valuesCount(d).toLocaleString("en-US") : <span className="cap">fixed</span>}</td>
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
-      <p className="cap">{dims.length ? `${combos.toLocaleString("en-US")} combinations` : COPY.tickOne}</p>
       {tooBig && <p className="rnote">At most {MAX_VALUES.toLocaleString("en-US")} values per setting and {catalogue.max_combos.toLocaleString("en-US")} combinations. Narrow the ranges.</p>}
-      <div className="lab-row">
+      <div className="lab-row lab-optimize-run">
+        <span className="cap">{dims.length ? `${combos.toLocaleString("en-US")} combinations` : COPY.tickOne}</span>
         <label className="dfield">Held back
           <select aria-label="Held back" value={heldBack} onChange={(e) => setHeldBack(Number(e.target.value))}>
             <option value={0}>None</option>
@@ -132,10 +132,10 @@ export function OptimizePanel(props: {
         </label>
         <button type="button" className="dbtn primary" data-lab-action="optimize" disabled={disabled}
           onClick={() => run([withOptimize(spec, dims), split])}>Run optimization</button>
+        <span className="cap">Variants tried this session: {tried.toLocaleString("en-US")}</span>
       </div>
       {tooLong && <p className="rnote">{COPY.tooLong}</p>}
       {heldBack > 0 && <p className="cap">{split ? COPY.splitLine(heldBack, split) : dates.length ? "Not enough history for this split." : "Run a backtest first to set the hold-back date."}</p>}
-      <p className="cap">Variants tried this session: {tried.toLocaleString("en-US")}</p>
       {running !== null && <><Loading text={`Optimizing… ${Math.floor((Date.now() - running) / 1000)} s`} /><p className="cap">{COPY.optimizeLimit}</p></>}
       {error !== null && <ErrorNotice error={error} market={market} instrumentLabel={instrumentLabel}
         onRetry={() => last.current && run(last.current)} />}

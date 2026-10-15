@@ -1,11 +1,21 @@
-.lab-page { display: grid; gap: 18px; }
-.lab-grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 18px; align-items: start; }
-.lab-main { display: grid; gap: 18px; min-width: 0; }
+/* House section gap: one 14px step. The grid gap owns it, so the house .box margin-top and .two margin are reset here (they would stack on the gap). */
+.lab-page { display: grid; gap: 14px; }
+.lab-page .box, .lab-page .two { margin: 0; }
+.lab-page .box { padding: 16px 18px; }
+.lab-page .box-h { margin-bottom: 10px; }
+.lab-page > header p { margin: 6px 0 0; }
+.lab-page .cap { margin-top: 4px; }
+/* Notices stay one compact line; the house .empty is a tall 40px dashed panel. */
+.lab-page .empty { padding: 8px 12px; text-align: left; font-size: 13px; }
+.lab-page .empty b { display: inline; font-size: inherit; margin: 0 8px 0 0; }
+.lab-page .loading { padding: 10px 0; text-align: left; }
+.lab-grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 14px; align-items: start; }
+.lab-main { display: grid; gap: 14px; min-width: 0; }
 .lab-label { margin: 6px 0 0; font: 500 12.5px var(--font); color: var(--ink2); }
 .lab-provisional { border-left-color: var(--red); background: var(--card); color: var(--ink); }
-.lab-error { display: grid; gap: 8px; justify-items: center; padding: 24px; }
+.lab-error { display: grid; gap: 4px; justify-items: start; padding: 8px 12px; }
 .lab-error .lab-provisional { justify-self: stretch; text-align: left; }
-.lab-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.lab-row { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; }
 .lab-kept code { font: 400 11.5px "IBM Plex Mono", monospace; color: var(--ink2); background: var(--panel); padding: 2px 4px; }
 @media (max-width: 900px) { .lab-grid { grid-template-columns: minmax(0, 1fr); } }
-@media (max-width: 600px) { .lab-page .box { padding-left: 12px; padding-right: 12px; } .lab-row { gap: 6px; } }
+@media (max-width: 600px) { .lab-page .box { padding: 12px; } .lab-row { gap: 6px; } }

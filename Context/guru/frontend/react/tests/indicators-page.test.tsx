@@ -60,6 +60,24 @@ it("an unknown ?tf= falls back to daily once the catalogue loads", async () => {
   expect(location.hash).not.toContain("tf=");
 });
 
+it("the rules span the full row until a backtest exists or is running, then sit beside it", async () => {
+  const { host } = await go("#/indicators?tk=NIFTY%2050");
+  const row = () => host.querySelector<HTMLElement>(".two.lab-two")!;
+  expect(row().dataset.labLayout).toBe("full");
+  expect(row().querySelector(".lab-rules")).not.toBeNull();
+  expect(row().children).toHaveLength(1); // no empty second column
+  let release!: (r: Response) => void;
+  runAnswer = () => new Promise<Response>((resolve) => { release = resolve; });
+  await run(host);
+  expect(row().dataset.labLayout).toBe("split");
+  expect(row().querySelector("[role=status]")?.textContent).toBe("Running backtest…");
+  await act(async () => release(jsonResponse(runFixture)));
+  await flush();
+  expect(row().dataset.labLayout).toBe("split");
+  expect(row().querySelector("[data-lab-result]")).not.toBeNull();
+  expect(row().children).toHaveLength(2);
+});
+
 it("a failed run clears the previous result", async () => {
   const { host } = await go("#/indicators?tk=NIFTY%2050");
   await run(host);

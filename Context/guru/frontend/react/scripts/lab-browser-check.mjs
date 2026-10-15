@@ -36,6 +36,8 @@ const click = (selector) => evaluate(`(() => { const el = document.querySelector
 await send("Runtime.enable");
 await send("Page.enable");
 
+// The app applies the account theme after it boots, so switch through its own runtime (client side only; nothing is saved).
+const applyTheme = async (theme) => { await waitFor(`!!window.VaultRuntime`, 10000); await sleep(300); await evaluate(`window.VaultRuntime.changeTheme(${JSON.stringify(theme || "steel")})`); await sleep(200); };
 const report = [];
 const views = [["desktop-steel", 1440, ""], ["desktop-aqua", 1440, "aqua"], ["desktop-midnight", 1440, "midnight"], ["mobile-aqua", 400, "aqua"]];
 for (const [name, width, theme] of views) {
@@ -43,7 +45,7 @@ for (const [name, width, theme] of views) {
   await send("Emulation.setDeviceMetricsOverride", { width, height: 1000, deviceScaleFactor: 1, mobile: width < 600 });
   await send("Page.navigate", { url: `${base}/#/indicators?tk=NIFTY%2050` });
   checks.library = await waitFor(`!!document.querySelector('[data-lab-library] [data-lab-item]')`);
-  await evaluate(theme ? `document.documentElement.setAttribute('data-theme', ${JSON.stringify(theme)})` : `document.documentElement.removeAttribute('data-theme')`);
+  await applyTheme(theme);
   checks.label = await evaluate(`[...document.querySelectorAll('[data-server-label]')].some(e => e.textContent === 'User-defined indicator strategy · simulated · not a book method')`);
   if (name === "desktop-steel") {
     checks.chip = (await click(`[data-lab-item="rsi"]`)) && (await waitFor(`!!document.querySelector('[data-lab-chip]')`));
@@ -69,6 +71,56 @@ for (const [name, width, theme] of views) {
   const shot = await send("Page.captureScreenshot", { format: "png", captureBeyondViewport: true });
   writeFileSync(join(out, `lab-${name}.png`), Buffer.from(shot.result.data, "base64"));
   report.push({ name, checks, pageErrors: errors.slice(before) });
+}
+
+// Rules/backtest row: full width before any run, rules | backtest after one. [name, width, height, theme]
+const layoutViews = [["1920-steel", 1920, 1080, ""], ["1920-midnight", 1920, 1080, "midnight"], ["1425-steel", 1425, 900, ""], ["1425-midnight", 1425, 900, "midnight"], ["400-steel", 400, 900, ""], ["400-midnight", 400, 900, "midnight"]];
+const bad = `(() => {
+  const scrolls = (el) => { for (let n = el.parentElement; n; n = n.parentElement) if (/auto|scroll/.test(getComputedStyle(n).overflowX)) return true; return false; };
+  return [...document.body.querySelectorAll('*')].filter((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.right > innerWidth + 1 && !scrolls(el); }).length === 0 && document.documentElement.scrollWidth <= innerWidth + 1;
+})()`;
+// Spacing: stacked top-level lab sections sit one house step apart (<= 24px), and the optimization table keeps its numeric columns beside the setting.
+const sectionGaps = `(() => {
+  const gaps = (host) => { const k = [...host.children].filter((e) => e.offsetHeight > 0 && getComputedStyle(e).position !== 'sticky'); return k.slice(1).map((e, i) => e.getBoundingClientRect().top - k[i].getBoundingClientRect().bottom); };
+  const grid = document.querySelector('.lab-grid');
+  const stacked = grid && getComputedStyle(grid).gridTemplateColumns.split(' ').length === 1;
+  return [...gaps(document.querySelector('.lab-page')), ...gaps(document.querySelector('.lab-main')), ...(stacked ? gaps(grid) : [])];
+})()`;
+const gapsOk = `(${sectionGaps}).every((g) => g >= 0 && g <= 24)`;
+const optimizeCompact = `(() => { const row = document.querySelector('.lab-dims tbody tr'); if (!row) return false; const label = row.children[1].getBoundingClientRect(), ins = [...row.querySelectorAll('input[type=number]')]; return ins.length === 3 && ins[2].getBoundingClientRect().right - label.right <= 400 && !!row.children[5].textContent.trim(); })()`;
+const runGroup = `(() => { const ins = [...document.querySelectorAll('.lab-settings input')], b = document.querySelector('[data-lab-action=run]').getBoundingClientRect(), l = ins[ins.length - 1].getBoundingClientRect(); return b.left - l.right <= 40 || b.top > l.bottom; })()`;
+const widths = `(() => { const r = document.querySelector('.lab-rules')?.getBoundingClientRect().width ?? 0, m = document.querySelector('.lab-main')?.getBoundingClientRect().width ?? 1; return r / m; })()`;
+for (const [name, width, height, theme] of layoutViews) {
+  const before = errors.length, checks = {};
+  await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: width < 600 });
+  await send("Page.navigate", { url: `${base}/#/indicators?tk=NIFTY%2050` });
+  await send("Page.reload");
+  checks.library = await waitFor(`!!document.querySelector('[data-lab-library] [data-lab-item]') && !!document.querySelector('.lab-rules')`);
+  await applyTheme(theme);
+  await sleep(500);
+  checks.preFull = await evaluate(`document.querySelector('.lab-two')?.dataset.labLayout === 'full' && !document.querySelector('[data-lab-result]')`);
+  const ratio = await evaluate(widths);
+  checks.preRulesWidthAtLeast90pct = ratio >= 0.9;
+  checks.preNoOverflow = await evaluate(bad);
+  checks.preSectionGapsAtMost24 = await evaluate(gapsOk);
+  checks.preOptimizeColumnsCompact = await evaluate(optimizeCompact);
+  checks.preRunButtonBesideInputs = await evaluate(runGroup);
+  checks.preLibraryGroupsClosed = await evaluate(`(() => { const h = [...document.querySelectorAll('.lab-group-h')]; return h.length > 1 && h.every((b) => b.getAttribute('aria-expanded') === 'false'); })()`);
+  if (width >= 1400) { // an indicator condition needs ~1000px for one line; in the half-width Entry column it wraps to two (left+operator, right), never three
+    checks.preConditionAtMostTwoLines = await evaluate(`[...document.querySelectorAll('.lab-cond')].every((c) => c.getBoundingClientRect().height < 90)`);
+  }
+  const pre = await send("Page.captureScreenshot", { format: "png", captureBeyondViewport: true });
+  mkdirSync(join(out, "prerun"), { recursive: true });
+  writeFileSync(join(out, "prerun", `lab-prerun-${name}.png`), Buffer.from(pre.result.data, "base64"));
+  checks.run = (await click(`[data-lab-action="run"]`)) && (await waitFor(`!!document.querySelector('[data-lab-result]')`, 120000));
+  checks.postSplit = await evaluate(`document.querySelector('.lab-two')?.dataset.labLayout === 'split'`);
+  const post = await evaluate(widths);
+  checks.postRulesBesideBacktest = width < 1100 || post < 0.6;
+  checks.postNoOverflow = await evaluate(bad);
+  checks.postSectionGapsAtMost24 = await evaluate(gapsOk);
+  const shot = await send("Page.captureScreenshot", { format: "png", captureBeyondViewport: true });
+  writeFileSync(join(out, "prerun", `lab-postrun-${name}.png`), Buffer.from(shot.result.data, "base64"));
+  report.push({ name: `layout-${name}`, ratios: { pre: ratio, post }, checks, pageErrors: errors.slice(before) });
 }
 await send("Page.navigate", { url: `${base}/#/yt-strategies` });
 report.push({ name: "yt-strategies", checks: { rendered: await waitFor(`!!document.querySelector('[data-lab-page="yt-strategies"] [data-lab-error], [data-lab-page="yt-strategies"] .lab-card, [data-lab-page="yt-strategies"] .empty')`) }, pageErrors: [] });

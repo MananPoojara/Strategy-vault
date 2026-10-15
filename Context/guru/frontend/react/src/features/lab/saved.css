@@ -1,13 +1,13 @@
-.lab-saved-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--rule); }
+.lab-saved-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--rule); }
 .lab-saved-save { border-bottom: 0; }
-.lab-saved-name { flex: 1 1 220px; min-width: 0; padding: 6px 8px; border: 1px solid var(--rule); background: var(--card); color: var(--ink); font: inherit; }
+.lab-saved-name { flex: 0 1 360px; min-width: 0; padding: 6px 8px; border: 1px solid var(--rule); background: var(--card); color: var(--ink); font: inherit; }
 .lab-saved-list { list-style: none; margin: 0; padding: 0; }
 .lab-saved-item .lab-saved-row + .lab-saved-row { padding-top: 0; }
-.lab-saved-group h3 { margin: 14px 0 0; font-size: 13px; color: var(--ink2); }
+.lab-saved-group h3 { margin: 10px 0 0; font-size: 13px; color: var(--ink2); }
 .lab-saved-meta { font-size: 12px; color: var(--ink2); }
 .lab-saved-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
-.lab-saved-note { margin: 6px 0; font-size: 12.5px; color: var(--ink2); }
-.lab-saved-feedback { display: grid; gap: 8px; justify-items: start; margin: 8px 0; }
+.lab-saved-note { margin: 4px 0; font-size: 12.5px; color: var(--ink2); }
+.lab-saved-feedback { display: grid; gap: 8px; justify-items: start; margin: 6px 0; }
 .lab-saved-feedback .lab-error { justify-self: stretch; }
 .lab-status-submitted { border-color: var(--steel); }
 .lab-review-note { flex: 1 1 260px; min-width: 0; padding: 6px 8px; border: 1px solid var(--rule); background: var(--card); color: var(--ink); font: inherit; }

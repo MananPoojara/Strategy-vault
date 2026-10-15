@@ -6,7 +6,7 @@
 .lab-result .metric b { font-size: 22px; overflow-wrap: anywhere; }
 .lab-legend { margin-top: 14px; }
 .lab-result-tables > :first-child { margin-top: 0; }
-.lab-monthly { margin-top: 18px; overflow-x: auto; }
-.lab-trades { margin-top: 18px; display: grid; gap: 8px; }
+.lab-monthly { margin-top: 12px; overflow-x: auto; }
+.lab-trades { margin-top: 12px; display: grid; gap: 8px; }
 .lab-trades .lab-row { justify-content: space-between; }
 .lab-trades .box-h { margin: 0; font-size: 16px; }

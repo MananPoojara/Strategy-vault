@@ -31,6 +31,7 @@ export function RuleBuilder({ spec, catalogue, onChange, settings, onSettings, p
     <section className="box lab-rules">
       <h2 className="box-h">Strategy rules <small>{COPY.rulesHint}</small></h2>
       <OrdersPanel spec={spec} onChange={onChange} />
+      <div className="lab-sides">
       {SIDES.map(({ side, title, tag }) => (
         <div className="lab-side" key={side}>
           <h3>{title}</h3>
@@ -53,6 +54,7 @@ export function RuleBuilder({ spec, catalogue, onChange, settings, onSettings, p
           </button>
         </div>
       ))}
+      </div>
       {weeklyOrMonthly && <p className="cap">{COPY.wmRule}</p>}
       <div className="lab-row lab-settings">
         <label className="dfield">From<input type="date" aria-label="From" value={settings.from} onChange={(e) => onSettings({ from: e.target.value })} /></label>
@@ -68,14 +70,12 @@ export function RuleBuilder({ spec, catalogue, onChange, settings, onSettings, p
         <label className="dfield">Slippage (bps / side)
           <input type="number" aria-label="Slippage (bps / side)" min={0} step="any" value={settings.slippage} onChange={(e) => onSettings({ slippage: e.target.value })} />
         </label>
-      </div>
-      {problems.length > 0 && <ul className="rnote">{problems.map((p, i) => <li key={i}>{p}</li>)}</ul>}
-      <div className="lab-row">
         <button type="button" className="dbtn primary" data-lab-action="run" disabled={running || problems.length > 0} onClick={onRun}>
           {running ? "Running…" : "Run backtest"}
         </button>
+        <span className="cap">Signal at the bar's close · fill at the {fill}</span>
       </div>
-      <p className="cap">Signal at the bar's close · fill at the {fill}</p>
+      {problems.length > 0 && <ul className="rnote">{problems.map((p, i) => <li key={i}>{p}</li>)}</ul>}
     </section>
   );
 }

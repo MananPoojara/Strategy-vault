@@ -32,6 +32,18 @@ it("ticking a setting fills a small range; split sends a date; optimize carries 
   expect(base.onTried).toHaveBeenCalledWith(3);
 });
 
+it("the Values column is never empty: fixed when unticked, the value count when ticked; the run controls share one row", async () => {
+  const host = await mount(<OptimizePanel {...base} onOptimize={vi.fn()} />);
+  const values = () => host.querySelector('[data-lab-dim="entry.all[0].rhs.p.length"] .lab-dim-values')!.textContent;
+  expect(values()).toBe("fixed");
+  await tick(host, "entry.all[0].rhs.p.length");
+  expect(values()).toBe("5");
+  const row = host.querySelector(".lab-optimize-run")!;
+  expect(row.contains(host.querySelector('[data-lab-action="optimize"]'))).toBe(true);
+  expect(row.textContent).toContain("Held back");
+  expect(row.textContent).toContain("Variants tried this session: 0");
+});
+
 it("onTried fires once per finished optimization", async () => {
   const onTried = vi.fn();
   const host = await mount(<OptimizePanel {...base} onTried={onTried} onOptimize={vi.fn().mockResolvedValue(optimizeFixture)} />);

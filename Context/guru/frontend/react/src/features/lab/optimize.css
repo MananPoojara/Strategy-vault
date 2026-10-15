@@ -1,2 +1,13 @@
-.lab-dims .dfield input[type=number] { width: 80px; }
+/* Compact settings table: the setting takes what it needs, the numeric columns stay narrow right beside it. */
+.lab-page .lab-dims { width: auto; max-width: 100%; }
+.lab-page .lab-dims th, .lab-page .lab-dims td { padding: 5px 10px; }
+.lab-page .lab-dims th:first-child, .lab-page .lab-dims td:first-child { width: 36px; padding-right: 0; }
+.lab-page .lab-dims td:nth-child(2) { max-width: 420px; }
+.lab-page .lab-dims th:nth-child(n+3):nth-child(-n+5), .lab-page .lab-dims td:nth-child(n+3):nth-child(-n+5) { width: 116px; min-width: 80px; }
+.lab-page .lab-dims .dfield, .lab-page .lab-dims .dfield input[type=number] { width: 100%; }
+.lab-page .lab-dims .lab-dim-values { min-width: 64px; white-space: nowrap; }
+.lab-page .lab-dims .lab-dim-values .cap { margin: 0; }
+.lab-page .lab-optimize-run { margin-top: 10px; }
+.lab-page .lab-optimize-run .cap { margin: 0; }
+.lab-page [data-lab-optimize] > .empty { margin-top: 10px; }
 .ocmp th, .ocmp td { white-space: nowrap; }

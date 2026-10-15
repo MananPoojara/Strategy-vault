@@ -179,6 +179,8 @@ function IndicatorsLab() {
   const glNote = loaded && "gl" in loaded ? loaded.gl?.provisional_note : undefined;
   const hasVolume = !!option?.hasVolume;
 
+  const backtestShown = !!(result || running || runError);
+
   let work: ReactNode;
   if (loaded && "error" in loaded) work = <ErrorNotice error={loaded.error} market={market} />;
   else if (!cat || !options) work = <Loading text="Loading the Indicators lab…" />;
@@ -199,18 +201,21 @@ function IndicatorsLab() {
               onChipRemove={(key) => dispatch({ type: "chip-remove", key })} />
           ) : <div className="box empty">No instrument is available on this market.</div>}
         </Part>
-        <div className="two">
+        {/* No backtest yet: the rules take the whole row instead of leaving the right half empty. */}
+        <div className="two lab-two" data-lab-layout={backtestShown ? "split" : "full"}>
           <Part>
+            <div className="lab-rules-col">
             {openError ? <ErrorNotice error={openError} market={savedMarketValue} instrumentLabel={option?.instrumentLabel} /> : null}
             <RuleBuilder spec={state.spec} catalogue={cat} onChange={(spec) => dispatch({ type: "spec", spec })}
               settings={settings} onSettings={(patch) => setSettings((s) => ({ ...s, ...patch }))}
               problems={problems} running={running} onRun={() => void run()} />
+            </div>
           </Part>
-          <Part>
+          {backtestShown && <Part>
             {runError ? <ErrorNotice error={runError} market={savedMarketValue} instrumentLabel={option?.instrumentLabel} />
               : result ? <RunResults result={result} market={savedMarketValue} />
-              : running ? <Loading text="Running the backtest…" /> : null}
-          </Part>
+              : <Loading text="Running backtest…" />}
+          </Part>}
         </div>
         {result && !runError && <Part><RunTables result={result} /></Part>}
         <Part key={`${market}|${ticker}`}>{/* a ticker change remounts it: an optimization belongs to one instrument */}

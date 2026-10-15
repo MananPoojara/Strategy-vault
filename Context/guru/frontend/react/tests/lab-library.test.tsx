@@ -99,3 +99,25 @@ it("toolbar has no provisional strip on in/us", async () => {
     await unmount();
   }
 });
+
+it("rail groups start collapsed; a search expands only matching groups and clearing restores the manual choices", async () => {
+  const host = await mount(<LibraryRail catalogue={cat} market="in" hasVolume={false} tf="D" onAdd={() => {}} onRead={() => {}} />);
+  const heads = () => [...host.querySelectorAll<HTMLButtonElement>(".lab-group-h")];
+  const open = () => heads().filter((h) => h.getAttribute("aria-expanded") === "true").map((h) => h.textContent);
+  const type = async (v: string) => {
+    const search = host.querySelector<HTMLInputElement>('input[aria-label="Search indicators"]')!;
+    await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, v); search.dispatchEvent(new Event("input", { bubbles: true })); });
+  };
+  expect(heads().length).toBeGreaterThan(1);
+  expect(open()).toEqual([]);
+  expect(host.querySelectorAll("ul[hidden]")).toHaveLength(heads().length);
+  await act(async () => heads()[0].click());
+  const manual = open();
+  expect(manual).toHaveLength(1);
+  await type("ta.rsi");
+  expect(heads()).toHaveLength(1); // only the group holding a match is shown, and it is open
+  expect(open()).toHaveLength(1);
+  expect(host.querySelector("ul[hidden]")).toBeNull();
+  await type("");
+  expect(open()).toEqual(manual);
+});

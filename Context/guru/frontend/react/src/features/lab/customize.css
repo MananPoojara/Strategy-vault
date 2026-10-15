@@ -1,8 +1,12 @@
-.lab-methods { display: grid; gap: 4px; max-height: 320px; overflow: auto; margin-top: 8px; padding: 0; list-style: none; }
-.lab-methods button { display: grid; width: 100%; text-align: left; gap: 2px; padding: 6px 8px; background: var(--card); color: var(--ink); border: 1px solid var(--rule); cursor: pointer; font: inherit; }
+.lab-methods { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 8px; max-height: 320px; overflow: auto; margin: 10px 0 0; padding: 0; list-style: none; }
+.lab-methods li { display: flex; }
+.lab-methods button { display: grid; align-content: start; flex: 1; width: 100%; text-align: left; gap: 2px; padding: 8px 10px; background: var(--card); color: var(--ink); border: 1px solid var(--rule); cursor: pointer; font: inherit; }
 .lab-methods button[aria-pressed="true"] { background: var(--panel); border-color: var(--steel); }
 .lab-methods small { color: var(--ink2); }
+.lab-customize .dfield { display: flex; max-width: 360px; margin-top: 6px; }
 .lab-customize .dfield input { width: 100%; }
+.lab-methods button > span { font-weight: 600; font-size: 13px; line-height: 1.3; }
 .lab-template h3 { margin: 10px 0 4px; }
+.lab-template p { margin: 4px 0; }
 .lab-template ul { margin: 6px 0; padding-left: 18px; }
-.lab-fidelity { display: grid; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--rule); }
+.lab-fidelity { display: grid; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--rule); }

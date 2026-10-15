@@ -33,6 +33,7 @@ export function OrdersPanel({ spec, onChange }: { spec: Spec; onChange(spec: Spe
         </label>
       </div>
       {!spec.entry.limit && !spec.execution?.exit_fill && <p className="cap">Changing the entry fill also moves exits until an exit fill is chosen.</p>}
+      <div className="lab-price-orders">
       {PRICE_ORDERS.map((order) => {
         const d = orderOf(spec, order.key);
         const mode: Mode = !d ? "off" : "pct" in d ? "pct" : "atr";
@@ -56,6 +57,7 @@ export function OrdersPanel({ spec, onChange }: { spec: Spec; onChange(spec: Spe
           </div>
         );
       })}
+      </div>
     </div>
   );
 }
