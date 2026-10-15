@@ -31,8 +31,10 @@ optimization parameter heat map, basket scans, portfolio mode, intraday.
   (remove the hard-coded "YT Strategies soon" item, give custom links the `on` state) and
   `vite.config.ts` (coverage `include` list only). No backend, gateway, auth or Rust file changes.
 - **No new npm dependency.** Charts use the vendored Lightweight Charts 4.2.0 (`window.LightweightCharts`)
-  and the vendored `window.VaultReport` (`aggregate`, `monthly`, `csv`), both already loaded by
-  `index.html`. Typed through a lab-local `globals.d.ts`; `src/env.d.ts` stays unchanged.
+  and the vendored `window.VaultReport` (`monthly`, `csv`), both already loaded by `index.html`. Typed
+  through a lab-local `globals.d.ts`; `src/env.d.ts` stays unchanged. W/M (and any later Q/Y) candles
+  are aggregated by a small lab function (Monday-start weeks, calendar months, the same keys as
+  `VaultReport.aggregate`) so new timeframes need no vendored change.
 - **Theme:** existing tokens and classes only (`.box`, `.box-h`, `.metrics/.metric`, `.rnote`, `.dbtn`,
   `.join/.join-item`, `.dfield`, `.tbl`, `.tlog`, `.empty`, `.loading`, `.lwc`, `.chip`). New CSS uses
   `var(--card)`, `var(--panel)`, `var(--thead)` — never `#fff` — so Midnight works. Archivo + IBM Plex Mono.
@@ -87,8 +89,8 @@ Desktop: two columns (library rail 300px | work column). Below 900px the rail co
    close, cached per market+ticker) with up to 4 price overlays and 3 panes (oldest dropped). Chips show
    colour, name and editable settings (number inputs with min/max/step; the `variant` parameter is a
    select TradingView | AmiBroker); × removes. Sparse outputs draw gaps (null → whitespace point),
-   boolean outputs (0/1) draw as markers on the price chart, not lines. W/M: candles from
-   `VaultReport.aggregate`, indicator values sampled at each period's last daily bar; the last bar is
+   boolean outputs (0/1) draw as markers on the price chart, not lines. W/M: candles aggregated from
+   the daily OHLC, indicator values sampled at each period's last daily bar; the last bar is
    marked "in progress" and the chart note says "The last weekly bar is still in progress; its values
    can change until the week closes." Trade spans from the latest backtest show as entry/exit markers.
    Note text: "Indicators are calculated from the full history, then the visible range is shown."
@@ -249,9 +251,9 @@ people build them in parallel.
 - Page mount: `getAccount()` (role) and `client.catalogue(market)` (cached per market) in parallel;
   instruments per market; `region`/`tk` from the query (defaults: `in`, `NIFTY 50`; on gl the first
   `ready` instrument; on us the first ticker).
-- Market change: resets instrument, Customize state and optimization; keeps the rules only if every
-  operand still exists in the new catalogue (it does today; Phase 7 may differ), otherwise resets to the
-  default spec with a notice.
+- Market change: resets instrument, chips, the open saved row, Customize state and optimization; keeps
+  the rules (operands that the new market cannot serve are reported by the pre-checks or by the engine's
+  `needs_data` answer, as given).
 - Chart: per chip `client.series(market, {id, ticker, tf, p})`; OHLC via four `series` calls for the
   price sources, cached per market+ticker; at most 4 requests in flight (the gateway has 4 read slots).
 - Run: `client.run(market, spec, {ticker, from, to, cost, slippage})` → result or `LabError`.
