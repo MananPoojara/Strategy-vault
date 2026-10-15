@@ -290,7 +290,7 @@ fn backtest(ctx: &Ctx, c: &Compiled, d: &Bars, from: usize, to: usize, cost: f64
     };
     if equity.iter().any(|v| !v.is_finite() || *v <= 0.) { return Err(LabError::Invalid("calculation_unavailable: nonpositive or nonfinite equity; no result is published".into())); }
     let bh = (from..=to).map(|k| ctx.c[k] / ctx.c[from]).collect();
-    Ok((crate::Run { trades, from, to, equity, bh }, events, booked))
+    Ok((crate::Run { trades, from, to, equity, bh, source_account: None }, events, booked))
 }
 /// Money mode on a cash instrument: capital, sizing and the declared costs (futures add their contract in lab/futures.rs).
 fn money_of(spec: &Spec, q: &Query, market: Option<&str>) -> Result<Option<ledger::Money>, LabError> {
@@ -326,9 +326,9 @@ fn money_json(b: &ledger::Booked, m: &ledger::Money, currency: Option<&str>) -> 
 fn gross_run(ctx: &Ctx, run: &crate::Run, booked: Option<&ledger::Booked>, money: Option<&ledger::Money>) -> crate::Run {
     match (booked, money) {
         (Some(b), Some(m)) => crate::Run { trades: b.fills(), from: run.from, to: run.to,
-            equity: b.equity(&ctx.c, &ctx.r.iter().map(|r| r.date.clone()).collect::<Vec<_>>(), run.from, run.to, m, false), bh: run.bh.clone() },
+            equity: b.equity(&ctx.c, &ctx.r.iter().map(|r| r.date.clone()).collect::<Vec<_>>(), run.from, run.to, m, false), bh: run.bh.clone(), source_account: None },
         _ => crate::Run { trades: run.trades.clone(), from: run.from, to: run.to,
-            equity: crate::equity_curve(&ctx.c, &run.trades, run.from, run.to, 0.), bh: run.bh.clone() },
+            equity: crate::equity_curve(&ctx.c, &run.trades, run.from, run.to, 0.), bh: run.bh.clone(), source_account: None },
     }
 }
 fn result_stats(ctx: &Ctx, run: &crate::Run, costs: accounting::Costs, booked: Option<&ledger::Booked>, money: Option<&ledger::Money>) -> BTreeMap<&'static str, f64> {
@@ -653,7 +653,7 @@ fn portfolio_book(spec:&Spec)->Result<super::portfolio::Book,LabError>{
 }
 fn portfolio_stats(ctx:&Ctx,prepared:&PreparedPortfolio,led:&super::portfolio::Ledger,capital:f64,net:bool)->BTreeMap<&'static str,f64>{
     let mut trades:Vec<_>=led.trades.iter().map(|t|t.as_trade(net)).collect();trades.sort_by_key(|t|(t.legs[0].i,t.exit_i));
-    let run=crate::Run{trades,from:prepared.from,to:prepared.to,equity:if net{&led.equity}else{&led.gross_equity}.iter().map(|v|v/capital).collect(),bh:(prepared.from..=prepared.to).map(|i|ctx.c[i]/ctx.c[prepared.from]).collect()};
+    let run=crate::Run{trades,from:prepared.from,to:prepared.to,equity:if net{&led.equity}else{&led.gross_equity}.iter().map(|v|v/capital).collect(),bh:(prepared.from..=prepared.to).map(|i|ctx.c[i]/ctx.c[prepared.from]).collect(),source_account:None};
     let mut stats=crate::stats(ctx,&run,0.);stats.insert("avg_exposure",led.invested.iter().zip(&led.equity).map(|(v,e)|v/e).sum::<f64>()/led.equity.len() as f64);stats.insert("max_positions",led.positions.iter().copied().max().unwrap_or(0) as f64);stats
 }
 fn membership_json(loaded:&super::universe::Loaded)->String{format!("{{\"kind\":\"{}\",\"historical_membership_verified\":false,\"note\":\"{}\"}}",loaded.membership.0,esc(loaded.membership.1))}
