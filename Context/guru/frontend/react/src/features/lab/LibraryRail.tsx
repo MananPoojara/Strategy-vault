@@ -38,12 +38,12 @@ export function LibraryRail({ catalogue, market, hasVolume, tf, onAdd, onRead }:
           </button>
           <ul hidden={!isOpen(category)}>
             {list.map((ind) => {
-              const { ok, reason } = availability(ind, { market, hasVolume, tf });
+              const { ok, reason } = availability(ind, { market, hasVolume, tf, maxForeign: catalogue.max_foreign });
               return (
                 <li key={ind.id}>
                   <button type="button" data-lab-item={ind.id} disabled={!ok} title={reason} onClick={() => onAdd(ind)}>
                     {ind.name} <span className="tag">{ok ? ind.placement : "needs data"}</span>
-                    {!ok && <small>{reason}</small>}
+                    {(!ok || ind.needs.second_symbol) && <small>{reason}</small>}
                   </button>{" "}
                   <button type="button" className="dbtn ghost sm" aria-label={`About ${ind.name}`} onClick={() => onRead(ind)}>i</button>
                 </li>

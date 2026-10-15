@@ -113,10 +113,10 @@ export function SavedStrategies({ role, api = strategies, editor, methodNames = 
   const item = (row: LabStrategy) => {
     const method = row.origin ? methodNames[row.origin.method] ?? row.origin.method : "";
     const open = editor.row?.id === row.id;
-    const publishable = row.publishable && !isProvisional(row.market);
+    const publishable = row.publishable && !row.spec.portfolio && !isProvisional(row.market);
     const canSubmit = publishable && open && editor.unchanged && editor.ranFresh;
     // Visible (not only a tooltip) so keyboard and screen-reader users get the reason too.
-    const reason = !publishable ? COPY.provisionalSubmit : canSubmit ? undefined : COPY.runFirst;
+    const reason = row.spec.portfolio ? "Portfolio strategies are research-only and cannot be submitted." : !publishable ? COPY.provisionalSubmit : canSubmit ? undefined : COPY.runFirst;
     const reasonId = `lab-submit-why-${row.id}`;
     const showReason = reason !== undefined && canEdit && editable(row.status) && (open || !publishable);
     return (

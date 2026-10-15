@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { act } from "react";
+import { ForeignProvider } from "../src/features/lab/ForeignFields";
 import { OperandEditor } from "../src/features/lab/OperandEditor";
 import { DEFAULT_STATE_COND } from "../src/features/lab/rule-tree";
 import { EXPAND_FIRST_REFUSED } from "../src/features/lab/labels";
@@ -180,4 +181,13 @@ it("formula displays and unwrapping preserve the inner series across every formu
     await click(row.host.querySelector('button[aria-label="Remove formula"]')!);
     expect(row.last()).toEqual("bars_since" in operand || "count" in operand ? { s: "close" } : inner);
   }
+});
+
+it("shares foreign controls recursively through formula operands only when advertised", async () => {
+  const onChange=vi.fn();const catalogue={...catalogue7Fixture,max_foreign:4};
+  const host=await mount(<ForeignProvider value={{catalogue,market:"us",ticker:"SPY",options:[{ticker:"SPX",label:"S&P 500",disabled:false,hasVolume:false}]}}>
+    <OperandEditor operand={{abs:{s:"rsi",p:{length:2},future:"keep"}}} side="entry" catalogue={catalogue} onChange={onChange} label="Entry left" />
+  </ForeignProvider>);
+  const select=host.querySelector<HTMLSelectElement>('[aria-label="Entry left › abs · Read from"]'); expect(select).not.toBeNull();
+  await choose(select!,"SPX");expect(onChange).toHaveBeenCalledWith({abs:{s:"rsi",p:{length:2},future:"keep",symbol:"SPX"}});
 });

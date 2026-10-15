@@ -97,6 +97,7 @@ export interface InstrumentContext { kind: string; market: Market }
 /** in/us rows without a native asset type are indices (instruments.ts); gl rows carry their kind (index | cfd | crypto). */
 export const instrumentContext = (market: Market, option?: InstrumentOption): InstrumentContext => ({ market, kind: option?.type ?? (market === "gl" ? "unknown" : "index") });
 export function moneyBlocked(ctx: InstrumentContext, spec: Spec): string | null {
+  if(ctx.kind==="portfolio")return ctx.market==="gl"?"Portfolios require admitted India or US stocks and ETFs.":hasShorts(spec)?"Portfolios are long-only.":null;
   if (ctx.kind === "index") return MONEY_BLOCKED.index;
   if (ctx.kind === "crypto") return MONEY_BLOCKED.crypto;
   if (ctx.kind === "cfd") return MONEY_BLOCKED.cfd;
@@ -105,6 +106,7 @@ export function moneyBlocked(ctx: InstrumentContext, spec: Spec): string | null 
 }
 /** Pre-run mirror of lab/model.rs model(); the response's execution_model replaces it after a run. */
 export function instrumentNotes(ctx: InstrumentContext, spec: Spec): string[] {
+  if(ctx.kind==="portfolio")return ["Portfolio money is shared across admitted stocks and ETFs; the chart instrument is a signal or reference only."];
   const shorts = hasShorts(spec);
   const notes = ctx.kind === "index" ? [MODEL_NOTE.index] : ctx.kind === "crypto" ?
     shorts ? [MODEL_NOTE.crypto, MODEL_NOTE.cryptoShort] : [MODEL_NOTE.crypto] : ctx.kind === "cfd" ? [MODEL_NOTE.cfd] :

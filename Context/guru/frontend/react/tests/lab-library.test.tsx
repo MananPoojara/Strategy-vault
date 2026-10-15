@@ -121,3 +121,20 @@ it("rail groups start collapsed; a search expands only matching groups and clear
   await type("");
   expect(open()).toEqual(manual);
 });
+
+it("enables the admitted daily pairs only when foreign capability is advertised", () => {
+  const base=cat.indicators[0];const pair={...base,id:"ratio",computed:true,needs:{...base.needs,second_symbol:true},note:""};
+  expect(availability(pair,{market:"us",hasVolume:true,tf:"D",maxForeign:4})).toEqual({ok:true,reason:"Choose a comparison instrument on the chart."});
+  expect(availability(pair,{market:"us",hasVolume:true,tf:"D"}).ok).toBe(false);
+  expect(availability(pair,{market:"us",hasVolume:true,tf:"W",maxForeign:4}).reason).toContain("daily");
+});
+
+it("retains native market metadata for same-market signal and comparison choices", () => {
+  const rows=[{ticker:"basket:us_sp500:SPY",first:"2024-01-01",last:"2024-02-01",has_volume:true,series:[],native:true,asset_type:"etf",trusted_market:"us" as const}];
+  expect(optionsFromTickers(rows)[0].market).toBe("us");
+});
+it("uses server-advertised preloaded ETF metadata without guessing an index's execution type",()=>{
+ const rows=[{ticker:"SPY",first:"2024-01-01",last:"2024-02-01",has_volume:true,series:[]}];
+ expect(optionsFromTickers(rows,undefined,[{ticker:"SPY",type:"etf",market:"us"}])[0].type).toBe("etf");
+ expect(optionsFromTickers(rows)[0].type).toBeUndefined();
+});

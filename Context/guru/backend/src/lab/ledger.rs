@@ -58,7 +58,7 @@ impl Row {
         gross - self.entries.iter().filter(|l| l.i <= i).map(Fill::costs).sum::<f64>() - exits.iter().map(|e| e.costs()).sum::<f64>() - self.borrow_at(i, dates)
     }
 }
-fn fill(c: &MoneyCosts, k: &Contract, i: usize, px: f64, qty: f64, buy: bool, slips: bool) -> Fill {
+pub(super) fn fill(c: &MoneyCosts, k: &Contract, i: usize, px: f64, qty: f64, buy: bool, slips: bool) -> Fill {
     let value = px * qty * k.point_value;
     let tax: f64 = c.taxes.iter().filter(|t| matches!((t.2, buy), (TaxSide::Both, _) | (TaxSide::Buy, true) | (TaxSide::Sell, false))).map(|t| t.1 / 100. * value).sum();
     Fill { i, px, qty, commission: c.per_order + c.per_unit * qty + c.pct / 100. * value,

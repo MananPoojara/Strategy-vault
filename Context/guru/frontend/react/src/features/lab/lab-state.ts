@@ -1,3 +1,4 @@
+import { portfolioIdentity } from "./portfolio-model";
 import { MAX_PANES, MAX_PRICE_OVERLAYS } from "./catalogue";
 import { canonicalJson, defaultSpec } from "./spec-model";
 import type { EditorState } from "./SavedStrategies";
@@ -14,9 +15,10 @@ export type LabAction =
   | { type: "market"; market: Market } | { type: "ticker"; ticker: string } | { type: "tf"; tf: string } | { type: "range"; range: ChartRange }
   | { type: "spec"; spec: Spec } | { type: "open"; row: LabStrategy | null; spec: Spec } | { type: "row"; row: LabStrategy }
   | { type: "chip-add"; indicator: Indicator } | { type: "chip-set"; key: string; params: Record<string, number> } | { type: "chip-remove"; key: string }
+  | { type: "chip-vs"; key: string; vs?: string }
   | { type: "ran"; key: string; combos: number } | { type: "tried"; n: number };
 
-export const runKey = (spec: Spec, market: SavedMarket, ticker: string) => canonicalJson([spec, market, ticker]);
+export const runKey = (spec: Spec, market: SavedMarket, ticker: string) => canonicalJson([spec, market, spec.portfolio?portfolioIdentity(spec):ticker]);
 
 /** The page passes regionFallback only when the hash has no `region` (then the research pages' region wins). */
 export function initialLabState(q: LabQuery, regionFallback?: string): LabState {
@@ -46,6 +48,7 @@ export function labReducer(state: LabState, action: LabAction): LabState {
       return { ...state, chips, placements, nextChip: state.nextChip + 1 };
     }
     case "chip-set": return { ...state, chips: state.chips.map((c) => (c.key === action.key ? { ...c, params: action.params } : c)) };
+    case "chip-vs": return { ...state, chips: state.chips.map((c) => c.key === action.key ? { ...c, vs: action.vs } : c) };
     case "chip-remove": return { ...state, chips: state.chips.filter((c) => c.key !== action.key) };
     case "ran": return { ...state, lastRun: action.key, tried: state.tried + 1 };
     case "tried": return { ...state, tried: state.tried + action.n };
@@ -53,7 +56,8 @@ export function labReducer(state: LabState, action: LabAction): LabState {
 }
 
 export function editorState(state: LabState, market: SavedMarket): EditorState {
-  const unchanged = !!state.row && state.row.instrument === state.ticker && canonicalJson(state.row.spec) === canonicalJson(state.spec);
-  return { spec: state.spec, market, ticker: state.ticker, row: state.row, unchanged,
+  const ticker=state.spec.portfolio?portfolioIdentity(state.spec):state.ticker;
+  const unchanged = !!state.row && state.row.instrument === ticker && canonicalJson(state.row.spec) === canonicalJson(state.spec);
+  return { spec: state.spec, market, ticker, row: state.row, unchanged,
     ranFresh: state.lastRun === runKey(state.spec, market, state.ticker) };
 }

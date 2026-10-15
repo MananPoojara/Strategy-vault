@@ -306,3 +306,44 @@ it("omits actions outside the available price dates without fabricating a bar or
     { time: "2024-01-15", position: "aboveBar", shape: "arrowDown", color: "#c43c3c", size: 1 },
   ]);
 });
+
+it("waits for an explicit pair comparison and keys requests by the selected instrument", async () => {
+  const pair={...cat.indicators[0],id:"ratio",name:"Ratio",placement:"pane" as const,params:[],outputs:["value"],computed:true,needs:{...cat.indicators[0].needs,second_symbol:true}};
+  const catalogue={...cat,max_foreign:4,indicators:[...cat.indicators,pair]};const onVs=vi.fn();
+  const pairLoad=vi.fn(async(q:{id:string;vs?:string})=>q.id==="ratio"?seriesFixture("ratio",["value"],{value:[2,2,2,2,2,2]}):ohlc(q.id));
+  const options=[{ticker:"SPX",label:"S&P 500",disabled:false,hasVolume:false}];
+  const host=await mount(<Workbench {...props} market="us" ticker="SPY" catalogue={catalogue} chips={[{key:"p",id:"ratio",params:{}}]}
+    loadSeries={pairLoad} comparisonOptions={options} onChipVsChange={onVs} />);
+  await flush();expect(pairLoad.mock.calls.some(([q])=>q.id==="ratio")).toBe(false);
+  const comparison=host.querySelector<HTMLSelectElement>('[aria-label="Ratio · Compared with"]');expect(comparison).not.toBeNull();
+  await act(async()=>{comparison!.value="SPX";comparison!.dispatchEvent(new Event("change",{bubbles:true}));});
+  expect(onVs).toHaveBeenCalledWith("p","SPX");
+  await unmount();
+  await mount(<Workbench {...props} market="us" ticker="SPY" catalogue={catalogue} chips={[{key:"p",id:"ratio",params:{},vs:"SPX"}]}
+    loadSeries={pairLoad} comparisonOptions={options} onChipVsChange={onVs} />);await flush();
+  expect(pairLoad.mock.calls.some(([q])=>q.id==="ratio"&&q.vs==="SPX")).toBe(true);
+});
+
+it("suppresses unsupported pair queries on older engines, non-daily charts and unavailable comparisons", async () => {
+  const pair={...cat.indicators[0],id:"ratio",name:"Ratio",placement:"pane" as const,params:[],outputs:["value"],computed:true,needs:{...cat.indicators[0].needs,second_symbol:true}};
+  for (const [max_foreign,tf,vs] of [[undefined,"D","SPX"],[0,"D","SPX"],[-1,"D","SPX"],[4,"W","SPX"],[4,"D","UNKNOWN"]] as const) {
+    const pairLoad=vi.fn(async(q:{id:string})=>ohlc(q.id));
+    const host=await mount(<Workbench {...props} catalogue={{...cat,max_foreign,indicators:[pair]}} tf={tf} chips={[{key:"p",id:"ratio",params:{},vs}]}
+      loadSeries={pairLoad} comparisonOptions={[{ticker:"SPX",label:"S&P 500",disabled:false,hasVolume:false}]} />);await flush();
+    expect(pairLoad.mock.calls.some(([q])=>q.id==="ratio")).toBe(false);expect(host.querySelector('[data-lab-pane="p"]')).toBeNull();
+    if (!(max_foreign && max_foreign>0)) expect(host.querySelector('[aria-label="Ratio · Compared with"]')).toBeNull();
+    await unmount();
+  }
+});
+
+it("changing only vs redraws a mounted pair chip while reusing OHLC requests", async () => {
+  const pair={...cat.indicators[0],id:"ratio",name:"Ratio",placement:"pane" as const,params:[],outputs:["value"],computed:true,needs:{...cat.indicators[0].needs,second_symbol:true}};
+  const catalogue={...cat,max_foreign:4,indicators:[pair]};const options=["SPX","NDX"].map(ticker=>({ticker,label:ticker,disabled:false,hasVolume:false}));
+  const pairLoad=vi.fn(async(q:{id:string;vs?:string})=>q.id==="ratio"?seriesFixture("ratio",["value"],{value:[2,2,2,2,2,2]}):ohlc(q.id));
+  function Harness(){const[vs,setVs]=useState<string|undefined>("SPX");return <Workbench {...props} catalogue={catalogue} chips={[{key:"p",id:"ratio",params:{},vs}]} loadSeries={pairLoad} comparisonOptions={options} onChipVsChange={(_,next)=>setVs(next)} />;}
+  const host=await mount(<Harness/>);await flush();
+  const select=host.querySelector<HTMLSelectElement>('[aria-label="Ratio · Compared with"]')!;
+  await act(async()=>{select.value="NDX";select.dispatchEvent(new Event("change",{bubbles:true}));});await flush();
+  expect(pairLoad.mock.calls.filter(([q])=>q.id==="ratio").map(([q])=>q.vs)).toEqual(["SPX","NDX"]);
+  expect(pairLoad.mock.calls.filter(([q])=>q.id==="open")).toHaveLength(1);
+});

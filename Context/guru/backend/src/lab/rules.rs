@@ -39,7 +39,23 @@ fn inv(m: impl Into<String>) -> LabError { LabError::Invalid(m.into()) }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Op { CrossesAbove, CrossesBelow, Gt, Lt, Ge, Le, Eq, Ne, Crosses }
 #[derive(Clone, Debug, PartialEq)]
-pub struct SeriesRef { pub id: String, pub params: Params, pub tf: Tf, pub out: usize, pub offset: usize }
+pub struct SeriesRef { pub id: String, pub params: Params, pub tf: Tf, pub out: usize, pub offset: usize, pub foreign: Foreign }
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Foreign { pub symbol: Option<String>, pub vs: Option<String>, pub fixup: bool }
+pub const MAX_FOREIGN: usize = 4;
+pub const MAX_SYMBOL_LEN: usize = 80;
+pub const MAX_UNIVERSE: usize = 120;
+pub const MAX_UNIVERSE_LIST: usize = 50;
+pub const MAX_OPEN: usize = 50;
+pub const MAX_PORTFOLIO_COMBOS: usize = 200;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mode { Signals, Rotation }
+#[derive(Clone, Debug, PartialEq)]
+pub enum Universe { Basket(String), Tickers(Vec<String>) }
+pub type Rebalance = Option<usize>;
+#[derive(Clone, Debug, PartialEq)]
+pub struct Portfolio { pub universe: Universe, pub mode: Mode, pub score: Option<Operand>, pub lowest: bool, pub max_open: usize, pub worst_rank_held: Option<usize>, pub rebalance: Rebalance }
+impl Portfolio { pub fn worst_rank_held(&self) -> usize { self.worst_rank_held.unwrap_or(self.max_open) } }
 #[derive(Clone, Debug, PartialEq)]
 pub enum Operand { Series(SeriesRef), Value(f64), BarsHeld, Expr(Box<Expr>) }
 /// Expression operands (spec §4.1), evaluated on the daily bars.
@@ -194,7 +210,7 @@ pub const MAX_ATR_LENGTH: usize = 500;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Dim { pub path: String, pub target: Target, pub values: Vec<f64> }
 #[derive(Clone, Debug, PartialEq)]
-pub struct Spec { pub entry: Vec<Node>, pub exit: Vec<Node>, pub cost_bps: Option<f64>, pub optimize: Vec<Dim>, pub exec: Exec, pub origin: Option<Origin>, pub short_side: Option<Box<Side>> }
+pub struct Spec { pub entry: Vec<Node>, pub exit: Vec<Node>, pub cost_bps: Option<f64>, pub optimize: Vec<Dim>, pub exec: Exec, pub origin: Option<Origin>, pub short_side: Option<Box<Side>>, pub portfolio: Option<Portfolio> }
 /// The short side of a `direction: both` spec: its own rule lists and price orders (exec.short = true).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Side { pub entry: Vec<Node>, pub exit: Vec<Node>, pub exec: Exec }
@@ -202,7 +218,7 @@ pub struct Side { pub entry: Vec<Node>, pub exit: Vec<Node>, pub exec: Exec }
 pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
     if text.len() > MAX_SPEC_BYTES { return Err(inv(format!("spec is {} bytes; the limit is {MAX_SPEC_BYTES}", text.len()))); }
     let root = json::parse(text).map_err(|e| inv(format!("spec is not valid JSON: {e}")))?;
-    fields(&root, "spec", &["v", "direction", "origin", "entry", "exit", "short_side", "execution", "optimize"], &["short", "portfolio", "scale_in"])?;
+    fields(&root, "spec", &["v", "direction", "origin", "entry", "exit", "short_side", "execution", "optimize", "portfolio"], &["short", "scale_in"])?;
     if root.get("v").and_then(Json::as_f64) != Some(1.) { return Err(inv("v must be 1")); }
     let mut exec = Exec::default();
     let both = match root.get("direction") {
@@ -214,12 +230,14 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
     };
     let origin = root.get("origin").map(origin).transpose()?;
     let mut budget = Budget::default();
-    let (entry, exit) = side(root.get("entry"), root.get("exit"), "", both, &mut exec, &mut budget)?;
+    let portfolio = root.get("portfolio").map(|v|portfolio(v,&mut budget)).transpose()?;
+    let rotation = portfolio.as_ref().is_some_and(|p|p.mode==Mode::Rotation);
+    let (entry, exit) = side(root.get("entry"), root.get("exit"), "", both, rotation, &mut exec, &mut budget)?;
     let mut short_side = match (both, root.get("short_side")) {
         (true, Some(s)) => {
             fields(s, "short_side", &["entry", "exit"], &[])?;
             let mut x = Exec { short: true, ..Exec::default() };
-            let (entry, exit) = side(s.get("entry"), s.get("exit"), "short_side.", true, &mut x, &mut budget)?;
+            let (entry, exit) = side(s.get("entry"), s.get("exit"), "short_side.", true, false, &mut x, &mut budget)?;
             Some(Box::new(Side { entry, exit, exec: x }))
         }
         (true, None) => return Err(inv("direction \"both\" needs short_side with the short entry and exit rules")),
@@ -326,13 +344,14 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
     if exec.futures.is_some() && execs.iter().any(|x| x.scale_in.is_some() || !x.take_profits.is_empty()) {
         return Err(inv("futures runs do not combine with scale_in or take_profits yet"));
     }
-    let mut spec = Spec { entry, exit, cost_bps, optimize: vec![], exec, origin, short_side };
+    let mut spec = Spec { entry, exit, cost_bps, optimize: vec![], exec, origin, short_side, portfolio };
+    validate_applied(&spec)?;
     if let Some(o) = root.get("optimize") { spec.optimize = dims(&spec, o)?; }
     Ok(spec)
 }
 
 /// One side's rule lists and price orders; `pre` is "" (the long side, or the only side) or "short_side.".
-fn side(entry: Option<&Json>, exit: Option<&Json>, pre: &str, both: bool, exec: &mut Exec, b: &mut Budget) -> Result<(Vec<Node>, Vec<Node>), LabError> {
+fn side(entry: Option<&Json>, exit: Option<&Json>, pre: &str, both: bool, rotation: bool, exec: &mut Exec, b: &mut Budget) -> Result<(Vec<Node>, Vec<Node>), LabError> {
     let entry_obj = entry.ok_or_else(|| inv(format!("{pre}entry is required")))?;
     fields(entry_obj, &format!("{pre}entry"), &["all", "limit", "stop", "valid_bars", "scale_in"], &[])?;
     if let Some(v) = entry_obj.get("scale_in") { exec.scale_in = Some(scale_in(v, &format!("{pre}entry.scale_in"))?); }
@@ -384,12 +403,105 @@ fn side(entry: Option<&Json>, exit: Option<&Json>, pre: &str, both: bool, exec: 
         return Err(inv(format!("{pre}entry.scale_in cannot combine with {pre}exit.take_profits (a trade's scale-out fractions are of one position)")));
     }
     let price_exit = exec.stop_loss.is_some() || exec.target.is_some() || exec.trailing.is_some() || exec.breakeven.is_some();
-    let entry = conds(entry_obj.get("all"), &format!("{pre}entry.all"), false, false, b)?;
-    let exit = conds(exit_obj.get("any"), &format!("{pre}exit.any"), true, price_exit || both, b)?;
+    let entry = conds(entry_obj.get("all"), &format!("{pre}entry.all"), false, rotation, b)?;
+    let exit = conds(exit_obj.get("any"), &format!("{pre}exit.any"), true, price_exit || both || rotation, b)?;
     if entry.len() + exit.len() > MAX_CONDITIONS {
         return Err(inv(format!("{}{} conditions; the limit is {MAX_CONDITIONS}", if pre.is_empty() { "" } else { "short_side: " }, entry.len() + exit.len())));
     }
     Ok((entry, exit))
+}
+
+/// The same validation is used by JSON leaves and chart query fields.
+pub fn foreign_ref(at: &str, symbol: Option<&str>, vs: Option<&str>, fixup: Option<&str>) -> Result<Foreign,LabError> {
+    let name=|key:&str,value:Option<&str>|value.map(|s| {
+        if s.trim().is_empty() || s.len()>MAX_SYMBOL_LEN || s.chars().any(char::is_control) {Err(inv(format!("{at}.{key} must name an instrument (1 to {MAX_SYMBOL_LEN} characters)")))} else {Ok(s.to_string())}
+    }).transpose();
+    let (symbol,vs)=(name("symbol",symbol)?,name("vs",vs)?);
+    let previous=match fixup {None|Some("none")=>false,Some("previous")=>true,_=>return Err(inv(format!("{at}.fixup must be none or previous")))};
+    if fixup.is_some()&&symbol.is_none(){return Err(inv(format!("{at}.fixup applies to a symbol operand")));}
+    Ok(Foreign{symbol,vs,fixup:previous})
+}
+fn portfolio(v:&Json,budget:&mut Budget)->Result<Portfolio,LabError> {
+    fields(v,"portfolio",&["universe","mode","score","rank","max_open","worst_rank_held","rebalance"],&[])?;
+    let u=v.get("universe").ok_or_else(||inv("portfolio.universe is required"))?;
+    fields(u,"portfolio.universe",&["basket","tickers"],&[])?;
+    let universe=match (u.get("basket"),u.get("tickers")) {
+        (Some(b),None)=>Universe::Basket(b.as_str().filter(|s|!s.is_empty()&&s.len()<=40&&s.bytes().all(|c|c.is_ascii_alphanumeric()||c==b'_'||c==b'-')).ok_or_else(||inv("portfolio.universe.basket must be a basket id (letters, digits, _ or -)"))?.into()),
+        (None,Some(Json::Arr(items)))=>{
+            if !(2..=MAX_UNIVERSE_LIST).contains(&items.len()){return Err(inv(format!("portfolio.universe.tickers needs 2 to {MAX_UNIVERSE_LIST} instruments (at most {MAX_UNIVERSE_LIST})")));}
+            let mut names=Vec::new();
+            for (i,t) in items.iter().enumerate(){
+                let value=t.as_str().ok_or_else(||inv(format!("portfolio.universe.tickers[{i}] must name an instrument")))?;
+                let name=foreign_ref(&format!("portfolio.universe.tickers[{i}]"),Some(value),None,None)?.symbol.unwrap();
+                if names.contains(&name){return Err(inv(format!("portfolio.universe.tickers[{i}] {name} is listed twice")));}names.push(name);
+            }
+            Universe::Tickers(names)
+        }
+        _=>return Err(inv("portfolio.universe needs exactly one of basket or tickers")),
+    };
+    let mode=match v.get("mode").map(Json::as_str){None|Some(Some("signals"))=>Mode::Signals,Some(Some("rotation"))=>Mode::Rotation,_=>return Err(inv("portfolio.mode must be signals or rotation"))};
+    let lowest=match v.get("rank").map(Json::as_str){None|Some(Some("highest"))=>false,Some(Some("lowest"))=>true,_=>return Err(inv("portfolio.rank must be highest or lowest"))};
+    let number=|key:&str,hi:usize|v.get(key).map(|n|n.as_f64().filter(|n|n.is_finite()&&n.fract()==0.&&*n>=1.&&*n<=hi as f64).map(|n|n as usize).ok_or_else(||inv(format!("portfolio.{key} must be a whole number from 1 to {hi}")))).transpose();
+    let max_open=number("max_open",MAX_OPEN)?.unwrap_or(1);let worst_rank_held=number("worst_rank_held",MAX_UNIVERSE)?;
+    if worst_rank_held.is_some()&&mode!=Mode::Rotation {return Err(inv("portfolio.worst_rank_held applies to rotation mode"));}
+    let rebalance=match v.get("rebalance").map(Json::as_str){None|Some(Some("bar"))=>None,Some(Some("W"))=>Some(1),Some(Some("M"))=>Some(2),Some(Some("Q"))=>Some(3),Some(Some("Y"))=>Some(4),_=>return Err(inv("portfolio.rebalance must be bar, W, M, Q or Y"))};
+    if rebalance.is_some()&&mode!=Mode::Rotation{return Err(inv("portfolio.rebalance applies to rotation mode"));}
+    let score=match v.get("score"){
+        None=>None,
+        Some(v)=>{
+            budget.take(false)?;
+            let mut score=operand(Some(v),"portfolio.score",false,budget)?;
+            if matches!(score,Operand::Value(_)|Operand::BarsHeld){return Err(inv("portfolio.score needs a series or expression, not a constant or bars_held"));}
+            let (mut symbol,mut has_series)=(None,false);
+            walk_operand(&mut score,"portfolio.score",&mut |path,k|if let Knob::Series(r)=k {has_series=true;if r.foreign.symbol.is_some(){symbol=Some(path);}});
+            if !has_series{return Err(inv("portfolio.score needs at least one series, including inside state conditions"));}
+            if let Some(path)=symbol{return Err(inv(format!("{path}: portfolio.score cannot read another symbol; vs is allowed")));}
+            Some(score)
+        }
+    };
+    if mode==Mode::Rotation&&score.is_none(){return Err(inv("rotation needs portfolio.score"));}
+    Ok(Portfolio{universe,mode,score,lowest,max_open,worst_rank_held,rebalance})
+}
+fn portfolio_rules(s:&Spec)->Result<(),LabError>{
+    let Some(p)=&s.portfolio else{return Ok(())};
+    let unsupported=|field:&str|Err(LabError::Unsupported(format!("{field} in a portfolio is not supported by the declared execution model")));
+    if s.origin.is_some(){return unsupported("origin");}
+    if s.exec.short||s.short_side.is_some(){return unsupported("portfolio shorts or direction both");}
+    let x=&s.exec;
+    if x.limit.is_some()||x.limit_at.is_some(){return unsupported("entry.limit");}
+    if x.stop.is_some()||x.stop_at.is_some(){return unsupported("entry.stop");}
+    if x.scale_in.is_some(){return unsupported("entry.scale_in");}
+    if !x.take_profits.is_empty(){return unsupported("exit.take_profits");}
+    if x.cooldown.is_some(){return unsupported("execution.cooldown");}
+    if x.max_trades.is_some(){return unsupported("execution.max_trades");}
+    if x.risk!=Risk::default(){return unsupported("execution.risk");}
+    if x.futures.is_some(){return unsupported("execution.instrument futures");}
+    if x.delay!=1{return unsupported("execution.delay_bars");}
+    if x.capital.is_none(){return Err(inv("a portfolio needs execution.capital (shared money mode)"));}
+    if p.max_open==0||p.max_open>MAX_OPEN{return Err(inv(format!("portfolio.max_open must be a whole number from 1 to {MAX_OPEN}")));}
+    if p.worst_rank_held()==0||p.worst_rank_held()>MAX_UNIVERSE||p.worst_rank_held()<p.max_open{return Err(inv(format!("portfolio.worst_rank_held must be at least max_open and at most {MAX_UNIVERSE}")));}
+    if p.mode==Mode::Rotation&&(!s.exit.is_empty()||x.stop_loss.is_some()||x.target.is_some()||x.trailing.is_some()||x.trail_activate.is_some()||x.breakeven.is_some()) {return Err(inv("rotation ranks by score; exit.any must be empty and price exits are not used"));}
+    Ok(())
+}
+impl Spec {
+    pub fn foreign_locations(&self)->Vec<(String,Foreign)>{
+        let mut out=Vec::new();walk(&mut self.clone(),&mut |path,k|if let Knob::Series(r)=k {if r.foreign!=Foreign::default(){out.push((path,r.foreign.clone()));}});out
+    }
+    pub fn foreign_symbols(&self)->Vec<String>{
+        let mut names:Vec<_>=self.foreign_locations().into_iter().flat_map(|(_,f)|f.symbol.into_iter().chain(f.vs)).collect();names.sort();names.dedup();names
+    }
+    pub fn fixup_symbols(&self)->std::collections::BTreeSet<String>{self.foreign_locations().into_iter().filter(|(_,f)|f.fixup).filter_map(|(_,f)|f.symbol).collect()}
+}
+/// Recheck applied portfolio candidates before expensive member work; an invalid combination is never ranked.
+pub fn validate_applied(s:&Spec)->Result<(),LabError>{
+    let foreign=s.foreign_symbols();if foreign.len()>MAX_FOREIGN{return Err(inv(format!("the spec reads {} other instruments ({}); the limit is {MAX_FOREIGN}",foreign.len(),foreign.join(", "))));}
+    portfolio_rules(s)?;
+    let short=s.short_side.as_ref().map(|x|x.entry.iter().chain(&x.exit));
+    s.entry.iter().chain(&s.exit).chain(short.into_iter().flatten()).try_for_each(consistent).map_err(inv)?;
+    let execs=std::iter::once(&s.exec).chain(s.short_side.as_ref().map(|x|&x.exec));
+    execs.flat_map(|x|[&x.limit_at,&x.stop_at]).flatten().try_for_each(consistent_operand).map_err(inv)?;
+    if let Some(score)=s.portfolio.as_ref().and_then(|p|p.score.as_ref()){consistent_operand(score).map_err(inv)?;}
+    Ok(())
 }
 
 fn instrument(v: &Json) -> Result<Option<Futures>, LabError> {
@@ -647,14 +759,11 @@ fn operand(v: Option<&Json>, at: &str, held: bool, b: &mut Budget) -> Result<Ope
         return v.get("value").and_then(Json::as_f64).map(Operand::Value).ok_or_else(|| inv(format!("{at}.value must be a number")));
     }
     if let Some(e) = expr(v, at, b)? { return Ok(Operand::Expr(Box::new(e))); }
-    if v.get("symbol").is_some() {
-        return Err(LabError::Unsupported(format!("{at}.symbol: operands from another symbol (AmiBroker Foreign, TradingView request.security on another ticker) arrive in Phase 8")));
-    }
-    fields(v, at, &["s", "p", "tf", "out", "offset", "expand"], &[])?;
+    fields(v, at, &["s", "p", "tf", "out", "offset", "expand", "symbol", "vs", "fixup"], &[])?;
     let id = v.get("s").and_then(Json::as_str).ok_or_else(|| inv(format!("{at}.s must name a series (or give a value)")))?;
     if id == "bars_held" {
         if !held { return Err(inv(format!("{at}: bars_held is only available as a plain comparison at the top level of the exit list (not inside a group, range, trend or expression)"))); }
-        if ["p", "tf", "out", "offset", "expand"].iter().any(|k| v.get(k).is_some()) { return Err(inv(format!("{at}: bars_held takes no p, tf, out, offset or expand"))); }
+        if ["p", "tf", "out", "offset", "expand", "symbol", "vs", "fixup"].iter().any(|k| v.get(k).is_some()) { return Err(inv(format!("{at}: bars_held takes no p, tf, out, offset, expand, symbol, vs or fixup"))); }
         return Ok(Operand::BarsHeld);
     }
     let tf = match v.get("tf") { None => Tf::D, Some(t) => t.as_str().and_then(Tf::parse).ok_or_else(|| inv(format!("{at}.tf must be {TF_HELP}")))? };
@@ -670,7 +779,9 @@ fn operand(v: Option<&Json>, at: &str, held: bool, b: &mut Budget) -> Result<Ope
     }
     let out = match v.get("out") { None => None, Some(o) => Some(o.as_str().ok_or_else(|| inv(format!("{at}.out must be a string")))?) };
     let expand = expand_of(v, at, tf, offset, id == "open")?;
-    let r = series_ref(at, id, &given, tf, out, offset)?;
+    let text=|key:&str|v.get(key).map(|v|v.as_str().ok_or_else(||inv(format!("{at}.{key} must be a string")))).transpose();
+    let foreign=foreign_ref(at,text("symbol")?,text("vs")?,text("fixup")?)?;
+    let r = series_ref(at, id, &given, tf, out, offset, foreign)?;
     Ok(if expand == Expand::Last { Operand::Series(r) } else { Operand::Expr(Box::new(Expr::Expand(r, expand))) })
 }
 /// `expand` (default last). `first` is accepted only where the value is known by the close of the period's first daily bar:
@@ -689,9 +800,6 @@ fn expand_of(v: &Json, at: &str, tf: Tf, offset: usize, known_at_start: bool) ->
 /// An expression operand (spec §4.1), or None when `v` is a series operand.
 fn expr(v: &Json, at: &str, b: &mut Budget) -> Result<Option<Expr>, LabError> {
     let Json::Obj(kv) = v else { return Ok(None) };
-    if kv.iter().any(|(k, _)| EXPRESSIONS.contains(&k.as_str())) && v.get("symbol").is_some() {
-        return Err(LabError::Unsupported(format!("{at}.symbol: operands from another symbol (AmiBroker Foreign, TradingView request.security on another ticker) arrive in Phase 8")));
-    }
     let Some(key) = kv.iter().map(|(k, _)| k.as_str()).find(|k| EXPRESSIONS.contains(k)) else { return Ok(None) };
     b.take(false)?;
     // a unary, window or state expression over a constant is that constant (or 0): refuse it like two constants
@@ -750,10 +858,10 @@ fn cond_of(v: &Json, key: &str, at: &str, b: &mut Budget) -> Result<Node, LabErr
 }
 
 /// Validates one series operand against the catalogue (shared by rule specs and /api/lab/series).
-pub fn series_ref(at: &str, id: &str, given: &Params, tf: Tf, out: Option<&str>, offset: usize) -> Result<SeriesRef, LabError> {
+pub fn series_ref(at: &str, id: &str, given: &Params, tf: Tf, out: Option<&str>, offset: usize, foreign: Foreign) -> Result<SeriesRef, LabError> {
     if PRICE_SOURCES.contains(&id) {
-        if !given.is_empty() || out.is_some() { return Err(inv(format!("{at}: price source '{id}' takes no p or out"))); }
-        return Ok(SeriesRef { id: id.into(), params: Params::new(), tf, out: 0, offset });
+        if !given.is_empty() || out.is_some() || foreign.vs.is_some() { return Err(inv(format!("{at}: price source '{id}' takes no p or out or vs"))); }
+        return Ok(SeriesRef { id: id.into(), params: Params::new(), tf, out: 0, offset, foreign });
     }
     let def = catalogue::get(id).ok_or_else(|| inv(format!("{at}.s: unknown series '{id}'")))?;
     if def.needs.intraday { return Err(LabError::NeedsData(format!("{at}: {}: {}", def.name, def.note))); }
@@ -761,12 +869,16 @@ pub fn series_ref(at: &str, id: &str, given: &Params, tf: Tf, out: Option<&str>,
         let msg = format!("{at}: {}: {}", def.name, def.note);
         return Err(if def.needs.any_data() { LabError::NeedsData(msg) } else { LabError::Unsupported(msg) });
     }
+    if def.needs.second_symbol != foreign.vs.is_some() {
+        return Err(inv(if foreign.vs.is_some(){format!("{at}.vs applies to second-instrument indicators only")}else{format!("{at}: {} compares two instruments; name the second one in vs",def.name)}));
+    }
+    if foreign.vs.is_some() && tf!=Tf::D {return Err(inv(format!("{at}: second-instrument indicators run on daily bars (tf D)")));}
     let params = catalogue::resolve_params(&def, given).map_err(|e| inv(format!("{at}.p: {e}")))?;
     let out = match out {
         None => 0,
         Some(o) => def.outputs.iter().position(|x| *x == o).ok_or_else(|| inv(format!("{at}.out: {} has outputs {}", def.id, def.outputs.join(", "))))?,
     };
-    Ok(SeriesRef { id: id.into(), params, tf, out, offset })
+    Ok(SeriesRef { id: id.into(), params, tf, out, offset, foreign })
 }
 
 fn dims(spec: &Spec, v: &Json) -> Result<Vec<Dim>, LabError> {
@@ -790,7 +902,8 @@ fn dims(spec: &Spec, v: &Json) -> Result<Vec<Dim>, LabError> {
         if values.is_empty() || values.iter().any(|x| !x.is_finite()) { return Err(inv(format!("{at}.path '{path}': bad range, no values"))); }
         for &x in &values { check_value(spec, &target, x).map_err(|e| inv(format!("{at}: {e}")))?; }
         combos = combos.saturating_mul(values.len());
-        if combos > crate::MAX_COMBOS { return Err(inv(format!("optimize gives more than {} combinations; narrow a range or raise a step", crate::MAX_COMBOS))); }
+        let cap=if spec.portfolio.is_some(){MAX_PORTFOLIO_COMBOS}else{crate::MAX_COMBOS};
+        if combos > cap { return Err(inv(format!("optimize gives more than {cap} combinations; narrow a range or raise a step"))); }
         out.push(Dim { path: path.into(), target, values });
     }
     // at_least and of may both be optimized: the worst pairing must still be a valid node.
@@ -800,6 +913,11 @@ fn dims(spec: &Spec, v: &Json) -> Result<Vec<Dim>, LabError> {
         let Some(o) = out.iter().find(|d| d.path == of_path) else { continue };
         let (hi, lo) = (a.values.iter().copied().fold(f64::MIN, f64::max), o.values.iter().copied().fold(f64::MAX, f64::min));
         if hi > lo { return Err(inv(format!("optimize '{}' reaches {hi} but '{of_path}' reaches down to {lo}; at_least cannot exceed of", a.path))); }
+    }
+    if let Some(p)=spec.portfolio.as_ref().filter(|p|p.worst_rank_held.is_some()||out.iter().any(|d|d.path=="portfolio.worst_rank_held")) {
+        let high=out.iter().find(|d|d.path=="portfolio.max_open").map_or(p.max_open as f64,|d|d.values.iter().copied().fold(f64::MIN,f64::max));
+        let low=out.iter().find(|d|d.path=="portfolio.worst_rank_held").map_or(p.worst_rank_held() as f64,|d|d.values.iter().copied().fold(f64::MAX,f64::min));
+        if high>low{return Err(inv("optimize portfolio.worst_rank_held must cover every portfolio.max_open value"));}
     }
     Ok(out)
 }
@@ -820,6 +938,11 @@ fn slot_at(rest: &str) -> Option<(Slot, String, String, f64)> {
 }
 
 fn target(spec: &Spec, path: &str) -> Result<Target, String> {
+    if path.starts_with("portfolio.") && spec.portfolio.is_none(){return Err("the spec has no portfolio".into());}
+    if matches!(path,"portfolio.max_open"|"portfolio.worst_rank_held") {
+        if path.ends_with("worst_rank_held")&&spec.portfolio.as_ref().is_some_and(|p|p.mode!=Mode::Rotation){return Err("portfolio.worst_rank_held applies to rotation mode".into());}
+        return Ok(Target{path:path.into(),slot:None});
+    }
     let rest = path.strip_prefix("short_side.").unwrap_or(path);
     if rest == "entry.stop.at" || rest == "entry.limit.at" {
         return Err(format!("{rest} is a level operand; optimize a number inside it ({rest}.value, {rest}.p.<key> or a whole-number field)"));
@@ -832,7 +955,7 @@ fn target(spec: &Spec, path: &str) -> Result<Target, String> {
             (Some(d), _) => Err(format!("{at} is set by {}; optimize that field", match d { Dist::Pct(_) => "pct", Dist::Atr { .. } => "atr", Dist::Points(_) => "points", Dist::Ticks(_) => "ticks" })),
         };
     }
-    if !["entry.all[", "exit.any[", "entry.limit.at.", "entry.stop.at.", "entry.scale_in.", "execution.sizing."].iter().any(|p| rest.starts_with(p)) {
+    if !["entry.all[", "exit.any[", "entry.limit.at.", "entry.stop.at.", "entry.scale_in.", "execution.sizing.", "portfolio.score."].iter().any(|p| rest.starts_with(p)) {
         return Err("must start with entry.all[i], exit.any[i], entry.limit, entry.limit.at, entry.stop, entry.stop.at, exit.stop_loss, exit.target, exit.trailing, exit.trailing.activate, exit.breakeven.after, exit.take_profits[k], entry.scale_in.min_bars (each also under short_side.), execution.sizing.pct_equity or execution.sizing.risk_pct".into());
     }
     let (mut found, mut near) = (false, None::<String>);
@@ -871,6 +994,8 @@ fn walk(s: &mut Spec, f: &mut dyn FnMut(String, Knob)) {
         for (k, n) in x.exit.iter_mut().enumerate() { walk_node(n, &format!("short_side.exit.any[{k}]"), f); }
         walk_levels(&mut x.exec, "short_side.", f);
     }
+    if let Some(score)=s.portfolio.as_mut().and_then(|p|p.score.as_mut()){walk_operand(score,"portfolio.score",f);}
+
 }
 fn walk_levels(x: &mut Exec, pre: &str, f: &mut dyn FnMut(String, Knob)) {
     if let Some(si) = x.scale_in.as_mut() { f(format!("{pre}entry.scale_in.min_bars"), Knob::Whole(&mut si.min_bars)); }
@@ -944,6 +1069,14 @@ fn consistent_operand(o: &Operand) -> Result<(), String> {
 }
 
 fn set(s: &mut Spec, t: &Target, x: f64) {
+    if matches!(t.path.as_str(),"portfolio.max_open"|"portfolio.worst_rank_held") {
+        if let Some(p)=s.portfolio.as_mut(){
+            let hi=if t.path.ends_with("max_open"){MAX_OPEN}else{MAX_UNIVERSE};
+            let n=if x.is_finite()&&x.fract()==0.&&x>=1.&&x<=hi as f64{x as usize}else{usize::MAX};
+            if t.path.ends_with("max_open"){p.max_open=n;}else{p.worst_rank_held=Some(n);}
+        }
+        return;
+    }
     if let Some(slot) = t.slot {
         match exec_mut(s, &t.path).and_then(|e| e.slot_mut(slot)) { Some(Dist::Pct(p) | Dist::Points(p) | Dist::Ticks(p)) => *p = x, Some(Dist::Atr { mult, .. }) => *mult = x, None => {} }
         return;
@@ -958,6 +1091,10 @@ fn set(s: &mut Spec, t: &Target, x: f64) {
     });
 }
 fn check_value(spec: &Spec, t: &Target, x: f64) -> Result<(), String> {
+    if matches!(t.path.as_str(),"portfolio.max_open"|"portfolio.worst_rank_held") {
+        let hi=if t.path.ends_with("max_open"){MAX_OPEN}else{MAX_UNIVERSE};
+        return if x.is_finite()&&x.fract()==0.&&x>=1.&&x<=hi as f64{Ok(())}else{Err(format!("{} must be a whole number from 1 to {hi}",t.path))};
+    }
     if let Some(slot) = t.slot {
         let (_, at, _, hi) = slot_at(t.path.strip_prefix("short_side.").unwrap_or(&t.path)).unwrap();
         let order = matches!(slot, Slot::Limit | Slot::Stop);
@@ -994,7 +1131,9 @@ fn check_value(spec: &Spec, t: &Target, x: f64) -> Result<(), String> {
     s.entry.iter().chain(&s.exit).chain(short.into_iter().flatten()).try_for_each(consistent)?;
     let execs = std::iter::once(&s.exec).chain(s.short_side.as_ref().map(|x| &x.exec));
     let levels = execs.flat_map(|e| [&e.limit_at, &e.stop_at]).flatten().try_for_each(consistent_operand);
-    levels
+    levels?;
+    if let Some(score)=s.portfolio.as_ref().and_then(|p|p.score.as_ref()){consistent_operand(score)?;}
+    Ok(())
 }
 /// Every catalogue or price series id the rule lists read, nested ones included.
 pub fn series_ids(spec: &Spec) -> Vec<String> {
@@ -1004,6 +1143,9 @@ pub fn series_ids(spec: &Spec) -> Vec<String> {
 }
 /// The spec's own value at an optimize target (the "base" setting the ranking prefers on ties).
 pub fn current(spec: &Spec, t: &Target) -> f64 {
+    if matches!(t.path.as_str(),"portfolio.max_open"|"portfolio.worst_rank_held") {
+        return spec.portfolio.as_ref().map_or(f64::NAN,|p|if t.path.ends_with("max_open"){p.max_open as f64}else{p.worst_rank_held() as f64});
+    }
     if let Some(slot) = t.slot { return match exec_of(spec, &t.path).and_then(|e| e.slot(slot)) { Some(Dist::Pct(p) | Dist::Points(p) | Dist::Ticks(p)) => p, Some(Dist::Atr { mult, .. }) => mult, None => f64::NAN }; }
     let mut v = f64::NAN;
     walk(&mut spec.clone(), &mut |p, k| if p == t.path {
@@ -1087,7 +1229,7 @@ mod tests {
     }
     #[test] fn reserved_fields_are_unsupported() {
         for (text, needle) in [
-            (with(r#""v": 1,"#, r#""v": 1, "portfolio": {"max_open": 3},"#), "spec.portfolio"),
+
             (with(r#""fill": "next_open""#, r#""fill": "limit""#), "execution.fill 'limit'"),
             (with(r#""fill": "next_open""#, r#""fill": "stop""#), "execution.fill 'stop'"),
             (with(r#""v": 1,"#, r#""v": 1, "scale_in": [],"#), "spec.scale_in"),
@@ -1284,7 +1426,7 @@ mod tests {
             (r#"{"lhs":{"abs":{"value":-1}},"op":">","rhs":{"s":"close"}}"#, "entry.all[0].lhs.abs is a number", "invalid"),
             (r#"{"lhs":{"sum":{"value":1},"bars":3},"op":">","rhs":{"s":"close"}}"#, "entry.all[0].lhs.sum is a number", "invalid"),
             (r#"{"lhs":{"ref":{"value":1},"bars":3},"op":">","rhs":{"s":"close"}}"#, "entry.all[0].lhs.ref is a number", "invalid"),
-            (r#"{"lhs":{"abs":{"s":"close"},"symbol":"X"},"op":">","rhs":{"value":1}}"#, "arrive in Phase 8", "unsupported"),
+            (r#"{"lhs":{"abs":{"s":"close"},"symbol":"X"},"op":">","rhs":{"value":1}}"#, "unknown field 'symbol'", "invalid"),
         ] {
             let e = err(&ONE_EXIT.replace("NODE", node));
             assert_eq!(e.status(), status, "{node}");
@@ -1304,7 +1446,7 @@ mod tests {
             (r#"{"sum":{"s":"close"},"bars":3,"x":1}"#, "unknown field 'x' in entry.all[0].lhs", "invalid"),
             (r#"{"ref":{"s":"close"},"bars":-1}"#, "entry.all[0].lhs.bars must be a whole number from 0", "invalid"),
             (r#"{"abs":{"s":"bars_held"}}"#, "only available as a plain comparison", "invalid"),
-            (r#"{"s":"close","symbol":"NIFTY BANK"}"#, "arrive in Phase 8", "unsupported"),
+            (r#"{"s":"close","symbol":7}"#, "symbol must be a string", "invalid"),
         ] {
             let e = err(&ONE_EXIT.replace("NODE", &format!(r#"{{"lhs":{lhs},"op":">","rhs":{{"value":1}}}}"#)));
             assert_eq!(e.status(), status, "{lhs}");
@@ -1561,4 +1703,86 @@ mod tests {
         assert!(err(single).message().contains("needs at least one condition"));
     }
 
+}
+
+#[cfg(test)]
+mod phase8_grammar_tests {
+    use super::*;
+    const PORT: &str=r#"{"v":1,"entry":{"all":[{"lhs":{"s":"rsi","p":{"length":2}},"op":"<","rhs":{"value":10}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":5}}]},"execution":{"capital":1000000},"portfolio":{"universe":{"basket":"nifty50"},"score":{"abs":{"s":"rsi","p":{"length":14}}},"rank":"lowest","max_open":5}}"#;
+    fn rotation() -> String { PORT.replace(r#""all":[{"lhs":{"s":"rsi","p":{"length":2}},"op":"<","rhs":{"value":10}}]"#,r#""all":[]"#).replace(r#""any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":5}}]"#,r#""any":[]"#).replace(r#""max_open":5"#,r#""max_open":5,"mode":"rotation""#) }
+    fn error(s:&str)->LabError {parse_spec(s).err().expect("invalid spec was accepted")}
+    fn optimize(s:&str,items:&str)->String {s.replacen(r#""v":1,"#, &format!(r#""v":1,"optimize":[{items}],"#),1)}
+    #[test] fn foreign_fields_reach_nested_expand_short_and_price_levels() {
+        let text=r#"{"v":1,"direction":"both","entry":{"all":[{"lhs":{"add":[{"s":"close","symbol":"A","fixup":"previous"},{"abs":{"s":"rsi","symbol":"B"}}]},"op":">","rhs":{"value":0}}],"limit":{"at":{"s":"close","symbol":"C","tf":"W","offset":1,"expand":"first"}}},"exit":{"any":[]},"short_side":{"entry":{"all":[{"not":{"lhs":{"s":"close","symbol":"D"},"op":"<","rhs":{"value":0}}}],"stop":{"at":{"highest_since":{"lhs":{"s":"close","symbol":"D"},"op":">","rhs":{"value":0}},"of":{"s":"close","symbol":"D"}}}},"exit":{"any":[]}}}"#;
+        let s=parse_spec(text).unwrap();assert_eq!(s.foreign_symbols(),vec!["A","B","C","D"]);assert_eq!(s.fixup_symbols().into_iter().collect::<Vec<_>>(),vec!["A"]);
+        let paths:Vec<_>=s.foreign_locations().into_iter().map(|(p,_)|p).collect();
+        assert!(paths.iter().any(|p|p=="entry.limit.at"));assert!(paths.iter().any(|p|p=="short_side.entry.stop.at.of"));
+        assert!(error(&text.replace(r#""of":{"s":"close","symbol":"D"}"#,r#""of":{"s":"close","symbol":"E"}"#)).message().contains("limit is 4"));
+    }
+    #[test] fn foreign_names_and_chart_validation_share_limits() {
+        assert_eq!(foreign_ref("series",Some("SPX"),None,Some("previous")).unwrap(),Foreign{symbol:Some("SPX".into()),vs:None,fixup:true});
+        for (symbol,vs,fixup) in [(Some(""),None,None),(Some("A\n"),None,None),(None,None,Some("previous")),(Some("SPX"),None,Some("bad")),(None,Some(""),None)] {assert!(foreign_ref("series",symbol,vs,fixup).is_err());}
+        assert!(foreign_ref("series",Some(&"A".repeat(81)),None,None).is_err());
+        for leaf in [r#"{"s":"close","symbol":7}"#,r#"{"s":"close","symbol":"SPX","fixup":true}"#,r#"{"s":"sma","vs":"SPX"}"#,r#"{"s":"close","vs":"SPX"}"#] {
+            let t=PORT.replace(r#"{"s":"rsi","p":{"length":2}}"#,leaf);assert_eq!(error(&t).status(),"invalid");
+        }
+    }
+    #[test] fn portfolio_rotation_defaults_and_expression_score_preserve_context() {
+        let s=parse_spec(PORT).unwrap();let p=s.portfolio.as_ref().unwrap();assert_eq!((&p.universe,p.mode,p.lowest,p.max_open,p.worst_rank_held()),(&Universe::Basket("nifty50".into()),Mode::Signals,true,5,5));
+        assert!(matches!(p.score,Some(Operand::Expr(_))));assert!(series_ids(&s).contains(&"rsi".into()));
+        let s=parse_spec(&rotation().replace(r#"{"abs":{"s":"rsi","p":{"length":14}}}"#,r#"{"s":"close","tf":"Q","offset":1,"expand":"first"}"#)).unwrap();assert!(s.entry.is_empty()&&s.exit.is_empty());assert_eq!(s.portfolio.as_ref().unwrap().mode,Mode::Rotation);
+        assert!(matches!(s.portfolio.as_ref().unwrap().score,Some(Operand::Expr(_))));
+    }
+    #[test] fn portfolio_score_and_lineage_are_never_silently_dropped() {
+        for score in [r#"{"value":1}"#,r#"{"s":"bars_held"}"#,r#"{"s":"close","symbol":"NIFTY 50"}"#,r#"{"add":[{"s":"close"},{"s":"close","symbol":"SPX"}]}"#] {
+            assert_eq!(error(&PORT.replace(r#"{"abs":{"s":"rsi","p":{"length":14}}}"#,score)).status(),"invalid");
+        }
+        let lineage=PORT.replacen(r#""v":1,"#,r#""v":1,"origin":{"book":"stc9","method":"m","template_version":1},"#,1);let e=error(&lineage);assert_eq!(e.status(),"unsupported");assert!(e.message().contains("origin"));
+        let mut s=parse_spec(PORT).unwrap();let mut r=match s.entry[0].cmp().unwrap().lhs.clone(){Operand::Series(r)=>r,_=>panic!()};r.foreign.vs=Some("SPX".into());s.portfolio.as_mut().unwrap().score=Some(Operand::Series(r));assert_eq!(s.foreign_symbols(),vec!["SPX"]);
+    }
+    #[test] fn portfolio_state_scores_need_a_series_inside_their_condition() {
+        let scores=[
+            r#"{"bars_since":{"lhs":{"value":1},"op":"between","lo":{"value":0},"hi":{"value":2}}}"#,
+            r#"{"count":{"lhs":{"value":1},"op":"outside","lo":{"value":0},"hi":{"value":2}},"bars":3}"#,
+            r#"{"count":{"lhs":{"value":1},"op":"rising","bars":2},"bars":3}"#,
+        ];
+        for score in scores {
+            let text=PORT.replace(r#"{"abs":{"s":"rsi","p":{"length":14}}}"#,score);
+            let e=error(&text);assert_eq!(e.status(),"invalid");assert!(e.message().contains("portfolio.score needs at least one series"),"{e:?}");
+            for actual in [r#"{"s":"close"}"#,r#"{"s":"close","tf":"Q","offset":1,"expand":"first"}"#] {
+                let valid=text.replacen(r#"{"value":1}"#,actual,1);
+                assert!(parse_spec(&valid).is_ok(),"state scores with a real series remain supported: {valid}");
+            }
+        }
+    }
+    #[test] fn portfolio_refuses_unimplemented_execution_combinations() {
+        for execution in [r#"{"capital":1000,"delay_bars":2}"#,r#"{"capital":1000,"cooldown":{"bars":2}}"#,r#"{"capital":1000,"max_trades":{"count":2,"per":"M"}}"#,r#"{"capital":1000,"risk":{"max_drawdown_pct":5}}"#,r#"{"capital":1000,"instrument":{"kind":"futures"}}"#] {assert_eq!(error(&PORT.replace(r#"{"capital":1000000}"#,execution)).status(),"unsupported");}
+        for order in [r#""limit":{"at":{"s":"close"}},"#,r#""stop":{"pct":2},"#,r#""scale_in":{"legs":[0.5,0.5]},"#] {assert_eq!(error(&PORT.replacen(r#""entry":{"all"#, &format!(r#""entry":{{{order}"all"#),1)).status(),"unsupported");}
+        assert_eq!(error(&PORT.replacen(r#""v":1,"#,r#""v":1,"direction":"short","#,1)).status(),"unsupported");
+        assert!(error(&PORT.replace(r#"{"capital":1000000}"#,r#"{}"#)).message().contains("capital"));
+        let t=rotation().replace(r#""any":[]"#,r#""any":[],"breakeven":{"after":{"pct":2}}"#);assert!(error(&t).message().contains("rotation"));
+    }
+    #[test] fn portfolio_universe_field_and_work_caps_are_enforced() {
+        for u in [r#"{"basket":"bad basket!"}"#,r#"{"tickers":["A"]}"#,r#"{"tickers":["A","A"]}"#,r#"{"basket":"x","tickers":["A","B"]}"#] {assert_eq!(error(&PORT.replace(r#"{"basket":"nifty50"}"#,u)).status(),"invalid");}
+        let list=format!(r#"{{"tickers":[{}]}}"#,(0..51).map(|i|format!("\"S{i}\"")).collect::<Vec<_>>().join(","));assert!(error(&PORT.replace(r#"{"basket":"nifty50"}"#,&list)).message().contains("50"));
+        for n in ["0","51","2.5","1e100"] {assert!(error(&PORT.replace(r#""max_open":5"#,&format!(r#""max_open":{n}"#))).message().contains("max_open"));}
+        assert!(error(&optimize(PORT,r#"{"path":"portfolio.score.abs.p.length","from":1,"to":201,"step":1}"#)).message().contains("200"));
+    }
+    #[test] fn portfolio_optimizer_tracks_omitted_worst_and_validates_all_combinations() {
+        let r=rotation();let grid=r#"{"path":"portfolio.max_open","from":2,"to":6,"step":2},{"path":"portfolio.score.abs.p.length","from":5,"to":20,"step":5}"#;
+        let s=parse_spec(&optimize(&r,grid)).unwrap();let a=apply(&s,&s.optimize,&[6.,10.]);let p=a.portfolio.as_ref().unwrap();assert_eq!((p.max_open,p.worst_rank_held()),(6,6));assert!(validate_applied(&a).is_ok());
+        assert_eq!(current(&s,&s.optimize[1].target),14.);
+        let explicit=r.replace(r#""max_open":5"#,r#""max_open":5,"worst_rank_held":8"#);
+        let valid=r#"{"path":"portfolio.max_open","from":10,"to":12,"step":1},{"path":"portfolio.worst_rank_held","from":20,"to":25,"step":1}"#;assert!(parse_spec(&optimize(&explicit,valid)).is_ok());
+        let invalid=r#"{"path":"portfolio.max_open","from":2,"to":10,"step":2},{"path":"portfolio.worst_rank_held","from":6,"to":12,"step":2}"#;assert!(error(&optimize(&explicit,invalid)).message().contains("worst_rank_held"));
+        let s=parse_spec(&optimize(&explicit,valid)).unwrap();assert!(validate_applied(&apply(&s,&s.optimize,&[12.,3.])).is_err());
+    }
+    #[test] fn score_expressions_share_the_existing_rule_part_budget() {
+        let mut score=r#"{"s":"close"}"#.to_string();for _ in 0..6{score=format!(r#"{{"add":[{score},{score}]}}"#);}
+        let leaf=r#"{"lhs":{"s":"close"},"op":">","rhs":{"value":1}}"#;
+        let group=format!(r#"{{"all":[{{"all":[{leaf}]}},{{"all":[{leaf}]}}]}}"#);
+        let entry=format!(r#""all":[{}]"#,vec![group;12].join(","));
+        let text=PORT.replace(r#"{"abs":{"s":"rsi","p":{"length":14}}}"#,&score).replace(r#""all":[{"lhs":{"s":"rsi","p":{"length":2}},"op":"<","rhs":{"value":10}}]"#,&entry);
+        let e=error(&text);assert!(e.message().contains("limit is 120"),"{e:?}");
+    }
 }

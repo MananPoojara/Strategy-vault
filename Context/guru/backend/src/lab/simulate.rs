@@ -112,6 +112,25 @@ impl Pos {
 /// What bar i does to an open position: a full exit (price, reason), or the other side's resting order reverses it.
 enum Hit { Exit(f64, String), Reverse }
 
+/// Opaque lab-only adapter for long cash portfolios; the single-instrument state machine is unchanged.
+pub(super) struct PortfolioPosition(Pos);
+impl PortfolioPosition {
+    pub(super) fn new(c: &Compiled, entry: usize, raw: f64, signal: usize, kind: &'static str) -> Self {
+        Self(Pos::open(c, entry, raw, signal, kind, 1.))
+    }
+    pub(super) fn price_exit(&mut self, c: &Compiled, b: &Bars, i: usize) -> Option<(f64, String)> {
+        if self.0.e == i && self.0.kind == "close" { return None; }
+        match self.0.price_exit(c, b, i, 1., None) {
+            Some(Hit::Exit(px, reason)) => Some((px, reason)),
+            // With rev=None there is no reversal order; the shared engine cannot produce Reverse.
+            Some(Hit::Reverse) | None => None,
+        }
+    }
+    pub(super) fn observe_completed_bar(&mut self, b: &Bars, i: usize) {
+        if !(self.0.limit_bar && self.0.e == i) { self.0.best = self.0.best.max(b.high[i]); }
+    }
+}
+
 /// A resting entry order for bars sig+1 ..= until (spec §6.2); a NaN level is an absent leg. At most one per side: placed
 /// while flat, or, for the other side of a `direction: both` spec, while a position is open (a reversal order).
 #[derive(Clone, Copy)]

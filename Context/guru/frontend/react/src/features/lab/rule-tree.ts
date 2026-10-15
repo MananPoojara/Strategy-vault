@@ -140,6 +140,7 @@ export function walkSpec(spec: Spec, f: Emit): void {
       if (o !== undefined) walkOperand(o as Operand, root, root, false, f);
     }
   }
+  if(spec.portfolio?.score!==undefined)walkOperand(spec.portfolio.score,"portfolio.score","portfolio.score",false,f);
 }
 const knob = (f: Emit, path: string, root: string, v: unknown, min: number, max = MAX_WHOLE) =>
   f({ t: "knob", path, root, value: typeof v === "number" ? v : NaN, whole: true, min, max });
@@ -186,7 +187,7 @@ function walkOperand(o: Operand | undefined, path: string, root: string, held: b
 export interface Budget { leaves: number; nodes: number; top: { long: number; short: number } }
 /** rules.rs Budget::take: every leaf (comparison, range, trend) and every group and expression counts once, over both sides and `at` levels. */
 export function budget(spec: Spec): Budget {
-  let leaves = 0, nodes = 0;
+  let leaves = 0, nodes = spec.portfolio?.score!==undefined ? 1 : 0;
   walkSpec(spec, (x) => {
     if (x.t === "node") { nodes++; if (isLeaf(x.kind)) leaves++; }
     else if (x.t === "operand" && exprKey(x.operand)) nodes++;
@@ -204,10 +205,10 @@ const SEGMENT: Record<string, string> = {
   lowest_since: "lowest since", count: "count", compress: "aggregate",
 };
 export function pathLabel(path: string, both: boolean): string {
-  const match = /^(short_side\.)?(entry\.all|exit\.any|entry\.limit\.at|entry\.stop\.at)(?:\[(\d+)\])?(.*)$/.exec(path);
+  const match = /^(short_side\.)?(entry\.all|exit\.any|entry\.limit\.at|entry\.stop\.at|portfolio\.score)(?:\[(\d+)\])?(.*)$/.exec(path);
   if (!match) return path;
   const [, short, root, index, rest] = match;
-  const word = ({ "entry.all": "entry", "exit.any": "exit", "entry.limit.at": "limit level", "entry.stop.at": "stop level" } as Record<string, string>)[root];
+  const word = ({ "entry.all": "entry", "exit.any": "exit", "entry.limit.at": "limit level", "entry.stop.at": "stop level", "portfolio.score":"rank score" } as Record<string, string>)[root];
   const title = short ? `Short ${word}` : both ? `Long ${word}` : word[0].toUpperCase() + word.slice(1);
   const parts = [title + (index !== undefined ? ` ${Number(index) + 1}` : "")];
   for (const m of rest.matchAll(/\.([^.[\]]+)(?:\[(\d+)\])?/g)) {

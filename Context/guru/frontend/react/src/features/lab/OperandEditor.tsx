@@ -3,6 +3,7 @@ import { CALENDAR_OUTPUTS, COPY, EXPAND_FIRST_REFUSED, OPERAND_KIND_LABELS, TF_L
 import { isSeries, isValue, type Side } from "./spec-model";
 import { ARITH, CALENDAR_IDS, MAX_NTH, MAX_WHOLE, WINDOWS, convertOperand, describeNode, exprKey, firstAllowed, innerOperand, operandKind, type OperandKind } from "./rule-tree";
 import type { Catalogue, Indicator, Operand, RuleNode, SeriesOperand } from "./types";
+import { ForeignFields } from "./ForeignFields";
 import "./rules.css";
 import "./operand.css";
 
@@ -117,6 +118,7 @@ export function OperandEditor({ operand, side, catalogue, onChange, label, heldO
     </>}
     {(kind === "price" || kind === "indicator" || kind === "calendar" || kind === "compress") &&
       <Timing operand={operand} catalogue={catalogue} onChange={onChange} compress={kind === "compress"} />}
+    {series && <ForeignFields operand={operand} onChange={onChange} label={label} />}
     {expression && <button type="button" className="dbtn sm ghost" aria-label="Remove formula" title="Remove formula, keep the inner value"
       onClick={() => onChange(innerOperand(operand) ?? { s: "close" })}>×</button>}
   </span>;

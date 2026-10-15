@@ -9,13 +9,14 @@ const notAdmitted = (type: string | undefined, allowed?: string[]) =>
   allowed && type && !allowed.includes(type) ? `Not admitted for this method (needs ${allowed.join(", ")})` : undefined;
 
 /** in/us rows. Index rows carry no client-side type, so they stay selectable (spec §3.1). */
-export function optionsFromTickers(rows: TickerRow[], allowedTypes?: string[]): InstrumentOption[] {
+export function optionsFromTickers(rows: TickerRow[], allowedTypes?: string[], metadata: readonly {ticker:string;type:string;market:Market}[] = []): InstrumentOption[] {
   return rows.map((r) => {
-    const type = r.native ? r.asset_type : undefined;
+    const declared=metadata.find(m=>m.ticker===r.ticker);
+    const type = r.native ? r.asset_type : declared?.type;
     const reason = notAdmitted(type, allowedTypes);
     return {
       ticker: r.ticker, label: r.native ? [r.symbol ?? r.ticker, r.basket].filter(Boolean).join(" · ") : r.ticker,
-      disabled: !!reason, reason, type, hasVolume: r.has_volume, first: r.first, last: r.last,
+      disabled: !!reason, reason, type, hasVolume: r.has_volume, market: r.trusted_market ?? r.market ?? declared?.market, first: r.first, last: r.last,
     };
   });
 }

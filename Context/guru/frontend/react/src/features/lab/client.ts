@@ -1,7 +1,7 @@
 import { ApiError } from "../../services/api";
 import type {
   Catalogue, EngineStatus, FidelityResult, InstrumentsResponse, LabErrorFields, LabStrategy, OptimizeResult,
-  PublishedStrategy, RunResult, SavedMarket, SeriesResponse, Spec, StrategyDraft, StrategyStatus, TemplateResponse,
+  PublishedStrategy, PortfolioSpec, PortfolioRunResult, PortfolioOptimizeResult, LabRunResult, LabOptimizeResult, RunResult, SavedMarket, SeriesResponse, Spec, StrategyDraft, StrategyStatus, TemplateResponse,
   TemplatesResponse, TickerRow,
 } from "./types";
 
@@ -69,15 +69,20 @@ export const clearLabCache = () => cache.clear();
 export interface RunQuery { ticker: string; from?: string; to?: string; cost?: number; slippage?: number }
 
 export const catalogue = (m: SavedMarket) => cached(`cat:${engineBase(m)}`, () => engine<Catalogue>(m, "lab/catalogue"));
-export function series(m: SavedMarket, q: { id: string; ticker: string; tf?: string; p?: Record<string, number> }) {
-  const params: Record<string, QueryValue> = { id: q.id, ticker: q.ticker, tf: q.tf };
+export function series(m: SavedMarket, q: { id: string; ticker: string; tf?: string; p?: Record<string, number>; vs?: string }) {
+  const params: Record<string, QueryValue> = { id: q.id, ticker: q.ticker, tf: q.tf, vs: q.vs };
   for (const [k, v] of Object.entries(q.p ?? {})) params[`p.${k}`] = v;
   return engine<SeriesResponse>(m, "lab/series", params);
 }
-export const run = (m: SavedMarket, spec: Spec, q: RunQuery) => engine<RunResult>(m, "lab/run", { spec: JSON.stringify(spec), ...q });
+export type PortfolioRunQuery = Omit<RunQuery,"ticker"|"cost"|"slippage">;
+const executionQuery = (spec: Spec, q: (RunQuery | PortfolioRunQuery) & {split?: string | null}) => spec.portfolio ? {from:q.from,to:q.to} : q;
+export function run(m:SavedMarket,spec:Spec&{portfolio:PortfolioSpec},q:PortfolioRunQuery):Promise<PortfolioRunResult>;
+export function run(m:SavedMarket,spec:Spec,q:RunQuery):Promise<LabRunResult>;
+export function run(m:SavedMarket,spec:Spec,q:RunQuery|PortfolioRunQuery):Promise<LabRunResult>{return engine<LabRunResult>(m,"lab/run",{spec:JSON.stringify(spec),...executionQuery(spec,q)});}
 /** slim=1 always: the page reads `picked`, never `rows` (full rows can reach the 64 MB gateway cap). Not slot-limited: it has its own server slot. */
-export const optimize = (m: SavedMarket, spec: Spec, q: RunQuery & { split?: string | null }) =>
-  labRequest<OptimizeResult>(`${engineBase(m)}/lab/optimize?${qs({ spec: JSON.stringify(spec), ...q, slim: "1" })}`);
+export function optimize(m:SavedMarket,spec:Spec&{portfolio:PortfolioSpec},q:PortfolioRunQuery):Promise<PortfolioOptimizeResult>;
+export function optimize(m:SavedMarket,spec:Spec,q:RunQuery&{split?:string|null}):Promise<LabOptimizeResult>;
+export function optimize(m:SavedMarket,spec:Spec,q:(RunQuery|PortfolioRunQuery)&{split?:string|null}):Promise<LabOptimizeResult>{return labRequest<LabOptimizeResult>(`${engineBase(m)}/lab/optimize?${qs({spec:JSON.stringify(spec),...executionQuery(spec,q),slim:"1"})}`);}
 export const tickers = (m: "in" | "us") => cached(`tickers:${m}`, () => engine<TickerRow[]>(m, "tickers"));
 export const labInstruments = () => cached("gl:instruments", () => engine<InstrumentsResponse>("gl", "lab/instruments"));
 export const templates = (m: SavedMarket) => cached(`templates:${engineBase(m)}`, () => engine<TemplatesResponse>(m, "lab/templates"));

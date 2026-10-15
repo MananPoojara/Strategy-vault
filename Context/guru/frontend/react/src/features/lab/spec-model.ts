@@ -171,14 +171,14 @@ function distProblems(label: string, d: Dist, [lo, hi]: [number, number], zeroOk
 /** UX pre-checks only; the engine stays the authority (unknown series ids are left to it). */
 export function specProblems(spec: Spec, cat: Catalogue): string[] {
   const out: string[] = [];
-  if (!spec.entry.all.length) out.push(COPY.emptyEntry);
+  if (!spec.entry.all.length && spec.portfolio?.mode!=="rotation") out.push(COPY.emptyEntry);
   const alwaysIn = spec.direction === "both" && (spec.execution?.opposite ?? "reverse") === "reverse" &&
     !spec.exit.any.length && !spec.short_side?.exit.any.length;
   const sides = [{ side: spec, prefix: "", title: "" },
     ...(spec.short_side ? [{ side: spec.short_side, prefix: "short_side.", title: "Short side: " }] : [])];
   for (const { side, prefix, title } of sides) {
     const priceExit = ["stop_loss", "target", "trailing", "breakeven"].some((k) => side.exit[k] !== undefined) || !!side.exit.take_profits?.length;
-    if (!alwaysIn && !side.exit.any.length && !priceExit)
+    if (spec.portfolio?.mode!=="rotation" && !alwaysIn && !side.exit.any.length && !priceExit)
       out.push(`${prefix}exit.any needs at least one condition (or a stop_loss, target, trailing, breakeven or take-profit exit)`);
     if (side.entry.all.length + side.exit.any.length > cat.max_conditions)
       out.push(`${title}${title ? "use" : "Use"} at most ${cat.max_conditions} conditions in total.`);

@@ -41,7 +41,7 @@ pub fn not_found_json(path: &str) -> String {
 }
 pub fn route(path: &str, st: &State, q: &Query) -> Option<Result<String, LabError>> {
     let f: fn(&State, &Query) -> Result<String, LabError> = match path {
-        "/api/lab/catalogue" => |_, _| Ok(catalogue_json()),
+        "/api/lab/catalogue" => |st, _| Ok(catalogue_for_state(st)),
         "/api/lab/series" => series_json,
         "/api/lab/run" => run_json,
         "/api/lab/optimize" => optimize_json,
@@ -75,11 +75,12 @@ pub fn catalogue_json() -> String {
             d.id, esc(d.name), esc(d.category), if d.placement == Placement::Price { "price" } else { "pane" }, d.needs.volume, d.needs.intraday, d.needs.breadth, d.needs.second_symbol, d.needs.fundamentals, d.needs.derivatives, d.needs.onchain,
             d.compute.is_some(), quoted(d.outputs.iter().copied()), arr(d.first.iter().map(|&f| if f == usize::MAX { "null".into() } else { f.to_string() })), d.sparse, esc(d.definition), esc(d.note), esc(tv), esc(ab))
     });
-    format!(
+    let mut body = format!(
         "{{\"label\":\"{LABEL}\",\"price_sources\":{},\"operators\":{},\"timeframes\":[\"D\",\"W\",\"M\",\"Q\",\"Y\"],\"custom_days\":[2,{}],\"expand_modes\":[\"last\",\"first\",\"point\"],\"max_conditions\":{},\"max_leaves\":{},\"max_nodes\":{},\"node_kinds\":{},\"expressions\":{},\"max_spec_bytes\":{},\"max_query_bytes\":16384,\"execution\":{{\"direction\":[\"long\",\"short\",\"both\"],\"fill\":[\"next_open\",\"close\"],\"opposite\":[\"reverse\",\"exit\",\"ignore\"],\"entry_on\":[\"level\",\"edge\"],\"intrabar\":[\"stop_first\",\"ohlc_path\"],\"sizing\":[\"pct_equity\",\"risk_pct\",\"units\",\"value\"],\"distances\":[\"pct\",\"atr\",\"points\",\"at\"],\"max_take_profits\":{},\"max_legs\":{},\"max_valid_bars\":{},\"max_delay_bars\":{},\"cooldown_after\":[\"any\",\"loss\",\"win\"],\"max_cooldown_bars\":{},\"max_trades_per\":[\"W\",\"M\",\"Q\",\"Y\"],\"max_trades_count\":{},\"max_consecutive_losses\":{},\"max_pause_bars\":{},\"max_drawdown_pct_below\":100}},\"max_combos\":{},\"indicators\":{}}}",
         quoted(rules::PRICE_SOURCES.iter().copied()), quoted(rules::OPERATORS.iter().copied()), super::resample::MAX_DAYS, rules::MAX_CONDITIONS, rules::MAX_LEAVES, rules::MAX_NODES,
         quoted(rules::NODE_KINDS.iter().copied()), quoted(rules::EXPRESSIONS.iter().copied()), rules::MAX_SPEC_BYTES, rules::MAX_TAKE_PROFITS, rules::MAX_LEGS, rules::MAX_VALID_BARS, rules::MAX_DELAY,
-        rules::MAX_OFFSET, rules::MAX_OFFSET, rules::MAX_OFFSET, rules::MAX_PAUSE, crate::MAX_COMBOS, arr(defs))
+        rules::MAX_OFFSET, rules::MAX_OFFSET, rules::MAX_OFFSET, rules::MAX_PAUSE, crate::MAX_COMBOS, arr(defs));
+    body.pop();body.push_str(&format!(",\"max_foreign\":{},\"foreign_volatility\":null,\"portfolio\":null}}",rules::MAX_FOREIGN));body
 }
 
 /// Instrument identity from the server's own data (never from the query): type, native flag, market, currency.
@@ -100,27 +101,123 @@ fn select_error(e: String) -> LabError {
 fn select<'a>(st: &'a State, q: &Query) -> Result<crate::SelectedContext<'a>, LabError> {
     crate::select_context(st, q).map_err(select_error)
 }
+/// Establish market identity before reading a foreign source; the engine never fetches another market.
+fn symbol_market(st: &State, ticker: &str) -> Option<&'static str> {
+    if markets::gl(ticker).is_some() { return Some("gl"); }
+    match ticker {
+        "INDIA VIX" => Some("in"), "CBOE VIX" => Some("us"),
+        _ => st.baskets.native_evidence(ticker).map(|e| e.market()).or_else(|| crate::preloaded_market(ticker)).map(|m| m.code()),
+    }
+}
+fn close_fills(spec: &Spec) -> bool {
+    std::iter::once(&spec.exec).chain(spec.short_side.as_ref().map(|s| &s.exec))
+        .any(|x| x.fill == rules::Fill::Close || x.exit_fill == rules::Fill::Close)
+}
+/// Load each referenced instrument once and retain operand paths on every refusal.
+fn others_for(st: &State, run: &str, refs: &[(String, rules::Foreign)], close: bool, member_scope: bool) -> Result<(series::Others, String), LabError> {
+    let mut names = BTreeMap::<String, (String, bool)>::new();
+    for (path, value) in refs {
+        for (key, name, fixup) in [("symbol", value.symbol.as_ref(), value.fixup), ("vs", value.vs.as_ref(), false)] {
+            if let Some(name) = name {
+                let entry = names.entry(name.clone()).or_insert_with(|| (format!("{path}.{key}"), false));
+                entry.1 |= fixup;
+            }
+        }
+    }
+    if names.len() > rules::MAX_FOREIGN { return Err(LabError::Invalid(format!("the other-instrument limit is {}", rules::MAX_FOREIGN))); }
+    let mut frames = BTreeMap::new();
+    let mut items = Vec::new();
+    // First validate all market identities. No expensive source read happens before these checks.
+    for (name, (path, _)) in &names {
+        let Some(other_market) = symbol_market(st, name) else {
+            return Err(LabError::Invalid(format!("{path}: unknown ticker {name} on this market")));
+        };
+        let run_market = symbol_market(st, run).ok_or_else(|| LabError::NeedsData(format!("{run}: source market is not established")))?;
+        if other_market != run_market {
+            let note = if other_market == "gl" { "served by /api/gl; provisional data cannot be mixed into India/US" }
+                else if run_market == "gl" { "served by /api/in or /api/us; provisional data cannot be mixed with India/US" }
+                else { "cross-market references are not available on this engine" };
+            return Err(LabError::NeedsData(format!("{path}: {name} is {note}")));
+        }
+    }
+    for (name, (path, fixup)) in names {
+        let (loaded, kind, first, last) = frames_of(st, &name).map_err(|e| match e {
+            LabError::Invalid(m) => LabError::Invalid(format!("{path}: {m}")),
+            LabError::Unsupported(m) => LabError::Unsupported(format!("{path}: {m}")),
+            LabError::NeedsData(m) => LabError::NeedsData(format!("{path}: {m}")),
+        })?;
+        let mut uses=Vec::new();
+        for (path,value) in refs {
+            for (key,target,source,fill) in [("symbol",value.symbol.as_deref(),run,value.fixup),("vs",value.vs.as_deref(),value.symbol.as_deref().unwrap_or(run),false)] {
+                if target==Some(name.as_str()){
+                    let scope=if member_scope&&(key=="symbol"||value.symbol.is_none()) {",\"source_scope\":\"portfolio_member\""}else{""};
+                    uses.push(format!("{{\"path\":\"{}\",\"source\":\"{}\",\"alignment\":\"{}\",\"fixup\":{fill}{scope}}}",esc(&format!("{path}.{key}")),esc(source),super::foreign::alignment(source,&name,close).name()));
+                }
+            }
+        }
+        let alignment = super::foreign::alignment(run, &name, close);
+        items.push(format!("{{\"ticker\":\"{}\",\"type\":\"{kind}\",\"alignment\":\"{}\",\"fixup\":{fixup},\"first\":\"{first}\",\"last\":\"{last}\",\"uses\":[{}]}}", esc(&name), alignment.name(),uses.join(",")));
+        frames.insert(name, loaded);
+    }
+    Ok((series::Others { run: run.into(), close_fills: close, frames: Arc::new(frames) },
+        if items.is_empty() { String::new() } else { format!(",\"foreign\":[{}]", items.join(",")) }))
+}
+/// Shared read-only loader for foreign signals and portfolio members; coverage is never invented.
+pub(super) fn frames_of(st: &State, ticker: &str) -> Result<(Frames, &'static str, String, String), LabError> {
+    let calendar = |bars: &Bars| super::foreign::validate_dates(&bars.date, ticker)
+        .map_err(|e| LabError::NeedsData(e.message().into()));
+    if super::foreign::VIX.contains(&ticker) {
+        if st.vix.is_empty() || st.vix.iter().any(|r| r.ticker != ticker) {
+            return Err(LabError::NeedsData(format!("{ticker} is not loaded on this engine")));
+        }
+        raw_prices_clean(&st.vix)?;
+        let bars = Bars::from_rows(&st.vix);
+        calendar(&bars)?;
+        let first = bars.date.first().cloned().ok_or_else(|| LabError::NeedsData(format!("{ticker}: no dates are loaded")))?;
+        let last = bars.date.last().cloned().unwrap();
+        return Ok((Frames::new(bars), "volatility_index", first, last));
+    }
+    if crate::preloaded_market(ticker).is_some() && !st.ctxs.contains_key(ticker) {
+        return Err(LabError::NeedsData(format!("{ticker} is not loaded on this engine")));
+    }
+    let query = Query::from([("ticker".into(), ticker.into())]);
+    let selected = select(st, &query)?;
+    let held = selected.context(st);
+    if !selected.native() && held.r.iter().any(|r| r.ticker != ticker) {
+        return Err(LabError::NeedsData(format!("{ticker}: loaded source identity does not match the requested instrument")));
+    }
+    let (kind, _) = instrument(&selected, ticker);
+    known_type(kind, ticker)?;
+    let first = held.r.first().ok_or_else(|| LabError::NeedsData(format!("{ticker}: no price bars are loaded")))?.date.clone();
+    let last = held.r.last().unwrap().date.clone();
+    raw_prices_clean(held.r)?;
+    let bars = Bars::from_ctx(&held);
+    calendar(&bars)?;
+    Ok((Frames::new(bars), kind, first, last))
+}
 pub fn series_json(st: &State, q: &Query) -> Result<String, LabError> {
     let id = q.get("id").ok_or_else(|| LabError::Invalid("id is required".into()))?;
     let tf = q.get("tf").map_or(Some(Tf::D), |t| Tf::parse(t)).ok_or_else(|| LabError::Invalid(format!("tf must be {}", super::resample::TF_HELP)))?;
     if let Some((k, _)) = q.iter().find(|(k, v)| k.starts_with("p.") && !v.parse::<f64>().is_ok_and(f64::is_finite)) {
         return Err(LabError::Invalid(format!("{k} must be a finite number")));
     }
-    let r = rules::series_ref("series", id, &crate::params_of(q), tf, None, 0)?;
+    let foreign = rules::foreign_ref("series", q.get("symbol").map(String::as_str), q.get("vs").map(String::as_str), q.get("fixup").map(String::as_str))?;
+    let r = rules::series_ref("series", id, &crate::params_of(q), tf, None, 0, foreign.clone())?;
     let selected = select(st, q)?;
     let held = selected.context(st);
     let ctx: &Ctx = &held;
     let (_, instrument) = instrument(&selected, &ctx.r[0].ticker);
+    let (others, foreign_json) = others_for(st, &ctx.r[0].ticker, &[("series".into(), foreign)], false, false)?;
     let fr = Frames::new(Bars::from_ctx(ctx));
     let outputs: Vec<&str> = catalogue::get(id).map_or(vec![id.as_str()], |d| d.outputs.to_vec());
     let mut cache = Cache::new();
     let mut values = Vec::new();
     for (k, name) in outputs.iter().enumerate() {
-        let s = series::series(&fr, &mut cache, &rules::SeriesRef { out: k, ..r.clone() })?;
+        let s = series::series_in(&fr, &others, &mut cache, &rules::SeriesRef { out: k, ..r.clone() })?;
         values.push(format!("\"{}\":{}", esc(name), arr(s.into_iter().map(full))));
     }
     let params = r.params.iter().map(|(k, v)| format!("\"{}\":{}", esc(k), full(*v))).collect::<Vec<_>>().join(",");
-    Ok(format!("{{\"label\":\"{LABEL}\",\"instrument\":{instrument},\"id\":\"{}\",\"tf\":\"{}\",\"params\":{{{params}}},\"outputs\":{},\"dates\":{},\"series\":{{{}}},\"provenance\":{}{}}}",
+    Ok(format!("{{\"label\":\"{LABEL}\",\"instrument\":{instrument}{foreign_json},\"id\":\"{}\",\"tf\":\"{}\",\"params\":{{{params}}},\"outputs\":{},\"dates\":{},\"series\":{{{}}},\"provenance\":{}{}}}",
         esc(id), tf.name(), quoted(outputs.iter().copied()), quoted(ctx.r.iter().map(|r| r.date.as_str())), values.join(","), crate::source_provenance(st, q), adaptations([id.as_str()].into_iter())))
 }
 fn known_type(kind: &str, ticker: &str) -> Result<(), LabError> {
@@ -151,7 +248,10 @@ fn window(ctx: &Ctx, q: &Query) -> Result<(usize, usize, String), LabError> {
     }
     Ok((from, to, start))
 }
-fn spec_of(q: &Query) -> Result<Spec, LabError> { rules::parse_spec(q.get("spec").ok_or_else(|| LabError::Invalid("spec is required".into()))?) }
+fn spec_of(q: &Query) -> Result<Spec, LabError> {
+    let spec = rules::parse_spec(q.get("spec").ok_or_else(|| LabError::Invalid("spec is required".into()))?)?;
+    Ok(spec)
+}
 /// execution.cost_bps (saved with a strategy) and the `cost` query must agree; one of them may be absent.
 fn with_spec_cost(q: &Query, spec: &Spec) -> Result<Query, LabError> {
     let mut q = q.clone();
@@ -270,6 +370,7 @@ fn futures_refusal(spec: &Spec, q: &Query) -> Result<(),LabError> {
 pub fn run_json(st: &State, q: &Query) -> Result<String, LabError> {
     if q.get("split").is_some_and(|s| !s.is_empty()) { return Err(LabError::Invalid("split applies to /api/lab/optimize only".into())); }
     let spec = spec_of(q)?;
+    if spec.portfolio.is_some() { return portfolio_run_json(st,q,&spec,markets::engine_market().as_deref()==Some("gl")); }
     futures_refusal(&spec,q)?;
     let origin = origin_of(&spec)?;
     let q = &with_spec_cost(q, &spec)?;
@@ -278,6 +379,7 @@ pub fn run_json(st: &State, q: &Query) -> Result<String, LabError> {
     let ctx: &Ctx = &held;
     let (kind, instrument) = instrument(&selected, &ctx.r[0].ticker);
     known_type(kind, &ctx.r[0].ticker)?;
+    let (others, foreign_json) = others_for(st, &ctx.r[0].ticker, &spec.foreign_locations(), close_fills(&spec), false)?;
     origin_admits(origin.as_ref(), kind, &ctx.r[0].ticker)?;
     let (label, origin) = labelled(origin.as_ref(), spec.origin.as_ref().map_or(0, |o| o.version));
     let (from, to, start) = window(ctx, q)?;
@@ -288,7 +390,7 @@ pub fn run_json(st: &State, q: &Query) -> Result<String, LabError> {
     costs.ensure_rollover()?;
     let cost = costs.side_rate();
     let fr = Frames::new(Bars::from_ctx(ctx));
-    let mut compiled = series::compile(&spec, &fr, &mut Cache::new())?;
+    let mut compiled = series::compile_with(&spec, &fr, &others, &mut Cache::new())?;
     compiled.cost = cost;
     let (run, events, booked) = backtest(ctx, &compiled, &fr.d, from, to, cost, money.as_ref())?;
     let gross = gross_run(ctx, &run, booked.as_ref(), money.as_ref());
@@ -311,7 +413,7 @@ pub fn run_json(st: &State, q: &Query) -> Result<String, LabError> {
     let stats = result_stats(ctx, &run, costs, booked.as_ref(), money.as_ref());
     let cost_json = money.as_ref().map_or_else(|| costs.json(), declared_costs_json);
     Ok(format!(
-        "{{\"label\":\"{}\",\"kind\":\"lab_simulation\",\"origin\":{origin},\"instrument\":{instrument},\"execution_model\":{},\"from\":\"{}\",\"to\":\"{}\",\"start\":{start},\"dates\":{},\"close\":{},\"equity\":{},\"gross_equity\":{},\"bh\":{},\"trades\":{trades}{money_block},\"stats\":{},\"gross_stats\":{},\"costs\":{},\"provenance\":{}{}}}",
+        "{{\"label\":\"{}\",\"kind\":\"lab_simulation\",\"origin\":{origin},\"instrument\":{instrument}{foreign_json},\"execution_model\":{},\"from\":\"{}\",\"to\":\"{}\",\"start\":{start},\"dates\":{},\"close\":{},\"equity\":{},\"gross_equity\":{},\"bh\":{},\"trades\":{trades}{money_block},\"stats\":{},\"gross_stats\":{},\"costs\":{},\"provenance\":{}{}}}",
         esc(&label), model.json(Some(&events)), ctx.r[from].date, ctx.r[to].date, quoted((from..=to).map(|k| ctx.r[k].date.as_str())), arr((from..=to).map(|k| crate::num(ctx.c[k]))),
         arr(run.equity.iter().map(|v| crate::num(*v))), arr(gross.equity.iter().map(|v| crate::num(*v))), arr(run.bh.iter().map(|v| crate::num(*v))),
         crate::stats_json(&stats), crate::stats_json(&gross_stats(ctx, &gross)), cost_json, crate::source_provenance(st, q), adaptations(rules::series_ids(&spec).iter().map(String::as_str))))
@@ -319,6 +421,7 @@ pub fn run_json(st: &State, q: &Query) -> Result<String, LabError> {
 pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> {
     let t0 = std::time::Instant::now();
     let spec = spec_of(q)?;
+    if spec.portfolio.is_some() { return portfolio_optimize_json(st,q,&spec,markets::engine_market().as_deref()==Some("gl"),t0); }
     futures_refusal(&spec,q)?;
     if spec.optimize.is_empty() { return Err(LabError::Invalid("optimize lists no parameter ranges".into())); }
     let origin = origin_of(&spec)?;
@@ -328,6 +431,7 @@ pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> {
     let ctx: &Ctx = &held;
     let (kind, instrument) = instrument(&selected, &ctx.r[0].ticker);
     known_type(kind, &ctx.r[0].ticker)?;
+    let (others, foreign_json) = others_for(st, &ctx.r[0].ticker, &spec.foreign_locations(), close_fills(&spec), false)?;
     origin_admits(origin.as_ref(), kind, &ctx.r[0].ticker)?;
     let (label, origin) = labelled(origin.as_ref(), spec.origin.as_ref().map_or(0, |o| o.version));
     let (from, to, start) = window(ctx, q)?;
@@ -347,7 +451,8 @@ pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> {
     let dims = &spec.optimize;
     let combos: usize = dims.iter().map(|d| d.values.len()).product();
     let metrics = |cache: &mut Cache, s: &Spec| -> Result<Vec<f64>, LabError> {
-        let mut c = series::compile(s, &fr, cache)?;
+        rules::validate_applied(s)?;
+        let mut c = series::compile_with(s, &fr, &others, cache)?;
         c.cost = cost;
         let money = money_of(s, q, market_of(&selected, &ctx.r[0].ticker))?;
         let (run, _, booked) = backtest(ctx, &c, &fr.d, from, to, cost, money.as_ref())?;
@@ -436,10 +541,175 @@ pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> {
     let money_block = money.as_ref().map_or(String::new(), |m| format!(",\"money\":{{\"capital\":{},\"basis\":\"{}\"}}", crate::num(m.capital), esc(ledger::BASIS)));
     let cost_json = money.as_ref().map_or_else(|| costs.json(), declared_costs_json);
     Ok(format!(
-        "{{\"label\":\"{}\",\"kind\":\"lab_optimization\",\"origin\":{origin}{money_block},\"instrument\":{instrument},\"execution_model\":{},\"from\":\"{}\",\"to\":\"{}\",\"start\":{start},\"split\":{},\"combos\":{combos},\"threads\":{threads},\"ms\":{},\"dims\":{dims_json},\"cols\":{},\"base\":{},\"ranked_on\":\"{}\",\"rank\":{rank_json},\"picked\":{{{picked}}},\"rows\":[{rows}],\"costs\":{},\"provenance\":{}{}}}",
+        "{{\"label\":\"{}\",\"kind\":\"lab_optimization\",\"origin\":{origin}{money_block},\"instrument\":{instrument}{foreign_json},\"execution_model\":{},\"from\":\"{}\",\"to\":\"{}\",\"start\":{start},\"split\":{},\"combos\":{combos},\"threads\":{threads},\"ms\":{},\"dims\":{dims_json},\"cols\":{},\"base\":{},\"ranked_on\":\"{}\",\"rank\":{rank_json},\"picked\":{{{picked}}},\"rows\":[{rows}],\"costs\":{},\"provenance\":{}{}}}",
         esc(&label), model.json(None), dates[from], dates[to], split.map_or("null".into(), |s| format!("\"{}\"", dates[s])), t0.elapsed().as_millis(),
         quoted(cols.iter().map(String::as_str)), arr(base.iter().map(|v| crate::num(*v))), if split.is_some() { "in_sample" } else { "full" }, cost_json, crate::source_provenance(st, q), adaptations(rules::series_ids(&spec).iter().map(String::as_str))))
 }
+
+fn catalogue_for_state(st:&State)->String{
+    let markets:std::collections::BTreeSet<_>=st.ctxs.keys().filter_map(|t|symbol_market(st,t)).collect();
+    let market=if markets.len()==1{markets.iter().next().copied().filter(|m|*m=="in"||*m=="us")}else{None};
+    let vix=st.vix.first().filter(|r|super::foreign::VIX.contains(&r.ticker.as_str())&&st.vix.iter().all(|v|v.ticker==r.ticker)&&symbol_market(st,&r.ticker)==market&&market.is_some()&&raw_prices_clean(&st.vix).is_ok()&&super::foreign::validate_dates(&st.vix.iter().map(|r|r.date.clone()).collect::<Vec<_>>(),"volatility source").is_ok()).map(|r|r.ticker.as_str());
+    let baskets=arr(["allfo","midcap100","nifty50","nse500","us_dow30","us_dow30_past","us_nasdaq100","us_nasdaq100_past","us_russell2000","us_russell2000_past","us_sp500","us_sp500_past"].iter().filter_map(|id|{
+        let members=st.baskets.members(id);if members.is_empty()||members.iter().any(|m|Some(m.market.code())!=market){return None;}let available=members.len();let n=st.baskets.expected_member_count(id).unwrap_or(available).max(available);let kind=if members.iter().any(|m|m.membership_kind=="current_plus_past_snapshot"){"current_plus_past_snapshot"}else{"current_snapshot"};Some(format!("{{\"id\":\"{id}\",\"members\":{n},\"available_members\":{available},\"membership_kind\":\"{kind}\",\"supported\":{}}}",n==available&&(2..=rules::MAX_UNIVERSE).contains(&n)))
+    }));
+    let instruments=arr(st.ctxs.iter().filter_map(|(ticker,ctx)|{let kind=instrument_policy::selected_type(ticker,st.baskets.native_evidence(ticker).is_some());let m=symbol_market(st,ticker);if !matches!(kind,"etf"|"individual_stock")||m!=market||market.is_none()||ctx.r.is_empty()||ctx.r.iter().any(|r|r.ticker!=*ticker){return None;}Some(format!("{{\"ticker\":\"{}\",\"type\":\"{kind}\",\"market\":\"{}\"}}",esc(ticker),m.unwrap()))}));
+    let capabilities=if market.is_some()&&markets::engine_market().as_deref()!=Some("gl"){format!("{{\"modes\":[\"signals\",\"rotation\"],\"max_universe\":{},\"max_universe_list\":{},\"max_open\":{},\"max_combos\":{},\"max_work\":{},\"max_source_bars\":500000,\"max_member_bars\":50000,\"max_compiled_cells\":8000000,\"max_workers\":2,\"rebalance\":[\"bar\",\"W\",\"M\",\"Q\",\"Y\"],\"baskets\":{baskets},\"instruments\":{instruments}}}",rules::MAX_UNIVERSE,rules::MAX_UNIVERSE_LIST,rules::MAX_OPEN,rules::MAX_PORTFOLIO_COMBOS,PORTFOLIO_MAX_WORK)}else{"null".into()};
+    catalogue_json().replace("\"foreign_volatility\":null",&format!("\"foreign_volatility\":{}",vix.map_or("null".into(),|s|format!("\"{}\"",esc(s))))).replace("\"portfolio\":null",&format!("\"portfolio\":{capabilities}"))
+}
+fn portfolio_costs_json(spec:&Spec)->String{declared_costs_json(&ledger::Money{capital:spec.exec.capital.unwrap(),sizing:spec.exec.sizing,costs:spec.exec.costs.clone(),contract:ledger::CASH})}
+
+
+pub(super) const PORTFOLIO_MAX_SOURCE_BARS:usize=500_000;
+pub(super) const PORTFOLIO_MAX_MEMBER_BARS:usize=50_000;
+const PORTFOLIO_MAX_COMPILED_CELLS:usize=8_000_000;
+const PORTFOLIO_MAX_WORKERS:usize=2;
+fn finish_portfolio(body:String,deadline:std::time::Instant,opt:bool)->Result<String,LabError>{
+    portfolio_deadline(deadline).map_err(|e|if opt{LabError::Invalid("portfolio optimization stopped after 300 s; narrow the grid. No partial ranking is published.".into())}else{e})?;Ok(body)
+}
+/// Conservative cells include evaluated tree arrays and all raw output channels; repeated leaves deliberately overcount.
+fn operand_cells(o:&rules::Operand)->usize{
+    use rules::{Operand,Expr};match o{
+        Operand::Value(_)|Operand::BarsHeld=>0,
+        Operand::Series(s)=>1+catalogue::get(&s.id).map_or(0,|d|d.outputs.len()),
+        Operand::Expr(e)=>1+match &**e{
+            Expr::Bin(_,a,b)=>operand_cells(a)+operand_cells(b),Expr::Abs(a)|Expr::Ref(a,_)|Expr::Win(_,a,_)=>operand_cells(a),
+            Expr::BarsSince(n)|Expr::Count(n,_)=>node_cells(n),Expr::ValueWhen{when,of,..}|Expr::Since{when,of,..}=>node_cells(when)+operand_cells(of),
+            Expr::Expand(s,_)=>1+catalogue::get(&s.id).map_or(0,|d|d.outputs.len()),Expr::Compress{of,..}=>operand_cells(of),
+        }
+    }
+}
+fn node_cells(n:&rules::Node)->usize{use rules::Node;1+match n{
+    Node::Cmp(c)=>operand_cells(&c.lhs)+operand_cells(&c.rhs),Node::Range{x,lo,hi,..}=>operand_cells(x)+operand_cells(lo)+operand_cells(hi),Node::Trend{x,..}=>operand_cells(x),
+    Node::All(v)|Node::Any(v)=>v.iter().map(node_cells).sum(),Node::Not(n)|Node::AtLeast{when:n,..}=>node_cells(n),Node::Then{steps,..}=>steps.iter().map(node_cells).sum(),
+}}
+fn portfolio_resource_counts(member_bars:&[usize],other_bars:usize,units:usize)->Result<usize,LabError>{
+    let refuse=|why:String|LabError::Invalid(format!("portfolio resource limit: {why}; use fewer members or shorter admitted histories (from/to does not truncate indicator warm-up)"));
+    if member_bars.iter().any(|n|*n>PORTFOLIO_MAX_MEMBER_BARS){return Err(refuse(format!("at most {PORTFOLIO_MAX_MEMBER_BARS} source bars per member")));}
+    let total=member_bars.iter().try_fold(other_bars,|sum,n|sum.checked_add(*n)).ok_or_else(||refuse("source-bar count overflow".into()))?;
+    if total>PORTFOLIO_MAX_SOURCE_BARS{return Err(refuse(format!("at most {PORTFOLIO_MAX_SOURCE_BARS} total source bars")));}
+    let cells=total.checked_mul(units.max(1)).ok_or_else(||refuse("compiled-cell count overflow".into()))?;
+    if cells>PORTFOLIO_MAX_COMPILED_CELLS{return Err(refuse(format!("at most {PORTFOLIO_MAX_COMPILED_CELLS} compiled cells")));}Ok(cells)
+}
+fn portfolio_resources(prepared:&PreparedPortfolio,spec:&Spec)->Result<(usize,usize),LabError>{
+    let bars:Vec<_>=prepared.loaded.members.iter().map(|m|m.frames.d.len()).collect();let other=prepared.others.frames.values().try_fold(prepared.loaded.dates.len(),|n,f|n.checked_add(f.d.len())).ok_or_else(||LabError::Invalid("portfolio source-bar count overflow".into()))?;
+    // Reserve six arrays for protective ATR/score/marks in addition to the actual parsed tree.
+    let units=6+spec.entry.iter().chain(&spec.exit).map(node_cells).sum::<usize>()+spec.portfolio.as_ref().and_then(|p|p.score.as_ref()).map_or(0,operand_cells);
+    let cells=portfolio_resource_counts(&bars,other,units)?;let total=bars.iter().sum::<usize>()+other;
+    let working=cells.checked_mul(8).and_then(|n|n.checked_add(total*64)).ok_or_else(||LabError::Invalid("portfolio working-set estimate overflow".into()))?;
+    Ok((cells,((128*1024*1024)/working.max(1)).clamp(1,PORTFOLIO_MAX_WORKERS)))
+}
+
+const PORTFOLIO_SECONDS:u64=90;
+const PORTFOLIO_MAX_WORK:usize=12_000;
+const PCOLS:&[&str]=&["total_return","cagr","sharpe","sortino","max_dd","mar","trades","win_rate","profit_factor","avg_trade","exposure","t_stat","avg_bars","expectancy_ratio","monthly_thickness","avg_hold_days","avg_exposure","max_positions"];
+struct PreparedPortfolio {loaded:super::universe::Loaded,from:usize,to:usize,others:series::Others,foreign_json:String}
+fn portfolio_deadline(deadline:std::time::Instant)->Result<(),LabError>{if std::time::Instant::now()>=deadline{Err(LabError::Invalid(format!("portfolio run stopped after {PORTFOLIO_SECONDS} s; use fewer members or a shorter window")))}else{Ok(())}}
+fn portfolio_request(q:&Query,spec:&Spec,gl:bool,opt:bool)->Result<(),LabError>{
+    if gl{return Err(LabError::Unsupported("portfolio mode runs on India/US stocks and ETFs; gl instruments are provisional indices, CFDs and crypto".into()));}
+    if q.contains_key("ticker"){return Err(LabError::Invalid("portfolio runs read their instruments from spec.portfolio.universe; omit ticker".into()));}
+    if q.get("split").is_some_and(|s|!s.is_empty()){return Err(LabError::Invalid(if opt{"split is not available for portfolio optimizations in this phase"}else{"split applies to /api/lab/optimize only"}.into()));}
+    if ["cost","slippage","rollover"].iter().any(|k|q.contains_key(*k))||spec.cost_bps.is_some(){return Err(LabError::Invalid("money mode takes costs from execution.costs; remove the cost, slippage and rollover query".into()));}
+    rules::validate_applied(spec)
+}
+fn prepare_portfolio(st:&State,q:&Query,spec:&Spec,deadline:std::time::Instant)->Result<PreparedPortfolio,LabError>{
+    portfolio_deadline(deadline)?;
+    let p=spec.portfolio.as_ref().ok_or_else(||LabError::Invalid("portfolio is required".into()))?;
+    let loaded=super::universe::load_with_deadline(st,&p.universe,deadline)?;
+    let ctx=&st.ctxs[&loaded.reference];raw_prices_clean(ctx.r)?;
+    for key in ["from","to"] {if let Some(date)=q.get(key).filter(|s|!s.is_empty()){
+        if date.len()!=10||!date.bytes().enumerate().all(|(i,c)|if i==4||i==7{c==b'-'}else{c.is_ascii_digit()})||!crate::baskets::valid_date(date){return Err(LabError::Invalid(format!("{key} must be a valid YYYY-MM-DD date")));}
+    }}
+    if q.get("from").is_some_and(|f|!f.is_empty()&&(f<&loaded.dates[0]||f>loaded.dates.last().unwrap())){return Err(LabError::NeedsData(format!("from precedes or exceeds admitted reference coverage {} through {}",loaded.dates[0],loaded.dates.last().unwrap())));}
+    if q.get("to").is_some_and(|t|!t.is_empty()&&(t>loaded.dates.last().unwrap()||t<&loaded.dates[0])){return Err(LabError::NeedsData(format!("to exceeds or precedes admitted reference coverage {} through {}",loaded.dates[0],loaded.dates.last().unwrap())));}
+    let (_,mut from,mut to,_)=crate::resolve_context(ctx,q).map_err(LabError::Invalid)?;
+    if q.get("from").is_none_or(|s|s.is_empty()){if let Some(first)=loaded.members.iter().filter_map(|m|m.at.iter().position(Option::is_some)).min(){from=from.max(first);}}
+    if q.get("to").is_none_or(|s|s.is_empty()){if let Some(last)=loaded.members.iter().filter_map(|m|m.at.iter().rposition(Option::is_some)).max(){to=to.min(last);}}
+    if from>=to{return Err(LabError::NeedsData("no member has data inside the window".into()));}
+    let (others,foreign_json)=others_for(st,&loaded.reference,&spec.foreign_locations(),close_fills(spec),true)?;
+    portfolio_deadline(deadline)?;
+    let prepared=PreparedPortfolio{loaded,from,to,others,foreign_json};portfolio_resources(&prepared,spec)?;Ok(prepared)
+}
+fn portfolio_lanes<'a>(prepared:&'a PreparedPortfolio,spec:&Spec,caches:&mut[Cache],deadline:std::time::Instant,stop:Option<&AtomicBool>)->Result<(Vec<super::portfolio::Lane<'a>>,Vec<(String,String)>),LabError>{
+    rules::validate_applied(spec)?;
+    let p=spec.portfolio.as_ref().unwrap();let mut lanes=vec![];let mut refused=prepared.loaded.refused.clone();
+    for (i,m) in prepared.loaded.members.iter().enumerate(){
+        portfolio_deadline(deadline)?;if stop.is_some_and(|s|s.load(Ordering::Relaxed)){return Err(LabError::Invalid(STOPPED.into()));}
+        if !(prepared.from..=prepared.to).any(|i|m.at[i].is_some()){refused.push((m.ticker.clone(),"no bars inside the window".into()));continue;}
+        let others=prepared.others.with_run(&m.ticker);
+        let result=(||{let c=series::compile_with(spec,&m.frames,&others,&mut caches[i])?;let score=p.score.as_ref().map(|o|series::operand_values(&m.frames,&others,&mut caches[i],o)).transpose()?;Ok::<_,LabError>((c,score))})();
+        caches[i].clear(); // compiled arrays own their values; do not retain raw outputs across members or combinations
+        match result {Ok((c,score))=>lanes.push(super::portfolio::Lane{m,c,score}),Err(LabError::NeedsData(reason))=>refused.push((m.ticker.clone(),reason)),Err(error)=>return Err(error)}
+        portfolio_deadline(deadline)?;
+    }
+    if lanes.is_empty(){return Err(LabError::NeedsData(format!("no universe member is admitted for this window; {}",refused.iter().map(|(t,r)|format!("{t}: {r}")).collect::<Vec<_>>().join("; "))));}
+    Ok((lanes,refused))
+}
+fn portfolio_book(spec:&Spec)->Result<super::portfolio::Book,LabError>{
+    rules::validate_applied(spec)?;let p=spec.portfolio.as_ref().unwrap();
+    if spec.exec.costs.slip_ticks>0.{return Err(LabError::Unsupported("tick slippage needs a futures contract".into()));}
+    let capital=spec.exec.capital.ok_or_else(||LabError::Invalid("portfolio money mode requires execution.capital".into()))?;
+    Ok(super::portfolio::Book{capital,mode:p.mode,max_open:p.max_open,worst_rank_held:p.worst_rank_held(),rebalance:p.rebalance,lowest:p.lowest,fill:spec.exec.fill,exit_fill:spec.exec.exit_fill,size:if spec.exec.sizing==rules::Sizing::Full{rules::Sizing::PctEquity(100./p.max_open as f64)}else{spec.exec.sizing},costs:spec.exec.costs.clone()})
+}
+fn portfolio_stats(ctx:&Ctx,prepared:&PreparedPortfolio,led:&super::portfolio::Ledger,capital:f64,net:bool)->BTreeMap<&'static str,f64>{
+    let mut trades:Vec<_>=led.trades.iter().map(|t|t.as_trade(net)).collect();trades.sort_by_key(|t|(t.legs[0].i,t.exit_i));
+    let run=crate::Run{trades,from:prepared.from,to:prepared.to,equity:if net{&led.equity}else{&led.gross_equity}.iter().map(|v|v/capital).collect(),bh:(prepared.from..=prepared.to).map(|i|ctx.c[i]/ctx.c[prepared.from]).collect()};
+    let mut stats=crate::stats(ctx,&run,0.);stats.insert("avg_exposure",led.invested.iter().zip(&led.equity).map(|(v,e)|v/e).sum::<f64>()/led.equity.len() as f64);stats.insert("max_positions",led.positions.iter().copied().max().unwrap_or(0) as f64);stats
+}
+fn membership_json(loaded:&super::universe::Loaded)->String{format!("{{\"kind\":\"{}\",\"historical_membership_verified\":false,\"note\":\"{}\"}}",loaded.membership.0,esc(loaded.membership.1))}
+fn portfolio_meta(spec:&Spec,prepared:&PreparedPortfolio,admitted:usize,refused:&[(String,String)])->String{
+    let p=spec.portfolio.as_ref().unwrap();format!("{{\"mode\":\"{}\",\"max_open\":{},\"worst_rank_held\":{},\"rebalance\":{},\"rank\":\"{}\",\"universe\":{{\"basket\":{},\"members\":{},\"admitted\":{admitted},\"refused\":{}}}}}",if p.mode==rules::Mode::Rotation{"rotation"}else{"signals"},p.max_open,p.worst_rank_held(),p.rebalance.map_or("null".into(),|v|format!("\"{}\"",["","W","M","Q","Y"][v])),if p.lowest{"lowest"}else{"highest"},prepared.loaded.basket.as_ref().map_or("null".into(),|s|format!("\"{}\"",esc(s))),prepared.loaded.members.len()+prepared.loaded.refused.len(),arr(refused.iter().map(|(t,r)|format!("{{\"ticker\":\"{}\",\"reason\":\"{}\"}}",esc(t),esc(r)))))
+}
+fn portfolio_model(events:Option<&[String]>)->String{format!("{{\"kind\":\"cash\",\"mode\":\"money\",\"executable\":true,\"notes\":[\"User-declared costs; not a verified statutory schedule. Quantities use admitted prices whose corporate-action adjustment is not established; not verified as-traded quantities. Terminal member coverage can cause data_end liquidation; this is a historical coverage adaptation, not live-causal delisting knowledge. Gross revalues the same booked fills and quantities before declared costs.\"],\"events\":{}}}",events.map_or("null".into(),|v|quoted(v.iter().map(String::as_str))))}
+fn portfolio_run_json(st:&State,q:&Query,spec:&Spec,gl:bool)->Result<String,LabError>{
+    let deadline=std::time::Instant::now()+std::time::Duration::from_secs(PORTFOLIO_SECONDS);portfolio_request(q,spec,gl,false)?;
+    let prepared=prepare_portfolio(st,q,spec,deadline)?;let mut caches:Vec<_>=(0..prepared.loaded.members.len()).map(|_|Cache::new()).collect();let (lanes,refused)=portfolio_lanes(&prepared,spec,&mut caches,deadline,None)?;let book=portfolio_book(spec)?;
+    let led=super::portfolio::run(&lanes,&book,&prepared.loaded.dates,prepared.from,prepared.to,deadline,None)?;portfolio_deadline(deadline)?;
+    let ctx=&st.ctxs[&prepared.loaded.reference];let stats=portfolio_stats(ctx,&prepared,&led,book.capital,true);let gross=portfolio_stats(ctx,&prepared,&led,book.capital,false);
+    let dates=&prepared.loaded.dates;let from=prepared.from;let to=prepared.to;
+    let trades=arr(led.trades.iter().map(|t|format!("{{\"ticker\":\"{}\",\"entry\":\"{}\",\"exit\":\"{}\",\"entry_i\":{},\"exit_i\":{},\"entry_px\":{},\"exit_px\":{},\"qty\":{},\"notional\":{},\"costs\":{},\"ret\":{},\"bars\":{},\"open\":{},\"signal\":\"{}\",\"entry_signal\":\"{}\",\"reason\":\"{}\",\"rank\":{},\"score\":{},\"dir\":1,\"entry_kind\":\"{}\"}}",esc(&lanes[t.lane].m.ticker),dates[t.entry_i],dates[t.exit_i],t.entry_i-from,t.exit_i-from,full(t.entry_px),full(t.exit_px),full(t.qty),full(t.entry_px*t.qty),full(t.entry_cost+t.exit_cost),full(t.pnl()/t.equity_at_signal),t.exit_i-t.entry_i,t.open,dates[t.exit_signal_i],dates[t.signal_i],esc(&t.reason),t.rank,full(t.score),t.kind)));
+    let provenance=arr(lanes.iter().map(|l|crate::source_provenance(st,&Query::from([("ticker".into(),l.m.ticker.clone())]))));
+    let costs=portfolio_costs_json(spec);
+    let body=format!("{{\"label\":\"{LABEL}\",\"kind\":\"lab_portfolio_simulation\",\"origin\":null,\"portfolio\":{},\"membership\":{},\"execution_model\":{},\"reference\":{{\"ticker\":\"{}\",\"type\":\"index\"}}{},\"from\":\"{}\",\"to\":\"{}\",\"dates\":{},\"equity\":{},\"gross_equity\":{},\"cash\":{},\"exposure\":{},\"positions\":{},\"bh\":{},\"trades\":{trades},\"skipped\":{{\"no_slot\":{},\"no_cash\":{},\"no_bar\":{},\"data_end\":{},\"final_bar\":{}}},\"stats\":{},\"gross_stats\":{},\"money\":{{\"capital\":{},\"final_equity\":{},\"costs_total\":{},\"currency\":\"{}\"}},\"costs\":{costs},\"provenance\":{provenance}{}}}",portfolio_meta(spec,&prepared,lanes.len(),&refused),membership_json(&prepared.loaded),portfolio_model(Some(&led.events)),esc(&prepared.loaded.reference),prepared.foreign_json,dates[from],dates[to],quoted(dates[from..=to].iter().map(String::as_str)),arr(led.equity.iter().map(|v|full(v/book.capital))),arr(led.gross_equity.iter().map(|v|full(v/book.capital))),arr(led.cash.iter().map(|v|full(*v))),arr(led.invested.iter().map(|v|full(*v))),arr(led.positions.iter().map(|v|v.to_string())),arr((from..=to).map(|i|full(ctx.c[i]/ctx.c[from]))),led.skipped.no_slot,led.skipped.no_cash,led.skipped.no_bar,led.skipped.data_end,led.skipped.final_bar,crate::stats_json(&stats),crate::stats_json(&gross),full(book.capital),full(*led.equity.last().unwrap()),full(led.costs_total),if symbol_market(st,&prepared.loaded.reference)==Some("in"){"INR"}else{"USD"},adaptations(rules::series_ids(spec).iter().map(String::as_str)));
+    finish_portfolio(body,deadline,false)
+}
+fn portfolio_work(members:usize,combos:usize)->Result<(),LabError>{
+    if combos==0||combos>rules::MAX_PORTFOLIO_COMBOS{return Err(LabError::Invalid("portfolio optimize allows at most 200 combinations".into()));}
+    let work=members.checked_mul(combos).ok_or_else(||LabError::Invalid("members × combinations overflows the 12000 work limit".into()))?;
+    if work>PORTFOLIO_MAX_WORK{return Err(LabError::Invalid(format!("members × combinations is {work}; the limit is 12000 — use fewer members or a smaller grid")));}Ok(())
+}
+fn portfolio_optimize_json(st:&State,q:&Query,spec:&Spec,gl:bool,t0:std::time::Instant)->Result<String,LabError>{
+    portfolio_request(q,spec,gl,true)?;if spec.optimize.is_empty(){return Err(LabError::Invalid("optimize lists no parameter ranges".into()));}
+    let deadline=t0+std::time::Duration::from_secs(OPT_SECONDS);let timeout=|e:LabError|if e.message().contains("stopped after 90 s"){LabError::Invalid("portfolio optimization stopped after 300 s; narrow the grid. No partial ranking is published.".into())}else{e};
+    let combos=spec.optimize.iter().try_fold(1usize,|n,d|n.checked_mul(d.values.len())).ok_or_else(||LabError::Invalid("portfolio combination count overflow".into()))?;portfolio_work(0,combos)?;
+    let prepared=prepare_portfolio(st,q,spec,deadline).map_err(timeout)?;portfolio_work(prepared.loaded.members.len()+prepared.loaded.refused.len(),combos)?;
+    let mut caches:Vec<_>=(0..prepared.loaded.members.len()).map(|_|Cache::new()).collect();let (base_lanes,refused)=portfolio_lanes(&prepared,spec,&mut caches,deadline,None).map_err(timeout)?;
+    let cohort:Vec<_>=base_lanes.iter().map(|l|l.m.ticker.clone()).collect();let base_book=portfolio_book(spec)?;let base_ledger=super::portfolio::run(&base_lanes,&base_book,&prepared.loaded.dates,prepared.from,prepared.to,deadline,None).map_err(timeout)?;
+    let ctx=&st.ctxs[&prepared.loaded.reference];let base_stats=portfolio_stats(ctx,&prepared,&base_ledger,base_book.capital,true);let base:Vec<_>=PCOLS.iter().map(|k|base_stats[k]).collect();let provenance=arr(base_lanes.iter().map(|l|crate::source_provenance(st,&Query::from([("ticker".into(),l.m.ticker.clone())]))));drop(base_lanes);drop(base_ledger);drop(caches);let (_,worker_limit)=portfolio_resources(&prepared,spec)?;
+    let stop=AtomicBool::new(false);let done=Arc::new(AtomicUsize::new(0));let errors=std::sync::Mutex::new(None::<LabError>);let threads=std::thread::available_parallelism().map_or(1,|n|n.get()).min(worker_limit).min(combos);let dims=&spec.optimize;
+    #[cfg(test)] LAST_DONE.with(|d|*d.borrow_mut()=Some(done.clone()));
+    let rows=std::thread::scope(|scope|->Result<Vec<Vec<f64>>,LabError>{
+        let handles:Vec<_>=(0..threads).map(|worker|{let (stop,done,errors,prepared,cohort,timeout)=(&stop,&done,&errors,&prepared,&cohort,&timeout);scope.spawn(move||{
+            let mut out=vec![];let mut caches:Vec<_>=(0..prepared.loaded.members.len()).map(|_|Cache::new()).collect();
+            for k in (worker..combos).step_by(threads){if stop.load(Ordering::Relaxed){break;}let mut index=k;let mut vals=vec![0.;dims.len()];for (j,d) in dims.iter().enumerate().rev(){vals[j]=d.values[index%d.values.len()];index/=d.values.len();}
+                let result=(||{portfolio_deadline(deadline)?;
+                    #[cfg(test)] if vals[0]==77.{return Err(LabError::Invalid("test hook: portfolio combination failed; no partial ranking is published".into()));}
+                    let candidate=rules::apply(spec,dims,&vals);let (lanes,_)=portfolio_lanes(prepared,&candidate,&mut caches,deadline,Some(stop))?;
+                    if lanes.iter().map(|l|l.m.ticker.clone()).collect::<Vec<_>>()!=*cohort{return Err(LabError::NeedsData("a combination changed the admitted member cohort; no partial ranking is published".into()));}
+                    let book=portfolio_book(&candidate)?;let led=super::portfolio::run(&lanes,&book,&prepared.loaded.dates,prepared.from,prepared.to,deadline,Some(stop))?;let stats=portfolio_stats(ctx,prepared,&led,book.capital,true);portfolio_deadline(deadline)?;vals.extend(PCOLS.iter().map(|key|stats[key]));Ok(vals)})();
+                match result {Ok(row)=>{out.push((k,row));done.fetch_add(1,Ordering::Relaxed);},Err(e)=>{let e=timeout(e);let cancellation=e.message()==STOPPED||e.message().contains("cancelled after another");if !cancellation{let mut first=errors.lock().unwrap_or_else(|p|p.into_inner());if first.is_none(){*first=Some(e);}}stop.store(true,Ordering::Relaxed);break;}}
+            }out
+        })}).collect();let mut rows=vec![];for h in handles{match h.join(){Ok(v)=>rows.extend(v),Err(_)=>{stop.store(true,Ordering::Relaxed);let mut first=errors.lock().unwrap_or_else(|p|p.into_inner());if first.is_none(){*first=Some(LabError::Invalid("portfolio optimization worker failed; no result is published".into()));}}}}
+        if let Some(error)=errors.lock().unwrap_or_else(|p|p.into_inner()).take(){return Err(error);}if rows.len()!=combos{return Err(LabError::Invalid("portfolio optimization cancelled; no partial ranking is published".into()));}rows.sort_by_key(|r|r.0);Ok(rows.into_iter().map(|r|r.1).collect())
+    })?;
+    portfolio_deadline(deadline).map_err(timeout)?;
+    let nd=dims.len();let col=|name:&str|nd+PCOLS.iter().position(|k|*k==name).unwrap();let years=crate::years(ctx,prepared.from,prepared.to);let per_year=(base_stats["trades"]/years*0.5).clamp(crate::MIN_PER_YEAR.0,crate::MIN_PER_YEAR.1);let min_trades=(per_year*years).ceil().max(crate::MIN_TRADES);let defs:Vec<_>=dims.iter().map(|d|rules::current(spec,&d.target)).collect();let (rank,pool)=crate::conclude_rank_with_outcomes(&rows,col("trades"),&crate::RANK_STATS.map(|(k,_)|col(k)),min_trades,per_year,&defs,None);
+    let slim=q.get("slim").is_some_and(|v|v=="1");let row=|r:&Vec<f64>|arr(r.iter().map(|v|full(*v)));let picked=if slim{pool.iter().map(|i|format!("\"{i}\":{}",row(&rows[*i]))).collect::<Vec<_>>().join(",")}else{String::new()};let shown=if slim{String::new()}else{rows.iter().map(row).collect::<Vec<_>>().join(",")};let cols=dims.iter().map(|d|d.path.as_str()).chain(PCOLS.iter().copied());
+    let costs=portfolio_costs_json(spec);
+    let body=format!("{{\"label\":\"{LABEL}\",\"kind\":\"lab_portfolio_optimization\",\"origin\":null,\"portfolio\":{},\"membership\":{},\"reference\":{{\"ticker\":\"{}\",\"type\":\"index\"}}{},\"execution_model\":{},\"money\":{{\"capital\":{}}},\"from\":\"{}\",\"to\":\"{}\",\"split\":null,\"combos\":{combos},\"threads\":{threads},\"ms\":{},\"dims\":{},\"cols\":{},\"base\":{},\"ranked_on\":\"full\",\"rank\":{rank},\"picked\":{{{picked}}},\"rows\":[{shown}],\"costs\":{costs},\"provenance\":{provenance}{}}}",portfolio_meta(spec,&prepared,cohort.len(),&refused),membership_json(&prepared.loaded),esc(&prepared.loaded.reference),prepared.foreign_json,portfolio_model(None),full(base_book.capital),prepared.loaded.dates[prepared.from],prepared.loaded.dates[prepared.to],t0.elapsed().as_millis(),arr(dims.iter().map(|d|format!("{{\"path\":\"{}\",\"values\":{}}}",esc(&d.path),arr(d.values.iter().map(|v|full(*v)))))),quoted(cols),arr(base.iter().map(|v|full(*v))),adaptations(rules::series_ids(spec).iter().map(String::as_str)));
+    finish_portfolio(body,deadline,true)
+}
+
 /// A spec with `origin` is a customized book template: the template must exist (same book, version not newer).
 fn origin_of(spec: &Spec) -> Result<Option<StrategyDef>, LabError> {
     let Some(o) = &spec.origin else { return Ok(None) };
@@ -451,13 +721,25 @@ fn origin_of(spec: &Spec) -> Result<Option<StrategyDef>, LabError> {
 fn demoted(why: Option<String>) -> Result<(), LabError> {
     why.map_or(Ok(()), |w| Err(LabError::NeedsData(format!("the book method behind this variant is not available for Customize: {w}"))))
 }
+fn price_problem(r: &crate::Row) -> Option<&'static str> {
+    if ![r.open, r.high, r.low, r.close].iter().all(|n| n.is_finite() && *n > 0.0) { Some("non-positive or missing price") }
+    else if r.low > r.high { Some("low above the high") } else if r.open < r.low { Some("open below the low") } else if r.open > r.high { Some("open above the high") }
+    else if r.close < r.low { Some("close below the low") } else if r.close > r.high { Some("close above the high") } else { None }
+}
+/// Foreign warm-up and resampling consume the source history, so validate that history before computing.
+fn raw_prices_clean(rows: &[crate::Row]) -> Result<(), LabError> {
+    for r in rows {
+        let why = price_problem(r).or_else(|| r.volume.filter(|v| !v.is_finite() || *v < 0.).map(|_| "invalid volume"));
+        if let Some(why) = why { return Err(LabError::NeedsData(format!("{}: invalid source bar on {} ({why}); repair the source before using it", r.ticker, r.date))); }
+    }
+    Ok(())
+}
 /// Same predicate as the book's own check (readiness::check): every bar in the window must be a valid OHLC bar.
 fn bars_clean(ctx: &Ctx, from: usize, to: usize) -> Result<(), LabError> {
     for r in &ctx.r[from..=to] {
-        let why = if ![r.open, r.high, r.low, r.close].iter().all(|n| n.is_finite() && *n > 0.0) { "non-positive or missing price" }
-            else if r.low > r.high { "low above the high" } else if r.open < r.low { "open below the low" } else if r.open > r.high { "open above the high" }
-            else if r.close < r.low { "close below the low" } else if r.close > r.high { "close above the high" } else { continue };
-        return Err(LabError::NeedsData(format!("{}: invalid bar on {} ({why}); choose a window after it", r.ticker, r.date)));
+        if let Some(why) = price_problem(r) {
+            return Err(LabError::NeedsData(format!("{}: invalid bar on {} ({why}); choose a window after it", r.ticker, r.date)));
+        }
     }
     Ok(())
 }
@@ -564,6 +846,112 @@ mod tests {
         let mut q: Query = [("ticker", "SPX"), ("spec", SPEC), ("cost", "5")].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
         for (k, v) in extra { q.insert(k.to_string(), v.to_string()); }
         q
+    }
+
+    #[test] fn shared_frames_loader_preserves_identity_coverage_and_volatility_source() {
+        let mut st = state(30, "NIFTY 50", true);
+        let (frames, kind, first, last) = frames_of(&st, "NIFTY 50").unwrap();
+        assert_eq!((kind, frames.d.len()), ("index", 30));
+        assert_eq!((&first, &last), (frames.d.date.first().unwrap(), frames.d.date.last().unwrap()));
+        assert!(matches!(frames_of(&st, "missing"), Err(LabError::Invalid(_))));
+        assert!(matches!(frames_of(&st, "SPY"), Err(LabError::NeedsData(_))));
+        assert!(matches!(frames_of(&st, "INDIA VIX"), Err(LabError::NeedsData(_))));
+        st.vix = st.ctxs["NIFTY 50"].r[..3].iter().map(|r| Row { ticker: "INDIA VIX".into(), ..r.clone() }).collect();
+        let (vix, kind, first, last) = frames_of(&st, "INDIA VIX").unwrap();
+        assert_eq!((kind, vix.d.len(), first.as_str(), last.as_str()), ("volatility_index", 3, "2015-01-01", "2015-01-03"));
+        assert!(matches!(frames_of(&st, "CBOE VIX"), Err(LabError::NeedsData(_))), "one volatility source cannot stand in for another");
+        st.vix[1].ticker = "CBOE VIX".into();
+        assert!(matches!(frames_of(&st, "INDIA VIX"), Err(LabError::NeedsData(_))));
+        st.vix[1].ticker = "INDIA VIX".into();
+        st.vix[1].date = st.vix[0].date.clone();
+        assert!(frames_of(&st, "INDIA VIX").err().unwrap().message().contains("dates"));
+        let index = st.ctxs["NIFTY 50"].r;
+        st.ctxs.insert("SPY".into(), Ctx::new(index, index, &[]));
+        assert!(frames_of(&st, "SPY").err().unwrap().message().contains("source identity"), "an index cannot stand in for an ETF");
+    }
+
+    #[test] fn shared_frames_reject_invalid_raw_prices_before_resampling() {
+        for price in [f64::NAN, f64::INFINITY, 0., 1e9] {
+            let mut st = foreign_state();
+            st.vix = st.ctxs["SPX"].r[..3].iter().map(|r| Row {ticker:"CBOE VIX".into(), ..r.clone()}).collect();
+            st.vix[0].close = price;
+            assert!(matches!(frames_of(&st, "CBOE VIX"), Err(LabError::NeedsData(_))), "raw volatility price {price} is not an indicator warm-up hole");
+            let mut rows = st.ctxs["SPY"].r.to_vec(); rows[0].close = price;
+            let rows = Box::leak(rows.into_boxed_slice());
+            st.ctxs.insert("SPY".into(), Ctx::new(rows, rows, &[]));
+            assert!(matches!(frames_of(&st, "SPY"), Err(LabError::NeedsData(_))), "raw ETF price {price}");
+        }
+    }
+
+    #[test] fn portfolio_grammar_never_falls_through_to_single_instrument_execution() {
+        let portfolio=SPEC.replace("\"v\":1", "\"v\":1,\"execution\":{\"capital\":100000},\"portfolio\":{\"universe\":{\"tickers\":[\"SPY\",\"QQQ\"]},\"max_open\":2}");
+        let st=state(100,"SPX",true);let query=q(&[("spec",&portfolio)]);
+        for result in [run_json(&st,&query),optimize_json(&st,&query)]{assert!(result.unwrap_err().message().contains("omit ticker"));}
+    }
+
+    fn foreign_state() -> State {
+        let mut st = state(500, "SPX", true);
+        let rows: &'static [Row] = Box::leak(st.ctxs["SPX"].r.iter().enumerate().filter(|(i, _)| i % 97 != 5).map(|(i, r)| {
+            let factor = 1. + (i % 7) as f64 / 100.;
+            Row { ticker: "SPY".into(), open: r.open * factor, high: r.high * factor, low: r.low * factor, close: r.close * factor, ..r.clone() }
+        }).collect::<Vec<_>>().into_boxed_slice());
+        st.ctxs.insert("SPY".into(), Ctx::new(rows, rows, &[]));
+        st
+    }
+    const FOREIGN_FILTER: &str = r#"{"v":1,"entry":{"all":[{"lhs":{"s":"close","symbol":"SPX"},"op":">","rhs":{"s":"sma","p":{"length":50},"symbol":"SPX"}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":5}}]}}"#;
+    #[test] fn foreign_market_filter_uses_its_source_but_fills_the_selected_etf() {
+        let st = foreign_state();
+        let body = run_json(&st, &q(&[("ticker", "SPY"), ("spec", FOREIGN_FILTER)])).unwrap();
+        assert!(body.contains("\"instrument\":{\"ticker\":\"SPY\",\"type\":\"etf\""));
+        assert!(!body.contains("source_scope"),"plain single-instrument metadata keeps its existing schema");
+        assert!(body.contains("\"foreign\":[{\"ticker\":\"SPX\",\"type\":\"index\",\"alignment\":\"same_date\",\"fixup\":false"));
+        let entry: f64 = body.split("\"entry_px\":").nth(1).unwrap().split(',').next().unwrap().parse().unwrap();
+        let json=crate::lab::json::parse(&body).unwrap();let trades=match json.get("trades").unwrap(){crate::lab::json::Json::Arr(v)=>v,_=>panic!()};let date=trades[0].get("entry").unwrap().as_str().unwrap();let raw=st.ctxs["SPY"].r.iter().find(|r|r.date==date).unwrap();assert_eq!(crate::num(raw.open),crate::num(entry));
+        assert!(!run_json(&st, &q(&[("ticker", "SPY")])).unwrap().contains("\"foreign\""));
+    }
+    #[test] fn foreign_trade_fills_closed_trades_and_equity_are_causal(){
+        use crate::lab::json::{parse,Json};let baseline=foreign_state();let query=q(&[("ticker","SPY"),("spec",FOREIGN_FILTER)]);let want=parse(&run_json(&baseline,&query).unwrap()).unwrap();let list=|j:&Json,key:&str|match j.get(key).unwrap(){Json::Arr(v)=>v.clone(),_=>panic!()};let trades=list(&want,"trades");assert!(trades.iter().any(|t|t.get("open")==Some(&Json::Bool(false))));
+        for cut in [150usize,300]{let mut changed=foreign_state();let cutdate=changed.ctxs["SPY"].r[cut].date.clone();let rows: &'static [crate::Row]=Box::leak(changed.ctxs["SPX"].r.iter().map(|r|if r.date>cutdate{crate::Row{open:r.open*1.7,high:r.high*1.7,low:r.low*1.7,close:r.close*1.7,..r.clone()}}else{r.clone()}).collect::<Vec<_>>().into_boxed_slice());changed.ctxs.insert("SPX".into(),Ctx::new(rows,rows,&[]));let got=parse(&run_json(&changed,&query).unwrap()).unwrap();assert_eq!(&list(&got,"equity")[..=cut],&list(&want,"equity")[..=cut]);
+            let closed=|j:&Json|list(j,"trades").into_iter().filter(|t|t.get("open")==Some(&Json::Bool(false))&&t.get("exit").unwrap().as_str().unwrap()<=cutdate.as_str()).collect::<Vec<_>>();assert_eq!(closed(&got),closed(&want));
+            let fills=|j:&Json|list(j,"trades").into_iter().filter(|t|t.get("entry").unwrap().as_str().unwrap()<=cutdate.as_str()).map(|t|["entry","entry_px","entry_kind"].iter().map(|k|t.get(k).unwrap().clone()).collect::<Vec<_>>()).collect::<Vec<_>>();assert_eq!(fills(&got),fills(&want));
+        }
+    }
+    #[test] fn foreign_metadata_records_each_real_pair_alignment_and_fixup_use(){
+        use crate::lab::json::{parse,Json};let mut st=state(6,"HSI:HSI",false);for (ticker,start,step) in [("HSI:HSI",200.,1.),("IG:DAX",100.,1.),("IG:FTSE",50.,2.)]{let rows: &'static [crate::Row]=Box::leak((0..6).map(|i|{let c=start+i as f64*step;crate::Row{ticker:ticker.into(),date:format!("2024-01-0{}",i+1),open:c,high:c+1.,low:c-1.,close:c,volume:None}}).collect::<Vec<_>>().into_boxed_slice());st.ctxs.insert(ticker.into(),Ctx::new(rows,rows,&[]));}
+        let pair=rules::Foreign{symbol:Some("IG:DAX".into()),vs:Some("IG:FTSE".into()),fixup:false};let refs=vec![("entry.all[0].lhs".into(),pair.clone()),("entry.all[1].lhs".into(),rules::Foreign{symbol:Some("IG:DAX".into()),fixup:true,..Default::default()})];let (others,meta)=others_for(&st,"HSI:HSI",&refs,false,false).unwrap();let j=parse(&format!("{{{}}}",meta.trim_start_matches(','))).unwrap();let rows=match j.get("foreign").unwrap(){Json::Arr(v)=>v,_=>panic!()};let dax=rows.iter().find(|r|r.get("ticker").and_then(Json::as_str)==Some("IG:DAX")).unwrap();let uses=match dax.get("uses").unwrap(){Json::Arr(v)=>v,_=>panic!()};assert_eq!(uses.len(),2);assert_eq!(uses[0].get("fixup"),Some(&Json::Bool(false)));assert_eq!(uses[1].get("fixup"),Some(&Json::Bool(true)));
+        let ftse=rows.iter().find(|r|r.get("ticker").and_then(Json::as_str)==Some("IG:FTSE")).unwrap();let uses=match ftse.get("uses").unwrap(){Json::Arr(v)=>v,_=>panic!()};assert_eq!(uses[0].get("source").and_then(Json::as_str),Some("IG:DAX"));assert_eq!(uses[0].get("alignment").and_then(Json::as_str),Some("prior_date"));let (fr,_,_,_)=frames_of(&st,"HSI:HSI").unwrap();let r=rules::series_ref("test","spread",&Default::default(),Tf::D,None,0,pair).unwrap();let values=series::series_in(&fr,&others,&mut Cache::new(),&r).unwrap();assert!(values[0].is_nan()&&values[1].is_nan());assert_eq!(values[2],51.);
+    }
+    #[test] fn foreign_api_refusals_preserve_operand_path_and_market_identity() {
+        let st = foreign_state();
+        for (symbol, status, note) in [("NOPE", "invalid", "unknown ticker"), ("IG:DAX", "needs_data", "/api/gl"), ("NIFTY 50", "needs_data", "cross-market")] {
+            let spec = FOREIGN_FILTER.replace("\"symbol\":\"SPX\"", &format!("\"symbol\":\"{symbol}\""));
+            let error = run_json(&st, &q(&[("ticker", "SPY"), ("spec", &spec)])).unwrap_err();
+            assert_eq!(error.status(), status, "{symbol}: {}", error.message());
+            assert!(error.message().contains(note) && error.message().contains("entry.all[0].lhs"), "{}", error.message());
+        }
+    }
+    #[test] fn foreign_volatility_identity_and_close_availability_are_disclosed() {
+        let mut st = foreign_state();
+        st.vix = st.ctxs["SPX"].r.iter().map(|r| Row {ticker: "CBOE VIX".into(), ..r.clone()}).collect();
+        let spec = FOREIGN_FILTER.replace("\"symbol\":\"SPX\"", "\"symbol\":\"CBOE VIX\"");
+        assert!(run_json(&st, &q(&[("ticker", "SPY"), ("spec", &spec)])).unwrap().contains("\"alignment\":\"same_date\""));
+        let close = spec.replace("\"v\":1", "\"v\":1,\"execution\":{\"fill\":\"close\"}");
+        assert!(run_json(&st, &q(&[("ticker", "SPY"), ("spec", &close)])).unwrap().contains("\"alignment\":\"prior_date\""));
+        let wrong = spec.replace("CBOE VIX", "INDIA VIX");
+        assert!(run_json(&st, &q(&[("ticker", "SPY"), ("spec", &wrong)])).unwrap_err().message().contains("cross-market"));
+    }
+    #[test] fn pair_chart_query_and_optimization_use_the_same_foreign_validation() {
+        let st = foreign_state();
+        let body = series_json(&st, &q(&[("ticker", "SPY"), ("id", "ratio"), ("vs", "SPX")])).unwrap();
+        assert!(body.contains("\"id\":\"ratio\"") && body.contains("\"outputs\":[\"value\"]"));
+        assert!(body.contains("\"foreign\""));
+        for other in ["", "SPX\n", &"A".repeat(81)] {
+            assert_eq!(series_json(&st, &q(&[("ticker", "SPY"), ("id", "ratio"), ("vs", other)])).unwrap_err().status(), "invalid");
+        }
+        assert_eq!(series_json(&st, &q(&[("ticker", "SPY"), ("id", "ratio")])).unwrap_err().status(), "invalid");
+        let optimize = FOREIGN_FILTER.replace("\"v\":1", "\"v\":1,\"optimize\":[{\"path\":\"entry.all[0].rhs.p.length\",\"from\":40,\"to\":50,\"step\":10}]");
+        let body = optimize_json(&st, &q(&[("ticker", "SPY"), ("spec", &optimize)])).unwrap();
+        assert!(body.contains("\"foreign\"") && body.contains("\"combos\":2"));
     }
 
     #[test] fn catalogue_lists_notes_needs_and_sources() {
@@ -1061,4 +1449,82 @@ mod origin_admission_tests {
         assert!(origin_admits(Some(&etf), "index", "SPX").is_err(), "an index never stands in for an ETF");
         assert!(origin_admits(None, "index", "SPX").is_ok(), "plain lab strategies have no admission rule");
     }
+}
+
+#[cfg(test)]
+mod portfolio_api_tests {
+    use super::*;
+    use super::super::json::{parse,Json};
+    const PSPEC:&str=r#"{"v":1,"entry":{"all":[{"lhs":{"s":"close"},"op":">","rhs":{"s":"sma","p":{"length":5}}},{"lhs":{"s":"close","symbol":"NIFTY 50"},"op":">","rhs":{"value":0}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":3}}]},"execution":{"capital":100000,"costs":{"commission":{"per_order":2}}},"portfolio":{"universe":{"basket":"nifty50"},"score":{"s":"roc","p":{"length":3}},"max_open":2}}"#;
+    fn pq(s:&str)->Query {[("spec".into(),s.into())].into()}
+    fn array(j:&Json)->&[Json] {match j {Json::Arr(v)=>v,_=>panic!("expected array")}}
+    fn num(j:&Json,k:&str)->f64 {j.get(k).and_then(Json::as_f64).unwrap()}
+    fn grid()->String {PSPEC.replace(r#""max_open":2}}"#,r#""max_open":2},"optimize":[{"path":"portfolio.max_open","from":1,"to":2,"step":1},{"path":"entry.all[0].rhs.p.length","from":3,"to":6,"step":3}]}"#)}
+    #[test] fn portfolio_api_run_schema_cash_equity_and_same_fills_gross_reconcile() {
+        let (_d,st)=super::super::universe::tests::india("api-run");let j=parse(&run_json(&st,&pq(PSPEC)).unwrap()).unwrap();
+        assert_eq!(j.get("kind").and_then(Json::as_str),Some("lab_portfolio_simulation"));assert_eq!(j.get("origin"),Some(&Json::Null));
+        assert_eq!(j.get("membership").unwrap().get("historical_membership_verified"),Some(&Json::Bool(false)));
+        assert_eq!(j.get("reference").unwrap().get("ticker").and_then(Json::as_str),Some("NIFTY 50"));
+        let (eq,cash,exposure,gross)=(array(j.get("equity").unwrap()),array(j.get("cash").unwrap()),array(j.get("exposure").unwrap()),array(j.get("gross_equity").unwrap()));
+        for i in 0..eq.len(){assert!((eq[i].as_f64().unwrap()*100000.-cash[i].as_f64().unwrap()-exposure[i].as_f64().unwrap()).abs()<0.1);assert!(gross[i].as_f64().unwrap()>=eq[i].as_f64().unwrap());}
+        let costs=num(j.get("money").unwrap(),"costs_total");assert!((gross.last().unwrap().as_f64().unwrap()*100000.-eq.last().unwrap().as_f64().unwrap()*100000.-costs).abs()<0.1);
+        let foreign=array(j.get("foreign").unwrap());let uses=array(foreign[0].get("uses").unwrap());assert_eq!(uses[0].get("source_scope").and_then(Json::as_str),Some("portfolio_member"));
+        assert!(!array(j.get("trades").unwrap()).is_empty());assert!(j.get("skipped").unwrap().get("final_bar").is_some());assert!(j.get("skipped").unwrap().get("data_end").is_some());
+        assert!(j.get("provenance").is_some());assert!(j.get("foreign").is_some());assert!(!j.get("membership").unwrap().get("note").unwrap().as_str().unwrap().is_empty());
+    }
+    #[test] fn portfolio_api_refusals_and_deadline_start_before_universe_load() {
+        let (_d,st)=super::super::universe::tests::india("api-refusals");let spec=rules::parse_spec(PSPEC).unwrap();
+        for (k,v,note) in [("ticker","NIFTY 50","omit ticker"),("cost","0","money mode"),("slippage","0","money mode"),("from","2000-01-01","precedes"),("to","2030-01-01","exceeds"),("from","bad","YYYY-MM-DD")] {let mut q=pq(PSPEC);q.insert(k.into(),v.into());assert!(run_json(&st,&q).unwrap_err().message().contains(note),"{k}");}
+        assert_eq!(portfolio_run_json(&st,&pq(PSPEC),&spec,true).unwrap_err().status(),"unsupported");
+        assert!(prepare_portfolio(&st,&pq(PSPEC),&spec,std::time::Instant::now()-std::time::Duration::from_secs(1)).err().unwrap().message().contains("90 s"));
+        let invalid=PSPEC.replace(r#""symbol":"NIFTY 50""#,r#""symbol":"NOPE""#);assert_eq!(run_json(&st,&pq(&invalid)).unwrap_err().status(),"invalid");
+        let list=PSPEC.replace(r#"{"basket":"nifty50"}"#,r#"{"tickers":["basket:nifty50:B","basket:nifty50:A"]}"#);let j=run_json(&st,&pq(&list)).unwrap();assert!(j.contains("user_list")&&j.contains("hindsight"));
+    }
+    #[test] fn portfolio_api_default_window_and_score_expressions_work() {
+        let (_d,st)=super::super::universe::tests::india("api-window");let s=PSPEC.replace(r#""score":{"s":"roc","p":{"length":3}}"#,r#""score":{"add":[{"s":"roc","p":{"length":3}},{"value":1}]}"#);
+        let j=parse(&run_json(&st,&pq(&s)).unwrap()).unwrap();assert_eq!(j.get("from").and_then(Json::as_str),Some("2024-01-01"));assert_eq!(j.get("to").and_then(Json::as_str),Some("2024-03-04"));
+    }
+    #[test] fn portfolio_api_default_window_is_member_union_and_outside_members_are_refused(){
+        let (_d,mut st)=super::super::universe::tests::india("api-default-real-bounds");let reference=st.ctxs["NIFTY 50"].r;
+        for (ticker,a,z) in [("SPX",0,60),("SPY",10,55),("QQQ",20,59)] {let rows: &'static [crate::Row]=Box::leak(reference[a..z].iter().map(|r|crate::Row{ticker:ticker.into(),..r.clone()}).collect::<Vec<_>>().into_boxed_slice());st.ctxs.insert(ticker.into(),Ctx::new(rows,rows,&[]));}
+        let spec=PSPEC.replace(r#"{"basket":"nifty50"}"#,r#"{"tickers":["SPY","QQQ"]}"#).replace("NIFTY 50","SPX");
+        let j=parse(&run_json(&st,&pq(&spec)).unwrap()).unwrap();assert_eq!(j.get("from").and_then(Json::as_str),Some(reference[10].date.as_str()));assert_eq!(j.get("to").and_then(Json::as_str),Some(reference[58].date.as_str()));
+        let mut q=pq(&spec);q.insert("from".into(),reference[56].date.clone());let j=parse(&run_json(&st,&q).unwrap()).unwrap();let universe=j.get("portfolio").unwrap().get("universe").unwrap();assert_eq!(num(universe,"admitted"),1.);assert!(array(universe.get("refused").unwrap()).iter().any(|m|m.get("ticker").and_then(Json::as_str)==Some("SPY")));
+    }
+    #[test] fn portfolio_api_optimize_deterministic_full_ranking_and_bounds() {
+        let (_d,st)=super::super::universe::tests::india("api-opt");let s=grid();let j=parse(&optimize_json(&st,&pq(&s)).unwrap()).unwrap();assert_eq!(num(&j,"combos"),4.);assert_eq!(j.get("kind").and_then(Json::as_str),Some("lab_portfolio_optimization"));assert_eq!(j.get("ranked_on").and_then(Json::as_str),Some("full"));assert_eq!(j.get("split"),Some(&Json::Null));assert_eq!(array(j.get("rows").unwrap()).len(),4);
+        let k=parse(&optimize_json(&st,&pq(&s)).unwrap()).unwrap();for field in ["base","rows","rank","cols","portfolio","membership"]{assert_eq!(j.get(field),k.get(field),"{field}");}
+        let mut q=pq(&s);q.insert("split".into(),"2024-02-01".into());assert!(optimize_json(&st,&q).unwrap_err().message().contains("split is not available"));
+        assert!(portfolio_work(61,200).unwrap_err().message().contains("12000"));assert!(portfolio_work(2,201).unwrap_err().message().contains("200"));assert!(portfolio_work(usize::MAX,200).is_err());
+    }
+    #[test] fn portfolio_api_all_reference_bounds_and_final_publication_deadline_are_enforced(){
+      let (_d,st)=super::super::universe::tests::india("api-extra-bounds");for (key,date) in [("from","2030-01-01"),("to","2000-01-01")]{let mut q=pq(PSPEC);q.insert(key.into(),date.into());assert_eq!(run_json(&st,&q).unwrap_err().status(),"needs_data");}
+      let deadline=std::time::Instant::now()-std::time::Duration::from_millis(1);assert!(finish_portfolio("ready".into(),deadline,false).unwrap_err().message().contains("90 s"));assert!(finish_portfolio("ready".into(),deadline,true).unwrap_err().message().contains("300 s"));
+    }
+    #[test] fn portfolio_api_resource_caps_have_checked_boundaries_without_large_allocations(){
+       assert!(portfolio_resource_counts(&[50_000;10],0,16).is_ok());assert!(portfolio_resource_counts(&[50_001],0,1).unwrap_err().message().contains("50000"));assert!(portfolio_resource_counts(&[50_000;11],0,1).is_err());assert!(portfolio_resource_counts(&[50_000;10],0,17).unwrap_err().message().contains("8000000"));assert!(portfolio_resource_counts(&[1],usize::MAX,1).is_err());assert!(portfolio_resource_counts(&[1],0,usize::MAX).is_err());
+    }
+    #[test] fn portfolio_api_failed_combination_returns_error_without_partial_ranking() {
+        let (_d,st)=super::super::universe::tests::india("api-opt-fail");let s=PSPEC.replace(r#""max_open":2}}"#,r#""max_open":2},"optimize":[{"path":"entry.all[0].rhs.p.length","from":76,"to":78,"step":1}]}"#);
+        let e=optimize_json(&st,&pq(&s)).unwrap_err();assert!(e.message().contains("combination failed"));
+    }
+}
+
+#[cfg(test)]
+mod catalogue_state_tests {
+ use super::*;
+ #[test] fn state_catalogue_identifies_actual_preloaded_etfs_without_guessing_indices(){
+    let (_d,mut st)=super::super::universe::tests::india("etf-catalogue");let reference=st.ctxs["NIFTY 50"].r;for ticker in ["SPX","SPY"]{let rows: &'static [crate::Row]=Box::leak(reference.iter().map(|r|crate::Row{ticker:ticker.into(),..r.clone()}).collect::<Vec<_>>().into_boxed_slice());st.ctxs.insert(ticker.into(),Ctx::new(rows,rows,&[]));}
+    // Mixed synthetic market context deliberately yields no portfolio capability; actual single-market engine is required.
+    st.ctxs.remove("NIFTY 50");let j=super::super::json::parse(&catalogue_for_state(&st)).unwrap();let i=match j.get("portfolio").unwrap().get("instruments").unwrap(){super::super::json::Json::Arr(v)=>v,_=>panic!()};assert_eq!(i.len(),1);assert_eq!(i[0].get("ticker").and_then(super::super::json::Json::as_str),Some("SPY"));assert_eq!(i[0].get("type").and_then(super::super::json::Json::as_str),Some("etf"));
+ }
+ #[test] fn state_catalogue_caps_and_vix_use_only_actual_same_market_source(){
+  let rows: &'static [crate::Row]=Box::leak((0..3).map(|i|crate::Row{ticker:"SPX".into(),date:format!("2024-01-0{}",i+1),open:100.,high:101.,low:99.,close:100.,volume:None}).collect::<Vec<_>>().into_boxed_slice());let mut st=State{ctxs:[("SPX".into(),Ctx::new(rows,rows,&[]))].into(),baskets:Default::default(),vix:vec![],market_extra:Default::default()};
+  let empty=catalogue_for_state(&st);assert!(empty.contains("\"max_foreign\":4"));assert!(empty.contains("\"foreign_volatility\":null"));
+  st.vix=st.ctxs["SPX"].r[..3].iter().map(|r|crate::Row{ticker:"CBOE VIX".into(),..r.clone()}).collect();
+  assert!(catalogue_for_state(&st).contains("\"foreign_volatility\":\"CBOE VIX\""));st.vix[0].ticker="INDIA VIX".into();assert!(catalogue_for_state(&st).contains("\"foreign_volatility\":null"));
+  st.vix[0].ticker="CBOE VIX".into();st.vix[0].date=st.vix[1].date.clone();assert!(catalogue_for_state(&st).contains("\"foreign_volatility\":null"));
+  assert!(catalogue_json().contains("\"foreign_volatility\":null"));
+  let (_d,india)=super::super::universe::tests::india("catalogue-caps");let j=super::super::json::parse(&catalogue_for_state(&india)).unwrap();let p=j.get("portfolio").unwrap();assert_eq!(p.get("max_combos").and_then(super::super::json::Json::as_f64),Some(200.));let b=match p.get("baskets").unwrap(){super::super::json::Json::Arr(v)=>v,_=>panic!()};assert_eq!(b.len(),2);assert!(b.iter().any(|r|r.get("id").and_then(super::super::json::Json::as_str)==Some("nse500")&&r.get("members").and_then(super::super::json::Json::as_f64)==Some(130.)));
+ }
 }

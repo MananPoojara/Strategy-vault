@@ -10,6 +10,7 @@ pub mod candles;
 pub mod breadth;
 pub mod catalogue;
 pub mod fidelity;
+pub mod foreign;
 pub mod json;
 pub mod ledger;
 pub mod listed;
@@ -19,6 +20,7 @@ pub mod ma;
 pub mod ma2;
 pub mod momentum;
 pub mod osc2;
+pub mod pairs;
 pub mod patterns;
 pub mod periods;
 pub mod price;
@@ -33,6 +35,7 @@ pub mod stops;
 pub mod templates;
 pub mod ta;
 pub mod trend;
+pub mod universe;
 pub mod vol2;
 pub mod volatility;
 pub mod volume;
@@ -48,3 +51,5 @@ pub mod futures;
 
 #[cfg(test)]
 pub mod examples;
+
+pub mod portfolio;

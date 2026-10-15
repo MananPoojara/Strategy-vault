@@ -3,7 +3,6 @@
 //! unsupported (look-ahead, drawing, unpublished formula, user code) with the note (rules::series_ref).
 use super::catalogue::{IndicatorDef, Needs, Placement};
 
-const SECOND: Needs = Needs { second_symbol: true, ..Needs::NONE };
 const INTRADAY: Needs = Needs { intraday: true, ..Needs::NONE };
 const FUNDAMENTALS: Needs = Needs { fundamentals: true, ..Needs::NONE };
 const DERIVATIVES: Needs = Needs { derivatives: true, ..Needs::NONE };
@@ -15,10 +14,6 @@ const fn l(id: &'static str, name: &'static str, category: &'static str, needs: 
 }
 
 pub const DEFS: &[IndicatorDef] = &[
-    l("correlation", "Correlation Coefficient (CC)", "Second instrument", SECOND, "not available yet — needs a second instrument in the same request"),
-    l("correlation_log", "Correlation - Log", "Second instrument", SECOND, "not available yet — needs a second instrument in the same request"),
-    l("ratio", "Ratio", "Second instrument", SECOND, "not available yet — needs a second instrument in the same request"),
-    l("spread", "Spread", "Second instrument", SECOND, "not available yet — needs a second instrument in the same request"),
     l("cvd", "Cumulative Volume Delta", "Intraday & order flow", INTRADAY, "not available yet — needs intraday (lower-timeframe/tick) bars"),
     l("volume_delta", "Volume Delta", "Intraday & order flow", INTRADAY, "not available yet — needs intraday (lower-timeframe/tick) bars"),
     l("up_down_volume", "Up/Down Volume", "Intraday & order flow", INTRADAY, "not available yet — needs intraday (lower-timeframe/tick) bars"),

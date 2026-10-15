@@ -1,11 +1,13 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { COPY } from "./labels";
 import { int, num, pct } from "./format";
-import { comboCount, setAt, specTooLong, splitDate, valuesCount, withOptimize } from "./spec-model";
+import { canonicalJson, comboCount, setAt, specTooLong, splitDate, valuesCount, withOptimize } from "./spec-model";
 import { optimizablePaths, type OptimizableSetting } from "./optimize-paths";
+import {foreignDescription} from "./foreign-model";
+import { portfolioGridProblems } from "./portfolio-model";
 import { ExecutionStrip } from "./RunResults";
 import { ErrorNotice, isProvisional, Loading, ProvisionalStrip, ServerLabel } from "./ui";
-import type { Catalogue, OptimizeDim, OptimizeResult, Role, SavedMarket, Spec } from "./types";
+import type { Catalogue, OptimizeDim, LabOptimizeResult, Role, SavedMarket, Spec } from "./types";
 import "./optimize.css";
 
 const MAX_VALUES = 1000;
@@ -16,7 +18,7 @@ const fmt = (name: string, v: number | null) =>
 const dimFmt = (v: number | undefined) => (v === undefined ? "" : Number.isInteger(v) ? int(v) : num(v, 2));
 
 /** Value of a metric for a row of `cols` (dims first) or for `base` (cols after the dims). */
-export function colValue(result: OptimizeResult, values: number[], name: string): number | null {
+export function colValue(result: LabOptimizeResult, values: number[], name: string): number | null {
   const i = result.cols.indexOf(name);
   if (i < 0) return null;
   const j = values.length === result.cols.length ? i : i - result.dims.length;
@@ -25,7 +27,7 @@ export function colValue(result: OptimizeResult, values: number[], name: string)
 
 export function OptimizePanel(props: {
   spec: Spec; catalogue: Catalogue; market: SavedMarket; role: Role | null; dates: string[];
-  onOptimize(spec: Spec, split: string | null): Promise<OptimizeResult>;
+  onOptimize(spec: Spec, split: string | null): Promise<LabOptimizeResult>;
   onApply(spec: Spec): void; onTried(n: number): void; tried: number; instrumentLabel?: string;
 }) {
   const { spec, catalogue, market, role, dates, onOptimize, onApply, onTried, tried, instrumentLabel } = props;
@@ -34,7 +36,7 @@ export function OptimizePanel(props: {
   const [heldBack, setHeldBack] = useState(0);
   const [running, setRunning] = useState<number | null>(null); // start time
   const [, setTick] = useState(0);
-  const [result, setResult] = useState<OptimizeResult | null>(null);
+  const [result, setResult] = useState<LabOptimizeResult | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [retryUntil, setRetryUntil] = useState(0); // 429 deadline; the main button waits for it too
   const last = useRef<[Spec, string | null] | null>(null);
@@ -52,20 +54,21 @@ export function OptimizePanel(props: {
     const id = setTimeout(() => setRetryUntil(0), Math.max(0, retryUntil - Date.now()));
     return () => clearTimeout(id);
   }, [retryUntil]);
-  useEffect(() => () => { // a market change resets optimization; a run still in flight is ignored
-    runId.current++;
-    setResult(null); setError(null); setRunning(null); setRetryUntil(0);
-  }, [market]);
+  const contextKey=spec.portfolio?canonicalJson(spec):"single";
+  useEffect(()=>{runId.current++;last.current=null;setResult(null);setError(null);setRunning(null);setRetryUntil(0);},[market,contextKey]);
+  useEffect(()=>()=>{runId.current++;},[]);
 
   if (role === null || role === "viewer")
     return <section className="box" data-lab-optimize><h2 className="box-h">Optimization</h2><p className="rnote">{COPY.researcherOnly}</p></section>;
 
   const dims = settings.filter((s) => sel[s.path]).map((s) => sel[s.path]);
   const combos = comboCount(dims);
-  const tooBig = dims.some((d) => valuesCount(d) > MAX_VALUES) || combos > catalogue.max_combos;
-  const split = heldBack ? splitDate(dates, heldBack) : null;
+  const comboCap=spec.portfolio?catalogue.portfolio?.max_combos??200:catalogue.max_combos;
+  const portfolioIssues=portfolioGridProblems(withOptimize(spec,dims),catalogue);
+  const tooBig = dims.some((d) => valuesCount(d) > MAX_VALUES) || combos > comboCap || portfolioIssues.length>0;
+  const split = !spec.portfolio && heldBack ? splitDate(dates, heldBack) : null;
   const tooLong = dims.length > 0 && specTooLong(withOptimize(spec, dims));
-  const disabled = tooLong || running !== null || retryUntil > 0 || combos === 0 || tooBig || (heldBack > 0 && split === null);
+  const disabled = tooLong || running !== null || retryUntil > 0 || combos === 0 || tooBig || (!spec.portfolio && heldBack > 0 && split === null);
 
   const toggle = (s: OptimizableSetting, on: boolean) => setSel((cur) => {
     const next = { ...cur };
@@ -126,32 +129,34 @@ export function OptimizePanel(props: {
           </tbody>
         </table>
       </div>
-      {tooBig && <p className="rnote">At most {MAX_VALUES.toLocaleString("en-US")} values per setting and {catalogue.max_combos.toLocaleString("en-US")} combinations. Narrow the ranges.</p>}
+      {tooBig && <p className="rnote">At most {MAX_VALUES.toLocaleString("en-US")} values per setting and {comboCap.toLocaleString("en-US")} combinations. Narrow the ranges.</p>}
       <div className="lab-row lab-optimize-run">
         <span className="cap">{dims.length ? `${combos.toLocaleString("en-US")} combinations` : COPY.tickOne}</span>
-        <label className="dfield">Held back
+        {!spec.portfolio && <label className="dfield">Held back
           <select aria-label="Held back" value={heldBack} onChange={(e) => setHeldBack(Number(e.target.value))}>
             <option value={0}>None</option>
             {[20, 30, 40].map((p) => <option key={p} value={p}>last {p}%</option>)}
           </select>
-        </label>
+        </label>}
+        {spec.portfolio && <span className="cap">Full period only · shared portfolio cash</span>}
         <button type="button" className="dbtn primary" data-lab-action="optimize" disabled={disabled}
           onClick={() => run([withOptimize(spec, dims), split])}>Run optimization</button>
         <span className="cap">Variants tried this session: {tried.toLocaleString("en-US")}</span>
       </div>
+      {portfolioIssues.map(p=><p className="rnote" key={p}>{p}</p>)}
       {tooLong && <p className="rnote">{COPY.tooLong}</p>}
-      {heldBack > 0 && <p className="cap">{split ? COPY.splitLine(heldBack, split) : dates.length ? "Not enough history for this split." : "Run a backtest first to set the hold-back date."}</p>}
+      {!spec.portfolio && heldBack > 0 && <p className="cap">{split ? COPY.splitLine(heldBack, split) : dates.length ? "Not enough history for this split." : "Run a backtest first to set the hold-back date."}</p>}
       {running !== null && <><Loading text={`Optimizing… ${Math.floor((Date.now() - running) / 1000)} s`} /><p className="cap">{COPY.optimizeLimit}</p></>}
       {error !== null && <ErrorNotice error={error} market={market} instrumentLabel={instrumentLabel}
         onRetry={() => last.current && run(last.current)} />}
-      {result && <OptimizeResultView result={result} spec={spec} ranSpec={last.current?.[0] ?? spec} catalogue={catalogue} settings={settings} market={market} instrumentLabel={instrumentLabel} onApply={onApply} />}
-      {!result && !error && running === null && <p className="empty">{COPY.emptyOptimize}</p>}
+      {result && <LabOptimizeResultView result={result} spec={spec} ranSpec={last.current?.[0] ?? spec} catalogue={catalogue} settings={settings} market={market} instrumentLabel={instrumentLabel} onApply={onApply} />}
+      {!result && !error && running === null && <p className="empty">{spec.portfolio?"Portfolio optimization ranks the full period using shared cash.":COPY.emptyOptimize}</p>}
     </section>
   );
 }
 
-function OptimizeResultView({ result, spec, ranSpec, catalogue, settings, market, instrumentLabel, onApply }: {
-  result: OptimizeResult; spec: Spec; ranSpec: Spec; catalogue: Catalogue; settings: OptimizableSetting[]; market: SavedMarket; instrumentLabel?: string; onApply(spec: Spec): void;
+function LabOptimizeResultView({ result, spec, ranSpec, catalogue, settings, market, instrumentLabel, onApply }: {
+  result: LabOptimizeResult; spec: Spec; ranSpec: Spec; catalogue: Catalogue; settings: OptimizableSetting[]; market: SavedMarket; instrumentLabel?: string; onApply(spec: Spec): void;
 }) {
   const { rank, dims } = result;
   const stats = rank.stats ?? [];
@@ -171,7 +176,9 @@ function OptimizeResultView({ result, spec, ranSpec, catalogue, settings, market
       <ServerLabel text={result.label} />
       <ExecutionStrip model={result.execution_model} money={result.money} adaptations={result.adaptations} />
       {result.money && <p className="cap">{result.money.basis}</p>}
-      {isProvisional(market) && <ProvisionalStrip note={result.provisional_note} instrumentLabel={result.instrument.label ?? instrumentLabel} />}
+      {isProvisional(market) && <ProvisionalStrip note={result.provisional_note} instrumentLabel={("instrument" in result ? result.instrument.label : undefined) ?? instrumentLabel} />}
+      {"membership" in result && <p className="rnote">{result.reference.ticker} reference · {result.membership.note}</p>}
+      {result.foreign?.map(f=><p className="cap" key={f.ticker}>{foreignDescription(f)}</p>)}
       <p className="cap">Ranked on: {result.ranked_on === "in_sample" ? "in-sample only" : "full period"}</p>
       <p className="cap">
         {result.combos.toLocaleString("en-US")} settings tested · {rank.eligible.toLocaleString("en-US")} eligible (at least {rank.min_trades} trades) · {rank.distinct.toLocaleString("en-US")} distinct

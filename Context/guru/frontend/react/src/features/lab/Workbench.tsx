@@ -4,16 +4,18 @@ import { createLabChart, PALETTE, syncPanes, useThemeKey, type SyncedPane } from
 import { COPY } from "./labels";
 import type { Catalogue, ChartRange, IndicatorParam, SavedMarket, SeriesResponse, Trade } from "./types";
 import { ErrorNotice, isProvisional, ProvisionalStrip } from "./ui";
+import { foreignDescription, foreignAdvertised, isPair } from "./foreign-model";
+import type { InstrumentOption } from "./instruments";
 import "./workbench.css";
 
-export interface Chip { key: string; id: string; params: Record<string, number> }
+export interface Chip { key: string; id: string; params: Record<string, number>; vs?: string }
 export interface WorkbenchProps {
   market: SavedMarket; ticker: string; tf: string; range: ChartRange; catalogue: Catalogue; chips: Chip[];
   trades?: Trade[];
-  loadSeries(q: { id: string; tf: string; p?: Record<string, number> }): Promise<SeriesResponse>;
+  loadSeries(q: { id: string; tf: string; p?: Record<string, number>; vs?: string }): Promise<SeriesResponse>;
   onChipChange(key: string, params: Record<string, number>): void;
   onChipRemove(key: string): void;
-  instrumentLabel?: string;
+  instrumentLabel?: string; comparisonOptions?: readonly InstrumentOption[]; onChipVsChange?(key: string, vs?: string): void;
 }
 
 const TF_NAMES: Record<string, string> = { D: "Daily", W: "Weekly", M: "Monthly" };
@@ -21,18 +23,25 @@ const PRICE_IDS = ["open", "high", "low", "close"] as const;
 type Marker = { time: string; position: string; shape: string; color: string; text?: string; size?: number };
 type Disposable = NonNullable<ReturnType<typeof createLabChart>>;
 
-export function Workbench({ market, ticker, tf, range, catalogue, chips, trades, loadSeries, onChipChange, onChipRemove, instrumentLabel }: WorkbenchProps) {
+export function Workbench({ market, ticker, tf, range, catalogue, chips, trades, loadSeries, onChipChange, onChipRemove, instrumentLabel, comparisonOptions = [], onChipVsChange }: WorkbenchProps) {
   const priceRef = useRef<HTMLDivElement>(null);
   const panesRef = useRef<HTMLDivElement>(null);
   const themeKey = useThemeKey();
   const [ohlcError, setOhlcError] = useState<unknown>(null);
   const [chipErrors, setChipErrors] = useState<Record<string, unknown>>({});
   const [provisionalNote, setProvisionalNote] = useState<string | undefined>();
+  const [foreignNotes,setForeignNotes]=useState<string[]>([]);
   const [adaptations, setAdaptations] = useState<string[]>([]);
   // Prices depend only on market+ticker, so chip edits reuse the in-flight or finished OHLC requests.
   const ohlcCache = useRef<{ key: string; p: Promise<PromiseSettledResult<SeriesResponse>[]> } | null>(null);
   const find = (id: string) => catalogue.indicators.find((i) => i.id === id);
-  const chipsKey = JSON.stringify(chips.map((c) => [c.key, c.id, Object.entries(c.params).sort(([a], [b]) => a.localeCompare(b))]));
+  const pairProblem = (chip: Chip) => !isPair(chip.id) ? undefined
+    : !foreignAdvertised(catalogue) ? "Comparison instruments are not advertised by this engine yet."
+    : tf !== "D" ? "Pair indicators use daily (D) values only; switch the chart to Daily."
+    : !chip.vs ? "Choose a comparison instrument to draw this pair."
+    : !comparisonOptions.some((o) => o.ticker === chip.vs && !o.disabled) ? `${chip.vs} is not available in this market; choose another comparison.` : undefined;
+  const comparisonsKey = JSON.stringify(comparisonOptions.map((o) => [o.ticker, o.disabled]));
+  const chipsKey = JSON.stringify(chips.map((c) => [c.key, c.id, c.vs, Object.entries(c.params).sort(([a], [b]) => a.localeCompare(b))]));
 
   useEffect(() => {
     let live = true;
@@ -40,7 +49,7 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
     let unsync: (() => void) | undefined;
     const drawn = chips.flatMap((chip, index) => {
       const ind = find(chip.id);
-      return ind?.computed ? [{ chip, ind, index }] : [];
+      return ind?.computed && !pairProblem(chip) ? [{ chip, ind, index }] : [];
     });
     const cacheKey = `${market}|${ticker}`;
     if (ohlcCache.current?.key !== cacheKey) {
@@ -53,13 +62,14 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
     void (async () => {
       const [ohlcParts, chipParts] = await Promise.all([
         ohlcLoad,
-        Promise.allSettled(drawn.map(({ chip }) => loadSeries({ id: chip.id, tf, p: chip.params }))),
+        Promise.allSettled(drawn.map(({ chip }) => loadSeries({ id: chip.id, tf, p: chip.params, vs: chip.vs }))),
       ]);
       if (!live) return;
       const failedOhlc = ohlcParts.find((r) => r.status === "rejected");
       setOhlcError(failedOhlc ? (failedOhlc as PromiseRejectedResult).reason : null);
       setProvisionalNote(ohlcParts.flatMap((r) => (r.status === "fulfilled" ? [r.value.provisional_note] : []))[0]);
       setChipErrors(Object.fromEntries(chipParts.flatMap((r, i) => (r.status === "rejected" ? [[drawn[i].chip.key, r.reason]] : []))));
+      setForeignNotes([...new Set([...ohlcParts,...chipParts].flatMap(r=>r.status==="fulfilled"?r.value.foreign?.map(foreignDescription)??[]:[]))]);
       setAdaptations([...new Set([...ohlcParts, ...chipParts].flatMap((r) => r.status === "fulfilled" ? r.value.adaptations ?? [] : []))]);
       if (failedOhlc || !priceRef.current || !panesRef.current) return;
       const [o, h, l, c] = ohlcParts.map((r) => (r as PromiseFulfilledResult<SeriesResponse>).value);
@@ -132,9 +142,9 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
     })();
     return () => { live = false; unsync?.(); disposers.forEach((d) => d.dispose()); };
     // loadSeries and find are read fresh per run; chips are tracked by their canonical key.
-  }, [market, ticker, tf, range, chipsKey, trades, themeKey, catalogue]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [market, ticker, tf, range, chipsKey, trades, themeKey, catalogue, comparisonsKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const panes = chips.filter((c) => find(c.id)?.placement === "pane");
+  const panes = chips.filter((c) => find(c.id)?.placement === "pane" && !pairProblem(c));
   return (
     <section className="box lab-workbench">
       <div className="box-h">{ticker} · {TF_NAMES[tf] ?? tf} bars <small>{COPY.chartHint}</small></div>
@@ -143,7 +153,7 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
         <div className="lab-chips">
           {chips.map((chip, index) => (
             <ChipView key={chip.key} chip={chip} index={index} catalogue={catalogue} error={chipErrors[chip.key]} market={market}
-              instrumentLabel={instrumentLabel} onChange={onChipChange} onRemove={onChipRemove} />
+              instrumentLabel={instrumentLabel} onChange={onChipChange} onRemove={onChipRemove} comparisonOptions={comparisonOptions} onVs={onChipVsChange} pairProblem={pairProblem(chip)} />
           ))}
         </div>
       ) : <p className="cap">{COPY.noChips}</p>}
@@ -157,6 +167,7 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
         </div>
       </div>
       <p className="cap">{COPY.chartNote}</p>
+      {foreignNotes.map(note=><p className="cap" role="note" key={note}>{note}</p>)}
       {adaptations.map((note) => <p className="rnote" role="note" data-lab-adaptations key={note}>{note}</p>)}
       {tf !== "D" && <p className="cap">{COPY.inProgress(tf)}</p>}
       {!!trades?.length && (
@@ -168,9 +179,10 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
   );
 }
 
-function ChipView({ chip, index, catalogue, error, market, instrumentLabel, onChange, onRemove }: {
+function ChipView({ chip, index, catalogue, error, market, instrumentLabel, onChange, onRemove, comparisonOptions, onVs, pairProblem }: {
   chip: Chip; index: number; catalogue: Catalogue; error: unknown; market: SavedMarket; instrumentLabel?: string;
   onChange(key: string, params: Record<string, number>): void; onRemove(key: string): void;
+  comparisonOptions: readonly InstrumentOption[]; onVs?(key: string, vs?: string): void; pairProblem?: string;
 }) {
   const ind = catalogue.indicators.find((i) => i.id === chip.id);
   const name = ind?.name ?? chip.id;
@@ -188,6 +200,12 @@ function ChipView({ chip, index, catalogue, error, market, instrumentLabel, onCh
       ) : (
         <ParamInput key={p.key} param={p} name={name} value={chip.params[p.key] ?? p.default} onValid={(v) => set(p.key, v)} />
       )))}
+      {isPair(chip.id) && foreignAdvertised(catalogue) && <label className="dfield">Compared with<select aria-label={`${name} · Compared with`} value={chip.vs ?? ""} onChange={(e) => onVs?.(chip.key, e.target.value || undefined)}>
+        <option value="">Choose instrument…</option>
+        {chip.vs && !comparisonOptions.some((o) => o.ticker === chip.vs) && <option value={chip.vs}>Kept: {chip.vs}</option>}
+        {comparisonOptions.map((o) => <option key={o.ticker} value={o.ticker} disabled={o.disabled}>{o.label}</option>)}
+      </select></label>}
+      {pairProblem && <span className="cap" role="note">{pairProblem}</span>}
       <button type="button" aria-label={`Remove ${name}`} onClick={() => onRemove(chip.key)}>×</button>
       {error !== undefined && <ErrorNotice error={error} market={market} instrumentLabel={instrumentLabel} />}
     </div>

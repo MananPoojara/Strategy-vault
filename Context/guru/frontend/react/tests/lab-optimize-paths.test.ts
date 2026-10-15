@@ -25,3 +25,8 @@ it("lists supported distances, activation and scale-ins without offering exclude
   expect(paths.some((p) => /atr_length|breakeven.plus|legs\[/.test(p.path))).toBe(false);
   expect(new Set(paths.map((p) => p.path)).size).toBe(paths.length);
 });
+it("walks all score expressions and exposes portfolio rank limits",()=>{
+ const spec={...defaultSpec(),portfolio:{universe:{basket:"nifty50"},mode:"rotation" as const,max_open:3,score:{count:{lhs:{s:"rsi",p:{length:2}},op:"<",rhs:{value:5}},bars:3}}};
+ const paths=optimizablePaths(spec,cat);expect(paths.map(p=>p.path)).toEqual(expect.arrayContaining(["portfolio.score.count.lhs.p.length","portfolio.score.count.rhs.value","portfolio.score.bars","portfolio.max_open","portfolio.worst_rank_held"]));
+ expect(paths.find(p=>p.path==="portfolio.worst_rank_held")!.current).toBe(3);
+});

@@ -60,7 +60,7 @@ mod tests {
     #[test] fn breadth_needs_daily_market_data() {
         assert_eq!(run(&get("adl").unwrap(), &closes(&[1., 2.]), &Params::new()).unwrap_err(), "needs breadth");
         let fr = Frames::new(with_breadth(walk(60, 3, true)));
-        let r = |tf| SeriesRef { id: "adl".into(), params: Params::new(), tf, out: 0, offset: 0 };
+        let r = |tf| SeriesRef { id: "adl".into(), params: Params::new(), tf, out: 0, offset: 0, foreign: Default::default() };
         assert!(series(&fr, &mut Cache::new(), &r(Tf::D)).is_ok());
         for tf in [Tf::W, Tf::M] {
             let e = series(&fr, &mut Cache::new(), &r(tf)).unwrap_err();

@@ -2,19 +2,22 @@
 //! W/M values reach daily bars through `resample::expand` (usable after the period's last daily close).
 use super::bars::Bars;
 use super::catalogue;
+use super::foreign;
 use super::resample::{self, Expand, Tf};
 use super::rules::{Agg, Bin, Cond, Dist, Exec, Expr, LabError, Node, Op, Operand, SeriesRef, Spec, Win};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::rc::Rc;
+use std::sync::{Arc, atomic::{AtomicU64, Ordering}};
 
 /// Daily bars of one instrument plus their calendar resamples (built once per request); n-session blocks are built on use.
-pub struct Frames { pub d: Bars, pub w: Bars, pub m: Bars, pub q: Bars, pub y: Bars }
+pub struct Frames { pub d: Bars, pub w: Bars, pub m: Bars, pub q: Bars, pub y: Bars, cache_identity: String }
+static FRAME_ID: AtomicU64 = AtomicU64::new(1);
 impl Frames {
     pub fn new(d: Bars) -> Frames {
         let r = |tf| resample::resample(&d, tf);
         let (w, m, q, y) = (r(Tf::W), r(Tf::M), r(Tf::Q), r(Tf::Y));
-        Frames { d, w, m, q, y }
+        Frames { d, w, m, q, y, cache_identity: FRAME_ID.fetch_add(1, Ordering::Relaxed).to_string() }
     }
     pub fn bars(&self, tf: Tf) -> Cow<'_, Bars> {
         match tf {
@@ -25,7 +28,8 @@ impl Frames {
         }
     }
 }
-/// Indicator outputs on their own timeframe, keyed by instrument fingerprint, id, tf and resolved params. One per request (per instrument) / optimizer thread.
+/// Indicator outputs on their own timeframe, keyed by immutable Frames identity, id, tf and params.
+/// Frames are built once and borrowed throughout compilation; paired identity also includes both sources and availability policy.
 pub type Cache = BTreeMap<String, Rc<Vec<Vec<f64>>>>;
 const CACHE_CAP: usize = 64;
 
@@ -47,19 +51,19 @@ fn price(b: &Bars, id: &str) -> Option<Result<Vec<f64>, LabError>> {
 pub fn series(fr: &Frames, cache: &mut Cache, s: &SeriesRef) -> Result<Vec<f64>, LabError> { series_mode(fr, cache, s, Expand::Last) }
 /// One operand on daily bars with an AmiBroker expand mode (spec §5.1).
 fn series_mode(fr: &Frames, cache: &mut Cache, s: &SeriesRef, mode: Expand) -> Result<Vec<f64>, LabError> {
+    if s.foreign!=super::rules::Foreign::default(){return Err(LabError::Unsupported("foreign series need the explicit multi-symbol resolver".into()));}
     let held = fr.bars(s.tf);
     let b: &Bars = &held;
     let raw = match price(b, &s.id) {
         Some(r) => r?,
         None => {
-            let d = &fr.d; // instrument fingerprint: closes too, since two instruments can share a calendar
-            let fp = |v: Option<&f64>| v.map_or(0, |x| x.to_bits());
-            let key = format!("{}|{:?}|{:?}|{}|{:?}|{:?}|{}|{}", s.id, s.tf, s.params, d.len(), d.date.first(), d.date.last(), fp(d.close.first()), fp(d.close.last()));
+            let key = format!("{}|{}|{:?}|{:?}", fr.cache_identity, s.id, s.tf, s.params);
             let outs = match cache.get(&key) {
                 Some(o) => o.clone(),
                 None => {
                     let def = catalogue::get(&s.id).ok_or_else(|| LabError::Invalid(format!("unknown series '{}'", s.id)))?;
                     let o = Rc::new(catalogue::run(&def, b, &s.params).map_err(|e| match e.as_str() {
+                        "needs a second instrument" => LabError::NeedsData(format!("{}: needs a second instrument", def.name)),
                         "needs volume" => LabError::NeedsData(format!("{}: needs volume, which is missing on some admitted bars of this instrument", def.name)),
                         "needs breadth" => LabError::NeedsData(format!("{}: needs market breadth (advances/declines) on daily bars; this market or timeframe has none", def.name)),
                         "needs contract data" => LabError::NeedsData(format!("{}: needs admitted futures contract metadata",def.name)),
@@ -78,6 +82,46 @@ fn series_mode(fr: &Frames, cache: &mut Cache, s: &SeriesRef, mode: Expand) -> R
     // Offset counts bars of the operand's own timeframe (W offset 1 = the previous completed week).
     let shifted: Vec<f64> = (0..raw.len()).map(|i| if i >= s.offset { raw[i - s.offset] } else { f64::NAN }).collect();
     Ok(if s.tf == Tf::D { shifted } else { resample::expand_mode(&shifted, b, fr.d.len(), mode) })
+}
+
+/// Shared loaded instruments and conservative daily-session availability for one request.
+#[derive(Default)]
+pub struct Others { pub run: String, pub close_fills: bool, pub frames: Arc<BTreeMap<String, Frames>> }
+impl Others {
+    /// Reuse loaded frames when compiling another portfolio member.
+    pub fn with_run(&self, run: &str) -> Others { Others { run: run.into(), close_fills: self.close_fills, frames: self.frames.clone() } }
+    fn get<'a>(&'a self, symbol: &str, run: &'a Frames) -> Result<&'a Frames, LabError> {
+        if symbol == self.run { return Ok(run); }
+        self.frames.get(symbol).ok_or_else(|| LabError::Invalid(format!("{symbol}: not loaded for this request")))
+    }
+}
+/// Compute on the source instrument's calendar, including timeframe, offset and expansion, then align to the run.
+pub fn series_in(fr: &Frames, others: &Others, cache: &mut Cache, s: &SeriesRef) -> Result<Vec<f64>, LabError> {
+    series_mode_in(fr, others, cache, s, Expand::Last)
+}
+fn series_mode_in(fr: &Frames, others: &Others, cache: &mut Cache, s: &SeriesRef, mode: Expand) -> Result<Vec<f64>, LabError> {
+    let f = &s.foreign;
+    if f == &super::rules::Foreign::default() { return series_mode(fr, cache, s, mode); }
+    let base_name = f.symbol.as_deref().unwrap_or(&others.run);
+    let base = match &f.symbol { Some(t) => others.get(t, fr)?, None => fr };
+    let local = SeriesRef { foreign: Default::default(), ..s.clone() };
+    let raw = match &f.vs {
+        None => series_mode(base, cache, &local, mode)?,
+        Some(vs) => {
+            let second = if vs == base_name { base } else { others.get(vs, fr)? };
+            let policy = foreign::alignment(base_name, vs, others.close_fills);
+            let mut d = base.d.clone();
+            d.second = Some(foreign::align(&base.d.date, &second.d.date, &second.d.close, policy, false)?);
+            // Pair indicators are daily-only. Preserve all native data and resamples; identity makes repeated pair operands reuse raw outputs.
+            let mut paired = Frames::new(d);
+            paired.cache_identity = format!("pair:{}:{}:{}", base.cache_identity, second.cache_identity, policy.name());
+            series_mode(&paired, cache, &local, mode)?
+        }
+    };
+    match &f.symbol {
+        None => Ok(raw),
+        Some(symbol) => foreign::align(&fr.d.date, &base.d.date, &raw, foreign::alignment(&others.run, symbol, others.close_fills), f.fixup),
+    }
 }
 
 pub enum Val { Arr(Vec<f64>), Const(f64), Held }
@@ -139,31 +183,39 @@ impl Compiled {
 
 }
 
-fn val(o: &Operand, fr: &Frames, cache: &mut Cache) -> Result<Val, LabError> {
-    Ok(match o { Operand::Series(s) => Val::Arr(series(fr, cache, s)?), Operand::Value(x) => Val::Const(*x), Operand::BarsHeld => Val::Held, Operand::Expr(e) => Val::Arr(eval(e, fr, cache)?) })
+/// Compile a single-instrument spec without a foreign-data context.
+pub fn compile(spec: &Spec, fr: &Frames, cache: &mut Cache) -> Result<Compiled, LabError> { compile_with(spec, fr, &Others::default(), cache) }
+/// Existing local mask helper; multi-instrument compilation uses the same recursive evaluator with Others.
+pub fn mask(n: &Node, fr: &Frames, cache: &mut Cache) -> Result<Vec<f64>, LabError> { mask_in(n, fr, &Others::default(), cache) }
+#[cfg(test)]
+fn arr(o: &Operand, fr: &Frames, cache: &mut Cache) -> Result<Vec<f64>, LabError> { operand_values(fr, &Others::default(), cache, o) }
+/// Evaluate a complete operand (including expressions and state) for a portfolio member's score.
+pub fn operand_values(fr: &Frames, others: &Others, cache: &mut Cache, operand: &Operand) -> Result<Vec<f64>, LabError> { arr_in(operand, fr, others, cache) }
+fn val(o: &Operand, fr: &Frames, others: &Others, cache: &mut Cache) -> Result<Val, LabError> {
+    Ok(match o { Operand::Series(s) => Val::Arr(series_in(fr, others, cache, s)?), Operand::Value(x) => Val::Const(*x), Operand::BarsHeld => Val::Held, Operand::Expr(e) => Val::Arr(eval(e, fr, others, cache)?) })
 }
 /// A v1 comparison compiles exactly as before; every other node becomes a precomputed 1/0/NaN array tested with `> 0.5`.
-fn list(ns: &[Node], at: &str, fr: &Frames, cache: &mut Cache) -> Result<Vec<RCond>, LabError> {
+fn list(ns: &[Node], at: &str, fr: &Frames, others: &Others, cache: &mut Cache) -> Result<Vec<RCond>, LabError> {
     ns.iter().enumerate().map(|(k, n)| Ok(match n {
-        Node::Cmp(c) => RCond { lhs: val(&c.lhs, fr, cache)?, op: c.op, rhs: val(&c.rhs, fr, cache)?, label: format!("{at}[{k}]: {}", describe(c)) },
-        _ => RCond { lhs: Val::Arr(mask(n, fr, cache)?), op: Op::Gt, rhs: Val::Const(0.5), label: format!("{at}[{k}]: {}", describe_node(n)) },
+        Node::Cmp(c) => RCond { lhs: val(&c.lhs, fr, others, cache)?, op: c.op, rhs: val(&c.rhs, fr, others, cache)?, label: format!("{at}[{k}]: {}", describe(c)) },
+        _ => RCond { lhs: Val::Arr(mask_in(n, fr, others, cache)?), op: Op::Gt, rhs: Val::Const(0.5), label: format!("{at}[{k}]: {}", describe_node(n)) },
     })).collect()
 }
 /// An operand as a daily array (constants repeated). bars_held never reaches here: the parser keeps it top-level.
-fn arr(o: &Operand, fr: &Frames, cache: &mut Cache) -> Result<Vec<f64>, LabError> {
-    match val(o, fr, cache)? {
+fn arr_in(o: &Operand, fr: &Frames, others: &Others, cache: &mut Cache) -> Result<Vec<f64>, LabError> {
+    match val(o, fr, others, cache)? {
         Val::Arr(v) => Ok(v),
         Val::Const(x) => Ok(vec![x; fr.d.len()]),
         Val::Held => Err(LabError::Invalid("bars_held is only available in top-level exit conditions".into())),
     }
 }
 /// An expression on the daily bars (spec §4.1–§4.2): a NaN input gives NaN, division by zero gives NaN, windows are NaN until full.
-fn eval(e: &Expr, fr: &Frames, cache: &mut Cache) -> Result<Vec<f64>, LabError> {
+fn eval(e: &Expr, fr: &Frames, others: &Others, cache: &mut Cache) -> Result<Vec<f64>, LabError> {
     let len = fr.d.len();
     let nan = f64::NAN;
     Ok(match e {
         Expr::Bin(op, l, r) => {
-            let (a, b) = (arr(l, fr, cache)?, arr(r, fr, cache)?);
+            let (a, b) = (arr_in(l, fr, others, cache)?, arr_in(r, fr, others, cache)?);
             a.iter().zip(&b).map(|(&x, &y)| if x.is_nan() || y.is_nan() { nan } else {
                 match op {
                     Bin::Add => x + y,
@@ -176,19 +228,19 @@ fn eval(e: &Expr, fr: &Frames, cache: &mut Cache) -> Result<Vec<f64>, LabError> 
                 }
             }).collect()
         }
-        Expr::Abs(x) => arr(x, fr, cache)?.into_iter().map(f64::abs).collect(),
-        Expr::Ref(x, n) => { let a = arr(x, fr, cache)?; (0..len).map(|i| if i >= *n { a[i - n] } else { nan }).collect() }
-        Expr::Win(Win::Change, x, n) => { let a = arr(x, fr, cache)?; (0..len).map(|i| if i >= *n { a[i] - a[i - n] } else { nan }).collect() }
+        Expr::Abs(x) => arr_in(x, fr, others, cache)?.into_iter().map(f64::abs).collect(),
+        Expr::Ref(x, n) => { let a = arr_in(x, fr, others, cache)?; (0..len).map(|i| if i >= *n { a[i - n] } else { nan }).collect() }
+        Expr::Win(Win::Change, x, n) => { let a = arr_in(x, fr, others, cache)?; (0..len).map(|i| if i >= *n { a[i] - a[i - n] } else { nan }).collect() }
         // State operands follow Kleene logic (spec §4.2): an unknown bar that could change the answer makes it unknown.
         Expr::BarsSince(c) => {
             let (mut last, mut unk) = (None, None);
-            mask(c, fr, cache)?.iter().enumerate().map(|(i, m)| {
+            mask_in(c, fr, others, cache)?.iter().enumerate().map(|(i, m)| {
                 if *m == 1. { last = Some(i); } else if m.is_nan() { unk = Some(i); }
                 match last { Some(l) if unk < Some(l) => (i - l) as f64, _ => nan }
             }).collect()
         }
         Expr::Count(c, n) => {
-            let m = mask(c, fr, cache)?;
+            let m = mask_in(c, fr, others, cache)?;
             let (mut count, mut unk) = (0usize, 0usize);
             (0..len).map(|i| {
                 count += usize::from(m[i] == 1.); unk += usize::from(m[i].is_nan());
@@ -197,7 +249,7 @@ fn eval(e: &Expr, fr: &Frames, cache: &mut Cache) -> Result<Vec<f64>, LabError> 
             }).collect()
         }
         Expr::ValueWhen { when, of, nth } => {
-            let (m, a) = (mask(when, fr, cache)?, arr(of, fr, cache)?);
+            let (m, a) = (mask_in(when, fr, others, cache)?, arr_in(of, fr, others, cache)?);
             let (mut hits, mut unk): (Vec<usize>, Option<usize>) = (Vec::new(), None);
             (0..len).map(|i| {
                 if m[i] == 1. { hits.push(i); } else if m[i].is_nan() { unk = Some(i); }
@@ -207,7 +259,7 @@ fn eval(e: &Expr, fr: &Frames, cache: &mut Cache) -> Result<Vec<f64>, LabError> 
         Expr::Since { when, of, highest } => {
             // AmiBroker HighestSince/LowestSince: from the latest bar where `when` held (inclusive). A missing `of` on any bar
             // since then, like an unknown `when`, makes the extreme unknown (Kleene, spec §4.2).
-            let (m, a) = (mask(when, fr, cache)?, arr(of, fr, cache)?);
+            let (m, a) = (mask_in(when, fr, others, cache)?, arr_in(of, fr, others, cache)?);
             let (mut started, mut unk, mut ext) = (false, false, nan);
             (0..len).map(|i| {
                 if m[i] == 1. { started = true; unk = a[i].is_nan(); ext = a[i]; }
@@ -216,9 +268,9 @@ fn eval(e: &Expr, fr: &Frames, cache: &mut Cache) -> Result<Vec<f64>, LabError> 
                 if started && !unk { ext } else { nan }
             }).collect()
         }
-        Expr::Expand(r, mode) => series_mode(fr, cache, r, *mode)?,
+        Expr::Expand(r, mode) => series_mode_in(fr, others, cache, r, *mode)?,
         Expr::Compress { of, tf, agg, offset, expand } => {
-            let (a, held) = (arr(of, fr, cache)?, fr.bars(*tf));
+            let (a, held) = (arr_in(of, fr, others, cache)?, fr.bars(*tf));
             let b: &Bars = &held;
             let c: Vec<f64> = (0..b.len()).map(|w| {
                 let g = &a[if w == 0 { 0 } else { b.end[w - 1] + 1 }..=b.end[w]];
@@ -235,7 +287,7 @@ fn eval(e: &Expr, fr: &Frames, cache: &mut Cache) -> Result<Vec<f64>, LabError> 
             resample::expand_mode(&shifted, b, len, *expand)
         }
         Expr::Win(w, x, n) => {
-            let a = arr(x, fr, cache)?;
+            let a = arr_in(x, fr, others, cache)?;
             // shortcut: O(bars × window); a running sum / monotone deque is the upgrade if optimizer profiles show it.
             (0..len).map(|i| {
                 if i + 1 < *n { return nan; }
@@ -271,16 +323,16 @@ fn cmp_at(op: Op, a: &[f64], b: &[f64], i: usize) -> f64 {
     })
 }
 /// Three-valued truth of a node on every daily bar (spec §4.2): 1 true, 0 false, NaN unknown.
-pub fn mask(n: &Node, fr: &Frames, cache: &mut Cache) -> Result<Vec<f64>, LabError> {
+fn mask_in(n: &Node, fr: &Frames, others: &Others, cache: &mut Cache) -> Result<Vec<f64>, LabError> {
     let len = fr.d.len();
     Ok(match n {
-        Node::Cmp(c) => { let (a, b) = (arr(&c.lhs, fr, cache)?, arr(&c.rhs, fr, cache)?); (0..len).map(|i| cmp_at(c.op, &a, &b, i)).collect() }
+        Node::Cmp(c) => { let (a, b) = (arr_in(&c.lhs, fr, others, cache)?, arr_in(&c.rhs, fr, others, cache)?); (0..len).map(|i| cmp_at(c.op, &a, &b, i)).collect() }
         Node::Range { x, lo, hi, outside } => {
-            let (x, lo, hi) = (arr(x, fr, cache)?, arr(lo, fr, cache)?, arr(hi, fr, cache)?);
+            let (x, lo, hi) = (arr_in(x, fr, others, cache)?, arr_in(lo, fr, others, cache)?, arr_in(hi, fr, others, cache)?);
             (0..len).map(|i| if x[i].is_nan() || lo[i].is_nan() || hi[i].is_nan() { f64::NAN } else { truth((lo[i] <= x[i] && x[i] <= hi[i]) != *outside) }).collect()
         }
         Node::Trend { x, bars, rising } => {
-            let x = arr(x, fr, cache)?;
+            let x = arr_in(x, fr, others, cache)?;
             (0..len).map(|i| {
                 if i < *bars || x[i - bars..=i].iter().any(|v| v.is_nan()) { return f64::NAN; }
                 truth(x[i - bars..=i].windows(2).all(|w| if *rising { w[1] > w[0] } else { w[1] < w[0] }))
@@ -288,16 +340,16 @@ pub fn mask(n: &Node, fr: &Frames, cache: &mut Cache) -> Result<Vec<f64>, LabErr
         }
         Node::All(v) | Node::Any(v) => {
             let all = matches!(n, Node::All(_));
-            let kids = v.iter().map(|c| mask(c, fr, cache)).collect::<Result<Vec<_>, _>>()?;
+            let kids = v.iter().map(|c| mask_in(c, fr, others, cache)).collect::<Result<Vec<_>, _>>()?;
             (0..len).map(|i| {
                 let (decisive, other) = if all { (0., 1.) } else { (1., 0.) };
                 if kids.iter().any(|k| k[i] == decisive) { decisive } else if kids.iter().any(|k| k[i].is_nan()) { f64::NAN } else { other }
             }).collect()
         }
-        Node::Not(c) => mask(c, fr, cache)?.into_iter().map(|v| if v.is_nan() { v } else { 1. - v }).collect(),
+        Node::Not(c) => mask_in(c, fr, others, cache)?.into_iter().map(|v| if v.is_nan() { v } else { 1. - v }).collect(),
         Node::AtLeast { k, of, when } => {
             // Kleene count over the last `of` bars: true if trues >= k, false if even every unknown could not reach k, else unknown.
-            let m = mask(when, fr, cache)?;
+            let m = mask_in(when, fr, others, cache)?;
             let (mut t, mut u) = (0usize, 0usize);
             (0..len).map(|i| {
                 t += usize::from(m[i] == 1.); u += usize::from(m[i].is_nan());
@@ -306,7 +358,7 @@ pub fn mask(n: &Node, fr: &Frames, cache: &mut Cache) -> Result<Vec<f64>, LabErr
             }).collect()
         }
         Node::Then { steps, within } => {
-            let ms = steps.iter().map(|c| mask(c, fr, cache)).collect::<Result<Vec<_>, _>>()?;
+            let ms = steps.iter().map(|c| mask_in(c, fr, others, cache)).collect::<Result<Vec<_>, _>>()?;
             // start[i]: the latest first-step bar of a chain whose current step is true on bar i (-1 = none).
             let mut start: Vec<i64> = ms[0].iter().enumerate().map(|(i, v)| if *v == 1. { i as i64 } else { -1 }).collect();
             for m in &ms[1..] {
@@ -329,25 +381,25 @@ pub fn mask(n: &Node, fr: &Frames, cache: &mut Cache) -> Result<Vec<f64>, LabErr
         }
     })
 }
-pub fn compile(spec: &Spec, fr: &Frames, cache: &mut Cache) -> Result<Compiled, LabError> {
-    let mut c = side(&spec.entry, &spec.exit, &spec.exec, "", fr, cache)?;
+pub fn compile_with(spec: &Spec, fr: &Frames, others: &Others, cache: &mut Cache) -> Result<Compiled, LabError> {
+    let mut c = side(&spec.entry, &spec.exit, &spec.exec, "", fr, others, cache)?;
     if let Some(s) = &spec.short_side {
-        let mut o = side(&s.entry, &s.exit, &s.exec, "short_side.", fr, cache)?;
+        let mut o = side(&s.entry, &s.exit, &s.exec, "short_side.", fr, others, cache)?;
         o.exec.sizing = spec.exec.sizing; // one sizing for both sides (optimize changes the spec's)
         c.other = Some(Box::new(o));
     }
     Ok(c)
 }
-fn side(entry: &[Node], exit: &[Node], x: &Exec, pre: &str, fr: &Frames, cache: &mut Cache) -> Result<Compiled, LabError> {
-    let mut c = Compiled { entry: list(entry, &format!("{pre}entry.all"), fr, cache)?, exit: list(exit, &format!("{pre}exit.any"), fr, cache)?, ..Compiled::new(vec![], vec![]) };
+fn side(entry: &[Node], exit: &[Node], x: &Exec, pre: &str, fr: &Frames, others: &Others, cache: &mut Cache) -> Result<Compiled, LabError> {
+    let mut c = Compiled { entry: list(entry, &format!("{pre}entry.all"), fr, others, cache)?, exit: list(exit, &format!("{pre}exit.any"), fr, others, cache)?, ..Compiled::new(vec![], vec![]) };
     c.exec = x.clone();
-    c.limit_at = x.limit_at.as_ref().map(|o| arr(o, fr, cache)).transpose()?;
-    c.stop_at = x.stop_at.as_ref().map(|o| arr(o, fr, cache)).transpose()?;
+    c.limit_at = x.limit_at.as_ref().map(|o| arr_in(o, fr, others, cache)).transpose()?;
+    c.stop_at = x.stop_at.as_ref().map(|o| arr_in(o, fr, others, cache)).transpose()?;
     let later = x.breakeven.iter().flat_map(|b| [Some(b.0), b.1]).chain(x.take_profits.iter().map(|t| Some(t.0)));
     for d in [x.limit, x.stop_loss, x.target, x.trailing, x.stop, x.trail_activate].into_iter().chain(later).flatten() {
         if let Dist::Atr { length, .. } = d {
             if c.atr.contains_key(&length) { continue; }
-            let r = SeriesRef { id: "atr".into(), params: [("length".to_string(), length as f64)].into(), tf: Tf::D, out: 0, offset: 0 };
+            let r = SeriesRef { id: "atr".into(), params: [("length".to_string(), length as f64)].into(), tf: Tf::D, out: 0, offset: 0, foreign: Default::default() };
             c.atr.insert(length, series(fr, cache, &r)?);
         }
     }
@@ -380,6 +432,9 @@ pub fn operand_text(o: &Operand) -> String {
             if s.out > 0 { if let Some(d) = catalogue::get(&s.id) { t = format!("{t}.{}", d.outputs[s.out]); } }
             if s.tf != Tf::D { t = format!("{t}@{}", s.tf.name()); }
             if s.offset > 0 { t = format!("{t}[{}]", s.offset); }
+            if let Some(vs)=&s.foreign.vs {t=format!("{t} vs {vs}");}
+            if let Some(symbol)=&s.foreign.symbol {t=format!("{symbol}:{t}");}
+            if s.foreign.fixup {t.push_str(" (fixup previous)");}
             t
         }
     }
@@ -421,17 +476,17 @@ mod tests {
     }
     fn sref(id: &str, tf: Tf, out: usize, offset: usize) -> SeriesRef {
         let params = catalogue::get(id).map_or(Params::new(), |d| resolve_params(&d, &Params::new()).unwrap());
-        SeriesRef { id: id.into(), params, tf, out, offset }
+        SeriesRef { id: id.into(), params, tf, out, offset, foreign: Default::default() }
     }
 
     #[test] fn every_computed_indicator_is_reachable_from_a_rule() {
-        for d in all().iter().filter(|d| d.compute.is_some() && !d.needs.derivatives) {
+        for d in all().iter().filter(|d| d.compute.is_some() && !d.needs.derivatives && !d.needs.second_symbol) {
             let out = d.outputs[d.outputs.len() - 1];
             if let Err(e) = crate::lab::testdata::compiles(d.id, out) { panic!("{}.{out}: {} {}", d.id, e.status(), e.message()); }
         }
     }
     #[test] fn listed_entries_refuse_with_their_note() {
-        for (id, status) in [("vwap", "needs_data"), ("cvd", "needs_data"), ("correlation", "needs_data"), ("dividend_yield", "needs_data"),
+        for (id, status) in [("vwap", "needs_data"), ("cvd", "needs_data"), ("dividend_yield", "needs_data"),
             ("open_interest", "needs_data"), ("onchain_hash_rate", "needs_data"), ("zigzag", "unsupported"), ("peak", "unsupported"),
             ("rob_booker_reversal", "unsupported"), ("fir", "unsupported"), ("seasonality", "unsupported")] {
             let d = catalogue::get(id).unwrap();
@@ -463,7 +518,7 @@ mod tests {
         // Every catalogue indicator on D, W and M: truncating the data never changes an earlier daily value.
         let full_bars = with_breadth(business_days(420, true));
         let full = Frames::new(full_bars.clone());
-        for d in all().iter().filter(|d| d.compute.is_some() && !crate::lab::periods::USES_SESSION_DATES.contains(&d.id)) {
+        for d in all().iter().filter(|d| d.compute.is_some() && !d.needs.second_symbol && !crate::lab::periods::USES_SESSION_DATES.contains(&d.id)) {
             for tf in [Tf::D, Tf::W, Tf::M, Tf::Q, Tf::Y, Tf::Days(5)] {
                 let r = sref(d.id, tf, d.outputs.len() - 1, 0);
                 if (d.needs.breadth && tf != Tf::D) || d.needs.derivatives { assert_eq!(series(&full, &mut Cache::new(), &r).unwrap_err().status(), "needs_data"); continue; }
@@ -505,12 +560,12 @@ mod tests {
     #[test] fn every_indicator_at_parameter_bounds_never_panics() {
         for bars in [with_breadth(business_days(3, true)), with_breadth(business_days(300, true))] {
             let fr = Frames::new(bars);
-            for d in all().iter().filter(|d| d.compute.is_some()) {
+            for d in all().iter().filter(|d| d.compute.is_some() && !d.needs.second_symbol) {
                 let picks: [fn(&catalogue::ParamSpec) -> f64; 2] = [|p| p.min, |p| p.max];
                 for pick in picks {
                     let params: Params = d.params.iter().map(|p| (p.key.to_string(), pick(p))).collect();
                     for tf in [Tf::D, Tf::W, Tf::M, Tf::Q, Tf::Y, Tf::Days(5)] {
-                        let r = SeriesRef { id: d.id.into(), params: params.clone(), tf, out: 0, offset: 0 };
+                        let r = SeriesRef { id: d.id.into(), params: params.clone(), tf, out: 0, offset: 0, foreign: Default::default() };
                         if (d.needs.breadth && tf != Tf::D) || d.needs.derivatives { assert_eq!(series(&fr, &mut Cache::new(), &r).unwrap_err().status(), "needs_data"); continue; }
                         assert_eq!(series(&fr, &mut Cache::new(), &r).unwrap().len(), fr.d.len(), "{} {tf:?}", d.id);
                     }
@@ -802,6 +857,74 @@ mod tests {
                 let upto = if t.contains(r#""expand":"first""#) { cut } else { cut - 1 };
                 for i in 0..upto { assert!(close_eq(got[i], want[i]), "{t} bar {i} changes when bars after {cut} exist"); }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod foreign_resolver_tests {
+    use super::*;
+    use super::tests::business_days;
+    fn sref(id:&str,tf:Tf,out:usize,offset:usize)->SeriesRef { let params=catalogue::get(id).map_or(Default::default(),|d|catalogue::resolve_params(&d,&Default::default()).unwrap()); SeriesRef{id:id.into(),params,tf,out,offset,foreign:Default::default()} }
+    use crate::lab::rules::{parse_spec,Foreign};
+    use crate::lab::testdata::{assert_series,close_eq};
+    fn others(run:&str,close_fills:bool,list:Vec<(&str,Bars)>)->Others {Others{run:run.into(),close_fills,frames:std::sync::Arc::new(list.into_iter().map(|(t,b)|(t.into(),Frames::new(b))).collect())}}
+    fn reference(id:&str,symbol:Option<&str>,vs:Option<&str>,fixup:bool)->SeriesRef {SeriesRef{foreign:Foreign{symbol:symbol.map(Into::into),vs:vs.map(Into::into),fixup},..sref(id,Tf::D,0,0)}}
+    fn operand(text:&str)->Operand {parse_spec(&format!(r#"{{"v":1,"entry":{{"all":[{{"lhs":{text},"op":">","rhs":{{"value":0}}}}]}},"exit":{{"any":[{{"lhs":{{"s":"bars_held"}},"op":">=","rhs":{{"value":3}}}}]}}}}"#)).unwrap().entry[0].cmp().unwrap().lhs.clone()}
+    fn remove(b:&mut Bars,i:usize) {for v in [&mut b.open,&mut b.high,&mut b.low,&mut b.close]{v.remove(i);}b.date.remove(i);b.end=(0..b.len()).collect();if let Some(v)=&mut b.volume{v.remove(i);}}
+    #[test] fn own_calendar_offsets_expand_and_fixup_run_before_alignment() {
+        let run=business_days(90,true);let mut source=business_days(90,true);for v in [&mut source.open,&mut source.high,&mut source.low,&mut source.close]{for p in v{*p*=10.;}}remove(&mut source,20);
+        let fr=Frames::new(run);let o=others("SPY",false,vec![("SPX",source.clone())]);
+        let got=series_in(&fr,&o,&mut Cache::new(),&reference("close",Some("SPX"),None,false)).unwrap();assert!(got[20].is_nan());assert_eq!(got[21],source.close[20]);
+        let got=series_in(&fr,&o,&mut Cache::new(),&reference("close",Some("SPX"),None,true)).unwrap();assert_eq!(got[20],source.close[19]);
+        for tf in ["W","M","Q","Y","5D"] {for expand in ["last","point","first"] {
+            let text=format!(r#"{{"s":"close","symbol":"SPX","tf":"{tf}","offset":1,"expand":"{expand}"}}"#);let local=text.replace(r#""symbol":"SPX","#,"");
+            let expected=operand_values(&Frames::new(source.clone()),&Others::default(),&mut Cache::new(),&operand(&local)).unwrap();
+            let expected=crate::lab::foreign::align(&fr.d.date,&source.date,&expected,crate::lab::foreign::Align::SameDate,false).unwrap();
+            assert_series(&operand_values(&fr,&o,&mut Cache::new(),&operand(&text)).unwrap(),&expected);
+        }}
+    }
+    #[test] fn sparse_nan_and_warmup_are_not_filled_by_fixup() {
+        let run=business_days(90,true);let mut source=business_days(90,true);remove(&mut source,20);let source_fr=Frames::new(source.clone());let o=others("SPY",false,vec![("SPX",source.clone())]);let fr=Frames::new(run);
+        for id in ["sma","fractals"] {
+            let raw=series(&source_fr,&mut Cache::new(),&sref(id,Tf::D,0,0)).unwrap();let expected=crate::lab::foreign::align(&fr.d.date,&source.date,&raw,crate::lab::foreign::Align::SameDate,true).unwrap();
+            let got=series_in(&fr,&o,&mut Cache::new(),&reference(id,Some("SPX"),None,true)).unwrap();assert_series(&got,&expected);
+            assert!(got.iter().any(|v|v.is_nan()));
+        }
+    }
+    #[test] fn cache_identity_covers_interior_source_data_and_paired_inputs() {
+        let a=business_days(100,false);let mut b=a.clone();b.close[40]*=1.2;b.high[40]=b.high[40].max(b.close[40]);
+        let (fa,fb)=(Frames::new(a.clone()),Frames::new(b.clone()));let mut cache=Cache::new();let r=sref("sma",Tf::D,0,0);
+        let x=series(&fa,&mut cache,&r).unwrap();let y=series(&fb,&mut cache,&r).unwrap();assert!(!close_eq(x[40],y[40]));assert_series(&y,&series(&fb,&mut Cache::new(),&r).unwrap());
+        let oa=others("R",false,vec![("B",a)]);let ob=others("R",false,vec![("B",b)]);let r=reference("ratio",None,Some("B"),false);
+        let x=series_in(&fa,&oa,&mut cache,&r).unwrap();let y=series_in(&fa,&ob,&mut cache,&r).unwrap();assert!(!close_eq(x[40],y[40]));
+        let n=cache.len();series_in(&fa,&ob,&mut cache,&r).unwrap();assert_eq!(cache.len(),n,"same paired inputs reuse their raw computation");
+    }
+    #[test] fn paired_cache_separates_session_availability_policy() {
+        let fr=Frames::new(business_days(40,false));let o=others("SPY",false,vec![("CBOE VIX",business_days(40,false))]);
+        let later=Others{close_fills:true,run:o.run.clone(),frames:o.frames.clone()};let r=reference("ratio",None,Some("CBOE VIX"),false);let mut cache=Cache::new();
+        let same=series_in(&fr,&o,&mut cache,&r).unwrap();let prior=series_in(&fr,&later,&mut cache,&r).unwrap();assert_eq!(same[0],1.);assert!(prior[0].is_nan());assert_series(&prior,&series_in(&fr,&later,&mut Cache::new(),&r).unwrap());
+    }
+    #[test] fn self_references_and_pair_base_vs_use_the_right_frames() {
+        let a=business_days(80,false);let mut b=a.clone();for v in [&mut b.open,&mut b.high,&mut b.low,&mut b.close]{for p in v{*p*=2.;}}
+        let fr=Frames::new(a.clone());let o=others("A",false,vec![("B",b)]);let mut cache=Cache::new();
+        assert_series(&series_in(&fr,&o,&mut cache,&reference("close",Some("A"),None,false)).unwrap(),&a.close);
+        let self_pair=series_in(&fr,&o,&mut cache,&reference("ratio",None,Some("A"),false)).unwrap();assert!(self_pair.iter().all(|v|*v==1.));
+        let other=series_in(&fr,&o,&mut cache,&reference("ratio",Some("B"),Some("A"),false)).unwrap();assert!(other.iter().all(|v|*v==2.));
+    }
+    #[test] fn every_recursive_location_and_both_order_levels_receive_context() {
+        let mut a=business_days(40,false);let mut b=a.clone();for v in [&mut a.open,&mut a.high,&mut a.low,&mut a.close]{v.fill(100.);}for v in [&mut b.open,&mut b.high,&mut b.low,&mut b.close]{v.fill(40.);}
+        let fr=Frames::new(business_days(40,false));let o=others("R",false,vec![("A",a),("B",b)]);
+        let spec=parse_spec(r#"{"v":1,"direction":"both","entry":{"all":[{"all":[{"not":{"lhs":{"s":"close","symbol":"A"},"op":"<","rhs":{"value":50}}},{"lhs":{"count":{"lhs":{"s":"close","symbol":"A"},"op":">","rhs":{"value":50}},"bars":2},"op":">","rhs":{"value":1}}]}],"limit":{"at":{"add":[{"s":"close","symbol":"A"},{"value":1}]}}},"exit":{"any":[]},"short_side":{"entry":{"all":[{"lhs":{"value_when":{"lhs":{"s":"close","symbol":"A"},"op":">","rhs":{"value":0}},"of":{"s":"close","symbol":"B"}},"op":">","rhs":{"value":0}}],"stop":{"at":{"s":"close","symbol":"B","tf":"W","offset":1,"expand":"first"}}},"exit":{"any":[]}}}"#).unwrap();
+        let c=compile_with(&spec,&fr,&o,&mut Cache::new()).unwrap();assert!(c.entry[0].holds(3,None));assert_eq!(c.limit_at.as_ref().unwrap()[3],101.);assert_eq!(c.other.as_ref().unwrap().stop_at.as_ref().unwrap()[10],40.);
+        assert!(compile(&spec,&fr,&mut Cache::new()).err().unwrap().message().contains("not loaded"));
+    }
+    #[test] fn future_foreign_prices_do_not_change_earlier_values() {
+        let run=business_days(100,false);let source=business_days(100,false);let fr=Frames::new(run);let o=others("R",false,vec![("X",source.clone())]);
+        for text in [r#"{"s":"rsi","symbol":"X","p":{"length":2}}"#,r#"{"s":"close","symbol":"X","tf":"W","offset":1,"expand":"first"}"#,r#"{"sum":{"s":"close","symbol":"X"},"bars":3}"#,r#"{"compress":{"s":"close","symbol":"X"},"tf":"5D","mode":"last"}"#] {
+            let operand=operand(text);let want=operand_values(&fr,&o,&mut Cache::new(),&operand).unwrap();
+            let mut alt=source.clone();for v in [&mut alt.open,&mut alt.high,&mut alt.low,&mut alt.close]{for p in &mut v[51..]{*p*=1.3;}}
+            let got=operand_values(&fr,&others("R",false,vec![("X",alt)]),&mut Cache::new(),&operand).unwrap();assert_series(&got[..=50],&want[..=50]);
         }
     }
 }

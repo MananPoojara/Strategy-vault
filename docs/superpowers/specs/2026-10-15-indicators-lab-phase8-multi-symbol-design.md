@@ -429,7 +429,9 @@ Every body keeps `label: "User-defined indicator strategy · simulated · not a 
 | other instruments (`symbol` + `vs`) | ≤ 4 per spec | one load each |
 | portfolio run wall clock | 90 s (gateway allows 120 s) | refused as `invalid` "portfolio run stopped after 90 s; use fewer members or a shorter window" — no partial result |
 | portfolio optimize | ≤ 200 combos, members × combos ≤ 12,000, 300 s | single slot; no partial ranking |
-| member loading | sequential; rows converted to lab `Bars` and dropped per member | bounded peak memory; each basket read is SHA-checked by the book loader |
+| member loading | sequential; raw rows released after conversion while member Frames remain for the request | source-bar admission checks prevent accumulating an unbounded cohort; one loader operation is cooperative rather than preemptible |
+| member history | ≤ 50,000 source bars per member and ≤ 500,000 across members, reference and loaded foreign sources | initial bounds for the 1 GiB engine; no source is truncated and no member is silently removed to meet a resource limit |
+| compiled portfolio work | ≤ 8,000,000 compiled cells; at most 2 optimize workers, reduced by the working-set estimate | raw indicator caches are cleared between members; requests over the budget fail rather than publishing a narrowed universe |
 
 ## 7. Markets
 
@@ -504,7 +506,7 @@ admitted."), and `publishable` is false for them — one helper in `contracts.mj
   weekend; HSI vs IG:DAX with a Hong Kong holiday on the previous date; CBOE VIX `same_date` vs `prior_date` by fill
   mode; `fixup` filling only missing dates, not indicator NaNs.
 - Every bar of every portfolio test: equity = cash + Σ qty × mark (1e-9 relative), cash ≥ 0, open ≤ `max_open`,
-  exposure ≤ 1, quantities whole, every fill price inside its bar's low–high.
+  invested ÷ equity ≤ 1 (`exposure` on the wire is invested currency, not a fraction), quantities whole, every fill price inside its bar's low–high.
 
 ### 12.3 Determinism
 
@@ -604,6 +606,9 @@ Decided without the user (unavailable). Each: decision — reason — cost if wr
 22. **Documented-example fixtures are hand-computed** from the AmiBroker pages cited in §15, not exported from
     AmiBroker (no install here). — No decompilation, no licence question. — If AmiBroker's undocumented behaviour
     differs on a fixture, the fixture documents the lab's choice, not AmiBroker's output.
+
+23. **Initial deployment memory bounds also limit admitted history.** The member-count and combination caps alone do not bound a full-history rule tree's memory. The 1 GiB engine therefore additionally admits at most 50,000 bars per member, 500,000 source bars including the cohort, reference and loaded foreign sources, and 8,000,000 compiled cells, with at most two optimization workers. A refusal asks for fewer members or shorter admitted histories; changing only the visible From/To window does not remove indicator warm-up history. These are conservative admission limits, not a completed peak-memory benchmark.
+24. **Final-bar entries and coverage-end knowledge.** New portfolio entries do not fill on the final reference bar or a member's known terminal quote; realized exits still process. Daily rotation can take final-close rank exits, while an unfinished W/M/Q/Y period does not rebalance. Terminal `data_end` liquidation is a disclosed historical adaptation, not live-causal knowledge of a delisting. `entry_on: edge` applies to new rotation entries on that rebalance bar without latching; held eligibility and ranks continue to use the current level.
 
 ## 15. Sources (AmiBroker documentation only; nothing decompiled)
 

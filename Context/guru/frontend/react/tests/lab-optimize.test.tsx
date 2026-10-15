@@ -258,3 +258,14 @@ it("money optimization is labelled Money even without run-only ledger totals", a
   expect(host.querySelector("[data-lab-optimize-result] [data-lab-money]")?.textContent).toContain("Money");
   expect(host.querySelector("[data-lab-optimize-result]")?.textContent).not.toContain("Unit study");
 });
+it("a changed portfolio cohort invalidates pending results and their Apply actions",async()=>{
+ const {portfolioCatalogueFixture}=await import("./fixtures/portfolio");let release!:(r:OptimizeResult)=>void;const onOptimize=vi.fn(()=>new Promise<OptimizeResult>(resolve=>{release=resolve;}));
+ const start:Spec={...defaultSpec(),execution:{capital:1000},portfolio:{universe:{basket:"nifty50"},mode:"signals",max_open:2}};
+ function Harness(){const[spec,setSpec]=useState(start);return <><button onClick={()=>setSpec({...spec,portfolio:{...spec.portfolio!,universe:{tickers:["A","B"]}}})}>Change cohort</button><OptimizePanel {...base} catalogue={portfolioCatalogueFixture} spec={spec} onOptimize={onOptimize}/></>;}
+ const host=await mount(<Harness/>);await tick(host,"portfolio.max_open");
+ await act(async()=>host.querySelector<HTMLButtonElement>('[data-lab-action="optimize"]')!.click());expect(onOptimize).toHaveBeenCalledTimes(1);
+ await act(async()=>[...host.querySelectorAll<HTMLButtonElement>("button")].find(b=>b.textContent==="Change cohort")!.click());
+ await act(async()=>release(optimizeFixture));await flush();expect(host.querySelector('[data-lab-optimize-result]')).toBeNull();expect(host.querySelector('[aria-label="Apply #1"]')).toBeNull();
+ expect(host.querySelector<HTMLSelectElement>('[aria-label="Held back"]')).toBeNull();
+ expect(host.querySelector(".empty")?.textContent).toBe("Portfolio optimization ranks the full period using shared cash.");
+});

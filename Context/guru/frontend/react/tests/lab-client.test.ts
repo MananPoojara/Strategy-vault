@@ -98,3 +98,18 @@ it("saved strategies: version on every mutation, 204 delete, auth errors", async
   expect(JSON.parse(String(f.calls[4].init?.body))).toEqual({ version: 3, note: "Needs a stop" });
   expect(f.calls[0].init?.headers).toMatchObject({ "Content-Type": "application/json" });
 });
+
+it("sends an explicit pair comparison without inventing a default instrument", async () => {
+  const f = fetchRouter([["/api/", () => jsonResponse({})]]); vi.stubGlobal("fetch", f);
+  await lab.series("us", { id: "ratio", ticker: "SPY", tf: "D", vs: "SPX" } as never);
+  await lab.series("us", { id: "ema", ticker: "SPY", tf: "D" });
+  expect(new URL(f.calls[0].url,"http://x").searchParams.get("vs")).toBe("SPX");
+  expect(new URL(f.calls[1].url,"http://x").searchParams.has("vs")).toBe(false);
+});
+
+it("portfolio transport omits single-instrument and split queries even if stale settings were supplied",async()=>{
+ const f=fetchRouter([["/api/",()=>jsonResponse({})]]);vi.stubGlobal("fetch",f);
+ const spec={v:1 as const,entry:{all:[]},exit:{any:[]},execution:{capital:1000},portfolio:{mode:"rotation",universe:{tickers:["SPY","QQQ"]},score:{s:"close"},max_open:2}};
+ await lab.run("us",spec as never,{ticker:"SPX",cost:5,slippage:2});await lab.optimize("us",spec as never,{ticker:"SPX",cost:5,split:"2024-01-01"});
+ for(const call of f.calls){const q=new URL(call.url,"http://x").searchParams;for(const key of ["ticker","cost","slippage","split"])expect(q.has(key)).toBe(false);expect(JSON.parse(q.get("spec")!).execution.capital).toBe(1000);}
+});

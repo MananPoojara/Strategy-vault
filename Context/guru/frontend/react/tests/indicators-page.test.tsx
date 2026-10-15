@@ -1,3 +1,4 @@
+import {portfolioCatalogueFixture,portfolioResultFixture} from "./fixtures/portfolio";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { act } from "react";
 import { IndicatorsPage } from "../src/pages/IndicatorsPage";
@@ -291,4 +292,44 @@ it("a book variant can replace an indicator through the full editor and retain i
   const spec = JSON.parse(new URL(f.calls.find((c) => c.url.includes("/lab/run"))!.url, "http://x").searchParams.get("spec")!);
   expect(spec.entry.all[0].lhs.s).toBe("ema");
   expect(spec.origin).toEqual({book:"ststw", method:"rsi2_4", template_version:1});
+});
+
+it("exposes foreign source choices only for an advertised engine and sends the edited rule", async () => {
+  catalogueAnswer={...catalogue7Fixture,max_foreign:4} as typeof catalogueFixture;
+  const {host,f}=await go("#/indicators?tk=NIFTY%2050");
+  const source=host.querySelector<HTMLSelectElement>('[aria-label="Entry 1 › left · Read from"]') ?? host.querySelector<HTMLSelectElement>('[aria-label$="· Read from"]');
+  expect(source).not.toBeNull();
+  const other=[...source!.options].find(o=>o.value&&o.value!=="NIFTY 50")!.value;
+  await act(async()=>{source!.value=other;source!.dispatchEvent(new Event("change",{bubbles:true}));});await run(host);
+  const request=f.calls.find(c=>c.url.includes("/lab/run"));expect(request).toBeDefined();
+  expect(new URL(request!.url,"http://x").searchParams.get("spec")).toContain(`"symbol":"${other}"`);
+});
+
+it("keeps foreign controls absent on older engines and blocks a saved invalid foreign spec before HTTP", async () => {
+  const old=await go("#/indicators");expect(old.host.querySelector('[aria-label$="· Read from"]')).toBeNull();await unmount();clearLabCache();
+  catalogueAnswer={...catalogue7Fixture,max_foreign:4} as typeof catalogueFixture;
+  if(templateFixture.status!=="available")throw new Error("fixture must be available");
+  templateAnswer={...templateFixture,template:{...templateFixture.template,spec:{...templateFixture.template.spec,entry:{all:[{lhs:{s:"close",symbol:"UNKNOWN"},op:">",rhs:{value:1}}]}}}} as typeof templateFixture;
+  const {host,f}=await go("#/indicators?customize=rsi2_4&tk=NIFTY%2050");
+  expect(host.textContent).toContain("UNKNOWN is not listed");expect(host.querySelector<HTMLButtonElement>('[data-lab-action="run"]')!.disabled).toBe(true);
+  await run(host);expect(f.calls.filter(c=>c.url.includes("/lab/run"))).toHaveLength(0);
+});
+
+it("runs a shared-money portfolio while leaving the chart instrument as reference context",async()=>{
+ catalogueAnswer=portfolioCatalogueFixture;runAnswer=()=>jsonResponse(portfolioResultFixture);
+ const {host,f}=await go("#/indicators?tk=NIFTY%2050");
+ const choose=async(label:string,value:string)=>act(async()=>{const el=host.querySelector<HTMLSelectElement>(`[aria-label="${label}"]`)!;el.value=value;el.dispatchEvent(new Event("change",{bubbles:true}));});
+ await choose("Strategy mode","signals");await choose("Portfolio universe","nifty50");
+ const money=[...host.querySelectorAll<HTMLButtonElement>('[aria-label="Results in"] button')].find(b=>b.textContent==="Money")!;
+ expect(money.disabled).toBe(false);await act(async()=>money.click());
+ expect(host.querySelector<HTMLButtonElement>('[data-lab-action="run"]')!.disabled).toBe(false);await run(host);
+ const call=f.calls.find(c=>c.url.includes("/lab/run"))!;const q=new URL(call.url,"http://x").searchParams;expect(q.has("ticker")).toBe(false);expect(q.has("cost")).toBe(false);
+ expect(host.querySelector('[data-lab-portfolio-result]')).not.toBeNull();expect(host.querySelector('[data-lab-result]')).toBeNull();expect(host.textContent).toContain("ACTUAL");
+});
+it("an old portfolio run cannot land after its universe changes",async()=>{
+ catalogueAnswer=portfolioCatalogueFixture;let release!:(r:Response)=>void;runAnswer=()=>new Promise<Response>(resolve=>{release=resolve;});
+ const {host}=await go("#/indicators?tk=NIFTY%2050");const choose=async(label:string,value:string)=>act(async()=>{const el=host.querySelector<HTMLSelectElement>(`[aria-label="${label}"]`)!;el.value=value;el.dispatchEvent(new Event("change",{bubbles:true}));});
+ await choose("Strategy mode","signals");await choose("Portfolio universe","nifty50");await act(async()=>[...host.querySelectorAll<HTMLButtonElement>('[aria-label="Results in"] button')].find(b=>b.textContent==="Money")!.click());await run(host);
+ await choose("Portfolio universe","list");await act(async()=>release(jsonResponse(portfolioResultFixture)));await flush();
+ expect(host.querySelector('[data-lab-portfolio-result]')).toBeNull();expect(host.querySelector('[data-lab-layout]')?.getAttribute("data-lab-layout")).toBe("full");
 });

@@ -6,6 +6,7 @@ export type Role = "admin" | "researcher" | "viewer";
 export type Timeframe = string;
 export type ChartRange = "1Y" | "3Y" | "All";
 
+export interface ForeignDisclosure { ticker: string; type: string; alignment: "same_date" | "prior_date"; fixup: boolean; first: string; last: string; uses?: {path:string;source:string;source_scope?:"portfolio_member";alignment:"same_date"|"prior_date";fixup:boolean}[] }
 export interface Provisional { provisional?: true; provisional_note?: string }
 export interface IndicatorParam { key: string; label: string; default: number; min: number; max: number; step: number | null; integer: boolean }
 export interface Needs { volume: boolean; intraday: boolean; breadth: boolean; second_symbol: boolean; fundamentals: boolean; derivatives: boolean; onchain: boolean }
@@ -18,6 +19,7 @@ export interface Catalogue extends Provisional {
   label: string; price_sources: string[]; operators: string[]; timeframes: Timeframe[];
   custom_days?: [number, number]; expand_modes?: string[]; max_leaves?: number; max_nodes?: number;
   node_kinds?: string[]; expressions?: string[]; max_query_bytes?: number; execution?: CatalogueExecution;
+  max_foreign?: number; foreign_volatility?: string | null; portfolio?: PortfolioCapability | null;
   max_conditions: number; max_spec_bytes: number; max_combos: number; indicators: Indicator[];
 }
 export interface CatalogueExecution {
@@ -33,7 +35,7 @@ export interface Instrument {
 }
 export interface TickerRow {
   ticker: string; first: string; last: string; has_volume: boolean; series: string[];
-  symbol?: string; basket?: string; native?: boolean; asset_type?: string; price_status?: string;
+  symbol?: string; basket?: string; native?: boolean; asset_type?: string; price_status?: string; market?: SavedMarket; trusted_market?: Market;
 }
 export type GlInstrumentRow =
   | { instrument: Instrument; status: "ready"; first: string; last: string; bars: number; tradable_from: string | null }
@@ -41,13 +43,13 @@ export type GlInstrumentRow =
 export interface InstrumentsResponse extends Provisional { label: string; instruments: GlInstrumentRow[] }
 export interface SeriesResponse extends Provisional {
   label: string; instrument: Instrument; id: string; tf: Timeframe; params: Record<string, number>;
-  adaptations?: string[]; outputs: string[]; dates: string[]; series: Record<string, (number | null)[]>; provenance: unknown;
+  adaptations?: string[]; foreign?: ForeignDisclosure[]; outputs: string[]; dates: string[]; series: Record<string, (number | null)[]>; provenance: unknown;
 }
 
 // ---- rule spec (Context/guru/backend/src/lab/rules.rs; Phase 7 spec §4–§7). Unknown keys are kept by every editor.
 export type ExpandMode = "last" | "first" | "point";
 export interface ValueOperand { value: number }
-export interface SeriesOperand { s: string; p?: Record<string, number>; tf?: Timeframe; out?: string; offset?: number; expand?: ExpandMode }
+export interface SeriesOperand { s: string; p?: Record<string, number>; tf?: Timeframe; out?: string; offset?: number; expand?: ExpandMode; symbol?: string; vs?: string; fixup?: "none" | "previous" }
 /** An expression or state operand: one key of rule-tree EXPR_KEYS plus its fields; read it through rule-tree.ts. */
 export type ExprOperand = { [key: string]: unknown };
 export type Operand = ValueOperand | SeriesOperand | ExprOperand;
@@ -87,7 +89,7 @@ export interface OptimizeDim { path: string; from: number; to: number; step: num
 export type Fill = "next_open" | "close";
 export interface Spec {
   v: 1; direction?: "long" | "short" | "both"; origin?: Origin; entry: EntrySpec; exit: ExitSpec; short_side?: ShortSide;
-  execution?: Execution; optimize?: OptimizeDim[]; [extra: string]: unknown;
+  execution?: Execution; optimize?: OptimizeDim[]; portfolio?: PortfolioSpec; [extra: string]: unknown;
 }
 
 // ---- run / optimize
@@ -119,7 +121,7 @@ export interface LedgerRow {
   borrow?: number; open?: boolean; entries?: LedgerFill[]; exits?: LedgerFill[];
 }
 export interface RunResult extends Provisional {
-  execution_model?: ExecutionModel; money?: MoneySummary; ledger?: LedgerRow[]; adaptations?: string[];
+  execution_model?: ExecutionModel; money?: MoneySummary; ledger?: LedgerRow[]; adaptations?: string[]; foreign?: ForeignDisclosure[];
   label: string; kind: "lab_simulation"; origin: ResponseOrigin | null; instrument: Instrument;
   from: string; to: string; start: Start; dates: string[]; close: number[]; equity: number[];
   gross_equity: number[]; bh: number[]; trades: Trade[]; stats: Stats; gross_stats: Stats; costs: Costs; provenance: unknown;
@@ -131,7 +133,7 @@ export interface Rank {
 }
 export interface OptimizeResult extends Provisional {
   money?: Pick<MoneySummary, "capital" | "basis">;
-  execution_model?: ExecutionModel; adaptations?: string[];
+  execution_model?: ExecutionModel; adaptations?: string[]; foreign?: ForeignDisclosure[];
   label: string; kind: "lab_optimization"; origin: ResponseOrigin | null; instrument: Instrument;
   from: string; to: string; start: Start; split: string | null; combos: number; threads: number; ms: number;
   dims: { path: string; values: number[] }[];
@@ -174,3 +176,14 @@ export interface LabErrorFields {
   message: string; status: number; kind: "engine" | "gateway" | "auth";
   engineStatus?: EngineStatus; label?: string; provisionalNote?: string; retryAfter?: number; read?: boolean;
 }
+
+// Phase 8 portfolios have their own result kind and never invent a single execution instrument.
+export interface PortfolioCapability { modes: string[]; max_universe: number; max_universe_list: number; max_open: number; max_combos: number; max_work: number; max_source_bars?:number;max_member_bars?:number;max_compiled_cells?:number;max_workers?:number; rebalance: string[]; instruments?: {ticker:string;type:string;market:Market}[]; baskets: {id:string;members:number;available_members?:number;membership_kind:string;supported?:boolean}[] }
+export interface PortfolioSpec { universe: {basket:string;tickers?:never}|{tickers:string[];basket?:never}; mode?: "signals"|"rotation"; score?: Operand; rank?: "highest"|"lowest"; max_open?:number; worst_rank_held?:number; rebalance?:"bar"|"W"|"M"|"Q"|"Y"; [extra:string]:unknown }
+export interface PortfolioMeta {mode:"signals"|"rotation";max_open:number;worst_rank_held:number;rank:"highest"|"lowest";rebalance:string|null;universe:{basket:string|null;members:number;admitted:number;refused:{ticker:string;reason:string}[]}}
+export interface Membership {kind:string;historical_membership_verified:false;note:string}
+export interface PortfolioTrade extends Trade {ticker:string;qty:number;notional:number;costs:number;rank:number;score:number|null;entry_signal:string}
+export interface PortfolioRunResult extends Provisional {kind:"lab_portfolio_simulation";label:string;origin:null;portfolio:PortfolioMeta;membership:Membership;reference:{ticker:string;type:"index"};foreign?:ForeignDisclosure[];execution_model:ExecutionModel;adaptations?:string[];from:string;to:string;dates:string[];equity:number[];gross_equity:number[];cash:number[];exposure:number[];positions:number[];bh:number[];trades:PortfolioTrade[];skipped:Record<string,number>;stats:Stats;gross_stats:Stats;money:{capital:number;final_equity:number;costs_total:number;currency:string};provenance:unknown}
+export type PortfolioOptimizeResult = Omit<OptimizeResult,"kind"|"instrument"|"start"|"costs"|"provenance"|"money"> & {kind:"lab_portfolio_optimization";portfolio:PortfolioMeta;membership:Membership;reference:{ticker:string;type:"index"};money:{capital:number;basis?:string}};
+export type LabRunResult = RunResult | PortfolioRunResult;
+export type LabOptimizeResult = OptimizeResult | PortfolioOptimizeResult;

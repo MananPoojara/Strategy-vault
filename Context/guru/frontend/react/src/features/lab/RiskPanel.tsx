@@ -58,7 +58,7 @@ export function RiskPanel({ spec, catalogue, instrument, onChange }: { spec: Spe
           onChange={(m) => onChange(withMode(spec, m))} />
         {money && <NumField label="Capital" value={ex.capital} min={0} max={1e12} onChange={(n) => n !== undefined && change("capital", n)} />}
         <label className="dfield">Size<select aria-label="Size" value={kind} onChange={(e) => onChange(withSizingKind(spec, e.target.value as SizingKind))}>
-          {sizeOptions.map((o) => <option key={o.value} value={o.value} disabled={(o.value === "units" || o.value === "value") && (!money || !cap.sizing.includes(o.value))}>{o.label}</option>)}
+          {sizeOptions.map((o) => <option key={o.value} value={o.value} disabled={(o.value === "units" || o.value === "value") && (!money || !cap.sizing.includes(o.value))}>{spec.portfolio&&o.value==="full"?"Equal allocation (1 / Max positions)":o.label}</option>)}
         </select></label>
         {kind !== "full" && <NumField label={SIZE[kind]} value={getAt(ex.sizing, kind) as number | undefined} min={kind === "units" ? 1 : 0}
           max={kind === "units" ? 1e9 : kind === "value" ? 1e12 : 100} step={kind === "units" ? 1 : null}

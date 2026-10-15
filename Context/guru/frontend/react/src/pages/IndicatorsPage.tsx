@@ -5,9 +5,14 @@ import * as lab from "../features/lab/client";
 import { COPY } from "../features/lab/labels";
 import { readLabQuery, writeLabQuery } from "../features/lab/url-state";
 import { editorState, initialLabState, labReducer, runKey } from "../features/lab/lab-state";
-import { runQuery, specProblems } from "../features/lab/spec-model";
+import { canonicalJson, runQuery, specProblems } from "../features/lab/spec-model";
 import { treeProblems } from "../features/lab/rule-tree";
 import { executionProblems, instrumentContext } from "../features/lab/execution-model";
+import { PortfolioPanel } from "../features/lab/PortfolioPanel";
+import { PortfolioResults } from "../features/lab/PortfolioResults";
+import { portfolioProblems, portfolioGridProblems } from "../features/lab/portfolio-model";
+import { ForeignProvider } from "../features/lab/ForeignFields";
+import { foreignDescription, foreignOptions, foreignProblems, type ForeignScope } from "../features/lab/foreign-model";
 import { availability } from "../features/lab/catalogue";
 import { defaultTicker, optionsFromGl, optionsFromTickers, savedMarket } from "../features/lab/instruments";
 import { ErrorNotice, LabErrorBoundary, Loading, ServerLabel } from "../features/lab/ui";
@@ -22,7 +27,7 @@ import { CustomizePanel } from "../features/lab/CustomizePanel";
 import { SavedStrategies } from "../features/lab/SavedStrategies";
 import { ReviewQueue } from "../features/lab/ReviewQueue";
 import type {
-  Catalogue, Indicator, InstrumentsResponse, LabStrategy, Market, Role, RunResult, Spec, TemplateResponse, TemplatesResponse, TickerRow,
+  Catalogue, Indicator, InstrumentsResponse, LabStrategy, Market, Role, LabRunResult, Spec, TemplateResponse, TemplatesResponse, TickerRow,
 } from "../features/lab/types";
 
 export function IndicatorsPage() {
@@ -52,7 +57,7 @@ function IndicatorsLab() {
   };
   const [role, setRole] = useState<Role | null>(null);
   const [data, setData] = useState<MarketData | null>(null);
-  const [result, setResult] = useState<RunResult | null>(null);
+  const [result, setResult] = useState<LabRunResult | null>(null);
   const [runError, setRunError] = useState<unknown>(null);
   const [running, setRunning] = useState(false);
   const [settings, setSettings] = useState<RunSettings>({ from: "", to: "", fees: "", slippage: "" });
@@ -68,6 +73,9 @@ function IndicatorsLab() {
   const [swapNote, setSwapNote] = useState("");
   const [savePrefill, setSavePrefill] = useState<{ name: string; seq: number } | undefined>();
   const { market, ticker } = state;
+  const portfolioContext=canonicalJson([market,state.spec.portfolio??null]);
+  const currentContext=useRef(portfolioContext);currentContext.current=portfolioContext;
+  const issuedContext=useRef(portfolioContext);
 
   useEffect(() => { getAccount().then((a) => setRole(a.user.role), () => {}); }, []); // the App shell handles sign-in
 
@@ -86,11 +94,15 @@ function IndicatorsLab() {
   const cat = loaded && "cat" in loaded ? loaded.cat : null;
   const options = useMemo(() => {
     if (!loaded || !("cat" in loaded)) return null;
-    return loaded.gl ? optionsFromGl(loaded.gl, allowedTypes) : optionsFromTickers(loaded.rows ?? [], allowedTypes);
+    return loaded.gl ? optionsFromGl(loaded.gl, allowedTypes) : optionsFromTickers(loaded.rows ?? [], allowedTypes, loaded.cat.portfolio?.instruments);
   }, [loaded, allowedTypes]);
+  // Signal sources are not constrained by a selected book template's execution types.
+  const signalOptions = useMemo(() => !loaded || !("cat" in loaded) ? [] : loaded.gl ? optionsFromGl(loaded.gl) : optionsFromTickers(loaded.rows ?? [], undefined, loaded.cat.portfolio?.instruments), [loaded]);
+  const foreignScope = useMemo<ForeignScope | null>(() => cat ? { catalogue: cat, ticker:state.spec.portfolio?"":ticker, market, options: signalOptions, spec: state.spec, portfolio:!!state.spec.portfolio } : null, [cat, ticker, market, signalOptions, state.spec]);
+  const comparisonOptions = useMemo(() => foreignScope ? foreignOptions(foreignScope) : [], [foreignScope]);
   const option = options?.find((o) => o.ticker === ticker);
   const savedMarketValue = savedMarket(market, option);
-  const instrument = useMemo(() => instrumentContext(market, option), [market, option]);
+  const instrument = useMemo(() => state.spec.portfolio?{kind:"portfolio",market}:instrumentContext(market, option), [market, option, state.spec.portfolio]);
 
   useEffect(() => {
     if (!options || options.some((o) => o.ticker === ticker && !o.disabled)) return;
@@ -112,6 +124,7 @@ function IndicatorsLab() {
   // A result belongs to one market and instrument: its numbers never stay on screen for another one.
   const clearRun = () => { runSeq.current++; setResult(null); setRunError(null); setRunning(false); };
   useEffect(clearRun, [market, ticker]);
+  useEffect(()=>{if(issuedContext.current!==portfolioContext)clearRun();},[portfolioContext]);
 
   useEffect(() => {
     setTemplates(null); setTemplatesError(null);
@@ -137,9 +150,9 @@ function IndicatorsLab() {
   }, [market, customize]);
 
   const openRow = useCallback((row: LabStrategy) => {
-    setTab("strategy"); opened.current = row.instrument; setSwapNote("");
+    setTab("strategy"); opened.current = row.spec.portfolio?null:row.instrument; setSwapNote("");
     dispatch({ type: "market", market: row.market === "crypto" ? "gl" : row.market });
-    dispatch({ type: "ticker", ticker: row.instrument });
+    if(!row.spec.portfolio)dispatch({ type: "ticker", ticker: row.instrument });
     dispatch({ type: "open", row, spec: row.spec });
     setCustomize(""); setOpenError(null); setReading(null); clearRun();
     writeLabQuery({ strategy: String(row.id), published: "", customize: "" });
@@ -156,7 +169,7 @@ function IndicatorsLab() {
         if (!snap) { setOpenError(new Error(`Published strategy ${query.published} was not found.`)); return; }
         opened.current = snap.instrument; setSwapNote("");
         dispatch({ type: "market", market: snap.market });
-        dispatch({ type: "ticker", ticker: snap.instrument });
+        if(!snap.spec.portfolio)dispatch({ type: "ticker", ticker: snap.instrument });
         dispatch({ type: "open", row: null, spec: snap.spec });
       }, (e: unknown) => !cancelled && setOpenError(e));
     }
@@ -165,21 +178,26 @@ function IndicatorsLab() {
 
   const changeMarket = (m: Market) => {
     if (m === market) return;
-    opened.current = null; setSwapNote("");
+    opened.current = null; setSwapNote(state.chips.some((chip) => chip.vs) ? "Chart comparisons were cleared for the new market; choose new instruments. Strategy source fields are kept for review." : "");
     dispatch({ type: "market", market: m });
     setCustomize(""); setReading(null); setOpenError(null);
     writeLabQuery({ customize: "", strategy: "", published: "" });
   };
 
+  const problemsFor = (spec: Spec) => cat ? [...specProblems(spec, cat), ...(cat.execution ? [...treeProblems(spec, cat), ...executionProblems(spec, cat, instrument)] : []), ...(foreignScope ? foreignProblems(spec, { ...foreignScope, spec }) : []), ...portfolioProblems(spec, cat, market, signalOptions), ...portfolioGridProblems(spec, cat)].filter((p, i, all) => all.indexOf(p) === i) : ["The engine catalogue is still loading."];
+  const assertRunnable = (spec: Spec) => { const issues = problemsFor(spec); if (issues.length) throw new Error(issues.join("\n")); };
+
   const run = async (spec: Spec = state.spec) => {
-    if (!ticker) return; // no selectable instrument on this market
+    if (!ticker && !spec.portfolio) return; // no selectable instrument on this market
     const n = ++runSeq.current;
+    const sentContext=canonicalJson([market,spec.portfolio??null]);issuedContext.current=sentContext;currentContext.current=sentContext;
     setResult(null); setRunError(null); setRunning(true);
     try {
+      assertRunnable(spec);
       const r = await lab.run(market, spec, {
         ticker, from: settings.from || undefined, to: settings.to || undefined, ...runQuery(spec, settings.fees, settings.slippage),
       });
-      if (n !== runSeq.current) return;
+      if (n !== runSeq.current || sentContext!==currentContext.current) return;
       setResult(r);
       dispatch({ type: "ran", key: runKey(spec, savedMarketValue, ticker), combos: 0 });
     } catch (e) {
@@ -189,8 +207,8 @@ function IndicatorsLab() {
     }
   };
 
-  const loadSeries = useCallback((q: { id: string; tf: string; p?: Record<string, number> }) => lab.series(market, { ...q, ticker }), [market, ticker]);
-  const problems = useMemo(() => (cat ? [...specProblems(state.spec, cat), ...(cat.execution ? [...treeProblems(state.spec, cat), ...executionProblems(state.spec, cat, instrument)] : [])].filter((p, i, all) => all.indexOf(p) === i) : []), [state.spec, cat, instrument]);
+  const loadSeries = useCallback((q: { id: string; tf: string; p?: Record<string, number>; vs?: string }) => lab.series(market, { ...q, ticker }), [market, ticker]);
+  const problems = problemsFor(state.spec);
   const methodNames = useMemo(() => Object.fromEntries(templates?.templates.map((t) => [t.method.id, t.method.name]) ?? []), [templates]);
   const glNote = loaded && "gl" in loaded ? loaded.gl?.provisional_note : undefined;
   const hasVolume = !!option?.hasVolume;
@@ -201,11 +219,12 @@ function IndicatorsLab() {
   if (loaded && "error" in loaded) work = <ErrorNotice error={loaded.error} market={market} />;
   else if (!cat || !options) work = <Loading text="Loading the Indicators lab…" />;
   else work = (
+    <ForeignProvider value={foreignScope!}>
     <div className={`lab-grid${tab === "strategy" ? "" : " lab-grid-focused"}`}>
       <div className="lab-library-slot" hidden={tab !== "strategy"}>
       <Part>
         <LibraryRail catalogue={cat} market={market} hasVolume={hasVolume} tf={state.tf}
-          onAdd={(ind) => { if (availability(ind, { market, hasVolume, tf: state.tf }).ok) dispatch({ type: "chip-add", indicator: ind }); }}
+          onAdd={(ind) => { if (availability(ind, { market, hasVolume, tf: state.tf, maxForeign: cat.max_foreign }).ok) dispatch({ type: "chip-add", indicator: ind }); }}
           onRead={(ind) => setReading((cur) => (cur?.id === ind.id ? null : ind))} />
       </Part>
       </div>
@@ -215,9 +234,10 @@ function IndicatorsLab() {
         <Part>
           {ticker ? (
             <Workbench market={savedMarketValue} ticker={ticker} tf={state.tf} range={state.range} catalogue={cat} chips={state.chips}
-              trades={result?.trades} loadSeries={loadSeries} instrumentLabel={option?.instrumentLabel}
+              trades={result?.kind==="lab_simulation"?result.trades:undefined} loadSeries={loadSeries} instrumentLabel={option?.instrumentLabel}
               onChipChange={(key, params) => dispatch({ type: "chip-set", key, params })}
-              onChipRemove={(key) => dispatch({ type: "chip-remove", key })} />
+              onChipRemove={(key) => dispatch({ type: "chip-remove", key })} comparisonOptions={comparisonOptions}
+              onChipVsChange={(key, vs) => dispatch({ type: "chip-vs", key, vs })} />
           ) : <div className="box empty">No instrument is available on this market.</div>}
         </Part>
         {/* No backtest yet: the rules take the whole row instead of leaving the right half empty. */}
@@ -225,6 +245,7 @@ function IndicatorsLab() {
           <Part>
             <div className="lab-rules-col">
             {openError ? <ErrorNotice error={openError} market={savedMarketValue} instrumentLabel={option?.instrumentLabel} /> : null}
+            <PortfolioPanel spec={state.spec} catalogue={cat} market={market} options={signalOptions} onChange={(spec)=>{clearRun();dispatch({type:"spec",spec});}}/>
             <RuleBuilder spec={state.spec} catalogue={cat} instrument={instrument} onChange={(spec) => dispatch({ type: "spec", spec })}
               settings={settings} onSettings={(patch) => setSettings((s) => ({ ...s, ...patch }))}
               problems={problems} running={running} onRun={() => void run()} />
@@ -232,19 +253,20 @@ function IndicatorsLab() {
           </Part>
           {backtestShown && <Part>
             {runError ? <ErrorNotice error={runError} market={savedMarketValue} instrumentLabel={option?.instrumentLabel} />
-              : result ? <RunResults result={result} market={savedMarketValue} />
+              : result ? result.kind==="lab_portfolio_simulation" ? <PortfolioResults result={result}/> : <RunResults result={result} market={savedMarketValue} />
               : <Loading text="Running backtest…" />}
           </Part>}
         </div>
-        {result && !runError && <Part><RunTables result={result} /></Part>}
+        {result?.foreign?.length && !runError ? <div className="rnote" role="note" data-lab-foreign-disclosure>{result.foreign.map((source) => <p key={source.ticker}>{foreignDescription(source)}</p>)}</div> : null}
+        {result?.kind==="lab_simulation" && !runError && <Part><RunTables result={result} /></Part>}
         </div>
         <div role="tabpanel" id="lab-panel-optimization" aria-labelledby="lab-tab-optimization" hidden={tab !== "optimization"} className="lab-tab-panel">
-        <p className="lab-tab-intro">Compare settings for <b>{ticker}</b>. Your strategy rules stay the same until you apply a result.</p>
+        <p className="lab-tab-intro">Compare settings for <b>{state.spec.portfolio?"the selected portfolio":ticker}</b>. Your strategy rules stay the same until you apply a result.</p>
         <Part key={`${market}|${ticker}`}>{/* a ticker change remounts it: an optimization belongs to one instrument */}
           <OptimizePanel spec={state.spec} catalogue={cat} market={savedMarketValue} role={role} dates={result?.dates ?? []}
-            onOptimize={(spec, split) => lab.optimize(market, spec, {
+            onOptimize={(spec, split) => { assertRunnable(spec); return lab.optimize(market, spec, {
               ticker, from: settings.from || undefined, to: settings.to || undefined, ...runQuery(spec, settings.fees, settings.slippage), split,
-            })}
+            }); }}
             onApply={(spec) => { setTab("strategy"); dispatch({ type: "spec", spec }); void run(spec); }}
             onTried={(n) => dispatch({ type: "tried", n })} tried={state.tried} instrumentLabel={option?.instrumentLabel} />
         </Part>
@@ -271,6 +293,7 @@ function IndicatorsLab() {
         </div>
       </div>
     </div>
+    </ForeignProvider>
   );
 
   return (

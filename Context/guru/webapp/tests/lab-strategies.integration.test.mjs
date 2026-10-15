@@ -106,6 +106,21 @@ await test('saved lab strategies: ownership, versions, review and frozen YT snap
       for (const strategy of [crypto, gl]) assert.equal((await call(`${S}/${strategy.id}/publish`, { cookie: admin, method: 'POST', body: { version: 1 } })).status, 409);
       assert.equal((await call(`${S}/${gl.id}/submit`, { cookie: owner, method: 'POST', body: { version: 1 } })).status, 400);
     });
+    await t.test('portfolio drafts and copies stay research-only', async () => {
+      const spec = { ...SPEC, execution: { capital: 100000 }, portfolio: { universe: { tickers: ['SPY', 'QQQ'] }, max_open: 2 } };
+      const created = await call(S, { cookie: owner, method: 'POST', body: { name: 'My portfolio', spec, market: 'us', instrument: 'portfolio:list' } });
+      assert.equal(created.status, 201, created.text);
+      const portfolio = created.json();
+      assert.equal(portfolio.publishable, false);
+      assert.deepEqual(portfolio.spec, spec);
+      const submit = await call(`${S}/${portfolio.id}/submit`, { cookie: owner, method: 'POST', body: { version: 1 } });
+      assert.equal(submit.status, 400, submit.text); assert.match(submit.json().error, /research-only/);
+      const copy = await call(`${S}/${portfolio.id}/duplicate`, { cookie: owner, method: 'POST' });
+      assert.equal(copy.status, 201, copy.text); assert.equal(copy.json().publishable, false);
+      assert.deepEqual(copy.json().spec, spec);
+      assert.equal((await call(`${S}/${portfolio.id}`, { cookie: other })).status, 404);
+      assert.ok(!(await call(`${S}/published`, { cookie: viewer })).json().some(s => s.id === portfolio.id));
+    });
     await t.test('a customized variant keeps its origin through edit, copy and publish', async () => {
       const ORIGIN = { book: 'stc9', method: 'rsi2_4', template_version: 1 };
       const spec = { ...SPEC, origin: ORIGIN };

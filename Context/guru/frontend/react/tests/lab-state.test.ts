@@ -49,3 +49,8 @@ it("submit readiness: unchanged row, same instrument, fresh successful run", () 
   expect(labReducer(s, { type: "tried", n: 3 }).tried).toBe(4);
   expect(initialLabState(readLabQuery("#/indicators")).spec).toEqual(defaultSpec());
 });
+it("uses a portfolio save/run identity independently of the chart ticker",()=>{
+ const spec={...defaultSpec(),portfolio:{universe:{basket:"nifty50"},mode:"signals" as const}};
+ const state={...start(),spec};expect(editorState(state,"in").ticker).toBe("portfolio:nifty50");
+ expect(runKey(spec,"in","NIFTY 50")).toBe(runKey(spec,"in","NIFTY BANK"));
+});

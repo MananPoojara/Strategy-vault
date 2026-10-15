@@ -8,7 +8,7 @@ export function optimizablePaths(spec: Spec, cat: Catalogue): OptimizableSetting
   const out: OptimizableSetting[] = [], both = spec.direction === "both";
   const groupOf = (root: string) => {
     const short = root.startsWith("short_side."), prefix = short ? "Short " : both ? "Long " : "", base = root.replace(/^short_side\./, "");
-    const text = base === "entry.all" ? "entry" : base === "exit.any" ? "exit" : "entry order";
+    const text = base === "portfolio.score" ? "rank score" : base === "entry.all" ? "entry" : base === "exit.any" ? "exit" : "entry order";
     return prefix ? prefix + text : text[0].toUpperCase() + text.slice(1);
   };
   walkSpec(spec, (item) => {
@@ -40,5 +40,6 @@ export function optimizablePaths(spec: Spec, cat: Catalogue): OptimizableSetting
     const risk = "risk_pct" in z;
     out.push({ path: `execution.sizing.${risk ? "risk_pct" : "pct_equity"}`, label: risk ? "Risk per trade · %" : "Position size · % of equity", group: "Position size", current: risk ? Number(z.risk_pct) : Number(z.pct_equity), min: risk ? 0.25 : 5, max: 100, step: risk ? 0.25 : 5, integer: false });
   }
+  if(spec.portfolio){const p=spec.portfolio,cap=cat.portfolio;out.push({path:"portfolio.max_open",label:"Max positions",group:"Portfolio",current:p.max_open??1,min:1,max:cap?.max_open??50,step:1,integer:true});if(p.mode==="rotation")out.push({path:"portfolio.worst_rank_held",label:"Worst rank held",group:"Portfolio",current:p.worst_rank_held??p.max_open??1,min:1,max:cap?.max_universe??120,step:1,integer:true});}
   return out;
 }
