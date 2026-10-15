@@ -39,11 +39,32 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || (def.book=="bllstr" && crate::books::bllstr::reviewed_daily_index(def.id))
         || (def.book=="sbma" && crate::books::sbma::next_reviewed_stock_rule(def.id))
         || (def.book=="sbma" && crate::books::sbma::four_reviewed_stock_rule(def.id))
+        || (def.book=="kfsc" && crate::books::kfsc::reviewed_stock_rule(def.id))
         || (def.book=="ehrs" && crate::books::ehrs::reviewed_sinetrend(def.id))
         || (def.book=="elcim" && def.id==crate::books::elcim_account::ID)
 }
 fn reviewed_adaptive_rule(def:&StrategyDef)->bool {
     def.book=="kftsm" && member(def.id,&["kftsm_kama","kftsm_adapt_exp","kftsm_vidya","kftsm_adapt_r2","kftsm_adapt_rsi","kftsm_swg","kftsm_swing","kftsm_raschke_first_cross","kftsm_outside_day","kftsm_fc_bb_abx"])
+}
+
+#[cfg(test)]
+mod short_course_policy_tests {
+    use super::*;
+    #[test]
+    fn exact_short_course_rules_require_actual_stocks_and_do_not_widen_other_sources() {
+        for &id in crate::books::kfsc::REVIEWED_STOCK_IDS {
+            let d=crate::books::kfsc::catalogue().into_iter().find(|d|d.id==id).unwrap();
+            assert!(reviewed_cash_rule(&d));let p=policy(&d);assert_eq!(p.allowed_types,&["individual_stock"]);
+            assert!(p.source_basis.contains("source convention"));assert!(p.source_basis.contains("idealized"));
+            assert!(check_native(&d,"AAPL",&NativeEvidence::us_test_fixture()).is_none());
+            for symbol in ["NIFTY 50","SPX","SPY","QQQ"] {assert!(check(&d,symbol,false).is_some());}
+            let mut wrong=d;wrong.book="kftsm";assert!(!reviewed_cash_rule(&wrong));
+        }
+        for id in ["kfsc_macd","kfsc_regression_band","kfsc_stoch"] {
+            let d=crate::books::kfsc::catalogue().into_iter().find(|d|d.id==id).unwrap();
+            assert!(!reviewed_cash_rule(&d));assert_eq!(policy(&d).requirement,"source_review_required");
+        }
+    }
 }
 
 /// Reviewed keys include both the book and the exact rule identifier. Adding a
@@ -64,6 +85,10 @@ pub fn policy(def:&StrategyDef)->Policy {
     p
 }
 fn base_policy(def:&StrategyDef)->Policy {
+    if def.book=="kfsc" && crate::books::kfsc::reviewed_stock_rule(def.id) {
+        let mut p=stock("Kaufman, A Short Course in Technical Trading: only the exact 80/10 SMA agreement, 20/5 divided percentage band and 20/2 literal price-level Excel sample-SD interpretation. Printed52,70,97-102,123-124; source/hash and selected-stock evidence scope: library/kfsc/REVIEW-2026-10-15-THREE.md. Actual individual stocks only; these are declared selected-stock research applications, not original AMR/Amazon charts, historical populations or book-performance reproduction. The fixed source convention explicitly chooses completed-close signals with idealized same-close fills, flat start, full observed warmup, one position, equality and opposite-band reversal conventions. The Bollinger prose/formula conflict is disclosed rather than silently resolved. Terminal-close entries remain open; estimated open liquidation costs are separate from filled exits. Band shorts are hypothetical without certified borrow, margin or financing. Adjusted quote sources and historical membership remain qualified; no index/ETF or basket portfolio admission is inherited.");
+        p.market_adaptation=true;return p;
+    }
     if def.book=="sbma" && crate::books::sbma::four_reviewed_stock_rule(def.id) {
         let mut p=stock("Burns Moving Averages 101, physical PDF58-60/64/67: four exact long/cash moving-average pairs. Source rules and full chronological selected AAPL/RELIANCE ledgers independently reviewed; native host/API integration checked separately in library/sbma/INDEPENDENT-FOUR-LONG-REVIEW-2026-10-15.md. Actual individual stocks only. Full supplied earlier history is retained; EMA first-n SMA seed, strict equality, flat test start and idealized signal-close/next-actual-open fills are declared conventions. Truncating EMA150 warmup changes selected signals. Original charts, historical stock population, capital sizing and book performance are not reproduced; quote adjustments, membership and execution remain qualified. Final open liquidation estimates are separate from actual filled exit orders.");
         p.market_adaptation=true;return p;
@@ -234,6 +259,16 @@ pub fn metadata_json(def:&StrategyDef)->String {
     let mut json=format!("{{\"requirement\":\"{}\",\"allowed_types\":[{}],\"preferred_basket\":{},\"execution_scope\":\"{}\",\"source_basis\":\"{}\",\"market_adaptation\":{},\"source_performance_reproduced\":false,\"limitations\":\"Compatibility is only an instrument check. Required source filters, data, currency/tick units, corporate actions, fill ordering and accounting must pass separate checks. Current constituent snapshots do not establish historical membership; retrospective selection has survivorship bias.\"}}",p.requirement,p.allowed_types.iter().map(|s|format!("\"{s}\"")).collect::<Vec<_>>().join(","),p.preferred_basket.map_or("null".into(),|s|format!("\"{s}\"")),p.execution_scope,escape(p.source_basis),p.market_adaptation);
     json.pop();
     json.push_str(&format!(",\"source_rule_reviewed\":{},\"independent_selected_ledger_checked\":{}",reviewed_cash_rule(def),reviewed_cash_rule(def)));
+    if def.book=="kfsc" && crate::books::kfsc::reviewed_stock_rule(def.id) {
+        let convention=if def.id=="kfsc_bollinger" {
+            "Fixed chosen printed price-level sample-SD formula despite conflicting changes prose; completed-close signals and idealized same-close fills; center equality and same-close opposite-band reversal; terminal entries remain open."
+        } else if def.id=="kfsc_pct_band" {
+            "Fixed divided lower band MA/1.05; strict completed-close penetration and idealized same-close fills; center equality and same-close opposite-band reversal; terminal entries remain open."
+        } else {
+            "Fixed selected80/10 SMA example; both slopes up enters, either down exits, equality holds; completed-close signals and idealized same-close fills; terminal entries remain open."
+        };
+        json.push_str(&format!(",\"source_convention\":\"{}\"",escape(convention)));
+    }
     let currency_admitted=if p.native_currency_constraint.is_some(){"false"}else if p.allowed_types.contains(&"individual_stock"){"true"}else{"null"};
     json.push_str(&format!(",\"source_price_unit\":{},\"native_india_currency_admitted\":{currency_admitted},\"native_currency_constraint\":{}}}",p.source_price_unit.map_or("null".into(),|s|format!("\"{}\"",escape(s))),p.native_currency_constraint.map_or("null".into(),|s|format!("\"{}\"",escape(s)))));
     json

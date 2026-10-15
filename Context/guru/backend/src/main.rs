@@ -652,6 +652,29 @@ fn params_of(q: &BTreeMap<String, String>) -> Params {
 /// Existing methods keep their previous parsing contract until separately reviewed.
 fn checked_params_of(q: &BTreeMap<String, String>) -> Result<Params,String> {
     let p=params_of(q);
+    if let Some(id)=q.get("id").filter(|id|books::kfsc::reviewed_stock_rule(id)) {
+        let schema=books::kfsc::params(id).ok_or("Unknown reviewed Short Course configuration")?;
+        for (key,text) in q {
+            if let Some(name)=key.strip_prefix("p.") {
+                let value=text.parse::<f64>().map_err(|_|format!("Invalid reviewed Short Course parameter: {key}"))?;
+                if let Some(note)=books::kfsc::validate_reviewed(id,&Params::from([(name.into(),value)])) {return Err(note.into());}
+            }
+            if let Some(name)=key.strip_prefix("g.") {
+                let setting=schema.iter().find(|s|s.key==name).ok_or_else(||format!("Unknown reviewed Short Course grid parameter: {key}"))?;
+                // Check raw endpoints and counts before the legacy parser rounds
+                // to1e-9 or converts a potentially unbounded float count to usize.
+                let values:Vec<f64>=text.split(':').map(|v|v.trim().parse::<f64>()).collect::<Result<_,_>>().map_err(|_|format!("Invalid reviewed Short Course grid: {key}"))?;
+                let allowed=values.iter().all(|v|v.is_finite()) && match values.as_slice() {
+                    [v]=>*v==setting.def,
+                    [lo,hi,step]=>*lo==setting.def && *hi==setting.def && *step>0.,
+                    _=>false,
+                };
+                if !allowed {return Err(format!("Short Course grid {key} covers only one exact reviewed setting; finite endpoints, positive finite step and unchanged unrounded values are required"));}
+            }
+        }
+        if let Some(note)=books::kfsc::validate_reviewed(id,&p) {return Err(note.into());}
+        return Ok(p);
+    }
     if let Some(id)=q.get("id").filter(|id|books::sbma::four_reviewed_stock_rule(id)) {
         for (key,text) in q {
             if let Some(name)=key.strip_prefix("p.") {
@@ -1329,6 +1352,26 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reviewed_short_course_raw_values_and_grids_reject_rounded_or_unbounded_variants() {
+        for &id in books::kfsc::REVIEWED_STOCK_IDS {
+            let base=BTreeMap::from([("id".into(),id.into())]);assert!(checked_params_of(&base).is_ok());
+            for s in books::kfsc::params(id).unwrap() {
+                for prefix in ["p.","g."] {
+                    let mut q=base.clone();q.insert(format!("{prefix}{}",s.key),s.def.to_string());assert!(checked_params_of(&q).is_ok());
+                    for raw in ["garbage".to_string(),"".into(),"NaN".into(),"inf".into(),format!("{:.11}",s.def+1e-10)] {
+                        q.insert(format!("{prefix}{}",s.key),raw);assert!(checked_params_of(&q).is_err(),"{q:?}");
+                    }
+                }
+                let mut q=base.clone();q.insert(format!("g.{}",s.key),format!("{}:{}:0.1",s.def,s.def));assert!(checked_params_of(&q).is_ok());
+                for raw in ["0:inf:1","0:1:1e-300","-1e308:1e308:1","0:1:inf","0:0:0","0:0:-1","0:0:1:1"] {
+                    q.insert(format!("g.{}",s.key),raw.into());assert!(checked_params_of(&q).is_err(),"{q:?}");
+                }
+            }
+            for key in ["p.unknown","g.unknown"] {let mut q=base.clone();q.insert(key.into(),"0".into());assert!(checked_params_of(&q).is_err());}
+        }
+        let legacy=BTreeMap::from([("id".into(),"kfsc_macd".into()),("p.fast".into(),"garbage".into())]);assert!(checked_params_of(&legacy).is_ok());
+    }
     #[test]
     fn reviewed_four_burns_queries_and_grids_fail_closed_without_changing_legacy() {
         for id in books::sbma::FOUR_REVIEWED_STOCK_IDS {

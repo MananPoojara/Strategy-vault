@@ -1,10 +1,22 @@
 //! Perry J. Kaufman, *A Short Course in Technical Trading* (Wiley 2003, 339 PDF pages, text layer).
-//! Page refs: printed page (PDF page = printed + 13). Only rules the book states exactly are Live; systems already in
-//! the vault (mostly kftsm, the same author's TSM 4th ed.) are listed as duplicates in library/kfsc/README.md and not
-//! re-coded. Every default is the book's literal number; readings the book leaves open are labelled in `notes`.
+//! Page refs: printed page (PDF page = printed + 13). Catalogue Live is not source admission.
+//! Only the three exact configurations below have a bounded stock research contract;
+//! source choices and execution conventions are separate from book-reported results.
 use crate::connors::{sma, true_range, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "kfsc";
+
+/// Exact bounded research configurations; other catalogue entries inherit no review.
+pub const REVIEWED_STOCK_IDS: &[&str] = &["kfsc_two_ma","kfsc_pct_band","kfsc_bollinger"];
+pub fn reviewed_stock_rule(id: &str) -> bool {REVIEWED_STOCK_IDS.contains(&id)}
+pub fn validate_reviewed(id: &str, p: &Params) -> Option<&'static str> {
+    if !reviewed_stock_rule(id) {return None;}
+    let schema=params(id)?;
+    if p.iter().any(|(key,value)| !value.is_finite() || !schema.iter().any(|s|s.key==key && s.def==*value)) {
+        return Some("This bounded Short Course review covers only the exact selected 80/10 SMA, 20/5 divided percentage band or 20/2 literal price-level sample-SD formula, with the fixed declared idealized completed-close execution convention. Changed, unknown or nonfinite settings need separate source and ledger review; they cannot inherit this configuration's review.");
+    }
+    None
+}
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let d = |id, name, group, dir, status, rules, notes| StrategyDef {
@@ -17,18 +29,18 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "F|\"1. Create a 20-day moving average (MA) ... 2. Multiply the current value of the moving average by 1.05 to get the upper band ... 3. Divide the current value of the moving average by 1.05 to get the lower band.\" (p.97)",
             "E|\"We trade a percentage band the same way as a channel, buying at the bottom, selling at the top, and exiting in the middle. It's a little easier to wait for a penetration of the band\" (p.97); \"As a countertrend trader you would sell when prices penetrated the top band and buy when prices penetrated the bottom band\" (Review answer 25, p.311)",
             "X|\"we wouldn't get out of the trade until the middle of the band is touched\" (p.98): exit at the moving average",
-        ], "Reading [book silent on bar mechanics]: penetration and touch are judged on the close and filled at the close (the book's own rule 'Trade on the close, not on the next open', p.70). Long: close < MA/1.05; short: close > MA*1.05; exit when the close reaches the MA. A close beyond the other band exits and reverses. Instrument swap only (the book trades stocks/futures)."),
+        ], "Source convention: selected 20/5 divided-lower-band interpretation (p.97), strict completed-close penetration, center equality exits, and opposite-band same-close reversal. The author recommends calculating just before close (p.70); using a completed daily close and filling at that close is an idealized research approximation. Actual individual stocks only; short exposure is hypothetical, without certified borrowing, financing or execution. Flat test start, full observed warmup, one position, terminal close entries retained as open. Original AMR figures, population and performance are not reproduced."),
         d("kfsc_bollinger", "Bollinger band countertrend (20-day, 2 SD)", "Ch 6 · Channels and bands", "Long/Short", Live, &[
             "F|\"Upper Bollinger band = average(A81:A100) + 2 × stdev(A81:A100); Lower Bollinger band = average(A81:A100) − 2 × stdev(A81:A100)\" (Excel, p.99)",
             "E|Bands are traded like the percentage band: buy on a penetration of the lower band, sell on a penetration of the upper band (p.97-101; Review answer 25, p.311)",
             "X|Exit at the centre of the band (the 20-day average): \"prices do not return to the center of the band until August\" (p.100-101)",
-        ], "Std dev = Excel STDEV of the 20 closes (sample, n-1) as in the book's formula; the prose says 'closing price changes' but the printed formula uses prices and is followed. Same close-based reading as kfsc_pct_band. p.period=200 = the book's 200-day example (Fig 6.8)."),
+        ], "Source convention 0 chooses the literal printed Excel STDEV of 20 closing price levels (sample, n-1), despite nearby prose saying closing price changes (p.99). This is a clearly selected formula interpretation, not a claim that the conflict is resolved. Strict completed-close penetration, center equality exit and opposite-band same-close reversal use idealized close fills (p.70 recommends preclose calculation). Actual individual stocks only; shorts are hypothetical. Flat test start, full warmup, one position, terminal close entries remain open. Other periods, including the 200-day example, are separate held configurations; original chart results are not reproduced."),
         // ------------------------------------------------ Ch 8 risk control: two trends
         d("kfsc_two_ma", "Two moving average system (both trends up, long only)", "Ch 8 · Controlling the risk of a trade", "Long", Live, &[
             "F|\"Choose a long calculation period (between 50 and 200 days) and a short calculation period (between 5 and 30 days) for two moving averages.\" (p.123)",
             "E|\"Buy when both trendlines are up\" (p.124)",
             "X|\"and sell when one trendline turns down (the fast one will always turn down before the slow one).\" (p.124)",
-        ], "Defaults 80 / 10 = the book's Amazon example (Fig 8.2, p.124: 'we plot both an 80-day moving average ... and a 10-day moving average'). 'Up' = today's average above yesterday's (the book's trend definition, p.52). Long only: 'you can only be long during this period when both trendlines are moving up' (Fig 8.2). Orders at the close (p.70)."),
+        ], "Source convention 0 selects 80/10 from the Amazon example (Fig8.2 p.124), rather than universal mandatory periods. Up/down compares today's full SMA with yesterday's (p.52); equality holds and either falling SMA exits, including slow-first cases. Long/cash only on actual individual stocks. Completed-close same-close fills are an idealized research convention: p.70 recommends preclose calculation. Flat test start, full observed warmup, one position; terminal-close entries remain open. Original Amazon chart, population and performance are not reproduced."),
         // ------------------------------------------------ Ch 14 momentum and MACD
         d("kfsc_macd", "MACD signal-line crossover (Kaufman 20/40/9)", "Ch 14 · Momentum and MACD", "Long/Short", Live, &[
             "F|\"slow = 40 and fast = 20 ... Step 2. Calculate the slow trendline using the smoothing value .0243. Step 3. Calculate the fast trendline using the smoothing value .0476. Step 4. The MACD line ... is calculated as the fast trendline minus the slow trendline. Step 5. The signal line is the 9-day smoothing (using a percentage of .10) of the MACD line.\" (p.204)",
@@ -111,9 +123,9 @@ fn s_static(s: &str) -> &'static str {
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     Some(match id {
-        "kfsc_pct_band" => vec![p("period", "Moving average period", 20., 2., 250., 1.), p("pct", "Band (%): upper = MA×(1+pct), lower = MA/(1+pct)", 5., 0.5, 20., 0.5)],
-        "kfsc_bollinger" => vec![p("period", "Average / std-dev period", 20., 5., 250., 1.), p("nsd", "Band std devs", 2., 0.5, 4., 0.1)],
-        "kfsc_two_ma" => vec![p("slow", "Slow moving average", 80., 50., 200., 1.), p("fast", "Fast moving average", 10., 5., 30., 1.)],
+        "kfsc_pct_band" => vec![p("period", "Selected source MA period", 20., 20., 20., 1.), p("pct", "Selected band (%): upper MA×1.05, lower MA/1.05", 5., 5., 5., 1.)],
+        "kfsc_bollinger" => vec![p("period", "Selected source MA / sample-SD period", 20., 20., 20., 1.), p("nsd", "Selected price-level sample SDs (literal Excel formula)", 2., 2., 2., 1.)],
+        "kfsc_two_ma" => vec![p("slow", "Selected example slow SMA", 80., 80., 80., 1.), p("fast", "Selected example fast SMA", 10., 10., 10., 1.)],
         "kfsc_macd" => vec![p("fast", "Fast period", 20., 2., 60., 1.), p("slow", "Slow period", 40., 5., 120., 1.), p("signal", "Signal period", 9., 2., 30., 1.), p("kind", "Constant: 0 = 1/(n+1) as printed, 1 = 2/(n+1)", 0., 0., 1., 1.)],
         "kfsc_stoch" => vec![p("period", "Stochastic days N", 10., 3., 40., 1.), p("prior", "Range: 0 = N days to today (Fig 15.2 numbers), 1 = N days before today (prose)", 0., 0., 1., 1.), p("over", "Overbought line", 80., 50., 95., 1.), p("under", "Oversold line", 20., 5., 50., 1.)],
         "kfsc_dsm" => vec![p("mom", "Momentum days", 10., 1., 40., 1.), p("smooth", "Smoothing period (each pass)", 20., 2., 60., 1.), p("kind", "Constant: 0 = 1/(n+1) (.0476 printed), 1 = 2/(n+1)", 0., 0., 1., 1.)],
@@ -132,10 +144,14 @@ struct Bk<'a> {
     to: usize,
     out: Vec<Trade>,
     cur: Option<Trade>,
+    terminal_close_entry: bool,
 }
 
 impl<'a> Bk<'a> {
-    fn new(x: &'a Ctx<'a>, from: usize, to: usize) -> Self { Bk { x, from, to, out: vec![], cur: None } }
+    fn new(x: &'a Ctx<'a>, from: usize, to: usize) -> Self { Bk { x, from, to, out: vec![], cur: None, terminal_close_entry: false } }
+    fn source_close(x: &'a Ctx<'a>, from: usize, to: usize) -> Self {
+        let mut b=Self::new(x,from,to);b.terminal_close_entry=true;b
+    }
     fn pos(&self) -> i8 { self.cur.as_ref().map_or(0, |t| t.dir as i8) }
     fn exit(&mut self, i: usize, px: f64, why: &str) {
         if let Some(mut t) = self.cur.take() {
@@ -143,11 +159,12 @@ impl<'a> Bk<'a> {
             self.out.push(t);
         }
     }
-    /// Target position `dir` at price px on bar i (close-out then entry). Entries only inside [from, to).
+    /// Target position after closing the old holding. Only source_close permits
+    /// an actual terminal-close entry, retained as open with estimated exit costs.
     fn go(&mut self, i: usize, dir: i8, px: f64, kind: &'static str, why: &str) {
         if i < self.from || dir == self.pos() { return; }
         if self.cur.is_some() { self.exit(i, px, why); }
-        if dir != 0 && i < self.to {
+        if dir != 0 && (i < self.to || (self.terminal_close_entry && i == self.to)) {
             self.cur = Some(Trade { dir: dir as f64, legs: vec![Leg { i, px, w: 1. }], exit_i: i, exit_px: px, reason: String::new(), entry_kind: kind, signal_i: i, open: false, exits: vec![] });
         }
     }
@@ -220,7 +237,7 @@ fn avg3(v: &[f64]) -> Vec<f64> { (0..v.len()).map(|i| if i >= 2 { (v[i - 2] + v[
 /// Countertrend band book: long below `lo`, short above `up`, exit when the close reaches `mid` (all at the close).
 fn band_ct(x: &Ctx, from: usize, to: usize, lo: &[f64], mid: &[f64], up: &[f64]) -> Vec<Trade> {
     let c = &x.c;
-    let mut b = Bk::new(x, from, to);
+    let mut b = Bk::source_close(x, from, to);
     for i in from..=to {
         if !(mid[i].is_finite() && lo[i].is_finite() && up[i].is_finite()) { continue; }
         match b.pos() {
@@ -239,6 +256,7 @@ fn band_ct(x: &Ctx, from: usize, to: usize, lo: &[f64], mid: &[f64], up: &[f64])
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let schema = params(id)?;
+    if validate_reviewed(id,p).is_some() {return None;}
     if from > to || to >= x.r.len() { return None; }
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(0., |d| d.def));
     let u = |k: &str| g(k).round().max(0.) as usize;
@@ -264,7 +282,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "kfsc_two_ma" => {
             // direction of an N-day average = sign of c[i] - c[i-N] (exact; avoids running-sum noise on flat days)
             let (sn, fnn) = (u("slow").max(1), u("fast").max(1));
-            let mut b = Bk::new(x, from, to);
+            let mut b = Bk::source_close(x, from, to);
             for i in from.max(sn.max(fnn))..=to {
                 let (su, sd_) = (c[i] > c[i - sn], c[i] < c[i - sn]);
                 let (fu, fd) = (c[i] > c[i - fnn], c[i] < c[i - fnn]);
@@ -337,6 +355,58 @@ mod tests {
     use crate::Row;
     fn mk(hlc: &[(f64, f64, f64)]) -> Vec<Row> {
         hlc.iter().enumerate().map(|(i, &(h, l, c))| Row { ticker: "T".into(), date: format!("1996-01-{:02}", i + 1), open: c, high: h, low: l, close: c, volume: None }).collect()
+    }
+    #[test]
+    fn reviewed_short_course_accepts_only_exact_finite_source_choices() {
+        for &id in REVIEWED_STOCK_IDS {
+            assert!(validate_reviewed(id,&Params::new()).is_none());
+            for s in params(id).unwrap() {
+                assert!(validate_reviewed(id,&Params::from([(s.key.into(),s.def)])).is_none());
+                for v in [s.def+1.,s.def+1e-10,f64::NAN,f64::INFINITY] {
+                    assert!(validate_reviewed(id,&Params::from([(s.key.into(),v)])).is_some());
+                }
+            }
+            assert!(validate_reviewed(id,&Params::from([("unknown".into(),0.)])).is_some());
+        }
+        assert!(!reviewed_stock_rule("kfsc_regression_band"));
+        assert!(!reviewed_stock_rule("kfsc_macd"));
+    }
+    #[test]
+    fn reviewed_bands_fill_terminal_close_and_retain_open_holding() {
+        let mut prices=vec![(100.,100.,100.);21];prices[20]=(80.,80.,80.);
+        let r=mk(&prices);let x=Ctx::new(&r,&r,&[]);
+        for id in ["kfsc_pct_band","kfsc_bollinger"] {
+            let t=run(id,&x,19,20,&Params::new()).unwrap();assert_eq!(t.len(),1);
+            assert_eq!((t[0].legs[0].i,t[0].exit_i,t[0].open),(20,20,true));
+        }
+        let mut legacy=Bk::new(&x,19,20);legacy.at_close(20,1,"legacy");assert!(legacy.done().is_empty());
+    }
+    #[test]
+    fn reviewed_percentage_reverses_after_center_exit_without_overlap() {
+        let mut prices=vec![(100.,100.,100.);20];
+        prices.extend([(80.,80.,80.),(80.,80.,80.),(120.,120.,120.),(98.,98.,98.)]);
+        let r=mk(&prices);let x=Ctx::new(&r,&r,&[]);
+        let t=run("kfsc_pct_band",&x,19,23,&Params::new()).unwrap();assert_eq!(t.len(),2);
+        assert_eq!((t[0].dir,t[0].legs[0].i,t[0].exit_i,t[0].open),(1.,20,22,false));
+        assert_eq!((t[1].dir,t[1].legs[0].i,t[1].exit_i,t[1].open),(-1.,22,23,false));
+    }
+    #[test]
+    fn reviewed_two_ma_retains_terminal_entry_and_slow_first_exit() {
+        let mut prices=vec![(100.,100.,100.);82];
+        prices[0]=(1000.,1000.,1000.);prices[1]=(1000.,1000.,1000.);
+        prices[80]=(1100.,1100.,1100.);prices[81]=(150.,150.,150.);
+        let r=mk(&prices);let x=Ctx::new(&r,&r,&[]);
+        let t=run("kfsc_two_ma",&x,80,80,&Params::new()).unwrap();assert_eq!(t.len(),1);assert!(t[0].open);
+        let t=run("kfsc_two_ma",&x,80,81,&Params::new()).unwrap();assert_eq!(t.len(),1);
+        assert_eq!((t[0].legs[0].i,t[0].exit_i,t[0].open),(80,81,false));
+        assert!(x.c[81]>x.c[71]);assert!(x.c[81]<x.c[1]);
+    }
+    #[test]
+    fn reviewed_percentage_center_equality_exits_and_band_equality_is_no_entry() {
+        let r=mk(&[(100.,100.,100.);3]);let x=Ctx::new(&r,&r,&[]);
+        // Use explicit levels to isolate touch/strictness from MA arithmetic.
+        let t=band_ct(&x,0,2,&[100.,101.,99.],&[100.,102.,100.],&[100.,103.,101.]);
+        assert_eq!(t.len(),1);assert_eq!((t[0].legs[0].i,t[0].exit_i,t[0].open),(1,2,false));
     }
     #[test]
     fn raw_stochastic_matches_fig_15_2() {

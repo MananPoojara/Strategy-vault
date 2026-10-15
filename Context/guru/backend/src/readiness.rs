@@ -16,7 +16,34 @@ fn event_column(name: &str) -> bool {
     ["LONG_FILLS", "SHORT_FILLS", "LONG_STOPS", "SHORT_STOPS", "VIXFILL_", "VIXUP_", "VIXDN_"].iter().any(|prefix| name.starts_with(prefix))
 }
 
+#[cfg(test)]
+mod short_course_readiness_tests {
+    use super::*;
+    #[test]
+    fn short_course_requires_real_warmup_and_exact_source_parameters() {
+        let mut rows:Vec<crate::Row>=(0..100).map(|i|crate::Row {ticker:"RELIANCE".into(),date:format!("2020-{:02}-{:02}",i/28+1,i%28+1),open:100.,high:101.,low:99.,close:100.,volume:None}).collect();
+        for &id in books::kfsc::REVIEWED_STOCK_IDS {
+            let def=books::kfsc::catalogue().into_iter().find(|d|d.id==id).unwrap();let ctx=Ctx::new(&rows,&rows,&[]);
+            let warmup=if id=="kfsc_two_ma" {80} else {19};
+            assert_eq!(check(&ctx,&def,warmup-1,99,&Params::new()).unwrap().status,"needs_data");
+            assert!(check(&ctx,&def,warmup,99,&Params::new()).is_none());
+            assert_eq!(check(&ctx,&def,80,99,&Params::from([("source_convention".into(),1.)])).unwrap().status,"not_testable");
+        }
+        rows[2].close=f64::NAN;let ctx=Ctx::new(&rows,&rows,&[]);
+        let def=books::kfsc::catalogue().into_iter().find(|d|d.id=="kfsc_two_ma").unwrap();
+        assert!(check(&ctx,&def,80,99,&Params::new()).unwrap().note.contains("warmup contains invalid"));
+    }
+}
+
 pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -> Option<Issue> {
+    if def.book=="kfsc" && books::kfsc::reviewed_stock_rule(def.id) {
+        if let Some(note)=books::kfsc::validate_reviewed(def.id,p) {return issue("not_testable",note);}
+        let warmup=if def.id=="kfsc_two_ma" {80} else {19};
+        if from<warmup {return issue("needs_data","This selected Short Course configuration requires actual earlier full-period observations (including both current and previous SMA80 for two_ma). Select a later test start; no indicator history is invented.");}
+        if ctx.r.iter().take(from).any(|r|!r.close.is_finite() || r.close<=0.) {
+            return issue("needs_data","Actual Short Course closing-price warmup contains invalid observations. Earlier rows are not filled, discarded or reseeded to manufacture a result.");
+        }
+    }
     if def.book==books::bllstr::BOOK && books::bllstr::reviewed_daily_index(def.id) {
         // An admitted zero-band ID must not expose a held band/holding/direction
         // variant through query parameters. Keep the reviewed contract explicit.
