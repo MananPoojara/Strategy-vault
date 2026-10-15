@@ -32,14 +32,15 @@ export function OrdersPanel({ spec, onChange }: { spec: Spec; onChange(spec: Spe
           </select>
         </label>
       </div>
+      {!spec.entry.limit && !spec.execution?.exit_fill && <p className="cap">Changing the entry fill also moves exits until an exit fill is chosen.</p>}
       {PRICE_ORDERS.map((order) => {
         const d = orderOf(spec, order.key);
         const mode: Mode = !d ? "off" : "pct" in d ? "pct" : "atr";
         const put = (dist: Dist | undefined) => onChange(setOrder(spec, order.key, dist));
         return (
-          <div className="lab-order" key={order.key}>
+          <div className="lab-order" key={order.key} role="group" aria-label={order.label}>
             <span className="dfield">{order.label}</span>
-            <Segmented label={order.label} value={mode} options={MODES} onChange={(m) => m !== mode &&
+            <Segmented label={`${order.label} type`} value={mode} options={MODES} onChange={(m) => m !== mode &&
               put(m === "off" ? undefined : m === "pct" ? { pct: DEFAULT_PCT[order.key] } : { atr: 2, atr_length: 14 })} />
             {d && "pct" in d && (
               <NumField label="%" value={d.pct} min={order.pct[0]} max={order.pct[1]} step={0.5}

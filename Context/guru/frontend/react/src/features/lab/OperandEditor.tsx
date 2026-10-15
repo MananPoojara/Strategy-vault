@@ -55,7 +55,7 @@ export function OperandEditor({ operand, side, catalogue, onChange, label }: {
     <span className="lab-operand" role="group" aria-label={label}>
       <select aria-label="Operand type" value={kind} onChange={(e) => switchKind(e.target.value)}>
         <option value="price">Price</option>
-        {computed.length > 0 && <option value="indicator">Indicator</option>}
+        <option value="indicator" disabled={computed.length === 0}>Indicator</option>
         <option value="number">Number</option>
         {specials.map((x) => <option key={x.s} value={x.s}>{x.label}</option>)}
       </select>
@@ -75,7 +75,7 @@ export function OperandEditor({ operand, side, catalogue, onChange, label }: {
             {[...new Set(["D", ...catalogue.timeframes, series!.tf ?? "D"])].map((tf) => <option key={tf} value={tf}>{tf}</option>)}
           </select>
           <NumField label="bars ago" value={series!.offset ?? 0} min={0} max={1000} step={1}
-            onChange={(n) => n !== undefined && onChange(n === 0 ? without("offset") : { ...series!, offset: n })} />
+            onChange={(n) => n !== undefined && Number.isInteger(n) && onChange(n === 0 ? without("offset") : { ...series!, offset: n })} />
         </>
       )}
     </span>

@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { act } from "react";
+import { act, useState } from "react";
 import { RuleBuilder } from "../src/features/lab/RuleBuilder";
 import { defaultSpec, addCond } from "../src/features/lab/spec-model";
 import type { Spec } from "../src/features/lab/types";
@@ -108,10 +108,50 @@ it("orders Off removes the key; exec line follows fill; remove condition", async
   const target = [...host.querySelectorAll<HTMLElement>(".lab-order")].find((r) => r.textContent!.startsWith("Target"))!;
   await act(async () => [...target.querySelectorAll<HTMLButtonElement>(".join-item")].find((b) => b.textContent === "Off")!.click());
   expect("target" in last().exit).toBe(false);
-  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Remove condition"]')!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Remove Entry 1"]')!.click());
   expect(last().entry.all).toEqual([]);
   await unmount();
   const limited = await setup({ ...defaultSpec(), entry: { ...defaultSpec().entry, limit: { pct: 1 } } });
   expect(limited.host.textContent).toContain("fill at the limit price");
   expect(limited.host.textContent).not.toContain("Entry fill");
+});
+
+it("clearing the fees box keeps cost_bps and the same focused input", async () => {
+  const onChange = vi.fn();
+  const Host = () => {
+    const [spec, setSpec] = useState<Spec>({ ...defaultSpec(), execution: { cost_bps: 10 } });
+    return <RuleBuilder spec={spec} catalogue={cat} onChange={(s) => { onChange(s); setSpec(s); }}
+      settings={settings} onSettings={() => {}} problems={[]} running={false} onRun={() => {}} />;
+  };
+  const host = await mount(<Host />);
+  const fees = host.querySelector<HTMLInputElement>('input[aria-label="Fees (bps / side)"]')!;
+  fees.focus();
+  await typeIn(fees, "");
+  expect(onChange.mock.calls.every(([s]) => (s as Spec).execution?.cost_bps !== undefined)).toBe(true);
+  expect(host.querySelector('input[aria-label="Fees (bps / side)"]')).toBe(fees);
+  expect(document.activeElement).toBe(fees);
+  await typeIn(fees, "7");
+  expect((onChange.mock.calls.at(-1)![0] as Spec).execution?.cost_bps).toBe(7);
+});
+
+it("each remove button and order input names its own row; repeated problems all render", async () => {
+  const spec = addCond({ ...defaultSpec(), exit: { any: defaultSpec().exit.any, stop_loss: { pct: 5 }, target: { atr: 2, atr_length: 14 } } }, "entry", defaultSpec().entry.all[0]);
+  const { host } = await setup(spec, { problems: ["same", "same"] });
+  expect(host.querySelector('[aria-label="Remove Entry 2"]')).not.toBeNull();
+  const names = [...host.querySelectorAll('button[aria-label^="Remove"]')].map((b) => b.getAttribute("aria-label"));
+  expect(new Set(names).size).toBe(names.length);
+  expect(host.querySelector('[role="group"][aria-label="Stop-loss"] input[aria-label="%"]')).not.toBeNull();
+  expect(host.querySelector('[role="group"][aria-label="Target"] input[aria-label="ATR length"]')).not.toBeNull();
+  expect(host.querySelectorAll(".rnote li")).toHaveLength(2);
+  expect(host.textContent).toContain("Changing the entry fill also moves exits");
+});
+
+it("bars ago ignores fractions; a listed indicator with no computed ones keeps a disabled Indicator kind", async () => {
+  const spec = { ...defaultSpec(), entry: { all: [{ lhs: { s: "close" }, op: ">", rhs: { s: "or_range" } }] } } as Spec;
+  const { host, onChange } = await setup(spec, { catalogue: { ...cat, indicators: cat.indicators.map((x) => ({ ...x, computed: false })) } });
+  const rhsKind = host.querySelector<HTMLElement>('[aria-label="Entry 1 right"] select[aria-label="Operand type"]') as HTMLSelectElement;
+  expect(rhsKind.value).toBe("indicator");
+  expect(rhsKind.querySelector<HTMLOptionElement>('option[value="indicator"]')!.disabled).toBe(true);
+  await typeIn(host.querySelector<HTMLInputElement>('[aria-label="Entry 1 left"] input[aria-label="bars ago"]')!, "1.5");
+  expect(onChange).not.toHaveBeenCalled();
 });

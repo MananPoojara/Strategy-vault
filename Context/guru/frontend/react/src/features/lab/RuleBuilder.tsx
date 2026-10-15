@@ -44,7 +44,7 @@ export function RuleBuilder({ spec, catalogue, onChange, settings, onSettings, p
                   {ops.map((op) => <option key={op} value={op}>{OPERATOR_LABELS[op] ?? op}</option>)}
                 </select>
                 <OperandEditor operand={c.rhs} side={side} catalogue={catalogue} label={`${tag} ${i + 1} right`} onChange={(rhs) => put({ rhs })} />
-                <button type="button" className="dbtn sm ghost" aria-label="Remove condition" onClick={() => onChange(removeCond(spec, side, i))}>×</button>
+                <button type="button" className="dbtn sm ghost" aria-label={`Remove ${tag} ${i + 1}`} onClick={() => onChange(removeCond(spec, side, i))}>×</button>
               </div>
             );
           })}
@@ -59,7 +59,7 @@ export function RuleBuilder({ spec, catalogue, onChange, settings, onSettings, p
         <label className="dfield">To<input type="date" aria-label="To" value={settings.to} onChange={(e) => onSettings({ to: e.target.value })} /></label>
         {costBps !== undefined ? (
           // The spec's own cost wins and the cost query is not sent, so this box edits the spec.
-          <NumField label="Fees (bps / side)" value={costBps} min={0} onChange={(n) => onChange(setExecution(spec, { cost_bps: n }))} />
+          <NumField label="Fees (bps / side)" value={costBps} min={0} onChange={(n) => n !== undefined && onChange(setExecution(spec, { cost_bps: n }))} />
         ) : (
           <label className="dfield">Fees (bps / side)
             <input type="number" aria-label="Fees (bps / side)" min={0} step="any" value={settings.fees} onChange={(e) => onSettings({ fees: e.target.value })} />
@@ -69,7 +69,7 @@ export function RuleBuilder({ spec, catalogue, onChange, settings, onSettings, p
           <input type="number" aria-label="Slippage (bps / side)" min={0} step="any" value={settings.slippage} onChange={(e) => onSettings({ slippage: e.target.value })} />
         </label>
       </div>
-      {problems.length > 0 && <ul className="rnote">{problems.map((p) => <li key={p}>{p}</li>)}</ul>}
+      {problems.length > 0 && <ul className="rnote">{problems.map((p, i) => <li key={i}>{p}</li>)}</ul>}
       <div className="lab-row">
         <button type="button" className="dbtn primary" data-lab-action="run" disabled={running || problems.length > 0} onClick={onRun}>
           {running ? "Running…" : "Run backtest"}
