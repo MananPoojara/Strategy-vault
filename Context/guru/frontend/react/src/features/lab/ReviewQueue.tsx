@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { strategies, type StrategiesApi } from "./client";
-import { ErrorNotice, Loading } from "./ui";
+import { COPY } from "./labels";
+import { ErrorNotice, Loading, isProvisional } from "./ui";
 import type { LabStrategy } from "./types";
 import "./saved.css";
 
@@ -11,11 +12,13 @@ export function ReviewQueue({ api = strategies, onOpen }: { api?: Pick<Strategie
   const [errors, setErrors] = useState<Record<number, unknown>>({});
   const [busy, setBusy] = useState(false);
 
+  const load = () => api.review().then((r) => { setRows(r); setListError(null); setErrors({}); }, (e: unknown) => setListError(e));
   useEffect(() => {
     let live = true;
     api.review().then((r) => live && setRows(r), (e: unknown) => live && setListError(e));
     return () => { live = false; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- load once on mount
+  const reload = async () => { setBusy(true); try { await load(); } finally { setBusy(false); } };
 
   async function decide(row: LabStrategy, action: "publish" | "reject", note: string | undefined) {
     setBusy(true);
@@ -40,6 +43,8 @@ export function ReviewQueue({ api = strategies, onOpen }: { api?: Pick<Strategie
           <ul className="lab-saved-list">
             {rows.map((row) => {
               const note = (notes[row.id] ?? "").trim();
+              const blocked = !row.publishable || isProvisional(row.market);
+              const error = errors[row.id];
               return (
                 <li key={row.id} className="lab-saved-item">
                   <div className="lab-saved-row">
@@ -54,11 +59,20 @@ export function ReviewQueue({ api = strategies, onOpen }: { api?: Pick<Strategie
                   <div className="lab-saved-row">
                     <textarea className="lab-review-note" aria-label="Review note" maxLength={1000} rows={2}
                       value={notes[row.id] ?? ""} onChange={(e) => setNotes((n) => ({ ...n, [row.id]: e.target.value }))} />
-                    <button type="button" className="dbtn sm primary" disabled={busy} onClick={() => decide(row, "publish", note || undefined)}>Publish</button>
+                    <button type="button" className="dbtn sm primary" disabled={busy || blocked} title={blocked ? COPY.provisionalSubmit : undefined}
+                      onClick={() => decide(row, "publish", note || undefined)}>Publish</button>
                     <button type="button" className="dbtn sm ghost" disabled={busy || note.length < 1 || note.length > 1000}
                       onClick={() => decide(row, "reject", note)}>Reject</button>
                   </div>
-                  {errors[row.id] !== undefined && <ErrorNotice error={errors[row.id]} market={row.market} />}
+                  {error !== undefined && (
+                    <div className="lab-saved-feedback">
+                      <ErrorNotice error={error} market={row.market} instrumentLabel={row.instrument} />
+                      {/* 409: the owner withdrew or another admin acted first. */}
+                      {(error as { status?: number }).status === 409 && (
+                        <button type="button" className="dbtn sm" disabled={busy} onClick={reload}>Reload queue</button>
+                      )}
+                    </div>
+                  )}
                 </li>
               );
             })}

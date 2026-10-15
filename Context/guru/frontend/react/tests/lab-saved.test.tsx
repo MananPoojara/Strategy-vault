@@ -76,10 +76,35 @@ it("submit needs a fresh run of the unchanged row and a publishable market", asy
   expect(button(stale, "Submit").disabled).toBe(true);
   expect(button(stale, "Submit").title).toBe("Run the current rules first; the engine checks the rules only when they run.");
   await unmount();
-  const gl = strategyFixture({ market: "gl", publishable: false });
-  const host = await mount(<SavedStrategies role="researcher" api={api([gl])} editor={editor(gl)} onOpen={vi.fn()} onSaved={vi.fn()} />);
+  // Each guard alone must block Submit: the server flag, and the provisional market even if the flag were wrong.
+  for (const row of [strategyFixture({ market: "in", publishable: false }), strategyFixture({ market: "gl", publishable: true }), strategyFixture({ market: "crypto", publishable: true })]) {
+    const host = await mount(<SavedStrategies role="researcher" api={api([row])} editor={editor(row)} onOpen={vi.fn()} onSaved={vi.fn()} />);
+    await flush();
+    const submit = button(host, "Submit");
+    expect(submit.disabled).toBe(true);
+    expect(submit.title).toBe("Provisional data cannot be published. Rerun on licensed data first.");
+    // The reason is visible text tied to the button, not only a tooltip.
+    expect(host.querySelector(`#${submit.getAttribute("aria-describedby")}`)?.textContent).toBe(submit.title);
+    await unmount();
+  }
+});
+
+it("an error on a provisional row carries the instrument in its provisional strip", async () => {
+  const row = strategyFixture({ market: "gl", instrument: "GL:XAUUSD", publishable: false });
+  const fail = Object.assign(new Error("Server busy."), { status: 500, kind: "gateway" });
+  const host = await mount(<SavedStrategies role="researcher" api={api([row], { duplicate: vi.fn().mockRejectedValue(fail) })} editor={editor(null)} onOpen={vi.fn()} onSaved={vi.fn()} />);
   await flush();
-  expect(button(host, "Submit").title).toBe("Provisional data cannot be published. Rerun on licensed data first.");
+  await act(async () => button(host, "Duplicate").click());
+  await flush();
+  expect(host.querySelector("[data-lab-error] [data-lab-provisional]")?.textContent).toContain("GL:XAUUSD");
+});
+
+it("save changes sends the newer of the list and editor versions", async () => {
+  const update = vi.fn().mockResolvedValue(strategyFixture({ version: 7 }));
+  const host = await mount(<SavedStrategies role="researcher" api={api([strategyFixture({ version: 3 })], { update })} editor={editor(strategyFixture({ version: 6 }))} onOpen={vi.fn()} onSaved={vi.fn()} />);
+  await flush();
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-action="save"]')!.click());
+  expect(update.mock.calls[0].slice(0, 2)).toEqual([7, 6]);
 });
 
 it("submit on a fresh run sends the version and shows the submitted note", async () => {
@@ -143,4 +168,35 @@ it("review queue: reject sends the note and removes the row; errors show as give
   await flush();
   expect(host.querySelector("[data-lab-error]")?.textContent).toContain("Only admins can review.");
   expect(host.textContent).toContain("Second");
+});
+
+it("review queue: publish is never enabled on provisional data", async () => {
+  const rows = [strategyFixture({ status: "submitted", market: "gl", publishable: true }), strategyFixture({ id: 8, status: "submitted", publishable: false })];
+  const host = await mount(<ReviewQueue api={{ review: vi.fn().mockResolvedValue(rows), action: vi.fn() } as never} onOpen={vi.fn()} />);
+  await flush();
+  const publish = [...host.querySelectorAll<HTMLButtonElement>("button")].filter((b) => b.textContent === "Publish");
+  expect(publish).toHaveLength(2);
+  for (const b of publish) {
+    expect(b.disabled).toBe(true);
+    expect(b.title).toBe("Provisional data cannot be published. Rerun on licensed data first.");
+  }
+});
+
+it("review queue: a 409 offers a queue reload with the instrument on provisional errors", async () => {
+  const row = strategyFixture({ status: "submitted", market: "crypto", instrument: "CRYPTO:BTCUSD" });
+  const review = vi.fn().mockResolvedValueOnce([row]).mockResolvedValueOnce([]);
+  const note = "  Needs a stop  ";
+  const host = await mount(<ReviewQueue api={{ review, action: vi.fn().mockRejectedValue(conflict()) } as never} onOpen={vi.fn()} />);
+  await flush();
+  const area = host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Review note"]')!;
+  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+  await act(async () => { setter.call(area, note); area.dispatchEvent(new Event("input", { bubbles: true })); });
+  await act(async () => button(host, "Reject").click());
+  await flush();
+  expect(host.querySelector("[data-lab-error]")?.textContent).toContain("now version 4");
+  expect(host.querySelector("[data-lab-error] [data-lab-provisional]")?.textContent).toContain("CRYPTO:BTCUSD");
+  await act(async () => button(host, "Reload queue").click());
+  await flush();
+  expect(review).toHaveBeenCalledTimes(2);
+  expect(host.textContent).toContain("No strategies are waiting for review.");
 });

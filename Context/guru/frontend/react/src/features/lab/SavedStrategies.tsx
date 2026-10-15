@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { strategies, type StrategiesApi } from "./client";
 import { COPY, variantLabel } from "./labels";
-import { ErrorNotice, Loading } from "./ui";
+import { ErrorNotice, Loading, isProvisional } from "./ui";
 import type { LabStrategy, Role, SavedMarket, Spec, StrategyStatus } from "./types";
 import "./saved.css";
 
@@ -53,7 +53,8 @@ export function SavedStrategies({ role, api = strategies, editor, methodNames = 
     put(row, true); onSaved(row); setNotice({ id: SAVE, text: `Saved "${row.name}"` });
   });
   const saveChanges = (cur: LabStrategy) => mutate(SAVE, async () => {
-    const row = await api.update(cur.id, cur.version, draft());
+    // The page may hold a newer version (e.g. it re-fetched the row itself); never send the older one.
+    const row = await api.update(cur.id, Math.max(cur.version, editor.row?.version ?? 0), draft());
     put(row); onSaved(row); setNotice({ id: SAVE, text: `Saved "${row.name}"` });
   });
   const reload = (key: number, id: number) => mutate(key, async () => {
@@ -63,7 +64,7 @@ export function SavedStrategies({ role, api = strategies, editor, methodNames = 
     touchesEditor(fresh);
     setNotice({ id: key, text: fresh.id === editor.row?.id ? COPY.keptAfterReload(fresh.version) : `Reloaded "${fresh.name}"` });
   });
-  const act = (row: LabStrategy, action: "submit" | "withdraw") => mutate(row.id, async () => {
+  const transition = (row: LabStrategy, action: "submit" | "withdraw") => mutate(row.id, async () => {
     const next = await api.action(row.id, action, row.version);
     put(next); touchesEditor(next);
     if (action === "submit") setNotice({ id: row.id, text: COPY.submitted });
@@ -77,13 +78,13 @@ export function SavedStrategies({ role, api = strategies, editor, methodNames = 
     });
   };
 
-  const feedback = (key: number, market: SavedMarket, reloadId?: number) => {
+  const feedback = (key: number, market: SavedMarket, instrument: string, reloadId?: number) => {
     const error = errors[key];
     return (
       <>
         {error !== undefined && (
           <div className="lab-saved-feedback">
-            <ErrorNotice error={error} market={market} />
+            <ErrorNotice error={error} market={market} instrumentLabel={instrument} />
             {(error as { status?: number }).status === 409 && reloadId !== undefined && (
               <button type="button" className="dbtn sm" disabled={busy} onClick={() => reload(key, reloadId)}>Reload this strategy</button>
             )}
@@ -103,7 +104,12 @@ export function SavedStrategies({ role, api = strategies, editor, methodNames = 
   const item = (row: LabStrategy) => {
     const method = row.origin ? methodNames[row.origin.method] ?? row.origin.method : "";
     const open = editor.row?.id === row.id;
-    const canSubmit = row.publishable && open && editor.unchanged && editor.ranFresh;
+    const publishable = row.publishable && !isProvisional(row.market);
+    const canSubmit = publishable && open && editor.unchanged && editor.ranFresh;
+    // Visible (not only a tooltip) so keyboard and screen-reader users get the reason too.
+    const reason = !publishable ? COPY.provisionalSubmit : canSubmit ? undefined : COPY.runFirst;
+    const reasonId = `lab-submit-why-${row.id}`;
+    const showReason = reason !== undefined && canEdit && editable(row.status) && (open || !publishable);
     return (
       <li key={row.id} className="lab-saved-item">
         <div className="lab-saved-row">
@@ -119,17 +125,18 @@ export function SavedStrategies({ role, api = strategies, editor, methodNames = 
             {canEdit && editable(row.status) && (
               <>
                 <button type="button" className="dbtn sm ghost" disabled={busy} onClick={() => remove(row)}>Delete</button>
-                <button type="button" className="dbtn sm" disabled={busy || !canSubmit} onClick={() => act(row, "submit")}
-                  title={!row.publishable ? COPY.provisionalSubmit : canSubmit ? undefined : COPY.runFirst}>Submit</button>
+                <button type="button" className="dbtn sm" disabled={busy || !canSubmit} onClick={() => transition(row, "submit")}
+                  title={reason} aria-describedby={showReason ? reasonId : undefined}>Submit</button>
               </>
             )}
             {canEdit && row.status === "submitted" && (
-              <button type="button" className="dbtn sm ghost" disabled={busy} onClick={() => act(row, "withdraw")}>Withdraw</button>
+              <button type="button" className="dbtn sm ghost" disabled={busy} onClick={() => transition(row, "withdraw")}>Withdraw</button>
             )}
           </span>
         </div>
+        {showReason && <p className="lab-saved-note" id={reasonId}>{reason}</p>}
         {(row.status === "rejected" || row.status === "published") && row.reviewNote && <p className="lab-saved-note">Review note: {row.reviewNote}</p>}
-        {feedback(row.id, row.market, row.id)}
+        {feedback(row.id, row.market, row.instrument, row.id)}
       </li>
     );
   };
@@ -147,7 +154,7 @@ export function SavedStrategies({ role, api = strategies, editor, methodNames = 
               <button type="button" className="dbtn sm" data-lab-action="save" disabled={busy || !trimmed} onClick={() => saveChanges(own)}>Save changes</button>
             )}
           </div>
-          {feedback(SAVE, editor.market, editor.row?.id)}
+          {feedback(SAVE, editor.market, editor.ticker, editor.row?.id)}
         </>
       )}
       {listError !== null ? <ErrorNotice error={listError} market="in" />
