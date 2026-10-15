@@ -11,6 +11,9 @@ const CROSS: &str = "E|\"Moving average crossover systems are a way to capture t
 const CROSS_X: &str = "X|Exit when the shorter average crosses back under the longer one (p.58, p.67). p.always_in=1 = the book's \"always in approach\" that reverses short on the cross under (p.59)";
 const REVIEWED_STOCK_NOTE: &str = "Source-supported default selected-stock research application: signal/fill and closed-trade ledgers independently checked on actual AAPL and RELIANCE; final platform accounting checked separately. Flat test start, real full-history SMA warmup, one sequential long position, no basket allocation or original Monster-stock population/performance reproduction. Quote adjustments and membership remain qualified. See library/sbma/INDEPENDENT-REVIEW-2026-10-15.md.";
 const REVIEWED_STOCK_FILL: &str = "E|Completed daily close signals. fill=0 is an idealized same-close research convention; fill=1 executes at the next actual observed open, as a source-described alternative (physical PDF16/63). A terminal next-open order remains unfilled; open final positions retain the platform's disclosed estimated liquidation costs, separately from actual filled exit orders.";
+const NEXT_STOCK_NOTE: &str = "Exact source-listed selected-stock research configuration. Source/default signal and filled-order ledgers independently compared on actual AAPL/RELIANCE; integrated API accounting is a separate check. Flat test start, full supplied history, no original chart population/performance reproduction or basket allocation. Current snapshots and price adjustments remain qualified. See library/sbma/INDEPENDENT-NEXT-REVIEW-2026-10-15.md.";
+const NEXT_EMA_DEF: &str = "F|Declared implementation convention: EMA alpha = 2/(n+1), seeded with the SMA of the first n completed closes. The book does not specify an EMA seed. Actual earlier supplied history warms indicators; first-price-seed sensitivity did not change these selected-window order lists, which is not a universal seed-equivalence claim.";
+const NEXT_CROSS_X: &str = "X|Long/cash default: exit when current fast is strictly below slow after prior fast at or above slow; equality alone holds. The separately described always-in short reversal is outside this reviewed configuration.";
 const NOTE: &str = "Book prints no test results. Written for stocks, stock indexes and ETFs (charts of SPY, QQQ, INDU, TSLA, AAPL); runs on any ticker (India = instrument swap, NIFTY 50 / NSE basket stocks).";
 
 pub fn catalogue() -> Vec<StrategyDef> {
@@ -27,14 +30,17 @@ pub fn catalogue() -> Vec<StrategyDef> {
             REVIEWED_STOCK_NOTE),
         d("sbma_sma200_short", "Short the first loss of the 200-day SMA", "Ch. 8 · 200 day SMA", "Short", Status::Live,
             &["E|\"Taking short positions as the 200 day is first lost gives traders exposure to profit from market downtrends\" (p.56): sell short on the first close below the 200-day SMA after a close at or above it",
-              "X|\"A stop loss can be set at a close back over the 200 day SMA.\" (p.56)", EOD,
+              "X|\"A stop loss can be set at a close back over the 200 day SMA.\" (p.56)", REVIEWED_STOCK_FILL,
               "F|Not coded (judgement): p.54 optional 5- or 10-day EMA trailing stop 'depending on the historical volatility of the stock'"],
-            "The long side of the same rule (long above the 200-day, cash below, p.50-51) duplicates apta_ma200_dji and is not repeated. Book prints no results."),
+            "Hypothetical individual-stock short price-return research. Borrow availability, margin, financing, short-sale restrictions and loan costs are unverified; no executable borrowing claim or cash-index/ETF substitution. Optional volatility-dependent trailing stops are excluded. Full-history warmup, flat start and estimated final open liquidation costs are disclosed. See library/sbma/INDEPENDENT-NEXT-REVIEW-2026-10-15.md."),
         d("sbma_x_5s20s", "5-day SMA / 20-day SMA crossover", "Ch. 9 · Moving average crossover systems", "Long", Status::Live,
             &[CROSS, "F|Fast = 5-day SMA, slow = 20-day SMA (physical PDF60); current fast strictly above slow after previous fast at or below slow enters long; equality alone holds", "X|Exit long when current fast is strictly below slow after previous fast at or above slow. This reviewed subset stays in cash; short reversal is not admitted.", REVIEWED_STOCK_FILL], REVIEWED_STOCK_NOTE),
-        x("sbma_x_5e50s", "5-day EMA / 50-day SMA crossover", &[CROSS, "F|Fast = 5-day EMA, slow = 50-day SMA (p.60)", EMA_DEF, CROSS_X, EOD]),
-        x("sbma_x_10e20e", "10-day EMA / 20-day EMA crossover", &[CROSS, "F|Fast = 10-day EMA, slow = 20-day EMA (p.60)", EMA_DEF, CROSS_X, EOD]),
-        x("sbma_x_10e50e", "10-day EMA / 50-day EMA crossover", &[CROSS, "F|Fast = 10-day EMA, slow = 50-day EMA (p.60, also the $INDU example p.70)", EMA_DEF, CROSS_X, EOD]),
+        d("sbma_x_5e50s", "5-day EMA / 50-day SMA crossover", "Ch. 9 · Moving average crossover systems", "Long", Status::Live,
+            &[CROSS, "F|Fast = 5-day EMA, slow = 50-day SMA (physical PDF60); current fast strictly above slow after prior fast at or below slow enters long", NEXT_EMA_DEF, NEXT_CROSS_X, REVIEWED_STOCK_FILL], NEXT_STOCK_NOTE),
+        d("sbma_x_10e20e", "10-day EMA / 20-day EMA crossover", "Ch. 9 · Moving average crossover systems", "Long", Status::Live,
+            &[CROSS, "F|Fast = 10-day EMA, slow = 20-day EMA (physical PDF60); current fast strictly above slow after prior fast at or below slow enters long", NEXT_EMA_DEF, NEXT_CROSS_X, REVIEWED_STOCK_FILL], NEXT_STOCK_NOTE),
+        d("sbma_x_10e50e", "10-day EMA / 50-day EMA crossover", "Ch. 9 · Moving average crossover systems", "Long", Status::Live,
+            &[CROSS, "F|Fast = 10-day EMA, slow = 50-day EMA (physical PDF60/70); current fast strictly above slow after prior fast at or below slow enters long", NEXT_EMA_DEF, NEXT_CROSS_X, REVIEWED_STOCK_FILL], NEXT_STOCK_NOTE),
         x("sbma_x_15e30e", "15-day EMA / 30-day EMA crossover", &[CROSS, "F|Fast = 15-day EMA, slow = 30-day EMA (p.60)", EMA_DEF, CROSS_X, EOD]),
         x("sbma_x_15e150e", "15-day EMA / 150-day EMA crossover", &[CROSS, "F|Fast = 15-day EMA, slow = 150-day EMA (p.60)", EMA_DEF, CROSS_X, EOD]),
         x("sbma_x_10s200s", "10-day SMA / 200-day SMA crossover", &[CROSS, "F|Fast = 10-day SMA, slow = 200-day SMA (p.60)", CROSS_X, EOD]),
@@ -120,11 +126,11 @@ fn pair(id: &str) -> Option<(f64, bool, f64, bool, f64)> {
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
-    let fill_label = if matches!(id,"sbma_sma50_long"|"sbma_x_5s20s") { "Research fill: 0 = idealized signal close, 1 = next actual open" } else { "Fill: 0 = signal close (book default), 1 = next open" };
+    let fill_label = if matches!(id,"sbma_sma50_long"|"sbma_x_5s20s") || next_reviewed_stock_rule(id) || id=="sbma_sma200_short" { "Research fill: 0 = idealized signal close, 1 = next actual open" } else { "Fill: 0 = signal close (book default), 1 = next open" };
     let fill = p("fill", fill_label, 0., 0., 1., 1.);
     if let Some((f, _, s, _, ai)) = pair(id) {
         let mut v = vec![p("fast", "Fast average length", f, 2., 100., 1.), p("slow", "Slow average length", s, 10., 300., 5.)];
-        if !id.ends_with("_sar") { v.push(p("always_in", "1 = always in, reverse short on the cross under (p.59)", ai, 0., 1., 1.)); }
+        if !id.ends_with("_sar") { let label=if next_reviewed_stock_rule(id) {"Reviewed long/cash = 0; short reversal is a separate unreviewed variant"} else {"1 = always in, reverse short on the cross under (p.59)"}; v.push(p("always_in", label, ai, 0., 1., 1.)); }
         v.push(fill);
         return Some(v);
     }
@@ -281,5 +287,52 @@ mod tests {
         let ts = run("sbma_x_10e30e_sar", &x, 0, 199, &Params::new()).unwrap();
         assert!(ts.len() > 3);
         for w in ts.windows(2) { assert_eq!(w[0].exit_i, w[1].legs[0].i); assert_eq!(w[0].dir, -w[1].dir); }
+    }
+}
+
+
+/// Exact defaults independently checked in the next Burns source/ledger batch.
+/// Only three long/cash configurations are proposed for admission; the independently
+/// checked200-SMA short remains held pending a separate diagnostic-display review.
+pub const NEXT_REVIEWED_STOCK_IDS: &[&str] = &[
+    "sbma_x_5e50s", "sbma_x_10e20e", "sbma_x_10e50e",
+];
+pub fn next_reviewed_stock_rule(id: &str) -> bool { NEXT_REVIEWED_STOCK_IDS.contains(&id) }
+pub fn validate_next_reviewed(id: &str, p: &Params) -> Option<&'static str> {
+    if !next_reviewed_stock_rule(id) { return None; }
+    let expected: &[(&str,f64)] = match id {
+        "sbma_x_5e50s" => &[("fast",5.),("slow",50.),("always_in",0.)],
+        "sbma_x_10e20e" => &[("fast",10.),("slow",20.),("always_in",0.)],
+        "sbma_x_10e50e" => &[("fast",10.),("slow",50.),("always_in",0.)],
+        _ => unreachable!(),
+    };
+    if p.iter().any(|(key,value)| key.as_str()!="fill" && !expected.iter().any(|(name,default)| key.as_str()==*name && value.is_finite() && *value==*default)) {
+        return Some("This independent review covers only the stated source-default periods and direction. Changed periods, short reversals and unknown settings require their own explicit research validation.");
+    }
+    if p.get("fill").is_some_and(|value| !value.is_finite() || ![0.,1.].contains(value)) {
+        return Some("Reviewed fill must be exactly 0 (idealized same-close) or 1 (next actual observed open).");
+    }
+    None
+}
+
+#[cfg(test)]
+mod next_reviewed_scope_tests {
+    use super::*;
+    #[test]
+    fn next_burns_exact_default_scope_does_not_admit_other_rules_or_variants() {
+        for &id in NEXT_REVIEWED_STOCK_IDS {
+            assert!(next_reviewed_stock_rule(id));
+            assert!(validate_next_reviewed(id,&Params::new()).is_none());
+            for fill in [0.,1.] { assert!(validate_next_reviewed(id,&Params::from([("fill".into(),fill)])).is_none()); }
+            for fill in [0.5,2.,f64::NAN] { assert!(validate_next_reviewed(id,&Params::from([("fill".into(),fill)])).is_some()); }
+            assert!(validate_next_reviewed(id,&Params::from([("unknown".into(),1.)])).is_some());
+        }
+        assert!(!next_reviewed_stock_rule("sbma_x_15e30e"));
+        assert!(!next_reviewed_stock_rule("sbma_x_10e50e_rsi"));
+        assert!(!next_reviewed_stock_rule("sbma_sma200_short"));
+        for id in ["sbma_x_5e50s","sbma_x_10e20e","sbma_x_10e50e"] {
+            assert!(validate_next_reviewed(id,&Params::from([("always_in".into(),1.)])).is_some());
+            assert!(validate_next_reviewed(id,&Params::from([("fast".into(),5.1)])).is_some());
+        }
     }
 }

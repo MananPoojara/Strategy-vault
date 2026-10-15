@@ -32,6 +32,9 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
             return issue("not_testable","This reviewed Brock admission covers only short MA 1, long MA 50, band 0%, sell_short 1 and, for FMA, a 10-observation hold. Changed or unknown parameters await separate source and ledger review; they cannot inherit default verification.");
         }
     }
+    if def.book=="sbma" && books::sbma::next_reviewed_stock_rule(def.id) {
+        if let Some(note)=books::sbma::validate_next_reviewed(def.id,p) {return issue("not_testable",note);}
+    }
     if def.book=="sbma" && matches!(def.id,"sbma_sma50_long"|"sbma_x_5s20s") {
         let fill=p.get("fill").copied().unwrap_or(0.);
         if ![0.,1.].contains(&fill) {return issue("not_testable","Reviewed Burns fill must be 0 (idealized same-close research) or 1 (next actual open).");}
