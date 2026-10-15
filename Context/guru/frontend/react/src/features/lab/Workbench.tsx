@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { aggregate, booleanMarkers, candles, isBooleanOutput, linePoints, ohlcFromSeries, rangeStart } from "./bars";
-import { createLabChart, PALETTE, useThemeKey } from "./charts";
+import { createLabChart, PALETTE, syncPanes, useThemeKey, type SyncedPane } from "./charts";
 import { COPY } from "./labels";
 import type { Catalogue, ChartRange, IndicatorParam, SavedMarket, SeriesResponse, Trade } from "./types";
 import { ErrorNotice, isProvisional, ProvisionalStrip } from "./ui";
@@ -36,6 +36,7 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
   useEffect(() => {
     let live = true;
     const disposers: Disposable[] = [];
+    let unsync: (() => void) | undefined;
     const drawn = chips.flatMap((chip, index) => {
       const ind = find(chip.id);
       return ind?.computed ? [{ chip, ind, index }] : [];
@@ -72,7 +73,7 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
       });
       candleSeries.setData(candles(px));
       const markers: Marker[] = [];
-      const charts = [chart];
+      const charts: SyncedPane[] = [{ chart, el: priceRef.current, series: candleSeries }];
       drawn.forEach(({ chip, ind, index }, i) => {
         const part = chipParts[i];
         if (part.status !== "fulfilled") return;
@@ -91,8 +92,11 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
             const pane = host && createLabChart(host, 150);
             if (!pane) return;
             disposers.push(pane);
-            charts.push(pane.chart);
             target = pane.chart;
+            const line = target.addLineSeries({ color, lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
+            line.setData(linePoints(res.dates, values, keep));
+            charts.push({ chart: pane.chart, el: host, series: line });
+            return;
           }
           target.addLineSeries({ color, lineWidth: 2, priceLineVisible: false, lastValueVisible: false }).setData(linePoints(res.dates, values, keep));
         });
@@ -107,13 +111,14 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
       const last = px.d[px.d.length - 1];
       if (keep && last) markers.push({ time: last, position: "aboveBar", shape: "square", color: colors.ink3, text: "in progress" });
       candleSeries.setMarkers?.(markers.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0)));
-      const from = rangeStart(px.d, range);
-      for (const ch of charts) {
+      const from = rangeStart(px.d, range) ?? px.d[0]; // "All" is an explicit range too, so panes with different warm-up start together
+      for (const { chart: ch } of charts) {
         if (from && last) ch.timeScale().setVisibleRange({ from, to: last });
         else ch.timeScale().fitContent();
       }
+      unsync = syncPanes(charts);
     })();
-    return () => { live = false; disposers.forEach((d) => d.dispose()); };
+    return () => { live = false; unsync?.(); disposers.forEach((d) => d.dispose()); };
     // loadSeries and find are read fresh per run; chips are tracked by their canonical key.
   }, [market, ticker, tf, range, chipsKey, trades, themeKey, catalogue]); // eslint-disable-line react-hooks/exhaustive-deps
 

@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import type { LabChartApi, LabChartLibrary } from "./globals";
+import type { LabChartApi, LabChartLibrary, LabSeriesApi } from "./globals";
 
 export interface ChartColors { ink: string; ink3: string; rule: string; steel: string; panel: string; chart: string; bh: string; green: string; red: string; blue: string }
 export const PALETTE: (keyof ChartColors)[] = ["blue", "bh", "green", "red", "chart", "ink3"];
@@ -25,7 +25,12 @@ export function createLabChart(el: HTMLElement, height: number, options: Record<
     rightPriceScale: { borderColor: colors.steel }, timeScale: { borderColor: colors.steel },
     ...options,
   });
-  const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => chart.resize(el.clientWidth, height));
+  const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => {
+    // A resize changes the bars shown; keep the time range the user (or the preset) chose.
+    const range = chart.timeScale().getVisibleRange?.();
+    chart.resize(el.clientWidth, height);
+    if (range) chart.timeScale().setVisibleRange(range);
+  });
   observer?.observe(el);
   return { chart, colors, dispose() { observer?.disconnect(); chart.remove(); } };
 }
@@ -37,3 +42,30 @@ function subscribe(onChange: () => void) {
 }
 /** Chart colours are read at creation; effects that depend on this key remount on a theme change. */
 export const useThemeKey = () => useSyncExternalStore(subscribe, () => document.documentElement.getAttribute("data-theme") ?? "");
+
+export interface SyncedPane { chart: LabChartApi; el: HTMLElement; series: LabSeriesApi }
+/** Keeps every pane on one visible time range and one crosshair bar; only the pane under the pointer drives the others, so updates cannot loop. */
+export function syncPanes(panes: SyncedPane[]) {
+  let active: SyncedPane | null = null;
+  const undo: (() => void)[] = [];
+  for (const pane of panes) {
+    const claim = () => { active = pane; };
+    pane.el.addEventListener("pointerenter", claim); pane.el.addEventListener("pointerdown", claim); pane.el.addEventListener("wheel", claim);
+    undo.push(() => { pane.el.removeEventListener("pointerenter", claim); pane.el.removeEventListener("pointerdown", claim); pane.el.removeEventListener("wheel", claim); });
+    const onRange = (range: { from: string; to: string } | null) => {
+      if (active !== pane || !range) return;
+      for (const other of panes) if (other !== pane) other.chart.timeScale().setVisibleRange(range);
+    };
+    const onCross = (param: { time?: string }) => {
+      if (active !== pane) return;
+      for (const other of panes) {
+        if (other === pane) continue;
+        if (param.time) other.chart.setCrosshairPosition?.(0, param.time, other.series); else other.chart.clearCrosshairPosition?.();
+      }
+    };
+    pane.chart.timeScale().subscribeVisibleTimeRangeChange?.(onRange);
+    pane.chart.subscribeCrosshairMove?.(onCross);
+    undo.push(() => { pane.chart.timeScale().unsubscribeVisibleTimeRangeChange?.(onRange); pane.chart.unsubscribeCrosshairMove?.(onCross); });
+  }
+  return () => undo.forEach((u) => u());
+}

@@ -201,3 +201,37 @@ it("the provisional strip uses the note the server sent", async () => {
   await flush();
   expect(host.querySelector("[data-lab-provisional]")?.textContent).toBe(`${note} · IG:DAX`);
 });
+
+it("keeps every pane on one time range and crosshair bar, and unsubscribes on unmount", async () => {
+  type Handler = (r: { from: string; to: string } | null) => void;
+  const subs: { range: Handler[]; cross: ((p: { time?: string }) => void)[]; setRange: ReturnType<typeof vi.fn>; setCross: ReturnType<typeof vi.fn>; unRange: ReturnType<typeof vi.fn>; unCross: ReturnType<typeof vi.fn> }[] = [];
+  window.LightweightCharts = { createChart: vi.fn(() => {
+    const s = { range: [] as Handler[], cross: [] as ((p: { time?: string }) => void)[], setRange: vi.fn(), setCross: vi.fn(), unRange: vi.fn(), unCross: vi.fn() };
+    subs.push(s);
+    const series = () => ({ setData: vi.fn(), setMarkers: vi.fn(), applyOptions: vi.fn() });
+    return { addCandlestickSeries: series, addLineSeries: series, addAreaSeries: series, remove: vi.fn(), resize: vi.fn(), applyOptions: vi.fn(),
+      subscribeCrosshairMove: (h: never) => s.cross.push(h), unsubscribeCrosshairMove: s.unCross, setCrosshairPosition: s.setCross, clearCrosshairPosition: vi.fn(),
+      timeScale: () => ({ fitContent: vi.fn(), setVisibleRange: s.setRange, subscribeVisibleTimeRangeChange: (h: Handler) => s.range.push(h), unsubscribeVisibleTimeRangeChange: s.unRange }) };
+  }) } as never;
+  const host = await mount(<Workbench {...props} chips={[chips[0], chips[3]]} />);
+  await flush();
+  expect(subs).toHaveLength(2);
+  const [price, pane] = subs;
+  const initial = price.setRange.mock.calls.length;
+  expect(initial).toBeGreaterThan(0);
+  expect(pane.setRange.mock.calls.length).toBe(initial);
+  // the pane under the pointer drives the others
+  host.querySelector('[data-lab-pane="c4"]')!.dispatchEvent(new Event("pointerenter"));
+  pane.range[0]({ from: "2024-01-01", to: "2025-01-01" });
+  expect(price.setRange).toHaveBeenLastCalledWith({ from: "2024-01-01", to: "2025-01-01" });
+  expect(pane.setRange.mock.calls.length).toBe(initial); // no feedback to the source
+  pane.cross[0]({ time: "2024-02-01" });
+  expect(price.setCross).toHaveBeenCalledWith(0, "2024-02-01", expect.anything());
+  // a pane that is not under the pointer does not echo
+  price.range[0]({ from: "2020-01-01", to: "2021-01-01" });
+  expect(pane.setRange.mock.calls.length).toBe(initial);
+  await unmount();
+  expect(price.unRange).toHaveBeenCalledTimes(1);
+  expect(pane.unRange).toHaveBeenCalledTimes(1);
+  expect(pane.unCross).toHaveBeenCalledTimes(1);
+});
