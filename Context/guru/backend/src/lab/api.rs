@@ -75,8 +75,8 @@ pub fn catalogue_json() -> String {
             d.compute.is_some(), quoted(d.outputs.iter().copied()), arr(d.first.iter().map(|&f| if f == usize::MAX { "null".into() } else { f.to_string() })), d.sparse, esc(d.definition), esc(d.note), esc(tv), esc(ab))
     });
     format!(
-        "{{\"label\":\"{LABEL}\",\"price_sources\":{},\"operators\":{},\"timeframes\":[\"D\",\"W\",\"M\"],\"max_conditions\":{},\"max_spec_bytes\":{},\"max_combos\":{},\"indicators\":{}}}",
-        quoted(rules::PRICE_SOURCES.iter().copied()), quoted(rules::OPERATORS.iter().copied()), rules::MAX_CONDITIONS, rules::MAX_SPEC_BYTES, crate::MAX_COMBOS, arr(defs))
+        "{{\"label\":\"{LABEL}\",\"price_sources\":{},\"operators\":{},\"timeframes\":[\"D\",\"W\",\"M\",\"Q\",\"Y\"],\"custom_days\":[2,{}],\"expand_modes\":[\"last\",\"first\",\"point\"],\"max_conditions\":{},\"max_spec_bytes\":{},\"max_combos\":{},\"indicators\":{}}}",
+        quoted(rules::PRICE_SOURCES.iter().copied()), quoted(rules::OPERATORS.iter().copied()), super::resample::MAX_DAYS, rules::MAX_CONDITIONS, rules::MAX_SPEC_BYTES, crate::MAX_COMBOS, arr(defs))
 }
 
 /// Instrument identity from the server's own data (never from the query): type, native flag, market, currency.
@@ -99,7 +99,7 @@ fn select<'a>(st: &'a State, q: &Query) -> Result<crate::SelectedContext<'a>, La
 }
 pub fn series_json(st: &State, q: &Query) -> Result<String, LabError> {
     let id = q.get("id").ok_or_else(|| LabError::Invalid("id is required".into()))?;
-    let tf = q.get("tf").map_or(Some(Tf::D), |t| Tf::parse(t)).ok_or_else(|| LabError::Invalid("tf must be D, W or M".into()))?;
+    let tf = q.get("tf").map_or(Some(Tf::D), |t| Tf::parse(t)).ok_or_else(|| LabError::Invalid(format!("tf must be {}", super::resample::TF_HELP)))?;
     if let Some((k, _)) = q.iter().find(|(k, v)| k.starts_with("p.") && !v.parse::<f64>().is_ok_and(f64::is_finite)) {
         return Err(LabError::Invalid(format!("{k} must be a finite number")));
     }
@@ -117,8 +117,8 @@ pub fn series_json(st: &State, q: &Query) -> Result<String, LabError> {
         values.push(format!("\"{}\":{}", esc(name), arr(s.into_iter().map(full))));
     }
     let params = r.params.iter().map(|(k, v)| format!("\"{}\":{}", esc(k), full(*v))).collect::<Vec<_>>().join(",");
-    Ok(format!("{{\"label\":\"{LABEL}\",\"instrument\":{instrument},\"id\":\"{}\",\"tf\":\"{:?}\",\"params\":{{{params}}},\"outputs\":{},\"dates\":{},\"series\":{{{}}},\"provenance\":{}}}",
-        esc(id), tf, quoted(outputs.iter().copied()), quoted(ctx.r.iter().map(|r| r.date.as_str())), values.join(","), crate::source_provenance(st, q)))
+    Ok(format!("{{\"label\":\"{LABEL}\",\"instrument\":{instrument},\"id\":\"{}\",\"tf\":\"{}\",\"params\":{{{params}}},\"outputs\":{},\"dates\":{},\"series\":{{{}}},\"provenance\":{}{}}}",
+        esc(id), tf.name(), quoted(outputs.iter().copied()), quoted(ctx.r.iter().map(|r| r.date.as_str())), values.join(","), crate::source_provenance(st, q), adaptations([id.as_str()].into_iter())))
 }
 fn known_type(kind: &str, ticker: &str) -> Result<(), LabError> {
     if kind == "unknown" { return Err(LabError::NeedsData(format!("{ticker}: instrument type is not established (index, ETF or catalogued stock); no lab result is published"))); }
@@ -181,6 +181,11 @@ fn backtest(ctx: &Ctx, c: &Compiled, d: &Bars, from: usize, to: usize, cost: f64
     Ok(crate::Run { trades, from, to, equity, bh })
 }
 
+/// `,"adaptations":[…]` when a response reads future session dates (spec §5.2); empty otherwise, so every other body is unchanged.
+fn adaptations<'a>(mut ids: impl Iterator<Item = &'a str>) -> String {
+    if !ids.any(|id| super::periods::USES_SESSION_DATES.contains(&id)) { return String::new(); }
+    format!(",\"adaptations\":[\"{}\"]", esc(super::periods::SESSION_DATES_NOTE))
+}
 pub fn run_json(st: &State, q: &Query) -> Result<String, LabError> {
     if q.get("split").is_some_and(|s| !s.is_empty()) { return Err(LabError::Invalid("split applies to /api/lab/optimize only".into())); }
     let spec = spec_of(q)?;
@@ -207,10 +212,10 @@ pub fn run_json(st: &State, q: &Query) -> Result<String, LabError> {
         ctx.r[t.legs[0].i].date, ctx.r[t.exit_i].date, t.legs[0].i - from, t.exit_i - from, crate::num(t.legs[0].px), crate::num(t.exit_px),
         crate::num(t.ret(cost)), t.exit_i - t.legs[0].i, t.open, ctx.r[t.signal_i].date, esc(&t.reason), t.dir, t.entry_kind)));
     Ok(format!(
-        "{{\"label\":\"{}\",\"kind\":\"lab_simulation\",\"origin\":{origin},\"instrument\":{instrument},\"from\":\"{}\",\"to\":\"{}\",\"start\":{start},\"dates\":{},\"close\":{},\"equity\":{},\"gross_equity\":{},\"bh\":{},\"trades\":{trades},\"stats\":{},\"gross_stats\":{},\"costs\":{},\"provenance\":{}}}",
+        "{{\"label\":\"{}\",\"kind\":\"lab_simulation\",\"origin\":{origin},\"instrument\":{instrument},\"from\":\"{}\",\"to\":\"{}\",\"start\":{start},\"dates\":{},\"close\":{},\"equity\":{},\"gross_equity\":{},\"bh\":{},\"trades\":{trades},\"stats\":{},\"gross_stats\":{},\"costs\":{},\"provenance\":{}{}}}",
         esc(&label), ctx.r[from].date, ctx.r[to].date, quoted((from..=to).map(|k| ctx.r[k].date.as_str())), arr((from..=to).map(|k| crate::num(ctx.c[k]))),
         arr(run.equity.iter().map(|v| crate::num(*v))), arr(gross.equity.iter().map(|v| crate::num(*v))), arr(run.bh.iter().map(|v| crate::num(*v))),
-        crate::stats_json(&lab_stats(ctx, &run, costs)), crate::stats_json(&gross_stats(ctx, &gross)), costs.json(), crate::source_provenance(st, q)))
+        crate::stats_json(&lab_stats(ctx, &run, costs)), crate::stats_json(&gross_stats(ctx, &gross)), costs.json(), crate::source_provenance(st, q), adaptations(rules::series_ids(&spec).iter().map(String::as_str))))
 }
 pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> {
     let t0 = std::time::Instant::now();
@@ -323,9 +328,9 @@ pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> {
     if split.is_some() { cols.extend(extra_rank_cols().iter().map(|c| format!("is_{c}"))); }
     let dims_json = arr(dims.iter().map(|d| format!("{{\"path\":\"{}\",\"values\":{}}}", esc(&d.path), arr(d.values.iter().map(|v| crate::num(*v))))));
     Ok(format!(
-        "{{\"label\":\"{}\",\"kind\":\"lab_optimization\",\"origin\":{origin},\"instrument\":{instrument},\"from\":\"{}\",\"to\":\"{}\",\"start\":{start},\"split\":{},\"combos\":{combos},\"threads\":{threads},\"ms\":{},\"dims\":{dims_json},\"cols\":{},\"base\":{},\"ranked_on\":\"{}\",\"rank\":{rank_json},\"picked\":{{{picked}}},\"rows\":[{rows}],\"costs\":{},\"provenance\":{}}}",
+        "{{\"label\":\"{}\",\"kind\":\"lab_optimization\",\"origin\":{origin},\"instrument\":{instrument},\"from\":\"{}\",\"to\":\"{}\",\"start\":{start},\"split\":{},\"combos\":{combos},\"threads\":{threads},\"ms\":{},\"dims\":{dims_json},\"cols\":{},\"base\":{},\"ranked_on\":\"{}\",\"rank\":{rank_json},\"picked\":{{{picked}}},\"rows\":[{rows}],\"costs\":{},\"provenance\":{}{}}}",
         esc(&label), dates[from], dates[to], split.map_or("null".into(), |s| format!("\"{}\"", dates[s])), t0.elapsed().as_millis(),
-        quoted(cols.iter().map(String::as_str)), arr(base.iter().map(|v| crate::num(*v))), if split.is_some() { "in_sample" } else { "full" }, costs.json(), crate::source_provenance(st, q)))
+        quoted(cols.iter().map(String::as_str)), arr(base.iter().map(|v| crate::num(*v))), if split.is_some() { "in_sample" } else { "full" }, costs.json(), crate::source_provenance(st, q), adaptations(rules::series_ids(&spec).iter().map(String::as_str))))
 }
 /// A spec with `origin` is a customized book template: the template must exist (same book, version not newer).
 fn origin_of(spec: &Spec) -> Result<Option<StrategyDef>, LabError> {
@@ -501,7 +506,8 @@ mod tests {
         assert!(series_json(&st, &query).unwrap_err().message().contains("p.fast"));
         query.insert("p.fast".into(), "0".into());
         assert!(series_json(&st, &query).unwrap_err().message().contains("fast must be between"));
-        assert_eq!(series_json(&st, &q(&[("id", "close"), ("tf", "Q")])).unwrap_err().message(), "tf must be D, W or M");
+        assert_eq!(series_json(&st, &q(&[("id", "close"), ("tf", "H")])).unwrap_err().message(), "tf must be D, W, M, Q, Y or nD (2D to 63D)");
+        assert!(series_json(&st, &q(&[("id", "close"), ("tf", "Q")])).unwrap().contains("\"tf\":\"Q\""));
     }
     #[test] fn run_is_labelled_simulated_and_reuses_book_accounting() {
         let st = state(400, "SPX", false);
@@ -512,6 +518,21 @@ mod tests {
         let v = crate::lab::json::parse(&j).unwrap();
         assert!(v.get("stats").and_then(|s| s.get("trades")).and_then(|t| t.as_f64()).unwrap() > 5.);
         assert!(!j.contains("\"gate\"") && !j.contains("\"claim\"") && !j.contains("\"readiness\""));
+    }
+    #[test] fn responses_reading_future_session_dates_carry_the_adaptation_note() {
+        let st = state(700, "SPX", false);
+        let note = format!(",\"adaptations\":[\"{}\"]}}", esc(crate::lab::periods::SESSION_DATES_NOTE));
+        // nested inside a `not`, after the optimized comparison
+        let spec = SPEC.replacen(r#"]},"exit":"#, r#",{"not":{"lhs":{"s":"sessions_left","out":"m"},"op":"<","rhs":{"value":1}}}]},"exit":"#, 1);
+        assert!(spec.contains("sessions_left"));
+        for j in [run_json(&st, &q(&[("spec", &spec)])).unwrap(), optimize_json(&st, &q(&[("spec", &spec)])).unwrap(), series_json(&st, &q(&[("id", "sessions_left")])).unwrap()] {
+            assert!(j.ends_with(&note), "{}", &j[j.len().saturating_sub(300)..]);
+            assert!(crate::lab::json::parse(&j).is_ok());
+        }
+        // everything else keeps its exact body: no adaptations key at all
+        for j in [run_json(&st, &q(&[])).unwrap(), optimize_json(&st, &q(&[])).unwrap(), series_json(&st, &q(&[("id", "session")])).unwrap()] {
+            assert!(!j.contains("adaptations") && j.ends_with(r#""provenance":null}"#), "{}", &j[j.len().saturating_sub(200)..]);
+        }
     }
     #[test] fn invalid_bar_in_window_withholds_runs_and_optimizations() {
         let st = state_bad(400, "SPX", false, 100); // index 100 -> 2015-04-17 (open below the low)

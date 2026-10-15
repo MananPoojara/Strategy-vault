@@ -247,6 +247,8 @@ pub const SOURCES: &[(&str, &str, &str)] = &[
     ("mtp", "Multi-Time Period Charts", ""),
     ("performance", "Performance", ""),
     ("calendar", "", "DayOfWeek; Day; Month; Year; DayOfYear; BarIndex"),
+    ("session", "", "no built-in; AFL idiom BarsSince(Month() != Ref(Month(), -1)) + 1"),
+    ("sessions_left", "", "no built-in; AFL idiom with a holiday list"),
     ("moon_phases", "Moon Phases", ""),
     ("highest_bars", "ta.highestbars (Pine)", "HHVBars; HighestBars"),
     ("lowest_bars", "ta.lowestbars (Pine)", "LLVBars; LowestBars"),

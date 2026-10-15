@@ -127,7 +127,8 @@ mod tests {
     }
     #[test] fn every_indicator_is_causal() {
         let bars = walk(400, 11, true);
-        for d in all().iter().filter(|d| computable(d)) {
+        // declared readers of future session dates have their own property test (periods.rs)
+        for d in all().iter().filter(|d| computable(d) && !crate::lab::periods::USES_SESSION_DATES.contains(&d.id)) {
             let full = run(d, &bars, &Params::new()).unwrap();
             // many cut points: a sparse lookahead (e.g. a fractal written on its pivot bar) only shows when a cut lands right after it
             for cut in (30usize..400).step_by(2) {
@@ -144,14 +145,14 @@ mod tests {
     }
     #[test] fn catalogue_matches_the_phase6_master_list() {
         let defs = all();
-        assert_eq!(defs.len(), 299, "Phase 6 master list: 66 Batch A + 233 new");
-        assert_eq!(defs.iter().filter(|d| d.compute.is_some()).count(), 183);
+        assert_eq!(defs.len(), 301, "Phase 6 master list: 66 Batch A + 233 new; Phase 7: session, sessions_left");
+        assert_eq!(defs.iter().filter(|d| d.compute.is_some()).count(), 185);
         assert_eq!(defs.iter().filter(|d| d.compute.is_none()).count(), 116);
         let mut c = std::collections::BTreeMap::new();
         for (_, tv, ab) in crate::lab::sources::SOURCES {
             *c.entry(match (tv.is_empty(), ab.is_empty()) { (false, false) => "both", (false, true) => "tv", (true, false) => "ab", _ => "lab" }).or_insert(0) += 1;
         }
-        assert_eq!((c["tv"], c["ab"], c["both"], c["lab"]), (234, 23, 41, 1));
+        assert_eq!((c["tv"], c["ab"], c["both"], c["lab"]), (234, 25, 41, 1));
     }
     #[test] fn volume_indicators_refuse_without_volume() {
         let bars = walk(300, 3, false);

@@ -2,16 +2,28 @@
 //! W/M values reach daily bars through `resample::expand` (usable after the period's last daily close).
 use super::bars::Bars;
 use super::catalogue;
-use super::resample::{self, Tf};
-use super::rules::{Bin, Cond, Dist, Exec, Expr, LabError, Node, Op, Operand, SeriesRef, Spec, Win};
+use super::resample::{self, Expand, Tf};
+use super::rules::{Agg, Bin, Cond, Dist, Exec, Expr, LabError, Node, Op, Operand, SeriesRef, Spec, Win};
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-/// Daily bars of one instrument plus their weekly and monthly resamples (built once per request).
-pub struct Frames { pub d: Bars, pub w: Bars, pub m: Bars }
+/// Daily bars of one instrument plus their calendar resamples (built once per request); n-session blocks are built on use.
+pub struct Frames { pub d: Bars, pub w: Bars, pub m: Bars, pub q: Bars, pub y: Bars }
 impl Frames {
-    pub fn new(d: Bars) -> Frames { let (w, m) = (resample::resample(&d, Tf::W), resample::resample(&d, Tf::M)); Frames { d, w, m } }
-    pub fn bars(&self, tf: Tf) -> &Bars { match tf { Tf::D => &self.d, Tf::W => &self.w, Tf::M => &self.m } }
+    pub fn new(d: Bars) -> Frames {
+        let r = |tf| resample::resample(&d, tf);
+        let (w, m, q, y) = (r(Tf::W), r(Tf::M), r(Tf::Q), r(Tf::Y));
+        Frames { d, w, m, q, y }
+    }
+    pub fn bars(&self, tf: Tf) -> Cow<'_, Bars> {
+        match tf {
+            Tf::D => Cow::Borrowed(&self.d), Tf::W => Cow::Borrowed(&self.w), Tf::M => Cow::Borrowed(&self.m),
+            Tf::Q => Cow::Borrowed(&self.q), Tf::Y => Cow::Borrowed(&self.y),
+            // shortcut: rebuilt per call; cache per (tf) in Frames if optimizer profiling shows it
+            Tf::Days(_) => Cow::Owned(resample::resample(&self.d, tf)),
+        }
+    }
 }
 /// Indicator outputs on their own timeframe, keyed by instrument fingerprint, id, tf and resolved params. One per request (per instrument) / optimizer thread.
 pub type Cache = BTreeMap<String, Rc<Vec<Vec<f64>>>>;
@@ -32,8 +44,11 @@ fn price(b: &Bars, id: &str) -> Option<Result<Vec<f64>, LabError>> {
 }
 
 /// One operand as a series aligned to the daily bars (NaN = no value).
-pub fn series(fr: &Frames, cache: &mut Cache, s: &SeriesRef) -> Result<Vec<f64>, LabError> {
-    let b = fr.bars(s.tf);
+pub fn series(fr: &Frames, cache: &mut Cache, s: &SeriesRef) -> Result<Vec<f64>, LabError> { series_mode(fr, cache, s, Expand::Last) }
+/// One operand on daily bars with an AmiBroker expand mode (spec §5.1).
+fn series_mode(fr: &Frames, cache: &mut Cache, s: &SeriesRef, mode: Expand) -> Result<Vec<f64>, LabError> {
+    let held = fr.bars(s.tf);
+    let b: &Bars = &held;
     let raw = match price(b, &s.id) {
         Some(r) => r?,
         None => {
@@ -61,7 +76,7 @@ pub fn series(fr: &Frames, cache: &mut Cache, s: &SeriesRef) -> Result<Vec<f64>,
     };
     // Offset counts bars of the operand's own timeframe (W offset 1 = the previous completed week).
     let shifted: Vec<f64> = (0..raw.len()).map(|i| if i >= s.offset { raw[i - s.offset] } else { f64::NAN }).collect();
-    Ok(if s.tf == Tf::D { shifted } else { resample::expand(&shifted, b, fr.d.len()) })
+    Ok(if s.tf == Tf::D { shifted } else { resample::expand_mode(&shifted, b, fr.d.len(), mode) })
 }
 
 pub enum Val { Arr(Vec<f64>), Const(f64), Held }
@@ -144,6 +159,61 @@ fn eval(e: &Expr, fr: &Frames, cache: &mut Cache) -> Result<Vec<f64>, LabError> 
         Expr::Abs(x) => arr(x, fr, cache)?.into_iter().map(f64::abs).collect(),
         Expr::Ref(x, n) => { let a = arr(x, fr, cache)?; (0..len).map(|i| if i >= *n { a[i - n] } else { nan }).collect() }
         Expr::Win(Win::Change, x, n) => { let a = arr(x, fr, cache)?; (0..len).map(|i| if i >= *n { a[i] - a[i - n] } else { nan }).collect() }
+        // State operands follow Kleene logic (spec §4.2): an unknown bar that could change the answer makes it unknown.
+        Expr::BarsSince(c) => {
+            let (mut last, mut unk) = (None, None);
+            mask(c, fr, cache)?.iter().enumerate().map(|(i, m)| {
+                if *m == 1. { last = Some(i); } else if m.is_nan() { unk = Some(i); }
+                match last { Some(l) if unk < Some(l) => (i - l) as f64, _ => nan }
+            }).collect()
+        }
+        Expr::Count(c, n) => {
+            let m = mask(c, fr, cache)?;
+            let (mut count, mut unk) = (0usize, 0usize);
+            (0..len).map(|i| {
+                count += usize::from(m[i] == 1.); unk += usize::from(m[i].is_nan());
+                if i >= *n { count -= usize::from(m[i - n] == 1.); unk -= usize::from(m[i - n].is_nan()); }
+                if i + 1 < *n || unk > 0 { nan } else { count as f64 }
+            }).collect()
+        }
+        Expr::ValueWhen { when, of, nth } => {
+            let (m, a) = (mask(when, fr, cache)?, arr(of, fr, cache)?);
+            let (mut hits, mut unk): (Vec<usize>, Option<usize>) = (Vec::new(), None);
+            (0..len).map(|i| {
+                if m[i] == 1. { hits.push(i); } else if m[i].is_nan() { unk = Some(i); }
+                if hits.len() >= *nth && unk < Some(hits[hits.len() - nth]) { a[hits[hits.len() - nth]] } else { nan }
+            }).collect()
+        }
+        Expr::Since { when, of, highest } => {
+            // AmiBroker HighestSince/LowestSince: from the latest bar where `when` held (inclusive). A missing `of` on any bar
+            // since then, like an unknown `when`, makes the extreme unknown (Kleene, spec §4.2).
+            let (m, a) = (mask(when, fr, cache)?, arr(of, fr, cache)?);
+            let (mut started, mut unk, mut ext) = (false, false, nan);
+            (0..len).map(|i| {
+                if m[i] == 1. { started = true; unk = a[i].is_nan(); ext = a[i]; }
+                else if m[i].is_nan() || a[i].is_nan() { unk = true; }
+                else if started { ext = if *highest { ext.max(a[i]) } else { ext.min(a[i]) }; }
+                if started && !unk { ext } else { nan }
+            }).collect()
+        }
+        Expr::Expand(r, mode) => series_mode(fr, cache, r, *mode)?,
+        Expr::Compress { of, tf, agg, offset, expand } => {
+            let (a, held) = (arr(of, fr, cache)?, fr.bars(*tf));
+            let b: &Bars = &held;
+            let c: Vec<f64> = (0..b.len()).map(|w| {
+                let g = &a[if w == 0 { 0 } else { b.end[w - 1] + 1 }..=b.end[w]];
+                match agg {
+                    Agg::Last => g[g.len() - 1],
+                    Agg::First => g[0],
+                    _ if g.iter().any(|v| v.is_nan()) => nan,
+                    Agg::High => g.iter().copied().fold(f64::MIN, f64::max),
+                    Agg::Low => g.iter().copied().fold(f64::MAX, f64::min),
+                    Agg::Sum => g.iter().sum(),
+                }
+            }).collect();
+            let shifted: Vec<f64> = (0..c.len()).map(|w| if w >= *offset { c[w - offset] } else { nan }).collect();
+            resample::expand_mode(&shifted, b, len, *expand)
+        }
         Expr::Win(w, x, n) => {
             let a = arr(x, fr, cache)?;
             // shortcut: O(bars × window); a running sum / monotone deque is the upgrade if optimizer profiles show it.
@@ -265,12 +335,18 @@ pub fn operand_text(o: &Operand) -> String {
             Expr::Abs(x) => format!("abs({})", operand_text(x)),
             Expr::Ref(x, n) => format!("ref({}, {n})", operand_text(x)),
             Expr::Win(w, x, n) => format!("{}({}, {n})", w.key(), operand_text(x)),
+            Expr::BarsSince(c) => format!("bars_since({})", describe_node(c)),
+            Expr::Count(c, n) => format!("count({}, {n})", describe_node(c)),
+            Expr::ValueWhen { when, of, nth } => format!("value_when({}, {}, {nth})", describe_node(when), operand_text(of)),
+            Expr::Since { when, of, highest } => format!("{}({}, {})", if *highest { "highest_since" } else { "lowest_since" }, describe_node(when), operand_text(of)),
+            Expr::Expand(r, mode) => format!("{} expand {}", operand_text(&Operand::Series(r.clone())), mode.key()),
+            Expr::Compress { of, tf, agg, offset, expand } => format!("compress({}, {}, {}){} expand {}", operand_text(of), tf.name(), agg.key(), if *offset > 0 { format!("[{offset}]") } else { String::new() }, expand.key()),
         },
         Operand::Series(s) => {
             let p: Vec<String> = s.params.iter().map(|(k, v)| format!("{k}={v}")).collect();
             let mut t = if p.is_empty() { s.id.clone() } else { format!("{}({})", s.id, p.join(",")) };
             if s.out > 0 { if let Some(d) = catalogue::get(&s.id) { t = format!("{t}.{}", d.outputs[s.out]); } }
-            if s.tf != Tf::D { t = format!("{t}@{:?}", s.tf); }
+            if s.tf != Tf::D { t = format!("{t}@{}", s.tf.name()); }
             if s.offset > 0 { t = format!("{t}[{}]", s.offset); }
             t
         }
@@ -355,8 +431,8 @@ mod tests {
         // Every catalogue indicator on D, W and M: truncating the data never changes an earlier daily value.
         let full_bars = with_breadth(business_days(420, true));
         let full = Frames::new(full_bars.clone());
-        for d in all().iter().filter(|d| d.compute.is_some()) {
-            for tf in [Tf::D, Tf::W, Tf::M] {
+        for d in all().iter().filter(|d| d.compute.is_some() && !crate::lab::periods::USES_SESSION_DATES.contains(&d.id)) {
+            for tf in [Tf::D, Tf::W, Tf::M, Tf::Q, Tf::Y, Tf::Days(5)] {
                 let r = sref(d.id, tf, d.outputs.len() - 1, 0);
                 if d.needs.breadth && tf != Tf::D { assert_eq!(series(&full, &mut Cache::new(), &r).unwrap_err().status(), "needs_data"); continue; }
                 let want = series(&full, &mut Cache::new(), &r).unwrap();
@@ -401,7 +477,7 @@ mod tests {
                 let picks: [fn(&catalogue::ParamSpec) -> f64; 2] = [|p| p.min, |p| p.max];
                 for pick in picks {
                     let params: Params = d.params.iter().map(|p| (p.key.to_string(), pick(p))).collect();
-                    for tf in [Tf::D, Tf::W, Tf::M] {
+                    for tf in [Tf::D, Tf::W, Tf::M, Tf::Q, Tf::Y, Tf::Days(5)] {
                         let r = SeriesRef { id: d.id.into(), params: params.clone(), tf, out: 0, offset: 0 };
                         if d.needs.breadth && tf != Tf::D { assert_eq!(series(&fr, &mut Cache::new(), &r).unwrap_err().status(), "needs_data"); continue; }
                         assert_eq!(series(&fr, &mut Cache::new(), &r).unwrap().len(), fr.d.len(), "{} {tf:?}", d.id);
@@ -557,6 +633,141 @@ mod tests {
             for cut in (60..400usize).step_by(7) {
                 let got = arr(&c.lhs, &Frames::new(crate::lab::testdata::cut(&full, cut)), &mut Cache::new()).unwrap();
                 let upto = if t.contains(r#""tf""#) { cut - 1 } else { cut };
+                for i in 0..upto { assert!(close_eq(got[i], want[i]), "{t} bar {i} changes when bars after {cut} exist"); }
+            }
+        }
+    }
+
+    // ---- Phase 7: state operands (spec §4.1)
+    #[test] fn state_operands_follow_amibroker_definitions() {
+        let fr = Frames::new(crate::lab::testdata::closes(&[1., 3., 2., 5., 4., 6., 1.]));
+        let x = f64::NAN;
+        let up = r#"{"lhs":{"s":"close"},"op":">","rhs":{"s":"close","offset":1}}"#; // unknown, 1, 0, 1, 0, 1, 0
+        let e = |t: &str| { let Node::Cmp(c) = node(&format!(r#"{{"lhs":{t},"op":">","rhs":{{"value":0}}}}"#)) else { panic!() }; arr(&c.lhs, &fr, &mut Cache::new()).unwrap() };
+        assert_series(&e(&format!(r#"{{"bars_since":{up}}}"#)), &[x, 0., 1., 0., 1., 0., 1.]);
+        assert_series(&e(&format!(r#"{{"value_when":{up},"of":{{"s":"close"}}}}"#)), &[x, 3., 3., 5., 5., 6., 6.]);
+        assert_series(&e(&format!(r#"{{"value_when":{up},"of":{{"s":"close"}},"nth":2}}"#)), &[x, x, x, 3., 3., 5., 5.]);
+        assert_series(&e(&format!(r#"{{"highest_since":{up},"of":{{"s":"close"}}}}"#)), &[x, 3., 3., 5., 5., 6., 6.]);
+        assert_series(&e(&format!(r#"{{"lowest_since":{up},"of":{{"s":"close"}}}}"#)), &[x, 3., 2., 5., 4., 6., 1.]);
+        assert_series(&e(&format!(r#"{{"count":{up},"bars":3}}"#)), &[x, x, x, 2., 1., 2., 1.]); // bar 2's window holds the unknown bar 0 (Kleene)
+    }
+    #[test] fn state_operands_never_use_later_bars() {
+        let full = business_days(420, true);
+        let rsi_low = r#"{"lhs":{"s":"rsi","p":{"length":2}},"op":"<","rhs":{"value":20}}"#;
+        for t in [format!(r#"{{"bars_since":{rsi_low}}}"#), format!(r#"{{"value_when":{rsi_low},"of":{{"s":"low"}},"nth":2}}"#),
+                  format!(r#"{{"highest_since":{rsi_low},"of":{{"s":"high"}}}}"#), format!(r#"{{"lowest_since":{{"lhs":{{"s":"close"}},"op":">","rhs":{{"s":"sma","p":{{"length":4}},"tf":"W"}}}},"of":{{"s":"close"}}}}"#),
+                  format!(r#"{{"count":{rsi_low},"bars":10}}"#)] {
+            let Node::Cmp(c) = node(&format!(r#"{{"lhs":{t},"op":">","rhs":{{"value":0}}}}"#)) else { panic!() };
+            let want = arr(&c.lhs, &Frames::new(full.clone()), &mut Cache::new()).unwrap();
+            assert!(want.iter().filter(|v| v.is_finite()).count() > 300, "{t}: vacuous");
+            for cut in (60..400usize).step_by(7) {
+                let got = arr(&c.lhs, &Frames::new(crate::lab::testdata::cut(&full, cut)), &mut Cache::new()).unwrap();
+                // only W/M items may differ on the cut bar itself (the still-open period's value)
+                let upto = if t.contains(r#""tf""#) { cut - 1 } else { cut };
+                for i in 0..upto { assert!(close_eq(got[i], want[i]), "{t} bar {i} changes when bars after {cut} exist"); }
+            }
+        }
+    }
+    #[test] fn state_operands_stay_unknown_through_warm_up() {
+        let fr = Frames::new(business_days(300, false));
+        let c = r#"{"lhs":{"s":"close"},"op":">","rhs":{"s":"sma","p":{"length":200}}}"#;
+        let base = mask(&node(c), &fr, &mut Cache::new()).unwrap();
+        assert!(base[210..].iter().any(|v| *v == 1.) && base[210..].iter().any(|v| *v == 0.), "vacuous");
+        for t in [format!(r#"{{"bars_since":{c}}}"#), format!(r#"{{"count":{c},"bars":1}}"#), format!(r#"{{"value_when":{c},"of":{{"s":"close"}}}}"#),
+                  format!(r#"{{"highest_since":{c},"of":{{"s":"close"}}}}"#), format!(r#"{{"lowest_since":{c},"of":{{"s":"close"}}}}"#)] {
+            // `x >= 0` is true whenever x is known, so its `not` is false when known and unknown only while x is unknown
+            let n = mask(&node(&format!(r#"{{"not":{{"lhs":{t},"op":">=","rhs":{{"value":0}}}}}}"#)), &fr, &mut Cache::new()).unwrap();
+            for i in 0..199 { assert!(n[i].is_nan(), "{t}: bar {i} must be unknown in warm-up"); }
+        }
+        // after warm-up count(c, 1) is the plain truth of c
+        let Node::Cmp(k) = node(&format!(r#"{{"lhs":{{"count":{c},"bars":1}},"op":">","rhs":{{"value":0}}}}"#)) else { panic!() };
+        let k = arr(&k.lhs, &fr, &mut Cache::new()).unwrap();
+        for i in 199..300 { assert_eq!(k[i], base[i], "count bar {i}"); }
+        // an unknown bar after the latest true makes the answer unknown; one before it does not
+        let fr = Frames::new(crate::lab::testdata::closes(&[3., 1., f64::NAN, 1., 4., 1.]));
+        let (x, big) = (f64::NAN, r#"{"lhs":{"s":"close"},"op":">","rhs":{"value":2}}"#); // 1, 0, unknown, 0, 1, 0
+        let e = |t: &str| { let Node::Cmp(c) = node(&format!(r#"{{"lhs":{t},"op":">","rhs":{{"value":0}}}}"#)) else { panic!() }; arr(&c.lhs, &fr, &mut Cache::new()).unwrap() };
+        assert_series(&e(&format!(r#"{{"bars_since":{big}}}"#)), &[0., 1., x, x, 0., 1.]);
+        assert_series(&e(&format!(r#"{{"count":{big},"bars":2}}"#)), &[x, 1., x, x, 1., 1.]);
+        assert_series(&e(&format!(r#"{{"value_when":{big},"of":{{"s":"close"}}}}"#)), &[3., 3., x, x, 4., 4.]);
+        assert_series(&e(&format!(r#"{{"value_when":{big},"of":{{"s":"close"}},"nth":2}}"#)), &[x, x, x, x, x, x]); // bar 2 might have been the 2nd-latest
+        assert_series(&e(&format!(r#"{{"highest_since":{big},"of":{{"s":"close"}}}}"#)), &[3., 3., x, x, 4., 4.]);
+        assert_series(&e(&format!(r#"{{"lowest_since":{big},"of":{{"s":"close"}}}}"#)), &[3., 1., x, x, 4., 1.]);
+        // a missing `of` since the start bar is unknown too (division by zero where close = 1)
+        let fr = Frames::new(crate::lab::testdata::closes(&[3., 2., 1., 2., 3., 2.]));
+        let e = |t: &str| { let Node::Cmp(c) = node(&format!(r#"{{"lhs":{t},"op":">","rhs":{{"value":0}}}}"#)) else { panic!() }; arr(&c.lhs, &fr, &mut Cache::new()).unwrap() };
+        let (hi, of) = (r#"{"lhs":{"s":"close"},"op":">","rhs":{"value":2.5}}"#, r#"{"div":[{"s":"close"},{"sub":[{"s":"close"},{"value":1}]}]}"#); // 1, 0, 0, 0, 1, 0 / 1.5, 2, -, 2, 1.5, 2
+        assert_series(&e(&format!(r#"{{"highest_since":{hi},"of":{of}}}"#)), &[1.5, 2., x, x, 1.5, 2.]);
+        assert_series(&e(&format!(r#"{{"lowest_since":{hi},"of":{of}}}"#)), &[1.5, 1.5, x, x, 1.5, 1.5]);
+        assert_series(&e(&format!(r#"{{"highest_since":{{"lhs":{{"s":"close"}},"op":"<","rhs":{{"value":1.5}}}},"of":{of}}}"#)), &[x, x, x, x, x, x]); // the start bar's own `of` is missing
+    }
+    #[test] fn the_amibroker_bars_since_time_exit_is_expressible() {
+        // hbqts_entry_id1's book exit counts bars since the latest (repeating) buy signal; the lab can now say so.
+        let spec = parse_spec(r#"{"v":1,"entry":{"all":[{"lhs":{"s":"sma","p":{"length":3}},"op":">","rhs":{"s":"sma","p":{"length":16}}}]},
+            "exit":{"any":[{"lhs":{"bars_since":{"lhs":{"s":"sma","p":{"length":3}},"op":">","rhs":{"s":"sma","p":{"length":16}}}},"op":">=","rhs":{"value":6}}]},"execution":{"fill":"close"}}"#).unwrap();
+        let c = compile(&spec, &Frames::new(business_days(200, false)), &mut Cache::new()).unwrap();
+        assert_eq!(c.exit[0].label, "exit.any[0]: bars_since(sma(length=3) > sma(length=16)) >= 6");
+    }
+
+    // ---- Phase 7: AmiBroker TimeFrame semantics (spec §5.1)
+    fn operand_of(t: &str) -> Operand { let Node::Cmp(c) = node(&format!(r#"{{"lhs":{t},"op":">","rhs":{{"value":0}}}}"#)) else { panic!() }; c.lhs }
+    #[test] fn each_expand_mode_is_causal_and_placed_like_amibroker() {
+        let fr = Frames::new(business_days(30, false)); // 2021-01-04 is a Monday: weeks are daily 0-4, 5-9, …
+        let x = f64::NAN;
+        let v = |t: &str| arr(&operand_of(t), &fr, &mut Cache::new()).unwrap();
+        let (c, o) = (&fr.d.close, &fr.d.open);
+        // last (the default, = v1): week 1's close from its Friday (4) until week 2's Friday (9)
+        assert_series(&v(r#"{"s":"close","tf":"W"}"#)[..10], &[x, x, x, x, c[4], c[4], c[4], c[4], c[4], c[9]]);
+        // point: only on each week's last day
+        assert_series(&v(r#"{"s":"close","tf":"W","expand":"point"}"#)[..10], &[x, x, x, x, c[4], x, x, x, x, c[9]]);
+        // first + offset 1: the previous completed week from Monday (TradingView expr[1] with lookahead_on)
+        assert_series(&v(r#"{"s":"close","tf":"W","offset":1,"expand":"first"}"#)[..10], &[x, x, x, x, x, c[4], c[4], c[4], c[4], c[4]]);
+        // first on the open: the week's own open from Monday
+        assert_series(&v(r#"{"s":"open","tf":"W","expand":"first"}"#)[..7], &[o[0], o[0], o[0], o[0], o[0], o[5], o[5]]);
+        // compress: the week's highest close at its Friday (last), and the week's first close from Monday (first)
+        let hi = c[..5].iter().copied().fold(f64::MIN, f64::max);
+        assert_series(&v(r#"{"compress":{"s":"close"},"tf":"W","mode":"high"}"#)[..6], &[x, x, x, x, hi, hi]);
+        assert_series(&v(r#"{"compress":{"s":"close"},"tf":"W","mode":"first","expand":"first"}"#)[..6], &[c[0], c[0], c[0], c[0], c[0], c[5]]);
+    }
+    #[test] fn lookahead_expand_first_is_refused_with_a_note() {
+        for (t, status, needle) in [
+            (r#"{"s":"close","tf":"W","expand":"first"}"#, "unsupported", "expandFirst would show the period's final value"),
+            (r#"{"s":"high","tf":"M","expand":"first"}"#, "unsupported", "lookahead"),
+            (r#"{"compress":{"s":"close"},"tf":"W","mode":"high","expand":"first"}"#, "unsupported", "lookahead"),
+            (r#"{"s":"close","expand":"point"}"#, "invalid", "expand applies to W, M, Q, Y and nD"),
+            (r#"{"s":"close","tf":"W","expand":"later"}"#, "invalid", "expand must be last, first or point"),
+            (r#"{"compress":{"s":"close"},"tf":"D"}"#, "invalid", "tf must be one of W, M, Q, Y or nD"),
+            (r#"{"s":"close","tf":"1D"}"#, "invalid", "tf must be D, W, M, Q, Y or nD (2D to 63D)"),
+        ] {
+            let e = parse_spec(&format!(r#"{{"v":1,"entry":{{"all":[{{"lhs":{t},"op":">","rhs":{{"value":0}}}}]}},"exit":{{"any":[{{"lhs":{{"s":"bars_held"}},"op":">=","rhs":{{"value":1}}}}]}}}}"#)).unwrap_err();
+            assert_eq!(e.status(), status, "{t}");
+            assert!(e.message().contains(needle), "{needle:?} not in {:?}", e.message());
+        }
+    }
+    #[test] fn a_quarter_close_is_invisible_until_the_quarters_last_session() {
+        let fr = Frames::new(business_days(200, false)); // from 2021-01-04; Q1 ends 2021-03-31
+        let q = series(&fr, &mut Cache::new(), &sref("close", Tf::Q, 0, 0)).unwrap();
+        let last_q1 = fr.d.date.iter().rposition(|d| d.as_str() <= "2021-03-31").unwrap();
+        assert!(q[..last_q1].iter().all(|v| v.is_nan()));
+        assert!(q[last_q1..last_q1 + 20].iter().all(|v| *v == fr.d.close[last_q1]));
+    }
+    #[test] fn expand_modes_and_compress_never_use_later_bars() {
+        let full = business_days(420, true);
+        for t in [r#"{"s":"close","tf":"W","expand":"point"}"#, r#"{"s":"rsi","tf":"M","offset":1,"expand":"first"}"#, r#"{"s":"open","tf":"Q","expand":"first"}"#,
+                  r#"{"s":"sma","p":{"length":3},"tf":"5D"}"#, r#"{"compress":{"s":"rsi","p":{"length":2}},"tf":"W","mode":"low"}"#,
+                  r#"{"compress":{"s":"volume"},"tf":"M","mode":"sum","offset":1,"expand":"first"}"#, r#"{"s":"close","tf":"Y","offset":1,"expand":"first"}"#,
+                  r#"{"s":"close","tf":"Q","expand":"point"}"#, r#"{"s":"close","tf":"Y","expand":"point"}"#, r#"{"s":"rsi","tf":"5D","expand":"point"}"#,
+                  r#"{"compress":{"s":"close"},"tf":"Q","mode":"high"}"#, r#"{"compress":{"s":"high"},"tf":"Y","mode":"high","expand":"point"}"#,
+                  r#"{"compress":{"s":"volume"},"tf":"5D","mode":"sum"}"#, r#"{"compress":{"s":"volume"},"tf":"Q","mode":"sum","expand":"point"}"#,
+                  r#"{"s":"close","tf":"5D","offset":1,"expand":"first"}"#] {
+            let o = operand_of(t);
+            let want = arr(&o, &Frames::new(full.clone()), &mut Cache::new()).unwrap();
+            assert!(want.iter().any(|v| v.is_finite()), "{t}: vacuous");
+            for cut in (60..400usize).step_by(7) {
+                let got = arr(&o, &Frames::new(crate::lab::testdata::cut(&full, cut)), &mut Cache::new()).unwrap();
+                // expand first shows only values complete by the period's first bar, so even the cut bar must match;
+                // last/point may show the still-open period's value on the cut bar itself
+                let upto = if t.contains(r#""expand":"first""#) { cut } else { cut - 1 };
                 for i in 0..upto { assert!(close_eq(got[i], want[i]), "{t} bar {i} changes when bars after {cut} exist"); }
             }
         }

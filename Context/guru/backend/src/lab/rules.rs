@@ -2,7 +2,7 @@
 //! Reserved fields return `Unsupported`; malformed input returns `Invalid` naming the field.
 use super::catalogue::{self, Params};
 use super::json::{self, Json};
-use super::resample::Tf;
+use super::resample::{Expand, Tf, TF_HELP};
 
 pub const LABEL: &str = "User-defined indicator strategy · simulated · not a book method";
 pub const MAX_CONDITIONS: usize = 12;
@@ -43,7 +43,14 @@ pub struct SeriesRef { pub id: String, pub params: Params, pub tf: Tf, pub out: 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Operand { Series(SeriesRef), Value(f64), BarsHeld, Expr(Box<Expr>) }
 /// Expression operands (spec §4.1), evaluated on the daily bars.
-pub const EXPRESSIONS: &[&str] = &["add", "sub", "mul", "div", "min", "max", "pct", "abs", "ref", "sum", "avg", "highest", "lowest", "change"];
+pub const EXPRESSIONS: &[&str] = &["add", "sub", "mul", "div", "min", "max", "pct", "abs", "ref", "sum", "avg", "highest", "lowest", "change",
+    "bars_since", "value_when", "highest_since", "lowest_since", "count", "compress"];
+/// TimeFrameCompress modes (spec §5.1).
+pub const AGGREGATES: &[&str] = &["last", "first", "high", "low", "sum"];
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Agg { Last, First, High, Low, Sum }
+impl Agg { pub fn key(self) -> &'static str { AGGREGATES[self as usize] } }
+pub const MAX_NTH: usize = 20;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Bin { Add, Sub, Mul, Div, Min, Max, Pct }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -56,6 +63,13 @@ pub enum Expr {
     Abs(Operand),
     Ref(Operand, usize),
     Win(Win, Operand, usize),
+    BarsSince(Node),
+    ValueWhen { when: Node, of: Operand, nth: usize },
+    Since { when: Node, of: Operand, highest: bool },
+    Count(Node, usize),
+    /// A series operand expanded with `expand: first|point` (`last` stays a plain series operand, the v1 path).
+    Expand(SeriesRef, Expand),
+    Compress { of: Operand, tf: Tf, agg: Agg, offset: usize, expand: Expand },
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct Cond { pub lhs: Operand, pub op: Op, pub rhs: Operand }
@@ -305,14 +319,14 @@ fn operand(v: Option<&Json>, at: &str, held: bool, b: &mut Budget) -> Result<Ope
     if v.get("symbol").is_some() {
         return Err(LabError::Unsupported(format!("{at}.symbol: operands from another symbol (AmiBroker Foreign, TradingView request.security on another ticker) arrive in Phase 8")));
     }
-    fields(v, at, &["s", "p", "tf", "out", "offset"], &[])?;
+    fields(v, at, &["s", "p", "tf", "out", "offset", "expand"], &[])?;
     let id = v.get("s").and_then(Json::as_str).ok_or_else(|| inv(format!("{at}.s must name a series (or give a value)")))?;
     if id == "bars_held" {
         if !held { return Err(inv(format!("{at}: bars_held is only available as a plain comparison at the top level of the exit list (not inside a group, range, trend or expression)"))); }
-        if ["p", "tf", "out", "offset"].iter().any(|k| v.get(k).is_some()) { return Err(inv(format!("{at}: bars_held takes no p, tf, out or offset"))); }
+        if ["p", "tf", "out", "offset", "expand"].iter().any(|k| v.get(k).is_some()) { return Err(inv(format!("{at}: bars_held takes no p, tf, out, offset or expand"))); }
         return Ok(Operand::BarsHeld);
     }
-    let tf = match v.get("tf") { None => Tf::D, Some(t) => t.as_str().and_then(Tf::parse).ok_or_else(|| inv(format!("{at}.tf must be D, W or M")))? };
+    let tf = match v.get("tf") { None => Tf::D, Some(t) => t.as_str().and_then(Tf::parse).ok_or_else(|| inv(format!("{at}.tf must be {TF_HELP}")))? };
     let offset = match v.get("offset") {
         None => 0,
         Some(o) => o.as_f64().filter(|n| n.fract() == 0. && *n >= 0. && *n <= MAX_OFFSET as f64)
@@ -324,7 +338,21 @@ fn operand(v: Option<&Json>, at: &str, held: bool, b: &mut Budget) -> Result<Ope
         for (k, x) in kv { given.insert(k.clone(), x.as_f64().ok_or_else(|| inv(format!("{at}.p.{k} must be a number")))?); }
     }
     let out = match v.get("out") { None => None, Some(o) => Some(o.as_str().ok_or_else(|| inv(format!("{at}.out must be a string")))?) };
-    series_ref(at, id, &given, tf, out, offset).map(Operand::Series)
+    let expand = expand_of(v, at, tf, offset, id == "open")?;
+    let r = series_ref(at, id, &given, tf, out, offset)?;
+    Ok(if expand == Expand::Last { Operand::Series(r) } else { Operand::Expr(Box::new(Expr::Expand(r, expand))) })
+}
+/// `expand` (default last). `first` is accepted only where the value is known by the close of the period's first daily bar:
+/// a completed earlier period (offset >= 1) or the period's own first value (`known_at_start`). AmiBroker's docs: expandFirst
+/// looks into the future for anything else.
+fn expand_of(v: &Json, at: &str, tf: Tf, offset: usize, known_at_start: bool) -> Result<Expand, LabError> {
+    let Some(e) = v.get("expand") else { return Ok(Expand::Last) };
+    let e = e.as_str().and_then(Expand::parse).ok_or_else(|| inv(format!("{at}.expand must be last, first or point")))?;
+    if tf == Tf::D && e != Expand::Last { return Err(inv(format!("{at}.expand applies to W, M, Q, Y and nD operands"))); }
+    if e == Expand::First && offset == 0 && !known_at_start {
+        return Err(LabError::Unsupported(format!("{at}: expandFirst would show the period's final value from its first day (lookahead); use offset >= 1, the period open, or expand last")));
+    }
+    Ok(e)
 }
 
 /// An expression operand (spec §4.1), or None when `v` is a series operand.
@@ -335,7 +363,11 @@ fn expr(v: &Json, at: &str, b: &mut Budget) -> Result<Option<Expr>, LabError> {
     }
     let Some(key) = kv.iter().map(|(k, _)| k.as_str()).find(|k| EXPRESSIONS.contains(k)) else { return Ok(None) };
     b.take(false)?;
-    let sub = |k: &str, b: &mut Budget| operand(v.get(k), &format!("{at}.{k}"), false, b);
+    // a unary, window or state expression over a constant is that constant (or 0): refuse it like two constants
+    let sub = |k: &str, b: &mut Budget| match operand(v.get(k), &format!("{at}.{k}"), false, b)? {
+        Operand::Value(_) => Err(inv(format!("{at}.{k} is a number; {key} needs a series"))),
+        o => Ok(o),
+    };
     Ok(Some(match key {
         "add" | "sub" | "mul" | "div" | "min" | "max" | "pct" => {
             fields(v, at, &[key], &[])?;
@@ -349,12 +381,41 @@ fn expr(v: &Json, at: &str, b: &mut Budget) -> Result<Option<Expr>, LabError> {
         }
         "abs" => { fields(v, at, &["abs"], &[])?; Expr::Abs(sub("abs", b)?) }
         "ref" => { fields(v, at, &["ref", "bars"], &[])?; Expr::Ref(sub("ref", b)?, whole(v.get("bars"), &format!("{at}.bars"), 0)?) }
+        "bars_since" => { fields(v, at, &[key], &[])?; Expr::BarsSince(cond_of(v, key, at, b)?) }
+        "count" => { fields(v, at, &[key, "bars"], &[])?; Expr::Count(cond_of(v, key, at, b)?, whole(v.get("bars"), &format!("{at}.bars"), 1)?) }
+        "value_when" => {
+            fields(v, at, &[key, "of", "nth"], &[])?;
+            let nth = match v.get("nth") {
+                None => 1,
+                Some(n) => n.as_f64().filter(|n| n.fract() == 0. && (1. ..=MAX_NTH as f64).contains(n)).ok_or_else(|| inv(format!("{at}.nth must be a whole number from 1 to {MAX_NTH}")))? as usize,
+            };
+            Expr::ValueWhen { when: cond_of(v, key, at, b)?, of: sub("of", b)?, nth }
+        }
+        "compress" => {
+            fields(v, at, &[key, "tf", "mode", "offset", "expand"], &[])?;
+            let tf = v.get("tf").and_then(Json::as_str).and_then(Tf::parse).filter(|t| *t != Tf::D)
+                .ok_or_else(|| inv(format!("{at}.tf must be one of W, M, Q, Y or nD (2D to 63D)")))?;
+            let agg = match v.get("mode") {
+                None => Agg::Last,
+                Some(m) => [Agg::Last, Agg::First, Agg::High, Agg::Low, Agg::Sum].into_iter().find(|a| Some(a.key()) == m.as_str())
+                    .ok_or_else(|| inv(format!("{at}.mode must be one of {}", AGGREGATES.join(", "))))?,
+            };
+            let offset = if v.get("offset").is_some() { whole(v.get("offset"), &format!("{at}.offset"), 0)? } else { 0 };
+            let expand = expand_of(v, at, tf, offset, agg == Agg::First)?;
+            Expr::Compress { of: sub(key, b)?, tf, agg, offset, expand }
+        }
+        "highest_since" | "lowest_since" => { fields(v, at, &[key, "of"], &[])?; Expr::Since { when: cond_of(v, key, at, b)?, of: sub("of", b)?, highest: key == "highest_since" } }
         _ => {
             fields(v, at, &[key, "bars"], &[])?;
             let w = [Win::Sum, Win::Avg, Win::Highest, Win::Lowest, Win::Change].into_iter().find(|w| w.key() == key).unwrap();
             Expr::Win(w, sub(key, b)?, whole(v.get("bars"), &format!("{at}.bars"), 1)?)
         }
     }))
+}
+
+/// The condition a state operand watches (`{"bars_since": node}` …).
+fn cond_of(v: &Json, key: &str, at: &str, b: &mut Budget) -> Result<Node, LabError> {
+    node(v.get(key).ok_or_else(|| inv(format!("{at}.{key} is required")))?, &format!("{at}.{key}"), false, b)
 }
 
 /// Validates one series operand against the catalogue (shared by rule specs and /api/lab/series).
@@ -463,28 +524,51 @@ fn walk_node(n: &mut Node, at: &str, f: &mut dyn FnMut(String, Knob)) {
 fn walk_operand(o: &mut Operand, at: &str, f: &mut dyn FnMut(String, Knob)) {
     match o {
         Operand::Value(x) => f(format!("{at}.value"), Knob::Value(x)),
-        Operand::Series(r) => {
-            f(at.to_string(), Knob::Series(r));
-            let keys: Vec<String> = r.params.keys().cloned().collect();
-            for k in keys { f(format!("{at}.p.{k}"), Knob::Param(&mut *r, k)); }
-        }
+        Operand::Series(r) => walk_series(r, at, f),
         Operand::BarsHeld => {}
         Operand::Expr(e) => match &mut **e {
             Expr::Bin(op, l, r) => { walk_operand(l, &format!("{at}.{}[0]", op.key()), f); walk_operand(r, &format!("{at}.{}[1]", op.key()), f); }
             Expr::Abs(x) => walk_operand(x, &format!("{at}.abs"), f),
             Expr::Ref(x, n) => { walk_operand(x, &format!("{at}.ref"), f); f(format!("{at}.bars"), Knob::Shift(n)); }
             Expr::Win(w, x, n) => { walk_operand(x, &format!("{at}.{}", w.key()), f); f(format!("{at}.bars"), Knob::Whole(n)); }
+            Expr::BarsSince(c) => walk_node(c, &format!("{at}.bars_since"), f),
+            Expr::Count(c, n) => { walk_node(c, &format!("{at}.count"), f); f(format!("{at}.bars"), Knob::Whole(n)); }
+            Expr::ValueWhen { when, of, nth } => { walk_node(when, &format!("{at}.value_when"), f); walk_operand(of, &format!("{at}.of"), f); f(format!("{at}.nth"), Knob::Whole(nth)); }
+            Expr::Since { when, of, highest } => { walk_node(when, &format!("{at}.{}", if *highest { "highest_since" } else { "lowest_since" }), f); walk_operand(of, &format!("{at}.of"), f); }
+            Expr::Expand(r, _) => walk_series(r, at, f),
+            Expr::Compress { of, .. } => walk_operand(of, &format!("{at}.compress"), f),
         },
     }
 }
-/// `at_least` never exceeds `of` (also after an optimize value is applied).
+fn walk_series(r: &mut SeriesRef, at: &str, f: &mut dyn FnMut(String, Knob)) {
+    f(at.to_string(), Knob::Series(r));
+    let keys: Vec<String> = r.params.keys().cloned().collect();
+    for k in keys { f(format!("{at}.p.{k}"), Knob::Param(&mut *r, k)); }
+}
+/// Node invariants the parser checks, re-checked after an optimize value is applied (at_least <= of, then spans, constant range bounds).
 fn consistent(n: &Node) -> Result<(), String> {
     match n {
         Node::AtLeast { k, of, .. } if k > of => Err(format!("at_least ({k}) cannot exceed of ({of})")),
         Node::Then { steps, within } if *within + 1 < steps.len() => Err(format!("within ({within}) is shorter than the {} steps need ({})", steps.len(), steps.len() - 1)),
+        Node::Range { lo: Operand::Value(l), hi: Operand::Value(h), .. } if l > h => Err(format!("lo ({l}) is above hi ({h})")),
         Node::AtLeast { when, .. } | Node::Not(when) => consistent(when),
         Node::All(v) | Node::Any(v) | Node::Then { steps: v, .. } => v.iter().try_for_each(consistent),
-        _ => Ok(()),
+        Node::Cmp(c) => [&c.lhs, &c.rhs].into_iter().try_for_each(consistent_operand),
+        Node::Range { x, lo, hi, .. } => [x, lo, hi].into_iter().try_for_each(consistent_operand),
+        Node::Trend { x, .. } => consistent_operand(x),
+    }
+}
+/// Nodes inside state operands obey the same rules; value_when's nth stays within MAX_NTH.
+fn consistent_operand(o: &Operand) -> Result<(), String> {
+    let Operand::Expr(e) = o else { return Ok(()) };
+    match &**e {
+        Expr::Bin(_, l, r) => { consistent_operand(l)?; consistent_operand(r) }
+        Expr::Abs(x) | Expr::Ref(x, _) | Expr::Win(_, x, _) => consistent_operand(x),
+        Expr::BarsSince(c) | Expr::Count(c, _) => consistent(c),
+        Expr::ValueWhen { nth, .. } if *nth > MAX_NTH => Err(format!("nth ({nth}) must be a whole number from 1 to {MAX_NTH}")),
+        Expr::ValueWhen { when, of, .. } | Expr::Since { when, of, .. } => { consistent(when)?; consistent_operand(of) }
+        Expr::Compress { of, .. } => consistent_operand(of),
+        Expr::Expand(..) => Ok(()),
     }
 }
 
@@ -521,6 +605,12 @@ fn check_value(spec: &Spec, t: &Target, x: f64) -> Result<(), String> {
     });
     res?;
     s.entry.iter().chain(&s.exit).try_for_each(consistent)
+}
+/// Every catalogue or price series id the rule lists read, nested ones included.
+pub fn series_ids(spec: &Spec) -> Vec<String> {
+    let mut ids = Vec::new();
+    walk(&mut spec.clone(), &mut |_, k| if let Knob::Series(r) = k { ids.push(r.id.clone()); });
+    ids
 }
 /// The spec's own value at an optimize target (the "base" setting the ranking prefers on ties).
 pub fn current(spec: &Spec, t: &Target) -> f64 {
@@ -793,11 +883,18 @@ mod tests {
         // a ref shift may be optimized down to 0
         let r = r#"{"v":1,"entry":{"all":[{"lhs":{"s":"close"},"op":">","rhs":{"ref":{"s":"close"},"bars":2}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":5}}]},"optimize":[{"path":"entry.all[0].rhs.bars","from":0,"to":3,"step":1}]}"#;
         assert!(parse_spec(r).is_ok());
+        // an optimized constant bound may not cross the other constant bound
+        let range = r#"{"v":1,"entry":{"all":[{"lhs":{"s":"close"},"op":"between","lo":{"value":2},"hi":{"value":5}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":5}}]},"optimize":[{"path":"entry.all[0].lo.value","from":1,"to":TO,"step":1}]}"#;
+        assert!(parse_spec(&range.replace("TO", "5")).is_ok());
+        assert!(err(&range.replace("TO", "6")).message().contains("lo (6) is above hi (5)"));
         for (node, needle, status) in [
             (r#"{"lhs":{"s":"close"},"op":"between","lo":{"value":5},"hi":{"value":2}}"#, "lo (5) is above hi (2)", "invalid"),
             (r#"{"lhs":{"s":"close"},"op":"outside","lo":{"value":5},"hi":{"value":2}}"#, "lo (5) is above hi (2)", "invalid"),
             (r#"{"then":[{"lhs":{"s":"close"},"op":">","rhs":{"value":1}},{"lhs":{"s":"close"},"op":">","rhs":{"value":1}},{"lhs":{"s":"close"},"op":">","rhs":{"value":1}}],"within":1}"#, "within (1) is shorter", "invalid"),
             (r#"{"lhs":{"add":[{"value":1},{"value":2}]},"op":">","rhs":{"value":1}}"#, "combines two numbers", "invalid"),
+            (r#"{"lhs":{"abs":{"value":-1}},"op":">","rhs":{"s":"close"}}"#, "entry.all[0].lhs.abs is a number", "invalid"),
+            (r#"{"lhs":{"sum":{"value":1},"bars":3},"op":">","rhs":{"s":"close"}}"#, "entry.all[0].lhs.sum is a number", "invalid"),
+            (r#"{"lhs":{"ref":{"value":1},"bars":3},"op":">","rhs":{"s":"close"}}"#, "entry.all[0].lhs.ref is a number", "invalid"),
             (r#"{"lhs":{"abs":{"s":"close"},"symbol":"X"},"op":">","rhs":{"value":1}}"#, "arrive in Phase 8", "unsupported"),
         ] {
             let e = err(&ONE_EXIT.replace("NODE", node));
@@ -830,5 +927,30 @@ mod tests {
         assert_eq!(s.optimize.iter().map(|d| current(&s, &d.target)).collect::<Vec<_>>(), vec![3., 2., 5.]);
         let t = apply(&s, &s.optimize, &[4., 3., 9.]);
         assert_eq!(crate::lab::series::describe(t.entry[0].cmp().unwrap()), "sum(rsi(length=3), 4) < add(close, 9)");
+    }
+
+    #[test] fn state_operands_parse_and_reach_optimize() {
+        let base = ONE_EXIT.replace("NODE", r#"{"lhs":{"value_when":{"lhs":{"s":"rsi"},"op":"<","rhs":{"value":30}},"of":{"s":"low"},"nth":2},"op":"<","rhs":{"s":"close"}}"#);
+        let text = format!(r#"{},"optimize":[{{"path":"entry.all[0].lhs.value_when.rhs.value","from":20,"to":30,"step":10}},{{"path":"entry.all[0].lhs.nth","from":1,"to":3,"step":1}}]}}"#, &base[..base.len() - 1]);
+        let s = parse_spec(&text).unwrap();
+        assert_eq!(s.optimize.iter().map(|d| current(&s, &d.target)).collect::<Vec<_>>(), vec![30., 2.]);
+        for (lhs, needle) in [
+            (r#"{"value_when":{"lhs":{"s":"rsi"},"op":"<","rhs":{"value":30}},"of":{"s":"low"},"nth":21}"#, "entry.all[0].lhs.nth must be a whole number from 1 to 20"),
+            (r#"{"count":{"lhs":{"s":"rsi"},"op":"<","rhs":{"value":30}}}"#, "entry.all[0].lhs.bars must be a whole number from 1"),
+            (r#"{"bars_since":{"value":1}}"#, "entry.all[0].lhs.bars_since must be a comparison"),
+            (r#"{"highest_since":{"lhs":{"s":"close"},"op":">","rhs":{"value":1}}}"#, "entry.all[0].lhs.of is required"),
+        ] {
+            let e = err(&ONE_EXIT.replace("NODE", &format!(r#"{{"lhs":{lhs},"op":">","rhs":{{"value":1}}}}"#)));
+            assert!(e.message().contains(needle), "{needle:?} not in {:?}", e.message());
+        }
+        // a node inside a state operand stays consistent under optimize
+        let nested = ONE_EXIT.replace("NODE", r#"{"lhs":{"bars_since":{"at_least":2,"of":3,"when":{"lhs":{"s":"close"},"op":">","rhs":{"s":"open"}}}},"op":">","rhs":{"value":1}}"#);
+        let opt = |to: u32| format!(r#"{},"optimize":[{{"path":"entry.all[0].lhs.bars_since.at_least","from":1,"to":{to},"step":1}}]}}"#, &nested[..nested.len() - 1]);
+        assert!(parse_spec(&opt(3)).is_ok());
+        assert!(err(&opt(4)).message().contains("at_least (4) cannot exceed of (3)"));
+        let vw = ONE_EXIT.replace("NODE", r#"{"lhs":{"value_when":{"lhs":{"s":"rsi"},"op":"<","rhs":{"value":30}},"of":{"s":"low"},"nth":2},"op":"<","rhs":{"s":"close"}}"#);
+        let nth = |to: u32| format!(r#"{},"optimize":[{{"path":"entry.all[0].lhs.nth","from":1,"to":{to},"step":1}}]}}"#, &vw[..vw.len() - 1]);
+        assert!(parse_spec(&nth(20)).is_ok());
+        assert!(err(&nth(21)).message().contains("nth (21) must be a whole number from 1 to 20"));
     }
 }

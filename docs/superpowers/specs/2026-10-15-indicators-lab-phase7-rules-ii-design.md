@@ -81,7 +81,7 @@ separately. Phase 7 stays single-instrument and leaves the `symbol` seam (§5.1)
 | Corporate actions | Native AmiBroker series; the README says the import "does not … prove corporate-action treatment" | — | quantities are labelled "on the admitted series; adjustment status not established" (§7.1) |
 | Futures contracts | Share-level `DATABASE/BHAVCOPY/FO BHAVCOPY` (36 daily files, April 2022 only: SYMBOL, EXPIRY_DT, OHLC, VAL_INLAKH, OPEN_INT; no lot size, no instrument type). `DATABASE/Cuurent and Next Month Continuous Futures` (Nifty/BankNifty stitched current and next month from 2011, with no contract identity per row). `Future Data of Diff Expiry for NF & BNF` (xlsx). `#Future` workbooks | **no** (no lot table, no tick size, no expiry calendar, no admission pipeline) | futures model implemented and tested on fixtures; real requests answer `needs_data` (§7.3) |
 | Perpetual/funding (crypto) | none | no | crypto stays long-only spot study; shorts labelled hypothetical (§7.2) |
-| Holiday calendar | none (sessions are known only from bar dates) | — | the `sessions_left_*` outputs are declared calendar adaptations (§5.2) |
+| Holiday calendar | none (sessions are known only from bar dates) | — | the `sessions_left` indicator (outputs `m`, `q`, `y`) is a declared calendar adaptation (§5.2) |
 
 ## 4. Condition vocabulary (entry and exit)
 
@@ -151,8 +151,9 @@ on the first 199 bars. AmiBroker would treat Null there in an undocumented way; 
 fire.
 
 Expressions return NaN when any input is NaN, and division by zero gives NaN. Window expressions are NaN while
-the window is incomplete or holds a NaN. `highest_since` and `lowest_since` skip NaN values of A and are NaN
-until the node has been true once. `value_when` is NaN until the k-th occurrence.
+the window is incomplete or holds a NaN. `highest_since` and `lowest_since` are NaN until the node has been
+true once, and unknown (NaN) when A is missing on any bar from the start bar to the current bar (Kleene, as
+above). `value_when` is NaN until the k-th occurrence.
 
 ### 4.3 Limits (decided; §13 items 13–15)
 
@@ -211,6 +212,11 @@ AmiBroker's documented functions onto operand fields. The sources are the "Multi
 Unchanged rules: `offset` counts bars of the operand's own timeframe (v1); the last, unfinished period shows
 its developing value under `expand:"last"`, as W and M do today; `"tf":"D"` takes no `expand`.
 
+Declared: `expand:"point"` and `compress` (like `last`) also show the unfinished last period's developing value
+on the final data bar, because that bar is the period's latest known session; the value can change when the
+period completes. `nD` blocks count bars, so on IG CFDs (which carry Sunday bars) a Sunday bar counts as a
+session.
+
 Each mode has a dedicated no-lookahead test (§10.1), with these expected values:
 
 - `last`: the value of period p is invisible before p's last bar;
@@ -229,10 +235,12 @@ ticker) arrive in Phase 8". Every operand is resolved through one function, `ser
 which reads only the `Frames` of the run's instrument. Phase 8 can add a per-symbol `Frames` lookup there
 without touching the rule grammar.
 
-### 5.2 Calendar operands (new catalogue indicator `session`)
+### 5.2 Calendar operands (new catalogue indicators `session` and `sessions_left`)
 
-`calendar` (Phase 6) already gives day of week, day of month, month, year and day of year. Phase 7 adds one
-indicator, `session`, with these outputs:
+`calendar` (Phase 6) already gives day of week, day of month, month, year and day of year. Phase 7 adds two
+indicators. `session` has these outputs (all causal; each counter is NaN until the data's first boundary of
+its period, because the data's first, partial period does not show where that period began; `week_of_month`
+waits for a month boundary):
 
 | Output | Meaning | Causal? |
 |---|---|---|
@@ -241,15 +249,19 @@ indicator, `session`, with these outputs:
 | `week_of_month` | 1 + number of earlier week starts in the month | yes |
 | `quarter` | 1–4 | yes |
 | `weekdays_left_m`, `weekdays_left_q`, `weekdays_left_y` | Monday–Friday dates after today up to the period end (holidays unknown) | yes (pure date arithmetic) |
-| `sessions_left_m`, `sessions_left_q`, `sessions_left_y` | sessions after today in the period, from the instrument's own **session dates**; NaN in the final, unfinished period of the data | uses future session *dates*, never future prices: declared adaptation |
 
-"First N trading days of the month" is `tdom <= N`. "Last N trading days" is `sessions_left_m < N`, which
-matches what a trader with the published exchange holiday list would know. The no-lookahead property test
-(perturb prices after bar *k*) covers `sessions_left_*`. The truncation test exempts only these three outputs,
-and a dedicated test shows they depend on dates alone (§10.1). `weekdays_left_*` is the strictly causal
+`sessions_left` is a separate indicator with outputs `m`, `q` and `y`: sessions after today in the month /
+quarter / year, from the instrument's own **session dates**, NaN in the final, unfinished period of the data.
+It uses future session *dates*, never future prices: a declared adaptation. Every run, optimize or series
+response that reads it carries a top-level `"adaptations"` note saying so (the key is absent otherwise).
+
+"First N trading days of the month" is `tdom <= N`. "Last N trading days" is `sessions_left.m < N`, which
+matches what a trader with the published exchange holiday list would know. The generic truncation tests exempt
+only `sessions_left`; its own property test shows that, under every cut, each finite value equals the
+full-data value, and a dedicated test shows it depends on dates alone (§10.1). `weekdays_left_*` is the strictly causal
 alternative: it misses the period's last session when that session's weekday is a holiday.
 
-Futures expiry operands come from a second new indicator, `expiry`, with these outputs:
+Futures expiry operands come from a third new indicator, `expiry`, with these outputs:
 
 - `days_to_expiry`: Monday–Friday dates until the held contract's expiry date;
 - `expiry_week`: 1 in the expiry's calendar week;
@@ -257,7 +269,7 @@ Futures expiry operands come from a second new indicator, `expiry`, with these o
 
 All three are computed from the expiry date, which is published contract metadata, so they are causal. Only a
 futures run carries expiry dates (§7.3). Elsewhere `expiry` answers `needs_data` ("needs futures contract data"). Time exits at a calendar boundary are plain exit
-conditions with these operands, for example `sessions_left_m = 0` with `exit_fill: close`. No separate
+conditions with these operands, for example `sessions_left.m = 0` with `exit_fill: close`. No separate
 simulator field is needed.
 
 ## 6. Execution and orders
@@ -547,6 +559,8 @@ fills.
   - Run trade JSON gains `legs` (scale-in) and `fills` (scale-out pieces) when a trade has more than one. In money
     mode, a `ledger` array gives each trade's entry date, units, position value, costs and money P&L.
   - `entry_kind` gains `stop`, `stop_limit`, `reverse` and `roll`.
+- `GET lab/run`, `lab/optimize` and `lab/series` gain a top-level `adaptations` list only when the spec (or
+  the series id) reads `sessions_left` (§5.2); otherwise the key is absent and the body is unchanged.
 - Error contract unchanged: `invalid`, `unsupported`, `needs_data`. The gateway allowlist and bounds are
   unchanged, and `main.rs` is untouched.
 
@@ -557,8 +571,10 @@ fills.
 - **Higher timeframes.** One test for each expand mode and each refused `expandFirst` case (§5.1), plus
   truncation tests on Q, Y and 5D for every computed indicator.
 - **Series level.** Every new expression and node kind is evaluated on a 420-bar fixture and on its cuts at
-  97, 203 and 311 bars. Every value before the cut must be identical. Only `session.sessions_left_*` is exempt,
-  and a separate test shows that changing prices after *k* never changes them.
+  60, 67, … 393 bars. Every value up to the cut must be identical (the cut bar itself is skipped only for
+  W/M/Q/Y/nD values that may show an unfinished period). Only the `sessions_left` indicator (outputs `m`, `q`,
+  `y`) is exempt; its own test on a gapped multi-year calendar shows every finite value is unchanged under each
+  cut, and a separate test shows that changing prices never changes it.
 - **Trade level.** `future_bars_never_change_past_trades` gains a spec for each new feature: two-sided
   reversal, stop entry with `at`, stop-limit, valid_bars 3, delay 2, edge entries, trailing activation,
   breakeven, take-profits, scale-in, cooldown after loss, max_trades, the risk pause, ohlc_path, and Q/Y
@@ -620,6 +636,8 @@ frontend phase.
    fidelity admission, so they are left to a separate batch.
 5. Position-dependent operands inside groups (`entry_price`, open profit), volatile ATR stops (AmiBroker
    `volatile=True`), and the AmiBroker same-bar `AllowSameBarExit` matrix as an option.
+6. (Review follow-up d.) Compute `sessions_left` from a scheduled per-exchange holiday calendar once one is
+   admitted, instead of the data's own session dates.
 
 ## 13. Assumptions for the user's review
 
@@ -651,10 +669,11 @@ wrong.
     documented and may differ, so block boundaries can disagree with an AmiBroker chart.
 6c. **`"symbol"` on an operand is reserved for Phase 8** (multi-symbol) and answers `unsupported` now.
     *Cost:* none; it is the seam.
-7. **`sessions_left_*` uses future session dates, never prices.** *Reason:* the published exchange calendar
-   is known in advance; this is the only way to say "last N trading days" exactly. *Cost:* unscheduled
-   closures (rare) would make a backtest signal earlier than live; `weekdays_left_*` is the strictly causal
-   alternative.
+7. **`sessions_left` (outputs `m`, `q`, `y`) uses future session dates, never prices.** *Reason:* the published exchange calendar
+   is known in advance; this is the only way to say "last N trading days" exactly. *Cost:* the data's session
+   dates also encode unscheduled closures, late-announced closures or special sessions, and data gaps, none of
+   which a live trader knew in advance, so a backtest signal can differ from live; every response that reads
+   it carries an `adaptations` note, and `session.weekdays_left_*` is the strictly causal alternative.
 8. **Expiry operands exist only inside futures runs.** *Cost:* none until futures data is admitted.
 9. **Two-sided specs keep `entry`/`exit` for the long side and add `short_side`.** *Reason:* v1 meaning is
    untouched and the shape mirrors the long side. *Cost:* the UI must label the top-level lists "long" when

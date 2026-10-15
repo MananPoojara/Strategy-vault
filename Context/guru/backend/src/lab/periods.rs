@@ -125,11 +125,60 @@ fn bars_since(x: &[f64], k: usize, high: bool) -> Vec<f64> {
 fn highest_bars(b: &Bars, prm: &Params) -> Output { Ok(vec![bars_since(&b.high, n(prm, "length"), true)]) }
 fn lowest_bars(b: &Bars, prm: &Params) -> Output { Ok(vec![bars_since(&b.low, n(prm, "length"), false)]) }
 
+/// Trading-session counters (spec §5.2), all causal: the session's number in its month, quarter, year and week (1 = first
+/// session), the week of the month, the quarter, and Monday–Friday dates left after this one in the month, quarter and year
+/// (exchange holidays unknown). A counter is NaN until its first period boundary inside the data: the data's first, partial
+/// period does not show where that period began (week_of_month waits for a month boundary).
+fn session(b: &Bars, _: &Params) -> Output {
+    let len = b.len();
+    let mut out = vec![vec![NA; len]; 9];
+    let (mut count, mut wom, mut seen) = ([0usize; 4], 0usize, [false; 4]);
+    for i in 0..len {
+        let d = &b.date[i];
+        let changed = |anchor: usize| i == 0 || period_key(d, anchor) != period_key(&b.date[i - 1], anchor);
+        for (k, anchor) in [2usize, 3, 4, 1].into_iter().enumerate() { seen[k] |= i > 0 && changed(anchor); count[k] = if changed(anchor) { 1 } else { count[k] + 1 }; }
+        wom = if changed(2) { 1 } else if changed(1) { wom + 1 } else { wom };
+        let (y, m): (i64, i64) = (d[0..4].parse().unwrap_or(1970), d[5..7].parse().unwrap_or(1));
+        let start = |y: i64, m: i64| day_number(&format!("{:04}-{:02}-01", y + (m - 1) / 12, (m - 1) % 12 + 1));
+        let today = day_number(d);
+        let weekdays = |end: i64| (today + 1..=end).filter(|n| (1..=5).contains(&(n + 4).rem_euclid(7))).count() as f64;
+        // week_of_month is known once a month boundary is (seen[0])
+        for (k, (v, known)) in [(count[0], seen[0]), (count[1], seen[1]), (count[2], seen[2]), (count[3], seen[3]), (wom, seen[0])].into_iter().enumerate() {
+            if known { out[k][i] = v as f64; }
+        }
+        out[5][i] = ((m - 1) / 3 + 1) as f64;
+        out[6][i] = weekdays(start(y, m + 1) - 1);
+        out[7][i] = weekdays(start(y, ((m - 1) / 3 + 1) * 3 + 1) - 1);
+        out[8][i] = weekdays(start(y + 1, 1) - 1);
+    }
+    Ok(out)
+}
+/// Indicators that read future session *dates* (never prices); the generic truncation tests exempt them (spec §5.2).
+pub const USES_SESSION_DATES: &[&str] = &["sessions_left"];
+/// Result-level note every run / optimize / series response carries when it reads one of USES_SESSION_DATES.
+pub const SESSION_DATES_NOTE: &str = "sessions_left reads this instrument's future session dates (published holidays, but also unscheduled closures, late-announced special sessions and data gaps); a live signal can differ — session.weekdays_left_* is the strictly causal alternative";
+/// Sessions after this one in its month / quarter / year, from the instrument's own session dates (the published exchange
+/// calendar); NaN throughout the data's last period, whose remaining sessions are not in the data.
+fn sessions_left(b: &Bars, _: &Params) -> Output {
+    let len = b.len();
+    Ok([2usize, 3, 4].into_iter().map(|anchor| {
+        let key: Vec<i64> = b.date.iter().map(|d| period_key(d, anchor)).collect();
+        let (mut v, mut left) = (vec![NA; len], 0usize);
+        for i in (0..len).rev() {
+            left = if i + 1 < len && key[i + 1] == key[i] { left + 1 } else { 0 };
+            if key[i] != key[len - 1] { v[i] = left as f64; }
+        }
+        v
+    }).collect())
+}
+
 pub const DEFS: &[IndicatorDef] = &[
     def("pivots_std", "Pivot Points Standard", PV, &["p", "r1", "r2", "r3", "r4", "r5", "s1", "s2", "s3", "s4", "s5"], PR, NO, "levels from the previous completed period's H, L, C (DM: and its open; Woodie: the current period's first open): Traditional P=(H+L+C)/3, R1=2P−L, R2=P+(H−L), R3=H+2(P−L), R4=3P+(H−3L), R5=4P+(H−4L), S mirror; Fibonacci P±0.382/0.618/1.0·(H−L); Woodie P=(H+L+2·O)/4, R3=H+2(P−L), R4=R3+(H−L); Classic P±1/2/3·(H−L) (R1/S1 as Traditional); DM X = C<O ? H+2L+C : C>O ? 2H+L+C : H+L+2C, P=X/4, R1=X/2−L, S1=X/2−H; Camarilla C±1.1(H−L)/12, /6, /4, /2, R5=(H/L)·C, S5=C−(R5−C); undefined levels NaN", &[5; 11], false, pivots_std),
     def("mtp", "Multi-Time Period Charts", PE, &["open", "high", "low", "prev_high", "prev_low", "prev_close"], PR, NO, "current period's first open and high/low so far; previous completed period's high, low, close", &[0,0,0,5,5,5], false, mtp),
     def("performance", "Performance", &[], &["w1", "m1", "m3", "m6", "ytd", "y1"], PN, NO, "roc(close, 5/21/63/126/252 bars) (declared bar horizons); ytd = 100·(close/last close of the previous calendar year − 1)", &[5,21,63,126,366,252], false, performance),
     def("calendar", "Calendar", &[], &["dow", "day", "month", "year", "doy", "bar_index"], PN, NO, "AmiBroker DayOfWeek (0 Sunday … 6 Saturday), Day, Month, Year, DayOfYear (1–366), BarIndex (0-based) of the bar's date", &[0,0,0,0,0,0], false, calendar),
+    def("session", "Trading Session Counters", &[], &["tdom", "tdoq", "tdoy", "tdow", "week_of_month", "quarter", "weekdays_left_m", "weekdays_left_q", "weekdays_left_y"], PN, NO, "session number in its month / quarter / year / week (1 = first; NaN until the data's first boundary of that period), week of the month (NaN until the first month boundary), quarter 1–4, Monday–Friday dates left after today in the month / quarter / year (holidays unknown; causal)", &[31, 91, 366, 5, 31, 0, 0, 0, 0], false, session),
+    def("sessions_left", "Sessions Left in Period", &[], &["m", "q", "y"], PN, NO, "sessions after today in the month / quarter / year from the instrument's own session dates (the published exchange calendar), never prices; NaN in the data's last period (declared adaptation, spec §5.2)", &[0; 3], true, sessions_left),
     def("moon_phases", "Moon Phases", &[], &["new_moon", "full_moon"], PR, NO, "1 on the first bar dated on or after a new (full) moon, UTC, Meeus ch. 49 with 15 periodic terms; else 0 (declared)", &[0,0], false, moon_phases),
     def("highest_bars", "Bars Since Highest High", LN, &["bars"], PN, NO, "bars since the highest high of the last length bars (0 = this bar; ties → the most recent) (AmiBroker HHVBars, TradingView ta.highestbars as a positive count)", &[19], false, highest_bars),
     def("lowest_bars", "Bars Since Lowest Low", LN, &["bars"], PN, NO, "bars since the lowest low of the last length bars (0 = this bar; ties → the most recent)", &[19], false, lowest_bars),
@@ -201,4 +250,53 @@ mod tests {
         assert_series(&go("lowest_bars", &d1(), &[("length", 3.)])[0], &[N, N, 2., 2., 0., 0., 1., 2.]);
     }
     #[test] fn rules_reach_periods() { for (id, out) in [("pivots_std", "s5"), ("mtp", "prev_close"), ("calendar", "dow"), ("moon_phases", "full_moon"), ("performance", "ytd")] { compiles(id, out).unwrap(); } }
+
+    #[test] fn session_counters_are_causal_calendar_arithmetic() {
+        let b = dated(&[(1., 1., 1., 1.); 4], &["2024-03-27", "2024-03-28", "2024-04-01", "2024-04-02"]);
+        let o = go("session", &b, &[]);
+        // the data's first, partial month/quarter/year/week shows no counter (where it began is unknown)
+        for (k, want) in [[N, N, 1., 2.], [N, N, 1., 2.], [N, N, N, N], [N, N, 1., 2.], [N, N, 1., 1.], [1., 1., 2., 2.],
+                          [2., 1., 21., 20.], [2., 1., 64., 63.], [199., 198., 196., 195.]].iter().enumerate() {
+            assert_series(&o[k], want);
+        }
+        let w = go("session", &dated(&[(1., 1., 1., 1.); 4], &["2024-03-29", "2024-04-05", "2024-04-08", "2024-04-15"]), &[]);
+        assert_series(&w[4], &[N, 1., 2., 3.]); // a new week inside the month
+    }
+    #[test] fn sessions_left_finite_values_never_change_when_later_sessions_arrive() {
+        use crate::lab::resample::{civil, day_number};
+        // a gapped, multi-year weekday calendar: every 17th weekday and one five-session closure are missing
+        let dates: Vec<String> = (day_number("2021-11-01")..).map(civil).filter(|d| (day_number(d) + 3).rem_euclid(7) < 5)
+            .enumerate().filter(|(k, _)| k % 17 != 16 && !(200..205).contains(k)).map(|(_, d)| d).take(460).collect();
+        let (rows, refs) = (vec![(1., 1., 1., 1.); dates.len()], dates.iter().map(String::as_str).collect::<Vec<_>>());
+        let full = go("sessions_left", &dated(&rows, &refs), &[]);
+        assert!(full[2].iter().filter(|v| v.is_finite()).count() > 200 && dates[459].as_str() > "2023-06-01", "vacuous");
+        for cut in (60..400usize).step_by(7) {
+            let part = go("sessions_left", &dated(&rows[..cut], &refs[..cut]), &[]);
+            for (k, out) in part.iter().enumerate() {
+                for i in 0..cut { assert!(!out[i].is_finite() || out[i] == full[k][i], "output {k} bar {i} ({}) changes when sessions after {cut} exist", dates[i]); }
+            }
+        }
+    }
+    #[test] fn session_counters_wait_for_their_first_boundary() {
+        use crate::lab::resample::{civil, day_number};
+        // weekday sessions from Mon 2024-07-15 to 2025-01-10, with 2024-12-25 and 2025-01-01 as holidays
+        let dates: Vec<String> = (day_number("2024-07-15")..=day_number("2025-01-10")).map(civil)
+            .filter(|d| (day_number(d) + 3).rem_euclid(7) < 5 && d != "2024-12-25" && d != "2025-01-01").collect();
+        let at = |d: &str| dates.iter().position(|x| x == d).unwrap();
+        let o = go("session", &dated(&vec![(1., 1., 1., 1.); dates.len()], &dates.iter().map(String::as_str).collect::<Vec<_>>()), &[]);
+        let first = |k: usize| o[k].iter().position(|v| !v.is_nan()).unwrap();
+        assert_eq!((first(0), first(1), first(2), first(3), first(4)), (at("2024-08-01"), at("2024-10-01"), at("2025-01-02"), at("2024-07-22"), at("2024-08-01")));
+        assert_eq!((o[2][at("2025-01-02")], o[2][at("2025-01-03")], o[0][at("2024-08-02")], o[1][at("2024-10-02")]), (1., 2., 2., 2.));
+        assert!(o[2][at("2025-01-02")..].iter().all(|v| v.is_finite()));
+    }
+    #[test] fn sessions_left_reads_dates_only_and_is_unknown_in_the_last_period() {
+        let x = f64::NAN;
+        let dates = ["2024-01-30", "2024-01-31", "2024-02-01", "2024-02-02", "2024-03-01", "2024-04-01"];
+        let o = go("sessions_left", &dated(&[(1., 1., 1., 1.); 6], &dates), &[]);
+        assert_series(&o[0], &[1., 0., 1., 0., 0., x]);
+        assert_series(&o[1], &[4., 3., 2., 1., 0., x]);
+        assert_series(&o[2], &[x; 6]);
+        let other = go("sessions_left", &dated(&[(5., 9., 2., 7.); 6], &dates), &[]); // other prices, same dates
+        for k in 0..3 { assert_series(&other[k], &o[k]); }
+    }
 }
