@@ -11,6 +11,7 @@ pub mod breadth;
 pub mod catalogue;
 pub mod fidelity;
 pub mod json;
+pub mod ledger;
 pub mod listed;
 pub mod markets;
 pub mod model;

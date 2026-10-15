@@ -119,6 +119,15 @@ pub enum After { Any, Loss, Win }
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Risk { pub losses: Option<(usize, usize)>, pub max_dd_pct: Option<f64> }
 pub const MAX_PAUSE: usize = 100_000;
+pub const MAX_CAPITAL: f64 = 1e12;
+pub const MAX_TAXES: usize = 6;
+/// Which side of a trade a declared tax applies to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TaxSide { Buy, Sell, Both }
+/// Money-mode costs (spec §7.4), all user-declared: commission per order / per unit / % of value, slippage in bps or ticks
+/// (ticks: futures only), named taxes as % of value on a side, and the yearly borrow % for shorts.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MoneyCosts { pub per_order: f64, pub per_unit: f64, pub pct: f64, pub slip_bps: f64, pub slip_ticks: f64, pub taxes: Vec<(String, f64, TaxSide)>, pub borrow_pct_year: Option<f64> }
 pub const MAX_VALID_BARS: usize = 20;
 pub const MAX_DELAY: usize = 10;
 pub const MAX_POINTS: f64 = 1e9;
@@ -137,13 +146,15 @@ pub struct Exec {
     pub scale_in: Option<ScaleIn>, pub sizing: Sizing,
     /// re-entry rules: cooldown (bars, after which exits), at most `count` entries per calendar period (anchor 1 W … 4 Y), risk
     pub cooldown: Option<(usize, After)>, pub max_trades: Option<(usize, usize)>, pub risk: Risk,
+    /// money mode (spec §7.4): starting capital and declared costs
+    pub capital: Option<f64>, pub costs: MoneyCosts,
 }
 impl Default for Exec {
     fn default() -> Self {
         Exec { short: false, fill: Fill::NextOpen, exit_fill: Fill::NextOpen, limit: None, stop_loss: None, target: None, trailing: None, opposite: Opposite::Reverse,
                stop: None, limit_at: None, stop_at: None, valid_bars: 1, delay: 1, edge: false,
                trail_activate: None, breakeven: None, take_profits: vec![], min_bars: 0, ohlc_path: false, scale_in: None, sizing: Sizing::Full,
-               cooldown: None, max_trades: None, risk: Risk::default() }
+               cooldown: None, max_trades: None, risk: Risk::default(), capital: None, costs: MoneyCosts::default() }
     }
 }
 impl Exec {
@@ -214,7 +225,15 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
         if ex.get("instrument").and_then(|v| v.get("kind")).and_then(Json::as_str) == Some("futures") {
             return Err(LabError::NeedsData(super::model::FUTURES.into()));
         }
-        fields(ex, "execution", &["fill", "exit_fill", "cost_bps", "opposite", "delay_bars", "entry_on", "intrabar", "sizing", "cooldown", "max_trades", "risk"], &["limit", "stop"])?;
+        fields(ex, "execution", &["fill", "exit_fill", "cost_bps", "opposite", "delay_bars", "entry_on", "intrabar", "sizing", "cooldown", "max_trades", "risk", "capital", "costs"], &["limit", "stop"])?;
+        if let Some(c) = ex.get("capital") {
+            exec.capital = Some(c.as_f64().filter(|c| c.is_finite() && *c > 0. && *c <= MAX_CAPITAL).ok_or_else(|| inv(format!("execution.capital must be a number above 0 and at most {MAX_CAPITAL}")))?);
+            if ex.get("cost_bps").is_some() { return Err(inv("money mode takes costs from execution.costs; remove execution.cost_bps")); }
+        }
+        if let Some(v) = ex.get("costs") {
+            if exec.capital.is_none() { return Err(inv("execution.costs applies to money mode (execution.capital)")); }
+            exec.costs = money_costs(v)?;
+        }
         if let Some(v) = ex.get("cooldown") {
             fields(v, "execution.cooldown", &["bars", "after"], &[])?;
             let after = match v.get("after").map(Json::as_str) {
@@ -250,6 +269,8 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
                     }
                     Sizing::RiskPct(pct(r, "risk_pct")?)
                 }
+                (None, None, Some(n), None) if ex.get("capital").is_some() => Sizing::Units(n.as_f64().filter(|n| n.fract() == 0. && *n >= 1. && *n <= 1e9).ok_or_else(|| inv("execution.sizing.units must be a whole number from 1 (shares, or lots for futures)"))?),
+                (None, None, None, Some(v)) if ex.get("capital").is_some() => Sizing::Value(v.as_f64().filter(|v| *v > 0. && *v <= MAX_CAPITAL).ok_or_else(|| inv("execution.sizing.value must be a number above 0"))?),
                 (None, None, Some(_), None) | (None, None, None, Some(_)) => return Err(inv("execution.sizing units and value need execution.capital (money mode)")),
                 _ => return Err(inv("execution.sizing needs exactly one of pct_equity, risk_pct, units or value")),
             };
@@ -353,6 +374,37 @@ fn side(entry: Option<&Json>, exit: Option<&Json>, pre: &str, exec: &mut Exec, b
         return Err(inv(format!("{}{} conditions; the limit is {MAX_CONDITIONS}", if pre.is_empty() { "" } else { "short_side: " }, entry.len() + exit.len())));
     }
     Ok((entry, exit))
+}
+
+fn money_costs(v: &Json) -> Result<MoneyCosts, LabError> {
+    fields(v, "execution.costs", &["commission", "slippage", "taxes", "borrow_pct_year"], &[])?;
+    let num = |v: Option<&Json>, at: &str, hi: f64| -> Result<f64, LabError> {
+        v.map_or(Ok(0.), |x| x.as_f64().filter(|x| (0. ..=hi).contains(x)).ok_or_else(|| inv(format!("execution.costs.{at} must be a number from 0 to {hi}"))))
+    };
+    let mut c = MoneyCosts::default();
+    if let Some(m) = v.get("commission") {
+        fields(m, "execution.costs.commission", &["per_order", "per_unit", "pct"], &[])?;
+        (c.per_order, c.per_unit, c.pct) = (num(m.get("per_order"), "commission.per_order", 1e9)?, num(m.get("per_unit"), "commission.per_unit", 1e6)?, num(m.get("pct"), "commission.pct", 10.)?);
+    }
+    if let Some(s) = v.get("slippage") {
+        fields(s, "execution.costs.slippage", &["bps", "ticks"], &[])?;
+        if s.get("bps").is_some() == s.get("ticks").is_some() { return Err(inv("execution.costs.slippage needs exactly one of bps or ticks")); }
+        (c.slip_bps, c.slip_ticks) = (num(s.get("bps"), "slippage.bps", 1000.)?, num(s.get("ticks"), "slippage.ticks", 100.)?);
+    }
+    if let Some(t) = v.get("taxes") {
+        let Json::Arr(items) = t else { return Err(inv("execution.costs.taxes must be a list")) };
+        if items.len() > MAX_TAXES { return Err(inv(format!("execution.costs.taxes allows at most {MAX_TAXES} entries"))); }
+        for (k, it) in items.iter().enumerate() {
+            let at = format!("execution.costs.taxes[{k}]");
+            fields(it, &at, &["name", "pct", "side"], &[])?;
+            let name = it.get("name").and_then(Json::as_str).filter(|n| !n.is_empty() && n.len() <= 40 && n.bytes().all(|b| b.is_ascii_alphanumeric() || b" _-".contains(&b)))
+                .ok_or_else(|| inv(format!("{at}.name must be 1 to 40 letters, digits, spaces, _ or -")))?;
+            let side = match it.get("side").and_then(Json::as_str) { Some("buy") => TaxSide::Buy, Some("sell") => TaxSide::Sell, Some("both") => TaxSide::Both, _ => return Err(inv(format!("{at}.side must be buy, sell or both"))) };
+            c.taxes.push((name.into(), num(it.get("pct"), &format!("taxes[{k}].pct"), 10.)?, side));
+        }
+    }
+    if let Some(b) = v.get("borrow_pct_year") { c.borrow_pct_year = Some(num(Some(b), "borrow_pct_year", 100.)?); }
+    Ok(c)
 }
 
 fn scale_in(v: &Json, at: &str) -> Result<ScaleIn, LabError> {
@@ -1414,5 +1466,27 @@ mod tests {
             let e = err(&with(r#""cost_bps": 12"#, &format!(r#""cost_bps": 12, {extra}"#)));
             assert!(e.message().contains(needle), "{needle:?} not in {:?}", e.message());
         }
+    }
+    // ---- Phase 7: money mode (spec §7.4)
+    #[test] fn money_mode_parses_capital_sizing_and_costs() {
+        let base = with(r#""fill": "next_open", "cost_bps": 12"#, r#""fill": "next_open", "capital": 100000, "sizing": {"units": 10},
+            "costs": {"commission": {"per_order": 20, "pct": 0.03}, "slippage": {"bps": 5}, "taxes": [{"name": "STT", "pct": 0.1, "side": "both"}], "borrow_pct_year": 0.5}"#);
+        let s = parse_spec(&base).unwrap();
+        assert_eq!((s.exec.capital, s.exec.sizing), (Some(100000.), Sizing::Units(10.)));
+        assert_eq!(s.exec.costs, MoneyCosts { per_order: 20., pct: 0.03, slip_bps: 5., taxes: vec![("STT".into(), 0.1, TaxSide::Both)], borrow_pct_year: Some(0.5), ..MoneyCosts::default() });
+        for (from, to, needle) in [
+            (r#""capital": 100000"#, r#""capital": 0"#, "execution.capital must be a number above 0"),
+            (r#""capital": 100000, "#, "", "execution.costs applies to money mode (execution.capital)"),
+            (r#""bps": 5"#, r#""bps": 5, "ticks": 1"#, "exactly one of bps or ticks"),
+            (r#""side": "both""#, r#""side": "all""#, "side must be buy, sell or both"),
+            (r#""name": "STT""#, r#""name": "STT; DROP""#, "name must be 1 to 40 letters"),
+            (r#""pct": 0.03"#, r#""pct": 11"#, "commission.pct must be a number from 0 to 10"),
+            (r#""units": 10"#, r#""units": 2.5"#, "units must be a whole number"),
+        ] {
+            let e = err(&base.replace(from, to));
+            assert!(e.message().contains(needle), "{needle:?} not in {:?}", e.message());
+        }
+        assert!(err(&with(r#""cost_bps": 12"#, r#""cost_bps": 12, "capital": 5000"#)).message().contains("remove execution.cost_bps"));
+        assert!(err(&with(r#""cost_bps": 12"#, r#""cost_bps": 12, "costs": {}"#)).message().contains("applies to money mode"));
     }
 }

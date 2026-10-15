@@ -530,7 +530,7 @@ Every run and optimize response gains
 
 | Sizing | Unit mode | Money mode |
 |---|---|---|
-| `pct_equity` p | leg weight p/100 (0 < p ≤ 100) | p% of equity (cash plus open P&L, at the signal close) ÷ price (cash), or ÷ margin per lot (futures) |
+| `pct_equity` p | leg weight p/100 (0 < p ≤ 100) | p% of equity at the trade start ÷ price (cash), or ÷ margin per lot (futures) |
 | `risk_pct` r | weight min(1, r / stop distance %) | r% of equity ÷ (stop distance × units per lot × point value) |
 | `units` n | — (needs capital) | n shares, or n lots |
 | `value` v | — (needs capital) | v currency of notional (cash) or of margin (futures) |
@@ -546,7 +546,11 @@ declared costs; not a verified statutory schedule".
 ```
 
 - Commission is charged on entry and on exit (AmiBroker, TradingView).
-- Slippage moves market and stop fills against the trade. Limit fills are not worsened (TradingView rule).
+- Slippage moves market and stop fills against the trade. Limit fills are not worsened (TradingView rule). Stop-limit entries
+  activate limit orders and pay no entry slippage; later scale-in legs remain market fills. Money mode
+  currently refuses two-sided resting limit/stop-limit reversals because the simulator retains only
+  `entry_kind: reverse`, losing the order kind needed to price both halves' costs. Unit mode and
+  money-mode market/stop reversals, or limit sides with `opposite: exit|ignore`, remain supported.
 - Each tax is a percentage of fill value on the declared side; there are at most 6 taxes.
 - Money mode refuses the bps `cost` query, `slippage` query and `execution.cost_bps`, so costs are never
   counted twice.
@@ -554,13 +558,21 @@ declared costs; not a verified statutory schedule".
 **Reusing the book statistics without touching them.** Every money fill gets an *effective* price that
 includes that fill's costs per unit: entry is fill + cost/qty for a long, and exit is fill − cost/qty. Each
 leg's weight is w = qty × units-per-lot × point value × effective entry ÷ equity at the start of the trade.
-Then `Trade::ret(0)` equals the trade's net money P&L ÷ equity at trade start, and the book
-`equity_curve(…, 0)` and `stats(…, 0)` produce the money equity curve and statistics unchanged.
+Then `Trade::ret(0)` equals the trade's net money P&L ÷ equity at trade start. The book's statistics are
+called read-only. A lab-only daily money curve deducts actual entry/exit costs on their fill dates and
+accrues short borrow by each leg's calendar days held; the effective-price curve alone cannot correctly
+accrue borrow or avoid charging a future exit on an open mark. Gross results use the same whole quantities
+and observed prices, without declared costs. Optimized sizing is applied separately for every combination.
 
-Money mode validates with a lab copy of `trade_validation::check`, `lab/ledger.rs::validate`. The copy allows
-weights above 1 for futures (margin leverage) and nowhere else; the book file is not changed. Trade JSON
-reports real fills, quantity, notional and each cost line separately, so effective prices are never shown as
-fills.
+Cash money trades pass the existing `trade_validation::check`; futures leverage waits for Task 14's
+contract validation. Trade JSON reports observed fill prices, while the separate money ledger reports
+whole quantities and each fill's commissions, taxes and slippage, plus accrued borrow and net money P&L.
+Effective prices remain internal. Partial exits round down to whole lots, and the final exit closes the
+remainder. A marked-open remainder is not an exit order and pays no invented closing commission, tax or
+slippage. Quantity sizing uses equity at the trade start; later scale-in legs retain that basis, without
+reading later equity or prices. Risk controls still use the simulator's unit returns (assumption 38a),
+which can differ from whole-quantity returns after declared costs. The response's money/cost basis names
+these limits. Unit-mode responses remain unchanged.
 
 ## 8. Compatibility (decided: stay `"v": 1`, additive)
 
