@@ -1,0 +1,8 @@
+.lab-methods { display: grid; gap: 4px; max-height: 320px; overflow: auto; margin-top: 8px; padding: 0; list-style: none; }
+.lab-methods button { display: grid; width: 100%; text-align: left; gap: 2px; padding: 6px 8px; background: var(--card); color: var(--ink); border: 1px solid var(--rule); cursor: pointer; font: inherit; }
+.lab-methods button[aria-pressed="true"] { background: var(--panel); border-color: var(--steel); }
+.lab-methods small { color: var(--ink2); }
+.lab-customize .dfield input { width: 100%; }
+.lab-template h3 { margin: 10px 0 4px; }
+.lab-template ul { margin: 6px 0; padding-left: 18px; }
+.lab-fidelity { display: grid; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--rule); }
