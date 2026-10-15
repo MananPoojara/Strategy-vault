@@ -60,6 +60,12 @@ pub const FILL_CONVENTION: &str = "the book fills a limit at the limit price eve
 pub const SIGNAL_CLOCK: &str = "the time exit counts bars since the latest buy signal, which repeats while in the trade (AmiBroker BarsSince); lab bars_held counts from the fill";
 pub const MULTI_DAY: &str = "the entry is a multi-day setup with a pending order window, which the lab does not model";
 pub const NO_TEMPLATE: &[(&str, &str)] = &[
+    ("radge_oc_long", "the admitted Radge stop-free open-to-close cash-index research rule has no source-specific lab template or template-fidelity comparison yet"),
+    ("sbma_sma50_long", "the admitted Burns 50-day SMA long/cash stock rule has no source-specific lab template or template-fidelity comparison yet; strict above/below ties and reviewed fill conventions must be preserved"),
+    ("sbma_x_5s20s", "the admitted Burns 5/20-day SMA long/cash stock crossover has no source-specific lab template or template-fidelity comparison yet; strict crossover ties and reviewed fill conventions must be preserved"),
+    ("sbma_x_5e50s", "the admitted Burns 5-day EMA / 50-day SMA long/cash stock crossover has no source-specific lab template or template-fidelity comparison yet; EMA seeding, crossover ties and reviewed fill conventions must be preserved"),
+    ("sbma_x_10e20e", "the admitted Burns 10/20-day EMA long/cash stock crossover has no source-specific lab template or template-fidelity comparison yet; EMA seeding, crossover ties and reviewed fill conventions must be preserved"),
+    ("sbma_x_10e50e", "the admitted Burns 10/50-day EMA long/cash stock crossover has no source-specific lab template or template-fidelity comparison yet; EMA seeding, crossover ties and reviewed fill conventions must be preserved"),
     ("r3", SCALE_IN), ("tps_stocks", SCALE_IN), ("tps_long", SCALE_IN), ("tps_short", SCALE_IN), ("s12345", SCALE_IN),
     ("x555", BOOK_FILTERS), ("h10", BOOK_FILTERS),
     ("eom_co", CALENDAR), ("eom_rsi", CALENDAR), ("eom_cc", CALENDAR), ("spmt_eom_co", CALENDAR), ("spmt_eom_rsi", CALENDAR), ("spmt_eom_cc", CALENDAR),
