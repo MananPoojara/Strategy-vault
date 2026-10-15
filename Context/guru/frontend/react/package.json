@@ -9,13 +9,14 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "typecheck": "tsc --noEmit",
-    "build": "npm run typecheck && vite build",
+    "build": "npm run typecheck && vite build && node scripts/build-login.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "preview": "vite preview --host 127.0.0.1",
     "prepare:assets": "node scripts/prepare-assets.mjs",
     "predev": "npm run prepare:assets",
-    "prebuild": "npm run prepare:assets"
+    "prebuild": "npm run prepare:assets",
+    "build:login": "node scripts/build-login.mjs"
   },
   "dependencies": {
     "react": "19.3.0",

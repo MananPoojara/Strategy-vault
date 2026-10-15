@@ -14,6 +14,13 @@ describe('compatible instrument controls', () => {
     expect(controls.index).toBe(false);
     expect(controls.note).toContain('stock');
   });
+  it('keeps source-account stock selection without implying equal-slot basket execution', () => {
+    const controls = instrumentControls({allowed_types: ['individual_stock'], execution_scope: 'single_symbol_source_account'});
+    expect([controls.stock,controls.index,controls.basket,controls.etf]).toEqual([true,false,false,false]);
+    expect(controls.note).toContain('individual stock risk account');
+    expect(controls.note).toContain('position limits are unavailable');
+    expect(instrumentControls({allowed_types: ['individual_stock'],execution_scope: 'single_symbol'}).basket).toBe(true);
+  });
   it('exposes ETFs for ETF methods without offering stock or index substitutes', () => {
     const controls = instrumentControls({ allowed_types: ['etf'] });
     expect([controls.index, controls.basket, controls.etf]).toEqual([false, false, true]);

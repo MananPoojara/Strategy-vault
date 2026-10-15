@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { HomeModel } from "../state/store";
+import { matchingSearchAuthors, type SearchAuthor } from "../services/library-search";
 const categories = [
   ["", "All books"],
   ["rule-based", "Rule-based"],
@@ -230,30 +231,36 @@ export function LibraryControls({
     </section>
   );
 }
-export function LibrarySearch({ query }: { query: string }) {
+function SearchAvatar({author}: {author: SearchAuthor}) {
+  const [failed, setFailed] = useState(false);
+  return <span className="search-avatar" aria-hidden="true">
+    {author.photo && !failed
+      ? <img src={author.photo} alt="" onError={() => setFailed(true)} />
+      : <span>{author.initials}</span>}
+  </span>;
+}
+
+export function LibrarySearch({ query, authors = [] }: { query: string; authors?: SearchAuthor[] }) {
   const [value, setValue] = useState(query);
-  useEffect(() => {
-    if (value === query) return;
-    const timer = setTimeout(
-      () =>
-        window.VaultRuntime.patch({
-          library_q: value,
-          library_limit: "24",
-          library_page: "1",
-          source_page: "1",
-        }),
-      250,
-    );
-    return () => clearTimeout(timer);
-  }, [value, query]);
+  const [focused, setFocused] = useState(false);
+  const [active, setActive] = useState(-1);
+  useEffect(() => { setValue(query); setActive(-1); }, [query]);
+  const matches = matchingSearchAuthors(authors, value);
+  const expanded = focused && value.trim().length > 0;
+  const selected = expanded ? matches[active] : undefined;
   return (
     <form
       className="library-search"
       id="library-search-form"
       role="search"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false);
+      }}
       onSubmit={(event) => {
         event.preventDefault();
         event.stopPropagation();
+        setFocused(false);
+        setActive(-1);
         window.VaultRuntime.patch({
           library_q: value.trim(),
           library_limit: "24",
@@ -275,14 +282,69 @@ export function LibrarySearch({ query }: { query: string }) {
         value={value}
         placeholder="Search a book, author or title…"
         autoComplete="off"
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded={expanded}
+        aria-controls={expanded ? "library-author-suggestions" : undefined}
+        aria-activedescendant={selected ? `search-author-${selected.id}` : undefined}
+        onFocus={() => setFocused(value.trim() !== query.trim())}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" || event.key === "Tab") {
+            if (event.key === "Escape" && expanded) {
+              event.preventDefault();
+              event.stopPropagation();
+            }
+            setFocused(false);
+            setActive(-1);
+            return;
+          }
+          if ((event.key === "ArrowDown" || event.key === "ArrowUp") && matches.length) {
+            event.preventDefault();
+            setFocused(true);
+            setActive(index => event.key === "ArrowDown"
+              ? (index + 1) % matches.length
+              : (index <= 0 ? matches.length - 1 : index - 1));
+          }
+          if (event.key === "Enter" && selected && !event.nativeEvent.isComposing) {
+            event.preventDefault();
+            event.stopPropagation();
+            setFocused(false);
+            window.location.assign(selected.href);
+          }
+        }}
         onChange={(event) => {
           event.stopPropagation();
           setValue(event.target.value);
+          setFocused(true);
+          setActive(-1);
         }}
       />
       <button type="submit">
         Search <span aria-hidden="true">↗</span>
       </button>
+      {expanded && <div className="search-suggestions">
+        <div className="search-suggestions-heading">Authors</div>
+        <div id="library-author-suggestions" role="listbox" aria-label="Matching authors">
+          {matches.map((author, index) => <a
+            key={author.id}
+            id={`search-author-${author.id}`}
+            className="search-author"
+            role="option"
+            aria-selected={active === index}
+            href={author.href}
+            tabIndex={-1}
+            onMouseEnter={() => setActive(index)}
+            onMouseDown={event => event.preventDefault()}
+            onClick={() => setFocused(false)}
+          >
+            <SearchAvatar author={author} />
+            <span className="search-author-copy"><strong>{author.name}</strong><small>Open author library</small></span>
+            <span className="search-author-arrow" aria-hidden="true">↗</span>
+          </a>)}
+        </div>
+        {!matches.length && <p className="search-no-authors">No matching authors</p>}
+        <p className="search-suggestions-hint">{selected ? "Enter to open author · Esc to close" : "Press Enter to search all books and authors"}</p>
+      </div>}
     </form>
   );
 }

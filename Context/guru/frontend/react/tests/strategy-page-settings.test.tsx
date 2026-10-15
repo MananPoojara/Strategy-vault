@@ -2,6 +2,8 @@ import {afterEach, expect, it, vi} from "vitest";
 import {act} from "react";
 import {createRoot, type Root} from "react-dom/client";
 import {StrategyPage} from "../src/pages/ResearchPages";
+import {sourceAccount,sourceAccountView} from "../src/services/source-account";
+import {accountFixture} from "./helpers/source-account-fixture";
 import type {ViewSnapshot} from "../src/state/store";
 
 let root: Root | undefined;
@@ -11,15 +13,15 @@ afterEach(async () => {
   host?.remove(); root = undefined; host = undefined;
 });
 const snapshot = (state: Record<string, string>): ViewSnapshot => ({
-  revision: 1, loading: false, html: '<header><span data-react-slot="strategy-settings"></span></header>',
+  revision: 1, loading: false, html: '<header><span data-react-slot="strategy-settings"></span></header><div data-react-slot="source-account-notice"></div>',
   error: null, route: null, status: "Strategy", state, home: null, reading: null,
 });
-async function mount(state: Record<string, string>) {
+async function mount(state: Record<string, string>, source = false) {
   Object.assign(globalThis, {IS_REACT_ACT_ENVIRONMENT: true});
   const patch = vi.fn();
   window.VaultRuntime = {patch} as unknown as Window["VaultRuntime"];
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
-  await act(async () => root!.render(<StrategyPage snapshot={snapshot(state)} />));
+  await act(async () => root!.render(<StrategyPage snapshot={{...snapshot(state), strategyAccount:source?sourceAccountView(sourceAccount(accountFixture(),"elcim_impulse","elcim")!):null}} />));
   await act(async () => host!.querySelector<HTMLButtonElement>('[aria-label="Strategy settings"]')!.click());
   return patch;
 }
@@ -51,4 +53,12 @@ it("keeps the basket's portfolio accounting and never offers closing-order trade
   expect(document.activeElement).toBe(dialog().querySelector('[aria-label="Close strategy settings"]'));
   await act(async () => button("Apply").click());
   expect(patch).not.toHaveBeenCalled();
+});
+
+it("explains protected source sizing and applies only the closed weighted-return display", async () => {
+ const patch=await mount({report_mode:"fixed",tk:"basket:us_sp500:AAPL"},true);
+ expect(document.querySelector('[data-source-account-notice]')?.textContent).toContain('discretionary turning-point resets');
+ expect(dialog().textContent).toContain('Closed weighted-return display');expect(dialog().textContent).toContain('Hypothetical closed compounding');
+ expect(dialog().textContent).toContain('mandatory 2%/6% risk controller');expect(dialog().textContent).not.toContain('Fixed quantity');
+ await act(async()=>radio('compound').click());await act(async()=>button('Apply').click());expect(patch).toHaveBeenCalledExactlyOnceWith({report_mode:'compound'});
 });

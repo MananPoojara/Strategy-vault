@@ -25,18 +25,29 @@ impl Costs {
     pub fn json(self)->String{
         format!("{{\"fees_bps\":{},\"slippage_bps\":{},\"rollover_bps\":{},\"total_side_bps\":{},\"taxes\":null,\"rolls\":null,\"basis\":\"User-entered execution fees and slippage, each in bps per side of deployed normalized allocation. Fees are not a verified statutory tax schedule.\",\"rollover_status\":\"No verified contract roll-event mapping\",\"slippage_status\":\"User-entered return deduction; fill prices are not rewritten\",\"money_status\":\"No position quantities or monetary sizing supplied; monetary P&L and taxes remain unavailable\",\"open_trade_cost_basis\":\"Legacy equity includes estimated exit costs on marked-open trades\"}}",num(self.fees_bps),num(self.slippage_bps),num(self.rollover_bps),num(self.fees_bps+self.slippage_bps))
     }
+    pub fn source_account_json(self)->String {
+        self.json().replace("Legacy equity includes estimated exit costs on marked-open trades","Protected source account charges actual entry costs on open marks; no exit transaction or liquidation fee is invented")
+    }
 }
 
 pub struct TradeLedger {
     symbol:String,side:&'static str,open:bool,
     pub gross_pnl:f64,pub fees:f64,pub slippage:f64,pub net_pnl:f64,
     pub gross_ret:f64,pub net_ret:f64,pub fee_ret:f64,pub slippage_ret:f64,pub pts:f64,pub days_held:i64,
-    pub observed_mae:Option<f64>,pub observed_mfe:Option<f64>,pub excursion_bars:usize,allocation:f64
+    pub observed_mae:Option<f64>,pub observed_mfe:Option<f64>,pub excursion_bars:usize,allocation:f64,entry_only_open:bool
 }
 impl TradeLedger {
     pub fn new(ctx:&Ctx,t:&Trade,allocation:f64,costs:Costs)->Self{
+        Self::with_open_cost_basis(ctx,t,allocation,costs,false)
+    }
+    pub fn source_account(ctx:&Ctx,t:&Trade,allocation:f64,costs:Costs)->Self{
+        Self::with_open_cost_basis(ctx,t,allocation,costs,true)
+    }
+    fn with_open_cost_basis(ctx:&Ctx,t:&Trade,allocation:f64,costs:Costs,entry_only_open:bool)->Self{
         let (gross_ret,net_ret)=(t.ret(0.),t.ret(costs.side_rate()));
-        let fee_ret=2.*t.deployed()*costs.fees_bps/10000.;let slippage_ret=2.*t.deployed()*costs.slippage_bps/10000.;
+        let sides=if entry_only_open && t.open {1.}else{2.};
+        let fee_ret=sides*t.deployed()*costs.fees_bps/10000.;let slippage_ret=sides*t.deployed()*costs.slippage_bps/10000.;
+        let net_ret=if entry_only_open && t.open {gross_ret-fee_ret-slippage_ret}else{net_ret};
         let mut observed_mae:Option<f64>=None;let mut observed_mfe:Option<f64>=None;let mut excursion_bars=0;
         // Event-day daily ranges do not establish whether extremes happened before
         // entry or after exit. Only complete event-free held bars are eligible.
@@ -52,12 +63,12 @@ impl TradeLedger {
             observed_mfe=Some(observed_mfe.unwrap_or(0.).max(bounds[0]).max(bounds[1]));
         }
         Self{symbol:ctx.r[t.legs[0].i].ticker.clone(),side:if t.dir>0.{"Long"}else{"Short"},open:t.open,gross_pnl:allocation*gross_ret,fees:allocation*fee_ret,slippage:allocation*slippage_ret,net_pnl:allocation*net_ret,
-            gross_ret,net_ret,fee_ret,slippage_ret,pts:t.dir*(t.exit_px-t.avg_px()),days_held:day_number(&ctx.r[t.exit_i].date)-day_number(&ctx.r[t.legs[0].i].date),observed_mae,observed_mfe,excursion_bars,allocation}
+            gross_ret,net_ret,fee_ret,slippage_ret,pts:t.dir*(t.exit_px-t.avg_px()),days_held:day_number(&ctx.r[t.exit_i].date)-day_number(&ctx.r[t.legs[0].i].date),observed_mae,observed_mfe,excursion_bars,allocation,entry_only_open}
     }
     pub fn json(&self)->String{
         let pct=|v:Option<f64>|v.map_or("null".into(),|n|num(n/self.allocation));
         format!("{{\"symbol\":\"{}\",\"signal_side\":\"{}\",\"pts\":{},\"days_held\":{},\"gross_ret\":{},\"net_ret\":{},\"fee_ret\":{},\"slippage_ret\":{},\"gross_pnl\":null,\"fees\":null,\"slippage\":null,\"taxes\":null,\"net_pnl\":null,\"money_status\":\"No position quantities or monetary sizing supplied\",\"return_basis\":\"Existing normalized allocation and actual filled leg weights; not contract quantities\",\"pts_basis\":\"Direction-adjusted effective exit price minus weighted average entry price; not monetary profit\",\"cost_status\":\"{}\",\"mae\":null,\"mfe\":null,\"mae_ret_observed\":{},\"mfe_ret_observed\":{},\"excursion_bars\":{},\"excursion_status\":\"{}\",\"excursion_basis\":\"Gross allocation returns on event-free full held OHLC bars only, preserving banked scale-out fills. Execution-day ordering is unknown; exact full-trade MAE/MFE remains unavailable.\"}}",
-            esc(&self.symbol),self.side,num(self.pts),self.days_held,num(self.gross_ret),num(self.net_ret),num(self.fee_ret),num(self.slippage_ret),if self.open{"open_liquidation_estimate"}else{"modeled_round_trip_cost"},pct(self.observed_mae),pct(self.observed_mfe),self.excursion_bars,if self.excursion_bars>0{"partial_daily_ohlc_bounds"}else{"unavailable"})
+            esc(&self.symbol),self.side,num(self.pts),self.days_held,num(self.gross_ret),num(self.net_ret),num(self.fee_ret),num(self.slippage_ret),if self.open&&self.entry_only_open{"actual_entry_cost_only_open_mark"}else if self.open{"open_liquidation_estimate"}else{"modeled_round_trip_cost"},pct(self.observed_mae),pct(self.observed_mfe),self.excursion_bars,if self.excursion_bars>0{"partial_daily_ohlc_bounds"}else{"unavailable"})
     }
 }
 #[cfg(test)]
@@ -65,6 +76,13 @@ mod tests {
     use super::*;
     use crate::{connors::{Ctx,Leg,Trade},Row};
     use std::collections::BTreeMap;
+    #[test]
+    fn protected_source_open_mark_has_one_actual_cost_side_and_preserves_legacy_estimate(){
+        let r=rows();let x=Ctx::new(&r,&r,&[]);let t=Trade{dir:1.,legs:vec![Leg{i:0,px:100.,w:0.4}],exit_i:2,exit_px:110.,reason:"actual_open_holding_mark".into(),entry_kind:"open",signal_i:2,open:true,exits:vec![]};
+        let c=Costs{fees_bps:3.,slippage_bps:2.,rollover_bps:0.};let source=TradeLedger::source_account(&x,&t,1.,c);let legacy=TradeLedger::new(&x,&t,1.,c);
+        assert!((source.net_ret-(0.04-0.4*0.0005)).abs()<1e-12);assert!((legacy.net_ret-(0.04-0.4*0.001)).abs()<1e-12);assert!(source.json().contains("actual_entry_cost_only_open_mark"));assert!(legacy.json().contains("open_liquidation_estimate"));
+        assert!((source.gross_pnl-source.fees-source.slippage-source.net_pnl).abs()<1e-12);
+    }
     fn inputs(values:&[(&str,&str)]) -> Costs { Costs::parse(&values.iter().map(|(k,v)|(k.to_string(),v.to_string())).collect()).unwrap() }
     fn rows()->Vec<Row>{
         [(100.,120.,70.),(80.,120.,60.),(90.,110.,70.),(100.,120.,80.)].iter().enumerate().map(|(i,&(c,h,l))|Row{ticker:"TEST".into(),date:format!("2020-01-0{}",i+1),open:c,high:h,low:l,close:c,volume:Some(100.)}).collect()

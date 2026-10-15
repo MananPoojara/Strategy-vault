@@ -2,6 +2,8 @@ import type { ReadingModel } from "../pages/ReadingPage";
 import type { Route } from "../app/routes";
 import type { LibraryMarket } from "../services/library-market";
 import type { OwnerIssue as SummaryIssue } from "../services/summary-loader";
+import type { SearchAuthor } from "../services/library-search";
+import type {SourceAccountView} from "../services/source-account";
 export interface ViewSnapshot {
   revision: number;
   loading: boolean;
@@ -12,6 +14,7 @@ export interface ViewSnapshot {
   state: Record<string, string>;
   home: HomeModel | null;
   reading: ReadingModel | null;
+  strategyAccount?: SourceAccountView | null;
 }
 export interface PageInfo {
   page: number;
@@ -71,6 +74,7 @@ export interface HomeModel {
   symbolCount: number;
   basket: boolean;
   authorCards: AuthorCard[];
+  searchAuthors?: SearchAuthor[];
   bookCards: BookCard[];
   page: PageInfo;
   query: string;
@@ -136,6 +140,7 @@ export function createStore() {
         html: "",
         home: null,
         reading: null,
+        strategyAccount: null,
       };
       notify();
       return true;

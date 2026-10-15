@@ -11,8 +11,8 @@ export function HomePage({ snapshot }: { snapshot: ViewSnapshot }) {
   return (
     <>
       <section className="lhero">
-        <div className="guilloche" aria-hidden="true">
-          <ResearchMarkup html={model.guilloche} />
+        <div className="hero-art" aria-hidden="true">
+          <div className="guilloche"><ResearchMarkup html={model.guilloche} /></div>
         </div>
         <h1>Guru's</h1>
         <p className="lede">
@@ -20,20 +20,10 @@ export function HomePage({ snapshot }: { snapshot: ViewSnapshot }) {
           markets. Backtests appear only where the required data and calculation
           support are available.
         </p>
-        <LibrarySearch query={model.query} />
+        <LibrarySearch query={model.query} authors={model.searchAuthors || []} />
         <div className="hero-cta">
           <a className="dbtn primary" href={model.strategiesLink}>
             Browse all strategies
-          </a>
-          <a
-            className="dbtn"
-            href="data/research-share-book-inventory.xlsx"
-            download
-          >
-            Download book inventory
-          </a>
-          <a className="dbtn ghost" href={model.connorsLink}>
-            Larry Connors
           </a>
         </div>
       </section>

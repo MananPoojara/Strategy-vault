@@ -1,6 +1,7 @@
 //! One module per book. Each exposes catalogue / params / run / family_of; this file just chains them.
 use crate::connors::{ParamDef, Params, StrategyDef, Ctx, Trade};
 pub mod joe_ross_math;
+pub mod elcim_account;
 
 macro_rules! books {
     ($($m:ident),*) => {

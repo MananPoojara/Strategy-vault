@@ -1,0 +1,9 @@
+@font-face{font-family:'Familjen Grotesk';src:url('/vendor/login/fonts/FamiljenGrotesk-var.woff2') format('woff2');font-weight:400 700;font-style:normal;font-display:swap}
+@font-face{font-family:'Plus Jakarta Sans';src:url('/vendor/login/fonts/PlusJakartaSans-var.woff2') format('woff2');font-weight:200 800;font-style:normal;font-display:swap}
+body.vault-welcome{--font-ui:'Familjen Grotesk',sans-serif;--font-heading:'Plus Jakarta Sans',sans-serif;--primary:#F97316;--accent:#FB923C;--surface:#FBF4EA;--panel:#fff;--text:#000;--muted:#6b6457;--line:#ECE2D2}
+.vault-welcome *{box-sizing:border-box;margin:0;padding:0}
+
+body.vault-welcome{font-family:var(--font-ui);background:var(--surface);color:var(--text);-webkit-font-smoothing:antialiased}
+#login-root{min-height:100vh}
+.vault-welcome .btn{background:linear-gradient(135deg,var(--primary),var(--accent));background-origin:border-box;color:#fff;border:1px solid transparent;border-radius:10px;padding:9px 19px;font-family:inherit;font-weight:700;font-size:.8125rem;cursor:pointer}
+.vault-welcome button:focus-visible{outline:2px solid var(--accent);outline-offset:3px}

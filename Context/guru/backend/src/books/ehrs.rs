@@ -150,7 +150,7 @@ fn sinetrend_state(x: &Ctx, cyc_part: f64, mbb: usize, reviewed: bool) -> SineTr
             let ip = (cyc_part * sp[i] + 0.5).trunc() as usize;
             let mut it = 0.;
             for k in 0..ip { it += if k <= i { p[i - k] } else { 0. }; }
-            if dcp > 0 { it /= ip as f64; }
+            if if reviewed { ip > 0 } else { dcp > 0 } { it /= ip as f64; }
             itrend[i] = it;
             tl[i] = (4. * itrend[i] + 3. * itrend[i - 1] + 2. * itrend[i - 2] + itrend[i - 3]) / 10.;
             if cb < 12 { tl[i] = p[i]; }
@@ -197,13 +197,13 @@ pub fn catalogue() -> Vec<StrategyDef> {
           "Source p.119 calls Fig.12.1 a complete theoretical automatic system before adding a $1,000 stop for the Treasury-bond study. This run uses that signal code on selected actual daily OHLC as a declared research application, without the separate dollar stop or futures accounting. CycPart=1. MaxBarsBack=50 is an explicit configurable research setting, not printed author metadata. Zero state persists before CurrentBar>5; next-open fills; flat at selected start; terminal positions stay open. Book figures are separate and are not reproduced. Review: library/ehlers/REVIEW-2026-10-13.md.",
           claim("233", "40.77%", "$398.61", "20 bars win / 5 bars loss", "T-Bonds 9 Jul 1984-16 Jun 2000, $1,000 stop")),
         d("ehrs_sinetrend_trend", "SineTrend · Trend Mode only (Fig. 12.3)", Status::Live, RULES_TREND,
-          "Fig. 12.3 test (T-Bonds, $1,000 stop). Author calls it \"simply awful\" - kept to show the Cycle Mode contribution.",
-          claim("81", "18.52%", "$246.53", "38 bars win / 8 bars loss", "T-Bonds 9 Jul 1984-16 Jun 2000, $1,000 stop")),
+          "Stop-free research application of the source's Trend-only order code (p.124): Cycle Mode orders are removed, without flattening positions during Cycle Mode. Reviewed settings are CycPart=1 and MaxBarsBack=50; alternate settings remain held. Zero-state startup and next-open fills are explicit conventions. Separate Fig.12.3 T-Bond figures include a $1,000 stop and a LOSS of $246.53 per trade; those futures results are not reproduced. Review: library/ehlers/REVIEW-2026-10-15-VARIANTS.md.",
+          claim("81", "18.52%", "-$246.53", "38 bars win / 8 bars loss", "T-Bonds 9 Jul 1984-16 Jun 2000, $1,000 stop")),
         d("ehrs_sinetrend_cp115", "SineTrend · CycPart 1.15 (Fig. 12.5)", Status::Live, RULES,
-          "Fig. 12.4 trendline with the book's optimized CycPart = 1.15; book also raised the stop to $1,100 (T-Bonds).",
+          "Stop-free research application of Fig.12.4's trendline and the full trend/cycle orders. Reviewed settings are CycPart=1.15 and MaxBarsBack=57; alternate settings remain held. This covers source Price[count] references. Zero-state startup, flat test start and next-open fills are declared conventions. Separate Fig.12.5 T-Bond figures include a $1,100 stop; no source-study performance or futures accounting is reproduced. Review: library/ehlers/REVIEW-2026-10-15-VARIANTS.md.",
           claim("191", "44.5%", "$594.37", "24 bars win / 6 bars loss", "T-Bonds 9 Jul 1984-16 Jun 2000, $1,100 stop")),
         d("ehrs_sinetrend_cp115_trend", "SineTrend · Trend only, CycPart 1.15 (Fig. 12.6)", Status::Live, RULES_TREND,
-          "Trend Mode-only code with CycPart = 1.15; book stop $1,500 (T-Bonds).",
+          "Stop-free research application of Fig.12.4's trendline with Cycle Mode orders removed (pp.124,127). Reviewed settings are CycPart=1.15 and MaxBarsBack=57; alternate settings remain held. This covers source history. Positions remain held through Cycle Mode; zero-state startup and next-open fills are declared conventions. Separate Fig.12.6 T-Bond figures include a $1,500 stop; no source-study performance or futures accounting is reproduced. Review: library/ehlers/REVIEW-2026-10-15-VARIANTS.md.",
           claim("67", "35.82%", "$642.72", "52 bars win / 13 bars loss", "T-Bonds 9 Jul 1984-16 Jun 2000, $1,500 stop")),
         d("ehrs_sinetrend_cp110", "SineTrend · CycPart 1.10 (Fig. 12.8)", Status::Live, RULES,
           "Book: CycPart optimized to 1.10, $2,200 stop, back-adjusted Swiss Franc futures 13 Feb 1975 - 1 Jun 2000 (the Fig. 12.8 caption says Deutschemark; text says Swiss Franc).",
@@ -252,17 +252,32 @@ fn variant(id: &str) -> Option<(f64, bool)> {
     })
 }
 
+/// Source-reviewed theoretical signal configurations; admission remains exact-ID.
+pub fn reviewed_sinetrend(id: &str) -> bool {
+    matches!(id,"ehrs_sinetrend"|"ehrs_sinetrend_trend"|"ehrs_sinetrend_cp115"|"ehrs_sinetrend_cp115_trend")
+}
+
+// ceil(cp*50)-1 conservatively bounds floor(cp*SmoothPeriod+.5)-1.
+// Unlike trunc(cp*50+.5), it cannot lose a history bar at a half-integer
+// represented just below its decimal value (e.g. 1.15*50).
+fn required_mbb(cp: f64) -> usize { MBB.max((cp * 50.).ceil() as usize - 1) }
+
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let (cp, _) = variant(id)?;
-    if id != "ehrs_sinetrend" {
+    if !reviewed_sinetrend(id) {
         return Some(vec![ParamDef { key: "cyc_part", label: "CycPart (trendline length / dominant cycle)", def: cp, min: 0.5, max: 1.5, step: 0.05 }]);
     }
+    if id != "ehrs_sinetrend" {
+        let mbb=required_mbb(cp) as f64;
+        return Some(vec![ParamDef { key:"cyc_part",label:"CycPart (reviewed configuration)",def:cp,min:cp,max:cp,step:0.05 },
+            ParamDef { key:"max_bars_back",label:"MaxBarsBack (reviewed research setting)",def:mbb,min:mbb,max:mbb,step:1. }]);
+    }
     Some(vec![ParamDef { key: "cyc_part", label: "CycPart (trendline length / dominant cycle)", def: cp, min: 1., max: 1.5, step: 0.05 },
-        ParamDef { key: "max_bars_back", label: "MaxBarsBack (declared research setting)", def: MBB.max((cp * 50. + 0.5).trunc() as usize - 1) as f64, min: 50., max: 250., step: 1. }])
+        ParamDef { key: "max_bars_back", label: "MaxBarsBack (declared research setting)", def: required_mbb(cp) as f64, min: 50., max: 250., step: 1. }])
 }
 
 pub fn validate(id: &str, p: &Params) -> Option<String> {
-    if id != "ehrs_sinetrend" { return None; }
+    if !reviewed_sinetrend(id) { return None; }
     let schema = params(id)?;
     for (key, value) in p {
         let Some(d) = schema.iter().find(|d| d.key == key) else { return Some(format!("Unknown SineTrend parameter: {key}")); };
@@ -270,7 +285,10 @@ pub fn validate(id: &str, p: &Params) -> Option<String> {
     }
     let get = |k| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).unwrap().def);
     let mbb = get("max_bars_back");
-    if mbb.fract() != 0. || mbb < (get("cyc_part") * 50. + 0.5).trunc() - 1. {
+    // Preserve the previously admitted base parameter contract; only the three
+    // new exact configurations use the conservative default-history bound.
+    let minimum=if id=="ehrs_sinetrend" {(get("cyc_part") * 50. + 0.5).trunc() - 1.} else {required_mbb(get("cyc_part")) as f64};
+    if mbb.fract() != 0. || mbb < minimum {
         return Some("MaxBarsBack must be an integer covering the maximum source Price[count] reference.".into());
     }
     None
@@ -279,13 +297,13 @@ pub fn validate(id: &str, p: &Params) -> Option<String> {
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let (cp_def, trend_only) = variant(id)?;
     let cp = p.get("cyc_part").copied().unwrap_or(cp_def);
-    if id != "ehrs_sinetrend" {
+    if !reviewed_sinetrend(id) {
         if !(0.5..=1.5).contains(&cp) || p.keys().any(|k| k != "cyc_part") || from >= to || to >= x.c.len() { return None; }
         let st = sinetrend(x, cp);
         return Some(next_open_sim(x, from, to, |i, pos| sinetrend_order(&st, i, pos, trend_only, MBB)));
     }
     if validate(id, p).is_some() || from >= to || to >= x.c.len() { return None; }
-    let mbb = p.get("max_bars_back").copied().unwrap_or(MBB.max((cp_def * 50. + 0.5).trunc() as usize - 1) as f64) as usize;
+    let mbb = p.get("max_bars_back").copied().unwrap_or(required_mbb(cp_def) as f64) as usize;
     let st = sinetrend_with_mbb(x, cp, mbb);
     Some(next_open_sim(x, from, to, |i, pos| sinetrend_order(&st, i, pos, trend_only, mbb)))
 }
@@ -339,11 +357,34 @@ mod tests {
         let r=rows(100, |_|100.);let x=Ctx::new(&r,&r,&[]);
         let legacy=sinetrend(&x,1.15);
         assert!(legacy.lead[..55].iter().all(|v|*v==sin_d(45.)));
-        for id in ["ehrs_sinetrend_trend","ehrs_sinetrend_cp115","ehrs_sinetrend_cp115_trend","ehrs_sinetrend_cp110"] {
+        for id in ["ehrs_sinetrend_cp110"] {
             let schema=params(id).unwrap();assert_eq!(schema.len(),1);
             assert_eq!(schema[0].key,"cyc_part");assert_eq!(schema[0].min,0.5);
             assert!(run(id,&x,60,99,&Params::from([("max_bars_back".into(),60.)])).is_none());
         }
+        assert!(validate("ehrs_sinetrend",&Params::from([("cyc_part".into(),1.15),("max_bars_back".into(),56.)])).is_none());
+    }
+    #[test]
+    fn reviewed_variants_have_source_sufficient_defaults_and_reject_missing_history() {
+        let r=rows(180, |i|100.+5.*(i as f64/4.).sin());let x=Ctx::new(&r,&r,&[]);
+        for (id,cp,mbb) in [("ehrs_sinetrend_trend",1.,50.),("ehrs_sinetrend_cp115",1.15,57.),("ehrs_sinetrend_cp115_trend",1.15,57.)] {
+            let schema=params(id).unwrap();assert_eq!(schema.len(),2);
+            assert_eq!(schema.iter().find(|d|d.key=="cyc_part").unwrap().def,cp);
+            assert_eq!(schema.iter().find(|d|d.key=="max_bars_back").unwrap().def,mbb);
+            let explicit=Params::from([("cyc_part".into(),cp),("max_bars_back".into(),mbb)]);
+            let default=run(id,&x,70,179,&Params::new()).unwrap();let configured=run(id,&x,70,179,&explicit).unwrap();
+            assert_eq!(default.len(),configured.len());
+            for (a,b) in default.iter().zip(&configured) {assert_eq!((a.dir,a.legs[0].i,a.exit_i,a.open),(b.dir,b.legs[0].i,b.exit_i,b.open));}
+            for bad in [Params::from([("max_bars_back".into(),50.5)]),Params::from([("max_bars_back".into(),mbb+1.)]),Params::from([("cyc_part".into(),1.5)]),Params::from([("cyc_part".into(),f64::NAN)]),Params::from([("cyc_part".into(),f64::INFINITY)]),Params::from([("unknown".into(),1.)])] {
+                assert!(validate(id,&bad).is_some());assert!(run(id,&x,70,179,&bad).is_none());
+            }
+        }
+    }
+    #[test]
+    fn trend_only_suppresses_cycle_orders_without_forced_flattening() {
+        let st=SineTrend{smooth:vec![100.;60],trendline:vec![100.;60],sine:vec![0.;60],lead:(0..60).map(|i|if i<56{-1.}else{1.}).collect(),trend:vec![0;60]};
+        assert_eq!(sinetrend_order(&st,56,-1,false,50).unwrap().0,1);
+        assert!(sinetrend_order(&st,56,-1,true,50).is_none());
     }
     #[test]
     fn next_open_orders_reverse_once_and_terminal_signal_has_no_fill() {
