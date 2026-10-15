@@ -27,6 +27,9 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
   const themeKey = useThemeKey();
   const [ohlcError, setOhlcError] = useState<unknown>(null);
   const [chipErrors, setChipErrors] = useState<Record<string, unknown>>({});
+  const [provisionalNote, setProvisionalNote] = useState<string | undefined>();
+  // Prices depend only on market+ticker, so chip edits reuse the in-flight or finished OHLC requests.
+  const ohlcCache = useRef<{ key: string; p: Promise<PromiseSettledResult<SeriesResponse>[]> } | null>(null);
   const find = (id: string) => catalogue.indicators.find((i) => i.id === id);
   const chipsKey = JSON.stringify(chips.map((c) => [c.key, c.id, Object.entries(c.params).sort(([a], [b]) => a.localeCompare(b))]));
 
@@ -37,14 +40,23 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
       const ind = find(chip.id);
       return ind?.computed ? [{ chip, ind, index }] : [];
     });
+    const cacheKey = `${market}|${ticker}`;
+    if (ohlcCache.current?.key !== cacheKey) {
+      const entry = { key: cacheKey, p: Promise.allSettled(PRICE_IDS.map((id) => loadSeries({ id, tf: "D" }))) };
+      ohlcCache.current = entry;
+      // A failed part is not kept, so the next run retries the prices.
+      void entry.p.then((parts) => { if (parts.some((r) => r.status === "rejected") && ohlcCache.current === entry) ohlcCache.current = null; });
+    }
+    const ohlcLoad = ohlcCache.current.p;
     void (async () => {
       const [ohlcParts, chipParts] = await Promise.all([
-        Promise.allSettled(PRICE_IDS.map((id) => loadSeries({ id, tf: "D" }))),
+        ohlcLoad,
         Promise.allSettled(drawn.map(({ chip }) => loadSeries({ id: chip.id, tf, p: chip.params }))),
       ]);
       if (!live) return;
       const failedOhlc = ohlcParts.find((r) => r.status === "rejected");
       setOhlcError(failedOhlc ? (failedOhlc as PromiseRejectedResult).reason : null);
+      setProvisionalNote(ohlcParts.flatMap((r) => (r.status === "fulfilled" ? [r.value.provisional_note] : []))[0]);
       setChipErrors(Object.fromEntries(chipParts.flatMap((r, i) => (r.status === "rejected" ? [[drawn[i].chip.key, r.reason]] : []))));
       if (failedOhlc || !priceRef.current || !panesRef.current) return;
       const [o, h, l, c] = ohlcParts.map((r) => (r as PromiseFulfilledResult<SeriesResponse>).value);
@@ -109,7 +121,7 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
   return (
     <section className="box lab-workbench">
       <div className="box-h">{ticker} · {TF_NAMES[tf] ?? tf} bars <small>{COPY.chartHint}</small></div>
-      {isProvisional(market) && <ProvisionalStrip instrumentLabel={instrumentLabel} />}
+      {isProvisional(market) && <ProvisionalStrip note={provisionalNote} instrumentLabel={instrumentLabel} />}
       {chips.length ? (
         <div className="lab-chips">
           {chips.map((chip, index) => (
@@ -120,9 +132,11 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
       ) : <p className="cap">{COPY.noChips}</p>}
       {ohlcError !== null && <ErrorNotice error={ohlcError} market={market} instrumentLabel={instrumentLabel} />}
       <div hidden={ohlcError !== null}>
-        <div className="lwc px" ref={priceRef} data-lab-chart />
+        <div className="lwc px" ref={priceRef} data-lab-chart role="img" aria-label={`${ticker} price chart`} />
         <div ref={panesRef}>
-          {panes.map((c) => <div key={c.key} className="lab-pane" data-lab-pane={c.key} />)}
+          {panes.map((c) => (
+            <div key={c.key} className="lab-pane" data-lab-pane={c.key} role="img" aria-label={`${find(c.id)?.name ?? c.id} chart`} />
+          ))}
         </div>
       </div>
       <p className="cap">{COPY.chartNote}</p>
@@ -144,10 +158,11 @@ function ChipView({ chip, index, catalogue, error, market, instrumentLabel, onCh
   const name = ind?.name ?? chip.id;
   const set = (k: string, value: number) => onChange(chip.key, { ...chip.params, [k]: value });
   return (
-    <span className="chip" data-lab-chip={chip.key}>
+    <div className="chip" data-lab-chip={chip.key}>
       <i className="lab-dot" style={{ background: `var(--${PALETTE[index % PALETTE.length]})` }} aria-hidden="true" />
       {name}
-      {ind?.params.map((p) => (p.key === "variant" ? (
+      {ind && !ind.computed && <span className="cap">{ind.note}</span>}
+      {ind?.computed && ind.params.map((p) => (p.key === "variant" ? (
         <select key={p.key} aria-label={`${name} ${p.label}`} value={chip.params[p.key] ?? p.default} onChange={(e) => set(p.key, Number(e.target.value))}>
           <option value={0}>TradingView</option>
           <option value={1}>AmiBroker</option>
@@ -157,7 +172,7 @@ function ChipView({ chip, index, catalogue, error, market, instrumentLabel, onCh
       )))}
       <button type="button" aria-label={`Remove ${name}`} onClick={() => onRemove(chip.key)}>×</button>
       {error !== undefined && <ErrorNotice error={error} market={market} instrumentLabel={instrumentLabel} />}
-    </span>
+    </div>
   );
 }
 

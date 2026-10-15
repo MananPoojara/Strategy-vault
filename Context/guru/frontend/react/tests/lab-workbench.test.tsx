@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { act } from "react";
+import { act, useState } from "react";
 import { Workbench, type Chip } from "../src/features/lab/Workbench";
 import { catalogueFixture as cat, flush, mount, runFixture, seriesFixture, unmount } from "./fixtures/lab";
 
@@ -43,10 +43,13 @@ it("draws candles, overlays with gaps, boolean markers and a pane; a failing chi
   expect(price.series[0].setMarkers.mock.calls.at(-1)![0].filter((m: { text: string }) => m.text === "Doji")).toHaveLength(2);
   expect(charts.length).toBeGreaterThanOrEqual(2);
   expect(host.querySelector('[data-lab-chip="c5"] [data-lab-error]')?.textContent).toContain("rsi: needs more history");
+  expect(host.querySelector<HTMLSelectElement>('[data-lab-chip="c4"] select')?.value).toBe("1");
   expect(host.querySelector('[data-lab-chip="c4"] select')?.textContent).toContain("AmiBroker");
   // the failed pane chip draws no chart; the stoch pane does
   expect(charts).toHaveLength(2);
-  expect(host.querySelector<HTMLElement>("[data-lab-chart]")?.hidden).toBe(false);
+  expect(host.querySelector("[data-lab-chart]")?.closest("[hidden]")).toBeNull();
+  expect(host.querySelector("[data-lab-chart]")?.getAttribute("aria-label")).toBe("NIFTY 50 price chart");
+  expect(host.querySelector('[data-lab-pane="c4"]')?.getAttribute("role")).toBe("img");
 });
 
 it("edits and removes chips through callbacks", async () => {
@@ -111,5 +114,90 @@ it("removes charts on unmount", async () => {
   await mount(<Workbench {...props} />);
   await flush();
   await unmount();
+  expect(charts.length).toBeGreaterThan(1);
   expect(charts.every((c) => c.remove.mock.calls.length === 1)).toBe(true);
+});
+
+it("chip edits reuse the cached OHLC; only changed chips are refetched", async () => {
+  const spy = vi.fn(load);
+  function Harness() {
+    const [list, setList] = useState<Chip[]>([{ key: "c1", id: "ema", params: { length: 20 } }]);
+    return <Workbench {...props} chips={list} loadSeries={spy}
+      onChipChange={(key, params) => setList((l) => l.map((c) => (c.key === key ? { ...c, params } : c)))} />;
+  }
+  const host = await mount(<Harness />);
+  await flush();
+  const input = host.querySelector<HTMLInputElement>('[data-lab-chip="c1"] input')!;
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+  for (const v of ["2", "20", "200"]) {
+    await act(async () => { setter.call(input, v); input.dispatchEvent(new Event("input", { bubbles: true })); });
+    await flush();
+  }
+  expect(spy.mock.calls.filter(([q]) => q.id === "close")).toHaveLength(1);
+  expect(spy.mock.calls.filter(([q]) => q.id === "ema").map(([q]) => (q as { p?: unknown }).p)).toContainEqual({ length: 200 });
+});
+
+it("a failed OHLC load is retried on the next run", async () => {
+  let fail = true;
+  const spy = vi.fn(async (q: { id: string }) => {
+    if (q.id === "close" && fail) throw Object.assign(new Error("busy"), { status: 503, kind: "gateway" });
+    return load(q);
+  });
+  function Harness() {
+    const [tf, setTf] = useState("D");
+    return <><button type="button" data-tf onClick={() => setTf("W")} /><Workbench {...props} chips={[]} tf={tf} loadSeries={spy} /></>;
+  }
+  const host = await mount(<Harness />);
+  await flush();
+  expect(charts).toHaveLength(0);
+  fail = false;
+  await act(async () => host.querySelector<HTMLButtonElement>("[data-tf]")!.click());
+  await flush();
+  expect(spy.mock.calls.filter(([q]) => q.id === "close")).toHaveLength(2);
+  expect(charts).toHaveLength(1);
+});
+
+it("does not draw after unmount", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  const slow = vi.fn(async (q: { id: string }) => { await gate; return load(q); });
+  await mount(<Workbench {...props} loadSeries={slow} />);
+  await unmount();
+  release();
+  await flush();
+  expect(window.LightweightCharts!.createChart).not.toHaveBeenCalled();
+});
+
+it("a run superseded by a rerender draws nothing (its charts would never be disposed)", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  const slow = vi.fn(async (q: { id: string }) => { await gate; return load(q); });
+  function Harness() {
+    const [tf, setTf] = useState("D");
+    return <><button type="button" data-tf onClick={() => setTf("W")} /><Workbench {...props} chips={[]} tf={tf} loadSeries={slow} /></>;
+  }
+  const host = await mount(<Harness />);
+  await act(async () => host.querySelector<HTMLButtonElement>("[data-tf]")!.click());
+  release();
+  await flush();
+  expect(window.LightweightCharts!.createChart).toHaveBeenCalledTimes(1);
+});
+
+it("an indicator that is not computed is never requested and shows its note", async () => {
+  const spy = vi.fn(load);
+  const host = await mount(<Workbench {...props} chips={[{ key: "x1", id: "or_range", params: {} }]} loadSeries={spy} />);
+  await flush();
+  expect(spy.mock.calls.some(([q]) => q.id === "or_range")).toBe(false);
+  const chip = host.querySelector('[data-lab-chip="x1"]')!;
+  expect(chip.textContent).toContain("Needs intraday (minute) bars; not available yet.");
+  expect(chip.querySelector("input")).toBeNull();
+  expect(chip.tagName).toBe("DIV");
+});
+
+it("the provisional strip uses the note the server sent", async () => {
+  const note = "Provisional · server note";
+  const spy = vi.fn(async (q: { id: string }) => ({ ...(await load(q)), provisional: true as const, provisional_note: note }));
+  const host = await mount(<Workbench {...props} market="gl" chips={[]} loadSeries={spy} instrumentLabel="IG:DAX" />);
+  await flush();
+  expect(host.querySelector("[data-lab-provisional]")?.textContent).toBe(`${note} · IG:DAX`);
 });

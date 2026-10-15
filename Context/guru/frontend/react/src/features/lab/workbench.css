@@ -1,7 +1,10 @@
 .lab-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
 .lab-chips .chip input { width: 64px; }
 .lab-chips .chip input, .lab-chips .chip select { background: var(--card); color: var(--ink); border: 1px solid var(--rule); }
-.lab-chips .chip .lab-error { flex-basis: 100%; padding: 4px 8px; }
+.lab-chips .chip:has(.lab-error) { flex-wrap: wrap; border-radius: var(--r-field); padding-right: 11px; padding-bottom: 8px; }
+.lab-chips .chip .lab-error { flex-basis: 100%; padding: 6px 8px; justify-items: start; text-align: left; font-weight: 500; }
+.lab-chips .chip .lab-error b { font-size: 12.5px; margin: 0; }
+.lab-chips .chip .cap { color: inherit; margin: 0; font-weight: 500; }
 .lab-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
 .lab-pane { height: 150px; margin-top: 6px; }
 .lab-pane:empty { display: none; }
