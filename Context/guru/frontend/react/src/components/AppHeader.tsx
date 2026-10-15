@@ -3,6 +3,7 @@ import type { Account } from "../services/api";
 import { saveSettings, signOut } from "../services/api";
 import type { ViewSnapshot } from "../state/store";
 import { customPages } from "../app/custom-pages";
+import { resolveRoute } from "../app/routes";
 const themes = [
   ["midnight", "Midnight", "#0d1727", "#4eade8"],
   ["forest", "Forest", "#eef4ed", "#357552"],
@@ -24,7 +25,10 @@ export function AppHeader({
   const [theme, setTheme] = useState(account?.settings.theme || "aqua"),
     [signingOut, setSigningOut] = useState(false),
     [message, setMessage] = useState("");
-  const active = snapshot.route?.name;
+  const customPath = resolveRoute(location.hash).path;
+  const onCustom = customPages.some((page) => page.path === customPath);
+  // The runtime maps unknown paths to 'home'; on a custom page no research link is active.
+  const active = onCustom ? undefined : snapshot.route?.name;
   const savedCount = window.VaultRuntime?.saved().length || 0;
   return (
     <>
@@ -62,13 +66,10 @@ export function AppHeader({
           {customPages
             .filter((page) => page.showInNavigation)
             .map((page) => (
-              <a href={`#${page.path}`} key={page.path}>
+              <a href={`#${page.path}`} key={page.path} className={customPath === page.path ? "on" : ""}>
                 {page.label}
               </a>
             ))}
-          <a className="off">
-            YT Strategies<em>soon</em>
-          </a>
         </nav>
         <div className="status" id="status">
           {snapshot.status}
