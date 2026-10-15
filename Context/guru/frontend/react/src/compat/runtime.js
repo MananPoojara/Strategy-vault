@@ -228,11 +228,11 @@ const statsM = s => ({ ...s, car_mdd: s.mar });
 /** Row i of an /optimize result: full results carry `rows`, slim ones only the ranked candidates in `picked`. */
 const rowAt = (res, i) => res.rows.length ? res.rows[i] : res.picked[i];
 
-// Banner when the page runs custom (non-book) settings.
+// Banner when the page runs custom (non-default) settings.
 function optimBanner(v) {
   const p = decodeP(S.p); if (!Object.keys(p).length) return '';
   const book = bookDefaults(v.id);
-  return `<div class="pbanner"><span class="olabel">Custom settings</span><span>${Object.entries(p).map(([k, x]) => `<span class="oset">${esc(sLabel(k))} <b>${x}</b>${book[k] !== x ? ` <span class="muted">book ${book[k] ?? '–'}</span>` : ''}</span>`).join(' ')}</span><a href="${href(R.path, { ...S, p: '' })}">Back to book settings</a></div>`;
+  return `<div class="pbanner"><span class="olabel">Custom settings</span><span>${Object.entries(p).map(([k, x]) => `<span class="oset">${esc(sLabel(k))} <b>${x}</b>${book[k] !== x ? ` <span class="muted">default ${book[k] ?? '–'}</span>` : ''}</span>`).join(' ')}</span><a href="${href(R.path, { ...S, p: '' })}">Back to default settings</a></div>`;
 }
 
 // ---------------------------------------------------------------- loader: a book flipping its pages
@@ -243,8 +243,8 @@ async function optimSection(v, tk, d, detailed = true) {
   OPT.schemaSync = await optSchema();
   const ps = OPT.schemaSync[v.id] || [];
   const opt = detailed && ps.length ? (() => { const g = OPT.grids[v.id] || (OPT.grids[v.id] = OptimCore.defaultGrid(ps, OPT_LIMIT));
-    return `<section class="box" id="optim"><div class="box-h">Optimization <small>Tick the settings to vary. Unticked settings stay at the book value. Runs on the period selected above.</small></div>
-    <table class="ogrid"><thead><tr><th></th><th>Setting</th><th class="n">Book</th><th class="n">From</th><th class="n">To</th><th class="n">Step</th><th class="n">Values</th></tr></thead><tbody>
+    return `<section class="box" id="optim"><div class="box-h">Optimization <small>Tick the settings to vary. Unticked settings stay at the default value. Runs on the period selected above.</small></div>
+    <table class="ogrid"><thead><tr><th></th><th>Setting</th><th class="n">Default</th><th class="n">From</th><th class="n">To</th><th class="n">Step</th><th class="n">Values</th></tr></thead><tbody>
     ${ps.map(p => { const x = g[p.key]; return `<tr data-k="${p.key}" class="${x.on ? '' : 'offrow'}"><td><input type="checkbox" data-f="on" ${x.on ? 'checked' : ''} aria-label="Vary ${esc(p.label)}"></td><td>${esc(p.label)}</td><td class="n">${p.def}</td>
       ${['min', 'max', 'step'].map(f => `<td class="n"><input type="number" data-f="${f}" value="${x[f]}" step="any"></td>`).join('')}<td class="n muted" data-cnt>${nVals(x)}</td></tr>`; }).join('')}</tbody></table>
     <form class="obar" id="oform"><span class="grow"></span><span class="ocount" id="ocount"></span><button class="dbtn primary sm" type="submit" id="orun">Run optimization</button></form>
@@ -252,7 +252,7 @@ async function optimSection(v, tk, d, detailed = true) {
   const claude = detailed ? `<section class="box" id="claude-c"><div class="box-h">Claude’s conclusion <small>Top 3 chosen once on all the data (CAGR, Sharpe, monthly thickness, expectancy ratio, CAR/MDD), shown for ${esc(PERIOD_NAME[periodKind()])} and split before / after the book</small></div><p class="rnote">This summary is calculated locally from Rust backtests. Opening a strategy does not call an AI model or use AI tokens. Parameter selection is research, not proof of future performance or reproduction of the book.</p><div id="cc-body">${ps.length ? bookLoader('Rust is testing the parameter grid…') : '<p class="muted">This rule has no settings to vary, so there is nothing to rank.</p>'}</div></section>` : `<section class="box" id="claude-c"><div class="box-h">Claude’s conclusion <small>Parameter research is available on the optimization page</small></div><p>Open Optimization to run the existing full-history parameter ranking, read its comparisons and download its workbook.</p><a class="dbtn sm" href="${href('/o/'+encodeURIComponent(v.id),{...S})}">Open parameter research</a></section>`;
   return `${opt}${claude}${gptSection(v,tk,d)}
     <section class="box" id="yt-c"><div class="box-h">YT’s conclusion <small>Our own call on the settings, saved in the vault</small></div>
-      <textarea id="yt-text" class="yt" rows="6" placeholder="Which settings we trade, on which index, why they differ from the book, and what would make us stop."></textarea>
+      <textarea id="yt-text" class="yt" rows="6" placeholder="Which settings we trade, on which index, why they differ from the default settings, and what would make us stop."></textarea>
       <div class="ytbar"><button class="dbtn sm" id="yt-save">Save</button><span class="muted" id="yt-msg"></span></div></section>`;
 }
 
@@ -276,7 +276,7 @@ function optimInit() {
   if ($('#cc-body') && (OPT.schemaSync[v.id] || []).length && (!window.VAULT_APP || window.VAULT_USER?.role !== 'viewer')) conclusionRun(v, tk);
   const key = `${v.id}.${S.region}`, noteText = $('#yt-text'), noteMessage = $('#yt-msg');
   fetch(`${API_IN}/notes?key=${key}`).then(r => r.ok ? r.text() : '').then(t => { if (noteText && $('#yt-text') === noteText) noteText.value = t; }).catch(() => {});
-  if (window.VAULT_APP && window.VAULT_USER?.role === 'viewer') { if ($('#gpt-body')) $('#gpt-body').innerHTML = '<p class="muted">Parameter research requires researcher access.</p>'; if ($('#cc-body')) $('#cc-body').innerHTML = '<p class="muted">Automatic parameter search requires researcher access. You can read saved conclusions below and run the book settings above.</p>'; if ($('#yt-save')) { $('#yt-save').disabled = true; $('#yt-save').title = 'Researcher access is required to save conclusions'; } if ($('#yt-text')) $('#yt-text').readOnly = true; if ($('#orun')) { $('#orun').disabled = true; $('#orun').title = 'Researcher access is required to optimize'; } return; }
+  if (window.VAULT_APP && window.VAULT_USER?.role === 'viewer') { if ($('#gpt-body')) $('#gpt-body').innerHTML = '<p class="muted">Parameter research requires researcher access.</p>'; if ($('#cc-body')) $('#cc-body').innerHTML = '<p class="muted">Automatic parameter search requires researcher access. You can read saved conclusions below and run the default settings above.</p>'; if ($('#yt-save')) { $('#yt-save').disabled = true; $('#yt-save').title = 'Researcher access is required to save conclusions'; } if ($('#yt-text')) $('#yt-text').readOnly = true; if ($('#orun')) { $('#orun').disabled = true; $('#orun').title = 'Researcher access is required to optimize'; } return; }
   if ($('#yt-save')) $('#yt-save').onclick = async () => { const m = noteMessage; m.textContent = 'Saving…';
     try { const r = await fetch(`${API_IN}/notes?key=${key}`, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: noteText.value }); m.textContent = r.ok ? `Saved at ${new Date().toLocaleTimeString()}` : 'Save failed: ' + await r.text(); } catch (err) { m.textContent = 'Save failed: ' + err.message; } };
 }
@@ -302,21 +302,21 @@ const setLine = (p, def) => Object.keys(def).map(k => `<span class="oset">${esc(
 const statCells = m => CC_STATS.map(([k, , f, signed]) => `<td class="n ${k === 'max_dd' ? 'neg' : signed ? cls(m[k]) : ''}">${f(m[k])}</td>`).join('');
 const statHead = () => CC_STATS.map(([, t]) => `<th class="n">${t}</th>`).join('');
 
-// Manual optimization result: the book and the top 3 by Claude's ranking, the parameter map, the top 25 by score.
+// Manual optimization result: the default settings and the top 3 by Claude's ranking, the parameter map, the top 25 by score.
 function showOpt(res) {
   const { v } = STRAT, out = $('#opt-out'); if (!out) return;
   const def = bookDefaults(v.id), rk = res.rank, rows = res.rows.map(r => rowOf(res, r)), top = (rk.top3 || []).map(c => ({ ...rows[c.row], c }));
   $('#otime').textContent = `${n0(res.combos)} settings on ${res.from} to ${res.to} in ${res.ms} ms (Rust, ${res.threads} threads). ${n0(rk.eligible)} had ${rk.min_trades}+ trades (${fx(rk.per_year, 1)} a year) and were ranked.`;
   const tbl = `<table class="tbl ocmp cc-tbl"><thead><tr><th></th><th>Settings</th>${statHead()}<th class="n">Score</th><th></th></tr></thead><tbody>
-    <tr class="book"><td>Book</td><td class="cset">${setLine({}, def)}</td>${statCells(bookRow(res).m)}<td class="n">–</td><td></td></tr>
-    ${top.map((t, k) => `<tr class="${k ? '' : 'pick'}"><td>#${k + 1}</td><td class="cset">${setLine(t.p, def)}</td>${statCells(t.m)}<td class="n">${fx(t.c.score, 1)}</td><td class="n">${sameP(t.p, def) ? '<span class="muted">book</span>' : applyLink(t.p)}</td></tr>`).join('')}</tbody></table>`;
+    <tr class="book"><td>Default</td><td class="cset">${setLine({}, def)}</td>${statCells(bookRow(res).m)}<td class="n">–</td><td></td></tr>
+    ${top.map((t, k) => `<tr class="${k ? '' : 'pick'}"><td>#${k + 1}</td><td class="cset">${setLine(t.p, def)}</td>${statCells(t.m)}<td class="n">${fx(t.c.score, 1)}</td><td class="n">${sameP(t.p, def) ? '<span class="muted">default</span>' : applyLink(t.p)}</td></tr>`).join('')}</tbody></table>`;
   const dims = res.dims, big = [...dims].sort((a, b) => b.values.length - a.values.length);
   OPT.hx ??= {}; const hx = OPT.hx[v.id] && dims.find(d => d.key === OPT.hx[v.id][0]) ? OPT.hx[v.id] : [big[0]?.key, big[1]?.key || '', 'sharpe'];
   const sel = (id, cur, opts) => `<select id="${id}">${opts.map(([k, t]) => `<option value="${k}" ${k === cur ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
   const dOpts = dims.map(d => [d.key, sLabel(d.key)]);
   const map = dims.length ? `<div class="ohead"><h4>Parameter map</h4><span class="osel">${sel('hx-x', hx[0], dOpts)} across, ${sel('hx-y', hx[1], [['', 'nothing'], ...dOpts])} down, showing ${sel('hx-m', hx[2], [['sharpe', 'Sharpe'], ['cagr', 'CAGR'], ['max_dd', 'Max DD'], ['mar', 'CAR/MDD'], ['expectancy_ratio', 'Expectancy ratio'], ['monthly_thickness', 'Monthly thickness'], ['trades', 'Trades'], ['win_rate', 'Win %']])}</span></div><div id="hx"></div>` : '';
-  out.innerHTML = `<div class="ohead"><h4>Book and Claude’s top 3 on this run</h4><span><button class="dbtn primary sm" id="grid-xlsx">Download all ${n0(res.combos)} rows</button> <button class="dbtn sm" id="oxlsx">Conclusion workbook</button> <button class="dbtn sm" id="gpt-grid-review">GPT analysis of this grid</button></span></div>${tbl}
-    <p class="cap">Score = average percentile on the five ranking stats (CAGR, Sharpe, monthly thickness, expectancy ratio, CAR/MDD) among the ${n0(rk.eligible)} settings with ${rk.min_trades}+ trades (${fx(rk.per_year, 1)} a year). Highlighted values differ from the book.</p>${map}`;
+  out.innerHTML = `<div class="ohead"><h4>Default settings and Claude’s top 3 on this run</h4><span><button class="dbtn primary sm" id="grid-xlsx">Download all ${n0(res.combos)} rows</button> <button class="dbtn sm" id="oxlsx">Conclusion workbook</button> <button class="dbtn sm" id="gpt-grid-review">GPT analysis of this grid</button></span></div>${tbl}
+    <p class="cap">Score = average percentile on the five ranking stats (CAGR, Sharpe, monthly thickness, expectancy ratio, CAR/MDD) among the ${n0(rk.eligible)} settings with ${rk.min_trades}+ trades (${fx(rk.per_year, 1)} a year). Highlighted values differ from the default settings.</p>${map}`;
   const an = { res, rows, pick: top[0], def };
   const drawHx = () => { OPT.hx[v.id] = [$('#hx-x').value, $('#hx-y').value, $('#hx-m').value]; $('#hx').innerHTML = heatGrid(an, ...OPT.hx[v.id]); };
   if (dims.length) { drawHx(); ['#hx-x', '#hx-y', '#hx-m'].forEach(s => $(s).onchange = drawHx); }
@@ -344,11 +344,11 @@ function heatGrid(an, xk, yk, mk) {
   const fixed = dims.filter(d => d.key !== xk && d.key !== yd?.key).map(d => `${esc(sLabel(d.key))} ${at[d.key]}`).join(', ');
   return `<div class="hxwrap"><table class="oheat"><thead><tr><th class="y">${yd ? esc(sLabel(yd.key)) : ''}</th>${xd.values.map(x => `<th>${x}</th>`).join('')}</tr></thead><tbody>
     ${ys.map(y => `<tr><th class="y">${y ?? ''}</th>${xd.values.map(x => { const r = get(x, y), val = r?.m[mk]; return `<td style="background:${bg(val)}" class="${r && sameP(r.p, an.def) ? 'hbook' : ''} ${r && an.pick && r.p === an.pick.p ? 'hpick' : ''}" title="${r ? esc(dims.map(d => `${sLabel(d.key)} ${r.p[d.key]}`).join(', ')) + `, ${r.m.trades} trades` : ''}"${r ? ` data-apply="${esc(encodeP(r.p))}"` : ''}>${val == null ? '–' : f(val)}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>
-    <p class="cap"><span class="key kpick"></span>#1 <span class="key kbook"></span>book setting. Click a cell to apply it.${fixed ? ` Other settings held at ${fixed}.` : ''}</p>`;
+    <p class="cap"><span class="key kpick"></span>#1 <span class="key kbook"></span>default setting. Click a cell to apply it.${fixed ? ` Other settings held at ${fixed}.` : ''}</p>`;
 }
 
 // ---------------------------------------------------------------- Claude's conclusion
-// One search on ALL the data picks the top 3. The same settings (and the book's) are then shown on the period selected
+// One search on ALL the data picks the top 3. The same settings (and the defaults) are then shown on the period selected
 // above, and split before / after the book's publication: the settings never change with the period.
 async function conclusionRun(v, tk) {
   const el = $('#cc-body'); if (!el) return;
@@ -364,12 +364,12 @@ async function conclusionRun(v, tk) {
   } catch (e) { delete OPT.cc[key]; if (STRAT?.v.id === v.id && STRAT.tk === tk && optKey(v.id,tk)===viewKey && $('#cc-body')===el) {if($('#gpt-body'))$('#gpt-body').innerHTML=`<p class="muted">Parameter analysis unavailable: ${esc(e.message)}</p>`;$('#cc-body').innerHTML = `<div class="empty"><b>No conclusion for this rule on ${esc(LABEL[tk] || tk)}</b>${esc(e.message)}</div>`;} }
 }
 
-/** Book + top 3 of `res`: full runs on the viewed window `win`, and the same settings before / after the book. */
+/** Default settings + top 3 of `res`: full runs on the viewed window `win`, and the same settings before / after the book. */
 async function conclusionData(v, tk, res, win, context={api:API,cost:S.cost,slippage:S.slippage||'0',rollover:S.rollover||'0',pub:PUB,us:isUS(),first:tkSpan(tk).first}) {
   const {api,cost,slippage='0',rollover='0',pub,us,first}=context;
   const def = bookDefaults(v.id), W = {all:{from:'',to:''},before:{from:'',to:`${pub-1}-12-31`},after:{from:`${pub}-01-01`,to:''}};
   const top = (res.rank.top3 || []).map((c, k) => ({ ...rowOf(res, rowAt(res, c.row)), c, name: `#${k + 1}` }));
-  const runs = [{ name: 'Book', p: def, book: true }, ...top];
+  const runs = [{ name: 'Default', p: def, book: true }, ...top];
   const stat = async (r, w) => { const d = await runData(v.id, tk, w.from, w.to, cost, r.book ? '' : encodeP(r.p),api,{slippage,rollover}); return d?.error ? { error: d.error } : { d, m: statsM(d.stats) }; };
   await Promise.all(runs.map(async r => {
     const cur = await stat(r, win); if (cur.error) throw new Error(cur.error); r.d = cur.d; r.m = cur.m;
@@ -380,7 +380,7 @@ async function conclusionData(v, tk, res, win, context={api:API,cost:S.cost,slip
   return { v, tk, res, runs, top, def, win, noBefore, cost:Number(cost || 0),slippage:Number(slippage),rollover:Number(rollover), region:us?'us':'in', context:{...context}, selectionLabel:context.selectionLabel || 'All history', kind: !win.from&&!win.to?'all':!win.from&&win.to===`${pub-1}-12-31`?'before':win.from===`${pub}-01-01`&&!win.to?'after':'custom', pub, made: new Date().toISOString().slice(0, 10) };
 }
 
-const dSet = (p, def) => { const ch = Object.keys(def).filter(k => Math.abs((p[k] ?? def[k]) - def[k]) > 1e-9); return ch.length ? ch.map(k => `${sLabel(k)} ${p[k]} (book ${def[k]})`).join(', ') : 'the book settings'; };
+const dSet = (p, def) => { const ch = Object.keys(def).filter(k => Math.abs((p[k] ?? def[k]) - def[k]) > 1e-9); return ch.length ? ch.map(k => `${sLabel(k)} ${p[k]} (default ${def[k]})`).join(', ') : 'the default settings'; };
 const holdText = (a, b) => !Number.isFinite(a) || !Number.isFinite(b) ? '' : b > a ? 'Sharpe increased after the book' : b < a ? 'Sharpe decreased after the book' : 'Sharpe unchanged after the book';
 const baText = (r, pub) => r.before?.m && r.after?.m ? `Sharpe ${fx(r.before.m.sharpe)} before ${pub}, ${fx(r.after.m.sharpe)} after (CAGR ${pct(r.before.m.cagr, 2, true)} → ${pct(r.after.m.cagr, 2, true)}): ${holdText(r.before.m.sharpe, r.after.m.sharpe)}` : '';
 
@@ -389,11 +389,11 @@ function ccSummary(D) {
   const [b, t1] = [D.runs[0], D.runs[1]], L = [], rk = D.res.rank;
   if (!t1) return [`No setting traded often enough to rank (needs ${rk.min_trades}+ trades, ${fx(rk.per_year, 1)} a year, on the selection dates).`];
   const bookRank = D.top.findIndex(t => sameP(t.p, D.def));
-  L.push(bookRank >= 0 ? `Chosen on ${D.selectionLabel || 'All history'} (${D.res.from.slice(0, 4)}–${D.res.to.slice(0, 4)}): the book settings rank #${bookRank + 1} of ${n0(rk.eligible)} distinct settings.`
+  L.push(bookRank >= 0 ? `Chosen on ${D.selectionLabel || 'All history'} (${D.res.from.slice(0, 4)}–${D.res.to.slice(0, 4)}): the default settings rank #${bookRank + 1} of ${n0(rk.eligible)} distinct settings.`
     : `Chosen on ${D.selectionLabel || 'All history'} (${D.res.from.slice(0, 4)}–${D.res.to.slice(0, 4)}): #1 changes ${dSet(t1.p, D.def)}, average percentile ${fx(t1.c.score, 1)} on the five ranking stats (weakest ${fx(t1.c.weakest, 1)}).`);
-  L.push(`${PERIOD_NAME[D.kind]}: #1 CAGR ${pct(t1.m.cagr, 2, true)} vs book ${pct(b.m.cagr, 2, true)}, Sharpe ${fx(t1.m.sharpe)} vs ${fx(b.m.sharpe)}, max DD ${pct(t1.m.max_dd, 1)} vs ${pct(b.m.max_dd, 1)}, expectancy ${fx(t1.m.expectancy_ratio)} vs ${fx(b.m.expectancy_ratio)}.`);
+  L.push(`${PERIOD_NAME[D.kind]}: #1 CAGR ${pct(t1.m.cagr, 2, true)} vs default ${pct(b.m.cagr, 2, true)}, Sharpe ${fx(t1.m.sharpe)} vs ${fx(b.m.sharpe)}, max DD ${pct(t1.m.max_dd, 1)} vs ${pct(b.m.max_dd, 1)}, expectancy ${fx(t1.m.expectancy_ratio)} vs ${fx(b.m.expectancy_ratio)}.`);
   if (D.noBefore) L.push(`No before-book test: ${D.noBefore}.`);
-  else { if (baText(t1, D.pub)) L.push(`#1 ${baText(t1, D.pub)}.`); if (baText(b, D.pub)) L.push(`Book ${baText(b, D.pub)}.`); }
+  else { if (baText(t1, D.pub)) L.push(`#1 ${baText(t1, D.pub)}.`); if (baText(b, D.pub)) L.push(`Default ${baText(b, D.pub)}.`); }
   return L;
 }
 
@@ -402,7 +402,7 @@ function conclusionHtml(D, analyst = null) {
   const head = `<div class="cc-head"><span class="cc-chip">${esc(D.selectionLabel || 'All history')} · ${r.from} to ${r.to}</span><span class="cc-chip">${n0(r.combos)} settings tested</span><span class="cc-chip">${n0(rk.eligible)} distinct ranked (${rk.min_trades}+ trades, ${fx(rk.per_year, 1)} a year)</span><span class="cc-chip">Showing ${esc(PERIOD_NAME[D.kind])} · ${d0.dates[0]} to ${d0.dates[d0.dates.length - 1]}</span><span class="cc-chip">${esc(D.region)} · ${esc(D.cost)} fees + ${esc(D.slippage??0)} slippage bps per side</span></div>`;
   const sum = `<ul class="cc-sum">${(analyst ? analyst.summary : ccSummary(D)).map(t => `<li>${esc(t)}</li>`).join('')}</ul>`;
   const tbl = `<div class="tlog"><table class="tbl cc-tbl"><thead><tr><th></th><th>Settings</th>${statHead()}<th class="n">Score</th><th></th></tr></thead><tbody>
-    ${D.runs.map((x, k) => `<tr class="${x.book ? 'book' : k === 1 ? 'pick' : ''}"><td>${x.name}</td><td class="cset">${x.book ? '<span class="muted">as printed</span>' : setLine(x.p, def)}</td>${statCells(x.m)}<td class="n">${x.c ? fx(x.c.score, 1) : '–'}</td><td class="n">${x.book || sameP(x.p, def) ? '' : applyLink(x.p)}</td></tr>`).join('')}</tbody></table></div>`;
+    ${D.runs.map((x, k) => `<tr class="${x.book ? 'book' : k === 1 ? 'pick' : ''}"><td>${x.name}</td><td class="cset">${x.book ? '<span class="muted">default baseline</span>' : setLine(x.p, def)}</td>${statCells(x.m)}<td class="n">${x.c ? fx(x.c.score, 1) : '–'}</td><td class="n">${x.book || sameP(x.p, def) ? '' : applyLink(x.p)}</td></tr>`).join('')}</tbody></table></div>`;
   const BA = CC_STATS;
   const side = (x, k) => x?.m ? BA.map(([f, , fm, sg], j) => `<td class="n ${f === 'max_dd' ? 'neg' : sg ? cls(x.m[f]) : ''}${k === 'a' && !j ? ' ba-split' : ''}">${fm(x.m[f])}</td>`).join('') : `<td class="n muted${k === 'a' ? ' ba-split' : ''}" colspan="${BA.length}">${esc(k === 'b' && D.noBefore ? 'no data before the book' : (x?.error || 'no trades').replace(/^data gap.*/, 'data gap').slice(0, 60))}</td>`;
   const ba = `<h4 class="cc-h">Same settings before and after the book (${D.pub})</h4><div class="tlog"><table class="tbl cc-tbl cc-ba-t"><thead><tr><th rowspan="2"></th><th class="n grp" colspan="${BA.length}">Before ${D.pub}</th><th class="n grp ba-split" colspan="${BA.length}">${D.pub} onward</th></tr>
@@ -420,7 +420,7 @@ function gptConclusionHtml(D, A = VaultAnalyst.analyze(D)) {
 }
 function gptDetailHtml(D,A) {
   const metricFormat=(k,v)=>CC_STATS.find(s=>s[0]===k)[2](v);
-  return detailHtml(D)+A.candidates.map(c=>`<h4 class="cc-h">${esc(c.name)} · change from book on evaluation dates</h4><div class="tlog"><table class="tbl cc-tbl"><thead><tr><th>Statistic</th><th class="n">Book</th><th class="n">Candidate</th><th class="n">Difference</th><th>Assessment</th></tr></thead><tbody>${c.comparisons.map(m=>`<tr><td>${esc(m.label)}</td><td class="n">${metricFormat(m.key,m.reference)}</td><td class="n">${metricFormat(m.key,m.value)}</td><td class="n">${m.delta==null?'–':/cagr|net_profit|max_dd|win_rate|thickness/.test(m.key)?fx(m.delta*100,2)+' pp':fx(m.delta,2)}</td><td>${esc(m.assessment)}</td></tr>`).join('')}</tbody></table></div><p class="cap">${esc(c.neighborhood.note)}</p>${c.neighborhood.available?`<div class="tlog"><table class="tbl"><thead><tr><th>One-step sensitivity · ${c.neighborhood.inspected} neighbors</th><th>Candidate</th><th>Neighbor minimum</th><th>Neighbor maximum</th></tr></thead><tbody>${c.neighborhood.metrics.map(m=>`<tr><td>${esc(m.label)}</td><td>${metricFormat(m.key,m.value)}</td><td>${metricFormat(m.key,m.min)}</td><td>${metricFormat(m.key,m.max)}</td></tr>`).join('')}</tbody></table></div>`:''}`).join('')
+  return detailHtml(D)+A.candidates.map(c=>`<h4 class="cc-h">${esc(c.name)} · change from default settings on evaluation dates</h4><div class="tlog"><table class="tbl cc-tbl"><thead><tr><th>Statistic</th><th class="n">Default</th><th class="n">Candidate</th><th class="n">Difference</th><th>Assessment</th></tr></thead><tbody>${c.comparisons.map(m=>`<tr><td>${esc(m.label)}</td><td class="n">${metricFormat(m.key,m.reference)}</td><td class="n">${metricFormat(m.key,m.value)}</td><td class="n">${m.delta==null?'–':/cagr|net_profit|max_dd|win_rate|thickness/.test(m.key)?fx(m.delta*100,2)+' pp':fx(m.delta,2)}</td><td>${esc(m.assessment)}</td></tr>`).join('')}</tbody></table></div><p class="cap">${esc(c.neighborhood.note)}</p>${c.neighborhood.available?`<div class="tlog"><table class="tbl"><thead><tr><th>One-step sensitivity · ${c.neighborhood.inspected} neighbors</th><th>Candidate</th><th>Neighbor minimum</th><th>Neighbor maximum</th></tr></thead><tbody>${c.neighborhood.metrics.map(m=>`<tr><td>${esc(m.label)}</td><td>${metricFormat(m.key,m.value)}</td><td>${metricFormat(m.key,m.min)}</td><td>${metricFormat(m.key,m.max)}</td></tr>`).join('')}</tbody></table></div>`:''}`).join('')
     +gptRecordsHtml(D)+`<h4 class="cc-h">Research limits</h4><ul>${A.limits.map(t=>`<li>${esc(t)}</li>`).join('')}</ul><p class="cap">Monthly thickness = average closed-trade return / average calendar holding days × 30. It is not observed monthly profit. MaxDD and CAR/MDD use the all-history peak; the underwater display resets its peak each year. Formula definitions, monthly results and closed-trade records are in the workbook.</p>`;
 }
 function gptRecordsHtml(D) {
@@ -483,7 +483,7 @@ function detailHtml(D) {
   const pool = (rk.pool || []).slice(0, 25), matrix = `<div class="tlog"><table class="tbl cc-m"><thead><tr><th>#</th><th>Settings</th>${RANK_KEYS.map(k => `<th class="n">${RANK_LABEL[k]}<br><small>value · gap to leader · pct</small></th>`).join('')}<th class="n">Score</th><th class="n">Weakest</th></tr></thead><tbody>
     ${pool.map((c, k) => `<tr class="${k < 3 ? 'pick' : ''}"><td class="rk">${k + 1}</td><td class="cset">${esc(dSet(rowOf(D.res, rowAt(D.res, c.row)).p, D.def))}</td>${RANK_KEYS.map((stat,s)=>{const x=rowOf(D.res,rowAt(D.res,c.row)),g=rk.groups.find(g=>(g.stat==='mar'?'car_mdd':g.stat)===stat),leader=g?.rows.length?rowOf(D.res,rowAt(D.res,g.rows[0])).m[stat]:null,value=x.m[stat],gap=Number.isFinite(value)&&Number.isFinite(leader)?value-leader:null,fmt=CC_STATS.find(q=>q[0]===stat)[2];return `<td class="n">${fmt(value)} · ${gap==null?'–':/cagr|thick/.test(stat)?fx(gap*100,2)+' pp':fx(gap,2)} · <b>${fx(c.pct[s],0)}</b></td>`;}).join('')}<td class="n"><b>${fx(c.score, 1)}</b></td><td class="n">${fx(c.weakest, 0)}</td></tr>`).join('')}</tbody></table></div>`;
   const steps = [['Search', `${n0(D.res.combos)} settings: varied parameters over the recorded grid, with other parameters held at their recorded fixed values, each one backtested on ${D.res.from} to ${D.res.to} in Rust.`],
-    ['Filter', `${n0(rk.eligible)} traded regularly enough and were ranked: an average-rate cutoff of ${fx(rk.per_year, 1)} trades a year (half the book setting’s yearly rate, kept between 1 and 5 a year), ${rk.min_trades} closed trades in this period, and never fewer than 10.`],
+    ['Filter', `${n0(rk.eligible)} traded regularly enough and were ranked: an average-rate cutoff of ${fx(rk.per_year, 1)} trades a year (half the default setting’s yearly rate, kept between 1 and 5 a year), ${rk.min_trades} closed trades in this period, and never fewer than 10.`],
     ['Percentiles', 'Each of the five stats (CAGR, Sharpe, monthly thickness, expectancy ratio, CAR/MDD) was turned into a percentile among the ranked settings, 100 = best.'],
     ['Groups', 'The top 5 settings by each stat form five groups (below). Together they are the candidates.'],
     ['Cross-compare', 'Each candidate is compared with every group’s leader on that group’s stat: its value as a share of a positive leader’s, and its percentile. Nonpositive leader ratios are withheld; raw stats remain available.'],
@@ -539,7 +539,7 @@ function xTable(sh, r0, c0, head, rows, fmts = [], signed = [], heat = null) {
 const xH2 = (sh, r, t, w) => { sh.put(r, 0, t, XS.h2); for (let c = 1; c <= w; c++) sh.put(r, c, '', XS.h2); };
 
 /**
- * Workbook: Summary (book + top 3, coloured), Formulas (each stat recomputed with Excel formulas from the trade and
+ * Workbook: Summary (default + top 3, coloured), Formulas (each stat recomputed with Excel formulas from the trade and
  * daily sheets, next to the engine value), Method (groups + cross-comparison), MoM, Drawdown (peak reset each year),
  * Daily (equity, return, peaks, drawdowns as formulas) and one Trades sheet per run.
  */
@@ -566,7 +566,7 @@ async function exportXlsx(D, analyst = false) {
   await loadXlsx();
   const A=analyst?VaultAnalyst.analyze(D):null;
   const { v, tk, runs, res } = D, X = XLSX.utils, wb = X.book_new(), P = '0.00%', N2 = '0.00', I = '#,##0', DF = 'yyyy-mm-dd', keys = Object.keys(D.def);
-  const W = 14, names = runs.map(x => x.name === 'Book' ? 'Book' : `Top ${x.name.slice(1)}`);
+  const W = 14, names = runs.map(x => x.name === 'Default' ? 'Default' : `Top ${x.name.slice(1)}`);
   const dates = runs[0].d.dates, nd = dates.length;
   const fmtOf = k => /cagr|net_profit|max_dd|win_rate|thickness|total_return/.test(k) ? P : k === 'trades' ? I : N2;
 
@@ -575,32 +575,32 @@ async function exportXlsx(D, analyst = false) {
   sh.put(r, 0, `${analyst?'GPT':'Claude'}’s conclusion: ${v.family_name}${v.variant ? ' · ' + v.variant : ''}`, XS.title); sh.height(r, 30); r++;
   sh.put(r, 0, `${LABEL[tk] || tk} · showing ${PERIOD_NAME[D.kind]} ${dates[0]} to ${dates[nd - 1]} · settings chosen on ${D.selectionLabel || 'All history'} ${res.from} to ${res.to} · ${BOOK[v.book]?.title || ''} (${D.pub}) · fees ${D.cost ?? 0} + slippage ${D.slippage ?? 0} bps a side · rollover ${D.rollover ?? 0} bps per actual roll · generated ${D.made}`, XS.sub); r += 2;
   if(res.experiment) {sh.put(r,0,res.experiment.basis,XS.val);sh.merge(r,0,10);sh.height(r,64);r++;}
-  xH2(sh, r, `Book vs ${analyst?'GPT':'Claude'}’s top 3`, W); r++;
+  xH2(sh, r, `Default settings vs ${analyst?'GPT':'Claude'}’s top 3`, W); r++;
   const best = CC_STATS.map(([k, , , signed]) => { const vals = runs.map(x => x.m[k]).filter(isFinite); return k === 'max_dd' ? Math.max(...vals) : k === 'trades' || k === 'win_rate' ? null : Math.max(...vals); });
   ['Run', 'Settings', ...CC_STATS.map(s => s[1]), 'Score (avg percentile)'].forEach((h, j) => sh.put(r, j, h, j ? XS.th : XS.thL)); sh.height(r, 32); r++;
   runs.forEach((x, i) => {
     const fill = { fgColor: { rgb: RUN_FILL[i] } }, base = { border: xBorder(XC.rule), fill, alignment: { vertical: 'center', wrapText: true } };
     sh.put(r, 0, names[i], { ...base, font: xFont({ bold: true }) });
-    sh.put(r, 1, x.book ? 'Book settings, as printed' : keys.map(k => `${sLabel(k)} ${x.p[k]}${Math.abs(x.p[k] - D.def[k]) > 1e-9 ? ' *' : ''}`).join(' · '), { ...base, font: xFont({ sz: 10 }) });
+    sh.put(r, 1, x.book ? 'Default settings · research baseline' : keys.map(k => `${sLabel(k)} ${x.p[k]}${Math.abs(x.p[k] - D.def[k]) > 1e-9 ? ' *' : ''}`).join(' · '), { ...base, font: xFont({ sz: 10 }) });
     CC_STATS.forEach(([k, , , signed], j) => { const val = x.m[k], top = best[j] != null && val === best[j];
       sh.put(r, 2 + j, val, { ...base, numFmt: fmtOf(k), alignment: { horizontal: 'right', vertical: 'center' }, font: xFont({ bold: top, color: { rgb: signed && isFinite(val) && val !== 0 ? (val > 0 ? XC.green : XC.red) : k === 'max_dd' ? XC.red : XC.ink } }), fill: top ? { fgColor: { rgb: XC.best } } : fill }); });
     sh.put(r, 2 + CC_STATS.length, x.c ? x.c.score : '–', { ...base, numFmt: '0.0', alignment: { horizontal: 'right' } });
     sh.height(r, 34); r++;
   });
-  sh.put(r, 0, 'Bold = best of the four in that column. * = differs from the book. Every stat is recomputed with formulas on the Formulas sheet.', XS.muted); sh.merge(r, 0, W); r += 2;
+  sh.put(r, 0, 'Bold = best of the four in that column. * = differs from the default settings. Every stat is recomputed with formulas on the Formulas sheet.', XS.muted); sh.merge(r, 0, W); r += 2;
   xH2(sh, r, 'Summary', W); r++;
   (A ? [...A.summary,...A.candidates.flatMap(c=>c.summary.map(t=>c.name+': '+t)),...A.limits] : ccSummary(D)).forEach(t => { sh.put(r, 0, t, XS.bullet); for (let c = 1; c <= W; c++) sh.put(r, c, '', XS.bullet); sh.merge(r, 0, W); sh.height(r, Math.max(20, Math.ceil(t.length / 170) * 16 + 6)); r++; });
   r++;
   xH2(sh, r, `Same settings before and after the book (${D.pub})`, W); r++;
   if (D.noBefore) { sh.put(r, 0, `No before-book test: ${D.noBefore}.`, XS.muted); sh.merge(r, 0, W); r++; }
   const ms = ['cagr', 'net_profit', 'max_dd', 'win_rate', 'sharpe', 'monthly_thickness', 'trades', 'expectancy_ratio', 'car_mdd'], lines = [];
-  runs.forEach((x, i) => [['before', `before ${D.pub}`], ['after', `${D.pub} onward`]].forEach(([k, t]) => { if (x[k]?.m) lines.push([`${names[i]} · ${t}`, x.book ? 'Book settings' : keys.map(q => `${sLabel(q)} ${x.p[q]}`).join(' · '), ...ms.map(f => x[k].m[f] ?? null)]); }));
+  runs.forEach((x, i) => [['before', `before ${D.pub}`], ['after', `${D.pub} onward`]].forEach(([k, t]) => { if (x[k]?.m) lines.push([`${names[i]} · ${t}`, x.book ? 'Default settings' : keys.map(q => `${sLabel(q)} ${x.p[q]}`).join(' · '), ...ms.map(f => x[k].m[f] ?? null)]); }));
   r = xTable(sh, r, 0, ['Run · period', 'Settings', ...ms.map(k => CC_STATS.find(s_ => s_[0] === k)[1])], lines, [null, null, ...ms.map(fmtOf)], [0, 0, 1, 1, 0, 0, 1, 1, 0, 1, 1]);
   xH2(sh, r, 'Definitions', W); r++;
   [['CAGR', 'final equity ^ (365.25 ÷ calendar days in the test) − 1'], ['Net profit', 'sum of closed-trade net returns; excludes the open position'], ['Max DD', 'largest fall of daily equity from its running (all-time) peak'], ['Win %', 'closed trades with a return above 0 ÷ closed trades'],
     ['Sharpe', 'mean daily return ÷ standard deviation of daily returns (n − 1) × √252, risk-free rate 0'], ['Monthly thickness', 'average trade return ÷ average holding days × 30 (holding days = calendar days entry to exit, a same-day trade counts 1)'],
     ['No. of trades', 'closed trades (a trade still open at the end is excluded)'], ['Expectancy ratio', '(win % × average win − loss % × |average loss|) ÷ |average loss|  (Van Tharp: expected gain per unit of average loss)'], ['CAR/MDD', 'CAGR ÷ |max DD|'],
-    ['Score', 'average of the five percentiles (CAGR, Sharpe, monthly thickness, expectancy ratio, CAR/MDD) among the settings that trade often enough (half the book’s yearly rate, 1 to 5 a year, at least 10 trades); see the Method sheet']].forEach(([k, t]) => { sh.put(r, 0, k, XS.key); sh.put(r, 1, t, XS.val); sh.merge(r, 1, W); for (let c = 2; c <= W; c++) sh.put(r, c, '', XS.val); r++; });
+    ['Score', 'average of the five percentiles (CAGR, Sharpe, monthly thickness, expectancy ratio, CAR/MDD) among the settings that trade often enough (half the default’s yearly rate, 1 to 5 a year, at least 10 trades); see the Method sheet']].forEach(([k, t]) => { sh.put(r, 0, k, XS.key); sh.put(r, 1, t, XS.val); sh.merge(r, 1, W); for (let c = 2; c <= W; c++) sh.put(r, c, '', XS.val); r++; });
   X.book_append_sheet(wb, sh.done([22, 54, ...Array(W).fill(13)]), 'Summary');
 
   // ---- Trades per run (dates as Excel dates so holding days are a formula)
@@ -608,7 +608,7 @@ async function exportXlsx(D, analyst = false) {
   runs.forEach((x, i) => {
     const t = xSheet(), closed = x.d.trades.filter(q => !q.open);
     t.put(0, 0, `Trades · ${names[i]}`, XS.title); t.height(0, 26);
-    t.put(1, 0, x.book ? 'Book settings' : keys.map(k => `${sLabel(k)} ${x.p[k]}`).join(' · '), XS.sub);
+    t.put(1, 0, x.book ? 'Default settings' : keys.map(k => `${sLabel(k)} ${x.p[k]}`).join(' · '), XS.sub);
     ['#', 'Entry', 'Exit', 'Return', 'Holding days', 'Win', 'Equity after', 'Pieces', 'Avg entry', 'Exit price', 'Exit reason'].forEach((h, j) => t.put(3, j, h, j ? XS.th : XS.thL)); t.height(3, 30);
     closed.forEach((q, k) => { const rr = 4 + k, e = rr + 1, z = k % 2 === 1;
       t.put(rr, 0, k + 1, xCell('0', 1, z)); t.put(rr, 1, xDate(q.entry), xCell(DF, 1, z)); t.put(rr, 2, xDate(q.exit), xCell(DF, 1, z)); t.put(rr, 3, q.ret, xCell(P, q.ret, z, 1));
@@ -666,7 +666,7 @@ async function exportXlsx(D, analyst = false) {
   // ---- Method: the groups and the cross-comparison behind the top 3
   const rk = res.rank, ms_ = xSheet(); let m = 0;
   ms_.put(m, 0, 'How the top 3 were chosen', XS.title); ms_.height(m, 28); m += 2;
-  [`1. Search: ${n0(res.combos)} settings (every parameter over its range) backtested on ${res.from} to ${res.to}.`, `2. Filter: ${n0(rk.eligible)} settings are ranked: at least ${fx(rk.per_year, 1)} trades a year (half the book setting’s yearly rate, between 1 and 5 a year), i.e. ${rk.min_trades} closed trades here, never fewer than 10.`,
+  [`1. Search: ${n0(res.combos)} settings (every parameter over its range) backtested on ${res.from} to ${res.to}.`, `2. Filter: ${n0(rk.eligible)} settings are ranked: at least ${fx(rk.per_year, 1)} trades a year (half the default setting’s yearly rate, between 1 and 5 a year), i.e. ${rk.min_trades} closed trades here, never fewer than 10.`,
     '3. Percentiles: CAGR, Sharpe, monthly thickness, expectancy ratio and CAR/MDD are each turned into a percentile (0–100, 100 = best) among the ranked settings.',
     '4. Groups: the top 5 by each stat form five groups; together they are the candidates.', '5. Cross-compare: each candidate is set against each group leader on that group’s stat (ratio only when the leader is positive, and percentile).',
     '6. Top 3: highest average percentile across the five stats; ties go to the higher weakest percentile, then CAGR.'].forEach(t => { ms_.put(m, 0, t, XS.val); ms_.merge(m, 0, 9); m++; });

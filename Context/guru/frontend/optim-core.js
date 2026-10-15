@@ -43,7 +43,7 @@
 
   const r9 = x => Math.round(x * 1e9) / 1e9;
   const nVals = g => g.step > 0 && g.max >= g.min ? Math.floor((g.max - g.min) / g.step + 1e-9) + 1 : 0;
-  /** Range for one parameter at a given step, aligned so the book value is always one of the grid points. */
+  /** Range for one parameter at a given step, aligned so the default value is always one of the grid points. */
   const aligned = (p, step) => ({ min: r9(p.def - Math.floor((p.def - p.min) / step + 1e-9) * step), max: r9(p.def + Math.floor((p.max - p.def) / step + 1e-9) * step), step: r9(step) });
   /** Default search: every parameter over its full range; the step of the widest dimension is doubled until the grid fits. */
   function defaultGrid(ps, limit = 50000) {
@@ -123,7 +123,7 @@
     const { res, robust, book } = an, ev = [], cav = [];
     const stat = (m, t) => `Sharpe ${f2(m.sharpe)}${an.split ? ` (in-sample ${f2(m.is_sharpe)}, out-of-sample ${f2(m.oos_sharpe)})` : ''}, CAGR ${p2(m.cagr)}, max drawdown ${p2(m.max_dd)}, ${m.trades ?? 0} trades, t-stat ${f2(t ?? m.t_stat)}`;
     ev.push(`Search: ${res.combos.toLocaleString('en-IN')} settings over ${res.from} to ${res.to}${an.split ? `; in-sample to ${res.split}, out-of-sample after` : ''}. ${an.gated.length.toLocaleString('en-IN')} traded in both periods and could be judged.`);
-    ev.push(`Book settings: ${stat(book)}.${an.bookPct != null ? ` Better than ${(an.bookPct * 100).toFixed(0)}% of the judged settings.` : ''}`);
+    ev.push(`Default settings: ${stat(book)}.${an.bookPct != null ? ` Better than ${(an.bookPct * 100).toFixed(0)}% of the judged settings.` : ''}`);
     if (!robust) return { verdict: 'No testable setting', conviction: 'None', recommendation: 'No setting traded on both sides of the split. Move the split date or widen the period before drawing any conclusion.', evidence: ev, caveats: cav, text: ev };
     const m = robust.m, gain = num(m.sharpe) - num(book.sharpe), d = an.dsr?.dsr;
     if (!robust.isBook) ev.push(`Best robust setting: ${set(robust.p)}. ${stat(m)}. Plateau score ${f2(robust.plateau)}.`);
@@ -131,16 +131,16 @@
     if (d != null) ev.push(`Luck test: Deflated Sharpe ${d.toFixed(2)} after ${res.combos.toLocaleString('en-IN')} trials; the best of that many random settings would show a Sharpe near ${f2(an.dsr.sr0Ann)}.`);
     let verdict, conviction, rec;
     if (an.split && !robust.checks.oos_positive) { verdict = 'Avoid'; conviction = 'High'; rec = 'Do not trade this rule on this index and period: even the most robust setting loses money out of sample.'; }
-    else if (robust.isBook || gain < 0.1) { verdict = 'Keep the book settings'; conviction = robust.sig && (d == null || d >= 0.95) ? 'High' : 'Medium'; rec = `Stay with the book settings. The search could not beat them by a meaningful margin (Sharpe gain ${f2(gain)}), so any change would mostly fit noise.`; }
+    else if (robust.isBook || gain < 0.1) { verdict = 'Keep the default settings'; conviction = robust.sig && (d == null || d >= 0.95) ? 'High' : 'Medium'; rec = `Stay with the default settings. The search could not beat them by a meaningful margin (Sharpe gain ${f2(gain)}), so any change would mostly fit noise.`; }
     else {
       const strong = robust.tier === 0 && d != null && d >= 0.95;
       verdict = strong ? 'Use the tuned settings' : robust.passes === 3 || !an.split ? 'Tuned settings: promising, not proven' : 'Tune with caution';
       conviction = strong ? 'High' : robust.tier <= 1 && (d == null || d >= 0.8) ? 'Medium' : 'Low';
       rec = strong ? `Switch to ${set(robust.p)}. It adds ${f2(gain)} Sharpe, is statistically significant in both periods, passes the out-of-sample checks and clears the luck test.`
-        : `Paper-trade ${set(robust.p)} alongside the book version before switching. It adds ${f2(gain)} Sharpe, but ${robust.tier > 0 ? 'its edge is not statistically significant in both periods' : 'it does not clear the luck test'}.`;
+        : `Paper-trade ${set(robust.p)} alongside the default version before switching. It adds ${f2(gain)} Sharpe, but ${robust.tier > 0 ? 'its edge is not statistically significant in both periods' : 'it does not clear the luck test'}.`;
     }
     if (an.split ? m.oos_trades < 10 : m.trades < 20) cav.push(`Small sample: the pick has ${m.trades} trades${an.split ? ` (${m.oos_trades} out of sample)` : ''}, so a handful of trades can swing the result.`);
-    if (num(m.max_dd) < num(book.max_dd) - 0.05) cav.push(`Deeper drawdown than the book (${p2(m.max_dd)} against ${p2(book.max_dd)}).`);
+    if (num(m.max_dd) < num(book.max_dd) - 0.05) cav.push(`Deeper drawdown than the default settings (${p2(m.max_dd)} against ${p2(book.max_dd)}).`);
     if (an.split && an.skipped) cav.push(`The out-of-sample result was used to choose between settings, so the hold-out is no longer a fully independent test.`);
     if (d != null && d < 0.95 && !robust.isBook) cav.push(`Deflated Sharpe below 0.95: the improvement may come from searching many settings rather than a real edge.`);
     return { verdict, conviction, recommendation: rec, evidence: ev, caveats: cav, text: [rec, ...ev, ...cav] };
@@ -162,7 +162,7 @@
     assert(an.rows[0].isBook && an.bookPct === 3 / 9);
     assert.deepStrictEqual(monthly(['2020-01-30', '2020-01-31', '2020-02-03', '2020-02-28'], [1, 1.1, 1.0, 1.21]), { '2020-01': 0.10000000000000009, '2020-02': 0.09999999999999987 });
     const g = defaultGrid([{ key: 'a', def: 4, min: 1, max: 15, step: 1 }, { key: 'b', def: 200, min: 100, max: 300, step: 25 }], 40);
-    assert(nVals(g.a) * nVals(g.b) <= 40 && (4 - g.a.min) % g.a.step === 0 && (200 - g.b.min) % g.b.step === 0, 'grid fits and keeps the book value');
+    assert(nVals(g.a) * nVals(g.b) <= 40 && (4 - g.a.min) % g.a.step === 0 && (200 - g.b.min) % g.b.step === 0, 'grid fits and keeps the default value');
     assert(tCrit(2) === 4.303 && tCrit(500) === 1.96, 't critical values');
     console.log('optim-core self-check ok');
   }

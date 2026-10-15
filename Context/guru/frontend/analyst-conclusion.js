@@ -101,7 +101,7 @@
       'This assessment interprets computed results; it does not certify source fidelity, independent trade-by-trade verification or future performance.'
     ];
     if(!bookRun?.m||!res.rank||dates.length<2)return {status:'withheld',metadata,book:null,candidates:[],flags:[],summary:['No supported optimization and evaluated backtest are available. Source-only methods receive no invented performance statistics or selections.'],limits};
-    const bookStats=stats(bookRun.m),book={name:'Book',parameters:{...(D.def||{}),...(bookRun.p||{})},stats:bookStats,beforeAfter:beforeAfter(bookRun)};
+    const bookStats=stats(bookRun.m),book={name:'Default',parameters:{...(D.def||{}),...(bookRun.p||{})},stats:bookStats,beforeAfter:beforeAfter(bookRun)};
     const flags=[];
     if(res.rank.eligible===1)flags.push('Only one outcome was eligible; a 100 percentile score cannot establish superiority to alternatives.');
     const candidates=(res.rank.top3||[]).slice(0,3).map((c,i)=>{
@@ -112,14 +112,14 @@
       if(finite(s.trades)&&s.trades<30)candidateFlags.push('Fewer than 30 closed trades in the evaluation window; sample adequacy is unresolved. Thirty is a screening heuristic, not a confidence threshold.');
       if(finite(s.net_profit)&&s.net_profit<0)candidateFlags.push('Net profit is negative despite this candidate’s relative grid rank.');
       const summary=[
-        'CAGR '+fmt('cagr',s.cagr)+' vs book '+fmt('cagr',bookStats.cagr)+' ('+fmtDelta('cagr',comparisons[0].delta)+'); Sharpe '+fmt('sharpe',s.sharpe)+' vs '+fmt('sharpe',bookStats.sharpe)+'; '+fmt('trades',s.trades)+' closed trades.',
-        'Monthly thickness '+fmt('monthly_thickness',s.monthly_thickness)+'; expectancy '+fmt('expectancy_ratio',s.expectancy_ratio)+'; CAR/MDD '+fmt('car_mdd',s.car_mdd)+'; Max DD '+fmt('max_dd',s.max_dd)+' vs book '+fmt('max_dd',bookStats.max_dd)+'.',
+        'CAGR '+fmt('cagr',s.cagr)+' vs default '+fmt('cagr',bookStats.cagr)+' ('+fmtDelta('cagr',comparisons[0].delta)+'); Sharpe '+fmt('sharpe',s.sharpe)+' vs '+fmt('sharpe',bookStats.sharpe)+'; '+fmt('trades',s.trades)+' closed trades.',
+        'Monthly thickness '+fmt('monthly_thickness',s.monthly_thickness)+'; expectancy '+fmt('expectancy_ratio',s.expectancy_ratio)+'; CAR/MDD '+fmt('car_mdd',s.car_mdd)+'; Max DD '+fmt('max_dd',s.max_dd)+' vs default '+fmt('max_dd',bookStats.max_dd)+'.',
         'Selection score '+fmt('score',r.score)+'; weakest percentile '+fmt('score',r.weakest)+'; member of '+r.groups.length+' of the five top-five groups. '+(r.scoreVerified&&r.weakestVerified&&r.groupsVerified?'Arithmetic and membership agree with the supplied ranking.':'Ranking verification is incomplete.')
       ];
       const improved=comparisons.filter(m=>rankKeys.includes(m.key)&&m.assessment==='improved').map(m=>m.label),weakened=comparisons.filter(m=>rankKeys.includes(m.key)&&m.assessment==='weakened').map(m=>m.label);
-      summary.push('Versus the book on the five ranking metrics: improved '+(improved.join(', ')||'none')+'; weakened '+(weakened.join(', ')||'none')+'. '+(improved.length&&weakened.length?'The higher rank involves measured tradeoffs.':'Relative rank alone does not establish a preferred trading configuration.'));
+      summary.push('Versus the default settings on the five ranking metrics: improved '+(improved.join(', ')||'none')+'; weakened '+(weakened.join(', ')||'none')+'. '+(improved.length&&weakened.length?'The higher rank involves measured tradeoffs.':'Relative rank alone does not establish a preferred trading configuration.'));
       const changed=Object.keys({...D.def,...res.fixed,...selected?.p,...run?.p}).filter(k=>finite((selected?.p||run?.p||{})[k])&&finite(D.def?.[k])&&(selected?.p||run?.p)[k]!==D.def[k]);
-      summary.push('Changed settings: '+(changed.length?changed.map(k=>k+' '+(selected?.p||run?.p)[k]+' (book '+D.def[k]+')').join(', '):'none among known book defaults')+'.');
+      summary.push('Changed settings: '+(changed.length?changed.map(k=>k+' '+(selected?.p||run?.p)[k]+' (default '+D.def[k]+')').join(', '):'none among known defaults')+'.');
       summary.push(...ba.summary,...candidateFlags);
       return {name:run?.name||'#'+(i+1),row:c.row,parameters:{...(D.def||{}),...(run?.p||{}),...(res.fixed||{}),...(selected?.p||{})},stats:s,selectionStats:selected?.m||null,comparisons,ranking:r,beforeAfter:ba,neighborhood:n,flags:candidateFlags,summary};
     });
