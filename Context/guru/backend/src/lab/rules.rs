@@ -102,6 +102,23 @@ pub enum Dist { Pct(f64), Atr { mult: f64, length: usize }, Points(f64) }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Slot { Limit, StopLoss, Target, Trailing, Stop, Activate, BreakevenAfter, TakeProfit(usize) }
 pub const MAX_TAKE_PROFITS: usize = 3;
+pub const MAX_LEGS: usize = 5;
+/// Which price a scale-in leg needs relative to the previous leg: any, better (averaging down a long), or worse (adding to strength).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LegPrice { Any, Better, Worse }
+/// Extra legs while in a trade (AmiBroker sigScaleIn, Pine pyramiding): `legs[0]` is the first entry; fractions of one position.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ScaleIn { pub legs: Vec<f64>, pub min_bars: usize, pub price: LegPrice }
+/// Position size (spec §7.4). Unit mode accepts Full (one unit), PctEquity and RiskPct; Units and Value need execution.capital.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Sizing { Full, PctEquity(f64), RiskPct(f64), Units(f64), Value(f64) }
+/// Which exits start a cooldown (AmiBroker ApplyStop ReEntryDelay counts after stops; here after any, losing or winning trades).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum After { Any, Loss, Win }
+/// Equity-level entry rules (spec §6.5), evaluated on closed trades: pause after n consecutive losses, stop after a drawdown.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Risk { pub losses: Option<(usize, usize)>, pub max_dd_pct: Option<f64> }
+pub const MAX_PAUSE: usize = 100_000;
 pub const MAX_VALID_BARS: usize = 20;
 pub const MAX_DELAY: usize = 10;
 pub const MAX_POINTS: f64 = 1e9;
@@ -117,12 +134,16 @@ pub struct Exec {
     /// Phase 7 exits (spec §6.1): trailing activation, breakeven (after, plus), partial take-profits (level, fraction of the
     /// initial position), the bars before rule exits count, and the TradingView intrabar path instead of stop-first.
     pub trail_activate: Option<Dist>, pub breakeven: Option<(Dist, Option<Dist>)>, pub take_profits: Vec<(Dist, f64)>, pub min_bars: usize, pub ohlc_path: bool,
+    pub scale_in: Option<ScaleIn>, pub sizing: Sizing,
+    /// re-entry rules: cooldown (bars, after which exits), at most `count` entries per calendar period (anchor 1 W … 4 Y), risk
+    pub cooldown: Option<(usize, After)>, pub max_trades: Option<(usize, usize)>, pub risk: Risk,
 }
 impl Default for Exec {
     fn default() -> Self {
         Exec { short: false, fill: Fill::NextOpen, exit_fill: Fill::NextOpen, limit: None, stop_loss: None, target: None, trailing: None, opposite: Opposite::Reverse,
                stop: None, limit_at: None, stop_at: None, valid_bars: 1, delay: 1, edge: false,
-               trail_activate: None, breakeven: None, take_profits: vec![], min_bars: 0, ohlc_path: false }
+               trail_activate: None, breakeven: None, take_profits: vec![], min_bars: 0, ohlc_path: false, scale_in: None, sizing: Sizing::Full,
+               cooldown: None, max_trades: None, risk: Risk::default() }
     }
 }
 impl Exec {
@@ -189,7 +210,50 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
     };
     let mut cost_bps = None;
     if let Some(ex) = root.get("execution") {
-        fields(ex, "execution", &["fill", "exit_fill", "cost_bps", "opposite", "delay_bars", "entry_on", "intrabar"], &["limit", "stop"])?;
+        // shortcut: every futures request is refused here (no contract data is admitted, spec §7.3); Task 14 adds the model
+        if ex.get("instrument").and_then(|v| v.get("kind")).and_then(Json::as_str) == Some("futures") {
+            return Err(LabError::NeedsData(super::model::FUTURES.into()));
+        }
+        fields(ex, "execution", &["fill", "exit_fill", "cost_bps", "opposite", "delay_bars", "entry_on", "intrabar", "sizing", "cooldown", "max_trades", "risk"], &["limit", "stop"])?;
+        if let Some(v) = ex.get("cooldown") {
+            fields(v, "execution.cooldown", &["bars", "after"], &[])?;
+            let after = match v.get("after").map(Json::as_str) {
+                None | Some(Some("any")) => After::Any, Some(Some("loss")) => After::Loss, Some(Some("win")) => After::Win,
+                _ => return Err(inv("execution.cooldown.after must be \"any\", \"loss\" or \"win\"")),
+            };
+            exec.cooldown = Some((whole(v.get("bars"), "execution.cooldown.bars", 1)?, after));
+        }
+        if let Some(v) = ex.get("max_trades") {
+            fields(v, "execution.max_trades", &["count", "per"], &[])?;
+            let per = match v.get("per").and_then(Json::as_str) { Some("W") => 1, Some("M") => 2, Some("Q") => 3, Some("Y") => 4, _ => return Err(inv("execution.max_trades.per must be W, M, Q or Y")) };
+            exec.max_trades = Some((whole(v.get("count"), "execution.max_trades.count", 1)?, per));
+        }
+        if let Some(v) = ex.get("risk") {
+            fields(v, "execution.risk", &["max_consecutive_losses", "pause_bars", "max_drawdown_pct"], &[])?;
+            if let Some(n) = v.get("max_consecutive_losses") {
+                let pause = v.get("pause_bars").and_then(Json::as_f64).filter(|p| p.fract() == 0. && *p >= 1. && *p <= MAX_PAUSE as f64)
+                    .ok_or_else(|| inv(format!("execution.risk.pause_bars must be a whole number from 1 to {MAX_PAUSE} (with max_consecutive_losses)")))? as usize;
+                exec.risk.losses = Some((whole(Some(n), "execution.risk.max_consecutive_losses", 1)?, pause));
+            } else if v.get("pause_bars").is_some() { return Err(inv("execution.risk.pause_bars goes with max_consecutive_losses")); }
+            if let Some(d) = v.get("max_drawdown_pct") {
+                exec.risk.max_dd_pct = Some(d.as_f64().filter(|d| *d > 0. && *d < 100.).ok_or_else(|| inv("execution.risk.max_drawdown_pct must be a number above 0 and below 100"))?);
+            }
+        }
+        if let Some(z) = ex.get("sizing") {
+            fields(z, "execution.sizing", &["pct_equity", "risk_pct", "units", "value"], &[])?;
+            let pct = |v: &Json, k: &str| v.as_f64().filter(|p| *p > 0. && *p <= 100.).ok_or_else(|| inv(format!("execution.sizing.{k} must be a number above 0 and at most 100")));
+            exec.sizing = match (z.get("pct_equity"), z.get("risk_pct"), z.get("units"), z.get("value")) {
+                (Some(p), None, None, None) => Sizing::PctEquity(pct(p, "pct_equity")?),
+                (None, Some(r), None, None) => {
+                    if exec.stop_loss.is_none() || short_side.as_ref().is_some_and(|s| s.exec.stop_loss.is_none()) {
+                        return Err(inv("execution.sizing.risk_pct needs an exit.stop_loss on every side (the risk is the stop distance)"));
+                    }
+                    Sizing::RiskPct(pct(r, "risk_pct")?)
+                }
+                (None, None, Some(_), None) | (None, None, None, Some(_)) => return Err(inv("execution.sizing units and value need execution.capital (money mode)")),
+                _ => return Err(inv("execution.sizing needs exactly one of pct_equity, risk_pct, units or value")),
+            };
+        }
         exec.ohlc_path = match ex.get("intrabar").map(Json::as_str) {
             None | Some(Some("stop_first")) => false,
             Some(Some("ohlc_path")) => true,
@@ -233,7 +297,8 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
 /// One side's rule lists and price orders; `pre` is "" (the long side, or the only side) or "short_side.".
 fn side(entry: Option<&Json>, exit: Option<&Json>, pre: &str, exec: &mut Exec, b: &mut Budget) -> Result<(Vec<Node>, Vec<Node>), LabError> {
     let entry_obj = entry.ok_or_else(|| inv(format!("{pre}entry is required")))?;
-    fields(entry_obj, &format!("{pre}entry"), &["all", "limit", "stop", "valid_bars"], &["scale_in"])?;
+    fields(entry_obj, &format!("{pre}entry"), &["all", "limit", "stop", "valid_bars", "scale_in"], &[])?;
+    if let Some(v) = entry_obj.get("scale_in") { exec.scale_in = Some(scale_in(v, &format!("{pre}entry.scale_in"))?); }
     let exit_obj = exit.ok_or_else(|| inv(format!("{pre}exit is required")))?;
     fields(exit_obj, &format!("{pre}exit"), &["any", "stop_loss", "target", "trailing", "breakeven", "take_profits", "min_bars"], &[])?;
     for (slot, at, hi) in SLOTS {
@@ -278,6 +343,9 @@ fn side(entry: Option<&Json>, exit: Option<&Json>, pre: &str, exec: &mut Exec, b
         if exec.take_profits.iter().map(|t| t.1).sum::<f64>() >= 1. { return Err(inv(format!("{at} sizes must add up to less than 1; the rest exits by the other rules"))); }
     }
     if let Some(n) = exit_obj.get("min_bars") { exec.min_bars = whole(Some(n), &format!("{pre}exit.min_bars"), 0)?; }
+    if exec.scale_in.is_some() && !exec.take_profits.is_empty() {
+        return Err(inv(format!("{pre}entry.scale_in cannot combine with {pre}exit.take_profits (a trade's scale-out fractions are of one position)")));
+    }
     let price_exit = exec.stop_loss.is_some() || exec.target.is_some() || exec.trailing.is_some() || exec.breakeven.is_some();
     let entry = conds(entry_obj.get("all"), &format!("{pre}entry.all"), false, false, b)?;
     let exit = conds(exit_obj.get("any"), &format!("{pre}exit.any"), true, price_exit, b)?;
@@ -285,6 +353,20 @@ fn side(entry: Option<&Json>, exit: Option<&Json>, pre: &str, exec: &mut Exec, b
         return Err(inv(format!("{}{} conditions; the limit is {MAX_CONDITIONS}", if pre.is_empty() { "" } else { "short_side: " }, entry.len() + exit.len())));
     }
     Ok((entry, exit))
+}
+
+fn scale_in(v: &Json, at: &str) -> Result<ScaleIn, LabError> {
+    fields(v, at, &["legs", "min_bars", "price"], &[])?;
+    let bad = || inv(format!("{at}.legs must be a list of 2 to {MAX_LEGS} fractions above 0 that add up to at most 1"));
+    let Some(Json::Arr(ls)) = v.get("legs") else { return Err(bad()) };
+    let legs = ls.iter().map(|l| l.as_f64().filter(|w| *w > 0. && *w <= 1.)).collect::<Option<Vec<f64>>>().ok_or_else(bad)?;
+    if !(2..=MAX_LEGS).contains(&legs.len()) || legs.iter().sum::<f64>() > 1. + 1e-9 { return Err(bad()); }
+    let min_bars = match v.get("min_bars") { None => 1, Some(n) => whole(Some(n), &format!("{at}.min_bars"), 1)? };
+    let price = match v.get("price").map(Json::as_str) {
+        None | Some(Some("any")) => LegPrice::Any, Some(Some("better")) => LegPrice::Better, Some(Some("worse")) => LegPrice::Worse,
+        _ => return Err(inv(format!("{at}.price must be \"any\", \"better\" or \"worse\""))),
+    };
+    Ok(ScaleIn { legs, min_bars, price })
 }
 
 /// In the same units the moved stop (`plus`) must stay short of the level that arms it (`after`); `at` is the breakeven path.
@@ -640,8 +722,8 @@ fn target(spec: &Spec, path: &str) -> Result<Target, String> {
             (Some(d), _) => Err(format!("{at} is set by {}; optimize that field", match d { Dist::Pct(_) => "pct", Dist::Atr { .. } => "atr", Dist::Points(_) => "points" })),
         };
     }
-    if !["entry.all[", "exit.any[", "entry.limit.at.", "entry.stop.at."].iter().any(|p| rest.starts_with(p)) {
-        return Err("must start with entry.all[i], exit.any[i], entry.limit, entry.limit.at, entry.stop, entry.stop.at, exit.stop_loss, exit.target, exit.trailing, exit.trailing.activate, exit.breakeven.after, exit.take_profits[k] (each also under short_side.)".into());
+    if !["entry.all[", "exit.any[", "entry.limit.at.", "entry.stop.at.", "entry.scale_in.", "execution.sizing."].iter().any(|p| rest.starts_with(p)) {
+        return Err("must start with entry.all[i], exit.any[i], entry.limit, entry.limit.at, entry.stop, entry.stop.at, exit.stop_loss, exit.target, exit.trailing, exit.trailing.activate, exit.breakeven.after, exit.take_profits[k], entry.scale_in.min_bars (each also under short_side.), execution.sizing.pct_equity or execution.sizing.risk_pct".into());
     }
     let (mut found, mut near) = (false, None::<String>);
     walk(&mut spec.clone(), &mut |p, k| match k {
@@ -663,12 +745,17 @@ fn target(spec: &Spec, path: &str) -> Result<Target, String> {
 }
 
 /// A number an optimize path can reach inside a rule list; `Series` is reported for error messages only.
-enum Knob<'a> { Value(&'a mut f64), Param(&'a mut SeriesRef, String), Whole(&'a mut usize), Shift(&'a mut usize), Series(&'a SeriesRef) }
+enum Knob<'a> { Value(&'a mut f64), Param(&'a mut SeriesRef, String), Whole(&'a mut usize), Shift(&'a mut usize), Series(&'a SeriesRef), Pct(&'a mut f64) }
 /// Visits every optimizable number in the rule lists with its spec path (`entry.all[0].lhs.p.length`, `exit.any[1].rhs.value`, `….bars`).
 fn walk(s: &mut Spec, f: &mut dyn FnMut(String, Knob)) {
     for (k, n) in s.entry.iter_mut().enumerate() { walk_node(n, &format!("entry.all[{k}]"), f); }
     for (k, n) in s.exit.iter_mut().enumerate() { walk_node(n, &format!("exit.any[{k}]"), f); }
-    for (pre, x) in [("", &mut s.exec)] { walk_levels(x, pre, f); }
+    walk_levels(&mut s.exec, "", f);
+    match &mut s.exec.sizing {
+        Sizing::PctEquity(p) => f("execution.sizing.pct_equity".into(), Knob::Pct(p)),
+        Sizing::RiskPct(p) => f("execution.sizing.risk_pct".into(), Knob::Pct(p)),
+        _ => {}
+    }
     if let Some(x) = s.short_side.as_mut() {
         for (k, n) in x.entry.iter_mut().enumerate() { walk_node(n, &format!("short_side.entry.all[{k}]"), f); }
         for (k, n) in x.exit.iter_mut().enumerate() { walk_node(n, &format!("short_side.exit.any[{k}]"), f); }
@@ -676,6 +763,7 @@ fn walk(s: &mut Spec, f: &mut dyn FnMut(String, Knob)) {
     }
 }
 fn walk_levels(x: &mut Exec, pre: &str, f: &mut dyn FnMut(String, Knob)) {
+    if let Some(si) = x.scale_in.as_mut() { f(format!("{pre}entry.scale_in.min_bars"), Knob::Whole(&mut si.min_bars)); }
     if let Some(o) = x.limit_at.as_mut() { walk_operand(o, &format!("{pre}entry.limit.at"), f); }
     if let Some(o) = x.stop_at.as_mut() { walk_operand(o, &format!("{pre}entry.stop.at"), f); }
 }
@@ -752,7 +840,7 @@ fn set(s: &mut Spec, t: &Target, x: f64) {
     }
     walk(s, &mut |p, k| if p == t.path {
         match k {
-            Knob::Value(v) => *v = x,
+            Knob::Value(v) | Knob::Pct(v) => *v = x,
             Knob::Param(r, key) => { r.params.insert(key, x); }
             Knob::Whole(n) | Knob::Shift(n) => *n = x as usize,
             Knob::Series(_) => {}
@@ -786,6 +874,7 @@ fn check_value(spec: &Spec, t: &Target, x: f64) -> Result<(), String> {
             Knob::Param(r, _) => catalogue::get(&r.id).ok_or_else(|| "unknown series".to_string()).and_then(|d| catalogue::resolve_params(&d, &r.params).map(|_| ())),
             Knob::Shift(_) if x.fract() != 0. || x < 0. || x > MAX_OFFSET as f64 => Err(format!("{} must be a whole number from 0 to {MAX_OFFSET}, not {x}", t.path)),
             Knob::Whole(_) if x.fract() != 0. || x < 1. || x > MAX_OFFSET as f64 => Err(format!("{} must be a whole number from 1 to {MAX_OFFSET}, not {x}", t.path)),
+            Knob::Pct(_) if !(x > 0. && x <= 100.) => Err(format!("{} must be above 0 and at most 100, not {x}", t.path)),
             _ => Ok(()),
         };
     });
@@ -808,7 +897,7 @@ pub fn current(spec: &Spec, t: &Target) -> f64 {
     let mut v = f64::NAN;
     walk(&mut spec.clone(), &mut |p, k| if p == t.path {
         match k {
-            Knob::Value(x) => v = *x,
+            Knob::Value(x) | Knob::Pct(x) => v = *x,
             Knob::Param(r, key) => v = r.params.get(&key).copied().unwrap_or(f64::NAN),
             Knob::Whole(n) | Knob::Shift(n) => v = *n as f64,
             Knob::Series(_) => {}
@@ -1281,5 +1370,49 @@ mod tests {
         let at = with(r#""all": ["#, r#""stop": {"at": {"s":"highest","p":{"length":5}}}, "all": ["#).replace(r#""fill": "next_open", "#, "")
             .replace(r#""entry.all[0].lhs.p.length""#, r#""entry.stop.at""#);
         assert!(err(&at).message().contains("entry.stop.at is a level operand; optimize a number inside it"), "{}", err(&at).message());
+    }
+
+    // ---- Phase 7: scale-in and unit sizing (spec §6.1, §7.4)
+    #[test] fn scale_in_and_sizing_parse_and_validate() {
+        let s = parse_spec(&with(r#""all": ["#, r#""scale_in": {"legs": [0.5, 0.3, 0.2], "min_bars": 2, "price": "better"}, "all": ["#)
+            .replace(r#""cost_bps": 12"#, r#""cost_bps": 12, "sizing": {"pct_equity": 50}"#)).unwrap();
+        assert_eq!(s.exec.scale_in, Some(ScaleIn { legs: vec![0.5, 0.3, 0.2], min_bars: 2, price: LegPrice::Better }));
+        assert_eq!(s.exec.sizing, Sizing::PctEquity(50.));
+        for (text, needle) in [
+            (with(r#""all": ["#, r#""scale_in": {"legs": [0.6, 0.6]}, "all": ["#), "legs must be a list of 2 to 5 fractions"),
+            (with(r#""all": ["#, r#""scale_in": {"legs": [1]}, "all": ["#), "legs must be a list of 2 to 5 fractions"),
+            (with(r#""all": ["#, r#""scale_in": {"legs": [0.5, 0.5], "price": "cheap"}, "all": ["#), "price must be"),
+            (with(r#""all": ["#, r#""scale_in": {"legs": [0.5, 0.5]}, "all": ["#).replace(r#""any": ["#, r#""take_profits": [{"pct": 5, "size": 0.5}], "any": ["#), "cannot combine with exit.take_profits"),
+            (with(r#""cost_bps": 12"#, r#""cost_bps": 12, "sizing": {"risk_pct": 1}"#), "risk_pct needs an exit.stop_loss"),
+            (with(r#""cost_bps": 12"#, r#""cost_bps": 12, "sizing": {"units": 10}"#), "need execution.capital"),
+            (with(r#""cost_bps": 12"#, r#""cost_bps": 12, "sizing": {"pct_equity": 150}"#), "pct_equity must be a number above 0 and at most 100"),
+            (with(r#""cost_bps": 12"#, r#""cost_bps": 12, "sizing": {}"#), "exactly one of pct_equity, risk_pct, units or value"),
+        ] {
+            let e = err(&text);
+            assert!(e.message().contains(needle), "{needle:?} not in {:?}", e.message());
+        }
+        let opt = with(r#""cost_bps": 12"#, r#""cost_bps": 12, "sizing": {"pct_equity": 50}"#)
+            .replace(r#"[ {"path":"entry.all[0].lhs.p.length","from":2,"to":6,"step":1} ]"#, r#"[ {"path":"execution.sizing.pct_equity","from":25,"to":100,"step":25} ]"#);
+        let s = parse_spec(&opt).unwrap();
+        assert_eq!((current(&s, &s.optimize[0].target), apply(&s, &s.optimize, &[75.]).exec.sizing), (50., Sizing::PctEquity(75.)));
+        assert!(err(&opt.replace(r#""to":100"#, r#""to":125"#)).message().contains("must be above 0 and at most 100"));
+    }
+
+    // ---- Phase 7: re-entry and risk rules (spec §6.1, §6.5)
+    #[test] fn reentry_and_risk_rules_parse_and_validate() {
+        let s = parse_spec(&with(r#""cost_bps": 12"#, r#""cost_bps": 12, "cooldown": {"bars": 3, "after": "loss"}, "max_trades": {"count": 2, "per": "M"}, "risk": {"max_consecutive_losses": 4, "pause_bars": 20, "max_drawdown_pct": 25}"#)).unwrap();
+        assert_eq!((s.exec.cooldown, s.exec.max_trades), (Some((3, After::Loss)), Some((2, 2))));
+        assert_eq!(s.exec.risk, Risk { losses: Some((4, 20)), max_dd_pct: Some(25.) });
+        for (extra, needle) in [
+            (r#""cooldown": {"bars": 0}"#, "execution.cooldown.bars must be a whole number from 1"),
+            (r#""cooldown": {"bars": 2, "after": "draw"}"#, "execution.cooldown.after must be"),
+            (r#""max_trades": {"count": 2, "per": "D"}"#, "execution.max_trades.per must be W, M, Q or Y"),
+            (r#""risk": {"max_consecutive_losses": 3}"#, "pause_bars must be a whole number"),
+            (r#""risk": {"pause_bars": 3}"#, "pause_bars goes with max_consecutive_losses"),
+            (r#""risk": {"max_drawdown_pct": 100}"#, "max_drawdown_pct must be a number above 0 and below 100"),
+        ] {
+            let e = err(&with(r#""cost_bps": 12"#, &format!(r#""cost_bps": 12, {extra}"#)));
+            assert!(e.message().contains(needle), "{needle:?} not in {:?}", e.message());
+        }
     }
 }

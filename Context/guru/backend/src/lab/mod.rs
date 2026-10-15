@@ -13,6 +13,7 @@ pub mod fidelity;
 pub mod json;
 pub mod listed;
 pub mod markets;
+pub mod model;
 pub mod ma;
 pub mod ma2;
 pub mod momentum;

@@ -413,6 +413,29 @@ The simulator classifies each closed trade by `Trade::ret(cost)`, using the run'
 compounded equity**, evaluated when a trade closes, rather than TradingView's tick-level equity. The response
 lists any triggered risk stop in `execution_model.events`.
 
+Rulings (batch 4, 2026-10-15):
+- The state reads only trades closed by the signal bar. A next-open exit signalled on the same bar is not counted
+  yet, because its fill price is unknown at that close.
+- A trade with `ret ≤ 0` counts as a loss for the streak and for `cooldown.after: loss`. This follows the house
+  statistics convention, where a zero-return trade is not a win.
+- A cooldown counts every exit inside its window, so a later winning trade does not end a loss cooldown (fix round 1).
+- A close-fill reversal first realizes its closing trade, then applies drawdown, loss-pause and cooldown rules before opening the opposite side. Risk events are also recorded for realized exits on the final bar; no new signal is taken there.
+- A blocked bar cancels resting entry and reversal orders. They are not queued.
+- A blocked bar also cancels a delayed market entry (`delay_bars` ≥ 2) that has not filled yet. A pending reversal
+  keeps its exit half and becomes a plain exit (fix round 1).
+- When a reversal's opening half cannot be sized (`risk_pct` with no stop distance yet), only the exit happens. Its
+  reason is "opposite entry", and the event "entry skipped: no stop distance on <date>" is listed.
+- `execution_model.events` lists at most 20 events, then "… and N more". Events are reported by `run` only; in
+  `optimize` the value is `null`.
+- `max_trades` counts positions, not scale-in legs.
+- A risk pause or the drawdown stop also blocks scale-in legs. Cooldown and `max_trades` block new positions only.
+- `max_trades` counts an entry in the period of its fill, and checks the signal bar's period.
+- Scale-in legs are decided at the signal close. The `better` / `worse` filter compares that close with the last
+  leg's fill price, and a next-open leg fills whatever its fill bar does. A pending leg belongs to its own position.
+  `risk_pct` sizing uses the first leg's stop level, known at the signal bar, and later legs scale from the same base.
+  After scale-ins, the stop-loss, target, trailing and breakeven levels stay anchored to the first leg's price. Legs
+  on an order side (`entry.limit` / `entry.stop`) fill as market orders.
+
 ## 7. Instruments: one explicit execution model per kind
 
 Every run and optimize response gains
@@ -450,7 +473,9 @@ Every run and optimize response gains
   traded; returns are a study of index levels, not of an ETF or futures contract". Money mode and
   `instrument.kind: futures` on an index ticker answer `needs_data`; the index is never priced as a proxy. A
   proxy trade needs the proxy's own data (an ETF ticker, or a futures chain once admitted).
-- **Crypto** (`CRYPTO:*`, a TradingView index composite): a long study only. A short gets
+- **Crypto** (`CRYPTO:*`, a TradingView index composite): a long study only, and also
+  `executable: false` (provisional, Phase 5) with the note "CRYPTO:* is a TradingView index composite, not an
+  exchange order book". A short gets
   `executable: false` with the note "shorting spot needs a margin borrow or perpetual data with funding, which
   is not staged". Money mode answers `needs_data`, because the series is not an exchange order book.
 - **CFD** (`IG:*`, `SPREADEX:*`): unit studies only, provisional (Phase 5). Money mode answers `needs_data`
@@ -572,7 +597,8 @@ fills.
 - `GET lab/run` and `GET lab/optimize`:
   - Both gain `execution_model` and, in money mode, `money: {capital, final_equity, costs_total, skipped,
     currency}`.
-  - Run trade JSON gains `legs` (scale-in) and `fills` (scale-out pieces) when a trade has more than one. In money
+  - Run trade JSON gains `legs` (scale-in) and `fills` (scale-out pieces) when a trade has more than one. It gains
+    `weight` (the position's total unit weight) only when that is not 1. In money
     mode, a `ledger` array gives each trade's entry date, units, position value, costs and money P&L.
   - `entry_kind` gains `stop`, `stop_limit`, `reverse` and `roll`.
 - `GET lab/run`, `lab/optimize` and `lab/series` gain a top-level `adaptations` list only when the spec (or

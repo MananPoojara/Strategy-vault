@@ -318,7 +318,11 @@ pub fn mask(n: &Node, fr: &Frames, cache: &mut Cache) -> Result<Vec<f64>, LabErr
 }
 pub fn compile(spec: &Spec, fr: &Frames, cache: &mut Cache) -> Result<Compiled, LabError> {
     let mut c = side(&spec.entry, &spec.exit, &spec.exec, "", fr, cache)?;
-    if let Some(s) = &spec.short_side { c.other = Some(Box::new(side(&s.entry, &s.exit, &s.exec, "short_side.", fr, cache)?)); }
+    if let Some(s) = &spec.short_side {
+        let mut o = side(&s.entry, &s.exit, &s.exec, "short_side.", fr, cache)?;
+        o.exec.sizing = spec.exec.sizing; // one sizing for both sides (optimize changes the spec's)
+        c.other = Some(Box::new(o));
+    }
     Ok(c)
 }
 fn side(entry: &[Node], exit: &[Node], x: &Exec, pre: &str, fr: &Frames, cache: &mut Cache) -> Result<Compiled, LabError> {

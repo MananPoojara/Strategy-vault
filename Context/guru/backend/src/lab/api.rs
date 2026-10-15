@@ -8,7 +8,7 @@ use super::resample::Tf;
 use super::rules::{self, LabError, LABEL};
 use super::series::{self, Cache, Compiled, Frames};
 use super::rules::Spec;
-use super::simulate::simulate;
+use super::simulate::{simulate, simulate_events};
 use super::{fidelity, templates};
 use crate::{accounting, connors::{Ctx, StrategyDef}, instrument_policy, trade_validation, State};
 use std::collections::BTreeMap;
@@ -63,6 +63,8 @@ fn full(v: f64) -> String { if v.is_finite() { v.to_string() } else { "null".int
 fn arr(it: impl Iterator<Item = String>) -> String { format!("[{}]", it.collect::<Vec<_>>().join(",")) }
 fn quoted<'a>(it: impl Iterator<Item = &'a str>) -> String { arr(it.map(|s| format!("\"{}\"", esc(s)))) }
 
+/// `max_query_bytes` (16384) must match the gateway's query bound (gateway policy.rs); sizing units/value and `ticks`
+/// distances are not listed until money mode and futures (Phase 7 Tasks 13–14) accept them.
 pub fn catalogue_json() -> String {
     let defs = catalogue::all().into_iter().map(|d| {
         let (tv, ab) = super::sources::names(d.id);
@@ -75,8 +77,10 @@ pub fn catalogue_json() -> String {
             d.compute.is_some(), quoted(d.outputs.iter().copied()), arr(d.first.iter().map(|&f| if f == usize::MAX { "null".into() } else { f.to_string() })), d.sparse, esc(d.definition), esc(d.note), esc(tv), esc(ab))
     });
     format!(
-        "{{\"label\":\"{LABEL}\",\"price_sources\":{},\"operators\":{},\"timeframes\":[\"D\",\"W\",\"M\",\"Q\",\"Y\"],\"custom_days\":[2,{}],\"expand_modes\":[\"last\",\"first\",\"point\"],\"max_conditions\":{},\"max_spec_bytes\":{},\"max_combos\":{},\"indicators\":{}}}",
-        quoted(rules::PRICE_SOURCES.iter().copied()), quoted(rules::OPERATORS.iter().copied()), super::resample::MAX_DAYS, rules::MAX_CONDITIONS, rules::MAX_SPEC_BYTES, crate::MAX_COMBOS, arr(defs))
+        "{{\"label\":\"{LABEL}\",\"price_sources\":{},\"operators\":{},\"timeframes\":[\"D\",\"W\",\"M\",\"Q\",\"Y\"],\"custom_days\":[2,{}],\"expand_modes\":[\"last\",\"first\",\"point\"],\"max_conditions\":{},\"max_leaves\":{},\"max_nodes\":{},\"node_kinds\":{},\"expressions\":{},\"max_spec_bytes\":{},\"max_query_bytes\":16384,\"execution\":{{\"direction\":[\"long\",\"short\",\"both\"],\"fill\":[\"next_open\",\"close\"],\"opposite\":[\"reverse\",\"exit\",\"ignore\"],\"entry_on\":[\"level\",\"edge\"],\"intrabar\":[\"stop_first\",\"ohlc_path\"],\"sizing\":[\"pct_equity\",\"risk_pct\"],\"distances\":[\"pct\",\"atr\",\"points\",\"at\"],\"max_take_profits\":{},\"max_legs\":{},\"max_valid_bars\":{},\"max_delay_bars\":{},\"cooldown_after\":[\"any\",\"loss\",\"win\"],\"max_cooldown_bars\":{},\"max_trades_per\":[\"W\",\"M\",\"Q\",\"Y\"],\"max_trades_count\":{},\"max_consecutive_losses\":{},\"max_pause_bars\":{},\"max_drawdown_pct_below\":100}},\"max_combos\":{},\"indicators\":{}}}",
+        quoted(rules::PRICE_SOURCES.iter().copied()), quoted(rules::OPERATORS.iter().copied()), super::resample::MAX_DAYS, rules::MAX_CONDITIONS, rules::MAX_LEAVES, rules::MAX_NODES,
+        quoted(rules::NODE_KINDS.iter().copied()), quoted(rules::EXPRESSIONS.iter().copied()), rules::MAX_SPEC_BYTES, rules::MAX_TAKE_PROFITS, rules::MAX_LEGS, rules::MAX_VALID_BARS, rules::MAX_DELAY,
+        rules::MAX_OFFSET, rules::MAX_OFFSET, rules::MAX_OFFSET, rules::MAX_PAUSE, crate::MAX_COMBOS, arr(defs))
 }
 
 /// Instrument identity from the server's own data (never from the query): type, native flag, market, currency.
@@ -172,13 +176,19 @@ fn gross_stats(ctx: &Ctx, run: &crate::Run) -> BTreeMap<&'static str, f64> {
     markets::annualise(&mut s, markets::bars_per_year(&ctx.r[0].ticker));
     s
 }
-fn backtest(ctx: &Ctx, c: &Compiled, d: &Bars, from: usize, to: usize, cost: f64) -> Result<crate::Run, LabError> {
-    let trades = simulate(c, d, from, to);
+/// The run plus the simulator's equity-level events (risk pauses and stops).
+fn backtest(ctx: &Ctx, c: &Compiled, d: &Bars, from: usize, to: usize, cost: f64) -> Result<(crate::Run, Vec<String>), LabError> {
+    let (trades, events) = simulate_events(c, d, from, to);
     trade_validation::check(&trades, from, to, cost)?;
     let equity = crate::equity_curve(&ctx.c, &trades, from, to, cost);
     if equity.iter().any(|v| !v.is_finite() || *v <= 0.) { return Err(LabError::Invalid("calculation_unavailable: nonpositive or nonfinite equity; no result is published".into())); }
     let bh = (from..=to).map(|k| ctx.c[k] / ctx.c[from]).collect();
-    Ok(crate::Run { trades, from, to, equity, bh })
+    Ok((crate::Run { trades, from, to, equity, bh }, events))
+}
+/// The execution model of this spec on this instrument (spec §7); refusals are typed needs_data.
+fn model_of(selected: &crate::SelectedContext, ticker: &str, kind: &str, spec: &Spec) -> Result<super::model::Model, LabError> {
+    let market = markets::gl(ticker).map_or_else(|| selected.evidence().map(|e| e.market().code()).or_else(|| crate::preloaded_market(ticker).map(|m| m.code())), |_| None);
+    super::model::model(kind, market, spec.exec.short || spec.short_side.is_some(), false)
 }
 
 /// `,"adaptations":[…]` when a response reads future session dates (spec §5.2); empty otherwise, so every other body is unchanged.
@@ -203,17 +213,26 @@ pub fn run_json(st: &State, q: &Query) -> Result<String, LabError> {
     let costs = accounting::Costs::parse(q)?;
     costs.ensure_rollover()?;
     let cost = costs.side_rate();
+    let model = model_of(&selected, &ctx.r[0].ticker, kind, &spec)?;
     let fr = Frames::new(Bars::from_ctx(ctx));
-    let compiled = series::compile(&spec, &fr, &mut Cache::new())?;
-    let run = backtest(ctx, &compiled, &fr.d, from, to, cost)?;
+    let mut compiled = series::compile(&spec, &fr, &mut Cache::new())?;
+    compiled.cost = cost;
+    let (run, events) = backtest(ctx, &compiled, &fr.d, from, to, cost)?;
     let gross = crate::Run { trades: run.trades.clone(), from, to, equity: crate::equity_curve(&ctx.c, &run.trades, from, to, 0.), bh: run.bh.clone() };
+    // scale-in legs and scale-out pieces as [date, price, weight / fraction] (only when a trade has more than one)
+    let pieces = |key: &str, v: Vec<(usize, f64, f64)>| if v.len() < 2 { String::new() } else {
+        format!(",\"{key}\":{}", arr(v.iter().map(|(k, p, w)| format!("[\"{}\",{},{}]", ctx.r[*k].date, crate::num(*p), crate::num(*w)))))
+    };
     let trades = arr(run.trades.iter().map(|t| format!(
-        "{{\"entry\":\"{}\",\"exit\":\"{}\",\"entry_i\":{},\"exit_i\":{},\"entry_px\":{},\"exit_px\":{},\"ret\":{},\"bars\":{},\"open\":{},\"signal\":\"{}\",\"reason\":\"{}\",\"dir\":{},\"entry_kind\":\"{}\"}}",
+        "{{\"entry\":\"{}\",\"exit\":\"{}\",\"entry_i\":{},\"exit_i\":{},\"entry_px\":{},\"exit_px\":{},\"ret\":{},\"bars\":{},\"open\":{},\"signal\":\"{}\",\"reason\":\"{}\",\"dir\":{},\"entry_kind\":\"{}\"{}{}{}}}",
         ctx.r[t.legs[0].i].date, ctx.r[t.exit_i].date, t.legs[0].i - from, t.exit_i - from, crate::num(t.legs[0].px), crate::num(t.exit_px),
-        crate::num(t.ret(cost)), t.exit_i - t.legs[0].i, t.open, ctx.r[t.signal_i].date, esc(&t.reason), t.dir, t.entry_kind)));
+        crate::num(t.ret(cost)), t.exit_i - t.legs[0].i, t.open, ctx.r[t.signal_i].date, esc(&t.reason), t.dir, t.entry_kind,
+        pieces("legs", t.legs.iter().map(|l| (l.i, l.px, l.w)).collect()), pieces("fills", t.exits.clone()),
+        // the position's total weight (unit sizing, scale-in), only when it is not one unit
+        if t.deployed() == 1. { String::new() } else { format!(",\"weight\":{}", crate::num(t.deployed())) })));
     Ok(format!(
-        "{{\"label\":\"{}\",\"kind\":\"lab_simulation\",\"origin\":{origin},\"instrument\":{instrument},\"from\":\"{}\",\"to\":\"{}\",\"start\":{start},\"dates\":{},\"close\":{},\"equity\":{},\"gross_equity\":{},\"bh\":{},\"trades\":{trades},\"stats\":{},\"gross_stats\":{},\"costs\":{},\"provenance\":{}{}}}",
-        esc(&label), ctx.r[from].date, ctx.r[to].date, quoted((from..=to).map(|k| ctx.r[k].date.as_str())), arr((from..=to).map(|k| crate::num(ctx.c[k]))),
+        "{{\"label\":\"{}\",\"kind\":\"lab_simulation\",\"origin\":{origin},\"instrument\":{instrument},\"execution_model\":{},\"from\":\"{}\",\"to\":\"{}\",\"start\":{start},\"dates\":{},\"close\":{},\"equity\":{},\"gross_equity\":{},\"bh\":{},\"trades\":{trades},\"stats\":{},\"gross_stats\":{},\"costs\":{},\"provenance\":{}{}}}",
+        esc(&label), model.json(Some(&events)), ctx.r[from].date, ctx.r[to].date, quoted((from..=to).map(|k| ctx.r[k].date.as_str())), arr((from..=to).map(|k| crate::num(ctx.c[k]))),
         arr(run.equity.iter().map(|v| crate::num(*v))), arr(gross.equity.iter().map(|v| crate::num(*v))), arr(run.bh.iter().map(|v| crate::num(*v))),
         crate::stats_json(&lab_stats(ctx, &run, costs)), crate::stats_json(&gross_stats(ctx, &gross)), costs.json(), crate::source_provenance(st, q), adaptations(rules::series_ids(&spec).iter().map(String::as_str))))
 }
@@ -241,16 +260,18 @@ pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> {
         Some(s) => Some(Some(dates.partition_point(|d| *d < s.as_str())).filter(|&k| k > from + 20 && k + 20 < to)
             .ok_or_else(|| LabError::Invalid("split must leave more than 20 bars on each side of the range".into()))?),
     };
+    let model = model_of(&selected, &ctx.r[0].ticker, kind, &spec)?;
     let fr = Frames::new(Bars::from_ctx(ctx));
     let dims = &spec.optimize;
     let combos: usize = dims.iter().map(|d| d.values.len()).product();
     let metrics = |cache: &mut Cache, s: &Spec| -> Result<Vec<f64>, LabError> {
-        let c = series::compile(s, &fr, cache)?;
-        let stats = lab_stats(ctx, &backtest(ctx, &c, &fr.d, from, to, cost)?, costs);
+        let mut c = series::compile(s, &fr, cache)?;
+        c.cost = cost;
+        let stats = lab_stats(ctx, &backtest(ctx, &c, &fr.d, from, to, cost)?.0, costs);
         let mut out: Vec<f64> = crate::FULL_COLS.iter().map(|k| stats[k]).collect();
         let mut ins = Vec::new();
         for (n, (a, b)) in split.map(|s| [(from, s - 1), (s, to)]).into_iter().flatten().enumerate() {
-            let part = lab_stats(ctx, &backtest(ctx, &c, &fr.d, a, b, cost)?, costs);
+            let part = lab_stats(ctx, &backtest(ctx, &c, &fr.d, a, b, cost)?.0, costs);
             out.extend(crate::PART_COLS.iter().map(|k| part[k]));
             if n == 0 { ins = crate::FULL_COLS.iter().map(|k| part[k]).collect(); }
         }
@@ -328,8 +349,8 @@ pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> {
     if split.is_some() { cols.extend(extra_rank_cols().iter().map(|c| format!("is_{c}"))); }
     let dims_json = arr(dims.iter().map(|d| format!("{{\"path\":\"{}\",\"values\":{}}}", esc(&d.path), arr(d.values.iter().map(|v| crate::num(*v))))));
     Ok(format!(
-        "{{\"label\":\"{}\",\"kind\":\"lab_optimization\",\"origin\":{origin},\"instrument\":{instrument},\"from\":\"{}\",\"to\":\"{}\",\"start\":{start},\"split\":{},\"combos\":{combos},\"threads\":{threads},\"ms\":{},\"dims\":{dims_json},\"cols\":{},\"base\":{},\"ranked_on\":\"{}\",\"rank\":{rank_json},\"picked\":{{{picked}}},\"rows\":[{rows}],\"costs\":{},\"provenance\":{}{}}}",
-        esc(&label), dates[from], dates[to], split.map_or("null".into(), |s| format!("\"{}\"", dates[s])), t0.elapsed().as_millis(),
+        "{{\"label\":\"{}\",\"kind\":\"lab_optimization\",\"origin\":{origin},\"instrument\":{instrument},\"execution_model\":{},\"from\":\"{}\",\"to\":\"{}\",\"start\":{start},\"split\":{},\"combos\":{combos},\"threads\":{threads},\"ms\":{},\"dims\":{dims_json},\"cols\":{},\"base\":{},\"ranked_on\":\"{}\",\"rank\":{rank_json},\"picked\":{{{picked}}},\"rows\":[{rows}],\"costs\":{},\"provenance\":{}{}}}",
+        esc(&label), model.json(None), dates[from], dates[to], split.map_or("null".into(), |s| format!("\"{}\"", dates[s])), t0.elapsed().as_millis(),
         quoted(cols.iter().map(String::as_str)), arr(base.iter().map(|v| crate::num(*v))), if split.is_some() { "in_sample" } else { "full" }, costs.json(), crate::source_provenance(st, q), adaptations(rules::series_ids(&spec).iter().map(String::as_str))))
 }
 /// A spec with `origin` is a customized book template: the template must exist (same book, version not newer).
@@ -825,6 +846,52 @@ mod tests {
             assert_eq!(s, status, "{path}: {body}");
             assert!(body.starts_with("{\"provisional\":true,\"provisional_note\":\"Provisional · TradingView export"), "{path}");
             crate::lab::json::parse(&body).unwrap();
+        }
+    }
+
+    // ---- Phase 7: execution model, legs and fills, catalogue limits (spec §7, §9)
+    #[test] fn runs_carry_the_execution_model_and_scale_out_fills() {
+        let st = state(400, "SPX", false);
+        let both = r#"{"v":1,"direction":"both","entry":{"all":[{"lhs":{"s":"close"},"op":"crosses_above","rhs":{"s":"sma","p":{"length":5}}}]},"exit":{"any":[],"stop_loss":{"pct":3},"take_profits":[{"pct":1,"size":0.5}]},
+            "short_side":{"entry":{"all":[{"lhs":{"s":"close"},"op":"crosses_below","rhs":{"s":"sma","p":{"length":5}}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":3}}]}}}"#;
+        let j = run_json(&st, &q(&[("spec", both)])).unwrap();
+        assert!(j.contains(&format!("\"execution_model\":{{\"kind\":\"index\",\"mode\":\"unit\",\"executable\":false,\"notes\":[\"{}\"],\"events\":[]}}", crate::lab::model::INDEX)), "{}", &j[..400]);
+        assert!(j.contains("\"dir\":-1") && j.contains("\"dir\":1") && j.contains("\"fills\":[["), "both sides trade and take-profits fill");
+        let o = optimize_json(&st, &q(&[])).unwrap();
+        assert!(o.contains("\"execution_model\":{\"kind\":\"index\",\"mode\":\"unit\"") && o.contains("\"events\":null},"), "events are reported by run only");
+        let c = crate::lab::json::parse(&catalogue_json()).unwrap();
+        assert_eq!((c.get("max_leaves").and_then(|v| v.as_f64()), c.get("max_query_bytes").and_then(|v| v.as_f64())), (Some(40.), Some(16384.)));
+        let ex = c.get("execution").unwrap();
+        assert_eq!((ex.get("max_pause_bars").and_then(|v| v.as_f64()), catalogue_json().contains("\"units\"") || catalogue_json().contains("\"ticks\"")), (Some(100000.), false));
+        assert!(catalogue_json().contains("\"node_kinds\":[\"all\",\"any\",\"not\",\"at_least\",\"then\"]") && catalogue_json().contains("\"timeframes\":[\"D\",\"W\",\"M\",\"Q\",\"Y\"]"));
+    }
+    #[test] fn each_instrument_kind_labels_or_refuses_its_result() {
+        use crate::lab::model::{CRYPTO_SHORT, INDEX, US_SHORT_UNIT};
+        let model = |j: &str| { let s = j.find("\"execution_model\":").unwrap(); j[s..s + j[s..].find("]},").unwrap() + 2].to_string() };
+        // an index is a signal study even for a plain long v1 spec; that body carries no legs or fills keys
+        let long = run_json(&state(400, "SPX", false), &q(&[])).unwrap();
+        assert!(model(&long).contains("\"executable\":false") && model(&long).contains(INDEX));
+        assert!(!long.contains("\"legs\"") && !long.contains("\"fills\"") && !long.contains("\"weight\""));
+        // a US ETF: long executable without notes; short labelled (borrow not modelled in unit mode)
+        let short = r#"{"v":1,"direction":"short","entry":{"all":[{"lhs":{"s":"close"},"op":"crosses_below","rhs":{"s":"sma","p":{"length":5}}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":3}}]}}"#;
+        let spy = state(400, "SPY", false);
+        assert!(model(&run_json(&spy, &q(&[("ticker", "SPY")])).unwrap()).contains("\"kind\":\"etf\",\"mode\":\"unit\",\"executable\":true,\"notes\":[]"));
+        assert_eq!(model(&run_json(&spy, &q(&[("ticker", "SPY"), ("spec", short)])).unwrap()),
+            format!("\"execution_model\":{{\"kind\":\"etf\",\"mode\":\"unit\",\"executable\":true,\"notes\":[\"{US_SHORT_UNIT}\"],\"events\":[]}}"));
+        // crypto stays provisional (Phase 5) and a short is hypothetical
+        let btc = run_json(&state(800, "CRYPTO:BTCUSD", false), &q(&[("ticker", "CRYPTO:BTCUSD"), ("spec", short)])).unwrap();
+        assert!(model(&btc).contains(CRYPTO_SHORT) && btc.contains("\"provisional\":true"));
+        // scale-in legs and risk events reach the run JSON
+        let si = r#"{"v":1,"entry":{"all":[{"lhs":{"s":"close"},"op":">","rhs":{"s":"sma","p":{"length":5}}}],"scale_in":{"legs":[0.5,0.5]}},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":6}}]},"execution":{"risk":{"max_drawdown_pct":1},"sizing":{"pct_equity":50}}}"#;
+        let j = run_json(&spy, &q(&[("ticker", "SPY"), ("spec", si)])).unwrap();
+        assert!(j.contains("\"legs\":[[\"") && j.contains("\"weight\":") && model(&j).contains("closed-trade drawdown reached 1%"), "{}", model(&j));
+        // futures: no contract data is admitted, on any ticker, for run and optimize
+        let fut = SPEC.replace(r#""v":1,"#, r#""v":1,"execution":{"instrument":{"kind":"futures"}},"#);
+        for tk in ["SPX", "SPY"] {
+            let st = state(400, tk, false);
+            for e in [run_json(&st, &q(&[("ticker", tk), ("spec", &fut)])).unwrap_err(), optimize_json(&st, &q(&[("ticker", tk), ("spec", &fut)])).unwrap_err()] {
+                assert!(e.status() == "needs_data" && e.message().contains("never used as a stand-in"), "{e:?}");
+            }
         }
     }
 }
