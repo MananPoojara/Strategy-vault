@@ -1,8 +1,9 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { act } from "react";
+import { act, useState, type ComponentProps } from "react";
 import { OptimizePanel, colValue } from "../src/features/lab/OptimizePanel";
-import { defaultSpec } from "../src/features/lab/spec-model";
-import type { Spec } from "../src/features/lab/types";
+import { num, pct } from "../src/features/lab/format";
+import { defaultSpec, setAt } from "../src/features/lab/spec-model";
+import type { OptimizeResult, Spec } from "../src/features/lab/types";
 import { catalogueFixture as cat, flush, mount, optimizeFixture, unmount } from "./fixtures/lab";
 
 afterEach(async () => { await unmount(); vi.useRealTimers(); });
@@ -29,6 +30,16 @@ it("ticking a setting fills a small range; split sends a date; optimize carries 
   expect(spec.optimize).toEqual([{ path: "entry.all[0].rhs.p.length", from: 50, to: 54, step: 1 }]);
   expect(splitDate).toBe(dates[210]);
   expect(base.onTried).toHaveBeenCalledWith(3);
+});
+
+it("onTried fires once per finished optimization", async () => {
+  const onTried = vi.fn();
+  const host = await mount(<OptimizePanel {...base} onTried={onTried} onOptimize={vi.fn().mockResolvedValue(optimizeFixture)} />);
+  await tick(host, "entry.all[0].rhs.p.length");
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-action="optimize"]')!.click());
+  await flush();
+  expect(onTried).toHaveBeenCalledTimes(1);
+  expect(onTried).toHaveBeenCalledWith(3);
 });
 
 it("result: ranked-on text, Now and top 3, held-back columns, Apply writes the setting", async () => {
@@ -83,4 +94,116 @@ it("no eligible settings: nothing is ranked", async () => {
   await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-action="optimize"]')!.click());
   await flush();
   expect(host.textContent).toContain("No setting had enough trades to rank (at least 10). Nothing is ranked.");
+});
+
+const P = "entry.all[0].rhs.p.length";
+// The backend ranks on the in-sample window and returns the ranked values as is_* (api.rs rank_basis).
+const IS_EXTRA = ["is_monthly_thickness", "is_expectancy_ratio", "is_mar"];
+const splitFx: OptimizeResult = {
+  ...optimizeFixture, cols: [...optimizeFixture.cols, ...IS_EXTRA], base: [...optimizeFixture.base, 0.2, 0.08, 0.3],
+  picked: { "1": [...optimizeFixture.picked["1"], 0.33, 0.13, 0.5], "0": [...optimizeFixture.picked["0"], 0.29, 0.1, 0.4] },
+};
+splitFx.picked["1"][splitFx.cols.indexOf("is_cagr")] = 0.11; // differs from the full-period cagr 0.07
+const runWith = async (fx: OptimizeResult, extra: Partial<ComponentProps<typeof OptimizePanel>> = {}) => {
+  const host = await mount(<OptimizePanel {...base} {...extra} onOptimize={vi.fn().mockResolvedValue(fx)} />);
+  await tick(host, P);
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-action="optimize"]')!.click());
+  await flush();
+  return host;
+};
+const rowCells = (host: HTMLElement, n: number) => [...host.querySelectorAll("table.ocmp tbody tr")[n].children].map((c) => c.textContent);
+
+it("with a split the ranking columns show the in-sample values with their percentiles", async () => {
+  const host = await runWith(splitFx);
+  const one = rowCells(host, 1);
+  const pick = splitFx.picked["1"];
+  expect(one[2]).toBe(`${pct(pick[splitFx.cols.indexOf("is_cagr")])} · p90`);
+  expect(one[2]).not.toContain(pct(pick[splitFx.cols.indexOf("cagr")]));
+  expect(one[3]).toBe(`${num(pick[splitFx.cols.indexOf("is_sharpe")])} · p85`);
+  expect(one[6]).toBe(`${num(pick[splitFx.cols.indexOf("is_mar")])} · p88`);
+  expect(rowCells(host, 0)[2]).toBe(pct(splitFx.base[splitFx.cols.indexOf("is_cagr") - 1]));
+});
+
+it("without a split the ranking columns show the full-period values", async () => {
+  const host = await runWith({ ...splitFx, split: null, ranked_on: "full" });
+  expect(host.textContent).toContain("Ranked on: full period");
+  expect(rowCells(host, 1)[2]).toBe(`${pct(0.07)} · p90`);
+  expect(host.textContent).not.toContain("Held back · display only");
+});
+
+it("dim values are formatted; a top row without picked values gets no Apply; Apply buttons are named", async () => {
+  const fx: OptimizeResult = { ...optimizeFixture, picked: { "1": [0.1 + 0.2, ...optimizeFixture.picked["1"].slice(1)] } };
+  const host = await runWith(fx);
+  expect(rowCells(host, 1)[1]).toBe("0.30");
+  expect(rowCells(host, 0)[1]).toBe("50");
+  const buttons = [...host.querySelectorAll<HTMLButtonElement>("table.ocmp tbody button")];
+  expect(buttons.map((b) => b.getAttribute("aria-label"))).toEqual(["Apply #1"]);
+});
+
+it("gl results carry the provisional strip and the instrument label", async () => {
+  const host = await runWith(optimizeFixture, { market: "gl", instrumentLabel: "DAX · IG CFD" });
+  const strip = host.querySelector("[data-lab-optimize-result] [data-lab-provisional]");
+  expect(strip?.textContent).toContain("DAX · IG CFD");
+});
+
+it("a failed run after a successful one clears the table", async () => {
+  const onOptimize = vi.fn().mockResolvedValueOnce(optimizeFixture).mockRejectedValueOnce(new Error("engine failed"));
+  const host = await mount(<OptimizePanel {...base} onOptimize={onOptimize} />);
+  await tick(host, P);
+  const go = () => act(async () => host.querySelector<HTMLButtonElement>('[data-lab-action="optimize"]')!.click());
+  await go(); await flush();
+  expect(host.querySelector("table.ocmp")).not.toBeNull();
+  await go(); await flush();
+  expect(host.querySelector("table.ocmp")).toBeNull();
+  expect(host.querySelector("[data-lab-error]")).not.toBeNull();
+});
+
+it("429: the main button stays disabled until the countdown ends", async () => {
+  vi.useFakeTimers();
+  const busy = Object.assign(new Error("An optimization is already running. Please retry when it finishes."), { status: 429, kind: "gateway", retryAfter: 5 });
+  const host = await mount(<OptimizePanel {...base} onOptimize={vi.fn().mockRejectedValueOnce(busy)} />);
+  await tick(host, P);
+  const main = () => host.querySelector<HTMLButtonElement>('[data-lab-action="optimize"]')!;
+  await act(async () => main().click());
+  await act(async () => { await Promise.resolve(); });
+  expect(main().disabled).toBe(true);
+  await act(async () => { vi.advanceTimersByTime(4000); });
+  expect(main().disabled).toBe(true);
+  await act(async () => { vi.advanceTimersByTime(1100); });
+  expect(main().disabled).toBe(false);
+});
+
+type Props = ComponentProps<typeof OptimizePanel>;
+let update: (p: Partial<Props>) => void = () => {};
+function Harness(p: Props) {
+  const [o, set] = useState<Partial<Props>>({});
+  update = (x) => set((cur) => ({ ...cur, ...x }));
+  return <OptimizePanel {...p} {...o} />;
+}
+
+it("a market change resets the result and ignores a run still in flight", async () => {
+  let resolve: (r: OptimizeResult) => void = () => {};
+  const onOptimize = vi.fn().mockResolvedValueOnce(optimizeFixture).mockReturnValueOnce(new Promise<OptimizeResult>((r) => { resolve = r; }));
+  const host = await mount(<Harness {...base} onOptimize={onOptimize} />);
+  await tick(host, P);
+  const go = () => act(async () => host.querySelector<HTMLButtonElement>('[data-lab-action="optimize"]')!.click());
+  await go(); await flush();
+  expect(host.querySelector("[data-lab-optimize-result]")).not.toBeNull();
+  await act(async () => update({ market: "us" }));
+  expect(host.querySelector("[data-lab-optimize-result]")).toBeNull();
+  await go();
+  await act(async () => update({ market: "in" }));
+  await act(async () => resolve(optimizeFixture));
+  await flush();
+  expect(host.querySelector("[data-lab-optimize-result]")).toBeNull();
+  expect(host.querySelector('[data-lab-action="optimize"]')!.hasAttribute("disabled")).toBe(false);
+});
+
+it("the Now row shows the settings that were optimized, not later edits", async () => {
+  const host = await mount(<Harness {...base} onOptimize={vi.fn().mockResolvedValue(optimizeFixture)} />);
+  await tick(host, P);
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-action="optimize"]')!.click());
+  await flush();
+  await act(async () => update({ spec: setAt(defaultSpec(), P, 60) }));
+  expect(rowCells(host, 0)[1]).toBe("50");
 });

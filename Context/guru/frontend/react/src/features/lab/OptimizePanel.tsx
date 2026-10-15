@@ -11,6 +11,7 @@ const RANK_LABELS: Record<string, string> = { cagr: "CAGR", sharpe: "Sharpe", mo
 const SPLIT_STATS: [string, string][] = [["total_return", "Total return"], ["cagr", "CAGR"], ["sharpe", "Sharpe"], ["trades", "Trades"]];
 const fmt = (name: string, v: number | null) =>
   /(^|_)(total_return|cagr|monthly_thickness)$/.test(name) ? pct(v) : /(^|_)trades$/.test(name) ? int(v) : num(v);
+const dimFmt = (v: number | undefined) => (v === undefined ? "" : Number.isInteger(v) ? int(v) : num(v, 2));
 
 /** Value of a metric for a row of `cols` (dims first) or for `base` (cols after the dims). */
 export function colValue(result: OptimizeResult, values: number[], name: string): number | null {
@@ -33,7 +34,9 @@ export function OptimizePanel(props: {
   const [, setTick] = useState(0);
   const [result, setResult] = useState<OptimizeResult | null>(null);
   const [error, setError] = useState<unknown>(null);
+  const [retryUntil, setRetryUntil] = useState(0); // 429 deadline; the main button waits for it too
   const last = useRef<[Spec, string | null] | null>(null);
+  const runId = useRef(0);
 
   const pathsKey = settings.map((s) => s.path).join("|");
   useEffect(() => setSel((cur) => Object.fromEntries(Object.entries(cur).filter(([p]) => settings.some((s) => s.path === p)))), [pathsKey]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -42,6 +45,15 @@ export function OptimizePanel(props: {
     const id = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(id);
   }, [running]);
+  useEffect(() => {
+    if (!retryUntil) return;
+    const id = setTimeout(() => setRetryUntil(0), Math.max(0, retryUntil - Date.now()));
+    return () => clearTimeout(id);
+  }, [retryUntil]);
+  useEffect(() => () => { // a market change resets optimization; a run still in flight is ignored
+    runId.current++;
+    setResult(null); setError(null); setRunning(null); setRetryUntil(0);
+  }, [market]);
 
   if (role === null || role === "viewer")
     return <section className="box" data-lab-optimize><h2 className="box-h">Optimization</h2><p className="rnote">{COPY.researcherOnly}</p></section>;
@@ -50,7 +62,7 @@ export function OptimizePanel(props: {
   const combos = comboCount(dims);
   const tooBig = dims.some((d) => valuesCount(d) > MAX_VALUES) || combos > catalogue.max_combos;
   const split = heldBack ? splitDate(dates, heldBack) : null;
-  const disabled = running !== null || combos === 0 || tooBig || (heldBack > 0 && split === null);
+  const disabled = running !== null || retryUntil > 0 || combos === 0 || tooBig || (heldBack > 0 && split === null);
 
   const toggle = (s: OptimizableSetting, on: boolean) => setSel((cur) => {
     const next = { ...cur };
@@ -61,18 +73,24 @@ export function OptimizePanel(props: {
   const edit = (path: string, key: "from" | "to" | "step", v: string) => setSel((cur) => ({ ...cur, [path]: { ...cur[path], [key]: Number(v) } }));
 
   const run = async (args: [Spec, string | null]) => {
+    const id = ++runId.current;
     last.current = args;
     setResult(null);
     setError(null);
+    setRetryUntil(0);
     setRunning(Date.now());
     try {
       const r = await onOptimize(...args);
+      if (id !== runId.current) return;
       setResult(r);
       onTried(r.combos);
     } catch (e) {
+      if (id !== runId.current) return;
       setError(e);
+      const wait = (e as { retryAfter?: number } | null)?.retryAfter;
+      if (wait) setRetryUntil(Date.now() + wait * 1000);
     } finally {
-      setRunning(null);
+      if (id === runId.current) setRunning(null);
     }
   };
 
@@ -119,14 +137,14 @@ export function OptimizePanel(props: {
       {running !== null && <><Loading text={`Optimizing… ${Math.floor((Date.now() - running) / 1000)} s`} /><p className="cap">{COPY.optimizeLimit}</p></>}
       {error !== null && <ErrorNotice error={error} market={market} instrumentLabel={instrumentLabel}
         onRetry={() => last.current && run(last.current)} />}
-      {result && <OptimizeResultView result={result} spec={spec} settings={settings} market={market} instrumentLabel={instrumentLabel} onApply={onApply} />}
+      {result && <OptimizeResultView result={result} spec={spec} ranSpec={last.current?.[0] ?? spec} catalogue={catalogue} settings={settings} market={market} instrumentLabel={instrumentLabel} onApply={onApply} />}
       {!result && !error && running === null && <p className="empty">{COPY.emptyOptimize}</p>}
     </section>
   );
 }
 
-function OptimizeResultView({ result, spec, settings, market, instrumentLabel, onApply }: {
-  result: OptimizeResult; spec: Spec; settings: OptimizableSetting[]; market: SavedMarket; instrumentLabel?: string; onApply(spec: Spec): void;
+function OptimizeResultView({ result, spec, ranSpec, catalogue, settings, market, instrumentLabel, onApply }: {
+  result: OptimizeResult; spec: Spec; ranSpec: Spec; catalogue: Catalogue; settings: OptimizableSetting[]; market: SavedMarket; instrumentLabel?: string; onApply(spec: Spec): void;
 }) {
   const { rank, dims } = result;
   const stats = rank.stats ?? [];
@@ -134,6 +152,9 @@ function OptimizeResultView({ result, spec, settings, market, instrumentLabel, o
   const apply = (values: number[]) =>
     onApply(dims.reduce((s, d, i) => setAt(s, d.path, values[i]), withOptimize(spec, [])));
   const setting = (path: string) => settings.find((s) => s.path === path);
+  const ranSettings = optimizablePaths(ranSpec, catalogue); // "Now" = the spec that was optimized
+  // With a split the backend ranks on the in-sample window and returns those values as is_*.
+  const rankCol = (s: string) => (result.split && result.cols.includes(`is_${s}`) ? `is_${s}` : s);
   const rows = [
     { name: "Now", values: result.base, pct: null as number[] | null },
     ...rank.top3.map((c, i) => ({ name: `#${i + 1}`, values: result.picked[String(c.row)] ?? [], pct: c.pct })),
@@ -170,13 +191,14 @@ function OptimizeResultView({ result, spec, settings, market, instrumentLabel, o
               {rows.map((r) => (
                 <tr key={r.name}>
                   <td>{r.name}</td>
-                  {dims.map((d, i) => <td key={d.path}>{String((r.pct ? r.values[i] : setting(d.path)?.current) ?? "")}</td>)}
+                  {dims.map((d, i) => <td key={d.path}>{dimFmt(r.pct ? r.values[i] : ranSettings.find((s) => s.path === d.path)?.current)}</td>)}
                   {stats.map((s, k) => {
-                    const v = fmt(s, colValue(result, r.values, s));
+                    const v = fmt(s, colValue(result, r.values, rankCol(s)));
                     return <td key={s}>{r.pct && typeof r.pct[k] === "number" ? `${v} · p${Math.round(r.pct[k])}` : v}</td>;
                   })}
                   {phases.map((ph) => SPLIT_STATS.map(([k]) => <td key={`${ph}_${k}`}>{fmt(k, colValue(result, r.values, `${ph}_${k}`))}</td>))}
-                  <td>{r.pct && dims.every((d) => setting(d.path)) && <button type="button" className="dbtn sm" onClick={() => apply(r.values)}>Apply</button>}</td>
+                  <td>{r.pct && r.values.length === result.cols.length && dims.every((d) => setting(d.path)) &&
+                    <button type="button" className="dbtn sm" aria-label={`Apply ${r.name}`} onClick={() => apply(r.values)}>Apply</button>}</td>
                 </tr>
               ))}
             </tbody>
