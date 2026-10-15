@@ -43,6 +43,12 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
             return issue("needs_data","Full supplied moving-average warmup contains invalid OHLC. Earlier rows are not discarded, repaired or reseeded to manufacture a result.");
         }
     }
+    if def.book=="elcim" && def.id==books::elcim_account::ID {
+        if let Some(note)=books::elcim_account::validate(p){return issue("not_testable",note);}
+    }
+    if matches!(def.id,"elcim_ts_fi"|"elcim_fi2"|"eltfl_sroc") {
+        return issue("source_review_required","The supplied Elder sources require protective stops and account risk limits. This legacy fragment omits part of that contract. Triple Screen additionally has stop-entry/protective-stop ordering ambiguities on daily bars; FI2 lacks a printed entry order; SROC lacks objective initial protection. These fragments remain held, without invented exits or risk-free source labels.");
+    }
     if def.book=="sbma" && matches!(def.id,"sbma_sma50_long"|"sbma_x_5s20s") {
         let fill=p.get("fill").copied().unwrap_or(0.);
         if ![0.,1.].contains(&fill) {return issue("not_testable","Reviewed Burns fill must be 0 (idealized same-close research) or 1 (next actual open).");}

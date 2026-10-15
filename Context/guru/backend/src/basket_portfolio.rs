@@ -782,6 +782,7 @@ pub fn run(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         .collect();
     let bh: Vec<_> = bh.iter().map(|c| c / bh[0]).collect();
     let benchmark_run = crate::Run {
+        source_account:None,
         trades: vec![],
         from: 0,
         to: calendar.len() - 1,
@@ -1084,6 +1085,7 @@ mod tests {
     #[test]
     fn a_target_equal_to_daily_close_still_has_no_reviewed_portfolio_fill_phase() {
         assert!(execution_contract("hbqts_profit_target", "hbqts").is_none());
+        assert!(execution_contract("elcim_impulse", "elcim").is_none());
         assert!(execution_contract("hbqts_limit_entry", "hbqts").is_none());
         assert!(execution_contract("hbqts_ma5_25", "another_book").is_none());
         assert!(execution_contract("a_new_rule", "hbqts").is_none());

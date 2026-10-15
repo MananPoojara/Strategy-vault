@@ -1,6 +1,8 @@
 //! Alexander Elder, "Come Into My Trading Room" (Wiley 2002). Chapter 6 "Trading" (printed pp.123-183)
-//! and Chapter 5 Force Index (pp.109-114). Only rules the book states with an exact entry AND exit are Live.
-//! Source, extraction and verification: library/elcim/README.md. The shared helpers here (EMA seeded with an
+//! and Chapter 5 Force Index (pp.109-114). Live is a legacy catalogue registration,
+//! not source admission. The protected Impulse candidate has its own account
+//! executor/review; other incomplete fragments remain held by readiness/policy.
+//! Source review: library/elcim/REVIEW-2026-10-15.md. Shared helpers (EMA seeded with an
 //! SMA as in Trading for a Living p.123, MACD-Histogram, Force Index, completed-week series, the day-bar order
 //! simulator) are also used by books/eltfl.rs.
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
@@ -316,18 +318,19 @@ pub fn simulate(x: &Ctx, from: usize, to: usize, r: &Rules) -> Vec<Trade> {
 // ------------------------------------------------------------------ catalogue
 
 const IMPULSE: &[&str] = &[
-    "F|\"If your favorite chart is daily, analyze the weekly chart to make a strategic decision to be a bull or a bear. Use a 26-week EMA, the slope of weekly MACD-Histogram, or both, on the weekly chart.\" (p.159) Default: slope of the 26-week EMA between the two latest completed weeks; MACD-Histogram slope or both = labelled options.",
-    "E|\"The Impulse System uses a 13-day EMA and a 12-26-9 MACD-Histogram ... When the weekly trend is up, turn to the daily charts and wait for both the 13-day EMA and MACD-Histogram to turn up. When both inertia and momentum rise, you have a strong buy signal, telling you to get long and stay long until the buy signal disappears.\" (p.159). Buy signal = mov(c,13,e) > ref(mov(c,13,e),-1) and MACD-Histogram > ref(MACD-Histogram,-1) (book code, p.159).",
-    "E|\"When the weekly trend is down, turn to the daily charts and wait for both the 13-day EMA and MACD-Histogram to turn down. They give you a signal to go short, but be ready to cover when that signal disappears.\" (p.159)",
-    "X|\"Hop off as soon as a single indicator turns down ... When the buy signal disappears, sell without waiting for a sell signal.\" \"Cover shorts as soon as one of those indicators stops giving a sell signal.\" (p.161)",
-    "X|Timing: \"Should you enter and exit at the open, after seeing the signal in the evening, or should you try to anticipate those signals? What if you do your homework 15 minutes before the close and buy or sell without waiting for tomorrow?\" (p.161). Default: next open (the first option named); 'at the signal close' = labelled option.",
+    "F|Source pp.158-161: completed weekly EMA26 direction filters daily long/short entries. SMA-seeded daily EMA13 and MACD12-26-9; both slopes must agree. Choose the source-offered EMA weekly filter, not a result-tuned alternative.",
+    "E|Source p.161 offers next-open orders after evening signals. Enter one position at the next actual observed open from a flat prior close; no automatic reversal. Only prior calendar weeks are completed at that execution clock, including actual NSE weekend sessions.",
+    "X|Source pp.159-161 and Study Guide answer55: exit at the next actual open after either daily Impulse component stops agreeing. A weekly change alone is not an invented daily exit.",
+    "X|Mandatory protection pp.171-180: SafeZone10-session penetration mean, coefficient2, protected3-level maximum/minimum and a never-loosen held stop. Source p.179 discretionary turning-point resets are not supplied as an objective rule; this composition fixes the10-session worksheet baseline. Protection is known before open and active on the entry day. A gap fills at the actual open; otherwise a touch fills at the known level.",
+    "F|Mandatory account risk pp.220-227 and Study Guide answers77-80: at most2% monthly-reference equity risk per trade including costs; current-month realized losses plus outstanding risk cannot exceed6%. Profits do not replenish the monthly allowance. New-month references/stops recalibrate from actual previous marks.",
+    "X|Declared research clock: closing equity below94% of the prior month-end reference halts entries for that month and queues existing-position liquidation at the next actual open. Gaps may exceed planned limits; no loss clipping or funding reset.",
 ];
 const TS_FI: &[&str] = &[
     "F|Screen one: \"I now prefer to use the slope of a weekly exponential moving average ... When the weekly EMA rises, it confirms a bull move and tells us to go long or stand aside. When it falls ... go short or stand aside. I use a 26-week EMA\" (p.132). Weekly bars are completed calendar weeks (book's test procedure, p.126).",
     "F|Screen two, active traders: \"use the two-day EMA of Force Index ... When the weekly trend is up and daily Force Index falls below zero, it flags a buying opportunity ... When the weekly trend is down and the two-day EMA of Force Index rallies above zero, it points to shorting opportunities.\" (p.135)",
     "E|Screen three: \"When the first two screens give you a buy signal (the weekly is up, but the daily is down), place a buy order at the high of the previous day or a tick higher ... Place a buy order, good for one day only.\" Shorts: \"place a sell order at the previous day's low or a tick lower.\" (p.137). Default: at the high/low (ticks = 0); a tick beyond = option. The order is re-placed each day the two screens still agree.",
     "X|\"If you buy in an uptrend when the two-day EMA of Force Index turns negative, sell when it turns positive. If you go short in a downtrend after the two-day EMA of Force Index turns positive, cover when it turns negative.\" (p.136) Executed the next day at the open (p.112: \"sell the day after Force Index turns positive\").",
-    "X|No specific stop is prescribed for this exit (stops: \"see SafeZone on page 173\", p.136; \"You can add it to almost any trading system, including Triple Screen\", p.180). Default: no stop; SafeZone (coefficient 2, 10-day lookback, Excel rules p.176-178) = labelled option.",
+    "X|Held: global source p.171 requires protective stops. The legacy optional-stop runner does not establish complete2%/6% risk control or daily stop-entry/protection ordering. No-stop is not a valid book default.",
 ];
 const FI2: &[&str] = &[
     "F|\"when the 22-day EMA of price is up and the two-day EMA of Force Index becomes negative, it reveals a short-term splash of bearishness within an uptrend, a buying opportunity.\" (p.110)",
@@ -343,7 +346,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
     use Status::*;
     vec![
         d("elcim_impulse", "Impulse System (weekly trend + 13-day EMA & MACD-Histogram)", "Ch 6 · The Impulse System", "Long/Short", Live, false, IMPULSE,
-          "pp.157-162. Book prints no test results. Weekly trend from completed calendar weeks (day i uses the week that ended on or before day i). EMAs start from an SMA seed (TFL p.123). One position at a time; long only while the weekly trend is up, short only while it is down; entry while the bar is 'green'/'red' (state, as the book's AlertMarker code marks every such bar). A weekly-trend reversal is not an exit (book: 'when the buy signal disappears'). Run on cash indices/ETFs (book: stocks/futures); India = instrument swap only."),
+          "Provisional protected daily Impulse composition on actual individual stocks; source pp.158-161,171-180,220-227. Source-offered next-open choice plus SafeZone10/2 and mandatory2%/6% account control. Normalized fractional cash-only exposure; shorts reserve principal, with no real borrow/lot or monetary capital claim. Flat selected start and actual recursive warmup; terminal holdings pay entry costs only. Gross uses identical accepted quantities/fills. Supplied adjustment basis and continuous stops remain qualified. This is not the old stop-free fragment or Elder's discretionary selection/chart results. Independent acceptance is required; library/elcim/REVIEW-2026-10-15.md."),
         d("elcim_ts_fi", "Triple Screen (2002 update) · 26-week EMA + 2-day Force Index", "Ch 6 · Triple Screen Update", "Long/Short", Live, true, TS_FI,
           "pp.128-138. Book prints no test results. Needs volume (Force Index): NIFTY 50 volume starts 2000. Buy stop fills at the open if the bar gaps through it, else at the stop. Profit-taking at channel lines and the 'weekly EMA turns flat' exit for long-term traders are not exact rules (channel coefficient is fitted to contain ~95% of prices) and are not modelled; this is the short-term exit the book states for the Force Index entry."),
         d("elcim_fi2", "Force Index 2-day EMA with 22-day EMA trend", "Ch 5 · Force Index", "Long/Short", Live, true, FI2,
@@ -377,19 +380,19 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     match id {
         "elcim_impulse" => Some(vec![
-            p("ema", "Daily EMA length", 13., 5., 30., 1.),
-            p("fast", "MACD fast EMA", 12., 5., 20., 1.),
-            p("slow", "MACD slow EMA", 26., 15., 40., 1.),
-            p("sig", "MACD signal EMA", 9., 3., 15., 1.),
-            p("wema", "Weekly EMA length", 26., 10., 52., 1.),
-            p("wfilter", "Weekly trend: 0 = 26-week EMA slope (book default), 1 = weekly MACD-H slope, 2 = both", 0., 0., 2., 1.),
-            p("next_open", "Fill: 1 = next open (book's first option), 0 = at the signal close", 1., 0., 1., 1.),
+            p("ema", "Daily EMA length (fixed source choice)", 13., 13., 13., 1.),
+            p("fast", "MACD fast EMA (fixed)", 12., 12., 12., 1.),
+            p("slow", "MACD slow EMA (fixed)", 26., 26., 26., 1.),
+            p("sig", "MACD signal EMA (fixed)", 9., 9., 9., 1.),
+            p("wema", "Weekly EMA length (fixed)", 26., 26., 26., 1.),
+            p("wfilter", "Weekly filter: EMA26 slope (fixed0; alternatives held)", 0., 0., 0., 1.),
+            p("next_open", "Next actual open (fixed1; same-close held)", 1., 1., 1., 1.),
         ]),
         "elcim_ts_fi" => Some(vec![
             p("wema", "Weekly EMA length", 26., 10., 52., 1.),
             p("fi", "Force Index EMA length", 2., 1., 13., 1.),
             p("ticks", "Ticks beyond the previous high/low (book: at it, or a tick beyond)", 0., 0., 1., 1.),
-            p("safezone", "SafeZone stop: 0 = off (book default), 1 = on", 0., 0., 1., 1.),
+            p("safezone", "Legacy held stop option: 0 = off, 1 = on; source protection is mandatory", 0., 0., 1., 1.),
             p("sz_coef", "SafeZone coefficient", 2., 2., 3., 0.5),
             p("sz_len", "SafeZone lookback days", 10., 10., 20., 5.),
         ]),
@@ -402,6 +405,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 }
 
 pub fn validate(id: &str, p: &Params) -> Option<String> {
+    if id==super::elcim_account::ID {return super::elcim_account::validate(p);}
     validate_with(&params(id)?, p)
 }
 pub fn validate_with(schema: &[ParamDef], p: &Params) -> Option<String> {
@@ -416,6 +420,9 @@ pub fn validate_with(schema: &[ParamDef], p: &Params) -> Option<String> {
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+    // Cost-aware API execution is dispatched before this generic book interface.
+    // Direct zero-cost callers must receive the same protected account decisions.
+    if id==super::elcim_account::ID {return super::elcim_account::run(x,from,to,0.,p).ok().map(|a|a.trades);}
     let schema = params(id)?;
     if validate(id, p).is_some() || from > to || to >= x.c.len() {
         return None;
@@ -425,23 +432,6 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let both: &[f64] = &[1.0, -1.0];
     let never = |_: usize, _: f64| false;
     match id {
-        "elcim_impulse" => {
-            let e = ema(&x.c, u("ema"));
-            let mh = macd_hist(&x.c, u("fast"), u("slow"), u("sig"));
-            let wk = weekly(x);
-            let (we, wm) = (ema(&wk.close, u("wema")), macd_hist(&wk.close, 12, 26, 9));
-            let wf = u("wfilter");
-            let wdir = |i: usize| -> i8 {
-                let (a, b) = (wk.slope(&we, i), wk.slope(&wm, i));
-                match wf { 0 => a, 1 => b, _ => if a == b { a } else { 0 } }
-            };
-            let green = |i: usize, d: f64| if d > 0.0 { rising(&e, i) && rising(&mh, i) } else { falling(&e, i) && falling(&mh, i) };
-            let trig = |i: usize, d: f64| wdir(i) == d as i8 && green(i, d);
-            let exit = |i: usize, d: f64| !green(i, d);
-            let nx = u("next_open") == 1;
-            Some(simulate(x, from, to, &Rules { sides: both, trig: &trig, keep: &never, exit: &exit,
-                entry: if nx { Entry::NextOpen } else { Entry::Close }, exit_next_open: nx, protect: Protect::None, exit_reason: "Impulse signal disappeared" }))
-        }
         "elcim_ts_fi" => {
             let wk = weekly(x);
             let we = ema(&wk.close, u("wema"));

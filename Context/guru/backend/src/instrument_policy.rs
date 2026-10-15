@@ -40,6 +40,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || (def.book=="sbma" && crate::books::sbma::next_reviewed_stock_rule(def.id))
         || (def.book=="sbma" && crate::books::sbma::four_reviewed_stock_rule(def.id))
         || (def.book=="ehrs" && crate::books::ehrs::reviewed_sinetrend(def.id))
+        || (def.book=="elcim" && def.id==crate::books::elcim_account::ID)
 }
 fn reviewed_adaptive_rule(def:&StrategyDef)->bool {
     def.book=="kftsm" && member(def.id,&["kftsm_kama","kftsm_adapt_exp","kftsm_vidya","kftsm_adapt_r2","kftsm_adapt_rsi","kftsm_swg","kftsm_swing","kftsm_raschke_first_cross","kftsm_outside_day","kftsm_fc_bb_abx"])
@@ -66,6 +67,12 @@ fn base_policy(def:&StrategyDef)->Policy {
     if def.book=="sbma" && crate::books::sbma::four_reviewed_stock_rule(def.id) {
         let mut p=stock("Burns Moving Averages 101, physical PDF58-60/64/67: four exact long/cash moving-average pairs. Source rules and full chronological selected AAPL/RELIANCE ledgers independently reviewed; native host/API integration checked separately in library/sbma/INDEPENDENT-FOUR-LONG-REVIEW-2026-10-15.md. Actual individual stocks only. Full supplied earlier history is retained; EMA first-n SMA seed, strict equality, flat test start and idealized signal-close/next-actual-open fills are declared conventions. Truncating EMA150 warmup changes selected signals. Original charts, historical stock population, capital sizing and book performance are not reproduced; quote adjustments, membership and execution remain qualified. Final open liquidation estimates are separate from actual filled exit orders.");
         p.market_adaptation=true;return p;
+    }
+    // Exact source/account composition only, before generic multi-instrument
+    // review handling. Basket execution has no corresponding event contract.
+    if def.book=="elcim" && def.id==crate::books::elcim_account::ID {
+        let mut p=stock("Elder Come Into My Trading Room pp158-161,171-180,220-227 and primary Study Guide answers55/77-80. Independently accepted protected daily Impulse research composition on actual selected AAPL/RELIANCE: next actual open, completed-week EMA26, daily EMA13/MACD12-26-9, unrounded fixed SafeZone10/2 and source2%/6% cost-aware normalized cash/risk account. Fixed worksheet lookback omits p179 discretionary turning-point resets. Source-account-aware page/export basis and exact default guards remain mandatory. Actual stocks only; no index/ETF or basket inheritance. Hypothetical shorts, fractional units, continuous stops, supplied adjustment qualification and flat selected start are declared conventions. Gross retains the same quantities; open marks pay actual entry costs only. No source-study reproduction, monetary capital, real lot/borrow or tax certification. See library/elcim/INDEPENDENT-BACKEND-REVIEW-2026-10-15.md and API-FIELD-CONTRACT.md.");
+        p.execution_scope="single_symbol_source_account";p.market_adaptation=true;return p;
     }
     if def.book=="sbma" && crate::books::sbma::next_reviewed_stock_rule(def.id) {
         let mut p=stock("Burns Moving Averages 101, physical PDF54-60 and67: exact source-default selected-stock research configurations. See library/sbma/INDEPENDENT-NEXT-REVIEW-2026-10-15.md. EMA SMA seeding, flat test start, strict ties and idealized same-close/next-observed-open fills are declared implementation conventions. Original chart populations/performance are not reproduced. Actual stocks are required; current snapshots do not establish unbiased historical membership. The 200-SMA short is a hypothetical price-return study without certified borrowing/margin/overnight feasibility. Platform final open-mark liquidation estimates remain separate from filled orders.");
@@ -239,6 +246,14 @@ mod tests {
     fn def(id: &'static str, book: &'static str) -> StrategyDef {
         StrategyDef { id, book, name: "Test", group: "Test", session: 0, dir: "Long", status: Status::Live,
             needs_volume: false, needs_vix: false, needs_series: &[], rules: &[], notes: "", claim: None }
+    }
+    #[test]
+    fn exact_protected_elder_account_requires_actual_stocks_and_never_inherits(){
+        let d=def("elcim_impulse","elcim");assert!(reviewed_cash_rule(&d));assert_eq!(policy(&d).allowed_types,&["individual_stock"]);assert_eq!(policy(&d).execution_scope,"single_symbol_source_account");
+        assert!(check(&d,"RELIANCE",true).is_none());assert!(check_native(&d,"AAPL",&NativeEvidence::us_test_fixture()).is_none());
+        for tk in ["NIFTY 50","SPX","SPY","QQQ","RELIANCE"]{assert!(check(&d,tk,false).is_some());}
+        assert!(!reviewed_cash_rule(&def("elcim_impulse","other")));
+        for id in ["elcim_fi2","elcim_ts_fi","eltfl_sroc","elcim_new"]{let d=def(id,"elcim");assert!(!reviewed_cash_rule(&d));assert_eq!(policy(&d).requirement,"source_review_required");}
     }
     #[test]
     fn reviewed_burns_keys_require_real_stocks_without_opening_other_methods() {

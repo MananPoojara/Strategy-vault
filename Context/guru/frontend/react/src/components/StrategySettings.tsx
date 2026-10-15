@@ -3,12 +3,13 @@ import {createPortal} from "react-dom";
 import type {ReturnDisplayMode} from "../services/return-display";
 import "./StrategySettings.css";
 
-export function StrategySettings({mode = "fixed", onApply, disabledReason}: {
+export function StrategySettings({mode = "fixed", onApply, disabledReason, sourceAccount = false}: {
   mode?: ReturnDisplayMode;
   onApply: (mode: ReturnDisplayMode) => void;
   /** Portfolio reports have their own chronological accounting; they must not
    * multiply the returns of overlapping positions in closing order. */
   disabledReason?: string;
+  sourceAccount?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<ReturnDisplayMode>(mode);
@@ -71,17 +72,23 @@ export function StrategySettings({mode = "fixed", onApply, disabledReason}: {
           </header>
           <p id={`${id}-description`} className="strategy-settings-intro">Choose how closed-trade returns are displayed.</p>
           <fieldset className="strategy-settings-group" data-settings-group="return-display" disabled={Boolean(disabledReason)}>
-            <legend>Net Profit calculation</legend>
+            <legend>{sourceAccount ? "Closed weighted-return display" : "Net Profit calculation"}</legend>
             <label className={`strategy-settings-option ${draft === "fixed" ? "selected" : ""}`}>
               <input type="radio" name={`${id}-return-mode`} value="fixed" checked={draft === "fixed"} onChange={() => setDraft("fixed")} />
-              <span><strong>Fixed quantity</strong><small>Additive trade-return view. No share quantity supplied.</small></span>
+              <span><strong>{sourceAccount ? "Closed return sum" : "Fixed quantity"}</strong><small>{sourceAccount
+                ? "Add accepted closed net fractions of each actual entry equity."
+                : "Additive trade-return view. No share quantity supplied."}</small></span>
             </label>
             <label className={`strategy-settings-option ${draft === "compound" ? "selected" : ""}`}>
               <input type="radio" name={`${id}-return-mode`} value="compound" checked={draft === "compound"} onChange={() => setDraft("compound")} />
-              <span><strong>Compounding</strong><small>Multiply each closed trade’s net return factor.</small></span>
+              <span><strong>{sourceAccount ? "Hypothetical closed compounding" : "Compounding"}</strong><small>{sourceAccount
+                ? "Multiply accepted closed weighted-return factors; this does not resize positions."
+                : "Multiply each closed trade’s net return factor."}</small></span>
             </label>
           </fieldset>
-          <p className="strategy-settings-note">{disabledReason || "Percentage report using closed trades only. Open-position marks are excluded."}</p>
+          <p className="strategy-settings-note">{disabledReason || (sourceAccount
+            ? "Display only. The mandatory 2%/6% risk controller, actual cash account, equity and risk statistics stay unchanged. Open holdings are excluded from this closed-return display."
+            : "Percentage report using closed trades only. Open-position marks are excluded.")}</p>
           <footer className="strategy-settings-actions">
             <button type="button" onClick={close}>Cancel</button>
             <button type="button" className="strategy-settings-apply" disabled={Boolean(disabledReason)} onClick={() => {close(); onApply(draft);}}>Apply</button>
