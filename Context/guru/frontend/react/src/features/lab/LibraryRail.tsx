@@ -23,6 +23,7 @@ export function LibraryRail({ catalogue, market, hasVolume, tf, onAdd, onRead }:
     <>
       <input type="search" value={query} onChange={(e) => setQuery(e.target.value)}
         placeholder="Search name, id, TradingView or AmiBroker name" aria-label="Search indicators" />
+      {groups.length === 0 && <div className="empty">No indicator matches "{query}".</div>}
       {groups.map(([category, list]) => (
         <details open key={category}>
           <summary>{category} <small>{list.length}</small></summary>

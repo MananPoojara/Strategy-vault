@@ -3,7 +3,7 @@
 .lab-library li { list-style: none; display: flex; align-items: flex-start; gap: 6px; padding: 2px 0; }
 .lab-library li > button[data-lab-item] { flex: 1; min-width: 0; text-align: left; font: 500 13px var(--font); color: var(--ink); background: none; border: 0; padding: 4px 2px; cursor: pointer; }
 .lab-library li > button[data-lab-item] small { display: block; color: var(--ink3); font-weight: 400; }
-.lab-library button[disabled] { color: var(--ink3); cursor: not-allowed; }
+.lab-library li > button[data-lab-item]:disabled, .lab-library button[disabled] { color: var(--ink3); cursor: not-allowed; }
 .lab-library summary { cursor: pointer; font-weight: 600; color: var(--ink2); padding: 4px 0; }
 .lab-library summary small { color: var(--ink3); font-weight: 400; }
 .lab-library input[type=search] { width: 100%; box-sizing: border-box; font: 500 13px var(--font); padding: 6px 8px; margin: 6px 0 8px; border: 1px solid var(--steel); border-radius: var(--r-field); background: var(--card); color: var(--ink); }
