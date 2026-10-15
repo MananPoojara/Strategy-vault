@@ -103,6 +103,10 @@ Each smoke case has:
 ```
 
 Markets are `india` and `us`; guru routes are `connors`, `ross` and `chande`.
+Smoke requests preserve every explicit reviewed cost, slippage, rollover and
+strategy parameter. Zero-cost defaults apply only to omitted cost fields. The
+publication receipt records the exact query used for readiness and execution,
+so a reviewed nonzero-cost case cannot silently become a zero-cost check.
 Instrument classes are `index`, `etf` and `individual_stock`. Native stocks
 use the actual engine ticker from its admitted basket catalogue, not an index
 standing in for a stock. Every method needs at least one ready case. Add

@@ -382,7 +382,7 @@ def smoke(base, cases, catalogue_rows):
     by_id = {item["id"]: item for item in catalogue_rows}
     results = []
     for case in cases:
-        query = {**case["query"], "id": case["method_id"], "cost": "0", "slippage": "0", "rollover": "0"}
+        query = {"cost": "0", "slippage": "0", "rollover": "0", **case["query"], "id": case["method_id"]}
         route = "/api/guru/" + case["guru"]
         code, response = get_json(base, route + "/readiness", query)
         require(code == 200 and isinstance(response, dict), "Actual-instrument readiness request failed")
@@ -395,10 +395,10 @@ def smoke(base, cases, catalogue_rows):
             require(case["instrument_kind"] in policy.get("allowed_types", []), "Reviewed instrument class is not admitted by the method policy")
             require(code == 200 and isinstance(run, dict) and run.get("dates") and isinstance(run.get("trades"), list), "A ready method did not produce an actual-price backtest")
             require(len(run.get("equity", [])) == len(run["dates"]), "Actual-price backtest has inconsistent equity dates")
-            results.append({"method_id": case["method_id"], "market": case["market"], "ticker": case["query"]["ticker"], "readiness": actual, "trade_records": len(run["trades"])})
+            results.append({"method_id": case["method_id"], "market": case["market"], "ticker": case["query"]["ticker"], "readiness": actual, "query": query, "trade_records": len(run["trades"])})
         else:
             require(code >= 400, "An incompatible instrument unexpectedly produced a backtest")
-            results.append({"method_id": case["method_id"], "market": case["market"], "ticker": case["query"]["ticker"], "readiness": actual, "blocked": True})
+            results.append({"method_id": case["method_id"], "market": case["market"], "ticker": case["query"]["ticker"], "readiness": actual, "query": query, "blocked": True})
     return results
 
 

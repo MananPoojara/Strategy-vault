@@ -371,6 +371,27 @@ class PublicationGates(unittest.TestCase):
             with self.assertRaises(publisher.Held):
                 publisher.catalogue("http://example.invalid")
 
+    def test_smoke_runs_and_records_the_exact_reviewed_costs_and_parameters(self):
+        template = self.review["smoke_cases"][0]
+        cases = [
+            {**template, "query": {"ticker": "NIFTY 50", "slippage": "5", "rollover": "0", "p.fill": "1"}},
+            {**template, "query": {"ticker": "NIFTY 50", "cost": "2", "slippage": "7.5", "rollover": "3"},
+             "expected_readiness": "not_testable"},
+        ]
+        rows = [{"id": "test_rule", "instrument_policy": {"allowed_types": ["index"]}}]
+        responses = [(200, {"strategies": [{"id": "test_rule", "status": "ready"}]}),
+                     (200, {"dates": ["2020-01-01"], "equity": [1], "trades": []}),
+                     (200, {"strategies": [{"id": "test_rule", "status": "not_testable"}]}),
+                     (400, "Unsupported reviewed costs")]
+        with mock.patch.object(publisher, "get_json", side_effect=responses) as request:
+            results = publisher.smoke("http://example.invalid", cases, rows)
+        for index, case in enumerate(cases):
+            expected = {"cost": "0", "slippage": "0", "rollover": "0", **case["query"], "id": "test_rule"}
+            self.assertEqual(request.call_args_list[index * 2].args[2], expected)
+            self.assertEqual(request.call_args_list[index * 2 + 1].args[2], expected)
+            self.assertEqual(results[index]["query"], expected)
+        self.assertNotIn("id", cases[0]["query"])
+
     def test_commands_keep_output_private_and_reject_failed_command(self):
         import sys
         commands = publisher.Commands(self.root / "private-command-logs")
