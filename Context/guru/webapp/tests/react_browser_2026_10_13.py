@@ -25,7 +25,7 @@ async def main():
    scope=await page.get_by_label('Library scope',exact=True).bounding_box();sorting=await page.locator('#library-sort').bounding_box();assert abs(scope['y']-sorting['y'])<8
    await expect(page.get_by_label('Library scope',exact=True)).to_have_value('trading')
    await page.get_by_role('button',name='Books & reading',exact=True).click();await expect(page.locator('[data-library-book]')).to_have_count(24,timeout=30000)
-   await page.locator('#library-query').fill('Engineering Matlab Programming');await expect(page.locator('.library-empty')).to_be_visible(timeout=30000)
+   await page.locator('#library-query').fill('Engineering Matlab Programming');await page.locator('#library-query').press('Enter');await expect(page.locator('.library-empty')).to_be_visible(timeout=30000)
    await page.get_by_label('Library scope',exact=True).select_option('technical');await expect(page.locator('[data-library-book]').first).to_be_visible(timeout=30000)
    await expect(page.locator('[data-library-book]').first).to_contain_text('Supporting technical reference')
    await page.locator('[data-library-book] h3 a').first.click();await expect(page.locator('[data-reading-scope]')).to_contain_text('not counted as a trading-strategy',timeout=30000)
@@ -34,7 +34,7 @@ async def main():
    await page.goto(BASE+'/#/');await expect(page.locator('[data-library-author]')).to_have_count(24,timeout=30000)
 
    await page.screenshot(path=str(OUT/'react-home.png'));checks.append('Native React home renders the source library and24author cards')
-   await page.locator('#library-query').fill('Van Tharp');await expect(page.locator('[data-library-author="tharp"]')).to_be_visible(timeout=30000)
+   await page.locator('#library-query').fill('Van Tharp');await page.locator('#library-query').press('Enter');await expect(page.locator('[data-library-author="tharp"]')).to_be_visible(timeout=30000)
    await expect(page.locator('[data-library-entry-count="tharp"]')).to_have_text('19');checks.append('Search preserves reviewed Van Tharp19entry coverage')
    await page.locator('[data-library-author="tharp"] .lc-more').click();await expect(page.locator('.gmodal')).to_be_visible();await page.locator('.gm-x').click();await expect(page.locator('.gmodal')).to_have_count(0)
    await page.locator('[data-library-author="tharp"] .lc-open').click();await expect(page.locator('[data-book="tharp_super_trader"]')).to_be_visible(timeout=30000)

@@ -10,5 +10,6 @@ it("uses plain counter labels and explains grouping without changing supplied co
  expect(html).toContain('data-count="83"');expect(html).toContain('data-count="15"');
  expect(html).toContain("parameter versions");expect(html).toContain("different books can count separately");
  expect(html).toContain("does not");expect(html).toContain("original published study");
+ expect(html).not.toContain("Download book inventory");expect(html).not.toContain(">Larry Connors</a>");expect(html).toContain("Browse all strategies");
  expect(html).not.toContain("Implemented methods");expect(html).not.toContain("Backtest families on");
 });
