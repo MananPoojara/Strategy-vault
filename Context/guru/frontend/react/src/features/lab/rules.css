@@ -1,0 +1,13 @@
+.lab-rules h3 { margin: 0 0 4px; font-size: 13px; color: var(--ink); }
+.lab-rules small { margin-left: 8px; font-weight: 500; color: var(--ink2); }
+.lab-orders { display: grid; gap: 8px; margin: 10px 0 14px; }
+.lab-side + .lab-side { margin-top: 14px; }
+.lab-side > .dbtn { margin-top: 8px; }
+.lab-cond { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--rule); }
+.lab-operand { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.lab-order { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.lab-order > .dfield:first-child { min-width: 96px; }
+.lab-settings { margin-top: 14px; }
+.lab-rules select { font: 500 13px var(--font); padding: 5px 8px; border: 1px solid var(--steel); border-radius: var(--r-field); background: var(--card); color: var(--ink); max-width: 100%; }
+.lab-rules .dfield input { background: var(--card); color: var(--ink); }
+.lab-rules .dfield input[type=number] { width: 76px; }
