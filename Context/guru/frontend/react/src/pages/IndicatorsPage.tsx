@@ -6,6 +6,8 @@ import { COPY } from "../features/lab/labels";
 import { readLabQuery, writeLabQuery } from "../features/lab/url-state";
 import { editorState, initialLabState, labReducer, runKey } from "../features/lab/lab-state";
 import { runQuery, specProblems } from "../features/lab/spec-model";
+import { treeProblems } from "../features/lab/rule-tree";
+import { executionProblems, instrumentContext } from "../features/lab/execution-model";
 import { availability } from "../features/lab/catalogue";
 import { defaultTicker, optionsFromGl, optionsFromTickers, savedMarket } from "../features/lab/instruments";
 import { ErrorNotice, LabErrorBoundary, Loading, ServerLabel } from "../features/lab/ui";
@@ -30,12 +32,24 @@ export function IndicatorsPage() {
 /** Everything loaded for one market, tagged so a late answer for another market is never used. */
 type MarketData = { market: Market; cat: Catalogue; rows?: TickerRow[]; gl?: InstrumentsResponse } | { market: Market; error: unknown };
 
+const LAB_TABS = [{ id: "strategy", label: "Strategy & backtest" }, { id: "optimization", label: "Optimization" }, { id: "customize", label: "Customize" }, { id: "saved", label: "Saved strategies" }] as const;
+type LabTab = typeof LAB_TABS[number]["id"];
+
 const Part = ({ children }: { children: ReactNode }) => <LabErrorBoundary>{children}</LabErrorBoundary>;
 
 function IndicatorsLab() {
   const query = useMemo(() => readLabQuery(), []);
   const [state, dispatch] = useReducer(labReducer, undefined, () =>
     initialLabState(query, /[?&]region=/.test(location.hash) ? undefined : vaultStore.getSnapshot().state?.region));
+  const [tab, setTab] = useState<LabTab>("strategy");
+  const showStrategy = (selector = ".lab-rules") => {
+    setTab("strategy");
+    requestAnimationFrame(() => {
+      const target = document.querySelector<HTMLElement>(selector);
+      target?.focus({ preventScroll: true });
+      target?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    });
+  };
   const [role, setRole] = useState<Role | null>(null);
   const [data, setData] = useState<MarketData | null>(null);
   const [result, setResult] = useState<RunResult | null>(null);
@@ -52,6 +66,7 @@ function IndicatorsLab() {
   const runSeq = useRef(0);
   const opened = useRef<string | null>(null); // instrument of the row or snapshot just opened
   const [swapNote, setSwapNote] = useState("");
+  const [savePrefill, setSavePrefill] = useState<{ name: string; seq: number } | undefined>();
   const { market, ticker } = state;
 
   useEffect(() => { getAccount().then((a) => setRole(a.user.role), () => {}); }, []); // the App shell handles sign-in
@@ -75,6 +90,7 @@ function IndicatorsLab() {
   }, [loaded, allowedTypes]);
   const option = options?.find((o) => o.ticker === ticker);
   const savedMarketValue = savedMarket(market, option);
+  const instrument = useMemo(() => instrumentContext(market, option), [market, option]);
 
   useEffect(() => {
     if (!options || options.some((o) => o.ticker === ticker && !o.disabled)) return;
@@ -121,7 +137,7 @@ function IndicatorsLab() {
   }, [market, customize]);
 
   const openRow = useCallback((row: LabStrategy) => {
-    opened.current = row.instrument; setSwapNote("");
+    setTab("strategy"); opened.current = row.instrument; setSwapNote("");
     dispatch({ type: "market", market: row.market === "crypto" ? "gl" : row.market });
     dispatch({ type: "ticker", ticker: row.instrument });
     dispatch({ type: "open", row, spec: row.spec });
@@ -174,7 +190,7 @@ function IndicatorsLab() {
   };
 
   const loadSeries = useCallback((q: { id: string; tf: string; p?: Record<string, number> }) => lab.series(market, { ...q, ticker }), [market, ticker]);
-  const problems = useMemo(() => (cat ? specProblems(state.spec, cat) : []), [state.spec, cat]);
+  const problems = useMemo(() => (cat ? [...specProblems(state.spec, cat), ...(cat.execution ? [...treeProblems(state.spec, cat), ...executionProblems(state.spec, cat, instrument)] : [])].filter((p, i, all) => all.indexOf(p) === i) : []), [state.spec, cat, instrument]);
   const methodNames = useMemo(() => Object.fromEntries(templates?.templates.map((t) => [t.method.id, t.method.name]) ?? []), [templates]);
   const glNote = loaded && "gl" in loaded ? loaded.gl?.provisional_note : undefined;
   const hasVolume = !!option?.hasVolume;
@@ -185,13 +201,16 @@ function IndicatorsLab() {
   if (loaded && "error" in loaded) work = <ErrorNotice error={loaded.error} market={market} />;
   else if (!cat || !options) work = <Loading text="Loading the Indicators lab…" />;
   else work = (
-    <div className="lab-grid">
+    <div className={`lab-grid${tab === "strategy" ? "" : " lab-grid-focused"}`}>
+      <div className="lab-library-slot" hidden={tab !== "strategy"}>
       <Part>
         <LibraryRail catalogue={cat} market={market} hasVolume={hasVolume} tf={state.tf}
           onAdd={(ind) => { if (availability(ind, { market, hasVolume, tf: state.tf }).ok) dispatch({ type: "chip-add", indicator: ind }); }}
           onRead={(ind) => setReading((cur) => (cur?.id === ind.id ? null : ind))} />
       </Part>
+      </div>
       <div className="lab-main">
+        <div role="tabpanel" id="lab-panel-strategy" aria-labelledby="lab-tab-strategy" hidden={tab !== "strategy"} className="lab-tab-panel">
         {reading && <Part><IndicatorDetail indicator={reading} catalogue={cat} onClose={() => setReading(null)} /></Part>}
         <Part>
           {ticker ? (
@@ -202,11 +221,11 @@ function IndicatorsLab() {
           ) : <div className="box empty">No instrument is available on this market.</div>}
         </Part>
         {/* No backtest yet: the rules take the whole row instead of leaving the right half empty. */}
-        <div className="two lab-two" data-lab-layout={backtestShown ? "split" : "full"}>
+        <div className="two lab-two" data-lab-layout={backtestShown ? "stacked" : "full"}>
           <Part>
             <div className="lab-rules-col">
             {openError ? <ErrorNotice error={openError} market={savedMarketValue} instrumentLabel={option?.instrumentLabel} /> : null}
-            <RuleBuilder spec={state.spec} catalogue={cat} onChange={(spec) => dispatch({ type: "spec", spec })}
+            <RuleBuilder spec={state.spec} catalogue={cat} instrument={instrument} onChange={(spec) => dispatch({ type: "spec", spec })}
               settings={settings} onSettings={(patch) => setSettings((s) => ({ ...s, ...patch }))}
               problems={problems} running={running} onRun={() => void run()} />
             </div>
@@ -218,26 +237,38 @@ function IndicatorsLab() {
           </Part>}
         </div>
         {result && !runError && <Part><RunTables result={result} /></Part>}
+        </div>
+        <div role="tabpanel" id="lab-panel-optimization" aria-labelledby="lab-tab-optimization" hidden={tab !== "optimization"} className="lab-tab-panel">
+        <p className="lab-tab-intro">Compare settings for <b>{ticker}</b>. Your strategy rules stay the same until you apply a result.</p>
         <Part key={`${market}|${ticker}`}>{/* a ticker change remounts it: an optimization belongs to one instrument */}
           <OptimizePanel spec={state.spec} catalogue={cat} market={savedMarketValue} role={role} dates={result?.dates ?? []}
             onOptimize={(spec, split) => lab.optimize(market, spec, {
               ticker, from: settings.from || undefined, to: settings.to || undefined, ...runQuery(spec, settings.fees, settings.slippage), split,
             })}
-            onApply={(spec) => { dispatch({ type: "spec", spec }); void run(spec); }}
+            onApply={(spec) => { setTab("strategy"); dispatch({ type: "spec", spec }); void run(spec); }}
             onTried={(n) => dispatch({ type: "tried", n })} tried={state.tried} instrumentLabel={option?.instrumentLabel} />
         </Part>
+        </div>
+        <div role="tabpanel" id="lab-panel-customize" aria-labelledby="lab-tab-customize" hidden={tab !== "customize"} className="lab-tab-panel">
         <Part>
-          <CustomizePanel market={savedMarketValue} ticker={ticker} selected={customize}
+          <CustomizePanel market={savedMarketValue} ticker={ticker} selected={customize} instrumentType={option?.type}
+            catalogue={cat} spec={state.spec} onSpec={(spec) => dispatch({ type: "spec", spec })}
             templates={templates} templatesError={templatesError} template={template} templateError={templateError}
             onSelect={(id) => { setCustomize(id); writeLabQuery({ customize: id }); }}
             onClear={() => { setCustomize(""); writeLabQuery({ customize: "" }); }}
-            loadFidelity={(id, tk) => lab.fidelity(market, id, tk, settings.from || undefined, settings.to || undefined)} />
+            loadTemplate={(id) => lab.template(market, id)}
+            loadFidelity={(id, tk) => lab.fidelity(market, id, tk, settings.from || undefined, settings.to || undefined)}
+            running={running} canRun={!!ticker && problems.length === 0} resultReady={!!result && !runError} onRun={() => { setTab("strategy"); void run(); }} onShowRules={() => showStrategy()} onShowResult={() => showStrategy("[data-lab-result]")}
+            onSaveVariant={(name) => { setTab("saved"); setSavePrefill((p) => ({ name, seq: (p?.seq ?? 0) + 1 })); }} />
         </Part>
+        </div>
+        <div role="tabpanel" id="lab-panel-saved" aria-labelledby="lab-tab-saved" hidden={tab !== "saved"} className="lab-tab-panel">
         <Part>
-          <SavedStrategies role={role} api={lab.strategies} editor={editorState(state, savedMarketValue)} methodNames={methodNames}
+          <SavedStrategies role={role} api={lab.strategies} editor={editorState(state, savedMarketValue)} methodNames={methodNames} prefill={savePrefill}
             onOpen={openRow} onSaved={(row) => dispatch({ type: "row", row })} />
         </Part>
         {role === "admin" && <Part><ReviewQueue api={lab.strategies} onOpen={openRow} /></Part>}
+        </div>
       </div>
     </div>
   );
@@ -253,6 +284,13 @@ function IndicatorsLab() {
         onTicker={(t) => { opened.current = null; setSwapNote(""); dispatch({ type: "ticker", ticker: t }); }} tf={state.tf} timeframes={cat?.timeframes ?? ["D", "W", "M"]}
         onTf={(tf) => dispatch({ type: "tf", tf })} range={state.range} onRange={(range) => dispatch({ type: "range", range })}
         provisionalNote={glNote} />
+      <div className="lab-tabs" role="tablist" aria-label="Indicators workspace">
+        {LAB_TABS.map((item, i) => <button key={item.id} id={`lab-tab-${item.id}`} type="button" role="tab" aria-selected={tab === item.id} aria-controls={`lab-panel-${item.id}`} tabIndex={tab === item.id ? 0 : -1}
+          onClick={() => setTab(item.id)} onKeyDown={(event) => {
+            const next = event.key === "ArrowRight" ? (i + 1) % LAB_TABS.length : event.key === "ArrowLeft" ? (i + LAB_TABS.length - 1) % LAB_TABS.length : event.key === "Home" ? 0 : event.key === "End" ? LAB_TABS.length - 1 : undefined;
+            if (next !== undefined) { event.preventDefault(); setTab(LAB_TABS[next].id); document.getElementById(`lab-tab-${LAB_TABS[next].id}`)?.focus(); }
+          }}>{item.label}</button>)}
+      </div>
       {swapNote && <p className="rnote" data-lab-swap>{swapNote}</p>}
       {work}
     </div>

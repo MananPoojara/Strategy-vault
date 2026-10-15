@@ -20,9 +20,11 @@ export function createLabChart(el: HTMLElement, height: number, options: Record<
   const colors = themeColors(el);
   const chart: LabChartApi = library.createChart(el, {
     width: el.clientWidth || 600, height,
-    layout: { background: { color: colors.panel }, textColor: colors.ink, fontFamily: "IBM Plex Mono, monospace" },
-    grid: { vertLines: { color: colors.rule }, horzLines: { color: colors.rule } },
-    rightPriceScale: { borderColor: colors.steel }, timeScale: { borderColor: colors.steel },
+    layout: { attributionLogo: false, background: { color: colors.panel }, textColor: colors.ink3,
+      fontFamily: getComputedStyle(document.body).fontFamily, fontSize: 11 },
+    grid: { vertLines: { visible: false }, horzLines: { color: colors.rule } },
+    rightPriceScale: { borderColor: colors.steel }, timeScale: { borderColor: colors.steel, minBarSpacing: 0.05 },
+    crosshair: { mode: library.CrosshairMode?.Normal ?? 0 }, handleScale: { axisPressedMouseMove: false },
     ...options,
   });
   const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => {

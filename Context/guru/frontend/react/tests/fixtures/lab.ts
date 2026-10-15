@@ -5,6 +5,8 @@ import type {
   RunResult, SeriesResponse, TemplateResponse, TemplatesResponse, TickerRow,
 } from "../../src/features/lab/types";
 
+import { MODEL_NOTE, MONEY_BASIS_HINT } from "../../src/features/lab/labels";
+
 const needs = { volume: false, intraday: false, breadth: false, second_symbol: false, fundamentals: false, derivatives: false, onchain: false };
 const ind = (patch: Partial<Indicator> & Pick<Indicator, "id" | "name" | "category">): Indicator => ({
   placement: "price", needs, computed: true, params: [], outputs: [patch.id], first: [0], sparse: false,
@@ -173,3 +175,50 @@ export async function unmount() {
 }
 /** Let pending promises and effects settle inside act. */
 export const flush = () => act(async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); await new Promise((r) => setTimeout(r, 0)); });
+
+/** Synthetic Phase 7 contracts for UI tests; money rows are not a validated ledger export. */
+export const catalogue7Fixture: Catalogue = {
+  ...catalogueFixture,
+  operators: ["crosses_above", "crosses_below", ">", "<", ">=", "<=", "=", "!=", "crosses", "between", "outside", "rising", "falling"],
+  timeframes: ["D", "W", "M", "Q", "Y"], custom_days: [2, 63], expand_modes: ["last", "first", "point"],
+  max_leaves: 40, max_nodes: 120, node_kinds: ["all", "any", "not", "at_least", "then"],
+  expressions: ["add", "sub", "mul", "div", "min", "max", "pct", "abs", "ref", "sum", "avg", "highest", "lowest", "change",
+    "bars_since", "value_when", "highest_since", "lowest_since", "count", "compress"],
+  max_query_bytes: 16384,
+  execution: {
+    direction: ["long", "short", "both"], fill: ["next_open", "close"], opposite: ["reverse", "exit", "ignore"], entry_on: ["level", "edge"],
+    intrabar: ["stop_first", "ohlc_path"], sizing: ["pct_equity", "risk_pct"], distances: ["pct", "atr", "points", "at"],
+    max_take_profits: 3, max_legs: 5, max_valid_bars: 20, max_delay_bars: 10,
+    cooldown_after: ["any", "loss", "win"], max_cooldown_bars: 1000, max_trades_per: ["W", "M", "Q", "Y"], max_trades_count: 1000,
+    max_consecutive_losses: 1000, max_pause_bars: 100000, max_drawdown_pct_below: 100,
+  },
+  indicators: [...catalogueFixture.indicators,
+    ind({ id: "calendar", name: "Calendar", category: "Periods & calendar", outputs: ["dow", "day", "month", "year", "doy", "bar_index"], first: [0, 0, 0, 0, 0, 0] }),
+    ind({ id: "session", name: "Session", category: "Periods & calendar",
+      outputs: ["tdom", "tdoq", "tdoy", "tdow", "week_of_month", "quarter", "weekdays_left_m", "weekdays_left_q", "weekdays_left_y"],
+      first: [31, 91, 366, 5, 31, 0, 0, 0, 0] }),
+    ind({ id: "sessions_left", name: "Sessions left", category: "Periods & calendar", outputs: ["m", "q", "y"], first: [0, 0, 0], sparse: true }),
+  ],
+};
+export const run7Fixture: RunResult = {
+  ...runFixture,
+  execution_model: { kind: "index", mode: "unit", executable: false, notes: [MODEL_NOTE.index], events: ["risk pause after 2 losing trades on 2024-01-15"] },
+  adaptations: ["sessions_left reads this instrument's future session dates"],
+  trades: [
+    { ...runFixture.trades[0], legs: [["2024-01-08", 101, 0.5], ["2024-01-09", 101.5, 0.5]],
+      fills: [["2024-01-10", 103, 0.5], ["2024-01-15", 102, 0.5]] },
+    { ...runFixture.trades[1], entry_kind: "reverse" },
+  ],
+};
+export const money7Fixture: RunResult = {
+  ...runFixture,
+  instrument: { ticker: "SPY", type: "etf", native: true, market: "us", currency: "USD" },
+  execution_model: { kind: "etf", mode: "money", executable: true, notes: [], events: [] },
+  money: { capital: 100000, final_equity: 101234.5, costs_total: 42, skipped: 1, currency: "USD",
+    basis: MONEY_BASIS_HINT + " Quantities are computed on the admitted price series." },
+  costs: { commission: { per_order: 21, per_unit: 0, pct: 0 }, slippage: { bps: 0 }, taxes: [], borrow_pct_year: null, basis: MONEY_BASIS_HINT },
+  ledger: [
+    { entry: "2024-01-08", qty: 10, notional: 1010, costs: 21, pnl: 9.4 },
+    { entry: "2024-02-01", qty: 10, notional: 1050, costs: 21, pnl: -10.5 },
+  ],
+};

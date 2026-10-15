@@ -6,6 +6,10 @@ export interface VaultRuntimeContract {
   cleanup(): void;
   patch(patch: Record<string, string>): void;
   changeTheme(theme: string): void;
+  /** Shared book-results area renderer, reused by the lab without a separate chart implementation. */
+  renderAreaChart?(element: HTMLElement, dates: string[], values: number[], options: {
+    color: string; fmt: (value: number) => string; axFmt?: (value: number) => string; h?: number; markMin?: boolean;
+  }): void;
   openAuthor(id: string, event?: unknown): void;
   closeAuthor(): void;
   actions(): string;

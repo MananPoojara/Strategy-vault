@@ -3,12 +3,13 @@ import { act } from "react";
 import { IndicatorsPage } from "../src/pages/IndicatorsPage";
 import { clearLabCache } from "../src/features/lab/client";
 import {
-  catalogueFixture, fetchRouter, flush, glInstrumentsFixture, jsonResponse, mount, optimizeFixture, publishedFixture, runFixture,
+  catalogueFixture, catalogue7Fixture, fetchRouter, flush, glInstrumentsFixture, jsonResponse, mount, optimizeFixture, publishedFixture, runFixture,
   seriesFixture, templateFixture, templatesFixture, tickersFixture, unavailableTemplateFixture, unmount,
 } from "./fixtures/lab";
 
 const me = (role: string) => jsonResponse({ user: { id: "u1", name: "N", email: "n@x", role }, settings: { theme: "aqua" } });
 const series = (url: string) => { const id = new URL(url, "http://x").searchParams.get("id")!; return jsonResponse(seriesFixture(id, [id], { [id]: [1, 2, 3, 4, 5, 6] })); };
+let catalogueAnswer = catalogueFixture;
 let runAnswer: () => Response | Promise<Response>;
 let usTickers = tickersFixture;
 let templateAnswer = templateFixture;
@@ -17,7 +18,7 @@ const routes = (role = "researcher") => fetchRouter([
   ["/api/app/lab/strategies/published", () => jsonResponse(publishedFixture)],
   ["/api/app/lab/strategies/review", () => jsonResponse([])],
   ["/api/app/lab/strategies", () => jsonResponse({ error: "Saved strategies need the auth service; this local dev proxy has none." }, 503)],
-  [/\/api\/(in|us|gl)\/lab\/catalogue/, () => jsonResponse(catalogueFixture)],
+  [/\/api\/(in|us|gl)\/lab\/catalogue/, () => jsonResponse(catalogueAnswer)],
   ["/api/us/tickers", () => jsonResponse(usTickers)],
   ["/api/in/tickers", () => jsonResponse(tickersFixture)],
   ["/api/gl/lab/instruments", () => jsonResponse(glInstrumentsFixture)],
@@ -27,7 +28,7 @@ const routes = (role = "researcher") => fetchRouter([
   [/\/lab\/run/, () => runAnswer()],
   [/\/lab\/optimize/, () => jsonResponse(optimizeFixture)],
 ]);
-beforeEach(() => { clearLabCache(); runAnswer = () => jsonResponse(runFixture); usTickers = tickersFixture; templateAnswer = templateFixture; });
+beforeEach(() => { catalogueAnswer = catalogueFixture; clearLabCache(); runAnswer = () => jsonResponse(runFixture); usTickers = tickersFixture; templateAnswer = templateFixture; });
 afterEach(async () => { await unmount(); vi.unstubAllGlobals(); history.replaceState(null, "", "/"); });
 const go = async (hash: string, role = "researcher") => {
   history.replaceState(null, "", `/${hash}`);
@@ -60,7 +61,7 @@ it("an unknown ?tf= falls back to daily once the catalogue loads", async () => {
   expect(location.hash).not.toContain("tf=");
 });
 
-it("the rules span the full row until a backtest exists or is running, then sit beside it", async () => {
+it("the rules keep the full row and results appear below without squeezing conditions", async () => {
   const { host } = await go("#/indicators?tk=NIFTY%2050");
   const row = () => host.querySelector<HTMLElement>(".two.lab-two")!;
   expect(row().dataset.labLayout).toBe("full");
@@ -69,11 +70,11 @@ it("the rules span the full row until a backtest exists or is running, then sit 
   let release!: (r: Response) => void;
   runAnswer = () => new Promise<Response>((resolve) => { release = resolve; });
   await run(host);
-  expect(row().dataset.labLayout).toBe("split");
+  expect(row().dataset.labLayout).toBe("stacked");
   expect(row().querySelector("[role=status]")?.textContent).toBe("Running backtest…");
   await act(async () => release(jsonResponse(runFixture)));
   await flush();
-  expect(row().dataset.labLayout).toBe("split");
+  expect(row().dataset.labLayout).toBe("stacked");
   expect(row().querySelector("[data-lab-result]")).not.toBeNull();
   expect(row().children).toHaveLength(2);
 });
@@ -112,6 +113,26 @@ it("customize loads the template and runs with its origin", async () => {
   const runCall = f.calls.find((c) => c.url.includes("/lab/run"))!;
   const spec = JSON.parse(new URL(runCall.url, "http://x").searchParams.get("spec")!);
   expect(spec.origin).toEqual({ book: "ststw", method: "rsi2_4", template_version: 1 });
+});
+
+it("customize: an inline number edits the shared rules, runs with the origin, and step 4 prefills the save name", async () => {
+  const { host, f } = await go("#/indicators?customize=rsi2_4&tk=NIFTY%2050");
+  const inline = host.querySelector<HTMLInputElement>('[data-lab-phrases] input[aria-label="Entry 1 · Threshold"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(inline, "3");
+    inline.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  // The Strategy rules builder above shows the same number: one spec.
+  expect([...host.querySelectorAll<HTMLInputElement>(".lab-rules input[type=number]")].some((i) => i.value === "3")).toBe(true);
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-action="customize-run"]')!.click());
+  await flush();
+  const spec = JSON.parse(new URL(f.calls.find((c) => c.url.includes("/lab/run"))!.url, "http://x").searchParams.get("spec")!);
+  expect(spec.entry.all[0].rhs).toEqual({ value: 3 });
+  expect(spec.origin).toEqual({ book: "ststw", method: "rsi2_4", template_version: 1 });
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-action="customize-save"]')!.click());
+  const name = host.querySelector<HTMLInputElement>('[data-lab-saved] input[aria-label="Strategy name"]')!;
+  expect(name.value).toBe("My RSI 2 · 4");
+  expect(document.activeElement).toBe(name);
 });
 
 const spy = { ticker: "SPY", first: "2000-01-03", last: "2026-10-14", has_volume: true, series: [] };
@@ -176,4 +197,98 @@ it("an unavailable template leaves the open snapshot named in the URL", async ()
   expect(host.textContent).toContain(unavailableTemplateFixture.status === "unavailable" ? unavailableTemplateFixture.reason : "");
   expect(location.hash).toContain("published=12");
   expect(location.hash).toContain("customize=rsi2_4");
+});
+
+
+it("Phase7 blocks money on an index before any calculation request", async () => {
+  catalogueAnswer = catalogue7Fixture;
+  const { host, f } = await go("#/indicators?tk=NIFTY%2050");
+  const money = [...host.querySelectorAll<HTMLButtonElement>('[aria-label="Results in"] button')].find((b) => b.textContent === "Money")!;
+  expect(money.disabled).toBe(true);
+  expect(host.querySelector("[data-lab-money-blocked]")!.textContent).toContain("index");
+  expect(f.calls.some((c) => c.url.includes("/lab/run"))).toBe(false);
+});
+it("Phase7 money requests omit legacy cost and slippage transport", async () => {
+  catalogueAnswer = { ...catalogue7Fixture, execution: { ...catalogue7Fixture.execution!, sizing: [...catalogue7Fixture.execution!.sizing, "units", "value"] } };
+  usTickers = [...tickersFixture, { ticker: "SPY", native: true, asset_type: "etf", has_volume: true } as typeof tickersFixture[number]];
+  const { host, f } = await go("#/indicators?region=us&tk=SPY");
+  const money = [...host.querySelectorAll<HTMLButtonElement>('[aria-label="Results in"] button')].find((b) => b.textContent === "Money")!;
+  await act(async () => money.click());
+  await flush();
+  expect(host.querySelector('input[aria-label="Fees (bps / side)"]')).toBeNull();
+  await run(host);
+  const url = new URL(f.calls.find((c) => c.url.includes("/lab/run"))!.url, "http://x");
+  expect(url.searchParams.has("cost")).toBe(false);
+  expect(url.searchParams.has("slippage")).toBe(false);
+  expect(JSON.parse(url.searchParams.get("spec")!).execution.capital).toBe(1_000_000);
+});
+
+it("Phase7 nested constant comparisons block the request without losing the loaded template", async () => {
+  catalogueAnswer = catalogue7Fixture;
+  if (templateFixture.status !== "available") throw new Error("template fixture required");
+  templateAnswer = { ...templateFixture, template: { ...templateFixture.template, spec: { ...templateFixture.template.spec,
+    entry: { all: [{ any: [{ lhs: { value: 1 }, op: ">", rhs: { value: 2 } }] }] } } } };
+  const { host, f } = await go("#/indicators?customize=rsi2_4&tk=NIFTY%2050");
+  expect(host.textContent).toContain("one side must be a series");
+  expect(host.querySelector<HTMLButtonElement>('[data-lab-action="run"]')!.disabled).toBe(true);
+  expect(f.calls.some((c) => c.url.includes("/lab/run"))).toBe(false);
+});
+
+
+it("workspace tabs separate optimization and customize while keeping edits and results", async () => {
+  const { host } = await go("#/indicators?tk=NIFTY%2050");
+  const panel = (id: string) => host.querySelector<HTMLElement>(`#lab-panel-${id}`)!;
+  const choose = async (id: string) => { await act(async () => host.querySelector<HTMLButtonElement>(`#lab-tab-${id}`)!.click()); };
+  expect(panel("strategy").hidden).toBe(false);
+  expect(panel("optimization").hidden).toBe(true);
+  expect(panel("customize").hidden).toBe(true);
+  await run(host);
+  const result = host.querySelector("[data-lab-result]");
+  await choose("optimization");
+  expect(panel("strategy").hidden).toBe(true);
+  expect(panel("optimization").hidden).toBe(false);
+  const checked = host.querySelector<HTMLInputElement>("[data-lab-dim] input[type=checkbox]")!;
+  await act(async () => checked.click());
+  await choose("customize");
+  expect(panel("customize").hidden).toBe(false);
+  expect(host.querySelector(".lab-library-slot")?.hasAttribute("hidden")).toBe(true);
+  await choose("strategy");
+  expect(host.querySelector("[data-lab-result]")).toBe(result);
+  await choose("optimization");
+  expect(checked.checked).toBe(true);
+  await act(async () => host.querySelector("#lab-tab-optimization")!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
+  expect(host.querySelector("#lab-tab-customize")?.getAttribute("aria-selected")).toBe("true");
+  expect(document.activeElement).toBe(host.querySelector("#lab-tab-customize"));
+});
+
+it("customize jump and save actions open their destination tabs", async () => {
+  const { host } = await go("#/indicators?customize=rsi2_4&tk=NIFTY%2050");
+  await act(async () => host.querySelector<HTMLButtonElement>("#lab-tab-customize")!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-action="jump-rules"]')!.click());
+  expect(host.querySelector("#lab-tab-strategy")?.getAttribute("aria-selected")).toBe("true");
+  await vi.waitFor(() => expect(document.activeElement).toBe(host.querySelector(".lab-rules")));
+  await run(host);
+  await act(async () => host.querySelector<HTMLButtonElement>("#lab-tab-customize")!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-action="jump-result"]')!.click());
+  await vi.waitFor(() => expect(document.activeElement).toBe(host.querySelector("[data-lab-result]")));
+  await act(async () => host.querySelector<HTMLButtonElement>("#lab-tab-customize")!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-action="customize-save"]')!.click());
+  expect(host.querySelector("#lab-tab-saved")?.getAttribute("aria-selected")).toBe("true");
+  expect((host.querySelector('[data-lab-saved] input[aria-label="Strategy name"]') as HTMLInputElement).value).toBe("My RSI 2 · 4");
+});
+
+
+it("a book variant can replace an indicator through the full editor and retain its origin", async () => {
+  const { host, f } = await go("#/indicators?customize=rsi2_4&tk=NIFTY%2050");
+  await act(async () => host.querySelector<HTMLButtonElement>("#lab-tab-customize")!.click());
+  const edit = host.querySelector<HTMLButtonElement>('[data-lab-action="jump-rules"]')!;
+  expect(edit.textContent).toBe("Edit indicators & rules");
+  await act(async () => edit.click());
+  const indicator = host.querySelector<HTMLSelectElement>('.lab-rules [aria-label="Entry 1 left"] select[aria-label="Indicator"]')!;
+  expect(indicator).not.toBeNull();
+  await act(async () => { indicator.value = "ema"; indicator.dispatchEvent(new Event("change", { bubbles: true })); });
+  await run(host);
+  const spec = JSON.parse(new URL(f.calls.find((c) => c.url.includes("/lab/run"))!.url, "http://x").searchParams.get("spec")!);
+  expect(spec.entry.all[0].lhs.s).toBe("ema");
+  expect(spec.origin).toEqual({book:"ststw", method:"rsi2_4", template_version:1});
 });

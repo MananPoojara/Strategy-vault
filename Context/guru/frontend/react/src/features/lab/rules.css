@@ -26,3 +26,21 @@
 }
 .lab-two > * { min-width: 0; }
 .lab-two[data-lab-layout="full"] { grid-template-columns: minmax(0, 1fr); }
+
+.lab-rules { display: grid; gap: 12px; }
+.lab-rules > .box-h { margin-bottom: 0; }
+.lab-side-panel { display: grid; gap: 8px; }
+.lab-side-panel + .lab-side-panel { padding-top: 10px; border-top: 1px solid var(--rule); }
+.lab-side-h { margin: 0; font-size: 13px; }
+.lab-caps { margin: 0 0 0 8px; font-weight: 500; }
+.lab-caps-warn { color: var(--red); }
+.lab-settings { margin-top: 0; }
+
+/* Complex indicator rules retain the full editor width, including after a run. */
+.lab-two[data-lab-layout="stacked"] { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.lab-rules .lab-sides { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+.lab-rules .lab-cond { gap: 8px 10px; padding: 10px 0; }
+.lab-rules .lab-operand { gap: 6px 8px; }
+.lab-rules .lab-operand select { max-width: 220px; }
+.lab-rules .lab-caps { display: block; margin: 8px 0 0; font-size: 12px; }
+.lab-rules { scroll-margin-top: 88px; }

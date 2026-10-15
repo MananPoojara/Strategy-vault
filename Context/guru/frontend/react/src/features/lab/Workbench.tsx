@@ -18,7 +18,7 @@ export interface WorkbenchProps {
 
 const TF_NAMES: Record<string, string> = { D: "Daily", W: "Weekly", M: "Monthly" };
 const PRICE_IDS = ["open", "high", "low", "close"] as const;
-type Marker = { time: string; position: string; shape: string; color: string; text: string };
+type Marker = { time: string; position: string; shape: string; color: string; text?: string; size?: number };
 type Disposable = NonNullable<ReturnType<typeof createLabChart>>;
 
 export function Workbench({ market, ticker, tf, range, catalogue, chips, trades, loadSeries, onChipChange, onChipRemove, instrumentLabel }: WorkbenchProps) {
@@ -28,6 +28,7 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
   const [ohlcError, setOhlcError] = useState<unknown>(null);
   const [chipErrors, setChipErrors] = useState<Record<string, unknown>>({});
   const [provisionalNote, setProvisionalNote] = useState<string | undefined>();
+  const [adaptations, setAdaptations] = useState<string[]>([]);
   // Prices depend only on market+ticker, so chip edits reuse the in-flight or finished OHLC requests.
   const ohlcCache = useRef<{ key: string; p: Promise<PromiseSettledResult<SeriesResponse>[]> } | null>(null);
   const find = (id: string) => catalogue.indicators.find((i) => i.id === id);
@@ -59,9 +60,11 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
       setOhlcError(failedOhlc ? (failedOhlc as PromiseRejectedResult).reason : null);
       setProvisionalNote(ohlcParts.flatMap((r) => (r.status === "fulfilled" ? [r.value.provisional_note] : []))[0]);
       setChipErrors(Object.fromEntries(chipParts.flatMap((r, i) => (r.status === "rejected" ? [[drawn[i].chip.key, r.reason]] : []))));
+      setAdaptations([...new Set([...ohlcParts, ...chipParts].flatMap((r) => r.status === "fulfilled" ? r.value.adaptations ?? [] : []))]);
       if (failedOhlc || !priceRef.current || !panesRef.current) return;
       const [o, h, l, c] = ohlcParts.map((r) => (r as PromiseFulfilledResult<SeriesResponse>).value);
-      const px = aggregate(ohlcFromSeries({ open: o, high: h, low: l, close: c }), tf);
+      const daily = ohlcFromSeries({ open: o, high: h, low: l, close: c });
+      const px = aggregate(daily, tf);
       const keep = tf === "D" ? undefined : new Set(px.d);
       const price = createLabChart(priceRef.current, 420);
       if (!price) return;
@@ -69,7 +72,7 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
       const { chart, colors } = price;
       const candleSeries = chart.addCandlestickSeries({
         upColor: colors.green, borderUpColor: colors.green, wickUpColor: colors.green,
-        downColor: colors.red, borderDownColor: colors.red, wickDownColor: colors.red,
+        downColor: colors.red, borderDownColor: colors.red, wickDownColor: colors.red, priceLineVisible: false,
       });
       candleSeries.setData(candles(px));
       const markers: Marker[] = [];
@@ -101,13 +104,22 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
           target.addLineSeries({ color, lineWidth: 2, priceLineVisible: false, lastValueVisible: false }).setData(linePoints(res.dates, values, keep));
         });
       });
-      const toPeriod = (date: string) => (!keep || keep.has(date) ? date : px.d.find((d) => d >= date));
-      for (const t of trades ?? []) {
-        const entry = toPeriod(t.entry);
-        if (entry) markers.push({ time: entry, position: "belowBar", shape: "arrowUp", color: colors.green, text: t.dir === 1 ? "Long" : "Short" });
-        const exit = t.open ? undefined : toPeriod(t.exit);
-        if (exit) markers.push({ time: exit, position: "aboveBar", shape: "arrowDown", color: colors.red, text: "Exit" });
-      }
+      // The house renderer takes daily bar indices, including every scale-in leg.
+      // Unknown dates remain unmapped: never invent a price bar for an action.
+      const dateIndex = new Map(daily.d.map((date, i) => [date, i]));
+      let period = 0;
+      const barOf = daily.d.map((date) => {
+        while (period < px.d.length - 1 && px.d[period] < date) period++;
+        return period;
+      });
+      const actionTrades = (trades ?? []).map((trade) => ({
+        dir: trade.dir, open: trade.open, exit_i: dateIndex.get(trade.exit) ?? -1,
+        legs: (trade.legs?.length ? trade.legs : [[trade.entry, trade.entry_px ?? 0, trade.weight ?? 1] as [string, number, number]])
+          .map(([date, price, weight]): [number, number, number] => [dateIndex.get(date) ?? -1, price, weight]),
+      }));
+      const actions = window.VaultTruth?.actionMarkers?.(actionTrades, px.d, barOf, { buy: colors.green, sell: colors.red }) ?? [];
+      const priceDates = new Set(px.d);
+      markers.push(...actions.filter((marker) => priceDates.has(marker.time)));
       const last = px.d[px.d.length - 1];
       if (keep && last) markers.push({ time: last, position: "aboveBar", shape: "square", color: colors.ink3, text: "in progress" });
       candleSeries.setMarkers?.(markers.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0)));
@@ -145,10 +157,11 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
         </div>
       </div>
       <p className="cap">{COPY.chartNote}</p>
+      {adaptations.map((note) => <p className="rnote" role="note" data-lab-adaptations key={note}>{note}</p>)}
       {tf !== "D" && <p className="cap">{COPY.inProgress(tf)}</p>}
       {!!trades?.length && (
         <p className="cap">
-          Shaded markers are trades from the backtest below.{tf !== "D" && " Trades run on daily bars and are mapped onto this timeframe."}
+          <span style={{ color: "var(--green)" }}>↑ Buy</span> · <span style={{ color: "var(--red)" }}>↓ Sell</span>. Arrows show backtest actions; smaller arrows show added legs.{tf !== "D" && " Trades run on daily bars and are mapped onto this timeframe."}
         </p>
       )}
     </section>

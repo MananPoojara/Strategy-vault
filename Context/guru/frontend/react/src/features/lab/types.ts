@@ -2,7 +2,7 @@
 export type Market = "in" | "us" | "gl";
 export type SavedMarket = Market | "crypto";
 export type Role = "admin" | "researcher" | "viewer";
-/** 'D' | 'W' | 'M' today; Phase 7 may add more through catalogue.timeframes. */
+/** 'D' | 'W' | 'M' | 'Q' | 'Y' | '<n>D' (2–63). */
 export type Timeframe = string;
 export type ChartRange = "1Y" | "3Y" | "All";
 
@@ -16,7 +16,15 @@ export interface Indicator {
 }
 export interface Catalogue extends Provisional {
   label: string; price_sources: string[]; operators: string[]; timeframes: Timeframe[];
+  custom_days?: [number, number]; expand_modes?: string[]; max_leaves?: number; max_nodes?: number;
+  node_kinds?: string[]; expressions?: string[]; max_query_bytes?: number; execution?: CatalogueExecution;
   max_conditions: number; max_spec_bytes: number; max_combos: number; indicators: Indicator[];
+}
+export interface CatalogueExecution {
+  direction: string[]; fill: string[]; opposite: string[]; entry_on: string[]; intrabar: string[]; sizing: string[]; distances: string[];
+  max_take_profits: number; max_legs: number; max_valid_bars: number; max_delay_bars: number;
+  cooldown_after?: string[]; max_cooldown_bars?: number; max_trades_per?: string[]; max_trades_count?: number;
+  max_consecutive_losses?: number; max_pause_bars?: number; max_drawdown_pct_below?: number;
 }
 export interface Instrument {
   ticker: string; type: string; native: boolean; market: SavedMarket | null; currency: string | null;
@@ -33,43 +41,85 @@ export type GlInstrumentRow =
 export interface InstrumentsResponse extends Provisional { label: string; instruments: GlInstrumentRow[] }
 export interface SeriesResponse extends Provisional {
   label: string; instrument: Instrument; id: string; tf: Timeframe; params: Record<string, number>;
-  outputs: string[]; dates: string[]; series: Record<string, (number | null)[]>; provenance: unknown;
+  adaptations?: string[]; outputs: string[]; dates: string[]; series: Record<string, (number | null)[]>; provenance: unknown;
 }
 
-// ---- rule spec v1 (Context/guru/backend/src/lab/rules.rs). Unknown keys are kept by every editor.
+// ---- rule spec (Context/guru/backend/src/lab/rules.rs; Phase 7 spec §4–§7). Unknown keys are kept by every editor.
+export type ExpandMode = "last" | "first" | "point";
 export interface ValueOperand { value: number }
-export interface SeriesOperand { s: string; p?: Record<string, number>; tf?: Timeframe; out?: string; offset?: number }
-export type Operand = ValueOperand | SeriesOperand;
+export interface SeriesOperand { s: string; p?: Record<string, number>; tf?: Timeframe; out?: string; offset?: number; expand?: ExpandMode }
+/** An expression or state operand: one key of rule-tree EXPR_KEYS plus its fields; read it through rule-tree.ts. */
+export type ExprOperand = { [key: string]: unknown };
+export type Operand = ValueOperand | SeriesOperand | ExprOperand;
 export interface Cond { lhs: Operand; op: string; rhs: Operand; [extra: string]: unknown }
-export type Dist = { pct: number } | { atr: number; atr_length?: number };
+export interface RangeNode { lhs: Operand; op: "between" | "outside"; lo: Operand; hi: Operand; [extra: string]: unknown }
+export interface TrendNode { lhs: Operand; op: "rising" | "falling"; bars: number; [extra: string]: unknown }
+export interface AllNode { all: RuleNode[]; [extra: string]: unknown }
+export interface AnyNode { any: RuleNode[]; [extra: string]: unknown }
+export interface NotNode { not: RuleNode; [extra: string]: unknown }
+export interface AtLeastNode { at_least: number; of: number; when: RuleNode; [extra: string]: unknown }
+export interface ThenNode { then: RuleNode[]; within: number; [extra: string]: unknown }
+export type RuleNode = Cond | RangeNode | TrendNode | AllNode | AnyNode | NotNode | AtLeastNode | ThenNode;
+export type Dist = { pct: number } | { atr: number; atr_length?: number } | { points: number };
+export type EntryLevel = Dist | { at: Operand };
+export type TakeProfit = Dist & { size: number };
+export interface ScaleIn { legs: number[]; min_bars?: number; price?: "any" | "better" | "worse" }
+export interface EntrySpec { all: RuleNode[]; limit?: EntryLevel; stop?: EntryLevel; valid_bars?: number; scale_in?: ScaleIn; [extra: string]: unknown }
+export interface ExitSpec {
+  any: RuleNode[]; stop_loss?: Dist; target?: Dist; trailing?: Dist & { activate?: Dist }; breakeven?: { after: Dist; plus?: Dist };
+  take_profits?: TakeProfit[]; min_bars?: number; [extra: string]: unknown;
+}
+export interface ShortSide { entry: EntrySpec; exit: ExitSpec; [extra: string]: unknown }
+export type Sizing = { pct_equity: number } | { risk_pct: number } | { units: number } | { value: number };
+export interface MoneyCosts {
+  commission?: { per_order?: number; per_unit?: number; pct?: number }; slippage?: { bps: number };
+  taxes?: { name: string; pct: number; side: "buy" | "sell" | "both" }[]; borrow_pct_year?: number;
+}
+export interface Execution {
+  fill?: Fill; exit_fill?: Fill; cost_bps?: number; opposite?: "reverse" | "exit" | "ignore"; delay_bars?: number;
+  entry_on?: "level" | "edge"; intrabar?: "stop_first" | "ohlc_path"; sizing?: Sizing; capital?: number; costs?: MoneyCosts;
+  cooldown?: { bars: number; after?: "any" | "loss" | "win" }; max_trades?: { count: number; per: "W" | "M" | "Q" | "Y" };
+  risk?: { max_consecutive_losses?: number; pause_bars?: number; max_drawdown_pct?: number };
+  [extra: string]: unknown;
+}
 export interface Origin { book: string; method: string; template_version: number }
 export interface OptimizeDim { path: string; from: number; to: number; step: number }
 export type Fill = "next_open" | "close";
 export interface Spec {
-  v: 1;
-  direction?: "long" | "short";
-  origin?: Origin;
-  entry: { all: Cond[]; limit?: Dist; [extra: string]: unknown };
-  exit: { any: Cond[]; stop_loss?: Dist; target?: Dist; trailing?: Dist; [extra: string]: unknown };
-  execution?: { fill?: Fill; exit_fill?: Fill; cost_bps?: number; [extra: string]: unknown };
-  optimize?: OptimizeDim[];
-  [extra: string]: unknown;
+  v: 1; direction?: "long" | "short" | "both"; origin?: Origin; entry: EntrySpec; exit: ExitSpec; short_side?: ShortSide;
+  execution?: Execution; optimize?: OptimizeDim[]; [extra: string]: unknown;
 }
 
 // ---- run / optimize
+export type Piece = [date: string, price: number, weight: number];
 export interface Trade {
+  legs?: Piece[]; fills?: Piece[]; weight?: number;
   entry: string; exit: string; entry_i: number; exit_i: number; entry_px: number | null; exit_px: number | null;
   ret: number | null; bars: number; open: boolean; signal: string; reason: string; dir: 1 | -1; entry_kind: string;
 }
 export type Stats = Record<string, number | null>;
-export interface Costs {
+export interface UnitCosts {
   fees_bps: number; slippage_bps: number; rollover_bps: number; total_side_bps: number; taxes: null; rolls: null;
   basis: string; rollover_status: string; slippage_status: string; money_status: string; open_trade_cost_basis: string;
 }
+export interface DeclaredCosts {
+  commission: { per_order: number; per_unit: number; pct: number }; slippage: { bps: number };
+  taxes: { name: string; pct: number; side: "buy" | "sell" | "both" }[]; borrow_pct_year: number | null; basis: string;
+  fees_bps?: never; slippage_bps?: never;
+}
+export type Costs = UnitCosts | DeclaredCosts;
 export interface BookMethod { id: string; name: string; book: string; group: string; dir: string }
 export interface ResponseOrigin { method: BookMethod; template_version: number }
 export type Start = null | { date: string; reason: string };
+export interface ExecutionModel { kind: string; mode: "unit" | "money"; executable: boolean; notes: string[]; events: string[] | null }
+export interface MoneySummary { capital: number; final_equity: number; costs_total: number; skipped: number; currency: string | null; basis: string }
+export interface LedgerFill { date: string; px: number; qty: number; commission: number; taxes: number; slippage: number }
+export interface LedgerRow {
+  entry: string; qty: number; notional: number; costs: number; pnl: number;
+  borrow?: number; open?: boolean; entries?: LedgerFill[]; exits?: LedgerFill[];
+}
 export interface RunResult extends Provisional {
+  execution_model?: ExecutionModel; money?: MoneySummary; ledger?: LedgerRow[]; adaptations?: string[];
   label: string; kind: "lab_simulation"; origin: ResponseOrigin | null; instrument: Instrument;
   from: string; to: string; start: Start; dates: string[]; close: number[]; equity: number[];
   gross_equity: number[]; bh: number[]; trades: Trade[]; stats: Stats; gross_stats: Stats; costs: Costs; provenance: unknown;
@@ -80,6 +130,8 @@ export interface Rank {
   groups: { stat: string; label: string; rows: number[] }[]; pool: Cand[]; top3: Cand[];
 }
 export interface OptimizeResult extends Provisional {
+  money?: Pick<MoneySummary, "capital" | "basis">;
+  execution_model?: ExecutionModel; adaptations?: string[];
   label: string; kind: "lab_optimization"; origin: ResponseOrigin | null; instrument: Instrument;
   from: string; to: string; start: Start; split: string | null; combos: number; threads: number; ms: number;
   dims: { path: string; values: number[] }[];

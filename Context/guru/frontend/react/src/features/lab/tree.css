@@ -1,0 +1,11 @@
+.lab-list { display: grid; gap: 4px; align-content: start; min-width: 0; }
+.lab-list > h3 { margin: 0 0 2px; }
+.lab-node.lab-group { padding: 4px 0; border-bottom: 1px solid var(--rule); min-width: 0; }
+.lab-node > .lab-group-h { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.lab-group-body { display: grid; gap: 2px; margin: 4px 0 0 4px; padding-left: 10px; border-left: 2px solid var(--rule); min-width: 0; }
+.lab-group-body > .lab-cond:last-of-type { border-bottom: 0; }
+.lab-group-body > select[data-lab-add] { justify-self: start; max-width: 100%; }
+.lab-list > select[data-lab-add] { justify-self: start; margin-top: 4px; max-width: 100%; }
+.lab-node select[data-lab-node-menu] { width: 36px; max-width: 36px; padding-inline: 6px; }
+.lab-node .lab-kept { overflow-wrap: anywhere; min-width: 0; }
+@media (max-width: 600px) { .lab-group-body { margin-left: 2px; padding-left: 6px; } }

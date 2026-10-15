@@ -81,7 +81,9 @@ export const optimize = (m: SavedMarket, spec: Spec, q: RunQuery & { split?: str
 export const tickers = (m: "in" | "us") => cached(`tickers:${m}`, () => engine<TickerRow[]>(m, "tickers"));
 export const labInstruments = () => cached("gl:instruments", () => engine<InstrumentsResponse>("gl", "lab/instruments"));
 export const templates = (m: SavedMarket) => cached(`templates:${engineBase(m)}`, () => engine<TemplatesResponse>(m, "lab/templates"));
-export const template = (m: SavedMarket, method: string) => engine<TemplateResponse>(m, "lab/template", { method });
+/** Cached: card summaries and the selected method share one answer per method. */
+export const template = (m: SavedMarket, method: string) =>
+  cached(`template:${engineBase(m)}:${method}`, () => engine<TemplateResponse>(m, "lab/template", { method }));
 export const fidelity = (m: SavedMarket, method: string, ticker: string, from?: string, to?: string) =>
   engine<FidelityResult>(m, "lab/fidelity", { method, ticker, from, to });
 

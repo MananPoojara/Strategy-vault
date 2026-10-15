@@ -27,6 +27,9 @@ class BookGuard(unittest.TestCase):
         (src / "connors.rs").write_text("fn a() {}\n")
         (src / "books/x.rs").write_text("fn b() {}\n")
         (src / "main.rs").write_text("mod books;\nmod trade_validation;\nfn main() {}\n")
+        runtime = self.repo / "Context/guru/frontend/react/src/compat/runtime.js"
+        runtime.parent.mkdir(parents=True)
+        runtime.write_text("function bkArea() {}\nwindow.VaultRuntime={changeTheme:theme=>setTheme(theme,true),};\n")
         git(self.repo, "add", "-A")
         git(self.repo, "commit", "-q", "-m", "base")
         git(self.repo, "switch", "-q", "-c", "Nandini")
@@ -49,6 +52,21 @@ class BookGuard(unittest.TestCase):
     def test_protected_file_edit_fails(self):
         self.commit("Context/guru/backend/src/books/x.rs", "fn b() { let _ = 1; }\n")
         self.assertTrue(any("books/x.rs" in v for v in guard.check(self.repo, "Manan")))
+
+    def test_only_exposing_existing_shared_chart_renderer_is_allowed(self):
+        path = "Context/guru/frontend/react/src/compat/runtime.js"
+        source = (self.repo / path).read_text()
+        (self.repo / path).write_text(source.replace("changeTheme:theme=>setTheme(theme,true),", "changeTheme:theme=>setTheme(theme,true),renderAreaChart:bkArea,"))
+        self.assertEqual(guard.check(self.repo, "Manan"), [])
+
+    def test_shared_chart_export_does_not_allow_renderer_or_other_runtime_changes(self):
+        path = "Context/guru/frontend/react/src/compat/runtime.js"
+        source = (self.repo / path).read_text()
+        exported = source.replace("changeTheme:theme=>setTheme(theme,true),", "changeTheme:theme=>setTheme(theme,true),renderAreaChart:bkArea,")
+        for changed in [exported.replace("function bkArea() {}", "function bkArea() { return 1; }"), exported.replace("renderAreaChart:bkArea", "renderAreaChart:other")]:
+            with self.subTest(source=changed):
+                (self.repo / path).write_text(changed)
+                self.assertTrue(any("compat/runtime.js" in problem for problem in guard.check(self.repo, "Manan")))
 
     def test_removed_line_in_additive_file_fails(self):
         self.commit("Context/guru/backend/src/main.rs", "mod books;\nfn main() {}\n")

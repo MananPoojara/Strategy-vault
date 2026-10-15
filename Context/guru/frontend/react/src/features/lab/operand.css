@@ -1,0 +1,7 @@
+.lab-expr { display: inline-flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; padding: 2px 6px; border: 1px solid var(--rule); border-radius: var(--r-field); background: var(--panel); max-width: 100%; min-width: 0; }
+.lab-word { font-size: 12px; color: var(--ink2); }
+.lab-timing { display: inline-flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; max-width: 100%; }
+.lab-operand { max-width: 100%; min-width: 0; }
+.lab-operand .lab-kept { font-size: 12px; overflow-wrap: anywhere; }
+.lab-operand .cap { max-width: 100%; white-space: normal; }
+@media (max-width: 600px) { .lab-expr { padding: 2px 4px; } }

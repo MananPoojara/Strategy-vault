@@ -1,15 +1,15 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { act } from "react";
-import { RunResults, RunTables, drawdown, kpiItems, tradeRows } from "../src/features/lab/RunResults";
+import { RunResults, RunTables, drawdown, kpiItems, tradeRows, tradeTable } from "../src/features/lab/RunResults";
 import { PROVISIONAL_NOTE } from "../src/features/lab/labels";
-import { mount, runFixture, unmount } from "./fixtures/lab";
+import { mount, runFixture, run7Fixture, money7Fixture, unmount } from "./fixtures/lab";
 
 beforeEach(() => {
   window.VaultReport = { monthly: vi.fn(() => ({ months: { "2024-01": 0.02 }, annual: { "2024": 0.05 }, years: ["2024"], averages: [], annualAverage: 0.05 })),
     csv: vi.fn(() => "a,b") };
 });
-afterEach(async () => { await unmount(); delete window.VaultReport; delete window.LightweightCharts; vi.unstubAllGlobals(); });
+afterEach(async () => { await unmount(); delete (window as { VaultRuntime?: Window["VaultRuntime"] }).VaultRuntime; document.documentElement.removeAttribute("data-theme"); delete window.VaultReport; delete window.LightweightCharts; vi.unstubAllGlobals(); });
 
 it("label verbatim, own start copy, KPIs and costs", async () => {
   const host = await mount(<RunResults result={runFixture} market="in" />);
@@ -91,7 +91,7 @@ it("monthly normalizes equity to start at 1", async () => {
   expect((window.VaultReport!.monthly as ReturnType<typeof vi.fn>).mock.calls[0][0].equity).toEqual(runFixture.equity);
 });
 
-it("equity chart on a log scale and drawdown chart; both removed on unmount", async () => {
+it("equity chart keeps its log scale and full data and is removed on unmount", async () => {
   const removed: number[] = [], options: Record<string, unknown>[] = [], series: { kind: string; data: unknown[] }[] = [];
   window.LightweightCharts = { createChart: (_el, o) => {
     const id = options.push(o);
@@ -101,14 +101,14 @@ it("equity chart on a log scale and drawdown chart; both removed on unmount", as
       timeScale: () => ({ fitContent() {}, setVisibleRange() {} }), applyOptions() {}, resize() {}, remove: () => removed.push(id) };
   } };
   await mount(<RunResults result={runFixture} market="in" />);
-  expect(options).toHaveLength(2);
+  expect(options).toHaveLength(1);
   expect((options[0].rightPriceScale as { mode: number }).mode).toBe(1);
-  expect(series.map((s) => s.kind)).toEqual(["area", "line", "area"]);
+  expect(series.map((s) => s.kind)).toEqual(["area", "line"]);
   expect(series[0].data[2]).toEqual({ time: runFixture.dates[2], value: 1.02 });
   expect(series[1].data[1]).toEqual({ time: runFixture.dates[1], value: 1.01 });
-  expect((series[2].data[3] as { value: number }).value).toBeCloseTo(1.01 / 1.02 - 1);
+  expect(drawdown(runFixture.equity)[3]).toBeCloseTo(1.01 / 1.02 - 1);
   await unmount();
-  expect(removed.sort()).toEqual([1, 2]);
+  expect(removed).toEqual([1]);
 });
 
 it("provisional strip on gl and drawdown math", async () => {
@@ -136,4 +136,95 @@ it("library rail is sticky below the topbar, with a static bounded stacked layou
   const css = readFileSync("src/features/lab/library.css", "utf8");
   expect(css).toMatch(/\.lab-library \{[^}]*position: sticky;[^}]*top: calc\(58px \+ env\(safe-area-inset-top[^}]*max-height: calc\(100vh[^}]*overflow: auto;/);
   expect(css).toMatch(/@media \(max-width: 900px\) \{ \.lab-library \{ position: static; max-height: 60vh;/);
+});
+
+
+it("shows execution notes, risk events and adaptations verbatim", async () => {
+  const host = await mount(<RunResults result={run7Fixture} market="in" />);
+  expect(host.querySelector("[data-lab-execution-notes]")!.textContent).toContain(run7Fixture.execution_model!.notes[0]);
+  expect(host.querySelector("[data-lab-events]")!.textContent).toContain(run7Fixture.execution_model!.events![0]);
+  expect(host.querySelector("[data-lab-adaptations]")!.textContent).toBe(run7Fixture.adaptations![0]);
+});
+it("shows declared money costs without claiming taxes were omitted", async () => {
+  const host = await mount(<RunResults result={money7Fixture} market="us" />);
+  expect(host.querySelector("[data-lab-money]")!.textContent).toContain("Money · USD 100,000");
+  expect(host.textContent).toContain("Final equity");
+  expect(host.textContent).toContain("Costs paid");
+  expect(host.textContent).toContain(money7Fixture.money!.basis);
+  expect(host.textContent).not.toContain("taxes not modelled");
+  expect(host.textContent).not.toContain("bps + slippage");
+});
+it("trade table adds only populated columns and never misjoins the ledger", () => {
+  expect(tradeTable(runFixture).header).toEqual(["Entry date", "Side", "Order", "Entry", "Exit date", "Exit", "Return", "Bars", "Exit reason"]);
+  expect(tradeTable(run7Fixture).header).toContain("Legs");
+  expect(tradeTable(run7Fixture).header).toContain("Scale-outs");
+  const money = tradeTable(money7Fixture);
+  expect(money.header.slice(-4)).toEqual(["Qty", "Value", "Costs", "P&L"]);
+  expect(money.csv[1][1]).toBe("Short");
+  expect(tradeTable({ ...money7Fixture, ledger: money7Fixture.ledger!.slice(1) }).header).not.toContain("Qty");
+});
+it("preserves the money ledger in its own table when trade identities differ", async () => {
+  const result = { ...money7Fixture, ledger: money7Fixture.ledger!.map((row) => ({ ...row, entry: "2020-01-01" })) };
+  const host = await mount(<RunTables result={result} />);
+  expect(host.querySelector("table[data-lab-ledger]")).not.toBeNull();
+  expect(host.querySelector("table[data-lab-trades]")).not.toBeNull();
+});
+it("shows a nondefault allocation even on a single-leg trade and keeps CSV plain", () => {
+  const table = tradeTable({ trades: [{ ...runFixture.trades[0], weight: 0.5 }] });
+  expect(table.header.at(-1)).toBe("Allocation");
+  expect(table.csv[1].at(-1)).toBe("50.0%");
+  expect(table.csv.flat().every((cell) => typeof cell === "string")).toBe(true);
+});
+
+it("calls the exact shared area renderer with full drawdown dates, percentages and worst marker", async () => {
+  const renderAreaChart = vi.fn((el: HTMLElement) => { el.innerHTML = '<svg class="shared-test-chart"></svg>'; });
+  window.VaultRuntime = { renderAreaChart } as unknown as Window["VaultRuntime"];
+  const charts: Record<string, unknown>[] = [];
+  window.LightweightCharts = { createChart: (_el, options) => {
+    charts.push(options); const add = () => ({setData() {}, applyOptions() {}});
+    return {addCandlestickSeries:add,addLineSeries:add,addAreaSeries:add,timeScale:()=>({fitContent() {},setVisibleRange() {}}),applyOptions() {},resize() {},remove() {}};
+  } };
+  const host = await mount(<RunResults result={runFixture} market="in" />);
+  expect(host.querySelector('[data-lab-chart="equity"] h3')?.textContent).toBe("Equity growth");
+  expect(host.querySelector('[data-lab-chart="drawdown"] h3')?.textContent).toBe("Drawdown from peak");
+  expect(charts).toHaveLength(1); expect(charts[0].height).toBe(300);
+  expect((charts[0].timeScale as {minBarSpacing:number}).minBarSpacing).toBe(0.01);
+  const [el, dates, values, options] = renderAreaChart.mock.calls[0] as unknown as [HTMLElement,string[],number[],{fmt:(n:number)=>string;axFmt:(n:number)=>string;markMin:boolean;h:number;color:string}];
+  expect(el).toBe(host.querySelector('[data-lab-drawdown]'));
+  expect(dates).toEqual(runFixture.dates); expect(values).toEqual(drawdown(runFixture.equity));
+  expect(options).toMatchObject({markMin:true,h:300,color:"#c43c3c"});
+  expect(options.fmt(-0.1234)).toBe("-12.34%"); expect(options.axFmt(-0.1234)).toBe("-12%");
+  expect(host.querySelector('.shared-test-chart')).not.toBeNull();
+  expect(readFileSync("src/compat/runtime.js","utf8")).toMatch(/renderAreaChart:\s*bkArea/);
+});
+it("redraws the same shared renderer for resizing and theme changes, then cleans up", async () => {
+  const observers: {callback:()=>void; disconnect:ReturnType<typeof vi.fn>}[] = [];
+  vi.stubGlobal("ResizeObserver",class {disconnect=vi.fn(); constructor(public callback:()=>void){observers.push(this);} observe(){} });
+  const renderAreaChart = vi.fn((el:HTMLElement) => {el.innerHTML='<svg></svg>';});
+  window.VaultRuntime = {renderAreaChart} as unknown as Window["VaultRuntime"];
+  const host=await mount(<RunResults result={runFixture} market="in" />), el=host.querySelector('[data-lab-drawdown]')!;
+  const count=renderAreaChart.mock.calls.length;
+  await act(async()=>{observers.at(-1)!.callback();});
+  expect(renderAreaChart.mock.calls.length).toBeGreaterThan(count);
+  await act(async()=>{document.documentElement.setAttribute("data-theme","midnight");await new Promise((r)=>setTimeout(r,0));});
+  expect(renderAreaChart.mock.calls.length).toBeGreaterThan(count+1);
+  await unmount(); expect(el.childNodes).toHaveLength(0); expect(observers.every((o)=>o.disconnect.mock.calls.length>0)).toBe(true);
+});
+
+it("drawdown includes a first-day loss against the declared starting equity", () => {
+  expect(drawdown([0.9, 0.8]).map((v) => Number(v.toFixed(6)))).toEqual([-0.1, -0.2]);
+  expect(drawdown([1, 1.2, 1.08]).map((v) => Number(v.toFixed(6)))).toEqual([0, 0, -0.1]);
+});
+
+
+it("guards empty and one-session drawdown without fabricating bars; flat periods stay flat", async () => {
+  const renderAreaChart=vi.fn();window.VaultRuntime={renderAreaChart} as unknown as Window["VaultRuntime"];
+  let host=await mount(<RunResults result={{...runFixture,dates:[],equity:[],bh:[]}} market="in" />);
+  expect(renderAreaChart).not.toHaveBeenCalled();expect(host.querySelector('[data-lab-drawdown]')?.textContent).toContain("No drawdown data");
+  await unmount();
+  host=await mount(<RunResults result={{...runFixture,dates:["2024-01-01"],equity:[0.9],bh:[1]}} market="in" />);
+  expect(renderAreaChart).not.toHaveBeenCalled();expect(host.querySelector('[data-lab-drawdown]')?.textContent).toContain("-10.00% · 2024-01-01");
+  await unmount();
+  await mount(<RunResults result={{...runFixture,equity:runFixture.equity.map(()=>1)}} market="in" />);
+  expect(renderAreaChart.mock.calls[0][1]).toEqual(runFixture.dates);expect(renderAreaChart.mock.calls[0][2]).toEqual(runFixture.dates.map(()=>0));
 });

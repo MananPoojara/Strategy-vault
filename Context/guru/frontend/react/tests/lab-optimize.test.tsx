@@ -231,3 +231,30 @@ it("blocks Optimize when the spec with dims is too long, and explains a hold-bac
   expect(host.textContent).toContain("Run a backtest first to set the hold-back date.");
   expect(host.textContent).not.toContain("Not enough history");
 });
+
+it("offers nested settings under group captions and sends their exact path", async () => {
+  const spec = setAt(defaultSpec(), "entry.all[1]", { any: [{ lhs: { s: "close" }, op: ">", rhs: { s: "ema", p: { length: 20 } } }] });
+  const onOptimize = vi.fn().mockResolvedValue(optimizeFixture);
+  const host = await mount(<OptimizePanel {...base} spec={spec} onOptimize={onOptimize} />);
+  expect([...host.querySelectorAll("tr.lab-dim-group")].map((r) => r.textContent)).toEqual(["Entry", "Exit"]);
+  await tick(host, "entry.all[1].any[0].rhs.p.length");
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-action="optimize"]')!.click());
+  expect(onOptimize.mock.calls[0][0].optimize[0].path).toBe("entry.all[1].any[0].rhs.p.length");
+});
+it("optimization shows server execution notes and adaptations without inventing risk events", async () => {
+  const result: OptimizeResult = { ...optimizeFixture, execution_model: { kind: "index", mode: "unit", executable: false, notes: ["Server note"], events: null }, adaptations: ["Server adaptation"] };
+  const host = await mount(<OptimizePanel {...base} onOptimize={async () => result} />);
+  await tick(host, "entry.all[0].rhs.p.length");
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-action="optimize"]')!.click());
+  expect(host.querySelector("[data-lab-optimize-result] [data-lab-execution-notes]")?.textContent).toBe("Server note");
+  expect(host.querySelector("[data-lab-optimize-result] [data-lab-adaptations]")?.textContent).toBe("Server adaptation");
+  expect(host.querySelector("[data-lab-events]")).toBeNull();
+});
+it("money optimization is labelled Money even without run-only ledger totals", async () => {
+  const result: OptimizeResult = { ...optimizeFixture, money: { capital: 100000, basis: "Declared costs" }, execution_model: { kind: "etf", mode: "money", executable: true, notes: [], events: null } };
+  const host = await mount(<OptimizePanel {...base} onOptimize={async () => result} />);
+  await tick(host, "entry.all[0].rhs.p.length");
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-action="optimize"]')!.click());
+  expect(host.querySelector("[data-lab-optimize-result] [data-lab-money]")?.textContent).toContain("Money");
+  expect(host.querySelector("[data-lab-optimize-result]")?.textContent).not.toContain("Unit study");
+});

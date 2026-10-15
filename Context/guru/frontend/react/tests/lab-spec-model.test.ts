@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import * as m from "../src/features/lab/spec-model";
 import type { Spec } from "../src/features/lab/types";
-import { catalogueFixture as cat, templateFixture } from "./fixtures/lab";
+import { catalogueFixture as cat, catalogue7Fixture as cat7, templateFixture } from "./fixtures/lab";
 
 const variant = (): Spec => (templateFixture.status === "available" ? structuredClone(templateFixture.template.spec) : m.defaultSpec());
 
@@ -76,7 +76,7 @@ it("pre-checks: two numbers, empty exit without a price exit, listed indicators,
   expect(m.specProblems(m.setCond(s, "entry", 0, { lhs: { value: 1 }, op: ">", rhs: { value: 2 } }), cat))
     .toContain("Entry 1: a condition cannot compare two numbers; one side must be a series.");
   const noExit = m.removeCond(s, "exit", 0);
-  expect(m.specProblems(noExit, cat)).toContain("exit.any needs at least one condition (or a stop_loss, target or trailing exit)");
+  expect(m.specProblems(noExit, cat)).toContain("exit.any needs at least one condition (or a stop_loss, target, trailing, breakeven or take-profit exit)");
   expect(m.specProblems(m.setOrder(noExit, "trailing", { pct: 5 }), cat)).toEqual([]);
   expect(m.specProblems(m.setCond(s, "entry", 0, { lhs: { s: "or_range" }, op: ">", rhs: { value: 1 } }), cat)[0])
     .toBe("Entry 1: Opening Range is listed only and cannot be used in rules. Needs intraday (minute) bars; not available yet.");
@@ -133,4 +133,85 @@ it("labels operands for summaries", () => {
   expect(m.operandLabel({ value: 30 }, cat)).toBe("30");
   expect(m.operandLabel({ s: "bars_held" }, cat)).toBe("Bars held");
   expect(m.conditionCount(m.defaultSpec())).toBe(2);
+});
+
+it("isCond tells v1 comparisons from Phase 7 nodes", () => {
+  expect(m.isCond({ lhs: { s: "close" }, op: ">", rhs: { value: 1 } })).toBe(true);
+  expect(m.isCond({ lhs: { s: "close" }, op: "between", lo: { value: 1 }, hi: { value: 2 } })).toBe(false);
+  expect(m.isCond({ lhs: { s: "close" }, op: "rising", bars: 3 })).toBe(false);
+  expect(m.isCond({ all: [] })).toBe(false);
+});
+
+it("removeAt and putAt edit by engine path and never mutate", () => {
+  const s = m.setAt(m.defaultSpec(), "exit.breakeven.after.pct", 2);
+  const before = JSON.stringify(s);
+  expect(m.removeAt(s, "exit.breakeven").exit).not.toHaveProperty("breakeven");
+  expect(m.putAt(s, "exit.min_bars", 3).exit.min_bars).toBe(3);
+  expect(m.putAt(s, "exit.min_bars", undefined).exit).not.toHaveProperty("min_bars");
+  expect(m.removeAt(s, "exit.nothing.here")).toEqual(s);
+  expect(JSON.stringify(s)).toBe(before);
+});
+
+it("pre-checks: entry, exit (price exits incl. breakeven and take-profits; always-in), per-side top-level cap, size", () => {
+  const s = m.defaultSpec();
+  const noExit = m.removeCond(s, "exit", 0);
+  expect(m.specProblems(noExit, cat)).toContain("exit.any needs at least one condition (or a stop_loss, target, trailing, breakeven or take-profit exit)");
+  expect(m.specProblems(m.setAt(noExit, "exit.breakeven.after.pct", 2), cat)).toEqual([]);
+  expect(m.specProblems(m.setAt(noExit, "exit.take_profits", [{ pct: 2, size: 0.5 }]), cat)).toEqual([]);
+  const always = { ...noExit, direction: "both", short_side: { entry: { all: [s.entry.all[0]] }, exit: { any: [] } } } as Spec;
+  expect(m.specProblems(always, cat)).toEqual([]);
+  expect(m.specProblems(m.setExecution(always, { opposite: "exit" }), cat)).toContain("exit.any needs at least one condition (or a stop_loss, target, trailing, breakeven or take-profit exit)");
+  let many = s;
+  for (let i = 0; i < 11; i++) many = m.addCond(many, "entry", s.entry.all[0]);
+  expect(m.specProblems(many, cat)).toContain("Use at most 12 conditions in total.");
+  const shortMany = { ...s, direction: "both", short_side: { entry: { all: Array(12).fill(s.entry.all[0]) }, exit: { any: [s.exit.any[0]] } } } as Spec;
+  expect(m.specProblems(shortMany, cat)).toContain("Short side: use at most 12 conditions in total.");
+  expect(m.specProblems({ ...s, entry: { all: [] } }, cat)).toContain("Add at least one entry condition.");
+});
+
+it("money mode sends no cost or slippage query; otherwise as before", () => {
+  expect(m.runQuery(m.defaultSpec(), "5", "2")).toEqual({ cost: 5, slippage: 2 });
+  expect(m.runQuery(m.defaultSpec(), "", "")).toEqual({});
+  expect(m.runQuery(m.setExecution(m.defaultSpec(), { cost_bps: 10 }), "5", "")).toEqual({});
+  expect(m.runQuery(m.setExecution(m.defaultSpec(), { capital: 100000 }), "5", "2")).toEqual({});
+});
+
+it("maps Phase 7 exit reasons to friendly text and keeps unknown text", () => {
+  expect(["open", "exit.stop_loss", "exit.target (gap at the open)", "exit.trailing", "exit.breakeven", "exit.breakeven (gap at the open)",
+    "exit.any[1]: rsi > 70", "short_side.exit.any[0]: rsi < 30", "reverse to short", "reverse to long", "opposite entry", "expiry", "margin_call", "roll", "something new"]
+    .map(m.friendlyReason)).toEqual(["Still open at the end", "Stop-loss", "Target (gap at the open)", "Trailing stop", "Breakeven stop",
+    "Breakeven stop (gap at the open)", "Exit rule 2: rsi > 70", "Short exit rule 1: rsi < 30", "Reversed to short", "Reversed to long",
+    "Opposite signal", "Contract expiry", "Margin call", "Contract roll", "something new"]);
+});
+
+it("operator labels cover the Phase 7 operators", () => {
+  expect(cat7.operators.every((op) => m.OPERATOR_LABELS[op])).toBe(true);
+});
+
+it("new nodes and point distances keep Customize summaries usable", () => {
+  const s = m.setAt(m.defaultSpec(), "entry.all[0]", { all: [{ lhs: { s: "close" }, op: ">", rhs: { value: 1 } }] });
+  expect(() => m.specProblems(s, cat)).not.toThrow();
+  expect(m.specSummary(s, cat)).toContain("a rule shown only in Strategy rules");
+  const points = m.setOrder(m.defaultSpec(), "target", { points: 4 });
+  expect(m.specSummary(points, cat)).toContain("4 points profit target");
+  expect(m.optimizablePaths(points, cat).some((x) => x.path === "exit.target.atr")).toBe(false);
+  expect(m.describeSpec(variant(), cat).entry[0]).toContainEqual(expect.objectContaining({ path: "entry.all[0].rhs.value", value: 4 }));
+});
+
+it("removeAt splices arrays and preserves unknown keys and missing paths", () => {
+  const s = m.setAt(m.defaultSpec(), "future", { note: "keep" });
+  expect(m.removeAt(s, "entry.all[0]").entry.all).toEqual([]);
+  expect(m.removeAt(s, "missing.path")).toBe(s);
+  expect(m.removeAt(s, "entry.all[0]").future).toEqual({ note: "keep" });
+});
+
+it("point-distance prechecks keep zero-price orders and reject invalid protective distances", () => {
+  expect(m.specProblems(m.setOrder(m.defaultSpec(), "limit", { points: 0 }), cat)).toEqual([]);
+  for (const points of [0, -1, Infinity, 1000000001])
+    expect(m.specProblems(m.setOrder(m.defaultSpec(), "stop_loss", { points }), cat).length).toBeGreaterThan(0);
+});
+
+it("extended catalogues defer entry At levels to execution validation", () => {
+  const spec = m.setAt(m.defaultSpec(), "entry.limit", { at: { s: "close" } });
+  expect(m.specProblems(spec, cat7).some((p) => p.includes("ATR multiplier"))).toBe(false);
 });

@@ -1,5 +1,5 @@
 .lab-result .lwc { height: auto; margin-top: 10px; background: var(--panel); }
-/* The result sits in a half-width column, so the house 7-across tiles overlap; let them wrap. */
+/* Result metrics wrap with the available width. */
 .lab-result .metrics { margin-top: 12px; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; border-top: 0; }
 /* Tiles wrap, so each carries its own rule instead of the house .metric + .metric left border. */
 .lab-result .metrics .metric, .lab-result .metrics .metric + .metric { padding: 12px; border: 1px solid var(--rule); border-left: 1px solid var(--rule); }
@@ -10,3 +10,21 @@
 .lab-trades { margin-top: 12px; display: grid; gap: 8px; }
 .lab-trades .lab-row { justify-content: space-between; }
 .lab-trades .box-h { margin: 0; font-size: 16px; }
+.lab-exec-strip { display: grid; gap: 6px; margin-top: 8px; }
+.lab-exec-strip .chip { font-size: 12px; }
+.lab-exec-strip ul.rnote { margin: 0; padding-left: 18px; }
+.lab-trades td details summary { cursor: pointer; color: var(--ink2); }
+.lab-trades td details { font-size: 12px; }
+
+.lab-result-charts { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 24px; margin-top: 18px; }
+.lab-result-chart { margin: 0; min-width: 0; }
+.lab-chart-h { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
+.lab-chart-h h3 { margin: 0; font-size: 15px; color: var(--ink); }
+.lab-chart-h output { font-size: 12px; color: var(--ink2); font-variant-numeric: tabular-nums; }
+[data-lab-chart="drawdown"] .lab-chart-h output { color: var(--red); }
+.lab-result-chart .lab-chart-sub { min-height: 20px; margin: 6px 0 0; }
+.lab-result-chart .lab-chart-sub .cap { margin: 0; }
+.lab-result .lab-result-chart .lwc { height: 300px; margin-top: 8px; }
+@media (max-width: 1100px) { .lab-result-charts { grid-template-columns: minmax(0, 1fr); gap: 20px; } }
+
+.lab-result .lab-chart-empty { display: grid; place-content: center; color: var(--ink2); font-size: 13px; }

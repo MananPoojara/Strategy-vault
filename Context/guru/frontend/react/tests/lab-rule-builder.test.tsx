@@ -3,7 +3,7 @@ import { act, useState } from "react";
 import { RuleBuilder } from "../src/features/lab/RuleBuilder";
 import { defaultSpec, addCond } from "../src/features/lab/spec-model";
 import type { Spec } from "../src/features/lab/types";
-import { catalogueFixture as cat, mount, templateFixture, unmount } from "./fixtures/lab";
+import { catalogueFixture as cat, catalogue7Fixture, mount, templateFixture, unmount } from "./fixtures/lab";
 
 afterEach(unmount);
 const settings = { from: "", to: "", fees: "", slippage: "" };
@@ -20,6 +20,7 @@ it("shows both sides, catalogue operators incl. 'is at most' and catalogue timef
   expect(host.textContent).toContain("Entry · all of these");
   expect(host.textContent).toContain("Exit · any of these");
   expect([...host.querySelectorAll("option")].map((o) => o.textContent)).toEqual(expect.arrayContaining(["is at most", "crosses above"]));
+  await act(async () => host.querySelector<HTMLButtonElement>("[data-lab-timing]")!.click());
   expect([...host.querySelectorAll("option")].some((o) => o.value === "Q")).toBe(true);
 });
 
@@ -88,12 +89,13 @@ const typeIn = async (el: HTMLInputElement, value: string) => act(async () => {
 it("operand edits: D deletes tf, 0 deletes offset, a new indicator drops params, price keeps tf", async () => {
   const spec = { ...defaultSpec(), entry: { all: [{ lhs: { s: "close", tf: "W", offset: 2 }, op: ">", rhs: { s: "macd", p: { fast: 5 }, out: "signal", tf: "W" }, note: "x" }] } } as Spec;
   const { host, last } = await setup(spec);
-  expect(host.textContent).toContain("Weekly and monthly values are used only after that bar closes.");
+  expect(host.textContent).toContain("Higher-timeframe values are used only after that period closes (unless a timing option says otherwise).");
   const lhs = host.querySelector<HTMLElement>('[aria-label="Entry 1 left"]')!, rhs = host.querySelector<HTMLElement>('[aria-label="Entry 1 right"]')!;
+  await act(async () => lhs.querySelector<HTMLButtonElement>("[data-lab-timing]")!.click());
   await choose(lhs.querySelector<HTMLSelectElement>('select[aria-label="Timeframe"]')!, "D");
   expect(last().entry.all[0].lhs).toEqual({ s: "close", offset: 2 });
   expect(last().entry.all[0].note).toBe("x");
-  await typeIn(lhs.querySelector<HTMLInputElement>('input[aria-label="bars ago"]')!, "0");
+  await typeIn(lhs.querySelector<HTMLInputElement>('input[aria-label="periods ago"]')!, "0");
   expect(last().entry.all[0].lhs).toEqual({ s: "close", tf: "W" });
   expect(rhs.querySelector<HTMLSelectElement>('select[aria-label="Output"]')!.value).toBe("signal");
   await choose(rhs.querySelector<HTMLSelectElement>('select[aria-label="Indicator"]')!, "rsi");
@@ -152,6 +154,38 @@ it("bars ago ignores fractions; a listed indicator with no computed ones keeps a
   const rhsKind = host.querySelector<HTMLElement>('[aria-label="Entry 1 right"] select[aria-label="Operand type"]') as HTMLSelectElement;
   expect(rhsKind.value).toBe("indicator");
   expect(rhsKind.querySelector<HTMLOptionElement>('option[value="indicator"]')!.disabled).toBe(true);
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Entry 1 left"] [data-lab-timing]')!.click());
   await typeIn(host.querySelector<HTMLInputElement>('[aria-label="Entry 1 left"] input[aria-label="bars ago"]')!, "1.5");
   expect(onChange).not.toHaveBeenCalled();
+});
+
+it("noncomparison nodes stay read-only and survive editing another rule", async () => {
+  const node = { all: [{ lhs: { s: "rsi" }, op: "<", rhs: { value: 30 } }], future_tag: "keep" };
+  const spec = { ...defaultSpec(), entry: { all: [node] }, future_rule: { enabled: true } } as Spec;
+  const before = JSON.stringify(spec);
+  const { host, last } = await setup(spec);
+  expect(host.querySelector(".lab-cond .lab-kept")?.textContent).toContain(JSON.stringify(node));
+  const exit = host.querySelectorAll<HTMLElement>(".lab-side")[1];
+  await choose(exit.querySelector<HTMLSelectElement>('select[aria-label="Operator"]')!, "<=");
+  expect(last().entry.all[0]).toEqual(node);
+  expect(last().future_rule).toEqual({ enabled: true });
+  expect(JSON.stringify(spec)).toBe(before);
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Remove Entry 1"]')!.click());
+  expect(last().entry.all).toEqual([]);
+});
+
+
+it("Phase7 Both exposes independent long and short rule lists and a compact caps line", async () => {
+  const spec = { ...defaultSpec(), direction: "both", short_side: { entry: defaultSpec().entry, exit: defaultSpec().exit } } as Spec;
+  const { host } = await setup(spec, { catalogue: catalogue7Fixture });
+  expect([...host.querySelectorAll("[data-lab-side]")].map((e) => e.getAttribute("data-lab-side"))).toEqual(["long", "short"]);
+  expect(host.querySelector("[data-lab-list='short_side.entry.all']")).not.toBeNull();
+  expect(host.querySelector("[data-lab-caps]")!.textContent).toContain("comparisons 4/40");
+  expect(host.querySelector("details[data-lab-risk]")).not.toBeNull();
+});
+it("Phase7 money uses declared costs instead of sending legacy fee fields", async () => {
+  const spec = { ...defaultSpec(), execution: { capital: 100000 } } as Spec;
+  const { host } = await setup(spec, { catalogue: catalogue7Fixture });
+  expect(host.querySelector('input[aria-label="Fees (bps / side)"]')).toBeNull();
+  expect(host.querySelector('input[aria-label="Slippage (bps / side)"]')).toBeNull();
 });

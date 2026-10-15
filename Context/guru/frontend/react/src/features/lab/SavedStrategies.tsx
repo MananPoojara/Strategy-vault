@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { strategies, type StrategiesApi } from "./client";
 import { COPY, variantLabel } from "./labels";
 import { ErrorNotice, Loading, isProvisional } from "./ui";
@@ -12,8 +12,10 @@ export const STATUS_LABEL: Record<StrategyStatus, string> = { draft: "Draft", su
 const editable = (s: StrategyStatus) => s === "draft" || s === "rejected";
 const SAVE = -1; // error/notice key for the save row
 
-export function SavedStrategies({ role, api = strategies, editor, methodNames = {}, onOpen, onSaved }: {
+export function SavedStrategies({ role, api = strategies, editor, methodNames = {}, prefill, onOpen, onSaved }: {
   role: Role | null; api?: Api; editor: EditorState; methodNames?: Record<string, string>;
+  /** A new seq puts this name in the box and brings the save row into view (Customize step 4). */
+  prefill?: { name: string; seq: number };
   onOpen(row: LabStrategy): void; onSaved(row: LabStrategy): void;
 }) {
   const [rows, setRows] = useState<LabStrategy[] | null>(null);
@@ -30,6 +32,13 @@ export function SavedStrategies({ role, api = strategies, editor, methodNames = 
     return () => { live = false; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- load once on mount
   useEffect(() => setName(editor.row?.name ?? ""), [editor.row?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const box = useRef<HTMLElement>(null), nameInput = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!prefill) return;
+    setName(prefill.name);
+    box.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    nameInput.current?.focus({ preventScroll: true });
+  }, [prefill?.seq]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The local row carries the latest version (after a reload or action) even before the page re-renders.
   const own = editor.row ? rows?.find((r) => r.id === editor.row!.id) : undefined;
@@ -142,12 +151,12 @@ export function SavedStrategies({ role, api = strategies, editor, methodNames = 
   };
 
   return (
-    <section className="box" data-lab-saved>
+    <section className="box" data-lab-saved ref={box}>
       <h2 className="box-h">My indicator strategies</h2>
       {canEdit && (
         <>
           <div className="lab-saved-row lab-saved-save">
-            <input className="lab-saved-name" type="text" aria-label="Strategy name" placeholder="Strategy name" maxLength={120}
+            <input ref={nameInput} className="lab-saved-name" type="text" aria-label="Strategy name" placeholder="Strategy name" maxLength={120}
               value={name} onChange={(e) => setName(e.target.value)} />
             <button type="button" className="dbtn sm primary" data-lab-action="save-new" disabled={busy || !trimmed} onClick={saveNew}>Save as new</button>
             {own && editable(own.status) && (

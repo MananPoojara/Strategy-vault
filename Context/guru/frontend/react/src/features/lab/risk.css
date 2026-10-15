@@ -1,0 +1,9 @@
+.lab-risk > summary { cursor: pointer; font-weight: 600; color: var(--ink); padding: 2px 0; }
+.lab-risk > summary small { margin-left: 8px; font-weight: 500; color: var(--ink2); }
+.lab-risk[open] > summary { margin-bottom: 6px; }
+.lab-risk-body, .lab-risk-taxes { display: grid; gap: 6px; min-width: 0; }
+.lab-risk .lab-row { gap: 6px 10px; }
+.lab-risk .cap { margin: 0; }
+.lab-risk input[type=text] { width: 90px; padding: 5px 8px; border: 1px solid var(--steel); border-radius: var(--r-field); background: var(--card); color: var(--ink); font: 500 13px var(--font); }
+.lab-risk input, .lab-risk select, .lab-risk button { max-height: 32px; max-width: 100%; }
+.lab-risk summary { overflow-wrap: anywhere; }

@@ -1,0 +1,12 @@
+.lab-exec, .lab-orders { display: grid; gap: 6px; min-width: 0; }
+.lab-exits, .lab-level, .lab-scale-in { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; min-width: 0; }
+.lab-exits .lab-order { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; max-width: 100%; padding: 4px 8px; border: 1px solid var(--rule); border-radius: var(--r-field); }
+.lab-tp-row { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; min-width: 0; }
+.lab-scale-legs { width: 110px; max-width: 100%; padding: 5px 8px; border: 1px solid var(--steel); border-radius: var(--r-field); background: var(--card); color: var(--ink); font: 500 13px var(--font); }
+.lab-delay { margin: 0; padding: 0; border: 0; min-width: 0; }
+.lab-exec .cap, .lab-orders .cap { margin: 0; }
+.lab-exec select, .lab-orders select, .lab-orders input:not([type=checkbox]), .lab-exec input, .lab-exec button, .lab-orders button { max-height: 32px; }
+.lab-extra-exit { min-width: 0; max-width: 100%; }
+.lab-extra-exit summary { cursor: pointer; font: 500 12px var(--font); color: var(--ink2); }
+.lab-extra-exit[open] summary { margin-bottom: 4px; }
+.lab-orders .lab-kept { max-width: 100%; overflow-wrap: anywhere; }

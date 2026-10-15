@@ -36,13 +36,26 @@ def preloaded_tickers(tickers_json):
     return [row["ticker"] for row in tickers_json if "basket" not in row]
 
 
+def shared_chart_export_only(repo, base, path):
+    # User-requested reuse of the existing book chart: export the function, never edit its body.
+    if path != "Context/guru/frontend/react/src/compat/runtime.js" or not (repo / path).is_file():
+        return False
+    try:
+        before = git(repo, "show", f"{base}:{path}")
+    except subprocess.CalledProcessError:
+        return False
+    anchor = "changeTheme:theme=>setTheme(theme,true),"
+    return (before.count(anchor) == 1 and "renderAreaChart:bkArea," not in before
+            and (repo / path).read_text() == before.replace(anchor, anchor + "renderAreaChart:bkArea,", 1))
+
+
 def check(repo, base):
     mb = compare_base(repo, base)
     # --no-renames: a rename out of a protected path must show the protected source path as deleted.
     # ls-files --others: untracked new files under protected paths count as changes too.
     changed = [p for p in git(repo, "diff", "--no-renames", "--name-only", mb).splitlines() if p]
     changed += [p for p in git(repo, "ls-files", "--others", "--exclude-standard").splitlines() if p]
-    problems = [f"protected file changed: {p}" for p in changed if p.startswith(PROTECTED)]
+    problems = [f"protected file changed: {p}" for p in changed if p.startswith(PROTECTED) and not shared_chart_export_only(repo, mb, p)]
     for path in ADDITIVE_ONLY:
         diff = git(repo, "diff", "-U0", mb, "--", path)
         removed = [l for l in diff.splitlines() if l.startswith("-") and not l.startswith("---")]

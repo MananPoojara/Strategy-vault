@@ -1,12 +1,19 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { runInNewContext } from "node:vm";
 import { act, useState } from "react";
 import { Workbench, type Chip } from "../src/features/lab/Workbench";
 import { catalogueFixture as cat, flush, mount, runFixture, seriesFixture, unmount } from "./fixtures/lab";
 
 type Spy = { setData: ReturnType<typeof vi.fn>; setMarkers: ReturnType<typeof vi.fn>; applyOptions: ReturnType<typeof vi.fn> };
+const truthModule = { exports: {} };
+runInNewContext(readFileSync("../backtest-trust.js", "utf8"), { module: truthModule });
+const truth = truthModule.exports as NonNullable<Window["VaultTruth"]>;
+
 let charts: { remove: ReturnType<typeof vi.fn>; series: Spy[]; kinds: string[] }[] = [];
 beforeEach(() => {
   charts = [];
+  window.VaultTruth = truth;
   const make = () => {
     const c = { remove: vi.fn(), series: [] as Spy[], kinds: [] as string[] };
     charts.push(c);
@@ -14,9 +21,9 @@ beforeEach(() => {
     return { addCandlestickSeries: add("candle"), addLineSeries: add("line"), addAreaSeries: add("area"), remove: c.remove, resize: vi.fn(),
       applyOptions: vi.fn(), timeScale: () => ({ fitContent: vi.fn(), setVisibleRange: vi.fn() }) };
   };
-  window.LightweightCharts = { createChart: vi.fn(make) } as never;
+  window.LightweightCharts = { createChart: vi.fn(make), CrosshairMode: { Normal: 0 } } as never;
 });
-afterEach(async () => { await unmount(); delete window.LightweightCharts; });
+afterEach(async () => { await unmount(); delete window.LightweightCharts; delete window.VaultTruth; });
 
 const ohlc = (id: string) => seriesFixture(id, [id], { [id]: [1, 2, 3, 4, 5, 6] });
 const load = vi.fn(async (q: { id: string }) => {
@@ -80,9 +87,9 @@ it("weekly view marks the last bar in progress and maps trades", async () => {
   expect(host.textContent).toContain("Trades run on daily bars and are mapped onto this timeframe.");
   const markers = charts[0].series[0].setMarkers.mock.calls.at(-1)![0];
   expect(markers.some((m: { text: string }) => m.text === "in progress")).toBe(true);
-  expect(markers.some((m: { text: string }) => m.text === "Short")).toBe(true);
+  expect(markers.some((m: { shape: string; position: string }) => m.shape === "arrowDown" && m.position === "aboveBar")).toBe(true);
   // 2024-02-01 is not a week end; it moves to 2024-02-02, and markers stay time-sorted
-  expect(markers.find((m: { text: string }) => m.text === "Short").time).toBe("2024-02-02");
+  expect(markers.find((m: { shape: string; position: string; time: string }) => m.shape === "arrowDown" && m.position === "aboveBar" && m.time === "2024-02-02").time).toBe("2024-02-02");
   const times = markers.map((m: { time: string }) => m.time);
   expect(times).toEqual([...times].sort());
   expect(charts[0].series[0].setData.mock.calls[0][0]).toHaveLength(4);
@@ -234,4 +241,68 @@ it("keeps every pane on one time range and crosshair bar, and unsubscribes on un
   expect(price.unRange).toHaveBeenCalledTimes(1);
   expect(pane.unRange).toHaveBeenCalledTimes(1);
   expect(pane.unCross).toHaveBeenCalledTimes(1);
+});
+
+it("marks short entry above the bar and its cover below", async () => {
+  const t = { ...runFixture.trades[0], dir: -1 as const };
+  await mount(<Workbench {...props} chips={[]} trades={[t]} />);
+  await flush();
+  const markers = charts[0].series[0].setMarkers.mock.calls.at(-1)![0];
+  expect(markers).toEqual([
+    { time: "2024-01-08", position: "aboveBar", shape: "arrowDown", color: "#c43c3c", size: 1 },
+    { time: "2024-01-15", position: "belowBar", shape: "arrowUp", color: "#2e7d4f", size: 1 },
+  ]);
+});
+it("shows unique server series adaptations verbatim", async () => {
+  const adapted = async (q: { id: string }) => ({ ...(await load(q)), adaptations: ["Future session dates are read."] });
+  const host = await mount(<Workbench {...props} chips={chips.slice(0, 1)} loadSeries={adapted} />);
+  await flush();
+  expect([...host.querySelectorAll("[data-lab-adaptations]")].map((n) => n.textContent)).toEqual(["Future session dates are read."]);
+});
+
+
+it("inherits the software font and price-chart interaction options", async () => {
+  const previousFont = document.body.style.fontFamily;
+  document.body.style.fontFamily = '"House Sans", sans-serif';
+  try {
+    await mount(<Workbench {...props} chips={[]} />);
+    await flush();
+    const options = vi.mocked(window.LightweightCharts!.createChart).mock.calls[0][1];
+    expect(options).toMatchObject({
+      layout: { attributionLogo: false, fontFamily: getComputedStyle(document.body).fontFamily, fontSize: 11, textColor: "#8b8d93" },
+      grid: { vertLines: { visible: false }, horzLines: { color: "#e3e3e4" } },
+      timeScale: { minBarSpacing: 0.05 }, crosshair: { mode: 0 }, handleScale: { axisPressedMouseMove: false },
+    });
+  } finally { document.body.style.fontFamily = previousFont; }
+});
+
+it("uses the shared action arrows for every scale-in leg, preserving short covers on weekly bars", async () => {
+  const trade = { ...runFixture.trades[0], dir: -1 as const,
+    legs: [["2024-01-08", 101, 0.5], ["2024-01-09", 103, 0.5]] as [string, number, number][] };
+  const original = structuredClone(trade);
+  const host = await mount(<Workbench {...props} chips={[]} tf="W" trades={[trade]} />);
+  await flush();
+  const actions = charts[0].series[0].setMarkers.mock.calls.at(-1)![0].filter((m: { shape: string }) => m.shape !== "square");
+  expect(actions).toEqual([
+    { time: "2024-01-09", position: "aboveBar", shape: "arrowDown", color: "#c43c3c", size: 1 },
+    { time: "2024-01-09", position: "aboveBar", shape: "arrowDown", color: "#c43c3c", size: 0.7 },
+    { time: "2024-01-15", position: "belowBar", shape: "arrowUp", color: "#2e7d4f", size: 1 },
+  ]);
+  expect(trade).toEqual(original);
+  expect(host.textContent).toContain("Buy");
+  expect(host.textContent).toContain("Sell");
+});
+
+it("omits actions outside the available price dates without fabricating a bar or hiding valid legs", async () => {
+  const trades = [
+    { ...runFixture.trades[0], entry: "2023-12-29", exit: "2024-01-15",
+      legs: [["2023-12-29", 98, 0.5], ["2024-01-09", 103, 0.5]] as [string, number, number][] },
+    { ...runFixture.trades[0], entry: "2024-01-10", exit: "2024-02-05" },
+  ];
+  await mount(<Workbench {...props} chips={[]} trades={trades} />);
+  await flush();
+  expect(charts[0].series[0].setMarkers.mock.calls.at(-1)![0]).toEqual([
+    { time: "2024-01-09", position: "belowBar", shape: "arrowUp", color: "#2e7d4f", size: 0.7 },
+    { time: "2024-01-15", position: "aboveBar", shape: "arrowDown", color: "#c43c3c", size: 1 },
+  ]);
 });

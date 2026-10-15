@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { COPY } from "./labels";
 import { int, num, pct } from "./format";
-import { comboCount, optimizablePaths, type OptimizableSetting, setAt, specTooLong, splitDate, valuesCount, withOptimize } from "./spec-model";
+import { comboCount, setAt, specTooLong, splitDate, valuesCount, withOptimize } from "./spec-model";
+import { optimizablePaths, type OptimizableSetting } from "./optimize-paths";
+import { ExecutionStrip } from "./RunResults";
 import { ErrorNotice, isProvisional, Loading, ProvisionalStrip, ServerLabel } from "./ui";
 import type { Catalogue, OptimizeDim, OptimizeResult, Role, SavedMarket, Spec } from "./types";
 import "./optimize.css";
@@ -102,7 +104,9 @@ export function OptimizePanel(props: {
         <table className="tbl lab-dims">
           <thead><tr><th></th><th>Setting</th><th>From</th><th>To</th><th>Step</th><th>Values</th></tr></thead>
           <tbody>
-            {settings.map((s) => {
+            {[...new Set(settings.map((s) => s.group))].map((group) => <Fragment key={group}>
+              <tr className="lab-dim-group"><th colSpan={6}>{group}</th></tr>
+              {settings.filter((s) => s.group === group).map((s) => {
               const d = sel[s.path];
               return (
                 <tr key={s.path} data-lab-dim={s.path}>
@@ -117,7 +121,8 @@ export function OptimizePanel(props: {
                   <td className="lab-dim-values">{d ? valuesCount(d).toLocaleString("en-US") : <span className="cap">fixed</span>}</td>
                 </tr>
               );
-            })}
+              })}
+            </Fragment>)}
           </tbody>
         </table>
       </div>
@@ -164,6 +169,8 @@ function OptimizeResultView({ result, spec, ranSpec, catalogue, settings, market
   return (
     <div data-lab-optimize-result>
       <ServerLabel text={result.label} />
+      <ExecutionStrip model={result.execution_model} money={result.money} adaptations={result.adaptations} />
+      {result.money && <p className="cap">{result.money.basis}</p>}
       {isProvisional(market) && <ProvisionalStrip note={result.provisional_note} instrumentLabel={result.instrument.label ?? instrumentLabel} />}
       <p className="cap">Ranked on: {result.ranked_on === "in_sample" ? "in-sample only" : "full period"}</p>
       <p className="cap">
