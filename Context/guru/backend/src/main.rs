@@ -643,8 +643,22 @@ fn checked_params_of(q: &BTreeMap<String, String>) -> Result<Params,String> {
         }
         if let Some(name)=key.strip_prefix("g.") {
             let Some(setting)=schema.iter().find(|d|d.key==name) else {return Err(format!("Unknown reviewed Ehlers grid parameter: {key}"));};
+            let unreviewed=||format!("Unreviewed Ehlers grid setting: {key}; only the exact configuration default is admitted");
+            // Bound this reviewed request before the legacy grid parser casts
+            // its floating count to usize. Nonfinite endpoints or huge counts
+            // can otherwise overflow even though no alternate value is admitted.
+            // Keep malformed syntax and ordinary legacy errors with grid().
+            if let Ok(values)=text.split(':').map(|v|v.trim().parse::<f64>()).collect::<Result<Vec<_>,_>>() {
+                if values.iter().any(|v|!v.is_finite()) {return Err(unreviewed());}
+                if let [lo,hi,step]=values[..] {
+                    if step>0. && hi>=lo {
+                        let steps=((hi-lo)/step+1e-9).floor();
+                        if !steps.is_finite() || steps>999. {return Err(unreviewed());}
+                    }
+                }
+            }
             if grid(text)?.iter().any(|value|!value.is_finite() || *value!=setting.def) {
-                return Err(format!("Unreviewed Ehlers grid setting: {key}; only the exact configuration default is admitted"));
+                return Err(unreviewed());
             }
         }
     }
@@ -1232,6 +1246,21 @@ mod tests {
         }
         let legacy=BTreeMap::from([("id".into(),"ehrs_sinetrend_cp110".into()),("p.cyc_part".into(),"garbage".into())]);
         assert!(checked_params_of(&legacy).unwrap().is_empty());
+    }
+
+    #[test]
+    fn reviewed_ehlers_grid_overflow_inputs_return_errors_without_panicking() {
+        for id in ["ehrs_sinetrend_trend","ehrs_sinetrend_cp115","ehrs_sinetrend_cp115_trend"] {
+            for spec in ["0:inf:1","0:1:1e-300","-1e308:1e308:1","NaN","1:1:inf","1:1:1e-400","1:1001:1"] {
+                let query=BTreeMap::from([("id".into(),id.into()),("g.cyc_part".into(),spec.into())]);
+                assert!(checked_params_of(&query).is_err(),"{id}: {spec}");
+            }
+            let cp=if id=="ehrs_sinetrend_trend" {"1"} else {"1.15"};
+            for spec in [cp.to_string(),format!("{cp}:{cp}:0.05"),format!("{cp}:{cp}:1e-300")] {
+                let query=BTreeMap::from([("id".into(),id.into()),("g.cyc_part".into(),spec)]);
+                assert!(checked_params_of(&query).is_ok());
+            }
+        }
     }
 
     #[test]
