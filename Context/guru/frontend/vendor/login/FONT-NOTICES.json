@@ -1,0 +1,20 @@
+{
+  "PlusJakartaSans-var.woff2": {
+    "0": "Copyright 2020 The Plus Jakarta Sans Project Authors (https://github.com/tokotype/PlusJakartaSans)",
+    "1": "Plus Jakarta Sans",
+    "13": "This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: https://scripts.sil.org/OFL",
+    "14": "https://scripts.sil.org/OFL"
+  },
+  "FamiljenGrotesk-var.woff2": {
+    "0": "Copyright 2021 The Familjen Grotesk Project Authors (https://github.com/Familjen-Sthlm/Familjen-Grotesk)",
+    "1": "Familjen Grotesk",
+    "13": "This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: https://scripts.sil.org/OFL",
+    "14": "https://scripts.sil.org/OFL"
+  },
+  "NotoSerifGujarati-var.woff2": {
+    "0": "Copyright 2022 The Noto Project Authors (https://github.com/notofonts/gujarati)",
+    "1": "Noto Serif Gujarati",
+    "13": null,
+    "14": "https://scripts.sil.org/OFL"
+  }
+}

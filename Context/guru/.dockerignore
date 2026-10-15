@@ -12,3 +12,5 @@ frontend/react/node_modules
 frontend/react/dist
 frontend/react/public
 frontend/react/coverage
+
+frontend/react/dist-login

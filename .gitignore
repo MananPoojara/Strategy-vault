@@ -61,3 +61,6 @@ Context/guru/webapp/backups/
 Context/guru/webapp/verification/
 /library/market-data/
 /library/us-market-data/
+
+# Standalone React login output is rebuilt; optional supplied audio stays private.
+Context/guru/frontend/react/dist-login/

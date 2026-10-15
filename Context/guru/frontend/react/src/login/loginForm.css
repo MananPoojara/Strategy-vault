@@ -1,0 +1,50 @@
+/* Sign-in form in the welcome page's colours (owner 13-10-2026): ivory fields, gold hairlines, brass/orange focus,
+   the desk's orange primary button, dark-brown ink. Gujarati glyphs fall through to Noto Serif Gujarati. */
+.lf{display:flex;flex-direction:column;color:#3d2a0e;font-family:var(--font-ui),'Noto Serif Gujarati',sans-serif}
+.lf-title{margin:4px 0 4px;text-align:center;font-family:var(--font-heading),'Noto Serif Gujarati',serif;
+  font-size:1.85rem;line-height:1.15;font-weight:700;letter-spacing:-.015em;color:#3d2a0e}
+.lf-sub{margin:0 0 6px;text-align:center;color:#8d6a33;font-size:.86rem;line-height:1.45}
+
+.lf-field{margin-top:14px}
+.lf-field label{display:block;margin-bottom:7px;font-family:var(--font-heading);font-size:.68rem;font-weight:700;
+  letter-spacing:.16em;text-transform:uppercase;color:#7a5a26}
+.lf-control{position:relative}
+.lf-control input{display:block;width:100%;box-sizing:border-box;height:48px;padding:0 46px 0 44px;
+  border:1px solid #e3cfa6;border-radius:10px;outline:0;background:#FFFDF8;color:#3d2a0e;
+  font-family:inherit;font-size:.95rem;font-weight:600;caret-color:#F97316;
+  box-shadow:inset 0 1px 2px rgba(84,50,8,.06);transition:border-color .18s,box-shadow .18s,background .18s}
+.lf-control input::placeholder{color:#b9a07a;font-weight:500}
+.lf-control input:hover:not(:disabled){border-color:#d9b56a}
+.lf-control input:focus{border-color:#D9A441;background:#fff;box-shadow:0 0 0 3px rgba(249,115,22,.18),inset 0 1px 2px rgba(84,50,8,.04)}
+.lf-control input:disabled{cursor:wait;opacity:.66}
+.lf.has-error .lf-control input{border-color:#c2410c;box-shadow:0 0 0 3px rgba(194,65,12,.1)}
+.lf-icon{position:absolute;left:14px;top:50%;width:18px;height:18px;transform:translateY(-50%);color:#b08a4a;pointer-events:none;transition:color .18s}
+.lf-control:focus-within .lf-icon{color:#F97316}
+.lf-icon svg,.lf-eye svg{display:block;width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round}
+.lf-eye{position:absolute;right:6px;top:50%;width:36px;height:36px;display:grid;place-items:center;transform:translateY(-50%);
+  border:0;border-radius:8px;background:transparent;color:#a07f45;cursor:pointer}
+.lf-eye:hover:not(:disabled){background:rgba(217,164,65,.14);color:#7a4e0e}
+.lf-eye:disabled{cursor:wait;opacity:.55}
+.lf-strike{position:absolute;width:21px;height:1.5px;background:currentColor;transform:rotate(-43deg) scaleX(0);transition:transform .18s ease}
+.lf-strike.is-visible{transform:rotate(-43deg) scaleX(1)}
+
+.lf-remember{display:flex;align-items:center;gap:9px;width:max-content;margin-top:14px;color:#5b3d0e;
+  font-size:.85rem;font-weight:600;line-height:1;cursor:pointer;user-select:none}
+.lf-remember input{width:16px;height:16px;margin:0;accent-color:#F97316;cursor:pointer}
+.lf-remember input:disabled{cursor:wait}
+
+/* the desk's primary button (theme .btn): orange gradient, 10px radius, 700 */
+.lf-submit{height:48px;margin-top:18px;border:0;border-radius:10px;background:linear-gradient(135deg,var(--primary,#F97316),var(--accent,#FB923C));
+  color:#fff;font-family:inherit;font-size:.95rem;font-weight:700;letter-spacing:.02em;cursor:pointer;
+  box-shadow:0 10px 20px -10px rgba(249,115,22,.75);transition:filter .15s,box-shadow .15s}
+.lf-submit:hover:not(:disabled){filter:brightness(1.05);box-shadow:0 14px 24px -10px rgba(249,115,22,.85)}
+.lf-submit:disabled{cursor:wait;opacity:.75}
+.lf-msg{min-height:1.4em;margin:12px 0 0;color:#7a5a26;font-size:.82rem;line-height:1.4;text-align:center}
+.lf-msg.is-error{color:#b3400c}
+.lf-msg:empty{min-height:0;margin-top:8px}
+.lf-secondary{margin-top:8px;padding:10px 12px;border:1px solid rgba(201,154,60,.42);border-radius:10px;background:transparent;
+  color:#5b3d0e;font-family:inherit;font-size:.85rem;cursor:pointer;transition:background .15s,border-color .15s}
+.lf-secondary b{color:#c2570c;font-weight:700}
+.lf-secondary:hover:not(:disabled){background:rgba(217,164,65,.1);border-color:rgba(201,154,60,.7)}
+.lf-secondary:disabled{opacity:.5;cursor:default}
+.lf-eye:focus-visible,.lf-submit:focus-visible,.lf-secondary:focus-visible,.lf-remember input:focus-visible{outline:2px solid #D9A441;outline-offset:2px}
