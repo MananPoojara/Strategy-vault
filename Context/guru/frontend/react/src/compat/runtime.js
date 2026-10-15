@@ -6,7 +6,7 @@ import {LIB} from './catalogue.js';
 import {loadOwnerRows} from '../services/summary-loader';
 import {bookContext} from '../services/book-context';
 import {returnDisplay} from '../services/return-display';
-import {stockChoices,basketSpan,positionLimit} from '../services/stock-selection';
+import {stockChoices,basketSpan,positionLimit,priceRecoveryPeriod} from '../services/stock-selection';
 import {libraryScope,inLibraryScope} from '../services/library-scope';
 import {libraryMarket,libraryMarketVariants} from '../services/library-market';
 import {orderAuthors} from '../services/author-order';
@@ -1440,7 +1440,11 @@ const apiError = (e, tk) => `${e} (${LABEL[tk]})`;
 const verdictText = (s) => `<b>${fx(s.trades,0)}</b> closed trades in ${fx(s.years,1)} years, in the market ${pct(s.exposure,0)} of the time. It compounded <b class="${cls(s.cagr)}">${pct(s.cagr,2,true)}</b> a year against <b>${pct(s.bh_cagr,2,true)}</b> for buy &amp; hold, with a worst drawdown of <b class="neg">${pct(s.max_dd,1)}</b> (buy &amp; hold ${pct(s.bh_max_dd,1)}). ${s.trades<30?'Too few trades to judge.':s.t_stat>=2?`The average trade is statistically significant (t = ${fx(s.t_stat)}).`:`The average trade is not statistically different from zero (t = ${fx(s.t_stat)}).`}`;
 function withheldStrategy(v,tk,crumbs,switches,issue) {
   const label=S.run_scope==='basket'?BASKETS.find(b=>b.id===S.basket)?.name||S.basket:LABEL[tk]||tk;
-  return `${crumbs}<section class="box" data-backtest-state="${esc(issue.status)}"><div class="st-head"><h1 class="st">${esc(v.family_name)}</h1>${VaultUI.toolbar()}</div><div class="tags2"><span class="badge outline">${esc(v.dir)}</span><span>${esc(label)}</span><span class="badge gapb">${TRUST.statusLabel(issue.status)}</span></div>${switches}${periodPanel(tk,null,issue)}${sourceBlockers(v)}<div class="empty gapbox"><b>${TRUST.statusLabel(issue.status)}</b>${esc(issue.note)}<p>No performance figures or charts are displayed for this run. The book information and rules below are reference material, not evidence of a completed backtest.</p></div></section><section class="box"><div class="box-h">${v.guru==='ross'?'Source rules and unresolved requirements':'Book rules and implementation notes'}</div>${rulesPanel(v)}</section>${gptSection(v,tk,null,issue)}`;
+  const span=selectedSpan(tk),coverage=BASKETS.find(b=>b.id===S.basket)?.price_coverage;
+  const recovery=S.run_scope==='basket'&&S.membership==='current'&&instrumentControls(v.instrument_policy).basket&&issue.status==='needs_data'
+    ?priceRecoveryPeriod(coverage,S.from||span.first,S.to||span.last):null;
+  const recoveryHTML=recovery?`<p data-price-recovery>Daily price coverage is available from ${esc(recovery.from)} to ${esc(recovery.to)}. Some requested dates have no supplied quotation; the selected dates have not been changed. <button type="button" class="dbtn sm" data-period="${recovery.from}|${recovery.to}">Run available price period</button></p>`:'';
+  return `${crumbs}<section class="box" data-backtest-state="${esc(issue.status)}"><div class="st-head"><h1 class="st">${esc(v.family_name)}</h1>${VaultUI.toolbar()}</div><div class="tags2"><span class="badge outline">${esc(v.dir)}</span><span>${esc(label)}</span><span class="badge gapb">${TRUST.statusLabel(issue.status)}</span></div>${switches}${periodPanel(tk,null,issue)}${sourceBlockers(v)}<div class="empty gapbox"><b>${TRUST.statusLabel(issue.status)}</b>${esc(issue.note)}<p>No performance figures or charts are displayed for this run. The book information and rules below are reference material, not evidence of a completed backtest.</p>${recoveryHTML}</div></section><section class="box"><div class="box-h">${v.guru==='ross'?'Source rules and unresolved requirements':'Book rules and implementation notes'}</div>${rulesPanel(v)}</section>${gptSection(v,tk,null,issue)}`;
 }
 
 const BASKET_RUNS=new Map();

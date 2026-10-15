@@ -117,6 +117,9 @@ def fixture_basket(query):
             "Auxiliary columns do not establish a verified membership contract.",
             "stats": None, "dates": [], "equity": [], "trades": [],
             "_test_fixture": True}
+    if query.get("from", [""])[0] and query["from"][0] < "2009-05-19":
+        return {"kind": "basket", "status": "needs_data", "blocked": "Synthetic historical price gap.",
+                "stats": None, "dates": [], "equity": [], "trades": [], "_test_fixture": True}
     data = fixture_run(INDIA_STOCK)
     data.update({"kind": "basket", "status": "ready", "equity": [1] * len(FIXTURE_DATES),
         "gross_equity": [1] * len(FIXTURE_DATES), "bh": [1] * len(FIXTURE_DATES),
@@ -239,7 +242,9 @@ class Fixtures:
             payload = {"baskets": [{"id": "us_sp500" if us else "nifty50",
                 "name": "Browser fixture stocks", "price_status": "ready",
                 "symbols": [US_STOCK if us else INDIA_STOCK],
-                "note": "Synthetic membership metadata; no market data loaded."}]}
+                "note": "Synthetic membership metadata; no market data loaded.",
+                "price_coverage": {"scope": "supplied_daily_observations", "from": "2009-05-19", "to": "2020-09-11",
+                    "source_index_sha256": "a" * 64, "benchmark_sha256": "b" * 64}}]}
             if not us:
                 payload["baskets"].append({"id": "nse500", "name": "Other source-listed fixture stocks",
                     "price_status": "ready", "symbols": [INDIA_OTHER_STOCK, INDIA_DUPLICATE_STOCK],
@@ -523,6 +528,20 @@ async def strategy_basket_controls(page, base, fixtures, expect):
                for item in fixtures.requests[begin:])
 
 
+async def basket_price_recovery(page, base, fixtures, expect):
+    await page.goto(base + "/#/s/hbqts_ma5_25?" + urlencode({"basket": "nifty50", "run_scope": "basket", "from": "2000-01-03", "to": "2020-09-11"}), wait_until="domcontentloaded")
+    await expect(page.locator('[data-backtest-state="needs_data"]')).to_be_visible()
+    await expect(page.locator('[data-tile]')).to_have_count(0)
+    await expect(page.locator('[data-price-recovery]')).to_contain_text("selected dates have not been changed")
+    assert current_route_query(page)["from"] == ["2000-01-03"]
+    await page.get_by_role("button", name="Run available price period", exact=True).click()
+    await expect(page.locator('[data-basket-result]')).to_be_visible()
+    assert current_route_query(page)["from"] == ["2009-05-19"]
+    await page.locator('[data-membership="past"]').click()
+    await expect(page.locator('[data-backtest-state="needs_data"]')).to_be_visible()
+    await expect(page.locator('[data-price-recovery]')).to_have_count(0)
+
+
 async def smoke(dist):
     from playwright.async_api import async_playwright, expect
     server = ThreadingHTTPServer(("127.0.0.1", 0), partial(QuietHandler, directory=str(dist)))
@@ -543,6 +562,7 @@ async def smoke(dist):
                         (partial_owner_failure, Fixtures(failed_owners=("connors",), valid_chande=True)),
                         (strategy_settings_and_stock, Fixtures()),
                         (strategy_basket_controls, Fixtures()),
+                        (basket_price_recovery, Fixtures()),
                     ]
                     for journey, fixtures in cases:
                         # Each journey owns its browser context and runtime caches.

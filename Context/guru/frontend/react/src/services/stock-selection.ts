@@ -41,3 +41,18 @@ export function positionLimit(value: unknown): number | null {
   const count = Number(value);
   return count <= 100 ? count : null;
 }
+
+/** An explicit alternative window, never an automatic change to a request.
+ * Observation coverage does not certify historical membership or execution. */
+export function priceRecoveryPeriod(coverage: unknown, from: string, to: string): {from: string; to: string} | null {
+  const validDate = (value: unknown): value is string => typeof value === "string"
+    && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value))
+    && new Date(value).toISOString().slice(0, 10) === value;
+  if (!coverage || typeof coverage !== "object" || !validDate(from) || !validDate(to) || from > to) return null;
+  const c = coverage as Record<string, unknown>;
+  if (c.scope !== "supplied_daily_observations" || !validDate(c.from) || !validDate(c.to) || c.from > c.to
+    || !/^[a-f0-9]{64}$/.test(String(c.source_index_sha256 || ""))
+    || !/^[a-f0-9]{64}$/.test(String(c.benchmark_sha256 || ""))) return null;
+  const first = from > c.from ? from : c.from, last = to < c.to ? to : c.to;
+  return first > last || first === from && last === to ? null : {from: first, to: last};
+}
