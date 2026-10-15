@@ -1,0 +1,40 @@
+.strategy-settings-trigger {
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  width: 36px; height: 36px; padding: 7px; border: 1px solid var(--steel);
+  border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer;
+}
+.strategy-settings-trigger:hover, .strategy-settings-trigger[aria-expanded="true"] {
+  color: var(--blue); border-color: var(--blue); background: var(--blue-soft);
+}
+.strategy-settings-backdrop {
+  position: fixed; inset: 0; z-index: 85; display: grid; place-items: center; padding: 24px;
+  background: color-mix(in srgb, var(--ink) 24%, transparent);
+}
+.strategy-settings-dialog {
+  width: min(460px, 100%); max-height: calc(100dvh - 48px); overflow: auto;
+  padding: 22px; border: 1px solid var(--steel); border-radius: 10px;
+  background: var(--card); color: var(--ink); font-family: var(--font);
+  box-shadow: 0 18px 64px color-mix(in srgb, var(--ink) 16%, transparent);
+  animation: strategy-settings-enter 140ms ease-out;
+}
+.strategy-settings-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.strategy-settings-heading h2 { margin: 0; font-size: 20px; line-height: 1.2; font-weight: 750; letter-spacing: -.015em; }
+.strategy-settings-close { display: inline-flex; padding: 6px; border: 0; background: none; color: var(--ink2); cursor: pointer; }
+.strategy-settings-close:hover { color: var(--ink); }
+.strategy-settings-intro { margin: 10px 0 22px; color: var(--ink2); font-size: 13px; }
+.strategy-settings-group { min-width: 0; margin: 0; padding: 0; border: 0; }
+.strategy-settings-group legend { margin-bottom: 10px; padding: 0; color: var(--ink2); font-size: 11px; font-weight: 700; letter-spacing: .035em; text-transform: uppercase; }
+.strategy-settings-option { display: flex; align-items: start; gap: 12px; margin-top: 8px; padding: 14px; border: 1px solid var(--rule); border-radius: 6px; background: var(--panel); cursor: pointer; }
+.strategy-settings-option.selected { border-color: var(--blue); background: var(--blue-soft); }
+.strategy-settings-group:disabled .strategy-settings-option { cursor: default; opacity: .65; }
+.strategy-settings-option input { flex: 0 0 auto; margin: 4px 0 0; accent-color: var(--blue); }
+.strategy-settings-option strong { display: block; font-size: 14px; font-weight: 650; }
+.strategy-settings-option small { display: block; margin-top: 4px; color: var(--ink2); font-size: 12px; line-height: 1.5; }
+.strategy-settings-note { margin: 16px 0 22px; color: var(--ink2); font-size: 11px; line-height: 1.6; }
+.strategy-settings-actions { display: flex; justify-content: end; gap: 8px; border-top: 1px solid var(--rule); padding-top: 16px; }
+.strategy-settings-actions button { padding: 8px 18px; border: 1px solid var(--steel); border-radius: 5px; background: var(--card); color: var(--ink); font-weight: 600; font-size: 12px; cursor: pointer; }
+.strategy-settings-actions .strategy-settings-apply { border-color: var(--blue); background: var(--blue); color: var(--card); }
+.strategy-settings-actions button:disabled { opacity: .5; cursor: default; }
+@keyframes strategy-settings-enter { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .strategy-settings-dialog { animation: none; } }
+@media (max-width: 480px) { .strategy-settings-backdrop { padding: 16px; } .strategy-settings-dialog { padding: 18px; max-height: calc(100dvh - 32px); } }

@@ -1,6 +1,7 @@
 import type { ReadingModel } from "../pages/ReadingPage";
 import type { Route } from "../app/routes";
 import type { LibraryMarket } from "../services/library-market";
+import type { OwnerIssue as SummaryIssue } from "../services/summary-loader";
 export interface ViewSnapshot {
   revision: number;
   loading: boolean;
@@ -54,6 +55,7 @@ export interface AuthorCard {
   sharpe: string | null;
 }
 export interface HomeModel {
+  summaryIssues?: SummaryIssue[];
   market: LibraryMarket;
   implementedMethods: number;
   enabledVariants: number;

@@ -36,6 +36,8 @@ export default defineConfig({
         "src/services/library-market.ts",
         "src/services/author-order.ts",
         "src/services/library-backtest-context.ts",
+        "src/services/summary-loader.ts",
+        "src/services/book-context.ts",
         "src/services/instrument-controls.ts",
         "src/services/strategy-indicators.ts",
         "src/app/routes.ts",

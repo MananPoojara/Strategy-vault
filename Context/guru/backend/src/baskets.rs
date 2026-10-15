@@ -67,8 +67,11 @@ fn native_evidence<'a>(basket:&str,optional:impl Fn(&str)->Option<&'a str>)->Res
 }
 
 #[derive(Default)]
-pub struct Catalogue {root:PathBuf,entries:BTreeMap<String,Entry>}
-struct Entry {basket:String,symbol:String,path:PathBuf,first:String,last:String,bars:usize,source:String,source_sha:String,csv_sha:String,membership:String,has_volume:bool,excluded_prefix:usize,original_bars:usize,coverage_note:String,evidence:NativeEvidence}
+pub struct Catalogue {root:PathBuf,entries:BTreeMap<String,Entry>,expected_members:BTreeMap<String,usize>}
+/// Server-owned universe inventory. This exposes no filesystem paths and does
+/// not turn a static source watchlist into dated historical membership.
+pub struct BasketMember {pub key:String,pub symbol:String,pub first:String,pub last:String,pub market:Market,pub membership_kind:String}
+struct Entry {basket:String,symbol:String,path:PathBuf,first:String,last:String,bars:usize,source:String,source_sha:String,csv_sha:String,membership:String,basket_member:bool,has_volume:bool,excluded_prefix:usize,original_bars:usize,coverage_note:String,evidence:NativeEvidence}
 
 fn sha256_hex(bytes:&[u8])->Result<String,String>{
     // Coreutils is present in the engine's Debian base. Hash the very bytes
@@ -114,10 +117,17 @@ impl Catalogue {
         let text=std::str::from_utf8(&bytes).map_err(|_|"Basket whitelist is not UTF-8")?;
         let mut lines=text.lines();let header=parse_csv_fields(lines.next().ok_or("Basket whitelist empty")?);
         if header.iter().any(|name|!text_safe(name))||header.iter().enumerate().any(|(i,name)|header[..i].contains(name)){return Err("Basket whitelist has unsafe or duplicate columns".into());}
-        let mut catalogue=Self{root,entries:BTreeMap::new()};
+        let mut catalogue=Self{root,entries:BTreeMap::new(),expected_members:BTreeMap::new()};
         for line in lines.filter(|line|!line.trim().is_empty()){
             let fields=parse_csv_fields(line);
             let field=|name:&str|header.iter().position(|key|key==name).and_then(|i|fields.get(i)).map(|v|v.trim()).ok_or_else(||format!("Basket whitelist missing {name}"));
+            let optional=|name:&str|header.iter().position(|key|key==name).and_then(|i|fields.get(i)).map(|v|v.trim());
+            if header.iter().any(|key|key=="basket_expected_members"){
+                let expected=field("basket_expected_members")?.parse::<usize>().ok().filter(|n|(1..=25_000).contains(n)).ok_or("Invalid expected source-basket member count")?;
+                let basket=field("basket")?;
+                if !text_safe(basket)||!basket.bytes().all(|c|c.is_ascii_alphanumeric()||c==b'_'||c==b'-'){return Err("Unsafe expected-basket namespace".into());}
+                if catalogue.expected_members.insert(basket.into(),expected).is_some_and(|old|old!=expected){return Err("Inconsistent expected source-basket member counts".into());}
+            }
             if field("status")?!="ready"{continue;}
             let (basket,symbol,path)=(field("basket")?,field("ticker")?,PathBuf::from(field("path")?));
             if !text_safe(basket)||!basket.bytes().all(|c|c.is_ascii_alphanumeric()||c==b'_'||c==b'-')||!text_safe(symbol)||symbol.contains(':')||path.as_os_str().is_empty()||path.components().any(|c|!matches!(c,Component::Normal(_))){return Err("Unsafe basket namespace or source path".into());}
@@ -125,17 +135,22 @@ impl Catalogue {
             let source_sha=field("source_sha256")?;let csv_sha=field("csv_sha256")?;
             if !valid_date(first)||!valid_date(last)||first>last||bars<2||bars>100000||!valid_sha(source_sha)||!valid_sha(csv_sha){return Err("Invalid native source provenance".into());}
             let key=format!("basket:{basket}:{symbol}");
-            let optional=|name:&str|header.iter().position(|key|key==name).and_then(|i|fields.get(i)).map(|v|v.trim());
             let evidence=native_evidence(basket,&optional)?;
             let has_volume=match field("has_volume")? {"true"=>true,"false"=>false,_=>return Err("Invalid native volume-availability status".into())};
+            let basket_member=match optional("basket_member"){None|Some("true")=>true,Some("false")=>false,_=>return Err("Invalid native current-basket admission flag".into())};
             if !text_safe(field("source")?)||!text_safe(field("membership")?){return Err("Native source/membership provenance is empty or unsafe".into());}
-            let entry=Entry{basket:basket.into(),symbol:symbol.into(),path,first:first.into(),last:last.into(),bars,source:field("source")?.into(),source_sha:source_sha.to_ascii_lowercase(),csv_sha:csv_sha.to_ascii_lowercase(),membership:field("membership")?.into(),has_volume,excluded_prefix:optional("excluded_prefix_count").unwrap_or("0").parse().map_err(|_|"Invalid prefix exclusion count")?,original_bars:optional("original_bars").map_or(Ok(bars),str::parse).map_err(|_|"Invalid original source count")?,coverage_note:optional("coverage_note").unwrap_or("No source prefix exclusion recorded").into(),evidence};
+            let entry=Entry{basket:basket.into(),symbol:symbol.into(),path,first:first.into(),last:last.into(),bars,source:field("source")?.into(),source_sha:source_sha.to_ascii_lowercase(),csv_sha:csv_sha.to_ascii_lowercase(),membership:field("membership")?.into(),basket_member,has_volume,excluded_prefix:optional("excluded_prefix_count").unwrap_or("0").parse().map_err(|_|"Invalid prefix exclusion count")?,original_bars:optional("original_bars").map_or(Ok(bars),str::parse).map_err(|_|"Invalid original source count")?,coverage_note:optional("coverage_note").unwrap_or("No source prefix exclusion recorded").into(),evidence};
             if entry.original_bars<entry.bars||entry.original_bars-entry.bars!=entry.excluded_prefix{return Err("Native prefix counts do not reconcile".into());}
             if catalogue.entries.insert(key,entry).is_some(){return Err("Duplicate qualified basket symbol".into());}
         }
         Ok(catalogue)
     }
     pub fn contains(&self,key:&str)->bool{self.entries.contains_key(key)}
+    pub fn expected_member_count(&self,basket:&str)->Option<usize>{self.expected_members.get(basket).copied()}
+    pub fn members(&self,basket:&str)->Vec<BasketMember>{
+        let mut members:Vec<_>=self.entries.iter().filter(|(_,e)|e.basket==basket&&e.basket_member).map(|(key,e)|BasketMember{key:key.clone(),symbol:e.symbol.clone(),first:e.first.clone(),last:e.last.clone(),market:e.evidence.market(),membership_kind:e.evidence.membership_kind().into()}).collect();
+        members.sort_by(|a,b|a.symbol.cmp(&b.symbol));members
+    }
     pub fn native_evidence(&self,key:&str)->Option<&NativeEvidence>{self.entries.get(key).map(|entry|&entry.evidence)}
     pub fn rows(&self,key:&str)->Result<Vec<Row>,String>{
         let entry=self.entries.get(key).ok_or("Unknown qualified basket symbol")?;
@@ -150,10 +165,10 @@ impl Catalogue {
         Ok(rows)
     }
     pub fn provenance_json(&self,key:&str)->Option<String>{
-        self.entries.get(key).map(|e|{let mut json=format!("{{\"qualified_ticker\":\"{}\",\"symbol\":\"{}\",\"basket\":\"{}\",\"source\":\"{}\",\"source_sha256\":\"{}\",\"csv_sha256\":\"{}\",\"membership\":\"{}\",\"first\":\"{}\",\"last\":\"{}\",\"bars\":{},\"excluded_prefix_count\":{},\"original_bars\":{},\"coverage_note\":\"{}\",\"quote_accuracy_independently_verified\":false,\"basis\":\"Actual native daily vendor OHLC and volume; unknown auxiliary fields are not trading signals. Current watchlist membership is a snapshot, not historical membership: retrospective universe selection has survivorship bias. Cash-stock F&O eligibility does not establish futures contracts or roll events.\"}}",esc(key),esc(&e.symbol),esc(&e.basket),esc(&e.source),e.source_sha,e.csv_sha,esc(&e.membership),e.first,e.last,e.bars,e.excluded_prefix,e.original_bars,esc(&e.coverage_note));json.pop();json.push_str(&format!(",{}}}",e.evidence.json()));json})
+        self.entries.get(key).map(|e|{let mut json=format!("{{\"qualified_ticker\":\"{}\",\"symbol\":\"{}\",\"basket\":\"{}\",\"source\":\"{}\",\"source_sha256\":\"{}\",\"csv_sha256\":\"{}\",\"membership\":\"{}\",\"first\":\"{}\",\"last\":\"{}\",\"bars\":{},\"excluded_prefix_count\":{},\"original_bars\":{},\"coverage_note\":\"{}\",\"quote_accuracy_independently_verified\":false,\"basis\":\"Actual native daily vendor OHLC and volume; unknown auxiliary fields are not trading signals. Current watchlist membership is a snapshot, not historical membership: retrospective universe selection has survivorship bias. Cash-stock F&O eligibility does not establish futures contracts or roll events.\"}}",esc(key),esc(&e.symbol),esc(&e.basket),esc(&e.source),e.source_sha,e.csv_sha,esc(&e.membership),e.first,e.last,e.bars,e.excluded_prefix,e.original_bars,esc(&e.coverage_note));json.pop();json.push_str(&format!(",\"basket_member\":{},\"basket_expected_members\":{},{}}}",e.basket_member,self.expected_member_count(&e.basket).map_or("null".into(),|n|n.to_string()),e.evidence.json()));json})
     }
     pub fn tickers_json(&self)->Vec<String>{
-        self.entries.iter().map(|(key,e)|format!("{{\"ticker\":\"{}\",\"symbol\":\"{}\",\"basket\":\"{}\",\"first\":\"{}\",\"last\":\"{}\",\"has_volume\":{},\"series\":[],\"price_status\":\"ready\",\"native\":true,{},\"provenance\":{}}}",esc(key),esc(&e.symbol),esc(&e.basket),e.first,e.last,e.has_volume,e.evidence.json(),self.provenance_json(key).unwrap())).collect()
+        self.entries.iter().map(|(key,e)|format!("{{\"ticker\":\"{}\",\"symbol\":\"{}\",\"basket\":\"{}\",\"first\":\"{}\",\"last\":\"{}\",\"has_volume\":{},\"series\":[],\"price_status\":\"ready\",\"native\":true,{},\"provenance\":{}}}",esc(key),esc(&e.symbol),esc(&e.basket),e.first,e.last,e.has_volume,format!("\"basket_member\":{},\"basket_expected_members\":{},{}",e.basket_member,self.expected_member_count(&e.basket).map_or("null".into(),|n|n.to_string()),e.evidence.json()),self.provenance_json(key).unwrap())).collect()
     }
 }
 #[cfg(test)]
@@ -168,6 +183,25 @@ mod tests {
         let csv="date,open,high,low,close,volume,open_interest,aux1,aux2\n2020-01-01,100,110,90,105,1000,0,777,888\n2020-01-02,105,115,95,110,2000,0,777,888\n";
         fs::write(p.join("quote.csv"),csv).unwrap();let sha=sha256_hex(csv.as_bytes()).unwrap();
         fs::write(p.join("index.csv"),format!("basket,ticker,path,first,last,bars,source,source_sha256,csv_sha256,membership,status,has_volume\nnifty50,RELIANCE,quote.csv,2020-01-01,2020-01-02,2,Native current watchlist,{}, {},Current snapshot; historical survivorship bias,ready,true\n", "a".repeat(64),sha)).unwrap();Fixture(p)
+    }
+    #[test]
+    fn archived_aliases_keep_actual_stock_prices_but_cannot_enter_current_basket(){
+        let f=fixture();let old=fs::read_to_string(f.0.join("index.csv")).unwrap();let row=old.lines().nth(1).unwrap();
+        let mut index=format!("{},basket_member\n{},true\n",old.lines().next().unwrap(),row);
+        for symbol in ["HEROMOTOCO","INDUSINDBK","WIPRO"]{index.push_str(&format!("{},false\n",row.replace(",RELIANCE,",&format!(",{symbol},"))));}
+        fs::write(f.0.join("index.csv"),&index).unwrap();let c=Catalogue::load(&f.0).unwrap();let members=c.members("nifty50");assert_eq!(members.len(),1);assert_eq!(members[0].symbol,"RELIANCE");
+        for symbol in ["HEROMOTOCO","INDUSINDBK","WIPRO"]{let key=format!("basket:nifty50:{symbol}");assert!(c.contains(&key));assert_eq!(c.rows(&key).unwrap()[0].ticker,symbol);assert!(c.provenance_json(&key).unwrap().contains("\"basket_member\":false"));assert!(c.tickers_json().iter().any(|json|json.contains(&key)&&json.contains("\"basket_member\":false")));}
+        assert!(c.members("unknown").is_empty());
+        fs::write(f.0.join("index.csv"),index.replace(",false",",dead")).unwrap();assert!(Catalogue::load(&f.0).is_err());
+    }
+    #[test]
+    fn expected_coverage_is_strict_consistent_and_includes_unready_source_rows(){
+        let f=fixture();let old=fs::read_to_string(f.0.join("index.csv")).unwrap();let header=old.lines().next().unwrap();let row=old.lines().nth(1).unwrap();
+        let missing=row.replace(",RELIANCE,",",GSPL,").replace(",ready,",",missing,");let index=format!("{header},basket_expected_members\n{row},2\n{missing},2\n");
+        fs::write(f.0.join("index.csv"),&index).unwrap();let c=Catalogue::load(&f.0).unwrap();assert_eq!(c.expected_member_count("nifty50"),Some(2));assert_eq!(c.members("nifty50").len(),1);assert!(!c.contains("basket:nifty50:GSPL"));assert!(c.tickers_json()[0].contains("\"basket_expected_members\":2"));
+        fs::write(f.0.join("index.csv"),format!("{header},basket_expected_members\n{row},2\n{missing},3\n")).unwrap();assert!(Catalogue::load(&f.0).is_err());
+        for value in ["0","25001","NaN","1.5","-1",""]{fs::write(f.0.join("index.csv"),format!("{header},basket_expected_members\n{row},{value}\n")).unwrap();assert!(Catalogue::load(&f.0).is_err(),"{value}");}
+        fs::write(f.0.join("index.csv"),old).unwrap();assert_eq!(Catalogue::load(&f.0).unwrap().expected_member_count("nifty50"),None);
     }
     #[test]
     fn metadata_is_lazy_namespaced_and_does_not_relabel_original_symbol(){
@@ -210,7 +244,18 @@ mod tests {
     #[test]
     fn staged_manifest_and_one_actual_native_series_match_declared_coverage(){
         let Ok(root)=std::env::var("VAULT_NATIVE_TEST_DIR") else{return;};
-        let c=Catalogue::load(Path::new(&root)).unwrap();assert_eq!(c.entries.values().filter(|e|e.evidence.market()==Market::India).count(),873);
+        let c=Catalogue::load(Path::new(&root)).unwrap();
+        // The snapshot may retain additional individual-stock aliases. Verify
+        // every ready whitelist key instead of pinning an obsolete file count.
+        let index=fs::read_to_string(Path::new(&root).join("index.csv")).unwrap();
+        let mut lines=index.lines();let header=parse_csv_fields(lines.next().unwrap());
+        let column=|name:&str|header.iter().position(|value|value==name).unwrap();
+        let (status,basket,ticker)=(column("status"),column("basket"),column("ticker"));
+        let expected=lines.filter(|line|!line.trim().is_empty()).map(parse_csv_fields)
+            .filter(|row|row[status].trim()=="ready")
+            .map(|row|format!("basket:{}:{}",row[basket].trim(),row[ticker].trim()))
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(c.entries.keys().cloned().collect::<std::collections::BTreeSet<_>>(),expected);
         let key=c.entries.keys().find(|key|key.ends_with(":RELIANCE")).unwrap();let rows=c.rows(key).unwrap();assert!(rows.len()>1000);assert_eq!(rows[0].ticker,"RELIANCE");
         assert!(c.provenance_json(key).unwrap().contains("quote_accuracy_independently_verified\":false"));
     }

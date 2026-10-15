@@ -308,6 +308,39 @@ def save_status(state_dir, state, event=None):
             os.fsync(handle.fileno())
 
 
+def agent_usage_limit(log_path):
+    """Only actual CLI error events can stop a queue for account/rate limits."""
+    path = Path(log_path)
+    if not path.is_file():
+        return None
+    with path.open("rb") as handle:
+        size = path.stat().st_size
+        handle.seek(max(0, size - 2 * 1024 * 1024))
+        lines = handle.read().decode("utf-8", errors="replace").splitlines()
+    codes = {"usage_limit_reached", "insufficient_quota", "quota_exceeded",
+             "rate_limit_exceeded", "rate_limit_error", "billing_hard_limit_reached"}
+    for line in reversed(lines):
+        try:
+            event = json.loads(line)
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(event, dict) or event.get("type") not in {"error", "turn.failed"}:
+            continue
+        error = event.get("error", event)
+        if isinstance(error, str):
+            error = {"message": error}
+        if not isinstance(error, dict):
+            continue
+        code = str(error.get("code", "")).lower()
+        message = str(error.get("message", ""))
+        text = message.lower().replace("’", "'")
+        named_limit = any(term in text for term in ("usage limit", "rate limit", "insufficient quota", "quota exceeded"))
+        exhausted = any(term in text for term in ("hit", "reached", "exceeded", "exhausted", "insufficient", "too many"))
+        if code in codes or error.get("status") == 429 or named_limit and exhausted:
+            return {"code": code or "usage_limit", "message": message[:2000]}
+    return None
+
+
 def execute(job, state_dir, item, state, *, memory_mb, cpu_cores, poll_seconds, deadline, log_limit_bytes):
     result_path = Path(job["result_file"])
     result_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -344,9 +377,12 @@ def execute(job, state_dir, item, state, *, memory_mb, cpu_cores, poll_seconds, 
             item["pid"] = process.pid
             save_status(state_dir, state)
             failure = None
+            live_limit = None
             while process.poll() is None:
                 if (Path(state_dir) / "STOP").exists():
                     failure = "Stop requested"
+                elif job["kind"] == "agent_conversion" and (live_limit := agent_usage_limit(log_path)):
+                    failure = "Account or rate limit reached"
                 elif time.monotonic() >= deadline:
                     failure = "Worker runtime limit"
                 elif time.monotonic() - started > job.get("timeout_seconds", 600):
@@ -360,8 +396,13 @@ def execute(job, state_dir, item, state, *, memory_mb, cpu_cores, poll_seconds, 
                     break
                 time.sleep(poll_seconds)
             item["exit_code"] = process.returncode
-            if failure:
+            limit = live_limit or (agent_usage_limit(log_path) if job["kind"] == "agent_conversion" else None)
+            if failure == "Account or rate limit reached" and limit:
+                item.update(status="usage_limit", error=failure, usage_limit=limit)
+            elif failure:
                 item.update(status="interrupted" if failure in {"Stop requested", "Worker runtime limit"} else "failed", error=failure)
+            elif limit:
+                item.update(status="usage_limit", error="Account or rate limit reached", usage_limit=limit)
             elif process.returncode != 0:
                 item.update(status="failed", error="Nonzero command exit")
             else:
@@ -382,10 +423,14 @@ def run(manifest_path, state_dir, *, watch=False, max_runtime_seconds=24 * 3600,
         poll_seconds=0.5, log_limit_bytes=20 * 1024 * 1024):
     if not 64 <= memory_mb <= 8192 or not 1 <= cpu_cores <= 2:
         raise ValueError("Worker limits require 64..8192 MB and 1..2 CPU cores")
+    if max_runtime_seconds is not None and (isinstance(max_runtime_seconds, bool) or
+            not isinstance(max_runtime_seconds, (int, float)) or
+            not math.isfinite(max_runtime_seconds) or max_runtime_seconds <= 0):
+        raise ValueError("Worker runtime must be positive and finite, or None for continuous mode")
     state_dir = Path(state_dir).resolve()
     state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(state_dir, 0o700)
-    deadline = time.monotonic() + max_runtime_seconds
+    deadline = math.inf if max_runtime_seconds is None else time.monotonic() + max_runtime_seconds
     lock = (state_dir / "worker.lock").open("a")
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -394,7 +439,7 @@ def run(manifest_path, state_dir, *, watch=False, max_runtime_seconds=24 * 3600,
         raise ValueError("Another worker already owns this state directory")
     try:
         state = read_status(state_dir)
-        state.update(schema_version=1, status="running", worker_pid=os.getpid(), limits={"memory_mb_per_job": memory_mb, "cpu_cores": cpu_cores, "sequential": True, "min_available_mb": min_available_mb})
+        state.update(schema_version=1, status="running", worker_pid=os.getpid(), limits={"memory_mb_per_job": memory_mb, "cpu_cores": cpu_cores, "sequential": True, "min_available_mb": min_available_mb, "max_runtime_seconds": max_runtime_seconds})
         for item in state["jobs"].values():
             if item["status"] == "running":
                 item.update(status="interrupted", error="Previous worker stopped before recording completion")
@@ -421,6 +466,9 @@ def run(manifest_path, state_dir, *, watch=False, max_runtime_seconds=24 * 3600,
             if (state_dir / "STOP").exists():
                 state["status"] = "stopped"
                 break
+            if (state_dir / "LIMIT_REACHED.json").exists():
+                state["status"] = "usage_limit"
+                break
             if time.monotonic() >= deadline:
                 state["status"] = "runtime_limit"
                 break
@@ -435,6 +483,14 @@ def run(manifest_path, state_dir, *, watch=False, max_runtime_seconds=24 * 3600,
                 item["attempts"] += 1
                 execute(ready, state_dir, item, state, memory_mb=memory_mb, cpu_cores=cpu_cores,
                         poll_seconds=poll_seconds, deadline=deadline, log_limit_bytes=log_limit_bytes)
+                if item["status"] == "usage_limit":
+                    atomic_json(state_dir / "LIMIT_REACHED.json", {
+                        "at": timestamp(), "job_id": ready["id"],
+                        "reason": item.get("usage_limit", item.get("error")),
+                        "automatic_restart": False,
+                    })
+                    state["status"] = "usage_limit"
+                    break
             elif watch:
                 if state["status"] != "waiting_for_jobs":
                     state["status"] = "waiting_for_jobs"
@@ -460,7 +516,10 @@ def main():
         if name == "run":
             command.add_argument("--manifest", type=Path, required=True)
             command.add_argument("--watch", action="store_true")
-            command.add_argument("--max-runtime-hours", type=float, default=24)
+            duration = command.add_mutually_exclusive_group()
+            duration.add_argument("--max-runtime-hours", type=float, default=24)
+            duration.add_argument("--continuous", action="store_true",
+                                  help="Watch the queue without a wall-clock deadline; stop on STOP or account limits")
             command.add_argument("--memory-mb", type=int, default=2048)
             command.add_argument("--cpu-cores", type=int, default=2)
             command.add_argument("--min-available-mb", type=int, default=2048)
@@ -477,13 +536,13 @@ def main():
         request_stop(args.state_dir)
         print(json.dumps({"stop_requested": True}))
         return 0
-    if not 0 < args.max_runtime_hours <= 72:
+    if not args.continuous and not 0 < args.max_runtime_hours <= 72:
         parser.error("max-runtime-hours must be above zero and at most 72")
     try:
         signal.signal(signal.SIGTERM, lambda *_: request_stop(args.state_dir))
         signal.signal(signal.SIGINT, lambda *_: request_stop(args.state_dir))
-        return run(args.manifest, args.state_dir, watch=args.watch,
-                   max_runtime_seconds=args.max_runtime_hours * 3600,
+        return run(args.manifest, args.state_dir, watch=args.watch or args.continuous,
+                   max_runtime_seconds=None if args.continuous else args.max_runtime_hours * 3600,
                    memory_mb=args.memory_mb, cpu_cores=args.cpu_cores,
                    min_available_mb=args.min_available_mb)
     except (OSError, ValueError) as error:

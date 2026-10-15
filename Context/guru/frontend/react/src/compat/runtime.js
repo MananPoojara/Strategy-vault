@@ -3,6 +3,11 @@ import {vaultStore} from '../state/store';
 import {resolveRoute} from '../app/routes';
 import {customPages} from '../app/custom-pages';
 import {LIB} from './catalogue.js';
+import {loadOwnerRows} from '../services/summary-loader';
+import {bookContext} from '../services/book-context';
+import {returnDisplay} from '../services/return-display';
+import {tradeExitCheck,tradeExitCheckMarkup} from '../services/trade-exit-check';
+import {stockChoices,basketSpan,positionLimit,priceRecoveryPeriod} from '../services/stock-selection';
 import {libraryScope,inLibraryScope} from '../services/library-scope';
 import {libraryMarket,libraryMarketVariants} from '../services/library-market';
 import {orderAuthors} from '../services/author-order';
@@ -28,7 +33,7 @@ window.VaultUI=(()=>{
  const isLiked=()=>!!savedKey()&&likedList().includes(savedKey());
  function toggleLike(){const key=savedKey();if(!key)return;const list=new Set(likedList()),on=!list.has(key);if(on)list.add(key);else list.delete(key);
   try{localStorage.setItem(likesStorageKey(),JSON.stringify([...list]));}catch{msg('Could not store Like in this browser.');return;}
-  const button=document.querySelector('[data-action=like]');if(button){button.classList.toggle('on',on);button.setAttribute('aria-pressed',String(on));button.title=on?'Remove Like (stored in this browser)':'Like this strategy (stored in this browser)';button.innerHTML=ICON.like+'<span>Like</span>';}
+  const button=document.querySelector('[data-action=like]');if(button){button.classList.toggle('on',on);button.setAttribute('aria-pressed',String(on));button.title=on?'Remove Like (stored in this browser)':'Like this strategy (stored in this browser)';button.innerHTML=ICON.like;}
   msg(on?'Liked. Your preference is stored in this browser.':'Like removed from this browser.');
  }
  // Saved strategies: a per-browser bookmark list (strategy, index and settings live in the saved link).
@@ -40,8 +45,8 @@ window.VaultUI=(()=>{
  function actions(){return '';}
  // Strategy-page toolbar: Share (menu), Download (PDF of the page), Save (bookmark).
  function toolbar(){const saved=isSaved(),liked=isLiked();return `<div class="st-actbox"><div class="st-actions" role="toolbar" aria-label="Page actions">
-  <button type="button" class="sa${liked?' on':''}" data-action="like" aria-pressed="${liked}" aria-label="Like" title="${liked?'Remove Like':'Like this strategy'} (stored in this browser)">${ICON.like}<span>Like</span></button>
-  <div class="sa-wrap"><button type="button" class="sa" data-action="share-menu" aria-haspopup="menu" aria-expanded="false" title="Share">${ICON.share}<span>Share</span></button>
+  <button type="button" class="sa${liked?' on':''}" data-action="like" aria-pressed="${liked}" aria-label="Like" title="${liked?'Remove Like':'Like this strategy'} (stored in this browser)">${ICON.like}</button>
+  <div class="sa-wrap"><button type="button" class="sa" data-action="share-menu" aria-label="Share" aria-haspopup="menu" aria-expanded="false" title="Share">${ICON.share}</button>
    <div class="share-menu" role="menu" hidden>
     <button type="button" role="menuitem" data-share="pdf">${ICON.download}<span>Send as PDF<small>Share sheet on phone, Windows and Mac</small></span></button>
     <div class="sm-sep"></div>
@@ -52,12 +57,12 @@ window.VaultUI=(()=>{
     <div class="sm-sep"></div>
     <button type="button" role="menuitem" data-share="copy">${ICON.link}<span>Copy link</span></button>
    </div></div>
-  <button type="button" class="sa" data-action="pdf" title="Download this page as PDF">${ICON.download}<span>Download</span></button>
-  <button type="button" class="sa${saved?' on':''}" data-action="save" aria-pressed="${saved}" title="${saved?'Remove from Saved':'Save to your Saved list'}">${saved?ICON.saved:ICON.save}<span>${saved?'Saved':'Save'}</span></button>
+  <button type="button" class="sa" data-action="pdf" aria-label="Download page PDF" title="Download this page as PDF">${ICON.download}</button>
+  <button type="button" class="sa${saved?' on':''}" data-action="save" aria-label="Save" aria-pressed="${saved}" title="${saved?'Remove from Saved':'Save to your Saved list'}">${saved?ICON.saved:ICON.save}</button><span class="sa-settings" data-react-slot="strategy-settings"></span>
  </div><span role="status" id="page-action-message"></span></div>`;}
- function detailHTML(d){return `<details class="box detailed-stats" id="detailed-stats"><summary>Detailed statistics <span>Additional gross / net measures</span></summary><div class="detail-tools"><button class="dbtn sm" data-report-export="details">Download Excel</button></div><table class="tbl detailed-table"><thead><tr><th>Statistic</th><th class="n">Net</th><th class="n">Gross</th></tr></thead><tbody>${VaultReport.detailRows(d).map(([k,n,g,t])=>`<tr><td>${escText(k)}</td><td class="n">${label(n,t)}</td><td class="n">${label(g,t)}</td></tr>`).join('')}</tbody></table><p class="rnote">Gross is the independently compounded zero-cost comparison. Net includes the selected fee and slippage rates. Closed-trade measures exclude open positions. Observed excursions omit entry/add-on/exit event bars where intraday order is unknown; they are partial bounds, not exact MAE/MFE. Time in market counts distinct observed daily bars with a held position, including entry/exit bars; it does not measure exact intraday duration. Undefined ratios stay unavailable.</p></details>`;}
- function benchmarkHTML(d,tk,px){currentBenchmark={d,tk,px};const b=VaultReport.benchmark(px,d.dates[0],d.dates.at(-1)),keys=[['Compounded model return','total_return','percent'],['Annualised return','cagr','percent'],['Max drawdown','max_dd','percent'],['Sharpe (rf = 0)','sharpe','ratio'],['Sortino','sortino','ratio'],['Return per drawdown','mar','ratio'],['Annualised volatility','vol','percent'],['Exposure','exposure','percent']];return `<section class="box" data-benchmark-comparison data-benchmark-symbol="${escText(tk)}"><div class="box-h">Strategy vs ${escText(LABEL[tk]||tk)} <button class="dbtn sm" data-report-export="benchmark">Download Excel</button></div><p class="rnote">Computed selected strategy settings against actual ${escText(LABEL[tk]||tk)} buy &amp; hold, with no benchmark execution costs. ${b?`${b.from} to ${b.to}.`:'Benchmark price coverage is missing.'} Book-reported figures remain separate reference claims.</p><table class="tbl"><thead><tr><th>Statistic</th><th class="n">Selected strategy</th><th class="n">${escText(LABEL[tk]||tk)} buy &amp; hold</th></tr></thead><tbody>${keys.map(([name,key,type])=>`<tr><td>${name}</td><td class="n">${label(d.stats[key],type)}</td><td class="n">${label(b?.[key],type)}</td></tr>`).join('')}</tbody></table></section>`;}
- function tradeHTML(d,tk){const rows=VaultReport.tradeRows(d,tk);return `<section class="box" data-tradesheet><div class="box-h">Tradesheet <span class="legend"><small>${rows.length} positions · newest first</small><button class="dbtn sm" id="trades-xlsx">Download Excel</button><button class="dbtn sm" id="csv">Download CSV</button></span></div><p class="rnote">Returns and slippage are percentages of the strategy's normalized allocation; prices/points use the actual symbol. Monetary Gross/Net P&amp;L and Taxes are unavailable because no quantity, monetary sizing or tax schedule was supplied. MAE/MFE show gross observed daily-bar bounds when available; event bars are excluded. Open exits are marked Open.</p><div class="tlog"><table class="tbl tl" id="tradesheet"><thead><tr>${VaultReport.tradeHeaders.map(k=>`<th>${escText(k)}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${row.map((v,i)=>`<td class="${[8,11,13,14,15].includes(i)?'n '+(v<0?'neg':'pos'):''}">${v===null?'—':[8,11,13,14,15].includes(i)?label(v,'percent'):typeof v==='number'?v.toFixed(i===9?0:2):escText(v)}</td>`).join('')}</tr>`).reverse().join('')}</tbody></table></div></section>`;}
+ function detailHTML(d){return `<details class="box detailed-stats" id="detailed-stats"><summary>Detailed statistics <span>Additional gross / net measures</span></summary><div class="detail-tools"><button class="dbtn sm" data-report-export="details">Download Excel</button></div><table class="tbl detailed-table"><thead><tr><th>Statistic</th><th class="n">Net</th><th class="n">Gross</th></tr></thead><tbody>${VaultReport.detailRows(d).map(([k,n,g,t])=>`<tr><td>${escText(k)}</td><td class="n">${label(n,t)}</td><td class="n">${label(g,t)}</td></tr>`).join('')}</tbody></table><p class="rnote">${d.kind==='basket'?'Gross is zero-cost accounting on the same accepted portfolio fills.':'Gross is the independently compounded zero-cost comparison.'} Net includes the selected fee and slippage rates. Closed-trade measures exclude open positions. Observed excursions omit entry/add-on/exit event bars where intraday order is unknown; they are partial bounds, not exact MAE/MFE. Time in market counts distinct observed daily bars with a held position, including entry/exit bars; it does not measure exact intraday duration. Undefined ratios stay unavailable.</p></details>`;}
+ function benchmarkHTML(d,tk,px){currentBenchmark={d,tk,px};const b=VaultReport.benchmark(px,d.dates[0],d.dates.at(-1)),keys=[[d.kind==='basket'?'Portfolio equity return':'Compounded model return','total_return','percent'],['Annualised return','cagr','percent'],['Max drawdown','max_dd','percent'],['Sharpe (rf = 0)','sharpe','ratio'],['Sortino','sortino','ratio'],['Return per drawdown','mar','ratio'],['Annualised volatility','vol','percent'],['Exposure','exposure','percent']];return `<section class="box" data-benchmark-comparison data-benchmark-symbol="${escText(tk)}"><div class="box-h">Strategy vs ${escText(LABEL[tk]||tk)} <button class="dbtn sm" data-report-export="benchmark">Download Excel</button></div><p class="rnote">Computed selected strategy settings against actual ${escText(LABEL[tk]||tk)} buy &amp; hold, with no benchmark execution costs. ${b?`${b.from} to ${b.to}.`:'Benchmark price coverage is missing.'} Book-reported figures remain separate reference claims.</p><table class="tbl"><thead><tr><th>Statistic</th><th class="n">Selected strategy</th><th class="n">${escText(LABEL[tk]||tk)} buy &amp; hold</th></tr></thead><tbody>${keys.map(([name,key,type])=>`<tr><td>${name}</td><td class="n">${label(d.stats[key],type)}</td><td class="n">${label(b?.[key],type)}</td></tr>`).join('')}</tbody></table></section>`;}
+ function tradeHTML(d,tk){const rows=VaultReport.tradeRows(d,tk);return `<section class="box" data-tradesheet><div class="box-h">Tradesheet <span class="legend"><small>${rows.length} positions · newest first</small><button class="dbtn sm" id="trades-xlsx">Download Excel</button><button class="dbtn sm" id="csv">Download CSV</button></span></div><p class="rnote">Returns and slippage are percentages of the strategy's normalized allocation; prices/points use the actual symbol. Monetary Gross/Net P&amp;L and Taxes are unavailable because no quantity, monetary sizing or tax schedule was supplied. MAE/MFE show gross observed daily-bar bounds when available; event bars are excluded. Open exits are marked Open.</p><div class="tlog"><table class="tbl tl" id="tradesheet"><thead><tr>${VaultReport.tradeHeaders.map(k=>`<th>${escText(k)}</th>`).join('')}</tr></thead><tbody>${rows.map((row,tradeIndex)=>`<tr>${row.map((v,i)=>`<td class="${[8,11,13,14,15].includes(i)?'n '+(v<0?'neg':'pos'):''}">${v===null?'—':[8,11,13,14,15].includes(i)?label(v,'percent'):typeof v==='number'?v.toFixed(i===9?0:2):escText(v)}${i===16?tradeExitCheckMarkup(d.trades[tradeIndex]):''}</td>`).join('')}</tr>`).reverse().join('')}</tbody></table></div></section>`;}
  function equityNavigator(ch,d){const box=document.getElementById('equity-navigator');if(!box)return;const a=box.querySelector('[data-range=start]'),b=box.querySelector('[data-range=end]'),text=box.querySelector('output'),n=d.dates.length;if(n<2){a.disabled=b.disabled=true;text.textContent=d.dates[0]||'No dated results';return;}a.max=b.max=n-1;a.value=0;b.value=n-1;const show=()=>{let lo=+a.value,hi=+b.value;if(lo>=hi){if(document.activeElement===a)lo=Math.max(0,hi-1);else hi=Math.min(n-1,lo+1);}a.value=lo;b.value=hi;ch.timeScale().setVisibleLogicalRange({from:lo,to:hi});text.textContent=`${d.dates[lo]} — ${d.dates[hi]}`;};a.oninput=b.oninput=show;box.querySelectorAll('[data-equity-year]').forEach(btn=>btn.onclick=()=>{const y=btn.dataset.equityYear;if(y==='all'){a.value=0;b.value=n-1;}else{const indices=d.dates.map((x,i)=>x.startsWith(y)?i:-1).filter(i=>i>=0);a.value=indices[0];b.value=indices.at(-1);}show();});ch.timeScale().subscribeVisibleLogicalRangeChange(range=>{if(!range)return;const lo=Math.max(0,Math.min(n-1,Math.ceil(range.from))),hi=Math.max(lo,Math.min(n-1,Math.floor(range.to)));a.value=lo;b.value=hi;text.textContent=`${d.dates[lo]} — ${d.dates[hi]}`;});show();}
  const msg=text=>{const el=document.getElementById('page-action-message');if(el)el.textContent=text;};
  const immutable=value=>{if(Array.isArray(value))return Object.freeze(value.map(immutable));if(value&&typeof value==='object')return Object.freeze(Object.fromEntries(Object.entries(value).map(([key,v])=>[key,immutable(v)])));return value;};
@@ -66,8 +71,8 @@ window.VaultUI=(()=>{
   const state=immutable(S),d=immutable(STRAT.d),v=immutable(STRAT.v),region=STRAT.region||state.region;
   const benchmark=currentBenchmark?.d===STRAT.d?currentBenchmark:null;
   const benchmarkTk=document.querySelector('[data-benchmark-comparison]')?.getAttribute('data-benchmark-symbol')||benchmark?.tk||(region==='us'?'SPX':'NIFTY 50');
-  return Object.freeze({d,v,tk:STRAT.tk,region,state,url:location.href,params:immutable(STRAT.d.params||state.p||{}),px:immutable(STRAT.px),
-   actualSymbol:d.provenance?.symbol||d.trades?.find(t=>t.accounting?.symbol)?.accounting.symbol||STRAT.tk,
+  return Object.freeze({d,v,display:immutable(STRAT.display),tk:STRAT.tk,region,state,url:location.href,params:immutable(STRAT.d.params||state.p||{}),px:immutable(STRAT.px),
+   actualSymbol:d.kind==='basket'?d.basket:d.provenance?.symbol||d.trades?.find(t=>t.accounting?.symbol)?.accounting.symbol||STRAT.tk,
    benchmarkTk,benchmarkLabel:LABEL[benchmarkTk]||benchmarkTk,benchmarkPx:immutable(benchmark?.px)});
  }
  const filePart=value=>String(value??'report').replace(/[^a-zA-Z0-9._-]+/g,'-').replace(/^-+|-+$/g,'').slice(0,90)||'report';
@@ -95,9 +100,10 @@ window.VaultUI=(()=>{
   if(!window.XLSX?.utils)throw Error('The Excel library did not load.');
   const book=XLSX.utils.book_new(),names={trades:'Trades','detailed-statistics':'Detailed statistics','monthly-returns':'Monthly returns',equity:'Equity',benchmark:'Benchmark'};
   XLSX.utils.book_append_sheet(book,styledSheet(rows,percentColumns,rowTypes),names[kind]||'Report');
-  const costs=st.d.costs||{},provenance=st.d.provenance||{},context=[['Field','Value'],['Report',kind],['Strategy ID',st.v.id],['Strategy',st.v.name||st.v.family_name],['Book',st.v.book],['Actual symbol',st.actualSymbol],['Selected data key',st.tk],['Market',st.region],['From',st.d.dates?.[0]],['To',st.d.dates?.at(-1)],['Execution fees (bps per side)',costs.fees_bps??null],['Slippage (bps per side)',costs.slippage_bps??null],['Rollover (bps per event)',costs.rollover_bps??null],['Benchmark symbol',st.benchmarkTk],['Report link',st.url],['Trade count basis','Closed positions; open exits remain marked Open.'],['Accounting basis',st.d.accounting_basis||'Recorded return-only engine report. No monetary sizing or statutory tax schedule is supplied.']];
+  const costs=st.d.costs||{},provenance=st.d.provenance||{},context=[['Field','Value'],['Report',kind],['Strategy ID',st.v.id],['Strategy',st.v.name||st.v.family_name],['Book',st.v.book],['Actual symbol',st.actualSymbol],['Selected data key',st.tk],['Market',st.region],['From',st.d.dates?.[0]],['To',st.d.dates?.at(-1)],['Execution fees (bps per side)',costs.fees_bps??null],['Slippage (bps per side)',costs.slippage_bps??null],['Rollover (bps per event)',costs.rollover_bps??null],['Benchmark symbol',st.benchmarkTk],['Report link',st.url],['Net Profit display',st.display?.reportMode??'Portfolio realized contribution'],['Displayed Net Profit (fractional return)',st.display?st.display.value:st.d.stats?.net_profit??null],['Display formula',st.display?.description??st.d.accounting_basis??null],['Display unavailable reason',st.display?.unavailableReason??null],['Trade count basis','Closed positions; open exits remain marked Open.'],['Accounting basis',st.d.accounting_basis||'Recorded return-only engine report. No monetary sizing or statutory tax schedule is supplied.']];
   const sources=[['Field','Value'],['Source',provenance.source??null],['Basket',provenance.basket??null],['Source SHA-256',provenance.source_sha256??null],['Derived CSV SHA-256',provenance.csv_sha256??null],['Membership',provenance.membership??null],['Source coverage from',provenance.first??null],['Source coverage to',provenance.last??null],['Excluded source prefix',provenance.excluded_prefix_count??null],['Coverage note',provenance.coverage_note??null],['Qualification','Source identity and format admission are not certification of book authorship, historical membership or reproduced performance.'],['Unavailable fields','Monetary P&L and taxes stay empty. Observed excursions are partial daily-bar bounds; event bars cannot establish exact intraday MAE/MFE.'],['Execution costs',costs.basis??null]];
   XLSX.utils.book_append_sheet(book,styledSheet(context), 'Metadata');XLSX.utils.book_append_sheet(book,styledSheet(sources),'Sources');
+  if(st.d.kind==='basket'){XLSX.utils.book_append_sheet(book,styledSheet([['Symbol','Source key','First','Last','Status','Coverage note'],...(st.d.coverage||[]).map(c=>[c.symbol,c.ticker,c.first,c.last,c.status,c.note])]),'Constituent coverage');XLSX.utils.book_append_sheet(book,styledSheet([['Symbol','Entry','Exit','Open','Initial-equity slot','Source net return','Portfolio contribution'],...(st.d.trades||[]).map(t=>[t.symbol,t.entry,t.exit,t.open,t.allocation,t.ret,t.portfolio_contribution])],[4,5,6]),'Portfolio allocation');XLSX.utils.book_append_sheet(book,styledSheet([['Field','Value'],...Object.entries(st.d.portfolio||{}).filter(([,value])=>!Array.isArray(value))]),'Portfolio method');}
   XLSX.utils.book_append_sheet(book,styledSheet([['Parameter','Value'],...Object.entries(st.params)]),'Parameters');
   const bytes=XLSX.write(book,{bookType:'xlsx',type:'array',cellStyles:true,compression:true});downloadBlob(new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),reportName(st,kind,'xlsx'));msg('Excel downloaded.');
  }
@@ -149,7 +155,7 @@ window.VaultUI=(()=>{
   if(kind==='pdf'){msg('Preparing PDF…');try{const file=await pagePdf();if(navigator.canShare?.({files:[file]})){await navigator.share({files:[file],title:text,text});msg('PDF shared.');}else{download(file);msg('This browser cannot attach files to other apps, so the PDF was downloaded — attach it in WhatsApp, Telegram, X or email.');}}catch(e){if(e?.name!=='AbortError')msg('Could not create the PDF: '+(e?.message||e));else msg('');}return;}
   const enc=encodeURIComponent,links={wa:`https://wa.me/?text=${enc(text+' '+url)}`,x:`https://twitter.com/intent/tweet?text=${enc(text)}&url=${enc(url)}`,tg:`https://t.me/share/url?url=${enc(url)}&text=${enc(text)}`,mail:`mailto:?subject=${enc(text)}&body=${enc(text+'\n\n'+url+'\n\nTip: use "Send as PDF file" or the download icon to attach the page as a PDF.')}`};
   window.open(links[kind],'_blank','noopener');msg('Link shared. Recipients need a Vault login to open it; send the PDF instead for anyone without one.');}
- async function action(name){if(name==='like'){toggleLike();return;}if(name==='pdf'){msg('Preparing PDF…');try{download(await pagePdf());msg('PDF downloaded.');}catch(e){if(e?.name==='ReportChangedError'){msg(e.message);return;}msg('PDF failed, opening print instead: '+(e?.message||e));finishMetricAnimations();window.print();}return;}if(name==='share-menu'){const m=document.querySelector('.share-menu');if(m){m.hidden=!m.hidden;document.querySelector('[data-action=share-menu]')?.setAttribute('aria-expanded',String(!m.hidden));if(!m.hidden)m.querySelector('button')?.focus();}return;}if(name==='save'){const key=savedKey();if(!key)return;let list=savedList();const was=list.some(x=>x.key===key);list=was?list.filter(x=>x.key!==key):[{key,id:R.id,tk:S.tk,region:S.region,name:(document.querySelector('h1.st')?.textContent||R.id).trim(),hash:location.hash,at:new Date().toISOString().slice(0,10)},...list];writeSaved(list);const b=document.querySelector('[data-action=save]');if(b){const on=!was;b.classList.toggle('on',on);b.setAttribute('aria-pressed',on);b.title=on?'Remove from Saved':'Save to your Saved list';b.innerHTML=(on?ICON.saved:ICON.save)+`<span>${on?'Saved':'Save'}</span>`;}msg(was?'Removed from Saved.':'Saved. Open it any time from Saved in the top menu.');return;}if(name==='share'){const link=location.href;try{await navigator.clipboard.writeText(link);msg('Page link copied. Recipients need a Vault login.');}catch{const field=document.createElement('input');field.value=link;field.setAttribute('aria-label','Shareable page link');const host=document.getElementById('page-action-message');host.replaceChildren(field);field.select();try{if(document.execCommand('copy'))msg('Page link copied. Recipients need a Vault login.');}catch{}}return;}}
+ async function action(name){if(name==='like'){toggleLike();return;}if(name==='pdf'){msg('Preparing PDF…');try{download(await pagePdf());msg('PDF downloaded.');}catch(e){if(e?.name==='ReportChangedError'){msg(e.message);return;}msg('PDF failed, opening print instead: '+(e?.message||e));finishMetricAnimations();window.print();}return;}if(name==='share-menu'){const m=document.querySelector('.share-menu');if(m){m.hidden=!m.hidden;document.querySelector('[data-action=share-menu]')?.setAttribute('aria-expanded',String(!m.hidden));if(!m.hidden)m.querySelector('button')?.focus();}return;}if(name==='save'){const key=savedKey();if(!key)return;let list=savedList();const was=list.some(x=>x.key===key);list=was?list.filter(x=>x.key!==key):[{key,id:R.id,tk:S.tk,region:S.region,name:(document.querySelector('h1.st')?.textContent||R.id).trim(),hash:location.hash,at:new Date().toISOString().slice(0,10)},...list];writeSaved(list);const b=document.querySelector('[data-action=save]');if(b){const on=!was;b.classList.toggle('on',on);b.setAttribute('aria-pressed',on);b.title=on?'Remove from Saved':'Save to your Saved list';b.innerHTML=(on?ICON.saved:ICON.save);}msg(was?'Removed from Saved.':'Saved. Open it any time from Saved in the top menu.');return;}if(name==='share'){const link=location.href;try{await navigator.clipboard.writeText(link);msg('Page link copied. Recipients need a Vault login.');}catch{const field=document.createElement('input');field.value=link;field.setAttribute('aria-label','Shareable page link');const host=document.getElementById('page-action-message');host.replaceChildren(field);field.select();try{if(document.execCommand('copy'))msg('Page link copied. Recipients need a Vault login.');}catch{}}return;}}
  const KIND=b=>b.dataset.chartSnapshot?'png':b.id==='csv'?'csv':'xls';
  function iconize(root=document){
   root.querySelectorAll('[data-chart-snapshot],[data-report-export],#csv,#trades-xlsx').forEach(b=>{if(b.classList.contains('ibtn'))return;const label=b.textContent.trim()||'Download';const k=KIND(b);b.className=`ibtn`;b.title=label;b.setAttribute('aria-label',label);b.innerHTML=ICON[k];});
@@ -712,7 +718,12 @@ const rgba_ = (hex, a) => { const h = hex.replace('#', ''); return `rgba(${parse
 let API = window.VAULT_APP ? '/api/in' : (new URLSearchParams(location.search).get('api') || `http://${location.hostname || 'localhost'}:8090`).replace(/\/$/, '') + '/api';
 const API_IN = API, API_US = window.VAULT_APP ? '/api/us' : `http://${location.hostname || 'localhost'}:8091/api`, BOOKCTX = { stc9: ['1995-01-01', '2009-12-31', 2010], etfss: ['2000-01-03', '2004-06-16', 2004], pctb: ['1994-01-03', '2004-06-30', 2004], rsi25: ['1993-01-29', '2003-12-31', 2004], spmt: ['1997-09-09', '2006-11-30', 2007], vixr: ['1993-01-28', '2001-08-06', 2001], otvt: ['1993-01-28', '1997-10-01', 1999], ptjmt: ['1993-01-28', '1997-10-31', 1999], ats: ['1993-01-28', '1997-10-31', 1998], hfm: ['1993-01-29', '1994-12-31', 1995], btp: ['1993-01-29', '1999-12-31', 1999], ptjdt: ['1993-01-29', '1999-12-31', 1999], ws5: ['1993-01-29', '2003-06-30', 2003], cwin: ['1994-01-03', '2002-12-31', 2003], ss: ['1993-01-29', '1995-12-31', 1996], oiss: ['1993-01-29', '2004-06-30', 2004], lrd: ['1995-01-01', '1996-12-31', 2001], alpha: ['1993-01-29', '2018-12-31', 2020], ststw: ['1995-01-03', '2007-12-31', 2008], hpetf: ['1993-01-29', '2008-12-31', 2009], hmrw: ['1993-01-29', '2011-12-31', 2012], radge: ['1993-01-29', '2011-12-31', 2012], covel: ['1993-01-29', '2006-12-31', 2007], tharp: ['1993-01-29', '1998-12-31', 1999], afactor: ['2000-01-03', '2004-12-31', 2005] }; // US default window = each book's own test period, + publication year
 let BOOK_FROM = '1995-01-01', BOOK_TO = '2009-12-31';
-const bookCtx = id => { [BOOK_FROM, BOOK_TO, PUB] = id?.startsWith('jr_') ? ['', '', BOOK[id]?.year || null] : BOOKCTX[id] || BOOKCTX.stc9; };
+const bookCtx = id => {
+ [BOOK_FROM,BOOK_TO,PUB]=bookContext(id,BOOKCTX,BOOK);
+ TABS.working.pre=PUB?`${PUB-1}-12-31`:undefined;
+ TABS.working.metric.label=PUB?`Sharpe since ${PUB}`:'Publication year unconfirmed';
+ TABS.working.note=PUB?`Compare Sharpe since publication (${PUB}) with the period before it. Missing history remains unavailable; this is a research comparison, not a certified holdout.`:'The publication year is not established for this book.';
+};
 const srcOf = v => v.guru === 'ross' ? (sourceEvidence(v)?.pages || 'Source reference') : v.session ? `Session ${v.session}` : 'Part III';
 let TICK_IN = [], TICK_US = null;
 const IN_INDICES = ['NIFTY 50', 'NIFTYBANK', 'NIFTYMIDCAP100'], US_INDICES = ['SPX', 'NDX', 'DJI']; // the Indian indices the vault shows (Nifty IT and Midcap Select are left out)
@@ -833,47 +844,61 @@ const writeHash = () => { const q = new URLSearchParams(); for (const k in DEF) 
 
 let CAT = [], TICKERS = [], GURUS_API = [], TICK_ALL_US = [];
 const TRUST = window.VaultTruth;
-const READINESS = {};
-async function getReadiness(tk, from = '', to = '', id = '', parameters = {}) {
-  const api=API,owners=id?[ownerOf(id)]:guruIds(),variants=[...CAT];
-  if(!owners.length)return {};
-  const query = new URLSearchParams({ticker:tk,from,to,cost:S.cost||'0',...VaultUI.costState(S),...(id?{id}:{})});
-  const settings=typeof parameters==='string'?decodeP(parameters):parameters;
-  for(const [key,value] of Object.entries(settings)) query.set('p.'+key,value);
-  const key = api + '|' + (id ? owners[0] : 'all') + '?' + query;
-  if(!READINESS[key]) READINESS[key] = (async () => {
-    try {
-      const data=await Promise.all(owners.map(async guru=>{
-        const response=await fetch(api+'/guru/'+guru+'/readiness?'+query);
-        if(!response.ok) throw new Error(await response.text());
-        return (await response.json()).strategies;
-      }));
-      return Object.fromEntries(data.flat().map(item=>[item.id,item]));
-    } catch(error) {
-      return Object.fromEntries((id?variants.filter(v=>v.id===id):variants).map(v=>[v.id,{id:v.id,status:'unavailable',note:'Data readiness could not be established for this period. Results are withheld. '+error.message}]));
-    }
-  })();
-  return READINESS[key];
+function summaryContext(tk,from='',to='') {
+ const ticker=[...TICK_ALL_IN,...TICK_ALL_US].find(item=>item.ticker===tk);
+ return {ticker:tk,label:LABEL[tk]||ticker?.symbol||tk,from,to,first:ticker?.first,last:ticker?.last};
 }
-const SUM = {}; // `${tk}|${from}|${to}` -> { id: {stats, spark} }
+const summaryKey=(api,tk,from='',to='')=>`${api}|${tk}|${from}|${to}`;
+const SUMMARY_ISSUES={},READINESS={},SUM={},SUM_FAILURE_GENERATION={},READINESS_FAILURE_GENERATION={};
+const ownedDefinitions=(variants,owner,id='')=>variants.filter(v=>(v.api||ownerOf(v.id))===owner&&(!id||v.id===id));
+const summaryIssues=(tk,from='',to='')=>SUMMARY_ISSUES[summaryKey(API,tk,from,to)]||[];
+async function getReadiness(tk, from = '', to = '', id = '', parameters = {}) {
+ const api=API,owners=id?[ownerOf(id)]:guruIds(),variants=[...ALLCAT],generation=busy;
+ if(!owners.length)return {};
+ const query=new URLSearchParams({ticker:tk,from,to,cost:S.cost||'0',...VaultUI.costState(S),...(id?{id}:{})});
+ const settings=typeof parameters==='string'?decodeP(parameters):parameters;
+ for(const [key,value] of Object.entries(settings))query.set('p.'+key,value);
+ const key=api+'|'+(id?owners[0]:'all')+'?'+query,context=summaryContext(tk,from,to);
+ // Failed requests are shared within a render, then retried on the next user navigation.
+ if(READINESS_FAILURE_GENERATION[key]!=null&&READINESS_FAILURE_GENERATION[key]!==generation)delete READINESS[key];
+ return READINESS[key]||(READINESS[key]=(async()=>{
+  const outcomes=await Promise.all(owners.map(owner=>loadOwnerRows({owner,definitions:ownedDefinitions(variants,owner,id),context,url:api+'/guru/'+owner+'/readiness?'+query,kind:'readiness',fetcher:fetch,wait:ms=>new Promise(resolve=>setTimeout(resolve,ms))})));
+  if(outcomes.some(outcome=>outcome.issue))READINESS_FAILURE_GENERATION[key]=generation;else delete READINESS_FAILURE_GENERATION[key];
+  return Object.fromEntries(outcomes.flatMap(outcome=>outcome.rows).map(row=>[row.id,row]));
+ })());
+}
 async function getSum(tk, from = '', to = '') {
-  const api=API,owners=guruIds();if(!owners.length)return {};
-  const k = `${api}|${tk}|${from}|${to}`;
-  const query = new URLSearchParams({ ticker: tk, from, to });
-  const load = async (tries = 3) => { try { const sets=await Promise.all(owners.map(async guru=>{const r=await fetch(`${api}/guru/${guru}/summary?`+query);if(!r.ok)throw new Error(await r.text());return r.json();})); return Object.fromEntries(sets.flat().map(r => [r.id, r])); }
-    catch (e) { if (tries <= 1) { delete SUM[k]; throw e; } await new Promise(r => setTimeout(r, 300)); return load(tries - 1); } };
-  return SUM[k] || (SUM[k] = load());
+ const api=API,owners=guruIds(),variants=[...ALLCAT],generation=busy;
+ if(!owners.length)return {};
+ const key=summaryKey(api,tk,from,to),context=summaryContext(tk,from,to),query=new URLSearchParams({ticker:tk,from,to});
+ if(SUM_FAILURE_GENERATION[key]!=null&&SUM_FAILURE_GENERATION[key]!==generation)delete SUM[key];
+ return SUM[key]||(SUM[key]=(async()=>{
+  const outcomes=await Promise.all(owners.map(owner=>loadOwnerRows({owner,definitions:ownedDefinitions(variants,owner),context,url:api+'/guru/'+owner+'/summary?'+query,kind:'summary',fetcher:fetch,wait:ms=>new Promise(resolve=>setTimeout(resolve,ms))})));
+  SUMMARY_ISSUES[key]=outcomes.flatMap(outcome=>outcome.issue?[outcome.issue]:[]);
+  if(outcomes.some(outcome=>outcome.issue))SUM_FAILURE_GENERATION[key]=generation;else delete SUM_FAILURE_GENERATION[key];
+  return Object.fromEntries(outcomes.flatMap(outcome=>outcome.rows).map(row=>[row.id,row]));
+ })());
+}
+function summaryNoticeHTML(issues) {
+ if(!issues.length)return '';
+ const notes=[...new Set(issues.map(issue=>issue.note))],dates=issues.some(issue=>['empty_range','invalid_range'].includes(issue.kind));
+ return `<section class="summary-unavailable" data-summary-unavailable role="status"><strong>Data coverage</strong>${notes.map(note=>`<p>${esc(note)}</p>`).join('')}${dates?`<a class="dbtn sm" data-summary-reset-dates href="${href(R.path,{...S,from:'',to:'',tab:'sharpe'})}">Use available history</a>`:''}</section>`;
+}
+function listSummaryIssues() {
+ if(S.tab==='awaiting')return [];
+ const tab=TABS[S.tab],tickers=S.tk==='ALL'?TICKERS.map(item=>item.ticker):[S.tk];
+ return tickers.flatMap(tk=>{const window=S.tab==='sharpe'&&(S.from||S.to)?{from:S.from||'',to:S.to||''}:tab.win(tk);return summaryIssues(tk,window.from,window.to);});
 }
 // "before the book" numbers come from the per-strategy endpoint: the summary endpoint crashes when the end date
 // is before the first India VIX bar (VIX strategies), while /run answers that case cleanly.
 const PRE = {};
 function preMap(tk, to) {
-  const k = `${API}|${tk}|${to}`;
+  const api=API,k = `${api}|${tk}|${to}`;
   if (PRE[k]) return PRE[k];
   const ids = CAT.filter(v => v.status === 'live' && !v.needs_vix).map(v => v.id), out = {}; // VIX data starts after 2009: nothing to ask
   let i = 0;
   const worker = async () => { while (i < ids.length) { const id = ids[i++];
-    try { const r = await fetch(enginePath(id,'run')+'?' + new URLSearchParams({ id, ticker: tk, to })); if (r.ok) out[id] = { stats: (await r.json()).stats }; } catch (e) { /* leave missing */ } } };
+    try { const r = await fetch(enginePath(id,'run',api)+'?' + new URLSearchParams({ id, ticker: tk, to })); if (r.ok) out[id] = { stats: (await r.json()).stats }; } catch (e) { /* leave missing */ } } };
   return PRE[k] = Promise.all(Array.from({ length: 6 }, worker)).then(() => out);
 }
 const lastOf = tk => TICKERS.find(t => t.ticker === tk)?.last || '2026-05-15';
@@ -983,7 +1008,7 @@ const RTAG = { F: 'IF', E: 'ENTRY', A: 'ADD', X: 'EXIT' };
 const rulesList = v => `<details class="rules"><summary>Rules as written in the book</summary><ul>${(v.rules || []).map(x => { const [t, ...rest] = x.split('|'); return `<li><span class="t">${RTAG[t] || ''}</span>${esc(rest.join('|') || x)}</li>`; }).join('')}</ul></details>`;
 const kpiTriplet = r => {
   const M = TABS[S.tab].metric, s = r.s;
-  const second = S.tab === 'working' ? `<div><span>Before ${PUB}</span><b>${fx(r.x?.sharpe)}</b><i>${r.x ? (r.x.sharpe > 0 && s.sharpe > 0 ? 'still working' : s.sharpe > 0 ? 'works since book' : r.x.sharpe > 0 ? 'decayed' : 'never worked') : r.v.needs_vix ? 'no India VIX before 2010' : 'no trades before'}</i></div>`
+  const second = S.tab === 'working' ? `<div><span>Before ${PUB}</span><b>${fx(r.x?.sharpe)}</b><i>${r.x ? (r.x.sharpe > 0 && s.sharpe > 0 ? 'still working' : s.sharpe > 0 ? 'works since book' : r.x.sharpe > 0 ? 'decayed' : 'never worked') : 'Before-book result unavailable'}</i></div>`
     : S.tab === 'trending' ? `<div><span>Sharpe (full)</span><b>${fx(r.x?.sharpe)}</b><i>${fx(r.s.trades, 0)} trades in 12M</i></div>`
     : `<div><span>CAGR</span><b class="${cls(s.cagr)}">${pct(s.cagr, 1, true)}</b><i>B&amp;H ${pct(s.bh_cagr, 1, true)}</i></div>`;
   return `<div class="kpis"><div><span>${esc(M.label)}</span><b class="p">${M.fmt(M.get(r))}</b><i>${S.tab === 'sig' ? 'Sharpe ' + fx(s.sharpe) : 'win ' + pct(s.win_rate, 0)}</i></div>${second}<div><span>Max DD</span><b class="neg">${pct(s.max_dd, 1)}</b><i>${fx(s.trades, 0)} trades</i></div></div>`;
@@ -1101,22 +1126,13 @@ function hist(rets, w = 520, h = 80) {
 }
 
 
-function exitCheck(t) {
-  // book settings use the RSI(2) / 5-SMA / 200-SMA snapshot; custom settings add rsi_p / vs_ma_p / vs_trend_p at their own periods
-  const x = t.at_exit, r = t.reason, f1 = n => n == null ? '–' : n.toFixed(1), sg = n => (n > 0 ? '+' : '') + n.toFixed(2) + '%';
-  let m = r.match(/^RSI\((\d+)\) ([<>]) ([\d.]+)/); if (m) { const v = m[1] === '2' && x.rsi_p == null ? x.rsi2 : x.rsi_p; if (v == null) return null; const th = +m[3]; return { ok: m[2] === '>' ? v > th : v < th, text: `RSI(${m[1]}) ${f1(v)}` }; }
-  if ((m = r.match(/^(\d+) bars held/))) return { ok: t.bars === +m[1], text: `${t.bars} bars` };
-  if ((m = r.match(/^Close ([<>]) (\d+)-day SMA/))) { const v = x.vs_ma_p ?? (m[2] === '5' ? x.vs_sma5 : null); if (v == null) return null; return { ok: m[1] === '>' ? v > 0 : v < 0, text: `${sg(v)} vs ${m[2]}-SMA` }; }
-  if ((m = r.match(/≥ ([\d.]+)% (below|above) (\d+)-day SMA/))) { const v = x.vs_trend_p ?? (m[3] === '200' ? x.vs_sma200 : null); if (v == null) return null; return { ok: m[2] === 'below' ? v <= -m[1] + 1e-9 : v >= +m[1] - 1e-9, text: `${sg(v)} vs ${m[3]}-SMA` }; }
-  if ((m = r.match(/^Close ≥ ([\d.]+)% profit/))) { const g = x.close / t.avg_px - 1; return { ok: g >= m[1] / 100 - 1e-12, text: `${sg(g * 100)} vs entry` }; }
-  return null;
-}
+function exitCheck(t) { return tradeExitCheck(t); }
 
 
 // ================================================================ FULL VARIANT 1
 // Routes:  #/  landing (legends)  ·  #/guru/<id>  author grid  ·  #/strategies  all gurus  ·  #/s/<id>  one strategy
 // Filters live in a top navbar of dropdowns (DaisyUI-style); animation by motion.dev; charts in the Bklit style.
-DEF.view = 'grid'; DEF.region = 'in'; DEF.from = ''; DEF.to = ''; DEF.cost = '0'; DEF.slippage='0'; DEF.rollover='0'; DEF.basket=''; DEF.p = ''; DEF.library_scope='trading'; DEF.library_market=''; DEF.library_q=''; DEF.library_view='authors'; DEF.library_sort='default'; DEF.book_category=''; DEF.library_limit='24'; DEF.library_page='1'; DEF.source_page='1'; // p = custom strategy settings 'key:value,…' (empty = the book's) // custom backtest period, kept in the link
+DEF.view = 'grid'; DEF.region = 'in'; DEF.from = ''; DEF.to = ''; DEF.cost = '0'; DEF.slippage='0'; DEF.rollover='0'; DEF.basket=''; DEF.run_scope='single'; DEF.report_mode='fixed'; DEF.membership='current'; DEF.max_positions='10'; DEF.position_choice='10'; DEF.p = ''; DEF.library_scope='trading'; DEF.library_market=''; DEF.library_q=''; DEF.library_view='authors'; DEF.library_sort='default'; DEF.book_category=''; DEF.library_limit='24'; DEF.library_page='1'; DEF.source_page='1'; // p = custom strategy settings 'key:value,…' (empty = the book's) // custom backtest period, kept in the link
 const getS = () => S;
 const MO = window.Motion, CALM = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const anim = (el, kf, o) => { if (MO && !CALM && el && (el.length === undefined || el.length)) try { return MO.animate(el, kf, o); } catch (e) {} };
@@ -1133,6 +1149,11 @@ function readRoute() {
   R = p[0] === 'source' && p[1] ? {name:'source',id:decodeURIComponent(p[1]),path:path} : p[0] === 'saved' ? { name: 'saved', path: '/saved' } : p[0] === 'strategies' ? { name: 'all', path: '/strategies' } : p[0] === 'guru' && GURU[p[1]] ? { name: 'guru', id: p[1], path: '/guru/' + p[1] }
     : ['s','o'].includes(p[0]) && p[1] ? { name: 'strategy', optim: p[0] === 'o', id: decodeURIComponent(p[1]), path: path } : { name: 'home', path: '/' };
   S = { ...DEF }; for (const [k, v] of new URLSearchParams(q)) if (k in DEF) S[k] = v;
+  S.report_mode=S.report_mode==='compound'?'compound':'fixed';
+  S.run_scope=R.name==='strategy'&&S.run_scope==='basket'?'basket':'single';
+  S.membership=S.membership==='past'?'past':'current';
+  S.max_positions=String(positionLimit(S.max_positions)||10);
+  S.position_choice=['10','20','custom'].includes(S.position_choice)?S.position_choice:'10';
   S.cost='0'; // The interface now uses only user-entered slippage and actual-roll costs.
   if (R.name === 'guru') S.guru = R.id;
   if (S.book?.startsWith('jr_') && !new URLSearchParams(q).has('tab')) S.tab='awaiting';
@@ -1144,14 +1165,22 @@ function readRoute() {
   const types=chosen?.instrument_policy?.allowed_types||[];
   const etfs=S.region==='us'?TICK_ALL_US.filter(t=>['SPY','QQQ','MDY','IWM','SMH','DIA'].includes(t.ticker)):[];
   const basket=BASKETS.find(b=>b.id===S.basket);
-  TICKERS=S.basket&&basket?.symbols?.length?pool.filter(t=>basket.symbols.includes(t.ticker)):instrumentTickers(['home','guru','all'].includes(R.name)?{allowed_types:['index','etf']}:chosen?.instrument_policy,indices,etfs);
-  if(S.basket&&S.tk==='ALL')S.tk=TICKERS[0]?.ticker||S.tk;
-  if(S.tk!=='ALL'&&!TICKERS.some(t=>t.ticker===S.tk))S.tk=TICKERS[0]?.ticker||S.tk;
-  const explicit=new URLSearchParams(q);
-  if(chosen && types.includes('individual_stock') && !types.includes('index') && !S.basket && (!explicit.has('tk')||!explicit.get('tk'))) {
+  const explicit=new URLSearchParams(q),isDetail=R.name==='strategy';
+  if(chosen && types.includes('individual_stock') && !types.includes('index') && !types.includes('etf')
+    && !explicit.get('tk') && S.run_scope==='single') {
     const preferred=BASKETS.find(b=>b.id===(S.region==='us'?'us_sp500':chosen.instrument_policy.preferred_basket||'nifty50'));
-    if(preferred?.symbols.length) {S.basket=preferred.id;TICKERS=pool.filter(t=>preferred.symbols.includes(t.ticker));S.tk=TICKERS[0]?.ticker||S.tk;}
+    S.tk=pool.find(t=>preferred?.symbols?.includes(t.ticker))?.ticker||S.tk;
   }
+  const stocks=isDetail&&types.includes('individual_stock')?stockChoices(pool,S.tk):[];
+  TICKERS=isDetail&&S.run_scope==='single'
+    ? [...instrumentTickers(chosen?.instrument_policy,indices,etfs),...stocks]
+    : S.basket&&basket?.symbols?.length?pool.filter(t=>basket.symbols.includes(t.ticker))
+    : instrumentTickers(['home','guru','all'].includes(R.name)?{allowed_types:['index','etf']}:chosen?.instrument_policy,indices,etfs);
+  // Keep an explicitly named, admitted source even when its instrument is
+  // incompatible. The readiness gate explains the mismatch without replacing it.
+  const explicitStock=isDetail&&S.run_scope==='single'&&explicit.get('tk')?.startsWith('basket:')?pool.find(t=>t.ticker===S.tk):null;
+  if(explicitStock&&!TICKERS.some(t=>t.ticker===S.tk))TICKERS.push(explicitStock);
+  if(S.tk!=='ALL'&&!TICKERS.some(t=>t.ticker===S.tk))S.tk=TICKERS[0]?.ticker||S.tk;
   // Preserve explicit basket URLs: the readiness gate explains incompatible instruments.
   // Silent substitution back to an index made basket clicks appear stuck.
   CAT = marketCat();
@@ -1164,7 +1193,7 @@ const href = (path, st = {}) => { const q = new URLSearchParams(),catalogue=path
 const go = (path, st) => { location.hash = href(path, st).slice(1); };
 const setState = patch => { const st = { ...S, ...patch }; if ('guru' in patch && !('book' in patch) && st.book && BOOK[st.book]?.guru.id !== st.guru) st.book = ''; go(R.path, st); };
 const guruLink = id => href('/guru/' + id, {view:'grid',tk:S.tk,basket:S.basket,from:S.from,to:S.to});
-const stratLink = (id, tk) => href('/s/' + encodeURIComponent(id), { ...(tk && tk !== 'NIFTY 50' && tk !== 'ALL' ? { tk } : {}), from: S.from, to: S.to, cost: S.cost,slippage:S.slippage,rollover:S.rollover,basket:S.basket });
+const stratLink = (id, tk) => href('/s/' + encodeURIComponent(id), { ...(tk && tk !== 'NIFTY 50' && tk !== 'ALL' ? { tk } : {}), from: S.from, to: S.to, cost: S.cost,slippage:S.slippage,rollover:S.rollover,basket:S.basket,run_scope:S.run_scope,report_mode:S.report_mode,membership:S.membership,max_positions:S.max_positions,position_choice:S.position_choice });
 
 // ---------------------------------------------------------------- shared bits
 const GUILL = (() => { const paths = [[80, 23, 60, 23], [74, 19, 48, 19], [66, 29, 40, 29]].map(([R_, r, d, turns]) => { let p = ''; for (let k = 0; k <= 2400; k++) { const t = k / 2400 * Math.PI * 2 * turns, x = (R_ - r) * Math.cos(t) + d * Math.cos((R_ - r) / r * t), y = (R_ - r) * Math.sin(t) - d * Math.sin((R_ - r) / r * t); p += `${k ? 'L' : 'M'}${(100 + x * .7).toFixed(2)},${(100 + y * .7).toFixed(2)}`; } return `<path d="${p}"/>`; }); return `<svg viewBox="0 0 200 200">${paths.join('')}</svg>`; })();
@@ -1315,10 +1344,12 @@ function resultsHtml(rs) {
 
 // ---------------------------------------------------------------- 3. author page and all-strategies page
 async function viewList() {
-  const rs = await rows();
+  if(R.name==='guru'&&S.book&&BOOK[S.book]&&!BOOK[S.book].live)return readingBookPage(GURU[R.id],BOOK[S.book]);
+  // Author shelves use their book statistics, never the ranked strategy rows.
+  const rs = R.name==='guru'&&!S.book ? [] : await rows();
   let head;
   if (R.name === 'guru') {
-    const g = GURU[R.id], api = GURUS_API.find(a => a.id === g.id), b = S.book && BOOK[S.book], h = await heroStats(g.id, S.book);
+    const g = GURU[R.id], api = GURUS_API.find(a => a.id === g.id), b = S.book && BOOK[S.book], h = g.books.some(book=>book.live) ? await heroStats(g.id,S.book) : {fams:new Set(CAT.filter(v=>v.guru===g.id).map(v=>v.family)).size};
     head = `<nav class="crumbs"><a href="#/">Guru's</a><span>/</span>${b ? `<a href="${guruLink(g.id)}">${esc(g.name)}</a><span>/</span><span>${esc(b.title)}</span>` : `<span>${esc(g.name)}</span>`}</nav>
       <section class="ghero"><div class="guilloche" aria-hidden="true">${GUILL}</div><div class="ghero-copy"><h1>${esc(b ? b.title : g.name)}</h1><p class="lede">${esc(b ? `${g.name} · ${bookYear(b)}` : api?.tagline || g.tagline || 'Reading library · objective strategy review pending')}</p><p class="gbook">${esc(b ? (b.blurb || BOOK_BLURB[b.id] || '') : g.books.filter(x => x.live).map(x => `${x.title} (${bookYear(x)})`).join(' · '))}</p></div><figure class="guru-portrait"><div class="portrait ${g.id==='ross'?'portrait-ross':''}">${pframe(g)}</div>${g.photoSource?`<figcaption class="photo-credit">Photo: <a href="${esc(g.photoSource)}" target="_blank" rel="noopener noreferrer">Trading Educators</a></figcaption>`:''}</figure></section>
       ${g.id==='ross'?`<dl class="lstrip" data-source-counts><div><dt>Source methods</dt><dd>${h.fams}</dd></div><div><dt>Directional references</dt><dd>${CAT.filter(v=>v.guru==='ross'&&(!b||v.book===b.id)).length}</dd></div><div><dt>Implemented backtests</dt><dd>0</dd></div><div><dt>Requirements</dt><dd style="font-size:16px">Data missing · Rules unresolved</dd></div></dl>`:g.books.some(x => x.live) ? `<dl class="lstrip"><div><dt>${b ? `Strategies in the ${b.id === 'stc9' ? 'course' : 'book'}` : `Strategies across ${g.books.filter(x => x.live).length} books`}</dt><dd data-count="${h.fams}">${h.fams}</dd></div><div><dt>Rule variants tested on ${esc(LABEL[h.tk])}</dt><dd data-count="${h.variants}">${h.variants}</dd></div><div><dt>Variants with t ≥ 2</dt><dd data-count="${h.sig}">${h.sig}</dd></div>${h.best?`<div><dt>Best modeled Sharpe (20+ trades)</dt><dd>${fx(h.best.s.sharpe)}</dd></div>`:''}</dl>` : ''}`;
@@ -1327,8 +1358,8 @@ async function viewList() {
   if(R.name==='guru' && R.id==='chande' && S.book) head+=experimentNotice({guru:'chande'},null);
   if(R.name==='guru' && S.book) head+=readingReviewHTML(bookSources(GURU[R.id],BOOK[S.book]).find(x=>x.review));
   if(R.name==='guru'&&S.book&&!BOOK[S.book]?.live)return readingBookPage(GURU[R.id],BOOK[S.book]);
-  if (R.name === 'guru' && !S.book) return `${head}${R.id==='ross'?rossResearchNotice():R.id==='chande'?experimentNotice({guru:'chande'},null):''}${libraryFiltersHTML(true)}${await bookShelf(GURU[R.id])}`;
-  return `${head}${await filterBar()}${resultsBar(rs)}<div id="results">${resultsHtml(rs)}</div>`;
+  if (R.name === 'guru' && !S.book) return `${head}${summaryNoticeHTML(listSummaryIssues())}${R.id==='ross'?rossResearchNotice():R.id==='chande'?experimentNotice({guru:'chande'},null):''}${libraryFiltersHTML(true)}${await bookShelf(GURU[R.id])}`;
+  return `${head}${await filterBar()}${summaryNoticeHTML(listSummaryIssues())}${resultsBar(rs)}<div id="results">${resultsHtml(rs)}</div>`;
 }
 // A guru's books as covers; opening one shows its strategies.
 function rossResearchNotice() {
@@ -1365,20 +1396,29 @@ const runData = (id, tk, from = '', to = '', cost = '0', p = '', api = API,execu
       const j = await r.json(); j._ms = performance.now() - t0; return j; } catch (e) { delete RUNS[k]; return { error: e.message }; } })()); };
 // the period bar: dates, quick presets, cost, and a Run button (the Rust API recomputes the whole backtest for that window)
 let BASKETS=[],BASKETS_IN=[],BASKETS_US=[],TICK_ALL_IN=[];
-function basketChoices(){const past=BASKETS.find(b=>b.id===S.basket)?.universe==='current_plus_past';return S.region==='us'?[['us_sp500','S&P 500'],['us_nasdaq100','Nasdaq 100'],['us_dow30','Dow Jones'],['us_russell2000','Russell 2000']].map(([id,name])=>[id+(past?'_past':''),name]):[['nse500','NSE 500'],['nifty50','Nifty 50'],['midcap100','Midcap100'],['allfo','All F&O']];}
+function basketChoices(){const past=S.membership==='past';return S.region==='us'?[['us_sp500','S&P 500'],['us_nasdaq100','Nasdaq 100'],['us_dow30','Dow Jones'],['us_russell2000','Russell 2000']].map(([id,name])=>[id+(past?'_past':''),name]):[['nse500','NSE 500'],['nifty50','Nifty 50'],['midcap100','Midcap100'],['allfo','All F&O']];}
 function marketControls(v,tk){
- const indices=S.region==='us'?TICK_US:TICK_IN,basket=BASKETS.find(b=>b.id===S.basket),past=basket?.universe==='current_plus_past',controls=instrumentControls(v.instrument_policy);
+ const indices=S.region==='us'?TICK_US:TICK_IN,controls=instrumentControls(v.instrument_policy),portfolio=S.run_scope==='basket';
  const etfs=S.region==='us'&&controls.etf?TICK_ALL_US.filter(t=>['SPY','QQQ','MDY','IWM','SMH','DIA'].includes(t.ticker)):[];
- const indexButtons=(indices||[]).map(t=>controls.index?`<a class="join-item ${!S.basket&&t.ticker===tk?'active':''}" href="${href(R.path,{...S,basket:'',tk:t.ticker,from:'',to:''})}">${esc(LABEL[t.ticker]||t.ticker)}</a>`:`<button type="button" class="join-item" disabled title="${esc(controls.note)}">${esc(LABEL[t.ticker]||t.ticker)}</button>`).join('');
- const basketButtons=basketChoices().map(([key,name])=>{const entry=BASKETS.find(b=>b.id===key),missing=!entry?.symbols?.length;return `<button type="button" class="join-item ${S.basket===key?'active':''}" data-basket="${key}" ${!controls.basket||missing?`disabled title="${esc(!controls.basket?controls.note:'No admitted constituent prices are available for this basket.')}"`:''}>${esc(name)}</button>`;}).join('');
- return `<div class="sw research-controls" data-market-controls><div class="swg"><span class="swl">Market</span>${regionToggle()}</div><div class="swg"><span class="swl">Index</span><div class="join sm">${indexButtons}</div></div>${etfs.length?`<div class="swg"><span class="swl">ETF</span><div class="join sm">${etfs.map(t=>`<a class="join-item ${!S.basket&&t.ticker===tk?'active':''}" href="${href(R.path,{...S,basket:'',tk:t.ticker,from:'',to:''})}">${esc(t.ticker)}</a>`).join('')}</div></div>`:''}<div class="swg" data-selector-panel><span class="swl">Basket</span><div class="join sm">${basketButtons}</div></div>${S.region==='us'&&S.basket?`<label class="dfield">Universe <select id="basket-universe"><option value="current" ${past?'':'selected'}>Source-listed current</option><option value="current_plus_past" ${past?'selected':''}>Current &amp; Past research collection</option></select></label>`:''}<div class="control-run"><button class="dbtn primary sm" type="submit" form="period">Run backtest</button>${v.status==='live'?`<a class="dbtn sm back-btn" id="open-optimization" href="${href('/'+(R.optim?'s':'o')+'/'+encodeURIComponent(v.id),{...S})}">${R.optim?'Back to backtest':'Optimization'}</a>`:''}</div></div>${controls.note?`<p class="instrument-note" data-instrument-note>${esc(controls.note)}</p>`:''}`;
+ const stocks=stockChoices(S.region==='us'?TICK_ALL_US:TICK_ALL_IN,tk);
+ const singleState=ticker=>({...S,run_scope:'single',basket:'',tk:ticker,from:'',to:''});
+ const indexButtons=(indices||[]).map(t=>controls.index?`<a class="join-item ${!portfolio&&t.ticker===tk?'active':''}" href="${href(R.path,singleState(t.ticker))}">${esc(LABEL[t.ticker]||t.ticker)}</a>`:`<button type="button" class="join-item" disabled title="${esc(controls.note)}">${esc(LABEL[t.ticker]||t.ticker)}</button>`).join('');
+ const basketButtons=basketChoices().map(([key,name])=>{const entry=BASKETS.find(b=>b.id===key),missing=!entry?.symbols?.length;return `<button type="button" class="join-item ${portfolio&&S.basket===key?'active':''}" data-basket="${key}" ${!controls.basket||missing?`disabled title="${esc(!controls.basket?controls.note:'No admitted constituent prices are available for this basket.')}"`:''}>${esc(name)}</button>`;}).join('');
+ const stockPicker=controls.basket?`<label class="dfield stock-picker">Stock <select id="strategy-stock" aria-label="Stock"><option value="" ${portfolio||!tk.startsWith('basket:')?'selected':''}>Select a stock</option>${stocks.map(t=>`<option value="${esc(t.ticker)}" ${!portfolio&&t.ticker===tk?'selected':''}>${esc(t.symbol||t.ticker.split(':').at(-1))}</option>`).join('')}</select></label>`:'';
+ const pastTooltip=S.region==='us'?'Includes current and former constituents.\nDate-specific membership remains unverified.':'Historical constituent lists were found.\nPrice admission and dated membership are under review.';
+ return `<div class="sw research-controls" data-market-controls><div class="swg"><span class="swl">Market</span>${regionToggle()}</div><div class="swg"><span class="swl">Index</span><div class="join sm">${indexButtons}</div></div>${stockPicker}${etfs.length?`<div class="swg"><span class="swl">ETF</span><div class="join sm">${etfs.map(t=>`<a class="join-item ${!portfolio&&t.ticker===tk?'active':''}" href="${href(R.path,singleState(t.ticker))}">${esc(t.ticker)}</a>`).join('')}</div></div>`:''}<div class="basket-selector" data-selector-panel><div class="join sm membership-toggle" role="group" aria-label="Basket membership"><button type="button" class="join-item ${S.membership==='current'?'active':''}" data-membership="current" aria-pressed="${S.membership==='current'}" title="Source-listed current constituents; historical tests can have survivorship bias.">Current</button><button type="button" class="join-item ${S.membership==='past'?'active':''}" data-membership="past" aria-pressed="${S.membership==='past'}" title="${esc(pastTooltip)}">Past</button></div><div class="swg"><span class="swl">Basket</span><div class="join sm">${basketButtons}</div></div></div><div class="control-run"><button class="dbtn primary sm" type="submit" form="period">Run backtest</button>${v.status==='live'&&!portfolio?`<a class="dbtn sm back-btn" id="open-optimization" href="${href('/'+(R.optim?'s':'o')+'/'+encodeURIComponent(v.id),{...S})}">${R.optim?'Back to backtest':'Optimization'}</a>`:''}</div></div>${controls.note?`<p class="instrument-note" data-instrument-note>${esc(controls.note)}</p>`:''}`;
 }
 function varyingControls(v,tk) {
- const fam=CAT.filter(x=>x.family===v.family),basket=BASKETS.find(b=>b.id===S.basket);
- return `<div class="sw variant-basket">${fam.length>1?`<div class="swg"><span class="swl">Variant</span><div class="join sm">${fam.map(x=>`<a class="join-item ${x.id===v.id?'active':''}" href="${stratLink(x.id,tk)}">${esc((x.variant||x.name).split(' · ')[0])}</a>`).join('')}</div></div>`:''}${['ready','partial'].includes(basket?.price_status)&&basket.symbols.length?`<label class="dfield">Symbol <select id="basket-symbol">${basket.symbols.map(symbol=>`<option value="${esc(symbol)}" ${symbol===tk?'selected':''}>${esc(LABEL[symbol]||symbol.split(':').at(-1))}</option>`).join('')}</select></label>`:''}</div>${S.basket?`<p class="rnote" data-basket-note>${esc(basket?.note||'Data missing: source constituents and price history are unavailable.')} Independent symbol results; no combined portfolio or capital allocation is assumed.</p>`:''}`;
+ const fam=CAT.filter(x=>x.family===v.family),stock=instrumentControls(v.instrument_policy).basket;
+ return `<div class="sw variant-basket">${fam.length>1?`<div class="swg"><span class="swl">Variant</span><div class="join sm">${fam.map(x=>`<a class="join-item ${x.id===v.id?'active':''}" href="${stratLink(x.id,tk)}">${esc((x.variant||x.name).split(' · ')[0])}</a>`).join('')}</div></div>`:''}${stock?`<div class="swg position-controls"><span class="swl">Positions</span><div class="join sm" role="group" aria-label="Maximum simultaneous positions">${['10','20','custom'].map(n=>`<button type="button" class="join-item ${S.position_choice===n?'active':''}" data-position-choice="${n}" aria-pressed="${S.position_choice===n}">${n==='custom'?'Custom':n+' open'}</button>`).join('')}</div>${S.position_choice==='custom'?`<form id="position-limit" class="custom-position"><label>Max open <input name="max_positions" type="number" min="1" max="100" step="1" required value="${esc(S.max_positions)}"></label><button type="submit" class="dbtn sm">Apply</button><span role="status" id="position-error"></span></form>`:''}<small>${S.run_scope==='basket'?`1/${esc(S.max_positions)} per position · unused slots in cash`:'Applies when a basket is selected'}</small></div>`:''}</div>`;
+}
+function selectedSpan(tk){
+ const basket=BASKETS.find(b=>b.id===S.basket),span=S.run_scope==='basket'&&basket?basketSpan((S.region==='us'?TICK_ALL_US:TICK_ALL_IN).filter(t=>basket.symbols?.includes(t.ticker))):null;
+ if(span){const calendar=(S.region==='us'?TICK_US:TICK_IN)?.find(t=>t.ticker===(S.region==='us'?'SPX':'NIFTY 50'));if(calendar?.first&&calendar?.last)return {first:span.first>calendar.first?span.first:calendar.first,last:span.last<calendar.last?span.last:calendar.last};}
+ return span||TICKERS.find(x=>x.ticker===tk)||TICKERS[0]||{first:'',last:''};
 }
 function periodPanel(tk, d, issue = null) {
-  const t = TICKERS.find(x => x.ticker === tk) || TICKERS[0], first = t.first, last = t.last, f = S.from || first, to = S.to || last;
+  const t = selectedSpan(tk), first = t.first, last = t.last, f = S.from || first, to = S.to || last;
   // All / Before book / After book (the book's publication year splits the data like in-sample and out-of-sample)
   const noBefore = +first.slice(0, 4) > PUB - 1, noAfter = +last.slice(0, 4) < PUB;
   const tog = [['All', '', '', `${first.slice(0, 4)}–${last.slice(0, 4)}`, false], ['Before book', '', `${PUB - 1}-12-31`, noBefore ? 'no data' : `to ${PUB - 1}`, noBefore], ['After book', `${PUB}-01-01`, '', noAfter ? 'no data' : `${PUB}–${last.slice(0, 4)}`, noAfter]].filter((_,i)=>PUB || i===0);
@@ -1393,7 +1433,38 @@ function periodPanel(tk, d, issue = null) {
 const apiError = (e, tk) => `${e} (${LABEL[tk]})`;
 const verdictText = (s) => `<b>${fx(s.trades,0)}</b> closed trades in ${fx(s.years,1)} years, in the market ${pct(s.exposure,0)} of the time. It compounded <b class="${cls(s.cagr)}">${pct(s.cagr,2,true)}</b> a year against <b>${pct(s.bh_cagr,2,true)}</b> for buy &amp; hold, with a worst drawdown of <b class="neg">${pct(s.max_dd,1)}</b> (buy &amp; hold ${pct(s.bh_max_dd,1)}). ${s.trades<30?'Too few trades to judge.':s.t_stat>=2?`The average trade is statistically significant (t = ${fx(s.t_stat)}).`:`The average trade is not statistically different from zero (t = ${fx(s.t_stat)}).`}`;
 function withheldStrategy(v,tk,crumbs,switches,issue) {
-  return `${crumbs}<section class="box" data-backtest-state="${esc(issue.status)}"><h1 class="st">${esc(v.family_name)}</h1><div class="tags2"><span class="badge outline">${esc(v.dir)}</span><span>${esc(LABEL[tk])}</span><span class="badge gapb">${TRUST.statusLabel(issue.status)}</span></div>${switches}${periodPanel(tk,null,issue)}${sourceBlockers(v)}<div class="empty gapbox"><b>${TRUST.statusLabel(issue.status)}</b>${esc(issue.note)}<p>No performance figures or charts are displayed for this run. The book information and rules below are reference material, not evidence of a completed backtest.</p></div></section><section class="box"><div class="box-h">${v.guru==='ross'?'Source rules and unresolved requirements':'Book rules and implementation notes'}</div>${rulesPanel(v)}</section>${gptSection(v,tk,null,issue)}`;
+  const label=S.run_scope==='basket'?BASKETS.find(b=>b.id===S.basket)?.name||S.basket:LABEL[tk]||tk;
+  const span=selectedSpan(tk),coverage=BASKETS.find(b=>b.id===S.basket)?.price_coverage;
+  const recovery=S.run_scope==='basket'&&S.membership==='current'&&instrumentControls(v.instrument_policy).basket&&issue.status==='needs_data'
+    ?priceRecoveryPeriod(coverage,S.from||span.first,S.to||span.last):null;
+  const recoveryHTML=recovery?`<p data-price-recovery>Daily price coverage is available from ${esc(recovery.from)} to ${esc(recovery.to)}. Some requested dates have no supplied quotation; the selected dates have not been changed. <button type="button" class="dbtn sm" data-period="${recovery.from}|${recovery.to}">Run available price period</button></p>`:'';
+  return `${crumbs}<section class="box" data-backtest-state="${esc(issue.status)}"><div class="st-head"><h1 class="st">${esc(v.family_name)}</h1>${VaultUI.toolbar()}</div><div class="tags2"><span class="badge outline">${esc(v.dir)}</span><span>${esc(label)}</span><span class="badge gapb">${TRUST.statusLabel(issue.status)}</span></div>${switches}${periodPanel(tk,null,issue)}${sourceBlockers(v)}<div class="empty gapbox"><b>${TRUST.statusLabel(issue.status)}</b>${esc(issue.note)}<p>No performance figures or charts are displayed for this run. The book information and rules below are reference material, not evidence of a completed backtest.</p>${recoveryHTML}</div></section><section class="box"><div class="box-h">${v.guru==='ross'?'Source rules and unresolved requirements':'Book rules and implementation notes'}</div>${rulesPanel(v)}</section>${gptSection(v,tk,null,issue)}`;
+}
+
+const BASKET_RUNS=new Map();
+async function viewBasket(v,tk,crumbs,switches,selection,api,generation){
+  if(R.optim)return withheldStrategy(v,tk,crumbs,switches,{status:'not_testable',note:'Basket parameter optimization is not yet admitted. Open the basket backtest page or choose an individual Stock for existing parameter research.'});
+  if(!instrumentControls(v.instrument_policy).basket)return withheldStrategy(v,tk,crumbs,switches,{status:'needs_data',note:'This source method requires an index or actual ETF. Cash-stock baskets cannot substitute for its required instrument.'});
+  const inventory=BASKETS.find(b=>b.id===selection.basket),counts=inventory?.source_counts;
+  if(counts&&Number.isInteger(counts.expected)&&counts.expected>inventory.symbols.length)return withheldStrategy(v,tk,crumbs,switches,{status:'needs_data',note:`This source list has ${counts.expected} constituents but only ${inventory.symbols.length} admitted price series. The complete basket is withheld; missing stocks are not silently excluded. ${inventory.note||''}`});
+  const query=new URLSearchParams({id:v.id,basket:selection.basket,from:selection.from,to:selection.to,cost:'0',...VaultUI.costState(selection),max_positions:selection.max_positions,membership:selection.membership,...Object.fromEntries(Object.entries(decodeP(selection.p)).map(([k,value])=>['p.'+k,value]))});
+  const key=api+'|'+query.toString();let d=BASKET_RUNS.get(key);
+  try{
+    if(!d){const response=await fetch(enginePath(v.id,'basket-run',api)+'?'+query,{signal:AbortSignal.timeout(95000)});if(!response.ok)throw Error(await response.text());d=await response.json();if(d.status==='ready'){BASKET_RUNS.set(key,d);while(BASKET_RUNS.size>4)BASKET_RUNS.delete(BASKET_RUNS.keys().next().value);}}
+  }catch(error){if(generation!==busy)return '';return withheldStrategy(v,tk,crumbs,switches,{status:'unavailable',note:error.name==='TimeoutError'?'Basket request reached its time limit. No partial result is displayed; retry with a shorter covered period.':error.message});}
+  if(generation!==busy)return '';
+  if(d?.status!=='ready'||!d.stats||!d.dates?.length)return withheldStrategy(v,tk,crumbs,switches,{status:d?.status||'unavailable',note:d?.blocked||d?.note||'No complete admitted basket result is available.'});
+  const s=d.stats,p=d.portfolio||{},name=BASKETS.find(b=>b.id===selection.basket)?.name||selection.basket;
+  const tiles=[['Net Profit',s.net_profit,x=>pct(x,2,true),'Closed allocated return',cls(s.net_profit)],['Avg net pnl',s.avg_net_pnl,x=>pct(x,2,true),'Per closed stock trade',cls(s.avg_net_pnl)],['No. of trades',s.trades,x=>fx(x,0),'Accepted closed positions'],['Win Rate',s.win_rate,x=>pct(x,1),'Closed trades'],['Expectancy',s.expectancy_ratio,x=>fx(x),'Per unit of average loss'],['MaxDD',s.max_dd,x=>pct(x,2),'Portfolio equity decline','neg'],['Sharpe',s.sharpe,x=>fx(x),'Portfolio daily returns · rf = 0']];
+  STRAT={d,v,tk:'Basket · '+name,region:selection.region,tiles,px:null,display:{value:s.net_profit,reportMode:'Equal-slot closed portfolio contribution',description:d.accounting_basis,unavailableReason:null}};
+  const coverage=`<details class="box" data-basket-coverage><summary>Constituent coverage · ${esc(p.source_members)} source members</summary><div class="tlog"><table class="tbl"><thead><tr><th>Symbol</th><th>Source first</th><th>Source last</th><th>Status</th><th>Coverage notes</th></tr></thead><tbody>${(d.coverage||[]).map(c=>`<tr><td>${esc(c.symbol)}</td><td>${esc(c.first)}</td><td>${esc(c.last)}</td><td>${esc(c.status)}</td><td>${esc(c.note)}</td></tr>`).join('')}</tbody></table></div></details>`;
+  const benchmark=d.benchmark_symbol||(selection.region==='us'?'SPX':'NIFTY 50');
+  const benchmarkPrices=await ohlc(benchmark).catch(()=>null);if(generation!==busy)return '';
+  return `${crumbs}<section class="box" data-basket-result><div class="st-head"><h1 class="st">${esc(v.family_name)}</h1>${VaultUI.toolbar()}</div>${gateNotice(v,tk)}${switches}${periodPanel(tk,d)}${optimBanner(v)}<p class="rnote" data-results-provenance><b>Computed basket application · ${esc(name)} · ${selection.region==='us'?'US':'India'}.</b> ${esc((d.notices||[]).join(' '))}</p><div class="metrics">${tiles.map(([k,x,f,i,c],n)=>`<div class="metric"><span>${k}</span><b class="${c||''}" data-tile="${n}">${f(x)}</b><i>${i}</i></div>`).join('')}</div><p class="rnote" data-return-definition><b>Basket Net Profit = sum of accepted closed-trade returns × their initial-equity slot allocations.</b> Avg net pnl is the source-unit average per stock trade. Avg × trade count gives an unallocated return sum, not the basket return.</p><div class="portfolio-basis"><b>${esc(selection.max_positions)} simultaneous positions · 1/${esc(selection.max_positions)} per full position.</b> ${esc(p.allocation_basis)}<br>${esc(p.ranking)}. ${esc(p.signal_mode)}.<br>${esc(p.timing_basis)}<br>${esc(p.accepted_positions)} accepted positions · ${esc(p.rejected_capacity)} capacity rejections · ${esc(p.rejected_cash)} cash rejections. ${esc(p.gross_basis)}</div></section>
+  <section class="box"><div class="box-h">Rules <small>Source stock rule with a declared equal-slot portfolio application</small></div>${rulesPanel(v)}</section>${coverage}
+  <section class="box"><div class="box-h">Basket equity <span class="legend"><span><i class="sw-line" style="background:var(--blue)"></i>Portfolio</span><label class="dcheck"><input type="checkbox" id="cmp">Compare with ${esc(LABEL[benchmark]||benchmark)} buy &amp; hold</label><label class="dcheck"><input type="checkbox" id="logs" checked>Log scale</label></span></div><div class="chart-tools"><button class="dbtn sm" data-chart-snapshot="c-eq">Download PNG</button><button class="dbtn sm" data-report-export="equity">Download Excel</button></div><div class="lwc" id="c-eq"></div><div id="equity-navigator" class="equity-navigator"><div class="year-shortcuts"><button class="dbtn sm" data-equity-year="all">All years</button>${[...new Set(d.dates.map(date=>date.slice(0,4)))].map(year=>`<button class="dbtn sm" data-equity-year="${year}">${year}</button>`).join('')}</div><label>Start <input type="range" data-range="start" min="0" aria-label="Equity range start"></label><label>End <input type="range" data-range="end" min="0" aria-label="Equity range end"></label><output></output></div><div class="cap">Cash plus actual simultaneous position marks · ${d.equity.at(-1).toFixed(2)}× final normalized equity, including open marks</div></section>
+  <div class="two"><section class="box"><div class="box-h">Drawdown <small>worst ${pct(s.max_dd,1)}</small></div><div class="chart-tools"><button class="dbtn sm" data-chart-snapshot="c-dd">Download PNG</button></div><div class="bkc" id="c-dd"></div></section><section class="box"><div class="box-h">Calendar-year returns</div><div class="chart-tools"><button class="dbtn sm" data-chart-snapshot="c-yr">Download PNG</button></div><div class="bkc" id="c-yr"></div></section></div>
+  ${VaultUI.benchmarkHTML(d,benchmark,benchmarkPrices)}${VaultUI.detailHTML(d)}<section class="box"><div class="box-h">Monthly returns (%)</div><div class="chart-tools"><button class="dbtn sm" data-report-export="monthly">Download Excel</button></div><div id="heatbox">${heatTable(d)}</div><p class="rnote">Calendar returns use the basket equity including held-position marks. Avg/Total is the arithmetic mean of displayed calendar-year returns.</p></section>${VaultUI.tradeHTML(d,STRAT.tk)}`;
 }
 
 function rulesPanel(v) {
@@ -1413,26 +1484,30 @@ async function viewStrategy() {
   const crumbs = `<nav class="crumbs"><a href="#/">Guru's</a><span>/</span><a href="${guruLink(g.id)}">${esc(g.name)}</a><span>/</span><a href="${href('/guru/' + g.id, {view:'grid',book:b.id,tk:S.tk,basket:S.basket,from:S.from,to:S.to})}">${esc(b.title)}</a><span>/</span><span>${esc(v.family_name)}</span><a class="back" href="${LIST_HASH || guruLink(g.id)}">Back to strategies</a></nav>`;
   const switches = marketControls(v,tk);
   const selectedBasket=BASKETS.find(b=>b.id===S.basket);
-  if(S.basket&&(!['ready','partial'].includes(selectedBasket?.price_status)||!selectedBasket.symbols.includes(tk)))return withheldStrategy(v,tk,crumbs,switches,{status:'needs_data',note:selectedBasket?.note||'Data missing: verified constituent prices and universe coverage for this basket are not available. Index prices cannot substitute for basket constituents.'});
+  if(S.run_scope==='basket'&&S.basket&&(!['ready','partial'].includes(selectedBasket?.price_status)||!selectedBasket.symbols.includes(tk)))return withheldStrategy(v,tk,crumbs,switches,{status:'needs_data',note:selectedBasket?.note||'Data missing: verified constituent prices and universe coverage for this basket are not available. Index prices cannot substitute for basket constituents.'});
+  if(selection.run_scope==='basket')return viewBasket(v,tk,crumbs,switches,selection,runApi,generation);
   const availability=(await getReadiness(tk,selection.from,selection.to,v.id,selection.p))[v.id] || {status:'unavailable',note:'The data requirements could not be verified.'};
   if(generation!==busy)return '';
   if(availability.status!=='ready') return withheldStrategy(v,tk,crumbs,switches,availability);
-  await optSchema();
-  const d = await runData(v.id, tk, selection.from, selection.to, selection.cost, selection.p,runApi,VaultUI.costState(selection));
+  const schemaRequest=optSchema(),chartRequest=optimization?Promise.resolve(null):fullOhlc(tk,runApi).catch(()=>null);
+  const d=await runData(v.id,tk,selection.from,selection.to,selection.cost,selection.p,runApi,VaultUI.costState(selection));
   if(generation!==busy)return '';
   if (!d || d.error) return withheldStrategy(v,tk,crumbs,switches,{status:'unavailable',note:apiError(d?.error || 'No response from the calculation engine',tk)});
-  const s = d.stats, cl = v.claim, vd = verdictOf(s), closed = d.trades.filter(t => !t.open), chk = closed.map(exitCheck).filter(Boolean), pass = chk.filter(x => x.ok).length;
-  const tiles = [['Net Profit',s.net_profit,x=>pct(x,2,true),'Sum of closed-trade net returns',cls(s.net_profit)],['Avg net pnl',s.avg_net_pnl??s.avg_trade,x=>pct(x,2,true),'Per closed trade',cls(s.avg_trade)],['No. of trades',s.trades,x=>fx(x,0),'Closed positions'],['Win Rate',s.win_rate,x=>pct(x,1),'Closed trades'],['Expectancy',s.expectancy_ratio,x=>fx(x),'Per unit of average loss'],['MaxDD',s.max_dd,x=>pct(x,2),'Largest equity decline','neg'],['Sharpe',s.sharpe,x=>fx(x),'Daily returns · rf = 0']];
-  const px=optimization?null:await fullOhlc(tk,runApi).catch(async()=>d.ohlc||await ohlc(tk));
+  await schemaRequest;
   if(generation!==busy)return '';
-  STRAT = { d, v, tk, tiles, px, indicatorParameters:{...bookDefaults(v.id),...decodeP(selection.p)} };
+  const s = d.stats, cl = v.claim, vd = verdictOf(s), closed = d.trades.filter(t => !t.open), chk = closed.map(exitCheck).filter(check=>check?.available), pass = chk.filter(x => x.ok).length;
+  const display=returnDisplay(d,selection.report_mode);
+  const tiles = [['Net Profit',display.value,x=>pct(x,2,true),display.reportMode,cls(display.value)],['Avg net pnl',s.avg_net_pnl??s.avg_trade,x=>pct(x,2,true),'Per closed trade',cls(s.avg_trade)],['No. of trades',s.trades,x=>fx(x,0),'Closed positions'],['Win Rate',s.win_rate,x=>pct(x,1),'Closed trades'],['Expectancy',s.expectancy_ratio,x=>fx(x),'Per unit of average loss'],['MaxDD',s.max_dd,x=>pct(x,2),'Largest equity decline','neg'],['Sharpe',s.sharpe,x=>fx(x),'Daily returns · rf = 0']];
+  const px=optimization?null:(await chartRequest)||d.ohlc||await ohlc(tk);
+  if(generation!==busy)return '';
+  STRAT = { d, v, tk, tiles, px, display, indicatorParameters:{...bookDefaults(v.id),...decodeP(selection.p)} };
   STRAT.indicators=buildStrategyIndicators({id:v.id,prices:px,fullHistory:px?.full_history===true,parameters:STRAT.indicatorParameters});
   if(R.optim) return `${crumbs}<section class="box"><div class="st-head"><h1 class="st">Optimization · ${esc(v.family_name)}</h1><a class="dbtn sm back-btn" href="${href('/s/'+encodeURIComponent(v.id),{...S})}">${VaultUI.ICON.back} Back to strategy</a></div><p class="rnote">${esc(LABEL[tk])} · ${esc(v.name)}. Parameter searches are research; selected settings and before/after displays do not establish an untouched holdout. Net profit sums closed-trade net returns; CAGR and risk measures use the separate compounded model.</p>${gateNotice(v,tk)}${experimentNotice(v,d)}${switches}${periodPanel(tk,d)}${optimBanner(v)}</section>${await optimSection(v,tk,d,true)}`;
   return `${crumbs}
     <section class="box"><div class="st-head"><h1 class="st">${esc(v.family_name)}</h1>${VaultUI.toolbar()}</div>
       ${gateNotice(v,tk)}${experimentNotice(v,d)}${switches}${periodPanel(tk, d)}${optimBanner(v)}${v.variant ? `<p class="vname">Variant: <b>${esc(v.variant)}</b></p>` : ''}
       <div class="metrics">${tiles.map(([k, x, f, i, c], n) => `<div class="metric"><span>${k}</span><b class="${c || ''}" data-tile="${n}">${f(x)}</b><i>${i}</i></div>`).join('')}</div>
-      <p class="rnote" data-return-definition><b>Net Profit = sum of closed-trade net returns = unrounded Avg net pnl × No. of trades.</b> Open positions are excluded. The separately labelled compounded chart multiplies sequential return factors and includes open marks; it is a normalized research model, not a sized basket portfolio.</p><p class="rnote" data-results-provenance><b>Computed backtest · ${esc(LABEL[tk])} · ${isUS()?'US':'India'}.</b> Results use loaded local market data and the selected settings. ${S.basket?'These are independent cash-stock results from the selected source-listed universe. Historical constituent membership, source adjustment conventions and any disclosed session gaps are unverified. Current & Past collections do not establish membership on each trade date. Cash stocks are not dated futures contracts.': 'This index/ETF application is separate from the book’s original instruments, stock universe and published performance.'} Rule interpretation and source differences are described below.</p></section>
+      <p class="rnote" data-return-definition><b>${selection.report_mode==='compound'?'Net Profit = product of (1 + each closed-trade net return) − 1.':'Net Profit = sum of closed-trade net returns = unrounded Avg net pnl × No. of trades.'}</b> ${esc(display.unavailableReason||display.description)} The separately labelled compounded chart multiplies sequential return factors and includes open marks; it is a normalized research model, not a sized basket portfolio.</p><p class="rnote" data-results-provenance><b>Computed backtest · ${esc(LABEL[tk])} · ${isUS()?'US':'India'}.</b> Results use loaded local market data and the selected settings. ${tk.startsWith('basket:')?'These are independent cash-stock results from the selected source-listed universe. Historical constituent membership, source adjustment conventions and any disclosed session gaps are unverified. Current & Past collections do not establish membership on each trade date. Cash stocks are not dated futures contracts.': 'This index/ETF application is separate from the book’s original instruments, stock universe and published performance.'} Rule interpretation and source differences are described below.</p></section>
     <section class="box"><div class="box-h">Rules <small>${v.guru==='chande'?'Source interpretation and declared adaptation':'implemented interpretation of the'} ${v.book === 'stc9' ? 'course' : 'book'}, ${srcOf(v)}</small></div>${rulesPanel(v)}</section>
     <section class="box" data-book-reference><div class="box-h">Book-reported figures <small>reference only · separate from the computed backtest</small></div>${TRUST.bookReference(cl)}</section>
     <section class="box"><div class="box-h">Compounded return model <span class="legend"><span><i class="sw-line" style="background:var(--blue)"></i>Strategy</span><label class="dcheck"><input type="checkbox" id="cmp"> <i class="sw-line" style="background:var(--bh)"></i>Compare with buy &amp; hold</label><label class="dcheck"><input type="checkbox" id="logs" checked> Log scale</label></span></div>
@@ -1591,8 +1666,8 @@ function drawStrategy() {
     $('#cmp').onchange = e => bh.applyOptions({ visible: e.target.checked });
     $('#logs').onchange = e => ch.priceScale('right').applyOptions({ mode: e.target.checked ? L.PriceScaleMode.Logarithmic : L.PriceScaleMode.Normal });
   } });
-  safe('signals', () => drawSignals(TF));
-  safe('optim', optimInit);
+  if(d.kind!=='basket')safe('signals', () => drawSignals(TF));
+  if(d.kind!=='basket')safe('optim', optimInit);
   safe('drawdown', () => { let pk = 1; const dd = d.equity.map(v => { pk = Math.max(pk, v); return v / pk - 1; }); bkArea($('#c-dd'), d.dates, dd, { color: cv('--red'), fmt: v => pct(v, 2), axFmt: pctAx, markMin: true }); });
   safe('years', () => { const ys = periods(d, 4), yb = periods({ dates: d.dates, equity: d.bh }, 4); bkBars($('#c-yr'), Object.keys(ys).map(k => ({ label: k, a: ys[k], b: yb[k] })), {}); });
   if($('#heat-palette')){$('#heat-palette').value=HEAT_PALETTE;$('#heat-palette').onchange=e=>{HEAT_PALETTE=e.target.value;$('#heatbox').innerHTML=heatTable(d);};}
@@ -1650,7 +1725,9 @@ document.addEventListener('click', e => {
   if (!e.target.closest('details.dd')) document.querySelectorAll('details.dd[open]').forEach(d => d.removeAttribute('open'));
   const lb=e.target.closest('[data-library-set]');if(lb){e.preventDefault();return setState(Object.fromEntries(new URLSearchParams(lb.dataset.librarySet)));}
   const hb = e.target.closest('[data-heat]'); if (hb && STRAT) { HEAT_DESC = hb.dataset.heat === 'desc'; $('#heatbox').innerHTML = heatTable(STRAT.d); document.querySelectorAll('[data-heat]').forEach(x => x.classList.toggle('active', x === hb)); return; }
-  const basketButton=e.target.closest('[data-basket]');if(basketButton){if(basketButton.disabled)return;const key=basketButton.dataset.basket,basket=BASKETS.find(b=>b.id===key);return setState({basket:key,tk:key&&['ready','partial'].includes(basket?.price_status)&&basket.symbols.length?basket.symbols[0]:(S.region==='us'?'SPX':'NIFTY 50'),from:'',to:''});}
+  const positions=e.target.closest('[data-position-choice]');if(positions){const choice=positions.dataset.positionChoice;return setState({position_choice:choice,...(choice==='custom'?{}:{max_positions:choice})});}
+  const membership=e.target.closest('[data-membership]');if(membership){const mode=membership.dataset.membership,base=S.basket.replace(/_past$/,'');return setState({membership:mode,basket:S.region==='us'&&base?base+(mode==='past'?'_past':''):S.basket,...(S.run_scope==='basket'?{from:'',to:''}:{})});}
+  const basketButton=e.target.closest('[data-basket]');if(basketButton){if(basketButton.disabled)return;const key=basketButton.dataset.basket;return go('/s/'+encodeURIComponent(R.id),{...S,run_scope:'basket',basket:key,from:'',to:''});}
   const tfb = e.target.closest('[data-tf]'); if (tfb) { TF = tfb.dataset.tf; drawSignals(TF); return; }
   if(e.target.closest('.source-pdfs'))return;
   const t = e.target.closest('[data-set], [data-fam], [data-book], [data-guru], [data-guru-strats], [data-sort]'); if (!t) return;
@@ -1663,14 +1740,14 @@ document.addEventListener('click', e => {
   if (d.guru) return go('/guru/'+d.guru,{view:'grid',tk:S.tk,basket:S.basket,from:S.from,to:S.to});
   if (d.guruStrats) return go('/guru/'+d.guruStrats,{view:'grid',tk:S.tk,basket:S.basket,from:S.from,to:S.to});
 });
-document.addEventListener('submit', e => { if(e.target.id==='library-search-form'){e.preventDefault();return setState({library_q:document.getElementById('library-query').value.trim(),library_limit:'24',library_page:'1',source_page:'1'});}if (e.target.id !== 'period') return; e.preventDefault();
-  const fd = new FormData(e.target), t = TICKERS.find(x => x.ticker === (S.tk === 'ALL' ? TICKERS[0].ticker : S.tk)), from = fd.get('from'), to = fd.get('to'), cost = '0',slippage=String(Math.max(0,+fd.get('slippage')||0)),rollover=String(Math.max(0,+fd.get('rollover')||0));
+document.addEventListener('submit', e => { if(e.target.id==='position-limit'){e.preventDefault();const count=positionLimit(String(new FormData(e.target).get('max_positions')));if(!count){document.getElementById('position-error').textContent='Use a whole number from 1 to 100.';return;}return setState({max_positions:String(count),position_choice:'custom'});} if(e.target.id==='library-search-form'){e.preventDefault();return setState({library_q:document.getElementById('library-query').value.trim(),library_limit:'24',library_page:'1',source_page:'1'});}if (e.target.id !== 'period') return; e.preventDefault();
+  const fd = new FormData(e.target), t = selectedSpan(S.tk), from = fd.get('from'), to = fd.get('to'), cost = '0',slippage=String(Math.max(0,+fd.get('slippage')||0)),rollover=String(Math.max(0,+fd.get('rollover')||0));
   if (!from || !to || from >= to) { $('#perr').textContent = 'From must be before To.'; return; }
   go(R.path, { ...S, from: from <= t.first ? '' : from, to: to >= t.last ? '' : to, cost,slippage,rollover }); });
 document.addEventListener('click', e => { const b = e.target.closest('[data-period]'); if (!b) return; const [from, to] = b.dataset.period.split('|'); go(R.path, { ...S, from, to }); });
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches?.('.bookcard[data-book]')) e.target.click(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('details.dd[open]').forEach(d => d.removeAttribute('open')); });
-document.addEventListener('change', e => {if(e.target.id==='library-stock')return setState({tk:e.target.value,from:'',to:''});if(e.target.id==='library-instrument'){const value=e.target.value;if(value.startsWith('i:'))return setState({basket:'',tk:value.slice(2),from:'',to:''});const key=value.slice(2),basket=BASKETS.find(b=>b.id===key);if(basket?.symbols?.length)return setState({basket:key,tk:basket.symbols[0],from:'',to:''});return;}if(e.target.id==='library-sort')return setState({library_sort:e.target.value,library_limit:'24',library_page:'1',source_page:'1'}); if(e.target.id==='basket-universe'){const base=S.basket.replace(/_past$/,''),key=base+(e.target.value==='current_plus_past'?'_past':''),basket=BASKETS.find(b=>b.id===key),symbol=S.tk.split(':').at(-1),match=basket?.symbols?.find(x=>x.split(':').at(-1)===symbol);return setState({basket:key,tk:match||basket?.symbols?.[0]||S.tk,from:'',to:''});} if(e.target.id==='basket-symbol')return setState({tk:e.target.value});const k = e.target.dataset?.key; if (k) setState({ [k]: e.target.value }); });
+document.addEventListener('change', e => {if(e.target.id==='strategy-stock'){if(!e.target.value)return;return setState({run_scope:'single',basket:'',tk:e.target.value,from:'',to:''});}if(e.target.id==='library-stock')return setState({tk:e.target.value,from:'',to:''});if(e.target.id==='library-instrument'){const value=e.target.value;if(value.startsWith('i:'))return setState({basket:'',tk:value.slice(2),from:'',to:''});const key=value.slice(2),basket=BASKETS.find(b=>b.id===key);if(basket?.symbols?.length)return setState({basket:key,tk:basket.symbols[0],from:'',to:''});return;}if(e.target.id==='library-sort')return setState({library_sort:e.target.value,library_limit:'24',library_page:'1',source_page:'1'}); if(e.target.id==='basket-universe'){const base=S.basket.replace(/_past$/,''),key=base+(e.target.value==='current_plus_past'?'_past':''),basket=BASKETS.find(b=>b.id===key),symbol=S.tk.split(':').at(-1),match=basket?.symbols?.find(x=>x.split(':').at(-1)===symbol);return setState({basket:key,tk:match||basket?.symbols?.[0]||S.tk,from:'',to:''});} if(e.target.id==='basket-symbol')return setState({tk:e.target.value});const k = e.target.dataset?.key; if (k) setState({ [k]: e.target.value }); });
 let qt; document.addEventListener('input', e => { if (e.target.id !== 'q') return; clearTimeout(qt); qt = setTimeout(() => setState({ q: e.target.value }), 300); });
 addEventListener('hashchange', () => { if(!GURUS_API.length||!ALLCAT.length)return;readRoute(); render(); });
 
@@ -1688,14 +1765,15 @@ async function initializeRuntime(account) {
     try { const u = await (await fetch(API_US + '/tickers')).json(); TICK_ALL_US=u;u.forEach(t=>{if(!LABEL[t.ticker])LABEL[t.ticker]=t.symbol||t.ticker.split(':').at(-1);}); TICK_US = US_INDICES.map(k => u.find(t => t.ticker === k)).filter(Boolean); if (!TICK_US.length) TICK_US = null; } catch (e) { TICK_US = null; }
     ALLCAT = cat.map((v, i) => ({ ...v, ord: i, book: v.book || 'stc9', style: v.group.split(' · ')[0] })); CAT = marketCat();
     Object.values(BOOK).forEach(b => { if (CAT.some(v => v.book === b.id)) b.live = true; });
-    for(const [file,region] of [['baskets.json','in'],['baskets-us.json','us']]){try{const response=await fetch('data/'+file);if(response.ok){const data=await response.json(),pool=region==='us'?TICK_ALL_US:TICK_ALL_IN,keys=new Set(pool.map(t=>t.ticker)),items=(Array.isArray(data)?data:data.baskets||[]).map(b=>({...b,symbols:(b.symbols||[]).filter(key=>keys.has(key))}));if(region==='us')BASKETS_US=items;else BASKETS_IN=items;}}catch{}}
-    try{const coverage=await fetch('data/book-coverage.json');if(coverage.ok)BOOK_COVERAGE=await coverage.json();}catch{}
-    try{const pristine=await fetch('data/pristine-reading-index.json');if(pristine.ok){const data=await pristine.json(),entries=(data.entries||[]).map(b=>({...b,author_metadata:b.source_author,years_reported:b.year?[String(b.year)]:[]}));BOOK_COVERAGE.authors.pristine={id:'pristine',name:'Pristine Trading',source_titles:entries,catalogue_books:GURU.pristine.books.map(b=>({id:b.id,title:b.title,summary:b.blurb})),counts:{catalogue_books:3,source_title_candidates:entries.length,local_pdf_files:(data.counts?.source_locations||0)},note:'Three curated reading entries, plus related Pristine manuals and articles with their recorded author credits. Source-title candidates, document versions and split materials are not independently verified distinct authored books. Original source bytes were preserved; complete trading-rule review is pending.'};}}
-    catch{}
-    try{const files=await fetch('data/book-file-index.json');if(files.ok)BOOK_FILE_INDEX=await files.json();}catch{}
-    try{const categories=await fetch('data/book-categories.json');if(categories.ok)BOOK_CATEGORIES=await categories.json();}catch{}
-    try{const inventory=await fetch('data/research-share-library.json');if(inventory.ok)mergeResearchLibrary(await inventory.json());}catch{}
-    try{const reviews=await fetch('data/tharp-source-review.json');if(reviews.ok)applyReadingReviews(await reviews.json());}catch{}
+    const metadataFiles=['baskets.json','baskets-us.json','book-coverage.json','pristine-reading-index.json','book-file-index.json','book-categories.json','research-share-library.json','tharp-source-review.json'];
+    const metadata=await Promise.all(metadataFiles.map(async file=>{try{const response=await fetch('data/'+file);return response.ok?await response.json():null;}catch{return null;}}));
+    for(const [offset,region] of [[0,'in'],[1,'us']]){try{const data=metadata[offset];if(data){const pool=region==='us'?TICK_ALL_US:TICK_ALL_IN,keys=new Set(pool.map(t=>t.ticker)),items=(Array.isArray(data)?data:data.baskets||[]).map(b=>({...b,symbols:(b.symbols||[]).filter(key=>keys.has(key))}));if(region==='us')BASKETS_US=items;else BASKETS_IN=items;}}catch{}}
+    if(metadata[2])BOOK_COVERAGE=metadata[2];
+    try{const data=metadata[3];if(data){const entries=(data.entries||[]).map(b=>({...b,author_metadata:b.source_author,years_reported:b.year?[String(b.year)]:[]}));BOOK_COVERAGE.authors.pristine={id:'pristine',name:'Pristine Trading',source_titles:entries,catalogue_books:GURU.pristine.books.map(b=>({id:b.id,title:b.title,summary:b.blurb})),counts:{catalogue_books:3,source_title_candidates:entries.length,local_pdf_files:(data.counts?.source_locations||0)},note:'Three curated reading entries, plus related Pristine manuals and articles with their recorded author credits. Source-title candidates, document versions and split materials are not independently verified distinct authored books. Original source bytes were preserved; complete trading-rule review is pending.'};}}catch{}
+    if(metadata[4])BOOK_FILE_INDEX=metadata[4];
+    if(metadata[5])BOOK_CATEGORIES=metadata[5];
+    try{if(metadata[6])mergeResearchLibrary(metadata[6]);}catch{}
+    try{if(metadata[7])applyReadingReviews(metadata[7]);}catch{}
     finalizeReadingIndex();
     readRoute(); render();
   } catch (error) { vaultStore.fail(vaultStore.begin('/'),error.message||'Could not reach the calculation engine.'); }
@@ -1704,7 +1782,9 @@ async function initializeRuntime(account) {
 
 
 async function homeModel(){
- const h=await heroStats(),readiness=await getReadiness(h.tk,S.from||'',S.to||''),inventoryRecords=libraryRecords(),allRecords=inventoryRecords.filter(record=>inLibraryScope(libraryScope(record,CURATED_AUTHOR_IDS),S.library_scope)),scopeAuthorIds=new Set(allRecords.map(record=>record.authorId)),scopeAuthors=LIB.filter(author=>scopeAuthorIds.has(author.id)),authors=VaultLibraryBrowser.matchingAuthors(scopeAuthors,allRecords,S.library_q,S.book_category),live=LIB.filter(g=>g.books.some(b=>b.live));
+ const selectedTicker=S.tk==='ALL'||S.market!=='india'?TICKERS[0].ticker:S.tk;
+ const [h,readiness]=await Promise.all([heroStats(),getReadiness(selectedTicker,S.from||'',S.to||'')]);
+ const inventoryRecords=libraryRecords(),allRecords=inventoryRecords.filter(record=>inLibraryScope(libraryScope(record,CURATED_AUTHOR_IDS),S.library_scope)),scopeAuthorIds=new Set(allRecords.map(record=>record.authorId)),scopeAuthors=LIB.filter(author=>scopeAuthorIds.has(author.id)),authors=VaultLibraryBrowser.matchingAuthors(scopeAuthors,allRecords,S.library_q,S.book_category),live=LIB.filter(g=>g.books.some(b=>b.live));
  const scoped=Object.fromEntries(await Promise.all(live.map(async g=>[g.id,await heroStats(g.id)])));
  const summary=await getSum(h.tk,S.from||'',S.to||''),states=Object.fromEntries(LIB.map(g=>[g.id,VaultLibraryDiscovery.authorAvailability(g.books.map(b=>b.id),CAT,summary,readiness)]));
  if(states.pristine){states.pristine.title='Rule review pending';states.pristine.text='Original Pristine books are readable. Complete trading rules and execution assumptions still need review; no verified strategy is registered.';}
@@ -1740,7 +1820,7 @@ async function homeModel(){
  const bookCards=books.slice(offset,offset+24).map(record=>{const b=record.book||record.source||record;return {id:record.id,kind:record.kind,title:record.title,author:record.kind==='source'&&record.source?.author_metadata&&record.source.author_metadata!=='?'?record.source.author_metadata+' · '+record.authorName:record.authorName,summary:record.kind==='catalogue'?readingSummary(record.author||GURU[record.authorId],b):b.summary||'Original reading material indexed from the source vault. Content and objective rules still need review.',year:String(record.year||'Edition year unconfirmed'),scope:libraryScope(record,CURATED_AUTHOR_IDS),categories:libraryScope(record,CURATED_AUTHOR_IDS)==='trading'?record.categories:[],href:record.kind==='catalogue'?href('/guru/'+record.authorId,{view:'grid',book:record.id,tk:S.tk,basket:S.basket,from:S.from,to:S.to}):href('/source/'+encodeURIComponent(record.id),{guru:record.authorId}),live:!!b.live};});
  const indices=S.region==='us'?TICK_US:TICK_IN;
  const enabled=ALLCAT.filter(variant=>variant.status==='live');
- return {authorStats:scoped,market:libraryMarket(S),implementedMethods:new Set(enabled.map(variant=>variant.book+':'+variant.family)).size,enabledVariants:enabled.length,implementedBooks:new Set(enabled.map(variant=>variant.book)).size,authors:scopeAuthorIds.size,curatedAuthors:CURATED_AUTHOR_IDS.size,scope:S.library_scope,inventoryGroups:LIB.length,inventoryEntries:inventoryRecords.length,entries:allRecords.length,families:h.tested,symbol:LABEL[h.tk]||h.tk,symbolCount:TICKERS.length,basket:!!S.basket,authorCards,bookCards,page:{page,pages,total,key:'library_page',label:S.library_view==='books'?'books':'authors'},query:S.library_q,category:S.book_category,view:S.library_view,etfs:etfs.map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),indices:(indices||[]).map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),baskets:BASKETS.map(b=>({id:b.id,name:b.name,symbols:b.symbols||[]})),symbols:TICKERS.map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),usAvailable:!!TICK_US,guilloche:GUILL,connorsLink:guruLink('connors'),strategiesLink:href('/strategies',{tk:S.tk,basket:S.basket})};
+ return {summaryIssues:summaryIssues(h.tk,S.from||'',S.to||''),authorStats:scoped,market:libraryMarket(S),implementedMethods:new Set(enabled.map(variant=>variant.book+':'+variant.family)).size,enabledVariants:enabled.length,implementedBooks:new Set(enabled.map(variant=>variant.book)).size,authors:scopeAuthorIds.size,curatedAuthors:CURATED_AUTHOR_IDS.size,scope:S.library_scope,inventoryGroups:LIB.length,inventoryEntries:inventoryRecords.length,entries:allRecords.length,families:h.tested,symbol:LABEL[h.tk]||h.tk,symbolCount:TICKERS.length,basket:!!S.basket,authorCards,bookCards,page:{page,pages,total,key:'library_page',label:S.library_view==='books'?'books':'authors'},query:S.library_q,category:S.book_category,view:S.library_view,etfs:etfs.map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),indices:(indices||[]).map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),baskets:BASKETS.map(b=>({id:b.id,name:b.name,symbols:b.symbols||[]})),symbols:TICKERS.map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),usAvailable:!!TICK_US,guilloche:GUILL,connorsLink:guruLink('connors'),strategiesLink:href('/strategies',{tk:S.tk,basket:S.basket})};
 }
 let startup;
 window.VaultRuntime={

@@ -33,6 +33,9 @@ state directory.
 
 `--watch` allows reviewed jobs to be appended to the same manifest while the
 worker runs. The worker also waits when available memory is below 2 GiB.
+`--continuous` removes the worker's overall wall-clock deadline and implies
+`--watch`; individual job timeouts and resource limits still apply. Without
+that explicit option the default deadline remains 24 hours.
 Idle polling checks every five seconds and avoids rewriting unchanged status artifacts.
 Changing an existing job's commands, provenance or results path is rejected;
 use a new ID for a changed specification. The explicit `approved` boolean may
@@ -70,6 +73,66 @@ process trees. External engine APIs retain their own container limits.
 Service settings do not survive a PC reboot automatically; this example is a
 transient unit. Check the service after starting it and verify the first real
 job in `status.json`, rather than treating successful launch as completed work.
+
+## Continuous conversion and separate review
+
+`scripts/continuous_conversion.py` refills the worker from an owner-authorized
+private backlog. It creates an isolated worktree, runs a bounded conversion,
+freezes the proposed file hashes, then starts a separate Codex review session.
+Reviewers must read the actual source and perform their own checks without
+editing the frozen candidate. Only after that stage finishes does the next
+source task begin. This coordinator **never publishes** candidates: its best
+outcome is `reviewed_pending_integration`, requiring the normal integration
+and release checks. Its `live_admissions` counter is always zero.
+
+The private backlog has `schema_version: 1`, `approved_by`, and `tasks`. Each
+task supplies a stable `id`, `author`, `book`, concrete `scope`, `instrument`,
+absolute `source_paths` and `data_paths`, source SHA-256 bindings in
+`source_hashes`, `adaptations`, and exact `method_ids` when already identified.
+Optional `data_hashes` bind the price inputs. Empty method IDs mean source
+discovery, not permission to invent strategies. Source files are checked lazily
+for the current task; startup does not scan or backtest the whole library.
+Changing a started specification requires a new task ID.
+
+```bash
+python3 scripts/continuous_conversion.py \
+  --backlog /private/continuous/backlog.json \
+  --state-dir /private/continuous \
+  --repo /home/server/.cache/strategy-vault-development \
+  --worktree-root /private/continuous-worktrees \
+  --codex /absolute/path/to/codex --watch
+```
+
+For owner-authorized continuous operation, install a persistent user unit in
+`~/.config/systemd/user/strategy-vault-conversion.service`, with the absolute
+command above as `ExecStart`, `WantedBy=default.target`, and the same CPU,
+memory, swap and process-group limits as the transient example. Set
+`RuntimeMaxSec=infinity`, `Restart=on-failure`, `RestartSec=20`, and bounded
+start retries; enable the unit with `systemctl --user enable --now`. User
+lingering must be enabled if it is to survive logout. These settings remove
+the old daily service expiry without removing per-job limits. A powered-off
+machine or unavailable account/network cannot perform research.
+
+Inspect `pipeline.json` for the current source and conversion/review stage;
+`status.json` records the underlying jobs. `waiting_for_backlog` explicitly
+means idle. The state directory lock prevents duplicate coordinators.
+The coordinator waits before starting another source when less than 20 GiB
+remains on its state volume; preserved evidence and live data are not deleted
+to make room.
+
+An actual CLI usage/quota/rate-limit error stops the process, retains its
+evidence, and writes `LIMIT_REACHED.json`. That marker prevents automatic
+restart or progression to other tasks. Error-shaped events are checked while
+the CLI runs, so its internal retries do not keep consuming work after a
+detected limit. Ordinary agent prose mentioning limits is not an error event.
+Never change accounts or API credentials to evade a limit. Resume deliberately
+only after the account is usable again; preserve the marker's audit history.
+The regular `STOP` mechanism also stops the coordinator.
+
+Unique PDF hashes are source-candidate counts. A PDF may be a chapter, article,
+edition or non-rule-based reading; it is not necessarily a distinct book or a
+convertible strategy. Keep candidate, family, variant, checked-run and deployed
+counts separate in progress reports.
 
 ## Reviewed manifest contract
 
@@ -164,6 +227,7 @@ before the application availability counters change.
 
 ```bash
 python3 -m unittest discover -s scripts -p test_overnight_worker.py
+python3 -m unittest discover -s scripts -p test_continuous_conversion.py
 ```
 
 The tests use temporary queue artifacts and small subprocesses. They check

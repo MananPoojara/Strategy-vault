@@ -5,7 +5,8 @@ import vm from 'node:vm';
 const vendorContext={Uint8Array,ArrayBuffer,TextEncoder,TextDecoder,setTimeout,clearTimeout};
 vm.runInNewContext(fs.readFileSync(new URL('../../frontend/vendor/xlsx-js-style-1.2.0.min.js',import.meta.url),'utf8'),vendorContext);
 const XLSX=vendorContext.XLSX;
-const reportCode=fs.readFileSync(new URL('../../frontend/report-ui.js',import.meta.url),'utf8');
+const activeRuntime=fs.readFileSync(new URL('../../frontend/react/src/compat/runtime.js',import.meta.url),'utf8');
+const reportCode=activeRuntime.slice(activeRuntime.indexOf('window.VaultUI=(()=>{'),activeRuntime.indexOf('// Optimization research on the strategy page'));
 const reportDataCode=fs.readFileSync(new URL('../../frontend/report-data.js',import.meta.url),'utf8');
 
 function fixture(){return {dates:['2024-01-02','2024-01-09'],equity:[1,1.099],gross_equity:[1,1.1],bh:[1,1.1],stats:{total_return:.099,trades:1},gross_stats:{total_return:.1},costs:{fees_bps:3,slippage_bps:2,rollover_bps:0},provenance:{symbol:'REAL_SYMBOL',source_sha256:'a'.repeat(64),csv_sha256:'b'.repeat(64),membership:'Current snapshot; historical membership unverified'},trades:[{entry:'2024-01-02',exit:'2024-01-09',avg_px:100,exit_px:110,ret:.099,reason:'close, rule',accounting:{symbol:'REAL_SYMBOL',signal_side:'Long',pts:10,gross_ret:.1,net_ret:.099,days_held:7,slippage_ret:.001,mae_ret_observed:null,mfe_ret_observed:null,gross_pnl:null,net_pnl:null,taxes:null}}]};}
@@ -43,6 +44,38 @@ test('CSV handler downloads recorded rows with quoting, blank money and formula-
  const h=harness();h.context.STRAT.d.trades[0].reason=' =HYPERLINK("bad"),\ntext';await h.click('csv');
  assert.equal(h.downloads.length,1,h.status.textContent);const text=await h.downloads[0].blob.text();
  assert.ok(text.includes('Symbol,Signal,Entry Date'));assert.ok(text.includes('REAL_SYMBOL,LONG'));assert.ok(text.includes("' =HYPERLINK"));assert.ok(!text.includes('undefined'));
+});
+
+test('active React report exports capture the selected Net Profit basis before asynchronous loading',async()=>{
+ const h=harness({deferred:true});
+ h.context.STRAT.display={value:.08,reportMode:'Compounded closed-trade returns',description:'Product of closed return factors; open marks excluded.',unavailableReason:null};
+ const pending=h.click('trades-xlsx');h.context.STRAT.display.value=999;h.context.S.report_mode='fixed';h.release();await pending;
+ assert.equal(h.downloads.length,1,h.status.textContent);
+ const book=XLSX.read(new Uint8Array(await h.downloads[0].blob.arrayBuffer()),{type:'array'}),meta=values(book.Sheets.Metadata);
+ assert.ok(meta.includes(.08));assert.ok(meta.includes('Compounded closed-trade returns'));assert.ok(!meta.includes(999));
+ assert.equal(XLSX.utils.sheet_to_json(book.Sheets.Trades,{header:1})[1][13],.099);
+});
+
+test('an unavailable display value stays blank in Excel instead of falling back to a different formula',async()=>{
+ const h=harness();h.context.STRAT.d.stats.net_profit=6000;
+ h.context.STRAT.display={value:null,reportMode:'Compounded closed-trade returns',description:'Closed only',unavailableReason:'Nonpositive return factor'};
+ await h.click('trades-xlsx');assert.equal(h.downloads.length,1,h.status.textContent);
+ const book=XLSX.read(new Uint8Array(await h.downloads[0].blob.arrayBuffer()),{type:'array'}),meta=values(book.Sheets.Metadata);
+ assert.ok(meta.includes('Nonpositive return factor'));assert.ok(!meta.includes(6000));
+});
+
+test('basket Excel retains constituent coverage and allocated contributions with no monetary invention',async()=>{
+ const h=harness(),d=h.context.STRAT.d;d.kind='basket';d.basket='nifty50';
+ d.coverage=[{symbol:'REAL_SYMBOL',ticker:'basket:nifty50:REAL_SYMBOL',first:d.dates[0],last:d.dates[1],status:'ready',note:'Actual fixture coverage'}];
+ d.portfolio={max_positions:10,slot_allocation:.1,signal_mode:'Regular-mode replay'};
+ Object.assign(d.trades[0],{symbol:'REAL_SYMBOL',allocation:.1,portfolio_contribution:.0099});
+ await h.click('trades-xlsx');assert.equal(h.downloads.length,1,h.status.textContent);
+ const book=XLSX.read(new Uint8Array(await h.downloads[0].blob.arrayBuffer()),{type:'array'});
+ assert.ok(book.Sheets['Constituent coverage']);assert.ok(book.Sheets['Portfolio method']);
+ const rows=XLSX.utils.sheet_to_json(book.Sheets['Portfolio allocation'],{header:1,defval:null});
+ assert.equal(rows[1][4],.1);assert.equal(rows[1][6],.0099);
+ assert.equal(XLSX.utils.sheet_to_json(book.Sheets.Trades,{header:1,defval:null})[1][12],null);
+ assert.ok(h.downloads[0].name.includes('nifty50'));
 });
 
 test('native chart PNG handler captures registered chart rather than exporting an empty canvas',async()=>{
@@ -106,7 +139,7 @@ test('Like toggles a per-account browser preference without aggregate counts or 
  h.context.document.querySelector=selector=>selector==='[data-action=like]'?button:null;
  assert.match(h.context.VaultUI.toolbar(),/data-action="like"[^>]*aria-pressed="false"/);
  await h.click('',{action:'like'});assert.equal(attrs.get('aria-pressed'),'true');assert.equal(attrs.get('on'),true);
- assert.match(button.innerHTML,/ic-line/);assert.match(button.innerHTML,/<span>Like<\/span>/);assert.match(h.status.textContent,/this browser/);assert.equal(h.downloads.length,0);
+ assert.match(button.innerHTML,/ic-line/);assert.match(button.innerHTML,/<svg/);assert.doesNotMatch(button.innerHTML,/<span>/);assert.match(h.status.textContent,/this browser/);assert.equal(h.downloads.length,0);
  assert.equal(storage.size,1);assert.ok([...storage.keys()][0].includes('account-A'));
  assert.match(h.context.VaultUI.toolbar(),/data-action="like"[^>]*aria-pressed="true"/);
  h.context.VAULT_USER={id:'account-B'};assert.match(h.context.VaultUI.toolbar(),/data-action="like"[^>]*aria-pressed="false"/);

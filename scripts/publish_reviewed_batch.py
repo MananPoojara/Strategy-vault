@@ -57,13 +57,52 @@ def allowed_file(name):
         return True
     if name in BOOK_HELPERS:
         return True
-    if name in {"Context/guru/backend/src/instrument_policy.rs", "Context/guru/backend/src/readiness.rs"}:
+    if name in {"Context/guru/backend/src/instrument_policy.rs", "Context/guru/backend/src/readiness.rs",
+                "Context/guru/backend/src/gate.rs", "Context/guru/backend/src/main.rs"}:
         return True
     if name.startswith("docs/") and path.suffix == ".md":
         return True
     if name.startswith("library/") and path.suffix in {".py", ".rs", ".js", ".mjs", ".md"}:
         return not any(part in {"data", "Books", "node_modules", "target"} for part in path.parts)
     return False
+
+
+def validate_support_source(name, before, after, approved):
+    """Permit gate records and main's tests without widening production edits."""
+    if name not in {"Context/guru/backend/src/gate.rs", "Context/guru/backend/src/main.rs"}:
+        return
+    marker = "\n#[cfg(test)]\nmod tests {"
+    require(before.count(marker) == after.count(marker) == 1,
+            "Supporting source must retain its identifiable test module")
+    old, new = before.split(marker, 1)[0], after.split(marker, 1)[0]
+    if name.endswith("/main.rs"):
+        require(old == new, "Strategy publication cannot change main production code")
+        return
+    declaration = "static GATE: &[G] = &[\n"
+    require(old.count(declaration) == new.count(declaration) == 1,
+            "Gate metadata declaration changed")
+    old_prefix, old_rest = old.split(declaration, 1)
+    new_prefix, new_rest = new.split(declaration, 1)
+    require("\n];" in old_rest and "\n];" in new_rest, "Gate metadata terminator missing")
+    old_body, old_suffix = old_rest.split("\n];", 1)
+    new_body, new_suffix = new_rest.split("\n];", 1)
+    require(old_prefix == new_prefix and old_suffix == new_suffix,
+            "Strategy publication cannot change gate production helpers")
+    def entries(body):
+        result = {}
+        for line in body.splitlines():
+            if not line.strip():
+                continue
+            match = re.fullmatch(r'\s*G \{ id: r(#+)"([a-z][a-z0-9_]*)"\1, .+ \},', line)
+            require(match is not None, "Gate contains a nonmetadata entry")
+            key = match.group(2)
+            require(key not in result, "Gate contains duplicate entries")
+            result[key] = line
+        return result
+    previous, current = entries(old_body), entries(new_body)
+    require(set(previous) <= set(current), "Existing gate metadata was removed")
+    changed = {key for key in current if current[key] != previous.get(key)}
+    require(changed <= set(approved), "Candidate changed unapproved gate metadata")
 
 
 def candidate_source(candidate, name):
@@ -174,6 +213,9 @@ def validate_candidate(candidate, repo, review):
         mode = git(candidate, "ls-tree", commit, "--", name).split()[0]
         require(mode in {"100644", "100755"}, "Candidate changes must contain regular source files")
         candidate_source(candidate, name)
+        if name in {"Context/guru/backend/src/gate.rs", "Context/guru/backend/src/main.rs"}:
+            validate_support_source(name, git(candidate, "show", base + ":" + name),
+                                    candidate_source(candidate, name).read_text(), review.get("method_ids", []))
         changed.append(name)
     require(changed and set(changed) == set(review.get("approved_files", [])) == set(review.get("candidate_hashes", {})), "Review must name the exact changed file set")
     validate_review(review, candidate)
@@ -340,7 +382,7 @@ def smoke(base, cases, catalogue_rows):
     by_id = {item["id"]: item for item in catalogue_rows}
     results = []
     for case in cases:
-        query = {**case["query"], "id": case["method_id"], "cost": "0", "slippage": "0", "rollover": "0"}
+        query = {"cost": "0", "slippage": "0", "rollover": "0", **case["query"], "id": case["method_id"]}
         route = "/api/guru/" + case["guru"]
         code, response = get_json(base, route + "/readiness", query)
         require(code == 200 and isinstance(response, dict), "Actual-instrument readiness request failed")
@@ -353,10 +395,10 @@ def smoke(base, cases, catalogue_rows):
             require(case["instrument_kind"] in policy.get("allowed_types", []), "Reviewed instrument class is not admitted by the method policy")
             require(code == 200 and isinstance(run, dict) and run.get("dates") and isinstance(run.get("trades"), list), "A ready method did not produce an actual-price backtest")
             require(len(run.get("equity", [])) == len(run["dates"]), "Actual-price backtest has inconsistent equity dates")
-            results.append({"method_id": case["method_id"], "market": case["market"], "ticker": case["query"]["ticker"], "readiness": actual, "trade_records": len(run["trades"])})
+            results.append({"method_id": case["method_id"], "market": case["market"], "ticker": case["query"]["ticker"], "readiness": actual, "query": query, "trade_records": len(run["trades"])})
         else:
             require(code >= 400, "An incompatible instrument unexpectedly produced a backtest")
-            results.append({"method_id": case["method_id"], "market": case["market"], "ticker": case["query"]["ticker"], "readiness": actual, "blocked": True})
+            results.append({"method_id": case["method_id"], "market": case["market"], "ticker": case["query"]["ticker"], "readiness": actual, "query": query, "blocked": True})
     return results
 
 

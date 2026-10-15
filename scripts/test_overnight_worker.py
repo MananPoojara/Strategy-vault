@@ -348,6 +348,90 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(self.run_worker(watch=True, max_runtime_seconds=0.3), 0)
         self.assertEqual(worker.read_status(self.state)["status"], "runtime_limit")
 
+    def test_continuous_mode_has_no_deadline_and_remains_stoppable(self):
+        self.writes_result()
+        def stop():
+            for _ in range(500):
+                if self.result.exists():
+                    break
+                time.sleep(0.01)
+            worker.request_stop(self.state)
+        thread = threading.Thread(target=stop)
+        thread.start()
+        try:
+            self.assertEqual(self.run_worker(watch=True, max_runtime_seconds=None), 0)
+        finally:
+            thread.join()
+        status = worker.read_status(self.state)
+        self.assertEqual(status["status"], "stopped")
+        self.assertIsNone(status["limits"]["max_runtime_seconds"])
+        self.assertEqual(status["jobs"]["book-method"]["attempts"], 1)
+
+    def test_usage_limit_detection_requires_a_real_agent_error_event(self):
+        path = self.state / "agent.jsonl"
+        for event in (
+            {"type": "turn.failed", "error": {"code": "usage_limit_reached", "message": "Usage limit reached"}},
+            {"type": "error", "message": "You've hit your usage limit. Try again later."},
+            {"type": "error", "error": {"code": "insufficient_quota", "message": "Quota exhausted"}},
+            {"type": "turn.failed", "error": {"code": "rate_limit_exceeded", "message": "Too many requests"}},
+        ):
+            with self.subTest(event=event):
+                path.write_text(json.dumps(event) + "\n")
+                self.assertIsNotNone(worker.agent_usage_limit(path))
+        for event in (
+            {"type": "item.completed", "item": {"text": "Test the usage_limit_reached error"}},
+            {"type": "error", "message": "An ordinary source file could not be read"},
+            {"type": "turn.completed", "usage": {"input_tokens": 123}},
+        ):
+            with self.subTest(event=event):
+                path.write_text(json.dumps(event) + "\n")
+                self.assertIsNone(worker.agent_usage_limit(path))
+
+    def test_usage_limit_stops_queue_without_retrying_or_starting_next_job(self):
+        self.write_manifest()
+        manifest = json.loads(self.manifest.read_text())
+        second = {**self.job, "id": "next-book", "result_file": str(self.state / "next.json")}
+        manifest["jobs"].append(second)
+        self.manifest.write_text(json.dumps(manifest))
+        def limited(job, state_dir, item, state, **kwargs):
+            item.update(status="usage_limit", error="usage_limit_reached")
+        with mock.patch.object(worker, "execute", side_effect=limited) as execute:
+            self.assertEqual(worker.run(self.manifest, self.state, min_available_mb=0), 0)
+        self.assertEqual(execute.call_count, 1)
+        self.assertEqual(worker.read_status(self.state)["status"], "usage_limit")
+        self.assertEqual(worker.read_status(self.state)["jobs"]["next-book"]["status"], "queued")
+        self.assertTrue((self.state / "LIMIT_REACHED.json").is_file())
+
+    def test_limit_marker_prevents_automatic_restart_until_explicitly_cleared(self):
+        self.writes_result()
+        self.write_manifest()
+        (self.state / "LIMIT_REACHED.json").write_text(json.dumps({"reason": "quota"}))
+        with mock.patch.object(worker, "execute") as execute:
+            self.assertEqual(worker.run(self.manifest, self.state, min_available_mb=0), 0)
+        execute.assert_not_called()
+        self.assertEqual(worker.read_status(self.state)["status"], "usage_limit")
+
+    def test_agent_error_is_classified_before_generic_nonzero_exit(self):
+        payload = {"type": "turn.failed", "error": {"code": "usage_limit_reached", "message": "limit reached"}}
+        self.job["argv"] = [sys.executable, "-c", "import json;print(" + repr(json.dumps(payload)) + ");raise SystemExit(1)"]
+        self.write_manifest()
+        state = {"jobs": {self.job["id"]: {"attempts": 1, "status": "queued"}}}
+        with mock.patch.object(worker, "validate_memory_mode", return_value=None):
+            worker.execute({**self.job, "kind": "agent_conversion"}, self.state, state["jobs"][self.job["id"]], state,
+                           memory_mb=256, cpu_cores=1, poll_seconds=0.02,
+                           deadline=time.monotonic()+3, log_limit_bytes=1024*1024)
+        self.assertEqual(state["jobs"][self.job["id"]]["status"], "usage_limit")
+
+    def test_live_usage_limit_event_interrupts_a_retrying_agent(self):
+        payload={"type":"error","message":"You've hit your usage limit."}
+        self.job['argv']=[sys.executable,'-c',"import time;print("+repr(json.dumps(payload))+",flush=True);time.sleep(30)"]
+        self.job['timeout_seconds']=2
+        state={'jobs':{self.job['id']:{'attempts':1,'status':'queued'}}}
+        worker.execute({**self.job,'kind':'agent_conversion'},self.state,state['jobs'][self.job['id']],state,
+                       memory_mb=256,cpu_cores=1,poll_seconds=0.02,
+                       deadline=time.monotonic()+5,log_limit_bytes=1024*1024)
+        self.assertEqual(state['jobs'][self.job['id']]['status'],'usage_limit')
+
     def test_existing_file_lock_prevents_second_worker(self):
         self.write_manifest()
         with (self.state / "worker.lock").open("a") as lock:

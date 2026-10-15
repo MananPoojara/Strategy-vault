@@ -1,5 +1,6 @@
 webapp/auth/node_modules
 webapp/gateway/target
+backend/target
 webapp/.env
 webapp/.env.*
 webapp/verification

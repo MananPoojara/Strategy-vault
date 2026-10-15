@@ -10,7 +10,11 @@ import parse, {
  * executes inline HTML or evaluates handler strings. Chart widgets own only their
  * empty container children; the containing page remounts between result snapshots.
  * New pages use JSX directly. This is not an arbitrary user-HTML renderer. */
-export function ResearchMarkup({ html }: { html: string }) {
+export function ResearchMarkup({ html, slots = {} }: {
+  html: string;
+  /** Components supplied by the owning React page, never by source HTML. */
+  slots?: Readonly<Record<string, ReactNode>>;
+}) {
   const options: HTMLReactParserOptions = {
     replace(node, index) {
       if (!(node instanceof Element)) return;
@@ -36,6 +40,14 @@ export function ResearchMarkup({ html }: { html: string }) {
           delete attributes[key];
       }
       const props: Record<string, unknown> = attributesToProps(attributes);
+      const slot = attributes["data-react-slot"];
+      if (
+        slot &&
+        ["span", "div"].includes(node.name) &&
+        Object.hasOwn(slots, slot)
+      ) {
+        return createElement(node.name, { ...props, key: index }, slots[slot]);
+      }
       if (node.name === "input" || node.name === "textarea") {
         if ("value" in props) {
           props.defaultValue = props.value;

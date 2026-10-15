@@ -28,6 +28,31 @@ it("preserves form defaults and SVG icons for existing research controls", () =>
   expect(html).toContain("2026-01-01");
   expect(html).toContain('viewBox="0 0 24 24"');
 });
+it("renders only slots registered by the React page and keeps the safe surrounding markup", () => {
+  const html = renderToStaticMarkup(
+    <ResearchMarkup
+      html={'<section><span class="action-slot" data-react-slot="settings" onmouseover="alert(1)">Old fallback</span><div data-react-slot="unknown"><a href="javascript:alert(1)">Reading fallback</a></div></section>'}
+      slots={{settings: <button type="button">Reviewed React control</button>}}
+    />,
+  );
+  expect(html).toContain('class="action-slot"');
+  expect(html).toContain('<button type="button">Reviewed React control</button>');
+  expect(html).not.toContain("Old fallback");
+  expect(html).toContain("Reading fallback");
+  expect(html).not.toContain("javascript:");
+  expect(html).not.toContain("onmouseover");
+});
+it("does not treat inherited names or blocked tags as registered React slots", () => {
+  const html = renderToStaticMarkup(
+    <ResearchMarkup
+      html={'<span data-react-slot="constructor">Normal content</span><script data-react-slot="settings">Unsafe content</script>'}
+      slots={{settings: <button>Trusted control</button>}}
+    />,
+  );
+  expect(html).toContain("Normal content");
+  expect(html).not.toContain("Trusted control");
+  expect(html).not.toContain("Unsafe content");
+});
 it("supports only the reviewed author actions without evaluating source strings", async () => {
   const { createRoot } = await import("react-dom/client"),
     { act } = await import("react"),

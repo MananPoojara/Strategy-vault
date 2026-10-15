@@ -31,6 +31,7 @@ class PublicationGates(unittest.TestCase):
         target = self.repo / self.path
         target.parent.mkdir(parents=True)
         target.write_text('pub const BOOK: &str = "testbook";\n// baseline source\n')
+        (target.parent.parent/'main.rs').write_text('fn main() {}\n#[cfg(test)]\nmod tests {}\n')
         git(self.repo, "add", ".")
         git(self.repo, "commit", "-m", "baseline")
         self.base = git(self.repo, "rev-parse", "HEAD")
@@ -184,11 +185,62 @@ class PublicationGates(unittest.TestCase):
 
     def test_path_allowlist_rejects_config_data_auth_and_frontend(self):
         for path in ("../outside.rs", "Context/guru/frontend/react/src/main.tsx", ".env",
-                     "Context/guru/backend/src/main.rs", "library/book/raw.pdf", "docs/dump.csv"):
+                     "Context/guru/backend/src/accounting.rs", "library/book/raw.pdf", "docs/dump.csv"):
             self.assertFalse(publisher.allowed_file(path), path)
         for path in (self.path, "Context/guru/backend/src/instrument_policy.rs", "docs/BOOK-REVIEW.md",
-                     "library/author/scripts/reference.py"):
+                     "library/author/scripts/reference.py", "Context/guru/backend/src/gate.rs",
+                     "Context/guru/backend/src/main.rs"):
             self.assertTrue(publisher.allowed_file(path), path)
+
+    def test_main_support_is_test_only_and_cannot_change_production(self):
+        name="Context/guru/backend/src/main.rs"
+        before='fn main() {}\n#[cfg(test)]\nmod tests { fn old() {} }\n'
+        after='fn main() {}\n#[cfg(test)]\nmod tests { fn reviewed() {} }\n'
+        publisher.validate_support_source(name,before,after,{"test_rule"})
+        with self.assertRaisesRegex(publisher.Held,"production"):
+            publisher.validate_support_source(name,before,after.replace('fn main() {}','fn main() { unsafe_change(); }'),{"test_rule"})
+        with self.assertRaises(publisher.Held):
+            publisher.validate_support_source(name,before,'fn main() {}',{"test_rule"})
+
+    def test_candidate_gate_enforces_main_production_identity_from_git(self):
+        name="Context/guru/backend/src/main.rs"
+        path=self.candidate/name
+        path.write_text('fn main() { unapproved_change(); }\n#[cfg(test)]\nmod tests {}\n')
+        git(self.candidate,"add",name)
+        git(self.candidate,"commit","--amend","--no-edit")
+        self.review['candidate_commit']=git(self.candidate,'rev-parse','HEAD')
+        self.review['approved_files'].append(name)
+        self.review['candidate_hashes'][name]=publisher.sha256(path)
+        with self.assertRaisesRegex(publisher.Held,'production'):
+            publisher.validate_candidate(self.candidate,self.repo,self.review)
+        path.write_text('fn main() {}\n#[cfg(test)]\nmod tests { fn reviewed_window() {} }\n')
+        git(self.candidate,"add",name)
+        git(self.candidate,"commit","--amend","--no-edit")
+        self.review['candidate_commit']=git(self.candidate,'rev-parse','HEAD')
+        self.review['candidate_hashes'][name]=publisher.sha256(path)
+        self.assertEqual(set(publisher.validate_candidate(self.candidate,self.repo,self.review)),{self.path,name})
+
+    def test_gate_support_changes_only_named_metadata_and_tests(self):
+        name="Context/guru/backend/src/gate.rs"
+        row='    G { id: r##"test_rule"##, verdict: r##"unverified"## },'
+        other='    G { id: r##"other_rule"##, verdict: r##"withheld"## },'
+        before='struct G {}\nstatic GATE: &[G] = &[\n'+row+'\n'+other+'\n];\nfn get() {}\n#[cfg(test)]\nmod tests {}\n'
+        after=before.replace(row,row.replace('unverified','reviewed'))
+        publisher.validate_support_source(name,before,after,{"test_rule"})
+        with self.assertRaisesRegex(publisher.Held,"unapproved"):
+            publisher.validate_support_source(name,before,after.replace(other,other.replace('withheld','reviewed')),{"test_rule"})
+        with self.assertRaisesRegex(publisher.Held,"production"):
+            publisher.validate_support_source(name,before,after.replace('fn get() {}','fn get() { changed(); }'),{"test_rule"})
+        with self.assertRaisesRegex(publisher.Held,"removed"):
+            publisher.validate_support_source(name,before,after.replace(other+'\n',''),{"test_rule"})
+
+    def test_gate_support_rejects_nonmetadata_and_duplicate_entries(self):
+        name="Context/guru/backend/src/gate.rs"
+        row='    G { id: r##"test_rule"##, verdict: r##"unverified"## },'
+        before='struct G {}\nstatic GATE: &[G] = &[\n'+row+'\n];\nfn get() {}\n#[cfg(test)]\nmod tests {}\n'
+        for replacement in (row+'\n'+row, '    execute_unreviewed_code(),'):
+            with self.assertRaises(publisher.Held):
+                publisher.validate_support_source(name,before,before.replace(row,replacement),{"test_rule"})
 
     def simulated_publication(self, *, deploy=True, fail_stage=None, fail_live=False, existing_method=False):
         """Mock release infrastructure, retain actual precondition Git histories."""
@@ -318,6 +370,27 @@ class PublicationGates(unittest.TestCase):
         with mock.patch.object(publisher, "get_json", return_value=(500, "server error")):
             with self.assertRaises(publisher.Held):
                 publisher.catalogue("http://example.invalid")
+
+    def test_smoke_runs_and_records_the_exact_reviewed_costs_and_parameters(self):
+        template = self.review["smoke_cases"][0]
+        cases = [
+            {**template, "query": {"ticker": "NIFTY 50", "slippage": "5", "rollover": "0", "p.fill": "1"}},
+            {**template, "query": {"ticker": "NIFTY 50", "cost": "2", "slippage": "7.5", "rollover": "3"},
+             "expected_readiness": "not_testable"},
+        ]
+        rows = [{"id": "test_rule", "instrument_policy": {"allowed_types": ["index"]}}]
+        responses = [(200, {"strategies": [{"id": "test_rule", "status": "ready"}]}),
+                     (200, {"dates": ["2020-01-01"], "equity": [1], "trades": []}),
+                     (200, {"strategies": [{"id": "test_rule", "status": "not_testable"}]}),
+                     (400, "Unsupported reviewed costs")]
+        with mock.patch.object(publisher, "get_json", side_effect=responses) as request:
+            results = publisher.smoke("http://example.invalid", cases, rows)
+        for index, case in enumerate(cases):
+            expected = {"cost": "0", "slippage": "0", "rollover": "0", **case["query"], "id": "test_rule"}
+            self.assertEqual(request.call_args_list[index * 2].args[2], expected)
+            self.assertEqual(request.call_args_list[index * 2 + 1].args[2], expected)
+            self.assertEqual(results[index]["query"], expected)
+        self.assertNotIn("id", cases[0]["query"])
 
     def test_commands_keep_output_private_and_reject_failed_command(self):
         import sys
