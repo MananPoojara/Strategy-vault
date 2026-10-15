@@ -189,3 +189,17 @@ test('origin migration only adds a nullable column and runs after 002',async()=>
  const bootstrap=await readFile(new URL('../auth/src/bootstrap.mjs',import.meta.url),'utf8');
  assert.ok(bootstrap.indexOf('003-lab-origin.sql')>bootstrap.indexOf('002-lab-strategies.sql')&&bootstrap.indexOf('002-lab-strategies.sql')>0);
 });
+
+test('portfolio-labelled lab specs remain research-only and keep normal save actions',async()=>{
+ const {labPublishable,labAction}=await import('../auth/src/contracts.mjs');
+ assert.equal(labPublishable({...LAB_ROW,spec:LAB_SPEC}),true);
+ assert.equal(labPublishable({...LAB_ROW,market:'gl',spec:LAB_SPEC}),false);
+ for(const portfolio of [{universe:{basket:'nifty50'}},null,false,[]]) {
+  const r={...LAB_ROW,spec:{...LAB_SPEC,portfolio}};
+  assert.equal(labPublishable(r),false);
+  assert.equal(labAction(r,LAB_USERS.owner,'update',3),'draft');
+  assert.equal(labAction(r,LAB_USERS.owner,'duplicate'),'draft');
+  assert.throws(()=>labAction(r,LAB_USERS.owner,'submit',3),{status:400,message:/survivorship bias/});
+  assert.throws(()=>labAction({...r,status:'submitted'},LAB_USERS.admin,'publish',3),{status:400,message:/survivorship bias/});
+ }
+});

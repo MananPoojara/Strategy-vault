@@ -157,3 +157,20 @@ test('duplicating a variant keeps its origin and YT Strategies lists the origin 
   await call('viewer', 'GET', '/published');
   assert.ok(sqls.some(sql => /v\.spec->'origin' AS origin/.test(sql)));
 });
+
+test('portfolio drafts stay readable and editable but neither submit nor admin publish writes anything',async()=>{
+ const spec={...SPEC,portfolio:{universe:{basket:'nifty50'}}};
+ const draft=harness({7:row({spec,instrument:'portfolio:nifty50'})});
+ const read=await draft.call('owner','GET','/7');
+ assert.equal((await read.json()).publishable,false);
+ const submit=await draft.call('owner','POST','/7/submit',{version:3});
+ assert.equal(submit.status,400);assert.match((await submit.json()).error,/survivorship bias/);
+ assert.ok(!draft.log.includes('UPDATE')&&!draft.log.includes('INSERT'));
+ const review=harness({7:row({spec,status:'submitted'})});
+ const publish=await review.call('admin','POST','/7/publish',{version:3});
+ assert.equal(publish.status,400);assert.match((await publish.json()).error,/survivorship bias/);
+ assert.ok(!review.log.includes('UPDATE')&&!review.log.includes('INSERT'));
+ const edit=await draft.call('owner','PUT','/7',{version:3,name:'Research variant',spec,market:'in',instrument:'portfolio:nifty50'});
+ assert.equal(edit.status,200);
+ assert.equal((await edit.json()).publishable,false);
+});

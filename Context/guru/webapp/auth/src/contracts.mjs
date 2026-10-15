@@ -38,6 +38,8 @@ export class LabRequestError extends Error {
 export const LAB_MARKETS = new Set(['in', 'us', 'gl', 'crypto']);
 // Global and crypto are provisional TradingView exports: internal research only until licensed data exists.
 export const LAB_PUBLISHABLE_MARKETS = new Set(['in', 'us']);
+// Portfolio rules use undated member lists; even malformed reserved fields stay research-only.
+export function labPublishable(row) { return LAB_PUBLISHABLE_MARKETS.has(row.market) && !Object.hasOwn(row.spec ?? {}, 'portfolio'); }
 export const LAB_STATUSES = new Set(['draft', 'submitted', 'published', 'rejected']);
 const LAB_SPEC_BYTES = 8192;
 const CONTROL = /[\x00-\x1f\x7f]/;
@@ -118,5 +120,6 @@ export function labAction(row, user, action, version) {
   if (action !== 'duplicate' && (version === undefined || version === null)) throw new LabRequestError('version required', 400);
   if (version !== undefined && version !== null && version !== row.version) throw new LabRequestError(`This strategy changed since you opened it (now version ${row.version}). Reload before saving.`, 409);
   if (rule.publishable && !LAB_PUBLISHABLE_MARKETS.has(row.market)) throw new LabRequestError('Global and crypto data are provisional TradingView exports; strategies on them cannot go to YT Strategies until licensed data replaces them.', 400);
+  if (rule.publishable && !labPublishable(row)) throw new LabRequestError("Portfolio strategies use today's basket lists, not dated index membership (survivorship bias); they stay research-only until historical membership is admitted.", 400);
   return rule.to ?? row.status;
 }

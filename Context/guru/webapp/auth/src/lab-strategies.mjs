@@ -1,5 +1,5 @@
 // Saved indicators-lab strategies (spec §3): per-user drafts, admin review, frozen YT Strategies snapshots.
-import { roleAllows, LabRequestError, LAB_PUBLISHABLE_MARKETS, LAB_STATUSES, labAction, labCanRead, validateLabStrategy, sameLabOrigin, validateLabVersion, validateLabNote } from './contracts.mjs';
+import { roleAllows, LabRequestError, labPublishable, LAB_STATUSES, labAction, labCanRead, validateLabStrategy, sameLabOrigin, validateLabVersion, validateLabNote } from './contracts.mjs';
 
 const BASE = '/api/app/lab/strategies';
 const ID = ':id{[1-9][0-9]{0,8}}';
@@ -12,7 +12,7 @@ const TRANSITIONS = {
   publish: "status='published', reviewed_by=$2, reviewed_at=now(), review_note=$3",
   reject: "status='rejected', reviewed_by=$2, reviewed_at=now(), review_note=$3",
 };
-const view = row => row && { ...row, publishable: LAB_PUBLISHABLE_MARKETS.has(row.market) };
+const view = row => row && { ...row, publishable: labPublishable(row) };
 
 async function body(c) {
   const data = await c.req.json().catch(() => null);
