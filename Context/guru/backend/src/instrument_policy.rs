@@ -34,6 +34,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
     (def.book=="kftsm" && member(def.id,&["kftsm_ma","kftsm_exp","kftsm_lrs","kftsm_ndb","kftsm_bb_ma","kftsm_ma_pct_band","kftsm_ma_tr_band","kftsm_triple_smooth","kftsm_vol_breakout","kftsm_keltner","kftsm_hh_ma","kftsm_hh_cross","kftsm_hh_channel","kftsm_mod_3ma","kftsm_4_9_18","kftsm_month_end","kftsm_hirsch"]))) || reviewed_adaptive_rule(def)
         || (def.book=="spmt" && crate::books::spmt::reviewed_daily(def.id))
         || (def.book=="chbta2" && member(def.id,&["ch_bta2_ma_stack","ch_bta2_65sma_ravi"]))
+        || (def.book=="sbma" && member(def.id,&["sbma_sma50_long","sbma_x_5s20s"]))
 }
 fn reviewed_adaptive_rule(def:&StrategyDef)->bool {
     def.book=="kftsm" && member(def.id,&["kftsm_kama","kftsm_adapt_exp","kftsm_vidya","kftsm_adapt_r2","kftsm_adapt_rsi","kftsm_swg","kftsm_swing","kftsm_raschke_first_cross","kftsm_outside_day","kftsm_fc_bb_abx"])
@@ -57,6 +58,10 @@ pub fn policy(def:&StrategyDef)->Policy {
     p
 }
 fn base_policy(def:&StrategyDef)->Policy {
+    if def.book=="sbma" && member(def.id,&["sbma_sma50_long","sbma_x_5s20s"]) {
+        let mut p=stock("Burns Moving Averages 101 (2015), physical PDF pages 10/16/42/58/60/63/67. Default 50-SMA long and 5-SMA/20-SMA long/cash contracts independently source-checked and compared on selected actual AAPL/RELIANCE data at 0/5 bps and declared idealized-close/next-actual-open fills. These are deliberate individual-stock research applications, not original Monster-stock selection, ETF/index chart or book portfolio/performance reproduction. Flat test start, full actual SMA warmup and terminal open/pending orders retained. Quote adjustments and historical population remain qualified. See library/sbma/INDEPENDENT-REVIEW-2026-10-15.md.");
+        p.market_adaptation=true;return p;
+    }
     if def.book=="hbqts" && reviewed_cash_rule(def) {
         if def.id=="hbqts_cmo" {
             let mut p=etf("QTS Figure20.2, printed pp263-264, was used on XLB, an actual Materials ETF. The bounded reviewed ledger uses actual SPY ETF prices as a declared ETF research application with literal companion defaults, not the source XLB walk-forward study or its optimized results. Individual stocks and cash indices cannot substitute for ETF prices. See library/bandy/REVIEW-2026-10-13.md.");
@@ -213,6 +218,21 @@ mod tests {
     fn def(id: &'static str, book: &'static str) -> StrategyDef {
         StrategyDef { id, book, name: "Test", group: "Test", session: 0, dir: "Long", status: Status::Live,
             needs_volume: false, needs_vix: false, needs_series: &[], rules: &[], notes: "", claim: None }
+    }
+    #[test]
+    fn reviewed_burns_keys_require_real_stocks_without_opening_other_methods() {
+        for id in ["sbma_sma50_long","sbma_x_5s20s"] {
+            let d=def(id,"sbma");assert!(reviewed_cash_rule(&d));
+            assert!(check(&d,"RELIANCE",true).is_none());
+            assert!(check_native(&d,"AAPL",&NativeEvidence::us_test_fixture()).is_none());
+            for symbol in ["NIFTY 50","SPY","RELIANCE"] {assert!(check(&d,symbol,false).is_some());}
+            assert!(metadata_json(&d).contains("\"source_performance_reproduced\":false"));
+            assert!(!reviewed_cash_rule(&def(id,"other_book")));
+        }
+        for id in ["sbma_sma200_short","sbma_x_5e50s","sbma_x_10e30e_sar","sbma_new_rule"] {
+            let d=def(id,"sbma");assert!(!reviewed_cash_rule(&d));
+            assert_eq!(policy(&d).requirement,"source_review_required");
+        }
     }
     #[test]
     fn reviewed_bandy_ids_require_real_stocks_and_do_not_open_held_methods() {

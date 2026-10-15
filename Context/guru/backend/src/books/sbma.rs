@@ -9,6 +9,8 @@ const EOD: &str = "E|Signals are taken on the close and filled at that close: \"
 const EMA_DEF: &str = "F|EMA = exponential moving average of the close, weight 2/(n+1), seeded with the simple average of the first n closes (StockCharts.com convention; the book's charts are StockCharts, p.4)";
 const CROSS: &str = "E|\"Moving average crossover systems are a way to capture trends by entering a trade when a shorter term moving average crosses over a longer term one, then exiting as it crosses back under\" (p.58); listed pair from \"Here are some popular moving average crossovers that are used\" (p.60)";
 const CROSS_X: &str = "X|Exit when the shorter average crosses back under the longer one (p.58, p.67). p.always_in=1 = the book's \"always in approach\" that reverses short on the cross under (p.59)";
+const REVIEWED_STOCK_NOTE: &str = "Source-supported default selected-stock research application: signal/fill and closed-trade ledgers independently checked on actual AAPL and RELIANCE; final platform accounting checked separately. Flat test start, real full-history SMA warmup, one sequential long position, no basket allocation or original Monster-stock population/performance reproduction. Quote adjustments and membership remain qualified. See library/sbma/INDEPENDENT-REVIEW-2026-10-15.md.";
+const REVIEWED_STOCK_FILL: &str = "E|Completed daily close signals. fill=0 is an idealized same-close research convention; fill=1 executes at the next actual observed open, as a source-described alternative (physical PDF16/63). A terminal next-open order remains unfilled; open final positions retain the platform's disclosed estimated liquidation costs, separately from actual filled exit orders.";
 const NOTE: &str = "Book prints no test results. Written for stocks, stock indexes and ETFs (charts of SPY, QQQ, INDU, TSLA, AAPL); runs on any ticker (India = instrument swap, NIFTY 50 / NSE basket stocks).";
 
 pub fn catalogue() -> Vec<StrategyDef> {
@@ -21,13 +23,15 @@ pub fn catalogue() -> Vec<StrategyDef> {
     vec![
         d("sbma_sma50_long", "50-day SMA green light / red light", "Ch. 6 · 50 day SMA", "Long", Status::Live,
             &["E|\"In the strongest of Monster stocks, the 50 day can act as a standalone Green light/Red Light indicator. Staying long as price is above the 50 day line\" (p.42): buy on a close above the 50-day SMA while flat",
-              "X|\"and exiting if price drops below\" (p.42): sell on a close below the 50-day SMA", EOD],
-            "Book's instrument choice ('the strongest of Monster stocks') is the user's, not a coded filter. Book prints no results."),
+              "X|\"and exiting if price drops below\" (p.42): sell on a close below the 50-day SMA", REVIEWED_STOCK_FILL],
+            REVIEWED_STOCK_NOTE),
         d("sbma_sma200_short", "Short the first loss of the 200-day SMA", "Ch. 8 · 200 day SMA", "Short", Status::Live,
             &["E|\"Taking short positions as the 200 day is first lost gives traders exposure to profit from market downtrends\" (p.56): sell short on the first close below the 200-day SMA after a close at or above it",
               "X|\"A stop loss can be set at a close back over the 200 day SMA.\" (p.56)", EOD,
               "F|Not coded (judgement): p.54 optional 5- or 10-day EMA trailing stop 'depending on the historical volatility of the stock'"],
             "The long side of the same rule (long above the 200-day, cash below, p.50-51) duplicates apta_ma200_dji and is not repeated. Book prints no results."),
+        d("sbma_x_5s20s", "5-day SMA / 20-day SMA crossover", "Ch. 9 · Moving average crossover systems", "Long", Status::Live,
+            &[CROSS, "F|Fast = 5-day SMA, slow = 20-day SMA (physical PDF60); current fast strictly above slow after previous fast at or below slow enters long; equality alone holds", "X|Exit long when current fast is strictly below slow after previous fast at or above slow. This reviewed subset stays in cash; short reversal is not admitted.", REVIEWED_STOCK_FILL], REVIEWED_STOCK_NOTE),
         x("sbma_x_5e50s", "5-day EMA / 50-day SMA crossover", &[CROSS, "F|Fast = 5-day EMA, slow = 50-day SMA (p.60)", EMA_DEF, CROSS_X, EOD]),
         x("sbma_x_10e20e", "10-day EMA / 20-day EMA crossover", &[CROSS, "F|Fast = 10-day EMA, slow = 20-day EMA (p.60)", EMA_DEF, CROSS_X, EOD]),
         x("sbma_x_10e50e", "10-day EMA / 50-day EMA crossover", &[CROSS, "F|Fast = 10-day EMA, slow = 50-day EMA (p.60, also the $INDU example p.70)", EMA_DEF, CROSS_X, EOD]),
@@ -80,6 +84,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
     Some(match id {
         "sbma_sma50_long" => ("sbma_price_ma", "Burns price vs moving average", "50-day SMA long"),
         "sbma_sma200_short" => ("sbma_price_ma", "Burns price vs moving average", "200-day SMA short"),
+        "sbma_x_5s20s" => ("sbma_cross", "Burns MA crossovers", "5 / 20 SMA"),
         "sbma_x_5e50s" => ("sbma_cross", "Burns MA crossovers", "5 EMA / 50 SMA"),
         "sbma_x_10e20e" => ("sbma_cross", "Burns MA crossovers", "10 / 20 EMA"),
         "sbma_x_10e50e" => ("sbma_cross", "Burns MA crossovers", "10 / 50 EMA"),
@@ -100,6 +105,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 /// (fast length, fast is EMA, slow length, slow is EMA, always in by default)
 fn pair(id: &str) -> Option<(f64, bool, f64, bool, f64)> {
     Some(match id {
+        "sbma_x_5s20s" => (5., false, 20., false, 0.),
         "sbma_x_5e50s" => (5., true, 50., false, 0.),
         "sbma_x_10e20e" => (10., true, 20., true, 0.),
         "sbma_x_10e50e" => (10., true, 50., true, 0.),
@@ -114,7 +120,8 @@ fn pair(id: &str) -> Option<(f64, bool, f64, bool, f64)> {
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
-    let fill = p("fill", "Fill: 0 = signal close (book default), 1 = next open", 0., 0., 1., 1.);
+    let fill_label = if matches!(id,"sbma_sma50_long"|"sbma_x_5s20s") { "Research fill: 0 = idealized signal close, 1 = next actual open" } else { "Fill: 0 = signal close (book default), 1 = next open" };
+    let fill = p("fill", fill_label, 0., 0., 1., 1.);
     if let Some((f, _, s, _, ai)) = pair(id) {
         let mut v = vec![p("fast", "Fast average length", f, 2., 100., 1.), p("slow", "Slow average length", s, 10., 300., 5.)];
         if !id.ends_with("_sar") { v.push(p("always_in", "1 = always in, reverse short on the cross under (p.59)", ai, 0., 1., 1.)); }
@@ -209,6 +216,47 @@ mod tests {
     use crate::Row;
     fn rows(cl: &[f64]) -> Vec<Row> {
         cl.iter().enumerate().map(|(i, &c)| Row { ticker: "T".into(), date: format!("{:05}", i), open: c, high: c + 1., low: c - 1., close: c, volume: None }).collect()
+    }
+    #[test]
+    fn reviewed_crossover_is_registered_as_five_twenty_sma_long_cash() {
+        let d=catalogue().into_iter().find(|d|d.id=="sbma_x_5s20s").expect("source-listed SMA crossover");
+        assert_eq!(d.dir,"Long");
+        assert_eq!(pair(d.id),Some((5.,false,20.,false,0.)));
+        assert_eq!(family_of(d.id).unwrap().0,"sbma_cross");
+    }
+    #[test]
+    fn reviewed_crossover_tie_then_strict_cross_is_long_cash() {
+        let mut cl=vec![100.;20];cl.extend([101.,90.,90.]);
+        let r=rows(&cl);let x=Ctx::new(&r,&r,&[]);
+        let ts=run("sbma_x_5s20s",&x,19,22,&Params::new()).unwrap();
+        assert_eq!(ts.len(),1);let t=&ts[0];
+        assert_eq!((t.dir,t.legs[0].i,t.exit_i,t.open),(1.,20,21,false));
+        assert_eq!((t.legs[0].px,t.exit_px),(101.,90.));
+        // Later values cannot change an earlier signal or its close fill.
+        let mut future=r.clone();future[22].close=500.;future[22].high=501.;
+        let xx=Ctx::new(&future,&future,&[]);
+        let prefix=run("sbma_x_5s20s",&xx,19,21,&Params::new()).unwrap();
+        assert_eq!((prefix[0].legs[0].i,prefix[0].exit_i),(20,21));
+    }
+    #[test]
+    fn reviewed_next_open_uses_actual_prices_and_keeps_terminal_order_unfilled() {
+        let mut cl=vec![100.;20];cl.extend([101.,90.,90.]);
+        let mut r=rows(&cl);r[21].open=92.;r[21].high=93.;r[22].open=89.;
+        let x=Ctx::new(&r,&r,&[]);let p=Params::from([("fill".into(),1.)]);
+        assert!(run("sbma_x_5s20s",&x,19,20,&p).unwrap().is_empty());
+        let pending=run("sbma_x_5s20s",&x,19,21,&p).unwrap();
+        assert_eq!(pending.len(),1);let t=&pending[0];
+        assert_eq!((t.legs[0].i,t.legs[0].px,t.exit_i,t.exit_px,t.open),(21,92.,21,90.,true));
+        assert_eq!(t.entry_kind,"open");
+        let closed=run("sbma_x_5s20s",&x,19,22,&p).unwrap();let t=&closed[0];
+        assert_eq!((t.legs[0].px,t.exit_i,t.exit_px,t.signal_i,t.open),(92.,22,89.,21,false));
+    }
+    #[test]
+    fn reviewed_fifty_sma_cold_start_above_does_not_require_a_fresh_cross() {
+        let mut cl=vec![100.;50];cl.extend([110.,110.,90.]);
+        let r=rows(&cl);let x=Ctx::new(&r,&r,&[]);
+        let ts=run("sbma_sma50_long",&x,51,52,&Params::new()).unwrap();
+        assert_eq!(ts.len(),1);assert_eq!((ts[0].legs[0].i,ts[0].exit_i),(51,52));
     }
     #[test]
     fn ema_is_sma_seeded() {

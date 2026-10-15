@@ -17,6 +17,12 @@ fn event_column(name: &str) -> bool {
 }
 
 pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -> Option<Issue> {
+    if def.book=="sbma" && matches!(def.id,"sbma_sma50_long"|"sbma_x_5s20s") {
+        let fill=p.get("fill").copied().unwrap_or(0.);
+        if ![0.,1.].contains(&fill) {return issue("not_testable","Reviewed Burns fill must be 0 (idealized same-close research) or 1 (next actual open).");}
+        let changed=if def.id=="sbma_sma50_long" {p.get("ma").is_some_and(|v|*v!=50.)} else {p.get("fast").is_some_and(|v|*v!=5.) || p.get("slow").is_some_and(|v|*v!=20.) || p.get("always_in").is_some_and(|v|*v!=0.)};
+        if changed {return issue("not_testable","This bounded Burns admission covers only the independently checked default 50-SMA long or 5-SMA/20-SMA long/cash baseline. Other lengths/directions are separate research variants awaiting their own review; no changed result inherits default verification.");}
+    }
     if def.book=="spmt" {
         if let Some(note)=books::spmt::hold_reason(def.id) {return issue("needs_data",note);}
     }
@@ -110,6 +116,22 @@ mod tests {
         (1..=5).map(|i| Row{ticker:"TEST".into(),date:format!("2020-01-0{i}"),open:100.0,high:101.0,low:99.0,close:100.0,volume:Some(1000.0)}).collect()
     }
     fn definition(id: &str) -> StrategyDef { crate::connors::catalogue().into_iter().find(|d| d.id==id).unwrap() }
+    #[test]
+    fn reviewed_burns_only_accepts_default_long_cash_lengths_and_exact_fill_modes() {
+        let r=rows();let ctx=Ctx::new(&r,&r,&[]);
+        for id in ["sbma_sma50_long","sbma_x_5s20s"] {
+            let d=definition(id);
+            for fill in [0.,1.] {assert!(check(&ctx,&d,0,4,&Params::from([("fill".into(),fill)])).is_none());}
+            for fill in [-1.,0.5,2.,f64::NAN,f64::INFINITY] {
+                assert_eq!(check(&ctx,&d,0,4,&Params::from([("fill".into(),fill)])).unwrap().status,"not_testable");
+            }
+        }
+        for (id,key,value) in [("sbma_sma50_long","ma",49.),("sbma_sma50_long","ma",f64::NAN),
+            ("sbma_x_5s20s","fast",6.),("sbma_x_5s20s","slow",21.),("sbma_x_5s20s","always_in",1.)] {
+            let d=definition(id);let p=Params::from([(key.into(),value)]);
+            assert_eq!(check(&ctx,&d,0,4,&p).unwrap().status,"not_testable");
+        }
+    }
     #[test]
     fn spmt_partial_auxiliary_basket_and_inferred_options_exit_stay_held() {
         let r=rows();let mut ctx=Ctx::new(&r,&r,&r);
