@@ -633,6 +633,21 @@ fn params_of(q: &BTreeMap<String, String>) -> Params {
 /// Existing methods keep their previous parsing contract until separately reviewed.
 fn checked_params_of(q: &BTreeMap<String, String>) -> Result<Params,String> {
     let p=params_of(q);
+    if let Some(id)=q.get("id").filter(|id|books::sbma::four_reviewed_stock_rule(id)) {
+        for (key,text) in q {
+            if let Some(name)=key.strip_prefix("p.") {
+                let value=text.parse::<f64>().map_err(|_|format!("Invalid reviewed Burns parameter: {key}"))?;
+                if let Some(note)=books::sbma::validate_four_reviewed(id,&Params::from([(name.into(),value)])) {return Err(note.into());}
+            }
+            if let Some(name)=key.strip_prefix("g.") {
+                for value in four_burns_grid(text)? {
+                    if let Some(note)=books::sbma::validate_four_reviewed(id,&Params::from([(name.into(),value)])) {return Err(note.into());}
+                }
+            }
+        }
+        if let Some(note)=books::sbma::validate_four_reviewed(id,&p) {return Err(note.into());}
+        return Ok(p);
+    }
     let Some(id)=q.get("id").filter(|id|id.as_str()!="ehrs_sinetrend" && books::ehrs::reviewed_sinetrend(id)) else {return Ok(p);};
     let schema=books::ehrs::params(id).ok_or("Unknown reviewed Ehlers configuration")?;
     for (key,text) in q {
@@ -669,6 +684,21 @@ fn checked_params_of(q: &BTreeMap<String, String>) -> Result<Params,String> {
     }
     if let Some(note)=books::ehrs::validate(id,&p) {return Err(note);}
     Ok(p)
+}
+
+/// Bound only the four newly reviewed Burns grids before legacy integer conversion.
+fn four_burns_grid(text:&str)->Result<Vec<f64>,String> {
+    let bad=||"Reviewed Burns grid requires finite values and at most 1000 steps".to_string();
+    let values:Vec<f64>=text.split(':').map(|v|v.trim().parse::<f64>()).collect::<Result<_,_>>().map_err(|_|bad())?;
+    if values.iter().any(|v|!v.is_finite()) {return Err(bad());}
+    let count=match values.as_slice() {
+        [_]=>0., [lo,hi,step] if *step>0. && hi>=lo => (hi-lo)/step, _=>return Err(bad()),
+    };
+    if !count.is_finite() || count>999. {return Err(bad());}
+    // Validate the unrounded values. Legacy grid() rounds to1e-9; a changed
+    // near-default value must not acquire review by rounding into the default.
+    let (lo,step)=match values.as_slice() {[a]=>(*a,1.),[a,_,s]=>(*a,*s),_=>unreachable!()};
+    Ok((0..=(count+1e-9).floor() as usize).map(|i|lo+i as f64*step).collect())
 }
 
 /// Resolve ticker + [from, to] (inclusive bar indices) + cost from query params.
@@ -1238,6 +1268,24 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reviewed_four_burns_queries_and_grids_fail_closed_without_changing_legacy() {
+        for id in books::sbma::FOUR_REVIEWED_STOCK_IDS {
+            let defaults=BTreeMap::from([("id".into(),(*id).into())]);
+            assert!(checked_params_of(&defaults).is_ok());
+            for (key,value) in [("p.fast","garbage"),("p.fast",""),("p.fast","NaN"),("p.slow","inf"),("p.always_in","1"),("p.fill","0.5"),("p.unknown","garbage"),("p.unknown","0"),("g.fast","1:2:1"),("g.always_in","0:1:1"),("g.fill","0:1:0.5"),("g.fill","NaN"),("g.fill","0:inf:1"),("g.fill","0:1:1e-300"),("g.fill","-1e308:1e308:1"),("g.fill","0:1:inf"),("g.fill","0.00000000001"),("g.unknown","0")] {
+                let mut bad=defaults.clone();bad.insert(key.into(),value.into());
+                assert!(checked_params_of(&bad).is_err(),"{id}: {key}={value}");
+            }
+            let mut fills=defaults.clone();fills.insert("g.fill".into(),"0:1:1".into());assert!(checked_params_of(&fills).is_ok());
+            for setting in books::sbma::params(id).unwrap() {
+                let mut exact=defaults.clone();exact.insert(format!("p.{}",setting.key),setting.def.to_string());assert!(checked_params_of(&exact).is_ok());
+                if setting.key!="fill" {exact.insert(format!("g.{}",setting.key),setting.def.to_string());assert!(checked_params_of(&exact).is_ok());}
+            }
+        }
+        let old=BTreeMap::from([("id".into(),"sbma_x_5e50s".into()),("p.fast".into(),"garbage".into())]);
+        assert!(checked_params_of(&old).unwrap().is_empty());
+    }
     #[test]
     fn reviewed_ehlers_queries_reject_malformed_alternate_and_unknown_settings() {
         for (id,cp,mbb) in [("ehrs_sinetrend_trend","1","50"),("ehrs_sinetrend_cp115","1.15","57"),("ehrs_sinetrend_cp115_trend","1.15","57")] {

@@ -35,6 +35,14 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     if def.book=="sbma" && books::sbma::next_reviewed_stock_rule(def.id) {
         if let Some(note)=books::sbma::validate_next_reviewed(def.id,p) {return issue("not_testable",note);}
     }
+    if def.book=="sbma" && books::sbma::four_reviewed_stock_rule(def.id) {
+        if let Some(note)=books::sbma::validate_four_reviewed(def.id,p) {return issue("not_testable",note);}
+        let slow=if def.id=="sbma_x_15e30e" {30} else if def.id=="sbma_x_15e150e" {150} else {200};
+        if from<slow {return issue("needs_data","This reviewed crossover requires actual earlier observations for both current and previous moving averages. Choose a later start with real warmup; no indicator history is invented.");}
+        if ctx.r.iter().take(from).any(|r| ![r.open,r.high,r.low,r.close].iter().all(|v|v.is_finite()&&*v>0.) || r.low>r.high || r.open<r.low || r.open>r.high || r.close<r.low || r.close>r.high) {
+            return issue("needs_data","Full supplied moving-average warmup contains invalid OHLC. Earlier rows are not discarded, repaired or reseeded to manufacture a result.");
+        }
+    }
     if def.book=="sbma" && matches!(def.id,"sbma_sma50_long"|"sbma_x_5s20s") {
         let fill=p.get("fill").copied().unwrap_or(0.);
         if ![0.,1.].contains(&fill) {return issue("not_testable","Reviewed Burns fill must be 0 (idealized same-close research) or 1 (next actual open).");}
@@ -135,6 +143,22 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
 mod tests {
     use super::*;
     use crate::Row;
+    #[test]
+    fn four_burns_requires_real_valid_prior_history_without_shortening_it() {
+        let mut bars:Vec<Row>=(0..450).map(|i|Row{ticker:"AAPL".into(),date:format!("{i:04}"),open:100.,high:101.,low:99.,close:100.,volume:None}).collect();
+        for &id in books::sbma::FOUR_REVIEWED_STOCK_IDS {
+            let def=books::sbma::catalogue().into_iter().find(|d|d.id==id).unwrap();
+            let ctx=Ctx::new(&bars,&bars,&[]);
+            assert!(check(&ctx,&def,250,449,&Params::new()).is_none());
+            assert_eq!(check(&ctx,&def,2,449,&Params::new()).unwrap().status,"needs_data");
+        }
+        bars[1].close=f64::NAN;
+        let ctx=Ctx::new(&bars,&bars,&[]);
+        for &id in books::sbma::FOUR_REVIEWED_STOCK_IDS {
+            let def=books::sbma::catalogue().into_iter().find(|d|d.id==id).unwrap();
+            assert!(check(&ctx,&def,250,449,&Params::new()).unwrap().note.contains("Full supplied"));
+        }
+    }
     fn rows() -> Vec<Row> {
         (1..=5).map(|i| Row{ticker:"TEST".into(),date:format!("2020-01-0{i}"),open:100.0,high:101.0,low:99.0,close:100.0,volume:Some(1000.0)}).collect()
     }

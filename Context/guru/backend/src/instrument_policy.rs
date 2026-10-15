@@ -38,6 +38,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || (def.book=="radge" && def.id=="radge_oc_long")
         || (def.book=="bllstr" && crate::books::bllstr::reviewed_daily_index(def.id))
         || (def.book=="sbma" && crate::books::sbma::next_reviewed_stock_rule(def.id))
+        || (def.book=="sbma" && crate::books::sbma::four_reviewed_stock_rule(def.id))
         || (def.book=="ehrs" && crate::books::ehrs::reviewed_sinetrend(def.id))
 }
 fn reviewed_adaptive_rule(def:&StrategyDef)->bool {
@@ -62,6 +63,10 @@ pub fn policy(def:&StrategyDef)->Policy {
     p
 }
 fn base_policy(def:&StrategyDef)->Policy {
+    if def.book=="sbma" && crate::books::sbma::four_reviewed_stock_rule(def.id) {
+        let mut p=stock("Burns Moving Averages 101, physical PDF58-60/64/67: four exact long/cash moving-average pairs. Source rules and full chronological selected AAPL/RELIANCE ledgers independently reviewed; native host/API integration checked separately in library/sbma/INDEPENDENT-FOUR-LONG-REVIEW-2026-10-15.md. Actual individual stocks only. Full supplied earlier history is retained; EMA first-n SMA seed, strict equality, flat test start and idealized signal-close/next-actual-open fills are declared conventions. Truncating EMA150 warmup changes selected signals. Original charts, historical stock population, capital sizing and book performance are not reproduced; quote adjustments, membership and execution remain qualified. Final open liquidation estimates are separate from actual filled exit orders.");
+        p.market_adaptation=true;return p;
+    }
     if def.book=="sbma" && crate::books::sbma::next_reviewed_stock_rule(def.id) {
         let mut p=stock("Burns Moving Averages 101, physical PDF54-60 and67: exact source-default selected-stock research configurations. See library/sbma/INDEPENDENT-NEXT-REVIEW-2026-10-15.md. EMA SMA seeding, flat test start, strict ties and idealized same-close/next-observed-open fills are declared implementation conventions. Original chart populations/performance are not reproduced. Actual stocks are required; current snapshots do not establish unbiased historical membership. The 200-SMA short is a hypothetical price-return study without certified borrowing/margin/overnight feasibility. Platform final open-mark liquidation estimates remain separate from filled orders.");
         p.market_adaptation=true; return p;
@@ -245,7 +250,7 @@ mod tests {
             assert!(metadata_json(&d).contains("\"source_performance_reproduced\":false"));
             assert!(!reviewed_cash_rule(&def(id,"other_book")));
         }
-        for id in ["sbma_x_15e30e","sbma_x_15e150e","sbma_x_10e30e_sar","sbma_new_rule"] {
+        for id in ["sbma_x_10e30e_sar","sbma_new_rule"] {
             let d=def(id,"sbma");assert!(!reviewed_cash_rule(&d));
             assert_eq!(policy(&d).requirement,"source_review_required");
         }
@@ -535,6 +540,20 @@ mod tests {
 mod next_burns_policy_tests {
     use super::*;
     #[test]
+    fn four_burns_long_versions_require_actual_stock_and_do_not_admit_shorts() {
+        for &id in crate::books::sbma::FOUR_REVIEWED_STOCK_IDS {
+            let d=crate::books::sbma::catalogue().into_iter().find(|d|d.id==id).unwrap();
+            let p=policy(&d);assert!(reviewed_cash_rule(&d));assert_eq!(p.allowed_types,&["individual_stock"]);
+            assert!(p.market_adaptation);assert!(p.source_basis.contains("FOUR-LONG"));
+            assert!(check_native(&d,"AAPL",&NativeEvidence::us_test_fixture()).is_none());
+            for ticker in ["NIFTY 50","SPX","SPY","QQQ"] {assert!(check(&d,ticker,false).is_some());}
+            let mut wrong=d;wrong.book="unknown";assert!(!reviewed_cash_rule(&wrong));
+        }
+        for id in ["sbma_sma200_short","sbma_x_10e30e_sar"] {
+            let d=crate::books::sbma::catalogue().into_iter().find(|d|d.id==id).unwrap();assert!(!reviewed_cash_rule(&d));
+        }
+    }
+    #[test]
     fn exact_three_long_stock_ids_preserve_two_reviewed_and_short_hold() {
         let defs=crate::books::sbma::catalogue();
         for &id in crate::books::sbma::NEXT_REVIEWED_STOCK_IDS {
@@ -544,7 +563,7 @@ mod next_burns_policy_tests {
             let mut wrong_book=crate::books::sbma::catalogue().into_iter().find(|d|d.id==id).unwrap();wrong_book.book="unknown";assert!(!reviewed_cash_rule(&wrong_book));
         }
         for id in ["sbma_sma50_long","sbma_x_5s20s"] {assert!(reviewed_cash_rule(defs.iter().find(|d|d.id==id).unwrap()));}
-        for id in ["sbma_sma200_short","sbma_x_15e30e","sbma_x_10e30e_sar","sbma_x_10e50e_rsi"] {
+        for id in ["sbma_sma200_short","sbma_x_10e30e_sar","sbma_x_10e50e_rsi"] {
             let def=defs.iter().find(|d|d.id==id).unwrap();assert!(!reviewed_cash_rule(def));
             assert_eq!(policy(def).requirement,"source_review_required");
         }
