@@ -244,7 +244,18 @@ mod tests {
     #[test]
     fn staged_manifest_and_one_actual_native_series_match_declared_coverage(){
         let Ok(root)=std::env::var("VAULT_NATIVE_TEST_DIR") else{return;};
-        let c=Catalogue::load(Path::new(&root)).unwrap();assert_eq!(c.entries.values().filter(|e|e.evidence.market()==Market::India).count(),873);
+        let c=Catalogue::load(Path::new(&root)).unwrap();
+        // The snapshot may retain additional individual-stock aliases. Verify
+        // every ready whitelist key instead of pinning an obsolete file count.
+        let index=fs::read_to_string(Path::new(&root).join("index.csv")).unwrap();
+        let mut lines=index.lines();let header=parse_csv_fields(lines.next().unwrap());
+        let column=|name:&str|header.iter().position(|value|value==name).unwrap();
+        let (status,basket,ticker)=(column("status"),column("basket"),column("ticker"));
+        let expected=lines.filter(|line|!line.trim().is_empty()).map(parse_csv_fields)
+            .filter(|row|row[status].trim()=="ready")
+            .map(|row|format!("basket:{}:{}",row[basket].trim(),row[ticker].trim()))
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(c.entries.keys().cloned().collect::<std::collections::BTreeSet<_>>(),expected);
         let key=c.entries.keys().find(|key|key.ends_with(":RELIANCE")).unwrap();let rows=c.rows(key).unwrap();assert!(rows.len()>1000);assert_eq!(rows[0].ticker,"RELIANCE");
         assert!(c.provenance_json(key).unwrap().contains("quote_accuracy_independently_verified\":false"));
     }
