@@ -139,7 +139,8 @@ crosses, the whole window for `rising`, and the `lo`/`hi` bounds. The rules are:
 - `any` is true if any child is true, otherwise unknown if any child is unknown, otherwise false;
 - `not` of unknown is unknown;
 - the counting nodes (`at_least`, `count`, `then`, `bars_since`, `value_when`, `*_since`) treat unknown as
-  "not true". `at_least` and `count` are unknown until m (n) bars exist.
+  "not true". `at_least` and `count` are unknown until m (n) bars exist, and `then` is unknown while its last step
+  is unknown.
 
 At the top of a rule list, unknown counts as **false**, so a node never fires during warm-up. A top-level v1
 comparison keeps its exact v1 code path, where NaN gives false. Example: `not(close > sma(200))` does not fire
@@ -197,7 +198,7 @@ AmiBroker's documented functions onto operand fields. The sources are the "Multi
 |---|---|---|
 | `TimeFrameSet(inWeekly)` … indicator … `TimeFrameRestore()` | operand `"tf":"W"` (v1) | The indicator runs on the compressed bars: O = first, H = max, L = min, C = last, V = sum (`resample.rs`). |
 | `inMonthly`, quarterly, yearly | `"tf":"M"`, **`"Q"`, `"Y"`** | Q and Y are new: calendar quarters and years, from `resample::period_key` anchors 3 and 4. |
-| N-day custom interval (`TimeFrameSet(n*inDaily)`) | **`"tf":"3D"` … `"63D"`** | Consecutive blocks of n sessions counted from the instrument's **first admitted bar**, not from the run window, so a block never depends on `from`. The guide does not document AmiBroker's own anchoring, so this is a declared adaptation. |
+| N-day custom interval (`TimeFrameSet(n*inDaily)`) | **`"tf":"2D"` … `"63D"`** | Consecutive blocks of n sessions counted from the instrument's **first admitted bar**, not from the run window, so a block never depends on `from`. The guide does not document AmiBroker's own anchoring, so this is a declared adaptation. |
 | `TimeFrameCompress(array, interval, mode)` | **expression `{"compress":A,"tf":"W","mode":"last|first|high|low|sum"}`** | Compresses any daily operand or expression (`compressLast`, `compressOpen`, `compressHigh`, `compressLow`, `compressVolume`). The result is a higher-timeframe array that is then expanded. |
 | `TimeFrameExpand(x, tf, expandLast)` (the default) | **`"expand":"last"`** (the default, = v1 behaviour) | The value of period p is used from the last daily bar of p, after its close, until the next period's last bar. |
 | `TimeFrameExpand(x, tf, expandPoint)` | **`"expand":"point"`** | Only on the period's last daily bar; NaN elsewhere. |
@@ -245,10 +246,14 @@ matches what a trader with the published exchange holiday list would know. The n
 and a dedicated test shows they depend on dates alone (§10.1). `weekdays_left_*` is the strictly causal
 alternative: it misses the period's last session when that session's weekday is a holiday.
 
-Futures expiry operands come from a second new indicator, `expiry`, with outputs `days_to_expiry`
-(sessions), `expiry_week` (1/0) and `expiry_day` (1/0). They are computed only in a futures run, from the
-contract chain (§7.3). Elsewhere `expiry` is a listed entry with `needs.derivatives`, so the existing
-`series_ref` path answers `needs_data` with its note. Time exits at a calendar boundary are plain exit
+Futures expiry operands come from a second new indicator, `expiry`, with these outputs:
+
+- `days_to_expiry`: Monday–Friday dates until the held contract's expiry date;
+- `expiry_week`: 1 in the expiry's calendar week;
+- `expiry_day`: 1 on the expiry date.
+
+All three are computed from the expiry date, which is published contract metadata, so they are causal. Only a
+futures run carries expiry dates (§7.3). Elsewhere `expiry` answers `needs_data` ("needs futures contract data"). Time exits at a calendar boundary are plain exit
 conditions with these operands, for example `sessions_left_m = 0` with `exit_fill: close`. No separate
 simulator field is needed.
 
@@ -272,7 +277,7 @@ simulator field is needed.
                  "risk": { "max_consecutive_losses": 4, "pause_bars": 20, "max_drawdown_pct": 25 },
                  "sizing": { "pct_equity": 100 } | { "risk_pct": 1 } | { "units": 10 } | { "value": 100000 },
                  "capital": 1000000, "costs": {…§7.4…}, "cost_bps": 12,
-                 "instrument": { "kind": "cash | futures", "roll": {…}, "adjust": "back | ratio | none" } },
+                 "instrument": { "kind": "cash | futures", "roll": {…}, "adjust": "forward | ratio | none" } },
   "optimize": [ … ] }
 ```
 
@@ -343,8 +348,12 @@ because the bar cannot show whether price came back after touching S.
 and limit modes give no new order on a bar that exited after its open. A reversal is exempt, because it is one
 fill. No signal is taken on the last bar. A position still open on the last bar is marked `open`.
 
-**Resting orders** are not replaced by later signals. A new order can be placed only when no order for that
-side is resting. Pine's re-issued entry (for example a channel breakout whose stop moves each bar) is
+**Resting orders** are not replaced by later signals, and each side has at most one. A new order can be placed
+only when no order for that side is resting.
+
+While flat, both sides can rest an order at once; a channel breakout rests a long stop and a short stop. When
+only one is touched, it fills, and the other keeps resting as a reversal order. When both are touched on one
+bar, nothing fills, in either intrabar mode, because daily bars cannot show which came first. Pine's re-issued entry (for example a channel breakout whose stop moves each bar) is
 `valid_bars: 1`, re-placed every bar.
 
 ### 6.3 Same-bar ordering: one default, one cheap option
@@ -366,7 +375,8 @@ again matching backtestRegular.
 
 ### 6.5 Equity-level state
 
-`cooldown.after: loss|win`, `risk.max_consecutive_losses` and `risk.max_drawdown_pct` need trade outcomes.
+`cooldown.after: loss|win`, `risk.max_consecutive_losses` and `risk.max_drawdown_pct` need trade outcomes. Blocked entries also block the opening half of a reversal, which then
+acts as an opposite exit: closing is always allowed.
 The simulator classifies each closed trade by `Trade::ret(cost)`, using the run's cost per side
 (`Compiled.cost`, set by the API before simulating; 0 when no cost is given). Drawdown is on **closed-trade
 compounded equity**, evaluated when a trade closes, rather than TradingView's tick-level equity. The response
@@ -382,9 +392,11 @@ Every run and optimize response gains
 - **Unit mode** (default, unchanged): book unit-allocation returns.
 - **Money mode** (`execution.capital` given):
   - Quantities are whole shares, rounded down.
-  - Size is computed from equity at the signal close and the signal close price (TradingView's rule). The fill
-    is at the order's fill price. If the fill needs more cash than equity, the quantity shrinks to fit
+  - Size is computed from equity at the start of the trade and the entry fill price, as AmiBroker does. Scale-in
+    legs use the same starting equity. If the fill needs more cash than equity, the quantity shrinks to fit
     (AmiBroker `AllowPositionShrinking`), and a zero quantity skips the trade (counted in `skipped`).
+  - A skipped trade's bars are not reused for other signals, because the simulator already counted it as a
+    position.
   - No leverage: the notional must be ≤ equity.
 - **Shorts, India (stocks and ETFs).** An overnight cash short is not executable in the Indian cash segment:
   a retail short must be squared off the same day unless shares are borrowed through SLB or the position is
@@ -428,15 +440,17 @@ Every run and optimize response gains
   - `"none"` means no roll: an open position is force-closed at the expiry close (reason `expiry`).
   - The default is `{"days_before_expiry":1}`.
 - **Continuous series for signals** (`instrument.adjust`):
-  - `back` (default): additive. Each earlier segment is shifted by new close − old close on the roll day.
-  - `ratio`: multiplicative, by new close / old close.
+  - `forward` (default): additive. Each later contract is shifted onto the earlier series by old close − new
+    close on the roll day. Earlier bars never change when a later roll arrives, so the series is causal.
+  - `ratio`: forward multiplicative, by old close / new close.
   - `none`: raw stitched prices, so the jump shows at each roll.
+  - `back` (TradingView's B-ADJ) is **refused** as `unsupported`. It shifts every earlier bar at each new roll,
+    so a backtest would read prices that exist only after later rolls (lookahead).
 
   The continuous bar on a roll day is the outgoing contract. Indicators, rules and price levels run on the
   continuous series.
 - **P&L on actual contract prices.** Each fill on the continuous series maps exactly to the contract held on
-  that bar: the actual price is the continuous price minus that segment's offset (back) or divided by its
-  factor (ratio). A roll inside a trade splits it into two trades: the old contract is closed at the roll-day
+  that bar: actual = (continuous − offset) ÷ factor for that bar's segment. A roll inside a trade splits it into two trades: the old contract is closed at the roll-day
   close and the new contract opened at the same close (`entry_kind: roll`). Both legs pay costs, so roll costs
   are explicit.
 - **Orders** are rounded to the contract tick (nearest). `ticks` distances use the contract tick.
@@ -447,6 +461,10 @@ Every run and optimize response gains
   close is below the required margin (maintenance = initial, declared), the position is liquidated at the next
   open (reason `margin_call`) and trading stops (`events`).
 - **Expiry operands** (§5.2) come from the chain.
+- **Limits for now:**
+  - futures runs do not combine with scale-in or take-profits;
+  - roll `none` force-closes at the expiry close, so it needs `exit_fill: close`;
+  - `ticks` distances and tick slippage are futures-only.
 - **Real requests.** No futures contract data is admitted (§3.1). Any request with `kind: futures` answers
   400 `needs_data`: "futures contract data for <ticker> (contract chain with expiries, lot sizes and tick size)
   is not admitted; no futures result is published, and the index or spot series is never used as a stand-in".
@@ -496,7 +514,7 @@ fills.
   evaluator.
 - The auth service's `v === 1` check, the saved-strategy storage and the gateway policy need no change.
 - Reserved fields made real: `entry.stop` and `entry.scale_in`. The `reserved_fields_are_unsupported` test
-  drops those two rows. `spec.portfolio`, `spec.scale_in`, `spec.short` and the fill values `limit`/`stop`
+  drops its `entry.stop` row. `spec.portfolio`, `spec.scale_in`, `spec.short` and the fill values `limit`/`stop`
   stay `unsupported`.
 - **Proof, all in the plan's gate:**
   1. All existing lab tests pass. The only edits are mechanical accessor changes where a test reads
@@ -523,7 +541,8 @@ fills.
 - `GET lab/run` and `GET lab/optimize`:
   - Both gain `execution_model` and, in money mode, `money: {capital, final_equity, costs_total, skipped,
     currency}`.
-  - Run trade JSON gains `qty`, `notional` and `costs` (money mode), and `fills` (scale-out pieces).
+  - Run trade JSON gains `legs` (scale-in) and `fills` (scale-out pieces) when a trade has more than one. In money
+    mode, a `ledger` array gives each trade's entry date, units, position value, costs and money P&L.
   - `entry_kind` gains `stop`, `stop_limit`, `reverse` and `roll`.
 - Error contract unchanged: `invalid`, `unsupported`, `needs_data`. The gateway allowlist and bounds are
   unchanged, and `main.rs` is untouched.
@@ -542,7 +561,7 @@ fills.
   breakeven, take-profits, scale-in, cooldown after loss, max_trades, the risk pause, ohlc_path, and Q/Y
   operands. Every bar after *k* is perturbed, and every trade closed by *k* must be unchanged.
 - **Futures.** Perturbing contract bars after *k* never changes rolls, fills or trades closed by *k*.
-  Back/ratio offsets after *k* never change earlier actual-price fills.
+  Forward and ratio offsets never change earlier continuous bars or earlier actual-price fills.
 
 ### 10.2 Unit tests per feature
 
@@ -561,7 +580,7 @@ list against expected values computed by hand from the **platform's documented s
 | E1 | AmiBroker guide, Backtesting ("`Short = Sell; Cover = Buy;`" stop-and-reverse), https://www.amibroker.com/guide/h_backtest.html, with `SetTradeDelays(1,1,1,1)` and `BuyPrice = Open` | MA cross stop-and-reverse | both, reverse, next_open |
 | E2 | AmiBroker KB "Handling limit orders in the backtester", https://www.amibroker.com/kb/2014/11/26/handling-limit-orders-in-the-backtester/ | `Buy = cond AND L < limit; BuyPrice = Min(O, limit)` | limit, gap at open |
 | E3 | AmiBroker `ApplyStop` (https://www.amibroker.com/guide/afl/applystop.html): `stopTypeNBar` with `stopModeBars` 5, and `stopTypeLoss` with `stopModePercent` and ExitAtStop 1 | N-bar exit, percent stop, gap through stop at open | bars_held, stop_loss |
-| E4 | TradingView built-in "Channel BreakOut Strategy" | stop entries at highest(high,5) + tick / lowest(low,5) − tick, reversing | both, stop `at`, valid_bars 1, reversal orders |
+| E4 | TradingView built-in "Channel BreakOut Strategy" | stop entries at highest(high,5) + tick / lowest(low,5) − tick, reversing | both, always in, stop `at`, two resting orders, reversal orders |
 | E5 | TradingView built-in "Consecutive Up/Down Strategy" | 3 rising closes → long, 3 falling closes → short | `at_least` / `count`, reverse at next open |
 | E6 | Pine User Manual, Strategies, `strategy.exit` with `profit` / `loss` in ticks and `trail_points` / `trail_offset`, https://www.tradingview.com/pine-script-docs/concepts/strategies/ | bracket and trailing on a futures fixture | ticks, trailing activate, ohlc_path |
 
@@ -624,7 +643,7 @@ wrong.
     periods (offset ≥ 1), the period open, or `compress` mode `first`. *Reason:* the user asked for
     AmiBroker's TimeFrame behaviour; AmiBroker's own docs warn that expandFirst looks ahead. *Cost:* an AFL
     system that relies on expandFirst of a high/low/close at offset 0 is refused rather than reproduced.
-6b. **N-day custom periods (`3D`…`63D`) count sessions from the instrument's first admitted bar.** *Reason:*
+6b. **N-day custom periods (`2D`…`63D`) count sessions from the instrument's first admitted bar.** *Reason:*
     deterministic, and independent of the chosen window. *Cost:* AmiBroker's own N-day anchoring is not
     documented and may differ, so block boundaries can disagree with an AmiBroker chart.
 6c. **`"symbol"` on an operand is reserved for Phase 8** (multi-symbol) and answers `unsupported` now.
@@ -672,9 +691,9 @@ wrong.
 24. **Unit mode stays the default; money mode starts when `execution.capital` is given.** *Reason:* v1
     results and the book statistics stay as they are; money mode reuses them through effective prices.
     *Cost:* money and unit results are not comparable, so the response labels the mode.
-25. **Money sizing uses equity and price at the signal close; it shrinks to fit at fill, and 0 skips.**
-    *Reason:* TradingView's sizing rule and AmiBroker's shrinking. *Cost:* a gap can make the position smaller
-    than requested.
+25. **Money sizing uses equity at the trade's start and the entry fill price; it shrinks to fit, and 0 skips.**
+    *Reason:* AmiBroker's sizing and shrinking; the fill price is known when the size is set. *Cost:* the result
+    differs slightly from TradingView, which sizes on the signal close.
 26. **No leverage for cash; futures margin is the user's declared % (maintenance = initial).** *Cost:* real
     exchange SPAN margins and maintenance below initial are not modelled.
 27. **Costs are user-declared lists; no statutory rate is hard-coded.** *Reason:* AGENTS.md (no unsourced
@@ -690,9 +709,10 @@ wrong.
 32. **Crypto and CFD money mode answer `needs_data`.** *Reason:* TradingView composite/CFD quotes are not
     exchange order books, and their contract terms are not admitted. *Cost:* crypto money results wait for
     licensed spot data.
-33. **Futures: back-adjusted signals by default; P&L on actual contract prices; roll at the close one session
-    before expiry by default; tick rounding to the nearest tick.** *Cost:* users who expect TradingView's
-    unadjusted `1!` must set `adjust: none`.
+33. **Futures: forward-adjusted signals by default, backward adjustment refused (lookahead); P&L on actual
+    contract prices; roll at the close one session before expiry by default; tick rounding to the nearest
+    tick.** *Cost:* a TradingView B-ADJ chart's historical levels differ from the lab's forward-adjusted ones.
+    Users who expect TradingView's unadjusted `1!` must set `adjust: none`.
 34. **Futures margin call liquidates at the next open and stops trading.** *Reason:* a deterministic end
     state; TradingView's partial 4× liquidation is not reproduced. *Cost:* a run after a margin call shows no
     further trades.
@@ -703,6 +723,10 @@ wrong.
     series are not adjusted, share counts around splits are approximate; the label says so.
 37. **No new templates in this phase.** *Reason:* each template needs a fidelity admission against the book
     engine, which is its own batch of work. *Cost:* Customize coverage stays at 43 until that batch runs.
+38a. **Two resting orders touched on one bar fill nothing; blocked entries turn a reversal into an exit;
+    scale-in legs fill at market even when the first entry was an order; stop levels come from the first leg;
+    equity-level rules read unit returns (also in money mode).** *Reason:* each is the simplest causal rule.
+    *Cost:* rare bars and money-mode risk rules differ from a full money-aware engine.
 38. **Documented-example fixtures are hand-computed from the published semantics**, not exported from
     AmiBroker or TradingView (no install or export here). The Pine built-in sources are quoted from memory and
     must be checked in the Pine editor. *Cost:* if a quote differs, that fixture's spec changes; the engine
