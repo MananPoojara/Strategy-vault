@@ -50,8 +50,9 @@ export function setExecution(spec: Spec, patch: Partial<NonNullable<Spec["execut
 export function setOrder(spec: Spec, key: PriceOrder["key"], dist: Dist | undefined): Spec {
   if (key === "limit") {
     const entry = dist ? { ...spec.entry, limit: dist } : without(spec.entry, "limit");
-    // The engine refuses execution.fill together with a limit entry.
-    return dist ? setExecution({ ...spec, entry }, { fill: undefined }) : { ...spec, entry };
+    // The engine refuses execution.fill with a limit entry; fill also set exit fills, so keep that as exit_fill.
+    const ex = spec.execution;
+    return dist ? setExecution({ ...spec, entry }, { fill: undefined, ...(ex?.fill !== undefined && ex.exit_fill === undefined ? { exit_fill: ex.fill } : {}) }) : { ...spec, entry };
   }
   return { ...spec, exit: dist ? { ...spec.exit, [key]: dist } : without(spec.exit, key) };
 }
@@ -103,7 +104,7 @@ export function optimizablePaths(spec: Spec, cat: Catalogue): OptimizableSetting
     if (!d) continue;
     const isPct = "pct" in d;
     out.push({ path: `${orderPath(order.key)}.${isPct ? "pct" : "atr"}`, label: `${order.label} · ${isPct ? "%" : "ATR ×"}`,
-      current: isPct ? d.pct : d.atr, min: isPct ? order.pct[0] : 0, max: isPct ? order.pct[1] : 50, step: isPct ? 0.5 : 0.25, integer: false });
+      current: isPct ? d.pct : d.atr, min: isPct ? (order.zeroOk ? order.pct[0] : 0.5) : 0.25, max: isPct ? order.pct[1] : 50, step: isPct ? 0.5 : 0.25, integer: false });
   }
   return out;
 }
@@ -137,6 +138,8 @@ export function specProblems(spec: Spec, cat: Catalogue): string[] {
       const tag = `${side === "entry" ? "Entry" : "Exit"} ${i + 1}`;
       if (isValue(c.lhs) && isValue(c.rhs)) out.push(`${tag}: a condition cannot compare two numbers; one side must be a series.`);
       for (const o of [c.lhs, c.rhs]) {
+        const special = isSeries(o) ? SPECIAL_OPERANDS.find((x) => x.s === o.s && !x.sides.includes(side)) : undefined;
+        if (special) out.push(`${tag}: ${special.label} can only be used in ${special.sides.join(" or ")} conditions.`);
         const ind = isSeries(o) ? cat.indicators.find((x) => x.id === o.s && !x.computed) : undefined;
         if (ind) out.push(`${tag}: ${ind.name} is listed only and cannot be used in rules. ${ind.note}`.trim());
       }
@@ -146,7 +149,7 @@ export function specProblems(spec: Spec, cat: Catalogue): string[] {
     if (d) out.push(...distProblems(order.label, d, order.pct, order.zeroOk));
   }
   const json = JSON.stringify(spec);
-  if (specBytes(spec) > MAX_BYTES || encodeURIComponent(json).length > MAX_ENCODED) out.push(COPY.tooLong);
+  if (specBytes(spec) > MAX_BYTES || new URLSearchParams({ spec: json }).toString().length > MAX_ENCODED) out.push(COPY.tooLong);
   return out;
 }
 

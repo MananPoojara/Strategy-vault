@@ -21,7 +21,8 @@ it("edits keep origin and unknown keys and never mutate the input", () => {
   t = m.setDirection(t, "short");
   t = m.setAt(t, "entry.all[0].rhs.value", 12);
   expect(JSON.stringify(s)).toBe(before);
-  expect(t.origin).toEqual(s.origin);
+  expect(t.origin).toBeDefined();
+  expect(t.origin).toBe(s.origin);
   expect(t.future_rule).toEqual({ q: 1 });
   expect(t.entry.all[0]).toMatchObject({ tag: "x", rhs: { value: 12 } });
   expect(JSON.parse(JSON.stringify(t))).toEqual(t);
@@ -36,6 +37,11 @@ it("a limit entry removes execution.fill; removing an order deletes the key", ()
   expect(limited.execution).toEqual({ exit_fill: "close" });
   expect("limit" in m.setOrder(limited, "limit", undefined).entry).toBe(false);
   expect(m.setExecution(m.defaultSpec(), { fill: undefined }).execution).toBeUndefined();
+  // fill also set the exit fill, so adding a limit must not move exits to the next open.
+  expect(m.setOrder(m.setExecution(m.defaultSpec(), { fill: "close" }), "limit", { pct: 1 }).execution).toEqual({ exit_fill: "close" });
+  expect(m.setOrder(m.setExecution(m.defaultSpec(), { fill: "close", exit_fill: "next_open" }), "limit", { pct: 1 }).execution)
+    .toEqual({ exit_fill: "next_open" });
+  expect(m.setOrder(m.defaultSpec(), "limit", { pct: 1 }).execution).toBeUndefined();
 });
 
 it("getAt/setAt follow the engine's optimize path grammar", () => {
@@ -50,7 +56,10 @@ it("lists optimizable settings for params, numbers and price orders", () => {
   const paths = m.optimizablePaths(s, cat);
   expect(paths.map((p) => p.path)).toEqual(["entry.all[0].rhs.p.length", "exit.any[0].rhs.value", "exit.target.pct"]);
   expect(paths[0]).toMatchObject({ label: "Entry 1 · Exponential Moving Average Length", current: 50, min: 1, max: 5000, step: 1, integer: true });
-  expect(paths[2]).toMatchObject({ min: 0, max: 1000 });
+  expect(paths[2]).toMatchObject({ min: 0.5, max: 1000 });
+  const more = m.optimizablePaths(m.setOrder(m.setOrder(s, "limit", { pct: 1 }), "stop_loss", { atr: 2 }), cat);
+  expect(more.find((p) => p.path === "entry.limit.pct")).toMatchObject({ min: 0, max: 50 });
+  expect(more.find((p) => p.path === "exit.stop_loss.atr")).toMatchObject({ min: 0.25, max: 50 });
 });
 
 it("counts combinations like the engine", () => {
@@ -58,6 +67,7 @@ it("counts combinations like the engine", () => {
   expect(m.valuesCount({ path: "a", from: 0.1, to: 0.3, step: 0.1 })).toBe(3);
   expect(m.valuesCount({ path: "a", from: 5, to: 1, step: 1 })).toBe(0);
   expect(m.comboCount([{ path: "a", from: 1, to: 3, step: 1 }, { path: "b", from: 1, to: 2, step: 1 }])).toBe(6);
+  expect(m.comboCount([])).toBe(0);
   expect(m.withOptimize(m.defaultSpec(), []).optimize).toBeUndefined();
 });
 
@@ -72,6 +82,10 @@ it("pre-checks: two numbers, empty exit without a price exit, listed indicators,
     .toBe("Entry 1: Opening Range is listed only and cannot be used in rules. Needs intraday (minute) bars; not available yet.");
   expect(m.specProblems(m.setOrder(s, "stop_loss", { pct: 0 }), cat)).toContain("Stop-loss: % must be above 0 and at most 99.");
   expect(m.specProblems(m.setOrder(s, "limit", { pct: 0 }), cat)).toEqual([]);
+  for (const atr of [0, 51]) expect(m.specProblems(m.setOrder(s, "target", { atr }), cat)).toContain("Target: ATR multiplier must be above 0 and at most 50.");
+  expect(m.specProblems(m.setOrder(s, "target", { atr: 50 }), cat)).toEqual([]);
+  expect(m.specProblems(m.setCond(s, "entry", 0, { lhs: { s: "bars_held" }, op: ">", rhs: { value: 1 } }), cat))
+    .toContain("Entry 1: Bars held can only be used in exit conditions.");
   expect(m.specProblems(m.setOrder(s, "target", { atr: 2, atr_length: 600 }), cat)).toContain("Target: ATR length must be a whole number from 1 to 500.");
   let many = s;
   for (let i = 0; i < 11; i++) many = m.addCond(many, "entry", s.entry.all[0]);
@@ -99,6 +113,9 @@ it("split date leaves more than 20 bars each side", () => {
   expect(m.splitDate(dates, 30)).toBe("d140");
   expect(m.splitDate(dates.slice(0, 60), 30)).toBeNull();
   expect(m.splitDate(dates, 0)).toBeNull();
+  expect(m.splitDate(dates.slice(0, 42), 50)).toBe("d021"); // exactly 21 bars each side
+  expect(m.splitDate(dates.slice(0, 41), 50)).toBeNull(); // 20 bars before the split
+  expect(m.splitDate(dates.slice(0, 41), 48)).toBeNull(); // 20 bars after the split
 });
 
 it("maps exit reasons to friendly text and keeps unknown text", () => {

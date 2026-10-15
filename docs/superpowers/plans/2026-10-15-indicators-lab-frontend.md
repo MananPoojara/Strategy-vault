@@ -1210,6 +1210,7 @@ it("a limit entry removes execution.fill; removing an order deletes the key", ()
   expect(limited.execution).toEqual({ exit_fill: "close" });
   expect("limit" in m.setOrder(limited, "limit", undefined).entry).toBe(false);
   expect(m.setExecution(m.defaultSpec(), { fill: undefined }).execution).toBeUndefined();
+  expect(m.setOrder(m.setExecution(m.defaultSpec(), { fill: "close" }), "limit", { pct: 1 }).execution).toEqual({ exit_fill: "close" });
 });
 
 it("getAt/setAt follow the engine's optimize path grammar", () => {
@@ -1350,8 +1351,9 @@ export function setExecution(spec: Spec, patch: Partial<NonNullable<Spec["execut
 export function setOrder(spec: Spec, key: PriceOrder["key"], dist: Dist | undefined): Spec {
   if (key === "limit") {
     const entry = dist ? { ...spec.entry, limit: dist } : without(spec.entry, "limit");
-    // The engine refuses execution.fill together with a limit entry.
-    return dist ? setExecution({ ...spec, entry }, { fill: undefined }) : { ...spec, entry };
+    // The engine refuses execution.fill with a limit entry; fill also set exit fills, so keep that as exit_fill.
+    const ex = spec.execution;
+    return dist ? setExecution({ ...spec, entry }, { fill: undefined, ...(ex?.fill !== undefined && ex.exit_fill === undefined ? { exit_fill: ex.fill } : {}) }) : { ...spec, entry };
   }
   return { ...spec, exit: dist ? { ...spec.exit, [key]: dist } : without(spec.exit, key) };
 }
