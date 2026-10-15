@@ -25,6 +25,7 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
+    setupFiles: ["tests/setup-globals.ts"],
     maxWorkers: 1,
     coverage: {
       provider: "v8",
@@ -44,6 +45,9 @@ export default defineConfig({
         "src/features/lab/client.ts",
         "src/features/lab/format.ts",
         "src/features/lab/spec-model.ts",
+        "src/features/lab/rule-tree.ts",
+        "src/features/lab/execution-model.ts",
+        "src/features/lab/optimize-paths.ts",
         "src/features/lab/charts.ts",
         "src/features/lab/bars.ts",
         "src/features/lab/catalogue.ts",
