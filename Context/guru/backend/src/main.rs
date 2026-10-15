@@ -491,7 +491,7 @@ fn readiness_json(st: &State, q: &BTreeMap<String, String>) -> Result<String, St
     let selected=select_context(st,q)?;let held=selected.context(st);
     let (ctx,from,to,_)=resolve_context(&held,q)?;
     let costs=accounting::Costs::parse(q)?;
-    let p=params_of(q);
+    let p=checked_params_of(q)?;
     let cat=query_catalogue(q);
     if q.get("id").is_some_and(|id| !cat.iter().any(|d| d.id==id)) { return Err("unknown strategy".into()); }
     let rows:Vec<String>=cat.iter().filter(|d| q.get("id").map_or(true,|id| d.id==id)).map(|d| {
@@ -629,6 +629,29 @@ fn params_of(q: &BTreeMap<String, String>) -> Params {
     q.iter().filter_map(|(k, v)| Some((k.strip_prefix("p.")?.to_string(), v.parse().ok()?))).collect()
 }
 
+/// New exact-default reviews must not silently discard malformed query inputs.
+/// Existing methods keep their previous parsing contract until separately reviewed.
+fn checked_params_of(q: &BTreeMap<String, String>) -> Result<Params,String> {
+    let p=params_of(q);
+    let Some(id)=q.get("id").filter(|id|id.as_str()!="ehrs_sinetrend" && books::ehrs::reviewed_sinetrend(id)) else {return Ok(p);};
+    let schema=books::ehrs::params(id).ok_or("Unknown reviewed Ehlers configuration")?;
+    for (key,text) in q {
+        if let Some(name)=key.strip_prefix("p.") {
+            if !schema.iter().any(|d|d.key==name) || text.parse::<f64>().is_err() {
+                return Err(format!("Invalid reviewed Ehlers parameter: {key}"));
+            }
+        }
+        if let Some(name)=key.strip_prefix("g.") {
+            let Some(setting)=schema.iter().find(|d|d.key==name) else {return Err(format!("Unknown reviewed Ehlers grid parameter: {key}"));};
+            if grid(text)?.iter().any(|value|!value.is_finite() || *value!=setting.def) {
+                return Err(format!("Unreviewed Ehlers grid setting: {key}; only the exact configuration default is admitted"));
+            }
+        }
+    }
+    if let Some(note)=books::ehrs::validate(id,&p) {return Err(note);}
+    Ok(p)
+}
+
 /// Resolve ticker + [from, to] (inclusive bar indices) + cost from query params.
 fn resolve_context<'a>(ctx:&'a Ctx<'a>, q: &BTreeMap<String, String>) -> Result<(&'a Ctx<'a>, usize, usize, f64), String> {
     let dates: Vec<&str> = ctx.r.iter().map(|r| r.date.as_str()).collect();
@@ -733,7 +756,7 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     let id = q.get("id").ok_or("id missing")?;
     let cat = query_catalogue(q);
     let def = cat.iter().find(|d| d.id == id.as_str()).ok_or("unknown strategy")?;
-    let p = params_of(q);
+    let p = checked_params_of(q)?;
     if let Some(issue) = readiness::check(ctx, def, from, to, &p).or_else(||native_admission(ctx,def,from,to,&selected,st,q)) {
         return Err(format!("{}: {}", issue.status, issue.note));
     }
@@ -838,7 +861,7 @@ fn optimize(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> 
     let id = q.get("id").ok_or("id missing")?.as_str();
     let cat = query_catalogue(q);
     let def = cat.iter().find(|d| d.id == id).ok_or("unknown strategy")?;
-    let base = params_of(q);
+    let base = checked_params_of(q)?;
     if let Some(issue) = readiness::check(ctx, def, from, to, &base).or_else(||native_admission(ctx,def,from,to,&selected,st,q)) {
         return Err(format!("{}: {}", issue.status, issue.note));
     }
@@ -1196,6 +1219,20 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reviewed_ehlers_queries_reject_malformed_alternate_and_unknown_settings() {
+        for (id,cp,mbb) in [("ehrs_sinetrend_trend","1","50"),("ehrs_sinetrend_cp115","1.15","57"),("ehrs_sinetrend_cp115_trend","1.15","57")] {
+            let defaults=BTreeMap::from([("id".into(),id.into()),("p.cyc_part".into(),cp.into()),("p.max_bars_back".into(),mbb.into())]);
+            assert!(checked_params_of(&defaults).is_ok());
+            for (key,value) in [("p.cyc_part","garbage"),("p.cyc_part",""),("p.cyc_part","NaN"),("p.cyc_part","inf"),("p.cyc_part","1.10"),("p.max_bars_back","60"),("p.unknown","garbage"),("g.cyc_part","1.10"),("g.max_bars_back","60"),("g.unknown","1")] {
+                let mut bad=defaults.clone();bad.insert(key.into(),value.into());
+                assert!(checked_params_of(&bad).is_err(),"{id}: {key}={value}");
+            }
+            let mut exact_grid=defaults.clone();exact_grid.insert("g.cyc_part".into(),cp.into());assert!(checked_params_of(&exact_grid).is_ok());
+        }
+        let legacy=BTreeMap::from([("id".into(),"ehrs_sinetrend_cp110".into()),("p.cyc_part".into(),"garbage".into())]);
+        assert!(checked_params_of(&legacy).unwrap().is_empty());
+    }
 
     #[test]
     fn reviewed_index_methods_keep_distinct_open_and_close_data_windows() {

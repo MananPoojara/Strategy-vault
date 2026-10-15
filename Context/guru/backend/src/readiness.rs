@@ -47,10 +47,12 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     if def.book=="chbta2" && matches!(def.id,"ch_bta2_ma_stack"|"ch_bta2_65sma_ravi") {
         if let Some(note)=books::chbta2::validate_reviewed(def.id,p) {return issue("not_testable",note);}
     }
-    if matches!((def.book,def.id),("ehrs","ehrs_sinetrend")|("ehmd","ehmd_mama")) {
+    if (def.book=="ehrs" && books::ehrs::reviewed_sinetrend(def.id)) || (def.book=="ehmd" && def.id=="ehmd_mama") {
         let invalid=if def.book=="ehrs" {books::ehrs::validate(def.id,p)} else {books::ehmd::validate(def.id,p)};
         if let Some(note)=invalid {return issue("not_testable",note);}
-        let mbb=p.get("max_bars_back").copied().unwrap_or(50.) as usize;
+        let schema=if def.book=="ehrs" {books::ehrs::params(def.id)} else {books::ehmd::params(def.id)};
+        let default_mbb=schema.as_ref().and_then(|s|s.iter().find(|d|d.key=="max_bars_back")).map_or(50.,|d|d.def);
+        let mbb=p.get("max_bars_back").copied().unwrap_or(default_mbb) as usize;
         if from<mbb+5 {return issue("needs_data","The selected Ehlers start lacks actual MaxBarsBack plus CurrentBar>5 warmup. Earlier observed bars must remain loaded; no indicator history is invented.");}
         if ctx.r.iter().take(from).any(|r| ![r.open,r.high,r.low,r.close].iter().all(|v|v.is_finite()&&*v>0.) || r.low>r.high || r.open<r.low || r.open>r.high || r.close<r.low || r.close>r.high) {return issue("needs_data","Ehlers recursive indicator warmup contains invalid OHLC. No earlier prices are repaired or filled.");}
     }
@@ -261,12 +263,18 @@ mod tests {
     #[test]
     fn ehlers_exact_ids_require_real_valid_warmup_and_valid_platform_settings() {
         let mut r:Vec<Row>=(0..100).map(|i|Row{ticker:"AAPL".into(),date:format!("{i:05}"),open:100.,high:101.,low:99.,close:100.,volume:None}).collect();
-        for id in ["ehrs_sinetrend","ehmd_mama"] {
+        for id in ["ehrs_sinetrend","ehrs_sinetrend_trend","ehrs_sinetrend_cp115","ehrs_sinetrend_cp115_trend","ehmd_mama"] {
             let ctx=Ctx::new(&r,&r,&[]);let d=definition(id);
             assert_eq!(check(&ctx,&d,50,99,&Params::new()).unwrap().status,"needs_data");
-            assert!(check(&ctx,&d,60,99,&Params::new()).is_none());
+            assert!(check(&ctx,&d,65,99,&Params::new()).is_none());
             let bad=Params::from([("max_bars_back".into(),50.5)]);
             assert_eq!(check(&ctx,&d,60,99,&bad).unwrap().status,"not_testable");
+        }
+        for id in ["ehrs_sinetrend_cp115","ehrs_sinetrend_cp115_trend"] {
+            let ctx=Ctx::new(&r,&r,&[]);let d=definition(id);
+            assert_eq!(check(&ctx,&d,61,99,&Params::new()).unwrap().status,"needs_data");
+            assert!(check(&ctx,&d,62,99,&Params::new()).is_none());
+            assert_eq!(check(&ctx,&d,65,99,&Params::from([("max_bars_back".into(),50.)])).unwrap().status,"not_testable");
         }
         r[2].close=f64::NAN;let ctx=Ctx::new(&r,&r,&[]);
         assert!(check(&ctx,&definition("ehmd_mama"),60,99,&Params::new()).unwrap().note.contains("warmup"));

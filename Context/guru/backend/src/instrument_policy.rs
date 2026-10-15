@@ -38,6 +38,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || (def.book=="radge" && def.id=="radge_oc_long")
         || (def.book=="bllstr" && crate::books::bllstr::reviewed_daily_index(def.id))
         || (def.book=="sbma" && crate::books::sbma::next_reviewed_stock_rule(def.id))
+        || (def.book=="ehrs" && crate::books::ehrs::reviewed_sinetrend(def.id))
 }
 fn reviewed_adaptive_rule(def:&StrategyDef)->bool {
     def.book=="kftsm" && member(def.id,&["kftsm_kama","kftsm_adapt_exp","kftsm_vidya","kftsm_adapt_r2","kftsm_adapt_rsi","kftsm_swg","kftsm_swing","kftsm_raschke_first_cross","kftsm_outside_day","kftsm_fc_bb_abx"])
@@ -94,6 +95,9 @@ fn base_policy(def:&StrategyDef)->Policy {
         let mut p=requirement("declared_ohlc_adaptation", &["index","etf","individual_stock"], "Chande, Beyond Technical Analysis (1997), printed pp.20-21 and pp.80,94-97,99. Only the exact stop-free SMA-agreement and RAVI-filtered reversal contracts were source-reviewed and checked against independent chronological ledgers; see library/chande/REVIEW-2026-10-13.md. Actual selected prices are a declared research application, flat at the test start with available historical warmup and one position per symbol. Cash-index short exposure is hypothetical. No futures dollar stops/costs, contract ticks/rollovers, portfolio allocation or source performance are reproduced. Other Chande IDs remain under their existing policy.");
         p.market_adaptation=true;return p;
     }
+    if def.book=="ehrs" && crate::books::ehrs::reviewed_sinetrend(def.id) {
+        let mut p=requirement("declared_ohlc_adaptation", &["index","etf","individual_stock"], "Ehlers Rocket Science for Traders p.119 identifies Fig.12.1 (pp.120-123) as a complete theoretical automatic signal system before adding a separate Treasury-bond dollar stop. Only the exact reviewed SineTrend configurations are admitted. Trend-only removes Cycle Mode orders without flattening holdings (p.124); CycPart1.15 uses Fig.12.4's trendline (p.126). Source review and selected real-price ledger scope: library/ehlers/REVIEW-2026-10-13.md and REVIEW-2026-10-15-VARIANTS.md. Selected actual daily OHLC is a declared research application; The three additional configurations require exact reviewed CycPart/MaxBarsBack pairs1/50 or1.15/57; alternate settings remain held. The previously reviewed base preserves its parameter contract. Zero-state startup and next-open fills are explicit conventions. No dollar stops, original futures contracts, roll history, portfolio or source-study performance are reproduced. Cash-index short exposure is hypothetical.");p.market_adaptation=true;return p;
+    }
     if reviewed_cash_rule(def) {
         let allowed=if matches!(def.id,"kftsm_month_end"|"kftsm_hirsch"){&["index","etf"][..]}else{&["index","etf","individual_stock"][..]};
         let basis=if reviewed_adaptive_rule(def) {
@@ -105,9 +109,6 @@ fn base_policy(def:&StrategyDef)->Policy {
     }
     let id=def.id;
     match def.book {
-        "ehrs" if id=="ehrs_sinetrend" => {
-            let mut p=requirement("declared_ohlc_adaptation", &["index","etf","individual_stock"], "Ehlers Rocket Science for Traders p.119 identifies Fig.12.1 (pp.120-123) as a complete theoretical automatic signal system before adding the separate Treasury-bond dollar stop. Source code is reviewed in library/ehlers/REVIEW-2026-10-13.md. Selected actual daily OHLC is a declared research application; configurable MaxBarsBack50 and next-open fills are explicit conventions. No dollar stops, original futures contracts, roll history, portfolio or source-study performance are reproduced. Cash-index short exposure is hypothetical.");p.market_adaptation=true;p
-        },
         "ehmd" if id=="ehmd_mama" => stock("Ehlers MESA Adaptive Moving Averages, S&C19:9 pp.30-35, explicitly tests a long-only MAMA/FAMA crossover on100 stocks. Review and independent ledgers: library/ehlers/REVIEW-2026-10-13.md. Actual individual stocks are required. One selected stock is not the original unnamed100-stock population; configurable MaxBarsBack50 and next-open execution are declared research conventions, and the pooled source performance is not reproduced."),
         "stc9" if member(id,&["f1a","f3a","f4a","f4c","f4d","rsi2_5d"]) => stock("STC IX Session 1 foundation studies concern a pooled US individual-stock population. A native single-stock run uses one actual constituent at a time; it does not reproduce the pooled published counts, universe or performance."),
         "stc9" if member(id,&["tps_stocks","x555","h10"]) => stock("STC IX Sessions 2-3 specify stocks with volatility, ADX and Liquidity Filter population restrictions. Actual constituent OHLC/volume is necessary; this type check does not supply missing liquidity denominators, historical membership or portfolio slots."),
@@ -504,9 +505,14 @@ mod tests {
         for ticker in ["NIFTY 50","SPY"] {assert!(check(&mama,ticker,false).is_some());}
         assert!(check(&mama,"RELIANCE",true).is_none());
         assert!(check_native(&mama,"AAPL",&NativeEvidence::us_test_fixture()).is_none());
-        let st=def("ehrs_sinetrend","ehrs");
-        for ticker in ["NIFTY 50","SPY"] {assert!(check(&st,ticker,false).is_none());}
-        for (id,book) in [("ehrs_sinetrend_cp115","ehrs"),("ehrs_zerolag","ehrs"),("ehmd_lms_zerolag","ehmd"),("ehmd_new_unreviewed","ehmd")] {
+        for id in ["ehrs_sinetrend","ehrs_sinetrend_trend","ehrs_sinetrend_cp115","ehrs_sinetrend_cp115_trend"] {
+            let st=def(id,"ehrs");assert!(reviewed_cash_rule(&st));
+            for ticker in ["NIFTY 50","SPY"] {assert!(check(&st,ticker,false).is_none());}
+            assert!(check(&st,"RELIANCE",true).is_none());
+            assert!(policy(&st).source_basis.contains("Ehlers"));assert!(!policy(&st).source_basis.contains("Kaufman"));
+            assert_eq!(policy(&def(id,"other_book")).requirement,"source_review_required");
+        }
+        for (id,book) in [("ehrs_sinetrend_cp110","ehrs"),("ehrs_zerolag","ehrs"),("ehrs_sinewave_cycle","ehrs"),("ehrs_optimum_predictor","ehrs"),("ehrs_adaptive_osc","ehrs"),("ehrs_snr_filter","ehrs"),("ehmd_lms_zerolag","ehmd"),("ehmd_new_unreviewed","ehmd")] {
             assert_eq!(policy(&def(id,book)).requirement,"source_review_required");
         }
         assert_eq!(policy(&def("ehmd_mama","other_book")).requirement,"source_review_required");
