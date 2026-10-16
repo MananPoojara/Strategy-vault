@@ -18,7 +18,7 @@ beforeEach(() => {
     const c = { remove: vi.fn(), series: [] as Spy[], kinds: [] as string[] };
     charts.push(c);
     const add = (kind: string) => () => { const s = { setData: vi.fn(), setMarkers: vi.fn(), applyOptions: vi.fn() }; c.series.push(s); c.kinds.push(kind); return s; };
-    return { addCandlestickSeries: add("candle"), addLineSeries: add("line"), addAreaSeries: add("area"), remove: c.remove, resize: vi.fn(),
+    return { addCandlestickSeries: add("candle"), addBarSeries: add("bar"), addLineSeries: add("line"), addAreaSeries: add("area"), remove: c.remove, resize: vi.fn(),
       applyOptions: vi.fn(), timeScale: () => ({ fitContent: vi.fn(), setVisibleRange: vi.fn() }) };
   };
   window.LightweightCharts = { createChart: vi.fn(make), CrosshairMode: { Normal: 0 } } as never;
@@ -39,10 +39,10 @@ const chips: Chip[] = [
 ];
 const props = { market: "in" as const, ticker: "NIFTY 50", tf: "D", range: "All" as const, catalogue: cat, chips, loadSeries: load, onChipChange: vi.fn(), onChipRemove: vi.fn() };
 
-it("draws a close line for long daily ranges", async () => {
+it("draws OHLC bars at long daily ranges too", async () => {
   await mount(<Workbench {...props} chips={[]} />);
   await flush();
-  expect(charts[0].kinds[0]).toBe("line");
+  expect(charts[0].kinds[0]).toBe("bar");
   expect(charts[0].series[0].setData.mock.calls[0][0]).toHaveLength(6);
 });
 
@@ -50,7 +50,7 @@ it("draws candles, overlays with gaps, boolean markers and a pane; a failing chi
   const host = await mount(<Workbench {...props} range="1Y" />);
   await flush();
   const price = charts[0];
-  expect(price.kinds[0]).toBe("candle");
+  expect(price.kinds[0]).toBe("bar");
   expect(price.series[0].setData.mock.calls[0][0]).toHaveLength(6);
   const lines = price.series.slice(1).map((s) => s.setData.mock.calls[0][0]);
   expect(lines.some((points: { value?: number }[]) => points[0].value === undefined)).toBe(true);
@@ -223,7 +223,7 @@ it("keeps every pane on one time range and crosshair bar, and unsubscribes on un
     const s = { range: [] as Handler[], cross: [] as ((p: { time?: string }) => void)[], setRange: vi.fn(), setCross: vi.fn(), unRange: vi.fn(), unCross: vi.fn() };
     subs.push(s);
     const series = () => ({ setData: vi.fn(), setMarkers: vi.fn(), applyOptions: vi.fn() });
-    return { addCandlestickSeries: series, addLineSeries: series, addAreaSeries: series, remove: vi.fn(), resize: vi.fn(), applyOptions: vi.fn(),
+    return { addCandlestickSeries: series, addBarSeries: series, addLineSeries: series, addAreaSeries: series, remove: vi.fn(), resize: vi.fn(), applyOptions: vi.fn(),
       subscribeCrosshairMove: (h: never) => s.cross.push(h), unsubscribeCrosshairMove: s.unCross, setCrosshairPosition: s.setCross, clearCrosshairPosition: vi.fn(),
       timeScale: () => ({ fitContent: vi.fn(), setVisibleRange: s.setRange, subscribeVisibleTimeRangeChange: (h: Handler) => s.range.push(h), unsubscribeVisibleTimeRangeChange: s.unRange }) };
   }) } as never;

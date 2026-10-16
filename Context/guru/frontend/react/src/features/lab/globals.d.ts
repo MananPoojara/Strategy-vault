@@ -6,6 +6,7 @@ export interface LabSeriesApi {
 }
 export interface LabChartApi {
   addCandlestickSeries(options: Record<string, unknown>): LabSeriesApi;
+  addBarSeries(options: Record<string, unknown>): LabSeriesApi;
   addLineSeries(options: Record<string, unknown>): LabSeriesApi;
   addAreaSeries(options: Record<string, unknown>): LabSeriesApi;
   addHistogramSeries?(options: Record<string, unknown>): LabSeriesApi;

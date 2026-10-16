@@ -97,7 +97,7 @@ it("equity chart keeps its log scale and full data and is removed on unmount", a
     const id = options.push(o);
     const add = (kind: string) => () => { const s = { kind, data: [] as unknown[] }; series.push(s);
       return { setData: (d: unknown[]) => { s.data = d; }, applyOptions() {} }; };
-    return { addCandlestickSeries: add("candle"), addLineSeries: add("line"), addAreaSeries: add("area"),
+    return { addCandlestickSeries: add("candle"), addBarSeries: add("bar"), addLineSeries: add("line"), addAreaSeries: add("area"),
       timeScale: () => ({ fitContent() {}, setVisibleRange() {} }), applyOptions() {}, resize() {}, remove: () => removed.push(id) };
   } };
   await mount(<RunResults result={runFixture} market="in" />);
@@ -182,7 +182,7 @@ it("calls the exact shared area renderer with full drawdown dates, percentages a
   const charts: Record<string, unknown>[] = [];
   window.LightweightCharts = { createChart: (_el, options) => {
     charts.push(options); const add = () => ({setData() {}, applyOptions() {}});
-    return {addCandlestickSeries:add,addLineSeries:add,addAreaSeries:add,timeScale:()=>({fitContent() {},setVisibleRange() {}}),applyOptions() {},resize() {},remove() {}};
+    return {addCandlestickSeries:add,addBarSeries:add,addLineSeries:add,addAreaSeries:add,timeScale:()=>({fitContent() {},setVisibleRange() {}}),applyOptions() {},resize() {},remove() {}};
   } };
   const host = await mount(<RunResults result={runFixture} market="in" />);
   expect(host.querySelector('[data-lab-chart="equity"] h3')?.textContent).toBe("Equity growth");

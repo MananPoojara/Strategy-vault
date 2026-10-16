@@ -96,13 +96,9 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
         chart.priceScale?.("lab-trades").applyOptions({ scaleMargins: { top: 0, bottom: 0 }, visible: false });
         spans.setData(px.d.map((time, i) => (shade[i] ? { time, value: 1, color: shade[i] } : { time })));
       }
-      const priceSeries = asLine
-        ? chart.addLineSeries({ color: colors.ink, lineWidth: 1, priceLineVisible: false })
-        : chart.addCandlestickSeries({
-          upColor: colors.green, borderUpColor: colors.green, wickUpColor: colors.green,
-          downColor: colors.red, borderDownColor: colors.red, wickDownColor: colors.red, priceLineVisible: false,
-        });
-      priceSeries.setData(asLine ? px.d.map((time, i) => ({ time, value: px.c[i] })) : candles(px));
+      // OHLC bars at every range: up bars green, down bars red.
+      const priceSeries = chart.addBarSeries({ upColor: colors.green, downColor: colors.red, openVisible: true, thinBars: false, priceLineVisible: false });
+      priceSeries.setData(candles(px));
       const markers: Marker[] = [];
       const readouts: { label: string; values: Map<string, number | null> }[] = [];
       const charts: SyncedPane[] = [{ chart, el: priceRef.current, series: priceSeries }];
@@ -171,8 +167,6 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
     // loadSeries and find are read fresh per run; chips are tracked by their canonical key.
   }, [market, ticker, tf, range, chipsKey, trades, themeKey, catalogue, comparisonsKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Thousands of daily candles turn into noise: 3Y and All daily ranges draw a close line.
-  const asLine = tf === "D" && range !== "1Y";
   const panes = chips.filter((c) => find(c.id)?.placement === "pane" && !pairProblem(c));
   return (
     <section className="box lab-workbench">
@@ -198,7 +192,7 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
           ))}
         </div>
       </div>
-      <p className="cap">{asLine && "Long daily ranges are drawn as a close line; 1Y shows candles. "}{COPY.chartNote}</p>
+      <p className="cap">{COPY.chartNote}</p>
       {foreignNotes.map(note=><p className="cap" role="note" key={note}>{note}</p>)}
       {adaptations.map((note) => <p className="rnote" role="note" data-lab-adaptations key={note}>{note}</p>)}
       {tf !== "D" && <p className="cap">{COPY.inProgress(tf)}</p>}
