@@ -17,6 +17,7 @@ import sys
 import time
 
 import overnight_worker as worker
+import source_cursor as cursor
 from publish_reviewed_batch import allowed_file
 
 
@@ -54,6 +55,10 @@ def load_backlog(path):
         for field in ('author','book','scope','instrument'):
             if not isinstance(task.get(field),str) or not task[field].strip():
                 raise ValueError('Backlog missing '+field)
+        if 'source_cursor_required' in task and type(task['source_cursor_required']) is not bool:
+            raise ValueError('source_cursor_required must be boolean')
+        if 'source_cursor_contract_version' in task and (type(task['source_cursor_contract_version']) is not int or task['source_cursor_contract_version']!=1):
+            raise ValueError('Unsupported source cursor contract version')
         for field in ('source_paths','data_paths','adaptations','method_ids'):
             if not isinstance(task.get(field),list):raise ValueError('Backlog missing '+field)
         if not task['source_paths'] or not isinstance(task.get('source_hashes'),dict):
@@ -139,7 +144,7 @@ def make_job(task,phase,workspace,state_dir,codex,template):
         'converter_result':str(root/'jobs'/(task['id']+'.convert')/'result.json'),
         'frozen_candidate':str(root/'jobs'/(task['id']+'.convert')/'candidate-files.json'),
         'reviewer_identity':job_id,'admitted':False}
-    text=Path(template).read_text()+'\n'+json.dumps(context,indent=2)+'\n'
+    text,_context_version=cursor.prompt_text(task,phase,root,template,context)
     if prompt.exists() and prompt.read_text()!=text:raise ValueError('Existing job prompt changed; use a new task ID')
     prompt.write_text(text);prompt.chmod(0o600)
     return {'id':job_id,'approved':True,'kind':'agent_conversion','isolated_workspace':True,
@@ -174,10 +179,15 @@ def _run(backlog,state_dir,repo,worktree_root,codex,watch=False):
     def save(status):
         state.update(status=status,updated_at=worker.timestamp(),live_admissions=0)
         worker.atomic_json(path,state)
+    seeded_backlog=None
     while True:
         if (root/'STOP').exists():save('stopped');return 0
         if (root/'LIMIT_REACHED.json').exists():save('usage_limit');return 0
-        data=load_backlog(backlog);task=choose_task(data['tasks'],state)
+        data=load_backlog(backlog)
+        source_specs=worker.digest([(t['id'],t['source_hashes'],t.get('source_cursor_required',False)) for t in data['tasks']])
+        if source_specs!=seeded_backlog or not (root/'source-cursors.json').exists():
+            cursor.seed_registry(data['tasks'],root);seeded_backlog=source_specs
+        task=choose_task(data['tasks'],state)
         state['backlog_tasks']=len(data['tasks']);state['approved_by']=data['approved_by']
         if task is None:
             save('waiting_for_backlog' if watch else 'backlog_processed')
@@ -198,6 +208,8 @@ def _run(backlog,state_dir,repo,worktree_root,codex,watch=False):
             if item['status'] not in ('converted','reviewing'):
                 item['status']='converting';save('running')
                 converted=run_stage(task,'convert',workspace,root,codex)
+                if cursor.context_version(task,root)==2:
+                    item['source_cursor_binding']=cursor.freeze_converter(task,root)
                 frozen=candidate_snapshot(workspace)
                 freeze_path=root/'jobs'/(key+'.convert')/'candidate-files.json'
                 freeze_path.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
@@ -209,6 +221,10 @@ def _run(backlog,state_dir,repo,worktree_root,codex,watch=False):
             reviewed=run_stage(task,'review',workspace,root,codex)
             verify_candidate(workspace,frozen)
             if candidate_snapshot(workspace)!=frozen:raise ValueError('Candidate file set changed during independent review')
+            if cursor.context_version(task,root)==2:
+                coverage=cursor.accept_review(task,root,expected_binding=item.get('source_cursor_binding'))
+                item['source_coverage']={k:coverage[k] for k in ('coverage_status','source_sha256','all_available_sections_reviewed','complete_bibliographic_work_reviewed','unread_section_ids','missing_source_section_ids','pending_method_ids','blocked_method_ids')}
+            else:item['source_coverage']={'coverage_status':cursor.record_legacy_task(task,root),'complete_bibliographic_work_reviewed':False}
             item.update(status=review_outcome(reviewed),review_summary=reviewed.get('summary',''),
                 method_ids=reviewed.get('method_ids',[]),checked_records=reviewed.get('checked_trades',0),
                 review_result=str(root/'jobs'/(key+'.review')/'result.json'),finished_at=worker.timestamp())

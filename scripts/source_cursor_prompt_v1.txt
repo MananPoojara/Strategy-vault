@@ -1,0 +1,76 @@
+SOURCE COVERAGE CONTRACT v1 (job context v2; this source task only)
+
+The source_cursor context names your exact private source-coverage.json path and
+actor job ID. Write this sidecar even when every selected method remains held.
+Task completion is not whole-source completion. Read actual source identity and
+contents, enumerate all known chapter/section boundaries and preserve every
+unread section and every additional method beyond the three-method batch cap.
+Do not infer objective rules from headings. A document may be an article, manual,
+partial scan or duplicate edition. Use the source's actual instrument/frequency.
+
+Sidecar JSON shape (all examples below describe generated schema, not book data):
+{
+ "schema_version":1,
+ "job_id":"EXACT source_cursor.actor_job_id",
+ "coverage":{
+  "source_sha256":"actual task PDF SHA256",
+  "physical_pages":123,
+  "bibliographic_completeness":"unverified | partial | declared_complete",
+  "missing_printed_pages":[],
+  "inventory_complete":false,
+  "sections":[{
+   "id":"stable-source-section-id", "label":"Actual section locator",
+   "pages":[{"page":1,"region":"whole"}],
+   "status":"unread | read | unreadable | source_missing",
+   "methods":[{"id":"stable-method-id","family_id":"algorithm-family-id",
+               "kind":"strategy | component | reading",
+               "state":"pending | held | source_checked | reading_only",
+               "hold_reason":"Required nonempty exact material reason when held"}],
+   "evidence_ids":["bound-page-proof"]
+  }],
+  "batch_section_ids":["stable-source-section-id"],
+  "batch_method_ids":[]
+ },
+ "evidence":[{"id":"bound-page-proof","path":"relative-evidence-file.json",
+              "sha256":"actual evidence file SHA256",
+              "pages":[{"page":1,"region":"whole"}]}]
+}
+
+Use actual physical PDF pages starting at1. Two-page spreads can use disjoint
+left/right regions; whole overlaps either half. Source section page ownership
+must not overlap. Shared context can be cited in evidence without claiming a
+second source section owns it. Missing source sections have no invented physical
+pages: pages:[] plus explicit missing_printed_pages and partial/unverified work.
+An inventory marked complete must cover every actual physical page, including
+front matter/end matter. This still does not certify a complete authored book.
+
+Read every page of a bounded section before marking it read. Bind locally existing
+source-page extraction/render/checklist evidence to its actual hash and page cells.
+Evidence paths are relative to this phase's own artifact directory, never parent
+traversal, absolute paths or symlinks. All read section cells need evidence.
+If prior accepted coverage exists, preserve its stable section/method identities,
+page cells, reviewed states and genuine holds; use its accepted evidence binding
+when retaining cumulative reading. Do not erase earlier chapters or reopen held
+methods without a separately reviewed changed-input/repair contract. Unread and
+unreadable areas remain explicit. Inventory all discovered methods/components;
+at most three batch_method_ids may be investigated/implemented in this batch.
+Extra methods remain pending; held methods keep precise reasons. Parameter
+variants and algorithm families stay distinct. source_checked means source-only,
+not numerical correctness, integrated readiness, original study reproduction or
+public admission. Reading-only material cannot become an invented strategy.
+
+For REVIEW: independently read the actual source before candidate calculations,
+validate the converter's frozen sidecar and your own source coverage, and write
+your own sidecar/evidence under the review job. Add top-level accepted:true only
+if you accept the same logical source/section/method coverage, plus
+converter_sidecar_sha256 equal to the exact original converter sidecar SHA in the
+frozen binding file. Your job_id must be the distinct review ID. On disagreement
+write accepted:false with evidence; never copy an unsupported pass. Converter
+coverage must remain unchanged during review. Each phase retains separate paths.
+
+The coordinator validates actual PDF SHA/page count, page bounds, evidence paths
+and hashes, independent actor/binding agreement and monotonic accepted coverage.
+Only an accepted pair can update the private source cursor and produce bounded
+residual child PROPOSALS. No child is automatically appended or publicly admitted.
+Preserve source/rule/data holds and all losing results. A completed three-method
+job must leave all other chapters/methods visible in the cursor.

@@ -100,16 +100,27 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(worker.read_status(self.state)["jobs"]["book-method"]["error"], "Job timeout")
 
     def test_stop_file_interrupts_current_job(self):
-        self.job["argv"] = [sys.executable, "-c", "import time;time.sleep(30)"]
+        import os
+        started = self.state / "started-child.pid"
+        code = "import os,pathlib,time;pathlib.Path(" + repr(str(started)) + ").write_text(str(os.getpid()));time.sleep(30)"
+        self.job["argv"] = [sys.executable, "-c", code]
         def stop():
-            time.sleep(0.12)
+            deadline = time.monotonic() + 5
+            while not started.exists() and time.monotonic() < deadline:
+                time.sleep(0.01)
             worker.request_stop(self.state)
         thread = threading.Thread(target=stop)
         thread.start()
-        self.assertEqual(self.run_worker(), 0)
-        thread.join()
+        try:
+            self.assertEqual(self.run_worker(), 0)
+        finally:
+            thread.join(timeout=6)
+        self.assertFalse(thread.is_alive())
+        self.assertTrue(started.exists(), "The test must stop an actual running child")
         self.assertEqual(worker.read_status(self.state)["status"], "stopped")
         self.assertEqual(worker.read_status(self.state)["jobs"]["book-method"]["status"], "interrupted")
+        with self.assertRaises(ProcessLookupError):
+            os.kill(int(started.read_text()), 0)
 
     def test_changed_job_id_cannot_replace_completed_provenance(self):
         self.writes_result()
