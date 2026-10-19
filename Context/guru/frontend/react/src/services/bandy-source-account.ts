@@ -44,8 +44,9 @@ const monthlyOrStop = (v: Fields) => ["stop", "initial_stop", "final_stop", "mon
   "outstanding_planned_risk", "monthly_halted", "planned_risk_fraction_of_month_reference", "risk_budget_fraction_of_month_reference"]
   .some(key => Object.hasOwn(v, key));
 
-export function parseBandySourceAccount(data: unknown, id?: string, book?: string): BandySourceAccount {
+export function parseBandySourceAccount(data: unknown, id?: string, book?: string, selectedTicker?: string): BandySourceAccount {
   if (!bandyAccountMethod(id, book) || !object(data) || data.kind === "basket" || !object(data.source_account)) return invalid();
+  if ((Object.hasOwn(data,"id") && data.id !== id) || (Object.hasOwn(data,"book") && data.book !== book)) return invalid();
   const a=data.source_account, macd=id === "hbiab_macd_example", fraction=macd ? .25 : 1;
   if (a.model !== BANDY_ACCOUNT_MODEL || a.book_performance_reproduced !== false
     || typeof a.basis !== "string" || !a.basis.trim() || typeof a.account_contribution_basis !== "string" || !a.account_contribution_basis.trim()
@@ -58,6 +59,12 @@ export function parseBandySourceAccount(data: unknown, id?: string, book?: strin
     || !Array.isArray(data.trades) || !Array.isArray(data.close) || !object(data.stats) || !object(data.gross_stats) || !object(data.costs)
     || data.dates.length < 2 || [a.days,data.equity,data.gross_equity,data.close].some(rows => rows.length !== (data.dates as unknown[]).length)
     || a.trade_accounts.length !== data.trades.length) return invalid();
+  const provenance=object(data.provenance) ? data.provenance : null;
+  if (selectedTicker?.startsWith("basket:") && (!provenance || provenance.qualified_ticker !== selectedTicker
+    || typeof provenance.symbol !== "string" || !provenance.symbol.trim())) return invalid();
+  if (selectedTicker && provenance && typeof provenance.qualified_ticker === "string" && provenance.qualified_ticker !== selectedTicker) return invalid();
+  const expectedSymbol=provenance && typeof provenance.symbol === "string" ? provenance.symbol
+    : selectedTicker && !selectedTicker.startsWith("basket:") ? selectedTicker : null;
   const costs=data.costs;
   if (!finite(costs.fees_bps) || !finite(costs.slippage_bps) || costs.fees_bps < 0 || costs.slippage_bps < 0
     || costs.fees_bps+costs.slippage_bps > 5000 || costs.rollover_bps !== 0
@@ -82,7 +89,7 @@ export function parseBandySourceAccount(data: unknown, id?: string, book?: strin
   const numericTrade=["raw_instrument_gross_return","entry_equity_units","entry_allocation_fraction","quantity","entry_notional_units",
     "gross_account_contribution","net_account_contribution","entry_cost_account_contribution","exit_cost_account_contribution",
     "gross_fraction_of_actual_entry_equity","net_fraction_of_actual_entry_equity","open_liquidation_cost_estimate"];
-  let lastExit=-1, closed=0, sum=0, grossSum=0, netSum=0, openCount=0;
+  let lastExit=-1, closed=0, sum=0, grossSum=0, netSum=0, openCount=0, ledgerSymbol="";
   for (let i=0;i<a.trade_accounts.length;i++) {
     const row: unknown=a.trade_accounts[i], trade: unknown=data.trades[i];
     if (!object(row) || monthlyOrStop(row) || !object(trade) || !object(trade.accounting)
@@ -104,13 +111,13 @@ export function parseBandySourceAccount(data: unknown, id?: string, book?: strin
       || trade.exit_i !== xi || trade.signal !== (t.open ? t.exit : t.exit_signal_date)
       || (macd && indices.get(t.entry_signal_date) !== ti-1)
       || typeof trade.accounting.symbol !== "string" || !trade.accounting.symbol.trim()
-      || (typeof data.benchmark_symbol === "string" && trade.accounting.symbol !== data.benchmark_symbol)
-      || (object(data.provenance) && typeof data.provenance.symbol === "string" && trade.accounting.symbol !== data.provenance.symbol)
+      || (expectedSymbol !== null && trade.accounting.symbol !== expectedSymbol)
+      || (ledgerSymbol !== "" && trade.accounting.symbol !== ledgerSymbol)
       || trade.accounting.signal_side !== "Long"
       || trade.accounting.cost_status !== (t.open ? "actual_entry_cost_only_open_mark" : "modeled_filled_side_costs")
       || trade.accounting.excursion_bars !== 0 || trade.accounting.excursion_status !== "unavailable"
       || trade.accounting.mae_ret_observed !== null || trade.accounting.mfe_ret_observed !== null) return invalid();
-    lastExit=xi;
+    lastExit=xi;ledgerSymbol=trade.accounting.symbol;
     if (t.open) {
       openCount++;
       if (i !== a.trade_accounts.length-1 || xi !== a.days.length-1 || t.exit_notional_units !== null || t.exit_signal_date !== null

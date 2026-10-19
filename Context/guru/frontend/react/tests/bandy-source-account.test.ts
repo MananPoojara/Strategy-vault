@@ -122,3 +122,23 @@ it('retains tiny positive modeled costs and rejects zeroed paid charges or cost 
  expect(()=>parse({...d,trades:d.trades.map((row,i)=>i===0?{...row,accounting:{...row.accounting,slippage_ret:0}}:row)},true)).toThrow();
  expect(()=>parse({...d,source_account:{...d.source_account,days:d.source_account.days.map((row,i)=>i===1?{...row,costs_paid:0}:row)}},true)).toThrow();
 });
+
+it('binds the selected traded instrument and provenance independently of its benchmark',()=>{
+ const d=bandyAccountFixture();d.benchmark_symbol='SPX';
+ expect(sourceAccount(d,'hbiab_ma5_20','hbiab','AAPL')!.model).toBe(BANDY_ACCOUNT_MODEL);
+ expect(()=>sourceAccount(d,'hbiab_ma5_20','hbiab','SPY')).toThrow();
+ const native={...d,provenance:{qualified_ticker:'basket:us_sp500:AAPL',symbol:'AAPL'}};
+ expect(sourceAccount(native,'hbiab_ma5_20','hbiab','basket:us_sp500:AAPL')!.model).toBe(BANDY_ACCOUNT_MODEL);
+ expect(()=>sourceAccount(native,'hbiab_ma5_20','hbiab','basket:us_nasdaq100:AAPL')).toThrow();
+ expect(()=>sourceAccount(d,'hbiab_ma5_20','hbiab','basket:us_sp500:AAPL')).toThrow();
+ expect(()=>sourceAccount({...native,provenance:{...native.provenance,symbol:'OTHER'}},'hbiab_ma5_20','hbiab','basket:us_sp500:AAPL')).toThrow();
+});
+
+ it('rejects conflicting outer method/book identity without changing legacy account requirements',()=>{
+ const d=bandyAccountFixture();
+ expect(sourceAccount({...d,id:'hbiab_ma5_20',book:'hbiab'},'hbiab_ma5_20','hbiab')!.model).toBe(BANDY_ACCOUNT_MODEL);
+ expect(sourceAccount({...d,id:'hbiab_ma7_4',book:'hbiab'},'hbiab_ma7_4','hbiab')!.model).toBe(BANDY_ACCOUNT_MODEL);
+ for(const fields of [{id:'hbiab_ma7_4'},{book:'other'},{id:null},{book:null}])
+   expect(()=>sourceAccount({...d,...fields},'hbiab_ma5_20','hbiab')).toThrow('Bandy cash account');
+ expect(sourceAccount(accountFixture(),'elcim_impulse','elcim')!.model).toBe(ELDER_ACCOUNT_MODEL);
+ });

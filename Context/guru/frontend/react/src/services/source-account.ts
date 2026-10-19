@@ -67,8 +67,8 @@ const count = (v: unknown): v is number => finite(v) && Number.isInteger(v) && v
 const near = (a: number, b: number, tolerance = 2.01e-6) => Math.abs(a - b) <= tolerance * Math.max(1, Math.abs(a), Math.abs(b));
 const invalid = (): never => { throw new Error("The protected Elder account response is missing or inconsistent. Results remain unavailable; reload after the account contract is restored."); };
 
-export function sourceAccount(data: unknown, id?: string, book?: string): SourceAccount | null {
-  if (bandyAccountMethod(id,book) || (object(data) && object(data.source_account) && data.source_account.model === BANDY_ACCOUNT_MODEL)) return parseBandySourceAccount(data,id,book);
+export function sourceAccount(data: unknown, id?: string, book?: string, selectedTicker?: string): SourceAccount | null {
+  if (bandyAccountMethod(id,book) || (object(data) && object(data.source_account) && data.source_account.model === BANDY_ACCOUNT_MODEL)) return parseBandySourceAccount(data,id,book,selectedTicker);
   return elderSourceAccount(data,id,book);
 }
 function elderSourceAccount(data: unknown, id?: string, book?: string): ElderSourceAccount | null {
