@@ -9,7 +9,7 @@ import {returnDisplay} from '../services/return-display';
 import {sourceAccount,sourceAccountView,sourceTradeHeaders,sourceAccountTables,sourceAccountCopy} from '../services/source-account';
 import {BANDY_SIMPLE_METHOD,simpleInstrumentContext} from '../services/bandy-source-account';
 import {unitExposureMethod,unitExposureInstrumentContext,validatedUnitExposureReport} from '../services/unit-exposure-report';
-import {UNIT_VISUAL_BASIS,UNIT_CLOSED_BASIS,unitExposureTables,unitExposureMetadata} from '../services/unit-exposure-presenter';
+import {UNIT_VISUAL_BASIS,UNIT_CLOSED_BASIS,unitExposureTables,unitExposureMetadata,unitPriceSignals} from '../services/unit-exposure-presenter';
 import {tradeExitCheck,tradeExitCheckMarkup} from '../services/trade-exit-check';
 import {stockChoices,basketSpan,positionLimit,priceRecoveryPeriod} from '../services/stock-selection';
 import {libraryScope,inLibraryScope} from '../services/library-scope';
@@ -1564,7 +1564,7 @@ async function viewStrategy() {
     <section class="box" data-book-reference><div class="box-h">Book-reported figures <small>reference only · separate from the computed backtest</small></div>${TRUST.bookReference(cl)}</section>
     <section class="box"><div class="box-h">${unit?'Canonical unit-exposure model':account?sourceAccountCopy(account).accountEquity:'Compounded return model'} <span class="legend"><span><i class="sw-line" style="background:var(--blue)"></i>${account?'Account':'Strategy'}</span><label class="dcheck"><input type="checkbox" id="cmp"> <i class="sw-line" style="background:var(--bh)"></i>Compare with buy &amp; hold</label><label class="dcheck"><input type="checkbox" id="logs" checked> Log scale</label></span></div>
       <div class="chart-tools"><button class="dbtn sm" data-chart-snapshot="c-eq">Download PNG</button><button class="dbtn sm" data-report-export="equity">Download Excel</button></div><div class="lwc" id="c-eq"></div><div id="equity-navigator" class="equity-navigator"><div class="year-shortcuts"><button class="dbtn sm" data-equity-year="all">All years</button>${[...new Set(d.dates.map(x=>x.slice(0,4)))].map(y=>`<button class="dbtn sm" data-equity-year="${y}">${y}</button>`).join('')}</div><label>Start <input type="range" data-range="start" min="0" aria-label="Equity range start"></label><label>End <input type="range" data-range="end" min="0" aria-label="Equity range end"></label><output></output></div><div class="cap">${account?'Actual source-account return '+pct(s.total_return,2,true)+' · including open marks · account':'Strategy'} ${d.equity[d.equity.length - 1].toFixed(2)}× · buy &amp; hold ${d.bh[d.bh.length - 1].toFixed(2)}× · drag to zoom, hover for values</div></section>
-    <section class="box"><div class="box-h">Price &amp; signals · ${esc(LABEL[tk])} <span class="legend"><span><i class="mk up"></i>Buy / cover</span><span><i class="mk ex"></i>Sell / short</span><span><i class="zk win"></i>Winning trade</span><span><i class="zk loss"></i>Losing trade</span><span><i class="zk open"></i>Open</span><span class="muted">shaded from entry day to exit day · zoom in for each return</span>
+    <section class="box"><div class="box-h">Price &amp; signals · ${esc(LABEL[tk])} <span class="legend"><span><i class="mk up"></i>Buy / cover</span><span><i class="mk ex"></i>Sell / short</span><span><i class="zk win"></i>Winning trade</span><span><i class="zk loss"></i>${unit?'Non-winning closed trade':'Losing trade'}</span><span><i class="zk open"></i>Open</span><span class="muted">shaded from entry day to exit day · zoom in for each return</span>
         <span class="join sm">${[["D", "Daily"], ["W", "Weekly"], ["M", "Monthly"]].map(([k, t]) => `<button class="join-item ${TF === k ? "active" : ""}" data-tf="${k}">${t}</button>`).join("")}</span><span class="join sm"><button class="join-item active" id="px3">Last 3 years</button><button class="join-item" id="px1">Last year</button><button class="join-item" id="pxall">Show all</button></span></span></div>
       <div class="pxread" id="pxread">Hover the chart: open, high, low, close and the trade you were in.</div><div class="chart-tools"><button class="dbtn sm" data-chart-snapshot="c-px">Download PNG</button></div><div class="lwc px" id="c-px"></div>${indicatorControlsHTML(STRAT.indicators,true)}</section>
     <div class="two"><section class="box"><div class="box-h">Drawdown <small>worst ${pct(s.max_dd, 1)} · ${fx(s.max_dd_days, 0)} ${unit?'observed sessions':'days'} under water</small></div><div class="chart-tools"><button class="dbtn sm" data-chart-snapshot="c-dd">Download PNG</button></div><div class="bkc" id="c-dd"></div></section>
@@ -1657,7 +1657,8 @@ async function drawSignals(tf) {
   const n = px.d.length, perBar = {};
   // trade zones: a solid translucent band from the entry candle to the exit candle (green = win, red = loss, grey = still open),
   // drawn on an overlay so it stays one block at any zoom; one return label per trade, skipped where labels would collide
-  const zones = d.trades.map(t => ({ a: barOf[t.legs[0][0]], b: t.open ? n - 1 : barOf[t.exit_i], t }));
+  const unit=unitFor({...snapshot,state:S,params:snapshot.indicatorParameters}),unitSignals=unit?unitPriceSignals(d,unit,barOf):null;
+  const zones = unitSignals?unitSignals.zones:d.trades.map(t => ({ a: barOf[t.legs[0][0]], b: t.open ? n - 1 : barOf[t.exit_i], t }));
   d.trades.forEach(t => { const a = barOf[t.legs[0][0]]; (perBar[a] ||= { in: [], out: [] }).in.push(t); if (!t.open) (perBar[barOf[t.exit_i]] ||= { in: [], out: [] }).out.push(t); });
   // Arrow color denotes the action. Return colors remain in the independent trade shading.
   const arrows = TRUST.actionMarkers(d.trades,px.d,barOf,{buy:cv('--green'),sell:cv('--red')});
@@ -1671,12 +1672,12 @@ async function drawSignals(tf) {
     const g = ov.getContext('2d'); g.scale(dpr, dpr); g.clearRect(0, 0, w, h); g.save(); g.beginPath(); g.rect(0, 0, plotW, plotH); g.clip();
     const half = Math.max(1, ts.options().barSpacing / 2), x = b => ts.logicalToCoordinate(b);
     let lastLabel = -1e9; g.font = `700 11px ${getComputedStyle(document.body).fontFamily}`; g.textAlign = 'center';
-    const col = t => t.open ? cv('--ink3') : t.ret >= 0 ? cv('--green') : cv('--red');
+    const col = t => unitSignals?({open:cv('--ink3'),win:cv('--green'),nonwin:cv('--red')}[unitSignals.annotation(t).outcome]):t.open ? cv('--ink3') : t.ret >= 0 ? cv('--green') : cv('--red');
     for (const z of zones) { const x0 = x(z.a), x1 = x(z.b); if (x0 == null || x1 == null || x1 + half < 0 || x0 - half > plotW) continue;
       g.fillStyle = rgba_(col(z.t), .16); g.fillRect(x0 - half, 0, Math.max(2, x1 - x0 + 2 * half), plotH);
       g.fillStyle = rgba_(col(z.t), .75); g.fillRect(x0 - half, 0, Math.max(2, x1 - x0 + 2 * half), 3); }
     for (const z of zones) { const x0 = x(z.a), x1 = x(z.b); if (x0 == null || x1 == null) continue; const cx = (x0 + x1) / 2; if (cx < 0 || cx > plotW) continue;
-      const txt = z.t.open ? 'open' : pct(z.t.ret, 2, true), tw = g.measureText(txt).width + 10;
+      const txt = z.t.open ? 'open' : pct(unitSignals?unitSignals.annotation(z.t).return:z.t.ret, 2, true), tw = g.measureText(txt).width + 10;
       if (cx - tw / 2 < lastLabel + 4) continue; lastLabel = cx + tw / 2;
       g.fillStyle = cv('--panel'); g.fillRect(cx - tw / 2, 6, tw, 16); g.fillStyle = col(z.t); g.fillText(txt, cx, 18); }
     g.restore();
@@ -1694,8 +1695,10 @@ async function drawSignals(tf) {
   $('#pxread').innerHTML = `${{ D: 'Daily', W: 'Weekly', M: 'Monthly' }[tf]} candles · ${n} bars · hover for open, high, low, close and the trades in each candle.`;
   ch.subscribeCrosshairMove(p => { const b = p.time ? at[p.time] : undefined; if (b === undefined) return; const chg = b ? px.c[b] / px.c[b - 1] - 1 : 0;
     let tradeTxt;
-    if (tf === 'D') { const tr = d.trades.find(t => barOf[t.legs[0][0]] <= b && b <= (t.open ? n - 1 : barOf[t.exit_i])); tradeTxt = tr ? `in trade ${tr.entry} to ${tr.open ? 'open' : tr.exit}: <b class="${cls(tr.ret)}">${pct(tr.ret, 2, true)}</b>${tr.legs.length > 1 ? ` (${tr.legs.length} pieces)` : ''}` : '<span class="muted">no position</span>'; }
-    else { const g = perBar[b]; tradeTxt = g ? `${g.in.length} entr${g.in.length === 1 ? 'y' : 'ies'} · ${g.out.length} exit${g.out.length === 1 ? '' : 's'}${g.out.length ? `: <b class="${cls(g.out.reduce((a, t) => a * (1 + t.ret), 1) - 1)}">${pct(g.out.reduce((a, t) => a * (1 + t.ret), 1) - 1, 2, true)}</b> combined` : ''}` : '<span class="muted">no trades in this candle</span>'; }
+    if (tf === 'D') { const tr = unitSignals?unitSignals.positionAt(b):d.trades.find(t => barOf[t.legs[0][0]] <= b && b <= (t.open ? n - 1 : barOf[t.exit_i])); tradeTxt = tr ? `in trade ${tr.entry} to ${tr.open ? unitSignals?'open mark '+tr.exit:'open' : tr.exit}: <b class="${unitSignals?unitSignals.annotation(tr).outcome==='win'?'pos':unitSignals.annotation(tr).outcome==='open'?'':'neg':cls(tr.ret)}">${pct(unitSignals?unitSignals.annotation(tr).return:tr.ret, 2, true)}</b>${tr.legs.length > 1 ? ` (${tr.legs.length} pieces)` : ''}` : '<span class="muted">no position</span>'; }
+    else { const g = perBar[b],closedSum=unitSignals&&g?.out.length?unitSignals.closedReturnSum(g.out):null;
+      const returns=g?.out.length?unitSignals?`: Closed return sum <b class="${closedSum>0?'pos':'neg'}">${pct(closedSum,2,true)}</b>`:`: <b class="${cls(g.out.reduce((a, t) => a * (1 + t.ret), 1) - 1)}">${pct(g.out.reduce((a, t) => a * (1 + t.ret), 1) - 1, 2, true)}</b> combined`:'';
+      tradeTxt = g ? `${g.in.length} entr${g.in.length === 1 ? 'y' : 'ies'} · ${g.out.length} exit${g.out.length === 1 ? '' : 's'}${returns}` : '<span class="muted">no trades in this candle</span>'; }
     $('#pxread').innerHTML = `<b>${what}${px.d[b]}</b> O ${f(px.o[b])} · H ${f(px.h[b])} · L ${f(px.l[b])} · C <b>${f(px.c[b])}</b> <span class="${cls(chg)}">${pct(chg, 2, true)}</span> · ${tradeTxt}`; });
   const model=buildStrategyIndicators({id:STRAT.v.id,book:STRAT.v.book,ticker:STRAT.tk,prices:STRAT.px,fullHistory:STRAT.px?.full_history===true,parameters:STRAT.indicatorParameters,displayDates:px.d});
   INDICATOR_CHARTS=mountStrategyIndicators({root:document.querySelector('[data-strategy-indicators]'),chart:ch,priceSeries:cs,result:model,library:L,pricePoints:px.d.map((time,i)=>({time,value:px.c[i]})),chartOptions:{layout:{attributionLogo:false,background:{color:cv('--panel')},textColor:cv('--ink3'),fontFamily:getComputedStyle(document.body).fontFamily,fontSize:11},grid:{vertLines:{visible:false},horzLines:{color:cv('--rule')}},timeScale:{borderColor:cv('--steel')},crosshair:{mode:L.CrosshairMode.Normal}}});

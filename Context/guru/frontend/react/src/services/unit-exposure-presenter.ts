@@ -17,6 +17,38 @@ export function unitExposureDisplay(data: unknown,mode: ReturnDisplayMode,view: 
   return {...result,value:Number.isFinite(value)?value:null,closedTrades:closed.length,
     unavailableReason:Number.isFinite(value)?null:'The closed display is outside finite arithmetic bounds.'};
 }
+/** Chart annotations use the same audited response, never a reconstructed NAV factor.
+ * Candle coordinates may include later price history; positions stop at the selected
+ * exit/terminal mark and an open mark remains distinct from a filled Sell. */
+export function unitPriceSignals(data: unknown,view: UnitExposureView,barOf: readonly number[]) {
+  if (!isValidatedUnitExposurePair(data,view)) throw Error('A paired validated unit-exposure report is required for price annotations.');
+  const trades=(data as {trades: object[]}).trades,first=view.report.days[0].source_index;
+  const zones=view.report.trade_returns.map((audit,i)=>{
+    const a=barOf[audit.entry_source_index-first],b=barOf[audit.exit_source_index-first];
+    if (!Number.isSafeInteger(a)||!Number.isSafeInteger(b)||a<0||b<a) throw Error('Price annotations require mapped selected-session coordinates.');
+    return Object.freeze({a,b,t:trades[i],return:audit.net_return,
+      outcome:audit.open?'open':audit.net_return>0?'win':'nonwin'} as const);
+  });
+  const byTrade=new Map(zones.map(zone=>[zone.t,zone]));
+  const annotation=(trade: object)=>{
+    const zone=byTrade.get(trade);
+    if (!zone) throw Error('Price annotation trade does not belong to the validated response.');
+    return zone;
+  };
+  return Object.freeze({zones:Object.freeze(zones),annotation,
+    positionAt:(bar:number)=>zones.find(zone=>zone.a<=bar&&bar<=zone.b)?.t,
+    closedReturnSum:(closed: readonly object[])=>{
+      const seen=new Set<object>();let value=0;
+      for (const trade of closed) {
+        const zone=annotation(trade);
+        if (zone.outcome==='open'||seen.has(trade)) throw Error('Closed return sum requires distinct audited closed trades.');
+        seen.add(trade);value+=zone.return;
+      }
+      if (!Number.isFinite(value)) throw Error('Closed return sum is outside finite presentation bounds.');
+      return value;
+    },
+  });
+}
 export function unitExposureTables(view: UnitExposureView) {
   if (!isValidatedUnitExposureView(view)) throw Error('A validated unit-exposure report is required for export.');
   return {
