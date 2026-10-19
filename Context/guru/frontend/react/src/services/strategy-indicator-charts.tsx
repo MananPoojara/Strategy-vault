@@ -2,8 +2,18 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { StrategyIndicatorControls } from "../components/StrategyIndicatorControls";
 import type { IndicatorPoint, StrategyIndicator, StrategyIndicators } from "./strategy-indicators";
 
-export function indicatorControlsHTML(result: StrategyIndicators): string {
-  return renderToStaticMarkup(<StrategyIndicatorControls result={result} />);
+export function indicatorControlsHTML(result: StrategyIndicators, collapsible = false): string {
+  const controls = <StrategyIndicatorControls result={result} />;
+  return renderToStaticMarkup(collapsible && result.status === "ready" ? (
+    <details className="indicator-disclosure" data-indicator-disclosure>
+      <summary>
+        <strong>Indicators</strong>
+        <span>{result.series.map(series => series.label).join(" · ")}</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg>
+      </summary>
+      {controls}
+    </details>
+  ) : controls);
 }
 
 type LogicalRange = { from: number; to: number } | null;
@@ -74,6 +84,8 @@ export function mountStrategyIndicators(options: IndicatorMount): IndicatorContr
   };
   const series = new Map<string, { definition: StrategyIndicator; line: LineSeries; chart: IndicatorChart; pane: HTMLElement | null; element: HTMLElement | null; values: Map<string, number | null> }>();
   const paneCharts: IndicatorChart[] = [];
+  const disclosure = root.closest<HTMLDetailsElement>("details[data-indicator-disclosure]");
+  const preferences = new Map<string, boolean>();
   let disposed = false, synchronizingRange = false, synchronizingCrosshair = false;
   const lineColor = (definition: StrategyIndicator) => definition.key === "upper" ? colors.reference
     : definition.key === "lower" ? colors.di
@@ -100,6 +112,7 @@ export function mountStrategyIndicators(options: IndicatorMount): IndicatorContr
     series.set(definition.key, { definition, line, chart: ownChart, pane, element,
       values: new Map(definition.points.map(({ time, value }) => [time, value])) });
     const toggle = root.querySelector<HTMLInputElement>(`[data-indicator-toggle="${definition.key}"]`);
+    preferences.set(definition.key, toggle ? toggle.checked : true);
     if (toggle && !toggle.checked) { line.applyOptions({ visible: false }); if (pane) pane.hidden = true; }
     if (!definition.points.some((point) => point.value !== null)) { line.applyOptions({ visible: false }); if (pane) pane.hidden = true; }
   }
@@ -149,11 +162,18 @@ export function mountStrategyIndicators(options: IndicatorMount): IndicatorContr
   };
   const observer = typeof ResizeObserver === "function" ? new ResizeObserver(resize) : null;
   observer?.observe(root);
-  const setVisible = (key: string, visible: boolean) => {
+  const applyVisibility = (key: string) => {
     if (disposed) return;
     const state = series.get(key); if (!state) return;
+    const visible = preferences.get(key) === true && (!disclosure || disclosure.open)
+      && state.definition.points.some(point => point.value !== null);
     state.line.applyOptions({ visible });
     if (state.pane) state.pane.hidden = !visible;
+  };
+  const setVisible = (key: string, visible: boolean) => {
+    if (disposed || !series.has(key)) return;
+    preferences.set(key, visible);
+    applyVisibility(key);
     const toggle = root.querySelector<HTMLInputElement>(`[data-indicator-toggle="${key}"]`);
     if (toggle) toggle.checked = visible;
     resize();
@@ -165,11 +185,20 @@ export function mountStrategyIndicators(options: IndicatorMount): IndicatorContr
     }
   };
   root.addEventListener("change", change);
+  const disclosureChanged = () => {
+    for (const key of series.keys()) applyVisibility(key);
+    resize();
+  };
+  if (disclosure) {
+    disclosure.addEventListener("toggle", disclosureChanged);
+    disclosureChanged();
+  }
   return {
     setVisible,
     dispose() {
       if (disposed) return; disposed = true;
       root.removeEventListener("change", change); observer?.disconnect();
+      disclosure?.removeEventListener("toggle", disclosureChanged);
       for (const state of rangeListeners) state.chart.timeScale().unsubscribeVisibleLogicalRangeChange(state.listener);
       for (const state of crosshairListeners) state.chart.unsubscribeCrosshairMove(state.listener);
       for (const state of series.values()) if (state.chart === chart) chart.removeSeries(state.line);
