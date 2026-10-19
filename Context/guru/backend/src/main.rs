@@ -11,6 +11,8 @@ mod basket_portfolio;
 mod instrument_policy;
 mod trade_validation;
 mod unit_exposure_report;
+mod unit_exposure_arithmetic;
+mod unit_exposure_detail;
 
 use connors::{Ctx, Params, Status, Trade};
 use std::collections::BTreeMap;
@@ -235,6 +237,13 @@ struct Run {
 }
 
 fn backtest_costs(ctx:&Ctx,id:&str,from:usize,to:usize,costs:accounting::Costs,p:&Params)->Result<Run,String>{
+    if books::hbqts::reviewed::is_dema_index(id) {
+        let trades=connors::run(id,ctx,from,to,p).ok_or("QTS DEMA source implementation unavailable")?;
+        trade_validation::check_structure(&trades,from,to)?;
+        let report=unit_exposure_report::build(ctx,&trades,from,to,costs)?;
+        return Ok(Run{trades,from,to,equity:report.days.iter().map(|d|d.equity).collect(),bh:report.days.iter().map(|d|d.benchmark_equity).collect(),source_account:None,bandy_account:None,unit_exposure_report:Some(report)});
+    }
+
     if !books::hbiab_reviewed::reviewed(id){return backtest(ctx,id,from,to,costs.side_rate(),p);}
     let account=books::hbiab_reviewed::run_with_bps(id,ctx,from,to,costs.fees_bps,costs.slippage_bps,p)?;
     trade_validation::check(&account.trades,from,to,0.)?;
@@ -242,6 +251,8 @@ fn backtest_costs(ctx:&Ctx,id:&str,from:usize,to:usize,costs:accounting::Costs,p
 }
 
 fn backtest(ctx: &Ctx, id: &str, from: usize, to: usize, cost: f64, p: &Params) -> Result<Run,String> {
+    if books::hbqts::reviewed::is_dema_index(id) {return Err("QTS DEMA canonical unit reporting requires separate fee/slippage components through backtest_costs".into());}
+
     if books::hbiab_reviewed::reviewed(id) {
         let account=books::hbiab_reviewed::run(id,ctx,from,to,cost,p)?;
         // This cash account validates paid fees on true filled notionals itself.
@@ -323,6 +334,8 @@ fn years(ctx: &Ctx, from: usize, to: usize) -> f64 {
 }
 
 fn stats(ctx: &Ctx, run: &Run, cost: f64) -> BTreeMap<&'static str, f64> {
+    if let Some(report)=&run.unit_exposure_report {return report.common_stats(ctx,&run.trades,run.from,run.to,unit_exposure_report::View::Net);}
+
     let mut s = BTreeMap::new();
     let eq = &run.equity;
     let yrs = years(ctx, run.from, run.to);
@@ -421,6 +434,8 @@ fn stats(ctx: &Ctx, run: &Run, cost: f64) -> BTreeMap<&'static str, f64> {
 /// Additive return accounting. Monetary sizing and exact intraday MAE/MFE are
 /// deliberately unavailable; changing a cost input does not manufacture them.
 fn financial_stats(ctx: &Ctx, run: &Run, costs: accounting::Costs) -> BTreeMap<&'static str,f64> {
+    if let Some(report)=&run.unit_exposure_report {return report.financial_stats(ctx,&run.trades,run.from,run.to);}
+
     if let Some(account)=&run.bandy_account {
         let mut s=stats(ctx,run,costs.side_rate());
         let zero=Run{trades:run.trades.clone(),from:run.from,to:run.to,equity:account.days.iter().map(|d|d.gross).collect(),bh:run.bh.clone(),source_account:None,bandy_account:Some(account.clone()),unit_exposure_report:None};
@@ -460,6 +475,8 @@ fn financial_stats(ctx: &Ctx, run: &Run, costs: accounting::Costs) -> BTreeMap<&
 }
 
 fn benchmark_stats(ctx:&Ctx,run:&Run)->BTreeMap<&'static str,f64>{
+    if let Some(report)=&run.unit_exposure_report {return report.benchmark_stats(ctx,run.from,run.to);}
+
     let benchmark=Run{trades:vec![],from:run.from,to:run.to,equity:run.bh.clone(),bh:run.bh.clone(),source_account:None,bandy_account:None,unit_exposure_report:None};
     let all=stats(ctx,&benchmark,0.);
     ["total_return","cagr","sharpe","max_dd","vol","sortino","mar"].into_iter().map(|k|(k,all[k])).collect()
@@ -543,7 +560,7 @@ fn readiness_json(st: &State, q: &BTreeMap<String, String>) -> Result<String, St
         let note=if let Some(roll)=costs.rollover_issue(){if issue.is_none(){status="needs_data";}format!("{note} {roll}")}else{note.into()};
         format!("{{\"id\":\"{}\",\"status\":\"{}\",\"note\":\"{}\"}}",d.id,status,esc(&note))
     }).collect();
-    Ok(format!("{{\"ticker\":\"{}\",\"from\":\"{}\",\"to\":\"{}\",\"strategies\":[{}],\"costs\":{},\"provenance\":{}}}",esc(&ctx.r[0].ticker),ctx.r[from].date,ctx.r[to].date,rows.join(","),costs.json(),source_provenance(st,q)))
+    Ok(format!("{{\"ticker\":\"{}\",\"from\":\"{}\",\"to\":\"{}\",\"strategies\":[{}],\"costs\":{},\"provenance\":{}}}",esc(&ctx.r[0].ticker),ctx.r[from].date,ctx.r[to].date,rows.join(","),if q.get("id").is_some_and(|id|books::hbqts::reviewed::is_dema_index(id)){unit_exposure_report::costs_json(costs)}else{costs.json()},source_provenance(st,q)))
 }
 
 // ---------------------------------------------------------------- http
@@ -947,6 +964,8 @@ fn window_start(ctx: &Ctx, d: &connors::StrategyDef, from: usize) -> Option<usiz
 }
 
 fn summary(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
+    if q.get("id").is_some_and(|id|books::hbqts::reviewed::is_dema_index(id)){checked_params_of(q)?;}
+
     let selected=select_context(st,q)?;let held=selected.context(st);
     let definitions=query_catalogue(q);
     let single_session_catalogue=!q.contains_key("id") && definitions.iter().any(|d|reviewed_single_session(d.id));
@@ -966,8 +985,8 @@ fn summary(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         let run = match backtest_costs(ctx,d.id,from,to,costs,&Params::new()){Ok(run)=>run,Err(note)=>{rows.push(format!("{{\"id\":\"{}\",\"blocked\":\"{}\",\"readiness\":\"calculation_unavailable\"}}",d.id,esc(&note)));continue;}};
         // ~120-point equity sparkline for the strategy list
         let step = (run.equity.len() / 120).max(1);
-        let spark: Vec<String> = run.equity.iter().step_by(step).map(|v| num(*v)).collect();
-        rows.push(format!("{{\"id\":\"{}\",\"stats\":{},\"spark\":[{}],\"costs\":{}}}", d.id, stats_json(&financial_stats(ctx, &run, costs)), spark.join(","),if run.bandy_account.is_some(){bandy_costs_json(costs)}else if run.source_account.is_some(){costs.source_account_json()}else{costs.json()}));
+        let spark: Vec<String> = run.equity.iter().step_by(step).map(|v| if run.unit_exposure_report.is_some(){unit_exposure_report::number(*v)}else{num(*v)}).collect();
+        rows.push(format!("{{\"id\":\"{}\",\"stats\":{},\"spark\":[{}],\"costs\":{}}}", d.id, if run.unit_exposure_report.is_some(){unit_exposure_report::stats_json(&financial_stats(ctx,&run,costs))}else{stats_json(&financial_stats(ctx, &run, costs))}, spark.join(","),if run.unit_exposure_report.is_some(){unit_exposure_report::costs_json(costs)}else if run.bandy_account.is_some(){bandy_costs_json(costs)}else if run.source_account.is_some(){costs.source_account_json()}else{costs.json()}));
         if d.book==books::chande::BOOK {let item=rows.last_mut().unwrap();item.pop();let _=write!(item,",\"experiment\":{}}}",experiment_json(d.id));}
         if selected.native(){let item=rows.last_mut().unwrap();item.pop();let _=write!(item,",\"provenance\":{}}}",source_provenance(st,q));}
     }
@@ -1057,6 +1076,9 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     costs.ensure_rollover()?;
     let from = window_start(ctx, def, from).filter(|&f| f < to || (f==to && reviewed_single_session(id))).ok_or("Required volatility-index data does not cover this period")?;
     let run = backtest_costs(ctx, id, from, to, costs, &p)?;
+    if run.unit_exposure_report.is_some() {
+        let mut output=unit_exposure_detail::render(ctx,&run,costs)?;output.pop();let _=write!(output,",\"provenance\":{}}}",source_provenance(st,q));return Ok(output);
+    }
     if run.bandy_account.is_some() {
         let mut output=bandy_detail(ctx,id,from,to,costs,&run);output.pop();let _=write!(output,",\"provenance\":{}}}",source_provenance(st,q));return Ok(output);
     }
@@ -1242,7 +1264,8 @@ fn optimize(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> 
         Ok(out)
     };
     let book_metrics=metrics_v(&Params::new())?;
-    let metrics = book_metrics.iter().map(|v|num(*v)).collect::<Vec<_>>().join(",");
+    let serialize_stat:fn(f64)->String=if books::hbqts::reviewed::is_dema_index(id){unit_exposure_report::statistic_number}else{num};
+    let metrics = book_metrics.iter().map(|v|serialize_stat(*v)).collect::<Vec<_>>().join(",");
     let threads = std::thread::available_parallelism().map_or(4, |n| n.get()).min(combos);
     // each row: parameter values, then FULL_COLS (and IS/OOS PART_COLS)
     let rows_v: Vec<Vec<f64>> = std::thread::scope(|sc| -> Result<Vec<Vec<f64>>,String> {
@@ -1286,7 +1309,7 @@ fn optimize(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> 
     let (rank_json, pool) = conclude_rank_with_outcomes(&rows_v, col("trades"), &RANK_STATS.map(|(k, _)| col(k)), min_trades, per_year, &defs,Some(&outcome_cols));
     // slim=1: only the ranked candidates' rows (as {"index": row}), so the conclusion view does not download every combo
     let slim = q.get("slim").is_some_and(|v| v == "1");
-    let row_s = |r: &Vec<f64>| format!("[{}]", r.iter().map(|v| num(*v)).collect::<Vec<_>>().join(","));
+    let row_s = |r: &Vec<f64>| format!("[{}]", r.iter().map(|v| serialize_stat(*v)).collect::<Vec<_>>().join(","));
     let rows: Vec<String> = if slim { vec![] } else { rows_v.iter().map(row_s).collect() };
     let picked: Vec<String> = if slim { pool.iter().map(|&i| format!("\"{i}\":{}", row_s(&rows_v[i]))).collect() } else { vec![] };
     let mut cols: Vec<String> = dims.iter().map(|d| format!("\"p.{}\"", d.0)).collect();
@@ -1294,12 +1317,12 @@ fn optimize(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> 
     for part in split.map(|_| ["is_", "oos_"]).into_iter().flatten() {
         cols.extend(PART_COLS.iter().map(|c| format!("\"{part}{c}\"")));
     }
-    let dims_json: Vec<String> = dims.iter().map(|(k, v)| format!("{{\"key\":\"{k}\",\"values\":[{}]}}", v.iter().map(|x| num(*x)).collect::<Vec<_>>().join(","))).collect();
-    let fixed: Vec<String> = base.iter().map(|(k, v)| format!("\"{}\":{}", esc(k), num(*v))).collect();
+    let dims_json: Vec<String> = dims.iter().map(|(k, v)| format!("{{\"key\":\"{k}\",\"values\":[{}]}}", v.iter().map(|x| serialize_stat(*x)).collect::<Vec<_>>().join(","))).collect();
+    let fixed: Vec<String> = base.iter().map(|(k, v)| format!("\"{}\":{}", esc(k), serialize_stat(*v))).collect();
     Ok(format!(
         "{{\"id\":\"{id}\",\"from\":\"{}\",\"to\":\"{}\",\"split\":{},\"combos\":{combos},\"threads\":{threads},\"ms\":{},\"dims\":[{}],\"fixed\":{{{}}},\"cols\":[{}],\"book\":[{}],\"rank\":{rank_json},\"picked\":{{{}}},\"rows\":[{}],\"costs\":{},\"provenance\":{},\"experiment\":{}}}",
         dates[from], dates[to], split.map_or("null".into(), |s| format!("\"{}\"", dates[s])), t0.elapsed().as_millis(),
-        dims_json.join(","), fixed.join(","), cols.join(","), metrics, picked.join(","), rows.join(","),if books::hbiab_reviewed::reviewed(id){bandy_costs_json(costs)}else if id==books::elcim_account::ID{costs.source_account_json()}else{costs.json()},source_provenance(st,q),experiment_json(id)
+        dims_json.join(","), fixed.join(","), cols.join(","), metrics, picked.join(","), rows.join(","),if books::hbqts::reviewed::is_dema_index(id){unit_exposure_report::costs_json(costs)}else if books::hbiab_reviewed::reviewed(id){bandy_costs_json(costs)}else if id==books::elcim_account::ID{costs.source_account_json()}else{costs.json()},source_provenance(st,q),experiment_json(id)
     ))
 }
 
@@ -2011,6 +2034,13 @@ mod tests {
                 // warmup. Its opt-in AAPL/RELIANCE evidence test covers account
                 // conservation; a Nifty/from-zero corpus shortcut cannot do so.
                 assert!(instrument_policy::check(d,"NIFTY 50",false).is_some());
+                continue;
+            }
+            if books::hbqts::reviewed::is_dema_index(d.id) {
+                // Canonical factor rounding is separately source/ref checked;
+                // this preserved legacy Trade::ret shortcut is not its model.
+                assert!(instrument_policy::check(d,"NIFTY 50",false).is_none());
+                assert!(backtest(&ctx,d.id,0,rows.len()-1,0.,&Params::new()).unwrap_err().contains("separate fee/slippage"));
                 continue;
             }
             for cost in [0.0, 0.0005] {

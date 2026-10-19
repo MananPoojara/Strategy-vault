@@ -66,13 +66,12 @@ fn dump_case() {
     let fp=full_precision_trade_return;
     let indicators=(0..=to).map(|i|format!("{{\"source_index\":{i},\"date\":\"{}\",\"close\":{},\"dema16\":{},\"dema8\":{},\"raw_buy\":{},\"reverse_cross\":{},\"raw_bars_since_buy\":{},\"raw_sell\":{},\"filtered_sell\":{}}}",rows[i].date,fp(x.c[i]),fp(s.dema16[i]),fp(s.dema8[i]),s.raw_buy[i],s.reverse_cross[i],s.raw_bars_since_buy[i].map_or("null".into(),|v|v.to_string()),s.raw_sell[i],s.filtered_sell[i])).collect::<Vec<_>>().join(",");
     let array=|v:&[f64]|v.iter().copied().map(fp).collect::<Vec<_>>().join(",");
-    let mut allocation=1.;
-    let trades=run.trades.iter().map(|t|{
-        let ledger=accounting::TradeLedger::new(x,t,allocation,costs);
-        let result=format!("{{\"entry_i\":{},\"exit_i\":{},\"signal_i\":{},\"entry_px\":{},\"exit_px\":{},\"weight\":{},\"open\":{},\"gross_ret\":{},\"net_ret\":{},\"fee_ret\":{},\"slippage_ret\":{},\"entry_allocation\":{},\"gross_contribution\":{},\"net_contribution\":{},\"fee_contribution\":{},\"slippage_contribution\":{}}}",t.legs[0].i,t.exit_i,t.signal_i,fp(t.legs[0].px),fp(t.exit_px),fp(t.legs[0].w),t.open,fp(ledger.gross_ret),fp(ledger.net_ret),fp(ledger.fee_ret),fp(ledger.slippage_ret),fp(allocation),fp(ledger.gross_pnl),fp(ledger.net_pnl),fp(ledger.fees),fp(ledger.slippage));
-        allocation*=1.+ledger.net_ret;result
+    let report=run.unit_exposure_report.as_ref().unwrap();
+    let trades=run.trades.iter().zip(&report.trade_returns).map(|(t,a)|{
+        format!("{{\"entry_i\":{},\"exit_i\":{},\"signal_i\":{},\"entry_px\":{},\"exit_px\":{},\"weight\":{},\"open\":{},\"gross_ret\":{},\"net_ret\":{},\"fee_ret\":{},\"slippage_ret\":{},\"entry_allocation\":{},\"gross_contribution\":{},\"net_contribution\":{},\"fee_contribution\":{},\"slippage_contribution\":{}}}",t.legs[0].i,t.exit_i,t.signal_i,fp(t.legs[0].px),fp(t.exit_px),fp(t.legs[0].w),t.open,fp(a.gross_return),fp(a.net_return),fp(a.fee_return),fp(a.slippage_return),fp(a.entry_allocation),fp(a.gross_contribution),fp(a.net_contribution),fp(a.fee_contribution),fp(a.slippage_contribution))
     }).collect::<Vec<_>>().join(",");
-    let gross=equity_curve(&x.c,&run.trades,from,to,0.);
-    let result=format!("{{\"payload\":{payload},\"indicators\":[{indicators}],\"raw\":{{\"from\":{from},\"to\":{to},\"equity\":[{}],\"gross_equity\":[{}],\"bh\":[{}],\"trades\":[{trades}]}}}}",array(&run.equity),array(&gross),array(&run.bh));
+    let gross=report.days.iter().map(|d|d.gross_equity).collect::<Vec<_>>();
+    let raw_stats=|s:BTreeMap<&'static str,f64>|format!("{{{}}}",s.iter().map(|(k,v)|format!("\"{k}\":{}",fp(*v))).collect::<Vec<_>>().join(","));
+    let result=format!("{{\"payload\":{payload},\"indicators\":[{indicators}],\"raw\":{{\"from\":{from},\"to\":{to},\"equity\":[{}],\"gross_equity\":[{}],\"bh\":[{}],\"trades\":[{trades}],\"stats\":{},\"gross_stats\":{},\"benchmark_stats\":{}}}}}",array(&run.equity),array(&gross),array(&run.bh),raw_stats(report.financial_stats(x,&run.trades,from,to)),raw_stats(report.common_stats(x,&run.trades,from,to,unit_exposure_report::View::Gross)),raw_stats(report.benchmark_stats(x,from,to)));
     std::fs::write(std::env::var("DEMA_CASE_OUTPUT").unwrap(),result).unwrap();
 }

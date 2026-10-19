@@ -10,8 +10,8 @@ pub const IDS: &[&str] = &[
 ];
 
 pub const DEMA_INDEX_ID: &str = "hbqts_dema16_8";
-pub const DEMA_INDEX_CONVENTION: &str = "qts_dema16_8_first_close_index_unit_exposure_v1";
-pub const DEMA_INDEX_BASIS: &str = "Bandy Quantitative Trading Systems (2007), Figure A.7 printed322-323; printed324 illustrates the S&P500 cash index. Fixed ordered DEMA16/8 crossing, reverse crossing or one observed bar since raw Buy, then ExRem(Sell,Buy). Both internal DEMA states start at the first supplied close, following the official developer's dated2003 loop; no standalone-EMA SMA seed or native binary parity claim. Daily finalized same-close fills, zero delay and one normalized long unit-exposure position are declared research conventions for omitted settings. Full genuine prefix, flat selected start and terminal open marks retained. Actual SPX is the primary index application; actual NIFTY50 is a separately declared cash-index adaptation. Stocks, ETFs and derivatives are not substitutes. Book optimization, objective-function rankings and reported equity are not reproduced. Return-only unit compounding uses declared entry-allocation cost deductions and estimated terminal liquidation costs, without funded capital, actual cash/share quantities or statutory taxes.";
+pub const DEMA_INDEX_CONVENTION: &str = crate::unit_exposure_report::CONVENTION;
+pub const DEMA_INDEX_BASIS: &str = crate::unit_exposure_report::BASIS;
 
 pub fn is_dema_index(id: &str) -> bool { id == DEMA_INDEX_ID }
 pub fn validate_dema_index(p: &Params) -> Option<String> {
