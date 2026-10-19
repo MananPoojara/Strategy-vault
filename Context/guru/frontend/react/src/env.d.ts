@@ -4,6 +4,7 @@ export interface VaultRuntimeContract {
   bootstrap(account: Account): Promise<void>;
   commit(): void;
   cleanup(): void;
+  activateReportTab?(): void;
   patch(patch: Record<string, string>): void;
   changeTheme(theme: string): void;
   openAuthor(id: string, event?: unknown): void;

@@ -3,6 +3,8 @@ import { ResearchMarkup } from "../components/ResearchMarkup";
 import { StrategySettings } from "../components/StrategySettings";
 import {SourceAccountNotice} from "../components/SourceAccountNotice";
 import {RulesVisualGuide} from "../components/RulesVisualGuide";
+import {useLayoutEffect, useMemo, useState} from "react";
+import {prepareStrategyReport, REPORT_TABS, type ReportTabId} from "../services/strategy-report-layout";
 // These presenters preserve reviewed rules, admission notices, charts and exports.
 // The React-owned page boundary remounts when the immutable result revision changes.
 export function AuthorPage({ snapshot }: { snapshot: ViewSnapshot }) {
@@ -14,7 +16,29 @@ export function StrategiesPage({ snapshot }: { snapshot: ViewSnapshot }) {
 export function StrategyPage({ snapshot }: { snapshot: ViewSnapshot }) {
   const mode = snapshot.state.report_mode === "compound" ? "compound" : "fixed";
   const basket = snapshot.state.run_scope === "basket";
-  return <ResearchMarkup html={snapshot.html} slots={{
+  const report = useMemo(() => prepareStrategyReport(snapshot.html), [snapshot.html]);
+  const [selectedTab, setSelectedTab] = useState<ReportTabId>("equity");
+  const activeTab = report.tabs.includes(selectedTab) ? selectedTab : "equity";
+  const tabs = REPORT_TABS.filter(tab => report.tabs.includes(tab.id));
+  useLayoutEffect(() => {
+    if (tabs.length) window.VaultRuntime?.activateReportTab?.();
+  }, [activeTab, snapshot.revision, tabs.length]);
+  return <ResearchMarkup html={snapshot.html} report={report} activeReportTab={activeTab} slots={{
+    "report-tabs": <div className="report-tabs" role="tablist" aria-label="Backtest report views">
+      {tabs.map((tab, index) => <button key={tab.id} type="button" role="tab"
+        id={`report-tab-${tab.id}`} aria-controls={`report-panel-${tab.id}`}
+        aria-selected={activeTab === tab.id} tabIndex={activeTab === tab.id ? 0 : -1}
+        onClick={() => {if (!document.body.classList.contains("pdf-capture")) setSelectedTab(tab.id);}} onKeyDown={event => {
+          if (document.body.classList.contains("pdf-capture")) return;
+          const next = event.key === "ArrowRight" ? (index + 1) % tabs.length
+            : event.key === "ArrowLeft" ? (index + tabs.length - 1) % tabs.length
+            : event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : null;
+          if (next === null) return;
+          event.preventDefault(); setSelectedTab(tabs[next].id);
+          const button = document.getElementById(`report-tab-${tabs[next].id}`);
+          button?.focus(); button?.scrollIntoView?.({block: "nearest", inline: "nearest"});
+        }}>{tab.label}</button>)}
+    </div>,
     "visual-rules": snapshot.strategyRules ? <RulesVisualGuide model={snapshot.strategyRules} /> : null,
     "strategy-settings": <StrategySettings
       mode={mode}

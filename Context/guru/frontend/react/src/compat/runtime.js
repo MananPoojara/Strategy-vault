@@ -152,12 +152,13 @@ window.VaultUI=(()=>{
   const assertSame=()=>{if(location.href!==url||document.getElementById('main')!==root){const error=Error('The page changed while preparing the PDF. Download it again on the desired report.');error.name='ReportChangedError';throw error;}};
   await loadScript('vendor/html2canvas-1.4.1.min.js');await loadScript('vendor/jspdf-2.5.1.umd.min.js');assertSame();
   finishMetricAnimations();const closed=[...document.querySelectorAll('details:not([open])')];closed.forEach(d=>d.open=true);document.body.classList.add('pdf-capture');
-  try{const width=Math.max(1,root.scrollWidth||document.documentElement.scrollWidth||1),height=Math.max(1,root.scrollHeight||root.getBoundingClientRect().height||1),scale=Math.min(2,window.devicePixelRatio||1.5,Math.sqrt(16000000/(width*height)));
+  const ranges=CHARTS.map(({ch})=>({ch,range:ch.timeScale().getVisibleLogicalRange()}));
+  try{await drawVisibleReportCharts();resizeVisibleReportCharts();await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));assertSame();const width=Math.max(1,root.scrollWidth||document.documentElement.scrollWidth||1),height=Math.max(1,root.scrollHeight||root.getBoundingClientRect().height||1),scale=Math.min(2,window.devicePixelRatio||1.5,Math.sqrt(16000000/(width*height)));
    const canvas=await html2canvas(root,{scale,useCORS:true,backgroundColor:toRgb(getComputedStyle(document.body).backgroundColor)||'#fff',windowWidth:document.documentElement.scrollWidth,onclone:plainColors});assertSame();
    const {jsPDF}=window.jspdf,doc=new jsPDF({unit:'pt',format:'a4',compress:true}),W=doc.internal.pageSize.getWidth(),H=doc.internal.pageSize.getHeight(),m=18,iw=W-2*m,pageH=Math.max(1,Math.floor(canvas.width*(H-2*m)/iw));
    for(let y=0,n=0;y<canvas.height;y+=pageH,n++){const slice=document.createElement('canvas');slice.width=canvas.width;slice.height=Math.min(pageH,canvas.height-y);slice.getContext('2d').drawImage(canvas,0,-y);if(n)doc.addPage();doc.addImage(slice.toDataURL('image/jpeg',.9),'JPEG',m,m,iw,slice.height*iw/canvas.width);slice.width=slice.height=1;}
    doc.setProperties({title:name.replace(/\.pdf$/,''),subject:url});return new File([doc.output('blob')],name,{type:'application/pdf'});
-  }finally{document.body.classList.remove('pdf-capture');closed.forEach(d=>d.open=false);}}
+  }finally{document.body.classList.remove('pdf-capture');closed.forEach(d=>d.open=false);resizeVisibleReportCharts();for(const {ch,range}of ranges)if(range&&CHARTS.some(item=>item.ch===ch))ch.timeScale().setVisibleLogicalRange(range);}}
  const download=file=>downloadBlob(file,file.name);
  async function copyLink(url){try{if(!navigator.clipboard?.writeText)throw Error('Clipboard API unavailable');await navigator.clipboard.writeText(url);return true;}catch{const field=document.createElement('textarea');field.value=url;field.setAttribute('aria-label','Shareable page link');field.style.position='fixed';field.style.opacity='0';document.body.append(field);field.select();try{return !!document.execCommand?.('copy');}finally{field.remove();}}}
  const shareText=()=>`${(document.querySelector('h1.st')?.textContent||'Strategy Vault').trim()} — Strategy Vault backtest`;
@@ -170,7 +171,7 @@ window.VaultUI=(()=>{
  const KIND=b=>b.dataset.chartSnapshot?'png':b.id==='csv'?'csv':'xls';
  function iconize(root=document){
   root.querySelectorAll('[data-chart-snapshot],[data-report-export],#csv,#trades-xlsx').forEach(b=>{if(b.classList.contains('ibtn'))return;const label=b.textContent.trim()||'Download';const k=KIND(b);b.className=`ibtn`;b.title=label;b.setAttribute('aria-label',label);b.innerHTML=ICON[k];});
-  root.querySelectorAll('.box > .chart-tools, .box > .detail-tools').forEach(t=>{const h=t.parentElement.querySelector(':scope > .box-h');if(h&&!h.querySelector('.box-tools')){t.classList.add('box-tools');h.append(t);}});
+  root.querySelectorAll('.box > .chart-tools, .box > .detail-tools, .report-panel > .chart-tools').forEach(t=>{const h=t.parentElement.querySelector(':scope > .box-h');if(h&&!h.querySelector('.box-tools')){t.classList.add('box-tools');h.append(t);}});
   
  }
  document.addEventListener('click',e=>{const s=e.target.closest('[data-share]');if(s){share(s.dataset.share);return;}const m=document.querySelector('.share-menu');if(m&&!m.hidden&&!e.target.closest('.share-menu,[data-action="share-menu"]'))m.hidden=true;});
@@ -1545,7 +1546,7 @@ async function viewStrategy() {
     ${account?'<section class="box"><div class="box-h">Reviewed parameter scope</div><p class="rnote">This protected account is limited to the fixed reviewed configuration. Changed indicator, stop or risk settings need separate source and ledger review; no optimization selection inherits this acceptance.</p></section>':await optimSection(v, tk, d, false)}`;
 }
 let RULE_VISUAL=null;
-let STRAT = null, CHARTS = [], METRIC_ANIMATIONS = [],INDICATOR_CHARTS=null;
+let STRAT = null, CHARTS = [], METRIC_ANIMATIONS = [],INDICATOR_CHARTS=null,REPORT_OBSERVER=null,SIGNAL_REQUEST=0,SIGNAL_PENDING=null;
 function finishMetricAnimations(){METRIC_ANIMATIONS.forEach(a=>a.stop?.());METRIC_ANIMATIONS=[];if(!STRAT?.tiles)return;document.querySelectorAll('[data-tile]').forEach(el=>{const tile=STRAT.tiles[+el.dataset.tile];if(tile)el.textContent=tile[2](tile[1]);});}
 
 // ---------------------------------------------------------------- Bklit-style interactive SVG charts (gradient area, crosshair + tooltip, spring bars)
@@ -1609,9 +1610,9 @@ function heatTable(d) {
 }
 async function drawSignals(tf) {
   const el = $('#c-px'); if (!el || !STRAT) return; const { d } = STRAT;
-  const generation=busy,snapshot=STRAT;
+  const generation=busy,snapshot=STRAT,request=++SIGNAL_REQUEST;
   const px = tf === 'D' ? STRAT.px : STRAT.px?.full_history||STRAT.d.ohlc?VaultReport.aggregate(STRAT.px,tf):await ohlc(STRAT.tk, tf);
-  if(generation!==busy||snapshot!==STRAT||tf!==TF||!el.isConnected)return;
+  if(generation!==busy||snapshot!==STRAT||tf!==TF||request!==SIGNAL_REQUEST||!reportVisible(el))return;
   INDICATOR_CHARTS?.dispose();INDICATOR_CHARTS=null;
   if (PXCH) { try { PXCH.__ro?.disconnect(); PXCH.remove(); } catch (e) {} CHARTS = CHARTS.filter(c => c.ch !== PXCH); PXCH = null; } el.innerHTML = '';
   if (!px || !window.LightweightCharts) { el.innerHTML = '<div class="empty">Price data not available for this index.</div>'; return; }
@@ -1634,7 +1635,7 @@ async function drawSignals(tf) {
   el.style.position = 'relative';
   const ov = document.createElement('canvas'); ov.className = 'zone-ov'; el.appendChild(ov);
   const draw = () => {
-    if (PXCH !== ch || !el.isConnected) return; // the chart was replaced (new period / timeframe): stop drawing on it
+    if (PXCH !== ch || !el.isConnected || !el.clientWidth || !el.clientHeight) return; // hidden tabs retain their last valid chart geometry
     const ts = ch.timeScale(), w = el.clientWidth, h = el.clientHeight, dpr = devicePixelRatio || 1, plotW = w - ch.priceScale('right').width(), plotH = h - ts.height();
     ov.width = w * dpr; ov.height = h * dpr; ov.style.width = w + 'px'; ov.style.height = h + 'px';
     const g = ov.getContext('2d'); g.scale(dpr, dpr); g.clearRect(0, 0, w, h); g.save(); g.beginPath(); g.rect(0, 0, plotW, plotH); g.clip();
@@ -1676,8 +1677,25 @@ function drawStrategy() {
   // count-up tiles
   finishMetricAnimations(); // Financial values are shown atomically, without intermediate mixed counts/returns.
   });
-  // equity: same TradingView chart as the main app
+  if(d.kind!=='basket')safe('optim', optimInit);
+  const report=document.querySelector('[data-strategy-report]');
+  if(report&&typeof ResizeObserver==='function'){
+    REPORT_OBSERVER?.disconnect();REPORT_OBSERVER=new ResizeObserver(()=>resizeVisibleReportCharts());REPORT_OBSERVER.observe(report);
+  }
+  void drawVisibleReportCharts();
+  if($('#heat-palette')){$('#heat-palette').value=HEAT_PALETTE;$('#heat-palette').onchange=e=>{HEAT_PALETTE=e.target.value;$('#heatbox').innerHTML=heatTable(d);};}
+}
+const reportVisible=el=>!!(el?.isConnected&&el.clientWidth&&el.clientHeight);
+function resizeVisibleReportCharts(){
+  CHARTS.forEach(({ch,el})=>{if(reportVisible(el))ch.resize(el.clientWidth,el.clientHeight);});
+  if(STRAT&&!R.optim)void drawVisibleReportCharts();
+}
+async function drawVisibleReportCharts(){
+  if(!STRAT||R.optim)return;const {d}=STRAT;
+  // Each widget is initialized only after its existing container is visible.
+  // Keeping it mounted preserves range, series toggles and indicator choices.
   safe('equity', () => { const el = $('#c-eq'); if (el && window.LightweightCharts) {
+    if(!reportVisible(el)||CHARTS.some(item=>item.el===el))return;
     const L = LightweightCharts, fmt = { type: 'custom', formatter: v => v.toFixed(2) + '×', minMove: 0.01 };
     const ch = L.createChart(el, { width: el.clientWidth, height: el.clientHeight, layout: { attributionLogo: false, background: { color: cv('--panel') }, textColor: cv('--ink3'), fontFamily: getComputedStyle(document.body).fontFamily, fontSize: 11 },
       grid: { vertLines: { visible: false }, horzLines: { color: cv('--rule') } }, rightPriceScale: { borderColor: cv('--steel'), mode: L.PriceScaleMode.Logarithmic }, timeScale: { borderColor: cv('--steel'), minBarSpacing: 0.01 }, crosshair: { mode: L.CrosshairMode.Normal }, handleScale: { axisPressedMouseMove: false } });
@@ -1688,13 +1706,21 @@ function drawStrategy() {
     $('#cmp').onchange = e => bh.applyOptions({ visible: e.target.checked });
     $('#logs').onchange = e => ch.priceScale('right').applyOptions({ mode: e.target.checked ? L.PriceScaleMode.Logarithmic : L.PriceScaleMode.Normal });
   } });
-  if(d.kind!=='basket')safe('signals', () => drawSignals(TF));
-  if(d.kind!=='basket')safe('optim', optimInit);
-  safe('drawdown', () => { let pk = 1; const dd = d.equity.map(v => { pk = Math.max(pk, v); return v / pk - 1; }); bkArea($('#c-dd'), d.dates, dd, { color: cv('--red'), fmt: v => pct(v, 2), axFmt: pctAx, markMin: true }); });
-  safe('years', () => { const ys = periods(d, 4), yb = periods({ dates: d.dates, equity: d.bh }, 4); bkBars($('#c-yr'), Object.keys(ys).map(k => ({ label: k, a: ys[k], b: yb[k] })), {}); });
-  if($('#heat-palette')){$('#heat-palette').value=HEAT_PALETTE;$('#heat-palette').onchange=e=>{HEAT_PALETTE=e.target.value;$('#heatbox').innerHTML=heatTable(d);};}
+  if(d.kind!=='basket'&&reportVisible($('#c-px'))&&!PXCH){
+    const snapshot=STRAT,tf=TF;
+    if(!SIGNAL_PENDING||SIGNAL_PENDING.snapshot!==snapshot||SIGNAL_PENDING.tf!==tf){
+      const pending={snapshot,tf,promise:drawSignals(tf)};SIGNAL_PENDING=pending;
+      pending.promise.finally(()=>{if(SIGNAL_PENDING===pending)SIGNAL_PENDING=null;}).catch(error=>console.warn('signals',error));
+    }
+    await SIGNAL_PENDING.promise;
+    if(snapshot!==STRAT)return;
+  }
+  safe('drawdown', () => { const el=$('#c-dd');if(!reportVisible(el)||el.dataset.reportWidth===String(el.clientWidth))return;let pk = 1; const dd = d.equity.map(v => { pk = Math.max(pk, v); return v / pk - 1; }); bkArea(el, d.dates, dd, { color: cv('--red'), fmt: v => pct(v, 2), axFmt: pctAx, markMin: true });el.dataset.reportWidth=String(el.clientWidth); });
+  safe('years', () => { const el=$('#c-yr');if(!reportVisible(el)||el.dataset.reportWidth===String(el.clientWidth))return;const ys = periods(d, 4), yb = periods({ dates: d.dates, equity: d.bh }, 4); bkBars(el, Object.keys(ys).map(k => ({ label: k, a: ys[k], b: yb[k] })), {});el.dataset.reportWidth=String(el.clientWidth); });
 }
-addEventListener('resize', () => CHARTS.forEach(({ ch, el }) => ch.resize(el.clientWidth, el.clientHeight)));
+addEventListener('resize',resizeVisibleReportCharts);
+addEventListener('beforeprint',()=>{document.body.classList.add('report-print');resizeVisibleReportCharts();});
+addEventListener('afterprint',()=>{document.body.classList.remove('report-print');resizeVisibleReportCharts();});
 
 // ---------------------------------------------------------------- render + motion
 let busy = 0, lastName = '', LIST_HASH = ''; // the list (with its filters) the user last looked at
@@ -1729,6 +1755,8 @@ async function render() {
 }
 let pendingFocus=null;
 function cleanupCharts(){
+  SIGNAL_REQUEST++;SIGNAL_PENDING=null;
+  REPORT_OBSERVER?.disconnect();REPORT_OBSERVER=null;
   INDICATOR_CHARTS?.dispose();INDICATOR_CHARTS=null;
   METRIC_ANIMATIONS.forEach(animation=>animation.stop?.());METRIC_ANIMATIONS=[];
   CHARTS.forEach(({ch})=>{try{ch.__ro?.disconnect();ch.remove();}catch{}});CHARTS=[];PXCH=null;
@@ -1848,6 +1876,7 @@ async function homeModel(){
 let startup;
 window.VaultRuntime={
  bootstrap:account=>startup||(startup=initializeRuntime(account)),commit:commitReactPage,cleanup:cleanupCharts,patch:setState,changeTheme:theme=>setTheme(theme,true),
+ activateReportTab:resizeVisibleReportCharts,
  openAuthor:(id,event)=>window.openGuru(id,event),closeAuthor:()=>window.closeGuru(),actions:()=>VaultUI.actions(),themes:THEMES,
  saved:()=>VaultUI.savedList().map(item=>({...item,book:BOOK[ALLCAT.find(v=>v.id===item.id)?.book]?.title||'',symbol:LABEL[item.tk]||item.tk})),removeSaved:key=>VaultUI.writeSaved(VaultUI.savedList().filter(item=>item.key!==key))
 };

@@ -6,18 +6,21 @@ import parse, {
   type DOMNode,
   type HTMLReactParserOptions,
 } from "html-react-parser";
+import {isMarkupElement, type ReportMarkup, type ReportTabId} from "../services/strategy-report-layout";
 /** Compatibility for existing source/rule presenters. Creates React nodes, never
  * executes inline HTML or evaluates handler strings. Chart widgets own only their
  * empty container children; the containing page remounts between result snapshots.
  * New pages use JSX directly. This is not an arbitrary user-HTML renderer. */
-export function ResearchMarkup({ html, slots = {} }: {
+export function ResearchMarkup({ html, slots = {}, report, activeReportTab }: {
   html: string;
+  report?: ReportMarkup;
+  activeReportTab?: ReportTabId;
   /** Components supplied by the owning React page, never by source HTML. */
   slots?: Readonly<Record<string, ReactNode>>;
 }) {
   const options: HTMLReactParserOptions = {
     replace(node, index) {
-      if (!(node instanceof Element)) return;
+      if (!(isMarkupElement(node))) return;
       if (
         [
           "script",
@@ -40,6 +43,8 @@ export function ResearchMarkup({ html, slots = {} }: {
           delete attributes[key];
       }
       const props: Record<string, unknown> = attributesToProps(attributes);
+      if (activeReportTab && attributes["data-report-panel"])
+        props.hidden = attributes["data-report-panel"] !== activeReportTab;
       const slot = attributes["data-react-slot"];
       if (
         slot &&
@@ -60,13 +65,13 @@ export function ResearchMarkup({ html, slots = {} }: {
       }
       if (node.name === "select") {
         const selected = (node.children as DOMNode[]).flatMap((child) =>
-          child instanceof Element
+          isMarkupElement(child)
             ? child.name === "option" && "selected" in child.attribs
               ? [child.attribs.value || ""]
               : child.children
                   .filter(
                     (x) =>
-                      x instanceof Element &&
+                      isMarkupElement(x) &&
                       x.name === "option" &&
                       "selected" in x.attribs,
                   )
@@ -118,5 +123,5 @@ export function ResearchMarkup({ html, slots = {} }: {
       );
     },
   };
-  return <>{parse(html, options)}</>;
+  return <>{report ? domToReact(report.nodes, options) : parse(html, options)}</>;
 }
