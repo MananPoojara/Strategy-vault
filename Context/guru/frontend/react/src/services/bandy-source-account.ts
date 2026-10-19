@@ -34,6 +34,9 @@ const dayString = (v: unknown): v is string => typeof v === "string" && /^\d{4}-
   && Number.isFinite(Date.parse(v)) && new Date(v).toISOString().slice(0, 10) === v;
 const count = (v: unknown): v is number => finite(v) && Number.isSafeInteger(v) && v >= 0;
 const close = (a: number, b: number) => Math.abs(a-b) <= 1e-10 * Math.max(1, Math.abs(a), Math.abs(b));
+// A positive modeled charge must not disappear inside an absolute NAV tolerance.
+const paidCost = (actual: number, expected: number) => expected === 0 ? actual === 0
+  : actual > 0 && Math.abs(actual-expected) <= 1e-10 * Math.max(Math.abs(actual),Math.abs(expected));
 // Only existing six-decimal prices/statistics need display-rounding tolerance.
 const displayed = (a: number, b: number) => Math.abs(a-b) <= 2.01e-6 * Math.max(1, Math.abs(a), Math.abs(b));
 const invalid = (): never => {throw new Error("The Bandy cash account response is missing or inconsistent. Results remain unavailable; reload after the account contract is restored.");};
@@ -58,7 +61,7 @@ export function parseBandySourceAccount(data: unknown, id?: string, book?: strin
   const costs=data.costs;
   if (!finite(costs.fees_bps) || !finite(costs.slippage_bps) || costs.fees_bps < 0 || costs.slippage_bps < 0
     || costs.fees_bps+costs.slippage_bps > 5000 || costs.rollover_bps !== 0
-    || costs.total_side_bps !== costs.fees_bps+costs.slippage_bps) return invalid();
+    || !finite(costs.total_side_bps) || !paidCost(costs.total_side_bps,costs.fees_bps+costs.slippage_bps)) return invalid();
   const side=(costs.fees_bps+costs.slippage_bps)/10000;
   const indices=new Map<string,number>(), numericDay=["equity","gross_same_quantity_equity","costs_paid","free_cash","quantity","position_value"];
   for (let i=0;i<a.days.length;i++) {
@@ -111,20 +114,20 @@ export function parseBandySourceAccount(data: unknown, id?: string, book?: strin
     if (t.open) {
       openCount++;
       if (i !== a.trade_accounts.length-1 || xi !== a.days.length-1 || t.exit_notional_units !== null || t.exit_signal_date !== null
-        || t.exit_cost_account_contribution !== 0 || !close(t.open_liquidation_cost_estimate,t.quantity*exitPrice*side)) return invalid();
+        || t.exit_cost_account_contribution !== 0 || !paidCost(t.open_liquidation_cost_estimate,t.quantity*exitPrice*side)) return invalid();
     } else {
       closed++;sum+=t.net_fraction_of_actual_entry_equity;
       if (!dayString(t.exit_signal_date) || t.exit_signal_date < t.entry_signal_date || t.exit_signal_date > t.exit
         || (macd ? indices.get(t.exit_signal_date) !== xi-1 : t.exit_signal_date !== t.exit)
         || !finite(t.exit_notional_units) || t.exit_notional_units <= 0 || !close(t.exit_notional_units,t.quantity*exitPrice)
-        || !close(t.exit_cost_account_contribution,t.exit_notional_units*side) || t.open_liquidation_cost_estimate !== 0) return invalid();
+        || !paidCost(t.exit_cost_account_contribution,t.exit_notional_units*side) || t.open_liquidation_cost_estimate !== 0) return invalid();
       exits.set(xi,t);
     }
     const account=trade.accounting;
     const paidNotional=t.entry_notional_units+(t.exit_notional_units || 0);
     if (!close(t.entry_notional_units,t.quantity*price) || !close(t.entry_allocation_fraction,t.entry_notional_units/t.entry_equity_units)
       || !close(t.entry_allocation_fraction,macd ? .25 : 1/(1+side))
-      || !close(t.entry_cost_account_contribution,t.entry_notional_units*side)
+      || !paidCost(t.entry_cost_account_contribution,t.entry_notional_units*side)
       || !close(t.raw_instrument_gross_return,exitPrice/price-1)
       || !close(t.gross_account_contribution,t.quantity*(exitPrice-price))
       || !close(t.gross_account_contribution-t.entry_cost_account_contribution-t.exit_cost_account_contribution,t.net_account_contribution)
@@ -132,8 +135,8 @@ export function parseBandySourceAccount(data: unknown, id?: string, book?: strin
       || !close(t.net_fraction_of_actual_entry_equity,t.net_account_contribution/t.entry_equity_units)
       || !finite(account.gross_ret) || !finite(account.net_ret) || !finite(account.fee_ret) || !finite(account.slippage_ret)
       || !close(account.gross_ret,t.gross_fraction_of_actual_entry_equity) || !close(account.net_ret,t.net_fraction_of_actual_entry_equity)
-      || !close(account.fee_ret,paidNotional*costs.fees_bps/10000/t.entry_equity_units)
-      || !close(account.slippage_ret,paidNotional*costs.slippage_bps/10000/t.entry_equity_units)) return invalid();
+      || !paidCost(account.fee_ret,paidNotional*costs.fees_bps/10000/t.entry_equity_units)
+      || !paidCost(account.slippage_ret,paidNotional*costs.slippage_bps/10000/t.entry_equity_units)) return invalid();
     grossSum+=t.gross_account_contribution;netSum+=t.net_account_contribution;entries.set(ti,t);
   }
   let cash=1,paid=0,quantity=0;
@@ -144,7 +147,7 @@ export function parseBandySourceAccount(data: unknown, id?: string, book?: strin
       if (quantity !== 0 || !close(enter.entry_equity_units,cash)) return invalid();
       cash-=enter.entry_notional_units+enter.entry_cost_account_contribution;paid+=enter.entry_cost_account_contribution;quantity=enter.quantity;
     }
-    if (!close(cash,d.free_cash) || !close(paid,d.costs_paid) || !close(quantity,d.quantity)) return invalid();
+    if (!close(cash,d.free_cash) || !paidCost(d.costs_paid,paid) || !close(quantity,d.quantity)) return invalid();
   }
   const pending=a.pending_order;
   if (pending === null) {if (a.terminal_entry_pending || a.terminal_exit_pending) return invalid();}

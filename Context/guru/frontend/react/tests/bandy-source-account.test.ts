@@ -101,3 +101,22 @@ it('rejects stale or missing MACD signals and conflicting chart/tradesheet field
  ];
  for(const mutate of corrupt)expect(()=>parse(mutate(bandyAccountFixture(true)),true)).toThrow('Bandy cash account');
 });
+
+it('accepts fractional fee/slippage bps using arithmetic conservation instead of exact binary addition spelling',()=>{
+ const d=bandyAccountFixture(false,.3);d.costs.fees_bps=.1;d.costs.slippage_bps=.2;d.costs.total_side_bps=.3;
+ d.trades=d.trades.map((trade,i)=>{
+  const row=d.source_account.trade_accounts[i],notional=row.entry_notional_units+(row.exit_notional_units||0);
+  return {...trade,accounting:{...trade.accounting,fee_ret:notional*.1/10000/row.entry_equity_units,slippage_ret:notional*.2/10000/row.entry_equity_units}};
+ });
+ expect(.1+.2).not.toBe(.3);expect(parse(d).model).toBe(BANDY_ACCOUNT_MODEL);
+});
+
+it('retains tiny positive modeled costs and rejects zeroed paid charges or cost metadata',()=>{
+ const d=bandyAccountFixture(true,.0000003);expect(parse(d,true).model).toBe(BANDY_ACCOUNT_MODEL);
+ const t=d.source_account.trade_accounts[0];expect(t.entry_cost_account_contribution).toBeGreaterThan(0);expect(t.entry_cost_account_contribution).toBeLessThan(1e-10);
+ const omitted={...d,source_account:{...d.source_account,trade_accounts:d.source_account.trade_accounts.map((row,i)=>i===0?{...row,entry_cost_account_contribution:0}:row)}};
+ expect(()=>parse(omitted,true)).toThrow();
+ expect(()=>parse({...d,costs:{...d.costs,total_side_bps:0}},true)).toThrow();
+ expect(()=>parse({...d,trades:d.trades.map((row,i)=>i===0?{...row,accounting:{...row.accounting,slippage_ret:0}}:row)},true)).toThrow();
+ expect(()=>parse({...d,source_account:{...d.source_account,days:d.source_account.days.map((row,i)=>i===1?{...row,costs_paid:0}:row)}},true)).toThrow();
+});
