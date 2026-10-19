@@ -18,6 +18,51 @@ fn near(a: f64, b: f64) {
     assert!((a - b).abs() < 1e-11, "{a} vs {b}");
 }
 #[test]
+fn simple_source_raw_buy_clock_maturity_equality_and_prefixes() {
+    // Seven cases frozen from printed527-528 before this implementation.
+    let mut restarted=vec![100.;24]; restarted.extend([110.,90.,90.,90.,90.,120.,80.,80.,80.,80.,80.]);
+    let mut first=vec![100.;24]; first.push(110.);
+    let mut fifth=first.clone(); fifth.extend([90.;5]);
+    let mut equality=vec![100.;24]; equality.extend([124.,101.]);
+    let cases:Vec<(Vec<f64>,Vec<usize>,Vec<usize>)>=vec![
+        ((100..145).map(|v|v as f64).collect(),(24..45).collect(),vec![]),
+        (restarted,vec![24,29],vec![34]),
+        (vec![0.1283481;70],vec![],vec![]),
+        ({let mut c=vec![100.;23];c.push(110.);c},vec![],vec![]),
+        (first,vec![24],vec![]), (fifth,vec![24],vec![29]),
+        (equality,vec![24],vec![]),
+    ];
+    for (c,buys,sells) in cases {
+        let s=states_for_prices("hbiab_simple_ma25",&c).unwrap();
+        assert_eq!(s.buy.iter().enumerate().filter_map(|(i,&v)|v.then_some(i)).collect::<Vec<_>>(),buys);
+        assert_eq!(s.sell.iter().enumerate().filter_map(|(i,&v)|v.then_some(i)).collect::<Vec<_>>(),sells);
+        assert!(s.first.iter().take(24).all(|v|v.is_nan()));
+        for end in 1..=c.len() {
+            let p=states_for_prices("hbiab_simple_ma25",&c[..end]).unwrap();
+            assert_eq!(p.buy,s.buy[..end]); assert_eq!(p.sell,s.sell[..end]);
+        }
+    }
+}
+#[test]
+fn simple_account_retains_terminal_close_and_raw_clock_while_held() {
+    let mut c=vec![100.;24];c.extend([110.,90.,90.,90.,90.,120.,80.,80.,80.,80.,80.]);
+    let r=rows(&c);let x=Ctx::new(&r,&r,&[]);
+    let a=run_with_bps("hbiab_simple_ma25",&x,0,34,2.,3.,&Params::new()).unwrap();
+    assert_eq!(a.trades.len(),1);
+    assert_eq!((a.trades[0].legs[0].i,a.trades[0].exit_i,a.trades[0].entry_kind,a.trades[0].open),(24,34,"close",false));
+    assert_eq!(a.trades[0].reason,"five observed bars since latest raw Buy");
+    let terminal=run_with_bps("hbiab_simple_ma25",&x,24,24,2.,3.,&Params::new()).unwrap();
+    assert!(terminal.trades[0].open);assert_eq!(terminal.trade_audit[0].exit_cost,0.);
+    assert_eq!(terminal.basis,SIMPLE_BASIS);
+    assert!(terminal.json(&x).contains(SIMPLE_BASIS));
+    for id in ["hbiab_ma5_20","hbiab_ma7_4","hbiab_macd_example"] {
+        assert_eq!(basis(id),BASIS);assert_eq!(convention(id),CONVENTION);
+    }
+    let flat=run("hbiab_simple_ma25",&x,30,34,0.,&Params::new()).unwrap();
+    assert!(flat.trades.is_empty());
+    assert!(validate("hbiab_simple_ma25",&Params::from([("hold".into(),4.)])).is_some());
+}
+#[test]
 fn source_period_order_and_terminal_ma_close_entry() {
     let mut c = vec![100.; 20];
     c.extend([99., 110.]);

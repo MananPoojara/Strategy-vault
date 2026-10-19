@@ -1,13 +1,20 @@
-//! Three primary-source examples with an explicit normalized fractional cash account.
-//! Source/defaults and declared conventions: docs/hbiab-three-review.md.
+//! Bounded primary-source examples with an explicit normalized fractional cash account.
+//! Source/defaults: docs/hbiab-three-review.md and docs/hbiab-simple-system-review.md.
 use crate::connors::{Ctx, Leg, Params, Trade};
 use std::fmt::Write;
 #[path = "hbiab_decimal.rs"]
 mod decimal;
-pub const IDS: &[&str] = &["hbiab_ma5_20", "hbiab_ma7_4", "hbiab_macd_example"];
+pub const IDS: &[&str] = &["hbiab_ma5_20", "hbiab_ma7_4", "hbiab_macd_example", "hbiab_simple_ma25"];
 pub const MODEL: &str = "bandy_fixed_fraction_fractional_cash_v1";
 pub const CONVENTION: &str = "bandy_sma_seed_fractional_cash_v1";
 pub const BASIS:&str="Bandy Introduction to AmiBroker (2008), printed78/85/93-97/224-225/287/308/317/502-503. Exact ordered 5/20 and 7/4 SMA crosses; MACD 12/26/9 with declared SMA seeds. MA5/20 idealized same-close fills follow printed 503; MA 7/4 same-close fills and 100% fractional cash allocation are declared conventions. MACD uses source next-actual-open fills and 25% of current equity. MA entry fees reserve cash, reducing actual deployed fraction. Normalized account starts at 1, flat selected start, retains full supplied history, one long position, no pyramiding/stops/ranking or portfolio reproduction. Actual selected stocks and ordinary equity ETFs are separate research applications; no cash-index substitute. Open marks pay only actual entry costs; hypothetical liquidation costs are separate. Gross equity removes actual paid costs from identical accepted quantities. Source figures/capital, historical universes and native AmiBroker binary parity are not reproduced.";
+pub const SIMPLE_BASIS:&str="Bandy Introduction to AmiBroker (2008), printed527-528, SimpleSystem.afl interpretation/commentary teaching example shown on actual SPY; no printed performance study. MA25=MA(C,25), raw Buy=Close>MA25, Sell=BarsSince(raw Buy)>=5; every true raw Buy resets the clock even while held, and equality is false. Twenty-five genuine observations mature MA; no actionable sell before the first observed Buy and no native BarsSince sentinel claim. Daily finalized same-close fills, one long without pyramiding, 100% fractional current-equity target with entry-cost cash reserve are declared research conventions. Normalized initial equity1, full supplied signal history and flat selected account start; terminal entries remain open and pay actual entry cost only. Gross removes paid costs from identical accepted quantities; liquidation estimate separate. Actual stocks/ordinary equity ETFs only; no cash-index, basket portfolio or derivative substitution. No source performance, funded capital, native AmiBroker binary parity or broker-execution claim.";
+pub fn basis(id: &str) -> &'static str {
+    if id == "hbiab_simple_ma25" { SIMPLE_BASIS } else { BASIS }
+}
+pub fn convention(id: &str) -> &'static str {
+    if id == "hbiab_simple_ma25" { "bandy_simple_raw_buy_clock_fractional_cash_v1" } else { CONVENTION }
+}
 pub fn reviewed(id: &str) -> bool {
     IDS.contains(&id)
 }
@@ -16,7 +23,8 @@ pub fn validate(id: &str, p: &Params) -> Option<String> {
         "hbiab_ma5_20" => &[("fast", 5.), ("slow", 20.)],
         "hbiab_ma7_4" => &[("fast", 7.), ("slow", 4.)],
         "hbiab_macd_example" => &[("fast", 12.), ("slow", 26.), ("sig", 9.)],
-        _ => return Some("Outside the three reviewed Bandy examples".into()),
+        "hbiab_simple_ma25" => &[("ma", 25.), ("hold", 5.)],
+        _ => return Some("Outside the reviewed Bandy examples".into()),
     };
     for (k, v) in p {
         if !defaults
@@ -75,6 +83,22 @@ pub fn states(id: &str, x: &Ctx) -> Result<States, String> {
     states_for_prices(id, &x.c)
 }
 fn states_for_prices(id: &str, c: &[f64]) -> Result<States, String> {
+    if id == "hbiab_simple_ma25" {
+        let prices: Vec<_> = c.iter().map(|&v| decimal::Decimal::new(v)).collect();
+        let mut last_buy = None;
+        let mut buy = vec![false; c.len()];
+        let mut sell = vec![false; c.len()];
+        let mut since = vec![f64::NAN; c.len()];
+        for i in 0..c.len() {
+            buy[i] = i >= 24 && decimal::mean_order(&prices, i, 1, 25) == std::cmp::Ordering::Greater;
+            if buy[i] { last_buy = Some(i); }
+            if let Some(last) = last_buy {
+                since[i] = (i - last) as f64;
+                sell[i] = i - last >= 5;
+            }
+        }
+        return Ok(States { first: sma(c, 25), second: since, buy, sell });
+    }
     let (a, b) = match id {
         "hbiab_ma5_20" => (sma(c, 5), sma(c, 20)),
         "hbiab_ma7_4" => (sma(c, 7), sma(c, 4)),
@@ -172,6 +196,7 @@ pub struct Day {
 }
 #[derive(Clone, Debug)]
 pub struct Account {
+    pub basis: &'static str,
     pub trades: Vec<Trade>,
     pub trade_audit: Vec<TradeAudit>,
     pub days: Vec<Day>,
@@ -278,6 +303,7 @@ fn execute_rate(
     exact_rate: &decimal::Decimal,
 ) -> Result<Account, String> {
     let mut out = Account {
+        basis: BASIS,
         trades: vec![],
         trade_audit: vec![],
         days: vec![],
@@ -441,7 +467,7 @@ fn run_rate(
         return Err("Full actual Bandy history contains invalid OHLC, chronology or mixed instruments; no filling/reseeding".into());
     }
     let s = states_for_prices(id, &x.c[..=to])?;
-    execute_rate(
+    let mut account = execute_rate(
         x,
         from,
         to,
@@ -451,7 +477,14 @@ fn run_rate(
         if id == "hbiab_macd_example" { 0.25 } else { 1. },
         cost,
         exact_rate,
-    )
+    )?;
+    account.basis = basis(id);
+    if id == "hbiab_simple_ma25" {
+        for trade in &mut account.trades {
+            if !trade.open { trade.reason = "five observed bars since latest raw Buy".into(); }
+        }
+    }
+    Ok(account)
 }
 fn n(v: f64) -> String {
     if v.is_finite() {
@@ -462,7 +495,7 @@ fn n(v: f64) -> String {
 }
 impl Account {
     pub fn json(&self, x: &Ctx) -> String {
-        let mut out=format!("{{\"model\":\"{MODEL}\",\"book_performance_reproduced\":false,\"basis\":\"{}\",\"account_contribution_basis\":\"Dimensionless units of initial account1; trade fractions divide by actual net entry equity. Open marks charge entry only; estimated liquidation is separate.\",\"rejected_entries\":0,\"sizing\":{{\"target_equity_fraction\":{},\"origin\":\"{}\",\"cash_reserved\":true,\"fractional_positions\":true}},\"terminal_entry_pending\":{},\"terminal_exit_pending\":{},\"pending_order\":",crate::esc(BASIS),n(self.target_fraction),if self.target_fraction==0.25{"source_rule"}else{"declared_research_convention"},self.terminal_pending==Some("buy"),self.terminal_pending==Some("sell"));
+        let mut out=format!("{{\"model\":\"{MODEL}\",\"book_performance_reproduced\":false,\"basis\":\"{}\",\"account_contribution_basis\":\"Dimensionless units of initial account1; trade fractions divide by actual net entry equity. Open marks charge entry only; estimated liquidation is separate.\",\"rejected_entries\":0,\"sizing\":{{\"target_equity_fraction\":{},\"origin\":\"{}\",\"cash_reserved\":true,\"fractional_positions\":true}},\"terminal_entry_pending\":{},\"terminal_exit_pending\":{},\"pending_order\":",crate::esc(self.basis),n(self.target_fraction),if self.target_fraction==0.25{"source_rule"}else{"declared_research_convention"},self.terminal_pending==Some("buy"),self.terminal_pending==Some("sell"));
         if let Some(side) = self.terminal_pending {
             let _=write!(out,"{{\"side\":\"{side}\",\"signal_date\":\"{}\",\"fill_phase\":\"open\",\"filled\":false}}",x.r[self.days.last().unwrap().i].date);
         } else {

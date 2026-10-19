@@ -100,7 +100,7 @@ pub fn policy(def:&StrategyDef)->Policy {
 }
 fn base_policy(def:&StrategyDef)->Policy {
     if def.book=="hbiab" && crate::books::hbiab_reviewed::reviewed(def.id) {
-        let mut p=requirement("stock_or_equity_etf", &["individual_stock","etf"], crate::books::hbiab_reviewed::BASIS);
+        let mut p=requirement("stock_or_equity_etf", &["individual_stock","etf"], crate::books::hbiab_reviewed::basis(def.id));
         p.execution_scope="single_symbol_source_account";p.market_adaptation=true;return p;
     }
     if def.book=="kfsc" && crate::books::kfsc::reviewed_hv_rule(def.id) {
@@ -284,7 +284,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     fn escape(s:&str)->String {s.chars().flat_map(|c|match c {'"'=>"\\\"".chars().collect::<Vec<_>>(),'\\'=>"\\\\".chars().collect(),'\n'=>"\\n".chars().collect(),'\r'=>"\\r".chars().collect(),'\t'=>"\\t".chars().collect(),c if c.is_control()=>format!("\\u{:04x}",c as u32).chars().collect(),c=>vec![c]}).collect()}
     let mut json=format!("{{\"requirement\":\"{}\",\"allowed_types\":[{}],\"preferred_basket\":{},\"execution_scope\":\"{}\",\"source_basis\":\"{}\",\"market_adaptation\":{},\"source_performance_reproduced\":false,\"limitations\":\"Compatibility is only an instrument check. Required source filters, data, currency/tick units, corporate actions, fill ordering and accounting must pass separate checks. Current constituent snapshots do not establish historical membership; retrospective selection has survivorship bias.\"}}",p.requirement,p.allowed_types.iter().map(|s|format!("\"{s}\"")).collect::<Vec<_>>().join(","),p.preferred_basket.map_or("null".into(),|s|format!("\"{s}\"")),p.execution_scope,escape(p.source_basis),p.market_adaptation);
     json.pop();
-    if def.book=="hbiab" && crate::books::hbiab_reviewed::reviewed(def.id) {json.push_str(&format!(",\"source_convention\":\"{}\",\"account_model\":\"{}\"",crate::books::hbiab_reviewed::CONVENTION,crate::books::hbiab_reviewed::MODEL));}
+    if def.book=="hbiab" && crate::books::hbiab_reviewed::reviewed(def.id) {json.push_str(&format!(",\"source_convention\":\"{}\",\"account_model\":\"{}\"",crate::books::hbiab_reviewed::convention(def.id),crate::books::hbiab_reviewed::MODEL));}
     json.push_str(&format!(",\"source_rule_reviewed\":{},\"independent_selected_ledger_checked\":{}",reviewed_cash_rule(def),reviewed_cash_rule(def)));
     if def.book=="kfsc" && crate::books::kfsc::reviewed_hv_rule(def.id) {
         json.push_str(&format!(",\"source_convention\":\"{}\"",escape(crate::books::kfsc::HV_CONVENTION)));

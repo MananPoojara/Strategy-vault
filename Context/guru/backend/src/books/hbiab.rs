@@ -1,10 +1,10 @@
-//! Howard B. Bandy, *Introduction to AmiBroker* (Blue Owl Press, 2008) - legacy catalogue with three separately reviewed examples.
+//! Howard B. Bandy, *Introduction to AmiBroker* (Blue Owl Press, 2008) - bounded reviewed examples within a legacy catalogue.
 //! Source, page references and checks: library/hbiab/README.md.
 //!
-//! The three reviewed examples use their own fixed-fraction normalized cash account
+//! The reviewed examples use their own fixed-fraction normalized cash account
 //! and exact instrument policy. Other catalogue entries remain legacy fragments,
 //! outside this bounded source review. No index substitution or whole-book coverage
-//! is implied. See docs/hbiab-three-review.md.
+//! is implied. See docs/hbiab-three-review.md and docs/hbiab-simple-system-review.md.
 use crate::connors::{true_range, wilder, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "hbiab";
@@ -63,9 +63,9 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["E|PositionScore = 10000 - ROC(C,252); MaxPositions 4, WorstRankHeld 6, next-day open (p.225-226)"], ""),
         def!("hbiab_sector_portfolio", "Example 7A / BacktestExample: MA crossover on a watch-list portfolio", G10, NeedsData("the book's watch lists (Basic Materials stocks; the nine Select Sector SPDR ETFs) traded as a 2-3 position portfolio"),
             &["E|MA 5/20 crossover with MaxOpenPositions 2 or 3 and PositionSize = -100/PosQty (p.87-90, 497-501)"], ""),
-        def!("hbiab_simple_ma25", "SimpleSystem.afl: close above the 25-day MA, exit 5 bars later", G10, Live,
+        def!("hbiab_simple_ma25", "SimpleSystem.afl: above MA25, exit five bars since latest raw Buy", G10, Live,
             &["E|MA25 = MA(C,25); Buy = Close > MA25 (p.528)", "X|Sell = BarsSince(Buy) >= 5 (p.528)"],
-            "Shown in the Commentary chapter on SPY (no result printed). Buy is a state, so the 5-bar count restarts on every close above the MA."),
+            "Printed527-528 teaches interpretation/commentary on actual SPY; no performance study is printed. Every raw Buy resets the five-observed-bar clock, including while long; equality is false. Daily finalized same-close fills and 100% fractional current-equity cash sizing are declared research conventions. Full prior signal history, flat selected account start and terminal open positions; no native AmiBroker parity or book-performance claim. See docs/hbiab-simple-system-review.md."),
         def!("hbiab_trend_following", "TrendFollowing.afl: 50/30 MA crossover with 3.75 x ATR(14) chandelier stop", G10, Live,
             &["F|SetTradeDelays(1,1,1,1); BuyPrice = SellPrice = Open (p.542)", "E|MA1 = MA(C,50), MA2 = MA(C,30) (Optimize defaults); Buy = Cross(MA1, MA2) (p.542)",
               "X|Sell = Cross(MA2, MA1) (p.542)", "X|ApplyStop(stopTypeTrailing, stopModePoint, 3.75*ATR(14), True, True) - trailing stop 3.75 x ATR(14) below the highest high, exit at the stop (p.542)"],
@@ -94,7 +94,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "hbiab_ma5_20" => vec![p("fast", "FastMA length", 5., 5., 5., 1.), p("slow", "SlowMA length", 20., 20., 20., 1.)],
         "hbiab_ma7_4" => vec![p("fast", "FastMA length", 7., 7., 7., 1.), p("slow", "SlowMA length", 4., 4., 4., 1.)],
         "hbiab_macd_example" => vec![p("fast", "MACD fast EMA", 12., 12., 12., 1.), p("slow", "MACD slow EMA", 26., 26., 26., 1.), p("sig", "Signal EMA", 9., 9., 9., 1.)],
-        "hbiab_simple_ma25" => vec![p("ma", "MA length", 25., 2., 200., 1.), p("hold", "Bars since Buy", 5., 1., 30., 1.)],
+        "hbiab_simple_ma25" => vec![p("ma", "MA length", 25., 25., 25., 1.), p("hold", "Bars since latest raw Buy", 5., 5., 5., 1.)],
         "hbiab_trend_following" => vec![p("mal1", "MAL1", 50., 1., 51., 2.), p("mal2", "MAL2", 30., 2., 52., 2.), p("atr_mult", "ATR multiple", 3.75, 1., 5., 0.25), p("atr", "ATR length", 14., 2., 50., 1.)],
         "hbiab_mean_reversion" => vec![p("zs", "Z-score length", 34., 4., 50., 1.), p("level", "Buy level", -2.0, -4.0, 0.0, 0.25), p("hold", "N-bar stop", 9., 1., 10., 1.), p("pt", "Profit target %", 3., 0.5, 5., 0.25)],
         _ => return None,
