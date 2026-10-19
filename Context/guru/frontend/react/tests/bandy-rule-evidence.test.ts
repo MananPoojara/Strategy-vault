@@ -64,6 +64,10 @@ describe('accepted positions and qualified stocks',()=>{
   for(const bad of [{...trade(m,3,4),entryKind:'limit'},{...trade(m,3,4),exitPrice:null},{...trade(m,3,4),exits:[{date:m.prices!.d[4],price:9,weight:.5}]},{...trade(m,3,4),legs:[{date:m.prices!.d[3],price:10,weight:.5}]}]){m.trades=[bad];expect(check(m,3,'Source entry permitted').passed).toBeNull();expect(check(m,3,'Recorded entry fill').passed).toBeNull();}
   const original=model([10,9,8,10,9,11,12,13],'hbqts_ma5_25',{fast:1,slow:2});original.trades=[trade(original,1,6),{...trade(original,3,7),key:1}];expect(check(original,3,'Source position before close').value).toBeNull();
  });
+ it('withholds position evidence when a recorded source date is missing or a closed close-only trade exits on entry',()=>{
+  for(const removed of [3,6]){const m=model([10,9,8,10,9,11,10],'hbqts_ma5_25',{fast:1,slow:2});m.trades=[trade(m,3,6)];const px=m.prices!;m.prices={...px,...Object.fromEntries((['d','o','h','l','c'] as const).map(k=>[k,px[k].filter((_,i)=>i!==removed)]))};expect(check(m,4,'Source position before close').value).toBeNull();expect(check(m,4,'Recorded exit fill').passed).toBeNull();}
+  const m=model([10,9,8,10,9],'hbqts_ma5_25',{fast:1,slow:2});m.trades=[trade(m,3,3)];expect(check(m,3,'Recorded entry fill').passed).toBeNull();m.trades=[trade(m,4,4,true)];expect(check(m,4,'Source position before close').value).toBe(0);expect(check(m,4,'Recorded entry fill').passed).toBe(true);expect(check(m,4,'Recorded exit fill').passed).toBe(false);
+ });
  it('withholds missing/nonfinite/excessive parameters or invalid OHLC and handles out-of-range inspection',()=>{
   const m=model([10,12,11,13,9]);for(const parameters of [{rsi:2,lb:2},{rsi:NaN,lb:2,trig:2},{rsi:10001,lb:2,trig:2}] as Record<string,number>[])expect(buildBandyRuleEvidence({...m,parameters},m.prices!)?.scope).toBe('unavailable');expect(buildBandyRuleEvidence(m,{...m.prices!,c:[1]})?.scope).toBe('unavailable');expect(evidence(m).at(-1)).toEqual([]);expect(evidence(m).at(1000)).toEqual([]);
  });

@@ -74,9 +74,9 @@ export function buildBandyRuleEvidence(model:Context,px:PriceHistory):RuleEviden
    }
   }
  }catch(error){return unavailable(error instanceof Error?error.message:'The selected Bandy formula parameters are unavailable.');}
- const isBasket=!!model.focusTicker||model.basket,selected=new Set(model.dates);
+ const isBasket=!!model.focusTicker||model.basket,selected=new Set(model.dates),sourceDates=new Set(px.d);
  const matching=model.trades.filter(t=>t.ticker===ticker||!t.ticker&&t.symbol===object(object(px).provenance).symbol);
- const validTrade=(t:VisualTrade)=>t.direction===1&&t.entryKind==='close'&&t.exits.length===0&&finite(t.exitPrice)&&t.exitPrice>0&&day(t.entry)&&day(t.exit)&&t.entry<=t.exit&&t.legs.length===1&&t.legs[0].date===t.entry&&finite(t.legs[0].price)&&t.legs[0].price>0&&t.legs[0].weight===1&&selected.has(t.entry)&&selected.has(t.exit)&&(!t.open||t.exit===model.dates.at(-1));
+ const validTrade=(t:VisualTrade)=>t.direction===1&&t.entryKind==='close'&&t.exits.length===0&&finite(t.exitPrice)&&t.exitPrice>0&&day(t.entry)&&day(t.exit)&&t.entry<=t.exit&&t.legs.length===1&&t.legs[0].date===t.entry&&finite(t.legs[0].price)&&t.legs[0].price>0&&t.legs[0].weight===1&&selected.has(t.entry)&&selected.has(t.exit)&&sourceDates.has(t.entry)&&sourceDates.has(t.exit)&&(t.open||t.entry<t.exit)&&(!t.open||t.exit===model.dates.at(-1));
  const ledger=model.ledgerAvailable===true&&matching.every((t,i)=>validTrade(t)&&(!i||!matching[i-1].open&&matching[i-1].exit<t.entry));
  note+=' These are calculated source-formula inputs, not new orders or source-performance certification. All five methods are long/cash. Same-bar close fills are the declared research convention; Figure 13.2 omits delays/prices and uses the reviewed zero-delay Close selection. Formula history is warmed, the selected single-stock account starts flat, and terminal holdings remain open. Arrows remain actual accepted fills from the existing ledger.';
  if(isBasket)note+=' In a basket constituent view the ledger establishes accepted exposure only. Capacity-rejected source positions and controller decisions are not supplied; accepted flat exposure cannot prove source-flat entry permission.';
