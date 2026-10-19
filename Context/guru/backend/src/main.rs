@@ -920,6 +920,13 @@ fn snapshot(ctx: &Ctx, i: usize, series: &DiagnosticSeries) -> String {
     )
 }
 
+/// A next-open exit cannot know that session's completed-close indicators.
+/// Keep this source-specific diagnostic honest without changing legacy snapshots.
+fn hv_exit_snapshot(ctx:&Ctx,t:&Trade)->String {
+    if t.open {return "null".into();}
+    format!("{{\"date\":\"{}\",\"phase\":\"open\",\"execution_px\":{},\"close\":null,\"rsi2\":null,\"vs_sma200\":null,\"vs_sma5\":null,\"vix_rsi2\":null,\"rsi_p\":null,\"rsi_period\":null,\"rsi_kind\":null,\"vs_ma_p\":null,\"ma_period\":null,\"ma_kind\":null,\"vs_trend_p\":null,\"trend_period\":null,\"trend_kind\":null,\"basis\":\"Idealized next genuine session OPEN exit. This session's completed-close indicators are unavailable at its open and are omitted.\"}}",ctx.r[t.exit_i].date,t.exit_px)
+}
+
 fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     let selected=select_context(st,q)?;let held=selected.context(st);
     let (ctx, from, to, cost) = resolve_context(&held, q)?;
@@ -960,7 +967,7 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
             "{{\"dir\":{},\"legs\":[{}],\"entry\":\"{}\",\"exit\":\"{}\",\"exit_i\":{},\"exit_px\":{},\"avg_px\":{},\"ret\":{},\"ret_full_precision\":{},\"bars\":{},\"open\":{},\"reason\":\"{}\",\"entry_kind\":\"{}\",\"at_entry\":{},\"at_exit\":{},\"signal\":\"{}\",\"exits\":[{}],\"accounting\":{}}}",
             t.dir, legs.join(","), ctx.r[t.legs[0].i].date, ctx.r[t.exit_i].date, t.exit_i - from, num(t.exit_px),
             num(t.avg_px()), num(ledger.net_ret), full_precision_trade_return(ledger.net_ret), t.exit_i - t.legs[0].i, t.open, esc(&t.reason), t.entry_kind,
-            snapshot(ctx, t.legs[0].i, &diagnostics), snapshot(ctx, t.signal_i, &diagnostics), ctx.r[t.signal_i].date,
+            snapshot(ctx, t.legs[0].i, &diagnostics), if books::kfsc::reviewed_hv_rule(id) {hv_exit_snapshot(ctx,t)} else {snapshot(ctx, t.signal_i, &diagnostics)}, ctx.r[t.signal_i].date,
             t.exits.iter().map(|(i, px, f)| format!("[{},{},{}]", i - from, num(*px), num(*f))).collect::<Vec<_>>().join(","),ledger.json()
         )
     }));
@@ -1421,6 +1428,13 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn hv_exit_diagnostic_uses_actual_open_date_without_future_close_indicators() {
+        let rows=vec![Row{ticker:"AAPL".into(),date:"2024-04-01".into(),open:100.,high:110.,low:99.,close:109.,volume:None},Row{ticker:"AAPL".into(),date:"2024-04-02".into(),open:112.,high:120.,low:110.,close:119.,volume:None}];
+        let ctx=Ctx::new(&rows,&[],&[]);let mut t=Trade{dir:1.,legs:vec![connors::Leg{i:0,px:109.,w:1.}],exit_i:1,exit_px:112.,reason:"next open".into(),entry_kind:"close",signal_i:0,open:false,exits:vec![]};
+        let s=hv_exit_snapshot(&ctx,&t);assert!(s.contains("2024-04-02"));assert!(s.contains("\"execution_px\":112"));assert!(s.contains("\"close\":null"));assert!(!s.contains("119"));
+        t.open=true;assert_eq!(hv_exit_snapshot(&ctx,&t),"null");
+    }
     #[test]
     fn hv_queries_reject_raw_unknown_nonfinite_alternate_and_unreviewed_grids() {
         let base=BTreeMap::from([("id".into(),books::kfsc::HV_ID.into())]);assert!(checked_params_of(&base).is_ok());
