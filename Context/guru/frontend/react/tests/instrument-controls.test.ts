@@ -67,3 +67,14 @@ describe('route ticker choices match visible instrument controls', () => {
     expect(instrumentTickers(undefined, indices, etfs)).toEqual(indices);
   });
 });
+
+it('describes the reviewed Bandy single-instrument cash account without imposing a false source ETF ban',()=>{
+ const controls=instrumentControls({allowed_types:['individual_stock'],execution_scope:'single_symbol_source_account'},'hbiab_ma5_20','hbiab');
+ expect([controls.stock,controls.basket,controls.index,controls.etf]).toEqual([true,false,false,false]);
+ expect(controls.note).toContain('cash account');expect(controls.note).toContain('admitted Stock above');
+ const mixed=instrumentControls({allowed_types:['individual_stock','etf'],execution_scope:'single_symbol_source_account'},'hbiab_macd_example','hbiab');
+ expect(mixed.note).toContain('Stock or ETF');expect(mixed.basket).toBe(false);
+ const etf=instrumentControls({allowed_types:['etf'],execution_scope:'single_symbol_source_account'},'hbiab_macd_example','hbiab');
+ expect(etf.note).toContain('admitted ETF above');expect(etf.basket).toBe(false);
+ expect(controls.note).not.toContain('risk account');
+});

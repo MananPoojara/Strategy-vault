@@ -18,7 +18,7 @@ export function StrategyPage({ snapshot }: { snapshot: ViewSnapshot }) {
     "visual-rules": snapshot.strategyRules ? <RulesVisualGuide model={snapshot.strategyRules} /> : null,
     "strategy-settings": <StrategySettings
       mode={mode}
-      sourceAccount={Boolean(snapshot.strategyAccount)}
+      sourceAccount={snapshot.strategyAccount || false}
       disabledReason={basket
         ? "Basket returns use the equal-slot portfolio calculation. Closed-trade compounding applies only to one instrument."
         : undefined}

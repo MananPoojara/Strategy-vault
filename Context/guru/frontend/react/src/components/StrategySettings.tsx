@@ -1,5 +1,6 @@
 import {useEffect, useId, useRef, useState} from "react";
 import {createPortal} from "react-dom";
+import {sourceAccountCopy,type SourceAccountView} from "../services/source-account";
 import type {ReturnDisplayMode} from "../services/return-display";
 import "./StrategySettings.css";
 
@@ -9,7 +10,7 @@ export function StrategySettings({mode = "fixed", onApply, disabledReason, sourc
   /** Portfolio reports have their own chronological accounting; they must not
    * multiply the returns of overlapping positions in closing order. */
   disabledReason?: string;
-  sourceAccount?: boolean;
+  sourceAccount?: boolean | SourceAccountView;
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<ReturnDisplayMode>(mode);
@@ -87,7 +88,7 @@ export function StrategySettings({mode = "fixed", onApply, disabledReason, sourc
             </label>
           </fieldset>
           <p className="strategy-settings-note">{disabledReason || (sourceAccount
-            ? "Display only. The mandatory 2%/6% risk controller, actual cash account, equity and risk statistics stay unchanged. Open holdings are excluded from this closed-return display."
+            ? sourceAccountCopy(typeof sourceAccount === "object" ? sourceAccount : {model:"elder_protected_impulse_fractional_cash_v1"}).settingsNote
             : "Percentage report using closed trades only. Open-position marks are excluded.")}</p>
           <footer className="strategy-settings-actions">
             <button type="button" onClick={close}>Cancel</button>
