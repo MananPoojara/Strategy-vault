@@ -35,6 +35,13 @@ function mockLine() { return { setData: vi.fn(), applyOptions: vi.fn(), createPr
 afterEach(() => { document.body.innerHTML = ""; vi.restoreAllMocks(); });
 
 describe("strategy indicator companion charts", () => {
+  it('distinguishes fast/slow, MACD/signal and upper/lower lines with the active theme palette',()=>{
+    const model=result();model.series=['fast','slow','macd','macd-signal','upper','lower'].map(key=>({...model.series[0],key}));
+    const host=document.createElement('div');host.innerHTML=indicatorControlsHTML(model);document.body.append(host);
+    const price=mockChart();const controller=mountStrategyIndicators({root:host,chart:price.chart,result:model,library:{createChart:()=>mockChart().chart},colors:{trend:'blue',ma:'violet',reference:'gray',di:'green'}});
+    const colors=price.chart.addLineSeries.mock.calls.map(call=>(call as unknown as [Record<string,unknown>])[0].color);
+    expect(colors).toEqual(['blue','violet','blue','violet','gray','green']);controller.dispose();
+  });
   it("preserves a hidden indicator when the price chart is remounted for another timeframe", () => {
     const host = document.createElement('div');host.innerHTML=indicatorControlsHTML(result());document.body.append(host);
     const root=host.firstElementChild as HTMLElement;
