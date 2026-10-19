@@ -114,6 +114,8 @@ export function parseBandySourceAccount(data: unknown, id?: string, book?: strin
       || (expectedSymbol !== null && trade.accounting.symbol !== expectedSymbol)
       || (ledgerSymbol !== "" && trade.accounting.symbol !== ledgerSymbol)
       || trade.accounting.signal_side !== "Long"
+      || !finite(trade.accounting.pts) || !close(trade.accounting.pts,exitPrice-price)
+      || trade.accounting.days_held !== (Date.parse(t.exit)-Date.parse(t.entry))/86400000
       || trade.accounting.cost_status !== (t.open ? "actual_entry_cost_only_open_mark" : "modeled_filled_side_costs")
       || trade.accounting.excursion_bars !== 0 || trade.accounting.excursion_status !== "unavailable"
       || trade.accounting.mae_ret_observed !== null || trade.accounting.mfe_ret_observed !== null) return invalid();

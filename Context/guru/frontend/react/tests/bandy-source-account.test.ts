@@ -97,6 +97,8 @@ it('rejects stale or missing MACD signals and conflicting chart/tradesheet field
   d=>({...d,trades:d.trades.map((t,i)=>i===0?{...t,exit_i:3}:t)}),
   d=>({...d,trades:d.trades.map((t,i)=>i===0?{...t,signal:d.dates[0]}:t)}),
   d=>({...d,trades:d.trades.map((t,i)=>i===0?{...t,accounting:{...t.accounting,signal_side:'Short'}}:t)}),
+  d=>({...d,trades:d.trades.map((t,i)=>i===0?{...t,accounting:{...t.accounting,pts:0}}:t)}),
+  d=>({...d,trades:d.trades.map((t,i)=>i===0?{...t,accounting:{...t.accounting,days_held:2}}:t)}),
   d=>({...d,trades:d.trades.map((t,i)=>i===0?{...t,accounting:{...t.accounting,symbol:'OTHER'}}:t)}),
   d=>({...d,costs:{...d.costs,total_side_bps:99}}),
   d=>({...d,trades:d.trades.map((t,i)=>i===1?{...t,accounting:{...t.accounting,cost_status:'open_liquidation_estimate'}}:t)}),

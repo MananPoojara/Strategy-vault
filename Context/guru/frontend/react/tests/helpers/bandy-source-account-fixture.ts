@@ -25,7 +25,7 @@ export function bandyAccountFixture(macd=false, bps=5) {
   const trades=trade_accounts.map((t,i)=>({dir:1,entry:t.entry,exit:t.exit,open:t.open,entry_kind:t.entry_phase,
     legs:[[i===0?1:3,i===0?100:120,t.entry_allocation_fraction]],exit_px:i===0?110:120,exit_i:i===0?2:3,signal:t.open?t.exit:t.exit_signal_date,
     ret:Number(t.net_fraction_of_actual_entry_equity.toFixed(6)),ret_full_precision:t.net_fraction_of_actual_entry_equity,
-    accounting:{symbol:'AAPL',signal_side:'Long',cost_status:t.open?'actual_entry_cost_only_open_mark':'modeled_filled_side_costs',excursion_bars:0,excursion_status:'unavailable',mae_ret_observed:null,mfe_ret_observed:null,gross_ret:t.gross_fraction_of_actual_entry_equity,net_ret:t.net_fraction_of_actual_entry_equity,
+    accounting:{symbol:'AAPL',signal_side:'Long',pts:i===0?10:0,days_held:i===0?1:0,cost_status:t.open?'actual_entry_cost_only_open_mark':'modeled_filled_side_costs',excursion_bars:0,excursion_status:'unavailable',mae_ret_observed:null,mfe_ret_observed:null,gross_ret:t.gross_fraction_of_actual_entry_equity,net_ret:t.net_fraction_of_actual_entry_equity,
       fee_ret:0,slippage_ret:(t.entry_cost_account_contribution+t.exit_cost_account_contribution)/t.entry_equity_units,
       gross_pnl:null,net_pnl:null,taxes:null,fees:null,slippage:null,mae:null,mfe:null}}));
   return {id:macd?'hbiab_macd_example':'hbiab_ma5_20',book:'hbiab',dates,benchmark_symbol:'AAPL',close:prices,equity:days.map(d=>d.equity),gross_equity:days.map(d=>d.gross_same_quantity_equity),trades,
