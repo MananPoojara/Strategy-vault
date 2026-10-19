@@ -35,6 +35,7 @@ function RulePriceChart({model,evidence,trade,onDate,focusDate,containerRef}: {
   // Warmup is retained for arithmetic, but only the admitted run's actual dates
   // are painted. Earlier index rows may be close-only warmup, not valid candles.
   const visibleIndices=useMemo(()=>{const dates=new Set(model.dates);return px?.d.flatMap((d,i)=>dates.has(d)?[i]:[])||[];},[model,px]);
+  const visibleDates=useMemo(()=>visibleIndices.map(i=>px!.d[i]),[visibleIndices,px]);
   useEffect(()=>{
     const element=host.current,root=containerRef.current;
     const library=(window as unknown as {LightweightCharts?:RuleChartLibrary}).LightweightCharts;
@@ -65,12 +66,12 @@ function RulePriceChart({model,evidence,trade,onDate,focusDate,containerRef}: {
       const buy=event.kind==='exit'?trade!.direction<0:trade!.direction>0;
       return {time:event.date,position:buy?'belowBar':'aboveBar',color:buy?green:red,shape:buy?'arrowUp':'arrowDown',text:event.kind==='add'?'Add':event.kind==='exit'?'Exit':'Entry'};
     }).sort((a,b)=>a.time.localeCompare(b.time)));
-    if(trade){const first=model.dates.indexOf(trade.entry),last=model.dates.indexOf(trade.exit);if(first>=0)chart.current.timeScale().setVisibleLogicalRange({from:Math.max(0,first-18),to:Math.min(visibleIndices.length-1,Math.max(first+24,last+12))});}
-  },[trade,px,model,evidence]);
+    if(trade){const first=visibleDates.indexOf(trade.entry),last=visibleDates.indexOf(trade.exit);if(first>=0)chart.current.timeScale().setVisibleLogicalRange({from:Math.max(0,first-18),to:Math.min(visibleDates.length-1,Math.max(first+24,last+12))});}
+  },[trade,px,model,evidence,visibleDates]);
   useEffect(()=>{
-    if(!focusDate||!px||!chart.current)return;const i=model.dates.indexOf(focusDate);if(i<0)return;
-    chart.current.timeScale().setVisibleLogicalRange({from:Math.max(0,i-25),to:Math.min(model.dates.length-1,i+25)});
-  },[focusDate,px,model]);
+    if(!focusDate||!px||!chart.current)return;const i=visibleDates.indexOf(focusDate);if(i<0)return;
+    chart.current.timeScale().setVisibleLogicalRange({from:Math.max(0,i-25),to:Math.min(visibleDates.length-1,i+25)});
+  },[focusDate,px,visibleDates]);
   return <><div className="rule-guide-price" ref={host} aria-label="Actual daily price candles and selected trade fill arrows" data-rule-price-chart />{error&&<p className="rule-guide-warning" role="status">{error}</p>}</>;
 }
 

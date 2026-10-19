@@ -5,14 +5,14 @@ import {RulesVisualGuide,recordedTradeEvents} from '../src/components/RulesVisua
 import {makeRuleVisualModel,type RuleVisualModel} from '../src/services/rule-evidence';
 
 let root:Root|undefined,host:HTMLDivElement|undefined;
-const charts:{candles:{setData:ReturnType<typeof vi.fn>;setMarkers:ReturnType<typeof vi.fn>};remove:ReturnType<typeof vi.fn>;hover?:(event:{time:string})=>void;click?:(event:{time:string})=>void}[]=[];
+const charts:{candles:{setData:ReturnType<typeof vi.fn>;setMarkers:ReturnType<typeof vi.fn>};remove:ReturnType<typeof vi.fn>;setRange:ReturnType<typeof vi.fn>;hover?:(event:{time:string})=>void;click?:(event:{time:string})=>void}[]=[];
 const makeModel=():RuleVisualModel=>makeRuleVisualModel({strategy:{id:'kftsm_exp',name:'Smoothed trendline',rules:['E|Enter the latched direction at the close.','X|Reverse on the opposite direction.'],notes:'Declared SmoothedAverage seed convention.',instrument_policy:{source_rule_reviewed:false,source_basis:'Actual selected stocks or admitted index',source_convention:'Mean-seeded source convention',limitations:'No execution or original performance certification'}},ticker:'TEST',symbol:'TEST',parameters:{period:2,kind:0,lag:0,filter:0},prices:{ticker:'TEST',full_history:true,d:['2020-01-01','2020-01-02','2020-01-03','2020-01-06','2020-01-07'],o:[10,20,30,15,16],h:[11,21,31,16,17],l:[9,19,29,14,15],c:[10,20,30,15,16]},run:{dates:['2020-01-03','2020-01-06','2020-01-07'],trades:[{dir:1,entry:'2020-01-03',exit:'2020-01-06',signal:'2020-01-06',legs:[[0,30,.5],[1,15,.5]],exits:[],exit_px:15,open:false,entry_kind:'close',reason:'trendline turned'},{dir:-1,entry:'2020-01-06',exit:'2020-01-07',signal:'2020-01-07',legs:[[1,15,1]],exits:[],exit_px:16,open:true,entry_kind:'close',reason:'open'}]}});
 beforeEach(()=>{
   Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});
   charts.length=0;
   (window as unknown as {LightweightCharts:unknown}).LightweightCharts={createChart:()=>{
-    const state={candles:{setData:vi.fn(),setMarkers:vi.fn()},remove:vi.fn(),hover:undefined as undefined|((event:{time:string})=>void),click:undefined as undefined|((event:{time:string})=>void)};charts.push(state);
-    const scale={getVisibleLogicalRange:()=>({from:0,to:10}),setVisibleLogicalRange:vi.fn(),subscribeVisibleLogicalRangeChange:vi.fn(),unsubscribeVisibleLogicalRangeChange:vi.fn()};
+    const state={candles:{setData:vi.fn(),setMarkers:vi.fn()},remove:vi.fn(),setRange:vi.fn(),hover:undefined as undefined|((event:{time:string})=>void),click:undefined as undefined|((event:{time:string})=>void)};charts.push(state);
+    const scale={getVisibleLogicalRange:()=>({from:0,to:10}),setVisibleLogicalRange:state.setRange,subscribeVisibleLogicalRangeChange:vi.fn(),unsubscribeVisibleLogicalRangeChange:vi.fn()};
     return {addCandlestickSeries:()=>state.candles,addLineSeries:()=>({setData:vi.fn(),applyOptions:vi.fn(),createPriceLine:vi.fn()}),removeSeries:vi.fn(),timeScale:()=>scale,subscribeCrosshairMove:(cb:typeof state.hover)=>{state.hover??=cb;},unsubscribeCrosshairMove:vi.fn(),subscribeClick:(cb:typeof state.click)=>{state.click=cb;},unsubscribeClick:vi.fn(),resize:vi.fn(),remove:state.remove};
   }};
 });
@@ -132,4 +132,17 @@ it('does not treat a non-trading date as an interpolated candle or a condition m
   // jsdom React date changes use the input event as well.
   await act(async()=>input.dispatchEvent(new Event('input',{bubbles:true})));
   if(input.value==='2020-01-04')expect(dialog().querySelector('.rule-guide-ohlc')).toBeNull();
+});
+
+
+it('focuses a late-listed constituent using only its painted candle indices',async()=>{
+  const m=makeModel();
+  // The basket calendar has two earlier dates with no listed-stock observations.
+  m.dates=['2020-01-01','2020-01-02',...m.dates];
+  m.prices={...m.prices!,d:m.prices!.d.slice(2),o:m.prices!.o.slice(2),h:m.prices!.h.slice(2),l:m.prices!.l.slice(2),c:m.prices!.c.slice(2)};
+  await mount(m);
+  expect(charts[0].candles.setData.mock.calls[0][0].map((c:{time:string})=>c.time)).toEqual(['2020-01-03','2020-01-06','2020-01-07']);
+  expect(charts[0].setRange.mock.calls.at(-1)![0]).toEqual({from:0,to:2});
+  await act(async()=>[...dialog().querySelectorAll<HTMLButtonElement>('.rule-guide-event')].at(-1)!.click());
+  expect(charts[0].setRange.mock.calls.at(-1)![0]).toEqual({from:0,to:2});
 });
