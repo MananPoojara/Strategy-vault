@@ -89,7 +89,7 @@ export function mountStrategyIndicators(options: IndicatorMount): IndicatorContr
   let disposed = false, synchronizingRange = false, synchronizingCrosshair = false;
   const lineColor = (definition: StrategyIndicator) => definition.key === "upper" ? colors.reference
     : definition.key === "lower" ? colors.di
-    : ["ma", "slow", "macd-signal", "slow-rsi", "percent-b", "rsi-sum"].includes(definition.key)
+    : ["ma", "slow", "macd-signal", "slow-rsi", "percent-b", "rsi-sum", "dema-second"].includes(definition.key)
       ? colors.ma : definition.kind === "di" ? colors.di : definition.kind === "sma" ? colors.trend : colors.rsi;
   for (const definition of result.series) {
     const element = definition.placement === "pane" ? root.querySelector<HTMLElement>(`[data-indicator-pane="${definition.key}"]`) : null;

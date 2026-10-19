@@ -16,6 +16,7 @@
 .indicator-swatch { width: 17px; height: 2px; background: var(--blue); }
 .indicator-swatch-ma, .indicator-swatch-slow-rsi, .indicator-swatch-percent-b, .indicator-swatch-rsi-sum { background: var(--bh); }
 .indicator-swatch-plus-di { background: var(--green); }
+.indicator-swatch-dema-second { background: var(--bh); }
 .indicator-note { margin: 9px 0 12px; max-width: 1100px; color: var(--ink2); font-size: 11px; line-height: 1.6; }
 .indicator-pane-wrap { border-top: 1px solid var(--rule); }
 .indicator-pane-caption { display: flex; gap: 14px; justify-content: space-between; align-items: baseline; padding-top: 9px; color: var(--ink2); font-size: 11px; }
