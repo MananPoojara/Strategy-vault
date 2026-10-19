@@ -146,3 +146,21 @@ it('focuses a late-listed constituent using only its painted candle indices',asy
   await act(async()=>[...dialog().querySelectorAll<HTMLButtonElement>('.rule-guide-event')].at(-1)!.click());
   expect(charts[0].setRange.mock.calls.at(-1)![0]).toEqual({from:0,to:2});
 });
+
+it('uses each closed scale-out piece price, including the final piece, rather than weighted exit_px',()=>{
+  const trade=makeModel().trades[0];trade.exits=[{date:'2020-01-03',price:110,weight:.25},{date:trade.exit,price:90,weight:.75}];trade.exitPrice=95;
+  const events=recordedTradeEvents(trade).filter(e=>e.kind==='exit');
+  expect(events.map(e=>e.price)).toEqual([110,90]);expect(events.at(-1)?.label).toContain('final exit');
+  expect(events.some(e=>e.price===95)).toBe(false);
+});
+
+it('never turns an open scale-out terminal tuple into an exit arrow and uses its raw close mark',async()=>{
+  const m=makeModel(),trade=m.trades[1];
+  trade.exits=[{date:trade.entry,price:110,weight:.25},{date:trade.exit,price:90,weight:.25},{date:trade.exit,price:120,weight:.5}];trade.exitPrice=110;
+  const events=recordedTradeEvents(trade);expect(events.at(-1)).toMatchObject({kind:'mark',price:120,label:'Open position mark · not an exit'});
+  const partials=events.filter(e=>e.kind==='exit');expect(partials.map(e=>e.price)).toEqual([110,90]);expect(partials[1].arrow).toBe(false);
+  m.trades=[trade];await mount(m);
+  const markers=charts[0].candles.setMarkers.mock.calls.at(-1)![0];
+  expect(markers.filter((e:{time:string})=>e.time===trade.exit)).toEqual([]);
+  expect(dialog().textContent).toContain('Intraday ordering is not established');
+});

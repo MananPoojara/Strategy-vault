@@ -35,6 +35,10 @@ There are three distinct calculation scopes:
 An arrow always comes from an actual accepted trade. It never comes from a
 frontend recomputation of a signal or a hypothetical example. Existing source
 review, instrument-admission and data-gap notices continue to govern the run.
+For scale-outs, each piece retains its own price; the aggregate weighted exit
+price is not presented as a final fill. An open position's terminal tuple is a
+remaining-position mark, and ambiguous scale-outs on that terminal date remain
+readable without inferring a terminal exit arrow.
 
 As of the 2026-10-19 catalogue snapshot, all 4,321 registered definition routes
 use the common Rules presenter. Among the 183 definitions with live status and a
