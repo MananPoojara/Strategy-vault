@@ -12,7 +12,10 @@ Strategies* overview and from *Tools and Tactics for the Master Day Trader*.
 This review reads the complete Foundation section, physical pages 9–20, as
 text and rendered slides. Identity/contents pages 1 and 3 and dependency
 examples on pages 23, 36 and 59 were also inspected visually. Other sections
-remain pending; selected text locators do not establish full-section review.
+were pending in this initial pass; selected text locators do not establish
+full-section review. The subsequent
+[complete-source review](REVIEW-2026-10-19-CAPRA-INTRADAY-COMPLETE-SOURCE.md)
+records the separate continuation and its decision.
 Page references here are physical PDF positions, not invented printed numbers.
 
 ## What is established
