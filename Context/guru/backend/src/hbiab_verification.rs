@@ -133,3 +133,77 @@ fn exact_three_account_policy_has_no_cross_book_or_legacy_inheritance() {
         );
     }
 }
+
+#[test]
+fn one_session_summary_uses_bandy_cash_costs_and_matches_detail() {
+    // Synthetic prices test report wiring, not market/source performance.
+    let rows: Vec<Row> = (0..22)
+        .map(|i| {
+            let c = if i == 20 {
+                99.
+            } else if i == 21 {
+                110.
+            } else {
+                100.
+            };
+            Row {
+                ticker: "SPY".into(),
+                date: format!("2001-01-{:02}", i + 1),
+                open: c,
+                high: c + 1.,
+                low: c - 1.,
+                close: c,
+                volume: None,
+            }
+        })
+        .collect();
+    let rows: &'static [Row] = Box::leak(rows.into_boxed_slice());
+    let st = State {
+        ctxs: BTreeMap::from([("SPY".into(), Ctx::new(rows, rows, &[]))]),
+        baskets: baskets::Catalogue::default(),
+        vix: vec![],
+        market_extra: BTreeMap::new(),
+    };
+    for &id in books::hbiab_reviewed::IDS {
+        let q = BTreeMap::from([
+            ("id".into(), id.into()),
+            ("ticker".into(), "SPY".into()),
+            ("from".into(), "2001-01-22".into()),
+            ("to".into(), "2001-01-22".into()),
+            ("cost".into(), "3".into()),
+            ("slippage".into(), "2".into()),
+        ]);
+        let summary = summary(&st, &q).unwrap();
+        let begin = summary.find(&format!("{{\"id\":\"{id}\"")).unwrap();
+        let row = &summary[begin..];
+        let row = row.split("},{\"id\":").next().unwrap();
+        assert!(row.contains("\"stats\":"), "{id}: {row}");
+        let actual = detail(&st, &q).unwrap();
+        let detail_stats = actual
+            .split("\"stats\":")
+            .nth(1)
+            .unwrap()
+            .split(",\"gross_stats\":")
+            .next()
+            .unwrap();
+        let summary_stats = row
+            .split("\"stats\":")
+            .nth(1)
+            .unwrap()
+            .split(",\"spark\":")
+            .next()
+            .unwrap();
+        assert_eq!(summary_stats, detail_stats);
+        let costs = bandy_costs_json(accounting::Costs::parse(&q).unwrap());
+        assert!(row.contains(&costs));
+        assert!(actual.contains(&costs));
+        assert!(!row.contains("Legacy equity includes estimated exit costs"));
+    }
+    let legacy = BTreeMap::from([
+        ("id".into(), "f1a".into()),
+        ("ticker".into(), "SPY".into()),
+        ("from".into(), "2001-01-22".into()),
+        ("to".into(), "2001-01-22".into()),
+    ]);
+    assert_eq!(summary(&st, &legacy).unwrap_err(), "empty date range");
+}

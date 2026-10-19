@@ -928,7 +928,7 @@ fn summary(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
             rows.push(format!("{{\"id\":\"{}\",\"blocked\":\"{}\",\"readiness\":\"{}\"}}", d.id, esc(&issue.note), issue.status));
             continue;
         }
-        let Some(from) = window_start(ctx, d, from).filter(|&f| f < to) else {
+        let Some(from) = window_start(ctx, d, from).filter(|&f| f < to || (f==to && books::hbiab_reviewed::reviewed(d.id))) else {
             rows.push(format!("{{\"id\":\"{}\",\"blocked\":\"Required volatility-index data does not cover this period\",\"readiness\":\"needs_data\"}}", d.id));
             continue;
         };
@@ -936,7 +936,7 @@ fn summary(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         // ~120-point equity sparkline for the strategy list
         let step = (run.equity.len() / 120).max(1);
         let spark: Vec<String> = run.equity.iter().step_by(step).map(|v| num(*v)).collect();
-        rows.push(format!("{{\"id\":\"{}\",\"stats\":{},\"spark\":[{}],\"costs\":{}}}", d.id, stats_json(&financial_stats(ctx, &run, costs)), spark.join(","),if run.source_account.is_some(){costs.source_account_json()}else{costs.json()}));
+        rows.push(format!("{{\"id\":\"{}\",\"stats\":{},\"spark\":[{}],\"costs\":{}}}", d.id, stats_json(&financial_stats(ctx, &run, costs)), spark.join(","),if run.bandy_account.is_some(){bandy_costs_json(costs)}else if run.source_account.is_some(){costs.source_account_json()}else{costs.json()}));
         if d.book==books::chande::BOOK {let item=rows.last_mut().unwrap();item.pop();let _=write!(item,",\"experiment\":{}}}",experiment_json(d.id));}
         if selected.native(){let item=rows.last_mut().unwrap();item.pop();let _=write!(item,",\"provenance\":{}}}",source_provenance(st,q));}
     }
