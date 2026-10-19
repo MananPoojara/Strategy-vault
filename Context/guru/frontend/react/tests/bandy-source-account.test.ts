@@ -30,6 +30,8 @@ it('does not publish invented monthly risk, stops, capital or unescaped basis in
   const d=bandyAccountFixture();d.source_account.basis='<img src=x onerror=alert(1)>';
   const markup=renderToStaticMarkup(createElement(SourceAccountNotice,{account:sourceAccountView(parse(d))}));
   expect(markup).toContain('&lt;img');expect(markup).not.toContain('<img');expect(markup).not.toMatch(/2%|6%|monthly|SafeZone|₹/);
+  expect(markup).toContain('observed sessions');expect(markup).toContain('not calendar days');
+  expect(markup).toContain('Zero-return closed trades join non-wins');expect(markup).toContain('actual net entry equity');
 });
 it('preserves the Elder account model, notice wording and audit columns',()=>{
   const d=accountFixture(),account=sourceAccount(d,'elcim_impulse','elcim')!;
