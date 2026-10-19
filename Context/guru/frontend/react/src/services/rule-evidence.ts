@@ -1,4 +1,5 @@
 import {buildStrategyIndicators, simpleMovingAverage, type PriceHistory, type StrategyIndicator} from './strategy-indicators';
+import {buildConnorsRuleEvidence} from './connors-rule-evidence';
 
 export interface RuleCheck {
   label: string;
@@ -33,6 +34,7 @@ export interface VisualTrade {
 export interface RuleVisualModel {
   id: string;
   name: string;
+  book: string;
   symbol: string;
   status: string;
   blocked: string;
@@ -45,6 +47,9 @@ export interface RuleVisualModel {
   trades: VisualTrade[];
   dates: string[];
   basket: boolean;
+  /** The actual constituent currently charted inside a basket guide. */
+  focusTicker?: string;
+  ledgerAvailable: boolean;
   basketPriceApi?: string;
   basketSources?: Readonly<Record<string, {source_sha256:string;csv_sha256:string}>>;
 }
@@ -67,6 +72,27 @@ export function makeRuleVisualModel(input: {strategy: unknown; run?: unknown; pr
   const sourcePrices = sourceMatches && ['d','o','h','l','c'].every(k => Array.isArray(p[k])) ? p as unknown as RuleVisualModel['prices'] : null;
   const basket = d.kind === 'basket';
   const rows = Array.isArray(d.trades) ? d.trades : [];
+  // Validate the raw contract before sanitizing display rows. A dropped leg must
+  // never turn a malformed two-unit holding into a valid one-unit position gate.
+  const dateSet=new Set(dates);
+  const rawLedgerComplete=Array.isArray(d.trades)&&Array.isArray(d.dates)&&dates.length===d.dates.length
+    && dates.every((day,i)=>!i||day>dates[i-1])&&rows.every(raw=>{
+      const t=object(raw),entry=text(t.entry),exit=text(t.exit);
+      const pieces=(rawPieces:unknown,required:boolean)=>{
+        if(rawPieces===undefined)return !required;
+        if(!Array.isArray(rawPieces)||required&&!rawPieces.length)return false;
+        let previous=-1;
+        return rawPieces.every(piece=>{
+          if(!Array.isArray(piece)||piece.length!==3||!Number.isInteger(piece[0])||piece[0]<0||piece[0]>=dates.length
+            ||!finite(piece[1])||piece[1]<=0||!finite(piece[2])||piece[2]<=0||piece[0]<previous
+            ||dates[piece[0]]<entry||dates[piece[0]]>exit)return false;
+          previous=piece[0];return true;
+        });
+      };
+      return dateSet.has(entry)&&dateSet.has(exit)&&entry<=exit&&finite(t.dir)&&[1,-1].includes(t.dir)
+        &&pieces(t.legs,true)&&pieces(t.exits,false)&&Array.isArray(t.legs)&&dates[t.legs[0][0]]===entry
+        &&(t.exit_i===undefined||Number.isInteger(t.exit_i)&&dates[Number(t.exit_i)]===exit);
+    });
   const trades = rows.map((raw, key): VisualTrade => {
     const t = object(raw), accounting = object(t.accounting);
     const legs = (value: unknown) => !Array.isArray(value) ? [] : value.flatMap(row => {
@@ -80,10 +106,10 @@ export function makeRuleVisualModel(input: {strategy: unknown; run?: unknown; pr
   const parameters = Object.fromEntries(Object.entries(object(input.parameters)).filter((entry): entry is [string, number] => finite(entry[1])));
   const requested=new Set(trades.map(t=>t.ticker));
   const basketSources=Object.fromEntries((Array.isArray(input.sourceTickers)?input.sourceTickers:[]).flatMap(raw=>{const row=object(raw),source=object(row.provenance),ticker=text(row.ticker);return requested.has(ticker)&&source.qualified_ticker===ticker&&typeof source.source_sha256==='string'&&typeof source.csv_sha256==='string'?[[ticker,{source_sha256:source.source_sha256,csv_sha256:source.csv_sha256}]]:[];}));
-  return {id: text(v.id), name: text(v.family_name) || text(v.name), symbol: input.symbol || '', status: input.status || (input.run ? 'ready' : 'unavailable'), blocked: input.blocked || (sourceMatches?'':'The chart source does not match the selected run’s instrument and source identity. No substitute prices are displayed.'),
+  return {id: text(v.id), name: text(v.family_name) || text(v.name), book:text(v.book), symbol: input.symbol || '', status: input.status || (input.run ? 'ready' : 'unavailable'), blocked: input.blocked || (sourceMatches?'':'The chart source does not match the selected run’s instrument and source identity. No substitute prices are displayed.'),
     rules: (Array.isArray(v.rules) ? v.rules : []).filter((x): x is string => typeof x === 'string').map(rule => {const [tag, ...rest] = rule.split('|'); return {stage: ({F:'Conditions',E:'Entry',A:'Scale-in',X:'Exit'} as Record<string,string>)[tag] || 'Rule', text: rest.length ? rest.join('|') : rule};}),
     notes: text(v.notes), sourceReview:(object(v.instrument_policy).source_rule_reviewed===true?'Selected source rules reviewed. Declared adaptations, instrument admission and data limits still apply.':'Source-rule review is not established for this method. The chart explains recorded engine behavior; it does not independently verify the book.')+' '+text(object(v.gate).note),
-    sourceQualifications:[text(object(v.instrument_policy).source_basis),text(object(v.instrument_policy).source_convention),text(object(v.instrument_policy).limitations)].filter(Boolean),prices: sourcePrices, parameters, trades, dates, basket,basketPriceApi:input.basketPriceApi,basketSources};
+    sourceQualifications:[text(object(v.instrument_policy).source_basis),text(object(v.instrument_policy).source_convention),text(object(v.instrument_policy).limitations)].filter(Boolean),prices: sourcePrices, parameters, trades, dates, basket,ledgerAvailable:rawLedgerComplete,basketPriceApi:input.basketPriceApi,basketSources};
 }
 
 const basketPriceCache=new Map<string, NonNullable<RuleVisualModel['prices']>>();
@@ -136,6 +162,7 @@ export function buildRuleEvidence(model: RuleVisualModel): RuleEvidence {
   const px = chartablePrices(model);
   if(!px)return unavailable(model.blocked || (model.basket ? 'A basket has many price series. A single index or stock chart cannot represent its rule conditions. Open an individual stock result for a candle-by-candle view.' : 'No valid actual price series is available for this selected run.'));
   if(model.prices?.full_history !== true)return unavailable('Full engine source history, including indicator warmup, is unavailable. Sliced candles can show fills, but exact rule values are withheld.');
+  const connors=buildConnorsRuleEvidence(model,px);if(connors)return connors;
   const c=px.c, p=model.parameters, series:StrategyIndicator[]=[];
   const add=(key:string,label:string,values:(number|null)[],placement:'price'|'pane'='price',thresholds:StrategyIndicator['thresholds']=[])=>{
     series.push({key,label,points:px.d.map((time,i)=>({time,value:number(values[i])})),kind:placement==='price'?'sma':'sum',placement,thresholds});

@@ -42,7 +42,7 @@ readable without inferring a terminal exit arrow.
 
 As of the 2026-10-19 catalogue snapshot, all 4,321 registered definition routes
 use the common Rules presenter. Among the 183 definitions with live status and a
-compatible instrument policy, 15 have method-specific arithmetic providers, 78
+compatible instrument policy, 30 have method-specific arithmetic providers, 63
 have partial indicator inputs, and 90 await a condition provider. These are
 frontend coverage counts, not verified-book counts or assurances that the
 required data exists for every selection. Detailed condition coverage remains
@@ -79,6 +79,55 @@ Indicator arithmetic retains the engine's complete source history. Only actual
 dates in the admitted run are painted as candles and indicator points; earlier
 warmup bars are not presented as admitted OHLC history. Missing trading dates are
 not interpolated, and sliced histories cannot establish exact smoothed values.
+
+## Connors predicate expansion (2026-10-19)
+
+The following 15 existing definitions now add method-specific entry, exit and
+position-gate tests. This is visualization coverage, not 15 newly converted
+strategies or an independent re-review of all source books:
+
+- `dmi_1` through `dmi_5`, and `spmt_dmi_1` through `spmt_dmi_5`:
+  trend close strictly above the selected SMA; current +DI and its complete
+  consecutive-bar window strictly below the selected threshold; RSI entry cap
+  inclusive of equality; strict RSI exit. +DI is not ADX. Both use the declared
+  Wilder seeds. SPMT alone uses its reviewed subtraction-roundoff tie budget;
+  the unchanged STC IX comparison is retained for the course methods.
+- `rsi2_4` and `spmt_rsi2_4`: selected trend and strict RSI-level entry;
+  the separate RSI exit threshold. An extra RSI entry cap is not invented.
+- `rsi4_25` and `spmt_rsi4_25`: the slower selected RSI supplies the entry
+  oversold test; the separately selected fast RSI supplies the inclusive entry
+  cap and strict exit. Their default names do not override custom periods.
+- `r3`: course R3, two half-position units, selected falling-RSI streak,
+  rolling first-falling-day threshold and current RSI entry threshold. Its
+  first-day index is `today + 1 - fall`, while HPETF R3 exposes a selectable prior-value
+  rule. A later held bar may add the second half; exits take priority over
+  adding. The add predicate does not repeat all original entry conditions.
+
+These source-specific providers require the actual matching `stc9` / `spmt`
+book identity and resolved selected parameters. Missing or mismatched source
+identity is unavailable. Raw ledger dates and every leg/exit tuple are checked
+before display sanitization; dropped malformed pieces cannot establish position
+permission. These fifteen close-only long providers additionally withhold state
+checks for overlapping source holdings, missing source dates, or an incompatible
+leg allocation. Price-input tests remain separate from unknown position state.
+Falling-streak checks stay unknown until all required RSI comparisons exist.
+
+Position gates use the selected run's recorded ledger, including the held exit
+close. Entry price tests can pass while that position gate prevents a new trade.
+For a basket chart, another constituent's holding cannot supply the selected
+stock's position state. A basket with no accepted holding cannot prove that the
+underlying source runner is flat: a capacity-rejected source position may still
+be open. Accepted exposure is labelled separately and source-flat permission
+stays unknown in that case. Missing or malformed ledgers also leave this gate
+unresolved.
+A final-close entry is supported by the reviewed SPMT close runner; the shared
+STC IX runner does not open a new position on that final selected close.
+
+The existing public [SPMT independent review](../library/connors-spmt/INDEPENDENT-REVIEW-2026-10-13.md)
+provides the reviewed daily source scope and declared conventions. This frontend
+change does not transfer that acceptance to the STC IX course or HPETF variants,
+change admissions, or certify printed performance. HPETF R3 and auxiliary-data
+methods retain their existing partial or unavailable condition status.
 
 ## Basket handling and resource limits
 

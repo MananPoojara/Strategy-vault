@@ -98,7 +98,7 @@ function RuleGuideBody({model,onClose,id}: {model:RuleVisualModel;onClose:()=>vo
     loadBasketRulePrices(model,selectedTrade,controller.signal).then(prices=>{if(!controller.signal.aborted)setBasketPrice({ticker,prices,note:'',loading:false});}).catch(error=>{if(!controller.signal.aborted)setBasketPrice({ticker,prices:null,note:error instanceof Error?error.message:'The constituent price history is unavailable.',loading:false});}).finally(()=>clearTimeout(timer));
     return()=>{clearTimeout(timer);controller.abort();};
   },[model,selectedTrade?.ticker]);
-  const chartModel=useMemo(()=>!model.basket?model:{...model,symbol:selectedTrade?.symbol||model.symbol,basket:false,prices:basketPrice.ticker===selectedTrade?.ticker?basketPrice.prices:null,blocked:basketPrice.ticker===selectedTrade?.ticker?basketPrice.note:'Choose a recorded position to inspect its own stock prices.'},[model,selectedTrade?.ticker,selectedTrade?.symbol,basketPrice]);
+  const chartModel=useMemo(()=>!model.basket?model:{...model,symbol:selectedTrade?.symbol||model.symbol,focusTicker:selectedTrade?.ticker,basket:false,prices:basketPrice.ticker===selectedTrade?.ticker?basketPrice.prices:null,blocked:basketPrice.ticker===selectedTrade?.ticker?basketPrice.note:'Choose a recorded position to inspect its own stock prices.'},[model,selectedTrade?.ticker,selectedTrade?.symbol,basketPrice]);
   const evidence=useMemo(()=>buildRuleEvidence(chartModel),[chartModel]),px=chartablePrices(chartModel);
   const trade=model.trades[tradeIndex],sourceIndex=model.dates.includes(selectedDate)?px?.d.indexOf(selectedDate)??-1:-1,checks=evidence.at(sourceIndex);
   // Keep very large basket trade lists accessible without creating thousands of

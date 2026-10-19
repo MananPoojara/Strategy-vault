@@ -72,7 +72,7 @@ describe('method-specific visual rule arithmetic',()=>{
     expect(buildRuleEvidence({...m,parameters:{fast:2,slow:3}}).scope).toBe('unavailable');
   });
   it('keeps generic indicator inputs partial and unknown methods unproved',()=>{
-    const m=model([10,20,30,10],'dmi_1',{trend:2,rsi_n:2,exit_rsi:65,di_n:2,di_lt:5});
+    const m=model([10,20,30,10],'eom_rsi',{trend:2,rsi_n:2,exit_rsi:65,rsi_lt:10});
     expect(buildRuleEvidence(m).scope).toBe('indicators');
     expect(buildRuleEvidence(m).at(3).every(v=>v.passed===null)).toBe(true);
     expect(buildRuleEvidence({...m,id:'unreviewed'}).scope).toBe('unavailable');
