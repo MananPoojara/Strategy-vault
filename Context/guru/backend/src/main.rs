@@ -887,16 +887,22 @@ fn protected_elder_grid(text:&str,expected:f64)->Result<(),String> {
 
 /// Resolve ticker + [from, to] (inclusive bar indices) + cost from query params.
 fn resolve_context<'a>(ctx:&'a Ctx<'a>, q: &BTreeMap<String, String>) -> Result<(&'a Ctx<'a>, usize, usize, f64), String> {
+    resolve_context_window(ctx, q, false)
+}
+/// The catalogue may resolve one observed session so its individually reviewed
+/// methods can be evaluated. Ordinary detail/optimizer admission is unchanged.
+fn resolve_context_window<'a>(ctx:&'a Ctx<'a>, q: &BTreeMap<String, String>, single_session_catalogue: bool) -> Result<(&'a Ctx<'a>, usize, usize, f64), String> {
     let dates: Vec<&str> = ctx.r.iter().map(|r| r.date.as_str()).collect();
     let from = q.get("from").filter(|s| !s.is_empty()).map_or(0, |f| dates.partition_point(|d| *d < f.as_str()));
     let to = q
         .get("to")
         .filter(|s| !s.is_empty())
         .map_or(dates.len() - 1, |t| dates.partition_point(|d| *d <= t.as_str()).saturating_sub(1));
-    if from > to || (from == to && !q.get("id").is_some_and(|id|books::hbiab_reviewed::reviewed(id))) {
+    let single_session = single_session_catalogue || q.get("id").is_some_and(|id|books::hbiab_reviewed::reviewed(id));
+    if from > to || (from == to && !single_session) {
         return Err("empty date range".into());
     }
-    if q.get("id").is_some_and(|id|books::hbiab_reviewed::reviewed(id)) && q.get("to").is_some_and(|t|!t.is_empty() && dates.first().is_some_and(|first|t.as_str()<*first)){return Err("empty date range".into());}
+    if single_session && q.get("to").is_some_and(|t|!t.is_empty() && dates.first().is_some_and(|first|t.as_str()<*first)){return Err("empty date range".into());}
     let cost = accounting::Costs::parse(q)?.side_rate(); // fees + slippage, bps per side exactly once
     Ok((ctx, from, to, cost))
 }
@@ -920,16 +926,19 @@ fn window_start(ctx: &Ctx, d: &connors::StrategyDef, from: usize) -> Option<usiz
 
 fn summary(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     let selected=select_context(st,q)?;let held=selected.context(st);
-    let (ctx, from, to, cost) = resolve_context(&held, q)?;
+    let definitions=query_catalogue(q);
+    let single_session_catalogue=!q.contains_key("id") && definitions.iter().any(|d|books::hbiab_reviewed::reviewed(d.id));
+    let (ctx, from, to, _cost) = resolve_context_window(&held, q, single_session_catalogue)?;
     let costs=accounting::Costs::parse(q)?;costs.ensure_rollover()?;
     let mut rows = Vec::new();
-    for d in query_catalogue(q).iter() {
+    for d in definitions.iter() {
         if let Some(issue) = readiness::check(ctx, d, from, to, &Params::new()).or_else(||native_admission(ctx,d,from,to,&selected,st,q)) {
             rows.push(format!("{{\"id\":\"{}\",\"blocked\":\"{}\",\"readiness\":\"{}\"}}", d.id, esc(&issue.note), issue.status));
             continue;
         }
         let Some(from) = window_start(ctx, d, from).filter(|&f| f < to || (f==to && books::hbiab_reviewed::reviewed(d.id))) else {
-            rows.push(format!("{{\"id\":\"{}\",\"blocked\":\"Required volatility-index data does not cover this period\",\"readiness\":\"needs_data\"}}", d.id));
+            let note=if from==to {"Single-session results are not admitted for this method"}else{"Required volatility-index data does not cover this period"};
+            rows.push(format!("{{\"id\":\"{}\",\"blocked\":\"{}\",\"readiness\":\"needs_data\"}}", d.id,note));
             continue;
         };
         let run = match backtest_costs(ctx,d.id,from,to,costs,&Params::new()){Ok(run)=>run,Err(note)=>{rows.push(format!("{{\"id\":\"{}\",\"blocked\":\"{}\",\"readiness\":\"calculation_unavailable\"}}",d.id,esc(&note)));continue;}};

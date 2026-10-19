@@ -198,6 +198,35 @@ fn one_session_summary_uses_bandy_cash_costs_and_matches_detail() {
         assert!(row.contains(&costs));
         assert!(actual.contains(&costs));
         assert!(!row.contains("Legacy equity includes estimated exit costs"));
+
+        // The public catalogue request has an owner but no strategy ID. An ID
+        // on the detailed request must not accidentally authorize the list.
+        let mut public_query = q.clone();
+        public_query.remove("id");
+        let public_query = owned_query(&public_query, "connors");
+        let public_summary = crate::summary(&st, &public_query).unwrap();
+        let begin = public_summary.find(&format!("{{\"id\":\"{id}\"")).unwrap();
+        let public_row = public_summary[begin..].split("},{\"id\":").next().unwrap();
+        assert_eq!(public_row, row);
+        for item in public_summary.split("{\"id\":\"").skip(1) {
+            let method = item.split('"').next().unwrap();
+            if !books::hbiab_reviewed::reviewed(method) {
+                assert!(!item.contains("\"stats\":"), "Unreviewed single-session result: {method}");
+            }
+        }
+        for guru in ["chande", "ross"] {
+            assert_eq!(crate::summary(&st, &owned_query(&public_query, guru)).unwrap_err(), "empty date range");
+        }
+        for (from, to) in [
+            ("2000-12-20", "2000-12-21"),
+            ("2001-01-22", "2001-01-21"),
+            ("2001-02-01", "2001-02-02"),
+        ] {
+            let mut outside = public_query.clone();
+            outside.insert("from".into(), from.into());
+            outside.insert("to".into(), to.into());
+            assert_eq!(crate::summary(&st, &outside).unwrap_err(), "empty date range");
+        }
     }
     let legacy = BTreeMap::from([
         ("id".into(), "f1a".into()),
@@ -206,4 +235,23 @@ fn one_session_summary_uses_bandy_cash_costs_and_matches_detail() {
         ("to".into(), "2001-01-22".into()),
     ]);
     assert_eq!(summary(&st, &legacy).unwrap_err(), "empty date range");
+    assert_eq!(detail(&st, &legacy).unwrap_err(), "empty date range");
+
+    // A calendar interval between observations is empty, even though the
+    // resolver's upper bound uses saturating_sub for ordinary date lookup.
+    let mut gap_rows = rows.to_vec();
+    gap_rows.last_mut().unwrap().date = "2001-01-24".into();
+    let gap_rows: &'static [Row] = Box::leak(gap_rows.into_boxed_slice());
+    let gap_state = State {
+        ctxs: BTreeMap::from([("SPY".into(), Ctx::new(gap_rows, gap_rows, &[]))]),
+        baskets: baskets::Catalogue::default(),
+        vix: vec![],
+        market_extra: BTreeMap::new(),
+    };
+    let empty_gap = owned_query(&BTreeMap::from([
+        ("ticker".into(), "SPY".into()),
+        ("from".into(), "2001-01-22".into()),
+        ("to".into(), "2001-01-23".into()),
+    ]), "connors");
+    assert_eq!(summary(&gap_state, &empty_gap).unwrap_err(), "empty date range");
 }
