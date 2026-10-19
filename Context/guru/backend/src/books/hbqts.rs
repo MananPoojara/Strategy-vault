@@ -323,10 +323,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
         def!("hbqts_ma11_50", "Custom-metric example: 11/50 MA crossover (Fig A.1)", G20, "Long", Live,
             &["E|fast = 11, slow = 50 (Optimize defaults); Buy = Cross(MA(C,11), MA(C,50)) (p.318)", "X|Sell = Cross(MA(C,50), MA(C,11)) (p.318)"], ""),
         def!("hbqts_dema16_8", "Objective-function example: DEMA 16/8 cross, hold 1 (Fig A.7)", G20, "Long", Live,
-            &["E|fast = 16, slow = 8 (Optimize defaults); Buy = Cross(DEMA(C,16), DEMA(C,8)) (p.322)", "X|Sell = Cross(DEMA(C,8), DEMA(C,16)) OR BarsSince(Buy) >= 1 (p.322)"], ""),
+            &["E|fast = 16, slow = 8 (fixed Optimize defaults); Buy = Cross(DEMA(C,16), DEMA(C,8)) (printed323)", "X|Raw Sell = Cross(DEMA(C,8), DEMA(C,16)) OR BarsSince(raw Buy) >= 1; then Sell = ExRem(Sell,Buy) (printed323)", "F|Declared daily finalized same-close fills, zero delay and normalized long unit exposure; source omits fills and sizing"],
+            "Figure A.7 teaches a custom objective-function metric; the complete demonstration trading rule is reviewed separately. Printed324 illustrates actual S&P500 cash-index data; book optimization and equity figures are not reproduced. Actual SPX is primary, NIFTY50 a separately declared cash-index adaptation; stocks/ETFs are not substitutes. First-close DEMA seeds, full prefix, flat selected start and terminal open positions. Unit-return cost deductions include explicitly estimated open liquidation costs; no funded cash account or native AmiBroker binary parity. See docs/hbqts-dema-index-review.md."),
     ];
     for d in &mut definitions {
-        if reviewed::IDS.contains(&d.id) {
+        if reviewed::IDS.contains(&d.id) && !reviewed::is_dema_index(d.id) {
             d.notes = "Source-reviewed companion AFL research contract: library/bandy/REVIEW-2026-10-13.md. Actual individual stocks only; selected AAPL/RELIANCE ledgers are independent symbol checks, not the book's universe or portfolio. Literal source defaults, explicit seed/Null conventions, no copied performance, sizing, dividends or financing. Open positions remain open. Independent source and actual-ledger review is documented there; deterministic publisher admission remains pending.";
         }
         if d.id=="hbqts_cmo" {
@@ -415,7 +416,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "hbqts_ma8_7_atr_stop" => vec![p("fast", "MA1 length", 8., 1., 20., 1.), p("slow", "MA2 length", 7., 1., 20., 1.), p("mult", "Stop ATR(20) multiple", 2., 0.5, 5., 0.5)],
         "hbqts_equity_alloc" => vec![p("fast", "MA1 length", 8., 1., 20., 1.), p("slow", "MA2 length", 7., 1., 20., 1.), p("mult", "ATR multiple", 2., 0.5, 5., 0.5),
             p("risk", "Max risk % of price", 2., 0.5, 10., 0.5), p("hold", "Hold days", 100., 1., 200., 1.)],
-        "hbqts_dema16_8" => vec![p("fast", "DEMA fast", 16., 1., 20., 1.), p("slow", "DEMA slow", 8., 1., 20., 1.), p("hold", "Hold days", 1., 1., 20., 1.)],
+        "hbqts_dema16_8" => vec![p("fast", "DEMA first length", 16., 16., 16., 1.), p("slow", "DEMA second length", 8., 8., 8., 1.), p("hold", "Bars since raw Buy", 1., 1., 1., 1.)],
         _ => return None,
     })
 }
@@ -448,6 +449,9 @@ fn daynumber(doi: &[bool], to: usize) -> Vec<Option<i64>> {
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     if !id.starts_with("hbqts_") { return None; }
     let schema = params(id)?;
+    // This separately reviewed close-entry rule retains a true terminal entry,
+    // including a one-observation selection with its genuine prior prefix.
+    if reviewed::is_dema_index(id) { return reviewed::run(id,x,from,to,p); }
     if from >= to || to >= x.r.len() { return Some(vec![]); }
     if reviewed::IDS.contains(&id) { return reviewed::run(id, x, from, to, p); }
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));

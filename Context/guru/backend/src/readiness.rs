@@ -47,6 +47,10 @@ mod short_course_readiness_tests {
 }
 
 pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -> Option<Issue> {
+    if crate::instrument_policy::reviewed_dema_index(def) {
+        if let Some(note)=books::hbqts::reviewed::validate_dema_index(p){return issue("not_testable",note);}
+        if from>to || books::hbqts::reviewed::dema_index_states(ctx,to).is_none(){return issue("needs_data","Actual QTS index history is unavailable or contains invalid OHLC, chronology or nonfinite DEMA states. The full supplied prefix is retained; observations are not dropped, filled or reseeded.");}
+    }
     if def.book=="hbiab" && books::hbiab_reviewed::reviewed(def.id) {
         if let Some(note)=books::hbiab_reviewed::validate(def.id,p){return issue("not_testable",note);}
         if from>to||to>=ctx.r.len(){return issue("needs_data","Actual Bandy selected window unavailable");}
@@ -162,7 +166,7 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
             }
         }
     }
-    if from >= ctx.r.len() || to >= ctx.r.len() || from > to || (from==to && !(def.book=="hbiab" && books::hbiab_reviewed::reviewed(def.id))) {
+    if from >= ctx.r.len() || to >= ctx.r.len() || from > to || (from==to && !((def.book=="hbiab" && books::hbiab_reviewed::reviewed(def.id)) || crate::instrument_policy::reviewed_dema_index(def))) {
         return issue("needs_data", "No usable trading range is covered by the required data. Choose another period.");
     }
     if ctx.r[from..=to].iter().any(|r| ![r.open,r.high,r.low,r.close].iter().all(|n| n.is_finite() && *n > 0.0) || r.low > r.high || r.open < r.low || r.open > r.high || r.close < r.low || r.close > r.high) {

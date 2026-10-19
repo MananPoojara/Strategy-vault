@@ -700,6 +700,22 @@ fn hv_raw_default(text:&str,default:f64)->bool {
 /// Existing methods keep their previous parsing contract until separately reviewed.
 fn checked_params_of(q: &BTreeMap<String, String>) -> Result<Params,String> {
     let p=params_of(q);
+    if let Some(id)=q.get("id").filter(|id|books::hbqts::reviewed::is_dema_index(id)) {
+        let schema=books::hbqts::params(id).ok_or("Unknown QTS index configuration")?;
+        for (key,text) in q {
+            if let Some(name)=key.strip_prefix("p.") {
+                let setting=schema.iter().find(|s|s.key==name).ok_or_else(||format!("Unknown QTS index parameter: {key}"))?;
+                if !hv_raw_default(text,setting.def){return Err(format!("QTS index {key} must equal its exact reviewed decimal default before rounding or underflow"));}
+            }
+            if let Some(name)=key.strip_prefix("g.") {
+                let setting=schema.iter().find(|s|s.key==name).ok_or_else(||format!("Unknown QTS index grid: {key}"))?;
+                let raw:Vec<&str>=text.split(':').map(str::trim).collect();
+                let ok=match raw.as_slice(){[v]=>hv_raw_default(v,setting.def),[lo,hi,step]=>hv_raw_default(lo,setting.def)&&hv_raw_default(hi,setting.def)&&step.parse::<f64>().is_ok_and(|v|v.is_finite()&&v>0.),_=>false};
+                if !ok{return Err(format!("QTS index grid {key} permits only the exact singleton reviewed value and finite positive step"));}
+            }
+        }
+        if let Some(note)=books::hbqts::reviewed::validate_dema_index(&p){return Err(note);}return Ok(p);
+    }
     if let Some(id)=q.get("id").filter(|id|books::hbiab_reviewed::reviewed(id)) {
         let schema=books::hbiab::params(id).ok_or("Unknown reviewed Bandy configuration")?;
         for (key,text) in q {
@@ -885,6 +901,10 @@ fn protected_elder_grid(text:&str,expected:f64)->Result<(),String> {
     Ok(())
 }
 
+fn reviewed_single_session(id:&str)->bool {
+    books::hbiab_reviewed::reviewed(id) || books::hbqts::reviewed::is_dema_index(id)
+}
+
 /// Resolve ticker + [from, to] (inclusive bar indices) + cost from query params.
 fn resolve_context<'a>(ctx:&'a Ctx<'a>, q: &BTreeMap<String, String>) -> Result<(&'a Ctx<'a>, usize, usize, f64), String> {
     resolve_context_window(ctx, q, false)
@@ -898,7 +918,7 @@ fn resolve_context_window<'a>(ctx:&'a Ctx<'a>, q: &BTreeMap<String, String>, sin
         .get("to")
         .filter(|s| !s.is_empty())
         .map_or(dates.len() - 1, |t| dates.partition_point(|d| *d <= t.as_str()).saturating_sub(1));
-    let single_session = single_session_catalogue || q.get("id").is_some_and(|id|books::hbiab_reviewed::reviewed(id));
+    let single_session = single_session_catalogue || q.get("id").is_some_and(|id|reviewed_single_session(id));
     if from > to || (from == to && !single_session) {
         return Err("empty date range".into());
     }
@@ -927,7 +947,7 @@ fn window_start(ctx: &Ctx, d: &connors::StrategyDef, from: usize) -> Option<usiz
 fn summary(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     let selected=select_context(st,q)?;let held=selected.context(st);
     let definitions=query_catalogue(q);
-    let single_session_catalogue=!q.contains_key("id") && definitions.iter().any(|d|books::hbiab_reviewed::reviewed(d.id));
+    let single_session_catalogue=!q.contains_key("id") && definitions.iter().any(|d|reviewed_single_session(d.id));
     let (ctx, from, to, _cost) = resolve_context_window(&held, q, single_session_catalogue)?;
     let costs=accounting::Costs::parse(q)?;costs.ensure_rollover()?;
     let mut rows = Vec::new();
@@ -936,7 +956,7 @@ fn summary(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
             rows.push(format!("{{\"id\":\"{}\",\"blocked\":\"{}\",\"readiness\":\"{}\"}}", d.id, esc(&issue.note), issue.status));
             continue;
         }
-        let Some(from) = window_start(ctx, d, from).filter(|&f| f < to || (f==to && books::hbiab_reviewed::reviewed(d.id))) else {
+        let Some(from) = window_start(ctx, d, from).filter(|&f| f < to || (f==to && reviewed_single_session(d.id))) else {
             let note=if from==to {"Single-session results are not admitted for this method"}else{"Required volatility-index data does not cover this period"};
             rows.push(format!("{{\"id\":\"{}\",\"blocked\":\"{}\",\"readiness\":\"needs_data\"}}", d.id,note));
             continue;
@@ -1033,7 +1053,7 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         return Err(format!("{}: {}", issue.status, issue.note));
     }
     costs.ensure_rollover()?;
-    let from = window_start(ctx, def, from).filter(|&f| f < to || (f==to && books::hbiab_reviewed::reviewed(id))).ok_or("Required volatility-index data does not cover this period")?;
+    let from = window_start(ctx, def, from).filter(|&f| f < to || (f==to && reviewed_single_session(id))).ok_or("Required volatility-index data does not cover this period")?;
     let run = backtest_costs(ctx, id, from, to, costs, &p)?;
     if run.bandy_account.is_some() {
         let mut output=bandy_detail(ctx,id,from,to,costs,&run);output.pop();let _=write!(output,",\"provenance\":{}}}",source_provenance(st,q));return Ok(output);
@@ -1177,7 +1197,7 @@ fn optimize(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> 
             }
         }
     }
-    let from = window_start(ctx, def, from).filter(|&f| f < to || (f==to && books::hbiab_reviewed::reviewed(id))).ok_or("Required volatility-index data does not cover this period")?;
+    let from = window_start(ctx, def, from).filter(|&f| f < to || (f==to && reviewed_single_session(id))).ok_or("Required volatility-index data does not cover this period")?;
     let mut dims: Vec<(&str, Vec<f64>)> = Vec::new();
     for p in connors::params(id) {
         if let Some(spec) = q.get(&format!("g.{}", p.key)) {
@@ -2013,3 +2033,5 @@ mod tests {
 }
 
 #[cfg(test)] mod hbiab_verification;
+
+#[cfg(test)] mod dema_verification;

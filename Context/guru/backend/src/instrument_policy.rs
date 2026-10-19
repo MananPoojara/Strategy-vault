@@ -46,6 +46,16 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || (def.book=="elcim" && def.id==crate::books::elcim_account::ID)
         || (def.book=="hbiab" && crate::books::hbiab_reviewed::reviewed(def.id))
 }
+/// Figure A.7 is an index example, distinct from the reviewed stock/ETF batch.
+pub fn reviewed_dema_index(def:&StrategyDef)->bool {
+    def.book=="hbqts" && crate::books::hbqts::reviewed::is_dema_index(def.id)
+}
+fn dema_index_symbol_issue(def:&StrategyDef,ticker:&str,selected:&str)->Option<Issue> {
+    if reviewed_dema_index(def) && !(selected=="index" && matches!(ticker,"SPX"|"NIFTY 50")) {
+        return Some(Issue{status:"needs_data",note:"QTS Figure A.7 printed324 illustrates the S&P500 cash index. This review admits actual SPX and the separately declared actual NIFTY 50 cash-index adaptation only. Other indices, stocks, ETFs, derivatives and baskets do not inherit source or numerical review.".into()});
+    }
+    None
+}
 fn reviewed_adaptive_rule(def:&StrategyDef)->bool {
     def.book=="kftsm" && member(def.id,&["kftsm_kama","kftsm_adapt_exp","kftsm_vidya","kftsm_adapt_r2","kftsm_adapt_rsi","kftsm_swg","kftsm_swing","kftsm_raschke_first_cross","kftsm_outside_day","kftsm_fc_bb_abx"])
 }
@@ -99,6 +109,10 @@ pub fn policy(def:&StrategyDef)->Policy {
     p
 }
 fn base_policy(def:&StrategyDef)->Policy {
+    if reviewed_dema_index(def) {
+        let mut p=index(crate::books::hbqts::reviewed::DEMA_INDEX_BASIS);
+        p.execution_scope="single_symbol_index_timing_research";p.market_adaptation=true;return p;
+    }
     if def.book=="hbiab" && crate::books::hbiab_reviewed::reviewed(def.id) {
         let mut p=requirement("stock_or_equity_etf", &["individual_stock","etf"], crate::books::hbiab_reviewed::basis(def.id));
         p.execution_scope="single_symbol_source_account";p.market_adaptation=true;return p;
@@ -228,6 +242,7 @@ pub fn selected_type(ticker:&str,native_stock:bool)->&'static str {
 }
 pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     let p=policy(def);let selected=selected_type(ticker,native_stock);
+    if let Some(issue)=dema_index_symbol_issue(def,ticker,selected){return Some(issue);}
     if native_stock {
         if let Some(reason)=p.native_currency_constraint {
             return Some(Issue {status:"needs_data",note:format!("Source currency/tick data missing. {reason} USD amounts cannot silently become INR amounts. A source-supported Indian specification or dated FX treatment and verified local tick rules are required before admission; editing the numeric parameter alone does not establish those inputs. Selected actual stock: {ticker}. No results are published.")});
@@ -240,6 +255,7 @@ pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
 /// source's historical adjusted-price basis or its original execution ticks.
 pub fn check_native(def:&StrategyDef,ticker:&str,evidence:&NativeEvidence)->Option<Issue> {
     let p=policy(def);
+    if let Some(issue)=dema_index_symbol_issue(def,ticker,evidence.asset_type()){return Some(issue);}
     if let Some(issue)=check_selected(p,ticker,evidence.asset_type()){return Some(issue);}
     if let Some(reason)=p.native_currency_constraint {
         return Some(Issue{status:"needs_data",note:format!("Source currency/price-unit/tick review is pending. {reason} Selected actual stock: {ticker}; trusted source market {} and currency {}. Matching USD currency alone cannot establish the author's historical adjusted-price basis, absolute price thresholds or execution ticks; no reviewed source-unit proof is staged. No results are published.",evidence.market().code(),evidence.currency())});
@@ -285,7 +301,9 @@ pub fn metadata_json(def:&StrategyDef)->String {
     let mut json=format!("{{\"requirement\":\"{}\",\"allowed_types\":[{}],\"preferred_basket\":{},\"execution_scope\":\"{}\",\"source_basis\":\"{}\",\"market_adaptation\":{},\"source_performance_reproduced\":false,\"limitations\":\"Compatibility is only an instrument check. Required source filters, data, currency/tick units, corporate actions, fill ordering and accounting must pass separate checks. Current constituent snapshots do not establish historical membership; retrospective selection has survivorship bias.\"}}",p.requirement,p.allowed_types.iter().map(|s|format!("\"{s}\"")).collect::<Vec<_>>().join(","),p.preferred_basket.map_or("null".into(),|s|format!("\"{s}\"")),p.execution_scope,escape(p.source_basis),p.market_adaptation);
     json.pop();
     if def.book=="hbiab" && crate::books::hbiab_reviewed::reviewed(def.id) {json.push_str(&format!(",\"source_convention\":\"{}\",\"account_model\":\"{}\"",crate::books::hbiab_reviewed::convention(def.id),crate::books::hbiab_reviewed::MODEL));}
-    json.push_str(&format!(",\"source_rule_reviewed\":{},\"independent_selected_ledger_checked\":{}",reviewed_cash_rule(def),reviewed_cash_rule(def)));
+    if reviewed_dema_index(def) {json.push_str(&format!(",\"source_convention\":\"{}\"",crate::books::hbqts::reviewed::DEMA_INDEX_CONVENTION));}
+    let reviewed=reviewed_cash_rule(def)||reviewed_dema_index(def);
+    json.push_str(&format!(",\"source_rule_reviewed\":{},\"independent_selected_ledger_checked\":{}",reviewed,reviewed));
     if def.book=="kfsc" && crate::books::kfsc::reviewed_hv_rule(def.id) {
         json.push_str(&format!(",\"source_convention\":\"{}\"",escape(crate::books::kfsc::HV_CONVENTION)));
     }
