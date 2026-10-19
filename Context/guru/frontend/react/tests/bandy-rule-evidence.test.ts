@@ -60,7 +60,7 @@ describe('accepted positions and qualified stocks',()=>{
  });
  it('requires exact book ownership and refuses unknown close-position state',()=>{
   const m=model([10,9,8,10,9],'hbqts_ma5_25',{fast:1,slow:2});
-  for(const book of ['stc9','',undefined])expect(buildBandyRuleEvidence({...m,book},m.prices!)?.scope).toBe('unavailable');
+  for(const book of ['stc9','',undefined])expect(buildBandyRuleEvidence({...m,book:book??''},m.prices!)?.scope).toBe('unavailable');
   for(const bad of [{...trade(m,3,4),entryKind:'limit'},{...trade(m,3,4),exitPrice:null},{...trade(m,3,4),exits:[{date:m.prices!.d[4],price:9,weight:.5}]},{...trade(m,3,4),legs:[{date:m.prices!.d[3],price:10,weight:.5}]}]){m.trades=[bad];expect(check(m,3,'Source entry permitted').passed).toBeNull();expect(check(m,3,'Recorded entry fill').passed).toBeNull();}
   const original=model([10,9,8,10,9,11,12,13],'hbqts_ma5_25',{fast:1,slow:2});original.trades=[trade(original,1,6),{...trade(original,3,7),key:1}];expect(check(original,3,'Source position before close').value).toBeNull();
  });

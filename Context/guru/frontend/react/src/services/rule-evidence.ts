@@ -1,5 +1,6 @@
 import {buildStrategyIndicators, simpleMovingAverage, type PriceHistory, type StrategyIndicator} from './strategy-indicators';
 import {buildConnorsRuleEvidence} from './connors-rule-evidence';
+import {buildBandyRuleEvidence} from './bandy-rule-evidence';
 
 export interface RuleCheck {
   label: string;
@@ -163,6 +164,7 @@ export function buildRuleEvidence(model: RuleVisualModel): RuleEvidence {
   if(!px)return unavailable(model.blocked || (model.basket ? 'A basket has many price series. A single index or stock chart cannot represent its rule conditions. Open an individual stock result for a candle-by-candle view.' : 'No valid actual price series is available for this selected run.'));
   if(model.prices?.full_history !== true)return unavailable('Full engine source history, including indicator warmup, is unavailable. Sliced candles can show fills, but exact rule values are withheld.');
   const connors=buildConnorsRuleEvidence(model,px);if(connors)return connors;
+  const bandy=buildBandyRuleEvidence(model,px);if(bandy)return bandy;
   const c=px.c, p=model.parameters, series:StrategyIndicator[]=[];
   const add=(key:string,label:string,values:(number|null)[],placement:'price'|'pane'='price',thresholds:StrategyIndicator['thresholds']=[])=>{
     series.push({key,label,points:px.d.map((time,i)=>({time,value:number(values[i])})),kind:placement==='price'?'sma':'sum',placement,thresholds});

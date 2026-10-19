@@ -9,6 +9,17 @@ function model(closes:number[],id='kftsm_exp',parameters:Record<string,number>={
 }
 const values=(m:RuleVisualModel,key:string)=>buildRuleEvidence(m).series.find(s=>s.key===key)!.points.map(p=>p.value);
 describe('method-specific visual rule arithmetic',()=>{
+  it('dispatches reviewed Bandy stock conditions only with matching full source history',()=>{
+    const original=model([10,11,12,11,10],'hbqts_ma5_25',{fast:1,slow:2});
+    const ticker='basket:nifty50:TEST',provenance={asset_type:'individual_stock',symbol:'TEST',qualified_ticker:ticker,source_sha256:'a'.repeat(64),csv_sha256:'b'.repeat(64)};
+    const make=(book='hbqts',full_history=true,asset_type='individual_stock')=>makeRuleVisualModel({strategy:{id:original.id,book},run:{dates:original.dates,trades:[],provenance},prices:{...original.prices,provenance:{...provenance,asset_type},full_history},parameters:original.parameters,ticker,symbol:'TEST'});
+    const evidence=buildRuleEvidence(make());
+    expect(evidence.scope).toBe('exact');
+    expect(evidence.at(3).find(c=>c.label==='Raw sell condition')?.passed).toBe(true);
+    expect(buildRuleEvidence(make('another_book')).scope).toBe('unavailable');
+    expect(buildRuleEvidence(make('hbqts',false)).scope).toBe('unavailable');
+    expect(buildRuleEvidence(make('hbqts',true,'index')).scope).toBe('unavailable');
+  });
   it('uses mean-seeded SmoothedAverage, not a generic first-close EMA',()=>{
     expect(smoothedAverage([10,20,30,10],2)).toEqual([null,15,22.5,16.25]);
     const m=model([10,20,30,10]);

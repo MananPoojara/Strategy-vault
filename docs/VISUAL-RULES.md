@@ -42,8 +42,8 @@ readable without inferring a terminal exit arrow.
 
 As of the 2026-10-19 catalogue snapshot, all 4,321 registered definition routes
 use the common Rules presenter. Among the 183 definitions with live status and a
-compatible instrument policy, 30 have method-specific arithmetic providers, 63
-have partial indicator inputs, and 90 await a condition provider. These are
+compatible instrument policy, 35 have method-specific arithmetic providers, 63
+have partial indicator inputs, and 85 await a condition provider. These are
 frontend coverage counts, not verified-book counts or assurances that the
 required data exists for every selection. Detailed condition coverage remains
 unfinished; the common popup does not certify all strategies.
@@ -128,6 +128,21 @@ provides the reviewed daily source scope and declared conventions. This frontend
 change does not transfer that acceptance to the STC IX course or HPETF variants,
 change admissions, or certify printed performance. HPETF R3 and auxiliary-data
 methods retain their existing partial or unavailable condition status.
+
+## Bandy stock providers
+
+The five reviewed Bandy QTS stock providers (`hbqts_stoch_rsi`,
+`hbqts_ma5_25`, `hbqts_ma1_36`, `hbqts_fixed_interval`, `hbqts_entry_id1`)
+also expose their source-formula inputs, raw and de-duplicated conditions,
+position permission and accepted fills. They require the matching `hbqts` book
+and qualified individual-stock source history; an index cannot substitute.
+Their RSI initialization, fresh-window averages, complete-history bar clock,
+ordered ExRem assignments and missing-value behavior follow the reviewed engine.
+Missing source dates, incompatible positions or a malformed ledger leave state
+unknown. A terminal open mark is never an exit fill. See
+[`library/bandy/VISUAL-RULES-2026-10-19.md`](../library/bandy/VISUAL-RULES-2026-10-19.md)
+for the scoped conventions and limits. This adds explanations for existing
+methods; it does not certify native AmiBroker parity or reproduce book returns.
 
 ## Basket handling and resource limits
 
