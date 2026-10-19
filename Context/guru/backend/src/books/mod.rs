@@ -2,6 +2,7 @@
 use crate::connors::{ParamDef, Params, StrategyDef, Ctx, Trade};
 pub mod joe_ross_math;
 pub mod elcim_account;
+pub mod hbiab_reviewed;
 
 macro_rules! books {
     ($($m:ident),*) => {

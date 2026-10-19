@@ -1,13 +1,10 @@
-//! Howard B. Bandy, *Introduction to AmiBroker* (Blue Owl Press, 2008) - the complete AFL trading systems in the book.
+//! Howard B. Bandy, *Introduction to AmiBroker* (Blue Owl Press, 2008) - legacy catalogue with three separately reviewed examples.
 //! Source, page references and checks: library/hbiab/README.md.
 //!
-//! AmiBroker semantics (book p.66, 396-399, 408, 486-488, 530-531): with Buy/Sell delay 0 and price Close an order fills at
-//! the close of the signal bar; with `SetTradeDelays(1,1,1,1)` and price Open at the next bar's open. `ApplyStop` with
-//! ExitAtStop = 1 exits intraday at the stop level (gap = open); stops are evaluated in the fixed order N-bar (when it has
-//! priority, ExitAtStop = 1), max loss, profit target, trailing (p.399). "Activate stops immediately" follows the book's
-//! scenarios (p.397-398): on for next-open trading, off for close trading. Positions Long (the book's settings), one position.
-//! The book ran these on single stocks (CAT, IP, XLU, SPY charts) and sector ETF watch lists; the vault runs the same AFL on the
-//! selected index (instrument swap only). Portfolio sizing (PosQty positions) is replaced by the vault allocation.
+//! The three reviewed examples use their own fixed-fraction normalized cash account
+//! and exact instrument policy. Other catalogue entries remain legacy fragments,
+//! outside this bounded source review. No index substitution or whole-book coverage
+//! is implied. See docs/hbiab-three-review.md.
 use crate::connors::{true_range, wilder, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "hbiab";
@@ -34,7 +31,7 @@ fn bars_since(b: &[bool]) -> Vec<Option<usize>> {
     (0..b.len()).map(|i| { if b[i] { last = Some(i); } last.map(|l| i - l) }).collect()
 }
 
-const STK: &str = "The book shows this on single stocks / ETFs (CAT, IP, XLU, SPY) with dollar equity of a $10,000 account; no index result is printed. Vault: same AFL on the selected index.";
+const STK: &str = "The book shows this on single stocks / ETFs (CAT, IP, XLU, SPY) with dollar equity of a $10,000 account; no index result is printed. Actual stock/ETF applications require source-specific review; indices are not substitutes.";
 macro_rules! def {
     ($id:expr, $name:expr, $g:expr, $st:expr, $rules:expr, $notes:expr) => {
         StrategyDef { id: $id, name: $name, group: $g, session: 0, dir: "Long", status: $st, needs_volume: false, needs_vix: false,
@@ -51,7 +48,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         def!("hbiab_ma5_20", "Example 6A/6B: 5/20 moving average crossover", G3, Live,
             &["E|FastMA = MA(C,5); SlowMA = MA(C,20); Buy = Cross(FastMA, SlowMA) (Example6A.afl, p.78; Example6X p.503)", "X|Sell = Cross(SlowMA, FastMA) (p.78)",
               "F|Settings: positions Long, \"Buy and Sell on the Close with Delay 0\" (p.503)"],
-            "Book: CAT, final equity $14,013 on $10,000 (p.85). Example 7A / BacktestExample run the same rules as a 2-3 position portfolio of a watch list."),
+            "Book-reported CAT equity $14,013 on $10,000 (p.85), not reproduced. Printed503 also illustrates actual XLU ETF. Reviewed single-symbol application uses declared 100% fractional cash allocation, reserves entry costs, starts flat and retains terminal open marks. Separate Example7A portfolio is not reproduced."),
         def!("hbiab_ma7_4", "Example 8B: optimised 7/4 moving average crossover", G3, Live,
             &["E|FastMALength = 7, SlowMALength = 4 (the best in-sample values entered as the Optimize defaults, p.95-96); Buy = Cross(MA(C,7), MA(C,4)) (p.93)",
               "X|Sell = Cross(MA(C,4), MA(C,7)) (p.93)"],
@@ -60,8 +57,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["E|Walk forward: in-sample 6 months, out-of-sample 6 months, RAR/MDD objective, 7/2004-8/2007 (p.98-103)"], ""),
         def!("hbiab_macd_example", "Example.afl: MACD / signal crossover, next-day open", G5, Live,
             &["E|Buy = Cross(MACD(), Signal()) (p.224)", "X|Sell = Cross(Signal(), MACD()) (p.224)", "F|SetTradeDelays(1,1,1,1); BuyPrice = SellPrice = Open (p.224-225)",
-              "F|MACD() = EMA(C,12) - EMA(C,26), Signal() = EMA(MACD,9) (AmiBroker defaults)"],
-            "Book sizes 25% of equity per position (SetPositionSize(25, spsPercentOfEquity)); no result printed."),
+              "F|MACD12/26 and Signal9 defaults (printed308,317); full SMA seeds are a declared computational convention", "F|SetPositionSize(25, spsPercentOfEquity): source 25% of current equity (printed224)"],
+            "Source sizes 25% of current equity per position (SetPositionSize(25, spsPercentOfEquity)); cash and paid costs retained in the reviewed normalized fractional account. EMA12/26 and signal9 use explicitly declared full SMA seeds; native AmiBroker binary parity is not claimed. No book result printed."),
         def!("hbiab_rotational", "ExampleRotational.afl: buy the 4 worst 252-day performers", G5, NeedsData("a stock universe ranked daily by -ROC(C,252) with 4 positions held (rotational backtest)"),
             &["E|PositionScore = 10000 - ROC(C,252); MaxPositions 4, WorstRankHeld 6, next-day open (p.225-226)"], ""),
         def!("hbiab_sector_portfolio", "Example 7A / BacktestExample: MA crossover on a watch-list portfolio", G10, NeedsData("the book's watch lists (Basic Materials stocks; the nine Select Sector SPDR ETFs) traded as a 2-3 position portfolio"),
@@ -94,9 +91,9 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     Some(match id {
-        "hbiab_ma5_20" => vec![p("fast", "FastMA length", 5., 1., 50., 1.), p("slow", "SlowMA length", 20., 2., 100., 1.)],
-        "hbiab_ma7_4" => vec![p("fast", "FastMA length", 7., 1., 31., 2.), p("slow", "SlowMA length", 4., 2., 30., 2.)],
-        "hbiab_macd_example" => vec![p("fast", "MACD fast EMA", 12., 2., 50., 1.), p("slow", "MACD slow EMA", 26., 5., 100., 1.), p("sig", "Signal EMA", 9., 2., 30., 1.)],
+        "hbiab_ma5_20" => vec![p("fast", "FastMA length", 5., 5., 5., 1.), p("slow", "SlowMA length", 20., 20., 20., 1.)],
+        "hbiab_ma7_4" => vec![p("fast", "FastMA length", 7., 7., 7., 1.), p("slow", "SlowMA length", 4., 4., 4., 1.)],
+        "hbiab_macd_example" => vec![p("fast", "MACD fast EMA", 12., 12., 12., 1.), p("slow", "MACD slow EMA", 26., 26., 26., 1.), p("sig", "Signal EMA", 9., 9., 9., 1.)],
         "hbiab_simple_ma25" => vec![p("ma", "MA length", 25., 2., 200., 1.), p("hold", "Bars since Buy", 5., 1., 30., 1.)],
         "hbiab_trend_following" => vec![p("mal1", "MAL1", 50., 1., 51., 2.), p("mal2", "MAL2", 30., 2., 52., 2.), p("atr_mult", "ATR multiple", 3.75, 1., 5., 0.25), p("atr", "ATR length", 14., 2., 50., 1.)],
         "hbiab_mean_reversion" => vec![p("zs", "Z-score length", 34., 4., 50., 1.), p("level", "Buy level", -2.0, -4.0, 0.0, 0.25), p("hold", "N-bar stop", 9., 1., 10., 1.), p("pt", "Profit target %", 3., 0.5, 5., 0.25)],
@@ -122,6 +119,7 @@ fn at_close(x: &Ctx, from: usize, to: usize, buy: &[bool], sell: &[bool]) -> Vec
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+    if super::hbiab_reviewed::reviewed(id){return super::hbiab_reviewed::run(id,x,from,to,0.,p).ok().map(|a|a.trades);}
     if !id.starts_with("hbiab_") { return None; }
     let schema = params(id)?;
     if from >= to || to >= x.r.len() { return Some(vec![]); }

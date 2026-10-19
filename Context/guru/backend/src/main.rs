@@ -229,20 +229,34 @@ struct Run {
     equity: Vec<f64>, // strategy equity, one value per bar in [from, to]
     bh: Vec<f64>,     // buy & hold equity (long; short strategies still compare to B&H)
     source_account:Option<books::elcim_account::Account>,
+    bandy_account:Option<books::hbiab_reviewed::Account>,
+}
+
+fn backtest_costs(ctx:&Ctx,id:&str,from:usize,to:usize,costs:accounting::Costs,p:&Params)->Result<Run,String>{
+    if !books::hbiab_reviewed::reviewed(id){return backtest(ctx,id,from,to,costs.side_rate(),p);}
+    let account=books::hbiab_reviewed::run_with_bps(id,ctx,from,to,costs.fees_bps,costs.slippage_bps,p)?;
+    trade_validation::check(&account.trades,from,to,0.)?;
+    Ok(Run{trades:account.trades.clone(),from,to,equity:account.days.iter().map(|d|d.equity).collect(),bh:(from..=to).map(|k|ctx.c[k]/ctx.c[from]).collect(),source_account:None,bandy_account:Some(account)})
 }
 
 fn backtest(ctx: &Ctx, id: &str, from: usize, to: usize, cost: f64, p: &Params) -> Result<Run,String> {
+    if books::hbiab_reviewed::reviewed(id) {
+        let account=books::hbiab_reviewed::run(id,ctx,from,to,cost,p)?;
+        // This cash account validates paid fees on true filled notionals itself.
+        trade_validation::check(&account.trades,from,to,0.)?;
+        return Ok(Run{trades:account.trades.clone(),from,to,equity:account.days.iter().map(|d|d.equity).collect(),bh:(from..=to).map(|k|ctx.c[k]/ctx.c[from]).collect(),source_account:None,bandy_account:Some(account)});
+    }
     if id==books::elcim_account::ID {
         let account=books::elcim_account::run(ctx,from,to,cost,p)?;
         trade_validation::check(&account.trades,from,to,cost)?;
-        return Ok(Run{trades:account.trades.clone(),from,to,equity:account.days.iter().map(|d|d.equity).collect(),bh:(from..=to).map(|k|ctx.c[k]/ctx.c[from]).collect(),source_account:Some(account)});
+        return Ok(Run{trades:account.trades.clone(),from,to,equity:account.days.iter().map(|d|d.equity).collect(),bh:(from..=to).map(|k|ctx.c[k]/ctx.c[from]).collect(),source_account:Some(account),bandy_account:None});
     }
     let trades = connors::run(id, ctx, from, to, p).ok_or("Strategy implementation unavailable")?;
     trade_validation::check(&trades,from,to,cost)?;
     let equity = equity_curve(&ctx.c, &trades, from, to, cost);
     if equity.iter().any(|v|!v.is_finite()||*v<=0.) {return Err("calculation_unavailable: Unsupported nonpositive or nonfinite normalized equity; no reset, clipping or invented funding is applied.".into());}
     let bh = (from..=to).map(|k| ctx.c[k] / ctx.c[from]).collect();
-    Ok(Run { trades, from, to, equity, bh,source_account:None })
+    Ok(Run { trades, from, to, equity, bh,source_account:None,bandy_account:None })
 }
 
 /// Daily equity: each trade's legs marked to the close (scale-out pieces at their fill once out).
@@ -330,7 +344,9 @@ fn stats(ctx: &Ctx, run: &Run, cost: f64) -> BTreeMap<&'static str, f64> {
     // Trade statistics use CLOSED trades only; a still-open trade is in the equity curve
     // (marked to market) but has no final result yet.
     let closed: Vec<&Trade> = run.trades.iter().filter(|t| !t.open).collect();
-    let tr: Vec<f64> = closed.iter().map(|t| t.ret(cost)).collect();
+    let tr: Vec<f64> = if let Some(account)=&run.bandy_account {
+        account.trades.iter().zip(&account.trade_audit).filter(|(t,_)|!t.open).map(|(_,a)|if cost==0.{a.gross/a.entry_equity}else{a.net/a.entry_equity}).collect()
+    } else {closed.iter().map(|t| t.ret(cost)).collect()};
     let n = tr.len() as f64;
     let wins: Vec<f64> = tr.iter().copied().filter(|r| *r > 0.0).collect();
     let losses: Vec<f64> = tr.iter().copied().filter(|r| *r <= 0.0).collect();
@@ -403,12 +419,23 @@ fn stats(ctx: &Ctx, run: &Run, cost: f64) -> BTreeMap<&'static str, f64> {
 /// Additive return accounting. Monetary sizing and exact intraday MAE/MFE are
 /// deliberately unavailable; changing a cost input does not manufacture them.
 fn financial_stats(ctx: &Ctx, run: &Run, costs: accounting::Costs) -> BTreeMap<&'static str,f64> {
+    if let Some(account)=&run.bandy_account {
+        let mut s=stats(ctx,run,costs.side_rate());
+        let zero=Run{trades:run.trades.clone(),from:run.from,to:run.to,equity:account.days.iter().map(|d|d.gross).collect(),bh:run.bh.clone(),source_account:None,bandy_account:Some(account.clone())};
+        let gross=stats(ctx,&zero,0.);
+        for (key,source) in [("gross_total_return","total_return"),("gross_avg_trade","avg_trade"),("gross_win_rate","win_rate"),("gross_sharpe","sharpe"),("gross_max_dd","max_dd")] {s.insert(key,gross[source]);}
+        let (mut ledger,mut fees,mut slips)=(0.,0.,0.);
+        for a in &account.trade_audit {ledger+=a.gross;let turnover=a.notional+a.exit_notional.unwrap_or(0.);fees+=turnover*costs.fees_bps/10000.;slips+=turnover*costs.slippage_bps/10000.;}
+        s.insert("ledger_gross_return",ledger);s.insert("fee_return",fees);s.insert("slippage_return",slips);s.insert("avg_net_pnl",s["avg_trade"]);
+        s.insert("open_trade",account.trades.iter().zip(&account.trade_audit).find(|(t,_)|t.open).map_or(f64::NAN,|(_,a)|a.net/a.entry_equity));
+        return s;
+    }
     let mut s=stats(ctx,run,costs.side_rate());
     let gross=if let Some(account)=&run.source_account {
-        let zero=Run{trades:run.trades.clone(),from:run.from,to:run.to,equity:account.days.iter().map(|d|d.gross).collect(),bh:run.bh.clone(),source_account:None};
+        let zero=Run{trades:run.trades.clone(),from:run.from,to:run.to,equity:account.days.iter().map(|d|d.gross).collect(),bh:run.bh.clone(),source_account:None,bandy_account:None};
         stats(ctx,&zero,0.)
     } else if costs.side_rate()==0. {s.clone()} else {
-        let zero=Run{trades:run.trades.clone(),from:run.from,to:run.to,equity:equity_curve(&ctx.c,&run.trades,run.from,run.to,0.),bh:run.bh.clone(),source_account:None};
+        let zero=Run{trades:run.trades.clone(),from:run.from,to:run.to,equity:equity_curve(&ctx.c,&run.trades,run.from,run.to,0.),bh:run.bh.clone(),source_account:None,bandy_account:None};
         stats(ctx,&zero,0.)
     };
     for (key,source) in [("gross_total_return","total_return"),("gross_avg_trade","avg_trade"),("gross_win_rate","win_rate"),("gross_sharpe","sharpe"),("gross_max_dd","max_dd")] {s.insert(key,gross[source]);}
@@ -431,7 +458,7 @@ fn financial_stats(ctx: &Ctx, run: &Run, costs: accounting::Costs) -> BTreeMap<&
 }
 
 fn benchmark_stats(ctx:&Ctx,run:&Run)->BTreeMap<&'static str,f64>{
-    let benchmark=Run{trades:vec![],from:run.from,to:run.to,equity:run.bh.clone(),bh:run.bh.clone(),source_account:None};
+    let benchmark=Run{trades:vec![],from:run.from,to:run.to,equity:run.bh.clone(),bh:run.bh.clone(),source_account:None,bandy_account:None};
     let all=stats(ctx,&benchmark,0.);
     ["total_return","cagr","sharpe","max_dd","vol","sortino","mar"].into_iter().map(|k|(k,all[k])).collect()
 }
@@ -673,6 +700,22 @@ fn hv_raw_default(text:&str,default:f64)->bool {
 /// Existing methods keep their previous parsing contract until separately reviewed.
 fn checked_params_of(q: &BTreeMap<String, String>) -> Result<Params,String> {
     let p=params_of(q);
+    if let Some(id)=q.get("id").filter(|id|books::hbiab_reviewed::reviewed(id)) {
+        let schema=books::hbiab::params(id).ok_or("Unknown reviewed Bandy configuration")?;
+        for (key,text) in q {
+            if let Some(name)=key.strip_prefix("p.") {
+                let setting=schema.iter().find(|s|s.key==name).ok_or_else(||format!("Unknown Bandy parameter: {key}"))?;
+                if !hv_raw_default(text,setting.def){return Err(format!("Bandy {key} must equal its exact reviewed decimal default before rounding or underflow"));}
+            }
+            if let Some(name)=key.strip_prefix("g.") {
+                let setting=schema.iter().find(|s|s.key==name).ok_or_else(||format!("Unknown Bandy grid: {key}"))?;
+                let raw:Vec<&str>=text.split(':').map(str::trim).collect();
+                let ok=match raw.as_slice(){[v]=>hv_raw_default(v,setting.def),[lo,hi,step]=>hv_raw_default(lo,setting.def)&&hv_raw_default(hi,setting.def)&&step.parse::<f64>().is_ok_and(|v|v.is_finite()&&v>0.),_=>false};
+                if !ok{return Err(format!("Bandy grid {key} permits only the exact singleton reviewed value and finite positive step"));}
+            }
+        }
+        if let Some(note)=books::hbiab_reviewed::validate(id,&p){return Err(note);}return Ok(p);
+    }
     if let Some(id)=q.get("id").filter(|id|books::kfsc::reviewed_hv_rule(id)) {
         let schema=books::kfsc::params(id).ok_or("Unknown reviewed high-volatility configuration")?;
         for (key,text) in q {
@@ -850,9 +893,10 @@ fn resolve_context<'a>(ctx:&'a Ctx<'a>, q: &BTreeMap<String, String>) -> Result<
         .get("to")
         .filter(|s| !s.is_empty())
         .map_or(dates.len() - 1, |t| dates.partition_point(|d| *d <= t.as_str()).saturating_sub(1));
-    if from >= to {
+    if from > to || (from == to && !q.get("id").is_some_and(|id|books::hbiab_reviewed::reviewed(id))) {
         return Err("empty date range".into());
     }
+    if q.get("id").is_some_and(|id|books::hbiab_reviewed::reviewed(id)) && q.get("to").is_some_and(|t|!t.is_empty() && dates.first().is_some_and(|first|t.as_str()<*first)){return Err("empty date range".into());}
     let cost = accounting::Costs::parse(q)?.side_rate(); // fees + slippage, bps per side exactly once
     Ok((ctx, from, to, cost))
 }
@@ -888,7 +932,7 @@ fn summary(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
             rows.push(format!("{{\"id\":\"{}\",\"blocked\":\"Required volatility-index data does not cover this period\",\"readiness\":\"needs_data\"}}", d.id));
             continue;
         };
-        let run = match backtest(ctx,d.id,from,to,cost,&Params::new()){Ok(run)=>run,Err(note)=>{rows.push(format!("{{\"id\":\"{}\",\"blocked\":\"{}\",\"readiness\":\"calculation_unavailable\"}}",d.id,esc(&note)));continue;}};
+        let run = match backtest_costs(ctx,d.id,from,to,costs,&Params::new()){Ok(run)=>run,Err(note)=>{rows.push(format!("{{\"id\":\"{}\",\"blocked\":\"{}\",\"readiness\":\"calculation_unavailable\"}}",d.id,esc(&note)));continue;}};
         // ~120-point equity sparkline for the strategy list
         let step = (run.equity.len() / 120).max(1);
         let spark: Vec<String> = run.equity.iter().step_by(step).map(|v| num(*v)).collect();
@@ -946,6 +990,28 @@ fn hv_exit_snapshot(ctx:&Ctx,t:&Trade)->String {
     format!("{{\"date\":\"{}\",\"phase\":\"open\",\"execution_px\":{},\"close\":null,\"rsi2\":null,\"vs_sma200\":null,\"vs_sma5\":null,\"vix_rsi2\":null,\"rsi_p\":null,\"rsi_period\":null,\"rsi_kind\":null,\"vs_ma_p\":null,\"ma_period\":null,\"ma_kind\":null,\"vs_trend_p\":null,\"trend_period\":null,\"trend_kind\":null,\"basis\":\"Idealized next genuine session OPEN exit. This session's completed-close indicators are unavailable at its open and are omitted.\"}}",ctx.r[t.exit_i].date,t.exit_px)
 }
 
+fn bandy_costs_json(costs:accounting::Costs)->String {
+    format!("{{\"fees_bps\":{},\"slippage_bps\":{},\"rollover_bps\":{},\"total_side_bps\":{},\"taxes\":null,\"rolls\":null,\"basis\":\"User-entered execution fees and slippage on actual entry and exit notional in a normalized fractional cash account; not a statutory tax schedule\",\"rollover_status\":\"No verified contract roll-event mapping\",\"slippage_status\":\"User-entered notional charge; observed fill prices are not rewritten\",\"money_status\":\"Dimensionless fractional units; no monetary quantities or taxes\",\"open_trade_cost_basis\":\"Bandy cash account charges actual entry/exit notional on filled sides; open marks pay entry only, separate hypothetical liquidation estimates are not deducted\"}}",full_precision_trade_return(costs.fees_bps),full_precision_trade_return(costs.slippage_bps),full_precision_trade_return(costs.rollover_bps),full_precision_trade_return(costs.fees_bps+costs.slippage_bps))
+}
+
+/// Production Bandy serializer, also exercised by the bounded verification adapter.
+fn bandy_detail(ctx:&Ctx,id:&str,from:usize,to:usize,costs:accounting::Costs,run:&Run)->String {
+    let account=run.bandy_account.as_ref().expect("Bandy report requires its own cash account");
+    let precise=full_precision_trade_return;
+    let list=|values:Vec<String>|format!("[{}]",values.join(","));
+    let dates=list((from..=to).map(|i|format!("\"{}\"",ctx.r[i].date)).collect());
+    let numbers=|v:&[f64]|list(v.iter().copied().map(precise).collect());
+    let mut trades=Vec::new();
+    for (i,(t,a)) in run.trades.iter().zip(&account.trade_audit).enumerate(){
+        let legs=list(t.legs.iter().map(|l|format!("[{},{},{}]",l.i-from,precise(l.px),precise(l.w))).collect());
+        let snapshot=|index:usize,phase:&str,px:f64|format!("{{\"date\":\"{}\",\"phase\":\"{}\",\"execution_px\":{},\"basis\":\"Fill or mark event; completed future-close indicators omitted\"}}",ctx.r[index].date,phase,precise(px));
+        trades.push(format!("{{\"dir\":1,\"legs\":{},\"entry\":\"{}\",\"exit\":\"{}\",\"exit_i\":{},\"exit_px\":{},\"avg_px\":{},\"ret\":{},\"ret_full_precision\":{},\"bars\":{},\"open\":{},\"reason\":\"{}\",\"entry_kind\":\"{}\",\"at_entry\":{},\"at_exit\":{},\"signal\":\"{}\",\"exits\":[],\"accounting\":{}}}",legs,ctx.r[t.legs[0].i].date,ctx.r[t.exit_i].date,t.exit_i-from,precise(t.exit_px),precise(t.legs[0].px),precise(a.net/a.entry_equity),precise(a.net/a.entry_equity),t.exit_i-t.legs[0].i,t.open,esc(&t.reason),t.entry_kind,snapshot(t.legs[0].i,t.entry_kind,t.legs[0].px),snapshot(t.exit_i,if t.open{"mark"}else{t.entry_kind},t.exit_px),ctx.r[t.signal_i].date,account.ledger_json(i,ctx,costs.fees_bps,costs.slippage_bps)));
+    }
+    let gross=Run{trades:run.trades.clone(),from,to,equity:account.days.iter().map(|d|d.gross).collect(),bh:run.bh.clone(),source_account:None,bandy_account:Some(account.clone())};
+    let ohlc=format!("{{\"d\":{},\"o\":{},\"h\":{},\"l\":{},\"c\":{},\"v\":{}}}",dates,numbers(&ctx.o[from..=to]),numbers(&ctx.h[from..=to]),numbers(&ctx.l[from..=to]),numbers(&ctx.c[from..=to]),list((from..=to).map(|i|ctx.r[i].volume.map_or("null".into(),precise)).collect()));
+    format!("{{\"id\":\"{}\",\"book\":\"hbiab\",\"dates\":{},\"close\":{},\"equity\":{},\"gross_equity\":{},\"bh\":{},\"trades\":{},\"ohlc\":{},\"source_account\":{},\"model_initial_equity\":1,\"stats\":{},\"gross_stats\":{},\"benchmark_symbol\":\"{}\",\"benchmark_stats\":{},\"costs\":{},\"accounting_basis\":\"{}\"}}",id,dates,numbers(&ctx.c[from..=to]),numbers(&run.equity),numbers(&gross.equity),numbers(&run.bh),list(trades),ohlc,account.json(ctx),stats_json(&financial_stats(ctx,run,costs)),stats_json(&stats(ctx,&gross,0.)),esc(&ctx.r[from].ticker),stats_json(&benchmark_stats(ctx,run)),bandy_costs_json(costs),esc(books::hbiab_reviewed::BASIS))
+}
+
 fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     let selected=select_context(st,q)?;let held=selected.context(st);
     let (ctx, from, to, cost) = resolve_context(&held, q)?;
@@ -958,8 +1024,11 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         return Err(format!("{}: {}", issue.status, issue.note));
     }
     costs.ensure_rollover()?;
-    let from = window_start(ctx, def, from).filter(|&f| f < to).ok_or("Required volatility-index data does not cover this period")?;
-    let run = backtest(ctx, id, from, to, cost, &p)?;
+    let from = window_start(ctx, def, from).filter(|&f| f < to || (f==to && books::hbiab_reviewed::reviewed(id))).ok_or("Required volatility-index data does not cover this period")?;
+    let run = backtest_costs(ctx, id, from, to, costs, &p)?;
+    if run.bandy_account.is_some() {
+        let mut output=bandy_detail(ctx,id,from,to,costs,&run);output.pop();let _=write!(output,",\"provenance\":{}}}",source_provenance(st,q));return Ok(output);
+    }
     let diagnostics = diagnostic_series(ctx, id, &p);
     let mut o = String::with_capacity(1 << 20);
     let arr = |v: &mut String, it: &mut dyn Iterator<Item = String>| {
@@ -1019,7 +1088,7 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     }
     let gross_equity=run.source_account.as_ref().map_or_else(||equity_curve(&ctx.c,&run.trades,from,to,0.),|a|a.days.iter().map(|d|d.gross).collect());
     o.push_str(",\"gross_equity\":");arr(&mut o,&mut gross_equity.iter().copied().map(num));
-    let gross=Run{trades:run.trades.clone(),from,to,equity:gross_equity,bh:run.bh.clone(),source_account:None};
+    let gross=Run{trades:run.trades.clone(),from,to,equity:gross_equity,bh:run.bh.clone(),source_account:None,bandy_account:None};
     if let Some(account)=&run.source_account {
         let _=write!(o,",\"source_account\":{},\"model_initial_equity\":1,\"stats\":{},\"gross_stats\":{},\"benchmark_symbol\":\"{}\",\"benchmark_stats\":{},\"costs\":{},\"accounting_basis\":\"{}\"}}",account.json(ctx),stats_json(&financial_stats(ctx,&run,costs)),stats_json(&stats(ctx,&gross,0.)),esc(&ctx.r[from].ticker),stats_json(&benchmark_stats(ctx,&run)),costs.source_account_json(),esc(books::elcim_account::BASIS));
         return Ok(o);
@@ -1099,7 +1168,7 @@ fn optimize(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> 
             }
         }
     }
-    let from = window_start(ctx, def, from).filter(|&f| f < to).ok_or("Required volatility-index data does not cover this period")?;
+    let from = window_start(ctx, def, from).filter(|&f| f < to || (f==to && books::hbiab_reviewed::reviewed(id))).ok_or("Required volatility-index data does not cover this period")?;
     let mut dims: Vec<(&str, Vec<f64>)> = Vec::new();
     for p in connors::params(id) {
         if let Some(spec) = q.get(&format!("g.{}", p.key)) {
@@ -1131,11 +1200,11 @@ fn optimize(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> 
         .filter(|&s| s > from + 20 && s + 20 < to);
     let metrics_v = |p: &Params| -> Result<Vec<f64>,String> {
         if let Some(issue)=readiness::check(ctx,def,from,to,p){return Err(issue.note);}
-        let full = backtest(ctx, id, from, to, cost, p)?;
+        let full = backtest_costs(ctx, id, from, to, costs, p)?;
         let s = financial_stats(ctx, &full, costs);
         let mut out: Vec<f64> = FULL_COLS.iter().map(|k| s[k]).collect();
         for (a, b) in split.map(|s| [(from, s - 1), (s, to)]).into_iter().flatten() {
-            let r = backtest(ctx, id, a, b, cost, p)?;
+            let r = backtest_costs(ctx, id, a, b, costs, p)?;
             let s = financial_stats(ctx, &r, costs);
             out.extend(PART_COLS.iter().map(|k| s[k]));
         }
@@ -1199,7 +1268,7 @@ fn optimize(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> 
     Ok(format!(
         "{{\"id\":\"{id}\",\"from\":\"{}\",\"to\":\"{}\",\"split\":{},\"combos\":{combos},\"threads\":{threads},\"ms\":{},\"dims\":[{}],\"fixed\":{{{}}},\"cols\":[{}],\"book\":[{}],\"rank\":{rank_json},\"picked\":{{{}}},\"rows\":[{}],\"costs\":{},\"provenance\":{},\"experiment\":{}}}",
         dates[from], dates[to], split.map_or("null".into(), |s| format!("\"{}\"", dates[s])), t0.elapsed().as_millis(),
-        dims_json.join(","), fixed.join(","), cols.join(","), metrics, picked.join(","), rows.join(","),if id==books::elcim_account::ID{costs.source_account_json()}else{costs.json()},source_provenance(st,q),experiment_json(id)
+        dims_json.join(","), fixed.join(","), cols.join(","), metrics, picked.join(","), rows.join(","),if books::hbiab_reviewed::reviewed(id){bandy_costs_json(costs)}else if id==books::elcim_account::ID{costs.source_account_json()}else{costs.json()},source_provenance(st,q),experiment_json(id)
     ))
 }
 
@@ -1797,7 +1866,7 @@ mod tests {
         let state=accounting_state();let ctx=&state.ctxs["SPX"];
         let trade=Trade{dir:1.,legs:vec![connors::Leg{i:0,px:100.,w:1.}],exit_i:5,exit_px:110.,reason:"arithmetic close".into(),entry_kind:"close",signal_i:5,open:false,exits:vec![]};
         let costs=accounting::Costs::parse(&accounting_query()).unwrap();
-        let run=Run{trades:vec![trade],from:0,to:5,equity:equity_curve(&ctx.c,&[Trade{dir:1.,legs:vec![connors::Leg{i:0,px:100.,w:1.}],exit_i:5,exit_px:110.,reason:String::new(),entry_kind:"close",signal_i:5,open:false,exits:vec![]}],0,5,costs.side_rate()),bh:vec![1.;6],source_account:None};
+        let run=Run{trades:vec![trade],from:0,to:5,equity:equity_curve(&ctx.c,&[Trade{dir:1.,legs:vec![connors::Leg{i:0,px:100.,w:1.}],exit_i:5,exit_px:110.,reason:String::new(),entry_kind:"close",signal_i:5,open:false,exits:vec![]}],0,5,costs.side_rate()),bh:vec![1.;6],source_account:None,bandy_account:None};
         let legacy=stats(ctx,&run,costs.side_rate());let added=financial_stats(ctx,&run,costs);
         for (key,value) in legacy {assert!(added[key].to_bits()==value.to_bits(),"Legacy statistic {key} changed");}
         assert!((added["ledger_gross_return"]-added["fee_return"]-added["slippage_return"]-added["total_return"]).abs()<1e-12);
@@ -1812,7 +1881,7 @@ mod tests {
         let state=accounting_state();let ctx=&state.ctxs["SPX"];
         let make=|start,end,exit_px,open|Trade{dir:1.,legs:vec![connors::Leg{i:start,px:100.,w:1.}],exit_i:end,exit_px,reason:String::new(),entry_kind:"close",signal_i:start,open,exits:vec![]};
         let trades=vec![make(0,2,110.,false),make(3,5,80.,false),make(6,7,150.,true)];
-        let run=Run{equity:equity_curve(&ctx.c,&trades,0,7,0.),trades,from:0,to:7,bh:vec![1.;8],source_account:None};
+        let run=Run{equity:equity_curve(&ctx.c,&trades,0,7,0.),trades,from:0,to:7,bh:vec![1.;8],source_account:None,bandy_account:None};
         let s=financial_stats(ctx,&run,accounting::Costs{fees_bps:0.,slippage_bps:0.,rollover_bps:0.});
         assert_eq!(s["trades"],2.);
         assert!((s["net_profit"]+0.1).abs()<1e-12);
@@ -1823,7 +1892,7 @@ mod tests {
     #[test]
     fn initial_loss_or_fee_is_in_daily_risk_and_drawdown(){
         let state=accounting_state();let ctx=&state.ctxs["SPX"];
-        let run=Run{trades:vec![],from:0,to:2,equity:vec![0.9,0.99,0.98],bh:vec![1.;3],source_account:None};
+        let run=Run{trades:vec![],from:0,to:2,equity:vec![0.9,0.99,0.98],bh:vec![1.;3],source_account:None,bandy_account:None};
         let s=stats(ctx,&run,0.);
         assert!((s["total_return"]+0.02).abs()<1e-12);
         assert!((s["max_dd"]+0.1).abs()<1e-12);
@@ -1904,7 +1973,9 @@ mod tests {
         let rows = &data["NIFTY 50"];
         let ctx = Ctx::new(rows, rows, &[]);
         for d in connors::catalogue().iter().filter(|d| d.status == Status::Live && !d.needs_vix) {
-            if d.id==books::elcim_account::ID {
+            if d.id==books::elcim_account::ID || (d.book=="hbiab" && books::hbiab_reviewed::reviewed(d.id)) {
+                // These source cash accounts exclude cash indices and use
+                // independently checked actual-stock/ETF account conservation.
                 // This source account requires actual stocks plus real weekly
                 // warmup. Its opt-in AAPL/RELIANCE evidence test covers account
                 // conservation; a Nifty/from-zero corpus shortcut cannot do so.
@@ -1931,3 +2002,5 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)] mod hbiab_verification;

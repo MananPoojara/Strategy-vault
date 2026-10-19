@@ -47,6 +47,11 @@ mod short_course_readiness_tests {
 }
 
 pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -> Option<Issue> {
+    if def.book=="hbiab" && books::hbiab_reviewed::reviewed(def.id) {
+        if let Some(note)=books::hbiab_reviewed::validate(def.id,p){return issue("not_testable",note);}
+        if from>to||to>=ctx.r.len(){return issue("needs_data","Actual Bandy selected window unavailable");}
+        if ctx.r[..=to].iter().any(|r|!crate::baskets::valid_date(&r.date)||![r.open,r.high,r.low,r.close].iter().all(|v|v.is_finite()&&*v>0.)||r.low>r.high||r.open<r.low||r.open>r.high||r.close<r.low||r.close>r.high)||ctx.r[..=to].windows(2).any(|w|w[0].date>=w[1].date||w[0].ticker!=w[1].ticker){return issue("needs_data","Full supplied Bandy indicator history contains invalid observations or chronology; no dropping, filling or reseeding is permitted");}
+    }
     if def.book=="kfsc" && books::kfsc::reviewed_hv_rule(def.id) {
         if let Some(note)=books::kfsc::validate_hv(def.id,p) {return issue("not_testable",note);}
         if from<65 || to>=ctx.r.len() || from>to {return issue("needs_data","The selected high-volatility application requires 65 genuine true-range observations including the signal day, each with an actual preceding stock close: earliest eligible source index 65 (66 rows). No initial previous close or warmup is invented.");}
@@ -157,7 +162,7 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
             }
         }
     }
-    if from >= ctx.r.len() || to >= ctx.r.len() || from >= to {
+    if from >= ctx.r.len() || to >= ctx.r.len() || from > to || (from==to && !(def.book=="hbiab" && books::hbiab_reviewed::reviewed(def.id))) {
         return issue("needs_data", "No usable trading range is covered by the required data. Choose another period.");
     }
     if ctx.r[from..=to].iter().any(|r| ![r.open,r.high,r.low,r.close].iter().all(|n| n.is_finite() && *n > 0.0) || r.low > r.high || r.open < r.low || r.open > r.high || r.close < r.low || r.close > r.high) {

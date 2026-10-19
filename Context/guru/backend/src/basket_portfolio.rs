@@ -782,7 +782,7 @@ pub fn run(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         .collect();
     let bh: Vec<_> = bh.iter().map(|c| c / bh[0]).collect();
     let benchmark_run = crate::Run {
-        source_account:None,
+        source_account:None,bandy_account:None,
         trades: vec![],
         from: 0,
         to: calendar.len() - 1,
