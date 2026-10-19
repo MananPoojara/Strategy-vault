@@ -15,7 +15,7 @@ pub const MOMENTUM_STOCK_IDS: &[&str] = &["kfsc_macd","kfsc_dsm"];
 pub fn reviewed_momentum_rule(id:&str)->bool {MOMENTUM_STOCK_IDS.contains(&id)}
 pub const HV_ID: &str = "kfsc_hv_day";
 pub fn reviewed_hv_rule(id:&str)->bool {id==HV_ID}
-pub const HV_CONVENTION: &str = "Selected source convention: 65 complete genuine true ranges including today, each with its actual previous stock close; arithmetic mean and strict TR > 2 × mean. Top and bottom deciles with inclusive .90/.10 boundaries explicitly correct the inconsistent printed upper 90 percent wording. Zero high-low range has no close zone. Actual Fridays are excluded. Finalized signal CLOSE entry and the next genuine market-session OPEN exit are idealized OHLC research fills: printed 70 recommends preclose calculation, printed 83 MOC/MOO permit prices within the last/first 60 seconds, and printed 250 prose says shortly after open while Figure 17.4 selects next open. Terminal signals remain open inside the selected window. Actual single stocks only; shorts lack certified borrow, margin and financing. Normalized unit-allocation returns and linear modeled costs per side do not reproduce source capital, sizing, vendor authenticity or original performance; open liquidation cost is a separate estimate. Checked shortest-decimal OHLC comparisons preserve admitted source quotes without epsilon or tick rounding; approximate displayed ratios do not override exact predicates. General 2-TR targets, 3-TR stops and portfolio examples are separate from this four-rule subsystem.";
+pub const HV_CONVENTION: &str = "Selected source convention: 65 complete genuine true ranges including today, each with its actual previous stock close; arithmetic mean and strict TR > 2 × mean. Top and bottom deciles with inclusive .90/.10 boundaries explicitly correct the inconsistent printed upper 90 percent wording. Zero high-low range has no close zone. Actual Fridays are excluded. Finalized signal CLOSE entry and the next genuine market-session OPEN exit are idealized OHLC research fills: printed 70 recommends preclose calculation, printed 83 MOC/MOO permit prices within the last/first 60 seconds, and printed 250 prose says shortly after open while Figure 17.4 selects next open. Terminal signals remain open inside the selected window. Actual single stocks only; shorts lack certified borrow, margin and financing. Normalized unit-allocation returns and linear modeled costs per side do not reproduce source capital, sizing, vendor authenticity or original performance; open liquidation cost is a separate estimate. Checked comparisons use shortest-decimal loaded OHLC without epsilon or tick rounding. Original token identity was checked for selected AAPL/RELIANCE inputs; other stock inputs retain loader-precision qualification. Approximate displayed ratios do not override exact predicates. General 2-TR targets, 3-TR stops and portfolio examples are separate from this four-rule subsystem.";
 pub fn validate_hv(id:&str,p:&Params)->Option<&'static str> {
     if !reviewed_hv_rule(id) {return None;}
     let schema=params(id)?;
@@ -325,6 +325,19 @@ pub fn hv_calendar_issue(rows:&[crate::Row],calendar:&[crate::Row],from:usize,to
     let actual:Vec<&str>=rows[from-65..=to].iter().map(|r|r.date.as_str()).collect();
     let expected:Vec<&str>=calendar.iter().filter(|r|r.date.as_str()>=first && r.date.as_str()<=last).map(|r|r.date.as_str()).collect();
     if actual!=expected {return Some("Stock observations and genuine native market sessions differ within the required 65-TR warmup or selected execution period. Missing stock sessions cannot be treated as holidays or bridged to a later available open; the requested run is held.".into());}
+    None
+}
+/// The requested final session must not disappear when resolve_context selects
+/// the preceding available stock row. Holidays/weekends add no calendar session.
+pub fn hv_requested_end_issue(rows:&[crate::Row],calendar:&[crate::Row],to:usize,requested:Option<&str>)->Option<String> {
+    let Some(end)=requested.filter(|s|!s.is_empty()) else {return None;};
+    let Some(last)=rows.get(to) else {return Some("No selected high-volatility stock observations are available.".into());};
+    if calendar.iter().any(|r|r.date.as_str()>last.date.as_str() && r.date.as_str()<=end) {
+        return Some("A genuine native market session inside the requested end is missing from the selected stock observations. The requested window cannot silently end at the preceding available stock row.".into());
+    }
+    if calendar.last().map_or(true,|r|r.date.as_str()<last.date.as_str()) {
+        return Some("The native market-session calendar does not cover the requested stock end.".into());
+    }
     None
 }
 fn hv_trades(x:&Ctx,from:usize,to:usize)->Vec<Trade> {
@@ -666,6 +679,12 @@ mod hv_source_tests {
         assert!(hv_calendar_issue(&r,&[],70,89).is_some());assert!(hv_calendar_issue(&r,&r,64,89).is_some());
         // A terminal period needs no invented future session/calendar row.
         assert!(hv_calendar_issue(&r[..=75],&r[..=75],70,75).is_none());
+        let mut missing_end=r.clone();let requested=r[75].date.clone();missing_end.remove(75);
+        assert!(hv_requested_end_issue(&missing_end,&r,74,Some(&requested)).is_some());
+        assert!(hv_requested_end_issue(&r,&r,74,Some(&r[74].date)).is_none());
+        assert!(hv_requested_end_issue(&r,&r,74,None).is_none());
+        let holiday_calendar:Vec<Row>=r.iter().filter(|v|v.date!=requested).cloned().collect();
+        assert!(hv_requested_end_issue(&missing_end,&holiday_calendar,74,Some(&requested)).is_none());
     }
     #[test]
     fn hv_exact_decimal_capacity_and_unchanged_parameters_fail_closed() {

@@ -606,6 +606,7 @@ fn native_admission(ctx:&Ctx,def:&connors::StrategyDef,from:usize,to:usize,selec
     if def.book=="kfsc" && books::kfsc::reviewed_hv_rule(def.id) {
         let calendar=st.ctxs.get(benchmark).filter(|c|!c.r.is_empty() && c.r.iter().all(|r|r.ticker==benchmark)).map_or(&[][..],|c|c.r);
         if let Some(note)=books::kfsc::hv_calendar_issue(ctx.r,calendar,from,to) {return Some(readiness::Issue{status:"needs_data",note});}
+        if let Some(note)=books::kfsc::hv_requested_end_issue(ctx.r,calendar,to,q.get("to").map(String::as_str)) {return Some(readiness::Issue{status:"needs_data",note});}
     }
     if connors::params(def.id).iter().any(|p|p.key=="lf")&&ctx.lf[from.max(19).min(to)..=to].iter().any(|v|!v.is_finite()){
         return Some(readiness::Issue{status:"needs_data",note:format!("This stock strategy requires the Liquidity Filter denominator from actual {benchmark} benchmark close and volume. Benchmark volume/coverage is missing; stock OHLC or unknown auxiliary fields cannot replace it.")});
