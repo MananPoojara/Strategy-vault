@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { COPY } from "./labels";
 import type { Catalogue, Indicator, Needs } from "./types";
 import "./library.css";
@@ -9,11 +10,16 @@ const NEEDS: Record<keyof Needs, string> = {
 
 export function IndicatorDetail({ indicator: ind, catalogue, onClose }: { indicator: Indicator; catalogue: Catalogue; onClose(): void }) {
   const needs = (Object.keys(NEEDS) as (keyof Needs)[]).filter((k) => ind.needs[k]).map((k) => NEEDS[k]);
+  const box = useRef<HTMLElement>(null);
+  // It renders under the chart: bring it into view when a library "i" opens it.
+  useEffect(() => { box.current?.scrollIntoView?.({ block: "nearest" }); }, [ind.id]);
   return (
-    <section className="box lab-detail">
+    <section className="box lab-detail" ref={box}>
       <h2 className="box-h">{ind.name} <small>id {ind.id} · {ind.category}</small>
         <span className="box-tools"><button type="button" className="dbtn ghost sm" aria-label="Close reference" onClick={onClose}>×</button></span>
       </h2>
+      <div className="lab-detail-cols">
+      <div>
       <h3>Definition</h3>
       <pre>{ind.definition}</pre>
       <dl>
@@ -23,6 +29,8 @@ export function IndicatorDetail({ indicator: ind, catalogue, onClose }: { indica
         <dt>Timeframes</dt><dd>{catalogue.timeframes.join(" · ")}</dd>
         <dt>Engine</dt><dd>{ind.computed ? "Computed" : "Listed only"}</dd>
       </dl>
+      </div>
+      <div>
       {ind.params.length > 0 && (
         <div className="tblwrap">
           <table className="tbl">
@@ -47,6 +55,8 @@ export function IndicatorDetail({ indicator: ind, catalogue, onClose }: { indica
       ) : (
         <p>{ind.note} Rules cannot reference it until that data exists.</p>
       )}
+      </div>
+      </div>
     </section>
   );
 }

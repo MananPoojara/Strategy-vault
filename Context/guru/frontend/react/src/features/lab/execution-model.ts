@@ -1,7 +1,7 @@
 import { COPY, FUTURES_NOTE, MODEL_NOTE, MONEY_BLOCKED } from "./labels";
 import { getAt, putAt, removeAt, setAt, setExecution } from "./spec-model";
 import type { InstrumentOption } from "./instruments";
-import type { Catalogue, EntryLevel, EntrySpec, ExitSpec, Market, ShortSide, Sizing, Spec, TakeProfit } from "./types";
+import type { Catalogue, EntryLevel, EntrySpec, Execution, ExitSpec, Market, ShortSide, Sizing, Spec, TakeProfit, TradePrice, TradeSide } from "./types";
 
 export type Direction = "long" | "short" | "both";
 export type SidePre = "" | "short_side.";
@@ -15,9 +15,9 @@ const omit = <T extends object>(o: T, ...keys: string[]): T => { const c = { ...
 export function withDirection(spec: Spec, dir: Direction, kept?: ShortSide): Spec {
   let s = omit(spec, "direction", "short_side");
   if (dir !== "both") s = setExecution(s, { opposite: undefined });
-  if (dir === "short") return { ...s, direction: "short" };
-  if (dir === "both") return { ...s, direction: "both", short_side: structuredClone(spec.short_side ?? kept ?? DEFAULT_SHORT_SIDE) };
-  return s;
+  if (dir === "short") return withTradeKeys({ ...s, direction: "short" });
+  if (dir === "both") return withTradeKeys({ ...s, direction: "both", short_side: structuredClone(spec.short_side ?? kept ?? DEFAULT_SHORT_SIDE) });
+  return withTradeKeys(s);
 }
 export const sideOf = (s: Spec, pre: SidePre): { entry: EntrySpec; exit: ExitSpec } | undefined => (pre ? s.short_side : s);
 export type EntryOrderType = "market" | "limit" | "stop" | "stop_limit";
@@ -35,29 +35,109 @@ export function withEntryOrder(spec: Spec, pre: SidePre, type: EntryOrderType): 
     const ex = s.execution;
     s = setExecution(s, { fill: undefined, ...(ex?.fill !== undefined && ex.exit_fill === undefined ? { exit_fill: ex.fill } : {}) });
   }
-  return s;
+  return withTradeKeys(s);
+}
+
+/** AmiBroker Analysis settings › Trades (engine `execution.prices` / `delays`, rules.rs market()). */
+export const TRADE_SIDES: TradeSide[] = ["buy", "sell", "short", "cover"];
+export const SIDE_LABEL: Record<TradeSide, string> = { buy: "Buy", sell: "Sell", short: "Short", cover: "Cover" };
+export const MAX_TRADE_DELAY = 20;
+export const usesTradePrices = (ex?: Execution) => !!ex && (ex.prices !== undefined || ex.delays !== undefined);
+/** The keys a spec may set: its direction's sides, without the entry of a side that enters by a limit or stop order. */
+export function tradeKeys(spec: Spec): TradeSide[] {
+  const dir = directionOf(spec), ordered = entryOrderType(spec.entry) !== "market";
+  const shortOrdered = dir === "short" ? ordered : !!spec.short_side && entryOrderType(spec.short_side.entry) !== "market";
+  const keys: TradeSide[] = dir === "long" ? ["buy", "sell"] : dir === "short" ? ["short", "cover"] : TRADE_SIDES;
+  return keys.filter((k) => !(k === "buy" && ordered) && !(k === "short" && shortOrdered));
+}
+/** Drops price and delay keys the spec may not set (another direction, an ordered entry); empty objects are removed. */
+export function withTradeKeys(spec: Spec): Spec {
+  const ex = spec.execution;
+  if (!usesTradePrices(ex)) return spec;
+  const keep = tradeKeys(spec);
+  const pick = <T,>(o?: Partial<Record<TradeSide, T>>) => {
+    if (!o) return undefined;
+    const kept = Object.fromEntries(Object.entries(o).filter(([k]) => keep.includes(k as TradeSide))) as Partial<Record<TradeSide, T>>;
+    return Object.keys(kept).length ? kept : undefined;
+  };
+  return setExecution(spec, { prices: pick(ex!.prices), delays: pick(ex!.delays) });
+}
+/** Today's fill/exit_fill/delay_bars as the equivalent AmiBroker prices and delays (next open = open + delay; same close = close + 0). */
+export function toTradePrices(spec: Spec): Spec {
+  const ex = spec.execution ?? {}, delay = ex.delay_bars ?? 1;
+  const one = (fill: "next_open" | "close"): [TradePrice, number] => (fill === "close" ? ["close", 0] : ["open", delay]);
+  const entry = one(ex.fill ?? "next_open"), exit = one(ex.exit_fill ?? ex.fill ?? "next_open");
+  const keys = tradeKeys(spec), of = (k: TradeSide) => (k === "buy" || k === "short" ? entry : exit);
+  return setExecution(spec, {
+    fill: undefined, exit_fill: undefined, delay_bars: undefined,
+    prices: Object.fromEntries(keys.map((k) => [k, of(k)[0]])), delays: Object.fromEntries(keys.map((k) => [k, of(k)[1]])),
+  });
+}
+/** What rules.rs market() refuses: a key the spec may not set, a delay outside 0..20, a field other than close on the signal bar. */
+export function tradePriceProblems(spec: Spec): string[] {
+  const ex = spec.execution;
+  if (!usesTradePrices(ex)) return [];
+  const keep = tradeKeys(spec), dir = directionOf(spec);
+  return TRADE_SIDES.flatMap((k) => {
+    const set = ex!.prices?.[k] !== undefined || ex!.delays?.[k] !== undefined;
+    if (!keep.includes(k)) {
+      if (!set) return [];
+      const traded = dir === "both" || (dir === "long") === (k === "buy" || k === "sell");
+      return [traded ? `${SIDE_LABEL[k]} price and delay apply to market entries; limit and stop orders fill on the bars after the signal.`
+        : `${SIDE_LABEL[k]} price and delay apply to ${k === "buy" || k === "sell" ? "long" : "short"} trades, which this strategy does not take; choose the Scenario again to reset them.`];
+    }
+    const field = ex!.prices?.[k] ?? "open", delay = ex!.delays?.[k] ?? 1;
+    if (!bounded(delay, 0, MAX_TRADE_DELAY, true)) return [`${SIDE_LABEL[k]} delay must be a whole number from 0 to ${MAX_TRADE_DELAY}.`];
+    return delay === 0 && field !== "close" ? [`${SIDE_LABEL[k]} price ${field} with delay 0 would use prices before the signal; use Close or a delay of 1 or more.`] : [];
+  });
+}
+/** Re-entry delays and position limits as rules.rs checks them (reentry: whole 0..1000; limits: rules.rs limits()). */
+export function amiProblems(spec: Spec): string[] {
+  const ex = spec.execution ?? {}, out = tradePriceProblems(spec);
+  for (const [k, v] of Object.entries(ex.reentry ?? {})) if (!bounded(v, 0, 1000, true)) out.push(`Re-entry delay (${k.replace("_", "-")}) must be a whole number of bars from 0 to 1000.`);
+  // rules.rs refuses the AmiBroker stop settings in a portfolio (its engine keeps today's stops)
+  if (spec.portfolio && [ex.exit_at_stop, ex.activate_stops_immediately, ex.nbar_has_priority, ex.allow_same_bar_exit].some((x) => x !== undefined))
+    out.push("Exit at stop?, Activate stops immediately, N-bar Has priority and Allow same bar exit / entry signal apply to one instrument only; remove them on the Trades tab.");
+  // rules.rs tick_size / report::rates bounds; execution.report is refused in a portfolio
+  if (ex.tick_size !== undefined && !bounded(ex.tick_size, 0, 1e6)) out.push("Tick size must be from 0 (no rounding) to 1,000,000.");
+  for (const [k, what] of [["rf_sharpe", "Sharpe ratio"], ["rf_upi", "UPI"]] as const) { const v = ex.report?.[k]; if (v !== undefined && !bounded(v, 0, 100)) out.push(`Risk-free rate for ${what} must be from 0% to 100%.`); }
+  if (spec.portfolio && ex.report) out.push("The risk-free rates (Settings › Report) apply to single-instrument runs only; remove them on the General tab.");
+  const l = ex.limits;
+  if (l) {
+    const check = (v: unknown, ok: boolean, what: string) => { if (v !== undefined && !ok) out.push(what); };
+    check(l.min_shares, bounded(l.min_shares, 0, 1e9), "Min. shares must be from 0 to 1,000,000,000.");
+    check(l.round_lot, bounded(l.round_lot, 1, 1e9, true), "Round lot size must be a whole number from 1 to 1,000,000,000.");
+    check(l.min_value, bounded(l.min_value, 0, 1e12), "Min. pos. value must be from 0 to 1,000,000,000,000.");
+    check(l.max_value, bounded(l.max_value, 0, 1e12), "Max. pos. value must be from 0 (no maximum) to 1,000,000,000,000.");
+    check(l.max_volume_pct, bounded(l.max_volume_pct, 0, 100), "Trade size as % of bar volume must be from 0 (no limit) to 100.");
+    check(l.interest_pct, bounded(l.interest_pct, 0, 100), "Annual interest must be from 0% to 100%.");
+    check(l.margin_pct, bounded(l.margin_pct, 1, 100), "Account margin must be from 1% to 100% (100 = no margin).");
+    if (finite(l.max_value) && l.max_value > 0 && finite(l.min_value) && l.min_value > l.max_value) out.push("Min. pos. value must not exceed Max. pos. value.");
+  }
+  return out;
 }
 export type LevelSlot = "entry.limit" | "entry.stop" | "exit.stop_loss" | "exit.target" | "exit.trailing" | "exit.trailing.activate" | "exit.breakeven.after" | "exit.breakeven.plus";
 export const LEVEL_SLOTS: LevelSlot[] = ["entry.limit", "entry.stop", "exit.stop_loss", "exit.target", "exit.trailing", "exit.trailing.activate", "exit.breakeven.after", "exit.breakeven.plus"];
-export interface LevelBounds { label: string; maxPct: number; zeroOk: boolean; at: boolean; pct: number }
+export interface LevelBounds { label: string; maxPct: number; zeroOk: boolean; at: boolean; pct: number; profitPct?: boolean }
 /** rules.rs SLOTS and dist() bounds: entry orders may sit at the signal close (0); exits need > 0. */
 export const LEVELS: Record<LevelSlot, LevelBounds> = {
   "entry.limit": { label: "Limit", maxPct: 50, zeroOk: true, at: true, pct: 1 },
   "entry.stop": { label: "Stop", maxPct: 50, zeroOk: true, at: true, pct: 1 },
   "exit.stop_loss": { label: "Stop-loss", maxPct: 99, zeroOk: false, at: false, pct: 5 },
   "exit.target": { label: "Target", maxPct: 1000, zeroOk: false, at: false, pct: 10 },
-  "exit.trailing": { label: "Trailing stop", maxPct: 99, zeroOk: false, at: false, pct: 5 },
+  "exit.trailing": { label: "Trailing stop", maxPct: 99, zeroOk: false, at: false, pct: 5, profitPct: true },
   "exit.trailing.activate": { label: "Trailing activation", maxPct: 1000, zeroOk: false, at: false, pct: 2 },
   "exit.breakeven.after": { label: "Breakeven after", maxPct: 1000, zeroOk: false, at: false, pct: 2 },
   "exit.breakeven.plus": { label: "Breakeven plus", maxPct: 1000, zeroOk: false, at: false, pct: 0.1 },
 };
 export const TP_BOUNDS: LevelBounds = { label: "Take-profit", maxPct: 1000, zeroOk: false, at: false, pct: 5 };
-export type LevelForm = "pct" | "atr" | "points" | "at";
+export type LevelForm = "pct" | "atr" | "points" | "at" | "profit_pct";
 export const levelForm = (d: unknown): LevelForm | undefined =>
-  typeof d === "object" && d !== null ? (["at", "pct", "atr", "points"] as const).find((k) => k in d) : undefined;
+  typeof d === "object" && d !== null ? (["at", "pct", "atr", "points", "profit_pct"] as const).find((k) => k in d) : undefined;
 export function defaultLevel(slot: LevelSlot | "take_profit", form: LevelForm, short: boolean): EntryLevel {
   if (form === "atr") return { atr: 2, atr_length: 14 };
   if (form === "points") return { points: 10 };
+  if (form === "profit_pct") return { profit_pct: 40 };
   if (form === "at") return (slot === "entry.stop") !== short ? { at: { highest: { s: "high" }, bars: 5 } } : { at: { lowest: { s: "low" }, bars: 5 } };
   return { pct: slot === "take_profit" ? TP_BOUNDS.pct : LEVELS[slot].pct };
 }
@@ -71,7 +151,7 @@ export function withLevel(s: Spec, pre: SidePre, slot: LevelSlot, d: EntryLevel 
   if (slot === "exit.breakeven.after" && !d) return removeAt(s, `${pre}exit.breakeven`);
   if (!d) return removeAt(s, path);
   const old = getAt(s, path);
-  const extra = old && typeof old === "object" ? omit(old, "pct", "atr", "atr_length", "points", "at") : {};
+  const extra = old && typeof old === "object" ? omit(old, "pct", "atr", "atr_length", "points", "at", "profit_pct") : {};
   return setAt(s, path, { ...extra, ...d });
 }
 export const takeProfits = (s: Spec, pre: SidePre): TakeProfit[] => {
@@ -85,7 +165,7 @@ export const DEFAULT_CAPITAL = 1_000_000;
 export function withMode(s: Spec, mode: ResultMode): Spec {
   if (mode === "money") return setExecution(s, { capital: s.execution?.capital ?? DEFAULT_CAPITAL, cost_bps: undefined });
   const z = s.execution?.sizing;
-  return setExecution(s, { capital: undefined, costs: undefined, sizing: z && typeof z === "object" && ("units" in z || "value" in z) ? undefined : z });
+  return setExecution(s, { capital: undefined, costs: undefined, limits: undefined, sizing: z && typeof z === "object" && ("units" in z || "value" in z) ? undefined : z });
 }
 export type SizingKind = "full" | "pct_equity" | "risk_pct" | "units" | "value";
 export const sizingKind = (s: Spec): SizingKind => { const z = s.execution?.sizing; return z && typeof z === "object" ? ((["pct_equity", "risk_pct", "units", "value"] as const).find((k) => k in z) ?? "full") : "full"; };
@@ -125,9 +205,10 @@ function levelProblems(label: string, d: unknown, b: LevelBounds): string[] {
   if (!d || typeof d !== "object") return [`${label}: choose %, ATR or points.`];
   const v = d as Record<string, unknown>;
   if ("ticks" in v) return [`${label}: ticks need a futures contract, and futures contract data is not admitted.`];
-  const forms = ["at", "pct", "atr", "points"].filter((k) => k in v);
+  const forms = ["at", "pct", "atr", "points", "profit_pct"].filter((k) => k in v);
   if (forms.length !== 1 || ("atr_length" in v && !("atr" in v))) return [`${label}: choose exactly one of %, ATR, points or an entry At level.`];
   if ("at" in v) return b.at ? [] : [`${label}: an At level works only for entry orders.`];
+  if ("profit_pct" in v) return !b.profitPct ? [`${label}: % of profit works only for the trailing stop.`] : bounded(v.profit_pct, 0, 100) && (v.profit_pct as number) > 0 && (v.profit_pct as number) < 100 ? [] : [`${label}: % of profit must be above 0 and below 100.`];
   const valid = (n: unknown, max: number) => bounded(n, 0, max) && (b.zeroOk || (n as number) > 0);
   if ("pct" in v) return valid(v.pct, b.maxPct) ? [] : [`${label}: % must be ${b.zeroOk ? "from 0" : "above 0"} and at most ${b.maxPct}.`];
   if ("points" in v) return valid(v.points, 1e9) ? [] : [`${label}: points must be ${b.zeroOk ? "from 0" : "above 0"} and at most 1,000,000,000.`];
@@ -266,6 +347,7 @@ export function executionProblems(spec: Spec, cat: Catalogue, ctx: InstrumentCon
     if (risk.max_drawdown_pct !== undefined && (!bounded(risk.max_drawdown_pct, Number.MIN_VALUE, caps?.max_drawdown_pct_below ?? 100) || risk.max_drawdown_pct >= (caps?.max_drawdown_pct_below ?? 100)))
       out.push("Drawdown stop must be above 0% and below 100%.");
   }
+  out.push(...amiProblems(spec));
   if (getAt(spec, "execution.instrument.kind") === "futures") out.push(FUTURES_NOTE);
   return out;
 }

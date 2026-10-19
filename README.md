@@ -16,6 +16,8 @@ cd Strategy-vault
 git switch -c your-name/page-name
 ```
 
+Nandini (collaborator, write access) works on **`Nandini`**, kept up to date by merging `origin/Manan`; her work reaches `Manan` only through a reviewed pull request.
+
 The repository was empty when imported. The initial code is published only on `Manan`; no `main` branch or main commit is created by this import. If main is introduced later, integrate reviewed changes through pull requests.
 
 ## Frontend
@@ -48,6 +50,38 @@ The setup script preserves existing secrets and generates private credentials on
 ## Strategy status
 
 The complete source-rule audit is **unfinished**. Current available result counts are documented in [strategy review status](docs/STRATEGY-STATUS.md). Registered methods, parameter variants and enabled results do not certify complete book-faithful conversions or reproduction of published studies.
+
+## Indicators lab
+
+User-defined indicator strategies (`#/indicators`), developed on branch **`Nandini`**. Every result is labelled *simulated · not a book method*; book strategy code and results are never changed by lab work (`python3 scripts/check_book_untouched.py --base origin/Manan` must report no problems).
+
+- **Indicator library:** 606 indicators by category (492 computed, the rest listed with the data they need), collapsed by default. They come from TradingView, AmiBroker, MetaTrader, cTrader, NinjaTrader, TradeStation, thinkorswim, Sierra Chart, MetaStock and TA-Lib, with formulas checked against published sources. Platform formula variants (e.g. MetaTrader ADX/ATR) are a `variant` setting whose default keeps today's values.
+- **AmiBroker-style analysis:** Parameters window per chart chip; Analysis settings tabs (General · Trades · Orders & stops · Portfolio) with trade prices/delays, stop exit modes, re-entry delays, position limits, tick size, margin, pad & align, risk-free rates; Backtest, Scan, Explore, Optimize, Individual optimize, 3D optimization chart, Walk-forward and Monte Carlo. Results open as tabs under *Run backtest*: Performance metrics (All / Long / Short / Buy&Hold, Formula and Symbols pages) · Equity & drawdown · Monthly returns · Trades · Monte Carlo · Scan / Explore. Feature-by-feature status: [AmiBroker parity gaps](docs/superpowers/specs/2026-10-16-indicators-lab-amibroker-parity-gaps.md).
+- **Custom indicators:** an AmiBroker-like formula (`Param`, `Plot`, arithmetic, `x[n]`, `IIf`, `Cross`, MA/EMA/HHV/LLV…, any built-in indicator by id) or a drag-and-drop block builder; saved per user under *My indicators*, charted, usable in rules and optimizable. Design: [custom indicators](docs/superpowers/specs/2026-10-19-custom-indicators-design.md).
+
+## Tests
+
+```bash
+# Engine (Rust) — VAULT_IDX points at the private idx_data.csv
+cd Context/guru/backend && VAULT_IDX=/path/to/idx_data.csv cargo test --release
+# Frontend
+cd Context/guru/frontend/react && npx tsc --noEmit -p . && npx vitest run
+# Gateway + Node unit tests + browser/data checks
+Context/guru/webapp/scripts/verify.sh
+```
+
+Integration tests run only against an **isolated dev stack** (`strategy-vault-dev-<name>`, own database and port, never port 8180) — see [two developers on one machine](docs/DEVELOPMENT.md):
+
+```bash
+cd Context/guru/webapp
+export VAULT_ENV_FILE=$HOME/.cache/strategy-vault-dev-<name>/.env VAULT_COMPOSE_PROJECT=strategy-vault-dev-<name>
+node --test tests/integration.test.mjs tests/lab-strategies.integration.test.mjs tests/lab-indicators.integration.test.mjs
+node --import ./tests/ts-loader.mjs --test tests/library-context-integration.test.mjs   # imports frontend .ts files
+python3 tests/data_readiness.py                                                          # needs Python Playwright + Chrome
+VAULT_RUNTIME_ROOT=$HOME/.cache/strategy-vault-dev-<name> python3 tests/chart_data_audit.py
+```
+
+Sign-in is rate limited; when running several suites back to back, restart the dev stack's `auth` service between them. `verification/reference/` (captured legacy responses) is git-ignored and exists only on the reference machine; without it those comparisons are skipped with a message.
 
 ## React migration scope
 

@@ -92,6 +92,7 @@ pub const NO_TEMPLATE: &[(&str, &str)] = &[
     ("ehmd_mama", CUSTOM), ("ch_cbpb_time", CUSTOM),
     ("hbqts_fixed_interval", CUSTOM), ("hbqts_bb_breakout", TWO_SIDED), ("hbqts_cgo", CUSTOM), ("hbqts_stoch_rsi", CUSTOM), ("hbqts_dpo", CUSTOM),
     ("hbqts_dom", TWO_SIDED), ("hbqts_limit_entry", FILL_CONVENTION), ("hbqts_entry_id1", SIGNAL_CLOCK), ("hbqts_macd_daily", CUSTOM), ("hbqts_cmo", CUSTOM),
+    ("kfsc_two_ma", "the admitted Kaufman two-moving-average long/cash stock rule (selected 80/10 SMA example, exit when either SMA turns down, equality holds) has no source-specific lab template or template-fidelity comparison yet; SMA slope ties and reviewed fill conventions must be preserved"),
 ];
 
 pub const TEMPLATES: &[Template] = &[

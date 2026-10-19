@@ -2,7 +2,7 @@
 .lab-rules small { margin-left: 8px; font-weight: 500; color: var(--ink2); }
 .lab-rules-col { min-width: 0; }
 .lab-rules { container-type: inline-size; }
-.lab-orders { display: grid; gap: 6px; margin: 0 0 10px; }
+.lab-orders { display: grid; gap: 6px; margin: 0; }
 .lab-price-orders { display: flex; flex-wrap: wrap; gap: 6px 10px; }
 .lab-sides { display: grid; gap: 10px; }
 .lab-side > .dbtn { margin-top: 6px; }
@@ -36,12 +36,48 @@
 .lab-caps-warn { color: var(--red); }
 .lab-settings { margin-top: 0; }
 
-/* After a run: rules beside the backtest on wide screens (as in the lab mockup); narrower screens stack them. */
+/* After a run the rules keep the full width and the backtest follows below: side by side left a tall empty gap under the rules. */
 .lab-two[data-lab-layout="stacked"] { grid-template-columns: minmax(0, 1fr); gap: 14px; }
-@media (min-width: 1280px) { .lab-two[data-lab-layout="stacked"] { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); } }
 .lab-rules .lab-sides { grid-template-columns: minmax(0, 1fr); gap: 18px; }
 .lab-rules .lab-cond { gap: 8px 10px; padding: 10px 0; }
 .lab-rules .lab-operand { gap: 6px 8px; }
 .lab-rules .lab-operand select { max-width: 220px; }
-.lab-rules .lab-caps { display: block; margin: 8px 0 0; font-size: 12px; }
+.lab-rules .lab-caps { display: block; margin: 8px 0 0; font-size: 11.5px; font-weight: 500; }
+.lab-rules .lab-caps:not(.lab-caps-warn) { color: var(--ink3); }
+.lab-rules > .box-h small { margin-right: auto; }
 .lab-rules { scroll-margin-top: 88px; }
+/* Strategy mode reads as the first line of the rules box, not a separate one-field box. */
+.lab-rules-col { display: grid; }
+.lab-rules-col > .lab-portfolio { border-bottom: 0; padding-bottom: 4px; }
+.lab-rules-col > .lab-portfolio + * > .box, .lab-rules-col > .lab-portfolio + .box { border-top: 0; padding-top: 8px; }
+/* The rule actions menu shows only "⋯"; give it room so the glyph is not clipped by the select arrow. */
+.lab-rules select[aria-label^="Actions for"] { min-width: 52px; }
+/* AmiBroker-style Analysis settings tabs under the rule lists. */
+.lab-settings-tabs { border: 1px solid var(--rule); border-radius: var(--r-field); }
+.lab-stabs { display: flex; gap: 2px; padding: 6px 8px 0; border-bottom: 1px solid var(--rule); background: var(--panel); overflow-x: auto; overflow-y: hidden; }
+.lab-stabs [role=tab] { flex: none; border: 1px solid transparent; border-bottom: 0; border-radius: 4px 4px 0 0; background: none; padding: 6px 14px; font: 600 13px var(--font); color: var(--ink2); cursor: pointer; margin-bottom: -1px; }
+.lab-stabs [role=tab][aria-selected=true] { background: var(--card); color: var(--ink); border-color: var(--rule); }
+@media (max-width: 600px) { .lab-stabs { padding: 6px 4px 0; } .lab-stabs [role=tab] { padding: 6px 8px; } }
+.lab-stab-panel { display: grid; gap: 10px; padding: 10px 12px 12px; }
+.lab-stab-panel .lab-settings { margin: 0; }
+/* One column that never grows past the tab: a long Scenario option or price grid wraps instead of widening the page. */
+.lab-stab-panel { grid-template-columns: minmax(0, 1fr); }
+.lab-scenario { display: flex; min-width: 0; max-width: 100%; }
+.lab-scenario select { min-width: 0; max-width: 100%; }
+.lab-run { margin-top: 2px; }
+.lab-trade-prices { display: grid; gap: 8px; }
+.lab-fieldset { display: grid; gap: 6px; }
+.lab-trade-prices fieldset, .lab-fieldset { border: 1px solid var(--rule); border-radius: var(--r-field); padding: 6px 10px 8px; margin: 0; min-width: 0; }
+.lab-trade-prices legend, .lab-fieldset > legend { font-size: 12px; font-weight: 600; color: var(--ink2); padding: 0 4px; }
+.lab-trade-prices fieldset { display: grid; gap: 6px; }
+.lab-trade-prices fieldset:disabled { opacity: .6; }
+/* Operand type ("Price", "Indicator") sized to its value so a comparison fits one line. */
+.lab-rules .lab-operand > select[aria-label="Operand type"] { width: auto; max-width: 120px; }
+.lab-check { display: inline-flex; align-items: center; gap: 6px; font: 500 13px var(--font); color: var(--ink2); }
+.lab-check input { margin: 0; }
+/* AmiBroker Stops: four fixed groups, two per row when there is room. */
+.lab-stops { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr)); align-items: start; }
+.lab-stops .lab-level { gap: 6px; }
+/* A panel inside a settings tab (Portfolio) is not a second box. */
+.lab-page .lab-rules .lab-stab-panel .box { border: 0; padding: 0; background: none; }
+.lab-stops select[aria-label$="exit mode"] { max-width: 190px; }

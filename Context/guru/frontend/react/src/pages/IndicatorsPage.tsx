@@ -6,7 +6,10 @@ import { COPY } from "../features/lab/labels";
 import { readLabQuery, writeLabQuery } from "../features/lab/url-state";
 import { editorState, initialLabState, labReducer, runKey } from "../features/lab/lab-state";
 import { canonicalJson, runQuery, specProblems } from "../features/lab/spec-model";
-import { treeProblems } from "../features/lab/rule-tree";
+import { treeProblems, walkSpec } from "../features/lab/rule-tree";
+import { FormulaContext, formulaIndicator, isFormulaOperand, myId, type FormulaCheck } from "../features/lab/formula";
+import { FormulaEditor } from "../features/lab/FormulaEditor";
+import { FormulaBlocks } from "../features/lab/FormulaBlocks";
 import { executionProblems, instrumentContext } from "../features/lab/execution-model";
 import { PortfolioPanel } from "../features/lab/PortfolioPanel";
 import { PortfolioResults } from "../features/lab/PortfolioResults";
@@ -20,14 +23,17 @@ import { Toolbar } from "../features/lab/Toolbar";
 import { LibraryRail } from "../features/lab/LibraryRail";
 import { IndicatorDetail } from "../features/lab/IndicatorDetail";
 import { Workbench } from "../features/lab/Workbench";
-import { RuleBuilder, type RunSettings } from "../features/lab/RuleBuilder";
+import { RuleBuilder, SettingsTabs, type RunSettings } from "../features/lab/RuleBuilder";
 import { RunResults, RunTables } from "../features/lab/RunResults";
+import { ReportPanel } from "../features/lab/Report";
+import { MonteCarloPanel } from "../features/lab/MonteCarlo";
+import { ExplorePanel } from "../features/lab/Explore";
 import { OptimizePanel } from "../features/lab/OptimizePanel";
 import { CustomizePanel } from "../features/lab/CustomizePanel";
 import { SavedStrategies } from "../features/lab/SavedStrategies";
 import { ReviewQueue } from "../features/lab/ReviewQueue";
 import type {
-  Catalogue, Indicator, InstrumentsResponse, LabStrategy, Market, Role, LabRunResult, Spec, TemplateResponse, TemplatesResponse, TickerRow,
+  Catalogue, FormulaInfo, Indicator, InstrumentsResponse, SavedIndicator, LabStrategy, Market, Role, LabRunResult, Spec, TemplateResponse, TemplatesResponse, TickerRow,
 } from "../features/lab/types";
 
 export function IndicatorsPage() {
@@ -58,6 +64,7 @@ function IndicatorsLab() {
   const [role, setRole] = useState<Role | null>(null);
   const [data, setData] = useState<MarketData | null>(null);
   const [result, setResult] = useState<LabRunResult | null>(null);
+  const [ranSpec, setRanSpec] = useState<Spec | null>(null); // the spec behind `result`, for the report's Settings block
   const [runError, setRunError] = useState<unknown>(null);
   const [running, setRunning] = useState(false);
   const [settings, setSettings] = useState<RunSettings>({ from: "", to: "", fees: "", slippage: "" });
@@ -73,11 +80,28 @@ function IndicatorsLab() {
   const [swapNote, setSwapNote] = useState("");
   const [savePrefill, setSavePrefill] = useState<{ name: string; seq: number } | undefined>();
   const { market, ticker } = state;
+  // "My indicators": saved formulas, their chart indicators (by saved id) and the check result per formula text in the spec.
+  const [mine, setMine] = useState<SavedIndicator[]>([]);
+  const [mineError, setMineError] = useState<unknown>(null);
+  const [myInds, setMyInds] = useState<Record<number, Indicator>>({});
+  const [infos, setInfos] = useState<Record<string, FormulaCheck>>({});
+  const [editing, setEditing] = useState<SavedIndicator | "new" | null>(null);
   const portfolioContext=canonicalJson([market,state.spec.portfolio??null]);
   const currentContext=useRef(portfolioContext);currentContext.current=portfolioContext;
   const issuedContext=useRef(portfolioContext);
 
   useEffect(() => { getAccount().then((a) => setRole(a.user.role), () => {}); }, []); // the App shell handles sign-in
+  useEffect(() => { lab.indicators.list().then(setMine, setMineError); }, []);
+  // Every formula operand in the spec is checked once per text (cached in the client), for its fields and optimize paths.
+  const infosRef = useRef(infos); infosRef.current = infos;
+  useEffect(() => {
+    const texts = new Set<string>();
+    walkSpec(state.spec, (x) => { if (x.t === "operand" && isFormulaOperand(x.operand)) texts.add(x.operand.formula); });
+    for (const text of texts) if (!(text in infosRef.current)) lab.formulaInfo(market, text).then(
+      (info) => setInfos((s) => ({ ...s, [text]: info })),
+      (e: unknown) => setInfos((s) => ({ ...s, [text]: { error: e instanceof Error ? e.message : String(e) } })));
+  }, [state.spec, market]);
+  const formulaScope = useMemo(() => ({ mine, infos }), [mine, infos]);
 
   useEffect(() => {
     let cancelled = false;
@@ -198,7 +222,7 @@ function IndicatorsLab() {
         ticker, from: settings.from || undefined, to: settings.to || undefined, ...runQuery(spec, settings.fees, settings.slippage),
       });
       if (n !== runSeq.current || sentContext!==currentContext.current) return;
-      setResult(r);
+      setResult(r); setRanSpec(spec);
       dispatch({ type: "ran", key: runKey(spec, savedMarketValue, ticker), combos: 0 });
     } catch (e) {
       if (n === runSeq.current) setRunError(e);
@@ -207,58 +231,106 @@ function IndicatorsLab() {
     }
   };
 
-  const loadSeries = useCallback((q: { id: string; tf: string; p?: Record<string, number>; vs?: string }) => lab.series(market, { ...q, ticker }), [market, ticker]);
+  const loadSeries = useCallback((q: { id: string; tf: string; p?: Record<string, number>; vs?: string; formula?: string; name?: string }) => lab.series(market, { ...q, ticker }), [market, ticker]);
   const problems = problemsFor(state.spec);
   const methodNames = useMemo(() => Object.fromEntries(templates?.templates.map((t) => [t.method.id, t.method.name]) ?? []), [templates]);
   const glNote = loaded && "gl" in loaded ? loaded.gl?.provisional_note : undefined;
   const hasVolume = !!option?.hasVolume;
 
   const backtestShown = !!(result || running || runError);
+  const canEditMine = role === "admin" || role === "researcher";
+  const chartCat = useMemo(() => cat && { ...cat, indicators: [...cat.indicators, ...Object.values(myInds)] }, [cat, myInds]);
+  const addMine = (row: SavedIndicator) => lab.formulaInfo(market, row.formula).then((info) => {
+    const ind = formulaIndicator(row, info);
+    setMyInds((m) => ({ ...m, [row.id]: ind }));
+    dispatch({ type: "chip-add", indicator: ind });
+  }, () => setEditing(row)); // a formula the engine refuses opens in the editor with its error
+  const mineSaved = (row: SavedIndicator, info: FormulaInfo) => {
+    setMine((list) => [...list.filter((r) => r.id !== row.id), row].sort((a, b) => a.name.localeCompare(b.name)));
+    setInfos((s) => ({ ...s, [row.formula]: info }));
+    if (!myInds[row.id]) return;
+    // chips of this indicator redraw with the saved formula; settings kept where the Param still exists
+    setMyInds((m) => ({ ...m, [row.id]: formulaIndicator(row, info) }));
+    for (const chip of state.chips) if (chip.id === myId(row.id))
+      dispatch({ type: "chip-set", key: chip.key, params: Object.fromEntries(info.params.map((p) => [p.key, chip.params[p.key] ?? p.default])) });
+  };
+  const mineDeleted = (id: number) => {
+    setMine((list) => list.filter((r) => r.id !== id)); setEditing(null);
+    for (const chip of state.chips) if (chip.id === myId(id)) dispatch({ type: "chip-remove", key: chip.key });
+  };
 
+  const portfolioPanel = cat && <PortfolioPanel spec={state.spec} catalogue={cat} market={market} options={signalOptions} onChange={(spec)=>{clearRun();dispatch({type:"spec",spec});}}/>;
   let work: ReactNode;
   if (loaded && "error" in loaded) work = <ErrorNotice error={loaded.error} market={market} />;
   else if (!cat || !options) work = <Loading text="Loading the Indicators lab…" />;
   else work = (
-    <ForeignProvider value={foreignScope!}>
+    <ForeignProvider value={foreignScope!}><FormulaContext.Provider value={formulaScope}>
     <div className={`lab-grid${tab === "strategy" ? "" : " lab-grid-focused"}`}>
       <div className="lab-library-slot" hidden={tab !== "strategy"}>
       <Part>
         <LibraryRail catalogue={cat} market={market} hasVolume={hasVolume} tf={state.tf}
           onAdd={(ind) => { if (availability(ind, { market, hasVolume, tf: state.tf, maxForeign: cat.max_foreign }).ok) dispatch({ type: "chip-add", indicator: ind }); }}
-          onRead={(ind) => setReading((cur) => (cur?.id === ind.id ? null : ind))} />
+          onRead={(ind) => setReading((cur) => (cur?.id === ind.id ? null : ind))}
+          mine={{ list: mine, error: mineError ?? undefined, canEdit: canEditMine, onAdd: (row) => void addMine(row), onEdit: (row) => setEditing(row ?? "new") }} />
       </Part>
       </div>
       <div className="lab-main">
         <div role="tabpanel" id="lab-panel-strategy" aria-labelledby="lab-tab-strategy" hidden={tab !== "strategy"} className="lab-tab-panel">
-        {reading && <Part><IndicatorDetail indicator={reading} catalogue={cat} onClose={() => setReading(null)} /></Part>}
         <Part>
           {ticker ? (
-            <Workbench market={savedMarketValue} ticker={ticker} tf={state.tf} range={state.range} catalogue={cat} chips={state.chips}
+            <Workbench market={savedMarketValue} ticker={ticker} tf={state.tf} range={state.range} catalogue={chartCat!} chips={state.chips}
               trades={result?.kind==="lab_simulation"?result.trades:undefined} loadSeries={loadSeries} instrumentLabel={option?.instrumentLabel}
               onChipChange={(key, params) => dispatch({ type: "chip-set", key, params })}
-              onChipRemove={(key) => dispatch({ type: "chip-remove", key })} comparisonOptions={comparisonOptions}
+              onChipRemove={(key) => dispatch({ type: "chip-remove", key })} onChipLook={(key, looks) => dispatch({ type: "chip-look", key, looks })} comparisonOptions={comparisonOptions}
               onChipVsChange={(key, vs) => dispatch({ type: "chip-vs", key, vs })} />
           ) : <div className="box empty">No instrument is available on this market.</div>}
         </Part>
-        {/* No backtest yet: the rules take the whole row instead of leaving the right half empty. */}
+        {/* below the chart, so opening a reference does not push the chart down */}
+        {reading && <Part><IndicatorDetail indicator={reading} catalogue={cat} onClose={() => setReading(null)} /></Part>}
+        {editing && <Part><FormulaEditor key={editing === "new" ? "new" : editing.id} row={editing === "new" ? null : editing} functions={cat.formula_functions ?? []}
+          canEdit={canEditMine} check={(text) => lab.formulaInfo(market, text)} api={lab.indicators}
+          onSaved={mineSaved} onDeleted={mineDeleted} onClose={() => setEditing(null)}
+          blocksEditor={(p) => <FormulaBlocks {...p} indicators={cat.indicators} check={(text) => lab.formulaInfo(market, text)} readOnly={!canEditMine} />} /></Part>}
+        {/* No backtest yet: the rules take the whole row; after a run the Results tabs stack under Run backtest. */}
         <div className="two lab-two" data-lab-layout={backtestShown ? "stacked" : "full"}>
-          <Part>
-            <div className="lab-rules-col">
-            {openError ? <ErrorNotice error={openError} market={savedMarketValue} instrumentLabel={option?.instrumentLabel} /> : null}
-            <PortfolioPanel spec={state.spec} catalogue={cat} market={market} options={signalOptions} onChange={(spec)=>{clearRun();dispatch({type:"spec",spec});}}/>
-            <RuleBuilder spec={state.spec} catalogue={cat} instrument={instrument} onChange={(spec) => dispatch({ type: "spec", spec })}
-              settings={settings} onSettings={(patch) => setSettings((s) => ({ ...s, ...patch }))}
-              problems={problems} running={running} onRun={() => void run()} />
-            </div>
-          </Part>
-          {backtestShown && <Part>
-            {runError ? <ErrorNotice error={runError} market={savedMarketValue} instrumentLabel={option?.instrumentLabel} />
-              : result ? result.kind==="lab_portfolio_simulation" ? <PortfolioResults result={result}/> : <RunResults result={result} market={savedMarketValue} />
-              : <Loading text="Running backtest…" />}
-          </Part>}
+        <Part>
+          <div className="lab-rules-col">
+          {openError ? <ErrorNotice error={openError} market={savedMarketValue} instrumentLabel={option?.instrumentLabel} /> : null}
+          {/* the tree builder shows the portfolio controls on its Portfolio settings tab (AmiBroker layout) */}
+          {!cat.execution && portfolioPanel}
+          <RuleBuilder spec={state.spec} catalogue={cat} instrument={instrument} onChange={(spec) => dispatch({ type: "spec", spec })}
+            settings={settings} onSettings={(patch) => setSettings((s) => ({ ...s, ...patch }))}
+            problems={problems} running={running} onRun={() => void run()} portfolio={portfolioPanel} />
+          </div>
+        </Part>
+        {/* WealthLab/AmiBroker style: one Results box under Run backtest, every view a tab instead of a long scroll */}
+        {backtestShown ? <Part>
+          {runError ? <ErrorNotice error={runError} market={savedMarketValue} instrumentLabel={option?.instrumentLabel} />
+            : !result ? <Loading text="Running backtest…" />
+            : <section className="box lab-results-tabs" data-lab-results-tabs>
+              <h2 className="box-h">Results</h2>
+              {(() => {
+                const tabs: [string, ReactNode][] = result.kind === "lab_portfolio_simulation"
+                  ? [["Portfolio results", <PortfolioResults result={result} />]]
+                  : [
+                    ...(result.report ? [["Performance metrics", <ReportPanel report={result.report} trades={result.trades} spec={ranSpec ?? undefined} run={result} />] as [string, ReactNode]] : []),
+                    ["Equity & drawdown", <RunResults result={result} market={savedMarketValue} />],
+                    ["Monthly returns", <RunTables result={result} part="monthly" />],
+                    ["Trades", <RunTables result={result} part="trades" />],
+                    ...(result.report ? [["Monte Carlo", <MonteCarloPanel trades={result.trades} from={result.from} to={result.to} ledger={result.ledger} capital={result.money?.capital} />] as [string, ReactNode]] : []),
+                  ];
+                if (ticker) tabs.push(["Scan / Explore", <ExplorePanel spec={state.spec} catalogue={chartCat!} chips={state.chips} portfolio={!!state.spec.portfolio} market={savedMarketValue} loadSeries={loadSeries}
+          onScan={(apply) => { assertRunnable(state.spec); return lab.scan(market, state.spec, { ticker, apply, from: settings.from || undefined, to: settings.to || undefined }); }}
+          onExplore={() => { assertRunnable(state.spec); return lab.explore(market, state.spec, { ticker, from: settings.from || undefined, to: settings.to || undefined }); }} />])
+                return <SettingsTabs ariaLabel="Backtest results" labels={tabs.map(([l]) => l)}>{tabs.map(([, el]) => el)}</SettingsTabs>;
+              })()}
+            </section>}
+        </Part> : null}
         </div>
         {result?.foreign?.length && !runError ? <div className="rnote" role="note" data-lab-foreign-disclosure>{result.foreign.map((source) => <p key={source.ticker}>{foreignDescription(source)}</p>)}</div> : null}
-        {result?.kind==="lab_simulation" && !runError && <Part><RunTables result={result} /></Part>}
+        {!backtestShown && ticker && <Part key={`explore|${market}|${ticker}`}><ExplorePanel spec={state.spec} catalogue={chartCat!} chips={state.chips} portfolio={!!state.spec.portfolio} market={savedMarketValue} loadSeries={loadSeries}
+          onScan={(apply) => { assertRunnable(state.spec); return lab.scan(market, state.spec, { ticker, apply, from: settings.from || undefined, to: settings.to || undefined }); }}
+          onExplore={() => { assertRunnable(state.spec); return lab.explore(market, state.spec, { ticker, from: settings.from || undefined, to: settings.to || undefined }); }} /></Part>}
         </div>
         <div role="tabpanel" id="lab-panel-optimization" aria-labelledby="lab-tab-optimization" hidden={tab !== "optimization"} className="lab-tab-panel">
         <p className="lab-tab-intro">Compare settings for <b>{state.spec.portfolio?"the selected portfolio":ticker}</b>. Your strategy rules stay the same until you apply a result.</p>
@@ -267,6 +339,10 @@ function IndicatorsLab() {
             onOptimize={(spec, split) => { assertRunnable(spec); return lab.optimize(market, spec, {
               ticker, from: settings.from || undefined, to: settings.to || undefined, ...runQuery(spec, settings.fees, settings.slippage), split,
             }); }}
+            onWalkforward={(spec, o) => { assertRunnable(spec); return lab.walkforward(market, spec, {
+              ticker, from: settings.from || undefined, to: settings.to || undefined, ...runQuery(spec, settings.fees, settings.slippage), ...o,
+            }); }}
+            onIndividual={(spec) => { assertRunnable(spec); return lab.optimizeIndividual(market, spec, { from: settings.from || undefined, to: settings.to || undefined }); }}
             onApply={(spec) => { setTab("strategy"); dispatch({ type: "spec", spec }); void run(spec); }}
             onTried={(n) => dispatch({ type: "tried", n })} tried={state.tried} instrumentLabel={option?.instrumentLabel} />
         </Part>
@@ -293,7 +369,7 @@ function IndicatorsLab() {
         </div>
       </div>
     </div>
-    </ForeignProvider>
+    </FormulaContext.Provider></ForeignProvider>
   );
 
   return (
@@ -304,7 +380,7 @@ function IndicatorsLab() {
         {cat && <ServerLabel text={cat.label} />}
       </header>
       <Toolbar market={market} onMarket={changeMarket} options={options ?? []} ticker={ticker}
-        onTicker={(t) => { opened.current = null; setSwapNote(""); dispatch({ type: "ticker", ticker: t }); }} tf={state.tf} timeframes={cat?.timeframes ?? ["D", "W", "M"]}
+        onTicker={(t) => { opened.current = null; setSwapNote(""); dispatch({ type: "ticker", ticker: t }); }} tf={state.tf} timeframes={cat?.timeframes ?? ["D", "W", "M", "Q", "Y"]}
         onTf={(tf) => dispatch({ type: "tf", tf })} range={state.range} onRange={(range) => dispatch({ type: "range", range })}
         provisionalNote={glNote} />
       <div className="lab-tabs" role="tablist" aria-label="Indicators workspace">

@@ -118,8 +118,8 @@ pub fn run(chain:&[Contract],spec:&Spec,capital:f64)->Result<FuturesRun,LabError
         for (t,k) in to_contracts(&[logical],&cont) {
             let ct=&chain[k];let terms=Terms{lot:ct.lot,point_value:ct.point_value,tick:ct.tick,margin_pct:Some(ct.margin_pct)};
             let sizing=quantity.map_or(x.sizing,|q:f64|Sizing::Units(q/(ct.lot*t.legs[0].w)));
-            let m=Money{capital:equity,sizing,costs:x.costs.clone(),contract:terms};
-            let Some(row)=ledger::book(std::slice::from_ref(&t),&cont.bars.date,&m).rows.into_iter().next() else {events.push(format!("entry/roll skipped: insufficient whole-lot margin on {}",cont.bars.date[t.legs[0].i]));break;};
+            let m=Money{capital:equity,sizing,costs:x.costs.clone(),contract:terms,limits:super::rules::Limits::none()};let span=ledger::Span{close:&[],volume:None,from:0,to:cont.bars.date.len()-1};
+            let Some(row)=ledger::book(std::slice::from_ref(&t),&cont.bars.date,&m,&span).rows.into_iter().next() else {events.push(format!("entry/roll skipped: insufficient whole-lot margin on {}",cont.bars.date[t.legs[0].i]));break;};
             let paid: f64=row.entries.iter().map(|f|f.costs()).sum();
             let entry=row.entries[0].px;let q=row.qty*ct.point_value;
             let mut call=None;
@@ -130,7 +130,7 @@ pub fn run(chain:&[Contract],spec:&Spec,capital:f64)->Result<FuturesRun,LabError
             if let Some(j)=call {
                 let px=ct.bars.open[index(ct,&cont.bars.date[j+1])?];
                 let cut=Trade{exit_i:j+1,exit_px:px,reason:"margin_call".into(),signal_i:j,open:false,..t};
-                let r=ledger::book(std::slice::from_ref(&cut),&cont.bars.date,&m).rows.into_iter().next().unwrap();
+                let r=ledger::book(std::slice::from_ref(&cut),&cont.bars.date,&m,&span).rows.into_iter().next().unwrap();
                 equity+=r.pnl;rows.push((cut,k,r));events.push(format!("margin call on {}: liquidated at the next actual contract open; trading stopped",cont.bars.date[j]));
                 return Ok(FuturesRun{series:cont,rows,events,final_equity:equity});
             }

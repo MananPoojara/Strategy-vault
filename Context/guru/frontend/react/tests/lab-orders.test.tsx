@@ -45,12 +45,66 @@ it("entry orders: stop, At level with an operand editor, stop-limit hint, order 
   expect(last().entry.valid_bars).toBe(3);
 });
 
-it("exits: add menu lists only unset exits; trailing activation; breakeven; take-profits in % of the position; min bars", async () => {
+it("AmiBroker stops: four fixed groups in order, Disabled removes, unsupported options are not selectable", async () => {
+  const { host, last, rerender } = await orders(defaultSpec(), "", catalogue7Fixture);
+  expect([...host.querySelectorAll(".lab-stops > fieldset > legend")].map((l) => l.textContent)).toEqual(["Maximum loss stop", "Profit target", "Trailing stop", "N-bar stop"]);
+  const unit = () => host.querySelector<HTMLSelectElement>('[data-lab-exit="stop_loss"] select[aria-label="Stop-loss unit"]')!;
+  expect(unit().value).toBe("off");
+  await choose(unit(), "pct");
+  expect(last().exit.stop_loss).toEqual({ pct: 5 });
+  await rerender(last());
+  await choose(unit(), "off");
+  expect(last().exit).not.toHaveProperty("stop_loss");
+  // exit modes, N-bar priority and re-entry delays are single-instrument settings shown with `reentry`
+  expect(host.querySelector('select[aria-label="Target exit mode"]')).toBeNull();
+  expect(host.querySelector('[data-lab-exit="n_bar"] input[type=checkbox]')).toBeNull();
+  expect(host.querySelector('input[aria-label="Re-entry delay (bars)"]')).toBeNull();
+  expect(host.textContent).not.toContain("not modelled");
+});
+
+it("Exit at stop? per stop and N-bar Has priority, with AmiBroker wording and disclosures", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host); active.push({ root, host });
+  const onChange = vi.fn();
+  const render = async (s: Spec) => act(async () => root.render(<OrdersPanel spec={s} catalogue={catalogue7Fixture} reentry onChange={onChange} />));
+  await render(defaultSpec());
+  const mode = (label: string) => host.querySelector<HTMLSelectElement>(`select[aria-label="${label} exit mode"]`)!;
+  expect(["Stop-loss", "Target", "Trailing stop"].map((l) => mode(l).value)).toEqual(["1", "1", "1"]);
+  expect(host.querySelector('select[aria-label="N-bar stop exit mode"]')).toBeNull(); // AmiBroker's N-bar stop has only Has priority
+  expect([...mode("Target").options].map((o) => [o.value, o.textContent, o.disabled])).toEqual([
+    ["0", "Exit at trade price only (0)", false], ["1", "Exit intraday at stop (1)", false], ["2", "Exit next bar at trade price (2)", false]]);
+  await choose(mode("Target"), "2");
+  expect(onChange.mock.calls.at(-1)![0].execution.exit_at_stop).toEqual({ target: 2 });
+  await render(setExecution(defaultSpec(), { exit_at_stop: { target: 2, bars: 0 } }));
+  expect(mode("Target").value).toBe("2");
+  await choose(mode("Target"), "1"); // back to the default: not stored
+  expect(onChange.mock.calls.at(-1)![0].execution.exit_at_stop).toEqual({ bars: 0 });
+  const priority = host.querySelector<HTMLInputElement>('[data-lab-exit="n_bar"] input[type=checkbox]')!;
+  expect([priority.checked, priority.disabled, priority.parentElement!.textContent]).toEqual([false, false, "Has priority"]);
+  await act(async () => priority.click());
+  expect(onChange.mock.calls.at(-1)![0].execution.nbar_has_priority).toBe(true);
+  expect(host.querySelector("[data-lab-stop-modes]")!.textContent).toContain("next bar's open");
+  expect(host.textContent).toContain("The N-bar stop has no stop price");
+});
+
+it("each stop carries its own re-entry delay when asked", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host); active.push({ root, host });
+  const onChange = vi.fn();
+  await act(async () => root.render(<OrdersPanel spec={defaultSpec()} catalogue={catalogue7Fixture} reentry onChange={onChange} />));
+  expect(host.querySelectorAll('input[aria-label="Re-entry delay (bars)"]')).toHaveLength(4);
+  await type(host.querySelector('[data-lab-exit="trailing"] input[aria-label="Re-entry delay (bars)"]')!, "3");
+  expect(onChange.mock.calls.at(-1)![0].execution.reentry).toEqual({ trailing: 3 });
+});
+
+it("exits: add menu lists only unset extra exits; trailing activation; breakeven; take-profits in % of the position; min bars", async () => {
   const { host, last, rerender } = await orders(defaultSpec());
   const add = () => host.querySelector<HTMLSelectElement>('select[aria-label="Add exit (long)"]')!;
-  await choose(add(), "trailing");
+  expect([...add().options].map((o) => o.value)).toEqual(["", "breakeven", "take_profits", "min_bars"]);
+  await choose(host.querySelector('[data-lab-exit="trailing"] select[aria-label="Trailing stop unit"]')!, "pct");
   await rerender(last());
-  expect([...add().options].map((o) => o.value)).not.toContain("trailing");
   await choose(host.querySelector('[data-lab-exit="trailing"] select[aria-label="Trailing activation unit"]')!, "pct");
   expect(last().exit.trailing).toEqual({ pct: 5, activate: { pct: 2 } });
   await choose(add(), "breakeven");
@@ -73,7 +127,7 @@ it("the short side writes to short_side paths and labels itself", async () => {
   const both = withDirection(defaultSpec(), "both");
   const { host, last } = await orders(both, "short_side.");
   expect(host.querySelector('[data-lab-orders="short"]')).not.toBeNull();
-  await choose(host.querySelector('select[aria-label="Add exit (short)"]')!, "stop_loss");
+  await choose(host.querySelector('[data-lab-exit="stop_loss"] select[aria-label="Stop-loss unit"]')!, "pct");
   expect(last().short_side?.exit.stop_loss).toEqual({ pct: 5 });
   expect(last().exit).not.toHaveProperty("stop_loss");
 });
@@ -117,4 +171,11 @@ it("future take-profit row shapes stay read-only and survive other order edits",
   expect(host.querySelector('[data-lab-exit="take_profits"] .lab-kept')?.textContent).toContain("future_level");
   await clickIn(host, '[aria-label="Long entry order"]', "Stop");
   expect(last().exit.take_profits).toEqual([null, { future_level: 3 }]);
+});
+
+it("trailing stop: choosing % of profit writes exit.trailing { profit_pct: 40 }", async () => {
+  const { host, last } = await orders(setAt(defaultSpec(), "exit.trailing", { pct: 5 }));
+  await choose(host.querySelector('[data-lab-exit="trailing"] select[aria-label="Trailing stop unit"]')!, "profit_pct");
+  expect(last().exit.trailing).toEqual({ profit_pct: 40 });
+  expect([...host.querySelectorAll<HTMLOptionElement>('select[aria-label="Trailing stop unit"] option')].map((o) => o.value)).toContain("profit_pct");
 });

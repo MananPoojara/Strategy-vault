@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { act } from "react";
-import { RunResults, RunTables, drawdown, kpiItems, tradeRows, tradeTable } from "../src/features/lab/RunResults";
+import { RunResults, RunTables, drawdown, kpiItems, tradeTable } from "../src/features/lab/RunResults";
 import { PROVISIONAL_NOTE } from "../src/features/lab/labels";
 import { mount, runFixture, run7Fixture, money7Fixture, unmount } from "./fixtures/lab";
 
@@ -18,8 +18,9 @@ it("label verbatim, own start copy, KPIs and costs", async () => {
   expect(host.textContent).toContain("Results start on 2024-01-08, not the requested start");
   expect(host.textContent).not.toContain("stale");
   expect(kpiItems(runFixture.stats).map((k) => [k.label, k.value])).toEqual([
-    ["Net return", "5.0%"], ["CAGR", "31.0%"], ["Max drawdown", "-1.0%"], ["Sharpe", "1.42"],
-    ["Trades", "2"], ["Win rate", "50.0%"], ["Avg trade", "0.02%"], ["Buy & hold CAGR", "40.0%"]]);
+    ["Net Profit %", "5.0%"], ["CAR", "31.0%"], ["MaxSysDD", "-1.0%"], ["CAR/MDD", "—"], ["# trades", "2"], ["# winners", "1 (50.0%)"], ["# losers", "1 (50.0%)"],
+    ["Avg. profit/loss %", "0.02%"], ["Sharpe", "1.42"], ["Buy & hold CAGR", "40.0%"]]);
+  expect(kpiItems({ ...runFixture.stats, mar: 31.6, trades: 10, win_rate: 0.3 }).filter((k) => ["CAR/MDD", "# winners", "# losers"].includes(k.label)).map((k) => k.value)).toEqual(["31.60", "3 (30.0%)", "7 (70.0%)"]);
   expect(host.textContent).toContain("Exposure 60.0% · before costs: 5.1%");
   expect(host.textContent).toContain("Fees 5 bps + slippage 2 bps per side · taxes not modelled");
   expect(host.querySelector("[data-lab-provisional]")).toBeNull();
@@ -30,23 +31,33 @@ it("label verbatim, own start copy, KPIs and costs", async () => {
 it("no start disclosure when start is null; null stats show a dash", async () => {
   const host = await mount(<RunResults result={{ ...runFixture, start: null }} market="in" />);
   expect(host.textContent).not.toContain("Results start on");
-  expect(kpiItems({ ...runFixture.stats, sharpe: null })[3].value).toBe("—");
+  expect(kpiItems({ ...runFixture.stats, sharpe: null }).find((k) => k.label === "Sharpe")!.value).toBe("—");
 });
 
-it("tradesheet: newest first, side, fill, open trade and friendly reasons", () => {
-  const rows = tradeRows(runFixture.trades);
-  expect(rows[0]).toEqual(["2024-02-01", "Short", "Close", "105.00", "Open", "106.00", "-0.95%", "1", "Still open at the end"]);
-  expect(rows[1]).toEqual(["2024-01-08", "Long", "Next open", "101.00", "2024-01-15", "102.00", "0.99%", "2", "Exit rule 1: bars_held >= 2"]);
-  expect(tradeRows([{ ...runFixture.trades[0], entry_kind: "limit" }])[0][2]).toBe("Limit");
-  expect(tradeRows([{ ...runFixture.trades[0], entry_kind: "weird" }])[0][2]).toBe("weird");
+it("tradesheet: AmiBroker columns, oldest first, symbol, side, fill, open trade and friendly reasons", () => {
+  const { csv } = tradeTable(runFixture);
+  expect(csv[0]).toEqual(["Symbol", "Trade", "Order", "Date", "Price", "Ex. date", "Ex. Price", "Cum. %", "% Profit", "# bars", "Profit/bar", "Exit reason"]);
+  expect(csv[1]).toEqual(["NIFTY 50", "Long", "Next open", "2024-01-08", "101.00", "2024-01-15", "102.00", "1.0%", "0.99%", "2", "0.330%", "Exit rule 1: bars_held >= 2"]);
+  expect(csv[2]).toEqual(["NIFTY 50", "Short", "Close", "2024-02-01", "105.00", "Open", "106.00", "0.0%", "-0.95%", "1", "-0.475%", "Still open at the end"]);
+  expect(tradeTable({ trades: [{ ...runFixture.trades[0], entry_kind: "limit" }] }).csv[1][2]).toBe("Limit");
+  expect(tradeTable({ trades: [{ ...runFixture.trades[0], entry_kind: "weird" }] }).csv[1][2]).toBe("weird");
 });
 
-it("caps the table at 200 rows and points to the CSV", async () => {
-  const many = { ...runFixture, trades: Array.from({ length: 205 }, () => runFixture.trades[0]) };
+it("pages the table 100 rows at a time, oldest first, with a newest-first toggle", async () => {
+  const many = { ...runFixture, trades: Array.from({ length: 205 }, (_, i) => ({ ...runFixture.trades[0], entry: `D${String(i).padStart(3, "0")}` })) };
   const host = await mount(<RunTables result={many} />);
-  expect(host.querySelectorAll("table.tl tbody tr")).toHaveLength(200);
-  expect(host.textContent).toContain("205 trades · newest first");
-  expect(host.textContent).toContain("5 older trades are in the CSV.");
+  const firstDate = () => host.querySelector("table.tl tbody tr")!.children[3].textContent;
+  const click = (text: string) => act(async () => [...host.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === text)!.click());
+  expect(host.querySelectorAll("table.tl tbody tr")).toHaveLength(100);
+  expect(host.textContent).toContain("205 trades");
+  expect(host.querySelector("[data-lab-pager]")!.textContent).toContain("1–100 of 205");
+  expect(firstDate()).toBe("D000");
+  await click("Next ›"); await click("Next ›");
+  expect(host.querySelectorAll("table.tl tbody tr")).toHaveLength(5);
+  expect(firstDate()).toBe("D200");
+  await click("Newest first");
+  expect(firstDate()).toBe("D204");
+  expect(host.querySelector("[data-lab-pager]")!.textContent).toContain("1–100 of 205");
 });
 
 it("no trades shows the fixed copy", async () => {
@@ -64,7 +75,7 @@ it("CSV download uses VaultReport.csv with every trade and the file name", async
   const host = await mount(<RunTables result={many} />);
   await act(async () => [...host.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "Download CSV")!.click());
   const rows = (window.VaultReport!.csv as ReturnType<typeof vi.fn>).mock.calls[0][0] as string[][];
-  expect(rows[0][0]).toBe("Entry date");
+  expect(rows[0][0]).toBe("Symbol");
   expect(rows).toHaveLength(206);
   expect(createObjectURL.mock.calls[0][0].type).toBe("text/csv;charset=utf-8");
   expect(names).toEqual([`lab-NIFTY 50-${runFixture.from}-${runFixture.to}.csv`]);
@@ -79,6 +90,8 @@ it("monthly table from VaultReport; table and CSV button absent without it", asy
   expect(cells[0]).toBe("2024");
   expect(cells[1]).toBe("2.0%");
   expect(cells[13]).toBe("5.0%");
+  expect(host.querySelector(".lab-monthly caption")!.textContent).toBe("Profit Table");
+  expect(host.querySelector(".lab-monthly thead th:last-child")!.textContent).toBe("Yr%");
   await unmount();
   delete window.VaultReport;
   host = await mount(<RunTables result={runFixture} />);
@@ -97,7 +110,7 @@ it("equity chart keeps its log scale and full data and is removed on unmount", a
     const id = options.push(o);
     const add = (kind: string) => () => { const s = { kind, data: [] as unknown[] }; series.push(s);
       return { setData: (d: unknown[]) => { s.data = d; }, applyOptions() {} }; };
-    return { addCandlestickSeries: add("candle"), addBarSeries: add("bar"), addLineSeries: add("line"), addAreaSeries: add("area"),
+    return { addCandlestickSeries: add("candle"), addLineSeries: add("line"), addAreaSeries: add("area"),
       timeScale: () => ({ fitContent() {}, setVisibleRange() {} }), applyOptions() {}, resize() {}, remove: () => removed.push(id) };
   } };
   await mount(<RunResults result={runFixture} market="in" />);
@@ -155,13 +168,32 @@ it("shows declared money costs without claiming taxes were omitted", async () =>
   expect(host.textContent).not.toContain("bps + slippage");
 });
 it("trade table adds only populated columns and never misjoins the ledger", () => {
-  expect(tradeTable(runFixture).header).toEqual(["Entry date", "Side", "Order", "Entry", "Exit date", "Exit", "Return", "Bars", "Exit reason"]);
-  expect(tradeTable(run7Fixture).header).toContain("Legs");
-  expect(tradeTable(run7Fixture).header).toContain("Scale-outs");
+  expect(tradeTable(runFixture).header).toEqual(["Symbol", "Trade", "Order", "Date", "Price", "Ex. date", "Ex. Price", "Cum. %", "% Profit", "# bars", "Profit/bar", "Exit reason"]);
+  // MAE/MFE columns appear only when the engine sends excursions
+  const excursions = { ...runFixture, trades: runFixture.trades.map((t) => ({ ...t, mae: -0.01, mfe: 0.02 })) };
+  expect(tradeTable(excursions).header).toEqual(expect.arrayContaining(["MAE", "MFE"]));
+  expect(tradeTable(run7Fixture).header).toContain("Scale in");
+  expect(tradeTable(run7Fixture).header).toContain("Scale out");
   const money = tradeTable(money7Fixture);
-  expect(money.header.slice(-4)).toEqual(["Qty", "Value", "Costs", "P&L"]);
-  expect(money.csv[1][1]).toBe("Short");
-  expect(tradeTable({ ...money7Fixture, ledger: money7Fixture.ledger!.slice(1) }).header).not.toContain("Qty");
+  // AmiBroker order for the money columns
+  expect(money.header.slice(7, 12)).toEqual(["Cum. Profit", "Profit", "% Profit", "Shares", "Position value"]);
+  expect(money.header).toContain("Costs");
+  expect(money.csv.at(-1)![1]).toBe("Short");
+  expect(tradeTable({ ...money7Fixture, ledger: money7Fixture.ledger!.slice(1) }).header).not.toContain("Shares");
+});
+it("Cum. % compounds in trade order (open trade included); Profit/bar uses AmiBroker bars (entry and exit bar)", () => {
+  const base = runFixture.trades[0];
+  const trades = [{ ...base, entry: "2020-01-02", ret: 0.1, bars: 4, open: false }, { ...base, entry: "2020-02-03", ret: -0.05, bars: 0, open: false }, { ...base, entry: "2020-03-02", ret: 0.02, bars: 1, open: true }];
+  const t = tradeTable({ trades }), col = (h: string) => t.header.indexOf(h);
+  // rows are oldest first
+  expect(t.csv.slice(1).map((r) => r[col("Cum. %")])).toEqual(["10.0%", "4.5%", "6.6%"]);
+  expect(t.csv.slice(1).map((r) => r[col("Profit/bar")])).toEqual(["2.000%", "-5.000%", "1.000%"]);
+  // money mode: summed ledger P&L in money, and money per bar
+  const ledger = trades.map((x, i) => ({ entry: x.entry, qty: 1, notional: 1, costs: 0, pnl: [1000, -500, 200][i] }));
+  const m = tradeTable({ trades, ledger, money: { capital: 100_000 } });
+  expect(m.csv.slice(1).map((r) => r[m.header.indexOf("Cum. Profit")])).toEqual(["1,000.00", "500.00", "700.00"]);
+  expect(m.csv.slice(1).map((r) => r[m.header.indexOf("Profit/bar")])).toEqual(["200.00", "-500.00", "100.00"]);
+  expect(m.cls[1][m.header.indexOf("Profit")]).toBe("n neg");
 });
 it("preserves the money ledger in its own table when trade identities differ", async () => {
   const result = { ...money7Fixture, ledger: money7Fixture.ledger!.map((row) => ({ ...row, entry: "2020-01-01" })) };
@@ -171,8 +203,7 @@ it("preserves the money ledger in its own table when trade identities differ", a
 });
 it("shows a nondefault allocation even on a single-leg trade and keeps CSV plain", () => {
   const table = tradeTable({ trades: [{ ...runFixture.trades[0], weight: 0.5 }] });
-  expect(table.header.at(-1)).toBe("Allocation");
-  expect(table.csv[1].at(-1)).toBe("50.0%");
+  expect(table.csv[1][table.header.indexOf("Allocation")]).toBe("50.0%");
   expect(table.csv.flat().every((cell) => typeof cell === "string")).toBe(true);
 });
 
@@ -182,11 +213,11 @@ it("calls the exact shared area renderer with full drawdown dates, percentages a
   const charts: Record<string, unknown>[] = [];
   window.LightweightCharts = { createChart: (_el, options) => {
     charts.push(options); const add = () => ({setData() {}, applyOptions() {}});
-    return {addCandlestickSeries:add,addBarSeries:add,addLineSeries:add,addAreaSeries:add,timeScale:()=>({fitContent() {},setVisibleRange() {}}),applyOptions() {},resize() {},remove() {}};
+    return {addCandlestickSeries:add,addLineSeries:add,addAreaSeries:add,timeScale:()=>({fitContent() {},setVisibleRange() {}}),applyOptions() {},resize() {},remove() {}};
   } };
   const host = await mount(<RunResults result={runFixture} market="in" />);
-  expect(host.querySelector('[data-lab-chart="equity"] h3')?.textContent).toBe("Equity growth");
-  expect(host.querySelector('[data-lab-chart="drawdown"] h3')?.textContent).toBe("Drawdown from peak");
+  expect(host.querySelector('[data-lab-chart="equity"] h3')?.textContent).toBe("Portfolio Equity");
+  expect(host.querySelector('[data-lab-chart="drawdown"] h3')?.textContent).toBe("Underwater Equity");
   expect(charts).toHaveLength(1); expect(charts[0].height).toBe(300);
   expect((charts[0].timeScale as {minBarSpacing:number}).minBarSpacing).toBe(0.01);
   const [el, dates, values, options] = renderAreaChart.mock.calls[0] as unknown as [HTMLElement,string[],number[],{fmt:(n:number)=>string;axFmt:(n:number)=>string;markMin:boolean;h:number;color:string}];

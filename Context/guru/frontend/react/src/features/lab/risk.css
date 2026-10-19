@@ -9,7 +9,8 @@
 .lab-risk summary { overflow-wrap: anywhere; }
 
 /* Monetary capital and share/value sizes need room beyond compact rule thresholds. */
-.lab-rules .lab-risk input[type=number][aria-label="Capital"],
-.lab-rules .lab-risk input[type=number][aria-label="Shares"],
-.lab-rules .lab-risk input[type=number][aria-label="Value"] { width: 16ch; min-width: 110px; }
+.lab-rules .dfield input[type=number]:is([aria-label="Initial equity"], [aria-label="Shares"], [aria-label="Value"], [aria-label^="Commission per"], [aria-label^="Min."], [aria-label^="Max. pos"], [aria-label="Round lot size"], [aria-label="Tick size"]) { width: 11ch; }
 .lab-risk-taxes > button[aria-label="Add tax"] { justify-self: start; width: auto; }
+
+/* AmiBroker position limits: a compact group inside money mode. */
+.lab-risk-limits { display: grid; gap: 6px; min-width: 0; }

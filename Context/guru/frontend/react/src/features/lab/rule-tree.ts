@@ -2,6 +2,7 @@
  *  the engine's comparison/node budget, location labels and UX pre-checks. The engine stays the authority. */
 import { COPY, EXPAND_FIRST_REFUSED, OPERAND_KIND_LABELS } from "./labels";
 import { getAt, isCond, isSeries, isValue, OPERATOR_LABELS, operandLabel } from "./spec-model";
+import { isFormulaOperand } from "./formula";
 import type { Catalogue, Cond, Operand, RuleNode, Spec } from "./types";
 
 export const ARITH = ["add", "sub", "mul", "div", "min", "max"] as const;
@@ -29,12 +30,13 @@ export const isLeaf = (k: NodeKind) => k === "cmp" || k === "range" || k === "tr
 export const exprKey = (o: unknown): ExprKey | undefined => (isObj(o) ? (Object.keys(o).find((k) => (EXPR_KEYS as readonly string[]).includes(k)) as ExprKey | undefined) : undefined);
 
 export type OperandKind = "number" | "price" | "indicator" | "calendar" | "bars_held" | "arith" | "pct" | "abs" | "ref" | "window" | "change"
-  | "compress" | "bars_since" | "value_when" | "since" | "count" | "unknown";
+  | "compress" | "bars_since" | "value_when" | "since" | "count" | "formula" | "unknown";
 export const CALENDAR_IDS = ["calendar", "session", "sessions_left"];
 const kindOfKey = (k: ExprKey): OperandKind =>
   (ARITH as readonly string[]).includes(k) ? "arith" : (WINDOWS as readonly string[]).includes(k) ? "window" : k === "highest_since" || k === "lowest_since" ? "since" : (k as OperandKind);
 export function operandKind(o: Operand, cat: Catalogue): OperandKind {
   if (isValue(o)) return "number";
+  if (isFormulaOperand(o)) return "formula";
   const k = exprKey(o);
   if (k) return kindOfKey(k);
   if (!isSeries(o)) return "unknown";
@@ -114,7 +116,7 @@ export function convertOperand(o: Operand, to: OperandKind, cat: Catalogue): Ope
     case "compress": return { compress: series, tf: "W", mode: "last" };
     default: return o;
   } };
-  const known = ["s", "p", "tf", "out", "offset", "expand", "value", "bars", "of", "nth", "mode", ...EXPR_KEYS];
+  const known = ["s", "formula", "name", "p", "tf", "out", "offset", "expand", "value", "bars", "of", "nth", "mode", ...EXPR_KEYS];
   const extras = exprKey(o) || ["number", "price", "indicator", "calendar", "bars_held"].includes(to)
     ? Object.fromEntries(Object.entries(o).filter(([k]) => !known.includes(k))) : {};
   return { ...extras, ...convert() };
@@ -267,6 +269,11 @@ export function treeProblems(spec: Spec, cat: Catalogue): string[] {
       return;
     }
     const o = item.operand, k = exprKey(o), x = o as Obj;
+    if (isFormulaOperand(o)) {
+      const issue = timingProblem(o, cat);
+      if (issue) add(issue);
+      if (!o.formula.trim()) add("the custom indicator has no formula.");
+    }
     if (isSeries(o)) {
       if (o.s === "bars_held") {
         if (!item.held) add(COPY.heldTopOnly);
@@ -309,7 +316,7 @@ export function usesHigherTimeframes(spec: Spec): boolean {
 }
 const ARITH_SYMBOL: Record<string, string> = { add: "+", sub: "−", mul: "×", div: "÷", min: "min", max: "max" };
 export function describeOperand(o: Operand, cat: Catalogue): string {
-  if (isValue(o) || isSeries(o)) return operandLabel(o, cat);
+  if (isValue(o) || isSeries(o) || isFormulaOperand(o)) return operandLabel(o, cat);
   const k = exprKey(o);
   if (!k) return "kept as is";
   const x = o as Obj, inner = (key: string) => describeOperand(x[key] as Operand, cat), cond = (key: string) => describeNode(x[key] as RuleNode, cat);

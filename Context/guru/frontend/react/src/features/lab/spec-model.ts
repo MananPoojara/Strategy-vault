@@ -1,4 +1,5 @@
 import { COPY } from "./labels";
+import { formulaLabel, isFormulaOperand } from "./formula";
 import type { Catalogue, Cond, Dist, IndicatorParam, Operand, OptimizeDim, RuleNode, SeriesOperand, Spec, ValueOperand } from "./types";
 
 export type Side = "entry" | "exit";
@@ -161,6 +162,7 @@ function distProblems(label: string, d: Dist, [lo, hi]: [number, number], zeroOk
     return (zeroOk ? d.pct >= lo : d.pct > lo) && d.pct <= hi ? [] : [`${label}: % must be ${zeroOk ? `from ${lo}` : `above ${lo}`} and at most ${hi}.`];
   if ("points" in d) return Number.isFinite(d.points) && (zeroOk ? d.points >= 0 : d.points > 0) && d.points <= 1e9
     ? [] : [`${label}: points must be ${zeroOk ? "from" : "above"} 0 and at most 1000000000.`];
+  if ("profit_pct" in d) return d.profit_pct > 0 && d.profit_pct < 100 ? [] : [`${label}: % of profit must be above 0 and below 100.`];
   const out: string[] = [];
   if (!(d.atr > 0 && d.atr <= 50)) out.push(`${label}: ATR multiplier must be above 0 and at most 50.`);
   if (d.atr_length !== undefined && !(Number.isInteger(d.atr_length) && d.atr_length >= 1 && d.atr_length <= 500))
@@ -236,6 +238,7 @@ export const canonicalJson = (value: unknown): string =>
 
 export function operandLabel(o: Operand, cat: Catalogue): string {
   if (isValue(o)) return String(o.value);
+  if (isFormulaOperand(o)) return [formulaLabel(o), o.tf && o.tf !== "D" ? o.tf : "", o.offset ? `${o.offset} bar${o.offset === 1 ? "" : "s"} ago` : ""].filter(Boolean).join(" · ");
   if (!isSeries(o)) return "kept as is";
   const special = SPECIAL_OPERANDS.find((x) => x.s === o.s);
   if (special) return special.label;
@@ -299,6 +302,7 @@ function orderPhrase(spec: Spec, order: PriceOrder): Phrase | null {
   const size: Phrase = "pct" in d
     ? [{ path: `${path}.pct`, value: d.pct, label: `${order.label} %`, min: order.pct[0], max: order.pct[1], step: 0.5 }, "%"]
     : "points" in d ? [{ path: `${path}.points`, value: d.points, label: `${order.label} points`, min: 0, step: 1 }, " points"]
+    : "profit_pct" in d ? [{ path: `${path}.profit_pct`, value: d.profit_pct, label: `${order.label} % of profit`, min: 1, max: 99, step: 1 }, "% of open profit"]
     : [{ path: `${path}.atr`, value: d.atr, label: `${order.label} ATR multiple`, min: 0.25, max: 50, step: 0.25 }, " × ATR(",
        { path: `${path}.atr_length`, value: d.atr_length ?? 14, label: `${order.label} ATR length`, min: 1, max: 500, step: 1, integer: true }, ")"];
   if (order.key === "limit") return ["using a limit order ", ...size, ` ${spec.direction === "short" ? "above" : "below"} the signal close`];

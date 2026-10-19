@@ -32,3 +32,18 @@
 .lab-tab-intro { margin: 2px 0; color: var(--ink2); font-size: 13px; }
 @media (max-width: 900px) { .lab-library-slot { position: static; } }
 @media (max-width: 600px) { .lab-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; overflow: visible; } .lab-tabs [role=tab] { padding: 10px 12px; font-size: 13px; } }
+/* Theme palettes (styles.css :root[data-theme] :is(.dbtn,…)) out-rank .dbtn.primary and turn it into an outline; body lifts this above them. */
+:root[data-theme] body .lab-page .dbtn.primary { background: var(--blue); border-color: var(--blue); color: var(--bg); }
+:root[data-theme] body .lab-page .dbtn.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--blue) 86%, var(--ink)); }
+
+/* Native selects outside the rules box (toolbar Instrument, Monte Carlo sizing, Held back, walk-forward) match the lab fields. */
+.lab-page .dfield select, .lab-page .lab-toolbar select { font: 500 13px var(--font); padding: 5px 8px; min-height: 32px; border: 1px solid var(--steel); border-radius: var(--r-field); background: var(--card); color: var(--ink); }
+/* The 170 px sticky header on phones would cover content scrolled into view. */
+.lab-rules, .lab-params, .lab-workbench, .lab-detail { scroll-margin-top: 180px; }
+/* Touch screens: controls at least 36 px tall (the 32 px caps in orders.css / risk.css are for mouse pointers). */
+@media (pointer: coarse) {
+  .lab-page button, .lab-page select, .lab-page input:not([type=checkbox]):not([type=range]), .lab-page summary,
+  .lab-library li > button[data-lab-item], .lab-stabs [role=tab], .lab-chips .chip .lab-chip-open { min-height: 36px; max-height: none; }
+  .lab-page input[type=checkbox] { width: 20px; height: 20px; }
+  .lab-library li > .dbtn.sm, .lab-chips .chip > button[aria-label^="Remove"] { min-width: 36px; min-height: 36px; }
+}

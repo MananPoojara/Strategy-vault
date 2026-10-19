@@ -6,7 +6,7 @@ import { defaultSpec, setAt, setExecution } from "../src/features/lab/spec-model
 import { DEFAULT_SHORT_SIDE, withDirection, withEntryOrder, withTakeProfits } from "../src/features/lab/execution-model";
 import type { Catalogue, Spec } from "../src/features/lab/types";
 import { catalogue7Fixture, catalogueFixture } from "./fixtures/lab";
-import { RiskPanel } from "../src/features/lab/RiskPanel";
+import { InitialEquity, MARGIN_NOTE, PAD_NOTE, PortfolioLimits, RiskPanel, TICK_NOTE } from "../src/features/lab/RiskPanel";
 import { FUTURES_NOTE, MONEY_BASIS_HINT, MONEY_BLOCKED } from "../src/features/lab/labels";
 import { withMode, type InstrumentContext } from "../src/features/lab/execution-model";
 
@@ -20,7 +20,7 @@ async function setup(spec: Spec, instrument: InstrumentContext = usEtf, catalogu
   const host = document.createElement("div"); document.body.append(host);
   const root = createRoot(host); active.push({ root, host });
   const onChange = vi.fn();
-  const rerender = async (s: Spec) => { await act(async () => root.render(<RiskPanel spec={s} catalogue={catalogue} instrument={instrument} onChange={onChange} />)); };
+  const rerender = async (s: Spec) => { await act(async () => root.render(<><InitialEquity spec={s} catalogue={catalogue} instrument={instrument} onChange={onChange} /><RiskPanel spec={s} catalogue={catalogue} instrument={instrument} onChange={onChange} /></>)); };
   await rerender(spec);
   return { host, last: () => onChange.mock.calls.at(-1)![0] as Spec, rerender };
 }
@@ -59,7 +59,9 @@ it("money mode on a US ETF: capital, sizing in shares, costs, taxes, borrow for 
   const { host, last, rerender } = await risk(setExecution(defaultSpec(), { cost_bps: 10 }), usEtf);
   await clickIn(host, '[aria-label="Results in"]', "Money");
   expect(last().execution).toEqual({ capital: 1_000_000 });
+  expect(host.querySelector<HTMLInputElement>('input[aria-label="Initial equity"]')!.disabled).toBe(true); // unit study until rerendered
   await rerender(last());
+  expect(host.querySelector<HTMLInputElement>('input[aria-label="Initial equity"]')!.value).toBe("1000000");
   expect(host.textContent).toContain(MONEY_BASIS_HINT);
   await choose(host.querySelector('select[aria-label="Size"]')!, "units");
   expect(last().execution?.sizing).toEqual({ units: 100 });
@@ -135,6 +137,77 @@ it("unknown tax row shapes stay visible and other money edits preserve them", as
   const source = setAt(withMode(defaultSpec(), "money"), "execution.costs.taxes", [null, { future_tax: true }]);
   const { host, last } = await risk(source);
   expect(host.querySelector(".lab-kept")?.textContent).toContain("future_tax");
-  await type(host.querySelector('input[aria-label="Capital"]')!, "200000");
+  await type(host.querySelector('input[aria-label="Initial equity"]')!, "200000");
   expect(last().execution?.costs?.taxes).toEqual([null, { future_tax: true }]);
+});
+
+it("position limits (AmiBroker) appear in money mode only, edit execution.limits and clear when emptied", async () => {
+  expect((await risk(defaultSpec(), usEtf)).host.querySelector("[data-lab-limits]")).toBeNull();
+  const { host, last, rerender } = await risk(withMode(defaultSpec(), "money"), usEtf);
+  expect(host.querySelector("[data-lab-limits]")!.textContent).toContain("Position limits (AmiBroker)");
+  expect(host.querySelector('input[aria-label="Limit trade size as % of entry bar volume"]')).toBeNull(); // on the Portfolio tab
+  await type(host.querySelector('input[aria-label="Round lot size"]')!, "10");
+  expect(last().execution?.limits).toEqual({ round_lot: 10 });
+  await rerender(last());
+  await click(host.querySelector('input[aria-label="Allow position size shrinking"]')!);
+  expect(last().execution?.limits).toEqual({ round_lot: 10, shrink: true });
+  await rerender(last());
+  await type(host.querySelector('input[aria-label="Fixed annual interest [%]"]')!, "4");
+  expect(last().execution?.limits).toEqual({ round_lot: 10, shrink: true, interest_pct: 4 });
+  const cleared = await risk(setExecution(withMode(defaultSpec(), "money"), { limits: { round_lot: 10 } }), usEtf);
+  await type(cleared.host.querySelector('input[aria-label="Round lot size"]')!, "");
+  expect(cleared.last().execution).not.toHaveProperty("limits");
+  expect(withMode(last(), "unit").execution?.limits).toBeUndefined();
+});
+
+it("General: Tick size and Pad and align (AmiBroker wording) in unit and money mode, with their disclosures", async () => {
+  const { host, last, rerender } = await risk(defaultSpec(), usEtf);
+  expect(host.querySelector("[data-lab-reference]")!.textContent).toBe("Reference symbol: SPX");
+  expect(host.querySelector("[data-lab-tick-note]")).toBeNull();
+  await type(host.querySelector('input[aria-label="Tick size"]')!, "0.05");
+  expect(last().execution?.tick_size).toBe(0.05);
+  await rerender(last());
+  expect(host.querySelector("[data-lab-tick-note]")!.textContent).toBe(TICK_NOTE);
+  await click(host.querySelector('input[aria-label="Pad and align all data to reference symbol"]')!);
+  expect(last().execution).toEqual({ tick_size: 0.05, pad_align: true });
+  await rerender(last());
+  expect(host.querySelector("[data-lab-pad-note]")!.textContent).toBe(PAD_NOTE);
+  await type(host.querySelector('input[aria-label="Tick size"]')!, "0");
+  expect(last().execution).toEqual({ pad_align: true }); // AmiBroker: 0 = no rounding, so the field is removed
+  const india = await risk(defaultSpec(), { kind: "individual_stock", market: "in" });
+  expect(india.host.querySelector("[data-lab-reference]")!.textContent).toBe("Reference symbol: NIFTY 50");
+  const gl = await risk(defaultSpec(), { kind: "crypto", market: "gl" } as InstrumentContext);
+  expect((gl.host.querySelector('input[aria-label="Pad and align all data to reference symbol"]') as HTMLInputElement).disabled).toBe(true);
+  const fut = await risk(setExecution(defaultSpec(), { instrument: { kind: "futures" } }), usEtf);
+  expect((fut.host.querySelector('input[aria-label="Tick size"]') as HTMLInputElement).disabled).toBe(true);
+  const port = await risk({ ...withMode(defaultSpec(), "money"), portfolio: { universe: { basket: "nifty50" } } } as Spec, usEtf);
+  expect(port.host.querySelector("[data-lab-general-data]")).toBeNull();
+});
+
+it("Account margin edits execution.limits.margin_pct and discloses no loan interest", async () => {
+  const { host, last, rerender } = await risk(withMode(defaultSpec(), "money"), usEtf);
+  expect(host.querySelector("[data-lab-margin-note]")).toBeNull();
+  await type(host.querySelector('input[aria-label="Account margin [%]"]')!, "50");
+  expect(last().execution?.limits).toEqual({ margin_pct: 50 });
+  await rerender(last());
+  expect(host.querySelector("[data-lab-margin-note]")!.textContent).toBe(MARGIN_NOTE);
+  expect(MARGIN_NOTE).toContain("No margin loan interest is charged");
+  expect((await risk(defaultSpec(), usEtf)).host.querySelector('input[aria-label="Account margin [%]"]')).toBeNull(); // money mode only
+});
+
+it("Portfolio tab limits: % of bar volume and previous-bar equity, money mode on one instrument only", async () => {
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host); active.push({ root, host });
+  const onChange = vi.fn();
+  const show = (s: Spec) => act(async () => root.render(<PortfolioLimits spec={s} onChange={onChange} />));
+  await show(defaultSpec());
+  expect(host.querySelector("[data-lab-portfolio-limits]")).toBeNull();
+  const money = setExecution(withMode(defaultSpec(), "money"), { limits: { round_lot: 10 } });
+  await show(money);
+  await type(host.querySelector('input[aria-label="Limit trade size as % of entry bar volume"]')!, "2.5");
+  expect(onChange.mock.calls.at(-1)![0].execution.limits).toEqual({ round_lot: 10, max_volume_pct: 2.5 });
+  await click(host.querySelector('input[aria-label="Use previous bar equity for position sizing"]')!);
+  expect(onChange.mock.calls.at(-1)![0].execution.limits).toEqual({ round_lot: 10, prev_bar_equity: true });
+  await show({ ...money, portfolio: { universe: { basket: "nifty50" } } } as Spec);
+  expect(host.querySelector("[data-lab-portfolio-limits]")).toBeNull();
 });

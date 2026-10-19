@@ -1,6 +1,6 @@
 //! Volume family (TradingView built-ins) plus listed-only intraday entries.
 use super::bars::Bars;
-use super::catalogue::{len, n, p, real, IndicatorDef, Needs, Output, ParamSpec, Params, Placement};
+use super::catalogue::{int, len, n, p, real, IndicatorDef, Needs, Output, ParamSpec, Params, Placement};
 use super::ta::{self, NA};
 
 const CAT: &str = "Volume";
@@ -41,19 +41,29 @@ fn pvt(b: &Bars, _: &Params) -> Output {
     Ok(vec![cum(dc(b).iter().zip(vol(b)).enumerate().map(|(i, (d, v))| if i == 0 { NA } else { div(*d, c[i - 1]) * v }))])
 }
 fn pvo(b: &Bars, prm: &Params) -> Output {
-    let s = ta::ema(vol(b), n(prm, "slow"));
-    let o: Vec<f64> = ta::ema(vol(b), n(prm, "fast")).iter().zip(&s).map(|(f, s)| div(100. * (f - s), *s)).collect();
+    let ma = |k: usize| if p(prm, "exponential") == 1. { ta::ema(vol(b), k) } else { ta::sma(vol(b), k) };
+    let (s, pts) = (ma(n(prm, "slow")), p(prm, "points") == 1.);
+    let o: Vec<f64> = ma(n(prm, "fast")).iter().zip(&s).map(|(f, s)| if pts { f - s } else { div(100. * (f - s), *s) }).collect();
     let sg = ta::ema(&o, n(prm, "signal"));
     let h = o.iter().zip(&sg).map(|(a, b)| a - b).collect();
     Ok(vec![o, sg, h])
 }
 fn efi(b: &Bars, prm: &Params) -> Output {
+    let v = p(prm, "variant");
+    if v >= 1. {
+        let ma = if v == 1. { ta::sma(&b.close, n(prm, "length")) } else { ta::ema(&b.close, n(prm, "length")) };
+        return Ok(vec![ta::change(&ma, 1).iter().zip(vol(b)).map(|(d, v)| v * d).collect()]);
+    }
     let x: Vec<f64> = dc(b).iter().zip(vol(b)).map(|(d, v)| d * v).collect();
     Ok(vec![ta::ema(&x, n(prm, "length"))])
 }
 fn eom(b: &Bars, prm: &Params) -> Output {
     let (d, v) = (p(prm, "divisor"), vol(b));
     let hl2: Vec<f64> = (0..b.len()).map(|i| (b.high[i] + b.low[i]) / 2.).collect();
+    if p(prm, "variant") == 1. {
+        let x: Vec<f64> = ta::change(&hl2, 1).iter().enumerate().map(|(i, c)| div(8. * d * c * (b.high[i] - b.low[i]), v[i])).collect();
+        return Ok(vec![ta::ema(&x, n(prm, "length"))]);
+    }
     let x: Vec<f64> = ta::change(&hl2, 1).iter().enumerate().map(|(i, c)| div(d * c * (b.high[i] - b.low[i]), v[i])).collect();
     Ok(vec![ta::sma(&x, n(prm, "length"))])
 }
@@ -79,8 +89,9 @@ const fn listed(id: &'static str, name: &'static str, params: &'static [ParamSpe
     IndicatorDef { id, name, category: CAT, params, outputs: out, placement: Placement::Price, needs, definition, first, sparse: false, compute: None, note }
 }
 const FS: &[ParamSpec] = &[len("fast", "Fast length", 3.), len("slow", "Slow length", 10.)];
-const PVO: &[ParamSpec] = &[len("fast", "Fast length", 12.), len("slow", "Slow length", 26.), len("signal", "Signal length", 9.)];
-const EOM: &[ParamSpec] = &[len("length", "Length", 14.), real("divisor", "Divisor", 10000., 1., 1e9, 1.)];
+const PVO: &[ParamSpec] = &[len("fast", "Fast length", 12.), len("slow", "Slow length", 26.), len("signal", "Signal length", 9.),
+    int("exponential", "Volume MA (0 SMA, 1 EMA)", 1., 0., 1.), int("points", "Output (0 percent, 1 volume difference — thinkorswim VolumeOsc, NinjaTrader 8 Volume Oscillator)", 0., 0., 1.)];
+const EOM: &[ParamSpec] = &[len("length", "Length", 14.), real("divisor", "Divisor", 10000., 1., 1e9, 1.), int("variant", "Variant (0 TradingView, 1 AmiBroker EOM)", 0., 0., 1.)];
 const EMA255: &[ParamSpec] = &[len("ema", "EMA length", 255.)];
 
 pub const DEFS: &[IndicatorDef] = &[
@@ -89,9 +100,10 @@ pub const DEFS: &[IndicatorDef] = &[
     def("cmf", "Chaikin Money Flow", &[len("length", "Length", 20.)], &["cmf"], Placement::Pane, "sum(mfv,n)/sum(volume,n); zero volume sum -> NaN", &[19], cmf),
     def("chaikin_osc", "Chaikin Oscillator", FS, &["osc"], Placement::Pane, "ema(accdist,fast)-ema(accdist,slow)", &[9], chaikin_osc),
     def("pvt", "Price Volume Trend", &[], &["pvt"], Placement::Pane, "cumulative (close-close[1])/close[1]*volume; bar 0 NaN", &[1], pvt),
-    def("pvo", "Percentage Volume Oscillator", PVO, &["pvo", "signal", "hist"], Placement::Pane, "100*(ema(v,fast)-ema(v,slow))/ema(v,slow); signal=ema(pvo); hist=pvo-signal", &[25, 33, 33], pvo),
-    def("efi", "Elder's Force Index", &[len("length", "Length", 13.)], &["efi"], Placement::Pane, "ema((close-close[1])*volume,n)", &[13], efi),
-    def("eom", "Ease of Movement", EOM, &["eom"], Placement::Pane, "sma(divisor*change(hl2)*(high-low)/volume,n); zero volume -> NaN", &[14], eom),
+    def("pvo", "Percentage Volume Oscillator", PVO, &["pvo", "signal", "hist"], Placement::Pane, "100*(ema(v,fast)-ema(v,slow))/ema(v,slow); signal=ema(pvo); hist=pvo-signal; exponential 0 uses sma(v) for both averages; points 1 outputs ma(v, fast) − ma(v, slow) in volume units (thinkorswim VolumeOsc, NinjaTrader 8 VolumeOscillator); the signal stays ema of the output", &[25, 33, 33], pvo),
+    def("efi", "Elder's Force Index", &[len("length", "Length", 13.), int("variant", "Variant (0 Elder/TradingView, 1 MetaTrader iForce SMA, 2 MetaTrader iForce EMA)", 0., 0., 2.)], &["efi"], Placement::Pane,
+        "ema((close-close[1])*volume,n); variant 1/2 (MetaTrader Force_Index.mq5, MA method SMA default / EMA): volume·(ma(close, n) − ma(close, n)[1]) (EMA SMA-seeded as ours)", &[13], efi),
+    def("eom", "Ease of Movement", EOM, &["eom"], Placement::Pane, "sma(divisor*change(hl2)*(high-low)/volume,n); zero volume -> NaN; variant 1 (AmiBroker 'EOM - Ease Of Movement.afl'): ema(MidPointMove/BoxRatio, n) with BoxRatio = (volume/divisor)/(8·(high − low)), i.e. ema(8·divisor·change(hl2)·(high − low)/volume, n) (zero volume → NaN; zero range → 0, where AmiBroker divides by 0)", &[14], eom),
     def("nvi", "Negative Volume Index", EMA255, &["nvi", "signal"], Placement::Pane, "starts at 1000 like TradingView's chart built-in (= 1000 × ta.nvi); volume<prev volume -> prev*(1+dClose/close[1]) else prev; signal=ema(nvi)", &[0, 254], nvi),
     def("pvi", "Positive Volume Index", EMA255, &["pvi", "signal"], Placement::Pane, "starts at 1000 like TradingView's chart built-in (= 1000 × ta.pvi); volume>prev volume -> prev*(1+dClose/close[1]) else prev; signal=ema(pvi)", &[0, 254], pvi),
     listed("vwap", "VWAP", &[], &["vwap"], Needs { volume: true, intraday: true, ..Needs::NONE }, "session-anchored sum(hlc3*v)/sum(v); needs intraday bars (listed only)", &[usize::MAX], "not available yet — needs intraday bars, which are not admitted"),
@@ -134,6 +146,19 @@ mod tests {
     #[test] fn efi_len2() {
         let b = with(&[(1., 1., 1., 1.), (3., 3., 3., 3.), (2., 2., 2., 2.)], &[1., 2., 3.]);
         assert_series(&go("efi", &b, &[("length", 2.)])[0], &[N, N, 0.5]);
+    }
+    #[test] fn efi_metatrader_force() {
+        let b = with(&[(1., 1., 1., 1.), (3., 3., 3., 3.), (2., 2., 2., 2.)], &[1., 2., 3.]);
+        assert_series(&go("efi", &b, &[("length", 2.), ("variant", 1.)])[0], &[N, N, 1.5]); // sma 2, 2.5 → 3·0.5
+        assert_series(&go("efi", &b, &[("length", 2.), ("variant", 2.)])[0], &[N, N, 0.]); // ema 2, 2
+    }
+    #[test] fn pvo_points_with_sma() {
+        let o = go("pvo", &crate::lab::testdata::d1(), &[("fast", 2.), ("slow", 3.), ("signal", 2.), ("exponential", 0.), ("points", 1.)]);
+        assert_series(&o[0], &[N, N, 5. / 3., 0., 50. / 3., -10., 5. / 3., 40. / 3.]);
+    }
+    #[test] fn eom_amibroker_ema_with_8x_box_ratio() {
+        let b = with(&[(1., 2., 0., 1.), (3., 4., 2., 3.), (4., 6., 2., 4.)], &[1., 4., 2.]);
+        assert_series(&go("eom", &b, &[("length", 2.), ("divisor", 1.), ("variant", 1.)])[0], &[N, N, 12.]); // terms 8, 16 → ema seed 12
     }
     #[test] fn eom_len2() {
         // hl2 = 1,3,4; range 2,2,4; terms: 2*2/4 = 1, 1*4/2 = 2

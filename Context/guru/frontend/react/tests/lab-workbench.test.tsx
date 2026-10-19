@@ -5,6 +5,9 @@ import { act, useState } from "react";
 import { Workbench, type Chip } from "../src/features/lab/Workbench";
 import { catalogueFixture as cat, flush, mount, runFixture, seriesFixture, unmount } from "./fixtures/lab";
 
+/** Chip settings live in the AmiBroker-style Parameters window; clicking a chip opens it. */
+const openParams = (host: HTMLElement, key: string) => act(async () => host.querySelector<HTMLButtonElement>(`[data-lab-chip="${key}"] .lab-chip-open`)!.click());
+
 type Spy = { setData: ReturnType<typeof vi.fn>; setMarkers: ReturnType<typeof vi.fn>; applyOptions: ReturnType<typeof vi.fn> };
 const truthModule = { exports: {} };
 runInNewContext(readFileSync("../backtest-trust.js", "utf8"), { module: truthModule });
@@ -18,7 +21,7 @@ beforeEach(() => {
     const c = { remove: vi.fn(), series: [] as Spy[], kinds: [] as string[] };
     charts.push(c);
     const add = (kind: string) => () => { const s = { setData: vi.fn(), setMarkers: vi.fn(), applyOptions: vi.fn() }; c.series.push(s); c.kinds.push(kind); return s; };
-    return { addCandlestickSeries: add("candle"), addBarSeries: add("bar"), addLineSeries: add("line"), addAreaSeries: add("area"), remove: c.remove, resize: vi.fn(),
+    return { addCandlestickSeries: add("candle"), addLineSeries: add("line"), addAreaSeries: add("area"), remove: c.remove, resize: vi.fn(),
       applyOptions: vi.fn(), timeScale: () => ({ fitContent: vi.fn(), setVisibleRange: vi.fn() }) };
   };
   window.LightweightCharts = { createChart: vi.fn(make), CrosshairMode: { Normal: 0 } } as never;
@@ -39,10 +42,10 @@ const chips: Chip[] = [
 ];
 const props = { market: "in" as const, ticker: "NIFTY 50", tf: "D", range: "All" as const, catalogue: cat, chips, loadSeries: load, onChipChange: vi.fn(), onChipRemove: vi.fn() };
 
-it("draws OHLC bars at long daily ranges too", async () => {
+it("draws candles at long daily ranges too", async () => {
   await mount(<Workbench {...props} chips={[]} />);
   await flush();
-  expect(charts[0].kinds[0]).toBe("bar");
+  expect(charts[0].kinds[0]).toBe("candle");
   expect(charts[0].series[0].setData.mock.calls[0][0]).toHaveLength(6);
 });
 
@@ -50,15 +53,16 @@ it("draws candles, overlays with gaps, boolean markers and a pane; a failing chi
   const host = await mount(<Workbench {...props} range="1Y" />);
   await flush();
   const price = charts[0];
-  expect(price.kinds[0]).toBe("bar");
+  expect(price.kinds[0]).toBe("candle");
   expect(price.series[0].setData.mock.calls[0][0]).toHaveLength(6);
   const lines = price.series.slice(1).map((s) => s.setData.mock.calls[0][0]);
   expect(lines.some((points: { value?: number }[]) => points[0].value === undefined)).toBe(true);
   expect(price.series[0].setMarkers.mock.calls.at(-1)![0].filter((m: { text: string }) => m.text === "Doji")).toHaveLength(2);
   expect(charts.length).toBeGreaterThanOrEqual(2);
   expect(host.querySelector('[data-lab-chip="c5"] [data-lab-error]')?.textContent).toContain("rsi: needs more history");
-  expect(host.querySelector<HTMLSelectElement>('[data-lab-chip="c4"] select')?.value).toBe("1");
-  expect(host.querySelector('[data-lab-chip="c4"] select')?.textContent).toContain("AmiBroker");
+  await openParams(host, "c4");
+  expect(host.querySelector<HTMLSelectElement>('.lab-params select')?.value).toBe("1");
+  expect(host.querySelector('.lab-params select')?.textContent).toContain("AmiBroker");
   // the failed pane chip draws no chart; the stoch pane does
   expect(charts).toHaveLength(2);
   expect(host.querySelector("[data-lab-chart]")?.closest("[hidden]")).toBeNull();
@@ -69,7 +73,8 @@ it("draws candles, overlays with gaps, boolean markers and a pane; a failing chi
 it("edits and removes chips through callbacks", async () => {
   const onChipChange = vi.fn(), onChipRemove = vi.fn();
   const host = await mount(<Workbench {...props} onChipChange={onChipChange} onChipRemove={onChipRemove} />);
-  const input = host.querySelector<HTMLInputElement>('[data-lab-chip="c1"] input')!;
+  await openParams(host, "c1");
+  const input = host.querySelector<HTMLInputElement>('.lab-params input[type=number]')!;
   const type = (value: string) => act(async () => {
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
     setter.call(input, value);
@@ -141,7 +146,8 @@ it("chip edits reuse the cached OHLC; only changed chips are refetched", async (
   }
   const host = await mount(<Harness />);
   await flush();
-  const input = host.querySelector<HTMLInputElement>('[data-lab-chip="c1"] input')!;
+  await openParams(host, "c1");
+  const input = host.querySelector<HTMLInputElement>('.lab-params input[type=number]')!;
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
   for (const v of ["2", "20", "200"]) {
     await act(async () => { setter.call(input, v); input.dispatchEvent(new Event("input", { bubbles: true })); });
@@ -223,7 +229,7 @@ it("keeps every pane on one time range and crosshair bar, and unsubscribes on un
     const s = { range: [] as Handler[], cross: [] as ((p: { time?: string }) => void)[], setRange: vi.fn(), setCross: vi.fn(), unRange: vi.fn(), unCross: vi.fn() };
     subs.push(s);
     const series = () => ({ setData: vi.fn(), setMarkers: vi.fn(), applyOptions: vi.fn() });
-    return { addCandlestickSeries: series, addBarSeries: series, addLineSeries: series, addAreaSeries: series, remove: vi.fn(), resize: vi.fn(), applyOptions: vi.fn(),
+    return { addCandlestickSeries: series, addLineSeries: series, addAreaSeries: series, remove: vi.fn(), resize: vi.fn(), applyOptions: vi.fn(),
       subscribeCrosshairMove: (h: never) => s.cross.push(h), unsubscribeCrosshairMove: s.unCross, setCrosshairPosition: s.setCross, clearCrosshairPosition: vi.fn(),
       timeScale: () => ({ fitContent: vi.fn(), setVisibleRange: s.setRange, subscribeVisibleTimeRangeChange: (h: Handler) => s.range.push(h), unsubscribeVisibleTimeRangeChange: s.unRange }) };
   }) } as never;
@@ -322,6 +328,7 @@ it("waits for an explicit pair comparison and keys requests by the selected inst
   const host=await mount(<Workbench {...props} market="us" ticker="SPY" catalogue={catalogue} chips={[{key:"p",id:"ratio",params:{}}]}
     loadSeries={pairLoad} comparisonOptions={options} onChipVsChange={onVs} />);
   await flush();expect(pairLoad.mock.calls.some(([q])=>q.id==="ratio")).toBe(false);
+  await openParams(host,"p");
   const comparison=host.querySelector<HTMLSelectElement>('[aria-label="Ratio · Compared with"]');expect(comparison).not.toBeNull();
   await act(async()=>{comparison!.value="SPX";comparison!.dispatchEvent(new Event("change",{bubbles:true}));});
   expect(onVs).toHaveBeenCalledWith("p","SPX");
@@ -348,9 +355,153 @@ it("changing only vs redraws a mounted pair chip while reusing OHLC requests", a
   const catalogue={...cat,max_foreign:4,indicators:[pair]};const options=["SPX","NDX"].map(ticker=>({ticker,label:ticker,disabled:false,hasVolume:false}));
   const pairLoad=vi.fn(async(q:{id:string;vs?:string})=>q.id==="ratio"?seriesFixture("ratio",["value"],{value:[2,2,2,2,2,2]}):ohlc(q.id));
   function Harness(){const[vs,setVs]=useState<string|undefined>("SPX");return <Workbench {...props} catalogue={catalogue} chips={[{key:"p",id:"ratio",params:{},vs}]} loadSeries={pairLoad} comparisonOptions={options} onChipVsChange={(_,next)=>setVs(next)} />;}
-  const host=await mount(<Harness/>);await flush();
+  const host=await mount(<Harness/>);await flush();await openParams(host,"p");
   const select=host.querySelector<HTMLSelectElement>('[aria-label="Ratio · Compared with"]')!;
   await act(async()=>{select.value="NDX";select.dispatchEvent(new Event("change",{bubbles:true}));});await flush();
   expect(pairLoad.mock.calls.filter(([q])=>q.id==="ratio").map(([q])=>q.vs)).toEqual(["SPX","NDX"]);
   expect(pairLoad.mock.calls.filter(([q])=>q.id==="open")).toHaveLength(1);
+});
+
+it("Parameters window: opens for a newly added indicator, changes look live, Reset all restores defaults, Escape closes", async () => {
+  const onLook = vi.fn(), onChange = vi.fn();
+  function Harness() {
+    const [list, setList] = useState<Chip[]>([{ key: "c1", id: "ema", params: { length: 20 } }]);
+    return <>
+      <button type="button" data-add onClick={() => setList((l) => [...l, { key: "c2", id: "ema", params: { length: 33 } }])}>add</button>
+      <Workbench {...props} chips={list} onChipChange={onChange} onChipLook={onLook} />
+    </>;
+  }
+  const host = await mount(<Harness />);
+  await flush();
+  expect(host.querySelector(".lab-params")).toBeNull(); // chips present at mount do not pop a window
+  await act(async () => host.querySelector<HTMLButtonElement>("[data-add]")!.click());
+  const dialog = host.querySelector<HTMLElement>(".lab-params")!;
+  expect(dialog.getAttribute("role")).toBe("dialog");
+  expect(dialog.textContent).toContain("Properties of Exponential Moving Average");
+  expect(host.querySelector<HTMLInputElement>(".lab-params input[type=number]")!.value).toBe("33");
+  const style = host.querySelector<HTMLSelectElement>('.lab-params select[aria-label$="Style"]')!;
+  await act(async () => { style.value = "dashed"; style.dispatchEvent(new Event("change", { bubbles: true })); });
+  expect(onLook).toHaveBeenLastCalledWith("c2", { ema: { style: "dashed" } }); // per plot (output)
+  await act(async () => [...dialog.querySelectorAll("button")].find((b) => b.textContent === "Reset all")!.click());
+  expect(onChange).toHaveBeenLastCalledWith("c2", { length: cat.indicators.find((i) => i.id === "ema")!.params[0].default });
+  expect(onLook).toHaveBeenLastCalledWith("c2", undefined);
+  await act(async () => dialog.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  expect(host.querySelector(".lab-params")).toBeNull();
+});
+
+it("trade spans shade won / still-open trades behind the price, and the legend lists each chip", async () => {
+  const make = (window.LightweightCharts as unknown as { createChart: (...a: unknown[]) => Record<string, unknown> }).createChart;
+  window.LightweightCharts = { CrosshairMode: { Normal: 0 }, createChart: vi.fn((...a: unknown[]) => {
+    const chart = make(...a), c = charts.at(-1)!;
+    return { ...chart, priceScale: () => ({ applyOptions: vi.fn() }), addHistogramSeries: () => {
+      const s = { setData: vi.fn(), setMarkers: vi.fn(), applyOptions: vi.fn() }; c.series.push(s); c.kinds.push("histogram"); return s;
+    } };
+  }) } as never;
+  const trades = [
+    { ...runFixture.trades[0], entry: "2024-01-08", exit: "2024-01-09", ret: 0.05, open: false, dir: 1 as const },
+    { ...runFixture.trades[0], entry: "2024-02-01", exit: "2024-02-02", ret: -0.01, open: true, dir: -1 as const },
+  ];
+  const host = await mount(<Workbench {...props} chips={[chips[0]]} trades={trades} />);
+  await flush();
+  const price = charts[0], spans = price.series[price.kinds.indexOf("histogram")];
+  expect(price.kinds.indexOf("histogram")).toBeLessThan(price.kinds.indexOf("candle")); // behind the candles
+  const shade = (spans.setData.mock.calls[0][0] as { time: string; color?: string }[]).map((p) => p.color ?? null);
+  // won (green tint) on its two bars; the open short (grey) runs to the last bar; never shaded outside a trade
+  expect(shade).toEqual([null, "#2e7d4f14", "#2e7d4f14", null, "#8b8d9314", "#8b8d9314"]);
+  const legend = host.querySelector(".lab-legend-tv")!.textContent!;
+  expect(legend).toContain("NIFTY 50 · Daily · 2024-02-02");
+  expect(legend).toContain("EMA 20"); // the chip's short name, not the long one
+});
+
+it("stacked panes: each pane reads out in its own legend and only the bottom chart draws the date axis", async () => {
+  const host = await mount(<Workbench {...props} chips={[chips[0], chips[3]]} />);
+  await flush();
+  const legends = [...host.querySelectorAll(".lab-legend-tv")].map((el) => el.textContent);
+  expect(legends[0]).toContain("EMA 20");
+  expect(legends[0]).not.toContain("STOCH");
+  expect(host.querySelector('[data-lab-pane="c4"]')!.parentElement!.querySelector(".lab-legend-tv")!.textContent).toBe("STOCH 14  5.00");
+  const made = vi.mocked(window.LightweightCharts!.createChart).mock.results.map((r) => r.value.applyOptions as ReturnType<typeof vi.fn>);
+  expect(made[0]).toHaveBeenCalledWith({ timeScale: { visible: false } });
+  expect(made.at(-1)).toHaveBeenCalledWith({ timeScale: { visible: true } });
+  expect(vi.mocked(window.LightweightCharts!.createChart).mock.calls[0][1]).toMatchObject({ rightPriceScale: { minimumWidth: 78 } });
+});
+
+it("Parameters: the slider covers usable lengths, Axes & Grid is shown disabled, colours are named by role", async () => {
+  const host = await mount(<Workbench {...props} chips={[{ key: "c1", id: "ema", params: { length: 20 } }, { key: "c2", id: "ema", params: { length: 9 }, looks: { ema: { color: "bh" } } }]} />);
+  await flush();
+  await openParams(host, "c1");
+  expect(host.querySelector('.lab-params input[type=number]')!.getAttribute("max")).toBe("5000");
+  expect(host.querySelector('.lab-params input[type=range]')!.getAttribute("max")).toBe("200");
+  expect(host.querySelector('.lab-params-tabs [aria-disabled="true"]')?.textContent).toBe("Axes & Grid");
+  const color = () => host.querySelector<HTMLSelectElement>('.lab-params select[aria-label$="Color"]')!;
+  expect([...color().options].map((o) => o.textContent)).toEqual(["Theme main", "Red", "Green", "Theme accent", "Dark grey", "Custom…"]);
+  await openParams(host, "c2");
+  expect(color().value).toBe("bh"); // a colour saved before stays selectable
+  expect(color().selectedOptions[0].textContent).toBe("Muted");
+});
+
+it("Parameters: a slider drag commits once, a look change redraws without refetching, each chip gets a fresh window", async () => {
+  const onChange = vi.fn();
+  function Harness() {
+    const [list, setList] = useState<Chip[]>([{ key: "c1", id: "ema", params: { length: 20 } }, { key: "c2", id: "macd", params: { fast: 12, slow: 26, signal: 9 } }]);
+    return <Workbench {...props} chips={list} onChipChange={(key, params) => { onChange(key, params); setList((l) => l.map((c) => (c.key === key ? { ...c, params } : c))); }}
+      onChipLook={(key, looks) => setList((l) => l.map((c) => (c.key === key ? { ...c, looks } : c)))} />;
+  }
+  load.mockClear();
+  const host = await mount(<Harness />);
+  await flush();
+  const emaCalls = () => load.mock.calls.filter(([q]) => q.id === "ema").length;
+  expect(emaCalls()).toBe(1);
+  await openParams(host, "c1");
+  const slider = host.querySelector<HTMLInputElement>('.lab-params input[type=range]')!;
+  for (const v of ["21", "22", "23"]) await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(slider, v); slider.dispatchEvent(new Event("input", { bubbles: true })); });
+  expect(onChange).not.toHaveBeenCalled(); // still dragging
+  await act(async () => { await new Promise((r) => setTimeout(r, 260)); });
+  await flush();
+  expect(onChange.mock.calls).toEqual([["c1", { length: 23 }]]);
+  expect(emaCalls()).toBe(2);
+  const style = host.querySelector<HTMLSelectElement>('.lab-params select[aria-label$="Style"]')!;
+  await act(async () => { style.value = "dotted"; style.dispatchEvent(new Event("change", { bubbles: true })); });
+  await flush();
+  expect(emaCalls()).toBe(2); // the look changed, the data did not: served from the series cache
+  await act(async () => host.querySelector<HTMLButtonElement>(".lab-params-sec")!.click());
+  expect(host.querySelector(".lab-params-sec")!.getAttribute("aria-expanded")).toBe("false");
+  await openParams(host, "c2");
+  expect(host.querySelector(".lab-params")!.textContent).toContain("Properties of MACD");
+  expect(host.querySelector(".lab-params-sec")!.getAttribute("aria-expanded")).toBe("true"); // a fresh window
+  expect(host.querySelector(".lab-params [role=tablist]")).toBeNull();
+  // one Color / Style pair per plot, with different default colours
+  const colors = [...host.querySelectorAll<HTMLSelectElement>('.lab-params select[aria-label$="Color"]')];
+  expect(colors.map((c) => c.getAttribute("aria-label"))).toEqual(["MACD macd Color", "MACD signal Color", "MACD hist Color"]);
+  expect(new Set(colors.map((c) => c.value)).size).toBe(3);
+});
+
+it("Parameters: Custom… reveals a colour picker; the hex is kept in the chip look and drawn on the plot", async () => {
+  const make = (window.LightweightCharts as unknown as { createChart: (...a: unknown[]) => Record<string, unknown> }).createChart, lineColors: unknown[] = [];
+  window.LightweightCharts = { CrosshairMode: { Normal: 0 }, createChart: vi.fn((...a: unknown[]) => {
+    const chart = make(...a), add = chart.addLineSeries as (o: { color: string }) => unknown;
+    return { ...chart, addLineSeries: (o: { color: string }) => { lineColors.push(o.color); return add(o); } };
+  }) } as never;
+  const onLook = vi.fn();
+  function Harness() {
+    const [list, setList] = useState<Chip[]>([{ key: "c1", id: "ema", params: { length: 20 } }]);
+    return <Workbench {...props} chips={list} onChipLook={(key, looks) => { onLook(key, looks); setList((l) => l.map((c) => (c.key === key ? { ...c, looks } : c))); }} />;
+  }
+  const host = await mount(<Harness />);
+  await flush();
+  await openParams(host, "c1");
+  expect(host.querySelector(".lab-params input[type=color]")).toBeNull(); // theme colours stay the default
+  const color = host.querySelector<HTMLSelectElement>('.lab-params select[aria-label$="Color"]')!;
+  await act(async () => { color.value = "custom"; color.dispatchEvent(new Event("change", { bubbles: true })); });
+  expect(onLook).toHaveBeenLastCalledWith("c1", { ema: { color: "#2f5a8f" } }); // starts from the theme colour shown
+  const picker = host.querySelector<HTMLInputElement>('.lab-params input[type=color]')!;
+  expect(color.value).toBe("custom");
+  await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(picker, "#ff8800"); picker.dispatchEvent(new Event("input", { bubbles: true })); });
+  await flush();
+  expect(onLook).toHaveBeenLastCalledWith("c1", { ema: { color: "#ff8800" } });
+  expect(lineColors.at(-1)).toBe("#ff8800");
+  expect(host.querySelector<HTMLElement>('[data-lab-chip="c1"] .lab-dot')!.style.background).toBe("rgb(255, 136, 0)");
+  await act(async () => { color.value = "red"; color.dispatchEvent(new Event("change", { bubbles: true })); });
+  expect(onLook).toHaveBeenLastCalledWith("c1", { ema: { color: "red" } });
+  expect(host.querySelector(".lab-params input[type=color]")).toBeNull();
 });

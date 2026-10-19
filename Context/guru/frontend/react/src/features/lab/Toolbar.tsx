@@ -19,12 +19,15 @@ export function Toolbar({ market, onMarket, options, ticker, onTicker, tf, timef
       <div className="lab-row">
         <Segmented label="Market" value={market} options={MARKETS} onChange={onMarket} />
         <label className="dfield">Instrument
-          <select value={ticker} onChange={(e) => onTicker(e.target.value)}>
-            {options.map((o) => <option key={o.ticker} value={o.ticker} disabled={o.disabled} title={o.reason}>{o.label}</option>)}
+          <select value={options.length ? ticker : ""} disabled={!options.length} onChange={(e) => onTicker(e.target.value)}>
+            {options.length ? options.map((o) => <option key={o.ticker} value={o.ticker} disabled={o.disabled} title={o.reason}>{o.label}</option>)
+              : <option value="">No instruments available</option>}
           </select>
         </label>
         <Segmented label="Chart" value={tf} options={timeframes.map((t) => ({ value: t, label: TF_LABEL[t] ?? t }))} onChange={onTf} />
-        <Segmented label="Show" value={range} options={RANGES.map((r) => ({ value: r, label: r }))} onChange={onRange} />
+        <div className="dfield">Chart range
+          <Segmented label="Chart range" value={range} options={RANGES.map((r) => ({ value: r, label: r }))} onChange={onRange} />
+        </div>
       </div>
       {market === "gl" && <ProvisionalStrip note={provisionalNote} instrumentLabel={selected?.instrumentLabel} />}
     </div>

@@ -57,19 +57,20 @@ fn series_mode(fr: &Frames, cache: &mut Cache, s: &SeriesRef, mode: Expand) -> R
     let raw = match price(b, &s.id) {
         Some(r) => r?,
         None => {
-            let key = format!("{}|{}|{:?}|{:?}", fr.cache_identity, s.id, s.tf, s.params);
+            // a formula's identity is its text: two formulas with one name never share outputs
+            let id = s.formula.as_ref().map_or(s.id.as_str(), |f| f.text.as_str());
+            let key = format!("{}|{}|{:?}|{:?}", fr.cache_identity, id, s.tf, s.params);
             let outs = match cache.get(&key) {
                 Some(o) => o.clone(),
                 None => {
-                    let def = catalogue::get(&s.id).ok_or_else(|| LabError::Invalid(format!("unknown series '{}'", s.id)))?;
-                    let o = Rc::new(catalogue::run(&def, b, &s.params).map_err(|e| match e.as_str() {
-                        "needs a second instrument" => LabError::NeedsData(format!("{}: needs a second instrument", def.name)),
-                        "needs volume" => LabError::NeedsData(format!("{}: needs volume, which is missing on some admitted bars of this instrument", def.name)),
-                        "needs breadth" => LabError::NeedsData(format!("{}: needs market breadth (advances/declines) on daily bars; this market or timeframe has none", def.name)),
-                        "needs contract data" => LabError::NeedsData(format!("{}: needs admitted futures contract metadata",def.name)),
-                        "needs intraday data" => LabError::NeedsData(format!("{}: needs intraday data", def.name)),
-                        _ => LabError::Invalid(format!("{}: {e}", def.id)),
-                    })?);
+                    let o = Rc::new(match &s.formula {
+                        // errors keep the exact `line L, col C: message` form the editor highlights
+                        Some(f) => super::formula::eval(&f.prog, b, &s.params)?,
+                        None => {
+                            let def = catalogue::get(&s.id).ok_or_else(|| LabError::Invalid(format!("unknown series '{}'", s.id)))?;
+                            catalogue::run(&def, b, &s.params).map_err(|e| catalogue_error(&def, e))?
+                        }
+                    });
                     // shortcut: a full reset bounds memory (64 × outputs × bars); switch to LRU if optimizer profiles show recomputation.
                     if cache.len() >= CACHE_CAP { cache.clear(); }
                     cache.insert(key, o.clone());
@@ -84,6 +85,17 @@ fn series_mode(fr: &Frames, cache: &mut Cache, s: &SeriesRef, mode: Expand) -> R
     Ok(if s.tf == Tf::D { shifted } else { resample::expand_mode(&shifted, b, fr.d.len(), mode) })
 }
 
+/// A catalogue run error as a typed lab error (shared by indicator operands and formula indicator calls).
+pub fn catalogue_error(def: &catalogue::IndicatorDef, e: String) -> LabError {
+    match e.as_str() {
+        "needs a second instrument" => LabError::NeedsData(format!("{}: needs a second instrument", def.name)),
+        "needs volume" => LabError::NeedsData(format!("{}: needs volume, which is missing on some admitted bars of this instrument", def.name)),
+        "needs breadth" => LabError::NeedsData(format!("{}: needs market breadth (advances/declines) on daily bars; this market or timeframe has none", def.name)),
+        "needs contract data" => LabError::NeedsData(format!("{}: needs admitted futures contract metadata",def.name)),
+        "needs intraday data" => LabError::NeedsData(format!("{}: needs intraday data", def.name)),
+        _ => LabError::Invalid(format!("{}: {e}", def.id)),
+    }
+}
 /// Shared loaded instruments and conservative daily-session availability for one request.
 #[derive(Default)]
 pub struct Others { pub run: String, pub close_fills: bool, pub frames: Arc<BTreeMap<String, Frames>> }
@@ -174,7 +186,7 @@ impl Compiled {
     pub fn dist_at(&self, d: Dist, px: f64, source: usize, at: usize) -> f64 {
         let (_,off,factor)=self.grid.get(at).copied().unwrap_or((0.,0.,1.));
         match d { Dist::Pct(p) => (px-off)*p/100., Dist::Atr { mult,length } => self.atr.get(&length).map_or(f64::NAN,|a|mult*a[source]), Dist::Points(p) => p*factor,
-            Dist::Ticks(t) => self.grid.get(at).map_or(f64::NAN,|g|t*g.0*g.2) }
+            Dist::Ticks(t) => self.grid.get(at).map_or(f64::NAN,|g|t*g.0*g.2), Dist::ProfitPct(_) => f64::NAN } // a trailing level, not a distance (simulate.rs)
 
     }
     pub fn round_at(&self, i: usize, px: f64) -> f64 {
@@ -399,7 +411,7 @@ fn side(entry: &[Node], exit: &[Node], x: &Exec, pre: &str, fr: &Frames, others:
     for d in [x.limit, x.stop_loss, x.target, x.trailing, x.stop, x.trail_activate].into_iter().chain(later).flatten() {
         if let Dist::Atr { length, .. } = d {
             if c.atr.contains_key(&length) { continue; }
-            let r = SeriesRef { id: "atr".into(), params: [("length".to_string(), length as f64)].into(), tf: Tf::D, out: 0, offset: 0, foreign: Default::default() };
+            let r = SeriesRef { id: "atr".into(), params: [("length".to_string(), length as f64)].into(), tf: Tf::D, out: 0, offset: 0, foreign: Default::default(), formula: None };
             c.atr.insert(length, series(fr, cache, &r)?);
         }
     }
@@ -409,6 +421,22 @@ fn side(entry: &[Node], exit: &[Node], x: &Exec, pre: &str, fr: &Frames, others:
 /// Human-readable condition, recorded as a trade's exit reason, e.g. `rsi(length=2) crosses_above 70`.
 pub fn describe(c: &Cond) -> String {
     format!("{} {} {}", operand_text(&c.lhs), op_text(c.op), operand_text(&c.rhs))
+}
+/// Parameters added to existing ids after the Phase 6/7 master list (cross-platform variants, 2026-10-19). Labels are
+/// exit reasons, hashed by pinned.rs and saved with results, so these keys print only when set off their default: a spec
+/// written before they existed keeps its exact label. Earlier keys (stoch/trix/percentrank `variant`) always print.
+pub const LATE_PARAMS: &[(&str, &str)] = &[
+    ("atr", "variant"), ("bb", "source"), ("kc", "basis_type"), ("kc", "source"), ("kc", "range"), ("hv", "days"),
+    ("mom", "variant"), ("dpo", "variant"), ("stochrsi", "variant"), ("rsi", "variant"), ("roc", "variant"),
+    ("macd", "signal_type"), ("macd", "ma_type"), ("dmi", "variant"), ("efi", "variant"), ("eom", "variant"),
+    ("pvo", "exponential"), ("pvo", "points"), ("price_osc", "points"), ("tsf", "horizon"), ("majority_rule", "variant"),
+    ("hma", "variant"), ("median", "source"), ("vwap_period", "anchor_date"), ("cdl_kicking_bull", "variant"), ("cdl_kicking_bear", "variant"),
+];
+/// The resolved parameters a label or echo shows: all of them except a `LATE_PARAMS` key at its catalogue default.
+pub fn shown_params<'a>(id: &str, params: &'a catalogue::Params) -> impl Iterator<Item = (&'a String, &'a f64)> {
+    let late: Vec<(&'static str, f64)> = LATE_PARAMS.iter().filter(|(i, _)| *i == id)
+        .filter_map(|(_, k)| catalogue::get(id)?.params.iter().find(|p| p.key == *k).map(|p| (p.key, p.default))).collect();
+    params.iter().filter(move |(k, v)| !late.iter().any(|&(lk, d)| lk == k.as_str() && d == **v))
 }
 pub fn operand_text(o: &Operand) -> String {
     match o {
@@ -427,9 +455,11 @@ pub fn operand_text(o: &Operand) -> String {
             Expr::Compress { of, tf, agg, offset, expand } => format!("compress({}, {}, {}){} expand {}", operand_text(of), tf.name(), agg.key(), if *offset > 0 { format!("[{offset}]") } else { String::new() }, expand.key()),
         },
         Operand::Series(s) => {
-            let p: Vec<String> = s.params.iter().map(|(k, v)| format!("{k}={v}")).collect();
-            let mut t = if p.is_empty() { s.id.clone() } else { format!("{}({})", s.id, p.join(",")) };
-            if s.out > 0 { if let Some(d) = catalogue::get(&s.id) { t = format!("{t}.{}", d.outputs[s.out]); } }
+            let mut t = if let Some(f) = &s.formula { super::formula::label(f, &s.params, s.out) } else {
+                let p: Vec<String> = shown_params(&s.id, &s.params).map(|(k, v)| format!("{k}={v}")).collect();
+                if p.is_empty() { s.id.clone() } else { format!("{}({})", s.id, p.join(",")) }
+            };
+            if s.out > 0 && s.formula.is_none() { if let Some(d) = catalogue::get(&s.id) { t = format!("{t}.{}", d.outputs[s.out]); } }
             if s.tf != Tf::D { t = format!("{t}@{}", s.tf.name()); }
             if s.offset > 0 { t = format!("{t}[{}]", s.offset); }
             if let Some(vs)=&s.foreign.vs {t=format!("{t} vs {vs}");}
@@ -476,7 +506,7 @@ mod tests {
     }
     fn sref(id: &str, tf: Tf, out: usize, offset: usize) -> SeriesRef {
         let params = catalogue::get(id).map_or(Params::new(), |d| resolve_params(&d, &Params::new()).unwrap());
-        SeriesRef { id: id.into(), params, tf, out, offset, foreign: Default::default() }
+        SeriesRef { id: id.into(), params, tf, out, offset, foreign: Default::default(), formula: None }
     }
 
     #[test] fn every_computed_indicator_is_reachable_from_a_rule() {
@@ -565,7 +595,7 @@ mod tests {
                 for pick in picks {
                     let params: Params = d.params.iter().map(|p| (p.key.to_string(), pick(p))).collect();
                     for tf in [Tf::D, Tf::W, Tf::M, Tf::Q, Tf::Y, Tf::Days(5)] {
-                        let r = SeriesRef { id: d.id.into(), params: params.clone(), tf, out: 0, offset: 0, foreign: Default::default() };
+                        let r = SeriesRef { id: d.id.into(), params: params.clone(), tf, out: 0, offset: 0, foreign: Default::default(), formula: None };
                         if (d.needs.breadth && tf != Tf::D) || d.needs.derivatives { assert_eq!(series(&fr, &mut Cache::new(), &r).unwrap_err().status(), "needs_data"); continue; }
                         assert_eq!(series(&fr, &mut Cache::new(), &r).unwrap().len(), fr.d.len(), "{} {tf:?}", d.id);
                     }
@@ -592,6 +622,12 @@ mod tests {
         let c = compile(&spec, &Frames::new(business_days(60, false)), &mut Cache::new()).unwrap();
         assert_eq!(c.entry[0].label, "entry.all[0]: macd(fast=12,signal=9,slow=26).signal@W[1] < 0");
         assert_eq!(c.exit[0].label, "exit.any[0]: bars_held >= 3");
+    }
+    #[test] fn late_params_print_only_off_default() {
+        for (id, key) in super::LATE_PARAMS { assert!(catalogue::get(id).is_some_and(|d| d.params.iter().any(|p| p.key == *key)), "{id}.{key} not in the catalogue"); }
+        let text = |p: &str| { let s = parse_spec(&format!(r#"{{"v":1,"entry":{{"all":[{{"lhs":{{"s":"macd","p":{{{p}}}}},"op":"<","rhs":{{"value":0}}}}]}},"exit":{{"any":[{{"lhs":{{"s":"bars_held"}},"op":">=","rhs":{{"value":3}}}}]}}}}"#)).unwrap(); describe(s.entry[0].cmp().unwrap()) };
+        assert_eq!(text(r#""signal_type":0"#), "macd(fast=12,signal=9,slow=26) < 0");
+        assert_eq!(text(r#""signal_type":1,"ma_type":2"#), "macd(fast=12,ma_type=2,signal=9,signal_type=1,slow=26) < 0");
     }
 
     // ---- Phase 7: nodes (spec §4.2)
@@ -865,7 +901,7 @@ mod tests {
 mod foreign_resolver_tests {
     use super::*;
     use super::tests::business_days;
-    fn sref(id:&str,tf:Tf,out:usize,offset:usize)->SeriesRef { let params=catalogue::get(id).map_or(Default::default(),|d|catalogue::resolve_params(&d,&Default::default()).unwrap()); SeriesRef{id:id.into(),params,tf,out,offset,foreign:Default::default()} }
+    fn sref(id:&str,tf:Tf,out:usize,offset:usize)->SeriesRef { let params=catalogue::get(id).map_or(Default::default(),|d|catalogue::resolve_params(&d,&Default::default()).unwrap()); SeriesRef{id:id.into(),params,tf,out,offset,foreign:Default::default(),formula:None} }
     use crate::lab::rules::{parse_spec,Foreign};
     use crate::lab::testdata::{assert_series,close_eq};
     fn others(run:&str,close_fills:bool,list:Vec<(&str,Bars)>)->Others {Others{run:run.into(),close_fills,frames:std::sync::Arc::new(list.into_iter().map(|(t,b)|(t.into(),Frames::new(b))).collect())}}
@@ -926,5 +962,95 @@ mod foreign_resolver_tests {
             let mut alt=source.clone();for v in [&mut alt.open,&mut alt.high,&mut alt.low,&mut alt.close]{for p in &mut v[51..]{*p*=1.3;}}
             let got=operand_values(&fr,&others("R",false,vec![("X",alt)]),&mut Cache::new(),&operand).unwrap();assert_series(&got[..=50],&want[..=50]);
         }
+    }
+}
+
+/// AmiBroker "Pad and align all data to reference symbol": the instrument's bars on the reference's calendar, inside the
+/// instrument's own first..last dates (no bar before its first is invented). A reference day the instrument lacks repeats the
+/// latest earlier close (O=H=L=C, volume 0 where the instrument has volume); a day the reference lacks is dropped. Returns
+/// the bars, each bar's source row (None: padded) and the padded / dropped counts.
+pub fn pad_align(rows: &[crate::Row], reference: &[crate::Row]) -> (Vec<crate::Row>, Vec<Option<usize>>, usize, usize) {
+    let (Some(first), Some(last)) = (rows.first(), rows.last()) else { return (vec![], vec![], 0, 0) };
+    let (mut out, mut src) = (Vec::new(), Vec::new());
+    for d in reference.iter().map(|r| r.date.as_str()).filter(|d| *d >= first.date.as_str() && *d <= last.date.as_str()) {
+        let k = rows.partition_point(|r| r.date.as_str() <= d) - 1; // d >= the first date, so k is a row on or before d
+        let p = &rows[k];
+        if p.date == d { out.push(p.clone()); src.push(Some(k)); }
+        else { out.push(crate::Row { date: d.into(), open: p.close, high: p.close, low: p.close, volume: p.volume.map(|_| 0.), ..p.clone() }); src.push(None); }
+    }
+    let padded = src.iter().filter(|s| s.is_none()).count();
+    let dropped = rows.len() - (src.len() - padded);
+    (out, src, padded, dropped)
+}
+
+#[cfg(test)]
+mod pad_align_tests {
+    fn row(d: &str, c: f64) -> crate::Row { crate::Row { ticker: "X".into(), date: d.into(), open: c - 1., high: c + 1., low: c - 2., close: c, volume: Some(100.) } }
+    #[test] fn pads_missing_reference_days_with_the_previous_close_and_drops_extra_days() {
+        let rows = [row("2024-01-02", 10.), row("2024-01-03", 11.), row("2024-01-06", 12.), row("2024-01-08", 13.)];
+        let reference = [row("2024-01-01", 0.), row("2024-01-02", 0.), row("2024-01-04", 0.), row("2024-01-05", 0.), row("2024-01-08", 0.), row("2024-01-09", 0.)];
+        let (out, src, padded, dropped) = super::pad_align(&rows, &reference);
+        assert_eq!(out.iter().map(|r| r.date.as_str()).collect::<Vec<_>>(), ["2024-01-02", "2024-01-04", "2024-01-05", "2024-01-08"], "within the instrument's own range");
+        assert_eq!(src, [Some(0), None, None, Some(3)]);
+        assert_eq!((padded, dropped), (2, 2)); // 01-03 and 01-06 are not reference days
+        let p = &out[1];
+        assert_eq!((p.open, p.high, p.low, p.close, p.volume), (11., 11., 11., 11., Some(0.)), "the latest earlier close, a dropped day's included");
+        assert_eq!((out[0].open, out[3].close), (9., 13.), "real bars are untouched");
+        let no_volume: Vec<_> = rows.iter().map(|r| crate::Row { volume: None, ..r.clone() }).collect();
+        assert_eq!(super::pad_align(&no_volume, &reference).0[1].volume, None);
+        assert_eq!(super::pad_align(&rows, &rows).0.len(), 4, "the same calendar is unchanged");
+    }
+}
+
+#[cfg(test)]
+mod formula_tests {
+    use super::*;
+    use crate::lab::rules::parse_spec;
+    use crate::lab::testdata::{close_eq, walk};
+    const EMA_X: &str = "Fast = Param(\"Fast\", 9, 2, 50, 1)\nSlow = Param(\"Slow\", 21, 5, 100, 1)\nPlot(EMA(C, Fast) - EMA(C, Slow), \"Osc\")\nPlot(Cross(EMA(C, Fast), EMA(C, Slow)), \"Up\")";
+    fn spec(entry: &str) -> Spec {
+        parse_spec(&format!(r#"{{"v":1,"entry":{{"all":[{entry}]}},"exit":{{"any":[{{"lhs":{{"s":"bars_held"}},"op":">=","rhs":{{"value":5}}}}]}}}}"#)).unwrap()
+    }
+    fn formula(extra: &str) -> String { format!(r#"{{"formula":"{}","name":"My Momentum"{extra}}}"#, crate::lab::json::esc(EMA_X)) }
+    fn trades(s: &Spec, bars: &Bars) -> Vec<String> {
+        let c = compile(s, &Frames::new(bars.clone()), &mut Cache::new()).unwrap();
+        crate::lab::simulate::simulate(&c, bars, 0, bars.len() - 1).iter().map(|t| format!("{t:?}")).collect()
+    }
+    #[test] fn a_formula_rule_trades_like_the_equivalent_built_in_rule() {
+        let bars = walk(600, 13, true);
+        let built = spec(r#"{"lhs":{"s":"ema","p":{"length":12}},"op":"crosses_above","rhs":{"s":"ema","p":{"length":30}}}"#);
+        let by_cross = spec(&format!(r#"{{"lhs":{},"op":">","rhs":{{"value":0.5}}}}"#, formula(r#","p":{"Fast":12,"Slow":30},"out":"Up""#)));
+        let by_osc = spec(&format!(r#"{{"lhs":{},"op":"crosses_above","rhs":{{"value":0}}}}"#, formula(r#","p":{"Fast":12,"Slow":30}"#)));
+        let want = trades(&built, &bars);
+        assert!(want.len() > 3, "the test needs trades");
+        assert_eq!(trades(&by_cross, &bars), want);
+        assert_eq!(trades(&by_osc, &bars), want);
+        assert_eq!(describe_node(&by_cross.entry[0]), "My Momentum(Fast=12,Slow=30).Up > 0.5");
+        assert_eq!(describe_node(&spec(&format!(r#"{{"lhs":{},"op":">","rhs":{{"value":0}}}}"#, formula(r#","tf":"W","offset":1"#))).entry[0]), "My Momentum.Osc@W[1] > 0");
+    }
+    #[test] fn formula_operands_resample_offset_and_stay_causal() {
+        let full = super::tests::business_days(400, true);
+        let s = spec(&format!(r#"{{"lhs":{},"op":">","rhs":{{"value":0}}}}"#, formula(r#","tf":"W","offset":1"#)));
+        let Node::Cmp(c) = &s.entry[0] else { panic!() };
+        let want = operand_values(&Frames::new(full.clone()), &Others::default(), &mut Cache::new(), &c.lhs).unwrap();
+        assert!(want.iter().filter(|v| v.is_finite()).count() > 200);
+        for cut in (100..400).step_by(23) {
+            let got = operand_values(&Frames::new(crate::lab::testdata::cut(&full, cut)), &Others::default(), &mut Cache::new(), &c.lhs).unwrap();
+            for i in 0..cut - 1 { assert!(close_eq(got[i], want[i]), "bar {i} changes when bars after {cut} exist"); }
+        }
+    }
+    #[test] fn formula_cache_is_keyed_by_text_not_name() {
+        let fr = Frames::new(walk(100, 3, false));
+        let a = spec(r#"{"lhs":{"formula":"Plot(C, \"X\")","name":"Same"},"op":">","rhs":{"value":0}}"#);
+        let b = spec(r#"{"lhs":{"formula":"Plot(-C, \"X\")","name":"Same"},"op":">","rhs":{"value":0}}"#);
+        let mut cache = Cache::new();
+        let val = |s: &Spec, cache: &mut Cache| operand_values(&fr, &Others::default(), cache, &s.entry[0].cmp().unwrap().lhs).unwrap();
+        let (x, y) = (val(&a, &mut cache), val(&b, &mut cache));
+        assert_eq!(x[5], -y[5]);
+    }
+    #[test] fn formula_run_errors_keep_their_position_and_type() {
+        let s = spec(r#"{"lhs":{"formula":"x = 1\nPlot(V, \"X\")"},"op":">","rhs":{"value":0}}"#);
+        let e = compile(&s, &Frames::new(walk(50, 1, false)), &mut Cache::new()).err().unwrap();
+        assert_eq!((e.status(), e.message()), ("needs_data", "line 2, col 6: volume: volume is missing on some admitted bars of this instrument"));
     }
 }

@@ -1,6 +1,6 @@
 //! Trend family (TradingView built-ins).
 use super::bars::Bars;
-use super::catalogue::{len, n, p, real, IndicatorDef, Needs, Output, ParamSpec, Params, Placement};
+use super::catalogue::{int, len, n, p, real, IndicatorDef, Needs, Output, ParamSpec, Params, Placement};
 use super::ta::{self, NA};
 
 const CAT: &str = "Trend";
@@ -10,6 +10,7 @@ fn div(a: f64, b: f64) -> f64 { if b == 0. { NA } else { a / b } }
 
 fn dmi(b: &Bars, prm: &Params) -> Output {
     let (dl, al) = (n(prm, "di_length"), n(prm, "adx_smoothing"));
+    if p(prm, "variant") == 1. { return Ok(dmi_mt(b, dl, al)); }
     let m = b.len();
     let dm = |plus: bool| -> Vec<f64> { (0..m).map(|i| if i == 0 { NA } else {
         let (up, dn) = (b.high[i] - b.high[i - 1], b.low[i - 1] - b.low[i]);
@@ -27,6 +28,26 @@ fn dmi(b: &Bars, prm: &Params) -> Output {
     let x: Vec<f64> = (0..m).map(|i| { let s = pl[i] + mi[i]; (pl[i] - mi[i]).abs() / if s == 0. { 1. } else { s } }).collect();
     let adx: Vec<f64> = ta::rma(&x, al).iter().map(|v| 100. * v).collect();
     Ok(vec![pl, mi, adx])
+}
+
+/// MetaTrader 5 ADX.mq5: per-bar DM (smaller side and ties zeroed) as 100·DM/TR, EMA-smoothed (alpha 2/(n+1)) from 0 at bar 0.
+fn dmi_mt(b: &Bars, dl: usize, al: usize) -> Vec<Vec<f64>> {
+    let (m, a, aa) = (b.len(), 2. / (dl as f64 + 1.), 2. / (al as f64 + 1.));
+    let mut out = vec![vec![NA; m]; 3];
+    let (mut pdi, mut ndi, mut adx) = (0., 0., 0.);
+    for i in 1..m {
+        let (mut up, mut dn) = ((b.high[i] - b.high[i - 1]).max(0.), (b.low[i - 1] - b.low[i]).max(0.));
+        if up > dn { dn = 0. } else if up < dn { up = 0. } else { up = 0.; dn = 0. }
+        let pc = b.close[i - 1];
+        let tr = (b.high[i] - b.low[i]).abs().max((b.high[i] - pc).abs()).max((b.low[i] - pc).abs());
+        let (pd, nd) = if tr != 0. { (100. * up / tr, 100. * dn / tr) } else { (0., 0.) };
+        pdi = pd * a + pdi * (1. - a); ndi = nd * a + ndi * (1. - a);
+        let s = pdi + ndi;
+        let x = if s != 0. { 100. * ((pdi - ndi) / s).abs() } else { 0. };
+        adx = x * aa + adx * (1. - aa);
+        out[0][i] = pdi; out[1][i] = ndi; out[2][i] = adx;
+    }
+    out
 }
 
 fn supertrend(b: &Bars, prm: &Params) -> Output {
@@ -124,8 +145,9 @@ const fn def(id: &'static str, name: &'static str, params: &'static [ParamSpec],
 const LEN14: &[ParamSpec] = &[len("length", "Length", 14.)];
 
 pub const DEFS: &[IndicatorDef] = &[
-    def("dmi", "Directional Movement Index", &[len("di_length", "DI length", 14.), len("adx_smoothing", "ADX smoothing", 14.)], &["plus_di", "minus_di", "adx"], Placement::Pane,
-        "up=change(high), dn=-change(low); +DM=(up>dn&&up>0)?up:0; tr=tr(false); +DI=100*rma(+DM)/rma(tr) held when rma(tr)=0; ADX=100*rma(|+DI--DI|/(sum==0?1:sum))", &[14, 14, 27], dmi),
+    def("dmi", "Directional Movement Index", &[len("di_length", "DI length", 14.), len("adx_smoothing", "ADX smoothing", 14.),
+        int("variant", "Variant (0 Wilder/TradingView/MetaTrader iADXWilder, 1 MetaTrader iADX)", 0., 0., 1.)], &["plus_di", "minus_di", "adx"], Placement::Pane,
+        "up=change(high), dn=-change(low); +DM=(up>dn&&up>0)?up:0; tr=tr(false); +DI=100*rma(+DM)/rma(tr) held when rma(tr)=0; ADX=100*rma(|+DI--DI|/(sum==0?1:sum)); variant 1 (MetaTrader 4/5 iADX, ADX.mq5): +DM = max(up, 0), −DM = max(dn, 0), the smaller zeroed and both zeroed on a tie; +DI = ema(100·+DM/TR, di_length) (TR 0 → 0), −DI likewise; ADX = ema(100·|+DI − −DI|/(+DI + −DI), adx_smoothing) (sum 0 → 0); every EMA alpha 2/(n+1) starts from 0 at bar 0 (MetaTrader's seed), so values exist from bar 1 and the first ~n bars are seed-biased (MetaTrader starts drawing at bar n)", &[14, 14, 27], dmi),
     def("supertrend", "Supertrend", &[len("atr_length", "ATR length", 10.), real("factor", "Factor", 3., 0.5, 20., 0.5)], &["supertrend", "direction"], Placement::Price,
         "atr=rma(tr(true)); bands hl2+-factor*atr with carry rules; direction -1 uptrend / +1 downtrend; NaN where atr is NaN", &[9, 9], supertrend),
     def("sar", "Parabolic SAR", &[real("start", "Start", 0.02, 0.001, 1., 0.001), real("increment", "Increment", 0.02, 0.001, 1., 0.001), real("max", "Maximum", 0.2, 0.01, 1., 0.01)], &["sar"], Placement::Price,
@@ -179,6 +201,14 @@ mod tests {
         let o = go("vortex", &b, &many(&[("length", 2.)]));
         assert_series(&o[0], &[N, N, 1.5]);
         assert_series(&o[1], &[N, N, 0.75]);
+    }
+    #[test] fn dmi_metatrader_iadx_ema_from_zero() {
+        // n = 3 → alpha 0.5; bar 1: +DM 1, TR 2.5 → 40; bar 2: −DM 1.5, TR 3.5; bar 3: up 0 = dn 0 (tie) → both 0
+        let b = from_ohlc(&[(10., 11., 9., 10.), (10., 12., 9.5, 11.), (11., 11.5, 8., 9.), (9., 10., 8., 9.5)]);
+        let o = go("dmi", &b, &many(&[("di_length", 3.), ("adx_smoothing", 3.), ("variant", 1.)]));
+        assert_series(&o[0], &[N, 20., 10., 5.]);
+        assert_series(&o[1], &[N, 0., 150. / 7., 75. / 7.]);
+        assert_series(&o[2], &[N, 50., 50. / 2. + 400. / 22., 43.181818181818 / 2. + 400. / 22.]);
     }
     #[test] fn supertrend_flips_up() {
         let b = from_ohlc(&[(10., 11., 9., 10.), (11., 12., 10., 11.5), (13., 15., 12., 14.), (14., 16., 13., 15.)]);

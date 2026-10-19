@@ -15,7 +15,8 @@ const NO: Needs = Needs::NONE;
 const NONE: &[ParamSpec] = &[];
 const L13: &[ParamSpec] = &[len("length", "Length", 13.)];
 const AC: &[ParamSpec] = &[len("fast", "Fast", 5.), len("slow", "Slow", 34.), len("smooth", "Smoothing", 5.)];
-const PO: &[ParamSpec] = &[len("fast", "Fast", 10.), len("slow", "Slow", 21.), int("exponential", "Exponential (0 SMA, 1 EMA)", 0., 0., 1.)];
+const PO: &[ParamSpec] = &[len("fast", "Fast", 10.), len("slow", "Slow", 21.), int("exponential", "MA type (0 SMA, 1 EMA, 2 WMA Sierra Chart)", 0., 0., 2.),
+    int("points", "Output (0 percent, 1 points — TA-Lib APO, thinkorswim PriceOsc, LBR 3/10)", 0., 0., 1.)];
 const WC: &[ParamSpec] = &[int("length", "Length", 14., 2., 2000.), int("turbo", "Turbo length", 6., 2., 2000.)]; // length 1: zero mean deviation
 const RM: &[ParamSpec] = &[len("length", "Length", 20.), len("momentum", "Momentum", 5.)];
 const L10: &[ParamSpec] = &[len("length", "Length", 10.)];
@@ -41,8 +42,9 @@ fn accel_osc(b: &Bars, prm: &Params) -> Output {
     Ok(vec![zip(&ao, &ta::sma(&ao, n(prm, "smooth")), |a, c| a - c)])
 }
 fn price_osc(b: &Bars, prm: &Params) -> Output {
-    let ma = |k| if p(prm, "exponential") == 1. { ta::ema(&b.close, k) } else { ta::sma(&b.close, k) };
-    Ok(vec![zip(&ma(n(prm, "fast")), &ma(n(prm, "slow")), |f, s| div(100. * (f - s), s))])
+    let ma = |k| match n(prm, "exponential") { 1 => ta::ema(&b.close, k), 2 => ta::wma(&b.close, k), _ => ta::sma(&b.close, k) };
+    let pts = p(prm, "points") == 1.;
+    Ok(vec![zip(&ma(n(prm, "fast")), &ma(n(prm, "slow")), |f, s| if pts { f - s } else { div(100. * (f - s), s) })])
 }
 fn woodies_cci(b: &Bars, prm: &Params) -> Output { Ok(vec![cci_s(&b.close, n(prm, "length")), cci_s(&b.close, n(prm, "turbo"))]) }
 fn rmi(b: &Bars, prm: &Params) -> Output {
@@ -122,7 +124,7 @@ pub const DEFS: &[IndicatorDef] = &[
     def("bop", "Balance of Power", NONE, &["bop"], PN, NO, "(close − open)/(high − low); zero range → NaN", &[0], false, bop),
     def("bbp", "Bull Bear Power", L13, &["bbp", "bull", "bear"], PN, NO, "bull = high − ema(close, n); bear = low − ema(close, n); bbp = bull + bear (the TradingView plot)", &[12, 12, 12], false, bbp),
     def("accel_osc", "Accelerator Oscillator", AC, &["ac"], PN, NO, "ao = sma(hl2, fast) − sma(hl2, slow); ac = ao − sma(ao, smooth)", &[37], false, accel_osc),
-    def("price_osc", "Price Oscillator", PO, &["po"], PN, NO, "100·(ma(close, fast) − ma(close, slow))/ma(close, slow), ma = sma (ema if exponential = 1; AmiBroker OscP = exponential 1)", &[20], false, price_osc),
+    def("price_osc", "Price Oscillator", PO, &["po"], PN, NO, "100·(ma(close, fast) − ma(close, slow))/ma(close, slow), ma = sma (ema if exponential = 1; AmiBroker OscP = exponential 1; wma if 2, Sierra Chart Weighted Average Oscillator); points 1: ma(close, fast) − ma(close, slow) in price points (TA-Lib APO, default SMA 12/26; thinkorswim PriceOsc; LBR 3/10 oscillator = SMA 3/10 points, whose SMA 16 signal is not an output here)", &[20], false, price_osc),
     def("woodies_cci", "Woodies CCI", WC, &["cci", "turbo"], PN, NO, "cci of close (not hlc3) over length and over turbo: (close − sma)/(0.015·mean absolute deviation); zero deviation → NaN", &[13, 5], false, woodies_cci),
     def("rmi", "Relative Momentum Index", RM, &["rmi"], PN, NO, "up = max(close − close[m], 0), dn = max(close[m] − close, 0); RSI formula on rma(up, n), rma(dn, n) (dn 0 → 100, up 0 → 0) (AmiBroker RMI; rma seeded as TradingView)", &[24], false, rmi),
     def("cg_osc", "Center of Gravity (Ehlers)", CG, &["cg", "trigger"], PN, NO, "cg = −Σ_{i=0}^{n−1}(i+1)·hl2[t−i] / Σ hl2[t−i]; trigger = cg[1] (declared Ehlers form for Bandy's CGOscillator)", &[9, 10], false, cg_osc),
@@ -148,6 +150,11 @@ mod tests {
     #[test] fn accelerator_and_price_oscillator() {
         assert_series(&go("accel_osc", &d1(), &[("fast", 2.), ("slow", 3.), ("smooth", 2.)])[0], &[N, N, N, -0.125, -0.208333333333, -0.0625, 0.166666666667, 0.25]);
         assert_series(&go("price_osc", &d1(), &[("fast", 2.), ("slow", 3.), ("exponential", 0.)])[0], &[N, N, 3.676470588235, 0.0, -4.21686746988, -1.5625, 3.495440729483, 4.107648725212]);
+    }
+    #[test] fn price_osc_points_and_wma() {
+        assert_series(&go("price_osc", &d1(), &[("fast", 2.), ("slow", 3.), ("points", 1.)])[0], &[N, N, 0.416666666667, 0.0, -0.466666666667, -0.166666666667, 0.383333333333, 0.483333333333]);
+        // wma(2) = (11.5 + 2·12)/3, wma(3) = (10.5 + 2·11.5 + 3·12)/6 at bar 2
+        assert!((go("price_osc", &d1(), &[("fast", 2.), ("slow", 3.), ("exponential", 2.), ("points", 1.)])[0][2] - 0.25).abs() < 1e-12);
     }
     #[test] fn woodies_cci_uses_close() {
         let o = go("woodies_cci", &d1(), &[("length", 3.), ("turbo", 2.)]);

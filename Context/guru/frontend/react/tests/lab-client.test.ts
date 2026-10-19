@@ -33,6 +33,7 @@ it("optimize always asks for slim rows and sends split only when given", async (
   await lab.optimize("us", { v: 1, entry: { all: [] }, exit: { any: [] } }, { ticker: "SPY", split: null });
   const [a, b] = f.calls.map((c) => new URL(c.url, "http://x").searchParams);
   expect(a.get("slim")).toBe("1");
+  expect(a.get("table")).toBe("1");
   expect(a.get("split")).toBe("2020-01-02");
   expect(b.has("split")).toBe(false);
 });

@@ -50,6 +50,8 @@ it("rail lists every entry, disables listed ones with their note and adds comput
   const listed = host.querySelector<HTMLButtonElement>('[data-lab-item="or_range"]')!;
   expect(listed.disabled).toBe(true);
   expect(listed.closest("li")!.textContent).toContain("Needs intraday (minute) bars; not available yet.");
+  expect(listed.closest("li")!.querySelector(".tag")?.textContent).toBe("needs data");
+  expect(host.querySelector('[data-lab-item="ema"]')!.closest("li")!.querySelector(".tag")).toBeNull(); // available rows carry no tag
   await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-item="ema"]')!.click());
   expect(onAdd).toHaveBeenCalledWith(byId("ema"));
   const search = host.querySelector<HTMLInputElement>('input[aria-label="Search indicators"]')!;
@@ -100,7 +102,7 @@ it("toolbar has no provisional strip on in/us", async () => {
   }
 });
 
-it("rail groups start open; a search shows only matching groups and clearing restores the manual choices", async () => {
+it("rail groups start closed, a click shows every indicator of that category; a search shows only matching groups and clearing restores the manual choices", async () => {
   const host = await mount(<LibraryRail catalogue={cat} market="in" hasVolume={false} tf="D" onAdd={() => {}} onRead={() => {}} />);
   const heads = () => [...host.querySelectorAll<HTMLButtonElement>(".lab-group-h")];
   const shut = () => heads().filter((h) => h.getAttribute("aria-expanded") === "false").map((h) => h.textContent);
@@ -109,11 +111,14 @@ it("rail groups start open; a search shows only matching groups and clearing res
     await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, v); search.dispatchEvent(new Event("input", { bubbles: true })); });
   };
   expect(heads().length).toBeGreaterThan(1);
-  expect(shut()).toEqual([]);
-  expect(host.querySelector("ul[hidden]")).toBeNull();
+  expect(shut()).toHaveLength(heads().length);
+  expect(host.querySelector("ul:not([hidden])")).toBeNull();
   await act(async () => heads()[0].click());
   const manual = shut();
-  expect(manual).toHaveLength(1);
+  expect(manual).toHaveLength(heads().length - 1);
+  const first = host.querySelector(".lab-group ul")!;
+  expect(first.hasAttribute("hidden")).toBe(false);
+  expect(first.querySelectorAll("li")).toHaveLength(Number(heads()[0].querySelector("small")!.textContent)); // every indicator of the category
   await type("ta.rsi");
   expect(heads()).toHaveLength(1); // only the group holding a match is shown, and it is open
   expect(shut()).toEqual([]);

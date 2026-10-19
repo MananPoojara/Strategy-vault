@@ -17,7 +17,7 @@ pub const DEFS: &[IndicatorDef] = &[
     def("ratio","Ratio",&[],"close divided by aligned vs close; zero denominator gives no value",&[0],ratio),
     def("spread","Spread",&[],"close minus aligned vs close",&[0],spread),
 ];
-fn second(b: &Bars) -> Result<&[f64],String> {
+pub(super) fn second(b: &Bars) -> Result<&[f64],String> {
     let s = b.second.as_deref().ok_or_else(||"needs a second instrument".to_string())?;
     if b.date.len() != b.close.len() || s.len() != b.close.len() {return Err("pair dates, closes and second closes must have equal lengths".into());}
     super::foreign::validate_dates(&b.date,"pair calendar").map_err(|e|e.message().to_string())?;
@@ -66,7 +66,7 @@ pub fn pearson(x:&[f64],y:&[f64],n:usize) -> Result<Vec<f64>,String> {
     }
     Ok(out)
 }
-fn log_returns(x:&[f64]) -> Vec<f64> {
+pub(super) fn log_returns(x:&[f64]) -> Vec<f64> {
     (0..x.len()).map(|i|{
         if i==0 || !x[i].is_finite() || !x[i-1].is_finite() || x[i]<=0. || x[i-1]<=0. {return NA;}
         let ratio=x[i]/x[i-1];if ratio.is_finite() && ratio>0. {ratio.ln()}else{x[i].ln()-x[i-1].ln()}

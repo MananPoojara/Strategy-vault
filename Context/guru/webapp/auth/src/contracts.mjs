@@ -79,6 +79,23 @@ export function sameLabOrigin(a, b) {
   return (a?.book ?? null) === (b?.book ?? null) && (a?.method ?? null) === (b?.method ?? null) && (a?.template_version ?? null) === (b?.template_version ?? null);
 }
 
+// Custom indicators (spec 2026-10-19 §3): the engine parses the formula; here only sizes and characters.
+export function validateLabIndicator(body) {
+  const name = typeof body?.name === 'string' ? body.name.trim() : '';
+  if (!name || name.length > 60 || CONTROL.test(name)) throw new LabRequestError('Name must be 1–60 characters.');
+  const formula = body.formula;
+  if (typeof formula !== 'string' || !formula.trim() || formula.length > 4000) throw new LabRequestError('Formula must be 1–4000 characters.');
+  if (NOTE_CONTROL.test(formula)) throw new LabRequestError('Formula cannot contain control characters other than tabs and line breaks.'); // PostgreSQL text rejects NUL
+  const blocks = body.blocks ?? null;
+  if (blocks !== null) {
+    if (typeof blocks !== 'object' || Array.isArray(blocks)) throw new LabRequestError('Blocks must be a JSON object or null.');
+    const json = JSON.stringify(blocks);
+    if (Buffer.byteLength(json) > 65536) throw new LabRequestError('Blocks are larger than 64 KB.');
+    if (json.includes('\\u0000')) throw new LabRequestError('Blocks cannot contain NUL characters.'); // PostgreSQL jsonb rejects \u0000
+  }
+  return { name, formula, blocks };
+}
+
 export function validateLabVersion(version) {
   if (!Number.isSafeInteger(version) || version < 1) throw new LabRequestError('Provide the version you are changing.');
   return version;

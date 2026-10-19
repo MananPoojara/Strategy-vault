@@ -6,8 +6,17 @@
 .lab-chips .chip .lab-error { flex-basis: 100%; padding: 6px 8px; justify-items: start; text-align: left; font-weight: 500; }
 .lab-chips .chip .lab-error b { font-size: 12.5px; margin: 0; }
 .lab-chips .chip .cap { color: inherit; margin: 0; font-weight: 500; }
+/* The house .chip button is white-on-ink; lab chips are card-coloured, so the remove × needs its own colours. */
+.lab-chips .chip > button[aria-label^="Remove"] { color: var(--ink3); background: none; font-size: 15px; }
+.lab-chips .chip > button[aria-label^="Remove"]:hover { color: var(--red); background: none; }
 .lab-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
-.lab-pane { height: 150px; margin-top: 6px; }
+/* Panes stack flush under the price chart, each with its own legend; only the bottom chart draws the date axis. */
+.lab-pane-box { position: relative; }
+.lab-pane { height: 150px; margin-top: 0; border-top: 1px solid var(--rule); }
+.lab-pane-box > .lab-legend-tv { top: 2px; }
 .lab-pane:empty { display: none; }
 .lab-price { position: relative; }
-.lab-tip { position: absolute; top: 0; left: 0; z-index: 3; pointer-events: none; background: var(--panel); color: var(--ink); border: 1px solid var(--steel); padding: 6px 9px; font: 12px/1.45 "IBM Plex Mono", monospace; white-space: pre; }
+.lab-legend-tv { position: absolute; top: 6px; left: 8px; z-index: 3; pointer-events: none; display: grid; gap: 1px; max-width: calc(100% - 90px); font: 500 12px/1.5 var(--font); color: var(--ink); }
+.lab-legend-tv > div { width: max-content; max-width: 100%; padding: 0 4px; background: color-mix(in srgb, var(--panel) 82%, transparent); white-space: pre; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+/* Phones: the legend wraps inside the chart (the grid column may shrink below the one-line width). */
+@media (max-width: 600px) { .lab-legend-tv { font-size: 11px; width: calc(100% - 80px); grid-template-columns: minmax(0, 1fr); } .lab-legend-tv > div { white-space: normal; width: auto; } }

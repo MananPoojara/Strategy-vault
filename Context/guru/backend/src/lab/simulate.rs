@@ -9,10 +9,13 @@
 //! `ohlc_path` takes the same groups in the order of the O→H→L or O→L→H path;
 //! (3) at the close, rule exits (after min_bars) fill at this close or set a next-open exit, then the other side's
 //! entry reverses / exits / is ignored, then entries fill at this close, set a next-open order or rest an order.
+//! With `execution.prices` / `delays` (AmiBroker trade prices) a delayed market order whose field is not the open fills at
+//! that field after step (3)'s rule exits, as at the close: exit first, then the entry, then a scale-in leg; a position
+//! opened there is checked by price exits from the next bar.
 use super::bars::Bars;
 use super::resample::period_key;
-use super::rules::{After, Dist, Fill, LegPrice, Opposite, Sizing};
-use super::series::Compiled;
+use super::rules::{After, Dist, Fill, LegPrice, Opposite, Px, Sizing};
+use super::series::{Compiled, RCond, Val};
 use crate::connors::{Leg, Trade};
 
 struct Pos {
@@ -52,24 +55,49 @@ impl Pos {
         Trade { dir: d, legs, exit_i: x, exit_px, reason, entry_kind: self.kind, signal_i, open: false, exits }
     }
     fn add(&mut self, i: usize, px: f64, w: f64) { self.adds.push(Leg { i, px, w }); self.last = (i, px); }
+    /// Stop-loss, trailing, breakeven and target levels on bar i (NaN: none or not armed). Trailing and breakeven come from the
+    /// best price through the previous bar and ATR at the previous close: known before bar i opens.
+    fn levels(&self, c: &Compiled, i: usize, d: f64) -> [f64; 4] {
+        let armed = |at: f64| !at.is_nan() && d * (self.best - at) >= 0.;
+        let trail = c.exec.trailing.filter(|_| self.arm.is_nan() || armed(self.arm)).map_or(f64::NAN, |t| match t {
+            // x % of the open profit below the peak (mirror for shorts); no level while the best price shows no profit
+            Dist::ProfitPct(x) if d * (self.best - self.px) > 0. => c.round_at(i, self.best - x / 100. * (self.best - self.px)),
+            Dist::ProfitPct(_) => f64::NAN,
+            _ => c.round_at(i, self.best - d * c.dist_at(t, self.best, i - 1, i)),
+        });
+        let be = if armed(self.be_after) { c.round_at(i,self.be) } else { f64::NAN };
+        [c.round_at(i,self.stop), trail, be, c.round_at(i,self.target)]
+    }
+    /// Whether stops are checked on bar i: on the entry bar only with "Activate stops immediately" (today's default) and same-bar exits allowed.
+    fn live(&self, c: &Compiled, i: usize) -> bool { self.e < i || (c.exec.stops_immediately && c.exec.same_bar) }
+    /// AmiBroker ExitAtStop 0 ("exit at trade price only"): stops tested on bar i's trade price `pv` alone (max loss, then profit
+    /// target, then trailing); the caller exits at that price on bar i (stops are not delayed). `nbar_due`: an N-bar stop with priority takes this bar.
+    fn trade_price_stop(&self, c: &Compiled, i: usize, d: f64, pv: f64, nbar_due: bool) -> Option<&'static str> {
+        if !self.live(c, i) || nbar_due { return None; }
+        let ([sl, tr, _, tg], m) = (self.levels(c, i, d), c.exec.exit_at_stop);
+        [(sl, -1., 0, "exit.stop_loss"), (tg, 1., 1, "exit.target"), (tr, -1., 2, "exit.trailing")].into_iter()
+            .find(|&(l, side, k, _)| m[k] == 0 && side * d * (pv - l) >= 0.).map(|x| x.3)
+    }
     /// Stop-loss / breakeven / trailing / take-profits / target and a resting reversal order `rev` (fill price, adverse
     /// side) inside bar i (a close-fill entry is never checked on its own bar). Partial take-profit fills go to `out`.
-    fn price_exit(&mut self, c: &Compiled, b: &Bars, i: usize, d: f64, rev: Option<(f64, bool)>) -> Option<Hit> {
-        // Trailing and breakeven levels from the best price through the previous bar and ATR at the previous close: known before bar i opens.
-        let armed = |at: f64| !at.is_nan() && d * (self.best - at) >= 0.;
-        let trail = c.exec.trailing.filter(|_| self.arm.is_nan() || armed(self.arm)).map_or(f64::NAN, |t| c.round_at(i, self.best - d * c.dist_at(t, self.best, i - 1, i)));
-        let be = if armed(self.be_after) { c.round_at(i,self.be) } else { f64::NAN };
+    /// ExitAtStop 0 stops are left to `trade_price_stop`; an ExitAtStop 2 stop reached here exits on the next bar (`Hit::Next`).
+    fn price_exit(&mut self, c: &Compiled, b: &Bars, i: usize, d: f64, rev: Option<(f64, bool)>, nbar_due: bool) -> Option<Hit> {
+        let (on, m) = (self.live(c, i) && !nbar_due, c.exec.exit_at_stop);
+        let [sl, trail, be, target] = if on { self.levels(c, i, d) } else { [f64::NAN; 4] };
+        let intraday = |l: f64, k: usize| if m[k] == 0 { f64::NAN } else { l };
         // the protective level is the tightest of stop-loss, trailing and breakeven (ties keep the earlier name)
-        let (stop, why) = [(c.round_at(i,self.stop), "exit.stop_loss"), (trail, "exit.trailing"), (be, "exit.breakeven")].into_iter()
+        let (stop, why) = [(intraday(sl, 0), "exit.stop_loss"), (intraday(trail, 2), "exit.trailing"), (be, "exit.breakeven")].into_iter()
             .filter(|(l, _)| !l.is_nan()).fold((f64::NAN, ""), |a, (l, w)| if a.0.is_nan() || d * (l - a.0) > 0. { (l, w) } else { a });
-        let target=c.round_at(i,self.target);
+        let target = intraday(target, 1);
+        let hit = |px: f64, why: &str, note: &str| match why { "exit.stop_loss" if m[0] == 2 => Hit::Next(format!("{why}{note}")), "exit.target" if m[1] == 2 => Hit::Next(format!("{why}{note}")),
+            "exit.trailing" if m[2] == 2 => Hit::Next(format!("{why}{note}")), _ => Hit::Exit(px, format!("{why}{note}")) };
         let (o, adverse, favour) = (b.open[i], if d > 0. { b.low[i] } else { b.high[i] }, if d > 0. { b.high[i] } else { b.low[i] });
         // the path starts at the open: levels gapped through fill there (protective, adverse reversal, take-profits, target, limit reversal)
         if self.e < i {
-            if d * (o - stop) <= 0. { return Some(Hit::Exit(o, format!("{why} (gap at the open)"))); }
+            if d * (o - stop) <= 0. { return Some(hit(o, why, " (gap at the open)")); }
             if rev.is_some_and(|(px, adv)| adv && px == o) { return Some(Hit::Reverse); }
-            self.take(i, |l| d * (o - l) >= 0., Some(o));
-            if d * (o - target) >= 0. { return Some(Hit::Exit(o, "exit.target (gap at the open)".into())); }
+            if on { self.take(i, |l| d * (o - l) >= 0., Some(o)); }
+            if d * (o - target) >= 0. { return Some(hit(o, "exit.target", " (gap at the open)")); }
             if rev.is_some_and(|(px, adv)| !adv && px == o) { return Some(Hit::Reverse); }
         }
         // On a limit-fill bar the high/low may precede the fill, so only adverse events are assumed reachable.
@@ -80,7 +108,7 @@ impl Pos {
         if d * (adverse - stop) <= 0. { adv.push((stop, 0, 0)); }
         if let Some((px, true)) = rev { adv.push((px, 1, 0)); }
         let mut fav: Vec<(f64, u8, usize)> = vec![];
-        if favour_ok {
+        if favour_ok && on {
             fav.extend(self.tps.iter().enumerate().filter(|(_, t)| !t.2 && d * (favour - t.0) >= 0.).map(|(k, t)| (t.0, 2, k)));
             if d * (favour - target) >= 0. { fav.push((target, 3, 0)); }
             if let Some((px, false)) = rev { fav.push((px, 4, 0)); }
@@ -95,9 +123,9 @@ impl Pos {
         let path = if favour_first { [fav, adv] } else { [adv, fav] };
         for (lvl, rank, k) in path.into_iter().flatten() {
             match rank {
-                0 => return Some(Hit::Exit(lvl, why.into())),
+                0 => return Some(hit(lvl, why, "")),
                 2 => { self.tps[k].2 = true; self.out.push((i, lvl, self.tps[k].1)); }
-                3 => return Some(Hit::Exit(lvl, "exit.target".into())),
+                3 => return Some(hit(lvl, "exit.target", "")),
                 _ => return Some(Hit::Reverse),
             }
         }
@@ -109,8 +137,9 @@ impl Pos {
     }
 }
 
-/// What bar i does to an open position: a full exit (price, reason), or the other side's resting order reverses it.
-enum Hit { Exit(f64, String), Reverse }
+/// What bar i does to an open position: a full exit (price, reason), an ExitAtStop 2 stop exiting on the next bar at the
+/// regular trade price (reason), or the other side's resting order reverses it.
+enum Hit { Exit(f64, String), Next(String), Reverse }
 
 /// Opaque lab-only adapter for long cash portfolios; the single-instrument state machine is unchanged.
 pub(super) struct PortfolioPosition(Pos);
@@ -120,10 +149,10 @@ impl PortfolioPosition {
     }
     pub(super) fn price_exit(&mut self, c: &Compiled, b: &Bars, i: usize) -> Option<(f64, String)> {
         if self.0.e == i && self.0.kind == "close" { return None; }
-        match self.0.price_exit(c, b, i, 1., None) {
+        match self.0.price_exit(c, b, i, 1., None, false) {
             Some(Hit::Exit(px, reason)) => Some((px, reason)),
-            // With rev=None there is no reversal order; the shared engine cannot produce Reverse.
-            Some(Hit::Reverse) | None => None,
+            // With rev=None there is no reversal order; portfolios refuse exit_at_stop, so neither Reverse nor Next occurs.
+            Some(Hit::Reverse | Hit::Next(_)) | None => None,
         }
     }
     pub(super) fn observe_completed_bar(&mut self, b: &Bars, i: usize) {
@@ -195,6 +224,21 @@ impl RiskState {
                 + usize::from(pos.as_ref().is_some_and(|(_, p)| in_period(p.e, anchor))) >= count)
     }
 }
+/// Price of a market fill at field `px` of bar i (a futures average is rounded to the contract's tick grid).
+fn price(c: &Compiled, b: &Bars, px: Px, i: usize) -> f64 {
+    match px { Px::Open => b.open[i], Px::High => b.high[i], Px::Low => b.low[i], Px::Close => b.close[i], Px::Average => c.round_at(i, (b.open[i] + b.high[i] + b.low[i] + b.close[i]) / 4.) }
+}
+/// Entry kind of a market fill: today's names for the open and close, otherwise the field.
+fn kind(px: Px) -> &'static str { match px { Px::Open => "next_open", Px::Close => "close", Px::High => "high", Px::Low => "low", Px::Average => "average" } }
+/// Which AmiBroker re-entry delay a closed trade starts: 0 stop_loss, 1 target, 2 trailing, 3 a bars_held rule exit (N-bar stop;
+/// a top-level comparison with bars_held on either side; bars_held inside all/any groups is not recognised).
+/// An N-bar stop for its exit mode and "Has priority": a top-level bars_held comparison with a number (known before the bar opens).
+fn nbar(r: &RCond) -> bool { matches!((&r.lhs, &r.rhs), (Val::Held, Val::Const(_)) | (Val::Const(_), Val::Held)) }
+fn exit_kind(c: &Compiled, t: &Trade) -> Option<usize> {
+    let r = t.reason.as_str();
+    ["exit.stop_loss", "exit.target", "exit.trailing"].iter().position(|k| r.starts_with(k))
+        .or_else(|| c.exit.iter().any(|e| (matches!(e.lhs, Val::Held) || matches!(e.rhs, Val::Held)) && e.label == r).then_some(3))
+}
 /// One position at a time over one side (long or short) or, for `direction: both`, two sides (`c` long, `c.other` short).
 pub fn simulate(c: &Compiled, b: &Bars, from: usize, to: usize) -> Vec<Trade> { simulate_events(c, b, from, to).0 }
 /// The trades plus the equity-level events that changed them (risk pauses and stops, spec §6.5), for `execution_model.events`.
@@ -202,11 +246,24 @@ pub fn simulate_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<T
     let sides: Vec<&Compiled> = std::iter::once(c).chain(c.other.as_deref()).collect();
     let dir = |s: usize| if sides[s].exec.short { -1. } else { 1. };
     let x = &c.exec; // fill, exit_fill, opposite, delay and edge are shared by both sides
-    let delay = x.delay;
+    // [entry, exit] (price field, delay) of side s's market orders: its execution.prices / delays, else the shared fills
+    let legacy = [x.fill, x.exit_fill].map(|f| match f { Fill::Close => (Px::Close, 0), Fill::NextOpen => (Px::Open, x.delay) });
+    let market = |s: usize| sides[s].exec.market.unwrap_or(legacy);
+    // AmiBroker re-entry delay: side s takes no new entry while a same-side trade's exit of a delayed kind is that recent,
+    // counted to the bar the entry would fill (AmiBroker shifts signals by the trade delay first; an order fills from i + 1)
+    let waiting = |s: usize, i: usize, trades: &[Trade]| x.reentry.is_some_and(|n| {
+        let (fill, longest) = (i + if sides[s].has_order() { 1 } else { market(s)[0].1 }, n.iter().copied().max().unwrap_or(0));
+        trades.iter().rev().take_while(|t| fill - t.exit_i < longest).filter(|t| (t.dir < 0.) == sides[s].exec.short)
+            .any(|t| exit_kind(sides[s], t).is_some_and(|k| fill - t.exit_i < n[k]))
+    });
     // v1 rule kept: a next-open market entry may share the open with a next-open exit. Close fills and resting orders
     // follow the books instead: no new order on a bar that held a position at its close or exited after its open.
-    let shares_open = sides.iter().all(|s| !s.has_order()) && x.fill == Fill::NextOpen;
+    let shares_open = sides.iter().all(|s| !s.has_order()) && (0..sides.len()).all(|s| market(s)[0].1 > 0);
     let holds = |s: usize, i: usize| sides[s].entry.iter().all(|r| r.holds(i, None));
+    // "Has priority": on the bar the N-bar stop exits, the max loss, profit target and trailing stops are not checked
+    let nbar_due = |s: usize, p: &Pos, i: usize| sides[s].exec.nbar_first && sides[s].exit.iter().any(|r| nbar(r) && i - p.e >= sides[s].exec.min_bars && r.holds(i, Some(p.e)));
+    // "Allow same bar exit / entry signal" off: no entry fills on a bar a position closed (a reversal is one fill and stays exempt)
+    let exited_on = |trades: &[Trade], i: usize| !x.same_bar && trades.last().is_some_and(|t| t.exit_i == i);
     let fires = |s: usize, i: usize| holds(s, i) && (!x.edge || i == 0 || !holds(s, i - 1));
     // An order's levels come from the signal bar; a configured level that is unknown (warm-up) places no order.
     let place = |s: usize, i: usize| -> Option<Order> {
@@ -218,36 +275,42 @@ pub fn simulate_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<T
     };
     let mut trades = Vec::new();
     let mut pos: Option<(usize, Pos)> = None; // (side, position)
-    let mut pending_entry: Option<(usize, usize, usize, &'static str)> = None; // (side, signal bar, fill bar, entry kind)
-    let mut pending_exit: Option<(usize, usize, String)> = None; // (signal bar, fill bar, reason); cleared when its position closes
+    let mut pending_entry: Option<(usize, usize, usize, &'static str, Px)> = None; // (side, signal bar, fill bar, entry kind, field)
+    let mut pending_exit: Option<(usize, usize, String, Px)> = None; // (signal bar, fill bar, reason, field); cleared when its position closes
     let mut orders: [Option<Order>; 2] = [None, None]; // one resting order per side
-    let mut pending_add: Option<(usize, f64, usize, usize)> = None; // (fill bar, leg weight, side, position entry bar)
+    let mut pending_add: Option<(usize, f64, usize, usize, Px)> = None; // (fill bar, leg weight, side, position entry bar, field)
     // equity-level state from closed trades (spec §6.5): loss streak, compounded closed equity and its peak, pause, stop
     let (mut events, mut risk) = (Vec::new(), RiskState::new());
     for i in from..=to {
         let expiry = c.expiry_bar.get(i).copied().unwrap_or(false);
         if expiry { pending_entry = None; pending_add = None; orders = [None,None]; }
-        let mut closed_at_open = false;
-        if pending_exit.as_ref().is_some_and(|e| e.1 == i) {
-            let (sig, _, why) = pending_exit.take().unwrap();
-            if let Some((s, p)) = pos.take() { trades.push(p.trade(i, b.open[i], why, sig, dir(s))); closed_at_open = true; }
-        }
-        if pending_entry.is_some_and(|e| e.2 == i) {
-            let (s, sig, _, kind) = pending_entry.take().unwrap();
-            // a reversal whose closing half was already done by a price exit or a reversal order is a plain entry
-            let kind = if kind == "reverse" && !closed_at_open { "next_open" } else { kind };
-            if pos.is_none() {
-                pos = sized(s, Pos::open(sides[s], i, b.open[i], sig, kind, dir(s)), &mut events, &b.date[i]);
-                // only the closing half of the reversal happened
-                if pos.is_none() && kind == "reverse" { if let Some(t) = trades.last_mut() { t.reason = "opposite entry".into(); } }
+        // Market orders due on bar i at a stage: the open (field open) or after the rule exits (any other field). Exit
+        // first, then the entry, then a scale-in leg; evaluates to whether a position closed.
+        macro_rules! fill_due { ($late:expr) => {{
+            let mut closed = false;
+            if pending_exit.as_ref().is_some_and(|e| e.1 == i && (e.3 != Px::Open) == $late) {
+                let (sig, _, why, px) = pending_exit.take().unwrap();
+                if let Some((s, p)) = pos.take() { trades.push(p.trade(i, price(sides[s], b, px, i), why, sig, dir(s))); closed = true; }
             }
-        }
-        // a pending scale-in leg belongs to the position it was signalled for (same side and entry bar)
-        if let Some((_, w, s, e)) = pending_add.filter(|a| a.0 == i) {
-            pending_add = None;
-            if let Some((_, p)) = pos.as_mut().filter(|(ps, p)| *ps == s && p.e == e) { p.add(i, b.open[i], w); }
-        }
-        if pos.is_none() {
+            if pending_entry.is_some_and(|e| e.2 == i && (e.4 != Px::Open) == $late) {
+                let (s, sig, _, k, px) = pending_entry.take().unwrap();
+                // a reversal whose closing half was already done by a price exit or a reversal order is a plain entry
+                let k = if k == "reverse" && !closed { kind(px) } else { k };
+                if pos.is_none() && (k == "reverse" || !exited_on(&trades, i)) {
+                    pos = sized(s, Pos::open(sides[s], i, price(sides[s], b, px, i), sig, k, dir(s)), &mut events, &b.date[i]);
+                    // only the closing half of the reversal happened
+                    if pos.is_none() && k == "reverse" { if let Some(t) = trades.last_mut() { t.reason = "opposite entry".into(); } }
+                }
+            }
+            // a pending scale-in leg belongs to the position it was signalled for (same side and entry bar)
+            if let Some((_, w, s, e, px)) = pending_add.filter(|a| a.0 == i && (a.4 != Px::Open) == $late) {
+                pending_add = None;
+                if let Some((_, p)) = pos.as_mut().filter(|(ps, p)| *ps == s && p.e == e) { p.add(i, price(sides[s], b, px, i), w); }
+            }
+            closed
+        }}}
+        fill_due!(false);
+        if pos.is_none() && !exited_on(&trades, i) {
             // resting orders while flat: one fill opens a position (the other side's order keeps resting); two fills on one
             // bar are ambiguous on daily bars and fill nothing
             let filled: Vec<(Order, (f64, &'static str, bool))> = orders.iter().flatten().filter_map(|o| o.fill(sides[o.side], b, i, dir(o.side)).map(|f| (*o, f))).collect();
@@ -264,11 +327,16 @@ pub fn simulate_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<T
             // the other side's resting order is a reversal order under `opposite: reverse` only; a limit fills on the
             // favourable side, a stop or stop-limit on the adverse side
             let rev = orders[1 - s.min(1)].filter(|o| o.side != s && x.opposite == Opposite::Reverse).and_then(|o| o.fill(sides[o.side], b, i, dir(o.side)).map(|f| (o, f)));
-            match p.price_exit(sides[s], b, i, d, rev.map(|(_, (px, kind, _))| (px, kind != "limit"))) {
+            let (due, epx) = (nbar_due(s, p, i), market(s)[1].0);
+            // ExitAtStop 0 on an Open trade price: the stop is tested on the open only, before anything else in the bar
+            let at_open = (epx == Px::Open && p.e < i).then(|| p.trade_price_stop(sides[s], i, d, b.open[i], due)).flatten();
+            match at_open.map(|w| Hit::Exit(b.open[i], w.into())).or_else(|| p.price_exit(sides[s], b, i, d, rev.map(|(_, (px, kind, _))| (px, kind != "limit")), due)) {
                 Some(Hit::Exit(px, why)) => {
                     trades.push(pos.take().unwrap().1.trade(i, px, why, i, d));
                     (exited, pending_exit) = (true, None); // a delayed exit belongs to the position it was set for
                 }
+                // ExitAtStop 2: triggered inside bar i, filled on the next bar at the regular trade price (an earlier pending exit is kept)
+                Some(Hit::Next(why)) => if i < to && pending_exit.as_ref().map_or(true, |e| e.1 > i + 1) { pending_exit = Some((i, i + 1, why, epx)); },
                 Some(Hit::Reverse) => {
                     // a reversal order fills: the position closes and the other side opens at the same price
                     let (o, (px, _, limit_bar)) = rev.unwrap();
@@ -294,20 +362,28 @@ pub fn simulate_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<T
             pending_exit=None;
         }
         if let (Some((s, p)), None) = (&pos, &pending_exit) { // a pending (delayed) exit is not re-placed
-            let s = *s;
-            // rule exits count from min_bars after the fill (price exits stay active)
-            if let Some(r) = sides[s].exit.iter().find(|r| i - p.e >= sides[s].exec.min_bars && r.holds(i, Some(p.e))) {
-                match x.exit_fill {
-                    Fill::Close => { trades.push(pos.take().unwrap().1.trade(i, b.close[i], r.label.clone(), i, dir(s))); exited = true; }
-                    Fill::NextOpen if i + delay <= to => pending_exit = Some((i, i + delay, r.label.clone())),
-                    Fill::NextOpen => {} // no fill inside the window; the position is marked open below
-                }
+            let (s, xs, epx) = (*s, &sides[*s].exec, market(*s)[1].0);
+            // ExitAtStop 0 stops on a trade price other than the open: tested on it and filled there on this bar
+            let pv = price(sides[s], b, epx, i);
+            let stop0 = if epx == Px::Open { None } else { p.trade_price_stop(sides[s], i, dir(s), pv, nbar_due(s, p, i)) };
+            // then rule exits, which count from min_bars after the fill (price exits stay active), at the regular trade price
+            // and delay, except an ExitAtStop 2 N-bar stop: the next bar at the regular trade price
+            let hit = if stop0.is_some() { None } else { sides[s].exit.iter().find(|r| i - p.e >= xs.min_bars && r.holds(i, Some(p.e)))
+                .map(|r| (r.label.clone(), if nbar(r) && xs.exit_at_stop[3] == 2 { (epx, 1) } else { market(s)[1] })) };
+            let entry_bar = p.e == i;
+            if let Some(w) = stop0 { trades.push(pos.take().unwrap().1.trade(i, pv, w.into(), i, dir(s))); exited = true; }
+            match hit {
+                Some((_, (_, 0))) if !xs.same_bar && entry_bar => {} // same-bar exit off: no exit on the entry bar
+                Some((why, (_, 0))) => { trades.push(pos.take().unwrap().1.trade(i, b.close[i], why, i, dir(s))); exited = true; }
+                Some((why, (px, delay))) if i + delay <= to => pending_exit = Some((i, i + delay, why, px)),
+                _ => {} // no fill inside the window; the position is marked open below
             }
         }
         if let Some((s, p)) = pos.as_mut() {
             let d = dir(*s);
             if !(p.limit_bar && p.e == i) { p.best = if d > 0. { p.best.max(b.high[i]) } else { p.best.min(b.low[i]) }; }
         }
+        if fill_due!(true) { exited = true; }
         risk.record(c, b, &trades, &mut events);
         if last { break; } // final-bar realized exits still update risk; no new signal is taken
         if expiry { continue; } // expiry cannot reopen or retain a future entry
@@ -315,8 +391,10 @@ pub fn simulate_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<T
         let risk_block = risk.paused(i);
         let blocked = risk.blocked(c, b, &trades, &pos, i);
         if blocked { orders = [None, None]; } // a resting entry or reversal order would open a position: cancelled, not queued
-        // a delayed market entry (delay_bars ≥ 2) not filled yet is cancelled too; a pending reversal keeps its exit half
-        if blocked && pending_entry.take().is_some_and(|e| e.3 == "reverse") {
+        // a delayed market entry (delay_bars ≥ 2) not filled yet is cancelled too, as is one a re-entry delay now holds back
+        // (a stop on a bar between its signal and its fill); a pending reversal keeps its exit half
+        let cancel = blocked || pending_entry.is_some_and(|e| waiting(e.0, e.1, &trades));
+        if cancel && pending_entry.take().is_some_and(|e| e.3 == "reverse") {
             if let Some(e) = pending_exit.as_mut() { e.2 = "opposite entry".into(); }
         }
         if risk_block { pending_add = None; }
@@ -325,13 +403,13 @@ pub fn simulate_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<T
         if let Some(&(s, _)) = pos.as_ref().filter(|_| pending_exit.is_none()) {
             let o = 1 - s.min(1);
             if sides.len() == 2 && want.contains(&o) {
-                let opposite = if blocked && x.opposite == Opposite::Reverse { Opposite::Exit } else { x.opposite };
+                let opposite = if (blocked || waiting(o, i, &trades)) && x.opposite == Opposite::Reverse { Opposite::Exit } else { x.opposite };
                 let why = if opposite == Opposite::Reverse { format!("reverse to {}", if dir(o) > 0. { "long" } else { "short" }) } else { "opposite entry".into() };
-                match (opposite, x.fill, sides[o].has_order()) {
+                match (opposite, market(o)[0], sides[o].has_order()) {
                     (Opposite::Ignore, ..) => {}
                     (Opposite::Reverse, _, true) => { if orders[o].is_none() { orders[o] = place(o, i); } }
                     // a reversal is one fill: exit and new entry at the same price, exempt from the same-bar re-entry rule
-                    (Opposite::Reverse, Fill::Close, false) => {
+                    (Opposite::Reverse, (_, 0), false) => {
                         trades.push(pos.take().unwrap().1.trade(i, b.close[i], why, i, dir(s)));
                         risk.record(c, b, &trades, &mut events);
                         if !risk.blocked(c, b, &trades, &pos, i) {
@@ -339,10 +417,12 @@ pub fn simulate_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<T
                         }
                         if pos.is_none() { trades.last_mut().unwrap().reason = "opposite entry".into(); } // only the closing half happened
                     }
-                    (Opposite::Reverse, Fill::NextOpen, false) => if i + delay <= to { pending_exit = Some((i, i + delay, why)); pending_entry = Some((o, i, i + delay, "reverse")); },
-                    (Opposite::Exit, ..) => match x.exit_fill {
-                        Fill::Close => trades.push(pos.take().unwrap().1.trade(i, b.close[i], why, i, dir(s))),
-                        Fill::NextOpen => if i + delay <= to { pending_exit = Some((i, i + delay, why)); },
+                    // one fill: both halves at the new side's entry field and delay
+                    (Opposite::Reverse, (px, delay), false) => if i + delay <= to { pending_exit = Some((i, i + delay, why, px)); pending_entry = Some((o, i, i + delay, "reverse", px)); },
+                    (Opposite::Exit, ..) => match market(s)[1] {
+                        (_, 0) if !x.same_bar && pos.as_ref().is_some_and(|(_, p)| p.e == i) => {}
+                        (_, 0) => trades.push(pos.take().unwrap().1.trade(i, b.close[i], why, i, dir(s))),
+                        (px, delay) => if i + delay <= to { pending_exit = Some((i, i + delay, why, px)); },
                     },
                 }
                 risk.record(c, b, &trades, &mut events);
@@ -355,10 +435,10 @@ pub fn simulate_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<T
             if let Some(si) = sides[s].exec.scale_in.as_ref().filter(|si| p.adds.len() + 1 < si.legs.len() && want.contains(&s) && i - p.last.0 >= si.min_bars) {
                 let ok = match si.price { LegPrice::Any => true, LegPrice::Better => d * (b.close[i] - p.last.1) < 0., LegPrice::Worse => d * (b.close[i] - p.last.1) > 0. };
                 let w = p.base * si.legs[p.adds.len() + 1];
-                match (ok, x.fill) {
+                match (ok, market(s)[0]) {
                     (false, _) => {}
-                    (true, Fill::Close) => p.add(i, b.close[i], w),
-                    (true, Fill::NextOpen) => if i + delay <= to { pending_add = Some((i + delay, w, s, p.e)); },
+                    (true, (_, 0)) => p.add(i, b.close[i], w),
+                    (true, (px, delay)) => if i + delay <= to { pending_add = Some((i + delay, w, s, p.e, px)); },
                 }
             }
         }
@@ -367,16 +447,21 @@ pub fn simulate_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<T
         // Both sides firing while flat: two order sides each rest an order (a channel breakout); otherwise it is ambiguous
         // and nothing is placed (spec §6.1). One order side rests its order; one market side enters and cancels a resting
         // order of the other side.
+        // re-entry delays drop a waiting side's entry signal (the other side may still enter)
+        let want: Vec<usize> = want.into_iter().filter(|&s| !waiting(s, i, &trades)).collect();
+        // a market entry never fills before the pending exit of the position it follows (per-side prices and delays)
+        let before_exit = |s: usize| pending_exit.as_ref().is_some_and(|e| { let (px, d) = market(s)[0]; (i + d, px != Px::Open) < (e.1, e.3 != Px::Open) });
         if may_enter {
             match *want.as_slice() {
                 [a, z] if sides[a].has_order() && sides[z].has_order() => for s in [a, z] { if orders[s].is_none() { orders[s] = place(s, i); } },
                 [s] if sides[s].has_order() => if orders[s].is_none() { orders[s] = place(s, i); },
+                [s] if before_exit(s) => {}
                 [s] => {
                     orders = [None, None];
                     let (d, side) = (dir(s), sides[s]);
-                    match x.fill {
-                        Fill::Close => pos = sized(s, Pos::open(side, i, b.close[i], i, "close", d), &mut events, &b.date[i]),
-                        Fill::NextOpen => if i + delay <= to { pending_entry = Some((s, i, i + delay, "next_open")); },
+                    match market(s)[0] {
+                        (_, 0) => if !exited_on(&trades, i) { pos = sized(s, Pos::open(side, i, b.close[i], i, "close", d), &mut events, &b.date[i]); },
+                        (px, delay) => if i + delay <= to { pending_entry = Some((s, i, i + delay, kind(px), px)); },
                     }
                 }
                 _ => {}
@@ -645,6 +730,8 @@ mod tests {
             r#"{"v":1,"entry":{"all":[{"lhs":{"s":"rsi","p":{"length":2}},"op":"<","rhs":{"value":40}}]},"exit":{"any":[{"lhs":{"s":"rsi","p":{"length":2}},"op":">","rhs":{"value":60}}],"stop_loss":{"pct":1}},"execution":{"cooldown":{"bars":4,"after":"loss"},"max_trades":{"count":1,"per":"W"}}}"#,
             r#"{"v":1,"direction":"both","entry":{"all":[{"lhs":{"s":"rsi","p":{"length":2}},"op":"<","rhs":{"value":20}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":6}}]},"short_side":{"entry":{"all":[{"lhs":{"s":"rsi","p":{"length":2}},"op":">","rhs":{"value":80}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":6}}]}},"execution":{"risk":{"max_consecutive_losses":2,"pause_bars":10,"max_drawdown_pct":25}}}"#,
             r#"{"v":1,"direction":"both","entry":{"all":[{"lhs":{"s":"close"},"op":">","rhs":{"value":0}}],"stop":{"at":{"s":"highest","p":{"length":5}}},"valid_bars":3},"exit":{"any":[],"stop_loss":{"pct":2}},"short_side":{"entry":{"all":[{"lhs":{"s":"close"},"op":">","rhs":{"value":0}}],"stop":{"at":{"s":"lowest","p":{"length":5}}},"valid_bars":3},"exit":{"any":[],"stop_loss":{"pct":2}}},"execution":{"cooldown":{"bars":3},"risk":{"max_consecutive_losses":3,"pause_bars":8}}}"#,
+            // AmiBroker Stops: ExitAtStop 2 / 0 (next-open exits), stops from the bar after entry, N-bar priority, no same-bar re-entry
+            r#"{"v":1,"entry":{"all":[{"lhs":{"s":"rsi","p":{"length":2}},"op":"<","rhs":{"value":30}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":6}},{"lhs":{"s":"rsi","p":{"length":2}},"op":">","rhs":{"value":70}}],"stop_loss":{"pct":2},"target":{"pct":3},"trailing":{"pct":2}},"execution":{"exit_at_stop":{"stop_loss":2,"target":0,"trailing":2,"bars":2},"activate_stops_immediately":false,"nbar_has_priority":true,"allow_same_bar_exit":false}}"#,
         ];
         // every leg filled up to bar k (entries and scale-in legs, with their weights)
         let legs_upto = |t: &[Trade], k: usize| t.iter().flat_map(|t| t.legs.iter().filter(move |l| l.i <= k).map(move |l| (l.i, l.px, l.w, t.dir))).collect::<Vec<_>>();
@@ -1185,5 +1272,304 @@ mod tests {
         let (t, events) = simulate_events(&c, &bars(), 0, 9);
         assert_eq!((t.len(), t[0].exit_i, t[0].open), (1, 9, false));
         assert!(events.iter().any(|e| e.contains("drawdown reached 1%")));
+    }
+
+    // ---- AmiBroker Analysis settings › Trades / Stops: prices and delays per side, trailing % of profit, re-entry delay
+    fn trades_at(entry: &[usize], exit: &[usize], market: [(Px, usize); 2], short: bool) -> Vec<Trade> {
+        simulate(&with(entry, exit, Exec { short, market: Some(market), ..Exec::default() }), &bars(), 0, 9)
+    }
+    #[test] fn market_orders_fill_on_signal_plus_delay_at_the_chosen_field() {
+        // long: buy at the high one bar after the signal (bar 2 → 3: 104), sell at the low two bars after (bar 5 → 7: 106)
+        let t = trades_at(&[2], &[5], [(Px::High, 1), (Px::Low, 2)], false);
+        assert_eq!((fills(&t), t[0].entry_kind, t[0].signal_i, t[0].reason.as_str()), (vec![(3, 104., 7, 106.)], "high", 5, "rule"));
+        // short: short at the average (bar 3: 103 + 0.125), cover at the next bar's close (bar 6: 106.5)
+        let t = trades_at(&[2], &[5], [(Px::Average, 1), (Px::Close, 1)], true);
+        assert_eq!((fills(&t), t[0].entry_kind, t[0].dir), (vec![(3, 103.125, 6, 106.5)], "average", -1.));
+        // open with delay 2, close with delay 0 (the signal bar's own close)
+        let t = trades_at(&[2], &[5], [(Px::Open, 2), (Px::Close, 0)], false);
+        assert_eq!((fills(&t), t[0].entry_kind), (vec![(4, 104., 5, 105.5)], "next_open"));
+        // an entry at a late field opens after bar 5's rule exits: its exit rule counts from bar 6 (cover at bar 7's high)
+        let t = trades_at(&[2], &[5, 6], [(Px::Low, 3), (Px::High, 1)], true);
+        assert_eq!((fills(&t), t[0].entry_kind, t[0].dir, t[0].signal_i), (vec![(5, 104., 7, 108.)], "low", -1., 6));
+        // the new form at today's settings gives today's trades
+        assert_eq!(fills(&trades_at(&[2, 6], &[4], [(Px::Open, 1), (Px::Open, 1)], false)), fills(&simulate(&with(&[2, 6], &[4], Exec::default()), &bars(), 0, 9)));
+        assert_eq!(fills(&trades_at(&[2, 6], &[4], [(Px::Close, 0), (Px::Close, 0)], false)), fills(&simulate(&with(&[2, 6], &[4], close_fill()), &bars(), 0, 9)));
+    }
+    #[test] fn average_is_the_mean_of_open_high_low_and_close() {
+        let mut b = bars();
+        (b.open[3], b.high[3], b.low[3], b.close[3]) = (100., 110., 96., 106.);
+        let t = simulate(&with(&[2], &[], Exec { market: Some([(Px::Average, 1), (Px::Open, 1)]), ..Exec::default() }), &b, 0, 9);
+        assert_eq!(t[0].legs[0].px, 103.);
+    }
+    #[test] fn a_reversal_fills_both_halves_at_the_new_sides_field_and_delay() {
+        let mut c = both(&[1], &[4], Exec { market: Some([(Px::Open, 1), (Px::Open, 1)]), ..Exec::default() });
+        c.other.as_mut().unwrap().exec.market = Some([(Px::Close, 2), (Px::Open, 1)]);
+        let t = simulate(&c, &bars(), 0, 9);
+        assert_eq!(fills(&t), vec![(2, 102., 6, 106.5), (6, 106.5, 9, 109.5)]);
+        assert_eq!((t[0].reason.as_str(), t[1].entry_kind, t[1].dir), ("reverse to short", "reverse", -1.));
+    }
+    #[test] fn late_fields_fill_after_the_bars_price_exits() {
+        // a sell at the next close is pre-empted by the stop-loss inside that bar
+        let exec = Exec { market: Some([(Px::Open, 1), (Px::Close, 1)]), stop_loss: Some(Dist::Pct(5.)), ..Exec::default() };
+        let mut b = bars();
+        assert_eq!(fills(&simulate(&with(&[2], &[5], exec.clone()), &b, 0, 9)), vec![(3, 103., 6, 106.5)]);
+        b.low[6] = 90.;
+        let t = simulate(&with(&[2], &[5], exec), &b, 0, 9);
+        assert_eq!((fills(&t), t[0].reason.as_str()), (vec![(3, 103., 6, 103. - 103. * 5. / 100.)], "exit.stop_loss"));
+        // a buy at the high is not checked on its own bar (bar 3's low 102 is below its 1% stop 102.96), only from bar 4 on
+        let t = simulate(&with(&[2], &[], Exec { market: Some([(Px::High, 1), (Px::Open, 1)]), stop_loss: Some(Dist::Pct(1.)), ..Exec::default() }), &bars(), 0, 9);
+        assert_eq!((fills(&t), t[0].open), (vec![(3, 104., 9, 109.5)], true));
+    }
+    #[test] fn an_entry_never_fills_before_the_exit_it_follows() {
+        // buy delay 2, sell delay 3: bar 4's exit fills at bar 7's open; bar 4's entry (bar 6) would precede it and is not
+        // placed, bar 5's entry (bar 7) follows the exit at the same open
+        let t = trades_at(&[1, 4, 5], &[4], [(Px::Open, 2), (Px::Open, 3)], false);
+        assert_eq!(fills(&t), vec![(3, 103., 7, 107.), (7, 107., 9, 109.5)]);
+    }
+    fn falling() -> Bars { from_ohlc(&(0..10).map(|i| { let o = 100. - i as f64; (o, o + 1., o - 1., o + 0.5) }).collect::<Vec<_>>()) }
+    #[test] fn trailing_percent_of_profit_long_and_short() {
+        // long from bar 2's close 102.5; peak 104 after bar 3 → stop 104 − 50% × 1.5 = 103.25, bar 4's low 103 reaches it
+        let t = simulate(&with(&[2], &[], Exec { trailing: Some(Dist::ProfitPct(50.)), ..close_fill() }), &bars(), 0, 9);
+        assert_eq!((fills(&t), t[0].reason.as_str()), (vec![(2, 102.5, 4, 103.25)], "exit.trailing"));
+        // no open profit, no stop: a falling long stays open where a 1% trailing stop exits
+        let t = simulate(&with(&[2], &[], Exec { trailing: Some(Dist::ProfitPct(50.)), ..close_fill() }), &falling(), 0, 9);
+        assert_eq!((t.len(), t[0].exit_i, t[0].open), (1, 9, true));
+        assert_eq!(simulate(&with(&[2], &[], Exec { trailing: Some(Dist::Pct(1.)), ..close_fill() }), &falling(), 0, 9)[0].exit_i, 3);
+        // short from 98.5; best 96 after bar 3 → stop 96 + 20% × 2.5 = 96.5, bar 4's high 97 reaches it
+        let t = simulate(&with(&[2], &[], Exec { short: true, trailing: Some(Dist::ProfitPct(20.)), ..close_fill() }), &falling(), 0, 9);
+        assert_eq!((t[0].exit_i, t[0].reason.as_str()), (4, "exit.trailing"));
+        assert!((t[0].exit_px - 96.5).abs() < 1e-9);
+        // a short without profit keeps no stop (lows never below the entry)
+        let up = from_ohlc(&(0..10).map(|i| { let o = 100. + i as f64; (o, o + 1., o, o + 0.5) }).collect::<Vec<_>>());
+        let t = simulate(&with(&[2], &[], Exec { short: true, trailing: Some(Dist::ProfitPct(20.)), ..close_fill() }), &up, 0, 9);
+        assert_eq!((t[0].exit_i, t[0].open), (9, true));
+    }
+    fn entries(t: &[Trade]) -> Vec<usize> { t.iter().map(|t| t.legs[0].i).collect() }
+    #[test] fn reentry_delay_counts_from_an_exit_of_its_kind() {
+        let every: Vec<usize> = (1..9).collect();
+        let mut b = bars();
+        b.low[4] = 90.; // the long's 2% stop (99.47) fills on bar 4
+        let long = |reentry, cooldown| entries(&simulate(&with(&every, &[], Exec { stop_loss: Some(Dist::Pct(2.)), reentry, cooldown, ..close_fill() }), &b, 0, 9));
+        assert_eq!(long(None, None), vec![1, 5]);
+        assert_eq!(long(Some([3, 0, 0, 0]), None), vec![1, 7]);
+        assert_eq!(long(Some([0, 3, 3, 3]), None), vec![1, 5]); // a stop-loss exit starts only the stop_loss delay
+        assert_eq!(long(Some([3, 0, 0, 0]), Some((1, After::Any))), vec![1, 7]); // the larger wait wins
+        assert_eq!(long(Some([3, 0, 0, 0]), Some((4, After::Any))), vec![1, 8]);
+        // short: the 2% stop (103.53) fills on bar 3; with a delay of 3 the next short is bar 6
+        let short = |reentry| entries(&simulate(&with(&every, &[], Exec { short: true, stop_loss: Some(Dist::Pct(2.)), reentry, ..close_fill() }), &bars(), 0, 9));
+        assert_eq!((short(None), short(Some([3, 0, 0, 0]))), (vec![1, 4, 7], vec![1, 6]));
+        // N-bar stop: a bars_held rule exit
+        let nbar = |reentry| entries(&simulate(&Compiled { exec: Exec { reentry, ..close_fill() }, ..Compiled::new(vec![rule(on(&every))], vec![held_at_least(2.)]) }, &bars(), 0, 9));
+        assert_eq!((nbar(None), nbar(Some([0, 0, 0, 2])), nbar(Some([2, 2, 2, 0]))), (vec![1, 4, 7], vec![1, 5], vec![1, 4, 7]));
+    }
+    #[test] fn reentry_delay_holds_back_only_the_same_side() {
+        let mut b = bars();
+        b.low[3] = 90.; // the long stops out on bar 3; both sides fire on bar 5
+        let run = |reentry| simulate(&both(&[1, 5], &[5], Exec { stop_loss: Some(Dist::Pct(2.)), reentry, ..close_fill() }), &b, 0, 9);
+        assert_eq!(entries(&run(None)), vec![1]); // both sides at once: ambiguous, nothing
+        let t = run(Some([5, 0, 0, 0]));
+        assert_eq!((entries(&t), t[1].dir), (vec![1, 5], -1.)); // the waiting long drops out, the short enters
+    }
+    #[test] fn target_and_trailing_exits_start_their_own_delays() {
+        let every: Vec<usize> = (1..9).collect();
+        let run = |exec: Exec| entries(&simulate(&with(&every, &[], exec), &bars(), 0, 9));
+        // 1% target from bar 1's close 101.5 → 102.515, reached on bar 2 (high 103)
+        let target = Exec { target: Some(Dist::Pct(1.)), ..close_fill() };
+        assert_eq!((run(target.clone()), run(Exec { reentry: Some([0, 3, 0, 0]), ..target.clone() }), run(Exec { reentry: Some([3, 0, 3, 3]), ..target })), (vec![1, 3, 5, 7], vec![1, 5], vec![1, 3, 5, 7]));
+        let trail = Exec { trailing: Some(Dist::ProfitPct(50.)), ..close_fill() };
+        // 50% of the profit: bar 1's long (101.5, peak 103) stops at 102.25 on bar 3
+        assert_eq!((run(trail.clone()), run(Exec { reentry: Some([0, 0, 4, 0]), ..trail })), (vec![1, 4, 7], vec![1, 7]));
+    }
+
+    // ---- review fixes: re-entry counted to the fill bar, N-bar on either side, edge cases
+    fn rising(n: usize) -> Bars { from_ohlc(&(0..n).map(|i| { let o = 100. + i as f64; (o, o + 1., o - 1., o + 0.5) }).collect::<Vec<_>>()) }
+    fn at(n: usize, set: &[usize]) -> RCond { rule((0..n).map(|i| if set.contains(&i) { 1. } else { 0. }).collect()) }
+    #[test] fn reentry_delay_counts_to_the_bar_the_entry_fills() {
+        let mut b = rising(14);
+        b.low[10] = 90.; // the long's 2% stop fills on bar 10
+        let run = |signals: &[usize], buy: (Px, usize), wait: usize| entries(&simulate(&Compiled { exec: Exec { market: Some([buy, (Px::Open, 1)]), stop_loss: Some(Dist::Pct(2.)), reentry: Some([wait, 0, 0, 0]), ..Exec::default() }, ..Compiled::new(vec![at(14, signals)], vec![at(14, &[])]) }, &b, 0, 13));
+        // buy at the open with delay 1, stop_loss re-entry 1: bar 10's signal fills at bar 11's open, one bar after the stop
+        assert_eq!(run(&[7, 10], (Px::Open, 1), 1), vec![8, 11]);
+        assert_eq!(run(&[7, 10], (Px::Open, 1), 2), vec![8]);
+        // delay 2: bar 10's signal fills at bar 12 (2 bars after the stop); with a re-entry delay of 3 bar 11's signal fills at 13
+        assert_eq!(run(&[6, 10, 11], (Px::Open, 2), 2), vec![8, 12]);
+        assert_eq!(run(&[6, 10, 11], (Px::Open, 2), 3), vec![8, 13]);
+    }
+    #[test] fn a_queued_entry_is_cancelled_by_a_stop_before_it_fills() {
+        // buy and sell at the open 2 bars later: bar 4's exit and bar 4's entry both queue for bar 6; the 2% stop fires on
+        // bar 5, so the re-entry delay of 5 holds the queued buy back (it would fill one bar after the stop)
+        let mut b = rising(14);
+        b.low[5] = 90.;
+        let run = |reentry| entries(&simulate(&Compiled { exec: Exec { market: Some([(Px::Open, 2), (Px::Open, 2)]), stop_loss: Some(Dist::Pct(2.)), reentry, ..Exec::default() }, ..Compiled::new(vec![at(14, &[1, 4])], vec![at(14, &[4])]) }, &b, 0, 13));
+        assert_eq!(run(None), vec![3, 6]);
+        assert_eq!(run(Some([5, 0, 0, 0])), vec![3]);
+    }
+    #[test] fn an_n_bar_exit_is_recognised_with_bars_held_on_either_side() {
+        let every: Vec<usize> = (1..9).collect();
+        let rhs = || RCond { lhs: Val::Const(2.), op: Op::Le, rhs: Val::Held, label: "2 <= bars_held".into() };
+        let run = |reentry| entries(&simulate(&Compiled { exec: Exec { reentry, ..close_fill() }, ..Compiled::new(vec![rule(on(&every))], vec![rhs()]) }, &bars(), 0, 9));
+        assert_eq!((run(None), run(Some([0, 0, 0, 2]))), (vec![1, 4, 7], vec![1, 5]));
+    }
+    #[test] fn a_scale_in_leg_fills_at_a_late_field() {
+        let exec = Exec { market: Some([(Px::High, 1), (Px::Open, 1)]), scale_in: Some(ScaleIn { legs: vec![0.5, 0.5], min_bars: 1, price: LegPrice::Any }), ..Exec::default() };
+        let t = simulate(&with(&[2, 4], &[], exec), &bars(), 0, 9);
+        assert_eq!(t[0].legs.iter().map(|l| (l.i, l.px, l.w)).collect::<Vec<_>>(), vec![(3, 104., 0.5), (5, 106., 0.5)]);
+    }
+    #[test] fn an_open_entry_is_not_placed_before_a_close_exit_due_that_bar() {
+        // sell at the next close: bar 4's exit fills at bar 5's close, so bar 4's buy (bar 5's open) is not placed
+        let t = trades_at(&[1, 4], &[4], [(Px::Open, 1), (Px::Close, 1)], false);
+        assert_eq!(fills(&t), vec![(2, 102., 5, 105.5)]);
+        assert_eq!(fills(&trades_at(&[1, 4, 5], &[4], [(Px::Open, 1), (Px::Close, 1)], false)), vec![(2, 102., 5, 105.5), (6, 106., 9, 109.5)]);
+    }
+    #[test] fn late_fills_at_and_past_the_last_bar() {
+        // entry exactly at `to` (bar 9's close) is held open; one that would fall at bar 10 is not taken
+        let t = trades_at(&[7], &[], [(Px::Close, 2), (Px::Open, 1)], false);
+        assert_eq!((fills(&t), t[0].open, t[0].entry_kind), (vec![(9, 109.5, 9, 109.5)], true, "close"));
+        assert!(trades_at(&[8], &[], [(Px::Close, 2), (Px::Open, 1)], false).is_empty());
+        // exit at bar 9's high closes the trade; an exit due at bar 10 leaves it marked open at the last close
+        let t = trades_at(&[2], &[8], [(Px::Open, 1), (Px::High, 1)], false);
+        assert_eq!((fills(&t), t[0].open), (vec![(3, 103., 9, 110.)], false));
+        let t = trades_at(&[2], &[9], [(Px::Open, 1), (Px::High, 1)], false);
+        assert_eq!((fills(&t), t[0].open), (vec![(3, 103., 9, 109.5)], true));
+    }
+    #[test] fn a_waiting_short_lets_the_long_enter() {
+        // the short (bar 1, 2% stop 103.53) stops out on bar 3; both sides fire on bar 5
+        let run = |reentry| simulate(&both(&[5], &[1, 5], Exec { stop_loss: Some(Dist::Pct(2.)), reentry, ..close_fill() }), &bars(), 0, 9);
+        assert_eq!(entries(&run(None)), vec![1]);
+        let t = run(Some([5, 0, 0, 0]));
+        assert_eq!((entries(&t), t[1].dir), (vec![1, 5], 1.));
+    }
+    #[test] fn a_waiting_side_turns_a_reversal_into_an_exit() {
+        // short stopped on bar 3, long from bar 4; bar 5's short signal reverses, unless the short side is still waiting
+        let run = |reentry| simulate(&both(&[4], &[1, 5], Exec { stop_loss: Some(Dist::Pct(2.)), reentry, ..close_fill() }), &bars(), 0, 9);
+        let t = run(None);
+        assert_eq!((t.len(), t[1].reason.as_str(), t[2].legs[0].i, t[2].dir), (3, "reverse to short", 5, -1.));
+        let t = run(Some([5, 0, 0, 0]));
+        assert_eq!((t.len(), t[1].exit_i, t[1].reason.as_str()), (2, 5, "opposite entry"));
+    }
+    #[test] fn profit_pct_with_activation_and_with_breakeven() {
+        // armed once the best price reaches 102.5 × 1.03 = 105.575 (after bar 5): bar 7's stop 107 − 50% × 4.5 = 104.75
+        let mut b = bars();
+        b.low[7] = 100.;
+        let t = simulate(&with(&[2], &[], Exec { trailing: Some(Dist::ProfitPct(50.)), trail_activate: Some(Dist::Pct(3.)), ..close_fill() }), &b, 0, 9);
+        assert_eq!((t[0].exit_i, t[0].exit_px, t[0].reason.as_str()), (7, 104.75, "exit.trailing"));
+        // with breakeven (after 1.2%, plus 1% → 103.525) the tighter of the two levels exits on bar 4
+        let be = |pct: f64| simulate(&with(&[2], &[], Exec { trailing: Some(Dist::ProfitPct(pct)), breakeven: Some((Dist::Pct(1.2), Some(Dist::Pct(1.)))), ..close_fill() }), &bars(), 0, 9);
+        let t = be(50.); // trailing 103.25 < breakeven 103.525
+        assert_eq!((t[0].exit_i, t[0].reason.as_str()), (4, "exit.breakeven"));
+        assert!((t[0].exit_px - 103.525).abs() < 1e-9);
+        let t = be(10.); // trailing 104 − 0.15 = 103.85 is tighter
+        assert_eq!((t[0].exit_i, t[0].reason.as_str()), (4, "exit.trailing"));
+        assert!((t[0].exit_px - 103.85).abs() < 1e-9);
+    }
+    // ---- AmiBroker Stops: ExitAtStop modes, activate stops immediately, N-bar priority, same-bar exit / entry
+    fn ex_at(m: [u8; 4], exec: Exec) -> Exec { Exec { exit_at_stop: m, ..exec } }
+    fn near(a: f64, b: f64) -> bool { (a - b).abs() < 1e-9 }
+    #[test] fn exit_at_stop_modes_for_max_loss_target_and_trailing() {
+        // long from bar 3's open (103); stop 1% = 101.97. Bar 5 dips to 101 and closes at 105.5; bar 6 opens 106.
+        let mut b = bars();
+        b.low[5] = 101.;
+        let sl = Exec { stop_loss: Some(Dist::Pct(1.)), ..Exec::default() };
+        let run = |m, e: &Exec, b: &Bars| simulate(&with(&[2], &[], ex_at(m, e.clone())), b, 0, 9);
+        let t = run([1; 4], &sl, &b); // 1: intraday at the stop (today)
+        assert_eq!((t[0].exit_i, t[0].reason.as_str()), (5, "exit.stop_loss"));
+        assert!(near(t[0].exit_px, 101.97));
+        let t = run([2, 1, 1, 1], &sl, &b); // 2: high-low triggers on bar 5, exit at bar 6's open
+        assert_eq!((t[0].signal_i, t[0].exit_i, t[0].exit_px, t[0].reason.as_str()), (5, 6, 106., "exit.stop_loss"));
+        assert!(run([0, 1, 1, 1], &sl, &b)[0].open); // 0 on an Open trade price: no open (104, 105, 106 …) reaches the stop
+        b.close[5] = 101.4;
+        // 0 tests only the trade price: a close below the stop does not exit an Open trader (AmiBroker "exit at trade price only")
+        assert!(run([0, 1, 1, 1], &sl, &b)[0].open);
+        let mut g = b.clone();
+        (g.open[6], g.low[6]) = (101.5, 101.);
+        let t = run([0, 1, 1, 1], &sl, &g); // an open at or below the stop: exit there, on that bar (stops are not delayed)
+        assert_eq!((t[0].signal_i, t[0].exit_i, t[0].exit_px, t[0].reason.as_str()), (6, 6, 101.5, "exit.stop_loss"));
+        let t = run([0, 1, 1, 1], &Exec { stop_loss: Some(Dist::Pct(1.)), ..close_fill() }, &b); // close trading: at this close
+        assert_eq!((t[0].exit_i, t[0].exit_px), (5, 101.4));
+        // target 2.5% = 105.575: bar 5 reaches it intraday (high 106) but opens below (105); bar 6 opens above (106)
+        let tg = Exec { target: Some(Dist::Pct(2.5)), ..Exec::default() };
+        let t = run([1; 4], &tg, &bars());
+        assert!(t[0].exit_i == 5 && near(t[0].exit_px, 105.575));
+        let t = run([1, 0, 1, 1], &tg, &bars());
+        assert_eq!((t[0].signal_i, t[0].exit_i, t[0].exit_px), (6, 6, 106.));
+        let t = run([1, 2, 1, 1], &tg, &bars());
+        assert_eq!((t[0].exit_i, t[0].exit_px, t[0].reason.as_str()), (6, 106., "exit.target"));
+        // 2 exits on the next bar at the regular trade price: the close when trading on the close (target 102.5 × 1.025 on bar 5)
+        let t = run([1, 2, 1, 1], &Exec { target: Some(Dist::Pct(2.5)), ..close_fill() }, &bars());
+        assert_eq!((t[0].signal_i, t[0].exit_i, t[0].exit_px, t[0].reason.as_str()), (5, 6, 106.5, "exit.target"));
+        // trailing 1% (104.94 from the best 106) reached on bar 6, ExitAtStop 2: bar 7's open; the reason stays exit.trailing
+        let mut d = bars();
+        d.low[6] = 100.;
+        let t = run([1, 1, 2, 1], &Exec { trailing: Some(Dist::Pct(1.)), ..Exec::default() }, &d);
+        assert_eq!((t[0].exit_i, t[0].exit_px, t[0].reason.as_str()), (7, 107., "exit.trailing"));
+        // mode 2 on the last bar has no next open inside the window: the position stays open
+        assert!(simulate(&with(&[2], &[], ex_at([2, 1, 1, 1], sl)), &b, 0, 5)[0].open);
+    }
+    #[test] fn activate_stops_immediately_off_skips_the_entry_bar() {
+        let mut b = bars();
+        b.low[3] = 101.; // the entry bar (open 103) reaches the 1% stop 101.97
+        let sl = |on| Exec { stop_loss: Some(Dist::Pct(1.)), stops_immediately: on, ..Exec::default() };
+        assert_eq!(simulate(&with(&[2], &[], sl(true)), &b, 0, 9)[0].exit_i, 3); // today: checked on the entry bar
+        assert!(simulate(&with(&[2], &[], sl(false)), &b, 0, 9)[0].open);
+        b.low[4] = 101.; // from the next bar on, as before
+        assert_eq!(simulate(&with(&[2], &[], sl(false)), &b, 0, 9)[0].exit_i, 4);
+    }
+    #[test] fn nbar_stop_priority_and_exit_mode() {
+        // long from bar 3; bars_held 2 at bar 5's close; the 1% stop (101.97) is reached on bar 5
+        let mut b = bars();
+        b.low[5] = 101.;
+        let mk = |exec: Exec| Compiled { exec, ..Compiled::new(vec![rule(on(&[2]))], vec![held_at_least(2.)]) };
+        let sl = Exec { stop_loss: Some(Dist::Pct(1.)), ..Exec::default() };
+        let t = simulate(&mk(sl.clone()), &b, 0, 9);
+        assert_eq!((t[0].exit_i, t[0].reason.as_str()), (5, "exit.stop_loss")); // default: max loss before the N-bar stop
+        let t = simulate(&mk(Exec { nbar_first: true, ..sl.clone() }), &b, 0, 9);
+        assert_eq!((t[0].exit_i, t[0].exit_px, t[0].reason.as_str()), (6, 106., "bars_held >= 2"));
+        // a bar the N-bar stop does not take keeps its stops
+        let mut e = bars();
+        e.low[4] = 101.;
+        assert_eq!(simulate(&mk(Exec { nbar_first: true, ..sl }), &e, 0, 9)[0].reason, "exit.stop_loss");
+        // close trading exits the N-bar stop at bar 4's close; ExitAtStop 2 on the next bar at the trade price (bar 5's close)
+        assert_eq!(fills(&simulate(&mk(close_fill()), &bars(), 0, 9)), vec![(2, 102.5, 4, 104.5)]);
+        let t = simulate(&mk(ex_at([1, 1, 1, 2], close_fill())), &bars(), 0, 9);
+        assert_eq!((t[0].signal_i, t[0].exit_i, t[0].exit_px), (4, 5, 105.5));
+    }
+    #[test] fn same_bar_exit_entry_off_blocks_reentry_and_single_bar_trades() {
+        let same = |on| Exec { same_bar: on, ..Exec::default() };
+        // exit and re-entry signalled on bar 4: today both fill at bar 5's open; off: no entry on the exit bar
+        assert_eq!(simulate(&with(&[1, 4], &[4], same(true)), &bars(), 0, 9).len(), 2);
+        assert_eq!(fills(&simulate(&with(&[1, 4], &[4], same(false)), &bars(), 0, 9)), vec![(2, 102., 5, 105.)]);
+        // a stop on the entry bar: off keeps the position past it
+        let mut b = bars();
+        b.low[3] = 101.;
+        let sl = |on| Exec { stop_loss: Some(Dist::Pct(1.)), same_bar: on, ..Exec::default() };
+        assert_eq!(simulate(&with(&[2], &[], sl(true)), &b, 0, 9)[0].exit_i, 3);
+        assert!(simulate(&with(&[2], &[], sl(false)), &b, 0, 9)[0].open);
+        // open entry, close exit: a rule exit on the entry bar's close waits for a later bar
+        let oc = |on| Exec { exit_fill: Fill::Close, same_bar: on, ..Exec::default() };
+        assert_eq!(fills(&simulate(&with(&[2], &[3, 4], oc(true)), &bars(), 0, 9))[0], (3, 103., 3, 103.5));
+        assert_eq!(fills(&simulate(&with(&[2], &[3, 4], oc(false)), &bars(), 0, 9))[0], (3, 103., 4, 104.5));
+        // close-filled entry after an exit at that bar's open (next-open exits)
+        let co = |on| Exec { exit_fill: Fill::NextOpen, same_bar: on, ..close_fill() };
+        assert_eq!(fills(&simulate(&with(&[1, 3, 4], &[3], co(true)), &bars(), 0, 9)).len(), 2);
+        assert_eq!(fills(&simulate(&with(&[1, 3, 4], &[3], co(false)), &bars(), 0, 9)), vec![(1, 101.5, 4, 104.)]);
+    }
+    #[test] fn ami_stop_settings_parse_and_default_to_today() {
+        use crate::lab::rules::parse_spec;
+        let base = r#"{"v":1,"entry":{"all":[{"lhs":{"s":"close"},"op":">","rhs":{"value":1}}]},"exit":{"any":[],"stop_loss":{"pct":5}}"#;
+        let x = parse_spec(&format!("{base}}}")).unwrap().exec;
+        assert_eq!((x.exit_at_stop, x.stops_immediately, x.nbar_first, x.same_bar), ([1; 4], true, false, true));
+        let x = parse_spec(&format!(r#"{base},"execution":{{"exit_at_stop":{{"stop_loss":0,"target":2,"bars":2}},"activate_stops_immediately":false,"nbar_has_priority":true,"allow_same_bar_exit":false}}}}"#)).unwrap().exec;
+        assert_eq!((x.exit_at_stop, x.stops_immediately, x.nbar_first, x.same_bar), ([0, 2, 1, 2], false, true, false));
+        for (bad, msg) in [(r#"{"exit_at_stop":{"stop_loss":3}}"#, "exit_at_stop.stop_loss must be 0, 1 or 2"), (r#"{"exit_at_stop":{"nbar":1}}"#, "unknown field"),
+                           (r#"{"allow_same_bar_exit":1}"#, "allow_same_bar_exit must be true or false")] {
+            let e = parse_spec(&format!(r#"{base},"execution":{bad}}}"#)).unwrap_err();
+            assert!(e.message().contains(msg), "{bad}: {}", e.message());
+        }
+        // shared by both sides; refused for portfolios (the portfolio engine keeps today's stops)
+        let both = r#"{"v":1,"direction":"both","entry":{"all":[{"lhs":{"s":"close"},"op":">","rhs":{"value":1}}]},"exit":{"any":[],"stop_loss":{"pct":5}},"short_side":{"entry":{"all":[{"lhs":{"s":"close"},"op":"<","rhs":{"value":1}}]},"exit":{"any":[],"stop_loss":{"pct":5}}},"execution":{"exit_at_stop":{"trailing":0},"allow_same_bar_exit":false}}"#;
+        let s = parse_spec(both).unwrap().short_side.unwrap().exec;
+        assert_eq!((s.exit_at_stop, s.same_bar), ([1, 1, 0, 1], false));
+        let port = r#"{"v":1,"entry":{"all":[{"lhs":{"s":"close"},"op":">","rhs":{"value":1}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":5}}]},"execution":{"capital":1000000,"nbar_has_priority":true},"portfolio":{"universe":{"basket":"nifty50"},"max_open":5}}"#;
+        assert!(matches!(parse_spec(port), Err(crate::lab::rules::LabError::Unsupported(m)) if m.contains("nbar_has_priority")));
     }
 }

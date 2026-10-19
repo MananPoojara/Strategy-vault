@@ -4,6 +4,7 @@ use super::bars::Bars;
 use super::catalogue::{self, Placement};
 use super::json::esc;
 use super::markets;
+use super::report;
 use super::resample::Tf;
 use super::rules::{self, LabError, LABEL};
 use super::series::{self, Cache, Compiled, Frames};
@@ -18,8 +19,16 @@ use std::sync::Arc;
 
 type Query = BTreeMap<String, String>;
 /// Wall-clock bound for one lab optimization (the gateway allows 600 s).
-const OPT_SECONDS: u64 = 300;
+pub(super) const OPT_SECONDS: u64 = 300;
 const STOPPED: &str = "optimization stopped after another combination failed";
+/// `,"info":{…}` — AmiBroker Analysis "Info" tab: elapsed ms, combinations evaluated, worker threads and warnings.
+pub(super) fn info_json(ms: u128, combos: usize, threads: usize, warnings: &[String]) -> String {
+    format!(",\"info\":{{\"ms\":{ms},\"combos\":{combos},\"threads\":{threads},\"warnings\":{}}}", quoted(warnings.iter().map(String::as_str)))
+}
+/// A moved window start (stale opens) as an info warning; `start` is the response's `start` JSON.
+fn start_warning(start: &str) -> Vec<String> {
+    super::json::parse(start).ok().and_then(|j| Some(format!("the window starts {}: {}", j.get("date")?.as_str()?, j.get("reason")?.as_str()?))).into_iter().collect()
+}
 #[cfg(test)]
 thread_local! { static LAST_DONE: std::cell::RefCell<Option<Arc<AtomicUsize>>> = const { std::cell::RefCell::new(None) }; }
 
@@ -43,8 +52,11 @@ pub fn route(path: &str, st: &State, q: &Query) -> Option<Result<String, LabErro
     let f: fn(&State, &Query) -> Result<String, LabError> = match path {
         "/api/lab/catalogue" => |st, _| Ok(catalogue_for_state(st)),
         "/api/lab/series" => series_json,
+        "/api/lab/formula" => formula_json,
         "/api/lab/run" => run_json,
         "/api/lab/optimize" => optimize_json,
+        "/api/lab/walkforward" => super::walkforward::walkforward_json,
+        "/api/lab/scan" => super::scan::scan_json,
         "/api/lab/instruments" => |st, _| Ok(markets::instruments_json(st)),
         "/api/lab/templates" => |_, _| Ok(templates_json()),
         "/api/lab/template" => template_json,
@@ -80,11 +92,11 @@ pub fn catalogue_json() -> String {
         quoted(rules::PRICE_SOURCES.iter().copied()), quoted(rules::OPERATORS.iter().copied()), super::resample::MAX_DAYS, rules::MAX_CONDITIONS, rules::MAX_LEAVES, rules::MAX_NODES,
         quoted(rules::NODE_KINDS.iter().copied()), quoted(rules::EXPRESSIONS.iter().copied()), rules::MAX_SPEC_BYTES, rules::MAX_TAKE_PROFITS, rules::MAX_LEGS, rules::MAX_VALID_BARS, rules::MAX_DELAY,
         rules::MAX_OFFSET, rules::MAX_OFFSET, rules::MAX_OFFSET, rules::MAX_PAUSE, crate::MAX_COMBOS, arr(defs));
-    body.pop();body.push_str(&format!(",\"max_foreign\":{},\"foreign_volatility\":null,\"portfolio\":null}}",rules::MAX_FOREIGN));body
+    body.pop();body.push_str(&format!(",\"formula_functions\":{},\"max_foreign\":{},\"foreign_volatility\":null,\"portfolio\":null}}",super::formula::functions_json(),rules::MAX_FOREIGN));body
 }
 
 /// Instrument identity from the server's own data (never from the query): type, native flag, market, currency.
-fn instrument(selected: &crate::SelectedContext, ticker: &str) -> (&'static str, String) {
+pub(super) fn instrument(selected: &crate::SelectedContext, ticker: &str) -> (&'static str, String) {
     if let Some(m) = markets::gl(ticker) { return (m.kind, m.json()); }
     let native = selected.native();
     let kind = instrument_policy::selected_type(ticker, native);
@@ -98,7 +110,7 @@ fn select_error(e: String) -> LabError {
     if let Some(m) = e.strip_prefix("unknown ticker ").and_then(markets::gl) { return LabError::NeedsData(markets::not_staged(m.ticker)); }
     if e.starts_with("unknown ticker ") { LabError::Invalid(e) } else { LabError::NeedsData(e.trim_start_matches("needs_data:").trim().into()) }
 }
-fn select<'a>(st: &'a State, q: &Query) -> Result<crate::SelectedContext<'a>, LabError> {
+pub(super) fn select<'a>(st: &'a State, q: &Query) -> Result<crate::SelectedContext<'a>, LabError> {
     crate::select_context(st, q).map_err(select_error)
 }
 /// Establish market identity before reading a foreign source; the engine never fetches another market.
@@ -109,12 +121,12 @@ fn symbol_market(st: &State, ticker: &str) -> Option<&'static str> {
         _ => st.baskets.native_evidence(ticker).map(|e| e.market()).or_else(|| crate::preloaded_market(ticker)).map(|m| m.code()),
     }
 }
-fn close_fills(spec: &Spec) -> bool {
+pub(super) fn close_fills(spec: &Spec) -> bool {
     std::iter::once(&spec.exec).chain(spec.short_side.as_ref().map(|s| &s.exec))
-        .any(|x| x.fill == rules::Fill::Close || x.exit_fill == rules::Fill::Close)
+        .any(|x| x.market.map_or(x.fill == rules::Fill::Close || x.exit_fill == rules::Fill::Close, |m| m.iter().any(|o| o.1 == 0)))
 }
 /// Load each referenced instrument once and retain operand paths on every refusal.
-fn others_for(st: &State, run: &str, refs: &[(String, rules::Foreign)], close: bool, member_scope: bool) -> Result<(series::Others, String), LabError> {
+pub(super) fn others_for(st: &State, run: &str, refs: &[(String, rules::Foreign)], close: bool, member_scope: bool) -> Result<(series::Others, String), LabError> {
     let mut names = BTreeMap::<String, (String, bool)>::new();
     for (path, value) in refs {
         for (key, name, fixup) in [("symbol", value.symbol.as_ref(), value.fixup), ("vs", value.vs.as_ref(), false)] {
@@ -196,6 +208,7 @@ pub(super) fn frames_of(st: &State, ticker: &str) -> Result<(Frames, &'static st
     Ok((Frames::new(bars), kind, first, last))
 }
 pub fn series_json(st: &State, q: &Query) -> Result<String, LabError> {
+    if let Some(text) = q.get("formula") { return formula_series_json(st, q, text); }
     let id = q.get("id").ok_or_else(|| LabError::Invalid("id is required".into()))?;
     let tf = q.get("tf").map_or(Some(Tf::D), |t| Tf::parse(t)).ok_or_else(|| LabError::Invalid(format!("tf must be {}", super::resample::TF_HELP)))?;
     if let Some((k, _)) = q.iter().find(|(k, v)| k.starts_with("p.") && !v.parse::<f64>().is_ok_and(f64::is_finite)) {
@@ -216,9 +229,49 @@ pub fn series_json(st: &State, q: &Query) -> Result<String, LabError> {
         let s = series::series_in(&fr, &others, &mut cache, &rules::SeriesRef { out: k, ..r.clone() })?;
         values.push(format!("\"{}\":{}", esc(name), arr(s.into_iter().map(full))));
     }
-    let params = r.params.iter().map(|(k, v)| format!("\"{}\":{}", esc(k), full(*v))).collect::<Vec<_>>().join(",");
+    let params = series::shown_params(&r.id, &r.params).map(|(k, v)| format!("\"{}\":{}", esc(k), full(*v))).collect::<Vec<_>>().join(",");
     Ok(format!("{{\"label\":\"{LABEL}\",\"instrument\":{instrument}{foreign_json},\"id\":\"{}\",\"tf\":\"{}\",\"params\":{{{params}}},\"outputs\":{},\"dates\":{},\"series\":{{{}}},\"provenance\":{}{}}}",
         esc(id), tf.name(), quoted(outputs.iter().copied()), quoted(ctx.r.iter().map(|r| r.date.as_str())), values.join(","), crate::source_provenance(st, q), adaptations([id.as_str()].into_iter())))
+}
+/// `/api/lab/formula?formula=…`: `{"ok":true,"params":[…],"plots":[…],"placement":…}` or 400 `line L, col C: message`.
+pub fn formula_json(_: &State, q: &Query) -> Result<String, LabError> {
+    let text = q.get("formula").ok_or_else(|| LabError::Invalid("formula is required".into()))?;
+    let prog = super::formula::parse(text).map_err(LabError::Invalid)?;
+    Ok(format!("{{\"ok\":true,{}}}", super::formula::info_json(&prog)))
+}
+/// `/api/lab/series?formula=…&name=…&<Param>=<v>…&tf=…&ticker=…`: an indicator series body plus `"formula":{params,plots,placement}`.
+/// Param values come as bare keys (`Fast=9`; formula::RESERVED_KEYS cannot be Param names) or as `p.Fast`.
+fn formula_series_json(st: &State, q: &Query, text: &str) -> Result<String, LabError> {
+    let tf = q.get("tf").map_or(Some(Tf::D), |t| Tf::parse(t)).ok_or_else(|| LabError::Invalid(format!("tf must be {}", super::resample::TF_HELP)))?;
+    if ["symbol", "vs", "fixup"].iter().any(|k| q.get(*k).is_some_and(|v| !v.is_empty())) {
+        return Err(LabError::Invalid("symbol, vs and fixup apply to catalogue indicators; a formula runs on the selected ticker".into()));
+    }
+    let prog = super::formula::parse(text).map_err(LabError::Invalid)?;
+    if let Some(k) = q.keys().filter_map(|k| k.strip_prefix("p.")).find(|k| !prog.params.iter().any(|p| p.key == *k)) {
+        return Err(LabError::Invalid(format!("unknown parameter '{k}'")));
+    }
+    let mut given = catalogue::Params::new();
+    for p in &prog.params {
+        let Some(v) = q.get(&format!("p.{}", p.key)).or_else(|| q.get(&p.key)) else { continue };
+        given.insert(p.key.clone(), v.parse::<f64>().ok().filter(|v| v.is_finite()).ok_or_else(|| LabError::Invalid(format!("{} must be a finite number", p.key)))?);
+    }
+    let (f, params, _) = super::formula::operand(q.get("name").map(String::as_str), text, &given, None).map_err(LabError::Invalid)?;
+    let selected = select(st, q)?;
+    let held = selected.context(st);
+    let ctx: &Ctx = &held;
+    let (_, instrument) = instrument(&selected, &ctx.r[0].ticker);
+    let fr = Frames::new(Bars::from_ctx(ctx));
+    let shown = f.prog.params.iter().map(|p| format!("\"{}\":{}", esc(&p.key), full(params[&p.key]))).collect::<Vec<_>>().join(",");
+    let (name, info, plots) = (f.name.clone(), super::formula::info_json(&f.prog), f.prog.plots.clone());
+    let r = rules::SeriesRef { id: "formula".into(), params, tf, out: 0, offset: 0, foreign: Default::default(), formula: Some(Arc::new(f)) };
+    let mut cache = Cache::new();
+    let mut values = Vec::new();
+    for (k, plot) in plots.iter().enumerate() {
+        let s = series::series(&fr, &mut cache, &rules::SeriesRef { out: k, ..r.clone() })?;
+        values.push(format!("\"{}\":{}", esc(plot), arr(s.into_iter().map(full))));
+    }
+    Ok(format!("{{\"label\":\"{LABEL}\",\"instrument\":{instrument},\"id\":\"formula\",\"name\":\"{}\",\"tf\":\"{}\",\"params\":{{{shown}}},\"outputs\":{},\"dates\":{},\"series\":{{{}}},\"provenance\":{},\"formula\":{{{info}}}}}",
+        esc(&name), tf.name(), quoted(plots.iter().map(String::as_str)), quoted(ctx.r.iter().map(|r| r.date.as_str())), values.join(","), crate::source_provenance(st, q)))
 }
 fn known_type(kind: &str, ticker: &str) -> Result<(), LabError> {
     if kind == "unknown" { return Err(LabError::NeedsData(format!("{ticker}: instrument type is not established (index, ETF or catalogued stock); no lab result is published"))); }
@@ -226,7 +279,7 @@ fn known_type(kind: &str, ticker: &str) -> Result<(), LabError> {
 }
 /// Requested dates must be real and inside admitted coverage; nothing is filled or silently shortened.
 /// Also returns the `start` disclosure JSON: lab fills use the next open, which is stale for some indices before a known date.
-fn window(ctx: &Ctx, q: &Query) -> Result<(usize, usize, String), LabError> {
+pub(super) fn window(ctx: &Ctx, q: &Query) -> Result<(usize, usize, String), LabError> {
     for key in ["from", "to", "split"] {
         if q.get(key).is_some_and(|v| !v.is_empty() && !crate::baskets::valid_date(v)) { return Err(LabError::Invalid(format!("{key} must be a valid YYYY-MM-DD date"))); }
     }
@@ -279,11 +332,17 @@ fn gross_stats(ctx: &Ctx, run: &crate::Run) -> BTreeMap<&'static str, f64> {
 /// effective-price trades the run then holds (cost 0: costs are inside the prices).
 fn backtest(ctx: &Ctx, c: &Compiled, d: &Bars, from: usize, to: usize, cost: f64, money: Option<&ledger::Money>) -> Result<(crate::Run, Vec<String>, Option<ledger::Booked>), LabError> {
     let (real, events) = simulate_events(c, d, from, to);
+    let real = if c.exec.tick_size > 0. { ledger::snap_ticks(real, c.exec.tick_size) } else { real }; // AmiBroker Tick size
     trade_validation::check(&real, from, to, cost)?;
     let dates: Vec<String> = ctx.r.iter().map(|r| r.date.clone()).collect();
-    let booked = money.map(|m| ledger::book(&real, &dates, m));
+    if money.is_some_and(|m| m.limits.max_volume_pct.is_some()) && d.volume.is_none() {
+        return Err(LabError::NeedsData("execution.limits.max_volume_pct needs volume, which is missing on some admitted bars".into()));
+    }
+    let span = ledger::Span { close: &ctx.c, volume: d.volume.as_deref(), from, to };
+    let booked = money.map(|m| ledger::book(&real, &dates, m, &span));
     let trades = booked.as_ref().map_or(real, |b| b.trades());
-    if booked.is_some() { trade_validation::check(&trades, from, to, 0.)?; } // cash: no leverage, so the book's own check applies
+    // cash: no leverage, so the book's own check applies; on account margin a position may exceed equity (the raw trades were checked above)
+    if booked.is_some() && money.is_some_and(|m| m.limits.margin_pct >= 100.) { trade_validation::check(&trades, from, to, 0.)?; }
     let equity = match (&booked, money) {
         (Some(b), Some(m)) => b.equity(&ctx.c, &dates, from, to, m, true),
         _ => crate::equity_curve(&ctx.c, &trades, from, to, cost),
@@ -308,18 +367,40 @@ fn money_of(spec: &Spec, q: &Query, market: Option<&str>) -> Result<Option<ledge
         return Err(LabError::Invalid("declare execution.costs.borrow_pct_year (0 is allowed) for US short positions in money mode".into()));
     }
     if spec.exec.costs.slip_ticks > 0. { return Err(LabError::Invalid("slippage in ticks needs a futures contract's tick size; use bps".into())); }
-    Ok(Some(ledger::Money { capital, sizing: spec.exec.sizing, costs: spec.exec.costs.clone(), contract: ledger::CASH }))
+    Ok(Some(ledger::Money { capital, sizing: spec.exec.sizing, costs: spec.exec.costs.clone(), contract: ledger::CASH, limits: spec.exec.limits.unwrap_or_else(rules::Limits::none) }))
 }
 /// The instrument's market code ("in" / "us"; None for gl instruments).
 fn market_of(selected: &crate::SelectedContext, ticker: &str) -> Option<&'static str> {
     markets::gl(ticker).map_or_else(|| selected.evidence().map(|e| e.market().code()).or_else(|| crate::preloaded_market(ticker).map(|m| m.code())), |_| None)
+}
+/// AmiBroker "Pad and align all data to reference symbol" (execution.pad_align): the run's bars on the market benchmark's
+/// calendar (series::pad_align), each bar's source row, and the disclosure for execution_model.events. None when off.
+pub(super) fn padded(st: &State, spec: &Spec, selected: &crate::SelectedContext, ctx: &Ctx) -> Result<Option<(Vec<crate::Row>, Vec<Option<usize>>, String)>, LabError> {
+    if !spec.exec.pad_align { return Ok(None); }
+    let reference = match market_of(selected, &ctx.r[0].ticker) { Some("in") => crate::BENCHMARK, Some("us") => "SPX",
+        _ => return Err(LabError::Unsupported("execution.pad_align needs the market's reference index (NIFTY 50 or SPX); this market has none".into())) };
+    let calendar = st.ctxs.get(reference).map(|c| c.r).filter(|r| !r.is_empty()).ok_or_else(|| LabError::NeedsData(format!("execution.pad_align: the reference {reference} is not loaded")))?;
+    let (rows, src, n_pad, n_drop) = series::pad_align(ctx.r, calendar);
+    if rows.is_empty() { return Err(LabError::NeedsData(format!("execution.pad_align: no {reference} date falls inside this instrument's data"))); }
+    Ok(Some((rows, src, format!("Pad and align to {reference}: {n_pad} bars padded with the previous close, {n_drop} dropped"))))
+}
+/// The padded bars as a context; extra series follow their source rows (NaN on a padded bar).
+pub(super) fn padded_ctx<'r>(held: &Ctx, rows: &'r [crate::Row], src: &[Option<usize>]) -> Ctx<'r> {
+    let mut c = Ctx::new(rows, &[], &[]);
+    c.extra = held.extra.iter().map(|(k, v)| (k.clone(), src.iter().map(|s| s.map_or(f64::NAN, |i| v[i])).collect())).collect();
+    c
 }
 /// The execution model of this spec on this instrument (spec §7); refusals are typed needs_data.
 fn model_of(selected: &crate::SelectedContext, ticker: &str, kind: &str, spec: &Spec) -> Result<super::model::Model, LabError> {
     super::model::model(kind, market_of(selected, ticker), spec.exec.short || spec.short_side.is_some(), spec.exec.capital.is_some())
 }
 fn money_json(b: &ledger::Booked, m: &ledger::Money, currency: Option<&str>) -> String {
-    format!("{{\"capital\":{},\"final_equity\":{},\"costs_total\":{},\"skipped\":{},\"currency\":{},\"basis\":\"{}\"}}", crate::num(m.capital), crate::num(b.final_equity),
+    // only specs with execution.limits get the limits block, so every other money body is unchanged
+    let limits = if m.limits == rules::Limits::none() { String::new() } else {
+        format!(",\"limits\":{{\"interest\":{},\"skip_reasons\":{{{}}},\"basis\":\"{}\"}}", crate::num(b.interest.iter().fold(0., |a, b| a.max(*b))) /* cumulative, so the window's total is the maximum */,
+            b.skip_reasons.iter().map(|(k, n)| format!("\"{k}\":{n}")).collect::<Vec<_>>().join(","), esc(ledger::LIMITS_BASIS))
+    };
+    format!("{{\"capital\":{},\"final_equity\":{},\"costs_total\":{},\"skipped\":{},\"currency\":{},\"basis\":\"{}\"{limits}}}", crate::num(m.capital), crate::num(b.final_equity),
         crate::num(b.costs_total), b.skipped, currency.map_or("null".into(), |c| format!("\"{c}\"")), esc(ledger::BASIS))
 }
 
@@ -369,14 +450,19 @@ fn futures_refusal(spec: &Spec, q: &Query) -> Result<(),LabError> {
 }
 pub fn run_json(st: &State, q: &Query) -> Result<String, LabError> {
     if q.get("split").is_some_and(|s| !s.is_empty()) { return Err(LabError::Invalid("split applies to /api/lab/optimize only".into())); }
-    let spec = spec_of(q)?;
+    run_spec(st, q, spec_of(q)?)
+}
+/// One run of an already parsed (or optimizer-applied) spec; walk-forward runs each out-of-sample window through it.
+pub(super) fn run_spec(st: &State, q: &Query, spec: Spec) -> Result<String, LabError> {
     if spec.portfolio.is_some() { return portfolio_run_json(st,q,&spec,markets::engine_market().as_deref()==Some("gl")); }
     futures_refusal(&spec,q)?;
     let origin = origin_of(&spec)?;
     let q = &with_spec_cost(q, &spec)?;
     let selected = select(st, q)?;
     let held = selected.context(st);
-    let ctx: &Ctx = &held;
+    let pad = padded(st, &spec, &selected, &held)?;
+    let pad_ctx = pad.as_ref().map(|(rows, src, _)| padded_ctx(&held, rows, src));
+    let ctx: &Ctx = pad_ctx.as_ref().unwrap_or(&*held);
     let (kind, instrument) = instrument(&selected, &ctx.r[0].ticker);
     known_type(kind, &ctx.r[0].ticker)?;
     let (others, foreign_json) = others_for(st, &ctx.r[0].ticker, &spec.foreign_locations(), close_fills(&spec), false)?;
@@ -392,35 +478,59 @@ pub fn run_json(st: &State, q: &Query) -> Result<String, LabError> {
     let fr = Frames::new(Bars::from_ctx(ctx));
     let mut compiled = series::compile_with(&spec, &fr, &others, &mut Cache::new())?;
     compiled.cost = cost;
-    let (run, events, booked) = backtest(ctx, &compiled, &fr.d, from, to, cost, money.as_ref())?;
+    let (run, mut events, booked) = backtest(ctx, &compiled, &fr.d, from, to, cost, money.as_ref())?;
+    if let Some(p) = &pad { events.insert(0, p.2.clone()); } // first, so the event cap never hides it
     let gross = gross_run(ctx, &run, booked.as_ref(), money.as_ref());
     let shown = booked.as_ref().map_or_else(|| run.trades.clone(), ledger::Booked::fills);
     // scale-in legs and scale-out pieces as [date, price, weight / fraction] (only when a trade has more than one)
     let pieces = |key: &str, v: Vec<(usize, f64, f64)>| if v.len() < 2 { String::new() } else {
         format!(",\"{key}\":{}", arr(v.iter().map(|(k, p, w)| format!("[\"{}\",{},{}]", ctx.r[*k].date, crate::num(*p), crate::num(*w)))))
     };
-    let trades = arr(shown.iter().zip(&run.trades).map(|(t, effective)| format!(
-        "{{\"entry\":\"{}\",\"exit\":\"{}\",\"entry_i\":{},\"exit_i\":{},\"entry_px\":{},\"exit_px\":{},\"ret\":{},\"bars\":{},\"open\":{},\"signal\":\"{}\",\"reason\":\"{}\",\"dir\":{},\"entry_kind\":\"{}\"{}{}{}}}",
+    // AmiBroker report inputs: one row per shown trade (fill prices, effective return, money profit × initial equity: the
+    // ledger P&L in money mode, otherwise the compounded equity before the trade × its return).
+    let mut before = 1.;
+    let report_trades: Vec<report::ReportTrade> = shown.iter().zip(&run.trades).enumerate().map(|(k, (t, effective))| {
+        let ret = effective.ret(cost);
+        let profit = match (&booked, &money) { (Some(b), Some(m)) => b.rows[k].pnl / m.capital, _ => before * ret };
+        before += profit;
+        report::ReportTrade { dir: t.dir, entry_i: t.legs[0].i, exit_i: t.exit_i, entry_px: t.legs[0].px, ret, profit }
+    }).collect();
+    // the statistics count closed trades, like `stats`; the open position stays in the trade list
+    let closed: Vec<report::ReportTrade> = shown.iter().zip(&report_trades).filter(|(t, _)| !t.open).map(|(_, r)| *r).collect();
+    let trades = arr(shown.iter().zip(&run.trades).zip(&report_trades).map(|((t, effective), rt)| { let (mae, mfe) = report::excursion(&ctx.r, rt); format!(
+        "{{\"entry\":\"{}\",\"exit\":\"{}\",\"entry_i\":{},\"exit_i\":{},\"entry_px\":{},\"exit_px\":{},\"ret\":{},\"bars\":{},\"open\":{},\"signal\":\"{}\",\"reason\":\"{}\",\"dir\":{},\"entry_kind\":\"{}\",\"mae\":{},\"mfe\":{}{}{}{}}}",
         ctx.r[t.legs[0].i].date, ctx.r[t.exit_i].date, t.legs[0].i - from, t.exit_i - from, crate::num(t.legs[0].px), crate::num(t.exit_px),
-        crate::num(effective.ret(cost)), t.exit_i - t.legs[0].i, t.open, ctx.r[t.signal_i].date, esc(&t.reason), t.dir, t.entry_kind,
+        crate::num(effective.ret(cost)), t.exit_i - t.legs[0].i, t.open, ctx.r[t.signal_i].date, esc(&t.reason), t.dir, t.entry_kind, crate::num(mae), crate::num(mfe),
         pieces("legs", t.legs.iter().map(|l| (l.i, l.px, l.w)).collect()), pieces("fills", t.exits.clone()),
         // the position's total weight (unit sizing, scale-in), only when it is not one unit
-        if t.deployed() == 1. { String::new() } else { format!(",\"weight\":{}", crate::num(t.deployed())) })));
+        if t.deployed() == 1. { String::new() } else { format!(",\"weight\":{}", crate::num(t.deployed())) }) }));
     let money_block = match (&booked, &money) {
         (Some(b), Some(m)) => format!(",\"money\":{},\"ledger\":{}", money_json(b, m, market_of(&selected, &ctx.r[0].ticker).map(|c| if c == "in" { "INR" } else { "USD" })), ledger_json(b, ctx)),
         _ => String::new(),
     };
     let stats = result_stats(ctx, &run, costs, booked.as_ref(), money.as_ref());
+    let report = report::report_json(&ctx.r, &run.equity, &closed, stats.get("cagr").copied().unwrap_or(f64::NAN),
+        stats.get("exposure").copied().unwrap_or(f64::NAN), markets::bars_per_year(&ctx.r[0].ticker), &run.bh, stats.get("bh_cagr").copied().unwrap_or(f64::NAN), spec.report.unwrap_or(report::DEFAULT_RATES));
     let cost_json = money.as_ref().map_or_else(|| costs.json(), declared_costs_json);
     Ok(format!(
-        "{{\"label\":\"{}\",\"kind\":\"lab_simulation\",\"origin\":{origin},\"instrument\":{instrument}{foreign_json},\"execution_model\":{},\"from\":\"{}\",\"to\":\"{}\",\"start\":{start},\"dates\":{},\"close\":{},\"equity\":{},\"gross_equity\":{},\"bh\":{},\"trades\":{trades}{money_block},\"stats\":{},\"gross_stats\":{},\"costs\":{},\"provenance\":{}{}}}",
+        "{{\"label\":\"{}\",\"kind\":\"lab_simulation\",\"origin\":{origin},\"instrument\":{instrument}{foreign_json},\"execution_model\":{},\"from\":\"{}\",\"to\":\"{}\",\"start\":{start},\"dates\":{},\"close\":{},\"equity\":{},\"gross_equity\":{},\"bh\":{},\"trades\":{trades}{money_block},\"stats\":{},\"gross_stats\":{},\"report\":{report},\"costs\":{},\"provenance\":{}{}}}",
         esc(&label), model.json(Some(&events)), ctx.r[from].date, ctx.r[to].date, quoted((from..=to).map(|k| ctx.r[k].date.as_str())), arr((from..=to).map(|k| crate::num(ctx.c[k]))),
         arr(run.equity.iter().map(|v| crate::num(*v))), arr(gross.equity.iter().map(|v| crate::num(*v))), arr(run.bh.iter().map(|v| crate::num(*v))),
         crate::stats_json(&stats), crate::stats_json(&gross_stats(ctx, &gross)), cost_json, crate::source_provenance(st, q), adaptations(rules::series_ids(&spec).iter().map(String::as_str))))
 }
-pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> {
-    let t0 = std::time::Instant::now();
+pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> { optimize_since(st, q, std::time::Instant::now()) }
+/// The optimizer with its OPT_SECONDS clock started at `t0` (walk-forward shares one clock across all its windows).
+/// `mode=individual` (AmiBroker Individual Optimize) optimizes each member of a portfolio universe on its own.
+pub(super) fn optimize_since(st: &State, q: &Query, t0: std::time::Instant) -> Result<String, LabError> {
     let spec = spec_of(q)?;
+    match q.get("mode").map_or("", String::as_str) {
+        "" => {}
+        "individual" => return individual_optimize_json(st, q, spec, t0),
+        _ => return Err(LabError::Invalid("mode must be individual (or absent)".into())),
+    }
+    optimize_spec(st, q, spec, t0)
+}
+fn optimize_spec(st: &State, q: &Query, spec: Spec, t0: std::time::Instant) -> Result<String, LabError> {
     if spec.portfolio.is_some() { return portfolio_optimize_json(st,q,&spec,markets::engine_market().as_deref()==Some("gl"),t0); }
     futures_refusal(&spec,q)?;
     if spec.optimize.is_empty() { return Err(LabError::Invalid("optimize lists no parameter ranges".into())); }
@@ -428,7 +538,9 @@ pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> {
     let q = &with_spec_cost(q, &spec)?;
     let selected = select(st, q)?;
     let held = selected.context(st);
-    let ctx: &Ctx = &held;
+    let pad = padded(st, &spec, &selected, &held)?;
+    let pad_ctx = pad.as_ref().map(|(rows, src, _)| padded_ctx(&held, rows, src));
+    let ctx: &Ctx = pad_ctx.as_ref().unwrap_or(&*held);
     let (kind, instrument) = instrument(&selected, &ctx.r[0].ticker);
     known_type(kind, &ctx.r[0].ticker)?;
     let (others, foreign_json) = others_for(st, &ctx.r[0].ticker, &spec.foreign_locations(), close_fills(&spec), false)?;
@@ -527,6 +639,7 @@ pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> {
     let outcome_cols = outcome_cols(nd, ndisp, split.is_some());
     let col = |name: &str| nd + crate::FULL_COLS.iter().position(|c| *c == name).unwrap();
     let (rank_json, pool) = crate::conclude_rank_with_outcomes(&rank_rows, col("trades"), &crate::RANK_STATS.map(|(k, _)| col(k)), min_trades, per_year, &defs, Some(&outcome_cols));
+    let table = table_json(q, &rank_rows, nd, crate::FULL_COLS, crate::num); // ranking-period values, as ranked
     let rows_v: Vec<Vec<f64>> = rows_v.into_iter().map(|mut r| { r.truncate(nd + ndisp); r }).collect();
     let base = &base[..ndisp];
     let slim = q.get("slim").is_some_and(|v| v == "1");
@@ -540,8 +653,11 @@ pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> {
     let dims_json = arr(dims.iter().map(|d| format!("{{\"path\":\"{}\",\"values\":{}}}", esc(&d.path), arr(d.values.iter().map(|v| crate::num(*v))))));
     let money_block = money.as_ref().map_or(String::new(), |m| format!(",\"money\":{{\"capital\":{},\"basis\":\"{}\"}}", crate::num(m.capital), esc(ledger::BASIS)));
     let cost_json = money.as_ref().map_or_else(|| costs.json(), declared_costs_json);
+    let mut warnings = start_warning(&start);
+    if pool.is_empty() { warnings.push(format!("no combination is eligible: each needs at least {min_trades} trades")); }
+    let info = info_json(t0.elapsed().as_millis(), combos, threads, &warnings);
     Ok(format!(
-        "{{\"label\":\"{}\",\"kind\":\"lab_optimization\",\"origin\":{origin}{money_block},\"instrument\":{instrument}{foreign_json},\"execution_model\":{},\"from\":\"{}\",\"to\":\"{}\",\"start\":{start},\"split\":{},\"combos\":{combos},\"threads\":{threads},\"ms\":{},\"dims\":{dims_json},\"cols\":{},\"base\":{},\"ranked_on\":\"{}\",\"rank\":{rank_json},\"picked\":{{{picked}}},\"rows\":[{rows}],\"costs\":{},\"provenance\":{}{}}}",
+        "{{\"label\":\"{}\",\"kind\":\"lab_optimization\",\"origin\":{origin}{money_block},\"instrument\":{instrument}{foreign_json},\"execution_model\":{},\"from\":\"{}\",\"to\":\"{}\",\"start\":{start},\"split\":{},\"combos\":{combos},\"threads\":{threads},\"ms\":{},\"dims\":{dims_json},\"cols\":{},\"base\":{},\"ranked_on\":\"{}\",\"rank\":{rank_json},\"picked\":{{{picked}}},\"rows\":[{rows}]{table}{info},\"costs\":{},\"provenance\":{}{}}}",
         esc(&label), model.json(None), dates[from], dates[to], split.map_or("null".into(), |s| format!("\"{}\"", dates[s])), t0.elapsed().as_millis(),
         quoted(cols.iter().map(String::as_str)), arr(base.iter().map(|v| crate::num(*v))), if split.is_some() { "in_sample" } else { "full" }, cost_json, crate::source_provenance(st, q), adaptations(rules::series_ids(&spec).iter().map(String::as_str))))
 }
@@ -557,7 +673,7 @@ fn catalogue_for_state(st:&State)->String{
     let capabilities=if market.is_some()&&markets::engine_market().as_deref()!=Some("gl"){format!("{{\"modes\":[\"signals\",\"rotation\"],\"max_universe\":{},\"max_universe_list\":{},\"max_open\":{},\"max_combos\":{},\"max_work\":{},\"max_source_bars\":500000,\"max_member_bars\":50000,\"max_compiled_cells\":8000000,\"max_workers\":2,\"rebalance\":[\"bar\",\"W\",\"M\",\"Q\",\"Y\"],\"baskets\":{baskets},\"instruments\":{instruments}}}",rules::MAX_UNIVERSE,rules::MAX_UNIVERSE_LIST,rules::MAX_OPEN,rules::MAX_PORTFOLIO_COMBOS,PORTFOLIO_MAX_WORK)}else{"null".into()};
     catalogue_json().replace("\"foreign_volatility\":null",&format!("\"foreign_volatility\":{}",vix.map_or("null".into(),|s|format!("\"{}\"",esc(s))))).replace("\"portfolio\":null",&format!("\"portfolio\":{capabilities}"))
 }
-fn portfolio_costs_json(spec:&Spec)->String{declared_costs_json(&ledger::Money{capital:spec.exec.capital.unwrap(),sizing:spec.exec.sizing,costs:spec.exec.costs.clone(),contract:ledger::CASH})}
+fn portfolio_costs_json(spec:&Spec)->String{declared_costs_json(&ledger::Money{capital:spec.exec.capital.unwrap(),sizing:spec.exec.sizing,costs:spec.exec.costs.clone(),contract:ledger::CASH,limits:rules::Limits::none()})}
 
 
 pub(super) const PORTFOLIO_MAX_SOURCE_BARS:usize=500_000;
@@ -571,11 +687,11 @@ fn finish_portfolio(body:String,deadline:std::time::Instant,opt:bool)->Result<St
 fn operand_cells(o:&rules::Operand)->usize{
     use rules::{Operand,Expr};match o{
         Operand::Value(_)|Operand::BarsHeld=>0,
-        Operand::Series(s)=>1+catalogue::get(&s.id).map_or(0,|d|d.outputs.len()),
+        Operand::Series(s)=>1+catalogue::get(&s.id).map_or(s.formula.as_ref().map_or(0,|f|f.prog.plots.len()),|d|d.outputs.len()),
         Operand::Expr(e)=>1+match &**e{
             Expr::Bin(_,a,b)=>operand_cells(a)+operand_cells(b),Expr::Abs(a)|Expr::Ref(a,_)|Expr::Win(_,a,_)=>operand_cells(a),
             Expr::BarsSince(n)|Expr::Count(n,_)=>node_cells(n),Expr::ValueWhen{when,of,..}|Expr::Since{when,of,..}=>node_cells(when)+operand_cells(of),
-            Expr::Expand(s,_)=>1+catalogue::get(&s.id).map_or(0,|d|d.outputs.len()),Expr::Compress{of,..}=>operand_cells(of),
+            Expr::Expand(s,_)=>1+catalogue::get(&s.id).map_or(s.formula.as_ref().map_or(0,|f|f.prog.plots.len()),|d|d.outputs.len()),Expr::Compress{of,..}=>operand_cells(of),
         }
     }
 }
@@ -705,13 +821,81 @@ fn portfolio_optimize_json(st:&State,q:&Query,spec:&Spec,gl:bool,t0:std::time::I
     portfolio_deadline(deadline).map_err(timeout)?;
     let nd=dims.len();let col=|name:&str|nd+PCOLS.iter().position(|k|*k==name).unwrap();let years=crate::years(ctx,prepared.from,prepared.to);let per_year=(base_stats["trades"]/years*0.5).clamp(crate::MIN_PER_YEAR.0,crate::MIN_PER_YEAR.1);let min_trades=(per_year*years).ceil().max(crate::MIN_TRADES);let defs:Vec<_>=dims.iter().map(|d|rules::current(spec,&d.target)).collect();let (rank,pool)=crate::conclude_rank_with_outcomes(&rows,col("trades"),&crate::RANK_STATS.map(|(k,_)|col(k)),min_trades,per_year,&defs,None);
     let slim=q.get("slim").is_some_and(|v|v=="1");let row=|r:&Vec<f64>|arr(r.iter().map(|v|full(*v)));let picked=if slim{pool.iter().map(|i|format!("\"{i}\":{}",row(&rows[*i]))).collect::<Vec<_>>().join(",")}else{String::new()};let shown=if slim{String::new()}else{rows.iter().map(row).collect::<Vec<_>>().join(",")};let cols=dims.iter().map(|d|d.path.as_str()).chain(PCOLS.iter().copied());
-    let costs=portfolio_costs_json(spec);
-    let body=format!("{{\"label\":\"{LABEL}\",\"kind\":\"lab_portfolio_optimization\",\"origin\":null,\"portfolio\":{},\"membership\":{},\"reference\":{{\"ticker\":\"{}\",\"type\":\"index\"}}{},\"execution_model\":{},\"money\":{{\"capital\":{}}},\"from\":\"{}\",\"to\":\"{}\",\"split\":null,\"combos\":{combos},\"threads\":{threads},\"ms\":{},\"dims\":{},\"cols\":{},\"base\":{},\"ranked_on\":\"full\",\"rank\":{rank},\"picked\":{{{picked}}},\"rows\":[{shown}],\"costs\":{costs},\"provenance\":{provenance}{}}}",portfolio_meta(spec,&prepared,cohort.len(),&refused),membership_json(&prepared.loaded),esc(&prepared.loaded.reference),prepared.foreign_json,portfolio_model(None),full(base_book.capital),prepared.loaded.dates[prepared.from],prepared.loaded.dates[prepared.to],t0.elapsed().as_millis(),arr(dims.iter().map(|d|format!("{{\"path\":\"{}\",\"values\":{}}}",esc(&d.path),arr(d.values.iter().map(|v|full(*v)))))),quoted(cols),arr(base.iter().map(|v|full(*v))),adaptations(rules::series_ids(spec).iter().map(String::as_str)));
+    let costs=portfolio_costs_json(spec);let table=table_json(q,&rows,nd,PCOLS,full);
+    let body=format!("{{\"label\":\"{LABEL}\",\"kind\":\"lab_portfolio_optimization\",\"origin\":null,\"portfolio\":{},\"membership\":{},\"reference\":{{\"ticker\":\"{}\",\"type\":\"index\"}}{},\"execution_model\":{},\"money\":{{\"capital\":{}}},\"from\":\"{}\",\"to\":\"{}\",\"split\":null,\"combos\":{combos},\"threads\":{threads},\"ms\":{},\"dims\":{},\"cols\":{},\"base\":{},\"ranked_on\":\"full\",\"rank\":{rank},\"picked\":{{{picked}}},\"rows\":[{shown}]{table}{},\"costs\":{costs},\"provenance\":{provenance}{}}}",portfolio_meta(spec,&prepared,cohort.len(),&refused),membership_json(&prepared.loaded),esc(&prepared.loaded.reference),prepared.foreign_json,portfolio_model(None),full(base_book.capital),prepared.loaded.dates[prepared.from],prepared.loaded.dates[prepared.to],t0.elapsed().as_millis(),arr(dims.iter().map(|d|format!("{{\"path\":\"{}\",\"values\":{}}}",esc(&d.path),arr(d.values.iter().map(|v|full(*v)))))),quoted(cols),arr(base.iter().map(|v|full(*v))),info_json(t0.elapsed().as_millis(),combos,threads,&refused.iter().map(|(t,r)|format!("{t} skipped: {r}")).chain(pool.is_empty().then(||format!("no combination is eligible: each needs at least {min_trades} trades"))).collect::<Vec<_>>()),adaptations(rules::series_ids(spec).iter().map(String::as_str)));
     finish_portfolio(body,deadline,true)
 }
 
+/// Most single-symbol backtests (symbols × combinations) one Individual Optimize request may make: the portfolio work limit
+/// (a portfolio spec's grid is already capped at rules::MAX_PORTFOLIO_COMBOS).
+pub(super) const INDIVIDUAL_MAX_WORK: usize = PORTFOLIO_MAX_WORK;
+fn individual_work(symbols: usize, combos: usize) -> Result<(), LabError> {
+    let work = symbols.saturating_mul(combos);
+    if work > INDIVIDUAL_MAX_WORK { return Err(LabError::Invalid(format!("Individual optimize: {symbols} symbols × {combos} combinations = {work} backtests; the limit is {INDIVIDUAL_MAX_WORK} — use fewer symbols or a smaller grid"))); }
+    Ok(())
+}
+/// Rows of each symbol's all-results table kept in an Individual Optimize response, in grid order (the best row is separate).
+pub(super) const INDIVIDUAL_TABLE_ROWS: usize = 500;
+const INDIVIDUAL_NOTES: [&str; 3] = [
+    "Each symbol is optimized alone as a single-instrument backtest with the whole capital: portfolio max positions, ranking and shared cash do not apply.",
+    "Best is the optimizer's own pick for that symbol (#1 of the same ranking as the single-symbol optimizer); none when no combination has enough trades.",
+    "Each symbol's all-results table keeps at most 500 combinations in grid order; the best row is always shown.",
+];
+/// AmiBroker Individual Optimize (`mode=individual`): every member of spec.portfolio.universe runs the single-instrument
+/// optimizer on the spec without its portfolio block; one clock (OPT_SECONDS) and one work cap cover all symbols.
+fn individual_optimize_json(st: &State, q: &Query, spec: Spec, t0: std::time::Instant) -> Result<String, LabError> {
+    let p = spec.portfolio.as_ref().ok_or_else(|| LabError::Invalid("mode=individual optimizes each symbol of spec.portfolio.universe; this spec has no portfolio universe".into()))?;
+    portfolio_request(q, &spec, markets::engine_market().as_deref() == Some("gl"), true)?;
+    if p.mode == rules::Mode::Rotation { return Err(LabError::Unsupported("Individual optimize needs signals mode; rotation ranks the symbols against each other".into())); }
+    if spec.optimize.is_empty() { return Err(LabError::Invalid("optimize lists no parameter ranges".into())); }
+    if let Some(d) = spec.optimize.iter().find(|d| d.path.starts_with("portfolio.")) { return Err(LabError::Invalid(format!("{} is a portfolio setting; Individual optimize runs each symbol alone", d.path))); }
+    let tickers: Vec<String> = match &p.universe { rules::Universe::Basket(b) => super::universe::basket_members(st, b).into_iter().map(|m| m.0).collect(), rules::Universe::Tickers(t) => t.clone() };
+    if tickers.is_empty() { return Err(LabError::Invalid("portfolio.universe has no member on this engine".into())); }
+    for t in &tickers {
+        let kind = instrument_policy::selected_type(t, st.baskets.native_evidence(t).is_some());
+        if !matches!(kind, "individual_stock" | "etf") { return Err(LabError::Invalid(format!("{t} ({kind}) cannot be optimized as a universe member; members are actual stocks or ETFs with their own prices"))); }
+    }
+    let combos = spec.optimize.iter().try_fold(1usize, |n, d| n.checked_mul(d.values.len())).unwrap_or(usize::MAX);
+    individual_work(tickers.len(), combos)?;
+    let single = Spec { portfolio: None, ..spec.clone() };
+    let nums = |v: Option<&super::json::Json>| match v { Some(super::json::Json::Arr(v)) => Some(arr(v.iter().map(|x| x.as_f64().map_or("null".into(), full)))), _ => None };
+    let (mut results, mut warnings, mut label, mut cols, mut table_cols, mut threads, mut evaluated) = (vec![], vec![], LABEL.to_string(), "[]".to_string(), String::new(), 1, 0);
+    for t in &tickers {
+        if t0.elapsed().as_secs() >= OPT_SECONDS { return Err(LabError::Invalid(format!("individual optimization stopped after {OPT_SECONDS} s; use fewer symbols or a smaller grid. No partial result is published."))); }
+        let mut qi = q.clone();
+        qi.remove("mode"); qi.insert("ticker".into(), t.clone()); qi.insert("slim".into(), "1".into());
+        let body = match optimize_spec(st, &qi, single.clone(), t0) {
+            Ok(b) => b,
+            Err(LabError::NeedsData(why)) => { warnings.push(format!("{t} skipped: {why}")); results.push(format!("{{\"ticker\":\"{}\",\"skipped\":\"{}\"}}", esc(t), esc(&why))); continue; }
+            Err(LabError::Invalid(m)) => return Err(LabError::Invalid(format!("{t}: {m}"))),
+            Err(LabError::Unsupported(m)) => return Err(LabError::Unsupported(format!("{t}: {m}"))),
+        };
+        let j = super::json::parse(&body).map_err(|e| LabError::Invalid(format!("internal: unreadable optimizer output ({e})")))?;
+        let get = |k: &str| j.get(k);
+        label = get("label").and_then(|l| l.as_str()).unwrap_or(LABEL).to_string();
+        if let Some(super::json::Json::Arr(v)) = get("cols") { cols = quoted(v.iter().filter_map(|x| x.as_str())); }
+        if let Some(super::json::Json::Arr(v)) = get("table_cols") { table_cols = format!(",\"table_cols\":{}", quoted(v.iter().filter_map(|x| x.as_str()))); }
+        threads = threads.max(get("threads").and_then(|x| x.as_f64()).unwrap_or(1.) as usize);
+        evaluated += combos;
+        let rank = get("rank");
+        let num_of = |k: &str| rank.and_then(|r| r.get(k)).and_then(|x| x.as_f64()).map_or("null".into(), full);
+        let top = rank.and_then(|r| r.get("top3")).and_then(|v| if let super::json::Json::Arr(v) = v { v.first() } else { None }).and_then(|c| c.get("row")).and_then(|r| r.as_f64());
+        let best = top.and_then(|r| nums(get("picked").and_then(|p| p.get(&(r as usize).to_string())))).unwrap_or_else(|| "null".into());
+        let table = match get("table") { Some(super::json::Json::Arr(v)) => format!(",\"table\":[{}],\"table_rows\":{}", v.iter().take(INDIVIDUAL_TABLE_ROWS).filter_map(|r| nums(Some(r))).collect::<Vec<_>>().join(","), v.len()), _ => String::new() };
+        if let Some(super::json::Json::Arr(w)) = get("info").and_then(|i| i.get("warnings")) { warnings.extend(w.iter().filter_map(|x| x.as_str()).map(|x| format!("{t}: {x}"))); }
+        if combos > INDIVIDUAL_TABLE_ROWS && !table.is_empty() { warnings.push(format!("{t}: all-results table capped at {INDIVIDUAL_TABLE_ROWS} of {combos} combinations")); }
+        results.push(format!("{{\"ticker\":\"{}\",\"from\":\"{}\",\"to\":\"{}\",\"eligible\":{},\"min_trades\":{},\"best\":{best}{table}}}", esc(t),
+            esc(get("from").and_then(|x| x.as_str()).unwrap_or_default()), esc(get("to").and_then(|x| x.as_str()).unwrap_or_default()), num_of("eligible"), num_of("min_trades")));
+    }
+    let dims_json = arr(spec.optimize.iter().map(|d| format!("{{\"path\":\"{}\",\"values\":{}}}", esc(&d.path), arr(d.values.iter().map(|v| crate::num(*v))))));
+    let basket = match &p.universe { rules::Universe::Basket(b) => format!("\"{}\"", esc(b)), _ => "null".into() };
+    Ok(format!("{{\"label\":\"{}\",\"kind\":\"lab_individual_optimization\",\"origin\":null,\"universe\":{{\"basket\":{basket},\"symbols\":{}}},\"combos\":{combos},\"dims\":{dims_json},\"cols\":{cols}{table_cols},\"results\":[{}],\"notes\":{}{}{}}}",
+        esc(&label), tickers.len(), results.join(","), quoted(INDIVIDUAL_NOTES.iter().copied()), info_json(t0.elapsed().as_millis(), evaluated, threads, &warnings),
+        adaptations(rules::series_ids(&spec).iter().map(String::as_str))))
+}
+
 /// A spec with `origin` is a customized book template: the template must exist (same book, version not newer).
-fn origin_of(spec: &Spec) -> Result<Option<StrategyDef>, LabError> {
+pub(super) fn origin_of(spec: &Spec) -> Result<Option<StrategyDef>, LabError> {
     let Some(o) = &spec.origin else { return Ok(None) };
     let found = templates::template(&o.method).filter(|t| o.version <= t.version).and(templates::method(&o.method)).filter(|d| d.book == o.book);
     let d = found.ok_or_else(|| LabError::Invalid(format!("origin names no book template ({} · {} · version {})", o.book, o.method, o.version)))?;
@@ -735,7 +919,7 @@ fn raw_prices_clean(rows: &[crate::Row]) -> Result<(), LabError> {
     Ok(())
 }
 /// Same predicate as the book's own check (readiness::check): every bar in the window must be a valid OHLC bar.
-fn bars_clean(ctx: &Ctx, from: usize, to: usize) -> Result<(), LabError> {
+pub(super) fn bars_clean(ctx: &Ctx, from: usize, to: usize) -> Result<(), LabError> {
     for r in &ctx.r[from..=to] {
         if let Some(why) = price_problem(r) {
             return Err(LabError::NeedsData(format!("{}: invalid bar on {} ({why}); choose a window after it", r.ticker, r.date)));
@@ -744,7 +928,7 @@ fn bars_clean(ctx: &Ctx, from: usize, to: usize) -> Result<(), LabError> {
     Ok(())
 }
 /// A variant keeps its book method's instrument admission: stock methods on actual stocks, ETF methods on ETF prices.
-fn origin_admits(d: Option<&StrategyDef>, kind: &str, ticker: &str) -> Result<(), LabError> {
+pub(super) fn origin_admits(d: Option<&StrategyDef>, kind: &str, ticker: &str) -> Result<(), LabError> {
     let Some(d) = d else { return Ok(()) };
     let allowed = instrument_policy::policy(d).allowed_types;
     if allowed.contains(&kind) { return Ok(()); }
@@ -812,6 +996,16 @@ pub fn fidelity_json(st: &State, q: &Query) -> Result<String, LabError> {
         "{{\"label\":\"{}\",\"kind\":\"lab_template_fidelity\",\"method\":{},\"template_version\":{},\"instrument\":{instrument},\"from\":\"{}\",\"to\":\"{}\",\"book_trades\":{},\"template_trades\":{},\"matched\":{},\"reproduces\":{},\"differences_total\":{},\"differences\":{diffs},\"note\":\"{}\"}}",
         fidelity::FIDELITY_LABEL, method_json(&d), t.version, ctx.r[from].date, ctx.r[to].date, book.len(), lab.len(), c.matched,
         fidelity::reproduces(book.len(), lab.len(), c.matched), c.diffs.len(), fidelity::note(book.len(), lab.len())))
+}
+/// AmiBroker result-list columns (Net %, Exposure, CAR, Max. sys % DD, CAR/MDD, # trades, % winners, PF, Avg. % P/L, Sharpe).
+/// `net_profit` is left out: it sums trade percentages, not AmiBroker's money Net Profit.
+const TABLE_KEYS: [&str; 10] = ["total_return", "exposure", "cagr", "max_dd", "mar", "trades", "win_rate", "profit_factor", "avg_trade", "sharpe"];
+/// Opt-in (`table=1`) list of every combination: each row is the dim values then `table_cols`, read from metric columns starting at `nd`.
+fn table_json(q: &Query, rows: &[Vec<f64>], nd: usize, metric_cols: &[&str], num: fn(f64) -> String) -> String {
+    if q.get("table").map_or(true, |v| v != "1") { return String::new(); }
+    let keys: Vec<(&str, usize)> = TABLE_KEYS.iter().filter_map(|k| metric_cols.iter().position(|c| c == k).map(|i| (*k, nd + i))).collect();
+    let row = |r: &Vec<f64>| arr(r[..nd].iter().chain(keys.iter().map(|k| &r[k.1])).map(|v| num(*v)));
+    format!(",\"table_cols\":{},\"table\":[{}]", quoted(keys.iter().map(|k| k.0)), rows.iter().map(row).collect::<Vec<_>>().join(","))
 }
 /// RANK_STATS metrics without an is_ PART_COLS column: shown in-sample so the ranked numbers are visible.
 fn extra_rank_cols() -> Vec<&'static str> {
@@ -990,6 +1184,55 @@ mod tests {
         assert!(route("/api/lab/nothing", &st, &q(&[])).is_none());
         assert!(route("/api/lab/catalogue", &st, &q(&[])).unwrap().is_ok());
     }
+    const FORMULA: &str = "Fast = Param(\"Fast\", 9, 2, 50, 1)\nPlot(EMA(C, Fast) - EMA(C, 21), \"Osc\")\nPlot(EMA(C, Fast), \"Line\", \"price\")";
+    #[test] fn formula_route_validates_and_describes() {
+        let st = state(10, "SPX", false);
+        let j = route("/api/lab/formula", &st, &q(&[("formula", FORMULA)])).unwrap().unwrap();
+        assert_eq!(j, r#"{"ok":true,"params":[{"key":"Fast","default":9,"min":2,"max":50,"step":1}],"plots":["Osc","Line"],"placement":"price"}"#);
+        let (status, body) = response(None, "/api/lab/formula", &st, &q(&[("formula", "x = C\n  y = FOO(x)\nPlot(y, \"A\")")]));
+        assert_eq!(status, "400 Bad Request");
+        assert_eq!(crate::lab::json::parse(&body).unwrap().get("error").unwrap().as_str(), Some("line 2, col 7: unknown function FOO"));
+        assert_eq!(formula_json(&st, &q(&[])).unwrap_err().message(), "formula is required");
+    }
+    #[test] fn series_route_runs_formulas_with_bare_or_prefixed_params() {
+        let st = state(120, "SPX", true);
+        let j = series_json(&st, &q(&[("formula", FORMULA), ("name", "My Momentum"), ("Fast", "12")])).unwrap();
+        let v = crate::lab::json::parse(&j).unwrap();
+        assert!(j.contains(r#""id":"formula","name":"My Momentum","tf":"D","params":{"Fast":12},"outputs":["Osc","Line"]"#), "{j}");
+        assert!(j.ends_with(r#","formula":{"params":[{"key":"Fast","default":9,"min":2,"max":50,"step":1}],"plots":["Osc","Line"],"placement":"price"}}"#));
+        let crate::lab::json::Json::Arr(line) = v.get("series").unwrap().get("Line").unwrap() else { panic!() };
+        let closes: Vec<f64> = st.ctxs["SPX"].r.iter().map(|r| r.close).collect();
+        let want = crate::lab::ta::ema(&closes, 12);
+        assert_eq!(line.len(), 120);
+        for (k, w) in want.iter().enumerate() { assert_eq!(line[k].as_f64().unwrap_or(f64::NAN).to_bits() == w.to_bits() || (w.is_nan() && line[k] == crate::lab::json::Json::Null), true, "bar {k}"); }
+        assert!(series_json(&st, &q(&[("formula", FORMULA), ("p.Fast", "12")])).unwrap().contains(r#""params":{"Fast":12}"#));
+        assert!(series_json(&st, &q(&[("formula", FORMULA), ("tf", "W")])).unwrap().contains(r#""tf":"W","params":{"Fast":9}"#));
+        let e = |extra: &[(&str, &str)]| series_json(&st, &q(&[&[("formula", FORMULA)], extra].concat())).unwrap_err().message().to_string();
+        assert_eq!(e(&[("Fast", "1")]), "Fast must be between 2 and 50");
+        assert_eq!(e(&[("Fast", "abc")]), "Fast must be a finite number");
+        assert_eq!(e(&[("p.Slow", "3")]), "unknown parameter 'Slow'");
+        assert!(e(&[("vs", "NDX")]).contains("a formula runs on the selected ticker"));
+        assert_eq!(series_json(&st, &q(&[("formula", "Plot(Ref(C, 1), \"A\")")])).unwrap_err().message(), "line 1, col 13: Ref(x, 1) would read 1 bars in the future; use Ref(x, -n) for n bars ago");
+        let no_volume = state(60, "SPX", false);
+        let nv = series_json(&no_volume, &q(&[("formula", "Plot(V, \"A\")")])).unwrap_err();
+        assert_eq!((nv.status(), nv.message()), ("needs_data", "line 1, col 6: volume: volume is missing on some admitted bars of this instrument"));
+    }
+    #[test] fn catalogue_lists_formula_functions() {
+        let v = crate::lab::json::parse(&catalogue_json()).unwrap();
+        let crate::lab::json::Json::Arr(f) = v.get("formula_functions").unwrap() else { panic!() };
+        assert_eq!(f.len(), super::super::formula::FUNCTIONS.len());
+        assert_eq!((f[2].get("name").unwrap().as_str(), f[2].get("args").unwrap().as_str()), (Some("MA"), Some("x, n")));
+        assert!(f.iter().all(|x| x.get("desc").and_then(|d| d.as_str()).is_some_and(|d| !d.is_empty())));
+    }
+    #[test] fn a_formula_spec_runs_and_optimizes_through_the_routes() {
+        let st = state(400, "SPX", true);
+        let f = crate::lab::json::esc(FORMULA);
+        let spec = format!(r#"{{"v":1,"entry":{{"all":[{{"lhs":{{"formula":"{f}","name":"Mom"}},"op":"crosses_above","rhs":{{"value":0}}}}]}},"exit":{{"any":[{{"lhs":{{"s":"bars_held"}},"op":">=","rhs":{{"value":3}}}}]}},"optimize":[{{"path":"entry.all[0].lhs.p.Fast","from":5,"to":15,"step":5}}]}}"#);
+        let run = run_json(&st, &q(&[("spec", &spec)])).unwrap();
+        assert!(run.contains(LABEL));
+        let opt = optimize_json(&st, &q(&[("spec", &spec)])).unwrap();
+        assert!(opt.contains("entry.all[0].lhs.p.Fast"), "{}", &opt[..opt.len().min(600)]);
+    }
     #[test] fn series_route_returns_daily_aligned_outputs() {
         let st = state(120, "SPX", true);
         let mut query = q(&[("id", "macd"), ("tf", "W"), ("p.fast", "3")]);
@@ -1119,6 +1362,38 @@ mod tests {
         assert!(optimize_json(&st, &q(&[("split", "2015-01-05")])).unwrap_err().message().contains("split"));
         let none = SPEC.split(",\"optimize\"").next().unwrap().to_string() + "}";
         assert!(optimize_json(&st, &q(&[("spec", &none)])).unwrap_err().message().contains("no parameter ranges"));
+    }
+    #[test] fn optimize_has_an_info_log_and_refuses_an_unknown_mode() {
+        use crate::lab::json::{parse, Json};
+        let st = state(700, "SPX", false);
+        let v = parse(&optimize_json(&st, &q(&[("slim", "1")])).unwrap()).unwrap();
+        let info = v.get("info").unwrap();
+        assert_eq!((info.get("combos").and_then(Json::as_f64), info.get("threads").and_then(Json::as_f64)), (Some(9.), v.get("threads").and_then(Json::as_f64)));
+        assert!(matches!(info.get("warnings"), Some(Json::Arr(_))));
+        assert!(optimize_json(&st, &q(&[("mode", "pairs")])).unwrap_err().message().contains("mode must be individual"));
+        assert!(optimize_json(&st, &q(&[("mode", "individual")])).unwrap_err().message().contains("no portfolio universe"));
+    }
+    #[test] fn optimize_table_lists_every_combination_on_request() {
+        use crate::lab::json::Json;
+        let st = state(700, "SPX", false);
+        assert!(!optimize_json(&st, &q(&[("slim", "1")])).unwrap().contains("\"table\""));
+        let v = crate::lab::json::parse(&optimize_json(&st, &q(&[("slim", "1"), ("table", "1")])).unwrap()).unwrap();
+        let Json::Arr(names) = v.get("table_cols").unwrap() else { panic!() };
+        let names: Vec<&str> = names.iter().filter_map(Json::as_str).collect();
+        assert_eq!(names, TABLE_KEYS);
+        let Json::Arr(rows) = v.get("table").unwrap() else { panic!() };
+        assert_eq!(rows.len(), 9);
+        let Json::Arr(r0) = &rows[0] else { panic!() };
+        assert_eq!(r0.len(), 2 + TABLE_KEYS.len());
+        assert_eq!((r0[0].as_f64(), r0[1].as_f64()), (Some(3.), Some(2.)));
+        // same values as the full rows for every combination (no split: the ranking period is the full window)
+        let w = crate::lab::json::parse(&optimize_json(&st, &q(&[("table", "1")])).unwrap()).unwrap();
+        let (Json::Arr(cols), Json::Arr(full_rows)) = (w.get("cols").unwrap(), w.get("rows").unwrap()) else { panic!() };
+        let at = |k: &str| cols.iter().position(|c| c.as_str() == Some(k)).unwrap();
+        for (t, f) in rows.iter().zip(full_rows) {
+            let (Json::Arr(t), Json::Arr(f)) = (t, f) else { panic!() };
+            for (i, k) in TABLE_KEYS.iter().enumerate() { assert_eq!(t[2 + i], f[at(k)], "{k}"); }
+        }
     }
     #[test] fn split_ranks_on_the_in_sample_columns_only() {
         let n = crate::FULL_COLS.len();
@@ -1435,6 +1710,109 @@ mod tests {
         let idx = state(400, "SPX", false);
         assert_eq!(run_json(&idx, &qm(money, "SPX")).unwrap_err().status(), "needs_data");
     }
+    #[test] fn execution_limits_leave_todays_ledger_alone_until_set() {
+        use crate::lab::json::{parse, Json};
+        let money = r#"{"v":1,"entry":{"all":[{"lhs":{"s":"close"},"op":"crosses_above","rhs":{"s":"sma","p":{"length":5}}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":3}}]},"execution":{"capital":100000,"sizing":{"pct_equity":50},"costs":{"commission":{"per_order":1}}}}"#;
+        let with = |limits: &str| money.replace(r#""capital":100000,"#, &format!(r#""capital":100000,"limits":{limits},"#));
+        let run = |st: &State, spec: &str| { let mut m = q(&[("spec", spec), ("ticker", "SPY")]); m.remove("cost"); run_json(st, &m) };
+        // the money block minus the limits echo (present only when limits differ from the default)
+        let parts = |j: &str| { let v = parse(j).unwrap(); ["trades", "ledger", "money", "equity", "gross_equity", "stats"].map(|k| v.get(k).cloned().map(|x| match x {
+            Json::Obj(kv) if k == "money" => Json::Obj(kv.into_iter().filter(|(k, _)| k != "limits").collect()), x => x })) };
+        for volume in [false, true] {
+            let st = state(400, "SPY", volume);
+            let base = parts(&run(&st, money).unwrap());
+            assert!(matches!(&base[1], Some(Json::Arr(rows)) if rows.len() > 5));
+            for limits in ["{}", r#"{"round_lot":1,"min_shares":0,"min_value":0,"shrink":true,"prev_bar_equity":false,"interest_pct":0}"#] {
+                assert_eq!(parts(&run(&st, &with(limits)).unwrap()), base, "{limits} is today's behaviour");
+            }
+        }
+        // 100% of equity plus a 2,000 commission: without limits the order shrinks to the cash (today); limits without shrink skip it
+        let st = state(400, "SPY", false);
+        let all_in = money.replace(r#""pct_equity":50"#, r#""pct_equity":100"#).replace(r#""per_order":1"#, r#""per_order":2000"#);
+        let all_in_with = |limits: &str| all_in.replace(r#""capital":100000,"#, &format!(r#""capital":100000,"limits":{limits},"#));
+        let rows = |v: &Json| match v.get("ledger") { Some(Json::Arr(r)) => r.len(), _ => panic!() };
+        let today = run(&st, &all_in).unwrap();
+        assert_eq!(parts(&run(&st, &all_in_with(r#"{"shrink":true}"#)).unwrap()), parts(&today));
+        let v = parse(&run(&st, &all_in_with("{}")).unwrap()).unwrap();
+        let short = v.get("money").unwrap().get("limits").unwrap().get("skip_reasons").unwrap().get("insufficient_cash").unwrap().as_f64().unwrap();
+        assert!(short > 0. && rows(&v) + short as usize == rows(&parse(&today).unwrap()), "{short}");
+        let e = run(&st, &with(r#"{"max_volume_pct":10}"#)).unwrap_err();
+        assert!(e.status() == "needs_data" && e.message().contains("volume"), "{}", e.message());
+        let st = state(400, "SPY", true); // 1,000 a bar: 10% caps ~500 wanted shares at 100 shares
+        let v = parse(&run(&st, &with(r#"{"max_volume_pct":10,"shrink":true}"#)).unwrap()).unwrap();
+        let Some(Json::Arr(rows)) = v.get("ledger") else { panic!() };
+        assert!(!rows.is_empty() && rows.iter().all(|r| r.get("qty").unwrap().as_f64() == Some(100.)));
+        let v = parse(&run(&st, &with(r#"{"max_volume_pct":10}"#)).unwrap()).unwrap();
+        assert!(matches!(v.get("ledger"), Some(Json::Arr(rows)) if rows.is_empty()));
+        let skipped = v.get("money").unwrap().get("skipped").unwrap().as_f64().unwrap();
+        assert!(skipped > 5. && v.get("money").unwrap().get("limits").unwrap().get("skip_reasons").unwrap().get("max_volume_pct").unwrap().as_f64() == Some(skipped));
+        let v = parse(&run(&st, &with(r#"{"interest_pct":5}"#)).unwrap()).unwrap();
+        let base = parse(&run(&st, money).unwrap()).unwrap();
+        let fin = |v: &Json| v.get("money").unwrap().get("final_equity").unwrap().as_f64().unwrap();
+        let interest = v.get("money").unwrap().get("limits").unwrap().get("interest").unwrap().as_f64().unwrap();
+        assert!(interest > 0. && fin(&v) > fin(&base));
+        let Some(Json::Arr(eq)) = v.get("equity") else { panic!() };
+        assert!((eq.last().unwrap().as_f64().unwrap() * 100000. / fin(&v) - 1.).abs() < 1e-6, "the curve ends at final equity (curve numbers are rounded)");
+    }
+}
+
+#[cfg(test)]
+mod amibroker_report_tests {
+    use super::*;
+    use super::super::json::{parse, Json};
+    const RULES: &str = r#""entry":{"all":[{"lhs":{"s":"close"},"op":">","rhs":{"value":0}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":3}}]}"#;
+    fn long(execution: &str) -> Result<Spec, LabError> { rules::parse_spec(&format!(r#"{{"v":1,{RULES},"execution":{execution}}}"#)) }
+    fn both(execution: &str) -> Spec {
+        rules::parse_spec(&format!(r#"{{"v":1,"direction":"both",{RULES},"short_side":{{{}}},"execution":{execution}}}"#, RULES.replace(r#""op":">""#, r#""op":"<""#))).unwrap()
+    }
+    // a same-bar close fill reads foreign closes (CBOE VIX) at the prior date; every form of it must be seen
+    #[test] fn close_fills_counts_a_delay_zero_side_in_either_form() {
+        assert!(close_fills(&long(r#"{"fill":"close"}"#).unwrap()) && close_fills(&long(r#"{"exit_fill":"close"}"#).unwrap()));
+        assert!(!close_fills(&long(r#"{"fill":"next_open"}"#).unwrap()) && !close_fills(&long("{}").unwrap()));
+        assert!(close_fills(&long(r#"{"prices":{"buy":"close"},"delays":{"buy":0}}"#).unwrap()));
+        assert!(close_fills(&long(r#"{"prices":{"sell":"close"},"delays":{"sell":0}}"#).unwrap()));
+        assert!(!close_fills(&long(r#"{"prices":{"buy":"close","sell":"high"},"delays":{"buy":1,"sell":2}}"#).unwrap()));
+        assert!(close_fills(&both(r#"{"prices":{"cover":"close"},"delays":{"cover":0}}"#)), "the short side's cover counts");
+        assert!(!close_fills(&both(r#"{"delays":{"buy":1,"sell":1,"short":1,"cover":1}}"#)));
+        assert!(long(r#"{"prices":{"cover":"close"},"delays":{"cover":0}}"#).is_err(), "a key of a side not traded is refused, not ignored");
+    }
+    #[test] fn the_report_counts_closed_trades_by_side_and_every_trade_has_excursions() {
+        let rows: &'static [crate::Row] = Box::leak((0..400).map(|i| {
+            let c = 100. + (i as f64 * 0.3).sin() * 8.;
+            crate::Row { ticker: "SPX".into(), date: format!("{}-{:02}-{:02}", 2015 + i / 336, 1 + (i / 28) % 12, 1 + i % 28), open: c - 0.2, high: c + 1., low: c - 1., close: c, volume: None }
+        }).collect::<Vec<_>>().into_boxed_slice());
+        let st = State { ctxs: BTreeMap::from([("SPX".into(), Ctx::new(rows, rows, &[]))]), baskets: Default::default(), vix: vec![], market_extra: Default::default() };
+        let spec = r#"{"v":1,"direction":"both","entry":{"all":[{"lhs":{"s":"close"},"op":"crosses_above","rhs":{"s":"sma","p":{"length":5}}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":4}}]},"short_side":{"entry":{"all":[{"lhs":{"s":"close"},"op":"crosses_below","rhs":{"s":"sma","p":{"length":5}}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":4}}]}}}"#;
+        let q: Query = [("ticker", "SPX"), ("spec", spec), ("cost", "5")].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        let v = parse(&run_json(&st, &q).unwrap()).unwrap();
+        let Some(Json::Arr(trades)) = v.get("trades") else { panic!() };
+        let closed = trades.iter().filter(|t| !matches!(t.get("open"), Some(Json::Bool(true)))).count() as f64;
+        let n = |side: &str| v.get("report").unwrap().get(side).unwrap().get("trades").unwrap().as_f64().unwrap();
+        assert!(n("long") > 0. && n("short") > 0.);
+        assert_eq!((n("all"), n("long") + n("short")), (closed, closed));
+        assert_eq!(Some(closed), v.get("stats").unwrap().get("trades").and_then(Json::as_f64), "the report and the stats count the same trades");
+        for t in trades {
+            let (mae, mfe) = (t.get("mae").unwrap().as_f64().unwrap(), t.get("mfe").unwrap().as_f64().unwrap());
+            assert!(mae <= 0. && 0. <= mfe);
+        }
+        assert!(v.get("report").unwrap().get("buy_hold").unwrap().get("net_profit").unwrap().as_f64().is_some());
+        // Buy&Hold statistics column: one trade over the run, same keys as All; default rates echoed
+        let r = v.get("report").unwrap();
+        let bh = r.get("buyhold").unwrap();
+        assert_eq!(bh.get("trades").and_then(Json::as_f64), Some(1.));
+        let Some(Json::Arr(close)) = v.get("close") else { panic!() };
+        assert!((bh.get("avg").unwrap().as_f64().unwrap() - (close[close.len() - 1].as_f64().unwrap() / close[0].as_f64().unwrap() - 1.)).abs() < 1e-5);
+        assert_eq!((r.get("rates").unwrap().get("sharpe").and_then(Json::as_f64), r.get("rates").unwrap().get("upi").and_then(Json::as_f64)), (Some(5.), Some(5.4)));
+        // execution.report changes only the two ratios that read a risk-free rate
+        let set = spec.replacen(r#""direction":"both","#, r#""direction":"both","execution":{"report":{"rf_sharpe":0,"rf_upi":0}},"#, 1);
+        let mut q2 = q.clone(); q2.insert("spec".into(), set);
+        let w = parse(&run_json(&st, &q2).unwrap()).unwrap();
+        let sys = |v: &Json, k: &str| v.get("report").unwrap().get("system").unwrap().get(k).and_then(Json::as_f64);
+        assert_eq!(w.get("report").unwrap().get("rates").unwrap().get("upi").and_then(Json::as_f64), Some(0.));
+        assert!(sys(&w, "sharpe_trades") > sys(&v, "sharpe_trades") && sys(&w, "upi") > sys(&v, "upi"));
+        for k in ["net_profit", "cagr", "max_sys_dd", "ulcer_index", "k_ratio"] { assert_eq!(sys(&w, k), sys(&v, k), "{k}"); }
+        assert_eq!(v.get("trades"), w.get("trades"));
+    }
 }
 
 #[cfg(test)]
@@ -1497,6 +1875,34 @@ mod portfolio_api_tests {
         let mut q=pq(&s);q.insert("split".into(),"2024-02-01".into());assert!(optimize_json(&st,&q).unwrap_err().message().contains("split is not available"));
         assert!(portfolio_work(61,200).unwrap_err().message().contains("12000"));assert!(portfolio_work(2,201).unwrap_err().message().contains("200"));assert!(portfolio_work(usize::MAX,200).is_err());
     }
+    #[test] fn individual_optimize_runs_each_symbol_alone_and_bounds_the_work() {
+        let (_d,st)=super::super::universe::tests::india("api-individual");
+        let dims=r#""optimize":[{"path":"entry.all[0].rhs.p.length","from":3,"to":6,"step":3},{"path":"exit.any[0].rhs.value","from":2,"to":3,"step":1}]"#;
+        // the NIFTY 50 condition is dropped: the fixture's member rows carry bare tickers without an established market
+        let s=PSPEC.replace(r#",{"lhs":{"s":"close","symbol":"NIFTY 50"},"op":">","rhs":{"value":0}}"#,"").replace(r#""max_open":2}}"#,&format!(r#""max_open":2}},{dims}}}"#));
+        let mut q=pq(&s);q.insert("mode".into(),"individual".into());q.insert("table".into(),"1".into());
+        let j=parse(&optimize_json(&st,&q).unwrap()).unwrap();
+        assert_eq!(j.get("kind").and_then(Json::as_str),Some("lab_individual_optimization"));assert_eq!(num(&j,"combos"),4.);
+        let results=array(j.get("results").unwrap());
+        assert_eq!(results.iter().map(|r|r.get("ticker").and_then(Json::as_str).unwrap()).collect::<Vec<_>>(),["basket:nifty50:A","basket:nifty50:B"]);
+        assert_eq!(num(j.get("info").unwrap(),"combos"),8.,"{j:?}");assert_eq!(array(j.get("notes").unwrap()).len(),3);
+        // each symbol's table and best row are the single-instrument optimizer's for that symbol
+        let single=s.replace(r#","portfolio":{"universe":{"basket":"nifty50"},"score":{"s":"roc","p":{"length":3}},"max_open":2}"#,"");
+        for r in results {
+            let t=r.get("ticker").and_then(Json::as_str).unwrap();
+            let one:Query=[("spec",single.as_str()),("ticker",t),("slim","1"),("table","1")].iter().map(|(k,v)|(k.to_string(),v.to_string())).collect();
+            let o=parse(&optimize_json(&st,&one).unwrap()).unwrap();
+            assert_eq!(r.get("table"),o.get("table"),"{t}");assert_eq!(num(r,"table_rows"),4.);
+            let top=array(o.get("rank").unwrap().get("top3").unwrap()).first().map(|c|num(c,"row") as usize);
+            assert_eq!(r.get("best"),top.map_or(Some(&Json::Null),|k|o.get("picked").unwrap().get(&k.to_string())),"{t}");
+        }
+        // bounds and refusals
+        assert!(individual_work(60,200).is_ok());assert!(individual_work(61,200).unwrap_err().message().contains("61 symbols × 200 combinations = 12200 backtests; the limit is 12000"));assert!(individual_work(usize::MAX,2).is_err());
+        let mut port=pq(&grid());port.insert("mode".into(),"individual".into());
+        assert!(optimize_json(&st,&port).unwrap_err().message().contains("portfolio.max_open is a portfolio setting"));
+        let mut rot=pq(&s.replace(r#""max_open":2}"#,r#""max_open":2,"mode":"rotation"}"#));rot.insert("mode".into(),"individual".into());
+        let e=optimize_json(&st,&rot).unwrap_err();assert!(e.message().contains("rotation"),"{}",e.message());
+    }
     #[test] fn portfolio_api_all_reference_bounds_and_final_publication_deadline_are_enforced(){
       let (_d,st)=super::super::universe::tests::india("api-extra-bounds");for (key,date) in [("from","2030-01-01"),("to","2000-01-01")]{let mut q=pq(PSPEC);q.insert(key.into(),date.into());assert_eq!(run_json(&st,&q).unwrap_err().status(),"needs_data");}
       let deadline=std::time::Instant::now()-std::time::Duration::from_millis(1);assert!(finish_portfolio("ready".into(),deadline,false).unwrap_err().message().contains("90 s"));assert!(finish_portfolio("ready".into(),deadline,true).unwrap_err().message().contains("300 s"));
@@ -1527,4 +1933,71 @@ mod catalogue_state_tests {
   assert!(catalogue_json().contains("\"foreign_volatility\":null"));
   let (_d,india)=super::super::universe::tests::india("catalogue-caps");let j=super::super::json::parse(&catalogue_for_state(&india)).unwrap();let p=j.get("portfolio").unwrap();assert_eq!(p.get("max_combos").and_then(super::super::json::Json::as_f64),Some(200.));let b=match p.get("baskets").unwrap(){super::super::json::Json::Arr(v)=>v,_=>panic!()};assert_eq!(b.len(),2);assert!(b.iter().any(|r|r.get("id").and_then(super::super::json::Json::as_str)==Some("nse500")&&r.get("members").and_then(super::super::json::Json::as_f64)==Some(130.)));
  }
+}
+
+#[cfg(test)]
+mod money_settings_tests {
+    use super::*;
+    use crate::Row;
+    use super::super::json::{parse, Json};
+    fn rows(ticker: &str, n: usize, keep: impl Fn(usize) -> bool) -> &'static [Row] {
+        Box::leak((0..n).filter(|i| keep(*i)).map(|i| { let c = 100. + (i as f64 * 0.3).sin() * 8. + i as f64 * 0.02;
+            Row { ticker: ticker.into(), date: format!("{}-{:02}-{:02}", 2015 + i / 336, 1 + (i / 28) % 12, 1 + i % 28), open: c - 0.2, high: c + 1., low: c - 1., close: c, volume: Some(1000.) } }).collect::<Vec<_>>().into_boxed_slice())
+    }
+    /// SPY misses every 10th SPX day; SPX misses SPY's day 5.
+    fn st() -> State {
+        let (spy, spx) = (rows("SPY", 400, |i| i % 10 != 3), rows("SPX", 400, |i| i != 5));
+        State { ctxs: BTreeMap::from([("SPY".into(), Ctx::new(spy, spy, &[])), ("SPX".into(), Ctx::new(spx, spx, &[]))]), baskets: Default::default(), vix: vec![], market_extra: Default::default() }
+    }
+    const RULES: &str = r#""entry":{"all":[{"lhs":{"s":"close"},"op":"crosses_above","rhs":{"s":"sma","p":{"length":5}}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":3}}]}"#;
+    fn run(st: &State, execution: &str) -> Result<String, LabError> {
+        let q: Query = [("ticker", "SPY"), ("spec", &format!(r#"{{"v":1,{RULES},"execution":{execution}}}"#) as &str)].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        run_json(st, &q)
+    }
+    #[test] fn defaults_are_todays_results() {
+        let st = st();
+        assert_eq!(run(&st, r#"{"fill":"next_open"}"#).unwrap(), run(&st, r#"{"fill":"next_open","tick_size":0,"pad_align":false}"#).unwrap());
+        let money = r#"{"capital":100000,"sizing":{"pct_equity":100},"limits":{"shrink":true}}"#;
+        assert_eq!(run(&st, money).unwrap(), run(&st, &money.replace(r#""shrink":true"#, r#""shrink":true,"margin_pct":100"#)).unwrap());
+    }
+    #[test] fn tick_size_rounds_only_stop_exits_against_the_trader() {
+        let st = st();
+        // AmiBroker: the tick size affects only trades exited by the built-in stops; entries and rule exits keep their prices
+        let rules = format!("{},\"stop_loss\":{{\"pct\":0.5}}}}", RULES.strip_suffix('}').unwrap());
+        let go = |execution: &str| { let q: Query = [("ticker", "SPY"), ("spec", &format!(r#"{{"v":1,{rules},"execution":{execution}}}"#) as &str)].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+            match parse(&run_json(&st, &q).unwrap()).unwrap().get("trades") { Some(Json::Arr(t)) => t.iter().map(|t| (t.get("entry_px").unwrap().as_f64().unwrap(), t.get("exit_px").unwrap().as_f64().unwrap(),
+                t.get("reason").unwrap().as_str().unwrap().to_string(), t.get("open") == Some(&Json::Bool(true)))).collect::<Vec<_>>(), _ => panic!() } };
+        let (raw, snapped) = (go(r#"{"fill":"next_open"}"#), go(r#"{"fill":"next_open","tick_size":0.25}"#));
+        assert_eq!(raw.len(), snapped.len());
+        let on = |x: f64| ((x / 0.25) - (x / 0.25).round()).abs() < 1e-6;
+        let mut stopped = 0;
+        for ((e, x, why, open), (se, sx, swhy, _)) in raw.iter().zip(&snapped) {
+            assert_eq!((e, why), (se, swhy), "entries and exit reasons are unchanged");
+            if why.starts_with("exit.stop_loss") && !open { stopped += 1; assert!(on(*sx) && sx <= x && x - sx < 0.25 + 1e-6, "a stop sells down: {x} → {sx}"); }
+            else { assert_eq!(x, sx, "{why}: not a stop exit"); }
+        }
+        assert!(stopped > 0 && raw.iter().any(|t| !on(t.0)), "the fixture has stop exits and off-grid entries");
+    }
+    #[test] fn account_margin_doubles_the_position_at_fifty_percent() {
+        let st = st();
+        let qty = |margin: &str| match parse(&run(&st, &format!(r#"{{"capital":100000,"sizing":{{"pct_equity":100}},"limits":{{"shrink":true{margin}}}}}"#)).unwrap()).unwrap().get("ledger") {
+            Some(Json::Arr(r)) => r[0].get("qty").unwrap().as_f64().unwrap(), _ => panic!() };
+        let (one, two) = (qty(""), qty(r#","margin_pct":50"#));
+        assert!(two >= 2. * one - 1. && two <= 2. * one + 1., "{one} {two}");
+    }
+    #[test] fn pad_align_follows_the_benchmark_calendar_and_says_so() {
+        let st = st();
+        let v = parse(&run(&st, r#"{"fill":"next_open","pad_align":true}"#).unwrap()).unwrap();
+        let Some(Json::Arr(dates)) = v.get("dates") else { panic!() };
+        assert_eq!(dates.len(), 399, "SPX's 399 days within SPY's first (day 0) and last (day 399)");
+        assert!(dates.iter().all(|d| d.as_str() != Some("2015-01-06")), "a day the reference lacks is dropped");
+        let Some(Json::Arr(events)) = v.get("execution_model").unwrap().get("events") else { panic!() };
+        assert_eq!(events[0].as_str(), Some("Pad and align to SPX: 40 bars padded with the previous close, 1 dropped"));
+        // Explore (and so Scan) reads the same padded bars as the run
+        let spec = format!(r#"{{"v":1,{RULES},"execution":{{"fill":"next_open","pad_align":true}}}}"#);
+        let q: Query = [("ticker", "SPY"), ("mode", "explore"), ("spec", spec.as_str())].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        assert_eq!(parse(&super::super::scan::scan_json(&st, &q).unwrap()).unwrap().get("dates"), v.get("dates"));
+        let spx = State { ctxs: BTreeMap::from([("SPY".into(), Ctx::new(rows("SPY", 50, |_| true), rows("SPY", 50, |_| true), &[]))]), ..st };
+        assert_eq!(run(&spx, r#"{"fill":"next_open","pad_align":true}"#).unwrap_err().status(), "needs_data", "no reference loaded");
+    }
 }

@@ -1,6 +1,6 @@
 //! Moving-average family (TradingView built-ins).
 use super::bars::Bars;
-use super::catalogue::{len, n, p, real, IndicatorDef, Needs, Output, ParamSpec, Params, Placement};
+use super::catalogue::{int, len, n, p, real, IndicatorDef, Needs, Output, ParamSpec, Params, Placement};
 use super::ta;
 
 const CAT: &str = "Moving averages";
@@ -25,6 +25,20 @@ fn vwma(b: &Bars, prm: &Params) -> Output {
 }
 fn hma(b: &Bars, prm: &Params) -> Output {
     let n = n(prm, "length");
+    let x = &b.close;
+    match p(prm, "variant") as u8 {
+        1 => {
+            let (half, full) = (ta::ema(x, n / 2), ta::ema(x, n));
+            let diff: Vec<f64> = half.iter().zip(&full).map(|(h, f)| 2. * h - f).collect();
+            return Ok(vec![ta::ema(&diff, (n as f64).sqrt().round() as usize)]);
+        }
+        2 => {
+            let (third, half, full) = (ta::wma(x, (n / 3).max(1)), ta::wma(x, n / 2), ta::wma(x, n));
+            let diff: Vec<f64> = (0..x.len()).map(|i| 3. * third[i] - half[i] - full[i]).collect();
+            return Ok(vec![ta::wma(&diff, n)]);
+        }
+        _ => {}
+    }
     let (half, full) = (ta::wma(&b.close, n / 2), ta::wma(&b.close, n));
     let diff: Vec<f64> = half.iter().zip(&full).map(|(h, f)| 2. * h - f).collect();
     Ok(vec![ta::wma(&diff, (n as f64).sqrt().floor() as usize)])
@@ -97,7 +111,8 @@ pub const DEFS: &[IndicatorDef] = &[
     def("smma", &["smma"], "Smoothed Moving Average", &[len("length", "Length", 7.)], NO, "rma(close, length) (Wilder smoothing)", &[6], smma),
     def("swma", &["swma"], "Symmetrically Weighted Moving Average", &[], NO, "(x[3] + 2·x[2] + 2·x[1] + x)/6 of close (TradingView ta.swma)", &[3], swma),
     def("vwma", &["vwma"], "Volume Weighted Moving Average", &[len("length", "Length", 20.)], Needs { volume: true, ..Needs::NONE }, "sma(close*volume, length) / sma(volume, length)", &[19], vwma),
-    def("hma", &["hma"], "Hull Moving Average", &[ParamSpec { min: 2., ..len("length", "Length", 9.) }], NO, "wma(2*wma(close, floor(length/2)) - wma(close, length), floor(sqrt(length)))", &[10], hma),
+    def("hma", &["hma"], "Hull Moving Average", &[ParamSpec { min: 2., ..len("length", "Length", 9.) }, int("variant", "Variant (0 HMA TradingView, 1 EHMA Hull Suite, 2 THMA Hull Suite)", 0., 0., 2.)], NO,
+        "wma(2*wma(close, floor(length/2)) - wma(close, length), floor(sqrt(length))); variant 1 EHMA (TradingView public 'Hull Suite' by InSilico): ema(2·ema(close, floor(n/2)) − ema(close, n), round(√n)); variant 2 THMA (same script): wma(3·wma(close, floor(n/3)) − wma(close, floor(n/2)) − wma(close, n), n) (floor(n/3) at least 1)", &[10], hma),
     def("alma", &["alma"], "Arnaud Legoux Moving Average", &[len("length", "Length", 9.), real("offset", "Offset", 0.85, 0., 1., 0.05), real("sigma", "Sigma", 6., 0.5, 50., 0.5)], NO,
         "m=offset*(length-1), s=length/sigma, w_i=exp(-(i-m)^2/(2*s^2)) with i=0 oldest; sum(w_i*close)/sum(w_i)", &[8], alma),
     def("lsma", &["lsma"], "Least Squares Moving Average", &[len("length", "Length", 25.)], NO, "linreg(close, length, 0)", &[24], lsma),
@@ -117,6 +132,13 @@ mod tests {
     #[test] fn sma_len3() { assert_series(&run(&get("sma").unwrap(), &closes(&[1., 2., 3., 4.]), &with("length", 3.)).unwrap()[0], &[N, N, 2., 3.]); }
     #[test] fn ema_len2_sma_seed() { assert_series(&run(&get("ema").unwrap(), &closes(&[1., 2., 3.]), &with("length", 2.)).unwrap()[0], &[N, 1.5, 2.5]); }
     #[test] fn swma_weights() { assert_series(&run(&get("swma").unwrap(), &closes(&[1., 2., 3., 4., 5.]), &Params::new()).unwrap()[0], &[N, N, N, 2.5, 3.5]); }
+    #[test] fn hull_suite_ehma_and_thma_on_a_line() {
+        // SMA-seeded EMAs of a line lag exactly (n−1)/2 and WMAs (n−1)/3: EHMA(4) = x; THMA(4) = wma4(x + 4/3) = x + 1/3
+        let x = closes(&(0..8).map(|i| i as f64).collect::<Vec<_>>());
+        let pv = |v: f64| { let mut p = with("length", 4.); p.insert("variant".into(), v); p };
+        assert_series(&run(&get("hma").unwrap(), &x, &pv(1.)).unwrap()[0], &[N, N, N, N, 4., 5., 6., 7.]);
+        assert_series(&run(&get("hma").unwrap(), &x, &pv(2.)).unwrap()[0], &[N, N, N, N, N, N, 6. + 1. / 3., 7. + 1. / 3.]);
+    }
     #[test] fn hma_len4_constant_input() { // any MA of a constant is the constant
         assert_series(&run(&get("hma").unwrap(), &closes(&[5.; 6]), &with("length", 4.)).unwrap()[0], &[N, N, N, N, 5., 5.]);
     }

@@ -41,7 +41,7 @@ export const COPY = {
   riskEvents: "Risk events",
 
   lead: "Pick indicators from the library, chart them on any market, turn them into entry and exit rules, then backtest and optimize. Saved strategies can be submitted to YT Strategies.",
-  chartHint: "Click a library item to add it · edit settings in the chips",
+  chartHint: "Click a library item to add it · click an indicator chip to open its Parameters",
   noChips: "No indicators on the chart. Pick one from the library.",
   chartNote: "Indicators are calculated from the full history, then the visible range is shown.",
   inProgress: (tf: string) => `The last ${tf === "W" ? "weekly" : tf === "M" ? "monthly" : "period"} bar is still in progress; its values can change until it closes.`,
@@ -97,6 +97,7 @@ export const OPERAND_KIND_LABELS: Record<string, string> = {
   price: "Price", indicator: "Indicator", calendar: "Calendar", number: "Number", bars_held: "Bars held",
   arith: "Arithmetic", pct: "% difference", abs: "Absolute value", ref: "N bars ago", window: "Rolling window", change: "Change over N bars",
   compress: "Higher-timeframe aggregate", bars_since: "Bars since", value_when: "Value when", since: "Highest / lowest since", count: "Count of bars",
+  formula: "My indicator",
 };
 export const CALENDAR_OUTPUTS: { id: string; out: string; label: string }[] = [
   { id: "session", out: "tdom", label: "Trading day of the month" }, { id: "session", out: "tdow", label: "Trading day of the week" },
@@ -113,4 +114,5 @@ export const CALENDAR_OUTPUTS: { id: string; out: string; label: string }[] = [
 export const TF_LABELS: Record<string, string> = { D: "Daily", W: "Weekly", M: "Monthly", Q: "Quarterly", Y: "Yearly" };
 export const ENTRY_KIND_LABELS: Record<string, string> = {
   next_open: "Next open", close: "Close", limit: "Limit", stop: "Stop", stop_limit: "Stop-limit", reverse: "Reversal", roll: "Contract roll",
+  high: "Bar high", low: "Bar low", average: "Bar average",
 };

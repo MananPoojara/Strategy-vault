@@ -12,3 +12,49 @@
 .lab-page [data-lab-optimize] > .empty { margin-top: 10px; }
 .ocmp th, .ocmp td { white-space: nowrap; }
 .lab-page .lab-dims tr.lab-dim-group th { padding: 8px 10px 2px; text-align: left; font-size: 12px; color: var(--ink2); background: transparent; border-bottom: 0; }
+/* Walk-forward sub-section: compact form, IS rows muted, OOS rows plain; chart frame from report.css. */
+.lab-page .lab-wf { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--rule); display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; min-width: 0; }
+.lab-page .lab-wf .box-h { margin: 0; }
+.lab-page .lab-wf .cap { margin: 0; }
+.lab-page .lab-wf-form { flex-wrap: wrap; gap: 8px 12px; }
+.lab-page .lab-wf-form input[type=number] { width: 64px; }
+.lab-page .lab-wf-table tr[data-lab-wf-mode="is"] td { color: var(--ink3); }
+.lab-page .lab-wf-table tr[data-lab-wf-mode="oos"] td { border-bottom: 1px solid var(--rule); }
+.lab-page .lab-wf-chart polyline { fill: none; stroke: var(--blue); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+/* Result tables: compact rows; numbers right-aligned via .n, signs via .pos/.neg. */
+.lab-page .ocmp th, .lab-page .ocmp td { padding: 4px 8px; }
+.lab-page .ocmp td small { color: var(--ink3); }
+.lab-page .lab-opt-all { margin-top: 8px; display: grid; gap: 6px; justify-items: start; min-width: 0; }
+.lab-page .lab-opt-all .tblwrap { width: 100%; max-height: 480px; overflow: auto; }
+.lab-page .lab-opt-all .cap { margin: 0; }
+.lab-page .lab-sort { background: none; border: 0; padding: 0; font: inherit; color: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; }
+.lab-page .lab-sort:focus-visible { outline: none; box-shadow: var(--ring); }
+.lab-page .lab-wf-span { font-weight: 500; white-space: nowrap; }
+.lab-page .lab-wf-preview { max-height: 168px; overflow: auto; max-width: 360px; }
+/* Long setting names wrap in the results header instead of making the table ~1000 px wide on phones. */
+.lab-page .ocmp thead th { white-space: normal; min-width: 64px; max-width: 16ch; }
+@media (max-width: 600px) {
+  .lab-page .lab-dims th:nth-child(n+3), .lab-page .lab-dims td:nth-child(n+3) { width: 60px; min-width: 56px; }
+  .lab-page .lab-dims td:nth-child(2) { min-width: 120px; }
+  .lab-page .lab-dims input[type=checkbox] { width: 20px; height: 20px; }
+}
+/* 3D optimization chart (OptimizeSurface): SVG scales to the panel; colours are theme tokens mixed in the fill. */
+.lab-page .lab-surface { margin-top: 12px; display: grid; gap: 6px; min-width: 0; }
+.lab-page .lab-surface .cap { margin: 0; }
+.lab-page .lab-surface-controls { flex-wrap: wrap; gap: 8px 12px; align-items: end; }
+.lab-page .lab-surface-svg { width: 100%; max-width: 560px; height: auto; display: block; overflow: visible; }
+.lab-page .lab-surface-floor { fill: var(--panel); stroke: var(--rule); }
+.lab-page .lab-surface-axis { stroke: var(--ink3); }
+.lab-page .lab-surface-quad { stroke: var(--card); stroke-width: 0.6; }
+.lab-page .lab-surface-cell { stroke: var(--card); stroke-width: 0.5; }
+.lab-page .lab-surface-tick { fill: var(--ink2); font: 11px var(--font); }
+.lab-page .lab-surface-name { fill: var(--ink); font: 600 12px var(--font); }
+.lab-page .lab-surface-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; color: var(--ink2); }
+.lab-page .lab-surface-ramp { display: inline-flex; height: 10px; width: 160px; max-width: 40vw; border: 1px solid var(--rule); }
+.lab-page .lab-surface-ramp i { flex: 1; }
+/* Individual optimize per-symbol tables and the Info log (AmiBroker Analysis Info tab). */
+.lab-page .lab-individual-table { margin-top: 4px; }
+.lab-page .lab-individual-notes { margin: 6px 0 0; padding-left: 18px; }
+.lab-page .lab-info { margin-top: 8px; display: grid; gap: 4px; justify-items: start; }
+.lab-page .lab-info-log { margin: 0; padding-left: 18px; font-size: 12px; color: var(--ink2); overflow-wrap: anywhere; }
+.lab-page .lab-info-warn { color: var(--red); }

@@ -1,14 +1,15 @@
 import { useSyncExternalStore } from "react";
 import type { LabChartApi, LabChartLibrary, LabSeriesApi } from "./globals";
 
-export interface ChartColors { ink: string; ink3: string; rule: string; steel: string; panel: string; chart: string; bh: string; green: string; red: string; blue: string }
-export const PALETTE: (keyof ChartColors)[] = ["blue", "bh", "green", "red", "chart", "ink3"];
+export interface ChartColors { ink: string; ink2: string; ink3: string; rule: string; steel: string; panel: string; chart: string; bh: string; green: string; red: string; blue: string }
+/** Plot colours that read on every theme (--bh and --ink3 are too pale for lines). */
+export const PALETTE: (keyof ChartColors)[] = ["blue", "red", "green", "chart", "ink2"];
 
 export function themeColors(el: HTMLElement): ChartColors {
   const css = getComputedStyle(el);
   const c = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
   return {
-    ink: c("--ink", "#1d1f23"), ink3: c("--ink3", "#8b8d93"), rule: c("--rule", "#e3e3e4"), steel: c("--steel", "#b9b9ba"),
+    ink: c("--ink", "#1d1f23"), ink2: c("--ink2", "#5f6166"), ink3: c("--ink3", "#8b8d93"), rule: c("--rule", "#e3e3e4"), steel: c("--steel", "#b9b9ba"),
     panel: c("--panel", "#f3f3f3"), chart: c("--chart", "#2f5a8f"), bh: c("--bh", "#8b738f"), green: c("--green", "#2e7d4f"),
     red: c("--red", "#c43c3c"), blue: c("--blue", "#2f5a8f"),
   };
@@ -21,6 +22,26 @@ export function tint(color: string, alpha: number) {
   return rgb ? `rgba(${rgb[1]}, ${alpha})` : "transparent";
 }
 
+/** AmiBroker wheel: scrolling pans the bars left/right (down = later bars), Ctrl/⌘ + scroll zooms around the cursor. */
+export function amiWheel(el: HTMLElement, chart: LabChartApi) {
+  const onWheel = (e: WheelEvent) => {
+    const ts = chart.timeScale(), r = ts.getVisibleLogicalRange?.(), d = e.deltaY || e.deltaX;
+    if (!r || !ts.setVisibleLogicalRange || !d) return;
+    e.preventDefault(); // keep the page (and the browser zoom on Ctrl) still while the chart moves
+    const width = r.to - r.from;
+    if (e.ctrlKey || e.metaKey) {
+      const box = el.getBoundingClientRect(), at = r.from + width * Math.min(1, Math.max(0, (e.clientX - box.left) / (box.width || 1)));
+      const next = Math.max(10, width * (d > 0 ? 1.15 : 1 / 1.15)), k = next / width;
+      ts.setVisibleLogicalRange({ from: at - (at - r.from) * k, to: at + (r.to - at) * k });
+    } else {
+      const step = Math.sign(d) * Math.max(1, Math.round(width * 0.08));
+      ts.setVisibleLogicalRange({ from: r.from + step, to: r.to + step });
+    }
+  };
+  el.addEventListener("wheel", onWheel, { passive: false });
+  return () => el.removeEventListener("wheel", onWheel);
+}
+
 /** Lab pages bypass VaultRuntime.cleanup, so every chart owns its resize observer and removal. */
 export function createLabChart(el: HTMLElement, height: number, options: Record<string, unknown> = {}, library: LabChartLibrary | undefined = window.LightweightCharts) {
   if (!library) return null;
@@ -30,8 +51,9 @@ export function createLabChart(el: HTMLElement, height: number, options: Record<
     layout: { attributionLogo: false, background: { color: colors.panel }, textColor: colors.ink3,
       fontFamily: getComputedStyle(document.body).fontFamily, fontSize: 11 },
     grid: { vertLines: { visible: false }, horzLines: { color: colors.rule } },
-    rightPriceScale: { borderColor: colors.steel }, timeScale: { borderColor: colors.steel, minBarSpacing: 0.05 },
-    crosshair: { mode: library.CrosshairMode?.Normal ?? 0 }, handleScale: { axisPressedMouseMove: false },
+    // minimumWidth: one price-axis width, so stacked panes line up
+    rightPriceScale: { borderColor: colors.steel, minimumWidth: 78 }, timeScale: { borderColor: colors.steel, minBarSpacing: 0.05 },
+    crosshair: { mode: library.CrosshairMode?.Normal ?? 0 }, handleScale: { axisPressedMouseMove: false, mouseWheel: false }, handleScroll: { mouseWheel: false },
     ...options,
   });
   const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => {
@@ -41,7 +63,8 @@ export function createLabChart(el: HTMLElement, height: number, options: Record<
     if (range) chart.timeScale().setVisibleRange(range);
   });
   observer?.observe(el);
-  return { chart, colors, dispose() { observer?.disconnect(); chart.remove(); } };
+  const unwheel = amiWheel(el, chart);
+  return { chart, colors, dispose() { unwheel(); observer?.disconnect(); chart.remove(); } };
 }
 
 function subscribe(onChange: () => void) {

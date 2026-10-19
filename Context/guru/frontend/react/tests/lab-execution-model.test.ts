@@ -231,3 +231,14 @@ it("money limit reversals are refused until their originating order kind is reta
   expect(x.executionProblems(setExecution(both, { opposite: "exit" }), cat, usEtf)).not.toContain(msg);
   expect(x.executionProblems(x.withMode(both, "unit"), cat, usEtf)).not.toContain(msg);
 });
+
+it("trailing % of profit: default, form swap, and the engine's bounds", () => {
+  expect(x.defaultLevel("exit.trailing", "profit_pct", false)).toEqual({ profit_pct: 40 });
+  const swapped = x.withLevel(setAt(defaultSpec(), "exit.trailing", { pct: 5, activate: { pct: 2 } }), "", "exit.trailing", { profit_pct: 40 });
+  expect(swapped.exit.trailing).toEqual({ activate: { pct: 2 }, profit_pct: 40 }); // no stale pct (the engine refuses it)
+  const problems = (slot: string, v: number) => x.executionProblems(setAt(defaultSpec(), slot, { profit_pct: v }), cat, usEtf);
+  expect(problems("exit.trailing", 40)).toEqual([]);
+  expect(problems("exit.trailing", 0)).toContain("Trailing stop: % of profit must be above 0 and below 100.");
+  expect(problems("exit.trailing", 100)).toContain("Trailing stop: % of profit must be above 0 and below 100.");
+  expect(problems("exit.stop_loss", 40)).toContain("Stop-loss: % of profit works only for the trailing stop.");
+});

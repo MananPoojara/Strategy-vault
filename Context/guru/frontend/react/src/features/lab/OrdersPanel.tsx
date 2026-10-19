@@ -8,6 +8,7 @@ import { NumField, OperandEditor } from "./OperandEditor";
 import { orderOf, PRICE_ORDERS, setDirection, setExecution, setOrder, type PriceOrder } from "./spec-model";
 import type { Catalogue, Dist, EntryLevel, Fill, Spec } from "./types";
 import { Segmented } from "./ui";
+import { ExitAtStopSelect, NBarStop, ReentryDelay } from "./AmiSettings";
 import "./rules.css";
 
 const DEFAULT_PCT: Record<PriceOrder["key"], number> = { limit: 1, stop_loss: 5, target: 10, trailing: 5 };
@@ -69,30 +70,33 @@ function LegacyOrdersPanel({ spec, onChange }: { spec: Spec; onChange(spec: Spec
 }
 
 
-function LevelEditor({ value, slot, short, onChange, catalogue, allowOff, label }: {
+function LevelEditor({ value, slot, short, onChange, catalogue, allowOff, label, caption = label }: {
   value?: EntryLevel; slot: LevelSlot | "take_profit"; short: boolean; onChange(value: EntryLevel | undefined): void;
   catalogue?: Catalogue; allowOff?: boolean; label: string;
+  /** Visible text before the unit select; a fixed stop group's legend already names it. */
+  caption?: string;
 }) {
   const bounds = slot === "take_profit" ? TP_BOUNDS : LEVELS[slot];
   const form = levelForm(value), at = bounds.at && !!catalogue;
   const unknown = value !== undefined && (!form || (form === "at" && !at));
   return <span className="lab-level" role="group" aria-label={label}>
-    <label className="dfield">{label}<select aria-label={`${label} unit`} value={unknown ? "kept" : form ?? (allowOff ? "off" : "pct")}
+    <label className="dfield">{caption}<select aria-label={`${label} unit`} value={unknown ? "kept" : form ?? (allowOff ? "off" : "pct")}
       onChange={(e) => {
         if (e.target.value === "off") { onChange(undefined); return; }
         const extra = { ...value } as Record<string, unknown>;
-        for (const key of ["pct", "atr", "atr_length", "points", "at", "ticks"]) delete extra[key];
+        for (const key of ["pct", "atr", "atr_length", "points", "at", "ticks", "profit_pct"]) delete extra[key];
         onChange({ ...extra, ...defaultLevel(slot, e.target.value as LevelForm, short) });
       }}>
-      {allowOff && <option value="off">Off</option>}
+      {allowOff && <option value="off">Disabled</option>}
       {unknown && <option value="kept" disabled>Kept as is</option>}
-      <option value="pct">%</option><option value="atr">ATR</option><option value="points">Points</option>{at && <option value="at">At</option>}
+      <option value="pct">%</option><option value="atr">ATR</option><option value="points">Points</option>{bounds.profitPct && <option value="profit_pct">% of profit</option>}{at && <option value="at">At</option>}
     </select></label>
     {unknown ? <span className="lab-kept">{COPY.keptAsIs} <code>{JSON.stringify(value)}</code></span> : value && <>
       {"pct" in value && <NumField label="%" value={value.pct} min={0} max={bounds.maxPct} step={0.1} onChange={(n) => n !== undefined && onChange({ ...value, pct: n })} />}
       {"atr" in value && <><NumField label="ATR ×" value={value.atr} min={0} max={50} step={0.25} onChange={(n) => n !== undefined && onChange({ ...value, atr: n })} />
         <NumField label="ATR length" value={value.atr_length ?? 14} min={1} max={500} step={1} onChange={(n) => n !== undefined && onChange({ ...value, atr_length: n })} /></>}
       {"points" in value && <NumField label="Points" value={value.points} min={0} max={1e9} step={0.1} onChange={(n) => n !== undefined && onChange({ ...value, points: n })} />}
+      {"profit_pct" in value && <NumField label="% of profit" value={value.profit_pct} min={1} max={99} step={1} onChange={(n) => n !== undefined && onChange({ ...value, profit_pct: n })} />}
       {"at" in value && catalogue && <OperandEditor operand={value.at} side="entry" heldOk={false} catalogue={catalogue} label={`${label} level`}
         onChange={(o) => onChange({ ...value, at: o })} />}
     </>}
@@ -132,18 +136,34 @@ function ScaleInEditor({ spec, pre, catalogue, onChange }: { spec: Spec; pre: Si
   </div>;
 }
 
+/** Exits beyond AmiBroker's four fixed stops, added on demand. */
 const EXITS = [
-  { key: "stop_loss", label: "Stop-loss", initial: { pct: 5 } }, { key: "target", label: "Target", initial: { pct: 10 } },
-  { key: "trailing", label: "Trailing stop", initial: { pct: 5 } }, { key: "breakeven", label: "Breakeven", initial: { after: { pct: 2 } } },
+  { key: "breakeven", label: "Breakeven", initial: { after: { pct: 2 } } },
   { key: "take_profits", label: "Take-profits", initial: [{ pct: 5, size: 0.5 }] }, { key: "min_bars", label: "Minimum bars", initial: 1 },
 ] as const;
+/** AmiBroker Stops tab: the four fixed groups in its order and naming. */
+const STOPS = [
+  { key: "stop_loss", legend: "Maximum loss stop", label: "Stop-loss" }, { key: "target", legend: "Profit target", label: "Target" },
+  { key: "trailing", legend: "Trailing stop", label: "Trailing stop" },
+] as const;
+/** One-line disclosures of how the AmiBroker stop options run in this engine. */
+const STOP_NOTES = {
+  modes: "Exit at trade price only (0): the stop is tested only on each bar's Sell/Cover price (its open or close) and exits there, on that bar. Exit next bar at trade price (2): High-Low triggers it and it exits on the next bar at the Sell/Cover price (the next bar's open when trading on the open). Stops ignore trade delays. Breakeven and take-profits always exit intraday.",
+  nbar: "The N-bar stop has no stop price and exits at the regular trade price. Has priority: on the bar the N-bar stop exits, the other stops are not checked.",
+  portfolio: "Portfolio runs exit stops intraday at the stop level; exit modes, N-bar priority and re-entry delays are single-instrument settings.",
+};
 
-export function OrdersPanel({ spec, onChange, pre = "", catalogue }: { spec: Spec; onChange(spec: Spec): void; pre?: SidePre; catalogue?: Catalogue }) {
+export function OrdersPanel({ spec, onChange, pre = "", catalogue, reentry = false }: {
+  spec: Spec; onChange(spec: Spec): void; pre?: SidePre; catalogue?: Catalogue;
+  /** Show each stop's re-entry delay, exit mode and the N-bar priority (single instrument; one value shared by both sides). */
+  reentry?: boolean;
+}) {
   // The original builder has no catalogue prop until Phase 7 assembly wires the shared execution panel.
   if (!catalogue && !pre) return <LegacyOrdersPanel spec={spec} onChange={onChange} />;
   const side = sideOf(spec, pre);
   if (!side) return <p className="cap">Choose Both directions to edit the short side.</p>;
-  const sideName = pre || spec.direction === "short" ? "Short" : "Long";
+  const sideName = pre || spec.direction === "short" ? "Short" : "Long", both = spec.direction === "both";
+  const reentryLabel = both ? "Re-entry delay, both sides (bars)" : "Re-entry delay (bars)";
   const short = sideName === "Short", order = entryOrderType(side.entry);
   const tps = takeProfits(spec, pre);
   const editableTps = Array.isArray(side.exit.take_profits) && tps.every((tp) => tp && typeof tp === "object" && typeof tp.size === "number");
@@ -162,11 +182,33 @@ export function OrdersPanel({ spec, onChange, pre = "", catalogue }: { spec: Spe
     </div>
     {order === "stop_limit" && levelForm(side.entry.limit) !== "at" && <p className="cap">{COPY.stopLimitHint}</p>}
     {catalogue?.execution && <ScaleInEditor spec={spec} pre={pre} catalogue={catalogue} onChange={onChange} />}
+    <div className="lab-stops">
+      {STOPS.map(({ key, legend, label }) => <fieldset className="lab-fieldset" data-lab-exit={key} key={key}>
+        <legend>{legend}</legend>
+        <div className="lab-row">
+          <LevelEditor value={levelAt(spec, pre, `exit.${key}`)} slot={`exit.${key}`} short={short} catalogue={catalogue} label={label} caption="" allowOff
+            onChange={(d) => onChange(withLevel(spec, pre, `exit.${key}`, d))} />
+          {key === "trailing" && side.exit.trailing !== undefined && level("exit.trailing.activate", "Trailing activation", true)}
+          {reentry && <ExitAtStopSelect spec={spec} stop={key} label={label} onChange={onChange} />}
+          {reentry && <ReentryDelay spec={spec} stop={key} label={reentryLabel} onChange={onChange} />}
+        </div>
+      </fieldset>)}
+      <fieldset className="lab-fieldset" data-lab-exit="n_bar">
+        <legend>N-bar stop</legend>
+        <div className="lab-row">
+          <NBarStop spec={spec} pre={pre} label="Bars held" onChange={onChange} />
+          {reentry && <ReentryDelay spec={spec} stop="bars" label={reentryLabel} onChange={onChange} />}
+          {reentry && <label className="lab-check"><input type="checkbox" checked={!!spec.execution?.nbar_has_priority}
+            onChange={(e) => onChange(setExecution(spec, { nbar_has_priority: e.target.checked || undefined }))} />Has priority</label>}
+        </div>
+        {reentry && <p className="cap">{STOP_NOTES.nbar}</p>}
+      </fieldset>
+    </div>
+    {reentry && <p className="cap" data-lab-stop-modes>{both ? "Exit at stop? applies to both sides. " : ""}{STOP_NOTES.modes}</p>}
+    {!reentry && !pre && <p className="cap">{STOP_NOTES.portfolio}</p>}
     <div className="lab-exits">
       {EXITS.filter(({ key }) => side.exit[key] !== undefined).map(({ key, label }) => {
         const controls = <>
-          {(key === "stop_loss" || key === "target") && level(`exit.${key}`, label)}
-          {key === "trailing" && <>{level("exit.trailing", label)}{level("exit.trailing.activate", "Trailing activation", true)}</>}
           {key === "breakeven" && <>{level("exit.breakeven.after", "Breakeven after")}{level("exit.breakeven.plus", "Breakeven plus", true)}</>}
           {key === "min_bars" && <><NumField label="Rule exits wait (bars)" value={side.exit.min_bars} min={0} max={1000} step={1}
             onChange={(n) => n !== undefined && onChange(putAt(spec, `${pre}exit.min_bars`, n))} /><span className="cap">{COPY.minBarsHint}</span></>}
@@ -183,9 +225,8 @@ export function OrdersPanel({ spec, onChange, pre = "", catalogue }: { spec: Spe
               onClick={() => onChange(withTakeProfits(spec, pre, [...tps, { pct: 5, size: 0.25 }]))}>+ Take-profit</button>}
           </> : <span className="lab-kept">{COPY.keptAsIs} <code>{JSON.stringify(side.exit.take_profits)}</code></span>)}
         </>;
-        const advanced = key === "breakeven" || key === "take_profits" || key === "min_bars";
         return <div className="lab-order" data-lab-exit={key} role="group" aria-label={label} key={key}>
-          {advanced ? <details className="lab-extra-exit" open><summary>{label}</summary><div className="lab-row">{controls}</div></details> : controls}
+          <details className="lab-extra-exit" open><summary>{label}</summary><div className="lab-row">{controls}</div></details>
           <button type="button" className="dbtn sm ghost" aria-label={`Remove ${label}`} onClick={() => onChange(putAt(spec, `${pre}exit.${key}`, undefined))}>×</button>
         </div>;
       })}
@@ -193,7 +234,7 @@ export function OrdersPanel({ spec, onChange, pre = "", catalogue }: { spec: Spe
         const item = EXITS.find((x) => x.key === e.target.value);
         if (item) onChange(putAt(spec, `${pre}exit.${item.key}`, structuredClone(item.initial)));
       }}>
-        <option value="">+ Add exit…</option>
+        <option value="">+ More exits…</option>
         {EXITS.filter(({ key }) => side.exit[key] === undefined).map(({ key, label }) => <option key={key} value={key} disabled={key === "take_profits" && !!side.entry.scale_in}>{label}</option>)}
       </select>
     </div>

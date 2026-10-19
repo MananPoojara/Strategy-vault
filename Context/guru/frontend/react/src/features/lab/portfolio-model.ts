@@ -1,4 +1,4 @@
-import { comboCount, removeAt } from "./spec-model";
+import { comboCount, removeAt, setExecution } from "./spec-model";
 import { foreignProblems, type ForeignScope } from "./foreign-model";
 import type {Catalogue,Market,PortfolioSpec,Spec} from "./types";
 import type {InstrumentOption} from "./instruments";
@@ -7,7 +7,9 @@ export const portfolioShape=(v:unknown):v is PortfolioSpec=>object(v)&&object(v.
 export const portfolioEnabled=(cat:Catalogue)=>!!cat.portfolio?.modes?.length;
 export function withPortfolioMode(s:Spec,mode:"off"|"signals"|"rotation"):Spec {
  if(mode==="off")return removeAt(s,"portfolio");
- return {...s,portfolio:{...s.portfolio,universe:s.portfolio?.universe??{tickers:[]},mode}};
+ // single-instrument AmiBroker settings the portfolio engine refuses (rules.rs portfolio_rules); their controls are hidden there
+ const single=s.portfolio?s:setExecution(s,{prices:undefined,delays:undefined,reentry:undefined,limits:undefined,tick_size:undefined,pad_align:undefined});
+ return {...single,portfolio:{...s.portfolio,universe:s.portfolio?.universe??{tickers:[]},mode}};
 }
 export const portfolioIdentity=(s:Spec)=>portfolioShape(s.portfolio)&&s.portfolio.universe.basket?`portfolio:${s.portfolio.universe.basket}`:"portfolio:list";
 export const portfolioMembers=(s:Spec,cat:Catalogue)=>(portfolioShape(s.portfolio)?s.portfolio.universe.tickers?.length:undefined)??cat.portfolio?.baskets.find(b=>b.id===(portfolioShape(s.portfolio)?s.portfolio.universe.basket:undefined))?.members;
@@ -21,7 +23,7 @@ export function portfolioProblems(s:Spec,cat:Catalogue,market:Market,options?:re
  if((s.direction??"long")!=="long"||s.short_side)out.push("Portfolio execution is long-only; change Direction and remove the short side explicitly.");
  if(!(Number.isFinite(s.execution?.capital)&&s.execution!.capital!>0))out.push("Portfolio money mode requires capital above zero in Position size, re-entry and risk.");
  const ex=s.execution??{};
- for(const [name,value]of Object.entries({"entry.limit":s.entry.limit,"entry.stop":s.entry.stop,"entry.scale_in":s.entry.scale_in,"exit.take_profits":s.exit.take_profits?.length?true:undefined,"execution.cooldown":ex.cooldown,"execution.max_trades":ex.max_trades,"execution.risk":ex.risk&&Object.keys(ex.risk).length?ex.risk:undefined,"execution.instrument":(ex.instrument as {kind?:string}|undefined)?.kind==="cash"?undefined:ex.instrument,"execution.cost_bps":ex.cost_bps}))if(value!==undefined)out.push(`${name} is not supported in a portfolio; settings are kept until you edit them.`);
+ for(const [name,value]of Object.entries({"entry.limit":s.entry.limit,"entry.stop":s.entry.stop,"entry.scale_in":s.entry.scale_in,"exit.take_profits":s.exit.take_profits?.length?true:undefined,"execution.cooldown":ex.cooldown,"execution.max_trades":ex.max_trades,"execution.risk":ex.risk&&Object.keys(ex.risk).length?ex.risk:undefined,"execution.instrument":(ex.instrument as {kind?:string}|undefined)?.kind==="cash"?undefined:ex.instrument,"execution.cost_bps":ex.cost_bps,"execution.prices":ex.prices,"execution.delays":ex.delays,"execution.reentry":ex.reentry,"execution.limits":ex.limits,"execution.tick_size":ex.tick_size||undefined,"execution.pad_align":ex.pad_align||undefined}))if(value!==undefined)out.push(`${name} is not supported in a portfolio; settings are kept until you edit them.`);
  if((ex.delay_bars??1)!==1)out.push("Portfolio delay_bars must be 1.");
  const n=p.max_open??1;if(!Number.isInteger(n)||n<1||n>(cap?.max_open??50))out.push("max_open is outside the advertised whole-number limit.");
  if(p.worst_rank_held!==undefined&&(p.mode!=="rotation"||!Number.isInteger(p.worst_rank_held)||p.worst_rank_held<n||p.worst_rank_held>(cap?.max_universe??120)))out.push("worst_rank_held is rotation-only and must cover max_open within the universe limit.");

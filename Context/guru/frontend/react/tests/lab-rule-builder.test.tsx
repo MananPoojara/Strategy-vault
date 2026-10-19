@@ -189,3 +189,96 @@ it("Phase7 money uses declared costs instead of sending legacy fee fields", asyn
   expect(host.querySelector('input[aria-label="Fees (bps / side)"]')).toBeNull();
   expect(host.querySelector('input[aria-label="Slippage (bps / side)"]')).toBeNull();
 });
+
+// ---- AmiBroker Analysis settings tabs (General / Trades / Stops / Portfolio) and the Scenario presets
+const tree = (spec: Spec, extra: Partial<Parameters<typeof RuleBuilder>[0]> = {}) => setup(spec, { catalogue: catalogue7Fixture, ...extra });
+const tabs = (host: HTMLElement) => [...host.querySelectorAll<HTMLButtonElement>("[data-lab-settings-tabs] [role=tab]")];
+const panel = (host: HTMLElement, label: string) => {
+  const tab = tabs(host).find((t) => t.textContent === label)!;
+  return [...host.querySelectorAll<HTMLElement>("[role=tabpanel]")].find((p) => p.id === tab.getAttribute("aria-controls"))!;
+};
+const scenario = (host: HTMLElement) => host.querySelector<HTMLSelectElement>('select[aria-label="Scenario"]')!;
+
+it("settings tabs follow AmiBroker and the ARIA tab pattern; hidden panels stay mounted", async () => {
+  const { host } = await tree(defaultSpec(), { portfolio: <p data-portfolio-slot>portfolio controls</p> });
+  expect(tabs(host).map((t) => t.textContent)).toEqual(["General", "Trades", "Orders & stops", "Portfolio"]);
+  expect(tabs(host).map((t) => t.tabIndex)).toEqual([0, -1, -1, -1]);
+  for (const t of tabs(host)) expect(panel(host, t.textContent!).getAttribute("aria-labelledby")).toBe(t.id);
+  expect(panel(host, "General").querySelector('[data-lab-exec="direction"]')).not.toBeNull(); // Positions sit in General
+  expect(panel(host, "General").firstElementChild!.hasAttribute("data-lab-equity")).toBe(true); // Initial equity first, as in AmiBroker
+  expect(panel(host, "Trades").querySelector('[data-lab-trade-prices="preset"]')).not.toBeNull(); // grid always visible, greyed for presets
+  expect(panel(host, "Portfolio").querySelector("[data-portfolio-slot]")).not.toBeNull();
+  const list = host.querySelector<HTMLElement>("[role=tablist]")!;
+  await act(async () => list.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
+  expect(tabs(host)[1].getAttribute("aria-selected")).toBe("true");
+  expect(document.activeElement).toBe(tabs(host)[1]);
+  await act(async () => list.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true })));
+  expect(tabs(host)[3].tabIndex).toBe(0);
+  await act(async () => list.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
+  expect(tabs(host)[0].getAttribute("aria-selected")).toBe("true"); // wraps
+  await act(async () => tabs(host)[2].click());
+  expect(panel(host, "Trades").hidden).toBe(true);
+  expect(panel(host, "Trades").querySelector('select[aria-label="Scenario"]')).not.toBeNull(); // hidden, not unmounted
+});
+
+it("Scenario presets rewrite the fills, keep Same-bar order, and show Custom for mixed settings", async () => {
+  const { host, last } = await tree(defaultSpec());
+  expect(scenario(host).value).toBe("next_open");
+  await choose(scenario(host), "prices");
+  expect(last().execution).toEqual({ prices: { buy: "open", sell: "open" }, delays: { buy: 1, sell: 1 } });
+  const fromPrices = await tree(last());
+  await choose(scenario(fromPrices.host), "close");
+  expect(fromPrices.last().execution).toEqual({ fill: "close" });
+  const ohlc = await tree({ ...defaultSpec(), execution: { intrabar: "ohlc_path" } });
+  expect(scenario(ohlc.host).value).toBe("next_open"); // Same-bar order is not part of the scenario
+  await choose(scenario(ohlc.host), "close");
+  expect(ohlc.last().execution).toEqual({ fill: "close", intrabar: "ohlc_path" });
+  const mixed = await tree({ ...defaultSpec(), execution: { exit_fill: "close" } });
+  expect(scenario(mixed.host).value).toBe("custom");
+  expect([...scenario(mixed.host).options].find((o) => o.value === "custom")!.textContent).toBe("Custom (see the fields below)");
+  expect([...scenario(mixed.host).options].filter((o) => o.disabled)).toEqual([]);
+  expect(scenario(mixed.host).textContent).not.toContain("not modelled");
+});
+
+it("stop scenarios set Exit at stop? of all four stops and are recognised back; mixed modes read Custom", async () => {
+  const { host, last } = await tree(defaultSpec());
+  await choose(scenario(host), "next_open_stops_open");
+  expect(last().execution).toEqual({ exit_at_stop: { stop_loss: 2, target: 2, trailing: 2, bars: 2 } });
+  expect(scenario((await tree(last())).host).value).toBe("next_open_stops_open");
+  await choose(scenario(host), "close_stops_close");
+  expect(last().execution).toEqual({ fill: "close", exit_at_stop: { stop_loss: 0, target: 0, trailing: 0, bars: 0 } });
+  const back = await tree(last());
+  expect(scenario(back.host).value).toBe("close_stops_close");
+  await choose(scenario(back.host), "close"); // the intraday preset clears the modes
+  expect(back.last().execution).toEqual({ fill: "close" });
+  expect(scenario((await tree({ ...defaultSpec(), execution: { exit_at_stop: { target: 0 } } })).host).value).toBe("custom");
+  expect(scenario((await tree({ ...defaultSpec(), execution: { exit_at_stop: { stop_loss: 0, target: 0, trailing: 0, bars: 0 } } })).host).value).toBe("custom"); // next open + stops on close
+  const port = await tree({ ...defaultSpec(), execution: { capital: 1e6 }, portfolio: { universe: { basket: "nifty50" } } } as Spec);
+  expect([...scenario(port.host).options].filter((o) => o.disabled).map((o) => o.value)).toEqual(["next_open_stops_open", "close_stops_close"]); // single-instrument modes
+});
+
+it("Activate stops immediately is a real toggle whose default keeps today's behaviour, with a disclosure", async () => {
+  const { host, last } = await tree(defaultSpec());
+  const box = () => [...panel(host, "Orders & stops").querySelectorAll<HTMLLabelElement>("label.lab-check")].find((l) => l.textContent === "Activate stops immediately")!.querySelector("input")!;
+  expect([box().checked, box().disabled]).toEqual([true, false]);
+  expect(panel(host, "Orders & stops").textContent).toContain("AmiBroker's default is unchecked");
+  await act(async () => box().click());
+  expect(last().execution).toEqual({ activate_stops_immediately: false });
+  const off = await tree(last());
+  expect(panel(off.host, "Orders & stops").textContent).toContain("Stops are first checked on the bar after the entry bar.");
+});
+
+it("Orders & stops has an N-bar stop per side; a portfolio hides per-side prices and re-entry and offers to remove kept ones", async () => {
+  const { host, last } = await tree({ ...defaultSpec(), exit: { any: [] } });
+  const nbar = panel(host, "Orders & stops").querySelector<HTMLInputElement>('[data-lab-exit="n_bar"] input[aria-label="Bars held"]')!;
+  await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(nbar, "4"); nbar.dispatchEvent(new Event("input", { bubbles: true })); });
+  expect(last().exit.any).toEqual([{ lhs: { s: "bars_held" }, op: ">=", rhs: { value: 4 } }]);
+  expect(panel(host, "Orders & stops").querySelectorAll('input[aria-label="Re-entry delay (bars)"]')).toHaveLength(4);
+  const port = { ...defaultSpec(), execution: { capital: 1e6, reentry: { stop_loss: 2 }, prices: { buy: "close" as const }, delays: { buy: 0 } }, portfolio: { universe: { basket: "nifty50" } } } as Spec;
+  const p = await tree(port);
+  expect(p.host.querySelector('input[aria-label^="Re-entry delay"]')).toBeNull();
+  expect(p.host.querySelector("[data-lab-trade-prices]")).toBeNull();
+  expect([...scenario(p.host).options].find((o) => o.value === "prices")!.disabled).toBe(true);
+  await act(async () => p.host.querySelector<HTMLButtonElement>("[data-lab-portfolio-stray] button")!.click());
+  expect(p.last().execution).toEqual({ capital: 1e6 });
+});

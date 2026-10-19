@@ -3,6 +3,8 @@ import type { Indicator, Market, Timeframe } from "./types";
 
 export const MAX_PRICE_OVERLAYS = 4;
 export const MAX_PANES = 3;
+/** Short ids read as the familiar abbreviation (SMA, RSI, MACD); longer ids keep the full name. */
+export const shortName = (ind: Indicator) => (/^[a-z0-9]{2,6}$/.test(ind.id) ? ind.id.toUpperCase() : ind.name);
 
 /** Matches name, id, TradingView and AmiBroker names; an empty query returns the list unchanged. */
 export function searchIndicators(list: Indicator[], query: string): Indicator[] {

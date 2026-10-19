@@ -1,0 +1,11 @@
+/* Analysis window: Scan (signal list) and Explore (per-bar columns), collapsed until opened. */
+.lab-explore { min-width: 0; }
+.lab-explore > summary { cursor: pointer; font-weight: 600; color: var(--ink); }
+.lab-explore-body { display: grid; gap: 8px; margin-top: 10px; min-width: 0; }
+.lab-explore-body > .lab-row { flex-wrap: wrap; gap: 8px; align-items: flex-end; }
+.lab-explore-body .cap { margin: 0; color: var(--ink2); }
+.lab-explore-body input[type="number"] { width: 80px; }
+.lab-explore-table { max-width: 100%; overflow: auto; }
+.lab-explore-table th button { all: unset; cursor: pointer; white-space: nowrap; }
+.lab-explore-table th button:focus-visible { outline: 2px solid var(--ink2); outline-offset: 2px; }
+.lab-explore-table td { white-space: nowrap; font-variant-numeric: tabular-nums; }

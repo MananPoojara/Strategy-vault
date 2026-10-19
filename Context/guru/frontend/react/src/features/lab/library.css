@@ -4,13 +4,13 @@
 .lab-library li { list-style: none; display: flex; align-items: center; gap: 6px; padding: 0 2px; }
 .lab-library li:hover { background: var(--panel); }
 .lab-library li > button[data-lab-item] { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; text-align: left; font: 500 13px var(--font); color: var(--ink); background: none; border: 0; padding: 4px 2px; cursor: pointer; }
-.lab-library li > button[data-lab-item] b { flex: 0 1 auto; max-width: 62%; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lab-library li > button[data-lab-item] b { flex: 0 1 auto; max-width: 75%; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lab-library li > button[data-lab-item] small { flex: 1 1 0; min-width: 0; color: var(--ink3); font-weight: 400; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lab-library li > button[data-lab-item]:disabled, .lab-library button[disabled] { color: var(--ink3); cursor: not-allowed; }
 .lab-library .tag { flex: none; font: 600 10px "IBM Plex Mono", monospace; letter-spacing: .04em; text-transform: uppercase; padding: 1px 5px; border: 1px solid var(--steel); border-radius: 0; color: var(--ink3); background: none; white-space: nowrap; }
-.lab-library .tag.on { border-color: var(--blue); color: var(--blue); }
 .lab-library .tag.warn { border-color: var(--red); color: var(--red); }
-.lab-library li > .dbtn.sm { flex: none; padding: 1px 7px; font-size: 11.5px; line-height: 1.4; }
+.lab-library li > .dbtn.sm { flex: none; width: 20px; height: 20px; padding: 0; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--rule); background: none; color: var(--ink3); font: italic 600 11px Georgia, serif; }
+.lab-library li > .dbtn.sm:hover { color: var(--ink); border-color: var(--steel); }
 .lab-library summary { cursor: pointer; font-weight: 600; color: var(--ink2); padding: 4px 0; }
 .lab-library summary small { color: var(--ink3); font-weight: 400; }
 .lab-library .lab-group-h { display: flex; align-items: baseline; gap: 2px; width: 100%; text-align: left; font: 600 11px var(--font); letter-spacing: .06em; text-transform: uppercase; color: var(--ink2); background: none; border: 0; padding: 10px 2px 4px; cursor: pointer; }
@@ -23,7 +23,13 @@
 .lab-library input[type=search] { width: 100%; box-sizing: border-box; font: 500 13px var(--font); padding: 6px 8px; margin: 6px 0 8px; border: 1px solid var(--steel); border-radius: var(--r-field); background: var(--card); color: var(--ink); }
 .lab-toolbar .dfield select { max-width: 100%; }
 .lab-detail pre { white-space: pre-wrap; background: var(--panel); padding: 8px; font: 400 12px "IBM Plex Mono", monospace; color: var(--ink); }
-.lab-detail dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; }
+.lab-detail-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 32px; align-items: start; }
+@media (max-width: 1000px) { .lab-detail-cols { grid-template-columns: minmax(0, 1fr); } }
+.lab-detail dl { display: grid; grid-template-columns: repeat(2, max-content minmax(0, 1fr)); gap: 4px 12px; }
+@media (max-width: 600px) { .lab-detail dl { grid-template-columns: max-content minmax(0, 1fr); } }
 .lab-detail dt { color: var(--ink2); font-weight: 600; } .lab-detail dd { margin: 0; }
 @media (max-width: 900px) { .lab-library { position: static; max-height: 60vh; } }
 .lab-toolbar { padding-top: 10px; padding-bottom: 10px; }
+.lab-library li > .dbtn.sm.lab-mine-edit { width: auto; border-radius: var(--r-field); padding: 0 8px; font: 600 11px var(--font); font-style: normal; }
+.lab-library .lab-mine-new { margin: 2px 0 4px; }
+.lab-library .lab-mine li.cap { padding: 4px 2px; font-size: 12px; }

@@ -269,3 +269,32 @@ it("a changed portfolio cohort invalidates pending results and their Apply actio
  expect(host.querySelector<HTMLSelectElement>('[aria-label="Held back"]')).toBeNull();
  expect(host.querySelector(".empty")?.textContent).toBe("Portfolio optimization ranks the full period using shared cash.");
 });
+
+it("All results: collapsed list of every combination with AmiBroker names, click-to-sort and Show all", async () => {
+  const cols = ["total_return", "exposure", "cagr", "max_dd", "mar", "trades", "win_rate", "profit_factor", "avg_trade", "sharpe"];
+  const table = Array.from({ length: 120 }, (_, i) => [10 + i, 0.01 * i, 0.5, (i % 7) / 100 - 0.02, -0.1, 1, 20, 0.5, 1.2, 0.001, 0.4]);
+  const fx: OptimizeResult = { ...optimizeFixture, split: null, ranked_on: "full", table_cols: cols, table, money: { capital: 100000, basis: "money basis" } };
+  const host = await mount(<OptimizePanel {...base} onOptimize={vi.fn().mockResolvedValue(fx)} />);
+  await tick(host, "entry.all[0].rhs.p.length");
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-action="optimize"]')!.click());
+  await flush();
+  const all = host.querySelector("[data-lab-optimize-all]")!;
+  expect(all.querySelector("table")).toBeNull();
+  await act(async () => all.querySelector<HTMLButtonElement>("button[aria-expanded]")!.click());
+  const heads = [...all.querySelectorAll("thead th")].map((th) => th.textContent);
+  expect(heads.slice(0, 5)).toEqual(["No. ▲", "Net Profit", "Net % Profit", "Exposure %", "CAR"]);
+  expect(heads).toContain("CAR/MDD");
+  expect(all.querySelectorAll("tbody tr")).toHaveLength(100);
+  const first = () => [...all.querySelector("tbody tr")!.children].map((c) => c.textContent);
+  expect(first()[1]).toBe(num(0)); // capital × Net % for row 1
+  // sort by CAR: descending first, the best CAR on top; then ascending
+  const car = () => [...all.querySelectorAll<HTMLButtonElement>("thead .lab-sort")].find((b) => b.textContent!.startsWith("CAR"))!;
+  await act(async () => car().click());
+  expect(first()[4]).toBe(pct(0.04, 2));
+  expect(car().closest("th")!.getAttribute("aria-sort")).toBe("descending");
+  await act(async () => car().click());
+  expect(first()[4]).toBe(pct(-0.02, 2));
+  expect(first()[4] && all.querySelector("tbody tr td:nth-child(5)")!.className).toContain("neg");
+  await act(async () => [...all.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "Show all 120")!.click());
+  expect(all.querySelectorAll("tbody tr")).toHaveLength(120);
+});

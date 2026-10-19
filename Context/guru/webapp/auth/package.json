@@ -5,7 +5,7 @@
   "scripts": {
     "start": "node src/server.mjs",
     "bootstrap": "node src/bootstrap.mjs",
-    "test": "node --test ../tests/contracts.test.mjs ../tests/lab-strategies.test.mjs"
+    "test": "node --test ../tests/contracts.test.mjs ../tests/lab-strategies.test.mjs ../tests/lab-indicators.test.mjs"
   },
   "dependencies": {
     "@hono/node-server": "2.1.4",

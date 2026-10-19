@@ -27,8 +27,11 @@ pub fn allowed_engine_path(path: &str) -> bool {
             | "guru/chande/optimize"
             | "lab/catalogue"
             | "lab/series"
+            | "lab/formula"
             | "lab/run"
             | "lab/optimize"
+            | "lab/walkforward"
+            | "lab/scan"
             | "lab/instruments"
             | "lab/templates"
             | "lab/template"
@@ -186,12 +189,15 @@ pub fn safe_engine_numbers(params: &std::collections::BTreeMap<String, String>) 
 }
 /// Indicators lab: one optimization at a time and research roles only, like the book optimizers.
 pub fn is_lab_optimization_path(path: &str) -> bool {
+    if path == "lab/walkforward" { return true; } // walk-forward runs the optimizer per window: same slot and roles
     path == "lab/optimize"
 }
 pub const LAB_SPEC_MAX_BYTES: usize = 8192;
 pub const LAB_MAX_CONDITIONS: usize = 12;
 /// Bounds a lab rule spec before it reaches the engine (the engine re-validates every field).
 pub fn lab_spec_problem(path: &str, params: &std::collections::BTreeMap<String, String>) -> Option<&'static str> {
+    let path = if path == "lab/walkforward" { "lab/optimize" } else { path }; // walk-forward specs are bounded like optimize specs
+    let path = if path == "lab/scan" { "lab/run" } else { path }; // scan/explore evaluate the same rules as one run: same spec bounds
     if !matches!(path, "lab/run" | "lab/optimize") {
         return None;
     }
@@ -248,8 +254,26 @@ mod lab_tests {
         assert!(!allowed_engine_path("lab/strategies"));
         assert!(!allowed_engine_path("lab/../notes"));
         assert!(is_lab_optimization_path("lab/optimize"));
+        // walk-forward runs the optimizer per window: same role, slot and spec bounds
+        assert!(allowed_engine_path("lab/walkforward") && is_lab_optimization_path("lab/walkforward") && engine_market_allows("gl", "lab/walkforward"));
+        assert!(lab_spec_problem("lab/walkforward", &Default::default()).is_some());
         assert!(!is_lab_optimization_path("lab/run"));
+        assert!(allowed_engine_path("lab/scan") && !is_lab_optimization_path("lab/scan") && lab_spec_problem("lab/scan", &Default::default()).is_some());
         assert!(!is_optimization_path("lab/optimize"), "existing book list stays unchanged");
+    }
+    #[test]
+    fn formula_validation_is_an_allowlisted_cheap_read_and_formula_specs_keep_the_byte_budget() {
+        assert!(allowed_engine_path("lab/formula") && engine_market_allows("gl", "lab/formula"));
+        assert!(!is_lab_optimization_path("lab/formula") && !is_optimization_path("lab/formula"));
+        assert_eq!(lab_spec_problem("lab/formula", &BTreeMap::new()), None, "validation sends formula text, not a spec");
+        assert!(!allowed_engine_path("lab/formula/x"));
+        let operand = |text: &str| format!(r#"{{"formula":"{text}","name":"Mom","p":{{"Fast":9}},"out":"Osc"}}"#);
+        let small = SPEC.replacen(r#"{"s":"close"}"#, &operand(r#"Fast = Param(\"Fast\", 9, 2, 50, 1)\nPlot(EMA(C, Fast), \"Osc\")"#), 1);
+        assert_eq!(lab_spec_problem("lab/run", &q(&small)), None);
+        let big = SPEC.replacen(r#"{"s":"close"}"#, &operand(&format!(r#"Plot(C, \"Osc\") // {}"#, "x".repeat(LAB_SPEC_MAX_BYTES))), 1);
+        for path in ["lab/run", "lab/optimize", "lab/scan", "lab/walkforward"] {
+            assert!(lab_spec_problem(path, &q(&big)).is_some_and(|p| p.contains("8 KB")), "{path}");
+        }
     }
     #[test]
     fn customize_routes_are_allowlisted_reads() {

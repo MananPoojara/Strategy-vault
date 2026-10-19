@@ -86,7 +86,9 @@ it("a failed run clears the previous result", async () => {
   expect(host.querySelector("[data-lab-result]")).not.toBeNull();
   const tables = host.querySelector("[data-lab-result-tables]")!;
   expect(tables).not.toBeNull();
-  expect(tables.closest("[data-lab-result], .two")).toBeNull(); // a full-width row below the rules/backtest pair
+  expect(tables.closest("[data-lab-results-tabs]")).not.toBeNull(); // every result view is a tab of the Results box under Run backtest
+  const tabs = [...host.querySelectorAll<HTMLElement>('[data-lab-results-tabs] [role=tab]')].map((t) => t.textContent);
+  expect(tabs).toEqual(expect.arrayContaining(["Equity & drawdown", "Monthly returns", "Trades", "Scan / Explore"]));
   expect(host.querySelector(".two [data-lab-result]")).not.toBeNull();
   runAnswer = () => jsonResponse({ status: "needs_data", error: "NIFTY 50: invalid OHLC bar on 2001-03-02", label: catalogueFixture.label }, 400);
   await run(host);

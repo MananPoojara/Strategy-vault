@@ -54,3 +54,10 @@ it("uses a portfolio save/run identity independently of the chart ticker",()=>{
  const state={...start(),spec};expect(editorState(state,"in").ticker).toBe("portfolio:nifty50");
  expect(runKey(spec,"in","NIFTY 50")).toBe(runKey(spec,"in","NIFTY BANK"));
 });
+
+it("chip-look sets the per-plot looks and keeps the chip's params and comparison", () => {
+  const s = { ...start(), chips: [{ key: "c1", id: "ema", params: { length: 20 }, vs: "SPX" }] };
+  const next = labReducer(s, { type: "chip-look", key: "c1", looks: { ema: { style: "dashed" } } });
+  expect(next.chips[0]).toEqual({ key: "c1", id: "ema", params: { length: 20 }, vs: "SPX", looks: { ema: { style: "dashed" } } });
+  expect(labReducer(next, { type: "chip-look", key: "c1", looks: undefined }).chips[0].params).toEqual({ length: 20 });
+});

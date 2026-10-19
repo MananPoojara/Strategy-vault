@@ -1,51 +1,66 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { linePoints } from "./bars";
 import { createLabChart, themeColors, useThemeKey } from "./charts";
-import { int, num, pct } from "./format";
+import { DASH, int, num, pct } from "./format";
 import { COPY, ENTRY_KIND_LABELS } from "./labels";
 import { friendlyReason } from "./spec-model";
-import type { RunResult, SavedMarket, Stats, Trade, Piece, ExecutionModel, MoneySummary } from "./types";
-import { MetricTiles, ProvisionalStrip, ServerLabel, isProvisional } from "./ui";
+import type { RunResult, SavedMarket, Stats, Piece, ExecutionModel, MoneySummary, Instrument } from "./types";
+import { MetricTiles, ProvisionalStrip, Segmented, ServerLabel, isProvisional } from "./ui";
 import "./results.css";
 
-const MAX_ROWS = 200;
+const PAGE = 100;
+const sign = (v: number | null | undefined) => (typeof v === "number" ? (v > 0 ? "n pos" : v < 0 ? "n neg" : "n") : "n");
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const FILL: Record<string, string> = { next_open: "Next open", close: "Close", limit: "Limit" };
 
-/** Engine stats are ratios (same units as the book presenters' `label(…, 'percent')`). */
-export const kpiItems = (s: Stats) => [
-  { label: "Net return", value: pct(s.total_return) }, { label: "CAGR", value: pct(s.cagr) },
-  { label: "Max drawdown", value: pct(s.max_dd) }, { label: "Sharpe", value: num(s.sharpe) },
-  { label: "Trades", value: int(s.trades) }, { label: "Win rate", value: pct(s.win_rate) },
-  { label: "Avg trade", value: pct(s.avg_trade, 2) }, { label: "Buy & hold CAGR", value: pct(s.bh_cagr) },
-];
+/** AmiBroker status line (Profit, CAR, MaxSysDD, CAR/MDD, # winners, # losers); engine stats are ratios. */
+export const kpiItems = (s: Stats) => {
+  const n = s.trades, won = typeof n === "number" && typeof s.win_rate === "number" ? Math.round(n * s.win_rate) : null;
+  const share = (k: number | null) => (k === null ? DASH : `${int(k)} (${pct(n ? k / n : null)})`);
+  return [
+    { label: "Net Profit %", value: pct(s.total_return) }, { label: "CAR", value: pct(s.cagr) },
+    { label: "MaxSysDD", value: pct(s.max_dd) }, { label: "CAR/MDD", value: num(s.mar) },
+    { label: "# trades", value: int(n) }, { label: "# winners", value: share(won) }, { label: "# losers", value: share(won === null ? null : n! - won) },
+    { label: "Avg. profit/loss %", value: pct(s.avg_trade, 2) }, { label: "Sharpe", value: num(s.sharpe) }, { label: "Buy & hold CAGR", value: pct(s.bh_cagr) },
+  ];
+};
 
-/** Newest first; an open trade's exit price is the last mark. */
-export const tradeRows = (trades: Trade[]) => [...trades].reverse().map((t) => [
-  t.entry, t.dir === -1 ? "Short" : "Long", FILL[t.entry_kind] ?? t.entry_kind, num(t.entry_px),
-  t.open ? "Open" : t.exit, num(t.exit_px), pct(t.ret, 2), int(t.bars), friendlyReason(t.reason),
-]);
-
-export interface TradeTable { header: string[]; rows: (string | ReactNode)[][]; csv: string[][]; numeric: number[]; ret: number }
+/** Rows and CSV in trade order (oldest first, as AmiBroker); `cls` holds each cell's class. */
+export interface TradeTable { header: string[]; rows: (string | ReactNode)[][]; csv: string[][]; cls: (string | undefined)[][] }
 const ledgerAligned = ({ trades, ledger }: Pick<RunResult, "trades" | "ledger">) => !!ledger?.length && ledger.length === trades.length && ledger.every((r, i) => r.entry === trades[i].entry);
 const pieceText = (pieces: Piece[]) => pieces.map(([date, price, weight]) => `${date} @ ${num(price)} × ${Math.round(weight * 100)}%`).join("; ");
-export function tradeTable(result: Pick<RunResult, "trades" | "ledger">): TradeTable {
+const NUMERIC = new Set(["Price", "Ex. Price", "Cum. Profit", "Cum. %", "Profit", "% Profit", "Shares", "Position value", "Allocation", "# bars", "MAE", "MFE", "Profit/bar", "Costs"]);
+export function tradeTable(result: Pick<RunResult, "trades" | "ledger"> & { money?: Pick<MoneySummary, "capital">; instrument?: Pick<Instrument, "ticker"> }): TradeTable {
   const { trades, ledger } = result;
   const legs = trades.some((t) => !!t.legs?.length), fills = trades.some((t) => !!t.fills?.length), sized = trades.some((t) => t.weight !== undefined), money = ledgerAligned(result);
-  const header = ["Entry date", "Side", "Order", "Entry", ...(legs ? ["Legs"] : []), "Exit date", "Exit", ...(fills ? ["Scale-outs"] : []), "Return", "Bars", "Exit reason", ...(sized ? ["Allocation"] : []), ...(money ? ["Qty", "Value", "Costs", "P&L"] : [])];
-  const ret = header.indexOf("Return"), numeric = header.flatMap((h, i) => ["Entry", "Exit", "Return", "Bars", "Allocation", "Qty", "Value", "Costs", "P&L"].includes(h) ? [i] : []);
-  const csv: string[][] = [header], rows: (string | ReactNode)[][] = [];
-  for (let i = trades.length - 1; i >= 0; i--) {
-    const t = trades[i], row = [t.entry, t.dir === -1 ? "Short" : "Long", ENTRY_KIND_LABELS[t.entry_kind] ?? t.entry_kind, num(t.entry_px), ...(legs ? [t.legs?.length ? pieceText(t.legs) : "1"] : []), t.open ? "Open" : t.exit, num(t.exit_px), ...(fills ? [t.fills?.length ? pieceText(t.fills) : "—"] : []), pct(t.ret, 2), int(t.bars), friendlyReason(t.reason), ...(sized ? [pct(t.weight ?? 1)] : [])];
-    if (money) { const r = ledger![i]; row.push(int(r.qty), num(r.notional), num(r.costs), num(r.pnl)); }
+  const excursions = trades.some((t) => typeof t.mae === "number");
+  // AmiBroker result-list names and order; Order, Allocation, Costs and Exit reason are this lab's own columns.
+  const header = ["Symbol", "Trade", "Order", "Date", "Price", "Ex. date", "Ex. Price", ...(money ? ["Cum. Profit", "Profit", "% Profit", "Shares", "Position value"] : ["Cum. %", "% Profit"]),
+    ...(sized ? ["Allocation"] : []), "# bars", ...(excursions ? ["MAE", "MFE"] : []), "Profit/bar", ...(legs ? ["Scale in"] : []), ...(fills ? ["Scale out"] : []), ...(money ? ["Costs"] : []), "Exit reason"];
+  // Cumulative in trade order, the open (marked) trade included: unit mode compounds the trade returns (the unit equity
+  // line); money mode sums ledger P&L (cash equity, before idle-cash interest).
+  let growth = 1, pnl = 0;
+  const csv: string[][] = [header], rows: (string | ReactNode)[][] = [], cls: (string | undefined)[][] = [];
+  trades.forEach((t, i) => {
+    const r = money ? ledger![i] : undefined, cum = r ? (pnl += r.pnl) : (growth *= 1 + (t.ret ?? 0)) - 1;
+    const cell: Record<string, string> = {
+      Symbol: result.instrument?.ticker ?? "", Trade: t.dir === -1 ? "Short" : "Long", Order: ENTRY_KIND_LABELS[t.entry_kind] ?? t.entry_kind,
+      Date: t.entry, Price: num(t.entry_px), "Ex. date": t.open ? "Open" : t.exit, "Ex. Price": num(t.exit_px),
+      "Cum. Profit": num(cum), "Cum. %": pct(cum, 1), Profit: num(r?.pnl), "% Profit": pct(t.ret, 2), Shares: int(r?.qty), "Position value": num(r?.notional),
+      Allocation: pct(t.weight ?? 1), "# bars": int(t.bars), MAE: pct(t.mae, 2), MFE: pct(t.mfe, 2),
+      // AmiBroker # bars counts the entry and the exit bar
+      "Profit/bar": r ? num(r.pnl / (t.bars + 1)) : pct(typeof t.ret === "number" ? t.ret / (t.bars + 1) : null, 3),
+      "Scale in": t.legs?.length ? pieceText(t.legs) : "1", "Scale out": t.fills?.length ? pieceText(t.fills) : DASH, Costs: num(r?.costs), "Exit reason": friendlyReason(t.reason),
+    };
+    const row = header.map((h) => cell[h]);
     csv.push(row);
     const view: (string | ReactNode)[] = [...row];
-    for (const [label, pieces, word] of [["Legs", t.legs, "legs"], ["Scale-outs", t.fills, "scale-outs"]] as const) {
+    for (const [label, pieces, word] of [["Scale in", t.legs, "legs"], ["Scale out", t.fills, "scale-outs"]] as const) {
       if (pieces?.length) view[header.indexOf(label)] = <details><summary>{pieces.length} {word}</summary>{pieceText(pieces)}</details>;
     }
     rows.push(view);
-  }
-  return { header, rows, csv, ret, numeric };
+    cls.push(header.map((h) => (h === "% Profit" ? sign(t.ret) : h === "Profit" || h === "Cum. Profit" ? sign(h === "Profit" ? r?.pnl : cum) : NUMERIC.has(h) ? "n" : undefined)));
+  });
+  return { header, rows, csv, cls };
 }
 export function ExecutionStrip({ model, money, adaptations }: { model?: ExecutionModel; money?: Pick<MoneySummary, "capital"> & { currency?: string | null }; adaptations?: string[] }) {
   if (!model && !money && !adaptations?.length) return null;
@@ -62,8 +77,6 @@ export function drawdown(equity: number[]): number[] {
   let peak = 1;
   return equity.map((v) => { peak = Math.max(peak, v); return v / peak - 1; });
 }
-
-const sign = (v: number | null | undefined) => (typeof v === "number" ? (v > 0 ? "n pos" : v < 0 ? "n neg" : "n") : "n");
 
 export function RunResults({ result, market }: { result: RunResult; market: SavedMarket }) {
   const { instrument, stats, costs } = result;
@@ -126,34 +139,41 @@ export function RunResults({ result, market }: { result: RunResult; market: Save
       <ExecutionStrip model={result.execution_model} money={result.money} adaptations={result.adaptations} />
       <MetricTiles items={[...(result.money ? [{ label: "Final equity", value: num(result.money.final_equity) }, { label: "Costs paid", value: num(result.money.costs_total) }] : []), ...kpiItems(stats)]} />
       <p className="cap">Exposure {pct(stats.exposure)} · before costs: {pct(stats.gross_total_return)}</p>
-      {result.money ? <><p className="cap">{result.money.basis}</p>{result.money.skipped > 0 && <p className="cap">{result.money.skipped} trade{result.money.skipped === 1 ? "" : "s"} skipped (size rounded to 0)</p>}</> : <p className="cap">Fees {costs.fees_bps} bps + slippage {costs.slippage_bps} bps per side · taxes not modelled</p>}
+      {result.money ? <><p className="cap">{result.money.basis}</p>{result.money.skipped > 0 && <p className="cap">{result.money.skipped} trade{result.money.skipped === 1 ? "" : "s"} skipped ({result.money.limits
+        ? Object.entries(result.money.limits.skip_reasons).map(([k, n]) => `${k.replaceAll("_", " ")}: ${n}`).join(" · ") : "size rounded to 0"})</p>}
+        {result.money.limits && <p className="cap" data-lab-limits-basis>Interest on idle cash: {result.money.limits.interest.toLocaleString("en-US", { maximumFractionDigits: 2 })}. {result.money.limits.basis}</p>}</> : <p className="cap">Fees {costs.fees_bps} bps + slippage {costs.slippage_bps} bps per side · taxes not modelled</p>}
 
       <div className="lab-result-charts">
         <figure className="lab-result-chart" data-lab-chart="equity">
-          <figcaption className="lab-chart-h"><h3>Equity growth</h3><output ref={equityValueRef} data-lab-equity-value>Latest {num(result.equity.at(-1))}×</output></figcaption>
+          <figcaption className="lab-chart-h"><h3>Portfolio Equity</h3><output ref={equityValueRef} data-lab-equity-value>Latest {num(result.equity.at(-1))}×</output></figcaption>
           <div className="legend lab-legend lab-chart-sub">
             <span><i className="sw-line" style={{ background: "var(--chart)" }} />Strategy</span>
             <span><i className="sw-line" style={{ background: "var(--bh)" }} />Buy &amp; hold</span>
-            <span className="cap">Logarithmic scale</span>
+            <span className="cap lab-scale-note">log scale</span>
           </div>
-          <div className="lwc" data-lab-equity aria-label="Equity growth chart" ref={equityRef} />
+          <div className="lwc" data-lab-equity aria-label="Portfolio Equity chart" ref={equityRef} />
         </figure>
         <figure className="lab-result-chart" data-lab-chart="drawdown">
-          <figcaption className="lab-chart-h"><h3>Drawdown from peak</h3><output ref={ddValueRef} data-lab-drawdown-value>Latest {pct(ddValues.at(-1))}</output></figcaption>
+          <figcaption className="lab-chart-h"><h3>Underwater Equity</h3><output ref={ddValueRef} data-lab-drawdown-value>Latest {pct(ddValues.at(-1))}</output></figcaption>
           <p className="cap lab-chart-sub">0% is the previous peak · losses appear below zero</p>
-          <div className="lwc bkc" data-lab-drawdown aria-label="Drawdown from peak chart" ref={ddRef} />
+          <div className="lwc bkc" data-lab-drawdown aria-label="Underwater Equity chart" ref={ddRef} />
         </figure>
       </div>
     </section>
   );
 }
 
-/** Monthly returns and tradesheet: a full-width row under the rules/backtest pair. */
-export function RunTables({ result }: { result: RunResult }) {
+/** AmiBroker Profit Table and the tradesheet (result list): a full-width row under the rules/backtest pair. */
+/** `part` shows only the Profit Table ("monthly") or only the Tradesheet and ledger ("trades"); both when absent. */
+export function RunTables({ result, part }: { result: RunResult; part?: "monthly" | "trades" }) {
   const { instrument, trades } = result;
+  const [order, setOrder] = useState<"oldest" | "newest">("oldest");
+  const [page, setPage] = useState(0);
+  useEffect(() => setPage(0), [result]); // a new backtest starts on its first page
   const report = window.VaultReport;
   const monthly = report && result.equity.length ? report.monthly({ dates: result.dates, equity: result.equity.map((v) => v / result.equity[0]) }) : null;
-  const table = tradeTable(result), rows = table.rows;
+  const table = tradeTable(result), pages = Math.max(1, Math.ceil(table.rows.length / PAGE)), at = Math.min(page, pages - 1);
+  const shown = (order === "oldest" ? table.rows.map((_, k) => k) : table.rows.map((_, k) => table.rows.length - 1 - k)).slice(at * PAGE, (at + 1) * PAGE);
 
   const download = () => {
     if (!report) return;
@@ -170,10 +190,11 @@ export function RunTables({ result }: { result: RunResult }) {
 
   return (
     <section className="box lab-result-tables" data-lab-result-tables>
-      {monthly && (
+      {part !== "trades" && monthly && (
         <div className="tblwrap lab-monthly">
           <table className="tbl">
-            <thead><tr><th>Year</th>{MONTHS.map((m) => <th className="n" key={m}>{m}</th>)}<th className="n">Total</th></tr></thead>
+            <caption>Profit Table</caption>
+            <thead><tr><th>Year</th>{MONTHS.map((m) => <th className="n" key={m}>{m}</th>)}<th className="n">Yr%</th></tr></thead>
             <tbody>
               {monthly.years.map((y) => (
                 <tr key={y}>
@@ -186,32 +207,35 @@ export function RunTables({ result }: { result: RunResult }) {
                 </tr>
               ))}
             </tbody>
+            {!!monthly.averages?.length && <tfoot><tr><td>Avg</td>{MONTHS.map((_, i) => <td className={sign(monthly.averages[i])} key={i}>{pct(monthly.averages[i])}</td>)}
+              <td className={sign(monthly.annualAverage)}>{pct(monthly.annualAverage)}</td></tr></tfoot>}
           </table>
         </div>
       )}
 
+      {part !== "monthly" && <>
       <section className="lab-trades">
         <div className="lab-row">
-          <h3 className="box-h">Tradesheet <small>{trades.length} trades · newest first</small></h3>
+          <h3 className="box-h">Tradesheet <small>{trades.length} trades</small></h3>
+          {trades.length > 1 && <Segmented label="Trade order" value={order} onChange={(v) => { setOrder(v); setPage(0); }}
+            options={[{ value: "oldest", label: "Oldest first" }, { value: "newest", label: "Newest first" }]} />}
           {report && trades.length > 0 && <button type="button" className="dbtn sm" onClick={download}>Download CSV</button>}
         </div>
         {trades.length ? (
           <>
             <div className="tlog">
               <table className="tbl tl" data-lab-trades>
-                <thead><tr>{table.header.map((h, i) => <th key={h} className={table.numeric.includes(i) ? "n" : undefined}>{h}</th>)}</tr></thead>
+                <thead><tr>{table.header.map((h) => <th key={h} className={NUMERIC.has(h) ? "n" : undefined}>{h}</th>)}</tr></thead>
                 <tbody>
-                  {rows.slice(0, MAX_ROWS).map((r, k) => (
-                    <tr key={k}>
-                      {r.map((cell, i) => (
-                        <td key={i} className={i === table.ret ? sign(trades[trades.length - 1 - k].ret) : table.header[i] === "P&L" ? sign(result.ledger?.[trades.length - 1 - k]?.pnl) : table.numeric.includes(i) ? "n" : undefined}>{cell}</td>
-                      ))}
-                    </tr>
-                  ))}
+                  {shown.map((k) => <tr key={k}>{table.rows[k].map((cell, i) => <td key={i} className={table.cls[k][i]}>{cell}</td>)}</tr>)}
                 </tbody>
               </table>
             </div>
-            {rows.length > MAX_ROWS && <p className="cap">{rows.length - MAX_ROWS} older trades are in the CSV.</p>}
+            {pages > 1 && <div className="lab-row lab-pager" data-lab-pager>
+              <button type="button" className="dbtn sm" disabled={at === 0} onClick={() => setPage(at - 1)}>‹ Previous</button>
+              <span className="cap">{int(at * PAGE + 1)}–{int(Math.min((at + 1) * PAGE, table.rows.length))} of {int(table.rows.length)}</span>
+              <button type="button" className="dbtn sm" disabled={at === pages - 1} onClick={() => setPage(at + 1)}>Next ›</button>
+            </div>}
           </>
         ) : <p className="empty">{COPY.noTrades}</p>}
       </section>
@@ -219,6 +243,8 @@ export function RunTables({ result }: { result: RunResult }) {
         <caption>Money ledger</caption><thead><tr>{["Entry date", "Qty", "Value", "Costs", "P&L"].map((h) => <th key={h}>{h}</th>)}</tr></thead>
         <tbody>{result.ledger.map((r, i) => <tr key={i}><td>{r.entry}</td><td className="n">{int(r.qty)}</td><td className="n">{num(r.notional)}</td><td className="n">{num(r.costs)}</td><td className={sign(r.pnl)}>{num(r.pnl)}</td></tr>)}</tbody>
       </table></div>}
+      </>}
+      {part === "monthly" && !monthly && <p className="empty">No monthly returns for this run.</p>}
     </section>
   );
 }

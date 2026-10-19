@@ -38,3 +38,24 @@ pub const PLAIN: [&str; 4] = [
     let plain: Vec<_> = PLAIN.iter().map(|t| parse_spec(t).unwrap()).collect();
     assert_eq!((digest(&templates), digest(&plain)), ((8551371247103554118, 4422), (14900454072103790734, 1366)), "pinned at Phase 6 HEAD 53d7308; a change here means an existing spec changed meaning");
 }
+
+/// AmiBroker trade prices and delays at today's settings give today's trades: each PLAIN spec in the legacy form and
+/// in `execution.prices` / `delays` (the pin above shows the legacy form itself is unchanged).
+#[test] fn amibroker_prices_at_todays_settings_reproduce_todays_trades() {
+    let same = |legacy: &str, prices: &str| {
+        let (a, b) = (parse_spec(legacy).unwrap(), parse_spec(prices).unwrap());
+        assert!(b.exec.market.is_some() && a.exec.market.is_none());
+        let (x, y) = (digest(std::slice::from_ref(&a)), digest(std::slice::from_ref(&b)));
+        assert!(x.1 > 0 && x == y, "{prices}");
+    };
+    let next_open = r#""execution":{"prices":{"buy":"open","sell":"open"},"delays":{"buy":1,"sell":1}}"#;
+    let with_execution = |spec: &str, execution: &str| format!("{},{execution}}}", spec.strip_suffix('}').unwrap());
+    same(PLAIN[0], &with_execution(PLAIN[0], next_open));
+    same(PLAIN[1], &PLAIN[1].replace(r#""execution":{"fill":"close"}"#, r#""execution":{"prices":{"buy":"close","sell":"close"},"delays":{"buy":0,"sell":0}}"#));
+    let delayed = with_execution(PLAIN[2], r#""execution":{"delay_bars":3}"#);
+    same(&delayed, &delayed.replace(r#""delay_bars":3"#, r#""delays":{"buy":3,"sell":3}"#));
+    let both = r#"{"v":1,"direction":"both","entry":{"all":[{"lhs":{"s":"rsi","p":{"length":2}},"op":"<","rhs":{"value":20}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":6}}],"stop_loss":{"pct":3}},"short_side":{"entry":{"all":[{"lhs":{"s":"rsi","p":{"length":2}},"op":">","rhs":{"value":85}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":4}}]}},"execution":{"fill":"close"}}"#;
+    same(both, &both.replace(r#""fill":"close""#, r#""prices":{"buy":"close","sell":"close","short":"close","cover":"close"},"delays":{"buy":0,"sell":0,"short":0,"cover":0}"#));
+    same(&both.replace(r#""fill":"close""#, r#""delay_bars":2"#), &both.replace(r#""fill":"close""#, r#""delays":{"buy":2,"sell":2,"short":2,"cover":2}"#));
+    same(PLAIN[3], &PLAIN[3].replace(r#""execution":{"exit_fill":"close"}"#, r#""execution":{"prices":{"cover":"close"},"delays":{"cover":0}}"#));
+}

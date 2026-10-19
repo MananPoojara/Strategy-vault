@@ -21,7 +21,6 @@ const PR: &[ParamSpec] = &[len("length", "Length", 20.), int("variant", "Variant
 const PCT: &[ParamSpec] = &[len("length", "Length", 20.), real("pct", "Percentile", 50., 0., 100., 1.), int("variant", "Variant (0 interpolated, 1 nearest rank)", 0., 0., 1.)];
 const L20: &[ParamSpec] = &[len("length", "Length", 20.)];
 const M20: &[ParamSpec] = &[int("length", "Length", 20., 2., 2000.)];
-const L14N: &[ParamSpec] = &[len("length", "Length", 14.)];
 const RIB: &[ParamSpec] = &[int("short", "Short", 10., 2., 2000.), int("middle", "Middle", 30., 2., 2000.), int("long", "Long", 50., 2., 2000.)];
 
 /// Least squares over w with k = 1..n (oldest → newest): y = alpha + slope·k.
@@ -43,7 +42,10 @@ fn stderr_w(w: &[f64]) -> f64 {
 }
 fn linreg_slope(b: &Bars, prm: &Params) -> Output { Ok(vec![rolling(&b.close, n(prm, "length"), |w| fit(w).1)]) }
 fn linreg_intercept(b: &Bars, prm: &Params) -> Output { Ok(vec![rolling(&b.close, n(prm, "length"), |w| fit(w).0)]) }
-fn tsf(b: &Bars, prm: &Params) -> Output { Ok(vec![rolling(&b.close, n(prm, "length"), |w| { let (a, s) = fit(w); a + s * (w.len() + 1) as f64 })]) }
+fn tsf(b: &Bars, prm: &Params) -> Output {
+    let h = n(prm, "horizon");
+    Ok(vec![rolling(&b.close, n(prm, "length"), |w| { let (a, s) = fit(w); a + s * (w.len() + h) as f64 })])
+}
 fn stderr(b: &Bars, prm: &Params) -> Output { Ok(vec![rolling(&b.close, n(prm, "length"), stderr_w)]) }
 fn se_bands(b: &Bars, prm: &Params) -> Output {
     let (k, m, s) = (n(prm, "length"), p(prm, "mult"), n(prm, "smooth"));
@@ -113,14 +115,16 @@ fn skewness(b: &Bars, prm: &Params) -> Output { Ok(vec![moment(&b.close, n(prm, 
 fn kurtosis(b: &Bars, prm: &Params) -> Output { Ok(vec![moment(&b.close, n(prm, "length"), 4)]) }
 fn majority_rule(b: &Bars, prm: &Params) -> Output {
     let k = n(prm, "length"); let c = &b.close;
-    let up: Vec<f64> = (0..c.len()).map(|i| if i == 0 { NA } else if c[i] > c[i - 1] { 1. } else { 0. }).collect();
+    let up: Vec<f64> = if p(prm, "variant") == 1. { (0..c.len()).map(|i| if c[i] > b.open[i] { 1. } else { 0. }).collect() }
+        else { (0..c.len()).map(|i| if i == 0 { NA } else if c[i] > c[i - 1] { 1. } else { 0. }).collect() };
     Ok(vec![ta::sum(&up, k).iter().map(|s| 100. * s / k as f64).collect()])
 }
 
 pub const DEFS: &[IndicatorDef] = &[
     def("linreg_slope", "Linear Regression Slope", L14, &["slope"], PN, NO, "least-squares slope of close per bar over length bars", &[13], false, linreg_slope),
     def("linreg_intercept", "Linear Regression Intercept", L14, &["intercept"], PN, NO, "AmiBroker LinRegIntercept: a in a + b·k, k = 1..n oldest→newest (= fitted end value − slope·n)", &[13], false, linreg_intercept),
-    def("tsf", "Time Series Forecast", L14, &["tsf"], P, NO, "AmiBroker TSF: fitted end value + slope (forecast of the next bar)", &[13], false, tsf),
+    def("tsf", "Time Series Forecast", &[int("length", "Length", 14., 2., 2000.), int("horizon", "Bars ahead (1 AmiBroker TSF; thinkorswim barPlus)", 1., 0., 500.)], &["tsf"], P, NO,
+        "AmiBroker TSF: fitted end value + slope (forecast of the next bar); horizon k: fitted end value + k·slope (thinkorswim TimeSeriesForecast 'bar plus'; k = 0 is the fitted end value)", &[13], false, tsf),
     def("stderr", "Standard Error", L14S, &["stderr"], PN, NO, "√(Σ(close − fitted)²/(n − 2)) of the least-squares fit (AmiBroker StdErr; charting-library Standard Error)", &[13], false, stderr),
     def("se_bands", "Standard Error Bands", SEB, &["basis", "upper", "lower"], P, NO, "basis = sma(linreg(close, length), smooth); upper/lower = sma(linreg ± mult·stderr, smooth) (declared defaults 21/2/3)", &[22, 22, 22], false, se_bands),
     def("trend_strength", "Trend Strength Index", L14, &["tsi"], PN, NO, "Pearson correlation of close with bar index over length; zero variance → NaN (declared default 14)", &[13], false, trend_strength),
@@ -131,7 +135,8 @@ pub const DEFS: &[IndicatorDef] = &[
     def("zscore", "Z-Score (Bandy)", L20, &["z"], PN, NO, "(close − sma(close, n))/stdev(close, n) (population); zero stdev → NaN", &[19], false, zscore),
     def("skewness", "Skewness", M20, &["skew"], PN, NO, "population skewness of close: mean((x − m)³)/σ³ (AmiBroker Skewness, population = True); σ = 0 → NaN", &[19], false, skewness),
     def("kurtosis", "Kurtosis", M20, &["kurt"], PN, NO, "population excess kurtosis: mean((x − m)⁴)/σ⁴ − 3 (AmiBroker Kurtosis, population = True); σ = 0 → NaN", &[19], false, kurtosis),
-    def("majority_rule", "Majority Rule", L14N, &["pct"], PN, NO, "100·(number of bars with close > close[1] in the last length bars)/length (declared; charting-library formula unpublished)", &[14], false, majority_rule),
+    def("majority_rule", "Majority Rule", &[len("length", "Length", 14.), int("variant", "Variant (0 close > previous close: TradingView/TradeStation/ChartIQ Psychological Line, 1 close > open: NinjaTrader 8 PsychologicalLine)", 0., 0., 1.)], &["pct"], PN, NO,
+        "100·(number of bars with close > close[1] in the last length bars)/length (declared; charting-library formula unpublished); variant 1 (NinjaTrader 8 PsychologicalLine, default length 10): counts bars with close > open, so bar 0 counts and the first value is at bar length − 1 (NinjaTrader also prints a partial-window value over the first length − 1 bars; here NaN)", &[14], false, majority_rule),
 ];
 
 #[cfg(test)]
@@ -191,6 +196,12 @@ mod tests {
     #[test] fn nearest_rank_rounds_up_and_ties_are_not_up_days() {
         assert_series(&go("percentile", &closes(&[4., 3., 2., 1.]), &[("length", 4.), ("pct", 30.), ("variant", 1.)])[0], &[N, N, N, 2.]); // ceil(1.2) = rank 2
         assert_series(&go("majority_rule", &closes(&[1., 1., 2., 2.]), &[("length", 3.)])[0], &[N, N, N, 33.333333333333]);
+    }
+    #[test] fn tsf_horizon_and_psychological_line_close_over_open() {
+        assert_series(&one("tsf", &[("length", 3.), ("horizon", 2.)]), &[N, N, 13.583333333333, 10.75, 8.366666666667, 10.366666666667, 13.516666666667, 14.466666666667]);
+        assert_series(&one("tsf", &[("length", 3.), ("horizon", 0.)])[2..3], &[12.083333333333]);
+        // close > open: 1, 1, 1, 0, 0, 1, 1, 1 (bar 0 counts)
+        assert_series(&one("majority_rule", &[("length", 3.), ("variant", 1.)]), &[N, N, 100., 66.666666666667, 33.333333333333, 33.333333333333, 66.666666666667, 100.]);
     }
     #[test] fn majority_rule_len3() { assert_series(&one("majority_rule", &[("length", 3.)]), &[N, N, N, 66.666666666667, 33.333333333333, 33.333333333333, 66.666666666667, 100.0]); }
     #[test] fn rules_reach_distribution() { for (id, out) in [("percentrank", "rank"), ("percentile", "percentile"), ("kurtosis", "kurt")] { compiles(id, out).unwrap(); } }

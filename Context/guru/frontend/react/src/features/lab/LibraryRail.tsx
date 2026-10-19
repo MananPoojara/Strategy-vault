@@ -1,14 +1,17 @@
 import { useEffect, useState } from "react";
-import { availability, groupByCategory, searchIndicators } from "./catalogue";
-import type { Catalogue, Indicator, Market, Timeframe } from "./types";
+import { availability, groupByCategory, searchIndicators, shortName } from "./catalogue";
+import { myId } from "./formula";
+import { ErrorNotice } from "./ui";
+import type { Catalogue, Indicator, Market, SavedIndicator, Timeframe } from "./types";
 import "./library.css";
 
-/** Short ids read as the familiar abbreviation (SMA, RSI, MACD); longer ids keep the full name. */
-const shortName = (ind: Indicator) => (/^[a-z0-9]{2,6}$/.test(ind.id) ? ind.id.toUpperCase() : ind.name);
+const MINE = "My indicators";
+/** "My indicators" group: the user's saved formulas; absent `onEdit` hides the group (no account storage). */
+export interface MineProps { list: SavedIndicator[]; error?: unknown; canEdit: boolean; onAdd(row: SavedIndicator): void; onEdit(row: SavedIndicator | null): void }
 const narrow = () => typeof window !== "undefined" && !!window.matchMedia?.("(max-width: 900px)").matches;
 
-export function LibraryRail({ catalogue, market, hasVolume, tf, onAdd, onRead }: {
-  catalogue: Catalogue; market: Market; hasVolume: boolean; tf: Timeframe; onAdd(ind: Indicator): void; onRead(ind: Indicator): void;
+export function LibraryRail({ catalogue, market, hasVolume, tf, onAdd, onRead, mine }: {
+  catalogue: Catalogue; market: Market; hasVolume: boolean; tf: Timeframe; onAdd(ind: Indicator): void; onRead(ind: Indicator): void; mine?: MineProps;
 }) {
   const [query, setQuery] = useState("");
   const [manual, setManual] = useState<Record<string, boolean>>({}); // the user's own open/closed choices, kept across searches
@@ -24,14 +27,35 @@ export function LibraryRail({ catalogue, market, hasVolume, tf, onAdd, onRead }:
   const count = `${catalogue.indicators.length} indicators`;
   const groups = groupByCategory(searchIndicators(catalogue.indicators, query));
   const searching = query.trim() !== "";
-  const isOpen = (category: string) => (searching ? !searchShut.has(category) : manual[category] ?? true);
+  const myList = mine?.list.filter((r) => !searching || r.name.toLowerCase().includes(query.trim().toLowerCase())) ?? [];
+  const isOpen = (category: string) => (searching ? !searchShut.has(category) : manual[category] ?? false); // categories start closed; a click shows every indicator in it
   const toggle = (category: string) => searching
     ? setSearchShut((s) => { const n = new Set(s); if (!n.delete(category)) n.add(category); return n; })
-    : setManual((m) => ({ ...m, [category]: !(m[category] ?? true) }));
+    : setManual((m) => ({ ...m, [category]: !(m[category] ?? false) }));
   const body = (
     <>
       <input type="search" value={query} onChange={(e) => { setQuery(e.target.value); setSearchShut(new Set()); }}
         placeholder="Search name, id, TradingView or AmiBroker name" aria-label="Search indicators" />
+      {mine && (
+        <div className="lab-group lab-mine" data-lab-mine>
+          <button type="button" className="lab-group-h" aria-expanded={isOpen(MINE)} onClick={() => toggle(MINE)}>
+            {MINE} <small>{myList.length}</small>
+          </button>
+          <ul hidden={!isOpen(MINE)}>
+            {mine.canEdit && <li><button type="button" className="dbtn sm lab-mine-new" onClick={() => mine.onEdit(null)}>+ New indicator</button></li>}
+            {mine.error !== undefined && mine.error !== null && <li><ErrorNotice error={mine.error} market={market} /></li>}
+            {myList.map((row) => (
+              <li key={row.id}>
+                <button type="button" data-lab-item={myId(row.id)} title={row.formula} onClick={() => mine.onAdd(row)}>
+                  <b title={row.name}>{row.name}</b><small>Custom formula</small>
+                </button>
+                <button type="button" className="dbtn ghost sm lab-mine-edit" aria-label={`${mine.canEdit ? "Edit" : "View"} ${row.name}`} onClick={() => mine.onEdit(row)}>{mine.canEdit ? "Edit" : "View"}</button>
+              </li>
+            ))}
+            {!myList.length && !mine.error && <li className="cap">{searching ? "No saved indicator matches." : "No saved indicators yet."}</li>}
+          </ul>
+        </div>
+      )}
       {groups.length === 0 && <div className="empty">No indicator matches "{query}".</div>}
       {groups.map(([category, list]) => (
         <div className="lab-group" key={category}>
@@ -47,7 +71,7 @@ export function LibraryRail({ catalogue, market, hasVolume, tf, onAdd, onRead }:
                     <b title={ind.name}>{shortName(ind)}</b>
                     <small>{!ok || ind.needs.second_symbol ? reason : ind.definition}</small>
                   </button>
-                  <span className={`tag${ok ? " on" : ind.needs.volume && !hasVolume ? " warn" : ""}`}>{ok ? "chart" : ind.needs.volume && !hasVolume ? "volume" : "needs data"}</span>
+                  {!ok && <span className={`tag${ind.needs.volume && !hasVolume ? " warn" : ""}`}>{ind.needs.volume && !hasVolume ? "volume" : "needs data"}</span>}
                   <button type="button" className="dbtn ghost sm" aria-label={`About ${ind.name}`} onClick={() => onRead(ind)}>i</button>
                 </li>
               );
@@ -55,7 +79,7 @@ export function LibraryRail({ catalogue, market, hasVolume, tf, onAdd, onRead }:
           </ul>
         </div>
       ))}
-      <p className="lab-lib-foot"><span className="tag on">chart</span> adds it to the chart · <span className="tag">needs data</span> listed, not available yet · <b>i</b> formula and sources</p>
+      <p className="lab-lib-foot">Click a name to add it to the chart · <span className="tag">needs data</span> listed, not available yet · <b>i</b> formula and sources</p>
     </>
   );
   return (

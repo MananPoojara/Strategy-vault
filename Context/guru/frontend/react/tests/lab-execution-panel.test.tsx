@@ -33,7 +33,7 @@ const exec = setup;
 
 it("Both adds the short side and the opposite setting with help; Long removes them; Both again restores the short side", async () => {
   const { host, last, rerender } = await exec(defaultSpec());
-  await clickIn(host, '[aria-label="Direction"]', "Both");
+  await clickIn(host, '[aria-label="Positions"]', "Long and short");
   expect(last().short_side).toEqual(DEFAULT_SHORT_SIDE);
   await rerender(setAt(last(), "short_side.entry.all[0].rhs.p.length", 20));
   expect(host.querySelector('[aria-label="When the other side signals"]')).not.toBeNull();
@@ -41,10 +41,10 @@ it("Both adds the short side and the opposite setting with help; Long removes th
   expect(host.textContent).toContain(COPY.bothFlat);
   await clickIn(host, '[aria-label="When the other side signals"]', "Exit only");
   expect(last().execution).toEqual({ opposite: "exit" });
-  await clickIn(host, '[aria-label="Direction"]', "Long");
+  await clickIn(host, '[aria-label="Positions"]', "Long");
   expect(last()).not.toHaveProperty("short_side");
   await rerender(last());
-  await clickIn(host, '[aria-label="Direction"]', "Both");
+  await clickIn(host, '[aria-label="Positions"]', "Long and short");
   expect(last().short_side?.entry.all[0]).toMatchObject({ rhs: { p: { length: 20 } } });
 });
 
@@ -68,3 +68,20 @@ it("timing options fold away until set; OHLC path shows its explanation; edge en
   expect(set.last().execution).toMatchObject({ entry_on: "edge" });
 });
 
+
+it("Allow same bar exit / entry signal: checked keeps today's behaviour; unchecked is stored and explained; portfolios keep it fixed", async () => {
+  const { host, last, rerender } = await exec(defaultSpec());
+  const box = () => [...host.querySelectorAll<HTMLLabelElement>("label.lab-check")].find((l) => l.textContent === "Allow same bar exit / entry signal")!.querySelector("input")!;
+  expect([box().checked, box().disabled]).toEqual([true, false]);
+  expect(host.querySelector("[data-lab-same-bar]")!.textContent).toContain("Checked (default)");
+  await click(box());
+  expect(last().execution).toEqual({ allow_same_bar_exit: false });
+  await rerender(last());
+  expect(box().checked).toBe(false);
+  expect(host.querySelector("[data-lab-same-bar]")!.textContent).toContain("no position exits on its entry bar");
+  await click(box());
+  expect(last()).not.toHaveProperty("execution");
+  await rerender({ ...defaultSpec(), execution: { capital: 1e6 }, portfolio: { universe: { basket: "nifty50" } } } as Spec);
+  expect(box().disabled).toBe(true);
+  expect(host.textContent).not.toContain("not modelled");
+});

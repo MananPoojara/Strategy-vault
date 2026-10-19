@@ -2,16 +2,19 @@ import { useEffect, useState, type ReactNode } from "react";
 import { CALENDAR_OUTPUTS, COPY, EXPAND_FIRST_REFUSED, OPERAND_KIND_LABELS, TF_LABELS } from "./labels";
 import { isSeries, isValue, type Side } from "./spec-model";
 import { ARITH, CALENDAR_IDS, MAX_NTH, MAX_WHOLE, WINDOWS, convertOperand, describeNode, exprKey, firstAllowed, innerOperand, operandKind, type OperandKind } from "./rule-tree";
-import type { Catalogue, Indicator, Operand, RuleNode, SeriesOperand } from "./types";
+import type { Catalogue, FormulaOperand, Indicator, Operand, RuleNode, SavedIndicator, SeriesOperand } from "./types";
 import { ForeignFields } from "./ForeignFields";
+import { infoOf, useFormulaScope, wholeParam } from "./formula";
 import "./rules.css";
 import "./operand.css";
 
 const parse = (t: string) => (t.trim() === "" || !Number.isFinite(Number(t)) ? undefined : Number(t));
 
 /** Number input that keeps the typed text (e.g. "1.") until it parses; empty reports undefined. */
-export function NumField({ label, value, onChange, min, max, step, hideLabel }: {
+export function NumField({ label, value, onChange, min, max, step, hideLabel, placeholder, disabled }: {
   label: string; value: number | undefined; onChange(n: number | undefined): void; min?: number; max?: number; step?: number | null;
+  /** Shown while empty: what an empty field means (e.g. "0", "off"). */
+  placeholder?: string; disabled?: boolean;
   /** Inline in a sentence: the label stays for screen readers only. */
   hideLabel?: boolean;
 }) {
@@ -20,7 +23,7 @@ export function NumField({ label, value, onChange, min, max, step, hideLabel }: 
   return (
     <label className={hideLabel ? "dfield lab-inline-num" : "dfield"}>
       {hideLabel ? <span className="sr-only">{label}</span> : label}
-      <input type="number" aria-label={label} value={text} min={min} max={max} step={step ?? "any"}
+      <input type="number" aria-label={label} value={text} min={min} max={max} step={step ?? "any"} placeholder={placeholder} disabled={disabled}
         onChange={(e) => { setText(e.target.value); onChange(parse(e.target.value)); }}
         onBlur={() => setText(value === undefined ? "" : String(value))} />
     </label>
@@ -40,6 +43,7 @@ export function OperandEditor({ operand, side, catalogue, onChange, label, heldO
   nodesFull?: boolean;
 }) {
   const kind = operandKind(operand, catalogue);
+  const { mine, infos } = useFormulaScope();
   if (kind === "unknown") return <span className="lab-kept" role="group" aria-label={label}>{COPY.keptAsIs} <code>{JSON.stringify(operand)}</code></span>;
   const series = isSeries(operand) ? operand : undefined, key = exprKey(operand), x = operand as Obj;
   const computed = catalogue.indicators.filter((i) => i.computed && !CALENDAR_IDS.includes(i.id));
@@ -70,12 +74,14 @@ export function OperandEditor({ operand, side, catalogue, onChange, label, heldO
     <select aria-label="Operand type" value={kind} onChange={(e) => {
       const next = e.target.value as OperandKind;
       if (nodesFull && next !== kind && [...FORMULAS, ...STATES].includes(next)) return;
+      if (next === "formula") { if (mine[0]) onChange(formulaOperand(mine[0], infos[mine[0].formula], series ? timingOf(x) : {})); return; }
       onChange(updatedTiming(convertOperand(operand, next, catalogue), {}, next === "compress"));
     }}>
       <option value="price">{OPERAND_KIND_LABELS.price}</option>
       <option value="indicator" disabled={computed.length === 0}>{OPERAND_KIND_LABELS.indicator}</option>
       <option value="calendar" disabled={!catalogue.indicators.some((i) => i.computed && CALENDAR_IDS.includes(i.id))}>{OPERAND_KIND_LABELS.calendar}</option>
       <option value="number">{OPERAND_KIND_LABELS.number}</option>
+      {(mine.length > 0 || kind === "formula") && <optgroup label="My indicators"><option value="formula">{OPERAND_KIND_LABELS.formula}</option></optgroup>}
       {((heldOk ?? side === "exit") || kind === "bars_held") && <option value="bars_held">{OPERAND_KIND_LABELS.bars_held}</option>}
       <optgroup label="Formula">{FORMULAS.map(kindOptions)}</optgroup>
       <optgroup label="Since a condition">{STATES.map(kindOptions)}</optgroup>
@@ -116,7 +122,8 @@ export function OperandEditor({ operand, side, catalogue, onChange, label, heldO
         {["last", "first", "high", "low", "sum"].map((m) => <option key={m} value={m}>{m}</option>)}
       </select>
     </>}
-    {(kind === "price" || kind === "indicator" || kind === "calendar" || kind === "compress") &&
+    {kind === "formula" && <FormulaFields operand={operand as FormulaOperand} onChange={onChange} />}
+    {(kind === "price" || kind === "indicator" || kind === "calendar" || kind === "compress" || kind === "formula") &&
       <Timing operand={operand} catalogue={catalogue} onChange={onChange} compress={kind === "compress"} />}
     {series && <ForeignFields operand={operand} onChange={onChange} label={label} />}
     {expression && <button type="button" className="dbtn sm ghost" aria-label="Remove formula" title="Remove formula, keep the inner value"
@@ -156,7 +163,7 @@ function Timing({ operand, catalogue, onChange, compress }: {
   const summary = [tf !== "D" ? TF_LABELS[tf] ?? `Every ${tf.slice(0, -1)} sessions` : "", offset ? `${offset} ${tf === "D" ? "bars" : "periods"} ago` : "",
     expand === "point" ? "period's last day" : expand === "first" ? "from the period's first day" : ""].filter(Boolean).join(" · ");
   return <>
-    <button type="button" className="dbtn sm ghost" data-lab-timing aria-expanded={open} aria-label="Timeframe and offset" onClick={() => setOpen(!open)}>{summary || "⋯"}</button>
+    <button type="button" className="dbtn sm ghost" data-lab-timing aria-expanded={open} aria-label="Timeframe and offset" title="Timeframe and offset" onClick={() => setOpen(!open)}>{summary || "⋯"}</button>
     {open && <span className="lab-timing">
       {!compress && <TimeframeField operand={operand} catalogue={catalogue} onChange={onChange} />}
       {tf !== "D" && <>
@@ -199,4 +206,32 @@ function IndicatorFields({ operand, ind, computed, groups, set, replace }: {
       )}
     </>
   );
+}
+
+const timingOf = (o: Obj) => Object.fromEntries(Object.entries(o).filter(([k]) => ["tf", "offset", "expand"].includes(k)));
+/** The saved formula's text is copied into the spec: later edits to the saved indicator do not change this strategy. */
+function formulaOperand(row: SavedIndicator, check: Parameters<typeof infoOf>[0], timing: Obj): FormulaOperand {
+  const info = infoOf(check);
+  return { ...timing, formula: row.formula, name: row.name, ...(info ? { p: Object.fromEntries(info.params.map((p) => [p.key, p.default])), ...(info.plots[0] ? { out: info.plots[0] } : {}) } : {}) };
+}
+function FormulaFields({ operand, onChange }: { operand: FormulaOperand; onChange(o: Operand): void }) {
+  const { mine, infos } = useFormulaScope();
+  const check = infos[operand.formula], info = infoOf(check);
+  const saved = mine.find((r) => r.formula === operand.formula && r.name === operand.name) ?? mine.find((r) => r.formula === operand.formula);
+  return <>
+    <select aria-label="My indicator" value={saved ? String(saved.id) : ""} onChange={(e) => {
+      const row = mine.find((r) => String(r.id) === e.target.value);
+      if (row) onChange(formulaOperand(row, infos[row.formula], timingOf(operand)));
+    }}>
+      {!saved && <option value="">{operand.name || "My indicator"} (copy kept in this strategy)</option>}
+      {mine.map((r) => <option key={r.id} value={String(r.id)}>{r.name}</option>)}
+    </select>
+    {!check && <span className="cap">Checking the formula…</span>}
+    {check && "error" in check && <span className="cap lab-formula-err" role="note">Formula error: {check.error}</span>}
+    {info?.params.map((p) => <NumField key={p.key} label={p.key} value={operand.p?.[p.key] ?? p.default} min={p.min} max={p.max} step={p.step || null}
+      onChange={(n) => n !== undefined && n >= p.min && n <= p.max && (!wholeParam(p) || Number.isInteger(n)) && onChange({ ...operand, p: { ...operand.p, [p.key]: n } })} />)}
+    {info && info.plots.length > 1 && <select aria-label="Output" value={operand.out ?? info.plots[0]} onChange={(e) => onChange({ ...operand, out: e.target.value })}>
+      {info.plots.map((o) => <option key={o} value={o}>{o}</option>)}
+    </select>}
+  </>;
 }

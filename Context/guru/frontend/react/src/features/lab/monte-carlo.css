@@ -1,0 +1,10 @@
+/* Monte Carlo panel: compact controls, percentile table, five AmiBroker charts (chart frame shared with report.css). */
+.lab-mc { display: grid; gap: 10px; }
+.lab-mc .box-h { margin: 0; }
+.lab-mc .rnote { margin: 0; font-size: 12px; }
+.lab-mc .dfield input { width: 90px; }
+.lab-mc .tblwrap { max-width: 760px; }
+.lab-mc .tbl td, .lab-mc .tbl th { padding-top: 4px; padding-bottom: 4px; }
+.lab-mc-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 14px; }
+.lab-mc polyline { fill: none; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.lab-mc polyline.mid { stroke: var(--blue); } .lab-mc polyline.lo { stroke: var(--red); } .lab-mc polyline.hi { stroke: var(--green); }

@@ -38,8 +38,12 @@ pub const fn int(key: &'static str, label: &'static str, default: f64, min: f64,
 pub const fn real(key: &'static str, label: &'static str, default: f64, min: f64, max: f64, step: f64) -> ParamSpec {
     ParamSpec { key, label, default, min, max, step, integer: false }
 }
-pub fn all() -> Vec<IndicatorDef> {
+/// The Phase 6/7 master list (302 ids); `all()` adds the 2026-10-19 cross-platform families.
+pub fn base() -> Vec<IndicatorDef> {
     [super::ma::DEFS, super::momentum::DEFS, super::trend::DEFS, super::volatility::DEFS, super::volume::DEFS, super::price::DEFS, super::listed::DEFS, super::breadth::DEFS, super::ma2::DEFS, super::bands::DEFS, super::stats::DEFS, super::osc2::DEFS, super::vol2::DEFS, super::stops::DEFS, super::volume2::DEFS, super::periods::DEFS, super::patterns::DEFS, super::candles::DEFS, super::ratings::DEFS, super::futures::DEFS, super::pairs::DEFS].concat()
+}
+pub fn all() -> Vec<IndicatorDef> {
+    [&base()[..], super::x_ma::DEFS, super::x_momentum::DEFS, super::x_momentum2::DEFS, super::x_trend::DEFS, super::x_volatility::DEFS, super::x_volume::DEFS, super::x_candles::DEFS, super::x_cycles::DEFS, super::x_derived::DEFS, super::x_atlas::DEFS].concat()
 }
 pub fn get(id: &str) -> Option<IndicatorDef> { all().into_iter().find(|d| d.id == id) }
 pub fn resolve_params(def: &IndicatorDef, given: &Params) -> Result<Params, String> {
@@ -82,13 +86,13 @@ mod tests {
         }
     }
     #[test] fn sources_cover_every_indicator_once() {
-        use crate::lab::sources::SOURCES;
+        let rows: Vec<_> = crate::lab::sources::rows().collect();
         let ids: Vec<&str> = all().iter().map(|d| d.id).collect();
-        for (id, tv, ab) in SOURCES {
+        for (id, tv, ab) in rows.iter().copied() {
             assert!(ids.contains(id), "sources row for unknown id {id}");
             assert!(!tv.is_empty() || !ab.is_empty() || *id == "opening_range", "{id}: no TradingView or AmiBroker name");
         }
-        for id in &ids { assert_eq!(SOURCES.iter().filter(|r| r.0 == *id).count(), 1, "{id}: exactly one sources row"); }
+        for id in &ids { assert_eq!(rows.iter().filter(|r| r.0 == *id).count(), 1, "{id}: exactly one sources row"); }
     }
     fn defaults(d: &IndicatorDef) -> Params { resolve_params(d, &Params::new()).unwrap() }
 
@@ -146,7 +150,7 @@ mod tests {
         }
     }
     #[test] fn catalogue_matches_the_phase6_master_list() {
-        let defs = all();
+        let defs = base();
         assert_eq!(defs.len(), 302, "Phase 6 master list: 66 Batch A + 233 new; Phase 7: session, sessions_left, expiry");
         assert_eq!(defs.iter().filter(|d| d.compute.is_some()).count(), 190);
         assert_eq!(defs.iter().filter(|d| d.compute.is_none()).count(), 112);

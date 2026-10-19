@@ -1,6 +1,6 @@
 .lab-result .lwc { height: auto; margin-top: 10px; background: var(--panel); }
 /* Result metrics wrap with the available width. */
-.lab-result .metrics { margin-top: 12px; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; border-top: 0; }
+.lab-result .metrics { margin-top: 12px; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 8px; border-top: 0; }
 /* Tiles wrap, so each carries its own rule instead of the house .metric + .metric left border. */
 .lab-result .metrics .metric, .lab-result .metrics .metric + .metric { padding: 12px; border: 1px solid var(--rule); border-left: 1px solid var(--rule); }
 .lab-result .metric b { font-size: 22px; overflow-wrap: anywhere; }
@@ -8,7 +8,7 @@
 .lab-result-tables > :first-child { margin-top: 0; }
 .lab-monthly { margin-top: 12px; overflow-x: auto; }
 .lab-trades { margin-top: 12px; display: grid; gap: 8px; }
-.lab-trades .lab-row { justify-content: space-between; }
+.lab-trades .lab-row { justify-content: flex-end; }
 .lab-trades .box-h { margin: 0; font-size: 16px; }
 .lab-exec-strip { display: grid; gap: 6px; margin-top: 8px; }
 .lab-exec-strip .chip { font-size: 12px; }
@@ -31,3 +31,14 @@
 /* Beside the rules the results column is narrow: stack equity and drawdown by the column's own width. */
 .lab-result { container-type: inline-size; }
 @container (max-width: 760px) { .lab-result-charts { grid-template-columns: minmax(0, 1fr); gap: 20px; } }
+
+/* AmiBroker Profit Table: compact cells, average row last. */
+.lab-monthly caption { caption-side: top; text-align: left; font-weight: 600; font-size: 14px; color: var(--ink); padding: 0 0 4px; }
+.lab-monthly .tbl td, .lab-monthly .tbl th { padding: 3px 6px; }
+.lab-monthly tfoot td { border-top: 1px solid var(--steel); font-weight: 600; }
+.lab-trades .lab-row .box-h { margin-right: auto; }
+.lab-pager { justify-content: flex-end; }
+/* The scale is a fact, not a control. */
+.lab-result-chart .lab-scale-note { color: var(--ink3); font-size: 11px; font-style: italic; }
+/* Drawdown axis text matches the equity chart (11 px, ink3, body font). */
+.lab-result [data-lab-drawdown] .bk-ax { font-family: inherit; font-size: 11px; fill: var(--ink3); }

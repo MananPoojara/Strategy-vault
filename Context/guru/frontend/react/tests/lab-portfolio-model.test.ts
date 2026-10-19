@@ -22,3 +22,14 @@ it("keeps score traversal and Cartesian rank/work limits consistent",()=>{
  const bad={...s,optimize:[{path:"portfolio.max_open",from:2,to:6,step:2},{path:"portfolio.worst_rank_held",from:4,to:8,step:2}]};expect(portfolioGridProblems(bad,cat).join(" ")).toContain("Every optimized");
  expect(portfolioProblems({...s,portfolio:null} as never,cat,"in").join(" ")).toContain("kept as is");
 });
+
+it("refuses the single-instrument AmiBroker fields in a portfolio, like the engine, and strips them on switching", () => {
+ const port={...defaultSpec(),execution:{capital:1e6},portfolio:{universe:{basket:"nifty50"},mode:"signals" as const}};
+ const cat={...catalogue7Fixture,portfolio:{modes:["signals","rotation"],max_open:50,max_universe:120,max_universe_list:50,max_combos:200,max_work:12000,baskets:[{id:"nifty50",members:50}]}} as never;
+ for(const[key,value]of[["reentry",{stop_loss:3}],["prices",{buy:"close"}],["delays",{buy:0}],["limits",{round_lot:10}],["tick_size",0.05],["pad_align",true]] as const){
+  const msg=portfolioProblems({...port,execution:{...port.execution,[key]:value}},cat,"in");
+  expect(msg).toContain(`execution.${key} is not supported in a portfolio; settings are kept until you edit them.`);
+ }
+ const single={...defaultSpec(),execution:{capital:1e6,reentry:{stop_loss:3},prices:{buy:"close" as const},delays:{buy:0},limits:{round_lot:10},tick_size:0.05,pad_align:true}};
+ expect(withPortfolioMode(single,"signals").execution).toEqual({capital:1e6});
+});

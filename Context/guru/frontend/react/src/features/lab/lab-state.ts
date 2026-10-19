@@ -15,7 +15,7 @@ export type LabAction =
   | { type: "market"; market: Market } | { type: "ticker"; ticker: string } | { type: "tf"; tf: string } | { type: "range"; range: ChartRange }
   | { type: "spec"; spec: Spec } | { type: "open"; row: LabStrategy | null; spec: Spec } | { type: "row"; row: LabStrategy }
   | { type: "chip-add"; indicator: Indicator } | { type: "chip-set"; key: string; params: Record<string, number> } | { type: "chip-remove"; key: string }
-  | { type: "chip-vs"; key: string; vs?: string }
+  | { type: "chip-vs"; key: string; vs?: string } | { type: "chip-look"; key: string; looks: Chip["looks"] }
   | { type: "ran"; key: string; combos: number } | { type: "tried"; n: number };
 
 export const runKey = (spec: Spec, market: SavedMarket, ticker: string) => canonicalJson([spec, market, spec.portfolio?portfolioIdentity(spec):ticker]);
@@ -49,6 +49,7 @@ export function labReducer(state: LabState, action: LabAction): LabState {
     }
     case "chip-set": return { ...state, chips: state.chips.map((c) => (c.key === action.key ? { ...c, params: action.params } : c)) };
     case "chip-vs": return { ...state, chips: state.chips.map((c) => c.key === action.key ? { ...c, vs: action.vs } : c) };
+    case "chip-look": return { ...state, chips: state.chips.map((c) => (c.key === action.key ? { ...c, looks: action.looks } : c)) };
     case "chip-remove": return { ...state, chips: state.chips.filter((c) => c.key !== action.key) };
     case "ran": return { ...state, lastRun: action.key, tried: state.tried + 1 };
     case "tried": return { ...state, tried: state.tried + action.n };

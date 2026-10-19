@@ -1,6 +1,6 @@
 //! Candlestick patterns (TradingView built-ins). Formulas: TradingView "All Candlestick Patterns" (Pine v4), Decision 20.
 use super::bars::Bars;
-use super::catalogue::{int, n, IndicatorDef, Needs, Output, ParamSpec, Params, Placement};
+use super::catalogue::{int, n, p, IndicatorDef, Needs, Output, ParamSpec, Params, Placement};
 use super::ta;
 
 const CAT: &str = "Candlestick patterns";
@@ -106,6 +106,26 @@ pattern!(three_white_soldiers, |f, b, i| i >= 2 && (0..3).all(|j| f.long[i - j] 
 pattern!(tri_star_bear, trend, |f, b, i| i >= 2 && f.doji[i - 2] && f.doji[i - 1] && f.doji[i] && f.up[i - 2] && f.bh[i - 2] < f.bl[i - 1] && f.bl[i - 1] > f.bh[i]);
 pattern!(tri_star_bull, trend, |f, b, i| i >= 2 && f.doji[i - 2] && f.doji[i - 1] && f.doji[i] && f.dn[i - 2] && f.bl[i - 2] > f.bh[i - 1] && f.bh[i - 1] < f.bl[i]);
 
+/// variant 1 = TA-Lib CDLKICKINGBYLENGTH: either kicking pair (same marubozu and gap rules), direction = colour of the longer
+/// marubozu body (TA-Lib compares body[i] > body[i−1], so a tie takes the first candle).
+fn kicking_by_length(b: &Bars, prm: &Params, bull: bool) -> Output {
+    let f = feats(b, 2);
+    if p(prm, "variant") == 0. { return Ok(vec![sweep(b, &f, if bull { kicking_bull::at } else { kicking_bear::at })]); }
+    Ok(vec![(0..b.len()).map(|i| {
+        let hit = kicking_bull::at(&f, b, i) || kicking_bear::at(&f, b, i);
+        if hit && (if f.body[i] > f.body[i - 1] { f.white[i] } else { f.white[i - 1] }) == bull { 1. } else { 0. }
+    }).collect()])
+}
+fn kicking_bull_run(b: &Bars, prm: &Params) -> Output { kicking_by_length(b, prm, true) }
+fn kicking_bear_run(b: &Bars, prm: &Params) -> Output { kicking_by_length(b, prm, false) }
+const KICK: &[ParamSpec] = &[int("variant", "Direction (0 TradingView second candle, 1 TA-Lib longer marubozu)", 0., 0., 1.)];
+macro_rules! kick {
+    ($id:expr, $name:expr, $f:expr) => {
+        IndicatorDef { id: $id, name: $name, category: CAT, params: KICK, outputs: &["signal"], placement: Placement::Pane, needs: Needs::NONE,
+            definition: concat!($name, ": TradingView All Candlestick Patterns rule (Pine v4 source, see candles.rs); 1 on the bar the pattern completes, else 0; variant 1 (TA-Lib CDLKICKINGBYLENGTH): a kicking pair in either direction, signed by the colour of the longer marubozu (tie: the first candle)"),
+            first: &[0], sparse: false, compute: Some($f), note: "" }
+    };
+}
 /// TradingView classification used by "All Candlestick Patterns": +1 bullish, −1 bearish, 0 neutral.
 const KIND: &[(P, i8)] = &[
     (abandoned_baby_bull::at, 1), (doji_star_bull::at, 1), (dragonfly_doji::at, 1), (engulfing_bull::at, 1), (hammer::at, 1), (harami_bull::at, 1),
@@ -153,8 +173,8 @@ pub const DEFS: &[IndicatorDef] = &[
     cdl!("cdl_harami_cross_bear", "Harami Cross - Bearish", TREND, harami_cross_bear::run),
     cdl!("cdl_harami_cross_bull", "Harami Cross - Bullish", TREND, harami_cross_bull::run),
     cdl!("cdl_inverted_hammer", "Inverted Hammer - Bullish", TREND, inverted_hammer::run),
-    cdl!("cdl_kicking_bear", "Kicking - Bearish", &[], kicking_bear::run),
-    cdl!("cdl_kicking_bull", "Kicking - Bullish", &[], kicking_bull::run),
+    kick!("cdl_kicking_bear", "Kicking - Bearish", kicking_bear_run),
+    kick!("cdl_kicking_bull", "Kicking - Bullish", kicking_bull_run),
     cdl!("cdl_long_lower_shadow", "Long Lower Shadow - Bullish", &[], long_lower_shadow::run),
     cdl!("cdl_long_upper_shadow", "Long Upper Shadow - Bearish", &[], long_upper_shadow::run),
     cdl!("cdl_marubozu_black", "Marubozu Black - Bearish", &[], marubozu_black::run),
@@ -195,7 +215,7 @@ mod tests {
     pub(super) fn case(rows: &[(f64, f64, f64, f64)]) -> crate::lab::bars::Bars { let mut all = vec![PRE; 14]; all.extend_from_slice(rows); from_ohlc(&all) }
     /// The pattern's value on the last bar, with trend detection off (trend = 2) where the pattern has a trend rule.
     pub(super) fn last(id: &str, rows: &[(f64, f64, f64, f64)]) -> f64 {
-        let kv: &[(&str, f64)] = if get(id).unwrap().params.is_empty() { &[] } else { &[("trend", 2.)] };
+        let kv: &[(&str, f64)] = if !get(id).unwrap().params.iter().any(|p| p.key == "trend") { &[] } else { &[("trend", 2.)] };
         *go(id, &case(rows), kv)[0].last().unwrap()
     }
     const CASES: &[(&str, &[(f64, f64, f64, f64)])] = &[
@@ -233,13 +253,22 @@ mod tests {
     #[test] fn each_pattern_fires_on_its_case() { for (id, rows) in CASES { assert_eq!(last(id, rows), 1., "{id}"); } }
     #[test] fn plain_bars_fire_nothing() {
         for d in DEFS.iter().filter(|d| d.id.starts_with("cdl_") && d.id != "cdl_all") {
-            let kv: &[(&str, f64)] = if d.params.is_empty() { &[] } else { &[("trend", 2.)] };
+            let kv: &[(&str, f64)] = if !d.params.iter().any(|p| p.key == "trend") { &[] } else { &[("trend", 2.)] };
             assert!(go(d.id, &case(&[PRE]), kv)[0].iter().all(|v| *v == 0.), "{}", d.id);
         }
     }
     #[test] fn trend_rule_gates_reversal_patterns() {
         // with the default SMA50 trend rule, 15 bars have no trend yet, so a hammer is not reported
         assert_eq!(*go("cdl_hammer", &case(&[(11., 11.1, 9.6, 11.1)]), &[])[0].last().unwrap(), 0.);
+    }
+    #[test] fn kicking_by_length_signs_by_the_longer_marubozu() {
+        let at = |id: &str, rows: &[R], v: f64| *go(id, &case(rows), &[("variant", v)])[0].last().unwrap();
+        let tie: &[R] = &[(13.0, 13.0, 10.0, 10.0), (13.5, 16.5, 13.5, 16.5)]; // black 3 then white 3: TA-Lib takes the first (black)
+        assert_eq!((at("cdl_kicking_bull", tie, 0.), at("cdl_kicking_bull", tie, 1.), at("cdl_kicking_bear", tie, 1.)), (1., 0., 1.));
+        let long_white: &[R] = &[(13.0, 13.0, 10.0, 10.0), (13.5, 17.5, 13.5, 17.5)];
+        assert_eq!((at("cdl_kicking_bull", long_white, 1.), at("cdl_kicking_bear", long_white, 1.)), (1., 0.));
+        let long_black_first: &[R] = &[(10.0, 14.0, 10.0, 14.0), (9.5, 9.5, 6.5, 6.5)]; // white 4 then black 3 gap down: bullish by length
+        assert_eq!((at("cdl_kicking_bear", long_black_first, 0.), at("cdl_kicking_bear", long_black_first, 1.), at("cdl_kicking_bull", long_black_first, 1.)), (1., 0., 1.));
     }
     #[test] fn rules_reach_candles() { compiles("cdl_engulfing_bull", "signal").unwrap(); compiles("cdl_doji", "signal").unwrap(); }
     const CASES_II: &[(&str, &[(f64, f64, f64, f64)])] = &[
@@ -277,7 +306,7 @@ mod tests {
         let all = go("cdl_all", b, &kv);
         let mut want = vec![vec![0.; b.len()]; 3];
         for d in DEFS.iter().filter(|d| d.id.starts_with("cdl_") && d.id != "cdl_all") {
-            let s = go(d.id, b, if d.params.is_empty() { &[] } else { &kv }).remove(0);
+            let s = go(d.id, b, if !d.params.iter().any(|p| p.key == "trend") { &[] } else { &kv }).remove(0);
             let kind = if d.name.ends_with("Bullish") { 0 } else if d.name.ends_with("Bearish") { 1 } else { 2 };
             for j in 0..b.len() { want[kind][j] += s[j]; }
         }

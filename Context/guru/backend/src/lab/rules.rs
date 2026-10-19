@@ -39,7 +39,8 @@ fn inv(m: impl Into<String>) -> LabError { LabError::Invalid(m.into()) }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Op { CrossesAbove, CrossesBelow, Gt, Lt, Ge, Le, Eq, Ne, Crosses }
 #[derive(Clone, Debug, PartialEq)]
-pub struct SeriesRef { pub id: String, pub params: Params, pub tf: Tf, pub out: usize, pub offset: usize, pub foreign: Foreign }
+/// `formula` is set on a custom-indicator operand (id "formula"); its params are the formula's Params.
+pub struct SeriesRef { pub id: String, pub params: Params, pub tf: Tf, pub out: usize, pub offset: usize, pub foreign: Foreign, pub formula: Option<std::sync::Arc<super::formula::Formula>> }
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Foreign { pub symbol: Option<String>, pub vs: Option<String>, pub fixup: bool }
 pub const MAX_FOREIGN: usize = 4;
@@ -111,9 +112,14 @@ pub struct Target { pub path: String, pub slot: Option<Slot> }
 /// Market orders fill at the next bar's open (default) or at the signal bar's own close (the book convention).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Fill { NextOpen, Close }
+/// AmiBroker trade price field (Analysis settings › Trades) of a market order's fill bar; Average = (O+H+L+C)/4.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Px { Open, High, Low, Close, Average }
+pub const MAX_TRADE_DELAY: usize = 20;
 /// A price distance: percent of a reference price, or a multiple of ATR(length) read at a bar already closed.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Dist { Pct(f64), Atr { mult: f64, length: usize }, Points(f64), Ticks(f64) }
+/// `ProfitPct` (trailing only): the stop sits x % of the open profit below the peak (AmiBroker trailing in % of profit).
+pub enum Dist { Pct(f64), Atr { mult: f64, length: usize }, Points(f64), Ticks(f64), ProfitPct(f64) }
 /// The price-order settings an optimize path can address (`entry.limit.pct`, `exit.stop_loss.atr`, ...).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Slot { Limit, StopLoss, Target, Trailing, Stop, Activate, BreakevenAfter, TakeProfit(usize) }
@@ -151,6 +157,20 @@ pub enum TaxSide { Buy, Sell, Both }
 /// (ticks: futures only), named taxes as % of value on a side, and the yearly borrow % for shorts.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct MoneyCosts { pub per_order: f64, pub per_unit: f64, pub pct: f64, pub slip_bps: f64, pub slip_ticks: f64, pub taxes: Vec<(String, f64, TaxSide)>, pub borrow_pct_year: Option<f64> }
+/// AmiBroker Analysis settings › General / Portfolio position limits (money mode only).
+/// `shrink` (AmiBroker "Allow position size shrinking"): an entry that a max_value / max_volume_pct cap or the cash on hand cuts
+/// takes the smaller size; off (the default, as in AmiBroker), it is skipped. Without `execution.limits` the ledger uses
+/// [`Limits::none`], today's behaviour.
+#[derive(Clone, Copy, Debug, PartialEq)]
+/// `margin_pct` (AmiBroker "Account margin", 100 = no margin): a cash account's buying power is equity × 100 / margin_pct.
+pub struct Limits { pub min_shares: f64, pub round_lot: f64, pub min_value: f64, pub max_value: Option<f64>, pub max_volume_pct: Option<f64>, pub shrink: bool, pub prev_bar_equity: bool, pub interest_pct: f64, pub margin_pct: f64 }
+impl Default for Limits {
+    fn default() -> Self { Limits { min_shares: 0., round_lot: 1., min_value: 0., max_value: None, max_volume_pct: None, shrink: false, prev_bar_equity: false, interest_pct: 0., margin_pct: 100. } }
+}
+impl Limits {
+    /// No `execution.limits`: no caps, and a cash shortfall shrinks the order to the affordable lots.
+    pub fn none() -> Self { Limits { shrink: true, ..Limits::default() } }
+}
 pub const MAX_VALID_BARS: usize = 20;
 pub const MAX_DELAY: usize = 10;
 pub const MAX_POINTS: f64 = 1e9;
@@ -170,14 +190,25 @@ pub struct Exec {
     /// re-entry rules: cooldown (bars, after which exits), at most `count` entries per calendar period (anchor 1 W … 4 Y), risk
     pub cooldown: Option<(usize, After)>, pub max_trades: Option<(usize, usize)>, pub risk: Risk,
     /// money mode (spec §7.4): starting capital and declared costs
-    pub capital: Option<f64>, pub costs: MoneyCosts, pub futures: Option<Futures>,
+    pub capital: Option<f64>, pub costs: MoneyCosts, pub futures: Option<Futures>, pub limits: Option<Limits>,
+    /// AmiBroker trade prices and delays of this side's market orders, [entry, exit] (buy/sell long, short/cover short);
+    /// None: fill, exit_fill and delay. Re-entry delay in bars after a stop_loss, target, trailing or bars_held exit (same side).
+    pub market: Option<[(Px, usize); 2]>, pub reentry: Option<[usize; 4]>,
+    /// AmiBroker Stops (shared by both sides): ExitAtStop 0/1/2 of stop_loss, target, trailing and the N-bar stop (1: today's),
+    /// "Activate stops immediately" (true: today's), N-bar "Has priority", General › "Allow same bar exit / entry signal" (true: today's).
+    pub exit_at_stop: [u8; 4], pub stops_immediately: bool, pub nbar_first: bool, pub same_bar: bool,
+    /// AmiBroker General › "Tick size" of a cash instrument (0: no rounding; ledger::snap_ticks) and "Pad and align all data to
+    /// reference symbol" (the market benchmark's calendar). Run-level: read from the main side only.
+    pub tick_size: f64, pub pad_align: bool,
 }
 impl Default for Exec {
     fn default() -> Self {
         Exec { short: false, fill: Fill::NextOpen, exit_fill: Fill::NextOpen, limit: None, stop_loss: None, target: None, trailing: None, opposite: Opposite::Reverse,
                stop: None, limit_at: None, stop_at: None, valid_bars: 1, delay: 1, edge: false,
                trail_activate: None, breakeven: None, take_profits: vec![], min_bars: 0, ohlc_path: false, scale_in: None, sizing: Sizing::Full,
-               cooldown: None, max_trades: None, risk: Risk::default(), capital: None, costs: MoneyCosts::default(), futures: None }
+               cooldown: None, max_trades: None, risk: Risk::default(), capital: None, costs: MoneyCosts::default(), futures: None, limits: None, market: None, reentry: None,
+               exit_at_stop: [1; 4], stops_immediately: true, nbar_first: false, same_bar: true,
+               tick_size: 0., pad_align: false }
     }
 }
 impl Exec {
@@ -210,7 +241,9 @@ pub const MAX_ATR_LENGTH: usize = 500;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Dim { pub path: String, pub target: Target, pub values: Vec<f64> }
 #[derive(Clone, Debug, PartialEq)]
-pub struct Spec { pub entry: Vec<Node>, pub exit: Vec<Node>, pub cost_bps: Option<f64>, pub optimize: Vec<Dim>, pub exec: Exec, pub origin: Option<Origin>, pub short_side: Option<Box<Side>>, pub portfolio: Option<Portfolio> }
+pub struct Spec { pub entry: Vec<Node>, pub exit: Vec<Node>, pub cost_bps: Option<f64>, pub optimize: Vec<Dim>, pub exec: Exec, pub origin: Option<Origin>, pub short_side: Option<Box<Side>>, pub portfolio: Option<Portfolio>,
+    /// AmiBroker Settings › Report risk-free rates (Sharpe, UPI) in percent from `execution.report` (lab/report.rs rates); None: defaults.
+    pub report: Option<(f64, f64)> }
 /// The short side of a `direction: both` spec: its own rule lists and price orders (exec.short = true).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Side { pub entry: Vec<Node>, pub exit: Vec<Node>, pub exec: Exec }
@@ -246,7 +279,7 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
     };
     let mut cost_bps = None;
     if let Some(ex) = root.get("execution") {
-        fields(ex, "execution", &["fill", "exit_fill", "cost_bps", "opposite", "delay_bars", "entry_on", "intrabar", "sizing", "cooldown", "max_trades", "risk", "capital", "costs", "instrument"], &["limit", "stop"])?;
+        fields(ex, "execution", &["fill", "exit_fill", "cost_bps", "opposite", "delay_bars", "entry_on", "intrabar", "sizing", "cooldown", "max_trades", "risk", "capital", "costs", "instrument", "prices", "delays", "reentry", "limits", "exit_at_stop", "activate_stops_immediately", "nbar_has_priority", "allow_same_bar_exit", "report", "tick_size", "pad_align"], &["limit", "stop"])?;
         if let Some(v) = ex.get("instrument") { exec.futures = instrument(v)?; }
         if let Some(c) = ex.get("capital") {
             exec.capital = Some(c.as_f64().filter(|c| c.is_finite() && *c > 0. && *c <= MAX_CAPITAL).ok_or_else(|| inv(format!("execution.capital must be a number above 0 and at most {MAX_CAPITAL}")))?);
@@ -256,6 +289,15 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
             if exec.capital.is_none() { return Err(inv("execution.costs applies to money mode (execution.capital)")); }
             exec.costs = money_costs(v)?;
         }
+        if let Some(v) = ex.get("limits") {
+            if exec.capital.is_none() { return Err(inv("execution.limits needs money mode (execution.capital)")); }
+            exec.limits = Some(limits(v)?);
+        }
+        if let Some(v) = ex.get("tick_size") {
+            exec.tick_size = v.as_f64().filter(|t| t.is_finite() && (0. ..=1e6).contains(t)).ok_or_else(|| inv("execution.tick_size must be a number from 0 (no rounding) to 1e6"))?;
+            if exec.tick_size > 0. && exec.futures.is_some() { return Err(inv("futures round to the contract's tick; remove execution.tick_size")); }
+        }
+        if let Some(v) = ex.get("pad_align") { exec.pad_align = match v { Json::Bool(b) => *b, _ => return Err(inv("execution.pad_align must be true or false")) }; }
         if let Some(v) = ex.get("cooldown") {
             fields(v, "execution.cooldown", &["bars", "after"], &[])?;
             let after = match v.get("after").map(Json::as_str) {
@@ -313,6 +355,21 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
             exec.delay = n.as_f64().filter(|n| n.fract() == 0. && (1. ..=MAX_DELAY as f64).contains(n))
                 .ok_or_else(|| inv(format!("execution.delay_bars must be a whole number from 1 to {MAX_DELAY}")))? as usize;
         }
+        if ex.get("prices").is_some() || ex.get("delays").is_some() {
+            exec.market = Some(market(ex, &exec, short_side.as_mut())?);
+        }
+        if let Some(v) = ex.get("reentry") {
+            fields(v, "execution.reentry", &REENTRY, &[])?;
+            let mut n = [0; 4];
+            for (k, key) in REENTRY.iter().enumerate() { if let Some(b) = v.get(key) { n[k] = whole(Some(b), &format!("execution.reentry.{key}"), 0)?; } }
+            exec.reentry = Some(n);
+        }
+        if let Some(v) = ex.get("exit_at_stop") {
+            fields(v, "execution.exit_at_stop", &REENTRY, &[])?;
+            for (k, key) in REENTRY.iter().enumerate() { if let Some(m) = v.get(key) { exec.exit_at_stop[k] = m.as_f64().filter(|m| [0., 1., 2.].contains(m)).ok_or_else(|| inv(format!("execution.exit_at_stop.{key} must be 0, 1 or 2")))? as u8; } }
+        }
+        let flag = |k: &str, default: bool| match ex.get(k) { None => Ok(default), Some(Json::Bool(b)) => Ok(*b), _ => Err(inv(format!("execution.{k} must be true or false"))) };
+        (exec.stops_immediately, exec.nbar_first, exec.same_bar) = (flag("activate_stops_immediately", true)?, flag("nbar_has_priority", false)?, flag("allow_same_bar_exit", true)?);
         exec.edge = match ex.get("entry_on").map(Json::as_str) {
             None | Some(Some("level")) => false,
             Some(Some("edge")) => true,
@@ -331,6 +388,7 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
     }
     if let Some(s) = short_side.as_mut() {
         (s.exec.fill, s.exec.exit_fill, s.exec.opposite, s.exec.delay, s.exec.edge, s.exec.ohlc_path) = (exec.fill, exec.exit_fill, exec.opposite, exec.delay, exec.edge, exec.ohlc_path);
+        (s.exec.exit_at_stop, s.exec.stops_immediately, s.exec.nbar_first, s.exec.same_bar) = (exec.exit_at_stop, exec.stops_immediately, exec.nbar_first, exec.same_bar);
     }
     // An exitless side relies on the opposite entry to reverse its position.
     let exitless = |x: &Exec, e: &[Node]| e.is_empty() && x.stop_loss.is_none() && x.target.is_none() && x.trailing.is_none() && x.breakeven.is_none();
@@ -344,10 +402,57 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
     if exec.futures.is_some() && execs.iter().any(|x| x.scale_in.is_some() || !x.take_profits.is_empty()) {
         return Err(inv("futures runs do not combine with scale_in or take_profits yet"));
     }
-    let mut spec = Spec { entry, exit, cost_bps, optimize: vec![], exec, origin, short_side, portfolio };
+    let report = root.get("execution").and_then(|x| x.get("report")).map(super::report::rates).transpose()?;
+    if report.is_some() && portfolio.is_some() { return Err(LabError::Unsupported("execution.report applies to single-instrument runs; a portfolio run has no AmiBroker report".into())); }
+    let mut spec = Spec { entry, exit, cost_bps, optimize: vec![], exec, origin, short_side, portfolio, report };
     validate_applied(&spec)?;
     if let Some(o) = root.get("optimize") { spec.optimize = dims(&spec, o)?; }
     Ok(spec)
+}
+
+const REENTRY: [&str; 4] = ["stop_loss", "target", "trailing", "bars"];
+/// `execution.prices` / `execution.delays` (AmiBroker Analysis settings › Trades): each order fills on bar signal + delay at
+/// that bar's field. A missing key keeps today's default (open, 1 bar); delay 0 is the signal bar, known only at its close.
+/// Sets the short side's [short, cover] and returns this side's [buy, sell] (or [short, cover] for direction short).
+fn market(ex: &Json, exec: &Exec, short_side: Option<&mut Box<Side>>) -> Result<[(Px, usize); 2], LabError> {
+    const KEYS: [&str; 4] = ["buy", "sell", "short", "cover"];
+    const NAMES: [(&str, Px); 5] = [("open", Px::Open), ("high", Px::High), ("low", Px::Low), ("close", Px::Close), ("average", Px::Average)];
+    if ["fill", "exit_fill", "delay_bars"].iter().any(|k| ex.get(k).is_some()) {
+        return Err(inv("execution.prices and execution.delays replace execution.fill, exit_fill and delay_bars; give one form"));
+    }
+    let (prices, delays) = (ex.get("prices"), ex.get("delays"));
+    // only the sides this spec trades: buy/sell for long, short/cover for short, all four for both
+    let used: &[&str] = if short_side.is_some() { &KEYS } else if exec.short { &KEYS[2..] } else { &KEYS[..2] };
+    for (v, at) in [(prices, "execution.prices"), (delays, "execution.delays")] {
+        let Some(v) = v else { continue };
+        fields(v, at, &KEYS, &[])?;
+        if let Some(key) = KEYS.iter().find(|k| !used.contains(k) && v.get(k).is_some()) {
+            return Err(inv(format!("{at}.{key} applies to direction {} or both", if KEYS[..2].contains(key) { "long" } else { "short" })));
+        }
+    }
+    let mut m = [(Px::Open, 1); 4];
+    for (k, key) in KEYS.iter().enumerate().filter(|(_, k)| used.contains(k)) {
+        if let Some(p) = prices.and_then(|v| v.get(key)) {
+            m[k].0 = NAMES.iter().find(|n| p.as_str() == Some(n.0)).map(|n| n.1)
+                .ok_or_else(|| inv(format!("execution.prices.{key} must be \"open\", \"high\", \"low\", \"close\" or \"average\"")))?;
+        }
+        if let Some(n) = delays.and_then(|v| v.get(key)) {
+            m[k].1 = n.as_f64().filter(|n| n.fract() == 0. && (0. ..=MAX_TRADE_DELAY as f64).contains(n))
+                .ok_or_else(|| inv(format!("execution.delays.{key} must be a whole number from 0 to {MAX_TRADE_DELAY}")))? as usize;
+        }
+        if m[k].1 == 0 && m[k].0 != Px::Close {
+            let name = NAMES.iter().find(|n| n.1 == m[k].0).unwrap().0;
+            return Err(inv(format!("execution.prices.{key} \"{name}\" with delay 0 would use prices before the signal (a signal is known at the bar's close); use \"close\" or a delay of 1 or more")));
+        }
+    }
+    // entry orders (limit / stop) fill by their own rules: their side's entry price and delay do not apply
+    let given = |key: &str| prices.and_then(|v| v.get(key)).or(delays.and_then(|v| v.get(key))).is_some();
+    let entry_key = if exec.short { "short" } else { "buy" };
+    for (ordered, key) in [(exec.has_order(), entry_key), (short_side.as_ref().is_some_and(|s| s.exec.has_order()), "short")] {
+        if ordered && given(key) { return Err(inv(format!("execution.prices.{key} / execution.delays.{key} apply to market entries; entry.limit and entry.stop orders fill on the bars after the signal"))); }
+    }
+    if let Some(s) = short_side { s.exec.market = Some([m[2], m[3]]); }
+    Ok(if exec.short { [m[2], m[3]] } else { [m[0], m[1]] })
 }
 
 /// One side's rule lists and price orders; `pre` is "" (the long side, or the only side) or "short_side.".
@@ -362,7 +467,13 @@ fn side(entry: Option<&Json>, exit: Option<&Json>, pre: &str, both: bool, rotati
         let Some(v) = (if order { entry_obj } else { exit_obj }).get(at.split_once('.').unwrap().1) else { continue };
         if slot == Slot::Trailing {
             if let Some(a) = v.get("activate") { exec.trail_activate = Some(dist(a, &format!("{pre}exit.trailing.activate"), 1000.)?); }
-            exec.put(slot, dist(&without(v, "activate"), &format!("{pre}{at}"), hi)?);
+            let d = without(v, "activate");
+            if let Some(p) = d.get("profit_pct") {
+                fields(&d, &format!("{pre}{at}"), &["profit_pct"], &[])?;
+                exec.trailing = Some(Dist::ProfitPct(p.as_f64().filter(|p| *p > 0. && *p < 100.).ok_or_else(|| inv(format!("{pre}{at}.profit_pct must be a number above 0 and below 100")))?));
+                continue;
+            }
+            exec.put(slot, dist(&d, &format!("{pre}{at}"), hi)?);
             continue;
         }
         if v.get("at").is_none() { exec.put(slot, dist(v, &format!("{pre}{at}"), hi)?); continue; }
@@ -477,6 +588,12 @@ fn portfolio_rules(s:&Spec)->Result<(),LabError>{
     if x.risk!=Risk::default(){return unsupported("execution.risk");}
     if x.futures.is_some(){return unsupported("execution.instrument futures");}
     if x.delay!=1{return unsupported("execution.delay_bars");}
+    if x.market.is_some(){return unsupported("execution.prices / execution.delays");}
+    if x.reentry.is_some(){return unsupported("execution.reentry");}
+    if x.exit_at_stop!=[1;4]||!x.stops_immediately||x.nbar_first||!x.same_bar{return unsupported("execution.exit_at_stop, activate_stops_immediately, nbar_has_priority or allow_same_bar_exit");}
+    if x.limits.is_some(){return unsupported("execution.limits");}
+    if x.tick_size>0.{return unsupported("execution.tick_size");}
+    if x.pad_align{return unsupported("execution.pad_align");}
     if x.capital.is_none(){return Err(inv("a portfolio needs execution.capital (shared money mode)"));}
     if p.max_open==0||p.max_open>MAX_OPEN{return Err(inv(format!("portfolio.max_open must be a whole number from 1 to {MAX_OPEN}")));}
     if p.worst_rank_held()==0||p.worst_rank_held()>MAX_UNIVERSE||p.worst_rank_held()<p.max_open{return Err(inv(format!("portfolio.worst_rank_held must be at least max_open and at most {MAX_UNIVERSE}")));}
@@ -539,6 +656,28 @@ fn distances(x: &Exec) -> Vec<Dist> {
     [x.limit,x.stop_loss,x.target,x.trailing,x.stop,x.trail_activate].into_iter().flatten()
         .chain(x.breakeven.iter().flat_map(|b|[Some(b.0),b.1]).flatten())
         .chain(x.take_profits.iter().map(|t|t.0)).collect()
+}
+
+fn limits(v: &Json) -> Result<Limits, LabError> {
+    fields(v, "execution.limits", &["min_shares", "round_lot", "min_value", "max_value", "max_volume_pct", "shrink", "prev_bar_equity", "interest_pct", "margin_pct"], &[])?;
+    let num = |k: &str, ok: &dyn Fn(f64) -> bool, want: &str| -> Result<Option<f64>, LabError> {
+        v.get(k).map(|x| x.as_f64().filter(|x| x.is_finite() && ok(*x)).ok_or_else(|| inv(format!("execution.limits.{k} must be {want}")))).transpose()
+    };
+    let flag = |k: &str| match v.get(k) { None => Ok(false), Some(Json::Bool(b)) => Ok(*b), _ => Err(inv(format!("execution.limits.{k} must be true or false"))) };
+    let d = Limits::default();
+    let l = Limits {
+        min_shares: num("min_shares", &|x| (0. ..=1e9).contains(&x), "a number from 0 to 1e9")?.unwrap_or(d.min_shares),
+        round_lot: num("round_lot", &|x| x.fract() == 0. && (1. ..=1e9).contains(&x), "a whole number from 1 to 1e9")?.unwrap_or(d.round_lot),
+        min_value: num("min_value", &|x| (0. ..=MAX_CAPITAL).contains(&x), "a number from 0 to 1e12")?.unwrap_or(d.min_value),
+        // AmiBroker: 0 means no maximum / no volume limit
+        max_value: num("max_value", &|x| (0. ..=MAX_CAPITAL).contains(&x), "a number from 0 (no maximum) to 1e12")?.filter(|x| *x > 0.),
+        max_volume_pct: num("max_volume_pct", &|x| (0. ..=100.).contains(&x), "a number from 0 (no limit) to 100")?.filter(|x| *x > 0.),
+        shrink: flag("shrink")?, prev_bar_equity: flag("prev_bar_equity")?,
+        interest_pct: num("interest_pct", &|x| (0. ..=100.).contains(&x), "a number from 0 to 100")?.unwrap_or(d.interest_pct),
+        margin_pct: num("margin_pct", &|x| (1. ..=100.).contains(&x), "a number from 1 to 100 (100 = no margin)")?.unwrap_or(d.margin_pct),
+    };
+    if l.max_value.is_some_and(|m| l.min_value > m) { return Err(inv("execution.limits.min_value must not exceed max_value")); }
+    Ok(l)
 }
 
 fn money_costs(v: &Json) -> Result<MoneyCosts, LabError> {
@@ -758,6 +897,7 @@ fn operand(v: Option<&Json>, at: &str, held: bool, b: &mut Budget) -> Result<Ope
         fields(v, at, &["value"], &[])?;
         return v.get("value").and_then(Json::as_f64).map(Operand::Value).ok_or_else(|| inv(format!("{at}.value must be a number")));
     }
+    if v.get("formula").is_some() { return formula_operand(v, at); }
     if let Some(e) = expr(v, at, b)? { return Ok(Operand::Expr(Box::new(e))); }
     fields(v, at, &["s", "p", "tf", "out", "offset", "expand", "symbol", "vs", "fixup"], &[])?;
     let id = v.get("s").and_then(Json::as_str).ok_or_else(|| inv(format!("{at}.s must name a series (or give a value)")))?;
@@ -766,6 +906,15 @@ fn operand(v: Option<&Json>, at: &str, held: bool, b: &mut Budget) -> Result<Ope
         if ["p", "tf", "out", "offset", "expand", "symbol", "vs", "fixup"].iter().any(|k| v.get(k).is_some()) { return Err(inv(format!("{at}: bars_held takes no p, tf, out, offset, expand, symbol, vs or fixup"))); }
         return Ok(Operand::BarsHeld);
     }
+    let (tf, offset, given, out) = timing(v, at)?;
+    let expand = expand_of(v, at, tf, offset, id == "open")?;
+    let text=|key:&str|v.get(key).map(|v|v.as_str().ok_or_else(||inv(format!("{at}.{key} must be a string")))).transpose();
+    let foreign=foreign_ref(at,text("symbol")?,text("vs")?,text("fixup")?)?;
+    let r = series_ref(at, id, &given, tf, out, offset, foreign)?;
+    Ok(if expand == Expand::Last { Operand::Series(r) } else { Operand::Expr(Box::new(Expr::Expand(r, expand))) })
+}
+/// tf, offset, p and out of a series or formula operand.
+fn timing<'a>(v: &'a Json, at: &str) -> Result<(Tf, usize, Params, Option<&'a str>), LabError> {
     let tf = match v.get("tf") { None => Tf::D, Some(t) => t.as_str().and_then(Tf::parse).ok_or_else(|| inv(format!("{at}.tf must be {TF_HELP}")))? };
     let offset = match v.get("offset") {
         None => 0,
@@ -778,10 +927,18 @@ fn operand(v: Option<&Json>, at: &str, held: bool, b: &mut Budget) -> Result<Ope
         for (k, x) in kv { given.insert(k.clone(), x.as_f64().ok_or_else(|| inv(format!("{at}.p.{k} must be a number")))?); }
     }
     let out = match v.get("out") { None => None, Some(o) => Some(o.as_str().ok_or_else(|| inv(format!("{at}.out must be a string")))?) };
-    let expand = expand_of(v, at, tf, offset, id == "open")?;
-    let text=|key:&str|v.get(key).map(|v|v.as_str().ok_or_else(||inv(format!("{at}.{key} must be a string")))).transpose();
-    let foreign=foreign_ref(at,text("symbol")?,text("vs")?,text("fixup")?)?;
-    let r = series_ref(at, id, &given, tf, out, offset, foreign)?;
+    Ok((tf, offset, given, out))
+}
+/// A custom-indicator operand `{"formula","name","p","out","tf","offset","expand"}` (design 2026-10-19 §2). The formula
+/// text travels inside the spec, so it counts toward MAX_SPEC_BYTES and a saved spec keeps the formula it was saved with.
+fn formula_operand(v: &Json, at: &str) -> Result<Operand, LabError> {
+    fields(v, at, &["formula", "name", "p", "out", "tf", "offset", "expand"], &[])?;
+    let text = v.get("formula").and_then(Json::as_str).ok_or_else(|| inv(format!("{at}.formula must be a string")))?;
+    let name = v.get("name").map(|n| n.as_str().ok_or_else(|| inv(format!("{at}.name must be a string")))).transpose()?;
+    let (tf, offset, given, out) = timing(v, at)?;
+    let (f, params, out) = super::formula::operand(name, text, &given, out).map_err(|e| inv(format!("{at}.formula: {e}")))?;
+    let expand = expand_of(v, at, tf, offset, false)?;
+    let r = SeriesRef { id: "formula".into(), params, tf, out, offset, foreign: Foreign::default(), formula: Some(std::sync::Arc::new(f)) };
     Ok(if expand == Expand::Last { Operand::Series(r) } else { Operand::Expr(Box::new(Expr::Expand(r, expand))) })
 }
 /// `expand` (default last). `first` is accepted only where the value is known by the close of the period's first daily bar:
@@ -861,7 +1018,7 @@ fn cond_of(v: &Json, key: &str, at: &str, b: &mut Budget) -> Result<Node, LabErr
 pub fn series_ref(at: &str, id: &str, given: &Params, tf: Tf, out: Option<&str>, offset: usize, foreign: Foreign) -> Result<SeriesRef, LabError> {
     if PRICE_SOURCES.contains(&id) {
         if !given.is_empty() || out.is_some() || foreign.vs.is_some() { return Err(inv(format!("{at}: price source '{id}' takes no p or out or vs"))); }
-        return Ok(SeriesRef { id: id.into(), params: Params::new(), tf, out: 0, offset, foreign });
+        return Ok(SeriesRef { id: id.into(), params: Params::new(), tf, out: 0, offset, foreign, formula: None });
     }
     let def = catalogue::get(id).ok_or_else(|| inv(format!("{at}.s: unknown series '{id}'")))?;
     if def.needs.intraday { return Err(LabError::NeedsData(format!("{at}: {}: {}", def.name, def.note))); }
@@ -878,7 +1035,7 @@ pub fn series_ref(at: &str, id: &str, given: &Params, tf: Tf, out: Option<&str>,
         None => 0,
         Some(o) => def.outputs.iter().position(|x| *x == o).ok_or_else(|| inv(format!("{at}.out: {} has outputs {}", def.id, def.outputs.join(", "))))?,
     };
-    Ok(SeriesRef { id: id.into(), params, tf, out, offset, foreign })
+    Ok(SeriesRef { id: id.into(), params, tf, out, offset, foreign, formula: None })
 }
 
 fn dims(spec: &Spec, v: &Json) -> Result<Vec<Dim>, LabError> {
@@ -950,9 +1107,9 @@ fn target(spec: &Spec, path: &str) -> Result<Target, String> {
     if let Some((slot, at, field, _)) = slot_at(rest) {
         let exec = exec_of(spec, path).ok_or("the spec has no short_side")?;
         return match (exec.slot(slot), field.as_str()) {
-            (Some(Dist::Pct(_)), "pct") | (Some(Dist::Atr { .. }), "atr") | (Some(Dist::Points(_)), "points") | (Some(Dist::Ticks(_)), "ticks") => Ok(Target { path: path.into(), slot: Some(slot) }),
+            (Some(Dist::Pct(_)), "pct") | (Some(Dist::Atr { .. }), "atr") | (Some(Dist::Points(_)), "points") | (Some(Dist::Ticks(_)), "ticks") | (Some(Dist::ProfitPct(_)), "profit_pct") => Ok(Target { path: path.into(), slot: Some(slot) }),
             (None, _) => Err(format!("the spec has no {at}")),
-            (Some(d), _) => Err(format!("{at} is set by {}; optimize that field", match d { Dist::Pct(_) => "pct", Dist::Atr { .. } => "atr", Dist::Points(_) => "points", Dist::Ticks(_) => "ticks" })),
+            (Some(d), _) => Err(format!("{at} is set by {}; optimize that field", match d { Dist::Pct(_) => "pct", Dist::Atr { .. } => "atr", Dist::Points(_) => "points", Dist::Ticks(_) => "ticks", Dist::ProfitPct(_) => "profit_pct" })),
         };
     }
     if !["entry.all[", "exit.any[", "entry.limit.at.", "entry.stop.at.", "entry.scale_in.", "execution.sizing.", "portfolio.score."].iter().any(|p| rest.starts_with(p)) {
@@ -961,7 +1118,7 @@ fn target(spec: &Spec, path: &str) -> Result<Target, String> {
     let (mut found, mut near) = (false, None::<String>);
     walk(&mut spec.clone(), &mut |p, k| match k {
         Knob::Series(r) => if let Some(key) = path.strip_prefix(&format!("{p}.p.")) {
-            near = Some(catalogue::get(&r.id).map_or("price sources have no parameters".into(), |d| format!("{} has no parameter '{key}'", d.id)));
+            near = Some(if let Some(f) = &r.formula { format!("{} has no parameter '{key}'", f.name) } else { catalogue::get(&r.id).map_or("price sources have no parameters".into(), |d| format!("{} has no parameter '{key}'", d.id)) });
         },
         _ => found |= p == path,
     });
@@ -1078,7 +1235,7 @@ fn set(s: &mut Spec, t: &Target, x: f64) {
         return;
     }
     if let Some(slot) = t.slot {
-        match exec_mut(s, &t.path).and_then(|e| e.slot_mut(slot)) { Some(Dist::Pct(p) | Dist::Points(p) | Dist::Ticks(p)) => *p = x, Some(Dist::Atr { mult, .. }) => *mult = x, None => {} }
+        match exec_mut(s, &t.path).and_then(|e| e.slot_mut(slot)) { Some(Dist::Pct(p) | Dist::Points(p) | Dist::Ticks(p) | Dist::ProfitPct(p)) => *p = x, Some(Dist::Atr { mult, .. }) => *mult = x, None => {} }
         return;
     }
     walk(s, &mut |p, k| if p == t.path {
@@ -1102,6 +1259,7 @@ fn check_value(spec: &Spec, t: &Target, x: f64) -> Result<(), String> {
             Some(Dist::Pct(_)) => x <= hi && (x > 0. || (x == 0. && order)),
             Some(Dist::Ticks(_)) => x.fract() == 0. && x <= MAX_TICKS && (x > 0. || (x == 0. && order)),
             Some(Dist::Points(_)) => x <= MAX_POINTS && (x > 0. || (x == 0. && order)),
+            Some(Dist::ProfitPct(_)) => x > 0. && x < 100.,
             _ => x > 0. && x <= MAX_ATR_MULT,
         };
         if !ok { return Err(format!("{at} value {x} is out of range")); }
@@ -1119,6 +1277,7 @@ fn check_value(spec: &Spec, t: &Target, x: f64) -> Result<(), String> {
     let mut res = Ok(());
     walk(&mut s, &mut |p, k| if p == t.path {
         res = match k {
+            Knob::Param(r, _) if r.formula.is_some() => r.formula.as_ref().map_or(Ok(()), |f| super::formula::resolve(&f.prog, &r.params).and_then(|p| super::formula::check(&f.prog, &p))),
             Knob::Param(r, _) => catalogue::get(&r.id).ok_or_else(|| "unknown series".to_string()).and_then(|d| catalogue::resolve_params(&d, &r.params).map(|_| ())),
             Knob::Shift(_) if x.fract() != 0. || x < 0. || x > MAX_OFFSET as f64 => Err(format!("{} must be a whole number from 0 to {MAX_OFFSET}, not {x}", t.path)),
             Knob::Whole(_) if x.fract() != 0. || x < 1. || x > MAX_OFFSET as f64 => Err(format!("{} must be a whole number from 1 to {MAX_OFFSET}, not {x}", t.path)),
@@ -1146,7 +1305,7 @@ pub fn current(spec: &Spec, t: &Target) -> f64 {
     if matches!(t.path.as_str(),"portfolio.max_open"|"portfolio.worst_rank_held") {
         return spec.portfolio.as_ref().map_or(f64::NAN,|p|if t.path.ends_with("max_open"){p.max_open as f64}else{p.worst_rank_held() as f64});
     }
-    if let Some(slot) = t.slot { return match exec_of(spec, &t.path).and_then(|e| e.slot(slot)) { Some(Dist::Pct(p) | Dist::Points(p) | Dist::Ticks(p)) => p, Some(Dist::Atr { mult, .. }) => mult, None => f64::NAN }; }
+    if let Some(slot) = t.slot { return match exec_of(spec, &t.path).and_then(|e| e.slot(slot)) { Some(Dist::Pct(p) | Dist::Points(p) | Dist::Ticks(p) | Dist::ProfitPct(p)) => p, Some(Dist::Atr { mult, .. }) => mult, None => f64::NAN }; }
     let mut v = f64::NAN;
     walk(&mut spec.clone(), &mut |p, k| if p == t.path {
         match k {
@@ -1669,6 +1828,35 @@ mod tests {
         }
     }
     // ---- Phase 7: money mode (spec §7.4)
+    #[test] fn execution_limits_parse_in_money_mode_only() {
+        let money = |limits: &str| with(r#""fill": "next_open", "cost_bps": 12"#, &format!(r#""fill": "next_open", "capital": 100000, "limits": {limits}"#));
+        let s = parse_spec(&money(r#"{"min_shares":5,"round_lot":10,"min_value":100,"max_value":5000,"max_volume_pct":2.5,"shrink":true,"prev_bar_equity":true,"interest_pct":4}"#)).unwrap();
+        assert_eq!(s.exec.limits, Some(Limits { min_shares: 5., round_lot: 10., min_value: 100., max_value: Some(5000.), max_volume_pct: Some(2.5), shrink: true, prev_bar_equity: true, interest_pct: 4., margin_pct: 100. }));
+        assert_eq!(parse_spec(&money("{}")).unwrap().exec.limits, Some(Limits::default()));
+        for (limits, msg) in [(r#"{"round_lot":0.5}"#, "round_lot must be a whole number"), (r#"{"max_volume_pct":101}"#, "max_volume_pct must be"), (r#"{"shrink":1}"#, "shrink must be true or false"),
+            (r#"{"min_value":10,"max_value":5}"#, "min_value must not exceed max_value"), (r#"{"lots":1}"#, "unknown field 'lots'")] {
+            assert!(err(&money(limits)).message().contains(msg), "{limits}");
+        }
+        assert_eq!(parse_spec(&money(r#"{"max_value":0,"max_volume_pct":0}"#)).unwrap().exec.limits, Some(Limits::default()), "AmiBroker: zero means no limit");
+        let unit = err(&with(r#""cost_bps": 12"#, r#""cost_bps": 12, "limits": {}"#));
+        assert_eq!((unit.status(), unit.message()), ("invalid", "execution.limits needs money mode (execution.capital)"));
+        let port = r#"{"v":1,"entry":{"all":[{"lhs":{"s":"rsi","p":{"length":2}},"op":"<","rhs":{"value":10}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":5}}]},"execution":{"capital":1000000,"limits":{"round_lot":10}},"portfolio":{"universe":{"basket":"nifty50"},"max_open":5}}"#;
+        assert_eq!(err(port).status(), "unsupported");
+    }
+    #[test] fn account_margin_tick_size_and_pad_align_parse() {
+        let money = |limits: &str| with(r#""fill": "next_open", "cost_bps": 12"#, &format!(r#""fill": "next_open", "capital": 100000, "limits": {limits}"#));
+        assert_eq!(parse_spec(&money(r#"{"margin_pct":50}"#)).unwrap().exec.limits.unwrap().margin_pct, 50.);
+        for m in ["0", "101", "true"] { assert!(err(&money(&format!(r#"{{"margin_pct":{m}}}"#))).message().contains("margin_pct must be a number from 1 to 100"), "{m}"); }
+        let exec = |extra: &str| with(r#""cost_bps": 12"#, &format!(r#""cost_bps": 12, {extra}"#));
+        let s = parse_spec(&exec(r#""tick_size": 0.05, "pad_align": true"#)).unwrap();
+        assert_eq!((s.exec.tick_size, s.exec.pad_align), (0.05, true));
+        assert_eq!(parse_spec(&exec(r#""tick_size": 0"#)).unwrap().exec.tick_size, 0., "AmiBroker: 0 means no rounding");
+        for (extra, msg) in [(r#""tick_size": -1"#, "tick_size must be a number"), (r#""pad_align": 1"#, "pad_align must be true or false")] { assert!(err(&exec(extra)).message().contains(msg), "{extra}"); }
+        let fut = r#"{"v":1,"entry":{"all":[{"lhs":{"s":"close"},"op":">","rhs":{"value":0}}]},"exit":{"any":[],"stop_loss":{"ticks":20}},"execution":{"tick_size":0.05,"instrument":{"kind":"futures","roll":{"days_before_expiry":2},"adjust":"ratio"}}}"#;
+        assert!(err(fut).message().contains("contract's tick"), "{}", err(fut).message());
+        let port = r#"{"v":1,"entry":{"all":[{"lhs":{"s":"rsi","p":{"length":2}},"op":"<","rhs":{"value":10}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":5}}]},"execution":{"capital":1000000,"pad_align":true},"portfolio":{"universe":{"basket":"nifty50"},"max_open":5}}"#;
+        assert_eq!(err(port).status(), "unsupported");
+    }
     #[test] fn money_mode_parses_capital_sizing_and_costs() {
         let base = with(r#""fill": "next_open", "cost_bps": 12"#, r#""fill": "next_open", "capital": 100000, "sizing": {"units": 10},
             "costs": {"commission": {"per_order": 20, "pct": 0.03}, "slippage": {"bps": 5}, "taxes": [{"name": "STT", "pct": 0.1, "side": "both"}], "borrow_pct_year": 0.5}"#);
@@ -1784,5 +1972,131 @@ mod phase8_grammar_tests {
         let entry=format!(r#""all":[{}]"#,vec![group;12].join(","));
         let text=PORT.replace(r#"{"abs":{"s":"rsi","p":{"length":14}}}"#,&score).replace(r#""all":[{"lhs":{"s":"rsi","p":{"length":2}},"op":"<","rhs":{"value":10}}]"#,&entry);
         let e=error(&text);assert!(e.message().contains("limit is 120"),"{e:?}");
+    }
+}
+#[cfg(test)]
+mod amibroker_trades_tests {
+    use super::*;
+    const BASE: &str = r#"{"v":1,"entry":{"all":[{"lhs":{"s":"close"},"op":">","rhs":{"value":0}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":3}}]},"execution":{}}"#;
+    fn ex(execution: &str) -> Result<Spec, LabError> { parse_spec(&BASE.replace(r#""execution":{}"#, &format!(r#""execution":{execution}"#))) }
+    fn msg(execution: &str) -> String { ex(execution).unwrap_err().message().to_string() }
+    #[test] fn prices_and_delays_parse_per_side_with_todays_defaults() {
+        assert_eq!(ex("{}").unwrap().exec.market, None);
+        let s = ex(r#"{"prices":{"buy":"high","sell":"average"},"delays":{"buy":2,"sell":0}}"#);
+        assert_eq!(s.unwrap_err().message(), r#"execution.prices.sell "average" with delay 0 would use prices before the signal (a signal is known at the bar's close); use "close" or a delay of 1 or more"#);
+        let s = ex(r#"{"prices":{"buy":"high","sell":"close"},"delays":{"buy":2,"sell":0}}"#).unwrap();
+        assert_eq!(s.exec.market, Some([(Px::High, 2), (Px::Close, 0)]));
+        // a missing key keeps today's default: the next bar's open
+        assert_eq!(ex(r#"{"prices":{"buy":"low"}}"#).unwrap().exec.market, Some([(Px::Low, 1), (Px::Open, 1)]));
+        let short = BASE.replace(r#""v":1,"#, r#""v":1,"direction":"short","#).replace(r#""execution":{}"#, r#""execution":{"prices":{"short":"average","cover":"close"},"delays":{"cover":0}}"#);
+        assert_eq!(parse_spec(&short).unwrap().exec.market, Some([(Px::Average, 1), (Px::Close, 0)]));
+        // a side the spec does not trade is refused, not ignored (and its delay 0 is not checked)
+        assert_eq!(parse_spec(&short.replace(r#""short":"average","#, r#""buy":"high","#)).unwrap_err().message(), "execution.prices.buy applies to direction long or both");
+        assert_eq!(msg(r#"{"prices":{"short":"low"}}"#), "execution.prices.short applies to direction short or both");
+        assert_eq!(msg(r#"{"delays":{"cover":0}}"#), "execution.delays.cover applies to direction short or both");
+        let both = r#"{"v":1,"direction":"both","entry":{"all":[{"lhs":{"s":"close"},"op":">","rhs":{"value":0}}]},"exit":{"any":[]},"short_side":{"entry":{"all":[{"lhs":{"s":"close"},"op":"<","rhs":{"value":0}}]},"exit":{"any":[]}},"execution":{"prices":{"buy":"close","sell":"high","short":"low","cover":"average"},"delays":{"buy":0,"sell":3,"short":2,"cover":1}}}"#;
+        let s = parse_spec(both).unwrap();
+        assert_eq!((s.exec.market, s.short_side.unwrap().exec.market), (Some([(Px::Close, 0), (Px::High, 3)]), Some([(Px::Low, 2), (Px::Average, 1)])));
+    }
+    #[test] fn delay_zero_needs_close_and_the_two_forms_do_not_mix() {
+        for p in ["open", "high", "low", "average"] {
+            assert!(msg(&format!(r#"{{"prices":{{"buy":"{p}"}},"delays":{{"buy":0}}}}"#)).ends_with("with delay 0 would use prices before the signal (a signal is known at the bar's close); use \"close\" or a delay of 1 or more"));
+            assert_eq!(ex(&format!(r#"{{"prices":{{"buy":"{p}"}},"delays":{{"buy":0}}}}"#)).unwrap_err().status(), "invalid");
+        }
+        assert!(msg(r#"{"delays":{"sell":0}}"#).starts_with(r#"execution.prices.sell "open" with delay 0"#)); // the default field is the open
+        for (execution, needle) in [
+            (r#"{"fill":"close","prices":{"buy":"close"}}"#, "replace execution.fill, exit_fill and delay_bars; give one form"),
+            (r#"{"delay_bars":2,"delays":{"buy":2}}"#, "give one form"),
+            (r#"{"exit_fill":"close","delays":{"sell":1}}"#, "give one form"),
+            (r#"{"prices":{"buy":"vwap"}}"#, r#"execution.prices.buy must be "open", "high", "low", "close" or "average""#),
+            (r#"{"delays":{"sell":21}}"#, "execution.delays.sell must be a whole number from 0 to 20"),
+            (r#"{"delays":{"sell":1.5}}"#, "execution.delays.sell must be a whole number"),
+            (r#"{"prices":{"entry":"open"}}"#, "unknown field 'entry' in execution.prices"),
+        ] { assert!(msg(execution).contains(needle), "{needle:?} not in {:?}", msg(execution)); }
+        let limit = BASE.replace(r#""all":[{"#, r#""limit":{"pct":1},"all":[{"#).replace(r#""execution":{}"#, r#""execution":{"prices":{"buy":"close"},"delays":{"buy":1}}"#);
+        assert!(parse_spec(&limit).unwrap_err().message().contains("execution.prices.buy / execution.delays.buy apply to market entries"));
+        let limit_exit = limit.replace(r#""prices":{"buy":"close"},"delays":{"buy":1}"#, r#""prices":{"sell":"close"},"delays":{"sell":0}"#);
+        assert_eq!(parse_spec(&limit_exit).unwrap().exec.market, Some([(Px::Open, 1), (Px::Close, 0)]));
+    }
+    #[test] fn trailing_profit_pct_parses_and_optimizes() {
+        let t = |trailing: &str| parse_spec(&BASE.replace(r#""exit":{"any":["#, &format!(r#""exit":{{"trailing":{trailing},"any":["#)));
+        assert_eq!(t(r#"{"profit_pct":40}"#).unwrap().exec.trailing, Some(Dist::ProfitPct(40.)));
+        assert_eq!(t(r#"{"profit_pct":40,"activate":{"pct":2}}"#).unwrap().exec.trail_activate, Some(Dist::Pct(2.)));
+        for (bad, needle) in [(r#"{"profit_pct":0}"#, "exit.trailing.profit_pct must be a number above 0 and below 100"), (r#"{"profit_pct":100}"#, "below 100"), (r#"{"profit_pct":40,"pct":2}"#, "unknown field 'pct' in exit.trailing")] {
+            assert!(t(bad).unwrap_err().message().contains(needle), "{needle}");
+        }
+        let opt = BASE.replace(r#""exit":{"any":["#, r#""exit":{"trailing":{"profit_pct":40},"any":["#).replace(r#""v":1,"#, r#""v":1,"optimize":[{"path":"exit.trailing.profit_pct","from":20,"to":60,"step":20}],"#);
+        let s = parse_spec(&opt).unwrap();
+        assert_eq!((s.optimize[0].values.clone(), current(&s, &s.optimize[0].target)), (vec![20., 40., 60.], 40.));
+        assert_eq!(apply(&s, &s.optimize, &[60.]).exec.trailing, Some(Dist::ProfitPct(60.)));
+        assert!(parse_spec(&opt.replace(r#""to":60"#, r#""to":100"#)).unwrap_err().message().contains("exit.trailing value 100 is out of range"));
+        assert!(parse_spec(&opt.replace("exit.trailing.profit_pct", "exit.trailing.pct")).unwrap_err().message().contains("exit.trailing is set by profit_pct"));
+    }
+    #[test] fn bars_held_may_sit_on_the_right_hand_side() {
+        let s = parse_spec(&BASE.replace(r#"{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":3}}"#, r#"{"lhs":{"value":5},"op":"<=","rhs":{"s":"bars_held"}}"#)).unwrap();
+        assert_eq!(s.exit[0].cmp().unwrap().rhs, Operand::BarsHeld);
+    }
+    #[test] fn reentry_parses_and_portfolios_refuse_the_new_fields() {
+        assert_eq!(ex(r#"{"reentry":{"stop_loss":3,"bars":2}}"#).unwrap().exec.reentry, Some([3, 0, 0, 2]));
+        assert_eq!(ex(r#"{"reentry":{"stop_loss":1,"target":2,"trailing":3,"bars":4},"cooldown":{"bars":5}}"#).unwrap().exec.reentry, Some([1, 2, 3, 4]));
+        assert!(msg(r#"{"reentry":{"breakeven":1}}"#).contains("unknown field 'breakeven' in execution.reentry"));
+        assert!(msg(r#"{"reentry":{"target":-1}}"#).contains("execution.reentry.target must be a whole number from 0"));
+        let port = r#"{"v":1,"entry":{"all":[{"lhs":{"s":"rsi","p":{"length":2}},"op":"<","rhs":{"value":10}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":5}}]},"execution":{"capital":1000000},"portfolio":{"universe":{"basket":"nifty50"},"score":{"abs":{"s":"rsi","p":{"length":14}}},"rank":"lowest","max_open":5}}"#;
+        for extra in [r#""prices":{"buy":"close"}"#, r#""delays":{"sell":2}"#, r#""reentry":{"stop_loss":2}"#] {
+            assert_eq!(parse_spec(&port.replace(r#""capital":1000000"#, &format!(r#""capital":1000000,{extra}"#))).unwrap_err().status(), "unsupported");
+        }
+    }
+}
+
+#[cfg(test)]
+mod formula_operand_tests {
+    use super::*;
+    const F: &str = r#"Fast = Param(\"Fast\", 9, 2, 50, 1)\nPlot(EMA(C, Fast) - EMA(C, 21), \"Osc\")\nPlot(C, \"Px\", \"price\")"#;
+    fn spec(operand: &str, optimize: &str) -> String {
+        format!(r#"{{"v":1,"entry":{{"all":[{{"lhs":{operand},"op":">","rhs":{{"value":0}}}}]}},"exit":{{"any":[{{"lhs":{{"s":"bars_held"}},"op":">=","rhs":{{"value":5}}}}]}}{optimize}}}"#)
+    }
+    fn op(extra: &str) -> String { format!(r#"{{"formula":"{F}","name":"Mom"{extra}}}"#) }
+    #[test] fn formula_operands_parse_with_timing_params_and_output() {
+        let s = parse_spec(&spec(&op(r#","p":{"Fast":12},"out":"Px","tf":"W","offset":2"#), "")).unwrap();
+        let Operand::Series(r) = &s.entry[0].cmp().unwrap().lhs else { panic!() };
+        assert_eq!((r.id.as_str(), r.out, r.offset, r.tf, r.params["Fast"]), ("formula", 1, 2, Tf::W, 12.));
+        assert_eq!(r.formula.as_ref().unwrap().name, "Mom");
+        let s = parse_spec(&spec(&op(r#","tf":"W","offset":1,"expand":"first""#), "")).unwrap();
+        assert!(matches!(&s.entry[0].cmp().unwrap().lhs, Operand::Expr(e) if matches!(**e, Expr::Expand(..))));
+        assert!(series_ids(&s).contains(&"formula".to_string()));
+        // a formula operand sits inside expressions, groups and the portfolio score like any series operand
+        assert!(parse_spec(&spec(&format!(r#"{{"sum":{},"bars":3}}"#, op("")), "")).is_ok());
+    }
+    #[test] fn formula_operand_errors_name_the_field_and_position() {
+        let e = |extra: &str| parse_spec(&spec(&op(extra), "")).unwrap_err().message().to_string();
+        assert_eq!(e(r#","p":{"Fast":1}"#), "entry.all[0].lhs.formula: Fast must be between 2 and 50");
+        assert_eq!(e(r#","p":{"Slow":3}"#), "entry.all[0].lhs.formula: unknown parameter 'Slow'; parameters: Fast");
+        assert_eq!(e(r#","out":"Nope""#), "entry.all[0].lhs.formula: out: Mom has plots Osc, Px");
+        assert!(e(r#","symbol":"X""#).contains("symbol"));
+        assert!(e(r#","expand":"first","tf":"W""#).contains("lookahead"));
+        let bad = parse_spec(&spec(r#"{"formula":"x = C\nPlot(Ref(x, 2), \"A\")"}"#, "")).unwrap_err();
+        assert_eq!(bad.message(), "entry.all[0].lhs.formula: line 2, col 13: Ref(x, 2) would read 2 bars in the future; use Ref(x, -n) for n bars ago");
+        assert!(parse_spec(&spec(r#"{"formula":3}"#, "")).unwrap_err().message().contains("formula must be a string"));
+    }
+    #[test] fn formula_text_counts_toward_the_spec_size() {
+        let long = format!(r#"{{"formula":"Plot(C, \"X\") // {}"}}"#, "x".repeat(3900));
+        let pad = format!(r#"{{"add":[{{"add":[{long},{long}]}},{long}]}}"#);
+        assert!(parse_spec(&spec(&long, "")).is_ok());
+        assert!(parse_spec(&spec(&pad, "")).unwrap_err().message().contains("the limit is 8192"));
+    }
+    #[test] fn optimize_reaches_formula_params() {
+        let opt = r#","optimize":[{"path":"entry.all[0].lhs.p.Fast","from":5,"to":15,"step":5}]"#;
+        let s = parse_spec(&spec(&op(""), opt)).unwrap();
+        assert_eq!(s.optimize[0].values, vec![5., 10., 15.]);
+        assert_eq!(current(&s, &s.optimize[0].target), 9.);
+        let a = apply(&s, &s.optimize, &[15.]);
+        let Operand::Series(r) = &a.entry[0].cmp().unwrap().lhs else { panic!() };
+        assert_eq!(r.params["Fast"], 15.);
+        assert_eq!(crate::lab::series::describe_node(&a.entry[0]), "Mom(Fast=15).Osc > 0");
+        let out = |o: &str| parse_spec(&spec(&op(""), &opt.replace(r#""from":5,"to":15,"step":5"#, o))).unwrap_err().message().to_string();
+        assert!(out(r#""from":1,"to":5,"step":1"#).contains("Fast must be between 2 and 50"));
+        assert!(out(r#""from":2,"to":3,"step":0.5"#).contains("Fast must be a whole number"));
+        let missing = parse_spec(&spec(&op(""), &opt.replace("p.Fast", "p.Slow"))).unwrap_err();
+        assert!(missing.message().contains("Mom has no parameter 'Slow'"), "{}", missing.message());
     }
 }

@@ -1,8 +1,9 @@
 import { ApiError } from "../../services/api";
+import { parseFormulaInfo } from "./formula";
 import type {
-  Catalogue, EngineStatus, FidelityResult, InstrumentsResponse, LabErrorFields, LabStrategy, OptimizeResult,
+  Catalogue, EngineStatus, FormulaInfo, IndicatorDraft, SavedIndicator, ForeignDisclosure, IndividualOptimizeResult, Provisional, FidelityResult, InstrumentsResponse, LabErrorFields, LabStrategy, OptimizeResult,
   PublishedStrategy, PortfolioSpec, PortfolioRunResult, PortfolioOptimizeResult, LabRunResult, LabOptimizeResult, RunResult, SavedMarket, SeriesResponse, Spec, StrategyDraft, StrategyStatus, TemplateResponse,
-  TemplatesResponse, TickerRow,
+  TemplatesResponse, TickerRow, WalkforwardOptions, WalkforwardResult,
 } from "./types";
 
 export class LabError extends ApiError implements LabErrorFields {
@@ -69,20 +70,41 @@ export const clearLabCache = () => cache.clear();
 export interface RunQuery { ticker: string; from?: string; to?: string; cost?: number; slippage?: number }
 
 export const catalogue = (m: SavedMarket) => cached(`cat:${engineBase(m)}`, () => engine<Catalogue>(m, "lab/catalogue"));
-export function series(m: SavedMarket, q: { id: string; ticker: string; tf?: string; p?: Record<string, number>; vs?: string }) {
-  const params: Record<string, QueryValue> = { id: q.id, ticker: q.ticker, tf: q.tf, vs: q.vs };
-  for (const [k, v] of Object.entries(q.p ?? {})) params[`p.${k}`] = v;
+/** A formula chip sends `formula` and `name` instead of `id`, and its Params as `<Param>=<value>` (custom indicators contract §2). */
+export function series(m: SavedMarket, q: { id: string; ticker: string; tf?: string; p?: Record<string, number>; vs?: string; formula?: string; name?: string }) {
+  const params: Record<string, QueryValue> = q.formula !== undefined
+    ? { formula: q.formula, name: q.name, ticker: q.ticker, tf: q.tf }
+    : { id: q.id, ticker: q.ticker, tf: q.tf, vs: q.vs };
+  for (const [k, v] of Object.entries(q.p ?? {})) params[q.formula !== undefined ? k : `p.${k}`] = v;
   return engine<SeriesResponse>(m, "lab/series", params);
 }
+/** Check a formula (lab/formula): its Params, Plots and placement; a refusal is a LabError "line L, col C: …". Cached per text. */
+export const formulaInfo = (m: SavedMarket, formula: string): Promise<FormulaInfo> =>
+  cached(`formula:${engineBase(m)}:${formula}`, () => engine<unknown>(m, "lab/formula", { formula }).then(parseFormulaInfo));
 export type PortfolioRunQuery = Omit<RunQuery,"ticker"|"cost"|"slippage">;
 const executionQuery = (spec: Spec, q: (RunQuery | PortfolioRunQuery) & {split?: string | null}) => spec.portfolio ? {from:q.from,to:q.to} : q;
 export function run(m:SavedMarket,spec:Spec&{portfolio:PortfolioSpec},q:PortfolioRunQuery):Promise<PortfolioRunResult>;
 export function run(m:SavedMarket,spec:Spec,q:RunQuery):Promise<LabRunResult>;
 export function run(m:SavedMarket,spec:Spec,q:RunQuery|PortfolioRunQuery):Promise<LabRunResult>{return engine<LabRunResult>(m,"lab/run",{spec:JSON.stringify(spec),...executionQuery(spec,q)});}
-/** slim=1 always: the page reads `picked`, never `rows` (full rows can reach the 64 MB gateway cap). Not slot-limited: it has its own server slot. */
+/** slim=1 always: the page reads `picked`, never `rows` (full rows can reach the 64 MB gateway cap); table=1 adds the compact all-results list. Not slot-limited: it has its own server slot. */
 export function optimize(m:SavedMarket,spec:Spec&{portfolio:PortfolioSpec},q:PortfolioRunQuery):Promise<PortfolioOptimizeResult>;
 export function optimize(m:SavedMarket,spec:Spec,q:RunQuery&{split?:string|null}):Promise<LabOptimizeResult>;
-export function optimize(m:SavedMarket,spec:Spec,q:(RunQuery|PortfolioRunQuery)&{split?:string|null}):Promise<LabOptimizeResult>{return labRequest<LabOptimizeResult>(`${engineBase(m)}/lab/optimize?${qs({spec:JSON.stringify(spec),...executionQuery(spec,q),slim:"1"})}`);}
+export function optimize(m:SavedMarket,spec:Spec,q:(RunQuery|PortfolioRunQuery)&{split?:string|null}):Promise<LabOptimizeResult>{return labRequest<LabOptimizeResult>(`${engineBase(m)}/lab/optimize?${qs({spec:JSON.stringify(spec),...executionQuery(spec,q),slim:"1",table:"1"})}`);}
+/** One optimizer run per window, so it shares the optimization slot and role check; slim on the server side. */
+export const walkforward = (m: SavedMarket, spec: Spec, q: RunQuery & WalkforwardOptions) =>
+  labRequest<WalkforwardResult>(`${engineBase(m)}/lab/walkforward?${qs({ spec: JSON.stringify(spec), ...q, anchored: q.anchored ? "1" : "0" })}`);
+/** AmiBroker Individual Optimize: each symbol of the portfolio universe optimized alone (same /lab/optimize route, mode=individual). */
+export const optimizeIndividual = (m: SavedMarket, spec: Spec, q: PortfolioRunQuery) =>
+  labRequest<IndividualOptimizeResult>(`${engineBase(m)}/lab/optimize?${qs({ spec: JSON.stringify(spec), from: q.from, to: q.to, mode: "individual", table: "1" })}`);
+/** AmiBroker Analysis Scan / Explore (/lab/scan): raw rule signals, not filled trades. Rows are [symbol, date, trade, close]. */
+export interface ScanBase extends Provisional { label: string; apply: "current" | "all"; from: string | null; to: string | null; notes: string[]; foreign?: ForeignDisclosure[] }
+export interface ScanResult extends ScanBase { kind: "lab_scan"; symbols: number; rows: [string, string, "Buy" | "Sell" | "Short" | "Cover", number | null][]; refused: { ticker: string; reason: string }[]; membership?: { kind: string; note: string } }
+export interface ExploreResult extends ScanBase { kind: "lab_explore"; dates: string[]; open: (number | null)[]; high: (number | null)[]; low: (number | null)[]; close: (number | null)[]; volume: (number | null)[] | null; signals: Record<"buy" | "sell" | "short" | "cover", (0 | 1)[]> }
+export interface ScanQuery { ticker?: string; from?: string; to?: string; apply?: "current" | "all" }
+export const scan = (m: SavedMarket, spec: Spec, q: ScanQuery) =>
+  engine<ScanResult>(m, "lab/scan", { spec: JSON.stringify(spec), mode: "scan", apply: q.apply ?? "current", ticker: q.apply === "all" ? undefined : q.ticker, from: q.from, to: q.to });
+export const explore = (m: SavedMarket, spec: Spec, q: Omit<ScanQuery, "apply">) =>
+  engine<ExploreResult>(m, "lab/scan", { spec: JSON.stringify(spec), mode: "explore", ticker: q.ticker, from: q.from, to: q.to });
 export const tickers = (m: "in" | "us") => cached(`tickers:${m}`, () => engine<TickerRow[]>(m, "tickers"));
 export const labInstruments = () => cached("gl:instruments", () => engine<InstrumentsResponse>("gl", "lab/instruments"));
 export const templates = (m: SavedMarket) => cached(`templates:${engineBase(m)}`, () => engine<TemplatesResponse>(m, "lab/templates"));
@@ -108,3 +130,13 @@ export const strategies = {
     labRequest<LabStrategy>(`${BASE}/${id}/${action}`, send("POST", note === undefined ? { version } : { version, note })),
 };
 export type StrategiesApi = typeof strategies;
+
+const IND = "/api/app/lab/indicators";
+/** The user's own formulas ("My indicators"); the server keeps text only, the engine is the authority on the formula. */
+export const indicators = {
+  list: () => labRequest<SavedIndicator[]>(IND),
+  create: (draft: IndicatorDraft) => labRequest<SavedIndicator>(IND, send("POST", draft)),
+  update: (id: number, version: number, draft: IndicatorDraft) => labRequest<SavedIndicator>(`${IND}/${id}`, send("PUT", { ...draft, version })),
+  remove: (id: number, version: number) => labRequest<null>(`${IND}/${id}?version=${version}`, send("DELETE")),
+};
+export type IndicatorsApi = typeof indicators;

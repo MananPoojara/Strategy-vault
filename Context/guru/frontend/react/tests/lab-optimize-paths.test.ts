@@ -6,7 +6,7 @@ import type { Spec } from "../src/features/lab/types";
 it("walks nested expressions, short rules and both entry levels with engine paths", () => {
   const s: Spec = { ...defaultSpec(), direction: "both", entry: { all: [{ any: [{ lhs: { avg: { s: "close" }, bars: 10 }, op: ">", rhs: { value: 1 } }] }], stop: { at: { highest: { s: "high" }, bars: 5 } } }, short_side: { entry: { all: [{ lhs: { s: "rsi", p: { length: 2 } }, op: ">", rhs: { value: 90 } }], limit: { at: { ref: { s: "close" }, bars: 2 } } }, exit: { any: [], stop_loss: { pct: 3 } } }, execution: { sizing: { risk_pct: 1 } } };
   const by = (path: string) => optimizablePaths(s, cat).find((p) => p.path === path);
-  expect(by("entry.all[0].any[0].lhs.bars")).toMatchObject({ label: "Long entry 1 › any 1 › left › bars", group: "Long entry", min: 1, max: 1000, integer: true });
+  expect(by("entry.all[0].any[0].lhs.bars")).toMatchObject({ label: "Long entry 1 › any 1: bars", group: "Long entry", min: 1, max: 1000, integer: true });
   expect(by("short_side.entry.all[0].lhs.p.length")).toMatchObject({ current: 2, integer: true, group: "Short entry" });
   expect(by("entry.stop.at.bars")?.group).toBe("Long entry order");
   expect(by("short_side.entry.limit.at.bars")?.group).toBe("Short entry order");
@@ -29,4 +29,20 @@ it("walks all score expressions and exposes portfolio rank limits",()=>{
  const spec={...defaultSpec(),portfolio:{universe:{basket:"nifty50"},mode:"rotation" as const,max_open:3,score:{count:{lhs:{s:"rsi",p:{length:2}},op:"<",rhs:{value:5}},bars:3}}};
  const paths=optimizablePaths(spec,cat);expect(paths.map(p=>p.path)).toEqual(expect.arrayContaining(["portfolio.score.count.lhs.p.length","portfolio.score.count.rhs.value","portfolio.score.bars","portfolio.max_open","portfolio.worst_rank_held"]));
  expect(paths.find(p=>p.path==="portfolio.worst_rank_held")!.current).toBe(3);
+});
+
+it("a trailing stop in % of profit optimizes inside the engine's 0 < x < 100 on both sides", () => {
+  let s: Spec = { ...defaultSpec(), direction: "both", short_side: { entry: { all: [] }, exit: { any: [] } } };
+  s = setAt(setAt(s, "exit.trailing", { profit_pct: 40 }), "short_side.exit.trailing", { profit_pct: 30 });
+  for (const path of ["exit.trailing.profit_pct", "short_side.exit.trailing.profit_pct"])
+    expect(optimizablePaths(s, cat).find((p) => p.path === path)).toMatchObject({ min: 5, max: 95 });
+});
+
+it("labels read like AmiBroker parameters: rule, then short indicator name and parameter; ambiguous ones keep the side", () => {
+  const ema = (length: number) => ({ s: "ema", p: { length } });
+  const one: Spec = { ...defaultSpec(), entry: { all: [{ lhs: { s: "close" }, op: ">", rhs: ema(20) }] } };
+  expect(optimizablePaths(one, cat).find((p) => p.path === "entry.all[0].rhs.p.length")!.label).toBe("Entry 1: EMA Length");
+  const two: Spec = { ...defaultSpec(), entry: { all: [{ lhs: ema(10), op: ">", rhs: ema(20) }] } };
+  const labels = optimizablePaths(two, cat).filter((p) => p.path.startsWith("entry.all[0]")).map((p) => p.label);
+  expect(labels).toEqual(["Entry 1 › left · EMA Length", "Entry 1 › right · EMA Length"]);
 });

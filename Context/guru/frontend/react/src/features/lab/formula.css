@@ -1,0 +1,29 @@
+/* Custom indicator (formula) editor: same card as the indicator reference, full width under the chart. Theme tokens only, so light and dark follow. */
+.lab-formula .lab-formula-name { display: flex; flex-direction: column; gap: 4px; max-width: 420px; margin-bottom: 10px; }
+.lab-formula .lab-formula-name input { width: 100%; box-sizing: border-box; }
+.lab-formula-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--rule); margin-bottom: 8px; }
+.lab-formula-tabs [role=tab] { font: 600 13px var(--font); color: var(--ink2); background: transparent; border: 0; border-bottom: 3px solid transparent; padding: 8px 14px; cursor: pointer; }
+.lab-formula-tabs [role=tab][aria-selected=true] { color: var(--ink); border-bottom-color: var(--accent, var(--ink)); }
+.lab-formula-tabs [role=tab]:focus-visible { outline: 2px solid var(--ink2); outline-offset: -4px; }
+.lab-formula-text { display: block; width: 100%; box-sizing: border-box; min-height: 180px; resize: vertical; font: 400 13px/1.5 "IBM Plex Mono", ui-monospace, monospace; tab-size: 2;
+  padding: 8px; border: 1px solid var(--steel); border-radius: var(--r-field); background: var(--card); color: var(--ink); white-space: pre; overflow-x: auto; }
+.lab-formula-text[aria-invalid=true] { border-color: var(--red); }
+.lab-formula-text:focus-visible { outline: none; box-shadow: var(--ring); }
+.lab-formula-result dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; margin: 8px 0; }
+.lab-formula-result dd { overflow-wrap: anywhere; }
+.lab-formula-err p { margin: 0 0 4px; color: var(--red); overflow-wrap: anywhere; }
+.lab-formula-err pre { margin: 0; overflow-x: auto; white-space: pre; }
+.lab-formula-err mark { background: var(--red); color: var(--card); }
+.lab-formula-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 10px 0; }
+.lab-formula-note { font-size: 13px; color: var(--ink2); }
+.lab-formula-note.err { color: var(--red); }
+.lab-formula-help { margin-top: 8px; border-top: 1px solid var(--rule); padding-top: 6px; }
+.lab-formula-help summary { cursor: pointer; font-weight: 600; color: var(--ink2); padding: 4px 0; }
+.lab-formula-help summary small { color: var(--ink3); font-weight: 400; margin-left: 4px; }
+.lab-formula-help dl > div { display: grid; grid-template-columns: minmax(0, 14em) minmax(0, 1fr); gap: 2px 12px; padding: 3px 0; }
+@media (max-width: 600px) { .lab-formula-help dl > div { grid-template-columns: minmax(0, 1fr); } }
+.lab-formula-help dt code { overflow-wrap: anywhere; }
+.lab-formula-help dd { margin: 0; color: var(--ink2); }
+.lab-formula-example h3 { margin: 10px 0 4px; font-size: 13px; }
+.lab-formula-example pre { overflow-x: auto; white-space: pre; }
+.lab-formula-err.cap, .lab-operand .lab-formula-err { color: var(--red); }
