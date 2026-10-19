@@ -46,7 +46,7 @@ const monthlyOrStop = (v: Fields) => ["stop", "initial_stop", "final_stop", "mon
 
 export function parseBandySourceAccount(data: unknown, id?: string, book?: string, selectedTicker?: string): BandySourceAccount {
   if (!bandyAccountMethod(id, book) || !object(data) || data.kind === "basket" || !object(data.source_account)) return invalid();
-  if ((Object.hasOwn(data,"id") && data.id !== id) || (Object.hasOwn(data,"book") && data.book !== book)) return invalid();
+  if (data.id !== id || data.book !== book) return invalid();
   const a=data.source_account, macd=id === "hbiab_macd_example", fraction=macd ? .25 : 1;
   if (a.model !== BANDY_ACCOUNT_MODEL || a.book_performance_reproduced !== false
     || typeof a.basis !== "string" || !a.basis.trim() || typeof a.account_contribution_basis !== "string" || !a.account_contribution_basis.trim()

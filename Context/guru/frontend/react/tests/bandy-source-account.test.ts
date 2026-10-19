@@ -134,11 +134,13 @@ it('binds the selected traded instrument and provenance independently of its ben
  expect(()=>sourceAccount({...native,provenance:{...native.provenance,symbol:'OTHER'}},'hbiab_ma5_20','hbiab','basket:us_sp500:AAPL')).toThrow();
 });
 
- it('rejects conflicting outer method/book identity without changing legacy account requirements',()=>{
+ it('requires matching outer method/book identity without changing legacy account requirements',()=>{
  const d=bandyAccountFixture();
  expect(sourceAccount({...d,id:'hbiab_ma5_20',book:'hbiab'},'hbiab_ma5_20','hbiab')!.model).toBe(BANDY_ACCOUNT_MODEL);
  expect(sourceAccount({...d,id:'hbiab_ma7_4',book:'hbiab'},'hbiab_ma7_4','hbiab')!.model).toBe(BANDY_ACCOUNT_MODEL);
- for(const fields of [{id:'hbiab_ma7_4'},{book:'other'},{id:null},{book:null}])
+ const {id:omittedId,book:omittedBook,...withoutIdentity}=d;
+ expect(()=>sourceAccount(withoutIdentity,'hbiab_ma5_20','hbiab')).toThrow('Bandy cash account');
+ for(const fields of [{id:'hbiab_ma7_4'},{book:'other'},{id:null},{book:null},{id:undefined},{book:undefined}])
    expect(()=>sourceAccount({...d,...fields},'hbiab_ma5_20','hbiab')).toThrow('Bandy cash account');
  expect(sourceAccount(accountFixture(),'elcim_impulse','elcim')!.model).toBe(ELDER_ACCOUNT_MODEL);
  });

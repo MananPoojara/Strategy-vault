@@ -28,7 +28,7 @@ export function bandyAccountFixture(macd=false, bps=5) {
     accounting:{symbol:'AAPL',signal_side:'Long',cost_status:t.open?'actual_entry_cost_only_open_mark':'modeled_filled_side_costs',excursion_bars:0,excursion_status:'unavailable',mae_ret_observed:null,mfe_ret_observed:null,gross_ret:t.gross_fraction_of_actual_entry_equity,net_ret:t.net_fraction_of_actual_entry_equity,
       fee_ret:0,slippage_ret:(t.entry_cost_account_contribution+t.exit_cost_account_contribution)/t.entry_equity_units,
       gross_pnl:null,net_pnl:null,taxes:null,fees:null,slippage:null,mae:null,mfe:null}}));
-  return {dates,benchmark_symbol:'AAPL',close:prices,equity:days.map(d=>d.equity),gross_equity:days.map(d=>d.gross_same_quantity_equity),trades,
+  return {id:macd?'hbiab_macd_example':'hbiab_ma5_20',book:'hbiab',dates,benchmark_symbol:'AAPL',close:prices,equity:days.map(d=>d.equity),gross_equity:days.map(d=>d.gross_same_quantity_equity),trades,
     costs:{fees_bps:0,slippage_bps:bps,rollover_bps:0,total_side_bps:bps},
     stats:{total_return:days.at(-1)!.equity-1,net_profit:net,closed_return_sum:net,avg_net_pnl:net,trades:1},gross_stats:{total_return:gross},
     source_account:{model:BANDY_ACCOUNT_MODEL,book_performance_reproduced:false,basis:'Arithmetic-only normalized fractional cash fixture.',

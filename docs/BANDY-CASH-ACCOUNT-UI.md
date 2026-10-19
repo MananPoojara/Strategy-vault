@@ -11,3 +11,5 @@ The closed sum and hypothetical closed-return product remain display choices. Th
 Full-precision reporting checks use arithmetic consistency tolerances; only existing six-decimal display fields use display-rounding tolerance. These checks do not alter source predicates or replace independent source, chronological ledger, price-data and numerical review. The tests' small fixtures are arithmetic examples, not book or market results.
 
 Exposure counts observed sessions inclusively from entry through exit. Drawdown duration counts observed sessions, not calendar days or exact intraday duration. Closed trades with zero net return join non-wins in loss statistics. Gross trade fractions divide by actual net entry equity, not an independently resized gross account. These conventions are stated only in the Bandy presenter; existing Elder and legacy labels are preserved.
+
+New Bandy responses must include matching outer `id` and `book`, in addition to the distinct account model. The selected traded symbol is bound independently of the benchmark. Elder and legacy identity requirements remain unchanged.
