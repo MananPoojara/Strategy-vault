@@ -2,7 +2,7 @@
 //! Page refs: printed page (PDF page = printed + 13). Catalogue Live is not source admission.
 //! Only the exact configurations named below have a bounded stock research contract;
 //! source choices and execution conventions are separate from book-reported results.
-use crate::connors::{sma, true_range, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
+use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "kfsc";
 
@@ -13,6 +13,17 @@ pub fn reviewed_stock_rule(id: &str) -> bool {REVIEWED_STOCK_IDS.contains(&id)}
 /// independent source/ledger review and a separate normal integration release.
 pub const MOMENTUM_STOCK_IDS: &[&str] = &["kfsc_macd","kfsc_dsm"];
 pub fn reviewed_momentum_rule(id:&str)->bool {MOMENTUM_STOCK_IDS.contains(&id)}
+pub const HV_ID: &str = "kfsc_hv_day";
+pub fn reviewed_hv_rule(id:&str)->bool {id==HV_ID}
+pub const HV_CONVENTION: &str = "Selected source convention: 65 complete genuine true ranges including today, each with its actual previous stock close; arithmetic mean and strict TR > 2 × mean. Top and bottom deciles with inclusive .90/.10 boundaries explicitly correct the inconsistent printed upper 90 percent wording. Zero high-low range has no close zone. Actual Fridays are excluded. Finalized signal CLOSE entry and the next genuine market-session OPEN exit are idealized OHLC research fills: printed 70 recommends preclose calculation, printed 83 MOC/MOO permit prices within the last/first 60 seconds, and printed 250 prose says shortly after open while Figure 17.4 selects next open. Terminal signals remain open inside the selected window. Actual single stocks only; shorts lack certified borrow, margin and financing. Normalized unit-allocation returns and linear modeled costs per side do not reproduce source capital, sizing, vendor authenticity or original performance; open liquidation cost is a separate estimate. Checked shortest-decimal OHLC comparisons preserve admitted source quotes without epsilon or tick rounding; approximate displayed ratios do not override exact predicates. General 2-TR targets, 3-TR stops and portfolio examples are separate from this four-rule subsystem.";
+pub fn validate_hv(id:&str,p:&Params)->Option<&'static str> {
+    if !reviewed_hv_rule(id) {return None;}
+    let schema=params(id)?;
+    if p.iter().any(|(key,value)|!value.is_finite() || !schema.iter().any(|s|s.key==key && s.def==*value)) {
+        return Some("This bounded high-volatility source convention covers only 65 genuine inclusive simple-TR observations, factor 2, extreme-zone fraction .10 and current-window lag 0. Changed, unknown, nonfinite or legacy alternate settings require separate source and ledger review.");
+    }
+    None
+}
 pub fn validate_momentum(id:&str,p:&Params)->Option<&'static str> {
     if !reviewed_momentum_rule(id) {return None;}
     let schema=params(id)?;
@@ -76,7 +87,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|\"1. Buy a high-volatility day if prices close in the upper 90 percent of the range. 2. Sell a high-volatility day if prices close in the lower 10 percent of the range.\" (p.250)",
             "X|\"3. Close out the trade shortly after the open of the next day.\" (p.250)",
             "F|\"4. Do not enter the trade on Friday.\" (p.250)",
-        ], "Readings: 'upper 90 percent' is read as the top 10% of the day's high-low range (mirror of 'lower 10 percent'; Fig 17.4 'close near the high or low'); entry at the close of the signal day; exit at the next open. The 65-day average true range includes today (TradeStation AvgTrueRange convention) [book silent]; p.atr_lag=1 uses the previous 65 days."),
+        ], HV_CONVENTION),
         // ------------------------------------------------ not testable
         d("kfsc_trendline", "Trendline penetration", "Ch 2 · Charting the trend", "Long/Short", NotTestable("trendlines are drawn and redrawn by eye (p.23-33)"), &[
             "E|\"Buy when the price closes above the downtrend line (conservative)\" / \"Sell when the price closes below the upward trendline\" (p.28-29)",
@@ -141,7 +152,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "kfsc_macd" => vec![p("alpha_fast", "Literal printed fast smoothing (formula conflict)", 0.0476, 0.0476, 0.0476, 0.0001), p("alpha_slow", "Literal printed slow smoothing (formula conflict)", 0.0243, 0.0243, 0.0243, 0.0001), p("alpha_signal", "Literal printed MACD signal smoothing", 0.10, 0.10, 0.10, 0.01)],
         "kfsc_stoch" => vec![p("period", "Stochastic days N", 10., 3., 40., 1.), p("prior", "Range: 0 = N days to today (Fig 15.2 numbers), 1 = N days before today (prose)", 0., 0., 1., 1.), p("over", "Overbought line", 80., 50., 95., 1.), p("under", "Oversold line", 20., 5., 50., 1.)],
         "kfsc_dsm" => vec![p("mom", "Selected source momentum days", 10., 10., 10., 1.), p("alpha", "Literal printed smoothing, each pass", 0.0476, 0.0476, 0.0476, 0.0001)],
-        "kfsc_hv_day" => vec![p("atr", "Average true range days", 65., 10., 130., 1.), p("factor", "High-volatility factor (x average TR)", 2., 1., 4., 0.1), p("zone", "Close zone (fraction of range from the extreme)", 0.1, 0.05, 0.3, 0.05), p("atr_lag", "0 = average includes today, 1 = previous days", 0., 0., 1., 1.)],
+        "kfsc_hv_day" => vec![p("atr", "Selected complete inclusive simple-TR observations", 65., 65., 65., 1.), p("factor", "Selected strict volatility factor", 2., 2., 2., 1.), p("zone", "Selected extreme decile (upper90 wording corrected)", 0.1, 0.1, 0.1, 0.1), p("atr_lag", "Selected current window including signal day", 0., 0., 0., 1.)],
         _ => {
             if catalogue().iter().any(|d| d.id == id) { vec![] } else { return None }
         }
@@ -254,6 +265,80 @@ fn days(d: &str) -> i64 {
 }
 fn weekday(d: &str) -> i64 { (days(d) + 3).rem_euclid(7) } // 0 = Monday
 
+/// Local source-specific states: row0 has no genuine preceding stock close.
+/// No generic ATR/smoothing routine is changed by this bounded application.
+pub struct HvStates {pub true_range:Vec<f64>,pub simple_mean65:Vec<f64>,pub close_fraction:Vec<f64>,pub friday:Vec<bool>,pub high_volatility:Vec<bool>,pub direction:Vec<i8>,pub exact_supported:Vec<bool>,pub upper_zone:Vec<bool>,pub lower_zone:Vec<bool>}
+/// Exact comparisons on the decimal representations retained by Row's f64
+/// loader. This avoids epsilon-expanded thresholds and binary division tie drift.
+/// The supplied reviewed quote inputs have at most15decimal places. Unsupported
+/// scales/overflow are held by readiness rather than converted to false signals.
+fn hv_decimal(value:f64)->Option<(i128,u32)> {
+    if !value.is_finite() || value<=0. {return None;}
+    let text=value.to_string();let (whole,fraction)=text.split_once('.').unwrap_or((&text,""));
+    if fraction.len()>18 || !whole.bytes().chain(fraction.bytes()).all(|c|c.is_ascii_digit()) {return None;}
+    let n=format!("{whole}{fraction}").parse::<i128>().ok()?;Some((n,fraction.len() as u32))
+}
+fn hv_scale(values:&[(i128,u32)])->Option<Vec<i128>> {
+    let scale=values.iter().map(|v|v.1).max()?;
+    values.iter().map(|&(n,s)|n.checked_mul(10i128.checked_pow(scale-s)?)).collect()
+}
+fn hv_exact_tr(x:&Ctx,i:usize)->Option<(i128,u32)> {
+    if i==0 {return None;}
+    let prices=[hv_decimal(x.h[i])?,hv_decimal(x.l[i])?,hv_decimal(x.c[i-1])?];
+    let scale=prices.iter().map(|p|p.1).max()?;let v=hv_scale(&prices)?;
+    Some(((v[0]-v[1]).max(v[0]-v[2]).max(v[2]-v[1]),scale))
+}
+pub fn hv_exact_supported(x:&Ctx,from:usize,to:usize)->bool {
+    if from<65 || to>=x.r.len(){return false;}
+    let state=hv_states(x);(from..=to).all(|i|state.exact_supported[i])
+}
+pub fn hv_states(x:&Ctx)->HvStates {
+    let n=x.r.len();let mut tr=vec![f64::NAN;n];let mut mean=vec![f64::NAN;n];let mut fraction=vec![f64::NAN;n];let mut friday=vec![false;n];let mut hv=vec![false;n];let mut direction=vec![0;n];let mut supported=vec![false;n];let mut upper_zone=vec![false;n];let mut lower_zone=vec![false;n];
+    let exact:Vec<Option<(i128,u32)>>=(0..n).map(|i|hv_exact_tr(x,i)).collect();
+    for i in 0..n {
+        if i>0 {tr[i]=(x.h[i]-x.l[i]).max(x.h[i]-x.c[i-1]).max(x.c[i-1]-x.l[i]);}
+        if i>=65 {mean[i]=tr[i-64..=i].iter().sum::<f64>()/65.;}
+        let range=x.h[i]-x.l[i];if range>0. {fraction[i]=(x.c[i]-x.l[i])/range;}
+        friday[i]=crate::baskets::valid_date(&x.r[i].date) && weekday(&x.r[i].date)==4;
+        if i<65 {continue;}
+        let window:Option<Vec<(i128,u32)>>=exact[i-64..=i].iter().copied().collect();
+        let Some(v)=window.as_deref().and_then(hv_scale) else {continue;};
+        let Some(sum)=v.iter().try_fold(0i128,|a,b|a.checked_add(*b)) else {continue;};
+        let Some(left)=v[64].checked_mul(65) else {continue;};let Some(right)=sum.checked_mul(2) else {continue;};
+        let prices=[hv_decimal(x.h[i]),hv_decimal(x.l[i]),hv_decimal(x.c[i])];
+        let Some(v)=prices.iter().copied().collect::<Option<Vec<_>>>().as_deref().and_then(hv_scale) else {continue;};
+        let Some(numerator)=(v[2]-v[1]).checked_mul(10) else {continue;};
+        let width=v[0]-v[1];let Some(upper)=width.checked_mul(9) else {continue;};
+        supported[i]=true;hv[i]=left>right;upper_zone[i]=width>0 && numerator>=upper;lower_zone[i]=width>0 && numerator<=width;
+        if hv[i] && !friday[i] && width>0 {
+            if upper_zone[i] {direction[i]=1;} else if lower_zone[i] {direction[i]=-1;}
+        }
+    }
+    HvStates{true_range:tr,simple_mean65:mean,close_fraction:fraction,friday,high_volatility:hv,direction,exact_supported:supported,upper_zone,lower_zone}
+}
+/// Native benchmark dates are used only as session evidence, never prices or
+/// substitutes for stocks. Check the required 65-TR window and selected period.
+pub fn hv_calendar_issue(rows:&[crate::Row],calendar:&[crate::Row],from:usize,to:usize)->Option<String> {
+    if from<65 || to>=rows.len() || from>to {return Some("The high-volatility application needs65 genuine true ranges and an actual previous close (66source rows).".into());}
+    let first=rows[from-65].date.as_str();let last=rows[to].date.as_str();
+    if calendar.first().map_or(true,|r|r.date.as_str()>first) || calendar.last().map_or(true,|r|r.date.as_str()<last) {return Some("The native market-session calendar does not cover the required high-volatility warmup and selected period; no next session is invented.".into());}
+    let actual:Vec<&str>=rows[from-65..=to].iter().map(|r|r.date.as_str()).collect();
+    let expected:Vec<&str>=calendar.iter().filter(|r|r.date.as_str()>=first && r.date.as_str()<=last).map(|r|r.date.as_str()).collect();
+    if actual!=expected {return Some("Stock observations and genuine native market sessions differ within the required 65-TR warmup or selected execution period. Missing stock sessions cannot be treated as holidays or bridged to a later available open; the requested run is held.".into());}
+    None
+}
+fn hv_trades(x:&Ctx,from:usize,to:usize)->Vec<Trade> {
+    let state=hv_states(x);let mut out=Vec::new();
+    for i in from.max(65)..=to {
+        let dir=state.direction[i];if dir==0 {continue;}
+        // A preceding overnight holding has already exited at this session's
+        // open; a fresh close signal may enter on that same genuine session.
+        let open=i==to;let exit_i=if open {i}else{i+1};
+        out.push(Trade{dir:dir as f64,legs:vec![Leg{i,px:x.c[i],w:1.}],exit_i,exit_px:if open{x.c[i]}else{x.o[exit_i]},reason:if open{"open".into()}else{"next genuine session open (idealized)".into()},entry_kind:"close",signal_i:i,open,exits:vec![]});
+    }
+    out
+}
+
 /// Raw stochastic %K over n days. `prior` = false: the n days ending today (the book's worked Fig 15.2 numbers);
 /// true: the n days before today, as the prose says ('not including today'), clamped to 0..100 (p.216-217).
 pub fn raw_k(x: &Ctx, n: usize, prior: bool) -> Vec<f64> {
@@ -300,11 +385,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let schema = params(id)?;
     if validate_reviewed(id,p).is_some() {return None;}
     if validate_momentum(id,p).is_some() {return None;}
+    if validate_hv(id,p).is_some() {return None;}
     if from > to || to >= x.r.len() { return None; }
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(0., |d| d.def));
     let u = |k: &str| g(k).round().max(0.) as usize;
     let n = x.r.len();
-    let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
+    let c = &x.c;
     Some(match id {
         "kfsc_pct_band" => {
             let ma = avg_n(c, u("period").max(1));
@@ -365,20 +451,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             }
             b.done()
         }
-        "kfsc_hv_day" => {
-            let tr = true_range(x.r);
-            let at = sma(&tr, u("atr").max(1));
-            let (k, z, lag) = (g("factor"), g("zone"), u("atr_lag").min(1));
-            let mut b = Bk::new(x, from, to);
-            for i in from.max(1)..=to {
-                if b.pos() != 0 { b.exit(i, o[i], "next open"); }
-                let a = at[i - lag];
-                let rg = h[i] - l[i];
-                if !a.is_finite() || rg <= 0. || tr[i] <= k * a || weekday(&x.r[i].date) == 4 { continue; }
-                if c[i] >= h[i] - z * rg { b.at_close(i, 1, ""); } else if c[i] <= l[i] + z * rg { b.at_close(i, -1, ""); }
-            }
-            b.done()
-        }
+        "kfsc_hv_day" => hv_trades(x,from,to),
         _ => return None, // not-testable entries
     })
 }
@@ -542,5 +615,64 @@ mod tests {
         let ts = run("kfsc_hv_day", &x, 1, 79, &Params::new()).unwrap();
         assert_eq!(ts.len(), 1);
         assert_eq!((ts[0].legs[0].i, ts[0].legs[0].px, ts[0].exit_i, ts[0].exit_px), (70, 109.6, 71, 105.));
+    }
+}
+
+#[cfg(test)]
+mod hv_source_tests {
+    use super::*;use crate::Row;
+    fn rows(n:usize)->Vec<Row> {
+        let mut dates=Vec::new();for m in 1..=12 {for d in 1..=31 {let date=format!("2024-{m:02}-{d:02}");if crate::baskets::valid_date(&date) && weekday(&date)<5 {dates.push(date);}}}
+        dates.into_iter().take(n).map(|date|Row{ticker:"AAPL".into(),date,open:100.,high:100.5,low:99.5,close:100.,volume:None}).collect()
+    }
+    #[test]
+    fn hv_requires65_genuine_inclusive_ranges_and_strict_threshold() {
+        let mut r=rows(70);for v in &mut r {v.high=131.5;v.low=68.5;}
+        r[65].high=228.;r[65].low=100.;r[65].open=100.;r[65].close=228.;
+        let x=Ctx::new(&r,&[],&[]);let s=hv_states(&x);
+        assert!(s.true_range[0].is_nan());assert!(s.simple_mean65[64].is_nan());
+        assert_eq!((s.true_range[65],s.simple_mean65[65]),(128.,64.));assert!(!s.high_volatility[65]);
+        r[65].high=228.25;r[65].close=228.25;let x=Ctx::new(&r,&[],&[]);assert!(hv_states(&x).high_volatility[65]);
+        r[65].high=227.75;r[65].close=227.75;let x=Ctx::new(&r,&[],&[]);assert!(!hv_states(&x).high_volatility[65]);
+    }
+    #[test]
+    fn hv_decimal_zone_ties_are_inclusive_without_an_epsilon() {
+        let mut r=rows(70);for v in &mut r {v.open=1.11;v.high=1.12;v.low=1.10;v.close=1.11;}
+        r[65].high=1.3;r[65].low=1.1;r[65].close=1.28;
+        assert!(10.*(r[65].close-r[65].low)<9.*(r[65].high-r[65].low)); // binary cross-product fails this exact decimal tie
+        let x=Ctx::new(&r,&[],&[]);let s=hv_states(&x);assert!(s.upper_zone[65]);assert_eq!(s.direction[65],1);
+        r[65].close=1.279999999999;let x=Ctx::new(&r,&[],&[]);assert_eq!(hv_states(&x).direction[65],0);
+        r[65].close=1.12;let x=Ctx::new(&r,&[],&[]);let s=hv_states(&x);assert!(s.lower_zone[65]);assert_eq!(s.direction[65],-1);
+        r[65].close=1.120000000001;let x=Ctx::new(&r,&[],&[]);assert_eq!(hv_states(&x).direction[65],0);
+    }
+    #[test]
+    fn hv_gap_zero_range_friday_and_next_open_before_new_close() {
+        let mut r=rows(72);r[65].high=110.;r[65].low=100.;r[65].close=110.;r[65].open=100.;
+        r[66].high=140.;r[66].low=120.;r[66].close=140.;r[66].open=120.;
+        r[69].high=190.;r[69].low=100.;r[69].close=190.;
+        let x=Ctx::new(&r,&[],&[]);let s=hv_states(&x);assert_eq!(weekday(&r[69].date),4);assert_eq!(s.direction[69],0);
+        let t=run(HV_ID,&x,65,66,&Params::new()).unwrap();assert_eq!(t.len(),2);
+        assert_eq!((t[0].legs[0].i,t[0].exit_i,t[0].exit_px,t[0].signal_i,t[0].open),(65,66,120.,65,false));assert_eq!((t[1].legs[0].i,t[1].exit_i,t[1].open),(66,66,true));
+        let terminal=run(HV_ID,&x,65,65,&Params::new()).unwrap();assert_eq!(terminal.len(),1);assert!(terminal[0].open);assert_eq!(terminal[0].exit_px,110.);
+        r[65].high=300.;r[65].low=300.;r[65].open=300.;r[65].close=300.;let x=Ctx::new(&r,&[],&[]);let s=hv_states(&x);
+        assert!(s.high_volatility[65]);assert!(s.close_fraction[65].is_nan());assert!(!s.upper_zone[65]&&!s.lower_zone[65]);assert_eq!(s.direction[65],0);
+    }
+    #[test]
+    fn hv_calendar_only_checks_required_window_and_holds_missing_stock_sessions() {
+        let r=rows(90);assert!(hv_calendar_issue(&r,&r,70,89).is_none());
+        let mut old_bad=r.clone();old_bad.remove(0);assert!(hv_calendar_issue(&r,&old_bad,70,89).is_none());
+        let mut missing=r.clone();missing.remove(75);assert!(hv_calendar_issue(&missing,&r,70,88).is_some());
+        let mut holiday=r.clone();holiday.remove(75);assert!(hv_calendar_issue(&holiday,&holiday,70,88).is_none());
+        assert!(hv_calendar_issue(&r,&[],70,89).is_some());assert!(hv_calendar_issue(&r,&r,64,89).is_some());
+        // A terminal period needs no invented future session/calendar row.
+        assert!(hv_calendar_issue(&r[..=75],&r[..=75],70,75).is_none());
+    }
+    #[test]
+    fn hv_exact_decimal_capacity_and_unchanged_parameters_fail_closed() {
+        for bad in [f64::NAN,f64::INFINITY,-1.,0.,1e-20,1e100] {assert!(hv_decimal(bad).is_none());}
+        assert!(hv_scale(&[(i128::MAX,0),(1,18)]).is_none());
+        let mut r=rows(70);r[65].high=1e100;let x=Ctx::new(&r,&[],&[]);assert!(!hv_exact_supported(&x,65,69));
+        for s in params(HV_ID).unwrap(){assert_eq!((s.min,s.max),(s.def,s.def));for v in [s.def+1e-12,f64::NAN,f64::INFINITY]{assert!(validate_hv(HV_ID,&Params::from([(s.key.into(),v)])).is_some());}}
+        for key in ["unknown","fill","source_convention"]{assert!(validate_hv(HV_ID,&Params::from([(key.into(),0.)])).is_some());}
     }
 }

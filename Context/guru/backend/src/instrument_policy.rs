@@ -41,6 +41,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || (def.book=="sbma" && crate::books::sbma::four_reviewed_stock_rule(def.id))
         || (def.book=="kfsc" && crate::books::kfsc::reviewed_stock_rule(def.id))
         || (def.book=="kfsc" && crate::books::kfsc::reviewed_momentum_rule(def.id))
+        || (def.book=="kfsc" && crate::books::kfsc::reviewed_hv_rule(def.id))
         || (def.book=="ehrs" && crate::books::ehrs::reviewed_sinetrend(def.id))
         || (def.book=="elcim" && def.id==crate::books::elcim_account::ID)
 }
@@ -72,7 +73,7 @@ mod short_course_policy_tests {
             for symbol in ["NIFTY 50","SPX","SPY","QQQ"] {assert!(check(&d,symbol,false).is_some());}
             let mut wrong=d;wrong.book="kftsm";assert!(!reviewed_cash_rule(&wrong));
         }
-        for id in ["kfsc_hv_day","kfsc_regression_band","kfsc_stoch"] {
+        for id in ["kfsc_regression_band","kfsc_stoch"] {
             let d=crate::books::kfsc::catalogue().into_iter().find(|d|d.id==id).unwrap();
             assert!(!reviewed_cash_rule(&d));assert_eq!(policy(&d).requirement,"source_review_required");
         }
@@ -97,6 +98,10 @@ pub fn policy(def:&StrategyDef)->Policy {
     p
 }
 fn base_policy(def:&StrategyDef)->Policy {
+    if def.book=="kfsc" && crate::books::kfsc::reviewed_hv_rule(def.id) {
+        let mut p=stock("Kaufman, A Short Course in Technical Trading, printed 70, 83, 243–255: one selected four-rule high-volatility stock continuation subsystem. Source and declared reconstruction: library/kfsc/REVIEW-2026-10-19-HV.md. Fixed 65 genuine inclusive simple true ranges, strict factor 2, upper/lower deciles (explicit correction of printed upper 90 percent), actual Friday ban, idealized finalized signal-close entry and next genuine session OPEN exit chosen from Figure 17.4 caption despite shortly-after prose. MOC/MOO first/last 60 seconds do not certify OHLC fills. Required warmup and selected native-session calendar coverage must match actual stock observations; missing sessions are held. Terminal entries stay open. Actual individual stocks only; no index, ETF, basket, target/stop or source capital/sizing inheritance. Normalized unit-allocation price-return research with modeled per-side costs; hypothetical shorts lack certified borrow/margin/financing. Selected AAPL/RELIANCE ledgers do not reproduce AOL figures, original stock population, reliability or book performance; quotes/adjustments and historical membership remain qualified.");
+        p.market_adaptation=true;return p;
+    }
     if def.book=="kfsc" && crate::books::kfsc::reviewed_momentum_rule(def.id) {
         let mut p=stock("Kaufman, A Short Course in Technical Trading, printed57-58,70,201-205,230-233: only the exact literal .0476/.0243/.10 MACD crossing or10-day momentum double-smoothed with literal .0476. These constants are not exact1/(N+1) and conflict with the MACD general2/(N+1) formula. Source and chosen conventions: library/kfsc/REVIEW-2026-10-15-MOMENTUM.md. Actual individual stocks only; selected AAPL/RELIANCE research applications, not the AOL/Microsoft charts, historical populations or source performance. All genuine earlier source history is retained; first actual close seeds MACD price smoothings, first actual10-day momentum seeds both DSM passes. Flat selected start waits for a subsequent crossing/turn; DSM equality holds the last nonzero slope, first slope initializes direction. Completed-close same-close fills and opposite-signal reversals are declared idealized conventions; terminal entries remain open. Shorts are hypothetical without certified borrow, margin or financing. Natural signal exits do not reproduce the discretionary combined methods or full game capital/risk programme. Quote adjustments and historical membership remain qualified. No index, ETF or basket substitution; stochastic regime selection remains held.");
         p.market_adaptation=true;return p;
@@ -275,6 +280,9 @@ pub fn metadata_json(def:&StrategyDef)->String {
     let mut json=format!("{{\"requirement\":\"{}\",\"allowed_types\":[{}],\"preferred_basket\":{},\"execution_scope\":\"{}\",\"source_basis\":\"{}\",\"market_adaptation\":{},\"source_performance_reproduced\":false,\"limitations\":\"Compatibility is only an instrument check. Required source filters, data, currency/tick units, corporate actions, fill ordering and accounting must pass separate checks. Current constituent snapshots do not establish historical membership; retrospective selection has survivorship bias.\"}}",p.requirement,p.allowed_types.iter().map(|s|format!("\"{s}\"")).collect::<Vec<_>>().join(","),p.preferred_basket.map_or("null".into(),|s|format!("\"{s}\"")),p.execution_scope,escape(p.source_basis),p.market_adaptation);
     json.pop();
     json.push_str(&format!(",\"source_rule_reviewed\":{},\"independent_selected_ledger_checked\":{}",reviewed_cash_rule(def),reviewed_cash_rule(def)));
+    if def.book=="kfsc" && crate::books::kfsc::reviewed_hv_rule(def.id) {
+        json.push_str(&format!(",\"source_convention\":\"{}\"",escape(crate::books::kfsc::HV_CONVENTION)));
+    }
     if def.book=="kfsc" && crate::books::kfsc::reviewed_momentum_rule(def.id) {
         let convention=if def.id=="kfsc_macd" {"Fixed literal .0476/.0243/.10 despite the general formula conflict; first actual close seeds both price smoothings and MACD/signal start at zero; full observed history; idealized completed-close same-close crossings and reversals; terminal entries remain open."} else {"Fixed10-day current-minus-prior momentum double-smoothed with literal .0476; first actual momentum seeds both passes; first slope initializes direction, nonzero turns reverse and equality holds; full observed history; idealized completed-close same-close fills; terminal entries remain open."};
         json.push_str(&format!(",\"source_convention\":\"{}\"",escape(convention)));

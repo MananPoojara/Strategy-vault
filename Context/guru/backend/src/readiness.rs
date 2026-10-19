@@ -47,6 +47,16 @@ mod short_course_readiness_tests {
 }
 
 pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -> Option<Issue> {
+    if def.book=="kfsc" && books::kfsc::reviewed_hv_rule(def.id) {
+        if let Some(note)=books::kfsc::validate_hv(def.id,p) {return issue("not_testable",note);}
+        if from<65 || to>=ctx.r.len() || from>to {return issue("needs_data","The selected high-volatility application requires 65 genuine true-range observations including the signal day, each with an actual preceding stock close: earliest eligible source index 65 (66 rows). No initial previous close or warmup is invented.");}
+        if ctx.r[from-65..=to].iter().any(|r|!crate::baskets::valid_date(&r.date) || ![r.open,r.high,r.low,r.close].iter().all(|v|v.is_finite()&&*v>0.) || r.low>r.high || r.open<r.low || r.open>r.high || r.close<r.low || r.close>r.high) || ctx.r[from-65..=to].windows(2).any(|w|w[0].date>=w[1].date) {
+            return issue("needs_data","Actual high-volatility warmup/selected observations contain invalid dates, chronology or OHLC. Required observations are not dropped, repaired or filled to manufacture results.");
+        }
+    }
+    if def.book=="kfsc" && books::kfsc::reviewed_hv_rule(def.id) && !books::kfsc::hv_exact_supported(ctx,from,to) {
+        return issue("needs_data","High-volatility exact decimal threshold comparisons exceed supported observed-price precision or arithmetic capacity. No epsilon, rounded threshold or fabricated signal is substituted.");
+    }
     if def.book=="kfsc" && books::kfsc::reviewed_momentum_rule(def.id) {
         if let Some(note)=books::kfsc::validate_momentum(def.id,p) {return issue("not_testable",note);}
         let required=if def.id=="kfsc_macd" {1} else {12};

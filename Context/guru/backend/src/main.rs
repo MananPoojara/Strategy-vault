@@ -603,6 +603,10 @@ fn native_admission(ctx:&Ctx,def:&connors::StrategyDef,from:usize,to:usize,selec
     let benchmark=native_benchmark(evidence.market());
     let benchmark_source=st.ctxs.get(benchmark).filter(|c|!c.r.is_empty()&&c.r.iter().all(|r|r.ticker==benchmark)).map(|_|benchmark);
     if let Some(issue)=instrument_policy::check_native_market_inputs(def,evidence,benchmark_source,selected.volatility_source(st)){return Some(issue);}
+    if def.book=="kfsc" && books::kfsc::reviewed_hv_rule(def.id) {
+        let calendar=st.ctxs.get(benchmark).filter(|c|!c.r.is_empty() && c.r.iter().all(|r|r.ticker==benchmark)).map_or(&[][..],|c|c.r);
+        if let Some(note)=books::kfsc::hv_calendar_issue(ctx.r,calendar,from,to) {return Some(readiness::Issue{status:"needs_data",note});}
+    }
     if connors::params(def.id).iter().any(|p|p.key=="lf")&&ctx.lf[from.max(19).min(to)..=to].iter().any(|v|!v.is_finite()){
         return Some(readiness::Issue{status:"needs_data",note:format!("This stock strategy requires the Liquidity Filter denominator from actual {benchmark} benchmark close and volume. Benchmark volume/coverage is missing; stock OHLC or unknown auxiliary fields cannot replace it.")});
     }
@@ -652,6 +656,27 @@ fn params_of(q: &BTreeMap<String, String>) -> Params {
 /// Existing methods keep their previous parsing contract until separately reviewed.
 fn checked_params_of(q: &BTreeMap<String, String>) -> Result<Params,String> {
     let p=params_of(q);
+    if let Some(id)=q.get("id").filter(|id|books::kfsc::reviewed_hv_rule(id)) {
+        let schema=books::kfsc::params(id).ok_or("Unknown reviewed high-volatility configuration")?;
+        for (key,text) in q {
+            if let Some(name)=key.strip_prefix("p.") {
+                let value=text.parse::<f64>().map_err(|_|format!("Invalid high-volatility parameter: {key}"))?;
+                if let Some(note)=books::kfsc::validate_hv(id,&Params::from([(name.into(),value)])) {return Err(note.into());}
+            }
+            if let Some(name)=key.strip_prefix("g.") {
+                let setting=schema.iter().find(|s|s.key==name).ok_or_else(||format!("Unknown high-volatility grid parameter: {key}"))?;
+                let values:Vec<f64>=text.split(':').map(|v|v.trim().parse::<f64>()).collect::<Result<_,_>>().map_err(|_|format!("Invalid high-volatility grid: {key}"))?;
+                let allowed=values.iter().all(|v|v.is_finite()) && match values.as_slice() {
+                    [v]=>*v==setting.def,
+                    [lo,hi,step]=>*lo==setting.def && *hi==setting.def && *step>0.,
+                    _=>false,
+                };
+                if !allowed {return Err(format!("High-volatility grid {key} covers only one exact reviewed setting; finite unchanged endpoints and a finite positive step are required"));}
+            }
+        }
+        if let Some(note)=books::kfsc::validate_hv(id,&p) {return Err(note.into());}
+        return Ok(p);
+    }
     if let Some(id)=q.get("id").filter(|id|books::kfsc::reviewed_momentum_rule(id)) {
         let schema=books::kfsc::params(id).ok_or("Unknown reviewed Short Course momentum configuration")?;
         for (key,text) in q {
@@ -944,6 +969,26 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         o.push_str("\"d\":");arr(&mut o,&mut (from..=to).map(|k|format!("\"{}\"",ctx.r[k].date)));
         for (name,field) in [("o",0),("h",1),("l",2),("c",3)]{let _=write!(o,",\"{name}\":");arr(&mut o,&mut (from..=to).map(|k|num([ctx.o[k],ctx.h[k],ctx.l[k],ctx.c[k]][field])));}
         o.push_str(",\"v\":");arr(&mut o,&mut (from..=to).map(|k|ctx.r[k].volume.map_or("null".into(),num)));o.push('}');
+    }
+    if def.book=="kfsc" && books::kfsc::reviewed_hv_rule(id) {
+        let state=books::kfsc::hv_states(ctx);
+        let precise=|v:f64|if v.is_finite(){v.to_string()}else{"null".into()};
+        let _=write!(o,",\"high_volatility_research\":{{\"source_convention\":\"{}\",\"basis\":\"Normalized unit-allocation return research; exact price-return cost deductions per side. No funded capital, borrow or source portfolio reproduction. Terminal liquidation is an estimate.\",\"states\":[",esc(books::kfsc::HV_CONVENTION));
+        for i in from..=to {
+            if i>from {o.push(',');}
+            let _=write!(o,"{{\"source_index\":{},\"date\":\"{}\",\"open\":{},\"high\":{},\"low\":{},\"close\":{},\"previous_close\":{},\"true_range\":{},\"simple_mean65\":{},\"close_fraction\":{},\"friday\":{},\"high_volatility\":{},\"tr_above\":{},\"upper_zone\":{},\"lower_zone\":{},\"exact_supported\":{},\"direction\":{}}}",i,ctx.r[i].date,precise(ctx.o[i]),precise(ctx.h[i]),precise(ctx.l[i]),precise(ctx.c[i]),precise(ctx.c[i-1]),precise(state.true_range[i]),precise(state.simple_mean65[i]),precise(state.close_fraction[i]),state.friday[i],state.high_volatility[i],state.high_volatility[i],state.upper_zone[i],state.lower_zone[i],state.exact_supported[i],state.direction[i]);
+        }
+        o.push_str("],\"orders\":[");
+        let mut first_order=true;
+        for t in &run.trades {
+            let entry=t.legs[0].i;
+            if !first_order {o.push(',');}first_order=false;
+            let _=write!(o,"{{\"date\":\"{}\",\"source_index\":{},\"phase\":\"close\",\"event\":\"entry\",\"direction\":{},\"price\":{},\"filled\":true}}",ctx.r[entry].date,entry,t.dir,precise(t.legs[0].px));
+            if !t.open {let _=write!(o,",{{\"date\":\"{}\",\"source_index\":{},\"phase\":\"open\",\"event\":\"exit\",\"direction\":{},\"price\":{},\"filled\":true}}",ctx.r[t.exit_i].date,t.exit_i,t.dir,precise(t.exit_px));}
+        }
+        o.push_str("],\"normalized_equity_with_liquidation_estimate\":[");
+        for (i,value) in run.equity.iter().enumerate(){if i>0{o.push(',');}o.push_str(&precise(*value));}
+        o.push_str("]}");
     }
     let gross_equity=run.source_account.as_ref().map_or_else(||equity_curve(&ctx.c,&run.trades,from,to,0.),|a|a.days.iter().map(|d|d.gross).collect());
     o.push_str(",\"gross_equity\":");arr(&mut o,&mut gross_equity.iter().copied().map(num));
@@ -1376,6 +1421,16 @@ fn main() {
 mod tests {
     use super::*;
     #[test]
+    fn hv_queries_reject_raw_unknown_nonfinite_alternate_and_unreviewed_grids() {
+        let base=BTreeMap::from([("id".into(),books::kfsc::HV_ID.into())]);assert!(checked_params_of(&base).is_ok());
+        for setting in books::kfsc::params(books::kfsc::HV_ID).unwrap() {
+            for prefix in ["p.","g."] {let mut q=base.clone();q.insert(format!("{prefix}{}",setting.key),setting.def.to_string());assert!(checked_params_of(&q).is_ok());
+                for raw in ["garbage".into(),"".into(),"NaN".into(),"inf".into(),format!("{:.12}",setting.def+1e-10)] {q.insert(format!("{prefix}{}",setting.key),raw);assert!(checked_params_of(&q).is_err(),"{q:?}");}}
+            for raw in ["0:inf:1","0:1:1e-300","-1e308:1e308:1","0:1:inf","0:0:0","0:0:-1","0:0:1:1"] {let mut q=base.clone();q.insert(format!("g.{}",setting.key),raw.into());assert!(checked_params_of(&q).is_err());}
+        }
+        for key in ["p.unknown","g.unknown","p.fill","p.kind"] {let mut q=base.clone();q.insert(key.into(),"0".into());assert!(checked_params_of(&q).is_err());}
+    }
+    #[test]
     fn reviewed_momentum_queries_reject_legacy_constants_and_raw_grid_overflow() {
         for &id in books::kfsc::MOMENTUM_STOCK_IDS {
             let base=BTreeMap::from([("id".into(),id.into())]);assert!(checked_params_of(&base).is_ok());
@@ -1393,7 +1448,7 @@ mod tests {
             }
             for key in ["p.unknown","g.unknown","p.kind","p.fill"] {let mut q=base.clone();q.insert(key.into(),"0".into());assert!(checked_params_of(&q).is_err());}
         }
-        let legacy=BTreeMap::from([("id".into(),"kfsc_hv_day".into()),("p.atr".into(),"garbage".into())]);assert!(checked_params_of(&legacy).is_ok());
+        let legacy=BTreeMap::from([("id".into(),"kfsc_stoch".into()),("p.atr".into(),"garbage".into())]);assert!(checked_params_of(&legacy).is_ok());
     }
     #[test]
     fn reviewed_short_course_raw_values_and_grids_reject_rounded_or_unbounded_variants() {
@@ -1413,7 +1468,7 @@ mod tests {
             }
             for key in ["p.unknown","g.unknown"] {let mut q=base.clone();q.insert(key.into(),"0".into());assert!(checked_params_of(&q).is_err());}
         }
-        let legacy=BTreeMap::from([("id".into(),"kfsc_hv_day".into()),("p.atr".into(),"garbage".into())]);assert!(checked_params_of(&legacy).is_ok());
+        let legacy=BTreeMap::from([("id".into(),"kfsc_stoch".into()),("p.atr".into(),"garbage".into())]);assert!(checked_params_of(&legacy).is_ok());
     }
     #[test]
     fn reviewed_four_burns_queries_and_grids_fail_closed_without_changing_legacy() {
