@@ -4,7 +4,7 @@ export function SourceAccountNotice({account}: {account: SourceAccountView}) {
   const copy=sourceAccountCopy(account);
   if (copy.bandy) return <aside className="portfolio-basis" data-source-account-notice aria-label="Bandy fractional cash research account">
     <strong>Bandy · fractional cash research account</strong>
-    <p>{copy.sizing}</p><p>Fixed reviewed settings on the selected instrument. Closed-return display settings do not change accepted positions,
+    <p>{copy.sizing}</p>{copy.signalNote ? <p>{copy.signalNote}</p> : null}<p>Fixed reviewed settings on the selected instrument. Closed-return display settings do not change accepted positions,
       allocation, the cash-account curve or its risk statistics. Gross retains the same accepted quantities and fills. Open marks pay entry costs only;
       pending exits and hypothetical liquidation costs are not executed charges.</p>
     <p>Exposure includes observed sessions from entry through exit. Drawdown duration counts observed sessions, not calendar days or intraday time.

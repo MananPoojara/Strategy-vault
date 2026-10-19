@@ -2,6 +2,8 @@ import {afterEach, expect, it, vi} from "vitest";
 import {act} from "react";
 import {createRoot, type Root} from "react-dom/client";
 import {StrategyPage} from "../src/pages/ResearchPages";
+import {sourceAccount,sourceAccountView,type SourceAccountView} from "../src/services/source-account";
+import {simpleAccountFixture,simpleAdmissionFixture} from "./helpers/bandy-simple-account-fixture";
 import type {ViewSnapshot} from "../src/state/store";
 
 const markup = (signals = true) => `
@@ -18,11 +20,11 @@ afterEach(async () => {
   if(root) await act(async () => root!.unmount());
   host?.remove(); root=undefined; vi.restoreAllMocks();
 });
-async function mount(html=markup()) {
+async function mount(html=markup(),account?:SourceAccountView) {
   Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});
   const patch=vi.fn(),activateReportTab=vi.fn();
   window.VaultRuntime={patch,activateReportTab} as unknown as Window['VaultRuntime'];
-  const snapshot:ViewSnapshot={revision:1,html,loading:false,error:null,route:null,status:'Strategy',state:{},home:null,reading:null};
+  const snapshot:ViewSnapshot={revision:1,html,loading:false,error:null,route:null,status:'Strategy',state:{},home:null,reading:null,strategyAccount:account};
   host=document.createElement('div');document.body.append(host);root=createRoot(host);
   await act(async () => root!.render(<StrategyPage snapshot={snapshot}/>));
   return {patch,activateReportTab};
@@ -79,4 +81,12 @@ it('offers only supported basket views and leaves withheld results without tabs'
   await act(async()=>root!.render(<StrategyPage snapshot={{revision:2,html:'<section class="box" data-withheld>Data missing: membership dates unresolved</section>',loading:false,error:null,route:null,status:'Strategy',state:{},home:null,reading:null}}/>));
   expect(host.querySelector('[role="tablist"]')).toBeNull();expect(host.querySelector('[data-strategy-report]')).toBeNull();
   expect(host.textContent).toContain('membership dates unresolved');
+});
+
+it('retains the six-tab report and external Simple convention notice without inheriting Elder controls',async()=>{
+ const account=sourceAccount(simpleAccountFixture(),'hbiab_simple_ma25','hbiab','basket:us_sp500:AAPL',simpleAdmissionFixture())!;
+ await mount('<div data-react-slot="source-account-notice"></div>'+markup(),sourceAccountView(account));
+ const notice=host.querySelector('[data-source-account-notice]')!;expect(notice.textContent).toContain('100%');expect(notice.textContent).toContain('not five bars from entry');expect(notice.textContent).not.toMatch(/2%|6%|SafeZone|₹/);
+ expect(host.querySelectorAll('[role="tab"]')).toHaveLength(6);expect(host.querySelector('[data-strategy-report]')!.contains(notice)).toBe(false);
+ await click('positions');expect(panel('positions').hidden).toBe(false);expect(host.querySelector('[data-source-account-notice]')).toBe(notice);await click('signals');expect(panel('signals').hidden).toBe(false);
 });

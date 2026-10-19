@@ -1,9 +1,27 @@
 /** Distinct cash-account contract. These checks validate reporting consistency;
  * they do not certify book figures, vendor prices or source performance. */
 export const BANDY_ACCOUNT_MODEL = "bandy_fixed_fraction_fractional_cash_v1";
-export const BANDY_ACCOUNT_METHODS = ["hbiab_ma5_20", "hbiab_ma7_4", "hbiab_macd_example"] as const;
+export const BANDY_ACCOUNT_METHODS = ["hbiab_ma5_20", "hbiab_ma7_4", "hbiab_macd_example", "hbiab_simple_ma25"] as const;
 export const bandyAccountMethod = (id?: string, book?: string) => book === "hbiab"
   && BANDY_ACCOUNT_METHODS.some(method => method === id);
+export const BANDY_SIMPLE_METHOD = "hbiab_simple_ma25";
+export const BANDY_SIMPLE_CONVENTION = "bandy_simple_raw_buy_clock_fractional_cash_v1";
+export const BANDY_SIMPLE_BASIS = "Bandy Introduction to AmiBroker (2008), printed527-528, SimpleSystem.afl interpretation/commentary teaching example shown on actual SPY; no printed performance study. MA25=MA(C,25), raw Buy=Close>MA25, Sell=BarsSince(raw Buy)>=5; every true raw Buy resets the clock even while held, and equality is false. Twenty-five genuine observations mature MA; no actionable sell before the first observed Buy and no native BarsSince sentinel claim. Daily finalized same-close fills, one long without pyramiding, 100% fractional current-equity target with entry-cost cash reserve are declared research conventions. Normalized initial equity1, full supplied signal history and flat selected account start; terminal entries remain open and pay actual entry cost only. Gross removes paid costs from identical accepted quantities; liquidation estimate separate. Actual stocks/ordinary equity ETFs only; no cash-index, basket portfolio or derivative substitution. No source performance, funded capital, native AmiBroker binary parity or broker-execution claim.";
+/** Catalogue identity and effective selected settings are separate from the account wire. */
+export interface BandyAdmissionContext { definition: unknown; parameters: unknown; instrument: unknown }
+const cashIndices=new Set(["NIFTY 50","BANK NIFTY","MIDCAP 100","NIFTY BANK","NIFTY MIDCAP 100","SPX","NDX","DJI"]);
+/** The row is retained unchanged. ETF eligibility comes from the existing UI
+ * selector, because older runtime ETF rows do not report their asset type. */
+export function simpleInstrumentContext(ticker: string, rows: readonly unknown[], eligibleEtfs: readonly unknown[]) {
+  const metadata=rows.find(row=>object(row) && row.ticker === ticker);
+  if (!object(metadata) || cashIndices.has(ticker)) return null;
+  if (metadata.asset_type === "individual_stock") return {
+    kind:"individual_stock", metadata, classification_basis:"native_stock_metadata",
+  };
+  const eligible=eligibleEtfs.filter(row=>object(row) && rows.includes(row)).map(row=>(row as Fields).ticker);
+  return !ticker.startsWith("basket:") && eligible.includes(ticker) && (metadata.asset_type === undefined || metadata.asset_type === "etf")
+    ? {kind:"etf",metadata,classification_basis:"existing_runtime_etf_selector",eligible_etf_tickers:eligible} : null;
+}
 export interface BandyAccountDay {
   date: string; source_index: number; equity: number; gross_same_quantity_equity: number;
   costs_paid: number; free_cash: number; quantity: number; position_value: number; direction: 0 | 1;
@@ -44,9 +62,61 @@ const monthlyOrStop = (v: Fields) => ["stop", "initial_stop", "final_stop", "mon
   "outstanding_planned_risk", "monthly_halted", "planned_risk_fraction_of_month_reference", "risk_budget_fraction_of_month_reference"]
   .some(key => Object.hasOwn(v, key));
 
-export function parseBandySourceAccount(data: unknown, id?: string, book?: string, selectedTicker?: string): BandySourceAccount {
+export function parseBandySourceAccount(data: unknown, id?: string, book?: string, selectedTicker?: string, admission?: unknown): BandySourceAccount {
+  return parseCashAccount(data,id,book,selectedTicker,admission,false);
+}
+/** Private/offline contract checks only. Public sourceAccount always calls the
+ * strict entry point above and can never enable a synthetic instrument. */
+export function parseBandyAdapterContract(data: unknown, id: string, selectedTicker: string, admission: unknown): BandySourceAccount {
+  if (id !== BANDY_SIMPLE_METHOD || !object(admission) || !object(admission.adapter_contract)
+    || admission.adapter_contract.scope !== "independently_bound_reporting_fixture"
+    || typeof admission.adapter_contract.case_id !== "string" || !admission.adapter_contract.case_id
+    || !["input_sha256","request_sha256","capture_sha256"].every(key=>typeof (admission.adapter_contract as Fields)[key] === "string"
+      && /^[a-f0-9]{64}$/.test((admission.adapter_contract as Fields)[key] as string))) return invalid();
+  return parseCashAccount(data,id,"hbiab",selectedTicker,admission,true);
+}
+function parseCashAccount(data: unknown, id?: string, book?: string, selectedTicker?: string, admission?: unknown, adapter=false): BandySourceAccount {
   if (!bandyAccountMethod(id, book) || !object(data) || data.kind === "basket" || !object(data.source_account)) return invalid();
   if (data.id !== id || data.book !== book) return invalid();
+  // The new teaching example cannot inherit the three older methods' basis or settings.
+  // Existing methods deliberately retain their original contract and checks.
+  if (id === BANDY_SIMPLE_METHOD) {
+    if (data.kind !== undefined || data.model_initial_equity !== 1 || data.accounting_basis !== BANDY_SIMPLE_BASIS
+      || data.source_account.basis !== BANDY_SIMPLE_BASIS || !object(admission)
+      || !object(admission.definition) || admission.definition.id !== id || admission.definition.book !== book
+      || !object(admission.definition.instrument_policy) || !object(admission.parameters) || !object(admission.instrument)) return invalid();
+    const policy=admission.definition.instrument_policy, parameters=admission.parameters;
+    if (!Array.isArray(policy.allowed_types) || policy.allowed_types.length !== 2
+      || !policy.allowed_types.includes("individual_stock") || !policy.allowed_types.includes("etf")
+      || policy.execution_scope !== "single_symbol_source_account" || policy.account_model !== BANDY_ACCOUNT_MODEL
+      || policy.source_basis !== BANDY_SIMPLE_BASIS || policy.source_convention !== BANDY_SIMPLE_CONVENTION
+      || policy.source_performance_reproduced !== false || policy.source_rule_reviewed !== true
+      || policy.independent_selected_ledger_checked !== true || Object.keys(parameters).length !== 2
+      || parameters.ma !== 25 || parameters.hold !== 5 || !selectedTicker) return invalid();
+    const instrument=admission.instrument, metadata=instrument.metadata;
+    if (!object(metadata) || metadata.ticker !== selectedTicker || cashIndices.has(selectedTicker)
+      || !["individual_stock","etf",...(adapter ? ["synthetic_test_only"] : [])].includes(instrument.kind as string)) return invalid();
+    if (instrument.kind === "individual_stock" && (instrument.classification_basis !== "native_stock_metadata" || metadata.asset_type !== "individual_stock")) return invalid();
+    if (instrument.kind === "etf" && (instrument.classification_basis !== "existing_runtime_etf_selector"
+      || selectedTicker.startsWith("basket:") || !Array.isArray(instrument.eligible_etf_tickers) || !instrument.eligible_etf_tickers.includes(selectedTicker)
+      || (metadata.asset_type !== undefined && metadata.asset_type !== "etf"))) return invalid();
+    if (instrument.kind === "synthetic_test_only" && (!adapter || instrument.classification_basis !== "independent_synthetic_fixture")) return invalid();
+    if (selectedTicker.startsWith("basket:") && (object(data.provenance) ? data.provenance.asset_type !== "individual_stock" : !adapter)) return invalid();
+    const symbol=typeof metadata.symbol === "string" ? metadata.symbol : selectedTicker.split(":").at(-1)!;
+    if (!symbol || (data.ticker !== undefined && data.ticker !== selectedTicker && data.ticker !== symbol)) return invalid();
+    const source=object(metadata.provenance) ? metadata.provenance : {};
+    for (const origin of [metadata,source]) {
+      if (origin.symbol !== undefined && origin.symbol !== symbol || origin.qualified_ticker !== undefined && origin.qualified_ticker !== selectedTicker) return invalid();
+      if (origin.asset_type !== undefined && origin.asset_type !== instrument.kind) return invalid();
+      if (object(data.provenance)) for (const key of ["symbol","qualified_ticker","asset_type","trusted_market","currency","source_sha256","csv_sha256"]) {
+        if (origin[key] !== undefined && origin[key] !== data.provenance[key]) return invalid();
+      }
+    }
+    if (object(data.provenance) && data.provenance.asset_type !== undefined && data.provenance.asset_type !== instrument.kind) return invalid();
+    if (!Array.isArray(data.trades)) return invalid();
+    for (const trade of data.trades) if (!object(trade) || !object(trade.accounting) || trade.accounting.symbol !== symbol
+      || ["ticker","symbol"].some(key=>trade[key] !== undefined && trade[key] !== selectedTicker && trade[key] !== symbol)) return invalid();
+  }
   const a=data.source_account, macd=id === "hbiab_macd_example", fraction=macd ? .25 : 1;
   if (a.model !== BANDY_ACCOUNT_MODEL || a.book_performance_reproduced !== false
     || typeof a.basis !== "string" || !a.basis.trim() || typeof a.account_contribution_basis !== "string" || !a.account_contribution_basis.trim()
@@ -60,8 +130,8 @@ export function parseBandySourceAccount(data: unknown, id?: string, book?: strin
     || data.dates.length < 1 || [a.days,data.equity,data.gross_equity,data.close].some(rows => rows.length !== (data.dates as unknown[]).length)
     || a.trade_accounts.length !== data.trades.length) return invalid();
   const provenance=object(data.provenance) ? data.provenance : null;
-  if (selectedTicker?.startsWith("basket:") && (!provenance || provenance.qualified_ticker !== selectedTicker
-    || typeof provenance.symbol !== "string" || !provenance.symbol.trim())) return invalid();
+  if (selectedTicker?.startsWith("basket:") && (provenance ? provenance.qualified_ticker !== selectedTicker
+    || typeof provenance.symbol !== "string" || !provenance.symbol.trim() : !adapter)) return invalid();
   if (selectedTicker && provenance && typeof provenance.qualified_ticker === "string" && provenance.qualified_ticker !== selectedTicker) return invalid();
   const expectedSymbol=provenance && typeof provenance.symbol === "string" ? provenance.symbol
     : selectedTicker && !selectedTicker.startsWith("basket:") ? selectedTicker : null;

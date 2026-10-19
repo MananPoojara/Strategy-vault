@@ -1,4 +1,4 @@
-import {BANDY_ACCOUNT_MODEL,bandyAccountMethod,parseBandySourceAccount,type BandySourceAccount} from "./bandy-source-account";
+import {BANDY_ACCOUNT_MODEL,bandyAccountMethod,parseBandySourceAccount,type BandySourceAccount,BANDY_SIMPLE_BASIS} from "./bandy-source-account";
 export {BANDY_ACCOUNT_MODEL,bandyAccountMethod} from "./bandy-source-account";
 /** Preserve the protected Elder contract and the distinct Bandy cash contract.
  * Unknown or stale payloads never fall back to the legacy unit-exposure presenter. */
@@ -67,8 +67,8 @@ const count = (v: unknown): v is number => finite(v) && Number.isInteger(v) && v
 const near = (a: number, b: number, tolerance = 2.01e-6) => Math.abs(a - b) <= tolerance * Math.max(1, Math.abs(a), Math.abs(b));
 const invalid = (): never => { throw new Error("The protected Elder account response is missing or inconsistent. Results remain unavailable; reload after the account contract is restored."); };
 
-export function sourceAccount(data: unknown, id?: string, book?: string, selectedTicker?: string): SourceAccount | null {
-  if (bandyAccountMethod(id,book) || (object(data) && object(data.source_account) && data.source_account.model === BANDY_ACCOUNT_MODEL)) return parseBandySourceAccount(data,id,book,selectedTicker);
+export function sourceAccount(data: unknown, id?: string, book?: string, selectedTicker?: string, admission?: unknown): SourceAccount | null {
+  if (bandyAccountMethod(id,book) || (object(data) && object(data.source_account) && data.source_account.model === BANDY_ACCOUNT_MODEL)) return parseBandySourceAccount(data,id,book,selectedTicker,admission);
   return elderSourceAccount(data,id,book);
 }
 function elderSourceAccount(data: unknown, id?: string, book?: string): ElderSourceAccount | null {
@@ -173,15 +173,18 @@ export function sourceAccountTables(account: SourceAccount, returns: readonly nu
       numericColumns:bandy ? [1,2,3,4,5,6] : [1,2,3,4,5,6,8,9,10,11]},
   };
 }
-export function sourceAccountCopy(account: {model: SourceAccount["model"]; sizing?: BandySourceAccount["sizing"]}) {
+export function sourceAccountCopy(account: {model: SourceAccount["model"]; sizing?: BandySourceAccount["sizing"]; basis?: string}) {
   const bandy=account.model === BANDY_ACCOUNT_MODEL;
   const sourceQuarter=bandy && account.sizing?.origin === "source_rule";
+  const simple=bandy && account.basis === BANDY_SIMPLE_BASIS;
   return {
     bandy,
+    ...(simple ? {signalNote:"MA25 uses the full supplied genuine history. Close > MA25 is raw Buy; every true raw Buy resets the clock even while held. Exit at five observed bars since the latest raw Buy, not five bars from entry. The declared daily finalized same-close fills and fractional cash account are research conventions. No source performance, funded capital, native AmiBroker binary parity or broker-executable close fill is claimed."} : {}),
     accountReturn:bandy ? "Cash-account return" : "Risk-sized account return",
     accountEquity:bandy ? "Cash-account equity" : "Risk-sized account equity",
     decline:bandy ? "Cash-account decline" : "Risk-sized account decline",
     sizing:bandy ? sourceQuarter ? "Source allocation: 25% of current equity; remaining cash stays idle."
+      : simple ? "SimpleSystem teaching example: declared 100% fractional current-equity target with entry costs reserved in cash. The commentary does not specify position sizing."
       : "Declared research convention: 100% target allocation with entry costs reserved in cash. The MA examples do not specify position sizing."
       : "Protection and the 2% per-trade / 6% monthly risk limits stay active.",
     settingsNote:bandy ? "Display only. The reviewed fixed allocation, actual cash account, equity and risk statistics stay unchanged. Open holdings are excluded from this closed-return display."
