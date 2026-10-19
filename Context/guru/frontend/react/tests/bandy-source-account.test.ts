@@ -146,3 +146,11 @@ it('binds the selected traded instrument and provenance independently of its ben
    expect(()=>sourceAccount({...d,...fields},'hbiab_ma5_20','hbiab')).toThrow('Bandy cash account');
  expect(sourceAccount(accountFixture(),'elcim_impulse','elcim')!.model).toBe(ELDER_ACCOUNT_MODEL);
  });
+
+it('accepts a single observed session with an unfilled terminal buy and no manufactured fills or charges',()=>{
+ const d=bandyAccountFixture(true),day=d.source_account.days[0];
+ const flat={...d,dates:[day.date],close:[100],equity:[1],gross_equity:[1],trades:[],stats:{total_return:0,net_profit:0,closed_return_sum:0,avg_net_pnl:null,trades:0},gross_stats:{total_return:0},
+ source_account:{...d.source_account,days:[day],trade_accounts:[],terminal_entry_pending:true,pending_order:{side:'buy',signal_date:day.date,fill_phase:'open',filled:false}}};
+ const account=parse(flat,true);expect(account.days).toHaveLength(1);expect(account.trade_accounts).toHaveLength(0);expect(account.days[0].costs_paid).toBe(0);expect(sourceAccountView(account).actualReturn).toBe(0);
+ expect(()=>parse({...flat,dates:[],close:[],equity:[],gross_equity:[],source_account:{...flat.source_account,days:[]}},true)).toThrow('Bandy cash account');
+});

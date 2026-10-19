@@ -57,7 +57,7 @@ export function parseBandySourceAccount(data: unknown, id?: string, book?: strin
     || !Array.isArray(a.days) || !Array.isArray(a.trade_accounts)
     || !Array.isArray(data.dates) || !Array.isArray(data.equity) || !Array.isArray(data.gross_equity)
     || !Array.isArray(data.trades) || !Array.isArray(data.close) || !object(data.stats) || !object(data.gross_stats) || !object(data.costs)
-    || data.dates.length < 2 || [a.days,data.equity,data.gross_equity,data.close].some(rows => rows.length !== (data.dates as unknown[]).length)
+    || data.dates.length < 1 || [a.days,data.equity,data.gross_equity,data.close].some(rows => rows.length !== (data.dates as unknown[]).length)
     || a.trade_accounts.length !== data.trades.length) return invalid();
   const provenance=object(data.provenance) ? data.provenance : null;
   if (selectedTicker?.startsWith("basket:") && (!provenance || provenance.qualified_ticker !== selectedTicker
