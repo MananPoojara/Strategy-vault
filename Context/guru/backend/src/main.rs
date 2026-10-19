@@ -967,7 +967,7 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
             "{{\"dir\":{},\"legs\":[{}],\"entry\":\"{}\",\"exit\":\"{}\",\"exit_i\":{},\"exit_px\":{},\"avg_px\":{},\"ret\":{},\"ret_full_precision\":{},\"bars\":{},\"open\":{},\"reason\":\"{}\",\"entry_kind\":\"{}\",\"at_entry\":{},\"at_exit\":{},\"signal\":\"{}\",\"exits\":[{}],\"accounting\":{}}}",
             t.dir, legs.join(","), ctx.r[t.legs[0].i].date, ctx.r[t.exit_i].date, t.exit_i - from, num(t.exit_px),
             num(t.avg_px()), num(ledger.net_ret), full_precision_trade_return(ledger.net_ret), t.exit_i - t.legs[0].i, t.open, esc(&t.reason), t.entry_kind,
-            snapshot(ctx, t.legs[0].i, &diagnostics), if books::kfsc::reviewed_hv_rule(id) {hv_exit_snapshot(ctx,t)} else {snapshot(ctx, t.signal_i, &diagnostics)}, ctx.r[t.signal_i].date,
+            snapshot(ctx, t.legs[0].i, &diagnostics), if books::kfsc::reviewed_hv_rule(id) {hv_exit_snapshot(ctx,t)} else {snapshot(ctx, t.signal_i, &diagnostics)}, ctx.r[if books::kfsc::reviewed_hv_rule(id) {t.exit_i}else{t.signal_i}].date,
             t.exits.iter().map(|(i, px, f)| format!("[{},{},{}]", i - from, num(*px), num(*f))).collect::<Vec<_>>().join(","),ledger.json()
         )
     }));
@@ -991,7 +991,7 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         for t in &run.trades {
             let entry=t.legs[0].i;
             if !first_order {o.push(',');}first_order=false;
-            let _=write!(o,"{{\"date\":\"{}\",\"source_index\":{},\"phase\":\"close\",\"event\":\"entry\",\"direction\":{},\"price\":{},\"filled\":true}}",ctx.r[entry].date,entry,t.dir,precise(t.legs[0].px));
+            let _=write!(o,"{{\"date\":\"{}\",\"source_index\":{},\"phase\":\"close\",\"event\":\"entry\",\"source_signal_date\":\"{}\",\"direction\":{},\"price\":{},\"filled\":true}}",ctx.r[entry].date,entry,ctx.r[t.signal_i].date,t.dir,precise(t.legs[0].px));
             if !t.open {let _=write!(o,",{{\"date\":\"{}\",\"source_index\":{},\"phase\":\"open\",\"event\":\"exit\",\"direction\":{},\"price\":{},\"filled\":true}}",ctx.r[t.exit_i].date,t.exit_i,t.dir,precise(t.exit_px));}
         }
         o.push_str("],\"normalized_equity_with_liquidation_estimate\":[");
