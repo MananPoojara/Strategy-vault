@@ -1,15 +1,20 @@
 import {bandyAccountMethod} from "./bandy-source-account";
+import {unitExposureMethod} from './unit-exposure-report';
 export interface InstrumentPolicy { allowed_types?: string[]; execution_scope?: string }
 
 /** A visible ETF button must remain a valid route choice alongside supported indices. */
-export function instrumentTickers<T extends {ticker: string}>(policy: InstrumentPolicy | undefined, indices: T[], etfs: T[]): T[] {
-  const controls = instrumentControls(policy);
+export function instrumentTickers<T extends {ticker: string}>(policy: InstrumentPolicy | undefined, indices: T[], etfs: T[], id?:string, book?:string): T[] {
+  const controls = instrumentControls(policy,id,book);
+  if (unitExposureMethod(id,book)) return controls.index ? indices.filter(t=>['SPX','NIFTY 50'].includes(t.ticker)) : [];
   return [...(controls.index ? indices : []), ...(controls.etf ? etfs : [])];
 }
 
 /** Navigation follows reviewed types; an unresolved policy still uses the API's admission gate. */
 export function instrumentControls(policy?: InstrumentPolicy, id?: string, book?: string) {
   const types = policy?.allowed_types || [];
+  if (unitExposureMethod(id,book)) return {index:types.length===1 && types[0]==='index'
+    && policy?.execution_scope==='single_symbol_index_timing_research',stock:false,basket:false,etf:false,
+    note:'This reviewed rule uses actual SPX cash-index prices, or NIFTY 50 as a declared adaptation. Other indices, stocks, ETFs and baskets do not inherit this review.'};
   if (!types.length) return { index: true, stock: true, basket: true, etf: false, note: '' };
   const index = types.includes('index'), stock = types.includes('individual_stock'), etf = types.includes('etf');
   const basket = stock && policy?.execution_scope !== 'single_symbol_source_account';

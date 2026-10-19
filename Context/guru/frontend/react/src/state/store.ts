@@ -5,6 +5,7 @@ import type { OwnerIssue as SummaryIssue } from "../services/summary-loader";
 import type { SearchAuthor } from "../services/library-search";
 import type {SourceAccountView} from "../services/source-account";
 import type {RuleVisualModel} from "../services/rule-evidence";
+import type {UnitExposureView} from '../services/unit-exposure-report';
 export interface ViewSnapshot {
   revision: number;
   loading: boolean;
@@ -16,6 +17,7 @@ export interface ViewSnapshot {
   home: HomeModel | null;
   reading: ReadingModel | null;
   strategyAccount?: SourceAccountView | null;
+  strategyUnit?: UnitExposureView | null;
   strategyRules?: RuleVisualModel | null;
 }
 export interface PageInfo {
@@ -143,6 +145,7 @@ export function createStore() {
         home: null,
         reading: null,
         strategyAccount: null,
+        strategyUnit: null,
         strategyRules: null,
       };
       notify();

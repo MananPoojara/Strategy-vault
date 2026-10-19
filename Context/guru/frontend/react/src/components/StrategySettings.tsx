@@ -2,15 +2,17 @@ import {useEffect, useId, useRef, useState} from "react";
 import {createPortal} from "react-dom";
 import {sourceAccountCopy,type SourceAccountView} from "../services/source-account";
 import type {ReturnDisplayMode} from "../services/return-display";
+import {UNIT_CLOSED_BASIS} from '../services/unit-exposure-presenter';
 import "./StrategySettings.css";
 
-export function StrategySettings({mode = "fixed", onApply, disabledReason, sourceAccount = false}: {
+export function StrategySettings({mode = "fixed", onApply, disabledReason, sourceAccount = false, unitExposure = false}: {
   mode?: ReturnDisplayMode;
   onApply: (mode: ReturnDisplayMode) => void;
   /** Portfolio reports have their own chronological accounting; they must not
    * multiply the returns of overlapping positions in closing order. */
   disabledReason?: string;
   sourceAccount?: boolean | SourceAccountView;
+  unitExposure?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<ReturnDisplayMode>(mode);
@@ -73,21 +75,23 @@ export function StrategySettings({mode = "fixed", onApply, disabledReason, sourc
           </header>
           <p id={`${id}-description`} className="strategy-settings-intro">Choose how closed-trade returns are displayed.</p>
           <fieldset className="strategy-settings-group" data-settings-group="return-display" disabled={Boolean(disabledReason)}>
-            <legend>{sourceAccount ? "Closed weighted-return display" : "Net Profit calculation"}</legend>
+            <legend>{unitExposure ? 'Closed unit-return display' : sourceAccount ? "Closed weighted-return display" : "Net Profit calculation"}</legend>
             <label className={`strategy-settings-option ${draft === "fixed" ? "selected" : ""}`}>
               <input type="radio" name={`${id}-return-mode`} value="fixed" checked={draft === "fixed"} onChange={() => setDraft("fixed")} />
-              <span><strong>{sourceAccount ? "Closed return sum" : "Fixed quantity"}</strong><small>{sourceAccount
+              <span><strong>{unitExposure || sourceAccount ? "Closed return sum" : "Fixed quantity"}</strong><small>{unitExposure
+                ? 'Add audited closed net fractions; no funded share quantity is assumed.' : sourceAccount
                 ? "Add accepted closed net fractions of each actual entry equity."
                 : "Additive trade-return view. No share quantity supplied."}</small></span>
             </label>
             <label className={`strategy-settings-option ${draft === "compound" ? "selected" : ""}`}>
               <input type="radio" name={`${id}-return-mode`} value="compound" checked={draft === "compound"} onChange={() => setDraft("compound")} />
-              <span><strong>{sourceAccount ? "Hypothetical closed compounding" : "Compounding"}</strong><small>{sourceAccount
+              <span><strong>{unitExposure ? 'Compounded closed model' : sourceAccount ? "Hypothetical closed compounding" : "Compounding"}</strong><small>{unitExposure
+                ? 'Use engine equity at the last closed exit; terminal-open marks stay excluded.' : sourceAccount
                 ? "Multiply accepted closed weighted-return factors; this does not resize positions."
                 : "Multiply each closed trade’s net return factor."}</small></span>
             </label>
           </fieldset>
-          <p className="strategy-settings-note">{disabledReason || (sourceAccount
+          <p className="strategy-settings-note">{disabledReason || (unitExposure ? UNIT_CLOSED_BASIS : sourceAccount
             ? sourceAccountCopy(typeof sourceAccount === "object" ? sourceAccount : {model:"elder_protected_impulse_fractional_cash_v1"}).settingsNote
             : "Percentage report using closed trades only. Open-position marks are excluded.")}</p>
           <footer className="strategy-settings-actions">

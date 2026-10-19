@@ -1,4 +1,6 @@
 import {sourceAccountCopy,type SourceAccount} from "./source-account";
+import {unitExposureDisplay} from './unit-exposure-presenter';
+import type {UnitExposureView} from './unit-exposure-report';
 export type ReturnDisplayMode = "fixed" | "compound";
 
 export interface ReturnDisplay {
@@ -14,7 +16,8 @@ export interface ReturnDisplay {
 
 /** Read the existing net, position-weighted trade returns without changing
  * execution, sizing, other statistics or open-position equity marks. */
-export function returnDisplay(data: unknown, mode: ReturnDisplayMode = "fixed", account: SourceAccount | null = null): ReturnDisplay {
+export function returnDisplay(data: unknown, mode: ReturnDisplayMode = "fixed", account: SourceAccount | null = null, unit: UnitExposureView | null = null): ReturnDisplay {
+  if (unit) return unitExposureDisplay(data,mode,unit);
   const result: ReturnDisplay = {
     mode,
     label: "Net Profit",
@@ -26,6 +29,9 @@ export function returnDisplay(data: unknown, mode: ReturnDisplayMode = "fixed", 
     reportMode: mode === "compound" ? "Compounded closed-trade returns" : "Additive closed-trade returns",
     unavailableReason: null,
   };
+  if (data && typeof data === 'object' && (Object.hasOwn(data,'unit_exposure_report')
+    || ((data as {id?:unknown}).id==='hbqts_dema16_8' && (data as {book?:unknown}).book==='hbqts')))
+    return {...result,unavailableReason:'A validated unit-exposure report is required; legacy returns cannot replace it.'};
   if (account) {
     result.label = mode === "compound" ? "Closed compounding" : "Closed return sum";
     result.reportMode = mode === "compound" ? "Hypothetical · weighted closed returns" : "Sum · weighted closed returns";

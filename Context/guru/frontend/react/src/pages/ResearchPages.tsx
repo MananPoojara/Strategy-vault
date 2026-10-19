@@ -2,6 +2,7 @@ import type { ViewSnapshot } from "../state/store";
 import { ResearchMarkup } from "../components/ResearchMarkup";
 import { StrategySettings } from "../components/StrategySettings";
 import {SourceAccountNotice} from "../components/SourceAccountNotice";
+import {UnitExposureNotice} from '../components/UnitExposureNotice';
 import {RulesVisualGuide} from "../components/RulesVisualGuide";
 import {useLayoutEffect, useMemo, useState} from "react";
 import {prepareStrategyReport, REPORT_TABS, type ReportTabId} from "../services/strategy-report-layout";
@@ -43,17 +44,20 @@ export function StrategyPage({ snapshot }: { snapshot: ViewSnapshot }) {
     "strategy-settings": <StrategySettings
       mode={mode}
       sourceAccount={snapshot.strategyAccount || false}
+      unitExposure={Boolean(snapshot.strategyUnit)}
       disabledReason={basket
         ? "Basket returns use the equal-slot portfolio calculation. Closed-trade compounding applies only to one instrument."
         : undefined}
       onApply={report_mode => window.VaultRuntime.patch({report_mode})}
     />,
     "source-account-notice": snapshot.strategyAccount ? <SourceAccountNotice account={snapshot.strategyAccount} /> : null,
+    "unit-exposure-notice": snapshot.strategyUnit ? <UnitExposureNotice view={snapshot.strategyUnit} /> : null,
   }} />;
 }
 export function OptimizationPage({ snapshot }: { snapshot: ViewSnapshot }) {
   return <ResearchMarkup html={snapshot.html} slots={{
     "source-account-notice": snapshot.strategyAccount ? <SourceAccountNotice account={snapshot.strategyAccount} /> : null,
+    "unit-exposure-notice": snapshot.strategyUnit ? <UnitExposureNotice view={snapshot.strategyUnit} /> : null,
   }} />;
 }
 export function ReadingPage({ snapshot }: { snapshot: ViewSnapshot }) {
