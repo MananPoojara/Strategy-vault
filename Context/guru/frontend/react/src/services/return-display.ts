@@ -1,4 +1,4 @@
-import type {SourceAccount} from "./source-account";
+import {sourceAccountCopy,type SourceAccount} from "./source-account";
 export type ReturnDisplayMode = "fixed" | "compound";
 
 export interface ReturnDisplay {
@@ -32,7 +32,7 @@ export function returnDisplay(data: unknown, mode: ReturnDisplayMode = "fixed", 
     result.description = (mode === "compound"
       ? "Hypothetical product of accepted closed net fractions of actual entry equity."
       : "Sum of accepted closed net fractions of actual entry equity; equals unrounded average on that same basis × closed trades.")
-      + " Open holdings are excluded. This display never changes the source 2%/6% sizing, protection, actual cash account or its risk statistics.";
+      + sourceAccountCopy(account).displayNote;
   }
   const unavailable = (reason: string): ReturnDisplay => ({...result, unavailableReason: reason});
   if (!data || typeof data !== "object" || !Array.isArray((data as {trades?: unknown}).trades)) {

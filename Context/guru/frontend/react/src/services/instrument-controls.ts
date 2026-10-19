@@ -1,3 +1,4 @@
+import {bandyAccountMethod} from "./bandy-source-account";
 export interface InstrumentPolicy { allowed_types?: string[]; execution_scope?: string }
 
 /** A visible ETF button must remain a valid route choice alongside supported indices. */
@@ -7,12 +8,14 @@ export function instrumentTickers<T extends {ticker: string}>(policy: Instrument
 }
 
 /** Navigation follows reviewed types; an unresolved policy still uses the API's admission gate. */
-export function instrumentControls(policy?: InstrumentPolicy) {
+export function instrumentControls(policy?: InstrumentPolicy, id?: string, book?: string) {
   const types = policy?.allowed_types || [];
   if (!types.length) return { index: true, stock: true, basket: true, etf: false, note: '' };
   const index = types.includes('index'), stock = types.includes('individual_stock'), etf = types.includes('etf');
   const basket = stock && policy?.execution_scope !== 'single_symbol_source_account';
-  const note = stock && !basket
+  const note = policy?.execution_scope === 'single_symbol_source_account' && bandyAccountMethod(id,book) && (stock || etf)
+    ? `This reviewed application uses an individual-instrument cash account. Choose an admitted ${stock && etf ? 'Stock or ETF' : etf ? 'ETF' : 'Stock'} above; equal-slot baskets and position limits are unavailable.`
+    : stock && !basket
     ? 'This method uses an individual stock risk account. Choose a Stock above; equal-slot basket execution and position limits are unavailable for this source account.'
     : index && !basket && !etf
     ? 'This method uses an index. Choose an index above; stock baskets apply to stock-compatible methods.'

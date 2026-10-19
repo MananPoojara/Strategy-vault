@@ -1,0 +1,11 @@
+# Bandy cash-account presentation
+
+The `bandy_fixed_fraction_fractional_cash_v1` response is separate from the protected Elder account and the legacy unit-exposure report. It is accepted only for book `hbiab` and the exact methods `hbiab_ma5_20`, `hbiab_ma7_4` and `hbiab_macd_example`. A missing, unknown, mismatched or inconsistent account is withheld; it cannot inherit the legacy presenter.
+
+The two MA examples use a declared 100% target with entry costs reserved in cash. The MACD example uses its source's 25% current-equity allocation. Fractional position units and account values refer to an initial model unit of one. They are not funded capital, currency P&L or actual share lots. The admitted instrument controls follow the reviewed backend policy; source applicability to actual ETFs does not establish a result on a cash index or a basket.
+
+The parser checks cash plus position value, cumulative paid costs, same-quantity gross equity, actual entry and filled-exit notionals, trade contributions and full-precision entry-equity returns. The MACD signal must precede its fill by exactly one observed session. Trade/chart indices, phases and return fields must agree with the account audit. A terminal pending order is distinct from a fill. Marked-open positions pay entry costs only; their separate liquidation estimate is never deducted from cash equity or presented as a paid exit.
+
+The closed sum and hypothetical closed-return product remain display choices. They do not change allocation, trades, cash equity or risk statistics. Account audit and daily Excel tables show the Bandy fields, including allocation origin, actual notionals and any uncharged liquidation estimate. They omit Elder monthly risk budgets and protective-stop fields. Elder labels, audit/risk columns and validation retain their existing branch.
+
+Full-precision reporting checks use arithmetic consistency tolerances; only existing six-decimal display fields use display-rounding tolerance. These checks do not alter source predicates or replace independent source, chronological ledger, price-data and numerical review. The tests' small fixtures are arithmetic examples, not book or market results.

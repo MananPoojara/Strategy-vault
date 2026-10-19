@@ -2,7 +2,8 @@ import {afterEach, expect, it, vi} from "vitest";
 import {act} from "react";
 import {createRoot, type Root} from "react-dom/client";
 import {StrategyPage} from "../src/pages/ResearchPages";
-import {sourceAccount,sourceAccountView} from "../src/services/source-account";
+import {sourceAccount,sourceAccountView,type SourceAccountView} from "../src/services/source-account";
+import {bandyAccountFixture} from "./helpers/bandy-source-account-fixture";
 import {accountFixture} from "./helpers/source-account-fixture";
 import type {ViewSnapshot} from "../src/state/store";
 
@@ -16,12 +17,12 @@ const snapshot = (state: Record<string, string>): ViewSnapshot => ({
   revision: 1, loading: false, html: '<header><span data-react-slot="strategy-settings"></span></header><div data-react-slot="source-account-notice"></div>',
   error: null, route: null, status: "Strategy", state, home: null, reading: null,
 });
-async function mount(state: Record<string, string>, source = false) {
+async function mount(state: Record<string, string>, source: boolean | SourceAccountView = false) {
   Object.assign(globalThis, {IS_REACT_ACT_ENVIRONMENT: true});
   const patch = vi.fn();
   window.VaultRuntime = {patch} as unknown as Window["VaultRuntime"];
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
-  await act(async () => root!.render(<StrategyPage snapshot={{...snapshot(state), strategyAccount:source?sourceAccountView(sourceAccount(accountFixture(),"elcim_impulse","elcim")!):null}} />));
+  await act(async () => root!.render(<StrategyPage snapshot={{...snapshot(state), strategyAccount:typeof source === "object" ? source : source?sourceAccountView(sourceAccount(accountFixture(),"elcim_impulse","elcim")!):null}} />));
   await act(async () => host!.querySelector<HTMLButtonElement>('[aria-label="Strategy settings"]')!.click());
   return patch;
 }
@@ -61,4 +62,15 @@ it("explains protected source sizing and applies only the closed weighted-return
  expect(dialog().textContent).toContain('Closed weighted-return display');expect(dialog().textContent).toContain('Hypothetical closed compounding');
  expect(dialog().textContent).toContain('mandatory 2%/6% risk controller');expect(dialog().textContent).not.toContain('Fixed quantity');
  await act(async()=>radio('compound').click());await act(async()=>button('Apply').click());expect(patch).toHaveBeenCalledExactlyOnceWith({report_mode:'compound'});
+});
+
+for (const macd of [false,true]) it(`keeps Bandy ${macd?'source25%':'declared100%'} sizing separate from the display-only setting`,async()=>{
+ const account=sourceAccount(bandyAccountFixture(macd),macd?'hbiab_macd_example':'hbiab_ma5_20','hbiab')!;
+ const patch=await mount({report_mode:'fixed',tk:'basket:us_sp500:AAPL'},sourceAccountView(account));
+ const notice=document.querySelector('[data-source-account-notice]')!;
+ expect(notice.textContent).toContain(macd?'25%':'100%');expect(notice.textContent).toContain(macd?'Source allocation':'Declared research convention');
+ expect(notice.textContent).not.toMatch(/2%|6%|monthly|SafeZone|₹/);expect(dialog().textContent).not.toMatch(/2%|6%|Fixed quantity/);
+ expect(dialog().textContent).toContain('reviewed fixed allocation');
+ await act(async()=>radio('compound').click());await act(async()=>button('Apply').click());
+ expect(patch).toHaveBeenCalledExactlyOnceWith({report_mode:'compound'});
 });
