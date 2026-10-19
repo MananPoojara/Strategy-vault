@@ -41,7 +41,14 @@ describe('one validated unit report reused without mutable financial bypass',()=
  });
  it('revalidates a clone instead of inheriting another object’s acceptance',()=>{
   const {data,admission}=unitRuntimeFixture();const first=validatedUnitExposureReport(data,admission),clone=structuredClone(data);
+  expect(returnDisplay({...data},'compound',null,first).value).toBeNull();
+  expect(returnDisplay({...data},'compound',null,first).unavailableReason).toContain('validated');
   expect(validatedUnitExposureReport(clone,admission)).not.toBe(first);const bad=structuredClone(data);bad.stats.win_rate=1;expect(()=>validatedUnitExposureReport(bad,admission)).toThrow();
+ });
+ it.each(['basket','cash','portfolio','unknown',null,undefined])('rejects any own kind field cold or hot: %s',kind=>{
+  const cold=unitRuntimeFixture();cold.data.kind=kind;expect(()=>validatedUnitExposureReport(cold.data,cold.admission)).toThrow();
+  const hot=unitRuntimeFixture();validatedUnitExposureReport(hot.data,hot.admission);hot.data.kind=kind;
+  expect(()=>validatedUnitExposureReport(hot.data,hot.admission)).toThrow();
  });
 });
 describe('model-specific closed display and exports',()=>{

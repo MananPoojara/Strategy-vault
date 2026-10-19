@@ -1,5 +1,5 @@
 import type {ReturnDisplay,ReturnDisplayMode} from './return-display';
-import {isValidatedUnitExposureView,type UnitExposureView,type UnitExposureReport} from './unit-exposure-report';
+import {isValidatedUnitExposureView,isValidatedUnitExposurePair,type UnitExposureView,type UnitExposureReport} from './unit-exposure-report';
 export const UNIT_VISUAL_BASIS = 'Charts and calendar tables show rounded model values; statistics and the daily audit export use engine calculations.';
 export const UNIT_CLOSED_BASIS = 'Closed trades only; terminal-open marks are excluded. Compounded closed model uses engine equity at the last closed exit, preserving independently rounded factors.';
 /** The engine has already applied independently rounded factors; never reconstruct1+r. */
@@ -10,8 +10,7 @@ export function closedUnitEquity(report:UnitExposureReport):number {
 export function unitExposureDisplay(data: unknown,mode: ReturnDisplayMode,view: UnitExposureView): ReturnDisplay {
   const result:ReturnDisplay={mode,label:mode==='compound'?'Compounded closed model':'Closed return sum',value:null,closedTrades:null,
     reportMode:mode==='compound'?'Engine factors · closed trades only':'Audited closed-return sum',description:UNIT_CLOSED_BASIS,unavailableReason:null};
-  if (!isValidatedUnitExposureView(view) || !data || typeof data!=='object'
-    || (data as {unit_exposure_report?:unknown}).unit_exposure_report!==view.report)
+  if (!isValidatedUnitExposurePair(data,view))
     return {...result,unavailableReason:'A validated unit-exposure report is required; legacy returns cannot replace it.'};
   const closed=view.report.trade_returns.filter(t=>!t.open),lastEquity=closedUnitEquity(view.report);
   const value=mode==='compound'?lastEquity-1:view.closedReturnSum;

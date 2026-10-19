@@ -110,7 +110,7 @@ function checkStats(value: unknown, keys: readonly string[]): Fields {
   return value;
 }
 function core(data: unknown, admission: UnitExposureAdmission, adapter: boolean): UnitExposureView {
-  if (!object(data) || Object.hasOwn(data, 'source_account') || data.kind === 'basket' || !object(data.unit_exposure_report)) return invalid();
+  if (!object(data) || Object.hasOwn(data, 'source_account') || Object.hasOwn(data,'kind') || !object(data.unit_exposure_report)) return invalid();
   const {policy, metadata} = context(data, admission, adapter), raw = data.unit_exposure_report;
   if (!exactKeys(raw, REPORT_KEYS) || raw.model !== UNIT_EXPOSURE_MODEL || raw.book !== UNIT_EXPOSURE_BOOK || raw.id !== UNIT_EXPOSURE_METHOD
     || raw.source_convention !== UNIT_EXPOSURE_CONVENTION || raw.source_performance_reproduced !== false
@@ -244,7 +244,7 @@ function freezeFinancial(value: unknown, seen = new WeakSet<object>()) {
   Object.freeze(value);
 }
 function cheapContext(data: unknown, admission: UnitExposureAdmission) {
-  if (!object(data) || Object.hasOwn(data,'source_account') || data.kind === 'basket' || !object(data.unit_exposure_report)) return invalid();
+  if (!object(data) || Object.hasOwn(data,'source_account') || Object.hasOwn(data,'kind') || !object(data.unit_exposure_report)) return invalid();
   const {policy,metadata}=context(data,admission,false), r=data.unit_exposure_report, costs=data.costs;
   if (r.model !== UNIT_EXPOSURE_MODEL || r.id !== admission.id || r.book !== admission.book
     || r.source_convention !== UNIT_EXPOSURE_CONVENTION || r.basis !== policy.source_basis
@@ -276,6 +276,9 @@ export function validatedUnitExposureReport(data: unknown, admission: UnitExposu
 }
 export function isValidatedUnitExposureView(value: unknown): value is UnitExposureView {
   return object(value) && protectedViews.has(value);
+}
+export function isValidatedUnitExposurePair(data:unknown,view:unknown):view is UnitExposureView {
+  return object(data) && isValidatedUnitExposureView(view) && validated.get(data)===view;
 }
 /** Explicit offline reference projections only; public admission never reads this flag. */
 export function parseUnitExposureAdapter(data: unknown, admission: UnitExposureAdmission, binding: unknown): UnitExposureView {
