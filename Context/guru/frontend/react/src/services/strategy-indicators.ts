@@ -1,5 +1,6 @@
 /** Visual checks for the existing Connors engines. Arithmetic and warmup match
- * backend/src/connors.rs; this module does not generate orders or alter a run.
+ * backend/src/connors.rs; SPMT +DI retains books/spmt.rs’s local tie convention.
+ * This module does not generate orders or alter a run.
  * Always calculate from the engine's full source history, then sample the visible
  * dates. Restarting Wilder smoothing at the selected From date is incorrect. */
 export interface PriceHistory {
@@ -88,12 +89,15 @@ export function wilderRsi(closes: readonly number[], period: number): (number | 
   });
 }
 
-export function directionalPlus(prices: PriceHistory, period: number): (number | null)[] {
+export function directionalPlus(prices: PriceHistory, period: number, roundoffTies = false): (number | null)[] {
   const movement: (number | null)[] = Array(prices.d.length).fill(null);
   const ranges: (number | null)[] = Array(prices.d.length).fill(null);
   for (let i = 1; i < prices.d.length; i++) {
     const up = prices.h[i] - prices.h[i - 1], down = prices.l[i - 1] - prices.l[i];
-    movement[i] = up > down && up > 0 ? up : 0;
+    // SPMT's daily runner has a local subtraction-error tie budget. Every other
+    // caller preserves the unchanged STC IX strict floating-point comparison.
+    const error = roundoffTies ? Number.EPSILON * (Math.abs(prices.h[i])+Math.abs(prices.h[i-1])+Math.abs(prices.l[i-1])+Math.abs(prices.l[i])) : 0;
+    movement[i] = (roundoffTies ? up > 0 && up-down > error : up > down && up > 0) ? up : 0;
     ranges[i] = Math.max(prices.h[i] - prices.l[i],
       Math.abs(prices.h[i] - prices.c[i - 1]), Math.abs(prices.l[i] - prices.c[i - 1]));
   }
@@ -188,7 +192,7 @@ export function buildStrategyIndicators(request: IndicatorRequest): StrategyIndi
     if (Object.hasOwn(p, "slow_n")) { const n = period("slow_n"); add("slow-rsi", `RSI(${n}) · second condition`, "rsi", wilderRsi(px.c, n), threshold("slow_lt", "Second RSI below", "entry")); }
     if (baseId.startsWith("dmi_")) {
       const n = period("di_n");
-      add("plus-di", `+DI(${n})`, "di", directionalPlus(px, n), threshold("di_lt", "Entry below", "entry"));
+      add("plus-di", `+DI(${n})`, "di", directionalPlus(px, n, request.id.startsWith('spmt_')), threshold("di_lt", "Entry below", "entry"));
     }
     if (baseId === "pctb_1" || baseId === "pctb_2" || request.id.startsWith("hpetf_pctb_")) {
       const n = period(etf ? "n" : "pctb_n"), k = request.id.startsWith("spmt_") ? parameter("pctb_k") : 1;

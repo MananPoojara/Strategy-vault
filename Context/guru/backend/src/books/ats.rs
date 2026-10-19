@@ -117,14 +117,15 @@ pub fn catalogue() -> Vec<StrategyDef> {
             NotTestable("needs an expected-vs-actual earnings calendar and put options; 'trending lower' is discretionary"),
             &["F|Company is late reporting its earnings", "F|Its price trends lower before the earnings are due (while the market rises, near the year's lows)", "E|Buy puts"],
             "Baby Superstores example, June 35 puts bought at 2 1/4 went above 10.", None),
-        StrategyDef { needs_volume: true, ..d("ats_dvmtm", "Double Volume Market Top Method (DVMTM)", "Ch 13 · Double Volume Market Top Method", "Short", Live,
-            &["F|A stock must be trading near or at a three-month high (highest high of the last 63 trading days)",
-              "E|Today's volume must be double its 15-day average volume (average of the 15 prior days)",
+        StrategyDef { needs_volume: true, ..d("ats_dvmtm", "Double Volume Market Top Method (DVMTM)", "Ch 13 · Double Volume Market Top Method", "Short",
+            NotTestable("Chapter 13 pp.103-108 requires trailing stops but gives no numerical trailing-exit rule. The prior fixed holding-period exit is not supplied by the book; complete source rules remain unresolved"),
+            &["F|A stock must be trading near or at a three-month calendar-day high; the source does not quantify 'near'",
+              "E|Today's volume must be at least double its average volume over the 15 prior trading days",
               "E|Either today, tomorrow or the next day the stock must close below its open (Rule 3 day)",
               "E|Over the next two days sell 1/8 (one tick) under the Rule 3 day low",
               "X|Initial protective stop at the top of the Rule 3 day bar",
-              "X|Trailing stops: not specified; the vault covers on the close after `hold` bars"],
-            "Built for single stocks (Microsoft, Yahoo, WDC, Fila examples, no statistics); run on index volume. near_pct widens 'near' (0 = at the high).", None) },
+              "X|Trailing stops should lock in profits, but the source supplies no numerical trailing algorithm (p.104)"],
+            "Source review of printed pp.103-108: actual individual-stock examples (Microsoft, Yahoo, Western Digital, Fila), not an index-volume strategy. Entry examples and subsequent price moves do not define an exit. The old hold-bar exit, 63-session high and local price-unit tick are implementation choices, not certified source rules. Results are withheld until a complete exit and source-unit contract is reviewed; changing hold, tick or stock cannot remove this source gap.", None) },
         d("ats_cvr_equities", "CVR I on stocks (Merrill Lynch, Intel)", "Ch 14 · Trading Equities with the CVR", "Long/Short",
             NeedsData("single-stock daily data (Merrill Lynch, Intel 1996-97); the rule itself is ats_cvr1 run on a stock"),
             &["E|On a CVR I buy (sell) signal buy (sell short) the stock on the close; front-run the 4:00 VIX close by a few minutes",
@@ -997,6 +998,19 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dvmtm_requires_a_complete_source_exit_before_publication() {
+        let def=catalogue().into_iter().find(|d|d.id=="ats_dvmtm").unwrap();
+        assert!(matches!(def.status,Status::NotTestable(reason) if reason.contains("trailing-exit") && reason.contains("fixed holding-period")));
+        let rows:Vec<Row>=(0..100).map(|i|Row{date:format!("2020-{:02}-{:02}",i/28+1,i%28+1),..row(0,100.,101.,99.,100.)}).collect();
+        let ctx=Ctx::new(&rows,&rows,&[]);
+        for hold in [1.,5.,20.] {
+            let issue=crate::readiness::check(&ctx,&def,70,99,&Params::from([("hold".into(),hold),("tick".into(),0.125)])).unwrap();
+            assert_eq!(issue.status,"not_testable");
+            assert!(issue.note.contains("complete source rules remain unresolved"));
+        }
+    }
 
     fn row(d: usize, o: f64, h: f64, l: f64, c: f64) -> Row {
         Row { ticker: "T".into(), date: format!("2020-01-{:02}", d + 1), open: o, high: h, low: l, close: c, volume: Some(1e6) }

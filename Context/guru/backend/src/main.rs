@@ -604,6 +604,11 @@ fn native_admission(ctx:&Ctx,def:&connors::StrategyDef,from:usize,to:usize,selec
     let benchmark=native_benchmark(evidence.market());
     let benchmark_source=st.ctxs.get(benchmark).filter(|c|!c.r.is_empty()&&c.r.iter().all(|r|r.ticker==benchmark)).map(|_|benchmark);
     if let Some(issue)=instrument_policy::check_native_market_inputs(def,evidence,benchmark_source,selected.volatility_source(st)){return Some(issue);}
+    if def.book=="kfsc" && books::kfsc::reviewed_hv_rule(def.id) {
+        let calendar=st.ctxs.get(benchmark).filter(|c|!c.r.is_empty() && c.r.iter().all(|r|r.ticker==benchmark)).map_or(&[][..],|c|c.r);
+        if let Some(note)=books::kfsc::hv_calendar_issue(ctx.r,calendar,from,to) {return Some(readiness::Issue{status:"needs_data",note});}
+        if let Some(note)=books::kfsc::hv_requested_end_issue(ctx.r,calendar,to,q.get("to").map(String::as_str)) {return Some(readiness::Issue{status:"needs_data",note});}
+    }
     if connors::params(def.id).iter().any(|p|p.key=="lf")&&ctx.lf[from.max(19).min(to)..=to].iter().any(|v|!v.is_finite()){
         return Some(readiness::Issue{status:"needs_data",note:format!("This stock strategy requires the Liquidity Filter denominator from actual {benchmark} benchmark close and volume. Benchmark volume/coverage is missing; stock OHLC or unknown auxiliary fields cannot replace it.")});
     }
@@ -649,10 +654,96 @@ fn params_of(q: &BTreeMap<String, String>) -> Params {
     q.iter().filter_map(|(k, v)| Some((k.strip_prefix("p.")?.to_string(), v.parse().ok()?))).collect()
 }
 
+/// Compare an HV setting's raw decimal text before binary float rounding or
+/// underflow. Equivalent scientific notation is allowed; no parameter is rounded.
+fn hv_raw_default(text:&str,default:f64)->bool {
+    fn canonical(text:&str)->Option<(String,i64)> {
+        let (negative,text)=if let Some(v)=text.strip_prefix('-'){(true,v)}else{(false,text.strip_prefix('+').unwrap_or(text))};
+        let (mantissa,exponent)=if let Some(i)=text.find(|c|c=='e'||c=='E'){(&text[..i],text[i+1..].parse::<i64>().ok()?)}else{(text,0)};
+        let (whole,fraction)=mantissa.split_once('.').unwrap_or((mantissa,""));
+        let digits=format!("{whole}{fraction}");if digits.is_empty()||!digits.bytes().all(|b|b.is_ascii_digit()){return None;}
+        let digits=digits.trim_start_matches('0');if digits.is_empty(){return Some(("0".into(),0));}if negative{return None;}
+        let significant=digits.trim_end_matches('0');
+        let power=exponent.checked_sub(fraction.len() as i64)?.checked_add((digits.len()-significant.len()) as i64)?;
+        Some((significant.into(),power))
+    }
+    canonical(text).is_some_and(|v|Some(v)==canonical(&default.to_string()))
+}
+
 /// New exact-default reviews must not silently discard malformed query inputs.
 /// Existing methods keep their previous parsing contract until separately reviewed.
 fn checked_params_of(q: &BTreeMap<String, String>) -> Result<Params,String> {
     let p=params_of(q);
+    if let Some(id)=q.get("id").filter(|id|books::kfsc::reviewed_hv_rule(id)) {
+        let schema=books::kfsc::params(id).ok_or("Unknown reviewed high-volatility configuration")?;
+        for (key,text) in q {
+            if let Some(name)=key.strip_prefix("p.") {
+                let value=text.parse::<f64>().map_err(|_|format!("Invalid high-volatility parameter: {key}"))?;
+                if let Some(note)=books::kfsc::validate_hv(id,&Params::from([(name.into(),value)])) {return Err(note.into());}
+                let setting=schema.iter().find(|s|s.key==name).ok_or_else(||format!("Unknown high-volatility parameter: {key}"))?;
+                if !hv_raw_default(text,setting.def){return Err(format!("High-volatility parameter {key} must equal its exact reviewed decimal value before rounding or underflow"));}
+            }
+            if let Some(name)=key.strip_prefix("g.") {
+                let setting=schema.iter().find(|s|s.key==name).ok_or_else(||format!("Unknown high-volatility grid parameter: {key}"))?;
+                let values:Vec<f64>=text.split(':').map(|v|v.trim().parse::<f64>()).collect::<Result<_,_>>().map_err(|_|format!("Invalid high-volatility grid: {key}"))?;
+                let raw:Vec<&str>=text.split(':').map(str::trim).collect();
+                let allowed=values.iter().all(|v|v.is_finite()) && match (values.as_slice(),raw.as_slice()) {
+                    ([v],[text])=>*v==setting.def && hv_raw_default(text,setting.def),
+                    ([lo,hi,step],[raw_lo,raw_hi,_])=>*lo==setting.def && *hi==setting.def && *step>0. && hv_raw_default(raw_lo,setting.def) && hv_raw_default(raw_hi,setting.def),
+                    _=>false,
+                };
+                if !allowed {return Err(format!("High-volatility grid {key} covers only one exact reviewed setting; finite unchanged endpoints and a finite positive step are required"));}
+            }
+        }
+        if let Some(note)=books::kfsc::validate_hv(id,&p) {return Err(note.into());}
+        return Ok(p);
+    }
+    if let Some(id)=q.get("id").filter(|id|books::kfsc::reviewed_momentum_rule(id)) {
+        let schema=books::kfsc::params(id).ok_or("Unknown reviewed Short Course momentum configuration")?;
+        for (key,text) in q {
+            if let Some(name)=key.strip_prefix("p.") {
+                let value=text.parse::<f64>().map_err(|_|format!("Invalid reviewed Short Course momentum parameter: {key}"))?;
+                if let Some(note)=books::kfsc::validate_momentum(id,&Params::from([(name.into(),value)])) {return Err(note.into());}
+            }
+            if let Some(name)=key.strip_prefix("g.") {
+                let setting=schema.iter().find(|s|s.key==name).ok_or_else(||format!("Unknown reviewed Short Course momentum grid parameter: {key}"))?;
+                // Raw exact endpoints and finite positive steps precede legacy
+                // rounding/count conversion; no unbounded expansion is possible.
+                let values:Vec<f64>=text.split(':').map(|v|v.trim().parse::<f64>()).collect::<Result<_,_>>().map_err(|_|format!("Invalid reviewed Short Course momentum grid: {key}"))?;
+                let allowed=values.iter().all(|v|v.is_finite()) && match values.as_slice() {
+                    [v]=>*v==setting.def,
+                    [lo,hi,step]=>*lo==setting.def && *hi==setting.def && *step>0.,
+                    _=>false,
+                };
+                if !allowed {return Err(format!("Short Course momentum grid {key} covers only one exact reviewed setting; finite endpoints, positive finite step and unchanged unrounded values are required"));}
+            }
+        }
+        if let Some(note)=books::kfsc::validate_momentum(id,&p) {return Err(note.into());}
+        return Ok(p);
+    }
+    if let Some(id)=q.get("id").filter(|id|books::kfsc::reviewed_stock_rule(id)) {
+        let schema=books::kfsc::params(id).ok_or("Unknown reviewed Short Course configuration")?;
+        for (key,text) in q {
+            if let Some(name)=key.strip_prefix("p.") {
+                let value=text.parse::<f64>().map_err(|_|format!("Invalid reviewed Short Course parameter: {key}"))?;
+                if let Some(note)=books::kfsc::validate_reviewed(id,&Params::from([(name.into(),value)])) {return Err(note.into());}
+            }
+            if let Some(name)=key.strip_prefix("g.") {
+                let setting=schema.iter().find(|s|s.key==name).ok_or_else(||format!("Unknown reviewed Short Course grid parameter: {key}"))?;
+                // Check raw endpoints and counts before the legacy parser rounds
+                // to1e-9 or converts a potentially unbounded float count to usize.
+                let values:Vec<f64>=text.split(':').map(|v|v.trim().parse::<f64>()).collect::<Result<_,_>>().map_err(|_|format!("Invalid reviewed Short Course grid: {key}"))?;
+                let allowed=values.iter().all(|v|v.is_finite()) && match values.as_slice() {
+                    [v]=>*v==setting.def,
+                    [lo,hi,step]=>*lo==setting.def && *hi==setting.def && *step>0.,
+                    _=>false,
+                };
+                if !allowed {return Err(format!("Short Course grid {key} covers only one exact reviewed setting; finite endpoints, positive finite step and unchanged unrounded values are required"));}
+            }
+        }
+        if let Some(note)=books::kfsc::validate_reviewed(id,&p) {return Err(note.into());}
+        return Ok(p);
+    }
     if let Some(id)=q.get("id").filter(|id|books::sbma::four_reviewed_stock_rule(id)) {
         for (key,text) in q {
             if let Some(name)=key.strip_prefix("p.") {
@@ -849,6 +940,13 @@ fn snapshot(ctx: &Ctx, i: usize, series: &DiagnosticSeries) -> String {
     )
 }
 
+/// A next-open exit cannot know that session's completed-close indicators.
+/// Keep this source-specific diagnostic honest without changing legacy snapshots.
+fn hv_exit_snapshot(ctx:&Ctx,t:&Trade)->String {
+    if t.open {return "null".into();}
+    format!("{{\"date\":\"{}\",\"phase\":\"open\",\"execution_px\":{},\"close\":null,\"rsi2\":null,\"vs_sma200\":null,\"vs_sma5\":null,\"vix_rsi2\":null,\"rsi_p\":null,\"rsi_period\":null,\"rsi_kind\":null,\"vs_ma_p\":null,\"ma_period\":null,\"ma_kind\":null,\"vs_trend_p\":null,\"trend_period\":null,\"trend_kind\":null,\"basis\":\"Idealized next genuine session OPEN exit. This session's completed-close indicators are unavailable at its open and are omitted.\"}}",ctx.r[t.exit_i].date,t.exit_px)
+}
+
 fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     let selected=select_context(st,q)?;let held=selected.context(st);
     let (ctx, from, to, cost) = resolve_context(&held, q)?;
@@ -889,7 +987,7 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
             "{{\"dir\":{},\"legs\":[{}],\"entry\":\"{}\",\"exit\":\"{}\",\"exit_i\":{},\"exit_px\":{},\"avg_px\":{},\"ret\":{},\"ret_full_precision\":{},\"bars\":{},\"open\":{},\"reason\":\"{}\",\"entry_kind\":\"{}\",\"at_entry\":{},\"at_exit\":{},\"signal\":\"{}\",\"exits\":[{}],\"accounting\":{}}}",
             t.dir, legs.join(","), ctx.r[t.legs[0].i].date, ctx.r[t.exit_i].date, t.exit_i - from, num(t.exit_px),
             num(t.avg_px()), num(ledger.net_ret), full_precision_trade_return(ledger.net_ret), t.exit_i - t.legs[0].i, t.open, esc(&t.reason), t.entry_kind,
-            snapshot(ctx, t.legs[0].i, &diagnostics), snapshot(ctx, t.signal_i, &diagnostics), ctx.r[t.signal_i].date,
+            snapshot(ctx, t.legs[0].i, &diagnostics), if books::kfsc::reviewed_hv_rule(id) {hv_exit_snapshot(ctx,t)} else {snapshot(ctx, t.signal_i, &diagnostics)}, ctx.r[if books::kfsc::reviewed_hv_rule(id) {t.exit_i}else{t.signal_i}].date,
             t.exits.iter().map(|(i, px, f)| format!("[{},{},{}]", i - from, num(*px), num(*f))).collect::<Vec<_>>().join(","),ledger.json()
         )
     }));
@@ -899,6 +997,26 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         o.push_str("\"d\":");arr(&mut o,&mut (from..=to).map(|k|format!("\"{}\"",ctx.r[k].date)));
         for (name,field) in [("o",0),("h",1),("l",2),("c",3)]{let _=write!(o,",\"{name}\":");arr(&mut o,&mut (from..=to).map(|k|num([ctx.o[k],ctx.h[k],ctx.l[k],ctx.c[k]][field])));}
         o.push_str(",\"v\":");arr(&mut o,&mut (from..=to).map(|k|ctx.r[k].volume.map_or("null".into(),num)));o.push('}');
+    }
+    if def.book=="kfsc" && books::kfsc::reviewed_hv_rule(id) {
+        let state=books::kfsc::hv_states(ctx);
+        let precise=|v:f64|if v.is_finite(){v.to_string()}else{"null".into()};
+        let _=write!(o,",\"high_volatility_research\":{{\"source_convention\":\"{}\",\"basis\":\"Normalized unit-allocation return research; exact price-return cost deductions per side. No funded capital, borrow or source portfolio reproduction. Terminal liquidation is an estimate.\",\"states\":[",esc(books::kfsc::HV_CONVENTION));
+        for i in from..=to {
+            if i>from {o.push(',');}
+            let _=write!(o,"{{\"source_index\":{},\"date\":\"{}\",\"open\":{},\"high\":{},\"low\":{},\"close\":{},\"previous_close\":{},\"true_range\":{},\"simple_mean65\":{},\"close_fraction\":{},\"friday\":{},\"high_volatility\":{},\"tr_above\":{},\"upper_zone\":{},\"lower_zone\":{},\"exact_supported\":{},\"direction\":{}}}",i,ctx.r[i].date,precise(ctx.o[i]),precise(ctx.h[i]),precise(ctx.l[i]),precise(ctx.c[i]),precise(ctx.c[i-1]),precise(state.true_range[i]),precise(state.simple_mean65[i]),precise(state.close_fraction[i]),state.friday[i],state.high_volatility[i],state.high_volatility[i],state.upper_zone[i],state.lower_zone[i],state.exact_supported[i],state.direction[i]);
+        }
+        o.push_str("],\"orders\":[");
+        let mut first_order=true;
+        for t in &run.trades {
+            let entry=t.legs[0].i;
+            if !first_order {o.push(',');}first_order=false;
+            let _=write!(o,"{{\"date\":\"{}\",\"source_index\":{},\"phase\":\"close\",\"event\":\"entry\",\"source_signal_date\":\"{}\",\"direction\":{},\"price\":{},\"filled\":true}}",ctx.r[entry].date,entry,ctx.r[t.signal_i].date,t.dir,precise(t.legs[0].px));
+            if !t.open {let _=write!(o,",{{\"date\":\"{}\",\"source_index\":{},\"phase\":\"open\",\"event\":\"exit\",\"direction\":{},\"price\":{},\"filled\":true}}",ctx.r[t.exit_i].date,t.exit_i,t.dir,precise(t.exit_px));}
+        }
+        o.push_str("],\"normalized_equity_with_liquidation_estimate\":[");
+        for (i,value) in run.equity.iter().enumerate(){if i>0{o.push(',');}o.push_str(&precise(*value));}
+        o.push_str("]}");
     }
     let gross_equity=run.source_account.as_ref().map_or_else(||equity_curve(&ctx.c,&run.trades,from,to,0.),|a|a.days.iter().map(|d|d.gross).collect());
     o.push_str(",\"gross_equity\":");arr(&mut o,&mut gross_equity.iter().copied().map(num));
@@ -1332,6 +1450,65 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn hv_exit_diagnostic_uses_actual_open_date_without_future_close_indicators() {
+        let rows=vec![Row{ticker:"AAPL".into(),date:"2024-04-01".into(),open:100.,high:110.,low:99.,close:109.,volume:None},Row{ticker:"AAPL".into(),date:"2024-04-02".into(),open:112.,high:120.,low:110.,close:119.,volume:None}];
+        let ctx=Ctx::new(&rows,&[],&[]);let mut t=Trade{dir:1.,legs:vec![connors::Leg{i:0,px:109.,w:1.}],exit_i:1,exit_px:112.,reason:"next open".into(),entry_kind:"close",signal_i:0,open:false,exits:vec![]};
+        let s=hv_exit_snapshot(&ctx,&t);assert!(s.contains("2024-04-02"));assert!(s.contains("\"execution_px\":112"));assert!(s.contains("\"close\":null"));assert!(!s.contains("119"));
+        t.open=true;assert_eq!(hv_exit_snapshot(&ctx,&t),"null");
+    }
+    #[test]
+    fn hv_queries_reject_raw_unknown_nonfinite_alternate_and_unreviewed_grids() {
+        let base=BTreeMap::from([("id".into(),books::kfsc::HV_ID.into())]);assert!(checked_params_of(&base).is_ok());
+        for setting in books::kfsc::params(books::kfsc::HV_ID).unwrap() {
+            for prefix in ["p.","g."] {let mut q=base.clone();q.insert(format!("{prefix}{}",setting.key),setting.def.to_string());assert!(checked_params_of(&q).is_ok());
+                for raw in ["garbage".into(),"".into(),"NaN".into(),"inf".into(),format!("{:.12}",setting.def+1e-10)] {q.insert(format!("{prefix}{}",setting.key),raw);assert!(checked_params_of(&q).is_err(),"{q:?}");}}
+            for raw in ["0:inf:1","0:1:1e-300","-1e308:1e308:1","0:1:inf","0:0:0","0:0:-1","0:0:1:1"] {let mut q=base.clone();q.insert(format!("g.{}",setting.key),raw.into());assert!(checked_params_of(&q).is_err());}
+        }
+        for key in ["p.unknown","g.unknown","p.fill","p.kind"] {let mut q=base.clone();q.insert(key.into(),"0".into());assert!(checked_params_of(&q).is_err());}
+        for (key,raw) in [("p.atr","65.00000000000000000001"),("p.atr_lag","1e-400"),("g.atr","65.00000000000000000001"),("g.atr_lag","0:1e-400:1"),("g.zone",".10000000000000000001")] {let mut q=base.clone();q.insert(key.into(),raw.into());assert!(checked_params_of(&q).is_err(),"{q:?}");}
+        for (key,raw) in [("p.atr","6.5e1"),("p.zone","1e-1"),("p.atr_lag","-0.000"),("g.factor","2.00:20e-1:0.1")] {let mut q=base.clone();q.insert(key.into(),raw.into());assert!(checked_params_of(&q).is_ok(),"{q:?}");}
+    }
+    #[test]
+    fn reviewed_momentum_queries_reject_legacy_constants_and_raw_grid_overflow() {
+        for &id in books::kfsc::MOMENTUM_STOCK_IDS {
+            let base=BTreeMap::from([("id".into(),id.into())]);assert!(checked_params_of(&base).is_ok());
+            for s in books::kfsc::params(id).unwrap() {
+                for prefix in ["p.","g."] {
+                    let mut q=base.clone();q.insert(format!("{prefix}{}",s.key),s.def.to_string());assert!(checked_params_of(&q).is_ok());
+                    for raw in ["garbage".to_string(),"".into(),"NaN".into(),"inf".into(),format!("{:.12}",s.def+1e-10)] {
+                        q.insert(format!("{prefix}{}",s.key),raw);assert!(checked_params_of(&q).is_err(),"{q:?}");
+                    }
+                }
+                let mut q=base.clone();q.insert(format!("g.{}",s.key),format!("{}:{}:1e-300",s.def,s.def));assert!(checked_params_of(&q).is_ok());
+                for raw in ["0:inf:1","0:1:1e-300","-1e308:1e308:1","0:1:inf","0:0:0","0:0:-1","0:0:1:1"] {
+                    q.insert(format!("g.{}",s.key),raw.into());assert!(checked_params_of(&q).is_err(),"{q:?}");
+                }
+            }
+            for key in ["p.unknown","g.unknown","p.kind","p.fill"] {let mut q=base.clone();q.insert(key.into(),"0".into());assert!(checked_params_of(&q).is_err());}
+        }
+        let legacy=BTreeMap::from([("id".into(),"kfsc_stoch".into()),("p.atr".into(),"garbage".into())]);assert!(checked_params_of(&legacy).is_ok());
+    }
+    #[test]
+    fn reviewed_short_course_raw_values_and_grids_reject_rounded_or_unbounded_variants() {
+        for &id in books::kfsc::REVIEWED_STOCK_IDS {
+            let base=BTreeMap::from([("id".into(),id.into())]);assert!(checked_params_of(&base).is_ok());
+            for s in books::kfsc::params(id).unwrap() {
+                for prefix in ["p.","g."] {
+                    let mut q=base.clone();q.insert(format!("{prefix}{}",s.key),s.def.to_string());assert!(checked_params_of(&q).is_ok());
+                    for raw in ["garbage".to_string(),"".into(),"NaN".into(),"inf".into(),format!("{:.11}",s.def+1e-10)] {
+                        q.insert(format!("{prefix}{}",s.key),raw);assert!(checked_params_of(&q).is_err(),"{q:?}");
+                    }
+                }
+                let mut q=base.clone();q.insert(format!("g.{}",s.key),format!("{}:{}:0.1",s.def,s.def));assert!(checked_params_of(&q).is_ok());
+                for raw in ["0:inf:1","0:1:1e-300","-1e308:1e308:1","0:1:inf","0:0:0","0:0:-1","0:0:1:1"] {
+                    q.insert(format!("g.{}",s.key),raw.into());assert!(checked_params_of(&q).is_err(),"{q:?}");
+                }
+            }
+            for key in ["p.unknown","g.unknown"] {let mut q=base.clone();q.insert(key.into(),"0".into());assert!(checked_params_of(&q).is_err());}
+        }
+        let legacy=BTreeMap::from([("id".into(),"kfsc_stoch".into()),("p.atr".into(),"garbage".into())]);assert!(checked_params_of(&legacy).is_ok());
+    }
     #[test]
     fn reviewed_four_burns_queries_and_grids_fail_closed_without_changing_legacy() {
         for id in books::sbma::FOUR_REVIEWED_STOCK_IDS {

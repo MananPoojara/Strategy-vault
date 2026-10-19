@@ -35,6 +35,43 @@ function mockLine() { return { setData: vi.fn(), applyOptions: vi.fn(), createPr
 afterEach(() => { document.body.innerHTML = ""; vi.restoreAllMocks(); });
 
 describe("strategy indicator companion charts", () => {
+  it('starts the optional main-chart disclosure closed without hiding the visual-guide controls', () => {
+    const host=document.createElement('div');host.innerHTML=indicatorControlsHTML(result(),true);
+    const details=host.querySelector('details')!;
+    expect(details.open).toBe(false);
+    expect(details.querySelector('summary')?.textContent).toContain('Indicators');
+    expect(details.querySelector('summary')?.textContent).toContain('+DI(2)');
+    expect(indicatorControlsHTML(result())).not.toContain('<details');
+    expect(indicatorControlsHTML({status:'unavailable',series:[],note:'Required history unavailable'},true)).not.toContain('<details');
+  });
+  it('collapses overlays and panes, restores checkbox choices and resizes charts on expansion', () => {
+    const host=document.createElement('div');host.innerHTML=indicatorControlsHTML(result(),true);document.body.append(host);
+    const details=host.querySelector('details')!,root=host.querySelector<HTMLElement>('[data-strategy-indicators]')!;
+    const price=mockChart(),panes=[mockChart(),mockChart()];let next=0;
+    const controller=mountStrategyIndicators({root,chart:price.chart,result:result(),library:{createChart:()=>panes[next++].chart}});
+    expect(price.lines[0].applyOptions).toHaveBeenLastCalledWith({visible:false});
+    expect(panes[0].lines[0].applyOptions).toHaveBeenLastCalledWith({visible:false});
+    details.open=true;details.dispatchEvent(new Event('toggle'));
+    expect(price.lines[0].applyOptions).toHaveBeenLastCalledWith({visible:true});
+    expect(panes[0].chart.resize).toHaveBeenCalled();
+    controller.setVisible('rsi',false);
+    details.open=false;details.dispatchEvent(new Event('toggle'));
+    details.open=true;details.dispatchEvent(new Event('toggle'));
+    expect(root.querySelector<HTMLInputElement>('[data-indicator-toggle="rsi"]')!.checked).toBe(false);
+    expect(panes[0].lines[0].applyOptions).toHaveBeenLastCalledWith({visible:false});
+    expect(panes[1].lines[0].applyOptions).toHaveBeenLastCalledWith({visible:true});
+    controller.dispose();const calls=panes[1].lines[0].applyOptions.mock.calls.length;
+    details.open=false;details.dispatchEvent(new Event('toggle'));
+    expect(panes[1].lines[0].applyOptions).toHaveBeenCalledTimes(calls);
+    expect(price.chart.remove).not.toHaveBeenCalled();
+  });
+  it('distinguishes fast/slow, MACD/signal and upper/lower lines with the active theme palette',()=>{
+    const model=result();model.series=['fast','slow','macd','macd-signal','upper','lower'].map(key=>({...model.series[0],key}));
+    const host=document.createElement('div');host.innerHTML=indicatorControlsHTML(model);document.body.append(host);
+    const price=mockChart();const controller=mountStrategyIndicators({root:host,chart:price.chart,result:model,library:{createChart:()=>mockChart().chart},colors:{trend:'blue',ma:'violet',reference:'gray',di:'green'}});
+    const colors=price.chart.addLineSeries.mock.calls.map(call=>(call as unknown as [Record<string,unknown>])[0].color);
+    expect(colors).toEqual(['blue','violet','blue','violet','gray','green']);controller.dispose();
+  });
   it("preserves a hidden indicator when the price chart is remounted for another timeframe", () => {
     const host = document.createElement('div');host.innerHTML=indicatorControlsHTML(result());document.body.append(host);
     const root=host.firstElementChild as HTMLElement;

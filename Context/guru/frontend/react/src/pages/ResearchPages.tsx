@@ -2,6 +2,7 @@ import type { ViewSnapshot } from "../state/store";
 import { ResearchMarkup } from "../components/ResearchMarkup";
 import { StrategySettings } from "../components/StrategySettings";
 import {SourceAccountNotice} from "../components/SourceAccountNotice";
+import {RulesVisualGuide} from "../components/RulesVisualGuide";
 // These presenters preserve reviewed rules, admission notices, charts and exports.
 // The React-owned page boundary remounts when the immutable result revision changes.
 export function AuthorPage({ snapshot }: { snapshot: ViewSnapshot }) {
@@ -14,6 +15,7 @@ export function StrategyPage({ snapshot }: { snapshot: ViewSnapshot }) {
   const mode = snapshot.state.report_mode === "compound" ? "compound" : "fixed";
   const basket = snapshot.state.run_scope === "basket";
   return <ResearchMarkup html={snapshot.html} slots={{
+    "visual-rules": snapshot.strategyRules ? <RulesVisualGuide model={snapshot.strategyRules} /> : null,
     "strategy-settings": <StrategySettings
       mode={mode}
       sourceAccount={Boolean(snapshot.strategyAccount)}

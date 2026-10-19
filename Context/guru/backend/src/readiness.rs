@@ -16,7 +16,63 @@ fn event_column(name: &str) -> bool {
     ["LONG_FILLS", "SHORT_FILLS", "LONG_STOPS", "SHORT_STOPS", "VIXFILL_", "VIXUP_", "VIXDN_"].iter().any(|prefix| name.starts_with(prefix))
 }
 
+#[cfg(test)]
+mod short_course_readiness_tests {
+    use super::*;
+    #[test]
+    fn momentum_uses_actual_preceding_states_and_does_not_reseed_bad_history() {
+        let mut rows:Vec<crate::Row>=(0..100).map(|i|crate::Row {ticker:"RELIANCE".into(),date:format!("2020-{:02}-{:02}",i/28+1,i%28+1),open:100.,high:101.,low:99.,close:100.,volume:None}).collect();
+        for &id in books::kfsc::MOMENTUM_STOCK_IDS {
+            let def=books::kfsc::catalogue().into_iter().find(|d|d.id==id).unwrap();let ctx=Ctx::new(&rows,&rows,&[]);let required=if id=="kfsc_macd" {1} else {12};
+            assert_eq!(check(&ctx,&def,required-1,99,&Params::new()).unwrap().status,"needs_data");assert!(check(&ctx,&def,required,99,&Params::new()).is_none());
+            assert_eq!(check(&ctx,&def,20,99,&Params::from([("kind".into(),0.)])).unwrap().status,"not_testable");
+        }
+        rows[0].close=f64::NAN;let ctx=Ctx::new(&rows,&rows,&[]);let def=books::kfsc::catalogue().into_iter().find(|d|d.id=="kfsc_macd").unwrap();
+        assert!(check(&ctx,&def,20,99,&Params::new()).unwrap().note.contains("invalid closing prices"));
+    }
+    #[test]
+    fn short_course_requires_real_warmup_and_exact_source_parameters() {
+        let mut rows:Vec<crate::Row>=(0..100).map(|i|crate::Row {ticker:"RELIANCE".into(),date:format!("2020-{:02}-{:02}",i/28+1,i%28+1),open:100.,high:101.,low:99.,close:100.,volume:None}).collect();
+        for &id in books::kfsc::REVIEWED_STOCK_IDS {
+            let def=books::kfsc::catalogue().into_iter().find(|d|d.id==id).unwrap();let ctx=Ctx::new(&rows,&rows,&[]);
+            let warmup=if id=="kfsc_two_ma" {80} else {19};
+            assert_eq!(check(&ctx,&def,warmup-1,99,&Params::new()).unwrap().status,"needs_data");
+            assert!(check(&ctx,&def,warmup,99,&Params::new()).is_none());
+            assert_eq!(check(&ctx,&def,80,99,&Params::from([("source_convention".into(),1.)])).unwrap().status,"not_testable");
+        }
+        rows[2].close=f64::NAN;let ctx=Ctx::new(&rows,&rows,&[]);
+        let def=books::kfsc::catalogue().into_iter().find(|d|d.id=="kfsc_two_ma").unwrap();
+        assert!(check(&ctx,&def,80,99,&Params::new()).unwrap().note.contains("warmup contains invalid"));
+    }
+}
+
 pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -> Option<Issue> {
+    if def.book=="kfsc" && books::kfsc::reviewed_hv_rule(def.id) {
+        if let Some(note)=books::kfsc::validate_hv(def.id,p) {return issue("not_testable",note);}
+        if from<65 || to>=ctx.r.len() || from>to {return issue("needs_data","The selected high-volatility application requires 65 genuine true-range observations including the signal day, each with an actual preceding stock close: earliest eligible source index 65 (66 rows). No initial previous close or warmup is invented.");}
+        if ctx.r[from-65..=to].iter().any(|r|!crate::baskets::valid_date(&r.date) || ![r.open,r.high,r.low,r.close].iter().all(|v|v.is_finite()&&*v>0.) || r.low>r.high || r.open<r.low || r.open>r.high || r.close<r.low || r.close>r.high) || ctx.r[from-65..=to].windows(2).any(|w|w[0].date>=w[1].date) {
+            return issue("needs_data","Actual high-volatility warmup/selected observations contain invalid dates, chronology or OHLC. Required observations are not dropped, repaired or filled to manufacture results.");
+        }
+    }
+    if def.book=="kfsc" && books::kfsc::reviewed_hv_rule(def.id) && !books::kfsc::hv_exact_supported(ctx,from,to) {
+        return issue("needs_data","High-volatility exact decimal threshold comparisons exceed supported observed-price precision or arithmetic capacity. No epsilon, rounded threshold or fabricated signal is substituted.");
+    }
+    if def.book=="kfsc" && books::kfsc::reviewed_momentum_rule(def.id) {
+        if let Some(note)=books::kfsc::validate_momentum(def.id,p) {return issue("not_testable",note);}
+        let required=if def.id=="kfsc_macd" {1} else {12};
+        if from<required {return issue("needs_data","This selected Short Course momentum application requires genuine preceding source observations for a crossing/turn: MACD needs a previous seeded state; DSM needs10-day momentum and two observable slope comparisons. Select a later test start; no prices or indicator history are invented.");}
+        if ctx.r.iter().take(from).any(|r|!r.close.is_finite() || r.close<=0.) {
+            return issue("needs_data","Actual Short Course momentum warmup contains invalid closing prices. The full source history is retained; invalid earlier values are not dropped, filled or reseeded to manufacture a result.");
+        }
+    }
+    if def.book=="kfsc" && books::kfsc::reviewed_stock_rule(def.id) {
+        if let Some(note)=books::kfsc::validate_reviewed(def.id,p) {return issue("not_testable",note);}
+        let warmup=if def.id=="kfsc_two_ma" {80} else {19};
+        if from<warmup {return issue("needs_data","This selected Short Course configuration requires actual earlier full-period observations (including both current and previous SMA80 for two_ma). Select a later test start; no indicator history is invented.");}
+        if ctx.r.iter().take(from).any(|r|!r.close.is_finite() || r.close<=0.) {
+            return issue("needs_data","Actual Short Course closing-price warmup contains invalid observations. Earlier rows are not filled, discarded or reseeded to manufacture a result.");
+        }
+    }
     if def.book==books::bllstr::BOOK && books::bllstr::reviewed_daily_index(def.id) {
         // An admitted zero-band ID must not expose a held band/holding/direction
         // variant through query parameters. Keep the reviewed contract explicit.

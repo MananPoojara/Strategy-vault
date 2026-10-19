@@ -126,4 +126,74 @@ class ContinuousConversionTests(unittest.TestCase):
         self.assertEqual(state['live_admissions'],0)
 
 
+    def test_legacy_prompt_bytes_and_job_signature_remain_exact(self):
+        template=Path(__file__).with_name('continuous_conversion_prompt.txt')
+        folder=self.state/'jobs'/'one-book.convert'
+        context={**self.task,'phase':'convert','artifact_dir':str(folder),
+            'candidate_workspace':str(self.workspace),'converter_result':str(folder/'result.json'),
+            'frozen_candidate':str(folder/'candidate-files.json'),'reviewer_identity':'one-book.convert','admitted':False}
+        expected=template.read_text()+'\n'+json.dumps(context,indent=2)+'\n'
+        job=queue.make_job(self.task,'convert',self.workspace,self.state,'/usr/bin/codex',template)
+        self.assertEqual(Path(job['stdin_file']).read_text(),expected)
+        first=queue.worker.digest(job)
+        self.assertEqual(queue.worker.digest(queue.make_job(self.task,'convert',self.workspace,self.state,'/usr/bin/codex',template)),first)
+
+    def test_cursor_optin_requires_typed_supported_contract(self):
+        path=self.state/'backlog.json'
+        for changes in ({'source_cursor_required':'true'},{'source_cursor_contract_version':True},
+                        {'source_cursor_contract_version':2}):
+            path.write_text(json.dumps({'schema_version':1,'approved_by':'owner','tasks':[{**self.task,**changes}]}))
+            with self.assertRaisesRegex(ValueError,'source_cursor_required|source cursor contract'):
+                queue.load_backlog(path)
+
+    def test_flagged_task_with_existing_legacy_prompt_stays_legacy_both_phases(self):
+        self.task['source_cursor_required']=True
+        template=Path(__file__).with_name('continuous_conversion_prompt.txt')
+        folder=self.state/'jobs'/'one-book.convert';folder.mkdir(parents=True)
+        context={**self.task,'phase':'convert','artifact_dir':str(folder),'candidate_workspace':str(self.workspace),
+            'converter_result':str(folder/'result.json'),'frozen_candidate':str(folder/'candidate-files.json'),
+            'reviewer_identity':'one-book.convert','admitted':False}
+        text=template.read_text()+'\n'+json.dumps(context,indent=2)+'\n';(folder/'prompt.txt').write_text(text)
+        job=queue.make_job(self.task,'convert',self.workspace,self.state,'/usr/bin/codex',template)
+        self.assertEqual(Path(job['stdin_file']).read_text(),text)
+        review=queue.make_job(self.task,'review',self.workspace,self.state,'/usr/bin/codex',template)
+        self.assertNotIn('"source_cursor":',Path(review['stdin_file']).read_text())
+        self.assertEqual(queue.cursor.context_version(self.task,self.state),1)
+
+    def test_new_optin_prompt_context_is_versioned_and_pinned_for_retry(self):
+        self.task['source_cursor_required']=True
+        template=self.root/'template.txt';template.write_text('Frozen base prompt fixture')
+        first=queue.make_job(self.task,'convert',self.workspace,self.state,'/usr/bin/codex',template)
+        text=Path(first['stdin_file']).read_text();self.assertIn('"source_cursor":',text)
+        template.write_text('Changed future template; existing retry must stay frozen')
+        retry=queue.make_job(self.task,'convert',self.workspace,self.state,'/usr/bin/codex',template)
+        self.assertEqual(Path(retry['stdin_file']).read_text(),text);self.assertEqual(queue.worker.digest(first),queue.worker.digest(retry))
+        self.assertEqual(queue.cursor.context_version(self.task,self.state),2)
+        self.task['scope']='Changed task is not a retry of the same specification'
+        with self.assertRaisesRegex(ValueError,'Pinned job context changed'):
+            queue.make_job(self.task,'convert',self.workspace,self.state,'/usr/bin/codex',template)
+
+    def test_new_cursor_task_records_held_scope_and_disjoint_proposals_end_to_end(self):
+        from test_source_cursor import pdf_fixture,cells
+        pdf=self.root/'source.pdf';pdf_fixture(pdf)
+        self.task.update(source_paths=[str(pdf)],source_hashes={str(pdf):queue.sha256(pdf)},source_cursor_required=True)
+        backlog=self.state/'backlog.json';payload={'schema_version':1,'approved_by':'owner','tasks':[self.task]};backlog.write_text(json.dumps(payload));before=backlog.read_bytes()
+        template=Path(__file__).with_name('continuous_conversion_prompt.txt')
+        result={'source_reviewed':True,'implementation_ready':False,'ledger_checked':False,'checked_trades':0,'admitted':False,'method_ids':['held-method'],'evidence':[]}
+        def stage(task,phase,workspace,state,codex):
+            queue.make_job(task,phase,workspace,state,codex,template)
+            folder=state/'jobs'/(task['id']+'.'+phase);e=folder/'evidence.txt';e.write_text('Generated fixture evidence')
+            coverage={'source_sha256':queue.sha256(pdf),'physical_pages':4,'bibliographic_completeness':'partial','missing_printed_pages':['Final volume not supplied'],'inventory_complete':True,
+                'sections':[{'id':'read-chapter','pages':cells(1,2),'status':'read','methods':[{'id':'held-method','family_id':'one-family','kind':'strategy','state':'held','hold_reason':'Actual required derivative input absent'}],'evidence_ids':['proof']},
+                            {'id':'unseen-chapter','pages':cells(3,4),'status':'unread','methods':[],'evidence_ids':[]}],
+                'batch_section_ids':['read-chapter'],'batch_method_ids':['held-method']}
+            value={'schema_version':1,'job_id':task['id']+'.'+phase,'coverage':coverage,'evidence':[{'id':'proof','path':'evidence.txt','sha256':queue.sha256(e),'pages':cells(1,2)}]}
+            if phase=='review':value.update(accepted=True,converter_sidecar_sha256=queue.sha256(state/'jobs'/(task['id']+'.convert')/'source-coverage.json'))
+            (folder/'source-coverage.json').write_text(json.dumps(value));return result
+        with mock.patch.object(queue,'prepare_workspace',return_value=self.workspace),mock.patch.object(queue,'run_stage',side_effect=stage),mock.patch.object(queue,'candidate_snapshot',return_value={}):
+            self.assertEqual(queue.run(backlog,self.state,self.workspace,self.root/'worktrees','/usr/bin/codex'),0)
+        self.assertEqual(backlog.read_bytes(),before);pipeline=json.loads((self.state/'pipeline.json').read_text());self.assertEqual(pipeline['tasks']['one-book']['status'],'held');self.assertEqual(pipeline['live_admissions'],0)
+        registry=json.loads((self.state/'source-cursors.json').read_text());record=registry['sources'][queue.sha256(pdf)];self.assertEqual(record['unread_section_ids'],['unseen-chapter']);self.assertEqual(record['proposals'][0]['section_ids'],['unseen-chapter']);self.assertFalse(record['complete_bibliographic_work_reviewed'])
+
+
 if __name__=='__main__':unittest.main()
