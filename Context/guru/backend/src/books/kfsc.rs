@@ -335,8 +335,8 @@ pub fn hv_requested_end_issue(rows:&[crate::Row],calendar:&[crate::Row],to:usize
     if calendar.iter().any(|r|r.date.as_str()>last.date.as_str() && r.date.as_str()<=end) {
         return Some("A genuine native market session inside the requested end is missing from the selected stock observations. The requested window cannot silently end at the preceding available stock row.".into());
     }
-    if calendar.last().map_or(true,|r|r.date.as_str()<last.date.as_str()) {
-        return Some("The native market-session calendar does not cover the requested stock end.".into());
+    if calendar.last().map_or(true,|r|r.date.as_str()<end) {
+        return Some("The native market-session calendar does not cover the explicit requested end. An unobserved final session cannot be declared a holiday or silently removed.".into());
     }
     None
 }
@@ -685,6 +685,14 @@ mod hv_source_tests {
         assert!(hv_requested_end_issue(&r,&r,74,None).is_none());
         let holiday_calendar:Vec<Row>=r.iter().filter(|v|v.date!=requested).cloned().collect();
         assert!(hv_requested_end_issue(&missing_end,&holiday_calendar,74,Some(&requested)).is_none());
+        // A truncated calendar cannot certify a missing Monday just because
+        // the stock resolver snaps to its preceding Friday row.
+        let mut monday_gap=r.clone();monday_gap.remove(70);
+        assert_eq!(weekday(&r[69].date),4);assert_eq!(weekday(&r[70].date),0);
+        assert!(hv_requested_end_issue(&monday_gap,&r[..=69],69,Some(&r[70].date)).is_some());
+        // A known later session establishes that the intervening weekend
+        // contributes no expected stock session.
+        assert!(hv_requested_end_issue(&r,&r,69,Some("2024-04-06")).is_none());
     }
     #[test]
     fn hv_exact_decimal_capacity_and_unchanged_parameters_fail_closed() {
