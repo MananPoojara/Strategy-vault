@@ -653,6 +653,22 @@ fn params_of(q: &BTreeMap<String, String>) -> Params {
     q.iter().filter_map(|(k, v)| Some((k.strip_prefix("p.")?.to_string(), v.parse().ok()?))).collect()
 }
 
+/// Compare an HV setting's raw decimal text before binary float rounding or
+/// underflow. Equivalent scientific notation is allowed; no parameter is rounded.
+fn hv_raw_default(text:&str,default:f64)->bool {
+    fn canonical(text:&str)->Option<(String,i64)> {
+        let (negative,text)=if let Some(v)=text.strip_prefix('-'){(true,v)}else{(false,text.strip_prefix('+').unwrap_or(text))};
+        let (mantissa,exponent)=if let Some(i)=text.find(|c|c=='e'||c=='E'){(&text[..i],text[i+1..].parse::<i64>().ok()?)}else{(text,0)};
+        let (whole,fraction)=mantissa.split_once('.').unwrap_or((mantissa,""));
+        let digits=format!("{whole}{fraction}");if digits.is_empty()||!digits.bytes().all(|b|b.is_ascii_digit()){return None;}
+        let digits=digits.trim_start_matches('0');if digits.is_empty(){return Some(("0".into(),0));}if negative{return None;}
+        let significant=digits.trim_end_matches('0');
+        let power=exponent.checked_sub(fraction.len() as i64)?.checked_add((digits.len()-significant.len()) as i64)?;
+        Some((significant.into(),power))
+    }
+    canonical(text).is_some_and(|v|Some(v)==canonical(&default.to_string()))
+}
+
 /// New exact-default reviews must not silently discard malformed query inputs.
 /// Existing methods keep their previous parsing contract until separately reviewed.
 fn checked_params_of(q: &BTreeMap<String, String>) -> Result<Params,String> {
@@ -663,13 +679,16 @@ fn checked_params_of(q: &BTreeMap<String, String>) -> Result<Params,String> {
             if let Some(name)=key.strip_prefix("p.") {
                 let value=text.parse::<f64>().map_err(|_|format!("Invalid high-volatility parameter: {key}"))?;
                 if let Some(note)=books::kfsc::validate_hv(id,&Params::from([(name.into(),value)])) {return Err(note.into());}
+                let setting=schema.iter().find(|s|s.key==name).ok_or_else(||format!("Unknown high-volatility parameter: {key}"))?;
+                if !hv_raw_default(text,setting.def){return Err(format!("High-volatility parameter {key} must equal its exact reviewed decimal value before rounding or underflow"));}
             }
             if let Some(name)=key.strip_prefix("g.") {
                 let setting=schema.iter().find(|s|s.key==name).ok_or_else(||format!("Unknown high-volatility grid parameter: {key}"))?;
                 let values:Vec<f64>=text.split(':').map(|v|v.trim().parse::<f64>()).collect::<Result<_,_>>().map_err(|_|format!("Invalid high-volatility grid: {key}"))?;
-                let allowed=values.iter().all(|v|v.is_finite()) && match values.as_slice() {
-                    [v]=>*v==setting.def,
-                    [lo,hi,step]=>*lo==setting.def && *hi==setting.def && *step>0.,
+                let raw:Vec<&str>=text.split(':').map(str::trim).collect();
+                let allowed=values.iter().all(|v|v.is_finite()) && match (values.as_slice(),raw.as_slice()) {
+                    ([v],[text])=>*v==setting.def && hv_raw_default(text,setting.def),
+                    ([lo,hi,step],[raw_lo,raw_hi,_])=>*lo==setting.def && *hi==setting.def && *step>0. && hv_raw_default(raw_lo,setting.def) && hv_raw_default(raw_hi,setting.def),
                     _=>false,
                 };
                 if !allowed {return Err(format!("High-volatility grid {key} covers only one exact reviewed setting; finite unchanged endpoints and a finite positive step are required"));}
@@ -1444,6 +1463,8 @@ mod tests {
             for raw in ["0:inf:1","0:1:1e-300","-1e308:1e308:1","0:1:inf","0:0:0","0:0:-1","0:0:1:1"] {let mut q=base.clone();q.insert(format!("g.{}",setting.key),raw.into());assert!(checked_params_of(&q).is_err());}
         }
         for key in ["p.unknown","g.unknown","p.fill","p.kind"] {let mut q=base.clone();q.insert(key.into(),"0".into());assert!(checked_params_of(&q).is_err());}
+        for (key,raw) in [("p.atr","65.00000000000000000001"),("p.atr_lag","1e-400"),("g.atr","65.00000000000000000001"),("g.atr_lag","0:1e-400:1"),("g.zone",".10000000000000000001")] {let mut q=base.clone();q.insert(key.into(),raw.into());assert!(checked_params_of(&q).is_err(),"{q:?}");}
+        for (key,raw) in [("p.atr","6.5e1"),("p.zone","1e-1"),("p.atr_lag","-0.000"),("g.factor","2.00:20e-1:0.1")] {let mut q=base.clone();q.insert(key.into(),raw.into());assert!(checked_params_of(&q).is_ok(),"{q:?}");}
     }
     #[test]
     fn reviewed_momentum_queries_reject_legacy_constants_and_raw_grid_overflow() {
