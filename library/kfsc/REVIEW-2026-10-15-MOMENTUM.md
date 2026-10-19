@@ -1,6 +1,6 @@
-# Short Course: literal MACD and double-smoothed momentum research candidates
+# Short Course: literal MACD and double-smoothed momentum research applications
 
-This document records a bounded source/implementation candidate. It does not claim public deployment, independent approval or whole-book completion. Exact future source admission and release require a different reviewer and root integration. The earlier three configurations' accepted interpretation remains unchanged.
+This document records the selected source interpretation and its bounded research scope. The candidate was independently reviewed and released at `9c3f807`; the final verification record is below. This is not whole-book completion. The earlier three configurations' accepted interpretation remains unchanged.
 
 The source is Perry J. Kaufman, *A Short Course in Technical Trading*, Wiley2003, private339-page PDF SHA256`11dfd5d543d7bd0ab7c43a2e2f4a3593a7be9eee1c9a2fae124f6042601d857e`. Physical pages are printed+13. Direct text and actual figure images were read before changing calculations; the old catalogue/overnight eleven-method work was a locator, not proof.
 
@@ -30,4 +30,18 @@ Short stock exposure is hypothetical without certified locate/borrow, margin or 
 
 Printed216–218 says the range excludes today; the actual Nokia spreadsheet on217 clearly uses a10-observation window including today. Printed219 gives threshold/crossing timing;220 specifies the first crossing after an extreme, requiring a precise excursion/re-arm choice. More materially,222–223 permits both directions in sideways conditions and selects direction in trends, without an objective regime classifier. Dropping that requirement would substitute a different unfiltered strategy. The oscillator/table can be explained as reading material; no verified strategy/backtest admission follows. Legacy illustrative execution code is not used as proof and remains held.
 
-Private source pages, fresh chronological reference, full indicator/order/trade/equity comparisons, adverse/prefix/cost tests and exact binary/input manifests remain outside Git. A catalogue entry alone is not verification. This candidate's source/API evidence and separate review must be bound before any live release.
+Private source pages, fresh chronological reference, full indicator/order/trade/equity comparisons, adverse/prefix/cost tests and exact binary/input manifests remain outside Git. A catalogue entry alone is not verification. The selected release's source/API evidence and separate review are bound in the receipts below.
+
+## Selected integration and verification
+
+The different reviewer accepted source candidate `002a695e8c39e4cc69ceb8b8d60f209960350f3c` for exactly `kfsc_macd` and `kfsc_dsm`. The current integration `9c3f8074c5f86d99b1dfd98e8c38cc22ebcd4fd2` preserves the same backend, the earlier reviewed methods and the existing login/interface. `kfsc_stoch` remains held; no other chapter or instrument receives admission through this release.
+
+The source-first independent reference checked all 16,675 actual AAPL/RELIANCE source rows, eight full ledgers, 25 independently selected event prefixes, 372 request guards and 10 singleton grids with zero mismatches. The source-built production binary separately preserved 324 complete response bodies, 2,414 status/body contracts and 60 optimization payloads; only optimization runtime is excluded. The normal LAN browser checked eight API cases, eight closed-sum/closed-compound views, 23 held requests and four actual Excel downloads without page or console errors. All 17 export columns across 482 scenario position records match the bound production ledgers. Repeated scenarios and source rows are verification cases, not counts of new strategies.
+
+On 2026-10-19, the running engine binaries, bound inputs and eight authenticated live responses were revalidated. Additive closed-trade return, closed-only compounding and open-marked research equity keep their separate bases. Monetary P&L/taxes remain empty without quantities; exported observed excursions retain their partial daily-bar qualification. Losing outcomes are included. These checks do not certify original source populations, prices, capital, borrowing or book-reported performance.
+
+Private receipt SHA256 identities:
+
+- Independent source acceptance: `2a3dacbc77dd77e21c3fbd62fad056c2eb6c1b4405da8704ab94eb9f61917314`.
+- Current-source integration qualification: `965cf65c52deb38899c26e7c6640720f24494575b06605e7d771c45172995a01`.
+- Root production, browser, download and current-live release: `26c53867dab25e3961542c6dc51dd211b8df5d26d4d25959452aaae4ed26a69d`.
