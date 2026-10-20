@@ -14,7 +14,7 @@
 //! Chapter 10 (S&P timing) measures close-to-close returns, so those rules fill at the close of the signal day.
 //! The original mixed-instrument study used volatility-scaled dollar sizing. Selected-stock
 //! normalized percentage research is a separate application and cannot reproduce those dollar figures.
-use crate::connors::{rsi, sma, true_range, Claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
+use crate::connors::{sma, true_range, Claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "lkqts";
 
@@ -45,6 +45,108 @@ pub fn stock_history_issue(id: &str, x: &Ctx, from: usize, to: usize) -> Option<
         return Some("Full supplied Kestner indicator history contains invalid OHLC, dates, chronology or mixed symbols. Earlier observations are not dropped, filled or reseeded to manufacture results.");
     }
     None
+}
+
+/// Unadmitted conversion candidates, deliberately separate from STOCK_CANDIDATE_IDS.
+/// Source/indicator declarations are recorded in docs/kestner-next-stock-candidates.md.
+pub const NEXT_CANDIDATE_IDS: &[&str] = &[
+    "lkqts_volbo", "lkqts_rsi14", "lkqts_macd", "lkqts_macd_literal_alpha",
+];
+
+pub fn next_candidate(id: &str) -> bool { NEXT_CANDIDATE_IDS.contains(&id) }
+
+pub fn validate_next_candidate(id: &str, p: &Params) -> Option<String> {
+    if !next_candidate(id) { return Some("Not a next Kestner conversion candidate".into()); }
+    let schema=params(id)?;
+    (!p.iter().all(|(key,value)| value.is_finite() && schema.iter().any(|s|s.key==key && *value==s.def)))
+        .then(|| "Next Kestner candidates require exact volbo100/2, declared RSI14/35/65 or the named fixed MACD12/26/9 alpha profile. Changed, unknown, fractional or nonfinite settings are not rounded into this contract. These candidates are not market-admitted.".into())
+}
+
+/// Validate the genuine prefix used by indicators. Early selected bars can stay
+/// flat until the declared indicator exists; requested dates are not shortened.
+pub fn next_history_issue(x: &Ctx, from: usize, to: usize) -> Option<&'static str> {
+    if from>to || to>=x.r.len() { return Some("Next Kestner candidate window is unavailable"); }
+    if x.r[..=to].iter().any(|r| !crate::baskets::valid_date(&r.date)
+        || ![r.open,r.high,r.low,r.close].iter().all(|v|v.is_finite() && *v>0.)
+        || r.low>r.high || r.open<r.low || r.open>r.high || r.close<r.low || r.close>r.high)
+        || x.r[..=to].windows(2).any(|w|w[0].date>=w[1].date || w[0].ticker!=w[1].ticker) {
+        return Some("Next Kestner full source prefix requires genuine finite positive OHLC, strictly ordered dates and one identity. No observations are dropped, filled or reseeded; original quantities, borrow and financing are unsupported.");
+    }
+    None
+}
+
+fn next_population_variance(v: &[f64]) -> Option<f64> {
+    if v.is_empty() || v.iter().any(|v|!v.is_finite()) { return None; }
+    let mean=v.iter().sum::<f64>()/v.len() as f64;
+    let variance=v.iter().map(|v|(v-mean).powi(2)).sum::<f64>()/v.len() as f64;
+    (mean.is_finite() && variance.is_finite() && variance>=0.).then_some(variance)
+}
+
+/// Population/current-inclusive100 changes, strict2-sigma comparison without a
+/// square-root or epsilon. Finite IEEE754 arithmetic is an explicit convention.
+fn next_volbo_signals(c: &[f64]) -> Option<Vec<i8>> {
+    let mut out=vec![0;c.len()];
+    for i in 100..c.len() {
+        let changes:Vec<_>=(i-99..=i).map(|k|c[k]-c[k-1]).collect();
+        let variance=next_population_variance(&changes)?;
+        let delta=changes[99];let square=delta*delta;let threshold=4.*variance;
+        if !square.is_finite() || !threshold.is_finite() { return None; }
+        if square>threshold {out[i]=if delta>0. {1} else if delta<0. {-1} else {0};}
+    }
+    Some(out)
+}
+
+/// Declared Wilder RMA14, seeded with the first14 actual changes. The source
+/// gives average up/down moves, not this recursion/seed; no shared helper changes.
+fn next_rsi_states(c: &[f64]) -> Option<Vec<Option<(f64,f64)>>> {
+    let mut out=vec![None;c.len()];
+    if c.len()<=14 { return Some(out); }
+    let (mut up,mut down)=(0.,0.);
+    for i in 1..=14 {let delta=c[i]-c[i-1];up+=delta.max(0.);down+=(-delta).max(0.);}
+    up/=14.;down/=14.;
+    for i in 14..c.len() {
+        if i>14 {let delta=c[i]-c[i-1];up=(13.*up+delta.max(0.))/14.;down=(13.*down+(-delta).max(0.))/14.;}
+        if ![up,down,13.*up,13.*down,up+down].iter().all(|v|v.is_finite()) {return None;}
+        out[i]=Some((up,down));
+    }
+    Some(out)
+}
+
+fn next_rsi_side(up: f64, down: f64) -> i8 {
+    // RSI<35 iff13U<7D; RSI>65 iff7U>13D. Flat U=D=0
+    // is the declared neutral50 state. Equality never supplies an entry.
+    if 13.*up<7.*down {1} else if 7.*up>13.*down {-1} else {0}
+}
+
+#[cfg(test)]
+fn next_rsi_value(up: f64, down: f64) -> f64 {
+    if up+down==0. {50.} else {100.*up/(up+down)}
+}
+
+fn next_ema_alpha(v: &[f64], alpha: f64) -> Option<Vec<f64>> {
+    let mut out=Vec::with_capacity(v.len());
+    let Some(&first)=v.first() else {return Some(out)};
+    if !first.is_finite() {return None;}
+    let mut state=first;out.push(state);
+    for &value in &v[1..] {
+        // Declared local machine-operation convention: a genuine constant input
+        // preserves its exact seeded value, without an epsilon/phantom cross.
+        state+=alpha*(value-state);
+        if !value.is_finite() || !state.is_finite() {return None;}
+        out.push(state);
+    }
+    Some(out)
+}
+
+/// Two named source interpretations, same first-close seed and signal-line clock.
+/// Literal .15/.075 (p68) is not numerically equal to2/13,2/27 (p57).
+fn next_macd_histogram(c: &[f64], literal: bool) -> Option<Vec<f64>> {
+    let (fast,slow)=if literal {(0.15,0.075)} else {(2./13.,2./27.)};
+    let f=next_ema_alpha(c,fast)?;let s=next_ema_alpha(c,slow)?;
+    let macd:Vec<_>=f.iter().zip(&s).map(|(f,s)|f-s).collect();
+    let signal=next_ema_alpha(&macd,0.2)?;
+    let histogram:Vec<_>=macd.iter().zip(&signal).map(|(m,s)|m-s).collect();
+    histogram.iter().all(|v|v.is_finite()).then_some(histogram)
 }
 
 // ------------------------------------------------------------------ indicators
@@ -210,6 +312,10 @@ fn cl(trades: &'static str, win: &'static str, avg: &'static str, hold: &'static
 
 const IDX: &str = "Original book research used multiple instruments and volatility-scaled dollar sizing. This legacy catalogue entry still requires instrument-specific source, data and accounting review. Registration does not reproduce the source study or authorize an index to substitute for stocks, ETFs or futures.";
 const STOCK_RESEARCH: &str = "Reviewed single-stock price research at fixed source settings; release and measured availability are separate from catalogue registration. Signals use completed closes and next actual session opens. Current-inclusive channel extrema/ties, exit-first collision handling, flat selected-window startup and SMA equality edges are declared conventions. Normalized single-stock long/short returns do not reproduce the book's mixed-instrument volatility-scaled dollar study. No stock basket, index substitution, borrowing, financing, complete exchange calendar or corporate-action correctness is certified by these rules.";
+const NEXT_VOLBO: &str = "Unadmitted conversion candidate. Printed155 supplies strict2-sigma price-change entries and opposite-entry reversals; printed41 supports population variance. Current-inclusive100 actual close changes, strict squared IEEE754 comparison without epsilon, flat selected start and next actual open are declared conventions. Zero-variance signed constant changes can signal; original10000/sigma sizing is undefined there and is not supplied. Actual selected-stock percentage research requires independent data/account/API review; no original performance, stock population, index substitution, borrow or financing certification. See docs/kestner-next-stock-candidates.md.";
+const NEXT_RSI: &str = "Unadmitted conversion candidate. Printed165/170 supplies long below35 and short above65; contradictory sample prose and copied stochastic table labels do not invert those rules. Declared Wilder RMA14 with arithmetic first14-change seed, zero-filled up/down changes, flat RSI50 and strict LEVEL entries. Printed66 does not specify smoothing, seed or flat handling; naming Wilder is not source certification of this implementation. Full genuine prefix, flat selected start, next actual open and opposite reversals; independent selected-stock accounting/admission remain pending. See docs/kestner-next-stock-candidates.md.";
+const NEXT_MACD_PERIOD: &str = "Unadmitted period-alpha MACD candidate. Printed57 gives2/(N+1), while printed68 MACD-specific .15/.075 conflicts with2/13,2/27. This named period profile retains2/13,2/27 and signal1/5; first actual close seeds both price EMAs, MACD/signal start0. Local finite arithmetic uses state+=alpha*(value-state) to preserve constant prices without epsilon. Observed signal-line crossing (previous histogram<=0/current>0, reverse>=0/<0), not MACD-zero crossing; equality holds, full genuine prefix, flat selected start, next actual open. No unique original alpha/default or original performance is claimed. See docs/kestner-next-stock-candidates.md.";
+const NEXT_MACD_LITERAL: &str = "Unadmitted literal-alpha MACD candidate in the same MACD family. Printed68 constants .15/.075 are implemented literally, with declared signal .2 from printed57's9-day rule. They differ from the period2/13,2/27 profile. First-close price seeds, initial MACD/signal0 and local state+=alpha*(value-state) arithmetic preserve constant inputs without epsilon. Observed signal-line crosses and next actual open; no source-original seed or performance certification. Independent source-price/account/API acceptance remains pending. See docs/kestner-next-stock-candidates.md.";
 const P90: &str = "SPX 1/1/1990-12/31/2001 (stock table)";
 
 pub fn catalogue() -> Vec<StrategyDef> {
@@ -247,7 +353,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             ["E|\"enter long if today's price change is greater than twice the standard deviation of price changes over the past 100 days\" (p.155)",
              "E|\"enter short if today's price change is less than negative two times the standard deviation of price changes over the past 100 days\" (p.155)",
              "X|\"no rules for exiting positions, except for an entry in the other direction\" (p.155)"],
-            IDX, cl("89", "30%", "-$3/share", "44 / 28 bars", P90)),
+            NEXT_VOLBO, cl("89", "30%", "-$3/share", "44 / 28 bars", P90)),
         sd!("lkqts_stoch14", "14-day Slow %K stochastic 20/80", G7, "Long/Short", Live,
             ["E|\"Long entries are established when today's 14-day Slow %K stochastic falls below 20 and then crosses back above 20\" (p.155)",
              "E|\"Short entries are established when today's 14-day Slow %K stochastic rises above 80 and then crosses below 80\" (pp.155, 160)",
@@ -258,14 +364,20 @@ pub fn catalogue() -> Vec<StrategyDef> {
             ["E|\"Long entries are established if today's 14-day RSI falls below 35\" (p.165)",
              "E|\"Short entries are established if today's 14-day RSI rises above 65\" (p.165)",
              "X|\"no rules for exiting positions, except for an entry in the other direction\" (p.165)",
-             "F|RSI = 100 - 100/(1+U/D) (p.66); Wilder smoothing (the book cites Wilder 1978)"],
-            IDX, cl("36", "69%", "$0/share", "49 / 160 bars", P90)),
-        sd!("lkqts_macd", "MACD 12/26/9 crossover", G7, "Long/Short", Live,
-            ["F|MACD = 12-day EMA of close - 26-day EMA of close; signal = 9-day EMA of MACD; EMA alpha = 2/(1+days) (pp.57, 68, 170)",
+             "F|Source p.66 gives average up/down moves; RMA14 smoothing, first14-change seed, flat50 and level startup are declared research conventions, not printed executable instructions"],
+            NEXT_RSI, cl("36", "69%", "$0/share", "49 / 160 bars", P90)),
+        sd!("lkqts_macd", "MACD 12/26/9 crossover (period alphas)", G7, "Long/Short", Live,
+            ["F|Declared period profile: fast2/13, slow2/27, signal1/5 (general EMA rule p.57); p.68 instead specifies .15/.075, retained as a separate named variant",
              "E|\"Long entries are established when the MACD rises above the signal line\" (p.170)",
              "E|\"Short entries are established when the MACD falls below the signal line\" (p.170)",
              "X|Reverse on the opposite entry (GE example: \"our short positions are exited and a long position is established\", p.175)"],
-            IDX, cl("260", "30%", "-$2/share", "21 / 7 bars", P90)),
+            NEXT_MACD_PERIOD, cl("260", "30%", "-$2/share", "21 / 7 bars", P90)),
+        sd!("lkqts_macd_literal_alpha", "MACD 12/26/9 crossover (literal .15/.075 alphas)", G7, "Long/Short", NotTestable("Unadmitted source-conversion candidate; independent selected-stock trades, percentage accounting and API checks remain pending"),
+            ["F|Printed p.68 MACD-specific fast .15 and slow .075; signal .2 is a declared application of p.57's9-day EMA rule",
+             "E|Long on an observed MACD/signal upward cross; short on an observed downward cross (p.170)",
+             "X|Opposite entry exits and reverses at the next actual session open (pp.139,175)",
+             "F|First actual close seeds both price EMAs; MACD/signal start0; equality does not itself enter. These are declared conventions"],
+            NEXT_MACD_LITERAL, None),
         // ---------------- Chapter 8
         sd!("lkqts_kma", "Kestner's moving average system (20 & 80 day)", G8, "Long/Short", Live,
             ["F|Sub-system n (n = 20 and 80): long when the close > n-day SMA of highs and the n-day SMA of closes > its value x days ago; short when the close < n-day SMA of lows and the n-day SMA of closes < its value x days ago (p.183)",
@@ -435,6 +547,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
                 "lkqts_cb_afterloss" => "After a loser", "lkqts_cb_afterwin" => "After a winner", "lkqts_cb_trendstat" => "Trend statistic filter",
                 "lkqts_adx_bins" => "ADX band filter", "lkqts_regime" => "ADX regime switch", _ => "Trend filters" }),
         "lkqts_mom20" | "lkqts_mom80" => ("lkqts_mom", "Kestner momentum", if id == "lkqts_mom20" { "20-day" } else { "80-day" }),
+        "lkqts_macd" | "lkqts_macd_literal_alpha" => ("lkqts_macd", "Kestner MACD", if id=="lkqts_macd" {"Period-derived alphas"} else {"Literal .15/.075 alphas"}),
         "lkqts_d100" | "lkqts_d1040" | "lkqts_rv_markets" => ("lkqts_rv", "Kestner relative-value exhaustion", match id { "lkqts_d100" => "100-day stat", "lkqts_d1040" => "10/40 stat", _ => "Spread markets" }),
         "lkqts_dom1" | "lkqts_dom2" => ("lkqts_dom", "Kestner day of month", if id == "lkqts_dom1" { "Strategy 1" } else { "Strategy 2" }),
         "lkqts_vixscore" | "lkqts_gross_vix" | "lkqts_headley_vix" => ("lkqts_vix", "VIX timing of the S&P 500", match id { "lkqts_vixscore" => "Kestner VIX score", "lkqts_gross_vix" => "Gross 30/20", _ => "Headley bands" }),
@@ -462,10 +575,10 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "lkqts_ma1040" => vec![p("fast", "Fast SMA", 10., 10., 10., 1.), p("slow", "Slow SMA", 40., 40., 40., 1.)],
         "lkqts_mom20" => vec![p("n", "Momentum days", 20., 5., 120., 5.)],
         "lkqts_mom80" => vec![p("n", "Momentum days", 80., 80., 80., 1.)],
-        "lkqts_volbo" => vec![p("k", "Sigma multiple", 2., 0.5, 4., 0.25), p("sd_n", "Sigma look-back (price changes)", 100., 20., 250., 10.)],
+        "lkqts_volbo" => vec![p("k", "Sigma multiple", 2., 2., 2., 1.), p("sd_n", "Sigma look-back (price changes)", 100., 100., 100., 1.)],
         "lkqts_stoch14" => vec![p("n", "Stochastic days", 14., 5., 30., 1.), p("lo", "Oversold level", 20., 5., 40., 5.), p("hi", "Overbought level", 80., 60., 95., 5.)],
-        "lkqts_rsi14" => vec![p("n", "RSI days", 14., 2., 30., 1.), p("lo", "Long below", 35., 10., 45., 5.), p("hi", "Short above", 65., 55., 90., 5.)],
-        "lkqts_macd" => vec![p("fast", "Fast EMA", 12., 5., 20., 1.), p("slow", "Slow EMA", 26., 15., 50., 1.), p("sig", "Signal EMA", 9., 3., 20., 1.)],
+        "lkqts_rsi14" => vec![p("n", "Declared RMA days", 14., 14., 14., 1.), p("lo", "Level long below", 35., 35., 35., 1.), p("hi", "Level short above", 65., 65., 65., 1.)],
+        "lkqts_macd" | "lkqts_macd_literal_alpha" => vec![p("fast", "Fast EMA label", 12., 12., 12., 1.), p("slow", "Slow EMA label", 26., 26., 26., 1.), p("sig", "Signal EMA days", 9., 9., 9., 1.)],
         "lkqts_kma" => vec![p("n1", "Short MA length", 20., 5., 50., 5.), p("n2", "Long MA length", 80., 40., 200., 10.), p("x_one", "Filter: compare with yesterday (1, book's GE example and results) or n days ago (0, p.183 'typically')", 1., 0., 1., 1.)],
         "lkqts_sob" => vec![p("search", "Search back (days)", 80., 40., 120., 10.), p("chan", "Statistic channel (days)", 40., 10., 80., 5.), p("min", "Minimum statistic", 20., 5., 40., 5.)],
         "lkqts_macdhr" => vec![p("retrace", "Retracement of the extreme", 0.25, 0.1, 0.5, 0.05), p("arm", "Arming level, x sigma(20)", 0.5, 0.0, 2.0, 0.25), p("sd_n", "Sigma look-back", 20., 10., 50., 5.)],
@@ -591,6 +704,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         return None;
     }
     if stock_candidate(id) && validate_stock_candidate(id,p).is_some() { return None; }
+    if next_candidate(id) && (validate_next_candidate(id,p).is_some() || next_history_issue(x,from,to).is_some()) {return None;}
     let defs = params(id)?;
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| defs.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
     let u = |k: &str| g(k).round().max(1.0) as usize;
@@ -636,26 +750,18 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             sar(x, from, to, &sig, "close > close n days ago", "close < close n days ago")
         }
         "lkqts_volbo" => {
-            let sd = sd_chg(c, u("sd_n"));
-            let k = g("k");
-            let sig: Vec<i8> = (0..n).map(|i| {
-                if i == 0 || !sd[i].is_finite() { 0 } else if c[i] - c[i - 1] > k * sd[i] { 1 } else if c[i] - c[i - 1] < -k * sd[i] { -1 } else { 0 }
-            }).collect();
+            let sig=next_volbo_signals(&c[..=to])?;
             sar(x, from, to, &sig, "price change > 2 sigma(100)", "price change < -2 sigma(100)")
         }
         "lkqts_stoch14" => stoch_sar(&slow_k(x, u("n")), from, to, x, g("lo"), g("hi")),
         "lkqts_rsi14" => {
-            let r = rsi(c, u("n"));
-            let (lo, hi) = (g("lo"), g("hi"));
-            let sig: Vec<i8> = (0..n).map(|i| if r[i] < lo { 1 } else if r[i] > hi { -1 } else { 0 }).collect();
+            let states=next_rsi_states(&c[..=to])?;
+            let sig:Vec<_>=states.iter().map(|v|v.map_or(0,|(up,down)|next_rsi_side(up,down))).collect();
             sar(x, from, to, &sig, "RSI(14) below 35", "RSI(14) above 65")
         }
-        "lkqts_macd" => {
-            let (ef, es) = (ema(c, u("fast")), ema(c, u("slow")));
-            let m: Vec<f64> = (0..n).map(|i| ef[i] - es[i]).collect();
-            let s = ema(&m, u("sig"));
-            let d: Vec<f64> = (0..n).map(|i| m[i] - s[i]).collect();
-            let sig: Vec<i8> = (0..n).map(|i| if cross_up(&d, i, 0.0) { 1 } else if cross_dn(&d, i, 0.0) { -1 } else { 0 }).collect();
+        "lkqts_macd" | "lkqts_macd_literal_alpha" => {
+            let d=next_macd_histogram(&c[..=to],id=="lkqts_macd_literal_alpha")?;
+            let sig: Vec<i8> = (0..d.len()).map(|i| if cross_up(&d, i, 0.0) { 1 } else if cross_dn(&d, i, 0.0) { -1 } else { 0 }).collect();
             sar(x, from, to, &sig, "MACD crossed above signal", "MACD crossed below signal")
         }
         "lkqts_kma" => {
@@ -959,5 +1065,175 @@ mod tests {
     fn population_sd_of_changes() {
         let s = sd_chg(&[1.0, 2.0, 4.0, 7.0], 3); // changes 1,2,3 -> pop sd sqrt(2/3)
         assert!((s[3] - (2.0f64 / 3.0).sqrt()).abs() < 1e-12);
+    }
+
+    // Independent arithmetic fixtures frozen before observing this candidate.
+    // Synthetic observations are not market history or original performance.
+    fn next_closes(changes: &[f64]) -> Vec<f64> {
+        let mut c = vec![1000.];
+        for d in changes { c.push(c.last().unwrap() + d); }
+        c
+    }
+    fn next_rows(c: &[f64]) -> Vec<Row> {
+        rows(c).into_iter().map(|mut r| { r.ticker="AAPL".into(); r }).collect()
+    }
+    #[test]
+    fn next_volatility_population_strict_ties_and_opposite_sign() {
+        assert!((next_population_variance(&[5.,3.,7.,8.,4.]).unwrap()-3.44).abs()<1e-12);
+        let mut d=vec![1.;47];d.extend(vec![-1.;49]);d.extend([0.,0.,0.,2.,3.,0.]);
+        let s=next_volbo_signals(&next_closes(&d)).unwrap();
+        assert!(s[..=100].iter().all(|v|*v==0));assert_eq!(s[101],1);
+        let negative:Vec<_>=d.iter().map(|v|-v).collect();
+        let s=next_volbo_signals(&next_closes(&negative)).unwrap();
+        assert_eq!(s[100],0);assert_eq!(s[101],-1);
+        let r=next_rows(&next_closes(&d));let x=Ctx::new(&r,&r,&[]);
+        let t=run("lkqts_volbo",&x,100,102,&Params::new()).unwrap();
+        assert_eq!(t.len(),1);assert_eq!(t[0].legs[0].i,102);assert!(t[0].open);
+    }
+    #[test]
+    fn next_volatility_population_not_sample_and_inclusive_not_prior() {
+        let mut d=vec![1.;47];d.extend(vec![-1.;49]);d.extend([0.,0.,0.,2.005]);
+        let v=next_population_variance(&d).unwrap();
+        assert!(2.005f64.powi(2)>4.*v);assert!(2.005f64.powi(2)<4.*v*100./99.);
+        assert_eq!(next_volbo_signals(&next_closes(&d)).unwrap()[100],1);
+        let mut prior=Vec::new();for _ in 0..50 {prior.extend([1.,-1.]);}
+        prior.push(2.001);
+        assert!(2.001f64.powi(2)>4.); // prior-only population variance is one
+        assert_eq!(next_volbo_signals(&next_closes(&prior)).unwrap()[101],0);
+    }
+    #[test]
+    fn next_volatility_zero_variance_is_not_an_invented_quantity_cap() {
+        for (d,want) in [(0.,0),(1.,1),(-1.,-1)] {
+            let s=next_volbo_signals(&next_closes(&vec![d;101])).unwrap();
+            assert_eq!(s[100],want);
+        }
+        assert!(next_population_variance(&[f64::MAX,-f64::MAX]).is_none());
+    }
+    #[test]
+    fn next_rsi_declared_seed_strict_levels_and_flat_state() {
+        for (u,d,want) in [(7.,13.,0),(13.,7.,0),(1.,3.,1),(3.,1.,-1),(0.,0.,0),(1.,0.,-1),(0.,1.,1)] {
+            assert_eq!(next_rsi_side(u,d),want);
+        }
+        let mut d=vec![35.,-65.];d.extend(vec![0.;12]);d.push(-1.);
+        let states=next_rsi_states(&next_closes(&d)).unwrap();
+        assert!(states[..14].iter().all(Option::is_none));
+        let (u,v)=states[14].unwrap();assert_eq!(next_rsi_side(u,v),0);
+        let (u,v)=states[15].unwrap();assert_eq!(next_rsi_side(u,v),1);
+        assert!((u-65./28.).abs()<1e-12);assert!((v-859./196.).abs()<1e-12);
+        assert!((next_rsi_value(u,v)-22750./657.).abs()<1e-12);
+        d.push(0.);let r=next_rows(&next_closes(&d));let x=Ctx::new(&r,&r,&[]);
+        let t=run("lkqts_rsi14",&x,15,16,&Params::new()).unwrap();
+        assert_eq!(t.len(),1);assert_eq!(t[0].legs[0].i,16);assert_eq!(t[0].dir,1.);
+        let mut d=vec![1.,1.,-1.];d.extend(vec![0.;11]);
+        let states=next_rsi_states(&next_closes(&d)).unwrap();
+        let (u,v)=states[14].unwrap();assert_eq!(next_rsi_side(u,v),-1);
+        // Conditional nonzero-day means would be 1/1 =>50; that is not this profile.
+        assert_eq!(next_rsi_value(1.,1.),50.);assert_eq!(next_rsi_value(0.,0.),50.);
+    }
+    #[test]
+    fn next_rsi_level_start_reversals_and_terminal_mark_clocks() {
+        let mut c:Vec<_>=(0..15).map(|i|100.-i as f64).collect();c.extend([85.,200.,200.,200.]);
+        let r=next_rows(&c);let x=Ctx::new(&r,&r,&[]);
+        let t=run("lkqts_rsi14",&x,14,18,&Params::new()).unwrap();
+        assert_eq!(t.len(),2);assert_eq!(t[0].dir,1.);assert_eq!(t[0].legs[0].i,15);
+        assert_eq!(t[0].signal_i,16);assert_eq!(t[0].exit_i,17);
+        assert_eq!(t[1].dir,-1.);assert_eq!(t[1].legs[0].i,17);
+        assert!(t[1].open);assert_eq!(t[1].signal_i,18);assert_eq!(t[1].exit_i,18);
+        assert_eq!(t[0].exit_px,t[1].legs[0].px);
+        let t=run("lkqts_rsi14",&x,15,16,&Params::new()).unwrap();
+        assert_eq!(t.len(),1);assert_eq!(t[0].legs[0].i,16); // level, no observed cross required
+        assert!(run("lkqts_rsi14",&x,14,14,&Params::new()).unwrap().is_empty());
+    }
+    #[test]
+    fn next_macd_named_alpha_profiles_have_frozen_different_orders() {
+        let mut c=vec![100.;100];c.extend([113.,92.54,92.54,92.54]);
+        let period=next_macd_histogram(&c,false).unwrap();let literal=next_macd_histogram(&c,true).unwrap();
+        assert!((literal[100]-39./50.).abs()<1e-12);
+        assert!((literal[101]-9./10000.).abs()<1e-12);
+        assert!((period[101]+1736./1184625.).abs()<1e-12);
+        let mut r=next_rows(&c);r[101].open=115.;r[101].high=116.;r[102].open=90.;r[102].low=89.;
+        let x=Ctx::new(&r,&r,&[]);
+        let p=run("lkqts_macd",&x,100,102,&Params::new()).unwrap();
+        let l=run("lkqts_macd_literal_alpha",&x,100,102,&Params::new()).unwrap();
+        assert_eq!(p.len(),2);assert_eq!(l.len(),1);
+        assert_eq!(p[0].legs[0].px,115.);assert_eq!(p[0].exit_px,90.);
+        assert_eq!(p[1].dir,-1.);assert_eq!(p[1].legs[0].px,90.);assert!(p[1].open);
+        assert_eq!(l[0].dir,1.);assert!(l[0].open);
+        let selected=run("lkqts_macd",&x,101,102,&Params::new()).unwrap();
+        assert_eq!(selected.len(),1);assert_eq!(selected[0].dir,-1.);
+        assert_eq!(selected[0].legs[0].i,102); // earlier positive histogram retained; flat selected start
+        let marked=run("lkqts_macd",&x,100,103,&Params::new()).unwrap();
+        let last=marked.last().unwrap();assert!(last.open);assert_eq!(last.signal_i,103);
+        assert_eq!(last.legs[0].i,102); // terminal legacy signal is not entry signal101
+        let mirror:Vec<_>=c.iter().map(|c|200.-c).collect();
+        let mut r=next_rows(&mirror);r[101].open=85.;r[101].low=84.;r[102].open=110.;r[102].high=111.;
+        let x=Ctx::new(&r,&r,&[]);
+        let t=run("lkqts_macd",&x,100,102,&Params::new()).unwrap();
+        assert_eq!(t.len(),2);assert_eq!(t[0].dir,-1.);assert_eq!(t[1].dir,1.);
+        assert_eq!(t[0].exit_i,102);assert_eq!(t[1].legs[0].i,102);
+        assert_eq!(t[0].exit_px,110.);assert_eq!(t[1].legs[0].px,110.);
+    }
+    #[test]
+    fn next_macd_crosses_signal_not_zero_and_preserves_full_seed_prefix() {
+        assert!(cross_dn(&[1.,-1.],1,0.)); // M3/S2 -> M1/S2, M stays positive
+        assert!(cross_up(&[-1.,1.],1,0.)); // M-3/S-2 -> M-1/S-2
+        assert!(!cross_up(&[0.,0.],1,0.));assert!(!cross_dn(&[0.,0.],1,0.));
+        assert!(cross_up(&[0.,1.],1,0.));assert!(cross_dn(&[0.,-1.],1,0.));
+        let mut c=vec![100.;11];c.push(112.);
+        assert!((next_ema_alpha(&c,2./13.).unwrap()[11]-1324./13.).abs()<1e-12);
+        assert_ne!(next_ema_alpha(&c,2./13.).unwrap()[11],101.); // SMA12 seed differs
+        let r=next_rows(&[100.,113.,113.]);let x=Ctx::new(&r,&r,&[]);
+        for id in ["lkqts_macd","lkqts_macd_literal_alpha"] {
+            assert!(run(id,&x,1,1,&Params::new()).unwrap().is_empty());
+            let t=run(id,&x,1,2,&Params::new()).unwrap();assert_eq!(t.len(),1);assert_eq!(t[0].legs[0].i,2);assert!(t[0].open);
+            assert!(run(id,&x,2,2,&Params::new()).unwrap().is_empty());
+        }
+    }
+    #[test]
+    fn next_candidates_do_not_inherit_admission_or_parameter_rounding() {
+        for id in NEXT_CANDIDATE_IDS {
+            assert!(!stock_candidate(id));assert!(validate_next_candidate(id,&Params::new()).is_none());
+            for p in [Params::from([("unknown".into(),1.)]),Params::from([("n".into(),f64::NAN)]),Params::from([("fast".into(),12.1)])] {
+                assert!(validate_next_candidate(id,&p).is_some());
+            }
+            let d=catalogue().into_iter().find(|d|d.id==*id).unwrap();
+            if *id=="lkqts_macd_literal_alpha" {assert!(matches!(d.status,Status::NotTestable(_)));}
+            let schema=params(id).unwrap();
+            let defaults:Params=schema.iter().map(|s|(s.key.to_string(),s.def)).collect();
+            assert!(validate_next_candidate(id,&defaults).is_none());
+            for s in schema {
+                assert_eq!(s.min,s.def);assert_eq!(s.max,s.def);
+                for value in [s.def+0.1,f64::NAN,f64::INFINITY] {
+                    assert!(validate_next_candidate(id,&Params::from([(s.key.to_string(),value)])).is_some());
+                }
+            }
+        }
+        assert_eq!(family_of("lkqts_macd").unwrap().0,family_of("lkqts_macd_literal_alpha").unwrap().0);
+        let c=vec![100.;110];let mut r=next_rows(&c);r[0].close=f64::NAN;
+        let x=Ctx::new(&r,&r,&[]);for id in NEXT_CANDIDATE_IDS {assert!(run(id,&x,100,109,&Params::new()).is_none());}
+    }
+    #[test]
+    fn next_macd_flat_noninteger_inputs_have_no_phantom_cross_or_order() {
+        for price in [100.1,1001.13] {
+            let c=vec![price;120];let r=next_rows(&c);let x=Ctx::new(&r,&r,&[]);
+            for (id,literal) in [("lkqts_macd",false),("lkqts_macd_literal_alpha",true)] {
+                let h=next_macd_histogram(&c,literal).unwrap();
+                assert!(h.iter().all(|v|*v==0.));
+                for from in [0,1,50,118] {assert!(run(id,&x,from,119,&Params::new()).unwrap().is_empty());}
+            }
+        }
+    }
+    #[test]
+    fn next_prefix_admission_rejects_mixed_identity_dates_and_nonpositive_prices() {
+        let base=next_rows(&vec![100.;105]);
+        for kind in 0..4 {
+            let mut r=base.clone();
+            match kind {0=>r[0].close=0.,1=>r[0].open=f64::INFINITY,2=>r[1].date=r[0].date.clone(),_=>r[0].ticker="MSFT".into()}
+            let x=Ctx::new(&r,&r,&[]);
+            assert!(next_history_issue(&x,100,104).is_some());
+        }
+        let x=Ctx::new(&base,&base,&[]);
+        assert!(next_history_issue(&x,100,105).is_some());
+        assert!(next_history_issue(&x,104,100).is_some());
     }
 }
