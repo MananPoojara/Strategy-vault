@@ -515,3 +515,86 @@ fn actual_stock_api_capture() {
     }
     assert_eq!(cases.len(),24);std::fs::write(output.join("CASES.json"),format!("{{\"cases\":[{}],\"scope\":\"Production API functions and serialization, not network transport or live deployment\"}}",cases.join(","))).unwrap();
 }
+
+/// Private prospective-profile evidence through the real whitelist and ordinary
+/// percentage account. This intentionally does not invoke or enable public APIs.
+#[test]
+#[ignore = "Needs explicit private roots and a fresh absolute output directory; numeric-gate owner only"]
+fn actual_next_stock_candidate_capture() {
+    let output=std::path::PathBuf::from(std::env::var("VAULT_KESTNER_NEXT_CAPTURE_DIR").expect("Explicit private next-candidate output directory required"));
+    assert!(output.is_absolute(),"Next-candidate output must be an absolute private path");
+    assert!(!output.exists(),"Preserve previous captures; choose a fresh absent directory");
+    let sources=[
+        (std::env::var("VAULT_KESTNER_US_DATA_DIR").expect("Explicit qualified US stock root required"),"basket:us_sp500:AAPL","AAPL",baskets::Market::UnitedStates,"1990-01-01","2001-12-31"),
+        (std::env::var("VAULT_KESTNER_IN_DATA_DIR").expect("Explicit qualified Indian stock root required"),"basket:nifty50:RELIANCE","RELIANCE",baskets::Market::India,"2001-01-01","2010-12-31"),
+    ];
+    // Atomic creation refuses a destination introduced after the absence check.
+    std::fs::create_dir(&output).expect("Fresh private output parent must already exist");
+    let mut manifest=vec![];
+    for (root,key,symbol,market,start,end) in sources {
+        let catalogue=baskets::Catalogue::load(std::path::Path::new(&root));
+        let provenance=catalogue.as_ref().ok().and_then(|c|c.provenance_json(key)).unwrap_or_else(||"null".into());
+        let prepared=(|| -> Result<(Vec<Row>,usize,usize),String> {
+            let catalogue=catalogue.as_ref().map_err(|e|e.clone())?;
+            let evidence=catalogue.native_evidence(key).ok_or("No authoritative native evidence for the selected stock")?;
+            if evidence.asset_type()!="individual_stock" || evidence.market()!=market {
+                return Err("Selected source is not the required native stock/market identity".into());
+            }
+            let rows=catalogue.rows(key)?;
+            if rows.is_empty() || rows.iter().any(|r|r.ticker!=symbol) {return Err("Native rows do not retain the required actual stock identity".into());}
+            let from=rows.partition_point(|r|r.date.as_str()<start);
+            let after=rows.partition_point(|r|r.date.as_str()<=end);
+            if from>=after || rows[0].date.as_str()>start || rows.last().unwrap().date.as_str()<end {
+                return Err("Native source does not cover the full requested window; no unsupported prefix or end is silently substituted".into());
+            }
+            Ok((rows,from,after-1))
+        })();
+        for &id in books::lkqts::NEXT_CANDIDATE_IDS {for (fee,slip) in [(0.,0.),(3.,2.)] {
+            let costs=accounting::Costs{fees_bps:fee,slippage_bps:slip,rollover_bps:0.};
+            let stem=format!("{}-{id}-fee{fee}-slip{slip}",key.replace(':',"_"));
+            let (actual_from,actual_to)=prepared.as_ref().map_or(("null".into(),"null".into()),|(rows,from,to)|
+                (format!("\"{}\"",rows[*from].date),format!("\"{}\"",rows[*to].date)));
+            let (mut source_status,mut source_closed,mut source_open)=("held",0,0);
+            let mut source_file=String::from("null");
+            let result=(|| -> Result<(usize,usize),String> {
+                let (rows,from,to)=prepared.as_ref().map_err(|e|e.clone())?;
+                let ctx=Ctx::new(rows,&[],&[]);
+                if let Some(note)=books::lkqts::validate_next_candidate(id,&Params::new()) {return Err(note);}
+                if let Some(note)=books::lkqts::next_history_issue(&ctx,*from,*to) {return Err(note.into());}
+                let raw=books::lkqts::run(id,&ctx,*from,*to,&Params::new()).ok_or("Raw candidate source calculation unavailable")?;
+                trade_validation::check_structure(&raw,*from,*to)?;
+                if raw.iter().any(|t|t.entry_kind!="open" || t.legs.first().is_none_or(|l|l.i==0)) {
+                    return Err("Candidate does not have a validated previous-close/next-open entry clock".into());
+                }
+                // Save source events before account-domain admission. A valid raw
+                // short ledger can coexist with an unavailable normalized account.
+                let name=format!("{stem}-source-trades.csv");
+                let mut source=String::from("direction,entry_signal_date,entry_date,entry_px,exit_signal_date,exit_or_mark_date,exit_or_mark_px,open,gross_return\n");
+                for t in &raw {
+                    let _=writeln!(source,"{},{},{},{},{},{},{},{},{}",t.dir,rows[t.legs[0].i-1].date,rows[t.legs[0].i].date,t.legs[0].px,if t.open{""}else{rows[t.signal_i].date.as_str()},rows[t.exit_i].date,t.exit_px,t.open,t.ret(0.));
+                }
+                std::fs::write(output.join(&name),source).map_err(|e|e.to_string())?;
+                source_status="computed_source_candidate";
+                source_closed=raw.iter().filter(|t|!t.open).count();source_open=raw.iter().filter(|t|t.open).count();
+                source_file=format!("\"{name}\"");
+                let run=backtest_costs(&ctx,id,*from,*to,costs,&Params::new())?;
+                let mut daily=String::from("date,equity,benchmark\n");
+                for (j,eq) in run.equity.iter().enumerate(){let _=writeln!(daily,"{},{},{}",rows[*from+j].date,eq,run.bh[j]);}
+                std::fs::write(output.join(format!("{stem}-daily.csv")),daily).map_err(|e|e.to_string())?;
+                let mut trades=String::from("direction,entry_signal_date,entry_date,entry_px,exit_signal_date,exit_or_mark_date,exit_or_mark_px,open,net_return\n");
+                for t in &run.trades {
+                    let _=writeln!(trades,"{},{},{},{},{},{},{},{},{}",t.dir,rows[t.legs[0].i-1].date,rows[t.legs[0].i].date,t.legs[0].px,if t.open{""}else{rows[t.signal_i].date.as_str()},rows[t.exit_i].date,t.exit_px,t.open,t.ret(costs.side_rate()));
+                }
+                std::fs::write(output.join(format!("{stem}-trades.csv")),trades).map_err(|e|e.to_string())?;
+                let s=financial_stats(&ctx,&run,costs);let stats=s.iter().map(|(k,v)|format!("\"{k}\":{}",if v.is_finite(){v.to_string()}else{"null".into()})).collect::<Vec<_>>().join(",");
+                std::fs::write(output.join(format!("{stem}-stats.json")),format!("{{{stats}}}")).map_err(|e|e.to_string())?;
+                Ok((run.trades.iter().filter(|t|!t.open).count(),run.trades.iter().filter(|t|t.open).count()))
+            })();
+            let (status,note,closed,open)=match result {Ok((closed,open))=>("computed_candidate",String::new(),closed,open),Err(note)=>("held",note,0,0)};
+            let source_note=if source_status=="held" {note.as_str()} else {""};
+            manifest.push(format!("{{\"capture\":\"{stem}\",\"id\":\"{id}\",\"status\":\"{status}\",\"note\":\"{}\",\"closed\":{closed},\"open_marks\":{open},\"source_status\":\"{source_status}\",\"source_note\":\"{}\",\"source_trades\":{source_file},\"source_closed\":{source_closed},\"source_open_marks\":{source_open},\"requested_from\":\"{start}\",\"requested_to\":\"{end}\",\"actual_from\":{actual_from},\"actual_to\":{actual_to},\"provenance\":{provenance},\"public_admission\":false}}",esc(&note),esc(source_note)));
+        }}
+    }
+    assert_eq!(manifest.len(),16);
+    std::fs::write(output.join("CAPTURE.json"),format!("{{\"public_admission\":false,\"qualification\":\"Prospective profiles through native whitelist and ordinary percentage accounting only. Actual-source/profile comparisons, account comparisons and public API guards/admission remain pending. Adjustments, borrow and original book performance are not certified. Held records are not computed results; any partial artifacts retain their held manifest status.\",\"runs\":[{}]}}",manifest.join(","))).unwrap();
+}
