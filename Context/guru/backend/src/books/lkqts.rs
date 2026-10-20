@@ -6,15 +6,45 @@
 //! Book conventions used by every Chapter 6-9 and 12 strategy (p.139): "Signals are generated at the close of each
 //! trading day and executed on the next trading day's opening price"; no commissions or slippage (p.139). Standard
 //! deviation is the population form, divided by N (p.41, Fig. 2.2). "Average true range" = simple average of the true
-//! range (p.64). Windows such as "the highest close of the past 40 days" include today (p.62, p.140).
+//! range (p.64). Current-inclusive channel windows are a declared interpretation of the prose,
+//! not parity with a published indexed implementation. See docs/kestner-stock-candidates.md.
 //! Long/short systems whose text gives only entries are stop-and-reverse: the book states it for Chapter 7
 //! ("no rules for exiting positions, except for an entry in the other direction", pp.145, 155, 160, 165) and its own
 //! SPX/NDX tables prove it for the Chapter 8 systems (trades x average bars held ~= every bar of 1990-2001); see README.
 //! Chapter 10 (S&P timing) measures close-to-close returns, so those rules fill at the close of the signal day.
-//! The book tested 29 futures + 34 stocks/indices with volatility-scaled size; here one unit of the selected index.
+//! The original mixed-instrument study used volatility-scaled dollar sizing. Selected-stock
+//! normalized percentage research is a separate application and cannot reproduce those dollar figures.
 use crate::connors::{rsi, sma, true_range, Claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "lkqts";
+
+/// Source-reviewed candidates only. This list does NOT grant instrument admission.
+pub const STOCK_CANDIDATE_IDS: &[&str] = &["lkqts_cb4020", "lkqts_ma1040", "lkqts_mom80"];
+
+pub fn stock_candidate(id: &str) -> bool {
+    STOCK_CANDIDATE_IDS.contains(&id)
+}
+
+pub fn validate_stock_candidate(id: &str, p: &Params) -> Option<String> {
+    if !stock_candidate(id) { return Some("Not a bounded Kestner stock candidate".into()); }
+    let schema = params(id)?;
+    (!p.iter().all(|(key, value)| value.is_finite() && schema.iter().any(|s| s.key == key && *value == s.def)))
+        .then(|| "Kestner stock research covers only CB entry40/exit20, SMA fast10/slow40 and momentum n80. Changed, unknown or nonfinite parameters need separate review; no rounding or clamping is admitted.".into())
+}
+
+pub fn stock_history_issue(id: &str, x: &Ctx, from: usize, to: usize) -> Option<&'static str> {
+    let first = match id { "lkqts_cb4020" => 39, "lkqts_ma1040" => 40, "lkqts_mom80" => 80, _ => return Some("Unknown Kestner stock candidate") };
+    if from < first || from > to || to >= x.r.len() {
+        return Some("Kestner stock research needs genuine preceding source observations: current-inclusive channel first signal39, observed SMA crossover40, momentum80. Select a start with actual warmup; no history is invented.");
+    }
+    if x.r[..=to].iter().any(|r| !crate::baskets::valid_date(&r.date)
+        || ![r.open,r.high,r.low,r.close].iter().all(|v|v.is_finite() && *v>0.)
+        || r.low>r.high || r.open<r.low || r.open>r.high || r.close<r.low || r.close>r.high)
+        || x.r[..=to].windows(2).any(|w|w[0].date>=w[1].date || w[0].ticker!=w[1].ticker) {
+        return Some("Full supplied Kestner indicator history contains invalid OHLC, dates, chronology or mixed symbols. Earlier observations are not dropped, filled or reseeded to manufacture results.");
+    }
+    None
+}
 
 // ------------------------------------------------------------------ indicators
 
@@ -177,7 +207,8 @@ fn cl(trades: &'static str, win: &'static str, avg: &'static str, hold: &'static
     Some(Claim { trades, win, avg, hold, period })
 }
 
-const IDX: &str = "Book tested 29 futures + 34 US stocks/indices 1/1/1990-12/31/2001 with $10,000/sigma(100) sizing; run here on one index (instrument swap). India: NIFTY 50 / NIFTY BANK / NIFTY MIDCAP 100 replace the US indices.";
+const IDX: &str = "Original book research used multiple instruments and volatility-scaled dollar sizing. This legacy catalogue entry still requires instrument-specific source, data and accounting review. Registration does not reproduce the source study or authorize an index to substitute for stocks, ETFs or futures.";
+const STOCK_RESEARCH: &str = "Source-reviewed stock research candidate; publication still requires instrument, account and request validation. Signals use completed closes and next actual session opens. Current-inclusive channel extrema/ties, exit-first collision handling, flat selected-window startup and SMA equality edges are declared conventions. Normalized single-stock long/short returns do not reproduce the book's mixed-instrument volatility-scaled dollar study. No stock basket, index substitution, borrowing, financing or corporate-action correctness is certified by these rules.";
 const P90: &str = "SPX 1/1/1990-12/31/2001 (stock table)";
 
 pub fn catalogue() -> Vec<StrategyDef> {
@@ -195,12 +226,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
              "E|\"enters short when a market's close is the lowest close of the past 40 days\" (pp.139-140)",
              "X|\"Longs are exited if today's close is the lowest close of the past 20 days. Shorts are exited if today's close is the highest close of the past 20 days.\" (p.140)",
              "F|Signals at the close, executed at the next day's open (p.139)"],
-            IDX, cl("71", "34%", "-$1/share", "53 / 19 bars (win / loss)", P90)),
+            STOCK_RESEARCH, cl("71", "34%", "-$1/share", "53 / 19 bars (win / loss)", P90)),
         sd!("lkqts_ma1040", "10-day / 40-day dual moving average crossover", G7, "Long/Short", Live,
             ["E|\"Long entries are established if the 10-day average crosses above the 40-day average\" (simple averages, p.145)",
              "E|\"Short entries are established if the 10-day average crosses below the 40-day average\" (p.145)",
              "X|\"Positions are exited on an entry signal in the opposite direction\" (p.145)"],
-            IDX, cl("97", "30%", "$1/share", "59 / 19 bars", P90)),
+            STOCK_RESEARCH, cl("97", "30%", "$1/share", "59 / 19 bars", P90)),
         sd!("lkqts_mom20", "20-day momentum", G7, "Long/Short", Live,
             ["E|\"long entries are established if today's close is greater than the close 20 days ago\" (p.150)",
              "E|\"Short entries are established if today's close is less than the close 20 days ago\" (p.150)",
@@ -210,7 +241,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             ["E|\"long entries are established if today's close is greater than the close 80 days ago\" (p.150)",
              "E|\"Short entries are established if today's close is less than the close 80 days ago\" (p.150)",
              "X|Reverse on the opposite entry (p.157 table)"],
-            IDX, cl("149", "31%", "$1/share", "47 / 8 bars", P90)),
+            STOCK_RESEARCH, cl("149", "31%", "$1/share", "47 / 8 bars", P90)),
         sd!("lkqts_volbo", "Volatility breakout (2 sigma of 100 price changes)", G7, "Long/Short", Live,
             ["E|\"enter long if today's price change is greater than twice the standard deviation of price changes over the past 100 days\" (p.155)",
              "E|\"enter short if today's price change is less than negative two times the standard deviation of price changes over the past 100 days\" (p.155)",
@@ -527,6 +558,27 @@ fn cb(x: &Ctx, from: usize, to: usize, o: &CbOpt) -> Vec<Trade> {
     })
 }
 
+/// Bounded plain-channel convention; legacy stop/filter/pyramiding variants keep
+/// their existing runner. Ambiguous opposing entries do not choose a direction.
+/// An existing position's 20-close exit takes priority over same-side re-entry;
+/// an unambiguous opposite 40-close entry reverses at that same next open.
+fn stock_channel(x: &Ctx, from: usize, to: usize) -> Vec<Trade> {
+    run_target(x, from.max(39), to, Fill::NextOpen, |i, pos, _| {
+        let c=x.c[i];
+        let long=c>=hh(&x.c,i,40);
+        let short=c<=ll(&x.c,i,40);
+        let direction=if long && !short {1} else if short && !long {-1} else {0};
+        let exit=(pos>0 && c<=ll(&x.c,i,20)) || (pos<0 && c>=hh(&x.c,i,20));
+        if pos!=0 && direction==-pos {
+            Some((direction,"opposite 40-close entry"))
+        } else if exit {
+            Some((0,"20-close exit; exit-first convention"))
+        } else if pos==0 && direction!=0 {
+            Some((direction,"unambiguous 40-close extreme"))
+        } else { None }
+    })
+}
+
 fn stoch_sar(k: &[f64], from: usize, to: usize, x: &Ctx, lo: f64, hi: f64) -> Vec<Trade> {
     let sig: Vec<i8> = (0..k.len()).map(|i| if cross_up(k, i, lo) { 1 } else if cross_dn(k, i, hi) { -1 } else { 0 }).collect();
     sar(x, from, to, &sig, "oscillator crossed back above the low level", "oscillator crossed back below the high level")
@@ -536,6 +588,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     if !id.starts_with("lkqts_") {
         return None;
     }
+    if stock_candidate(id) && validate_stock_candidate(id,p).is_some() { return None; }
     let defs = params(id)?;
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| defs.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
     let u = |k: &str| g(k).round().max(1.0) as usize;
@@ -546,7 +599,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     }
     let cbo = |gap, pyr, stop, target| CbOpt { entry: u("entry"), exit: u("exit"), atr_n: if stop > 0.0 || target > 0.0 { u("atr_n") } else { 20 }, stop, target, gap, pyr };
     let t = match id {
-        "lkqts_cb4020" => cb(x, from, to, &cbo(0, 0, 0.0, 0.0)),
+        "lkqts_cb4020" => stock_channel(x, from, to),
         "lkqts_cb_atrstop" => cb(x, from, to, &cbo(0, 0, g("stop"), 0.0)),
         "lkqts_cb_ptake" => cb(x, from, to, &cbo(u("gap"), 0, 0.0, g("target"))),
         "lkqts_cb_pyr" => cb(x, from, to, &cbo(0, u("gap"), 0.0, 0.0)),

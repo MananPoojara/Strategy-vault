@@ -47,6 +47,10 @@ mod short_course_readiness_tests {
 }
 
 pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -> Option<Issue> {
+    if def.book==books::lkqts::BOOK && books::lkqts::stock_candidate(def.id) {
+        if let Some(note)=books::lkqts::validate_stock_candidate(def.id,p) {return issue("not_testable",note);}
+        if let Some(note)=books::lkqts::stock_history_issue(def.id,ctx,from,to) {return issue("needs_data",note);}
+    }
     if crate::instrument_policy::reviewed_dema_index(def) {
         if let Some(note)=books::hbqts::reviewed::validate_dema_index(p){return issue("not_testable",note);}
         if from>to || books::hbqts::reviewed::dema_index_states(ctx,to).is_none(){return issue("needs_data","Actual QTS index history is unavailable or contains invalid OHLC, chronology or nonfinite DEMA states. The full supplied prefix is retained; observations are not dropped, filled or reseeded.");}

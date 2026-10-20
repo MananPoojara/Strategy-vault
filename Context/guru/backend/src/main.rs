@@ -279,6 +279,12 @@ fn backtest(ctx: &Ctx, id: &str, from: usize, to: usize, cost: f64, p: &Params) 
         return Ok(Run{trades:account.trades.clone(),from,to,equity:account.days.iter().map(|d|d.equity).collect(),bh:(from..=to).map(|k|ctx.c[k]/ctx.c[from]).collect(),source_account:Some(account),bandy_account:None,unit_exposure_report:None});
     }
     let trades = connors::run(id, ctx, from, to, p).ok_or("Strategy implementation unavailable")?;
+    normalized_run(ctx,trades,from,to,cost)
+}
+
+/// Shared ordinary percentage account finalization, also exercised with frozen
+/// event fixtures. Source-account and fixed-unit report models remain separate.
+fn normalized_run(ctx: &Ctx, trades: Vec<Trade>, from: usize, to: usize, cost: f64) -> Result<Run,String> {
     trade_validation::check(&trades,from,to,cost)?;
     let equity = equity_curve(&ctx.c, &trades, from, to, cost);
     if equity.iter().any(|v|!v.is_finite()||*v<=0.) {return Err("calculation_unavailable: Unsupported nonpositive or nonfinite normalized equity; no reset, clipping or invented funding is applied.".into());}
@@ -733,6 +739,27 @@ fn hv_raw_default(text:&str,default:f64)->bool {
 /// Existing methods keep their previous parsing contract until separately reviewed.
 fn checked_params_of(q: &BTreeMap<String, String>) -> Result<Params,String> {
     let p=params_of(q);
+    if let Some(id)=q.get("id").filter(|id|books::lkqts::stock_candidate(id)) {
+        let schema=books::lkqts::params(id).ok_or("Unknown Kestner stock candidate")?;
+        for (key,text) in q {
+            if let Some(name)=key.strip_prefix("p.") {
+                let setting=schema.iter().find(|s|s.key==name).ok_or_else(||format!("Unknown Kestner parameter: {key}"))?;
+                if !hv_raw_default(text,setting.def) {return Err(format!("Kestner {key} must equal its exact source default before rounding or underflow"));}
+            }
+            if let Some(name)=key.strip_prefix("g.") {
+                let setting=schema.iter().find(|s|s.key==name).ok_or_else(||format!("Unknown Kestner grid: {key}"))?;
+                let raw:Vec<&str>=text.split(':').map(str::trim).collect();
+                let ok=match raw.as_slice() {
+                    [v]=>hv_raw_default(v,setting.def),
+                    [lo,hi,step]=>hv_raw_default(lo,setting.def) && hv_raw_default(hi,setting.def) && step.parse::<f64>().is_ok_and(|v|v.is_finite() && v>0.),
+                    _=>false,
+                };
+                if !ok {return Err(format!("Kestner grid {key} allows only its exact singleton source default and finite positive step"));}
+            }
+        }
+        if let Some(note)=books::lkqts::validate_stock_candidate(id,&p) {return Err(note);}
+        return Ok(p);
+    }
     if let Some(id)=q.get("id").filter(|id|books::hbqts::reviewed::is_dema_index(id)) {
         let schema=books::hbqts::params(id).ok_or("Unknown QTS index configuration")?;
         for (key,text) in q {
@@ -978,7 +1005,7 @@ fn window_start(ctx: &Ctx, d: &connors::StrategyDef, from: usize) -> Option<usiz
 }
 
 fn summary(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
-    if q.get("id").is_some_and(|id|books::hbqts::reviewed::is_dema_index(id)){checked_params_of(q)?;}
+    if q.get("id").is_some_and(|id|books::hbqts::reviewed::is_dema_index(id) || books::lkqts::stock_candidate(id)){checked_params_of(q)?;}
 
     let selected=select_context(st,q)?;let held=selected.context(st);
     let definitions=query_catalogue(q);
@@ -2196,3 +2223,5 @@ mod tests {
 #[cfg(test)] mod hbiab_verification;
 
 #[cfg(test)] mod dema_verification;
+
+#[cfg(test)] mod kestner_verification;
