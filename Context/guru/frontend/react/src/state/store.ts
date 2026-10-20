@@ -1,3 +1,4 @@
+import type {PristineStrategySnapshot} from '../services/pristine-presenter';
 import type { ReadingModel } from "../pages/ReadingPage";
 import type { Route } from "../app/routes";
 import type { LibraryMarket } from "../services/library-market";
@@ -18,6 +19,7 @@ export interface ViewSnapshot {
   reading: ReadingModel | null;
   strategyAccount?: SourceAccountView | null;
   strategyUnit?: UnitExposureView | null;
+  strategyPristine?: PristineStrategySnapshot | null;
   strategyRules?: RuleVisualModel | null;
 }
 export interface PageInfo {
@@ -146,6 +148,7 @@ export function createStore() {
         reading: null,
         strategyAccount: null,
         strategyUnit: null,
+        strategyPristine: null,
         strategyRules: null,
       };
       notify();

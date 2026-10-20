@@ -9,7 +9,8 @@ export function libraryMarket(state: Record<string, string>, route = 'home'): Li
     : region;
 }
 
-export function libraryMarketVariants<T extends {needs_series?: string[]}>(variants: T[], market: LibraryMarket): T[] {
+export function libraryMarketVariants<T extends {needs_series?: string[];instrument_policy?: {allowed_markets?: string[]}}>(variants: T[], market: LibraryMarket): T[] {
   return market === 'all' ? [...variants] : variants.filter(variant =>
+    (!variant.instrument_policy?.allowed_markets || variant.instrument_policy.allowed_markets.includes(market)) &&
     !(variant.needs_series || []).some(name => market === 'us' ? /^NSE_/.test(name) : /^NYSE_/.test(name)));
 }

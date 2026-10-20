@@ -1,3 +1,4 @@
+import type {PristineView} from './services/pristine-report';
 /// <reference types="vite/client" />
 import type { Account } from "./services/api";
 export interface VaultRuntimeContract {
@@ -6,6 +7,8 @@ export interface VaultRuntimeContract {
   cleanup(): void;
   activateReportTab?(): void;
   patch(patch: Record<string, string>): void;
+  pristineCurrent?(data:unknown, view:PristineView):boolean;
+  exportPristine?(data:unknown, view:PristineView,kind:'workbook'|'csv'):Promise<void>;
   changeTheme(theme: string): void;
   openAuthor(id: string, event?: unknown): void;
   closeAuthor(): void;

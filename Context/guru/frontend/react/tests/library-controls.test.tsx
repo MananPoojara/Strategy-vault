@@ -102,3 +102,18 @@ it('accepts older home models without an ETF field', async () => {
   expect(host.querySelector('optgroup[label="ETFs"]')).toBeNull();
   expect(host.querySelector<HTMLSelectElement>('#library-instrument')!.value).toBe('i:SPX');
 });
+
+// A stock-only US source with no breadth dependency must not inherit India
+// catalogue coverage merely because needs_series is empty.
+it('keeps explicit market admission separate from breadth dependencies and All coverage', () => {
+  const variants = [
+    {id:'pristine-us-stock',needs_series:[],instrument_policy:{allowed_markets:['us']}},
+    {id:'shared',needs_series:[]},
+    {id:'india-breadth',needs_series:['NSE_ADV']},
+    {id:'us-breadth',needs_series:['NYSE_ADV']},
+  ];
+  expect(libraryMarketVariants(variants,'in').map(v=>v.id)).toEqual(['shared','india-breadth']);
+  expect(libraryMarketVariants(variants,'us').map(v=>v.id)).toEqual(['pristine-us-stock','shared','us-breadth']);
+  expect(libraryMarketVariants(variants,'all')).toEqual(variants);
+  expect(libraryMarketVariants(variants,'all')).not.toBe(variants);
+});

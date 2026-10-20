@@ -1,3 +1,4 @@
+import {PristineStrategyReport} from '../components/PristineStrategyReport';
 import type { ViewSnapshot } from "../state/store";
 import { ResearchMarkup } from "../components/ResearchMarkup";
 import { StrategySettings } from "../components/StrategySettings";
@@ -15,6 +16,9 @@ export function StrategiesPage({ snapshot }: { snapshot: ViewSnapshot }) {
   return <ResearchMarkup html={snapshot.html} />;
 }
 export function StrategyPage({ snapshot }: { snapshot: ViewSnapshot }) {
+  return snapshot.strategyPristine ? <PristineStrategyReport key={snapshot.revision} snapshot={snapshot.strategyPristine} chrome={snapshot.html}/> : <LegacyStrategyPage snapshot={snapshot}/>;
+}
+function LegacyStrategyPage({ snapshot }: { snapshot: ViewSnapshot }) {
   const mode = snapshot.state.report_mode === "compound" ? "compound" : "fixed";
   const basket = snapshot.state.run_scope === "basket";
   const report = useMemo(() => prepareStrategyReport(snapshot.html), [snapshot.html]);
@@ -55,6 +59,7 @@ export function StrategyPage({ snapshot }: { snapshot: ViewSnapshot }) {
   }} />;
 }
 export function OptimizationPage({ snapshot }: { snapshot: ViewSnapshot }) {
+  if (snapshot.strategyPristine) return <PristineStrategyReport key={snapshot.revision} snapshot={snapshot.strategyPristine} chrome={snapshot.html}/>;
   return <ResearchMarkup html={snapshot.html} slots={{
     "source-account-notice": snapshot.strategyAccount ? <SourceAccountNotice account={snapshot.strategyAccount} /> : null,
     "unit-exposure-notice": snapshot.strategyUnit ? <UnitExposureNotice view={snapshot.strategyUnit} /> : null,

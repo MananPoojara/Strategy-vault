@@ -9,6 +9,8 @@ import {returnDisplay} from '../services/return-display';
 import {sourceAccount,sourceAccountView,sourceTradeHeaders,sourceAccountTables,sourceAccountCopy} from '../services/source-account';
 import {BANDY_SIMPLE_METHOD,simpleInstrumentContext} from '../services/bandy-source-account';
 import {unitExposureMethod,unitExposureInstrumentContext,validatedUnitExposureReport} from '../services/unit-exposure-report';
+import {PRISTINE_BOOK,PRISTINE_RESEARCH_MODE,pristineMethod,pristineInstrumentContext,validatedPristineReport,isValidatedPristinePair} from '../services/pristine-report';
+import {pristineWorkbook,pristineTradeTable} from '../services/pristine-presenter';
 import {UNIT_VISUAL_BASIS,UNIT_CLOSED_BASIS,unitExposureTables,unitExposureMetadata,unitPriceSignals} from '../services/unit-exposure-presenter';
 import {tradeExitCheck,tradeExitCheckMarkup} from '../services/trade-exit-check';
 import {stockChoices,basketSpan,positionLimit,priceRecoveryPeriod} from '../services/stock-selection';
@@ -38,6 +40,24 @@ function unitAdmission(definition,ticker,parameters,region,state){
 function unitFor(st){
  if(!unitExposureMethod(st.v.id,st.v.book)&&!Object.hasOwn(st.d,'unit_exposure_report'))return null;
  return validatedUnitExposureReport(st.d,unitAdmission(st.v,st.tk,st.params||st.indicatorParameters,st.region,st.state||st));
+}
+
+function pristineCost(value){
+ const token=value===undefined?'0':value;
+ if(typeof token!=='string'||!/^[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?$/.test(token)||!Number.isFinite(Number(token)))throw Error('Use a finite numeric execution cost; unknown cost settings are not replaced.');
+ return Number(token);
+}
+function pristineExecution(state){return {slippage:state.slippage??'0',rollover:state.rollover??'0'};}
+function pristineAdmission(definition,ticker,state){
+ if(state.p)throw Error('These fixed source branches accept no parameter settings.');
+ const rows=state.region==='us'?TICK_ALL_US:TICK_ALL_IN,window={};
+ if(state.from)window.from=state.from;if(state.to)window.to=state.to;
+ return {id:definition.id,book:definition.book,ticker,region:state.region,researchMode:state.research_mode||'',definition,parameters:{},instrument:pristineInstrumentContext(ticker,state.region,rows),costs:{fees_bps:pristineCost(state.cost),slippage_bps:pristineCost(state.slippage),rollover_bps:pristineCost(state.rollover)},window};
+}
+function pristineCurrent(data,view){
+ if(!STRAT?.pristine||STRAT.pristine.data!==data||STRAT.pristine.view!==view||!isValidatedPristinePair(data,view)||R.name!=='strategy'||R.optim||R.id!==STRAT.v.id||S.tk!==STRAT.tk||S.region!==STRAT.region||S.run_scope!=='single'||!!S.p)return false;
+ const definition=ALLCAT.find(row=>row.id===R.id);if(!definition)return false;
+ try{return validatedPristineReport(data,pristineAdmission(definition,S.tk,S))===view;}catch{return false;}
 }
 
 /* Report controls use recorded engine results; unavailable inputs stay empty. */
@@ -145,6 +165,25 @@ window.VaultUI=(()=>{
   XLSX.utils.book_append_sheet(book,styledSheet([['Parameter','Value'],...Object.entries(st.params)]),'Parameters');
   const bytes=XLSX.write(book,{bookType:'xlsx',type:'array',cellStyles:true,compression:true});downloadBlob(new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),reportName(st,kind,'xlsx'));msg('Excel downloaded.');
  }
+ async function pristineExport(data,view,kind){
+  if(!pristineCurrent(data,view))throw Error('The Pristine response or current controls changed.');
+  const safe=value=>typeof value==='string'&&/^[\s\uFEFF]*[=+\-@]/.test(value)?"'"+value:value;
+  const filename=`${view.report.id}-${view.report.symbol}-${view.report.rows[0].date}-${view.report.rows.at(-1).date}`.replace(/[^a-zA-Z0-9._-]+/g,'-');
+  if(kind==='csv'){
+   const table=pristineTradeTable(data,view),rows=[table.headers,...table.rows];
+   const csv=rows.map(row=>row.map(value=>'"'+String(safe(value)??'').replace(/"/g,'""')+'"').join(',')).join('\r\n');
+   if(!pristineCurrent(data,view))throw Error('The selected report changed.');
+   downloadBlob(new Blob([csv],{type:'text/csv;charset=utf-8'}),filename+'-positions.csv');return;
+  }
+  if(kind!=='workbook')throw Error('Unsupported Pristine export.');
+  const tables=pristineWorkbook(data,view);await loadXlsx();
+  if(!pristineCurrent(data,view))throw Error('The selected report changed while preparing Excel.');
+  const book=XLSX.utils.book_new();
+  for(const table of tables){const rows=[table.headers,...table.rows].map(row=>row.map(safe));XLSX.utils.book_append_sheet(book,styledSheet(rows,table.percentColumns,[],table.headers.map((_,i)=>i)),table.name);}
+  const bytes=XLSX.write(book,{bookType:'xlsx',type:'array',cellStyles:true,compression:true});
+  if(!pristineCurrent(data,view))throw Error('The selected report changed while preparing Excel.');
+  downloadBlob(new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),filename+'.xlsx');
+ }
  const canvasBlob=canvas=>new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(Error('The chart image could not be created.')),'image/png'));
  async function snapshot(id){
   const st=snapshotContext(),el=document.getElementById(id);if(!el)throw Error('This chart is unavailable.');msg('Preparing chart PNG…');
@@ -175,9 +214,11 @@ window.VaultUI=(()=>{
  const COLOR_PROPS=['color','backgroundColor','backgroundImage','borderTopColor','borderRightColor','borderBottomColor','borderLeftColor','outlineColor','boxShadow','textDecorationColor','fill','stroke','columnRuleColor'];
  function plainColors(doc){const win=doc.defaultView;doc.querySelectorAll('*').forEach(el=>{const cs=win.getComputedStyle(el);for(const prop of COLOR_PROPS){const v=cs[prop];if(v&&v.includes('color('))el.style[prop]=toRgb(v);}});}
  async function pagePdf(){
+  const pristine=typeof STRAT!=='undefined'?STRAT?.pristine:null;
+  if(pristine?.view&&!pristineCurrent(pristine.data,pristine.view))throw Error('The Pristine report or controls changed.');
   const report=typeof STRAT!=='undefined'&&STRAT?.d?snapshotContext():null,url=location.href,name=report?reportName(report,'page','pdf'):pdfName(),root=document.getElementById('main');
   if(!root)throw Error('The report page is unavailable.');
-  const assertSame=()=>{if(location.href!==url||document.getElementById('main')!==root){const error=Error('The page changed while preparing the PDF. Download it again on the desired report.');error.name='ReportChangedError';throw error;}};
+  const assertSame=()=>{if(location.href!==url||document.getElementById('main')!==root||(pristine?.view&&!pristineCurrent(pristine.data,pristine.view))){const error=Error('The page changed while preparing the PDF. Download it again on the desired report.');error.name='ReportChangedError';throw error;}};
   await loadScript('vendor/html2canvas-1.4.1.min.js');await loadScript('vendor/jspdf-2.5.1.umd.min.js');assertSame();
   finishMetricAnimations();const closed=[...document.querySelectorAll('details:not([open])')];closed.forEach(d=>d.open=true);document.body.classList.add('pdf-capture');
   const ranges=CHARTS.map(({ch})=>({ch,range:ch.timeScale().getVisibleLogicalRange()}));
@@ -210,7 +251,7 @@ window.VaultUI=(()=>{
  addEventListener('beforeprint',()=>{finishMetricAnimations();refreshHeat();});
  addEventListener('afterprint',refreshHeat);
  addEventListener('afterprint',()=>document.querySelectorAll('details[data-print-closed]').forEach(d=>{d.open=false;delete d.dataset.printClosed;}));
- return {costState,actions,toolbar,savedList,writeSaved,detailHTML,benchmarkHTML,tradeHTML,equityNavigator,init,iconize,ICON};
+ return {costState,actions,toolbar,savedList,writeSaved,detailHTML,benchmarkHTML,tradeHTML,equityNavigator,init,iconize,pristineExport,ICON};
 })();
 
 // Optimization research on the strategy page: parameter ranges, Rust grid run, Claude's conclusion (top 3 by the
@@ -836,7 +877,10 @@ function sourcePdfLinks(sources){
   return admitted.length?`<details class="source-pdfs"><summary>Read original files (${admitted.length})</summary><ul>${admitted.map(f=>`<li><a class="olink" href="/api/app/books/files/${encodeURIComponent(f.id)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${esc(f.filename)}</a>${f.disposition==='attachment'?' <small>Download original document</small>':''}</li>`).join('')}</ul><p class="muted">Files are served from the checked local reading cache. Filename-based catalogue associations may require bibliographic review; a readable copy does not certify authorship, rules or published performance.</p></details>`:'';
 }
 function bookSources(g,b){const sources=(BOOK_COVERAGE.authors[g.id]?.source_titles||[]).filter(s=>b.sourceIds?.includes(s.id)||(s.catalogue_candidates||[]).some(c=>(typeof c==='string'?c:c.id)===b.id));return sources.length?sources:b.readerPaths?.length?[{local_copies:b.readerPaths.map(path=>({path}))}]:[];}
-function readingSummary(g,b){return SOURCE_REVIEWS.catalogue?.[b.id]?.summary||BOOK_COVERAGE.authors[g.id]?.catalogue_books?.find(x=>x.id===b.id)?.summary||b.blurb||BOOK_BLURB[b.id]||'This book is indexed as reading material. Its content and objective strategy rules have not completed independent review; no performance is attributed to it.';}
+const pristineReviewedSource=()=>ALLCAT.some(v=>pristineMethod(v.id,v.book)&&v.instrument_policy?.source_rule_reviewed===true);
+const pristineSourceNote='Selected TPM1 daily CBS/COG and Bullish Gap Surprise branches are source-reviewed under declared supplied-series conventions. Other Pristine sources and original book performance do not inherit this review.';
+function pristineAuthorStatus(state){if(!state)return;if(pristineReviewedSource()){state.title='Selected TPM1 rules reviewed';state.text=pristineSourceNote+' Choose an actual US stock and explicit research mode; basket admission remains separate.';}else{state.title='Rule review pending';state.text='Original Pristine books are readable. Complete trading rules and execution assumptions still need review; no verified strategy is registered.';}}
+function readingSummary(g,b){if(g.id==='pristine'&&b.id==='p_tpm1'&&pristineReviewedSource())return pristineSourceNote;return SOURCE_REVIEWS.catalogue?.[b.id]?.summary||BOOK_COVERAGE.authors[g.id]?.catalogue_books?.find(x=>x.id===b.id)?.summary||b.blurb||BOOK_BLURB[b.id]||'This book is indexed as reading material. Its content and objective strategy rules have not completed independent review; no performance is attributed to it.';}
 function readingReviewHTML(source){
   const review=source?.review;if(!review)return '';
   const evidence=(review.evidence||[]).map(e=>`<li><strong>${esc(e.file||'Source document')}</strong>${e.page_range?` · PDF ${esc(Array.isArray(e.page_range)?e.page_range.map(p=>Array.isArray(p)?p[0]===p[1]?String(p[0]):p.join('–'):p).join(', '):e.page_range)}`:''}<p>${esc(e.finding||'')}</p></li>`).join('');
@@ -846,7 +890,7 @@ function readingReviewHTML(source){
 const BOOK = {}; LIB.forEach(g => g.books.forEach((b, k) => { b.guru = g; b.c = CLOTH[(LIB.indexOf(g) * 2 + k) % CLOTH.length]; BOOK[b.id] = b; }));
 const GURU = Object.fromEntries(LIB.map(g => [g.id, g]));
 const bookYear = b => b.year || 'Edition year unconfirmed';
-const ownerOf = id => ALLCAT.find(v => v.id === id)?.api || (id.startsWith('jr_') ? 'ross' : id.startsWith('ch_') ? 'chande' : 'connors');
+const ownerOf = id => ALLCAT.find(v => v.id === id)?.api || (pristineMethod(id,PRISTINE_BOOK)?'pristine':id.startsWith('jr_') ? 'ross' : id.startsWith('ch_') ? 'chande' : 'connors');
 const enginePath = (id, endpoint, api = API) => `${api}/guru/${ownerOf(id)}/${endpoint}`;
 const guruIds = () => GURUS_API.map(g => g.id);
 function sourceEvidence(v) { return v.guru==='chande'?window.ChandeEvidence.methods[v.id]:window.JoeRossEvidence.methods[v.id]; }
@@ -892,21 +936,42 @@ function summaryContext(tk,from='',to='') {
  const ticker=[...TICK_ALL_IN,...TICK_ALL_US].find(item=>item.ticker===tk);
  return {ticker:tk,label:LABEL[tk]||ticker?.symbol||tk,from,to,first:ticker?.first,last:ticker?.last};
 }
-const summaryKey=(api,tk,from='',to='')=>`${api}|${tk}|${from}|${to}`;
+const summaryKey=(api,tk,from='',to='')=>`${api}|${tk}|${from}|${to}`+(guruIds().includes('pristine')?`|pristine:${S.research_mode||''}:${S.cost??'0'}:${S.slippage??'0'}:${S.rollover??'0'}:${S.p||''}`:'');
 const SUMMARY_ISSUES={},READINESS={},SUM={},SUM_FAILURE_GENERATION={},READINESS_FAILURE_GENERATION={};
 const ownedDefinitions=(variants,owner,id='')=>variants.filter(v=>(v.api||ownerOf(v.id))===owner&&(!id||v.id===id));
 const summaryIssues=(tk,from='',to='')=>SUMMARY_ISSUES[summaryKey(API,tk,from,to)]||[];
+function ownerQuery(owner,query){
+ if(owner!=='pristine')return query;
+ const selected=new URLSearchParams(query);selected.set('research_mode',S.research_mode||'');selected.set('cost',S.cost??'0');selected.set('slippage',S.slippage??'0');selected.set('rollover',S.rollover??'0');return selected;
+}
+// A distinct owner has a distinct inclusive-session protocol. Do not weaken
+// the shared legacy loader's date/window semantics to admit this model.
+async function pristineOwnerRows(url,definitions,kind){
+ try{
+  if(S.p)throw Error('These fixed Pristine branches accept no parameter settings.');
+  const response=await fetch(url);if(!response.ok)throw Error(await response.text());
+  const payload=await response.json(),rows=kind==='readiness'?payload?.strategies:payload,selected=new URL(url,location.href).searchParams;
+  if(!Array.isArray(rows)||rows.length!==definitions.length)throw Error('Pristine owner response shape is unavailable.');
+  const expected=new Set(definitions.map(definition=>definition.id)),seen=new Set();
+  for(const row of rows){
+   if(!row||!expected.has(row.id)||seen.has(row.id))throw Error('Pristine owner response identity is unavailable.');seen.add(row.id);
+   if(kind==='summary'&&!row.blocked){const model=row.pristine_summary;if(!model||model.id!==row.id||model.book!==PRISTINE_BOOK||model.owner!=='pristine'||model.model!=='pristine_daily_supplied_series_summary_v1'||model.research_mode!==selected.get('research_mode')||model.qualified_ticker!==selected.get('ticker')||model.market!=='us'||model.asset_type!=='individual_stock'||model.book_performance_reproduced!==false||model.native_historical_dollars_verified!==false||model.historical_membership_verified!==false)throw Error('Pristine summary model does not match current research scope.');}
+  }
+  return {rows,retryableFailure:false};
+ }catch(error){return {rows:definitions.map(definition=>({id:definition.id,...(kind==='readiness'?{status:'unavailable',note:error.message}:{blocked:error.message,readiness:'unavailable'})})),retryableFailure:true,issue:{owner:'pristine',status:'unavailable',kind:'request_failed',note:error.message||'Pristine owner data is unavailable.'}};}
+}
+
 async function getReadiness(tk, from = '', to = '', id = '', parameters = {}) {
  const api=API,owners=id?[ownerOf(id)]:guruIds(),variants=[...ALLCAT],generation=busy;
  if(!owners.length)return {};
  const query=new URLSearchParams({ticker:tk,from,to,cost:S.cost||'0',...VaultUI.costState(S),...(id?{id}:{})});
  const settings=typeof parameters==='string'?decodeP(parameters):parameters;
  for(const [key,value] of Object.entries(settings))query.set('p.'+key,value);
- const key=api+'|'+(id?owners[0]:'all')+'?'+query,context=summaryContext(tk,from,to);
+ const key=api+'|'+(id?owners[0]:'all')+'?'+query+(owners.includes('pristine')?'|research_mode='+S.research_mode:''),context=summaryContext(tk,from,to);
  // Failed requests are shared within a render, then retried on the next user navigation.
  if(READINESS_FAILURE_GENERATION[key]!=null&&READINESS_FAILURE_GENERATION[key]!==generation)delete READINESS[key];
  return READINESS[key]||(READINESS[key]=(async()=>{
-  const outcomes=await Promise.all(owners.map(owner=>loadOwnerRows({owner,definitions:ownedDefinitions(variants,owner,id),context,url:api+'/guru/'+owner+'/readiness?'+query,kind:'readiness',fetcher:fetch,wait:ms=>new Promise(resolve=>setTimeout(resolve,ms))})));
+  const outcomes=await Promise.all(owners.map(owner=>owner==='pristine'?pristineOwnerRows(api+'/guru/pristine/readiness?'+ownerQuery(owner,query),ownedDefinitions(variants,owner,id),'readiness'):loadOwnerRows({owner,definitions:ownedDefinitions(variants,owner,id),context,url:api+'/guru/'+owner+'/readiness?'+query,kind:'readiness',fetcher:fetch,wait:ms=>new Promise(resolve=>setTimeout(resolve,ms))})));
   if(outcomes.some(outcome=>outcome.issue))READINESS_FAILURE_GENERATION[key]=generation;else delete READINESS_FAILURE_GENERATION[key];
   return Object.fromEntries(outcomes.flatMap(outcome=>outcome.rows).map(row=>[row.id,row]));
  })());
@@ -917,7 +982,7 @@ async function getSum(tk, from = '', to = '') {
  const key=summaryKey(api,tk,from,to),context=summaryContext(tk,from,to),query=new URLSearchParams({ticker:tk,from,to});
  if(SUM_FAILURE_GENERATION[key]!=null&&SUM_FAILURE_GENERATION[key]!==generation)delete SUM[key];
  return SUM[key]||(SUM[key]=(async()=>{
-  const outcomes=await Promise.all(owners.map(owner=>loadOwnerRows({owner,definitions:ownedDefinitions(variants,owner),context,url:api+'/guru/'+owner+'/summary?'+query,kind:'summary',fetcher:fetch,wait:ms=>new Promise(resolve=>setTimeout(resolve,ms))})));
+  const outcomes=await Promise.all(owners.map(owner=>owner==='pristine'?pristineOwnerRows(api+'/guru/pristine/summary?'+ownerQuery(owner,query),ownedDefinitions(variants,owner),'summary'):loadOwnerRows({owner,definitions:ownedDefinitions(variants,owner),context,url:api+'/guru/'+owner+'/summary?'+query,kind:'summary',fetcher:fetch,wait:ms=>new Promise(resolve=>setTimeout(resolve,ms))})));
   SUMMARY_ISSUES[key]=outcomes.flatMap(outcome=>outcome.issue?[outcome.issue]:[]);
   if(outcomes.some(outcome=>outcome.issue))SUM_FAILURE_GENERATION[key]=generation;else delete SUM_FAILURE_GENERATION[key];
   return Object.fromEntries(outcomes.flatMap(outcome=>outcome.rows).map(row=>[row.id,row]));
@@ -1176,7 +1241,7 @@ function exitCheck(t) { return tradeExitCheck(t); }
 // ================================================================ FULL VARIANT 1
 // Routes:  #/  landing (legends)  ·  #/guru/<id>  author grid  ·  #/strategies  all gurus  ·  #/s/<id>  one strategy
 // Filters live in a top navbar of dropdowns (DaisyUI-style); animation by motion.dev; charts in the Bklit style.
-DEF.view = 'grid'; DEF.region = 'in'; DEF.from = ''; DEF.to = ''; DEF.cost = '0'; DEF.slippage='0'; DEF.rollover='0'; DEF.basket=''; DEF.run_scope='single'; DEF.report_mode='fixed'; DEF.membership='current'; DEF.max_positions='10'; DEF.position_choice='10'; DEF.p = ''; DEF.library_scope='trading'; DEF.library_market=''; DEF.library_q=''; DEF.library_view='authors'; DEF.library_sort='default'; DEF.book_category=''; DEF.library_limit='24'; DEF.library_page='1'; DEF.source_page='1'; // p = custom strategy settings 'key:value,…' (empty = the book's) // custom backtest period, kept in the link
+DEF.research_mode=''; DEF.view = 'grid'; DEF.region = 'in'; DEF.from = ''; DEF.to = ''; DEF.cost = '0'; DEF.slippage='0'; DEF.rollover='0'; DEF.basket=''; DEF.run_scope='single'; DEF.report_mode='fixed'; DEF.membership='current'; DEF.max_positions='10'; DEF.position_choice='10'; DEF.p = ''; DEF.library_scope='trading'; DEF.library_market=''; DEF.library_q=''; DEF.library_view='authors'; DEF.library_sort='default'; DEF.book_category=''; DEF.library_limit='24'; DEF.library_page='1'; DEF.source_page='1'; // p = custom strategy settings 'key:value,…' (empty = the book's) // custom backtest period, kept in the link
 const getS = () => S;
 const MO = window.Motion, CALM = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const anim = (el, kf, o) => { if (MO && !CALM && el && (el.length === undefined || el.length)) try { return MO.animate(el, kf, o); } catch (e) {} };
@@ -1198,12 +1263,12 @@ function readRoute() {
   S.membership=S.membership==='past'?'past':'current';
   S.max_positions=String(positionLimit(S.max_positions)||10);
   S.position_choice=['10','20','custom'].includes(S.position_choice)?S.position_choice:'10';
-  S.cost='0'; // The interface now uses only user-entered slippage and actual-roll costs.
+  if(!pristineMethod(R.id,PRISTINE_BOOK))S.cost='0'; // Legacy interface retains its existing fee setting.
   if (R.name === 'guru') S.guru = R.id;
   if (S.book?.startsWith('jr_') && !new URLSearchParams(q).has('tab')) S.tab='awaiting';
   if (S.book?.startsWith('jr_') && !BOOK[S.book]?.year && S.tab==='working') S.tab='awaiting';
   // Use each source-qualified basket only with the market engine that admitted it.
-  if(S.region==='us'&&TICK_US){API=API_US;BASKETS=BASKETS_US;}else{S.region='in';API=API_IN;BASKETS=BASKETS_IN;}
+  if(S.region==='us'&&(TICK_US||pristineMethod(R.id,PRISTINE_BOOK))){API=API_US;BASKETS=BASKETS_US;}else{S.region='in';API=API_IN;BASKETS=BASKETS_IN;}
   const pool=S.region==='us'?TICK_ALL_US:TICK_ALL_IN, indices=S.region==='us'?TICK_US:TICK_IN;
   const chosen=R.name==='strategy'?ALLCAT.find(v=>v.id===R.id):null;
   const types=chosen?.instrument_policy?.allowed_types||[];
@@ -1226,7 +1291,8 @@ function readRoute() {
   if(explicitStock&&!TICKERS.some(t=>t.ticker===S.tk))TICKERS.push(explicitStock);
   const explicitUnitSelection=isDetail&&unitExposureMethod(chosen?.id,chosen?.book)&&explicit.get('tk')?pool.find(t=>t.ticker===S.tk):null;
   if(explicitUnitSelection&&!TICKERS.some(t=>t.ticker===S.tk))TICKERS.push(explicitUnitSelection); // Preserve actual incompatible URLs for an honest admission hold.
-  if(S.tk!=='ALL'&&!TICKERS.some(t=>t.ticker===S.tk))S.tk=TICKERS[0]?.ticker||S.tk;
+  const explicitPristine=isDetail&&pristineMethod(chosen?.id,chosen?.book)&&explicit.has('tk');
+  if(S.tk!=='ALL'&&!TICKERS.some(t=>t.ticker===S.tk)&&!explicitPristine)S.tk=TICKERS[0]?.ticker||S.tk;
   // Preserve explicit basket URLs: the readiness gate explains incompatible instruments.
   // Silent substitution back to an index made basket clicks appear stuck.
   CAT = marketCat();
@@ -1235,7 +1301,7 @@ function readRoute() {
 let ALLCAT = [];
 const foreignTo = (v, us) => (v.needs_series || []).some(n => us ? /^NSE_/.test(n) : /^NYSE_/.test(n));
 const marketCat = () => libraryMarketVariants(ALLCAT,libraryMarket(S,R.name));
-const href = (path, st = {}) => { const q = new URLSearchParams(),catalogue=path==='/'||path==='/strategies'||path.startsWith('/guru/')||path.startsWith('/source/'); if (S.region === 'us' && !('region' in st)) q.set('region', 'us'); if(catalogue&&S.library_market&&!('library_market' in st))q.set('library_market',S.library_market); for (const k in st) if (st[k] !== DEF[k] && st[k] != null && !(path.startsWith('/guru/') && k === 'guru') && (k!=='library_market'||catalogue)) q.set(k, st[k]); const s = q.toString(); return '#' + path + (s ? '?' + s : ''); };
+const href = (path, st = {}) => { const q = new URLSearchParams();if(S.research_mode&&!('research_mode' in st))q.set('research_mode',S.research_mode);const catalogue=path==='/'||path==='/strategies'||path.startsWith('/guru/')||path.startsWith('/source/'); if (S.region === 'us' && !('region' in st)) q.set('region', 'us'); if(catalogue&&S.library_market&&!('library_market' in st))q.set('library_market',S.library_market); for (const k in st) if (st[k] !== DEF[k] && st[k] != null && !(path.startsWith('/guru/') && k === 'guru') && (k!=='library_market'||catalogue)) q.set(k, st[k]); const s = q.toString(); return '#' + path + (s ? '?' + s : ''); };
 const go = (path, st) => { location.hash = href(path, st).slice(1); };
 const setState = patch => { const st = { ...S, ...patch }; if ('guru' in patch && !('book' in patch) && st.book && BOOK[st.book]?.guru.id !== st.guru) st.book = ''; go(R.path, st); };
 const guruLink = id => href('/guru/' + id, {view:'grid',tk:S.tk,basket:S.basket,from:S.from,to:S.to});
@@ -1302,7 +1368,7 @@ function libraryBookResults(records){
   return `<div class="library-result-count"><h2 class="section-h">Books &amp; reading sources</h2><span>${found.length} indexed entries${S.library_q?` matching “${esc(S.library_q)}”`:''}</span></div>${found.length?`<div class="library-book-grid">${found.slice(start,start+24).map(libraryBookCard).join('')}</div>${libraryPagination(found.length,page,'library_page','books')}`:libraryEmpty()}`;
 }
 function libraryBookCard(record){const b=record.book||record.source||record,link=record.kind==='catalogue'?href('/guru/'+record.authorId,{view:'grid',book:record.id,tk:S.tk,basket:S.basket,from:S.from,to:S.to}):href('/source/'+encodeURIComponent(record.id),{guru:record.authorId}),isRule=record.categories.includes('rule-based');return `<article class="library-book" data-library-book="${esc(record.id)}"><span class="library-book-kind">${record.kind==='catalogue'?'Catalogue book entry':'Reading source · identity review'}</span><p class="library-book-author">${esc(record.kind==='source'&&record.source?.author_metadata&&record.source.author_metadata!=='?'?record.source.author_metadata+' · '+record.authorName:record.authorName)}</p><h3><a href="${link}">${esc(record.title)}</a></h3>${categoryTags(b,record.kind)}<p class="library-book-summary">${esc(record.kind==='catalogue'?readingSummary(record.author||GURU[record.authorId],b):b.summary||'Original reading material indexed from the source vault. Content and objective rules still need review.')}</p><div class="library-book-foot"><span>${record.year||'Edition year unconfirmed'}</span><a href="${link}">${isRule&&b.live?'Open book & rules':'Open reading page'} <span aria-hidden="true">↗</span></a></div></article>`;}
-function readingBookPage(g,b,source=null){if(!g||!b)return '<div class="empty"><b>Reading entry unavailable</b>This source is not in the current index.</div>';const title=b.title||'Reading source',sources=source?[source]:bookSources(g,b),links=sourcePdfLinks(sources),credit=b.author_credit||source?.source_identity?.credit||source?.author_metadata||(source?(b.source_author&&b.source_author!=='?'?`Recorded source author: ${b.source_author}`:'Individual author unconfirmed'):g.name);return `<nav class="crumbs"><a href="#/">Guru’s</a><span>/</span>${GURU[g.id]?`<a href="${guruLink(g.id)}">${esc(g.name)}</a>`:`<span>${esc(g.name)}</span>`}<span>/</span><span>${esc(title)}</span></nav><section class="box reading-page" data-reading-page="${esc(b.id)}"><div class="reading-book-cover" aria-hidden="true"><span>${esc(credit)}</span><strong>${esc(title)}</strong><small>${source?(source.source_identity?.year||'Source edition unconfirmed'):bookYear(b)}</small></div><div class="reading-book-copy"><span class="olabel">Reading library</span><h1>${esc(title)}</h1><p class="reading-credit">${esc(credit)} · ${source?(source.source_identity?.year||'Edition year unconfirmed'):bookYear(b)}</p>${categoryTags(b,source?'source':'catalogue')}<p class="lede">${esc(source?b.summary||'This reading source is indexed from the vault. A detailed content summary and mechanical rule review are still pending.':readingSummary(g,b))}</p><div class="reading-status"><strong>Read the source</strong><p>${g.id==='pristine'?'Complete entry, exit, management and execution rules have not yet been independently reviewed.':'This page is for reading and source review. Topic classification does not establish a backtested trading system.'} No performance figures are attributed to this reading entry.</p></div>${b.publisher_source?`<p><a class="olink" href="${esc(b.publisher_source)}" target="_blank" rel="noopener">Publisher’s book record</a></p>`:''}${links||'<p class="rnote">Data missing: a verified local reading copy is not available for this entry.</p>'}</div></section>${readingReviewHTML(source||bookSources(g,b).find(x=>x.review))}${source?`<section class="box"><div class="box-h">Source record</div><p>${esc(source.count_basis||'An indexed source-title candidate, not a certified count of distinct authored books.')}</p><ul>${(source.files||[]).map(f=>`<li>${esc(f.filename)}</li>`).join('')}</ul></section>`:''}`;}
+function readingBookPage(g,b,source=null){if(!g||!b)return '<div class="empty"><b>Reading entry unavailable</b>This source is not in the current index.</div>';const title=b.title||'Reading source',sources=source?[source]:bookSources(g,b),links=sourcePdfLinks(sources),credit=b.author_credit||source?.source_identity?.credit||source?.author_metadata||(source?(b.source_author&&b.source_author!=='?'?`Recorded source author: ${b.source_author}`:'Individual author unconfirmed'):g.name);return `<nav class="crumbs"><a href="#/">Guru’s</a><span>/</span>${GURU[g.id]?`<a href="${guruLink(g.id)}">${esc(g.name)}</a>`:`<span>${esc(g.name)}</span>`}<span>/</span><span>${esc(title)}</span></nav><section class="box reading-page" data-reading-page="${esc(b.id)}"><div class="reading-book-cover" aria-hidden="true"><span>${esc(credit)}</span><strong>${esc(title)}</strong><small>${source?(source.source_identity?.year||'Source edition unconfirmed'):bookYear(b)}</small></div><div class="reading-book-copy"><span class="olabel">Reading library</span><h1>${esc(title)}</h1><p class="reading-credit">${esc(credit)} · ${source?(source.source_identity?.year||'Edition year unconfirmed'):bookYear(b)}</p>${categoryTags(b,source?'source':'catalogue')}<p class="lede">${esc(source?b.summary||'This reading source is indexed from the vault. A detailed content summary and mechanical rule review are still pending.':readingSummary(g,b))}</p><div class="reading-status"><strong>Read the source</strong><p>${g.id==='pristine'?(b.id==='p_tpm1'&&pristineReviewedSource()?esc(pristineSourceNote):'This Pristine reading source has no separately admitted complete trading protocol. Selected TPM1 branches do not certify other sources.'):'This page is for reading and source review. Topic classification does not establish a backtested trading system.'} No performance figures are attributed to this reading entry.</p></div>${b.publisher_source?`<p><a class="olink" href="${esc(b.publisher_source)}" target="_blank" rel="noopener">Publisher’s book record</a></p>`:''}${links||'<p class="rnote">Data missing: a verified local reading copy is not available for this entry.</p>'}</div></section>${readingReviewHTML(source||bookSources(g,b).find(x=>x.review))}${source?`<section class="box"><div class="box-h">Source record</div><p>${esc(source.count_basis||'An indexed source-title candidate, not a certified count of distinct authored books.')}</p><ul>${(source.files||[]).map(f=>`<li>${esc(f.filename)}</li>`).join('')}</ul></section>`:''}`;}
 function sourceReadingPage(){const record=libraryRecords().find(r=>r.kind==='source'&&r.id===R.id),indexed=SOURCE_ROW_BY_ID.get(R.id);return record?readingBookPage(record.author||{id:record.authorId,name:record.authorName},record.source,record.source):indexed?readingBookPage(indexed.author,indexed.source,indexed.source):'<div class="empty"><b>Reading source unavailable</b>This source is not in the current index.</div>';}
 
 // ---------------------------------------------------------------- 1. landing
@@ -1314,7 +1380,7 @@ async function viewHome() {
   const scoped=Object.fromEntries(await Promise.all(live.map(async g=>[g.id,await heroStats(g.id)])));
   HOME_STATS = scoped;
   const awaitedSummary=await getSum(h.tk),cardStates=Object.fromEntries(LIB.map(g=>[g.id,VaultLibraryDiscovery.authorAvailability(g.books.map(b=>b.id),CAT,awaitedSummary,readiness)]));
-  const pristineState=cardStates.pristine;if(pristineState){pristineState.title='Rule review pending';pristineState.text='Original Pristine books are readable. Complete trading rules and execution assumptions still need review; no verified strategy is registered.';}
+  pristineAuthorStatus(cardStates.pristine);
   const card = (g,k,isLive) => {
     const gs=isLive?scoped[g.id]:null,state=cardStates[g.id],entryCounts=libraryEntryCounts(g.id);
     const matching=VaultLibraryBrowser.search(authorLibraryRecords(g.id),{query:S.library_q,category:S.book_category}),preview=matching.length?matching.slice(0,2):(g.books.some(b=>b.live)?g.books.filter(b=>b.live):g.books).slice(0,2);
@@ -1397,7 +1463,7 @@ async function viewList() {
   if (R.name === 'guru') {
     const g = GURU[R.id], api = GURUS_API.find(a => a.id === g.id), b = S.book && BOOK[S.book], h = g.books.some(book=>book.live) ? await heroStats(g.id,S.book) : {fams:new Set(CAT.filter(v=>v.guru===g.id).map(v=>v.family)).size};
     head = `<nav class="crumbs"><a href="#/">Guru's</a><span>/</span>${b ? `<a href="${guruLink(g.id)}">${esc(g.name)}</a><span>/</span><span>${esc(b.title)}</span>` : `<span>${esc(g.name)}</span>`}</nav>
-      <section class="ghero"><div class="guilloche" aria-hidden="true">${GUILL}</div><div class="ghero-copy"><h1>${esc(b ? b.title : g.name)}</h1><p class="lede">${esc(b ? `${g.name} · ${bookYear(b)}` : api?.tagline || g.tagline || 'Reading library · objective strategy review pending')}</p><p class="gbook">${esc(b ? (b.blurb || BOOK_BLURB[b.id] || '') : g.books.filter(x => x.live).map(x => `${x.title} (${bookYear(x)})`).join(' · '))}</p></div><figure class="guru-portrait"><div class="portrait ${g.id==='ross'?'portrait-ross':''}">${pframe(g)}</div>${g.photoSource?`<figcaption class="photo-credit">Photo: <a href="${esc(g.photoSource)}" target="_blank" rel="noopener noreferrer">Trading Educators</a></figcaption>`:''}</figure></section>
+      <section class="ghero"><div class="guilloche" aria-hidden="true">${GUILL}</div><div class="ghero-copy"><h1>${esc(b ? b.title : g.name)}</h1><p class="lede">${esc(b ? `${g.name} · ${bookYear(b)}` : api?.tagline || g.tagline || 'Reading library · objective strategy review pending')}</p><p class="gbook">${esc(b ? (g.id==='pristine'&&b.id==='p_tpm1'?readingSummary(g,b):(b.blurb || BOOK_BLURB[b.id] || '')) : g.books.filter(x => x.live).map(x => `${x.title} (${bookYear(x)})`).join(' · '))}</p></div><figure class="guru-portrait"><div class="portrait ${g.id==='ross'?'portrait-ross':''}">${pframe(g)}</div>${g.photoSource?`<figcaption class="photo-credit">Photo: <a href="${esc(g.photoSource)}" target="_blank" rel="noopener noreferrer">Trading Educators</a></figcaption>`:''}</figure></section>
       ${g.id==='ross'?`<dl class="lstrip" data-source-counts><div><dt>Source methods</dt><dd>${h.fams}</dd></div><div><dt>Directional references</dt><dd>${CAT.filter(v=>v.guru==='ross'&&(!b||v.book===b.id)).length}</dd></div><div><dt>Implemented backtests</dt><dd>0</dd></div><div><dt>Requirements</dt><dd style="font-size:16px">Data missing · Rules unresolved</dd></div></dl>`:g.books.some(x => x.live) ? `<dl class="lstrip"><div><dt>${b ? `Strategies in the ${b.id === 'stc9' ? 'course' : 'book'}` : `Strategies across ${g.books.filter(x => x.live).length} books`}</dt><dd data-count="${h.fams}">${h.fams}</dd></div><div><dt>Rule variants tested on ${esc(LABEL[h.tk])}</dt><dd data-count="${h.variants}">${h.variants}</dd></div><div><dt>Variants with t ≥ 2</dt><dd data-count="${h.sig}">${h.sig}</dd></div>${h.best?`<div><dt>Best modeled Sharpe (20+ trades)</dt><dd>${fx(h.best.s.sharpe)}</dd></div>`:''}</dl>` : ''}`;
   } else head = `<nav class="crumbs"><a href="#/">Guru's</a><span>/</span><span>All strategies</span></nav><section class="ahero"><h1>All strategies</h1><p class="lede">Explore the catalogued book rules on the selected India or US instrument. Available backtests and unavailable strategies are listed separately; book figures are reference claims.</p></section>`;
   if(S.from||S.to)head+=`<p class="rnote" data-list-period><b>Selected results period:</b> ${esc(S.from||'First available bar')} to ${esc(S.to||'Latest available bar')}. Top Sharpe results and linked backtests use this window.</p>`;
@@ -1432,14 +1498,14 @@ async function bookShelf(g) {
 const BOOK_BLURB = { stc9: 'TradingMarkets Swing Trading College IX (2010) · 14 sessions: the 4 Keys, R3, TPS, 5x5x5, H10 and the market-timing rules (RSI, DMI, %b, VIX, end of month).' };
 
 // ---------------------------------------------------------------- 4. one strategy (the main app's strategy panel, nothing else)
-const RUNS = {}, OHLC = {}, FULL_OHLC={};
+const RUNS = {}, OHLC = {}, FULL_OHLC={},PRISTINE_READY={};
 const fullOhlc=(tk,api=API)=>{const key=api+'|'+tk;return FULL_OHLC[key]||(FULL_OHLC[key]=fetch(api+'/ohlc?'+new URLSearchParams({ticker:tk}),{signal:AbortSignal.timeout(30000)}).then(async r=>{if(!r.ok)throw Error('Full chart history unavailable');return r.json();}).catch(error=>{delete FULL_OHLC[key];throw error;}));};
 const ohlc = (tk, tf = 'D') => OHLC[tk + tf] || (OHLC[tk + tf] = fetch(`data/ohlc-${tk.replace(/\s/g, '')}${tf === 'D' ? '' : '-' + tf}.json`).then(r => r.ok ? r.json() : null).catch(() => null));
 let TF = 'D';
-const runData = (id, tk, from = '', to = '', cost = '0', p = '', api = API,execution=VaultUI.costState(S)) => { const k = [api, id, tk, from, to, cost, p,execution.slippage,execution.rollover].join('|');
+const runData = (id, tk, from = '', to = '', cost = '0', p = '', api = API,execution=VaultUI.costState(S)) => { const k = [api, id, tk, from, to, cost, p,execution.slippage,execution.rollover,...(pristineMethod(id,PRISTINE_BOOK)?[execution.research_mode||'']:[])].join('|');
   return RUNS[k] || (RUNS[k] = (async () => { const t0 = performance.now();
     try { const r = await fetch(enginePath(id,'run',api)+'?' + new URLSearchParams({ id, ticker: tk, from, to, cost, ...execution, ...Object.fromEntries(Object.entries(decodeP(p)).map(([k, v]) => ['p.' + k, v])) })); if (!r.ok) { delete RUNS[k]; return { error: await r.text() }; }
-      const j = await r.json(); j._ms = performance.now() - t0; return j; } catch (e) { delete RUNS[k]; return { error: e.message }; } })()); };
+      const j = await r.json(); if(!pristineMethod(id,PRISTINE_BOOK))j._ms = performance.now() - t0; return j; } catch (e) { delete RUNS[k]; return { error: e.message }; } })()); };
 // the period bar: dates, quick presets, cost, and a Run button (the Rust API recomputes the whole backtest for that window)
 let BASKETS=[],BASKETS_IN=[],BASKETS_US=[],TICK_ALL_IN=[];
 function basketChoices(){const past=S.membership==='past';return S.region==='us'?[['us_sp500','S&P 500'],['us_nasdaq100','Nasdaq 100'],['us_dow30','Dow Jones'],['us_russell2000','Russell 2000']].map(([id,name])=>[id+(past?'_past':''),name]):[['nse500','NSE 500'],['nifty50','Nifty 50'],['midcap100','Midcap100'],['allfo','All F&O']];}
@@ -1523,15 +1589,44 @@ function rulesPanel(v) {
   const col = (t, sub, c, items) => items.length ? `<div class="rcol"><h4><i style="background:${c}"></i>${t}</h4><p class="rsub">${sub}</p><ul>${items.map(r => `<li class="${act(r) ? 'act' : ''}">${esc(r)}</li>`).join('')}</ul></div>` : '';
   return `<div class="rgrid">${col('Conditions', 'All must be true (trend, liquidity, volatility filters)', 'var(--ink)', sec.F)}${col('Entry', v.guru==='ross'?'Source entry conditions; unresolved choices remain explicit':'When all of these happen on a bar’s close', 'var(--blue)', sec.E)}${col('Scale-in', 'While the trade is open', '#8b93a1', sec.A)}${col('Exit', v.guru==='ross'?'Source management; a complete automatic exit is not assumed':sec.X.length > 1 ? 'Whichever happens first' : 'How the trade is closed', 'var(--red)', sec.X)}</div>${v.notes ? `<p class="rnote">${esc(v.notes)}</p>` : ''}`;
 }
+async function viewPristineStrategy(v,tk,crumbs,selection,runApi,generation,optimization){
+ const stocks=TICK_ALL_US.flatMap(row=>pristineInstrumentContext(row.ticker,'us',[row])?[{ticker:row.ticker,symbol:row.symbol}]:[]);
+ const snapshot={data:null,view:null,definition:v,selection:{...selection,tk},stocks,availability:null,optimization:!!optimization},shell=crumbs+VaultUI.toolbar();
+ const hold=note=>{snapshot.availability={status:'not_testable',note};STRAT={v,tk,region:selection.region,pristine:snapshot};return shell;};
+ if(selection.region!=='us')return hold('This selected research mode requires an actual US/USD native stock. Choose US and a supplied stock; no index or INR substitution is made.');
+ if(selection.run_scope==='basket')return hold('Full basket results remain unavailable until the separate coordinator, membership/coverage and model/presenter admission is complete.');
+ if(selection.research_mode!==PRISTINE_RESEARCH_MODE)return hold('Choose the supplied-series-unit research basis explicitly before running. Historical-dollar equivalence is not certified.');
+ if(selection.p)return hold('These source branches have fixed rules and no parameters. Unknown settings are not silently replaced.');
+ if(!pristineInstrumentContext(tk,selection.region,TICK_ALL_US))return hold('Select one uniquely qualified native US/USD individual stock. ETFs, indices and ambiguous sources are not admitted.');
+ if(optimization)return hold('Fixed source rules; no parameter grid or optimizer search is available. Open the ordinary strategy report to run the selected stock.');
+ try{pristineCost(selection.cost);pristineCost(selection.slippage);pristineCost(selection.rollover);}catch(error){return hold(error.message);}
+ const query=new URLSearchParams({id:v.id,ticker:tk,from:selection.from||'',to:selection.to||'',cost:selection.cost??'0',...pristineExecution(selection),research_mode:selection.research_mode});
+ try{
+  const readinessUrl=enginePath(v.id,'readiness',runApi)+'?'+query;
+  const readiness=await(PRISTINE_READY[readinessUrl]||(PRISTINE_READY[readinessUrl]=fetch(readinessUrl).then(async response=>{if(!response.ok)throw Error(await response.text());return response.json();}).catch(error=>{delete PRISTINE_READY[readinessUrl];throw error;})));
+  if(generation!==busy)return '';
+  const ready=Array.isArray(readiness?.strategies)?readiness.strategies.find(row=>row.id===v.id):null;
+  if(!ready||ready.status!=='ready')return hold(ready?.note||'The source/data/accounting readiness check is unavailable for this exact request.');
+  const data=await runData(v.id,tk,selection.from,selection.to,selection.cost,selection.p,runApi,{...pristineExecution(selection),research_mode:selection.research_mode});
+  if(generation!==busy)return '';
+  if(!data||data.error)return hold(apiError(data?.error||'No response from the Pristine engine',tk));
+  const view=validatedPristineReport(data,pristineAdmission(v,tk,selection));
+  snapshot.data=data;snapshot.view=view;snapshot.availability={status:'ready',note:ready.note||''};
+  STRAT={v,tk,region:selection.region,pristine:snapshot};return shell;
+ }catch(error){if(generation!==busy)return '';return hold(error.message||'The selected Pristine response could not be validated.');}
+}
+
 async function viewStrategy() {
   const generation=busy,selection={...S},runApi=API,optimization=R.optim;
   let v = CAT.find(x => x.id === R.id);
+  if(!v&&pristineMethod(R.id,PRISTINE_BOOK))v=ALLCAT.find(x=>x.id===R.id);
   if (!v) { const other = ALLCAT.find(x => x.id === R.id), sib = other && CAT.find(x => x.family === other.family && x.status === other.status) || other && CAT.find(x => x.family === other.family);
     if (sib) { setTimeout(() => go('/s/' + encodeURIComponent(sib.id), S), 0); return bookLoader(`Switching to the ${S.region === 'us' ? 'NYSE' : 'NSE'} version…`); } } // same rule, this market's data
   if (v) bookCtx(v.book);
   if (!v) return `<nav class="crumbs"><a href="#/">Guru's</a></nav><div class="empty"><b>This strategy is not in the vault</b>The link may be old.</div>`;
-  const g = GURU[v.guru], b = BOOK[v.book], fam = CAT.filter(x => x.family === v.family), tk = S.tk === 'ALL' ? TICKERS[0].ticker : S.tk;
+  const g = GURU[v.guru], b = BOOK[v.book], fam = CAT.filter(x => x.family === v.family), tk = S.tk === 'ALL'&&!pristineMethod(v.id,v.book) ? TICKERS[0].ticker : S.tk;
   const crumbs = `<nav class="crumbs"><a href="#/">Guru's</a><span>/</span><a href="${guruLink(g.id)}">${esc(g.name)}</a><span>/</span><a href="${href('/guru/' + g.id, {view:'grid',book:b.id,tk:S.tk,basket:S.basket,from:S.from,to:S.to})}">${esc(b.title)}</a><span>/</span><span>${esc(v.family_name)}</span><a class="back" href="${LIST_HASH || guruLink(g.id)}">Back to strategies</a></nav>`;
+  if(pristineMethod(v.id,v.book))return viewPristineStrategy(v,tk,crumbs,selection,runApi,generation,optimization);
   const switches = marketControls(v,tk);
   const selectedBasket=BASKETS.find(b=>b.id===S.basket);
   if(S.run_scope==='basket'&&S.basket&&(!['ready','partial'].includes(selectedBasket?.price_status)||!selectedBasket.symbols.includes(tk)))return withheldStrategy(v,tk,crumbs,switches,{status:'needs_data',note:selectedBasket?.note||'Data missing: verified constituent prices and universe coverage for this basket are not available. Index prices cannot substitute for basket constituents.'});
@@ -1705,7 +1800,7 @@ async function drawSignals(tf) {
 }
 const safe = (name, f) => { try { f(); } catch (e) { console.warn(name, e); } };
 function drawStrategy() {
-  if (!STRAT) return; if (R.optim) {safe('optim',optimInit);return;} const { d, tiles } = STRAT;
+  if (!STRAT||STRAT.pristine) return; if (R.optim) {safe('optim',optimInit);return;} const { d, tiles } = STRAT;
   safe('tiles', () => {
   // count-up tiles
   finishMetricAnimations(); // Financial values are shown atomically, without intermediate mixed counts/returns.
@@ -1724,7 +1819,7 @@ function resizeVisibleReportCharts(){
   if(STRAT&&!R.optim)void drawVisibleReportCharts();
 }
 async function drawVisibleReportCharts(){
-  if(!STRAT||R.optim)return;const {d}=STRAT;
+  if(!STRAT||STRAT.pristine||R.optim)return;const {d}=STRAT;
   // Each widget is initialized only after its existing container is visible.
   // Keeping it mounted preserves range, series toggles and indicator choices.
   safe('equity', () => { const el = $('#c-eq'); if (el && window.LightweightCharts) {
@@ -1783,7 +1878,7 @@ async function render() {
     const focus=document.activeElement?.id,pos=document.activeElement?.selectionStart;
     pendingFocus={id:focus,pos};
     const status=custom?.label||(R.name==='strategy'?'Strategy':`${isUS()?'US':'India'} · ${S.tk==='ALL'?'all indices':LABEL[S.tk]||S.tk} · ${TABS[S.tab]?.name||'Research'}`);
-    vaultStore.commit(ticket,{html,home,reading,route,state:{...S},status,strategyRules:route.name==='strategy'?RULE_VISUAL:null,strategyAccount:route.name==='strategy'||route.name==='optimization'?STRAT?.sourceView??null:null,strategyUnit:route.name==='strategy'||route.name==='optimization'?STRAT?.unit??null:null});
+    vaultStore.commit(ticket,{html,home,reading,route,state:{...S},status,strategyRules:route.name==='strategy'?RULE_VISUAL:null,strategyAccount:route.name==='strategy'||route.name==='optimization'?STRAT?.sourceView??null:null,strategyPristine:route.name==='strategy'||route.name==='optimization'?STRAT?.pristine??null:null,strategyUnit:route.name==='strategy'||route.name==='optimization'?STRAT?.unit??null:null});
   }catch(error){if(my===busy)vaultStore.fail(ticket,error.message||'Research data is unavailable.');}
 }
 let pendingFocus=null;
@@ -1842,7 +1937,8 @@ async function initializeRuntime(account) {
     setTheme(account.settings.theme||'aqua', false);
     const get = async u => { const response = await fetch(API + u); if (!response.ok) throw new Error(await response.text()); return response.json(); };
     const [connorsCat, rossCat, chandeCat, tk, gurus] = await Promise.all([get('/guru/connors/strategies'), get('/guru/ross/strategies'), get('/guru/chande/strategies'), get('/tickers'), get('/gurus')]);
-    const cat=[...connorsCat.map(v=>({...v,api:'connors',guru:BOOK[v.book]?.guru.id||'connors'})),...rossCat.map(v=>({...v,api:'ross',guru:'ross'})),...chandeCat.map(v=>({...v,api:'chande',guru:'chande'}))]; // guru = the book's author; api = the engine namespace that serves it
+    const pristineCat=gurus.some(owner=>owner.id==='pristine')?await get('/guru/pristine/strategies'):[];
+    const cat=[...connorsCat.map(v=>({...v,api:'connors',guru:BOOK[v.book]?.guru.id||'connors'})),...rossCat.map(v=>({...v,api:'ross',guru:'ross'})),...chandeCat.map(v=>({...v,api:'chande',guru:'chande'})),...pristineCat.map(v=>({...v,api:'pristine',guru:'pristine'}))]; // guru = the book's author; api = the engine namespace that serves it
     TICK_ALL_IN=tk;tk.forEach(t=>{if(!LABEL[t.ticker])LABEL[t.ticker]=t.symbol||t.ticker.split(':').at(-1);});
     TICKERS = TICK_IN = tk.filter(t => IN_INDICES.includes(t.ticker)); GURUS_API = gurus;
     try { const u = await (await fetch(API_US + '/tickers')).json(); TICK_ALL_US=u;u.forEach(t=>{if(!LABEL[t.ticker])LABEL[t.ticker]=t.symbol||t.ticker.split(':').at(-1);}); TICK_US = US_INDICES.map(k => u.find(t => t.ticker === k)).filter(Boolean); if (!TICK_US.length) TICK_US = null; } catch (e) { TICK_US = null; }
@@ -1852,7 +1948,7 @@ async function initializeRuntime(account) {
     const metadata=await Promise.all(metadataFiles.map(async file=>{try{const response=await fetch('data/'+file);return response.ok?await response.json():null;}catch{return null;}}));
     for(const [offset,region] of [[0,'in'],[1,'us']]){try{const data=metadata[offset];if(data){const pool=region==='us'?TICK_ALL_US:TICK_ALL_IN,keys=new Set(pool.map(t=>t.ticker)),items=(Array.isArray(data)?data:data.baskets||[]).map(b=>({...b,symbols:(b.symbols||[]).filter(key=>keys.has(key))}));if(region==='us')BASKETS_US=items;else BASKETS_IN=items;}}catch{}}
     if(metadata[2])BOOK_COVERAGE=metadata[2];
-    try{const data=metadata[3];if(data){const entries=(data.entries||[]).map(b=>({...b,author_metadata:b.source_author,years_reported:b.year?[String(b.year)]:[]}));BOOK_COVERAGE.authors.pristine={id:'pristine',name:'Pristine Trading',source_titles:entries,catalogue_books:GURU.pristine.books.map(b=>({id:b.id,title:b.title,summary:b.blurb})),counts:{catalogue_books:3,source_title_candidates:entries.length,local_pdf_files:(data.counts?.source_locations||0)},note:'Three curated reading entries, plus related Pristine manuals and articles with their recorded author credits. Source-title candidates, document versions and split materials are not independently verified distinct authored books. Original source bytes were preserved; complete trading-rule review is pending.'};}}catch{}
+    try{const data=metadata[3];if(data){const entries=(data.entries||[]).map(b=>({...b,author_metadata:b.source_author,years_reported:b.year?[String(b.year)]:[]}));BOOK_COVERAGE.authors.pristine={id:'pristine',name:'Pristine Trading',source_titles:entries,catalogue_books:GURU.pristine.books.map(b=>({id:b.id,title:b.title,summary:b.blurb})),counts:{catalogue_books:3,source_title_candidates:entries.length,local_pdf_files:(data.counts?.source_locations||0)},note:'Three curated reading entries, plus related Pristine manuals and articles with their recorded author credits. Source-title candidates, document versions and split materials are not independently verified distinct authored books. Original source bytes were preserved. Selected TPM1 daily branches have separate source review; other sources, execution modes and original performance are not thereby certified.'};}}catch{}
     if(metadata[4])BOOK_FILE_INDEX=metadata[4];
     if(metadata[5])BOOK_CATEGORIES=metadata[5];
     try{if(metadata[6])mergeResearchLibrary(metadata[6]);}catch{}
@@ -1870,7 +1966,7 @@ async function homeModel(){
  const inventoryRecords=libraryRecords(),allRecords=inventoryRecords.filter(record=>inLibraryScope(libraryScope(record,CURATED_AUTHOR_IDS),S.library_scope)),scopeAuthorIds=new Set(allRecords.map(record=>record.authorId)),scopeAuthors=LIB.filter(author=>scopeAuthorIds.has(author.id)),authors=VaultLibraryBrowser.matchingAuthors(scopeAuthors,allRecords,S.library_q,S.book_category),live=LIB.filter(g=>g.books.some(b=>b.live));
  const scoped=Object.fromEntries(await Promise.all(live.map(async g=>[g.id,await heroStats(g.id)])));
  const summary=await getSum(h.tk,S.from||'',S.to||''),states=Object.fromEntries(LIB.map(g=>[g.id,VaultLibraryDiscovery.authorAvailability(g.books.map(b=>b.id),CAT,summary,readiness)]));
- if(states.pristine){states.pristine.title='Rule review pending';states.pristine.text='Original Pristine books are readable. Complete trading rules and execution assumptions still need review; no verified strategy is registered.';}
+ pristineAuthorStatus(states.pristine);
  const scopedRecords=groupBy(allRecords,record=>record.authorId),scopeCounts=new Map([...scopedRecords].map(([id,records])=>[id,{total:records.length,catalogue:records.filter(record=>record.kind==='catalogue').length,reading:records.filter(record=>record.kind==='source').length}]));
  const pool=S.region==='us'?TICK_ALL_US:TICK_ALL_IN,etfs=S.region==='us'?TICK_ALL_US.filter(t=>['SPY','QQQ','MDY','IWM','SMH','DIA'].includes(t.ticker)):[];
  const selected={region:S.region,tk:h.tk,basket:S.basket,label:LABEL[h.tk]||h.tk,kind:S.basket?'stock':etfs.some(t=>t.ticker===h.tk)?'ETF':'index',from:S.from||'',to:S.to||''};
@@ -1909,7 +2005,7 @@ async function homeModel(){
 let startup;
 window.VaultRuntime={
  bootstrap:account=>startup||(startup=initializeRuntime(account)),commit:commitReactPage,cleanup:cleanupCharts,patch:setState,changeTheme:theme=>setTheme(theme,true),
- activateReportTab:resizeVisibleReportCharts,
+ activateReportTab:resizeVisibleReportCharts,pristineCurrent,exportPristine:(data,view,kind)=>VaultUI.pristineExport(data,view,kind),
  openAuthor:(id,event)=>window.openGuru(id,event),closeAuthor:()=>window.closeGuru(),actions:()=>VaultUI.actions(),themes:THEMES,
  saved:()=>VaultUI.savedList().map(item=>({...item,book:BOOK[ALLCAT.find(v=>v.id===item.id)?.book]?.title||'',symbol:LABEL[item.tk]||item.tk})),removeSaved:key=>VaultUI.writeSaved(VaultUI.savedList().filter(item=>item.key!==key))
 };
