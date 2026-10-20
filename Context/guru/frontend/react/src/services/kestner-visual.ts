@@ -2,6 +2,7 @@
 import type {IndicatorRequest,PriceHistory,StrategyIndicator,StrategyIndicators} from './strategy-indicators';
 
 const profiles = {
+  lkqts_sob: 'sob_close_max80_current_inclusive_channel40_tie_inclusive_strict20',
   lkqts_volbo: 'volbo_current_inclusive_population100_k2',
   lkqts_rsi14: 'rsi_wilder_rma14_level35_65_seed14_flat50',
   lkqts_macd: 'macd_period_alpha_first_close',
@@ -10,6 +11,7 @@ const profiles = {
 type Method = keyof typeof profiles;
 type ObjectValue = Record<string,unknown>;
 const defaults: Record<Method,Readonly<Record<string,number>>> = {
+  lkqts_sob:{search:80,chan:40,min:20},
   lkqts_volbo: {sd_n:100,k:2}, lkqts_rsi14:{n:14,lo:35,hi:65},
   lkqts_macd:{fast:12,slow:26,sig:9},lkqts_macd_literal_alpha:{fast:12,slow:26,sig:9},
 };
@@ -63,9 +65,24 @@ function provenance(value:unknown,ticker:string):ObjectValue {
   return p;
 }
 function stateValues(id:Method,raw:unknown,index:number,previous:ObjectValue|null):ObjectValue|null {
-  const warmup=id==='lkqts_volbo'?100:id==='lkqts_rsi14'?14:0;
+  const warmup=id==='lkqts_sob'?79:id==='lkqts_volbo'?100:id==='lkqts_rsi14'?14:0;
   if(index<warmup){requireValue(raw===null,'A backend state was supplied before its declared eligibility.');return null;}
   const s=object(raw);
+  if(id==='lkqts_sob'){
+    keys(s,['profile','high_horizon','low_horizon','statistic','upper_40','lower_40','predicate_ready','long_condition','short_condition']);
+    const high=s.high_horizon,low=s.low_horizon,statistic=s.statistic;
+    requireValue(s.profile===profiles[id]&&finite(high)&&Number.isSafeInteger(high)&&high>=1&&high<=80&&finite(low)&&Number.isSafeInteger(low)&&low>=1&&low<=80,'SOB horizons must be exact integers in 1..80 for the fixed profile.');
+    requireValue(finite(statistic)&&Number.isSafeInteger(statistic)&&statistic>=-80&&statistic<=80&&statistic===(high>low?high:low>high?-low:0)&&(high!==low||high===80),'SOB signed statistic or equal-horizon neutral state is inconsistent.');
+    requireValue(typeof s.long_condition==='boolean'&&typeof s.short_condition==='boolean'&&s.predicate_ready===(index>=118),'SOB predicate phase or decision flags are missing or inconsistent.');
+    if(index<118){
+      requireValue(s.upper_40===null&&s.lower_40===null&&s.long_condition===false&&s.short_condition===false,'SOB channel and predicates must remain unavailable until 40 defined statistics.');
+    }else{
+      const upper=s.upper_40,lower=s.lower_40;
+      requireValue(finite(upper)&&finite(lower)&&Number.isSafeInteger(upper)&&Number.isSafeInteger(lower)&&upper<=80&&lower>=-80&&lower<=statistic&&statistic<=upper,'SOB supplied channel bounds must be exact supported integers containing the statistic.');
+      requireValue(s.long_condition===(statistic>20&&statistic===upper)&&s.short_condition===(statistic< -20&&statistic===lower),'SOB strict threshold or inclusive channel-tie predicate disagrees with the supplied state.');
+    }
+    return s;
+  }
   const names=id==='lkqts_volbo'?['delta','mean_change_100','population_variance_100','four_variance','delta_squared']
     :id==='lkqts_rsi14'?['rma_up_14','rma_down_14','rsi_14','long_comparison_13_up','long_comparison_7_down','short_comparison_7_up','short_comparison_13_down']
     :['fast_ema','slow_ema','macd','signal_ema','histogram','previous_histogram','fast_alpha','slow_alpha','signal_alpha'];
@@ -132,6 +149,7 @@ export function buildKestnerIndicators(request:IndicatorRequest):StrategyIndicat
       const value=values.get(time)?.[field];return {time,value:finite(value)?transform?transform(value):value:null};
     })});
     const note='Daily values are supplied by the actual backend report with its full genuine indicator prefix; no indicator recurrence is recalculated in the page. Values outside the selected report are unavailable. Weekly/monthly candles sample the daily state at their actual final observation. These are declared rule inputs, not original book-performance, portfolio, capital or borrowing certification.';
+    if(id==='lkqts_sob')return {status:'ready',series:[add('kestner-sob','Second Order Breakout · supplied signed horizon','statistic','sum',[{value:20,label:'Strict long threshold >20',kind:'reference'},{value:-20,label:'Strict short threshold <−20',kind:'reference'}]),add('kestner-sob-upper','Actual supplied 40-statistic upper bound','upper_40'),add('kestner-sob-lower','Actual supplied 40-statistic lower bound','lower_40')],note:note+' The declared profile uses 80 current-inclusive closes with price ties included; equal high/low horizons are neutral. Its current-inclusive 40-statistic channel permits tied extremes. Signals require strictly >20 or <−20; the book’s Intel example at exactly ±20 conflicts with that formal rule. Statistic values begin at absolute source observation 79, complete channel predicates at 118, and a first possible actual next-open fill at 119. This display supplies no orders, original performance, volatility sizing or borrow certification.'};
     if(id==='lkqts_rsi14')return {status:'ready',series:[add('kestner-rsi','RSI(14) · declared RMA/level profile','rsi_14','rsi',[{value:35,label:'Long below',kind:'entry'},{value:65,label:'Short above',kind:'entry'}])],note:note+' The engine uses strict cross-multiplied comparisons; threshold equality supplies no new entry.'};
     if(id==='lkqts_volbo')return {status:'ready',series:[add('kestner-change','Actual close change · price units','delta'),add('kestner-upper-band','Positive 2σ reference band','population_variance_100','sum',[],v=>2*Math.sqrt(v)),add('kestner-lower-band','Negative 2σ reference band','population_variance_100','sum',[],v=>-2*Math.sqrt(v))],note:note+' Displayed ±2√variance bands are visual references. The exact engine predicate uses signed change² > 4 × population variance, without a comparison epsilon; rounded plotted bands do not decide trades. Original 10000/σ quantities are unsupported.'};
     return {status:'ready',series:[add('kestner-macd',`MACD · ${id==='lkqts_macd'?'period alphas 2/13, 2/27':'literal alphas .15, .075'}`,'macd'),add('macd-signal','Signal · backend .2 profile','signal_ema'),add('kestner-histogram','MACD minus signal · backend state','histogram','sum',[{value:0,label:'Signal-line crossing reference',kind:'reference'}])],note:note+' Both named alpha profiles use the backend first-close seed and local increment convention. A histogram departure across zero is a signal-line crossing, not a MACD-zero crossing.'};
