@@ -1792,7 +1792,7 @@ async function drawSignals(tf) {
   if (!px || !window.LightweightCharts) { el.innerHTML = '<div class="empty">Price data not available for this index.</div>'; return; }
   document.querySelectorAll('[data-tf]').forEach(b => b.classList.toggle('active', b.dataset.tf === tf));
   const L = LightweightCharts, ch = L.createChart(el, { width: el.clientWidth, height: el.clientHeight, layout: { attributionLogo: false, background: { color: cv('--panel') }, textColor: cv('--ink3'), fontFamily: getComputedStyle(document.body).fontFamily, fontSize: 11 },
-    grid: { vertLines: { visible: false }, horzLines: { color: cv('--rule') } }, rightPriceScale: { borderColor: cv('--steel') }, timeScale: { borderColor: cv('--steel'), minBarSpacing: 0.05 }, crosshair: { mode: L.CrosshairMode.Normal }, handleScale: { axisPressedMouseMove: false } });
+    grid: { vertLines: { visible: false }, horzLines: { color: cv('--rule') } }, rightPriceScale: { borderColor: cv('--steel') }, timeScale: { borderColor: cv('--steel'), minBarSpacing: 0.05, lockVisibleTimeRangeOnResize: true }, crosshair: { mode: L.CrosshairMode.Normal }, handleScale: { axisPressedMouseMove: false } });
   PXCH = ch; CHARTS.push({ ch, el });
   const cs = ch.addCandlestickSeries({ upColor: cv('--green'), downColor: cv('--red'), borderUpColor: cv('--green'), borderDownColor: cv('--red'), wickUpColor: cv('--green'), wickDownColor: cv('--red'), priceLineVisible: false });
   cs.setData(px.d.map((t, i) => ({ time: t, open: px.o[i], high: px.h[i], low: px.l[i], close: px.c[i] })));
@@ -1849,7 +1849,7 @@ async function drawSignals(tf) {
       tradeTxt = g ? `${g.in.length} entr${g.in.length === 1 ? 'y' : 'ies'} · ${g.out.length} exit${g.out.length === 1 ? '' : 's'}${returns}` : '<span class="muted">no trades in this candle</span>'; }
     $('#pxread').innerHTML = `<b>${what}${px.d[b]}</b> O ${f(px.o[b])} · H ${f(px.h[b])} · L ${f(px.l[b])} · C <b>${f(px.c[b])}</b> <span class="${cls(chg)}">${pct(chg, 2, true)}</span> · ${tradeTxt}`; });
   const model=buildStrategyIndicators({id:STRAT.v.id,book:STRAT.v.book,ticker:STRAT.tk,prices:STRAT.px,fullHistory:STRAT.px?.full_history===true,parameters:STRAT.indicatorParameters,displayDates:px.d,sourceReport:STRAT.d});
-  INDICATOR_CHARTS=mountStrategyIndicators({root:document.querySelector('[data-strategy-indicators]'),chart:ch,priceSeries:cs,result:model,library:L,pricePoints:px.d.map((time,i)=>({time,value:px.c[i]})),chartOptions:{layout:{attributionLogo:false,background:{color:cv('--panel')},textColor:cv('--ink3'),fontFamily:getComputedStyle(document.body).fontFamily,fontSize:11},grid:{vertLines:{visible:false},horzLines:{color:cv('--rule')}},timeScale:{borderColor:cv('--steel'),minBarSpacing:ch.timeScale().options().minBarSpacing},crosshair:{mode:L.CrosshairMode.Normal}}});
+  INDICATOR_CHARTS=mountStrategyIndicators({root:document.querySelector('[data-strategy-indicators]'),chart:ch,priceSeries:cs,result:model,library:L,pricePoints:px.d.map((time,i)=>({time,value:px.c[i]})),chartOptions:{layout:{attributionLogo:false,background:{color:cv('--panel')},textColor:cv('--ink3'),fontFamily:getComputedStyle(document.body).fontFamily,fontSize:11},grid:{vertLines:{visible:false},horzLines:{color:cv('--rule')}},timeScale:{borderColor:cv('--steel'),minBarSpacing:ch.timeScale().options().minBarSpacing,lockVisibleTimeRangeOnResize:ch.timeScale().options().lockVisibleTimeRangeOnResize},crosshair:{mode:L.CrosshairMode.Normal}}});
 }
 const safe = (name, f) => { try { f(); } catch (e) { console.warn(name, e); } };
 function drawStrategy() {
