@@ -538,10 +538,26 @@ body { font-weight: 500; }
 .ibtn .ic { width: 16px; height: 16px; } .ibtn:hover { color: var(--blue); border-color: color-mix(in srgb, var(--blue) 45%, var(--steel)); background: color-mix(in srgb, var(--blue) 7%, var(--card)); }
 .ibtn:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 30%, transparent); }
 .box-h .box-tools { display: inline-flex; gap: 6px; margin: 0 0 0 auto; padding: 0; } .box-h .box-tools .dfield { font-size: 12px; }
-.research-controls { gap: 14px 20px; align-items: center; margin: 16px 0 10px; }
-.research-controls .swg { gap: 8px; }
-.control-run { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-.research-controls .join-item { white-space: nowrap; }
+/* One label row and one control row keep every instrument selector aligned. */
+.research-controls { gap: 14px 20px; align-items: flex-end; margin: 18px 0 14px; }
+.research-controls > .swg, .research-controls .stock-picker { flex-direction: column; align-items: flex-start; gap: 7px; min-width: 0; max-width: 100%; }
+.research-controls .swl { display: flex; align-items: center; min-height: 24px; font-size: 10px; letter-spacing: .08em; }
+.research-controls .basket-selector { gap: 7px; min-width: 0; max-width: 100%; }
+.basket-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 24px; }
+.research-controls > .swg > .join, .research-controls .basket-selector > .join { height: 34px; box-sizing: border-box; }
+.research-controls .join-item { min-height: 32px; padding: 0 10px; white-space: nowrap; font-size: 12px; justify-content: center; }
+.research-controls .membership-toggle { align-self: auto; height: 24px; box-sizing: border-box; }
+.research-controls .membership-toggle .join-item { min-height: 22px; padding: 0 9px; font-size: 11px; }
+.research-controls .stock-picker select { min-width: 170px; max-width: 220px; height: 34px; box-sizing: border-box; padding: 0 30px 0 10px; border: 1px solid var(--steel); border-radius: var(--r-field); background: var(--card); color: var(--ink); font: 600 12px var(--font); }
+.research-controls .stock-picker select:focus-visible { outline: none; box-shadow: var(--ring); }
+.control-run { display: flex; align-items: center; align-self: flex-end; gap: 8px; margin-left: auto; }
+.research-controls .control-run .dbtn { display: inline-flex; align-items: center; justify-content: center; height: 34px; box-sizing: border-box; padding: 0 13px; white-space: nowrap; }
+@media(max-width:640px) {
+  .research-controls .stock-picker, .research-controls .basket-selector { flex: 1 1 100%; }
+  .research-controls .stock-picker select { width: 100%; max-width: none; }
+  .research-controls > .swg > .join, .research-controls .basket-selector > .join { flex-wrap: wrap; height: auto; min-height: 34px; }
+  .research-controls .control-run { margin-left: 0; width: 100%; }
+}
 .heatmap-refined { border-spacing: 3px; min-width: 900px; }
 .heatmap-refined td { font: 600 12px/1.3 "Manrope",var(--font); font-variant-numeric: tabular-nums; padding: 9px 5px; border-radius: 5px; box-shadow: none; }
 .heatmap-refined th { font: 700 11px/1.4 "Manrope",var(--font); }
