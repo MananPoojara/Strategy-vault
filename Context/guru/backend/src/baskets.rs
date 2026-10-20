@@ -2,6 +2,9 @@
 use crate::{Row,esc,parse_csv_fields};
 use std::{collections::BTreeMap,path::{Path,PathBuf,Component},io::{Read,Write},process::{Command,Stdio}};
 
+#[path="pristine_data.rs"]
+pub(crate) mod pristine_data;
+
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Market { India, UnitedStates }
 impl Market {
@@ -163,6 +166,30 @@ impl Catalogue {
         let rows=parse_rows(text,&entry.symbol)?;
         if rows.len()!=entry.bars||rows.first().unwrap().date!=entry.first||rows.last().unwrap().date!=entry.last{return Err("Native source coverage disagrees with the whitelist".into());}
         Ok(rows)
+    }
+    /// Separate explicit research decoder. Legacy rows()/parse_rows() and all
+    /// existing admission/default behavior are deliberately unchanged.
+    pub(crate) fn pristine_series(&self,key:&str,mode:Option<pristine_data::ResearchMode>)->Result<pristine_data::Series,pristine_data::DataError>{
+        use pristine_data::DataError;
+        pristine_data::mode(mode)?;
+        let entry=self.entries.get(key).ok_or(DataError::UnknownQualifiedTicker)?;
+        pristine_data::evidence(&entry.evidence)?;
+        let error=|message:&str|DataError::Source(message.into());
+        let path=self.root.join(&entry.path).canonicalize().map_err(|_|error("Native source CSV unavailable"))?;
+        if !path.starts_with(&self.root){return Err(error("Native source path escapes its whitelist directory"));}
+        let file=std::fs::File::open(path).map_err(|_|error("Native source CSV unavailable"))?;
+        if file.metadata().map_err(|_|error("Native source metadata unavailable"))?.len()>32*1024*1024{return Err(error("Native source CSV exceeds memory admission limit"));}
+        // Bound the actual read as well as metadata; do not trust a pre-read
+        // length if the file changes. Hash precisely the bytes decoded below.
+        let mut bytes=Vec::new();
+        file.take(32*1024*1024+1).read_to_end(&mut bytes).map_err(|_|error("Native source CSV read failed"))?;
+        if bytes.len()>32*1024*1024{return Err(error("Native source CSV exceeds memory admission limit"));}
+        if sha256_hex(&bytes).map_err(DataError::Source)?!=entry.csv_sha{return Err(error("Native source SHA-256 mismatch; data changed after whitelist generation"));}
+        let text=std::str::from_utf8(&bytes).map_err(|_|error("Native source CSV is not UTF-8"))?;
+        let decoded=pristine_data::decode(text)?;
+        if decoded.rows.len()!=entry.bars||decoded.rows.first().unwrap().date!=entry.first||decoded.rows.last().unwrap().date!=entry.last{return Err(error("Native source coverage disagrees with the whitelist"));}
+        let provenance=self.provenance_json(key).ok_or(DataError::UnknownQualifiedTicker)?;
+        Ok(pristine_data::from_verified_catalogue(key,&entry.symbol,&entry.evidence,provenance,decoded))
     }
     pub fn provenance_json(&self,key:&str)->Option<String>{
         self.entries.get(key).map(|e|{let mut json=format!("{{\"qualified_ticker\":\"{}\",\"symbol\":\"{}\",\"basket\":\"{}\",\"source\":\"{}\",\"source_sha256\":\"{}\",\"csv_sha256\":\"{}\",\"membership\":\"{}\",\"first\":\"{}\",\"last\":\"{}\",\"bars\":{},\"excluded_prefix_count\":{},\"original_bars\":{},\"coverage_note\":\"{}\",\"quote_accuracy_independently_verified\":false,\"basis\":\"Actual native daily vendor OHLC and volume; unknown auxiliary fields are not trading signals. Current watchlist membership is a snapshot, not historical membership: retrospective universe selection has survivorship bias. Cash-stock F&O eligibility does not establish futures contracts or roll events.\"}}",esc(key),esc(&e.symbol),esc(&e.basket),esc(&e.source),e.source_sha,e.csv_sha,esc(&e.membership),e.first,e.last,e.bars,e.excluded_prefix,e.original_bars,esc(&e.coverage_note));json.pop();json.push_str(&format!(",\"basket_member\":{},\"basket_expected_members\":{},{}}}",e.basket_member,self.expected_member_count(&e.basket).map_or("null".into(),|n|n.to_string()),e.evidence.json()));json})

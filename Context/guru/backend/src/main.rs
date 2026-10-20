@@ -13,6 +13,20 @@ mod trade_validation;
 mod unit_exposure_report;
 mod unit_exposure_arithmetic;
 mod unit_exposure_detail;
+mod pristine_daily;
+mod pristine_spans;
+mod pristine_report;
+mod pristine_controller;
+mod pristine_stats;
+mod pristine_wire;
+mod pristine_request;
+mod pristine_transport;
+mod pristine_http;
+mod pristine_api;
+
+// Source-prefix loading and exact account work are serialized for this owner.
+// Metadata stays responsive, and concurrent requests receive a retry response.
+static PRISTINE_RESEARCH_SLOT: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 use connors::{Ctx, Params, Status, Trade};
 use std::collections::BTreeMap;
@@ -1448,6 +1462,40 @@ fn handle(mut stream: TcpStream, st: Arc<State>) {
     let body = &buf[(head_end + 4).min(buf.len())..];
     let mut parts = head.split_whitespace();
     let (method, target) = (parts.next().unwrap_or(""), parts.next().unwrap_or("/"));
+    // The new owner decodes ORIGINAL request bytes before legacy query()
+    // collection can discard repeated or malformed names. A rejected request
+    // returns here; it never reaches legacy context conversion or execution.
+    if target.starts_with("/api/guru/pristine/") {
+        let result = pristine_http::parse(&buf[..head_end]).and_then(|request| {
+            use pristine_http::Endpoint;
+            let _research_slot = if matches!(request.endpoint, Endpoint::Strategies | Endpoint::Params) {
+                None
+            } else {
+                Some(PRISTINE_RESEARCH_SLOT.try_lock().map_err(|_| pristine_request::Failure {
+                    stage: "request", code: "pristine_server_busy", at: None, signal_i: None, source_i: None,
+                })?)
+            };
+            match request.endpoint {
+                Endpoint::Strategies => Ok(pristine_api::catalogue_json()),
+                Endpoint::Params => Ok(pristine_api::params_json()),
+                Endpoint::Readiness => pristine_api::readiness(&st.baskets, &request.query),
+                Endpoint::Summary => pristine_api::summary(&st.baskets, &request.query),
+                Endpoint::Run => pristine_request::execute(&st.baskets, &request.query),
+            }
+        });
+        return match result {
+            Ok(body) => respond(&mut stream, "200 OK", "application/json; charset=utf-8", body.as_bytes()),
+            Err(error) => {
+                let status = match error.code {
+                    "pristine_unknown_endpoint" => "404 Not Found",
+                    "pristine_method_not_allowed" => "405 Method Not Allowed",
+                    "pristine_server_busy" => "429 Too Many Requests",
+                    _ => "400 Bad Request",
+                };
+                respond(&mut stream, status, "application/json; charset=utf-8", pristine_api::failure_json(&error).as_bytes())
+            }
+        };
+    }
     let (path, q) = query(target);
     if method == "POST" && path == "/api/notes" {
         let r = note_path(&q).and_then(|f| {
@@ -1483,7 +1531,7 @@ fn handle(mut stream: TcpStream, st: Arc<State>) {
             let live = cat.iter().filter(|d| d.status == Status::Live).count();
             let thesis: Vec<String> = connors::THESIS.iter().map(|(h, b)| format!("{{\"title\":\"{}\",\"body\":\"{}\"}}", esc(h), esc(b))).collect();
             json(Ok(format!(
-                "[{{\"id\":\"{}\",\"name\":\"{}\",\"tagline\":\"{}\",\"book\":\"{}\",\"strategies\":{},\"testable\":{},\"thesis\":[{}]}},{{\"id\":\"ross\",\"name\":\"Joe Ross\",\"tagline\":\"Price-action methods, source evidence and discretionary trade management. Complete backtests remain unavailable.\",\"book\":\"Reviewed core sources; full corpus review in progress\",\"strategies\":{},\"testable\":0,\"thesis\":[]}},{{\"id\":\"chande\",\"name\":\"Tushar Chande\",\"tagline\":\"Trend reversal and breakout-pullback rules with independently checked OHLC execution. Original futures studies are not reproduced.\",\"book\":\"Beyond Technical Analysis (1997, supplied partial edition)\",\"strategies\":5,\"testable\":2,\"thesis\":[]}}]",
+                "[{{\"id\":\"{}\",\"name\":\"{}\",\"tagline\":\"{}\",\"book\":\"{}\",\"strategies\":{},\"testable\":{},\"thesis\":[{}]}},{{\"id\":\"ross\",\"name\":\"Joe Ross\",\"tagline\":\"Price-action methods, source evidence and discretionary trade management. Complete backtests remain unavailable.\",\"book\":\"Reviewed core sources; full corpus review in progress\",\"strategies\":{},\"testable\":0,\"thesis\":[]}},{{\"id\":\"chande\",\"name\":\"Tushar Chande\",\"tagline\":\"Trend reversal and breakout-pullback rules with independently checked OHLC execution. Original futures studies are not reproduced.\",\"book\":\"Beyond Technical Analysis (1997, supplied partial edition)\",\"strategies\":5,\"testable\":2,\"thesis\":[]}},{{\"id\":\"pristine\",\"name\":\"Pristine Trading\",\"tagline\":\"Two source-reviewed daily stock adaptations. Explicit supplied-USD-series research only; original book performance and historical-dollar equivalence remain unverified.\",\"book\":\"Trading the Pristine Method, Part 1 (supplied manual; edition year unconfirmed)\",\"strategies\":2,\"testable\":2,\"thesis\":[]}}]",
                 connors::GURU_ID, esc(connors::GURU_NAME), esc(connors::TAGLINE), esc(connors::BOOK), cat.len(), live, thesis.join(","), ross.len()
             )), &mut stream)
         }
@@ -1513,6 +1561,87 @@ fn handle(mut stream: TcpStream, st: Arc<State>) {
             Err(e) => respond(&mut stream, "400 Bad Request", "text/plain", e.as_bytes()),
         },
         _ => respond(&mut stream, "404 Not Found", "text/plain", b"not found"),
+    }
+}
+
+#[cfg(test)]
+mod pristine_route_tests {
+    use super::*;
+    static SERIAL:std::sync::Mutex<()>=std::sync::Mutex::new(());
+    fn request(line: &[u8]) -> String {
+        use std::net::Shutdown;
+        let listener=TcpListener::bind("127.0.0.1:0").unwrap();
+        let address=listener.local_addr().unwrap();
+        let state=Arc::new(State{ctxs:BTreeMap::new(),baskets:baskets::Catalogue::default(),vix:vec![],market_extra:BTreeMap::new()});
+        let server=std::thread::spawn(move||{
+            let (stream,_)=listener.accept().unwrap();
+            stream.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
+            stream.set_write_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
+            handle(stream,state);
+        });
+        let mut client=TcpStream::connect(address).unwrap();
+        client.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
+        client.write_all(line).unwrap();client.shutdown(Shutdown::Write).unwrap();
+        let mut output=String::new();client.read_to_string(&mut output).unwrap();
+        server.join().unwrap();output
+    }
+    #[test]
+    fn metadata_is_separate_and_has_no_published_book_figures() {
+        let _serial=SERIAL.lock().unwrap();
+        let out=request(b"GET /api/guru/pristine/strategies HTTP/1.1\r\nHost: localhost\r\n\r\n");
+        assert!(out.starts_with("HTTP/1.1 200"));
+        for id in pristine_api::IDS {assert!(out.contains(id));}
+        assert!(out.contains("\"owner\":\"pristine\""));
+        assert!(out.contains("\"claim\":null"));
+        assert!(out.contains("\"source_performance_reproduced\":false"));
+        assert!(out.contains("\"allowed_markets\":[\"us\"]"));
+        assert!(out.contains("prior-session low - 0.05"));
+        let owners=request(b"GET /api/gurus HTTP/1.1\r\nHost: localhost\r\n\r\n");
+        assert!(owners.starts_with("HTTP/1.1 200"));
+        for owner in ["connors","ross","chande","pristine"] {
+            assert_eq!(owners.matches(&format!("\"id\":\"{owner}\"")).count(),1);
+        }
+    }
+    #[test]
+    fn raw_query_failures_do_not_fall_back_to_legacy_run() {
+        let _serial=SERIAL.lock().unwrap();
+        for (target,code) in [
+            ("run?id=a&id=b","pristine_duplicate_query_field"),
+            ("run?id=a&%69d=b","pristine_duplicate_query_field"),
+            ("run?id=%FF","pristine_invalid_query_encoding"),
+            ("params?capital=1","pristine_metadata_query_unsupported"),
+        ] {
+            let out=request(format!("GET /api/guru/pristine/{target} HTTP/1.1\r\nHost: localhost\r\n\r\n").as_bytes());
+            assert!(out.starts_with("HTTP/1.1 400"),"{out}");assert!(out.contains(code));
+            assert!(!out.contains("\"stats\":")&&!out.contains("\"pristine_report\":"));
+        }
+    }
+    #[test]
+    fn mode_and_stock_are_required_before_any_legacy_context() {
+        let _serial=SERIAL.lock().unwrap();
+        let out=request(b"GET /api/guru/pristine/run?id=ptpm1_daily_cbs_cog&ticker=NIFTY+50 HTTP/1.1\r\nHost: localhost\r\n\r\n");
+        assert!(out.starts_with("HTTP/1.1 400"));assert!(out.contains("explicit_research_mode_required"));
+        let out=request(b"GET /api/guru/pristine/run?id=ptpm1_daily_cbs_cog&ticker=NIFTY+50&research_mode=supplied_usd_series_units HTTP/1.1\r\nHost: localhost\r\n\r\n");
+        assert!(out.starts_with("HTTP/1.1 400"));assert!(out.contains("pristine_unknown_qualified_ticker"));
+        assert!(!out.contains("\"stats\":")&&!out.contains("\"pristine_report\":"));
+    }
+    #[test]
+    fn new_owner_does_not_inherit_legacy_optimization_or_post_routes() {
+        let _serial=SERIAL.lock().unwrap();
+        let out=request(b"GET /api/guru/pristine/optimize HTTP/1.1\r\nHost: localhost\r\n\r\n");
+        assert!(out.starts_with("HTTP/1.1 404"));
+        let out=request(b"POST /api/guru/pristine/run HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\n\r\n");
+        assert!(out.starts_with("HTTP/1.1 405"));
+    }
+    #[test]
+    fn concurrent_research_is_bounded_without_blocking_metadata() {
+        let _serial=SERIAL.lock().unwrap();
+        let _slot=PRISTINE_RESEARCH_SLOT.lock().unwrap();
+        let out=request(b"GET /api/guru/pristine/run?id=ptpm1_daily_cbs_cog HTTP/1.1\r\nHost: localhost\r\n\r\n");
+        assert!(out.starts_with("HTTP/1.1 429"));assert!(out.contains("pristine_server_busy"));
+        assert!(!out.contains("\"stats\":")&&!out.contains("\"pristine_report\":"));
+        let out=request(b"GET /api/guru/pristine/params HTTP/1.1\r\nHost: localhost\r\n\r\n");
+        assert!(out.starts_with("HTTP/1.1 200"));
     }
 }
 

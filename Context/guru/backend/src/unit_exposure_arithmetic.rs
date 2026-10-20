@@ -124,6 +124,76 @@ impl Rational {
     fn round_positive_factor(&self)->Result<f64,Error>{if !self.positive(){Err(Error::EquityDomain)}else{self.round()}}
 }
 
+/// Exact source-rule values share the established canonical-decimal parser and
+/// nearest-even converter. The integer representation stays private so callers
+/// cannot construct an invalid denominator or a negative zero.
+#[derive(Clone, Debug)]
+pub(crate) struct ExactValue(Rational);
+
+/// Lossless rational evidence, not a display price or a reduced-fraction claim.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ExactAudit {
+    pub negative: bool,
+    pub numerator_hex: String,
+    pub denominator_hex: String,
+}
+
+impl ExactValue {
+    pub(crate) fn canonical(value: f64) -> Result<Self, Error> {
+        Rational::canonical(value).map(Self)
+    }
+
+    pub(crate) fn ratio(numerator: u32, denominator: u32) -> Result<Self, Error> {
+        if denominator == 0 { return Err(Error::InvalidDomain); }
+        Ok(Self(Rational::new(false, Natural::from_u64(numerator.into()), Natural::from_u64(denominator.into()))))
+    }
+
+    pub(crate) fn add(&self, other: &Self) -> Self { Self(self.0.add(&other.0)) }
+    pub(crate) fn sub(&self, other: &Self) -> Self { Self(self.0.sub(&other.0)) }
+
+    pub(crate) fn scale(&self, multiplier: u32) -> Self {
+        Self(Rational::new(self.0.negative, self.0.numerator.mul(&Natural::from_u64(multiplier.into())), self.0.denominator.clone()))
+    }
+
+    pub(crate) fn divide(&self, denominator: u32) -> Result<Self, Error> {
+        if denominator == 0 { return Err(Error::InvalidDomain); }
+        Ok(Self(Rational::new(self.0.negative, self.0.numerator.clone(), self.0.denominator.mul(&Natural::from_u64(denominator.into())))))
+    }
+
+    pub(crate) fn signed_cmp(&self, other: &Self) -> Ordering {
+        if self.0.negative != other.0.negative {
+            return if self.0.negative { Ordering::Less } else { Ordering::Greater };
+        }
+        let magnitude = self.0.numerator.mul(&other.0.denominator)
+            .cmp(&other.0.numerator.mul(&self.0.denominator));
+        if self.0.negative { magnitude.reverse() } else { magnitude }
+    }
+
+    pub(crate) fn positive(&self) -> bool { self.0.positive() }
+    pub(crate) fn rounded(&self) -> Result<f64, Error> { self.0.round() }
+
+    pub(crate) fn audit(&self) -> ExactAudit {
+        fn hex(value: &Natural) -> String {
+            let mut words = value.0.iter().rev();
+            let Some(first) = words.next() else { return "0".into(); };
+            let mut text = format!("{first:x}");
+            for word in words { text.push_str(&format!("{word:08x}")); }
+            text
+        }
+        ExactAudit { negative: self.0.negative, numerator_hex: hex(&self.0.numerator), denominator_hex: hex(&self.0.denominator) }
+    }
+
+    /// A fresh bounded window prevents unreduced denominators from growing
+    /// with the length of a market series. Domain-specific positivity and
+    /// genuine-session validation belong to the calling strategy.
+    pub(crate) fn mean20(values: &[f64]) -> Result<Self, Error> {
+        if values.len() != 20 { return Err(Error::InvalidDomain); }
+        let mut sum = Self(Rational::zero());
+        for &value in values { sum = sum.add(&Self::canonical(value)?); }
+        sum.divide(20)
+    }
+}
+
 #[derive(Clone,Debug)]
 pub struct ModelScalars {
     pub gross:Result<f64,Error>,pub fee:Result<f64,Error>,pub slippage:Result<f64,Error>,
@@ -157,3 +227,6 @@ fn round_ratio_for_test(numerator:&str,denominator:&str)->Result<f64,Error>{
 #[cfg(test)]
 #[path="unit_exposure_arithmetic_tests.rs"]
 mod tests;
+#[cfg(test)]
+#[path="exact_value_tests.rs"]
+mod exact_value_tests;
