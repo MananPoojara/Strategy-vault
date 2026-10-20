@@ -760,6 +760,9 @@ fn checked_params_of(q: &BTreeMap<String, String>) -> Result<Params,String> {
     let p=params_of(q);
     if let Some(id)=q.get("id").filter(|id|books::lkqts::stock_research_profile(id)) {
         let schema=books::lkqts::params(id).ok_or("Unknown Kestner stock candidate")?;
+        if books::lkqts::sob_candidate(id) && q.keys().any(|key| matches!(key.as_str(),"profile"|"source_profile"|"source_convention"|"execution_scope")) {
+            return Err("Kestner SOB profile and source convention are server-owned; request overrides are unsupported".into());
+        }
         for (key,text) in q {
             if let Some(name)=key.strip_prefix("p.") {
                 let setting=schema.iter().find(|s|s.key==name).ok_or_else(||format!("Unknown Kestner parameter: {key}"))?;
@@ -1061,16 +1064,20 @@ struct DiagnosticSeries {
     ma: Option<(usize, Vec<f64>)>,
     trend: Option<(usize, Vec<f64>)>,
     kestner_next: Option<books::lkqts::NextDiagnostics>,
+    kestner_sob: Option<books::lkqts::SobDiagnostics>,
 }
 fn diagnostic_series(ctx: &Ctx, id: &str, p: &Params) -> DiagnosticSeries {
     diagnostic_series_through(ctx,id,p,ctx.r.len().saturating_sub(1))
 }
 fn diagnostic_series_through(ctx: &Ctx,id: &str,p: &Params,to: usize) -> DiagnosticSeries {
+    if books::lkqts::sob_candidate(id) {
+        return DiagnosticSeries{rsi:None,ma:None,trend:None,kestner_next:None,kestner_sob:books::lkqts::sob_diagnostics(ctx,to,p)};
+    }
     if books::lkqts::next_candidate(id) {
-        return DiagnosticSeries{rsi:None,ma:None,trend:None,kestner_next:books::lkqts::next_diagnostics(id,ctx,to,p)};
+        return DiagnosticSeries{rsi:None,ma:None,trend:None,kestner_next:books::lkqts::next_diagnostics(id,ctx,to,p),kestner_sob:None};
     }
     if id=="lkqts_ma1040" {
-        return DiagnosticSeries{rsi:None,ma:Some((10,ctx.sma_n(10).into_owned())),trend:Some((40,ctx.sma_n(40).into_owned())),kestner_next:None};
+        return DiagnosticSeries{rsi:None,ma:Some((10,ctx.sma_n(10).into_owned())),trend:Some((40,ctx.sma_n(40).into_owned())),kestner_next:None,kestner_sob:None};
     }
     let schema = connors::params(id);
     let period = |key: &str, kind: &str| {
@@ -1086,6 +1093,7 @@ fn diagnostic_series_through(ctx: &Ctx,id: &str,p: &Params,to: usize) -> Diagnos
         ma: period("ma", "sma").map(|n| (n, ctx.sma_n(n).into_owned())),
         trend: period("trend", "sma").map(|n| (n, ctx.sma_n(n).into_owned())),
         kestner_next:None,
+        kestner_sob:None,
     }
 }
 
@@ -1094,6 +1102,36 @@ fn kestner_next_rule_state(i:usize,series:&DiagnosticSeries)->String {
     let Some(Some(state))=d.states.get(i) else {return "null".into()};
     let values=state.values.iter().map(|(name,value)|format!("\"{name}\":{}",full_precision_trade_return(*value))).collect::<Vec<_>>().join(",");
     format!("{{\"profile\":\"{}\",{},\"long_condition\":{},\"short_condition\":{}}}",d.profile,values,state.long_condition,state.short_condition)
+}
+
+/// Source state comes from the same fixed SOB diagnostic used by its runner.
+/// Before79 it is unavailable;79..117 have a statistic but no complete channel.
+fn kestner_sob_rule_state(i:usize,series:&DiagnosticSeries)->String {
+    let Some(d)=&series.kestner_sob else {return "null".into()};
+    let Some(Some(s))=d.states.get(i) else {return "null".into()};
+    let integer=|v:Option<i16>|v.map_or("null".into(),|n|n.to_string());
+    format!("{{\"profile\":\"{}\",\"high_horizon\":{},\"low_horizon\":{},\"statistic\":{},\"upper_40\":{},\"lower_40\":{},\"predicate_ready\":{},\"long_condition\":{},\"short_condition\":{}}}",d.profile,s.high_horizon,s.low_horizon,s.statistic,integer(s.upper_40),integer(s.lower_40),s.upper_40.is_some()&&s.lower_40.is_some(),s.long_condition,s.short_condition)
+}
+
+/// Refuse to serialize an inferred causal clock unless the actual SOB trade
+/// still has its reviewed one-leg next-open/reversal/terminal-mark structure.
+fn validate_sob_execution_clocks(ctx:&Ctx,run:&Run,series:&DiagnosticSeries)->Result<(),String> {
+    let fail=||"calculation_unavailable: SOB source trade cannot be bound to its completed-close predicate and next actual open or terminal mark".to_owned();
+    let d=series.kestner_sob.as_ref().ok_or_else(fail)?;
+    if d.profile!=books::lkqts::SOB_PROPOSED_PROFILE || d.states.len()!=run.to+1 {return Err(fail());}
+    let side=|i:usize,dir:f64|d.states.get(i).and_then(Option::as_ref).is_some_and(|s|
+        s.upper_40.is_some() && s.lower_40.is_some() && match dir {1.=>s.long_condition && !s.short_condition,-1.=>s.short_condition && !s.long_condition,_=>false});
+    for t in &run.trades {
+        if t.legs.len()!=1 || t.legs[0].w!=1. || t.entry_kind!="open" || !t.exits.is_empty() {return Err(fail());}
+        let e=&t.legs[0];
+        if e.i<=run.from || e.i>run.to || e.px!=ctx.o[e.i] || !side(e.i-1,t.dir)
+            || t.exit_i<e.i || t.exit_i>run.to {return Err(fail());}
+        if t.open {
+            if t.exit_i!=run.to || t.signal_i!=run.to || t.exit_px!=ctx.c[run.to] {return Err(fail());}
+        } else if t.signal_i<e.i || t.signal_i.checked_add(1)!=Some(t.exit_i)
+            || t.exit_px!=ctx.o[t.exit_i] || !side(t.signal_i,-t.dir) {return Err(fail());}
+    }
+    Ok(())
 }
 
 /// Completed-bar context labelled by actual date, indicator kind and period.
@@ -1124,8 +1162,8 @@ fn hv_exit_snapshot(ctx:&Ctx,t:&Trade)->String {
 fn kestner_execution_clock(ctx:&Ctx,id:&str,t:&Trade,series:&DiagnosticSeries)->String {
     let precise=full_precision_trade_return;
     let state=|i:usize| {
-        if books::lkqts::next_candidate(id) {
-            let rule_state=kestner_next_rule_state(i,series);
+        if books::lkqts::next_candidate(id) || books::lkqts::sob_candidate(id) {
+            let rule_state=if books::lkqts::sob_candidate(id){kestner_sob_rule_state(i,series)}else{kestner_next_rule_state(i,series)};
             if rule_state=="null" || i>=ctx.r.len() {return "null".into();}
             return format!("{{\"date\":\"{}\",\"phase\":\"completed_close\",\"close\":{},\"rule_state\":{rule_state}}}",ctx.r[i].date,precise(ctx.c[i]));
         }
@@ -1193,7 +1231,11 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     }
     let diagnostics = diagnostic_series_through(ctx,id,&p,to);
     if books::lkqts::next_candidate(id) && diagnostics.kestner_next.is_none() {return Err("calculation_unavailable: Kestner causal indicator states are unavailable for the genuine selected prefix".into());}
-    let price_number:fn(f64)->String=if books::lkqts::next_candidate(id) {full_precision_trade_return} else {num};
+    if books::lkqts::sob_candidate(id) {validate_sob_execution_clocks(ctx,&run,&diagnostics)?;}
+    let price_number:fn(f64)->String=if books::lkqts::next_candidate(id) || books::lkqts::sob_candidate(id) {full_precision_trade_return} else {num};
+    // Keep all existing profiles' row precision unchanged. SOB source fills must
+    // bind exactly to the full-precision native quotes and causal clock.
+    let fill_number:fn(f64)->String=if books::lkqts::sob_candidate(id){full_precision_trade_return}else{num};
     let mut o = String::with_capacity(1 << 20);
     let arr = |v: &mut String, it: &mut dyn Iterator<Item = String>| {
         v.push('[');
@@ -1214,11 +1256,11 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         if let Some(account)=&run.source_account {allocation=account.trade_audit[i].entry_equity;}
         let ledger=if run.source_account.is_some(){accounting::TradeLedger::source_account(ctx,t,allocation,costs)}else{accounting::TradeLedger::new(ctx,t,allocation,costs)};
         allocation*=1.+ledger.net_ret;
-        let legs: Vec<String> = t.legs.iter().map(|l| format!("[{},{},{}]", l.i - from, num(l.px), num(l.w))).collect();
+        let legs: Vec<String> = t.legs.iter().map(|l| format!("[{},{},{}]", l.i - from, fill_number(l.px), num(l.w))).collect();
         let mut row=format!(
             "{{\"dir\":{},\"legs\":[{}],\"entry\":\"{}\",\"exit\":\"{}\",\"exit_i\":{},\"exit_px\":{},\"avg_px\":{},\"ret\":{},\"ret_full_precision\":{},\"bars\":{},\"open\":{},\"reason\":\"{}\",\"entry_kind\":\"{}\",\"at_entry\":{},\"at_exit\":{},\"signal\":\"{}\",\"exits\":[{}],\"accounting\":{}}}",
-            t.dir, legs.join(","), ctx.r[t.legs[0].i].date, ctx.r[t.exit_i].date, t.exit_i - from, num(t.exit_px),
-            num(t.avg_px()), num(ledger.net_ret), full_precision_trade_return(ledger.net_ret), t.exit_i - t.legs[0].i, t.open, esc(&t.reason), t.entry_kind,
+            t.dir, legs.join(","), ctx.r[t.legs[0].i].date, ctx.r[t.exit_i].date, t.exit_i - from, fill_number(t.exit_px),
+            fill_number(t.avg_px()), num(ledger.net_ret), full_precision_trade_return(ledger.net_ret), t.exit_i - t.legs[0].i, t.open, esc(&t.reason), t.entry_kind,
             snapshot(ctx, if books::lkqts::stock_research_profile(id){t.legs[0].i.saturating_sub(1)}else{t.legs[0].i}, &diagnostics), if books::kfsc::reviewed_hv_rule(id) {hv_exit_snapshot(ctx,t)} else if books::lkqts::stock_research_profile(id)&&t.open {"null".into()}else {snapshot(ctx, t.signal_i, &diagnostics)}, ctx.r[if books::kfsc::reviewed_hv_rule(id) {t.exit_i}else{t.signal_i}].date,
             t.exits.iter().map(|(i, px, f)| format!("[{},{},{}]", i - from, num(*px), num(*f))).collect::<Vec<_>>().join(","),ledger.json()
         );
@@ -1231,6 +1273,15 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         for i in from..=to {
             if i>from {o.push(',');}
             let _=write!(o,"{{\"source_index\":{i},\"date\":\"{}\",\"phase\":\"completed_close\",\"close\":{},\"rule_state\":{}}}",ctx.r[i].date,full_precision_trade_return(ctx.c[i]),kestner_next_rule_state(i,&diagnostics));
+        }
+        o.push_str("]}");
+    }
+    if let Some(d)=&diagnostics.kestner_sob {
+        let qualified=q.get("ticker").filter(|key|st.baskets.native_evidence(key).is_some()).ok_or("needs_data: SOB report requires the actual server-qualified stock identity")?;
+        let _=write!(o,",\"kestner_research\":{{\"id\":\"{}\",\"book\":\"lkqts\",\"qualified_ticker\":\"{}\",\"ticker\":\"{}\",\"provenance\":{},\"profile\":\"{}\",\"source_convention\":\"{}\",\"states\":[",esc(id),esc(qualified),esc(&ctx.r[from].ticker),source_provenance(st,q),d.profile,esc(books::lkqts::sob_source_convention()));
+        for i in from..=to {
+            if i>from {o.push(',');}
+            let _=write!(o,"{{\"source_index\":{i},\"date\":\"{}\",\"phase\":\"completed_close\",\"close\":{},\"rule_state\":{}}}",ctx.r[i].date,full_precision_trade_return(ctx.c[i]),kestner_sob_rule_state(i,&diagnostics));
         }
         o.push_str("]}");
     }
@@ -2309,3 +2360,6 @@ mod tests {
 #[cfg(test)] mod kestner_verification;
 
 #[cfg(test)] mod kestner_next_verification;
+
+// Private proposal: opt-in evidence only; never a production startup job.
+#[cfg(test)] mod sob_integration_tests;

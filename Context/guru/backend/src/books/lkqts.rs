@@ -1,22 +1,114 @@
 //! Lars N. Kestner, "Quantitative Trading Strategies" (McGraw-Hill, 2003). Book id `lkqts`.
-//! Source: research drive "Trading Knowledge I/Lars N.Kestner - Quantitative Trading Strategies/
-//! Quantitative Trading Strategies_0071412395.pdf" (367 pp., text layer). Transcription, page refs, oracle and
-//! verification: library/lkqts/.
+//! Source authority: the published book; method-specific page references and declared
+//! research conventions are recorded in docs/kestner-sob-stock-research.md.
 //!
-//! Book conventions used by every Chapter 6-9 and 12 strategy (p.139): "Signals are generated at the close of each
-//! trading day and executed on the next trading day's opening price"; no commissions or slippage (p.139). Standard
-//! deviation is the population form, divided by N (p.41, Fig. 2.2). "Average true range" = simple average of the true
-//! range (p.64). Current-inclusive channel windows are a declared interpretation of the prose,
+//! Execution context: the Chapter 7 study states (p.139), "Signals are generated at the close of each
+//! trading day and executed on the next trading day's opening price", with no commissions or slippage.
+//! Applying that clock to another section, including Chapter 8 SOB, is a declared research convention unless
+//! that method's source independently specifies it; p.139 does not establish every chapter's execution rules.
+//! Standard deviation is the population form, divided by N (p.41, Fig. 2.2). "Average true range" = simple average
+//! of the true range (p.64). Current-inclusive channel windows are a declared interpretation of the prose,
 //! not parity with a published indexed implementation. See docs/kestner-stock-candidates.md.
-//! Long/short systems whose text gives only entries are stop-and-reverse: the book states it for Chapter 7
-//! ("no rules for exiting positions, except for an entry in the other direction", pp.145, 155, 160, 165) and its own
-//! SPX/NDX tables are consistent with it for the Chapter 8 systems (aggregate occupancy cannot prove a unique trade ledger); see README.
+//! Entry-only long/short systems use a declared stop-and-reverse implementation convention. Chapter 7 explicitly
+//! gives an opposite-entry exit ("no rules for exiting positions, except for an entry in the other direction",
+//! pp.145, 155, 160, 165); applying that convention to Chapter 8 SOB remains declared. Aggregate table occupancy
+//! cannot establish a unique trade ledger or certify the original exit implementation; see README.
 //! Chapter 10 (S&P timing) measures close-to-close returns, so those rules fill at the close of the signal day.
 //! The original mixed-instrument study used volatility-scaled dollar sizing. Selected-stock
 //! normalized percentage research is a separate application and cannot reproduce those dollar figures.
 use crate::connors::{sma, true_range, Claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "lkqts";
+
+/// Fixed SOB source configuration. Kept separate from the original three and
+/// next-four lists; stock-only request/history admission is dispatched explicitly.
+pub const SOB_PROPOSED_PROFILE: &str =
+    "sob_close_max80_current_inclusive_channel40_tie_inclusive_strict20";
+
+/// Local direct-run defaults only; never round a changed value into review.
+/// Empty/missing fields use the exact fixed source defaults80/40/20.
+pub fn validate_sob_candidate(p: &Params) -> Option<String> {
+    (!p.iter().all(|(key,value)| value.is_finite() && match key.as_str() {
+        "search" => *value==80., "chan" => *value==40., "min" => *value==20., _ => false,
+    })).then(|| "SOB stock research requires exact search80/chan40/min20. Changed, unknown, fractional or nonfinite parameters are rejected without rounding; all source/data/account and instrument checks remain mandatory.".into())
+}
+
+/// At the Ctx boundary, validate only the genuine causal prefix and required opens.
+/// SOB state/fill calculations ignore observations after selectedto. The native
+/// loader separately requires whole-file whitelist/hash/format integrity before
+/// constructing a Ctx; this does not waive rejection of an invalid native suffix.
+pub fn sob_history_issue(x: &Ctx, from: usize, to: usize) -> Option<&'static str> {
+    if from>to || to>=x.r.len() {return Some("SOB selected source window is unavailable");}
+    if x.r[..=to].iter().any(|r| r.ticker.is_empty() || !crate::baskets::valid_date(&r.date)
+        || ![r.open,r.high,r.low,r.close].iter().all(|v|v.is_finite() && *v>0.)
+        || r.low>r.high || r.open<r.low || r.open>r.high || r.close<r.low || r.close>r.high)
+        || x.r[..=to].windows(2).any(|w|w[0].date>=w[1].date || w[0].ticker!=w[1].ticker) {
+        return Some("SOB requires genuine finite positive consistent OHLC, ordered distinct valid dates and one source identity through the selected end. No observations, opens or earlier indicator history are repaired or invented.");
+    }
+    None
+}
+
+/// Longest high/low horizons over exactly80 current-inclusive actual closes.
+/// Equality is included; both horizons80 on a flat window resolve to neutral0.
+fn sob_close_statistic(window: &[f64]) -> Option<(u8,u8,i16)> {
+    if window.len()!=80 || window.iter().any(|v|!v.is_finite() || *v<=0.) {return None;}
+    let current=window[79];
+    let high=window.iter().rev().take_while(|&&v|v<=current).count() as u8;
+    let low=window.iter().rev().take_while(|&&v|v>=current).count() as u8;
+    let statistic=if high>low {i16::from(high)} else if low>high {-i16::from(low)} else {0};
+    Some((high,low,statistic))
+}
+
+/// Exactly40 defined statistics includingtoday. Ties at the outer extreme can
+/// qualify again; the strict formal20 threshold differs from the Intel example.
+fn sob_channel_predicate(window: &[i16]) -> Option<(i16,i16,i8)> {
+    if window.len()!=40 || window.iter().any(|s|!(-80..=80).contains(s)) {return None;}
+    let upper=*window.iter().max()?;let lower=*window.iter().min()?;let current=window[39];
+    let side=if current>20 && current==upper {1} else if current< -20 && current==lower {-1} else {0};
+    Some((upper,lower,side))
+}
+
+pub struct SobRuleState {
+    pub high_horizon: u8,
+    pub low_horizon: u8,
+    pub statistic: i16,
+    pub upper_40: Option<i16>,
+    pub lower_40: Option<i16>,
+    pub long_condition: bool,
+    pub short_condition: bool,
+}
+pub struct SobDiagnostics {
+    pub profile: &'static str,
+    pub states: Vec<Option<SobRuleState>>,
+}
+
+/// Causal source state for the exact fixed SOB stock-price research application.
+/// First statistic79; first complete predicate118; first possible nextopen119.
+pub fn sob_diagnostics(x: &Ctx, to: usize, p: &Params) -> Option<SobDiagnostics> {
+    if validate_sob_candidate(p).is_some() || sob_history_issue(x,0,to).is_some() {return None;}
+    let closes=&x.c[..=to];
+    let mut states:Vec<Option<SobRuleState>>=(0..closes.len()).map(|_|None).collect();
+    let mut statistics=Vec::with_capacity(closes.len().saturating_sub(79));
+    for i in 79..closes.len() {
+        let (high,low,statistic)=sob_close_statistic(&closes[i-79..=i])?;
+        statistics.push(statistic);
+        let channel=if statistics.len()>=40 {Some(sob_channel_predicate(&statistics[statistics.len()-40..])?)} else {None};
+        let (upper,lower,side)=channel.map_or((None,None,0),|(u,l,s)|(Some(u),Some(l),s));
+        states[i]=Some(SobRuleState{high_horizon:high,low_horizon:low,statistic,upper_40:upper,lower_40:lower,long_condition:side==1,short_condition:side== -1});
+    }
+    Some(SobDiagnostics{profile:SOB_PROPOSED_PROFILE,states})
+}
+
+fn sob_proposed_run(x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+    if validate_sob_candidate(p).is_some() || sob_history_issue(x,from,to).is_some() {return None;}
+    let diagnostics=sob_diagnostics(x,to,p)?;
+    let signals:Vec<i8>=diagnostics.states.iter().map(|state|state.as_ref().map_or(0,|s|if s.long_condition {1} else if s.short_condition {-1} else {0})).collect();
+    // The existing source-clock runner startsflat at selectedfrom, ignores
+    // same-side repeated levels, reverses at the next actualopen, never fills
+    // a terminalsignal outside the period and marks an existing holdingclose.
+    Some(sar(x,from,to,&signals,"Proposed SOB strict20: tied40-statistic high","Proposed SOB strict20: tied40-statistic low"))
+}
+
 
 /// Exact bounded source configurations. Instrument admission is owned separately
 /// by instrument_policy::reviewed_kestner_stock; other Kestner IDs inherit none.
@@ -56,15 +148,24 @@ pub const NEXT_CANDIDATE_IDS: &[&str] = &[
 pub fn next_candidate(id: &str) -> bool { NEXT_CANDIDATE_IDS.contains(&id) }
 
 /// Shared request/history dispatch; the original exact-three list stays stable.
-pub fn stock_research_profile(id: &str) -> bool { stock_candidate(id) || next_candidate(id) }
+pub fn sob_candidate(id: &str) -> bool { id=="lkqts_sob" }
+
+pub fn sob_source_convention() -> &'static str {
+    "Printed185/190: closing-price maximum signed breakout horizon80 and strict20 entries at the40-statistic extreme. Printed191 Intel exactly+20/-20 conflicts with that formal paragraph; this named profile follows strict20 without fitting returns. Current-inclusive80/40 windows, inclusive ties, equal high/low horizons neutral0, complete initialization79/118/119, flat selected start and Chapter7 completed-close/next-actual-open opposite reversal are declared interpretations. Genuine prefix, no pyramiding, independent stop or invented terminal exit. Original volatility-dollar sizing and published performance are not reproduced."
+}
+
+pub fn stock_research_profile(id: &str) -> bool { stock_candidate(id) || next_candidate(id) || sob_candidate(id) }
 
 pub fn validate_stock_research_profile(id: &str,p: &Params) -> Option<String> {
-    if stock_candidate(id) {validate_stock_candidate(id,p)} else {validate_next_candidate(id,p)}
+    if stock_candidate(id) {validate_stock_candidate(id,p)}
+    else if sob_candidate(id) {validate_sob_candidate(p)}
+    else {validate_next_candidate(id,p)}
 }
 
 pub fn stock_research_history_issue(id: &str,x: &Ctx,from: usize,to: usize) -> Option<&'static str> {
     if stock_candidate(id) {stock_history_issue(id,x,from,to)}
     else if next_candidate(id) {next_history_issue(x,from,to)}
+    else if sob_candidate(id) {sob_history_issue(x,from,to)}
     else {Some("Unknown Kestner stock research profile")}
 }
 
@@ -473,11 +574,10 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "x_one=0 gives the prose's 'typically x = MA length' reading (non-default).",
             cl("73", "23%", "-$1/share", "105 / 16 bars", P90)),
         sd!("lkqts_sob", "Second order breakout", G8, "Long/Short", Live,
-            ["F|Second Order Breakout statistic = +N if today's close is the highest close of the past N days, -N if the lowest of the past N days, searched up to 80 days (p.183)",
-             "E|\"If today's Second Order Breakout statistic is both the highest value over the past 40 days and greater than 20, then long positions are established\" (p.190)",
-             "E|\"If today's Second Order Breakout statistic is both the lowest value over the past 40 days and less than -20, then short positions are established\" (p.190)",
-             "X|Reverse on the opposite entry (INTC example, p.190)"],
-            "When today's close equals yesterday's close the day is both a 2-day high and low; the larger count wins (0 on a tie).",
+            ["F|Closing-price signed maximum high/low breakout horizon through80 (printed185); declared current-inclusive80 closes, inclusive price ties and neutral equal high/low horizons",
+             "E|Formal paragraph printed190: statistic strictly>20 and at its40-observation high; strictly<−20 and at its40-observation low. Declared current-inclusive40 complete statistics and tied extremes qualify",
+             "X|Declared research convention: completed-close signals fill next actual open; opposite eligible signal exits/reverses, repeated same-side signal does not add exposure; no independent stop or fabricated terminal exit"],
+            "Fixed selected-stock research profile sob_close_max80_current_inclusive_channel40_tie_inclusive_strict20. The Intel narrative uses exactly+20/−20, conflicting with the formal strict threshold; no choice is fitted to performance. First statistic79, first complete predicate118, earliest next-open119; genuine full prefix, selected account starts flat. Chapter7 next-open execution is a declared Chapter8 adaptation. Selected AAPL/RELIANCE source ledgers and four zero/nonzero-cost normalized accounts matched independent references. Every requested run still requires source/data/account and actual-stock admission checks. Original mixed-instrument volatility-dollar sizing, quoted performance, price adjustments, borrow and historical population are not certified.",
             cl("93", "31%", "-$3/share", "51 / 19 bars", P90)),
         sd!("lkqts_macdhr", "MACD histogram retracement", G8, "Long/Short", Live,
             ["F|Histogram = MACD(12,26) - 9-day EMA of MACD (p.191)",
@@ -666,7 +766,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "lkqts_rsi14" => vec![p("n", "Declared RMA days", 14., 14., 14., 1.), p("lo", "Level long below", 35., 35., 35., 1.), p("hi", "Level short above", 65., 65., 65., 1.)],
         "lkqts_macd" | "lkqts_macd_literal_alpha" => vec![p("fast", "Fast EMA label", 12., 12., 12., 1.), p("slow", "Slow EMA label", 26., 26., 26., 1.), p("sig", "Signal EMA days", 9., 9., 9., 1.)],
         "lkqts_kma" => vec![p("n1", "Short MA length", 20., 5., 50., 5.), p("n2", "Long MA length", 80., 40., 200., 10.), p("x_one", "Filter: compare with yesterday (1, book's GE example and results) or n days ago (0, p.183 'typically')", 1., 0., 1., 1.)],
-        "lkqts_sob" => vec![p("search", "Search back (days)", 80., 40., 120., 10.), p("chan", "Statistic channel (days)", 40., 10., 80., 5.), p("min", "Minimum statistic", 20., 5., 40., 5.)],
+        "lkqts_sob" => vec![p("search", "Maximum current-inclusive close horizon", 80., 80., 80., 1.), p("chan", "Current-inclusive statistic channel", 40., 40., 40., 1.), p("min", "Strict absolute statistic threshold", 20., 20., 20., 1.)],
         "lkqts_macdhr" => vec![p("retrace", "Retracement of the extreme", 0.25, 0.1, 0.5, 0.05), p("arm", "Arming level, x sigma(20)", 0.5, 0.0, 2.0, 0.25), p("sd_n", "Sigma look-back", 20., 10., 50., 5.)],
         "lkqts_macs" => vec![p("long", "Long at MACS >=", 60., 50., 90., 5.), p("short", "Short at MACS <=", 40., 10., 50., 5.)],
         "lkqts_nei" => vec![p("n", "Look-back days", 50., 20., 100., 10.), p("up", "Upper band rank", 10., 1., 25., 1.), p("dn", "Lower band rank", 40., 25., 50., 1.), p("scale", "Band = MA + ranked NEI x sigma (1, reproduces the book's SPX table) or + NEI as printed (0)", 1., 0., 1., 1.)],
@@ -789,6 +889,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     if !id.starts_with("lkqts_") {
         return None;
     }
+    if id=="lkqts_sob" && (validate_sob_candidate(p).is_some() || sob_history_issue(x,from,to).is_some()) {return None;}
     if stock_candidate(id) && validate_stock_candidate(id,p).is_some() { return None; }
     if next_candidate(id) && (validate_next_candidate(id,p).is_some() || next_history_issue(x,from,to).is_some()) {return None;}
     let defs = params(id)?;
@@ -883,21 +984,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 None
             })
         }
-        "lkqts_sob" => {
-            let (sb, ch, mn) = (u("search"), u("chan"), g("min"));
-            let mut st = vec![f64::NAN; n];
-            for i in sb..n {
-                let (mut nh, mut nl) = (1usize, 1usize);
-                while nh < sb && c[i - nh] <= c[i] { nh += 1 }
-                while nl < sb && c[i - nl] >= c[i] { nl += 1 }
-                st[i] = if nh > nl { nh as f64 } else if nl > nh { -(nl as f64) } else { 0.0 };
-            }
-            let sig: Vec<i8> = (0..n).map(|i| {
-                if i + 1 < ch || !st[i + 1 - ch].is_finite() { return 0 }
-                if st[i] > mn && st[i] >= hh(&st, i, ch) { 1 } else if st[i] < -mn && st[i] <= ll(&st, i, ch) { -1 } else { 0 }
-            }).collect();
-            sar(x, from, to, &sig, "SOB statistic: 40-day high and > 20", "SOB statistic: 40-day low and < -20")
-        }
+        "lkqts_sob" => sob_proposed_run(x,from,to,p)?,
         "lkqts_macdhr" => {
             let (ef, es) = (ema(c, 12), ema(c, 26));
             let m: Vec<f64> = (0..n).map(|i| ef[i] - es[i]).collect();
@@ -1321,5 +1408,93 @@ mod tests {
         let x=Ctx::new(&base,&base,&[]);
         assert!(next_history_issue(&x,100,105).is_some());
         assert!(next_history_issue(&x,104,100).is_some());
+    }
+}
+
+
+#[cfg(test)]
+mod sob_proposed_tests {
+    use super::*;
+    use crate::Row;
+    // Synthetic observed sessions only, not real market or source trade data.
+    fn sob_rows(c: &[f64]) -> Vec<Row> {
+        c.iter().enumerate().map(|(i,&close)|Row{ticker:"AAPL".into(),date:format!("2000-{:02}-{:02}",1+i/28,1+i%28),open:close,high:close+1.,low:close*0.9,close,volume:Some(1.)}).collect()
+    }
+    fn set_open(rows:&mut [Row],i:usize,open:f64) {
+        rows[i].open=open;rows[i].high=rows[i].close.max(open)+1.;rows[i].low=rows[i].close.min(open)*0.9;
+    }
+    #[test]
+    fn sob_s01_s03_full_eighty_statistic_and_flat_neutral() {
+        let up:Vec<_>=(1..=80).map(|n|n as f64).collect();
+        let down:Vec<_>=(101..=180).rev().map(|n|n as f64).collect();
+        assert_eq!(sob_close_statistic(&up),Some((80,1,80)));
+        assert_eq!(sob_close_statistic(&down),Some((1,80,-80)));
+        assert_eq!(sob_close_statistic(&vec![100.;80]),Some((80,80,0)));
+        assert!(sob_close_statistic(&up[..79]).is_none());
+    }
+    #[test]
+    fn sob_s04_s08_horizon_boundaries_and_plateau_signs() {
+        let mut c=vec![98.;80];c[39]=101.;for v in &mut c[40..79] {*v=99.;}c[79]=100.;
+        assert_eq!(sob_close_statistic(&c),Some((40,1,40))); // lag40 blocks41, not40
+        let mut c=vec![102.;80];c[44]=99.;for v in &mut c[45..79] {*v=101.;}c[79]=100.;
+        assert_eq!(sob_close_statistic(&c),Some((1,35,-35)));
+        let mut c=vec![99.;80];c[78]=100.;c[79]=100.;
+        assert_eq!(sob_close_statistic(&c),Some((80,2,80)));
+        let mut c=vec![101.;80];c[78]=100.;c[79]=100.;
+        assert_eq!(sob_close_statistic(&c),Some((2,80,-80)));
+        let mut c=vec![99.;81];c[0]=1000.;c[80]=100.;
+        assert_eq!(sob_close_statistic(&c[1..]),Some((80,1,80))); // excludeslag80
+    }
+    #[test]
+    fn sob_p09_p12_strict_threshold_outer_ties_and_current_window() {
+        // Outer-indicator fixtures only; no claim of a full price reconstruction.
+        let mut s=vec![19;40];s[39]=20;assert_eq!(sob_channel_predicate(&s),Some((20,19,0)));
+        let mirrored:Vec<_>=s.iter().map(|v|-v).collect();assert_eq!(sob_channel_predicate(&mirrored),Some((-19,-20,0)));
+        let mut s=vec![0;40];s[0]=40;s[39]=21;assert_eq!(sob_channel_predicate(&s),Some((40,0,0)));
+        s[39]=40;assert_eq!(sob_channel_predicate(&s),Some((40,0,1)));
+        let mirrored:Vec<_>=s.iter().map(|v|-v).collect();assert_eq!(sob_channel_predicate(&mirrored),Some((0,-40,-1)));
+        let mut s=vec![30;41];s[0]=50;s[40]=40;
+        assert_eq!(sob_channel_predicate(&s[1..]),Some((40,30,1))); // lag40excluded
+        assert_eq!(sob_channel_predicate(&s[..40]),Some((50,30,0))); // prior40different
+        assert!(sob_channel_predicate(&[21;39]).is_none());
+    }
+    #[test]
+    fn sob_c13_first_statistic79_predicate118_actual_open119() {
+        let c:Vec<_>=(1..=120).map(|n|n as f64).collect();let mut r=sob_rows(&c);set_open(&mut r,119,200.);let x=Ctx::new(&r,&r,&[]);
+        let d=sob_diagnostics(&x,119,&Params::new()).unwrap();assert_eq!(d.profile,SOB_PROPOSED_PROFILE);
+        assert!(d.states[..79].iter().all(Option::is_none));let first=d.states[79].as_ref().unwrap();assert_eq!((first.high_horizon,first.low_horizon,first.statistic),(80,1,80));
+        assert!(d.states[117].as_ref().unwrap().upper_40.is_none());assert!(!d.states[117].as_ref().unwrap().long_condition);assert!(d.states[118].as_ref().unwrap().long_condition);
+        let t=run("lkqts_sob",&x,117,119,&Params::new()).unwrap();assert_eq!(t.len(),1);assert_eq!(t[0].legs.len(),1);assert_eq!((t[0].legs[0].i,t[0].legs[0].px),(119,200.));assert_eq!(t[0].entry_kind,"open");assert_eq!((t[0].exit_i,t[0].exit_px,t[0].open),(119,120.,true));
+        assert!(run("lkqts_sob",&x,118,118,&Params::new()).unwrap().is_empty());
+    }
+    #[test]
+    fn sob_c14_full_prefix_flat_selected_start_and_future_stability() {
+        let c:Vec<_>=(1..=131).map(|n|n as f64).collect();let mut r=sob_rows(&c);set_open(&mut r,130,500.);
+        let x=Ctx::new(&r,&r,&[]);let base=run("lkqts_sob",&x,129,130,&Params::new()).unwrap();assert_eq!(base.len(),1);assert_eq!((base[0].legs[0].i,base[0].legs[0].px),(130,500.));
+        let mut suffix=r.clone();let mut bad=suffix[130].clone();bad.date="2000-05-20".into();bad.open=f64::NAN;bad.close=f64::NAN;suffix.push(bad);let x=Ctx::new(&suffix,&suffix,&[]);
+        let prior=run("lkqts_sob",&x,129,130,&Params::new()).unwrap();assert_eq!((prior[0].legs[0].i,prior[0].legs[0].px,prior[0].exit_px),(130,500.,131.));assert!(run("lkqts_sob",&x,129,131,&Params::new()).is_none());
+        let mut changed=r.clone();changed[130].close=1.;changed[130].low=0.5;let x=Ctx::new(&changed,&changed,&[]);let changed=run("lkqts_sob",&x,129,130,&Params::new()).unwrap();assert_eq!((changed[0].legs[0].i,changed[0].legs[0].px),(130,500.)); // signal129unchanged, terminalmark differs
+    }
+    #[test]
+    fn sob_c15_supplied_predicates_no_pyramid_nextopen_reverse_terminal_mark() {
+        // Supplied eligible predicate fixture, not a claimed price-derived SOBseries.
+        let mut r=sob_rows(&vec![100.;123]);set_open(&mut r,119,101.);set_open(&mut r,120,102.);set_open(&mut r,121,95.);let x=Ctx::new(&r,&r,&[]);let mut s=vec![0;123];s[118]=1;s[119]=1;s[120]=-1;s[122]=1;
+        let t=sar(&x,118,122,&s,"long fixture","short fixture");assert_eq!(t.len(),2);assert_eq!(t[0].legs.len(),1);assert_eq!((t[0].dir,t[0].legs[0].i,t[0].legs[0].px),(1.,119,101.));assert_eq!((t[0].signal_i,t[0].exit_i,t[0].exit_px,t[0].open),(120,121,95.,false));assert_eq!((t[1].dir,t[1].legs[0].i,t[1].legs[0].px),(-1.,121,95.));assert_eq!((t[1].exit_i,t[1].exit_px,t[1].open,t[1].signal_i),(122,100.,true,122));
+    }
+    #[test]
+    fn sob_exact_fixed_parameters_and_causal_quote_identity_guards() {
+        assert!(validate_sob_candidate(&Params::new()).is_none());
+        let fixed=Params::from([("search".into(),80.),("chan".into(),40.),("min".into(),20.)]);assert!(validate_sob_candidate(&fixed).is_none());
+        let r=sob_rows(&vec![100.;120]);
+        for (key,value) in [("search",79.),("search",80.5),("chan",41.),("min",20.5),("unknown",0.),("search",f64::NAN),("min",f64::INFINITY)] {
+            let p=Params::from([(key.into(),value)]);assert!(validate_sob_candidate(&p).is_some());let x=Ctx::new(&r,&r,&[]);assert!(run("lkqts_sob",&x,118,119,&p).is_none());
+        }
+        for kind in 0..7 {
+            let mut bad=r.clone();match kind {0=>bad[2].open=0.,1=>bad[2].close=f64::NAN,2=>bad[2].high=bad[2].low-1.,3=>bad[2].date=bad[1].date.clone(),4=>bad[2].date="2000-02-31".into(),5=>bad[2].ticker="MSFT".into(),_=>bad[2].ticker=String::new()};let x=Ctx::new(&bad,&bad,&[]);assert!(sob_history_issue(&x,118,119).is_some());assert!(run("lkqts_sob",&x,118,119,&Params::new()).is_none());
+        }
+        let x=Ctx::new(&r,&r,&[]);assert!(sob_history_issue(&x,119,118).is_some());assert!(sob_history_issue(&x,118,120).is_some());
+        assert!(sob_candidate("lkqts_sob"));assert!(stock_research_profile("lkqts_sob"));
+        assert_eq!(STOCK_CANDIDATE_IDS.len(),3);assert_eq!(NEXT_CANDIDATE_IDS.len(),4);
+        let d=catalogue().into_iter().find(|d|d.id=="lkqts_sob").unwrap();assert!(matches!(d.status,Status::Live));
     }
 }
