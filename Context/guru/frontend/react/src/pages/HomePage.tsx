@@ -27,10 +27,9 @@ export function HomePage({ snapshot }: { snapshot: ViewSnapshot }) {
           </a>
         </div>
       </section>
-      <dl className="lstrip library-summary">
+      <dl className="lstrip library-summary library-summary-strategies">
         {[
-          ["Total Authors", model.identifiedAuthors],
-          ["Total Strategies found", model.strategiesFound],
+          ["Total Strategies", model.strategiesFound],
           ["Backtested Strategies", model.progressCurrent ? model.backtestedStrategies : "Checking"],
         ].map(([label, value]) => (
           <div key={label}>
@@ -40,8 +39,7 @@ export function HomePage({ snapshot }: { snapshot: ViewSnapshot }) {
         ))}
       </dl>
       <p className="library-count-note">
-        Authors counts the people identified so far; the full inventory still contains unresolved author credits.
-        Strategies counts distinct catalogued rules, grouping parameter versions within each book.
+        Total Strategies includes catalogued entries awaiting review or conversion, grouping parameter versions within each book.
         Backtested counts strategies with available computed results on a supported instrument,
         across India and US; it does not certify the original book study.
       </p>

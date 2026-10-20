@@ -733,3 +733,5 @@ body.pdf-capture .st-actions, body.pdf-capture #page-action-message, body.pdf-ca
 .unavailable-method .stamp {color:var(--ink2);}
 .unavailable-method .btns {margin-top:auto; flex-wrap:wrap;}
 .unavailable-method-grid {margin-top:22px;}
+
+.lstrip.library-summary.library-summary-strategies { grid-template-columns:repeat(2,minmax(0,1fr)); }

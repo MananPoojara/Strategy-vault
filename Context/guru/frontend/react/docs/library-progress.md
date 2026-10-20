@@ -1,9 +1,9 @@
 # Library counts and book progress
 
-The home page reports three library-wide counts. Instrument and market filters affect browsing and result links, not these totals.
+The home page reports two library-wide counts: Total Strategies and Backtested Strategies. The identified-author count is retained for internal review and is not shown in the homepage summary. Instrument and market filters affect browsing and result links, not these totals.
 
-- **Total Authors:** explicitly identified people in `src/services/author-identities.ts`, deduplicated across curated credits and reviewed source bylines. This is the identified count so far. Do not count folders, organizations, publisher names or unresolved source credits as people. Retain their reading records.
-- **Total Strategies found:** distinct `book:family` entries in the engine catalogue, including entries awaiting review. Parameter variants within a book count once. The same idea in two books remains two attributed entries. This count does not establish that every rule is complete, implemented or verified.
+- **Identified authors (internal review only):** explicitly identified people in `src/services/author-identities.ts`, deduplicated across curated credits and reviewed source bylines. This is the identified count so far. Do not count folders, organizations, publisher names or unresolved source credits as people. Retain their reading records.
+- **Total Strategies:** distinct `book:family` entries in the engine catalogue, including entries awaiting review. Parameter variants within a book count once. The same idea in two books remains two attributed entries. This count does not establish that every rule is complete, implemented or verified.
 - **Backtested Strategies:** distinct methods with an admitted, finite measured summary containing closed trades, recorded in the current availability snapshot. Union across supported instruments and markets; never sum the same method's results across instruments. This records available simulated results, not original book-performance reproduction.
 
 Author cards, the author dialog and author pages show Books, Strategies and Backtested. Book counts preserve indexed titles/editions, including separately labelled courses and articles; unresolved bibliographic records are not silently merged into published books. Only explicit reviewed source identities can merge a source row with a catalogue title. All original associations and source files must remain represented in the private inventory.
