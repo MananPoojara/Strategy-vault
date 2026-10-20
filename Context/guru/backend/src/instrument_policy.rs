@@ -28,7 +28,7 @@ fn review()->Policy {requirement("source_review_required", &[], "Instrument popu
 fn member(id:&str,ids:&[&str])->bool {ids.contains(&id)}
 
 pub fn reviewed_kestner_stock(def:&StrategyDef)->bool {
-    def.book==crate::books::lkqts::BOOK && crate::books::lkqts::stock_candidate(def.id)
+    def.book==crate::books::lkqts::BOOK && crate::books::lkqts::stock_research_profile(def.id)
 }
 
 /// Exact source-rule IDs reviewed against selected real-price ledgers.
@@ -114,6 +114,10 @@ pub fn policy(def:&StrategyDef)->Policy {
     p
 }
 fn base_policy(def:&StrategyDef)->Policy {
+    if reviewed_kestner_stock(def) && crate::books::lkqts::next_candidate(def.id) {
+        let mut p=stock("Kestner, Quantitative Trading Strategies (2003), printed41,57,66,68,139,155,165,170,175. Only fixed volatility100/2, declared Wilder-RMA14 level35/65 and the two named MACD coefficient profiles are reviewed here; source rules and declared conventions are separated in docs/kestner-next-stock-candidates.md. Completed-close signals fill at the next actual stock open, with genuine full-prefix indicators and a flat selected start. Volatility uses current-inclusive100-change population variance and strict squared thresholds. RSI smoothing, arithmetic14-change seed, flat50 and level startup are declared conventions. Period MACD2/13,2/27 conflicts with the printed literal .15/.075; both named profiles retain a declared .2 signal, first-close seed and increment-form EMA, without choosing a winner from returns. Selected AAPL/RELIANCE source-event ledgers matched separate references. Volatility/MACD normalized accounts matched at zero and nonzero costs; the checked RSI accounts remain withheld because the model becomes nonpositive. Every requested account still requires its own calculation checks. These are individual-stock percentage research applications, not original volatility-dollar sizing or published performance reproduction. No index, ETF, derivative, basket, historical membership, complete exchange calendar, quote adjustment, borrow, margin, financing or dividend certification. Terminal open marks are not closed trades and retain separately disclosed estimated liquidation costs.");
+        p.execution_scope="single_symbol_stock_price_research";p.market_adaptation=true;return p;
+    }
     if reviewed_kestner_stock(def) {
         let mut p=stock("Kestner, Quantitative Trading Strategies (2003), printed139–140,145,150: only channel40/20, SMA10/40 and momentum80 at fixed source settings. Source and declared conventions: docs/kestner-stock-candidates.md. Completed-close signals fill at the next actual stock open; selected start is flat with genuine earlier indicator history. Inclusive channel bounds/ties, exit-first collision priority and SMA equality edges are declared interpretations. Independent selected AAPL/MSFT/RELIANCE/HDFCBANK source-event and normalized percentage-account comparisons do not reproduce original mixed-instrument volatility-scaled dollar sizing, source populations or book performance. Actual individual stocks only; no index, ETF, derivative or basket substitution. Price adjustments, complete exchange calendars and historical membership remain qualified. Shorts are hypothetical without certified borrow, margin, financing or dividends. Terminal open marks stay outside closed-trade statistics and include an explicitly estimated liquidation-cost side in the retained ordinary model.");
         p.execution_scope="single_symbol_stock_price_research";p.market_adaptation=true;return p;
@@ -311,6 +315,18 @@ pub fn metadata_json(def:&StrategyDef)->String {
     json.pop();
     if def.book=="hbiab" && crate::books::hbiab_reviewed::reviewed(def.id) {json.push_str(&format!(",\"source_convention\":\"{}\",\"account_model\":\"{}\"",crate::books::hbiab_reviewed::convention(def.id),crate::books::hbiab_reviewed::MODEL));}
     if reviewed_dema_index(def) {json.push_str(&format!(",\"source_convention\":\"{}\"",crate::books::hbqts::reviewed::DEMA_INDEX_CONVENTION));}
+    if reviewed_kestner_stock(def) && crate::books::lkqts::next_candidate(def.id) {
+        let convention=crate::books::lkqts::next_source_convention(def.id).expect("Exact next-profile predicate");
+        let profile=match def.id {
+            "lkqts_volbo"=>"volbo_current_inclusive_population100_k2",
+            "lkqts_rsi14"=>"rsi_wilder_rma14_level35_65_seed14_flat50",
+            "lkqts_macd"=>"macd_period_alpha_first_close",
+            "lkqts_macd_literal_alpha"=>"macd_literal_alpha_first_close",
+            _=>unreachable!("Exact next-profile predicate"),
+        };
+        let account_checks=if def.id=="lkqts_rsi14" {"Selected AAPL/RELIANCE source events matched; the four checked normalized-account cost cases are correctly withheld for nonpositive equity. Source-ledger agreement does not certify a supported funded account."} else {"Selected AAPL/RELIANCE source events and four zero/nonzero-cost normalized-account cases matched. Other requested runs still require their own account-domain checks; no original book performance is certified."};
+        json.push_str(&format!(",\"source_convention\":\"{}\",\"source_profile\":\"{}\",\"selected_account_checks\":\"{}\",\"normalized_account_model\":\"sequential_full_allocation_price_returns\"",escape(convention),profile,escape(account_checks)));
+    }
     let reviewed=reviewed_cash_rule(def)||reviewed_dema_index(def);
     json.push_str(&format!(",\"source_rule_reviewed\":{},\"independent_selected_ledger_checked\":{}",reviewed,reviewed));
     if def.book=="kfsc" && crate::books::kfsc::reviewed_hv_rule(def.id) {
@@ -677,6 +693,34 @@ mod next_burns_policy_tests {
         for id in ["sbma_sma200_short","sbma_x_10e30e_sar","sbma_x_10e50e_rsi"] {
             let def=defs.iter().find(|d|d.id==id).unwrap();assert!(!reviewed_cash_rule(def));
             assert_eq!(policy(def).requirement,"source_review_required");
+        }
+    }
+}
+
+#[cfg(test)]
+mod kestner_next_policy_tests {
+    use super::*;
+    fn definition(id:&str)->StrategyDef {crate::books::lkqts::catalogue().into_iter().find(|d|d.id==id).unwrap()}
+    #[test]
+    fn exact_next_profiles_remain_stock_only_with_qualified_account_claims() {
+        for &id in crate::books::lkqts::NEXT_CANDIDATE_IDS {
+            let d=definition(id);let p=policy(&d);
+            assert!(reviewed_kestner_stock(&d));assert!(reviewed_cash_rule(&d));
+            assert_eq!(p.allowed_types,&["individual_stock"]);assert_eq!(p.execution_scope,"single_symbol_stock_price_research");
+            assert!(p.source_basis.contains("declared conventions"));assert!(p.source_basis.contains("nonpositive"));
+            for symbol in ["SPX","NDX","SPY","QQQ","NIFTY 50","AAPL","NIFTY31JAN2008FUT"] {assert!(check(&d,symbol,false).is_some());}
+            assert!(check_native(&d,"AAPL",&NativeEvidence::us_test_fixture()).is_none());
+            let json=metadata_json(&d);assert!(json.contains("\"source_performance_reproduced\":false"));assert!(json.contains("\"source_convention\":"));
+            let mut forged=d;forged.book="another_book";assert!(!reviewed_kestner_stock(&forged));assert!(!reviewed_cash_rule(&forged));
+        }
+        let rsi=metadata_json(&definition("lkqts_rsi14"));assert!(rsi.contains("four checked normalized-account cost cases are correctly withheld"));
+        for id in ["lkqts_stoch14","lkqts_mom20","lkqts_cb_pyr"] {assert!(!reviewed_kestner_stock(&definition(id)));}
+    }
+    #[test]
+    fn earlier_kestner_policy_keeps_its_own_source_basis() {
+        for &id in crate::books::lkqts::STOCK_CANDIDATE_IDS {
+            let d=definition(id);let p=policy(&d);assert!(p.source_basis.contains("only channel40/20, SMA10/40 and momentum80"));
+            assert!(!metadata_json(&d).contains("selected_account_checks"));
         }
     }
 }

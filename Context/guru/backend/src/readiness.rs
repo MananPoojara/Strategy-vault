@@ -47,9 +47,9 @@ mod short_course_readiness_tests {
 }
 
 pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -> Option<Issue> {
-    if def.book==books::lkqts::BOOK && books::lkqts::stock_candidate(def.id) {
-        if let Some(note)=books::lkqts::validate_stock_candidate(def.id,p) {return issue("not_testable",note);}
-        if let Some(note)=books::lkqts::stock_history_issue(def.id,ctx,from,to) {return issue("needs_data",note);}
+    if def.book==books::lkqts::BOOK && books::lkqts::stock_research_profile(def.id) {
+        if let Some(note)=books::lkqts::validate_stock_research_profile(def.id,p) {return issue("not_testable",note);}
+        if let Some(note)=books::lkqts::stock_research_history_issue(def.id,ctx,from,to) {return issue("needs_data",note);}
     }
     if crate::instrument_policy::reviewed_dema_index(def) {
         if let Some(note)=books::hbqts::reviewed::validate_dema_index(p){return issue("not_testable",note);}
@@ -413,5 +413,24 @@ mod tests {
         assert!(check(&ctx,&def,0,4,&Params::new()).unwrap().note.contains("OPEN15_HIGH"));
         def.status=Status::NeedsData("stock universe");
         assert_eq!(check(&ctx,&def,0,4,&Params::new()).unwrap().status,"needs_data");
+    }
+}
+
+#[cfg(test)]
+mod kestner_next_readiness_tests {
+    use super::*;
+    fn rows()->Vec<crate::Row> {(0..112).map(|i|crate::Row{ticker:"AAPL".into(),date:format!("2000-{:02}-{:02}",1+i/28,1+i%28),open:100.,high:101.,low:99.,close:100.,volume:None}).collect()}
+    #[test]
+    fn next_profile_input_checks_retain_history_and_exact_settings() {
+        let r=rows();let ctx=Ctx::new(&r,&[],&[]);
+        for &id in books::lkqts::NEXT_CANDIDATE_IDS {
+            let d=books::lkqts::catalogue().into_iter().find(|d|d.id==id).unwrap();
+            assert!(check(&ctx,&d,100,110,&Params::new()).is_none(),"{id}");
+            assert_eq!(check(&ctx,&d,100,110,&Params::from([("unknown".into(),0.)])).unwrap().status,"not_testable");
+            let mut bad=r.clone();bad[1].date=bad[0].date.clone();let badctx=Ctx::new(&bad,&[],&[]);
+            assert_eq!(check(&badctx,&d,100,110,&Params::new()).unwrap().status,"needs_data");
+            let mut future=r.clone();future[111].close=f64::NAN;let futurectx=Ctx::new(&future,&[],&[]);
+            assert!(check(&futurectx,&d,100,110,&Params::new()).is_none(),"unused future row {id}");
+        }
     }
 }

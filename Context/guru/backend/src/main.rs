@@ -568,6 +568,7 @@ fn catalogue_json(guru: &str) -> String {
 
 /// Market/date-specific data admission; this does not claim book-result reproduction.
 fn readiness_json(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
+    if q.contains_key("p.__raw_query_error") || q.get("id").is_some_and(|id|books::lkqts::stock_research_profile(id)) {checked_params_of(q)?;}
     let selected=select_context(st,q)?;let held=selected.context(st);
     let (ctx,from,to,_)=resolve_context(&held,q)?;
     let costs=accounting::Costs::parse(q)?;
@@ -682,11 +683,26 @@ fn native_admission(ctx:&Ctx,def:&connors::StrategyDef,from:usize,to:usize,selec
 
 fn query(path: &str) -> (String, BTreeMap<String, String>) {
     let (p, q) = path.split_once('?').unwrap_or((path, ""));
-    let params = q
+    let mut params:BTreeMap<String,String> = q
         .split('&')
         .filter_map(|kv| kv.split_once('='))
         .map(|(k, v)| (k.to_string(), pct_decode(&v.replace('+', " "))))
         .collect();
+    // Scope strict duplicate/bare-key handling to a request naming any protected
+    // Kestner profile, even if a later duplicate id would otherwise hide it.
+    let protected=q.split('&').filter_map(|kv|kv.split_once('=')).any(|(key,value)|
+        pct_decode(key)=="id" && books::lkqts::stock_research_profile(&pct_decode(&value.replace('+'," "))));
+    if protected {
+        let mut seen=std::collections::BTreeSet::new();let mut invalid=false;
+        for token in q.split('&').filter(|s|!s.is_empty()) {
+            match token.split_once('=') {
+                Some((key,_))=>{let decoded=pct_decode(key);if key.is_empty() || decoded!=key || !seen.insert(decoded) {invalid=true;}}
+                None=>invalid=true,
+            }
+        }
+        // Added after collection; client ordering cannot clear this sentinel.
+        if invalid {params.insert("p.__raw_query_error".into(),"server_rejected_duplicate_or_malformed_kestner_query".into());}
+    }
     (p.to_string(), params)
 }
 
@@ -738,8 +754,11 @@ fn hv_raw_default(text:&str,default:f64)->bool {
 /// New exact-default reviews must not silently discard malformed query inputs.
 /// Existing methods keep their previous parsing contract until separately reviewed.
 fn checked_params_of(q: &BTreeMap<String, String>) -> Result<Params,String> {
+    if q.get("p.__raw_query_error").is_some_and(|v|v=="server_rejected_duplicate_or_malformed_kestner_query") {
+        return Err("Kestner request contains duplicate or malformed query fields; no collapsed defaults are admitted".into());
+    }
     let p=params_of(q);
-    if let Some(id)=q.get("id").filter(|id|books::lkqts::stock_candidate(id)) {
+    if let Some(id)=q.get("id").filter(|id|books::lkqts::stock_research_profile(id)) {
         let schema=books::lkqts::params(id).ok_or("Unknown Kestner stock candidate")?;
         for (key,text) in q {
             if let Some(name)=key.strip_prefix("p.") {
@@ -757,7 +776,7 @@ fn checked_params_of(q: &BTreeMap<String, String>) -> Result<Params,String> {
                 if !ok {return Err(format!("Kestner grid {key} allows only its exact singleton source default and finite positive step"));}
             }
         }
-        if let Some(note)=books::lkqts::validate_stock_candidate(id,&p) {return Err(note);}
+        if let Some(note)=books::lkqts::validate_stock_research_profile(id,&p) {return Err(note);}
         return Ok(p);
     }
     if let Some(id)=q.get("id").filter(|id|books::hbqts::reviewed::is_dema_index(id)) {
@@ -1005,11 +1024,11 @@ fn window_start(ctx: &Ctx, d: &connors::StrategyDef, from: usize) -> Option<usiz
 }
 
 fn summary(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
-    if q.get("id").is_some_and(|id|books::hbqts::reviewed::is_dema_index(id) || books::lkqts::stock_candidate(id)){checked_params_of(q)?;}
+    if q.contains_key("p.__raw_query_error") || q.get("id").is_some_and(|id|books::hbqts::reviewed::is_dema_index(id) || books::lkqts::stock_research_profile(id)){checked_params_of(q)?;}
 
     let selected=select_context(st,q)?;let held=selected.context(st);
     let mut definitions=query_catalogue(q);
-    if let Some(id)=q.get("id").filter(|id|books::lkqts::stock_candidate(id)) {definitions.retain(|d|d.id==id);}
+    if let Some(id)=q.get("id").filter(|id|books::lkqts::stock_research_profile(id)) {definitions.retain(|d|d.id==id);}
     let single_session_catalogue=!q.contains_key("id") && definitions.iter().any(|d|reviewed_single_session(d.id));
     let (ctx, from, to, _cost) = resolve_context_window(&held, q, single_session_catalogue)?;
     let costs=accounting::Costs::parse(q)?;costs.ensure_rollover()?;
@@ -1041,10 +1060,17 @@ struct DiagnosticSeries {
     rsi: Option<(usize, Vec<f64>)>,
     ma: Option<(usize, Vec<f64>)>,
     trend: Option<(usize, Vec<f64>)>,
+    kestner_next: Option<books::lkqts::NextDiagnostics>,
 }
 fn diagnostic_series(ctx: &Ctx, id: &str, p: &Params) -> DiagnosticSeries {
+    diagnostic_series_through(ctx,id,p,ctx.r.len().saturating_sub(1))
+}
+fn diagnostic_series_through(ctx: &Ctx,id: &str,p: &Params,to: usize) -> DiagnosticSeries {
+    if books::lkqts::next_candidate(id) {
+        return DiagnosticSeries{rsi:None,ma:None,trend:None,kestner_next:books::lkqts::next_diagnostics(id,ctx,to,p)};
+    }
     if id=="lkqts_ma1040" {
-        return DiagnosticSeries{rsi:None,ma:Some((10,ctx.sma_n(10).into_owned())),trend:Some((40,ctx.sma_n(40).into_owned()))};
+        return DiagnosticSeries{rsi:None,ma:Some((10,ctx.sma_n(10).into_owned())),trend:Some((40,ctx.sma_n(40).into_owned())),kestner_next:None};
     }
     let schema = connors::params(id);
     let period = |key: &str, kind: &str| {
@@ -1059,7 +1085,15 @@ fn diagnostic_series(ctx: &Ctx, id: &str, p: &Params) -> DiagnosticSeries {
         rsi: period("rsi_n", "rsi").map(|n| (n, ctx.rsi_n(n).into_owned())),
         ma: period("ma", "sma").map(|n| (n, ctx.sma_n(n).into_owned())),
         trend: period("trend", "sma").map(|n| (n, ctx.sma_n(n).into_owned())),
+        kestner_next:None,
     }
+}
+
+fn kestner_next_rule_state(i:usize,series:&DiagnosticSeries)->String {
+    let Some(d)=&series.kestner_next else {return "null".into()};
+    let Some(Some(state))=d.states.get(i) else {return "null".into()};
+    let values=state.values.iter().map(|(name,value)|format!("\"{name}\":{}",full_precision_trade_return(*value))).collect::<Vec<_>>().join(",");
+    format!("{{\"profile\":\"{}\",{},\"long_condition\":{},\"short_condition\":{}}}",d.profile,values,state.long_condition,state.short_condition)
 }
 
 /// Completed-bar context labelled by actual date, indicator kind and period.
@@ -1085,11 +1119,16 @@ fn hv_exit_snapshot(ctx:&Ctx,t:&Trade)->String {
     format!("{{\"date\":\"{}\",\"phase\":\"open\",\"execution_px\":{},\"close\":null,\"rsi2\":null,\"vs_sma200\":null,\"vs_sma5\":null,\"vix_rsi2\":null,\"rsi_p\":null,\"rsi_period\":null,\"rsi_kind\":null,\"vs_ma_p\":null,\"ma_period\":null,\"ma_kind\":null,\"vs_trend_p\":null,\"trend_period\":null,\"trend_kind\":null,\"basis\":\"Idealized next genuine session OPEN exit. This session's completed-close indicators are unavailable at its open and are omitted.\"}}",ctx.r[t.exit_i].date,t.exit_px)
 }
 
-/// Causal clocks for the three next-open Kestner stock applications. The legacy
+/// Causal clocks for the exact next-open Kestner stock applications. The legacy
 /// signal field remains the exit-rule/terminal clock; it is never relabelled entry.
 fn kestner_execution_clock(ctx:&Ctx,id:&str,t:&Trade,series:&DiagnosticSeries)->String {
     let precise=full_precision_trade_return;
     let state=|i:usize| {
+        if books::lkqts::next_candidate(id) {
+            let rule_state=kestner_next_rule_state(i,series);
+            if rule_state=="null" || i>=ctx.r.len() {return "null".into();}
+            return format!("{{\"date\":\"{}\",\"phase\":\"completed_close\",\"close\":{},\"rule_state\":{rule_state}}}",ctx.r[i].date,precise(ctx.c[i]));
+        }
         let fields=match id {
             "lkqts_cb4020" if i>=39 => {
                 let extrema=|n:usize,high:bool|ctx.c[i+1-n..=i].iter().copied().fold(if high {f64::NEG_INFINITY}else{f64::INFINITY},|a,b|if high {a.max(b)}else{a.min(b)});
@@ -1132,6 +1171,7 @@ fn bandy_detail(ctx:&Ctx,id:&str,from:usize,to:usize,costs:accounting::Costs,run
 }
 
 fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
+    if q.contains_key("p.__raw_query_error") || q.get("id").is_some_and(|id|books::lkqts::stock_research_profile(id)) {checked_params_of(q)?;}
     let selected=select_context(st,q)?;let held=selected.context(st);
     let (ctx, from, to, cost) = resolve_context(&held, q)?;
     let costs=accounting::Costs::parse(q)?;
@@ -1151,7 +1191,9 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     if run.bandy_account.is_some() {
         let mut output=bandy_detail(ctx,id,from,to,costs,&run);output.pop();let _=write!(output,",\"provenance\":{}}}",source_provenance(st,q));return Ok(output);
     }
-    let diagnostics = diagnostic_series(ctx, id, &p);
+    let diagnostics = diagnostic_series_through(ctx,id,&p,to);
+    if books::lkqts::next_candidate(id) && diagnostics.kestner_next.is_none() {return Err("calculation_unavailable: Kestner causal indicator states are unavailable for the genuine selected prefix".into());}
+    let price_number:fn(f64)->String=if books::lkqts::next_candidate(id) {full_precision_trade_return} else {num};
     let mut o = String::with_capacity(1 << 20);
     let arr = |v: &mut String, it: &mut dyn Iterator<Item = String>| {
         v.push('[');
@@ -1161,7 +1203,7 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     o.push_str("{\"dates\":");
     arr(&mut o, &mut (from..=to).map(|k| format!("\"{}\"", ctx.r[k].date)));
     o.push_str(",\"close\":");
-    arr(&mut o, &mut (from..=to).map(|k| num(ctx.c[k])));
+    arr(&mut o, &mut (from..=to).map(|k| price_number(ctx.c[k])));
     o.push_str(",\"equity\":");
     arr(&mut o, &mut run.equity.iter().map(|v| num(*v)));
     o.push_str(",\"bh\":");
@@ -1177,18 +1219,27 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
             "{{\"dir\":{},\"legs\":[{}],\"entry\":\"{}\",\"exit\":\"{}\",\"exit_i\":{},\"exit_px\":{},\"avg_px\":{},\"ret\":{},\"ret_full_precision\":{},\"bars\":{},\"open\":{},\"reason\":\"{}\",\"entry_kind\":\"{}\",\"at_entry\":{},\"at_exit\":{},\"signal\":\"{}\",\"exits\":[{}],\"accounting\":{}}}",
             t.dir, legs.join(","), ctx.r[t.legs[0].i].date, ctx.r[t.exit_i].date, t.exit_i - from, num(t.exit_px),
             num(t.avg_px()), num(ledger.net_ret), full_precision_trade_return(ledger.net_ret), t.exit_i - t.legs[0].i, t.open, esc(&t.reason), t.entry_kind,
-            snapshot(ctx, if books::lkqts::stock_candidate(id){t.legs[0].i.saturating_sub(1)}else{t.legs[0].i}, &diagnostics), if books::kfsc::reviewed_hv_rule(id) {hv_exit_snapshot(ctx,t)} else if books::lkqts::stock_candidate(id)&&t.open {"null".into()}else {snapshot(ctx, t.signal_i, &diagnostics)}, ctx.r[if books::kfsc::reviewed_hv_rule(id) {t.exit_i}else{t.signal_i}].date,
+            snapshot(ctx, if books::lkqts::stock_research_profile(id){t.legs[0].i.saturating_sub(1)}else{t.legs[0].i}, &diagnostics), if books::kfsc::reviewed_hv_rule(id) {hv_exit_snapshot(ctx,t)} else if books::lkqts::stock_research_profile(id)&&t.open {"null".into()}else {snapshot(ctx, t.signal_i, &diagnostics)}, ctx.r[if books::kfsc::reviewed_hv_rule(id) {t.exit_i}else{t.signal_i}].date,
             t.exits.iter().map(|(i, px, f)| format!("[{},{},{}]", i - from, num(*px), num(*f))).collect::<Vec<_>>().join(","),ledger.json()
         );
-        if books::lkqts::stock_candidate(id) {row.pop();let _=write!(row,",\"execution_clock\":{}}}",kestner_execution_clock(ctx,id,t,&diagnostics));}
+        if books::lkqts::stock_research_profile(id) {row.pop();let _=write!(row,",\"execution_clock\":{}}}",kestner_execution_clock(ctx,id,t,&diagnostics));}
         row
     }));
+    if let Some(d)=&diagnostics.kestner_next {
+        let qualified=q.get("ticker").filter(|key|st.baskets.native_evidence(key).is_some()).ok_or("needs_data: Kestner report requires the actual server-qualified stock identity")?;
+        let _=write!(o,",\"kestner_research\":{{\"id\":\"{}\",\"book\":\"lkqts\",\"qualified_ticker\":\"{}\",\"ticker\":\"{}\",\"provenance\":{},\"profile\":\"{}\",\"source_convention\":\"{}\",\"states\":[",esc(id),esc(qualified),esc(&ctx.r[from].ticker),source_provenance(st,q),d.profile,esc(books::lkqts::next_source_convention(id).unwrap_or("")));
+        for i in from..=to {
+            if i>from {o.push(',');}
+            let _=write!(o,"{{\"source_index\":{i},\"date\":\"{}\",\"phase\":\"completed_close\",\"close\":{},\"rule_state\":{}}}",ctx.r[i].date,full_precision_trade_return(ctx.c[i]),kestner_next_rule_state(i,&diagnostics));
+        }
+        o.push_str("]}");
+    }
     if selected.native(){let _=write!(o,",\"provenance\":{}",source_provenance(st,q));}
     if selected.native() || def.book==books::chande::BOOK {
         o.push_str(",\"ohlc\":{");
         o.push_str("\"d\":");arr(&mut o,&mut (from..=to).map(|k|format!("\"{}\"",ctx.r[k].date)));
-        for (name,field) in [("o",0),("h",1),("l",2),("c",3)]{let _=write!(o,",\"{name}\":");arr(&mut o,&mut (from..=to).map(|k|num([ctx.o[k],ctx.h[k],ctx.l[k],ctx.c[k]][field])));}
-        o.push_str(",\"v\":");arr(&mut o,&mut (from..=to).map(|k|ctx.r[k].volume.map_or("null".into(),num)));o.push('}');
+        for (name,field) in [("o",0),("h",1),("l",2),("c",3)]{let _=write!(o,",\"{name}\":");arr(&mut o,&mut (from..=to).map(|k|price_number([ctx.o[k],ctx.h[k],ctx.l[k],ctx.c[k]][field])));}
+        o.push_str(",\"v\":");arr(&mut o,&mut (from..=to).map(|k|ctx.r[k].volume.map_or("null".into(),price_number)));o.push('}');
     }
     if def.book=="kfsc" && books::kfsc::reviewed_hv_rule(id) {
         let state=books::kfsc::hv_states(ctx);
@@ -1271,6 +1322,7 @@ const PART_COLS: &[&str] = &["total_return", "cagr", "sharpe", "max_dd", "trades
 /// mixed-radix order (last dimension changes fastest) so the UI can find grid neighbours.
 /// With `split`, each combo is also run on [from, split) (in-sample) and [split, to] (out-of-sample).
 fn optimize(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
+    if q.contains_key("p.__raw_query_error") || q.get("id").is_some_and(|id|books::lkqts::stock_research_profile(id)) {checked_params_of(q)?;}
     let t0 = std::time::Instant::now();
     let selected=select_context(st,q)?;let held=selected.context(st);
     let (ctx, from, to, cost) = resolve_context(&held, q)?;
@@ -2255,3 +2307,5 @@ mod tests {
 #[cfg(test)] mod dema_verification;
 
 #[cfg(test)] mod kestner_verification;
+
+#[cfg(test)] mod kestner_next_verification;

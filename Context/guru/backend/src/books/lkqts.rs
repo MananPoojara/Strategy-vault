@@ -47,7 +47,7 @@ pub fn stock_history_issue(id: &str, x: &Ctx, from: usize, to: usize) -> Option<
     None
 }
 
-/// Unadmitted conversion candidates, deliberately separate from STOCK_CANDIDATE_IDS.
+/// Additional fixed research profiles, deliberately separate from STOCK_CANDIDATE_IDS.
 /// Source/indicator declarations are recorded in docs/kestner-next-stock-candidates.md.
 pub const NEXT_CANDIDATE_IDS: &[&str] = &[
     "lkqts_volbo", "lkqts_rsi14", "lkqts_macd", "lkqts_macd_literal_alpha",
@@ -55,11 +55,82 @@ pub const NEXT_CANDIDATE_IDS: &[&str] = &[
 
 pub fn next_candidate(id: &str) -> bool { NEXT_CANDIDATE_IDS.contains(&id) }
 
+/// Shared request/history dispatch; the original exact-three list stays stable.
+pub fn stock_research_profile(id: &str) -> bool { stock_candidate(id) || next_candidate(id) }
+
+pub fn validate_stock_research_profile(id: &str,p: &Params) -> Option<String> {
+    if stock_candidate(id) {validate_stock_candidate(id,p)} else {validate_next_candidate(id,p)}
+}
+
+pub fn stock_research_history_issue(id: &str,x: &Ctx,from: usize,to: usize) -> Option<&'static str> {
+    if stock_candidate(id) {stock_history_issue(id,x,from,to)}
+    else if next_candidate(id) {next_history_issue(x,from,to)}
+    else {Some("Unknown Kestner stock research profile")}
+}
+
+pub fn next_source_convention(id: &str) -> Option<&'static str> {
+    Some(match id {
+        "lkqts_volbo"=>"Printed155/41: strict signed2-sigma price-change entries with opposite-entry reversal; declared current-inclusive100 changes, population variance and finite squared comparison without epsilon. Genuine prefix, flat selected start, next actual stock open; original10000/sigma quantities are unsupported, including zero variance.",
+        "lkqts_rsi14"=>"Printed165/170 thresholds with declared Wilder RMA14, arithmetic first14-change seed, zero-filled gains/losses, neutral flat50 and strict level35/65 startup. Printed66 does not uniquely prescribe smoothing or seed. Genuine prefix, flat selected start and next actual stock open; nonpositive ordinary accounts remain unavailable.",
+        "lkqts_macd"=>"Declared period-alpha interpretation of printed57/170:2/13,2/27,1/5. Printed68's .15/.075 conflicts and is a separate named variant. First-close price seeds, MACD/signal0, local state+=alpha*(value-state), observed signal-line crossings, equality holds, full genuine prefix and next actual stock open.",
+        "lkqts_macd_literal_alpha"=>"Declared literal interpretation of printed68: .15/.075, with .2 signal from printed57's9-day rule. Distinct from2/13,2/27. First-close price seeds, MACD/signal0, local state+=alpha*(value-state), observed signal-line crossings, equality holds, full genuine prefix and next actual stock open.",
+        _=>return None,
+    })
+}
+
+/// A completed-close state computed once per selected report, never per trade.
+pub struct NextRuleState {
+    pub values: Vec<(&'static str,f64)>,
+    pub long_condition: bool,
+    pub short_condition: bool,
+}
+pub struct NextDiagnostics {
+    pub profile: &'static str,
+    pub states: Vec<Option<NextRuleState>>,
+}
+
+pub fn next_diagnostics(id: &str,x: &Ctx,to: usize,p: &Params) -> Option<NextDiagnostics> {
+    if !next_candidate(id) || validate_next_candidate(id,p).is_some() || next_history_issue(x,0,to).is_some() {return None;}
+    let c=&x.c[..=to];let mut states:Vec<Option<NextRuleState>>=(0..c.len()).map(|_|None).collect();
+    let profile=match id {
+        "lkqts_volbo"=>{
+            for i in 100..c.len() {
+                let changes:Vec<_>=(i-99..=i).map(|k|c[k]-c[k-1]).collect();
+                let mean=changes.iter().sum::<f64>()/100.;let variance=next_population_variance(&changes)?;
+                let delta=changes[99];let square=delta*delta;let four=4.*variance;
+                if ![mean,square,four].iter().all(|v|v.is_finite()) || (delta!=0. && square==0.) {return None;}
+                states[i]=Some(NextRuleState{values:vec![("delta",delta),("mean_change_100",mean),("population_variance_100",variance),("four_variance",four),("delta_squared",square)],long_condition:delta>0. && square>four,short_condition:delta<0. && square>four});
+            }
+            "volbo_current_inclusive_population100_k2"
+        },
+        "lkqts_rsi14"=>{
+            for (i,state) in next_rsi_states(c)?.into_iter().enumerate() {
+                if let Some((up,down))=state {
+                    let side=next_rsi_side(up,down);
+                    let rsi=next_rsi_value(up,down);if !rsi.is_finite() {return None;}
+                    states[i]=Some(NextRuleState{values:vec![("rma_up_14",up),("rma_down_14",down),("rsi_14",rsi),("long_comparison_13_up",13.*up),("long_comparison_7_down",7.*down),("short_comparison_7_up",7.*up),("short_comparison_13_down",13.*down)],long_condition:side==1,short_condition:side== -1});
+                }
+            }
+            "rsi_wilder_rma14_level35_65_seed14_flat50"
+        },
+        "lkqts_macd" | "lkqts_macd_literal_alpha"=>{
+            let literal=id=="lkqts_macd_literal_alpha";let (f,s,m,signal,h)=next_macd_components(c,literal)?;
+            let (fa,sa)=if literal {(0.15,0.075)} else {(2./13.,2./27.)};
+            for i in 0..c.len() {
+                states[i]=Some(NextRuleState{values:vec![("fast_ema",f[i]),("slow_ema",s[i]),("macd",m[i]),("signal_ema",signal[i]),("histogram",h[i]),("previous_histogram",if i>0 {h[i-1]}else{f64::NAN}),("fast_alpha",fa),("slow_alpha",sa),("signal_alpha",0.2)],long_condition:cross_up(&h,i,0.),short_condition:cross_dn(&h,i,0.)});
+            }
+            if literal {"macd_literal_alpha_first_close"} else {"macd_period_alpha_first_close"}
+        },
+        _=>return None,
+    };
+    Some(NextDiagnostics{profile,states})
+}
+
 pub fn validate_next_candidate(id: &str, p: &Params) -> Option<String> {
     if !next_candidate(id) { return Some("Not a next Kestner conversion candidate".into()); }
     let schema=params(id)?;
     (!p.iter().all(|(key,value)| value.is_finite() && schema.iter().any(|s|s.key==key && *value==s.def)))
-        .then(|| "Next Kestner candidates require exact volbo100/2, declared RSI14/35/65 or the named fixed MACD12/26/9 alpha profile. Changed, unknown, fractional or nonfinite settings are not rounded into this contract. These candidates are not market-admitted.".into())
+        .then(|| "Next Kestner profiles require exact volbo100/2, declared RSI14/35/65 or the named fixed MACD12/26/9 alpha profile. Changed, unknown, fractional or nonfinite settings are not rounded into this contract or allowed to inherit reviewed admission.".into())
 }
 
 /// Validate the genuine prefix used by indicators. Early selected bars can stay
@@ -77,9 +148,12 @@ pub fn next_history_issue(x: &Ctx, from: usize, to: usize) -> Option<&'static st
 
 fn next_population_variance(v: &[f64]) -> Option<f64> {
     if v.is_empty() || v.iter().any(|v|!v.is_finite()) { return None; }
+    // Exact equal binary64 observations have genuine zero dispersion. A varying
+    // window whose squared deviations disappear is an unsupported underflow.
+    if v.iter().all(|value|*value==v[0]) {return Some(0.);}
     let mean=v.iter().sum::<f64>()/v.len() as f64;
     let variance=v.iter().map(|v|(v-mean).powi(2)).sum::<f64>()/v.len() as f64;
-    (mean.is_finite() && variance.is_finite() && variance>=0.).then_some(variance)
+    (mean.is_finite() && variance.is_finite() && variance>0.).then_some(variance)
 }
 
 /// Population/current-inclusive100 changes, strict2-sigma comparison without a
@@ -90,7 +164,7 @@ fn next_volbo_signals(c: &[f64]) -> Option<Vec<i8>> {
         let changes:Vec<_>=(i-99..=i).map(|k|c[k]-c[k-1]).collect();
         let variance=next_population_variance(&changes)?;
         let delta=changes[99];let square=delta*delta;let threshold=4.*variance;
-        if !square.is_finite() || !threshold.is_finite() { return None; }
+        if !square.is_finite() || !threshold.is_finite() || (delta!=0. && square==0.) { return None; }
         if square>threshold {out[i]=if delta>0. {1} else if delta<0. {-1} else {0};}
     }
     Some(out)
@@ -98,14 +172,23 @@ fn next_volbo_signals(c: &[f64]) -> Option<Vec<i8>> {
 
 /// Declared Wilder RMA14, seeded with the first14 actual changes. The source
 /// gives average up/down moves, not this recursion/seed; no shared helper changes.
+fn next_rsi_average(numerator: f64) -> Option<f64> {
+    let average=numerator/14.;
+    // A genuine nonzero move must not disappear into an invented flat state.
+    // Multiplication by13 cannot underflow a positive stored state, but a new
+    // subnormal move divided by14 can. No epsilon or replacement value is used.
+    (numerator.is_finite() && numerator>=0. && average.is_finite()
+        && !(numerator>0. && average==0.)).then_some(average)
+}
+
 fn next_rsi_states(c: &[f64]) -> Option<Vec<Option<(f64,f64)>>> {
     let mut out=vec![None;c.len()];
     if c.len()<=14 { return Some(out); }
     let (mut up,mut down)=(0.,0.);
     for i in 1..=14 {let delta=c[i]-c[i-1];up+=delta.max(0.);down+=(-delta).max(0.);}
-    up/=14.;down/=14.;
+    up=next_rsi_average(up)?;down=next_rsi_average(down)?;
     for i in 14..c.len() {
-        if i>14 {let delta=c[i]-c[i-1];up=(13.*up+delta.max(0.))/14.;down=(13.*down+(-delta).max(0.))/14.;}
+        if i>14 {let delta=c[i]-c[i-1];up=next_rsi_average(13.*up+delta.max(0.))?;down=next_rsi_average(13.*down+(-delta).max(0.))?;}
         if ![up,down,13.*up,13.*down,up+down].iter().all(|v|v.is_finite()) {return None;}
         out[i]=Some((up,down));
     }
@@ -118,9 +201,8 @@ fn next_rsi_side(up: f64, down: f64) -> i8 {
     if 13.*up<7.*down {1} else if 7.*up>13.*down {-1} else {0}
 }
 
-#[cfg(test)]
 fn next_rsi_value(up: f64, down: f64) -> f64 {
-    if up+down==0. {50.} else {100.*up/(up+down)}
+    if up+down==0. {50.} else {100.*(up/(up+down))}
 }
 
 fn next_ema_alpha(v: &[f64], alpha: f64) -> Option<Vec<f64>> {
@@ -141,12 +223,16 @@ fn next_ema_alpha(v: &[f64], alpha: f64) -> Option<Vec<f64>> {
 /// Two named source interpretations, same first-close seed and signal-line clock.
 /// Literal .15/.075 (p68) is not numerically equal to2/13,2/27 (p57).
 fn next_macd_histogram(c: &[f64], literal: bool) -> Option<Vec<f64>> {
+    Some(next_macd_components(c,literal)?.4)
+}
+
+fn next_macd_components(c: &[f64], literal: bool) -> Option<(Vec<f64>,Vec<f64>,Vec<f64>,Vec<f64>,Vec<f64>)> {
     let (fast,slow)=if literal {(0.15,0.075)} else {(2./13.,2./27.)};
     let f=next_ema_alpha(c,fast)?;let s=next_ema_alpha(c,slow)?;
     let macd:Vec<_>=f.iter().zip(&s).map(|(f,s)|f-s).collect();
     let signal=next_ema_alpha(&macd,0.2)?;
     let histogram:Vec<_>=macd.iter().zip(&signal).map(|(m,s)|m-s).collect();
-    histogram.iter().all(|v|v.is_finite()).then_some(histogram)
+    histogram.iter().all(|v|v.is_finite()).then_some((f,s,macd,signal,histogram))
 }
 
 // ------------------------------------------------------------------ indicators
@@ -312,10 +398,10 @@ fn cl(trades: &'static str, win: &'static str, avg: &'static str, hold: &'static
 
 const IDX: &str = "Original book research used multiple instruments and volatility-scaled dollar sizing. This legacy catalogue entry still requires instrument-specific source, data and accounting review. Registration does not reproduce the source study or authorize an index to substitute for stocks, ETFs or futures.";
 const STOCK_RESEARCH: &str = "Reviewed single-stock price research at fixed source settings; release and measured availability are separate from catalogue registration. Signals use completed closes and next actual session opens. Current-inclusive channel extrema/ties, exit-first collision handling, flat selected-window startup and SMA equality edges are declared conventions. Normalized single-stock long/short returns do not reproduce the book's mixed-instrument volatility-scaled dollar study. No stock basket, index substitution, borrowing, financing, complete exchange calendar or corporate-action correctness is certified by these rules.";
-const NEXT_VOLBO: &str = "Unadmitted conversion candidate. Printed155 supplies strict2-sigma price-change entries and opposite-entry reversals; printed41 supports population variance. Current-inclusive100 actual close changes, strict squared IEEE754 comparison without epsilon, flat selected start and next actual open are declared conventions. Zero-variance signed constant changes can signal; original10000/sigma sizing is undefined there and is not supplied. Actual selected-stock percentage research requires independent data/account/API review; no original performance, stock population, index substitution, borrow or financing certification. See docs/kestner-next-stock-candidates.md.";
-const NEXT_RSI: &str = "Unadmitted conversion candidate. Printed165/170 supplies long below35 and short above65; contradictory sample prose and copied stochastic table labels do not invert those rules. Declared Wilder RMA14 with arithmetic first14-change seed, zero-filled up/down changes, flat RSI50 and strict LEVEL entries. Printed66 does not specify smoothing, seed or flat handling; naming Wilder is not source certification of this implementation. Full genuine prefix, flat selected start, next actual open and opposite reversals; independent selected-stock accounting/admission remain pending. See docs/kestner-next-stock-candidates.md.";
-const NEXT_MACD_PERIOD: &str = "Unadmitted period-alpha MACD candidate. Printed57 gives2/(N+1), while printed68 MACD-specific .15/.075 conflicts with2/13,2/27. This named period profile retains2/13,2/27 and signal1/5; first actual close seeds both price EMAs, MACD/signal start0. Local finite arithmetic uses state+=alpha*(value-state) to preserve constant prices without epsilon. Observed signal-line crossing (previous histogram<=0/current>0, reverse>=0/<0), not MACD-zero crossing; equality holds, full genuine prefix, flat selected start, next actual open. No unique original alpha/default or original performance is claimed. See docs/kestner-next-stock-candidates.md.";
-const NEXT_MACD_LITERAL: &str = "Unadmitted literal-alpha MACD candidate in the same MACD family. Printed68 constants .15/.075 are implemented literally, with declared signal .2 from printed57's9-day rule. They differ from the period2/13,2/27 profile. First-close price seeds, initial MACD/signal0 and local state+=alpha*(value-state) arithmetic preserve constant inputs without epsilon. Observed signal-line crosses and next actual open; no source-original seed or performance certification. Independent source-price/account/API acceptance remains pending. See docs/kestner-next-stock-candidates.md.";
+const NEXT_VOLBO: &str = "Selected-stock research profile. Printed155 supplies strict2-sigma price-change entries and opposite-entry reversals; printed41 supports population variance. Current-inclusive100 actual close changes, strict squared IEEE754 comparison without epsilon, flat selected start and next actual open are declared conventions. Zero-variance signed constant changes can signal; original10000/sigma sizing is undefined there and is not supplied. Actual stocks and per-request data/account checks remain required; no original performance, historical stock population, quote-adjustment, index-substitution, borrow or financing certification. See docs/kestner-next-stock-candidates.md.";
+const NEXT_RSI: &str = "Selected-stock research profile. Printed165/170 supplies long below35 and short above65; contradictory sample prose and copied stochastic table labels do not invert those rules. Declared Wilder RMA14 with arithmetic first14-change seed, zero-filled up/down changes, flat RSI50 and strict LEVEL entries. Printed66 does not specify smoothing, seed or flat handling; naming Wilder is not source certification of this implementation. Full genuine prefix, flat selected start, next actual open and opposite reversals. Nonpositive ordinary normalized accounts remain unavailable without clipping, resets or resized positions. Source-event checks do not reproduce original sizing, performance or borrowing feasibility. See docs/kestner-next-stock-candidates.md.";
+const NEXT_MACD_PERIOD: &str = "Named period-alpha selected-stock research profile. Printed57 gives2/(N+1), while printed68 MACD-specific .15/.075 conflicts with2/13,2/27. This profile retains2/13,2/27 and signal1/5; first actual close seeds both price EMAs, MACD/signal start0. Local finite arithmetic uses state+=alpha*(value-state) to preserve constant prices without epsilon. Observed signal-line crossing (previous histogram<=0/current>0, reverse>=0/<0), not MACD-zero crossing; equality holds, full genuine prefix, flat selected start, next actual open. No unique original alpha/default or original performance is claimed; actual-stock data/account checks and qualified adjustments/borrow remain separate. See docs/kestner-next-stock-candidates.md.";
+const NEXT_MACD_LITERAL: &str = "Named literal-alpha selected-stock research profile in the same MACD family. Printed68 constants .15/.075 are implemented literally, with declared signal .2 from printed57's9-day rule. They differ from the period2/13,2/27 profile. First-close price seeds, initial MACD/signal0 and local state+=alpha*(value-state) arithmetic preserve constant inputs without epsilon. Observed signal-line crosses and next actual open; no source-original seed or performance certification. Actual stocks and per-request data/account checks remain required; original sizing, qualified adjustments and borrow are not certified. See docs/kestner-next-stock-candidates.md.";
 const P90: &str = "SPX 1/1/1990-12/31/2001 (stock table)";
 
 pub fn catalogue() -> Vec<StrategyDef> {
@@ -372,7 +458,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
              "E|\"Short entries are established when the MACD falls below the signal line\" (p.170)",
              "X|Reverse on the opposite entry (GE example: \"our short positions are exited and a long position is established\", p.175)"],
             NEXT_MACD_PERIOD, cl("260", "30%", "-$2/share", "21 / 7 bars", P90)),
-        sd!("lkqts_macd_literal_alpha", "MACD 12/26/9 crossover (literal .15/.075 alphas)", G7, "Long/Short", NotTestable("Unadmitted source-conversion candidate; independent selected-stock trades, percentage accounting and API checks remain pending"),
+        sd!("lkqts_macd_literal_alpha", "MACD 12/26/9 crossover (literal .15/.075 alphas)", G7, "Long/Short", Live,
             ["F|Printed p.68 MACD-specific fast .15 and slow .075; signal .2 is a declared application of p.57's9-day EMA rule",
              "E|Long on an observed MACD/signal upward cross; short on an observed downward cross (p.170)",
              "X|Opposite entry exits and reverses at the next actual session open (pp.139,175)",
@@ -1197,7 +1283,7 @@ mod tests {
                 assert!(validate_next_candidate(id,&p).is_some());
             }
             let d=catalogue().into_iter().find(|d|d.id==*id).unwrap();
-            if *id=="lkqts_macd_literal_alpha" {assert!(matches!(d.status,Status::NotTestable(_)));}
+            if *id=="lkqts_macd_literal_alpha" {assert!(matches!(d.status,Status::Live));}
             let schema=params(id).unwrap();
             let defaults:Params=schema.iter().map(|s|(s.key.to_string(),s.def)).collect();
             assert!(validate_next_candidate(id,&defaults).is_none());

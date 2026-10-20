@@ -1,6 +1,6 @@
 # Kestner next stock conversion candidates
 
-These are unadmitted source-conversion candidates. Registration, synthetic fixtures and this note do not establish measured availability, numerical acceptance or original book performance. The earlier channel40/20, SMA10/40 and momentum80 batch has its own contract; its accepted behavior and admission guards are separate.
+These source-conversion candidates have bounded production-handler acceptance, described below. Registration, synthetic fixtures and this note do not establish measured availability or original book performance. The earlier channel40/20, SMA10/40 and momentum80 batch has its own contract; its accepted behavior and admission guards are separate. The deployed engine and measured availability remain unchanged until a coordinated release passes its remaining checks.
 
 ## Source and scope
 
@@ -8,7 +8,7 @@ Lars Kestner, Quantitative Trading Strategies (2003), source PDF SHA-256 `168ff6
 
 The intended next validation uses actual selected US and Indian individual stocks. A stock, cash index, ETF and futures contract retain distinct instrument identities. No stock universe or derivative can be supplied by an index substitution. Source stock/index tables and dollar-volatility position sizing are separate from selected-stock normalized percentage research. Present constituent membership, quote adjustments, borrow, financing, margin, dividends and original study performance are not certified here.
 
-The existing three IDs below remain outside the admitted stock-ID list. The new literal-alpha MACD ID is explicitly `NotTestable` while independent acceptance is pending. No policy, API, readiness, gateway or accuracy-gate permission is changed by this candidate. Its direct runner supports bounded independent verification; that is not public market admission.
+The original exact-three stock-ID list remains unchanged. A separate four-ID list identifies the configurations below. The source candidate now registers all four and supplies stock-only policy, request/history guards and causal diagnostics so bounded production-handler verification can exercise them. This source configuration does not establish deployment, measured availability, account viability for every requested window or original book-performance reproduction. Index, ETF, derivative and basket applications remain outside this reviewed scope.
 
 ## Fixed configurations
 
@@ -33,7 +33,7 @@ The local machine-operation convention for both MACD profiles is `state += alpha
 
 ## History, event clocks and numerical domain
 
-The candidate validates all supplied source observations through the selected end: positive finite internally consistent OHLC, strictly increasing valid dates and one identity. Full earlier history is retained. No missing prefix is filled, invalid observation dropped or recurrence reseeded at the requested start. Early selected observations remain flat until the declared indicator exists; the requested date range is not silently shortened. Nonfinite intermediate variance, squared threshold, RSI state or MACD state makes the direct candidate unavailable instead of clipping a signal. Invalid/nonpositive percentage equity remains the ordinary account validator's responsibility; this module supplies no funding or bankruptcy reset.
+The candidate validates all supplied source observations through the selected end: positive finite internally consistent OHLC, strictly increasing valid dates and one identity. Full earlier history is retained. No missing prefix is filled, invalid observation dropped or recurrence reseeded at the requested start. Early selected observations remain flat until the declared indicator exists; the requested date range is not silently shortened. Nonfinite intermediate variance, squared threshold, RSI state or MACD state makes the direct candidate unavailable instead of clipping a signal. Detectable squared-change/variance underflow and nonzero RSI numerators disappearing during averaging also hold; genuine zero states remain supported. Invalid/nonpositive percentage equity remains the ordinary account validator's responsibility; this module supplies no funding or bankruptcy reset.
 
 Each signal uses a completed close at source index i and fills only at actual supplied session open i+1 within the selected window. Repeated same-side signals do not pyramid. Opposite signals close the previous direction and open the new direction at that same next open. A final-close signal has no invented fill. A final actual-open entry remains open and can be marked at the final close.
 
@@ -41,14 +41,68 @@ Legacy `Trade.signal_i` holds the exit-signal index for a closed trade and the t
 
 ## Acceptance work still required
 
-The local schemas contain exact singleton defaults and reject unknown, changed, fractional or nonfinite numeric settings instead of rounding. Admission still needs raw request guards so malformed or near-default textual values cannot be erased before the module sees them, including optimization grids and all response routes. These source changes do not supply those guards or enable policy.
+The local schemas contain exact singleton defaults and reject unknown, changed, fractional or nonfinite numeric settings instead of rounding. The production-handler candidate additionally checks raw numeric text and singleton grids before legacy rounding/default handling. Duplicate, bare or encoded query keys in a request naming any protected Kestner method are rejected before map collapse can erase ambiguity. The bounded positive/negative production-handler checks below cover these guards and the exact stock-only policy. Other instrument types, settings and source/account interpretations gain no admission from those checks.
 
-Data-independent fixtures cover the source population arithmetic, positive/negative strict volatility ties, population versus sample and current versus prior windows, zero variance, RSI exact threshold states and seed arithmetic, level-start behavior, reversals, signal-line versus zero-line MACD decisions, coefficient divergence, seed distinction, prefix retention, final pending signals, open marks and invalid observations/defaults. The12 focused Kestner tests passed, followed by800 passing tests in the broader data-independent suite. Five opt-in private-input tests were ignored; the same legacy whole-catalogue private-index test excluded in the earlier batch remains excluded. These checks establish synthetic implementation behavior, not actual-price/account/API acceptance or additional live availability.
+Data-independent fixtures cover the source population arithmetic, positive/negative strict volatility ties, population versus sample and current versus prior windows, zero variance, RSI exact threshold states and seed arithmetic, level-start behavior, reversals, signal-line versus zero-line MACD decisions, coefficient divergence, seed distinction, prefix retention, final pending signals, open marks and invalid observations/defaults. The final focused and broader test counts are recorded below. Synthetic checks alone do not establish actual-price/account/API acceptance or additional live availability.
 
 A separate opt-in capture subsequently checked the ordinary pipeline on actual AAPL prices for1990–2001 and RELIANCE for2001–2010. Four configurations at zero costs and fee3bps/slippage2bps per side give16 context/cost runs, not16 methods. All source trade directions, signal/fill dates, observed fill prices and terminal-open states matched the frozen exact-rational/Decimal100 reference. For volatility and both MACD profiles, all12 normalized-account cases also matched the independent account formulation and checked statistics. RSI's four cost/instrument cases remained withheld: both the reference and ordinary engine reject a nonpositive normalized account. Source-event agreement does not make that account financially supported. No losses were clipped, accounts reset, positions resized or periods shortened to create an available result. The account-hold comparison establishes withholding, not a certified bankruptcy date or margin process.
 
-Public request guards, indicator/clock serialization, instrument admission, runtime deployment and measured availability remain separate pending gates. These next profiles have not been deployed or added to the live availability count. The separate source-trade artifacts are retained even when their normalized account is withheld; they are not published performance results.
+Public request guards, indicator/clock serialization and instrument admission are implemented in the candidate and passed the bounded production-handler verification below. Runtime deployment and measured availability are separate pending gates. These next profiles have not been deployed or added to the live availability count. The separate source-trade artifacts are retained even when their normalized account is withheld; they are not published performance results.
 
 The reference author did not read candidate Rust or candidate results, but did read the requested source contract's appendix describing legacy implementation agreement. This is disclosed source-based corroboration, not complete blindness to implementation descriptions. The account oracle's author separately disclosed prior exposure to legacy accounting. RSI/MACD reference recurrences use finite Decimal100 arithmetic, rather than exact real arithmetic or an emulator of Rust binary64 operations. Dates, predicates expressed as executed events and trade identity require exact agreement; finite account numbers retain the earlier field-specific comparison bounds.
 
-Next validation must check exposed indicator states and separate signal/fill/mark serialization against those frozen causal audits, then exercise exact raw-query and instrument guards through every public response route. One-share P&L is not the compounded account already checked. Preserve actual long/short clocks, nonpositive-equity rejection, displayed costs and terminal open-liquidation estimates. Do not route shorts through a long-only Pristine Span or change DEMA/Pristine arithmetic. Keep actual source prices, extracted text, generated ledgers and historical results outside Git. Original source figures, declared conventions and fresh simulations remain separate.
+## Bounded production-handler acceptance
+
+The final focused guard/diagnostic suite passed 13 tests. The broader scoped suite
+passed 813 tests, with seven opt-in tests ignored and one legacy private-index
+test excluded. A separately invoked ignored test then captured 480 production
+handler responses: 64 positive requests over the 16 fixed context/cost cases,
+plus 416 negative requests. Each raw request passed the actual query parser and
+owner restriction before run, readiness, selected summary or singleton
+optimization. This is function/serialization evidence, not HTTP transport,
+authentication or deployment evidence.
+
+The frozen independent source/account comparison passed all 16 cases, including
+the four expected RSI account holds. It checked 33,156 selected causal states,
+286,944 numeric rule fields, 33,156 account dates and 1,956 repeated-context trade
+spans including terminal marks. These are verification-case totals, not numbers
+of strategies or distinct economic trades. Predicates, dates, direction and
+open/closed/fill states require exact agreement; numeric serialization retains
+the previously frozen bounds. Readiness describes input eligibility and does
+not certify account viability. Held RSI run/optimizer requests remain errors;
+selected summaries carry a calculation-unavailable reason without performance.
+
+Two additional full-history chart responses were bound to their original source
+CSVs and selected absolute indices. The first comparison retained one failure:
+an AAPL source volume of zero on 1981-08-10 was exported as null by the unchanged
+native loader. A disclosed post-observation clarification checks that existing
+zero-to-unavailable mapping and records that one pre-window observation. The
+failed report remains retained. No price, source predicate, trade, account,
+numeric tolerance or raw source file was changed to resolve this auxiliary
+volume representation difference. Volume correctness is not certified by that
+mapping.
+
+The frontend candidate consumes those backend causal states instead of
+recalculating indicators. It validates profile, fixed settings, native source
+identity, full-precision selected prices, dates and source indices. Its focused
+15 tests, complete 326-test React suite, type check and production build passed.
+Missing, held or mismatched reports cannot supply indicator values. Actual
+browser checks passed 16 captured-report/component scenarios, including real
+visible indicator lines, desktop/mobile rendering, daily-to-weekly/monthly
+sampling, collapsed controls and suppression of held or mismatched reports.
+Screenshot inspection exposed an earlier blank-chart viewport outside the
+selected report; the scoped viewport fix now ends at the selected report's
+last actual observation. Full source history remains available. This browser
+check uses actual captured backend reports and production chart modules; it
+does not certify authenticated full-page routes or deployed HTTP behavior.
+Staged/live verification remains pending.
+
+Next validation must exercise a release binary over real HTTP and preserve
+existing accepted methods, then coordinate frontend, measured availability and
+runtime checks before deployment. One-share P&L is not the compounded account
+already checked. Preserve actual long/short clocks, nonpositive-equity
+rejection, displayed costs and terminal open-liquidation estimates. Do not route
+shorts through a long-only Pristine Span or change DEMA/Pristine arithmetic.
+Keep actual source prices, extracted text, generated ledgers and historical
+results outside Git. Original source figures, declared conventions and fresh
+simulations remain separate.

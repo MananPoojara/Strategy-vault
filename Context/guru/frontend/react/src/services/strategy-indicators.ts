@@ -1,4 +1,5 @@
 import {buildDemaIndicators,DEMA_METHOD} from './dema-visual';
+import {buildKestnerIndicators,isKestnerVisualMethod} from './kestner-visual';
 /** Visual checks for the existing Connors engines. Arithmetic and warmup match
  * backend/src/connors.rs; SPMT +DI retains books/spmt.rs’s local tie convention.
  * This module does not generate orders or alter a run.
@@ -35,6 +36,8 @@ export interface IndicatorRequest {
   book?: string;
   ticker?: string;
   prices: PriceHistory | null;
+  /** Actual completed backend detail response; selected methods never invent missing states. */
+  sourceReport?: unknown;
   /** Must be true only for the complete source supplied to the calculation engine. */
   fullHistory: boolean;
   /** Schema defaults merged with the selected run's custom parameters. */
@@ -152,6 +155,7 @@ const connorsIds = new Set([
 const hpetfIds = /^hpetf_(3dhl|rsi25|r3|pctb|mdd|rsi10|tps)_(long|short)(?:_aggr)?$/;
 
 export function buildStrategyIndicators(request: IndicatorRequest): StrategyIndicators {
+  if(isKestnerVisualMethod(request.id))return buildKestnerIndicators(request);
   if(request.id===DEMA_METHOD)return buildDemaIndicators(request);
   const unavailable = (note: string): StrategyIndicators => ({ status: "unavailable", series: [], note });
   const baseId = request.id.replace(/^spmt_/, ""), etf = hpetfIds.test(request.id);

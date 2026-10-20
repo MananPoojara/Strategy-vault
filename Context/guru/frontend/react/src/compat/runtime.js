@@ -25,6 +25,7 @@ import {chooseBacktestContext,referenceBacktestContexts} from '../services/libra
 import {instrumentControls,instrumentTickers} from '../services/instrument-controls';
 import {makeRuleVisualModel} from '../services/rule-evidence';
 import {buildStrategyIndicators} from '../services/strategy-indicators';
+import {isKestnerVisualMethod,kestnerReportLogicalRange} from '../services/kestner-visual';
 import {indicatorControlsHTML,mountStrategyIndicators} from '../services/strategy-indicator-charts';
 const CURATED_AUTHOR_IDS=new Set(LIB.map(author=>author.id));
 function sourceAdmission(definition,ticker,parameters,region){
@@ -1696,7 +1697,7 @@ async function viewStrategy() {
   if(generation!==busy)return '';
   STRAT = { d, v, tk,region:selection.region, tiles, px, display, account,unit, sourceView:account?sourceAccountView(account):null, indicatorParameters:parameters };
   RULE_VISUAL=makeRuleVisualModel({strategy:v,run:d,prices:px,ticker:tk,parameters:STRAT.indicatorParameters,symbol:LABEL[tk]||tk});
-  STRAT.indicators=buildStrategyIndicators({id:v.id,book:v.book,ticker:tk,prices:px,fullHistory:px?.full_history===true,parameters:STRAT.indicatorParameters});
+  STRAT.indicators=buildStrategyIndicators({id:v.id,book:v.book,ticker:tk,prices:px,fullHistory:px?.full_history===true,parameters:STRAT.indicatorParameters,sourceReport:d});
   if(R.optim) return `${crumbs}<section class="box"><div class="st-head"><h1 class="st">Optimization · ${esc(v.family_name)}</h1><a class="dbtn sm back-btn" href="${href('/s/'+encodeURIComponent(v.id),{...S})}">${VaultUI.ICON.back} Back to strategy</a></div><p class="rnote">${esc(LABEL[tk])} · ${esc(v.name)}. ${unit?'Only the fixed DEMA16/8 and raw-Buy clock1 configuration is reviewed. Alternative settings and optimizer searches do not inherit this admission.':account?sourceAccountCopy(account).bandy?'Only the fixed reviewed method and allocation are available. Other parameter settings require their own review; closed-display modes cannot resize the cash account.':'Only the fixed reviewed source/account configuration is available. Other indicator, stop and risk settings remain held; closed-display modes cannot resize the account.':'Parameter searches are research; selected settings and before/after displays do not establish an untouched holdout. Net profit sums closed-trade net returns; CAGR and risk measures use the separate compounded model.'}</p>${gateNotice(v,tk)}${experimentNotice(v,d)}${switches}${periodPanel(tk,d)}${optimBanner(v)}${account?'<div data-react-slot="source-account-notice"></div>':unit?'<div data-react-slot="unit-exposure-notice"></div>':''}</section>${unit?'<section class="box"><div class="box-h">Fixed reviewed index configuration</div><p class="rnote">DEMA first length16 / second length8 / Bars since raw Buy1. Only this source-reviewed configuration is admitted; changed parameters require separate review. No optimization or book-performance claim is made.</p></section>':account?sourceAccountCopy(account).bandy?`<section class="box"><div class="box-h">Fixed reviewed cash-account configuration</div><p class="rnote">${esc(v.name)}. ${esc(sourceAccountCopy(account).sizing)} The account allocation stays fixed; new configurations require their own review.</p></section>`:'<section class="box"><div class="box-h">Fixed protected configuration</div><p class="rnote">EMA13 / MACD12-26-9 / weekly EMA26 / SafeZone10-2 / source2%-6% risk. The account controller stays fixed; new configurations require their own review.</p></section>':await optimSection(v,tk,d,true)}`;
   return `${crumbs}
     <section class="box"><div class="st-head"><h1 class="st">${esc(v.family_name)}</h1>${VaultUI.toolbar()}</div>
@@ -1828,7 +1829,11 @@ async function drawSignals(tf) {
   const relabel = () => requestAnimationFrame(() => { try { draw(); } catch (e) { /* chart torn down mid-frame */ } });
   const ro = new ResizeObserver(relabel); ro.observe(el); ch.__ro = ro;
   ch.timeScale().subscribeVisibleLogicalRangeChange(relabel);
-  const span = { D: [756, 252], W: [156, 52], M: [36, 12] }[tf], show = bars => { if (bars) ch.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - bars), to: n - 1 }); else ch.timeScale().fitContent(); };
+  const selectedKestner = snapshot.indicators?.status==='ready'&&d.kestner_research&&isKestnerVisualMethod(snapshot.v.id);
+  const span = { D: [756, 252], W: [156, 52], M: [36, 12] }[tf], show = bars => {
+    if(selectedKestner){const range=kestnerReportLogicalRange(px.d,d.dates,bars);if(range)ch.timeScale().setVisibleLogicalRange(range);return;}
+    if (bars) ch.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - bars), to: n - 1 }); else ch.timeScale().fitContent();
+  };
   const btns = { px3: span[0], px1: span[1], pxall: 0 };
   Object.entries(btns).forEach(([id, bars]) => { $('#' + id).onclick = () => { show(bars); relabel(); document.querySelectorAll('#px3,#px1,#pxall').forEach(x => x.classList.toggle('active', x.id === id)); }; });
   const cur = document.querySelector('#px3.active,#px1.active,#pxall.active')?.id || 'px3'; show(btns[cur]); relabel();
@@ -1843,7 +1848,7 @@ async function drawSignals(tf) {
       const returns=g?.out.length?unitSignals?`: Closed return sum <b class="${closedSum>0?'pos':'neg'}">${pct(closedSum,2,true)}</b>`:`: <b class="${cls(g.out.reduce((a, t) => a * (1 + t.ret), 1) - 1)}">${pct(g.out.reduce((a, t) => a * (1 + t.ret), 1) - 1, 2, true)}</b> combined`:'';
       tradeTxt = g ? `${g.in.length} entr${g.in.length === 1 ? 'y' : 'ies'} · ${g.out.length} exit${g.out.length === 1 ? '' : 's'}${returns}` : '<span class="muted">no trades in this candle</span>'; }
     $('#pxread').innerHTML = `<b>${what}${px.d[b]}</b> O ${f(px.o[b])} · H ${f(px.h[b])} · L ${f(px.l[b])} · C <b>${f(px.c[b])}</b> <span class="${cls(chg)}">${pct(chg, 2, true)}</span> · ${tradeTxt}`; });
-  const model=buildStrategyIndicators({id:STRAT.v.id,book:STRAT.v.book,ticker:STRAT.tk,prices:STRAT.px,fullHistory:STRAT.px?.full_history===true,parameters:STRAT.indicatorParameters,displayDates:px.d});
+  const model=buildStrategyIndicators({id:STRAT.v.id,book:STRAT.v.book,ticker:STRAT.tk,prices:STRAT.px,fullHistory:STRAT.px?.full_history===true,parameters:STRAT.indicatorParameters,displayDates:px.d,sourceReport:STRAT.d});
   INDICATOR_CHARTS=mountStrategyIndicators({root:document.querySelector('[data-strategy-indicators]'),chart:ch,priceSeries:cs,result:model,library:L,pricePoints:px.d.map((time,i)=>({time,value:px.c[i]})),chartOptions:{layout:{attributionLogo:false,background:{color:cv('--panel')},textColor:cv('--ink3'),fontFamily:getComputedStyle(document.body).fontFamily,fontSize:11},grid:{vertLines:{visible:false},horzLines:{color:cv('--rule')}},timeScale:{borderColor:cv('--steel')},crosshair:{mode:L.CrosshairMode.Normal}}});
 }
 const safe = (name, f) => { try { f(); } catch (e) { console.warn(name, e); } };
