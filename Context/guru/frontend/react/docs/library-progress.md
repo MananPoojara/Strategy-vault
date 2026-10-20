@@ -23,3 +23,9 @@ A snapshot contains `schema_version: 1`, `as_of`, `catalogue_variant_ids`, `cata
 After each strategy admission or source correction, refresh the snapshot against the deployed catalogue and supported measured contexts, regenerate the private author/book workbook, recalculate its formulas, and verify coverage and yellow-row eligibility before replacing the previous version. Yellow identifies only books with available site backtests; source rows require an explicit reviewed identity link to the corresponding completed book. Preserve the inventory date and distinguish indexed source units from verified distinct published books.
 
 The private working directory and refresh commands are recorded in the conversion continuation checkpoint. Refresh remains required when the conversion goal resumes; a paused goal does not imply background conversion.
+
+## Selected books and unavailable cards
+
+The selected book header's Backtested count comes from the actual visible available rows for its current instrument, period and filters. It must match the number of distinct available strategy cards, rather than the library-wide union. Author-shelf book cards use the exact dataset, dates and execution settings their link opens. Library-wide totals and the Excel continue to record the union of measured supported contexts.
+
+Retain the established book-cover/title shelf. On a selected book's strategy grid, include the other catalogued methods as cards with their actual readiness/source/data reason and a link to their rules. Group parameter variants into one method. No closed trades is a distinct outcome, not proof of missing prices. Unavailable cards have no chart or performance statistics. A supported result elsewhere can provide a separately labelled link to its actual instrument. User-applied result filters can hide otherwise available cards; never relabel those as missing data.

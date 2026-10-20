@@ -717,3 +717,19 @@ body.pdf-capture .st-actions, body.pdf-capture #page-action-message, body.pdf-ca
 @media(max-width:540px){.lstrip.library-summary{gap:12px}.library-summary dt{font-size:10px}.library-summary dd{font-size:27px}}
 
 .gmodal-card .lc-stats {grid-template-columns:repeat(3,minmax(0,1fr));}
+
+/* Preserve the established cover-and-title author shelf. */
+.book-cover-link { display:block; width:168px; align-self:start; text-decoration:none; color:inherit; }
+.book-cover-link:focus-visible { outline:2px solid var(--blue); outline-offset:5px; }
+.shelf .bookcard { cursor:default; min-width:0; }
+.shelf .bookcard .bc-body { min-width:0; }
+.shelf .bookcard h3 { overflow-wrap:anywhere; }
+.shelf .c3-title { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:7; overflow:hidden; }
+.shelf .book-progress { display:inline-block; margin:6px 0; }
+.rbar[data-results-controls] { justify-content:flex-end; }
+
+.unavailable-method {border-style:dashed; background:var(--panel);}
+.unavailable-method .unavailable-reasons {font-size:12px; line-height:1.65; margin:12px 0; color:var(--ink2);}
+.unavailable-method .stamp {color:var(--ink2);}
+.unavailable-method .btns {margin-top:auto; flex-wrap:wrap;}
+.unavailable-method-grid {margin-top:22px;}

@@ -16,6 +16,8 @@ import {tradeExitCheck,tradeExitCheckMarkup} from '../services/trade-exit-check'
 import {stockChoices,basketSpan,positionLimit,priceRecoveryPeriod} from '../services/stock-selection';
 import {identifiedAuthorCount} from '../services/author-identities';
 import {libraryProgress} from '../services/library-progress';
+import {visibleBacktestCount,linkedBookBacktestCount} from '../services/library-count-context';
+import {unavailableBookMethods} from '../services/unavailable-book-methods';
 import {libraryScope,inLibraryScope} from '../services/library-scope';
 import {libraryMarket,libraryMarketVariants} from '../services/library-market';
 import {orderAuthors} from '../services/author-order';
@@ -1133,28 +1135,48 @@ const kpiTriplet = r => {
 const byline = v => `${esc(GURU[v.guru].name)} · ${esc(BOOK[v.book].title)} (${bookYear(BOOK[v.book])}) · ${srcOf(v)}`;
 
 // ---------------------------------------------------------------- MODES
-function viewStrategies(rs, perVariant) {
+function unavailableBookCard(method){
+  const v=method.definition,record=currentLibraryProgress().measured.find(row=>row.method_id===method.key),labels={needs_stock_basket:'Select a stock',needs_data:'Required data missing',source_review:'Rules need review',no_trades:'No closed trades'};
+  const alternative=record?href('/s/'+encodeURIComponent(record.variant_id),{region:record.market==='us'?'us':'in',tk:record.instrument,basket:record.instrument?.startsWith('basket:')?record.instrument.split(':')[1]:'',from:record.evidence?.from||'',to:record.evidence?.to||'',cost:record.execution?.cost||'0',slippage:record.execution?.slippage||'0',rollover:record.execution?.rollover||'0',research_mode:record.execution?.research_mode||'',run_scope:'single'}):'';
+  return `<article class="card unavailable-method" data-unavailable-method="${esc(method.key)}"><div class="rank"><span>Unavailable for ${esc(LABEL[S.tk]||S.tk)}</span><span class="stamp">${esc(labels[method.status]||'Backtest unavailable')}</span></div><h3>${esc(method.name)}</h3><div class="by">${byline(v)}</div><div class="unavailable-reasons">${method.reasons.map(note=>`<p>${esc(note)}</p>`).join('')}</div><p class="book-progress-reason">${method.status==='no_trades'?'This run has no closed positions. Open positions or signals may still exist.':'No performance chart or statistics are shown for this selection.'}</p>${rulesList(v)}<div class="btns"><a class="btn" href="${stratLink(v.id,S.tk)}">View rules &amp; requirements</a>${alternative?`<a class="btn" href="${alternative}">Available on ${esc(LABEL[record.instrument]||record.instrument.split(':').at(-1))}</a>`:''}</div></article>`;
+}
+async function unavailableForSelectedBook(){
+  if(!S.book||R.name!=='guru')return [];
+  const defs=ALLCAT.filter(v=>v.book===S.book),tickers=S.tk==='ALL'?TICKERS.map(t=>t.ticker):[S.tk],reasons=[];
+  for(const tk of tickers){
+    const w=S.tab==='sharpe'&&(S.from||S.to)?{from:S.from||'',to:S.to||''}:TABS[S.tab].win?.(tk)||{from:S.from||'',to:S.to||''};
+    const [summary,ready]=await Promise.all([getSum(tk,w.from,w.to),getReadiness(tk,w.from,w.to)]);
+    reasons.push(...VaultLibraryDiscovery.authorAvailability([S.book],defs,summary,ready).variantReasons);
+  }
+  // A ready result on any selected instrument admits the method; never let a later
+  // blocked context overwrite it when browsing all loaded indices.
+  const merged=new Map();for(const reason of reasons){const old=merged.get(reason.id);if(!old||reason.status==='available'||old.status!=='available'&&reason.status==='no_trades')merged.set(reason.id,reason);}
+  const query=S.q.trim().toLowerCase(),matching=defs.filter(v=>(!query||`${v.name} ${v.family_name} ${v.variant||''} ${v.group} ${v.dir} ${BOOK[v.book]?.title||''} ${GURU[v.guru]?.name||''} ${(v.rules||[]).join(' ')}`.toLowerCase().includes(query))&&(!S.style||v.style===S.style)&&(!S.dir||v.dir===S.dir)&&(!S.family||v.family===S.family));
+  return unavailableBookMethods(matching,[...merged.values()]);
+}
+function viewStrategies(rs, perVariant, missing = []) {
+  const missingGrid=missing.length?`<div class="grid unavailable-method-grid">${missing.map(unavailableBookCard).join('')}</div>`:'';
   // strategies = one entry per family (best variant by the current sort); variants = every rule set
   let list = rs;
   if (!perVariant) { const seen = new Map(); for (const r of rs) { const k = r.v.family; if (!seen.has(k)) seen.set(k, { ...r, all: [] }); seen.get(k).all.push(r); } list = [...seen.values()]; }
   const nVar = r => r.all ? new Set(r.all.map(x => x.v.id)).size : 1, nIdx = r => r.all ? new Set(r.all.map(x => x.tk)).size : 1;
   const title = r => esc(r.v.family_name) + gateBadge(r.v);
   const sub = r => perVariant && r.v.variant ? `<b style="font-weight:600">${esc(r.v.variant)}</b> · ` : '';
-  if (S.tab === 'awaiting') return awaiting(rs);
+  if (S.tab === 'awaiting') return S.book&&missing.length?`<div class="grid">${missing.map(unavailableBookCard).join('')}</div>`:awaiting(rs);
   if (S.view === 'list') {
     const M = TABS[S.tab].metric, ruleLine = v => { const e = (v.rules || []).find(x => x.startsWith('E|')), x = (v.rules || []).find(x => x.startsWith('X|')); return [e && 'Entry: ' + e.slice(2), x && 'Exit: ' + x.slice(2)].filter(Boolean).map(esc).join(' · '); };
     return `<div class="list">${list.map((r, i) => { const vd = verdictOf(r.s); return `<div class="lr"><span class="ln">${i + 1}</span><div class="sp">${spark(r, 110, 40)}</div>
       <div class="lt"><b>${title(r)}</b><small>${sub(r)}${byline(r.v)}${S.tk === 'ALL' ? ' · ' + esc(LABEL[r.tk]) : ''}</small><span class="rl">${ruleLine(r.v)}</span>
         <span class="ltags"><span class="tag">⏱ ${HOLD[holdOf(r.s)]}</span><span class="tag">${esc(r.v.style)}</span><span class="tag">${r.v.dir}</span>${!perVariant && nVar(r) > 1 ? `<span class="tag link" data-fam="${esc(r.v.family)}">${nVar(r)} variants</span>` : ''}</span></div>
       <div class="lk"><span>${esc(M.label)}<b class="p">${M.fmt(M.get(r))}</b></span><span>CAGR<b class="${cls(r.s.cagr)}">${pct(r.s.cagr, 1, true)}</b></span><span>Max DD<b class="neg">${pct(r.s.max_dd, 1)}</b></span><span>Trades<b>${fx(r.s.trades, 0)}</b></span></div>
-      <div class="la"><span class="stamp" style="color:${vd.c}">${vd.t}</span><a class="go" href="${appLink(r)}">Full backtest</a></div></div>`; }).join('')}</div>`;
+      <div class="la"><span class="stamp" style="color:${vd.c}">${vd.t}</span><a class="go" href="${appLink(r)}">Full backtest</a></div></div>`; }).join('')}</div>${missingGrid}`;
   }
   if (S.view === 'table') {
     const M = TABS[S.tab].metric, th = (k, t, n) => `<th class="${n ? 'n' : ''} ${S.sort === k ? 'on' : ''}" data-sort="${k}">${t}</th>`;
     return `<div class="tblwrap"><table class="tbl"><thead><tr><th class="nosort">#</th>${th('name', 'Strategy')}<th class="nosort">Style</th>${S.tk === 'ALL' ? '<th class="nosort">Index</th>' : ''}<th class="nosort">Hold</th><th class="nosort">Equity</th>${th('primary', esc(M.label), 1)}${S.tab === 'working' ? `<th class="n nosort">Before ${PUB}</th>` : S.tab === 'trending' ? '<th class="n nosort">Sharpe (full)</th>' : ''}${th('cagr', 'CAGR', 1)}${th('maxdd', 'Max DD', 1)}${th('win', 'Win', 1)}${th('trades', 'Trades', 1)}${th('t', 't', 1)}<th class="nosort"></th></tr></thead><tbody>
       ${list.map((r, i) => `<tr><td class="rk">${i + 1}</td><td class="nm"><b>${title(r)}</b><span>${sub(r)}${byline(r.v)}${!perVariant && nVar(r) > 1 ? ` · <a href="#" data-fam="${esc(r.v.family)}">${nVar(r)} variants</a>` : ''}</span></td><td>${esc(r.v.style)}<br><span class="muted">${r.v.dir}</span></td>${S.tk === 'ALL' ? `<td>${esc(LABEL[r.tk])}</td>` : ''}<td>${HOLD[holdOf(r.s)]}</td><td style="width:150px">${spark(r, 150, 34)}</td>
         <td class="n p">${M.fmt(M.get(r))}</td>${S.tab === 'working' || S.tab === 'trending' ? `<td class="n">${fx(r.x?.sharpe)}</td>` : ''}<td class="n ${cls(r.s.cagr)}">${pct(r.s.cagr, 1, true)}</td><td class="n neg">${pct(r.s.max_dd, 1)}</td><td class="n">${pct(r.s.win_rate, 0)}</td><td class="n">${fx(r.s.trades, 0)}</td><td class="n">${fx(r.s.t_stat)}</td><td><a class="go" href="${appLink(r)}">Backtest</a></td></tr>`).join('')}
-      </tbody></table></div>`;
+      </tbody></table></div>${missingGrid}`;
   }
   return `<div class="grid">${list.map((r, i) => { const vd = verdictOf(r.s); return `<article class="card">
       <div class="rank"><span>#${i + 1}${S.tk === 'ALL' ? ' · ' + esc(LABEL[r.tk]) : ''}</span><span class="stamp" style="color:${vd.c}">${vd.t}</span></div>
@@ -1163,7 +1185,7 @@ function viewStrategies(rs, perVariant) {
       <div class="tags"><span class="tag">⏱ ${HOLD[holdOf(r.s)]}</span><span class="tag">${esc(r.v.style)}</span><span class="tag">${r.v.dir}</span>${!perVariant && nVar(r) > 1 ? `<span class="tag link" data-fam="${esc(r.v.family)}">${nVar(r)} variants</span>` : ''}${!perVariant && S.tk === 'ALL' && nIdx(r) > 1 ? `<span class="tag">best of ${nIdx(r)} indices</span>` : ''}</div>
       ${rulesList(r.v)}
       <div class="btns"><a class="btn solid" href="${appLink(r)}">Full backtest</a><button class="btn" data-book="${r.v.book}">Book</button><button class="btn" data-guru="${r.v.guru}">Guru</button></div>
-    </article>`; }).join('')}</div>`;
+    </article>`; }).join('')}${missing.map(unavailableBookCard).join('')}</div>`;
 }
 function awaiting(rs) {
   const reasons = r => sourceBlockers(r.v) || r.issues.map(issue => `<p><b>${esc(LABEL[issue.tk])}: ${TRUST.statusLabel(issue.status)}</b><br>${esc(issue.note)}</p>`).join('');
@@ -1456,18 +1478,19 @@ async function filterBar() {
 }
 const regionToggle = () => `<div class="join region" title="India: Nifty 50, Bank Nifty, Midcap 100 (NSE daily close) · US: S&amp;P 500, Nasdaq 100, Dow Jones (daily close)">${[['in', 'India'], ['us', 'US']].map(([k, t]) => `<button class="join-item ${S.region === k ? 'active' : ''} ${k === 'us' && !TICK_US ? 'off' : ''}" data-set="${ds({ region: k,basket:'', tk: '', from: '', to: '', market: 'india' })}" ${k === 'us' && !TICK_US ? 'disabled title="US engine (port 8091) is not running"' : ''}>${t}</button>`).join('')}</div>`;
 function resultsBar(rs) {
-  const M = TABS[S.tab].metric,sourceOnly=rs.length>0&&rs.every(r=>r.v.guru==='ross');
-  return `<div class="rbar"><div class="cnt"><b>${distinct(rs, r => r.v.family)}</b> ${sourceOnly?'source methods':'strategies'} · <b>${distinct(rs, r => r.v.id)}</b> ${sourceOnly?'directional references':'rule variants'} · ${S.market === 'india' ? (S.tk === 'ALL' ? 'all indices' : esc(LABEL[S.tk])) : S.market} · ${TABS[S.tab].name}<div class="note">${isUS() ? '<b>US · S&amp;P 500, Nasdaq 100, Dow Jones</b> · ' : ''}${TABS[S.tab].note}</div></div>
+  const M = TABS[S.tab].metric;
+  return `<div class="rbar" data-results-controls>
     ${regionToggle()}<label class="dselect"><select data-key="sort" aria-label="Sort">${Object.entries(SORTS).map(([k, t]) => `<option value="${k}" ${S.sort === k ? 'selected' : ''}>Sort: ${k === 'primary' ? (M?.label || t) : t}</option>`).join('')}</select></label>
     <div class="join">${[['grid', 'Grid'], ['table', 'Table'], ['list', 'List']].map(([k, t]) => `<button class="join-item ${S.view === k ? 'active' : ''}" data-set="${ds({ view: k })}"><i class="ico ico-${k}"></i>${t}</button>`).join('')}</div></div>`;
 }
-function resultsHtml(rs) {
+function resultsHtml(rs, missing = []) {
   if (S.market !== 'india') return `<div class="empty"><b>${S.market === 'global' ? 'Global markets' : 'Single stocks'}: no data loaded yet</b>The same gurus, books and strategies appear here once that data is in the Rust backend.</div>`;
   const pv = S.book && !BOOK[S.book].live ? BOOK[S.book].title : S.guru && !GURU[S.guru].books.some(b => b.live) ? GURU[S.guru].name : '';
   if (pv && !rs.length) return `<div class="empty"><b>${esc(pv)}: not converted yet</b>Its strategies, stats and charts appear here once its rules are coded in Rust.</div>`;
+  if (!rs.length && missing.length) return viewStrategies([],S.mode==='variants',missing);
   if (!rs.length && (S.mode === 'strategies' || S.mode === 'variants')) return `<div class="empty"><b>Nothing matches</b>Loosen a filter or press Clear all.</div>`;
-  if (S.tab === 'awaiting') return awaiting(rs);
-  return S.mode === 'gurus' ? viewGurus(rs) : S.mode === 'books' ? viewBooks(rs) : viewStrategies(rs, S.mode === 'variants');
+  if (S.tab === 'awaiting') return S.book&&missing.length?`<div class="grid">${missing.map(unavailableBookCard).join('')}</div>`:awaiting(rs);
+  return S.mode === 'gurus' ? viewGurus(rs) : S.mode === 'books' ? viewBooks(rs) : viewStrategies(rs, S.mode === 'variants',missing);
 }
 
 // ---------------------------------------------------------------- 3. author page and all-strategies page
@@ -1480,14 +1503,15 @@ async function viewList() {
     const g = GURU[R.id], api = GURUS_API.find(a => a.id === g.id), b = S.book && BOOK[S.book];
     head = `<nav class="crumbs"><a href="#/">Guru's</a><span>/</span>${b ? `<a href="${guruLink(g.id)}">${esc(g.name)}</a><span>/</span><span>${esc(b.title)}</span>` : `<span>${esc(g.name)}</span>`}</nav>
       <section class="ghero"><div class="guilloche" aria-hidden="true">${GUILL}</div><div class="ghero-copy"><h1>${esc(b ? b.title : g.name)}</h1><p class="lede">${esc(b ? `${g.name} · ${bookYear(b)}` : api?.tagline || g.tagline || 'Reading library · objective strategy review pending')}</p><p class="gbook">${esc(b ? (g.id==='pristine'&&b.id==='p_tpm1'?readingSummary(g,b):(b.blurb || BOOK_BLURB[b.id] || '')) : g.books.filter(x => x.live).map(x => `${x.title} (${bookYear(x)})`).join(' · '))}</p></div><figure class="guru-portrait"><div class="portrait ${g.id==='ross'?'portrait-ross':''}">${pframe(g)}</div>${g.photoSource?`<figcaption class="photo-credit">Photo: <a href="${esc(g.photoSource)}" target="_blank" rel="noopener noreferrer">Trading Educators</a></figcaption>`:''}</figure></section>
-      <dl class="lstrip library-summary" data-author-counts><div><dt>Books</dt><dd>${b?1:libraryEntryCounts(g.id).total}</dd></div><div><dt>Strategies</dt><dd>${currentLibraryProgress().counts(b?[b.id]:g.books.map(x=>x.id)).strategies}</dd></div><div><dt>Backtested</dt><dd>${currentLibraryProgress().counts(b?[b.id]:g.books.map(x=>x.id)).backtested}</dd></div></dl>`;
+      <dl class="lstrip library-summary" data-author-counts><div><dt>Books</dt><dd>${b?1:libraryEntryCounts(g.id).total}</dd></div><div><dt>Strategies</dt><dd>${currentLibraryProgress().counts(b?[b.id]:g.books.map(x=>x.id)).strategies}</dd></div><div><dt>Backtested</dt><dd>${b?visibleBacktestCount(rs):currentLibraryProgress().counts(g.books.map(x=>x.id)).backtested}</dd></div></dl>${b?`<p class="library-count-note" data-book-result-context>Backtested counts the strategies shown below for ${esc(LABEL[S.tk]||S.tk)} and the selected period and filters. Strategies counts all catalogued entries in this book.</p>`:''}`;
   } else head = `<nav class="crumbs"><a href="#/">Guru's</a><span>/</span><span>All strategies</span></nav><section class="ahero"><h1>All strategies</h1><p class="lede">Explore the catalogued book rules on the selected India or US instrument. Available backtests and unavailable strategies are listed separately; book figures are reference claims.</p></section>`;
   if(S.from||S.to)head+=`<p class="rnote" data-list-period><b>Selected results period:</b> ${esc(S.from||'First available bar')} to ${esc(S.to||'Latest available bar')}. Top Sharpe results and linked backtests use this window.</p>`;
   if(R.name==='guru' && R.id==='chande' && S.book) head+=experimentNotice({guru:'chande'},null);
   if(R.name==='guru' && S.book) head+=readingReviewHTML(bookSources(GURU[R.id],BOOK[S.book]).find(x=>x.review));
   if(R.name==='guru'&&S.book&&!BOOK[S.book]?.live)return readingBookPage(GURU[R.id],BOOK[S.book]);
   if (R.name === 'guru' && !S.book) return `${head}${summaryNoticeHTML(listSummaryIssues())}${R.id==='ross'?rossResearchNotice():R.id==='chande'?experimentNotice({guru:'chande'},null):''}${libraryFiltersHTML(true)}${await bookShelf(GURU[R.id])}`;
-  return `${head}${await filterBar()}${summaryNoticeHTML(listSummaryIssues())}${resultsBar(rs)}<div id="results">${resultsHtml(rs)}</div>`;
+  const missing=await unavailableForSelectedBook();
+  return `${head}${await filterBar()}${summaryNoticeHTML(listSummaryIssues())}${resultsBar(rs)}<div id="results">${resultsHtml(rs,missing)}</div>`;
 }
 // A guru's books as covers; opening one shows its strategies.
 function rossResearchNotice() {
@@ -1499,6 +1523,14 @@ function sourceBookShelf(g) {
   const counts=audit.counts||{},entryCounts=libraryEntryCounts(g.id),page=Math.max(1,Math.min(Math.ceil(extra.length/24)||1,+S.source_page||1)),start=(page-1)*24;
   return `<section class="box" data-book-coverage><div class="box-h">Books and reading sources <small>${esc(g.name)}</small></div><p><strong>${entryCounts.total} library entries</strong> · ${entryCounts.catalogue} catalogue entries · ${entryCounts.reading} additional reading sources. ${counts.source_title_candidates??audit.source_titles.length} source-title candidates · ${counts.local_pdf_files??0} local PDF files. Articles, course materials, editions and split chapters are identified separately; these counts do not establish distinct published books.</p><p>${esc(audit.note||'')}</p><p><a class="dbtn sm" href="data/book-coverage-by-author.csv" download>Download author coverage CSV</a>${g.id==='pristine'?'<a class="dbtn sm" href="data/pristine-reading-index.csv" download>Download related-source inventory</a>':''}</p><details open><summary>Reading sources (${extra.length})</summary><div class="shelf">${extra.slice(start,start+24).map(record=>{const b=record.source,link=href('/source/'+encodeURIComponent(b.id),{guru:g.id,tk:S.tk,basket:S.basket,from:S.from,to:S.to}),originals=sourcePdfLinks([b]);return `<article class="bookcard" data-reading-source="${esc(b.id)}"><div class="bc-body"><span class="olabel">${esc(b.entry_kind_label||'Reading source')} · ${esc(b.review?.status_label||'Source review pending')}</span><h3><a href="${link}">${esc(b.title)}</a></h3><p class="bc-blurb">${esc(b.summary||'This original reading source is indexed from the vault. Content and mechanical trading rules still need review; no backtest is attributed to it.')}</p>${categoryTags(b,'source')}<details><summary>Source record</summary><p>${esc(b.count_basis||'An indexed source entry; distinct bibliographic identity remains separate.')}</p>${b.author_metadata?`<p>Recorded author: ${esc(b.author_metadata)}</p>`:''}<p>${esc((b.years_reported||[]).join(', ')||'Edition year not established')}</p><ul>${(b.files||[]).map(f=>`<li>${esc(f.filename)}</li>`).join('')}</ul></details>${originals||'<p class="category-pending">Original reading copy pending in the local cache.</p>'}<a class="dbtn sm" href="${link}">Open reading page</a></div></article>`;}).join('')}</div>${libraryPagination(extra.length,page,'source_page','sources')}</details></section>`;
 }
+function authorBookCard(record){
+  const b=record.book||record.source||record,link=libraryBookLink(record),progress=recordProgress(record),title=record.title||'Title not recorded';
+  const backtested=record.kind==='catalogue'?linkedBookBacktestCount(currentLibraryProgress().measured,record.id,link):0;
+  const year=record.year||'Edition unconfirmed',cloth=b.c||CLOTH[3],originals=record.kind==='catalogue'?bookSources(record.author||GURU[record.authorId],b):[b];
+  return `<article class="bookcard" data-library-book="${esc(record.id)}"><a class="book-cover-link" href="${link}" aria-label="Open ${esc(title)}"><div class="cover3d ${b.live?'':'pv'}" style="--c:${esc(cloth)}"><div class="c3-spine"></div><div class="c3-face"><span class="c3-author">${esc(record.authorName)}</span><span class="c3-title">${esc(title)}</span><span class="c3-year">${esc(String(year))}</span></div></div></a>
+    <div class="bc-body"><span class="olabel">${record.kind==='catalogue'?'Book / course':esc(b.entry_kind_label||'Reading source · identity review')} · ${esc(String(year))}</span><h3><a href="${link}">${esc(title)}</a></h3><span class="book-progress progress-${progress.status}" title="${esc(progress.reason)}">${progress.label}</span><p class="bc-blurb">${esc(record.kind==='catalogue'?readingSummary(record.author||GURU[record.authorId],b):b.summary||'Original reading source; content and mechanical rule review are pending.')}</p>${categoryTags(b,record.kind)}
+    ${record.kind==='catalogue'?`<dl class="bc-stats"><div><dt>Strategies</dt><dd>${progress.strategies}</dd></div><div><dt>Backtested</dt><dd>${backtested}</dd></div></dl><p class="book-progress-reason">Backtested for the data opened by this book link.</p>`:''}<p class="book-progress-reason">${esc(progress.reason)}</p>${sourcePdfLinks(originals)}<a class="dbtn ${backtested?'primary ':''}sm" href="${link}">${record.kind==='catalogue'&&b.live?'Open book & rules':'Open reading page'}</a></div></article>`;
+}
 async function bookShelf(g) {
   const records=VaultLibraryBrowser.search(authorLibraryRecords(g.id),{category:S.book_category,query:S.library_q,sort:S.library_sort});
   const progress=currentLibraryProgress(),totals={backtested:0,in_progress:0,not_backtested:0};
@@ -1508,7 +1540,7 @@ async function bookShelf(g) {
   return `<div class="shelfbar"><h2 class="section-h">Books</h2><a class="olink" href="${href('/strategies',{guru:g.id})}">Browse strategies</a></div>
     <p class="library-count-note">All indexed titles are included below. Editions, articles and courses retain their source labels. In progress means queued or incomplete review, not that every title is being processed now.</p>
     <div class="book-status-filters" role="group" aria-label="Book status">${[['','All books'],['backtested','Backtested'],['in_progress','In progress'],['not_backtested','Not Backtested']].map(([key,label])=>`<button class="category-filter ${S.book_progress===key?'active':''}" aria-pressed="${S.book_progress===key}" data-library-set="${ds({book_progress:key,source_page:'1'})}">${label} <span>${key?totals[key]:records.length}</span></button>`).join('')}</div>
-    ${filtered.length?`<div class="library-book-grid">${filtered.slice(start,start+24).map(libraryBookCard).join('')}</div>${libraryPagination(filtered.length,page,'source_page','books')}`:'<div class="empty"><b>No books in this status</b>Choose All books to see the full collection.</div>'}`;
+    ${filtered.length?`<div class="shelf">${filtered.slice(start,start+24).map(authorBookCard).join('')}</div>${libraryPagination(filtered.length,page,'source_page','books')}`:'<div class="empty"><b>No books in this status</b>Choose All books to see the full collection.</div>'}`;
 }
 
 const BOOK_BLURB = { stc9: 'TradingMarkets Swing Trading College IX (2010) · 14 sessions: the 4 Keys, R3, TPS, 5x5x5, H10 and the market-timing rules (RSI, DMI, %b, VIX, end of month).' };
