@@ -10,7 +10,7 @@
 //! not parity with a published indexed implementation. See docs/kestner-stock-candidates.md.
 //! Long/short systems whose text gives only entries are stop-and-reverse: the book states it for Chapter 7
 //! ("no rules for exiting positions, except for an entry in the other direction", pp.145, 155, 160, 165) and its own
-//! SPX/NDX tables prove it for the Chapter 8 systems (trades x average bars held ~= every bar of 1990-2001); see README.
+//! SPX/NDX tables are consistent with it for the Chapter 8 systems (aggregate occupancy cannot prove a unique trade ledger); see README.
 //! Chapter 10 (S&P timing) measures close-to-close returns, so those rules fill at the close of the signal day.
 //! The original mixed-instrument study used volatility-scaled dollar sizing. Selected-stock
 //! normalized percentage research is a separate application and cannot reproduce those dollar figures.
@@ -18,7 +18,8 @@ use crate::connors::{rsi, sma, true_range, Claim, Ctx, Leg, ParamDef, Params, St
 
 pub const BOOK: &str = "lkqts";
 
-/// Source-reviewed candidates only. This list does NOT grant instrument admission.
+/// Exact bounded source configurations. Instrument admission is owned separately
+/// by instrument_policy::reviewed_kestner_stock; other Kestner IDs inherit none.
 pub const STOCK_CANDIDATE_IDS: &[&str] = &["lkqts_cb4020", "lkqts_ma1040", "lkqts_mom80"];
 
 pub fn stock_candidate(id: &str) -> bool {
@@ -208,7 +209,7 @@ fn cl(trades: &'static str, win: &'static str, avg: &'static str, hold: &'static
 }
 
 const IDX: &str = "Original book research used multiple instruments and volatility-scaled dollar sizing. This legacy catalogue entry still requires instrument-specific source, data and accounting review. Registration does not reproduce the source study or authorize an index to substitute for stocks, ETFs or futures.";
-const STOCK_RESEARCH: &str = "Source-reviewed stock research candidate; publication still requires instrument, account and request validation. Signals use completed closes and next actual session opens. Current-inclusive channel extrema/ties, exit-first collision handling, flat selected-window startup and SMA equality edges are declared conventions. Normalized single-stock long/short returns do not reproduce the book's mixed-instrument volatility-scaled dollar study. No stock basket, index substitution, borrowing, financing or corporate-action correctness is certified by these rules.";
+const STOCK_RESEARCH: &str = "Reviewed single-stock price research at fixed source settings; release and measured availability are separate from catalogue registration. Signals use completed closes and next actual session opens. Current-inclusive channel extrema/ties, exit-first collision handling, flat selected-window startup and SMA equality edges are declared conventions. Normalized single-stock long/short returns do not reproduce the book's mixed-instrument volatility-scaled dollar study. No stock basket, index substitution, borrowing, financing, complete exchange calendar or corporate-action correctness is certified by these rules.";
 const P90: &str = "SPX 1/1/1990-12/31/2001 (stock table)";
 
 pub fn catalogue() -> Vec<StrategyDef> {
@@ -453,13 +454,14 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     let cb = || vec![p("entry", "Entry channel (closes)", 40., 10., 100., 5.), p("exit", "Exit channel (closes)", 20., 5., 50., 5.)];
     Some(match id {
-        "lkqts_cb4020" | "lkqts_cb_afterloss" | "lkqts_cb_afterwin" => cb(),
+        "lkqts_cb4020" => vec![p("entry","Entry channel (closes)",40.,40.,40.,1.),p("exit","Exit channel (closes)",20.,20.,20.,1.)],
+        "lkqts_cb_afterloss" | "lkqts_cb_afterwin" => cb(),
         "lkqts_cb_atrstop" => { let mut v = cb(); v.push(p("atr_n", "ATR length", 20., 5., 50., 5.)); v.push(p("stop", "Stop, ATR multiples from entry", 2., 0.5, 5., 0.5)); v }
         "lkqts_cb_ptake" => { let mut v = cb(); v.push(p("atr_n", "ATR length", 20., 5., 50., 5.)); v.push(p("target", "Profit exit, ATR multiples", 3., 1., 6., 0.5)); v.push(p("gap", "Days without a 40-day extreme before a new entry", 5., 1., 10., 1.)); v }
         "lkqts_cb_pyr" => { let mut v = cb(); v.push(p("gap", "Days without a 40-day extreme before adding", 5., 1., 10., 1.)); v }
-        "lkqts_ma1040" => vec![p("fast", "Fast SMA", 10., 2., 30., 1.), p("slow", "Slow SMA", 40., 20., 120., 5.)],
+        "lkqts_ma1040" => vec![p("fast", "Fast SMA", 10., 10., 10., 1.), p("slow", "Slow SMA", 40., 40., 40., 1.)],
         "lkqts_mom20" => vec![p("n", "Momentum days", 20., 5., 120., 5.)],
-        "lkqts_mom80" => vec![p("n", "Momentum days", 80., 5., 200., 5.)],
+        "lkqts_mom80" => vec![p("n", "Momentum days", 80., 80., 80., 1.)],
         "lkqts_volbo" => vec![p("k", "Sigma multiple", 2., 0.5, 4., 0.25), p("sd_n", "Sigma look-back (price changes)", 100., 20., 250., 10.)],
         "lkqts_stoch14" => vec![p("n", "Stochastic days", 14., 5., 30., 1.), p("lo", "Oversold level", 20., 5., 40., 5.), p("hi", "Overbought level", 80., 60., 95., 5.)],
         "lkqts_rsi14" => vec![p("n", "RSI days", 14., 2., 30., 1.), p("lo", "Long below", 35., 10., 45., 5.), p("hi", "Short above", 65., 55., 90., 5.)],

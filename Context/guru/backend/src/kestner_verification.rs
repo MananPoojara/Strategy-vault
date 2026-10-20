@@ -358,8 +358,11 @@ fn candidate_queries_reject_raw_rounding_unknown_fields_and_non_singleton_grids(
         for key in ["p.unknown","g.unknown","p.fill","p.kind"] {let mut q=base.clone();q.insert(key.into(),"0".into());assert!(checked_params_of(&q).is_err());}
         for value in [40.1,f64::NAN,f64::INFINITY] {assert!(books::lkqts::validate_stock_candidate(id,&Params::from([("unknown".into(),value)])).is_some());}
         let d=books::lkqts::catalogue().into_iter().find(|d|d.id==id).unwrap();
-        assert!(!instrument_policy::reviewed_cash_rule(&d),"A source fixture is not instrument/account/API admission");
-        assert!(instrument_policy::policy(&d).allowed_types.is_empty());
+        assert!(instrument_policy::reviewed_kestner_stock(&d));
+        assert_eq!(instrument_policy::policy(&d).allowed_types,&["individual_stock"]);
+        let mut wrong=books::lkqts::catalogue().into_iter().find(|d|d.id==id).unwrap();wrong.book="another_book";assert!(!instrument_policy::reviewed_kestner_stock(&wrong));
+        for ticker in ["NIFTY 50","SPX","NDX","SPY","QQQ","NIFTY31JAN2008FUT","AAPL"] {assert!(instrument_policy::check(&d,ticker,false).is_some(),"Unqualified ticker {ticker} cannot establish native stock identity");}
+        for setting in books::lkqts::params(id).unwrap() {assert_eq!(setting.min,setting.def);assert_eq!(setting.max,setting.def);}
     }
     assert!(!books::lkqts::stock_candidate("lkqts_mom20"));
     assert!(!books::lkqts::stock_candidate("lkqts_cb_pyr"));
@@ -442,4 +445,73 @@ fn actual_stock_candidate_capture() {
     }
     assert_eq!(manifest.len(),24);
     std::fs::write(output.join("CAPTURE.json"),format!("{{\"qualification\":\"Normal-pipeline candidate captures only; independent market comparison and API admission remain pending. Stock adjustments, borrow and original book performance are not certified.\",\"runs\":[{}]}}",manifest.join(","))).unwrap();
+}
+
+#[test]
+fn causal_clocks_separate_previous_close_next_open_exit_and_terminal_mark() {
+    let mut values=vec![(100.,120.,80.,100.);84];values[80].3=110.;values[81].0=112.;values[82].3=90.;values[83].0=88.;
+    let r=rows(&values);let ctx=Ctx::new(&r,&r,&[]);let id="lkqts_mom80";
+    let run=backtest_costs(&ctx,id,80,83,accounting::Costs::default(),&Params::new()).unwrap();assert_eq!(run.trades.len(),2);
+    let ds=diagnostic_series(&ctx,id,&Params::new());let closed=kestner_execution_clock(&ctx,id,&run.trades[0],&ds);
+    assert!(closed.contains(&format!("\"entry_signal\":{{\"date\":\"{}\"",r[80].date)));
+    assert!(closed.contains(&format!("\"entry_fill\":{{\"date\":\"{}\",\"phase\":\"open\",\"price\":112",r[81].date)));
+    assert!(closed.contains(&format!("\"exit_signal\":{{\"date\":\"{}\"",r[82].date)));
+    assert!(closed.contains(&format!("\"exit_fill\":{{\"date\":\"{}\",\"phase\":\"open\",\"price\":88",r[83].date)));
+    assert!(closed.contains("\"terminal_mark\":null"));
+    let open=kestner_execution_clock(&ctx,id,&run.trades[1],&ds);assert!(open.contains("\"exit_signal\":null,\"exit_fill\":null"));
+    assert!(open.contains("\"phase\":\"close_mark\""));assert!(open.contains("\"exit_filled\":false"));
+    values[81].3=900.;values[81].1=901.;let changed=rows(&values);let other=Ctx::new(&changed,&changed,&[]);
+    let changed_clock=kestner_execution_clock(&other,id,&run.trades[0],&diagnostic_series(&other,id,&Params::new()));
+    assert_eq!(closed.split(",\"entry_fill\"").next(),changed_clock.split(",\"entry_fill\"").next(),"Entry signal must not see its fill day's future close");
+}
+
+#[test]
+fn selected_stock_policy_cannot_be_forged_with_native_request_flags() {
+    let mut contexts=BTreeMap::new();
+    for symbol in ["NIFTY 50","SPX","SPY","AAPL"] {
+        let mut r=rows(&vec![(100.,101.,99.,100.);100]);for row in &mut r{row.ticker=symbol.into();}
+        let leaked=Box::leak(r.into_boxed_slice());contexts.insert(symbol.into(),Ctx::new(leaked,&[],&[]));
+    }
+    let state=State{ctxs:contexts,baskets:baskets::Catalogue::default(),vix:vec![],market_extra:BTreeMap::new()};
+    for &id in books::lkqts::STOCK_CANDIDATE_IDS {
+        for ticker in ["NIFTY 50","SPX","SPY","AAPL"] {
+            let q=BTreeMap::from([("id".into(),id.into()),("ticker".into(),ticker.into()),("from".into(),"2020-04-01".into()),("native_stock".into(),"true".into()),("asset_type".into(),"individual_stock".into())]);
+            assert!(detail(&state,&q).is_err());assert!(optimize(&state,&q).is_err());
+            let summary=summary(&state,&q).unwrap();assert!(summary.contains("\"blocked\""));assert!(!summary.contains("\"stats\""));
+            assert!(!readiness_json(&state,&q).unwrap().contains("\"status\":\"ready\""));
+        }
+        let q=BTreeMap::from([("id".into(),id.into()),("basket".into(),"nifty50".into())]);
+        let response=basket_portfolio::run(&state,&q).unwrap();assert!(response.contains("one actual stock"));
+    }
+}
+
+/// Exercise the production detail/readiness/summary/optimizer functions using
+/// only explicitly supplied private inputs. No source observation is committed.
+#[test]
+#[ignore = "Requires private whitelist roots and a fresh output directory"]
+fn actual_stock_api_capture() {
+    let output=std::path::PathBuf::from(std::env::var("VAULT_KESTNER_API_CAPTURE_DIR").expect("Explicit private API output required"));
+    assert!(!output.exists());std::fs::create_dir_all(&output).unwrap();let mut cases=vec![];
+    for (variable,basket,symbols,from,to) in [("VAULT_KESTNER_US_DATA_DIR","us_sp500",["AAPL","MSFT"],"1990-01-01","2001-12-31"),("VAULT_KESTNER_IN_DATA_DIR","nifty50",["RELIANCE","HDFCBANK"],"2001-01-01","2010-12-31")] {
+        let root=std::env::var(variable).unwrap();let catalogue=baskets::Catalogue::load(std::path::Path::new(&root)).unwrap();
+        let state=State{ctxs:BTreeMap::new(),baskets:catalogue,vix:vec![],market_extra:BTreeMap::new()};
+        for symbol in symbols {for &id in books::lkqts::STOCK_CANDIDATE_IDS {for (fee,slip) in [(0,0),(3,2)] {
+            let ticker=format!("basket:{basket}:{symbol}");let stem=format!("basket_{basket}_{symbol}-{id}-fee{fee}-slip{slip}");
+            let q=BTreeMap::from([("id".into(),id.into()),("ticker".into(),ticker),("from".into(),from.into()),("to".into(),to.into()),("cost".into(),fee.to_string()),("slippage".into(),slip.to_string())]);
+            for (name,response) in [("detail",detail(&state,&q)),("readiness",readiness_json(&state,&q)),("summary",summary(&state,&q)),("optimize",optimize(&state,&q))] {
+                let body=response.unwrap_or_else(|e|panic!("{stem}/{name}: {e}"));
+                if name=="detail" {assert!(body.contains("\"execution_clock\""));}
+                if name=="readiness" {assert!(body.contains("\"status\":\"ready\""));}
+                if name=="optimize" {assert!(body.contains("\"combos\":1"));}
+                std::fs::write(output.join(format!("{stem}-{name}.json")),body).unwrap();
+            }
+            for (key,value) in [("p.unknown","0"),("p.fill","open"),("g.unknown","1"),("rollover","1"),("capital","100000"),("to","2030-01-01"),("from","1970-01-01"),("ticker","basket:us_sp500:NOT_A_REAL_TICKER")] {
+                let mut bad=q.clone();bad.insert(key.into(),value.into());
+                assert!(detail(&state,&bad).is_err(),"{stem}/{key}");assert!(optimize(&state,&bad).is_err(),"{stem}/{key}");
+                if key.starts_with("p.")||key.starts_with("g.")||key=="rollover"||key=="capital"||key=="ticker" {assert!(summary(&state,&bad).is_err(),"{stem}/summary/{key}");}
+            }
+            cases.push(format!("\"{stem}\""));
+        }}}
+    }
+    assert_eq!(cases.len(),24);std::fs::write(output.join("CASES.json"),format!("{{\"cases\":[{}],\"scope\":\"Production API functions and serialization, not network transport or live deployment\"}}",cases.join(","))).unwrap();
 }

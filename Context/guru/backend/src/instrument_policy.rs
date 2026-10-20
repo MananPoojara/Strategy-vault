@@ -27,6 +27,10 @@ fn portfolio(basis: &'static str)->Policy {requirement("portfolio", &[], basis)}
 fn review()->Policy {requirement("source_review_required", &[], "Instrument population and executable rule requirements have not been independently reviewed for this specific source rule. Book titles, keywords, code availability and prior verification badges are not evidence of instrument compatibility.")}
 fn member(id:&str,ids:&[&str])->bool {ids.contains(&id)}
 
+pub fn reviewed_kestner_stock(def:&StrategyDef)->bool {
+    def.book==crate::books::lkqts::BOOK && crate::books::lkqts::stock_candidate(def.id)
+}
+
 /// Exact source-rule IDs reviewed against selected real-price ledgers.
 /// Each batch retains its instrument and readiness limits; original studies are not reproduced.
 pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
@@ -45,6 +49,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || (def.book=="ehrs" && crate::books::ehrs::reviewed_sinetrend(def.id))
         || (def.book=="elcim" && def.id==crate::books::elcim_account::ID)
         || (def.book=="hbiab" && crate::books::hbiab_reviewed::reviewed(def.id))
+        || reviewed_kestner_stock(def)
 }
 /// Figure A.7 is an index example, distinct from the reviewed stock/ETF batch.
 pub fn reviewed_dema_index(def:&StrategyDef)->bool {
@@ -109,6 +114,10 @@ pub fn policy(def:&StrategyDef)->Policy {
     p
 }
 fn base_policy(def:&StrategyDef)->Policy {
+    if reviewed_kestner_stock(def) {
+        let mut p=stock("Kestner, Quantitative Trading Strategies (2003), printed139–140,145,150: only channel40/20, SMA10/40 and momentum80 at fixed source settings. Source and declared conventions: docs/kestner-stock-candidates.md. Completed-close signals fill at the next actual stock open; selected start is flat with genuine earlier indicator history. Inclusive channel bounds/ties, exit-first collision priority and SMA equality edges are declared interpretations. Independent selected AAPL/MSFT/RELIANCE/HDFCBANK source-event and normalized percentage-account comparisons do not reproduce original mixed-instrument volatility-scaled dollar sizing, source populations or book performance. Actual individual stocks only; no index, ETF, derivative or basket substitution. Price adjustments, complete exchange calendars and historical membership remain qualified. Shorts are hypothetical without certified borrow, margin, financing or dividends. Terminal open marks stay outside closed-trade statistics and include an explicitly estimated liquidation-cost side in the retained ordinary model.");
+        p.execution_scope="single_symbol_stock_price_research";p.market_adaptation=true;return p;
+    }
     if reviewed_dema_index(def) {
         let mut p=index(crate::books::hbqts::reviewed::DEMA_INDEX_BASIS);
         p.execution_scope="single_symbol_index_timing_research";p.market_adaptation=true;return p;

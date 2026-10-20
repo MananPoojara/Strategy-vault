@@ -1008,7 +1008,8 @@ fn summary(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     if q.get("id").is_some_and(|id|books::hbqts::reviewed::is_dema_index(id) || books::lkqts::stock_candidate(id)){checked_params_of(q)?;}
 
     let selected=select_context(st,q)?;let held=selected.context(st);
-    let definitions=query_catalogue(q);
+    let mut definitions=query_catalogue(q);
+    if let Some(id)=q.get("id").filter(|id|books::lkqts::stock_candidate(id)) {definitions.retain(|d|d.id==id);}
     let single_session_catalogue=!q.contains_key("id") && definitions.iter().any(|d|reviewed_single_session(d.id));
     let (ctx, from, to, _cost) = resolve_context_window(&held, q, single_session_catalogue)?;
     let costs=accounting::Costs::parse(q)?;costs.ensure_rollover()?;
@@ -1042,6 +1043,9 @@ struct DiagnosticSeries {
     trend: Option<(usize, Vec<f64>)>,
 }
 fn diagnostic_series(ctx: &Ctx, id: &str, p: &Params) -> DiagnosticSeries {
+    if id=="lkqts_ma1040" {
+        return DiagnosticSeries{rsi:None,ma:Some((10,ctx.sma_n(10).into_owned())),trend:Some((40,ctx.sma_n(40).into_owned()))};
+    }
     let schema = connors::params(id);
     let period = |key: &str, kind: &str| {
         let def = schema.iter().find(|item| item.key == key)?;
@@ -1079,6 +1083,30 @@ fn snapshot(ctx: &Ctx, i: usize, series: &DiagnosticSeries) -> String {
 fn hv_exit_snapshot(ctx:&Ctx,t:&Trade)->String {
     if t.open {return "null".into();}
     format!("{{\"date\":\"{}\",\"phase\":\"open\",\"execution_px\":{},\"close\":null,\"rsi2\":null,\"vs_sma200\":null,\"vs_sma5\":null,\"vix_rsi2\":null,\"rsi_p\":null,\"rsi_period\":null,\"rsi_kind\":null,\"vs_ma_p\":null,\"ma_period\":null,\"ma_kind\":null,\"vs_trend_p\":null,\"trend_period\":null,\"trend_kind\":null,\"basis\":\"Idealized next genuine session OPEN exit. This session's completed-close indicators are unavailable at its open and are omitted.\"}}",ctx.r[t.exit_i].date,t.exit_px)
+}
+
+/// Causal clocks for the three next-open Kestner stock applications. The legacy
+/// signal field remains the exit-rule/terminal clock; it is never relabelled entry.
+fn kestner_execution_clock(ctx:&Ctx,id:&str,t:&Trade,series:&DiagnosticSeries)->String {
+    let precise=full_precision_trade_return;
+    let state=|i:usize| {
+        let fields=match id {
+            "lkqts_cb4020" if i>=39 => {
+                let extrema=|n:usize,high:bool|ctx.c[i+1-n..=i].iter().copied().fold(if high {f64::NEG_INFINITY}else{f64::INFINITY},|a,b|if high {a.max(b)}else{a.min(b)});
+                format!("\"highest_close_40\":{},\"lowest_close_40\":{},\"highest_close_20\":{},\"lowest_close_20\":{}",precise(extrema(40,true)),precise(extrema(40,false)),precise(extrema(20,true)),precise(extrema(20,false)))
+            },
+            "lkqts_ma1040" if i>=40 =>match (&series.ma,&series.trend) {
+                (Some((10,fast)),Some((40,slow)))=>format!("\"sma_10\":{},\"sma_40\":{},\"previous_sma_10\":{},\"previous_sma_40\":{}",precise(fast[i]),precise(slow[i]),precise(fast[i-1]),precise(slow[i-1])),
+                _=>return "null".into(),
+            },
+            "lkqts_mom80" if i>=80=>format!("\"close_80_observations_ago\":{}",precise(ctx.c[i-80])),
+            _=>return "null".into(),
+        };
+        format!("{{\"date\":\"{}\",\"phase\":\"completed_close\",\"close\":{},\"rule_state\":{{{fields}}}}}",ctx.r[i].date,precise(ctx.c[i]))
+    };
+    let entry=t.legs[0].i;
+    let fill=|i:usize,px:f64|format!("{{\"date\":\"{}\",\"phase\":\"open\",\"price\":{}}}",ctx.r[i].date,precise(px));
+    format!("{{\"entry_signal\":{},\"entry_fill\":{},\"exit_signal\":{},\"exit_fill\":{},\"terminal_mark\":{},\"legacy_signal_basis\":\"exit signal close for a closed trade; terminal observation for an open holding\",\"basis\":\"Actual supplied observations and idealized next-open fills; terminal mark is not an exit. Entry/exit rule states exclude the fill session's future close.\"}}",entry.checked_sub(1).map_or("null".into(),state),fill(entry,t.legs[0].px),if t.open {"null".into()}else{state(t.signal_i)},if t.open {"null".into()}else{fill(t.exit_i,t.exit_px)},if t.open {format!("{{\"date\":\"{}\",\"phase\":\"close_mark\",\"price\":{},\"exit_filled\":false}}",ctx.r[t.exit_i].date,precise(t.exit_px))}else{"null".into()})
 }
 
 fn bandy_costs_json(costs:accounting::Costs)->String {
@@ -1145,13 +1173,15 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         let ledger=if run.source_account.is_some(){accounting::TradeLedger::source_account(ctx,t,allocation,costs)}else{accounting::TradeLedger::new(ctx,t,allocation,costs)};
         allocation*=1.+ledger.net_ret;
         let legs: Vec<String> = t.legs.iter().map(|l| format!("[{},{},{}]", l.i - from, num(l.px), num(l.w))).collect();
-        format!(
+        let mut row=format!(
             "{{\"dir\":{},\"legs\":[{}],\"entry\":\"{}\",\"exit\":\"{}\",\"exit_i\":{},\"exit_px\":{},\"avg_px\":{},\"ret\":{},\"ret_full_precision\":{},\"bars\":{},\"open\":{},\"reason\":\"{}\",\"entry_kind\":\"{}\",\"at_entry\":{},\"at_exit\":{},\"signal\":\"{}\",\"exits\":[{}],\"accounting\":{}}}",
             t.dir, legs.join(","), ctx.r[t.legs[0].i].date, ctx.r[t.exit_i].date, t.exit_i - from, num(t.exit_px),
             num(t.avg_px()), num(ledger.net_ret), full_precision_trade_return(ledger.net_ret), t.exit_i - t.legs[0].i, t.open, esc(&t.reason), t.entry_kind,
-            snapshot(ctx, t.legs[0].i, &diagnostics), if books::kfsc::reviewed_hv_rule(id) {hv_exit_snapshot(ctx,t)} else {snapshot(ctx, t.signal_i, &diagnostics)}, ctx.r[if books::kfsc::reviewed_hv_rule(id) {t.exit_i}else{t.signal_i}].date,
+            snapshot(ctx, if books::lkqts::stock_candidate(id){t.legs[0].i.saturating_sub(1)}else{t.legs[0].i}, &diagnostics), if books::kfsc::reviewed_hv_rule(id) {hv_exit_snapshot(ctx,t)} else if books::lkqts::stock_candidate(id)&&t.open {"null".into()}else {snapshot(ctx, t.signal_i, &diagnostics)}, ctx.r[if books::kfsc::reviewed_hv_rule(id) {t.exit_i}else{t.signal_i}].date,
             t.exits.iter().map(|(i, px, f)| format!("[{},{},{}]", i - from, num(*px), num(*f))).collect::<Vec<_>>().join(","),ledger.json()
-        )
+        );
+        if books::lkqts::stock_candidate(id) {row.pop();let _=write!(row,",\"execution_clock\":{}}}",kestner_execution_clock(ctx,id,t,&diagnostics));}
+        row
     }));
     if selected.native(){let _=write!(o,",\"provenance\":{}",source_provenance(st,q));}
     if selected.native() || def.book==books::chande::BOOK {
