@@ -1,9 +1,12 @@
 # Following Kestner source proposals
 
-These are source specifications for subsequent conversion work, not tested
-implementations, available backtests or additions to the live strategy count.
-The currently pending volatility/RSI/MACD batch has a separate acceptance
-contract. No instrument admission follows from this document.
+This document preserves the source-proposal stage of the methods below. It
+does not establish current implementation or measured availability. Later work
+is documented separately in [the volatility/RSI/MACD review](kestner-next-stock-candidates.md),
+[the SOB review](kestner-sob-stock-research.md), [the MACS review](kestner-macs-raw-stock-research.md)
+and [the TIAR review](kestner-tiar-stock-research.md). Those documents distinguish
+the checks performed from outstanding release gates. No instrument admission
+follows from this historical proposal.
 
 Source: Lars Kestner, *Quantitative Trading Strategies* (2003), PDF SHA-256
 `168ff6a95da48f83bb8dcd5d8e00dc3f5e5e9895fdeae1e95dae0e845abd705b`.

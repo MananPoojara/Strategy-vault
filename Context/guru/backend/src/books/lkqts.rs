@@ -4,14 +4,14 @@
 //!
 //! Execution context: the Chapter 7 study states (p.139), "Signals are generated at the close of each
 //! trading day and executed on the next trading day's opening price", with no commissions or slippage.
-//! Applying that clock to another section, including Chapter 8 SOB, is a declared research convention unless
+//! Applying that clock to another section, including Chapter 8 SOB/TIAR, is a declared research convention unless
 //! that method's source independently specifies it; p.139 does not establish every chapter's execution rules.
 //! Standard deviation is the population form, divided by N (p.41, Fig. 2.2). "Average true range" = simple average
 //! of the true range (p.64). Current-inclusive channel windows are a declared interpretation of the prose,
 //! not parity with a published indexed implementation. See docs/kestner-stock-candidates.md.
 //! Entry-only long/short systems use a declared stop-and-reverse implementation convention. Chapter 7 explicitly
 //! gives an opposite-entry exit ("no rules for exiting positions, except for an entry in the other direction",
-//! pp.145, 155, 160, 165); applying that convention to Chapter 8 SOB remains declared. Aggregate table occupancy
+//! pp.145, 155, 160, 165); applying that convention to Chapter 8 SOB/TIAR remains declared. Aggregate table occupancy
 //! cannot establish a unique trade ledger or certify the original exit implementation; see README.
 //! Chapter 10 (S&P timing) measures close-to-close returns, so those rules fill at the close of the signal day.
 //! The original mixed-instrument study used volatility-scaled dollar sizing. Selected-stock
@@ -19,6 +19,235 @@
 use crate::connors::{sma, true_range, Claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "lkqts";
+
+/// Exact RAW-native MACS research; separate from original lists/SOB/TIAR.
+pub const MACS_SOURCE_PROFILE: &str =
+    "macs_close_sma_n1_20_ratio4_full80_longcount20_inclusive60_40_levels_flatstart_nextopen_reverse";
+/// Native MACS consumes exact RAW decimal values from its typed same-byte source binding.
+pub const MACS_RAW_NUMERIC_CONVENTION: &str = "raw_native_decimal_bounded_window_sums_v4";
+pub const MACS_STRICT_DIAGNOSTIC_PROFILE: &str =
+    "macs_close_sma_n1_20_ratio4_full80_longcount20_strict60_40_levels_flatstart_nextopen_reverse";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MacsThresholdProfile {
+    DetailedProseInclusive,
+    SummaryStrictDiagnostic,
+}
+impl MacsThresholdProfile {
+    pub fn source_profile(self) -> &'static str {
+        match self {
+            Self::DetailedProseInclusive => MACS_SOURCE_PROFILE,
+            Self::SummaryStrictDiagnostic => MACS_STRICT_DIAGNOSTIC_PROFILE,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct MacsSourcePair {
+    pub short_length: usize,
+    pub long_length: usize,
+    // Approximate binary64 diagnostics only. These means do NOT decide votes;
+    // Exact complete sums in the report's declared domain decide ordering;
+    // native research uses the same-byte bound RAW decimal closes.
+    pub comparison_anchor: f64,
+    pub centered_short_mean: f64,
+    pub centered_long_mean: f64,
+    pub pair_long: bool,
+    pub pair_short: bool,
+    pub pair_tie: bool,
+}
+#[derive(Clone, Debug, PartialEq)]
+pub struct MacsSourceState {
+    pub pairs: Vec<MacsSourcePair>,
+    pub long_pairs: u8,
+    pub short_pairs: u8,
+    pub tied_pairs: u8,
+    pub macs: u8,
+    pub long_condition: bool,
+    pub short_condition: bool,
+}
+#[derive(Clone, Debug)]
+pub struct MacsSourceDiagnostics {
+    pub profile: &'static str,
+    pub arithmetic_convention: &'static str,
+    pub states: Vec<Option<MacsSourceState>>,
+}
+
+
+pub fn macs_candidate(id:&str)->bool {id=="lkqts_macs"}
+pub fn validate_macs_candidate(p:&Params)->Option<String> {
+    (!p.iter().all(|(key,value)|value.is_finite() && match key.as_str(){"long"=>*value==60.,"short"=>*value==40.,_=>false}))
+        .then(||"MACS raw-native stock research requires exact long60/short40 under the named inclusive source profile. Unknown, changed, fractional or nonfinite settings are not rounded into admission.".into())
+}
+
+fn macs_exact_window_sums(values: &[crate::unit_exposure_arithmetic::ExactValue])
+    -> Option<Vec<crate::unit_exposure_arithmetic::ExactValue>> {
+    use crate::unit_exposure_arithmetic::ExactValue;
+    if values.is_empty() || values.len()>80 { return None; }
+    let mut sums=Vec::with_capacity(values.len()+1);
+    sums.push(ExactValue::canonical(0.).ok()?);
+    for value in values.iter().rev() {
+        sums.push(sums.last()?.add(value));
+    }
+    Some(sums)
+}
+
+
+fn macs_source_pair_from_sums(closes: &[f64], n: usize,
+    sums: &[crate::unit_exposure_arithmetic::ExactValue]) -> Option<MacsSourcePair> {
+    use std::cmp::Ordering;
+    if !(1..=20).contains(&n) || closes.len()!=4*n || sums.len()<=4*n
+        || closes.iter().any(|v| !v.is_finite() || *v<=0.) { return None; }
+    let ordering=sums[n].scale(4).signed_cmp(&sums[4*n]);
+    let anchor=*closes.last()?;
+    // Retained approximate chart/audit diagnostics, never a predicate source.
+    let long_sum=closes.iter().map(|v|*v-anchor).sum::<f64>();
+    let short_sum=closes[3*n..].iter().map(|v|*v-anchor).sum::<f64>();
+    let short_mean=short_sum/n as f64;
+    let long_mean=long_sum/(4*n) as f64;
+    if ![short_mean,long_mean].iter().all(|v|v.is_finite()) { return None; }
+    Some(MacsSourcePair {
+        short_length:n, long_length:4*n, comparison_anchor:anchor,
+        centered_short_mean:short_mean, centered_long_mean:long_mean,
+        pair_long:ordering==Ordering::Greater, pair_short:ordering==Ordering::Less,
+        pair_tie:ordering==Ordering::Equal,
+    })
+}
+
+
+fn macs_source_thresholds(long_pairs: u8, profile: MacsThresholdProfile) -> Option<(u8, bool, bool)> {
+    if long_pairs > 20 { return None; }
+    let score = 5*long_pairs;
+    let (long, short) = match profile {
+        MacsThresholdProfile::DetailedProseInclusive => (score >= 60, score <= 40),
+        MacsThresholdProfile::SummaryStrictDiagnostic => (score > 60, score < 40),
+    };
+    Some((score, long, short))
+}
+
+
+fn macs_source_diagnostics_with_exact(x:&Ctx,to:usize,p:&Params,profile:MacsThresholdProfile,
+    exact:&[crate::unit_exposure_arithmetic::ExactValue],convention:&'static str)->Option<MacsSourceDiagnostics> {
+    if validate_macs_candidate(p).is_some()
+        || following_two_source_history_issue(x,0,to).is_some() || exact.len()!=to+1
+        || exact.iter().any(|v|!v.positive()) {return None;}
+    let closes=&x.c[..=to];
+    let mut states = vec![None; closes.len()];
+    for i in 79..closes.len() {
+        let sums=macs_exact_window_sums(&exact[i-79..=i])?;
+        let pairs: Vec<MacsSourcePair> = (1..=20)
+            .map(|n| macs_source_pair_from_sums(&closes[i+1-4*n..=i], n, &sums)).collect::<Option<_>>()?;
+        let long_pairs = pairs.iter().filter(|p| p.pair_long).count() as u8;
+        let short_pairs = pairs.iter().filter(|p| p.pair_short).count() as u8;
+        let tied_pairs = pairs.iter().filter(|p| p.pair_tie).count() as u8;
+        let (macs, long_condition, short_condition) = macs_source_thresholds(long_pairs, profile)?;
+        states[i] = Some(MacsSourceState { pairs, long_pairs, short_pairs, tied_pairs, macs, long_condition, short_condition });
+    }
+    Some(MacsSourceDiagnostics { profile: profile.source_profile(), arithmetic_convention: convention, states })
+}
+
+
+pub(crate) fn macs_raw_source_diagnostics(series:&crate::baskets::macs_source_data::ValidatedSeries,
+    to:usize,p:&Params,profile:MacsThresholdProfile)->Option<MacsSourceDiagnostics> {
+    let report=series.report();
+    if report.arithmetic_convention!=MACS_RAW_NUMERIC_CONVENTION || report.through_source_i!=to
+        || report.checked_close_rows!=to+1 || report.closes.len()!=to+1
+        || series.exact_raw_closes().len()!=to+1 {return None;}
+    let x=Ctx::new(series.rows(),&[],&[]);
+    macs_source_diagnostics_with_exact(&x,to,p,profile,series.exact_raw_closes(),MACS_RAW_NUMERIC_CONVENTION)
+}
+
+
+pub(crate) fn macs_raw_source_run(series:&crate::baskets::macs_source_data::ValidatedSeries,
+    from:usize,to:usize,p:&Params,profile:MacsThresholdProfile)->Option<Vec<Trade>> {
+    let x=Ctx::new(series.rows(),&[],&[]);
+    if validate_macs_candidate(p).is_some()
+        || following_two_source_history_issue(&x,from,to).is_some() {return None;}
+    let diagnostics=macs_raw_source_diagnostics(series,to,p,profile)?;
+    let signals:Vec<i8>=diagnostics.states.iter().map(|s|s.as_ref()
+        .map_or(0,|v|if v.long_condition {1} else if v.short_condition {-1} else {0})).collect();
+    Some(sar(&x,from,to,&signals,"Private TIAR/MACS source long","Private TIAR/MACS source short"))
+}
+
+
+pub fn macs_source_convention()->&'static str {
+    "Printed207 detailed prose uses inclusive score>=60/<=40; strict summary alternatives remain a disclosed same-family ambiguity, not a fitted winner. Declared close-SMA n/4n for n1..20, complete80 actual closes; each pair votes long only when its short SMA is strictly above the long SMA. Pair equality contributes zero long votes without a neutral veto; the printed systems-on-long-trades wording does not uniquely specify equality state, so daily relationship/tie treatment is declared. Native votes compare exact RAW decimal sums through same-byte SHA/row/date/parsed-price binding, not rounded Rust Display prices; approximate centered binary64 means are diagnostics only. First complete state79/earliest next-open80, genuine prefix, flat selected start, repeated levels/no pyramiding, opposite next-actual-open reversal and terminal open marks are declared Chapter8 research conventions. Fixed AAPL1990–2001/RELIANCE2001–2010 full-prefix source comparisons matched unchanged exact references, including all20 pairs, with zero mismatches. Shared-author mechanical corroboration is not blind independence. Fixed AAPL1990-01-01..2001-12-31 and RELIANCE2001-01-01..2010-12-31: MACS and TIAR each matched four ordinary normalized-account cases (fees/slippage0/0 and3/2bps per side, rollover0) and16 direct production-function responses (detail, readiness, selected summary, singleton optimizer) against unchanged source/account references with zero mismatches (combined32responses/eightaccounts). Selected API states and earlier full-prefix source evidence have separate scope. HTTP transport/request-matrix, browser and deployment are separate acceptance gates. Every requested run still needs its own source/data/account checks; data readiness alone does not certify account support. Source agreement alone does not establish a financially supported account. Original mixed-instrument volatility-dollar sizing and book performance are not reproduced."
+}
+
+
+
+/// Fixed TIAR research profile; separate from earlier admission lists and MACS.
+pub const TIAR_SOURCE_PROFILE: &str =
+    "tiar_close_lags5_10_15_strict_levels_flatstart_nextopen_reverse";
+pub fn tiar_candidate(id: &str) -> bool { id=="lkqts_tiar" }
+/// Retained diagnostic helper name; this integration accepts TIAR only.
+pub fn validate_following_two_source(id: &str, p: &Params) -> Option<String> {
+    if !tiar_candidate(id) {return Some("Unknown TIAR stock research profile".into());}
+    (!p.iter().all(|(key,value)| key=="step" && value.is_finite() && *value==5.))
+        .then(|| "TIAR stock research requires exact step5 (close lags5/10/15). Changed, unknown, fractional and nonfinite parameters are rejected without rounding; source, data, account and instrument checks remain mandatory.".into())
+}
+
+pub fn following_two_source_history_issue(x: &Ctx, from: usize, to: usize) -> Option<&'static str> {
+    if from > to || to >= x.r.len() {
+        return Some("TIAR/MACS selected source window is unavailable");
+    }
+    if x.r[..=to].iter().any(|r| r.ticker.is_empty() || !crate::baskets::valid_date(&r.date)
+        || ![r.open, r.high, r.low, r.close].iter().all(|v| v.is_finite() && *v > 0.)
+        || r.low > r.high || r.open < r.low || r.open > r.high || r.close < r.low || r.close > r.high)
+        || x.r[..=to].windows(2).any(|w| w[0].date >= w[1].date || w[0].ticker != w[1].ticker)
+    {
+        return Some("TIAR/MACS source proposals require one genuine symbol, finite positive consistent OHLC and ordered distinct valid dates through the selected end. Earlier rows are not dropped or reseeded.");
+    }
+    None
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TiarSourceState {
+    pub close: f64,
+    pub close_lag5: f64,
+    pub close_lag10: f64,
+    pub close_lag15: f64,
+    pub long_condition: bool,
+    pub short_condition: bool,
+}
+#[derive(Clone, Debug)]
+pub struct TiarSourceDiagnostics {
+    pub profile: &'static str,
+    pub states: Vec<Option<TiarSourceState>>,
+}
+
+/// Printed222/227 strict three-step close chain, not three consecutive daily
+/// rises or endpoint momentum. Equality supplies no new direction.
+pub fn tiar_source_diagnostics(x: &Ctx, to: usize, p: &Params) -> Option<TiarSourceDiagnostics> {
+    if validate_following_two_source("lkqts_tiar", p).is_some()
+        || following_two_source_history_issue(x, 0, to).is_some() { return None; }
+    let closes = &x.c[..=to];
+    let mut states = vec![None; closes.len()];
+    for i in 15..closes.len() {
+        let (c0, c5, c10, c15) = (closes[i], closes[i-5], closes[i-10], closes[i-15]);
+        states[i] = Some(TiarSourceState {
+            close: c0, close_lag5: c5, close_lag10: c10, close_lag15: c15,
+            long_condition: c0 > c5 && c5 > c10 && c10 > c15,
+            short_condition: c0 < c5 && c5 < c10 && c10 < c15,
+        });
+    }
+    Some(TiarSourceDiagnostics { profile: TIAR_SOURCE_PROFILE, states })
+}
+
+/// TIAR-only extraction of the frozen source runner. No MACS code is dispatched.
+pub fn tiar_source_run(x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+    if validate_following_two_source("lkqts_tiar", p).is_some()
+        || following_two_source_history_issue(x, from, to).is_some() { return None; }
+    let signals: Vec<i8> = tiar_source_diagnostics(x, to, p)?.states.iter().map(|s| s.as_ref()
+                .map_or(0, |v| if v.long_condition { 1 } else if v.short_condition { -1 } else { 0 })).collect();
+    Some(sar(x, from, to, &signals, "Private TIAR/MACS source long", "Private TIAR/MACS source short"))
+}
+
+pub fn tiar_source_convention() -> &'static str {
+    "Printed222/227: long close>close5>close10>close15; short strict reverse chain. These are recurring levels, not observed crossings or three consecutive daily changes. Exact fixed step5, genuine prefix, first defined source state15/earliest next actual open16, equality supplies no new direction. Flat selected start, repeated same-side level does not add exposure; completed-close/next-actual-open opposite reversal and terminal open close mark are declared Chapter8 research conventions. Fixed AAPL1990–2001/RELIANCE2001–2010 source mechanics, four ordinary normalized-account cost cases (fees/slippage0/0 and3/2bps per side, rollover0) and16 production-function responses matched unchanged references with zero comparison mismatches. API states cover selected dates; earlier full-prefix source evidence is separately qualified. Shared-author mechanical corroboration is not blind independence. HTTP transport/request-matrix, browser and deployment are separate acceptance gates. Original mixed-instrument volatility-dollar sizing and published performance are not reproduced; no index/ETF/basket substitution, membership, adjustment, calendar, borrow, margin, financing or dividend certification."
+}
+
+
 
 /// Fixed SOB source configuration. Kept separate from the original three and
 /// next-four lists; stock-only request/history admission is dispatched explicitly.
@@ -154,11 +383,13 @@ pub fn sob_source_convention() -> &'static str {
     "Printed185/190: closing-price maximum signed breakout horizon80 and strict20 entries at the40-statistic extreme. Printed191 Intel exactly+20/-20 conflicts with that formal paragraph; this named profile follows strict20 without fitting returns. Current-inclusive80/40 windows, inclusive ties, equal high/low horizons neutral0, complete initialization79/118/119, flat selected start and Chapter7 completed-close/next-actual-open opposite reversal are declared interpretations. Genuine prefix, no pyramiding, independent stop or invented terminal exit. Original volatility-dollar sizing and published performance are not reproduced."
 }
 
-pub fn stock_research_profile(id: &str) -> bool { stock_candidate(id) || next_candidate(id) || sob_candidate(id) }
+pub fn stock_research_profile(id: &str) -> bool { stock_candidate(id) || next_candidate(id) || sob_candidate(id) || tiar_candidate(id) || macs_candidate(id) }
 
 pub fn validate_stock_research_profile(id: &str,p: &Params) -> Option<String> {
     if stock_candidate(id) {validate_stock_candidate(id,p)}
     else if sob_candidate(id) {validate_sob_candidate(p)}
+    else if tiar_candidate(id) {validate_following_two_source(id,p)}
+    else if macs_candidate(id) {validate_macs_candidate(p)}
     else {validate_next_candidate(id,p)}
 }
 
@@ -166,6 +397,8 @@ pub fn stock_research_history_issue(id: &str,x: &Ctx,from: usize,to: usize) -> O
     if stock_candidate(id) {stock_history_issue(id,x,from,to)}
     else if next_candidate(id) {next_history_issue(x,from,to)}
     else if sob_candidate(id) {sob_history_issue(x,from,to)}
+    else if tiar_candidate(id) {following_two_source_history_issue(x,from,to)}
+    else if macs_candidate(id) {following_two_source_history_issue(x,from,to)}
     else {Some("Unknown Kestner stock research profile")}
 }
 
@@ -592,10 +825,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
              "X|No exit stated"],
             "Book SPX: 36 trades, 31% win, 63 / 14 bars - only ~1/3 of bars held, so not stop-and-reverse.", cl("36", "31%", "$6/share", "63 / 14 bars", P90)),
         sd!("lkqts_macs", "Moving average confluence method (MACS)", G8, "Long/Short", Live,
-            ["F|For n = 1..20: add 5 when the n-day SMA > the 4n-day SMA; MACS ranges 0-100 (p.203)",
-             "E|\"Long signals are generated when the MACS is 60 or above, and shorts are initiated when the MACS is 40 or below.\" (p.203)",
-             "X|Reverse on the opposite entry (S&P 500 example, p.203)"],
-            IDX, cl("58", "29%", "$1/share", "107 / 29 bars", P90)),
+            ["F|Printed207:20 MA systems, n versus4n for n1..20. Declared close-SMA and complete80 actual closes; score=5 times the daily long-vote count",
+             "E|Primary detailed prose inclusive score>=60 long/<=40 short; the strict summary alternative remains disclosed source ambiguity",
+             "F|Pair equality contributes zero long votes under a declared daily-relationship convention; systems-on-long-trades does not uniquely establish equality state",
+             "X|Declared flat selected start and completed-close/next actual stock open opposite reversal; no pyramiding or fabricated terminal exit"],
+            "Named raw_native_decimal_bounded_window_sums_v4 profile. Exact native RAW closes, SHA/ordinal/date/ingested-price binding, full genuine prefix; first complete state79/fill80. Fixed stock full-prefix source comparisons matched unchanged exact references across all20 pairs with zero mismatches. Shared-author mechanical checks are not blind replication. Fixed AAPL1990-01-01..2001-12-31 and RELIANCE2001-01-01..2010-12-31: MACS and TIAR each matched four ordinary normalized-account cases (fees/slippage0/0 and3/2bps per side, rollover0) and16 direct production-function responses (detail, readiness, selected summary, singleton optimizer) against unchanged source/account references with zero mismatches (combined32responses/eightaccounts). Selected API states and earlier full-prefix source evidence have separate scope. HTTP transport/request-matrix, browser and deployment are separate acceptance gates. Every requested run still needs its own source/data/account checks; data readiness alone does not certify account support. Original mixed-instrument volatility-dollar sizing and book performance are not reproduced. No index/ETF/derivative/basket, quote-adjustment, complete-calendar, borrow or historical-membership certification. See docs/kestner-macs-raw-stock-research.md.",
+            cl("58", "29%", "$1/share", "107 / 29 bars", P90)),
         sd!("lkqts_nei", "Normalized envelope indicator (NEI)", G8, "Long/Short", Live,
             ["F|NEI = (Close - average of past 50 closes)/standard deviation of past 50 price changes; past NEIs use today's sigma (p.213)",
              "F|Sort the last 50 NEIs: upper band = today's 50-day MA + 10th-ranked NEI, lower band = 50-day MA + 40th-ranked NEI (p.213); the NEI is in sigma units, so it is converted back to price (x today's sigma) - this reading gives SPX 98 trades / 65% win vs the book's 98 / 66% (as printed, unscaled: 157 / 39%) [fitted reading]",
@@ -613,10 +848,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
              "X|Reverse on the opposite entry (TXN example, p.219)"],
             IDX, cl("51", "65%", "-$7/share", "29 / 113 bars", P90)),
         sd!("lkqts_tiar", "Three in a row", G8, "Long/Short", Live,
-            ["E|Buy: close > close 5 days ago; close 5 days ago > close 10 days ago; close 10 days ago > close 15 days ago (p.222)",
-             "E|Short: the three comparisons reversed (p.227)",
-             "X|Reverse on the opposite entry"],
-            IDX, cl("78", "33%", "$0/share", "67 / 24 bars", P90)),
+            ["E|Printed222/227: long close>close5>close10>close15; short strict reverse chain at each completed close. Exact fixed step5; equality supplies no new direction",
+             "F|Genuine full-prefix actual closes; first complete state15, earliest next-open16. Strict close levels, not observed crossings or three consecutive daily returns",
+             "X|Declared Chapter8 research convention: flat selected start, next actual stock open, opposite entry exits/reverses; same-side repeats do not add; terminal holding is marked, not fabricated as a closed exit"],
+            "Fixed selected-stock research profile tiar_close_lags5_10_15_strict_levels_flatstart_nextopen_reverse. Fixed AAPL1990–2001/RELIANCE2001–2010 source events, four zero/nonzero-cost ordinary accounts and16 detail/readiness/selected-summary/singleton-optimizer production-function responses matched unchanged references. Shared-author mechanical checks are not blind independent replication. Selected API states and earlier full-prefix source proof are separate evidence; HTTP transport/request-matrix, browser and deployment are separate acceptance gates. Original mixed-instrument volatility-dollar sizing, book dollar performance, borrow, adjustment correctness, complete exchange calendars and historical populations are not certified. See docs/kestner-tiar-stock-research.md.",
+            cl("78", "33%", "$0/share", "67 / 24 bars", P90)),
         StrategyDef { needs_volume: true, ..sd!("lkqts_volrev", "Volume reversal strategy", G8, "Long/Short", Live,
             ["F|Five-day absolute price change > 100-day standard deviation of price changes (p.227)",
              "F|Five-day average volume < 75% of \"the five-day average volume beginning 10 days prior\" (days t-10..t-6) (p.227)",
@@ -768,10 +1004,10 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "lkqts_kma" => vec![p("n1", "Short MA length", 20., 5., 50., 5.), p("n2", "Long MA length", 80., 40., 200., 10.), p("x_one", "Filter: compare with yesterday (1, book's GE example and results) or n days ago (0, p.183 'typically')", 1., 0., 1., 1.)],
         "lkqts_sob" => vec![p("search", "Maximum current-inclusive close horizon", 80., 80., 80., 1.), p("chan", "Current-inclusive statistic channel", 40., 40., 40., 1.), p("min", "Strict absolute statistic threshold", 20., 20., 20., 1.)],
         "lkqts_macdhr" => vec![p("retrace", "Retracement of the extreme", 0.25, 0.1, 0.5, 0.05), p("arm", "Arming level, x sigma(20)", 0.5, 0.0, 2.0, 0.25), p("sd_n", "Sigma look-back", 20., 10., 50., 5.)],
-        "lkqts_macs" => vec![p("long", "Long at MACS >=", 60., 50., 90., 5.), p("short", "Short at MACS <=", 40., 10., 50., 5.)],
+        "lkqts_macs" => vec![p("long", "Fixed inclusive long score", 60., 60., 60., 1.), p("short", "Fixed inclusive short score", 40., 40., 40., 1.)],
         "lkqts_nei" => vec![p("n", "Look-back days", 50., 20., 100., 10.), p("up", "Upper band rank", 10., 1., 25., 1.), p("dn", "Lower band rank", 40., 25., 50., 1.), p("scale", "Band = MA + ranked NEI x sigma (1, reproduces the book's SPX table) or + NEI as printed (0)", 1., 0., 1., 1.)],
         "lkqts_adjsto" => vec![p("n", "Stochastic days", 14., 5., 30., 1.), p("long_n", "Range normaliser days", 100., 50., 200., 10.), p("lo", "Long cross above", 35., 20., 45., 1.), p("hi", "Short cross below", 65., 55., 80., 1.)],
-        "lkqts_tiar" => vec![p("step", "Days between closes", 5., 2., 10., 1.)],
+        "lkqts_tiar" => vec![p("step", "Fixed close lag unit (5/10/15 actual observations)", 5., 5., 5., 1.)],
         "lkqts_volrev" => vec![p("sd_n", "Sigma look-back", 100., 20., 250., 10.), p("vol_pct", "Volume ratio below", 0.75, 0.5, 1.0, 0.05), p("hold", "Exit on day N of the trade", 5., 2., 10., 1.), p("exit_close", "Exit at that day's close (1) instead of open (0)", 0., 0., 1., 1.)],
         "lkqts_saitta" => vec![p("n", "SMA of highs/lows", 20., 5., 50., 5.), p("hl", "Tops/bottoms from highs/lows (1) instead of closes (0)", 0., 0., 1., 1.)],
         "lkqts_d100" => vec![p("n", "MA / sigma days", 100., 20., 250., 10.), p("k", "Entry threshold", 2.5, 1., 4., 0.25)],
@@ -890,6 +1126,9 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         return None;
     }
     if id=="lkqts_sob" && (validate_sob_candidate(p).is_some() || sob_history_issue(x,from,to).is_some()) {return None;}
+    if tiar_candidate(id) {return tiar_source_run(x,from,to,p);}
+    // RAW-native MACS requires a typed verified series; generic Ctx dispatch must not fall back.
+    if macs_candidate(id) {return None;}
     if stock_candidate(id) && validate_stock_candidate(id,p).is_some() { return None; }
     if next_candidate(id) && (validate_next_candidate(id,p).is_some() || next_history_issue(x,from,to).is_some()) {return None;}
     let defs = params(id)?;
@@ -1005,16 +1244,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             }
             sar(x, from, to, &sig, "histogram retraced 25% of its trough", "histogram retraced 25% of its peak")
         }
-        "lkqts_macs" => {
-            let pairs: Vec<(Vec<f64>, Vec<f64>)> = (1..=20).map(|k| (sma(c, k), sma(c, 4 * k))).collect();
-            let (lo, hi) = (g("short"), g("long"));
-            let sig: Vec<i8> = (0..n).map(|i| {
-                if i + 1 < 80 { return 0 }
-                let m: f64 = pairs.iter().map(|(a, b)| if a[i] > b[i] { 5.0 } else { 0.0 }).sum();
-                if m >= hi { 1 } else if m <= lo { -1 } else { 0 }
-            }).collect();
-            sar(x, from, to, &sig, "MACS >= 60", "MACS <= 40")
-        }
+
         "lkqts_nei" => {
             let m = u("n");
             let (up, dn) = (u("up").min(m), u("dn").min(m));
@@ -1046,14 +1276,6 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 if r2 > 0.0 { (k[i] - 50.0) * r1 / r2 + 50.0 } else { f64::NAN }
             }).collect();
             stoch_sar(&a, from, to, x, g("lo"), g("hi"))
-        }
-        "lkqts_tiar" => {
-            let s = u("step");
-            let sig: Vec<i8> = (0..n).map(|i| {
-                if i < 3 * s { 0 } else if c[i] > c[i - s] && c[i - s] > c[i - 2 * s] && c[i - 2 * s] > c[i - 3 * s] { 1 }
-                else if c[i] < c[i - s] && c[i - s] < c[i - 2 * s] && c[i - 2 * s] < c[i - 3 * s] { -1 } else { 0 }
-            }).collect();
-            sar(x, from, to, &sig, "three rising 5-day steps", "three falling 5-day steps")
         }
         "lkqts_volrev" => {
             let sd = sd_chg(c, u("sd_n"));

@@ -5,6 +5,9 @@ use std::{collections::BTreeMap,path::{Path,PathBuf,Component},io::{Read,Write},
 #[path="pristine_data.rs"]
 pub(crate) mod pristine_data;
 
+#[path="macs_source_data.rs"]
+pub(crate) mod macs_source_data;
+
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Market { India, UnitedStates }
 impl Market {
@@ -191,6 +194,36 @@ impl Catalogue {
         let provenance=self.provenance_json(key).ok_or(DataError::UnknownQualifiedTicker)?;
         Ok(pristine_data::from_verified_catalogue(key,&entry.symbol,&entry.evidence,provenance,decoded))
     }
+    /// Separate strategy-specific precision domain. Legacy rows()/parse_rows(),
+    /// Pristine and all other methods retain their existing admission behavior.
+    /// Whole-file hash/format/coverage remain mandatory; raw close/date/binary64 identity and exact RAW decimal values
+    /// are additionally retained for every actual observation0..=to, without repair.
+    pub(crate) fn macs_raw_decimal_series(&self,key:&str,to:usize)
+        -> Result<macs_source_data::ValidatedSeries,macs_source_data::DataError> {
+        use macs_source_data::DataError;
+        let entry=self.entries.get(key).ok_or_else(||DataError::Source("Unknown qualified MACS stock symbol".into()))?;
+        if entry.evidence.asset_type()!="individual_stock" { return Err(DataError::UnsupportedStockEvidence); }
+        let error=|message:&str|DataError::Source(message.into());
+        let path=self.root.join(&entry.path).canonicalize().map_err(|_|error("Native MACS CSV unavailable"))?;
+        if !path.starts_with(&self.root) { return Err(error("Native MACS path escapes its whitelist directory")); }
+        let file=std::fs::File::open(path).map_err(|_|error("Native MACS CSV unavailable"))?;
+        if file.metadata().map_err(|_|error("Native MACS metadata unavailable"))?.len()>32*1024*1024 {
+            return Err(error("Native MACS CSV exceeds memory admission limit"));
+        }
+        let mut bytes=Vec::new();
+        file.take(32*1024*1024+1).read_to_end(&mut bytes).map_err(|_|error("Native MACS CSV read failed"))?;
+        if bytes.len()>32*1024*1024 { return Err(error("Native MACS CSV exceeds memory admission limit")); }
+        if sha256_hex(&bytes).map_err(DataError::Source)?!=entry.csv_sha { return Err(error("Native MACS SHA-256 changed from whitelist")); }
+        let text=std::str::from_utf8(&bytes).map_err(|_|error("Native MACS CSV is not UTF-8"))?;
+        let provenance=self.provenance_json(key).ok_or_else(||error("Native MACS provenance unavailable"))?;
+        let series=macs_source_data::from_verified_catalogue(key,&entry.symbol,&entry.evidence,provenance,&entry.csv_sha,text,to)?;
+        let rows=series.rows();
+        if rows.len()!=entry.bars || rows.first().unwrap().date!=entry.first || rows.last().unwrap().date!=entry.last {
+            return Err(error("Native MACS coverage disagrees with whitelist"));
+        }
+        Ok(series)
+    }
+
     pub fn provenance_json(&self,key:&str)->Option<String>{
         self.entries.get(key).map(|e|{let mut json=format!("{{\"qualified_ticker\":\"{}\",\"symbol\":\"{}\",\"basket\":\"{}\",\"source\":\"{}\",\"source_sha256\":\"{}\",\"csv_sha256\":\"{}\",\"membership\":\"{}\",\"first\":\"{}\",\"last\":\"{}\",\"bars\":{},\"excluded_prefix_count\":{},\"original_bars\":{},\"coverage_note\":\"{}\",\"quote_accuracy_independently_verified\":false,\"basis\":\"Actual native daily vendor OHLC and volume; unknown auxiliary fields are not trading signals. Current watchlist membership is a snapshot, not historical membership: retrospective universe selection has survivorship bias. Cash-stock F&O eligibility does not establish futures contracts or roll events.\"}}",esc(key),esc(&e.symbol),esc(&e.basket),esc(&e.source),e.source_sha,e.csv_sha,esc(&e.membership),e.first,e.last,e.bars,e.excluded_prefix,e.original_bars,esc(&e.coverage_note));json.pop();json.push_str(&format!(",\"basket_member\":{},\"basket_expected_members\":{},{}}}",e.basket_member,self.expected_member_count(&e.basket).map_or("null".into(),|n|n.to_string()),e.evidence.json()));json})
     }

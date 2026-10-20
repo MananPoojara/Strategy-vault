@@ -251,6 +251,7 @@ struct Run {
 }
 
 fn backtest_costs(ctx:&Ctx,id:&str,from:usize,to:usize,costs:accounting::Costs,p:&Params)->Result<Run,String>{
+    if books::lkqts::macs_candidate(id){return Err("needs_data: MACS requires the selected server-qualified RAW native series; generic Ctx/canonical fallback is unsupported".into());}
     if books::hbqts::reviewed::is_dema_index(id) {
         let trades=connors::run(id,ctx,from,to,p).ok_or("QTS DEMA source implementation unavailable")?;
         trade_validation::check_structure(&trades,from,to)?;
@@ -262,6 +263,14 @@ fn backtest_costs(ctx:&Ctx,id:&str,from:usize,to:usize,costs:accounting::Costs,p
     let account=books::hbiab_reviewed::run_with_bps(id,ctx,from,to,costs.fees_bps,costs.slippage_bps,p)?;
     trade_validation::check(&account.trades,from,to,0.)?;
     Ok(Run{trades:account.trades.clone(),from,to,equity:account.days.iter().map(|d|d.equity).collect(),bh:(from..=to).map(|k|ctx.c[k]/ctx.c[from]).collect(),source_account:None,bandy_account:Some(account),unit_exposure_report:None})
+}
+
+fn selected_backtest_costs(selected:&SelectedContext,st:&State,q:&BTreeMap<String,String>,ctx:&Ctx,id:&str,from:usize,to:usize,costs:accounting::Costs,p:&Params)->Result<Run,String>{
+    if !books::lkqts::macs_candidate(id){return backtest_costs(ctx,id,from,to,costs,p);}
+    let series=selected.macs_raw_series(st,q,ctx,to)?;
+    let trades=books::lkqts::macs_raw_source_run(&series,from,to,p,books::lkqts::MacsThresholdProfile::DetailedProseInclusive)
+        .ok_or("calculation_unavailable: MACS RAW native source states or execution are unsupported")?;
+    normalized_run(ctx,trades,from,to,costs.side_rate())
 }
 
 fn backtest(ctx: &Ctx, id: &str, from: usize, to: usize, cost: f64, p: &Params) -> Result<Run,String> {
@@ -597,6 +606,19 @@ enum SelectedContext<'a>{Preloaded(&'a Ctx<'static>),Native{rows:Vec<Row>,eviden
 enum ContextRef<'a>{Preloaded(&'a Ctx<'a>),Native(Ctx<'a>)}
 impl<'a> std::ops::Deref for ContextRef<'a>{type Target=Ctx<'a>;fn deref(&self)->&Self::Target{match self{Self::Preloaded(c)=>c,Self::Native(c)=>c}}}
 impl SelectedContext<'_>{
+    /// MACS-only fresh typed source. Global summaries and optimizer subwindows
+    /// retain their existing semantics; each call binds its own genuine0..to prefix.
+    fn macs_raw_series(&self,st:&State,q:&BTreeMap<String,String>,ctx:&Ctx,to:usize)
+        ->Result<baskets::macs_source_data::ValidatedSeries,String>{
+        let bad=||"needs_data: MACS requires the same actual server-qualified native stock rows and complete RAW decimal prefix; no request flag or rounded-price fallback is accepted".to_owned();
+        if !matches!(self,Self::Native{evidence,..} if evidence.asset_type()=="individual_stock") || to>=ctx.r.len(){return Err(bad());}
+        let key=q.get("ticker").ok_or_else(bad)?;
+        let series=st.baskets.macs_raw_decimal_series(key,to).map_err(|e|format!("needs_data: {e}"))?;
+        if series.rows().len()!=ctx.r.len() || series.rows()[..=to].iter().zip(&ctx.r[..=to]).any(|(a,b)|
+            a.ticker!=b.ticker || a.date!=b.date || [a.open,a.high,a.low,a.close].map(f64::to_bits)!=[b.open,b.high,b.low,b.close].map(f64::to_bits)) {return Err(bad());}
+        Ok(series)
+    }
+
     fn context<'a>(&'a self,st:&'a State)->ContextRef<'a>{
         match self {
             Self::Preloaded(c)=>ContextRef::Preloaded(c),
@@ -678,6 +700,7 @@ fn native_admission(ctx:&Ctx,def:&connors::StrategyDef,from:usize,to:usize,selec
     if connors::params(def.id).iter().any(|p|p.key=="lf")&&ctx.lf[from.max(19).min(to)..=to].iter().any(|v|!v.is_finite()){
         return Some(readiness::Issue{status:"needs_data",note:format!("This stock strategy requires the Liquidity Filter denominator from actual {benchmark} benchmark close and volume. Benchmark volume/coverage is missing; stock OHLC or unknown auxiliary fields cannot replace it.")});
     }
+    if books::lkqts::macs_candidate(def.id){if let Err(note)=selected.macs_raw_series(st,q,ctx,to){return Some(readiness::Issue{status:"needs_data",note});}}
     None
 }
 
@@ -762,6 +785,12 @@ fn checked_params_of(q: &BTreeMap<String, String>) -> Result<Params,String> {
         let schema=books::lkqts::params(id).ok_or("Unknown Kestner stock candidate")?;
         if books::lkqts::sob_candidate(id) && q.keys().any(|key| matches!(key.as_str(),"profile"|"source_profile"|"source_convention"|"execution_scope")) {
             return Err("Kestner SOB profile and source convention are server-owned; request overrides are unsupported".into());
+        }
+        if books::lkqts::tiar_candidate(id) && q.keys().any(|key| matches!(key.as_str(),"profile"|"source_profile"|"source_convention"|"execution_scope")) {
+            return Err("Kestner TIAR profile and source convention are server-owned; request overrides are unsupported".into());
+        }
+        if books::lkqts::macs_candidate(id) && q.keys().any(|key|matches!(key.as_str(),"profile"|"source_profile"|"source_convention"|"execution_scope"|"numeric_convention")) {
+            return Err("Kestner MACS RAW profile and numeric/source convention are server-owned; request overrides are unsupported".into());
         }
         for (key,text) in q {
             if let Some(name)=key.strip_prefix("p.") {
@@ -1046,7 +1075,7 @@ fn summary(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
             rows.push(format!("{{\"id\":\"{}\",\"blocked\":\"{}\",\"readiness\":\"needs_data\"}}", d.id,note));
             continue;
         };
-        let run = match backtest_costs(ctx,d.id,from,to,costs,&Params::new()){Ok(run)=>run,Err(note)=>{rows.push(format!("{{\"id\":\"{}\",\"blocked\":\"{}\",\"readiness\":\"calculation_unavailable\"}}",d.id,esc(&note)));continue;}};
+        let run = match selected_backtest_costs(&selected,st,q,ctx,d.id,from,to,costs,&Params::new()){Ok(run)=>run,Err(note)=>{rows.push(format!("{{\"id\":\"{}\",\"blocked\":\"{}\",\"readiness\":\"calculation_unavailable\"}}",d.id,esc(&note)));continue;}};
         // ~120-point equity sparkline for the strategy list
         let step = (run.equity.len() / 120).max(1);
         let spark: Vec<String> = run.equity.iter().step_by(step).map(|v| if run.unit_exposure_report.is_some(){unit_exposure_report::number(*v)}else{num(*v)}).collect();
@@ -1065,19 +1094,24 @@ struct DiagnosticSeries {
     trend: Option<(usize, Vec<f64>)>,
     kestner_next: Option<books::lkqts::NextDiagnostics>,
     kestner_sob: Option<books::lkqts::SobDiagnostics>,
+    kestner_tiar: Option<books::lkqts::TiarSourceDiagnostics>,
+    kestner_macs: Option<books::lkqts::MacsSourceDiagnostics>,
 }
 fn diagnostic_series(ctx: &Ctx, id: &str, p: &Params) -> DiagnosticSeries {
     diagnostic_series_through(ctx,id,p,ctx.r.len().saturating_sub(1))
 }
 fn diagnostic_series_through(ctx: &Ctx,id: &str,p: &Params,to: usize) -> DiagnosticSeries {
+    if books::lkqts::tiar_candidate(id) {
+        return DiagnosticSeries{rsi:None,ma:None,trend:None,kestner_next:None,kestner_sob:None,kestner_tiar:books::lkqts::tiar_source_diagnostics(ctx,to,p),kestner_macs:None};
+    }
     if books::lkqts::sob_candidate(id) {
-        return DiagnosticSeries{rsi:None,ma:None,trend:None,kestner_next:None,kestner_sob:books::lkqts::sob_diagnostics(ctx,to,p)};
+        return DiagnosticSeries{rsi:None,ma:None,trend:None,kestner_next:None,kestner_sob:books::lkqts::sob_diagnostics(ctx,to,p),kestner_tiar:None,kestner_macs:None};
     }
     if books::lkqts::next_candidate(id) {
-        return DiagnosticSeries{rsi:None,ma:None,trend:None,kestner_next:books::lkqts::next_diagnostics(id,ctx,to,p),kestner_sob:None};
+        return DiagnosticSeries{rsi:None,ma:None,trend:None,kestner_next:books::lkqts::next_diagnostics(id,ctx,to,p),kestner_sob:None,kestner_tiar:None,kestner_macs:None};
     }
     if id=="lkqts_ma1040" {
-        return DiagnosticSeries{rsi:None,ma:Some((10,ctx.sma_n(10).into_owned())),trend:Some((40,ctx.sma_n(40).into_owned())),kestner_next:None,kestner_sob:None};
+        return DiagnosticSeries{rsi:None,ma:Some((10,ctx.sma_n(10).into_owned())),trend:Some((40,ctx.sma_n(40).into_owned())),kestner_next:None,kestner_sob:None,kestner_tiar:None,kestner_macs:None};
     }
     let schema = connors::params(id);
     let period = |key: &str, kind: &str| {
@@ -1093,7 +1127,7 @@ fn diagnostic_series_through(ctx: &Ctx,id: &str,p: &Params,to: usize) -> Diagnos
         ma: period("ma", "sma").map(|n| (n, ctx.sma_n(n).into_owned())),
         trend: period("trend", "sma").map(|n| (n, ctx.sma_n(n).into_owned())),
         kestner_next:None,
-        kestner_sob:None,
+        kestner_sob:None,kestner_tiar:None,kestner_macs:None,
     }
 }
 
@@ -1102,6 +1136,60 @@ fn kestner_next_rule_state(i:usize,series:&DiagnosticSeries)->String {
     let Some(Some(state))=d.states.get(i) else {return "null".into()};
     let values=state.values.iter().map(|(name,value)|format!("\"{name}\":{}",full_precision_trade_return(*value))).collect::<Vec<_>>().join(",");
     format!("{{\"profile\":\"{}\",{},\"long_condition\":{},\"short_condition\":{}}}",d.profile,values,state.long_condition,state.short_condition)
+}
+
+
+fn kestner_macs_rule_state(i:usize,series:&DiagnosticSeries)->String {
+    let Some(d)=&series.kestner_macs else{return "null".into()};let Some(Some(s))=d.states.get(i) else{return "null".into()};
+    let pairs=s.pairs.iter().map(|p|format!("{{\"short_length\":{},\"long_length\":{},\"comparison_anchor\":{},\"centered_short_mean\":{},\"centered_long_mean\":{},\"pair_long\":{},\"pair_short\":{},\"pair_tie\":{}}}",p.short_length,p.long_length,full_precision_trade_return(p.comparison_anchor),full_precision_trade_return(p.centered_short_mean),full_precision_trade_return(p.centered_long_mean),p.pair_long,p.pair_short,p.pair_tie)).collect::<Vec<_>>().join(",");
+    format!("{{\"profile\":\"{}\",\"arithmetic_convention\":\"{}\",\"pairs\":[{pairs}],\"long_pairs\":{},\"short_pairs\":{},\"tied_pairs\":{},\"macs\":{},\"long_condition\":{},\"short_condition\":{}}}",d.profile,d.arithmetic_convention,s.long_pairs,s.short_pairs,s.tied_pairs,s.macs,s.long_condition,s.short_condition)
+}
+
+fn validate_macs_execution_clocks(ctx:&Ctx,run:&Run,series:&DiagnosticSeries)->Result<(),String> {
+    let fail=||"calculation_unavailable: MACS source trade cannot be bound to its completed-close predicate and next actual open or terminal mark".to_owned();
+    let d=series.kestner_macs.as_ref().ok_or_else(fail)?;
+    if d.profile!=books::lkqts::MACS_SOURCE_PROFILE || d.arithmetic_convention!=books::lkqts::MACS_RAW_NUMERIC_CONVENTION || d.states.len()!=run.to+1 {return Err(fail());}
+    let side=|i:usize,dir:f64|d.states.get(i).and_then(Option::as_ref).is_some_and(|s|
+        match dir {1.=>s.long_condition && !s.short_condition,-1.=>s.short_condition && !s.long_condition,_=>false});
+    for t in &run.trades {
+        if t.legs.len()!=1 || t.legs[0].w!=1. || t.entry_kind!="open" || !t.exits.is_empty() {return Err(fail());}
+        let e=&t.legs[0];
+        if e.i<=run.from || e.i>run.to || e.px!=ctx.o[e.i] || !side(e.i-1,t.dir)
+            || t.exit_i<e.i || t.exit_i>run.to {return Err(fail());}
+        if t.open {
+            if t.exit_i!=run.to || t.signal_i!=run.to || t.exit_px!=ctx.c[run.to] {return Err(fail());}
+        } else if t.signal_i<e.i || t.signal_i.checked_add(1)!=Some(t.exit_i)
+            || t.exit_px!=ctx.o[t.exit_i] || !side(t.signal_i,-t.dir) {return Err(fail());}
+    }
+    Ok(())
+}
+
+
+/// Full-precision backend TIAR source state; no inferred/frontend indicator recurrence.
+fn kestner_tiar_rule_state(i:usize,series:&DiagnosticSeries)->String {
+    let Some(d)=&series.kestner_tiar else {return "null".into()};
+    let Some(Some(s))=d.states.get(i) else {return "null".into()};
+    format!("{{\"profile\":\"{}\",\"close\":{},\"close_lag5\":{},\"close_lag10\":{},\"close_lag15\":{},\"long_condition\":{},\"short_condition\":{}}}",d.profile,full_precision_trade_return(s.close),full_precision_trade_return(s.close_lag5),full_precision_trade_return(s.close_lag10),full_precision_trade_return(s.close_lag15),s.long_condition,s.short_condition)
+}
+
+/// Validate actual one-leg next-open/reversal/terminal structures before serializing clocks.
+fn validate_tiar_execution_clocks(ctx:&Ctx,run:&Run,series:&DiagnosticSeries)->Result<(),String> {
+    let fail=||"calculation_unavailable: TIAR source trade cannot be bound to its completed-close predicate and next actual open or terminal mark".to_owned();
+    let d=series.kestner_tiar.as_ref().ok_or_else(fail)?;
+    if d.profile!=books::lkqts::TIAR_SOURCE_PROFILE || d.states.len()!=run.to+1 {return Err(fail());}
+    let side=|i:usize,dir:f64|d.states.get(i).and_then(Option::as_ref).is_some_and(|s|
+        match dir {1.=>s.long_condition && !s.short_condition,-1.=>s.short_condition && !s.long_condition,_=>false});
+    for t in &run.trades {
+        if t.legs.len()!=1 || t.legs[0].w!=1. || t.entry_kind!="open" || !t.exits.is_empty() {return Err(fail());}
+        let e=&t.legs[0];
+        if e.i<=run.from || e.i>run.to || e.px!=ctx.o[e.i] || !side(e.i-1,t.dir)
+            || t.exit_i<e.i || t.exit_i>run.to {return Err(fail());}
+        if t.open {
+            if t.exit_i!=run.to || t.signal_i!=run.to || t.exit_px!=ctx.c[run.to] {return Err(fail());}
+        } else if t.signal_i<e.i || t.signal_i.checked_add(1)!=Some(t.exit_i)
+            || t.exit_px!=ctx.o[t.exit_i] || !side(t.signal_i,-t.dir) {return Err(fail());}
+    }
+    Ok(())
 }
 
 /// Source state comes from the same fixed SOB diagnostic used by its runner.
@@ -1162,8 +1250,8 @@ fn hv_exit_snapshot(ctx:&Ctx,t:&Trade)->String {
 fn kestner_execution_clock(ctx:&Ctx,id:&str,t:&Trade,series:&DiagnosticSeries)->String {
     let precise=full_precision_trade_return;
     let state=|i:usize| {
-        if books::lkqts::next_candidate(id) || books::lkqts::sob_candidate(id) {
-            let rule_state=if books::lkqts::sob_candidate(id){kestner_sob_rule_state(i,series)}else{kestner_next_rule_state(i,series)};
+        if books::lkqts::next_candidate(id) || books::lkqts::sob_candidate(id) || books::lkqts::tiar_candidate(id) || books::lkqts::macs_candidate(id) {
+            let rule_state=if books::lkqts::macs_candidate(id){kestner_macs_rule_state(i,series)}else if books::lkqts::tiar_candidate(id){kestner_tiar_rule_state(i,series)}else if books::lkqts::sob_candidate(id){kestner_sob_rule_state(i,series)}else{kestner_next_rule_state(i,series)};
             if rule_state=="null" || i>=ctx.r.len() {return "null".into();}
             return format!("{{\"date\":\"{}\",\"phase\":\"completed_close\",\"close\":{},\"rule_state\":{rule_state}}}",ctx.r[i].date,precise(ctx.c[i]));
         }
@@ -1222,20 +1310,26 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     }
     costs.ensure_rollover()?;
     let from = window_start(ctx, def, from).filter(|&f| f < to || (f==to && reviewed_single_session(id))).ok_or("Required volatility-index data does not cover this period")?;
-    let run = backtest_costs(ctx, id, from, to, costs, &p)?;
+    let run = selected_backtest_costs(&selected,st,q,ctx,id,from,to,costs,&p)?;
     if run.unit_exposure_report.is_some() {
         let mut output=unit_exposure_detail::render(ctx,&run,costs)?;output.pop();let _=write!(output,",\"provenance\":{}}}",source_provenance(st,q));return Ok(output);
     }
     if run.bandy_account.is_some() {
         let mut output=bandy_detail(ctx,id,from,to,costs,&run);output.pop();let _=write!(output,",\"provenance\":{}}}",source_provenance(st,q));return Ok(output);
     }
-    let diagnostics = diagnostic_series_through(ctx,id,&p,to);
+    let mut diagnostics = diagnostic_series_through(ctx,id,&p,to);
+    if books::lkqts::macs_candidate(id){
+        let series=selected.macs_raw_series(st,q,ctx,to)?;
+        diagnostics.kestner_macs=books::lkqts::macs_raw_source_diagnostics(&series,to,&p,books::lkqts::MacsThresholdProfile::DetailedProseInclusive);
+        validate_macs_execution_clocks(ctx,&run,&diagnostics)?;
+    }
     if books::lkqts::next_candidate(id) && diagnostics.kestner_next.is_none() {return Err("calculation_unavailable: Kestner causal indicator states are unavailable for the genuine selected prefix".into());}
     if books::lkqts::sob_candidate(id) {validate_sob_execution_clocks(ctx,&run,&diagnostics)?;}
-    let price_number:fn(f64)->String=if books::lkqts::next_candidate(id) || books::lkqts::sob_candidate(id) {full_precision_trade_return} else {num};
+    if books::lkqts::tiar_candidate(id) {validate_tiar_execution_clocks(ctx,&run,&diagnostics)?;}
+    let price_number:fn(f64)->String=if books::lkqts::next_candidate(id) || books::lkqts::sob_candidate(id) || books::lkqts::tiar_candidate(id) || books::lkqts::macs_candidate(id) {full_precision_trade_return} else {num};
     // Keep all existing profiles' row precision unchanged. SOB source fills must
     // bind exactly to the full-precision native quotes and causal clock.
-    let fill_number:fn(f64)->String=if books::lkqts::sob_candidate(id){full_precision_trade_return}else{num};
+    let fill_number:fn(f64)->String=if books::lkqts::sob_candidate(id) || books::lkqts::tiar_candidate(id) || books::lkqts::macs_candidate(id){full_precision_trade_return}else{num};
     let mut o = String::with_capacity(1 << 20);
     let arr = |v: &mut String, it: &mut dyn Iterator<Item = String>| {
         v.push('[');
@@ -1282,6 +1376,24 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         for i in from..=to {
             if i>from {o.push(',');}
             let _=write!(o,"{{\"source_index\":{i},\"date\":\"{}\",\"phase\":\"completed_close\",\"close\":{},\"rule_state\":{}}}",ctx.r[i].date,full_precision_trade_return(ctx.c[i]),kestner_sob_rule_state(i,&diagnostics));
+        }
+        o.push_str("]}");
+    }
+    if let Some(d)=&diagnostics.kestner_tiar {
+        let qualified=q.get("ticker").filter(|key|st.baskets.native_evidence(key).is_some()).ok_or("needs_data: TIAR report requires the actual server-qualified stock identity")?;
+        let _=write!(o,",\"kestner_research\":{{\"id\":\"{}\",\"book\":\"lkqts\",\"qualified_ticker\":\"{}\",\"ticker\":\"{}\",\"provenance\":{},\"profile\":\"{}\",\"source_convention\":\"{}\",\"states\":[",esc(id),esc(qualified),esc(&ctx.r[from].ticker),source_provenance(st,q),d.profile,esc(books::lkqts::tiar_source_convention()));
+        for i in from..=to {
+            if i>from {o.push(',');}
+            let _=write!(o,"{{\"source_index\":{i},\"date\":\"{}\",\"phase\":\"completed_close\",\"close\":{},\"rule_state\":{}}}",ctx.r[i].date,full_precision_trade_return(ctx.c[i]),kestner_tiar_rule_state(i,&diagnostics));
+        }
+        o.push_str("]}");
+    }
+    if let Some(d)=&diagnostics.kestner_macs {
+        let qualified=q.get("ticker").filter(|key|st.baskets.native_evidence(key).is_some()).ok_or("needs_data: MACS report requires the actual server-qualified stock identity")?;
+        let _=write!(o,",\"kestner_research\":{{\"id\":\"{}\",\"book\":\"lkqts\",\"qualified_ticker\":\"{}\",\"ticker\":\"{}\",\"provenance\":{},\"profile\":\"{}\",\"source_convention\":\"{}\",\"states\":[",esc(id),esc(qualified),esc(&ctx.r[from].ticker),source_provenance(st,q),d.profile,esc(books::lkqts::macs_source_convention()));
+        for i in from..=to {
+            if i>from {o.push(',');}
+            let _=write!(o,"{{\"source_index\":{i},\"date\":\"{}\",\"phase\":\"completed_close\",\"close\":{},\"rule_state\":{}}}",ctx.r[i].date,full_precision_trade_return(ctx.c[i]),kestner_macs_rule_state(i,&diagnostics));
         }
         o.push_str("]}");
     }
@@ -1427,11 +1539,11 @@ fn optimize(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> 
         .filter(|&s| s > from + 20 && s + 20 < to);
     let metrics_v = |p: &Params| -> Result<Vec<f64>,String> {
         if let Some(issue)=readiness::check(ctx,def,from,to,p){return Err(issue.note);}
-        let full = backtest_costs(ctx, id, from, to, costs, p)?;
+        let full = selected_backtest_costs(&selected,st,q,ctx,id,from,to,costs,p)?;
         let s = financial_stats(ctx, &full, costs);
         let mut out: Vec<f64> = FULL_COLS.iter().map(|k| s[k]).collect();
         for (a, b) in split.map(|s| [(from, s - 1), (s, to)]).into_iter().flatten() {
-            let r = backtest_costs(ctx, id, a, b, costs, p)?;
+            let r = selected_backtest_costs(&selected,st,q,ctx,id,a,b,costs,p)?;
             let s = financial_stats(ctx, &r, costs);
             out.extend(PART_COLS.iter().map(|k| s[k]));
         }
@@ -1472,9 +1584,8 @@ fn optimize(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> 
     let col = |name: &str| dims.len() + FULL_COLS.iter().position(|c| *c == name).unwrap();
     // a setting must trade regularly: at least half the book setting's yearly rate, clamped to 1..5 trades a year, and 10 in total
     let yrs = years(ctx, from, to);
-    let book_tpy = book_metrics[FULL_COLS.iter().position(|c| *c == "trades").unwrap()] / yrs;
-    let per_year = (book_tpy * 0.5).clamp(MIN_PER_YEAR.0, MIN_PER_YEAR.1);
-    let min_trades = (per_year * yrs).ceil().max(MIN_TRADES);
+    let book_trades = book_metrics[FULL_COLS.iter().position(|c| *c == "trades").unwrap()];
+    let (per_year, min_trades) = optimizer_trade_requirement(book_trades, yrs);
     // settings with identical results are one candidate, represented by the one with the fewest changes from the book
     let defs: Vec<f64> = dims.iter().map(|(k, _)| connors::params(id).iter().find(|p| p.key == *k).map_or(f64::NAN, |p| p.def)).collect();
     // Additive accounting columns must not change the historical outcome-
@@ -1505,6 +1616,20 @@ const RANK_STATS: [(&str, &str); 5] = [("cagr", "CAGR"), ("sharpe", "Sharpe"), (
 const MIN_TRADES: f64 = 10.0; // below this, Sharpe / expectancy of a combo are noise
 const MIN_PER_YEAR: (f64, f64) = (1.0, 5.0); // required trades a year = half the book's rate, kept within these bounds
 const GROUP_N: usize = 5;
+
+
+/// Keep the displayed annual rate unchanged, but round the required total in
+/// trade-count units. Dividing an integer count by years and multiplying back
+/// can turn an exact integer minimum into its next integer at ceil().
+/// Inputs come from finite closed-trade counts and the positive calendar years().
+fn optimizer_trade_requirement(book_trades: f64, yrs: f64) -> (f64, f64) {
+    let per_year = ((book_trades / yrs) * 0.5).clamp(MIN_PER_YEAR.0, MIN_PER_YEAR.1);
+    let min_trades = (book_trades * 0.5)
+        .clamp(MIN_PER_YEAR.0 * yrs, MIN_PER_YEAR.1 * yrs)
+        .ceil()
+        .max(MIN_TRADES);
+    (per_year, min_trades)
+}
 
 /// Claude's conclusion ranking over every optimizer combination:
 /// 1. eligible = one row per distinct outcome (identical stats), kept as the setting with the fewest changes from the book, with enough closed trades (min_trades: per_year a year over the window, at least MIN_TRADES) and all five stats finite;
@@ -2363,3 +2488,128 @@ mod tests {
 
 // Private proposal: opt-in evidence only; never a production startup job.
 #[cfg(test)] mod sob_integration_tests;
+
+#[cfg(test)] mod tiar_integration_tests;
+
+#[cfg(test)] mod macs_integration_tests;
+
+#[cfg(test)]
+mod optimizer_rank_minimum_tests {
+    use super::*;
+
+    #[test]
+    fn interior_even_and_odd_counts_use_integer_half_count_ceiling() {
+        let cases: [(f64, f64, f64); 8] = [
+            (22.0, 5.3, 11.0), (23.0, 5.3, 12.0),
+            (58.0, 9.7, 29.0), (59.0, 9.7, 30.0),
+            (80.0, 12.4, 40.0), (81.0, 12.4, 41.0),
+            (120.0, 20.25, 60.0), (121.0, 20.25, 61.0),
+        ];
+        for (closed, yrs, required) in cases {
+            assert_eq!(optimizer_trade_requirement(closed, yrs).1, required,
+                       "closed={closed}, years={yrs}");
+        }
+        // Independent integer oracle in the unclamped region. The expected
+        // count does not divide by years or multiply an annual rate back.
+        for closed in 22usize..=160 {
+            for yrs in [3.3_f64, 4.0, 7.9, 9.7, 12.25, 20.5] {
+                let half_count = closed as f64 * 0.5;
+                if half_count > yrs && half_count < 5.0 * yrs {
+                    assert_eq!(optimizer_trade_requirement(closed as f64, yrs).1,
+                               ((closed + 1) / 2) as f64,
+                               "closed={closed}, years={yrs}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn displayed_per_year_is_bit_identical_to_existing_rate_policy() {
+        let cases: [(f64, f64); 7] = [
+            (0.0, 0.5), (2.0, 12.25), (22.0, 5.3), (59.0, 9.7),
+            (81.0, 12.4), (100.0, 4.0), (100.0, 4.25),
+        ];
+        for (closed, yrs) in cases {
+            // Backward-compatibility oracle: retain precisely the former
+            // display calculation, independently of the new integer minimum.
+            let old_book_tpy = closed / yrs;
+            let old_display = (old_book_tpy * 0.5).clamp(MIN_PER_YEAR.0, MIN_PER_YEAR.1);
+            assert_eq!(optimizer_trade_requirement(closed, yrs).0.to_bits(),
+                       old_display.to_bits());
+        }
+    }
+
+    #[test]
+    fn exact_required_candidate_is_eligible_and_one_less_is_excluded() {
+        let cases: [(f64, f64, f64); 5] = [
+            (28.0, 4.0, 14.0), (29.0, 4.0, 15.0),
+            (2.0, 12.0, 12.0), (100.0, 4.0, 20.0), (0.0, 0.5, 10.0),
+        ];
+        for (closed, yrs, required) in cases {
+            let (per_year, minimum) = optimizer_trade_requirement(closed, yrs);
+            assert_eq!(minimum, required);
+            // The one-less row dominates all rank stats but must never enter
+            // the eligible pool. Exactly the required count must qualify.
+            let rows = vec![
+                vec![required - 1.0, 9.0, 9.0, 9.0, 9.0, 9.0],
+                vec![required, 1.0, 1.0, 1.0, 1.0, 1.0],
+            ];
+            let (json, pool) = conclude_rank(&rows, 0, &[1, 2, 3, 4, 5], minimum, per_year, &[]);
+            assert_eq!(pool, vec![1], "{json}");
+            assert!(json.contains("\"eligible\":1"), "{json}");
+        }
+    }
+
+    #[test]
+    fn lower_annual_clamp_and_fractional_year_ceiling_are_preserved() {
+        assert_eq!(optimizer_trade_requirement(22.0, 12.0), (1.0, 12.0));
+        assert_eq!(optimizer_trade_requirement(24.0, 12.0), (1.0, 12.0));
+        assert_eq!(optimizer_trade_requirement(26.0, 12.0).1, 13.0);
+        assert_eq!(optimizer_trade_requirement(0.0, 12.25), (1.0, 13.0));
+    }
+
+    #[test]
+    fn upper_annual_clamp_and_fractional_year_ceiling_are_preserved() {
+        assert_eq!(optimizer_trade_requirement(38.0, 4.0).1, 19.0);
+        assert_eq!(optimizer_trade_requirement(40.0, 4.0), (5.0, 20.0));
+        assert_eq!(optimizer_trade_requirement(42.0, 4.0), (5.0, 20.0));
+        assert_eq!(optimizer_trade_requirement(100.0, 4.25), (5.0, 22.0));
+    }
+
+    #[test]
+    fn global_ten_closed_trade_floor_still_applies() {
+        for (closed, yrs) in [(0.0, 0.5), (2.0, 2.0), (100.0, 1.5), (100.0, 2.0)] {
+            assert_eq!(optimizer_trade_requirement(closed, yrs).1, 10.0);
+        }
+        assert_eq!(optimizer_trade_requirement(100.0, 2.25).1, 12.0);
+    }
+
+    fn calendar_years(from: &str, to: &str) -> f64 {
+        // Synthetic prices, only two observations: years must use real elapsed
+        // calendar dates, never a row-count/trading-days approximation.
+        let rows = [from, to].map(|date| Row {
+            ticker: "RANK_TEST".into(), date: date.into(), open: 100.0,
+            high: 101.0, low: 99.0, close: 100.0, volume: None,
+        });
+        let ctx = Ctx::new(&rows, &rows, &[]);
+        years(&ctx, 0, 1)
+    }
+
+    #[test]
+    fn calendar_years_and_exact_four_year_clamp_boundary_stay_explicit() {
+        let before = calendar_years("2000-01-01", "2003-12-31");
+        let exact = calendar_years("2000-01-01", "2004-01-01");
+        let after = calendar_years("2000-01-01", "2004-01-02");
+        assert_eq!(day_number("2004-01-01") - day_number("2000-01-01"), 1461);
+        assert_eq!(exact, 4.0);
+        assert!(before < 4.0 && after > 4.0);
+        assert_eq!(optimizer_trade_requirement(100.0, before).1, 20.0);
+        assert_eq!(optimizer_trade_requirement(100.0, exact).1, 20.0);
+        // This increase is genuine elapsed-time clamp behavior, not the
+        // artificial division/multiplication +1 that the helper removes.
+        assert_eq!(optimizer_trade_requirement(100.0, after).1, 21.0);
+        let decade = calendar_years("2001-01-01", "2010-12-31");
+        assert_eq!(optimizer_trade_requirement(58.0, decade).1, 29.0);
+        assert_eq!(optimizer_trade_requirement(59.0, decade).1, 30.0);
+    }
+}
