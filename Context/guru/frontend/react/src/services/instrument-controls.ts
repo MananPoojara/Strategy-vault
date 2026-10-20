@@ -15,6 +15,11 @@ export function instrumentControls(policy?: InstrumentPolicy, id?: string, book?
   if (unitExposureMethod(id,book)) return {index:types.length===1 && types[0]==='index'
     && policy?.execution_scope==='single_symbol_index_timing_research',stock:false,basket:false,etf:false,
     note:'This reviewed rule uses actual SPX cash-index prices, or NIFTY 50 as a declared adaptation. Other indices, stocks, ETFs and baskets do not inherit this review.'};
+  if (policy?.execution_scope === 'single_symbol_stock_price_research') {
+    const stock = types.includes('individual_stock');
+    return {index:false,stock,basket:false,etf:false,
+      note:`This method uses percentage research on actual individual stock prices. ${stock ? 'Choose an admitted Stock above' : 'The current policy does not admit a Stock'}; basket execution and position limits are unavailable because no basket execution has been reviewed.`};
+  }
   if (!types.length) return { index: true, stock: true, basket: true, etf: false, note: '' };
   const index = types.includes('index'), stock = types.includes('individual_stock'), etf = types.includes('etf');
   const basket = stock && policy?.execution_scope !== 'single_symbol_source_account';
