@@ -12,9 +12,10 @@ export function BookCard({ book }: { book: Model }) {
           ? "Catalogue book entry"
           : "Reading source · identity review"}
       </span>
+      <span className={`book-progress progress-${book.progressStatus || "in_progress"}`} title={book.progressReason}>{book.progressLabel || "In progress"}</span>
       <p className="library-book-author">{book.author}</p>
       <h3>
-        <a href={book.href}>{book.title}</a>
+        <a href={book.href}>{book.title || "Title not recorded"}</a>
       </h3>
       {book.scope === "technical" ? <div className="book-types"><span>Supporting technical reference</span></div> : book.scope === "pending" ? <p className="category-pending">Market relevance review pending</p> : book.categories.length ? (
         <div className="book-types">
@@ -30,6 +31,7 @@ export function BookCard({ book }: { book: Model }) {
       ) : (
         <p className="category-pending">Topic review pending</p>
       )}
+      <p className="book-progress-reason">{book.progressReason}</p>
       <p className="library-book-summary">{book.summary}</p>
       <div className="library-book-foot">
         <span>{book.year}</span>

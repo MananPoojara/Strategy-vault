@@ -51,9 +51,9 @@ export function AuthorCard({
       <dl className="lc-stats">
         <div>
           <dt
-            title={`${author.catalogue} catalogue entries and ${author.reading} reading sources; these are not certified distinct books.`}
+            title={`${author.catalogue} catalogue titles and ${author.reading} additional indexed sources. Editions, courses and articles stay labelled; source identities remain under review.`}
           >
-            Library entries
+            Books
           </dt>
           <dd data-library-entry-count={author.id}>{author.entries}</dd>
         </div>
@@ -62,8 +62,8 @@ export function AuthorCard({
           <dd>{author.families}</dd>
         </div>
         <div>
-          <dt title={`Measured results on ${author.availableContext || "the selected instrument"}; original book performance is not certified`}>
-            Backtests available
+          <dt title={`Distinct strategies with available computed results across supported instruments; original book performance is not certified`}>
+            Backtested
           </dt>
           <dd>{author.available}</dd>
         </div>
@@ -78,18 +78,9 @@ export function AuthorCard({
         {author.statusText}
       </p>
       <div className="lc-foot">
-        {author.sharpe !== null ? (
-          <span
-            className="lc-sharpe"
-            title="Calculated Sharpe for this instrument; original book performance is not certified"
-          >
-            Sharpe <strong>{author.sharpe}</strong>
-          </span>
-        ) : (
-          <span className={`lc-status status-${author.status}`}>
-            {author.statusTitle}
-          </span>
-        )}
+        <span className={`lc-status status-${author.status}`}>
+          {author.available ? "Backtested" : author.statusTitle}
+        </span>
         <b className="lc-open">
           {author.openLabel || "Open the vault"} <span aria-hidden="true">↗</span>
         </b>

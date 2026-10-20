@@ -704,3 +704,16 @@ body.pdf-capture .st-actions, body.pdf-capture #page-action-message, body.pdf-ca
 .gallery .lc-stats dd { white-space:nowrap; }
 .gallery .lc-foot { flex-wrap:wrap; }
 .gallery .lc-foot .lc-open { white-space:normal; margin-left:auto; text-align:right; }
+
+/* Library progress uses the same three counters throughout the catalogue. */
+.lstrip.library-summary { grid-template-columns:repeat(3,minmax(0,1fr)); gap:24px; }
+.library-count-note { font-size:12px; line-height:1.65; color:var(--ink2); max-width:1050px; margin:14px 0 24px; }
+.book-progress { align-self:flex-start; font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; padding:4px 8px; border:1px solid var(--rule); border-radius:3px; background:var(--bg2); color:var(--ink2); }
+.book-progress.progress-backtested { color:var(--green); border-color:color-mix(in srgb,var(--green) 35%,var(--rule)); background:color-mix(in srgb,var(--green) 6%,var(--card)); }
+.book-progress.progress-in_progress { color:var(--blue); }
+.book-progress-reason { font-size:11px; line-height:1.55; color:var(--ink2); margin:0; }
+.book-status-filters { display:flex; gap:8px; flex-wrap:wrap; margin:18px 0; }
+.book-status-filters button span { margin-left:6px; font-variant-numeric:tabular-nums; opacity:.7; }
+@media(max-width:540px){.lstrip.library-summary{gap:12px}.library-summary dt{font-size:10px}.library-summary dd{font-size:27px}}
+
+.gmodal-card .lc-stats {grid-template-columns:repeat(3,minmax(0,1fr));}

@@ -115,6 +115,11 @@ export function LibraryControls({
             </button>
           ))}
         </div>
+        {model.view === "books" && <label className="library-sort">
+          Status <select aria-label="Book status" value={state.book_progress || ""} onChange={event => patch({book_progress: event.target.value})}>
+            <option value="">All statuses</option><option value="backtested">Backtested</option><option value="in_progress">In progress</option><option value="not_backtested">Not Backtested</option>
+          </select>
+        </label>}
         <div className="library-market">
           <div className="join sm" aria-label="Market">
             {[

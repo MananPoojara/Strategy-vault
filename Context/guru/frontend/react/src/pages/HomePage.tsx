@@ -29,21 +29,9 @@ export function HomePage({ snapshot }: { snapshot: ViewSnapshot }) {
       </section>
       <dl className="lstrip library-summary">
         {[
-          [
-            model.scope === "trading"
-              ? "Trading source groups"
-              : "Source groups in this view",
-            model.authors,
-          ],
-          [
-            model.scope === "trading"
-              ? "Trading-library entries"
-              : "Entries in this view",
-            model.entries,
-          ],
-          ["Enabled strategy entries", model.implementedMethods],
-          [`Strategies with ${model.symbol} backtests`, model.families],
-          [model.basket ? "Basket symbols" : "Indices", model.symbolCount],
+          ["Total Authors", model.identifiedAuthors],
+          ["Total Strategies found", model.strategiesFound],
+          ["Backtested Strategies", model.progressCurrent ? model.backtestedStrategies : "Checking"],
         ].map(([label, value]) => (
           <div key={label}>
             <dt>{label}</dt>
@@ -51,61 +39,17 @@ export function HomePage({ snapshot }: { snapshot: ViewSnapshot }) {
           </div>
         ))}
       </dl>
-      <details className="library-coverage-note">
-        <summary>Library coverage & review status</summary>
-        <p data-library-scope-notice>
-          {model.scope === "trading"
-            ? "Trading-related reading and curated collections. General programming guides are supporting material; unknown relevance remains pending. A title match does not establish a complete strategy."
-            : model.scope === "technical"
-              ? "Supporting technical references. These entries are not counted as trading strategies or money-management books."
-              : model.scope === "pending"
-                ? "Source titles awaiting market-relevance review. These entries are not counted as trading books."
-                : "Complete source inventory, including technical and unreviewed material. Metadata groups are not verified distinct authors."}{" "}
-          <span>
-            {model.inventoryGroups} metadata groups and {model.inventoryEntries}{" "}
-            entries in the full inventory.
-          </span>
-        </p>
-        <dl className="coverage-totals">
-          <div>
-            <dt>Enabled strategy entries</dt>
-            <dd>{model.implementedMethods}</dd>
-          </div>
-          <div>
-            <dt>Enabled variants</dt>
-            <dd>{model.enabledVariants}</dd>
-          </div>
-          <div>
-            <dt>Book / course entries with enabled methods</dt>
-            <dd>{model.implementedBooks}</dd>
-          </div>
-          <div>
-            <dt>Curated trading collections</dt>
-            <dd>{model.curatedAuthors}</dd>
-          </div>
-          <div>
-            <dt>Full inventory metadata groups</dt>
-            <dd>{model.inventoryGroups}</dd>
-          </div>
-          <div>
-            <dt>Full inventory entries</dt>
-            <dd>{model.inventoryEntries}</dd>
-          </div>
-        </dl>
-        <p>
-          Main strategy entries group their parameter versions. The same idea
-          credited to different books can count separately. Enabled code does not
-          certify source rules or reproduce an original published study. Source groups are
-          recorded credits and collections, not a certified count of distinct
-          authors. Screened titles are candidates; unreviewed relevance remains
-          available in its own view.
-        </p>
-      </details>
+      <p className="library-count-note">
+        Authors counts the people identified so far; the full inventory still contains unresolved author credits.
+        Strategies counts distinct catalogued rules, grouping parameter versions within each book.
+        Backtested counts strategies with available computed results on a supported instrument,
+        across India and US; it does not certify the original book study.
+      </p>
+      {!model.progressCurrent ? <p className="rnote" role="status">Backtest progress is being checked against the current catalogue. No completion is inferred from enabled code.</p> : null}
       <LibraryControls model={model} state={snapshot.state} />
       <DataCoverageNotice issues={model.summaryIssues} />
       {model.view === "authors" ? <p className="library-backtest-note">
-        Authors with measured backtests appear first by default. Each card names its dataset;
-        stock and ETF backtest links open that instrument and period.
+        Authors with available backtests appear first. Open an author to see all indexed books and their review status.
       </p> : null}
       <div id="library-results" aria-live="polite">
         <div className="library-result-count">
@@ -114,13 +58,13 @@ export function HomePage({ snapshot }: { snapshot: ViewSnapshot }) {
               ? "Books & reading sources"
               : model.query
                 ? "Search results"
-                : "Trading authors & source credits"}
+                : "Authors & collections"}
           </h2>
           <span>
             {model.page.total}{" "}
             {model.view === "books"
               ? "indexed entries"
-              : "authors / source-credit groups"}
+              : "author and collection records"}
             {model.query ? ` matching “${model.query}”` : ""}
           </span>
         </div>

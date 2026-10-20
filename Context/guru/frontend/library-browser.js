@@ -39,37 +39,73 @@
     ]);
   }
   function records(LIB, BOOK_COVERAGE, categoryLookup) {
-    const authors = list(LIB), knownBooks = new Set(authors.flatMap(author => list(author.books).map(book => book.id))), byId = new Map(authors.map(author => [author.id, author]));
+    const authors = list(LIB), byId = new Map(authors.map(author => [author.id, author]));
     const coverageAuthors = BOOK_COVERAGE?.authors || {};
     const audits = Array.isArray(coverageAuthors) ? coverageAuthors.map(author => [author.id, author]) : Object.entries(coverageAuthors);
     const auditById = new Map(audits.map(([id, author]) => [author.id || id, author]));
-    const result = [];
+    const result = [], catalogueById = new Map(), sourceTargets = new Map();
+    const associate = (row, authorId, authorName) => {
+      row.authorIds = uniqueStrings([...row.authorIds, authorId]);
+      row.authorNames = uniqueStrings([...row.authorNames, authorName]);
+    };
+    const linkSource = (sourceId, row) => {
+      if (typeof sourceId !== 'string' || !sourceId) return;
+      if (!sourceTargets.has(sourceId)) sourceTargets.set(sourceId, new Set());
+      sourceTargets.get(sourceId).add(row);
+    };
     for (const author of authors) for (const book of list(author.books)) {
-      result.push({ id: book.id, authorId: author.id, authorName: author.name || '', title: book.title || '', year: validYear(book.year),
+      const row = { id: book.id, authorId: author.id, authorName: author.name || '', authorIds: [author.id], authorNames: [author.name || ''], title: book.title || '', year: validYear(book.year),
         ...assignedCategories(categoryLookup, book, author, 'catalogue'), kind: 'catalogue', book, author,
-        aliases: aliasesFor(author, auditById.get(author.id), book) });
+        aliases: aliasesFor(author, auditById.get(author.id), book), sourceIds: [], sources: [] };
+      result.push(row);
+      if (!catalogueById.has(book.id)) catalogueById.set(book.id, []);
+      catalogueById.get(book.id).push(row);
+      for (const sourceId of list(book.sourceIds)) linkSource(sourceId, row);
     }
-    // A known catalogue relationship anywhere in the inventory excludes the duplicate source row everywhere.
-    const suppressed = new Set();
+    // Metadata title matches are discovery candidates, not proof of book/copy identity.
+    // Only reviewed source IDs or the explicit SHA-verified association can merge a source into a book.
     for (const [, audit] of audits) for (const source of list(audit.source_titles)) {
       const candidates = [...list(source.catalogue_candidates), ...list(source.catalog_candidates)];
-      if (candidates.some(candidate => knownBooks.has(typeof candidate === 'string' ? candidate : candidate?.id))) suppressed.add(source.id);
+      for (const candidate of candidates) {
+        if (candidate?.match !== 'curated_reading_original_sha256_identity_verified_not_strategy_certification') continue;
+        for (const row of catalogueById.get(candidate.id) || []) linkSource(source.id, row);
+      }
     }
-    const seen = new Set();
+    const sourcesById = new Map();
     for (const [key, audit] of audits) for (const source of list(audit.source_titles)) {
-      if (typeof source.id !== 'string' || !source.id || seen.has(source.id) || suppressed.has(source.id)) continue;
-      seen.add(source.id);
+      if (typeof source.id !== 'string' || !source.id) continue;
       const authorId = audit.id || key, author = byId.get(authorId) || audit;
-      result.push({ id: source.id, authorId, authorName: author.name || source.author_metadata || '', title: source.title || '', year: sourceYear(source),
-        ...assignedCategories(categoryLookup, source, author, 'source'), kind: 'source', source, author,
-        aliases: aliasesFor(author, audit, source) });
+      const authorName = author.name || source.author_metadata || '';
+      let row = sourcesById.get(source.id);
+      if (!row) {
+        row = { id: source.id, authorId, authorName, authorIds: [], authorNames: [], title: source.title || '', year: sourceYear(source),
+          ...assignedCategories(categoryLookup, source, author, 'source'), kind: 'source', source, author,
+          aliases: [], sourceIds: [source.id], sources: [] };
+        sourcesById.set(source.id, row);
+      }
+      associate(row, authorId, authorName);
+      row.sources.push(source);
+      row.aliases = uniqueStrings([...row.aliases, ...aliasesFor(author, audit, source), source.title, authorName,
+        ...list(source.files).map(file => file.filename)]);
+    }
+    for (const row of sourcesById.values()) {
+      const targets = sourceTargets.get(row.id);
+      if (!targets?.size) { result.push(row); continue; }
+      for (const target of targets) {
+        for (const authorId of row.authorIds) associate(target, authorId, '');
+        for (const authorName of row.authorNames) associate(target, '', authorName);
+        target.aliases = uniqueStrings([...target.aliases, ...row.aliases]);
+        target.sourceIds = uniqueStrings([...target.sourceIds, row.id]);
+        target.sources.push(...row.sources);
+      }
     }
     return result;
   }
   const categoryRequested = category => category != null && normalize(category) !== '' && normalize(category) !== 'all';
   const searchable = record => normalize([
-    record.title, record.authorName, ...list(record.aliases), record.book?.blurb, record.book?.summary, record.source?.summary,
-    ...list(record.source?.files).map(file => file.filename), record.source?.author_metadata
+    record.title, record.authorName, ...list(record.authorNames), ...list(record.aliases), record.book?.blurb, record.book?.summary, record.source?.summary,
+    ...list(record.source?.files).map(file => file.filename), record.source?.author_metadata,
+    ...list(record.sources).flatMap(source => [source.title, source.summary, source.author_metadata, ...list(source.files).map(file => file.filename)])
   ].filter(value => value != null).join(' '));
   const compare = new Intl.Collator('en', { sensitivity: 'base', numeric: true }).compare;
   function search(input, { query = '', category = '', sort = 'original' } = {}) {
@@ -92,7 +128,7 @@
   }
   function matchingAuthors(LIB, input, query = '', category = '') {
     const groups = list(LIB), term = normalize(query), useCategory = categoryRequested(category);
-    const ids = new Set(search(input, { query, category }).map(record => record.authorId));
+    const ids = new Set(search(input, { query, category }).flatMap(record => list(record.authorIds).length ? record.authorIds : [record.authorId]));
     return groups.filter(author => ids.has(author.id) || !useCategory && (!term || normalize([author.name, ...list(author.aliases)].join(' ')).includes(term)));
   }
   return Object.freeze({ records, search, matchingAuthors });

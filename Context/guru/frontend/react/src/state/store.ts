@@ -40,6 +40,9 @@ export interface BookCard {
   categories: string[];
   href: string;
   live: boolean;
+  progressStatus?: string;
+  progressLabel?: string;
+  progressReason?: string;
 }
 export interface AuthorCard {
   curated: boolean;
@@ -64,6 +67,10 @@ export interface AuthorCard {
   sharpe: string | null;
 }
 export interface HomeModel {
+  identifiedAuthors?: number;
+  strategiesFound?: number;
+  backtestedStrategies?: number;
+  progressCurrent?: boolean;
   summaryIssues?: SummaryIssue[];
   market: LibraryMarket;
   implementedMethods: number;
