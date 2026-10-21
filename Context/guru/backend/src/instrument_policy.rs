@@ -26,6 +26,14 @@ fn future(basis: &'static str)->Policy {requirement("futures", &[], basis)}
 fn portfolio(basis: &'static str)->Policy {requirement("portfolio", &[], basis)}
 fn review()->Policy {requirement("source_review_required", &[], "Instrument population and executable rule requirements have not been independently reviewed for this specific source rule. Book titles, keywords, code availability and prior verification badges are not evidence of instrument compatibility.")}
 fn member(id:&str,ids:&[&str])->bool {ids.contains(&id)}
+/// User decision 2026-10-21: non-ranking Connors single-stock rules also run on
+/// an actual index/ETF as a visibly declared application. Ranking/selection rules stay stock-only.
+macro_rules! connors_any {($basis:literal)=>{{
+    let mut p=requirement("index_etf_or_stock", &["index","etf","individual_stock"], concat!($basis," ",CONNORS_INDEX_LABEL!()));
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;p
+}}}
+macro_rules! CONNORS_INDEX_LABEL {()=>{"Book tested on US stocks; index/ETF runs are a declared application, not the author's test. Stock-only filters in the rule (minimum price, volume, liquidity) do not apply to an index."}}
+pub const CONNORS_INDEX_IDS:&[&str]=&["f1a","f3a","f4a","f4c","f4d","rsi2_5d","tps_stocks","x555","h10","r3r4_base","r3r4_base_scale","r3r4_bigcap","r3r4_bigcap_scale","r3r4_bigcap_deck","r3r4_bigcap_deck_scale","r3r4_midcap","r3r4_midcap_scale","r3r4_lowprice","r3r4_lowprice_scale","ats_dvmtm","ats_cvr_equities","ats_15min_adx_breakout_equities","afactor_baseline"];
 
 pub fn reviewed_kestner_stock(def:&StrategyDef)->bool {
     def.book==crate::books::lkqts::BOOK && crate::books::lkqts::stock_research_profile(def.id)
@@ -214,8 +222,8 @@ fn base_policy(def:&StrategyDef)->Policy {
     let id=def.id;
     match def.book {
         "ehmd" if id=="ehmd_mama" => stock("Ehlers MESA Adaptive Moving Averages, S&C19:9 pp.30-35, explicitly tests a long-only MAMA/FAMA crossover on100 stocks. Review and independent ledgers: library/ehlers/REVIEW-2026-10-13.md. Actual individual stocks are required. One selected stock is not the original unnamed100-stock population; configurable MaxBarsBack50 and next-open execution are declared research conventions, and the pooled source performance is not reproduced."),
-        "stc9" if member(id,&["f1a","f3a","f4a","f4c","f4d","rsi2_5d"]) => stock("STC IX Session 1 foundation studies concern a pooled US individual-stock population. A native single-stock run uses one actual constituent at a time; it does not reproduce the pooled published counts, universe or performance."),
-        "stc9" if member(id,&["tps_stocks","x555","h10"]) => stock("STC IX Sessions 2-3 specify stocks with volatility, ADX and Liquidity Filter population restrictions. Actual constituent OHLC/volume is necessary; this type check does not supply missing liquidity denominators, historical membership or portfolio slots."),
+        "stc9" if member(id,&["f1a","f3a","f4a","f4c","f4d","rsi2_5d"]) => connors_any!("STC IX Session 1 foundation studies concern a pooled US individual-stock population. A native single-stock run uses one actual constituent at a time; it does not reproduce the pooled published counts, universe or performance."),
+        "stc9" if member(id,&["tps_stocks","x555","h10"]) => connors_any!("STC IX Sessions 2-3 specify stocks with volatility, ADX and Liquidity Filter population restrictions. Actual constituent OHLC/volume is necessary; this type check does not supply missing liquidity denominators, historical membership or portfolio slots."),
         "stc9" if id=="r3" => index("STC IX Session 1 R3 explicitly uses an index; the reference is the S&P 500. A selected Indian index is a separate market application."),
         "stc9" if member(id,&["tps_long","tps_short"]) => etf("STC IX Session 4 presents ETF TPS rules. Cash-index OHLC cannot substitute for actual ETF prices or implementation of the ETF's exposure."),
         "stc9" if id=="s12345" => requirement("leveraged_etf", &[], "STC IX Session 7 specifies 2x/3x leveraged ETFs. No designated leveraged-ETF price series and exposure validation is currently admitted. An index or unleveraged ETF is not a substitute."),
@@ -230,11 +238,12 @@ fn base_policy(def:&StrategyDef)->Policy {
         "ststw" if member(id,&["ststw_overnight","ststw_intraday","ststw_cum_rsi_35","ststw_cum_rsi_50","ststw_double7"]) => etf("Short Term Trading Strategies That Work Chapter 7 pp.36-38, Chapter 9 pp.66-68 and Chapter 10 pp.75-80 reference actual SPY/QQQ or other ETFs. Actual ETF opens and closes are required; cash-index swaps are not silently admitted."),
         "ststw" if member(id,&["ststw_vix_stretch","ststw_sp_short"]) => requirement("index_or_etf", &["index","etf"], "Short Term Trading Strategies That Work Chapter 12 pp.93-95 and pp.106-108 explicitly names SPY or SPX. Market-specific VIX and all other rule/data checks remain required; a single stock is not the timed index/ETF."),
         "hpetf" if member(id,&["hpetf_3dhl_long","hpetf_3dhl_long_aggr","hpetf_3dhl_short","hpetf_3dhl_short_aggr","hpetf_rsi25_long_aggr","hpetf_rsi75_short","hpetf_rsi75_short_aggr","hpetf_r3_long","hpetf_r3_long_aggr","hpetf_r3_short","hpetf_r3_short_aggr","hpetf_pctb_long_aggr","hpetf_pctb_short_aggr","hpetf_mdd_long","hpetf_mdd_long_aggr","hpetf_mdu_short","hpetf_mdu_short_aggr","hpetf_rsi10_6_long","hpetf_rsi90_94_short","hpetf_tps_long","hpetf_tps_short"]) => etf("High Probability ETF Trading (2009), Chapters 2-8, explicitly trades 20 non-leveraged ETFs. Actual ETF prices are required. DJI is an index, not DIA; an Indian constituent or cash index cannot be silently substituted."),
-        "afactor" if id=="afactor_baseline" => stock("Alvarez Factor workbook pp.13-14 and Stats.xls baseline specify one stock's gap, OHLC and share volume. A selected Indian stock is an instrument/currency adaptation; literal US dollar price thresholds, corporate-action treatment and the absent pooled US universe remain limitations."),
+        "afactor" if id=="afactor_baseline" => connors_any!("Alvarez Factor workbook pp.13-14 and Stats.xls baseline specify one stock's gap, OHLC and share volume. A selected Indian stock is an instrument/currency adaptation; literal US dollar price thresholds, corporate-action treatment and the absent pooled US universe remain limitations."),
         "afactor" if id=="afactor_portfolio" => portfolio("Alvarez Factor Stats.xls portfolio uses simultaneous stock signals, 1/10 slots and day-level allocation. Independent-symbol returns cannot be compounded into the published portfolio without the verified universe and allocation engine."),
-        "r3r4" if member(id,&["r3r4_base","r3r4_base_scale","r3r4_bigcap","r3r4_bigcap_scale","r3r4_bigcap_deck","r3r4_bigcap_deck_scale","r3r4_midcap","r3r4_midcap_scale","r3r4_lowprice","r3r4_lowprice_scale"]) => stock("R3/R4 guide pp.6-8 and appendices pp.28-29 explicitly require stocks, share-volume liquidity, HV and ADX filters. Native constituent data alone cannot establish the missing benchmark volume or reproduce the 6,000+ US-stock study."),
+        "r3r4" if member(id,&["r3r4_base","r3r4_base_scale","r3r4_bigcap","r3r4_bigcap_scale","r3r4_bigcap_deck","r3r4_bigcap_deck_scale","r3r4_midcap","r3r4_midcap_scale","r3r4_lowprice","r3r4_lowprice_scale"]) => connors_any!("R3/R4 guide pp.6-8 and appendices pp.28-29 explicitly require stocks, share-volume liquidity, HV and ADX filters. Native constituent data alone cannot establish the missing benchmark volume or reproduce the 6,000+ US-stock study."),
         "jc5dm" if member(id,&["jc5dm_long","jc5dm_short"]) => stock("Five Day Momentum pp.10-12 and p.39 specifies individual stocks, US dollar price thresholds and a 1/16-point tick. Instrument-type compatibility does not approve a currency/tick conversion or waive the existing fixed-amount accuracy gate."),
-        "ats" if member(id,&["ats_cbp","ats_dvmtm","ats_cvr_equities","ats_15min_adx_breakout_equities"]) => stock("Advanced Trading Strategies Chapters 11-14 and the equities ADX variant concern individual stocks. IBD ratings, volume, intraday data, currency-specific offsets and incomplete discretionary exits remain separate source/data requirements; index prices are not stock substitutes."),
+        "ats" if id=="ats_cbp" => stock("Advanced Trading Strategies Chapter 11 selects momentum stocks from an IBD Relative Strength 98-99 scan (a cross-sectional stock ranking). Index prices are not stock substitutes for that selected population."),
+        "ats" if member(id,&["ats_dvmtm","ats_cvr_equities","ats_15min_adx_breakout_equities"]) => connors_any!("Advanced Trading Strategies Chapters 13-14 and the equities ADX variant concern individual stocks. Volume, intraday data, currency-specific offsets and incomplete discretionary exits remain separate source/data requirements."),
         "lwrsr" if member(id,&["lwrsr_oct_apr","lwrsr_apr_oct"]) => index("The Right Stock at the Right Time Chapter 3, Table 3.2 printed pp.32-34, explicitly times the DJIA index. Nifty is a new index application, not the Dow's historical results."),
         "lwrsr" if id=="lwrsr_stock_selection" => portfolio("The Right Stock at the Right Time Chapters 8-11 selects Dow/Utilities members using point-in-time fundamentals and portfolio rules. Present cash constituents do not supply these historical inputs."),
         "mmft" if id=="mmft_nasdaq79" => index("Market & Mutual Fund Timing Week 3 Model 1 uses the Nasdaq Composite index. Other observed index applications are separate market experiments; the absent source index and its 1963-1997 result are not reproduced."),
@@ -352,6 +361,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     }
     let reviewed=reviewed_cash_rule(def)||reviewed_dema_index(def);
     json.push_str(&format!(",\"source_rule_reviewed\":{},\"independent_selected_ledger_checked\":{}",reviewed,reviewed));
+    if p.requirement=="index_etf_or_stock" && CONNORS_INDEX_IDS.contains(&def.id) {json.push_str(concat!(",\"declared_application\":\"",CONNORS_INDEX_LABEL!(),"\""));}
     if def.book=="kfsc" && crate::books::kfsc::reviewed_hv_rule(def.id) {
         json.push_str(&format!(",\"source_convention\":\"{}\"",escape(crate::books::kfsc::HV_CONVENTION)));
     }
@@ -493,11 +503,12 @@ mod tests {
         assert!(check(&def("kftsm_month_end","kftsm"),"RELIANCE",true).is_some());
     }
     #[test]
-    fn stock_studies_require_validated_individual_stock_and_keep_snapshot_limits() {
+    fn stock_studies_admit_stocks_and_declared_index_etf_and_keep_snapshot_limits() {
         for id in ["f1a", "f3a", "f4a", "f4c", "f4d", "rsi2_5d", "tps_stocks", "x555", "h10"] {
             let d=def(id,"stc9");
-            assert!(check(&d,"NIFTY 50",false).unwrap().note.contains("individual"));
-            assert!(check(&d,"SPY",false).is_some());
+            // Declared index/ETF application (user decision 2026-10-21); unknown tickers still refused.
+            assert!(check(&d,"NIFTY 50",false).is_none());
+            assert!(check(&d,"SPY",false).is_none());
             assert!(check(&d,"RELIANCE",true).is_none());
             assert!(check(&d,"RELIANCE",false).is_some());
             let json=metadata_json(&d);
@@ -744,6 +755,37 @@ mod kestner_next_policy_tests {
         for &id in crate::books::lkqts::STOCK_CANDIDATE_IDS {
             let d=definition(id);let p=policy(&d);assert!(p.source_basis.contains("only channel40/20, SMA10/40 and momentum80"));
             assert!(!metadata_json(&d).contains("selected_account_checks"));
+        }
+    }
+}
+
+#[cfg(test)]
+mod connors_index_routing_tests {
+    use super::*;
+    fn find(id:&str)->StrategyDef {crate::connors::catalogue().into_iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"))}
+    #[test]
+    fn non_ranking_connors_stock_rules_also_admit_index_and_etf_with_visible_label() {
+        assert_eq!(CONNORS_INDEX_IDS.len(),23);
+        for &id in CONNORS_INDEX_IDS {
+            let d=find(id);let p=policy(&d);
+            assert_eq!(p.allowed_types,&["index","etf","individual_stock"],"{id}");
+            assert_eq!(p.requirement,"index_etf_or_stock");assert!(p.market_adaptation);
+            assert!(p.source_basis.contains("index/ETF runs are a declared application, not the author's test"),"{id}");
+            assert!(p.source_basis.contains("do not apply to an index"));
+            for tk in ["NIFTY 50","NIFTYBANK","SPX","SPY","QQQ"] {assert!(check(&d,tk,false).is_none(),"{id} {tk}");}
+            assert!(check(&d,"NIFTY FUTURE",false).is_some());
+            let json=metadata_json(&d);assert!(json.contains("\"declared_application\":\"Book tested on US stocks"));assert!(json.contains("\"market_adaptation\":true")&&json.contains("\"source_performance_reproduced\":false"));
+            // Native stocks keep the previous result, including the USD-unit holds.
+            assert_eq!(check(&d,"RELIANCE",true).is_none(),p.native_currency_constraint.is_none(),"{id}");
+        }
+    }
+    #[test]
+    fn ranking_and_portfolio_methods_stay_stock_or_portfolio_only() {
+        for id in ["ats_cbp","alpha_rising_assets","alpha_weekly_mr","alpha_etf_avalanches","alpha_dyn_treasuries","alpha_formula_portfolio","hmrw_sp500_rotation","afactor_portfolio"] {
+            let d=find(id);let p=policy(&d);
+            assert!(!p.allowed_types.contains(&"index")&&!p.allowed_types.contains(&"etf"),"{id}");
+            assert!(!CONNORS_INDEX_IDS.contains(&id));
+            for tk in ["NIFTY 50","SPX","SPY"] {assert!(check(&d,tk,false).is_some(),"{id} {tk}");}
         }
     }
 }
