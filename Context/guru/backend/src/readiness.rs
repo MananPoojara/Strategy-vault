@@ -127,6 +127,9 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     if def.book=="spmt" {
         if let Some(note)=books::spmt::hold_reason(def.id) {return issue("needs_data",note);}
     }
+    if def.book==books::vixr::BOOK && books::vixr::reviewed_daily(def.id) && ctx.r.get(from).is_some_and(|r|r.date.as_str()<books::vixr::REAL_VIX_OHLC_FROM) {
+        return issue("needs_data",format!("The CVR rules read the VIX open, high and low; the served CBOE VIX history has close-only bars before {}. Choose a later start; close-only bars are not used as highs, lows or opens.",books::vixr::REAL_VIX_OHLC_FROM));
+    }
     if def.book=="chbta2" && matches!(def.id,"ch_bta2_ma_stack"|"ch_bta2_65sma_ravi") {
         if let Some(note)=books::chbta2::validate_reviewed(def.id,p) {return issue("not_testable",note);}
     }
@@ -294,6 +297,16 @@ mod tests {
         // Printed performance mismatch alone is not an executable-rule gap.
         for id in ["spmt_rsi2_4","spmt_rsi4_25","spmt_rsi_1"] {
             assert!(check(&ctx,&definition(id),0,4,&Params::new()).is_none());
+        }
+    }
+    #[test]
+    fn vixr_admitted_rules_refuse_close_only_vix_years() {
+        let mut r=rows();for x in r.iter_mut(){x.ticker="SPX".into();}let ctx=Ctx::new(&r,&r,&r);
+        let mut old=r.clone();for (i,x) in old.iter_mut().enumerate(){x.date=format!("1991-12-2{}",i+5);}
+        let octx=Ctx::new(&old,&old,&old);
+        for &id in books::vixr::REVIEWED_DAILY {
+            assert!(check(&ctx,&definition(id),0,4,&Params::new()).is_none(),"{id}");
+            assert_eq!(check(&octx,&definition(id),0,4,&Params::new()).unwrap().status,"needs_data","{id}");
         }
     }
     #[test]

@@ -21,6 +21,25 @@ use std::sync::OnceLock;
 
 pub const BOOK: &str = "vixr";
 
+/// Exact daily CVR contracts admitted after the 2026-10-21 source review (pilot-vixr/SOURCE-CONTRACT.md) and an
+/// independent chronological Python ledger check on actual SPY/SPX (+ NIFTY 50 where listed below).
+/// Declared index-timing application of an S&P-futures study: no futures dollars or book performance.
+pub const REVIEWED_DAILY: &[&str] = &[
+    "vixr_cvr1", "vixr_cvr2", "vixr_cvr3", "vixr_cvr5_1d", "vixr_cvr5_3d", "vixr_cvr6",
+    "vixr_cvr7", "vixr_cvr8", "vixr_cvr9", "vixr_cvr10", "vixr_cvr11",
+];
+pub fn reviewed_daily(id: &str) -> bool { REVIEWED_DAILY.contains(&id) }
+/// Rules that read only India VIX close/high/low with scale-free thresholds. Rules reading the VIX open
+/// (India VIX open ~ prior close) or fixed VIX-point thresholds are not admitted on NIFTY 50.
+pub const INDIA_VIX_REVIEWED: &[&str] = &["vixr_cvr2", "vixr_cvr3", "vixr_cvr6"];
+/// Actual SPX (cash index, declared timing adaptation) and actual SPY with CBOE VIX; NIFTY 50 with India VIX
+/// only for `INDIA_VIX_REVIEWED`. Other indices/ETFs/stocks are not reviewed applications.
+pub fn admitted_symbol(id: &str, ticker: &str) -> bool {
+    reviewed_daily(id) && (matches!(ticker, "SPX" | "SPY") || (ticker == "NIFTY 50" && INDIA_VIX_REVIEWED.contains(&id)))
+}
+/// The served CBOE VIX file holds close-only bars (open = high = low = close) for 1990-1991.
+pub const REAL_VIX_OHLC_FROM: &str = "1992-01-01";
+
 /// Strategy note + the shared book note (+ the VIX-open caveat for rules that read the VIX open).
 macro_rules! note {
     ($s:literal, open_flag) => {
