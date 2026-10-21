@@ -16,6 +16,43 @@ use std::sync::OnceLock;
 
 pub const BOOK: &str = "ats";
 
+/// Daily rules admitted after the 2026-10-21 source review (connors/ats-admission/SOURCE-CONTRACT.md) and an independent
+/// chronological Python ledger check. Declared applications: the book traded S&P 500 futures and US stocks.
+/// Held (not listed): HV ratio setup (filter only), CBP (IBD RS stock ranking, gate), late earnings, Torpedoes, Morning Call,
+/// flag within a flag, short-term decline playbook (discretionary / data), the five option methods, 15-minute ADX breakout
+/// (intraday-derived fill counts, unreviewed builder), 10% OOPS and Wide Range Gap (gate: same-day path), CVR after losses
+/// (generic Q&A remark, no system named).
+pub const REVIEWED_DAILY: &[&str] = &[
+    "ats_cvr1", "ats_cvr2", "ats_cvr3", "ats_cvr_equities", "ats_trin_thrust", "ats_trin_thrust_nse", "ats_padi", "ats_padi_nse",
+    "ats_hv_thrust", "ats_1234", "ats_8day_hl_reversal", "ats_smtp", "ats_two_for_one", "ats_gipsons", "ats_dvmtm",
+];
+pub fn reviewed_daily(id: &str) -> bool { REVIEWED_DAILY.contains(&id) }
+/// Rules the book gives no exit for: the user's standard exits (param `exit`, [Not from the book]) apply.
+pub const NO_BOOK_EXIT: &[&str] = &["ats_hv_thrust", "ats_1234", "ats_8day_hl_reversal", "ats_smtp", "ats_two_for_one", "ats_dvmtm"];
+/// Index/ETF symbols admitted per rule (stocks: only ats_cvr_equities and ats_dvmtm, see instrument_policy). The pattern
+/// rules with a fixed 0.05 tick are further limited by the accuracy gate's own list (NSE indices).
+pub fn admitted_symbol(id: &str, ticker: &str) -> bool {
+    match id {
+        "ats_cvr1" | "ats_trin_thrust" | "ats_padi" => matches!(ticker, "SPX" | "SPY"),
+        "ats_cvr2" | "ats_cvr3" => matches!(ticker, "SPX" | "SPY" | "NIFTY 50"),
+        "ats_trin_thrust_nse" | "ats_padi_nse" => ticker == "NIFTY 50",
+        "ats_hv_thrust" => matches!(ticker, "SPX" | "NDX" | "DJI" | "SPY" | "NIFTY 50" | "NIFTYBANK"),
+        // CVR I reads the VIX open: US instruments with the CBOE VIX only (India VIX open = previous close)
+        "ats_cvr_equities" => matches!(ticker, "SPX" | "NDX" | "DJI" | "SPY" | "QQQ" | "IWM" | "MDY" | "SMH" | "DIA"),
+        _ => reviewed_daily(id),
+    }
+}
+/// Admitted rules whose fills can read the traded instrument's open (stop entries, % stops or a trailing stop gapped through).
+pub fn reads_open(id: &str, p: &Params) -> bool {
+    match id {
+        "ats_cvr1" | "ats_cvr2" | "ats_cvr3" | "ats_cvr_equities" => false,
+        "ats_hv_thrust" => p.get("exit").is_some_and(|v| v.round() == 1.0),
+        _ => reviewed_daily(id),
+    }
+}
+/// The served CBOE VIX history has close-only bars (open = high = low = close) for 1990-1991.
+pub const REAL_VIX_OHLC_FROM: &str = "1992-01-01";
+
 // ---------------------------------------------------------------- catalogue
 
 const CVR_NOTE: &str = "Book traded S&P 500 futures with the CBOE VIX of 1993-97, which is today's VXO (S&P 100 based). The vault runs the rules on the index/ETF with the VIX of its region (India VIX for NSE, CBOE VIX for US; a VXO directory can be passed as the VIX dir). An opposite signal while in a trade closes it and reverses (the appendix trade lists show same-day SExit + Buy rows). Side param: 0 = long and short (book), 1 = long only, -1 = short only. The book's numbers need the VXO: with the VXO the SPY runs reproduce 63/72 (CVR I), 92/97 (CVR II) and 71/75 (CVR III) of the appendix entries; with today's CBOE VIX only 19/72 (CVR I). [Not from the book] VIX bars are aligned to the traded ticker's calendar (VIX rows on days the ticker does not trade are dropped; 'yesterday' = the previous VIX bar, so a missing VIX day is skipped).";
@@ -79,7 +116,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["F|The 6-day or 10-day historical volatility is less than 1/2 its 100-day reading (read on the prior day)",
               "E|On the day of the readings under 50 percent look for a daily range larger than the daily range of the previous nine days",
               "E|Trade in the direction of the large-range day (close above the prior close = buy, below = sell) on its close",
-              "X|Expect follow-through for the next one to ten days: exit on the close after `hold` days (default 5)"],
+              "X|Expect follow-through for the next one to ten days: no exit rule in the book",
+              STD_EXIT_RULE],
             "No statistics in the book. The GBP example has the ratio under 50% on Apr 8 and the range expansion on Apr 9, so the ratio is read on the prior day (param when=1; 0 = same day). HV per the Appendix (sample sd of N-1 log returns x sqrt(260)); hv_rets=0 uses N returns.", None),
         // ---- Ch 8-10 patterns
         d("ats_1234", "1-2-3-4", "Ch 8 · 1-2-3-4", "Long/Short", Live,
@@ -87,7 +125,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "E|Wait for a 1-2-3 correction: three consecutive intraday lower lows, or two lower lows and an inside day (sells: higher highs)",
               "E|On day four only, buy 1 tick above the day-three high (sells: 1 tick below the day-three low)",
               "X|Initial protective stop near the day-three low (sells: day-three high), placed 1 tick beyond it",
-              "X|Trail stops as the position moves in your favor: not specified; the vault exits on the close after `hold` bars"],
+              "X|Trail stops as the position moves in your favor: not specified in the book",
+              STD_EXIT_RULE],
             "Developed with Jeff Cooper (Hit and Run Trading). 'Inside day' = high <= prior high and low >= prior low; at least two of the three days are lower lows. Day four only; a gap through the entry level fills at the open (Gucci example). The book gives no exit beyond the initial stop ('trail your stops'); the vault adds a time exit (`hold` bars, not in the book). One tick = `tick` in price units (book 1/8; NSE 0.05). two_for_one=1 adds the Ch 28 half-off-at-+1R overlay.", None),
         d("ats_8day_hl_reversal", "8-Day High/Low Reversal", "Ch 9 · 8-Day High/Low Reversal Method", "Long/Short", Live,
             &["E|Buys: day one must be an eight-day low; day two must trade above the day-one high",
@@ -95,7 +134,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "E|When condition three is met, buy one tick above the day-two high if the breakout occurs within four trading days of condition three (the same day counts)",
               "E|Sells are reversed (eight-day high, day two below the day-one low, then above the day-two high, sell 1 tick under the day-two low)",
               "X|Stop one tick below the day-two low (sells: above the day-two high)",
-              "X|No exit in the book: the vault exits on the close after `hold` bars"],
+              "X|No exit in the book beyond the stop",
+              STD_EXIT_RULE],
             "Microsoft example: conditions 3 and 4 on the same bar are accepted; the fill is then at the entry level. Otherwise a gap through the level fills at the open. No statistics in the book; exit not in the book (time exit added). two_for_one=1 adds the Ch 28 half-off-at-+1R overlay.", None),
         d("ats_smtp", "Spent Market Trading Pattern (SMTP)", "Ch 10 · Spent Market Trading Pattern", "Long/Short", Live,
             &["E|Today the market makes a 10-period low (sells: 10-period high)",
@@ -103,7 +143,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "E|Today's close is in the top 25 percent of today's range (sells: bottom 25 percent)",
               "E|Tomorrow, or the trading day after tomorrow, buy one tick above today's high (sells: one tick below today's low)",
               "X|If filled, initial protective stop at today's (setup day's) low (sells: high)",
-              "X|Trail it appropriately: not specified; the vault exits on the close after `hold` bars"],
+              "X|Trail it appropriately: not specified in the book",
+              STD_EXIT_RULE],
             "Merged from extract part 1 (rules) and the p.85-86 tail (Fig 10.4 S&P, Fig 10.5 SLOT, summary). No statistics in the book; exit not in the book (time exit added).", None),
         // ---- Section 4 equities
         d("ats_cbp", "Crash, Burn and Profit (CBP)", "Ch 11 · Crash, Burn and Profit", "Short", Live,
@@ -118,20 +159,21 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["F|Company is late reporting its earnings", "F|Its price trends lower before the earnings are due (while the market rises, near the year's lows)", "E|Buy puts"],
             "Baby Superstores example, June 35 puts bought at 2 1/4 went above 10.", None),
         StrategyDef { needs_volume: true, ..d("ats_dvmtm", "Double Volume Market Top Method (DVMTM)", "Ch 13 · Double Volume Market Top Method", "Short",
-            NotTestable("Chapter 13 pp.103-108 requires trailing stops but gives no numerical trailing-exit rule. The prior fixed holding-period exit is not supplied by the book; complete source rules remain unresolved"),
+            Live,
             &["F|A stock must be trading near or at a three-month calendar-day high; the source does not quantify 'near'",
               "E|Today's volume must be at least double its average volume over the 15 prior trading days",
               "E|Either today, tomorrow or the next day the stock must close below its open (Rule 3 day)",
               "E|Over the next two days sell 1/8 (one tick) under the Rule 3 day low",
               "X|Initial protective stop at the top of the Rule 3 day bar",
-              "X|Trailing stops should lock in profits, but the source supplies no numerical trailing algorithm (p.104)"],
-            "Source review of printed pp.103-108: actual individual-stock examples (Microsoft, Yahoo, Western Digital, Fila), not an index-volume strategy. Entry examples and subsequent price moves do not define an exit. The old hold-bar exit, 63-session high and local price-unit tick are implementation choices, not certified source rules. Results are withheld until a complete exit and source-unit contract is reviewed; changing hold, tick or stock cannot remove this source gap.", None) },
-        d("ats_cvr_equities", "CVR I on stocks (Merrill Lynch, Intel)", "Ch 14 · Trading Equities with the CVR", "Long/Short",
-            NeedsData("single-stock daily data (Merrill Lynch, Intel 1996-97); the rule itself is ats_cvr1 run on a stock"),
+              "X|Trailing stops should lock in profits, but the source supplies no numerical trailing algorithm (p.104)",
+              STD_EXIT_RULE],
+            "Source review of printed pp.103-108: actual individual-stock examples (Microsoft, Yahoo, Western Digital, Fila). The book gives no exit beyond the initial stop, so the user's standard exits apply as labelled options (default: close after `hold` = 5 bars); results are never the author's. 'Three-month calendar-day high' = 63 trading days and near_pct 0 (= 'at' the high) are declared readings; the 1/8 tick is a fixed 0.05 price-unit offset (accuracy gate: NSE indices only). Index runs are a declared application (index volume).", None) },
+        vx(d("ats_cvr_equities", "CVR I on stocks (Merrill Lynch, Intel)", "Ch 14 · Trading Equities with the CVR", "Long/Short", Live,
             &["E|On a CVR I buy (sell) signal buy (sell short) the stock on the close; front-run the 4:00 VIX close by a few minutes",
-              "X|Hold for three days with some sort of protective stop"],
+              "E|The CVR I signal is ats_cvr1's rule on the CBOE VIX (15-day VIX high/low with a close below/above its open)",
+              "X|Hold for three days (exit on the close of the 3rd day); 'some sort of protective stop' is not specified and not coded"],
             "Published tables (15 months, CVR I, no costs): Merrill Lynch 25 trades, 18 profitable / 7 unprofitable, +22 1/4 points; Intel 25 trades, 13 / 10 / 2 breakeven, +30 7/8 points. ML lists 02/26/97 where Intel and Ch 17 give 02/20/97 (misprint).",
-            claim("25 ML / 25 INTC", "72% ML (18/7) · 52% INTC (13/10/2)", "+0.89 pts ML · +1.24 pts INTC", "3 days", "Jan 1996 - Mar 1997, Merrill Lynch & Intel")),
+            claim("25 ML / 25 INTC", "72% ML (18/7) · 52% INTC (13/10/2)", "+0.89 pts ML · +1.24 pts INTC", "3 days", "Jan 1996 - Mar 1997, Merrill Lynch & Intel"))),
         d("ats_torpedoes", "Torpedoes (Jeff Cooper)", "Ch 15 · Torpedoes", "Long",
             NotTestable("discretionary: 'market begins to bounce back' and 'strongest stock' are subjective; needs intraday stock universe"),
             &["F|Market leaders / high-volatility names", "E|Stock market down at least 1 percent in the first hour; find leaders up for the day or down only a little",
@@ -203,7 +245,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["E|One unit = 1,000 shares or two contracts; entry = a base pattern (base 1 = 1-2-3-4, the book's PROX and TOM examples; base 2 = the 8-day high/low reversal, which Ch 9 p.76 says to combine with it)",
               "X|Take half a unit off at a profit equal to the original stop distance (entry +/- initial risk); keep the original stop on the other half",
               "X|On the entry bar the protective stop is checked before the +1R half exit",
-              "X|The other half leaves on the base pattern's exit: [Not from the book] the close after `hold` bars (the base patterns have no book exit)"],
+              "X|The other half leaves on the base pattern's exit (the base patterns have no book exit)",
+              STD_EXIT_RULE],
             "Money-management overlay run on 1-2-3-4 or the 8-day reversal (also available as two_for_one=1 on ats_1234 / ats_8day_hl_reversal). The half exit is folded into one trade: exit price = 0.5 x half price + 0.5 x rest price (vault convention, as btp/cwin).", None),
         vx(d("ats_after_losses", "CVR after consecutive losses", "Ch 29 · More Thoughts", "Long/Short", Live,
             &["F|The best time to trade a methodology is after it has had two or three consecutive losses",
@@ -213,6 +256,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
     ]
 }
 
+const STD_EXIT_RULE: &str = "X|[Not from the book] standard exits (user rule, the book gives none): param exit 0 = close after `hold` bars (3 / 5 / 10), 1 = trailing stop 2 x ATR(5) behind the best price since entry, 2 = first up close (shorts: first down close); the book's initial stop stays";
 const TRIN_RULES: &[&str] = &[
     "E|Buy: today's closing TRIN is 30 percent or more below yesterday's closing TRIN; buy the market on the close",
     "E|Sell: today's closing TRIN is 30 percent or more above yesterday's closing TRIN; sell the market on the close",
@@ -248,8 +292,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let losses = || p("max_losses", "Entries a day: re-enter after a stop-out up to N entries (book p.156: 2; 1 = no re-entry)", 2.0, 1.0, 5.0, 1.0);
     let hvr = || p("hv_rets", "HV uses N-1 returns (1, book) or N (0)", 1.0, 0.0, 1.0, 1.0);
     let t41 = |d| p("two_for_one", "Ch 28 Two-for-One: half off at +1x initial risk (1 = on)", d, 0.0, 1.0, 1.0);
+    let exitp = || p("exit", "[Not from the book] exit: 0 = close after hold bars, 1 = 2 x ATR(5) trailing stop, 2 = first up close (shorts: first down close)", 0.0, 0.0, 2.0, 1.0);
     Some(match id {
-        "ats_cvr1" => vec![p("n", "VIX N-day high/low", 15.0, 5.0, 30.0, 1.0), hold(3.0), side(), rev(), ext(1.0)],
+        "ats_cvr1" | "ats_cvr_equities" => vec![p("n", "VIX N-day high/low", 15.0, 5.0, 30.0, 1.0), hold(3.0), side(), rev(), ext(1.0)],
         "ats_cvr2" => vec![p("rsi_n", "VIX RSI period", 5.0, 2.0, 14.0, 1.0), p("ob", "VIX RSI overbought (buy) at or above", 70.0, 55.0, 90.0, 5.0),
             p("os", "VIX RSI oversold (sell) at or below", 30.0, 10.0, 45.0, 5.0), hold(8.0), side(), rev(), ext(1.0)],
         "ats_cvr3" => vec![p("ma", "VIX SMA length", 10.0, 5.0, 20.0, 1.0), p("pct", "VIX close % beyond its SMA", 10.0, 3.0, 20.0, 1.0),
@@ -260,23 +305,23 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("trend", "Market SMA filter length", 100.0, 50.0, 200.0, 10.0), hold(5.0), p("stop", "Protective stop %", 1.5, 0.0, 3.0, 0.25), side()],
         "ats_hv_thrust" => vec![p("short1", "Short HV period A", 6.0, 3.0, 10.0, 1.0), p("short2", "Short HV period B", 10.0, 5.0, 20.0, 1.0),
             p("long", "Long HV period", 100.0, 50.0, 150.0, 10.0), p("ratio", "Short/long HV below", 0.5, 0.3, 0.7, 0.05),
-            p("range_n", "Range larger than previous N days", 9.0, 5.0, 20.0, 1.0), p("when", "Ratio on prior day (1) or same day (0)", 1.0, 0.0, 1.0, 1.0), hold(5.0), hvr(), side()],
-        "ats_1234" => vec![p("adx_n", "ADX/DI period", 14.0, 7.0, 21.0, 1.0), p("adx", "ADX above", 30.0, 20.0, 45.0, 5.0), tick(), hold(10.0), side(), t41(0.0)],
+            p("range_n", "Range larger than previous N days", 9.0, 5.0, 20.0, 1.0), p("when", "Ratio on prior day (1) or same day (0)", 1.0, 0.0, 1.0, 1.0), hold(5.0), hvr(), side(), exitp()],
+        "ats_1234" => vec![p("adx_n", "ADX/DI period", 14.0, 7.0, 21.0, 1.0), p("adx", "ADX above", 30.0, 20.0, 45.0, 5.0), tick(), hold(10.0), side(), t41(0.0), exitp()],
         "ats_8day_hl_reversal" => vec![p("n", "Day one N-day low/high", 8.0, 5.0, 15.0, 1.0), p("c3_days", "Condition-3 window (days 3..)", 4.0, 2.0, 6.0, 1.0),
-            p("window", "Breakout within N days of condition 3", 4.0, 1.0, 8.0, 1.0), tick(), hold(10.0), side(), t41(0.0)],
+            p("window", "Breakout within N days of condition 3", 4.0, 1.0, 8.0, 1.0), tick(), hold(10.0), side(), t41(0.0), exitp()],
         "ats_two_for_one" => vec![p("base", "Entry pattern: 1 = 1-2-3-4, 2 = 8-day high/low reversal", 1.0, 1.0, 2.0, 1.0),
             p("adx_n", "1-2-3-4: ADX/DI period", 14.0, 7.0, 21.0, 1.0), p("adx", "1-2-3-4: ADX above", 30.0, 20.0, 45.0, 5.0),
             p("n", "8-day: day one N-day low/high", 8.0, 5.0, 15.0, 1.0), p("c3_days", "8-day: condition-3 window", 4.0, 2.0, 6.0, 1.0),
-            p("window", "8-day: breakout within N days of condition 3", 4.0, 1.0, 8.0, 1.0), tick(), hold(10.0), side()],
+            p("window", "8-day: breakout within N days of condition 3", 4.0, 1.0, 8.0, 1.0), tick(), hold(10.0), side(), exitp()],
         "ats_smtp" => vec![p("n", "N-period low/high and largest range", 10.0, 5.0, 20.0, 1.0), p("loc", "Close in top/bottom % of range", 25.0, 10.0, 40.0, 5.0),
-            p("days", "Entry valid N days", 2.0, 1.0, 3.0, 1.0), tick(), hold(10.0), side()],
+            p("days", "Entry valid N days", 2.0, 1.0, 3.0, 1.0), tick(), hold(10.0), side(), exitp()],
         "ats_cbp" => vec![p("adx_n", "Weekly ADX period", 14.0, 7.0, 21.0, 1.0), p("adx", "Weekly ADX reaches", 60.0, 40.0, 70.0, 5.0),
             p("min_price", "Price above", 20.0, 0.0, 100.0, 5.0), p("stop", "Stop % above entry", 15.0, 5.0, 25.0, 1.0), p("target", "Cover (half) at % profit", 20.0, 10.0, 40.0, 5.0),
             p("half", "Cover half at the target and trail the rest (1, book) or cover all (0, old vault reading)", 1.0, 0.0, 1.0, 1.0),
             p("trail_n", "[Not from the book] trail the other half at the prior N-day high", 20.0, 5.0, 60.0, 5.0),
             p("once", "First lower ADX reading only, re-armed under the level (1, book) or every downtick (0)", 1.0, 0.0, 1.0, 1.0)],
         "ats_dvmtm" => vec![p("high_n", "Three-month high: N trading days", 63.0, 40.0, 126.0, 1.0), p("near_pct", "Within % of the high", 0.0, 0.0, 3.0, 0.5),
-            p("vol_n", "Average volume days", 15.0, 10.0, 30.0, 1.0), p("vol_x", "Volume multiple", 2.0, 1.5, 3.0, 0.25), tick(), hold(5.0)],
+            p("vol_n", "Average volume days", 15.0, 10.0, 30.0, 1.0), p("vol_x", "Volume multiple", 2.0, 1.5, 3.0, 0.25), tick(), hold(5.0), exitp()],
         "ats_15min_adx_breakout" => vec![p("adx_n", "ADX/DI period", 14.0, 7.0, 21.0, 1.0), p("adx", "ADX above", 30.0, 20.0, 45.0, 5.0), tick(), losses(), side()],
         "ats_15min_adx_breakout_equities" => vec![p("adx_n", "ADX/DI period", 14.0, 7.0, 21.0, 1.0), p("adx", "ADX above", 30.0, 20.0, 45.0, 5.0), tick(), losses(),
             p("min_price", "Price above", 40.0, 0.0, 200.0, 5.0), p("min_hv", "HV(100) at or above", 40.0, 10.0, 60.0, 5.0), hvr(), side()],
@@ -398,6 +443,8 @@ struct Rules<'a> {
     extend: bool,
     stop_pct: f64, // protective stop % from a close entry (0 = none)
     mm: Mm,
+    /// [Not from the book] standard-exit trailing level for bar i (ratchets into the protective stop), None = off
+    trail: Option<&'a dyn Fn(usize, &Pos) -> f64>,
 }
 
 fn trade(p: &Pos, i: usize, px: f64, why: String, sig_i: usize) -> Trade {
@@ -444,6 +491,12 @@ fn sim(x: &Ctx, from: usize, to: usize, r: &Rules) -> Vec<Trade> {
                 let w = &(if long { l } else { h })[i - mm.trail..i];
                 let lv = if long { w.iter().copied().fold(f64::INFINITY, f64::min) } else { w.iter().copied().fold(f64::NEG_INFINITY, f64::max) };
                 p.stop = if long { p.stop.max(lv) } else { p.stop.min(lv) }; // NaN stop -> lv
+            }
+            if let Some(f) = r.trail.filter(|_| i > p.i0) {
+                let lv = f(i, p);
+                if lv.is_finite() {
+                    p.stop = if long { p.stop.max(lv) } else { p.stop.min(lv) };
+                }
             }
             // protective stop first (a stop and a target on one bar = stop)
             let s = p.stop;
@@ -535,6 +588,32 @@ fn hold_exit(n: usize) -> impl Fn(usize, &Pos) -> Option<(At, String)> {
     move |i, p| (i >= p.count_i + n).then(|| (At::Close, format!("{n} bars held")))
 }
 
+type ExitFn<'a> = Box<dyn Fn(usize, &Pos) -> Option<(At, String)> + 'a>;
+type TrailFn<'a> = Box<dyn Fn(usize, &Pos) -> f64 + 'a>;
+/// [Not from the book] the user's standard exits for rules the book gives no exit for (VERIFICATION-PIPELINE section 4):
+/// 0 = close after `hold` bars; 1 = trailing stop 2 x Wilder ATR(5) (of the previous bar) behind the best price since entry
+/// (entry price, then the highs / lows of the bars after the entry bar), from the bar after entry, ratcheting, filled at the
+/// level or at a gapped open; 2 = first close above the previous close after the entry bar (shorts: below). The book's
+/// initial stop stays in every mode.
+fn std_exit<'a>(x: &'a Ctx, mode: f64, hold: usize) -> (ExitFn<'a>, Option<TrailFn<'a>>) {
+    match mode.round() as i64 {
+        1 => {
+            let a = atr(x.r, 5);
+            let (h, l) = (&x.h, &x.l);
+            let tr = move |i: usize, p: &Pos| {
+                let best = if p.dir > 0.0 { (p.i0 + 1..i).map(|k| h[k]).fold(p.px, f64::max) } else { (p.i0 + 1..i).map(|k| l[k]).fold(p.px, f64::min) };
+                best - p.dir * 2.0 * a[i - 1]
+            };
+            (Box::new(|_, _| None), Some(Box::new(tr)))
+        }
+        2 => {
+            let c = &x.c;
+            (Box::new(move |i, p: &Pos| (i > p.i0 && if p.dir > 0.0 { c[i] > c[i - 1] } else { c[i] < c[i - 1] }).then(|| (At::Close, if p.dir > 0.0 { "first up close".to_string() } else { "first down close".to_string() }))), None)
+        }
+        _ => (Box::new(hold_exit(hold)), None),
+    }
+}
+
 // ---------------------------------------------------------------- strategies
 
 fn cvr(k: u8, x: &Ctx, from: usize, to: usize, g: &dyn Fn(&str) -> f64) -> Vec<Trade> {
@@ -609,7 +688,7 @@ fn cvr(k: u8, x: &Ctx, from: usize, to: usize, g: &dyn Fn(&str) -> f64) -> Vec<T
             });
         }
     }
-    sim(x, from, to, &Rules { sig: &*sig, touch: None, exit: &*exit, reverse: g("reverse") > 0.5, extend, stop_pct: 0.0, mm: MM0 })
+    sim(x, from, to, &Rules { sig: &*sig, touch: None, exit: &*exit, reverse: g("reverse") > 0.5, extend, stop_pct: 0.0, mm: MM0, trail: None })
 }
 
 /// Ch 28 Two-for-One on a base pattern (param two_for_one = 1): half off at +1x initial risk, the rest on the original stop
@@ -638,7 +717,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let rng: Vec<f64> = (0..n).map(|i| h[i] - l[i]).collect();
     let no_touch: Option<&dyn Fn(usize) -> Option<(f64, f64, f64, bool)>> = None;
     let trades = match id {
-        "ats_cvr1" => cvr(1, x, from, to, &g),
+        "ats_cvr1" | "ats_cvr_equities" => cvr(1, x, from, to, &g),
         "ats_cvr2" => cvr(2, x, from, to, &g),
         "ats_cvr3" => cvr(3, x, from, to, &g),
         "ats_after_losses" => {
@@ -664,7 +743,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 }
             };
             let ex = hold_exit(u("hold"));
-            sim(x, from, to, &Rules { sig: &sig, touch: no_touch, exit: &ex, reverse: g("reverse") > 0.5, extend: false, stop_pct: g("stop"), mm: MM0 })
+            sim(x, from, to, &Rules { sig: &sig, touch: no_touch, exit: &ex, reverse: g("reverse") > 0.5, extend: false, stop_pct: g("stop"), mm: MM0, trail: None })
         }
         "ats_padi" | "ats_padi_nse" => {
             let pre = if id == "ats_padi" { "NYSE_ADV_DEC" } else { "NSE_ADV_DEC" };
@@ -688,7 +767,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 }
             };
             let ex = hold_exit(u("hold"));
-            sim(x, from, to, &Rules { sig: &sig, touch: no_touch, exit: &ex, reverse: true, extend: false, stop_pct: g("stop"), mm: MM0 })
+            sim(x, from, to, &Rules { sig: &sig, touch: no_touch, exit: &ex, reverse: true, extend: false, stop_pct: g("stop"), mm: MM0, trail: None })
         }
         "ats_hv_thrust" => {
             let (a, b, lg) = (book_hv(c, u("short1"), hvr()), book_hv(c, u("short2"), hvr()), book_hv(c, u("long"), hvr()));
@@ -706,8 +785,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 let d = if c[i] > c[i - 1] { 1.0 } else if c[i] < c[i - 1] { -1.0 } else { 0.0 };
                 (d != 0.0 && ok(d)).then(|| Ord { dir: d, kind: Kind::Close, stop: f64::NAN })
             };
-            let ex = hold_exit(u("hold"));
-            sim(x, from, to, &Rules { sig: &sig, touch: no_touch, exit: &ex, reverse: false, extend: false, stop_pct: 0.0, mm: MM0 })
+            let (ex, trail) = std_exit(x, g("exit"), u("hold"));
+            sim(x, from, to, &Rules { sig: &sig, touch: no_touch, exit: &*ex, reverse: false, extend: false, stop_pct: 0.0, mm: MM0, trail: trail.as_deref() })
         }
         "ats_1234" => {
             let (pdi, mdi, adx) = dmi3(x.r, u("adx_n"));
@@ -728,8 +807,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 }
                 None
             };
-            let ex = hold_exit(u("hold"));
-            sim(x, from, to, &Rules { sig: &sig, touch: no_touch, exit: &ex, reverse: false, extend: false, stop_pct: 0.0, mm: two4one(&g) })
+            let (ex, trail) = std_exit(x, g("exit"), u("hold"));
+            sim(x, from, to, &Rules { sig: &sig, touch: no_touch, exit: &*ex, reverse: false, extend: false, stop_pct: 0.0, mm: two4one(&g), trail: trail.as_deref() })
         }
         "ats_8day_hl_reversal" => {
             let (nn, c3, win, t) = (u("n"), u("c3_days"), u("window"), tick());
@@ -767,8 +846,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 }
                 None
             };
-            let ex = hold_exit(u("hold"));
-            sim(x, from, to, &Rules { sig: &|_| None, touch: Some(&touch), exit: &ex, reverse: false, extend: false, stop_pct: 0.0, mm: two4one(&g) })
+            let (ex, trail) = std_exit(x, g("exit"), u("hold"));
+            sim(x, from, to, &Rules { sig: &|_| None, touch: Some(&touch), exit: &*ex, reverse: false, extend: false, stop_pct: 0.0, mm: two4one(&g), trail: trail.as_deref() })
         }
         "ats_smtp" => {
             let (nn, loc, days, t) = (u("n"), g("loc") / 100.0, u("days"), tick());
@@ -784,8 +863,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 }
                 None
             };
-            let ex = hold_exit(u("hold"));
-            sim(x, from, to, &Rules { sig: &sig, touch: no_touch, exit: &ex, reverse: false, extend: false, stop_pct: 0.0, mm: MM0 })
+            let (ex, trail) = std_exit(x, g("exit"), u("hold"));
+            sim(x, from, to, &Rules { sig: &sig, touch: no_touch, exit: &*ex, reverse: false, extend: false, stop_pct: 0.0, mm: MM0, trail: trail.as_deref() })
         }
         "ats_cbp" => {
             // weekly bars (Monday-based weeks) resampled from the daily bars
@@ -830,7 +909,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 (!half && l[i] <= t).then(|| (At::Px(o[i].min(t)), format!("{tg}% profit")))
             };
             let mm = if half { Mm { half_pct: tg, trail: u("trail_n"), after_half: true, ..MM0 } } else { MM0 };
-            sim(x, from, to, &Rules { sig: &sig, touch: no_touch, exit: &ex, reverse: false, extend: false, stop_pct: 0.0, mm })
+            sim(x, from, to, &Rules { sig: &sig, touch: no_touch, exit: &ex, reverse: false, extend: false, stop_pct: 0.0, mm, trail: None })
         }
         "ats_dvmtm" => {
             if !x.has_volume {
@@ -848,8 +927,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 let hit = c[r] < o[r] && (r.saturating_sub(2)..=r).any(|v| vday(v) && (v..r).all(|k| c[k] >= o[k]));
                 hit.then(|| Ord { dir: -1.0, kind: Kind::Stop { px: l[r] - t, bars: 2 }, stop: h[r] })
             };
-            let ex = hold_exit(u("hold"));
-            sim(x, from, to, &Rules { sig: &sig, touch: no_touch, exit: &ex, reverse: false, extend: false, stop_pct: 0.0, mm: MM0 })
+            let (ex, trail) = std_exit(x, g("exit"), u("hold"));
+            sim(x, from, to, &Rules { sig: &sig, touch: no_touch, exit: &*ex, reverse: false, extend: false, stop_pct: 0.0, mm: MM0, trail: trail.as_deref() })
         }
         "ats_15min_adx_breakout" | "ats_15min_adx_breakout_equities" => {
             // missing series = no trades (the API reports the data gap before calling run)
@@ -902,7 +981,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 None
             };
             let ex = |_: usize, _: &Pos| Some((At::Close, "MOC".to_string()));
-            sim(x, from, to, &Rules { sig: &|_| None, touch: Some(&touch), exit: &ex, reverse: false, extend: false, stop_pct: 0.0, mm: MM0 })
+            sim(x, from, to, &Rules { sig: &|_| None, touch: Some(&touch), exit: &ex, reverse: false, extend: false, stop_pct: 0.0, mm: MM0, trail: None })
         }
         "ats_wide_range_gap" => {
             let hv = book_hv(c, u("hv_n"), hvr());
@@ -926,7 +1005,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 let strong = if p.dir > 0.0 { x.close_loc(i) >= 1.0 - carry } else { x.close_loc(i) <= carry };
                 Some(if strong { (At::NextOpen, "closed in the extreme of its range: exit next morning".to_string()) } else { (At::Close, "locked in near the close".to_string()) })
             };
-            sim(x, from, to, &Rules { sig: &|_| None, touch: Some(&touch), exit: &ex, reverse: false, extend: false, stop_pct: 0.0, mm: MM0 })
+            sim(x, from, to, &Rules { sig: &|_| None, touch: Some(&touch), exit: &ex, reverse: false, extend: false, stop_pct: 0.0, mm: MM0, trail: None })
         }
         "ats_gipsons" => {
             let (pdi, mdi, adx) = dmi3(x.r, u("adx_n"));
@@ -950,7 +1029,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                     .then(|| if all { (At::Close, "6-day HV reached the 100-day HV".to_string()) } else { (At::Half, "half off: 6-day HV reached the 100-day HV".to_string()) })
             };
             let mm = if all { MM0 } else { Mm { trail: u("trail_n"), after_half: true, ..MM0 } };
-            sim(x, from, to, &Rules { sig: &sig, touch: no_touch, exit: &ex, reverse: false, extend: false, stop_pct: 0.0, mm })
+            sim(x, from, to, &Rules { sig: &sig, touch: no_touch, exit: &ex, reverse: false, extend: false, stop_pct: 0.0, mm, trail: None })
         }
         _ => return None,
     };
@@ -1000,16 +1079,30 @@ mod tests {
     use super::*;
 
     #[test]
-    fn dvmtm_requires_a_complete_source_exit_before_publication() {
-        let def=catalogue().into_iter().find(|d|d.id=="ats_dvmtm").unwrap();
-        assert!(matches!(def.status,Status::NotTestable(reason) if reason.contains("trailing-exit") && reason.contains("fixed holding-period")));
-        let rows:Vec<Row>=(0..100).map(|i|Row{date:format!("2020-{:02}-{:02}",i/28+1,i%28+1),..row(0,100.,101.,99.,100.)}).collect();
-        let ctx=Ctx::new(&rows,&rows,&[]);
-        for hold in [1.,5.,20.] {
-            let issue=crate::readiness::check(&ctx,&def,70,99,&Params::from([("hold".into(),hold),("tick".into(),0.125)])).unwrap();
-            assert_eq!(issue.status,"not_testable");
-            assert!(issue.note.contains("complete source rules remain unresolved"));
+    fn no_exit_rules_carry_the_labelled_standard_exits_only() {
+        for d in catalogue().into_iter().filter(|d| NO_BOOK_EXIT.contains(&d.id)) {
+            assert!(matches!(d.status, Status::Live) && d.rules.contains(&STD_EXIT_RULE), "{}", d.id);
+            assert_eq!(params(d.id).unwrap().iter().find(|q| q.key == "exit").map(|q| q.def), Some(0.0), "{}", d.id);
         }
+        for d in catalogue().into_iter().filter(|d| !NO_BOOK_EXIT.contains(&d.id)) {
+            assert!(params(d.id).map_or(true, |v| v.iter().all(|q| q.key != "exit")), "{}", d.id);
+        }
+    }
+
+    #[test]
+    fn standard_exits_first_up_close_and_atr_trail() {
+        // long on the bar-0 close at 100 (no book stop); bar 1 closes lower, bar 2 closes higher -> first up close = bar 2
+        let rows: Vec<Row> = [(100.0, 101.0, 99.0, 100.0), (100.0, 100.5, 98.0, 99.0), (99.0, 101.0, 98.5, 100.5), (100.0, 100.0, 90.0, 91.0)]
+            .iter().enumerate().map(|(d, &(o, h, l, c))| row(d, o, h, l, c)).collect();
+        let ctx = Ctx::new(&rows, &rows, &[]);
+        let sig = |i: usize| if i == 0 { at_close(1.0) } else { None };
+        let (ex, tr) = std_exit(&ctx, 2.0, 10);
+        let t = sim(&ctx, 0, 3, &Rules { sig: &sig, touch: None, exit: &*ex, reverse: false, extend: false, stop_pct: 0.0, mm: MM0, trail: tr.as_deref() });
+        assert_eq!((t[0].exit_i, t[0].exit_px, t[0].reason.as_str()), (2, 100.5, "first up close"));
+        // ATR trail: level = best price since entry - 2 x ATR5[i-1]; NaN ATR (first bars) leaves the position untouched
+        let (ex, tr) = std_exit(&ctx, 1.0, 10);
+        let t = sim(&ctx, 0, 3, &Rules { sig: &sig, touch: None, exit: &*ex, reverse: false, extend: false, stop_pct: 0.0, mm: MM0, trail: tr.as_deref() });
+        assert!(t[0].open, "ATR(5) is not defined before bar 4: {:?}", t);
     }
 
     fn row(d: usize, o: f64, h: f64, l: f64, c: f64) -> Row {
@@ -1054,7 +1147,7 @@ mod tests {
         let ctx = Ctx::new(&rows, &rows, &[]);
         let sig = |i: usize| if i == 0 { Some(Ord { dir: 1.0, kind: Kind::Close, stop: 95.0 }) } else { None };
         let ex = hold_exit(2);
-        let r = Rules { sig: &sig, touch: None, exit: &ex, reverse: false, extend: false, stop_pct: 0.0, mm: Mm { half_r: true, ..MM0 } };
+        let r = Rules { sig: &sig, touch: None, exit: &ex, reverse: false, extend: false, stop_pct: 0.0, mm: Mm { half_r: true, ..MM0 }, trail: None };
         let t = sim(&ctx, 0, 2, &r);
         assert_eq!(t.len(), 1);
         assert_eq!((t[0].exit_i, t[0].exit_px), (2, 103.5)); // 0.5 x 105 + 0.5 x 102
