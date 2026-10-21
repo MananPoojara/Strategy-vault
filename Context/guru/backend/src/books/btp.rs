@@ -610,7 +610,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let g0 = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).unwrap_or_else(|| panic!("{id} has no param {k}")).def);
     // tick < 0 = one real tick of the market: 0.05 NSE (the vault's Indian tickers all start "NIFTY"), 0.01 US decimals.
     // A native stock uses its trusted market's tick (NSE 0.05 INR, US 0.01 USD; adaptation: the book used 1/8-dollar ticks).
-    let g = |k: &str| match g0(k) { t if k == "tick" && t < 0.0 => x.stock_tick().unwrap_or(if x.r.first().map_or(false, |r| r.ticker.starts_with("NIFTY")) { 0.05 } else { 0.01 }), v => v };
+    let g = |k: &str| match g0(k) { t if k == "tick" && t < 0.0 => x.market_tick(), v => v };
     let u = |k: &str| g(k).round().max(1.0) as usize;
     let n = x.c.len();
     if n < 3 {

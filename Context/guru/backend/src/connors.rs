@@ -325,6 +325,11 @@ impl<'a> Ctx<'a> {
     pub fn stock_tick(&self) -> Option<f64> {
         self.native_market.map(|m| match m { crate::baskets::Market::India => 0.05, crate::baskets::Market::UnitedStates => 0.01 })
     }
+    /// One real tick of the traded instrument: a native stock's market tick, else 0.05 on the vault's NSE indices
+    /// (tickers start "NIFTY") and 0.01 on US indices/ETFs (decimal quotes). Adaptation: the Connors books used 1/8-dollar ticks.
+    pub fn market_tick(&self) -> f64 {
+        self.stock_tick().unwrap_or(if self.r.first().map_or(false, |r| r.ticker.starts_with("NIFTY")) { 0.05 } else { 0.01 })
+    }
     /// An external series by name, if it has any data for this ticker.
     pub fn series(&self, name: &str) -> Option<&[f64]> {
         self.extra.get(name).filter(|v| v.iter().any(|x| x.is_finite())).map(|v| v.as_slice())

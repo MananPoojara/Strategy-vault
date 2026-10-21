@@ -61,7 +61,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     (id == "afactor_baseline").then(|| vec![
-        p("price", "Yesterday's close above (book 10; Stats.xls tests 20, 40)", 10., 5., 40., 5.),
+        p("price", "Yesterday's close above, USD (book 10; Stats.xls tests 20, 40; omitted on Indian stocks: USD price filter omitted on INR stocks)", 10., 5., 40., 5.),
         p("vol", "20-day average volume above (book 100,000; tests 250k/500k/1M)", 100_000., 100_000., 1_000_000., 50_000.),
         p("prev_down", "Yesterday's close down at least X% (book: any down close = 0; tests 1-4%)", 0., 0., 4., 1.),
         p("atr_mult", "Yesterday's range > X x ATR(10) (book 1.1; tests 1.25-2)", 1.1, 1.0, 2.0, 0.05),
@@ -80,6 +80,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).unwrap().def);
     let (price, vol_min, pdown, mult, hv_min, rsi_max) = (g("price"), g("vol"), g("prev_down") / 100., g("atr_mult"), g("hv"), g("rsi"));
     let (lap, entry, lag) = (g("lap") / 100., g("entry") / 100., if g("atr_on_setup") >= 0.5 { 0 } else { 1 });
+    // User decision 2026-10-21: "USD price filter omitted on INR stocks" (labelled); the share-volume filter stays as printed.
+    let price = if x.native_market == Some(crate::baskets::Market::India) { f64::NEG_INFINITY } else { price };
     let vol: Vec<f64> = x.r.iter().map(|r| r.volume.unwrap_or(f64::NAN)).collect();
     let avg_vol = sma(&vol, 20);
     let hv = hv_ddof(&x.c, 100, 0.0); // AmiBroker StDev = population
@@ -128,5 +130,10 @@ mod tests {
         let p = Params::from([("vol".to_string(), 250_000.)]);
         assert!(run("afactor_baseline", &x, 0, 129, &p).unwrap().is_empty());
         assert!(run("afactor_travel_high", &x, 0, 129, &Params::new()).is_none());
+        // price 200 > every close: no trade, except on an Indian stock where the USD price filter is omitted
+        let hi = Params::from([("price".to_string(), 200.)]);
+        assert!(run("afactor_baseline", &x, 0, 129, &hi).unwrap().is_empty());
+        let mut inr = Ctx::new(&r, &r, &[]); inr.native_market = Some(crate::baskets::Market::India);
+        assert_eq!(run("afactor_baseline", &inr, 0, 129, &hi).unwrap().len(), 1);
     }
 }

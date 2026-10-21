@@ -35,6 +35,10 @@ impl NativeEvidence {
     pub(crate) fn us_test_fixture()->Self {
         Self{market:Market::UnitedStates,membership_kind:"current_snapshot".into(),membership_source:"Test source list".into(),membership_source_sha:"a".repeat(64),mapped_index:"SPX",adjustment_status:"not_independently_verified".into()}
     }
+    #[cfg(test)]
+    pub(crate) fn india_test_fixture()->Self {
+        Self{market:Market::India,..Self::us_test_fixture()}
+    }
     fn json(&self)->String {
         format!("\"trusted_market\":\"{}\",\"currency\":\"{}\",\"asset_type\":\"{}\",\"timeframe\":\"D\",\"membership_kind\":\"{}\",\"membership_source\":\"{}\",\"membership_source_sha256\":{},\"mapped_index\":\"{}\",\"adjustment_status\":\"{}\",\"source_price_units_verified\":false,\"historical_membership_verified\":false,\"corporate_actions_independently_verified\":false",
             self.market.code(),self.currency(),self.asset_type(),esc(&self.membership_kind),esc(&self.membership_source),

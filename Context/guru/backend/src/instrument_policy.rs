@@ -37,7 +37,8 @@ macro_rules! CWIN_INDEX_LABEL {()=>{"The book and course show Windows on US stoc
 macro_rules! WS5_INDEX_LABEL {()=>{"Seminar method for US stocks from a nightly scan; index/ETF runs are a declared application, not the author's test. Stock-only filters (price, volume, sub-sector, range, ATR) do not apply to an index."}}
 macro_rules! STOCK_TICK_LABEL {()=>{"Actual stocks are admitted (the book shows this setup on US stocks). Adaptation: the book used 1/8-dollar ticks; stock runs offset entries/stops by the stock's real tick, 0.05 INR on NSE and 0.01 USD on US stocks. Vault stock prices are split/dividend-adjusted (not independently verified), so one tick is a larger fraction of early adjusted prices. One stock at a time; no stock population or book result is reproduced."}}
 macro_rules! WS5_STOCK_LABEL {()=>{"Actual stocks are admitted without the filters that cannot be applied: #5 sub-sector vs its 200-day SMA is omitted for every stock (no SUBSECTOR series); on Indian stocks the USD #2 price >= $15, #6 90-day range > 6 points and #7 ATR(90) >= 1 point are omitted (no reviewed INR version) and only #3 share volume (100,000 shares/day; weekly 500,000 shares/week) is kept as printed; on US stocks #2, #3, #6 and #7 are kept in USD as printed, applied to split/dividend-adjusted prices. Results are therefore not the author's scan."}}
-macro_rules! USD_PRICE_US_LABEL {()=>{"US stocks only: the book's USD price filter is applied as printed to the US stock's own USD prices (vault prices are split/dividend-adjusted, not independently verified, so early adjusted prices sit below the historical quotes). Indian stocks stay held: the USD amount has no reviewed INR version."}}
+macro_rules! USD_PRICE_US_LABEL {()=>{"US stocks only: the book's USD price filter is applied as printed to the US stock's own USD prices (vault prices are split/dividend-adjusted, not independently verified, so early adjusted prices sit below the historical quotes). Indian stocks stay held: the USD 1-15 price band is the strategy itself."}}
+macro_rules! AFACTOR_STOCK_LABEL {()=>{"US stocks: the book's USD price filter (previous close > 10) is applied as printed to the US stock's own USD prices (split/dividend-adjusted, not independently verified). Indian stocks: USD price filter omitted on INR stocks (no reviewed INR version); the share-volume filter (20-day average > 100,000 shares) is kept as printed. Not the author's US universe."}}
 macro_rules! ALPHA_TREND_LABEL {()=>{"Book tested on nine US sector ETFs (XLB..XLY, not in the vault); other ETFs and index runs are a declared application, not the author's test."}}
 macro_rules! CONNORS_INDEX_LABEL {()=>{"Book tested on US stocks; index/ETF runs are a declared application, not the author's test. Stock filters in the rule (minimum price, share volume, Liquidity Filter) are still calculated on the index's own price and volume and are always met there (the R3/R4 low-price $1-$15 band is never met), so they do not screen index runs."}}
 pub const CONNORS_INDEX_IDS:&[&str]=&["f1a","f3a","f4a","f4c","f4d","rsi2_5d","tps_stocks","x555","h10","r3r4_base","r3r4_base_scale","r3r4_bigcap","r3r4_bigcap_scale","r3r4_bigcap_deck","r3r4_bigcap_deck_scale","r3r4_lowprice","r3r4_lowprice_scale","ats_dvmtm","ats_cvr_equities","ats_15min_adx_breakout_equities","afactor_baseline"];
@@ -173,7 +174,7 @@ pub fn policy(def:&StrategyDef)->Policy {
         ("afactor","afactor_baseline")=>Some("Alvarez Factor workbook p.13 filters the previous stock close above USD 10. The runner compares a literal price parameter with the INR close, which is not the same economic filter."),
         ("jc5dm","jc5dm_long")=>Some("Five Day Momentum p.10 requires the US stock price above USD 50 and pp.11-12 use a 1/16 USD stock tick. The runner's literal values do not establish an INR threshold or the actual NSE stock tick."),
         ("jc5dm","jc5dm_short")=>Some("Five Day Momentum p.10 requires the US stock price above USD 40 and pp.11-12 use a 1/16 USD stock tick. The runner's literal values do not establish an INR threshold or the actual NSE stock tick."),
-        ("r3r4","r3r4_lowprice"|"r3r4_lowprice_scale")=>Some("R3/R4 Low Priced Rules require the stock close above USD 1 and below USD 15. The source module explicitly keeps that numeric band as INR 1 to INR 15; this is an unsupported currency reinterpretation."),
+        ("r3r4","r3r4_lowprice"|"r3r4_lowprice_scale")=>Some(R3R4_LOWPRICE_HELD),
         ("ats","ats_cbp")=>Some("Advanced Trading Strategies Chapter 11 filters US momentum stocks above USD 20. The executable min_price parameter is compared directly with INR stock prices; a local currency specification is missing."),
         ("ats","ats_15min_adx_breakout_equities")=>Some("Advanced Trading Strategies p.164 requires a US equity price above USD 40 and stock execution ticks. Comparing a literal min_price with INR prices or substituting a generic tick does not preserve this source rule."),
         _=>None,
@@ -185,6 +186,13 @@ pub fn policy(def:&StrategyDef)->Policy {
 /// (the filter is applied in USD as printed); Indian stocks stay held.
 pub fn usd_price_rule_on_us_stock(def:&StrategyDef,market:Market)->bool {
     market==Market::UnitedStates && matches!((def.book,def.id),("afactor","afactor_baseline")|("r3r4","r3r4_lowprice"|"r3r4_lowprice_scale"))
+}
+/// The R3/R4 Low Priced rules ARE the USD 1-15 band: they run on US stocks only (refusal text for every other instrument).
+pub const R3R4_LOWPRICE_HELD:&str="R3/R4 Low Priced Rules are defined by the stock closing above USD 1 and below USD 15: the dollar price band is the strategy itself, so it runs only on actual US stocks. It stays held on Indian stocks (an INR 1-15 band would be a different strategy, not the book's) and on indices/ETFs. No results are published.";
+/// User decision 2026-10-21: afactor_baseline runs on Indian stocks with the USD price (> 10) filter omitted (labelled);
+/// the share-volume filter (> 100,000 shares) is kept as printed.
+pub fn inr_price_filter_omitted(def:&StrategyDef,market:Market)->bool {
+    market==Market::India && (def.book,def.id)==("afactor","afactor_baseline")
 }
 fn base_policy(def:&StrategyDef)->Policy {
     if reviewed_kestner_stock(def) && crate::books::lkqts::macs_candidate(def.id) {
@@ -281,15 +289,15 @@ fn base_policy(def:&StrategyDef)->Policy {
         p.market_adaptation=true; return p;
     }
     if def.book==crate::books::ss::BOOK && crate::books::ss::STOCK_ALSO.contains(&def.id) {
-        let mut p=requirement("index_etf_or_stock", &["index","etf","individual_stock"], "Street Smarts (Raschke & Connors, 1995), daily rules reviewed in connors/ss-admission/SOURCE-CONTRACT.md with independent chronological ledgers (stocks: stocks-admission). The book shows this setup on futures and on an individual stock (Turtle Soup Plus One: Delta/Texas Instruments p.41-42; Holy Grail: Citicorp p.81; ID/NR4: Abbott p.148; Historical Volatility: Micron p.157). Actual stocks are admitted (user decision 2026-10-21); index runs stay on SPX, NDX, DJI, SPY, NIFTY 50 and NIFTYBANK as a declared application, not the authors' test. 1 tick = tick_pct % of price on every instrument (not the stock's exchange tick). Daily-bar fill conventions, the labelled exits and every [Not from the book] option are disclosed. Cash-index and stock shorts are hypothetical exposure. No futures dollars or book performance is reproduced.");
+        let mut p=requirement("index_etf_or_stock", &["index","etf","individual_stock"], "Street Smarts (Raschke & Connors, 1995), daily rules reviewed in connors/ss-admission/SOURCE-CONTRACT.md with independent chronological ledgers (stocks: stocks-admission). The book shows this setup on futures and on an individual stock (Turtle Soup Plus One: Delta/Texas Instruments p.41-42; Holy Grail: Citicorp p.81; ID/NR4: Abbott p.148; Historical Volatility: Micron p.157). Actual stocks are admitted (user decision 2026-10-21); index runs stay on SPX, NDX, DJI, SPY, NIFTY 50 and NIFTYBANK as a declared application, not the authors' test. 1 tick = 0.01% of price on an index/ETF; on an actual stock the stock's real tick, 0.05 INR on NSE and 0.01 USD on US stocks (adaptation: the book used 1/8-dollar ticks). Daily-bar fill conventions, the labelled exits and every [Not from the book] option are disclosed. Cash-index and stock shorts are hypothetical exposure. No futures dollars or book performance is reproduced.");
         p.market_adaptation=true; return p;
     }
     if def.book==crate::books::ss::BOOK && crate::books::ss::reviewed_daily(def.id) {
         let stock=crate::books::ss::STOCK_SHOWN.contains(&def.id);
         let mut p=if stock {
-            requirement("index_etf_or_stock", &["index","etf","individual_stock"], "Street Smarts (Raschke & Connors, 1995), daily rules reviewed in connors/ss-admission/SOURCE-CONTRACT.md with independent chronological ledgers. The book shows this setup on futures and on individual stocks (2-period ROC: Micron p.64; The Anti: 'all equities and futures markets' p.77; Three-Day Unfilled Gap: Motorola pp.99-101). Actual stocks are admitted; actual index/ETF runs are a declared application, not the authors' test. 1 tick = tick_pct % of price. Exits the chapter leaves to judgement ('trail a stop') use the labelled 2-bar channel from Appendix p.232. No futures dollars or book performance is reproduced.")
+            requirement("index_etf_or_stock", &["index","etf","individual_stock"], "Street Smarts (Raschke & Connors, 1995), daily rules reviewed in connors/ss-admission/SOURCE-CONTRACT.md with independent chronological ledgers. The book shows this setup on futures and on individual stocks (2-period ROC: Micron p.64; The Anti: 'all equities and futures markets' p.77; Three-Day Unfilled Gap: Motorola pp.99-101). Actual stocks are admitted; actual index/ETF runs are a declared application, not the authors' test. 1 tick = 0.01% of price on an index/ETF; on an actual stock the stock's real tick, 0.05 INR on NSE and 0.01 USD on US stocks (adaptation: the book used 1/8-dollar ticks). Exits the chapter leaves to judgement ('trail a stop') use the labelled 2-bar channel from Appendix p.232. No futures dollars or book performance is reproduced.")
         } else {
-            requirement("declared_index_timing", &["index","etf"], "Street Smarts (Raschke & Connors, 1995), daily rules reviewed in connors/ss-admission/SOURCE-CONTRACT.md with independent chronological SPY/SPX/NIFTY ledgers. The book traded S&P, bond, currency and grain futures (Moore studies: 25 US futures 1986-1995). Actual SPX, NDX, DJI, NIFTY 50 and NIFTYBANK cash-index runs and actual SPY are a declared application; cash-index shorts are hypothetical exposure. 1 tick = tick_pct % of price. Daily-bar fill conventions, the labelled 2-bar channel trail (Appendix p.232) and every [Not from the book] option are disclosed; NIFTY opens before late 2010 lie close to the previous close (official NSE data, kept). No futures dollars, contract rolls or book performance is reproduced.")
+            requirement("declared_index_timing", &["index","etf"], "Street Smarts (Raschke & Connors, 1995), daily rules reviewed in connors/ss-admission/SOURCE-CONTRACT.md with independent chronological SPY/SPX/NIFTY ledgers. The book traded S&P, bond, currency and grain futures (Moore studies: 25 US futures 1986-1995). Actual SPX, NDX, DJI, NIFTY 50 and NIFTYBANK cash-index runs and actual SPY are a declared application; cash-index shorts are hypothetical exposure. 1 tick = 0.01% of price. Daily-bar fill conventions, the labelled 2-bar channel trail (Appendix p.232) and every [Not from the book] option are disclosed; NIFTY opens before late 2010 lie close to the previous close (official NSE data, kept). No futures dollars, contract rolls or book performance is reproduced.")
         };
         p.market_adaptation=true; return p;
     }
@@ -438,7 +446,10 @@ pub fn check_native(def:&StrategyDef,ticker:&str,evidence:&NativeEvidence)->Opti
     if let Some(issue)=ats_symbol_issue(def,ticker,Some(evidence.market()==crate::baskets::Market::UnitedStates)){return Some(issue);}
     if let Some(issue)=hfm_otvt_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=check_selected(p,ticker,evidence.asset_type()){return Some(issue);}
-    if let Some(reason)=p.native_currency_constraint.filter(|_|!usd_price_rule_on_us_stock(def,evidence.market())) {
+    if matches!((def.book,def.id),("r3r4","r3r4_lowprice"|"r3r4_lowprice_scale")) && evidence.market()!=Market::UnitedStates {
+        return Some(Issue{status:"not_testable",note:format!("{R3R4_LOWPRICE_HELD} Selected actual stock: {ticker}.")});
+    }
+    if let Some(reason)=p.native_currency_constraint.filter(|_|!usd_price_rule_on_us_stock(def,evidence.market()) && !inr_price_filter_omitted(def,evidence.market())) {
         return Some(Issue{status:"needs_data",note:format!("Source currency/price-unit/tick review is pending. {reason} Selected actual stock: {ticker}; trusted source market {} and currency {}. Matching USD currency alone cannot establish the author's historical adjusted-price basis, absolute price thresholds or execution ticks; no reviewed source-unit proof is staged. No results are published.",evidence.market().code(),evidence.currency())});
     }
     None
@@ -513,7 +524,8 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if def.book=="btp" && crate::books::btp::reviewed_daily(def.id) {json.push_str(concat!(",\"declared_application\":\"",BTP_INDEX_LABEL!(),"\""));}
     if (def.book=="btp" && crate::books::btp::STOCK_ADMITTED.contains(&def.id)) || (def.book==crate::books::ats::BOOK && crate::books::ats::STOCK_TICK_IDS.contains(&def.id)) {json.push_str(concat!(",\"stock_adaptation\":\"",STOCK_TICK_LABEL!(),"\""));}
     if def.book==crate::books::ws5::BOOK && crate::books::ws5::reviewed_daily(def.id) && !crate::books::ws5::TIMING.contains(&def.id) {json.push_str(concat!(",\"stock_adaptation\":\"",WS5_STOCK_LABEL!(),"\""));}
-    if matches!((def.book,def.id),("afactor","afactor_baseline")|("r3r4","r3r4_lowprice"|"r3r4_lowprice_scale")) {json.push_str(concat!(",\"stock_adaptation\":\"",USD_PRICE_US_LABEL!(),"\""));}
+    if (def.book,def.id)==("afactor","afactor_baseline") {json.push_str(concat!(",\"stock_adaptation\":\"",AFACTOR_STOCK_LABEL!(),"\""));}
+    if matches!((def.book,def.id),("r3r4","r3r4_lowprice"|"r3r4_lowprice_scale")) {json.push_str(concat!(",\"stock_adaptation\":\"",USD_PRICE_US_LABEL!(),"\""));}
     if def.book==crate::books::ws5::BOOK && crate::books::ws5::reviewed_daily(def.id) && !crate::books::ws5::TIMING.contains(&def.id) {json.push_str(concat!(",\"declared_application\":\"",WS5_INDEX_LABEL!(),"\""));}
     if def.book=="kfsc" && crate::books::kfsc::reviewed_hv_rule(def.id) {
         json.push_str(&format!(",\"source_convention\":\"{}\"",escape(crate::books::kfsc::HV_CONVENTION)));
@@ -532,7 +544,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
         };
         json.push_str(&format!(",\"source_convention\":\"{}\"",escape(convention)));
     }
-    let currency_admitted=if p.native_currency_constraint.is_some(){"false"}else if p.allowed_types.contains(&"individual_stock"){"true"}else{"null"};
+    let currency_admitted=if (def.book,def.id)==("afactor","afactor_baseline"){"true"}else if p.native_currency_constraint.is_some(){"false"}else if p.allowed_types.contains(&"individual_stock"){"true"}else{"null"};
     json.push_str(&format!(",\"source_price_unit\":{},\"native_india_currency_admitted\":{currency_admitted},\"native_currency_constraint\":{}}}",p.source_price_unit.map_or("null".into(),|s|format!("\"{}\"",escape(s))),p.native_currency_constraint.map_or("null".into(),|s|format!("\"{}\"",escape(s)))));
     json
 }
@@ -988,7 +1000,8 @@ mod tests {
             assert_eq!(issue.status,"needs_data");
             assert!(issue.note.contains("USD")&&issue.note.contains("INR"));
             let json=metadata_json(&d);
-            assert!(json.contains("\"native_india_currency_admitted\":false"));
+            // afactor_baseline: Indian stocks admitted with the USD price filter omitted (user decision 2026-10-21)
+            assert!(json.contains(if id=="afactor_baseline" {"\"native_india_currency_admitted\":true"} else {"\"native_india_currency_admitted\":false"}));
             assert!(json.contains("\"source_price_unit\":\"USD\""));
             assert_eq!(policy(&d).preferred_basket,Some("nifty50"));
         }
@@ -1020,6 +1033,10 @@ mod tests {
         // Existing admission API has no client currency argument and preserves
         // Indian defaults even if a client adds a misleading ticker suffix.
         assert!(check(&def("afactor_baseline","afactor"),"RELIANCE?currency=USD",true).unwrap().note.contains("INR"));
+        // 2026-10-21: afactor_baseline runs on Indian stocks (USD price filter omitted, labelled); the R3/R4 USD 1-15 band stays held.
+        let inr=NativeEvidence::india_test_fixture();
+        assert!(check_native(&def("afactor_baseline","afactor"),"RELIANCE",&inr).is_none());
+        for id in ["r3r4_lowprice","r3r4_lowprice_scale"] {assert!(check_native(&def(id,"r3r4"),"RELIANCE",&inr).unwrap().note.contains("price band is the strategy itself"));}
     }
     #[test]
     fn ehlers_review_is_exact_and_mama_requires_actual_stock() {

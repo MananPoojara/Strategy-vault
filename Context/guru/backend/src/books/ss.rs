@@ -39,7 +39,7 @@ pub fn reviewed_daily(id: &str) -> bool { REVIEWED_DAILY.contains(&id) }
 pub const STOCK_SHOWN: &[&str] = &["ss_2_period_roc", "ss_anti", "ss_anti_3_10", "ss_anti_trigger", "ss_three_day_unfilled_gap"];
 /// Setups also shown on stocks (Turtle Soup Plus One: DAL/TXN p.41-42; Holy Grail: Citicorp p.81; ID/NR4: Abbott p.148;
 /// Historical Volatility/Crabel: Micron p.157). Actual stocks are admitted too (user decision 2026-10-21); their index/ETF
-/// scope stays the futures-study list of `admitted_symbol`. Same tick convention as the other stock runs (tick_pct % of price).
+/// scope stays the futures-study list of `admitted_symbol`. Stock runs use the stock's real tick (tick_pct −1 = auto).
 pub const STOCK_ALSO: &[&str] = &["ss_turtle_soup_plus_one", "ss_holy_grail", "ss_id_nr4", "ss_hist_vol_crabel"];
 /// Non-stock symbols admitted for the futures studies (1 tick = % of price, so scale-free). The A/D Market Buster
 /// times the S&P on NYSE breadth (SPX/SPY) and NIFTY 50 on NSE breadth.
@@ -448,7 +448,7 @@ fn channel_sar(x: &Ctx, n: usize, from: usize, to: usize) -> Vec<Trade> {
 // ---------------------------------------------------------------- catalogue
 
 const TRAIL2: &str = "X|[From elsewhere in the book] \"trail a stop\" = a 2-period channel (Linda, Appendix p.232: \"I have also used a 2-period channel as a way to trail a stop in a trending market\"): stop at the lowest low (highest high) of the prior 2 bars, ratcheting only";
-const INDEX: &str = "The book traded futures and stocks; run here on the indices / ETFs. 1 tick = tick_pct % of price (0.01% default, about one S&P futures tick in 1995). India: NIFTY indices daily, no night session, same rules. NIFTY index opens before about Nov 2010 are stale (16-34% of days open within 0.01% of the prior close; NSE's pre-open call auction began late 2010): for rules that use the open (gaps, next-open entries or exits) set From to 2010-11-01 or later on NSE indices.";
+const INDEX: &str = "The book traded futures and stocks; run here on the indices / ETFs. 1 tick = 0.01% of price on an index/ETF (tick_pct −1 = auto; about one S&P futures tick in 1995); on an actual stock the stock's real tick (0.05 INR NSE, 0.01 USD US). India: NIFTY indices daily, no night session, same rules. NIFTY index opens before about Nov 2010 are stale (16-34% of days open within 0.01% of the prior close; NSE's pre-open call auction began late 2010): for rules that use the open (gaps, next-open entries or exits) set From to 2010-11-01 or later on NSE indices.";
 const MOORE: &str = "Moore Research Center tendency study (Appendix): 25 US futures 1986-1995, \"we are not testing mechanical systems\", no stops, costs or slippage; Win(%) counts positive outcomes, averages are $ per contract. Implemented as a mechanical rule with the table's own exit; the only data overlap is SPY 1993-1995 against the S&P row, so the comparison is an approximation (index ETF vs. rolled futures contracts; compare win % and frequency, not dollars). By default one position at a time: a setup that arrives while the previous one is still held is skipped; overlap = 1 counts every setup independently as Moore did (use it for the table comparison; the equity curve is then not meaningful because the trades overlap). India: NIFTY index opens before about Nov 2010 are stale, so for next-open exits and gap setups on NSE use From 2010-11-01 or later.";
 
 const FILLRULE: &str = "E|[Not from the book: daily-bar fill rule] the stop is placed only after the break, so a bar that opened beyond the level is ambiguous. fill_rule 0 (default, unbiased) = only bars that opened inside the level can fill; 1 = every bar that touches the level fills (pessimistic bound); 2 = an opened-beyond bar fills only if it closed back beyond the level (biased upward: keeps the winners, drops the losers)";
@@ -795,7 +795,7 @@ fn p(key: &'static str, label: &'static str, def: f64, min: f64, max: f64, step:
     ParamDef { key, label, def, min, max, step }
 }
 fn tick() -> ParamDef {
-    p("tick_pct", "1 tick = % of price", 0.01, 0.0, 0.1, 0.01)
+    p("tick_pct", "1 tick = % of price (−1 = auto: 0.01% of price on an index/ETF as before; on an actual stock its real tick, 0.05 INR NSE / 0.01 USD US, adaptation: the book used 1/8-dollar ticks)", -1.0, -1.0, 0.1, 0.01)
 }
 fn side() -> ParamDef {
     p("side", "Side: 0 both, 1 long only, -1 short only", 0.0, -1.0, 1.0, 1.0)
@@ -883,7 +883,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, prm: &Params) -> Option<Ve
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let n = c.len();
     let to = to.min(n.saturating_sub(1));
-    let tick = |i: usize| c[i] * g("tick_pct") / 100.0;
+    // tick_pct < 0 = auto: a native stock's real tick (user rule 2026-10-21), else 0.01% of the close (unchanged index/ETF convention)
+    let tick = |i: usize| match (g("tick_pct"), x.stock_tick()) { (t, Some(st)) if t < 0.0 => st, (t, None) if t < 0.0 => c[i] * 0.01 / 100.0, (t, _) => c[i] * t / 100.0 };
     let lo_ok = || g("side") >= 0.0;
     let sh_ok = || g("side") <= 0.0;
     let none = |_: usize, _: &Pos| -> Option<Act> { None };

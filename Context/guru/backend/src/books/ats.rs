@@ -30,10 +30,10 @@ pub fn reviewed_daily(id: &str) -> bool { REVIEWED_DAILY.contains(&id) }
 /// Rules the book gives no exit for: the user's standard exits (param `exit`, [Not from the book]) apply.
 pub const NO_BOOK_EXIT: &[&str] = &["ats_hv_thrust", "ats_1234", "ats_8day_hl_reversal", "ats_smtp", "ats_two_for_one", "ats_dvmtm"];
 /// Book-shown stock patterns (ATS: "1 tick (1/8 for equities)"; Ch 13 DVMTM stock examples) also admitted on actual
-/// stocks with the stock's real tick, outside the accuracy gate's NSE-index list (user decision 2026-10-21).
+/// stocks with the stock's real tick (user decision 2026-10-21).
 pub const STOCK_TICK_IDS: &[&str] = &["ats_1234", "ats_8day_hl_reversal", "ats_smtp", "ats_two_for_one", "ats_gipsons", "ats_dvmtm"];
-/// Index/ETF symbols admitted per rule (stocks: only ats_cvr_equities and ats_dvmtm, see instrument_policy). The pattern
-/// rules with a fixed 0.05 tick are further limited by the accuracy gate's own list (NSE indices).
+/// Index/ETF symbols admitted per rule (stocks: see instrument_policy). The pattern rules (STOCK_TICK_IDS) offset by the
+/// instrument's real tick (Ctx::market_tick: 0.05 NSE, 0.01 US index/ETF, the stock's own tick), so they run on any index/ETF.
 pub fn admitted_symbol(id: &str, ticker: &str) -> bool {
     match id {
         "ats_cvr1" | "ats_trin_thrust" | "ats_padi" => matches!(ticker, "SPX" | "SPY"),
@@ -290,7 +290,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let side = || p("side", "Side: 0 both, 1 long only, -1 short only", 0.0, -1.0, 1.0, 1.0);
     let rev = || p("reverse", "Opposite signal reverses (1) or is ignored (0)", 1.0, 0.0, 1.0, 1.0);
     let ext = |d| p("extend", "Same-side signal on the exit day keeps the position (1, TradeStation netting)", d, 0.0, 1.0, 1.0);
-    let tick = || p("tick", "One tick (price units; −1 = auto: 0.05 on an index/ETF as before, the stock's real tick on an actual stock: 0.05 INR NSE, 0.01 USD US; adaptation: the book used 1/8-dollar ticks)", -1.0, -1.0, 1.0, 0.01);
+    let tick = || p("tick", "One tick (price units; −1 = auto: 0.05 on NSE indices; on US indices/ETFs 0.01 for the pattern rules (1-2-3-4, 8-day, SMTP, 2-for-1, Gipsons, DVMTM), 0.05 for the others as before; the stock's own tick on an actual stock: 0.05 INR NSE, 0.01 USD US; adaptation: the book used 1/8-dollar ticks)", -1.0, -1.0, 1.0, 0.01);
     let hold = |d| p("hold", "Exit on the close after N bars", d, 1.0, 30.0, 1.0);
     let losses = || p("max_losses", "Entries a day: re-enter after a stop-out up to N entries (book p.156: 2; 1 = no re-entry)", 2.0, 1.0, 5.0, 1.0);
     let hvr = || p("hv_rets", "HV uses N-1 returns (1, book) or N (0)", 1.0, 0.0, 1.0, 1.0);
@@ -715,7 +715,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let n = c.len();
     let side = p.get("side").copied().or_else(|| schema.iter().find(|d| d.key == "side").map(|d| d.def)).unwrap_or(0.0);
     let ok = |d: f64| side == 0.0 || side == d;
-    let tick = || match g("tick") { t if t < 0.0 => x.stock_tick().unwrap_or(0.05), t => t };
+    // auto tick: the pattern rules use the instrument's real tick (0.01 on US index/ETF); the others keep 0.05 off a stock
+    let tick = || match g("tick") { t if t < 0.0 && STOCK_TICK_IDS.contains(&id) => x.market_tick(), t if t < 0.0 => x.stock_tick().unwrap_or(0.05), t => t };
     let hvr = || g("hv_rets") > 0.5;
     let rng: Vec<f64> = (0..n).map(|i| h[i] - l[i]).collect();
     let no_touch: Option<&dyn Fn(usize) -> Option<(f64, f64, f64, bool)>> = None;
