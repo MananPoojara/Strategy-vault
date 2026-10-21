@@ -182,6 +182,21 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     }
     // Admitted ats rules: CVR I/III read the VIX open/high/low (close-only CBOE VIX before 1992); rules whose fills read the
     // traded instrument's open refuse windows with stale US index opens unless the gate already clamps the start.
+    // Admitted Chairman's Club 2008 rules: CRDT limit fills read the open (refuse stale US index opens unless the gate clamps);
+    // the Liquidity Filter needs actual instrument and benchmark volume over the whole window.
+    if def.book==books::ccl08::BOOK && books::ccl08::reviewed_daily(def.id) {
+        if let Some(r)=ctx.r.get(from) {
+            if books::ccl08::day_trade(def.id) && !crate::gate::get(def.id).is_some_and(|g|g.clamp_open) {
+                if let Some(cut)=crate::gate::real_open_from(&r.ticker).filter(|c|r.date.as_str()<*c) {
+                    return issue("needs_data",format!("This day trade's limit fill reads the opening price; {} opens in this file are real only from {cut}. Choose a start on or after {cut}.",r.ticker));
+                }
+            }
+            if books::ccl08::params(def.id).is_some_and(|ps|ps.iter().any(|d|d.key=="lf")) && to<ctx.lf.len() && ctx.lf[from..=to].iter().any(|v|!v.is_finite()) {
+                let miss:Vec<usize>=(from..=to).filter(|&i|!ctx.lf[i].is_finite()).collect();
+                return issue("needs_data",format!("The Liquidity Filter (LF) needs actual close x volume of {} (20 days) and of the benchmark on the same dates (65 days); it is missing on {} day(s) of this window ({} to {}). Choose a window without those days.",r.ticker,miss.len(),ctx.r[miss[0]].date,ctx.r[*miss.last().unwrap()].date));
+            }
+        }
+    }
     if def.book==books::ats::BOOK && books::ats::reviewed_daily(def.id) {
         if let Some(r)=ctx.r.get(from) {
             if matches!(def.id,"ats_cvr1"|"ats_cvr3"|"ats_cvr_equities") && r.date.as_str()<books::ats::REAL_VIX_OHLC_FROM {
@@ -463,6 +478,17 @@ mod tests {
             assert_eq!(note(&spy).is_some_and(|n|n.contains("close-only")),id=="ws5_vix_iii_reversal","{id}");
             if id!="ws5_vix_iii_reversal" {assert!(note(&new).is_none(),"{id}");}
         }
+    }
+    #[test]
+    fn ccl08_day_trades_refuse_stale_index_opens_and_missing_lf() {
+        let mk=|t:&str,y:&str,vol:Option<f64>|{let mut r=rows();for (i,x) in r.iter_mut().enumerate(){x.ticker=t.into();x.date=format!("{y}-06-0{}",i+1);x.volume=vol;}r};
+        let note=|r:&Vec<Row>,id:&str|check(&Ctx::new(r,r,r),&definition(id),0,4,&Params::new()).map(|i|i.note);
+        // crdt3_long has no gate clamp: SPX before 2014 is refused for its open-reading fill
+        assert!(note(&mk("SPX","2013",Some(1e6)),"ccl08_crdt3_long").is_some_and(|n|n.contains("opening price")));
+        // LF needs 20/65 days of volume: a 5-bar file cannot supply it
+        assert!(note(&mk("NIFTY 50","2015",Some(1e6)),"ccl08_crdt3_long").is_some_and(|n|n.contains("Liquidity Filter")));
+        // CRDT II long and the TPS rules have no LF and no open read
+        for id in ["ccl08_crdt2_long","ccl08_tps_long","ccl08_tps_research"] {assert!(note(&mk("SPX","2013",Some(1e6)),id).map_or(true,|n|!n.contains("opening price")&&!n.contains("Liquidity Filter")),"{id}");}
     }
     #[test]
     fn ats_admitted_rules_refuse_close_only_vix_and_stale_index_opens() {

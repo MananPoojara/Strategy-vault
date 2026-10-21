@@ -32,6 +32,7 @@ macro_rules! connors_any {($basis:literal)=>{{
     let mut p=requirement("index_etf_or_stock", &["index","etf","individual_stock"], concat!($basis," ",CONNORS_INDEX_LABEL!()));
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;p
 }}}
+macro_rules! CCL08_INDEX_LABEL {()=>{"Book shows these day trades on US stocks; index/ETF runs are a declared application, not the author's test. The Liquidity Filter is computed on the instrument's own close x volume against the benchmark (SPX or NIFTY 50): on a cash index it is always met (no screening); on an ETF it is the fund's actual dollar volume and can screen days (IWM, MDY, SMH fall below 3-10 at times); indices without volume (NIFTY IT) are refused for LF rules. HV100, RSI(2), 200-day and percent-move filters apply as printed."}}
 macro_rules! BTP_INDEX_LABEL {()=>{"Book tested or illustrated on futures and US stocks; index/ETF runs are a declared application, not the author's test."}}
 macro_rules! CWIN_INDEX_LABEL {()=>{"The book and course show Windows on US stocks, HOLDRs, indices, ETFs and futures; index/ETF runs are a declared application, not the author's test. The 100,000-share volume suggestion (Q&A p56) applies to stocks only and is not coded."}}
 macro_rules! WS5_INDEX_LABEL {()=>{"Seminar method for US stocks from a nightly scan; index/ETF runs are a declared application, not the author's test. Stock-only filters (price, volume, sub-sector, range, ATR) do not apply to an index."}}
@@ -60,6 +61,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || (def.book==crate::books::cwin::BOOK && crate::books::cwin::reviewed_daily(def.id))
         || (def.book==crate::books::ws5::BOOK && crate::books::ws5::reviewed_daily(def.id))
         || (def.book==crate::books::ats::BOOK && crate::books::ats::reviewed_daily(def.id))
+        || (def.book==crate::books::ccl08::BOOK && crate::books::ccl08::reviewed_daily(def.id))
         || (def.book==crate::books::alpha::BOOK && def.id=="alpha_trend_6m")
         || hfm_otvt_reviewed(def)
         || (def.book=="chbta2" && member(def.id,&["ch_bta2_ma_stack","ch_bta2_65sma_ravi"]))
@@ -305,6 +307,15 @@ fn base_policy(def:&StrategyDef)->Policy {
         let mut p=requirement("index_etf_or_stock", &["index","etf","individual_stock"], concat!("The TradingWindows Strategy (Connors, 2002) and its course pages, rules reviewed in connors/cwin-admission/SOURCE-CONTRACT.md with independent chronological stock/index/ETF ledgers. ",CWIN_INDEX_LABEL!()," Profit taking is discretionary in the book (p31, p41 'there is no mechanical science to this'): the coded exit (1/3 at the first close beyond SMA4 then breakeven stop, 1/3 on a profitable day-2 close, rest at the day-3 close) is a declared mechanical reading of p31/p38/p56 and the course, not the author's exact exit; trailing stops beyond breakeven are not coded. The two-rule exit test is the book's own mechanical exit. Rules that read the open start where SPX/NDX/DJI opens are real (2014/2001/2016); NIFTY opens before 2011 are close to the prior close and are disclosed. Cash-index shorts are hypothetical exposure. 1 unit, prices in points; no futures dollars or book performance are claimed."));
         p.market_adaptation=true; return p;
     }
+    if def.book==crate::books::ccl08::BOOK && crate::books::ccl08::reviewed_daily(def.id) {
+        let mut p=if crate::books::ccl08::day_trade(def.id) {
+            requirement("index_etf_or_stock", &["index","etf","individual_stock"], concat!("Chairman's Club 2008 (TradingMarkets) CR Equity / CRDT Equity day trades, slide rules re-read and checked with independent chronological ledgers (connors/newrules-cc/SOURCE-CONTRACT.md). Limit entry X% beyond the setup close, exit at a 10% stop beyond the fill or at that day's close: exact on daily OHLC. The decks show US stocks (Bloomberg/TradeStation examples) and print only seminar-reported results (S2 s14: 15-25 Sep 2008), which are not reproduced. Actual US and NSE stocks run the rule as printed; the Liquidity Filter and HV formulas are vault definitions [Not from the book]. ",CCL08_INDEX_LABEL!()))
+        } else {
+            requirement("index_or_etf", &["index","etf"], "Chairman's Club 2008 (TradingMarkets) Session 2 TPS rules (s93, s95-s96), re-read from the slides and checked with independent chronological ledgers (connors/newrules-cc/SOURCE-CONTRACT.md). The deck lists S&P 500 TPS trades (s99); SPX and SPY are the deck's market, other indices/ETFs (NIFTY 50 included) are a declared application. Scale-in weights are shares of the full 1-2-3-4 (or 2-4-6-8) position; cash-index shorts are hypothetical exposure. No book performance is claimed.")
+        };
+        if crate::books::ccl08::day_trade(def.id) {p.preferred_basket=Some("nifty50");}
+        p.market_adaptation=true; return p;
+    }
     if def.book==crate::books::ats::BOOK && crate::books::ats::reviewed_daily(def.id) && !CONNORS_INDEX_IDS.contains(&def.id) {
         let timing=!matches!(def.id,"ats_1234"|"ats_8day_hl_reversal"|"ats_smtp"|"ats_two_for_one"|"ats_gipsons");
         let mut p=if timing {
@@ -519,6 +530,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     json.push_str(&format!(",\"source_rule_reviewed\":{},\"independent_selected_ledger_checked\":{}",reviewed,reviewed));
     if p.requirement=="index_etf_or_stock" && CONNORS_INDEX_IDS.contains(&def.id) {json.push_str(concat!(",\"declared_application\":\"",CONNORS_INDEX_LABEL!(),"\""));}
     if def.book==crate::books::cwin::BOOK && crate::books::cwin::reviewed_daily(def.id) {json.push_str(concat!(",\"declared_application\":\"",CWIN_INDEX_LABEL!(),"\""));}
+    if def.book==crate::books::ccl08::BOOK && crate::books::ccl08::day_trade(def.id) {json.push_str(concat!(",\"declared_application\":\"",CCL08_INDEX_LABEL!(),"\""));}
     if def.book==crate::books::ats::BOOK && crate::books::ats::reviewed_daily(def.id) && (p.requirement=="index_or_etf" || (crate::books::ats::STOCK_TICK_IDS.contains(&def.id) && !CONNORS_INDEX_IDS.contains(&def.id))) {json.push_str(concat!(",\"declared_application\":\"",BTP_INDEX_LABEL!(),"\""));}
     if def.book==crate::books::alpha::BOOK && def.id=="alpha_trend_6m" {json.push_str(concat!(",\"declared_application\":\"",ALPHA_TREND_LABEL!(),"\""));}
     if def.book=="btp" && crate::books::btp::reviewed_daily(def.id) {json.push_str(concat!(",\"declared_application\":\"",BTP_INDEX_LABEL!(),"\""));}
@@ -735,6 +747,25 @@ mod tests {
         }
         let d=def("ws5_emini_spy_daytrade","ws5");
         assert!(!reviewed_cash_rule(&d));assert_eq!(policy(&d).requirement,"source_review_required");assert!(check(&d,"SPY",false).is_some());
+    }
+    #[test]
+    fn ccl08_review_admits_day_trades_on_stocks_and_indices_tps_on_index_etf() {
+        use crate::books::ccl08;
+        let cat=ccl08::catalogue();
+        let admitted:Vec<&str>=cat.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        assert_eq!(admitted.len(),ccl08::REVIEWED_DAILY.len());
+        let ok=|id:&'static str,t:&str,stock:bool|check(&def(id,"ccl08"),t,stock).is_none();
+        for id in ccl08::REVIEWED_DAILY {
+            let dt=ccl08::day_trade(id);
+            for t in ["SPX","SPY","NIFTY 50","NIFTYBANK"] {assert!(ok(id,t,false),"{id} {t}");}
+            assert_eq!(ok(id,"RELIANCE",true),dt,"{id}");
+            assert!(check_native(&def(id,"ccl08"),"AAPL",&NativeEvidence::us_test_fixture()).is_none()==dt,"{id}");
+            assert_eq!(policy(&def(id,"ccl08")).requirement,if dt {"index_etf_or_stock"} else {"index_or_etf"});
+            assert_eq!(metadata_json(&def(id,"ccl08")).contains("\"declared_application\":\"Book shows these day trades on US stocks"),dt);
+        }
+        for id in ["ccl08_crdt_emini","ccl08_weekly_rsi_options","ccl08_quick_scalp","ccl08_adx_quiet","ccl08_busted_options"] {
+            assert!(!reviewed_cash_rule(&def(id,"ccl08")),"{id}");
+        }
     }
     #[test]
     fn ats_review_admits_exact_ids_on_reviewed_symbols_only() {

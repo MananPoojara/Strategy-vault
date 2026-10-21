@@ -10,13 +10,21 @@ use crate::connors::*;
 
 pub const BOOK: &str = "ccl08";
 
+/// Rules re-read from the slide images and admitted 2026-10-21 (connors/newrules-cc/SOURCE-CONTRACT.md): the nine CRDT
+/// limit-order day trades (exact on daily OHLC: limit then a stop beyond it, or the close) and the three TPS rules.
+pub const REVIEWED_DAILY: &[&str] = &["ccl08_crdt1_long", "ccl08_crdt1_short", "ccl08_crdt2_long", "ccl08_crdt3_long", "ccl08_crdt4_long",
+    "ccl08_crdt5_long", "ccl08_crdt2_short", "ccl08_crdt4_short", "ccl08_crdt5_short", "ccl08_tps_long", "ccl08_tps_short", "ccl08_tps_research"];
+pub fn reviewed_daily(id: &str) -> bool { REVIEWED_DAILY.contains(&id) }
+/// CRDT day trades: stock methods (index/ETF a declared application). Their limit fills read the open.
+pub fn day_trade(id: &str) -> bool { reviewed_daily(id) && id.starts_with("ccl08_crdt") }
+
 const DT_EXIT: &str = "X|\"EXIT - 10% stop or on the close.\" = stop 10% beyond the entry fill (filled at the stop; a day trade cannot gap through it); otherwise exit at that day's close";
-const LIMIT_NOTE: &str = "Entry = limit order for the day after the setup day: a buy fills if that day's low <= limit, at min(open, limit) (a gap below the limit fills at the open); a short fills if high >= limit, at max(open, limit). The 10% stop is then certain whenever the low (high) reaches 0.90 (1.10) x fill, because price must pass the limit before it can reach the stop. Stock method (Connors' universe: US stocks with LF/HV filters); the vault runs it on NSE basket stocks (basket:<list>:<SYMBOL>) and, as an instrument swap, on the indices, where moves of this size are rare. LF = vault Liquidity Filter (1e6 x SMA20(close x volume) / SMA65(NIFTY 50 close x volume)): on an index LF compares the index with NIFTY 50 and passes; on US data the denominator is missing, so LF strategies take no trades there. HV100 = vault hv100 (sample sd of log returns x sqrt(252) x 100).";
+const LIMIT_NOTE: &str = "Entry = limit order for the day after the setup day only. [Not from the book] fill convention: a buy fills if that day's low <= limit, at min(open, limit) (a gap below the limit fills at the open); a short fills if high >= limit, at max(open, limit); the decks print only 'Buy X% below previous close' and '10% stop or at the close'. The 10% stop is then certain whenever the low (high) reaches 0.90 (1.10) x fill, because price must pass the limit before it can reach the stop, so daily OHLC orders every fill without ambiguity. Percent limits are not rounded to the price tick [Not from the book]. Stock method (Connors' US stock day trades, Bloomberg/TradeStation examples on US stocks): runs on actual US and NSE stocks, and on indices/ETFs as a declared application where moves of this size are rare. [Not from the book] LF: the decks never define the Liquidity Filter; the vault uses the TradingMarkets Liquidity Filter of Connors' R3/R4 guide (updated 1/19/10): 1,000,000 x SMA20(close x volume) / SMA65(benchmark close x volume), benchmark SPX for US instruments (the guide's S&P 500) and NIFTY 50 for Indian ones; windows where it cannot be computed are refused. [Not from the book] HV100 = sample standard deviation of the last 100 daily log returns x sqrt(252) x 100 (the decks give no formula).";
 
 const CRDT1_L: &[&str] = &[
     "F|\"1. The stock must be above its 200 day moving average.\" (S1 s13) = setup-day close > SMA(200)",
     "F|\"2. LF is greater than 3.\"",
-    "F|\"3. The historical volatility of the stock must be above 20.\" [period not printed on S1; the CRDT deck states HV100 for every CRDT rule] = HV100 > 20",
+    "F|\"3. The historical volatility of the stock must be above 20.\" [Not from the book: period not printed on S1; the CRDT deck states HV100 for every CRDT rule] = HV100 > 20",
     "E|\"4. Yesterday the stock must have dropped at least 3% (4%, 5%) or more and closed below its open.\" = setup day: close <= prior close x 0.97 and close < open",
     "E|\"5. We also want the 2 period RSI on the close from yesterday to be less than 20 (15, 10) to further assure the stock is oversold.\"",
     "E|\"6. ENTRY - Today the selling must follow through from yesterday and the stock must drop 6% (7%, 8%) from yesterdays close. If it does-buy.\" (S1 s14) = buy limit 6% below the setup close",
@@ -25,7 +33,7 @@ const CRDT1_L: &[&str] = &[
 const CRDT1_S: &[&str] = &[
     "F|\"1. The stock must be above its 200-day moving average.\" (S1 s16)",
     "F|\"2. LF is greater than 10.\"",
-    "F|\"3. The historical volatility of the stock must be above 20.\" = HV100 > 20 (as CRDT deck)",
+    "F|\"3. The historical volatility of the stock must be above 20.\" = HV100 > 20 [Not from the book: period not printed on S1; HV100 as in the CRDT deck]",
     "E|\"4. Yesterday, the stock must have risen at least 4% (5%, 6%) and closed above its open.\"",
     "E|\"5. We also want the 2-period RSI to be greater than 85 (90,95) to further assure the stock is overbought.\"",
     "E|\"6. ENTRY - Today the buying must follow through from yesterday and the stock must rise 4% (5%, 6%) above yesterday's close. If it does-sell short.\" (S1 s17) = short limit 4% above the setup close",
@@ -36,7 +44,7 @@ const CRDT2_L: &[&str] = &[
     "E|\"2. 2 period RSI is less than 20\"",
     "F|\"3. Close is above the 200 day\"",
     "E|\"4. Close is less than the open\"",
-    "E|\"5. The stock drops 0-3% for the day\" = setup-day return in [-3%, 0%) (a drop, at most 3%)",
+    "E|\"5. The stock drops 0-3% for the day\" = setup-day return in [-3%, 0%) [Not from the book: '0-3%' read as a down day of at most 3%]",
     "E|\"6. Buy 10% below previous days close\"",
     "X|\"7. Exit on close or at 10% stop\"",
 ];
@@ -67,7 +75,7 @@ const CRDT5_L: &[&str] = &[
 const CRDT2_S: &[&str] = &[
     "F|\"1. HV100 > 20\" (CRDT s76)",
     "E|\"2. RSI(2) > 90\"", "E|\"3. Close > Open\"",
-    "E|\"4. 0% < 1 day return < 5%\"",
+    "E|\"4. 0% < 1 day return < 5%\" [the s78 example caption says 'yesterday was down, and up less than 5%'; the printed rules 3-4 govern]",
     "F|\"5. C > 200MA\"", "F|\"6. LF > 10\"",
     "E|\"7. Sell short 10% above previous close\"",
     "X|\"Exit Rules 1. 10% stop from entry price. Or 2. At the Close.\" (CRDT s77)",
@@ -102,7 +110,7 @@ const TPS_S: &[&str] = &[
 ];
 const TPS_R: &[&str] = &[
     "F|\"TPS Where the Research Started. Buy 1. C > 200MA\" (S2 s93)",
-    "E|\"2. Yesterday RSI2 < 75 (this is added to make it easy to do optimization runs) 3. Buy 2 shares\" = buy 2 units (of 20) at the close [timing: the deck's TPS rule \"Enter on Close\", s96]",
+    "E|\"2. Yesterday RSI2 < 75 (this is added to make it easy to do optimization runs) 3. Buy 2 shares\" = buy 2 units (of 20) at the close [Not from the book: s93 gives no fill time; the close is taken from the deck's TPS rule \"Enter on Close\", s96]",
     "A|\"Scale In 1. If still in position 1 day later buy 4 shares 2. If still in position 2 days later buy 6 shares 3. If still in position 3 days later buy 8 shares 4. Max 20 shares\" = adds at the 1st, 2nd and 3rd closes after entry",
     "X|\"Sell 1. RSI2 > 75\" = exit at the close on which RSI(2) > 75",
 ];
@@ -127,13 +135,13 @@ pub fn catalogue() -> Vec<StrategyDef> {
         v(d("ccl08_crdt4_short", "CRDT IV Short (up 20% in 4 days, short 5% above)", "CRDT Equity · IV Short", "Short", Live, CRDT4_S, LIMIT_NOTE, None)),
         v(d("ccl08_crdt5_short", "CRDT V Short (2 up days, up 10% in 2 days, short 7% above)", "CRDT Equity · V Short", "Short", Live, CRDT5_S, LIMIT_NOTE, None)),
         d("ccl08_tps_long", "TPS preview · long (1-2-3-4 units, RSI(2) < 40, 1.5% over the 200-day)", "Session 2 · TPS preview", "Long", Live, TPS_L,
-          "Session 2 'TPS - Preview' rules (s95), not the stc9 2-3-5 course version (RSI(2) < 30, 20/30/50%) nor the HPETF book version (RSI(2) < 25 two days, 10/20/30/40%). Book's 'SP-500' trade list for the past 12 months (s99) is reproduced on SPX (README). Entry price in that list = weighted average of the 1-2-3-4 legs. Slide 100: 'Exiting on the next days open improves the test results on the SPX' = labelled option p.exit_next=1 (default 0 = close). India: instrument swap only.",
+          "Session 2 'TPS - Preview' rules (s95), not the stc9 2-3-5 course version (RSI(2) < 30, 20/30/50%) nor the HPETF book version (RSI(2) < 25 two days, 10/20/30/40%). Book's 'SP-500' trade list for the past 12 months (s99) is reproduced on SPX (README). Entry price in that list = weighted average of the 1-2-3-4 legs. Slide 100: 'Exiting on the next days open improves the test results on the SPX' = labelled option p.exit_next=1 (default 0 = close). [Not from the book] Order of checks on each close: the exit rule first (no add on an exit close), then the scale-in; no new entry on the exit close; one position at a time; unit weights = shares / the maximum position (1+2+3+4 = 10; 2+4+6+8 = 20). Index/ETF only: the deck shows TPS on the S&P 500 (SPX/SPY); other indices/ETFs, NIFTY 50 included, are a declared application.",
           claim("3 longs (SPX)", "-", "-", "-", "TPS SPY trades past 12 months, SP-500, 9/2007-8/2008 (S2 s99)")),
         d("ccl08_tps_short", "TPS preview · short (RSI(2) > 70 two days, 1.5% under the 200-day)", "Session 2 · TPS preview", "Short", Live, TPS_S,
-          "Session 2 s96. Differs from stc9 tps_short (RSI(2) > 75 two days, 2-3-5). p.exit_next=1 = the s100 next-open exit (labelled option).",
+          "Session 2 s96. Differs from stc9 tps_short (RSI(2) > 75 two days, 2-3-5). p.exit_next=1 = the s100 next-open exit (labelled option). [Not from the book] Order of checks on each close: the exit rule first (no add on an exit close), then the scale-in; no new entry on the exit close; one position at a time; unit weights = shares / the maximum position (1+2+3+4 = 10; 2+4+6+8 = 20). Index/ETF only: the deck shows TPS on the S&P 500 (SPX/SPY); other indices/ETFs, NIFTY 50 included, are a declared application.",
           claim("9 shorts (SPX)", "-", "-", "-", "TPS SPY trades past 12 months, SP-500, 9/2007-8/2008 (S2 s99)")),
         d("ccl08_tps_research", "TPS 'where the research started' (time scale-in 2-4-6-8)", "Session 2 · TPS preview", "Long", Live, TPS_R,
-          "S2 s93, printed as the starting point of the TPS research. The entry filter is only 'C > 200MA' plus 'Yesterday RSI2 < 75', which the slide says was added for optimisation runs; coded literally, so it trades often. Fill timing (close) from the TPS rule slide s96.", None),
+          "S2 s93, printed as the starting point of the TPS research. The entry filter is only 'C > 200MA' plus 'Yesterday RSI2 < 75', which the slide says was added for optimisation runs; coded literally, so it trades often. Fill timing (close) from the TPS rule slide s96. [Not from the book] Order of checks on each close: the exit rule first (no add on an exit close), then the scale-in; no new entry on the exit close; one position at a time; unit weights = shares / the maximum position (1+2+3+4 = 10; 2+4+6+8 = 20). Index/ETF only: the deck shows TPS on the S&P 500 (SPX/SPY); other indices/ETFs, NIFTY 50 included, are a declared application.", None),
         d("ccl08_crdt_emini", "CRDT E-mini/SPY (breakout day trades)", "Session 1/CRDT · E-mini", "Long/Short",
           NotTestable("the rules are not in these files: Session 1 lists it on the agenda and the CRDT deck (s92) shows only 'observations so far' and its relation to EEV; it also needs intraday e-mini data"),
           &["E|\"Breakout trading (e-minis & SPYs)\" (S1 s9); \"CRDT E-mini/SPY - Observations so far\" (CRDT s92)"], "", None),
