@@ -35,6 +35,7 @@ macro_rules! connors_any {($basis:literal)=>{{
 macro_rules! BTP_INDEX_LABEL {()=>{"Book tested or illustrated on futures and US stocks; index/ETF runs are a declared application, not the author's test."}}
 macro_rules! CWIN_INDEX_LABEL {()=>{"The book and course show Windows on US stocks, HOLDRs, indices, ETFs and futures; index/ETF runs are a declared application, not the author's test. The 100,000-share volume suggestion (Q&A p56) applies to stocks only and is not coded."}}
 macro_rules! WS5_INDEX_LABEL {()=>{"Seminar method for US stocks from a nightly scan; index/ETF runs are a declared application, not the author's test. Stock-only filters (price, volume, sub-sector, range, ATR) do not apply to an index."}}
+macro_rules! ALPHA_TREND_LABEL {()=>{"Book tested on nine US sector ETFs (XLB..XLY, not in the vault); other ETFs and index runs are a declared application, not the author's test."}}
 macro_rules! CONNORS_INDEX_LABEL {()=>{"Book tested on US stocks; index/ETF runs are a declared application, not the author's test. Stock-only filters in the rule (minimum price, volume, liquidity) do not apply to an index."}}
 pub const CONNORS_INDEX_IDS:&[&str]=&["f1a","f3a","f4a","f4c","f4d","rsi2_5d","tps_stocks","x555","h10","r3r4_base","r3r4_base_scale","r3r4_bigcap","r3r4_bigcap_scale","r3r4_bigcap_deck","r3r4_bigcap_deck_scale","r3r4_midcap","r3r4_midcap_scale","r3r4_lowprice","r3r4_lowprice_scale","ats_dvmtm","ats_cvr_equities","ats_15min_adx_breakout_equities","afactor_baseline"];
 
@@ -55,6 +56,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || (def.book==crate::books::cwin::BOOK && crate::books::cwin::reviewed_daily(def.id))
         || (def.book==crate::books::ws5::BOOK && crate::books::ws5::reviewed_daily(def.id))
         || (def.book==crate::books::ats::BOOK && crate::books::ats::reviewed_daily(def.id))
+        || (def.book==crate::books::alpha::BOOK && def.id=="alpha_trend_6m")
         || (def.book=="chbta2" && member(def.id,&["ch_bta2_ma_stack","ch_bta2_65sma_ravi"]))
         || (def.book=="sbma" && member(def.id,&["sbma_sma50_long","sbma_x_5s20s"]))
         || (def.book=="radge" && def.id=="radge_oc_long")
@@ -269,6 +271,10 @@ fn base_policy(def:&StrategyDef)->Policy {
         };
         p.market_adaptation=true; return p;
     }
+    if def.book==crate::books::alpha::BOOK && def.id=="alpha_trend_6m" {
+        let mut p=requirement("index_or_etf", &["index","etf"], concat!("The Alpha Formula (Connors & Cain, 2019/2020) Appendix A1 six-month trend rule, reviewed in connors/rest-admission/SOURCE-CONTRACT.md with independent chronological index/ETF ledgers. ",ALPHA_TREND_LABEL!()," The out-of-market leg (SHY in the book) is idle cash here; vault prices are not dividend-adjusted total returns. The book calls the rule a risk-reduction illustration, not a stand-alone strategy. Cash-index exposure is hypothetical; the book's sector-ETF averages are not reproduced."));
+        p.market_adaptation=true; return p;
+    }
     if def.book=="btp" && crate::books::btp::reviewed_daily(def.id) {
         let mut p=requirement("index_or_etf", &["index","etf"], concat!("Best Trading Patterns I & II (Connors, PTJ 1998/1999), exact daily rules reviewed in btp-admission/SOURCE-CONTRACT.md with independent chronological index/ETF ledgers. ",BTP_INDEX_LABEL!()," Rules that read the open start where SPX/NDX/DJI opens are real (2014/2001/2016); NIFTY opens before 2011 are close to the prior close and are disclosed, not clamped. Every 'trail your stops' exit in the book is undefined: the coded trailing stop, 2-for-1 half exits and tick offsets marked [Not from the book] are declared conventions. Cash-index shorts are hypothetical exposure. Single-stock runs are held: the book's 1/8-USD stock tick offsets have no reviewed INR/NSE or decimal-USD specification. No futures dollars or book performance are claimed."));
         p.market_adaptation=true; return p;
@@ -453,6 +459,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if p.requirement=="index_etf_or_stock" && CONNORS_INDEX_IDS.contains(&def.id) {json.push_str(concat!(",\"declared_application\":\"",CONNORS_INDEX_LABEL!(),"\""));}
     if def.book==crate::books::cwin::BOOK && crate::books::cwin::reviewed_daily(def.id) {json.push_str(concat!(",\"declared_application\":\"",CWIN_INDEX_LABEL!(),"\""));}
     if def.book==crate::books::ats::BOOK && crate::books::ats::reviewed_daily(def.id) && p.requirement=="index_or_etf" {json.push_str(concat!(",\"declared_application\":\"",BTP_INDEX_LABEL!(),"\""));}
+    if def.book==crate::books::alpha::BOOK && def.id=="alpha_trend_6m" {json.push_str(concat!(",\"declared_application\":\"",ALPHA_TREND_LABEL!(),"\""));}
     if def.book=="btp" && crate::books::btp::reviewed_daily(def.id) {json.push_str(concat!(",\"declared_application\":\"",BTP_INDEX_LABEL!(),"\""));}
     if def.book==crate::books::ws5::BOOK && crate::books::ws5::reviewed_daily(def.id) && !crate::books::ws5::TIMING.contains(&def.id) {json.push_str(concat!(",\"declared_application\":\"",WS5_INDEX_LABEL!(),"\""));}
     if def.book=="kfsc" && crate::books::kfsc::reviewed_hv_rule(def.id) {
@@ -848,6 +855,13 @@ mod tests {
         assert_eq!(policy(&def("lwrsr_stock_selection","lwrsr")).requirement,"portfolio");
         assert_eq!(policy(&def("alpha_spy_rsi4_mr","alpha")).requirement,"etf");
         assert_eq!(policy(&def("alpha_weekly_mr_single","alpha")).requirement,"source_review_required");
+        // Appendix A1 trend rule: single-instrument, no ranking -> actual ETF, index as a declared application; never a stock.
+        let tf=def("alpha_trend_6m","alpha");
+        assert!(reviewed_cash_rule(&tf));assert_eq!(policy(&tf).requirement,"index_or_etf");assert!(policy(&tf).market_adaptation);
+        for t in ["SPY","QQQ","SMH","SPX","NIFTY 50","NIFTYBANK"] {assert!(check(&tf,t,false).is_none(),"{t}");}
+        assert!(check(&tf,"RELIANCE",true).is_some());
+        assert!(metadata_json(&tf).contains("\"declared_application\":\"Book tested on nine US sector ETFs"));
+        for id in ["alpha_weekly_mr_single","alpha_weekly_mr"] {assert!(!reviewed_cash_rule(&def(id,"alpha")),"{id}");}
         assert_eq!(policy(&def("radge_ma220","radge")).requirement,"futures");
         assert_eq!(policy(&def("radge_oc_long","radge")).requirement,"index");
         assert_eq!(policy(&def("jc5dm_long","jc5dm")).requirement,"individual_stock");
