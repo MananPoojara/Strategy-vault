@@ -469,7 +469,7 @@ pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
             return Some(Issue {status:"needs_data",note:format!("Source currency/tick data missing. {reason} USD amounts cannot silently become INR amounts. A source-supported Indian specification or dated FX treatment and verified local tick rules are required before admission; editing the numeric parameter alone does not establish those inputs. Selected actual stock: {ticker}. No results are published.")});
         }
     }
-    check_selected(p,ticker,selected)
+    check_selected(p,def.id,ticker,selected)
 }
 /// Native type/currency comes from the fixed server catalogue, never from a
 /// request flag or a ticker spelling. USD compatibility does not certify the
@@ -486,7 +486,7 @@ pub fn check_native(def:&StrategyDef,ticker:&str,evidence:&NativeEvidence)->Opti
     if let Some(issue)=ststw_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=ats_symbol_issue(def,ticker,Some(evidence.market()==crate::baskets::Market::UnitedStates)){return Some(issue);}
     if let Some(issue)=hfm_otvt_symbol_issue(def,ticker){return Some(issue);}
-    if let Some(issue)=check_selected(p,ticker,evidence.asset_type()){return Some(issue);}
+    if let Some(issue)=check_selected(p,def.id,ticker,evidence.asset_type()){return Some(issue);}
     if matches!((def.book,def.id),("r3r4","r3r4_lowprice"|"r3r4_lowprice_scale")) && evidence.market()!=Market::UnitedStates {
         return Some(Issue{status:"not_testable",note:format!("{R3R4_LOWPRICE_HELD} Selected actual stock: {ticker}.")});
     }
@@ -510,11 +510,26 @@ pub fn check_native_market_inputs(def:&StrategyDef,evidence:&NativeEvidence,benc
     }
     None
 }
-fn check_selected(p:Policy,ticker:&str,selected:&str)->Option<Issue> {
+/// Plain-language reason for Connors rules that stay unadmitted on every instrument (admission records, 21 Oct 2026).
+fn held_reason(id:&str)->Option<&'static str> {
+    Some(match id {
+        "ss_adx_gapper_no_gap"=>"Held: rules not fully defined. Street Smarts (p.93) presents this as Larry's discussion and calls it \"more subjective\"; it gives no objective entry, so any coded entry would be the vault's, not the book's.",
+        "hfm_hv"=>"Held: rules not fully defined. The book (Ch. 3) gives a volatility warning with no direction, entry, exit or stop (\"a personal choice\"); the coded breakout entry and 20-day exit would be vault choices.",
+        "hfm_und"|"hfm_und_long"|"hfm_und_short"=>"Held: needs option prices. The book (Ch. 4) trades Undeniables by selling out-of-the-money index puts or calls; a long or short trade in the index itself has a different payoff, and the vault holds no traded option prices.",
+        "btp_bottom_reversal_long"=>"Held: rules not fully defined. \"Bottom\", \"near the bottom of the range\" and \"a fairly tight stop\" are not quantified in the book, so the entry and stop would be the vault's.",
+        "btp_momentum_gap"=>"Held: rules not fully defined. The book gives no gap size, stop level or exit, so the whole exit would be the vault's.",
+        "alpha_weekly_mr_single"=>"Held: ranking method. The book (Ch. 6) buys the 10 lowest-volatility candidates from the 500 most liquid US stocks each week and reads the market regime from SPY; a single index, ETF or stock cannot reproduce that selection. The full method needs a stock universe (see the portfolio entry).",
+        _=>return None,
+    })
+}
+fn check_selected(p:Policy,id:&str,ticker:&str,selected:&str)->Option<Issue> {
     if p.requirement=="declared_index_timing" && selected=="etf" && ticker!="SPY" {
         return Some(Issue{status:"needs_data",note:"The reviewed SPMT ETF signal instrument is actual SPY. Other ETFs require a declared and separately reviewed adaptation; they cannot silently replace SPY.".into()});
     }
     if p.allowed_types.contains(&selected) {return None;}
+    if p.requirement=="source_review_required" {
+        if let Some(reason)=held_reason(id) {return Some(Issue{status:"not_testable",note:format!("{reason} Selected {ticker}: {selected}. No results are published.")});}
+    }
     let (status,explanation)=match p.requirement {
         "source_review_required" => ("not_testable","Source review required before publishing this method on any instrument."),
         "individual_stock" => ("needs_data","This method requires a validated individual stock from a source-qualified constituent basket. A cash index or ETF cannot stand in for its stock population."),
@@ -1257,5 +1272,18 @@ mod connors_index_routing_tests {
             assert!(!CONNORS_INDEX_IDS.contains(&id));
             for tk in ["NIFTY 50","SPX","SPY"] {assert!(check(&d,tk,false).is_some(),"{id} {tk}");}
         }
+    }
+}
+#[cfg(test)]
+mod held_reason_tests {
+    use super::*;
+    #[test]
+    fn unadmitted_connors_rules_state_their_plain_reason_with_unchanged_status() {
+        for (id,book,headline) in [("hfm_und_long","hfm","Held: needs option prices."),("btp_momentum_gap","btp","Held: rules not fully defined."),("alpha_weekly_mr_single","alpha","Held: ranking method.")] {
+            let d=crate::connors::catalogue().into_iter().find(|d|d.id==id&&d.book==book).unwrap();
+            let issue=check(&d,"SPX",false).unwrap();
+            assert_eq!(issue.status,"not_testable","{id}");assert!(issue.note.starts_with(headline),"{id}: {}",issue.note);
+        }
+        assert_eq!(crate::readiness::plain_gate_reason("x. checker: changed verified -> withheld W1. path_check SPX same_day_logret_share 1.0."),"x. The independent re-check changed this from matched to withheld. Same-day check, SPX share of gain from same-day trades 1.0.");
     }
 }

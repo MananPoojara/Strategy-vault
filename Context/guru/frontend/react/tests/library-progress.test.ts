@@ -1,5 +1,5 @@
 import {expect,it} from 'vitest';
-import {libraryProgress,definitionSignature} from '../src/services/library-progress';
+import {libraryProgress,definitionSignature,reasonLabel} from '../src/services/library-progress';
 import {identifiedAuthorCount,authorIdentities} from '../src/services/author-identities';
 const defs = [
  {id:'a1',book:'one',family:'rsi',status:'live',instrument_policy:{allowed_types:['individual_stock']}},
@@ -45,4 +45,14 @@ it('rejects changed rule text under unchanged variant IDs and honours explicit s
  const p=libraryProgress(defs,{...snapshot,source_reviews:[{source_id:'reading',author_id:'person',progress_status:'NOT BACKTESTED',reason:'Reviewed essay; no executable entry/exit protocol recorded.'}]});
  expect(p.source('reading',['person'])).toMatchObject({status:'not_backtested',reason:'Reviewed essay; no executable entry/exit protocol recorded.'});
  expect(p.source('reading',['other']).status).toBe('in_progress');
+});
+
+it('names the plain reason for held rules without changing their status',()=>{
+ expect(reasonLabel('Withheld by the accuracy check: more than half of its gain comes from same-day trades')).toBe('Held by the accuracy check');
+ expect(reasonLabel('Required market data is missing: OPT_ATM_PUT.Close.')).toBe('Needs option prices');
+ expect(reasonLabel('Backtest unavailable: discretionary. No rules or prices are invented to fill this gap.')).toBe('Rules not fully defined');
+ expect(reasonLabel('Source review required before publishing this method on any instrument.')).toBeUndefined();
+ const p=libraryProgress(defs,snapshot);
+ expect(p.book('five')).toMatchObject({status:'in_progress',reason:'No backtest is published yet for its 1 strategy: Held (1). Each strategy page gives the exact reason.'});
+ expect(p.book('one').reason).toMatch(/available computed result/);
 });

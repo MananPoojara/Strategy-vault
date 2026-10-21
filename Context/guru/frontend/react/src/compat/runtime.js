@@ -15,7 +15,7 @@ import {UNIT_VISUAL_BASIS,UNIT_CLOSED_BASIS,unitExposureTables,unitExposureMetad
 import {tradeExitCheck,tradeExitCheckMarkup} from '../services/trade-exit-check';
 import {stockChoices,basketSpan,positionLimit,priceRecoveryPeriod} from '../services/stock-selection';
 import {identifiedAuthorCount} from '../services/author-identities';
-import {libraryProgress} from '../services/library-progress';
+import {libraryProgress,reasonLabel} from '../services/library-progress';
 import {visibleBacktestCount,linkedBookBacktestCount,measuredWindow} from '../services/library-count-context';
 import {unavailableBookMethods} from '../services/unavailable-book-methods';
 import {libraryScope,inLibraryScope} from '../services/library-scope';
@@ -953,6 +953,8 @@ const writeHash = () => { const q = new URLSearchParams(); for (const k in DEF) 
 
 let CAT = [], TICKERS = [], GURUS_API = [], TICK_ALL_US = [];
 const TRUST = window.VaultTruth;
+// Plain-language headline for a withheld run; falls back to the status label. Wording only.
+const heldLabel = issue => ['needs_data','not_testable'].includes(issue.status) && reasonLabel(issue.note) || TRUST.statusLabel(issue.status);
 function summaryContext(tk,from='',to='') {
  const ticker=[...TICK_ALL_IN,...TICK_ALL_US].find(item=>item.ticker===tk);
  return {ticker:tk,label:LABEL[tk]||ticker?.symbol||tk,from,to,first:ticker?.first,last:ticker?.last};
@@ -1147,9 +1149,9 @@ const byline = v => `${esc(GURU[v.guru].name)} · ${esc(BOOK[v.book].title)} (${
 
 // ---------------------------------------------------------------- MODES
 function unavailableBookCard(method){
-  const v=method.definition,record=currentLibraryProgress().measured.find(row=>row.method_id===method.key),labels={needs_stock_basket:'Select a stock',needs_data:'Required data missing',source_review:'Rules need review',no_trades:'No closed trades'};
+  const v=method.definition,record=currentLibraryProgress().measured.find(row=>row.method_id===method.key),labels={needs_stock_basket:'Select a stock',needs_data:'Required data missing',source_review:'Not backtested · see reason',no_trades:'No closed trades'},stamp=['needs_data','source_review'].includes(method.status)&&reasonLabel(method.reasons[0])||labels[method.status]||'Backtest unavailable';
   const alternative=record?href('/s/'+encodeURIComponent(record.variant_id),{region:record.market==='us'?'us':'in',tk:record.instrument,basket:record.instrument?.startsWith('basket:')?record.instrument.split(':')[1]:'',...measuredWindow(record),cost:record.execution?.cost||'0',slippage:record.execution?.slippage||'0',rollover:record.execution?.rollover||'0',research_mode:record.execution?.research_mode||'',run_scope:'single'}):'';
-  return `<article class="card unavailable-method" data-unavailable-method="${esc(method.key)}"><div class="rank"><span>Unavailable for ${esc(LABEL[S.tk]||S.tk)}</span><span class="stamp">${esc(labels[method.status]||'Backtest unavailable')}</span></div><h3>${esc(method.name)}</h3><div class="by">${byline(v)}</div><div class="unavailable-reasons">${method.reasons.map(note=>`<p>${esc(note)}</p>`).join('')}</div><p class="book-progress-reason">${method.status==='no_trades'?'This run has no closed positions. Open positions or signals may still exist.':'No performance chart or statistics are shown for this selection.'}</p>${rulesList(v)}<div class="btns"><a class="btn" href="${stratLink(v.id,S.tk)}">View rules &amp; requirements</a>${alternative?`<a class="btn" href="${alternative}">Available on ${esc(LABEL[record.instrument]||record.instrument.split(':').at(-1))}</a>`:''}</div></article>`;
+  return `<article class="card unavailable-method" data-unavailable-method="${esc(method.key)}"><div class="rank"><span>Unavailable for ${esc(LABEL[S.tk]||S.tk)}</span><span class="stamp">${esc(stamp)}</span></div><h3>${esc(method.name)}</h3><div class="by">${byline(v)}</div><div class="unavailable-reasons">${method.reasons.map(note=>`<p>${esc(note)}</p>`).join('')}</div><p class="book-progress-reason">${method.status==='no_trades'?'This run has no closed positions. Open positions or signals may still exist.':'No performance chart or statistics are shown for this selection.'}</p>${rulesList(v)}<div class="btns"><a class="btn" href="${stratLink(v.id,S.tk)}">View rules &amp; requirements</a>${alternative?`<a class="btn" href="${alternative}">Available on ${esc(LABEL[record.instrument]||record.instrument.split(':').at(-1))}</a>`:''}</div></article>`;
 }
 async function unavailableForSelectedBook(){
   if(!S.book||R.name!=='guru')return [];
@@ -1199,7 +1201,7 @@ function viewStrategies(rs, perVariant, missing = []) {
     </article>`; }).join('')}${missing.map(unavailableBookCard).join('')}</div>`;
 }
 function awaiting(rs) {
-  const reasons = r => sourceBlockers(r.v) || r.issues.map(issue => `<p><b>${esc(LABEL[issue.tk])}: ${TRUST.statusLabel(issue.status)}</b><br>${esc(issue.note)}</p>`).join('');
+  const reasons = r => sourceBlockers(r.v) || r.issues.map(issue => `<p><b>${esc(LABEL[issue.tk])}: ${esc(heldLabel(issue))}</b><br>${esc(issue.note)}</p>`).join('');
   const link = r => `<a href="${stratLink(r.v.id,r.tk)}">${esc(familyDisplayName(r.v))}</a>`;
   if (S.view === 'table' || S.view === 'list') return `<div class="tblwrap"><table class="tbl"><thead><tr><th class="nosort">#</th><th class="nosort">Strategy / source method</th><th class="nosort">Style</th><th class="nosort">Why results are withheld</th></tr></thead><tbody>${rs.map((r,i)=>`<tr><td class="rk">${i+1}</td><td class="nm"><b>${link(r)}</b><span>${r.v.variant?esc(r.v.variant)+' · ':''}${byline(r.v)}</span></td><td>${esc(r.v.style)}</td><td>${reasons(r)}</td></tr>`).join('')}</tbody></table></div>`;
   return `<div class="grid">${rs.map((r,i)=>`<article class="card"><div class="rank"><span>#${i+1}</span><span class="stamp" style="color:#8a6a2f">${r.v.guru==='ross'?'DATA MISSING · RULES UNRESOLVED':'BACKTEST UNAVAILABLE'}</span></div><h3>${link(r)}</h3><div class="by">${r.v.variant?esc(r.v.variant)+' · ':''}${byline(r.v)}</div><div class="unavailable-reasons">${reasons(r)}</div><div class="tags"><span class="tag">${esc(r.v.style)}</span><span class="tag">${r.v.dir}</span></div>${rulesList(r.v)}<a class="btn" href="${stratLink(r.v.id,r.tk)}">View rules and data requirements</a></article>`).join('')}</div>`;
@@ -1610,7 +1612,7 @@ function withheldStrategy(v,tk,crumbs,switches,issue) {
   const recovery=S.run_scope==='basket'&&S.membership==='current'&&instrumentControls(v.instrument_policy,v.id,v.book).basket&&issue.status==='needs_data'
     ?priceRecoveryPeriod(coverage,S.from||span.first,S.to||span.last):null;
   const recoveryHTML=recovery?`<p data-price-recovery>Daily price coverage is available from ${esc(recovery.from)} to ${esc(recovery.to)}. Some requested dates have no supplied quotation; the selected dates have not been changed. <button type="button" class="dbtn sm" data-period="${recovery.from}|${recovery.to}">Run available price period</button></p>`:'';
-  return `${crumbs}<section class="box" data-backtest-state="${esc(issue.status)}"><div class="st-head"><h1 class="st">${esc(familyDisplayName(v))}</h1>${VaultUI.toolbar()}</div><div class="tags2"><span class="badge outline">${esc(v.dir)}</span><span>${esc(label)}</span><span class="badge gapb">${TRUST.statusLabel(issue.status)}</span></div>${switches}${periodPanel(tk,null,issue)}${sourceBlockers(v)}<div class="empty gapbox"><b>${TRUST.statusLabel(issue.status)}</b>${esc(issue.note)}<p>No performance figures or charts are displayed for this run. The book information and rules below are reference material, not evidence of a completed backtest.</p>${recoveryHTML}</div></section><section class="box"><div class="box-h">${v.guru==='ross'?'Source rules and unresolved requirements':'Book rules and implementation notes'}<span data-react-slot="visual-rules"></span></div>${rulesPanel(v)}</section>${gptSection(v,tk,null,issue)}`;
+  return `${crumbs}<section class="box" data-backtest-state="${esc(issue.status)}"><div class="st-head"><h1 class="st">${esc(familyDisplayName(v))}</h1>${VaultUI.toolbar()}</div><div class="tags2"><span class="badge outline">${esc(v.dir)}</span><span>${esc(label)}</span><span class="badge gapb">${esc(heldLabel(issue))}</span></div>${switches}${periodPanel(tk,null,issue)}${sourceBlockers(v)}<div class="empty gapbox"><b>${esc(heldLabel(issue))}</b>${esc(issue.note)}<p>No performance figures or charts are displayed for this run. The book information and rules below are reference material, not evidence of a completed backtest.</p>${recoveryHTML}</div></section><section class="box"><div class="box-h">${v.guru==='ross'?'Source rules and unresolved requirements':'Book rules and implementation notes'}<span data-react-slot="visual-rules"></span></div>${rulesPanel(v)}</section>${gptSection(v,tk,null,issue)}`;
 }
 
 const BASKET_RUNS=new Map();

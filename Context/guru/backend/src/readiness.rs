@@ -6,6 +6,16 @@ pub struct Issue {
     pub status: &'static str,
     pub note: String,
 }
+/// Display wording only: replaces the gate's internal audit shorthand with plain words.
+pub fn plain_gate_reason(reason:&str)->String {
+    [("checker: changed verified -> withheld W1.","The independent re-check changed this from matched to withheld."),
+     ("checker: ","Independent re-check: "),
+     (" (B_fixed_amount)",""),
+     ("Blocks: B_stale_open (opening gap).","It also trades at the opening price after a gap."),
+     ("path_check ","Same-day check, "),
+     ("same_day_logret_share","share of gain from same-day trades")]
+        .iter().fold(reason.to_string(),|s,(from,to)|s.replace(from,to))
+}
 fn issue(status: &'static str, note: impl Into<String>) -> Option<Issue> {
     Some(Issue { status, note: note.into() })
 }
@@ -274,7 +284,7 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     if let Some(g) = crate::gate::get(def.id) {
         // A fixed-USD-amount withhold does not apply on a US stock, the amount's home (user decision 2026-10-21).
         if g.verdict == "withheld" && !crate::instrument_policy::reviewed_cash_rule(def) && !usd_stock {
-            return issue("not_testable", format!("Withheld by the accuracy check: {} No results are published.", g.reason));
+            return issue("not_testable", format!("Withheld by the accuracy check: {} No results are published.", plain_gate_reason(g.reason)));
         }
         if let (Some(allowed), Some(row)) = (g.allowed, ctx.r.get(from)) {
             if !allowed.contains(&row.ticker.as_str()) {
