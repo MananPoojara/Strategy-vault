@@ -153,6 +153,12 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
             return issue("needs_data",format!("This rule's stop entries and gap tests read the opening price; {} opens in this file are real only from {cut}. Choose a start on or after {cut}.",r.ticker));
         }
     }
+    // Admitted cwin rules all read the open; the gate clamps all but the two-rule exit test, which is refused instead.
+    if def.book==books::cwin::BOOK && books::cwin::reads_open(def.id) && !crate::gate::get(def.id).is_some_and(|g|g.clamp_open) {
+        if let Some((r,cut))=ctx.r.get(from).and_then(|r|crate::gate::real_open_from(&r.ticker).map(|c|(r,c))).filter(|(r,c)|r.date.as_str()<*c) {
+            return issue("needs_data",format!("This rule's stop entries read the opening price; {} opens in this file are real only from {cut}. Choose a start on or after {cut}.",r.ticker));
+        }
+    }
     if def.book=="chbta2" && matches!(def.id,"ch_bta2_ma_stack"|"ch_bta2_65sma_ravi") {
         if let Some(note)=books::chbta2::validate_reviewed(def.id,p) {return issue("not_testable",note);}
     }
@@ -351,6 +357,19 @@ mod tests {
             assert_eq!(ok(&mk("SPX","2013"),id),books::ptjmt::reads_open(id).then_some("needs_data"),"{id}");
             assert_eq!(ok(&mk("SPX","2014"),id),None,"{id}");
             assert_eq!(ok(&mk("SPY","2013"),id),None,"{id}");
+        }
+    }
+    #[test]
+    fn cwin_unclamped_rules_refuse_stale_index_opens() {
+        let mk=|t:&str,y:&str|{let mut r=rows();for (i,x) in r.iter_mut().enumerate(){x.ticker=t.into();x.date=format!("{y}-06-0{}",i+1);}r};
+        for &id in books::cwin::REVIEWED_DAILY {
+            let d=definition(id);
+            let guarded=!crate::gate::get(id).is_some_and(|g|g.clamp_open);
+            assert_eq!(guarded,id=="cwin_window_two_rule_exit_test");
+            let (old,new,spy)=(mk("SPX","2013"),mk("SPX","2014"),mk("SPY","1995"));
+            assert_eq!(check(&Ctx::new(&old,&old,&old),&d,0,4,&Params::new()).is_some(),guarded,"{id}");
+            assert!(check(&Ctx::new(&new,&new,&new),&d,0,4,&Params::new()).is_none(),"{id}");
+            assert!(check(&Ctx::new(&spy,&spy,&spy),&d,0,4,&Params::new()).is_none(),"{id}");
         }
     }
     #[test]

@@ -17,6 +17,18 @@ use crate::Row;
 
 pub const BOOK: &str = "cwin";
 
+/// Daily/weekly rules admitted after the 2026-10-21 source review (connors/cwin-admission/SOURCE-CONTRACT.md) and an
+/// independent chronological Python ledger check. The book and course show Windows on stocks, HOLDRs, indices, ETFs
+/// and futures: actual stocks and any actual index/ETF are admitted. Exits: the book's partly discretionary management
+/// made mechanical as declared in the notes. Held: the VIX Gap Window (needs intraday VIX/price series not in the vault).
+pub const REVIEWED_DAILY: &[&str] = &[
+    "cwin_single_window", "cwin_double_window", "cwin_aggressive_window", "cwin_hanging_window", "cwin_gap_window_intraday",
+    "cwin_gap_window_close", "cwin_window_two_rule_exit_test", "cwin_first_window", "cwin_weekly_window",
+];
+pub fn reviewed_daily(id: &str) -> bool { REVIEWED_DAILY.contains(&id) }
+/// Every admitted rule reads the open (stop-entry fills at a gapped open, gap tests, close-vs-open, Situation 10).
+pub fn reads_open(id: &str) -> bool { reviewed_daily(id) }
+
 // ---------------------------------------------------------------- rules text (quoted from the book)
 
 const TREND_L: &str = "F|Uptrend (p12): \"we must have a 10-period ADX reading of 30 or higher and a +DI reading above the -DI reading. Or we must have a 14-period +DI of 30 or higher (with no ADX reading required).\"";
