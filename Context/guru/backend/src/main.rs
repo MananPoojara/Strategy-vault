@@ -139,9 +139,6 @@ fn load_csv(path: &str) -> Result<BTreeMap<String, Vec<Row>>, String> {
         };
         let volume = vi.and_then(num).filter(|v| *v > 0.0);
         let ticker = f[ti].clone();
-        // User-approved Nifty research cutoff applies BEFORE indicator warm-up.
-        // The original source CSV is retained unchanged.
-        if ticker=="NIFTY 50" && date.as_str()<"2000-01-01" {continue;}
         out.entry(ticker.clone()).or_default().push(Row { ticker, date, open: o, high: h, low: l, close: c, volume });
     }
     for rows in out.values_mut() {

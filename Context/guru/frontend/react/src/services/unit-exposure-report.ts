@@ -151,7 +151,7 @@ function core(data: unknown, admission: UnitExposureAdmission, adapter: boolean)
     days.push(d as unknown as UnitExposureDay);
   }
   if ((data.dates[0] as string) < metadata.first || (data.dates[N-1] as string) > metadata.last
-    || (!adapter && admission.region === 'in' && (data.dates[0] as string) < '2000-01-01') || days[0].benchmark_equity !== 1) return invalid();
+    || days[0].benchmark_equity !== 1) return invalid();
   const audits: UnitExposureTrade[] = [], covered = new Set<number>(); let lastExit = -1;
   for (let i = 0; i < raw.trade_returns.length; i++) {
     const a: unknown = raw.trade_returns[i], t: unknown = data.trades[i];

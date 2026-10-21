@@ -41,8 +41,7 @@ export function demaPriceIdentity(px:PriceHistory|null,ticker?:string):px is Pri
   &&[raw.o,raw.h,raw.l,raw.c].every(Array.isArray)
   &&[raw.o,raw.h,raw.l,raw.c].every(v=>v.length===raw.d.length&&v.every(n=>Number.isFinite(n)&&n>0))
   &&raw.d.every((d,i)=>/^\d{4}-\d{2}-\d{2}$/.test(d)&&Number.isFinite(Date.parse(d))&&new Date(d).toISOString().slice(0,10)===d&&(!i||d>raw.d[i-1])
-    &&raw.l[i]<=Math.min(raw.o[i],raw.c[i])&&raw.h[i]>=Math.max(raw.o[i],raw.c[i]))
-  &&(raw.ticker!=='NIFTY 50'||raw.d[0]>='2000-01-01');
+    &&raw.l[i]<=Math.min(raw.o[i],raw.c[i])&&raw.h[i]>=Math.max(raw.o[i],raw.c[i]));
 }
 export function demaSeries(px:PriceHistory,arrays:DemaSourceArrays,displayDates:readonly string[]=px.d):StrategyIndicator[] {
  const byDate=new Map(px.d.map((d,i)=>[d,i]));
