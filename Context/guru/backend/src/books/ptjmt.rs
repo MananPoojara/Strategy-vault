@@ -20,6 +20,27 @@ use crate::Row;
 
 pub const BOOK: &str = "ptjmt";
 
+/// Exact daily contracts admitted after the 2026-10-21 source review (connors/ptjmt-admission/SOURCE-CONTRACT.md)
+/// and independent chronological Python ledgers. Declared index-timing application of an S&P-futures study.
+/// CVR IV / IV Friday stay held (accuracy gate: fixed VIX points, next-open exit).
+pub const REVIEWED_DAILY: &[&str] = &[
+    "ptjmt_cvr1", "ptjmt_cvr2", "ptjmt_cvr3", "ptjmt_cvr5",
+    "ptjmt_trin_reversals", "ptjmt_trin_reversals_20", "ptjmt_trin_thrusts", "ptjmt_padi",
+    "ptjmt_trin_reversals_nse", "ptjmt_trin_reversals_20_nse", "ptjmt_trin_thrusts_nse", "ptjmt_padi_nse",
+];
+pub fn reviewed_daily(id: &str) -> bool { REVIEWED_DAILY.contains(&id) }
+/// NYSE-breadth and CVR rules: actual SPX / SPY; CVR II and III (VIX close/high/low, scale-free thresholds) also
+/// NIFTY 50 with India VIX. NSE-breadth versions (declared adaptation): NIFTY 50 only.
+pub fn admitted_symbol(id: &str, ticker: &str) -> bool {
+    reviewed_daily(id) && if id.ends_with("_nse") { ticker == "NIFTY 50" } else {
+        matches!(ticker, "SPX" | "SPY") || (ticker == "NIFTY 50" && matches!(id, "ptjmt_cvr2" | "ptjmt_cvr3"))
+    }
+}
+/// Rules whose % stop can fill at the traded instrument's open (refused where that index's opens are stale).
+pub fn reads_open(id: &str) -> bool { matches!(id, "ptjmt_trin_thrusts" | "ptjmt_padi") }
+/// The served CBOE VIX file holds close-only bars (open = high = low = close) for 1990-1991.
+pub const REAL_VIX_OHLC_FROM: &str = "1992-01-01";
+
 /// Strategy note + the shared book note (+ the VIX-open caveat for rules that read the VIX open).
 macro_rules! note {
     (cvr $s:literal) => {

@@ -130,6 +130,16 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     if def.book==books::vixr::BOOK && books::vixr::reviewed_daily(def.id) && ctx.r.get(from).is_some_and(|r|r.date.as_str()<books::vixr::REAL_VIX_OHLC_FROM) {
         return issue("needs_data",format!("The CVR rules read the VIX open, high and low; the served CBOE VIX history has close-only bars before {}. Choose a later start; close-only bars are not used as highs, lows or opens.",books::vixr::REAL_VIX_OHLC_FROM));
     }
+    if def.book==books::ptjmt::BOOK && books::ptjmt::reviewed_daily(def.id) {
+        if let Some(r)=ctx.r.get(from) {
+            if def.id.starts_with("ptjmt_cvr") && r.date.as_str()<books::ptjmt::REAL_VIX_OHLC_FROM {
+                return issue("needs_data",format!("The CVR rules read the VIX high and low (CVR I and V also the open); the served CBOE VIX history has close-only bars before {}. Choose a later start.",books::ptjmt::REAL_VIX_OHLC_FROM));
+            }
+            if let Some(cut)=books::ptjmt::reads_open(def.id).then(||crate::gate::real_open_from(&r.ticker)).flatten().filter(|c|r.date.as_str()<*c) {
+                return issue("needs_data",format!("The 1.5% stop fills at the open when a bar gaps through it; {} opens are real only from {cut}. Choose a start on or after {cut}.",r.ticker));
+            }
+        }
+    }
     if def.book=="chbta2" && matches!(def.id,"ch_bta2_ma_stack"|"ch_bta2_65sma_ravi") {
         if let Some(note)=books::chbta2::validate_reviewed(def.id,p) {return issue("not_testable",note);}
     }
@@ -307,6 +317,18 @@ mod tests {
         for &id in books::vixr::REVIEWED_DAILY {
             assert!(check(&ctx,&definition(id),0,4,&Params::new()).is_none(),"{id}");
             assert_eq!(check(&octx,&definition(id),0,4,&Params::new()).unwrap().status,"needs_data","{id}");
+        }
+    }
+    #[test]
+    fn ptjmt_admitted_rules_refuse_close_only_vix_years_and_stale_spx_opens() {
+        let mk=|t:&str,y:&str|{let mut r=rows();for (i,x) in r.iter_mut().enumerate(){x.ticker=t.into();x.date=format!("{y}-01-0{}",i+5);}r};
+        let ok=|r:&Vec<crate::Row>,id:&str|{let mut ctx=Ctx::new(r,r,r);for s in definition(id).needs_series {ctx.extra.insert(s.to_string(),vec![1.0;r.len()]);}check(&ctx,&definition(id),0,4,&Params::new()).map(|i|i.status)};
+        for &id in books::ptjmt::REVIEWED_DAILY {
+            let cvr=id.starts_with("ptjmt_cvr");
+            assert_eq!(ok(&mk("SPY","1991"),id),cvr.then_some("needs_data"),"{id}");
+            assert_eq!(ok(&mk("SPX","2013"),id),books::ptjmt::reads_open(id).then_some("needs_data"),"{id}");
+            assert_eq!(ok(&mk("SPX","2014"),id),None,"{id}");
+            assert_eq!(ok(&mk("SPY","2013"),id),None,"{id}");
         }
     }
     #[test]

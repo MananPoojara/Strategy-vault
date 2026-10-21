@@ -46,6 +46,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
     (def.book=="kftsm" && member(def.id,&["kftsm_ma","kftsm_exp","kftsm_lrs","kftsm_ndb","kftsm_bb_ma","kftsm_ma_pct_band","kftsm_ma_tr_band","kftsm_triple_smooth","kftsm_vol_breakout","kftsm_keltner","kftsm_hh_ma","kftsm_hh_cross","kftsm_hh_channel","kftsm_mod_3ma","kftsm_4_9_18","kftsm_month_end","kftsm_hirsch"]))) || reviewed_adaptive_rule(def)
         || (def.book=="spmt" && crate::books::spmt::reviewed_daily(def.id))
         || (def.book=="vixr" && crate::books::vixr::reviewed_daily(def.id))
+        || (def.book=="ptjmt" && crate::books::ptjmt::reviewed_daily(def.id))
         || (def.book=="chbta2" && member(def.id,&["ch_bta2_ma_stack","ch_bta2_65sma_ravi"]))
         || (def.book=="sbma" && member(def.id,&["sbma_sma50_long","sbma_x_5s20s"]))
         || (def.book=="radge" && def.id=="radge_oc_long")
@@ -73,6 +74,10 @@ fn dema_index_symbol_issue(def:&StrategyDef,ticker:&str,selected:&str)->Option<I
 fn vixr_symbol_issue(def:&StrategyDef,ticker:&str)->Option<Issue> {
     if def.book!="vixr" || !crate::books::vixr::reviewed_daily(def.id) || crate::books::vixr::admitted_symbol(def.id,ticker) {return None;}
     Some(Issue{status:"needs_data",note:format!("Trading Connors VIX Reversals traded S&P futures on the CBOE VIX. This review admits actual SPX and SPY with the CBOE VIX, and NIFTY 50 with India VIX only for CVR 2, 3 and 6 (rules that do not read the VIX open or fixed VIX-point thresholds). {ticker} is outside that reviewed scope; no result is published.")})
+}
+fn ptjmt_symbol_issue(def:&StrategyDef,ticker:&str)->Option<Issue> {
+    if def.book!="ptjmt" || !crate::books::ptjmt::reviewed_daily(def.id) || crate::books::ptjmt::admitted_symbol(def.id,ticker) {return None;}
+    Some(Issue{status:"needs_data",note:format!("PTJ Market Timing traded S&P 500 futures on the OEX VIX and NYSE breadth. This review admits actual SPX and SPY for the VIX and NYSE-breadth rules, NIFTY 50 with India VIX for CVR II and III only, and NIFTY 50 for the NSE-breadth versions. {ticker} is outside that reviewed scope; no result is published.")})
 }
 fn reviewed_adaptive_rule(def:&StrategyDef)->bool {
     def.book=="kftsm" && member(def.id,&["kftsm_kama","kftsm_adapt_exp","kftsm_vidya","kftsm_adapt_r2","kftsm_adapt_rsi","kftsm_swg","kftsm_swing","kftsm_raschke_first_cross","kftsm_outside_day","kftsm_fc_bb_abx"])
@@ -212,6 +217,10 @@ fn base_policy(def:&StrategyDef)->Policy {
         let mut p=requirement("declared_index_timing", &["index","etf"], "Trading Connors VIX Reversals (2001), CVR 1-11 daily rules (book pp.19-81) reviewed in pilot-vixr/SOURCE-CONTRACT.md with independent chronological SPY/SPX/NIFTY 50 ledgers. The book traded one S&P 500 futures contract on the OEX-based VIX (today's VXO), 1993-2001. SPY uses actual ETF prices and the CBOE VIX; SPX cash-index timing is a declared research application; NIFTY 50 with India VIX is admitted only for CVR 2, 3 and 6. Cash-index shorts are hypothetical exposure. Close fills, one position with stop-and-reverse, the restart of the hold count on a same-direction exit-bar signal and the open terminal position are explicit conventions. Book exit ranges (2-3 days) and source inconsistencies are disclosed open items, not resolved. No futures contract dollars, VXO, option P&L, multi-contract portfolio or book-performance reproduction is claimed.");
         p.market_adaptation=true; return p;
     }
+    if def.book=="ptjmt" && crate::books::ptjmt::reviewed_daily(def.id) {
+        let mut p=requirement("declared_index_timing", &["index","etf"], "The Best of the Professional Traders Journal: Market Timing (Connors, 1997-98), CVR I/II/III/V, TRIN Reversals (30/20-day), TRIN Thrusts and PADI (book pp.3-42) reviewed in connors/ptjmt-admission/SOURCE-CONTRACT.md with independent chronological SPY/SPX/NIFTY 50 ledgers. The book traded one S&P 500 futures contract on the OEX VIX (today's VXO) and NYSE TRIN / advance-decline data. SPY uses actual ETF prices and the CBOE VIX (VXO only with the labelled p.src=1 option); SPX cash-index timing is a declared research application; NIFTY 50 with India VIX is admitted for CVR II and III only; the NSE TRIN / NSE advance-decline versions on NIFTY 50 are declared adaptations, not book data. Cash-index shorts are hypothetical exposure. Close fills, one position with stop-and-reverse, the restart of the hold count on a same-direction exit-bar signal and the open terminal position are explicit conventions. Book exit ranges and source inconsistencies are disclosed open items, not resolved. No futures contract dollars, option spreads or book-performance reproduction is claimed.");
+        p.market_adaptation=true; return p;
+    }
     if def.book=="chbta2" && member(def.id,&["ch_bta2_ma_stack","ch_bta2_65sma_ravi"]) {
         let mut p=requirement("declared_ohlc_adaptation", &["index","etf","individual_stock"], "Chande, Beyond Technical Analysis (1997), printed pp.20-21 and pp.80,94-97,99. Only the exact stop-free SMA-agreement and RAVI-filtered reversal contracts were source-reviewed and checked against independent chronological ledgers; see library/chande/REVIEW-2026-10-13.md. Actual selected prices are a declared research application, flat at the test start with available historical warmup and one position per symbol. Cash-index short exposure is hypothetical. No futures dollar stops/costs, contract ticks/rollovers, portfolio allocation or source performance are reproduced. Other Chande IDs remain under their existing policy.");
         p.market_adaptation=true;return p;
@@ -289,6 +298,7 @@ pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     let p=policy(def);let selected=selected_type(ticker,native_stock);
     if let Some(issue)=dema_index_symbol_issue(def,ticker,selected){return Some(issue);}
     if let Some(issue)=vixr_symbol_issue(def,ticker){return Some(issue);}
+    if let Some(issue)=ptjmt_symbol_issue(def,ticker){return Some(issue);}
     if native_stock {
         if let Some(reason)=p.native_currency_constraint {
             return Some(Issue {status:"needs_data",note:format!("Source currency/tick data missing. {reason} USD amounts cannot silently become INR amounts. A source-supported Indian specification or dated FX treatment and verified local tick rules are required before admission; editing the numeric parameter alone does not establish those inputs. Selected actual stock: {ticker}. No results are published.")});
@@ -303,6 +313,7 @@ pub fn check_native(def:&StrategyDef,ticker:&str,evidence:&NativeEvidence)->Opti
     let p=policy(def);
     if let Some(issue)=dema_index_symbol_issue(def,ticker,evidence.asset_type()){return Some(issue);}
     if let Some(issue)=vixr_symbol_issue(def,ticker){return Some(issue);}
+    if let Some(issue)=ptjmt_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=check_selected(p,ticker,evidence.asset_type()){return Some(issue);}
     if let Some(reason)=p.native_currency_constraint {
         return Some(Issue{status:"needs_data",note:format!("Source currency/price-unit/tick review is pending. {reason} Selected actual stock: {ticker}; trusted source market {} and currency {}. Matching USD currency alone cannot establish the author's historical adjusted-price basis, absolute price thresholds or execution ticks; no reviewed source-unit proof is staged. No results are published.",evidence.market().code(),evidence.currency())});
@@ -475,6 +486,27 @@ mod tests {
             assert!(!reviewed_cash_rule(&d));
             assert_eq!(policy(&d).requirement,"source_review_required");
             assert!(check(&d,"SPY",false).is_some());
+        }
+    }
+    #[test]
+    fn ptjmt_review_admits_exact_ids_on_reviewed_symbols_only() {
+        let cat=crate::books::ptjmt::catalogue();
+        let admitted:Vec<&str>=cat.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        assert_eq!(admitted,["ptjmt_cvr1","ptjmt_cvr2","ptjmt_cvr3","ptjmt_cvr5","ptjmt_trin_reversals","ptjmt_trin_reversals_nse","ptjmt_trin_reversals_20","ptjmt_trin_reversals_20_nse","ptjmt_trin_thrusts","ptjmt_trin_thrusts_nse","ptjmt_padi","ptjmt_padi_nse"]);
+        for d in cat.iter().filter(|d|reviewed_cash_rule(d)) {
+            assert_eq!(policy(d).requirement,"declared_index_timing");
+            let nse=d.id.ends_with("_nse");
+            assert_eq!(check(d,"SPY",false).is_none(),!nse,"{}",d.id);
+            assert_eq!(check(d,"SPX",false).is_none(),!nse,"{}",d.id);
+            assert_eq!(check(d,"NIFTY 50",false).is_none(),nse||["ptjmt_cvr2","ptjmt_cvr3"].contains(&d.id),"{}",d.id);
+            for t in ["NDX","DJI","QQQ","DIA","NIFTY BANK"] {assert!(check(d,t,false).is_some(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_some() && check(d,"RELIANCE",true).is_some());
+        }
+        for id in ["ptjmt_cvr4","ptjmt_cvr4_friday"] {
+            let d=cat.iter().find(|d|d.id==id).unwrap();
+            assert!(!reviewed_cash_rule(d));
+            assert_eq!(policy(d).requirement,"source_review_required");
+            assert!(check(d,"SPY",false).is_some());
         }
     }
     #[test]
