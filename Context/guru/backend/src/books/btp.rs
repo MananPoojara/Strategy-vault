@@ -27,6 +27,22 @@ use crate::Row;
 
 pub const BOOK: &str = "btp";
 
+/// Daily rules admitted after the 2026-10-21 source review (btp-admission/SOURCE-CONTRACT.md) and an independent
+/// chronological Python ledger check on actual index/ETF prices. Declared application: the book tested or
+/// illustrated these on futures and US stocks. Held (not listed): CBP (IBD RS stock ranking, gate withheld),
+/// Bottom Reversals and Momentum Gaps (setup/stop not quantified), Large-Range Days (options / study),
+/// 10% Oops x3 and WREG sells (gate withheld: same-day path).
+pub const REVIEWED_DAILY: &[&str] = &[
+    "btp_dvmtm_short", "btp_triple_day_pullback_adx25", "btp_triple_day_pullback_adx30", "btp_turtle_thrust",
+    "btp2_smtp_long", "btp2_smtp_short", "btp2_1234_long", "btp2_1234_short",
+    "btp2_8day_hl_reversal_long", "btp2_8day_hl_reversal_short", "btp2_momentum_ma_long", "btp2_momentum_ma_short",
+    "btp2_gipsons_long", "btp2_gipsons_short", "btp2_wide_range_exhaustion_gap_long",
+];
+pub fn reviewed_daily(id: &str) -> bool { REVIEWED_DAILY.contains(&id) }
+/// Admitted rules whose fills or setups read the traded instrument's open (stop orders, gaps, open entries).
+/// Only Triple-Day Pullbacks (close fills, ADX from high/low/close) does not.
+pub fn reads_open(id: &str) -> bool { reviewed_daily(id) && !id.starts_with("btp_triple_day_pullback") }
+
 // ---------------------------------------------------------------- local helpers
 
 /// Wilder DMI with both lines: (+DI, -DI, ADX). Same maths as `connors::dmi`, which does not return -DI.
