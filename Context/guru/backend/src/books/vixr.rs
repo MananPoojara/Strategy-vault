@@ -117,9 +117,10 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|New 20-period high = that day's VIX high is the highest of the last 20 days incl. itself (ref = 0, the literal reading)",
             "E|[Not from the book] ref = 1: high above the 20-day high set before those 3 days (fitted to the report's trade count)",
             "E|Buy (sell) the market on the close",
-            "X|Exit in two to three days: close 2 days after entry (Section Four: two days for CVR 6)",
+            "X|Exit in two to three days (p.40): close 3 days after entry, the published CVR 6 test (p.42 report: winners average 3 bars)",
+            "X|Option hold = 2: Section Four (p.82) portfolio rule \"exited in three days (two days for the CVR 2, 6 and 7)\"",
             "X|An opposite CVR 6 signal stops and reverses"],
-          note!("New 20-period high = that day's VIX high is the highest of the last 20 days incl. itself (param ref = 0, the text as written; TradeStation inputs HILODAYS = 20, _2_3DAYS = 3): 103 trades (49 L / 54 S), 61.2% on VXO 1993-2001 (book 144, 72 / 72, 62.5%). [Not from the book] ref = 1 (above the highest high of the 20 days before the 3-day window) is fitted to the summary report, not stated in the text: 137 trades 69 L / 68 S, 62.8%. The input EXT_DAYS defaults to 5; Section Four and the report (3 / 4 bars) point to 2. "),
+          note!("Exit: the rule says \"Exit in two to three days\" (p.40). Default hold = 3 = the published CVR 6 test (p.42 report \"CVR 6 VIXdouble Top/Bot\": 144 trades, 62.5%, avg $1,048.33, winners average 3 bars; in every CVR report the winners' average bars equals the fixed exit), so the claim below belongs to this default. Option hold = 2 = Section Four's portfolio rule (p.82, \"two days for the CVR 2, 6 and 7\"). The TradeStation input EXT_DAYS defaults to 5 (used by neither). New 20-period high = that day's VIX high is the highest of the last 20 days incl. itself (param ref = 0, the text as written; TradeStation inputs HILODAYS = 20, _2_3DAYS = 3). Reference model on SPX with VXO, 1/28/93-8/6/01, close to close: ref 0 hold 3 = 102 trades (49 L / 53 S), 58.8% (hold 2: 103, 49 / 54, 59.2%); book 144 (72 / 72), 62.5%. [Not from the book] ref = 1 (above the highest high of the 20 days before the 3-day window) is fitted to the report's trade count, not stated in the text: hold 3 = 131 trades (66 L / 65 S), 59.5% (hold 2: 137, 69 / 68, 59.9%). p.43 summary: \"this simple situation has occurred 131 times ... and has correctly identified two-day market reversals about 62% of the time\" (not the report's 144 trades). "),
           claim("144 (72 L / 72 S)", "62.5%", "$1,048.33", "3 / 4 bars (win / loss)", PERIOD)),
         d("vixr_cvr7", "CVR 7 · Flushing out the weak money", Live,
           &["E|Buy: the VIX close of two days ago above the 10-period MA made three days ago",
@@ -198,7 +199,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("zone", "Open & close within % of the range from the extreme", 100.0 / 3.0, 10.0, 50.0, 5.0), hold(if id == "vixr_cvr5_1d" { 1.0 } else { 3.0 })],
         "vixr_cvr6" => vec![p("hilo", "New N-period VIX high/low", 20.0, 5.0, 40.0, 1.0), p("need", "…on at least this many days", 2.0, 1.0, 3.0, 1.0),
             p("look", "…of the past N days", 3.0, 2.0, 5.0, 1.0),
-            p("ref", "New high/low vs: 1 = the N days before the window (fitted), 0 = last N days incl. that day (literal, book p.40)", 0.0, 0.0, 1.0, 1.0), hold(2.0)],
+            p("ref", "New high/low vs: 1 = the N days before the window (fitted), 0 = last N days incl. that day (literal, book p.40)", 0.0, 0.0, 1.0, 1.0),
+            p("hold", "Exit on the close N days after entry (3 = published CVR 6 test, p.42; 2 = Section Four p.82)", 3.0, 1.0, 10.0, 1.0)],
         "vixr_cvr7" => vec![p("ma", "VIX moving average length (LEN)", 10.0, 5.0, 20.0, 1.0), hold(2.0)],
         "vixr_cvr8" => vec![p("fast", "Fast EMA", 10.0, 5.0, 20.0, 1.0), p("slow", "Slow EMA", 100.0, 50.0, 200.0, 10.0),
             p("look", "Oscillator highest/lowest of N days", 40.0, 10.0, 60.0, 5.0), p("thr", "Oscillator beyond ± (VIX points)", 0.2, 0.0, 1.0, 0.05), hold(3.0)],
@@ -535,6 +537,13 @@ mod tests {
         assert_eq!((t.len(), t[0].dir, t[0].legs[0].i, t[0].exit_i), (1, 1.0, 10, 12), "{t:?}");
         let t = run(1.0);
         assert_eq!((t[0].legs[0].i, t[0].exit_i), (10, 11), "{t:?}");
+    }
+
+    #[test]
+    fn cvr6_default_exit_is_the_published_3_day_test() {
+        let def = |k: &str| params("vixr_cvr6").unwrap().into_iter().find(|d| d.key == k).unwrap().def;
+        assert_eq!(def("hold"), 3.0);
+        assert!(catalogue().iter().find(|d| d.id == "vixr_cvr6").unwrap().rules.iter().any(|r| r.contains("close 3 days after entry")));
     }
 
     #[test]

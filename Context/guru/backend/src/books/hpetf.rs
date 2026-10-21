@@ -168,7 +168,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         StrategyDef { notes: SEM_RSI14_NOTE, claim: None, ..d(SEM_RSI14, "Seminar · RSI 14 TPS", "Seminar Session 2 · TPS under the 200-day MA", "Long",
           &["F|(S2 p19) \"1. The 200 Day MA is an optional rule and I'll show you the results with and without the 200-day MA.\" Default off; p.trend_filter=1 buys only while the close is under the 200-day SMA (S2 p9: 'TPS strategies which we like to trade ETFs under the 200-day MA') [direction read from p9]",
             "E|\"2. Buy 2 shares (20%) of the ETF when the 14-period RSI closes under 35 and the 2-period RSI is less than 30.\" (on the close)",
-            "A|\"3. Buy 3 shares (30%) if the ETF closes lower anytime you're in the position.\" \"4. Buy 5 shares (50%) if the ETF closes lower anytime you're in the position.\" [Not from the book] 'closes lower' = below the previous purchase price (the seminar's TPS rule, S1 p83, and S2 p12 '1-2-3-4-5'); p.add_ref=1 = below the previous close",
+            "A|\"3. Buy 3 shares (30%) if the ETF closes lower anytime you're in the position.\" \"4. Buy 5 shares (50%) if the ETF closes lower anytime you're in the position.\" 'Closes lower' = below the previous close (default, p.add_ref=1): the seminar keeps 'closes lower' (S2 p12 rule 3, p13 rule 6) apart from 'closes lower than the previous purchase' (S2 p12 rule 4, p13 rule 5). Option p.add_ref=0 = [Not from the book] below the previous purchase price (the TPS 2-3-5 rule, S1 p83)",
             "X|\"5. Exit when the 2 (two)-period RSI close above 65.\""], None) },
         StrategyDef { notes: "Session 2 pp.99-101 (repeated Session 3 pp.5-7). The pair list and results are only on a spreadsheet not in the PDF. Held: the rule needs two ETFs on the exact same index (e.g. a 1x and a 2x S&P 500 ETF); the vault holds one ETF per index (SPY, QQQ, IWM, MDY, SMH) and an index cannot stand in for an ETF leg, so no pair can be priced. No result is published.",
             status: Status::NeedsData("two ETFs on the exact same index (e.g. SPY with a 2x S&P 500 ETF); the vault holds one ETF per index and an index cannot be an ETF leg, so neither leg pair has real prices"),
@@ -225,7 +225,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("entry", "and RSI(2) below", 30.0, 5.0, 50.0, 5.0), p("exit", "Exit when RSI(2) closes above", 65.0, 50.0, 80.0, 5.0),
             p("trend_filter", "Optional 200-day rule: 0 = off (default), 1 = buy only while the close is under the trend SMA", 0.0, 0.0, 1.0, 1.0),
             p("trend", "Trend SMA", 200.0, 50.0, 300.0, 10.0),
-            p("add_ref", "[Not from the book] 'Closes lower' = 0 below the previous purchase price, 1 below the previous close", 0.0, 0.0, 1.0, 1.0)]);
+            p("add_ref", "'Closes lower' = 1 below the previous close (book wording, S2 p19-20), 0 = [Not from the book] below the previous purchase price (S1 p83 TPS)", 1.0, 0.0, 1.0, 1.0)]);
     }
     let (f, long, aggr) = kind(id)?;
     let mut v = vec![p("trend", "Trend SMA", 200.0, 50.0, 300.0, 10.0)];
