@@ -201,7 +201,7 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
         }
     }
     if def.needs_vix {
-        let Some(start)=ctx.vix.first else { return issue("needs_data","The required volatility-index history is not loaded for this market.") };
+        let Some(start)=ctx.vix.first else { return issue("needs_data","VIX data required: this strategy needs the daily volatility index (VIX) for this market, and that history is not loaded yet, so no backtest is shown. US markets: CBOE VIX data is pending and will be added. India: India VIX is used with NIFTY 50.") };
         if from < start { return issue("needs_data",format!("Required volatility-index data begins on {}. The selected period includes earlier days with no data; choose a fully covered period.",ctx.r[start].date)); }
         if start > to { return issue("needs_data","The selected period ends before the required volatility-index data begins. Choose another period."); }
         if let Some(i)=(from.max(start)..=to).find(|&i| !ctx.vix.has_bar(i)) {
