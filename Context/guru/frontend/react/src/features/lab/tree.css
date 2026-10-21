@@ -6,6 +6,6 @@
 .lab-group-body > .lab-cond:last-of-type { border-bottom: 0; }
 .lab-group-body > select[data-lab-add] { justify-self: start; max-width: 100%; }
 .lab-list > select[data-lab-add] { justify-self: start; margin-top: 4px; max-width: 100%; }
-.lab-node select[data-lab-node-menu] { width: 36px; max-width: 36px; padding-inline: 6px; }
+.lab-node select[data-lab-node-menu] { width: 136px; }
 .lab-node .lab-kept { overflow-wrap: anywhere; min-width: 0; }
 @media (max-width: 600px) { .lab-group-body { margin-left: 2px; padding-left: 6px; } }

@@ -163,7 +163,7 @@ function Timing({ operand, catalogue, onChange, compress }: {
   const summary = [tf !== "D" ? TF_LABELS[tf] ?? `Every ${tf.slice(0, -1)} sessions` : "", offset ? `${offset} ${tf === "D" ? "bars" : "periods"} ago` : "",
     expand === "point" ? "period's last day" : expand === "first" ? "from the period's first day" : ""].filter(Boolean).join(" · ");
   return <>
-    <button type="button" className="dbtn sm ghost" data-lab-timing aria-expanded={open} aria-label="Timeframe and offset" title="Timeframe and offset" onClick={() => setOpen(!open)}>{summary || "⋯"}</button>
+    <button type="button" className="dbtn sm ghost" data-lab-timing aria-expanded={open} aria-label="Timeframe and offset" title="Timeframe and offset" onClick={() => setOpen(!open)}>{summary || "Daily · now"} <span aria-hidden="true">{open ? "▴" : "▾"}</span></button>
     {open && <span className="lab-timing">
       {!compress && <TimeframeField operand={operand} catalogue={catalogue} onChange={onChange} />}
       {tf !== "D" && <>

@@ -30,7 +30,7 @@ function AddMenu({ title, caps, top = false, sequence = false, full = false, onA
 }) {
   const blocked = caps.leaves || caps.nodes || (top && caps.top) || full;
   const options = sequence ? ADD_KINDS.filter((k) => k !== "at_least" && k !== "then") : ADD_KINDS;
-  return <select data-lab-add aria-label={`Add to ${title}`} value="" onChange={(e) => {
+  return <select data-lab-add aria-label={`Add to ${title}`} title={COPY.addTip} value="" onChange={(e) => {
     const k = e.target.value as AddKind;
     if (!blocked && options.includes(k)) onAdd(newNode(k));
   }}>
@@ -46,7 +46,7 @@ export function NodeEditor({ node, onChange, onRemove, onMove, canUp = false, ca
   const [open, setOpen] = useState(true);
   const kind = nodeKind(node), x = node as Obj;
   const set = (patch: Obj) => onChange({ ...x, ...patch } as RuleNode);
-  const remove = onRemove && <button type="button" className="dbtn sm ghost" aria-label={`Remove ${label}`} onClick={onRemove}>×</button>;
+  const remove = onRemove && <button type="button" className="dbtn sm ghost" aria-label={`Remove ${label}`} title="Remove this condition" onClick={onRemove}>×</button>;
   const menu = <NodeMenu node={node} onChange={onChange} onMove={onMove} canUp={canUp} canDown={canDown} caps={caps} label={label} />;
   const renderNode = (n: RuleNode, update: (n: RuleNode) => void, name: string) => <NodeEditor node={n} onChange={update} catalogue={catalogue}
     caps={caps} side={side} top={false} label={name} />;
@@ -104,14 +104,14 @@ function NodeMenu({ node, onChange, onMove, canUp, canDown, caps, label }: {
   node: RuleNode; onChange(n: RuleNode): void; onMove?(d: -1 | 1): void; canUp: boolean; canDown: boolean; caps: TreeCaps; label: string;
 }) {
   const unwrapped = unwrap(node);
-  return <select data-lab-node-menu aria-label={`Actions for ${label}`} value="" onChange={(e) => {
+  return <select data-lab-node-menu aria-label={`Actions for ${label}`} title={COPY.nodeMenuTip} value="" onChange={(e) => {
     const action = e.target.value;
     if (!caps.nodes && ["wrap_all", "wrap_any", "wrap_not"].includes(action)) onChange(wrap(node, action.slice(5) as "all" | "any" | "not"));
     else if (action === "unwrap" && unwrapped !== undefined) onChange(unwrapped);
     else if (action === "up" && canUp) onMove?.(-1);
     else if (action === "down" && canDown) onMove?.(1);
   }}>
-    <option value="">⋯</option>
+    <option value="">{COPY.nodeMenuTitle}</option>
     {(["wrap_all", "wrap_any", "wrap_not"] as const).map((k) => <option key={k} value={k} disabled={caps.nodes}>{COPY.nodeMenu[k]}</option>)}
     {unwrapped !== undefined && <option value="unwrap">{COPY.nodeMenu.unwrap}</option>}
     {onMove && <><option value="up" disabled={!canUp}>{COPY.nodeMenu.up}</option><option value="down" disabled={!canDown}>{COPY.nodeMenu.down}</option></>}

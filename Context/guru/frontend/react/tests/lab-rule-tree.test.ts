@@ -95,7 +95,7 @@ it("tree problems mirror rules.rs in plain words", () => {
   expect(p(big)).toContain("More than 40 comparisons in the rules; the limit is 40.");
   let deep: RuleNode = C;
   for (let i = 0; i < 12; i++) deep = { not: deep };
-  expect(p(spec({ entry: { all: [deep] } }))).toContain("These rules are nested too deeply (the engine reads at most 16 levels). Unwrap a group or a formula.");
+  expect(p(spec({ entry: { all: [deep] } }))).toContain("These rules are nested too deeply (the engine reads at most 16 levels). Ungroup a group or remove a formula.");
 });
 
 it("converts operands: wraps, swaps formulas keeping the inner value, replaces plain kinds", () => {

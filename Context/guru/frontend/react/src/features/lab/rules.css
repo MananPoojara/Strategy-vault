@@ -50,8 +50,6 @@
 .lab-rules-col { display: grid; }
 .lab-rules-col > .lab-portfolio { border-bottom: 0; padding-bottom: 4px; }
 .lab-rules-col > .lab-portfolio + * > .box, .lab-rules-col > .lab-portfolio + .box { border-top: 0; padding-top: 8px; }
-/* The rule actions menu shows only "⋯"; give it room so the glyph is not clipped by the select arrow. */
-.lab-rules select[aria-label^="Actions for"] { min-width: 52px; }
 /* AmiBroker-style Analysis settings tabs under the rule lists. */
 .lab-settings-tabs { border: 1px solid var(--rule); border-radius: var(--r-field); }
 .lab-stabs { display: flex; gap: 2px; padding: 6px 8px 0; border-bottom: 1px solid var(--rule); background: var(--panel); overflow-x: auto; overflow-y: hidden; }
@@ -81,3 +79,16 @@
 /* A panel inside a settings tab (Portfolio) is not a second box. */
 .lab-page .lab-rules .lab-stab-panel .box { border: 0; padding: 0; background: none; }
 .lab-stops select[aria-label$="exit mode"] { max-width: 190px; }
+/* Even rows: every control in the rules and Analysis settings shares one height and one gap; Actions and × sit at the row's right edge. */
+.lab-rules { --lab-ctl: 32px; }
+.lab-rules :is(select, input:not([type=checkbox], [type=radio]), .join-item, .lab-cond > .dbtn, .lab-operand > .dbtn) { box-sizing: border-box; height: var(--lab-ctl); }
+.lab-rules .join-item { display: inline-flex; align-items: center; padding-block: 0; }
+.lab-rules .dfield input[type=number] { width: 64px; }
+.lab-rules :is(.lab-cond, .lab-operand, .lab-group-h, .lab-stab-panel .lab-row, .lab-stab-panel .lab-settings) { gap: 8px; }
+.lab-rules .lab-cond { padding: 8px 0; }
+.lab-rules .dbtn.ghost[data-lab-timing] { padding: 0 10px; border: 1px solid var(--rule); background: var(--panel); color: var(--ink2); font: 500 12.5px var(--font); }
+.lab-rules .lab-foreign:not([open]) { box-sizing: border-box; height: var(--lab-ctl); padding: 0 10px; }
+.lab-rules .lab-foreign:not([open]) > summary { line-height: calc(var(--lab-ctl) - 2px); font-size: 12.5px; }
+.lab-rules .lab-cond > select[data-lab-node-menu] { margin-left: auto; }
+.lab-rules .lab-cond > .dbtn[aria-label^="Remove"] { width: var(--lab-ctl); padding: 0; border-color: var(--rule); }
+.lab-stab-panel { gap: 12px; }
