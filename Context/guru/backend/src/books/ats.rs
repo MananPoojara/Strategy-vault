@@ -58,7 +58,7 @@ pub const REAL_VIX_OHLC_FROM: &str = "1992-01-01";
 
 // ---------------------------------------------------------------- catalogue
 
-const CVR_NOTE: &str = "Book traded S&P 500 futures with the CBOE VIX of 1993-97, which is today's VXO (S&P 100 based). The vault runs the rules on the index/ETF with the VIX of its region (India VIX for NSE, CBOE VIX for US; a VXO directory can be passed as the VIX dir). An opposite signal while in a trade closes it and reverses (the appendix trade lists show same-day SExit + Buy rows). Side param: 0 = long and short (book), 1 = long only, -1 = short only. The book's numbers need the VXO: with the VXO the SPY runs reproduce 63/72 (CVR I), 92/97 (CVR II) and 71/75 (CVR III) of the appendix entries; with today's CBOE VIX only 19/72 (CVR I). [Not from the book] VIX bars are aligned to the traded ticker's calendar (VIX rows on days the ticker does not trade are dropped; 'yesterday' = the previous VIX bar, so a missing VIX day is skipped).";
+const CVR_NOTE: &str = "Book traded S&P 500 futures with the CBOE VIX of 1993-97, which is today's VXO (S&P 100 based). The vault runs the rules on the index/ETF with the VIX of its region (India VIX for NSE, CBOE VIX for US; a VXO directory can be passed as the VIX dir). [Not from the book] An opposite signal while in a trade closes it and reverses (the rules are silent; inferred from the appendix trade lists' same-day SExit + Buy rows). Side param: 0 = long and short (book), 1 = long only, -1 = short only. The book's numbers need the VXO: with the VXO the SPY runs reproduce 63/72 (CVR I), 92/97 (CVR II) and 71/75 (CVR III) of the appendix entries; with today's CBOE VIX only 19/72 (CVR I). [Not from the book] VIX bars are aligned to the traded ticker's calendar (VIX rows on days the ticker does not trade are dropped; 'yesterday' = the previous VIX bar, so a missing VIX day is skipped).";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     use Status::*;
@@ -77,25 +77,25 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "E|If both are met, buy the market on the close of today",
               "E|Sell: today the VIX makes a 15-day low and closes above its open; sell the market on the close",
               "X|Hold the position at least one to three days: exit on the close of the 3rd day",
-              "X|An opposite signal closes the trade and reverses it (appendix: '04/04/96 SS (1 DAY)')"],
+              "X|[Not from the book] An opposite signal closes the trade and reverses it (rules silent; inferred from the appendix: '04/04/96 SS (1 DAY)')"],
             CVR_NOTE, claim("72 (L 50 / S 22)", "65% (L 64% / S 68%)", "$1,130.56 per contract", "3 / 3 bars (win / loss)", "01/01/93-10/01/97, S&P 500 futures, VIX of 1993-97 = today's VXO"))),
         vx(d("ats_cvr2", "Connors VIX Reversal II (CVR II)", G2, "Long/Short", Live,
             &["E|Take a five-period RSI of the closing VIX",
               "E|When a daily RSI reading above 70 is followed by a downtick in RSI, buy the market that day on the close",
               "E|When an RSI reading below 30 is followed by an uptick in RSI, sell the market that day on the close",
               "X|Exit five to eight trading days later: the published test uses an eight-day exit",
-              "X|An opposite signal closes the trade and reverses it (appendix: many same-day exit + entry rows)"],
+              "X|[Not from the book] An opposite signal closes the trade and reverses it (rules silent; inferred from the appendix: many same-day exit + entry rows)"],
             CVR_NOTE, claim("96 (L 55 / S 41)", "61% (L 67% / S 54%)", "$1,865.63 per contract", "7 / 8 bars (win / loss)", "01/01/93-10/01/97, S&P 500 futures, VIX of 1993-97 = today's VXO"))),
         vx(d("ats_cvr3", "Connors VIX Reversal III (CVR III)", G2, "Long/Short", Live,
-            &["E|Buy: \"Today, the low of the VIX must be above its 10-day moving average.\" Coded with yesterday's 10-day MA (ma_lag = 1) [Fitted to the book's own appendix trade list, not the rule text: 71/75 entries with yesterday's MA vs 53/75 with today's; ma_lag = 0 = the text's 'its' (today's) MA]",
-              "E|Buy: today the VIX closes at least 10 percent above yesterday's 10-day moving average; buy the market on the close",
-              "E|Sell: the VIX high is below yesterday's 10-day MA and the VIX closes at least 10 percent below it; sell on the close",
+            &["E|Buy: \"Today, the low of the VIX must be above its 10-day moving average.\" Coded with today's 10-day MA, the text's 'its' (ma_lag = 0) [Not from the book] previous reading: ma_lag = 1 = yesterday's MA, fitted to the book's appendix trade list (71/75 entries with yesterday's MA vs 53/75 with today's)",
+              "E|Buy: \"Today, the VIX must close at least 10 percent above its 10-day moving average\" (today's MA, as rule 1); buy the market on the close",
+              "E|Sell: the VIX high is below today's 10-day MA and the VIX closes at least 10 percent below it; sell on the close",
               "X|Long: exit on the close the day the VIX trades (intraday) below yesterday's 10-day moving average (strictly: VIX low < MA; a touch does not exit)",
               "X|Short: exit on the close the day the VIX trades (intraday) above yesterday's 10-day moving average (strictly: VIX high > MA)"],
             CVR_NOTE, claim("75 (L 41 / S 34)", "72% (L 78% / S 65%)", "$1,609.00 per contract", "4 / 5 bars (win / loss)", "01/01/93-10/01/97, S&P 500 futures, VIX of 1993-97 = today's VXO"))),
         // ---- Ch 3 TRIN Thrust
         ser(d("ats_trin_thrust", "TRIN Thrust · NYSE TRIN", "Ch 3 · TRIN Thrusts", "Long/Short", Live, TRIN_RULES,
-            "Series NYSE_TRIN = NYSE Arms index daily close ((adv issues/dec issues)/(adv volume/dec volume)), market-wide. The author rarely uses it stand-alone. A new opposite signal closes and reverses the trade.",
+            "Series NYSE_TRIN = NYSE Arms index daily close ((adv issues/dec issues)/(adv volume/dec volume)), market-wide. The author rarely uses it stand-alone. [Not from the book] A new opposite signal closes and reverses the trade (param reverse; the rules are silent).",
             claim("764 (L 342 / S 422)", "51% (L 57% / S 46%)", "$244.10 per contract", "2 / 1 bars (win / loss)", "01/03/90-10/01/97, S&P 500 futures, 1.5% stop")), &["NYSE_TRIN"]),
         ser(d("ats_trin_thrust_nse", "TRIN Thrust · NSE TRIN", "Ch 3 · TRIN Thrusts", "Long/Short", Live, TRIN_RULES,
             "India mapping: series NSE_TRIN = (advancing/declining NSE issues)/(advancing/declining volume), built from the daily bhavcopy (sum of traded quantity of stocks closing up vs down). Same rules as the NYSE version.",
@@ -116,12 +116,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "F|After an extraordinary move (1987 crash) wait a full 100 days before trusting the readings"],
             "HV = book Appendix definition. Coded as the filter inside ats_hv_thrust and ats_gipsons.", None),
         d("ats_hv_thrust", "HV Thrust", "Ch 7 · Additional Volatility Research", "Long/Short", Live,
-            &["F|The 6-day or 10-day historical volatility is less than 1/2 its 100-day reading (read on the prior day)",
+            &["F|The 6-day or 10-day historical volatility is less than 1/2 its 100-day reading, read on the range day itself (\"on the day of the readings\"; when=1 = [Not from the book] previous reading: the prior day)",
               "E|On the day of the readings under 50 percent look for a daily range larger than the daily range of the previous nine days",
               "E|Trade in the direction of the large-range day (close above the prior close = buy, below = sell) on its close",
               "X|Expect follow-through for the next one to ten days: no exit rule in the book",
               STD_EXIT_RULE],
-            "No statistics in the book. The GBP example has the ratio under 50% on Apr 8 and the range expansion on Apr 9, so the ratio is read on the prior day (param when=1; 0 = same day). HV per the Appendix (sample sd of N-1 log returns x sqrt(260)); hv_rets=0 uses N returns.", None),
+            "No statistics in the book. Rule 2 says \"On the day of the readings under 50 percent\", so the ratio is read on the range day (param when=0, default). [Not from the book] previous reading: when=1 reads it on the prior day (the GBP example shows the ratio under 50% on Apr 8 and the range expansion on Apr 9). HV per the Appendix (sample sd of N-1 log returns x sqrt(260)); hv_rets=0 uses N returns.", None),
         // ---- Ch 8-10 patterns
         d("ats_1234", "1-2-3-4", "Ch 8 · 1-2-3-4", "Long/Short", Live,
             &["F|Buys: 14-day ADX greater than 30 and 14-day +DI greater than -DI (sells: -DI > +DI)",
@@ -139,7 +139,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|Stop one tick below the day-two low (sells: above the day-two high)",
               "X|No exit in the book beyond the stop",
               STD_EXIT_RULE],
-            "Microsoft example: conditions 3 and 4 on the same bar are accepted; the fill is then at the entry level. Otherwise a gap through the level fills at the open. No statistics in the book; exit not in the book (time exit added). two_for_one=1 adds the Ch 28 half-off-at-+1R overlay.", None),
+            "Microsoft example: conditions 3 and 4 on the same bar are accepted; the fill is then at the entry level. Otherwise a gap through the level fills at the open. [Not from the book] After a stop-out the same setup can fill again while its breakout window is still open (re-entry; the book does not say). No statistics in the book; exit not in the book (time exit added). two_for_one=1 adds the Ch 28 half-off-at-+1R overlay.", None),
         d("ats_smtp", "Spent Market Trading Pattern (SMTP)", "Ch 10 · Spent Market Trading Pattern", "Long/Short", Live,
             &["E|Today the market makes a 10-period low (sells: 10-period high)",
               "E|Today's range is the largest range of the past 10 bars",
@@ -231,7 +231,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("ats_gipsons", "Gipsons", "Ch 25 · Gipsons", "Long/Short", Live,
             &["F|14-period ADX above 25; trade only in the direction of the trend (+DI vs -DI)",
               "F|6/100 day historical volatility reading under .40",
-              "E|Long: entry when the high of the signal day is exceeded (short: the low is taken out); next day, re-armed by each new signal day",
+              "E|Long: entry when the high of the signal day is exceeded (short: the low is taken out); [Not from the book] the order lives the next day only (the book gives no order life), re-armed by each new signal day",
               "X|Initial protective stop near the low of the signal day (shorts: the high)",
               "X|Exit (recommendation c): take half off on the close of the day the 6-day HV reaches the 100-day HV and tighten the stop on the other half (exit_all=1: exit everything there)",
               "X|[Not from the book] 'tighten the stop' = trailing stop at the prior 3-day low (shorts: high), from the day after the half exit (trail_n)"],
@@ -301,14 +301,14 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "ats_cvr2" => vec![p("rsi_n", "VIX RSI period", 5.0, 2.0, 14.0, 1.0), p("ob", "VIX RSI overbought (buy) at or above", 70.0, 55.0, 90.0, 5.0),
             p("os", "VIX RSI oversold (sell) at or below", 30.0, 10.0, 45.0, 5.0), hold(8.0), side(), rev(), ext(1.0)],
         "ats_cvr3" => vec![p("ma", "VIX SMA length", 10.0, 5.0, 20.0, 1.0), p("pct", "VIX close % beyond its SMA", 10.0, 3.0, 20.0, 1.0),
-            p("ma_lag", "Entry compares with today's (0) or yesterday's (1) SMA", 1.0, 0.0, 1.0, 1.0), side(), rev()],
+            p("ma_lag", "Entry compares with today's SMA (0, book 'its') or [Not from the book] previous reading: yesterday's (1)", 0.0, 0.0, 1.0, 1.0), side(), rev()],
         "ats_trin_thrust" | "ats_trin_thrust_nse" => vec![p("thrust", "TRIN change % vs yesterday", 30.0, 10.0, 50.0, 5.0), hold(2.0),
             p("stop", "Protective stop %", 1.5, 0.0, 3.0, 0.25), side(), rev()],
         "ats_padi" | "ats_padi_nse" => vec![p("avg", "Breadth average days", 6.0, 3.0, 10.0, 1.0), p("level", "Average % at or above", 40.0, 25.0, 50.0, 1.0),
             p("trend", "Market SMA filter length", 100.0, 50.0, 200.0, 10.0), hold(5.0), p("stop", "Protective stop %", 1.5, 0.0, 3.0, 0.25), side()],
         "ats_hv_thrust" => vec![p("short1", "Short HV period A", 6.0, 3.0, 10.0, 1.0), p("short2", "Short HV period B", 10.0, 5.0, 20.0, 1.0),
             p("long", "Long HV period", 100.0, 50.0, 150.0, 10.0), p("ratio", "Short/long HV below", 0.5, 0.3, 0.7, 0.05),
-            p("range_n", "Range larger than previous N days", 9.0, 5.0, 20.0, 1.0), p("when", "Ratio on prior day (1) or same day (0)", 1.0, 0.0, 1.0, 1.0), hold(5.0), hvr(), side(), exitp()],
+            p("range_n", "Range larger than previous N days", 9.0, 5.0, 20.0, 1.0), p("when", "Ratio on the range day (0, book) or [Not from the book] previous reading: the prior day (1)", 0.0, 0.0, 1.0, 1.0), hold(5.0), hvr(), side(), exitp()],
         "ats_1234" => vec![p("adx_n", "ADX/DI period", 14.0, 7.0, 21.0, 1.0), p("adx", "ADX above", 30.0, 20.0, 45.0, 5.0), tick(), hold(10.0), side(), t41(0.0), exitp()],
         "ats_8day_hl_reversal" => vec![p("n", "Day one N-day low/high", 8.0, 5.0, 15.0, 1.0), p("c3_days", "Condition-3 window (days 3..)", 4.0, 2.0, 6.0, 1.0),
             p("window", "Breakout within N days of condition 3", 4.0, 1.0, 8.0, 1.0), tick(), hold(10.0), side(), t41(0.0), exitp()],
@@ -673,7 +673,7 @@ fn cvr(k: u8, x: &Ctx, from: usize, to: usize, g: &dyn Fn(&str) -> f64) -> Vec<T
             let mv = sma(&vc, g("ma") as usize);
             let ma1 = align(&at, &prev(&mv)); // yesterday's MA (previous VIX bar)
             let t = g("pct") / 100.0;
-            // entry SMA: yesterday's 10-day MA (lag 1) reproduces 71-73 of the 75 appendix entries on VXO, today's only 53-55
+            // entry SMA: today's MA (lag 0) = the text's 'its'; lag 1 (yesterday's) reproduces 71-73 of the 75 appendix entries on VXO, today's 53-55
             let ma = if g("ma_lag") > 0.5 { ma1.clone() } else { align(&at, &mv) };
             sig = Box::new(move |i| {
                 if ok(1.0) && l[i] > ma[i] && c[i] >= ma[i] * (1.0 + t) {

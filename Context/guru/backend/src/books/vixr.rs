@@ -1,5 +1,5 @@
 //! Trading Connors VIX Reversals (Larry Connors & Connie Che, 2001). Book id "vixr".
-//! CVR 1-11 (CVR 4 was "removed in 1998" and has no rules). Every signal is read on the VIX's own daily bars,
+//! CVR 1-11 (CVR 4 was "removed in 1998" and has no rules). Every signal is read on the VIX daily bars of the traded instrument's trading days (param vix_cal),
 //! the market is bought / sold on the close of the signal day, the position is held a fixed number of days
 //! (CVR 3: until the VIX trades back through yesterday's 10-day MA) and an opposite CVR signal stops and reverses.
 //!
@@ -209,6 +209,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "vixr_all" | "vixr_stocks" | "vixr_options" => return Some(vec![]),
         _ => return None,
     };
+    v.push(p("vix_cal", "VIX calendar: 0 = the VIX bars on the traded instrument's days only (holiday VIX bars dropped, as ATS / PTJ / S&P MT), 1 = [Not from the book] previous reading: the VIX's own calendar", 0.0, 0.0, 1.0, 1.0));
     v.push(p("exit_restart", "Same-direction signal on the exit bar keeps the trade, count restarts (1 = on, TradeStation booking)", 1.0, 0.0, 1.0, 1.0));
     Some(v)
 }
@@ -225,7 +226,7 @@ fn server_vix() -> &'static [Row] {
     })
 }
 
-/// VIX bars (own calendar) + map from the instrument's bar to the VIX bar of the same date.
+/// VIX bars (instrument calendar, or own with vix_cal = 1) + map from the instrument's bar to the VIX bar of the same date.
 struct Vx {
     o: Vec<f64>,
     h: Vec<f64>,
@@ -235,7 +236,14 @@ struct Vx {
 }
 
 impl Vx {
-    fn new(r: &[Row], vix: &[Row]) -> Self {
+    /// own_cal = false (default): only the VIX rows on the instrument's own trading days, plus the VIX history before its
+    /// first bar as warm-up (as ats/ptjmt/spmt), so VIX bars on days the instrument does not trade (US holidays in the CBOE
+    /// file) never enter N-day highs/lows, MAs, RSI or "yesterday". own_cal = true: the previous reading, the VIX's own calendar.
+    fn new(r: &[Row], vix: &[Row], own_cal: bool) -> Self {
+        let dates: std::collections::HashSet<&str> = r.iter().map(|x| x.date.as_str()).collect();
+        let d0 = r.first().map_or(i64::MAX, |x| crate::day_number(&x.date));
+        let kept: Vec<Row> = if own_cal { vix.to_vec() } else { vix.iter().filter(|v| crate::day_number(&v.date) < d0 || dates.contains(v.date.as_str())).cloned().collect() };
+        let vix = &kept[..];
         let pos: HashMap<&str, usize> = vix.iter().enumerate().map(|(k, v)| (v.date.as_str(), k)).collect();
         Vx {
             o: vix.iter().map(|v| v.open).collect(),
@@ -334,7 +342,8 @@ fn sar(c: &[f64], from: usize, to: usize, sig: &dyn Fn(usize) -> i8, hold: usize
 /// None = not a strategy of this book.
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     params(id)?;
-    Some(run_with(id, x, &Vx::new(x.r, server_vix()), from, to, p))
+    let own_cal = p.get("vix_cal").copied().unwrap_or(0.0) >= 0.5;
+    Some(run_with(id, x, &Vx::new(x.r, server_vix(), own_cal), from, to, p))
 }
 
 fn run_with(id: &str, x: &Ctx, v: &Vx, from: usize, to: usize, p: &Params) -> Vec<Trade> {
@@ -483,7 +492,7 @@ mod tests {
         vix[8] = row(8, 18.0, 19.0, 17.0, 18.5);
         let mkt: Vec<Row> = (0..13).map(|d| { let p = 100.0 + d as f64; row(d, p, p + 1.0, p - 1.0, p) }).collect();
         let ctx = Ctx::new(&mkt, &mkt, &[]);
-        let t = run_with("vixr_cvr1", &ctx, &Vx::new(&mkt, &vix), 0, 12, &Params::new());
+        let t = run_with("vixr_cvr1", &ctx, &Vx::new(&mkt, &vix, false), 0, 12, &Params::new());
         assert_eq!(t.len(), 2, "{t:?}");
         assert_eq!((t[0].dir, t[0].legs[0].i, t[0].exit_i), (1.0, 6, 8));
         assert!(t[0].reason.contains("reverse"));
@@ -520,7 +529,7 @@ mod tests {
         let run = |touch: f64| {
             let mut p = Params::new();
             p.insert("exit_touch".into(), touch);
-            run_with("vixr_cvr3", &ctx, &Vx::new(&mkt, &vix), 0, 13, &p)
+            run_with("vixr_cvr3", &ctx, &Vx::new(&mkt, &vix, false), 0, 13, &p)
         };
         let t = run(0.0);
         assert_eq!((t.len(), t[0].dir, t[0].legs[0].i, t[0].exit_i), (1, 1.0, 10, 12), "{t:?}");

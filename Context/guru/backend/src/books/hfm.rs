@@ -53,7 +53,7 @@ const UND_RULES: &[&str] = &[
 
 const CHADTP_RULES: &[&str] = &[
     "F|CHADTP = (sum of the past five days' advancing issues - sum of the past five days' declining issues) / 5, calculated after the close",
-    "E|CHADTP +400 or more (overbought): sell only after the S&P trades .10 points below the previous day's low",
+    "E|CHADTP +400 or more (overbought): sell only after the S&P trades .10 points below the previous day's low ([Not from the book] ties: rule 1 says \"above +400\", rule 2 \"+400 or more\"; coded >= 400)",
     "E|CHADTP -400 or less (oversold): buy only after tomorrow's S&P trades .10 points above today's high",
     "E|While the reading stays beyond the threshold, the trigger is re-referenced to each latest day's low/high (\"and so on\")",
     "X|Exit on the close of the sixth trading day (entry day = day 1)",

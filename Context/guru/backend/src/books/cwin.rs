@@ -50,7 +50,7 @@ const SINGLE: &[&str] = &[TREND_L, TREND_S, WINDOW,
     X_STOP_NEXT, X_GAP10, X_MEAN, X_PROFIT, X_DAY2, X_TIME, X_TRAIL, X_TIE];
 const DOUBLE: &[&str] = &[TREND_L, TREND_S, WINDOW,
     "F|(p17) \"A 'DoubleWindow' is two 'SingleWindows' in a row\": today and yesterday are both Windows",
-    "F|Reading: the trend filter is checked on the second (setup) bar only (default); double_trend_both 1 = trend on both bars (strict \"two SingleWindows\")",
+    "F|The trend filter is checked on both bars (default, \"two SingleWindows\"); double_trend_both 0 = [Not from the book] previous reading: trend on the second (setup) bar only",
     "E|(p17) \"The entry is the same as a SingleWindow. You will enter uptrending stocks on the buy side if tomorrow trades above today's high and you will enter downtrending stocks on the short side tomorrow if it trades under today's low.\"",
     X_STOP_NEXT, X_GAP10, X_MEAN, X_PROFIT, X_DAY2, X_TIME, X_TRAIL, X_TIE];
 const AGGRESSIVE: &[&str] = &[TREND_L, TREND_S, WINDOW,
@@ -102,7 +102,7 @@ const VIX_GAP: &[&str] = &[
 
 macro_rules! note {
     ($s:expr) => {
-        concat!($s, " Exit (book management made mechanical; the book calls it discretionary): initial stop as quoted; 1/3 out at the first close beyond the 4-day SMA (first_needs_profit 1 = [Not from the book] only if that close is also in profit; first_rule 1 = the course's \"profit equals initial risk\"), then the stop moves to breakeven; another 1/3 at the close of day 2 if it is profitable; the rest at the close of day 3 (max_hold_days). Day 1 = the entry day for intraday entries, the day after the entry for entries on the close. Trailing stops beyond breakeven are discretionary and not coded. Pieces are folded into one trade at the size-weighted exit price.",
+        concat!($s, " Exit (book management made mechanical; the book calls it discretionary): initial stop as quoted; 1/3 out at the first close beyond the 4-day SMA (first_needs_profit 1 = [Not from the book] only if that close is also in profit; first_rule 1 = the course's \"profit equals initial risk\"), then the stop moves to breakeven; another 1/3 at the close of day 2 if it is profitable ([Not from the book] any piece taken, including this day-2 piece when no first piece was taken, moves the stop on the rest to breakeven; p31 ties breakeven only to the reversion exit); the rest at the close of day 3 (max_hold_days). Day 1 = the entry day for intraday entries, the day after the entry for entries on the close. Trailing stops beyond breakeven are discretionary and not coded. Pieces are folded into one trade at the size-weighted exit price.",
             " Trend: ADX(10)/DI(10) (charts label +DMI(10)) or DI(14) alone, Wilder/TradeStation formulas; -DI = +DI of the price-mirrored bars. The short DI-only threshold is \">= 30\" (p22) on both sides; p12 says \"above 30\". SMA4 includes the Window bar's own close. The book trades stocks/HOLDRs/futures; the vault runs it on indices/ETFs (NIFTY 50, NIFTY BANK, ...; SPY/QQQ in the US), 1 unit, prices in index points.",
             " Differences vs the 5-Week Seminar's Momentum Windows (book ws5): this book also accepts DI(14) >= 30 with no ADX; it has no price/volume/200-SMA/range/ATR/stochastic/VIX filters (only a 100k-share volume suggestion); it has AggressiveWindows and no Outside Windows; no opening-gap negation (Situation 10: a gap beyond the MA is still a buy, raise the stop to the Window-day close); the EOD GapWindow needs a gap against the trend AND a close beyond the open, entered on the close; the intraday GapWindow stop is today's open or today's low/high (ws5: the higher of 0.50 or the day's high); HangingWindows enter on the close (ws5: the generic next-day stop); exits scale out 1/4-1/3 at the close beyond the SMA4 with a breakeven stop and are out by day 3 (ws5: 1/3 at R and each further point, 2-pt then 1-pt trail).")
     };
@@ -121,7 +121,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("cwin_single_window", "SingleWindows", P2, SINGLE,
           note!("Next-day entry order only; a new Window the next day replaces it (that bar is then a DoubleWindow). Any Window bar counts, so this includes the second bar of a Double. Situation 10's raised stop (open beyond the Window-day SMA4 -> stop at the Window-day close) is on by default (gap_stop). Ranking when several setups appear (p57): Gap, Hanging, Double, Single, Aggressive."), None),
         d("cwin_double_window", "DoubleWindows", P2, DOUBLE,
-          note!("Two Window bars in a row; the trend filter is checked on the second (setup) bar (double_trend_both 1 = on both bars, the strict \"two SingleWindows\" reading). Stop at the second Window bar's low/high. Situation 10's raised stop on by default."), None),
+          note!("Two Window bars in a row; the trend filter is checked on both bars, as p17's \"two SingleWindows\" (double_trend_both 0 = [Not from the book] previous reading: on the second (setup) bar only). Stop at the second Window bar's low/high. Situation 10's raised stop on by default."), None),
         d("cwin_aggressive_window", "AggressiveWindows", P2, AGGRESSIVE,
           note!("Market-on-close fill at the close price. Zero-range bars excluded. \"you will be wrong more than normal\" (p18); lowest rank (p57)."), None),
         d("cwin_hanging_window", "HangingWindows", P2, HANGING,
@@ -173,7 +173,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             v.extend(days());
             v.extend(stop_entry());
             if id == "cwin_double_window" {
-                v.push(p("double_trend_both", "Trend on: 0 second bar only, 1 both bars", 0.0, 0.0, 1.0, 1.0));
+                v.push(p("double_trend_both", "Trend on: 1 both bars (book), 0 = [Not from the book] previous reading: second bar only", 1.0, 0.0, 1.0, 1.0));
             }
         }
         "cwin_aggressive_window" => {

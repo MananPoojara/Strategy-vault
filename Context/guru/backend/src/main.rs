@@ -119,6 +119,14 @@ fn parse_csv_number(value: &str) -> Result<f64, std::num::ParseFloatError> {
     value.trim_matches('"').replace(',', "").parse::<f64>()
 }
 
+/// NYSE full-closure days (2001-09-11..14, Sandy 2012-10-29/30, Bush 2018-12-05, Carter 2025-01-09). A US index bar on such
+/// a day with open = high = low = close and no volume is a vendor carry-forward, not a session (us_data.csv: SPX 2001-09-11,
+/// flat 1092.54, volume 0); it is skipped at load. The data file itself is untouched.
+fn phantom_closure_bar(ticker: &str, date: &str, ohlc: [f64; 4], volume: Option<f64>) -> bool {
+    const CLOSED: &[&str] = &["2001-09-11", "2001-09-12", "2001-09-13", "2001-09-14", "2012-10-29", "2012-10-30", "2018-12-05", "2025-01-09"];
+    matches!(ticker, "SPX" | "NDX" | "DJI") && CLOSED.contains(&date) && volume.is_none() && ohlc.iter().all(|&v| v == ohlc[0])
+}
+
 fn load_csv(path: &str) -> Result<BTreeMap<String, Vec<Row>>, String> {
     let text = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
     let mut lines = text.lines();
@@ -139,6 +147,10 @@ fn load_csv(path: &str) -> Result<BTreeMap<String, Vec<Row>>, String> {
         };
         let volume = vi.and_then(num).filter(|v| *v > 0.0);
         let ticker = f[ti].clone();
+        if phantom_closure_bar(&ticker, &date, [o, h, l, c], volume) {
+            eprintln!("skipped phantom bar {ticker} {date} (NYSE closed; flat {c}, volume 0)");
+            continue;
+        }
         out.entry(ticker.clone()).or_default().push(Row { ticker, date, open: o, high: h, low: l, close: c, volume });
     }
     for rows in out.values_mut() {
@@ -1053,6 +1065,17 @@ fn window_start(ctx: &Ctx, d: &connors::StrategyDef, from: usize) -> Option<usiz
     ctx.vix.first.map(|f| from.max(f))
 }
 
+/// Why `window_start` left no window: the accuracy gate's real-open clamp (stale index opens) moved the start past the
+/// end, or the volatility index does not cover the period.
+fn window_refusal(ctx: &Ctx, d: &connors::StrategyDef, from: usize, to: usize) -> String {
+    if let (Some(g), Some(r)) = (gate::get(d.id), ctx.r.get(from)) {
+        if let Some(cut) = gate::real_open_from(&r.ticker).filter(|c| g.clamp_open && r.date.as_str() < *c && ctx.r.partition_point(|x| x.date.as_str() < *c) >= to) {
+            return format!("This rule fills at the opening price; {} opens in this file are real only from {cut} (earlier opens repeat the previous close), and the selected period ends before that. Choose a period that runs past {cut}.", r.ticker);
+        }
+    }
+    "Required volatility-index data does not cover this period".into()
+}
+
 fn summary(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     if q.contains_key("p.__raw_query_error") || q.get("id").is_some_and(|id|books::hbqts::reviewed::is_dema_index(id) || books::lkqts::stock_research_profile(id)){checked_params_of(q)?;}
 
@@ -1069,8 +1092,8 @@ fn summary(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
             continue;
         }
         let Some(from) = window_start(ctx, d, from).filter(|&f| f < to || (f==to && reviewed_single_session(d.id))) else {
-            let note=if from==to {"Single-session results are not admitted for this method"}else{"Required volatility-index data does not cover this period"};
-            rows.push(format!("{{\"id\":\"{}\",\"blocked\":\"{}\",\"readiness\":\"needs_data\"}}", d.id,note));
+            let note=if from==to {"Single-session results are not admitted for this method".to_string()}else{window_refusal(ctx, d, from, to)};
+            rows.push(format!("{{\"id\":\"{}\",\"blocked\":\"{}\",\"readiness\":\"needs_data\"}}", d.id,esc(&note)));
             continue;
         };
         let run = match selected_backtest_costs(&selected,st,q,ctx,d.id,from,to,costs,&Params::new()){Ok(run)=>run,Err(note)=>{rows.push(format!("{{\"id\":\"{}\",\"blocked\":\"{}\",\"readiness\":\"calculation_unavailable\"}}",d.id,esc(&note)));continue;}};
@@ -1307,7 +1330,7 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         return Err(format!("{}: {}", issue.status, issue.note));
     }
     costs.ensure_rollover()?;
-    let from = window_start(ctx, def, from).filter(|&f| f < to || (f==to && reviewed_single_session(id))).ok_or("Required volatility-index data does not cover this period")?;
+    let from = window_start(ctx, def, from).filter(|&f| f < to || (f==to && reviewed_single_session(id))).ok_or_else(|| window_refusal(ctx, def, from, to))?;
     let run = selected_backtest_costs(&selected,st,q,ctx,id,from,to,costs,&p)?;
     if run.unit_exposure_report.is_some() {
         let mut output=unit_exposure_detail::render(ctx,&run,costs)?;output.pop();let _=write!(output,",\"provenance\":{}}}",source_provenance(st,q));return Ok(output);
@@ -1505,7 +1528,7 @@ fn optimize(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> 
             }
         }
     }
-    let from = window_start(ctx, def, from).filter(|&f| f < to || (f==to && reviewed_single_session(id))).ok_or("Required volatility-index data does not cover this period")?;
+    let from = window_start(ctx, def, from).filter(|&f| f < to || (f==to && reviewed_single_session(id))).ok_or_else(|| window_refusal(ctx, def, from, to))?;
     let mut dims: Vec<(&str, Vec<f64>)> = Vec::new();
     for p in connors::params(id) {
         if let Some(spec) = q.get(&format!("g.{}", p.key)) {
@@ -2429,6 +2452,14 @@ mod tests {
         assert!((equity_curve(&close, &[one], 0, 3, 0.0)[2] - 1.2).abs() < 1e-12);
     }
 
+    #[test]
+    fn phantom_nyse_closure_bar_is_skipped_only_when_flat_without_volume() {
+        assert!(super::phantom_closure_bar("SPX", "2001-09-11", [1092.54; 4], None));
+        assert!(!super::phantom_closure_bar("SPX", "2001-09-11", [1092.54, 1093.0, 1092.0, 1092.54], None));
+        assert!(!super::phantom_closure_bar("SPX", "2001-09-11", [1092.54; 4], Some(1e6)));
+        assert!(!super::phantom_closure_bar("SPX", "2001-09-10", [1092.54; 4], None));
+        assert!(!super::phantom_closure_bar("SPY", "2001-09-11", [1092.54; 4], None));
+    }
     #[test]
     fn equity_equals_compounded_trade_returns() {
         // Every live strategy on real data: the final equity must

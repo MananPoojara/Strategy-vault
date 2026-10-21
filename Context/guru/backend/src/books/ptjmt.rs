@@ -44,13 +44,13 @@ pub const REAL_VIX_OHLC_FROM: &str = "1992-01-01";
 /// Strategy note + the shared book note (+ the VIX-open caveat for rules that read the VIX open).
 macro_rules! note {
     (cvr $s:literal) => {
-        concat!($s, " Book: 1 S&P 500 futures contract ($500/pt), signals on the original CBOE VIX (OEX-based, today's VXO), no stops, no slippage or commission. Here the traded index is the ticker you pick and the VIX is the server's VIX (India VIX for NIFTY, CBOE VIX for US ETFs). Long and short share one position: an opposite signal stops and reverses. p.src=1 reads the external series VXO_OHLC (CBOE OEX VIX, the book's index; 1986 to 2021-09-23, US only, no trades where it has no data): on SPY 1993-97 it gives CVR I 63/72 and CVR II 93/97 of the ATS-listed entries, against 19/72 and 46/97 with today's SPX VIX (the default p.src=0, so live runs work after 2021 and in India). p.restart (default 1) = a same-direction signal on the N-day exit bar keeps the trade and restarts the count [Not from the book: a TradeStation netting inference, fitted to the ATS CVR lists; 0 = exit and re-enter on that close].")
+        concat!($s, " Book: 1 S&P 500 futures contract ($500/pt), signals on the original CBOE VIX (OEX-based, today's VXO), no stops, no slippage or commission. Here the traded index is the ticker you pick and the VIX is the server's VIX (India VIX for NIFTY, CBOE VIX for US ETFs). Long and short share one position: [Not from the book] an opposite signal stops and reverses (the rules are silent). p.src=1 reads the external series VXO_OHLC (CBOE OEX VIX, the book's index; 1986 to 2021-09-23, US only, no trades where it has no data): on SPY 1993-97 it gives CVR I 63/72 and CVR II 93/97 of the ATS-listed entries, against 19/72 and 46/97 with today's SPX VIX (the default p.src=0, so live runs work after 2021 and in India). p.restart (default 1) = a same-direction signal on the N-day exit bar keeps the trade and restarts the count [Not from the book: a TradeStation netting inference, fitted to the ATS CVR lists; 0 = exit and re-enter on that close].")
     };
     (open $s:literal) => {
         concat!(note!(cvr $s), " Reads the VIX OPEN: NSE defines the India VIX daily open as the previous close (276/276 sampled days; the vault's first-minute open is within 0.5% of it on 57% of days), so on Indian data this rule really tests 'VIX close vs yesterday's close' and its India results are NOT a meaningful test of the book's rule; kept exactly as written.")
     };
     (breadth $s:literal) => {
-        concat!($s, " Book: 1 S&P 500 futures contract ($500/pt), no slippage or commission; run here on the index/ETF you pick (vault convention). Long and short share one position: an opposite signal stops and reverses. p.restart (default 1) = a same-direction signal on the N-day exit bar keeps the trade and restarts the count [Not from the book: a TradeStation netting inference; with it TRIN Thrusts gives 763 trades vs the book's 764, without it 836].")
+        concat!($s, " Book: 1 S&P 500 futures contract ($500/pt), no slippage or commission; run here on the index/ETF you pick (vault convention). Long and short share one position: [Not from the book] an opposite signal stops and reverses (the rules are silent). p.restart (default 1) = a same-direction signal on the N-day exit bar keeps the trade and restarts the count [Not from the book: a TradeStation netting inference; with it TRIN Thrusts gives 763 trades vs the book's 764, without it 836].")
     };
 }
 
@@ -58,21 +58,21 @@ const CVR1: &[&str] = &[
     "E|Buy: \"Today the VIX must make a 15-day high.\" \"Today, the close of the VIX must be below the open.\" \"buy the S&P's (or the market) on the close of today\"",
     "E|Sell: \"Today the VIX must make a 15-day low.\" \"Today the close of the VIX must be above the open.\" \"sell the S&P's (or the market) on the close of today\"",
     "X|\"Hold the position at least one to three days.\" Coded: exit on the close 3 days after entry (book tables: avg bars 3 / 3)",
-    "X|No stops in the test. An opposite signal stops and reverses",
+    "X|No stops in the test. [Not from the book] An opposite signal stops and reverses (the rules are silent; TradeStation stop-and-reverse, inferred from the ATS appendix trade lists)",
 ];
 const CVR2: &[&str] = &[
     "F|\"Take a five-period RSI of the closing VIX.\"",
     "E|Buy: \"When a daily RSI reading above 70 is followed by a downtick in RSI, buy the market that day on the close.\" (coded: yesterday's RSI >= 70, today's RSI lower)",
     "E|Sell: \"When an RSI reading below 30 is followed by an uptick in RSI, sell the market that day on the close.\" (coded: yesterday's RSI <= 30, today's RSI higher)",
     "X|\"Exit five to eight trading days later\"; the published test uses \"an eight-day exit\"",
-    "X|No stops in the test. An opposite signal stops and reverses",
+    "X|No stops in the test. [Not from the book] An opposite signal stops and reverses (the rules are silent; TradeStation stop-and-reverse, inferred from the ATS appendix trade lists)",
 ];
 const CVR3: &[&str] = &[
     "E|Buy: \"Today, the low of the VIX must be above its 10-day moving average.\" \"Today, the VIX must close at least 10 percent above its 10-day moving average.\" \"buy the market on the close\"",
     "E|Sell: \"Today, the high of the VIX must be below its 10-day moving average.\" \"Today, the VIX must close at least 10 percent below its 10-day moving average.\" \"sell on the close\"",
     "X|Long: \"Exit (on the close) the day the VIX trades (intraday) below yesterday's 10-day moving average (reversion to the mean).\"",
     "X|Short: \"Exit (on the close) the day the VIX trades (intraday) above yesterday's 10-day moving average\"",
-    "X|No time stop, no price stop. An opposite signal stops and reverses",
+    "X|No time stop, no price stop. [Not from the book] An opposite signal stops and reverses (the rules are silent; TradeStation stop-and-reverse, inferred from the ATS appendix trade lists)",
 ];
 const CVR4: &[&str] = &[
     "E|Sell: \"If the VIX closes 1.50 or more points greater than its open, sell the S&P futures MOC.\"",
@@ -89,28 +89,28 @@ const CVR5: &[&str] = &[
     "E|Buy: \"Today's VIX must open and close in the bottom third of its trading range.\" \"The close of the VIX must be above its 10-day moving average.\" \"buy the market on the close\"",
     "E|Sell: \"sells are reversed\": the VIX opens and closes in the top third of its range and closes below its 10-day moving average: sell on the close",
     "X|\"exit the next day no later than the close\" (coded: next day's close; book avg bars 1 / 1)",
-    "X|An opposite signal stops and reverses",
+    "X|[Not from the book] An opposite signal stops and reverses (the rules are silent; TradeStation stop-and-reverse, inferred from the ATS appendix trade lists)",
 ];
 const TR: &[&str] = &[
     "F|\"Take a three-period simple moving average of the TRIN\" (NYSE closing TRIN)",
     "E|Buy: \"If yesterday's average hits a 30 trading-day high and today's average closes below yesterday's average, then buy the market on the close.\"",
     "E|Sell: \"If yesterday's average hits a 30 trading-day low and today's average closed above yesterday's average, then sell the market on the close.\"",
     "X|\"Exit seven trading days later.\"",
-    "X|No stops in the test. An opposite signal stops and reverses",
+    "X|No stops in the test. [Not from the book] An opposite signal stops and reverses (the rules are silent; TradeStation stop-and-reverse, inferred from the ATS appendix trade lists)",
 ];
 const TR20: &[&str] = &[
     "F|\"If you wish to be more aggressive, you can use 20-day highs/lows instead of 30.\"",
     "F|Three-period simple moving average of the NYSE closing TRIN",
     "E|Buy: yesterday's average is a 20-day high and today's average is below yesterday's: buy on the close",
     "E|Sell: yesterday's average is a 20-day low and today's average is above yesterday's: sell on the close",
-    "X|Exit seven trading days later. An opposite signal stops and reverses",
+    "X|Exit seven trading days later. [Not from the book] An opposite signal stops and reverses (the rules are silent; TradeStation stop-and-reverse, inferred from the ATS appendix trade lists)",
 ];
 const TT: &[&str] = &[
     "E|Buy: \"If today's closing TRIN is 30 percent or more below yesterday's closing TRIN, buy the market on the close today.\"",
     "E|Sell: \"If today's closing TRIN is 30 percent or more above yesterday's closing TRIN, sell the market on the close today.\"",
     "X|\"Sell on the close two trading days later.\" / \"Close the position two trading days later.\"",
     "X|\"Here are the mechanical results using a 1 1/2 percent stop.\" (stop from the entry close)",
-    "X|An opposite signal stops and reverses",
+    "X|[Not from the book] An opposite signal stops and reverses (the rules are silent; TradeStation stop-and-reverse, inferred from the ATS appendix trade lists)",
 ];
 const PADI: &[&str] = &[
     "F|Total issues = advances + declines + unchanged; advancing % = advances / total; declining % = declines / total",

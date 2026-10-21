@@ -92,16 +92,16 @@ fn vixr_symbol_issue(def:&StrategyDef,ticker:&str)->Option<Issue> {
 fn spmt_symbol_issue(def:&StrategyDef,ticker:&str)->Option<Issue> {
     use crate::books::spmt;
     if def.book!=spmt::BOOK || !spmt::reviewed_daily(def.id) || spmt::admitted_symbol(def.id,ticker) {return None;}
-    Some(Issue{status:"needs_data",note:format!("The S&P Market Timing Course signals on SPY with the CBOE VIX and NYSE TRIN/advancers. This review admits SPX and SPY (CBOE VIX, NYSE breadth) and NIFTY 50 (India VIX for the close-only VIX rules; NSE TRIN and advancing issues) as a declared application; VIX (2) and VIX (7) read the VIX open and stay on SPX/SPY. {ticker} is outside that reviewed scope; no result is published.")})
+    Some(Issue{status:"needs_data",note:format!("The S&P Market Timing Course signals on SPY with the CBOE VIX and NYSE TRIN/advancers. This review admits SPX and SPY (CBOE VIX, NYSE breadth) and NIFTY 50 (India VIX for the close-only VIX rules; the NSE TRIN / advancing-issues runs are held, thresholds not calibrated for India) as a declared application; VIX (2) and VIX (7) read the VIX open and stay on SPX/SPY. {ticker} is outside that reviewed scope; no result is published.")})
 }
 fn ptjmt_symbol_issue(def:&StrategyDef,ticker:&str)->Option<Issue> {
     if def.book!="ptjmt" || !crate::books::ptjmt::reviewed_daily(def.id) || crate::books::ptjmt::admitted_symbol(def.id,ticker) {return None;}
-    Some(Issue{status:"needs_data",note:format!("PTJ Market Timing traded S&P 500 futures on the OEX VIX and NYSE breadth. This review admits actual SPX and SPY for the VIX and NYSE-breadth rules, NIFTY 50 with India VIX for CVR II and III only, and NIFTY 50 for the NSE-breadth versions. {ticker} is outside that reviewed scope; no result is published.")})
+    Some(Issue{status:"needs_data",note:format!("PTJ Market Timing traded S&P 500 futures on the OEX VIX and NYSE breadth. This review admits actual SPX and SPY for the VIX and NYSE-breadth rules, NIFTY 50 with India VIX for CVR II and III only; the NSE-breadth versions are held (thresholds not calibrated for India). {ticker} is outside that reviewed scope; no result is published.")})
 }
 fn ss_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     use crate::books::ss;
     if def.book!=ss::BOOK || !ss::reviewed_daily(def.id) || native_stock || ss::admitted_symbol(def.id,ticker) {return None;}
-    Some(Issue{status:"needs_data",note:format!("Street Smarts traded futures (and stocks for some setups). This review admits SPX, NDX, DJI, SPY, NIFTY 50 and NIFTYBANK for the futures setups; the A/D Market Buster only on SPX/SPY with NYSE breadth or NIFTY 50 with NSE breadth. {ticker} is outside that reviewed scope; no result is published.")})
+    Some(Issue{status:"needs_data",note:format!("Street Smarts traded futures (and stocks for some setups). This review admits SPX, NDX, DJI, SPY, NIFTY 50 and NIFTYBANK for the futures setups; the A/D Market Buster only on SPX/SPY with NYSE breadth (the NSE-breadth version is held, thresholds not calibrated for India). {ticker} is outside that reviewed scope; no result is published.")})
 }
 fn ws5_symbol_issue(def:&StrategyDef,ticker:&str)->Option<Issue> {
     use crate::books::ws5;
@@ -114,7 +114,7 @@ fn ats_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Option<
     if def.book!=ats::BOOK || !ats::reviewed_daily(def.id) {return None;}
     let ok=match stock_us {Some(us)=>def.id!="ats_cvr_equities" || us, None=>ats::admitted_symbol(def.id,ticker)};
     if ok {return None;}
-    Some(Issue{status:"needs_data",note:format!("Connors on Advanced Trading Strategies traded S&P 500 futures and US stocks. This review admits SPX and SPY for the CVR I, NYSE TRIN and NYSE breadth rules, also NIFTY 50 with India VIX for CVR II and III, NIFTY 50 for the NSE TRIN / NSE breadth versions, SPX/NDX/DJI/SPY/NIFTY 50/NIFTYBANK for the HV Thrust, and CVR I on stocks only for US stocks and US indices/ETFs with the CBOE VIX (CVR I reads the VIX open; India VIX opens repeat the previous close). {ticker} is outside that reviewed scope; no result is published.")})
+    Some(Issue{status:"needs_data",note:format!("Connors on Advanced Trading Strategies traded S&P 500 futures and US stocks. This review admits SPX and SPY for the CVR I, NYSE TRIN and NYSE breadth rules, also NIFTY 50 with India VIX for CVR II and III (the NSE TRIN / NSE breadth versions are held, thresholds not calibrated for India), SPX/NDX/DJI/SPY/NIFTY 50/NIFTYBANK for the HV Thrust, and CVR I on stocks only for US stocks and US indices/ETFs with the CBOE VIX (CVR I reads the VIX open; India VIX opens repeat the previous close). {ticker} is outside that reviewed scope; no result is published.")})
 }
 /// Hedge Fund Manager CHADTP and the PTJ Options & Volatility CVR I sides / HV Thrust (connors/hfm-admission).
 fn hfm_otvt_reviewed(def:&StrategyDef)->bool {
@@ -122,7 +122,13 @@ fn hfm_otvt_reviewed(def:&StrategyDef)->bool {
 }
 fn hfm_otvt_symbol_issue(def:&StrategyDef,ticker:&str)->Option<Issue> {
     if !hfm_otvt_reviewed(def) || crate::books::hfm::admitted_symbol(def.id,ticker) || crate::books::otvt::admitted_symbol(def.id,ticker) {return None;}
-    Some(Issue{status:"needs_data",note:format!("Investment Secrets of a Hedge Fund Manager and the PTJ Options & Volatility Trading volume traded S&P 500 futures. This review admits CHADTP on NYSE breadth for SPX and SPY, the NSE-breadth CHADTP for NIFTY 50, CVR I buys / sells for SPX and SPY with the CBOE VIX (CVR I reads the VIX open; India VIX opens repeat the previous close), and the HV Thrust for SPX/NDX/DJI/SPY/NIFTY 50/NIFTYBANK. {ticker} is outside that reviewed scope; no result is published.")})
+    Some(Issue{status:"needs_data",note:format!("Investment Secrets of a Hedge Fund Manager and the PTJ Options & Volatility Trading volume traded S&P 500 futures. This review admits CHADTP on NYSE breadth for SPX and SPY (the NSE-breadth CHADTP is held, thresholds not calibrated for India), CVR I buys / sells for SPX and SPY with the CBOE VIX (CVR I reads the VIX open; India VIX opens repeat the previous close), and the HV Thrust for SPX/NDX/DJI/SPY/NIFTY 50/NIFTYBANK. {ticker} is outside that reviewed scope; no result is published.")})
+}
+/// User decision (2026-10-21): every NSE breadth / TRIN mapping of the NYSE-calibrated Connors rules is held; US versions run.
+pub fn nse_breadth_held(def:&StrategyDef,ticker:&str)->Option<Issue> {
+    let held=matches!(def.id,"ats_trin_thrust_nse"|"ats_padi_nse"|"ptjmt_trin_reversals_nse"|"ptjmt_trin_reversals_20_nse"|"ptjmt_trin_thrusts_nse"|"ptjmt_padi_nse"|"ss_ad_market_buster_nse"|"hfm_chadtp_nse")
+        || (ticker=="NIFTY 50" && matches!(def.id,"spmt_trin_1"|"spmt_trin_2"|"spmt_trin_3"|"spmt_trin_4"|"spmt_trin_5"|"spmt_nyse_adv"));
+    held.then(||Issue{status:"needs_data",note:"Held: this rule uses the book's NYSE TRIN/advance-decline thresholds; NSE breadth behaves differently (e.g. TRIN median 0.70 vs NYSE 0.93; fires 2-3x more often), so the thresholds are not calibrated for India. Not published until recalibrated and reviewed.".into()})
 }
 fn reviewed_adaptive_rule(def:&StrategyDef)->bool {
     def.book=="kftsm" && member(def.id,&["kftsm_kama","kftsm_adapt_exp","kftsm_vidya","kftsm_adapt_r2","kftsm_adapt_rsi","kftsm_swg","kftsm_swing","kftsm_raschke_first_cross","kftsm_outside_day","kftsm_fc_bb_abx"])
@@ -402,6 +408,7 @@ pub fn selected_type(ticker:&str,native_stock:bool)->&'static str {
 pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     let p=policy(def);let selected=selected_type(ticker,native_stock);
     if let Some(issue)=dema_index_symbol_issue(def,ticker,selected){return Some(issue);}
+    if let Some(issue)=nse_breadth_held(def,ticker){return Some(issue);}
     if let Some(issue)=vixr_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=spmt_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=ptjmt_symbol_issue(def,ticker){return Some(issue);}
@@ -422,6 +429,7 @@ pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
 pub fn check_native(def:&StrategyDef,ticker:&str,evidence:&NativeEvidence)->Option<Issue> {
     let p=policy(def);
     if let Some(issue)=dema_index_symbol_issue(def,ticker,evidence.asset_type()){return Some(issue);}
+    if let Some(issue)=nse_breadth_held(def,ticker){return Some(issue);}
     if let Some(issue)=vixr_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=spmt_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=ptjmt_symbol_issue(def,ticker){return Some(issue);}
@@ -602,7 +610,8 @@ mod tests {
             assert_eq!(policy(&d).requirement,"declared_index_timing");assert!(policy(&d).market_adaptation);
             assert!(policy(&d).source_basis.contains("spmt2-admission"));
             for t in ["SPX","SPY"] {assert!(check(&d,t,false).is_none(),"{id} {t}");}
-            assert_eq!(check(&d,"NIFTY 50",false).is_none(),!matches!(id,"spmt_vix2"|"spmt_vix7"),"{id}");
+            // NIFTY 50 TRIN / advancers runs are held (user decision 2026-10-21: NYSE thresholds not calibrated for NSE)
+            assert_eq!(check(&d,"NIFTY 50",false).is_none(),!matches!(id,"spmt_vix2"|"spmt_vix7"|"spmt_trin_1"|"spmt_trin_2"|"spmt_trin_3"|"spmt_trin_4"|"spmt_trin_5"|"spmt_nyse_adv"),"{id}");
             assert_eq!(check(&d,"NIFTYBANK",false).is_none(),id=="spmt_eom_und","{id}");
             assert_eq!(check(&d,"NDX",false).is_none(),id=="spmt_eom_und","{id}");
             assert!(check(&d,"QQQ",false).is_some() && check(&d,"AAPL",true).is_some() && check(&d,"RELIANCE",true).is_some(),"{id}");
@@ -626,7 +635,7 @@ mod tests {
             let futures=["SPX","NDX","DJI","SPY","NIFTY 50","NIFTYBANK"];
             match d.id {
                 "ss_ad_market_buster" => for t in futures {assert_eq!(check(d,t,false).is_none(),matches!(t,"SPX"|"SPY"),"{t}");},
-                "ss_ad_market_buster_nse" => for t in futures {assert_eq!(check(d,t,false).is_none(),t=="NIFTY 50","{t}");},
+                "ss_ad_market_buster_nse" => for t in futures {assert!(check(d,t,false).is_some(),"{t}");}, // held (NSE breadth)
                 _ => for t in futures {assert!(check(d,t,false).is_none(),"{} {t}",d.id);},
             }
             assert!(!reviewed_cash_rule(&def(d.id,"vixr")));
@@ -668,7 +677,7 @@ mod tests {
             let nse=d.id.ends_with("_nse");
             assert_eq!(check(d,"SPY",false).is_none(),!nse,"{}",d.id);
             assert_eq!(check(d,"SPX",false).is_none(),!nse,"{}",d.id);
-            assert_eq!(check(d,"NIFTY 50",false).is_none(),nse||["ptjmt_cvr2","ptjmt_cvr3"].contains(&d.id),"{}",d.id);
+            assert_eq!(check(d,"NIFTY 50",false).is_none(),["ptjmt_cvr2","ptjmt_cvr3"].contains(&d.id),"{}",d.id); // *_nse held
             for t in ["NDX","DJI","QQQ","DIA","NIFTY BANK"] {assert!(check(d,t,false).is_some(),"{} {t}",d.id);}
             assert!(check(d,"AAPL",true).is_some() && check(d,"RELIANCE",true).is_some());
         }
@@ -724,7 +733,8 @@ mod tests {
         assert!(admitted.iter().all(|id|ats::REVIEWED_DAILY.contains(id)));
         let ok=|id:&'static str,t:&str|check(&def(id,"ats"),t,false).is_none();
         for t in ["SPX","SPY"] {for id in ["ats_cvr1","ats_cvr2","ats_cvr3","ats_trin_thrust","ats_padi","ats_hv_thrust","ats_cvr_equities"] {assert!(ok(id,t),"{id} {t}");}}
-        for id in ["ats_cvr2","ats_cvr3","ats_trin_thrust_nse","ats_padi_nse","ats_hv_thrust"] {assert!(ok(id,"NIFTY 50"),"{id}");}
+        for id in ["ats_cvr2","ats_cvr3","ats_hv_thrust"] {assert!(ok(id,"NIFTY 50"),"{id}");}
+        for id in ["ats_trin_thrust_nse","ats_padi_nse"] {assert!(!ok(id,"NIFTY 50"),"{id}");} // held (NSE breadth)
         for id in ["ats_cvr1","ats_trin_thrust","ats_padi","ats_cvr_equities"] {assert!(!ok(id,"NIFTY 50"),"{id}");}
         for id in ["ats_trin_thrust_nse","ats_padi_nse"] {assert!(!ok(id,"SPX") && !ok(id,"SPY"),"{id}");}
         for id in ["ats_cvr1","ats_cvr2","ats_hv_thrust"] {assert!(!ok(id,"QQQ") && !ok(id,"NIFTYMIDCAP100"),"{id}");}
@@ -751,7 +761,7 @@ mod tests {
         let ok=|id:&'static str,b:&'static str,t:&str|check(&def(id,b),t,false).is_none();
         for t in ["SPX","SPY"] {for (id,b) in [("hfm_chadtp","hfm"),("otvt_cvr1_long","otvt"),("otvt_cvr1_short","otvt"),("otvt_hv_thrust","otvt")] {assert!(ok(id,b,t),"{id} {t}");}}
         for t in ["NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(ok("otvt_hv_thrust","otvt",t),"{t}");}
-        assert!(ok("hfm_chadtp_nse","hfm","NIFTY 50") && !ok("hfm_chadtp_nse","hfm","SPX") && !ok("hfm_chadtp","hfm","NIFTY 50"));
+        assert!(!ok("hfm_chadtp_nse","hfm","NIFTY 50") && !ok("hfm_chadtp_nse","hfm","SPX") && !ok("hfm_chadtp","hfm","NIFTY 50"));
         for id in ["otvt_cvr1_long","otvt_cvr1_short"] {assert!(!ok(id,"otvt","NIFTY 50") && !ok(id,"otvt","QQQ"),"{id}");}
         assert!(!ok("otvt_hv_thrust","otvt","QQQ") && !ok("otvt_hv_thrust","otvt","NIFTYMIDCAP100") && !ok("hfm_chadtp","hfm","QQQ"));
         assert!(check(&def("otvt_hv_thrust","otvt"),"RELIANCE",true).is_some());

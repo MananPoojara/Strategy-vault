@@ -88,7 +88,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             ENTRY, NEGATE, STOP, D1, D2, D2MA, D3], WNOTE),
         wdef("ws5_gap_window_eod", "End-of-day Gap Window", &[
             FILTERS_L, FILTERS_A, FILTERS_T, FILTERS_S, FILTERS_X,
-            "E|End-of-day Gap Window: a gap that creates a Window on the close (long: today's high below yesterday's low and below the 4-SMA; short: mirror)",
+            "E|End-of-day Gap Window: \"a gap that creates a Window on the close\" (p.29). [Not from the book] the gap definition: long = today's high below yesterday's low and below the 4-SMA; short: mirror",
             ENTRY, NEGATE, STOP, D1, D2, D2MA, D3], WNOTE),
         wdef("ws5_gap_window_intraday", "Intraday Gap Window", &[
             FILTERS_L, FILTERS_A, FILTERS_T, FILTERS_S, FILTERS_X,
@@ -130,10 +130,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|Buys: today's high of the SPX (NDX, XBD or SOX) is below its 10-period MA and today's close is 2.0% (6.0%, 8.0%, 8.0%) or more below it; buy the market on the close",
             "E|Sells: today's low is above the 10-period MA and the close is 2.0% (6.0%, 8.0%, 8.0%) or more above it; sell the market on the close",
             "X|3-point stop on all positions",
-            "X|Exit ½ on the close of the day the price trades (intraday) above yesterday's 10-day MA (sells: below); close the other ½ the following day",
+            "X|\"Look to exit ½ position on the close of the day the price trades (intraday) above yesterday's 10-day moving average (reversion to the mean). Close out the remaining ½ position the following day.\" (slide p.131, printed after the sells slide; coded as written for both sides: price high > yesterday's MA)",
+            "X|[Not from the book] literal_exit = 0: previous reading, sells exit instead when the price trades BELOW yesterday's MA (the reversion reading for a price stretched above its MA)",
             "X|Or exit within two to four days (default: on the close of day 4)",
         ],
-        notes: "Book trades SPY/S&P (2003). Threshold `pct` 2.0 = SPX; book values NDX 6, XBD 8, SOX 8 (use 6 for QQQ / NIFTY IT, 8 for SMH). 3-point stop = SPY points: pt_mode 1 with pt_pct 1.18 (1 point = 1/85 of price, SPY ≈ $85 in the 2003 sizing slide); pt_mode 0 = raw points. Stop checked before the reversion exit on the same bar.",
+        notes: "Book trades SPY/S&P (2003). Threshold `pct` 2.0 = SPX; book values NDX 6, XBD 8, SOX 8 (use 6 for QQQ / NIFTY IT, 8 for SMH). 3-point stop = SPY points: pt_mode 1 with pt_pct 1.18 (1 point = 1/85 of price, SPY ≈ $85 in the 2003 sizing slide); pt_mode 0 = raw points. Stop checked before the reversion exit on the same bar. The exit slide says 'trades above yesterday's 10-day MA' (literal_exit = 1, default; sells: the price was above its MA on the signal day, so the ½ exit usually comes on day 1); [Not from the book] literal_exit = 0 exits sells when the price trades below it.",
         claim: claim("-", "\"just over 70%\" (market-timing signals in general)", "-", "2-4 days", "general claim, no test published"),
     });
     v.push(StrategyDef {
@@ -280,6 +281,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             ];
             if vix {
                 v.push(p("literal_exit", "Buys exit when VIX trades ABOVE yesterday's MA (slide text p-130, 1) / below (0, [Not from the book] presumed copy error)", 1.0, 0.0, 1.0, 1.0));
+            } else {
+                v.push(p("literal_exit", "Sells exit when the price trades ABOVE yesterday's MA (slide p.131 as printed, 1) / below (0, [Not from the book] previous reading)", 1.0, 0.0, 1.0, 1.0));
             }
             v.extend(units(100.0 / 85.0, 1.0));
             v
@@ -876,7 +879,7 @@ fn market_timing(id: &str, x: &Ctx, from: usize, to: usize, g: &dyn Fn(&str) -> 
     let pct = g("pct") / 100.0;
     let atr90 = avg_tr(h, l, c, 90);
     let pt = point_fn(x, g, &atr90);
-    let (stop_pts, max_hold, literal) = (g("stop_pts"), u("max_hold"), vixm && g("literal_exit") >= 0.5);
+    let (stop_pts, max_hold, literal) = (g("stop_pts"), u("max_hold"), g("literal_exit") >= 0.5);
     let dirs = sides(g);
     // The watched series (price, or the VIX) is stretched UP when: non-VIX sell, VIX III buy.
     let up = |d: f64| if vixm { d > 0.0 } else { d < 0.0 };
@@ -885,7 +888,9 @@ fn market_timing(id: &str, x: &Ctx, from: usize, to: usize, g: &dyn Fn(&str) -> 
     };
     // reversion: the series trades (intraday) back through yesterday's MA
     let reverted = |k: usize, d: f64| -> bool {
-        if literal && d > 0.0 {
+        // slide as printed: "trades (intraday) above yesterday's 10-day MA" also for the stretched-up side
+        // (VIX III buys, Non-VIX sells)
+        if literal && up(d) {
             return gt(sh[k], ma[k - 1]);
         }
         if up(d) { lt(sl[k], ma[k - 1]) } else { gt(sh[k], ma[k - 1]) }

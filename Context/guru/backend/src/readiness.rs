@@ -47,6 +47,8 @@ mod short_course_readiness_tests {
 }
 
 pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -> Option<Issue> {
+    // user-held NSE breadth / TRIN mappings: the hold note wins over any data-coverage message
+    if let Some(i)=ctx.r.first().and_then(|r|crate::instrument_policy::nse_breadth_held(def,&r.ticker)) {return Some(i);}
     if def.book==books::lkqts::BOOK && books::lkqts::stock_research_profile(def.id) {
         if let Some(note)=books::lkqts::validate_stock_research_profile(def.id,p) {return issue("not_testable",note);}
         if let Some(note)=books::lkqts::stock_research_history_issue(def.id,ctx,from,to) {return issue("needs_data",note);}
@@ -135,6 +137,10 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     }
     if def.book==books::ptjmt::BOOK && books::ptjmt::reviewed_daily(def.id) {
         if let Some(r)=ctx.r.get(from) {
+            // NYSE-breadth rules on NIFTY 50: say why (US series only; the NSE version is held), not just "series missing"
+            if r.ticker=="NIFTY 50" && !def.id.starts_with("ptjmt_cvr") && !def.id.ends_with("_nse") {
+                return issue("needs_data","This version reads NYSE TRIN / NYSE advances-declines, a US market series; it is not run on NIFTY 50. The NSE-breadth version is held: it uses the book's NYSE TRIN/advance-decline thresholds; NSE breadth behaves differently (e.g. TRIN median 0.70 vs NYSE 0.93; fires 2-3x more often), so the thresholds are not calibrated for India. Not published until recalibrated and reviewed.");
+            }
             if def.id.starts_with("ptjmt_cvr") && r.date.as_str()<books::ptjmt::REAL_VIX_OHLC_FROM {
                 return issue("needs_data",format!("The CVR rules read the VIX high and low (CVR I and V also the open); the served CBOE VIX history has close-only bars before {}. Choose a later start.",books::ptjmt::REAL_VIX_OHLC_FROM));
             }
@@ -409,6 +415,10 @@ mod tests {
         let mk=|t:&str,y:&str|{let mut r=rows();for (i,x) in r.iter_mut().enumerate(){x.ticker=t.into();x.date=format!("{y}-01-0{}",i+5);}r};
         let ok=|r:&Vec<crate::Row>,id:&str|{let mut ctx=Ctx::new(r,r,r);for s in definition(id).needs_series {ctx.extra.insert(s.to_string(),vec![1.0;r.len()]);}check(&ctx,&definition(id),0,4,&Params::new()).map(|i|i.status)};
         for &id in books::ptjmt::REVIEWED_DAILY {
+            if id.ends_with("_nse") { // held for every symbol and period (NSE breadth, 2026-10-21)
+                for (t,y) in [("SPY","1991"),("SPX","2013"),("SPX","2014"),("SPY","2013")] {assert_eq!(ok(&mk(t,y),id),Some("needs_data"),"{id}");}
+                continue;
+            }
             let cvr=id.starts_with("ptjmt_cvr");
             assert_eq!(ok(&mk("SPY","1991"),id),cvr.then_some("needs_data"),"{id}");
             assert_eq!(ok(&mk("SPX","2013"),id),books::ptjmt::reads_open(id).then_some("needs_data"),"{id}");

@@ -467,7 +467,7 @@ const TSP1: &[&str] = &[
     "F|\"The market makes a new 20-day low. The previous 20-bar low must have been made at least three trading sessions earlier.\"",
     "F|\"The close of the new low (day one) must be at or below the previous 20-bar low\"",
     "E|\"An entry buy stop is placed the next day (day two) at the earlier 20 day low. If you are not filled on day two, the trade is cancelled.\" (an open beyond it fills at the open)",
-    "X|\"If filled, place a protective sell stop one tick under the lower of the day-one low or the day-two low.\" (day-one low on the entry day, the lower of the two from day three)",
+    "X|\"If filled, place a protective sell stop one tick under the lower of the day-one low or the day-two low.\" (from the fill: day two is the entry bar, so on daily bars its own low cannot trade through this stop and the entry day is never stopped out; entry_stop = 1: [Not from the book] previous reading, the day-one low on the entry day)",
     "X|\"Take partial profits within two to six bars and trail a stop on the balance of your position.\" Half off on the close of bar 6 (TradeStation code input Bars2Exit 6, ExitPct 50)",
     TRAIL2,
     "F|\"FOR BUYS (SELLS ARE REVERSED)\"",
@@ -498,8 +498,8 @@ const ROC2: &[&str] = &[
 ];
 const ANTI: &[&str] = &[
     "F|\"Use a seven-period %K stochastic (the 'fast' line). If your program allows for an adjustment of the smoothing of this parameter, default to four.\" Fast = 4-bar SMA of 7-bar %K",
-    "F|\"Use a 10-period %D stochastic (the 'slow' line).\" Slow = TradeStation SlowD(10): 10-bar %K smoothed twice by 3-bar SMAs",
-    "F|\"The slow line (%D) has established a definite upward-trend.\" (TradeStation 'Anti basic 2': slow > slow[1] > slow[2])",
+    "F|\"Use a 10-period %D stochastic (the 'slow' line).\" Slow = 10-bar SMA of the fast line (%D = the average of %K; p.69: Linda replaced 'a 3-10 oscillator with a simple 16-period moving average of itself' by '7%K and a 10%D'). d_mode = 1: [Not from the book] previous reading: TradeStation SlowD(10), a 10-bar %K smoothed twice by 3-bar SMAs",
+    "F|\"The slow line (%D) has established a definite upward-trend.\" [Not from the book] 'definite upward-trend' = slow > slow[1] > slow[2] (trend_bars 2)",
     "E|\"Enter when the price action causes the fast line to turn up once again in the direction of the slow line (forming a hook).\" (fast crosses over fast[1])",
     "E|\"We enter the trade on the opening the next morning\" (examples)",
     "X|\"The initial stop should be placed just below the bar of entry.\" (1 tick under the entry bar's low, from its close)",
@@ -508,8 +508,8 @@ const ANTI: &[&str] = &[
 ];
 const ANTI310: &[&str] = &[
     "F|\"a 3-10 moving-average oscillator with a simple 16-period moving average of itself\" (fast = SMA3 - SMA10, slow = SMA16 of fast)",
-    "F|(TradeStation 'Anti basic 1') slow line rising two bars: slow > slow[1] > slow[2]",
-    "E|(TradeStation) \"FASTLINE CROSSES OVER FASTLINE[1]\": the hook; buy on the next open (sells reversed)",
+    "F|[Not from the book] slow line rising two bars: slow > slow[1] > slow[2]",
+    "E|[Not from the book] the hook = the fast line turns up (fast > fast[1] after fast[1] <= fast[2]); buy on the next open (sells reversed)",
     "X|\"The initial stop should be placed just below the bar of entry.\"",
     "X|\"look to exit on a buying or selling climax within three to four bars.\" Out on the close of day 4",
 ];
@@ -537,7 +537,7 @@ const GAPPER: &[&str] = &[
     "F|\"For buys, the +DI must be greater than the -DI; for sells, the -DI must be greater than the +DI.\"",
     "F|\"Today's open must gap below yesterday's low.\"",
     "E|\"A buy stop is placed in the area of yesterday's low.\"",
-    "X|\"If filled, a protective sell stop is placed at today's low.\"",
+    "X|\"If filled, a protective sell stop is placed at today's low.\" [Not from the book] on daily bars this stop cannot trigger on the entry day (it sits at the day's own low, and a stop is hit only when the bar trades through it), and the trade is closed by the next open at the latest, so the stop never fires: results are optimistic versus intraday trading",
     "X|\"either exit the position before the close or carry it into the following day if it closes strongly.\" \"Back testing of this strategy shows profit improvement holding these trades into the next morning.\" Exit mode 2 (default) = carry to the next open only if it closes strongly, else out on the close (\"strongly\" = close in the favourable half of the range, [Not from the book]); 0 = always out on the close; 1 = [Not from the book] always carry to the next open (\"Back testing ... shows profit improvement\")",
     "F|\"FOR BUYS (SELLS ARE REVERSED)\"",
 ];
@@ -822,16 +822,17 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("entry_ticks", "Entry: ticks beyond the prior extreme", 5.0, 1.0, 10.0, 1.0), p("stop_ticks", "Stop: ticks beyond today's extreme", 1.0, 0.0, 5.0, 1.0),
             p("half_bar", "[TS code, not the chapter] half off on the close of bar N (0 = off, book: trailing stop only)", 0.0, 0.0, 10.0, 1.0), p("fill_rule", "[Not from the book] bar that opened beyond the level: 0 skip (unbiased), 1 fill (pessimistic), 2 fill if it closed back (biased)", 0.0, 0.0, 2.0, 1.0), trail(), side(), tick()],
         "ss_turtle_soup_plus_one" => vec![p("lookback", "New N-day low/high", 20.0, 10.0, 40.0, 5.0), p("prev", "Prior extreme at least N sessions earlier", 3.0, 2.0, 8.0, 1.0),
-            p("stop_ticks", "Stop: ticks beyond the day-1/day-2 extreme", 1.0, 0.0, 5.0, 1.0), p("half_bar", "Half off on the close of bar N (book 2-6; 0 = off)", 6.0, 0.0, 10.0, 1.0), trail(), side(), tick()],
+            p("stop_ticks", "Stop: ticks beyond the day-1/day-2 extreme", 1.0, 0.0, 5.0, 1.0),
+            p("entry_stop", "Entry-day stop: 0 = under the lower of the day-1/day-2 lows (book rule 3), 1 = [Not from the book] previous reading: under the day-1 low on day two", 0.0, 0.0, 1.0, 1.0), p("half_bar", "Half off on the close of bar N (book 2-6; 0 = off)", 6.0, 0.0, 10.0, 1.0), trail(), side(), tick()],
         "ss_80_20" => vec![p("open_pct", "Opened in the top/bottom % of range", 20.0, 5.0, 40.0, 5.0), p("close_pct", "Closed in the bottom/top % of range", 20.0, 5.0, 40.0, 5.0),
             p("pen_ticks", "Today trades N ticks beyond yesterday's extreme", 10.0, 0.0, 30.0, 5.0), p("fill_rule", "[Not from the book] bar that opened beyond the level: 0 skip (unbiased), 1 fill (pessimistic), 2 fill if it closed back (biased)", 0.0, 0.0, 2.0, 1.0), side(), tick()],
         "ss_momentum_pinball" => vec![p("rsi_len", "LBR/RSI period", 3.0, 2.0, 6.0, 1.0), p("buy_level", "Buy setup: LBR/RSI below", 30.0, 10.0, 40.0, 5.0), p("sell_level", "Sell setup: LBR/RSI above", 70.0, 60.0, 90.0, 5.0), side(), tick()],
         "ss_2_period_roc" => vec![p("roc_len", "ROC period", 2.0, 1.0, 5.0, 1.0), p("hold", "Exit on the close N days later", 1.0, 1.0, 5.0, 1.0), side()],
-        "ss_anti" => vec![p("k_len", "Fast line: %K period", 7.0, 5.0, 14.0, 1.0), p("k_smooth", "Fast line: smoothing", 4.0, 1.0, 5.0, 1.0), p("d_len", "Slow line: %D (stochastic) period", 10.0, 5.0, 20.0, 1.0),
+        "ss_anti" => vec![p("k_len", "Fast line: %K period", 7.0, 5.0, 14.0, 1.0), p("k_smooth", "Fast line: smoothing", 4.0, 1.0, 5.0, 1.0), p("d_len", "Slow line: %D period", 10.0, 5.0, 20.0, 1.0), p("d_mode", "Slow line: 0 = 10-bar SMA of the fast line (book), 1 = [Not from the book] previous reading: TradeStation SlowD (10-bar %K, SMA3 twice)", 0.0, 0.0, 1.0, 1.0),
             p("trend_bars", "Slow line rising N bars", 2.0, 1.0, 5.0, 1.0), p("hold", "Out on the close of day N", 4.0, 2.0, 8.0, 1.0), side(), tick()],
         "ss_anti_3_10" => vec![p("fast_ma", "Oscillator fast SMA", 3.0, 2.0, 5.0, 1.0), p("slow_ma", "Oscillator slow SMA", 10.0, 6.0, 20.0, 1.0), p("signal_ma", "Signal SMA of the oscillator", 16.0, 8.0, 25.0, 1.0),
             p("trend_bars", "Slow line rising N bars", 2.0, 1.0, 5.0, 1.0), p("hold", "Out on the close of day N", 4.0, 2.0, 8.0, 1.0), side(), tick()],
-        "ss_anti_trigger" => vec![p("k_len", "Fast line: %K period", 7.0, 5.0, 14.0, 1.0), p("k_smooth", "Fast line: smoothing", 4.0, 1.0, 5.0, 1.0), p("d_len", "Slow line: %D (stochastic) period", 10.0, 5.0, 20.0, 1.0),
+        "ss_anti_trigger" => vec![p("k_len", "Fast line: %K period", 7.0, 5.0, 14.0, 1.0), p("k_smooth", "Fast line: smoothing", 4.0, 1.0, 5.0, 1.0), p("d_len", "Slow line: %D period", 10.0, 5.0, 20.0, 1.0), p("d_mode", "Slow line: 0 = 10-bar SMA of the fast line (book), 1 = [Not from the book] previous reading: TradeStation SlowD (10-bar %K, SMA3 twice)", 0.0, 0.0, 1.0, 1.0),
             p("opp_days", "Opposing slopes for N days", 3.0, 2.0, 6.0, 1.0), p("hold", "Out on the close of day N", 4.0, 2.0, 8.0, 1.0), side(), tick()],
         "ss_holy_grail" => vec![p("adx_len", "ADX period", 14.0, 7.0, 21.0, 1.0), p("adx_min", "ADX above", 30.0, 20.0, 40.0, 5.0), p("ema_len", "EMA period", 20.0, 10.0, 50.0, 5.0),
             p("swing_n", "[Not from the book] swing high = highest high of N bars before the touch", 20.0, 5.0, 40.0, 5.0),
@@ -909,7 +910,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, prm: &Params) -> Option<Ve
             go(v, u0("trail"), u0("half_bar"), &none)
         }
         "ss_turtle_soup_plus_one" => {
-            let (nb, prev, st) = (u("lookback"), u("prev"), g("stop_ticks"));
+            let (nb, prev, st, old_stop) = (u("lookback"), u("prev"), g("stop_ticks"), g("entry_stop") >= 0.5);
             for j in nb + 1..=to {
                 let d = j - 1;
                 let (mut lo, mut kl, mut hi, mut kh) = (f64::INFINITY, 0, f64::NEG_INFINITY, 0);
@@ -917,11 +918,14 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, prm: &Params) -> Option<Ve
                     if l[m] <= lo { lo = l[m]; kl = m; }
                     if h[m] >= hi { hi = h[m]; kh = m; }
                 }
+                // p.37 rule 3: stop one tick under the lower of the day-one / day-two lows. Day two is the entry bar, so its own
+                // low can never trade through that stop on daily bars. entry_stop 1 = the previous reading (day-one low on day two).
+                let (sl, sh) = if old_stop { (l[d], h[d]) } else { (l[d].min(l[j]), h[d].max(h[j])) };
                 if lo_ok() && l[d] < lo && d - kl >= prev && c[d] <= lo {
-                    v.push(Ord { stop: l[d] - st * tick(d), ..ord(1.0, Fill::Stop(lo), d, j, j) });
+                    v.push(Ord { stop: sl - st * tick(d), ..ord(1.0, Fill::Stop(lo), d, j, j) });
                 }
                 if sh_ok() && h[d] > hi && d - kh >= prev && c[d] >= hi {
-                    v.push(Ord { stop: h[d] + st * tick(d), ..ord(-1.0, Fill::Stop(hi), d, j, j) });
+                    v.push(Ord { stop: sh + st * tick(d), ..ord(-1.0, Fill::Stop(hi), d, j, j) });
                 }
             }
             let rule = |j: usize, p: &Pos| (j == p.i).then(|| Act::SetStop(if p.dir > 0.0 { l[p.setup].min(l[j]) - st * tick(j) } else { h[p.setup].max(h[j]) + st * tick(j) }));
@@ -984,7 +988,10 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, prm: &Params) -> Option<Ve
                 let s = sma_w(&f, u("signal_ma"));
                 (f, s)
             } else {
-                (sma_w(&fast_k(x, u("k_len")), u("k_smooth")), sma_w(&sma_w(&fast_k(x, u("d_len")), 3), 3))
+                let f = sma_w(&fast_k(x, u("k_len")), u("k_smooth"));
+                // book p.69-70: %D = the 10-period average of the fast line; d_mode 1 = the previous SlowD(10) reading
+                let s = if g("d_mode") >= 0.5 { sma_w(&sma_w(&fast_k(x, u("d_len")), 3), 3) } else { sma_w(&f, u("d_len")) };
+                (f, s)
             };
             if id == "ss_anti_trigger" {
                 let od = u("opp_days");
