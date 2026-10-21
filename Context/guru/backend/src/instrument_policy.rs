@@ -57,6 +57,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || (def.book==crate::books::ws5::BOOK && crate::books::ws5::reviewed_daily(def.id))
         || (def.book==crate::books::ats::BOOK && crate::books::ats::reviewed_daily(def.id))
         || (def.book==crate::books::alpha::BOOK && def.id=="alpha_trend_6m")
+        || hfm_otvt_reviewed(def)
         || (def.book=="chbta2" && member(def.id,&["ch_bta2_ma_stack","ch_bta2_65sma_ravi"]))
         || (def.book=="sbma" && member(def.id,&["sbma_sma50_long","sbma_x_5s20s"]))
         || (def.book=="radge" && def.id=="radge_oc_long")
@@ -111,6 +112,14 @@ fn ats_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Option<
     let ok=match stock_us {Some(us)=>def.id!="ats_cvr_equities" || us, None=>ats::admitted_symbol(def.id,ticker)};
     if ok {return None;}
     Some(Issue{status:"needs_data",note:format!("Connors on Advanced Trading Strategies traded S&P 500 futures and US stocks. This review admits SPX and SPY for the CVR I, NYSE TRIN and NYSE breadth rules, also NIFTY 50 with India VIX for CVR II and III, NIFTY 50 for the NSE TRIN / NSE breadth versions, SPX/NDX/DJI/SPY/NIFTY 50/NIFTYBANK for the HV Thrust, and CVR I on stocks only for US stocks and US indices/ETFs with the CBOE VIX (CVR I reads the VIX open; India VIX opens repeat the previous close). {ticker} is outside that reviewed scope; no result is published.")})
+}
+/// Hedge Fund Manager CHADTP and the PTJ Options & Volatility CVR I sides / HV Thrust (connors/hfm-admission).
+fn hfm_otvt_reviewed(def:&StrategyDef)->bool {
+    (def.book==crate::books::hfm::BOOK && crate::books::hfm::reviewed_daily(def.id)) || (def.book==crate::books::otvt::BOOK && crate::books::otvt::reviewed_daily(def.id))
+}
+fn hfm_otvt_symbol_issue(def:&StrategyDef,ticker:&str)->Option<Issue> {
+    if !hfm_otvt_reviewed(def) || crate::books::hfm::admitted_symbol(def.id,ticker) || crate::books::otvt::admitted_symbol(def.id,ticker) {return None;}
+    Some(Issue{status:"needs_data",note:format!("Investment Secrets of a Hedge Fund Manager and the PTJ Options & Volatility Trading volume traded S&P 500 futures. This review admits CHADTP on NYSE breadth for SPX and SPY, the NSE-breadth CHADTP for NIFTY 50, CVR I buys / sells for SPX and SPY with the CBOE VIX (CVR I reads the VIX open; India VIX opens repeat the previous close), and the HV Thrust for SPX/NDX/DJI/SPY/NIFTY 50/NIFTYBANK. {ticker} is outside that reviewed scope; no result is published.")})
 }
 fn reviewed_adaptive_rule(def:&StrategyDef)->bool {
     def.book=="kftsm" && member(def.id,&["kftsm_kama","kftsm_adapt_exp","kftsm_vidya","kftsm_adapt_r2","kftsm_adapt_rsi","kftsm_swg","kftsm_swing","kftsm_raschke_first_cross","kftsm_outside_day","kftsm_fc_bb_abx"])
@@ -284,6 +293,10 @@ fn base_policy(def:&StrategyDef)->Policy {
         let mut p=requirement("index_or_etf", &["index","etf"], concat!("The Alpha Formula (Connors & Cain, 2019/2020) Appendix A1 six-month trend rule, reviewed in connors/rest-admission/SOURCE-CONTRACT.md with independent chronological index/ETF ledgers. ",ALPHA_TREND_LABEL!()," The out-of-market leg (SHY in the book) is idle cash here; vault prices are not dividend-adjusted total returns. The book calls the rule a risk-reduction illustration, not a stand-alone strategy. Cash-index exposure is hypothetical; the book's sector-ETF averages are not reproduced."));
         p.market_adaptation=true; return p;
     }
+    if hfm_otvt_reviewed(def) {
+        let mut p=requirement("declared_index_timing", &["index","etf"], "Investment Secrets of a Hedge Fund Manager (Connors & Hayward, 1995) CHADTP (Ch.5) and The Best of the Professional Traders Journal: Options Trading and Volatility Trading (Connors, 1999) CVR I buys / sells and HV Thrusts, daily rules reviewed in connors/hfm-admission/SOURCE-CONTRACT.md with independent chronological ledgers. The books traded S&P 500 futures (CHADTP on NYSE advancing/declining issues; CVR I on the OEX VIX, today's VXO). SPY uses actual ETF prices and the CBOE VIX; SPX cash-index timing is a declared application; the NSE-breadth CHADTP on NIFTY 50 (book's fixed +/-400 issues) and the HV Thrust on SPX/NDX/DJI/SPY/NIFTY 50/NIFTYBANK are declared adaptations. The CHADTP .10-point trigger is coded as 0.03% of price. The HV Thrust has no book exit, so the user's standard exits are labelled options [Not from the book]. Cash-index shorts are hypothetical exposure. No futures dollars or book performance is claimed.");
+        p.market_adaptation=true; return p;
+    }
     if def.book=="btp" && crate::books::btp::reviewed_daily(def.id) {
         let mut p=requirement("index_or_etf", &["index","etf"], concat!("Best Trading Patterns I & II (Connors, PTJ 1998/1999), exact daily rules reviewed in btp-admission/SOURCE-CONTRACT.md with independent chronological index/ETF ledgers. ",BTP_INDEX_LABEL!()," Rules that read the open start where SPX/NDX/DJI opens are real (2014/2001/2016); NIFTY opens before 2011 are close to the prior close and are disclosed, not clamped. Every 'trail your stops' exit in the book is undefined: the coded trailing stop, 2-for-1 half exits and tick offsets marked [Not from the book] are declared conventions. Cash-index shorts are hypothetical exposure. Single-stock runs are held: the book's 1/8-USD stock tick offsets have no reviewed INR/NSE or decimal-USD specification. No futures dollars or book performance are claimed."));
         p.market_adaptation=true; return p;
@@ -379,6 +392,7 @@ pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     if let Some(issue)=ss_symbol_issue(def,ticker,native_stock){return Some(issue);}
     if let Some(issue)=ws5_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=ats_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);}
+    if let Some(issue)=hfm_otvt_symbol_issue(def,ticker){return Some(issue);}
     if native_stock {
         if let Some(reason)=p.native_currency_constraint {
             return Some(Issue {status:"needs_data",note:format!("Source currency/tick data missing. {reason} USD amounts cannot silently become INR amounts. A source-supported Indian specification or dated FX treatment and verified local tick rules are required before admission; editing the numeric parameter alone does not establish those inputs. Selected actual stock: {ticker}. No results are published.")});
@@ -398,6 +412,7 @@ pub fn check_native(def:&StrategyDef,ticker:&str,evidence:&NativeEvidence)->Opti
     if let Some(issue)=ss_symbol_issue(def,ticker,evidence.asset_type()=="individual_stock"){return Some(issue);}
     if let Some(issue)=ws5_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=ats_symbol_issue(def,ticker,Some(evidence.market()==crate::baskets::Market::UnitedStates)){return Some(issue);}
+    if let Some(issue)=hfm_otvt_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=check_selected(p,ticker,evidence.asset_type()){return Some(issue);}
     if let Some(reason)=p.native_currency_constraint {
         return Some(Issue{status:"needs_data",note:format!("Source currency/price-unit/tick review is pending. {reason} Selected actual stock: {ticker}; trusted source market {} and currency {}. Matching USD currency alone cannot establish the author's historical adjusted-price basis, absolute price thresholds or execution ticks; no reviewed source-unit proof is staged. No results are published.",evidence.market().code(),evidence.currency())});
@@ -702,6 +717,22 @@ mod tests {
         assert_eq!(policy(&def("ats_dvmtm","ats")).requirement,"index_etf_or_stock");
         for id in ["ats_hv_ratio_setup","ats_cbp","ats_late_earnings","ats_torpedoes","ats_hv_ratio_short_strangle","ats_cvr_options","ats_split_call_selling","ats_sector_options_overpriced","ats_15min_adx_breakout","ats_15min_adx_breakout_equities","ats_10pct_oops","ats_morning_call_reversal","ats_wide_range_gap","ats_flag_within_a_flag","ats_short_term_decline_playbook","ats_large_range_day_combo","ats_after_losses"] {
             assert!(!reviewed_cash_rule(&def(id,"ats")),"{id}");
+        }
+    }
+    #[test]
+    fn hfm_otvt_review_admits_exact_ids_on_reviewed_symbols_only() {
+        use crate::books::{hfm,otvt};
+        let admitted:Vec<&str>=hfm::catalogue().iter().chain(otvt::catalogue().iter()).filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        assert_eq!(admitted,["hfm_chadtp","hfm_chadtp_nse","otvt_cvr1_long","otvt_cvr1_short","otvt_hv_thrust"]);
+        let ok=|id:&'static str,b:&'static str,t:&str|check(&def(id,b),t,false).is_none();
+        for t in ["SPX","SPY"] {for (id,b) in [("hfm_chadtp","hfm"),("otvt_cvr1_long","otvt"),("otvt_cvr1_short","otvt"),("otvt_hv_thrust","otvt")] {assert!(ok(id,b,t),"{id} {t}");}}
+        for t in ["NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(ok("otvt_hv_thrust","otvt",t),"{t}");}
+        assert!(ok("hfm_chadtp_nse","hfm","NIFTY 50") && !ok("hfm_chadtp_nse","hfm","SPX") && !ok("hfm_chadtp","hfm","NIFTY 50"));
+        for id in ["otvt_cvr1_long","otvt_cvr1_short"] {assert!(!ok(id,"otvt","NIFTY 50") && !ok(id,"otvt","QQQ"),"{id}");}
+        assert!(!ok("otvt_hv_thrust","otvt","QQQ") && !ok("otvt_hv_thrust","otvt","NIFTYMIDCAP100") && !ok("hfm_chadtp","hfm","QQQ"));
+        assert!(check(&def("otvt_hv_thrust","otvt"),"RELIANCE",true).is_some());
+        for (id,b) in [("hfm_hv","hfm"),("hfm_und","hfm"),("hfm_und_long","hfm"),("hfm_und_short","hfm"),("hfm_ndxspx","hfm"),("hfm_news","hfm"),("hfm_vix","hfm"),("otvt_cvr1","otvt"),("otvt_cvr1_sell_puts","otvt"),("ptjdt_adx15_breakout","ptjdt")] {
+            assert!(!reviewed_cash_rule(&def(id,b)),"{id}");assert_eq!(policy(&def(id,b)).requirement,"source_review_required","{id}");
         }
     }
     #[test]

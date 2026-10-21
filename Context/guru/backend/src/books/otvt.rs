@@ -15,6 +15,26 @@ use crate::connors::*;
 
 pub const BOOK: &str = "otvt";
 
+/// Daily underlying rules admitted after the 2026-10-21 source review (connors/hfm-admission/SOURCE-CONTRACT.md) and an
+/// independent chronological Python ledger check. Declared application: the book traded S&P futures / OEX.
+/// otvt_cvr1 (combined) stays gate-withheld; option, event-study and stock-split items stay held.
+pub const REVIEWED_DAILY: &[&str] = &["otvt_cvr1_long", "otvt_cvr1_short", "otvt_hv_thrust"];
+pub fn reviewed_daily(id: &str) -> bool { REVIEWED_DAILY.contains(&id) }
+/// CVR I reads the VIX open (India VIX open = previous close): SPX and SPY with the CBOE VIX only.
+pub fn admitted_symbol(id: &str, ticker: &str) -> bool {
+    match id {
+        "otvt_cvr1_long" | "otvt_cvr1_short" => matches!(ticker, "SPX" | "SPY"),
+        "otvt_hv_thrust" => matches!(ticker, "SPX" | "NDX" | "DJI" | "SPY" | "NIFTY 50" | "NIFTYBANK"),
+        _ => false,
+    }
+}
+/// Fills read the traded instrument's open only with the labelled ATR trailing stop (exit = 1).
+pub fn reads_open(id: &str, p: &Params) -> bool {
+    id == "otvt_hv_thrust" && p.get("exit").is_some_and(|v| v.round() == 1.0)
+}
+/// The served CBOE VIX history has close-only bars (open = high = low = close) for 1990-1991.
+pub const REAL_VIX_OHLC_FROM: &str = "1992-01-01";
+
 const VIX_IV: &[&str] = &["VIX_OHLC.Open", "VIX_OHLC.High", "VIX_OHLC.Low", "VIX_OHLC.Close"];
 const IV: &[&str] = &["IV30"];
 
@@ -87,8 +107,10 @@ const THRUST: &[&str] = &[
     "F|\"Identify a market whose 6-day or 10-day volatility is less than 1/2 its 100-day reading.\"",
     "E|\"On the day of the readings under 50 percent look for a daily price range that is larger than the daily range of the previous nine days.\" (HV reading taken on the prior bar)",
     "E|\"If rules 1 and 2 are met, expect a follow-through in the direction of the large-range day\": enter on the close in the direction of the day (close vs prior close)",
-    "X|\"for the next one to ten days\": exit on the close after N days (10 by default, 1-10 tested)",
+    "X|\"for the next one to ten days\": a follow-through expectation, not an exit rule; the book gives no exit or stop",
+    STD_EXIT_RULE,
 ];
+const STD_EXIT_RULE: &str = "X|[Not from the book] standard exits (user rule, the book gives none): param exit 0 = close after `hold` bars (default 10; 3 / 5 / 10), 1 = trailing stop 2 x ATR(5) behind the best price since entry, 2 = first up close (shorts: first down close)";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     use Status::*;
@@ -187,6 +209,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("nm1", "HV over N-1 returns (0/1)", 0.0, 0.0, 1.0, 1.0),
             p("filt_k", "False-signal filter: |return| > k sigma (0 = off)", 0.0, 0.0, 6.0, 0.5),
             p("filt_days", "False-signal filter: days to wait", 100.0, 20.0, 150.0, 10.0),
+            p("exit", "[Not from the book] exit: 0 = close after hold bars, 1 = 2 x ATR(5) trailing stop, 2 = first up close (shorts: first down close)", 0.0, 0.0, 2.0, 1.0),
         ],
         _ => return None,
     })
@@ -503,6 +526,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                     blocked[j] = until.map_or(false, |u| j <= u);
                 }
             }
+            let atr5 = if g("exit").round() == 1.0 { atr(x.r, 5) } else { Vec::new() };
             let mut out = Vec::new();
             let mut i = from.max(rn + 1);
             while i < to {
@@ -514,15 +538,49 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                     i += 1;
                     continue;
                 }
-                let j = (i + hold).min(to);
-                let open = i + hold > to;
-                out.push(trade(d.signum(), i, c[i], j, c[j], if open { "open".into() } else { format!("{hold} days held") }, open));
-                i = j + 1;
+                let t = match g("exit").round() as i64 {
+                    1 | 2 => std_exit(x, &atr5, g("exit").round() as i64, d.signum(), i, to),
+                    _ => {
+                        let j = (i + hold).min(to);
+                        let open = i + hold > to;
+                        trade(d.signum(), i, c[i], j, c[j], if open { "open".into() } else { format!("{hold} days held") }, open)
+                    }
+                };
+                i = t.exit_i + 1;
+                out.push(t);
             }
             out
         }
         _ => return None,
     })
+}
+
+/// [Not from the book] the user's standard exits for a close entry at bar `i` (VERIFICATION-PIPELINE section 4, same
+/// contract as ats): mode 1 = trailing stop 2 x Wilder ATR(5) of the previous bar behind the best price since entry
+/// (entry price, then the highs / lows of the bars after the entry bar), from the bar after entry, ratcheting, filled at
+/// the level or at a gapped open; mode 2 = first close above the previous close after the entry bar (shorts: below).
+/// A position still held at `to` is reported open at the last close.
+fn std_exit(x: &Ctx, atr5: &[f64], mode: i64, dir: f64, i: usize, to: usize) -> Trade {
+    let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
+    let (mut best, mut stop) = (c[i], f64::NAN);
+    for k in i + 1..=to {
+        if mode == 1 {
+            if k > i + 1 {
+                best = if dir > 0.0 { best.max(h[k - 1]) } else { best.min(l[k - 1]) };
+            }
+            let lv = best - dir * 2.0 * atr5[k - 1];
+            if lv.is_finite() {
+                stop = if dir > 0.0 { stop.max(lv) } else { stop.min(lv) }; // NaN stop -> lv
+            }
+            if stop.is_finite() && (if dir > 0.0 { l[k] <= stop } else { h[k] >= stop }) {
+                let px = if dir > 0.0 { o[k].min(stop) } else { o[k].max(stop) };
+                return trade(dir, i, c[i], k, px, "2 x ATR(5) trailing stop".into(), false);
+            }
+        } else if if dir > 0.0 { c[k] > c[k - 1] } else { c[k] < c[k - 1] } {
+            return trade(dir, i, c[i], k, c[k], if dir > 0.0 { "first up close" } else { "first down close" }.into(), false);
+        }
+    }
+    trade(dir, i, c[i], to, c[to], "open".into(), true)
 }
 
 /// CVR I underlying trades: enter on the signal close, exit on the close `hold` bars later;
@@ -612,5 +670,24 @@ mod tests {
         assert!(gap("otvt_cvr1_buy_puts", &spy, 0, 4, &none).is_none());
         assert!(gap("otvt_cvr1", &spy, 0, 4, &vxo).is_some()); // F3: src=1 with no VXO_OHLC
         assert_eq!(run("otvt_cvr1", &spy, 0, 4, &vxo).map(|t| t.len()), Some(0));
+    }
+
+    #[test]
+    fn hv_thrust_standard_exits() {
+        // long close entry at bar 0 (100): bar 1 closes lower, bar 2 higher -> first up close = bar 2
+        let b = [(100.0, 101.0, 99.0, 100.0), (100.0, 100.5, 98.0, 99.0), (99.0, 101.0, 98.5, 100.5), (100.0, 100.0, 90.0, 91.0)];
+        let rows: Vec<Row> = b.iter().enumerate().map(|(i, &(o, h, l, c))| Row { ticker: "T".into(), date: format!("2020-01-{:02}", i + 1), open: o, high: h, low: l, close: c, volume: None }).collect();
+        let ctx = Ctx::new(&rows, &rows, &[]);
+        let t = std_exit(&ctx, &[], 2, 1.0, 0, 3);
+        assert_eq!((t.exit_i, t.exit_px, t.reason.as_str(), t.open), (2, 100.5, "first up close", false));
+        let t = std_exit(&ctx, &[], 2, -1.0, 0, 3);
+        assert_eq!((t.exit_i, t.reason.as_str()), (1, "first down close"));
+        // ATR trail: level = best since entry - 2 x ATR[k-1]; ATR 1.0 -> bar 1 level 98 (low 98 hits, fill 98);
+        // a NaN ATR leaves the trade open at the last bar
+        let t = std_exit(&ctx, &[1.0; 4], 1, 1.0, 0, 3);
+        assert_eq!((t.exit_i, t.exit_px, t.reason.as_str()), (1, 98.0, "2 x ATR(5) trailing stop"));
+        let t = std_exit(&ctx, &[f64::NAN; 4], 1, 1.0, 0, 3);
+        assert!(t.open && t.exit_i == 3);
+        assert_eq!(params("otvt_hv_thrust").unwrap().iter().find(|q| q.key == "exit").map(|q| q.def), Some(0.0));
     }
 }

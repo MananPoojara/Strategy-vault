@@ -17,6 +17,21 @@ use std::sync::OnceLock;
 
 pub const BOOK: &str = "hfm";
 
+/// Daily rules admitted after the 2026-10-21 source review (connors/hfm-admission/SOURCE-CONTRACT.md) and an independent
+/// chronological Python ledger check. Declared application: the book traded S&P 500 futures on NYSE breadth.
+/// Held (not listed): HV signal (no direction, entry or exit), Undeniables (an index-option selling method), NDX-SPX
+/// (LEADER_CLOSE series not loaded), News Reversals and the VIX program (gate withheld), Globex and Bond (data).
+pub const REVIEWED_DAILY: &[&str] = &["hfm_chadtp", "hfm_chadtp_nse"];
+pub fn reviewed_daily(id: &str) -> bool { REVIEWED_DAILY.contains(&id) }
+/// CHADTP on NYSE breadth: actual SPX and SPY; the NSE-breadth version: NIFTY 50.
+pub fn admitted_symbol(id: &str, ticker: &str) -> bool {
+    match id {
+        "hfm_chadtp" => matches!(ticker, "SPX" | "SPY"),
+        "hfm_chadtp_nse" => ticker == "NIFTY 50",
+        _ => false,
+    }
+}
+
 const NEWS_RULES: &[&str] = &[
     "F|Rule #1: wait for an extremely bullish or bearish event after the close (discretionary; coded as the book's \"aggressive traders will take all news stories\": every qualifying gap)",
     "E|Rule #2: the market must gap open above or below the previous day's high or low",

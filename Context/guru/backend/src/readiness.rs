@@ -188,6 +188,21 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
             }
         }
     }
+    // Admitted hfm/otvt rules: CVR I reads the VIX open/high/low (close-only CBOE VIX before 1992); CHADTP stop entries and
+    // the labelled HV Thrust ATR trail read the traded instrument's open, so stale US index opens are refused.
+    if (def.book==books::hfm::BOOK && books::hfm::reviewed_daily(def.id)) || (def.book==books::otvt::BOOK && books::otvt::reviewed_daily(def.id)) {
+        if let Some(r)=ctx.r.get(from) {
+            if def.id.starts_with("otvt_cvr1") && r.date.as_str()<books::otvt::REAL_VIX_OHLC_FROM {
+                return issue("needs_data",format!("CVR I reads the VIX open, high and low; the served CBOE VIX history has close-only bars before {}. Choose a later start.",books::otvt::REAL_VIX_OHLC_FROM));
+            }
+            let opens=def.id=="hfm_chadtp" || books::otvt::reads_open(def.id,p);
+            if opens && !crate::gate::get(def.id).is_some_and(|g|g.clamp_open) {
+                if let Some(cut)=crate::gate::real_open_from(&r.ticker).filter(|c|r.date.as_str()<*c) {
+                    return issue("needs_data",format!("This rule's stop-entry or trailing-stop fills read the opening price; {} opens in this file are real only from {cut}. Choose a start on or after {cut}.",r.ticker));
+                }
+            }
+        }
+    }
     if def.book=="chbta2" && matches!(def.id,"ch_bta2_ma_stack"|"ch_bta2_65sma_ravi") {
         if let Some(note)=books::chbta2::validate_reviewed(def.id,p) {return issue("not_testable",note);}
     }
@@ -445,6 +460,17 @@ mod tests {
         for (t,y,id,p,want) in [("SPX","1991","ats_cvr1",&none,true),("SPX","1991","ats_cvr2",&none,false),("SPY","1991","ats_cvr_equities",&none,true),
             ("SPX","2013","ats_trin_thrust",&none,true),("SPX","2014","ats_trin_thrust",&none,false),("SPY","1995","ats_padi",&none,false),
             ("NDX","2000","ats_hv_thrust",&none,false),("NDX","2000","ats_hv_thrust",&atr,true),("NDX","2001","ats_hv_thrust",&atr,false),("NIFTY 50","2005","ats_hv_thrust",&atr,false)] {
+            assert_eq!(refused(&mk(t,y),id,p),want,"{id} {t} {y}");
+        }
+    }
+    #[test]
+    fn hfm_otvt_admitted_rules_refuse_close_only_vix_and_stale_index_opens() {
+        let mk=|t:&str,y:&str|{let mut r=rows();for (i,x) in r.iter_mut().enumerate(){x.ticker=t.into();x.date=format!("{y}-06-0{}",i+1);}r};
+        let refused=|r:&Vec<Row>,id:&str,p:&Params|check(&Ctx::new(r,r,r),&definition(id),0,4,p).is_some_and(|i|i.note.contains("close-only")||i.note.contains("opening price"));
+        let none=Params::new();let atr=Params::from([("exit".into(),1.0)]);
+        for (t,y,id,p,want) in [("SPX","1991","otvt_cvr1_long",&none,true),("SPY","1991","otvt_cvr1_short",&none,true),("SPX","1993","otvt_cvr1_long",&none,false),
+            ("SPX","2013","hfm_chadtp",&none,true),("SPX","2014","hfm_chadtp",&none,false),("SPY","1995","hfm_chadtp",&none,false),("NIFTY 50","2005","hfm_chadtp_nse",&none,false),
+            ("NDX","2000","otvt_hv_thrust",&none,false),("NDX","2000","otvt_hv_thrust",&atr,true),("NDX","2001","otvt_hv_thrust",&atr,false),("NIFTY 50","2005","otvt_hv_thrust",&atr,false)] {
             assert_eq!(refused(&mk(t,y),id,p),want,"{id} {t} {y}");
         }
     }
