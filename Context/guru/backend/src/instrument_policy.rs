@@ -42,7 +42,7 @@ macro_rules! USD_PRICE_US_LABEL {()=>{"US stocks only: the book's USD price filt
 macro_rules! AFACTOR_STOCK_LABEL {()=>{"US stocks: the book's USD price filter (previous close > 10) is applied as printed to the US stock's own USD prices (split/dividend-adjusted, not independently verified). Indian stocks: USD price filter omitted on INR stocks (no reviewed INR version); the share-volume filter (20-day average > 100,000 shares) is kept as printed. Not the author's US universe."}}
 macro_rules! ALPHA_TREND_LABEL {()=>{"Book tested on nine US sector ETFs (XLB..XLY, not in the vault); other ETFs and index runs are a declared application, not the author's test."}}
 macro_rules! CONNORS_INDEX_LABEL {()=>{"Book tested on US stocks; index/ETF runs are a declared application, not the author's test. Stock filters in the rule (minimum price, share volume, Liquidity Filter) are still calculated on the index's own price and volume and are always met there (the R3/R4 low-price $1-$15 band is never met), so they do not screen index runs."}}
-pub const CONNORS_INDEX_IDS:&[&str]=&["f1a","f3a","f4a","f4c","f4d","rsi2_5d","tps_stocks","x555","h10","r3r4_base","r3r4_base_scale","r3r4_bigcap","r3r4_bigcap_scale","r3r4_bigcap_deck","r3r4_bigcap_deck_scale","r3r4_lowprice","r3r4_lowprice_scale","ats_dvmtm","ats_cvr_equities","ats_15min_adx_breakout_equities","afactor_baseline"];
+pub const CONNORS_INDEX_IDS:&[&str]=&["f1a","f3a","f4a","f4c","f4d","rsi2_5d","tps_stocks","x555","h10","r3r4_base","r3r4_base_scale","r3r4_bigcap","r3r4_bigcap_scale","r3r4_bigcap_deck","r3r4_bigcap_deck_scale","r3r4_lowprice","r3r4_lowprice_scale","ats_dvmtm","ats_cvr_equities","ats_15min_adx_breakout_equities","afactor_baseline","afactor_spx_down"];
 
 pub fn reviewed_kestner_stock(def:&StrategyDef)->bool {
     def.book==crate::books::lkqts::BOOK && crate::books::lkqts::stock_research_profile(def.id)
@@ -63,6 +63,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || (def.book==crate::books::ats::BOOK && crate::books::ats::reviewed_daily(def.id))
         || (def.book==crate::books::ccl08::BOOK && crate::books::ccl08::reviewed_daily(def.id))
         || (def.book==crate::books::alpha::BOOK && def.id=="alpha_trend_6m")
+        || newrules_misc(def)
         || hfm_otvt_reviewed(def)
         || (def.book=="chbta2" && member(def.id,&["ch_bta2_ma_stack","ch_bta2_65sma_ravi"]))
         || (def.book=="sbma" && member(def.id,&["sbma_sma50_long","sbma_x_5s20s"]))
@@ -77,6 +78,20 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || (def.book=="elcim" && def.id==crate::books::elcim_account::ID)
         || (def.book=="hbiab" && crate::books::hbiab_reviewed::reviewed(def.id))
         || reviewed_kestner_stock(def)
+}
+/// Connors rules coded from the full-source readers (connors/newrules-misc, 2026-10-21): HPETF seminar RSI 14 TPS,
+/// STSTW VIX RSI, ETF Sweet Spot 2nd-signal variation, Alvarez Factor S&P-down-days filter.
+pub fn newrules_misc(def:&StrategyDef)->bool {
+    (def.book==crate::books::hpetf::BOOK && crate::books::hpetf::reviewed_daily(def.id))
+        || (def.book==crate::books::ststw::BOOK && crate::books::ststw::reviewed_daily(def.id))
+        || (def.book=="etfss" && crate::connors::ETFSS_REVIEWED.contains(&def.id))
+        || (def.book==crate::books::afactor::BOOK && crate::books::afactor::REVIEWED_DAILY.contains(&def.id))
+}
+macro_rules! NEWRULE_ANY_LABEL {()=>{"Index, ETF and stock runs: the source trades US ETFs; actual indices and actual stocks are a declared application (user rule 21 Oct 2026), not the author's test. Close-only rule: no price, volume or tick filter to adapt."}}
+pub fn ststw_symbol_issue(def:&StrategyDef,ticker:&str)->Option<Issue> {
+    use crate::books::ststw;
+    if def.book!=ststw::BOOK || !ststw::reviewed_daily(def.id) || ststw::admitted_symbol(def.id,ticker) {return None;}
+    Some(Issue{status:"needs_data",note:format!("The VIX RSI Strategy (Short Term Trading Strategies That Work p.96-98) times the S&P 500 on SPY or the SPX and reads today's VIX open. This review admits SPX and SPY with the CBOE VIX only: India VIX opens repeat the previous close, so the rule cannot be read on NIFTY. {ticker} is outside that reviewed scope; no result is published.")})
 }
 /// Figure A.7 is an index example, distinct from the reviewed stock/ETF batch.
 pub fn reviewed_dema_index(def:&StrategyDef)->bool {
@@ -173,7 +188,7 @@ mod short_course_policy_tests {
 pub fn policy(def:&StrategyDef)->Policy {
     let mut p=base_policy(def);
     p.native_currency_constraint=match (def.book,def.id) {
-        ("afactor","afactor_baseline")=>Some("Alvarez Factor workbook p.13 filters the previous stock close above USD 10. The runner compares a literal price parameter with the INR close, which is not the same economic filter."),
+        ("afactor","afactor_baseline"|"afactor_spx_down")=>Some("Alvarez Factor workbook p.13 filters the previous stock close above USD 10. The runner compares a literal price parameter with the INR close, which is not the same economic filter."),
         ("jc5dm","jc5dm_long")=>Some("Five Day Momentum p.10 requires the US stock price above USD 50 and pp.11-12 use a 1/16 USD stock tick. The runner's literal values do not establish an INR threshold or the actual NSE stock tick."),
         ("jc5dm","jc5dm_short")=>Some("Five Day Momentum p.10 requires the US stock price above USD 40 and pp.11-12 use a 1/16 USD stock tick. The runner's literal values do not establish an INR threshold or the actual NSE stock tick."),
         ("r3r4","r3r4_lowprice"|"r3r4_lowprice_scale")=>Some(R3R4_LOWPRICE_HELD),
@@ -187,14 +202,14 @@ pub fn policy(def:&StrategyDef)->Policy {
 /// User decision 2026-10-21: stock rules whose only stock hold was the book's USD price filter run on US stocks
 /// (the filter is applied in USD as printed); Indian stocks stay held.
 pub fn usd_price_rule_on_us_stock(def:&StrategyDef,market:Market)->bool {
-    market==Market::UnitedStates && matches!((def.book,def.id),("afactor","afactor_baseline")|("r3r4","r3r4_lowprice"|"r3r4_lowprice_scale"))
+    market==Market::UnitedStates && matches!((def.book,def.id),("afactor","afactor_baseline"|"afactor_spx_down")|("r3r4","r3r4_lowprice"|"r3r4_lowprice_scale"))
 }
 /// The R3/R4 Low Priced rules ARE the USD 1-15 band: they run on US stocks only (refusal text for every other instrument).
 pub const R3R4_LOWPRICE_HELD:&str="R3/R4 Low Priced Rules are defined by the stock closing above USD 1 and below USD 15: the dollar price band is the strategy itself, so it runs only on actual US stocks. It stays held on Indian stocks (an INR 1-15 band would be a different strategy, not the book's) and on indices/ETFs. No results are published.";
 /// User decision 2026-10-21: afactor_baseline runs on Indian stocks with the USD price (> 10) filter omitted (labelled);
 /// the share-volume filter (> 100,000 shares) is kept as printed.
 pub fn inr_price_filter_omitted(def:&StrategyDef,market:Market)->bool {
-    market==Market::India && (def.book,def.id)==("afactor","afactor_baseline")
+    market==Market::India && def.book=="afactor" && crate::books::afactor::stock_rule(def.id)
 }
 fn base_policy(def:&StrategyDef)->Policy {
     if reviewed_kestner_stock(def) && crate::books::lkqts::macs_candidate(def.id) {
@@ -356,6 +371,18 @@ fn base_policy(def:&StrategyDef)->Policy {
     if def.book=="ehrs" && crate::books::ehrs::reviewed_sinetrend(def.id) {
         let mut p=requirement("declared_ohlc_adaptation", &["index","etf","individual_stock"], "Ehlers Rocket Science for Traders p.119 identifies Fig.12.1 (pp.120-123) as a complete theoretical automatic signal system before adding a separate Treasury-bond dollar stop. Only the exact reviewed SineTrend configurations are admitted. Trend-only removes Cycle Mode orders without flattening holdings (p.124); CycPart1.15 uses Fig.12.4's trendline (p.126). Source review and selected real-price ledger scope: library/ehlers/REVIEW-2026-10-13.md and REVIEW-2026-10-15-VARIANTS.md. Selected actual daily OHLC is a declared research application; The three additional configurations require exact reviewed CycPart/MaxBarsBack pairs1/50 or1.15/57; alternate settings remain held. The previously reviewed base preserves its parameter contract. Zero-state startup and next-open fills are explicit conventions. No dollar stops, original futures contracts, roll history, portfolio or source-study performance are reproduced. Cash-index short exposure is hypothetical.");p.market_adaptation=true;return p;
     }
+    if def.book==crate::books::hpetf::BOOK && crate::books::hpetf::reviewed_daily(def.id) {
+        let mut p=requirement("index_etf_or_stock", &["index","etf","individual_stock"], concat!("High Probability ETF Trading seminar manuals (Connors, 2009), Session 2 RSI 14 TPS (pp.9, 17-20) reviewed in connors/newrules-misc/SOURCE-CONTRACT.md with independent chronological index/ETF/stock ledgers. ",NEWRULE_ANY_LABEL!()," The optional 200-day rule is off by default (the seminar shows both); 'closes lower' for the adds is read as below the previous purchase price [Not from the book]. The seminar's results are on a spreadsheet not in the PDF: no performance is claimed."));
+        p.preferred_basket=Some("nifty50");p.market_adaptation=true;return p;
+    }
+    if def.book=="etfss" && crate::connors::ETFSS_REVIEWED.contains(&def.id) {
+        let mut p=requirement("index_etf_or_stock", &["index","etf","individual_stock"], concat!("The ETF Sweet Spot Trading System (Connors Research, 2004), conservative 'trade only the 2nd signal' variation (printed p.32, Rules #5-#6 p.10-11, p.15) reviewed in connors/newrules-misc/SOURCE-CONTRACT.md with independent chronological index/ETF/stock ledgers. ",NEWRULE_ANY_LABEL!()," The book itself advises ETFs only (p.12). Book tests SPY/QQQ/IWM/SMH/MDY 1/3/00-6/16/04; only '77.5% of the second signals were profitable' is printed, so no claim is shown."));
+        p.preferred_basket=Some("nifty50");p.market_adaptation=true;return p;
+    }
+    if def.book==crate::books::ststw::BOOK && crate::books::ststw::reviewed_daily(def.id) {
+        let mut p=requirement("declared_index_timing", &["index","etf"], "Short Term Trading Strategies That Work (Connors & Alvarez, 2008) Ch.12 VIX RSI Strategy (pp.96-98) reviewed in connors/newrules-misc/SOURCE-CONTRACT.md with independent chronological SPY/SPX ledgers on the CBOE VIX. The book signals on SPY ('or use the SPX'). SPY uses actual ETF prices; SPX cash-index timing is the book's own alternative. The rule reads today's VIX open, so it runs only with the CBOE VIX from 1992 (close-only bars before); India VIX opens repeat the previous close, so NIFTY is not admitted. Close fills, one position, no entry on the last bar and the open terminal position are explicit conventions. No book performance is reproduced.");
+        p.market_adaptation=true;return p;
+    }
     // Kaufman catch-all; reviewed Connors stock rules keep their index/ETF/stock route below.
     if reviewed_cash_rule(def) && !CONNORS_INDEX_IDS.contains(&def.id) {
         let allowed=if matches!(def.id,"kftsm_month_end"|"kftsm_hirsch"){&["index","etf"][..]}else{&["index","etf","individual_stock"][..]};
@@ -386,6 +413,7 @@ fn base_policy(def:&StrategyDef)->Policy {
         "ststw" if member(id,&["ststw_vix_stretch","ststw_sp_short"]) => requirement("index_or_etf", &["index","etf"], "Short Term Trading Strategies That Work Chapter 12 pp.93-95 and pp.106-108 explicitly names SPY or SPX. Market-specific VIX and all other rule/data checks remain required; a single stock is not the timed index/ETF."),
         "hpetf" if member(id,&["hpetf_3dhl_long","hpetf_3dhl_long_aggr","hpetf_3dhl_short","hpetf_3dhl_short_aggr","hpetf_rsi25_long_aggr","hpetf_rsi75_short","hpetf_rsi75_short_aggr","hpetf_r3_long","hpetf_r3_long_aggr","hpetf_r3_short","hpetf_r3_short_aggr","hpetf_pctb_long_aggr","hpetf_pctb_short_aggr","hpetf_mdd_long","hpetf_mdd_long_aggr","hpetf_mdu_short","hpetf_mdu_short_aggr","hpetf_rsi10_6_long","hpetf_rsi90_94_short","hpetf_tps_long","hpetf_tps_short"]) => etf("High Probability ETF Trading (2009), Chapters 2-8, explicitly trades 20 non-leveraged ETFs. Actual ETF prices are required. DJI is an index, not DIA; an Indian constituent or cash index cannot be silently substituted."),
         "afactor" if id=="afactor_baseline" => connors_any!("Alvarez Factor workbook pp.13-14 and Stats.xls baseline specify one stock's gap, OHLC and share volume. A selected Indian stock is an instrument/currency adaptation; literal US dollar price thresholds, corporate-action treatment and the absent pooled US universe remain limitations."),
+        "afactor" if id=="afactor_spx_down" => connors_any!("Alvarez Factor S&P-down-days market-timing filter (AF_DownSP_RSfilter_Summary.xls, Stats.xls Variations, workbook pp.52-53) on the baseline rules (workbook pp.13-14), reviewed in connors/newrules-misc/SOURCE-CONTRACT.md with independent chronological stock/index ledgers. The S&P 500 down closes come from the SPX on US instruments; on Indian stocks/indices NIFTY 50 stands in for the S&P 500 (declared adaptation). Down closes are counted through the setup day (yesterday) and 'X days' means at least X in a row; default X = 2 [Not from the book]. Windows without a benchmark close on a setup day, or (SPX/NDX/DJI) before real opens, are refused."),
         "afactor" if id=="afactor_portfolio" => portfolio("Alvarez Factor Stats.xls portfolio uses simultaneous stock signals, 1/10 slots and day-level allocation. Independent-symbol returns cannot be compounded into the published portfolio without the verified universe and allocation engine."),
         "r3r4" if member(id,&["r3r4_midcap","r3r4_midcap_scale"]) => stock("R3/R4 Mid Cap Rules (guide pp.6-8, appendices pp.28-29) require a Liquidity Filter between 3 and 30. On an index the filter compares the index with its own volume (about 1,000,000), so the upper bound of 30 is never met and an index/ETF run could only return zero trades; index/ETF runs are therefore refused. Actual stocks only; the 6,000+ US-stock study is not reproduced."),
         "r3r4" if member(id,&["r3r4_base","r3r4_base_scale","r3r4_bigcap","r3r4_bigcap_scale","r3r4_bigcap_deck","r3r4_bigcap_deck_scale","r3r4_midcap","r3r4_midcap_scale","r3r4_lowprice","r3r4_lowprice_scale"]) => connors_any!("R3/R4 guide pp.6-8 and appendices pp.28-29 explicitly require stocks, share-volume liquidity, HV and ADX filters. Native constituent data alone cannot establish the missing benchmark volume or reproduce the 6,000+ US-stock study."),
@@ -433,6 +461,7 @@ pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     if let Some(issue)=ptjmt_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=ss_symbol_issue(def,ticker,native_stock){return Some(issue);}
     if let Some(issue)=ws5_symbol_issue(def,ticker){return Some(issue);}
+    if let Some(issue)=ststw_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=ats_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);}
     if let Some(issue)=hfm_otvt_symbol_issue(def,ticker){return Some(issue);}
     if native_stock {
@@ -454,6 +483,7 @@ pub fn check_native(def:&StrategyDef,ticker:&str,evidence:&NativeEvidence)->Opti
     if let Some(issue)=ptjmt_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=ss_symbol_issue(def,ticker,evidence.asset_type()=="individual_stock"){return Some(issue);}
     if let Some(issue)=ws5_symbol_issue(def,ticker){return Some(issue);}
+    if let Some(issue)=ststw_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=ats_symbol_issue(def,ticker,Some(evidence.market()==crate::baskets::Market::UnitedStates)){return Some(issue);}
     if let Some(issue)=hfm_otvt_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=check_selected(p,ticker,evidence.asset_type()){return Some(issue);}
@@ -536,8 +566,9 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if def.book=="btp" && crate::books::btp::reviewed_daily(def.id) {json.push_str(concat!(",\"declared_application\":\"",BTP_INDEX_LABEL!(),"\""));}
     if (def.book=="btp" && crate::books::btp::STOCK_ADMITTED.contains(&def.id)) || (def.book==crate::books::ats::BOOK && crate::books::ats::STOCK_TICK_IDS.contains(&def.id)) {json.push_str(concat!(",\"stock_adaptation\":\"",STOCK_TICK_LABEL!(),"\""));}
     if def.book==crate::books::ws5::BOOK && crate::books::ws5::reviewed_daily(def.id) && !crate::books::ws5::TIMING.contains(&def.id) {json.push_str(concat!(",\"stock_adaptation\":\"",WS5_STOCK_LABEL!(),"\""));}
-    if (def.book,def.id)==("afactor","afactor_baseline") {json.push_str(concat!(",\"stock_adaptation\":\"",AFACTOR_STOCK_LABEL!(),"\""));}
+    if def.book=="afactor" && crate::books::afactor::stock_rule(def.id) {json.push_str(concat!(",\"stock_adaptation\":\"",AFACTOR_STOCK_LABEL!(),"\""));}
     if matches!((def.book,def.id),("r3r4","r3r4_lowprice"|"r3r4_lowprice_scale")) {json.push_str(concat!(",\"stock_adaptation\":\"",USD_PRICE_US_LABEL!(),"\""));}
+    if newrules_misc(def) && matches!(def.book,"hpetf"|"etfss") {json.push_str(concat!(",\"declared_application\":\"",NEWRULE_ANY_LABEL!(),"\""));}
     if def.book==crate::books::ws5::BOOK && crate::books::ws5::reviewed_daily(def.id) && !crate::books::ws5::TIMING.contains(&def.id) {json.push_str(concat!(",\"declared_application\":\"",WS5_INDEX_LABEL!(),"\""));}
     if def.book=="kfsc" && crate::books::kfsc::reviewed_hv_rule(def.id) {
         json.push_str(&format!(",\"source_convention\":\"{}\"",escape(crate::books::kfsc::HV_CONVENTION)));
@@ -556,7 +587,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
         };
         json.push_str(&format!(",\"source_convention\":\"{}\"",escape(convention)));
     }
-    let currency_admitted=if (def.book,def.id)==("afactor","afactor_baseline"){"true"}else if p.native_currency_constraint.is_some(){"false"}else if p.allowed_types.contains(&"individual_stock"){"true"}else{"null"};
+    let currency_admitted=if def.book=="afactor" && crate::books::afactor::stock_rule(def.id){"true"}else if p.native_currency_constraint.is_some(){"false"}else if p.allowed_types.contains(&"individual_stock"){"true"}else{"null"};
     json.push_str(&format!(",\"source_price_unit\":{},\"native_india_currency_admitted\":{currency_admitted},\"native_currency_constraint\":{}}}",p.source_price_unit.map_or("null".into(),|s|format!("\"{}\"",escape(s))),p.native_currency_constraint.map_or("null".into(),|s|format!("\"{}\"",escape(s)))));
     json
 }
@@ -811,6 +842,35 @@ mod tests {
         for (id,b) in [("hfm_hv","hfm"),("hfm_und","hfm"),("hfm_und_long","hfm"),("hfm_und_short","hfm"),("hfm_ndxspx","hfm"),("hfm_news","hfm"),("hfm_vix","hfm"),("otvt_cvr1","otvt"),("otvt_cvr1_sell_puts","otvt"),("ptjdt_adx15_breakout","ptjdt")] {
             assert!(!reviewed_cash_rule(&def(id,b)),"{id}");assert_eq!(policy(&def(id,b)).requirement,"source_review_required","{id}");
         }
+    }
+    #[test]
+    fn newrules_misc_admits_exact_ids_and_symbols() {
+        let cat=crate::connors::catalogue();
+        let admitted:Vec<&str>=cat.iter().filter(|d|newrules_misc(d)).map(|d|d.id).collect();
+        assert_eq!(admitted.len(),5,"{admitted:?}");
+        for d in cat.iter().filter(|d|newrules_misc(d)) {assert!(reviewed_cash_rule(d),"{}",d.id);}
+        let ok=|id:&'static str,book:&'static str,t:&str,stock:bool|check(&def(id,book),t,stock).is_none();
+        for (id,book) in [("hpetf_sem_rsi14_tps","hpetf"),("ss_long_2nd","etfss"),("ss_short_2nd","etfss")] {
+            assert_eq!(policy(&def(id,book)).requirement,"index_etf_or_stock");
+            for t in ["SPY","QQQ","SPX","NIFTY 50","NIFTYBANK"] {assert!(ok(id,book,t,false),"{id} {t}");}
+            assert!(ok(id,book,"RELIANCE",true),"{id}");
+            assert!(check_native(&def(id,book),"AAPL",&NativeEvidence::us_test_fixture()).is_none());
+            assert!(metadata_json(&def(id,book)).contains("\"declared_application\":\"Index, ETF and stock runs"));
+        }
+        for t in ["SPX","SPY"] {assert!(ok("ststw_vix_rsi","ststw",t,false));}
+        for t in ["QQQ","NDX","NIFTY 50"] {assert!(!ok("ststw_vix_rsi","ststw",t,false),"{t}");}
+        assert!(!ok("ststw_vix_rsi","ststw","RELIANCE",true));
+        assert_eq!(policy(&def("ststw_vix_rsi","ststw")).requirement,"declared_index_timing");
+        // the S&P-down-days variant shares the baseline's stock admission (US: USD price filter kept; India: omitted)
+        let af=def("afactor_spx_down","afactor");
+        assert_eq!(policy(&af).requirement,"index_etf_or_stock");
+        assert!(check_native(&af,"AAPL",&NativeEvidence::us_test_fixture()).is_none());
+        assert!(check_native(&af,"RELIANCE",&NativeEvidence::india_test_fixture()).is_none());
+        assert!(inr_price_filter_omitted(&af,Market::India) && usd_price_rule_on_us_stock(&af,Market::UnitedStates));
+        assert!(metadata_json(&af).contains("\"native_india_currency_admitted\":true"));
+        // held / not admitted
+        assert!(!reviewed_cash_rule(&def("hpetf_sem_pairs","hpetf")));
+        for (id,book) in [("ss_long","etfss"),("ststw_vix_stretch","ststw"),("hpetf_tps_long","hpetf"),("afactor_portfolio","afactor")] {assert!(!newrules_misc(&def(id,book)),"{id}");}
     }
     #[test]
     fn btp_review_admits_exact_ids_on_index_and_etf_only() {
@@ -1169,7 +1229,7 @@ mod connors_index_routing_tests {
     fn find(id:&str)->StrategyDef {crate::connors::catalogue().into_iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"))}
     #[test]
     fn non_ranking_connors_stock_rules_also_admit_index_and_etf_with_visible_label() {
-        assert_eq!(CONNORS_INDEX_IDS.len(),21);
+        assert_eq!(CONNORS_INDEX_IDS.len(),22);
         for &id in CONNORS_INDEX_IDS {
             let d=find(id);let p=policy(&d);
             assert_eq!(p.allowed_types,&["index","etf","individual_stock"],"{id}");

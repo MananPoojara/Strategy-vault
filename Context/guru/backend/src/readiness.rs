@@ -224,6 +224,22 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
             }
         }
     }
+    // newrules-misc (2026-10-21): the STSTW VIX RSI rule reads the VIX open (close-only CBOE VIX before 1992); the Alvarez
+    // Factor S&P-down-days filter needs the benchmark's close on every setup day and reads the traded instrument's open.
+    // Say why NIFTY / stocks are not run (VIX open) before any VIX-coverage message.
+    if let Some(i)=ctx.r.first().and_then(|r|crate::instrument_policy::ststw_symbol_issue(def,&r.ticker)) {return Some(i);}
+    if def.book==books::ststw::BOOK && books::ststw::reviewed_daily(def.id) && ctx.r.get(from).is_some_and(|r|r.date.as_str()<books::ststw::REAL_VIX_OHLC_FROM) {
+        return issue("needs_data",format!("The VIX RSI Strategy reads today's VIX open; the served CBOE VIX history has close-only bars before {}. Choose a later start.",books::ststw::REAL_VIX_OHLC_FROM));
+    }
+    if def.book==books::afactor::BOOK && def.id==books::afactor::SPX_DOWN && from<=to && to<ctx.r.len() {
+        let (index,s)=(if ctx.r[0].ticker.starts_with("NIFTY") || ctx.native_market==Some(crate::baskets::Market::India) {"NIFTY 50 (standing in for the S&P 500)"} else {"S&P 500 (SPX)"},from.saturating_sub(1));
+        if let Some(k)=(s..to).find(|&k|!ctx.bench_down[k].is_finite()) {
+            return issue("needs_data",format!("The S&P-down-days filter reads the {index} close of every setup day; it is missing on {}. Choose a period the index covers; no closes are estimated.",ctx.r[k].date));
+        }
+        if let Some(cut)=crate::gate::real_open_from(&ctx.r[from].ticker).filter(|c|ctx.r[from].date.as_str()<*c) {
+            return issue("needs_data",format!("This rule's 3% gap test and buy stop read the opening price; {} opens in this file are real only from {cut}. Choose a start on or after {cut}.",ctx.r[from].ticker));
+        }
+    }
     if def.book=="chbta2" && matches!(def.id,"ch_bta2_ma_stack"|"ch_bta2_65sma_ravi") {
         if let Some(note)=books::chbta2::validate_reviewed(def.id,p) {return issue("not_testable",note);}
     }
@@ -511,6 +527,21 @@ mod tests {
             ("NDX","2000","otvt_hv_thrust",&none,false),("NDX","2000","otvt_hv_thrust",&atr,true),("NDX","2001","otvt_hv_thrust",&atr,false),("NIFTY 50","2005","otvt_hv_thrust",&atr,false)] {
             assert_eq!(refused(&mk(t,y),id,p),want,"{id} {t} {y}");
         }
+    }
+    #[test]
+    fn newrules_misc_guards() {
+        let mk=|t:&str,y:&str|{let mut r=rows();for (i,x) in r.iter_mut().enumerate(){x.ticker=t.into();x.date=format!("{y}-06-0{}",i+1);}r};
+        // VIX RSI: India refused for the VIX open (before any VIX-coverage message); close-only CBOE VIX before 1992
+        let r=mk("NIFTY 50","2018");let i=check(&Ctx::new(&r,&r,&[]),&definition("ststw_vix_rsi"),0,4,&Params::new()).unwrap();
+        assert!(i.note.contains("India VIX opens repeat"),"{}",i.note);
+        let r=mk("SPY","1991");assert!(check(&Ctx::new(&r,&r,&r),&definition("ststw_vix_rsi"),0,4,&Params::new()).unwrap().note.contains("close-only"));
+        // S&P-down-days: benchmark close needed on every setup day; stale SPX opens refused
+        let d=definition("afactor_spx_down");
+        let r=mk("AAPL","2005");assert!(check(&Ctx::new(&r,&r,&[]),&d,1,4,&Params::new()).is_none());
+        let short:Vec<_>=r[2..].to_vec();
+        assert!(check(&Ctx::new(&r,&short,&[]),&d,1,4,&Params::new()).unwrap().note.contains("missing on"));
+        let r=mk("SPX","2005");assert!(check(&Ctx::new(&r,&r,&[]),&d,1,4,&Params::new()).unwrap().note.contains("opening price"));
+        let r=mk("SPX","2015");assert!(check(&Ctx::new(&r,&r,&[]),&d,1,4,&Params::new()).is_none());
     }
     #[test]
     fn real_underlying_prices_can_be_backtested() {
