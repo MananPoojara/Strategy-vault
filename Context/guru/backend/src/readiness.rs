@@ -126,6 +126,9 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     }
     if def.book=="spmt" {
         if let Some(note)=books::spmt::hold_reason(def.id) {return issue("needs_data",note);}
+        if books::spmt::reads_vix_ohlc(def.id) && ctx.r.get(from).is_some_and(|r|r.date.as_str()<books::spmt::REAL_VIX_OHLC_FROM) {
+            return issue("needs_data",format!("VIX (2) and VIX (7) read the VIX open (VIX (7) also the high); the served CBOE VIX history has close-only bars before {}. Choose a later start.",books::spmt::REAL_VIX_OHLC_FROM));
+        }
     }
     if def.book==books::vixr::BOOK && books::vixr::reviewed_daily(def.id) && ctx.r.get(from).is_some_and(|r|r.date.as_str()<books::vixr::REAL_VIX_OHLC_FROM) {
         return issue("needs_data",format!("The CVR rules read the VIX open, high and low; the served CBOE VIX history has close-only bars before {}. Choose a later start; close-only bars are not used as highs, lows or opens.",books::vixr::REAL_VIX_OHLC_FROM));
@@ -346,9 +349,18 @@ mod tests {
     fn spmt_partial_auxiliary_basket_and_inferred_options_exit_stay_held() {
         let r=rows();let mut ctx=Ctx::new(&r,&r,&r);
         for name in ["TRIN","ADV","TICK"] {ctx.extra.insert(name.into(),vec![1.0;r.len()]);}
-        for id in ["spmt_multi5","spmt_multi9","spmt_mts","spmt_vix200","spmt_trin_1","spmt_nyse_adv","spmt_tick","spmt_eom_und","spmt_eom_puts","spmt_dt_gapdown"] {
+        for id in ["spmt_multi5","spmt_multi9","spmt_mts","spmt_tick","spmt_eom_puts","spmt_dt_gapdown","spmt_dt_unch","spmt_dt_gapup"] {
             assert_eq!(check(&ctx,&definition(id),0,4,&Params::new()).unwrap().status,"needs_data");
         }
+        // Second admission: VIX / breadth / EOM underlying rules run on covered data.
+        for &id in books::spmt::REVIEWED_AUX {
+            assert!(check(&ctx,&definition(id),0,4,&Params::new()).is_none(),"{id}");
+        }
+        let mut old=r.clone();for (i,x) in old.iter_mut().enumerate(){x.date=format!("1991-12-2{}",i+5);}
+        let mut octx=Ctx::new(&old,&old,&old);
+        for name in ["TRIN","ADV"] {octx.extra.insert(name.into(),vec![1.0;old.len()]);}
+        for id in ["spmt_vix2","spmt_vix7"] {assert!(check(&octx,&definition(id),0,4,&Params::new()).unwrap().note.contains("close-only"),"{id}");}
+        for id in ["spmt_vix200","spmt_vix4","spmt_trin_1"] {assert!(check(&octx,&definition(id),0,4,&Params::new()).is_none(),"{id}");}
         // Printed performance mismatch alone is not an executable-rule gap.
         for id in ["spmt_rsi2_4","spmt_rsi4_25","spmt_rsi_1"] {
             assert!(check(&ctx,&definition(id),0,4,&Params::new()).is_none());

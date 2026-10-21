@@ -24,18 +24,35 @@ pub const REVIEWED_DAILY: &[&str] = &[
     "spmt_pctb_1", "spmt_pctb_2", "spmt_price", "spmt_dmi_1", "spmt_dmi_2",
     "spmt_dmi_3", "spmt_dmi_4", "spmt_dmi_5", "spmt_short_4up", "spmt_short_strong",
 ];
-pub fn reviewed_daily(id: &str) -> bool { REVIEWED_DAILY.contains(&id) }
+/// Second admission (connors/spmt2-admission/SOURCE-CONTRACT.md): the VIX, NYSE/NSE TRIN and advancers rules and the
+/// EOM put-sale underlying. Admission only: they keep the shared simulator they always used (the close-only runner
+/// below stays keyed to REVIEWED_DAILY), so no calculation changes.
+pub const REVIEWED_AUX: &[&str] = &[
+    "spmt_eom_und", "spmt_vix200", "spmt_vix2", "spmt_vix4", "spmt_vix7", "spmt_vix8", "spmt_short_vix53", "spmt_short_vix101",
+    "spmt_trin_1", "spmt_trin_2", "spmt_trin_3", "spmt_trin_4", "spmt_trin_5", "spmt_nyse_adv",
+];
+pub fn reviewed_daily(id: &str) -> bool { REVIEWED_DAILY.contains(&id) || REVIEWED_AUX.contains(&id) }
+/// VIX (2) and VIX (7) read the VIX open (and high); the served CBOE VIX is close-only before this date.
+pub const REAL_VIX_OHLC_FROM: &str = "1992-01-01";
+pub fn reads_vix_ohlc(id: &str) -> bool { matches!(id, "spmt_vix2" | "spmt_vix7") }
+/// Reviewed symbols. VIX rules: SPX/SPY on the CBOE VIX; NIFTY 50 on India VIX only for close-only VIX rules (India VIX
+/// opens repeat the previous close). TRIN / advancers: SPX/SPY on NYSE breadth, NIFTY 50 on NSE breadth (declared).
+/// Price-only rules keep the existing index/SPY scope.
+pub fn admitted_symbol(id: &str, ticker: &str) -> bool {
+    match id {
+        "spmt_vix2" | "spmt_vix7" => matches!(ticker, "SPX" | "SPY"),
+        "spmt_vix200" | "spmt_vix4" | "spmt_vix8" | "spmt_short_vix53" | "spmt_short_vix101" | "spmt_trin_1" | "spmt_trin_2"
+        | "spmt_trin_3" | "spmt_trin_4" | "spmt_trin_5" | "spmt_nyse_adv" => matches!(ticker, "SPX" | "SPY" | "NIFTY 50"),
+        _ => true,
+    }
+}
 
 /// The approved batch supplies price series only. A partially observed signal
 /// basket must never silently become the source's complete basket.
 pub fn hold_reason(id: &str) -> Option<&'static str> {
     match id {
-        "spmt_vix200" | "spmt_vix2" | "spmt_vix4" | "spmt_vix7" | "spmt_vix8" |
-        "spmt_short_vix53" | "spmt_short_vix101" => Some("SPMT requires verified exchange-specific volatility-index inputs and complete lookback coverage. This batch did not verify CBOE VIX or a declared India VIX adaptation; daily OHLC of SPY/Nifty cannot replace them."),
-        "spmt_trin_1" | "spmt_trin_2" | "spmt_trin_3" | "spmt_trin_4" | "spmt_trin_5" |
-        "spmt_nyse_adv" | "spmt_tick" => Some("SPMT requires verified NYSE TRIN/advancers/TICK, or an explicitly reviewed exchange adaptation, with full lookback coverage. Generic auxiliary columns and OHLC cannot supply these inputs."),
-        "spmt_multi5" | "spmt_multi9" | "spmt_mts" => Some("The complete SPMT signal basket needs VIX, TRIN, advancers and TICK. Counting only available price signals changes the strategy. Signal recurrence, allocation and contract accounting also require independent review; the partial basket is held."),
-        "spmt_eom_und" => Some("Pages 168-169 show an options-entry signal and one next-open exit example, but do not specify the general exit threshold. The existing underlying runner infers RSI(2)>65. It is retained as an unverified interpretation, not a complete daily contract or options P&L."),
+        "spmt_tick" => Some("SPMT TICK needs the daily closing NYSE TICK; the vault holds no TICK history (US or NSE), so this rule cannot run."),
+        "spmt_multi5" | "spmt_multi9" | "spmt_mts" => Some("The complete SPMT signal basket needs VIX, TRIN, advancers and TICK. The vault has no NYSE or NSE TICK history, so the basket is always incomplete; counting only the available signals changes the strategy. The partial basket is held."),
         "spmt_eom_puts" | "spmt_put_sale" | "spmt_itm_calls" => Some("Actual option contracts, strikes, expiries, premiums and position accounting are missing. Underlying returns cannot establish options P&L."),
         "spmt_dt_gapdown" | "spmt_dt_unch" | "spmt_dt_gapup" => Some("Intraday methods are outside the approved daily batch. Actual 15-minute execution data and source-supported entry/stop ordering are required; invented ticks, currency conversions and daily paths are held."),
         "spmt_discretion" => Some("The source leaves ranking and allocation discretionary; a complete mechanical portfolio contract is unavailable."),
@@ -492,7 +509,7 @@ fn cond<'a>(id: &str, x: &'a Ctx, g: &dyn Fn(&str) -> f64) -> Option<Cond<'a>> {
 /// One single-signal strategy, one position at a time, entries and exits on the close.
 fn single(id: &str, x: &Ctx, from: usize, to: usize, g: &dyn Fn(&str) -> f64) -> Option<Vec<Trade>> {
     let e = cond(id, x, g)?;
-    if reviewed_daily(id) {
+    if REVIEWED_DAILY.contains(&id) {
         return Some(daily_closes(id, x, from, to, g, &*e));
     }
     let u = |k: &str| g(k).round().max(1.0) as usize;
@@ -546,7 +563,7 @@ fn daily_closes(id: &str, x: &Ctx, from: usize, to: usize, g: &dyn Fn(&str) -> f
 /// Audit raw setup conditions as well as filled records. The separate Python
 /// oracle checks held-position signals, warmup and final-bar handling.
 pub fn daily_signals(id: &str, x: &Ctx, p: &Params) -> Option<Vec<bool>> {
-    if !reviewed_daily(id) { return None; }
+    if !REVIEWED_DAILY.contains(&id) { return None; }
     let g = getter(id, p);
     let e = cond(id, x, &g)?;
     Some((0..x.r.len()).map(e).collect())

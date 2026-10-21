@@ -85,6 +85,11 @@ fn vixr_symbol_issue(def:&StrategyDef,ticker:&str)->Option<Issue> {
     if def.book!="vixr" || !crate::books::vixr::reviewed_daily(def.id) || crate::books::vixr::admitted_symbol(def.id,ticker) {return None;}
     Some(Issue{status:"needs_data",note:format!("Trading Connors VIX Reversals traded S&P futures on the CBOE VIX. This review admits actual SPX and SPY with the CBOE VIX, and NIFTY 50 with India VIX only for CVR 2, 3 and 6 (rules that do not read the VIX open or fixed VIX-point thresholds). {ticker} is outside that reviewed scope; no result is published.")})
 }
+fn spmt_symbol_issue(def:&StrategyDef,ticker:&str)->Option<Issue> {
+    use crate::books::spmt;
+    if def.book!=spmt::BOOK || !spmt::reviewed_daily(def.id) || spmt::admitted_symbol(def.id,ticker) {return None;}
+    Some(Issue{status:"needs_data",note:format!("The S&P Market Timing Course signals on SPY with the CBOE VIX and NYSE TRIN/advancers. This review admits SPX and SPY (CBOE VIX, NYSE breadth) and NIFTY 50 (India VIX for the close-only VIX rules; NSE TRIN and advancing issues) as a declared application; VIX (2) and VIX (7) read the VIX open and stay on SPX/SPY. {ticker} is outside that reviewed scope; no result is published.")})
+}
 fn ptjmt_symbol_issue(def:&StrategyDef,ticker:&str)->Option<Issue> {
     if def.book!="ptjmt" || !crate::books::ptjmt::reviewed_daily(def.id) || crate::books::ptjmt::admitted_symbol(def.id,ticker) {return None;}
     Some(Issue{status:"needs_data",note:format!("PTJ Market Timing traded S&P 500 futures on the OEX VIX and NYSE breadth. This review admits actual SPX and SPY for the VIX and NYSE-breadth rules, NIFTY 50 with India VIX for CVR II and III only, and NIFTY 50 for the NSE-breadth versions. {ticker} is outside that reviewed scope; no result is published.")})
@@ -237,6 +242,10 @@ fn base_policy(def:&StrategyDef)->Policy {
         let mut p=stock("Bandy QTS (2007), exact companion AFL and both local errata reviewed in library/bandy/REVIEW-2026-10-13.md. Bounded individual-stock research on actual AAPL and RELIANCE; these samples do not establish historical source-population membership. Literal signal timing and defaults with declared indicator seeds; full-history arrays and chronological ledgers independently checked. No source portfolio sizing or reported performance is reproduced. Independent source review and final compiled-ledger evidence are recorded there; publisher acceptance remains required.");
         p.market_adaptation=true;return p;
     }
+    if def.book=="spmt" && crate::books::spmt::REVIEWED_AUX.contains(&def.id) {
+        let mut p=requirement("declared_index_timing", &["index","etf"], "S&P Market Timing Course (2007), VIX, TRIN, NYSE advancers and EOM put-sale underlying rules (pp.50-72, 87-111, 133-141, 151-154, 168-169) reviewed in connors/spmt2-admission/SOURCE-CONTRACT.md with independent chronological SPY/SPX/NIFTY 50 ledgers. The book signalled on SPY with the ^VIX and NYSE TRIN/advancers and traded the E-mini. SPY uses actual ETF prices and the CBOE VIX; SPX cash-index timing is a declared application; NIFTY 50 with India VIX (close-only VIX rules; VIX (2) and VIX (7) read the VIX open, which on India VIX repeats the previous close, and stay US-only) and with NSE TRIN / NSE advancing issues at the book's unchanged thresholds is a declared adaptation, not book data. NYSE breadth in the vault ends 2020-02-10. The EOM underlying exit (RSI(2) > 65, out at the next open) is read from the p.169 example. Close fills, one position, no entry on the last bar and the open terminal position are explicit conventions. Cash-index shorts are hypothetical exposure. No E-mini dollars, option P&L or book performance is claimed.");
+        p.market_adaptation=true; return p;
+    }
     if def.book=="spmt" && crate::books::spmt::reviewed_daily(def.id) {
         let mut p=requirement("declared_index_timing", &["index","etf"], "S&P Market Timing Course (2007), exact daily rules reviewed in library/connors-spmt/REVIEW.md and source-based independent SPY/Nifty ledgers. SPY uses actual ETF prices; cash-index timing is a declared research application and cash-index shorts are hypothetical exposure. Indicator initialization, one sequential position and flat test start are explicit research conventions. These retained STC IX duplicates do not add new algorithms. No E-mini contract dollars, option P&L, portfolio allocation or book-performance reproduction is claimed.");
         p.market_adaptation=true; return p;
@@ -365,6 +374,7 @@ pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     let p=policy(def);let selected=selected_type(ticker,native_stock);
     if let Some(issue)=dema_index_symbol_issue(def,ticker,selected){return Some(issue);}
     if let Some(issue)=vixr_symbol_issue(def,ticker){return Some(issue);}
+    if let Some(issue)=spmt_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=ptjmt_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=ss_symbol_issue(def,ticker,native_stock){return Some(issue);}
     if let Some(issue)=ws5_symbol_issue(def,ticker){return Some(issue);}
@@ -383,6 +393,7 @@ pub fn check_native(def:&StrategyDef,ticker:&str,evidence:&NativeEvidence)->Opti
     let p=policy(def);
     if let Some(issue)=dema_index_symbol_issue(def,ticker,evidence.asset_type()){return Some(issue);}
     if let Some(issue)=vixr_symbol_issue(def,ticker){return Some(issue);}
+    if let Some(issue)=spmt_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=ptjmt_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=ss_symbol_issue(def,ticker,evidence.asset_type()=="individual_stock"){return Some(issue);}
     if let Some(issue)=ws5_symbol_issue(def,ticker){return Some(issue);}
@@ -541,10 +552,30 @@ mod tests {
             assert!(check(&d,"QQQ",false).is_some());
             assert!(!reviewed_cash_rule(&def(id,"stc9")));
         }
-        for id in ["spmt_vix200","spmt_multi5","spmt_tick","spmt_eom_und","spmt_future_method"] {
-            assert!(!reviewed_cash_rule(&def(id,"spmt")));
+        for id in ["spmt_multi5","spmt_multi9","spmt_mts","spmt_tick","spmt_dt_gapdown","spmt_dt_unch","spmt_dt_gapup","spmt_eom_puts","spmt_future_method"] {
+            assert!(!reviewed_cash_rule(&def(id,"spmt")),"{id}");
             assert!(check(&def(id,"spmt"),"SPY",false).is_some());
         }
+    }
+    #[test]
+    fn spmt_second_admission_is_exact_and_symbol_scoped() {
+        use crate::books::spmt;
+        let cat=spmt::catalogue();
+        let admitted:Vec<&str>=cat.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        assert_eq!(admitted.len(),spmt::REVIEWED_DAILY.len()+spmt::REVIEWED_AUX.len());
+        for &id in spmt::REVIEWED_AUX {
+            let d=def(id,"spmt");
+            assert_eq!(policy(&d).requirement,"declared_index_timing");assert!(policy(&d).market_adaptation);
+            assert!(policy(&d).source_basis.contains("spmt2-admission"));
+            for t in ["SPX","SPY"] {assert!(check(&d,t,false).is_none(),"{id} {t}");}
+            assert_eq!(check(&d,"NIFTY 50",false).is_none(),!matches!(id,"spmt_vix2"|"spmt_vix7"),"{id}");
+            assert_eq!(check(&d,"NIFTYBANK",false).is_none(),id=="spmt_eom_und","{id}");
+            assert_eq!(check(&d,"NDX",false).is_none(),id=="spmt_eom_und","{id}");
+            assert!(check(&d,"QQQ",false).is_some() && check(&d,"AAPL",true).is_some() && check(&d,"RELIANCE",true).is_some(),"{id}");
+        }
+        // The first batch keeps its policy text and any-index scope.
+        assert!(policy(&def("spmt_rsi_2","spmt")).source_basis.contains("STC IX duplicates"));
+        assert!(check(&def("spmt_rsi_2","spmt"),"NDX",false).is_none());
     }
     #[test]
     fn ss_review_admits_exact_ids_on_reviewed_symbols_only() {
