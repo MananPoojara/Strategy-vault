@@ -34,6 +34,7 @@ macro_rules! connors_any {($basis:literal)=>{{
 }}}
 macro_rules! BTP_INDEX_LABEL {()=>{"Book tested or illustrated on futures and US stocks; index/ETF runs are a declared application, not the author's test."}}
 macro_rules! CWIN_INDEX_LABEL {()=>{"The book and course show Windows on US stocks, HOLDRs, indices, ETFs and futures; index/ETF runs are a declared application, not the author's test. The 100,000-share volume suggestion (Q&A p56) applies to stocks only and is not coded."}}
+macro_rules! WS5_INDEX_LABEL {()=>{"Seminar method for US stocks from a nightly scan; index/ETF runs are a declared application, not the author's test. Stock-only filters (price, volume, sub-sector, range, ATR) do not apply to an index."}}
 macro_rules! CONNORS_INDEX_LABEL {()=>{"Book tested on US stocks; index/ETF runs are a declared application, not the author's test. Stock-only filters in the rule (minimum price, volume, liquidity) do not apply to an index."}}
 pub const CONNORS_INDEX_IDS:&[&str]=&["f1a","f3a","f4a","f4c","f4d","rsi2_5d","tps_stocks","x555","h10","r3r4_base","r3r4_base_scale","r3r4_bigcap","r3r4_bigcap_scale","r3r4_bigcap_deck","r3r4_bigcap_deck_scale","r3r4_midcap","r3r4_midcap_scale","r3r4_lowprice","r3r4_lowprice_scale","ats_dvmtm","ats_cvr_equities","ats_15min_adx_breakout_equities","afactor_baseline"];
 
@@ -52,6 +53,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || (def.book==crate::books::ss::BOOK && crate::books::ss::reviewed_daily(def.id))
         || (def.book=="btp" && crate::books::btp::reviewed_daily(def.id))
         || (def.book==crate::books::cwin::BOOK && crate::books::cwin::reviewed_daily(def.id))
+        || (def.book==crate::books::ws5::BOOK && crate::books::ws5::reviewed_daily(def.id))
         || (def.book=="chbta2" && member(def.id,&["ch_bta2_ma_stack","ch_bta2_65sma_ravi"]))
         || (def.book=="sbma" && member(def.id,&["sbma_sma50_long","sbma_x_5s20s"]))
         || (def.book=="radge" && def.id=="radge_oc_long")
@@ -88,6 +90,11 @@ fn ss_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue
     use crate::books::ss;
     if def.book!=ss::BOOK || !ss::reviewed_daily(def.id) || native_stock || ss::admitted_symbol(def.id,ticker) {return None;}
     Some(Issue{status:"needs_data",note:format!("Street Smarts traded futures (and stocks for some setups). This review admits SPX, NDX, DJI, SPY, NIFTY 50 and NIFTYBANK for the futures setups; the A/D Market Buster only on SPX/SPY with NYSE breadth or NIFTY 50 with NSE breadth. {ticker} is outside that reviewed scope; no result is published.")})
+}
+fn ws5_symbol_issue(def:&StrategyDef,ticker:&str)->Option<Issue> {
+    use crate::books::ws5;
+    if def.book!=ws5::BOOK || !ws5::TIMING.contains(&def.id) || ws5::admitted_symbol(def.id,ticker) {return None;}
+    Some(Issue{status:"needs_data",note:format!("The 2003 seminar times the S&P 500 (SPX signal, SPY/S&P traded); its Non-VIX thresholds for NDX, XBD and SOX differ from the default. This review admits actual SPX and SPY (CBOE VIX) and NIFTY 50 (India VIX) as a declared application. {ticker} is outside that reviewed scope; no result is published.")})
 }
 fn reviewed_adaptive_rule(def:&StrategyDef)->bool {
     def.book=="kftsm" && member(def.id,&["kftsm_kama","kftsm_adapt_exp","kftsm_vidya","kftsm_adapt_r2","kftsm_adapt_rsi","kftsm_swg","kftsm_swing","kftsm_raschke_first_cross","kftsm_outside_day","kftsm_fc_bb_abx"])
@@ -248,6 +255,14 @@ fn base_policy(def:&StrategyDef)->Policy {
         let mut p=requirement("index_or_etf", &["index","etf"], concat!("Best Trading Patterns I & II (Connors, PTJ 1998/1999), exact daily rules reviewed in btp-admission/SOURCE-CONTRACT.md with independent chronological index/ETF ledgers. ",BTP_INDEX_LABEL!()," Rules that read the open start where SPX/NDX/DJI opens are real (2014/2001/2016); NIFTY opens before 2011 are close to the prior close and are disclosed, not clamped. Every 'trail your stops' exit in the book is undefined: the coded trailing stop, 2-for-1 half exits and tick offsets marked [Not from the book] are declared conventions. Cash-index shorts are hypothetical exposure. Single-stock runs are held: the book's 1/8-USD stock tick offsets have no reviewed INR/NSE or decimal-USD specification. No futures dollars or book performance are claimed."));
         p.market_adaptation=true; return p;
     }
+    if def.book==crate::books::ws5::BOOK && crate::books::ws5::reviewed_daily(def.id) {
+        let mut p=if crate::books::ws5::TIMING.contains(&def.id) {
+            requirement("declared_index_timing", &["index","etf"], "Connors 5-Week Live Web Seminar (2003), Session 4 market timing (Non-VIX and VIX III, PDF pp.106-108, 129-131) reviewed in connors/ws5-admission/SOURCE-CONTRACT.md with independent chronological SPY/SPX/NIFTY 50 ledgers. The seminar times the S&P 500 and trades SPY/S&P futures. SPY uses actual ETF prices and the CBOE VIX; SPX cash-index timing is a declared research application; NIFTY 50 (India VIX for VIX III; the SPX 2.0% Non-VIX threshold unchanged) is a declared application, not the author's test. The 3-point SPY stop is 1.18% of price per point (SPY at $85 in the sizing slide). Close fills, the stop checked before the reversion exit and the open terminal position are explicit conventions; the Non-VIX sell exit 'below' and the VIX III literal 'above' exit are disclosed open items. Cash-index shorts are hypothetical exposure. No futures dollars or performance claim is reproduced.")
+        } else {
+            requirement("index_or_etf", &["index","etf"], concat!("Connors 5-Week Live Web Seminar (2003), Daily Momentum Windows (Sessions 1-2) and Weekly Windows (Session 3) reviewed in connors/ws5-admission/SOURCE-CONTRACT.md with independent chronological index/ETF ledgers. ",WS5_INDEX_LABEL!()," Points scale by ATR(90) (pt_mode 2, labelled); the daily-bar path (adverse extreme first), gap fills at the open and the Intraday/Outside Window readings are declared conventions. Rules that read the open start where SPX/NDX/DJI opens are real (2014/2001/2016). Single-stock runs are held: the sub-sector filter #5 series is not loaded and the USD price/volume/range/ATR filters have no reviewed INR specification. Cash-index shorts are hypothetical exposure. The workbook publishes no statistics; no performance claim is reproduced."))
+        };
+        p.market_adaptation=true; return p;
+    }
     if def.book=="chbta2" && member(def.id,&["ch_bta2_ma_stack","ch_bta2_65sma_ravi"]) {
         let mut p=requirement("declared_ohlc_adaptation", &["index","etf","individual_stock"], "Chande, Beyond Technical Analysis (1997), printed pp.20-21 and pp.80,94-97,99. Only the exact stop-free SMA-agreement and RAVI-filtered reversal contracts were source-reviewed and checked against independent chronological ledgers; see library/chande/REVIEW-2026-10-13.md. Actual selected prices are a declared research application, flat at the test start with available historical warmup and one position per symbol. Cash-index short exposure is hypothetical. No futures dollar stops/costs, contract ticks/rollovers, portfolio allocation or source performance are reproduced. Other Chande IDs remain under their existing policy.");
         p.market_adaptation=true;return p;
@@ -327,6 +342,7 @@ pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     if let Some(issue)=vixr_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=ptjmt_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=ss_symbol_issue(def,ticker,native_stock){return Some(issue);}
+    if let Some(issue)=ws5_symbol_issue(def,ticker){return Some(issue);}
     if native_stock {
         if let Some(reason)=p.native_currency_constraint {
             return Some(Issue {status:"needs_data",note:format!("Source currency/tick data missing. {reason} USD amounts cannot silently become INR amounts. A source-supported Indian specification or dated FX treatment and verified local tick rules are required before admission; editing the numeric parameter alone does not establish those inputs. Selected actual stock: {ticker}. No results are published.")});
@@ -343,6 +359,7 @@ pub fn check_native(def:&StrategyDef,ticker:&str,evidence:&NativeEvidence)->Opti
     if let Some(issue)=vixr_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=ptjmt_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=ss_symbol_issue(def,ticker,evidence.asset_type()=="individual_stock"){return Some(issue);}
+    if let Some(issue)=ws5_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=check_selected(p,ticker,evidence.asset_type()){return Some(issue);}
     if let Some(reason)=p.native_currency_constraint {
         return Some(Issue{status:"needs_data",note:format!("Source currency/price-unit/tick review is pending. {reason} Selected actual stock: {ticker}; trusted source market {} and currency {}. Matching USD currency alone cannot establish the author's historical adjusted-price basis, absolute price thresholds or execution ticks; no reviewed source-unit proof is staged. No results are published.",evidence.market().code(),evidence.currency())});
@@ -415,6 +432,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if p.requirement=="index_etf_or_stock" && CONNORS_INDEX_IDS.contains(&def.id) {json.push_str(concat!(",\"declared_application\":\"",CONNORS_INDEX_LABEL!(),"\""));}
     if def.book==crate::books::cwin::BOOK && crate::books::cwin::reviewed_daily(def.id) {json.push_str(concat!(",\"declared_application\":\"",CWIN_INDEX_LABEL!(),"\""));}
     if def.book=="btp" && crate::books::btp::reviewed_daily(def.id) {json.push_str(concat!(",\"declared_application\":\"",BTP_INDEX_LABEL!(),"\""));}
+    if def.book==crate::books::ws5::BOOK && crate::books::ws5::reviewed_daily(def.id) && !crate::books::ws5::TIMING.contains(&def.id) {json.push_str(concat!(",\"declared_application\":\"",WS5_INDEX_LABEL!(),"\""));}
     if def.book=="kfsc" && crate::books::kfsc::reviewed_hv_rule(def.id) {
         json.push_str(&format!(",\"source_convention\":\"{}\"",escape(crate::books::kfsc::HV_CONVENTION)));
     }
@@ -580,6 +598,24 @@ mod tests {
         }
         // Held: needs intraday VIX and price series that the vault does not have.
         let d=def("cwin_vix_gap_window","cwin");
+        assert!(!reviewed_cash_rule(&d));assert_eq!(policy(&d).requirement,"source_review_required");assert!(check(&d,"SPY",false).is_some());
+    }
+    #[test]
+    fn ws5_review_admits_exact_ids_on_reviewed_symbols_only() {
+        use crate::books::ws5;
+        let cat=ws5::catalogue();
+        let admitted:Vec<&str>=cat.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        assert_eq!(admitted,ws5::REVIEWED_DAILY);
+        for d in cat.iter().filter(|d|reviewed_cash_rule(d)) {
+            let timing=ws5::TIMING.contains(&d.id);let p=policy(d);
+            assert_eq!(p.requirement,if timing {"declared_index_timing"} else {"index_or_etf"},"{}",d.id);assert!(p.market_adaptation);
+            for t in ["SPX","SPY","NIFTY 50"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            for t in ["NDX","DJI","QQQ","NIFTYBANK"] {assert_eq!(check(d,t,false).is_none(),!timing,"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_some() && check(d,"RELIANCE",true).is_some(),"{}",d.id);
+            assert_eq!(metadata_json(d).contains("\"declared_application\":\"Seminar method for US stocks"),!timing);
+            assert!(!reviewed_cash_rule(&def(d.id,"vixr")));
+        }
+        let d=def("ws5_emini_spy_daytrade","ws5");
         assert!(!reviewed_cash_rule(&d));assert_eq!(policy(&d).requirement,"source_review_required");assert!(check(&d,"SPY",false).is_some());
     }
     #[test]

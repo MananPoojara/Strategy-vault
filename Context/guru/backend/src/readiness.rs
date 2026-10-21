@@ -159,6 +159,18 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
             return issue("needs_data",format!("This rule's stop entries read the opening price; {} opens in this file are real only from {cut}. Choose a start on or after {cut}.",r.ticker));
         }
     }
+    // Admitted ws5 rules all read the open (stop entries, gap negation, gapped stops): refuse stale US index opens
+    // where the gate does not already move the start; VIX III also needs real CBOE VIX highs and lows.
+    if def.book==books::ws5::BOOK && books::ws5::reviewed_daily(def.id) {
+        if let Some(r)=ctx.r.get(from) {
+            if def.id=="ws5_vix_iii_reversal" && r.date.as_str()<books::ws5::REAL_VIX_OHLC_FROM {
+                return issue("needs_data",format!("VIX III reads the VIX high and low; the served CBOE VIX history has close-only bars before {}. Choose a later start.",books::ws5::REAL_VIX_OHLC_FROM));
+            }
+            if let Some(cut)=crate::gate::real_open_from(&r.ticker).filter(|c|r.date.as_str()<*c && !crate::gate::get(def.id).is_some_and(|g|g.clamp_open)) {
+                return issue("needs_data",format!("This rule's stop entries, gap tests and gapped stops read the opening price; {} opens in this file are real only from {cut}. Choose a start on or after {cut}.",r.ticker));
+            }
+        }
+    }
     if def.book=="chbta2" && matches!(def.id,"ch_bta2_ma_stack"|"ch_bta2_65sma_ravi") {
         if let Some(note)=books::chbta2::validate_reviewed(def.id,p) {return issue("not_testable",note);}
     }
@@ -383,6 +395,20 @@ mod tests {
             assert_eq!(check(&Ctx::new(&old,&old,&old),&d,0,4,&Params::new()).is_some(),guarded,"{id}");
             assert!(check(&Ctx::new(&new,&new,&new),&d,0,4,&Params::new()).is_none(),"{id}");
             assert!(check(&Ctx::new(&spy,&spy,&spy),&d,0,4,&Params::new()).is_none(),"{id}");
+        }
+    }
+    #[test]
+    fn ws5_rules_refuse_stale_index_opens_and_close_only_vix() {
+        let mk=|t:&str,y:&str|{let mut r=rows();for (i,x) in r.iter_mut().enumerate(){x.ticker=t.into();x.date=format!("{y}-06-0{}",i+1);}r};
+        for &id in books::ws5::REVIEWED_DAILY {
+            let d=definition(id);
+            let guarded=!crate::gate::get(id).is_some_and(|g|g.clamp_open);
+            let (old,new,spy)=(mk("SPX","2013"),mk("SPX","2014"),mk("SPY","1991"));
+            let note=|r:&Vec<Row>|check(&Ctx::new(r,r,r),&d,0,4,&Params::new()).map(|i|i.note);
+            assert_eq!(note(&old).is_some_and(|n|n.contains("opens in this file are real only from 2014")),guarded,"{id}");
+            assert!(!note(&new).is_some_and(|n|n.contains("opening price")||n.contains("close-only")),"{id}");
+            assert_eq!(note(&spy).is_some_and(|n|n.contains("close-only")),id=="ws5_vix_iii_reversal","{id}");
+            if id!="ws5_vix_iii_reversal" {assert!(note(&new).is_none(),"{id}");}
         }
     }
     #[test]

@@ -22,6 +22,23 @@ use crate::connors::*;
 
 pub const BOOK: &str = "ws5";
 
+/// Rules admitted after the 2026-10-21 source review (connors/ws5-admission/SOURCE-CONTRACT.md) and an independent
+/// chronological Python ledger check. Windows (daily and weekly) are US stock-scan setups applied to actual index/ETF
+/// prices (declared application; stock runs held: no sub-sector series for filter #5, USD stock filters unreviewed).
+/// Market timing: SPX/SPY as in the book, NIFTY 50 declared. Held: the E-mini/SPY VIX gap day trade (intraday fills).
+pub const REVIEWED_DAILY: &[&str] = &[
+    "ws5_momentum_windows_any", "ws5_single_window", "ws5_double_window", "ws5_hanging_window", "ws5_gap_window_eod",
+    "ws5_gap_window_intraday", "ws5_outside_window", "ws5_weekly_windows", "ws5_non_vix_market_timing", "ws5_vix_iii_reversal",
+];
+pub fn reviewed_daily(id: &str) -> bool { REVIEWED_DAILY.contains(&id) }
+/// S&P market-timing rules (book: SPX signal, SPY/S&P traded); NIFTY 50 is a declared application.
+pub const TIMING: &[&str] = &["ws5_non_vix_market_timing", "ws5_vix_iii_reversal"];
+pub fn admitted_symbol(id: &str, ticker: &str) -> bool {
+    if TIMING.contains(&id) { matches!(ticker, "SPX" | "SPY" | "NIFTY 50") } else { reviewed_daily(id) }
+}
+/// CBOE VIX bars before this date are close-only (O=H=L=C); VIX III reads the VIX high and low.
+pub const REAL_VIX_OHLC_FROM: &str = "1992-01-01";
+
 // ------------------------------------------------------------------ catalogue
 
 const FILTERS_L: &str = "F|Filter #9 (do first): no new longs if the VIX is 5% or more below its 10-period SMA; no new shorts if 5% or more above";
