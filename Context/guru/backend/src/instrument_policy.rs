@@ -47,6 +47,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || (def.book=="spmt" && crate::books::spmt::reviewed_daily(def.id))
         || (def.book=="vixr" && crate::books::vixr::reviewed_daily(def.id))
         || (def.book=="ptjmt" && crate::books::ptjmt::reviewed_daily(def.id))
+        || (def.book==crate::books::ss::BOOK && crate::books::ss::reviewed_daily(def.id))
         || (def.book=="chbta2" && member(def.id,&["ch_bta2_ma_stack","ch_bta2_65sma_ravi"]))
         || (def.book=="sbma" && member(def.id,&["sbma_sma50_long","sbma_x_5s20s"]))
         || (def.book=="radge" && def.id=="radge_oc_long")
@@ -78,6 +79,11 @@ fn vixr_symbol_issue(def:&StrategyDef,ticker:&str)->Option<Issue> {
 fn ptjmt_symbol_issue(def:&StrategyDef,ticker:&str)->Option<Issue> {
     if def.book!="ptjmt" || !crate::books::ptjmt::reviewed_daily(def.id) || crate::books::ptjmt::admitted_symbol(def.id,ticker) {return None;}
     Some(Issue{status:"needs_data",note:format!("PTJ Market Timing traded S&P 500 futures on the OEX VIX and NYSE breadth. This review admits actual SPX and SPY for the VIX and NYSE-breadth rules, NIFTY 50 with India VIX for CVR II and III only, and NIFTY 50 for the NSE-breadth versions. {ticker} is outside that reviewed scope; no result is published.")})
+}
+fn ss_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
+    use crate::books::ss;
+    if def.book!=ss::BOOK || !ss::reviewed_daily(def.id) || native_stock || ss::admitted_symbol(def.id,ticker) {return None;}
+    Some(Issue{status:"needs_data",note:format!("Street Smarts traded futures (and stocks for some setups). This review admits SPX, NDX, DJI, SPY, NIFTY 50 and NIFTYBANK for the futures setups; the A/D Market Buster only on SPX/SPY with NYSE breadth or NIFTY 50 with NSE breadth. {ticker} is outside that reviewed scope; no result is published.")})
 }
 fn reviewed_adaptive_rule(def:&StrategyDef)->bool {
     def.book=="kftsm" && member(def.id,&["kftsm_kama","kftsm_adapt_exp","kftsm_vidya","kftsm_adapt_r2","kftsm_adapt_rsi","kftsm_swg","kftsm_swing","kftsm_raschke_first_cross","kftsm_outside_day","kftsm_fc_bb_abx"])
@@ -221,6 +227,15 @@ fn base_policy(def:&StrategyDef)->Policy {
         let mut p=requirement("declared_index_timing", &["index","etf"], "The Best of the Professional Traders Journal: Market Timing (Connors, 1997-98), CVR I/II/III/V, TRIN Reversals (30/20-day), TRIN Thrusts and PADI (book pp.3-42) reviewed in connors/ptjmt-admission/SOURCE-CONTRACT.md with independent chronological SPY/SPX/NIFTY 50 ledgers. The book traded one S&P 500 futures contract on the OEX VIX (today's VXO) and NYSE TRIN / advance-decline data. SPY uses actual ETF prices and the CBOE VIX (VXO only with the labelled p.src=1 option); SPX cash-index timing is a declared research application; NIFTY 50 with India VIX is admitted for CVR II and III only; the NSE TRIN / NSE advance-decline versions on NIFTY 50 are declared adaptations, not book data. Cash-index shorts are hypothetical exposure. Close fills, one position with stop-and-reverse, the restart of the hold count on a same-direction exit-bar signal and the open terminal position are explicit conventions. Book exit ranges and source inconsistencies are disclosed open items, not resolved. No futures contract dollars, option spreads or book-performance reproduction is claimed.");
         p.market_adaptation=true; return p;
     }
+    if def.book==crate::books::ss::BOOK && crate::books::ss::reviewed_daily(def.id) {
+        let stock=crate::books::ss::STOCK_SHOWN.contains(&def.id);
+        let mut p=if stock {
+            requirement("index_etf_or_stock", &["index","etf","individual_stock"], "Street Smarts (Raschke & Connors, 1995), daily rules reviewed in connors/ss-admission/SOURCE-CONTRACT.md with independent chronological ledgers. The book shows this setup on futures and on individual stocks (2-period ROC: Micron p.64; The Anti: 'all equities and futures markets' p.77; Three-Day Unfilled Gap: Motorola pp.99-101). Actual stocks are admitted; actual index/ETF runs are a declared application, not the authors' test. 1 tick = tick_pct % of price. Exits the chapter leaves to judgement ('trail a stop') use the labelled 2-bar channel from Appendix p.232. No futures dollars or book performance is reproduced.")
+        } else {
+            requirement("declared_index_timing", &["index","etf"], "Street Smarts (Raschke & Connors, 1995), daily rules reviewed in connors/ss-admission/SOURCE-CONTRACT.md with independent chronological SPY/SPX/NIFTY ledgers. The book traded S&P, bond, currency and grain futures (Moore studies: 25 US futures 1986-1995). Actual SPX, NDX, DJI, NIFTY 50 and NIFTYBANK cash-index runs and actual SPY are a declared application; cash-index shorts are hypothetical exposure. 1 tick = tick_pct % of price. Daily-bar fill conventions, the labelled 2-bar channel trail (Appendix p.232) and every [Not from the book] option are disclosed; NIFTY opens before late 2010 lie close to the previous close (official NSE data, kept). No futures dollars, contract rolls or book performance is reproduced.")
+        };
+        p.market_adaptation=true; return p;
+    }
     if def.book=="chbta2" && member(def.id,&["ch_bta2_ma_stack","ch_bta2_65sma_ravi"]) {
         let mut p=requirement("declared_ohlc_adaptation", &["index","etf","individual_stock"], "Chande, Beyond Technical Analysis (1997), printed pp.20-21 and pp.80,94-97,99. Only the exact stop-free SMA-agreement and RAVI-filtered reversal contracts were source-reviewed and checked against independent chronological ledgers; see library/chande/REVIEW-2026-10-13.md. Actual selected prices are a declared research application, flat at the test start with available historical warmup and one position per symbol. Cash-index short exposure is hypothetical. No futures dollar stops/costs, contract ticks/rollovers, portfolio allocation or source performance are reproduced. Other Chande IDs remain under their existing policy.");
         p.market_adaptation=true;return p;
@@ -299,6 +314,7 @@ pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     if let Some(issue)=dema_index_symbol_issue(def,ticker,selected){return Some(issue);}
     if let Some(issue)=vixr_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=ptjmt_symbol_issue(def,ticker){return Some(issue);}
+    if let Some(issue)=ss_symbol_issue(def,ticker,native_stock){return Some(issue);}
     if native_stock {
         if let Some(reason)=p.native_currency_constraint {
             return Some(Issue {status:"needs_data",note:format!("Source currency/tick data missing. {reason} USD amounts cannot silently become INR amounts. A source-supported Indian specification or dated FX treatment and verified local tick rules are required before admission; editing the numeric parameter alone does not establish those inputs. Selected actual stock: {ticker}. No results are published.")});
@@ -314,6 +330,7 @@ pub fn check_native(def:&StrategyDef,ticker:&str,evidence:&NativeEvidence)->Opti
     if let Some(issue)=dema_index_symbol_issue(def,ticker,evidence.asset_type()){return Some(issue);}
     if let Some(issue)=vixr_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=ptjmt_symbol_issue(def,ticker){return Some(issue);}
+    if let Some(issue)=ss_symbol_issue(def,ticker,evidence.asset_type()=="individual_stock"){return Some(issue);}
     if let Some(issue)=check_selected(p,ticker,evidence.asset_type()){return Some(issue);}
     if let Some(reason)=p.native_currency_constraint {
         return Some(Issue{status:"needs_data",note:format!("Source currency/price-unit/tick review is pending. {reason} Selected actual stock: {ticker}; trusted source market {} and currency {}. Matching USD currency alone cannot establish the author's historical adjusted-price basis, absolute price thresholds or execution ticks; no reviewed source-unit proof is staged. No results are published.",evidence.market().code(),evidence.currency())});
@@ -466,6 +483,33 @@ mod tests {
         for id in ["spmt_vix200","spmt_multi5","spmt_tick","spmt_eom_und","spmt_future_method"] {
             assert!(!reviewed_cash_rule(&def(id,"spmt")));
             assert!(check(&def(id,"spmt"),"SPY",false).is_some());
+        }
+    }
+    #[test]
+    fn ss_review_admits_exact_ids_on_reviewed_symbols_only() {
+        use crate::books::ss;
+        let cat=ss::catalogue();
+        let admitted:Vec<&str>=cat.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        assert_eq!(admitted.len(),30);
+        assert!(admitted.iter().all(|id|ss::REVIEWED_DAILY.contains(id)));
+        for d in cat.iter().filter(|d|reviewed_cash_rule(d)) {
+            let stock=ss::STOCK_SHOWN.contains(&d.id);
+            assert_eq!(policy(d).requirement,if stock {"index_etf_or_stock"} else {"declared_index_timing"},"{}",d.id);
+            assert_eq!(check(d,"AAPL",true).is_none(),stock,"{}",d.id);
+            assert_eq!(check(d,"QQQ",false).is_none(),stock,"{}",d.id);
+            let futures=["SPX","NDX","DJI","SPY","NIFTY 50","NIFTYBANK"];
+            match d.id {
+                "ss_ad_market_buster" => for t in futures {assert_eq!(check(d,t,false).is_none(),matches!(t,"SPX"|"SPY"),"{t}");},
+                "ss_ad_market_buster_nse" => for t in futures {assert_eq!(check(d,t,false).is_none(),t=="NIFTY 50","{t}");},
+                _ => for t in futures {assert!(check(d,t,false).is_none(),"{} {t}",d.id);},
+            }
+            assert!(!reviewed_cash_rule(&def(d.id,"vixr")));
+        }
+        // Held: gate-withheld, data-missing, discretionary or no trade rule in the book.
+        for id in ["ss_turtle_soup","ss_80_20","ss_momentum_pinball","ss_adx_gapper_no_gap","ss_spike_and_ledge","ss_fakeout_shakeout","ss_three_little_indians","ss_wolfe_wave","ss_morning_news_reversal","ss_big_picture_news_reversal","ss_smart_money_index","ss_tick_divergence","ss_tick_extreme_next_day","ss_arms_index_5ma","ss_arms_index_5ma_nse","ss_study_fresh_adx_buy","ss_study_fresh_adx_sell"] {
+            let d=def(id,"ss");
+            assert!(!reviewed_cash_rule(&d),"{id}");
+            assert_eq!(policy(&d).requirement,"source_review_required");
         }
     }
     #[test]

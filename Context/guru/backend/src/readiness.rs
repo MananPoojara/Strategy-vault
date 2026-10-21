@@ -140,6 +140,13 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
             }
         }
     }
+    // Reviewed Street Smarts rules fill stops at a gapped open; where the gate does not already move the start to
+    // the first real US index open, refuse earlier windows instead of using stale opens.
+    if def.book==books::ss::BOOK && books::ss::reads_open(def.id) && !crate::gate::get(def.id).is_some_and(|g|g.clamp_open) {
+        if let Some((row,cutoff))=ctx.r.get(from).and_then(|r|crate::gate::real_open_from(&r.ticker).map(|c|(r,c))) {
+            if row.date.as_str()<cutoff {return issue("needs_data",format!("This rule fills stop orders at the open when the market gaps through them. {} opens in this data are real only from {cutoff}; choose that start or later. Earlier stale opens are not used.",row.ticker));}
+        }
+    }
     if def.book=="chbta2" && matches!(def.id,"ch_bta2_ma_stack"|"ch_bta2_65sma_ravi") {
         if let Some(note)=books::chbta2::validate_reviewed(def.id,p) {return issue("not_testable",note);}
     }
@@ -307,6 +314,15 @@ mod tests {
         // Printed performance mismatch alone is not an executable-rule gap.
         for id in ["spmt_rsi2_4","spmt_rsi4_25","spmt_rsi_1"] {
             assert!(check(&ctx,&definition(id),0,4,&Params::new()).is_none());
+        }
+    }
+    #[test]
+    fn ss_open_reading_rules_refuse_stale_us_index_opens_unless_the_gate_clamps() {
+        let at=|t:&str,y:&str|{let mut r=rows();for (i,x) in r.iter_mut().enumerate(){x.ticker=t.into();x.date=format!("{y}-01-0{}",i+2);}r};
+        for (t,y,id,refused) in [("SPX","2013","ss_holy_grail",true),("SPX","2014","ss_holy_grail",false),("DJI","2015","ss_study_channel_2period_sar",true),
+            ("NDX","2000","ss_id_nr4",true),("SPX","2013","ss_2_period_roc",false),("SPX","2013","ss_turtle_soup_plus_one",false),("NIFTY 50","2005","ss_holy_grail",false),("SPY","1994","ss_holy_grail",false)] {
+            let r=at(t,y);let ctx=Ctx::new(&r,&r,&r);
+            assert_eq!(check(&ctx,&definition(id),0,4,&Params::new()).is_some(),refused,"{id} {t} {y}");
         }
     }
     #[test]

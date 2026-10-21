@@ -18,6 +18,38 @@ use crate::Row;
 
 pub const BOOK: &str = "ss";
 
+/// Daily rules admitted after the 2026-10-21 source review (connors/ss-admission/SOURCE-CONTRACT.md) and an
+/// independent chronological Python ledger check. Declared application of futures/stock studies to actual
+/// index/ETF prices (and actual stocks for `STOCK_SHOWN`); no futures dollars or book performance claimed.
+/// Held (not listed): Turtle Soup, 80-20's, Momentum Pinball, ADX no-gap variant, chart patterns, news,
+/// Smart Money / TICK / Arms indicators and the gate-withheld Fresh ADX studies.
+pub const REVIEWED_DAILY: &[&str] = &[
+    "ss_turtle_soup_plus_one", "ss_2_period_roc", "ss_anti", "ss_anti_3_10", "ss_anti_trigger", "ss_holy_grail",
+    "ss_adx_gapper", "ss_whiplash", "ss_three_day_unfilled_gap", "ss_id_nr4", "ss_hist_vol_crabel",
+    "ss_ad_market_buster", "ss_ad_market_buster_nse",
+    "ss_study_close_upper_90", "ss_study_close_upper_80", "ss_study_close_lower_10", "ss_study_close_lower_20",
+    "ss_study_wr7_high_close", "ss_study_wr7_low_close", "ss_study_rocrsi_buy", "ss_study_rocrsi_sell",
+    "ss_study_fresh_roc_buy", "ss_study_fresh_roc_sell", "ss_study_oops_buy", "ss_study_oops_sell",
+    "ss_study_oops_adx_gapper_buy", "ss_study_oops_adx_gapper_sell", "ss_study_gap_failure_buy",
+    "ss_study_gap_failure_sell", "ss_study_channel_2period_sar",
+];
+pub fn reviewed_daily(id: &str) -> bool { REVIEWED_DAILY.contains(&id) }
+/// Methods the book shows on individual stocks (MU p.64, "all equities" p.77, Motorola p.99-101): actual stocks
+/// plus any actual index/ETF (user rule 21 Oct 2026). The others are futures studies: index timing only.
+pub const STOCK_SHOWN: &[&str] = &["ss_2_period_roc", "ss_anti", "ss_anti_3_10", "ss_anti_trigger", "ss_three_day_unfilled_gap"];
+/// Non-stock symbols admitted for the futures studies (1 tick = % of price, so scale-free). The A/D Market Buster
+/// times the S&P on NYSE breadth (SPX/SPY) and NIFTY 50 on NSE breadth.
+pub fn admitted_symbol(id: &str, ticker: &str) -> bool {
+    match id {
+        "ss_ad_market_buster" => matches!(ticker, "SPX" | "SPY"),
+        "ss_ad_market_buster_nse" => ticker == "NIFTY 50",
+        _ if STOCK_SHOWN.contains(&id) => true,
+        _ => reviewed_daily(id) && matches!(ticker, "SPX" | "NDX" | "DJI" | "SPY" | "NIFTY 50" | "NIFTYBANK"),
+    }
+}
+/// Every admitted rule except the close-only 2-period ROC fills or exits at the open (stop gaps, next-open orders).
+pub fn reads_open(id: &str) -> bool { reviewed_daily(id) && id != "ss_2_period_roc" }
+
 // ---------------------------------------------------------------- indicators
 
 /// Window mean that is NaN until n finite values are available (connors::sma never recovers from a NaN).
