@@ -624,6 +624,7 @@ impl SelectedContext<'_>{
                 let bench=st.ctxs.get(benchmark).filter(|c|!c.r.is_empty()&&c.r.iter().all(|r|r.ticker==benchmark)).map_or(&[][..],|c|c.r);
                 let (source_vix,_)=market_vix(&st.vix,Some(evidence.market()));
                 let mut ctx=Ctx::new(rows,bench,source_vix);
+                ctx.native_market=Some(evidence.market());
                 let vix:BTreeMap<&str,&Row>=source_vix.iter().map(|r|(r.date.as_str(),r)).collect();
                 for (name,field) in [("Open",0),("High",1),("Low",2),("Close",3)]{
                     let values:Vec<f64>=rows.iter().map(|r|vix.get(r.date.as_str()).map_or(f64::NAN,|v|[v.open,v.high,v.low,v.close][field])).collect();

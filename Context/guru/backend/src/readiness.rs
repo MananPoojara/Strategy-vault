@@ -219,7 +219,8 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     if def.id=="tdperl_rebo" {return issue("needs_data","REBO requires source-supported stop/reversal sequencing. Daily OHLC cannot order both touched stop levels, and the current runner's one-reversal-per-day/skip-both-hit choices are not established by the reviewed source. Intraday execution evidence is required; no modeled path is published as fact.");}
     if def.id=="ss_turtle_soup" {return issue("needs_data","Turtle Soup's recovery entry must follow the new low/high break. The current daily-bar runner uses final extrema to qualify entry and set its stop without establishing that sequence. Intraday or source-supported causal execution data is required.");}
     if def.id.starts_with("ss_study_") && p.get("overlap").is_some_and(|v|*v>0.) {return issue("calculation_unavailable","Overlapping study observations are not a sequential single-position account. Portfolio sizing and overlapping mark-to-market accounting are unsupported; equity, risk statistics and optimization are withheld in overlap mode.");}
-    if def.id.starts_with("r3r4_lowprice") && !matches!(ctx.r.first().map(|r|r.ticker.as_str()),Some("SPY"|"QQQ"|"MDY"|"IWM"|"SMH")) {return issue("not_testable","The source's literalUSD1–15 stock price band is not an INR1–15 rule. Actual source-currency stocks or an explicitly validated local-price specification are required; no silent currency substitution is published.");}
+    let usd_stock=ctx.native_market.is_some_and(|m|crate::instrument_policy::usd_price_rule_on_us_stock(def,m));
+    if def.id.starts_with("r3r4_lowprice") && !usd_stock && !matches!(ctx.r.first().map(|r|r.ticker.as_str()),Some("SPY"|"QQQ"|"MDY"|"IWM"|"SMH")) {return issue("not_testable","The source's literalUSD1–15 stock price band is not an INR1–15 rule. Actual source-currency stocks or an explicitly validated local-price specification are required; no silent currency substitution is published.");}
     if def.book==books::chande::BOOK {
         if let Some(note)=books::chande::validate(def.id,p) {return issue("not_testable",note);}
     }
@@ -234,10 +235,13 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
         Status::Live => {}
     }
     if let Some(g) = crate::gate::get(def.id) {
-        if g.verdict == "withheld" && !crate::instrument_policy::reviewed_cash_rule(def) {
+        // A fixed-USD-amount withhold does not apply on a US stock, the amount's home (user decision 2026-10-21).
+        if g.verdict == "withheld" && !crate::instrument_policy::reviewed_cash_rule(def) && !usd_stock {
             return issue("not_testable", format!("Withheld by the accuracy check: {} No results are published.", g.reason));
         }
-        if let (Some(allowed), Some(row)) = (g.allowed, ctx.r.get(from)) {
+        // Stock patterns use the stock's own real tick (ats::STOCK_TICK_IDS), so the NSE-index tick list does not apply to them.
+        let stock_tick=ctx.native_market.is_some() && def.book==books::ats::BOOK && books::ats::STOCK_TICK_IDS.contains(&def.id);
+        if let (Some(allowed), Some(row), false) = (g.allowed, ctx.r.get(from), stock_tick) {
             if !allowed.contains(&row.ticker.as_str()) {
                 if def.book=="radge" && def.id=="radge_oc_long" {
                     return issue("not_testable",format!("This independently checked plain open-to-close research application is limited to NIFTY 50 and policy-qualified SPX prices. {} is outside that reviewed symbol scope; no result is published.",row.ticker));

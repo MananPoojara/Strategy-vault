@@ -37,6 +37,10 @@ pub fn reviewed_daily(id: &str) -> bool { REVIEWED_DAILY.contains(&id) }
 /// Methods the book shows on individual stocks (MU p.64, "all equities" p.77, Motorola p.99-101): actual stocks
 /// plus any actual index/ETF (user rule 21 Oct 2026). The others are futures studies: index timing only.
 pub const STOCK_SHOWN: &[&str] = &["ss_2_period_roc", "ss_anti", "ss_anti_3_10", "ss_anti_trigger", "ss_three_day_unfilled_gap"];
+/// Setups also shown on stocks (Turtle Soup Plus One: DAL/TXN p.41-42; Holy Grail: Citicorp p.81; ID/NR4: Abbott p.148;
+/// Historical Volatility/Crabel: Micron p.157). Actual stocks are admitted too (user decision 2026-10-21); their index/ETF
+/// scope stays the futures-study list of `admitted_symbol`. Same tick convention as the other stock runs (tick_pct % of price).
+pub const STOCK_ALSO: &[&str] = &["ss_turtle_soup_plus_one", "ss_holy_grail", "ss_id_nr4", "ss_hist_vol_crabel"];
 /// Non-stock symbols admitted for the futures studies (1 tick = % of price, so scale-free). The A/D Market Buster
 /// times the S&P on NYSE breadth (SPX/SPY) and NIFTY 50 on NSE breadth.
 pub fn admitted_symbol(id: &str, ticker: &str) -> bool {

@@ -226,6 +226,9 @@ pub struct Ctx<'a> {
     pub vix: VixAligned,
     /// External series aligned to this ticker's bars (NaN where missing), keyed by name (extra_data/)
     pub extra: BTreeMap<String, Vec<f64>>,
+    /// Trusted market of a server-qualified native stock (set only by the server from catalogue evidence; None for
+    /// index/ETF series). Used for the instrument's real tick in stock runs: NSE 0.05 INR, US 0.01 USD.
+    pub native_market: Option<crate::baskets::Market>,
 }
 
 /// India VIX facts, computed on the VIX's own daily series, then aligned to this
@@ -312,9 +315,15 @@ impl<'a> Ctx<'a> {
             red_bars,
             vix: VixAligned::new(r, vix),
             extra: BTreeMap::new(),
+            native_market: None,
             c,
             r,
         }
+    }
+    /// Real execution tick of a native stock: NSE 0.05 INR, US decimal 0.01 USD (None = not a native stock).
+    /// Adaptation: the Connors books used 1/8-dollar stock ticks.
+    pub fn stock_tick(&self) -> Option<f64> {
+        self.native_market.map(|m| match m { crate::baskets::Market::India => 0.05, crate::baskets::Market::UnitedStates => 0.01 })
     }
     /// An external series by name, if it has any data for this ticker.
     pub fn series(&self, name: &str) -> Option<&[f64]> {

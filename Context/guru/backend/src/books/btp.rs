@@ -39,6 +39,14 @@ pub const REVIEWED_DAILY: &[&str] = &[
     "btp2_gipsons_long", "btp2_gipsons_short", "btp2_wide_range_exhaustion_gap_long",
 ];
 pub fn reviewed_daily(id: &str) -> bool { REVIEWED_DAILY.contains(&id) }
+/// Book-shown single-stock rules (Volume I/II articles use US stocks with 1/8-dollar ticks) also admitted on actual
+/// stocks with the stock's real tick (user decision 2026-10-21); Momentum MAs (Merrill Lynch example, open entry, no
+/// tick). Triple-Day Pullbacks and Turtle Thrusts are shown on futures only, so they keep index/ETF only.
+pub const STOCK_ADMITTED: &[&str] = &[
+    "btp_dvmtm_short", "btp2_smtp_long", "btp2_smtp_short", "btp2_1234_long", "btp2_1234_short",
+    "btp2_8day_hl_reversal_long", "btp2_8day_hl_reversal_short", "btp2_gipsons_long", "btp2_gipsons_short",
+    "btp2_wide_range_exhaustion_gap_long", "btp2_momentum_ma_long", "btp2_momentum_ma_short",
+];
 /// Admitted rules whose fills or setups read the traded instrument's open (stop orders, gaps, open entries).
 /// Only Triple-Day Pullbacks (close fills, ADX from high/low/close) does not.
 pub fn reads_open(id: &str) -> bool { reviewed_daily(id) && !id.starts_with("btp_triple_day_pullback") }
@@ -535,7 +543,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
-    let tick = || p("tick", "Entry offset: 1 tick (−1 = [Not from the book] one real tick per market: 0.05 on NSE NIFTY indices, 0.01 otherwise; book's printed 1/8 = 0.125)", -1.0, -1.0, 0.5, 0.005);
+    let tick = || p("tick", "Entry offset: 1 tick (−1 = [Not from the book] one real tick per market: 0.05 on NSE NIFTY indices and Indian stocks (INR), 0.01 on US indices/ETFs and US stocks (USD); adaptation: the book used 1/8-dollar ticks = 0.125)", -1.0, -1.0, 0.5, 0.005);
     let kit = |mm: f64, hold: f64| [
         p("mm", "2-for-1: half off at +1× initial risk (1 = on; book suggests it only for Turtle Thrusts / Momentum MAs 'scale out')", mm, 0.0, 1.0, 1.0),
         p("trail_n", "[Not in book] trailing stop at the prior N-day low/high (0 = off)", 3.0, 0.0, 10.0, 1.0),
@@ -599,8 +607,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let schema = params(id)?;
     let g0 = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).unwrap_or_else(|| panic!("{id} has no param {k}")).def);
-    // tick < 0 = one real tick of the market: 0.05 NSE (the vault's Indian tickers all start "NIFTY"), 0.01 US decimals
-    let g = |k: &str| match g0(k) { t if k == "tick" && t < 0.0 => if x.r.first().map_or(false, |r| r.ticker.starts_with("NIFTY")) { 0.05 } else { 0.01 }, v => v };
+    // tick < 0 = one real tick of the market: 0.05 NSE (the vault's Indian tickers all start "NIFTY"), 0.01 US decimals.
+    // A native stock uses its trusted market's tick (NSE 0.05 INR, US 0.01 USD; adaptation: the book used 1/8-dollar ticks).
+    let g = |k: &str| match g0(k) { t if k == "tick" && t < 0.0 => x.stock_tick().unwrap_or(if x.r.first().map_or(false, |r| r.ticker.starts_with("NIFTY")) { 0.05 } else { 0.01 }), v => v };
     let u = |k: &str| g(k).round().max(1.0) as usize;
     let n = x.c.len();
     if n < 3 {

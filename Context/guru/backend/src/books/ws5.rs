@@ -24,7 +24,8 @@ pub const BOOK: &str = "ws5";
 
 /// Rules admitted after the 2026-10-21 source review (connors/ws5-admission/SOURCE-CONTRACT.md) and an independent
 /// chronological Python ledger check. Windows (daily and weekly) are US stock-scan setups applied to actual index/ETF
-/// prices (declared application; stock runs held: no sub-sector series for filter #5, USD stock filters unreviewed).
+/// prices (declared application) and, since the 2026-10-21 user decision, actual stocks without the filters that cannot be
+/// applied (#5 sub-sector always; USD #2/#6/#7 on Indian stocks), labelled.
 /// Market timing: SPX/SPY as in the book, NIFTY 50 declared. Held: the E-mini/SPY VIX gap day trade (intraday fills).
 pub const REVIEWED_DAILY: &[&str] = &[
     "ws5_momentum_windows_any", "ws5_single_window", "ws5_double_window", "ws5_hanging_window", "ws5_gap_window_eod",
@@ -45,7 +46,7 @@ const FILTERS_L: &str = "F|Filter #9 (do first): no new longs if the VIX is 5% o
 const FILTERS_A: &str = "F|Filter #1: 10-period ADX ≥ 30 with +DI > -DI (longs) / -DI > +DI (shorts)";
 const FILTERS_T: &str = "F|Filter #4: close above the 200-day SMA (longs) / below it (shorts)";
 const FILTERS_S: &str = "F|Filter #8 Taglia Stochastics 21-period %K, 3-period smoothing, 9-period %D: under 80 for longs, above 20 for shorts";
-const FILTERS_X: &str = "F|Filters #2 price ≥ $15, #3 volume ≥ 100,000 shares/day for the past 20 days (vol_rule: 1 = every day, the book wording; 0 = 20-day average [Not from the book]), #5 sub-sector vs its 200-day SMA, #6 90-day range > 6 points, #7 ATR(90) ≥ 1 point: stock-scan filters, OFF by default on an index (params stock_on / sector_on)";
+const FILTERS_X: &str = "F|Filters #2 price ≥ $15, #3 volume ≥ 100,000 shares/day for the past 20 days (vol_rule: 1 = every day, the book wording; 0 = 20-day average [Not from the book]), #5 sub-sector vs its 200-day SMA, #6 90-day range > 6 points, #7 ATR(90) ≥ 1 point: stock-scan filters, OFF on an index (params stock_on / sector_on). Actual stocks (stock_on auto): US stocks #2, #3, #6, #7 in USD as printed; Indian stocks #3 only; #5 omitted on every stock (no SUBSECTOR series), so stock results are not the author's scan";
 const ENTRY: &str = "E|Order placement: buy stop near the Window day's high (short: sell stop near its low), limit 1 point beyond the stop; order good for the next day only";
 const NEGATE: &str = "E|An opening gap of 1 point or more beyond the stop price negates the entry (trade not taken)";
 const STOP: &str = "X|Initial protective stop near the previous day's low (short: high); if the entry day is an outside day, beyond the entry day's low (high)";
@@ -211,7 +212,7 @@ fn trend_filters(weekly: bool) -> Vec<ParamDef> {
         p("stoch_line", "Stochastic line: 0 slow %K, 1 %D", 0.0, 0.0, 1.0, 1.0),
         p("stoch_long", "Longs only if stochastic below", 80.0, 60.0, 100.0, 5.0),
         p("stoch_short", "Shorts only if stochastic above", 20.0, 0.0, 40.0, 5.0),
-        p("stock_on", "Stock filters price/volume/range/ATR (0 off for indices)", 0.0, 0.0, 1.0, 1.0),
+        p("stock_on", "Stock filters: −1 auto (index/ETF: off; US stock: #2 price, #3 volume, #6 range, #7 ATR in USD as printed; Indian stock: #3 share volume only, the USD #2/#6/#7 omitted), 0 off, 1 all four as printed", -1.0, -1.0, 1.0, 1.0),
         p("min_price", "Stock filter: price at least $", 15.0, 5.0, 30.0, 5.0),
         p("min_vol", if weekly { "Stock filter: shares per week at least" } else { "Stock filter: shares per day at least" }, if weekly { 500_000.0 } else { 100_000.0 }, 0.0, 2_000_000.0, 100_000.0),
         p("vol_rule", "Volume filter: 0 = N-period average ≥ min [Not from the book], 1 = every one of the last N ≥ min (book wording)", 1.0, 0.0, 1.0, 1.0),
@@ -648,9 +649,16 @@ impl Trend {
 }
 
 /// Optional stock-scan filters in book dollars: #2 price, #3 volume (avg or min, see vol_filter), #6 range, #7 ATR, at daily bar i.
+/// stock_on −1 (auto): off on an index/ETF (unchanged); on a native US stock all four USD filters as printed; on a native
+/// Indian stock only #3 (a share count), since the USD price/range/ATR amounts have no reviewed INR version.
 fn stock_ok(x: &Ctx, g: &dyn Fn(&str) -> f64, u: &dyn Fn(&str) -> usize, atr: &[f64], close: f64, vol_avg: f64, i: usize) -> bool {
-    if g("stock_on") < 0.5 {
+    let on = g("stock_on");
+    let volume_only = on < 0.0 && x.native_market == Some(crate::baskets::Market::India);
+    if (on < 0.0 && x.native_market.is_none()) || (0.0..0.5).contains(&on) {
         return true;
+    }
+    if volume_only {
+        return vol_avg >= g("min_vol");
     }
     let n = u("range_n");
     if i + 1 < n {
