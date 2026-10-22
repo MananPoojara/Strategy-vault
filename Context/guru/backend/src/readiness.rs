@@ -166,6 +166,14 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
             if row.date.as_str()<cutoff {return issue("needs_data",format!("This rule fills stop orders at the open when the market gaps through them. {} opens in this data are real only from {cutoff}; choose that start or later. Earlier stale opens are not used.",row.ticker));}
         }
     }
+    // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
+    // Every reviewed Ross rule reads the open (gap tests, gapped stop fills, day-4 open exit): refuse stale US index opens.
+    if def.book.starts_with("jr_") && books::joe_ross_rules::reads_open(def.id) {
+        if let Some((r,cut))=ctx.r.get(from).and_then(|r|crate::gate::real_open_from(&r.ticker).map(|c|(r,c))).filter(|(r,c)|r.date.as_str()<*c) {
+            return issue("needs_data",format!("This Joe Ross rule reads the opening price (gaps, stop fills at a gapped open); {} opens in this file are real only from {cut}. Choose a start on or after {cut}. Earlier stale opens are not used.",r.ticker));
+        }
+    }
+    // ---- end Joe Ross block ----
     // Admitted btp rules that read the open but are not clamped by the gate: refuse windows with stale index opens.
     if def.book==books::btp::BOOK && books::btp::reads_open(def.id) && !crate::gate::get(def.id).is_some_and(|g|g.clamp_open) {
         if let Some((r,cut))=ctx.r.get(from).and_then(|r|crate::gate::real_open_from(&r.ticker).map(|c|(r,c))).filter(|(r,c)|r.date.as_str()<*c) {
@@ -430,6 +438,18 @@ mod tests {
             assert!(check(&ctx,&definition(id),0,4,&Params::new()).is_none());
         }
     }
+    // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
+    #[test]
+    fn joe_ross_rules_refuse_stale_us_index_opens() {
+        let at=|t:&str,y:&str|{let mut r=rows();for (i,x) in r.iter_mut().enumerate(){x.ticker=t.into();x.date=format!("{y}-01-0{}",i+2);}r};
+        for (t,y,refused) in [("SPX","2013",true),("SPX","2014",false),("NDX","2000",true),("DJI","2015",true),("NIFTY 50","1995",false),("SPY","1994",false)] {
+            for id in books::joe_ross_rules::REVIEWED {
+                let r=at(t,y);let ctx=Ctx::new(&r,&r,&r);
+                assert_eq!(check(&ctx,&definition(id),0,4,&Params::new()).is_some(),refused,"{id} {t} {y}");
+            }
+        }
+    }
+    // ---- end Joe Ross block ----
     #[test]
     fn ss_open_reading_rules_refuse_stale_us_index_opens_unless_the_gate_clamps() {
         let at=|t:&str,y:&str|{let mut r=rows();for (i,x) in r.iter_mut().enumerate(){x.ticker=t.into();x.date=format!("{y}-01-0{}",i+2);}r};
