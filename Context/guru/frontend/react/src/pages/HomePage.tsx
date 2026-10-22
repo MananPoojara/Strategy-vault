@@ -29,9 +29,11 @@ export function HomePage({ snapshot }: { snapshot: ViewSnapshot }) {
       </section>
       <dl className="lstrip library-summary library-summary-strategies">
         {[
+          ["Total Authors", model.libraryTotals?.authors],
+          ["Total Books", model.libraryTotals?.books],
           ["Total Strategies", model.strategiesFound],
           ["Backtested Strategies", model.progressCurrent ? model.backtestedStrategies : "Checking"],
-        ].map(([label, value]) => (
+        ].filter(([, value]) => value !== undefined).map(([label, value]) => (
           <div key={label}>
             <dt>{label}</dt>
             <dd data-count={value}>{value}</dd>
@@ -39,6 +41,8 @@ export function HomePage({ snapshot }: { snapshot: ViewSnapshot }) {
         ))}
       </dl>
       <p className="library-count-note">
+        Authors are the distinct people credited on the sources; Books are distinct published books (a second copy or edition counts once).
+        {model.libraryTotals ? ` Strategies also come from ${model.libraryTotals.otherSources} other sources: course manuals, articles, newsletters and vendor system code.` : ""}{" "}
         Total Strategies includes catalogued entries awaiting review or conversion, grouping parameter versions within each book.
         Backtested counts strategies with available computed results on a supported instrument,
         across India and US; it does not certify the original book study.

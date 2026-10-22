@@ -12,4 +12,7 @@ it("uses plain counter labels and explains grouping without changing supplied co
  expect(html).toContain("does not");expect(html).toContain("original book study");
  expect(html).not.toContain("Download book inventory");expect(html).not.toContain(">Larry Connors</a>");expect(html).toContain("Browse all strategies");
  expect(html).not.toContain("Implemented methods");expect(html).not.toContain("Backtest families on");
+ // Reviewed source totals show only when supplied; the older identified-author count is never shown.
+ const withTotals=renderToStaticMarkup(<HomePage snapshot={{...snapshot,home:{...home,libraryTotals:{authors:200,books:169,otherSources:191}}}}/>);
+ expect(withTotals).toContain('data-count="200"');expect(withTotals).toContain('data-count="169"');expect(withTotals).toContain("191 other sources");
 });
