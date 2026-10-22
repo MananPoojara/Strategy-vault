@@ -46,12 +46,15 @@ pub const CONNORS_INDEX_IDS:&[&str]=&["f1a","f3a","f4a","f4c","f4d","rsi2_5d","t
 
 /// User decision 2026-10-22: these backtested single-instrument rules also run on actual indices, ETFs and
 /// stocks (US and India) as a visibly declared application. Admission only: rules, parameters and calculations are unchanged.
-pub const OPEN_ETF_RULES:&[(&str,&str)]=&[("hpetf","hpetf_3dhl_long"),("hpetf","hpetf_3dhl_long_aggr"),("hpetf","hpetf_mdd_long"),("hpetf","hpetf_mdd_long_aggr"),("hpetf","hpetf_mdu_short"),("hpetf","hpetf_mdu_short_aggr"),("hpetf","hpetf_pctb_long_aggr"),("hpetf","hpetf_pctb_short_aggr"),("hpetf","hpetf_r3_long"),("hpetf","hpetf_r3_long_aggr"),("hpetf","hpetf_rsi10_6_long"),("hpetf","hpetf_rsi90_94_short"),("hpetf","hpetf_rsi25_long_aggr"),("hpetf","hpetf_rsi75_short"),("hpetf","hpetf_tps_long"),("hpetf","hpetf_tps_short"),("stc9","tps_long"),("stc9","tps_short"),("alpha","alpha_spy_rsi4_mr"),("ststw","ststw_double7"),("ststw","ststw_overnight"),("hbqts","hbqts_cmo")];
+pub const OPEN_ETF_RULES:&[(&str,&str)]=&[("hpetf","hpetf_3dhl_long"),("hpetf","hpetf_3dhl_long_aggr"),("hpetf","hpetf_mdd_long"),("hpetf","hpetf_mdd_long_aggr"),("hpetf","hpetf_mdu_short"),("hpetf","hpetf_mdu_short_aggr"),("hpetf","hpetf_pctb_long_aggr"),("hpetf","hpetf_pctb_short_aggr"),("hpetf","hpetf_r3_long"),("hpetf","hpetf_r3_long_aggr"),("hpetf","hpetf_rsi10_6_long"),("hpetf","hpetf_rsi90_94_short"),("hpetf","hpetf_rsi25_long_aggr"),("hpetf","hpetf_rsi75_short"),("hpetf","hpetf_tps_long"),("hpetf","hpetf_tps_short"),("stc9","tps_long"),("stc9","tps_short"),("alpha","alpha_spy_rsi4_mr"),("ststw","ststw_double7"),("ststw","ststw_overnight"),("ststw","ststw_cum_rsi_35"),("ststw","ststw_cum_rsi_50"),("hbqts","hbqts_cmo")];
 pub const OPEN_STOCK_RULES:&[(&str,&str)]=&[("ehmd","ehmd_mama"),("elcim","elcim_impulse"),("hbqts","hbqts_bb_breakout"),("hbqts","hbqts_cgo"),("hbqts","hbqts_dom"),("hbqts","hbqts_dpo"),("hbqts","hbqts_entry_id1"),("hbqts","hbqts_fixed_interval"),("hbqts","hbqts_limit_entry"),("hbqts","hbqts_macd_daily"),("hbqts","hbqts_profit_target"),("hbqts","hbqts_stoch_rsi"),("kfsc","kfsc_bollinger"),("kfsc","kfsc_pct_band"),("kfsc","kfsc_hv_day"),("kfsc","kfsc_dsm"),("kfsc","kfsc_macd"),("kfsc","kfsc_two_ma"),("lkqts","lkqts_cb4020"),("lkqts","lkqts_ma1040"),("lkqts","lkqts_macd"),("lkqts","lkqts_macd_literal_alpha"),("lkqts","lkqts_mom80"),("lkqts","lkqts_rsi14"),("lkqts","lkqts_sob"),("lkqts","lkqts_tiar"),("lkqts","lkqts_volbo"),("sbma","sbma_x_10e20e"),("sbma","sbma_x_10e50e"),("sbma","sbma_x_10s200s"),("sbma","sbma_x_15e150e"),("sbma","sbma_x_15e30e"),("sbma","sbma_x_50s200s"),("sbma","sbma_x_5e50s"),("sbma","sbma_x_5s20s"),("sbma","sbma_sma50_long")];
 macro_rules! OPEN_ETF_LABEL {()=>{"Book tests ETFs; index and stock runs (US and India) are a declared application (user decision 22 Oct 2026), not the author's test. Rules and parameters are unchanged."}}
 macro_rules! OPEN_STOCK_LABEL {()=>{"Book tests stocks; index and ETF runs (US and India) are a declared application (user decision 22 Oct 2026), not the author's test. Rules and parameters are unchanged."}}
+/// connors-leftovers (22 Oct 2026): STC IX 1-2-3-4-5 is written for 2x/3x leveraged ETFs, which the vault does not hold.
+macro_rules! OPEN_LEVERAGED_LABEL {()=>{"Book trades 2x/3x leveraged equity ETFs (STC IX Session 7); the vault holds none, so runs on unleveraged ETFs, indices and stocks (US and India) are a declared application (user decision 22 Oct 2026), not the author's test. Rules and parameters are unchanged; the 21-day share-volume filter is read on the selected instrument's own volume."}}
 pub fn open_instrument_label(def:&StrategyDef)->Option<&'static str> {
     let key=(def.book,def.id);
+    if key==("stc9","s12345") {return Some(OPEN_LEVERAGED_LABEL!());}
     if OPEN_ETF_RULES.contains(&key) {Some(OPEN_ETF_LABEL!())} else if OPEN_STOCK_RULES.contains(&key) {Some(OPEN_STOCK_LABEL!())} else {None}
 }
 
@@ -151,7 +154,7 @@ fn hfm_otvt_reviewed(def:&StrategyDef)->bool {
 }
 fn hfm_otvt_symbol_issue(def:&StrategyDef,ticker:&str)->Option<Issue> {
     if !hfm_otvt_reviewed(def) || crate::books::hfm::admitted_symbol(def.id,ticker) || crate::books::otvt::admitted_symbol(def.id,ticker) {return None;}
-    Some(Issue{status:"needs_data",note:format!("Investment Secrets of a Hedge Fund Manager and the PTJ Options & Volatility Trading volume traded S&P 500 futures. This review admits CHADTP on NYSE breadth for SPX and SPY (the NSE-breadth CHADTP is held, thresholds not calibrated for India), CVR I buys / sells for SPX and SPY with the CBOE VIX (CVR I reads the VIX open; India VIX opens repeat the previous close), and the HV Thrust for SPX/NDX/DJI/SPY/NIFTY 50/NIFTYBANK. {ticker} is outside that reviewed scope; no result is published.")})
+    Some(Issue{status:"needs_data",note:format!("Investment Secrets of a Hedge Fund Manager and the PTJ Options & Volatility Trading volume traded S&P 500 futures. This review admits CHADTP on NYSE breadth for SPX and SPY (the NSE-breadth CHADTP is held, thresholds not calibrated for India), NDX-SPX (NASDAQ 100 vs S&P 500 signal) for SPX, SPY and DJI only, CVR I buys / sells for SPX and SPY with the CBOE VIX (CVR I reads the VIX open; India VIX opens repeat the previous close), and the HV Thrust for SPX/NDX/DJI/SPY/NIFTY 50/NIFTYBANK. {ticker} is outside that reviewed scope; no result is published.")})
 }
 /// User decision (2026-10-21): every NSE breadth / TRIN mapping of the NYSE-calibrated Connors rules is held; US versions run.
 pub fn nse_breadth_held(def:&StrategyDef,ticker:&str)->Option<Issue> {
@@ -361,7 +364,7 @@ fn base_policy(def:&StrategyDef)->Policy {
         p.market_adaptation=true; return p;
     }
     if hfm_otvt_reviewed(def) {
-        let mut p=requirement("declared_index_timing", &["index","etf"], "Investment Secrets of a Hedge Fund Manager (Connors & Hayward, 1995) CHADTP (Ch.5) and The Best of the Professional Traders Journal: Options Trading and Volatility Trading (Connors, 1999) CVR I buys / sells and HV Thrusts, daily rules reviewed in connors/hfm-admission/SOURCE-CONTRACT.md with independent chronological ledgers. The books traded S&P 500 futures (CHADTP on NYSE advancing/declining issues; CVR I on the OEX VIX, today's VXO). SPY uses actual ETF prices and the CBOE VIX; SPX cash-index timing is a declared application; the NSE-breadth CHADTP on NIFTY 50 (book's fixed +/-400 issues) and the HV Thrust on SPX/NDX/DJI/SPY/NIFTY 50/NIFTYBANK are declared adaptations. The CHADTP .10-point trigger is coded as 0.03% of price. The HV Thrust has no book exit, so the user's standard exits are labelled options [Not from the book]. Cash-index shorts are hypothetical exposure. No futures dollars or book performance is claimed.");
+        let mut p=requirement("declared_index_timing", &["index","etf"], "Investment Secrets of a Hedge Fund Manager (Connors & Hayward, 1995) CHADTP (Ch.5) and The Best of the Professional Traders Journal: Options Trading and Volatility Trading (Connors, 1999) CVR I buys / sells and HV Thrusts, daily rules reviewed in connors/hfm-admission/SOURCE-CONTRACT.md with independent chronological ledgers; NDX-SPX (hfm Ch.6) reviewed in authors/connors-leftovers with an independent SPX/SPY/DJI ledger check (signal = NASDAQ 100 vs S&P 500 cash closes, traded at the next open on SPX, SPY or DJI; the book showed the DJIA too). The books traded S&P 500 futures (CHADTP on NYSE advancing/declining issues; CVR I on the OEX VIX, today's VXO). SPY uses actual ETF prices and the CBOE VIX; SPX cash-index timing is a declared application; the NSE-breadth CHADTP on NIFTY 50 (book's fixed +/-400 issues) and the HV Thrust on SPX/NDX/DJI/SPY/NIFTY 50/NIFTYBANK are declared adaptations. The CHADTP .10-point trigger is coded as 0.03% of price. The HV Thrust has no book exit, so the user's standard exits are labelled options [Not from the book]. Cash-index shorts are hypothetical exposure. No futures dollars or book performance is claimed.");
         p.market_adaptation=true; return p;
     }
     if def.book=="btp" && crate::books::btp::STOCK_ADMITTED.contains(&def.id) {
@@ -527,13 +530,22 @@ pub fn check_native_market_inputs(def:&StrategyDef,evidence:&NativeEvidence,benc
     None
 }
 /// Plain-language reason for Connors rules that stay unadmitted on every instrument (admission records, 21 Oct 2026).
-fn held_reason(id:&str)->Option<&'static str> {
+pub fn held_reason(id:&str)->Option<&'static str> {
     Some(match id {
         "ss_adx_gapper_no_gap"=>"Held: rules not fully defined. Street Smarts (p.93) presents this as Larry's discussion and calls it \"more subjective\"; it gives no objective entry, so any coded entry would be the vault's, not the book's.",
         "hfm_hv"=>"Held: rules not fully defined. The book (Ch. 3) gives a volatility warning with no direction, entry, exit or stop (\"a personal choice\"); the coded breakout entry and 20-day exit would be vault choices.",
         "hfm_und"|"hfm_und_long"|"hfm_und_short"=>"Held: needs option prices. The book (Ch. 4) trades Undeniables by selling out-of-the-money index puts or calls; a long or short trade in the index itself has a different payoff, and the vault holds no traded option prices.",
         "btp_bottom_reversal_long"=>"Held: rules not fully defined. \"Bottom\", \"near the bottom of the range\" and \"a fairly tight stop\" are not quantified in the book, so the entry and stop would be the vault's.",
-        "btp_momentum_gap"=>"Held: rules not fully defined. The book gives no gap size, stop level or exit, so the whole exit would be the vault's.",
+        "btp_momentum_gap"=>"Held: rules not fully defined. The book does not say what counts as a gap (open above yesterday's close, or above yesterday's high) and gives no stop or trailing-stop level, so both the entry and the exit would be the vault's choice.",
+        // connors-leftovers (22 Oct 2026): plain card reasons for the remaining held Connors rules
+        "ss_momentum_pinball"=>"Held: needs intraday data. Momentum Pinball buys or sells a break of the first trading hour's high or low; the vault holds daily bars only, so the first-hour range of each day is unknown.",
+        "ss_smart_money_index"=>"Held: needs intraday data. The Smart Money Index is built from the first and the last hour of each trading day, and the book does not give an entry price or exit for it; the vault holds daily bars only.",
+        "ss_arms_index_5ma"|"ss_arms_index_5ma_nse"=>"Held: rules not fully defined. The book shows the 5-day average of the Arms Index (TRIN) as an indicator reading and leaves the trade to the reader (\"determine for yourself\", pp.181-182); there is no entry or exit to test.",
+        "oiss_plus_three_put"|"oiss_plus_three_call"=>"Held: needs option prices. OISS Plus Three sells index options; the vault has no US option prices, and for India the engine cannot yet value open option positions, so the result would not be the option trade the book describes.",
+        "spmt_tick"=>"Held: needs NYSE TICK data. This rule reads the NYSE TICK at the close each day; the vault has no TICK history for the US or India.",
+        "spmt_multi5"|"spmt_multi9"|"spmt_mts"=>"Held: needs NYSE TICK data. The Market Timing System counts how many of the course's 30 daily signals fire, and one of those signals is the NYSE TICK, which the vault does not have; counting only the other signals would be a different system.",
+        "spmt_dt_gapdown"|"spmt_dt_unch"|"spmt_dt_gapup"=>"Held: needs intraday data. These day trades are built on 15-minute bars of the trading day; the vault holds daily bars only.",
+        "cwin_vix_gap_window"=>"Held: needs intraday data. The VIX Gap Window enters as soon as the VIX takes out yesterday's high or low during the day; that needs intraday VIX and intraday prices, and the vault holds daily bars only.",
         "alpha_weekly_mr_single"=>"Held: ranking method. The book (Ch. 6) buys the 10 lowest-volatility candidates from the 500 most liquid US stocks each week and reads the market regime from SPY; a single index, ETF or stock cannot reproduce that selection. The full method needs a stock universe (see the portfolio entry).",
         _=>return None,
     })
@@ -866,7 +878,7 @@ mod tests {
     fn hfm_otvt_review_admits_exact_ids_on_reviewed_symbols_only() {
         use crate::books::{hfm,otvt};
         let admitted:Vec<&str>=hfm::catalogue().iter().chain(otvt::catalogue().iter()).filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
-        assert_eq!(admitted,["hfm_chadtp","hfm_chadtp_nse","otvt_cvr1_long","otvt_cvr1_short","otvt_hv_thrust"]);
+        assert_eq!(admitted,["hfm_chadtp","hfm_chadtp_nse","hfm_ndxspx","otvt_cvr1_long","otvt_cvr1_short","otvt_hv_thrust"]);
         let ok=|id:&'static str,b:&'static str,t:&str|check(&def(id,b),t,false).is_none();
         for t in ["SPX","SPY"] {for (id,b) in [("hfm_chadtp","hfm"),("otvt_cvr1_long","otvt"),("otvt_cvr1_short","otvt"),("otvt_hv_thrust","otvt")] {assert!(ok(id,b,t),"{id} {t}");}}
         for t in ["NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(ok("otvt_hv_thrust","otvt",t),"{t}");}
@@ -874,9 +886,28 @@ mod tests {
         for id in ["otvt_cvr1_long","otvt_cvr1_short"] {assert!(!ok(id,"otvt","NIFTY 50") && !ok(id,"otvt","QQQ"),"{id}");}
         assert!(!ok("otvt_hv_thrust","otvt","QQQ") && !ok("otvt_hv_thrust","otvt","NIFTYMIDCAP100") && !ok("hfm_chadtp","hfm","QQQ"));
         assert!(check(&def("otvt_hv_thrust","otvt"),"RELIANCE",true).is_some());
-        for (id,b) in [("hfm_hv","hfm"),("hfm_und","hfm"),("hfm_und_long","hfm"),("hfm_und_short","hfm"),("hfm_ndxspx","hfm"),("hfm_news","hfm"),("hfm_vix","hfm"),("otvt_cvr1","otvt"),("otvt_cvr1_sell_puts","otvt"),("ptjdt_adx15_breakout","ptjdt")] {
+        // NDX-SPX: the NASDAQ 100 vs S&P 500 signal, traded on SPX, SPY and DJI only (connors-leftovers)
+        for t in ["SPX","SPY","DJI"] {assert!(ok("hfm_ndxspx","hfm",t),"{t}");}
+        for t in ["NDX","QQQ","NIFTY 50","NIFTYBANK"] {assert!(!ok("hfm_ndxspx","hfm",t),"{t}");}
+        assert!(check(&def("hfm_ndxspx","hfm"),"AAPL",true).is_some());
+        for (id,b) in [("hfm_hv","hfm"),("hfm_und","hfm"),("hfm_und_long","hfm"),("hfm_und_short","hfm"),("hfm_news","hfm"),("hfm_vix","hfm"),("otvt_cvr1","otvt"),("otvt_cvr1_sell_puts","otvt"),("ptjdt_adx15_breakout","ptjdt")] {
             assert!(!reviewed_cash_rule(&def(id,b)),"{id}");assert_eq!(policy(&def(id,b)).requirement,"source_review_required","{id}");
         }
+    }
+    #[test]
+    fn connors_leftovers_open_exact_ids_and_hold_the_rest_with_card_reasons() {
+        for (id,b) in [("s12345","stc9"),("ststw_cum_rsi_35","ststw"),("ststw_cum_rsi_50","ststw")] {
+            let d=def(id,b);assert!(open_instrument_label(&d).is_some(),"{id}");
+            assert_eq!(policy(&d).allowed_types,&["index","etf","individual_stock"],"{id}");
+            for (t,native) in [("SPY",false),("SPX",false),("NIFTY 50",false),("AAPL",true),("RELIANCE",true)] {assert!(check(&d,t,native).is_none(),"{id} {t}");}
+            assert!(metadata_json(&d).contains("declared_application"),"{id}");
+        }
+        assert!(open_instrument_label(&def("s12345","stc9")).unwrap().contains("leveraged"));
+        assert!(open_instrument_label(&def("s12345","other")).is_none());
+        for id in ["ss_momentum_pinball","ss_smart_money_index","ss_arms_index_5ma","ss_arms_index_5ma_nse","oiss_plus_three_put","oiss_plus_three_call","spmt_tick","spmt_multi5","spmt_multi9","spmt_mts","spmt_dt_gapdown","spmt_dt_unch","spmt_dt_gapup","cwin_vix_gap_window","hfm_hv","hfm_und","btp_bottom_reversal_long","btp_momentum_gap"] {
+            assert!(held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
+        }
+        for id in ["hfm_ndxspx","s12345","price","ststw_cum_rsi_35","ststw_cum_rsi_50","ststw_vix_stretch"] {assert!(held_reason(id).is_none(),"{id}");}
     }
     #[test]
     fn newrules_misc_admits_exact_ids_and_symbols() {
@@ -1059,7 +1090,8 @@ mod tests {
     }
     #[test]
     fn leverage_futures_options_and_portfolios_cannot_become_cash_backtests() {
-        for (id,book) in [("s12345","stc9"),("lwdg2_0105","lwdg2"),("lev_calls","stc9"),("hmrw_sp500_rotation","hmrw"),("alpha_weekly_mr","alpha")] {
+        // s12345 is opened as a labelled declared application (connors-leftovers), see its own test
+        for (id,book) in [("lwdg2_0105","lwdg2"),("lev_calls","stc9"),("hmrw_sp500_rotation","hmrw"),("alpha_weekly_mr","alpha")] {
             let d=def(id,book);
             for (ticker,native) in [("NIFTY 50",false),("SPY",false),("RELIANCE",true)] {
                 assert_eq!(check(&d,ticker,native).unwrap().status,"needs_data");

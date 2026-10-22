@@ -8,7 +8,7 @@ use crate::connors::*;
 
 pub const BOOK: &str = "hmrw";
 
-const SP500: &str = "needs daily OHLC + dividends/splits for every S&P 500 member stock since 1/1/2001 with point-in-time index membership (incl. removed and delisted names); the vault has index data only";
+const SP500: &str = "a stock universe: the rotation picks among all S&P 500 stocks each week, so it needs every member's prices (with dividends and splits) since 2001 and the list of which stocks were in the index on each date, including removed and delisted names. The vault's S&P 500 stock basket has no dated membership and no portfolio accounting, so the result would not be the book's portfolio";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef {

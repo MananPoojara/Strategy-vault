@@ -563,6 +563,8 @@ fn catalogue_json(guru: &str) -> String {
             let gated = gate::get(d.id);
             let (status, why) = match d.status {
                 Status::Live if gated.is_some_and(|g| g.verdict == "withheld") && !instrument_policy::reviewed_cash_rule(d) => ("not_testable", gated.map_or("", |g| g.reason)),
+                // a held rule's plain-language card reason (instrument_policy::held_reason) replaces the generic review note
+                Status::Live if instrument_policy::held_reason(d.id).is_some() => ("not_testable", instrument_policy::held_reason(d.id).unwrap_or("")),
                 Status::Live if instrument_policy::policy(d).requirement=="source_review_required" => ("not_testable", "Source-specific rules and required instrument have not completed admission review; no backtest is published."),
                 Status::Live => ("live", ""),
                 Status::NeedsData(w) => ("needs_data", w),
@@ -1987,6 +1989,16 @@ fn main() {
                 if is_vix_series(key)&&volatility_source.is_none(){continue;}
                 if tk == "*" || tk == t {
                     c.extra.insert(key.clone(), rows.iter().map(|r| m.get(&r.date).copied().unwrap_or(f64::NAN)).collect());
+                }
+            }
+            // NDX-SPX (hfm Ch.6): NASDAQ 100 and S&P 500 cash closes from the loaded US index rows, aligned by date
+            // (a missing date stays NaN). An extra_data file of the same name takes precedence.
+            if market==Some(baskets::Market::UnitedStates) {
+                for (key,src) in [("LEADER_CLOSE","NDX"),("FOLLOWER_CLOSE","SPX")] {
+                    if c.extra.contains_key(key) {continue;}
+                    let Some(src)=data.get(src) else {continue};
+                    let m:BTreeMap<&str,f64>=src.iter().map(|r|(r.date.as_str(),r.close)).collect();
+                    c.extra.insert(key.into(), rows.iter().map(|r| m.get(r.date.as_str()).copied().unwrap_or(f64::NAN)).collect());
                 }
             }
             (t.clone(), c)
