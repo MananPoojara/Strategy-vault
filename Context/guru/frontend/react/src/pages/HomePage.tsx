@@ -5,6 +5,7 @@ import { BookCard } from "../components/BookCard";
 import { Pagination } from "../components/Pagination";
 import { ResearchMarkup } from "../components/ResearchMarkup";
 import { DataCoverageNotice } from "../components/DataCoverageNotice";
+import { shareReview as share } from "../services/source-review-data";
 export function HomePage({ snapshot }: { snapshot: ViewSnapshot }) {
   const model = snapshot.home;
   if (!model) return null;
@@ -29,8 +30,8 @@ export function HomePage({ snapshot }: { snapshot: ViewSnapshot }) {
       </section>
       <dl className="lstrip library-summary library-summary-strategies">
         {[
-          ["Total Authors", model.libraryTotals?.authors],
-          ["Total Books", model.libraryTotals?.books],
+          ["Total Authors", share.authors],
+          ["Total Books", share.books],
           ["Total Strategies", model.strategiesFound],
           ["Backtested Strategies", model.progressCurrent ? model.backtestedStrategies : "Checking"],
         ].filter(([, value]) => value !== undefined).map(([label, value]) => (
@@ -41,8 +42,9 @@ export function HomePage({ snapshot }: { snapshot: ViewSnapshot }) {
         ))}
       </dl>
       <p className="library-count-note">
-        Authors are the distinct people credited on the sources; Books are distinct published books (a second copy or edition counts once).
-        {model.libraryTotals ? ` Strategies also come from ${model.libraryTotals.otherSources} other sources: course manuals, articles, newsletters and vendor system code.` : ""}{" "}
+        Authors and Books cover every trading source in the research share, each checked from its first pages: authors are distinct credited people, and a copy, edition or translation counts once.
+        The share also holds {share.articles} articles, {share.courseManuals} course manuals, {share.codePackages} system code packages, {share.magazinesAndNewsletters} magazines and newsletters, {share.videoCourses} video courses and {share.otherSources} other sources.
+        {model.libraryTotals ? ` Strategies so far come from ${model.libraryTotals.books} of these books and ${model.libraryTotals.otherSources} other sources.` : ""}{" "}
         Total Strategies includes catalogued entries awaiting review or conversion, grouping parameter versions within each book.
         Backtested counts strategies with available computed results on a supported instrument,
         across India and US; it does not certify the original book study.

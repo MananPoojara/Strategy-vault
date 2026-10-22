@@ -375,3 +375,6 @@ export const sourceReview: Record<string, {type: string; sameWorkAs?: string; pe
   "zsms": {"type": "course_manual", "people": []},
   "zstrt": {"type": "code_package", "people": []},
 };
+// Whole research-share trading library (every census entry classified from its first pages, 2026-10-22):
+// copies, editions, translations and parts of one work count once; authors are distinct credited people.
+export const shareReview = {"asOf": "2026-10-22", "works": 2748, "authors": 1541, "books": 1109, "articles": 672, "courseManuals": 454, "codePackages": 305, "magazinesAndNewsletters": 119, "videoCourses": 59, "otherSources": 30};
