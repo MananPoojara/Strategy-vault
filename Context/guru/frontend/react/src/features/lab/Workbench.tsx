@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { aggregate, booleanMarkers, candles, isBooleanOutput, linePoints, ohlcFromSeries, rangeStart, tradeSpans } from "./bars";
-import { createLabChart, syncPanes, tint, useThemeKey, type SyncedPane } from "./charts";
+import { createLabChart, syncPanes, themeColors, tint, useThemeKey, type SyncedPane } from "./charts";
+import type { LabChartApi, LabSeriesApi } from "./globals";
 import { shortName } from "./catalogue";
 import { defaultColor, ParamsDialog, plotCss, plotPaint, type LineStyle, type Look } from "./ParamsDialog";
-import { COPY } from "./labels";
+import { COPY, TF_LABELS } from "./labels";
 import { formulaQuery } from "./formula";
 import type { Catalogue, ChartRange, Indicator, SavedMarket, SeriesResponse, Trade } from "./types";
 import { ErrorNotice, isProvisional, ProvisionalStrip } from "./ui";
@@ -17,11 +18,35 @@ const chipValues = (ind: Indicator, params: Record<string, number>) =>
   ind.params.filter((p) => p.key !== "variant" && !(OPTION_KEYS.has(p.key) && (params[p.key] ?? p.default) === p.default)).map((p) => params[p.key] ?? p.default);
 
 /** `looks`: colour and style per plotted output (AmiBroker ParamColor / ParamStyle per Plot). */
-export interface Chip { key: string; id: string; params: Record<string, number>; vs?: string; looks?: Record<string, Look> }
+/** `tf`: the indicator's own timeframe (weekly RSI on a daily chart); absent = the chart's. */
+export interface Chip { key: string; id: string; params: Record<string, number>; vs?: string; looks?: Record<string, Look>; tf?: string; levels?: number[] }
+/** Default threshold lines per oscillator (TradingView / AmiBroker conventions); a chip's own `levels` replace them ([] = none).
+ *  Grouped by scale, checked against each indicator's range on NIFTY 50. Price-scale, volume and pattern panes have none. */
+const levelGroups: [number[], string[]][] = [
+  [[70, 30], ["rsi", "rmi", "rsx", "slow_rsi", "uo", "imi", "crsi", "aroon"]],
+  [[80, 20], ["stoch", "stochrsi", "mfi", "double_stoch", "hhlls", "kdj", "preferred_stoch", "projection_osc", "rss", "sve_stochrsi", "tii"]],
+  [[75, 25], ["stc"]], [[90, 10], ["dmi_stoch"]], [[68, 50, 32], ["tdi"]], [[50], ["inertia", "rvi", "qqe"]],
+  [[25], ["dmi", "adxr", "dx"]], [[61.8, 38.2], ["chop"]], [[-20, -80], ["willr"]],
+  [[100, -100], ["cci", "woodies_cci"]], [[50, -50], ["cmo"]], [[40, -40], ["smi", "pzo", "vzo"]], [[60, -60], ["wavetrend"]], [[80, -80], ["rci", "rci_ribbon"]],
+  [[150, 50, -50, -150], ["macd_v"]], [[8, 4, -4, -8], ["value_chart"]], [[7, -7], ["szo"]], [[3, -3], ["pgo"]], [[2, 0, -2], ["zscore", "rocket_rsi", "dso"]],
+  [[1.5, 0, -1.5], ["fisher"]], [[0.9, 0.2, -0.2, -0.9], ["premier_rsi", "premier_stoch"]], [[0.5, -0.5], ["ift_rsi"]],
+  [[0.8, 0.2], ["laguerre_rsi", "ehlers_stoch", "ibs"]], [[0.7, 0.3], ["demarker"]], [[1, 0], ["bbpct"]], [[1], ["rwi", "vortex"]],
+  [[0], ["macd", "ppo", "tsi", "roc", "mom", "ao", "trix", "kst", "coppock", "bop", "dpo", "aroon_osc", "cmf", "pvo", "bbtrend", "dosc", "repulse", "roc_bands",
+    "stoch_macd", "tmo", "vfi", "vpn", "rainbow_osc", "rmo", "pfe", "di_osc", "linreg_angle", "chaikin_osc", "bbp", "accel_osc", "price_osc", "pmo", "smi_ergodic",
+    "rvgi", "impulse_macd", "macd_bb", "macd_leader", "madh", "myrsi_net", "polychrome_mom", "rsih", "velocity", "vw_macd", "dmh", "efi", "eom", "mfo", "twiggs",
+    "klinger", "mcclellan", "trend_strength", "apo", "fosc", "disparity", "weekly_daily_macd", "iii", "vroc", "bandpass", "cyber_cycle", "decycler_osc", "ebsw",
+    "ehlers_hp", "elegant_osc", "roofing", "reflex", "trendflex", "universal_osc", "voss", "correlation_cycle", "super_passband", "swak_highpass", "rmo_ehlers",
+    "reverse_ema", "fourier_series", "rvgi_ext", "cycle_trend", "wvad"]],
+];
+export const DEFAULT_LEVELS: Record<string, number[]> = Object.fromEntries(levelGroups.flatMap(([levels, ids]) => ids.map((id) => [id, levels])));
+export const levelsOf = (chip: Chip) => chip.levels ?? DEFAULT_LEVELS[chip.id] ?? [];
 /** AmiBroker ParamStyle as Lightweight Charts line options (lineStyle 0 solid, 1 dotted, 2 dashed). */
 const LINE_LOOK: Record<LineStyle, Record<string, unknown>> = {
   line: { lineWidth: 2, lineStyle: 0 }, thick: { lineWidth: 4, lineStyle: 0 }, dashed: { lineWidth: 2, lineStyle: 2 }, dotted: { lineWidth: 2, lineStyle: 1 }, hidden: { visible: false },
 };
+/** TradingView-style drawings: a horizontal price line, or a trend line between two clicked bars. */
+type Drawing = { kind: "h"; price: number } | { kind: "t"; a: [string, number]; b: [string, number] };
+const loadDrawings = (key: string): Drawing[] => { try { return JSON.parse(localStorage.getItem(key) ?? "[]"); } catch { return []; } };
 const outputsOf = (chip: Chip, catalogue: Catalogue) => catalogue.indicators.find((i) => i.id === chip.id)?.outputs ?? [];
 /** Output k's colour: its own look, else the k-th palette entry after the chip's. */
 const plotColor = (chip: Chip, index: number, out: string | undefined, k: number) => (out && chip.looks?.[out]?.color) || defaultColor(index, k);
@@ -33,7 +58,7 @@ export interface WorkbenchProps {
   onChipChange(key: string, params: Record<string, number>): void;
   onChipRemove(key: string): void;
   onChipLook?(key: string, looks: Record<string, Look> | undefined): void;
-  instrumentLabel?: string; comparisonOptions?: readonly InstrumentOption[]; onChipVsChange?(key: string, vs?: string): void;
+  instrumentLabel?: string; comparisonOptions?: readonly InstrumentOption[]; onChipVsChange?(key: string, vs?: string): void; onChipTfChange?(key: string, tf?: string): void; onChipLevels?(key: string, levels?: number[]): void;
 }
 
 const TF_NAMES: Record<string, string> = { D: "Daily", W: "Weekly", M: "Monthly" };
@@ -41,10 +66,20 @@ const PRICE_IDS = ["open", "high", "low", "close"] as const;
 type Marker = { time: string; position: string; shape: string; color: string; text?: string; size?: number };
 type Disposable = NonNullable<ReturnType<typeof createLabChart>>;
 
-export function Workbench({ market, ticker, tf, range, catalogue, chips, trades, loadSeries, onChipChange, onChipRemove, onChipLook, instrumentLabel, comparisonOptions = [], onChipVsChange }: WorkbenchProps) {
+export function Workbench({ market, ticker, tf, range, catalogue, chips, trades, loadSeries, onChipChange, onChipRemove, onChipLook, instrumentLabel, comparisonOptions = [], onChipVsChange, onChipTfChange, onChipLevels }: WorkbenchProps) {
   const priceRef = useRef<HTMLDivElement>(null);
   const panesRef = useRef<HTMLDivElement>(null);
   const legendRef = useRef<HTMLDivElement>(null);
+  const toLatest = useRef<() => void>(undefined);
+  const [behind, setBehind] = useState(false);
+  // Drawings belong to this viewer's browser, per instrument and timeframe (bar dates differ by timeframe).
+  const drawKey = `lab.drawings|${market}|${ticker}|${tf}`;
+  const [drawings, setDrawings] = useState<Drawing[]>(() => loadDrawings(drawKey));
+  useEffect(() => setDrawings(loadDrawings(drawKey)), [drawKey]);
+  const saveDrawings = (next: Drawing[]) => { setDrawings(next); try { localStorage.setItem(drawKey, JSON.stringify(next)); } catch { /* kept for this visit */ } };
+  const [tool, setTool] = useState<"t" | "h" | null>(null);
+  const priceApi = useRef<{ chart: LabChartApi; series: LabSeriesApi } | null>(null);
+  const [chartVersion, setChartVersion] = useState(0); // the latest bar is off screen: show TradingView's "scroll to latest" button
   // AmiBroker "Ask for parameters of newly inserted indicators": a chip added after the first render opens its Parameters window.
   const [openKey, setOpenKey] = useState<string | null>(null);
   const seenKeys = useRef(new Set(chips.map((c) => c.key)));
@@ -79,7 +114,7 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
     : !chip.vs ? "Choose a comparison instrument to draw this pair."
     : !comparisonOptions.some((o) => o.ticker === chip.vs && !o.disabled) ? `${chip.vs} is not available in this market; choose another comparison.` : undefined;
   const comparisonsKey = JSON.stringify(comparisonOptions.map((o) => [o.ticker, o.disabled]));
-  const chipsKey = JSON.stringify(chips.map((c) => [c.key, c.id, c.vs, c.looks, Object.entries(c.params).sort(([a], [b]) => a.localeCompare(b))]));
+  const chipsKey = JSON.stringify(chips.map((c) => [c.key, c.id, c.vs, c.tf, c.levels, c.looks, Object.entries(c.params).sort(([a], [b]) => a.localeCompare(b))]));
 
   useEffect(() => {
     let live = true;
@@ -100,7 +135,7 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
     void (async () => {
       const [ohlcParts, chipParts] = await Promise.all([
         ohlcLoad,
-        Promise.allSettled(drawn.map(({ chip, ind }) => cachedSeries({ id: chip.id, tf, p: chip.params, vs: chip.vs, ...formulaQuery(ind) }))),
+        Promise.allSettled(drawn.map(({ chip, ind }) => cachedSeries({ id: chip.id, tf: chip.tf ?? tf, p: chip.params, vs: chip.vs, ...formulaQuery(ind) }))),
       ]);
       if (!live) return;
       const failedOhlc = ohlcParts.find((r) => r.status === "rejected");
@@ -139,9 +174,16 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
         downColor: colors.red, borderDownColor: colors.red, wickDownColor: colors.red, priceLineVisible: false,
       });
       priceSeries.setData(candles(px));
+      priceApi.current = { chart, series: priceSeries };
+      setChartVersion((v) => v + 1);
       const markers: Marker[] = [];
       const readouts: { box: HTMLElement | null; label: string; color: string; values: Map<string, number | null> }[] = [];
       const charts: SyncedPane[] = [{ chart, el: priceRef.current, series: priceSeries }];
+      // Every line carries exactly the price bars (blank where it has no value), so the panes line up bar for bar.
+      const onBars = (dates: string[], values: (number | null)[]) => {
+        const at = new Map(dates.map((d, k) => [d, values[k]]));
+        return linePoints(px.d, px.d.map((d) => at.get(d) ?? null));
+      };
       drawn.forEach(({ chip, ind, index }, i) => {
         const part = chipParts[i];
         if (part.status !== "fulfilled") return;
@@ -150,7 +192,7 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
         const host = target ? undefined : [...panesRef.current!.querySelectorAll<HTMLElement>("[data-lab-pane]")].find((el) => el.dataset.labPane === chip.key);
         // each pane reads out in its own legend, the price legend keeps the overlays
         const box = target ? legendRef.current : host?.parentElement?.querySelector<HTMLElement>(".lab-legend-tv") ?? null;
-        const settings = chipValues(ind, chip.params).join(", ");
+        const settings = [...chipValues(ind, chip.params), ...(chip.tf ? [TF_LABELS[chip.tf] ?? chip.tf] : [])].join(", ");
         res.outputs.forEach((out, k) => {
           const values = res.series[out] ?? [];
           const color = plotPaint(plotColor(chip, index, out, k), colors), look = LINE_LOOK[chip.looks?.[out]?.style ?? "line"];
@@ -158,19 +200,21 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
             markers.push(...booleanMarkers(res.dates, values, `${ind.name}${res.outputs.length > 1 ? "." + out : ""}`, color, keep));
             return;
           }
-          readouts.push({ box, label: `${shortName(ind)}${res.outputs.length > 1 ? "." + out : ""}${settings ? " " + settings : ""}`, color, values: new Map(res.dates.map((d, k) => [d, values[k]])) });
+          readouts.push({ box, label: `${shortName(ind)}${res.outputs.length > 1 ? "." + out : ""}${settings ? `(${settings})` : ""}`, color, values: new Map(res.dates.map((d, k) => [d, values[k]])) });
           if (!target) {
             // A pane chart is created only when the chip has a line to draw; boolean-only chips mark the price chart.
             const pane = host && createLabChart(host, 150);
             if (!pane) return;
             disposers.push(pane);
             target = pane.chart;
-            const line = target.addLineSeries({ color, ...look, priceLineVisible: false, lastValueVisible: false });
-            line.setData(linePoints(res.dates, values, keep));
+            const line = target.addLineSeries({ color, ...look, priceLineVisible: false, lastValueVisible: true });
+            line.setData(onBars(res.dates, values));
+            // threshold lines (RSI 70 / 30 …), dashed, with their value on the axis
+            for (const price of levelsOf(chip)) line.createPriceLine?.({ price, color: colors.ink3, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "" });
             charts.push({ chart: pane.chart, el: host, series: line });
             return;
           }
-          target.addLineSeries({ color, ...look, priceLineVisible: false, lastValueVisible: false }).setData(linePoints(res.dates, values, keep));
+          target.addLineSeries({ color, ...look, priceLineVisible: false, lastValueVisible: true }).setData(onBars(res.dates, values));
         });
       });
       const actionTrades = (trades ?? []).map((trade) => ({
@@ -192,6 +236,22 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
       // One date axis, under the bottom chart (AmiBroker / TradingView stacked panes).
       charts.forEach(({ chart: ch }, i) => ch.applyOptions({ timeScale: { visible: i === charts.length - 1 } }));
       unsync = syncPanes(charts);
+      // Same price-axis width on every pane, else "27200.00" vs "80.00" shifts each pane's bars sideways.
+      // shortcut: measured once after the first paint; a much longer price label after zooming can still differ.
+      requestAnimationFrame(() => {
+        if (!live) return;
+        const width = Math.max(...charts.map(({ chart: ch }) => ch.priceScale?.("right").width?.() ?? 0));
+        if (width > 0) for (const { chart: ch } of charts) ch.priceScale?.("right").applyOptions({ minimumWidth: Math.ceil(width) });
+      });
+      const priceTs = chart.timeScale(), lastBar = px.d.length - 1;
+      priceTs.subscribeVisibleLogicalRangeChange?.((r) => setBehind(!!r && r.to < lastBar - 0.5));
+      toLatest.current = () => {
+        const r = priceTs.getVisibleLogicalRange?.();
+        if (!r || !priceTs.setVisibleLogicalRange) return;
+        priceTs.setVisibleLogicalRange({ from: lastBar + 2 - (r.to - r.from), to: lastBar + 2 }); // same zoom, two empty bars after the latest
+        const next = priceTs.getVisibleLogicalRange?.();
+        if (next) for (const { chart: ch } of charts.slice(1)) ch.timeScale().setVisibleLogicalRange?.(next);
+      };
       // TradingView-style legend: fixed top-left, last bar by default, the hovered bar while the crosshair is on the chart.
       const at = new Map(px.d.map((d, i) => [d, i]));
       const num = (v: number) => v.toFixed(2);
@@ -206,7 +266,7 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
         };
         const rows = (target: HTMLElement | null) => readouts.flatMap(({ box: b, label, color, values }) => {
           const v = values.get(time);
-          return b !== target || v == null || !Number.isFinite(v) ? [] : [line([[label + "  ", color], [num(v), color]])];
+          return b !== target || v == null || !Number.isFinite(v) ? [] : [line([[label + " = ", color], [num(v), color]])];
         });
         box.replaceChildren(
           line([[`${ticker} · ${TF_NAMES[tf] ?? tf} · ${time}  `], ["O ", colors.ink2], [num(px.o[i]) + "  ", tone], ["H ", colors.ink2], [num(px.h[i]) + "  ", tone],
@@ -218,9 +278,45 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
       if (last) legend(last);
       for (const { chart: ch } of charts) ch.subscribeCrosshairMove?.((param) => legend(param.time && at.has(param.time) ? param.time : last));
     })();
-    return () => { live = false; unsync?.(); disposers.forEach((d) => d.dispose()); legendRef.current?.replaceChildren(); panesRef.current?.querySelectorAll(".lab-legend-tv").forEach((el) => el.replaceChildren()); };
+    return () => { live = false; priceApi.current = null; unsync?.(); disposers.forEach((d) => d.dispose()); legendRef.current?.replaceChildren(); panesRef.current?.querySelectorAll(".lab-legend-tv").forEach((el) => el.replaceChildren()); };
     // loadSeries and find are read fresh per run; chips are tracked by their canonical key.
   }, [market, ticker, tf, range, chipsKey, trades, themeKey, catalogue, comparisonsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const api = priceApi.current;
+    if (!api || !priceRef.current) return;
+    const { chart, series } = api, color = themeColors(priceRef.current).blue;
+    const lines = drawings.flatMap((d) => d.kind === "h" ? [series.createPriceLine?.({ price: d.price, color, lineWidth: 1, lineStyle: 0, axisLabelVisible: true })] : []);
+    const trends = drawings.flatMap((d) => {
+      if (d.kind !== "t") return [];
+      // its own series that never rescales the price axis
+      const line = chart.addLineSeries({ color, lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, autoscaleInfoProvider: () => null });
+      line.setData([d.a, d.b].sort(([x], [y]) => (x < y ? -1 : 1)).map(([time, value]) => ({ time, value })));
+      return [line];
+    });
+    return () => {
+      if (priceApi.current?.chart !== chart) return; // the chart itself was removed with its lines
+      lines.forEach((l) => series.removePriceLine?.(l));
+      trends.forEach((l) => chart.removeSeries?.(l));
+    };
+  }, [drawings, chartVersion]);
+
+  useEffect(() => {
+    const api = priceApi.current;
+    if (!api || !tool) return;
+    let start: [string, number] | null = null;
+    const onClick = (param: { time?: string; point?: { x: number; y: number } }) => {
+      const price = param.point && api.series.coordinateToPrice?.(param.point.y);
+      if (!param.time || price === undefined || price === null) return;
+      if (tool === "h") { saveDrawings([...drawings, { kind: "h", price }]); setTool(null); }
+      else if (!start) start = [param.time, price];
+      else if (param.time !== start[0]) { saveDrawings([...drawings, { kind: "t", a: start, b: [param.time, price] }]); setTool(null); }
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setTool(null); };
+    api.chart.subscribeClick?.(onClick);
+    window.addEventListener("keydown", onKey);
+    return () => { api.chart.unsubscribeClick?.(onClick); window.removeEventListener("keydown", onKey); };
+  }, [tool, chartVersion, drawings]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const panes = chips.filter((c) => find(c.id)?.placement === "pane" && !pairProblem(c));
   return (
@@ -236,11 +332,21 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
         </div>
       ) : <p className="cap">{COPY.noChips}</p>}
       {ohlcError !== null && <ErrorNotice error={ohlcError} market={market} instrumentLabel={instrumentLabel} />}
+      <div className="lab-draw" role="toolbar" aria-label="Drawing tools" hidden={ohlcError !== null}>
+        <button type="button" className="dbtn sm" data-lab-draw="t" aria-pressed={tool === "t"} onClick={() => setTool(tool === "t" ? null : "t")}>╱ Trend line</button>
+        <button type="button" className="dbtn sm" data-lab-draw="h" aria-pressed={tool === "h"} onClick={() => setTool(tool === "h" ? null : "h")}>─ Horizontal line</button>
+        {drawings.length > 0 && <>
+          <button type="button" className="dbtn sm ghost" data-lab-draw-undo onClick={() => saveDrawings(drawings.slice(0, -1))}>Undo</button>
+          <button type="button" className="dbtn sm ghost" data-lab-draw-clear onClick={() => saveDrawings([])}>Clear drawings ({drawings.length})</button>
+        </>}
+        {tool && <span className="cap" data-lab-draw-hint>{tool === "t" ? "Click the start, then the end of the line on the price chart" : "Click a price on the chart"} · Esc cancels</span>}
+      </div>
       <div className="lab-stage">
         <div hidden={ohlcError !== null}>
-          <div className="lab-price">
+          <div className={`lab-price${tool ? " lab-drawing" : ""}`}>
             <div className="lwc px" ref={priceRef} data-lab-chart role="img" aria-label={`${ticker} price chart`} />
             <div className="lab-legend-tv" ref={legendRef} aria-hidden="true" />
+            {behind && <button type="button" className="lab-latest" data-lab-latest title="Scroll to the latest bar" aria-label="Scroll to the latest bar" onClick={() => toLatest.current?.()}>»</button>}
           </div>
           <div ref={panesRef}>
             {panes.map((c) => (
@@ -256,7 +362,8 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
           if (!chip || !ind) return null;
           const close = () => { setOpenKey(null); document.querySelector<HTMLElement>(`[data-lab-chip="${chip.key}"] .lab-chip-open`)?.focus(); };
           // keyed by chip: another chip's window starts fresh (section open, focus, typed drafts)
-          return <ParamsDialog key={chip.key} name={ind.name} indicator={ind} params={chip.params} looks={chip.looks} index={index} vs={chip.vs}
+          return <ParamsDialog key={chip.key} name={ind.name} indicator={ind} params={chip.params} looks={chip.looks} index={index} vs={chip.vs} tf={chip.tf} timeframes={catalogue.timeframes} onTf={(t) => onChipTfChange?.(chip.key, t)}
+            levels={ind.placement === "pane" ? levelsOf(chip) : undefined} onLevels={(l) => onChipLevels?.(chip.key, l)}
             comparisonOptions={comparisonOptions} showComparison={isPair(chip.id) && foreignAdvertised(catalogue)}
             onParams={(params) => onChipChange(chip.key, params)} onLook={(looks) => onChipLook?.(chip.key, looks)} onVs={(vs) => onChipVsChange?.(chip.key, vs)} onClose={close} />;
         })()}
@@ -280,7 +387,7 @@ function ChipView({ chip, index, catalogue, error, market, instrumentLabel, onRe
 }) {
   const ind = catalogue.indicators.find((i) => i.id === chip.id);
   const name = ind?.name ?? chip.id;
-  const values = [...(ind ? chipValues(ind, chip.params) : []), ...(chip.vs ? [`vs ${chip.vs}`] : [])].join(", ");
+  const values = [...(ind ? chipValues(ind, chip.params) : []), ...(chip.vs ? [`vs ${chip.vs}`] : []), ...(chip.tf ? [TF_LABELS[chip.tf] ?? chip.tf] : [])].join(", ");
   return (
     <div className="chip" data-lab-chip={chip.key}>
       <button type="button" className="lab-chip-open" aria-haspopup="dialog" aria-expanded={open} title={`Parameters of ${name}`} onClick={onOpen}>

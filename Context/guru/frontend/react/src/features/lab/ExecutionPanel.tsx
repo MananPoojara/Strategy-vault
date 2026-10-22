@@ -37,6 +37,9 @@ export function ExecutionPanel({ spec, catalogue, onChange, part = "all" }: { sp
         const f = e.target.value as Fill;
         onChange(setExecution(spec, { exit_fill: f === fill ? undefined : f, ...(f === "close" ? { delay_bars: undefined } : {}) }));
       }}>{fills.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}</select></label>}
+      <label className="lab-check" title={spec.portfolio ? "A single-instrument setting" : "AmiBroker AFL counts BarsSince(Buy) from the signal bar; with a next-open fill that exits one bar earlier. Close fills are not affected."}>
+        <input type="checkbox" disabled={!!spec.portfolio} checked={ex.bars_held_from === "signal"}
+          onChange={(e) => onChange(setExecution(spec, { bars_held_from: e.target.checked ? "signal" : undefined }))} />Count bars held from the signal bar</label>
       <button type="button" className="dbtn sm ghost" data-lab-timing-options aria-expanded={timing} onClick={() => setTiming(!timing)}>{timing ? "▾" : "▸"} Timing options</button></>}
     </div>
     {showDirection && direction === "both" && <p className="cap">{COPY.oppositeHelp[opposite]} {COPY.bothFlat}</p>}

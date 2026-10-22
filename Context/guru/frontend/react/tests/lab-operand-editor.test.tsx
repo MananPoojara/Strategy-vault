@@ -191,3 +191,11 @@ it("shares foreign controls recursively through formula operands only when adver
   const select=host.querySelector<HTMLSelectElement>('[aria-label="Entry left › abs · Read from"]'); expect(select).not.toBeNull();
   await choose(select!,"SPX");expect(onChange).toHaveBeenCalledWith({abs:{s:"rsi",p:{length:2},future:"keep",symbol:"SPX"}});
 });
+
+it("AmiBroker defaults sets the indicator's AmiBroker parameters over the current ones; indicators without them show no button", async () => {
+  const { host, last } = await setup({ s: "stoch", p: { k: 20 } });
+  await click(host.querySelector<HTMLButtonElement>("[data-lab-ab-defaults]")!);
+  expect(last()).toEqual({ s: "stoch", p: { k: 14, smooth_k: 3, d: 3, variant: 1 } });
+  const sma = await setup({ s: "sma", p: { length: 20 } });
+  expect(sma.host.querySelector("[data-lab-ab-defaults]")).toBeNull();
+});

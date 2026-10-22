@@ -48,7 +48,7 @@ it("is absent until the engine lists execution options; folded unless something 
 
 it("money mode is blocked with the reason on an index and for India shorts", async () => {
   const { host } = await risk(defaultSpec(), { kind: "index", market: "in" });
-  const money = [...host.querySelectorAll<HTMLButtonElement>('[aria-label="Results in"] button')].find((b) => b.textContent === "Money")!;
+  const money = [...host.querySelectorAll<HTMLButtonElement>('[aria-label="Results in"] button')].find((b) => b.textContent === "Cash amounts")!;
   expect(money.disabled).toBe(true);
   expect(host.querySelector("[data-lab-money-blocked]")!.textContent).toBe(MONEY_BLOCKED.index);
   const short = await risk(withDirection(defaultSpec(), "short"), { kind: "individual_stock", market: "in" });
@@ -57,7 +57,7 @@ it("money mode is blocked with the reason on an index and for India shorts", asy
 
 it("money mode on a US ETF: capital, sizing in shares, costs, taxes, borrow for shorts", async () => {
   const { host, last, rerender } = await risk(setExecution(defaultSpec(), { cost_bps: 10 }), usEtf);
-  await clickIn(host, '[aria-label="Results in"]', "Money");
+  await clickIn(host, '[aria-label="Results in"]', "Cash amounts");
   expect(last().execution).toEqual({ capital: 1_000_000 });
   expect(host.querySelector<HTMLInputElement>('input[aria-label="Initial equity"]')!.disabled).toBe(true); // unit study until rerendered
   await rerender(last());
@@ -106,7 +106,7 @@ it("shows the futures note", async () => {
 
 it("money is disabled when the engine has only unit sizing capabilities", async () => {
   const { host } = await risk(defaultSpec(), usEtf, catalogue7Fixture);
-  const button = [...host.querySelectorAll<HTMLButtonElement>('[aria-label="Results in"] button')].find((b) => b.textContent === "Money")!;
+  const button = [...host.querySelectorAll<HTMLButtonElement>('[aria-label="Results in"] button')].find((b) => b.textContent === "Cash amounts")!;
   expect(button.disabled).toBe(true);
   expect(host.querySelector("[data-lab-money-blocked]")?.textContent).toBe("Money mode is not supported by this engine yet.");
 });
@@ -184,14 +184,16 @@ it("General: Tick size and Pad and align (AmiBroker wording) in unit and money m
   expect(port.host.querySelector("[data-lab-general-data]")).toBeNull();
 });
 
-it("Account margin edits execution.limits.margin_pct and discloses no loan interest", async () => {
+it("Account margin and Margin rate edit execution.limits and disclose the loan interest", async () => {
   const { host, last, rerender } = await risk(withMode(defaultSpec(), "money"), usEtf);
   expect(host.querySelector("[data-lab-margin-note]")).toBeNull();
   await type(host.querySelector('input[aria-label="Account margin [%]"]')!, "50");
   expect(last().execution?.limits).toEqual({ margin_pct: 50 });
   await rerender(last());
   expect(host.querySelector("[data-lab-margin-note]")!.textContent).toBe(MARGIN_NOTE);
-  expect(MARGIN_NOTE).toContain("No margin loan interest is charged");
+  expect(MARGIN_NOTE).toContain("Margin rate [%] is charged");
+  await type(host.querySelector('input[aria-label="Margin rate [%]"]')!, "9");
+  expect(last().execution?.limits).toEqual({ margin_pct: 50, margin_rate_pct: 9 });
   expect((await risk(defaultSpec(), usEtf)).host.querySelector('input[aria-label="Account margin [%]"]')).toBeNull(); // money mode only
 });
 

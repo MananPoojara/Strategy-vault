@@ -201,11 +201,15 @@ const scenario = (host: HTMLElement) => host.querySelector<HTMLSelectElement>('s
 
 it("settings tabs follow AmiBroker and the ARIA tab pattern; hidden panels stay mounted", async () => {
   const { host } = await tree(defaultSpec(), { portfolio: <p data-portfolio-slot>portfolio controls</p> });
-  expect(tabs(host).map((t) => t.textContent)).toEqual(["General", "Trades", "Orders & stops", "Portfolio"]);
-  expect(tabs(host).map((t) => t.tabIndex)).toEqual([0, -1, -1, -1]);
+  expect(tabs(host).map((t) => t.textContent)).toEqual(["General", "Trades", "Orders & stops", "Report", "Portfolio"]);
+  expect(tabs(host).map((t) => t.tabIndex)).toEqual([0, -1, -1, -1, -1]);
+  expect(panel(host, "Report").querySelector("[data-lab-report-settings]")).not.toBeNull(); // risk-free rates on their own tab, as in AmiBroker
   for (const t of tabs(host)) expect(panel(host, t.textContent!).getAttribute("aria-labelledby")).toBe(t.id);
   expect(panel(host, "General").querySelector('[data-lab-exec="direction"]')).not.toBeNull(); // Positions sit in General
-  expect(panel(host, "General").firstElementChild!.hasAttribute("data-lab-equity")).toBe(true); // Initial equity first, as in AmiBroker
+  // labelled groups; Initial equity first, as in AmiBroker
+  expect([...panel(host, "General").querySelectorAll(".lab-sgroup > h4")].map((h) => h.textContent)).toEqual(["Capital", "Test period & costs", "Trading", "Position size & risk"]);
+  expect(panel(host, "General").querySelector(".lab-sgroup > div")!.firstElementChild!.hasAttribute("data-lab-equity")).toBe(true);
+  expect(host.querySelector(".lab-settings-h")!.textContent).toContain("Backtest settings");
   expect(panel(host, "Trades").querySelector('[data-lab-trade-prices="preset"]')).not.toBeNull(); // grid always visible, greyed for presets
   expect(panel(host, "Portfolio").querySelector("[data-portfolio-slot]")).not.toBeNull();
   const list = host.querySelector<HTMLElement>("[role=tablist]")!;
@@ -213,7 +217,7 @@ it("settings tabs follow AmiBroker and the ARIA tab pattern; hidden panels stay 
   expect(tabs(host)[1].getAttribute("aria-selected")).toBe("true");
   expect(document.activeElement).toBe(tabs(host)[1]);
   await act(async () => list.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true })));
-  expect(tabs(host)[3].tabIndex).toBe(0);
+  expect(tabs(host)[4].tabIndex).toBe(0);
   await act(async () => list.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
   expect(tabs(host)[0].getAttribute("aria-selected")).toBe("true"); // wraps
   await act(async () => tabs(host)[2].click());

@@ -3,9 +3,10 @@ import { availability, groupByCategory, searchIndicators, shortName } from "./ca
 import { myId } from "./formula";
 import { ErrorNotice } from "./ui";
 import type { Catalogue, Indicator, Market, SavedIndicator, Timeframe } from "./types";
+import { POPULAR, useSimple } from "./simple";
 import "./library.css";
 
-const MINE = "My indicators";
+const MINE = "My indicators", POPULAR_GROUP = "Popular";
 /** "My indicators" group: the user's saved formulas; absent `onEdit` hides the group (no account storage). */
 export interface MineProps { list: SavedIndicator[]; error?: unknown; canEdit: boolean; onAdd(row: SavedIndicator): void; onEdit(row: SavedIndicator | null): void }
 const narrow = () => typeof window !== "undefined" && !!window.matchMedia?.("(max-width: 900px)").matches;
@@ -17,6 +18,8 @@ export function LibraryRail({ catalogue, market, hasVolume, tf, onAdd, onRead, m
   const [manual, setManual] = useState<Record<string, boolean>>({}); // the user's own open/closed choices, kept across searches
   const [searchShut, setSearchShut] = useState<Set<string>>(new Set()); // groups closed by hand while a search is showing
   const [mobile, setMobile] = useState(narrow);
+  const simple = useSimple();
+  const [all, setAll] = useState(false); // Simple view: Popular only until the analyst asks for every category
   useEffect(() => {
     const mq = window.matchMedia?.("(max-width: 900px)");
     if (!mq) return;
@@ -28,7 +31,9 @@ export function LibraryRail({ catalogue, market, hasVolume, tf, onAdd, onRead, m
   const groups = groupByCategory(searchIndicators(catalogue.indicators, query));
   const searching = query.trim() !== "";
   const myList = mine?.list.filter((r) => !searching || r.name.toLowerCase().includes(query.trim().toLowerCase())) ?? [];
-  const isOpen = (category: string) => (searching ? !searchShut.has(category) : manual[category] ?? false); // categories start closed; a click shows every indicator in it
+  const isOpen = (category: string) => (searching ? !searchShut.has(category) : manual[category] ?? category === POPULAR_GROUP); // categories start closed (Popular open); a click shows every indicator in it
+  const popular = simple && !all && !searching;
+  const popularList = POPULAR.map((id) => catalogue.indicators.find((i) => i.id === id)).filter((i): i is Indicator => !!i);
   const toggle = (category: string) => searching
     ? setSearchShut((s) => { const n = new Set(s); if (!n.delete(category)) n.add(category); return n; })
     : setManual((m) => ({ ...m, [category]: !(m[category] ?? false) }));
@@ -57,7 +62,7 @@ export function LibraryRail({ catalogue, market, hasVolume, tf, onAdd, onRead, m
         </div>
       )}
       {groups.length === 0 && <div className="empty">No indicator matches "{query}".</div>}
-      {groups.map(([category, list]) => (
+      {(popular ? [[POPULAR_GROUP, popularList] as [string, Indicator[]]] : groups).map(([category, list]) => (
         <div className="lab-group" key={category}>
           <button type="button" className="lab-group-h" aria-expanded={isOpen(category)} onClick={() => toggle(category)}>
             {category} <small>{list.length}</small>
@@ -79,6 +84,8 @@ export function LibraryRail({ catalogue, market, hasVolume, tf, onAdd, onRead, m
           </ul>
         </div>
       ))}
+      {popular && <button type="button" className="dbtn sm lab-popular-more" data-lab-show-all onClick={() => setAll(true)}>Show all {catalogue.indicators.length} indicators by category</button>}
+      {simple && all && !searching && <button type="button" className="dbtn sm ghost lab-popular-more" onClick={() => setAll(false)}>Show popular only</button>}
       <p className="lab-lib-foot">Click a name to add it to the chart · <span className="tag">needs data</span> listed, not available yet · <b>i</b> formula and sources</p>
     </>
   );

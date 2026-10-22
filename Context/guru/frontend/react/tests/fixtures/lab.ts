@@ -27,7 +27,7 @@ export const catalogueFixture: Catalogue = {
                { key: "slow", label: "Slow", default: 26, min: 1, max: 500, step: 1, integer: true },
                { key: "signal", label: "Signal", default: 9, min: 1, max: 500, step: 1, integer: true }] }),
     ind({ id: "stoch", name: "Stochastic", category: "Oscillators", placement: "pane", outputs: ["k", "d"],
-      params: [len(14), { key: "variant", label: "Variant", default: 0, min: 0, max: 1, step: 1, integer: true }] }),
+      params: [len(14), { key: "variant", label: "Variant (0 TradingView, 1 AmiBroker ratio of sums)", default: 0, min: 0, max: 1, step: 1, integer: true }] }),
     ind({ id: "obv", name: "On-Balance Volume", category: "Volume", placement: "pane", needs: { ...needs, volume: true } }),
     ind({ id: "ad_line", name: "Advance/Decline Line", category: "Breadth", placement: "pane", needs: { ...needs, breadth: true } }),
     ind({ id: "fractals", name: "Williams Fractals", category: "Patterns", outputs: ["up", "down"], sparse: true }),

@@ -3,25 +3,27 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { act, useState } from "react";
 import { Workbench, type Chip } from "../src/features/lab/Workbench";
+import { variantOptions } from "../src/features/lab/ParamsDialog";
 import { catalogueFixture as cat, flush, mount, runFixture, seriesFixture, unmount } from "./fixtures/lab";
 
 /** Chip settings live in the AmiBroker-style Parameters window; clicking a chip opens it. */
 const openParams = (host: HTMLElement, key: string) => act(async () => host.querySelector<HTMLButtonElement>(`[data-lab-chip="${key}"] .lab-chip-open`)!.click());
 
-type Spy = { setData: ReturnType<typeof vi.fn>; setMarkers: ReturnType<typeof vi.fn>; applyOptions: ReturnType<typeof vi.fn> };
+type Spy = { setData: ReturnType<typeof vi.fn>; setMarkers: ReturnType<typeof vi.fn>; applyOptions: ReturnType<typeof vi.fn>; createPriceLine?: ReturnType<typeof vi.fn>; removePriceLine?: ReturnType<typeof vi.fn> };
 const truthModule = { exports: {} };
 runInNewContext(readFileSync("../backtest-trust.js", "utf8"), { module: truthModule });
 const truth = truthModule.exports as NonNullable<Window["VaultTruth"]>;
 
-let charts: { remove: ReturnType<typeof vi.fn>; series: Spy[]; kinds: string[] }[] = [];
+let charts: { remove: ReturnType<typeof vi.fn>; series: Spy[]; kinds: string[]; click?: (p: { time?: string; point?: { x: number; y: number } }) => void; removeSeries: ReturnType<typeof vi.fn> }[] = [];
 beforeEach(() => {
   charts = [];
   window.VaultTruth = truth;
   const make = () => {
-    const c = { remove: vi.fn(), series: [] as Spy[], kinds: [] as string[] };
+    const c = { remove: vi.fn(), series: [] as Spy[], kinds: [] as string[], click: undefined as ((p: object) => void) | undefined, removeSeries: vi.fn() };
     charts.push(c);
-    const add = (kind: string) => () => { const s = { setData: vi.fn(), setMarkers: vi.fn(), applyOptions: vi.fn() }; c.series.push(s); c.kinds.push(kind); return s; };
-    return { addCandlestickSeries: add("candle"), addLineSeries: add("line"), addAreaSeries: add("area"), remove: c.remove, resize: vi.fn(),
+    const add = (kind: string) => () => { const s = { setData: vi.fn(), setMarkers: vi.fn(), applyOptions: vi.fn(), createPriceLine: vi.fn((o: object) => o), removePriceLine: vi.fn(), coordinateToPrice: vi.fn((y: number) => y * 10) }; c.series.push(s); c.kinds.push(kind); return s; };
+    return { addCandlestickSeries: add("candle"), addLineSeries: add("line"), addAreaSeries: add("area"), remove: c.remove, resize: vi.fn(), removeSeries: c.removeSeries,
+      subscribeClick: (h: (p: object) => void) => { c.click = h; }, unsubscribeClick: () => { c.click = undefined; },
       applyOptions: vi.fn(), timeScale: () => ({ fitContent: vi.fn(), setVisibleRange: vi.fn() }) };
   };
   window.LightweightCharts = { createChart: vi.fn(make), CrosshairMode: { Normal: 0 } } as never;
@@ -62,7 +64,9 @@ it("draws candles, overlays with gaps, boolean markers and a pane; a failing chi
   expect(host.querySelector('[data-lab-chip="c5"] [data-lab-error]')?.textContent).toContain("rsi: needs more history");
   await openParams(host, "c4");
   expect(host.querySelector<HTMLSelectElement>('.lab-params select')?.value).toBe("1");
-  expect(host.querySelector('.lab-params select')?.textContent).toContain("AmiBroker");
+  // the choices are the catalogue's own variant names, not a fixed TradingView/AmiBroker pair
+  expect([...host.querySelectorAll('.lab-params select')[0].querySelectorAll("option")].map((o) => o.textContent)).toEqual(["TradingView", "AmiBroker ratio of sums"]);
+  expect(host.querySelector(".lab-params [data-lab-ab-defaults]")?.textContent).toBe("AmiBroker defaults");
   // the failed pane chip draws no chart; the stoch pane does
   expect(charts).toHaveLength(2);
   expect(host.querySelector("[data-lab-chart]")?.closest("[hidden]")).toBeNull();
@@ -214,6 +218,68 @@ it("an indicator that is not computed is never requested and shows its note", as
   expect(chip.tagName).toBe("DIV");
 });
 
+it("an indicator can use its own timeframe: weekly EMA on a daily chart, set from its Parameters window", async () => {
+  const spy = vi.fn(load), onTf = vi.fn();
+  const host = await mount(<Workbench {...props} chips={[{ key: "w1", id: "ema", params: { length: 20 }, tf: "W" }]} loadSeries={spy} onChipTfChange={onTf} />);
+  await flush();
+  expect((spy.mock.calls.find(([q]) => q.id === "ema")![0] as { tf?: string }).tf).toBe("W");
+  expect((spy.mock.calls.find(([q]) => q.id === "close")![0] as { tf?: string }).tf).toBe("D"); // the candles stay daily
+  expect(host.querySelector('[data-lab-chip="w1"]')!.textContent).toContain("Weekly");
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-chip="w1"] .lab-chip-open')!.click());
+  const select = host.querySelector<HTMLSelectElement>('select[aria-label$="· Timeframe"]')!;
+  expect(select.value).toBe("W");
+  await act(async () => { select.value = ""; select.dispatchEvent(new Event("change", { bubbles: true })); });
+  expect(onTf).toHaveBeenCalledWith("w1", undefined);
+});
+
+it("draws TradingView-style horizontal and trend lines, kept per instrument and timeframe; Undo and Clear remove them", async () => {
+  localStorage.removeItem("lab.drawings|in|NIFTY 50|D");
+  const host = await mount(<Workbench {...props} chips={[]} />);
+  await flush();
+  const price = () => charts.at(-1)!, candles = () => price().series[price().kinds.indexOf("candle")];
+  const press = async (sel: string) => { await act(async () => host.querySelector<HTMLButtonElement>(sel)!.click()); await flush(); };
+  const at = async (time: string, y: number) => { await act(async () => price().click!({ time, point: { x: 1, y } })); await flush(); };
+  await press('[data-lab-draw="h"]');
+  expect(host.querySelector("[data-lab-draw-hint]")!.textContent).toContain("Click a price");
+  await at("2024-01-03", 100);
+  expect(candles().createPriceLine).toHaveBeenLastCalledWith(expect.objectContaining({ price: 1000 }));
+  expect(host.querySelector("[data-lab-draw-hint]")).toBeNull(); // one line per click of the tool, as TradingView
+  await press('[data-lab-draw="t"]');
+  const lines = price().kinds.filter((k) => k === "line").length;
+  await at("2024-01-05", 30);
+  await at("2024-01-02", 20); // clicked right to left: still drawn left to right
+  expect(price().kinds.filter((k) => k === "line")).toHaveLength(lines + 1);
+  expect(price().series.at(-1)!.setData).toHaveBeenLastCalledWith([{ time: "2024-01-02", value: 200 }, { time: "2024-01-05", value: 300 }]);
+  expect(JSON.parse(localStorage.getItem("lab.drawings|in|NIFTY 50|D")!)).toEqual([{ kind: "h", price: 1000 }, { kind: "t", a: ["2024-01-05", 300], b: ["2024-01-02", 200] }]);
+  await press("[data-lab-draw-undo]");
+  expect(price().removeSeries).toHaveBeenCalled();
+  expect(JSON.parse(localStorage.getItem("lab.drawings|in|NIFTY 50|D")!)).toEqual([{ kind: "h", price: 1000 }]);
+  await press("[data-lab-draw-clear]");
+  expect(candles().removePriceLine).toHaveBeenCalled();
+  expect(host.querySelector("[data-lab-draw-clear]")).toBeNull();
+});
+
+it("oscillator panes draw TradingView's threshold levels (Stochastic 80 / 20); the Properties window edits or removes them", async () => {
+  const onLevels = vi.fn();
+  const host = await mount(<Workbench {...props} chips={[chips[3]]} onChipLevels={onLevels} />);
+  await flush();
+  const paneLine = charts[1].series[0];
+  expect(paneLine.createPriceLine!.mock.calls.map(([o]) => (o as { price: number }).price)).toEqual([80, 20]);
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-chip="c4"] .lab-chip-open')!.click());
+  const field = host.querySelector<HTMLInputElement>('input[aria-label$="· Levels"]')!;
+  expect(field.value).toBe("80, 20");
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field, "75, 25");
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+  expect(onLevels).toHaveBeenLastCalledWith("c4", [75, 25]);
+  await unmount();
+  await mount(<Workbench {...props} chips={[{ ...chips[3], levels: [] }]} />);
+  await flush();
+  expect(charts.at(-1)!.series[0].createPriceLine).not.toHaveBeenCalled(); // [] = no lines
+});
+
 it("the provisional strip uses the note the server sent", async () => {
   const note = "Provisional · server note";
   const spy = vi.fn(async (q: { id: string }) => ({ ...(await load(q)), provisional: true as const, provisional_note: note }));
@@ -222,8 +288,8 @@ it("the provisional strip uses the note the server sent", async () => {
   expect(host.querySelector("[data-lab-provisional]")?.textContent).toBe(`${note} · IG:DAX`);
 });
 
-it("keeps every pane on one time range and crosshair bar, and unsubscribes on unmount", async () => {
-  type Handler = (r: { from: string; to: string } | null) => void;
+it("keeps every pane on one bar range and crosshair bar, and unsubscribes on unmount", async () => {
+  type Handler = (r: { from: number; to: number } | null) => void;
   const subs: { range: Handler[]; cross: ((p: { time?: string }) => void)[]; setRange: ReturnType<typeof vi.fn>; setCross: ReturnType<typeof vi.fn>; unRange: ReturnType<typeof vi.fn>; unCross: ReturnType<typeof vi.fn> }[] = [];
   window.LightweightCharts = { createChart: vi.fn(() => {
     const s = { range: [] as Handler[], cross: [] as ((p: { time?: string }) => void)[], setRange: vi.fn(), setCross: vi.fn(), unRange: vi.fn(), unCross: vi.fn() };
@@ -231,7 +297,7 @@ it("keeps every pane on one time range and crosshair bar, and unsubscribes on un
     const series = () => ({ setData: vi.fn(), setMarkers: vi.fn(), applyOptions: vi.fn() });
     return { addCandlestickSeries: series, addLineSeries: series, addAreaSeries: series, remove: vi.fn(), resize: vi.fn(), applyOptions: vi.fn(),
       subscribeCrosshairMove: (h: never) => s.cross.push(h), unsubscribeCrosshairMove: s.unCross, setCrosshairPosition: s.setCross, clearCrosshairPosition: vi.fn(),
-      timeScale: () => ({ fitContent: vi.fn(), setVisibleRange: s.setRange, subscribeVisibleTimeRangeChange: (h: Handler) => s.range.push(h), unsubscribeVisibleTimeRangeChange: s.unRange }) };
+      timeScale: () => ({ fitContent: vi.fn(), setVisibleRange: s.setRange, setVisibleLogicalRange: s.setRange, subscribeVisibleLogicalRangeChange: (h: Handler) => s.range.push(h), unsubscribeVisibleLogicalRangeChange: s.unRange }) };
   }) } as never;
   const host = await mount(<Workbench {...props} chips={[chips[0], chips[3]]} />);
   await flush();
@@ -242,13 +308,13 @@ it("keeps every pane on one time range and crosshair bar, and unsubscribes on un
   expect(pane.setRange.mock.calls.length).toBe(initial);
   // the pane under the pointer drives the others
   host.querySelector('[data-lab-pane="c4"]')!.dispatchEvent(new Event("pointerenter"));
-  pane.range[0]({ from: "2024-01-01", to: "2025-01-01" });
-  expect(price.setRange).toHaveBeenLastCalledWith({ from: "2024-01-01", to: "2025-01-01" });
+  pane.range[0]({ from: 2.5, to: 40 }); // bar positions: also covers the empty space after the last bar
+  expect(price.setRange).toHaveBeenLastCalledWith({ from: 2.5, to: 40 });
   expect(pane.setRange.mock.calls.length).toBe(initial); // no feedback to the source
   pane.cross[0]({ time: "2024-02-01" });
   expect(price.setCross).toHaveBeenCalledWith(0, "2024-02-01", expect.anything());
   // a pane that is not under the pointer does not echo
-  price.range[0]({ from: "2020-01-01", to: "2021-01-01" });
+  price.range[0]({ from: 0, to: 10 });
   expect(pane.setRange.mock.calls.length).toBe(initial);
   await unmount();
   expect(price.unRange).toHaveBeenCalledTimes(1);
@@ -284,7 +350,7 @@ it("inherits the software font and price-chart interaction options", async () =>
     expect(options).toMatchObject({
       layout: { attributionLogo: false, fontFamily: getComputedStyle(document.body).fontFamily, fontSize: 11, textColor: "#8b8d93" },
       grid: { vertLines: { visible: false }, horzLines: { color: "#e3e3e4" } },
-      timeScale: { minBarSpacing: 0.05 }, crosshair: { mode: 0 }, handleScale: { axisPressedMouseMove: false },
+      timeScale: { minBarSpacing: 0.05 }, crosshair: { mode: 0 }, handleScale: { axisPressedMouseMove: true, mouseWheel: true }, handleScroll: { mouseWheel: true, pressedMouseMove: true },
     });
   } finally { document.body.style.fontFamily = previousFont; }
 });
@@ -410,16 +476,16 @@ it("trade spans shade won / still-open trades behind the price, and the legend l
   expect(shade).toEqual([null, "#2e7d4f14", "#2e7d4f14", null, "#8b8d9314", "#8b8d9314"]);
   const legend = host.querySelector(".lab-legend-tv")!.textContent!;
   expect(legend).toContain("NIFTY 50 · Daily · 2024-02-02");
-  expect(legend).toContain("EMA 20"); // the chip's short name, not the long one
+  expect(legend).toContain("EMA(20) = 5.00"); // AmiBroker title: short name(settings) = value
 });
 
 it("stacked panes: each pane reads out in its own legend and only the bottom chart draws the date axis", async () => {
   const host = await mount(<Workbench {...props} chips={[chips[0], chips[3]]} />);
   await flush();
   const legends = [...host.querySelectorAll(".lab-legend-tv")].map((el) => el.textContent);
-  expect(legends[0]).toContain("EMA 20");
+  expect(legends[0]).toContain("EMA(20) = ");
   expect(legends[0]).not.toContain("STOCH");
-  expect(host.querySelector('[data-lab-pane="c4"]')!.parentElement!.querySelector(".lab-legend-tv")!.textContent).toBe("STOCH 14  5.00");
+  expect(host.querySelector('[data-lab-pane="c4"]')!.parentElement!.querySelector(".lab-legend-tv")!.textContent).toBe("STOCH(14) = 5.00");
   const made = vi.mocked(window.LightweightCharts!.createChart).mock.results.map((r) => r.value.applyOptions as ReturnType<typeof vi.fn>);
   expect(made[0]).toHaveBeenCalledWith({ timeScale: { visible: false } });
   expect(made.at(-1)).toHaveBeenCalledWith({ timeScale: { visible: true } });
@@ -504,4 +570,13 @@ it("Parameters: Custom… reveals a colour picker; the hex is kept in the chip l
   await act(async () => { color.value = "red"; color.dispatchEvent(new Event("change", { bubbles: true })); });
   expect(onLook).toHaveBeenLastCalledWith("c1", { ema: { color: "red" } });
   expect(host.querySelector(".lab-params input[type=color]")).toBeNull();
+});
+
+it("variant choices follow the catalogue label; an unnamed value shows its number", () => {
+  const p = (label: string, max: number) => ({ key: "variant", label, default: 0, min: 0, max, step: 1, integer: true });
+  expect(variantOptions(p("Variant (0 Wilder/TradingView/AmiBroker after warm-up, 1 Cutler/TradeStation RSI JP)", 1)))
+    .toEqual([[0, "Wilder/TradingView/AmiBroker after warm-up"], [1, "Cutler/TradeStation RSI JP"]]);
+  expect(variantOptions(p("Variant (0 % of MA, 1 % of close (NinjaTrader), 2 close/MA×100 (TradeStation))", 2)).map(([, t]) => t))
+    .toEqual(["% of MA", "% of close (NinjaTrader)", "close/MA×100 (TradeStation)"]);
+  expect(variantOptions(p("Variant", 2))).toEqual([[0, "0"], [1, "1"], [2, "2"]]);
 });

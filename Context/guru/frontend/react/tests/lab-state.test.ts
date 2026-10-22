@@ -47,7 +47,7 @@ it("submit readiness: unchanged row, same instrument, fresh successful run", () 
   const reordered = labReducer(s, { type: "row", row: { ...row, version: 4, spec: JSON.parse(JSON.stringify(row.spec, ["v", "exit", "any", "lhs", "s", "op", "rhs", "value", "entry", "all", "p", "length"])) } });
   expect(editorState(reordered, "in").unchanged).toBe(true);
   expect(labReducer(s, { type: "tried", n: 3 }).tried).toBe(4);
-  expect(initialLabState(readLabQuery("#/indicators")).spec).toEqual(defaultSpec());
+  expect(initialLabState(readLabQuery("#/indicators")).spec).toEqual({ ...defaultSpec(), execution: { fill: "close" } }); // a new strategy trades at the signal bar's close
 });
 it("uses a portfolio save/run identity independently of the chart ticker",()=>{
  const spec={...defaultSpec(),portfolio:{universe:{basket:"nifty50"},mode:"signals" as const}};

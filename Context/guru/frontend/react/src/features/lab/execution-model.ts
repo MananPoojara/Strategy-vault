@@ -96,8 +96,8 @@ export function amiProblems(spec: Spec): string[] {
   const ex = spec.execution ?? {}, out = tradePriceProblems(spec);
   for (const [k, v] of Object.entries(ex.reentry ?? {})) if (!bounded(v, 0, 1000, true)) out.push(`Re-entry delay (${k.replace("_", "-")}) must be a whole number of bars from 0 to 1000.`);
   // rules.rs refuses the AmiBroker stop settings in a portfolio (its engine keeps today's stops)
-  if (spec.portfolio && [ex.exit_at_stop, ex.activate_stops_immediately, ex.nbar_has_priority, ex.allow_same_bar_exit].some((x) => x !== undefined))
-    out.push("Exit at stop?, Activate stops immediately, N-bar Has priority and Allow same bar exit / entry signal apply to one instrument only; remove them on the Trades tab.");
+  if (spec.portfolio && [ex.exit_at_stop, ex.activate_stops_immediately, ex.nbar_has_priority, ex.allow_same_bar_exit, ex.bars_held_from].some((x) => x !== undefined))
+    out.push("Exit at stop?, Activate stops immediately, N-bar Has priority, Allow same bar exit / entry signal and Count bars held from the signal bar apply to one instrument only; remove them on the Trades tab.");
   // rules.rs tick_size / report::rates bounds; execution.report is refused in a portfolio
   if (ex.tick_size !== undefined && !bounded(ex.tick_size, 0, 1e6)) out.push("Tick size must be from 0 (no rounding) to 1,000,000.");
   for (const [k, what] of [["rf_sharpe", "Sharpe ratio"], ["rf_upi", "UPI"]] as const) { const v = ex.report?.[k]; if (v !== undefined && !bounded(v, 0, 100)) out.push(`Risk-free rate for ${what} must be from 0% to 100%.`); }
@@ -112,6 +112,7 @@ export function amiProblems(spec: Spec): string[] {
     check(l.max_volume_pct, bounded(l.max_volume_pct, 0, 100), "Trade size as % of bar volume must be from 0 (no limit) to 100.");
     check(l.interest_pct, bounded(l.interest_pct, 0, 100), "Annual interest must be from 0% to 100%.");
     check(l.margin_pct, bounded(l.margin_pct, 1, 100), "Account margin must be from 1% to 100% (100 = no margin).");
+    check(l.margin_rate_pct, bounded(l.margin_rate_pct, 0, 100), "Margin rate must be from 0% to 100%.");
     if (finite(l.max_value) && l.max_value > 0 && finite(l.min_value) && l.min_value > l.max_value) out.push("Min. pos. value must not exceed Max. pos. value.");
   }
   return out;

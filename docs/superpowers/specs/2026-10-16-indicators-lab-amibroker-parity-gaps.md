@@ -41,7 +41,7 @@ tree, not committed). Rows updated below; the remaining 🟡 rows say why.
 | Reverse entry signal forces exit | `execution.opposite` reverse/exit/ignore | ✅ |
 | Commissions: table / percent / per trade / per share | per_order, per_unit, pct, taxes | ✅ |
 | Fixed annual interest on cash | `execution.limits.interest_pct` (idle cash, calendar days) | ✅ |
-| Margin rate / account margin | Account margin: `execution.limits.margin_pct` 1–100 (buying power = equity × 100 / margin%, loan earns no idle interest, no margin call). Margin rate (loan interest) not modelled — disclosed in MARGIN_NOTE | 🟡 (margin rate) |
+| Margin rate / account margin | Account margin: `execution.limits.margin_pct` 1–100 (buying power = equity × 100 / margin%, loan earns no idle interest, no margin call). Margin rate: `execution.limits.margin_rate_pct` 0–100, charged per calendar day on the part of a long cash position above the closed-trade equity (shorts and futures borrow no cash); reported as `money.limits.margin_interest` — disclosed in MARGIN_NOTE and LIMITS_BASIS | ✅ |
 | Pad and align to reference symbol | `execution.pad_align` (`series::pad_align`, reference = market benchmark; padded bars O=H=L=C=prev close, volume 0; disclosed as the first execution event); run, optimize, walk-forward and Explore; not for portfolios or the gl market | ✅ |
 
 ## 3. Analysis settings · Trades

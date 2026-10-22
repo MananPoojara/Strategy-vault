@@ -107,6 +107,8 @@ export interface Execution {
   /** AmiBroker Stops (single instrument, both sides): ExitAtStop per stop (absent = 1), "Activate stops immediately" (absent = true, today's),
    *  N-bar "Has priority", General › "Allow same bar exit / entry signal" (absent = true, today's). */
   exit_at_stop?: Partial<Record<StopKey, ExitAtStop>>; activate_stops_immediately?: boolean; nbar_has_priority?: boolean; allow_same_bar_exit?: boolean;
+  /** "signal": bars_held counts from the entry signal bar (AmiBroker AFL BarsSince(Buy)); default the fill bar. */
+  bars_held_from?: "fill" | "signal";
   risk?: { max_consecutive_losses?: number; pause_bars?: number; max_drawdown_pct?: number };
   /** AmiBroker position limits (money mode only): every field optional; absent = no limit. */
   limits?: PositionLimits;
@@ -118,7 +120,7 @@ export interface Execution {
 }
 export interface PositionLimits {
   min_shares?: number; round_lot?: number; min_value?: number; max_value?: number; max_volume_pct?: number;
-  shrink?: boolean; prev_bar_equity?: boolean; interest_pct?: number; margin_pct?: number; [extra: string]: unknown;
+  shrink?: boolean; prev_bar_equity?: boolean; interest_pct?: number; margin_pct?: number; margin_rate_pct?: number; [extra: string]: unknown;
 }
 export interface Origin { book: string; method: string; template_version: number }
 export interface OptimizeDim { path: string; from: number; to: number; step: number }
@@ -162,8 +164,8 @@ export type Start = null | { date: string; reason: string };
 export interface ExecutionModel { kind: string; mode: "unit" | "money"; executable: boolean; notes: string[]; events: string[] | null }
 export interface MoneySummary {
   capital: number; final_equity: number; costs_total: number; skipped: number; currency: string | null; basis: string;
-  /** Only when execution.limits is set: total idle-cash interest and why entries were skipped. */
-  limits?: { interest: number; skip_reasons: Record<string, number>; basis: string };
+  /** Only when execution.limits is set: total idle-cash interest and why entries were skipped; margin_interest only with a margin rate. */
+  limits?: { interest: number; margin_interest?: number; skip_reasons: Record<string, number>; basis: string };
 }
 export interface LedgerFill { date: string; px: number; qty: number; commission: number; taxes: number; slippage: number }
 export interface LedgerRow {

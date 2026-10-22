@@ -85,3 +85,15 @@ it("Allow same bar exit / entry signal: checked keeps today's behaviour; uncheck
   expect(box().disabled).toBe(true);
   expect(host.textContent).not.toContain("not modelled");
 });
+
+it("Count bars held from the signal bar stores bars_held_from and clears it when unchecked", async () => {
+  const { host, last, rerender } = await exec(defaultSpec());
+  const box = () => [...host.querySelectorAll<HTMLLabelElement>("label.lab-check")].find((l) => l.textContent === "Count bars held from the signal bar")!.querySelector("input")!;
+  expect(box().checked).toBe(false);
+  await click(box());
+  expect(last().execution).toEqual({ bars_held_from: "signal" });
+  await rerender(last());
+  expect(box().checked).toBe(true);
+  await click(box());
+  expect(last()).not.toHaveProperty("execution");
+});

@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { PALETTE, themeColors, type ChartColors } from "./charts";
 import type { Indicator, IndicatorParam } from "./types";
 import type { InstrumentOption } from "./instruments";
+import { TF_LABELS } from "./labels";
+import { AB_DEFAULTS } from "./catalogue";
 import "./params.css";
 
 /** AmiBroker ParamStyle subset that a line plot can show. */
@@ -23,9 +25,17 @@ export const defaultColor = (index: number, k = 0): keyof ChartColors => PALETTE
 /** Slider commits wait this long after the last move, so a drag sends one series request, not one per step. */
 export const SLIDE_MS = 200;
 
+/** A variant's choices named as the catalogue label lists them ("Variant (0 Wilder/TradingView, 1 Cutler/TradeStation RSI JP)");
+ *  a value the label does not name shows its number. */
+export function variantOptions(p: IndicatorParam): [number, string][] {
+  const listed = (p.label.match(/\((.*)\)\s*$/)?.[1] ?? "").split(/,\s*(?=\d+ )/).map((s) => s.match(/^(\d+) (.+)$/));
+  const names = new Map(listed.flatMap((m) => (m ? [[Number(m[1]), m[2]] as const] : [])));
+  return Array.from({ length: p.max - p.min + 1 }, (_, k) => [p.min + k, names.get(p.min + k) ?? String(p.min + k)]);
+}
+
 export interface ParamsDialogProps {
   name: string; indicator: Indicator; params: Record<string, number>; looks?: Record<string, Look>; index: number;
-  vs?: string; comparisonOptions?: readonly InstrumentOption[]; showComparison: boolean;
+  vs?: string; comparisonOptions?: readonly InstrumentOption[]; showComparison: boolean; tf?: string; timeframes?: readonly string[]; onTf?(tf?: string): void; levels?: number[]; onLevels?(levels: number[]): void;
   onParams(params: Record<string, number>): void; onLook(looks: Record<string, Look> | undefined): void; onVs?(vs?: string): void; onClose(): void;
 }
 
@@ -33,7 +43,7 @@ export interface ParamsDialogProps {
  * AmiBroker-style Parameters window ("Properties of …"): one section per indicator, name | value rows, changes apply live,
  * Reset all restores defaults, OK closes. Axes & Grid is shown disabled, as the lab charts keep the house axes.
  */
-export function ParamsDialog({ name, indicator, params, looks, index, vs, comparisonOptions = [], showComparison, onParams, onLook, onVs, onClose }: ParamsDialogProps) {
+export function ParamsDialog({ name, indicator, params, looks, index, vs, comparisonOptions = [], showComparison, tf, timeframes = [], onTf, levels, onLevels, onParams, onLook, onVs, onClose }: ParamsDialogProps) {
   const box = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(true);
   const titleId = `lab-params-${indicator.id}`;
@@ -55,15 +65,29 @@ export function ParamsDialog({ name, indicator, params, looks, index, vs, compar
         {open && <>
           {indicator.params.map((p) => (
             <div className="lab-prow" key={p.key}>
-              <span>{p.label}</span>
+              <span>{p.key === "variant" ? p.label.replace(/\s*\(.*\)\s*$/, "") : p.label}</span>
               {p.key === "variant" ? (
                 <select aria-label={`${name} ${p.label}`} value={params[p.key] ?? p.default} onChange={(e) => set(p.key, Number(e.target.value))}>
-                  <option value={0}>TradingView</option>
-                  <option value={1}>AmiBroker</option>
+                  {variantOptions(p).map(([v, text]) => <option key={v} value={v}>{text}</option>)}
                 </select>
               ) : <ParamValue param={p} name={name} value={params[p.key] ?? p.default} onValid={(v) => set(p.key, v)} />}
             </div>
           ))}
+          {levels && onLevels && (
+            <div className="lab-prow">
+              <span>Levels</span>
+              <LevelsField name={name} levels={levels} onLevels={onLevels} />
+            </div>
+          )}
+          {onTf && timeframes.length > 0 && (
+            <div className="lab-prow">
+              <span>Timeframe</span>
+              <select aria-label={`${name} · Timeframe`} value={tf ?? ""} onChange={(e) => onTf(e.target.value || undefined)}>
+                <option value="">Same as chart</option>
+                {timeframes.filter((t) => !/^\d+D$/.test(t)).map((t) => <option key={t} value={t}>{TF_LABELS[t] ?? t}</option>)}
+              </select>
+            </div>
+          )}
           {showComparison && (
             <div className="lab-prow">
               <span>Compared with</span>
@@ -108,6 +132,8 @@ export function ParamsDialog({ name, indicator, params, looks, index, vs, compar
       </div>
       <div className="lab-params-f">
         <button type="button" className="dbtn sm" onClick={reset}>Reset all</button>
+        {AB_DEFAULTS[indicator.id] && <button type="button" className="dbtn sm" data-lab-ab-defaults title="Set the parameters to AmiBroker's own defaults for this indicator"
+          onClick={() => onParams({ ...params, ...AB_DEFAULTS[indicator.id] })}>AmiBroker defaults</button>}
         <button type="button" className="dbtn sm primary" onClick={onClose}>OK</button>
       </div>
     </div>
@@ -139,4 +165,13 @@ function ParamValue({ param, name, value, onValid }: { param: IndicatorParam; na
         }} />
     </span>
   );
+}
+
+/** Threshold lines as "70, 30": applied on Enter or when the field loses focus; empty removes them. */
+function LevelsField({ name, levels, onLevels }: { name: string; levels: number[]; onLevels(levels: number[]): void }) {
+  const [draft, setDraft] = useState(levels.join(", "));
+  const parts = draft.split(/[,\s]+/).filter(Boolean), bad = parts.some((p) => !Number.isFinite(Number(p)));
+  const apply = () => { if (!bad) onLevels(parts.map(Number)); };
+  return <input aria-label={`${name} · Levels`} value={draft} placeholder="e.g. 70, 30" aria-invalid={bad} title={bad ? "Numbers separated by commas" : undefined}
+    onChange={(e) => setDraft(e.target.value)} onBlur={apply} onKeyDown={(e) => { if (e.key === "Enter") apply(); }} />;
 }

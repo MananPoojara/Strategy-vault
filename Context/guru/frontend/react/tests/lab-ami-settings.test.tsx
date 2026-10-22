@@ -46,6 +46,8 @@ it("the Run gate checks account margin, tick size and the report rates as rules.
   expect(amiProblems(ex({ capital: 1e6, limits: { margin_pct: 50 }, tick_size: 0.05, report: { rf_sharpe: 0, rf_upi: 3 } }))).toEqual([]);
   expect(amiProblems(ex({ capital: 1e6, limits: { margin_pct: 0 } }))).toEqual(["Account margin must be from 1% to 100% (100 = no margin)."]);
   expect(amiProblems(ex({ capital: 1e6, limits: { margin_pct: 101 } }))).toHaveLength(1);
+  expect(amiProblems(ex({ capital: 1e6, limits: { margin_pct: 50, margin_rate_pct: 9 } }))).toEqual([]);
+  expect(amiProblems(ex({ capital: 1e6, limits: { margin_rate_pct: 101 } }))).toEqual(["Margin rate must be from 0% to 100%."]);
   expect(amiProblems(ex({ tick_size: -1 }))).toEqual(["Tick size must be from 0 (no rounding) to 1,000,000."]);
   expect(amiProblems(ex({ report: { rf_sharpe: 101, rf_upi: -1 } }))).toEqual(["Risk-free rate for Sharpe ratio must be from 0% to 100%.", "Risk-free rate for UPI must be from 0% to 100%."]);
   expect(amiProblems({ ...ex({ report: { rf_sharpe: 3 } }), portfolio: { universe: { tickers: [] } } } as Spec)).toEqual(["The risk-free rates (Settings › Report) apply to single-instrument runs only; remove them on the General tab."]);
@@ -114,5 +116,5 @@ it("AmiBroker stop settings: withExitAtStop stores only non-default modes; a por
   expect(withExitAtStop(s, "bars", 1)).not.toHaveProperty("execution");
   expect(amiProblems(ex({ exit_at_stop: { target: 0 }, allow_same_bar_exit: false }))).toEqual([]);
   const port = { ...ex({ capital: 1e6, nbar_has_priority: true }), portfolio: { universe: { basket: "nifty50" } } } as Spec;
-  expect(amiProblems(port)).toEqual(["Exit at stop?, Activate stops immediately, N-bar Has priority and Allow same bar exit / entry signal apply to one instrument only; remove them on the Trades tab."]);
+  expect(amiProblems(port)).toEqual(["Exit at stop?, Activate stops immediately, N-bar Has priority, Allow same bar exit / entry signal and Count bars held from the signal bar apply to one instrument only; remove them on the Trades tab."]);
 });

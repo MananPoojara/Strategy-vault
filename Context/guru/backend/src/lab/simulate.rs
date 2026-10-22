@@ -19,7 +19,7 @@ use super::series::{Compiled, RCond, Val};
 use crate::connors::{Leg, Trade};
 
 struct Pos {
-    e: usize, px: f64, kind: &'static str, stop: f64, target: f64, best: f64, limit_bar: bool,
+    e: usize, sig: usize, px: f64, kind: &'static str, stop: f64, target: f64, best: f64, limit_bar: bool,
     /// trailing arms once the best price reaches `arm` (NaN: always armed); breakeven moves the stop to `be` once the best
     /// price reaches `be_after` (NaN: no breakeven); take-profits (level, fraction, filled); scale-out pieces filled so far.
     arm: f64, be_after: f64, be: f64, tps: Vec<(f64, f64, bool)>, out: Vec<(usize, f64, f64)>,
@@ -39,7 +39,7 @@ impl Pos {
             Sizing::Full | Sizing::Units(_) | Sizing::Value(_) => 1.,
         };
         let w = base * x.scale_in.as_ref().map_or(1., |s| s.legs[0]);
-        Pos { e: i, px, kind, stop, target: lvl(x.target, 1.), best: px, limit_bar: kind == "limit", w, base, adds: vec![], last: (i, px),
+        Pos { e: i, sig, px, kind, stop, target: lvl(x.target, 1.), best: px, limit_bar: kind == "limit", w, base, adds: vec![], last: (i, px),
               arm: lvl(x.trail_activate, 1.), be_after: lvl(x.breakeven.map(|b| b.0), 1.),
               be: x.breakeven.map_or(f64::NAN, |b| b.1.map_or(px, |p| c.round_at(i, px + d * c.dist_at(p, px, sig, i)))),
               tps: x.take_profits.iter().map(|&(t, size)| (lvl(Some(t), 1.), size, false)).collect(), out: vec![] }
@@ -261,7 +261,9 @@ pub fn simulate_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<T
     let shares_open = sides.iter().all(|s| !s.has_order()) && (0..sides.len()).all(|s| market(s)[0].1 > 0);
     let holds = |s: usize, i: usize| sides[s].entry.iter().all(|r| r.holds(i, None));
     // "Has priority": on the bar the N-bar stop exits, the max loss, profit target and trailing stops are not checked
-    let nbar_due = |s: usize, p: &Pos, i: usize| sides[s].exec.nbar_first && sides[s].exit.iter().any(|r| nbar(r) && i - p.e >= sides[s].exec.min_bars && r.holds(i, Some(p.e)));
+    // bars_held counts from the fill bar, or from the signal bar (AmiBroker AFL BarsSince(Buy) with a trade delay)
+    let held_from = |s: usize, p: &Pos| if sides[s].exec.held_from_signal { p.sig } else { p.e };
+    let nbar_due = |s: usize, p: &Pos, i: usize| sides[s].exec.nbar_first && sides[s].exit.iter().any(|r| nbar(r) && i - p.e >= sides[s].exec.min_bars && r.holds(i, Some(held_from(s, p))));
     // "Allow same bar exit / entry signal" off: no entry fills on a bar a position closed (a reversal is one fill and stays exempt)
     let exited_on = |trades: &[Trade], i: usize| !x.same_bar && trades.last().is_some_and(|t| t.exit_i == i);
     let fires = |s: usize, i: usize| holds(s, i) && (!x.edge || i == 0 || !holds(s, i - 1));
@@ -368,7 +370,7 @@ pub fn simulate_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<T
             let stop0 = if epx == Px::Open { None } else { p.trade_price_stop(sides[s], i, dir(s), pv, nbar_due(s, p, i)) };
             // then rule exits, which count from min_bars after the fill (price exits stay active), at the regular trade price
             // and delay, except an ExitAtStop 2 N-bar stop: the next bar at the regular trade price
-            let hit = if stop0.is_some() { None } else { sides[s].exit.iter().find(|r| i - p.e >= xs.min_bars && r.holds(i, Some(p.e)))
+            let hit = if stop0.is_some() { None } else { sides[s].exit.iter().find(|r| i - p.e >= xs.min_bars && r.holds(i, Some(held_from(s, p))))
                 .map(|r| (r.label.clone(), if nbar(r) && xs.exit_at_stop[3] == 2 { (epx, 1) } else { market(s)[1] })) };
             let entry_bar = p.e == i;
             if let Some(w) = stop0 { trades.push(pos.take().unwrap().1.trade(i, pv, w.into(), i, dir(s))); exited = true; }
@@ -493,6 +495,19 @@ mod tests {
         // bars_held is 0 on the fill bar: 2 at the close of bar 5 → exit at the open of bar 6
         assert_eq!((t[0].signal_i, t[0].exit_i, t[0].exit_px, t[0].open), (5, 6, 106., false));
         assert_eq!(t[0].reason, "bars_held >= 2");
+    }
+    #[test] fn bars_held_from_the_signal_bar_exits_one_bar_earlier_with_next_open_fills() {
+        // signal bar 2, fill bar 3: counted from bar 2, bars_held is 2 at bar 4's close → exit at the open of bar 5
+        let c = Compiled { exec: Exec { held_from_signal: true, ..Exec::default() }, ..Compiled::new(vec![rule(on(&[2]))], vec![held_at_least(2.)]) };
+        let t = simulate(&c, &bars(), 0, 9);
+        assert_eq!((t[0].legs[0].i, t[0].exit_i, t[0].exit_px), (3, 5, 105.));
+        // close fills: the signal bar is the fill bar, so nothing changes
+        let base = |held_from_signal| simulate(&Compiled { exec: Exec { held_from_signal, ..close_fill() }, ..Compiled::new(vec![rule(on(&[2]))], vec![held_at_least(2.)]) }, &bars(), 0, 9);
+        assert_eq!(base(true)[0].exit_i, base(false)[0].exit_i);
+        for (v, ok) in [(r#""signal""#, true), (r#""fill""#, true), (r#""entry""#, false), ("1", false)] {
+            let s = format!(r#"{{"v":1,"entry":{{"all":[{{"lhs":{{"s":"close"}},"op":">","rhs":{{"value":1}}}}]}},"exit":{{"any":[{{"lhs":{{"s":"bars_held"}},"op":">=","rhs":{{"value":5}}}}]}},"execution":{{"bars_held_from":{v}}}}}"#);
+            assert_eq!(crate::lab::rules::parse_spec(&s).is_ok(), ok, "{v}");
+        }
     }
     #[test] fn exit_fills_before_a_same_bar_reentry() {
         let c = Compiled::new(vec![rule(on(&[1, 4]))], vec![rule(on(&[4]))]);

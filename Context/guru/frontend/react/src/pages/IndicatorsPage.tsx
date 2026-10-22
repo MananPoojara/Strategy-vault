@@ -32,6 +32,7 @@ import { OptimizePanel } from "../features/lab/OptimizePanel";
 import { CustomizePanel } from "../features/lab/CustomizePanel";
 import { SavedStrategies } from "../features/lab/SavedStrategies";
 import { ReviewQueue } from "../features/lab/ReviewQueue";
+import { CompactContext, LabModeContext, ModeSwitch, SimpleSummary, storedMode, storeMode, type LabMode } from "../features/lab/simple";
 import type {
   Catalogue, FormulaInfo, Indicator, InstrumentsResponse, SavedIndicator, LabStrategy, Market, Role, LabRunResult, Spec, TemplateResponse, TemplatesResponse, TickerRow,
 } from "../features/lab/types";
@@ -46,6 +47,15 @@ type MarketData = { market: Market; cat: Catalogue; rows?: TickerRow[]; gl?: Ins
 const LAB_TABS = [{ id: "strategy", label: "Strategy & backtest" }, { id: "optimization", label: "Optimization" }, { id: "customize", label: "Customize" }, { id: "saved", label: "Saved strategies" }] as const;
 type LabTab = typeof LAB_TABS[number]["id"];
 
+/** The strategy page as four plain-language steps (market and instrument stay in the top bar: every step uses them). */
+const STEPS = [
+  { id: "chart", label: "Chart & indicators", hint: "Look at the price and add indicators from the library on the left." },
+  { id: "idea", label: "Your idea", hint: "Say when to buy and when to sell. Start from an example if you like." },
+  { id: "settings", label: "Settings", hint: "The test period, trading costs and how money is counted." },
+  { id: "results", label: "Results", hint: "How the idea did, compared with simply holding the market." },
+] as const;
+type Step = typeof STEPS[number]["id"];
+
 const Part = ({ children }: { children: ReactNode }) => <LabErrorBoundary>{children}</LabErrorBoundary>;
 
 function IndicatorsLab() {
@@ -53,6 +63,13 @@ function IndicatorsLab() {
   const [state, dispatch] = useReducer(labReducer, undefined, () =>
     initialLabState(query, /[?&]region=/.test(location.hash) ? undefined : vaultStore.getSnapshot().state?.region));
   const [tab, setTab] = useState<LabTab>("strategy");
+  const [mode, setModeState] = useState<LabMode>(storedMode);
+  const simple = mode === "simple";
+  const tabs = LAB_TABS.filter((t) => !simple || t.id === "strategy" || t.id === "saved"); // Simple hides Optimization and Customize
+  const setMode = (m: LabMode) => { setModeState(m); storeMode(m); if (m === "simple" && (tab === "optimization" || tab === "customize")) setTab("strategy"); };
+  const [details, setDetails] = useState(false); // Simple: the full Results tabs after the summary
+  const [step, setStep] = useState<Step>("chart");
+  const stepIndex = STEPS.findIndex((s) => s.id === step);
   const showStrategy = (selector = ".lab-rules") => {
     setTab("strategy");
     requestAnimationFrame(() => {
@@ -215,7 +232,7 @@ function IndicatorsLab() {
     if (!ticker && !spec.portfolio) return; // no selectable instrument on this market
     const n = ++runSeq.current;
     const sentContext=canonicalJson([market,spec.portfolio??null]);issuedContext.current=sentContext;currentContext.current=sentContext;
-    setResult(null); setRunError(null); setRunning(true);
+    setResult(null); setRunError(null); setRunning(true); setStep("results");
     try {
       assertRunnable(spec);
       const r = await lab.run(market, spec, {
@@ -264,9 +281,9 @@ function IndicatorsLab() {
   if (loaded && "error" in loaded) work = <ErrorNotice error={loaded.error} market={market} />;
   else if (!cat || !options) work = <Loading text="Loading the Indicators lab…" />;
   else work = (
-    <ForeignProvider value={foreignScope!}><FormulaContext.Provider value={formulaScope}>
-    <div className={`lab-grid${tab === "strategy" ? "" : " lab-grid-focused"}`}>
-      <div className="lab-library-slot" hidden={tab !== "strategy"}>
+    <LabModeContext.Provider value={mode}><CompactContext.Provider value={true}><ForeignProvider value={foreignScope!}><FormulaContext.Provider value={formulaScope}>
+    <div className={`lab-grid${tab === "strategy" && step === "chart" ? "" : " lab-grid-focused"}`}>
+      <div className="lab-library-slot" hidden={tab !== "strategy" || step !== "chart"}>
       <Part>
         <LibraryRail catalogue={cat} market={market} hasVolume={hasVolume} tf={state.tf}
           onAdd={(ind) => { if (availability(ind, { market, hasVolume, tf: state.tf, maxForeign: cat.max_foreign }).ok) dispatch({ type: "chip-add", indicator: ind }); }}
@@ -276,13 +293,19 @@ function IndicatorsLab() {
       </div>
       <div className="lab-main">
         <div role="tabpanel" id="lab-panel-strategy" aria-labelledby="lab-tab-strategy" hidden={tab !== "strategy"} className="lab-tab-panel">
+        <nav className="lab-stepbar" aria-label="Steps" data-lab-steps>
+          {STEPS.map((s, i) => <button key={s.id} type="button" className="lab-step-btn" aria-current={step === s.id ? "step" : undefined} data-lab-step={s.id}
+            onClick={() => setStep(s.id)}><span className="lab-step-n">{i + 1}</span>{s.label}</button>)}
+        </nav>
+        <p className="lab-step-hint" data-lab-step-hint>{STEPS[stepIndex].hint}</p>
+        <div className="lab-step" hidden={step !== "chart"}>
         <Part>
           {ticker ? (
             <Workbench market={savedMarketValue} ticker={ticker} tf={state.tf} range={state.range} catalogue={chartCat!} chips={state.chips}
               trades={result?.kind==="lab_simulation"?result.trades:undefined} loadSeries={loadSeries} instrumentLabel={option?.instrumentLabel}
               onChipChange={(key, params) => dispatch({ type: "chip-set", key, params })}
               onChipRemove={(key) => dispatch({ type: "chip-remove", key })} onChipLook={(key, looks) => dispatch({ type: "chip-look", key, looks })} comparisonOptions={comparisonOptions}
-              onChipVsChange={(key, vs) => dispatch({ type: "chip-vs", key, vs })} />
+              onChipVsChange={(key, vs) => dispatch({ type: "chip-vs", key, vs })} onChipTfChange={(key, tf) => dispatch({ type: "chip-tf", key, tf })} onChipLevels={(key, levels) => dispatch({ type: "chip-levels", key, levels })} />
           ) : <div className="box empty">No instrument is available on this market.</div>}
         </Part>
         {/* below the chart, so opening a reference does not push the chart down */}
@@ -291,8 +314,8 @@ function IndicatorsLab() {
           canEdit={canEditMine} check={(text) => lab.formulaInfo(market, text)} api={lab.indicators}
           onSaved={mineSaved} onDeleted={mineDeleted} onClose={() => setEditing(null)}
           blocksEditor={(p) => <FormulaBlocks {...p} indicators={cat.indicators} check={(text) => lab.formulaInfo(market, text)} readOnly={!canEditMine} />} /></Part>}
-        {/* No backtest yet: the rules take the whole row; after a run the Results tabs stack under Run backtest. */}
-        <div className="two lab-two" data-lab-layout={backtestShown ? "stacked" : "full"}>
+        </div>
+        <div className="lab-step" hidden={step !== "idea"}>
         <Part>
           <div className="lab-rules-col">
           {openError ? <ErrorNotice error={openError} market={savedMarketValue} instrumentLabel={option?.instrumentLabel} /> : null}
@@ -300,15 +323,29 @@ function IndicatorsLab() {
           {!cat.execution && portfolioPanel}
           <RuleBuilder spec={state.spec} catalogue={cat} instrument={instrument} onChange={(spec) => dispatch({ type: "spec", spec })}
             settings={settings} onSettings={(patch) => setSettings((s) => ({ ...s, ...patch }))}
-            problems={problems} running={running} onRun={() => void run()} portfolio={portfolioPanel} />
+            problems={problems} running={running} onRun={() => void run()} portfolio={portfolioPanel} part="rules" />
           </div>
         </Part>
-        {/* WealthLab/AmiBroker style: one Results box under Run backtest, every view a tab instead of a long scroll */}
+        </div>
+        <div className="lab-step" hidden={step !== "settings"}>
+        <Part>
+          <RuleBuilder spec={state.spec} catalogue={cat} instrument={instrument} onChange={(spec) => dispatch({ type: "spec", spec })}
+            settings={settings} onSettings={(patch) => setSettings((s) => ({ ...s, ...patch }))}
+            problems={problems} running={running} onRun={() => void run()} portfolio={portfolioPanel} part="settings" />
+        </Part>
+        </div>
+        <div className="lab-step" hidden={step !== "results"} data-lab-step-results>
+        {/* WealthLab/AmiBroker style: one Results box, every view a tab instead of a long scroll */}
         {backtestShown ? <Part>
           {runError ? <ErrorNotice error={runError} market={savedMarketValue} instrumentLabel={option?.instrumentLabel} />
             : !result ? <Loading text="Running backtest…" />
+            : simple && !details && result.kind === "lab_simulation" ? <div className="lab-simple-results" data-lab-simple-results>
+              <SimpleSummary result={result} />
+              <RunResults result={result} market={savedMarketValue} />
+              <button type="button" className="dbtn sm lab-more" data-lab-more onClick={() => setDetails(true)}>More detail ▸ performance report, trades, monthly returns, Monte Carlo</button>
+            </div>
             : <section className="box lab-results-tabs" data-lab-results-tabs>
-              <h2 className="box-h">Results</h2>
+              <h2 className="box-h">Results{simple && result.kind === "lab_simulation" && <button type="button" className="dbtn sm ghost" onClick={() => setDetails(false)}>◂ Back to the summary</button>}</h2>
               {(() => {
                 const tabs: [string, ReactNode][] = result.kind === "lab_portfolio_simulation"
                   ? [["Portfolio results", <PortfolioResults result={result} />]]
@@ -325,12 +362,16 @@ function IndicatorsLab() {
                 return <SettingsTabs ariaLabel="Backtest results" labels={tabs.map(([l]) => l)}>{tabs.map(([, el]) => el)}</SettingsTabs>;
               })()}
             </section>}
-        </Part> : null}
-        </div>
+        </Part> : <div className="box empty" data-lab-no-result>No test yet. Set up your idea in step 2, then press <b>{simple ? "▶ Test this idea" : "Run backtest"}</b>.</div>}
         {result?.foreign?.length && !runError ? <div className="rnote" role="note" data-lab-foreign-disclosure>{result.foreign.map((source) => <p key={source.ticker}>{foreignDescription(source)}</p>)}</div> : null}
-        {!backtestShown && ticker && <Part key={`explore|${market}|${ticker}`}><ExplorePanel spec={state.spec} catalogue={chartCat!} chips={state.chips} portfolio={!!state.spec.portfolio} market={savedMarketValue} loadSeries={loadSeries}
+        {!backtestShown && !simple && ticker && <Part key={`explore|${market}|${ticker}`}><ExplorePanel spec={state.spec} catalogue={chartCat!} chips={state.chips} portfolio={!!state.spec.portfolio} market={savedMarketValue} loadSeries={loadSeries}
           onScan={(apply) => { assertRunnable(state.spec); return lab.scan(market, state.spec, { ticker, apply, from: settings.from || undefined, to: settings.to || undefined }); }}
           onExplore={() => { assertRunnable(state.spec); return lab.explore(market, state.spec, { ticker, from: settings.from || undefined, to: settings.to || undefined }); }} /></Part>}
+        </div>
+        <div className="lab-step-nav">
+          {stepIndex > 0 && <button type="button" className="dbtn" onClick={() => setStep(STEPS[stepIndex - 1].id)}>‹ Back: {STEPS[stepIndex - 1].label}</button>}
+          {stepIndex < STEPS.length - 1 && <button type="button" className="dbtn primary" data-lab-next onClick={() => setStep(STEPS[stepIndex + 1].id)}>Next: {STEPS[stepIndex + 1].label} ›</button>}
+        </div>
         </div>
         <div role="tabpanel" id="lab-panel-optimization" aria-labelledby="lab-tab-optimization" hidden={tab !== "optimization"} className="lab-tab-panel">
         <p className="lab-tab-intro">Compare settings for <b>{state.spec.portfolio?"the selected portfolio":ticker}</b>. Your strategy rules stay the same until you apply a result.</p>
@@ -369,7 +410,7 @@ function IndicatorsLab() {
         </div>
       </div>
     </div>
-    </FormulaContext.Provider></ForeignProvider>
+    </FormulaContext.Provider></ForeignProvider></CompactContext.Provider></LabModeContext.Provider>
   );
 
   return (
@@ -383,12 +424,15 @@ function IndicatorsLab() {
         onTicker={(t) => { opened.current = null; setSwapNote(""); dispatch({ type: "ticker", ticker: t }); }} tf={state.tf} timeframes={cat?.timeframes ?? ["D", "W", "M", "Q", "Y"]}
         onTf={(tf) => dispatch({ type: "tf", tf })} range={state.range} onRange={(range) => dispatch({ type: "range", range })}
         provisionalNote={glNote} />
+      <div className="lab-tabs-row">
       <div className="lab-tabs" role="tablist" aria-label="Indicators workspace">
-        {LAB_TABS.map((item, i) => <button key={item.id} id={`lab-tab-${item.id}`} type="button" role="tab" aria-selected={tab === item.id} aria-controls={`lab-panel-${item.id}`} tabIndex={tab === item.id ? 0 : -1}
+        {tabs.map((item, i) => <button key={item.id} id={`lab-tab-${item.id}`} type="button" role="tab" aria-selected={tab === item.id} aria-controls={`lab-panel-${item.id}`} tabIndex={tab === item.id ? 0 : -1}
           onClick={() => setTab(item.id)} onKeyDown={(event) => {
-            const next = event.key === "ArrowRight" ? (i + 1) % LAB_TABS.length : event.key === "ArrowLeft" ? (i + LAB_TABS.length - 1) % LAB_TABS.length : event.key === "Home" ? 0 : event.key === "End" ? LAB_TABS.length - 1 : undefined;
-            if (next !== undefined) { event.preventDefault(); setTab(LAB_TABS[next].id); document.getElementById(`lab-tab-${LAB_TABS[next].id}`)?.focus(); }
+            const next = event.key === "ArrowRight" ? (i + 1) % tabs.length : event.key === "ArrowLeft" ? (i + tabs.length - 1) % tabs.length : event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : undefined;
+            if (next !== undefined) { event.preventDefault(); setTab(tabs[next].id); document.getElementById(`lab-tab-${tabs[next].id}`)?.focus(); }
           }}>{item.label}</button>)}
+      </div>
+      <ModeSwitch mode={mode} onChange={setMode} />
       </div>
       {swapNote && <p className="rnote" data-lab-swap>{swapNote}</p>}
       {work}

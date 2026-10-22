@@ -21,8 +21,10 @@ pub const NOTES: &[&str] = &[
     "Returns are per unit of initial equity (1.0); money mode reports the same ratios on its cash equity.",
     "MAE and MFE use the highs and lows of every bar from the entry bar to the exit bar, as fractions of the entry price.",
     "Max. trade drawdown is the deepest close-to-close peak-to-valley fall inside one trade.",
-    "Sharpe ratio of trades: average trade % return × (bars per year / average bars held), minus {sharpe} % risk-free (Settings › Report; AmiBroker default 5 %), divided by the trade standard deviation × √(bars per year / average bars held).",
-    "Ulcer performance index uses a {upi} % risk-free rate (Settings › Report; AmiBroker default 5.4 %). K-ratio as the AmiBroker guide states it (citing Kestner 1996): slope × √Σ(bar − mean bar)² / (standard error × √bars), on the linear equity line.",
+    "Years and bars per year as AmiBroker: calendar days from the first to the last bar / 365, and bars / years. CAR = final equity^(1/years) − 1; CAR/MaxDD and the UPI follow it.",
+    "Exposure as AmiBroker: bars in a position from the entry bar to the bar before the exit, over all bars of the run. Net RAR, RAR and RAR/MaxDD follow it.",
+    "Sharpe ratio of trades: average trade % return × (bars per year / average bars held), minus {sharpe} % risk-free (Settings › Report; AmiBroker default 5 %), divided by the population standard deviation of trade % returns × √(bars per year / average bars held). Risk-reward ratio: slope × bars per year / standard error.",
+    "Ulcer performance index uses a {upi} % risk-free rate (Settings › Report; AmiBroker default 5.4 %). K-ratio as AmiBroker prints it: slope / (standard error of the slope × bars), on the linear equity line.",
     "Trade statistics count closed trades only, like the run's stats; a position still open at the end is in the trade list, the equity line and the system metrics.",
     "Profit factor, payoff ratio and Profit are from each trade's money profit (× initial equity: the ledger P&L in money mode, otherwise equity before the trade × its return), as AmiBroker does; Sum of trade % adds the trade % returns.",
     "Bars held count the entry and the exit bar (AmiBroker # bars): a same-bar trade is 1 bar. The trade list's bars column is exit bar − entry bar.",
@@ -106,7 +108,22 @@ fn regression(y: &[f64]) -> (f64, f64, f64) {
     (slope, (sse / (n - 2.)).sqrt(), sxx)
 }
 
-/// System metrics on the equity line (starting at 1.0) and the trade list. `cagr` and `exposure` come from the run's stats.
+/// AmiBroker's year length for a run: calendar days from the first to the last bar / 365 (CAR, bars per year).
+pub fn years(rows: &[Row], from: usize, to: usize) -> f64 {
+    let day = |i: usize| super::resample::day_number(&rows[i].date);
+    ((day(to) - day(from)) as f64 / 365.).max(1. / 365.)
+}
+/// AmiBroker CAR of an equity line starting at 1.0.
+pub fn car(equity: &[f64], years: f64) -> f64 { equity.last().map_or(f64::NAN, |e| e.powf(1. / years) - 1.) }
+/// AmiBroker exposure: bars in a position from the entry bar to the bar before the exit, over the run's bars.
+/// shortcut: a held bar counts 1 (one unit fully invested), not position value / equity; upgrade for money mode with partial sizing.
+pub fn exposure(trades: &[ReportTrade], from: usize, to: usize) -> f64 {
+    let mut held = vec![false; to + 1 - from];
+    for t in trades { for i in t.entry_i.max(from)..t.exit_i.min(to + 1) { held[i - from] = true; } }
+    held.iter().filter(|h| **h).count() as f64 / held.len() as f64
+}
+
+/// System metrics on the equity line (starting at 1.0) and the trade list, with AmiBroker's `cagr`, `exposure` and bars per year.
 pub fn system(rows: &[Row], equity: &[f64], trades: &[ReportTrade], cagr: f64, exposure: f64, bars_per_year: f64, (rf_sharpe, rf_upi): (f64, f64)) -> Vec<(&'static str, f64)> {
     let net = equity.last().copied().unwrap_or(1.) - 1.;
     let (mut peak, mut dd_pct, mut dd_abs, mut ulcer_sum) = (f64::MIN, 0.0_f64, 0.0_f64, 0.0);
@@ -121,7 +138,7 @@ pub fn system(rows: &[Row], equity: &[f64], trades: &[ReportTrade], cagr: f64, e
     let rets: Vec<f64> = trades.iter().map(|t| t.ret * 100.).collect();
     let n = rets.len() as f64;
     let avg = rets.iter().sum::<f64>() / n;
-    let sd = (rets.iter().map(|r| (r - avg).powi(2)).sum::<f64>() / (n - 1.)).sqrt();
+    let sd = (rets.iter().map(|r| (r - avg).powi(2)).sum::<f64>() / n).sqrt(); // population SD (AmiBroker)
     let avg_bars = trades.iter().map(|t| (t.exit_i - t.entry_i + 1) as f64).sum::<f64>() / n;
     let f = bars_per_year / avg_bars;
     let trade_dd = trades.iter().map(|t| trade_drawdown(rows, t)).fold(0.0_f64, f64::min);
@@ -133,7 +150,7 @@ pub fn system(rows: &[Row], equity: &[f64], trades: &[ReportTrade], cagr: f64, e
         ("std_error", se), ("rrr", if se > 0. { slope * bars_per_year / se } else { f64::NAN }),
         ("ulcer_index", ulcer), ("upi", if ulcer > 0. { (cagr * 100. - rf_upi) / ulcer } else { f64::NAN }),
         ("sharpe_trades", if n > 1. && sd > 0. { (avg * f - rf_sharpe) / (sd * f.sqrt()) } else { f64::NAN }),
-        ("k_ratio", if se > 0. && sxx > 0. { slope * sxx.sqrt() / se / (equity.len() as f64).sqrt() } else { f64::NAN }),
+        ("k_ratio", if se > 0. && sxx > 0. { slope * sxx.sqrt() / se / equity.len() as f64 } else { f64::NAN }),
     ]
 }
 
@@ -199,11 +216,25 @@ mod tests {
     }
 
     #[test] fn sharpe_of_trades_annualises_mean_linearly_and_deviation_by_square_root() {
-        // two trades of +2 % and 0 % over 10 bars each (entry and exit bar included), 250 bars a year: f = 25, mean 1 % → 25 %, sd 1.414 % → 7.07 %
+        // two trades of +2 % and 0 % over 10 bars each (entry and exit bar included), 250 bars a year: f = 25, mean 1 % → 25 %, population sd 1 % → 5 %
         let rows: Vec<Row> = (0..21).map(|_| row(1., 1., 1., 1.)).collect();
         let t = |ret: f64, a: usize| ReportTrade { dir: 1., entry_i: a, exit_i: a + 9, entry_px: 1., ret, profit: ret };
         let m: std::collections::BTreeMap<_, _> = system(&rows, &[1.0, 1.02, 1.02], &[t(0.02, 0), t(0.0, 10)], 0.1, 1.0, 250., DEFAULT_RATES).into_iter().collect();
-        assert!((m["sharpe_trades"] - (25. - 5.) / (2f64.sqrt() * 5.)).abs() < 1e-9, "{}", m["sharpe_trades"]);
+        assert!((m["sharpe_trades"] - (25. - 5.) / 5.).abs() < 1e-9, "{}", m["sharpe_trades"]);
+    }
+
+    #[test] fn amibroker_years_car_exposure_and_k_ratio() {
+        let rows: Vec<Row> = ["2020-01-01", "2020-07-01", "2021-01-01", "2021-01-02"].iter().map(|d| Row { date: d.to_string(), ..row(1., 1., 1., 1.) }).collect();
+        assert!((years(&rows, 0, 2) - 366. / 365.).abs() < 1e-12);
+        assert!((car(&[1., 1.21], 2.) - 0.1).abs() < 1e-12);
+        // entry bar 1 to exit bar 3 holds bars 1 and 2 (exit bar not counted); bars 0..=3 → 2/4
+        let t = ReportTrade { dir: 1., entry_i: 1, exit_i: 3, entry_px: 1., ret: 0., profit: 0. };
+        assert_eq!(exposure(&[t, t], 0, 3), 0.5);
+        // K-ratio = slope / (SE of the slope × bars), SE of the slope = SE / √Σ(x − x̄)²
+        let eq = [1., 1.2, 1.1, 1.4, 1.3];
+        let (slope, se, sxx) = regression(&eq);
+        let m: std::collections::BTreeMap<_, _> = system(&rows, &eq, &[], 0., 1., 252., DEFAULT_RATES).into_iter().collect();
+        assert!((m["k_ratio"] - slope / (se / sxx.sqrt()) / 5.).abs() < 1e-12);
     }
 
     #[test] fn trade_drawdown_is_close_to_close_inside_the_trade() {
@@ -255,7 +286,7 @@ mod tests {
         let t = |ret: f64, a: usize| ReportTrade { dir: 1., entry_i: a, exit_i: a + 9, entry_px: 1., ret, profit: ret };
         let sys = |r| -> std::collections::BTreeMap<_, _> { system(&rows, &[1.0, 1.02, 0.9, 1.02], &[t(0.02, 0), t(0.0, 10)], 0.1, 1.0, 250., r).into_iter().collect() };
         let (a, b) = (sys(DEFAULT_RATES), sys((0., 0.)));
-        assert!((b["sharpe_trades"] - a["sharpe_trades"] - 5. / (2f64.sqrt() * 5.)).abs() < 1e-9);
+        assert!((b["sharpe_trades"] - a["sharpe_trades"] - 5. / 5.).abs() < 1e-9);
         assert!((b["upi"] - a["upi"] - 5.4 / a["ulcer_index"]).abs() < 1e-9);
         let j = report_json(&rows, &[1., 1.1], &[], 0.1, 1., 252., &[1., 1.], 0., (2.5, 3.));
         assert!(j.contains(r#""rates":{"sharpe":2.5,"upi":3}"#) && j.contains("minus 2.5 % risk-free") && j.contains("uses a 3 % risk-free"), "{j}");

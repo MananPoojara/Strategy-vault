@@ -7,13 +7,14 @@ import { toTradePrices, TradePrices, usesTradePrices } from "./AmiSettings";
 import { addCond, conditionCount, conds, isCond, isSeries, OPERATOR_LABELS, removeCond, setCond, setExecution, type Side } from "./spec-model";
 import type { Catalogue, Cond, ExitAtStop, Spec, StopKey } from "./types";
 import { ExecutionPanel } from "./ExecutionPanel";
-import { InitialEquity, PortfolioLimits, RiskPanel } from "./RiskPanel";
+import { GeneralData, InitialEquity, PortfolioLimits, RiskPanel } from "./RiskPanel";
 import { ReportSettings } from "./ReportSettings";
 import { RuleList, type TreeCaps } from "./NodeEditor";
 import { budget, limits, readsSessionDates, usesHigherTimeframes, type ListPath } from "./rule-tree";
 import { modeOf, entryOrderType, type InstrumentContext } from "./execution-model";
 import { getAt, setAt, specBytes, SPEC_BYTE_BUDGET } from "./spec-model";
 import type { RuleNode } from "./types";
+import { ExamplePicker, SimpleSettings, useCompact, useSimple } from "./simple";
 import "./rules.css";
 
 export interface RunSettings { from: string; to: string; fees: string; slippage: string }
@@ -33,12 +34,15 @@ export function RuleBuilder(props: {
   problems: string[]; running: boolean; onRun(): void;
   /** The portfolio controls (PortfolioPanel), shown on the Portfolio tab. */
   portfolio?: ReactNode;
+  /** Step layout: "rules" (Your idea) or "settings" (Settings) only; both by default. */
+  part?: "rules" | "settings";
 }) {
   // Older engines keep their existing editor until they advertise the extended grammar.
-  if (!props.catalogue.execution) return <LegacyRuleBuilder {...props} />;
+  if (!props.catalogue.execution) return props.part === "settings" ? <p className="box cap">This engine shows the test period and costs with the rules, in step 2.</p> : <LegacyRuleBuilder {...props} />;
   return <TreeRuleBuilder {...props} />;
 }
-function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market: "in" }, onChange, settings, onSettings, problems, running, onRun, portfolio }: Parameters<typeof RuleBuilder>[0]) {
+function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market: "in" }, onChange, settings, onSettings, problems, running, onRun, portfolio, part }: Parameters<typeof RuleBuilder>[0]) {
+  const showRules = part !== "settings", showSettings = part !== "rules";
   const both = spec.direction === "both", b = budget(spec), lim = limits(catalogue), bytes = specBytes(spec);
   const caps = (top: number): TreeCaps => ({ leaves: b.leaves >= lim.leaves, nodes: b.nodes >= lim.nodes, top: top >= lim.top });
   const warn = b.leaves >= 0.9 * lim.leaves || b.nodes >= 0.9 * lim.nodes || bytes >= 0.9 * SPEC_BYTE_BUDGET || b.top.long >= lim.top || b.top.short >= lim.top;
@@ -48,43 +52,67 @@ function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market
   const ordered = entryOrderType(spec.entry) !== "market" || (!!spec.short_side && entryOrderType(spec.short_side.entry) !== "market");
   const fill = ordered ? "order level" : usesTradePrices(spec.execution) ? "price and delay set in Trades" : spec.execution?.fill === "close" ? "same close" : "next open";
   const ex = spec.execution ?? {}, single = !spec.portfolio; // per-side prices, re-entry delays and limits are single-instrument settings
-  const stray = !single && [ex.prices, ex.delays, ex.reentry, ex.limits, ex.exit_at_stop, ex.activate_stops_immediately, ex.nbar_has_priority, ex.allow_same_bar_exit].some((x) => x !== undefined);
+  const simple = useSimple(), compact = useCompact();
+  const tabbed = compact && !simple; // Advanced in the page: AmiBroker-style Entry / Exit tabs
+  const entryTitle = simple ? COPY.simpleEntryTitle : COPY.entryTitle, exitTitle = simple ? COPY.simpleExitTitle : COPY.exitTitle;
+  const period = <div className="lab-row lab-settings">
+    <label className="dfield">From<input type="date" aria-label="From" title="Empty: from the first bar" value={settings.from} onChange={(e) => onSettings({ from: e.target.value })} /></label>
+    <label className="dfield">To<input type="date" aria-label="To" title="Empty: to the last bar" value={settings.to} onChange={(e) => onSettings({ to: e.target.value })} /></label>
+    {money ? <span className="cap">{COPY.moneyCostsHere}</span> : <>
+      {cost !== undefined ? <NumField label="Fees (bps / side)" value={cost} min={0} placeholder="0" onChange={(n) => n !== undefined && onChange(setExecution(spec, { cost_bps: n }))} /> : <label className="dfield">Fees (bps / side)<input type="number" aria-label="Fees (bps / side)" min={0} step="any" placeholder="0" value={settings.fees} onChange={(e) => onSettings({ fees: e.target.value })} /></label>}
+      <label className="dfield">Slippage (bps / side)<input type="number" aria-label="Slippage (bps / side)" min={0} step="any" placeholder="0" value={settings.slippage} onChange={(e) => onSettings({ slippage: e.target.value })} /></label>
+    </>}
+  </div>;
+  const stray = !single && [ex.prices, ex.delays, ex.reentry, ex.limits, ex.exit_at_stop, ex.activate_stops_immediately, ex.nbar_has_priority, ex.allow_same_bar_exit, ex.bars_held_from].some((x) => x !== undefined);
   return <section className="box lab-rules" tabIndex={-1}>
-    <h2 className="box-h">Strategy rules <small>{COPY.rulesHint}</small><span className={`cap lab-caps${warn ? " lab-caps-warn" : ""}`} data-lab-caps>{COPY.caps(top, b.leaves, lim.leaves, b.nodes, lim.nodes, (bytes / 1024).toFixed(1))}</span></h2>
+    {showRules && <>
+    <h2 className="box-h">{simple ? "Your idea" : "Strategy rules"} <small>{COPY.rulesHint}</small>{((!simple && !compact) || warn) && <span className={`cap lab-caps${warn ? " lab-caps-warn" : ""}`} data-lab-caps>{COPY.caps(top, b.leaves, lim.leaves, b.nodes, lim.nodes, (bytes / 1024).toFixed(1))}</span>}</h2>
+    {simple && <ExamplePicker spec={spec} onChange={onChange} />}
+    {tabbed ? <SettingsTabs ariaLabel="Rules" labels={["Entry · Buy", "Exit · Sell", ...(both && spec.short_side ? ["Short entry", "Short exit"] : [])]}>
+      {[list("entry.all", both ? "Buy (long) when all of these are true" : COPY.simpleEntryTitle, both ? "Long entry" : "Entry", b.top.long),
+        list("exit.any", both ? "Sell the long when any of these is true" : COPY.simpleExitTitle, both ? "Long exit" : "Exit", b.top.long),
+        ...(both && spec.short_side ? [list("short_side.entry.all", "Sell short when all of these are true", "Short entry", b.top.short),
+          list("short_side.exit.any", "Cover the short when any of these is true", "Short exit", b.top.short)] : [])]}
+    </SettingsTabs> : <>
     <div className="lab-side-panel" data-lab-side="long">
       {both && <h3 className="lab-side-h">{COPY.longSide}</h3>}
-      <div className="lab-sides">{list("entry.all", both ? COPY.longEntryTitle : COPY.entryTitle, both ? "Long entry" : "Entry", b.top.long)}{list("exit.any", both ? COPY.longExitTitle : COPY.exitTitle, both ? "Long exit" : "Exit", b.top.long)}</div>
+      <div className="lab-sides">{list("entry.all", both ? COPY.longEntryTitle : entryTitle, both ? "Long entry" : "Entry", b.top.long)}{list("exit.any", both ? COPY.longExitTitle : exitTitle, both ? "Long exit" : "Exit", b.top.long)}</div>
     </div>
     {both && spec.short_side && <div className="lab-side-panel" data-lab-side="short">
       <h3 className="lab-side-h">{COPY.shortSide}</h3>
       <div className="lab-sides">{list("short_side.entry.all", COPY.shortEntryTitle, "Short entry", b.top.short)}{list("short_side.exit.any", COPY.shortExitTitle, "Short exit", b.top.short)}</div>
     </div>}
-    <SettingsTabs labels={["General", "Trades", "Orders & stops", "Portfolio"]}>
+    </>}
+    </>}
+    {part === "settings" && <h2 className="box-h">Settings <small>test period, costs and money</small></h2>}
+    {showSettings && <>
+    {simple ? <SimpleSettings spec={spec} settings={settings} onChange={onChange} open={part === "settings"}>
+      {period}
+      <InitialEquity spec={spec} catalogue={catalogue} instrument={instrument} onChange={onChange} instrumentData={false} />
+    </SimpleSettings> : <>{part !== "settings" && <h3 className="lab-settings-h">Backtest settings <small>how trades are filled, sized and charged</small></h3>}
+    <SettingsTabs labels={["General", "Trades", "Orders & stops", "Report", "Portfolio"]}>
       <>
-        <InitialEquity spec={spec} catalogue={catalogue} instrument={instrument} onChange={onChange} />
-        <ExecutionPanel spec={spec} catalogue={catalogue} onChange={onChange} part="direction" />
-        <div className="lab-row lab-settings">
-          <label className="dfield">From<input type="date" aria-label="From" title="Empty: from the first bar" value={settings.from} onChange={(e) => onSettings({ from: e.target.value })} /></label>
-          <label className="dfield">To<input type="date" aria-label="To" title="Empty: to the last bar" value={settings.to} onChange={(e) => onSettings({ to: e.target.value })} /></label>
-          {money ? <span className="cap">{COPY.moneyCostsHere}</span> : <>
-            {cost !== undefined ? <NumField label="Fees (bps / side)" value={cost} min={0} placeholder="0" onChange={(n) => n !== undefined && onChange(setExecution(spec, { cost_bps: n }))} /> : <label className="dfield">Fees (bps / side)<input type="number" aria-label="Fees (bps / side)" min={0} step="any" placeholder="0" value={settings.fees} onChange={(e) => onSettings({ fees: e.target.value })} /></label>}
-            <label className="dfield">Slippage (bps / side)<input type="number" aria-label="Slippage (bps / side)" min={0} step="any" placeholder="0" value={settings.slippage} onChange={(e) => onSettings({ slippage: e.target.value })} /></label>
-          </>}
-        </div>
-        <RiskPanel spec={spec} catalogue={catalogue} instrument={instrument} onChange={onChange} />
-        <ReportSettings spec={spec} onChange={onChange} />
+        <SettingGroup title="Capital"><InitialEquity spec={spec} catalogue={catalogue} instrument={instrument} onChange={onChange} instrumentData={false} /></SettingGroup>
+        <SettingGroup title="Test period & costs">{period}</SettingGroup>
+        <SettingGroup title="Trading">
+          <ExecutionPanel spec={spec} catalogue={catalogue} onChange={onChange} part="direction" />
+          {!spec.portfolio && <GeneralData spec={spec} instrument={instrument} onChange={onChange} />}
+        </SettingGroup>
+        <SettingGroup title="Position size & risk"><RiskPanel spec={spec} catalogue={catalogue} instrument={instrument} onChange={onChange} /></SettingGroup>
       </>
       <>
+        <p className="cap lab-stab-intro">When orders fill and at what price: the bar, the price for each side and any delay.</p>
         {!ordered && <ScenarioPreset spec={spec} custom={single} onChange={onChange} />}
         {single && <TradePrices spec={spec} preset={!usesTradePrices(spec.execution)} onChange={onChange} />}
         <ExecutionPanel spec={spec} catalogue={catalogue} onChange={onChange} part="fills" />
         {stray && <p className="rnote" role="note" data-lab-portfolio-stray>
           Trade prices, re-entry delays, stop exit modes, same-bar and stop activation settings and position limits apply to one instrument only.{" "}
           <button type="button" className="dbtn sm" onClick={() => onChange(setExecution(spec, { prices: undefined, delays: undefined, reentry: undefined, limits: undefined,
-            exit_at_stop: undefined, activate_stops_immediately: undefined, nbar_has_priority: undefined, allow_same_bar_exit: undefined }))}>Remove them</button>
+            exit_at_stop: undefined, activate_stops_immediately: undefined, nbar_has_priority: undefined, allow_same_bar_exit: undefined, bars_held_from: undefined }))}>Remove them</button>
         </p>}
       </>
       <>
+        <p className="cap lab-stab-intro">Entry orders (limit or stop) and the exits that close a trade automatically: stop loss, profit target, trailing, breakeven, N-bar.</p>
         <label className="lab-check" title={single ? undefined : "A portfolio checks stops from the entry bar (a single-instrument setting)"}><input type="checkbox" disabled={!single}
           checked={ex.activate_stops_immediately ?? true} onChange={(e) => onChange(setExecution(spec, { activate_stops_immediately: e.target.checked ? undefined : false }))} />Activate stops immediately</label>
         <p className="cap">{(ex.activate_stops_immediately ?? true) ? "Checked by default here (AmiBroker's default is unchecked): a stop can trigger on the entry bar when the entry fills at the open or as a limit/stop order; an entry at the close or another later price is checked from the next bar." : "Stops are first checked on the bar after the entry bar."}</p>
@@ -93,14 +121,20 @@ function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market
         {both && spec.short_side && <><h3 className="lab-side-h">{COPY.shortSide}</h3><OrdersPanel spec={spec} catalogue={catalogue} pre="short_side." onChange={onChange} /></>}
       </>
       <>
+        <p className="cap lab-stab-intro">Risk-free rates the performance report uses for the Sharpe ratio of trades and the Ulcer performance index (UPI).</p>
+        <ReportSettings spec={spec} onChange={onChange} />
+      </>
+      <>
+        <p className="cap lab-stab-intro">Trade several instruments together with shared cash, and the limits on each position.</p>
         {portfolio}
         <PortfolioLimits spec={spec} onChange={onChange} />
       </>
-    </SettingsTabs>
+    </SettingsTabs></>}
+    </>}
     {readsSessionDates(spec) && <p className="cap">{COPY.sessionDatesHint}</p>}
     {usesHigherTimeframes(spec) && <p className="cap">{COPY.wmRule}</p>}
     <div className="lab-row lab-run">
-      <button type="button" className="dbtn primary" data-lab-action="run" disabled={running || problems.length > 0} onClick={onRun}>{running ? "Running…" : "Run backtest"}</button>
+      <button type="button" className="dbtn primary" data-lab-action="run" disabled={running || problems.length > 0} onClick={onRun}>{running ? "Running…" : simple ? "▶ Test this idea" : "Run backtest"}</button>
       <span className="cap">Signal at the bar's close · fill at the {fill}</span>
     </div>
     {problems.length > 0 && <ul className="rnote">{problems.map((p, i) => <li key={i}>{p}</li>)}</ul>}
@@ -175,6 +209,10 @@ function LegacyRuleBuilder({ spec, catalogue, onChange, settings, onSettings, pr
   );
 }
 
+/** A labelled group inside a settings tab: the label in a left column so related controls read as one block. */
+const SettingGroup = ({ title, children }: { title: string; children: ReactNode }) =>
+  <section className="lab-sgroup" aria-label={title}><h4>{title}</h4><div>{children}</div></section>;
+
 /** AmiBroker Analysis settings: tabs over the execution controls; every panel stays mounted (hidden) so edits are never lost. */
 export function SettingsTabs({ labels, children, ariaLabel = "Analysis settings" }: { labels: string[]; children: ReactNode[]; ariaLabel?: string }) {
   const [tab, setTab] = useState(0);
@@ -197,8 +235,8 @@ export function SettingsTabs({ labels, children, ariaLabel = "Analysis settings"
 
 /** AmiBroker "Scenario" presets for market orders; `stops` sets Exit at stop? of all four stops (absent: intraday, the default). */
 const SCENARIOS: { id: string; label: string; fill?: "next_open" | "close"; stops?: ExitAtStop }[] = [
-  { id: "next_open", label: "Trade next bar on open, stops exit intraday (default)", fill: "next_open" },
-  { id: "close", label: "Trade current bar on close, stops exit intraday", fill: "close" },
+  { id: "next_open", label: "Trade next bar on open, stops exit intraday", fill: "next_open" },
+  { id: "close", label: "Trade current bar on close, stops exit intraday (default)", fill: "close" },
   { id: "next_open_stops_open", label: "Trade next bar on open, stops exit on next bar open", fill: "next_open", stops: 2 },
   { id: "close_stops_close", label: "Trade current bar on close, stops exit on close", fill: "close", stops: 0 },
   { id: "prices", label: "Custom: price and delay for buy, sell, short and cover" },

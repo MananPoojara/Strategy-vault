@@ -22,26 +22,6 @@ export function tint(color: string, alpha: number) {
   return rgb ? `rgba(${rgb[1]}, ${alpha})` : "transparent";
 }
 
-/** AmiBroker wheel: scrolling pans the bars left/right (down = later bars), Ctrl/⌘ + scroll zooms around the cursor. */
-export function amiWheel(el: HTMLElement, chart: LabChartApi) {
-  const onWheel = (e: WheelEvent) => {
-    const ts = chart.timeScale(), r = ts.getVisibleLogicalRange?.(), d = e.deltaY || e.deltaX;
-    if (!r || !ts.setVisibleLogicalRange || !d) return;
-    e.preventDefault(); // keep the page (and the browser zoom on Ctrl) still while the chart moves
-    const width = r.to - r.from;
-    if (e.ctrlKey || e.metaKey) {
-      const box = el.getBoundingClientRect(), at = r.from + width * Math.min(1, Math.max(0, (e.clientX - box.left) / (box.width || 1)));
-      const next = Math.max(10, width * (d > 0 ? 1.15 : 1 / 1.15)), k = next / width;
-      ts.setVisibleLogicalRange({ from: at - (at - r.from) * k, to: at + (r.to - at) * k });
-    } else {
-      const step = Math.sign(d) * Math.max(1, Math.round(width * 0.08));
-      ts.setVisibleLogicalRange({ from: r.from + step, to: r.to + step });
-    }
-  };
-  el.addEventListener("wheel", onWheel, { passive: false });
-  return () => el.removeEventListener("wheel", onWheel);
-}
-
 /** Lab pages bypass VaultRuntime.cleanup, so every chart owns its resize observer and removal. */
 export function createLabChart(el: HTMLElement, height: number, options: Record<string, unknown> = {}, library: LabChartLibrary | undefined = window.LightweightCharts) {
   if (!library) return null;
@@ -53,7 +33,8 @@ export function createLabChart(el: HTMLElement, height: number, options: Record<
     grid: { vertLines: { visible: false }, horzLines: { color: colors.rule } },
     // minimumWidth: one price-axis width, so stacked panes line up
     rightPriceScale: { borderColor: colors.steel, minimumWidth: 78 }, timeScale: { borderColor: colors.steel, minBarSpacing: 0.05 },
-    crosshair: { mode: library.CrosshairMode?.Normal ?? 0 }, handleScale: { axisPressedMouseMove: false, mouseWheel: false }, handleScroll: { mouseWheel: false },
+    crosshair: { mode: library.CrosshairMode?.Normal ?? 0 }, // TradingView: drag pans, the wheel zooms, dragging the price or time axis stretches it, double-click an axis resets it
+    handleScale: { axisPressedMouseMove: true, mouseWheel: true, axisDoubleClickReset: true }, handleScroll: { mouseWheel: true, pressedMouseMove: true },
     ...options,
   });
   const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => {
@@ -63,8 +44,7 @@ export function createLabChart(el: HTMLElement, height: number, options: Record<
     if (range) chart.timeScale().setVisibleRange(range);
   });
   observer?.observe(el);
-  const unwheel = amiWheel(el, chart);
-  return { chart, colors, dispose() { unwheel(); observer?.disconnect(); chart.remove(); } };
+  return { chart, colors, dispose() { observer?.disconnect(); chart.remove(); } };
 }
 
 function subscribe(onChange: () => void) {
@@ -76,7 +56,7 @@ function subscribe(onChange: () => void) {
 export const useThemeKey = () => useSyncExternalStore(subscribe, () => document.documentElement.getAttribute("data-theme") ?? "");
 
 export interface SyncedPane { chart: LabChartApi; el: HTMLElement; series: LabSeriesApi }
-/** Keeps every pane on one visible time range and one crosshair bar; only the pane under the pointer drives the others, so updates cannot loop. */
+/** Keeps every pane on one visible bar range and one crosshair bar (panes carry the same bars, so bar positions match, including the empty space after the last bar); only the pane under the pointer drives the others, so updates cannot loop. */
 export function syncPanes(panes: SyncedPane[]) {
   let active: SyncedPane | null = null;
   const undo: (() => void)[] = [];
@@ -84,9 +64,9 @@ export function syncPanes(panes: SyncedPane[]) {
     const claim = () => { active = pane; };
     pane.el.addEventListener("pointerenter", claim); pane.el.addEventListener("pointerdown", claim); pane.el.addEventListener("wheel", claim);
     undo.push(() => { pane.el.removeEventListener("pointerenter", claim); pane.el.removeEventListener("pointerdown", claim); pane.el.removeEventListener("wheel", claim); });
-    const onRange = (range: { from: string; to: string } | null) => {
+    const onRange = (range: { from: number; to: number } | null) => {
       if (active !== pane || !range) return;
-      for (const other of panes) if (other !== pane) other.chart.timeScale().setVisibleRange(range);
+      for (const other of panes) if (other !== pane) other.chart.timeScale().setVisibleLogicalRange?.(range);
     };
     const onCross = (param: { time?: string }) => {
       if (active !== pane) return;
@@ -95,9 +75,9 @@ export function syncPanes(panes: SyncedPane[]) {
         if (param.time) other.chart.setCrosshairPosition?.(0, param.time, other.series); else other.chart.clearCrosshairPosition?.();
       }
     };
-    pane.chart.timeScale().subscribeVisibleTimeRangeChange?.(onRange);
+    pane.chart.timeScale().subscribeVisibleLogicalRangeChange?.(onRange);
     pane.chart.subscribeCrosshairMove?.(onCross);
-    undo.push(() => { pane.chart.timeScale().unsubscribeVisibleTimeRangeChange?.(onRange); pane.chart.unsubscribeCrosshairMove?.(onCross); });
+    undo.push(() => { pane.chart.timeScale().unsubscribeVisibleLogicalRangeChange?.(onRange); pane.chart.unsubscribeCrosshairMove?.(onCross); });
   }
   return () => undo.forEach((u) => u());
 }

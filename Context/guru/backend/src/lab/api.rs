@@ -397,7 +397,9 @@ fn model_of(selected: &crate::SelectedContext, ticker: &str, kind: &str, spec: &
 fn money_json(b: &ledger::Booked, m: &ledger::Money, currency: Option<&str>) -> String {
     // only specs with execution.limits get the limits block, so every other money body is unchanged
     let limits = if m.limits == rules::Limits::none() { String::new() } else {
-        format!(",\"limits\":{{\"interest\":{},\"skip_reasons\":{{{}}},\"basis\":\"{}\"}}", crate::num(b.interest.iter().fold(0., |a, b| a.max(*b))) /* cumulative, so the window's total is the maximum */,
+        // margin_interest only when a margin rate is set, so every other limits body is unchanged
+        let loan = if m.limits.margin_rate_pct > 0. { format!(",\"margin_interest\":{}", crate::num(b.margin_interest)) } else { String::new() };
+        format!(",\"limits\":{{\"interest\":{}{loan},\"skip_reasons\":{{{}}},\"basis\":\"{}\"}}", crate::num(b.interest_earned),
             b.skip_reasons.iter().map(|(k, n)| format!("\"{k}\":{n}")).collect::<Vec<_>>().join(","), esc(ledger::LIMITS_BASIS))
     };
     format!("{{\"capital\":{},\"final_equity\":{},\"costs_total\":{},\"skipped\":{},\"currency\":{},\"basis\":\"{}\"{limits}}}", crate::num(m.capital), crate::num(b.final_equity),
@@ -509,8 +511,10 @@ pub(super) fn run_spec(st: &State, q: &Query, spec: Spec) -> Result<String, LabE
         _ => String::new(),
     };
     let stats = result_stats(ctx, &run, costs, booked.as_ref(), money.as_ref());
-    let report = report::report_json(&ctx.r, &run.equity, &closed, stats.get("cagr").copied().unwrap_or(f64::NAN),
-        stats.get("exposure").copied().unwrap_or(f64::NAN), markets::bars_per_year(&ctx.r[0].ticker), &run.bh, stats.get("bh_cagr").copied().unwrap_or(f64::NAN), spec.report.unwrap_or(report::DEFAULT_RATES));
+    // AmiBroker's calendar (365-day years, actual bars per year) and exposure for the report only: `stats` keeps the shared definitions
+    let years = report::years(&ctx.r, from, to);
+    let report = report::report_json(&ctx.r, &run.equity, &closed, report::car(&run.equity, years), report::exposure(&report_trades, from, to),
+        run.equity.len() as f64 / years, &run.bh, report::car(&run.bh, years), spec.report.unwrap_or(report::DEFAULT_RATES));
     let cost_json = money.as_ref().map_or_else(|| costs.json(), declared_costs_json);
     Ok(format!(
         "{{\"label\":\"{}\",\"kind\":\"lab_simulation\",\"origin\":{origin},\"instrument\":{instrument}{foreign_json},\"execution_model\":{},\"from\":\"{}\",\"to\":\"{}\",\"start\":{start},\"dates\":{},\"close\":{},\"equity\":{},\"gross_equity\":{},\"bh\":{},\"trades\":{trades}{money_block},\"stats\":{},\"gross_stats\":{},\"report\":{report},\"costs\":{},\"provenance\":{}{}}}",

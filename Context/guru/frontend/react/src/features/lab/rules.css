@@ -92,3 +92,13 @@
 .lab-rules .lab-cond > select[data-lab-node-menu] { margin-left: auto; }
 .lab-rules .lab-cond > .dbtn[aria-label^="Remove"] { width: var(--lab-ctl); padding: 0; border-color: var(--rule); }
 .lab-stab-panel { gap: 12px; }
+/* Backtest settings: a heading over the tabs, and the General tab in labelled groups (label column on the left). */
+.lab-settings-h { margin: 6px 0 0; padding-top: 14px; border-top: 1px solid var(--rule); font-size: 14px; color: var(--ink); }
+.lab-settings-h small { margin-left: 8px; font-size: 12px; font-weight: 500; color: var(--ink2); }
+.lab-sgroup { display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 8px 16px; padding: 12px 0; border-top: 1px solid var(--rule); }
+.lab-sgroup:first-child { border-top: 0; padding-top: 2px; }
+.lab-sgroup > h4 { margin: 8px 0 0; font: 700 11px var(--font); letter-spacing: .06em; text-transform: uppercase; color: var(--ink2); }
+.lab-sgroup > div { display: grid; gap: 10px; min-width: 0; }
+.lab-sgroup > div > .lab-row, .lab-sgroup .lab-exec > .lab-row { margin: 0; }
+.lab-stab-intro { margin: 0; }
+@media (max-width: 700px) { .lab-sgroup { grid-template-columns: minmax(0, 1fr); gap: 6px; } .lab-sgroup > h4 { margin: 0; } }

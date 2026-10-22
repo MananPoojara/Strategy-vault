@@ -42,10 +42,10 @@ export function PortfolioLimits({ spec, onChange }: { spec: Spec; onChange(spec:
 const REFERENCE: Record<string, string> = { in: "NIFTY 50", us: "SPX" };
 export const TICK_NOTE = "Tick size: as in AmiBroker, only exits by the built-in stops round to the tick; max loss, trailing and breakeven against you (sells down, covers up), profit targets and take-profits toward their level. Entries and other exits keep their price; stop levels are tested unrounded. Futures use the contract tick.";
 export const PAD_NOTE = "Pad and align: bars follow the reference's trading days within this instrument's own dates. A missing day repeats the previous close (O=H=L=C, volume 0) and is an ordinary bar to rules and fills, as in AmiBroker; days the reference lacks are dropped.";
-export const MARGIN_NOTE = "Account margin: buying power = equity × 100 / margin %. No margin loan interest is charged (AmiBroker's Margin rate is not modelled; as with it at 0) and there is no margin call; idle-cash interest is earned only on cash not in positions.";
+export const MARGIN_NOTE = "Account margin: buying power = equity × 100 / margin %. The part of a long position above the account's cash is a loan: Margin rate [%] is charged on it per year, by calendar day (0 = no charge). Shorts borrow no cash. There is no margin call; idle-cash interest is earned only on cash not in positions.";
 
 /** AmiBroker General › Tick size and Pad and align all data to reference symbol (one instrument, unit or money mode). */
-function GeneralData({ spec, instrument, onChange }: { spec: Spec; instrument: InstrumentContext; onChange(spec: Spec): void }) {
+export function GeneralData({ spec, instrument, onChange }: { spec: Spec; instrument: InstrumentContext; onChange(spec: Spec): void }) {
   const ex = spec.execution ?? {}, reference = REFERENCE[instrument.market];
   const futures = (ex.instrument as { kind?: string } | undefined)?.kind === "futures";
   return <>
@@ -62,7 +62,8 @@ function GeneralData({ spec, instrument, onChange }: { spec: Spec; instrument: I
 }
 
 /** AmiBroker General › Initial equity, first in the tab: editable in money mode, otherwise disabled with the reason. */
-export function InitialEquity({ spec, catalogue, instrument, onChange }: { spec: Spec; catalogue: Catalogue; instrument: InstrumentContext; onChange(spec: Spec): void }) {
+/** `instrumentData={false}` leaves out tick size and pad & align (shown under Trading, or not at all in the Simple view). */
+export function InitialEquity({ spec, catalogue, instrument, onChange, instrumentData = true }: { spec: Spec; catalogue: Catalogue; instrument: InstrumentContext; onChange(spec: Spec): void; instrumentData?: boolean }) {
   if (!catalogue.execution) return null;
   const money = modeOf(spec) === "money";
   const blocked = moneyBlocked(instrument, spec) ?? (!supportsMoney(catalogue) ? "Money mode is not supported by this engine yet." : null);
@@ -70,11 +71,11 @@ export function InitialEquity({ spec, catalogue, instrument, onChange }: { spec:
     <div className="lab-row" data-lab-equity>
       <NumField label="Initial equity" value={money ? spec.execution?.capital : undefined} min={0} max={1e12} disabled={!money} placeholder={money ? undefined : "off"}
         onChange={(n) => n !== undefined && onChange(changeExecution(spec, "capital", n))} />
-      <Segmented label="Results in" value={modeOf(spec)} options={[{ value: "unit", label: "Unit study" }, { value: "money", label: "Money", disabled: !!blocked, title: blocked ?? undefined }]}
+      <Segmented label="Results in" value={modeOf(spec)} options={[{ value: "unit", label: "% returns", title: "Results as percentage returns on a unit position" }, { value: "money", label: "Cash amounts", disabled: !!blocked, title: blocked ?? "Results in cash: starting equity, position sizes, costs" }]}
         onChange={(m) => onChange(withMode(spec, m))} />
     </div>
     {blocked && <p className="cap" data-lab-money-blocked>{blocked}</p>}
-    {!spec.portfolio && <GeneralData spec={spec} instrument={instrument} onChange={onChange} />}
+    {!spec.portfolio && instrumentData && <GeneralData spec={spec} instrument={instrument} onChange={onChange} />}
   </>;
 }
 
@@ -151,6 +152,7 @@ export function RiskPanel({ spec, catalogue, instrument, onChange }: { spec: Spe
             {limitField("Min. pos. value", "min_value", 0, 1e12)}
             {limitField("Max. pos. value", "max_value", 0, 1e12)}
             {limitField("Fixed annual interest [%]", "interest_pct", 0, 100, null, "0")}
+            {limitField("Margin rate [%]", "margin_rate_pct", 0, 100, null, "0")}
             {limitField("Account margin [%]", "margin_pct", 1, 100, null, "100")}
           </div>
           <div className="lab-row">

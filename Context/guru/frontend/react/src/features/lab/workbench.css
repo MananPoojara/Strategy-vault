@@ -16,6 +16,12 @@
 .lab-pane-box > .lab-legend-tv { top: 2px; }
 .lab-pane:empty { display: none; }
 .lab-price { position: relative; }
+.lab-latest { position: absolute; right: 92px; bottom: 40px; z-index: 4; width: 30px; height: 30px; border: 1px solid var(--steel); border-radius: 50%; background: var(--card); color: var(--ink); font: 700 16px/1 var(--font); cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.18); }
+.lab-draw { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0 6px; }
+.lab-draw .dbtn[aria-pressed=true] { background: var(--blue); border-color: var(--blue); color: #fff; }
+.lab-drawing .lwc { cursor: crosshair; }
+.lab-latest:hover { background: var(--panel); }
+.lab-latest:focus-visible { outline: none; box-shadow: var(--ring); }
 .lab-legend-tv { position: absolute; top: 6px; left: 8px; z-index: 3; pointer-events: none; display: grid; gap: 1px; max-width: calc(100% - 90px); font: 500 12px/1.5 var(--font); color: var(--ink); }
 .lab-legend-tv > div { width: max-content; max-width: 100%; padding: 0 4px; background: color-mix(in srgb, var(--panel) 82%, transparent); white-space: pre; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 /* Phones: the legend wraps inside the chart (the grid column may shrink below the one-line width). */

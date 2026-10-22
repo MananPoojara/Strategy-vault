@@ -15,7 +15,7 @@ export type LabAction =
   | { type: "market"; market: Market } | { type: "ticker"; ticker: string } | { type: "tf"; tf: string } | { type: "range"; range: ChartRange }
   | { type: "spec"; spec: Spec } | { type: "open"; row: LabStrategy | null; spec: Spec } | { type: "row"; row: LabStrategy }
   | { type: "chip-add"; indicator: Indicator } | { type: "chip-set"; key: string; params: Record<string, number> } | { type: "chip-remove"; key: string }
-  | { type: "chip-vs"; key: string; vs?: string } | { type: "chip-look"; key: string; looks: Chip["looks"] }
+  | { type: "chip-vs"; key: string; vs?: string } | { type: "chip-look"; key: string; looks: Chip["looks"] } | { type: "chip-tf"; key: string; tf?: string } | { type: "chip-levels"; key: string; levels?: number[] }
   | { type: "ran"; key: string; combos: number } | { type: "tried"; n: number };
 
 export const runKey = (spec: Spec, market: SavedMarket, ticker: string) => canonicalJson([spec, market, spec.portfolio?portfolioIdentity(spec):ticker]);
@@ -23,7 +23,7 @@ export const runKey = (spec: Spec, market: SavedMarket, ticker: string) => canon
 /** The page passes regionFallback only when the hash has no `region` (then the research pages' region wins). */
 export function initialLabState(q: LabQuery, regionFallback?: string): LabState {
   const market: Market = regionFallback === "us" ? "us" : q.region;
-  return { market, ticker: q.tk, tf: q.tf, range: q.range, spec: defaultSpec(), chips: [], placements: {}, nextChip: 1, row: null, lastRun: null, tried: 0 };
+  return { market, ticker: q.tk, tf: q.tf, range: q.range, spec: { ...defaultSpec(), execution: { fill: "close" } }, chips: [], placements: {}, nextChip: 1, row: null, lastRun: null, tried: 0 };
 }
 
 export function labReducer(state: LabState, action: LabAction): LabState {
@@ -49,6 +49,8 @@ export function labReducer(state: LabState, action: LabAction): LabState {
     }
     case "chip-set": return { ...state, chips: state.chips.map((c) => (c.key === action.key ? { ...c, params: action.params } : c)) };
     case "chip-vs": return { ...state, chips: state.chips.map((c) => c.key === action.key ? { ...c, vs: action.vs } : c) };
+    case "chip-levels": return { ...state, chips: state.chips.map((c) => (c.key === action.key ? { ...c, levels: action.levels } : c)) };
+    case "chip-tf": return { ...state, chips: state.chips.map((c) => (c.key === action.key ? { ...c, tf: action.tf } : c)) };
     case "chip-look": return { ...state, chips: state.chips.map((c) => (c.key === action.key ? { ...c, looks: action.looks } : c)) };
     case "chip-remove": return { ...state, chips: state.chips.filter((c) => c.key !== action.key) };
     case "ran": return { ...state, lastRun: action.key, tried: state.tried + 1 };

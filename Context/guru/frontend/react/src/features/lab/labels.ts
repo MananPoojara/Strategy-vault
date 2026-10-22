@@ -50,6 +50,7 @@ export const COPY = {
   notChecked: "Not yet checked against TradingView.",
   rulesHint: "values from completed bars only",
   entryTitle: "Entry · all of these",
+  simpleEntryTitle: "Buy when all of these are true", simpleExitTitle: "Sell when any of these is true",
   exitTitle: "Exit · any of these",
   addCondition: "+ Add condition",
   emptyEntry: "Add at least one entry condition.",

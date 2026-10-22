@@ -1,0 +1,39 @@
+/* Simple view: the analyst's path (idea → test → compare with buy & hold) without the AmiBroker power-user controls. */
+.lab-tabs-row { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.lab-tabs-row > .lab-tabs { flex: 1 1 auto; min-width: 0; }
+.lab-mode { margin-left: auto; padding-bottom: 6px; }
+.lab-examples { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; }
+.lab-examples .cap { margin: 0; }
+.lab-simple-settings { display: grid; gap: 10px; border: 1px solid var(--rule); border-radius: var(--r-field); padding: 8px 12px; }
+.lab-simple-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; font-size: 13px; color: var(--ink2); }
+.lab-simple-summary > span { flex: 1 1 auto; min-width: 0; }
+.lab-simple-panel { display: grid; gap: 12px; padding-top: 8px; border-top: 1px solid var(--rule); }
+.lab-simple-result { display: grid; gap: 8px; }
+.lab-simple-table { border-collapse: collapse; width: min(100%, 460px); font-size: 14px; }
+.lab-simple-table :is(th, td) { padding: 8px 12px; border-bottom: 1px solid var(--rule); text-align: left; }
+.lab-simple-table thead th { font-size: 12px; color: var(--ink2); font-weight: 600; }
+.lab-simple-table td.n { text-align: right; font: 600 15px "IBM Plex Mono", monospace; }
+.lab-simple-table thead th:not(:first-child) { text-align: right; }
+.lab-more { justify-self: start; }
+.lab-popular-more { margin: 8px 0 0; }
+
+/* Four plain steps (Chart & indicators · Your idea · Settings · Results): one connected row, the current step filled. */
+.lab-stepbar { display: flex; margin: 6px 0 8px; border: 1px solid var(--rule); border-radius: var(--r-field); overflow: hidden; background: var(--card); }
+.lab-step-btn { flex: 1 1 0; display: flex; align-items: center; justify-content: center; gap: 8px; min-width: 0; padding: 10px 12px; border: 0; border-right: 1px solid var(--rule); background: none; font: 600 14px var(--font); color: var(--ink2); cursor: pointer; }
+.lab-step-btn:last-child { border-right: 0; }
+.lab-step-btn:hover { background: var(--panel); color: var(--ink); }
+.lab-step-btn[aria-current=step] { background: var(--blue); color: #fff; }
+:root[data-theme] .lab-step-btn[aria-current=step] { color: var(--bg); }
+.lab-step-btn:focus-visible { outline: none; box-shadow: inset var(--ring); }
+.lab-step-n { display: inline-grid; place-items: center; flex: none; width: 22px; height: 22px; border: 1.5px solid currentColor; border-radius: 50%; font-size: 12px; }
+.lab-step-hint { margin: 0 0 12px; font-size: 14px; color: var(--ink2); }
+.lab-step-nav { display: flex; justify-content: space-between; gap: 12px; margin-top: 16px; }
+.lab-step-nav > [data-lab-next]:only-child { margin-left: auto; }
+@media (max-width: 700px) { .lab-stepbar { flex-wrap: wrap; } .lab-step-btn { flex: 1 1 45%; border-bottom: 1px solid var(--rule); } }
+.lab-list > button[data-lab-add], .lab-group-body > button[data-lab-add] { justify-self: start; }
+
+/* Advanced rule rows: what · compare · with what, then More (timing, source, group or move) and remove. */
+.lab-add-row { display: inline-flex; flex-wrap: wrap; gap: 8px; justify-self: start; align-items: center; }
+.lab-rules .lab-cond > .lab-more-btn { margin-left: auto; border-color: var(--rule); }
+.lab-rules .lab-cond > .lab-more-btn ~ select[data-lab-node-menu] { margin-left: 0; }
+.lab-rules [data-lab-settings-tabs] .lab-list > h3 { margin-top: 2px; }

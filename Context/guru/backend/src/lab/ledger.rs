@@ -18,10 +18,11 @@ pub struct Row {
     pub entries: Vec<Fill>, pub exits: Vec<Fill>, pub borrow: f64,
     point_value: f64, borrow_pct_year: f64,
 }
-/// `skip_reasons` splits `skipped`; `interest` is the cumulative idle-cash interest by bar index (empty without interest_pct).
-pub struct Booked { pub rows: Vec<Row>, pub skipped: usize, pub final_equity: f64, pub costs_total: f64, pub skip_reasons: BTreeMap<&'static str, usize>, pub interest: Vec<f64> }
+/// `skip_reasons` splits `skipped`; `interest` is the cumulative net interest by bar index, idle-cash interest less margin-loan
+/// interest (empty without interest_pct or margin_rate_pct); `interest_earned` and `margin_interest` are the two totals.
+pub struct Booked { pub rows: Vec<Row>, pub skipped: usize, pub final_equity: f64, pub costs_total: f64, pub skip_reasons: BTreeMap<&'static str, usize>, pub interest: Vec<f64>, pub interest_earned: f64, pub margin_interest: f64 }
 pub const BASIS: &str = "User-declared costs; not a verified statutory schedule. Quantities are computed on the admitted price series, whose corporate-action adjustment is not established; they are not verified as-traded quantities. Sizing uses equity at the trade start; risk pauses and cooldowns use the simulator's unit returns, before money rounding and declared costs. Open quantities are marked, with no invented liquidation order. Partial exits round down to whole lots; the final exit closes the remainder.";
-pub const LIMITS_BASIS: &str = "Position limits (AmiBroker settings) apply to each entry order: the quantity rounds down to round_lot; max_value (the position's total value, scale-in legs included) and max_volume_pct cap it, and a capped entry is skipped unless shrink is on; an entry below min_shares or min_value is skipped (a later scale-in leg is dropped, the position kept). max_volume_pct reads the last volume complete when the order fills, so it never looks ahead: the fill bar's volume for a fill at the close, otherwise the previous bar's (AmiBroker reads the entry bar's). A bar with zero volume is not capped (AmiBroker default). A cash shortfall skips the entry (insufficient_cash) unless shrink is on, which takes the affordable lots as without limits. prev_bar_equity sizes from the previous bar's closing equity, with an open position marked at that close. interest_pct: idle cash (equity less the entry value and entry costs of the open position) earns interest_pct / 365 per calendar day between bars, credited at each bar; it is in the equity curve and final equity, not in trade returns.";
+pub const LIMITS_BASIS: &str = "Position limits (AmiBroker settings) apply to each entry order: the quantity rounds down to round_lot; max_value (the position's total value, scale-in legs included) and max_volume_pct cap it, and a capped entry is skipped unless shrink is on; an entry below min_shares or min_value is skipped (a later scale-in leg is dropped, the position kept). max_volume_pct reads the last volume complete when the order fills, so it never looks ahead: the fill bar's volume for a fill at the close, otherwise the previous bar's (AmiBroker reads the entry bar's). A bar with zero volume is not capped (AmiBroker default). A cash shortfall skips the entry (insufficient_cash) unless shrink is on, which takes the affordable lots as without limits. prev_bar_equity sizes from the previous bar's closing equity, with an open position marked at that close. interest_pct: idle cash (equity less the entry value and entry costs of the open position) earns interest_pct / 365 per calendar day between bars, credited at each bar; it is in the equity curve and final equity, not in trade returns. margin_rate_pct (AmiBroker Margin rate): on account margin, the part of an open long position's entry value and entry costs above the closed-trade equity is a loan charged margin_rate_pct / 365 per calendar day, debited at each bar like interest_pct; shorts and futures borrow no cash, and there is no margin call.";
 
 impl Booked {
     pub fn trades(&self) -> Vec<Trade> { self.rows.iter().map(|r| r.real.clone()).collect() }
@@ -93,16 +94,19 @@ pub fn snap_ticks(trades: Vec<Trade>, tick: f64) -> Vec<Trade> {
 }
 fn lots(units: f64, lot: f64) -> f64 { if units.is_finite() && units > 0. { (units / lot).floor() * lot } else { 0. } }
 
-/// Idle-cash interest, credited bar by bar (simple daily rate per calendar day, compounding at each bar).
-struct Interest { rate: f64, cum: Vec<f64>, at: usize }
+/// Idle-cash interest credited and margin-loan interest debited bar by bar (simple daily rates per calendar day, compounding at each bar).
+struct Interest { rate: f64, loan_rate: f64, cum: Vec<f64>, at: usize, earned: f64, paid: f64 }
 impl Interest {
-    /// Credit bars (at, upto] on the cash idle at each previous bar's close: equity less `committed(bar)`.
-    fn to(&mut self, upto: usize, equity: &mut f64, dates: &[String], committed: impl Fn(usize) -> f64) {
-        if self.rate <= 0. { return; }
+    /// Bars (at, upto] at each previous bar's close: `held(bar)` is (committed, long cash) — the idle cash is equity less
+    /// committed, the loan the long cash position above equity.
+    fn to(&mut self, upto: usize, equity: &mut f64, dates: &[String], held: impl Fn(usize) -> (f64, f64)) {
+        if self.rate <= 0. && self.loan_rate <= 0. { return; }
         for i in self.at + 1..=upto {
             let days = (super::resample::day_number(&dates[i]) - super::resample::day_number(&dates[i - 1])) as f64;
-            let add = (*equity - committed(i - 1)).max(0.) * self.rate * days;
-            *equity += add; self.cum[i] = self.cum[i - 1] + add;
+            let (committed, long) = held(i - 1);
+            let add = (*equity - committed).max(0.) * self.rate * days;
+            let pay = (long - *equity).max(0.) * self.loan_rate * days;
+            *equity += add - pay; self.cum[i] = self.cum[i - 1] + add - pay; self.earned += add; self.paid += pay;
         }
         self.at = self.at.max(upto);
     }
@@ -114,14 +118,14 @@ pub fn book(trades: &[Trade], dates: &[String], m: &Money, span: &Span) -> Booke
     let lot = k.lot * lim.round_lot;
     let (mut equity, mut rows, mut skipped, mut costs_total) = (m.capital, Vec::<Row>::new(), 0, 0.);
     let mut skip_reasons = BTreeMap::new();
-    let rate = lim.interest_pct / 100. / 365.;
-    let mut interest = Interest { rate, cum: if rate > 0. { vec![0.; dates.len()] } else { vec![] }, at: span.from };
+    let (rate, loan_rate) = (lim.interest_pct / 100. / 365., lim.margin_rate_pct / 100. / 365.);
+    let mut interest = Interest { rate, loan_rate, cum: if rate > 0. || loan_rate > 0. { vec![0.; dates.len()] } else { vec![] }, at: span.from, earned: 0., paid: 0. };
     for t in trades {
         let (d, buy) = (t.dir, t.dir > 0.);
         // a futures contract's own margin, else the cash account margin (AmiBroker "Account margin"; 100 = none, × 1 exactly)
         let basis = |px: f64| px * k.point_value * k.margin_pct.map_or(lim.margin_pct / 100., |p| p / 100.);
         let e = t.legs[0].i;
-        interest.to(e, &mut equity, dates, |_| 0.);
+        interest.to(e, &mut equity, dates, |_| (0., 0.));
         // Previous-bar equity: drop bar e's interest and, if the last trade closed on bar e, use its mark at bar e-1's close.
         let sizing_equity = if !lim.prev_bar_equity || e <= span.from { equity } else {
             let j = e - 1;
@@ -189,13 +193,14 @@ pub fn book(trades: &[Trade], dates: &[String], m: &Money, span: &Span) -> Booke
             Leg { i: l.i, px: eff, w: l.qty * k.point_value * eff / equity }
         }).collect(), exit_px: eff_pieces.iter().map(|e| e.1 * e.2).sum(), exits: if t.exits.is_empty() { vec![] } else { eff_pieces }, ..t.clone() };
         row.pnl = row.mark(t.exit_i, pieces.last().unwrap().1, dates, true);
-        // cash on account margin: the loan is not idle cash, so the whole entry value is committed (no loan interest is charged)
+        // cash on account margin: the loan is not idle cash, so the whole entry value is committed; a long cash position above equity is the loan
         let held: Vec<(usize, f64)> = row.entries.iter().map(|l| (l.i, if k.margin_pct.is_some() { basis(l.px) } else { l.px * k.point_value } * l.qty + l.costs())).collect();
-        interest.to(t.exit_i, &mut equity, dates, |i| held.iter().filter(|h| h.0 <= i).map(|h| h.1).sum());
+        let borrows = buy && k.margin_pct.is_none();
+        interest.to(t.exit_i, &mut equity, dates, |i| { let c = held.iter().filter(|h| h.0 <= i).map(|h| h.1).sum(); (c, if borrows { c } else { 0. }) });
         equity += row.pnl; costs_total += row.costs; rows.push(row);
     }
-    interest.to(span.to, &mut equity, dates, |_| 0.);
-    Booked { rows, skipped, final_equity: equity, costs_total, skip_reasons, interest: interest.cum }
+    interest.to(span.to, &mut equity, dates, |_| (0., 0.));
+    Booked { rows, skipped, final_equity: equity, costs_total, skip_reasons, interest_earned: interest.earned, margin_interest: interest.paid, interest: interest.cum }
 }
 
 #[cfg(test)]
@@ -417,6 +422,23 @@ mod tests {
         let b = super::book(&t, &dates(5), &half(36.5), &span);
         let eq = 10_000. * 1.001; let after = eq + 200. * 10.; // bar 1 interest raises the sizing equity: 10,010 × 2 / 100 = 200 shares
         assert!((b.final_equity - after * 1.001).abs() < 1e-9, "{}", b.final_equity);
+    }
+    #[test] fn margin_rate_charges_the_long_loan_by_calendar_day() {
+        let margin = |rate| limited(Sizing::PctEquity(100.), Limits { margin_pct: 50., shrink: true, margin_rate_pct: rate, ..Limits::default() });
+        let span = Span { close: &[], volume: None, from: 0, to: 4 };
+        let long = [trade(1., &[(1, 100., 1.)], (3, 110.), "close")];
+        let b = super::book(&long, &dates(5), &margin(36.5), &span); // 0.1% a day
+        // 200 shares (20,000) on 10,000 equity: bar 2 pays 0.1% of the 10,000 loan, bar 3 of 10,010 (the charge lowered equity)
+        assert_eq!(b.rows[0].qty, 200.);
+        assert!((b.margin_interest - 20.01).abs() < 1e-9 && b.interest_earned == 0., "{}", b.margin_interest);
+        assert!((b.final_equity - (10_000. - 20.01 + 2000.)).abs() < 1e-9, "{}", b.final_equity);
+        let curve = b.equity(&[100., 100., 105., 110., 110.], &dates(5), 0, 4, &margin(36.5), true);
+        assert!((curve[4] * 10_000. - b.final_equity).abs() < 1e-9 && (curve[2] * 10_000. - (10_000. + 200. * 5. - 10.)).abs() < 1e-9, "the charge reaches the curve");
+        assert_eq!(super::book(&long, &dates(5), &margin(0.), &span).final_equity, 12_000., "rate 0: no charge");
+        let short = super::book(&[trade(-1., &[(1, 100., 1.)], (3, 100.), "close")], &dates(5), &margin(36.5), &span);
+        assert_eq!((short.margin_interest, short.final_equity), (0., 10_000.), "a short borrows no cash");
+        let cash = super::book(&long, &dates(5), &limited(Sizing::PctEquity(100.), Limits { shrink: true, margin_rate_pct: 36.5, ..Limits::default() }), &span);
+        assert_eq!(cash.margin_interest, 0., "no account margin: nothing is borrowed");
     }
     #[test] fn tick_size_rounds_fills_against_the_trader_and_limits_toward_their_limit() {
         let snap = |t: Trade| snap_ticks(vec![t], 0.05).remove(0);

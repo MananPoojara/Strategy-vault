@@ -111,7 +111,7 @@ pub const DEFS: &[IndicatorDef] = &[
     def("smma", &["smma"], "Smoothed Moving Average", &[len("length", "Length", 7.)], NO, "rma(close, length) (Wilder smoothing)", &[6], smma),
     def("swma", &["swma"], "Symmetrically Weighted Moving Average", &[], NO, "(x[3] + 2·x[2] + 2·x[1] + x)/6 of close (TradingView ta.swma)", &[3], swma),
     def("vwma", &["vwma"], "Volume Weighted Moving Average", &[len("length", "Length", 20.)], Needs { volume: true, ..Needs::NONE }, "sma(close*volume, length) / sma(volume, length)", &[19], vwma),
-    def("hma", &["hma"], "Hull Moving Average", &[ParamSpec { min: 2., ..len("length", "Length", 9.) }, int("variant", "Variant (0 HMA TradingView, 1 EHMA Hull Suite, 2 THMA Hull Suite)", 0., 0., 2.)], NO,
+    def("hma", &["hma"], "Hull Moving Average", &[ParamSpec { min: 2., ..len("length", "Length", 9.) }, int("variant", "Variant (0 HMA TradingView/AmiBroker, 1 EHMA Hull Suite, 2 THMA Hull Suite)", 0., 0., 2.)], NO,
         "wma(2*wma(close, floor(length/2)) - wma(close, length), floor(sqrt(length))); variant 1 EHMA (TradingView public 'Hull Suite' by InSilico): ema(2·ema(close, floor(n/2)) − ema(close, n), round(√n)); variant 2 THMA (same script): wma(3·wma(close, floor(n/3)) − wma(close, floor(n/2)) − wma(close, n), n) (floor(n/3) at least 1)", &[10], hma),
     def("alma", &["alma"], "Arnaud Legoux Moving Average", &[len("length", "Length", 9.), real("offset", "Offset", 0.85, 0., 1., 0.05), real("sigma", "Sigma", 6., 0.5, 50., 0.5)], NO,
         "m=offset*(length-1), s=length/sigma, w_i=exp(-(i-m)^2/(2*s^2)) with i=0 oldest; sum(w_i*close)/sum(w_i)", &[8], alma),

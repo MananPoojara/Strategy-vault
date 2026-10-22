@@ -163,9 +163,10 @@ pub struct MoneyCosts { pub per_order: f64, pub per_unit: f64, pub pct: f64, pub
 /// [`Limits::none`], today's behaviour.
 #[derive(Clone, Copy, Debug, PartialEq)]
 /// `margin_pct` (AmiBroker "Account margin", 100 = no margin): a cash account's buying power is equity × 100 / margin_pct.
-pub struct Limits { pub min_shares: f64, pub round_lot: f64, pub min_value: f64, pub max_value: Option<f64>, pub max_volume_pct: Option<f64>, pub shrink: bool, pub prev_bar_equity: bool, pub interest_pct: f64, pub margin_pct: f64 }
+/// `margin_rate_pct` (AmiBroker "Margin rate"): annual interest charged on the part of a long cash position the account borrows.
+pub struct Limits { pub min_shares: f64, pub round_lot: f64, pub min_value: f64, pub max_value: Option<f64>, pub max_volume_pct: Option<f64>, pub shrink: bool, pub prev_bar_equity: bool, pub interest_pct: f64, pub margin_pct: f64, pub margin_rate_pct: f64 }
 impl Default for Limits {
-    fn default() -> Self { Limits { min_shares: 0., round_lot: 1., min_value: 0., max_value: None, max_volume_pct: None, shrink: false, prev_bar_equity: false, interest_pct: 0., margin_pct: 100. } }
+    fn default() -> Self { Limits { min_shares: 0., round_lot: 1., min_value: 0., max_value: None, max_volume_pct: None, shrink: false, prev_bar_equity: false, interest_pct: 0., margin_pct: 100., margin_rate_pct: 0. } }
 }
 impl Limits {
     /// No `execution.limits`: no caps, and a cash shortfall shrinks the order to the affordable lots.
@@ -200,6 +201,9 @@ pub struct Exec {
     /// AmiBroker General › "Tick size" of a cash instrument (0: no rounding; ledger::snap_ticks) and "Pad and align all data to
     /// reference symbol" (the market benchmark's calendar). Run-level: read from the main side only.
     pub tick_size: f64, pub pad_align: bool,
+    /// `execution.bars_held_from` "signal": bars_held counts from the entry signal bar, not the fill bar (AmiBroker AFL
+    /// BarsSince(Buy) with a next-open fill). Same as the fill bar for close fills.
+    pub held_from_signal: bool,
 }
 impl Default for Exec {
     fn default() -> Self {
@@ -208,7 +212,7 @@ impl Default for Exec {
                trail_activate: None, breakeven: None, take_profits: vec![], min_bars: 0, ohlc_path: false, scale_in: None, sizing: Sizing::Full,
                cooldown: None, max_trades: None, risk: Risk::default(), capital: None, costs: MoneyCosts::default(), futures: None, limits: None, market: None, reentry: None,
                exit_at_stop: [1; 4], stops_immediately: true, nbar_first: false, same_bar: true,
-               tick_size: 0., pad_align: false }
+               tick_size: 0., pad_align: false, held_from_signal: false }
     }
 }
 impl Exec {
@@ -279,7 +283,7 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
     };
     let mut cost_bps = None;
     if let Some(ex) = root.get("execution") {
-        fields(ex, "execution", &["fill", "exit_fill", "cost_bps", "opposite", "delay_bars", "entry_on", "intrabar", "sizing", "cooldown", "max_trades", "risk", "capital", "costs", "instrument", "prices", "delays", "reentry", "limits", "exit_at_stop", "activate_stops_immediately", "nbar_has_priority", "allow_same_bar_exit", "report", "tick_size", "pad_align"], &["limit", "stop"])?;
+        fields(ex, "execution", &["fill", "exit_fill", "cost_bps", "opposite", "delay_bars", "entry_on", "intrabar", "sizing", "cooldown", "max_trades", "risk", "capital", "costs", "instrument", "prices", "delays", "reentry", "limits", "exit_at_stop", "activate_stops_immediately", "nbar_has_priority", "allow_same_bar_exit", "report", "tick_size", "pad_align", "bars_held_from"], &["limit", "stop"])?;
         if let Some(v) = ex.get("instrument") { exec.futures = instrument(v)?; }
         if let Some(c) = ex.get("capital") {
             exec.capital = Some(c.as_f64().filter(|c| c.is_finite() && *c > 0. && *c <= MAX_CAPITAL).ok_or_else(|| inv(format!("execution.capital must be a number above 0 and at most {MAX_CAPITAL}")))?);
@@ -370,6 +374,11 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
         }
         let flag = |k: &str, default: bool| match ex.get(k) { None => Ok(default), Some(Json::Bool(b)) => Ok(*b), _ => Err(inv(format!("execution.{k} must be true or false"))) };
         (exec.stops_immediately, exec.nbar_first, exec.same_bar) = (flag("activate_stops_immediately", true)?, flag("nbar_has_priority", false)?, flag("allow_same_bar_exit", true)?);
+        exec.held_from_signal = match ex.get("bars_held_from").map(Json::as_str) {
+            None | Some(Some("fill")) => false,
+            Some(Some("signal")) => true,
+            _ => return Err(inv("execution.bars_held_from must be \"fill\" or \"signal\"")),
+        };
         exec.edge = match ex.get("entry_on").map(Json::as_str) {
             None | Some(Some("level")) => false,
             Some(Some("edge")) => true,
@@ -594,6 +603,7 @@ fn portfolio_rules(s:&Spec)->Result<(),LabError>{
     if x.limits.is_some(){return unsupported("execution.limits");}
     if x.tick_size>0.{return unsupported("execution.tick_size");}
     if x.pad_align{return unsupported("execution.pad_align");}
+    if x.held_from_signal{return unsupported("execution.bars_held_from");}
     if x.capital.is_none(){return Err(inv("a portfolio needs execution.capital (shared money mode)"));}
     if p.max_open==0||p.max_open>MAX_OPEN{return Err(inv(format!("portfolio.max_open must be a whole number from 1 to {MAX_OPEN}")));}
     if p.worst_rank_held()==0||p.worst_rank_held()>MAX_UNIVERSE||p.worst_rank_held()<p.max_open{return Err(inv(format!("portfolio.worst_rank_held must be at least max_open and at most {MAX_UNIVERSE}")));}
@@ -659,7 +669,7 @@ fn distances(x: &Exec) -> Vec<Dist> {
 }
 
 fn limits(v: &Json) -> Result<Limits, LabError> {
-    fields(v, "execution.limits", &["min_shares", "round_lot", "min_value", "max_value", "max_volume_pct", "shrink", "prev_bar_equity", "interest_pct", "margin_pct"], &[])?;
+    fields(v, "execution.limits", &["min_shares", "round_lot", "min_value", "max_value", "max_volume_pct", "shrink", "prev_bar_equity", "interest_pct", "margin_pct", "margin_rate_pct"], &[])?;
     let num = |k: &str, ok: &dyn Fn(f64) -> bool, want: &str| -> Result<Option<f64>, LabError> {
         v.get(k).map(|x| x.as_f64().filter(|x| x.is_finite() && ok(*x)).ok_or_else(|| inv(format!("execution.limits.{k} must be {want}")))).transpose()
     };
@@ -675,6 +685,7 @@ fn limits(v: &Json) -> Result<Limits, LabError> {
         shrink: flag("shrink")?, prev_bar_equity: flag("prev_bar_equity")?,
         interest_pct: num("interest_pct", &|x| (0. ..=100.).contains(&x), "a number from 0 to 100")?.unwrap_or(d.interest_pct),
         margin_pct: num("margin_pct", &|x| (1. ..=100.).contains(&x), "a number from 1 to 100 (100 = no margin)")?.unwrap_or(d.margin_pct),
+        margin_rate_pct: num("margin_rate_pct", &|x| (0. ..=100.).contains(&x), "a number from 0 to 100")?.unwrap_or(d.margin_rate_pct),
     };
     if l.max_value.is_some_and(|m| l.min_value > m) { return Err(inv("execution.limits.min_value must not exceed max_value")); }
     Ok(l)
@@ -1831,7 +1842,7 @@ mod tests {
     #[test] fn execution_limits_parse_in_money_mode_only() {
         let money = |limits: &str| with(r#""fill": "next_open", "cost_bps": 12"#, &format!(r#""fill": "next_open", "capital": 100000, "limits": {limits}"#));
         let s = parse_spec(&money(r#"{"min_shares":5,"round_lot":10,"min_value":100,"max_value":5000,"max_volume_pct":2.5,"shrink":true,"prev_bar_equity":true,"interest_pct":4}"#)).unwrap();
-        assert_eq!(s.exec.limits, Some(Limits { min_shares: 5., round_lot: 10., min_value: 100., max_value: Some(5000.), max_volume_pct: Some(2.5), shrink: true, prev_bar_equity: true, interest_pct: 4., margin_pct: 100. }));
+        assert_eq!(s.exec.limits, Some(Limits { min_shares: 5., round_lot: 10., min_value: 100., max_value: Some(5000.), max_volume_pct: Some(2.5), shrink: true, prev_bar_equity: true, interest_pct: 4., margin_pct: 100., margin_rate_pct: 0. }));
         assert_eq!(parse_spec(&money("{}")).unwrap().exec.limits, Some(Limits::default()));
         for (limits, msg) in [(r#"{"round_lot":0.5}"#, "round_lot must be a whole number"), (r#"{"max_volume_pct":101}"#, "max_volume_pct must be"), (r#"{"shrink":1}"#, "shrink must be true or false"),
             (r#"{"min_value":10,"max_value":5}"#, "min_value must not exceed max_value"), (r#"{"lots":1}"#, "unknown field 'lots'")] {
@@ -1846,6 +1857,8 @@ mod tests {
     #[test] fn account_margin_tick_size_and_pad_align_parse() {
         let money = |limits: &str| with(r#""fill": "next_open", "cost_bps": 12"#, &format!(r#""fill": "next_open", "capital": 100000, "limits": {limits}"#));
         assert_eq!(parse_spec(&money(r#"{"margin_pct":50}"#)).unwrap().exec.limits.unwrap().margin_pct, 50.);
+        assert_eq!(parse_spec(&money(r#"{"margin_pct":50,"margin_rate_pct":9}"#)).unwrap().exec.limits.unwrap().margin_rate_pct, 9.);
+        for m in ["-1", "101", "true"] { assert!(err(&money(&format!(r#"{{"margin_rate_pct":{m}}}"#))).message().contains("margin_rate_pct must be a number from 0 to 100"), "{m}"); }
         for m in ["0", "101", "true"] { assert!(err(&money(&format!(r#"{{"margin_pct":{m}}}"#))).message().contains("margin_pct must be a number from 1 to 100"), "{m}"); }
         let exec = |extra: &str| with(r#""cost_bps": 12"#, &format!(r#""cost_bps": 12, {extra}"#));
         let s = parse_spec(&exec(r#""tick_size": 0.05, "pad_align": true"#)).unwrap();

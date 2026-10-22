@@ -4,6 +4,8 @@ import { NumField, OperandEditor } from "./OperandEditor";
 import { OPERATOR_LABELS, type Side } from "./spec-model";
 import { MAX_STEPS, MAX_WHOLE, describeNode, isLeaf, move, newNode, nodeKind, unwrap, withOp, wrap, type ListPath } from "./rule-tree";
 import type { Catalogue, Operand, RuleNode } from "./types";
+import { DetailContext, useCompact, useSimple } from "./simple";
+import { DEFAULT_LEVELS } from "./Workbench";
 import "./tree.css";
 
 export interface TreeCaps { leaves: boolean; nodes: boolean; top: boolean }
@@ -29,6 +31,18 @@ function AddMenu({ title, caps, top = false, sequence = false, full = false, onA
   title: string; caps: TreeCaps; top?: boolean; sequence?: boolean; full?: boolean; onAdd(n: RuleNode): void;
 }) {
   const blocked = caps.leaves || caps.nodes || (top && caps.top) || full;
+  const simple = useSimple(), compact = useCompact();
+  if (compact && !simple) return <span className="lab-add-row">
+    <button type="button" className="dbtn sm" data-lab-add-cond aria-label={`Add a condition to ${title}`} disabled={blocked} onClick={() => onAdd(newNode("cond"))}>+ Add condition</button>
+    <select data-lab-add aria-label={`Add a group to ${title}`} title="A group combines conditions: all must be true, any one is enough, not, a count over the last bars, or a sequence" value="" onChange={(e) => {
+      const k = e.target.value as AddKind;
+      if (!blocked && k && k !== "cond" && (sequence ? ADD_KINDS.filter((x) => x !== "at_least" && x !== "then") : ADD_KINDS).includes(k)) onAdd(newNode(k));
+    }}>
+      <option value="">+ Add group…</option>
+      {(sequence ? ADD_KINDS.filter((k) => k !== "at_least" && k !== "then") : ADD_KINDS).filter((k) => k !== "cond").map((k) => <option key={k} value={k} disabled={blocked}>{COPY.addOptions[k]}</option>)}
+    </select>
+  </span>;
+  if (simple) return <button type="button" className="dbtn sm" data-lab-add aria-label={`Add to ${title}`} disabled={blocked} onClick={() => onAdd(newNode("cond"))}>+ Add condition</button>;
   const options = sequence ? ADD_KINDS.filter((k) => k !== "at_least" && k !== "then") : ADD_KINDS;
   return <select data-lab-add aria-label={`Add to ${title}`} title={COPY.addTip} value="" onChange={(e) => {
     const k = e.target.value as AddKind;
@@ -44,10 +58,12 @@ export function NodeEditor({ node, onChange, onRemove, onMove, canUp = false, ca
   catalogue: Catalogue; side: Side; top: boolean; caps: TreeCaps; label: string;
 }) {
   const [open, setOpen] = useState(true);
+  const compact = useCompact(), simple = useSimple();
+  const [more, setMore] = useState(!compact); // the page keeps a row's timing, source and group/move behind "More"
   const kind = nodeKind(node), x = node as Obj;
   const set = (patch: Obj) => onChange({ ...x, ...patch } as RuleNode);
   const remove = onRemove && <button type="button" className="dbtn sm ghost" aria-label={`Remove ${label}`} title="Remove this condition" onClick={onRemove}>×</button>;
-  const menu = <NodeMenu node={node} onChange={onChange} onMove={onMove} canUp={canUp} canDown={canDown} caps={caps} label={label} />;
+  const menu = simple || (isLeaf(kind) && !more) ? null : <NodeMenu node={node} onChange={onChange} onMove={onMove} canUp={canUp} canDown={canDown} caps={caps} label={label} />;
   const renderNode = (n: RuleNode, update: (n: RuleNode) => void, name: string) => <NodeEditor node={n} onChange={update} catalogue={catalogue}
     caps={caps} side={side} top={false} label={name} />;
   const operand = (field: string, name: string) => <OperandEditor operand={x[field] as Operand} side={side} catalogue={catalogue}
@@ -59,12 +75,16 @@ export function NodeEditor({ node, onChange, onRemove, onMove, canUp = false, ca
     <span className="lab-kept">{COPY.keptAsIs} <code>{JSON.stringify(node)}</code></span>{remove}
   </div>;
   if (isLeaf(kind)) return <div className="lab-cond lab-node" data-lab-node data-lab-kind={kind}>
+    <DetailContext.Provider value={more}>
     {operand("lhs", "left")}
     <select aria-label="Operator" value={x.op as string} onChange={(e) => onChange(withOp(node, e.target.value))}>
       {[...new Set([...catalogue.operators, x.op as string])].map((op) => <option key={op} value={op}>{OPERATOR_LABELS[op] ?? op}</option>)}
     </select>
     {kind === "cmp" ? operand("rhs", "right") : kind === "range" ? <>{operand("lo", "low")}<span className="lab-word">and</span>{operand("hi", "high")}</>
       : <>{number("bars", "bars")}<span className="lab-word">bars</span></>}
+    </DetailContext.Provider>
+    {kind === "cmp" && <Levels of={x.lhs as Operand} onPick={(value) => set({ rhs: { value } })} />}
+    {compact && !simple && <button type="button" className="dbtn sm ghost lab-more-btn" aria-expanded={more} title="Timeframe, bars ago, another symbol, group or move" onClick={() => setMore(!more)}>{more ? "Less ▴" : "More ▾"}</button>}
     {menu}{remove}
   </div>;
   const key = kind === "at_least" ? "when" : kind;
@@ -116,4 +136,13 @@ function NodeMenu({ node, onChange, onMove, canUp, canDown, caps, label }: {
     {unwrapped !== undefined && <option value="unwrap">{COPY.nodeMenu.unwrap}</option>}
     {onMove && <><option value="up" disabled={!canUp}>{COPY.nodeMenu.up}</option><option value="down" disabled={!canDown}>{COPY.nodeMenu.down}</option></>}
   </select>;
+}
+
+/** The usual threshold lines of the left-hand oscillator (RSI 70/30, MFI 80/20…); a click compares against that number. */
+function Levels({ of, onPick }: { of: Operand; onPick(value: number): void }) {
+  const levels = DEFAULT_LEVELS[(of as { s?: string }).s ?? ""];
+  if (!levels) return null;
+  return <span className="lab-levels" data-lab-levels><span className="lab-word">Levels</span>
+    {levels.map((l) => <button key={l} type="button" className="dbtn sm ghost" title={`Compare with ${l}`} onClick={() => onPick(l)}>{l}</button>)}
+  </span>;
 }

@@ -1,10 +1,12 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useContext, useEffect, useState, type ReactNode } from "react";
 import { CALENDAR_OUTPUTS, COPY, EXPAND_FIRST_REFUSED, OPERAND_KIND_LABELS, TF_LABELS } from "./labels";
 import { isSeries, isValue, type Side } from "./spec-model";
 import { ARITH, CALENDAR_IDS, MAX_NTH, MAX_WHOLE, WINDOWS, convertOperand, describeNode, exprKey, firstAllowed, innerOperand, operandKind, type OperandKind } from "./rule-tree";
 import type { Catalogue, FormulaOperand, Indicator, Operand, RuleNode, SavedIndicator, SeriesOperand } from "./types";
 import { ForeignFields } from "./ForeignFields";
 import { infoOf, useFormulaScope, wholeParam } from "./formula";
+import { DetailContext, POPULAR, SHORT, useSimple } from "./simple";
+import { AB_DEFAULTS } from "./catalogue";
 import "./rules.css";
 import "./operand.css";
 
@@ -44,12 +46,16 @@ export function OperandEditor({ operand, side, catalogue, onChange, label, heldO
 }) {
   const kind = operandKind(operand, catalogue);
   const { mine, infos } = useFormulaScope();
+  const simple = useSimple(), brief = simple || !useContext(DetailContext);
   if (kind === "unknown") return <span className="lab-kept" role="group" aria-label={label}>{COPY.keptAsIs} <code>{JSON.stringify(operand)}</code></span>;
   const series = isSeries(operand) ? operand : undefined, key = exprKey(operand), x = operand as Obj;
   const computed = catalogue.indicators.filter((i) => i.computed && !CALENDAR_IDS.includes(i.id));
   const groups = [...new Set(computed.map((i) => i.category))];
   const ind = series && catalogue.indicators.find((i) => i.id === series.s);
   const expression = FORMULAS.includes(kind) || STATES.includes(kind);
+  // Simple view: timing and source controls only once they differ from the default (or a pair indicator needs its comparison)
+  const timed = (x.tf !== undefined && x.tf !== "D") || Number(x.offset ?? 0) !== 0 || (x.expand !== undefined && x.expand !== "last") || kind === "compress";
+  const sourced = x.symbol !== undefined || x.vs !== undefined || x.fixup !== undefined || !!ind?.needs.second_symbol;
   const set = (patch: Obj) => onChange({ ...operand, ...patch });
   const child = (value: Operand, update: (o: Operand) => void, name: string) => <OperandEditor operand={value} side={side} catalogue={catalogue}
     onChange={update} label={`${label} › ${name}`} heldOk={false} renderNode={renderNode} nodesFull={nodesFull} />;
@@ -79,12 +85,12 @@ export function OperandEditor({ operand, side, catalogue, onChange, label, heldO
     }}>
       <option value="price">{OPERAND_KIND_LABELS.price}</option>
       <option value="indicator" disabled={computed.length === 0}>{OPERAND_KIND_LABELS.indicator}</option>
-      <option value="calendar" disabled={!catalogue.indicators.some((i) => i.computed && CALENDAR_IDS.includes(i.id))}>{OPERAND_KIND_LABELS.calendar}</option>
+      {(!simple || kind === "calendar") && <option value="calendar" disabled={!catalogue.indicators.some((i) => i.computed && CALENDAR_IDS.includes(i.id))}>{OPERAND_KIND_LABELS.calendar}</option>}
       <option value="number">{OPERAND_KIND_LABELS.number}</option>
       {(mine.length > 0 || kind === "formula") && <optgroup label="My indicators"><option value="formula">{OPERAND_KIND_LABELS.formula}</option></optgroup>}
       {((heldOk ?? side === "exit") || kind === "bars_held") && <option value="bars_held">{OPERAND_KIND_LABELS.bars_held}</option>}
-      <optgroup label="Formula">{FORMULAS.map(kindOptions)}</optgroup>
-      <optgroup label="Since a condition">{STATES.map(kindOptions)}</optgroup>
+      {(!simple || expression) && <optgroup label="Formula">{FORMULAS.map(kindOptions)}</optgroup>}
+      {(!simple || expression) && <optgroup label="Since a condition">{STATES.map(kindOptions)}</optgroup>}
     </select>
     {kind === "number" && isValue(operand) && <NumField label="Number" value={operand.value}
       onChange={(n) => n !== undefined && onChange({ ...operand, value: n })} />}
@@ -123,9 +129,9 @@ export function OperandEditor({ operand, side, catalogue, onChange, label, heldO
       </select>
     </>}
     {kind === "formula" && <FormulaFields operand={operand as FormulaOperand} onChange={onChange} />}
-    {(kind === "price" || kind === "indicator" || kind === "calendar" || kind === "compress" || kind === "formula") &&
+    {(kind === "price" || kind === "indicator" || kind === "calendar" || kind === "compress" || kind === "formula") && (!brief || timed || kind === "price" || kind === "indicator") &&
       <Timing operand={operand} catalogue={catalogue} onChange={onChange} compress={kind === "compress"} />}
-    {series && <ForeignFields operand={operand} onChange={onChange} label={label} />}
+    {series && (!brief || sourced) && <ForeignFields operand={operand} onChange={onChange} label={label} />}
     {expression && <button type="button" className="dbtn sm ghost" aria-label="Remove formula" title="Remove formula, keep the inner value"
       onClick={() => onChange(innerOperand(operand) ?? { s: "close" })}>×</button>}
   </span>;
@@ -163,7 +169,7 @@ function Timing({ operand, catalogue, onChange, compress }: {
   const summary = [tf !== "D" ? TF_LABELS[tf] ?? `Every ${tf.slice(0, -1)} sessions` : "", offset ? `${offset} ${tf === "D" ? "bars" : "periods"} ago` : "",
     expand === "point" ? "period's last day" : expand === "first" ? "from the period's first day" : ""].filter(Boolean).join(" · ");
   return <>
-    <button type="button" className="dbtn sm ghost" data-lab-timing aria-expanded={open} aria-label="Timeframe and offset" title="Timeframe and offset" onClick={() => setOpen(!open)}>{summary || "Daily · now"} <span aria-hidden="true">{open ? "▴" : "▾"}</span></button>
+    <button type="button" className="dbtn sm ghost" data-lab-timing aria-expanded={open} aria-label="Timeframe and offset" title="Timeframe and offset" onClick={() => setOpen(!open)}>{summary || "Daily"} <span aria-hidden="true">{open ? "▴" : "▾"}</span></button>
     {open && <span className="lab-timing">
       {!compress && <TimeframeField operand={operand} catalogue={catalogue} onChange={onChange} />}
       {tf !== "D" && <>
@@ -189,6 +195,9 @@ function IndicatorFields({ operand, ind, computed, groups, set, replace }: {
     <>
       <select aria-label="Indicator" value={ind.id} onChange={(e) => replace(e.target.value)}>
         {!ind.computed && <option value={ind.id} disabled>{ind.name} (listed only)</option>}
+        {/* typing "RSI" in the list jumps here first, not to "RSI Divergence" */}
+        <optgroup label="Popular">{POPULAR.flatMap((id) => computed.filter((x) => x.id === id)).map((x) =>
+          <option key={x.id} value={x.id}>{x.name.toUpperCase().startsWith(SHORT[x.id] ?? "") ? x.name : `${SHORT[x.id]} · ${x.name}`}</option>)}</optgroup>
         {groups.map((g) => (
           <optgroup key={g} label={g}>
             {computed.filter((x) => x.category === g).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
@@ -199,6 +208,8 @@ function IndicatorFields({ operand, ind, computed, groups, set, replace }: {
         <NumField key={p.key} label={p.label} value={operand.p?.[p.key] ?? p.default} min={p.min} max={p.max} step={p.step}
           onChange={(n) => n !== undefined && set({ p: { ...operand.p, [p.key]: n } })} />
       ))}
+      {AB_DEFAULTS[ind.id] && <button type="button" className="dbtn sm ghost" data-lab-ab-defaults title="Set the parameters to AmiBroker's own defaults for this indicator"
+        onClick={() => set({ p: { ...operand.p, ...AB_DEFAULTS[ind.id] } })}>AmiBroker defaults</button>}
       {ind.outputs.length > 1 && (
         <select aria-label="Output" value={operand.out ?? ind.outputs[0]} onChange={(e) => set({ out: e.target.value })}>
           {ind.outputs.map((o) => <option key={o} value={o}>{o}</option>)}

@@ -28,9 +28,22 @@ fn macd_like(x: &[f64], f: usize, s: usize, sig: usize, pct: bool) -> Vec<Vec<f6
     vec![m, signal, hist]
 }
 
+/// AmiBroker's documented RSI (afl/rsi): P = N = 0, Wilder update from bar 1, output from bar `len`; P + N = 0 → NaN.
+fn rsi_ab(x: &[f64], len: usize) -> Vec<f64> {
+    let (k, mut out) = (len as f64, vec![NA; x.len()]);
+    let (mut up, mut dn) = (0., 0.);
+    for i in 1..x.len() {
+        let d = x[i] - x[i - 1];
+        up = ((k - 1.) * up + d.max(0.)) / k;
+        dn = ((k - 1.) * dn + (-d).max(0.)) / k;
+        if i >= len && up + dn > 0. { out[i] = 100. * up / (up + dn); }
+    }
+    out
+}
 fn rsi(b: &Bars, prm: &Params) -> Output {
     let l = n(prm, "length");
     if p(prm, "variant") == 0. { return Ok(vec![rsi_s(&b.close, l)]); }
+    if p(prm, "variant") == 2. { return Ok(vec![rsi_ab(&b.close, l)]); }
     let d = ta::change(&b.close, 1);
     let up = ta::sum(&d.iter().map(|v| if v.is_nan() { NA } else { v.max(0.) }).collect::<Vec<_>>(), l);
     let dn = ta::sum(&d.iter().map(|v| if v.is_nan() { NA } else { (-v).max(0.) }).collect::<Vec<_>>(), l);
@@ -209,8 +222,8 @@ const LEN14: &[ParamSpec] = &[len("length", "Length", 14.)];
 const MACD: &[ParamSpec] = &[len("fast", "Fast length", 12.), len("slow", "Slow length", 26.), len("signal", "Signal length", 9.)];
 
 pub const DEFS: &[IndicatorDef] = &[
-    def("rsi", &["rsi"], "Relative Strength Index", &[len("length", "Length", 14.), int("variant", "Variant (0 Wilder/TradingView, 1 Cutler/TradeStation RSI JP)", 0., 0., 1.)], NO,
-        "up=rma(max(change,0)), dn=rma(max(-change,0)); dn==0 -> 100, up==0 -> 0, else 100-100/(1+up/dn); variant 1 (Cutler's RSI, TradeStation RSI JP: no Wilder smoothing): 100·sum(up, n)/(sum(up, n) + sum(dn, n)), dn sum 0 → 100", &[14], rsi),
+    def("rsi", &["rsi"], "Relative Strength Index", &[len("length", "Length", 14.), int("variant", "Variant (0 Wilder/TradingView/AmiBroker after warm-up, 1 Cutler/TradeStation RSI JP, 2 AmiBroker from bar 1)", 0., 0., 2.)], NO,
+        "up=rma(max(change,0)), dn=rma(max(-change,0)); dn==0 -> 100, up==0 -> 0, else 100-100/(1+up/dn); variant 1 (Cutler's RSI, TradeStation RSI JP: no Wilder smoothing): 100·sum(up, n)/(sum(up, n) + sum(dn, n)), dn sum 0 → 100; variant 2 (AmiBroker RSI, afl/rsi documented loop): P = N = 0, then P = ((n−1)·P + up)/n and N likewise from bar 1, RSI = 100·P/(P + N) from bar n, P + N = 0 → NaN (equals variant 0 after the warm-up)", &[14], rsi),
     def("macd", &["macd", "signal", "hist"], "MACD", &[len("fast", "Fast length", 12.), len("slow", "Slow length", 26.), len("signal", "Signal length", 9.),
         int("signal_type", "Signal MA (0 EMA TradingView, 1 SMA MetaTrader iMACD/iOsMA)", 0., 0., 1.), int("ma_type", "Fast/slow MA (0 EMA, 1 DEMA, 2 TEMA — MetaStock/Mulloy)", 0., 0., 2.)], NO,
         "macd=ema(close,fast)-ema(close,slow); signal=ema(macd,signal); hist=macd-signal; signal_type 1 (MetaTrader 5 MACD.mq5/OsMA.mq5): signal = sma(macd, signal), hist = OsMA = macd − signal; ma_type 1/2 (MetaStock MACD on DEMA/TEMA, Mulloy 1994): fast/slow = dema/tema(close) = 2·e1 − e2 / 3·(e1 − e2) + e3 (EMAs SMA-seeded as ours; MetaTrader seeds its EMA with the first price, so its early values differ)", &[25, 33, 33], macd),
@@ -220,7 +233,7 @@ pub const DEFS: &[IndicatorDef] = &[
         int("variant", "Scale (0 TradingView 0–100, 1 NinjaTrader 8 0–1)", 0., 0., 1.)], NO,
         "r=rsi(close,rsi_length); k=sma(100*(r-lowest(r,s))/(highest(r,s)-lowest(r,s)),k) with highest/lowest window restarting after NaN; d=sma(k,d); variant 1 (NinjaTrader 8 StochRSI): k and d divided by 100 (0–1 scale); NinjaTrader's single unsmoothed line = k with k = 1 (NinjaTrader prints 0 where the RSI range is 0; here NaN)", &[17, 19], stochrsi),
     def("cci", &["cci"], "Commodity Channel Index", &[len("length", "Length", 20.)], NO, "(hlc3-sma(hlc3,n))/(0.015*dev(hlc3,n)); dev 0 -> NaN", &[19], cci),
-    def("mom", &["mom"], "Momentum", &[len("length", "Length", 10.), int("variant", "Variant (0 TradingView difference, 1 MetaTrader/thinkorswim ratio)", 0., 0., 1.)], NO,
+    def("mom", &["mom"], "Momentum", &[len("length", "Length", 10.), int("variant", "Variant (0 TradingView/AmiBroker difference, 1 MetaTrader/thinkorswim ratio)", 0., 0., 1.)], NO,
         "close - close[n]; variant 1 (MetaTrader 5 Momentum.mq5, default n 14; thinkorswim MomentumPercent): 100·close/close[n] (base 100; close[n] 0 → NaN)", &[10], mom),
     def("roc", &["roc"], "Rate of Change", &[len("length", "Length", 9.), int("variant", "Variant (0 TradingView/AmiBroker, 1 MetaTrader 5 ROC example)", 0., 0., 1.)], NO,
         "100*(close-close[n])/close[n]; variant 1 (MetaTrader 5 ROC.mq5 example): 100·(close − close[n])/close (divides by the current close; 0 → NaN)", &[9], roc),
@@ -238,7 +251,7 @@ pub const DEFS: &[IndicatorDef] = &[
     def("kst", &["kst", "signal"], "Know Sure Thing", &[len("roc1", "ROC 1", 10.), len("roc2", "ROC 2", 15.), len("roc3", "ROC 3", 20.), len("roc4", "ROC 4", 30.),
         len("sma1", "SMA 1", 10.), len("sma2", "SMA 2", 10.), len("sma3", "SMA 3", 10.), len("sma4", "SMA 4", 15.), len("signal", "Signal length", 9.)], NO,
         "sum_j j*sma(roc(close,roc_j),sma_j), j=1..4; signal=sma(kst,signal)", &[44, 52], kst),
-    def("dpo", &["dpo"], "Detrended Price Oscillator", &[len("length", "Length", 21.), int("variant", "Variant (0 TradingView, 1 MetaTrader 5 DPO)", 0., 0., 1.)], NO,
+    def("dpo", &["dpo"], "Detrended Price Oscillator", &[len("length", "Length", 21.), int("variant", "Variant (0 TradingView/AmiBroker, 1 MetaTrader 5 DPO)", 0., 0., 1.)], NO,
         "close - sma(close,n)[floor(n/2)+1] (non-centered); variant 1 (MetaTrader 5 DPO.mq5, default n 12): close − sma(close, floor(n/2) + 1) on the current bar (no shift; MetaTrader shows 0 before the first value). Sierra Chart Detrended Oscillator (Length L) = variant 0 with n = floor(L/2); Sierra Chart Detrended Oscillator - DiNapoli = close − sma(close, 7) = variant 1 with n = 12", &[31], dpo),
     def("coppock", &["coppock"], "Coppock Curve", &[len("wma", "WMA length", 10.), len("long", "Long ROC", 14.), len("short", "Short ROC", 11.)], NO, "wma(roc(close,long)+roc(close,short),wma)", &[23], coppock),
     def("fisher", &["fisher", "trigger"], "Fisher Transform", &[len("length", "Length", 9.)], NO,
@@ -353,6 +366,8 @@ mod tests {
         for k in 0..2 { assert_series(&f[k], &a[k].iter().map(|v| v / 100.).collect::<Vec<_>>()); }
         // changes +2, −1, +3: 100·5/6
         assert_series(&go("rsi", &closes(&[1., 3., 2., 5.]), &[("length", 3.), ("variant", 1.)])[0], &[N, N, N, 250. / 3.]);
+        // AmiBroker loop, n 3: P = 2/3, 4/9, 35/27; N = 0, 1/3, 2/9 → bar 3: 100·35/41 (bars before n stay NaN)
+        assert_series(&go("rsi", &closes(&[1., 3., 2., 5.]), &[("length", 3.), ("variant", 2.)])[0], &[N, N, N, 3500. / 41.]);
     }
     #[test] fn variant_zero_is_unchanged() {
         let b = walk(300, 5, true);
