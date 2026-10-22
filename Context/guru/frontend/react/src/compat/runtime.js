@@ -17,7 +17,7 @@ import {tradeExitCheck,tradeExitCheckMarkup} from '../services/trade-exit-check'
 import {stockChoices,basketSpan,positionLimit,priceRecoveryPeriod} from '../services/stock-selection';
 import {identifiedAuthorCount} from '../services/author-identities';
 import {libraryProgress,reasonLabel} from '../services/library-progress';
-import {visibleBacktestCount,linkedBookBacktestCount,measuredWindow} from '../services/library-count-context';
+import {visibleBacktestCount,measuredWindow} from '../services/library-count-context';
 import {unavailableBookMethods} from '../services/unavailable-book-methods';
 import {libraryScope,inLibraryScope} from '../services/library-scope';
 import {libraryMarket,libraryMarketVariants} from '../services/library-market';
@@ -1539,11 +1539,11 @@ function sourceBookShelf(g) {
 }
 function authorBookCard(record){
   const b=record.book||record.source||record,link=libraryBookLink(record),progress=recordProgress(record),title=record.title||'Title not recorded';
-  const backtested=record.kind==='catalogue'?linkedBookBacktestCount(currentLibraryProgress().measured,record.id,link):0;
+  const backtested=record.kind==='catalogue'?progress.backtested||0:0; // India and US together, so book cards add up to the author total
   const year=record.year||'Edition unconfirmed',cloth=b.c||CLOTH[3],originals=record.kind==='catalogue'?bookSources(record.author||GURU[record.authorId],b):[b];
   return `<article class="bookcard" data-library-book="${esc(record.id)}"><a class="book-cover-link" href="${link}" aria-label="Open ${esc(title)}"><div class="cover3d ${b.live?'':'pv'}" style="--c:${esc(cloth)}"><div class="c3-spine"></div><div class="c3-face"><span class="c3-author">${esc(record.authorName)}</span><span class="c3-title">${esc(title)}</span><span class="c3-year">${esc(String(year))}</span></div></div></a>
     <div class="bc-body"><span class="olabel">${record.kind==='catalogue'?'Book / course':esc(b.entry_kind_label||'Reading source · identity review')} · ${esc(String(year))}</span><h3><a href="${link}">${esc(title)}</a></h3><span class="book-progress progress-${progress.status}" title="${esc(progress.reason)}">${progress.label}</span><p class="bc-blurb">${esc(record.kind==='catalogue'?readingSummary(record.author||GURU[record.authorId],b):b.summary||'Original reading source; content and mechanical rule review are pending.')}</p>${categoryTags(b,record.kind)}
-    ${record.kind==='catalogue'?`<dl class="bc-stats"><div><dt>Strategies</dt><dd>${progress.strategies}</dd></div><div><dt>Backtested</dt><dd>${backtested}</dd></div></dl><p class="book-progress-reason">Backtested for the data opened by this book link.</p>`:''}<p class="book-progress-reason">${esc(progress.reason)}</p>${sourcePdfLinks(originals)}<a class="dbtn ${backtested?'primary ':''}sm" href="${link}">${record.kind==='catalogue'&&b.live?'Open book & rules':'Open reading page'}</a></div></article>`;
+    ${record.kind==='catalogue'?`<dl class="bc-stats"><div><dt>Strategies</dt><dd>${progress.strategies}</dd></div><div><dt>Backtested</dt><dd>${backtested}</dd></div></dl><p class="book-progress-reason">Backtested counts India and US results together.</p>`:''}<p class="book-progress-reason">${esc(progress.reason)}</p>${sourcePdfLinks(originals)}<a class="dbtn ${backtested?'primary ':''}sm" href="${link}">${record.kind==='catalogue'&&b.live?'Open book & rules':'Open reading page'}</a></div></article>`;
 }
 async function bookShelf(g) {
   const records=VaultLibraryBrowser.search(authorLibraryRecords(g.id),{category:S.book_category,query:S.library_q,sort:S.library_sort});

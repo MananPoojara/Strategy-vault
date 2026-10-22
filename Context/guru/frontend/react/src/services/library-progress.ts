@@ -3,7 +3,7 @@ export const progressLabels: Record<ProgressStatus, string> = {
   backtested: 'Backtested', in_progress: 'In progress', not_backtested: 'Not Backtested',
 };
 interface Definition {
-  id: string; book: string; family?: string; status?: string; status_note?: string; needs_series?: string[];
+  id: string; book: string; family?: string; status?: string; status_note?: string; needs_series?: string[]; needs_vix?: boolean;
   instrument_policy?: {requirement?: string; allowed_types?: string[]};
 }
 interface Measured {
@@ -74,7 +74,10 @@ export function libraryProgress(definitions: Definition[], input: unknown) {
     for (const rows of methods.values()) {
       // A rule still awaiting admission is described by the market series it reads; held siblings by their notes.
       const pending = rows.filter(v => /not completed admission review/i.test(v.status_note || ''));
-      const label = rows.some(v => v.status === 'live' && v.instrument_policy?.allowed_types?.length) ? 'Coded, not yet measured in the published results'
+      const coded = rows.filter(v => v.status === 'live' && v.instrument_policy?.allowed_types?.length);
+      const series = coded.flatMap(v => v.needs_series || []).join(' ');
+      const label = coded.length ? (coded.some(v => v.needs_vix) || /VIX/i.test(series) ? 'VIX data required'
+          : /TRIN|ADV|DEC/i.test(series) ? 'Breadth data required (TRIN / advance-decline)' : 'Coded, not yet measured in the published results')
         : reasonLabel(pending.flatMap(v => v.needs_series || []).join(' ')) || (pending.some(v => v.needs_series?.length) ? 'Required data missing' : '')
         || reasonLabel(rows.filter(v => !pending.includes(v)).map(v => v.status_note).join(' '))
         || (pending.length ? 'Held until instrument admission review' : 'Held');
@@ -86,7 +89,8 @@ export function libraryProgress(definitions: Definition[], input: unknown) {
   function book(bookId: string, review?: {status?: string; reason?: string}) {
     const own = byBook.get(bookId) || [];
     const n = counts([bookId]);
-    let status: ProgressStatus = 'in_progress';
+    // Coded books are never "in progress": without a result they are not backtested, with per-strategy reasons.
+    let status: ProgressStatus = own.length ? 'not_backtested' : 'in_progress';
     let reason = own.length
       ? heldSummary(own)
       : 'Source review and strategy extraction are pending. This is queued work, not a claim of active conversion.';
