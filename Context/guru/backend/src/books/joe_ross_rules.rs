@@ -48,7 +48,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "E|\"If you don't get a gap, do not place any order! Cancel your order if not filled by the close of the same day! Do NOT reverse your position! Enter a new trade only when you are flat!\" (p.12)",
               "X|Long: \"Place a sell limit order 32 ticks above your entry. Place a sell stop market order 16 ticks below your entry\"; short mirror (p.12-13). \"We do hold position overnight!\" - no time stop",
               "X|[Not from the book] the optional move of the stop to breakeven when the target is touched but not filled (p.13: \"experiment\") is not used"],
-            "Book: CBOT soybeans (1 tick = 1/4 cent; 32 ticks = 8 cents). Here 32 / 16 ticks of tick_pct % of price (default 0.01% on an index/ETF = 0.32% / 0.16%; one soybean tick was about 0.04% of price in 2005: tick_pct 0.04 is closer to the book's distances). Index, ETF and stock runs are a declared application."),
+            "Book: CBOT soybeans (1 tick = 1/4 cent; 32 ticks = 8 cents). Default tick = 0.04% of price, the book's own soybean ratio (1/4 cent at 585 1/4 cents, pp.14-16), so the target / stop are about 1.28% / 0.64%; tick_pct -1 = 0.01% on an index/ETF or the real stock tick [labelled option]. Index, ETF and stock runs are a declared application."),
         def!("jr_ambush", "AMBUSH gap fade", "Course package · Ambush Trading Method (wheat, corn)", "Long/Short", AMBUSH,
             &["E|\"Buy at the high of the last trading day using a Limit Order, but only when the market opens with a gap up (this is when the market opens above the high of the last trading day)\" (Ambush p.9)",
               "E|\"Sell at the low of the last trading day using a Limit Order, but only when the market opens with a gap down\" (p.9); \"Cancel your order if not filled by the close of the same day!\" (p.10)",
@@ -56,7 +56,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|Long: \"Place a sell limit order 30 ticks above your entry. Place a sell stop market order 40 ticks below your entry\"; short mirror (p.10)",
               "X|\"Time Stop: In case we do NOT get filled at the target or at the stop, we exit the trade after eight days using a MOC (Market On Close) order. We count the entry day as the first day.\" (p.11)",
               "X|[Not from the book] on a reversal day the old position closes at the new entry price (the reversal takes priority over its intraday stop/target unless the open already gapped through them)"],
-            "Book: CBOT wheat and corn (1 tick = 1/4 cent; 30 ticks = 7.5 cents, 40 ticks = 10 cents). Here 30 / 40 ticks of tick_pct % of price (soybean-like grain ticks were about 0.06-0.12% of price; default 0.01% on an index/ETF). Index, ETF and stock runs are a declared application."),
+            "Book: CBOT wheat and corn (1 tick = 1/4 cent; 30 ticks = 7.5 cents, 40 ticks = 10 cents). Default tick = 0.1% of price, the book's own grain ratio (1/4 cent at wheat 370 1/2 = 0.07%, corn 219 / 216 3/4 = 0.11%, pp.12-17, rounded mean), so the target / stop are about 3% / 4%; tick_pct -1 = 0.01% on an index/ETF or the real stock tick [labelled option]. Index, ETF and stock runs are a declared application."),
         def!("jr_ledge_tbtb", "Ledge straddle (Trading by the Book)", "Trading by the Book · Part V", "Long/Short", TBTB,
             &["F|Rule 1: \"a correction or congestion that is at least three bars in length, but no more than 10 bars in length\" (TBTB p.238); \"Once there are more than ten bars in the ledge, I stop trying\" (p.240)",
               "F|Matching: two highs and two lows, each pair separated by at least one bar, \"off by 1-2 ticks, but no more\" (p.241); p.match_ticks = 2. [Declared reading] the ledge is the longest window of 3-10 bars ending on the latest bar whose highest high and lowest low are each matched (within p.match_ticks) by another bar at least two bars away",
@@ -68,7 +68,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|\"Our profit objective is an amount equal to the height of the ledge\" measured from the ledge boundary (34800 - 455 = 34345, p.246)",
               "X|\"If our target objective is not hit on the third day, we place it as a regular market stop order the fourth day ... filled on or about the open\" (p.246): exit at the open of day 4 (entry day = day 1)",
               "X|Not used [account-dependent or not numeric]: the doubled reversing stop (Rules 3 and 9), \"move our stop as quickly as possible to breakeven\" (p.246)"],
-            "Trading by the Book Part V, OCR pages 238-246; also German Futures-Trading PDF 249-257. Book: US futures, daily. A different, book-literal ledge from the Law of Charts ledge (jr_ledge, held). Index, ETF and stock runs are a declared application."),
+            "Trading by the Book Part V, OCR pages 238-246; also German Futures-Trading PDF 249-257. Book: US futures, daily. Default tick = 0.015% of price, the book's S&P ratio (0.05 at 348.00, p.246); tick_pct -1 = 0.01% on an index/ETF or the real stock tick, p.match_pct = a wider match in % of price [labelled options, not from the book]. A different, book-literal ledge from the Law of Charts ledge (jr_ledge, held). Index, ETF and stock runs are a declared application."),
         def!("jr_sne_l", "Simple count: three higher highs · Long", "Electronic Trading TNT I · ch.27 Trend finding", "Long", TNT1,
             &["F|\"We must see three bars in a row of higher highs\" (TNT I p.231): three bars each with a higher high than the bar before",
               "E|\"WE WILL ATTEMPT TO BUY A BREAKOUT OF THE THIRD HIGH PROVIDED THE MARKET CORRECTS ONE OR MORE OF THE BARS BY MAKING A LOWER LOW ONCE THREE HIGHS ARE IN PLACE\" (p.231): after a bar with a lower low than its predecessor (the third-high bar itself may be that bar, p.231 chart), buy one tick above the third high",
@@ -147,14 +147,20 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     let tick = || p("tick_pct", "1 tick = % of the previous close (-1 = auto: 0.01% on an index/ETF, the real tick on a stock) [declared convention]", -1.0, -1.0, 0.2, 0.01);
+    // the book's own market: 1 tick / price in its worked example (lead decision 23 Oct); -1 = auto stays an option
+    let book_tick = |def, src| p("tick_pct", src, def, -1.0, 0.2, 0.005);
     let std = || vec![p("exit", "[Not from the book] exit: 0 = close after hold bars, 1 = 2 x ATR(5) trailing stop, 2 = first up close (shorts: first down close)", 0.0, 0.0, 2.0, 1.0),
         p("hold", "[Not from the book] bars held for exit 0 (3 / 5 / 10)", 5.0, 3.0, 10.0, 1.0), tick()];
     Some(match id {
-        "jr_zulu" => vec![p("target_ticks", "Profit target, ticks (book 32)", 32.0, 8.0, 64.0, 4.0), p("stop_ticks", "Protective stop, ticks (book 16)", 16.0, 4.0, 40.0, 2.0), tick()],
+        "jr_zulu" => vec![p("target_ticks", "Profit target, ticks (book 32)", 32.0, 8.0, 64.0, 4.0), p("stop_ticks", "Protective stop, ticks (book 16)", 16.0, 4.0, 40.0, 2.0),
+            book_tick(0.04, "1 tick = % of the previous close: 0.04 = the book's soybeans (1/4 cent at 585 1/4 and 589 1/4 cents, Zulu pp.14-16); -1 = auto (0.01% on an index/ETF, the real tick on a stock) [declared]")],
         "jr_ambush" => vec![p("target_ticks", "Profit target, ticks (book 30)", 30.0, 8.0, 64.0, 2.0), p("stop_ticks", "Protective stop, ticks (book 40)", 40.0, 8.0, 80.0, 4.0),
-            p("days", "Time stop: exit on the close of this day, entry day = 1 (book 8)", 8.0, 2.0, 15.0, 1.0), tick()],
+            p("days", "Time stop: exit on the close of this day, entry day = 1 (book 8)", 8.0, 2.0, 15.0, 1.0),
+            book_tick(0.1, "1 tick = % of the previous close: 0.1 = the book's grains (1/4 cent at wheat 370 1/2: 0.07%, corn 219 and 216 3/4: 0.11%; Ambush pp.12-17, rounded mean); -1 = auto (0.01% on an index/ETF, the real tick on a stock) [declared]")],
         "jr_ledge_tbtb" => vec![p("match_ticks", "Matching highs/lows within ticks (book 1-2)", 2.0, 0.0, 3.0, 1.0), p("with_ticks", "Entry ticks beyond the ledge with the current leg (book 1)", 1.0, 1.0, 3.0, 1.0),
-            p("against_ticks", "Entry ticks beyond the ledge against the current leg (book at least 3)", 3.0, 1.0, 5.0, 1.0), tick()],
+            p("against_ticks", "Entry ticks beyond the ledge against the current leg (book at least 3)", 3.0, 1.0, 5.0, 1.0),
+            p("match_pct", "[Not from the book] wider match: highs/lows within this % of price instead of match_ticks (0 = off, book)", 0.0, 0.0, 0.5, 0.05),
+            book_tick(0.015, "1 tick = % of the previous close: 0.015 = the book's S&P 500 futures (0.05 point at 348.00, TBTB p.246: 34800 - 34795); -1 = auto (0.01% on an index/ETF, the real tick on a stock) [declared]")],
         "jr_sne_l" | "jr_sne_s" => vec![p("correction", "Wait for a correction bar (1 = TNT I p.231; 0 = By the Minute 1999 recap) ", 1.0, 0.0, 1.0, 1.0), tick()],
         "jr_bb2_l" | "jr_bb2_s" => vec![p("len", "Average and band length (9 = TNT III; 20 = German Band III)", 9.0, 5.0, 30.0, 1.0), p("sd", "Standard deviations", 2.0, 1.0, 3.0, 0.5),
             p("band_exit", "Exit on a reversal bar at the band (1 = book)", 1.0, 0.0, 1.0, 1.0), tick()],
@@ -210,7 +216,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     Some(match id {
         "jr_zulu" => zulu(x, from, to, g("target_ticks"), g("stop_ticks"), &tick),
         "jr_ambush" => ambush(x, from, to, g("target_ticks"), g("stop_ticks"), g("days").round().max(1.0) as usize, &tick),
-        "jr_ledge_tbtb" => ledge(x, from, to, g("match_ticks"), g("with_ticks"), g("against_ticks"), &tick),
+        "jr_ledge_tbtb" => ledge(x, from, to, g("match_ticks"), g("match_pct"), g("with_ticks"), g("against_ticks"), &tick),
         "jr_sne_l" | "jr_sne_s" => {
             let d = if id.ends_with("_l") { 1.0 } else { -1.0 };
             let lv = sne_levels(x, to, d, g("correction") >= 0.5, &tick);
@@ -334,7 +340,7 @@ fn ledge_at(x: &Ctx, t: usize, earliest: usize, tol: f64) -> Option<(f64, f64)> 
     None
 }
 
-fn ledge(x: &Ctx, from: usize, to: usize, mt: f64, wt: f64, at: f64, tick: &dyn Fn(usize) -> f64) -> Vec<Trade> {
+fn ledge(x: &Ctx, from: usize, to: usize, mt: f64, mp: f64, wt: f64, at: f64, tick: &dyn Fn(usize) -> f64) -> Vec<Trade> {
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let lg = legs(x, to);
     // first bar of the leg two legs before the current one, for every bar (Rule 10)
@@ -370,7 +376,8 @@ fn ledge(x: &Ctx, from: usize, to: usize, mt: f64, wt: f64, at: f64, tick: &dyn 
         }
         let t = k - 1;
         let tk = tick(k);
-        let Some((hi, lo)) = ledge_at(x, t, start2[t], mt * tk) else { continue };
+        let tol = if mp > 0.0 { c[t] * mp / 100.0 } else { mt * tk };
+        let Some((hi, lo)) = ledge_at(x, t, start2[t], tol) else { continue };
         let (bo, so) = if lg[t] > 0 { (wt, at) } else if lg[t] < 0 { (at, wt) } else { (at, at) };
         let (buy, sell) = (hi + bo * tk, lo - so * tk);
         if o[k] >= buy || o[k] <= sell { continue; } // stop-limit: no fill through a gap, the ledge is gone

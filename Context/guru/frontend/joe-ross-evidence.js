@@ -1,7 +1,7 @@
 /* Generated reviewed evidence. No prices or performance results. */
 window.JoeRossEvidence = {
   "review_date": "2026-10-09",
-  "scope": "Core source review; complete corpus review remains in progress. No complete Joe Ross backtest has been independently verified.",
+  "scope": "Core source review of the held methods. The admitted Joe Ross rules (ZULU, AMBUSH, Trading by the Book ledge, simple count, Bollinger Method #2, 1-2-3 and Ross Hook with labelled standard exits) are backtested separately and matched independent trade ledgers; the methods listed here stay held.",
   "methods": {
     "jr_123_l": {
       "source": {
