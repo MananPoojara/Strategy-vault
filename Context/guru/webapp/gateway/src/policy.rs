@@ -30,10 +30,16 @@ pub fn allowed_engine_path(path: &str) -> bool {
             | "guru/pristine/readiness"
             | "guru/pristine/run"
             | "guru/pristine/params"
+            | "guru/yt/strategies"
+            | "guru/yt/summary"
+            | "guru/yt/readiness"
+            | "guru/yt/run"
+            | "guru/yt/params"
+            | "guru/yt/optimize"
     )
 }
 pub fn is_optimization_path(path:&str)->bool {
-    matches!(path,"guru/connors/optimize"|"guru/ross/optimize"|"guru/chande/optimize")
+    matches!(path,"guru/connors/optimize"|"guru/ross/optimize"|"guru/chande/optimize"|"guru/yt/optimize")
 }
 pub fn can_optimize(role: &str) -> bool {
     matches!(role, "admin" | "researcher")
@@ -58,7 +64,11 @@ mod tests {
             assert!(allowed_engine_path(&format!("guru/ross/{route}")));
             assert!(allowed_engine_path(&format!("guru/chande/{route}")));
         }
-        for owner in ["connors","ross","chande"] {assert!(is_optimization_path(&format!("guru/{owner}/optimize")));}
+        for route in ["strategies","summary","readiness","run","params","optimize"] {
+            assert!(allowed_engine_path(&format!("guru/yt/{route}")));
+        }
+        assert!(!allowed_engine_path("guru/yt/basket-run"));
+        for owner in ["connors","ross","chande","yt"] {assert!(is_optimization_path(&format!("guru/{owner}/optimize")));}
         assert!(!is_optimization_path("guru/other/optimize"));
         for path in [
             "../notes",

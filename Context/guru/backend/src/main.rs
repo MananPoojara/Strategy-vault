@@ -63,6 +63,10 @@ mod guru_ownership_tests {
         let chande= guru_catalogue("chande");
         assert_eq!(chande.len(),5);
         assert!(chande.iter().all(|d|d.book==books::chande::BOOK && d.claim.is_none()));
+        let yt=guru_catalogue("yt");
+        assert!(yt.iter().any(|d|d.id==books::ytmr::ID) && yt.iter().any(|d|d.id==books::ytjb::ID));
+        assert!(yt.iter().all(|d|d.book.starts_with("yt_") && d.claim.is_none()));
+        assert!(connors.iter().all(|d|!d.book.starts_with("yt_")));
     }
     #[test]
     fn caller_cannot_override_the_route_owner() {
@@ -529,9 +533,10 @@ fn stats_json(s: &BTreeMap<&str, f64>) -> String {
 
 fn guru_catalogue(guru: &str) -> Vec<connors::StrategyDef> {
     connors::catalogue().into_iter().filter(|d| match guru {
-        "connors" => !d.book.starts_with("jr_") && d.book!=books::chande::BOOK,
+        "connors" => !d.book.starts_with("jr_") && d.book!=books::chande::BOOK && !d.book.starts_with("yt_"),
         "ross" => d.book.starts_with("jr_"),
         "chande" => d.book==books::chande::BOOK,
+        "yt" => d.book.starts_with("yt_"),
         _ => false,
     }).collect()
 }
@@ -1813,11 +1818,12 @@ fn handle(mut stream: TcpStream, st: Arc<State>) {
         "/api/gurus" => {
             let cat = guru_catalogue("connors");
             let ross = guru_catalogue("ross");
+            let yt = guru_catalogue("yt");
             let live = cat.iter().filter(|d| d.status == Status::Live).count();
             let thesis: Vec<String> = connors::THESIS.iter().map(|(h, b)| format!("{{\"title\":\"{}\",\"body\":\"{}\"}}", esc(h), esc(b))).collect();
             json(Ok(format!(
-                "[{{\"id\":\"{}\",\"name\":\"{}\",\"tagline\":\"{}\",\"book\":\"{}\",\"strategies\":{},\"testable\":{},\"thesis\":[{}]}},{{\"id\":\"ross\",\"name\":\"Joe Ross\",\"tagline\":\"Price-action methods, source evidence and discretionary trade management. Complete backtests remain unavailable.\",\"book\":\"Reviewed core sources; full corpus review in progress\",\"strategies\":{},\"testable\":0,\"thesis\":[]}},{{\"id\":\"chande\",\"name\":\"Tushar Chande\",\"tagline\":\"Trend reversal and breakout-pullback rules with independently checked OHLC execution. Original futures studies are not reproduced.\",\"book\":\"Beyond Technical Analysis (1997, supplied partial edition)\",\"strategies\":5,\"testable\":2,\"thesis\":[]}},{{\"id\":\"pristine\",\"name\":\"Pristine Trading\",\"tagline\":\"Two source-reviewed daily stock adaptations. Explicit supplied-USD-series research only; original book performance and historical-dollar equivalence remain unverified.\",\"book\":\"Trading the Pristine Method, Part 1 (supplied manual; edition year unconfirmed)\",\"strategies\":2,\"testable\":2,\"thesis\":[]}}]",
-                connors::GURU_ID, esc(connors::GURU_NAME), esc(connors::TAGLINE), esc(connors::BOOK), cat.len(), live, thesis.join(","), ross.len()
+                "[{{\"id\":\"{}\",\"name\":\"{}\",\"tagline\":\"{}\",\"book\":\"{}\",\"strategies\":{},\"testable\":{},\"thesis\":[{}]}},{{\"id\":\"ross\",\"name\":\"Joe Ross\",\"tagline\":\"Price-action methods, source evidence and discretionary trade management. Complete backtests remain unavailable.\",\"book\":\"Reviewed core sources; full corpus review in progress\",\"strategies\":{},\"testable\":0,\"thesis\":[]}},{{\"id\":\"chande\",\"name\":\"Tushar Chande\",\"tagline\":\"Trend reversal and breakout-pullback rules with independently checked OHLC execution. Original futures studies are not reproduced.\",\"book\":\"Beyond Technical Analysis (1997, supplied partial edition)\",\"strategies\":5,\"testable\":2,\"thesis\":[]}},{{\"id\":\"pristine\",\"name\":\"Pristine Trading\",\"tagline\":\"Two source-reviewed daily stock adaptations. Explicit supplied-USD-series research only; original book performance and historical-dollar equivalence remain unverified.\",\"book\":\"Trading the Pristine Method, Part 1 (supplied manual; edition year unconfirmed)\",\"strategies\":2,\"testable\":2,\"thesis\":[]}},{{\"id\":\"yt\",\"name\":\"YT Strategies\",\"tagline\":\"Rule sets the team sourced outside the book library, simulated on the selected index or ETF. No published performance figures.\",\"book\":\"Team-supplied AFL rules\",\"strategies\":{},\"testable\":{},\"thesis\":[]}}]",
+                connors::GURU_ID, esc(connors::GURU_NAME), esc(connors::TAGLINE), esc(connors::BOOK), cat.len(), live, thesis.join(","), ross.len(), yt.len(), yt.iter().filter(|d| d.status == Status::Live).count()
             )), &mut stream)
         }
         "/api/guru/connors/strategies" => json(Ok(catalogue_json("connors")), &mut stream),
@@ -1841,6 +1847,12 @@ fn handle(mut stream: TcpStream, st: Arc<State>) {
         "/api/guru/ross/basket-run" => basket_json(&st,&owned_query(&q,"ross"),&mut stream),
         "/api/guru/ross/params" => json(Ok(params_json("ross")), &mut stream),
         "/api/guru/ross/optimize" => json(optimize(&st, &owned_query(&q,"ross")), &mut stream),
+        "/api/guru/yt/strategies" => json(Ok(catalogue_json("yt")), &mut stream),
+        "/api/guru/yt/readiness" => json(readiness_json(&st, &owned_query(&q,"yt")), &mut stream),
+        "/api/guru/yt/summary" => json(summary(&st, &owned_query(&q,"yt")), &mut stream),
+        "/api/guru/yt/run" => json(detail(&st, &owned_query(&q,"yt")), &mut stream),
+        "/api/guru/yt/params" => json(Ok(params_json("yt")), &mut stream),
+        "/api/guru/yt/optimize" => json(optimize(&st, &owned_query(&q,"yt")), &mut stream),
         "/api/notes" => match note_path(&q) {
             Ok(f) => respond(&mut stream, "200 OK", "text/plain; charset=utf-8", &std::fs::read(f).unwrap_or_default()),
             Err(e) => respond(&mut stream, "400 Bad Request", "text/plain", e.as_bytes()),
@@ -1883,7 +1895,7 @@ mod pristine_route_tests {
         assert!(out.contains("prior-session low - 0.05"));
         let owners=request(b"GET /api/gurus HTTP/1.1\r\nHost: localhost\r\n\r\n");
         assert!(owners.starts_with("HTTP/1.1 200"));
-        for owner in ["connors","ross","chande","pristine"] {
+        for owner in ["connors","ross","chande","pristine","yt"] {
             assert_eq!(owners.matches(&format!("\"id\":\"{owner}\"")).count(),1);
         }
     }

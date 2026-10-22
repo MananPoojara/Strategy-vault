@@ -64,3 +64,5 @@ Context/guru/webapp/verification/
 
 # Standalone React login output is rebuilt; optional supplied audio stays private.
 Context/guru/frontend/react/dist-login/
+
+jay-local/

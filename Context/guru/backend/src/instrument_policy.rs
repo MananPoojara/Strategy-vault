@@ -253,6 +253,8 @@ fn base_policy(def:&StrategyDef)->Policy {
             let mut p=requirement("declared_ohlc_adaptation", &["index","etf","individual_stock"], "Supplied partial Chande 1997 text, printed pp.75-80 and pp.101-111. These two rules are explicitly named OHLC return-based adaptations on actual selected prices; they do not reproduce the original futures contracts, dollar stops, 23-market portfolio or intraday drawdown.");p.market_adaptation=true;p
         },
         "ch_bta" if member(id,&["ch_cbpb_dollar","ch_cbpb_target","ch_cbpb_trail"]) => future("Chande Tables 4.8-4.10 require actual futures contract dollar/tick values, dated contract/roll prices and supported stop/target ordering. No cash-point or percentage substitute is authorized."),
+        "yt_mr" if id==crate::books::ytmr::ID => requirement("index_or_etf", &["index","etf"], "YT strategy from the team's AFL (Monday Reversal, Type 1), not a book method. Daily OHLC rules are simulated on the selected actual index or ETF series; there is no published study to reproduce."),
+        "yt_jb" if id==crate::books::ytjb::ID => requirement("index_or_etf", &["index","etf"], "YT strategy from the team's AFL (January Barometer 5 Days), not a book method. Daily OHLC rules are simulated on the selected actual index or ETF series; there is no published study to reproduce."),
         _ => review(),
     }
 }
@@ -378,6 +380,17 @@ pub fn metadata_json(def:&StrategyDef)->String {
 mod tests {
     use super::*;
     use crate::connors::{Status, StrategyDef};
+    #[test]
+    fn yt_monday_reversal_admits_indices_and_etfs_only() {
+        let d=crate::books::ytmr::catalogue().into_iter().next().unwrap();
+        let p=policy(&d);
+        assert_eq!((p.requirement,p.allowed_types),("index_or_etf",&["index","etf"][..]));
+        assert!(!reviewed_cash_rule(&d));
+        assert_eq!(policy(&def(crate::books::ytmr::ID,"other_book")).requirement,"source_review_required");
+        let d=crate::books::ytjb::catalogue().into_iter().next().unwrap();
+        assert_eq!(policy(&d).allowed_types,&["index","etf"][..]);
+        assert_eq!(policy(&def(crate::books::ytjb::ID,"yt_mr")).requirement,"source_review_required");
+    }
     fn def(id: &'static str, book: &'static str) -> StrategyDef {
         StrategyDef { id, book, name: "Test", group: "Test", session: 0, dir: "Long", status: Status::Live,
             needs_volume: false, needs_vix: false, needs_series: &[], rules: &[], notes: "", claim: None }

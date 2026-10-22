@@ -8,6 +8,8 @@ it("preserves old share links, queries and unknown-page errors", () => {
   expect(resolveRoute("#/guru/tharp?book=tharp").name).toBe("author");
   expect(resolveRoute("#/source/source-a").name).toBe("reading");
   expect(resolveRoute("#/strategies").name).toBe("strategies");
+  expect(resolveRoute("#/yt?tab=sharpe").name).toBe("yt");
+  expect(resolveRoute("#/yt/extra").name).toBe("not-found");
   expect(resolveRoute("#/unknown").name).toBe("not-found");
   expect(resolveRoute("#/s/%ZZ").name).toBe("not-found");
 });

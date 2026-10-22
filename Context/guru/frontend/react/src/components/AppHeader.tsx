@@ -66,8 +66,12 @@ export function AppHeader({
                 {page.label}
               </a>
             ))}
-          <a className="off">
-            YT Strategies<em>soon</em>
+          <a
+            href="#/yt"
+            data-r="yt"
+            className={active === "yt" ? "on" : ""}
+          >
+            YT Strategies
           </a>
         </nav>
         <div className="status" id="status">
