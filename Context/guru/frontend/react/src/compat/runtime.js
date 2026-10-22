@@ -896,6 +896,8 @@ function applyShareReview(data){
     for(const pid of owners){const g=GURU[pid];BOOK_COVERAGE.authors[pid]??={id:pid,name:g.name,source_titles:[],catalogue_books:[]};BOOK_COVERAGE.authors[pid].source_titles.push(source);}
   }
   for(const g of LIB)for(const b of g.books){const ids=(data.catalogue?.[b.id]||[]).filter(id=>id!==g.id&&GURU[id]);if(ids.length)b.coAuthorIds=ids;}
+  // A source the review identified as a copy of a catalogue book merges into that book (reviewed source id).
+  for(const [id,review] of Object.entries(data.sources))if(review.book&&BOOK[review.book])BOOK[review.book].sourceIds=[...new Set([...(BOOK[review.book].sourceIds||[]),id])];
   for(let i=LIB.length-1;i>=0;i--){const g=LIB[i];if(g.source_group&&!g.person&&g.id!=='uncredited'&&!g.books.length&&!BOOK_COVERAGE.authors[g.id]?.source_titles?.length){LIB.splice(i,1);delete GURU[g.id];}}
 }
 function finalizeReadingIndex(){
