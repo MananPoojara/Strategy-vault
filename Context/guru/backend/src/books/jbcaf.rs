@@ -8,6 +8,12 @@ use crate::connors::{sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade
 
 pub const BOOK: &str = "jbcaf";
 
+/// Rules admitted after the 2026-10-22 full reading (authors/bernstein/g1-admission/SOURCE-CONTRACT.md) and an
+/// independent chronological Python ledger check. Futures chart examples: actual stocks, indices and ETFs are a
+/// declared application. Close-only rules. Held: the cycle-window methods (judgement).
+pub const REVIEWED: &[&str] = &["jbcaf_stoch_2575", "jbcaf_mac_10h8l"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
+
 pub fn catalogue() -> Vec<StrategyDef> {
     use Status::*;
     let d = |id, name, group, dir, status, rules, notes| StrategyDef {
@@ -92,7 +98,7 @@ fn trade(dir: f64, i: usize, px: f64) -> Trade {
 
 /// Event machine: `sig[i]` = Some(+1/-1) wanted side (a signal); optional `fl`/`fs` = close a long / short.
 /// History before `from` is simulated; only trades entered inside the window are reported.
-fn machine(x: &Ctx, from: usize, to: usize, sig: &[Option<i8>], flat: Option<(&[bool], &[bool])>, long_only: bool, why: [&str; 3]) -> Vec<Trade> {
+pub fn machine(x: &Ctx, from: usize, to: usize, sig: &[Option<i8>], flat: Option<(&[bool], &[bool])>, long_only: bool, why: [&str; 3]) -> Vec<Trade> {
     let mut out = vec![];
     let mut pos: i8 = 0;
     let mut cur: Option<Trade> = None;
@@ -130,12 +136,14 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let (lo, hi) = (g("lo"), g("hi"));
             let (mut arm_b, mut arm_s) = (false, false);
             let mut sig = vec![None; n];
+            // a reading within float noise of a level counts as at the level
+            let gt = |a: f64, b: f64| a - b > 1e-9 * b.abs();
             for i in 0..n {
                 if !(k[i].is_finite() && d[i].is_finite()) { continue; }
-                if arm_b && k[i] > lo && d[i] > lo { sig[i] = Some(1); arm_b = false; }
-                else if arm_s && k[i] < hi && d[i] < hi { sig[i] = Some(-1); arm_s = false; }
-                if k[i] <= lo && d[i] <= lo { arm_b = true; }
-                if k[i] >= hi && d[i] >= hi { arm_s = true; }
+                if arm_b && gt(k[i], lo) && gt(d[i], lo) { sig[i] = Some(1); arm_b = false; }
+                else if arm_s && gt(hi, k[i]) && gt(hi, d[i]) { sig[i] = Some(-1); arm_s = false; }
+                if !gt(k[i], lo) && !gt(d[i], lo) { arm_b = true; }
+                if !gt(hi, k[i]) && !gt(hi, d[i]) { arm_s = true; }
             }
             let kd = g("kd_exit") >= 0.5;
             // rule 1/2 option: flat when %K is on the wrong side of %D for the open position
@@ -151,8 +159,9 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let mut last: i8 = 0;
             for i in 0..n {
                 if i + 1 < kk { continue; }
-                let above = (i + 1 - kk..=i).all(|j| mh[j].is_finite() && x.c[j] > mh[j]);
-                let below = (i + 1 - kk..=i).all(|j| ml[j].is_finite() && x.c[j] < ml[j]);
+                // a close within float noise of the average touches it (not outside)
+                let above = (i + 1 - kk..=i).all(|j| mh[j].is_finite() && x.c[j] - mh[j] > 1e-9 * mh[j].abs());
+                let below = (i + 1 - kk..=i).all(|j| ml[j].is_finite() && ml[j] - x.c[j] > 1e-9 * ml[j].abs());
                 let s = if above { 1 } else if below { -1 } else { 0 };
                 if s != 0 && s != last { sig[i] = Some(s); last = s; }
             }

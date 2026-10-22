@@ -59,6 +59,38 @@ pub fn reviewed_kestner_stock(def:&StrategyDef)->bool {
     def.book==crate::books::lkqts::BOOK && crate::books::lkqts::stock_research_profile(def.id)
 }
 
+// ---------------------------------------------------------------- Bernstein g1 (jb624, jbcaf, jbssf) 2026-10-22
+// Admission only for the listed ids (authors/bernstein/g1-admission/SOURCE-CONTRACT.md); kept in one block to merge.
+macro_rules! JB624_LABEL {()=>{"6-2-4 Winning Strategies shows these methods on futures (the MAC, 3HL and Stochastic POP also on stocks); index, ETF and stock runs (US and India) are a declared application, not the author's test."}}
+macro_rules! JBCAF_LABEL {()=>{"Cyclic Analysis in Futures Trading shows these timing rules on futures charts; index, ETF and stock runs (US and India) are a declared application, not the author's test."}}
+macro_rules! JBSSF_LABEL {()=>{"How to Trade the New Single Stock Futures trades single stock futures (S&P futures for the seasonal); actual stocks, indices and ETFs (US and India) are a declared application, not the author's test."}}
+macro_rules! JB624_FRIMON_LABEL {()=>{"The Friday-Monday system was tested on S&P 500 futures with S&P-point offsets and stops (p.130); it runs on the SPX cash index only (real opens from 2014) as a declared application. The points are not rescaled to other instruments."}}
+pub fn bernstein_g1_reviewed(def:&StrategyDef)->bool {
+    use crate::books::{jb624,jbcaf,jbssf};
+    (def.book==jb624::BOOK && jb624::reviewed(def.id)) || (def.book==jbcaf::BOOK && jbcaf::reviewed(def.id)) || (def.book==jbssf::BOOK && jbssf::reviewed(def.id))
+}
+fn bernstein_g1_label(def:&StrategyDef)->Option<&'static str> {
+    if !bernstein_g1_reviewed(def) {return None;}
+    Some(match def.book {_ if def.id=="jb624_fri_mon"=>JB624_FRIMON_LABEL!(), "jb624"=>JB624_LABEL!(), "jbcaf"=>JBCAF_LABEL!(), _=>JBSSF_LABEL!()})
+}
+fn bernstein_g1_policy(def:&StrategyDef)->Option<Policy> {
+    if !bernstein_g1_reviewed(def) {return None;}
+    let mut p=if def.id=="jb624_fri_mon" {
+        requirement("declared_index_timing", &["index"], concat!("Bernstein, 6-2-4 Winning Strategies and Systems (2006), Trading System I pp.126-131, reviewed in authors/bernstein/g1-admission/SOURCE-CONTRACT.md with independent chronological SPX ledgers. ",JB624_FRIMON_LABEL!()," The entry-day stop uses a declared open-near-far-close bar path. No futures dollars or the book's 198-trade result are claimed."))
+    } else {
+        requirement("index_etf_or_stock", &["index","etf","individual_stock"], match def.book {
+            "jb624"=>concat!("Bernstein, 6-2-4 Winning Strategies and Systems (2006), MAC, 5-bar MAC, MAC with AD/MA, MAC swing, Three High Low MAC, Stochastic POP and 2-Day Breakaway Gap (pp.32-50, 76, 79-81), reviewed in authors/bernstein/g1-admission/SOURCE-CONTRACT.md with independent chronological ledgers. ",JB624_LABEL!()," Order types the book leaves open (close fills, yesterday's MA levels as limits, the 2-day gap's half at the target and 75%-of-best-profit trail) are declared readings. Rules that read the open start where SPX/NDX/DJI opens are real; NIFTY opens before 2011 are close to the prior close and are disclosed. Cash-index shorts are hypothetical exposure. No futures dollars or book performance are claimed."),
+            "jbcaf"=>concat!("Bernstein, Cyclic Analysis in Futures Trading (1988), stochastic 25/75 guidelines (Fig 7.1 p.177, p.182-183) and the 10-high/8-low MA channel (Fig 9.8 p.213), reviewed in authors/bernstein/g1-admission/SOURCE-CONTRACT.md with independent chronological ledgers. ",JBCAF_LABEL!()," Close fills and stop-and-reverse are declared readings; the cycle time windows the author prefers are judgement and are not used. Cash-index shorts are hypothetical exposure. No results are printed in the book."),
+            _=>concat!("Bernstein, How to Trade the New Single Stock Futures (2002), three-MA 4/9/18 (p.90-92), gap trade (p.132), MOM/MA 28 (p.136, Fig 11.16) and the S&P Jan 12-18 seasonal (Fig 12.1 p.142-143), reviewed in authors/bernstein/g1-admission/SOURCE-CONTRACT.md with independent chronological ledgers. ",JBSSF_LABEL!()," The gap-down line's 'sell short' is read as a buy (p.128); no stop level is given for the gap trade or the MOM/MA timing method, so none is applied. The gap test reads the open (SPX/NDX/DJI from their real-open dates). The earlier same-day withhold does not apply to the gap trade: the open must be beyond yesterday's extreme before price can trade back to it, and the exit is the close, so daily bars fix the order. The Jan 12-18 seasonal matches the book's 19 entry and exit dates on SPX (win rate differs: cash index vs futures). Cash-index shorts are hypothetical exposure. No futures dollars or book performance are claimed."),
+        })
+    };
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+fn bernstein_g1_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
+    if def.book!=crate::books::jb624::BOOK || def.id!="jb624_fri_mon" || (!native_stock && ticker=="SPX") {return None;}
+    Some(Issue{status:"needs_data",note:format!("The Friday-Monday system's offsets and stops are S&P 500 futures points (5.40 / 0.10 entry offsets, 20 / 10.2 point stops, p.130). This review admits the SPX cash index only; {ticker} would need rescaled amounts the book does not give. No result is published.")})
+}
+// ---------------------------------------------------------------- end Bernstein g1
 /// Exact source-rule IDs reviewed against selected real-price ledgers.
 /// Each batch retains its instrument and readiness limits; original studies are not reproduced.
 pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
@@ -89,6 +121,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || (def.book=="elcim" && def.id==crate::books::elcim_account::ID)
         || (def.book=="hbiab" && crate::books::hbiab_reviewed::reviewed(def.id))
         || reviewed_kestner_stock(def)
+        || bernstein_g1_reviewed(def)
 }
 /// Connors rules coded from the full-source readers (connors/newrules-misc, 2026-10-21): HPETF seminar RSI 14 TPS,
 /// STSTW VIX RSI, ETF Sweet Spot 2nd-signal variation, Alvarez Factor S&P-down-days filter.
@@ -334,6 +367,7 @@ fn base_policy(def:&StrategyDef)->Policy {
         };
         p.market_adaptation=true; return p;
     }
+    if let Some(p)=bernstein_g1_policy(def) {return p;}
     if def.book==crate::books::cwin::BOOK && crate::books::cwin::reviewed_daily(def.id) {
         let mut p=requirement("index_etf_or_stock", &["index","etf","individual_stock"], concat!("The TradingWindows Strategy (Connors, 2002) and its course pages, rules reviewed in connors/cwin-admission/SOURCE-CONTRACT.md with independent chronological stock/index/ETF ledgers. ",CWIN_INDEX_LABEL!()," Profit taking is discretionary in the book (p31, p41 'there is no mechanical science to this'): the coded exit (1/3 at the first close beyond SMA4 then breakeven stop, 1/3 on a profitable day-2 close, rest at the day-3 close) is a declared mechanical reading of p31/p38/p56 and the course, not the author's exact exit; trailing stops beyond breakeven are not coded. The two-rule exit test is the book's own mechanical exit. On actual stocks the p56 Q&A volume suggestion (\"at least 100,000 shares traded on average each day\") is a default filter, averaged over 20 days [Not from the book] (min_avg_vol 0 = off); index/ETF runs have no volume filter. Rules that read the open start where SPX/NDX/DJI opens are real (2014/2001/2016); NIFTY opens before 2011 are close to the prior close and are disclosed. Cash-index shorts are hypothetical exposure. 1 unit, prices in points; no futures dollars or book performance are claimed."));
         p.market_adaptation=true; return p;
@@ -480,6 +514,7 @@ pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     if let Some(issue)=ststw_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=ats_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);}
     if let Some(issue)=hfm_otvt_symbol_issue(def,ticker){return Some(issue);}
+    if let Some(issue)=bernstein_g1_symbol_issue(def,ticker,native_stock){return Some(issue);}
     if native_stock {
         if let Some(reason)=p.native_currency_constraint {
             return Some(Issue {status:"needs_data",note:format!("Source currency/tick data missing. {reason} USD amounts cannot silently become INR amounts. A source-supported Indian specification or dated FX treatment and verified local tick rules are required before admission; editing the numeric parameter alone does not establish those inputs. Selected actual stock: {ticker}. No results are published.")});
@@ -502,6 +537,7 @@ pub fn check_native(def:&StrategyDef,ticker:&str,evidence:&NativeEvidence)->Opti
     if let Some(issue)=ststw_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=ats_symbol_issue(def,ticker,Some(evidence.market()==crate::baskets::Market::UnitedStates)){return Some(issue);}
     if let Some(issue)=hfm_otvt_symbol_issue(def,ticker){return Some(issue);}
+    if let Some(issue)=bernstein_g1_symbol_issue(def,ticker,evidence.asset_type()=="individual_stock"){return Some(issue);}
     if let Some(issue)=check_selected(p,def.id,ticker,evidence.asset_type()){return Some(issue);}
     if matches!((def.book,def.id),("r3r4","r3r4_lowprice"|"r3r4_lowprice_scale")) && evidence.market()!=Market::UnitedStates {
         return Some(Issue{status:"not_testable",note:format!("{R3R4_LOWPRICE_HELD} Selected actual stock: {ticker}.")});
@@ -590,6 +626,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     let reviewed=reviewed_cash_rule(def)||reviewed_dema_index(def);
     json.push_str(&format!(",\"source_rule_reviewed\":{},\"independent_selected_ledger_checked\":{}",reviewed,reviewed));
     if p.requirement=="index_etf_or_stock" && CONNORS_INDEX_IDS.contains(&def.id) {json.push_str(concat!(",\"declared_application\":\"",CONNORS_INDEX_LABEL!(),"\""));}
+    if let Some(label)=bernstein_g1_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));}
     if def.book==crate::books::cwin::BOOK && crate::books::cwin::reviewed_daily(def.id) {json.push_str(concat!(",\"declared_application\":\"",CWIN_INDEX_LABEL!(),"\""));}
     if def.book==crate::books::ccl08::BOOK && crate::books::ccl08::day_trade(def.id) {json.push_str(concat!(",\"declared_application\":\"",CCL08_INDEX_LABEL!(),"\""));}
     if def.book==crate::books::ats::BOOK && crate::books::ats::reviewed_daily(def.id) && (p.requirement=="index_or_etf" || (crate::books::ats::STOCK_TICK_IDS.contains(&def.id) && !CONNORS_INDEX_IDS.contains(&def.id))) {json.push_str(concat!(",\"declared_application\":\"",BTP_INDEX_LABEL!(),"\""));}
@@ -777,6 +814,30 @@ mod tests {
             assert_eq!(policy(d).requirement,"source_review_required");
             assert!(check(d,"SPY",false).is_some());
         }
+    }
+    #[test]
+    fn bernstein_g1_review_admits_exact_ids_and_routes() {
+        use crate::books::{jb624,jbcaf,jbssf};
+        let all:Vec<StrategyDef>=jb624::catalogue().into_iter().chain(jbcaf::catalogue()).chain(jbssf::catalogue()).collect();
+        let admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        let want:Vec<&str>=jb624::REVIEWED.iter().chain(jbcaf::REVIEWED).chain(jbssf::REVIEWED).copied().collect();
+        assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|reviewed_cash_rule(d)) {
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);assert!(policy(d).market_adaptation);
+            if d.id=="jb624_fri_mon" {
+                assert!(check(d,"SPX",false).is_none());
+                for t in ["SPY","NDX","DJI","NIFTY 50"] {assert!(check(d,t,false).is_some(),"{t}");}
+                assert!(check(d,"AAPL",true).is_some());continue;
+            }
+            assert_eq!(policy(d).requirement,"index_etf_or_stock");
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+        // Held: discretionary, intraday, futures/COT data, or incomplete in the book.
+        for d in all.iter().filter(|d|!want.contains(&d.id)) {
+            assert!(!reviewed_cash_rule(d));assert_eq!(policy(d).requirement,"source_review_required","{}",d.id);
+        }
+        assert!(!reviewed_cash_rule(&def("jb624_pop","jbudt")));
     }
     #[test]
     fn cwin_review_admits_exact_ids_on_stocks_and_index_etf() {

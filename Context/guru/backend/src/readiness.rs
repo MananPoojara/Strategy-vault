@@ -178,6 +178,13 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
             return issue("needs_data",format!("This rule's stop entries read the opening price; {} opens in this file are real only from {cut}. Choose a start on or after {cut}.",r.ticker));
         }
     }
+    // Bernstein g1 (jb624/jbssf): admitted rules that read the open refuse SPX/NDX/DJI windows with stale opens
+    // unless the gate already moves the start (jb624_mac5).
+    if crate::instrument_policy::bernstein_g1_reviewed(def) && (books::jb624::reads_open(def.id) || books::jbssf::reads_open(def.id)) && !crate::gate::get(def.id).is_some_and(|g|g.clamp_open) {
+        if let Some((r,cut))=ctx.r.get(from).and_then(|r|crate::gate::real_open_from(&r.ticker).map(|c|(r,c))).filter(|(r,c)|r.date.as_str()<*c) {
+            return issue("needs_data",format!("This rule's fills read the opening price (stops gapped through, limit or next-open fills, gap tests); {} opens in this file are real only from {cut}. Choose a start on or after {cut}.",r.ticker));
+        }
+    }
     // Admitted ws5 rules all read the open (stop entries, gap negation, gapped stops): refuse stale US index opens
     // where the gate does not already move the start; VIX III also needs real CBOE VIX highs and lows.
     if def.book==books::ws5::BOOK && books::ws5::reviewed_daily(def.id) {
@@ -287,7 +294,9 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
             return issue("not_testable", format!("Withheld by the accuracy check: {} No results are published.", plain_gate_reason(g.reason)));
         }
         if let (Some(allowed), Some(row)) = (g.allowed, ctx.r.get(from)) {
-            if !allowed.contains(&row.ticker.as_str()) {
+            // Bernstein g1: the reviewed Friday-Monday system keeps its S&P points on SPX (instrument_policy limits it to SPX).
+            let jb_spx=def.id=="jb624_fri_mon" && row.ticker=="SPX" && crate::instrument_policy::bernstein_g1_reviewed(def);
+            if !allowed.contains(&row.ticker.as_str()) && !jb_spx {
                 if def.book=="radge" && def.id=="radge_oc_long" {
                     return issue("not_testable",format!("This independently checked plain open-to-close research application is limited to NIFTY 50 and policy-qualified SPX prices. {} is outside that reviewed symbol scope; no result is published.",row.ticker));
                 }
@@ -428,6 +437,16 @@ mod tests {
         // Printed performance mismatch alone is not an executable-rule gap.
         for id in ["spmt_rsi2_4","spmt_rsi4_25","spmt_rsi_1"] {
             assert!(check(&ctx,&definition(id),0,4,&Params::new()).is_none());
+        }
+    }
+    #[test]
+    fn bernstein_g1_open_rules_refuse_stale_index_opens_and_fri_mon_runs_on_spx() {
+        let at=|t:&str,y:&str|{let mut r=rows();for (i,x) in r.iter_mut().enumerate(){x.ticker=t.into();x.date=format!("{y}-01-0{}",i+2);}r};
+        for (t,y,id,refused) in [("SPX","2013","jb624_mac_sr",true),("SPX","2014","jb624_mac_sr",false),("DJI","2015","jb624_mac2_stop",true),("DJI","2015","jbssf_gap",false),("SPX","1990","jbssf_sp_jan",false),("NDX","2000","jb624_gap2",true),
+            ("SPX","2013","jb624_mac2_sar",false),("SPX","1990","jbcaf_stoch_2575",false),("SPX","1990","jbssf_ma3",false),("NIFTY 50","2005","jb624_3hl",false),
+            ("SPX","2013","jb624_mac5",false),("SPX","2013","jb624_fri_mon",true),("SPX","2014","jb624_fri_mon",false),("SPY","2014","jb624_fri_mon",true)] {
+            let r=at(t,y);let ctx=Ctx::new(&r,&r,&r);
+            assert_eq!(check(&ctx,&definition(id),0,4,&Params::new()).is_some(),refused,"{id} {t} {y}");
         }
     }
     #[test]
