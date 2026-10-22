@@ -68,6 +68,7 @@ export interface AuthorCard {
 }
 export interface HomeModel {
   identifiedAuthors?: number;
+  listedPeople?: number;
   libraryTotals?: {books: number; otherSources: number; authors: number};
   strategiesFound?: number;
   backtestedStrategies?: number;

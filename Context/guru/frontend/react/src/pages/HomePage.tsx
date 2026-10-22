@@ -65,10 +65,11 @@ export function HomePage({ snapshot }: { snapshot: ViewSnapshot }) {
                 : "Authors & collections"}
           </h2>
           <span>
-            {model.page.total}{" "}
             {model.view === "books"
-              ? "indexed entries"
-              : "author and collection records"}
+              ? `${model.page.total} indexed entries`
+              : model.listedPeople !== undefined
+                ? `${model.listedPeople} authors · ${model.page.total - model.listedPeople} collections`
+                : `${model.page.total} author and collection records`}
             {model.query ? ` matching “${model.query}”` : ""}
           </span>
         </div>

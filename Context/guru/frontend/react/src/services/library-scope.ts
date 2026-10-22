@@ -4,6 +4,7 @@ export interface ScopeRecord {
   title: string;
   authorId: string;
   source?: {
+    reviewed_scope?: LibraryScope;
     files?: { filename?: string }[];
     source_identity?: { title?: string };
   };
@@ -21,6 +22,7 @@ export function libraryScope(
   curatedAuthors: ReadonlySet<string>,
 ): LibraryScope {
   if (record.kind === "catalogue") return "trading";
+  if (record.source?.reviewed_scope) return record.source.reviewed_scope;
   const title = record.source?.source_identity?.title || record.title;
   if (finance.test(title)) return "trading";
   const filenames = (record.source?.files || [])

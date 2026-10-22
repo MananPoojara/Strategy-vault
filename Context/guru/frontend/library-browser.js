@@ -57,6 +57,8 @@
       const row = { id: book.id, authorId: author.id, authorName: author.name || '', authorIds: [author.id], authorNames: [author.name || ''], title: book.title || '', year: validYear(book.year),
         ...assignedCategories(categoryLookup, book, author, 'catalogue'), kind: 'catalogue', book, author,
         aliases: aliasesFor(author, auditById.get(author.id), book), sourceIds: [], sources: [] };
+      // Reviewed co-authors (other credited people) list the book on their own author cards too.
+      for (const id of list(book.coAuthorIds)) if (byId.has(id)) associate(row, id, byId.get(id).name || '');
       result.push(row);
       if (!catalogueById.has(book.id)) catalogueById.set(book.id, []);
       catalogueById.get(book.id).push(row);
