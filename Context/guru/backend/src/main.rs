@@ -2476,7 +2476,8 @@ mod tests {
                 // This source account requires actual stocks plus real weekly
                 // warmup. Its opt-in AAPL/RELIANCE evidence test covers account
                 // conservation; a Nifty/from-zero corpus shortcut cannot do so.
-                assert!(instrument_policy::check(d,"NIFTY 50",false).is_some());
+                // Elder Impulse is opened to indices as a declared application (22 Oct 2026); the hbiab accounts stay stock-only.
+                assert_eq!(instrument_policy::check(d,"NIFTY 50",false).is_none(),d.id==books::elcim_account::ID);
                 continue;
             }
             if books::hbqts::reviewed::is_dema_index(d.id) {

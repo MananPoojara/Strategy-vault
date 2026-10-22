@@ -11,7 +11,7 @@ fn source(to:usize,future_change:bool)->baskets::macs_source_data::ValidatedSeri
 fn exact_macs_native_scope_preserves_sob_tiar_and_all_prior_profile_lists(){
     assert_eq!(books::lkqts::STOCK_CANDIDATE_IDS,&["lkqts_cb4020","lkqts_ma1040","lkqts_mom80"]);assert_eq!(books::lkqts::NEXT_CANDIDATE_IDS,&["lkqts_volbo","lkqts_rsi14","lkqts_macd","lkqts_macd_literal_alpha"]);
     for id in [ID,"lkqts_sob","lkqts_tiar"]{assert!(books::lkqts::stock_research_profile(id));}for id in ["lkqts_macs_strict","lkqts_macs2","lkqts_mom20","lkqts_volrev"]{assert!(!books::lkqts::stock_research_profile(id));}
-    let d=definition();let p=instrument_policy::policy(&d);assert_eq!(p.allowed_types,&["index","etf","individual_stock"]);assert_eq!(p.execution_scope,"single_symbol_stock_price_research");assert!(instrument_policy::metadata_json(&d).contains(books::lkqts::MACS_RAW_NUMERIC_CONVENTION));assert_eq!(gate::get(ID).unwrap().verdict,"unverified");assert_eq!(gate::get(ID).unwrap().ours,"");let mut wrong=d;wrong.book="other";assert!(!instrument_policy::reviewed_kestner_stock(&wrong));
+    let d=definition();let p=instrument_policy::policy(&d);assert_eq!(p.allowed_types,&["individual_stock"]);assert_eq!(p.execution_scope,"single_symbol_stock_price_research");assert!(instrument_policy::metadata_json(&d).contains(books::lkqts::MACS_RAW_NUMERIC_CONVENTION));assert_eq!(gate::get(ID).unwrap().verdict,"unverified");assert_eq!(gate::get(ID).unwrap().ours,"");let mut wrong=d;wrong.book="other";assert!(!instrument_policy::reviewed_kestner_stock(&wrong));
     // The selected-account bridge must delegate unchanged for existing TIAR/SOB.
     let rows:Vec<Row>=(0..131).map(|i|{let close=100.+i as f64;Row{ticker:"AAPL".into(),date:format!("2000-{:02}-{:02}",i/28+1,i%28+1),open:close,high:close+1.,low:close-1.,close,volume:None}}).collect();
     let rows=Box::leak(rows.into_boxed_slice());let ctx=Ctx::new(rows,rows,&[]);let selected=SelectedContext::Preloaded(&ctx);let st=empty();let q=BTreeMap::new();let costs=accounting::Costs{fees_bps:3.,slippage_bps:2.,rollover_bps:0.};
@@ -39,8 +39,7 @@ fn generic_canonical_fallback_is_held_and_native_raw_clocks_are_guarded(){
 #[test]
 fn basket_and_preloaded_index_etf_native_spoofing_stay_held(){
     let body=basket_portfolio::run(&empty(),&owned("id=lkqts_macs&basket=nifty50&membership=current&max_positions=10")).unwrap();assert!(body.contains("Kestner")&&body.contains("\"status\":\"not_testable\""));
-    for ticker in ["SPX","SPY"]{assert!(instrument_policy::check(&definition(),ticker,false).is_none());}
-    assert!(instrument_policy::check(&definition(),"AAPL",false).is_some());
+    for ticker in ["SPX","SPY","AAPL"]{assert!(instrument_policy::check(&definition(),ticker,false).is_some());}
     let series=source(80,false);let r=Box::leak(series.rows().to_vec().into_boxed_slice());let x=Ctx::new(r,r,&[]);let selected=SelectedContext::Preloaded(&x);assert!(selected.macs_raw_series(&empty(),&owned("id=lkqts_macs&ticker=basket:us_sp500:AAPL&native_stock=true"),&x,80).is_err());
 }
 #[test]

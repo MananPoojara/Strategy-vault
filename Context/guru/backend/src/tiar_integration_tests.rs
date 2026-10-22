@@ -16,10 +16,10 @@ fn exact_tiar_dispatch_leaves_sob_prior_lists_and_macs_admission_unchanged(){
     // Exact RAW MACS is a separately reviewed source integration; strict/other ids above stay held.
     assert!(books::lkqts::stock_research_profile("lkqts_macs"));
     let macs=books::lkqts::catalogue().into_iter().find(|d|d.id=="lkqts_macs").unwrap();assert!(instrument_policy::reviewed_kestner_stock(&macs));
-    assert_eq!(instrument_policy::policy(&macs).allowed_types,&["index","etf","individual_stock"]);assert_eq!(instrument_policy::policy(&macs).execution_scope,"single_symbol_stock_price_research");
+    assert_eq!(instrument_policy::policy(&macs).allowed_types,&["individual_stock"]);assert_eq!(instrument_policy::policy(&macs).execution_scope,"single_symbol_stock_price_research");
     assert!(instrument_policy::metadata_json(&macs).contains(books::lkqts::MACS_SOURCE_PROFILE));assert!(instrument_policy::metadata_json(&macs).contains(books::lkqts::MACS_RAW_NUMERIC_CONVENTION));
     for p in books::lkqts::params("lkqts_macs").unwrap(){assert_eq!((p.def,p.min,p.max),(p.def,p.def,p.def));}
-    for ticker in ["NIFTY 50","SPX","SPY"]{assert!(instrument_policy::check(&macs,ticker,false).is_none());}assert!(instrument_policy::check(&macs,"AAPL",false).is_some());
+    for ticker in ["NIFTY 50","SPX","SPY","AAPL"]{assert!(instrument_policy::check(&macs,ticker,false).is_some());}
     let d=def();let p=instrument_policy::policy(&d);assert!(instrument_policy::reviewed_kestner_stock(&d));assert_eq!(p.allowed_types,&["index","etf","individual_stock"]);assert_eq!(p.execution_scope,"single_symbol_stock_price_research");
     let metadata=instrument_policy::metadata_json(&d);assert!(metadata.contains(books::lkqts::TIAR_SOURCE_PROFILE));assert!(metadata.contains("comparison"));assert!(metadata.contains("separate acceptance gates"));assert!(metadata.contains("other runs need their own source/data/account checks"));assert!(metadata.contains("Data readiness alone does not prove a financially supported account"));assert!(metadata.contains("\"source_performance_reproduced\":false"));
     assert!(instrument_policy::check_native(&d,"AAPL",&baskets::NativeEvidence::us_test_fixture()).is_none());
