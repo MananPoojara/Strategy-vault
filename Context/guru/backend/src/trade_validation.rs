@@ -1,6 +1,10 @@
 //! Structural admission for the single-symbol return engine. Never fixes a trade to pass.
 use crate::connors::Trade;
-pub fn check(trades:&[Trade],from:usize,to:usize,cost:f64)->Result<(),String>{
+pub fn check(trades:&[Trade],from:usize,to:usize,cost:f64)->Result<(),String>{check_inner(trades,from,to,Some(cost))}
+/// All existing structural/event checks, with economic admission owned by the
+/// explicitly scoped canonical unit report rather than legacy ratio arithmetic.
+pub fn check_structure(trades:&[Trade],from:usize,to:usize)->Result<(),String>{check_inner(trades,from,to,None)}
+fn check_inner(trades:&[Trade],from:usize,to:usize,cost:Option<f64>)->Result<(),String>{
     let bad=|i:usize,why:&str|format!("calculation_unavailable: Trade{}: {why}. No performance is published.",i+1);
     for (i,t) in trades.iter().enumerate(){
         let Some(first)=t.legs.first() else{return Err(bad(i,"no observed entry leg"))};
@@ -13,7 +17,7 @@ pub fn check(trades:&[Trade],from:usize,to:usize,cost:f64)->Result<(),String>{
         if t.deployed()>1.+1e-9 {return Err(bad(i,"exposure exceeds the supported unit allocation; source sizing, leverage, funding and margin accounting are not supplied"));}
         if i>0 && (trades[i-1].open || first.i<trades[i-1].exit_i){return Err(bad(i,"positions overlap or an earlier open position was not closed; portfolio allocation/accounting is unsupported"));}
         if t.open && i+1!=trades.len(){return Err(bad(i,"only the terminal unresolved position can remain open"));}
-        if !t.ret(cost).is_finite() || t.ret(cost)<=-1. {return Err(bad(i,"return implies nonpositive normalized equity without a supported bankruptcy/margin model"));}
+        if let Some(cost)=cost {if !t.ret(cost).is_finite() || t.ret(cost)<=-1. {return Err(bad(i,"return implies nonpositive normalized equity without a supported bankruptcy/margin model"));}}
         if !t.exits.is_empty(){
             if t.exits.iter().any(|&(k,p,w)|k<first.i||k>t.exit_i||!p.is_finite()||p<=0.||!w.is_finite()||w<=0.)
                 || t.exits.windows(2).any(|w|w[0].0>w[1].0)

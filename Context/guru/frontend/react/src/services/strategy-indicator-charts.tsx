@@ -89,7 +89,7 @@ export function mountStrategyIndicators(options: IndicatorMount): IndicatorContr
   let disposed = false, synchronizingRange = false, synchronizingCrosshair = false;
   const lineColor = (definition: StrategyIndicator) => definition.key === "upper" ? colors.reference
     : definition.key === "lower" ? colors.di
-    : ["ma", "slow", "macd-signal", "slow-rsi", "percent-b", "rsi-sum"].includes(definition.key)
+    : ["ma", "slow", "macd-signal", "slow-rsi", "percent-b", "rsi-sum", "dema-second"].includes(definition.key)
       ? colors.ma : definition.kind === "di" ? colors.di : definition.kind === "sma" ? colors.trend : colors.rsi;
   for (const definition of result.series) {
     const element = definition.placement === "pane" ? root.querySelector<HTMLElement>(`[data-indicator-pane="${definition.key}"]`) : null;
@@ -156,7 +156,7 @@ export function mountStrategyIndicators(options: IndicatorMount): IndicatorContr
   const currentRange = chart.timeScale().getVisibleLogicalRange();
   if (currentRange) for (const ownChart of paneCharts) ownChart.timeScale().setVisibleLogicalRange(currentRange);
   const resize = () => {
-    if (disposed) return;
+    if (disposed || (root.closest('[data-report-panel]') && !root.getClientRects().length)) return;
     for (const state of series.values()) if (state.element && !state.pane?.hidden)
       state.chart.resize(state.element.clientWidth || root.clientWidth || 600, state.element.clientHeight || 145);
   };

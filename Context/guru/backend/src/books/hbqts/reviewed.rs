@@ -6,7 +6,42 @@ pub const IDS: &[&str] = &[
     "hbqts_ma5_25", "hbqts_ma1_36", "hbqts_limit_entry", "hbqts_fixed_interval",
     "hbqts_profit_target", "hbqts_entry_id1", "hbqts_bb_breakout", "hbqts_cgo",
     "hbqts_stoch_rsi", "hbqts_dpo", "hbqts_dom", "hbqts_macd_daily", "hbqts_cmo",
+    "hbqts_dema16_8",
 ];
+
+pub const DEMA_INDEX_ID: &str = "hbqts_dema16_8";
+pub const DEMA_INDEX_CONVENTION: &str = crate::unit_exposure_report::CONVENTION;
+pub const DEMA_INDEX_BASIS: &str = crate::unit_exposure_report::BASIS;
+
+pub fn is_dema_index(id: &str) -> bool { id == DEMA_INDEX_ID }
+pub fn validate_dema_index(p: &Params) -> Option<String> {
+    let defaults = [("fast",16.),("slow",8.),("hold",1.)];
+    p.iter().find(|(key,value)| !defaults.iter().any(|(k,v)| key.as_str()==*k && value.is_finite() && **value==*v))
+        .map(|(key,_)|format!("QTS Figure A.7 supports only exact reviewed fast16/slow8/hold1; {key} is changed, unknown or invalid. Alternate grids do not inherit review."))
+}
+
+#[derive(Clone, Debug)]
+pub struct DemaIndexStates {
+    pub dema16: Vec<f64>, pub dema8: Vec<f64>, pub raw_buy: Vec<bool>,
+    pub reverse_cross: Vec<bool>, pub raw_bars_since_buy: Vec<Option<usize>>,
+    pub raw_sell: Vec<bool>, pub filtered_sell: Vec<bool>,
+}
+
+/// Exact source ordering; no execution or accounting state feeds these arrays.
+pub fn dema_index_states(x: &Ctx, to: usize) -> Option<DemaIndexStates> {
+    if to>=x.r.len() || x.r[..=to].iter().any(|r|
+        !crate::baskets::valid_date(&r.date) || ![r.open,r.high,r.low,r.close].iter().all(|v|v.is_finite()&&*v>0.) ||
+        r.low>r.high || r.open<r.low || r.open>r.high || r.close<r.low || r.close>r.high
+    ) || x.r[..=to].windows(2).any(|w|w[0].date>=w[1].date || w[0].ticker!=w[1].ticker) { return None; }
+    let dema16=double(&x.c[..=to],16); let dema8=double(&x.c[..=to],8);
+    if dema16.iter().chain(&dema8).any(|v|!v.is_finite()) { return None; }
+    let raw_buy=cross(&dema16,&dema8);
+    let reverse_cross=cross(&dema8,&dema16);
+    let raw_bars_since_buy=bars_since(&raw_buy);
+    let raw_sell=(0..=to).map(|i|reverse_cross[i]||raw_bars_since_buy[i].is_some_and(|n|n>=1)).collect::<Vec<_>>();
+    let filtered_sell=exrem(&raw_sell,&raw_buy);
+    Some(DemaIndexStates{dema16,dema8,raw_buy,reverse_cross,raw_bars_since_buy,raw_sell,filtered_sell})
+}
 
 /// Formula arrays are calculated over actual loaded history BEFORE selecting a test range.
 /// Raw crossover and eligible order are different events for the one-day limit example.
@@ -71,6 +106,7 @@ fn double(v: &[f64], n: usize) -> Vec<f64> {
 
 pub fn signals(id: &str, x: &Ctx, to: usize, p: &Params) -> Option<Vec<Signal>> {
     if !IDS.contains(&id) || to>=x.r.len() { return None; }
+    if is_dema_index(id) && validate_dema_index(p).is_some() { return None; }
     let schema=params(id)?;
     let g=|key:&str|p.get(key).copied().unwrap_or_else(||schema.iter().find(|d|d.key==key).unwrap().def);
     let u=|key:&str|g(key).round().max(1.0) as usize;
@@ -80,6 +116,10 @@ pub fn signals(id: &str, x: &Ctx, to: usize, p: &Params) -> Option<Vec<Signal>> 
     let mut bp=c.to_vec(); let mut sp=c.to_vec();
     let raw;
     match id {
+        DEMA_INDEX_ID => {
+            let state=dema_index_states(x,to)?;
+            buy=state.raw_buy.clone(); raw=state.raw_buy; sell=state.filtered_sell;
+        }
         "hbqts_ma5_25"|"hbqts_ma1_36"|"hbqts_limit_entry"|"hbqts_entry_id1"|"hbqts_profit_target" => {
             let a=sma(c,u("fast")); let b=sma(c,u("slow"));
             buy=cross(&a,&b); sell=cross(&b,&a); raw=buy.clone();
@@ -197,6 +237,10 @@ pub fn run(id: &str,x:&Ctx,from:usize,to:usize,p:&Params)->Option<Vec<Trade>> {
     }
     Some(out)
 }
+
+#[cfg(test)]
+#[path = "dema_index_tests.rs"]
+mod dema_index_tests;
 
 #[cfg(test)]
 mod tests {

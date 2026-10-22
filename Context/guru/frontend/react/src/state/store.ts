@@ -1,3 +1,4 @@
+import type {PristineStrategySnapshot} from '../services/pristine-presenter';
 import type { ReadingModel } from "../pages/ReadingPage";
 import type { Route } from "../app/routes";
 import type { LibraryMarket } from "../services/library-market";
@@ -5,6 +6,7 @@ import type { OwnerIssue as SummaryIssue } from "../services/summary-loader";
 import type { SearchAuthor } from "../services/library-search";
 import type {SourceAccountView} from "../services/source-account";
 import type {RuleVisualModel} from "../services/rule-evidence";
+import type {UnitExposureView} from '../services/unit-exposure-report';
 export interface ViewSnapshot {
   revision: number;
   loading: boolean;
@@ -16,6 +18,8 @@ export interface ViewSnapshot {
   home: HomeModel | null;
   reading: ReadingModel | null;
   strategyAccount?: SourceAccountView | null;
+  strategyUnit?: UnitExposureView | null;
+  strategyPristine?: PristineStrategySnapshot | null;
   strategyRules?: RuleVisualModel | null;
 }
 export interface PageInfo {
@@ -36,6 +40,9 @@ export interface BookCard {
   categories: string[];
   href: string;
   live: boolean;
+  progressStatus?: string;
+  progressLabel?: string;
+  progressReason?: string;
 }
 export interface AuthorCard {
   curated: boolean;
@@ -60,6 +67,10 @@ export interface AuthorCard {
   sharpe: string | null;
 }
 export interface HomeModel {
+  identifiedAuthors?: number;
+  strategiesFound?: number;
+  backtestedStrategies?: number;
+  progressCurrent?: boolean;
   summaryIssues?: SummaryIssue[];
   market: LibraryMarket;
   implementedMethods: number;
@@ -143,6 +154,8 @@ export function createStore() {
         home: null,
         reading: null,
         strategyAccount: null,
+        strategyUnit: null,
+        strategyPristine: null,
         strategyRules: null,
       };
       notify();

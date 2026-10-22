@@ -17,6 +17,21 @@ use std::sync::OnceLock;
 
 pub const BOOK: &str = "hfm";
 
+/// Daily rules admitted after the 2026-10-21 source review (connors/hfm-admission/SOURCE-CONTRACT.md) and an independent
+/// chronological Python ledger check. Declared application: the book traded S&P 500 futures on NYSE breadth.
+/// Held (not listed): HV signal (no direction, entry or exit), Undeniables (an index-option selling method), NDX-SPX
+/// (LEADER_CLOSE series not loaded), News Reversals and the VIX program (gate withheld), Globex and Bond (data).
+pub const REVIEWED_DAILY: &[&str] = &["hfm_chadtp", "hfm_chadtp_nse"];
+pub fn reviewed_daily(id: &str) -> bool { REVIEWED_DAILY.contains(&id) }
+/// CHADTP on NYSE breadth: actual SPX and SPY; the NSE-breadth version: NIFTY 50.
+pub fn admitted_symbol(id: &str, ticker: &str) -> bool {
+    match id {
+        "hfm_chadtp" => matches!(ticker, "SPX" | "SPY"),
+        "hfm_chadtp_nse" => ticker == "NIFTY 50",
+        _ => false,
+    }
+}
+
 const NEWS_RULES: &[&str] = &[
     "F|Rule #1: wait for an extremely bullish or bearish event after the close (discretionary; coded as the book's \"aggressive traders will take all news stories\": every qualifying gap)",
     "E|Rule #2: the market must gap open above or below the previous day's high or low",
@@ -38,7 +53,7 @@ const UND_RULES: &[&str] = &[
 
 const CHADTP_RULES: &[&str] = &[
     "F|CHADTP = (sum of the past five days' advancing issues - sum of the past five days' declining issues) / 5, calculated after the close",
-    "E|CHADTP +400 or more (overbought): sell only after the S&P trades .10 points below the previous day's low",
+    "E|CHADTP +400 or more (overbought): sell only after the S&P trades .10 points below the previous day's low ([Not from the book] ties: rule 1 says \"above +400\", rule 2 \"+400 or more\"; coded >= 400)",
     "E|CHADTP -400 or less (oversold): buy only after tomorrow's S&P trades .10 points above today's high",
     "E|While the reading stays beyond the threshold, the trigger is re-referenced to each latest day's low/high (\"and so on\")",
     "X|Exit on the close of the sixth trading day (entry day = day 1)",

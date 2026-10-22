@@ -17,6 +17,18 @@ use crate::Row;
 
 pub const BOOK: &str = "cwin";
 
+/// Daily/weekly rules admitted after the 2026-10-21 source review (connors/cwin-admission/SOURCE-CONTRACT.md) and an
+/// independent chronological Python ledger check. The book and course show Windows on stocks, HOLDRs, indices, ETFs
+/// and futures: actual stocks and any actual index/ETF are admitted. Exits: the book's partly discretionary management
+/// made mechanical as declared in the notes. Held: the VIX Gap Window (needs intraday VIX/price series not in the vault).
+pub const REVIEWED_DAILY: &[&str] = &[
+    "cwin_single_window", "cwin_double_window", "cwin_aggressive_window", "cwin_hanging_window", "cwin_gap_window_intraday",
+    "cwin_gap_window_close", "cwin_window_two_rule_exit_test", "cwin_first_window", "cwin_weekly_window",
+];
+pub fn reviewed_daily(id: &str) -> bool { REVIEWED_DAILY.contains(&id) }
+/// Every admitted rule reads the open (stop-entry fills at a gapped open, gap tests, close-vs-open, Situation 10).
+pub fn reads_open(id: &str) -> bool { reviewed_daily(id) }
+
 // ---------------------------------------------------------------- rules text (quoted from the book)
 
 const TREND_L: &str = "F|Uptrend (p12): \"we must have a 10-period ADX reading of 30 or higher and a +DI reading above the -DI reading. Or we must have a 14-period +DI of 30 or higher (with no ADX reading required).\"";
@@ -32,45 +44,48 @@ const X_PROFIT: &str = "X|First piece at the first close beyond the 4-day SMA, a
 const X_TIE: &str = "X|[Not from the book] Price-vs-SMA comparisons use a 1e-9 relative tolerance: an exact decimal tie (e.g. Low == SMA4) is not beyond the SMA, which floating-point sums would otherwise decide at random";
 const X_TRAIL: &str = "X|Trailing stops after the first piece are discretionary (p31: \"Discretion, market strength/weakness, etc., will help you decide\"): not coded";
 
-const SINGLE: &[&str] = &[TREND_L, TREND_S, WINDOW,
+const F_VOL: &str = "F|Volume, actual stocks only (p56 Q&A): \"Do you have volume requirements?\" \"Ideally, you want to stay away from thinly traded stocks. Trade stocks that have at least 100,000 shares traded on average each day.\" Default on for stock runs (min_avg_vol 0 = off); [Not from the book] average = 20 trading days ending on the setup day (vol_n). Index/ETF runs: no volume filter";
+
+const SINGLE: &[&str] = &[TREND_L, TREND_S, WINDOW, F_VOL,
     "E|(p15) \"SingleWindows ... are simply a single bar which has its low trading above the 4-period moving average or its high of the day below the 4-period moving average. You will enter tomorrow if the market trades above today's high (for buys) or below today's low (for sells).\"",
     "E|Next day only: buy stop at the Window-day high (sell-short stop at its low); fill at the stop, or at the open if it gaps through",
     X_STOP_NEXT, X_GAP10, X_MEAN, X_PROFIT, X_DAY2, X_TIME, X_TRAIL, X_TIE];
-const DOUBLE: &[&str] = &[TREND_L, TREND_S, WINDOW,
+const DOUBLE: &[&str] = &[TREND_L, TREND_S, WINDOW, F_VOL,
     "F|(p17) \"A 'DoubleWindow' is two 'SingleWindows' in a row\": today and yesterday are both Windows",
-    "F|Reading: the trend filter is checked on the second (setup) bar only (default); double_trend_both 1 = trend on both bars (strict \"two SingleWindows\")",
+    "F|The trend filter is checked on both bars (default, \"two SingleWindows\"); double_trend_both 0 = [Not from the book] previous reading: trend on the second (setup) bar only",
     "E|(p17) \"The entry is the same as a SingleWindow. You will enter uptrending stocks on the buy side if tomorrow trades above today's high and you will enter downtrending stocks on the short side tomorrow if it trades under today's low.\"",
     X_STOP_NEXT, X_GAP10, X_MEAN, X_PROFIT, X_DAY2, X_TIME, X_TRAIL, X_TIE];
-const AGGRESSIVE: &[&str] = &[TREND_L, TREND_S, WINDOW,
+const AGGRESSIVE: &[&str] = &[TREND_L, TREND_S, WINDOW, F_VOL,
     "F|(p18) \"For sell setups, they are single or double Windows that close in the bottom 5% of their daily range and close below their open. For buys, they close in the top 5% of their daily range and above the open.\"",
     "E|(p18) \"you are buying on the close today in the direction of the trend\"",
     "E|Alternative (Situation 2, p39): \"You can also enter on the short side the next morning if it takes out the Window day low. This is a more conservative strategy.\" (entry_mode = 1)",
     X_STOP_CLOSE, X_MEAN, X_PROFIT, X_DAY2, X_TIME, X_TRAIL, X_TIE];
-const HANGING: &[&str] = &[TREND_L, TREND_S, WINDOW,
+const HANGING: &[&str] = &[TREND_L, TREND_S, WINDOW, F_VOL,
     "F|(p20) \"HangingWindows occur when a market or stock opens and closes in the bottom 10% of its daily range for sells and in the top 10% of its daily range for buys.\"",
     "E|(p21) \"They should be entered on the close but if you miss them, then you can enter on the opening the next day.\" (entry_mode = 1: next open)",
     X_STOP_CLOSE, X_MEAN, X_PROFIT, X_DAY2, X_TIME, X_TRAIL, X_TIE];
 const GAP_INTRA: &[&str] = &[
+    F_VOL,
     "F|[long] (p22) \"you must have a 10-period ADX ≥ 30 and its +DI > -DI, or a 14-period +DI by itself that is greater than or equal to 30. Also, yesterday must be a SingleWindow or DoubleWindow day.\"",
     "E|[long] (p22) \"If today gaps open below yesterday's low, we buy at yesterday's low.\"",
     "F|[short] (p22) \"ADX ≥ 30, -DI > +DI, or a 14-period -DI by itself that is greater than or equal to 30. Also, yesterday must be either a SingleWindow or DoubleWindow day.\"",
     "E|[short] (p22) \"If today gaps open above yesterday's high, we sell at yesterday's high.\"",
     "X|Stop (p30): \"our stop for long positions is either today's open or today's low (your choice for buys). For short positions, our stop is either today's open or today's high (your choice).\" (stop_mode 1 = today's low/high from the next day; 0 = today's open)",
     X_MEAN, X_PROFIT, X_DAY2, X_TIME, X_TRAIL, X_TIE];
-const GAP_CLOSE: &[&str] = &[TREND_L, TREND_S, WINDOW,
+const GAP_CLOSE: &[&str] = &[TREND_L, TREND_S, WINDOW, F_VOL,
     "E|(p24) \"Close Of The Day GapWindows simply have a strong trend that gaps in the opposite direction, closes above its open for buys (below its open for sells), and makes a Window. We buy on the close when this occurs.\"",
     X_STOP_CLOSE, X_MEAN, X_PROFIT, X_DAY2, X_TIME, X_TRAIL, X_TIE];
-const TWO_RULE: &[&str] = &[TREND_L, TREND_S, WINDOW,
+const TWO_RULE: &[&str] = &[TREND_L, TREND_S, WINDOW, F_VOL,
     "E|Entry not stated in the book; default = the SingleWindow entry (next-day stop beyond the Window-day high/low), 1 unit (entry_mode switches the reading)",
     "X|(p32) \"These two tests have only two rules. You exit if the second day is not profitable or if it closes above/below the 4-day moving average two days in a row.\"",
     "X|(p32) \"Please note: These are mechanical, single rule exits and I do not trade Windows in this manner.\" No protective stop (use_window_stop = 1 adds one)",
     X_TIE,
 ];
-const FIRST: &[&str] = &[TREND_L, TREND_S, WINDOW,
+const FIRST: &[&str] = &[TREND_L, TREND_S, WINDOW, F_VOL,
     "F|(course, FirstWindowsintro) \"What is a First Window? It's the first time a Window is formed after the ADX goes above 30. Using this criteria alone as a filter will increase your returns even more.\"",
     "E|Entry as SingleWindow: next-day stop beyond the Window-day high (buys) / low (sells)",
     X_STOP_NEXT, X_GAP10, X_MEAN, X_PROFIT, X_DAY2, X_TIME, X_TRAIL, X_TIE];
-const WEEKLY: &[&str] = &[TREND_L, TREND_S, WINDOW,
+const WEEKLY: &[&str] = &[TREND_L, TREND_S, WINDOW, F_VOL,
     "F|Same rules on weekly bars (ADX/DI, 4-week SMA)",
     "E|(p53) \"Windows work in nearly all time frames. Here is a weekly chart of the S&P 500 ... You can trade these setups as 1-3 week moves.\" (p58) \"it works equally well on weekly charts.\"",
     "E|SingleWindow entry on weekly bars: next-week stop beyond the Window-week high/low",
@@ -90,9 +105,9 @@ const VIX_GAP: &[&str] = &[
 
 macro_rules! note {
     ($s:expr) => {
-        concat!($s, " Exit (book management made mechanical; the book calls it discretionary): initial stop as quoted; 1/3 out at the first close beyond the 4-day SMA (first_needs_profit 1 = [Not from the book] only if that close is also in profit; first_rule 1 = the course's \"profit equals initial risk\"), then the stop moves to breakeven; another 1/3 at the close of day 2 if it is profitable; the rest at the close of day 3 (max_hold_days). Day 1 = the entry day for intraday entries, the day after the entry for entries on the close. Trailing stops beyond breakeven are discretionary and not coded. Pieces are folded into one trade at the size-weighted exit price.",
+        concat!($s, " Exit (book management made mechanical; the book calls it discretionary): initial stop as quoted; 1/3 out at the first close beyond the 4-day SMA (first_needs_profit 1 = [Not from the book] only if that close is also in profit; first_rule 1 = the course's \"profit equals initial risk\"), then the stop moves to breakeven; another 1/3 at the close of day 2 if it is profitable ([Not from the book] any piece taken, including this day-2 piece when no first piece was taken, moves the stop on the rest to breakeven; p31 ties breakeven only to the reversion exit); the rest at the close of day 3 (max_hold_days). Day 1 = the entry day for intraday entries, the day after the entry for entries on the close. Trailing stops beyond breakeven are discretionary and not coded. Pieces are folded into one trade at the size-weighted exit price.",
             " Trend: ADX(10)/DI(10) (charts label +DMI(10)) or DI(14) alone, Wilder/TradeStation formulas; -DI = +DI of the price-mirrored bars. The short DI-only threshold is \">= 30\" (p22) on both sides; p12 says \"above 30\". SMA4 includes the Window bar's own close. The book trades stocks/HOLDRs/futures; the vault runs it on indices/ETFs (NIFTY 50, NIFTY BANK, ...; SPY/QQQ in the US), 1 unit, prices in index points.",
-            " Differences vs the 5-Week Seminar's Momentum Windows (book ws5): this book also accepts DI(14) >= 30 with no ADX; it has no price/volume/200-SMA/range/ATR/stochastic/VIX filters (only a 100k-share volume suggestion); it has AggressiveWindows and no Outside Windows; no opening-gap negation (Situation 10: a gap beyond the MA is still a buy, raise the stop to the Window-day close); the EOD GapWindow needs a gap against the trend AND a close beyond the open, entered on the close; the intraday GapWindow stop is today's open or today's low/high (ws5: the higher of 0.50 or the day's high); HangingWindows enter on the close (ws5: the generic next-day stop); exits scale out 1/4-1/3 at the close beyond the SMA4 with a breakeven stop and are out by day 3 (ws5: 1/3 at R and each further point, 2-pt then 1-pt trail).")
+            " Differences vs the 5-Week Seminar's Momentum Windows (book ws5): this book also accepts DI(14) >= 30 with no ADX; it has no price/volume/200-SMA/range/ATR/stochastic/VIX filters (only the p56 100k-share volume suggestion, applied here on actual stocks); it has AggressiveWindows and no Outside Windows; no opening-gap negation (Situation 10: a gap beyond the MA is still a buy, raise the stop to the Window-day close); the EOD GapWindow needs a gap against the trend AND a close beyond the open, entered on the close; the intraday GapWindow stop is today's open or today's low/high (ws5: the higher of 0.50 or the day's high); HangingWindows enter on the close (ws5: the generic next-day stop); exits scale out 1/4-1/3 at the close beyond the SMA4 with a breakeven stop and are out by day 3 (ws5: 1/3 at R and each further point, 2-pt then 1-pt trail).")
     };
 }
 
@@ -109,7 +124,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("cwin_single_window", "SingleWindows", P2, SINGLE,
           note!("Next-day entry order only; a new Window the next day replaces it (that bar is then a DoubleWindow). Any Window bar counts, so this includes the second bar of a Double. Situation 10's raised stop (open beyond the Window-day SMA4 -> stop at the Window-day close) is on by default (gap_stop). Ranking when several setups appear (p57): Gap, Hanging, Double, Single, Aggressive."), None),
         d("cwin_double_window", "DoubleWindows", P2, DOUBLE,
-          note!("Two Window bars in a row; the trend filter is checked on the second (setup) bar (double_trend_both 1 = on both bars, the strict \"two SingleWindows\" reading). Stop at the second Window bar's low/high. Situation 10's raised stop on by default."), None),
+          note!("Two Window bars in a row; the trend filter is checked on both bars, as p17's \"two SingleWindows\" (double_trend_both 0 = [Not from the book] previous reading: on the second (setup) bar only). Stop at the second Window bar's low/high. Situation 10's raised stop on by default."), None),
         d("cwin_aggressive_window", "AggressiveWindows", P2, AGGRESSIVE,
           note!("Market-on-close fill at the close price. Zero-range bars excluded. \"you will be wrong more than normal\" (p18); lowest rank (p57)."), None),
         d("cwin_hanging_window", "HangingWindows", P2, HANGING,
@@ -161,7 +176,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             v.extend(days());
             v.extend(stop_entry());
             if id == "cwin_double_window" {
-                v.push(p("double_trend_both", "Trend on: 0 second bar only, 1 both bars", 0.0, 0.0, 1.0, 1.0));
+                v.push(p("double_trend_both", "Trend on: 1 both bars (book), 0 = [Not from the book] previous reading: second bar only", 1.0, 0.0, 1.0, 1.0));
             }
         }
         "cwin_aggressive_window" => {
@@ -203,7 +218,17 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         }
         _ => return None,
     }
+    v.extend(volume_params());
     Some(v)
+}
+
+/// p56 Q&A volume suggestion, applied on actual stocks only (index/ETF runs unchanged).
+fn volume_params() -> Vec<ParamDef> {
+    let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
+    vec![
+        p("min_avg_vol", "Actual stocks only (p56): average shares traded per day at least (0 = off; index/ETF runs never filtered)", 100_000.0, 0.0, 1_000_000.0, 50_000.0),
+        p("vol_n", "[Not from the book] Days in that average (the book does not say)", 20.0, 5.0, 60.0, 5.0),
+    ]
 }
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
@@ -582,11 +607,20 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).unwrap_or_else(|| panic!("{id} has no param {k}")).def);
     let u = |k: &str| g(k).round().max(1.0) as usize;
     let side = g("side").round();
-    let keep = |v: Vec<Setup>| -> Vec<Setup> { v.into_iter().filter(|s| side == 0.0 || s.dir == side).collect() };
-
     if id == "cwin_vix_gap_window" {
         return Some(vix_gap(x, from, to, u("vix_ma_len"), g("hold_days").round().max(0.0) as usize, side));
     }
+
+    // Volume (p56 Q&A), actual stocks only: no setup unless the vol_n-day average share volume ending on the setup day
+    // (daily bar k) is at least min_avg_vol; a day without reported volume counts as 0 shares. Index/ETF runs: no filter.
+    let (min_vol, vol_n) = (g("min_avg_vol"), u("vol_n"));
+    let liquid: Vec<bool> = if x.native_market.is_some() && min_vol > 0.0 {
+        let v: Vec<f64> = x.r.iter().map(|r| r.volume.unwrap_or(0.0)).collect();
+        (0..v.len()).map(|k| k + 1 >= vol_n && v[k + 1 - vol_n..=k].iter().sum::<f64>() / vol_n as f64 >= min_vol).collect()
+    } else {
+        vec![true; x.r.len()]
+    };
+    let keep = |k: usize, v: Vec<Setup>| -> Vec<Setup> { if !liquid[k] { return vec![]; } v.into_iter().filter(|s| side == 0.0 || s.dir == side).collect() };
 
     let mgmt = |hold_key: &str| Mgmt::Book { frac: g("first_piece_frac"), hold: u(hold_key), by_risk: g("first_rule") >= 0.5, needs_profit: g("first_needs_profit") >= 0.5 };
     let trend_of = |r: &[Row]| trend(r, u("adx_len"), g("adx_min"), u("di_only_len"), g("di_only_min"));
@@ -599,7 +633,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         let ma = sma_exact(&c, u("ma_len"));
         let b = Bars { o: &o, h: &h, l: &l, c: &c, ma: &ma, wk: Some(Wk { span: &span, o: &x.o, h: &x.h, l: &x.l }) };
         let (tick, gap) = (g("entry_tick"), g("gap_stop") >= 0.5);
-        let sig = |i: usize| keep(single_setups(&b, &up, &dn, i, tick, gap, true));
+        let sig = |i: usize| keep(span[i].1, single_setups(&b, &up, &dn, i, tick, gap, true)); // volume read on the week's last day
         let tw = w.len() - 1;
         let fw = match span.iter().position(|s| s.0 >= from) {
             Some(f) if f < tw => f,
@@ -619,7 +653,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     // close/open within the top (long) or bottom (short) fraction k of the range
     let near = |i: usize, d: f64, v: f64, k: f64| if d > 0.0 { v >= l[i] + (1.0 - k) * rng(i) } else { v <= l[i] + k * rng(i) };
     let at_close = |i: usize, d: f64| Setup { dir: d, ord: Ord::Close, stop: StopRule::Level(if d > 0.0 { l[i] } else { h[i] }), gap_raise: None };
-    let both = |i: usize, f: &dyn Fn(usize, f64) -> Option<Setup>| keep([f(i, 1.0), f(i, -1.0)].into_iter().flatten().collect());
+    let both = |i: usize, f: &dyn Fn(usize, f64) -> Option<Setup>| keep(i, [f(i, 1.0), f(i, -1.0)].into_iter().flatten().collect());
 
     let trades = match id {
         "cwin_single_window" | "cwin_double_window" => {
@@ -628,7 +662,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let tb = dbl && g("double_trend_both") >= 0.5;
             let prev = |i: usize| i > 0 && ((lt_ma(h[i - 1], ma[i - 1]) && lt_ma(h[i], ma[i]) && (!tb || up[i - 1]))
                 || (gt_ma(l[i - 1], ma[i - 1]) && gt_ma(l[i], ma[i]) && (!tb || dn[i - 1])));
-            let sig = |i: usize| keep(single_setups(&b, &up, &dn, i, tick, gap, !dbl || prev(i)));
+            let sig = |i: usize| keep(i, single_setups(&b, &up, &dn, i, tick, gap, !dbl || prev(i)));
             sim(&b, &sig, mgmt("max_hold_days"), from, to)
         }
         "cwin_first_window" => {
@@ -647,7 +681,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                     armed = false;
                 }
             }
-            let sig = |i: usize| keep(single_setups(&b, &up, &dn, i, tick, gap, first[i]));
+            let sig = |i: usize| keep(i, single_setups(&b, &up, &dn, i, tick, gap, first[i]));
             sim(&b, &sig, mgmt("max_hold_days"), from, to)
         }
         "cwin_aggressive_window" => {
@@ -711,7 +745,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 });
                 v
             };
-            let sig = |i: usize| keep([one(i, 1.0), one(i, -1.0)].concat());
+            let sig = |i: usize| keep(i, [one(i, 1.0), one(i, -1.0)].concat());
             sim(&b, &sig, m, from, to)
         }
         _ => return None,
@@ -775,6 +809,28 @@ fn vix_gap(x: &Ctx, from: usize, to: usize, n: usize, hold: usize, side: f64) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stock_volume_filter_p56_only_on_actual_stocks() {
+        // 40-day uptrend then a Window bar (high under SMA4) and a next-day break of its high
+        let mut r: Vec<Row> = (0..40).map(|d| { let p = 100.0 + d as f64; Row { ticker: "T".into(), date: format!("2020-{:02}-{:02}", d / 28 + 1, d % 28 + 1), open: p, high: p + 0.5, low: p - 0.5, close: p + 0.3, volume: None } }).collect();
+        r.push(Row { date: "2020-03-13".into(), open: 137.0, high: 136.5, low: 134.0, close: 135.0, ..r[0].clone() });
+        r.push(Row { date: "2020-03-14".into(), open: 135.5, high: 139.0, low: 135.0, close: 138.5, ..r[0].clone() });
+        r.push(Row { date: "2020-03-15".into(), open: 138.5, high: 140.0, low: 138.0, close: 139.5, ..r[0].clone() });
+        let n = r.len();
+        let run_v = |vol: f64, native: bool, min: Option<f64>| {
+            let rows: Vec<Row> = r.iter().map(|x| Row { volume: Some(vol), ..x.clone() }).collect();
+            let mut x = Ctx::new(&rows, &rows, &[]);
+            x.native_market = native.then_some(crate::baskets::Market::UnitedStates);
+            let mut p = Params::new();
+            if let Some(m) = min { p.insert("min_avg_vol".into(), m); }
+            run("cwin_single_window", &x, 0, n - 1, &p).unwrap().len()
+        };
+        assert!(run_v(200_000.0, true, None) > 0, "liquid stock trades");
+        assert_eq!(run_v(99_999.0, true, None), 0, "thin stock filtered (p56)");
+        assert!(run_v(99_999.0, true, Some(0.0)) > 0, "option off");
+        assert!(run_v(99_999.0, false, None) > 0, "index/ETF never filtered");
+    }
 
     #[test]
     fn book_management_scales_out_in_thirds() {

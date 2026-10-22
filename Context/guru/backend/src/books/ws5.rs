@@ -22,13 +22,31 @@ use crate::connors::*;
 
 pub const BOOK: &str = "ws5";
 
+/// Rules admitted after the 2026-10-21 source review (connors/ws5-admission/SOURCE-CONTRACT.md) and an independent
+/// chronological Python ledger check. Windows (daily and weekly) are US stock-scan setups applied to actual index/ETF
+/// prices (declared application) and, since the 2026-10-21 user decision, actual stocks without the filters that cannot be
+/// applied (#5 sub-sector always; USD #2/#6/#7 on Indian stocks), labelled.
+/// Market timing: SPX/SPY as in the book, NIFTY 50 declared. Held: the E-mini/SPY VIX gap day trade (intraday fills).
+pub const REVIEWED_DAILY: &[&str] = &[
+    "ws5_momentum_windows_any", "ws5_single_window", "ws5_double_window", "ws5_hanging_window", "ws5_gap_window_eod",
+    "ws5_gap_window_intraday", "ws5_outside_window", "ws5_weekly_windows", "ws5_non_vix_market_timing", "ws5_vix_iii_reversal",
+];
+pub fn reviewed_daily(id: &str) -> bool { REVIEWED_DAILY.contains(&id) }
+/// S&P market-timing rules (book: SPX signal, SPY/S&P traded); NIFTY 50 is a declared application.
+pub const TIMING: &[&str] = &["ws5_non_vix_market_timing", "ws5_vix_iii_reversal"];
+pub fn admitted_symbol(id: &str, ticker: &str) -> bool {
+    if TIMING.contains(&id) { matches!(ticker, "SPX" | "SPY" | "NIFTY 50") } else { reviewed_daily(id) }
+}
+/// CBOE VIX bars before this date are close-only (O=H=L=C); VIX III reads the VIX high and low.
+pub const REAL_VIX_OHLC_FROM: &str = "1992-01-01";
+
 // ------------------------------------------------------------------ catalogue
 
 const FILTERS_L: &str = "F|Filter #9 (do first): no new longs if the VIX is 5% or more below its 10-period SMA; no new shorts if 5% or more above";
 const FILTERS_A: &str = "F|Filter #1: 10-period ADX ≥ 30 with +DI > -DI (longs) / -DI > +DI (shorts)";
 const FILTERS_T: &str = "F|Filter #4: close above the 200-day SMA (longs) / below it (shorts)";
 const FILTERS_S: &str = "F|Filter #8 Taglia Stochastics 21-period %K, 3-period smoothing, 9-period %D: under 80 for longs, above 20 for shorts";
-const FILTERS_X: &str = "F|Filters #2 price ≥ $15, #3 volume ≥ 100,000 shares/day for the past 20 days (vol_rule: 1 = every day, the book wording; 0 = 20-day average [Not from the book]), #5 sub-sector vs its 200-day SMA, #6 90-day range > 6 points, #7 ATR(90) ≥ 1 point: stock-scan filters, OFF by default on an index (params stock_on / sector_on)";
+const FILTERS_X: &str = "F|Filters #2 price ≥ $15, #3 volume ≥ 100,000 shares/day for the past 20 days (vol_rule: 1 = every day, the book wording; 0 = 20-day average [Not from the book]), #5 sub-sector vs its 200-day SMA, #6 90-day range > 6 points, #7 ATR(90) ≥ 1 point: stock-scan filters, OFF on an index (params stock_on / sector_on). Actual stocks (stock_on auto): US stocks #2, #3, #6, #7 in USD as printed; Indian stocks #3 only; #5 omitted on every stock (no SUBSECTOR series), so stock results are not the author's scan";
 const ENTRY: &str = "E|Order placement: buy stop near the Window day's high (short: sell stop near its low), limit 1 point beyond the stop; order good for the next day only";
 const NEGATE: &str = "E|An opening gap of 1 point or more beyond the stop price negates the entry (trade not taken)";
 const STOP: &str = "X|Initial protective stop near the previous day's low (short: high); if the entry day is an outside day, beyond the entry day's low (high)";
@@ -70,7 +88,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             ENTRY, NEGATE, STOP, D1, D2, D2MA, D3], WNOTE),
         wdef("ws5_gap_window_eod", "End-of-day Gap Window", &[
             FILTERS_L, FILTERS_A, FILTERS_T, FILTERS_S, FILTERS_X,
-            "E|End-of-day Gap Window: a gap that creates a Window on the close (long: today's high below yesterday's low and below the 4-SMA; short: mirror)",
+            "E|End-of-day Gap Window: \"a gap that creates a Window on the close\" (p.29). [Not from the book] the gap definition: long = today's high below yesterday's low and below the 4-SMA; short: mirror",
             ENTRY, NEGATE, STOP, D1, D2, D2MA, D3], WNOTE),
         wdef("ws5_gap_window_intraday", "Intraday Gap Window", &[
             FILTERS_L, FILTERS_A, FILTERS_T, FILTERS_S, FILTERS_X,
@@ -112,10 +130,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|Buys: today's high of the SPX (NDX, XBD or SOX) is below its 10-period MA and today's close is 2.0% (6.0%, 8.0%, 8.0%) or more below it; buy the market on the close",
             "E|Sells: today's low is above the 10-period MA and the close is 2.0% (6.0%, 8.0%, 8.0%) or more above it; sell the market on the close",
             "X|3-point stop on all positions",
-            "X|Exit ½ on the close of the day the price trades (intraday) above yesterday's 10-day MA (sells: below); close the other ½ the following day",
+            "X|\"Look to exit ½ position on the close of the day the price trades (intraday) above yesterday's 10-day moving average (reversion to the mean). Close out the remaining ½ position the following day.\" (slide p.131, printed after the sells slide; coded as written for both sides: price high > yesterday's MA)",
+            "X|[Not from the book] literal_exit = 0: previous reading, sells exit instead when the price trades BELOW yesterday's MA (the reversion reading for a price stretched above its MA)",
             "X|Or exit within two to four days (default: on the close of day 4)",
         ],
-        notes: "Book trades SPY/S&P (2003). Threshold `pct` 2.0 = SPX; book values NDX 6, XBD 8, SOX 8 (use 6 for QQQ / NIFTY IT, 8 for SMH). 3-point stop = SPY points: pt_mode 1 with pt_pct 1.18 (1 point = 1/85 of price, SPY ≈ $85 in the 2003 sizing slide); pt_mode 0 = raw points. Stop checked before the reversion exit on the same bar.",
+        notes: "Book trades SPY/S&P (2003). Threshold `pct` 2.0 = SPX; book values NDX 6, XBD 8, SOX 8 (use 6 for QQQ / NIFTY IT, 8 for SMH). 3-point stop = SPY points: pt_mode 1 with pt_pct 1.18 (1 point = 1/85 of price, SPY ≈ $85 in the 2003 sizing slide); pt_mode 0 = raw points. Stop checked before the reversion exit on the same bar. The exit slide says 'trades above yesterday's 10-day MA' (literal_exit = 1, default; sells: the price was above its MA on the signal day, so the ½ exit usually comes on day 1); [Not from the book] literal_exit = 0 exits sells when the price trades below it.",
         claim: claim("-", "\"just over 70%\" (market-timing signals in general)", "-", "2-4 days", "general claim, no test published"),
     });
     v.push(StrategyDef {
@@ -194,7 +213,7 @@ fn trend_filters(weekly: bool) -> Vec<ParamDef> {
         p("stoch_line", "Stochastic line: 0 slow %K, 1 %D", 0.0, 0.0, 1.0, 1.0),
         p("stoch_long", "Longs only if stochastic below", 80.0, 60.0, 100.0, 5.0),
         p("stoch_short", "Shorts only if stochastic above", 20.0, 0.0, 40.0, 5.0),
-        p("stock_on", "Stock filters price/volume/range/ATR (0 off for indices)", 0.0, 0.0, 1.0, 1.0),
+        p("stock_on", "Stock filters: −1 auto (index/ETF: off; US stock: #2 price, #3 volume, #6 range, #7 ATR in USD as printed; Indian stock: #3 share volume only, the USD #2/#6/#7 omitted), 0 off, 1 all four as printed", -1.0, -1.0, 1.0, 1.0),
         p("min_price", "Stock filter: price at least $", 15.0, 5.0, 30.0, 5.0),
         p("min_vol", if weekly { "Stock filter: shares per week at least" } else { "Stock filter: shares per day at least" }, if weekly { 500_000.0 } else { 100_000.0 }, 0.0, 2_000_000.0, 100_000.0),
         p("vol_rule", "Volume filter: 0 = N-period average ≥ min [Not from the book], 1 = every one of the last N ≥ min (book wording)", 1.0, 0.0, 1.0, 1.0),
@@ -262,6 +281,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             ];
             if vix {
                 v.push(p("literal_exit", "Buys exit when VIX trades ABOVE yesterday's MA (slide text p-130, 1) / below (0, [Not from the book] presumed copy error)", 1.0, 0.0, 1.0, 1.0));
+            } else {
+                v.push(p("literal_exit", "Sells exit when the price trades ABOVE yesterday's MA (slide p.131 as printed, 1) / below (0, [Not from the book] previous reading)", 1.0, 0.0, 1.0, 1.0));
             }
             v.extend(units(100.0 / 85.0, 1.0));
             v
@@ -631,9 +652,16 @@ impl Trend {
 }
 
 /// Optional stock-scan filters in book dollars: #2 price, #3 volume (avg or min, see vol_filter), #6 range, #7 ATR, at daily bar i.
+/// stock_on −1 (auto): off on an index/ETF (unchanged); on a native US stock all four USD filters as printed; on a native
+/// Indian stock only #3 (a share count), since the USD price/range/ATR amounts have no reviewed INR version.
 fn stock_ok(x: &Ctx, g: &dyn Fn(&str) -> f64, u: &dyn Fn(&str) -> usize, atr: &[f64], close: f64, vol_avg: f64, i: usize) -> bool {
-    if g("stock_on") < 0.5 {
+    let on = g("stock_on");
+    let volume_only = on < 0.0 && x.native_market == Some(crate::baskets::Market::India);
+    if (on < 0.0 && x.native_market.is_none()) || (0.0..0.5).contains(&on) {
         return true;
+    }
+    if volume_only {
+        return vol_avg >= g("min_vol");
     }
     let n = u("range_n");
     if i + 1 < n {
@@ -851,7 +879,7 @@ fn market_timing(id: &str, x: &Ctx, from: usize, to: usize, g: &dyn Fn(&str) -> 
     let pct = g("pct") / 100.0;
     let atr90 = avg_tr(h, l, c, 90);
     let pt = point_fn(x, g, &atr90);
-    let (stop_pts, max_hold, literal) = (g("stop_pts"), u("max_hold"), vixm && g("literal_exit") >= 0.5);
+    let (stop_pts, max_hold, literal) = (g("stop_pts"), u("max_hold"), g("literal_exit") >= 0.5);
     let dirs = sides(g);
     // The watched series (price, or the VIX) is stretched UP when: non-VIX sell, VIX III buy.
     let up = |d: f64| if vixm { d > 0.0 } else { d < 0.0 };
@@ -860,7 +888,9 @@ fn market_timing(id: &str, x: &Ctx, from: usize, to: usize, g: &dyn Fn(&str) -> 
     };
     // reversion: the series trades (intraday) back through yesterday's MA
     let reverted = |k: usize, d: f64| -> bool {
-        if literal && d > 0.0 {
+        // slide as printed: "trades (intraday) above yesterday's 10-day MA" also for the stretched-up side
+        // (VIX III buys, Non-VIX sells)
+        if literal && up(d) {
             return gt(sh[k], ma[k - 1]);
         }
         if up(d) { lt(sl[k], ma[k - 1]) } else { gt(sh[k], ma[k - 1]) }

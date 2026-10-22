@@ -15,6 +15,26 @@ use crate::connors::*;
 
 pub const BOOK: &str = "otvt";
 
+/// Daily underlying rules admitted after the 2026-10-21 source review (connors/hfm-admission/SOURCE-CONTRACT.md) and an
+/// independent chronological Python ledger check. Declared application: the book traded S&P futures / OEX.
+/// otvt_cvr1 (combined) stays gate-withheld; option, event-study and stock-split items stay held.
+pub const REVIEWED_DAILY: &[&str] = &["otvt_cvr1_long", "otvt_cvr1_short", "otvt_hv_thrust"];
+pub fn reviewed_daily(id: &str) -> bool { REVIEWED_DAILY.contains(&id) }
+/// CVR I reads the VIX open (India VIX open = previous close): SPX and SPY with the CBOE VIX only.
+pub fn admitted_symbol(id: &str, ticker: &str) -> bool {
+    match id {
+        "otvt_cvr1_long" | "otvt_cvr1_short" => matches!(ticker, "SPX" | "SPY"),
+        "otvt_hv_thrust" => matches!(ticker, "SPX" | "NDX" | "DJI" | "SPY" | "NIFTY 50" | "NIFTYBANK"),
+        _ => false,
+    }
+}
+/// Fills read the traded instrument's open only with the labelled ATR trailing stop (exit = 1).
+pub fn reads_open(id: &str, p: &Params) -> bool {
+    id == "otvt_hv_thrust" && p.get("exit").is_some_and(|v| v.round() == 1.0)
+}
+/// The served CBOE VIX history has close-only bars (open = high = low = close) for 1990-1991.
+pub const REAL_VIX_OHLC_FROM: &str = "1992-01-01";
+
 const VIX_IV: &[&str] = &["VIX_OHLC.Open", "VIX_OHLC.High", "VIX_OHLC.Low", "VIX_OHLC.Close"];
 const IV: &[&str] = &["IV30"];
 
@@ -85,10 +105,12 @@ const HV_40: &[&str] = &[
 ];
 const THRUST: &[&str] = &[
     "F|\"Identify a market whose 6-day or 10-day volatility is less than 1/2 its 100-day reading.\"",
-    "E|\"On the day of the readings under 50 percent look for a daily price range that is larger than the daily range of the previous nine days.\" (HV reading taken on the prior bar)",
+    "E|\"On the day of the readings under 50 percent look for a daily price range that is larger than the daily range of the previous nine days.\" (HV reading taken on the range day itself; same_day=0 = [Not from the book] previous reading: HV read on the prior bar)",
     "E|\"If rules 1 and 2 are met, expect a follow-through in the direction of the large-range day\": enter on the close in the direction of the day (close vs prior close)",
-    "X|\"for the next one to ten days\": exit on the close after N days (10 by default, 1-10 tested)",
+    "X|\"for the next one to ten days\": a follow-through expectation, not an exit rule; the book gives no exit or stop",
+    STD_EXIT_RULE,
 ];
+const STD_EXIT_RULE: &str = "X|[Not from the book] standard exits (user rule, the book gives none): param exit 0 = close after `hold` bars (default 10; 3 / 5 / 10), 1 = trailing stop 2 x ATR(5) behind the best price since entry, 2 = first up close (shorts: first down close)";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     use Status::*;
@@ -97,15 +119,18 @@ pub fn catalogue() -> Vec<StrategyDef> {
     };
     // CVR ids: test window starts at the first bar of the market's volatility index (needs_vix), so CAGR is not diluted by years with no VIX.
     let v = |s: StrategyDef| StrategyDef { needs_vix: true, ..s };
-    const CVR_NOTE: &str = "Book's VIX is the CBOE OEX index (now VXO). Reads the external series VIX_OHLC (each market's own volatility index: CBOE VIX for US, India VIX for India); p.src=1 reads VXO_OHLC. VIX 15-day high = today's VIX high is the highest high of the last 15 bars, today included (lows mirrored). Same rules as Advanced Trading Strategies ch. 2 (ats CVR I); on SPY 1993-97 with VXO this reproduces 61 of that book's 72 listed trades exactly (same entry and exit). Claim \">60%\" reproduces only with the book's index: p.src=1 (VXO) gives 68.3% (41/60) on SPY 1993-03..1997-02; the default p.src=0 (today's SPX VIX) gives 48.6% (34/70) in the same window. p.src=1 is a data gap where VXO_OHLC has no data in the test window (India; SPY after 2021-09-23, when CBOE stopped VXO). Book traded S&P futures; run here on indices/ETFs.";
+    macro_rules! cvr_note { () => { "Book's VIX is the CBOE OEX index (now VXO). Reads the external series VIX_OHLC (each market's own volatility index: CBOE VIX for US, India VIX for India); p.src=1 reads VXO_OHLC. VIX 15-day high = today's VIX high is the highest high of the last 15 bars, today included (lows mirrored). Same rules as Advanced Trading Strategies ch. 2 (ats CVR I); on SPY 1993-97 with VXO this reproduces 61 of that book's 72 listed trades exactly (same entry and exit). Claim \">60%\" reproduces only with the book's index: p.src=1 (VXO) gives 68.3% (41/60) on SPY 1993-03..1997-02; the default p.src=0 (today's SPX VIX) gives 48.6% (34/70) in the same window. p.src=1 is a data gap where VXO_OHLC has no data in the test window (India; SPY after 2021-09-23, when CBOE stopped VXO). Book traded S&P futures; run here on indices/ETFs." } }
+    const CVR_NOTE: &str = cvr_note!();
+    // user-approved visible note (2026-10-21): the sides stay admitted, the combined rule failed the gate's book comparison
+    const CVR_SIDE_NOTE: &str = concat!("Accuracy-gate note: the combined CVR I (buys and sells together, otvt_cvr1) FAILED the gate's comparison with the book: 48.6% winners (34 of 70, SPY 1993-03..1997-01) vs the book's >60%, because the vault reads today's CBOE VIX, not the book's OEX VXO. The book's >60% is for buys and sells together; this side is shown on its own. The short side alone wins only about 36% (16 of 45) in that window. ", cvr_note!());
     vec![
         d("otvt_diz_short_strangle", "Diz HV10/HV100 peak · short strangle", "Trading Volatility with Options", "Long/Short", NeedsData("real traded prices of the exact option contracts (strike and expiry the rule picks); option P&L is never computed from a pricing model"), IV, DIZ,
           "Prof. Fernando Diz (PTJ July 1996). Signal from daily closes; the strangle is priced with Black-Scholes from the per-ticker IV30 series (no skew), strikes otm% either side (book examples are 2-13% OTM, no rule), dte calendar days to expiry (examples about 2 months). Down-ticks counted on the 10-day HV (p.tick_src=1: the 10/100 ratio, as in the soybean text). Down-ticks count from the peak (the bar that first reaches 1.65); p.rearm_reset=1 is the old fitted reading that restarts the count on every bar still >= 1.65 [Not from the book]. Reversion = HV10 <= HV100. No IV30 series is shipped, so this is a data gap until real per-ticker IV or option data exists; a single ATM IV for both legs would ignore skew, which matters for a 5% OTM strangle. Book traded COMEX gold/silver and soybeans; run here on indices/ETFs. Return = option P&L / underlying price.",
           claim("3 examples", "3/3", "130 pts gold, 360 pts silver, 15c beans", "8-14 days", "1994-95 futures options")),
         v(d("otvt_cvr1", "CVR I · buys and sells (reversing)", "Connors VIX Reversal I", "Long/Short", Live, VIX_IV, CVR_BOTH, CVR_NOTE,
           claim("-", ">60%", "-", "1-3 days", "four years to March 1997, S&P, book's VIX = OEX VXO (reproduces with p.src=1: 68.3%; default SPX VIX: 48.6%)"))),
-        v(d("otvt_cvr1_long", "CVR I · buys", "Connors VIX Reversal I", "Long", Live, VIX_IV, CVR_BUY, CVR_NOTE, None)),
-        v(d("otvt_cvr1_short", "CVR I · sells", "Connors VIX Reversal I", "Short", Live, VIX_IV, CVR_SELL, CVR_NOTE, None)),
+        v(d("otvt_cvr1_long", "CVR I · buys", "Connors VIX Reversal I", "Long", Live, VIX_IV, CVR_BUY, CVR_SIDE_NOTE, None)),
+        v(d("otvt_cvr1_short", "CVR I · sells", "Connors VIX Reversal I", "Short", Live, VIX_IV, CVR_SELL, CVR_SIDE_NOTE, None)),
         v(d("otvt_cvr1_sell_puts", "CVR I buy signal · sell near-the-money puts", "Trading Options with the CVR", "Long", NeedsData("real traded prices of the exact option contracts (strike and expiry the rule picks); option P&L is never computed from a pricing model"), VIX_IV, CVR_PUTS_SELL,
           "Put priced with Black-Scholes using the volatility index close itself as the implied vol (VIX = 30-day SPX IV, India VIX = NIFTY IV, VXO = OEX IV), so it needs no extra series. Strike otm% below the close (book: 770 put with OEX 781.98 and 760 with 768.54, about 1.3%); dte = days to expiry (book: March options, 21-29 days). Stop: the index trades to the strike (intraday low <= strike; priced at the strike or the open if it gaps through). Partial profit-taking is undefined and not coded. Return = put P&L / underlying price. Runs only on SPY and NIFTY 50, the two tickers whose own option IV the volatility index measures; other tickers return a data gap (their numbers would be priced off another index's IV) [Not from the book]. Model biases [Not from the book]: p.r = risk-free rate (default 0; about 5 for 1990s US, 6.5 for India; r = 0 overprices puts about 8-10%); p.vxo_adj=1 scales VXO by sqrt(22/30) to undo its trading-day upward bias (Carr & Wu 2006); no skew (optimistic for sold puts in sell-offs); no bid/ask. Equity inside a trade moves with the underlying (delta 1), so max DD and Sharpe are approximate; closed-trade returns are exact.",
           claim("2 examples", "2/2", "+5 1/2 and +6 1/4 points", "3 days", "Feb 1997, OEX"))),
@@ -122,7 +147,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("otvt_hv_ratio_combined_40min", "HV 6/100 and 10/100 under 50% · 40-minute bars", "Additional Volatility Research", "Long/Short", NotTestable("event study: no entry or exit (also needs 40-minute bars)"), &[], HV_40,
           "Intraday variant of the combined reading.", None),
         d("otvt_hv_thrust", "HV Thrust · HV ratio < 50% + 9-day range expansion", "HV Thrusts", "Long/Short", Live, &[], THRUST,
-          "HV ratio < 0.5 on the bar before the large-range day (p.same_day=1: on the range day itself). Range = high - low > every range of the previous 9 days. Direction = close vs prior close (p.dir_mode=1: close vs open); unchanged days are skipped. Entry on the range day's close, exit on the close N days later; no stop in the book. p.hv_mode: 0 = 6/100 or 10/100, 1 = both, 2 = 6/100 only, 3 = 10/100 only; p.min_days = consecutive days under 50%. p.filt_k > 0 enables a false-signal filter (not quantified in the book): skip signals for filt_days after a day whose |return| > filt_k x the daily sigma implied by HV100. Book examples are futures (British pound, T-bonds); run on indices/ETFs.",
+          "HV ratio < 0.5 on the large-range day itself, \"on the day of the readings\" (p.same_day=0: [Not from the book] previous reading, HV on the bar before the range day). Range = high - low > every range of the previous 9 days. Direction = close vs prior close (p.dir_mode=1: close vs open); unchanged days are skipped. Entry on the range day's close, exit on the close N days later; no stop in the book. p.hv_mode: 0 = 6/100 or 10/100, 1 = both, 2 = 6/100 only, 3 = 10/100 only; p.min_days = consecutive days under 50%. p.filt_k > 0 enables a false-signal filter (not quantified in the book): skip signals for filt_days after a day whose |return| > filt_k x the daily sigma implied by HV100. Book examples are futures (British pound, T-bonds); run on indices/ETFs.",
           claim("2 examples", "-", "-", "1-10 days", "1996 futures")),
     ]
 }
@@ -180,13 +205,14 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("ratio", "HV ratio below", 0.5, 0.3, 0.7, 0.05),
             p("hv_mode", "0 = A or B, 1 = both, 2 = A only, 3 = B only", 0.0, 0.0, 3.0, 1.0),
             p("min_days", "Consecutive days under the ratio", 1.0, 1.0, 10.0, 1.0),
-            p("same_day", "HV reading: 0 = prior bar, 1 = range day", 0.0, 0.0, 1.0, 1.0),
+            p("same_day", "HV reading: 1 = range day (book), 0 = [Not from the book] previous reading: prior bar", 1.0, 0.0, 1.0, 1.0),
             p("range_n", "Range larger than the previous N days", 9.0, 3.0, 20.0, 1.0),
             p("dir_mode", "Direction: 0 = close vs prior close, 1 = close vs open", 0.0, 0.0, 1.0, 1.0),
             p("hold", "Exit on the close after N days", 10.0, 1.0, 10.0, 1.0),
             p("nm1", "HV over N-1 returns (0/1)", 0.0, 0.0, 1.0, 1.0),
             p("filt_k", "False-signal filter: |return| > k sigma (0 = off)", 0.0, 0.0, 6.0, 0.5),
             p("filt_days", "False-signal filter: days to wait", 100.0, 20.0, 150.0, 10.0),
+            p("exit", "[Not from the book] exit: 0 = close after hold bars, 1 = 2 x ATR(5) trailing stop, 2 = first up close (shorts: first down close)", 0.0, 0.0, 2.0, 1.0),
         ],
         _ => return None,
     })
@@ -503,6 +529,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                     blocked[j] = until.map_or(false, |u| j <= u);
                 }
             }
+            let atr5 = if g("exit").round() == 1.0 { atr(x.r, 5) } else { Vec::new() };
             let mut out = Vec::new();
             let mut i = from.max(rn + 1);
             while i < to {
@@ -514,15 +541,49 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                     i += 1;
                     continue;
                 }
-                let j = (i + hold).min(to);
-                let open = i + hold > to;
-                out.push(trade(d.signum(), i, c[i], j, c[j], if open { "open".into() } else { format!("{hold} days held") }, open));
-                i = j + 1;
+                let t = match g("exit").round() as i64 {
+                    1 | 2 => std_exit(x, &atr5, g("exit").round() as i64, d.signum(), i, to),
+                    _ => {
+                        let j = (i + hold).min(to);
+                        let open = i + hold > to;
+                        trade(d.signum(), i, c[i], j, c[j], if open { "open".into() } else { format!("{hold} days held") }, open)
+                    }
+                };
+                i = t.exit_i + 1;
+                out.push(t);
             }
             out
         }
         _ => return None,
     })
+}
+
+/// [Not from the book] the user's standard exits for a close entry at bar `i` (VERIFICATION-PIPELINE section 4, same
+/// contract as ats): mode 1 = trailing stop 2 x Wilder ATR(5) of the previous bar behind the best price since entry
+/// (entry price, then the highs / lows of the bars after the entry bar), from the bar after entry, ratcheting, filled at
+/// the level or at a gapped open; mode 2 = first close above the previous close after the entry bar (shorts: below).
+/// A position still held at `to` is reported open at the last close.
+fn std_exit(x: &Ctx, atr5: &[f64], mode: i64, dir: f64, i: usize, to: usize) -> Trade {
+    let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
+    let (mut best, mut stop) = (c[i], f64::NAN);
+    for k in i + 1..=to {
+        if mode == 1 {
+            if k > i + 1 {
+                best = if dir > 0.0 { best.max(h[k - 1]) } else { best.min(l[k - 1]) };
+            }
+            let lv = best - dir * 2.0 * atr5[k - 1];
+            if lv.is_finite() {
+                stop = if dir > 0.0 { stop.max(lv) } else { stop.min(lv) }; // NaN stop -> lv
+            }
+            if stop.is_finite() && (if dir > 0.0 { l[k] <= stop } else { h[k] >= stop }) {
+                let px = if dir > 0.0 { o[k].min(stop) } else { o[k].max(stop) };
+                return trade(dir, i, c[i], k, px, "2 x ATR(5) trailing stop".into(), false);
+            }
+        } else if if dir > 0.0 { c[k] > c[k - 1] } else { c[k] < c[k - 1] } {
+            return trade(dir, i, c[i], k, c[k], if dir > 0.0 { "first up close" } else { "first down close" }.into(), false);
+        }
+    }
+    trade(dir, i, c[i], to, c[to], "open".into(), true)
 }
 
 /// CVR I underlying trades: enter on the signal close, exit on the close `hold` bars later;
@@ -612,5 +673,24 @@ mod tests {
         assert!(gap("otvt_cvr1_buy_puts", &spy, 0, 4, &none).is_none());
         assert!(gap("otvt_cvr1", &spy, 0, 4, &vxo).is_some()); // F3: src=1 with no VXO_OHLC
         assert_eq!(run("otvt_cvr1", &spy, 0, 4, &vxo).map(|t| t.len()), Some(0));
+    }
+
+    #[test]
+    fn hv_thrust_standard_exits() {
+        // long close entry at bar 0 (100): bar 1 closes lower, bar 2 higher -> first up close = bar 2
+        let b = [(100.0, 101.0, 99.0, 100.0), (100.0, 100.5, 98.0, 99.0), (99.0, 101.0, 98.5, 100.5), (100.0, 100.0, 90.0, 91.0)];
+        let rows: Vec<Row> = b.iter().enumerate().map(|(i, &(o, h, l, c))| Row { ticker: "T".into(), date: format!("2020-01-{:02}", i + 1), open: o, high: h, low: l, close: c, volume: None }).collect();
+        let ctx = Ctx::new(&rows, &rows, &[]);
+        let t = std_exit(&ctx, &[], 2, 1.0, 0, 3);
+        assert_eq!((t.exit_i, t.exit_px, t.reason.as_str(), t.open), (2, 100.5, "first up close", false));
+        let t = std_exit(&ctx, &[], 2, -1.0, 0, 3);
+        assert_eq!((t.exit_i, t.reason.as_str()), (1, "first down close"));
+        // ATR trail: level = best since entry - 2 x ATR[k-1]; ATR 1.0 -> bar 1 level 98 (low 98 hits, fill 98);
+        // a NaN ATR leaves the trade open at the last bar
+        let t = std_exit(&ctx, &[1.0; 4], 1, 1.0, 0, 3);
+        assert_eq!((t.exit_i, t.exit_px, t.reason.as_str()), (1, 98.0, "2 x ATR(5) trailing stop"));
+        let t = std_exit(&ctx, &[f64::NAN; 4], 1, 1.0, 0, 3);
+        assert!(t.open && t.exit_i == 3);
+        assert_eq!(params("otvt_hv_thrust").unwrap().iter().find(|q| q.key == "exit").map(|q| q.def), Some(0.0));
     }
 }

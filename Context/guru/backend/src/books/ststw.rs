@@ -1,12 +1,26 @@
 //! Larry Connors & Cesar Alvarez, "Short Term Trading Strategies That Work" (TradingMarkets, 2008). Book id "ststw".
 //! Index/SPY timing rules from Chapters 2, 7, 9, 10 and 12 coded bar by bar (all orders at the close unless stated).
 //! Rules already in the vault with identical wording are NOT repeated here (see library/ststw/README.md):
-//! VIX RSI strategy = stc9 `vix2`, TRIN strategy = stc9 `trin3_10`, 2-day RSI(3) < 45 = stc9 `rsi_3`.
+//! TRIN strategy = stc9 `trin3_10`, 2-day RSI(3) < 45 = stc9 `rsi_3`. The VIX RSI strategy (p.96-98) has the same
+//! wording as stc9 `vix2` and was added here on 2026-10-21 as `ststw_vix_rsi` so the book carries its own rule and claim.
 //! Stock-universe tests (Ch. 4, 6, 8, 9, 11, 13) need a US stock universe and are listed as NeedsData.
 #![allow(dead_code)]
 use crate::connors::*;
 
 pub const BOOK: &str = "ststw";
+
+/// Admitted after the 2026-10-21 source review (connors/newrules-misc/SOURCE-CONTRACT.md) and an independent ledger check.
+pub const REVIEWED_DAILY: &[&str] = &["ststw_vix_rsi"];
+pub fn reviewed_daily(id: &str) -> bool {
+    REVIEWED_DAILY.contains(&id)
+}
+/// The VIX RSI rule times the S&P 500 (SPY, "or use the SPX") and reads the VIX open: US only (India VIX opens repeat
+/// the previous close).
+pub fn admitted_symbol(id: &str, ticker: &str) -> bool {
+    reviewed_daily(id) && matches!(ticker, "SPX" | "SPY")
+}
+/// The served CBOE VIX history has close-only bars before this date.
+pub const REAL_VIX_OHLC_FROM: &str = "1992-01-01";
 
 /// [Not from the book] Price-vs-SMA tie tolerance (relative), as in ws5/cwin: a close can equal its SMA exactly in decimal
 /// arithmetic but differ by float rounding; within 1e-9 x |SMA| is a tie, which is never "above" or "below".
@@ -78,6 +92,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|\"Exit when the SPY closes above a 2-period RSI reading of 65 or more.\" (RSI(2) > 65)"],
           "p.93-95: 1995-2007, 33 trades, 84.85%, 363.90 SPX points, under five days. India: India VIX for the VIX (window starts 2015). [Book-vs-results gap] The printed rules give SPX 73 trades / 78.1% / +446 pts; the printed 33 trades are reproduced only with an extra RSI(2) < 10 on the trigger day (SPX 34 / 88.2% / +346 pts), the filter of the same strategy in the TradingMarkets course (vault stc9 'vix200'). The default is the printed rule; p.rsi_max=10 applies the course filter [Not from the book].",
           claim("33", "84.85%", "363.90 SPX pts total", "< 5 days", "1995 - 2007, SPX")) },
+        StrategyDef { needs_vix: true, ..d("ststw_vix_rsi", "VIX RSI Strategy", g12, "Long", Live,
+          &["F|(p96) \"1. The SPY is above its 200-period moving average. ... For those of you who want to keep things simpler, use the SPX.\"",
+            "E|\"2. The 2-period RSI of the VIX is greater than 90.\"", "E|\"3. Today's VIX open is greater than yesterday's close\" (the VIX's close)",
+            "E|\"4. The 2-period RSI of the SPY is below 30\"", "E|\"5. Buy on the close.\"", "X|\"6. Exit when the 2-period RSI of the SPY closes above 65.\""],
+          "p.96-98. Same wording as the TradingMarkets course rule stc9 'vix2'. Reads the VIX open: runs on SPX/SPY with the CBOE VIX only (India VIX opens repeat the previous close; the served CBOE VIX has real opens from 1992). The VIX bar of the instrument's previous trading day is 'yesterday'. Book: 1995-2007 (Ch.12 studies), SPX points.",
+          claim("92", "79.35%", "879.46 SPX pts total", "< 5 days", "1995 - 2007, SPX")) },
         d("ststw_sp_short", "The S&P Short Strategy", g12, "Short", Live,
           &["F|(p106) \"The SPY (or the SPX) is below the 200-day MA.\"", "E|\"The market closes up 4 or more days in a row.\"", "E|\"Sell on the close.\"",
             "X|\"Cover your short position when the SPY closes under its 5-period moving average.\""],
@@ -118,6 +138,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "ststw_cum_rsi_stocks" => (c.0, c.1, "Stocks, sum < 10 · data missing"),
         "ststw_double7" => ("ststw_double7", "Double 7's (STSTW)", ""),
         "ststw_vix_stretch" => ("ststw_vix_stretch", "VIX Stretches (STSTW)", ""),
+        "ststw_vix_rsi" => ("ststw_vix_rsi", "VIX RSI Strategy (STSTW)", ""),
         "ststw_sp_short" => ("ststw_sp_short", "S&P Short Strategy (STSTW)", ""),
         "ststw_intraday_drops_highs" => ("ststw_drops", "Intra-day drops, stocks (STSTW)", "10-day highs · data missing"),
         "ststw_intraday_drops_lows" => ("ststw_drops", "Intra-day drops, stocks (STSTW)", "10-day lows · data missing"),
@@ -145,6 +166,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "ststw_vix_stretch" => vec![p("trend", "Trend SMA", 200.0, 50.0, 300.0, 10.0), p("pct", "VIX % above its 10-day SMA", 5.0, 3.0, 15.0, 1.0),
             p("days", "for at least N days", 3.0, 1.0, 6.0, 1.0), p("exit", "Exit when RSI(2) closes above", 65.0, 50.0, 80.0, 5.0),
             p("rsi_max", "[Not from the book] also RSI(2) below this on the trigger day (course filter; 100 = off)", 100.0, 5.0, 100.0, 5.0)],
+        "ststw_vix_rsi" => vec![p("trend", "Trend SMA", 200.0, 50.0, 300.0, 10.0), p("vix_rsi", "VIX RSI(2) above", 90.0, 70.0, 98.0, 2.0),
+            p("entry", "RSI(2) below", 30.0, 10.0, 40.0, 5.0), p("exit", "Exit when RSI(2) closes above", 65.0, 50.0, 80.0, 5.0)],
         "ststw_sp_short" => vec![p("trend", "Trend SMA", 200.0, 50.0, 300.0, 10.0), p("up", "Up closes in a row, at least", 4.0, 2.0, 7.0, 1.0),
             p("exit_ma", "Cover: close below SMA", 5.0, 3.0, 10.0, 1.0)],
         _ => return None,
@@ -206,6 +229,11 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             close(1.0, &|i| above(c[i], ma[i]) && st[i] >= days && (rmax >= 100.0 || r2[i] < rmax),
                   &|i| (r2[i] > ex).then(|| format!("RSI(2) {:.1} > {ex}", r2[i])))
         }
+        "ststw_vix_rsi" => {
+            let (ma, vr, lt, ex, r2) = (x.sma_n(u("trend")), g("vix_rsi"), g("entry"), g("exit"), &x.rsi2);
+            close(1.0, &|i| above(c[i], ma[i]) && x.vix.rsi2[i] > vr && x.vix.gap_over_close[i] && r2[i] < lt,
+                  &|i| (r2[i] > ex).then(|| format!("RSI(2) {:.1} > {ex}", r2[i])))
+        }
         "ststw_sp_short" => {
             let (ma, up, xm) = (x.sma_n(u("trend")), u("up"), x.sma_n(u("exit_ma")));
             close(-1.0, &|i| below(c[i], ma[i]) && x.up_closes[i] >= up, &|i| below(c[i], xm[i]).then(|| "Close < 5-day SMA".into()))
@@ -244,5 +272,21 @@ mod tests {
         let t = run("ststw_intraday", &x, 0, 2, &Params::new()).unwrap();
         assert_eq!(t.len(), 3);
         assert_eq!((t[2].legs[0].px, t[2].exit_i, t[2].exit_px), (11.5, 2, 12.0));
+    }
+    #[test]
+    fn vix_rsi_reads_the_vix_open_gap() {
+        let mut c: Vec<f64> = (0..210).map(|i| 100.0 + i as f64).collect();
+        c.extend([300.0, 296.0, 292.0, 330.0]);
+        let r = rows(&c);
+        let vix = |gap: f64| -> Vec<Row> { r.iter().enumerate().map(|(i, x)| {
+            let v = if i < 210 { 15.0 + (i % 2) as f64 } else { 15.0 + 5.0 * (i - 209) as f64 };
+            Row { ticker: "CBOE VIX".into(), open: if i >= 210 { v - 5.0 + if i == 212 { gap } else { 0.0 } } else { v }, high: v + 1.0, low: v - 6.0, close: v, ..x.clone() } }).collect() };
+        let v = vix(1.0);
+        let x = Ctx::new(&r, &r, &v);
+        let t = run("ststw_vix_rsi", &x, 0, c.len() - 1, &Params::new()).unwrap();
+        assert!(x.vix.gap_over_close[212] && x.vix.rsi2[212] > 90.0 && x.rsi2[212] < 30.0);
+        assert_eq!((t[0].legs[0].i, t[0].exit_i), (212, 213));
+        let v = vix(-1.0); // open below yesterday's VIX close: no trade that day
+        assert!(run("ststw_vix_rsi", &Ctx::new(&r, &r, &v), 0, c.len() - 1, &Params::new()).unwrap().iter().all(|t| t.legs[0].i != 212));
     }
 }

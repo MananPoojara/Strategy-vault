@@ -10,6 +10,16 @@ use crate::connors::*;
 
 pub const BOOK: &str = "hpetf";
 
+/// High Probability ETF Trading seminar manuals (Connors, 2009; Session 2 PDF) rules added 2026-10-21 after the
+/// full-source reading (connors/newrules-misc/SOURCE-CONTRACT.md). Listed here, next to the book's ETF rules.
+pub const SEM_RSI14: &str = "hpetf_sem_rsi14_tps";
+pub const SEM_PAIRS: &str = "hpetf_sem_pairs";
+/// Admitted after the source review and an independent chronological ledger check (the pairs rule is held: no data).
+pub const REVIEWED_DAILY: &[&str] = &[SEM_RSI14];
+pub fn reviewed_daily(id: &str) -> bool {
+    REVIEWED_DAILY.contains(&id)
+}
+
 /// [Not from the book] Price-vs-SMA tie tolerance (relative), as in ws5/cwin: an SMA can equal a price exactly in decimal
 /// arithmetic but differ by float rounding (QQQ 2013-12-16: close 85.32 = SMA5), so within 1e-9 x |SMA| is a tie,
 /// which is never "above" or "below".
@@ -155,10 +165,30 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "A|\"If prices are higher on the close than your previous entry price, any day you're in the position, short 20% ... 30% ... 40% more\" (adds need Close < SMA200)",
             "X|\"Exit on the close when the 2-period RSI closes below 30.\""],
           claim("55", "85.45%", "1.49% on cash invested", "6.04 bars", P)),
+        StrategyDef { notes: SEM_RSI14_NOTE, claim: None, ..d(SEM_RSI14, "Seminar · RSI 14 TPS", "Seminar Session 2 · TPS under the 200-day MA", "Long",
+          &["F|(S2 p19) \"1. The 200 Day MA is an optional rule and I'll show you the results with and without the 200-day MA.\" Default off; p.trend_filter=1 buys only while the close is under the 200-day SMA (S2 p9: 'TPS strategies which we like to trade ETFs under the 200-day MA') [direction read from p9]",
+            "E|\"2. Buy 2 shares (20%) of the ETF when the 14-period RSI closes under 35 and the 2-period RSI is less than 30.\" (on the close)",
+            "A|\"3. Buy 3 shares (30%) if the ETF closes lower anytime you're in the position.\" \"4. Buy 5 shares (50%) if the ETF closes lower anytime you're in the position.\" 'Closes lower' = below the previous close (default, p.add_ref=1): the seminar keeps 'closes lower' (S2 p12 rule 3, p13 rule 6) apart from 'closes lower than the previous purchase' (S2 p12 rule 4, p13 rule 5). Option p.add_ref=0 = [Not from the book] below the previous purchase price (the TPS 2-3-5 rule, S1 p83)",
+            "X|\"5. Exit when the 2 (two)-period RSI close above 65.\""], None) },
+        StrategyDef { notes: "Session 2 pp.99-101 (repeated Session 3 pp.5-7). The pair list and results are only on a spreadsheet not in the PDF. Held: the rule needs two ETFs on the exact same index (e.g. a 1x and a 2x S&P 500 ETF); the vault holds one ETF per index (SPY, QQQ, IWM, MDY, SMH) and an index cannot stand in for an ETF leg, so no pair can be priced. No result is published.",
+            status: Status::NeedsData("two ETFs on the exact same index (e.g. SPY with a 2x S&P 500 ETF); the vault holds one ETF per index and an index cannot be an ETF leg, so neither leg pair has real prices"),
+            ..d(SEM_PAIRS, "Seminar · Directional 'market neutral' ETF pairs (RSI difference)", "Seminar Session 2 · ETF pairs", "Long/Short",
+          &["F|(S2 p101) \"1. Pair two exact index ETFs\"", "E|\"2. The absolute difference of the 2-period RSI in the pair is 10 points or more.\"",
+            "E|\"3. Buy the ETF with the lower 2-period RSI and short the ETF with the [higher] 2-period RSI.\" (end of day, p103)",
+            "E|\"4. If both sides of the pair are 1x or 2x, then buy and short an equal dollar amount. 5. If one side is a 1x and the second side is a 2x, make sure your 2x position is half the $ amount of your 1x.\"",
+            "X|\"6. Exit when the 2 period RSI closes on a cross in the opposite direction.\""], None) },
     ]
 }
 
+const SEM_RSI14_NOTE: &str = "High Probability ETF Trading seminar manuals, Session 2 PDF pp.9, 17-20 (rule slides p19-20). The seminar trades US ETFs (examples EWG, XHB, XLF, EWS, IFN) and shows the results only on a spreadsheet that is not in the PDF, so no book figures are claimed. Sizing 20/30/50% of a full position (2/3/5 shares); returns are on the full allocation. All orders on the close; adds are checked on bars after the entry; exit not tested on the entry bar. Index and stock runs are a declared application (user rule 21 Oct 2026), not the author's test.";
+
+
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
+    match id {
+        SEM_RSI14 => return Some(("hpetf_sem", "HPETF Seminar (2009)", "RSI 14 TPS")),
+        SEM_PAIRS => return Some(("hpetf_sem", "HPETF Seminar (2009)", "ETF pairs · data missing")),
+        _ => {}
+    }
     let (f, long, aggr) = kind(id)?;
     let name = match f {
         "3dhl" => "3-Day High/Low (HPETF)",
@@ -189,8 +219,15 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 }
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
-    let (f, long, aggr) = kind(id)?;
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
+    if id == SEM_RSI14 {
+        return Some(vec![p("rsi_n", "Slow RSI period", 14.0, 5.0, 20.0, 1.0), p("slow", "Slow RSI closes under", 35.0, 20.0, 50.0, 5.0),
+            p("entry", "and RSI(2) below", 30.0, 5.0, 50.0, 5.0), p("exit", "Exit when RSI(2) closes above", 65.0, 50.0, 80.0, 5.0),
+            p("trend_filter", "Optional 200-day rule: 0 = off (default), 1 = buy only while the close is under the trend SMA", 0.0, 0.0, 1.0, 1.0),
+            p("trend", "Trend SMA", 200.0, 50.0, 300.0, 10.0),
+            p("add_ref", "'Closes lower' = 1 below the previous close (book wording, S2 p19-20), 0 = [Not from the book] below the previous purchase price (S1 p83 TPS)", 1.0, 0.0, 1.0, 1.0)]);
+    }
+    let (f, long, aggr) = kind(id)?;
     let mut v = vec![p("trend", "Trend SMA", 200.0, 50.0, 300.0, 10.0)];
     let s = |l: f64, sh: f64| if long { l } else { sh };
     match f {
@@ -220,13 +257,21 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
-    let (f, long, aggr) = kind(id)?;
     let schema = params(id)?;
     if from > to || to >= x.c.len() {
         return Some(vec![]);
     }
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(0.0, |d| d.def));
     let u = |k: &str| g(k).round().max(1.0) as usize;
+    if id == SEM_RSI14 {
+        let (c, slow, r2, tr) = (&x.c, x.rsi_n(u("rsi_n").max(2)), &x.rsi2, x.sma_n(u("trend")));
+        let (lo, en, ex, filt, prev_close) = (g("slow"), g("entry"), g("exit"), g("trend_filter") >= 0.5, g("add_ref") >= 0.5);
+        let e = |i: usize| ((!filt || below(c[i], tr[i])) && slow[i] < lo && r2[i] < en).then_some(Entry::Close);
+        let add = |i: usize, t: &Trade| c[i] < if prev_close { c[i - 1] } else { t.legs.last().unwrap().px };
+        let xf = |i: usize, _: &Trade| (r2[i] > ex).then(|| Exit::Close(format!("RSI(2) {:.1} > {ex}", r2[i])));
+        return Some(simulate(x, &Spec { dir: 1.0, weights: &[0.2, 0.3, 0.5], entry: &e, add: &add, exit: &xf }, from, to));
+    }
+    let (f, long, aggr) = kind(id)?;
     let (c, h, l) = (&x.c, &x.h, &x.l);
     let dir = if long { 1.0 } else { -1.0 };
     let tr = x.sma_n(u("trend"));
@@ -309,5 +354,24 @@ mod tests {
         assert_eq!((t[0].legs[0].i, t[0].exit_i), (212, 214));
         let t = run("hpetf_3dhl_long_aggr", &x, 0, b.len() - 1, &Params::new()).unwrap();
         assert_eq!(t[0].legs.iter().map(|l| (l.i, l.w)).collect::<Vec<_>>(), vec![(212, 0.5), (213, 0.5)]);
+    }
+    /// Seminar RSI 14 TPS: 20/30/50 adds on lower closes (below the previous purchase), exit RSI(2) > 65; checked against
+    /// the conditions recomputed with the crate's indicators (the full ledger check is in connors/newrules-misc).
+    #[test]
+    fn seminar_rsi14_tps_scales_in_and_exits() {
+        let mut b: Vec<(f64, f64, f64)> = (0..60).map(|i| { let c = 100.0 + (i % 2) as f64; (c + 1.0, c - 1.0, c) }).collect();
+        for k in 0..12 { let c = 99.0 - 2.0 * k as f64; b.push((c + 1.0, c - 1.0, c)); }
+        b.extend([(80.0, 76.0, 79.0), (90.0, 80.0, 89.0), (95.0, 89.0, 94.0)]);
+        let r = rows(&b);
+        let x = Ctx::new(&r, &r, &[]);
+        let t = run(SEM_RSI14, &x, 0, b.len() - 1, &Params::new()).unwrap();
+        let (r14, r2) = (crate::connors::rsi(&x.c, 14), &x.rsi2);
+        let first = (0..b.len()).find(|&i| r14[i] < 35.0 && r2[i] < 30.0).unwrap();
+        assert_eq!(t[0].legs.iter().map(|l| (l.i, l.w)).collect::<Vec<_>>(), vec![(first, 0.2), (first + 1, 0.3), (first + 2, 0.5)]);
+        let exit = (first + 1..b.len()).find(|&i| r2[i] > 65.0).unwrap();
+        assert_eq!((t[0].exit_i, t[0].open), (exit, false));
+        // the 200-day option (close under the 200-day SMA) cannot pass without 200 bars
+        assert!(run(SEM_RSI14, &x, 0, b.len() - 1, &Params::from([("trend_filter".to_string(), 1.0)])).unwrap().is_empty());
+        assert!(run(SEM_PAIRS, &x, 0, b.len() - 1, &Params::new()).is_none());
     }
 }

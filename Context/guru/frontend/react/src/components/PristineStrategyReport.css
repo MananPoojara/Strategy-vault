@@ -1,0 +1,78 @@
+/* Capture-only rules for the typed Pristine tables. Ordinary screen scrolling
+   and every legacy report retain their existing layout. */
+body:is(.pdf-capture, .report-print) #main:has([data-pristine-report]) { padding-bottom: 0 !important; }
+
+body:is(.pdf-capture, .report-print) [data-pristine-table].tlog {
+  width: 100% !important;
+  max-width: 100% !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+body:is(.pdf-capture, .report-print) [data-pristine-table] .tbl {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  table-layout: fixed !important;
+  overflow: visible !important;
+}
+
+body:is(.pdf-capture, .report-print) [data-pristine-table] .tbl :is(th, td, td.n) {
+  min-width: 0 !important;
+  padding: 3px 2px !important;
+  font-size: 9px !important;
+  line-height: 1.35;
+  white-space: normal !important;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+body:is(.pdf-capture, .report-print) [data-pristine-table] .tbl th {
+  position: static !important;
+  font-size: 8px !important;
+  letter-spacing: 0;
+}
+
+@media print {
+  [data-pristine-report], [data-pristine-details] {
+    break-inside: auto !important;
+  }
+
+  [data-pristine-table].tlog {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  [data-pristine-table] .tbl {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    table-layout: fixed !important;
+    overflow: visible !important;
+    break-inside: auto;
+  }
+
+  [data-pristine-table] .tbl :is(th, td, td.n) {
+    min-width: 0 !important;
+    padding: 3px 2px !important;
+    font-size: 9px !important;
+    line-height: 1.35;
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  [data-pristine-table] .tbl th {
+    position: static !important;
+    font-size: 8px !important;
+    letter-spacing: 0;
+  }
+
+  [data-pristine-table] .tbl tr {
+    break-inside: avoid;
+  }
+}

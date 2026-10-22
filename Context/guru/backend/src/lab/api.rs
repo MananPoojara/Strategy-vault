@@ -349,7 +349,7 @@ fn backtest(ctx: &Ctx, c: &Compiled, d: &Bars, from: usize, to: usize, cost: f64
     };
     if equity.iter().any(|v| !v.is_finite() || *v <= 0.) { return Err(LabError::Invalid("calculation_unavailable: nonpositive or nonfinite equity; no result is published".into())); }
     let bh = (from..=to).map(|k| ctx.c[k] / ctx.c[from]).collect();
-    Ok((crate::Run { trades, from, to, equity, bh, source_account: None }, events, booked))
+    Ok((crate::Run { trades, from, to, equity, bh, source_account: None, bandy_account: None, unit_exposure_report: None }, events, booked))
 }
 /// Money mode on a cash instrument: capital, sizing and the declared costs (futures add their contract in lab/futures.rs).
 fn money_of(spec: &Spec, q: &Query, market: Option<&str>) -> Result<Option<ledger::Money>, LabError> {
@@ -407,9 +407,9 @@ fn money_json(b: &ledger::Booked, m: &ledger::Money, currency: Option<&str>) -> 
 fn gross_run(ctx: &Ctx, run: &crate::Run, booked: Option<&ledger::Booked>, money: Option<&ledger::Money>) -> crate::Run {
     match (booked, money) {
         (Some(b), Some(m)) => crate::Run { trades: b.fills(), from: run.from, to: run.to,
-            equity: b.equity(&ctx.c, &ctx.r.iter().map(|r| r.date.clone()).collect::<Vec<_>>(), run.from, run.to, m, false), bh: run.bh.clone(), source_account: None },
+            equity: b.equity(&ctx.c, &ctx.r.iter().map(|r| r.date.clone()).collect::<Vec<_>>(), run.from, run.to, m, false), bh: run.bh.clone(), source_account: None, bandy_account: None, unit_exposure_report: None },
         _ => crate::Run { trades: run.trades.clone(), from: run.from, to: run.to,
-            equity: crate::equity_curve(&ctx.c, &run.trades, run.from, run.to, 0.), bh: run.bh.clone(), source_account: None },
+            equity: crate::equity_curve(&ctx.c, &run.trades, run.from, run.to, 0.), bh: run.bh.clone(), source_account: None, bandy_account: None, unit_exposure_report: None },
     }
 }
 fn result_stats(ctx: &Ctx, run: &crate::Run, costs: accounting::Costs, booked: Option<&ledger::Booked>, money: Option<&ledger::Money>) -> BTreeMap<&'static str, f64> {
@@ -769,7 +769,7 @@ fn portfolio_book(spec:&Spec)->Result<super::portfolio::Book,LabError>{
 }
 fn portfolio_stats(ctx:&Ctx,prepared:&PreparedPortfolio,led:&super::portfolio::Ledger,capital:f64,net:bool)->BTreeMap<&'static str,f64>{
     let mut trades:Vec<_>=led.trades.iter().map(|t|t.as_trade(net)).collect();trades.sort_by_key(|t|(t.legs[0].i,t.exit_i));
-    let run=crate::Run{trades,from:prepared.from,to:prepared.to,equity:if net{&led.equity}else{&led.gross_equity}.iter().map(|v|v/capital).collect(),bh:(prepared.from..=prepared.to).map(|i|ctx.c[i]/ctx.c[prepared.from]).collect(),source_account:None};
+    let run=crate::Run{trades,from:prepared.from,to:prepared.to,equity:if net{&led.equity}else{&led.gross_equity}.iter().map(|v|v/capital).collect(),bh:(prepared.from..=prepared.to).map(|i|ctx.c[i]/ctx.c[prepared.from]).collect(),source_account:None,bandy_account:None,unit_exposure_report:None};
     let mut stats=crate::stats(ctx,&run,0.);stats.insert("avg_exposure",led.invested.iter().zip(&led.equity).map(|(v,e)|v/e).sum::<f64>()/led.equity.len() as f64);stats.insert("max_positions",led.positions.iter().copied().max().unwrap_or(0) as f64);stats
 }
 fn membership_json(loaded:&super::universe::Loaded)->String{format!("{{\"kind\":\"{}\",\"historical_membership_verified\":false,\"note\":\"{}\"}}",loaded.membership.0,esc(loaded.membership.1))}
@@ -1523,10 +1523,10 @@ mod tests {
         assert!(j.starts_with(&format!("{{\"label\":\"{}\",\"kind\":\"lab_simulation\",\"origin\":{{\"method\":{{\"id\":\"r25_rsi25_basic_no_filter\"", templates::variant_label(&d))), "{}", &j[..300]);
         assert!(j.contains("\"dir\":1,\"entry_kind\":\"close\""));
         assert!(!j.contains("\"gate\"") && !j.contains("\"claim\"") && !j.contains("\"readiness\""));
-        // f1a is a stock method: an index never stands in for a stock
-        let e = run_json(&st, &q(&[("spec", &spec_of_template("f1a"))])).unwrap_err();
+        // hbqts_ma5_25 is a stock method: an index never stands in for a stock (stc9 f1a runs on an index since 2026-10-21)
+        let e = run_json(&st, &q(&[("spec", &spec_of_template("hbqts_ma5_25"))])).unwrap_err();
         assert_eq!(e.status(), "needs_data");
-        assert!(e.message().starts_with("SPX (index): variants of stc9") && e.message().contains("individual_stock only"), "{}", e.message());
+        assert!(e.message().starts_with("SPX (index): variants of hbqts") && e.message().contains("individual_stock only"), "{}", e.message());
         let bad = spec_of_template("rsi2_4");
         for (from, to) in [("\"method\":\"rsi2_4\"", "\"method\":\"r3\""), ("\"template_version\":1", "\"template_version\":2"), ("\"book\":\"stc9\"", "\"book\":\"spmt\"")] {
             let e = run_json(&st, &q(&[("spec", &bad.replace(from, to))])).unwrap_err();
@@ -1536,14 +1536,14 @@ mod tests {
         let grid = |m: &str| { let t = spec_of_template(m); format!("{},\"optimize\":[{{\"path\":\"exit.any[0].rhs.value\",\"from\":50,\"to\":60,\"step\":5}}]}}", &t[..t.len() - 1]) };
         let o = optimize_json(&st, &q(&[("spec", &grid("r25_rsi25_basic_no_filter"))])).unwrap();
         assert!(o.starts_with(&format!("{{\"label\":\"{}\",\"kind\":\"lab_optimization\",\"origin\":{{", templates::variant_label(&d))), "{}", &o[..200]);
-        assert_eq!(optimize_json(&st, &q(&[("spec", &grid("f1a").replace("exit.any[0].rhs.value\",\"from\":50,\"to\":60", "exit.any[0].rhs.value\",\"from\":3,\"to\":6"))])).unwrap_err().status(), "needs_data");
+        assert_eq!(optimize_json(&st, &q(&[("spec", &grid("hbqts_ma5_25").replace("exit.any[0].rhs.value\",\"from\":50,\"to\":60", "exit.any[0].rhs.p.length\",\"from\":20,\"to\":30"))])).unwrap_err().status(), "needs_data");
         // plain lab specs keep the v1 label and a null origin
         assert!(run_json(&st, &q(&[])).unwrap().contains(&format!("\"label\":\"{LABEL}\",\"kind\":\"lab_simulation\",\"origin\":null")));
     }
     #[test] fn engine_gl_variant_bodies_still_carry_the_provisional_flag() {
         let st = state(700, "SPX", false);
         let d = templates::method("r25_rsi25_basic_no_filter").unwrap();
-        for (m, status) in [("r25_rsi25_basic_no_filter", "200 OK"), ("f1a", "400 Bad Request")] {
+        for (m, status) in [("r25_rsi25_basic_no_filter", "200 OK"), ("hbqts_ma5_25", "400 Bad Request")] {
             let (s, body) = response(Some("gl"), "/api/lab/run", &st, &q(&[("spec", &spec_of_template(m))]));
             assert_eq!(s, status, "{m}: {}", &body[..200.min(body.len())]);
             assert!(body.starts_with("{\"provisional\":true,\"provisional_note\":\"Provisional · TradingView export"), "{m}");
@@ -1578,7 +1578,7 @@ mod tests {
         assert!(j.starts_with(&format!("{{\"label\":\"{}\",\"kind\":\"lab_template_fidelity\"", fidelity::FIDELITY_LABEL)) && j.contains("does not verify"));
         assert_eq!(fidelity_json(&st, &q(&[("method", "r3")])).unwrap_err().status(), "unsupported");
         assert_eq!(fidelity_json(&st, &q(&[("method", "rsi2_4"), ("p.rsi_lt", "5")])).unwrap_err().status(), "invalid");
-        let e = fidelity_json(&st, &q(&[("method", "f1a")])).unwrap_err();
+        let e = fidelity_json(&st, &q(&[("method", "hbqts_ma5_25")])).unwrap_err();
         assert_eq!(e.status(), "needs_data", "{e:?}");
     }
     #[test] fn template_bodies_carry_no_verdict_keys_and_fidelity_refuses_provisional_data() {
@@ -1819,7 +1819,7 @@ mod amibroker_report_tests {
 mod origin_admission_tests {
     use super::*;
     #[test] fn variants_keep_their_methods_instrument_types() {
-        let stock = templates::method("f1a").unwrap();
+        let stock = templates::method("hbqts_ma5_25").unwrap();
         assert!(origin_admits(Some(&stock), "individual_stock", "RELIANCE").is_ok(), "a stock method's variant runs on an actual stock");
         assert!(origin_admits(Some(&stock), "index", "SPX").is_err());
         let etf = templates::method("hpetf_rsi75_short").unwrap();

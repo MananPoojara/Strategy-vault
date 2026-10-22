@@ -1,10 +1,14 @@
+import type {PristineView} from './services/pristine-report';
 /// <reference types="vite/client" />
 import type { Account } from "./services/api";
 export interface VaultRuntimeContract {
   bootstrap(account: Account): Promise<void>;
   commit(): void;
   cleanup(): void;
+  activateReportTab?(): void;
   patch(patch: Record<string, string>): void;
+  pristineCurrent?(data:unknown, view:PristineView):boolean;
+  exportPristine?(data:unknown, view:PristineView,kind:'workbook'|'csv'):Promise<void>;
   changeTheme(theme: string): void;
   /** Shared book-results area renderer, reused by the lab without a separate chart implementation. */
   renderAreaChart?(element: HTMLElement, dates: string[], values: number[], options: {

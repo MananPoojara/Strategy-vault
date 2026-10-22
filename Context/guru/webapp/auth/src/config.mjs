@@ -13,7 +13,7 @@ export const auth = betterAuth({
   secret: process.env.BETTER_AUTH_SECRET,
   trustedOrigins: [...allowedOrigins],
   database: pool,
-  emailAndPassword: { enabled: true, minPasswordLength: 12, maxPasswordLength: 128, autoSignIn: false },
+  emailAndPassword: { enabled: true, minPasswordLength: 3, maxPasswordLength: 128, autoSignIn: false },
   user: { additionalFields: { role: { type: 'string', required: true, defaultValue: 'researcher', input: false } } },
   session: { expiresIn: 86400 * 7, updateAge: 86400, cookieCache: { enabled: false } },
   rateLimit: { enabled: true, window: 60, max: 40, customRules: { '/sign-in/email': { window: 60, max: 10 } } },

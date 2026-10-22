@@ -27,6 +27,30 @@ use crate::Row;
 
 pub const BOOK: &str = "btp";
 
+/// Daily rules admitted after the 2026-10-21 source review (btp-admission/SOURCE-CONTRACT.md) and an independent
+/// chronological Python ledger check on actual index/ETF prices. Declared application: the book tested or
+/// illustrated these on futures and US stocks. Held (not listed): CBP (IBD RS stock ranking, gate withheld),
+/// Bottom Reversals and Momentum Gaps (setup/stop not quantified), Large-Range Days (options / study),
+/// 10% Oops x3 and WREG sells (gate withheld: same-day path).
+pub const REVIEWED_DAILY: &[&str] = &[
+    "btp_dvmtm_short", "btp_triple_day_pullback_adx25", "btp_triple_day_pullback_adx30", "btp_turtle_thrust",
+    "btp2_smtp_long", "btp2_smtp_short", "btp2_1234_long", "btp2_1234_short",
+    "btp2_8day_hl_reversal_long", "btp2_8day_hl_reversal_short", "btp2_momentum_ma_long", "btp2_momentum_ma_short",
+    "btp2_gipsons_long", "btp2_gipsons_short", "btp2_wide_range_exhaustion_gap_long",
+];
+pub fn reviewed_daily(id: &str) -> bool { REVIEWED_DAILY.contains(&id) }
+/// Book-shown single-stock rules (Volume I/II articles use US stocks with 1/8-dollar ticks) also admitted on actual
+/// stocks with the stock's real tick (user decision 2026-10-21); Momentum MAs (Merrill Lynch example, open entry, no
+/// tick). Triple-Day Pullbacks and Turtle Thrusts are shown on futures only, so they keep index/ETF only.
+pub const STOCK_ADMITTED: &[&str] = &[
+    "btp_dvmtm_short", "btp2_smtp_long", "btp2_smtp_short", "btp2_1234_long", "btp2_1234_short",
+    "btp2_8day_hl_reversal_long", "btp2_8day_hl_reversal_short", "btp2_gipsons_long", "btp2_gipsons_short",
+    "btp2_wide_range_exhaustion_gap_long", "btp2_momentum_ma_long", "btp2_momentum_ma_short",
+];
+/// Admitted rules whose fills or setups read the traded instrument's open (stop orders, gaps, open entries).
+/// Only Triple-Day Pullbacks (close fills, ADX from high/low/close) does not.
+pub fn reads_open(id: &str) -> bool { reviewed_daily(id) && !id.starts_with("btp_triple_day_pullback") }
+
 // ---------------------------------------------------------------- local helpers
 
 /// Wilder DMI with both lines: (+DI, -DI, ADX). Same maths as `connors::dmi`, which does not return -DI.
@@ -335,8 +359,8 @@ const TURTLE: &[&str] = &[
     "F|\"Today's range should be the largest or the second largest of the past 10 days. Also, its close must be above the open (thrust day).\"",
     "E|\"Tomorrow or the next day, buy 1 tick above the thrust-day high.\" (sells: 1 tick under the thrust-day low)",
     "X|\"Risk no more than the range of the thrust day or less.\" Stop = entry level − the thrust-day range",
-    "X|\"Trail your stop to lock in profits. Also, if you are inclined, apply the 2-for-1 Money Management Strategy to the method.\" 2-for-1 = half off at +1× initial risk (ATS ch. 28)",
-    "X|[Not from the book] trail the second half at the prior 3-day low (trail_n 3). No time cap (max_hold 0; > 0 adds one)",
+    "X|\"Trail your stop to lock in profits.\" [Not from the book] the trail: the whole position's stop ratchets to the prior 3-day low (shorts: high) from the bar after entry (trail_n 3). No time cap (max_hold 0; > 0 adds one)",
+    "X|\"Also, if you are inclined, apply the 2-for-1 Money Management Strategy to the method.\" Optional, so off by default (mm 0); mm = 1 takes half off at +1× initial risk (ATS ch. 28) and the trail continues on the rest. [Not from the book] previous reading: mm = 1 by default",
 ];
 const SMTP_L: &[&str] = &[
     "F|\"Today the market must make a 10-period low.\"",
@@ -429,7 +453,7 @@ const MMA_S: &[&str] = &[
 const GIP_L: &[&str] = &[
     "F|\"I use a 14 period ADX reading and I look for readings above 25. ... I also identify the trend with +DI and –DI.\" Long: +DI > –DI",
     "F|\"I then wait for its 6/100 day historical volatility reading to drop under .40. This means the six-day reading is less than 40 percent of the 100-day reading.\"",
-    "E|\"A long entry is triggered for uptrending markets when the high of the signal day is exceeded\" (next day; a new qualifying day becomes the new signal day)",
+    "E|\"A long entry is triggered for uptrending markets when the high of the signal day is exceeded\" ([Not from the book] the order lives the next day only; the book gives no order life. A new qualifying day becomes the new signal day)",
     "X|\"For uptrending markets, my initial protective stop is usually near the low of the signal day\"",
     "X|\"c. My recommendation: Exit half your position and tighten your stops on the other half when the 6-day H.V. reading reaches the 100-day reading.\" (default exit)",
     "X|\"b. ... for stocks you should look to exit at profit levels of at least 5 to 10 percent\" (exit mode 2); \"a. Follow the price with a trailing stop\" (exit mode 3)",
@@ -438,7 +462,7 @@ const GIP_L: &[&str] = &[
 const GIP_S: &[&str] = &[
     "F|\"I use a 14 period ADX reading and I look for readings above 25.\" Short: –DI > +DI",
     "F|\"I then wait for its 6/100 day historical volatility reading to drop under .40.\"",
-    "E|\"a short entry is triggered for downtrending markets when the low of the signal day is taken out.\"",
+    "E|\"a short entry is triggered for downtrending markets when the low of the signal day is taken out.\" ([Not from the book] the order lives the next day only)",
     "X|\"for downtrending markets, my initial protective stop is near the high of the signal day.\"",
     "X|\"c. My recommendation: Exit half your position and tighten your stops on the other half when the 6-day H.V. reading reaches the 100-day reading.\" (default exit)",
     "X|\"b. ... exit at profit levels of at least 5 to 10 percent\" (exit mode 2); \"a. Follow the price with a trailing stop\" (exit mode 3)",
@@ -506,7 +530,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
           "SMA. 'First time (only)': one signal per 5/20 up-cross regime; the regime ends when the 5-day crosses back under. Not in ATS. Run on index ETFs / NSE indices.", None),
         d("btp2_momentum_ma_short", "Momentum Moving Averages · sells", "Momentum Moving Averages (Vol. II)", "Short", Live, MMA_S, "Mirror of the buys (Hogs / CLZ8 examples).", None),
         d("btp2_gipsons_long", "Gipsons · long", "Gipsons (Vol. II)", "Long", Live, GIP_L,
-          "Same article as ATS (ats_gipsons), same wording. HV = sample stdev of the N−1 most recent log returns, the PTJ definition printed in the ATS appendix (the ratio is annualisation-free); it puts the S&P example's signal on Nov 13, 1996 as in the book. The order lives the next day only; each new qualifying day re-arms it (Pediatrix example). Default exit is the author's recommendation (c). Run on index ETFs / NSE indices.", None),
+          "Same article as ATS (ats_gipsons), same wording. HV = sample stdev of the N−1 most recent log returns, the PTJ definition printed in the ATS appendix (the ratio is annualisation-free); it puts the S&P example's signal on Nov 13, 1996 as in the book. [Not from the book] The order lives the next day only (the book says only \"when the high of the signal day is exceeded\"); each new qualifying day re-arms it (Pediatrix example). Default exit is the author's recommendation (c). Run on index ETFs / NSE indices.", None),
         d("btp2_gipsons_short", "Gipsons · short", "Gipsons (Vol. II)", "Short", Live, GIP_S, "Mirror of the long. Same as ATS.", None),
         d("btp2_wide_range_exhaustion_gap_long", "Wide-Range Exhaustion Gap Reversal · buys", "Wide-Range Exhaustion Gap Reversals (Vol. II)", "Long", Live, WREG_L,
           "Same article as ATS (ats_wide_range_exhaustion_gap_reversal). 2-SD move = close to close, HV100 measured the day before the move. Gap = open below the day-one low. The market opened under the stop, so the day-two low is taken to come before the entry and the entry day is not stopped out by its low; if day two closes below the stop, price certainly crossed it after the fill and the trade exits at the stop (the ATS extraction suggests a fully conservative reading, which makes every trade a loser). 1 SD uses the daily SD of log returns (the box's annualised HV ÷ √256); the old √252/√256 mix (1.984 SD) is gone. Default tick = one real tick per market [Not from the book]: 0.05 NSE, 0.01 US (the book's 1/8 = tick 0.125). Run on index ETFs / NSE indices.", None),
@@ -519,7 +543,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
-    let tick = || p("tick", "Entry offset: 1 tick (−1 = [Not from the book] one real tick per market: 0.05 on NSE NIFTY indices, 0.01 otherwise; book's printed 1/8 = 0.125)", -1.0, -1.0, 0.5, 0.005);
+    let tick = || p("tick", "Entry offset: 1 tick (−1 = [Not from the book] one real tick per market: 0.05 on NSE NIFTY indices and Indian stocks (INR), 0.01 on US indices/ETFs and US stocks (USD); adaptation: the book used 1/8-dollar ticks = 0.125)", -1.0, -1.0, 0.5, 0.005);
     let kit = |mm: f64, hold: f64| [
         p("mm", "2-for-1: half off at +1× initial risk (1 = on; book suggests it only for Turtle Thrusts / Momentum MAs 'scale out')", mm, 0.0, 1.0, 1.0),
         p("trail_n", "[Not in book] trailing stop at the prior N-day low/high (0 = off)", 3.0, 0.0, 10.0, 1.0),
@@ -571,7 +595,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     match id {
         "btp_dvmtm_short" | "btp_momentum_gap" | "btp2_smtp_long" | "btp2_smtp_short" | "btp2_1234_long" | "btp2_1234_short"
         | "btp2_8day_hl_reversal_long" | "btp2_8day_hl_reversal_short" => v.extend(kit(0.0, 0.0)),
-        "btp_turtle_thrust" | "btp2_momentum_ma_long" | "btp2_momentum_ma_short" => v.extend(kit(1.0, 0.0)),
+        "btp_turtle_thrust" => v.extend(kit(0.0, 0.0)), // the 2-for-1 is optional in the book ("if you are inclined")
+        "btp2_momentum_ma_long" | "btp2_momentum_ma_short" => v.extend(kit(1.0, 0.0)),
         "btp_bottom_reversal_long" => v.extend(kit(0.0, 5.0)),
         _ => {}
     }
@@ -583,8 +608,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let schema = params(id)?;
     let g0 = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).unwrap_or_else(|| panic!("{id} has no param {k}")).def);
-    // tick < 0 = one real tick of the market: 0.05 NSE (the vault's Indian tickers all start "NIFTY"), 0.01 US decimals
-    let g = |k: &str| match g0(k) { t if k == "tick" && t < 0.0 => if x.r.first().map_or(false, |r| r.ticker.starts_with("NIFTY")) { 0.05 } else { 0.01 }, v => v };
+    // tick < 0 = one real tick of the market: 0.05 NSE (the vault's Indian tickers all start "NIFTY"), 0.01 US decimals.
+    // A native stock uses its trusted market's tick (NSE 0.05 INR, US 0.01 USD; adaptation: the book used 1/8-dollar ticks).
+    let g = |k: &str| match g0(k) { t if k == "tick" && t < 0.0 => x.market_tick(), v => v };
     let u = |k: &str| g(k).round().max(1.0) as usize;
     let n = x.c.len();
     if n < 3 {

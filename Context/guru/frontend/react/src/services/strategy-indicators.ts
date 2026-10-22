@@ -1,9 +1,13 @@
+import {buildDemaIndicators,DEMA_METHOD} from './dema-visual';
+import {buildKestnerIndicators,isKestnerVisualMethod} from './kestner-visual';
 /** Visual checks for the existing Connors engines. Arithmetic and warmup match
  * backend/src/connors.rs; SPMT +DI retains books/spmt.rs’s local tie convention.
  * This module does not generate orders or alter a run.
  * Always calculate from the engine's full source history, then sample the visible
  * dates. Restarting Wilder smoothing at the selected From date is incorrect. */
 export interface PriceHistory {
+  readonly ticker?: string;
+  readonly full_history?: boolean;
   readonly d: readonly string[];
   readonly o: readonly number[];
   readonly h: readonly number[];
@@ -18,7 +22,7 @@ export interface StrategyIndicator {
   key: string;
   label: string;
   placement: "price" | "pane";
-  kind: "sma" | "rsi" | "di" | "pctb" | "sum";
+  kind: "sma" | "rsi" | "di" | "pctb" | "sum" | "dema";
   points: IndicatorPoint[];
   thresholds: IndicatorThreshold[];
 }
@@ -29,7 +33,11 @@ export interface StrategyIndicators {
 }
 export interface IndicatorRequest {
   id: string;
+  book?: string;
+  ticker?: string;
   prices: PriceHistory | null;
+  /** Actual completed backend detail response; selected methods never invent missing states. */
+  sourceReport?: unknown;
   /** Must be true only for the complete source supplied to the calculation engine. */
   fullHistory: boolean;
   /** Schema defaults merged with the selected run's custom parameters. */
@@ -147,6 +155,8 @@ const connorsIds = new Set([
 const hpetfIds = /^hpetf_(3dhl|rsi25|r3|pctb|mdd|rsi10|tps)_(long|short)(?:_aggr)?$/;
 
 export function buildStrategyIndicators(request: IndicatorRequest): StrategyIndicators {
+  if(isKestnerVisualMethod(request.id))return buildKestnerIndicators(request);
+  if(request.id===DEMA_METHOD)return buildDemaIndicators(request);
   const unavailable = (note: string): StrategyIndicators => ({ status: "unavailable", series: [], note });
   const baseId = request.id.replace(/^spmt_/, ""), etf = hpetfIds.test(request.id);
   if (!connorsIds.has(baseId) && !etf)

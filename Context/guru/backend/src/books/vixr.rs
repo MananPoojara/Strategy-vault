@@ -1,5 +1,5 @@
 //! Trading Connors VIX Reversals (Larry Connors & Connie Che, 2001). Book id "vixr".
-//! CVR 1-11 (CVR 4 was "removed in 1998" and has no rules). Every signal is read on the VIX's own daily bars,
+//! CVR 1-11 (CVR 4 was "removed in 1998" and has no rules). Every signal is read on the VIX daily bars of the traded instrument's trading days (param vix_cal),
 //! the market is bought / sold on the close of the signal day, the position is held a fixed number of days
 //! (CVR 3: until the VIX trades back through yesterday's 10-day MA) and an opposite CVR signal stops and reverses.
 //!
@@ -20,6 +20,25 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 
 pub const BOOK: &str = "vixr";
+
+/// Exact daily CVR contracts admitted after the 2026-10-21 source review (pilot-vixr/SOURCE-CONTRACT.md) and an
+/// independent chronological Python ledger check on actual SPY/SPX (+ NIFTY 50 where listed below).
+/// Declared index-timing application of an S&P-futures study: no futures dollars or book performance.
+pub const REVIEWED_DAILY: &[&str] = &[
+    "vixr_cvr1", "vixr_cvr2", "vixr_cvr3", "vixr_cvr5_1d", "vixr_cvr5_3d", "vixr_cvr6",
+    "vixr_cvr7", "vixr_cvr8", "vixr_cvr9", "vixr_cvr10", "vixr_cvr11",
+];
+pub fn reviewed_daily(id: &str) -> bool { REVIEWED_DAILY.contains(&id) }
+/// Rules that read only India VIX close/high/low with scale-free thresholds. Rules reading the VIX open
+/// (India VIX open ~ prior close) or fixed VIX-point thresholds are not admitted on NIFTY 50.
+pub const INDIA_VIX_REVIEWED: &[&str] = &["vixr_cvr2", "vixr_cvr3", "vixr_cvr6"];
+/// Actual SPX (cash index, declared timing adaptation) and actual SPY with CBOE VIX; NIFTY 50 with India VIX
+/// only for `INDIA_VIX_REVIEWED`. Other indices/ETFs/stocks are not reviewed applications.
+pub fn admitted_symbol(id: &str, ticker: &str) -> bool {
+    reviewed_daily(id) && (matches!(ticker, "SPX" | "SPY") || (ticker == "NIFTY 50" && INDIA_VIX_REVIEWED.contains(&id)))
+}
+/// The served CBOE VIX file holds close-only bars (open = high = low = close) for 1990-1991.
+pub const REAL_VIX_OHLC_FROM: &str = "1992-01-01";
 
 /// Strategy note + the shared book note (+ the VIX-open caveat for rules that read the VIX open).
 macro_rules! note {
@@ -98,9 +117,10 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|New 20-period high = that day's VIX high is the highest of the last 20 days incl. itself (ref = 0, the literal reading)",
             "E|[Not from the book] ref = 1: high above the 20-day high set before those 3 days (fitted to the report's trade count)",
             "E|Buy (sell) the market on the close",
-            "X|Exit in two to three days: close 2 days after entry (Section Four: two days for CVR 6)",
+            "X|Exit in two to three days (p.40): close 3 days after entry, the published CVR 6 test (p.42 report: winners average 3 bars)",
+            "X|Option hold = 2: Section Four (p.82) portfolio rule \"exited in three days (two days for the CVR 2, 6 and 7)\"",
             "X|An opposite CVR 6 signal stops and reverses"],
-          note!("New 20-period high = that day's VIX high is the highest of the last 20 days incl. itself (param ref = 0, the text as written; TradeStation inputs HILODAYS = 20, _2_3DAYS = 3): 103 trades (49 L / 54 S), 61.2% on VXO 1993-2001 (book 144, 72 / 72, 62.5%). [Not from the book] ref = 1 (above the highest high of the 20 days before the 3-day window) is fitted to the summary report, not stated in the text: 137 trades 69 L / 68 S, 62.8%. The input EXT_DAYS defaults to 5; Section Four and the report (3 / 4 bars) point to 2. "),
+          note!("Exit: the rule says \"Exit in two to three days\" (p.40). Default hold = 3 = the published CVR 6 test (p.42 report \"CVR 6 VIXdouble Top/Bot\": 144 trades, 62.5%, avg $1,048.33, winners average 3 bars; in every CVR report the winners' average bars equals the fixed exit), so the claim below belongs to this default. Option hold = 2 = Section Four's portfolio rule (p.82, \"two days for the CVR 2, 6 and 7\"). The TradeStation input EXT_DAYS defaults to 5 (used by neither). New 20-period high = that day's VIX high is the highest of the last 20 days incl. itself (param ref = 0, the text as written; TradeStation inputs HILODAYS = 20, _2_3DAYS = 3). Reference model on SPX with VXO, 1/28/93-8/6/01, close to close: ref 0 hold 3 = 102 trades (49 L / 53 S), 58.8% (hold 2: 103, 49 / 54, 59.2%); book 144 (72 / 72), 62.5%. [Not from the book] ref = 1 (above the highest high of the 20 days before the 3-day window) is fitted to the report's trade count, not stated in the text: hold 3 = 131 trades (66 L / 65 S), 59.5% (hold 2: 137, 69 / 68, 59.9%). p.43 summary: \"this simple situation has occurred 131 times ... and has correctly identified two-day market reversals about 62% of the time\" (not the report's 144 trades). "),
           claim("144 (72 L / 72 S)", "62.5%", "$1,048.33", "3 / 4 bars (win / loss)", PERIOD)),
         d("vixr_cvr7", "CVR 7 · Flushing out the weak money", Live,
           &["E|Buy: the VIX close of two days ago above the 10-period MA made three days ago",
@@ -179,7 +199,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("zone", "Open & close within % of the range from the extreme", 100.0 / 3.0, 10.0, 50.0, 5.0), hold(if id == "vixr_cvr5_1d" { 1.0 } else { 3.0 })],
         "vixr_cvr6" => vec![p("hilo", "New N-period VIX high/low", 20.0, 5.0, 40.0, 1.0), p("need", "…on at least this many days", 2.0, 1.0, 3.0, 1.0),
             p("look", "…of the past N days", 3.0, 2.0, 5.0, 1.0),
-            p("ref", "New high/low vs: 1 = the N days before the window (fitted), 0 = last N days incl. that day (literal, book p.40)", 0.0, 0.0, 1.0, 1.0), hold(2.0)],
+            p("ref", "New high/low vs: 1 = the N days before the window (fitted), 0 = last N days incl. that day (literal, book p.40)", 0.0, 0.0, 1.0, 1.0),
+            p("hold", "Exit on the close N days after entry (3 = published CVR 6 test, p.42; 2 = Section Four p.82)", 3.0, 1.0, 10.0, 1.0)],
         "vixr_cvr7" => vec![p("ma", "VIX moving average length (LEN)", 10.0, 5.0, 20.0, 1.0), hold(2.0)],
         "vixr_cvr8" => vec![p("fast", "Fast EMA", 10.0, 5.0, 20.0, 1.0), p("slow", "Slow EMA", 100.0, 50.0, 200.0, 10.0),
             p("look", "Oscillator highest/lowest of N days", 40.0, 10.0, 60.0, 5.0), p("thr", "Oscillator beyond ± (VIX points)", 0.2, 0.0, 1.0, 0.05), hold(3.0)],
@@ -190,6 +211,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "vixr_all" | "vixr_stocks" | "vixr_options" => return Some(vec![]),
         _ => return None,
     };
+    v.push(p("vix_cal", "VIX calendar: 0 = the VIX bars on the traded instrument's days only (holiday VIX bars dropped, as ATS / PTJ / S&P MT), 1 = [Not from the book] previous reading: the VIX's own calendar", 0.0, 0.0, 1.0, 1.0));
     v.push(p("exit_restart", "Same-direction signal on the exit bar keeps the trade, count restarts (1 = on, TradeStation booking)", 1.0, 0.0, 1.0, 1.0));
     Some(v)
 }
@@ -206,7 +228,7 @@ fn server_vix() -> &'static [Row] {
     })
 }
 
-/// VIX bars (own calendar) + map from the instrument's bar to the VIX bar of the same date.
+/// VIX bars (instrument calendar, or own with vix_cal = 1) + map from the instrument's bar to the VIX bar of the same date.
 struct Vx {
     o: Vec<f64>,
     h: Vec<f64>,
@@ -216,7 +238,14 @@ struct Vx {
 }
 
 impl Vx {
-    fn new(r: &[Row], vix: &[Row]) -> Self {
+    /// own_cal = false (default): only the VIX rows on the instrument's own trading days, plus the VIX history before its
+    /// first bar as warm-up (as ats/ptjmt/spmt), so VIX bars on days the instrument does not trade (US holidays in the CBOE
+    /// file) never enter N-day highs/lows, MAs, RSI or "yesterday". own_cal = true: the previous reading, the VIX's own calendar.
+    fn new(r: &[Row], vix: &[Row], own_cal: bool) -> Self {
+        let dates: std::collections::HashSet<&str> = r.iter().map(|x| x.date.as_str()).collect();
+        let d0 = r.first().map_or(i64::MAX, |x| crate::day_number(&x.date));
+        let kept: Vec<Row> = if own_cal { vix.to_vec() } else { vix.iter().filter(|v| crate::day_number(&v.date) < d0 || dates.contains(v.date.as_str())).cloned().collect() };
+        let vix = &kept[..];
         let pos: HashMap<&str, usize> = vix.iter().enumerate().map(|(k, v)| (v.date.as_str(), k)).collect();
         Vx {
             o: vix.iter().map(|v| v.open).collect(),
@@ -315,7 +344,8 @@ fn sar(c: &[f64], from: usize, to: usize, sig: &dyn Fn(usize) -> i8, hold: usize
 /// None = not a strategy of this book.
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     params(id)?;
-    Some(run_with(id, x, &Vx::new(x.r, server_vix()), from, to, p))
+    let own_cal = p.get("vix_cal").copied().unwrap_or(0.0) >= 0.5;
+    Some(run_with(id, x, &Vx::new(x.r, server_vix(), own_cal), from, to, p))
 }
 
 fn run_with(id: &str, x: &Ctx, v: &Vx, from: usize, to: usize, p: &Params) -> Vec<Trade> {
@@ -464,7 +494,7 @@ mod tests {
         vix[8] = row(8, 18.0, 19.0, 17.0, 18.5);
         let mkt: Vec<Row> = (0..13).map(|d| { let p = 100.0 + d as f64; row(d, p, p + 1.0, p - 1.0, p) }).collect();
         let ctx = Ctx::new(&mkt, &mkt, &[]);
-        let t = run_with("vixr_cvr1", &ctx, &Vx::new(&mkt, &vix), 0, 12, &Params::new());
+        let t = run_with("vixr_cvr1", &ctx, &Vx::new(&mkt, &vix, false), 0, 12, &Params::new());
         assert_eq!(t.len(), 2, "{t:?}");
         assert_eq!((t[0].dir, t[0].legs[0].i, t[0].exit_i), (1.0, 6, 8));
         assert!(t[0].reason.contains("reverse"));
@@ -501,12 +531,19 @@ mod tests {
         let run = |touch: f64| {
             let mut p = Params::new();
             p.insert("exit_touch".into(), touch);
-            run_with("vixr_cvr3", &ctx, &Vx::new(&mkt, &vix), 0, 13, &p)
+            run_with("vixr_cvr3", &ctx, &Vx::new(&mkt, &vix, false), 0, 13, &p)
         };
         let t = run(0.0);
         assert_eq!((t.len(), t[0].dir, t[0].legs[0].i, t[0].exit_i), (1, 1.0, 10, 12), "{t:?}");
         let t = run(1.0);
         assert_eq!((t[0].legs[0].i, t[0].exit_i), (10, 11), "{t:?}");
+    }
+
+    #[test]
+    fn cvr6_default_exit_is_the_published_3_day_test() {
+        let def = |k: &str| params("vixr_cvr6").unwrap().into_iter().find(|d| d.key == k).unwrap().def;
+        assert_eq!(def("hold"), 3.0);
+        assert!(catalogue().iter().find(|d| d.id == "vixr_cvr6").unwrap().rules.iter().any(|r| r.contains("close 3 days after entry")));
     }
 
     #[test]

@@ -36,6 +36,11 @@ pub fn allowed_engine_path(path: &str) -> bool {
             | "lab/templates"
             | "lab/template"
             | "lab/fidelity"
+            | "guru/pristine/strategies"
+            | "guru/pristine/summary"
+            | "guru/pristine/readiness"
+            | "guru/pristine/run"
+            | "guru/pristine/params"
     )
 }
 pub fn is_optimization_path(path:&str)->bool {
@@ -82,6 +87,16 @@ mod tests {
         assert!(can_optimize("researcher"));
         assert!(!can_optimize("viewer"));
         assert!(!can_optimize(""));
+    }
+    #[test]
+    fn pristine_has_only_the_reviewed_fixed_read_endpoints() {
+        for route in ["strategies","summary","readiness","run","params"] {
+            assert!(allowed_engine_path(&format!("guru/pristine/{route}")));
+            assert!(!is_optimization_path(&format!("guru/pristine/{route}")));
+        }
+        for route in ["optimize","basket-run","notes","run/","../run"] {
+            assert!(!allowed_engine_path(&format!("guru/pristine/{route}")));
+        }
     }
     #[test]
     fn api_queries_are_bounded() {

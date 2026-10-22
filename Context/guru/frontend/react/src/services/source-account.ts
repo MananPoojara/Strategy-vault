@@ -1,5 +1,7 @@
-/** The accepted Elder account has a distinct accounting basis. Unknown or stale
- * payloads must never fall back to the legacy unit-exposure presenter. */
+import {BANDY_ACCOUNT_MODEL,bandyAccountMethod,parseBandySourceAccount,type BandySourceAccount,BANDY_SIMPLE_BASIS} from "./bandy-source-account";
+export {BANDY_ACCOUNT_MODEL,bandyAccountMethod} from "./bandy-source-account";
+/** Preserve the protected Elder contract and the distinct Bandy cash contract.
+ * Unknown or stale payloads never fall back to the legacy unit-exposure presenter. */
 export const ELDER_ACCOUNT_MODEL = "elder_protected_impulse_fractional_cash_v1";
 export const ELDER_METHOD = "elcim_impulse";
 
@@ -37,7 +39,7 @@ export interface SourceTradeAccount {
   gross_fraction_of_actual_entry_equity: number;
   net_fraction_of_actual_entry_equity: number;
 }
-export interface SourceAccount {
+export interface ElderSourceAccount {
   model: typeof ELDER_ACCOUNT_MODEL;
   book_performance_reproduced: false;
   basis: string;
@@ -47,13 +49,16 @@ export interface SourceAccount {
   days: SourceAccountDay[];
   trade_accounts: SourceTradeAccount[];
 }
-export interface SourceAccountView {
-  model: typeof ELDER_ACCOUNT_MODEL;
+export type SourceAccount = ElderSourceAccount | BandySourceAccount;
+interface SourceAccountViewCore {
   basis: string;
   actualReturn: number;
   grossReturn: number;
   closedTradeCount: number;
 }
+export type SourceAccountView = SourceAccountViewCore & (
+  {model: typeof ELDER_ACCOUNT_MODEL} | {model: typeof BANDY_ACCOUNT_MODEL; sizing: BandySourceAccount["sizing"]}
+);
 type Fields = Record<string, unknown>;
 const object = (v: unknown): v is Fields => Boolean(v) && typeof v === "object" && !Array.isArray(v);
 const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -62,7 +67,11 @@ const count = (v: unknown): v is number => finite(v) && Number.isInteger(v) && v
 const near = (a: number, b: number, tolerance = 2.01e-6) => Math.abs(a - b) <= tolerance * Math.max(1, Math.abs(a), Math.abs(b));
 const invalid = (): never => { throw new Error("The protected Elder account response is missing or inconsistent. Results remain unavailable; reload after the account contract is restored."); };
 
-export function sourceAccount(data: unknown, id?: string, book?: string): SourceAccount | null {
+export function sourceAccount(data: unknown, id?: string, book?: string, selectedTicker?: string, admission?: unknown): SourceAccount | null {
+  if (bandyAccountMethod(id,book) || (object(data) && object(data.source_account) && data.source_account.model === BANDY_ACCOUNT_MODEL)) return parseBandySourceAccount(data,id,book,selectedTicker,admission);
+  return elderSourceAccount(data,id,book);
+}
+function elderSourceAccount(data: unknown, id?: string, book?: string): ElderSourceAccount | null {
   const expected = id === ELDER_METHOD && book === "elcim";
   if (!object(data)) return expected ? invalid() : null;
   if (!expected && data.source_account == null) return null;
@@ -109,13 +118,14 @@ export function sourceAccount(data: unknown, id?: string, book?: string): Source
   }
   const finalEquity = data.equity.at(-1) as number;
   if (!near(finalEquity - 1, data.stats.total_return)) return invalid();
-  return account as unknown as SourceAccount;
+  return account as unknown as ElderSourceAccount;
 }
 
 export function sourceAccountView(account: SourceAccount): SourceAccountView {
-  return {model: account.model, basis: account.basis, actualReturn: account.days.at(-1)!.equity - 1,
+  const view = {model: account.model, basis: account.basis, actualReturn: account.days.at(-1)!.equity - 1,
     grossReturn: account.days.at(-1)!.gross_same_quantity_equity - 1,
     closedTradeCount: account.trade_accounts.filter(t => !t.open).length};
+  return account.model === BANDY_ACCOUNT_MODEL ? {...view,model:account.model,sizing:account.sizing} : {...view,model:account.model};
 }
 
 export const sourceAuditHeaders = ["Entry", "Exit / mark", "Open", "Raw instrument gross return", "Entry allocation fraction",
@@ -127,8 +137,12 @@ export function sourceTradeHeaders(headers: readonly string[]): string[] {
     13: "Net return / actual entry equity", 14: "Observed adverse / actual entry equity",
     15: "Observed favourable / actual entry equity"}[i] || header));
 }
-export function sourceAuditRows(account: SourceAccount, fullPrecisionNetReturns: readonly number[]): (string | number | boolean)[][] {
+export function sourceAuditRows(account: SourceAccount, fullPrecisionNetReturns: readonly number[]): (string | number | boolean | null)[][] {
   if (fullPrecisionNetReturns.length !== account.trade_accounts.length || fullPrecisionNetReturns.some(v => !finite(v))) return invalid();
+  if (account.model === BANDY_ACCOUNT_MODEL) return account.trade_accounts.map((t,i) => [t.entry,t.open ? "Open mark: " + t.exit : t.exit,t.open,t.raw_instrument_gross_return,
+    t.entry_allocation_fraction,t.gross_fraction_of_actual_entry_equity,fullPrecisionNetReturns[i],t.gross_account_contribution,
+    t.net_account_contribution,t.entry_cost_account_contribution,t.exit_cost_account_contribution,t.entry_notional_units,
+    t.exit_notional_units,t.quantity,t.entry_equity_units,t.entry_signal_date,t.exit_signal_date,t.entry_phase,t.exit_phase,t.open_liquidation_cost_estimate]);
   return account.trade_accounts.map((t, i) => [t.entry, t.open ? "Open mark: " + t.exit : t.exit, t.open, t.raw_instrument_gross_return,
     t.entry_allocation_fraction, t.gross_fraction_of_actual_entry_equity, fullPrecisionNetReturns[i],
     t.gross_account_contribution, t.net_account_contribution, t.entry_cost_account_contribution,
@@ -140,7 +154,50 @@ export const sourceRiskHeaders = ["Date", "Net account equity (initial unit)", "
   "Direction", "Known stop", "Monthly reference (initial unit)", "Monthly realized losses (initial unit)",
   "Outstanding planned risk (initial unit)", "Monthly halted", "Liquidation pending"];
 export function sourceRiskRows(account: SourceAccount): (string | number | boolean | null)[][] {
+  if (account.model === BANDY_ACCOUNT_MODEL) return account.days.map(d => [d.date,d.equity,d.gross_same_quantity_equity,d.costs_paid,d.free_cash,d.quantity,d.position_value,d.direction,d.source_index]);
   return account.days.map(d => [d.date, d.equity, d.gross_same_quantity_equity, d.costs_paid, d.free_cash,
     d.reserved_short_principal, d.restricted_short_proceeds, d.direction, d.stop, d.monthly_reference,
     d.monthly_realized_losses, d.outstanding_planned_risk, d.monthly_halted, d.liquidation_pending]);
+}
+
+export const bandyAuditHeaders = [...sourceAuditHeaders.slice(0,11), "Entry notional (initial unit)", "Filled exit notional (initial unit)",
+  "Normalized fractional position units", "Actual entry equity (initial unit)", "Entry signal date", "Exit signal date", "Entry phase", "Exit / mark phase", "Uncharged open liquidation estimate (initial unit)"];
+export const bandyDailyHeaders = ["Date", "Net cash-account equity (initial unit)", "Gross same-quantity equity (initial unit)",
+  "Costs paid (initial unit)", "Free cash (initial unit)", "Normalized fractional position units", "Position value (initial unit)", "Direction", "Source index"];
+export function sourceAccountTables(account: SourceAccount, returns: readonly number[]) {
+  const bandy=account.model === BANDY_ACCOUNT_MODEL;
+  return {
+    audit:{name:"Account audit",headers:bandy ? bandyAuditHeaders : sourceAuditHeaders,rows:sourceAuditRows(account,returns),
+      percentColumns:bandy ? [3,4,5,6] : [3,4,5,6,11,12],numericColumns:bandy ? [7,8,9,10,11,12,13,14,19] : [7,8,9,10,13,14]},
+    daily:{name:bandy ? "Account daily" : "Account risk",headers:bandy ? bandyDailyHeaders : sourceRiskHeaders,rows:sourceRiskRows(account),
+      numericColumns:bandy ? [1,2,3,4,5,6] : [1,2,3,4,5,6,8,9,10,11]},
+  };
+}
+export function sourceAccountCopy(account: {model: SourceAccount["model"]; sizing?: BandySourceAccount["sizing"]; basis?: string}) {
+  const bandy=account.model === BANDY_ACCOUNT_MODEL;
+  const sourceQuarter=bandy && account.sizing?.origin === "source_rule";
+  const simple=bandy && account.basis === BANDY_SIMPLE_BASIS;
+  return {
+    bandy,
+    ...(simple ? {signalNote:"MA25 uses the full supplied genuine history. Close > MA25 is raw Buy; every true raw Buy resets the clock even while held. Exit at five observed bars since the latest raw Buy, not five bars from entry. The declared daily finalized same-close fills and fractional cash account are research conventions. No source performance, funded capital, native AmiBroker binary parity or broker-executable close fill is claimed."} : {}),
+    accountReturn:bandy ? "Cash-account return" : "Risk-sized account return",
+    accountEquity:bandy ? "Cash-account equity" : "Risk-sized account equity",
+    decline:bandy ? "Cash-account decline" : "Risk-sized account decline",
+    sizing:bandy ? sourceQuarter ? "Source allocation: 25% of current equity; remaining cash stays idle."
+      : simple ? "SimpleSystem teaching example: declared 100% fractional current-equity target with entry costs reserved in cash. The commentary does not specify position sizing."
+      : "Declared research convention: 100% target allocation with entry costs reserved in cash. The MA examples do not specify position sizing."
+      : "Protection and the 2% per-trade / 6% monthly risk limits stay active.",
+    settingsNote:bandy ? "Display only. The reviewed fixed allocation, actual cash account, equity and risk statistics stay unchanged. Open holdings are excluded from this closed-return display."
+      : "Display only. The mandatory 2%/6% risk controller, actual cash account, equity and risk statistics stay unchanged. Open holdings are excluded from this closed-return display.",
+    displayNote:bandy ? " Open holdings are excluded. This display never changes the reviewed allocation, actual cash account or its risk statistics."
+      : " Open holdings are excluded. This display never changes the source 2%/6% sizing, protection, actual cash account or its risk statistics.",
+    curveNote:bandy ? "The separate cash-account curve follows actual cash and position marks, including paid entry costs on open holdings. Unfilled exits and separate hypothetical liquidation estimates are not deducted. Its total return is not the arithmetic closed-return sum."
+      : "The separate risk-sized account curve follows the actual cash/risk ledger, including open price marks and actual entry costs. Its total return is not the arithmetic closed-return sum.",
+    tradeNote:bandy ? "Gross/net returns and paid slippage are fractions of actual net entry equity, weighted by the accepted cash allocation. Raw instrument returns, actual notionals and initial-unit contributions are separate in the Account audit Excel sheet. Open marks pay entry costs only; hypothetical liquidation estimates are separate."
+      : "Gross/net returns and slippage are fractions of actual net entry equity, weighted by the accepted risk allocation. Raw instrument returns and initial-unit contributions are separate in the Account audit Excel sheet. Open marks pay entry costs only.",
+    exportCurve:bandy ? "Cash plus actual accepted position marks, with paid entry costs only on open holdings."
+      : "Cash plus actual risk-sized position marks, with entry costs only on open holdings.",
+    exportDisplay:bandy ? "Closed sum / hypothetical closed compounding never changes reviewed fixed sizing or the accepted ledger."
+      : "Closed sum / hypothetical closed compounding never changes source 2%/6% sizing or the accepted ledger.",
+  };
 }

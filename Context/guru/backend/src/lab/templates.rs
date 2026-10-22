@@ -59,7 +59,22 @@ pub const PORTFOLIO: &str = "the rules include portfolio settings (position caps
 pub const FILL_CONVENTION: &str = "the book fills a limit at the limit price even when the bar opens beyond it (AmiBroker BuyPrice); the lab fills a gapped limit at the open, so a template would not reproduce the book engine";
 pub const SIGNAL_CLOCK: &str = "the time exit counts bars since the latest buy signal, which repeats while in the trade (AmiBroker BarsSince); lab bars_held counts from the fill";
 pub const MULTI_DAY: &str = "the entry is a multi-day setup with a pending order window, which the lab does not model";
+/// Methods Manan admitted to the book engine on 2026-10-21/22 (merged into Nandini 2026-10-22) whose lab template is still to be reviewed.
+pub const NEW_ADMISSION: &str = "admitted to the book engine in the 2026-10-21/22 book work; no lab template has been written or compared with the book engine yet";
 pub const NO_TEMPLATE: &[(&str, &str)] = &[
+    ("spmt_vix200", VIX), ("spmt_vix2", VIX), ("spmt_vix4", VIX), ("spmt_vix7", VIX), ("spmt_vix8", VIX), ("spmt_short_vix53", VIX), ("spmt_short_vix101", VIX), ("ststw_vix_rsi", VIX),
+    ("spmt_trin_1", SERIES), ("spmt_trin_2", SERIES), ("spmt_trin_3", SERIES), ("spmt_trin_4", SERIES), ("spmt_trin_5", SERIES), ("spmt_nyse_adv", SERIES),
+    ("spmt_eom_und", CALENDAR),
+    ("ccl08_tps_long", SCALE_IN), ("ccl08_tps_short", SCALE_IN), ("ccl08_tps_research", SCALE_IN), ("hpetf_sem_rsi14_tps", SCALE_IN), ("r3r4_lowprice_scale", SCALE_IN),
+    ("ss_long_2nd", NEW_ADMISSION), ("ss_short_2nd", NEW_ADMISSION), ("ss_study_close_upper_90", NEW_ADMISSION), ("ss_study_close_upper_80", NEW_ADMISSION), ("ss_study_close_lower_10", NEW_ADMISSION), ("ss_study_close_lower_20", NEW_ADMISSION),
+    ("ss_study_wr7_high_close", NEW_ADMISSION), ("ss_study_wr7_low_close", NEW_ADMISSION), ("ss_study_rocrsi_buy", NEW_ADMISSION), ("ss_study_rocrsi_sell", NEW_ADMISSION), ("ss_study_fresh_roc_buy", NEW_ADMISSION), ("ss_study_fresh_roc_sell", NEW_ADMISSION),
+    ("ss_study_oops_buy", NEW_ADMISSION), ("ss_study_oops_sell", NEW_ADMISSION), ("ss_study_oops_adx_gapper_buy", NEW_ADMISSION), ("ss_study_oops_adx_gapper_sell", NEW_ADMISSION), ("ss_study_gap_failure_buy", NEW_ADMISSION), ("ss_study_gap_failure_sell", NEW_ADMISSION),
+    ("otvt_cvr1_long", NEW_ADMISSION), ("otvt_cvr1_short", NEW_ADMISSION), ("btp_dvmtm_short", NEW_ADMISSION), ("btp2_smtp_long", NEW_ADMISSION), ("btp2_smtp_short", NEW_ADMISSION), ("btp2_1234_long", NEW_ADMISSION),
+    ("btp2_1234_short", NEW_ADMISSION), ("btp2_8day_hl_reversal_long", NEW_ADMISSION), ("btp2_8day_hl_reversal_short", NEW_ADMISSION), ("btp2_momentum_ma_long", NEW_ADMISSION), ("btp2_momentum_ma_short", NEW_ADMISSION), ("btp2_gipsons_long", NEW_ADMISSION),
+    ("btp2_gipsons_short", NEW_ADMISSION), ("btp2_wide_range_exhaustion_gap_long", NEW_ADMISSION), ("alpha_trend_6m", NEW_ADMISSION), ("afactor_spx_down", NEW_ADMISSION), ("r3r4_lowprice", NEW_ADMISSION), ("hbqts_dema16_8", NEW_ADMISSION),
+    ("hbiab_ma5_20", NEW_ADMISSION), ("hbiab_ma7_4", NEW_ADMISSION), ("hbiab_macd_example", NEW_ADMISSION), ("hbiab_simple_ma25", NEW_ADMISSION), ("ccl08_crdt1_long", NEW_ADMISSION), ("ccl08_crdt1_short", NEW_ADMISSION),
+    ("ccl08_crdt2_long", NEW_ADMISSION), ("ccl08_crdt3_long", NEW_ADMISSION), ("ccl08_crdt4_long", NEW_ADMISSION), ("ccl08_crdt5_long", NEW_ADMISSION), ("ccl08_crdt2_short", NEW_ADMISSION), ("ccl08_crdt4_short", NEW_ADMISSION),
+    ("ccl08_crdt5_short", NEW_ADMISSION),
     ("radge_oc_long", "the admitted Radge stop-free open-to-close cash-index research rule has no source-specific lab template or template-fidelity comparison yet"),
     ("sbma_sma50_long", "the admitted Burns 50-day SMA long/cash stock rule has no source-specific lab template or template-fidelity comparison yet; strict above/below ties and reviewed fill conventions must be preserved"),
     ("sbma_x_5s20s", "the admitted Burns 5/20-day SMA long/cash stock crossover has no source-specific lab template or template-fidelity comparison yet; strict crossover ties and reviewed fill conventions must be preserved"),

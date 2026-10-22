@@ -589,6 +589,9 @@ pub fn run(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         .iter()
         .find(|d| d.id == req.id)
         .ok_or("unknown strategy")?;
+    if crate::instrument_policy::reviewed_kestner_stock(def) {
+        return Ok(hold(&req,"not_testable","The Kestner review covers one actual stock at a time. Simultaneous long/short basket selection, capacity and portfolio accounting have not been reviewed for these methods; no basket result is published.",&[]));
+    }
     let members = st.baskets.members(req.basket);
     if let Some(expected) = st.baskets.expected_member_count(req.basket) {
         if members.len() != expected {
@@ -782,7 +785,7 @@ pub fn run(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         .collect();
     let bh: Vec<_> = bh.iter().map(|c| c / bh[0]).collect();
     let benchmark_run = crate::Run {
-        source_account:None,
+        source_account:None,bandy_account:None,unit_exposure_report:None,
         trades: vec![],
         from: 0,
         to: calendar.len() - 1,
