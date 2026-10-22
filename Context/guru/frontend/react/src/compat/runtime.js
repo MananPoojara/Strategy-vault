@@ -908,8 +908,7 @@ const enginePath = (id, endpoint, api = API) => `${api}/guru/${ownerOf(id)}/${en
 const guruIds = () => GURUS_API.map(g => g.id);
 function sourceEvidence(v) { return v.guru==='chande'?window.ChandeEvidence.methods[v.id]:window.JoeRossEvidence.methods[v.id]; }
 // A table comparison records its source discrepancies; it is not source-performance certification.
-const gateBadge = v => v.gate?.verdict === 'table_compared' ? '<span class="gb un" title="Approximate published-table comparison; original source instrument, universe and trade ledger have not been certified">Published-table comparison</span>'
-  : '';
+const gateBadge = () => ''; // verification badges hidden (user request 22 Oct 2026); gate data kept for a future UI
 const OPEN_FROM = { SPX: '2014-01-01', NDX: '2001-01-01', DJI: '2016-01-01' };
 function gateNotice(v, tk) {
   const g = v.gate;
@@ -918,7 +917,6 @@ function gateNotice(v, tk) {
   if(declared)return declared+gateNotice({...v,instrument_policy:{...v.instrument_policy,declared_application:''}},tk);
   if(v.instrument_policy?.source_rule_reviewed)return `<div class="rnote" data-rule-review><b>Source rules reviewed · computed market application.</b> Selected trade ledgers matched an independent reference calculation. ${esc(v.instrument_policy.source_basis)} ${clamp} ${v.gate?.book?`<details><summary>Earlier source-study comparison</summary><p>${esc(v.gate.book)}</p><p>${esc(v.gate.note)}</p><p>Original book-study reproduction remains unverified; these figures are separate from this computed backtest.</p></details>`:''}</div>`;
   if (!g) return '';
-  if (g.verdict === 'table_compared') return `<div class="rnote gate un"><b>Published-table comparison; source reproduction not certified.</b><p>Book: ${esc(g.book)}</p><p>Ours: ${esc(g.ours)}</p>${clamp}</div>`;
   return clamp ? `<div class="rnote gate un">${clamp}</div>` : ''; // the unverified-gate notice was removed (user request 22 Oct 2026)
 }
 function calculatedPeriodHTML(d) {
