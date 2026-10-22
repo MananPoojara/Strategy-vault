@@ -2262,7 +2262,7 @@ mod tests {
         assert!(readiness_json(&state,&q).unwrap().contains("\"status\":\"ready\""));
         let run=detail(&state,&q).unwrap();assert!(run.contains("\"currency\":\"USD\"")&&run.contains("\"benchmark_symbol\":\"AAPL\""));assert!(!run.contains("999999"));
         q.insert("id".into(),"r3".into());assert!(detail(&state,&q).unwrap_err().contains("index"));
-        q.insert("id".into(),"hpetf_3dhl_long".into());assert!(detail(&state,&q).unwrap_err().contains("ETF"));
+        q.insert("id".into(),"hpetf_3dhl_long".into());assert!(detail(&state,&q).is_ok(),"Opened 22 Oct 2026: ETF rule also runs on an actual stock");
     }
     #[test]
     fn detail_publishes_full_trade_return_precision_without_changing_legacy_rounding(){

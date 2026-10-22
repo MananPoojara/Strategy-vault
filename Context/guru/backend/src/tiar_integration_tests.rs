@@ -16,14 +16,14 @@ fn exact_tiar_dispatch_leaves_sob_prior_lists_and_macs_admission_unchanged(){
     // Exact RAW MACS is a separately reviewed source integration; strict/other ids above stay held.
     assert!(books::lkqts::stock_research_profile("lkqts_macs"));
     let macs=books::lkqts::catalogue().into_iter().find(|d|d.id=="lkqts_macs").unwrap();assert!(instrument_policy::reviewed_kestner_stock(&macs));
-    assert_eq!(instrument_policy::policy(&macs).allowed_types,&["individual_stock"]);assert_eq!(instrument_policy::policy(&macs).execution_scope,"single_symbol_stock_price_research");
+    assert_eq!(instrument_policy::policy(&macs).allowed_types,&["index","etf","individual_stock"]);assert_eq!(instrument_policy::policy(&macs).execution_scope,"single_symbol_stock_price_research");
     assert!(instrument_policy::metadata_json(&macs).contains(books::lkqts::MACS_SOURCE_PROFILE));assert!(instrument_policy::metadata_json(&macs).contains(books::lkqts::MACS_RAW_NUMERIC_CONVENTION));
     for p in books::lkqts::params("lkqts_macs").unwrap(){assert_eq!((p.def,p.min,p.max),(p.def,p.def,p.def));}
-    for ticker in ["NIFTY 50","SPX","SPY","AAPL"]{assert!(instrument_policy::check(&macs,ticker,false).is_some());}
-    let d=def();let p=instrument_policy::policy(&d);assert!(instrument_policy::reviewed_kestner_stock(&d));assert_eq!(p.allowed_types,&["individual_stock"]);assert_eq!(p.execution_scope,"single_symbol_stock_price_research");
+    for ticker in ["NIFTY 50","SPX","SPY"]{assert!(instrument_policy::check(&macs,ticker,false).is_none());}assert!(instrument_policy::check(&macs,"AAPL",false).is_some());
+    let d=def();let p=instrument_policy::policy(&d);assert!(instrument_policy::reviewed_kestner_stock(&d));assert_eq!(p.allowed_types,&["index","etf","individual_stock"]);assert_eq!(p.execution_scope,"single_symbol_stock_price_research");
     let metadata=instrument_policy::metadata_json(&d);assert!(metadata.contains(books::lkqts::TIAR_SOURCE_PROFILE));assert!(metadata.contains("comparison"));assert!(metadata.contains("separate acceptance gates"));assert!(metadata.contains("other runs need their own source/data/account checks"));assert!(metadata.contains("Data readiness alone does not prove a financially supported account"));assert!(metadata.contains("\"source_performance_reproduced\":false"));
     assert!(instrument_policy::check_native(&d,"AAPL",&baskets::NativeEvidence::us_test_fixture()).is_none());
-    for ticker in ["NIFTY 50","SPX","SPY","QQQ","AAPL"]{assert!(instrument_policy::check(&d,ticker,false).is_some());}
+    for ticker in ["NIFTY 50","SPX","SPY","QQQ"]{assert!(instrument_policy::check(&d,ticker,false).is_none());}assert!(instrument_policy::check(&d,"AAPL",false).is_some());
     let mut wrong=d;wrong.book="other";assert!(!instrument_policy::reviewed_kestner_stock(&wrong));assert_eq!(instrument_policy::policy(&wrong).requirement,"source_review_required");assert_eq!(gate::get(ID).unwrap().verdict,"unverified");assert_eq!(gate::get(ID).unwrap().ours,"");
 }
 #[test]
@@ -67,7 +67,8 @@ fn tiar_data_readiness_cannot_certify_nonpositive_account_and_basket_stays_held(
 }
 #[test]
 fn tiar_loaded_index_and_etf_cannot_forge_native_stock_policy(){
-    for ticker in ["SPX","SPY"]{let r=Box::leak(rows(&vec![100.;35],ticker).into_boxed_slice());let mut st=empty();st.ctxs.insert(ticker.into(),Ctx::new(r,r,&[]));let q=owned(&format!("id={ID}&ticker={ticker}&from=2000-01-01&to=2000-02-07&asset_type=individual_stock&native_stock=true"));let issue=instrument_policy::check(&def(),ticker,false).unwrap();assert_eq!(issue.status,"needs_data");let ready=readiness_json(&st,&q).unwrap();assert!(ready.contains("\"status\":\"needs_data\""));assert!(ready.contains(&esc(&issue.note)));let expected=format!("[{{\"id\":\"{ID}\",\"blocked\":\"{}\",\"readiness\":\"needs_data\"}}]",esc(&issue.note));assert_eq!(summary(&st,&q).unwrap(),expected);for result in [detail(&st,&q),optimize(&st,&q)]{assert_eq!(result.unwrap_err(),format!("needs_data: {}",issue.note));}}
+    // SPX/SPY admitted since 22 Oct 2026; a loaded unqualified stock ticker still cannot forge native identity.
+    for ticker in ["AAPL"]{let r=Box::leak(rows(&vec![100.;35],ticker).into_boxed_slice());let mut st=empty();st.ctxs.insert(ticker.into(),Ctx::new(r,r,&[]));let q=owned(&format!("id={ID}&ticker={ticker}&from=2000-01-01&to=2000-02-07&asset_type=individual_stock&native_stock=true"));let issue=instrument_policy::check(&def(),ticker,false).unwrap();assert_eq!(issue.status,"needs_data");let ready=readiness_json(&st,&q).unwrap();assert!(ready.contains("\"status\":\"needs_data\""));assert!(ready.contains(&esc(&issue.note)));let expected=format!("[{{\"id\":\"{ID}\",\"blocked\":\"{}\",\"readiness\":\"needs_data\"}}]",esc(&issue.note));assert_eq!(summary(&st,&q).unwrap(),expected);for result in [detail(&st,&q),optimize(&st,&q)]{assert_eq!(result.unwrap_err(),format!("needs_data: {}",issue.note));}}
 }
 #[test]
 fn tiar_causal_history_rejects_invalid_identity_dates_ohlc_and_parameters(){

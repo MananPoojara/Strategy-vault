@@ -44,6 +44,17 @@ macro_rules! ALPHA_TREND_LABEL {()=>{"Book tested on nine US sector ETFs (XLB..X
 macro_rules! CONNORS_INDEX_LABEL {()=>{"Book tested on US stocks; index/ETF runs are a declared application, not the author's test. Stock filters in the rule (minimum price, share volume, Liquidity Filter) are still calculated on the index's own price and volume and are always met there (the R3/R4 low-price $1-$15 band is never met), so they do not screen index runs."}}
 pub const CONNORS_INDEX_IDS:&[&str]=&["f1a","f3a","f4a","f4c","f4d","rsi2_5d","tps_stocks","x555","h10","r3r4_base","r3r4_base_scale","r3r4_bigcap","r3r4_bigcap_scale","r3r4_bigcap_deck","r3r4_bigcap_deck_scale","r3r4_lowprice","r3r4_lowprice_scale","ats_dvmtm","ats_cvr_equities","ats_15min_adx_breakout_equities","afactor_baseline","afactor_spx_down"];
 
+/// User decision 2026-10-22: these backtested single-instrument rules also run on actual indices, ETFs and
+/// stocks (US and India) as a visibly declared application. Admission only: rules, parameters and calculations are unchanged.
+pub const OPEN_ETF_RULES:&[(&str,&str)]=&[("hpetf","hpetf_3dhl_long"),("hpetf","hpetf_3dhl_long_aggr"),("hpetf","hpetf_mdd_long"),("hpetf","hpetf_mdd_long_aggr"),("hpetf","hpetf_mdu_short"),("hpetf","hpetf_mdu_short_aggr"),("hpetf","hpetf_pctb_long_aggr"),("hpetf","hpetf_pctb_short_aggr"),("hpetf","hpetf_r3_long"),("hpetf","hpetf_r3_long_aggr"),("hpetf","hpetf_rsi10_6_long"),("hpetf","hpetf_rsi90_94_short"),("hpetf","hpetf_rsi25_long_aggr"),("hpetf","hpetf_rsi75_short"),("hpetf","hpetf_tps_long"),("hpetf","hpetf_tps_short"),("stc9","tps_long"),("stc9","tps_short"),("alpha","alpha_spy_rsi4_mr"),("ststw","ststw_double7"),("ststw","ststw_overnight"),("hbqts","hbqts_cmo")];
+pub const OPEN_STOCK_RULES:&[(&str,&str)]=&[("ehmd","ehmd_mama"),("elcim","elcim_impulse"),("hbqts","hbqts_bb_breakout"),("hbqts","hbqts_cgo"),("hbqts","hbqts_dom"),("hbqts","hbqts_dpo"),("hbqts","hbqts_entry_id1"),("hbqts","hbqts_fixed_interval"),("hbqts","hbqts_limit_entry"),("hbqts","hbqts_macd_daily"),("hbqts","hbqts_profit_target"),("hbqts","hbqts_stoch_rsi"),("kfsc","kfsc_bollinger"),("kfsc","kfsc_pct_band"),("kfsc","kfsc_hv_day"),("kfsc","kfsc_dsm"),("kfsc","kfsc_macd"),("kfsc","kfsc_two_ma"),("lkqts","lkqts_cb4020"),("lkqts","lkqts_ma1040"),("lkqts","lkqts_macd"),("lkqts","lkqts_macd_literal_alpha"),("lkqts","lkqts_macs"),("lkqts","lkqts_mom80"),("lkqts","lkqts_rsi14"),("lkqts","lkqts_sob"),("lkqts","lkqts_tiar"),("lkqts","lkqts_volbo"),("sbma","sbma_x_10e20e"),("sbma","sbma_x_10e50e"),("sbma","sbma_x_10s200s"),("sbma","sbma_x_15e150e"),("sbma","sbma_x_15e30e"),("sbma","sbma_x_50s200s"),("sbma","sbma_x_5e50s"),("sbma","sbma_x_5s20s"),("sbma","sbma_sma50_long")];
+macro_rules! OPEN_ETF_LABEL {()=>{"Book tests ETFs; index and stock runs (US and India) are a declared application (user decision 22 Oct 2026), not the author's test. Rules and parameters are unchanged."}}
+macro_rules! OPEN_STOCK_LABEL {()=>{"Book tests stocks; index and ETF runs (US and India) are a declared application (user decision 22 Oct 2026), not the author's test. Rules and parameters are unchanged."}}
+pub fn open_instrument_label(def:&StrategyDef)->Option<&'static str> {
+    let key=(def.book,def.id);
+    if OPEN_ETF_RULES.contains(&key) {Some(OPEN_ETF_LABEL!())} else if OPEN_STOCK_RULES.contains(&key) {Some(OPEN_STOCK_LABEL!())} else {None}
+}
+
 pub fn reviewed_kestner_stock(def:&StrategyDef)->bool {
     def.book==crate::books::lkqts::BOOK && crate::books::lkqts::stock_research_profile(def.id)
 }
@@ -159,9 +170,9 @@ mod short_course_policy_tests {
     fn literal_momentum_applications_admit_only_exact_stock_ids() {
         for &id in crate::books::kfsc::MOMENTUM_STOCK_IDS {
             let d=crate::books::kfsc::catalogue().into_iter().find(|d|d.id==id).unwrap();assert!(reviewed_cash_rule(&d));
-            assert_eq!(policy(&d).allowed_types,&["individual_stock"]);assert!(check_native(&d,"AAPL",&NativeEvidence::us_test_fixture()).is_none());
+            assert_eq!(policy(&d).allowed_types,&["index","etf","individual_stock"]);assert!(check_native(&d,"AAPL",&NativeEvidence::us_test_fixture()).is_none());
             assert!(metadata_json(&d).contains("source_convention"));
-            for symbol in ["NIFTY 50","SPX","SPY","QQQ"] {assert!(check(&d,symbol,false).is_some());}
+            for symbol in ["NIFTY 50","SPX","SPY","QQQ"] {assert!(check(&d,symbol,false).is_none());}
             let mut other=d;other.book="kftsm";assert!(!reviewed_cash_rule(&other));
         }
         let d=crate::books::kfsc::catalogue().into_iter().find(|d|d.id=="kfsc_stoch").unwrap();assert!(!reviewed_cash_rule(&d));assert_eq!(policy(&d).requirement,"source_review_required");
@@ -170,10 +181,10 @@ mod short_course_policy_tests {
     fn exact_short_course_rules_require_actual_stocks_and_do_not_widen_other_sources() {
         for &id in crate::books::kfsc::REVIEWED_STOCK_IDS {
             let d=crate::books::kfsc::catalogue().into_iter().find(|d|d.id==id).unwrap();
-            assert!(reviewed_cash_rule(&d));let p=policy(&d);assert_eq!(p.allowed_types,&["individual_stock"]);
+            assert!(reviewed_cash_rule(&d));let p=policy(&d);assert_eq!(p.allowed_types,&["index","etf","individual_stock"]);
             assert!(p.source_basis.contains("source convention"));assert!(p.source_basis.contains("idealized"));
             assert!(check_native(&d,"AAPL",&NativeEvidence::us_test_fixture()).is_none());
-            for symbol in ["NIFTY 50","SPX","SPY","QQQ"] {assert!(check(&d,symbol,false).is_some());}
+            for symbol in ["NIFTY 50","SPX","SPY","QQQ"] {assert!(check(&d,symbol,false).is_none());}
             let mut wrong=d;wrong.book="kftsm";assert!(!reviewed_cash_rule(&wrong));
         }
         for id in ["kfsc_regression_band","kfsc_stoch"] {
@@ -187,6 +198,10 @@ mod short_course_policy_tests {
 /// method to a familiar book cannot inherit admission without a source review.
 pub fn policy(def:&StrategyDef)->Policy {
     let mut p=base_policy(def);
+    if open_instrument_label(def).is_some() {
+        p.requirement="index_etf_or_stock";p.allowed_types=&["index","etf","individual_stock"];
+        p.preferred_basket=Some("nifty50");p.market_adaptation=true;
+    }
     p.native_currency_constraint=match (def.book,def.id) {
         ("afactor","afactor_baseline"|"afactor_spx_down")=>Some("Alvarez Factor workbook p.13 filters the previous stock close above USD 10. The runner compares a literal price parameter with the INR close, which is not the same economic filter."),
         ("jc5dm","jc5dm_long")=>Some("Five Day Momentum p.10 requires the US stock price above USD 50 and pp.11-12 use a 1/16 USD stock tick. The runner's literal values do not establish an INR threshold or the actual NSE stock tick."),
@@ -583,6 +598,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if def.book==crate::books::ws5::BOOK && crate::books::ws5::reviewed_daily(def.id) && !crate::books::ws5::TIMING.contains(&def.id) {json.push_str(concat!(",\"stock_adaptation\":\"",WS5_STOCK_LABEL!(),"\""));}
     if def.book=="afactor" && crate::books::afactor::stock_rule(def.id) {json.push_str(concat!(",\"stock_adaptation\":\"",AFACTOR_STOCK_LABEL!(),"\""));}
     if matches!((def.book,def.id),("r3r4","r3r4_lowprice"|"r3r4_lowprice_scale")) {json.push_str(concat!(",\"stock_adaptation\":\"",USD_PRICE_US_LABEL!(),"\""));}
+    if let Some(label)=open_instrument_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));}
     if newrules_misc(def) && matches!(def.book,"hpetf"|"etfss") {json.push_str(concat!(",\"declared_application\":\"",NEWRULE_ANY_LABEL!(),"\""));}
     if def.book==crate::books::ws5::BOOK && crate::books::ws5::reviewed_daily(def.id) && !crate::books::ws5::TIMING.contains(&def.id) {json.push_str(concat!(",\"declared_application\":\"",WS5_INDEX_LABEL!(),"\""));}
     if def.book=="kfsc" && crate::books::kfsc::reviewed_hv_rule(def.id) {
@@ -617,9 +633,10 @@ mod tests {
     }
     #[test]
     fn exact_protected_elder_account_requires_actual_stocks_and_never_inherits(){
-        let d=def("elcim_impulse","elcim");assert!(reviewed_cash_rule(&d));assert_eq!(policy(&d).allowed_types,&["individual_stock"]);assert_eq!(policy(&d).execution_scope,"single_symbol_source_account");
+        let d=def("elcim_impulse","elcim");assert!(reviewed_cash_rule(&d));assert_eq!(policy(&d).allowed_types,&["index","etf","individual_stock"]);assert_eq!(policy(&d).execution_scope,"single_symbol_source_account");
         assert!(check(&d,"RELIANCE",true).is_none());assert!(check_native(&d,"AAPL",&NativeEvidence::us_test_fixture()).is_none());
-        for tk in ["NIFTY 50","SPX","SPY","QQQ","RELIANCE"]{assert!(check(&d,tk,false).is_some());}
+        for tk in ["NIFTY 50","SPX","SPY","QQQ"]{assert!(check(&d,tk,false).is_none());}
+        assert!(check(&d,"RELIANCE",false).is_some());
         assert!(!reviewed_cash_rule(&def("elcim_impulse","other")));
         for id in ["elcim_fi2","elcim_ts_fi","eltfl_sroc","elcim_new"]{let d=def(id,"elcim");assert!(!reviewed_cash_rule(&d));assert_eq!(policy(&d).requirement,"source_review_required");}
     }
@@ -629,7 +646,8 @@ mod tests {
             let d=def(id,"sbma");assert!(reviewed_cash_rule(&d));
             assert!(check(&d,"RELIANCE",true).is_none());
             assert!(check_native(&d,"AAPL",&NativeEvidence::us_test_fixture()).is_none());
-            for symbol in ["NIFTY 50","SPY","RELIANCE"] {assert!(check(&d,symbol,false).is_some());}
+            for symbol in ["NIFTY 50","SPY"] {assert!(check(&d,symbol,false).is_none());}
+            assert!(check(&d,"RELIANCE",false).is_some());
             assert!(metadata_json(&d).contains("\"source_performance_reproduced\":false"));
             assert!(!reviewed_cash_rule(&def(id,"other_book")));
         }
@@ -643,10 +661,11 @@ mod tests {
         for id in ["hbqts_ma5_25","hbqts_ma1_36","hbqts_limit_entry","hbqts_fixed_interval","hbqts_profit_target","hbqts_entry_id1","hbqts_bb_breakout","hbqts_cgo","hbqts_stoch_rsi","hbqts_dpo","hbqts_dom","hbqts_macd_daily"] {
             let d=def(id,"hbqts");assert!(reviewed_cash_rule(&d));
             assert!(check(&d,"RELIANCE",true).is_none());assert!(check(&d,"AAPL",true).is_none());
-            assert!(check(&d,"NIFTY 50",false).is_some());assert!(check(&d,"SPY",false).is_some());
+            let opened=open_instrument_label(&d).is_some();assert_eq!(opened,!matches!(id,"hbqts_ma5_25"|"hbqts_ma1_36"));
+            assert_eq!(check(&d,"NIFTY 50",false).is_none(),opened);assert_eq!(check(&d,"SPY",false).is_none(),opened);
         }
         let cmo=def("hbqts_cmo","hbqts");assert!(reviewed_cash_rule(&cmo));assert!(check(&cmo,"SPY",false).is_none());
-        assert!(check(&cmo,"NIFTY 50",false).is_some());assert!(check(&cmo,"AAPL",true).is_some());
+        assert!(check(&cmo,"NIFTY 50",false).is_none());assert!(check(&cmo,"AAPL",true).is_none());
         for id in ["hbqts_apz","hbqts_stop_entry","hbqts_common_signal","hbqts_rotation"] {
             let d=def(id,"hbqts");assert!(!reviewed_cash_rule(&d));assert_eq!(policy(&d).requirement,"source_review_required");
         }
@@ -988,9 +1007,9 @@ mod tests {
         let etf=def("hpetf_3dhl_long","hpetf");
         assert!(check(&etf,"SPY",false).is_none());
         assert!(check(&etf,"IWM",false).is_none());
-        assert!(check(&etf,"DJI",false).is_some());
-        assert!(check(&etf,"NIFTY 50",false).is_some());
-        assert!(check(&etf,"RELIANCE",true).is_some());
+        assert!(check(&etf,"DJI",false).is_none());
+        assert!(check(&etf,"NIFTY 50",false).is_none());
+        assert!(check(&etf,"RELIANCE",true).is_none());
     }
     #[test]
     fn radge_plain_review_does_not_admit_stops_or_other_instruments() {
@@ -1070,7 +1089,7 @@ mod tests {
     fn per_rule_exceptions_avoid_a_misleading_book_title_classification() {
         assert_eq!(policy(&def("lwrsr_oct_apr","lwrsr")).requirement,"index");
         assert_eq!(policy(&def("lwrsr_stock_selection","lwrsr")).requirement,"portfolio");
-        assert_eq!(policy(&def("alpha_spy_rsi4_mr","alpha")).requirement,"etf");
+        assert_eq!(policy(&def("alpha_spy_rsi4_mr","alpha")).requirement,"index_etf_or_stock");
         assert_eq!(policy(&def("alpha_weekly_mr_single","alpha")).requirement,"source_review_required");
         // Appendix A1 trend rule: single-instrument, no ranking -> actual ETF, index as a declared application; never a stock.
         let tf=def("alpha_trend_6m","alpha");
@@ -1089,7 +1108,7 @@ mod tests {
         assert!(check(&def("ststw_rsi2_under5","ststw"),"NIFTY 50",false).is_none());
         assert!(check(&def("ststw_rsi2_under5","ststw"),"SPY",false).is_some());
         assert!(check(&def("ststw_double7","ststw"),"SPY",false).is_none());
-        assert!(check(&def("ststw_double7","ststw"),"NIFTY 50",false).is_some());
+        assert!(check(&def("ststw_double7","ststw"),"NIFTY 50",false).is_none());
         assert!(check(&def("ststw_sp_short","ststw"),"SPY",false).is_none());
         assert!(check(&def("ststw_sp_short","ststw"),"NIFTY 50",false).is_none());
         assert!(check(&def("ststw_sp_short","ststw"),"RELIANCE",true).is_some());
@@ -1128,7 +1147,7 @@ mod tests {
         assert!(check_native(&def("f1a","stc9"),"AAPL",&e).is_none());
         assert!(check_native(&def("f3a","stc9"),"AABA-201910",&e).is_none());
         assert!(check_native(&def("r3","stc9"),"SPX",&e).is_some(),"Even an index-like ticker cannot change trusted stock type");
-        assert!(check_native(&def("hpetf_3dhl_long","hpetf"),"SPY",&e).is_some());
+        assert!(check_native(&def("hpetf_3dhl_long","hpetf"),"SPY",&e).is_none(),"Opened 22 Oct 2026: a trusted stock is admitted");
         for (id,book) in [("jc5dm_long","jc5dm"),("ats_cbp","ats")] {
             let issue=check_native(&def(id,book),"AAPL",&e).unwrap();assert_eq!(issue.status,"needs_data");assert!(issue.note.contains("USD"),"{id}");
         }
@@ -1147,7 +1166,7 @@ mod tests {
     #[test]
     fn ehlers_review_is_exact_and_mama_requires_actual_stock() {
         let mama=def("ehmd_mama","ehmd");
-        for ticker in ["NIFTY 50","SPY"] {assert!(check(&mama,ticker,false).is_some());}
+        for ticker in ["NIFTY 50","SPY"] {assert!(check(&mama,ticker,false).is_none());}
         assert!(check(&mama,"RELIANCE",true).is_none());
         assert!(check_native(&mama,"AAPL",&NativeEvidence::us_test_fixture()).is_none());
         for id in ["ehrs_sinetrend","ehrs_sinetrend_trend","ehrs_sinetrend_cp115","ehrs_sinetrend_cp115_trend"] {
@@ -1183,10 +1202,10 @@ mod next_burns_policy_tests {
     fn four_burns_long_versions_require_actual_stock_and_do_not_admit_shorts() {
         for &id in crate::books::sbma::FOUR_REVIEWED_STOCK_IDS {
             let d=crate::books::sbma::catalogue().into_iter().find(|d|d.id==id).unwrap();
-            let p=policy(&d);assert!(reviewed_cash_rule(&d));assert_eq!(p.allowed_types,&["individual_stock"]);
+            let p=policy(&d);assert!(reviewed_cash_rule(&d));assert_eq!(p.allowed_types,&["index","etf","individual_stock"]);
             assert!(p.market_adaptation);assert!(p.source_basis.contains("FOUR-LONG"));
             assert!(check_native(&d,"AAPL",&NativeEvidence::us_test_fixture()).is_none());
-            for ticker in ["NIFTY 50","SPX","SPY","QQQ"] {assert!(check(&d,ticker,false).is_some());}
+            for ticker in ["NIFTY 50","SPX","SPY","QQQ"] {assert!(check(&d,ticker,false).is_none());}
             let mut wrong=d;wrong.book="unknown";assert!(!reviewed_cash_rule(&wrong));
         }
         for id in ["sbma_sma200_short","sbma_x_10e30e_sar"] {
@@ -1198,7 +1217,7 @@ mod next_burns_policy_tests {
         let defs=crate::books::sbma::catalogue();
         for &id in crate::books::sbma::NEXT_REVIEWED_STOCK_IDS {
             let def=defs.iter().find(|d|d.id==id).unwrap();let p=policy(def);
-            assert!(reviewed_cash_rule(def)); assert_eq!(p.allowed_types,&["individual_stock"]);
+            assert!(reviewed_cash_rule(def)); assert_eq!(p.allowed_types,&["index","etf","individual_stock"]);
             assert!(p.market_adaptation); assert!(p.source_basis.contains("hypothetical"));
             let mut wrong_book=crate::books::sbma::catalogue().into_iter().find(|d|d.id==id).unwrap();wrong_book.book="unknown";assert!(!reviewed_cash_rule(&wrong_book));
         }
@@ -1219,9 +1238,10 @@ mod kestner_next_policy_tests {
         for &id in crate::books::lkqts::NEXT_CANDIDATE_IDS {
             let d=definition(id);let p=policy(&d);
             assert!(reviewed_kestner_stock(&d));assert!(reviewed_cash_rule(&d));
-            assert_eq!(p.allowed_types,&["individual_stock"]);assert_eq!(p.execution_scope,"single_symbol_stock_price_research");
+            assert_eq!(p.allowed_types,&["index","etf","individual_stock"]);assert_eq!(p.execution_scope,"single_symbol_stock_price_research");
             assert!(p.source_basis.contains("declared conventions"));assert!(p.source_basis.contains("nonpositive"));
-            for symbol in ["SPX","NDX","SPY","QQQ","NIFTY 50","AAPL","NIFTY31JAN2008FUT"] {assert!(check(&d,symbol,false).is_some());}
+            for symbol in ["SPX","NDX","SPY","QQQ","NIFTY 50"] {assert!(check(&d,symbol,false).is_none());}
+            for symbol in ["AAPL","NIFTY31JAN2008FUT"] {assert!(check(&d,symbol,false).is_some());}
             assert!(check_native(&d,"AAPL",&NativeEvidence::us_test_fixture()).is_none());
             let json=metadata_json(&d);assert!(json.contains("\"source_performance_reproduced\":false"));assert!(json.contains("\"source_convention\":"));
             let mut forged=d;forged.book="another_book";assert!(!reviewed_kestner_stock(&forged));assert!(!reviewed_cash_rule(&forged));

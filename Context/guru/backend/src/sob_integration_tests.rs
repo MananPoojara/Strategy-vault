@@ -15,11 +15,12 @@ fn exact_sob_profile_dispatch_does_not_expand_the_prior_seven_lists_or_other_boo
     assert!(books::lkqts::stock_research_profile(ID));assert!(books::lkqts::sob_candidate(ID));
     for id in ["lkqts_mom20","lkqts_sob_inclusive","lkqts_sob2","lkqts_macdhr","sob"]{assert!(!books::lkqts::stock_research_profile(id));}
     let d=sob_def();assert!(matches!(d.status,Status::Live));assert!(instrument_policy::reviewed_kestner_stock(&d));
-    let p=instrument_policy::policy(&d);assert_eq!(p.allowed_types,&["individual_stock"]);assert_eq!(p.execution_scope,"single_symbol_stock_price_research");
+    let p=instrument_policy::policy(&d);assert_eq!(p.allowed_types,&["index","etf","individual_stock"]);assert_eq!(p.execution_scope,"single_symbol_stock_price_research");
     let metadata=instrument_policy::metadata_json(&d);assert!(metadata.contains(books::lkqts::SOB_PROPOSED_PROFILE));assert!(metadata.contains("\"source_performance_reproduced\":false"));
     assert!(metadata.contains("\"normalized_account_model\":\"sequential_full_allocation_price_returns\""));assert!(metadata.contains("Intel"));
     assert!(instrument_policy::check_native(&d,"AAPL",&baskets::NativeEvidence::us_test_fixture()).is_none());
-    for ticker in ["NIFTY 50","SPX","SPY","QQQ","AAPL"] {assert!(instrument_policy::check(&d,ticker,false).is_some());}
+    for ticker in ["NIFTY 50","SPX","SPY","QQQ"] {assert!(instrument_policy::check(&d,ticker,false).is_none());}
+    assert!(instrument_policy::check(&d,"AAPL",false).is_some());
     let mut wrong=d;wrong.book="other";assert!(!instrument_policy::reviewed_kestner_stock(&wrong));assert_eq!(instrument_policy::policy(&wrong).requirement,"source_review_required");
     assert_eq!(crate::gate::get(ID).unwrap().verdict,"unverified");assert_eq!(crate::gate::get(ID).unwrap().ours,"");
 }
@@ -78,7 +79,8 @@ fn source_readiness_and_account_domain_remain_separate_and_basket_is_held(){
 fn loaded_synthetic_index_etf_public_handlers_return_exact_stock_policy_holds(){
     // Bounded synthetic observations test loaded-context routing only. They are
     // never presented as actual SPX/SPY prices or source performance evidence.
-    for ticker in ["SPX","SPY"] {
+    // SPX/SPY are admitted since 22 Oct 2026; a loaded unqualified stock ticker still cannot forge native identity.
+    for ticker in ["AAPL"] {
         let r=Box::leak(rows(&vec![100.;131],ticker).into_boxed_slice());let x=Ctx::new(r,r,&[]);
         let mut st=empty();st.ctxs.insert(ticker.into(),x);
         let q=owned(&format!("id=lkqts_sob&ticker={ticker}&from=2000-01-01&to=2000-05-19&asset_type=individual_stock&native_stock=true"));

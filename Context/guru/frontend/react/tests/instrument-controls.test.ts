@@ -110,3 +110,13 @@ it('describes the reviewed Bandy single-instrument cash account without imposing
  expect(etf.note).toContain('admitted ETF above');expect(etf.basket).toBe(false);
  expect(controls.note).not.toContain('risk account');
 });
+
+describe('declared open-instrument application', () => {
+  it('routes a stock-research rule to index/ETF only when the API declares it', () => {
+    const policy = {allowed_types:['index','etf','individual_stock'],execution_scope:'single_symbol_stock_price_research',declared_application:'Book tests stocks; index and ETF runs are a declared application.'};
+    for (const id of [undefined,'lkqts_sob']) {
+      const c = instrumentControls(policy,id,'lkqts');
+      expect([c.stock,c.index,c.basket,c.etf]).toEqual([true,true,false,true]);
+    }
+  });
+});
