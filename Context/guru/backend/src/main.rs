@@ -58,7 +58,9 @@ mod guru_ownership_tests {
         assert!(connors.iter().all(|d| !d.book.starts_with("jr_")));
         assert!(connors.iter().all(|d| d.book != books::chande::BOOK));
         assert!(ross.iter().all(|d| d.book.starts_with("jr_")));
-        assert!(ross.iter().all(|d| d.status != Status::Live && d.claim.is_none()));
+        // only the reviewed Joe Ross rules (books::joe_ross_rules) run; the source references stay held, nothing claims a book result
+        assert!(ross.iter().all(|d| d.claim.is_none() && (d.status != Status::Live || books::joe_ross_rules::reviewed(d.id))));
+        assert_eq!(ross.iter().filter(|d| d.status == Status::Live).count(), books::joe_ross_rules::REVIEWED.len());
         assert!(guru_catalogue("unknown").is_empty());
         let chande= guru_catalogue("chande");
         assert_eq!(chande.len(),5);

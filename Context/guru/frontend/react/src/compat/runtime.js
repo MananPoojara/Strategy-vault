@@ -953,8 +953,13 @@ function sourceBlockers(v) {
   const blocks=VaultResearch.blockers(sourceEvidence(v));
   return blocks.length?`<div data-source-blockers>${blocks.map(b=>`<div data-blocker="${b.status}"><h4>${esc(b.label)}</h4><ul>${b.items.map(t=>`<li>${esc(t)}</li>`).join('')}</ul></div>`).join('')}</div>`:'';
 }
+// Joe Ross: admitted rules (backend books/joe_ross_rules) are live and shown like any other book's results;
+// the page-cited references stay held. Counts come from the served catalogue, never from fixed text.
+const rossLiveIds = () => ALLCAT.filter(v => v.guru === 'ross' && v.status === 'live');
+const rossBookLive = id => ALLCAT.some(v => v.book === id && v.guru === 'ross' && v.status === 'live');
+const rossCounts = () => { const live = rossLiveIds(); return { methods: new Set(live.map(v => v.family)).size, rules: live.length }; };
 function sourceResearchAuthors() {
-  return `<section class="box" data-source-research><div class="box-h">Source research <small>Book references awaiting complete rules and market data</small></div><p>These sources are being reviewed. They have no implemented backtests and are excluded from performance rankings.</p><a class="research-author" href="${guruLink('ross')}"><div class="cover">${pframe(GURU.ross)}<div><h3>Joe Ross</h3><p>20 source methods · 40 directional references · 0 implemented backtests</p><p><b>Data missing · Rules unresolved</b></p><span class="dbtn sm">Open source review</span></div></div></a></section>`;
+  return `<section class="box" data-source-research><div class="box-h">Source research <small>Book references awaiting complete rules and market data</small></div><p>These sources are being reviewed. They have no implemented backtests and are excluded from performance rankings.</p><a class="research-author" href="${guruLink('ross')}"><div class="cover">${pframe(GURU.ross)}<div><h3>Joe Ross</h3><p>${rossCounts().methods} methods backtested · other source methods held</p><p><b>Held methods: data missing · rules unresolved</b></p><span class="dbtn sm">Open source review</span></div></div></a></section>`;
 }
 function familyDisplayName(v){return catalogueMethodLabel(v,ALLCAT);}
 function gptSection(v,tk,d=null,issue=null) {
@@ -1341,8 +1346,9 @@ function readRoute() {
   S.position_choice=['10','20','custom'].includes(S.position_choice)?S.position_choice:'10';
   if(!pristineMethod(R.id,PRISTINE_BOOK))S.cost='0'; // Legacy interface retains its existing fee setting.
   if (R.name === 'guru') S.guru = R.id;
-  if (S.book?.startsWith('jr_') && !new URLSearchParams(q).has('tab')) S.tab='awaiting';
-  if (S.book?.startsWith('jr_') && !BOOK[S.book]?.year && S.tab==='working') S.tab='awaiting';
+  // a Ross book without backtested rules opens on its held references; books with measured results behave like any other book
+  if (S.book?.startsWith('jr_') && !rossBookLive(S.book) && !new URLSearchParams(q).has('tab')) S.tab='awaiting';
+  if (S.book?.startsWith('jr_') && !rossBookLive(S.book) && !BOOK[S.book]?.year && S.tab==='working') S.tab='awaiting';
   // Use each source-qualified basket only with the market engine that admitted it.
   if(S.region==='us'&&(TICK_US||pristineMethod(R.id,PRISTINE_BOOK))){API=API_US;BASKETS=BASKETS_US;}else{if(!(S.region==='all'&&R.name==='all'&&TICK_US)){S.region='in';}else{S.tk='ALL';S.basket='';}API=API_IN;BASKETS=BASKETS_IN;}
   const pool=S.region==='us'?TICK_ALL_US:TICK_ALL_IN, indices=S.region==='us'?TICK_US:TICK_IN;
@@ -1460,7 +1466,7 @@ let PV = true;
 window.togglePV = () => { PV = !PV; render(); };
 async function viewHome() {
   const h = await heroStats(), readiness=await getReadiness(h.tk), allRecords=libraryRecords(), visibleAuthors=VaultLibraryBrowser.matchingAuthors(LIB,allRecords,S.library_q,S.book_category), live = LIB.filter(g => g.books.some(b => b.live)), pre = LIB.filter(g => !g.books.some(b => b.live));
-  const implementedFamilies=new Set(CAT.filter(v=>v.status==='live' && v.guru!=='ross').map(v=>v.family)).size;
+  const implementedFamilies=new Set(CAT.filter(v=>v.status==='live').map(v=>v.family)).size;
   const scoped=Object.fromEntries(await Promise.all(live.map(async g=>[g.id,await heroStats(g.id)])));
   HOME_STATS = scoped;
   const awaitedSummary=await getSum(h.tk),cardStates=Object.fromEntries(LIB.map(g=>[g.id,VaultLibraryDiscovery.authorAvailability(g.books.map(b=>b.id),CAT,awaitedSummary,readiness)]));
@@ -1496,7 +1502,7 @@ const FILTERS = {
   mode: { t: 'Browse', noAll: true, vals: () => Object.entries(MODES) },
   tk: { t: 'Market', noAll: true, cur: () => S.market !== 'india' ? '@' + S.market : S.tk, vals: () => [...TICKERS.map(t => [t.ticker, LABEL[t.ticker]]), ['ALL', isUS() ? 'All US indices' : 'All Indian indices'], ['@global', 'Global · soon'], ['@stocks', 'Single stocks · soon']], set: v => v.startsWith('@') ? { market: v.slice(1) } : { market: 'india', tk: v } },
   tab: { t: 'Rank by', noAll: true, vals: () => Object.entries(TABS).filter(([k])=>PUB || k!=='working').map(([k, x]) => [k, x.name]), set: v => ({ tab: v, sort: 'primary' }) },
-  guru: { t: 'Guru', vals: () => LIB.map(g => [g.id, g.name+(g.id==='ross'?' · Source research':'')]), set: v => ({ guru: v, book: '' }) },
+  guru: { t: 'Guru', vals: () => LIB.map(g => [g.id, g.name+(g.id==='ross'&&!rossLiveIds().length?' · Source research':'')]), set: v => ({ guru: v, book: '' }) },
   book: { t: 'Book', vals: () => Object.values(BOOK).filter(b => !S.guru || b.guru.id === S.guru).map(b => [b.id, b.title + (b.live ? '' : ' · soon')]) },
   style: { t: 'Style', vals: () => [...new Set(CAT.map(v => v.style))].map(x => [x, x]) },
   dir: { t: 'Direction', vals: () => [['Long', 'Long'], ['Short', 'Short']] },
@@ -1561,7 +1567,9 @@ async function viewList() {
 }
 // A guru's books as covers; opening one shows its strategies.
 function rossResearchNotice() {
-  return `<section class="box" data-ross-review><div class="box-h">Source research — no implemented backtests <small>GPT’s source review · full corpus review in progress</small></div><p><b>Data missing:</b> actual traded futures history, contract identities and roll treatment, tick/point values and execution costs. Some methods also require intraday prices or volume. The loaded cash-index bars do not supply these inputs.</p><p><b>Rules unresolved:</b> entries require context or judgment, and exits, stops or sizing are not fully specified. More data alone does not produce a complete book-faithful strategy. Each method lists its own requirements below.</p><p>${esc(window.JoeRossEvidence.scope)}</p><p>${esc(window.JoeRossEvidence.finding)}</p><p>The original bounded review covered 125 PDF copies with 59 distinct files. The current source inventory below also includes later imports; neither file count establishes a count of distinct books. Sweet Chariot's originally supplied chapter is damaged. No verified Joe Ross US or Indian performance is published; open a reviewed method for its page references and precise blockers.</p></section>`;
+  const n=rossCounts();
+  const admitted=n.methods?`<p><b>Backtested:</b> ${n.methods} methods (${n.rules} rule sets) whose complete rules were read from the books and checked against independent trade ledgers: ZULU, AMBUSH, the Trading by the Book ledge, the TNT I simple count, Bollinger Method #2, and the 1-2-3 and Ross Hook with labelled standard exits. They run on indices, ETFs and stocks as a declared application (Ross traded futures); every convention not from the book is labelled on the strategy page. The source methods below stay held.</p>`:'';
+  return `<section class="box" data-ross-review><div class="box-h">${n.methods?`Joe Ross — ${n.methods} methods backtested, the rest held`:'Source research — no implemented backtests'} <small>Source review · full corpus read 22-23 Oct 2026</small></div>${admitted}<p><b>Held methods — data missing:</b> actual traded futures history, contract identities and roll treatment, tick/point values and execution costs. Some methods also require intraday prices or volume. The loaded cash-index bars do not supply these inputs.</p><p><b>Rules unresolved:</b> entries require context or judgment, and exits, stops or sizing are not fully specified. More data alone does not produce a complete book-faithful strategy. Each method lists its own requirements below.</p><p>${esc(window.JoeRossEvidence.scope)}</p><p>${esc(window.JoeRossEvidence.finding)}</p><p>The original bounded review covered 125 PDF copies with 59 distinct files. The current source inventory below also includes later imports; neither file count establishes a count of distinct books. Sweet Chariot's originally supplied chapter is damaged. Held methods publish no performance; open one for its page references and precise blockers.</p></section>`;
 }
 function sourceBookShelf(g) {
   const audit=BOOK_COVERAGE.authors[g.id];if(!audit)return '';
@@ -1681,7 +1689,7 @@ function rulesPanel(v) {
   const sec = { F: [], E: [], A: [], X: [] }; (v.rules || []).forEach(x => { const [t, ...r] = x.split('|'); (sec[t] || sec.E).push(r.join('|')); });
   const act = r => /^(Buy|Short|Sell|Cover|Next day|No other signal|Once|After|Stop)/.test(r);
   const col = (t, sub, c, items) => items.length ? `<div class="rcol"><h4><i style="background:${c}"></i>${t}</h4><p class="rsub">${sub}</p><ul>${items.map(r => `<li class="${act(r) ? 'act' : ''}">${esc(r)}</li>`).join('')}</ul></div>` : '';
-  return `<div class="rgrid">${col('Conditions', 'All must be true (trend, liquidity, volatility filters)', 'var(--ink)', sec.F)}${col('Entry', v.guru==='ross'?'Source entry conditions; unresolved choices remain explicit':'When all of these happen on a bar’s close', 'var(--blue)', sec.E)}${col('Scale-in', 'While the trade is open', '#8b93a1', sec.A)}${col('Exit', v.guru==='ross'?'Source management; a complete automatic exit is not assumed':sec.X.length > 1 ? 'Whichever happens first' : 'How the trade is closed', 'var(--red)', sec.X)}</div>${v.notes ? `<p class="rnote">${esc(v.notes)}</p>` : ''}`;
+  return `<div class="rgrid">${col('Conditions', 'All must be true (trend, liquidity, volatility filters)', 'var(--ink)', sec.F)}${col('Entry', v.guru==='ross'&&v.status!=='live'?'Source entry conditions; unresolved choices remain explicit':'When all of these happen on a bar’s close', 'var(--blue)', sec.E)}${col('Scale-in', 'While the trade is open', '#8b93a1', sec.A)}${col('Exit', v.guru==='ross'&&v.status!=='live'?'Source management; a complete automatic exit is not assumed':sec.X.length > 1 ? 'Whichever happens first' : 'How the trade is closed', 'var(--red)', sec.X)}</div>${v.notes ? `<p class="rnote">${esc(v.notes)}</p>` : ''}`;
 }
 async function viewPristineStrategy(v,tk,crumbs,selection,runApi,generation,optimization){
  const stocks=TICK_ALL_US.flatMap(row=>pristineInstrumentContext(row.ticker,'us',[row])?[{ticker:row.ticker,symbol:row.symbol}]:[]);
@@ -2012,7 +2020,7 @@ document.addEventListener('click', e => {
   if (d.set != null) return setState(Object.fromEntries(new URLSearchParams(d.set)));
   if (d.fam) return setState({ family: d.fam, mode: 'variants' });
   if (d.sort) return setState({ sort: d.sort });
-  if (d.book) return go('/guru/' + BOOK[d.book].guru.id, {view:'grid',book:d.book,tk:S.tk,basket:S.basket,from:S.from,to:S.to, ...(BOOK[d.book].guru.id==='ross'?{tab:'awaiting'}:{}) });
+  if (d.book) return go('/guru/' + BOOK[d.book].guru.id, {view:'grid',book:d.book,tk:S.tk,basket:S.basket,from:S.from,to:S.to, ...(BOOK[d.book].guru.id==='ross'&&!rossBookLive(d.book)?{tab:'awaiting'}:{}) });
   if (d.guru) return go('/guru/'+d.guru,{view:'grid',tk:S.tk,basket:S.basket,from:S.from,to:S.to});
   if (d.guruStrats) return go('/guru/'+d.guruStrats,{view:'grid',tk:S.tk,basket:S.basket,from:S.from,to:S.to});
 });

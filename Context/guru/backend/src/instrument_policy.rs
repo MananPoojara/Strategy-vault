@@ -263,7 +263,29 @@ pub const R3R4_LOWPRICE_HELD:&str="R3/R4 Low Priced Rules are defined by the sto
 pub fn inr_price_filter_omitted(def:&StrategyDef,market:Market)->bool {
     market==Market::India && def.book=="afactor" && crate::books::afactor::stock_rule(def.id)
 }
+// ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
+/// Reviewed Joe Ross daily rules (books::joe_ross_rules::REVIEWED): actual indices, ETFs and stocks, US and India, as a
+/// labelled declared application. The source references in books::joe_ross stay held (source review).
+fn joe_ross_policy(def:&StrategyDef)->Option<Policy> {
+    use crate::books::joe_ross_rules as jr;
+    if !def.book.starts_with("jr_") || !jr::reviewed(def.id) {return None;}
+    let basis=match def.book {
+        jr::ZULU=>"Joe Ross, ZULU Trading Method (course package, pp.11-13): the author trades CBOT soybean futures on daily bars. Actual index, ETF and stock runs (US and India) are a declared application, not the author's test. The 32/16-tick target/stop use 1 tick = 0.04% of the previous close, the book's own soybean ratio (pp.14-16); 0.01% / the real stock tick is a labelled option [declared convention]. Cash-index shorts are hypothetical exposure. No futures dollars or book statistics are reproduced.",
+        jr::AMBUSH=>"Joe Ross, AMBUSH Trading Method (course package, pp.9-11): the author trades CBOT wheat and corn futures on daily bars. Actual index, ETF and stock runs (US and India) are a declared application, not the author's test. The 30/40-tick target/stop use 1 tick = 0.1% of the previous close, the book's own wheat/corn ratio (pp.12-17); 0.01% / the real stock tick is a labelled option [declared convention]. Cash-index shorts are hypothetical exposure. No futures dollars or book statistics are reproduced.",
+        jr::TBTB=>"Joe Ross, Trading by the Book Part V ledge rules (pp.238-246): the author trades US futures on daily bars. Actual index, ETF and stock runs (US and India) are a declared application, not the author's test. Tick offsets and the 1-2 tick match use 1 tick = 0.015% of the previous close, the book's S&P ratio (p.246); 0.01% / the real stock tick and a wider %-of-price match are labelled options; the swing-leg reading of Rules 6 and 10 is a declared convention. Cash-index shorts are hypothetical exposure.",
+        jr::TNT1=>"Joe Ross, Electronic Trading TNT I (simple count, pp.230-232): shown on intraday stock charts and said to apply to daily charts. Daily actual stock runs and actual index/ETF runs (US and India) are a declared application, not the author's test. Ticks: tick_pct % of the previous close (auto: real tick on a stock). Cash-index shorts are hypothetical exposure.",
+        jr::TNT3=>"Joe Ross, Electronic Trading TNT III (Bollinger Bands Method #2, pp.218-220): shown on an intraday Microsoft chart. Daily actual stock runs and actual index/ETF runs (US and India) are a declared application, not the author's test. Ticks: tick_pct % of the previous close (auto: real tick on a stock). Cash-index shorts are hypothetical exposure.",
+        _=>"Joe Ross, The Law of Charts (1-2-3 and Ross Hook definitions) with the initial stops of Trading by the Book (pp.80, 375): the author trades futures (and stocks in the TNT series). The book gives no complete exit, so the user's standard exits are labelled [Not from the book]. Actual index, ETF and stock runs (US and India) are a declared application, not the author's test. Ticks: tick_pct % of the previous close (auto: real tick on a stock). Cash-index shorts are hypothetical exposure.",
+    };
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],basis);
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;
+    Some(p)
+}
+// ---- end Joe Ross block ----
 fn base_policy(def:&StrategyDef)->Policy {
+    // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
+    if let Some(p)=joe_ross_policy(def) {return p;}
+    // ---- end Joe Ross block ----
     if reviewed_kestner_stock(def) && crate::books::lkqts::macs_candidate(def.id) {
         let mut p=stock("Kestner printed207 MACS, exact close-SMA n/4n for n1..20 and RAW native-decimal vote comparisons. Detailed-prose inclusive score>=60/<=40 is the named primary; strict summary and systems-on-long-trades equality ambiguity remain disclosed. Daily pair ties contribute zero long votes as a declared convention. Complete80 actual closes/first state79/fill80, genuine prefix, flat selected start and next actual open opposite reversal are declared research conventions. Both fixed AAPL1990–2001/RELIANCE2001–2010 full-prefix source comparisons matched unchanged exact references across all20 pairs with zero mismatches. Shared-author mechanical corroboration is not blind independence. Fixed AAPL1990-01-01..2001-12-31 and RELIANCE2001-01-01..2010-12-31: MACS and TIAR each matched four ordinary normalized-account cases (fees/slippage0/0 and3/2bps per side, rollover0) and16 direct production-function responses (detail, readiness, selected summary, singleton optimizer) against unchanged source/account references with zero mismatches (combined32responses/eightaccounts). Selected API states and earlier full-prefix source evidence have separate scope. HTTP transport/request-matrix, browser and deployment are separate acceptance gates. Every requested run still needs its own source/data/account checks; data readiness alone does not certify account support. Source agreement and these stock checks do not reproduce original mixed-instrument volatility-dollar sizing or book performance. Actual server-qualified single stocks only: no index/ETF/derivative/basket substitution, quote-unit/adjustment/calendar/borrow/margin/financing/dividend/historical-membership certification. Terminal open marks stay outside closed trade stats and retain separately labelled legacy liquidation-cost estimates.");
         p.execution_scope="single_symbol_stock_price_research";p.market_adaptation=true;return p;
@@ -681,6 +703,25 @@ mod tests {
         StrategyDef { id, book, name: "Test", group: "Test", session: 0, dir: "Long", status: Status::Live,
             needs_volume: false, needs_vix: false, needs_series: &[], rules: &[], notes: "", claim: None }
     }
+    // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
+    #[test]
+    fn joe_ross_reviewed_rules_run_on_indices_etfs_and_stocks_and_references_stay_held() {
+        use crate::books::{joe_ross,joe_ross_rules as jr};
+        let cat=jr::catalogue();
+        assert_eq!(cat.len(),jr::REVIEWED.len());
+        for d in &cat {
+            let p=policy(d);
+            assert_eq!((p.requirement,p.allowed_types,p.market_adaptation),("index_etf_or_stock",&["index","etf","individual_stock"][..],true),"{}",d.id);
+            assert!(p.source_basis.contains("declared application"),"{}",d.id);
+            for t in ["SPX","NDX","DJI","SPY","QQQ","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            for t in ["AAPL","RELIANCE"] {assert!(check(d,t,true).is_none(),"{} {t}",d.id);}
+        }
+        for d in joe_ross::catalogue() {
+            assert_eq!(policy(&d).requirement,"source_review_required","{}",d.id);
+            assert!(check(&d,"SPX",false).is_some_and(|i|i.status=="not_testable"),"{}",d.id);
+        }
+    }
+    // ---- end Joe Ross block ----
     #[test]
     fn exact_protected_elder_account_requires_actual_stocks_and_never_inherits(){
         let d=def("elcim_impulse","elcim");assert!(reviewed_cash_rule(&d));assert_eq!(policy(&d).allowed_types,&["index","etf","individual_stock"]);assert_eq!(policy(&d).execution_scope,"single_symbol_source_account");
