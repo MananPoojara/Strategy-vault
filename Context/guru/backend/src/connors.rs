@@ -622,7 +622,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         id, name, group, session, dir, status, needs_volume: false, needs_vix: false, needs_series: &[], book: "stc9", rules, notes, claim,
     };
     let vx = |def: StrategyDef| StrategyDef { needs_vix: true, ..def };
-    const VIXNOTE: &str = "Course used the CBOE VIX; here India VIX (NSE), daily bars built from 1-minute data (padded bars excluded). Window starts Jan 2015.";
+    const VIXNOTE: &str = "Course used the CBOE VIX on SPY (1995-2009). US runs use the CBOE VIX; India runs use India VIX (NSE), daily bars built from 1-minute data (padded bars excluded).";
     let mut v = vec![
         // ---- Session 1: the 4 keys + RSI2 + R3
         d("f1a", "Test 1a · Above 200-day MA", "Foundation (4 Keys)", 1, "Long", Live,
