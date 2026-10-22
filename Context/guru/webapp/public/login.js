@@ -2,13 +2,15 @@ const requestedNext = new URLSearchParams(location.search).get('next') || '/';
 const nextValue = requestedNext + (!requestedNext.includes('#') ? (location.hash || '') : '');
 const next = nextValue.startsWith('/') && !nextValue.startsWith('//') && !/[\\\x00-\x1f\x7f]/.test(nextValue) && !nextValue.startsWith('/login') ? nextValue : '/';
 fetch('/api/app/me').then(r => { if (r.ok) location.replace(next); }).catch(() => {});
+// A plain username signs in as <username>@vault.local (accounts are stored by email).
+const loginEmail=v=>{v=v.trim().toLowerCase(); return v.includes('@')?v:v+'@vault.local';};
 document.querySelector('#login-form').addEventListener('submit', async event => {
   event.preventDefault(); const button=document.querySelector('#submit'), message=document.querySelector('#message');
   const buttonContent=button.innerHTML;
   button.disabled=true; button.setAttribute('aria-busy','true'); button.textContent='Signing in…'; message.textContent='';
   try {
-    const response=await fetch('/api/auth/sign-in/email',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:document.querySelector('#email').value.trim(),password:document.querySelector('#password').value})});
-    if(!response.ok) throw new Error(response.status===429?'Too many attempts. Please wait a minute and try again.':'Could not sign in. Check your email and password.');
+    const response=await fetch('/api/auth/sign-in/email',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:loginEmail(document.querySelector('#email').value),password:document.querySelector('#password').value})});
+    if(!response.ok) throw new Error(response.status===429?'Too many attempts. Please wait a minute and try again.':'Could not sign in. Check your username and password.');
     document.querySelector('#password').value=''; location.replace(next);
   } catch(error) { message.textContent=error.message; button.disabled=false; button.removeAttribute('aria-busy'); button.innerHTML=buttonContent; }
 });
