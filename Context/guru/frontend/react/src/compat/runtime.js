@@ -352,6 +352,7 @@ function optimInit() {
     $('#oform').addEventListener('submit', e => { e.preventDefault(); runOpt(); });
     optCount();
     const c = OPT.cache[optKey(v.id, tk)]; if (c) showOpt(c.res);
+    if (OPT.runAfterPeriod) { OPT.runAfterPeriod = false; if (!c && !$('#orun').disabled) runOpt(); }
   }
   if ($('#cc-body') && (OPT.schemaSync[v.id] || []).length && (!window.VAULT_APP || window.VAULT_USER?.role !== 'viewer')) conclusionRun(v, tk);
   const key = `${v.id}.${S.region}`, noteText = $('#yt-text'), noteMessage = $('#yt-msg');
@@ -366,6 +367,7 @@ const optQuery = (v, tk, w, g, slim) => { const q = new URLSearchParams({ id: v.
 async function fetchOpt(q, api=API) { const r = await fetch(enginePath(q.get('id'),'optimize',api)+'?'+q), b = await r.text(); if (!r.ok) { let message = b; try { message = JSON.parse(b).error || b; } catch {} throw new Error(message); } return JSON.parse(b); }
 
 async function runOpt() {
+  const pending = ytPeriod(); if (Object.keys(pending).length) { OPT.runAfterPeriod = true; return go(R.path, { ...S, ...pending }); }
   const { v, tk } = STRAT, g = OPT.grids[v.id], key=optKey(v.id,tk), out=$('#opt-out');
   const n = optCount(); $('#orun').disabled = true; $('#otime').textContent = `Running ${n0(n)} backtests…`;
   $('#opt-out').innerHTML = bookLoader(`Running ${n0(n)} backtests in Rust…`);
@@ -400,7 +402,7 @@ function showOpt(res) {
   const an = { res, rows, pick: top[0], def };
   const drawHx = () => { OPT.hx[v.id] = [$('#hx-x').value, $('#hx-y').value, $('#hx-m').value]; $('#hx').innerHTML = heatGrid(an, ...OPT.hx[v.id]); };
   if (dims.length) { drawHx(); ['#hx-x', '#hx-y', '#hx-m'].forEach(s => $(s).onchange = drawHx); }
-  out.onclick = e => { const b_ = e.target.closest('[data-apply]'); if (b_) go(R.path, { ...S, p: b_.dataset.apply }); };
+  out.onclick = e => { const b_ = e.target.closest('[data-apply]'); if (b_) go(R.path, { ...S, ...ytPeriod(), p: b_.dataset.apply }); };
   if ($('#grid-xlsx')) $('#grid-xlsx').onclick=async()=>{const b=$('#grid-xlsx');b.disabled=true;try{await exportFullGrid(res,v,STRAT.tk);}catch(err){b.textContent='Export failed: '+err.message;}finally{b.disabled=false;}};
   if ($('#oxlsx')) $('#oxlsx').onclick = async () => { const b = $('#oxlsx'); b.disabled = true; b.textContent = 'Building Excel…';
     const tk=STRAT.tk,win={from:S.from,to:S.to},context={api:API,cost:S.cost,slippage:S.slippage||'0',rollover:S.rollover||'0',pub:PUB,us:isUS(),first:tkSpan(tk).first,selectionLabel:'Manual grid window'};
@@ -512,7 +514,7 @@ function gptRecordsHtml(D) {
 function gptConclusionWire(D) {
   const body=$('#gpt-body');if(!body)return;
   const A=VaultAnalyst.analyze(D);body.innerHTML=gptConclusionHtml(D,A);
-  body.onclick=e=>{const b=e.target.closest('[data-apply]');if(b)go(R.path,{...S,p:b.dataset.apply});};
+  body.onclick=e=>{const b=e.target.closest('[data-apply]');if(b)go(R.path,{...S,...ytPeriod(),p:b.dataset.apply});};
   $('#gpt-more').onclick=()=>{const det=$('#gpt-detail'),open=det.hidden;det.hidden=!open;$('#gpt-more').setAttribute('aria-expanded',String(open));$('#gpt-more').textContent=open?'Hide detailed stats':'Detailed stats';if(open&&!det.innerHTML)det.innerHTML=gptDetailHtml(D,A);};
   $('#gpt-xlsx').onclick=async()=>{const b=$('#gpt-xlsx');b.disabled=true;b.textContent='Building Excel…';try{await exportXlsx(D,true);b.textContent='Download GPT Excel';}catch(e){b.textContent='Excel failed: '+e.message;}finally{b.disabled=false;}};
 }
@@ -526,7 +528,7 @@ function ratioToLeader(res,c,s) {
 
 function conclusionWire(D) {
   const body = $('#cc-body');
-  body.onclick = e => { const b = e.target.closest('[data-apply]'); if (b) go(R.path, { ...S, p: b.dataset.apply }); };
+  body.onclick = e => { const b = e.target.closest('[data-apply]'); if (b) go(R.path, { ...S, ...ytPeriod(), p: b.dataset.apply }); };
   if ($('#cc-more')) $('#cc-more').onclick = () => { const det = $('#cc-detail'), open = det.hidden; det.hidden = !open; $('#cc-more').setAttribute('aria-expanded', open); $('#cc-more').textContent = open ? 'Hide detailed stats' : 'Detailed stats';
     if (open && !det.innerHTML) det.innerHTML = detailHtml(D); if (open) anim(det, { opacity: [0, 1], transform: ['translateY(-4px)', 'translateY(0)'] }, { duration: .3 }); };
   if ($('#cc-xlsx')) $('#cc-xlsx').onclick = async () => { const b = $('#cc-xlsx'); b.disabled = true; b.textContent = 'Building Excel…';
@@ -1989,6 +1991,16 @@ document.addEventListener('submit', e => { if(e.target.id==='position-limit'){e.
   const fd = new FormData(e.target), t = selectedSpan(S.tk), from = fd.get('from'), to = fd.get('to'), cost = '0',slippage=String(Math.max(0,+fd.get('slippage')||0)),rollover=String(Math.max(0,+fd.get('rollover')||0));
   if (!from || !to || from >= to) { $('#perr').textContent = 'From must be before To.'; return; }
   go(R.path, { ...S, from: from <= t.first ? '' : from, to: to >= t.last ? '' : to, cost,slippage,rollover }); });
+// YT strategies: the backtest and optimization pages share one From/To. A typed date applies by itself once it is a
+// complete date inside the data range, and Run optimization, Apply and the page links use a date not yet applied.
+function ytPeriod() {
+  const f = document.getElementById('period'); if (!f || !STRAT || !isYt(STRAT.v)) return {};
+  const [a, b] = [f.elements.from, f.elements.to]; if (!a?.value || !b?.value || !a.checkValidity() || !b.checkValidity() || a.value >= b.value) return {};
+  const t = selectedSpan(S.tk), from = a.value <= t.first ? '' : a.value, to = b.value >= t.last ? '' : b.value;
+  return from === (S.from || '') && to === (S.to || '') ? {} : { from, to };
+}
+let ytPeriodTimer; document.addEventListener('change', e => { if (e.target.form?.id !== 'period' || !['from', 'to'].includes(e.target.name)) return; clearTimeout(ytPeriodTimer); ytPeriodTimer = setTimeout(() => { const p = ytPeriod(); if (Object.keys(p).length) go(R.path, { ...S, ...p }); }, 700); });
+document.addEventListener('click', e => { const a = e.target.closest('#open-optimization, .back-btn[href^="#/s/"]'); if (!a) return; const p = ytPeriod(); if (!Object.keys(p).length) return; e.preventDefault(); clearTimeout(ytPeriodTimer); go('/' + (R.optim ? 's' : 'o') + '/' + encodeURIComponent(STRAT.v.id), { ...S, ...p }); }, true);
 document.addEventListener('click', e => { const b = e.target.closest('[data-period]'); if (!b) return; const [from, to] = b.dataset.period.split('|'); go(R.path, { ...S, from, to }); });
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches?.('.bookcard[data-book]')) e.target.click(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('details.dd[open]').forEach(d => d.removeAttribute('open')); });
