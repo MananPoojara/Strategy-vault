@@ -179,6 +179,9 @@ export const authorIdentities: Record<string, readonly string[]> = {
   "vendors": [],
   "scart": [],
   "swing12": [],
+  "schwager": [
+    "Jack D. Schwager"
+  ],
   "magazines": [],
   "t2wgrp": [],
   "v6misc": [],

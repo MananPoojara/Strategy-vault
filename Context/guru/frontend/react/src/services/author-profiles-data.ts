@@ -68,6 +68,24 @@ export const AUTHOR_PROFILE_DATA = {
   "sources": [],
   "confidence": "low"
  },
+ "schwager": {
+  "kind": "person",
+  "mastery": [
+   "Futures",
+   "Trend following",
+   "Trading systems"
+  ],
+  "summary": "Jack D. Schwager is a US futures analyst and fund manager, best known for the Market Wizards interview books. He also wrote A Complete Guide to the Futures Markets and the Schwager on Futures series, which describe generic trend systems and his own wide-ranging-day and run-day systems.",
+  "known_for": [
+   "Market Wizards",
+   "A Complete Guide to the Futures Markets",
+   "Schwager on Futures"
+  ],
+  "sources": [
+   "https://en.wikipedia.org/wiki/Jack_D._Schwager"
+  ],
+  "confidence": "medium"
+ },
  "bernstein": {
   "kind": "person",
   "mastery": [
@@ -1102,10 +1120,10 @@ export const AUTHOR_PROFILE_DATA = {
    "Pattern recognition",
    "Indicators"
   ],
-  "summary": "Swing-trading books and course methods. Marcel Link's High Probability Trading and a chapter of Jack Schwager's futures guide sit alongside vendor swing courses and toolkits such as Woodies CCI, FirstStrike Plus, Quantum Swing Trader and Price Headley's Big Trends Toolkit.",
+  "summary": "Swing-trading books and course methods. Marcel Link's High Probability Trading sits alongside vendor swing courses and toolkits such as Woodies CCI, FirstStrike Plus, Quantum Swing Trader and Price Headley's Big Trends Toolkit.",
   "known_for": [
    "High Probability Trading (Link)",
-   "Complete Guide to the Futures Markets (Schwager)",
+   "Market Millions (Chong)",
    "Woodies CCI"
   ],
   "sources": [],
