@@ -5,13 +5,29 @@
 //! Intermarket systems (Ch.17-19) need commercial paper yields, CRB, gold and bond series -> NeedsData.
 //! Fills: the signal bar's close (MetaStock System Tester, which the book used, p.1; "Close MONTHLY" tables).
 //! Weekly / monthly systems read the week-end / month-end daily close (book: weekly / monthly closes).
-use crate::connors::{sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
+use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
+
+/// Simple average summed over each window in order (no running sum), so an equal close and average compare as equal
+/// (the declared tie rule); NaN when the window holds a missing value.
+pub fn sma(v: &[f64], n: usize) -> Vec<f64> {
+    (0..v.len()).map(|i| if n == 0 || i + 1 < n { f64::NAN } else {
+        let w = &v[i + 1 - n..=i];
+        if w.iter().all(|x| x.is_finite()) { w.iter().sum::<f64>() / n as f64 } else { f64::NAN }
+    }).collect()
+}
 
 pub const BOOK: &str = "mpts";
 
-const FILL: &str = "Fill at the close of the signal bar (MetaStock System Tester default; the book's tables are 'Close MONTHLY' / weekly closes). No commission or cash interest in the vault default (book: none, except where a table says 1% / 4%).";
+/// Admitted after the 2026-10-23 full reading and independent ledgers (authors/pring/admission/SOURCE-CONTRACT.md).
+/// The RS systems wait for a per-ticker benchmark series (STR_DATA2) the engine does not load; Ch.17-19 need data.
+pub const REVIEWED: &[&str] = &["mpts_ma2d_long", "mpts_ma10m_ls", "mpts_ma10m_long", "mpts_ma_cmo", "mpts_posc_28_5", "mpts_posc_10_10",
+    "mpts_triple", "mpts_ma10w", "mpts_roc13w", "mpts_roc6w"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
+
+const FILL: &str = "Fill at the close of the signal bar [Not from the book: the book never states fills; it used the MetaStock System Tester, whose default is the signal close, and its tables read 'Close MONTHLY' / weekly closes]. A close equal to the average gives no signal [declared]. No commission or cash interest in the vault default (book: none, except where a table says 1% / 4%).";
 const CP: &str = "3-month commercial paper yield (monthly) is not in the vault; the S&P side is available (SPX from 1983)";
 const CRB: &str = "CRB Composite and spot gold (monthly / weekly) are not in the vault";
+const RS: &str = "the relative-strength line needs each ticker's benchmark index as a second series (the book: DJ All Banks vs DJ Composite, funds vs the S&P Composite); the engine does not load a per-ticker benchmark yet, so no result is published";
 const BONDS: &str = "long-term US government bond prices and the CRB Spot Raw Industrials index are not in the vault";
 
 pub fn catalogue() -> Vec<StrategyDef> {
@@ -45,7 +61,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|Buy when the price crosses above the (advanced) MA; \"As the final long position was liquidated, at point C, a short position was initiated\" (p.121): short on the cross below",
             "X|Partial profit: \"Partial profits would have been taken in August (B) because that is when the CMO crosses back below its overbought zone\" (p.120), +50 zone (p.121); \"I use the re-crossing of the overbought zones as my signaling point\" (p.120); size: \"to cover half the position\" (p.123). Shorts: CMO crosses back above -50",
             "X|Rest of the position: closed (and reversed) on the opposite MA crossover (p.121-122)"],
-          "Neutral-trend version only (Chart 13-3, International Paper). The bull/bear versions (Charts 13-4/13-5) trade only with a 'confirmed' primary trend, which is judgement -> not coded. CMO = Chande Momentum Oscillator 100*(sum up - sum down)/(sum up + sum down) of the last 20 close changes (the book points to pring.com for the formula, p.120). 'Advanced by 5 days' = the MA plotted 5 bars forward, i.e. today's line = SMA25 of 5 bars ago. One partial exit per trade. Fill: the signal bar's close (MetaStock default); no costs or cash interest by default.",
+          "Neutral-trend version only (Chart 13-3, International Paper). The bull/bear versions (Charts 13-4/13-5) trade only with a 'confirmed' primary trend, which is judgement -> not coded. CMO = Chande Momentum Oscillator 100*(sum up - sum down)/(sum up + sum down) of the last 20 close changes [Not from the book: the book points to pring.com for the formula, p.120]. Half the position at the CMO signal comes from the bear-market example ('to cover half the position', p.123); the neutral section says only 'partial profits' [declared]. 'Advanced by 5 days' = the MA plotted 5 bars forward, i.e. today's line = SMA25 of 5 bars ago. One partial exit per trade. Fill: the signal bar's close (MetaStock default); no costs or cash interest by default.",
           None),
         // ---- Ch.14 MA + price oscillator
         d("mpts_posc_28_5", "28-day MA crossover with +/-5% price-oscillator profit taking (S&P)", "Ch.14 · Testing a Moving Average and an Oscillator", "Long/Short", Live, &[],
@@ -60,7 +76,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|Buy on the close crossing above the 10-day SMA; short on the cross below (p.125)",
             "X|Exit longs at the cross below or when close/SMA10 - 1 >= +10%; cover shorts at the cross above or at <= -10% (p.125)"],
           "Book: NASDAQ Composite 1980-1998 (vault NDX from 1990 is a different index); Russell 2000 1987-1998 (vault IWM ETF from 2000). Same oscillator conventions as mpts_posc_28_5. Fill: the signal bar's close (MetaStock default); no costs or cash interest by default.",
-          crate::connors::claim("556 (NASDAQ) / 333 (Russell)", "228/328 (41%) / 145/188 (44%)", "+30,000% / +2,687%", "win/loss 3.19 / 8.33 (Table 14-6)", "NASDAQ 1980-98 / Russell 2000 1987-98 (p.139-142)")),
+          crate::connors::claim("556 (NASDAQ) / 333 (Russell)", "228/328 (41%) / 145/188 (44%)", "+30,000% / +2,687%", "NASDAQ win/loss 3.19", "NASDAQ 1980-98 (p.142) / Russell 2000 1987-98 (Table 14-5); Table 14-6 (135 trades, 46/89, ratio 8.33) is another run with commissions")),
         // ---- Ch.15 Triple indicator system
         d("mpts_triple", "Triple Indicator System (10-week MA, 6- and 13-week ROC)", "Ch.15 · The Triple Indicator System", "Long/Short", Live, &[],
           &["F|\"These are 10-week simple MAs, a 6-week ROC and a 13-week ROC\" (p.145)",
@@ -74,10 +90,10 @@ pub fn catalogue() -> Vec<StrategyDef> {
           "British pound mid-1974 to 1976: 13 signals, +19 cents on $1 (Chart 15-1). Weekly bars as mpts_triple. Fill: the signal bar's close (MetaStock default); no costs or cash interest by default.", None),
         d("mpts_roc13w", "13-week ROC zero crossover (Triple Indicator component 2)", "Ch.15 · The Triple Indicator System", "Long/Short", Live, &[],
           &["E|\"Buy and sell signals are triggered when the 13-week ROC crosses above and below its zero reference line\" (p.146)", "X|Reverse on the opposite zero crossing"],
-          "British pound 1974-76: +23 cents, six signals (Chart 15-2). Fill: the signal bar's close (MetaStock default); no costs or cash interest by default.", None),
+          "British pound 1974-76: +23 cents, six signals (Chart 15-2) Long and short [declared reading: the book says only 'buy and sell signals' for the ROC steps; the MA step and the full system trade both sides, p.146-148]. Fill: the signal bar's close (MetaStock default); no costs or cash interest by default.", None),
         d("mpts_roc6w", "6-week ROC zero crossover (Triple Indicator component 3)", "Ch.15 · The Triple Indicator System", "Long/Short", Live, &[],
           &["E|\"A 6-week ROC was chosen ... The result, as shown in Chart 15-3, was an improved 35 cents\" (p.146): signals on the 6-week ROC zero crossings", "X|Reverse on the opposite zero crossing"],
-          "British pound 1974-76: +35 cents (Chart 15-3). Fill: the signal bar's close (MetaStock default); no costs or cash interest by default.", None),
+          "British pound 1974-76: +35 cents (Chart 15-3) Long and short [declared reading: the book says only 'buy and sell signals' for the ROC steps; the MA step and the full system trade both sides, p.146-148]. Fill: the signal bar's close (MetaStock default); no costs or cash interest by default.", None),
         // ---- Ch.17-19 intermarket
         d("mpts_sp_cp_yield", "S&P Composite vs 3-month commercial paper yield (12/12, 2/33)", "Ch.17 · Equities Versus Short-Term Interest Rates", "Long", NeedsData(CP), &[],
           &["E|Bullish when the inverted 3-month commercial paper yield is above its 12-month MA and the S&P Composite is above its 12-month MA (p.164)",
@@ -91,18 +107,18 @@ pub fn catalogue() -> Vec<StrategyDef> {
           &["E|\"The system is bullish when the trend of bond prices is up and commodities are down ... a 9-month MA crossover for bonds and a 12-month moving average for commodities. Sell signals are triggered when either series goes negative. Short signals develop when both are negative and covered when either goes positive\" (p.182-184)"],
           "Table 19-1: 9/12 59 trades 30/29 (1940s-1998).", None),
         // ---- Ch.20 relative strength
-        d("mpts_rs_10_26", "RS system: 10/26-week MA crossover of price and RS line", "Ch.20 · Systems Using Relative Strength", "Long", Live, &["STR_DATA2"],
+        d("mpts_rs_10_26", "RS system: 10/26-week MA crossover of price and RS line", "Ch.20 · Systems Using Relative Strength", "Long", NeedsData(RS), &["STR_DATA2"],
           &["F|\"A relative strength line is calculated by dividing a stock or an industry group by a market average such as the S&P Composite\" (p.188)",
             "E|\"Buy signals are generated when the 10-week moving average of the Banks Index crosses above the 26-week simple MA. This is confirmed by a similar signal by the RS line\" (p.190)",
             "X|\"Sell signals are triggered when either of the 26-week averages is recrossed by their 10-week counterparts\" (p.190)"],
           rs_note, None),
-        d("mpts_rs_3_10", "More sensitive RS system: 3/10-week MA crossover", "Ch.20 · Systems Using Relative Strength", "Long", Live, &["STR_DATA2"],
+        d("mpts_rs_3_10", "More sensitive RS system: 3/10-week MA crossover", "Ch.20 · Systems Using Relative Strength", "Long", NeedsData(RS), &["STR_DATA2"],
           &["E|\"Buy signals are generated when the 3-week moving average of the price and RS crosses above their respective 10-week MAs\" (p.194)",
             "X|\"sell signals occur when either cross below their 10-week MA\" (p.194)"],
           rs_note, None),
         // ---- not testable
         d("mpts_not_testable", "Ch.6-10, 16 illustrations, Ch.13 trend versions, equity-curve filter", "Part I / Ch.13 / Ch.16", "Long/Short",
-          NotTestable("Ch.6 stops (no system); Ch.7-10 single-stock / fund MA examples (Merrill Lynch 25/13-day, McDonald's 40-day, Barrick 7-day, CRB 54-day, 21-day RSI 50-cross on GM) do not state long-only vs long/short on index data and are optimisation illustrations; DJIA 45-week MA crossover (p.59, Chart 7-6) gives no direction or result numbers; Ch.13 bull/bear versions need a 'confirmed' primary trend (judgement); 300-week equity-line MA (p.150) and leverage (Ch.16) are money-management suggestions, not entry/exit rules"), &[],
+          NotTestable("Ch.6 stops (no system); Ch.7-10 single-stock / fund MA examples (Merrill Lynch 13-day long/cash, Hang Seng 13-week short only, Heinz 25-day long only, Barrick 7-day long only, McDonald's 40-day, CRB 54-day, 21-day RSI 50-cross on GM) are parameter illustrations of the same MA crossover method (mpts_ma*), not separate systems; DJIA 45-week MA crossover (p.59, Chart 7-6) gives no direction or result numbers; Ch.13 bull/bear versions need a 'confirmed' primary trend (judgement); 300-week equity-line MA (p.150) and leverage (Ch.16) are money-management suggestions, not entry/exit rules"), &[],
           &["E|See notes"], "Listed so the pipeline knows these pages were read.", None),
     ]
 }
@@ -162,7 +178,7 @@ fn day_number(date: &str) -> i64 {
 
 /// Period-end bars: the next bar is in another week (Monday-based) / month. The last bar of the data is
 /// a week end only if it is a Friday, never a month end (the period may be incomplete).
-fn period_ends(x: &Ctx, monthly: bool) -> Vec<bool> {
+pub fn period_ends(x: &Ctx, monthly: bool) -> Vec<bool> {
     let n = x.r.len();
     (0..n).map(|i| match x.r.get(i + 1) {
         Some(nx) if monthly => nx.date[..7] != x.r[i].date[..7],

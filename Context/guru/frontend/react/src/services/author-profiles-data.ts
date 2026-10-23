@@ -816,6 +816,24 @@ export const AUTHOR_PROFILE_DATA = {
   ],
   "confidence": "medium"
  },
+ "pring": {
+  "kind": "person",
+  "mastery": [
+   "Momentum",
+   "Trend following",
+   "Market timing"
+  ],
+  "summary": "Martin J. Pring is a technical analyst, founder of Pring Research and co-founder of Pring Turner Capital. He wrote Technical Analysis Explained and devised the KST (Know Sure Thing) momentum indicator; his books cover momentum, trading systems and business-cycle asset allocation.",
+  "known_for": [
+   "Technical Analysis Explained",
+   "The KST indicator",
+   "Martin Pring on Market Momentum"
+  ],
+  "sources": [
+   "https://www.pringturner.com/investment-advisor-team/martin-pring/"
+  ],
+  "confidence": "medium"
+ },
  "mtiming": {
   "kind": "collection",
   "mastery": [
@@ -823,16 +841,14 @@ export const AUTHOR_PROFILE_DATA = {
    "Trend following",
    "Momentum"
   ],
-  "summary": "Long-horizon timing and trend-following for index funds and ETFs. It ranges from Jeremy Siegel's Wharton research on long-run stock returns to monthly moving-average and ETF trend playbooks. Martin Pring, founder of Pring Research and author of Technical Analysis Explained, contributes work on momentum, trading systems and business-cycle asset allocation.",
+  "summary": "Long-horizon timing and trend-following for index funds and ETFs. It ranges from Jeremy Siegel's Wharton research on long-run stock returns to monthly moving-average and ETF trend playbooks.",
   "known_for": [
    "Stocks for the Long Run (Siegel)",
-   "Martin Pring on Market Momentum",
-   "The All Seasons Investor (Pring)",
+   "Monthly Moving Averages (F.E. James)",
    "The ETF Trend Following Playbook (Lydon)"
   ],
   "sources": [
-   "https://en.wikipedia.org/wiki/Jeremy_Siegel",
-   "https://www.pringturner.com/investment-advisor-team/martin-pring/"
+   "https://en.wikipedia.org/wiki/Jeremy_Siegel"
   ],
   "confidence": "medium"
  },

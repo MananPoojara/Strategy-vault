@@ -152,6 +152,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || reviewed_kestner_stock(def)
         || bernstein_g1_reviewed(def)
         || schwager_reviewed(def) // Schwager block
+        || pring_reviewed(def) // Pring block
         || bernstein_g2_reviewed(def)
         || jb_g3_reviewed(def)
         || lwilliams_reviewed(def) // Larry Williams block
@@ -404,6 +405,37 @@ fn schwager_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Schwager
+// ---------------------------------------------------------------- Pring (mpts, mpmm, mpcse, mpsel) 2026-10-23
+// Admission only for the listed ids (authors/pring/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn pring_reviewed(def:&StrategyDef)->bool {
+    use crate::books::{mpts,mpmm,mpcse,mpsel,mpasi,mptae};
+    match def.book {"mpasi"=>mpasi::reviewed(def.id),"mptae"=>mptae::reviewed(def.id),"mpts"=>mpts::reviewed(def.id),"mpmm"=>mpmm::reviewed(def.id),"mpcse"=>mpcse::reviewed(def.id),"mpsel"=>mpsel::reviewed(def.id),_=>false}
+}
+fn pring_label(def:&StrategyDef)->Option<&'static str> {
+    if !pring_reviewed(def) {return None;}
+    Some(match def.book {
+        "mpts"=>"Trading Systems Explained tests these systems on the S&P Composite, Nikkei, NASDAQ, Russell 2000, the British pound and single stocks and funds; index, ETF and stock runs (US and India) are a declared application, not the book's test.",
+        "mpmm"=>"Market Momentum quotes these rules on the S&P Composite, NYSE and other indices (mostly Colby & Meyers' tests); index, ETF and stock runs (US and India) are a declared application. The Summation Index rules use the market's own advance/decline data (NYSE for US symbols, NSE for Indian symbols).",
+        "mptae"=>"Technical Analysis Explained shows these rules on the DJIA (and a trade-weighted currency index); index, ETF and stock runs (US and India) are a declared application.",
+        "mpasi"=>"The All-Season Investor applies this rule to the S&P Composite; other index, ETF and stock runs (US and India) are a declared application.",
+        "mpcse"=>"Candlesticks Explained shows the three-line break on US stocks; index, ETF and stock runs (US and India) are a declared application.",
+        _=>"The How to Select Stocks CD gives these MetaStock systems without a market; index, ETF and stock runs (US and India) are a declared application.",
+    })
+}
+fn pring_policy(def:&StrategyDef)->Option<Policy> {
+    if !pring_reviewed(def) {return None;}
+    let basis=match def.book {
+        "mpts"=>"Pring, Trading Systems Explained (2003): MA crossovers (Ch.11-12, 15), MA + CMO partial profits (Ch.13 neutral version), MA + price oscillator (Ch.14), Triple Indicator and its ROC parts (Ch.15), reviewed in authors/pring/admission/SOURCE-CONTRACT.md with independent chronological ledgers. Signal-close fills are a declared convention (MetaStock default; the book does not state fills). Cash-index shorts are hypothetical exposure. No commissions, cash interest or book results are claimed.",
+        "mpmm"=>"Pring, Martin Pring on Market Momentum (1993): Colby & Meyers RSI, moving-average, 15/36-week and 39-week %K tests, Gartley's advanced average, the 26/40-week deviation systems, the monthly and weekly KST crossovers, the 12-month ROC average turns and the McClellan Summation 35-day crossover, reviewed in authors/pring/admission/SOURCE-CONTRACT.md with independent chronological ledgers. Long or cash by default where the book says only buy and sell. Signal-close fills. No book results are claimed.",
+        "mptae"=>"Pring, Technical Analysis Explained (2nd ed. 1985): 40-week MA crossover (p.89-92), 10/30-week averages with the slope condition (p.95-97), Russell 13/50-week signals (p.158), 9-month MA with 12-month ROC confirmation (p.354) and Coppock's buy indicator (p.116-117) with the user's standard exits (the book gives none), reviewed in authors/pring/admission/SOURCE-CONTRACT.md with independent chronological ledgers. Long or cash by default; signal-close fills are a declared convention.",
+        "mpasi"=>"Pring, The All-Season Investor (1992): the S&P Composite 12-month moving-average crossover, at or above = bullish (p.101-105, 185-190), long or cash, reviewed in authors/pring/admission/SOURCE-CONTRACT.md with independent chronological ledgers. Month-end close fills are a declared convention. The stage allocation model needs bond, commodity and yield data and is not run.",
+        "mpcse"=>"Pring, Candlesticks Explained (2002), Ch.8 three-line break (p.129-142): reversal at the close of the turnaround day, reviewed in authors/pring/admission/SOURCE-CONTRACT.md with independent chronological ledgers. The first line's start is a declared convention. Cash-index shorts are hypothetical exposure.",
+        _=>"Pring, How to Select Stocks Using Technical Analysis (pring.com CD): MetaStock System Tester formulas (long-term KST momentum, Wellinvested NASDAQ, MA + CMO(7), advanced MA crossover) run as printed, reviewed in authors/pring/admission/SOURCE-CONTRACT.md with independent chronological ledgers. Signal-close fills are the MetaStock default. Cash-index shorts are hypothetical exposure.",
+    };
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],basis);
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Pring
 // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
 /// Reviewed Joe Ross daily rules (books::joe_ross_rules::REVIEWED): actual indices, ETFs and stocks, US and India, as a
 /// labelled declared application. The source references in books::joe_ross stay held (source review).
@@ -427,6 +459,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=lwilliams_policy(def) {return p;} // Larry Williams block
     // ---- Schwager block (2026-10-23) ----
     if let Some(p)=schwager_policy(def) {return p;}
+    if let Some(p)=pring_policy(def) {return p;} // Pring block
     // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
     if let Some(p)=joe_ross_policy(def) {return p;}
     // ---- end Joe Ross block ----
@@ -837,6 +870,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if let Some(label)=bernstein_g1_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));}
     if let Some(label)=schwager_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Schwager block
     if let Some(label)=lwilliams_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Larry Williams block
+    if let Some(label)=pring_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Pring block
     if def.book==crate::books::cwin::BOOK && crate::books::cwin::reviewed_daily(def.id) {json.push_str(concat!(",\"declared_application\":\"",CWIN_INDEX_LABEL!(),"\""));}
     if def.book==crate::books::ccl08::BOOK && crate::books::ccl08::day_trade(def.id) {json.push_str(concat!(",\"declared_application\":\"",CCL08_INDEX_LABEL!(),"\""));}
     if def.book==crate::books::ats::BOOK && crate::books::ats::reviewed_daily(def.id) && (p.requirement=="index_or_etf" || (crate::books::ats::STOCK_TICK_IDS.contains(&def.id) && !CONNORS_INDEX_IDS.contains(&def.id))) {json.push_str(concat!(",\"declared_application\":\"",BTP_INDEX_LABEL!(),"\""));}
@@ -957,6 +991,25 @@ mod tests {
         assert!(check(&def("radge_oc_long_stop","radge"),"SPY",false).is_some());
     }
     // ---- end open-all block ----
+    // ---- Pring block (2026-10-23) ----
+    #[test]
+    fn pring_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{mpts,mpmm,mpcse,mpsel,mpasi,mptae};
+        let all:Vec<StrategyDef>=mptae::catalogue().into_iter().chain(mpts::catalogue()).into_iter().chain(mpmm::catalogue()).chain(mpcse::catalogue()).chain(mpsel::catalogue()).chain(mpasi::catalogue()).collect();
+        let want:Vec<&str>=mptae::REVIEWED.iter().chain(mpasi::REVIEWED).chain(mpts::REVIEWED).chain(mpmm::REVIEWED).chain(mpcse::REVIEWED).chain(mpsel::REVIEWED).copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        let mut w=want.clone();admitted.sort();w.sort();assert_eq!(admitted,w);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert!(d.status==crate::connors::Status::Live,"{}",d.id);
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+        for d in all.iter().filter(|d|!want.contains(&d.id)) {assert!(!reviewed_cash_rule(d),"{}",d.id);}
+        assert!(!reviewed_cash_rule(&def("mpts_triple","jbudt")));
+    }
+    // ---- end Pring block ----
     // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
     #[test]
     fn joe_ross_reviewed_rules_run_on_indices_etfs_and_stocks_and_references_stay_held() {
