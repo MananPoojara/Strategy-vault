@@ -1,5 +1,5 @@
 //! Alexander Elder, "Study Guide for Entries & Exits" (Wiley, 2006). Book id `elsgee`.
-//! Source: research drive `Trading Books/Alexander Elder - Study Guide for Entries & Exits/Alexander Elder - Study Guide for Entries & Exits.pdf` (image scan).
+//! Source: Books/Alexander Elder/Alexander Elder - Study Guide for Entries & Exits.pdf (177-page image scan; OCR read in full 23 Oct 2026). The "..., 350 pg.pdf" file is another scan of Entries & Exits itself, not the study guide.
 //! Q&A on the material of `elee`; it adds no rule. Notes: library/elsgee/README.md.
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 

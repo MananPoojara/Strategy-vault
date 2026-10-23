@@ -152,6 +152,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || reviewed_kestner_stock(def)
         || bernstein_g1_reviewed(def)
         || schwager_reviewed(def) // Schwager block
+        || elder_reviewed(def) // Elder block
         || pring_reviewed(def) // Pring block
         || bernstein_g2_reviewed(def)
         || jb_g3_reviewed(def)
@@ -404,6 +405,24 @@ fn schwager_policy(def:&StrategyDef)->Option<Policy> {
     let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],basis);
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
+// ---------------------------------------------------------------- Elder (eltfl, elcim) 2026-10-23
+// Admission only for the ids in each module's REVIEWED list (authors/elder/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn elder_reviewed(def:&StrategyDef)->bool {
+    use crate::books::{eltfl,elcim};
+    match def.book {"eltfl"=>eltfl::REVIEWED.contains(&def.id),"elcim"=>elcim::REVIEWED.contains(&def.id),_=>false}
+}
+const ELDER_LABEL:&str="Alexander Elder shows these rules on futures and stock charts (gold, the Nikkei, US stocks); index, ETF and stock runs (US and India) are a declared application, not the author's test. Weekly bars are calendar weeks built from the daily bars. One tick is the instrument's real tick (0.01 in the US, 0.05 on NSE). Force Index needs volume: windows without volume show a data message. Cash-index shorts are hypothetical. Elder prints no test results.";
+fn elder_policy(def:&StrategyDef)->Option<Policy> {
+    if !elder_reviewed(def) {return None;}
+    let basis=match def.book {
+        "eltfl"=>"Elder, Trading for a Living (1993): Force Index 2-day EMA with the 13-day EMA trend, trailing buy/sell stop and two-bar protective stop (p.227-232), and Triple Screen with weekly MACD-Histogram and daily Elder-ray (p.235-242), reviewed in authors/elder/admission/SOURCE-CONTRACT.md with independent chronological ledgers. Stop entries fill at the open when the market gaps through them; indicator exits at the next open. Break-even and 50%-of-profit stop moves have no exact trigger in the book and are not modelled.",
+        _=>"Elder, Come Into My Trading Room (2002): Triple Screen update with the 26-week EMA, 2-day Force Index, buy (sell) order at the previous day's high (low) and the SafeZone stop (p.128-138, 173-178), reviewed in authors/elder/admission/SOURCE-CONTRACT.md with independent chronological ledgers. The 2%/6% account rules and the break-even move are not modelled (one-unit ledger).",
+    };
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],basis);
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+fn elder_label(def:&StrategyDef)->Option<&'static str> {elder_reviewed(def).then_some(ELDER_LABEL)}
+// ---------------------------------------------------------------- end Elder
 // ---------------------------------------------------------------- end Schwager
 // ---------------------------------------------------------------- Pring (mpts, mpmm, mpcse, mpsel) 2026-10-23
 // Admission only for the listed ids (authors/pring/admission/SOURCE-CONTRACT.md); kept in one block to merge.
@@ -459,6 +478,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=lwilliams_policy(def) {return p;} // Larry Williams block
     // ---- Schwager block (2026-10-23) ----
     if let Some(p)=schwager_policy(def) {return p;}
+    if let Some(p)=elder_policy(def) {return p;} // Elder block
     if let Some(p)=pring_policy(def) {return p;} // Pring block
     // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
     if let Some(p)=joe_ross_policy(def) {return p;}
@@ -869,6 +889,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if p.requirement=="index_etf_or_stock" && CONNORS_INDEX_IDS.contains(&def.id) {json.push_str(concat!(",\"declared_application\":\"",CONNORS_INDEX_LABEL!(),"\""));}
     if let Some(label)=bernstein_g1_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));}
     if let Some(label)=schwager_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Schwager block
+    if let Some(label)=elder_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Elder block
     if let Some(label)=lwilliams_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Larry Williams block
     if let Some(label)=pring_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Pring block
     if def.book==crate::books::cwin::BOOK && crate::books::cwin::reviewed_daily(def.id) {json.push_str(concat!(",\"declared_application\":\"",CWIN_INDEX_LABEL!(),"\""));}
@@ -950,6 +971,23 @@ mod tests {
         assert!(!lwilliams_reviewed(&def("lwlts_hh5","jbudt")));
     }
     // ---- end Larry Williams block
+    // ---- Elder block (2026-10-23) ----
+    #[test]
+    fn elder_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{eltfl,elcim};
+        let all:Vec<StrategyDef>=eltfl::catalogue().into_iter().chain(elcim::catalogue()).collect();
+        let mut want:Vec<&str>=eltfl::REVIEWED.iter().chain(elcim::REVIEWED).copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|elder_reviewed(d)).map(|d|d.id).collect();
+        want.sort();admitted.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert!(reviewed_cash_rule(d));assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+        assert!(!elder_reviewed(&def("eltfl_fi2","elcim")));
+    }
+    // ---- end Elder block ----
     // ---- Schwager block (2026-10-23) ----
     #[test]
     fn schwager_review_admits_exact_ids_on_indices_etfs_and_stocks() {
@@ -1036,7 +1074,7 @@ mod tests {
         for tk in ["NIFTY 50","SPX","SPY","QQQ"]{assert!(check(&d,tk,false).is_none());}
         assert!(check(&d,"RELIANCE",false).is_some());
         assert!(!reviewed_cash_rule(&def("elcim_impulse","other")));
-        for id in ["elcim_fi2","elcim_ts_fi","eltfl_sroc","elcim_new"]{let d=def(id,"elcim");assert!(!reviewed_cash_rule(&d));assert_eq!(policy(&d).requirement,"source_review_required");}
+        for id in ["elcim_fi2","elcim_new"]{let d=def(id,"elcim");assert!(!reviewed_cash_rule(&d));assert_eq!(policy(&d).requirement,"source_review_required");}
     }
     #[test]
     fn reviewed_burns_keys_require_real_stocks_without_opening_other_methods() {

@@ -127,8 +127,8 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     if def.book=="elcim" && def.id==books::elcim_account::ID {
         if let Some(note)=books::elcim_account::validate(p){return issue("not_testable",note);}
     }
-    if matches!(def.id,"elcim_ts_fi"|"elcim_fi2"|"eltfl_sroc") {
-        return issue("source_review_required","The supplied Elder sources require protective stops and account risk limits. This legacy fragment omits part of that contract. Triple Screen additionally has stop-entry/protective-stop ordering ambiguities on daily bars; FI2 lacks a printed entry order; SROC lacks objective initial protection. These fragments remain held, without invented exits or risk-free source labels.");
+    if def.id=="elcim_fi2" { // Elder block 2026-10-23: elcim_ts_fi (SafeZone stop) and eltfl_sroc (book rule has no stop) admitted
+        return issue("source_review_required","Held: the Force Index section of Come Into My Trading Room (p.109-114) gives no entry order and no protective stop, and the book says a stop must be placed with every trade (p.169). The same signal with a stop is admitted as the Triple Screen version (elcim_ts_fi) and as Trading for a Living's Force Index rule (eltfl_fi2).");
     }
     if def.book=="sbma" && matches!(def.id,"sbma_sma50_long"|"sbma_x_5s20s") {
         let fill=p.get("fill").copied().unwrap_or(0.);
