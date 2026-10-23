@@ -195,6 +195,13 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
             return issue("needs_data",format!("This rule's stop entries read the opening price; {} opens in this file are real only from {cut}. Choose a start on or after {cut}.",r.ticker));
         }
     }
+    // Schwager block (2026-10-23): the course systems fill at the next open, the book systems when p.fill = 1; refuse
+    // SPX/NDX/DJI windows with stale opens.
+    if crate::instrument_policy::schwager_reviewed(def) && (def.book==books::jsats::BOOK || p.get("fill").is_some_and(|v|*v==1.0)) {
+        if let Some((r,cut))=ctx.r.get(from).and_then(|r|crate::gate::real_open_from(&r.ticker).map(|c|(r,c))).filter(|(r,c)|r.date.as_str()<*c) {
+            return issue("needs_data",format!("This rule fills at the next day's opening price; {} opens in this file are real only from {cut}. Choose a start on or after {cut}.",r.ticker));
+        }
+    }
     // Bernstein g1 (jb624/jbssf): admitted rules that read the open refuse SPX/NDX/DJI windows with stale opens
     // unless the gate already moves the start (jb624_mac5).
     if crate::instrument_policy::bernstein_g1_reviewed(def) && (books::jb624::reads_open(def.id) || books::jbssf::reads_open(def.id)) && !crate::gate::get(def.id).is_some_and(|g|g.clamp_open) {
@@ -468,6 +475,16 @@ mod tests {
         }
     }
     // ---- end Joe Ross block ----
+    #[test]
+    fn schwager_open_fills_refuse_stale_index_opens() {
+        let at=|t:&str,y:&str|{let mut r=rows();for (i,x) in r.iter_mut().enumerate(){x.ticker=t.into();x.date=format!("{y}-01-0{}",i+2);}r};
+        let fill:Params=[("fill".to_string(),1.0)].into_iter().collect();
+        for (t,y,id,p,refused) in [("SPX","2013","jsats_bo",Params::new(),true),("SPX","2014","jsats_bo",Params::new(),false),("NIFTY 50","1996","jsats_gap",Params::new(),false),
+            ("SPX","1990","jscgf_wrd",Params::new(),false),("SPX","1990","jscgf_wrd",fill.clone(),true),("DJI","2015","sofmt_mlm",fill.clone(),true),("SPY","2000","nmwbk_penny",fill,false)] {
+            let r=at(t,y);let ctx=Ctx::new(&r,&r,&r);
+            assert_eq!(check(&ctx,&definition(id),0,4,&p).is_some(),refused,"{id} {t} {y}");
+        }
+    }
     #[test]
     fn bernstein_g1_open_rules_refuse_stale_index_opens_and_fri_mon_runs_on_spx() {
         let at=|t:&str,y:&str|{let mut r=rows();for (i,x) in r.iter_mut().enumerate(){x.ticker=t.into();x.date=format!("{y}-01-0{}",i+2);}r};

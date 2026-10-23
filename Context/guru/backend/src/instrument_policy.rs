@@ -125,6 +125,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || (def.book=="hbiab" && crate::books::hbiab_reviewed::reviewed(def.id))
         || reviewed_kestner_stock(def)
         || bernstein_g1_reviewed(def)
+        || schwager_reviewed(def) // Schwager block
         || bernstein_g2_reviewed(def)
 }
 // ---- Bernstein g2: 30 Days to Market Mastery (jb30d), The Ultimate Day Trader (jbudt), The Compleat Day Trader II (jbcdt2).
@@ -286,6 +287,35 @@ pub const R3R4_LOWPRICE_HELD:&str="R3/R4 Low Priced Rules are defined by the sto
 pub fn inr_price_filter_omitted(def:&StrategyDef,market:Market)->bool {
     market==Market::India && def.book=="afactor" && crate::books::afactor::stock_rule(def.id)
 }
+// ---------------------------------------------------------------- Schwager (jscgf, jsgsta, jsats, sofmt, nmwbk) 2026-10-23
+// Admission only for the listed ids (authors/schwager/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn schwager_reviewed(def:&StrategyDef)->bool {
+    use crate::books::{jscgf,jsgsta,jsats,sofmt,nmwbk};
+    match def.book {"jscgf"=>jscgf::reviewed(def.id),"jsgsta"=>jsgsta::reviewed(def.id),"jsats"=>jsats::reviewed(def.id),"sofmt"=>sofmt::reviewed(def.id),"nmwbk"=>nmwbk::reviewed(def.id),_=>false}
+}
+fn schwager_label(def:&StrategyDef)->Option<&'static str> {
+    if !schwager_reviewed(def) {return None;}
+    Some(match def.book {
+        "jscgf"=>"A Complete Guide to the Futures Markets shows these systems on futures charts (copper, crude oil, soybeans, silver, coffee, gold and others); index, ETF and stock runs (US and India) are a declared application, not the author's test.",
+        "jsgsta"=>"Getting Started in Technical Analysis shows these systems on futures and stock charts; index, ETF and stock runs (US and India) are a declared application where the book used futures.",
+        "jsats"=>"The automated-trading-systems course tests its EasyLanguage systems on futures and US stocks; index, ETF and Indian stock runs are a declared application, not the course's test.",
+        "sofmt"=>"The BARRA/MLM index applies this rule to 25 US futures markets with T-bill interest; single index, ETF and stock runs (US and India) are a declared application without interest.",
+        _=>"Gil Blake applied the one-penny rule to a municipal bond fund's NAV; index, ETF and stock runs (US and India) are a declared application, not his trading.",
+    })
+}
+fn schwager_policy(def:&StrategyDef)->Option<Policy> {
+    if !schwager_reviewed(def) {return None;}
+    let basis=match def.book {
+        "jscgf"=>concat!("Schwager, A Complete Guide to the Futures Markets (2nd ed. 2017): Ch.17 original systems (p.261-277) with the Ch.9 run-day and wide-ranging-day definitions, the Ch.16 moving-average, crossover, breakout (with penetration, time-delay and thrust-day confirmation), MA-direction filter and countertrend fade systems (p.237-256), the Ch.6 moving-average turn (p.79-80), the Ch.19 six-day MA example (p.290) and the 1st edition's weekly 4-week breakout (1984, p.410), reviewed in authors/schwager/admission/SOURCE-CONTRACT.md with independent chronological ledgers. ","Close fills as the book's testing chapter assumes; next-open fills are a labelled option. Futures ticks become a labelled percentage of price. Cash-index shorts are hypothetical exposure. No futures dollars or book results are claimed."),
+        "jsgsta"=>"Schwager, Getting Started in Technical Analysis (1999): Ch.14 moving-average, crossover, breakout with confirmations, MA-direction filter and countertrend fade (p.229-249), Ch.3 moving-average turn (p.47-49), Ch.6 MACD crossover (p.114) and the Ch.15 six-day MA example (p.254), reviewed in authors/schwager/admission/SOURCE-CONTRACT.md with independent chronological ledgers. Close fills; next-open fills are a labelled option. Cash-index shorts are hypothetical exposure. No book results are claimed.",
+        "jsats"=>"Jack Schwager's Guide to Winning with Automated Trading Systems (course manual and lesson manuals 2-22): the EasyLanguage breakout, crossover, momentum, gap, consecutive-close, wide-ranging-day, ATR-band, confirmation and time-exit systems, run as printed with next-open market orders, reviewed in authors/schwager/admission/SOURCE-CONTRACT.md with independent chronological ledgers. Rules read the open: SPX/NDX/DJI start where their opens are real; NIFTY opens before 2011 are close to the prior close and are disclosed. Mirrored sell cases of printed buy cases are labelled. Cash-index shorts are hypothetical exposure. No futures dollars or course results are claimed.",
+        "sofmt"=>"Schwager on Futures: Managed Trading (1996), BARRA/MLM index rule (p.82-84): monthly reading on the next-to-last trading day against the 12-month average, always in, reviewed in authors/schwager/admission/SOURCE-CONTRACT.md with independent chronological ledgers. Average type and ties are declared readings. Cash-index shorts are hypothetical exposure; no index returns or T-bill interest are claimed.",
+        _=>"Schwager, The New Market Wizards (1992), Gil Blake's one-penny fund-switching rule (p.91-93): long after an up close, cash after a down close, reviewed in authors/schwager/admission/SOURCE-CONTRACT.md with independent chronological ledgers. No fund NAVs or reported returns are claimed.",
+    };
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],basis);
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Schwager
 // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
 /// Reviewed Joe Ross daily rules (books::joe_ross_rules::REVIEWED): actual indices, ETFs and stocks, US and India, as a
 /// labelled declared application. The source references in books::joe_ross stay held (source review).
@@ -306,6 +336,8 @@ fn joe_ross_policy(def:&StrategyDef)->Option<Policy> {
 }
 // ---- end Joe Ross block ----
 fn base_policy(def:&StrategyDef)->Policy {
+    // ---- Schwager block (2026-10-23) ----
+    if let Some(p)=schwager_policy(def) {return p;}
     // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
     if let Some(p)=joe_ross_policy(def) {return p;}
     // ---- end Joe Ross block ----
@@ -697,6 +729,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     json.push_str(&format!(",\"source_rule_reviewed\":{},\"independent_selected_ledger_checked\":{}",reviewed,reviewed));
     if p.requirement=="index_etf_or_stock" && CONNORS_INDEX_IDS.contains(&def.id) {json.push_str(concat!(",\"declared_application\":\"",CONNORS_INDEX_LABEL!(),"\""));}
     if let Some(label)=bernstein_g1_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));}
+    if let Some(label)=schwager_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Schwager block
     if def.book==crate::books::cwin::BOOK && crate::books::cwin::reviewed_daily(def.id) {json.push_str(concat!(",\"declared_application\":\"",CWIN_INDEX_LABEL!(),"\""));}
     if def.book==crate::books::ccl08::BOOK && crate::books::ccl08::day_trade(def.id) {json.push_str(concat!(",\"declared_application\":\"",CCL08_INDEX_LABEL!(),"\""));}
     if def.book==crate::books::ats::BOOK && crate::books::ats::reviewed_daily(def.id) && (p.requirement=="index_or_etf" || (crate::books::ats::STOCK_TICK_IDS.contains(&def.id) && !CONNORS_INDEX_IDS.contains(&def.id))) {json.push_str(concat!(",\"declared_application\":\"",BTP_INDEX_LABEL!(),"\""));}
@@ -739,6 +772,24 @@ mod tests {
         StrategyDef { id, book, name: "Test", group: "Test", session: 0, dir: "Long", status: Status::Live,
             needs_volume: false, needs_vix: false, needs_series: &[], rules: &[], notes: "", claim: None }
     }
+    // ---- Schwager block (2026-10-23) ----
+    #[test]
+    fn schwager_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{jscgf,jsgsta,jsats,sofmt,nmwbk};
+        let all:Vec<StrategyDef>=jscgf::catalogue().into_iter().chain(jsgsta::catalogue()).chain(jsats::catalogue()).chain(sofmt::catalogue()).chain(nmwbk::catalogue()).collect();
+        let want:Vec<&str>=jscgf::REVIEWED.iter().chain(jsgsta::REVIEWED).chain(jsats::REVIEWED).chain(sofmt::REVIEWED).chain(nmwbk::REVIEWED).copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        let mut w=want.clone();admitted.sort();w.sort();assert_eq!(admitted,w);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+        for d in all.iter().filter(|d|!want.contains(&d.id)) {assert!(!reviewed_cash_rule(d));assert!(d.status!=crate::connors::Status::Live,"{}",d.id);}
+        assert!(!reviewed_cash_rule(&def("jscgf_ma","jbudt")));
+    }
+    // ---- end Schwager block ----
     // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
     #[test]
     fn joe_ross_reviewed_rules_run_on_indices_etfs_and_stocks_and_references_stay_held() {
