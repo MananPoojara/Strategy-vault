@@ -89,7 +89,30 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || (def.book=="elcim" && def.id==crate::books::elcim_account::ID)
         || (def.book=="hbiab" && crate::books::hbiab_reviewed::reviewed(def.id))
         || reviewed_kestner_stock(def)
+        || bernstein_g2_reviewed(def)
 }
+// ---- Bernstein g2: 30 Days to Market Mastery (jb30d), The Ultimate Day Trader (jbudt), The Compleat Day Trader II (jbcdt2).
+// Reviewed 22 Oct 2026 (authors/bernstein/agents/<work>, independent ledgers in authors/bernstein/g2-admission).
+pub fn bernstein_g2_reviewed(def:&StrategyDef)->bool {
+    use crate::books::{jb30d,jbudt,jbcdt2};
+    (def.book==jb30d::BOOK && jb30d::reviewed_daily(def.id)) || (def.book==jbudt::BOOK && jbudt::reviewed_daily(def.id)) || (def.book==jbcdt2::BOOK && jbcdt2::reviewed_daily(def.id))
+}
+fn bernstein_g2_spx_points(id:&str)->bool {crate::books::jb30d::SPX_POINTS.contains(&id) || crate::books::jbcdt2::SPX_POINTS.contains(&id)}
+macro_rules! BERNSTEIN_G2_ANY_LABEL {()=>{"Jake Bernstein tested these rules on S&P 500 futures (and showed some on stocks). Runs on actual indices, ETFs and stocks, US and India, are a declared application, not the author's test. The rules use no dollar or point amounts (stop-entry ticks are the instrument's real tick: 0.05 on NSE, 0.01 in the US). Cash-index shorts are hypothetical. Daily-bar conventions: stops fill at the open when the market gaps through them, otherwise at the stop price; where the order of prices inside a day matters the bar is read open, nearer extreme, other extreme, close. NIFTY opens before late 2010 lie close to the previous close (official data, kept). No futures dollars or book results are reproduced."}}
+macro_rules! BERNSTEIN_G2_SPX_LABEL {()=>{"Jake Bernstein's stop (and entry offsets) are dollar amounts on one S&P 500 futures contract, which the vault converts to S&P points (30 Days: $250 a point, p.16/p.44; Compleat Day Trader II: $500 a point). Those points mean the same thing only on the S&P 500 itself, so this rule runs on actual SPX only, as a declared application of the futures rule to the cash index; other indices, ETFs and stocks are held. SPX opens are real only from 2014, so earlier start dates are refused. No futures dollars or book results are reproduced."}}
+/// `stock_us`: None = not an individual stock; Some(true) = a US stock; Some(false) = Indian or unknown market.
+fn bernstein_g2_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Option<Issue> {
+    if !bernstein_g2_reviewed(def) {return None;}
+    if bernstein_g2_spx_points(def.id) && ticker!="SPX" {
+        return Some(Issue{status:"needs_data",note:format!("{} {ticker} is outside that scope; no result is published.",BERNSTEIN_G2_SPX_LABEL!())});
+    }
+    let us=stock_us.unwrap_or(!ticker.starts_with("NIFTY"));
+    if crate::books::jbcdt2::US_ONLY.contains(&def.id) && !us {
+        return Some(Issue{status:"needs_data",note:format!("The pre-holiday day trade (Compleat Day Trader II pp.68-69) buys the day before a US market holiday (Merrill's list: Good Friday, Memorial Day, July 4, Labor Day, Thanksgiving, Christmas, New Year's). Indian markets keep a different holiday calendar, so the rule runs on US indices, ETFs and stocks only. {ticker} is outside that scope; no result is published.")});
+    }
+    None
+}
+// ---- end Bernstein g2
 /// Connors rules coded from the full-source readers (connors/newrules-misc, 2026-10-21): HPETF seminar RSI 14 TPS,
 /// STSTW VIX RSI, ETF Sweet Spot 2nd-signal variation, Alvarez Factor S&P-down-days filter.
 pub fn newrules_misc(def:&StrategyDef)->bool {
@@ -325,6 +348,12 @@ fn base_policy(def:&StrategyDef)->Policy {
         let mut p=requirement("index_etf_or_stock", &["index","etf","individual_stock"], "Street Smarts (Raschke & Connors, 1995), daily rules reviewed in connors/ss-admission/SOURCE-CONTRACT.md with independent chronological ledgers (stocks: stocks-admission). The book shows this setup on futures and on an individual stock (Turtle Soup Plus One: Delta/Texas Instruments p.41-42; Holy Grail: Citicorp p.81; ID/NR4: Abbott p.148; Historical Volatility: Micron p.157). Actual stocks are admitted (user decision 2026-10-21); index runs stay on SPX, NDX, DJI, SPY, NIFTY 50 and NIFTYBANK as a declared application, not the authors' test. 1 tick = 0.01% of price on an index/ETF; on an actual stock the stock's real tick, 0.05 INR on NSE and 0.01 USD on US stocks (adaptation: the book used 1/8-dollar ticks). Daily-bar fill conventions, the labelled exits and every [Not from the book] option are disclosed. Cash-index and stock shorts are hypothetical exposure. No futures dollars or book performance is reproduced.");
         p.market_adaptation=true; return p;
     }
+    // ---- Bernstein g2 (30 Days / Ultimate Day Trader / Compleat Day Trader II), 22 Oct 2026
+    if bernstein_g2_reviewed(def) {
+        let mut p=if bernstein_g2_spx_points(def.id) {index(BERNSTEIN_G2_SPX_LABEL!())} else {requirement("index_etf_or_stock", &["index","etf","individual_stock"], BERNSTEIN_G2_ANY_LABEL!())};
+        p.market_adaptation=true; return p;
+    }
+    // ---- end Bernstein g2
     if def.book==crate::books::ss::BOOK && crate::books::ss::reviewed_daily(def.id) {
         let stock=crate::books::ss::STOCK_SHOWN.contains(&def.id);
         let mut p=if stock {
@@ -480,6 +509,7 @@ pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     if let Some(issue)=ststw_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=ats_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);}
     if let Some(issue)=hfm_otvt_symbol_issue(def,ticker){return Some(issue);}
+    if let Some(issue)=bernstein_g2_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);}
     if native_stock {
         if let Some(reason)=p.native_currency_constraint {
             return Some(Issue {status:"needs_data",note:format!("Source currency/tick data missing. {reason} USD amounts cannot silently become INR amounts. A source-supported Indian specification or dated FX treatment and verified local tick rules are required before admission; editing the numeric parameter alone does not establish those inputs. Selected actual stock: {ticker}. No results are published.")});
@@ -502,6 +532,7 @@ pub fn check_native(def:&StrategyDef,ticker:&str,evidence:&NativeEvidence)->Opti
     if let Some(issue)=ststw_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=ats_symbol_issue(def,ticker,Some(evidence.market()==crate::baskets::Market::UnitedStates)){return Some(issue);}
     if let Some(issue)=hfm_otvt_symbol_issue(def,ticker){return Some(issue);}
+    if let Some(issue)=bernstein_g2_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);}
     if let Some(issue)=check_selected(p,def.id,ticker,evidence.asset_type()){return Some(issue);}
     if matches!((def.book,def.id),("r3r4","r3r4_lowprice"|"r3r4_lowprice_scale")) && evidence.market()!=Market::UnitedStates {
         return Some(Issue{status:"not_testable",note:format!("{R3R4_LOWPRICE_HELD} Selected actual stock: {ticker}.")});
@@ -529,6 +560,11 @@ pub fn check_native_market_inputs(def:&StrategyDef,evidence:&NativeEvidence,benc
 /// Plain-language reason for Connors rules that stay unadmitted on every instrument (admission records, 21 Oct 2026).
 fn held_reason(id:&str)->Option<&'static str> {
     Some(match id {
+        // ---- Bernstein g2 held Live rules
+        "jb30d_rev_sell_fpo"=>"Held: no stop in the book. The only exit is the first profitable opening, so a trade that never gets one stays open: on SPY a short entered in 1995 is still open in 2026 and has lost more than the whole account, which no account can carry. The book's own table shows losing trades this exit cannot produce, so its test used an exit it does not print.",
+        "jbudt_gap_fpo"|"jbudt_gap_split"=>"Held: no stop in the book. The kept position leaves only on the first opening beyond the entry price, so a short that never gets one stays open: on SPY a short entered in January 1995 is still open in 2026 and has lost more than the whole account, which no account can carry.",
+        "jb30d_gap_tick"|"jb30d_gap_pct"|"jbcdt_gap_go"=>"Held: needs intraday data. The trade enters on a stop and is stopped out or closed on the same day; daily bars cannot show whether the stop or the entry came first, and the accuracy check found all of its gain comes from such same-day trades.",
+        // ---- end Bernstein g2
         "ss_adx_gapper_no_gap"=>"Held: rules not fully defined. Street Smarts (p.93) presents this as Larry's discussion and calls it \"more subjective\"; it gives no objective entry, so any coded entry would be the vault's, not the book's.",
         "hfm_hv"=>"Held: rules not fully defined. The book (Ch. 3) gives a volatility warning with no direction, entry, exit or stop (\"a personal choice\"); the coded breakout entry and 20-day exit would be vault choices.",
         "hfm_und"|"hfm_und_long"|"hfm_und_short"=>"Held: needs option prices. The book (Ch. 4) trades Undeniables by selling out-of-the-money index puts or calls; a long or short trade in the index itself has a different payoff, and the vault holds no traded option prices.",
@@ -1297,6 +1333,39 @@ mod connors_index_routing_tests {
             assert!(!CONNORS_INDEX_IDS.contains(&id));
             for tk in ["NIFTY 50","SPX","SPY"] {assert!(check(&d,tk,false).is_some(),"{id} {tk}");}
         }
+    }
+}
+#[cfg(test)]
+mod bernstein_g2_tests {
+    use super::*;
+    #[test]
+    fn bernstein_g2_admits_exact_ids_on_their_instruments() {
+        use crate::books::{jb30d,jbudt,jbcdt2};
+        let cat:Vec<_>=jb30d::catalogue().into_iter().chain(jbudt::catalogue()).chain(jbcdt2::catalogue()).collect();
+        let admitted:Vec<&str>=cat.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        assert_eq!(admitted.len(),14);
+        let (us,india)=(NativeEvidence::us_test_fixture(),NativeEvidence::india_test_fixture());
+        for d in cat.iter().filter(|d|reviewed_cash_rule(d)) {
+            assert!(matches!(d.status,crate::connors::Status::Live),"{}",d.id);
+            if matches!(d.id,"jb30d_rev_buy_stop"|"jb30d_rev_buy_3pc"|"jbcdt2_dbo_mon"|"jbcdt2_dbo_thu") {
+                assert!(check(d,"SPX",false).is_none(),"{}",d.id);
+                for t in ["SPY","NDX","NIFTY 50"] {assert!(check(d,t,false).is_some(),"{} {t}",d.id);}
+                assert!(check_native(d,"AAPL",&us).is_some());
+            } else if d.id=="jbcdt2_preholiday_oc" {
+                for t in ["SPX","SPY","QQQ","DJI"] {assert!(check(d,t,false).is_none(),"{t}");}
+                assert!(check_native(d,"AAPL",&us).is_none());
+                assert!(check(d,"NIFTY 50",false).is_some()&&check_native(d,"RELIANCE",&india).is_some());
+            } else {
+                for t in ["SPX","SPY","QQQ","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+                assert!(check_native(d,"AAPL",&us).is_none()&&check_native(d,"RELIANCE",&india).is_none(),"{}",d.id);
+            }
+        }
+        // Held: same-day gap stops, intraday, missing numbers, chart judgement.
+        for d in cat.iter().filter(|d|matches!(d.id,"jb30d_rev_sell_fpo"|"jbudt_gap_fpo"|"jbudt_gap_split"|"jb30d_gap_tick"|"jb30d_gap_pct"|"jb30d_rev_simple"|"jbudt_dow"|"jbudt_pop"|"jbcdt2_inside_day"|"jbcdt2_or30")) {
+            assert!(!reviewed_cash_rule(d),"{}",d.id);
+            assert_eq!(policy(d).requirement,"source_review_required");
+        }
+        assert!(crate::books::jbcdt::catalogue().iter().all(|d|!reviewed_cash_rule(d)));
     }
 }
 #[cfg(test)]

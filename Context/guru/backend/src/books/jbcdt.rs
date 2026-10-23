@@ -41,7 +41,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["E|\"An upper breakout and buy signal will occur when prices have had a 5-minute close above the highest 5-minute closing plot established during the first 2 hours\" (ch.20)"], ""),
         def!("jbcdt_cc", "Consecutive closes system", "Ch.18 · Consecutive Closes", "Long/Short", NotTestable("the number of closes is \"a given number\" (5 is only an example) and the bar length is the trader's choice"),
             &["E|\"A buy signal and an up trend are defined when the market has made a given number of up closes in a row\" (p.170); \"you exit the long and reverse to short when you get a CCD sell signal\" (p.171)"], ""),
-        def!("jbcdt_keydates", "Key seasonal dates and daily seasonals", "Ch.16 · Seasonality", "Long/Short", NotTestable("the S&P daily seasonal listings (Fig. 16-8) are images not present in the chapter files, and entries need an unspecified intraday timing confirmation"),
+        def!("jbcdt_keydates", "Key seasonal dates and daily seasonals", "Ch.16 · Seasonality", "Long/Short", NotTestable("entries need a timing confirmation the book never defines (\"do not buy unless timing confirms the direction of the move\", p.150); the S&P daily seasonal listings (Fig. 16-8, pp.154-156) cover only Aug 9 to Nov 30 from 6-8 years of data"),
             &["F|\"Percentage of time up close 75 percent of the time or more\" (p.150)", "E|\"do not buy unless timing confirms the direction of the move\" (p.150)"], ""),
     ]
 }
