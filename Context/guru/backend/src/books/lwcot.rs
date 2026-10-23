@@ -11,6 +11,11 @@ use crate::connors::{claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Tra
 
 pub const BOOK: &str = "lwcot";
 
+/// Larry Williams block: rules admitted after the 23 Oct 2026 reading and independent ledgers
+/// (authors/lwilliams/admission/SOURCE-CONTRACT.md). SPX_POINTS = dollar stops kept as S&P points: actual SPX only.
+pub const REVIEWED: &[&str] = &["lwcot_vol_p5up_v5up", "lwcot_vol_p5up_v5dn", "lwcot_vol_dn_vdn", "lwcot_vol_dn_vup", "lwcot_vol_t50dn_p8up_v8up", "lwcot_vol_t50dn_p8up_v8dn", "lwcot_vol_t50dn_p8dn_v8up", "lwcot_vol_t50dn_p8dn_v8dn", "lwcot_down_closes_daytrade", "lwcot_every_day_bail"];
+pub const SPX_POINTS: &[&str] = &["lwcot_vol_p5up_v5up", "lwcot_vol_p5up_v5dn", "lwcot_vol_dn_vdn", "lwcot_vol_dn_vup", "lwcot_vol_t50dn_p8up_v8up", "lwcot_vol_t50dn_p8up_v8dn", "lwcot_vol_t50dn_p8dn_v8up", "lwcot_vol_t50dn_p8dn_v8dn"];
+
 macro_rules! sd {
     ($id:expr, $name:expr, $group:expr, $dir:expr, $status:expr, $vol:expr, $rules:expr, $notes:expr, $claim:expr) => {
         StrategyDef { id: $id, name: $name, group: $group, session: 0, dir: $dir, status: $status, needs_volume: $vol,

@@ -15,6 +15,11 @@ use crate::connors::{claim, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "lwdtfo";
 
+/// Larry Williams block: rules admitted after the 23 Oct 2026 reading and independent ledgers
+/// (authors/lwilliams/admission/SOURCE-CONTRACT.md). SPX_POINTS = stops in S&P points: actual SPX only.
+pub const REVIEWED: &[&str] = &["lwdtfo_vb_close", "lwdtfo_vb_hilo", "lwdtfo_vb_open"];
+pub const SPX_POINTS: &[&str] = &[];
+
 const NOTE: &str = "Book: S&P 500 futures, row of a multi-commodity table; the test window is not printed (the S&P printouts in the same chapter run 07/02/82-08/25/98). The percentages are the book's 'best-fit' values for the S&P. Always in the market: each fill of the opposite stop exits and reverses; no protective stop, no other exit. India: same rule on NIFTY 50 (instrument swap only). Bars with zero range give no orders [Not from the book: needed so buy and sell stops do not coincide].";
 const ALWAYS: &str = "X|\"In this, and all data shown, no stop was used and we were always long/short\" (p.76): exit only by reversal on the opposite stop";
 

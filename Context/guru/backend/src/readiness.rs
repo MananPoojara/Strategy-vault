@@ -202,6 +202,12 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
             return issue("needs_data",format!("This rule's stop entries read the opening price; {} opens in this file are real only from {cut}. Choose a start on or after {cut}.",r.ticker));
         }
     }
+    // Larry Williams block (2026-10-23): admitted rules read the open; refuse SPX/NDX/DJI windows with stale opens.
+    if crate::instrument_policy::lwilliams_reviewed(def) && books::lw_admit::reads_open(def.book,def.id) {
+        if let Some((r,cut))=ctx.r.get(from).and_then(|r|crate::gate::real_open_from(&r.ticker).map(|c|(r,c))).filter(|(r,c)|r.date.as_str()<*c) {
+            return issue("needs_data",format!("This Larry Williams rule enters or exits at the opening price; {} opens in this file are real only from {cut}. Choose a start on or after {cut}.",r.ticker));
+        }
+    }
     // Schwager block (2026-10-23): the course systems fill at the next open, the book systems when p.fill = 1; refuse
     // SPX/NDX/DJI windows with stale opens.
     if crate::instrument_policy::schwager_reviewed(def) && (def.book==books::jsats::BOOK || p.get("fill").is_some_and(|v|*v==1.0)) {
@@ -325,7 +331,7 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
             return issue("not_testable", format!("Withheld by the accuracy check: {} No results are published.", plain_gate_reason(g.reason)));
         }
         // bernstein-g3: the reviewed S&P day-of-week rules are limited to SPX by instrument_policy instead of the gate list.
-        if let (Some(allowed), Some(row)) = (g.allowed.filter(|_|!(def.book==books::jbeft::BOOK && books::jbeft::reviewed_daily(def.id))), ctx.r.get(from)) {
+        if let (Some(allowed), Some(row)) = (g.allowed.filter(|_|!(def.book==books::jbeft::BOOK && books::jbeft::reviewed_daily(def.id)) && !crate::instrument_policy::lwilliams_reviewed(def)), ctx.r.get(from)) {
             // Bernstein g1: the reviewed Friday-Monday system keeps its S&P points on SPX (instrument_policy limits it to SPX).
             let jb_spx=def.id=="jb624_fri_mon" && row.ticker=="SPX" && crate::instrument_policy::bernstein_g1_reviewed(def);
             if !allowed.contains(&row.ticker.as_str()) && !jb_spx {
