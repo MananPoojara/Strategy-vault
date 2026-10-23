@@ -183,6 +183,13 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
         }
     }
     // ---- end Bernstein g2
+    // Bernstein (bernstein-g3): the admitted MAC pullback limit and the S&P day-of-week stop entries / first-profitable-
+    // opening exits read the open; refuse windows that start where the index opens are stale.
+    if ((def.book==books::jbsmsw::BOOK && books::jbsmsw::reads_open(def.id)) || (def.book==books::jbeft::BOOK && books::jbeft::reviewed_daily(def.id)) || def.id=="jbtifm_2000st") && !crate::gate::get(def.id).is_some_and(|g|g.clamp_open) {
+        if let Some((r,cut))=ctx.r.get(from).and_then(|r|crate::gate::real_open_from(&r.ticker).map(|c|(r,c))).filter(|(r,c)|r.date.as_str()<*c) {
+            return issue("needs_data",format!("This rule's orders fill at the opening price when the market gaps through them; {} opens in this file are real only from {cut}. Choose a start on or after {cut}.",r.ticker));
+        }
+    }
     // Admitted btp rules that read the open but are not clamped by the gate: refuse windows with stale index opens.
     if def.book==books::btp::BOOK && books::btp::reads_open(def.id) && !crate::gate::get(def.id).is_some_and(|g|g.clamp_open) {
         if let Some((r,cut))=ctx.r.get(from).and_then(|r|crate::gate::real_open_from(&r.ticker).map(|c|(r,c))).filter(|(r,c)|r.date.as_str()<*c) {
@@ -310,7 +317,8 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
         if g.verdict == "withheld" && !crate::instrument_policy::reviewed_cash_rule(def) && !usd_stock {
             return issue("not_testable", format!("Withheld by the accuracy check: {} No results are published.", plain_gate_reason(g.reason)));
         }
-        if let (Some(allowed), Some(row)) = (g.allowed, ctx.r.get(from)) {
+        // bernstein-g3: the reviewed S&P day-of-week rules are limited to SPX by instrument_policy instead of the gate list.
+        if let (Some(allowed), Some(row)) = (g.allowed.filter(|_|!(def.book==books::jbeft::BOOK && books::jbeft::reviewed_daily(def.id))), ctx.r.get(from)) {
             // Bernstein g1: the reviewed Friday-Monday system keeps its S&P points on SPX (instrument_policy limits it to SPX).
             let jb_spx=def.id=="jb624_fri_mon" && row.ticker=="SPX" && crate::instrument_policy::bernstein_g1_reviewed(def);
             if !allowed.contains(&row.ticker.as_str()) && !jb_spx {
@@ -483,6 +491,15 @@ mod tests {
         let at=|t:&str,y:&str|{let mut r=rows();for (i,x) in r.iter_mut().enumerate(){x.ticker=t.into();x.date=format!("{y}-01-0{}",i+2);}r};
         for (t,y,id,refused) in [("SPX","2013","jb30d_rev_buy_stop",true),("SPX","2014","jb30d_rev_buy_stop",false),("SPX","2013","jbcdt2_dbo_mon",true),
             ("SPX","2013","jb30d_cmc",true),("SPX","2013","jb30d_sp_seasonal",false),("SPX","2013","jbudt_mac_ad57",false),("SPX","2013","jbcdt2_mon_cc",false),("NIFTY 50","1996","jb30d_cmc",false)] {
+            let r=at(t,y);let ctx=Ctx::new(&r,&r,&r);
+            assert_eq!(check(&ctx,&definition(id),0,4,&Params::new()).is_some(),refused,"{id} {t} {y}");
+        }
+    }
+    #[test]
+    fn bernstein_g3_open_reading_rules_refuse_stale_us_index_opens() {
+        let at=|t:&str,y:&str|{let mut r=rows();for (i,x) in r.iter_mut().enumerate(){x.ticker=t.into();x.date=format!("{y}-01-0{}",i+2);}r};
+        for (t,y,id,refused) in [("SPX","2013","jbsmsw_mac_pullback",true),("SPX","2014","jbsmsw_mac_pullback",false),("DJI","2015","jbsmsw_mac_pullback",true),
+            ("SPX","2013","jbsmsw_mom_ma",false),("SPX","2013","jbhsms_sp_0113",false),("SPX","2013","jbeft_dow_fm97",true),("SPX","2014","jbeft_dow_fm97",false),("SPX","2014","jbeft_dow_wt",false),("NDX","2000","jbtifm_2000st",true),("NDX","2001","jbtifm_2000st",false),("NDX","2000","jbtifm_ma_9_18",false),("SPX","2013","jbtywr_crude_outside",false)] {
             let r=at(t,y);let ctx=Ctx::new(&r,&r,&r);
             assert_eq!(check(&ctx,&definition(id),0,4,&Params::new()).is_some(),refused,"{id} {t} {y}");
         }

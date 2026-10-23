@@ -25,14 +25,28 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["F|\"a 10-day moving average of the daily highs and an 8-day moving average of the daily lows\" (p.95)",
               "F|\"The trend: An uptrend develops once there have been two or more successive price bars completely above the top of the MAC. A downtrend develops when there have been two or more successive bars below the bottom of the MAC\" (p.97)",
               "E|\"In an uptrend, the trader will place an order to buy at the MAC low. In a downtrend, the trader will place an order to sell short at the MAC high\" (p.97): resting limit at yesterday's MA",
-              "X|\"For more aggressive traders, a sell signal will get you out of your long position or a buy signal will get you out of your short position\" (p.97); \"you can exit if there are two consecutive bars outside the MAC\" (p.112): exit on the close of the opposite trigger",
+              "X|\"For more aggressive traders, a sell signal will get you out of your long position or a buy signal will get you out of your short position\" (p.97); \"you can exit if there are two consecutive bars outside the MAC\" (p.107; the printed \"MAC high\" there is a misprint for the low, p.97): exit on the close of the opposite trigger",
               "X|\"For less risk, use a 10 percent closing basis stop of the price at which you entered the stock\" (p.97): p.stop_pct=10 (non-default; 0 = off)"],
-            "Book: risk is either the opposite signal or a 10% closing stop; the opposite signal is the only one that also ends winning trades, so it is the default exit. The trailing stop below the last three bars starts only after \"a reasonable profit\" (no size given, p.112) and is not coded; channel surfing (exit at the MAC high) is jb624_mac_sr."),
+            "Book: \"Risk will be a predetermined dollar amount\" (no amount given), \"for less risk\" a 10% closing stop, or for aggressive traders the opposite signal (p.97, p.107); it names no default. [Our reading] The opposite signal is the default because it is the only exit that also ends winning trades; the 10% closing stop is the labelled option. The trailing stop below the last three bars starts only after \"a reasonable profit\" (no size given, p.107) and is not coded; channel surfing (exit at the MAC high) is jb624_mac_sr."),
         def!("jbsmsw_add", "Advance/Decline derivative (ADD)", "Ch.6 · Technical Approach", "Long/Short", NotTestable("the length of the moving average of the A/D oscillator is not printed; authors: \"objective but not entirely systematic\" and it needs a stop added"),
             &["E|\"If I calculate a moving average of the A/D oscillator ... use the derivative value and the A/D value for generating signals\" (p.78)"], ""),
         def!("jbsmsw_3610_parabolic", "3-6-10 moving averages with parabolic", "Ch.9 · Two Real-Time Examples", "Long", NotTestable("a narrated trade with judgement (bought before the parabolic confirmed, held on 'confidence')"),
             &["E|\"The buy signal came at the end of the trading on the 9th, when the 3- and 6-day moving average lines crossed above the 10-day moving average line\" (p.124)"], ""),
+        def!("jbsmsw_dca_mom42", "MOM/MA 42 dollar-cost averaging into a mutual fund", "Ch.10 · Implementing Market Strategies", "Long", NotTestable("an accumulation plan, not a trade: buy $250 of a fund ten trading days after a 42-period MOM/MA buy signal that stays bullish ten periods (p.136-137), and never sell (\"We hold our shares as momentum falls below its moving average\"); the backtester scores closed trades, and adding an exit would be our rule, not the book's"),
+            &["E|\"consider a buy signal valid only if it remains bullish for ten periods in a row\"; Table 10-2 buy dates ten trading days after the signal (p.136-137)"], ""),
+        def!("jbsmsw_dca_biq", "Biquarterly dollar-cost averaging benchmark", "Ch.10 · Implementing Market Strategies", "Long", NotTestable("an accumulation plan with no sell rule: \"$250 every other quarter ... regardless of price\" (p.135-136)"),
+            &["E|\"$250 every other quarter ... regardless of price\" from 8/13/98 (p.135-136)"], ""),
     ]
+}
+
+/// Admission (bernstein-g3, 2026-10-22): rules reviewed against the book with independent chronological ledgers.
+pub const REVIEWED: &[&str] = &["jbsmsw_mom_ma", "jbsmsw_mac_pullback"];
+pub fn reviewed_daily(id: &str) -> bool {
+    REVIEWED.contains(&id)
+}
+/// The MAC pullback's limit order fills at the open when the market gaps through it.
+pub fn reads_open(id: &str) -> bool {
+    id == "jbsmsw_mac_pullback"
 }
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
@@ -41,6 +55,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "jbsmsw_mac_pullback" => ("jbsmsw_mac", "MAC support/resistance (stocks)", "Buy MAL / sell MAH, opposite-signal exit"),
         "jbsmsw_add" => ("jbsmsw_add", "A/D derivative", "Not testable"),
         "jbsmsw_3610_parabolic" => ("jbsmsw_3610", "3-6-10 MA + parabolic", "Not testable"),
+        "jbsmsw_dca_mom42" | "jbsmsw_dca_biq" => ("jbsmsw_dca", "Dollar-cost averaging plans", "Not a trade (no sell rule)"),
         _ => return None,
     })
 }
