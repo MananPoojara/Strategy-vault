@@ -1,7 +1,7 @@
 import { useContext, useEffect, useState, type ReactNode } from "react";
 import { CALENDAR_OUTPUTS, COPY, EXPAND_FIRST_REFUSED, OPERAND_KIND_LABELS, TF_LABELS } from "./labels";
 import { isSeries, isValue, type Side } from "./spec-model";
-import { ARITH, CALENDAR_IDS, MAX_NTH, MAX_WHOLE, WINDOWS, convertOperand, describeNode, exprKey, firstAllowed, innerOperand, operandKind, type OperandKind } from "./rule-tree";
+import { ARITH, CALENDAR_IDS, MAX_NTH, MAX_WHOLE, SINCE_ENTRY_KINDS, WINDOWS, convertOperand, describeNode, exprKey, firstAllowed, innerOperand, operandKind, sinceEntry, type OperandKind, type SinceEntryKind } from "./rule-tree";
 import type { Catalogue, FormulaOperand, Indicator, Operand, RuleNode, SavedIndicator, SeriesOperand } from "./types";
 import { ForeignFields } from "./ForeignFields";
 import { infoOf, useFormulaScope, wholeParam } from "./formula";
@@ -34,6 +34,7 @@ export function NumField({ label, value, onChange, min, max, step, hideLabel, pl
 
 
 type Obj = Record<string, unknown>;
+const SINCE_LABELS: Record<SinceEntryKind, string> = { highest: "highest", lowest: "lowest", count: "number of bars", entry_price: "entry price" };
 const FORMULAS: OperandKind[] = ["arith", "pct", "abs", "ref", "window", "change", "compress"];
 const STATES: OperandKind[] = ["bars_since", "value_when", "since", "count"];
 const dropParams = ({ p: _p, out: _out, ...rest }: SeriesOperand) => rest;
@@ -89,6 +90,7 @@ export function OperandEditor({ operand, side, catalogue, onChange, label, heldO
       <option value="number">{OPERAND_KIND_LABELS.number}</option>
       {(mine.length > 0 || kind === "formula") && <optgroup label="My indicators"><option value="formula">{OPERAND_KIND_LABELS.formula}</option></optgroup>}
       {((heldOk ?? side === "exit") || kind === "bars_held") && <option value="bars_held">{OPERAND_KIND_LABELS.bars_held}</option>}
+      {((heldOk ?? side === "exit") || kind === "since_entry") && <option value="since_entry">{OPERAND_KIND_LABELS.since_entry}</option>}
       {(!simple || expression) && <optgroup label="Formula">{FORMULAS.map(kindOptions)}</optgroup>}
       {(!simple || expression) && <optgroup label="Since a condition">{STATES.map(kindOptions)}</optgroup>}
     </select>
@@ -129,6 +131,17 @@ export function OperandEditor({ operand, side, catalogue, onChange, label, heldO
       </select>
     </>}
     {kind === "formula" && <FormulaFields operand={operand as FormulaOperand} onChange={onChange} />}
+    {kind === "since_entry" && <>
+      <select aria-label="Since entry value" value={x.since_entry as string} onChange={(e) => onChange(sinceEntry(e.target.value as SinceEntryKind, x) as Operand)}>
+        {SINCE_ENTRY_KINDS.map((k) => <option key={k} value={k}>{SINCE_LABELS[k]}</option>)}
+      </select>
+      {(x.since_entry === "highest" || x.since_entry === "lowest") && <>{word("of")}{sub("of")}{word("since entry")}</>}
+      {x.since_entry === "count" && <>{word("since entry where")}{node("when")}</>}
+      <NumField label="× factor" value={(x.mul ?? 1) as number} step={0.01}
+        onChange={(n) => n !== undefined && n !== 0 && set({ mul: n === 1 ? undefined : n })} />
+      <NumField label="+ amount" value={(x.add ?? 0) as number} step={0.5}
+        onChange={(n) => n !== undefined && set({ add: n === 0 ? undefined : n })} />
+    </>}
     {(kind === "price" || kind === "indicator" || kind === "calendar" || kind === "compress" || kind === "formula") && (!brief || timed || kind === "price" || kind === "indicator") &&
       <Timing operand={operand} catalogue={catalogue} onChange={onChange} compress={kind === "compress"} />}
     {series && (!brief || sourced) && <ForeignFields operand={operand} onChange={onChange} label={label} />}
@@ -169,7 +182,7 @@ function Timing({ operand, catalogue, onChange, compress }: {
   const summary = [tf !== "D" ? TF_LABELS[tf] ?? `Every ${tf.slice(0, -1)} sessions` : "", offset ? `${offset} ${tf === "D" ? "bars" : "periods"} ago` : "",
     expand === "point" ? "period's last day" : expand === "first" ? "from the period's first day" : ""].filter(Boolean).join(" · ");
   return <>
-    <button type="button" className="dbtn sm ghost" data-lab-timing aria-expanded={open} aria-label="Timeframe and offset" title="Timeframe and offset" onClick={() => setOpen(!open)}>{summary || "Daily"} <span aria-hidden="true">{open ? "▴" : "▾"}</span></button>
+    <button type="button" className="dbtn sm ghost" data-lab-timing aria-expanded={open} aria-label="Timeframe and offset" title="Which candles to use (Daily, Weekly or Monthly) and how many candles back. Click to change." onClick={() => setOpen(!open)}>{summary || "Daily"} <span aria-hidden="true">{open ? "▴" : "▾"}</span></button>
     {open && <span className="lab-timing">
       {!compress && <TimeframeField operand={operand} catalogue={catalogue} onChange={onChange} />}
       {tf !== "D" && <>

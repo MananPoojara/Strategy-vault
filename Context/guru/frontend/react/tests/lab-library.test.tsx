@@ -88,7 +88,7 @@ it("toolbar shows the provisional strip on gl and reports choices", async () => 
   const host = await mount(<Toolbar market="gl" onMarket={onMarket} options={optionsFromGl(glInstrumentsFixture)} ticker="CRYPTO:BTCUSD" onTicker={() => {}}
     tf="D" timeframes={["D", "W", "M", "Q"]} onTf={() => {}} range="3Y" onRange={() => {}} provisionalNote={glInstrumentsFixture.provisional_note} />);
   expect(host.querySelector("[data-lab-provisional]")?.textContent).toContain("CRYPTO:BTCUSD, daily");
-  expect([...host.querySelectorAll<HTMLButtonElement>(".join-item")].map((b) => b.textContent)).toEqual(expect.arrayContaining(["Daily", "Weekly", "Monthly", "Q"]));
+  expect([...host.querySelectorAll<HTMLButtonElement>(".join-item")].map((b) => b.textContent)).toEqual(expect.arrayContaining(["Daily", "Weekly", "Monthly", "Quarterly"]));
   await act(async () => [...host.querySelectorAll<HTMLButtonElement>(".join-item")].find((b) => b.textContent === "US")!.click());
   expect(onMarket).toHaveBeenCalledWith("us");
 });

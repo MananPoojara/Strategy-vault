@@ -44,5 +44,5 @@ it("labels read like AmiBroker parameters: rule, then short indicator name and p
   expect(optimizablePaths(one, cat).find((p) => p.path === "entry.all[0].rhs.p.length")!.label).toBe("Entry 1: EMA Length");
   const two: Spec = { ...defaultSpec(), entry: { all: [{ lhs: ema(10), op: ">", rhs: ema(20) }] } };
   const labels = optimizablePaths(two, cat).filter((p) => p.path.startsWith("entry.all[0]")).map((p) => p.label);
-  expect(labels).toEqual(["Entry 1 › left · EMA Length", "Entry 1 › right · EMA Length"]);
+  expect(labels).toEqual(["Entry 1: switched off (0 on, 1 off)", "Entry 1 › left · EMA Length", "Entry 1 › right · EMA Length"]);
 });

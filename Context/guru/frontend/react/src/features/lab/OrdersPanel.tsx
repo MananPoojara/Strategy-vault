@@ -140,7 +140,40 @@ function ScaleInEditor({ spec, pre, catalogue, onChange }: { spec: Spec; pre: Si
 const EXITS = [
   { key: "breakeven", label: "Breakeven", initial: { after: { pct: 2 } } },
   { key: "take_profits", label: "Take-profits", initial: [{ pct: 5, size: 0.5 }] }, { key: "min_bars", label: "Minimum bars", initial: 1 },
+  { key: "dual_atr", label: "Dual ATR exit", initial: { initial: { period: 5, mult: 2, price: "hl2" }, favour: { period: 5, mult: 4, price: "hl2" } } },
 ] as const;
+/** rules.rs DUAL_ATR_PRICES, in the AmiBroker AFL "ATR Avg Val" list's order. */
+const DUAL_PRICES: [string, string][] = [["open", "Open"], ["high", "High"], ["low", "Low"], ["close", "Close"], ["oc2", "(Open+Close)/2"],
+  ["hl2", "(High+Low)/2"], ["hlc3", "(H+L+C)/3"], ["ohlc4", "(O+H+L+C)/4"]];
+type DualBand = { period: number; mult: number; price?: string };
+type DualAtr = { initial: DualBand; favour: DualBand; tf?: "D" | "W" | "M"; period_end_only?: boolean };
+/** exit.dual_atr: the initial and favour ATR bands, the bands' timeframe and the period-end test (W/M only). */
+function DualAtrFields({ value, onChange }: { value: DualAtr; onChange(v: DualAtr): void }) {
+  const band = (key: "initial" | "favour", label: string) => {
+    const b = value[key];
+    const put = (patch: Partial<DualBand>) => onChange({ ...value, [key]: { ...b, ...patch } });
+    return <span className="lab-row" role="group" aria-label={`${label} ATR`}>
+      <span className="dfield">{label}</span>
+      <NumField label={`${label} ATR period`} value={b.period} min={1} max={500} step={1} onChange={(n) => n !== undefined && Number.isInteger(n) && n >= 1 && n <= 500 && put({ period: n })} />
+      <NumField label={`${label} ATR ×`} value={b.mult} min={0} max={100} step={0.5} onChange={(n) => n !== undefined && n > 0 && n <= 100 && put({ mult: n })} />
+      <label className="dfield">Price<select aria-label={`${label} price`} value={b.price ?? "hl2"} onChange={(e) => put({ price: e.target.value })}>
+        {DUAL_PRICES.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
+      </select></label>
+    </span>;
+  };
+  const tf = value.tf ?? "D";
+  return <>
+    {band("initial", "Initial")}
+    {band("favour", "Favour")}
+    <span className="lab-row">
+      <Segmented label="Dual ATR timeframe" value={tf} options={[{ value: "D", label: "Daily" }, { value: "W", label: "Weekly" }, { value: "M", label: "Monthly" }]}
+        onChange={(t) => onChange({ ...value, tf: t === "D" ? undefined : t, period_end_only: t === "D" ? undefined : value.period_end_only })} />
+      {tf !== "D" && <label className="lab-check"><input type="checkbox" checked={!!value.period_end_only}
+        onChange={(e) => onChange({ ...value, period_end_only: e.target.checked || undefined })} />Exit only on the {tf === "W" ? "week's" : "month's"} last bar</label>}
+    </span>
+    <span className="cap">{COPY.dualAtrHint}</span>
+  </>;
+}
 /** AmiBroker Stops tab: the four fixed groups in its order and naming. */
 const STOPS = [
   { key: "stop_loss", legend: "Maximum loss stop", label: "Stop-loss" }, { key: "target", legend: "Profit target", label: "Target" },
@@ -212,6 +245,7 @@ export function OrdersPanel({ spec, onChange, pre = "", catalogue, reentry = fal
           {key === "breakeven" && <>{level("exit.breakeven.after", "Breakeven after")}{level("exit.breakeven.plus", "Breakeven plus", true)}</>}
           {key === "min_bars" && <><NumField label="Rule exits wait (bars)" value={side.exit.min_bars} min={0} max={1000} step={1}
             onChange={(n) => n !== undefined && onChange(putAt(spec, `${pre}exit.min_bars`, n))} /><span className="cap">{COPY.minBarsHint}</span></>}
+          {key === "dual_atr" && <DualAtrFields value={side.exit.dual_atr as DualAtr} onChange={(v) => onChange(putAt(spec, `${pre}exit.dual_atr`, v))} />}
           {key === "take_profits" && (editableTps ? <>
             {tps.map((tp, i) => <div className="lab-tp-row" key={i}>
               <NumField label={`Take-profit ${i + 1} size (%)`} value={tp.size * 100} min={0} max={100} step={1}
@@ -235,7 +269,8 @@ export function OrdersPanel({ spec, onChange, pre = "", catalogue, reentry = fal
         if (item) onChange(putAt(spec, `${pre}exit.${item.key}`, structuredClone(item.initial)));
       }}>
         <option value="">+ More exits…</option>
-        {EXITS.filter(({ key }) => side.exit[key] === undefined).map(({ key, label }) => <option key={key} value={key} disabled={key === "take_profits" && !!side.entry.scale_in}>{label}</option>)}
+        {EXITS.filter(({ key }) => side.exit[key] === undefined).map(({ key, label }) => <option key={key} value={key}
+          disabled={(key === "take_profits" && !!side.entry.scale_in) || (key === "dual_atr" && !!spec.portfolio)}>{label}</option>)}
       </select>
     </div>
   </div>;

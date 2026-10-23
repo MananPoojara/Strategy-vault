@@ -3,7 +3,7 @@ import { availability, groupByCategory, searchIndicators, shortName } from "./ca
 import { myId } from "./formula";
 import { ErrorNotice } from "./ui";
 import type { Catalogue, Indicator, Market, SavedIndicator, Timeframe } from "./types";
-import { POPULAR, useSimple } from "./simple";
+import { plainOf, POPULAR, useSimple } from "./simple";
 import "./library.css";
 
 const MINE = "My indicators", POPULAR_GROUP = "Popular";
@@ -74,7 +74,7 @@ export function LibraryRail({ catalogue, market, hasVolume, tf, onAdd, onRead, m
                 <li key={ind.id}>
                   <button type="button" data-lab-item={ind.id} disabled={!ok} title={ok ? ind.definition : reason} onClick={() => onAdd(ind)}>
                     <b title={ind.name}>{shortName(ind)}</b>
-                    <small>{!ok || ind.needs.second_symbol ? reason : ind.definition}</small>
+                    <small>{!ok || ind.needs.second_symbol ? reason : (simple && plainOf(ind)) || ind.definition}</small>
                   </button>
                   {!ok && <span className={`tag${ind.needs.volume && !hasVolume ? " warn" : ""}`}>{ind.needs.volume && !hasVolume ? "volume" : "needs data"}</span>}
                   <button type="button" className="dbtn ghost sm" aria-label={`About ${ind.name}`} onClick={() => onRead(ind)}>i</button>

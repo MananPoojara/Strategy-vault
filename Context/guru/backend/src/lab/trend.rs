@@ -52,9 +52,15 @@ fn dmi_mt(b: &Bars, dl: usize, al: usize) -> Vec<Vec<f64>> {
 
 /// The user's AmiBroker Supertrend AFL (RSI_Setup_Entry "DAILY STR EXIT"): SMA of TR, (H+L)/2 ± factor·ATR, isUp starts true,
 /// flip when the close crosses the previous bar's opposite band, only the active band ratchets, no band reset.
-fn supertrend_afl(b: &Bars, f: f64, len: usize) -> Output {
+/// Supertrend band centre (`price`): 0 (H+L)/2 (TradingView and the default), then the AmiBroker AFL "ST Average Value" list.
+fn st_price(b: &Bars, code: f64) -> Vec<f64> {
+    match code as u8 {
+        1 => b.close.clone(), 2 => b.open.clone(), 3 => b.high.clone(), 4 => b.low.clone(), 5 => b.oc2(), 6 => b.hlc3(), 7 => b.ohlc4(),
+        _ => b.hl2(),
+    }
+}
+fn supertrend_afl(b: &Bars, f: f64, len: usize, hl2: Vec<f64>) -> Output {
     let atr = ta::sma(&ta::tr(b, true), len);
-    let hl2 = b.hl2();
     let m = b.len();
     let mut up: Vec<f64> = (0..m).map(|i| hl2[i] + f * atr[i]).collect();
     let mut dn: Vec<f64> = (0..m).map(|i| hl2[i] - f * atr[i]).collect();
@@ -72,9 +78,9 @@ fn supertrend_afl(b: &Bars, f: f64, len: usize) -> Output {
 }
 fn supertrend(b: &Bars, prm: &Params) -> Output {
     let (f, m) = (p(prm, "factor"), b.len());
-    if p(prm, "mode") == 1. { return supertrend_afl(b, f, n(prm, "atr_length")); }
+    let hl2 = st_price(b, p(prm, "price"));
+    if p(prm, "mode") == 1. { return supertrend_afl(b, f, n(prm, "atr_length"), hl2); }
     let atr = ta::rma(&ta::tr(b, true), n(prm, "atr_length"));
-    let hl2 = b.hl2();
     let (mut st, mut dir) = (vec![NA; m], vec![NA; m]);
     let (mut u1, mut l1, mut st1) = (NA, NA, NA);
     for i in 0..m {
@@ -170,8 +176,9 @@ pub const DEFS: &[IndicatorDef] = &[
         int("variant", "Variant (0 Wilder/TradingView/AmiBroker/MetaTrader iADXWilder, 1 MetaTrader iADX)", 0., 0., 1.)], &["plus_di", "minus_di", "adx"], Placement::Pane,
         "up=change(high), dn=-change(low); +DM=(up>dn&&up>0)?up:0; tr=tr(false); +DI=100*rma(+DM)/rma(tr) held when rma(tr)=0; ADX=100*rma(|+DI--DI|/(sum==0?1:sum)); variant 1 (MetaTrader 4/5 iADX, ADX.mq5): +DM = max(up, 0), −DM = max(dn, 0), the smaller zeroed and both zeroed on a tie; +DI = ema(100·+DM/TR, di_length) (TR 0 → 0), −DI likewise; ADX = ema(100·|+DI − −DI|/(+DI + −DI), adx_smoothing) (sum 0 → 0); every EMA alpha 2/(n+1) starts from 0 at bar 0 (MetaTrader's seed), so values exist from bar 1 and the first ~n bars are seed-biased (MetaTrader starts drawing at bar n)", &[14, 14, 27], dmi),
     def("supertrend", "Supertrend", &[len("atr_length", "ATR length", 10.), real("factor", "Factor", 3., 0.5, 20., 0.5),
-        int("mode", "Mode (0 TradingView, 1 AmiBroker AFL: SMA of TR, no band reset)", 0., 0., 1.)], &["supertrend", "direction"], Placement::Price,
-        "atr=rma(tr(true)); bands hl2+-factor*atr with carry rules; direction -1 uptrend / +1 downtrend; NaN where atr is NaN; mode 1 (the user's AmiBroker Supertrend AFL): atr = sma(tr(true), atr_length), up = hl2 + factor·atr, dn = hl2 − factor·atr, isUp true on every bar before atr_length; from bar atr_length: close > up[1] (or up[1] NaN) → up, close < dn[1] → down, else unchanged; in an uptrend dn = max(dn, dn[1]), in a downtrend up = min(up, up[1]) (the inactive band is not carried, no reset); supertrend = isUp ? dn : up", &[9, 9], supertrend),
+        int("mode", "Mode (0 TradingView, 1 AmiBroker AFL: SMA of TR, no band reset)", 0., 0., 1.),
+        int("price", "Price (0 (H+L)/2, 1 Close, 2 Open, 3 High, 4 Low, 5 (O+C)/2, 6 (H+L+C)/3, 7 (O+H+L+C)/4)", 0., 0., 7.)], &["supertrend", "direction"], Placement::Price,
+        "atr=rma(tr(true)); bands hl2+-factor*atr with carry rules; direction -1 uptrend / +1 downtrend; NaN where atr is NaN; mode 1 (the user's AmiBroker Supertrend AFL): atr = sma(tr(true), atr_length), up = hl2 + factor·atr, dn = hl2 − factor·atr, isUp true on every bar before atr_length; from bar atr_length: close > up[1] (or up[1] NaN) → up, close < dn[1] → down, else unchanged; in an uptrend dn = max(dn, dn[1]), in a downtrend up = min(up, up[1]) (the inactive band is not carried, no reset); supertrend = isUp ? dn : up; price (both modes) sets the band centre instead of hl2: 1 close, 2 open, 3 high, 4 low, 5 (O+C)/2, 6 (H+L+C)/3, 7 (O+H+L+C)/4", &[9, 9], supertrend),
     def("sar", "Parabolic SAR", &[real("start", "Start", 0.02, 0.001, 1., 0.001), real("increment", "Increment", 0.02, 0.001, 1., 0.001), real("max", "Maximum", 0.2, 0.01, 1., 0.01)], &["sar"], Placement::Price,
         "TradingView ta.sar: initial direction long if high[1]>high[0]; sar+=af*(ep-sar); reverse on strict penetration; clipped to the last two lows (long) / highs (short)", &[1], sar),
     def("aroon", "Aroon", LEN14, &["up", "down"], Placement::Pane,
@@ -237,6 +244,16 @@ mod tests {
         let o = go("supertrend", &b, &many(&[("atr_length", 1.), ("factor", 1.)]));
         assert_series(&o[0], &[12., 12., 10., 11.5]);
         assert_series(&o[1], &[1., 1., -1., -1.]);
+    }
+    #[test] fn supertrend_price_sets_the_band_centre_in_both_modes() {
+        // open = low and close = high, so (O+C)/2 equals (H+L)/2 and price 5 reproduces the default exactly
+        let b = from_ohlc(&[(10., 11., 10., 11.), (11., 12.5, 11., 12.5), (12., 13., 12., 13.), (12., 12.5, 12., 12.5), (11., 11.5, 11., 11.5), (12., 14., 12., 14.)]);
+        for mode in [0., 1.] {
+            let at = |price: f64| go("supertrend", &b, &many(&[("atr_length", 2.), ("factor", 1.), ("mode", mode), ("price", price)]));
+            let (oc, hl, close) = (at(5.), at(0.), at(1.));
+            for k in 0..2 { assert_series(&oc[k], &hl[k]); }
+            assert!(close[0].iter().zip(&hl[0]).any(|(a, b)| a.is_finite() && b.is_finite() && a != b), "mode {mode}: the close is not the band centre");
+        }
     }
     #[test] fn supertrend_amibroker_afl_starts_up_and_ratchets_only_the_active_band() {
         // TR 2, 2, 3.5, 3, 6.5 (n 1: atr = TR); dn = hl2 − atr = 8, 9, 10, 11.5 ratcheted up; bar 4 closes below dn[3] = 11.5 → down, up = min(18.75, 17.5)

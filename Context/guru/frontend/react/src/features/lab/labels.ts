@@ -16,6 +16,8 @@ export const COPY = {
   nodeMenu: { wrap_all: "Put in an “all must be true” group", wrap_any: "Put in an “any one is enough” group", wrap_not: "Negate · true when this is false", unwrap: "Ungroup · keep what is inside", up: "Move up", down: "Move down" },
   nodeMenuTitle: "Group or move", addTip: "Add another condition, or a group that combines conditions", nodeMenuTip: "Group this with other conditions, negate it, or change its order",
   heldTopOnly: "Bars held works only in a top-level exit condition (not inside a group, range, trend or formula).",
+  dualAtrHint: "From the entry bar the initial stop (price − initial ATR × multiple) and the favour stop (price − favour ATR × multiple) only rise, and the switch band (price + favour ATR × multiple) only falls. Once a close is above the switch band and the initial stop, the favour stop is used. The trade exits on a close below the previous bar's stop. ATR = simple average of the true range (AmiBroker AFL). Weekly and monthly bands use completed periods only.",
+  sinceTopOnly: "Since-entry values work only in a top-level exit condition (not inside a group, range, trend or formula).",
   tooDeep: "These rules are nested too deeply (the engine reads at most 16 levels). Ungroup a group or remove a formula.",
   caps: (top: string, leaves: number, maxLeaves: number, nodes: number, maxNodes: number, kb: string) =>
     `${top} · comparisons ${leaves}/${maxLeaves} · rule parts ${nodes}/${maxNodes} · ${kb} of 7.5 KB`,
@@ -50,6 +52,11 @@ export const COPY = {
   notChecked: "Not yet checked against TradingView.",
   rulesHint: "values from completed bars only",
   entryTitle: "Entry · all of these",
+  entryListHelp: "A trade opens on the candle where every row below is true. Rows that are switched off are ignored.",
+  exitListHelp: "The open trade closes on the first candle where any one row below is true.",
+  filtersTitle: "Filters · the buy also needs all of these",
+  filterListHelp: "Like the AFL filter sections: each filter is switched on or off, and while on, a buy also needs it to be true. Tick the box to also sell when it turns false.",
+  filterExit: "Also sell when it turns false",
   simpleEntryTitle: "Buy when all of these are true", simpleExitTitle: "Sell when any of these is true",
   exitTitle: "Exit · any of these",
   addCondition: "+ Add condition",
@@ -96,7 +103,7 @@ export const MONEY_BLOCKED = {
 export const FUTURES_NOTE = "Futures: the contract model exists, but no futures contract data (contract chain with expiries, lot sizes and tick size) is admitted, so futures runs answer “Data needed”. The index or spot series is never used as a stand-in.";
 export const MONEY_BASIS_HINT = "User-declared costs; not a verified statutory schedule.";
 export const OPERAND_KIND_LABELS: Record<string, string> = {
-  price: "Price", indicator: "Indicator", calendar: "Calendar", number: "Number", bars_held: "Bars held",
+  price: "Price", indicator: "Indicator", calendar: "Calendar", number: "Number", bars_held: "Bars held (candles in the trade)", since_entry: "Since entry",
   arith: "Arithmetic", pct: "% difference", abs: "Absolute value", ref: "N bars ago", window: "Rolling window", change: "Change over N bars",
   compress: "Higher-timeframe aggregate", bars_since: "Bars since", value_when: "Value when", since: "Highest / lowest since", count: "Count of bars",
   formula: "My indicator",

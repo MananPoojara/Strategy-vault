@@ -159,3 +159,46 @@ it("single-child group labels follow the engine's not/when paths without invente
   expect(row.host.querySelector('select[aria-label="Actions for Entry 1 › not"]')).not.toBeNull();
   expect(row.host.querySelector('select[aria-label="Actions for Entry 2 › when"]')).not.toBeNull();
 });
+
+it("exit lists offer ready-made since-entry exits; entry lists do not", async () => {
+  const exit = await setup([C], { listPath: "exit.any", title: "Exit · any of these", tag: "Exit" });
+  await choose(exit.host.querySelector<HTMLSelectElement>("select[data-lab-exit-presets]")!, "green");
+  expect(exit.last()).toEqual([C, { lhs: { since_entry: "count", when: { lhs: { s: "close" }, op: ">", rhs: { s: "open" } } }, op: ">=", rhs: { value: 3 } }]);
+  const entry = await setup([C]);
+  expect(entry.host.querySelector("select[data-lab-exit-presets]")).toBeNull();
+  const full = await setup([C], { listPath: "exit.any", title: "Exit", tag: "Exit", caps: { leaves: true, nodes: false, top: false } });
+  await choose(full.host.querySelector<HTMLSelectElement>("select[data-lab-exit-presets]")!, "green");
+  expect(full.onChange).not.toHaveBeenCalled();
+});
+
+it("a since-entry value edits its kind, inner value, factor and amount", async () => {
+  const row: RuleNode = { lhs: { s: "close" }, op: "<", rhs: { since_entry: "highest", of: { s: "close" }, mul: 0.95 } };
+  const { host, last } = await setup([row], { listPath: "exit.any", title: "Exit", tag: "Exit" });
+  const kind = host.querySelector<HTMLSelectElement>('select[aria-label="Since entry value"]')!;
+  expect(kind.value).toBe("highest");
+  await choose(kind, "entry_price");
+  expect((last()[0] as Cond).rhs).toEqual({ mul: 0.95, since_entry: "entry_price" });
+  await type(host.querySelector<HTMLInputElement>('input[aria-label="+ amount"]')!, "-2");
+  expect((last()[0] as Cond).rhs).toEqual({ since_entry: "highest", of: { s: "close" }, mul: 0.95, add: -2 });
+  await type(host.querySelector<HTMLInputElement>('input[aria-label="× factor"]')!, "1");
+  expect((last()[0] as Cond).rhs).toEqual({ since_entry: "highest", of: { s: "close" } });
+});
+
+it("rules and all/any conditions switch off and on without being deleted", async () => {
+  const group: RuleNode = { any: [C, { lhs: { s: "close" }, op: "<", rhs: { value: 5 } }] };
+  const { host, last } = await setup([C, group]);
+  const box = (label: string) => host.querySelector<HTMLInputElement>(`input[aria-label="${label} on"]`)!;
+  expect(box("Entry 1").checked).toBe(true);
+  await click(box("Entry 1"));
+  expect(last()[0]).toEqual({ ...C, off: true });
+  await click(box("Entry 2 › any 2"));
+  expect((last()[1] as { any: RuleNode[] }).any[1]).toEqual({ lhs: { s: "close" }, op: "<", rhs: { value: 5 }, off: true });
+  const off = await setup([{ ...C, off: true }]);
+  const row = off.host.querySelector("[data-lab-node]")!;
+  expect(row.getAttribute("data-lab-off")).toBe("true");
+  await click(off.host.querySelector<HTMLInputElement>('input[aria-label="Entry 1 on"]')!);
+  expect(off.last()[0]).toEqual(C);
+  // not / at-least / sequence steps have no switch
+  const nested = await setup([{ not: C }]);
+  expect(nested.host.querySelectorAll('input[aria-label$=" on"]')).toHaveLength(1);
+});

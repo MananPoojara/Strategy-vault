@@ -102,3 +102,37 @@
 .lab-sgroup > div > .lab-row, .lab-sgroup .lab-exec > .lab-row { margin: 0; }
 .lab-stab-intro { margin: 0; }
 @media (max-width: 700px) { .lab-sgroup { grid-template-columns: minmax(0, 1fr); gap: 6px; } .lab-sgroup > h4 { margin: 0; } }
+
+/* a condition switched off (rules.rs `off`): kept in the strategy, skipped by the backtest */
+.lab-node.lab-off > :not(.lab-onoff):not(.lab-group-h), .lab-node.lab-off > .lab-group-h > :not(.lab-onoff), .lab-node.lab-off > .lab-group-body { opacity: .45; }
+.lab-onoff { font-size: 12px; }
+
+/* Day-first date box: text input + calendar button; the native picker is kept off-screen for its calendar only. */
+.lab-datefield { display: inline-flex; flex-direction: column; gap: 2px; }
+.lab-datefield-box { position: relative; display: inline-flex; }
+.lab-datefield input:not(.lab-datefield-native) { width: 9.5em; padding-right: 28px; }
+.lab-datefield input[aria-invalid="true"] { border-color: var(--neg, #c0392b); }
+.lab-datefield-pick { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); display: grid; place-items: center; width: 22px; height: 22px; border: 0; border-radius: 4px; background: none; color: var(--ink2); cursor: pointer; padding: 0; }
+.lab-datefield-pick:hover { color: var(--blue); background: var(--rule); }
+.lab-datefield-pick:focus-visible { outline: none; box-shadow: var(--ring); }
+.lab-datefield-native { position: absolute; right: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; border: 0; padding: 0; }
+.lab-datefield-err { color: var(--neg, #c0392b); font-weight: 400; }
+
+/* Custom date filter (Settings) and its upload panel */
+.lab-datefilter .lab-row { align-items: center; }
+.lab-datefilter-dates summary { cursor: pointer; font-size: 13px; color: var(--ink2); }
+.lab-datefilter-table { max-height: 240px; overflow: auto; margin-top: 6px; }
+.lab-datefilter-table table { font-size: 12.5px; }
+.lab-datesets { margin-top: 10px; padding: 12px 14px; border: 1px solid var(--rule); border-radius: 6px; }
+.lab-datesets h4 { margin: 0 0 6px; font-size: 14px; }
+.lab-datesets-steps { margin: 0 0 10px; padding-left: 20px; line-height: 1.55; }
+.lab-datesets-text, .lab-datesets-lists textarea { width: 100%; box-sizing: border-box; font-family: var(--mono, ui-monospace, monospace); font-size: 12.5px; }
+.lab-datesets-lists { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 700px) { .lab-datesets-lists { grid-template-columns: 1fr; } }
+.lab-datesets-file { position: relative; overflow: hidden; cursor: pointer; }
+.lab-datesets-file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.lab-datesets-errors { margin: 6px 0; padding-left: 20px; }
+.lab-datesets-list { list-style: none; margin: 0; padding: 0; }
+.lab-datesets-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--rule); }
+.lab-datesets-list li > span:first-child { flex: 1 1 260px; }
+.lab-datesets-list .tag { margin-left: 6px; }

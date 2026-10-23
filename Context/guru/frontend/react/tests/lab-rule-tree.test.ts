@@ -220,3 +220,58 @@ it("pins the engine comparison, node, timing and JSON-depth boundaries", () => {
   expect(t.treeProblems(spec({ entry: { all: [{ lhs: { value_when: C, of: { s: "close" }, nth: 21 }, op: ">", rhs: { value: 0 } }] } }), cat7))
     .toContain("Entry 1 › left › occurrence must be a whole number from 1 to 20.");
 });
+
+it("since-entry values: kind, defaults, description, optimizable factor and top-level-only check", () => {
+  const trail: Operand = { since_entry: "highest", of: { s: "rsi", p: { length: 14 } }, add: -10 };
+  expect(t.operandKind(trail, cat7)).toBe("since_entry");
+  expect(t.operandKind({ since_entry: "median" }, cat7)).toBe("unknown");
+  expect(t.describeOperand(trail, cat7)).toMatch(/^highest .*since entry − 10$/);
+  expect(t.describeOperand({ since_entry: "entry_price", mul: 0.95 }, cat7)).toBe("entry price × 0.95");
+  expect(t.sinceEntry("count", { since_entry: "highest", of: { s: "close" }, mul: 2 })).toEqual({ mul: 2, since_entry: "count", when: { lhs: { s: "close" }, op: ">", rhs: { s: "open" } } });
+  expect(t.sinceEntry("entry_price", { since_entry: "count", when: C, add: 1 })).toEqual({ add: 1, since_entry: "entry_price" });
+  expect(t.convertOperand({ s: "close" }, "since_entry", cat7)).toEqual({ since_entry: "highest", of: { s: "close" } });
+  const top = spec({ exit: { any: [{ lhs: { s: "rsi", p: { length: 14 } }, op: "<", rhs: trail }] } });
+  const knobs: string[] = [];
+  t.walkSpec(top, (x) => { if (x.t === "knob") knobs.push(x.path); });
+  expect(knobs).toContain("exit.any[0].rhs.add");
+  expect(t.treeProblems(top, cat7)).toEqual([]);
+  const nested = spec({ exit: { any: [{ any: [{ lhs: { s: "close" }, op: "<", rhs: { since_entry: "entry_price", mul: 0 } }] }] } });
+  const problems = t.treeProblems(nested, cat7).join(" ");
+  expect(problems).toContain("Since-entry values work only in a top-level exit condition");
+  expect(problems).toContain("the factor must not be 0");
+});
+
+it("ready-made exits are valid top-level since-entry conditions", () => {
+  for (const p of t.EXIT_PRESETS) {
+    for (const short of [false, true]) {
+      const s = spec({ ...(short ? { direction: "short" } : {}), exit: { any: [p.node(short)] } });
+      expect(t.treeProblems(s, cat7), p.id).toEqual([]);
+      expect(t.describeNode(p.node(short), cat7)).toMatch(/since entry|entry price/);
+    }
+  }
+  expect(t.EXIT_PRESETS.map((p) => p.id)).toEqual(["green", "upclose", "red", "downclose", "rsi_trail", "close_drop", "close_stop", "close_target"]);
+});
+
+it("switched-off rules: allowed places, a group or entry list never all off, described as off", () => {
+  const C: Cond = { lhs: { s: "close" }, op: ">", rhs: { value: 1 } };
+  const off = { ...C, off: true } as RuleNode;
+  expect(t.treeProblems(spec({ entry: { all: [C, off] } }), cat7)).toEqual([]);
+  expect(t.treeProblems(spec({ entry: { all: [{ any: [C, off] }] } }), cat7)).toEqual([]);
+  expect(t.treeProblems(spec({ entry: { all: [{ not: off }] } }), cat7).join(" ")).toContain("only a top-level rule or a condition of an all/any group can be switched off");
+  expect(t.treeProblems(spec({ entry: { all: [{ all: [off] }] } }), cat7).join(" ")).toContain("every condition of this group is switched off");
+  expect(t.treeProblems(spec({ entry: { all: [off] } }), cat7).join(" ")).toContain("Entry: every rule is switched off");
+  expect(t.describeNode(off, cat7)).toMatch(/^\(off\) close/);
+});
+
+it("review fixes: since-entry factors are not formulas; position values convert from the close; presets mirror for shorts", () => {
+  const trail: Operand = { since_entry: "highest", of: { s: "close" }, mul: 0.95 };
+  expect(t.exprKey(trail)).toBeUndefined();
+  const before = t.budget(spec({ exit: { any: [{ lhs: { s: "close" }, op: "<", rhs: { since_entry: "highest", of: { s: "close" } } }] } })).nodes;
+  expect(t.budget(spec({ exit: { any: [{ lhs: { s: "close" }, op: "<", rhs: trail }] } })).nodes).toBe(before);
+  expect(t.convertOperand({ since_entry: "count", when: C }, "arith", cat7)).toEqual({ sub: [{ s: "close" }, { value: 0 }] });
+  expect(t.convertOperand({ s: "bars_held" }, "abs", cat7)).toEqual({ abs: { s: "close" } });
+  const stop = t.EXIT_PRESETS.find((p) => p.id === "close_stop")!;
+  expect(stop.node(true)).toEqual({ lhs: { s: "close" }, op: ">", rhs: { since_entry: "entry_price", mul: 1.05 } });
+  expect(stop.label(true)).toContain("above the entry price");
+  expect(t.EXIT_PRESETS.find((p) => p.id === "rsi_trail")!.node(true)).toEqual({ lhs: { s: "rsi", p: { length: 14 } }, op: ">", rhs: { since_entry: "lowest", of: { s: "rsi", p: { length: 14 } }, add: 10 } });
+});

@@ -58,7 +58,7 @@ pub fn assert_series(got: &[f64], want: &[f64]) {
 pub fn with_breadth(mut b: Bars) -> Bars {
     let n = b.len();
     let f = |k: usize, m: f64| -> Vec<f64> { (0..n).map(|i| 400. + ((i * k) % 97) as f64 * m).collect() };
-    b.breadth = Some(Breadth { adv: f(37, 5.), dec: f(53, 4.), unch: vec![50.; n], adv_vol: f(41, 1e4), dec_vol: f(59, 1e4), unch_vol: vec![1e3; n] });
+    b.breadth = Some(Breadth { adv: f(37, 5.), dec: f(53, 4.), unch: vec![50.; n], adv_vol: f(41, 1e4), dec_vol: f(59, 1e4), unch_vol: vec![1e3; n], ..Default::default() });
     b
 }
 /// The first `n` bars (all columns, breadth included).

@@ -47,8 +47,8 @@ export function ReentryDelay({ spec, stop, label = "Re-entry delay (bars)", onCh
 
 /** AmiBroker Stops › N-bar stop: a top-level `bars_held >= n` exit rule (the form the engine's N-bar re-entry delay recognises). */
 const isNBar = (n: RuleNode) => {
-  const c = n as { lhs?: { s?: string }; op?: string; rhs?: { value?: unknown } };
-  return c.lhs?.s === "bars_held" && c.op === ">=" && typeof c.rhs?.value === "number";
+  const c = n as { lhs?: { s?: string }; op?: string; rhs?: { value?: unknown }; off?: unknown };
+  return c.lhs?.s === "bars_held" && c.op === ">=" && typeof c.rhs?.value === "number" && c.off !== true;
 };
 export function nBarStop(spec: Spec, pre: SidePre): number | undefined {
   const node = ((getAt(spec, `${pre}exit.any`) as RuleNode[] | undefined) ?? []).find(isNBar) as { rhs: { value: number } } | undefined;

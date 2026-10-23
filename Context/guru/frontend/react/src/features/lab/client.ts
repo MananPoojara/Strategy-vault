@@ -1,7 +1,7 @@
 import { ApiError } from "../../services/api";
 import { parseFormulaInfo } from "./formula";
 import type {
-  Catalogue, EngineStatus, FormulaInfo, IndicatorDraft, SavedIndicator, ForeignDisclosure, IndividualOptimizeResult, Provisional, FidelityResult, InstrumentsResponse, LabErrorFields, LabStrategy, OptimizeResult,
+  Catalogue, DateSet, DateWindow, EngineStatus, FormulaInfo, IndicatorDraft, SavedIndicator, ForeignDisclosure, IndividualOptimizeResult, Provisional, FidelityResult, InstrumentsResponse, LabErrorFields, LabStrategy, OptimizeResult,
   PublishedStrategy, PortfolioSpec, PortfolioRunResult, PortfolioOptimizeResult, LabRunResult, LabOptimizeResult, RunResult, SavedMarket, SeriesResponse, Spec, StrategyDraft, StrategyStatus, TemplateResponse,
   TemplatesResponse, TickerRow, WalkforwardOptions, WalkforwardResult,
 } from "./types";
@@ -140,3 +140,12 @@ export const indicators = {
   remove: (id: number, version: number) => labRequest<null>(`${IND}/${id}?version=${version}`, send("DELETE")),
 };
 export type IndicatorsApi = typeof indicators;
+const DATES = "/api/app/lab/date-sets";
+/** Custom date filters: the user's own sets plus every shared set; admins may share and edit shared ones. */
+export const dateSets = {
+  list: () => labRequest<DateSet[]>(DATES),
+  create: (draft: { name: string; windows: DateWindow[]; shared?: boolean }) => labRequest<DateSet>(DATES, send("POST", draft)),
+  update: (id: number, version: number, draft: { name: string; windows: DateWindow[] }) => labRequest<DateSet>(`${DATES}/${id}`, send("PUT", { ...draft, version })),
+  remove: (id: number, version: number) => labRequest<null>(`${DATES}/${id}?version=${version}`, send("DELETE")),
+};
+export type DateSetsApi = typeof dateSets;

@@ -20,7 +20,13 @@ pub struct Bars {
 
 /// Market breadth of the instrument's market, aligned to its daily bars (NaN = no value that day).
 #[derive(Clone, Debug, Default)]
-pub struct Breadth { pub adv: Vec<f64>, pub dec: Vec<f64>, pub unch: Vec<f64>, pub adv_vol: Vec<f64>, pub dec_vol: Vec<f64>, pub unch_vol: Vec<f64> }
+pub struct Breadth {
+    pub adv: Vec<f64>, pub dec: Vec<f64>, pub unch: Vec<f64>, pub adv_vol: Vec<f64>, pub dec_vol: Vec<f64>, pub unch_vol: Vec<f64>,
+    /// Advance/decline ratio of the index's own member stocks (extra_data `<TICKER>__MEMBERS_AD_RATIO.csv`).
+    pub members_ratio: Option<Vec<f64>>,
+    /// The A/D ratio must come from the index's members: NSE counts span the whole exchange, not one index.
+    pub members_required: bool,
+}
 
 impl Bars {
     pub fn from_rows(rows: &[Row]) -> Bars {
@@ -44,19 +50,22 @@ impl Bars {
     /// Each engine instance serves one market, so the `_ADV_DEC.` suffix is unique.
     pub fn from_ctx(ctx: &crate::connors::Ctx) -> Bars {
         let mut b = Bars::from_rows(ctx.r);
-        let col = |c: &str| ctx.extra.iter().find(|(k, _)| k.ends_with(&format!("_ADV_DEC.{c}"))).map(|(_, v)| v.clone());
+        let key = |c: &str| ctx.extra.keys().find(|k| k.ends_with(&format!("_ADV_DEC.{c}"))).cloned();
+        let col = |c: &str| key(c).map(|k| ctx.extra[&k].clone());
         // gl/crypto ids are "EXCHANGE:SYMBOL"; a wildcard extra file must not hand them an India/US market's breadth.
         let gl = ctx.r.first().is_some_and(|r| r.ticker.contains(':'));
         if let (false, Some(adv), Some(dec)) = (gl, col("Advances"), col("Declines")) {
             let nan = || vec![f64::NAN; adv.len()];
             b.breadth = Some(Breadth { unch: col("Unchanged").unwrap_or_else(nan), adv_vol: col("AdvVolume").unwrap_or_else(nan),
-                dec_vol: col("DecVolume").unwrap_or_else(nan), unch_vol: col("UnchVolume").unwrap_or_else(nan), adv, dec });
+                dec_vol: col("DecVolume").unwrap_or_else(nan), unch_vol: col("UnchVolume").unwrap_or_else(nan), adv, dec,
+                members_ratio: ctx.extra.get("MEMBERS_AD_RATIO").cloned(), members_required: key("Advances").is_some_and(|k| k.starts_with("NSE_")) });
         }
         b
     }
     pub fn len(&self) -> usize { self.close.len() }
     pub fn hl2(&self) -> Vec<f64> { (0..self.len()).map(|i| (self.high[i] + self.low[i]) / 2.).collect() }
     pub fn hlc3(&self) -> Vec<f64> { (0..self.len()).map(|i| (self.high[i] + self.low[i] + self.close[i]) / 3.).collect() }
+    pub fn oc2(&self) -> Vec<f64> { (0..self.len()).map(|i| (self.open[i] + self.close[i]) / 2.).collect() }
     pub fn ohlc4(&self) -> Vec<f64> { (0..self.len()).map(|i| (self.open[i] + self.high[i] + self.low[i] + self.close[i]) / 4.).collect() }
 }
 
@@ -77,5 +86,11 @@ mod tests {
         assert!(Bars::from_ctx(&gctx).breadth.is_none(), "gl/crypto have no breadth");
         assert_eq!((br.adv[1], br.dec[2]), (2., 5.));
         assert!(br.adv[2].is_nan() && br.adv_vol.iter().all(|v| v.is_nan()) && br.unch_vol.len() == 3);
+        assert!(br.members_required && br.members_ratio.is_none(), "NSE counts are exchange-wide: an index needs its members' ratio");
+        ctx.extra.insert("MEMBERS_AD_RATIO".into(), vec![1.27, f64::NAN, 0.5]);
+        assert_eq!(Bars::from_ctx(&ctx).breadth.unwrap().members_ratio.unwrap()[0], 1.27);
+        let mut us = crate::connors::Ctx::new(&rows, &rows, &[]);
+        us.extra.insert("NYSE_ADV_DEC.Advances".into(), vec![1.; 3]); us.extra.insert("NYSE_ADV_DEC.Declines".into(), vec![1.; 3]);
+        assert!(!Bars::from_ctx(&us).breadth.unwrap().members_required, "US keeps the NYSE ratio");
     }
 }

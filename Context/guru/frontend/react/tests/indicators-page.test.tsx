@@ -78,7 +78,7 @@ it("four plain steps: chart, idea, settings, results; a run opens Results", asyn
   expect(panel(2).querySelector('[aria-label="Analysis settings"]')).not.toBeNull(); // settings live in step 3
   expect(panel(1).querySelector('[aria-label="Analysis settings"]')).toBeNull();
   // Advanced rules: AmiBroker-style Entry / Exit tabs; the timeframe stays on every price or indicator row; source and group/move sit behind More
-  expect([...panel(1).querySelectorAll('[aria-label="Rules"] [role=tab]')].map((t) => t.textContent)).toEqual(["Entry · Buy", "Exit · Sell"]);
+  expect([...panel(1).querySelectorAll('[aria-label="Rules"] [role=tab]')].map((t) => t.textContent)).toEqual(["Entry · Buy", "Filters", "Exit · Sell"]);
   const row = panel(1).querySelector<HTMLElement>(".lab-cond")!;
   expect(row.querySelector("[data-lab-node-menu]")).toBeNull();
   expect(row.querySelector("[data-lab-timing]")!.textContent).toContain("Daily");

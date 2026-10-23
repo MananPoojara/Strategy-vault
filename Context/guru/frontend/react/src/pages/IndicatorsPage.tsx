@@ -24,7 +24,10 @@ import { LibraryRail } from "../features/lab/LibraryRail";
 import { IndicatorDetail } from "../features/lab/IndicatorDetail";
 import { Workbench } from "../features/lab/Workbench";
 import { RuleBuilder, SettingsTabs, type RunSettings } from "../features/lab/RuleBuilder";
-import { RunResults, RunTables } from "../features/lab/RunResults";
+import { StepGuide } from "../features/lab/StepGuide";
+import { DateFilterPanel } from "../features/lab/DateFilterPanel";
+import { withCurrentDateSet } from "../features/lab/date-sets";
+import { NeverMeetsNote, RunResults, RunTables } from "../features/lab/RunResults";
 import { ReportPanel } from "../features/lab/Report";
 import { MonteCarloPanel } from "../features/lab/MonteCarlo";
 import { ExplorePanel } from "../features/lab/Explore";
@@ -34,7 +37,7 @@ import { SavedStrategies } from "../features/lab/SavedStrategies";
 import { ReviewQueue } from "../features/lab/ReviewQueue";
 import { CompactContext, LabModeContext, ModeSwitch, SimpleSummary, storedMode, storeMode, type LabMode } from "../features/lab/simple";
 import type {
-  Catalogue, FormulaInfo, Indicator, InstrumentsResponse, SavedIndicator, LabStrategy, Market, Role, LabRunResult, Spec, TemplateResponse, TemplatesResponse, TickerRow,
+  Catalogue, DateSet, FormulaInfo, Indicator, InstrumentsResponse, SavedIndicator, LabStrategy, Market, Role, LabRunResult, Spec, TemplateResponse, TemplatesResponse, TickerRow,
 } from "../features/lab/types";
 
 export function IndicatorsPage() {
@@ -49,10 +52,26 @@ type LabTab = typeof LAB_TABS[number]["id"];
 
 /** The strategy page as four plain-language steps (market and instrument stay in the top bar: every step uses them). */
 const STEPS = [
-  { id: "chart", label: "Chart & indicators", hint: "Look at the price and add indicators from the library on the left." },
-  { id: "idea", label: "Your idea", hint: "Say when to buy and when to sell. Start from an example if you like." },
-  { id: "settings", label: "Settings", hint: "The test period, trading costs and how money is counted." },
-  { id: "results", label: "Results", hint: "How the idea did, compared with simply holding the market." },
+  { id: "chart", label: "Chart & indicators", hint: "Look at the price and add indicators from the library on the left.", tips: [
+    "Choose the market and the instrument in the bar above (for example India → NIFTY 50).",
+    "Click an indicator in the Library on the left to draw it on the chart. Press “i” next to it to read what it measures.",
+    "Change an indicator's numbers (such as its length) from its chip above the chart.",
+    "This step is optional: you can go straight to “Your idea”." ] },
+  { id: "idea", label: "Your idea", hint: "Say when to buy and when to sell. Start from an example if you like.", tips: [
+    "New here? Click one of the examples. It fills in both lists for you, and you can change any part of it.",
+    "Each row reads left to right like a sentence: What to check → Condition → Compared with. For example: Price close · is above · EMA 50.",
+    "Buy list: a trade opens only when every row is true. Sell list: the trade closes as soon as any one row is true.",
+    "“+ Add condition” adds a row. “+ Ready-made exit” adds common exits, such as a stop loss or a fixed number of days." ] },
+  { id: "settings", label: "Settings", hint: "The test period, trading costs and how money is counted.", tips: [
+    "Leave From and To empty to test all the data. Type dates as dd-mm-yyyy, or use the calendar button.",
+    "Fees and slippage are in basis points per side: 10 bps = 0.10% on every buy and every sell.",
+    "“Signal day's close” trades at the close of the candle that gave the signal. “Next day's open” waits for the next candle's open.",
+    "If you are unsure, keep the defaults and go to Results." ] },
+  { id: "results", label: "Results", hint: "How the idea did, compared with simply holding the market.", tips: [
+    "Press “Test this idea” to run the backtest.",
+    "Compare your strategy with buy-and-hold: simply buying once and holding for the whole period.",
+    "Check the list of trades to see each buy and sell date and its result.",
+    "Results are simulated on past data; they are not a promise of future returns." ] },
 ] as const;
 type Step = typeof STEPS[number]["id"];
 
@@ -99,6 +118,12 @@ function IndicatorsLab() {
   const { market, ticker } = state;
   // "My indicators": saved formulas, their chart indicators (by saved id) and the check result per formula text in the spec.
   const [mine, setMine] = useState<SavedIndicator[]>([]);
+  const [dateSetList, setDateSetList] = useState<DateSet[] | null>(null);
+  const [dateSetError, setDateSetError] = useState<unknown>(undefined);
+  const reloadDateSets = useCallback(() => lab.dateSets.list().then((l) => { setDateSetList(l); setDateSetError(undefined); return l; }, (e) => { setDateSetError(e); return undefined; }), []);
+  useEffect(() => { void reloadDateSets(); }, [reloadDateSets]);
+  // A strategy that uses a saved date filter picks up the set's current dates (re-uploads, renames) once the sets load.
+  useEffect(() => { if (dateSetList) { const next = withCurrentDateSet(state.spec, dateSetList); if (next !== state.spec) dispatch({ type: "spec", spec: next }); } }, [dateSetList, state.spec]);
   const [mineError, setMineError] = useState<unknown>(null);
   const [myInds, setMyInds] = useState<Record<number, Indicator>>({});
   const [infos, setInfos] = useState<Record<string, FormulaCheck>>({});
@@ -228,7 +253,8 @@ function IndicatorsLab() {
   const problemsFor = (spec: Spec) => cat ? [...specProblems(spec, cat), ...(cat.execution ? [...treeProblems(spec, cat), ...executionProblems(spec, cat, instrument)] : []), ...(foreignScope ? foreignProblems(spec, { ...foreignScope, spec }) : []), ...portfolioProblems(spec, cat, market, signalOptions), ...portfolioGridProblems(spec, cat)].filter((p, i, all) => all.indexOf(p) === i) : ["The engine catalogue is still loading."];
   const assertRunnable = (spec: Spec) => { const issues = problemsFor(spec); if (issues.length) throw new Error(issues.join("\n")); };
 
-  const run = async (spec: Spec = state.spec) => {
+  const run = async (current: Spec = state.spec) => {
+    const spec = dateSetList ? withCurrentDateSet(current, dateSetList) : current; // a re-uploaded date filter reaches the run
     if (!ticker && !spec.portfolio) return; // no selectable instrument on this market
     const n = ++runSeq.current;
     const sentContext=canonicalJson([market,spec.portfolio??null]);issuedContext.current=sentContext;currentContext.current=sentContext;
@@ -276,6 +302,9 @@ function IndicatorsLab() {
     for (const chip of state.chips) if (chip.id === myId(id)) dispatch({ type: "chip-remove", key: chip.key });
   };
 
+  // AmiBroker AFL layout: the date windows (Base 1 / Base 2) sit with the filters on the rules' Filters tab, else in Settings
+  const datesPanel = <DateFilterPanel spec={state.spec} onChange={(spec) => dispatch({ type: "spec", spec })}
+    sets={{ list: dateSetList, error: dateSetError, reload: reloadDateSets, canSave: canEditMine, canShare: role === "admin" }} />;
   const portfolioPanel = cat && <PortfolioPanel spec={state.spec} catalogue={cat} market={market} options={signalOptions} onChange={(spec)=>{clearRun();dispatch({type:"spec",spec});}}/>;
   let work: ReactNode;
   if (loaded && "error" in loaded) work = <ErrorNotice error={loaded.error} market={market} />;
@@ -297,7 +326,7 @@ function IndicatorsLab() {
           {STEPS.map((s, i) => <button key={s.id} type="button" className="lab-step-btn" aria-current={step === s.id ? "step" : undefined} data-lab-step={s.id}
             onClick={() => setStep(s.id)}><span className="lab-step-n">{i + 1}</span>{s.label}</button>)}
         </nav>
-        <p className="lab-step-hint" data-lab-step-hint>{STEPS[stepIndex].hint}</p>
+        <StepGuide n={stepIndex + 1} of={STEPS.length} step={STEPS[stepIndex]} />
         <div className="lab-step" hidden={step !== "chart"}>
         <Part>
           {ticker ? (
@@ -323,7 +352,7 @@ function IndicatorsLab() {
           {!cat.execution && portfolioPanel}
           <RuleBuilder spec={state.spec} catalogue={cat} instrument={instrument} onChange={(spec) => dispatch({ type: "spec", spec })}
             settings={settings} onSettings={(patch) => setSettings((s) => ({ ...s, ...patch }))}
-            problems={problems} running={running} onRun={() => void run()} portfolio={portfolioPanel} part="rules" />
+            problems={problems} running={running} onRun={() => void run()} portfolio={portfolioPanel} part="rules" dates={datesPanel} />
           </div>
         </Part>
         </div>
@@ -331,7 +360,7 @@ function IndicatorsLab() {
         <Part>
           <RuleBuilder spec={state.spec} catalogue={cat} instrument={instrument} onChange={(spec) => dispatch({ type: "spec", spec })}
             settings={settings} onSettings={(patch) => setSettings((s) => ({ ...s, ...patch }))}
-            problems={problems} running={running} onRun={() => void run()} portfolio={portfolioPanel} part="settings" />
+            problems={problems} running={running} onRun={() => void run()} portfolio={portfolioPanel} part="settings" dates={datesPanel} />
         </Part>
         </div>
         <div className="lab-step" hidden={step !== "results"} data-lab-step-results>
@@ -363,6 +392,8 @@ function IndicatorsLab() {
               })()}
             </section>}
         </Part> : <div className="box empty" data-lab-no-result>No test yet. Set up your idea in step 2, then press <b>{simple ? "▶ Test this idea" : "Run backtest"}</b>.</div>}
+        {result?.kind === "lab_simulation" && !result.trades.length && !runError && ranSpec && cat && ticker
+          ? <NeverMeetsNote spec={ranSpec} catalogue={cat} market={savedMarketValue} ticker={ticker} /> : null}
         {result?.foreign?.length && !runError ? <div className="rnote" role="note" data-lab-foreign-disclosure>{result.foreign.map((source) => <p key={source.ticker}>{foreignDescription(source)}</p>)}</div> : null}
         {!backtestShown && !simple && ticker && <Part key={`explore|${market}|${ticker}`}><ExplorePanel spec={state.spec} catalogue={chartCat!} chips={state.chips} portfolio={!!state.spec.portfolio} market={savedMarketValue} loadSeries={loadSeries}
           onScan={(apply) => { assertRunnable(state.spec); return lab.scan(market, state.spec, { ticker, apply, from: settings.from || undefined, to: settings.to || undefined }); }}

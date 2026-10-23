@@ -335,7 +335,7 @@ mod tests {
     fn ab(adv: &[f64], dec: &[f64]) -> Bars {
         let mut b = closes(&vec![1.; adv.len()]);
         let z = vec![0.; adv.len()];
-        b.breadth = Some(Breadth { adv: adv.to_vec(), dec: dec.to_vec(), unch: z.clone(), adv_vol: z.clone(), dec_vol: z.clone(), unch_vol: z });
+        b.breadth = Some(Breadth { adv: adv.to_vec(), dec: dec.to_vec(), unch: z.clone(), adv_vol: z.clone(), dec_vol: z.clone(), unch_vol: z, ..Default::default() });
         b
     }
 

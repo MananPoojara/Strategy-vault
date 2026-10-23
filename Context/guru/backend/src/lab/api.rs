@@ -586,6 +586,7 @@ fn optimize_spec(st: &State, q: &Query, spec: Spec, t0: std::time::Instant) -> R
         Ok(out)
     };
     let base = metrics(&mut Cache::new(), &spec)?;
+    let width = base.len();
     let threads = std::thread::available_parallelism().map_or(4, |n| n.get()).min(combos);
     // Rows in mixed-radix order (last dimension fastest), as the book optimizer (main.rs optimize()).
     let (stop, done) = (AtomicBool::new(false), Arc::new(AtomicUsize::new(0)));
@@ -608,7 +609,10 @@ fn optimize_spec(st: &State, q: &Query, spec: Spec, t0: std::time::Instant) -> R
                     let s = rules::apply(spec, dims, &vals);
                     #[cfg(test)]
                     if vals[0] == 77. { stop.store(true, Ordering::Relaxed); return Err(LabError::Invalid("test hook: combination failed".into())); }
-                    vals.extend(metrics(&mut cache, &s).inspect_err(|_| stop.store(true, Ordering::Relaxed))?);
+                    // every rule switched off: an unranked row (NaN trades never pass the floor), not a failed grid
+                    if rules::switched_all_off(&s) { vals.extend(vec![f64::NAN; width]); } else {
+                        vals.extend(metrics(&mut cache, &s).inspect_err(|_| stop.store(true, Ordering::Relaxed))?);
+                    }
                     done.fetch_add(1, Ordering::Relaxed);
                     Ok((k, vals))
                 }).collect::<Result<Vec<_>, LabError>>()
@@ -691,6 +695,7 @@ fn finish_portfolio(body:String,deadline:std::time::Instant,opt:bool)->Result<St
 fn operand_cells(o:&rules::Operand)->usize{
     use rules::{Operand,Expr};match o{
         Operand::Value(_)|Operand::BarsHeld=>0,
+        Operand::SinceEntry(s)=>1+s.of.as_ref().map_or(0,operand_cells)+s.when.as_ref().map_or(0,node_cells),
         Operand::Series(s)=>1+catalogue::get(&s.id).map_or(s.formula.as_ref().map_or(0,|f|f.prog.plots.len()),|d|d.outputs.len()),
         Operand::Expr(e)=>1+match &**e{
             Expr::Bin(_,a,b)=>operand_cells(a)+operand_cells(b),Expr::Abs(a)|Expr::Ref(a,_)|Expr::Win(_,a,_)=>operand_cells(a),
@@ -701,7 +706,7 @@ fn operand_cells(o:&rules::Operand)->usize{
 }
 fn node_cells(n:&rules::Node)->usize{use rules::Node;1+match n{
     Node::Cmp(c)=>operand_cells(&c.lhs)+operand_cells(&c.rhs),Node::Range{x,lo,hi,..}=>operand_cells(x)+operand_cells(lo)+operand_cells(hi),Node::Trend{x,..}=>operand_cells(x),
-    Node::All(v)|Node::Any(v)=>v.iter().map(node_cells).sum(),Node::Not(n)|Node::AtLeast{when:n,..}=>node_cells(n),Node::Then{steps,..}=>steps.iter().map(node_cells).sum(),
+    Node::Off(n)=>node_cells(n),Node::All(v)|Node::Any(v)=>v.iter().map(node_cells).sum(),Node::Not(n)|Node::AtLeast{when:n,..}=>node_cells(n),Node::Then{steps,..}=>steps.iter().map(node_cells).sum(),
 }}
 fn portfolio_resource_counts(member_bars:&[usize],other_bars:usize,units:usize)->Result<usize,LabError>{
     let refuse=|why:String|LabError::Invalid(format!("portfolio resource limit: {why}; use fewer members or shorter admitted histories (from/to does not truncate indicator warm-up)"));
@@ -814,7 +819,7 @@ fn portfolio_optimize_json(st:&State,q:&Query,spec:&Spec,gl:bool,t0:std::time::I
             for k in (worker..combos).step_by(threads){if stop.load(Ordering::Relaxed){break;}let mut index=k;let mut vals=vec![0.;dims.len()];for (j,d) in dims.iter().enumerate().rev(){vals[j]=d.values[index%d.values.len()];index/=d.values.len();}
                 let result=(||{portfolio_deadline(deadline)?;
                     #[cfg(test)] if vals[0]==77.{return Err(LabError::Invalid("test hook: portfolio combination failed; no partial ranking is published".into()));}
-                    let candidate=rules::apply(spec,dims,&vals);let (lanes,_)=portfolio_lanes(prepared,&candidate,&mut caches,deadline,Some(stop))?;
+                    let candidate=rules::apply(spec,dims,&vals);if rules::switched_all_off(&candidate){vals.extend(vec![f64::NAN;PCOLS.len()]);return Ok(vals);}let (lanes,_)=portfolio_lanes(prepared,&candidate,&mut caches,deadline,Some(stop))?;
                     if lanes.iter().map(|l|l.m.ticker.clone()).collect::<Vec<_>>()!=*cohort{return Err(LabError::NeedsData("a combination changed the admitted member cohort; no partial ranking is published".into()));}
                     let book=portfolio_book(&candidate)?;let led=super::portfolio::run(&lanes,&book,&prepared.loaded.dates,prepared.from,prepared.to,deadline,Some(stop))?;let stats=portfolio_stats(ctx,prepared,&led,book.capital,true);portfolio_deadline(deadline)?;vals.extend(PCOLS.iter().map(|key|stats[key]));Ok(vals)})();
                 match result {Ok(row)=>{out.push((k,row));done.fetch_add(1,Ordering::Relaxed);},Err(e)=>{let e=timeout(e);let cancellation=e.message()==STOPPED||e.message().contains("cancelled after another");if !cancellation{let mut first=errors.lock().unwrap_or_else(|p|p.into_inner());if first.is_none(){*first=Some(e);}}stop.store(true,Ordering::Relaxed);break;}}

@@ -4,7 +4,8 @@ import { createLabChart, themeColors, useThemeKey } from "./charts";
 import { DASH, int, num, pct } from "./format";
 import { COPY, ENTRY_KIND_LABELS } from "./labels";
 import { friendlyReason } from "./spec-model";
-import type { RunResult, SavedMarket, Stats, Piece, ExecutionModel, MoneySummary, Instrument } from "./types";
+import type { Catalogue, RunResult, SavedMarket, Spec, Stats, Piece, ExecutionModel, MoneySummary, Instrument } from "./types";
+import { neverMeets } from "./scale-check";
 import { MetricTiles, ProvisionalStrip, Segmented, ServerLabel, isProvisional } from "./ui";
 import "./results.css";
 
@@ -247,4 +248,16 @@ export function RunTables({ result, part }: { result: RunResult; part?: "monthly
       {part === "monthly" && !monthly && <p className="empty">No monthly returns for this run.</p>}
     </section>
   );
+}
+
+/** A run with 0 trades: name the buy rules whose two sides never meet on this instrument (different scales, a level out of range). */
+export function NeverMeetsNote({ spec, catalogue, market, ticker }: { spec: Spec; catalogue: Catalogue; market: SavedMarket; ticker: string }) {
+  const [notes, setNotes] = useState<string[]>([]);
+  useEffect(() => {
+    let live = true;
+    setNotes([]);
+    neverMeets(spec, catalogue, market, ticker).then((n) => live && setNotes(n), () => undefined);
+    return () => { live = false; };
+  }, [spec, catalogue, market, ticker]);
+  return notes.length ? <div className="rnote" role="note" data-lab-never-meets>{notes.map((n) => <p key={n}>{n}</p>)}</div> : null;
 }

@@ -286,3 +286,33 @@ it("Orders & stops has an N-bar stop per side; a portfolio hides per-side prices
   await act(async () => p.host.querySelector<HTMLButtonElement>("[data-lab-portfolio-stray] button")!.click());
   expect(p.last().execution).toEqual({ capital: 1e6 });
 });
+
+it("Filters tab: AFL-style filters are entry rules marked filter, each with its own sell-when-false box", async () => {
+  const { CompactContext } = await import("../src/features/lab/simple");
+  const onChange = vi.fn();
+  const Host = () => {
+    const [spec, setSpec] = useState<Spec>(defaultSpec());
+    return <CompactContext.Provider value={true}><RuleBuilder spec={spec} catalogue={catalogue7Fixture} onChange={(s) => { onChange(s); setSpec(s); }}
+      settings={settings} onSettings={() => {}} problems={[]} running={false} onRun={() => {}} part="rules" dates={<p data-dates-slot>dates</p>} /></CompactContext.Provider>;
+  };
+  const host = await mount(<Host />);
+  const rules = () => [...host.querySelectorAll<HTMLElement>('[aria-label="Rules"] [role=tab]')];
+  const pane = (label: string) => [...host.querySelectorAll<HTMLElement>("[role=tabpanel]")].find((p) => p.id === rules().find((t) => t.textContent === label)!.getAttribute("aria-controls"))!;
+  const last = () => (onChange.mock.calls.at(-1)![0] as Spec).entry.all as Record<string, unknown>[];
+  expect(rules().map((t) => t.textContent)).toEqual(["Entry · Buy", "Filters", "Exit · Sell"]);
+  expect(pane("Filters").querySelector("[data-dates-slot]")).not.toBeNull(); // Base 1 / Base 2 windows with the filters
+  await act(async () => pane("Filters").querySelector<HTMLButtonElement>("[data-lab-add-cond]")!.click());
+  expect(last()).toHaveLength(2);
+  expect(last()[1]).toMatchObject({ filter: true });
+  await act(async () => pane("Filters").querySelector<HTMLInputElement>('input[aria-label="Filter 1: Also sell when it turns false"]')!.click());
+  expect(last()[1]).toMatchObject({ filter: true, filter_exit: true });
+  // the filter row's editor never sees the marks; editing it keeps them
+  await choose(pane("Filters").querySelector<HTMLSelectElement>('select[aria-label="Operator"]')!, "<=");
+  expect(last()[1]).toMatchObject({ op: "<=", filter: true, filter_exit: true });
+  // a new entry row goes before the filters, so the signal rows keep their entry.all paths
+  await act(async () => pane("Entry · Buy").querySelector<HTMLButtonElement>("[data-lab-add-cond]")!.click());
+  expect(last().map((n) => n.filter === true)).toEqual([false, false, true]);
+  expect(pane("Entry · Buy").querySelectorAll(".lab-cond")).toHaveLength(2);
+  await act(async () => pane("Filters").querySelector<HTMLInputElement>('input[aria-label="Filter 1: Also sell when it turns false"]')!.click());
+  expect(last()[2].filter_exit).toBeUndefined();
+});

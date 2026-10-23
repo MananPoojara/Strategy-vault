@@ -7,6 +7,7 @@ import { toTradePrices, TradePrices, usesTradePrices } from "./AmiSettings";
 import { addCond, conditionCount, conds, isCond, isSeries, OPERATOR_LABELS, removeCond, setCond, setExecution, type Side } from "./spec-model";
 import type { Catalogue, Cond, ExitAtStop, Spec, StopKey } from "./types";
 import { ExecutionPanel } from "./ExecutionPanel";
+import { DateField } from "./DateField";
 import { GeneralData, InitialEquity, PortfolioLimits, RiskPanel } from "./RiskPanel";
 import { ReportSettings } from "./ReportSettings";
 import { RuleList, type TreeCaps } from "./NodeEditor";
@@ -34,6 +35,8 @@ export function RuleBuilder(props: {
   problems: string[]; running: boolean; onRun(): void;
   /** The portfolio controls (PortfolioPanel), shown on the Portfolio tab. */
   portfolio?: ReactNode;
+  /** The custom date filter (DateFilterPanel), shown with the test period. */
+  dates?: ReactNode;
   /** Step layout: "rules" (Your idea) or "settings" (Settings) only; both by default. */
   part?: "rules" | "settings";
 }) {
@@ -41,13 +44,25 @@ export function RuleBuilder(props: {
   if (!props.catalogue.execution) return props.part === "settings" ? <p className="box cap">This engine shows the test period and costs with the rules, in step 2.</p> : <LegacyRuleBuilder {...props} />;
   return <TreeRuleBuilder {...props} />;
 }
-function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market: "in" }, onChange, settings, onSettings, problems, running, onRun, portfolio, part }: Parameters<typeof RuleBuilder>[0]) {
+function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market: "in" }, onChange, settings, onSettings, problems, running, onRun, portfolio, part, dates }: Parameters<typeof RuleBuilder>[0]) {
   const showRules = part !== "settings", showSettings = part !== "rules";
   const both = spec.direction === "both", b = budget(spec), lim = limits(catalogue), bytes = specBytes(spec);
   const caps = (top: number): TreeCaps => ({ leaves: b.leaves >= lim.leaves, nodes: b.nodes >= lim.nodes, top: top >= lim.top });
   const warn = b.leaves >= 0.9 * lim.leaves || b.nodes >= 0.9 * lim.nodes || bytes >= 0.9 * SPEC_BYTE_BUDGET || b.top.long >= lim.top || b.top.short >= lim.top;
   const top = `Top-level ${b.top.long}/${lim.top}${both ? ` · short ${b.top.short}/${lim.top}` : ""}`;
-  const list = (path: ListPath, title: string, tag: string, count: number) => <RuleList listPath={path} title={title} tag={tag} catalogue={catalogue} caps={caps(count)} list={(getAt(spec, path) as RuleNode[]) ?? []} onChange={(nodes) => onChange(setAt(spec, path, nodes))} />;
+  const list = (path: ListPath, title: string, tag: string, count: number) => <RuleList listPath={path} title={title} tag={tag} catalogue={catalogue} caps={caps(count)} list={(getAt(spec, path) as RuleNode[]) ?? []} onChange={(nodes) => onChange(setAt(spec, path, nodes))}
+    short={path.startsWith("short_side.") || spec.direction === "short"} />;
+  // the AFLs' filter sections: entry.all rows marked `filter`, kept after the signal rows so those keep their entry.all[i] paths
+  const entryLists = (path: ListPath, title: string, tag: string, count: number) => {
+    const all = (getAt(spec, path) as RuleNode[]) ?? [], isFilter = (n: RuleNode) => (n as Record<string, unknown>).filter === true;
+    const signals = all.filter((n) => !isFilter(n)), filters = all.filter(isFilter), short = path.startsWith("short_side.") || spec.direction === "short";
+    const one = (rows: RuleNode[], keep: (rows: RuleNode[]) => RuleNode[], title: string, tag: string, f = false) => <RuleList key={tag} listPath={path} title={title} tag={tag}
+      catalogue={catalogue} caps={caps(count)} list={rows} onChange={(nodes) => onChange(setAt(spec, path, keep(nodes)))} short={short} filters={f} />;
+    return [one(signals, (n) => [...n, ...filters], title, tag),
+      one(filters, (n) => [...signals, ...n], path.startsWith("short_side.") ? "Short filters · the short sale also needs all of these" : COPY.filtersTitle,
+        path.startsWith("short_side.") ? "Short filter" : "Filter", true)] as const;
+  };
+  const [longEntry, longFilters] = entryLists("entry.all", both ? "Buy (long) when all of these are true" : COPY.simpleEntryTitle, both ? "Long entry" : "Entry", b.top.long);
   const money = modeOf(spec) === "money", cost = spec.execution?.cost_bps;
   const ordered = entryOrderType(spec.entry) !== "market" || (!!spec.short_side && entryOrderType(spec.short_side.entry) !== "market");
   const fill = ordered ? "order level" : usesTradePrices(spec.execution) ? "price and delay set in Trades" : spec.execution?.fill === "close" ? "same close" : "next open";
@@ -56,8 +71,8 @@ function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market
   const tabbed = compact && !simple; // Advanced in the page: AmiBroker-style Entry / Exit tabs
   const entryTitle = simple ? COPY.simpleEntryTitle : COPY.entryTitle, exitTitle = simple ? COPY.simpleExitTitle : COPY.exitTitle;
   const period = <div className="lab-row lab-settings">
-    <label className="dfield">From<input type="date" aria-label="From" title="Empty: from the first bar" value={settings.from} onChange={(e) => onSettings({ from: e.target.value })} /></label>
-    <label className="dfield">To<input type="date" aria-label="To" title="Empty: to the last bar" value={settings.to} onChange={(e) => onSettings({ to: e.target.value })} /></label>
+    <label className="dfield">From<DateField label="From" title="Empty: from the first bar" value={settings.from} onChange={(from) => onSettings({ from })} /></label>
+    <label className="dfield">To<DateField label="To" title="Empty: to the last bar" value={settings.to} onChange={(to) => onSettings({ to })} /></label>
     {money ? <span className="cap">{COPY.moneyCostsHere}</span> : <>
       {cost !== undefined ? <NumField label="Fees (bps / side)" value={cost} min={0} placeholder="0" onChange={(n) => n !== undefined && onChange(setExecution(spec, { cost_bps: n }))} /> : <label className="dfield">Fees (bps / side)<input type="number" aria-label="Fees (bps / side)" min={0} step="any" placeholder="0" value={settings.fees} onChange={(e) => onSettings({ fees: e.target.value })} /></label>}
       <label className="dfield">Slippage (bps / side)<input type="number" aria-label="Slippage (bps / side)" min={0} step="any" placeholder="0" value={settings.slippage} onChange={(e) => onSettings({ slippage: e.target.value })} /></label>
@@ -68,19 +83,19 @@ function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market
     {showRules && <>
     <h2 className="box-h">{simple ? "Your idea" : "Strategy rules"} <small>{COPY.rulesHint}</small>{((!simple && !compact) || warn) && <span className={`cap lab-caps${warn ? " lab-caps-warn" : ""}`} data-lab-caps>{COPY.caps(top, b.leaves, lim.leaves, b.nodes, lim.nodes, (bytes / 1024).toFixed(1))}</span>}</h2>
     {simple && <ExamplePicker spec={spec} onChange={onChange} />}
-    {tabbed ? <SettingsTabs ariaLabel="Rules" labels={["Entry · Buy", "Exit · Sell", ...(both && spec.short_side ? ["Short entry", "Short exit"] : [])]}>
-      {[list("entry.all", both ? "Buy (long) when all of these are true" : COPY.simpleEntryTitle, both ? "Long entry" : "Entry", b.top.long),
+    {tabbed ? <SettingsTabs ariaLabel="Rules" labels={["Entry · Buy", "Filters", "Exit · Sell", ...(both && spec.short_side ? ["Short entry", "Short filters", "Short exit"] : [])]}>
+      {[longEntry, <>{longFilters}{dates && <SettingGroup title="Date filter (Base 1 / Base 2 windows)">{dates}</SettingGroup>}</>,
         list("exit.any", both ? "Sell the long when any of these is true" : COPY.simpleExitTitle, both ? "Long exit" : "Exit", b.top.long),
-        ...(both && spec.short_side ? [list("short_side.entry.all", "Sell short when all of these are true", "Short entry", b.top.short),
+        ...(both && spec.short_side ? [...entryLists("short_side.entry.all", "Sell short when all of these are true", "Short entry", b.top.short),
           list("short_side.exit.any", "Cover the short when any of these is true", "Short exit", b.top.short)] : [])]}
     </SettingsTabs> : <>
     <div className="lab-side-panel" data-lab-side="long">
       {both && <h3 className="lab-side-h">{COPY.longSide}</h3>}
-      <div className="lab-sides">{list("entry.all", both ? COPY.longEntryTitle : entryTitle, both ? "Long entry" : "Entry", b.top.long)}{list("exit.any", both ? COPY.longExitTitle : exitTitle, both ? "Long exit" : "Exit", b.top.long)}</div>
+      <div className="lab-sides">{entryLists("entry.all", both ? COPY.longEntryTitle : entryTitle, both ? "Long entry" : "Entry", b.top.long)}{list("exit.any", both ? COPY.longExitTitle : exitTitle, both ? "Long exit" : "Exit", b.top.long)}</div>
     </div>
     {both && spec.short_side && <div className="lab-side-panel" data-lab-side="short">
       <h3 className="lab-side-h">{COPY.shortSide}</h3>
-      <div className="lab-sides">{list("short_side.entry.all", COPY.shortEntryTitle, "Short entry", b.top.short)}{list("short_side.exit.any", COPY.shortExitTitle, "Short exit", b.top.short)}</div>
+      <div className="lab-sides">{entryLists("short_side.entry.all", COPY.shortEntryTitle, "Short entry", b.top.short)}{list("short_side.exit.any", COPY.shortExitTitle, "Short exit", b.top.short)}</div>
     </div>}
     </>}
     </>}
@@ -88,12 +103,15 @@ function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market
     {showSettings && <>
     {simple ? <SimpleSettings spec={spec} settings={settings} onChange={onChange} open={part === "settings"}>
       {period}
+      {dates}
       <InitialEquity spec={spec} catalogue={catalogue} instrument={instrument} onChange={onChange} instrumentData={false} />
     </SimpleSettings> : <>{part !== "settings" && <h3 className="lab-settings-h">Backtest settings <small>how trades are filled, sized and charged</small></h3>}
     <SettingsTabs labels={["General", "Trades", "Orders & stops", "Report", "Portfolio"]}>
       <>
+        <p className="cap lab-stab-intro">The basics: starting money, the test period and costs, long or short, and how big each trade is.</p>
         <SettingGroup title="Capital"><InitialEquity spec={spec} catalogue={catalogue} instrument={instrument} onChange={onChange} instrumentData={false} /></SettingGroup>
         <SettingGroup title="Test period & costs">{period}</SettingGroup>
+        {dates && !tabbed && <SettingGroup title="Date filter">{dates}</SettingGroup>}
         <SettingGroup title="Trading">
           <ExecutionPanel spec={spec} catalogue={catalogue} onChange={onChange} part="direction" />
           {!spec.portfolio && <GeneralData spec={spec} instrument={instrument} onChange={onChange} />}
@@ -186,8 +204,8 @@ function LegacyRuleBuilder({ spec, catalogue, onChange, settings, onSettings, pr
       </div>
       {weeklyOrMonthly && <p className="cap">{COPY.wmRule}</p>}
       <div className="lab-row lab-settings">
-        <label className="dfield">From<input type="date" aria-label="From" value={settings.from} onChange={(e) => onSettings({ from: e.target.value })} /></label>
-        <label className="dfield">To<input type="date" aria-label="To" value={settings.to} onChange={(e) => onSettings({ to: e.target.value })} /></label>
+        <label className="dfield">From<DateField label="From" title="Empty: from the first bar" value={settings.from} onChange={(from) => onSettings({ from })} /></label>
+        <label className="dfield">To<DateField label="To" title="Empty: to the last bar" value={settings.to} onChange={(to) => onSettings({ to })} /></label>
         {costBps !== undefined ? (
           // The spec's own cost wins and the cost query is not sent, so this box edits the spec.
           <NumField label="Fees (bps / side)" value={costBps} min={0} onChange={(n) => n !== undefined && onChange(setExecution(spec, { cost_bps: n }))} />

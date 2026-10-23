@@ -114,6 +114,9 @@ it("Formula page renders the rules as labelled AFL-like text with stops and trad
     "SetPositionSize(10, spsPercentOfEquity);",
     'SetOption("ActivateStopsImmediately", True);',
   ]);
+  // a filter with "also sell when it turns false" (the AFLs' ST Exit / Base exit)
+  const filtered = formulaText({ ...defaultSpec(), entry: { all: [defaultSpec().entry.all[0], { lhs: { s: "close" }, op: ">", rhs: { value: 100 }, filter: true, filter_exit: true }] } }).split("\n");
+  expect(filtered.slice(1, 4)).toEqual(["Buy = (C > EMA(50) AND C > 100);", "Sell = 0;", "Sell = Sell OR NOT (C > 100);"]);
   expect(formulaText({ ...defaultSpec(), execution: { prices: { buy: "close" }, delays: { buy: 0 } } }).split("\n").slice(-4, -1)).toEqual(["SetTradeDelays(0, 1, 0, 0);", "BuyPrice = Close;", "SellPrice = Open;"]);
   // Stops-tab and General settings a spec changes show in the formula: ExitAtStop, N-bar priority, same-bar exit, account margin, tick size
   const set = formulaText({ ...spec, execution: { exit_at_stop: { stop_loss: 0, bars: 2 }, nbar_has_priority: true, activate_stops_immediately: false, allow_same_bar_exit: false, tick_size: 0.05, capital: 1e5, limits: { margin_pct: 50 } } } as never).split("\n");
@@ -147,4 +150,34 @@ it("Symbols page: one row for a single instrument, per-symbol rows for a portfol
   expect([...host.querySelectorAll("[data-lab-report-page] button, [aria-label='Report page'] button")].map((b) => b.textContent)).toEqual(["Statistics", "Symbols"]); // no Formula without a spec
   await act(async () => pageButton(host, "Symbols").click());
   expect([...host.querySelectorAll("[data-lab-report-symbols] tbody td")].map((td) => td.textContent)).toEqual(symbolRows(ts, run)[0]);
+});
+
+it("the formula page writes the Dual ATR exit and since-entry values readably", () => {
+  const s = { v: 1, entry: { all: [{ lhs: { s: "close" }, op: ">", rhs: { value: 1 } }] },
+    exit: { any: [{ lhs: { s: "close" }, op: "<", rhs: { since_entry: "highest", of: { s: "close" }, mul: 0.95 } }],
+      dual_atr: { initial: { period: 5, mult: 2, price: "open" }, favour: { period: 5, mult: 4 }, tf: "W", period_end_only: true } } };
+  const text = formulaText(s as never);
+  expect(text).toContain("Sell = (C < (HighestSince(Buy, C) * 0.95));");
+  expect(text).toContain("// Dual ATR exit: initial O - 2 * ATR(5), favour (H + L) / 2 -/+ 4 * ATR(5), ATR = MA(TrueRange) on W bars, exit tested at the period end");
+});
+
+it("the formula page and the N-bar stop skip switched-off rules", () => {
+  const s = { v: 1, entry: { all: [{ lhs: { s: "close" }, op: ">", rhs: { value: 1 } }, { off: true, lhs: { s: "close" }, op: "<", rhs: { value: 9 } }] },
+    exit: { any: [{ off: true, lhs: { s: "bars_held" }, op: ">=", rhs: { value: 5 } }, { lhs: { s: "close" }, op: "<", rhs: { value: 0.5 } }] } };
+  const text = formulaText(s as never);
+  expect(text).toContain("Buy = (C > 1);");
+  expect(text).toContain("Sell = (C < 0.5);");
+  expect(text).not.toContain("stopTypeNBar");
+});
+
+it("settings and formula pages show an active date filter and its window-change exit", () => {
+  const spec = { ...defaultSpec(), date_filter: { mode: "outside" as const, windows: [["2008-01-01", "2008-01-31"], ["2008-11-21", "2010-12-31"]] as [string, string][], set: { id: 1, name: "Base 2" } } };
+  expect(settingsLines(spec).find(([k]) => k === "Date filter")?.[1]).toBe("Base 2: trade only outside 2 windows (2008-01-01 → exit date 2010-12-31); an open trade closes when the window changes");
+  const text = formulaText(spec).split("\n");
+  expect(text).toContain("InWindow = (DateNum() >= 1080101 AND DateNum() < 1080131) OR (DateNum() >= 1081121 AND DateNum() < 1101231);");
+  expect(text).toContain("DateOK = NOT InWindow;");
+  expect(text).toContain("Buy = Buy AND DateOK;");
+  expect(text).toContain("Sell = Sell OR NOT DateOK;");
+  expect(formulaText({ ...spec, date_filter: { ...spec.date_filter, off: true } })).not.toContain("DateOK");
+  expect(settingsLines({ ...spec, date_filter: { ...spec.date_filter, exit_at_change: false } }).find(([k]) => k === "Date filter")?.[1]).not.toContain("closes");
 });

@@ -23,6 +23,12 @@ export function optimizablePaths(spec: Spec, cat: Catalogue, formulas: Record<st
     return `${[head, ...rest].join(" › ")}: ${name}`;
   };
   walkSpec(spec, (item) => {
+    // a rule's on/off switch (rules.rs `….off`): top-level rules and the conditions of an all/any group
+    if (item.t === "node" && (item.top || /\.(all|any)\[\d+\]$/.test(item.path))) {
+      out.push({ path: `${item.path}.off`, label: `${pathLabel(item.path, both)}: switched off (0 on, 1 off)`, group: groupOf(item.root),
+        current: (item.node as { off?: unknown }).off === true ? 1 : 0, min: 0, max: 1, step: 1, integer: true });
+      return;
+    }
     if (item.t === "knob") {
       const span = Math.max(Math.abs(item.value) * 0.5, 1);
       out.push({ path: item.path, label: named(item.path, item.path), group: groupOf(item.root), current: item.value,
@@ -48,6 +54,12 @@ export function optimizablePaths(spec: Spec, cat: Catalogue, formulas: Record<st
     const prefix = pre ? "Short " : both ? "Long " : "", group = (text: string) => prefix ? prefix + text : text[0].toUpperCase() + text.slice(1);
     for (const slot of LEVEL_SLOTS.filter((s) => s !== "exit.breakeven.plus")) distance(pre + slot, prefix + LEVELS[slot].label, group(slot.startsWith("entry") ? "entry order" : "exits"), levelAt(spec, pre, slot), LEVELS[slot]);
     takeProfits(spec, pre).forEach((tp, i) => distance(`${pre}exit.take_profits[${i}]`, `${prefix}Take-profit ${i + 1}`, group("exits"), tp, TP_BOUNDS));
+    const dual = getAt(spec, pre + "exit.dual_atr") as { initial?: { period?: number; mult?: number }; favour?: { period?: number; mult?: number } } | undefined;
+    if (dual) for (const [key, name] of [["initial", "Initial"], ["favour", "Favour"]] as const) {
+      const b = dual[key] ?? {};
+      out.push({ path: `${pre}exit.dual_atr.${key}.period`, label: `${prefix}Dual ATR · ${name} ATR period`, group: group("exits"), current: Number(b.period ?? 5), min: 1, max: 500, step: 1, integer: true },
+        { path: `${pre}exit.dual_atr.${key}.mult`, label: `${prefix}Dual ATR · ${name} ATR ×`, group: group("exits"), current: Number(b.mult ?? 2), min: 0.25, max: 20, step: 0.25, integer: false });
+    }
     if (getAt(spec, pre + "entry.scale_in")) out.push({ path: pre + "entry.scale_in.min_bars", label: prefix + "Scale-in · bars between legs", group: group("entry order"), current: Number(getAt(spec, pre + "entry.scale_in.min_bars") ?? 1), min: 1, max: 1000, step: 1, integer: true });
   }
   const z = spec.execution?.sizing;

@@ -15,7 +15,7 @@
 use super::bars::Bars;
 use super::resample::period_key;
 use super::rules::{After, Dist, Fill, LegPrice, Opposite, Px, Sizing};
-use super::series::{Compiled, RCond, Val};
+use super::series::{At, Compiled, RCond, Val};
 use crate::connors::{Leg, Trade};
 
 struct Pos {
@@ -25,6 +25,32 @@ struct Pos {
     arm: f64, be_after: f64, be: f64, tps: Vec<(f64, f64, bool)>, out: Vec<(usize, f64, f64)>,
     /// first leg's weight, the full-position weight `base` scale-in legs multiply, later legs, and the last leg's bar and price
     w: f64, base: f64, adds: Vec<Leg>, last: (usize, f64),
+    /// exit.dual_atr state (None until the position's first bar is evaluated)
+    dual: Option<DualState>,
+}
+/// exit.dual_atr levels after bar `upto`, signed by the trade direction (a short's levels negated) so both directions
+/// ratchet the same way: stops up, the switch band down; `favour` once a close cleared the switch band and the initial stop.
+#[derive(Clone, Copy, Debug)]
+struct DualState { init: f64, fav: f64, up: f64, favour: bool, upto: usize }
+/// Advance the open position's exit.dual_atr state through bar i; true when bar i's (period) close is beyond the previous bar's
+/// active stop (initial, or favour after the switch). Never on the entry bar; NaN levels (ATR warm-up) never exit.
+fn dual_step(c: &Compiled, p: &mut Pos, i: usize, d: f64) -> bool {
+    let Some(a) = c.dual.as_ref() else { return false };
+    let e = p.e;
+    let st = p.dual.get_or_insert(DualState { init: d * a.init[e], fav: d * a.fav[e], up: d * a.up[e], favour: false, upto: e });
+    let mut hit = false;
+    while st.upto < i {
+        let k = st.upto + 1;
+        let close = d * a.close[k];
+        if !st.favour && close > st.up && close > st.init { st.favour = true; }
+        hit = (if st.favour { close < st.fav } else { close < st.init }) && (!a.end_only || a.end[k]);
+        // f64::max/min skip a NaN operand, so a level starts once its ATR is known
+        st.init = st.init.max(d * a.init[k]);
+        st.fav = st.fav.max(d * a.fav[k]);
+        st.up = st.up.min(d * a.up[k]);
+        st.upto = k;
+    }
+    hit
 }
 impl Pos {
     /// Levels are fixed from the entry price and ATR at `sig`, the bar whose close produced the order.
@@ -42,7 +68,7 @@ impl Pos {
         Pos { e: i, sig, px, kind, stop, target: lvl(x.target, 1.), best: px, limit_bar: kind == "limit", w, base, adds: vec![], last: (i, px),
               arm: lvl(x.trail_activate, 1.), be_after: lvl(x.breakeven.map(|b| b.0), 1.),
               be: x.breakeven.map_or(f64::NAN, |b| b.1.map_or(px, |p| c.round_at(i, px + d * c.dist_at(p, px, sig, i)))),
-              tps: x.take_profits.iter().map(|&(t, size)| (lvl(Some(t), 1.), size, false)).collect(), out: vec![] }
+              tps: x.take_profits.iter().map(|&(t, size)| (lvl(Some(t), 1.), size, false)).collect(), out: vec![], dual: None }
     }
     /// The trade, with the scale-out ledger when take-profits filled: pieces plus the final exit, exit_px their weighted average.
     fn trade(&self, x: usize, px: f64, reason: String, signal_i: usize, d: f64) -> Trade {
@@ -262,7 +288,7 @@ pub fn simulate_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<T
     let holds = |s: usize, i: usize| sides[s].entry.iter().all(|r| r.holds(i, None));
     // "Has priority": on the bar the N-bar stop exits, the max loss, profit target and trailing stops are not checked
     // bars_held counts from the fill bar, or from the signal bar (AmiBroker AFL BarsSince(Buy) with a trade delay)
-    let held_from = |s: usize, p: &Pos| if sides[s].exec.held_from_signal { p.sig } else { p.e };
+    let held_from = |s: usize, p: &Pos| At { held: if sides[s].exec.held_from_signal { p.sig } else { p.e }, entry: p.e, px: p.px };
     let nbar_due = |s: usize, p: &Pos, i: usize| sides[s].exec.nbar_first && sides[s].exit.iter().any(|r| nbar(r) && i - p.e >= sides[s].exec.min_bars && r.holds(i, Some(held_from(s, p))));
     // "Allow same bar exit / entry signal" off: no entry fills on a bar a position closed (a reversal is one fill and stays exempt)
     let exited_on = |trades: &[Trade], i: usize| !x.same_bar && trades.last().is_some_and(|t| t.exit_i == i);
@@ -363,6 +389,8 @@ pub fn simulate_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<T
             if let Some((s,p))=pos.take() {trades.push(p.trade(i,b.close[i],"expiry".into(),i,dir(s)));}
             pending_exit=None;
         }
+        // exit.dual_atr state advances on every bar of the position, before the exits are tested
+        let dual_hit = match (pos.as_mut(), &pending_exit) { (Some((s, p)), None) => dual_step(sides[*s], p, i, dir(*s)), _ => false };
         if let (Some((s, p)), None) = (&pos, &pending_exit) { // a pending (delayed) exit is not re-placed
             let (s, xs, epx) = (*s, &sides[*s].exec, market(*s)[1].0);
             // ExitAtStop 0 stops on a trade price other than the open: tested on it and filled there on this bar
@@ -371,7 +399,8 @@ pub fn simulate_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<T
             // then rule exits, which count from min_bars after the fill (price exits stay active), at the regular trade price
             // and delay, except an ExitAtStop 2 N-bar stop: the next bar at the regular trade price
             let hit = if stop0.is_some() { None } else { sides[s].exit.iter().find(|r| i - p.e >= xs.min_bars && r.holds(i, Some(held_from(s, p))))
-                .map(|r| (r.label.clone(), if nbar(r) && xs.exit_at_stop[3] == 2 { (epx, 1) } else { market(s)[1] })) };
+                .map(|r| (r.label.clone(), if nbar(r) && xs.exit_at_stop[3] == 2 { (epx, 1) } else { market(s)[1] }))
+                .or_else(|| (dual_hit && i - p.e >= xs.min_bars).then(|| ("exit.dual_atr".to_string(), market(s)[1]))) };
             let entry_bar = p.e == i;
             if let Some(w) = stop0 { trades.push(pos.take().unwrap().1.trade(i, pv, w.into(), i, dir(s))); exited = true; }
             match hit {
@@ -1586,5 +1615,142 @@ mod tests {
         assert_eq!((s.exit_at_stop, s.same_bar), ([1, 1, 0, 1], false));
         let port = r#"{"v":1,"entry":{"all":[{"lhs":{"s":"close"},"op":">","rhs":{"value":1}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":5}}]},"execution":{"capital":1000000,"nbar_has_priority":true},"portfolio":{"universe":{"basket":"nifty50"},"max_open":5}}"#;
         assert!(matches!(parse_spec(port), Err(crate::lab::rules::LabError::Unsupported(m)) if m.contains("nbar_has_priority")));
+    }
+}
+
+#[cfg(test)]
+mod dual_since_tests {
+    use super::*;
+    use crate::lab::rules::{parse_spec, Exec, Fill, Op};
+    use crate::lab::series::{compile, Cache, DualBands, Frames, RCond, Val};
+    use crate::lab::testdata::from_ohlc;
+
+    const CLOSES: [f64; 10] = [10., 10., 11., 12., 13., 12., 11.4, 11.9, 10.5, 10.];
+    fn flat(c: &[f64]) -> Bars { from_ohlc(&c.iter().map(|&x| (x, x, x, x)).collect::<Vec<_>>()) }
+    fn entry_on_1() -> RCond { RCond { lhs: Val::Arr((0..10).map(|i| if i == 1 { 1. } else { 0. }).collect()), op: Op::Gt, rhs: Val::Const(0.5), label: "rule".into() } }
+    fn run(up: f64, end: Option<usize>, init_nan_until: usize) -> Vec<Trade> {
+        let mut init = vec![9., 9., 9.5, 10., 10.5, 11., 11., 11., 11., 11.];
+        for v in init.iter_mut().take(init_nan_until) { *v = f64::NAN; }
+        let fav = vec![8., 8., 8., 9., 9.5, 10., 10., 10., 11.5, 11.];
+        let mut c = Compiled::new(vec![entry_on_1()], vec![]);
+        c.exec = Exec { fill: Fill::Close, exit_fill: Fill::Close, ..Exec::default() };
+        c.dual = Some(DualBands { init, fav, up: vec![up; 10], close: CLOSES.to_vec(), end: (0..10).map(|i| Some(i) == end).collect(), end_only: end.is_some() });
+        simulate(&c, &flat(&CLOSES), 0, 9)
+    }
+    #[test] fn dual_atr_switches_to_the_favour_stop_after_a_close_above_the_switch_band() {
+        // entry at bar 1's close; bar 4 closes 13 above the switch band 12 and the initial stop, so the favour stop (ratcheted
+        // to 11.5 by bar 8) exits bar 9 (10 < 11.5); the initial stop alone would exit bar 8 (10.5 < 11)
+        let t = run(12., None, 0);
+        assert_eq!((t.len(), t[0].legs[0].i, t[0].exit_i, t[0].reason.as_str()), (1, 1, 9, "exit.dual_atr"));
+        let t = run(1e9, None, 0);
+        assert_eq!((t[0].exit_i, t[0].exit_px), (8, 10.5));
+    }
+    #[test] fn dual_atr_period_end_only_waits_for_the_period_end_and_skips_unknown_levels() {
+        // bar 8 breaks the initial stop but is not a period end; bar 9 is, and still closes below the stop
+        assert_eq!(run(1e9, Some(9), 0)[0].exit_i, 9);
+        // a period end that does not break the stop: no exit, the position stays open
+        assert!(run(1e9, Some(5), 0)[0].open);
+        // the initial stop is unknown until bar 3: the entry level is NaN and the ratchet starts at bar 3's 10
+        assert_eq!(run(1e9, None, 3)[0].exit_i, 8);
+    }
+    #[test] fn dual_atr_never_exits_on_the_entry_bar_and_respects_min_bars() {
+        // an initial stop above the entry close: bar 2 exits (not bar 1, the entry bar)
+        let mut c = Compiled::new(vec![entry_on_1()], vec![]);
+        c.exec = Exec { fill: Fill::Close, exit_fill: Fill::Close, ..Exec::default() };
+        c.dual = Some(DualBands { init: vec![50.; 10], fav: vec![0.; 10], up: vec![1e9; 10], close: CLOSES.to_vec(), end: vec![false; 10], end_only: false });
+        assert_eq!(simulate(&c, &flat(&CLOSES), 0, 9)[0].exit_i, 2);
+        c.exec.min_bars = 3;
+        assert_eq!(simulate(&c, &flat(&CLOSES), 0, 9)[0].exit_i, 4);
+    }
+    fn spec_run(exit: &str) -> Vec<Trade> {
+        let spec = parse_spec(&format!(r#"{{"v":1,"entry":{{"all":[{{"lhs":{{"s":"close"}},"op":"crosses_above","rhs":{{"value":10.5}}}}]}},"exit":{{"any":[{exit}]}},"execution":{{"fill":"close"}}}}"#)).unwrap();
+        let fr = Frames::new(flat(&CLOSES));
+        simulate(&compile(&spec, &fr, &mut Cache::new()).unwrap(), &fr.d, 0, 9)
+    }
+    #[test] fn since_entry_values_read_the_open_position() {
+        // entry: close crosses above 10.5 at bar 2 (close 11)
+        // 2nd up-close after the entry bar: bar 3 (12), bar 4 (13) → exit bar 4
+        let t = spec_run(r#"{"lhs":{"since_entry":"count","when":{"lhs":{"s":"close"},"op":">","rhs":{"s":"close","offset":1}}},"op":">=","rhs":{"value":2}}"#);
+        assert_eq!((t[0].legs[0].i, t[0].exit_i), (2, 4));
+        // 10 % below the highest close since entry (13 → 11.7): bar 6 closes 11.4
+        assert_eq!(spec_run(r#"{"lhs":{"s":"close"},"op":"<","rhs":{"since_entry":"highest","of":{"s":"close"},"mul":0.9}}"#)[0].exit_i, 6);
+        // the entry close plus 1.5 (12.5): bar 4 closes 13
+        assert_eq!(spec_run(r#"{"lhs":{"s":"close"},"op":">","rhs":{"since_entry":"entry_price","add":1.5}}"#)[0].exit_i, 4);
+        // within 0.5 of the lowest close since entry, the entry bar included (11 → 11.5): bar 6 closes 11.4
+        assert_eq!(spec_run(r#"{"lhs":{"s":"close"},"op":"<","rhs":{"since_entry":"lowest","of":{"s":"close"},"add":0.5}}"#)[0].exit_i, 6);
+    }
+}
+
+#[cfg(test)]
+mod off_run_tests {
+    use super::*;
+    use crate::lab::rules::parse_spec;
+    use crate::lab::series::{compile, Cache, Frames};
+    use crate::lab::testdata::from_ohlc;
+    fn trades(spec: &str) -> Vec<(usize, usize, String)> {
+        let s = parse_spec(spec).unwrap();
+        let fr = Frames::new(from_ohlc(&(0..40).map(|i| { let c = 100. + ((i * 7) % 11) as f64 - (i % 3) as f64; (c - 0.5, c + 1., c - 1., c) }).collect::<Vec<_>>()));
+        simulate(&compile(&s, &fr, &mut Cache::new()).unwrap(), &fr.d, 0, 39).into_iter().map(|t| (t.legs[0].i, t.exit_i, t.reason)).collect()
+    }
+    #[test] fn a_switched_off_rule_runs_exactly_as_if_it_were_removed() {
+        let on = |e1: &str, x2: &str| format!(r#"{{"v":1,"entry":{{"all":[{{"lhs":{{"s":"close"}},"op":">","rhs":{{"s":"close","offset":1}}}}{e1}]}},"exit":{{"any":[{{"lhs":{{"s":"bars_held"}},"op":">=","rhs":{{"value":3}}}}{x2},{{"lhs":{{"s":"close"}},"op":"<","rhs":{{"s":"close","offset":2}}}}]}},"execution":{{"fill":"close"}}}}"#);
+        let entry_off = r#",{"off":true,"lhs":{"s":"close"},"op":">","rhs":{"value":105}}"#;
+        let exit_off = r#",{"off":true,"lhs":{"s":"close"},"op":"<","rhs":{"value":1000}}"#;
+        let base = trades(&on("", ""));
+        assert!(!base.is_empty());
+        // the off entry rule would block every entry, the off exit would exit at once: neither runs
+        let with_off = trades(&on(entry_off, exit_off));
+        assert_eq!(with_off.iter().map(|t| (t.0, t.1)).collect::<Vec<_>>(), base.iter().map(|t| (t.0, t.1)).collect::<Vec<_>>());
+        // labels keep the rule's position: the third exit is exit.any[2] even with exit.any[1] switched off
+        assert!(with_off.iter().any(|t| t.2.starts_with("exit.any[2]:")), "{with_off:?}");
+        // a group with an off condition behaves as the group without it
+        let grp = |extra: &str| format!(r#"{{"v":1,"entry":{{"all":[{{"any":[{{"lhs":{{"s":"close"}},"op":">","rhs":{{"s":"close","offset":1}}}}{extra}]}}]}},"exit":{{"any":[{{"lhs":{{"s":"bars_held"}},"op":">=","rhs":{{"value":2}}}}]}},"execution":{{"fill":"close"}}}}"#);
+        assert_eq!(trades(&grp(r#",{"off":true,"lhs":{"s":"close"},"op":">","rhs":{"value":0}}"#)), trades(&grp("")));
+    }
+    #[test] fn a_filter_is_an_entry_rule_and_its_filter_exit_sells_when_it_is_false() {
+        let spec = |f: &str, x: &str| format!(r#"{{"v":1,"entry":{{"all":[{{"lhs":{{"s":"close"}},"op":">","rhs":{{"s":"close","offset":1}}}},{{{f}"lhs":{{"s":"close"}},"op":">","rhs":{{"value":101}}}}]}},"exit":{{"any":[{{"lhs":{{"s":"bars_held"}},"op":">=","rhs":{{"value":5}}}}{x}]}},"execution":{{"fill":"close"}}}}"#);
+        let at = |t: Vec<(usize, usize, String)>| t.into_iter().map(|t| (t.0, t.1)).collect::<Vec<_>>();
+        assert_eq!(trades(&spec(r#""filter":true,"#, "")), trades(&spec("", "")));
+        // AFL: Buy = signal AND filter; Sell = ... OR NOT filter
+        let not = r#",{"not":{"lhs":{"s":"close"},"op":">","rhs":{"value":101}}}"#;
+        let (with, plain) = (trades(&spec(r#""filter":true,"filter_exit":true,"#, "")), trades(&spec("", not)));
+        assert_eq!(at(with.clone()), at(plain));
+        assert_ne!(at(with.clone()), at(trades(&spec("", ""))), "the filter exit never fired");
+        assert!(with.iter().any(|t| t.2 == "entry.all[1]: filter turned false"), "{with:?}");
+        // a switched-off filter takes its exit with it
+        assert_eq!(at(trades(&spec(r#""off":true,"filter":true,"filter_exit":true,"#, ""))), at(trades(&spec(r#""off":true,"#, ""))));
+    }
+}
+
+#[cfg(test)]
+mod date_filter_run_tests {
+    use super::*;
+    use crate::lab::rules::parse_spec;
+    use crate::lab::series::{compile, Cache, Frames};
+    use crate::lab::testdata::from_ohlc;
+    /// Ten trading days 2024-01-01 .. 2024-01-12 (weekends skipped), every bar an up-close so the entry rule always holds.
+    fn run(df: &str) -> Vec<(String, String, String)> { run_exit(df, "") }
+    fn run_exit(df: &str, exit: &str) -> Vec<(String, String, String)> {
+        let mut b = from_ohlc(&(0..10).map(|i| { let c = 100. + i as f64; (c, c + 1., c - 1., c) }).collect::<Vec<_>>());
+        b.date = ["01", "02", "03", "04", "05", "08", "09", "10", "11", "12"].iter().map(|d| format!("2024-01-{d}")).collect();
+        let s = parse_spec(&format!(r#"{{"v":1,"entry":{{"all":[{{"lhs":{{"s":"close"}},"op":">","rhs":{{"value":1}}}}]}},"exit":{{"any":[]{exit}}},"execution":{{"fill":"close"}},"date_filter":{df}}}"#)).unwrap();
+        let fr = Frames::new(b);
+        simulate(&compile(&s, &fr, &mut Cache::new()).unwrap(), &fr.d, 0, 9).into_iter().map(|t| (fr.d.date[t.legs[0].i].clone(), fr.d.date[t.exit_i].clone(), t.reason)).collect()
+    }
+    #[test] fn inside_trades_in_the_window_and_exits_on_the_first_day_on_or_after_to() {
+        // window 2024-01-03 .. 2024-01-06 (a Saturday): in on the 3rd, 4th, 5th; the 8th is the first day on or after `to`
+        let t = run(r#"{"windows":[["2024-01-03","2024-01-06"]]}"#);
+        assert_eq!(t, vec![("2024-01-03".to_string(), "2024-01-08".to_string(), "date_filter: window ended".to_string())]);
+    }
+    #[test] fn a_window_exit_the_change_bar_cannot_take_happens_on_the_next_bar_allowed() {
+        // in on the 3rd (window 3rd..5th, to exclusive); the 5th is the first bar outside but min_bars 3 blocks it there
+        let t = run_exit(r#"{"windows":[["2024-01-03","2024-01-05"]]}"#, r#","min_bars":3"#);
+        assert_eq!(t, vec![("2024-01-03".to_string(), "2024-01-08".to_string(), "date_filter: window ended".to_string())]);
+    }
+    #[test] fn outside_trades_out_of_the_window_and_exits_on_its_first_bar() {
+        let t = run(r#"{"mode":"outside","windows":[["2024-01-04","2024-01-09"]]}"#);
+        // the position from the 1st exits on the 4th (window starts); no entry inside; re-entry on the 9th, open at the end
+        assert_eq!(t[0], ("2024-01-01".to_string(), "2024-01-04".to_string(), "date_filter: window started".to_string()));
+        assert_eq!((t[1].0.as_str(), t[1].2.as_str()), ("2024-01-09", "open"));
     }
 }

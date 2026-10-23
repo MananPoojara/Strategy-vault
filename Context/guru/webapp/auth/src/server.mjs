@@ -8,6 +8,7 @@ import { validateNoteKey, validateTheme, roleAllows, ROLES, validateSavedView, v
 import { createBookLibrary, registerBookLibrary } from './book-library.mjs';
 import { registerLabStrategies } from './lab-strategies.mjs';
 import { registerLabIndicators } from './lab-indicators.mjs';
+import { registerLabDateSets } from './lab-date-sets.mjs';
 
 await bootstrap();
 export const app = new Hono();
@@ -41,6 +42,7 @@ app.use('/api/app/*', async (c, next) => {
 registerBookLibrary(app, await createBookLibrary());
 registerLabStrategies(app, pool);
 registerLabIndicators(app, pool);
+registerLabDateSets(app, pool);
 app.get('/api/app/me', async c => {
   const user = c.get('user');
   const settings = await pool.query('SELECT theme,last_view FROM vault_settings WHERE user_id = $1', [user.id]);

@@ -90,7 +90,10 @@ export interface ScaleIn { legs: number[]; min_bars?: number; price?: "any" | "b
 export interface EntrySpec { all: RuleNode[]; limit?: EntryLevel; stop?: EntryLevel; valid_bars?: number; scale_in?: ScaleIn; [extra: string]: unknown }
 export interface ExitSpec {
   any: RuleNode[]; stop_loss?: Dist; target?: Dist; trailing?: Dist & { activate?: Dist }; breakeven?: { after: Dist; plus?: Dist };
-  take_profits?: TakeProfit[]; min_bars?: number; [extra: string]: unknown;
+  take_profits?: TakeProfit[]; min_bars?: number;
+  /** rules.rs exit.dual_atr: price source ∓ multiple × average true range, initial and favour bands; tf D (default), W or M. */
+  dual_atr?: { initial: { period: number; mult: number; price?: string }; favour: { period: number; mult: number; price?: string }; tf?: "D" | "W" | "M"; period_end_only?: boolean };
+  [extra: string]: unknown;
 }
 export interface ShortSide { entry: EntrySpec; exit: ExitSpec; [extra: string]: unknown }
 export type Sizing = { pct_equity: number } | { risk_pct: number } | { units: number } | { value: number };
@@ -127,8 +130,15 @@ export interface OptimizeDim { path: string; from: number; to: number; step: num
 export type Fill = "next_open" | "close";
 export interface Spec {
   v: 1; direction?: "long" | "short" | "both"; origin?: Origin; entry: EntrySpec; exit: ExitSpec; short_side?: ShortSide;
-  execution?: Execution; optimize?: OptimizeDim[]; portfolio?: PortfolioSpec; [extra: string]: unknown;
+  execution?: Execution; optimize?: OptimizeDim[]; portfolio?: PortfolioSpec; date_filter?: DateFilter; [extra: string]: unknown;
 }
+/** A calendar window: from (inclusive) to `to` (the first day outside), YYYY-MM-DD. */
+export interface DateWindow { from: string; to: string; label?: string }
+/** A saved custom date filter (auth lab-date-sets.mjs): personal, or shared by an admin with everyone. */
+export interface DateSet { id: number; name: string; shared: boolean; windows: DateWindow[]; version: number; mine: boolean; editable: boolean; createdAt: string; updatedAt: string }
+/** rules.rs DateFilter: trade inside (bull) or outside (bear) the windows ([from, to] pairs); exit when a window ends / starts;
+ *  `set` names the saved set the windows come from. */
+export interface DateFilter { mode?: "inside" | "outside"; windows: [string, string][]; exit_at_change?: boolean; off?: boolean; set?: { id?: number; name?: string } }
 
 // ---- run / optimize
 export type Piece = [date: string, price: number, weight: number];

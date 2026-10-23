@@ -185,7 +185,7 @@ pub fn run(lanes:&[Lane],b:&Book,dates:&[String],from:usize,to:usize,deadline:In
         if b.mode==Mode::Signals {
             for &m in &order {pulse(deadline,stop)?;let (Some(k),Some(h))=(lanes[m].m.at[i],a.held[m].as_ref()) else {continue;};
                 if a.pending[m].is_some()||k-h.entry_k<lanes[m].c.exec.min_bars {continue;}
-                let why=lanes[m].c.exit.iter().find(|r|r.holds(k,Some(h.entry_k))).map(|r|r.label.clone());
+                let why=lanes[m].c.exit.iter().find(|r|r.holds(k,Some(super::series::At::bar(h.entry_k)))).map(|r|r.label.clone());
                 if let Some(reason)=why {match b.exit_fill {
                     Fill::Close=>{a.close(&mut out,b,m,i,lanes[m].m.frames.d.close[k],i,reason)?;exited[m]=true;},
                     Fill::NextOpen if i<to=>a.pending[m]=Some(PendingExit {signal_i:i,entry_i:h.entry.i,reason}),_=>{},

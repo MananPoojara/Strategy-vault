@@ -53,6 +53,17 @@ pub const FUNCTIONS: &[(&str, &str, &str)] = &[
     ("BarsSince", "cond", "Bars since cond was last true (NaN before the first time)."),
     ("ValueWhen", "cond, x[, nth]", "x on the nth most recent bar where cond was true (nth 1 to 20)."),
     ("Nz", "x[, v]", "x with missing values replaced by v (default 0)."),
+    ("Cum", "x", "Running total of x from the first bar; a missing value adds nothing (NaN until the first value)."),
+    ("Round", "x", "Nearest whole number (halves away from zero)."),
+    ("Int", "x", "Whole-number part, towards zero."),
+    ("Floor", "x", "Largest whole number at or below x."),
+    ("Ceil", "x", "Smallest whole number at or above x."),
+    ("Frac", "x", "Fractional part: x − Int(x)."),
+    ("Sign", "x", "1 above 0, −1 below 0, 0 at 0."),
+    ("HighestSince", "cond, x", "Highest x since the latest bar where cond was true, that bar included (NaN before; a missing x or cond since then makes it unknown)."),
+    ("LowestSince", "cond, x", "Lowest x since the latest bar where cond was true, that bar included (as HighestSince)."),
+    ("ExRem", "a, b", "1 on the first bar a is true, then 0 until b is true on a later bar (removes repeated signals). Same-bar a and b: a starts a signal; b ends one only on a later bar (AmiBroker's same-bar rule is not documented; not yet confirmed)."),
+    ("Flip", "a, b", "1 from the bar a is true until the bar b is true (a latch). Same bar a and b: 0, b wins (AmiBroker's same-bar rule is not documented; not yet confirmed)."),
     ("<indicator>", "args…, name=value", "Any computed catalogue indicator by id, e.g. rsi(14), macd(fast=8).signal, Supertrend(10, 3).direction."),
 ];
 /// (name, min args, max args). Param and Plot are handled by the parser; the rest evaluate bar by bar.
@@ -61,6 +72,8 @@ const BUILTINS: &[(&str, usize, usize)] = &[
     ("hhv", 2, 2), ("highest", 2, 2), ("llv", 2, 2), ("lowest", 2, 2), ("roc", 2, 2), ("change", 2, 2), ("mom", 2, 2),
     ("linregslope", 2, 2), ("ama", 2, 2), ("abs", 1, 1), ("sqrt", 1, 1), ("log", 1, 1), ("exp", 1, 1), ("max", 2, 2), ("min", 2, 2),
     ("iif", 3, 3), ("cross", 2, 2), ("barssince", 1, 1), ("valuewhen", 2, 3), ("nz", 1, 2), ("ref", 2, 2), ("param", 5, 5), ("plot", 2, 3),
+    ("cum", 1, 1), ("round", 1, 1), ("int", 1, 1), ("floor", 1, 1), ("ceil", 1, 1), ("frac", 1, 1), ("sign", 1, 1),
+    ("highestsince", 2, 2), ("lowestsince", 2, 2), ("exrem", 2, 2), ("flip", 2, 2),
 ];
 /// Query keys of /api/lab/series, which carries Param values as bare keys (`&Fast=9`).
 pub const RESERVED_KEYS: &[&str] = &["ticker", "tf", "formula", "name", "id", "symbol", "vs", "fixup", "from", "to", "market"];
@@ -611,6 +624,40 @@ impl Cx<'_> {
             "sqrt" => map1(self.eval(&a[0].e)?, f64::sqrt),
             "log" => map1(self.eval(&a[0].e)?, f64::ln),
             "exp" => map1(self.eval(&a[0].e)?, f64::exp),
+            "round" => map1(self.eval(&a[0].e)?, f64::round),
+            "int" => map1(self.eval(&a[0].e)?, f64::trunc),
+            "floor" => map1(self.eval(&a[0].e)?, f64::floor),
+            "ceil" => map1(self.eval(&a[0].e)?, f64::ceil),
+            "frac" => map1(self.eval(&a[0].e)?, f64::fract),
+            "sign" => map1(self.eval(&a[0].e)?, |x| if x > 0. { 1. } else if x < 0. { -1. } else { x }),
+            "cum" => {
+                let x = self.series(&a[0].e)?;
+                let mut sum: Option<f64> = None;
+                V::S(x.iter().map(|&v| { if !v.is_nan() { sum = Some(sum.unwrap_or(0.) + v); } sum.map_or(NAN, fin) }).collect())
+            }
+            "highestsince" | "lowestsince" => {
+                // as the rule builder's highest_since / lowest_since (series.rs Expr::Since)
+                let (c, x, hi) = (self.series(&a[0].e)?, self.series(&a[1].e)?, f == "highestsince");
+                let (mut started, mut unk, mut ext) = (false, false, NAN);
+                V::S((0..n).map(|i| {
+                    if on(c[i]) { started = true; unk = x[i].is_nan(); ext = x[i]; }
+                    else if c[i].is_nan() || x[i].is_nan() { unk = true; }
+                    else if started { ext = if hi { ext.max(x[i]) } else { ext.min(x[i]) }; }
+                    if started && !unk { ext } else { NAN }
+                }).collect())
+            }
+            "exrem" => {
+                let (x, y) = (self.series(&a[0].e)?, self.series(&a[1].e)?);
+                let mut active = false;
+                V::S((0..n).map(|i| {
+                    if !active && on(x[i]) { active = true; 1. } else { if active && on(y[i]) { active = false; } 0. }
+                }).collect())
+            }
+            "flip" => {
+                let (x, y) = (self.series(&a[0].e)?, self.series(&a[1].e)?);
+                let mut state = false;
+                V::S((0..n).map(|i| { if on(x[i]) { state = true; } if on(y[i]) { state = false; } truth(state) }).collect())
+            }
             "max" | "min" => {
                 let (x, y) = (self.eval(&a[0].e)?, self.eval(&a[1].e)?);
                 let hi = f == "max";
@@ -980,6 +1027,28 @@ mod tests {
         for (name, ..) in BUILTINS.iter().filter(|b| !["sma", "rma", "highest", "lowest", "mom"].contains(&b.0)) {
             assert!(FUNCTIONS.iter().any(|f| f.0.eq_ignore_ascii_case(name)), "{name} missing from FUNCTIONS");
         }
+    }
+    #[test] fn rounding_cum_since_exrem_and_flip() {
+        let b = closes(&[1.4, -2.5, 3., 2., 5., 4.]);
+        assert_series(&plot("Round(C)", &b), &[1., -3., 3., 2., 5., 4.]);
+        assert_series(&plot("Int(C)", &b), &[1., -2., 3., 2., 5., 4.]);
+        assert_series(&plot("Floor(C)", &b), &[1., -3., 3., 2., 5., 4.]);
+        assert_series(&plot("Ceil(C)", &b), &[2., -2., 3., 2., 5., 4.]);
+        assert_series(&plot("Frac(C)", &b), &[0.4, -0.5, 0., 0., 0., 0.]);
+        assert_series(&plot("Sign(C - 3)", &b), &[-1., -1., 0., -1., 1., 1.]);
+        assert_series(&plot("Cum(C)", &b), &[1.4, -1.1, 1.9, 3.9, 8.9, 12.9]);
+        // a missing value adds nothing; NaN until the first value
+        assert_series(&plot("Cum(Ref(C, -1))", &b), &[N, 1.4, -1.1, 1.9, 3.9, 8.9]);
+        // from the latest up-close (inclusive): bars 2 (3) and 4 (5); unknown before
+        assert_series(&plot("HighestSince(C > Ref(C, -1), C)", &b), &[N, N, 3., 3., 5., 5.]);
+        assert_series(&plot("LowestSince(C > Ref(C, -1), C)", &b), &[N, N, 3., 2., 5., 4.]);
+        // the same as the rule builder's highest_since on the same data
+        assert_series(&plot("ExRem(C > 0, C > 4)", &b), &[1., 0., 0., 0., 0., 1.]);
+        // same bar: a starts a signal (bar 5), b only ends one on a later bar (bar 2 ends bar 0's)
+        assert_series(&plot("ExRem(C > 0, C > 2)", &b), &[1., 0., 0., 1., 0., 1.]);
+        assert_series(&plot("Flip(C > 4, C < 2.5)", &b), &[0., 0., 0., 0., 1., 1.]);
+        // same bar: b wins
+        assert_series(&plot("Flip(C > 0, C < 2.5)", &b), &[0., 0., 1., 0., 1., 1.]);
     }
     #[test] fn operand_labels_and_out() {
         let text = "Fast = Param(\"Fast\", 9, 2, 50, 1)\nSlow = Param(\"Slow\", 21, 5, 100, 1)\nPlot(EMA(C, Fast) - EMA(C, Slow), \"Osc\")\nPlot(C, \"Signal\")";

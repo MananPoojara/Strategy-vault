@@ -13,7 +13,14 @@ fn cum(x: impl Iterator<Item = f64>) -> Vec<f64> { let mut s = 0.; x.map(|v| if 
 
 fn breadth(b: &Bars, _: &Params) -> Output { let r = br(b); Ok(vec![r.adv.clone(), r.dec.clone(), r.unch.clone(), r.adv_vol.clone(), r.dec_vol.clone(), r.unch_vol.clone()]) }
 fn adl(b: &Bars, _: &Params) -> Output { let r = br(b); Ok(vec![cum(r.adv.iter().zip(&r.dec).map(|(a, d)| a - d))]) }
-fn ad_ratio(b: &Bars, _: &Params) -> Output { let r = br(b); Ok(vec![r.adv.iter().zip(&r.dec).map(|(a, d)| div(*a, *d)).collect()]) }
+fn ad_ratio(b: &Bars, _: &Params) -> Output {
+    let r = br(b);
+    match (&r.members_ratio, r.members_required) {
+        (Some(m), _) => Ok(vec![m.clone()]),
+        (None, true) => Err("needs index member breadth".into()),
+        (None, false) => Ok(vec![r.adv.iter().zip(&r.dec).map(|(a, d)| div(*a, *d)).collect()]),
+    }
+}
 fn cvi(b: &Bars, _: &Params) -> Output { let r = br(b); Ok(vec![cum(r.adv_vol.iter().zip(&r.dec_vol).map(|(a, d)| a - d))]) }
 fn trin(b: &Bars, _: &Params) -> Output {
     let r = br(b);
@@ -26,7 +33,7 @@ pub const DEFS: &[IndicatorDef] = &[
     def("breadth", "Market Breadth (raw)", &["advances", "declines", "unchanged", "adv_volume", "dec_volume", "unch_volume"],
         "the market's advancing/declining/unchanged issues and volumes (NSE for India, NYSE for US) aligned to this instrument's dates; NaN where the source has no value; unch_volume is US only", &[0, 0, 0, 0, 0, 0], breadth),
     def("adl", "Advance/Decline Line", &["adl"], "cumulative (advances − declines); a day without breadth is NaN and the total continues", &[0], adl),
-    def("ad_ratio", "Advance/Decline Ratio", &["ratio"], "advances / declines; zero declines → NaN", &[0], ad_ratio),
+    def("ad_ratio", "Advance/Decline Ratio", &["ratio"], "advances / declines of the index's own member stocks in India (NIFTY 50 only, from the dealers' Daily ADR; other Indian indices have no member data), of NYSE issues in the US; zero declines → NaN", &[0], ad_ratio),
     def("cvi", "Cumulative Volume Index", &["cvi"], "cumulative (advancing volume − declining volume); missing days NaN, total continues", &[0], cvi),
     def("trin", "TRIN (Arms Index)", &["trin"], "(advances/declines) / (advancing volume/declining volume); any zero → NaN", &[0], trin),
 ];
@@ -43,7 +50,7 @@ mod tests {
     fn bars4() -> Bars {
         let mut b = closes(&[1.; 4]);
         b.breadth = Some(Breadth { adv: vec![100., N, 200., 150.], dec: vec![50., 60., 100., 150.], unch: vec![5.; 4],
-            adv_vol: vec![1000., N, 3000., 2000.], dec_vol: vec![500., 600., 1000., 4000.], unch_vol: vec![N; 4] });
+            adv_vol: vec![1000., N, 3000., 2000.], dec_vol: vec![500., 600., 1000., 4000.], unch_vol: vec![N; 4], ..Default::default() });
         b
     }
     #[test] fn breadth_gaps_stay_nan_and_cumulative_lines_continue() {
@@ -56,6 +63,14 @@ mod tests {
         assert_eq!(raw.len(), 6);
         assert_series(&raw[0], &[100., N, 200., 150.]);
         assert_series(&raw[5], &[N; 4]);
+    }
+    #[test] fn india_ad_ratio_counts_only_the_index_members() {
+        let mut b = bars4();
+        b.breadth.as_mut().unwrap().members_required = true;
+        assert_eq!(run(&get("ad_ratio").unwrap(), &b, &Params::new()).unwrap_err(), "needs index member breadth");
+        assert_series(&go("adl", &b, &[])[0], &[50., N, 150., 150.]); // the other breadth lines stay exchange-wide
+        b.breadth.as_mut().unwrap().members_ratio = Some(vec![1.27, N, 0.5, 50.]);
+        assert_series(&go("ad_ratio", &b, &[])[0], &[1.27, N, 0.5, 50.]);
     }
     #[test] fn breadth_needs_daily_market_data() {
         assert_eq!(run(&get("adl").unwrap(), &closes(&[1., 2.]), &Params::new()).unwrap_err(), "needs breadth");

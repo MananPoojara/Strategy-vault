@@ -102,7 +102,7 @@ it("each stop carries its own re-entry delay when asked", async () => {
 it("exits: add menu lists only unset extra exits; trailing activation; breakeven; take-profits in % of the position; min bars", async () => {
   const { host, last, rerender } = await orders(defaultSpec());
   const add = () => host.querySelector<HTMLSelectElement>('select[aria-label="Add exit (long)"]')!;
-  expect([...add().options].map((o) => o.value)).toEqual(["", "breakeven", "take_profits", "min_bars"]);
+  expect([...add().options].map((o) => o.value)).toEqual(["", "breakeven", "take_profits", "min_bars", "dual_atr"]);
   await choose(host.querySelector('[data-lab-exit="trailing"] select[aria-label="Trailing stop unit"]')!, "pct");
   await rerender(last());
   await choose(host.querySelector('[data-lab-exit="trailing"] select[aria-label="Trailing activation unit"]')!, "pct");
@@ -178,4 +178,30 @@ it("trailing stop: choosing % of profit writes exit.trailing { profit_pct: 40 }"
   await choose(host.querySelector('[data-lab-exit="trailing"] select[aria-label="Trailing stop unit"]')!, "profit_pct");
   expect(last().exit.trailing).toEqual({ profit_pct: 40 });
   expect([...host.querySelectorAll<HTMLOptionElement>('select[aria-label="Trailing stop unit"] option')].map((o) => o.value)).toContain("profit_pct");
+});
+
+it("Dual ATR exit: added from More exits, bands, timeframe and the period-end test; not in a portfolio", async () => {
+  const { host, last, rerender } = await orders(defaultSpec());
+  await choose(host.querySelector('select[aria-label="Add exit (long)"]')!, "dual_atr");
+  expect(last().exit.dual_atr).toEqual({ initial: { period: 5, mult: 2, price: "hl2" }, favour: { period: 5, mult: 4, price: "hl2" } });
+  await rerender(last());
+  await type(host.querySelector('input[aria-label="Favour ATR ×"]')!, "3");
+  expect(last().exit.dual_atr!.favour).toEqual({ period: 5, mult: 3, price: "hl2" });
+  await rerender(last());
+  await choose(host.querySelector('select[aria-label="Initial price"]')!, "open");
+  expect(last().exit.dual_atr!.initial.price).toBe("open");
+  await rerender(last());
+  expect(host.textContent).not.toContain("last bar");
+  await clickIn(host, '[aria-label="Dual ATR timeframe"]', "Monthly");
+  expect(last().exit.dual_atr!.tf).toBe("M");
+  await rerender(last());
+  await click([...host.querySelectorAll("label.lab-check")].find((l) => l.textContent === "Exit only on the month's last bar")!.querySelector("input")!);
+  expect(last().exit.dual_atr!.period_end_only).toBe(true);
+  await rerender(last());
+  await clickIn(host, '[aria-label="Dual ATR timeframe"]', "Daily");
+  expect(last().exit.dual_atr).toEqual({ initial: { period: 5, mult: 2, price: "open" }, favour: { period: 5, mult: 3, price: "hl2" } });
+  await click(host.querySelector('button[aria-label="Remove Dual ATR exit"]')!);
+  expect(last().exit.dual_atr).toBeUndefined();
+  const port = await orders({ ...defaultSpec(), execution: { capital: 1e6 }, portfolio: { universe: { basket: "nifty50" } } } as Spec);
+  expect(port.host.querySelector<HTMLOptionElement>('select[aria-label="Add exit (long)"] option[value="dual_atr"]')!.disabled).toBe(true);
 });

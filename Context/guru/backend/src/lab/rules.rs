@@ -8,7 +8,7 @@ pub const LABEL: &str = "User-defined indicator strategy · simulated · not a b
 pub const MAX_CONDITIONS: usize = 12;
 pub const MAX_SPEC_BYTES: usize = 8192;
 pub const MAX_OFFSET: usize = 1000;
-pub const PRICE_SOURCES: &[&str] = &["open", "high", "low", "close", "hl2", "hlc3", "ohlc4", "volume"];
+pub const PRICE_SOURCES: &[&str] = &["open", "high", "low", "close", "hl2", "hlc3", "ohlc4", "oc2", "volume"];
 pub const OPERATORS: &[&str] = &["crosses_above", "crosses_below", ">", "<", ">=", "<=", "=", "!=", "crosses", "between", "outside", "rising", "falling"];
 /// Group kinds a rule list may hold besides comparisons (spec §4.1).
 pub const NODE_KINDS: &[&str] = &["all", "any", "not", "at_least", "then"];
@@ -58,7 +58,28 @@ pub type Rebalance = Option<usize>;
 pub struct Portfolio { pub universe: Universe, pub mode: Mode, pub score: Option<Operand>, pub lowest: bool, pub max_open: usize, pub worst_rank_held: Option<usize>, pub rebalance: Rebalance }
 impl Portfolio { pub fn worst_rank_held(&self) -> usize { self.worst_rank_held.unwrap_or(self.max_open) } }
 #[derive(Clone, Debug, PartialEq)]
-pub enum Operand { Series(SeriesRef), Value(f64), BarsHeld, Expr(Box<Expr>) }
+pub enum Operand { Series(SeriesRef), Value(f64), BarsHeld, Expr(Box<Expr>), SinceEntry(Box<SinceEntry>) }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SinceKind { Highest, Lowest, Count, EntryPrice }
+pub const SINCE_KINDS: &[&str] = &["highest", "lowest", "count", "entry_price"];
+impl SinceKind { pub fn key(self) -> &'static str { SINCE_KINDS[self as usize] } }
+/// A value of the open position (top-level exit comparisons only, like bars_held), then × mul + add: the highest or lowest
+/// of `of` from the entry (fill) bar through this bar, the number of bars after the entry bar on which `when` held, or the
+/// entry fill price (the first leg's).
+#[derive(Clone, Debug, PartialEq)]
+pub struct SinceEntry { pub kind: SinceKind, pub of: Option<Operand>, pub when: Option<Node>, pub mul: f64, pub add: f64 }
+/// One band of the Dual ATR exit: price source ± mult × the simple average of the true range over `period` bars.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AtrBand { pub period: usize, pub mult: f64, pub price: String }
+/// The AmiBroker "Dual ATR" exit (exit.dual_atr): from the entry bar an initial stop (price − initial ATR band) and a favour
+/// stop (price − favour ATR band) ratchet in the trade's favour, and a switch band (price + favour ATR band) ratchets
+/// against it. Once a close is above both the previous switch band and the previous initial stop, the favour stop is used
+/// for the rest of the trade. Exit on a close below the previous bar's stop (mirrored for shorts). On W/M the bands use
+/// completed periods only; `period_end_only` tests the exit on a period's last bar.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DualAtr { pub initial: AtrBand, pub favour: AtrBand, pub tf: Tf, pub period_end_only: bool }
+pub const DUAL_ATR_PRICES: &[&str] = &["open", "high", "low", "close", "oc2", "hl2", "hlc3", "ohlc4"];
+pub const MAX_DUAL_ATR_PERIOD: usize = 500;
 /// Expression operands (spec §4.1), evaluated on the daily bars.
 pub const EXPRESSIONS: &[&str] = &["add", "sub", "mul", "div", "min", "max", "pct", "abs", "ref", "sum", "avg", "highest", "lowest", "change",
     "bars_since", "value_when", "highest_since", "lowest_since", "count", "compress"];
@@ -101,6 +122,9 @@ pub enum Node {
     Not(Box<Node>),
     AtLeast { k: usize, of: usize, when: Box<Node> },
     Then { steps: Vec<Node>, within: usize },
+    /// A rule switched off (`"off": true`): kept, validated and walked like the rule, skipped by the engine. Only a
+    /// top-level entry/exit rule or a condition of an all/any group.
+    Off(Box<Node>),
 }
 impl Node {
     /// The v1 comparison, when this node is one.
@@ -204,6 +228,11 @@ pub struct Exec {
     /// `execution.bars_held_from` "signal": bars_held counts from the entry signal bar, not the fill bar (AmiBroker AFL
     /// BarsSince(Buy) with a next-open fill). Same as the fill bar for close fills.
     pub held_from_signal: bool,
+    /// exit.dual_atr (None: off).
+    pub dual_atr: Option<DualAtr>,
+    /// Indices of entry.all rules marked `"filter": true, "filter_exit": true` (the AFLs' filter sections with a filter exit):
+    /// the position also exits on any bar the rule is false (series.rs side).
+    pub filter_exits: Vec<usize>,
 }
 impl Default for Exec {
     fn default() -> Self {
@@ -212,7 +241,7 @@ impl Default for Exec {
                trail_activate: None, breakeven: None, take_profits: vec![], min_bars: 0, ohlc_path: false, scale_in: None, sizing: Sizing::Full,
                cooldown: None, max_trades: None, risk: Risk::default(), capital: None, costs: MoneyCosts::default(), futures: None, limits: None, market: None, reentry: None,
                exit_at_stop: [1; 4], stops_immediately: true, nbar_first: false, same_bar: true,
-               tick_size: 0., pad_align: false, held_from_signal: false }
+               tick_size: 0., pad_align: false, held_from_signal: false, dual_atr: None, filter_exits: vec![] }
     }
 }
 impl Exec {
@@ -247,7 +276,16 @@ pub struct Dim { pub path: String, pub target: Target, pub values: Vec<f64> }
 #[derive(Clone, Debug, PartialEq)]
 pub struct Spec { pub entry: Vec<Node>, pub exit: Vec<Node>, pub cost_bps: Option<f64>, pub optimize: Vec<Dim>, pub exec: Exec, pub origin: Option<Origin>, pub short_side: Option<Box<Side>>, pub portfolio: Option<Portfolio>,
     /// AmiBroker Settings › Report risk-free rates (Sharpe, UPI) in percent from `execution.report` (lab/report.rs rates); None: defaults.
-    pub report: Option<(f64, f64)> }
+    pub report: Option<(f64, f64)>,
+    /// spec.date_filter (None: no filter, or switched off).
+    pub date_filter: Option<DateFilter> }
+/// A custom date filter (the AmiBroker AFLs' Base 1 / Base 2 windows): a bar is in a window when from <= date < to.
+/// `inside` (bull): entries only in a window; `outside` (bear): entries only outside. With `exit_at_change` an open
+/// position exits on the first bar after an inside window ends (the first trading day on or after `to`), or, outside,
+/// on a window's first bar.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DateFilter { pub inside: bool, pub windows: Vec<(String, String)>, pub exit_at_change: bool }
+pub const MAX_DATE_WINDOWS: usize = 200;
 /// The short side of a `direction: both` spec: its own rule lists and price orders (exec.short = true).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Side { pub entry: Vec<Node>, pub exit: Vec<Node>, pub exec: Exec }
@@ -255,7 +293,7 @@ pub struct Side { pub entry: Vec<Node>, pub exit: Vec<Node>, pub exec: Exec }
 pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
     if text.len() > MAX_SPEC_BYTES { return Err(inv(format!("spec is {} bytes; the limit is {MAX_SPEC_BYTES}", text.len()))); }
     let root = json::parse(text).map_err(|e| inv(format!("spec is not valid JSON: {e}")))?;
-    fields(&root, "spec", &["v", "direction", "origin", "entry", "exit", "short_side", "execution", "optimize", "portfolio"], &["short", "scale_in"])?;
+    fields(&root, "spec", &["v", "direction", "origin", "entry", "exit", "short_side", "execution", "optimize", "portfolio", "date_filter"], &["short", "scale_in"])?;
     if root.get("v").and_then(Json::as_f64) != Some(1.) { return Err(inv("v must be 1")); }
     let mut exec = Exec::default();
     let both = match root.get("direction") {
@@ -269,12 +307,14 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
     let mut budget = Budget::default();
     let portfolio = root.get("portfolio").map(|v|portfolio(v,&mut budget)).transpose()?;
     let rotation = portfolio.as_ref().is_some_and(|p|p.mode==Mode::Rotation);
-    let (entry, exit) = side(root.get("entry"), root.get("exit"), "", both, rotation, &mut exec, &mut budget)?;
+    let date_filter = root.get("date_filter").map(date_filter).transpose()?.flatten();
+    let dated = date_filter.as_ref().is_some_and(|d| d.exit_at_change);
+    let (entry, exit) = side(root.get("entry"), root.get("exit"), "", both, rotation, dated, &mut exec, &mut budget)?;
     let mut short_side = match (both, root.get("short_side")) {
         (true, Some(s)) => {
             fields(s, "short_side", &["entry", "exit"], &[])?;
             let mut x = Exec { short: true, ..Exec::default() };
-            let (entry, exit) = side(s.get("entry"), s.get("exit"), "short_side.", true, false, &mut x, &mut budget)?;
+            let (entry, exit) = side(s.get("entry"), s.get("exit"), "short_side.", true, false, dated, &mut x, &mut budget)?;
             Some(Box::new(Side { entry, exit, exec: x }))
         }
         (true, None) => return Err(inv("direction \"both\" needs short_side with the short entry and exit rules")),
@@ -400,7 +440,7 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
         (s.exec.exit_at_stop, s.exec.stops_immediately, s.exec.nbar_first, s.exec.same_bar) = (exec.exit_at_stop, exec.stops_immediately, exec.nbar_first, exec.same_bar);
     }
     // An exitless side relies on the opposite entry to reverse its position.
-    let exitless = |x: &Exec, e: &[Node]| e.is_empty() && x.stop_loss.is_none() && x.target.is_none() && x.trailing.is_none() && x.breakeven.is_none();
+    let exitless = |x: &Exec, e: &[Node]| e.is_empty() && x.stop_loss.is_none() && x.target.is_none() && x.trailing.is_none() && x.breakeven.is_none() && x.dual_atr.is_none() && !dated;
     if both && exec.opposite != Opposite::Reverse && (exitless(&exec,&exit) || short_side.as_ref().is_some_and(|s|exitless(&s.exec,&s.exit))) {
         return Err(inv("a side without exit rules (always in) needs execution.opposite \"reverse\""));
     }
@@ -413,7 +453,7 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
     }
     let report = root.get("execution").and_then(|x| x.get("report")).map(super::report::rates).transpose()?;
     if report.is_some() && portfolio.is_some() { return Err(LabError::Unsupported("execution.report applies to single-instrument runs; a portfolio run has no AmiBroker report".into())); }
-    let mut spec = Spec { entry, exit, cost_bps, optimize: vec![], exec, origin, short_side, portfolio, report };
+    let mut spec = Spec { entry, exit, cost_bps, optimize: vec![], exec, origin, short_side, portfolio, report, date_filter };
     validate_applied(&spec)?;
     if let Some(o) = root.get("optimize") { spec.optimize = dims(&spec, o)?; }
     Ok(spec)
@@ -465,12 +505,87 @@ fn market(ex: &Json, exec: &Exec, short_side: Option<&mut Box<Side>>) -> Result<
 }
 
 /// One side's rule lists and price orders; `pre` is "" (the long side, or the only side) or "short_side.".
-fn side(entry: Option<&Json>, exit: Option<&Json>, pre: &str, both: bool, rotation: bool, exec: &mut Exec, b: &mut Budget) -> Result<(Vec<Node>, Vec<Node>), LabError> {
+/// A real calendar date written YYYY-MM-DD.
+fn iso_date(s: &str) -> bool {
+    let b = s.as_bytes();
+    if b.len() != 10 || b[4] != b'-' || b[7] != b'-' || !s.bytes().enumerate().all(|(i, c)| i == 4 || i == 7 || c.is_ascii_digit()) { return false; }
+    let (y, m, d) = (s[0..4].parse::<u32>().unwrap_or(0), s[5..7].parse::<u32>().unwrap_or(0), s[8..10].parse::<u32>().unwrap_or(0));
+    let leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+    let days = match m { 1 | 3 | 5 | 7 | 8 | 10 | 12 => 31, 4 | 6 | 9 | 11 => 30, 2 => if leap { 29 } else { 28 }, _ => 0 };
+    y >= 1 && d >= 1 && d <= days
+}
+/// spec.date_filter; a switched-off filter (`off: true`) is validated and then ignored.
+fn date_filter(v: &Json) -> Result<Option<DateFilter>, LabError> {
+    let at = "date_filter";
+    fields(v, at, &["mode", "windows", "exit_at_change", "off", "set"], &[])?;
+    let inside = match v.get("mode").map(Json::as_str) { None | Some(Some("inside")) => true, Some(Some("outside")) => false, _ => return Err(inv(format!("{at}.mode must be inside or outside"))) };
+    let flag = |k: &str, d: bool| match v.get(k) { None => Ok(d), Some(Json::Bool(b)) => Ok(*b), _ => Err(inv(format!("{at}.{k} must be true or false"))) };
+    let (exit_at_change, off) = (flag("exit_at_change", true)?, flag("off", false)?);
+    // `set` names the saved date filter the windows came from (shown by the UI; the windows themselves are authoritative)
+    if let Some(s) = v.get("set") {
+        fields(s, &format!("{at}.set"), &["id", "name"], &[])?;
+        if s.get("id").is_some_and(|x| x.as_f64().is_none_or(|n| n.fract() != 0. || n < 1.)) { return Err(inv(format!("{at}.set.id must be a whole number"))); }
+        if s.get("name").is_some_and(|x| x.as_str().is_none_or(|n| n.chars().count() > 60)) { return Err(inv(format!("{at}.set.name must be text of at most 60 characters"))); }
+    }
+    let Some(Json::Arr(items)) = v.get("windows") else { return Err(inv(format!("{at}.windows must be a list"))) };
+    if items.is_empty() || items.len() > MAX_DATE_WINDOWS { return Err(inv(format!("{at}.windows needs 1 to {MAX_DATE_WINDOWS} windows"))); }
+    // each window is a pair ["from", "to"] (compact: a spec travels in the request, up to MAX_SPEC_BYTES)
+    let windows = items.iter().enumerate().map(|(k, w)| {
+        let a = format!("{at}.windows[{k}]");
+        let Json::Arr(pair) = w else { return Err(inv(format!("{a} must be a pair [\"from\", \"to\"]"))) };
+        if pair.len() != 2 { return Err(inv(format!("{a} must be a pair [\"from\", \"to\"]"))); }
+        let date = |i: usize, key: &str| pair[i].as_str().filter(|s| iso_date(s)).map(str::to_string).ok_or_else(|| inv(format!("{a}: {key} must be a real date written YYYY-MM-DD")));
+        let (from, to) = (date(0, "from")?, date(1, "to")?);
+        if from >= to { return Err(inv(format!("{a}: from ({from}) must be before to ({to})"))); }
+        Ok((from, to))
+    }).collect::<Result<Vec<_>, LabError>>()?;
+    Ok((!off).then_some(DateFilter { inside, windows, exit_at_change }))
+}
+fn dual_atr(v: &Json, at: &str) -> Result<DualAtr, LabError> {
+    fields(v, at, &["initial", "favour", "tf", "period_end_only"], &[])?;
+    let band = |key: &str| -> Result<AtrBand, LabError> {
+        let a = format!("{at}.{key}");
+        let b = v.get(key).ok_or_else(|| inv(format!("{a} is required")))?;
+        fields(b, &a, &["period", "mult", "price"], &[])?;
+        let period = b.get("period").and_then(Json::as_f64).filter(|p| p.fract() == 0. && (1. ..=MAX_DUAL_ATR_PERIOD as f64).contains(p))
+            .ok_or_else(|| inv(format!("{a}.period must be a whole number from 1 to {MAX_DUAL_ATR_PERIOD}")))? as usize;
+        let mult = b.get("mult").and_then(Json::as_f64).filter(|m| *m > 0. && *m <= 100.).ok_or_else(|| inv(format!("{a}.mult must be a number above 0 and at most 100")))?;
+        let price = match b.get("price") { None => "hl2", Some(p) => p.as_str().filter(|p| DUAL_ATR_PRICES.contains(p)).ok_or_else(|| inv(format!("{a}.price must be one of {}", DUAL_ATR_PRICES.join(", "))))? };
+        Ok(AtrBand { period, mult, price: price.into() })
+    };
+    let tf = match v.get("tf") { None => Tf::D, Some(t) => t.as_str().and_then(Tf::parse).filter(|t| matches!(t, Tf::D | Tf::W | Tf::M)).ok_or_else(|| inv(format!("{at}.tf must be D, W or M")))? };
+    let period_end_only = match v.get("period_end_only") { None => false, Some(Json::Bool(b)) => *b, _ => return Err(inv(format!("{at}.period_end_only must be true or false"))) };
+    if period_end_only && tf == Tf::D { return Err(inv(format!("{at}.period_end_only applies to tf W or M"))); }
+    Ok(DualAtr { initial: band("initial")?, favour: band("favour")?, tf, period_end_only })
+}
+fn since_entry(v: &Json, at: &str, held: bool, b: &mut Budget) -> Result<Operand, LabError> {
+    if !held { return Err(inv(format!("{at}: since_entry is only available as a plain comparison at the top level of the exit list (not inside a group, range, trend or expression)"))); }
+    let kind = match v.get("since_entry").and_then(Json::as_str) {
+        Some("highest") => SinceKind::Highest, Some("lowest") => SinceKind::Lowest, Some("count") => SinceKind::Count, Some("entry_price") => SinceKind::EntryPrice,
+        _ => return Err(inv(format!("{at}.since_entry must be one of {}", SINCE_KINDS.join(", ")))),
+    };
+    let inner = match kind { SinceKind::Highest | SinceKind::Lowest => Some("of"), SinceKind::Count => Some("when"), SinceKind::EntryPrice => None };
+    let allowed: Vec<&str> = ["since_entry", "mul", "add"].into_iter().chain(inner).collect();
+    fields(v, at, &allowed, &[])?;
+    let of = if inner == Some("of") {
+        let o = operand(v.get("of"), &format!("{at}.of"), false, b)?;
+        if matches!(o, Operand::Value(_)) { return Err(inv(format!("{at}.of needs a series or expression, not a number"))); }
+        Some(o)
+    } else { None };
+    let when = if inner == Some("when") { Some(node(v.get("when").ok_or_else(|| inv(format!("{at}.when is required")))?, &format!("{at}.when"), false, b)?) } else { None };
+    let num = |k: &str, d: f64| v.get(k).map_or(Ok(d), |x| x.as_f64().filter(|x| x.is_finite()).ok_or_else(|| inv(format!("{at}.{k} must be a number"))));
+    let (mul, add) = (num("mul", 1.)?, num("add", 0.)?);
+    if mul == 0. { return Err(inv(format!("{at}.mul must not be 0"))); }
+    Ok(Operand::SinceEntry(Box::new(SinceEntry { kind, of, when, mul, add })))
+}
+/// `dated`: the spec's date filter exits on a window change, so an empty exit list still exits.
+fn side(entry: Option<&Json>, exit: Option<&Json>, pre: &str, both: bool, rotation: bool, dated: bool, exec: &mut Exec, b: &mut Budget) -> Result<(Vec<Node>, Vec<Node>), LabError> {
     let entry_obj = entry.ok_or_else(|| inv(format!("{pre}entry is required")))?;
     fields(entry_obj, &format!("{pre}entry"), &["all", "limit", "stop", "valid_bars", "scale_in"], &[])?;
     if let Some(v) = entry_obj.get("scale_in") { exec.scale_in = Some(scale_in(v, &format!("{pre}entry.scale_in"))?); }
     let exit_obj = exit.ok_or_else(|| inv(format!("{pre}exit is required")))?;
-    fields(exit_obj, &format!("{pre}exit"), &["any", "stop_loss", "target", "trailing", "breakeven", "take_profits", "min_bars"], &[])?;
+    fields(exit_obj, &format!("{pre}exit"), &["any", "stop_loss", "target", "trailing", "breakeven", "take_profits", "min_bars", "dual_atr"], &[])?;
+    if let Some(v) = exit_obj.get("dual_atr") { exec.dual_atr = Some(dual_atr(v, &format!("{pre}exit.dual_atr"))?); }
     for (slot, at, hi) in SLOTS {
         let order = matches!(slot, Slot::Limit | Slot::Stop);
         let Some(v) = (if order { entry_obj } else { exit_obj }).get(at.split_once('.').unwrap().1) else { continue };
@@ -522,9 +637,22 @@ fn side(entry: Option<&Json>, exit: Option<&Json>, pre: &str, both: bool, rotati
     if exec.scale_in.is_some() && !exec.take_profits.is_empty() {
         return Err(inv(format!("{pre}entry.scale_in cannot combine with {pre}exit.take_profits (a trade's scale-out fractions are of one position)")));
     }
-    let price_exit = exec.stop_loss.is_some() || exec.target.is_some() || exec.trailing.is_some() || exec.breakeven.is_some();
-    let entry = conds(entry_obj.get("all"), &format!("{pre}entry.all"), false, rotation, b)?;
-    let exit = conds(exit_obj.get("any"), &format!("{pre}exit.any"), true, price_exit || both || rotation, b)?;
+    let price_exit = exec.stop_loss.is_some() || exec.target.is_some() || exec.trailing.is_some() || exec.breakeven.is_some() || exec.dual_atr.is_some();
+    // `filter` only labels a rule for the editor's Filters tab (an entry rule like any other); `filter_exit` also exits when it is false
+    let mut all = entry_obj.get("all").cloned();
+    if let Some(Json::Arr(items)) = &mut all {
+        for (i, c) in items.iter_mut().enumerate() {
+            let at = format!("{pre}entry.all[{i}]");
+            let flag = |k: &str| match c.get(k) { None => Ok(false), Some(Json::Bool(v)) => Ok(*v), Some(_) => Err(inv(format!("{at}.{k} must be true or false"))) };
+            let (filter, exit) = (flag("filter")?, flag("filter_exit")?);
+            if exit && !filter { return Err(inv(format!("{at}.filter_exit applies to a rule marked filter"))); }
+            if exit { exec.filter_exits.push(i); }
+            *c = without(&without(c, "filter"), "filter_exit");
+        }
+    }
+    let entry = conds(all.as_ref(), &format!("{pre}entry.all"), false, rotation, b)?;
+    let filter_exit = exec.filter_exits.iter().any(|&k| !matches!(entry[k], Node::Off(_)));
+    let exit = conds(exit_obj.get("any"), &format!("{pre}exit.any"), true, price_exit || both || rotation || dated || filter_exit, b)?;
     if entry.len() + exit.len() > MAX_CONDITIONS {
         return Err(inv(format!("{}{} conditions; the limit is {MAX_CONDITIONS}", if pre.is_empty() { "" } else { "short_side: " }, entry.len() + exit.len())));
     }
@@ -604,6 +732,9 @@ fn portfolio_rules(s:&Spec)->Result<(),LabError>{
     if x.tick_size>0.{return unsupported("execution.tick_size");}
     if x.pad_align{return unsupported("execution.pad_align");}
     if x.held_from_signal{return unsupported("execution.bars_held_from");}
+    if x.dual_atr.is_some(){return unsupported("exit.dual_atr");}
+    if s.date_filter.is_some(){return unsupported("date_filter");}
+    if s.exit.iter().any(|n|matches!(n,Node::Cmp(c) if matches!(c.lhs,Operand::SinceEntry(_))||matches!(c.rhs,Operand::SinceEntry(_)))){return unsupported("since_entry exit values");}
     if x.capital.is_none(){return Err(inv("a portfolio needs execution.capital (shared money mode)"));}
     if p.max_open==0||p.max_open>MAX_OPEN{return Err(inv(format!("portfolio.max_open must be a whole number from 1 to {MAX_OPEN}")));}
     if p.worst_rank_held()==0||p.worst_rank_held()>MAX_UNIVERSE||p.worst_rank_held()<p.max_open{return Err(inv(format!("portfolio.worst_rank_held must be at least max_open and at most {MAX_UNIVERSE}")));}
@@ -612,7 +743,28 @@ fn portfolio_rules(s:&Spec)->Result<(),LabError>{
 }
 impl Spec {
     pub fn foreign_locations(&self)->Vec<(String,Foreign)>{
-        let mut out=Vec::new();walk(&mut self.clone(),&mut |path,k|if let Knob::Series(r)=k {if r.foreign!=Foreign::default(){out.push((path,r.foreign.clone()));}});out
+        let mut out=Vec::new();walk(&mut self.without_off(),&mut |path,k|if let Knob::Series(r)=k {if r.foreign!=Foreign::default(){out.push((path,r.foreign.clone()));}});out
+    }
+    /// A copy whose switched-off rules are emptied, so their other instruments are not loaded or counted; a rule whose
+    /// `.off` is an optimize dimension is kept (a combination may switch it on).
+    fn without_off(&self)->Spec{
+        fn strip(n:&mut Node,at:&str,opt:&[&str]){
+            match n {
+                Node::Off(x) if !opt.contains(&format!("{at}.off").as_str()) => **x=Node::All(vec![]),
+                Node::Off(x) => strip(x,at,opt),
+                Node::All(v) => for (k,c) in v.iter_mut().enumerate() { strip(c,&format!("{at}.all[{k}]"),opt) },
+                Node::Any(v) => for (k,c) in v.iter_mut().enumerate() { strip(c,&format!("{at}.any[{k}]"),opt) },
+                _ => {}
+            }
+        }
+        let mut s=self.clone();let opt:Vec<&str>=self.optimize.iter().map(|d|d.path.as_str()).collect();
+        for (k,n) in s.entry.iter_mut().enumerate(){strip(n,&format!("entry.all[{k}]"),&opt);}
+        for (k,n) in s.exit.iter_mut().enumerate(){strip(n,&format!("exit.any[{k}]"),&opt);}
+        if let Some(x)=s.short_side.as_mut(){
+            for (k,n) in x.entry.iter_mut().enumerate(){strip(n,&format!("short_side.entry.all[{k}]"),&opt);}
+            for (k,n) in x.exit.iter_mut().enumerate(){strip(n,&format!("short_side.exit.any[{k}]"),&opt);}
+        }
+        s
     }
     pub fn foreign_symbols(&self)->Vec<String>{
         let mut names:Vec<_>=self.foreign_locations().into_iter().flat_map(|(_,f)|f.symbol.into_iter().chain(f.vs)).collect();names.sort();names.dedup();names
@@ -625,6 +777,7 @@ pub fn validate_applied(s:&Spec)->Result<(),LabError>{
     portfolio_rules(s)?;
     let short=s.short_side.as_ref().map(|x|x.entry.iter().chain(&x.exit));
     s.entry.iter().chain(&s.exit).chain(short.into_iter().flatten()).try_for_each(consistent).map_err(inv)?;
+    active_rules(s).map_err(inv)?;
     let execs=std::iter::once(&s.exec).chain(s.short_side.as_ref().map(|x|&x.exec));
     execs.flat_map(|x|[&x.limit_at,&x.stop_at]).flatten().try_for_each(consistent_operand).map_err(inv)?;
     if let Some(score)=s.portfolio.as_ref().and_then(|p|p.score.as_ref()){consistent_operand(score).map_err(inv)?;}
@@ -825,17 +978,31 @@ fn conds(v: Option<&Json>, at: &str, exit: bool, may_be_empty: bool, b: &mut Bud
     let Some(Json::Arr(items)) = v else { return Err(inv(format!("{at} must be a list of conditions"))) };
     if items.is_empty() && !may_be_empty { return Err(inv(format!("{at} needs at least one condition{}", if exit { " (or a stop_loss, target or trailing exit)" } else { "" }))); }
     if items.len() > MAX_CONDITIONS { return Err(inv(format!("{at} has {} conditions; the limit is {MAX_CONDITIONS}", items.len()))); }
-    items.iter().enumerate().map(|(i, c)| node(c, &format!("{at}[{i}]"), exit, b)).collect()
+    let list: Vec<Node> = items.iter().enumerate().map(|(i, c)| switchable(c, &format!("{at}[{i}]"), exit, b)).collect::<Result<_, _>>()?;
+    if !may_be_empty && list.iter().all(|n| matches!(n, Node::Off(_))) { return Err(inv(format!("{at}: every rule is switched off; switch one on"))); }
+    Ok(list)
 }
 
 /// One rule-list entry. `held` allows bars_held: top-level exit comparisons only, because every other node is a precomputed array.
+/// A rule that may carry `"off"` (a top-level entry/exit rule or a condition of an all/any group).
+fn switchable(v: &Json, at: &str, held: bool, b: &mut Budget) -> Result<Node, LabError> {
+    match v.get("off") {
+        None => node(v, at, held, b),
+        Some(Json::Bool(off)) => { let n = node(&without(v, "off"), at, held, b)?; Ok(if *off { Node::Off(Box::new(n)) } else { n }) }
+        Some(_) => Err(inv(format!("{at}.off must be true or false"))),
+    }
+}
 fn node(v: &Json, at: &str, held: bool, b: &mut Budget) -> Result<Node, LabError> {
+    if v.get("off").is_some() { return Err(inv(format!("{at}.off: only a top-level rule or a condition of an all/any group can be switched off"))); }
     if v.get("lhs").is_some() { return leaf(v, at, held, b); }
     b.take(false)?;
     let list = |key: &str, b: &mut Budget| -> Result<Vec<Node>, LabError> {
         let Some(Json::Arr(items)) = v.get(key) else { return Err(inv(format!("{at}.{key} must be a list"))) };
         if items.is_empty() { return Err(inv(format!("{at}.{key} needs at least one entry"))); }
-        items.iter().enumerate().map(|(i, c)| node(c, &format!("{at}.{key}[{i}]"), false, b)).collect()
+        let group = key != "then";
+        let kids: Vec<Node> = items.iter().enumerate().map(|(i, c)| { let a = format!("{at}.{key}[{i}]"); if group { switchable(c, &a, false, b) } else { node(c, &a, false, b) } }).collect::<Result<_, _>>()?;
+        if kids.iter().all(|k| matches!(k, Node::Off(_))) { return Err(inv(format!("{at}.{key}: every condition is switched off; switch one on or remove the group"))); }
+        Ok(kids)
     };
     if v.get("all").is_some() { fields(v, at, &["all"], &[])?; return Ok(Node::All(list("all", b)?)); }
     if v.get("any").is_some() { fields(v, at, &["any"], &[])?; return Ok(Node::Any(list("any", b)?)); }
@@ -909,6 +1076,7 @@ fn operand(v: Option<&Json>, at: &str, held: bool, b: &mut Budget) -> Result<Ope
         return v.get("value").and_then(Json::as_f64).map(Operand::Value).ok_or_else(|| inv(format!("{at}.value must be a number")));
     }
     if v.get("formula").is_some() { return formula_operand(v, at); }
+    if v.get("since_entry").is_some() { return since_entry(v, at, held, b); }
     if let Some(e) = expr(v, at, b)? { return Ok(Operand::Expr(Box::new(e))); }
     fields(v, at, &["s", "p", "tf", "out", "offset", "expand", "symbol", "vs", "fixup"], &[])?;
     let id = v.get("s").and_then(Json::as_str).ok_or_else(|| inv(format!("{at}.s must name a series (or give a value)")))?;
@@ -1123,8 +1291,8 @@ fn target(spec: &Spec, path: &str) -> Result<Target, String> {
             (Some(d), _) => Err(format!("{at} is set by {}; optimize that field", match d { Dist::Pct(_) => "pct", Dist::Atr { .. } => "atr", Dist::Points(_) => "points", Dist::Ticks(_) => "ticks", Dist::ProfitPct(_) => "profit_pct" })),
         };
     }
-    if !["entry.all[", "exit.any[", "entry.limit.at.", "entry.stop.at.", "entry.scale_in.", "execution.sizing.", "portfolio.score."].iter().any(|p| rest.starts_with(p)) {
-        return Err("must start with entry.all[i], exit.any[i], entry.limit, entry.limit.at, entry.stop, entry.stop.at, exit.stop_loss, exit.target, exit.trailing, exit.trailing.activate, exit.breakeven.after, exit.take_profits[k], entry.scale_in.min_bars (each also under short_side.), execution.sizing.pct_equity or execution.sizing.risk_pct".into());
+    if !["entry.all[", "exit.any[", "entry.limit.at.", "entry.stop.at.", "entry.scale_in.", "exit.dual_atr.", "execution.sizing.", "portfolio.score."].iter().any(|p| rest.starts_with(p)) {
+        return Err("must start with entry.all[i], exit.any[i], entry.limit, entry.limit.at, entry.stop, entry.stop.at, exit.stop_loss, exit.target, exit.trailing, exit.trailing.activate, exit.breakeven.after, exit.take_profits[k], entry.scale_in.min_bars, exit.dual_atr.initial|favour.period|mult (each also under short_side.), execution.sizing.pct_equity or execution.sizing.risk_pct".into());
     }
     let (mut found, mut near) = (false, None::<String>);
     walk(&mut spec.clone(), &mut |p, k| match k {
@@ -1146,11 +1314,13 @@ fn target(spec: &Spec, path: &str) -> Result<Target, String> {
 }
 
 /// A number an optimize path can reach inside a rule list; `Series` is reported for error messages only.
-enum Knob<'a> { Value(&'a mut f64), Param(&'a mut SeriesRef, String), Whole(&'a mut usize), Shift(&'a mut usize), Series(&'a SeriesRef), Pct(&'a mut f64) }
+/// `Switch` is a rule's on/off state (0 on, 1 off; `….off`); `Mult` / `Period` are exit.dual_atr's multiples and ATR periods.
+enum Knob<'a> { Value(&'a mut f64), Param(&'a mut SeriesRef, String), Whole(&'a mut usize), Shift(&'a mut usize), Series(&'a SeriesRef), Pct(&'a mut f64),
+    Switch(&'a mut Node), Mult(&'a mut f64), Period(&'a mut usize) }
 /// Visits every optimizable number in the rule lists with its spec path (`entry.all[0].lhs.p.length`, `exit.any[1].rhs.value`, `….bars`).
 fn walk(s: &mut Spec, f: &mut dyn FnMut(String, Knob)) {
-    for (k, n) in s.entry.iter_mut().enumerate() { walk_node(n, &format!("entry.all[{k}]"), f); }
-    for (k, n) in s.exit.iter_mut().enumerate() { walk_node(n, &format!("exit.any[{k}]"), f); }
+    for (k, n) in s.entry.iter_mut().enumerate() { switch_and_walk(n, &format!("entry.all[{k}]"), f); }
+    for (k, n) in s.exit.iter_mut().enumerate() { switch_and_walk(n, &format!("exit.any[{k}]"), f); }
     walk_levels(&mut s.exec, "", f);
     match &mut s.exec.sizing {
         Sizing::PctEquity(p) => f("execution.sizing.pct_equity".into(), Knob::Pct(p)),
@@ -1158,25 +1328,37 @@ fn walk(s: &mut Spec, f: &mut dyn FnMut(String, Knob)) {
         _ => {}
     }
     if let Some(x) = s.short_side.as_mut() {
-        for (k, n) in x.entry.iter_mut().enumerate() { walk_node(n, &format!("short_side.entry.all[{k}]"), f); }
-        for (k, n) in x.exit.iter_mut().enumerate() { walk_node(n, &format!("short_side.exit.any[{k}]"), f); }
+        for (k, n) in x.entry.iter_mut().enumerate() { switch_and_walk(n, &format!("short_side.entry.all[{k}]"), f); }
+        for (k, n) in x.exit.iter_mut().enumerate() { switch_and_walk(n, &format!("short_side.exit.any[{k}]"), f); }
         walk_levels(&mut x.exec, "short_side.", f);
     }
     if let Some(score)=s.portfolio.as_mut().and_then(|p|p.score.as_mut()){walk_operand(score,"portfolio.score",f);}
 
 }
+/// A switchable rule (list item or all/any condition): its on/off knob, then its numbers.
+fn switch_and_walk(n: &mut Node, at: &str, f: &mut dyn FnMut(String, Knob)) {
+    f(format!("{at}.off"), Knob::Switch(n));
+    walk_node(n, at, f);
+}
 fn walk_levels(x: &mut Exec, pre: &str, f: &mut dyn FnMut(String, Knob)) {
+    if let Some(d) = x.dual_atr.as_mut() {
+        for (key, b) in [("initial", &mut d.initial), ("favour", &mut d.favour)] {
+            f(format!("{pre}exit.dual_atr.{key}.period"), Knob::Period(&mut b.period));
+            f(format!("{pre}exit.dual_atr.{key}.mult"), Knob::Mult(&mut b.mult));
+        }
+    }
     if let Some(si) = x.scale_in.as_mut() { f(format!("{pre}entry.scale_in.min_bars"), Knob::Whole(&mut si.min_bars)); }
     if let Some(o) = x.limit_at.as_mut() { walk_operand(o, &format!("{pre}entry.limit.at"), f); }
     if let Some(o) = x.stop_at.as_mut() { walk_operand(o, &format!("{pre}entry.stop.at"), f); }
 }
 fn walk_node(n: &mut Node, at: &str, f: &mut dyn FnMut(String, Knob)) {
     match n {
+        Node::Off(x) => walk_node(x, at, f),
         Node::Cmp(c) => { walk_operand(&mut c.lhs, &format!("{at}.lhs"), f); walk_operand(&mut c.rhs, &format!("{at}.rhs"), f); }
         Node::Range { x, lo, hi, .. } => { walk_operand(x, &format!("{at}.lhs"), f); walk_operand(lo, &format!("{at}.lo"), f); walk_operand(hi, &format!("{at}.hi"), f); }
         Node::Trend { x, bars, .. } => { walk_operand(x, &format!("{at}.lhs"), f); f(format!("{at}.bars"), Knob::Whole(bars)); }
-        Node::All(v) => for (k, c) in v.iter_mut().enumerate() { walk_node(c, &format!("{at}.all[{k}]"), f) },
-        Node::Any(v) => for (k, c) in v.iter_mut().enumerate() { walk_node(c, &format!("{at}.any[{k}]"), f) },
+        Node::All(v) => for (k, c) in v.iter_mut().enumerate() { switch_and_walk(c, &format!("{at}.all[{k}]"), f) },
+        Node::Any(v) => for (k, c) in v.iter_mut().enumerate() { switch_and_walk(c, &format!("{at}.any[{k}]"), f) },
         Node::Not(c) => walk_node(c, &format!("{at}.not"), f),
         Node::AtLeast { k, of, when } => { f(format!("{at}.at_least"), Knob::Whole(k)); f(format!("{at}.of"), Knob::Whole(of)); walk_node(when, &format!("{at}.when"), f); }
         Node::Then { steps, within } => {
@@ -1190,6 +1372,12 @@ fn walk_operand(o: &mut Operand, at: &str, f: &mut dyn FnMut(String, Knob)) {
         Operand::Value(x) => f(format!("{at}.value"), Knob::Value(x)),
         Operand::Series(r) => walk_series(r, at, f),
         Operand::BarsHeld => {}
+        Operand::SinceEntry(s) => {
+            if let Some(o) = s.of.as_mut() { walk_operand(o, &format!("{at}.of"), f); }
+            if let Some(n) = s.when.as_mut() { walk_node(n, &format!("{at}.when"), f); }
+            f(format!("{at}.mul"), Knob::Value(&mut s.mul));
+            f(format!("{at}.add"), Knob::Value(&mut s.add));
+        }
         Operand::Expr(e) => match &mut **e {
             Expr::Bin(op, l, r) => { walk_operand(l, &format!("{at}.{}[0]", op.key()), f); walk_operand(r, &format!("{at}.{}[1]", op.key()), f); }
             Expr::Abs(x) => walk_operand(x, &format!("{at}.abs"), f),
@@ -1209,9 +1397,37 @@ fn walk_series(r: &mut SeriesRef, at: &str, f: &mut dyn FnMut(String, Knob)) {
     let keys: Vec<String> = r.params.keys().cloned().collect();
     for k in keys { f(format!("{at}.p.{k}"), Knob::Param(&mut *r, k)); }
 }
+/// After an optimize value is applied: an entry list keeps a rule on, and an exit list keeps one on unless a price exit,
+/// the other direction or rotation exits the position (the parser's rules).
+fn active_rules(s: &Spec) -> Result<(), String> {
+    let all_off = |v: &[Node]| !v.is_empty() && v.iter().all(|n| matches!(n, Node::Off(_)));
+    let rotation = s.portfolio.as_ref().is_some_and(|p| p.mode == Mode::Rotation);
+    let priced = |x: &Exec| x.stop_loss.is_some() || x.target.is_some() || x.trailing.is_some() || x.breakeven.is_some() || x.dual_atr.is_some();
+    let sides = std::iter::once((&s.entry, &s.exit, &s.exec, "")).chain(s.short_side.as_ref().map(|x| (&x.entry, &x.exit, &x.exec, "short_side.")));
+    for (entry, exit, x, pre) in sides {
+        if all_off(entry) { return Err(format!("{pre}entry.all: every rule is switched off")); }
+        if all_off(exit) && !priced(x) && s.short_side.is_none() && !rotation && !s.date_filter.as_ref().is_some_and(|d| d.exit_at_change) { return Err(format!("{pre}exit.any: every rule is switched off")); }
+    }
+    Ok(())
+}
+/// An optimize combination that switches off every rule of a list or every condition of a group is not a strategy:
+/// the optimizers skip it (unranked row) instead of failing the whole grid.
+pub fn switched_all_off(s: &Spec) -> bool {
+    fn group_off(n: &Node) -> bool {
+        match n {
+            Node::Off(x) => group_off(x),
+            Node::All(v) | Node::Any(v) => v.iter().all(|c| matches!(c, Node::Off(_))) || v.iter().any(group_off),
+            _ => false,
+        }
+    }
+    let short = s.short_side.as_ref().map(|x| x.entry.iter().chain(&x.exit));
+    active_rules(s).is_err() || s.entry.iter().chain(&s.exit).chain(short.into_iter().flatten()).any(group_off)
+}
 /// Node invariants the parser checks, re-checked after an optimize value is applied (at_least <= of, then spans, constant range bounds).
 fn consistent(n: &Node) -> Result<(), String> {
     match n {
+        Node::Off(x) => consistent(x),
+        Node::All(v) | Node::Any(v) if v.iter().all(|c| matches!(c, Node::Off(_))) => Err("every condition of a group is switched off".into()),
         Node::AtLeast { k, of, .. } if k > of => Err(format!("at_least ({k}) cannot exceed of ({of})")),
         Node::Then { steps, within } if *within + 1 < steps.len() => Err(format!("within ({within}) is shorter than the {} steps need ({})", steps.len(), steps.len() - 1)),
         Node::Range { lo: Operand::Value(l), hi: Operand::Value(h), .. } if l > h => Err(format!("lo ({l}) is above hi ({h})")),
@@ -1224,6 +1440,11 @@ fn consistent(n: &Node) -> Result<(), String> {
 }
 /// Nodes inside state operands obey the same rules; value_when's nth stays within MAX_NTH.
 fn consistent_operand(o: &Operand) -> Result<(), String> {
+    if let Operand::SinceEntry(s) = o {
+        if s.mul == 0. { return Err("since_entry mul must not be 0".into()); }
+        if let Some(of) = &s.of { consistent_operand(of)?; }
+        return s.when.as_ref().map_or(Ok(()), consistent);
+    }
     let Operand::Expr(e) = o else { return Ok(()) };
     match &**e {
         Expr::Bin(_, l, r) => { consistent_operand(l)?; consistent_operand(r) }
@@ -1251,9 +1472,17 @@ fn set(s: &mut Spec, t: &Target, x: f64) {
     }
     walk(s, &mut |p, k| if p == t.path {
         match k {
-            Knob::Value(v) | Knob::Pct(v) => *v = x,
+            Knob::Value(v) | Knob::Pct(v) | Knob::Mult(v) => *v = x,
             Knob::Param(r, key) => { r.params.insert(key, x); }
-            Knob::Whole(n) | Knob::Shift(n) => *n = x as usize,
+            Knob::Whole(n) | Knob::Shift(n) | Knob::Period(n) => *n = x as usize,
+            // 1 switches the rule off, 0 on (other values are refused by check_value before a run)
+            Knob::Switch(n) => {
+                let off = x >= 0.5;
+                if off != matches!(n, Node::Off(_)) {
+                    let inner = std::mem::replace(n, Node::All(vec![]));
+                    *n = match inner { Node::Off(b) => *b, other => Node::Off(Box::new(other)) };
+                }
+            }
             Knob::Series(_) => {}
         }
     });
@@ -1293,10 +1522,14 @@ fn check_value(spec: &Spec, t: &Target, x: f64) -> Result<(), String> {
             Knob::Shift(_) if x.fract() != 0. || x < 0. || x > MAX_OFFSET as f64 => Err(format!("{} must be a whole number from 0 to {MAX_OFFSET}, not {x}", t.path)),
             Knob::Whole(_) if x.fract() != 0. || x < 1. || x > MAX_OFFSET as f64 => Err(format!("{} must be a whole number from 1 to {MAX_OFFSET}, not {x}", t.path)),
             Knob::Pct(_) if !(x > 0. && x <= 100.) => Err(format!("{} must be above 0 and at most 100, not {x}", t.path)),
+            Knob::Mult(_) if !(x > 0. && x <= 100.) => Err(format!("{} must be above 0 and at most 100, not {x}", t.path)),
+            Knob::Period(_) if x.fract() != 0. || x < 1. || x > MAX_DUAL_ATR_PERIOD as f64 => Err(format!("{} must be a whole number from 1 to {MAX_DUAL_ATR_PERIOD}, not {x}", t.path)),
+            Knob::Switch(_) if x != 0. && x != 1. => Err(format!("{} must be 0 (on) or 1 (off), not {x}", t.path)),
             _ => Ok(()),
         };
     });
     res?;
+    active_rules(&s)?;
     let short = s.short_side.as_ref().map(|x| x.entry.iter().chain(&x.exit));
     s.entry.iter().chain(&s.exit).chain(short.into_iter().flatten()).try_for_each(consistent)?;
     let execs = std::iter::once(&s.exec).chain(s.short_side.as_ref().map(|x| &x.exec));
@@ -1320,7 +1553,9 @@ pub fn current(spec: &Spec, t: &Target) -> f64 {
     let mut v = f64::NAN;
     walk(&mut spec.clone(), &mut |p, k| if p == t.path {
         match k {
-            Knob::Value(x) | Knob::Pct(x) => v = *x,
+            Knob::Value(x) | Knob::Pct(x) | Knob::Mult(x) => v = *x,
+            Knob::Period(n) => v = *n as f64,
+            Knob::Switch(n) => v = if matches!(n, Node::Off(_)) { 1. } else { 0. },
             Knob::Param(r, key) => v = r.params.get(&key).copied().unwrap_or(f64::NAN),
             Knob::Whole(n) | Knob::Shift(n) => v = *n as f64,
             Knob::Series(_) => {}
@@ -2111,5 +2346,187 @@ mod formula_operand_tests {
         assert!(out(r#""from":2,"to":3,"step":0.5"#).contains("Fast must be a whole number"));
         let missing = parse_spec(&spec(&op(""), &opt.replace("p.Fast", "p.Slow"))).unwrap_err();
         assert!(missing.message().contains("Mom has no parameter 'Slow'"), "{}", missing.message());
+    }
+}
+
+#[cfg(test)]
+mod dual_since_parse_tests {
+    use super::*;
+    const BASE: &str = r#"{"v":1,"entry":{"all":[{"lhs":{"s":"close"},"op":">","rhs":{"value":1}}]},"exit":EXIT}"#;
+    fn p(exit: &str) -> Result<Spec, LabError> { parse_spec(&BASE.replace("EXIT", exit)) }
+    fn err(exit: &str) -> String { match p(exit) { Err(e) => format!("{e:?}"), Ok(_) => panic!("accepted: {exit}") } }
+    #[test] fn dual_atr_parses_with_defaults_and_rejects_bad_fields() {
+        let s = p(r#"{"any":[],"dual_atr":{"initial":{"period":5,"mult":2},"favour":{"period":5,"mult":4,"price":"open"}}}"#).unwrap();
+        let d = s.exec.dual_atr.unwrap();
+        assert_eq!((d.initial.price.as_str(), d.favour.price.as_str(), d.tf, d.period_end_only), ("hl2", "open", Tf::D, false));
+        let w = p(r#"{"any":[],"dual_atr":{"initial":{"period":5,"mult":2},"favour":{"period":5,"mult":4},"tf":"M","period_end_only":true}}"#).unwrap();
+        assert_eq!(w.exec.dual_atr.unwrap().tf, Tf::M);
+        for (bad, msg) in [
+            (r#"{"any":[],"dual_atr":{"favour":{"period":5,"mult":4}}}"#, "initial is required"),
+            (r#"{"any":[],"dual_atr":{"initial":{"period":0,"mult":2},"favour":{"period":5,"mult":4}}}"#, "period must be a whole number"),
+            (r#"{"any":[],"dual_atr":{"initial":{"period":5,"mult":0},"favour":{"period":5,"mult":4}}}"#, "mult must be a number above 0"),
+            (r#"{"any":[],"dual_atr":{"initial":{"period":5,"mult":2,"price":"vwap"},"favour":{"period":5,"mult":4}}}"#, "price must be one of"),
+            (r#"{"any":[],"dual_atr":{"initial":{"period":5,"mult":2},"favour":{"period":5,"mult":4},"tf":"Q"}}"#, "tf must be D, W or M"),
+            (r#"{"any":[],"dual_atr":{"initial":{"period":5,"mult":2},"favour":{"period":5,"mult":4},"period_end_only":true}}"#, "applies to tf W or M"),
+            (r#"{"any":[],"dual_atr":{"initial":{"period":5,"mult":2,"len":3},"favour":{"period":5,"mult":4}}}"#, "unknown field"),
+        ] { assert!(err(bad).contains(msg), "{bad}: {}", err(bad)); }
+    }
+    #[test] fn since_entry_is_a_top_level_exit_value_only() {
+        let s = p(r#"{"any":[{"lhs":{"s":"close"},"op":"<","rhs":{"since_entry":"highest","of":{"s":"close"},"mul":0.95,"add":-1}}]}"#).unwrap();
+        let Node::Cmp(c) = &s.exit[0] else { panic!() };
+        let Operand::SinceEntry(e) = &c.rhs else { panic!() };
+        assert_eq!((e.kind, e.mul, e.add), (SinceKind::Highest, 0.95, -1.));
+        assert!(p(r#"{"any":[{"lhs":{"since_entry":"count","when":{"lhs":{"s":"close"},"op":">","rhs":{"s":"open"}}},"op":">=","rhs":{"value":3}}]}"#).is_ok());
+        assert!(p(r#"{"any":[{"lhs":{"s":"close"},"op":"<","rhs":{"since_entry":"entry_price","mul":0.97}}]}"#).is_ok());
+        for (bad, msg) in [
+            (r#"{"any":[{"any":[{"lhs":{"s":"close"},"op":"<","rhs":{"since_entry":"entry_price"}}]}]}"#, "only available as a plain comparison"),
+            (r#"{"any":[{"lhs":{"s":"close"},"op":"<","rhs":{"sub":[{"since_entry":"entry_price"},{"value":1}]}}]}"#, "only available as a plain comparison"),
+            (r#"{"any":[{"lhs":{"s":"close"},"op":"<","rhs":{"since_entry":"highest"}}]}"#, "of is required"),
+            (r#"{"any":[{"lhs":{"s":"close"},"op":"<","rhs":{"since_entry":"highest","of":{"value":3}}}]}"#, "not a number"),
+            (r#"{"any":[{"lhs":{"s":"close"},"op":"<","rhs":{"since_entry":"count"}}]}"#, "when is required"),
+            (r#"{"any":[{"lhs":{"s":"close"},"op":"<","rhs":{"since_entry":"entry_price","mul":0}}]}"#, "mul must not be 0"),
+            (r#"{"any":[{"lhs":{"s":"close"},"op":"<","rhs":{"since_entry":"entry_price","of":{"s":"close"}}}]}"#, "unknown field"),
+            (r#"{"any":[{"lhs":{"s":"close"},"op":"<","rhs":{"since_entry":"median","of":{"s":"close"}}}]}"#, "since_entry must be one of"),
+        ] { assert!(err(bad).contains(msg), "{bad}: {}", err(bad)); }
+        // not on the entry side
+        let entry = r#"{"v":1,"entry":{"all":[{"lhs":{"s":"close"},"op":">","rhs":{"since_entry":"entry_price"}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":5}}]}}"#;
+        assert!(format!("{:?}", parse_spec(entry).unwrap_err()).contains("only available as a plain comparison"));
+    }
+    #[test] fn since_entry_values_and_dual_atr_are_single_instrument() {
+        let port = |exit: &str| format!(r#"{{"v":1,"entry":{{"all":[{{"lhs":{{"s":"close"}},"op":">","rhs":{{"value":1}}}}]}},"exit":{exit},"execution":{{"capital":1000000}},"portfolio":{{"universe":{{"basket":"nifty50"}},"max_open":5}}}}"#);
+        assert!(matches!(parse_spec(&port(r#"{"any":[],"dual_atr":{"initial":{"period":5,"mult":2},"favour":{"period":5,"mult":4}}}"#)), Err(LabError::Unsupported(m)) if m.contains("dual_atr")));
+        assert!(matches!(parse_spec(&port(r#"{"any":[{"lhs":{"s":"close"},"op":"<","rhs":{"since_entry":"entry_price","mul":0.9}}]}"#)), Err(LabError::Unsupported(m)) if m.contains("since_entry")));
+    }
+    #[test] fn since_entry_mul_and_add_are_optimizable_and_rechecked() {
+        let s = p(r#"{"any":[{"lhs":{"s":"close"},"op":"<","rhs":{"since_entry":"highest","of":{"s":"close"},"mul":0.95}}]}"#).unwrap();
+        let t = Target { path: "exit.any[0].rhs.mul".into(), slot: None };
+        assert_eq!(current(&s, &t), 0.95);
+    }
+}
+
+#[cfg(test)]
+mod off_tests {
+    use super::*;
+    fn spec(entry: &str, exit: &str) -> Result<Spec, LabError> { parse_spec(&format!(r#"{{"v":1,"entry":{{"all":[{entry}]}},"exit":{exit}}}"#)) }
+    const C: &str = r#"{"lhs":{"s":"close"},"op":">","rhs":{"value":1}}"#;
+    const OFF: &str = r#"{"off":true,"lhs":{"s":"close"},"op":"<","rhs":{"value":2}}"#;
+    const EXIT: &str = r#"{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":5}}]}"#;
+    #[test] fn off_wraps_a_top_level_rule_or_an_all_any_condition_only() {
+        let s = spec(&format!("{C},{OFF}"), EXIT).unwrap();
+        assert!(matches!(s.entry[1], Node::Off(_)));
+        let g = spec(&format!(r#"{{"any":[{C},{OFF}]}}"#), EXIT).unwrap();
+        assert!(matches!(&g.entry[0], Node::Any(v) if matches!(v[1], Node::Off(_))));
+        // off: false is the same as no flag
+        assert_eq!(spec(&C.replace("{\"lhs\"", "{\"off\":false,\"lhs\""), EXIT).unwrap().entry, spec(C, EXIT).unwrap().entry);
+        let e = |entry: &str, exit: &str| format!("{:?}", spec(entry, exit).unwrap_err());
+        assert!(e(&format!(r#"{{"not":{OFF}}}"#), EXIT).contains("only a top-level rule or a condition of an all/any group"));
+        assert!(e(&format!(r#"{{"then":[{OFF},{C}],"within":3}}"#), EXIT).contains("only a top-level rule or a condition of an all/any group"));
+        assert!(e(&format!(r#"{{"all":[{OFF}]}}"#), EXIT).contains("every condition is switched off"));
+        assert!(e(OFF, EXIT).contains("every rule is switched off"));
+        assert!(e(&C.replace("{\"lhs\"", "{\"off\":1,\"lhs\""), EXIT).contains("off must be true or false"));
+        // an exit list may be all off when a price exit exits
+        assert!(spec(C, &format!(r#"{{"any":[{OFF}],"stop_loss":{{"pct":5}}}}"#)).is_ok());
+        assert!(spec(C, &format!(r#"{{"any":[{OFF}]}}"#)).is_err());
+    }
+    #[test] fn switched_off_rules_load_no_other_instrument_unless_optimized_on() {
+        let x = r#"{"off":true,"lhs":{"s":"close","symbol":"X"},"op":">","rhs":{"value":1}}"#;
+        assert!(spec(&format!("{C},{x}"), EXIT).unwrap().foreign_symbols().is_empty());
+        let s = parse_spec(&format!(r#"{{"v":1,"entry":{{"all":[{C},{x}]}},"exit":{EXIT},"optimize":[{{"path":"entry.all[1].off","from":0,"to":1,"step":1}}]}}"#)).unwrap();
+        assert_eq!(s.foreign_symbols(), vec!["X"]);
+    }
+    #[test] fn a_combination_with_every_rule_off_is_flagged_for_skipping() {
+        let s = spec(&format!("{C},{OFF}"), EXIT).unwrap();
+        assert!(!switched_all_off(&s));
+        let mut all = s.clone(); all.entry[0] = Node::Off(Box::new(all.entry[0].clone()));
+        assert!(switched_all_off(&all));
+        let g = spec(&format!(r#"{{"any":[{C},{OFF}]}}"#), EXIT).unwrap();
+        let mut g_off = g.clone(); if let Node::Any(v) = &mut g_off.entry[0] { v[0] = Node::Off(Box::new(v[0].clone())); }
+        assert!(!switched_all_off(&g) && switched_all_off(&g_off));
+    }
+    #[test] fn switched_off_rules_keep_their_optimize_paths() {
+        let s = spec(&format!("{C},{OFF}"), EXIT).unwrap();
+        assert_eq!(current(&s, &Target { path: "entry.all[1].rhs.value".into(), slot: None }), 2.);
+    }
+}
+
+#[cfg(test)]
+mod dual_atr_both_tests {
+    use super::*;
+    #[test] fn a_side_whose_only_exit_is_dual_atr_is_not_exitless() {
+        let dual = r#""any":[],"dual_atr":{"initial":{"period":5,"mult":2},"favour":{"period":5,"mult":4}}"#;
+        let s = format!(r#"{{"v":1,"direction":"both","entry":{{"all":[{{"lhs":{{"s":"close"}},"op":">","rhs":{{"value":1}}}}]}},"exit":{{{dual}}},"short_side":{{"entry":{{"all":[{{"lhs":{{"s":"close"}},"op":"<","rhs":{{"value":1}}}}]}},"exit":{{{dual}}}}},"execution":{{"opposite":"exit"}}}}"#);
+        assert!(parse_spec(&s).is_ok(), "{:?}", parse_spec(&s).err());
+    }
+}
+
+#[cfg(test)]
+mod optimize_switch_dual_tests {
+    use super::*;
+    fn with_opt(spec: &str, dims: &str) -> Result<Spec, LabError> { parse_spec(&spec.replacen("{\"v\":1,", &format!("{{\"v\":1,\"optimize\":[{dims}],"), 1)) }
+    const S: &str = r#"{"v":1,"entry":{"all":[{"lhs":{"s":"close"},"op":">","rhs":{"value":1}},{"lhs":{"s":"close"},"op":"<","rhs":{"value":9}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":5}}],"dual_atr":{"initial":{"period":5,"mult":2},"favour":{"period":5,"mult":4}}}}"#;
+    #[test] fn on_off_switches_and_dual_atr_numbers_are_optimizable() {
+        let s = with_opt(S, r#"{"path":"entry.all[1].off","from":0,"to":1,"step":1},{"path":"exit.dual_atr.favour.mult","from":2,"to":6,"step":2},{"path":"exit.dual_atr.initial.period","from":3,"to":9,"step":3}"#).unwrap();
+        let t = |p: &str| Target { path: p.into(), slot: None };
+        assert_eq!((current(&s, &t("entry.all[1].off")), current(&s, &t("exit.dual_atr.favour.mult")), current(&s, &t("exit.dual_atr.initial.period"))), (0., 4., 5.));
+        let off = apply(&s, &s.optimize, &[1., 6., 9.]);
+        assert!(matches!(off.entry[1], Node::Off(_)));
+        let d = off.exec.dual_atr.as_ref().unwrap();
+        assert_eq!((d.favour.mult, d.initial.period), (6., 9));
+        // switching back on restores the rule exactly
+        assert_eq!(apply(&off, &s.optimize, &[0., 4., 5.]).entry, s.entry);
+    }
+    #[test] fn optimized_switches_and_numbers_are_range_checked() {
+        let bad = |dims: &str| format!("{:?}", with_opt(S, dims).unwrap_err());
+        assert!(bad(r#"{"path":"entry.all[1].off","from":0,"to":2,"step":1}"#).contains("must be 0 (on) or 1 (off)"));
+        assert!(bad(r#"{"path":"exit.dual_atr.initial.period","from":0,"to":3,"step":1}"#).contains("whole number from 1 to 500"));
+        assert!(bad(r#"{"path":"exit.dual_atr.favour.mult","from":0,"to":3,"step":1}"#).contains("above 0 and at most 100"));
+        // switching off both entry rules would leave the entry list with no rule on
+        let both = r#"{"path":"entry.all[0].off","from":0,"to":1,"step":1},{"path":"entry.all[1].off","from":0,"to":1,"step":1}"#;
+        let s = with_opt(S, both);
+        assert!(s.as_ref().is_err() || {
+            let s = s.unwrap();
+            check_value(&apply(&s, &s.optimize, &[1., 0.]), &Target { path: "entry.all[1].off".into(), slot: None }, 1.).is_err()
+        });
+    }
+}
+
+#[cfg(test)]
+mod date_filter_tests {
+    use super::*;
+    fn spec(df: &str, exit: &str) -> Result<Spec, LabError> { parse_spec(&format!(r#"{{"v":1,"entry":{{"all":[{{"lhs":{{"s":"close"}},"op":">","rhs":{{"value":1}}}}]}},"exit":{exit},"date_filter":{df}}}"#)) }
+    const W: &str = r#""windows":[["2008-01-01","2008-01-31"],["2008-11-21","2010-12-31"]]"#;
+    #[test] fn date_filters_parse_with_defaults_and_count_as_an_exit() {
+        let s = spec(&format!("{{{W}}}"), r#"{"any":[]}"#).unwrap();
+        let d = s.date_filter.unwrap();
+        assert_eq!((d.inside, d.exit_at_change, d.windows.len()), (true, true, 2));
+        assert_eq!(d.windows[1], ("2008-11-21".to_string(), "2010-12-31".to_string()));
+        let o = spec(&format!(r#"{{"mode":"outside","exit_at_change":false,"set":{{"id":3,"name":"Base 2"}},{W}}}"#), r#"{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":5}}]}"#).unwrap();
+        assert!(!o.date_filter.as_ref().unwrap().inside);
+        // without the window-change exit an empty exit list is refused again
+        assert!(spec(&format!(r#"{{"exit_at_change":false,{W}}}"#), r#"{"any":[]}"#).is_err());
+        // switched off: validated, then no filter
+        assert!(spec(&format!(r#"{{"off":true,{W}}}"#), r#"{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":5}}]}"#).unwrap().date_filter.is_none());
+    }
+    #[test] fn filters_mark_entry_rules_and_a_filter_exit_counts_as_an_exit() {
+        let f = |keys: &str, exit: &str| parse_spec(&format!(r#"{{"v":1,"entry":{{"all":[{{"lhs":{{"s":"close"}},"op":">","rhs":{{"value":1}}}},{{{keys}"lhs":{{"s":"rsi"}},"op":">","rhs":{{"value":50}}}}]}},"exit":{exit}}}"#));
+        let x = r#"{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":5}}]}"#;
+        assert_eq!(f(r#""filter":true,"#, x).unwrap(), f("", x).unwrap());
+        assert_eq!(f(r#""filter":true,"filter_exit":true,"#, r#"{"any":[]}"#).unwrap().exec.filter_exits, vec![1]);
+        assert!(f(r#""filter":true,"#, r#"{"any":[]}"#).is_err());
+        assert!(f(r#""off":true,"filter":true,"filter_exit":true,"#, r#"{"any":[]}"#).is_err());
+        assert!(format!("{:?}", f(r#""filter_exit":true,"#, x).unwrap_err()).contains("applies to a rule marked filter"));
+        assert!(format!("{:?}", f(r#""filter":1,"#, x).unwrap_err()).contains("filter must be true or false"));
+    }
+    #[test] fn date_filters_reject_bad_windows() {
+        let e = |df: &str| format!("{:?}", spec(df, r#"{"any":[]}"#).unwrap_err());
+        assert!(e(r#"{"windows":[]}"#).contains("1 to 200 windows"));
+        assert!(e(r#"{"windows":[["2023-02-29","2023-03-01"]]}"#).contains("real date"));
+        assert!(e(r#"{"windows":[["01-01-2008","2008-02-01"]]}"#).contains("real date"));
+        assert!(e(r#"{"windows":[["2008-02-01","2008-02-01"]]}"#).contains("must be before"));
+        assert!(e(r#"{"mode":"bull","windows":[["2008-01-01","2008-02-01"]]}"#).contains("inside or outside"));
+        assert!(e(r#"{"windows":[["2008-01-01","2008-02-01","x"]]}"#).contains("must be a pair"));
+        assert!(e(r#"{"windows":[{"from":"2008-01-01","to":"2008-02-01"}]}"#).contains("must be a pair"));
+        assert!(e(r#"{"set":{"id":0},"windows":[["2008-01-01","2008-02-01"]]}"#).contains("set.id"));
+        assert!(iso_date("2024-02-29") && !iso_date("2100-02-29") && iso_date("2000-02-29") && !iso_date("2024-13-01"));
     }
 }

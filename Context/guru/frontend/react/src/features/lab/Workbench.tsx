@@ -30,7 +30,7 @@ const levelGroups: [number[], string[]][] = [
   [[100, -100], ["cci", "woodies_cci"]], [[50, -50], ["cmo"]], [[40, -40], ["smi", "pzo", "vzo"]], [[60, -60], ["wavetrend"]], [[80, -80], ["rci", "rci_ribbon"]],
   [[150, 50, -50, -150], ["macd_v"]], [[8, 4, -4, -8], ["value_chart"]], [[7, -7], ["szo"]], [[3, -3], ["pgo"]], [[2, 0, -2], ["zscore", "rocket_rsi", "dso"]],
   [[1.5, 0, -1.5], ["fisher"]], [[0.9, 0.2, -0.2, -0.9], ["premier_rsi", "premier_stoch"]], [[0.5, -0.5], ["ift_rsi"]],
-  [[0.8, 0.2], ["laguerre_rsi", "ehlers_stoch", "ibs"]], [[0.7, 0.3], ["demarker"]], [[1, 0], ["bbpct"]], [[1], ["rwi", "vortex"]],
+  [[0.8, 0.2], ["laguerre_rsi", "ehlers_stoch", "ibs"]], [[0.7, 0.3], ["demarker"]], [[1, 0], ["bbpct"]], [[1], ["rwi", "vortex", "ad_ratio", "trin"]],
   [[0], ["macd", "ppo", "tsi", "roc", "mom", "ao", "trix", "kst", "coppock", "bop", "dpo", "aroon_osc", "cmf", "pvo", "bbtrend", "dosc", "repulse", "roc_bands",
     "stoch_macd", "tmo", "vfi", "vpn", "rainbow_osc", "rmo", "pfe", "di_osc", "linreg_angle", "chaikin_osc", "bbp", "accel_osc", "price_osc", "pmo", "smi_ergodic",
     "rvgi", "impulse_macd", "macd_bb", "macd_leader", "madh", "myrsi_net", "polychrome_mom", "rsih", "velocity", "vw_macd", "dmh", "efi", "eom", "mfo", "twiggs",

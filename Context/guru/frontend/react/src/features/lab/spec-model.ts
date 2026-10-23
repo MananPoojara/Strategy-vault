@@ -174,12 +174,15 @@ function distProblems(label: string, d: Dist, [lo, hi]: [number, number], zeroOk
 export function specProblems(spec: Spec, cat: Catalogue): string[] {
   const out: string[] = [];
   if (!spec.entry.all.length && spec.portfolio?.mode!=="rotation") out.push(COPY.emptyEntry);
+  if (spec.portfolio && spec.date_filter && !spec.date_filter.off) out.push("A date filter works on a single instrument only; switch it off (Settings → Date filter) for a portfolio.");
   const alwaysIn = spec.direction === "both" && (spec.execution?.opposite ?? "reverse") === "reverse" &&
     !spec.exit.any.length && !spec.short_side?.exit.any.length;
   const sides = [{ side: spec, prefix: "", title: "" },
     ...(spec.short_side ? [{ side: spec.short_side, prefix: "short_side.", title: "Short side: " }] : [])];
   for (const { side, prefix, title } of sides) {
-    const priceExit = ["stop_loss", "target", "trailing", "breakeven"].some((k) => side.exit[k] !== undefined) || !!side.exit.take_profits?.length;
+    const dated = !!spec.date_filter && !spec.date_filter.off && spec.date_filter.exit_at_change !== false; // rules.rs: the window-change exit closes trades
+    const filterExit = side.entry.all.some((n) => { const x = n as Record<string, unknown>; return x.filter_exit === true && x.off !== true; }); // rules.rs filter_exits
+    const priceExit = ["stop_loss", "target", "trailing", "breakeven", "dual_atr"].some((k) => side.exit[k] !== undefined) || !!side.exit.take_profits?.length || dated || filterExit;
     if (spec.portfolio?.mode!=="rotation" && !alwaysIn && !side.exit.any.length && !priceExit)
       out.push(`${prefix}exit.any needs at least one condition (or a stop_loss, target, trailing, breakeven or take-profit exit)`);
     if (side.entry.all.length + side.exit.any.length > cat.max_conditions)
@@ -228,7 +231,7 @@ export function friendlyReason(reason: string): string {
   const rule = /^(short_side\.)?exit\.any\[(\d+)\]: (.*)$/.exec(reason);
   if (rule) return `${rule[1] ? "Short exit" : "Exit"} rule ${Number(rule[2]) + 1}: ${rule[3]}`;
   const fixed: Record<string, string> = { "reverse to long": "Reversed to long", "reverse to short": "Reversed to short", "opposite entry": "Opposite signal",
-    expiry: "Contract expiry", margin_call: "Margin call", roll: "Contract roll" };
+    expiry: "Contract expiry", margin_call: "Margin call", roll: "Contract roll", "exit.dual_atr": "Dual ATR stop" };
   return fixed[reason] ?? reason;
 }
 

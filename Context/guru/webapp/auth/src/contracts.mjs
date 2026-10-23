@@ -96,6 +96,32 @@ export function validateLabIndicator(body) {
   return { name, formula, blocks };
 }
 
+/** A real calendar date written YYYY-MM-DD. */
+const isoDate = s => {
+  if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(`${s}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+};
+/** A custom date filter set: a name and 1–200 windows {from, to[, label]} with from before to (to is the first day outside). */
+export function validateLabDateSet(body) {
+  const name = typeof body?.name === 'string' ? body.name.trim() : '';
+  if (!name || name.length > 60 || CONTROL.test(name)) throw new LabRequestError('Name must be 1–60 characters.');
+  const windows = body.windows;
+  if (!Array.isArray(windows) || windows.length < 1 || windows.length > 200) throw new LabRequestError('Provide 1 to 200 date windows.');
+  const clean = windows.map((w, i) => {
+    const at = `Window ${i + 1}`;
+    if (!w || typeof w !== 'object' || Array.isArray(w)) throw new LabRequestError(`${at} must be an object with from and to.`);
+    const extra = Object.keys(w).find(k => !['from', 'to', 'label'].includes(k));
+    if (extra) throw new LabRequestError(`${at} has an unknown field "${extra}".`);
+    if (!isoDate(w.from) || !isoDate(w.to)) throw new LabRequestError(`${at}: from and to must be real dates written YYYY-MM-DD.`);
+    if (!(w.from < w.to)) throw new LabRequestError(`${at}: from (${w.from}) must be before to (${w.to}).`);
+    if (w.label !== undefined && (typeof w.label !== 'string' || w.label.length > 60 || CONTROL.test(w.label))) throw new LabRequestError(`${at}: the label must be text of at most 60 characters.`);
+    return w.label === undefined || !w.label.trim() ? { from: w.from, to: w.to } : { from: w.from, to: w.to, label: w.label.trim() };
+  });
+  if (body.shared !== undefined && typeof body.shared !== 'boolean') throw new LabRequestError('shared must be true or false.');
+  return { name, windows: clean, shared: body.shared === true };
+}
+
 export function validateLabVersion(version) {
   if (!Number.isSafeInteger(version) || version < 1) throw new LabRequestError('Provide the version you are changing.');
   return version;

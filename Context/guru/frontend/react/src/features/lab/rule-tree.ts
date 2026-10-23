@@ -27,15 +27,27 @@ export function nodeKind(n: unknown): NodeKind {
 }
 export const isLeaf = (k: NodeKind) => k === "cmp" || k === "range" || k === "trend";
 /** The first expression key, as rules.rs `expr()` finds it. */
-export const exprKey = (o: unknown): ExprKey | undefined => (isObj(o) ? (Object.keys(o).find((k) => (EXPR_KEYS as readonly string[]).includes(k)) as ExprKey | undefined) : undefined);
+export const exprKey = (o: unknown): ExprKey | undefined => (isObj(o) && !("since_entry" in o) ? (Object.keys(o).find((k) => (EXPR_KEYS as readonly string[]).includes(k)) as ExprKey | undefined) : undefined);
 
-export type OperandKind = "number" | "price" | "indicator" | "calendar" | "bars_held" | "arith" | "pct" | "abs" | "ref" | "window" | "change"
+export type OperandKind = "number" | "price" | "indicator" | "calendar" | "bars_held" | "since_entry" | "arith" | "pct" | "abs" | "ref" | "window" | "change"
   | "compress" | "bars_since" | "value_when" | "since" | "count" | "formula" | "unknown";
 export const CALENDAR_IDS = ["calendar", "session", "sessions_left"];
+/** rules.rs SINCE_KINDS: a value of the open position, top-level exit comparisons only (like bars_held). */
+export const SINCE_ENTRY_KINDS = ["highest", "lowest", "count", "entry_price"] as const;
+export type SinceEntryKind = (typeof SINCE_ENTRY_KINDS)[number];
+export const isSinceEntry = (o: unknown): boolean => isObj(o) && "since_entry" in o;
+/** The default fields of a since-entry value of kind `k`, keeping an existing inner value or condition where it fits. */
+export function sinceEntry(k: SinceEntryKind, from: Obj = {}): Obj {
+  const keep = Object.fromEntries(Object.entries(from).filter(([key]) => !["since_entry", "of", "when"].includes(key)));
+  if (k === "highest" || k === "lowest") return { ...keep, since_entry: k, of: from.of ?? { s: "close" } };
+  if (k === "count") return { ...keep, since_entry: k, when: from.when ?? { lhs: { s: "close" }, op: ">", rhs: { s: "open" } } };
+  return { ...keep, since_entry: k };
+}
 const kindOfKey = (k: ExprKey): OperandKind =>
   (ARITH as readonly string[]).includes(k) ? "arith" : (WINDOWS as readonly string[]).includes(k) ? "window" : k === "highest_since" || k === "lowest_since" ? "since" : (k as OperandKind);
 export function operandKind(o: Operand, cat: Catalogue): OperandKind {
   if (isValue(o)) return "number";
+  if (isSinceEntry(o)) return (SINCE_ENTRY_KINDS as readonly unknown[]).includes((o as Obj).since_entry) ? "since_entry" : "unknown";
   if (isFormulaOperand(o)) return "formula";
   const k = exprKey(o);
   if (k) return kindOfKey(k);
@@ -86,6 +98,7 @@ export function move<T>(list: T[], i: number, d: number): T[] {
   return next;
 }
 export function innerOperand(o: Operand): Operand | undefined {
+  if (isSinceEntry(o)) return (o as Obj).of as Operand | undefined;
   const k = exprKey(o);
   if (!k) return undefined;
   const x = o as Obj;
@@ -96,14 +109,17 @@ export function innerOperand(o: Operand): Operand | undefined {
 export function convertOperand(o: Operand, to: OperandKind, cat: Catalogue): Operand {
   if (operandKind(o, cat) === to) return o;
   const timing = isSeries(o) ? Object.fromEntries(Object.entries(o).filter(([k]) => ["tf", "offset", "expand"].includes(k))) : {};
-  const base = innerOperand(o) ?? o, series: Operand = isValue(base) ? { s: "close" } : base;
+  const base = innerOperand(o) ?? o;
+  // a position value (bars held, since entry) cannot sit inside a formula: start the formula from the close instead
+  const series: Operand = isValue(base) || isSinceEntry(base) || (isSeries(base) && base.s === "bars_held") ? { s: "close" } : base;
   const convert = (): Operand => { switch (to) {
     case "number": return { value: 0 };
     case "price": return { s: "close", ...timing };
     case "indicator": return { s: cat.indicators.find((i) => i.computed && !CALENDAR_IDS.includes(i.id))?.id ?? "ema", ...timing };
     case "calendar": return cat.indicators.some((i) => i.id === "session" && i.computed) ? { s: "session", out: "tdom" } : { s: "calendar", out: "dow" };
     case "bars_held": return { s: "bars_held" };
-    case "arith": return { sub: isValue(base) ? [{ s: "close" }, base] : [base, { value: 0 }] };
+    case "since_entry": return sinceEntry("highest", { of: series });
+    case "arith": return { sub: isValue(base) ? [{ s: "close" }, base] : [series, { value: 0 }] };
     case "pct": return { pct: [series, { ref: series, bars: 1 }] };
     case "abs": return { abs: series };
     case "ref": return { ref: series, bars: 1 };
@@ -116,8 +132,8 @@ export function convertOperand(o: Operand, to: OperandKind, cat: Catalogue): Ope
     case "compress": return { compress: series, tf: "W", mode: "last" };
     default: return o;
   } };
-  const known = ["s", "formula", "name", "p", "tf", "out", "offset", "expand", "value", "bars", "of", "nth", "mode", ...EXPR_KEYS];
-  const extras = exprKey(o) || ["number", "price", "indicator", "calendar", "bars_held"].includes(to)
+  const known = ["s", "formula", "name", "p", "tf", "out", "offset", "expand", "value", "bars", "of", "nth", "mode", "since_entry", "when", "mul", "add", ...EXPR_KEYS];
+  const extras = exprKey(o) || isSinceEntry(o) || ["number", "price", "indicator", "calendar", "bars_held", "since_entry"].includes(to)
     ? Object.fromEntries(Object.entries(o).filter(([k]) => !known.includes(k))) : {};
   return { ...extras, ...convert() };
 }
@@ -165,6 +181,13 @@ function walkOperand(o: Operand | undefined, path: string, root: string, held: b
   if (o === undefined) return;
   f({ t: "operand", path, root, operand: o, held });
   if (isValue(o)) { f({ t: "knob", path: `${path}.value`, root, value: o.value, whole: false, min: -Infinity, max: Infinity }); return; }
+  if (isSinceEntry(o)) {
+    const s = o as Obj;
+    if (s.of !== undefined) walkOperand(s.of as Operand, `${path}.of`, root, false, f);
+    if (s.when !== undefined) walkNode(s.when as RuleNode, `${path}.when`, root, false, f);
+    for (const key of ["mul", "add"]) if (s[key] !== undefined) f({ t: "knob", path: `${path}.${key}`, root, value: typeof s[key] === "number" ? s[key] as number : NaN, whole: false, min: -Infinity, max: Infinity });
+    return;
+  }
   const k = exprKey(o);
   if (!k) return;
   const x = o as Obj;
@@ -247,6 +270,10 @@ export function treeProblems(spec: Spec, cat: Catalogue): string[] {
   for (const side of ["long", "short"] as const) if (b.top[side] > lim.top)
     out.push(`${side === "short" ? "Short side" : both ? "Long side" : "Rules"}: use at most ${lim.top} top-level entry and exit conditions in total.`);
   if (jsonDepth(spec) > MAX_DEPTH) out.push(COPY.tooDeep);
+  for (const pre of ["", "short_side."] as const) {
+    const entry = getAt(spec, `${pre}entry.all`);
+    if (Array.isArray(entry) && entry.length && entry.every((c) => (c as Obj).off === true)) out.push(`${pre ? "Short entry" : both ? "Long entry" : "Entry"}: every rule is switched off; switch one on.`);
+  }
   walkSpec(spec, (item) => {
     const label = pathLabel(item.path, both), add = (message: string) => out.push(`${label}: ${message}`);
     if (item.t === "knob") {
@@ -257,6 +284,8 @@ export function treeProblems(spec: Spec, cat: Catalogue): string[] {
     }
     if (item.t === "node") {
       const x = item.node as Obj;
+      if (x.off !== undefined && (x.off !== true || !(item.top || /\.(all|any)\[\d+\]$/.test(item.path)))) add("only a top-level rule or a condition of an all/any group can be switched off.");
+      if ((item.kind === "all" || item.kind === "any") && (x[item.kind] as RuleNode[]).length && (x[item.kind] as RuleNode[]).every((c) => (c as Obj).off === true)) add("every condition of this group is switched off; switch one on or remove the group.");
       if (item.kind === "cmp" && isValue(x.lhs) && isValue(x.rhs)) add("a condition cannot compare two numbers; one side must be a series.");
       if (item.kind === "range" && isValue(x.lo) && isValue(x.hi) && x.lo.value > x.hi.value) add("the low bound is above the high bound.");
       if ((item.kind === "all" || item.kind === "any") && !(x[item.kind] as RuleNode[]).length) add("add at least one condition to this group.");
@@ -269,6 +298,15 @@ export function treeProblems(spec: Spec, cat: Catalogue): string[] {
       return;
     }
     const o = item.operand, k = exprKey(o), x = o as Obj;
+    if (isSinceEntry(o)) {
+      if (!item.held) add(COPY.sinceTopOnly);
+      const kind = x.since_entry;
+      if (!(SINCE_ENTRY_KINDS as readonly unknown[]).includes(kind)) add(`since entry must be one of ${SINCE_ENTRY_KINDS.join(", ")}.`);
+      if ((kind === "highest" || kind === "lowest") && (x.of === undefined || isValue(x.of))) add("the highest or lowest since entry needs a series, not a number.");
+      if (kind === "count" && x.when === undefined) add("the count since entry needs a condition.");
+      if (x.mul === 0) add("the factor must not be 0.");
+      return;
+    }
     if (isFormulaOperand(o)) {
       const issue = timingProblem(o, cat);
       if (issue) add(issue);
@@ -315,7 +353,15 @@ export function usesHigherTimeframes(spec: Spec): boolean {
   return found;
 }
 const ARITH_SYMBOL: Record<string, string> = { add: "+", sub: "−", mul: "×", div: "÷", min: "min", max: "max" };
+const num = (v: number) => String(Number(v.toFixed(6)));
 export function describeOperand(o: Operand, cat: Catalogue): string {
+  if (isSinceEntry(o)) {
+    const s = o as Obj;
+    const base = s.since_entry === "highest" || s.since_entry === "lowest" ? `${s.since_entry} ${describeOperand(s.of as Operand, cat)} since entry`
+      : s.since_entry === "count" ? `bars since entry where (${describeNode(s.when as RuleNode, cat)})` : s.since_entry === "entry_price" ? "entry price" : "kept as is";
+    const mul = typeof s.mul === "number" && s.mul !== 1 ? ` × ${num(s.mul)}` : "", add = typeof s.add === "number" && s.add !== 0 ? ` ${s.add < 0 ? "−" : "+"} ${num(Math.abs(s.add))}` : "";
+    return base + mul + add;
+  }
   if (isValue(o) || isSeries(o) || isFormulaOperand(o)) return operandLabel(o, cat);
   const k = exprKey(o);
   if (!k) return "kept as is";
@@ -339,7 +385,9 @@ export function describeOperand(o: Operand, cat: Catalogue): string {
   }
 }
 export function describeNode(n: RuleNode, cat: Catalogue): string {
-  const x = n as Obj, operand = (key: string) => describeOperand(x[key] as Operand, cat), kind = nodeKind(n);
+  const x = n as Obj;
+  if (x.off === true) return `(off) ${describeNode({ ...x, off: undefined } as unknown as RuleNode, cat)}`;
+  const operand = (key: string) => describeOperand(x[key] as Operand, cat), kind = nodeKind(n);
   switch (kind) {
     case "cmp": return `${operand("lhs")} ${OPERATOR_LABELS[x.op as string] ?? x.op} ${operand("rhs")}`;
     case "range": return `${operand("lhs")} is ${x.op} ${operand("lo")} and ${operand("hi")}`;
@@ -351,3 +399,22 @@ export function describeNode(n: RuleNode, cat: Catalogue): string {
     default: return "kept as is";
   }
 }
+
+/** Ready-made since-entry exits (the AmiBroker AFL exits users ask for by name), added to an exit list as normal conditions. */
+const candle = (when: Cond): RuleNode => ({ lhs: { since_entry: "count", when }, op: ">=", rhs: { value: 3 } });
+const RSI14 = { s: "rsi", p: { length: 14 } };
+/** Each preset for a long position and its mirror for a short one (trails run from the lowest value, stops sit above). */
+export const EXIT_PRESETS: { id: string; label(short: boolean): string; node(short: boolean): RuleNode }[] = [
+  { id: "green", label: () => "Nth green candle since entry", node: () => candle({ lhs: { s: "close" }, op: ">", rhs: { s: "open" } }) },
+  { id: "upclose", label: () => "Nth up-close since entry", node: () => candle({ lhs: { s: "close" }, op: ">", rhs: { s: "close", offset: 1 } }) },
+  { id: "red", label: () => "Nth red candle since entry", node: () => candle({ lhs: { s: "close" }, op: "<", rhs: { s: "open" } }) },
+  { id: "downclose", label: () => "Nth down-close since entry", node: () => candle({ lhs: { s: "close" }, op: "<", rhs: { s: "close", offset: 1 } }) },
+  { id: "rsi_trail", label: (short) => short ? "RSI rises 10 above its lowest since entry" : "RSI falls 10 below its highest since entry",
+    node: (short) => short ? { lhs: { ...RSI14 }, op: ">", rhs: { since_entry: "lowest", of: { ...RSI14 }, add: 10 } } : { lhs: { ...RSI14 }, op: "<", rhs: { since_entry: "highest", of: { ...RSI14 }, add: -10 } } },
+  { id: "close_drop", label: (short) => short ? "Close 5 % above its lowest since entry" : "Close 5 % below its highest since entry",
+    node: (short) => short ? { lhs: { s: "close" }, op: ">", rhs: { since_entry: "lowest", of: { s: "close" }, mul: 1.05 } } : { lhs: { s: "close" }, op: "<", rhs: { since_entry: "highest", of: { s: "close" }, mul: 0.95 } } },
+  { id: "close_stop", label: (short) => `Close 5 % ${short ? "above" : "below"} the entry price (stop on close)`,
+    node: (short) => ({ lhs: { s: "close" }, op: short ? ">" : "<", rhs: { since_entry: "entry_price", mul: short ? 1.05 : 0.95 } }) },
+  { id: "close_target", label: (short) => `Close 10 % ${short ? "below" : "above"} the entry price (target on close)`,
+    node: (short) => ({ lhs: { s: "close" }, op: short ? "<" : ">", rhs: { since_entry: "entry_price", mul: short ? 0.9 : 1.1 } }) },
+];

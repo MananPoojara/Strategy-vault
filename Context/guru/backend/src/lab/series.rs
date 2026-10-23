@@ -4,7 +4,7 @@ use super::bars::Bars;
 use super::catalogue;
 use super::foreign;
 use super::resample::{self, Expand, Tf};
-use super::rules::{Agg, Bin, Cond, Dist, Exec, Expr, LabError, Node, Op, Operand, SeriesRef, Spec, Win};
+use super::rules::{Agg, Bin, Cond, Dist, DualAtr, Exec, Expr, LabError, Node, Op, Operand, SeriesRef, SinceKind, Spec, Win};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -42,6 +42,7 @@ fn price(b: &Bars, id: &str) -> Option<Result<Vec<f64>, LabError>> {
         "hl2" => b.hl2(),
         "hlc3" => b.hlc3(),
         "ohlc4" => b.ohlc4(),
+        "oc2" => b.oc2(),
         "volume" => return Some(b.volume.clone().ok_or_else(|| LabError::NeedsData("volume: volume is missing on some admitted bars of this instrument".into()))),
         _ => return None,
     }))
@@ -91,6 +92,7 @@ pub fn catalogue_error(def: &catalogue::IndicatorDef, e: String) -> LabError {
         "needs a second instrument" => LabError::NeedsData(format!("{}: needs a second instrument", def.name)),
         "needs volume" => LabError::NeedsData(format!("{}: needs volume, which is missing on some admitted bars of this instrument", def.name)),
         "needs breadth" => LabError::NeedsData(format!("{}: needs market breadth (advances/declines) on daily bars; this market or timeframe has none", def.name)),
+        "needs index member breadth" => LabError::NeedsData(format!("{}: counts only this index's own member stocks, and that data is loaded for NIFTY 50 only", def.name)),
         "needs contract data" => LabError::NeedsData(format!("{}: needs admitted futures contract metadata",def.name)),
         "needs intraday data" => LabError::NeedsData(format!("{}: needs intraday data", def.name)),
         _ => LabError::Invalid(format!("{}: {e}", def.id)),
@@ -136,23 +138,69 @@ fn series_mode_in(fr: &Frames, others: &Others, cache: &mut Cache, s: &SeriesRef
     }
 }
 
-pub enum Val { Arr(Vec<f64>), Const(f64), Held }
+pub enum Val { Arr(Vec<f64>), Const(f64), Held, Since(Box<SinceVal>) }
+/// The open position a top-level exit condition reads: `held` is the bar bars_held counts from (the fill bar, or the
+/// signal bar with execution.bars_held_from "signal"), `entry` the fill bar and `px` the entry fill price.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct At { pub held: usize, pub entry: usize, pub px: f64 }
+impl At {
+    /// A position filled on bar `e` (bars_held from the fill bar) at an unknown price.
+    pub fn bar(e: usize) -> At { At { held: e, entry: e, px: f64::NAN } }
+}
+/// A compiled since_entry value: a range table over `of` (highest / lowest), the running count of `when` (count) or nothing
+/// (entry price); then × mul + add.
+pub struct SinceVal { pub kind: SinceKind, range: Option<Rmq>, count: Vec<u32>, pub mul: f64, pub add: f64 }
+impl SinceVal {
+    fn at(&self, i: usize, p: At) -> f64 {
+        if i < p.entry { return f64::NAN; }
+        let v = match self.kind {
+            SinceKind::Highest | SinceKind::Lowest => self.range.as_ref().map_or(f64::NAN, |r| r.query(p.entry, i)),
+            // bars after the entry bar on which the condition held
+            SinceKind::Count => f64::from(self.count[i] - self.count[p.entry]),
+            SinceKind::EntryPrice => p.px,
+        };
+        v * self.mul + self.add
+    }
+}
+/// Sparse table for the highest / lowest value over an inclusive bar range in O(1); NaN values are skipped and a range
+/// with no number gives NaN.
+pub struct Rmq { t: Vec<Vec<f64>>, max: bool }
+impl Rmq {
+    pub fn new(v: &[f64], max: bool) -> Rmq {
+        let mut t = vec![v.to_vec()];
+        let mut w = 1;
+        while 2 * w <= v.len() {
+            let p = t.last().unwrap();
+            let next = (0..=v.len() - 2 * w).map(|i| Self::pick(p[i], p[i + w], max)).collect();
+            t.push(next);
+            w *= 2;
+        }
+        Rmq { t, max }
+    }
+    fn pick(a: f64, b: f64, max: bool) -> f64 { if a.is_nan() { b } else if b.is_nan() { a } else if max { a.max(b) } else { a.min(b) } }
+    /// Highest (or lowest) of bars l..=r (l <= r < len).
+    pub fn query(&self, l: usize, r: usize) -> f64 {
+        let k = (usize::BITS - 1 - (r - l + 1).leading_zeros()) as usize;
+        Self::pick(self.t[k][l], self.t[k][r + 1 - (1 << k)], self.max)
+    }
+}
 impl Val {
-    /// Value at the close of daily bar i. `entry` = fill bar of the open position; bars_held is 0 on that bar.
-    fn at(&self, i: usize, entry: Option<usize>) -> f64 {
+    /// Value at the close of daily bar i for the open position `pos` (None outside a position: position values are NaN).
+    fn at(&self, i: usize, pos: Option<At>) -> f64 {
         match self {
             Val::Arr(v) => v[i],
             Val::Const(x) => *x,
-            Val::Held => entry.filter(|&e| e <= i).map_or(f64::NAN, |e| (i - e) as f64),
+            Val::Held => pos.filter(|p| p.held <= i).map_or(f64::NAN, |p| (i - p.held) as f64),
+            Val::Since(s) => pos.map_or(f64::NAN, |p| s.at(i, p)),
         }
     }
 }
 pub struct RCond { pub lhs: Val, pub op: Op, pub rhs: Val, pub label: String }
 impl RCond {
     /// NaN on either side (or on the previous bar for crosses) makes the condition false.
-    pub fn holds(&self, i: usize, entry: Option<usize>) -> bool {
-        let (a, b) = (self.lhs.at(i, entry), self.rhs.at(i, entry));
-        let prev = || if i == 0 { (f64::NAN, f64::NAN) } else { (self.lhs.at(i - 1, entry), self.rhs.at(i - 1, entry)) };
+    pub fn holds(&self, i: usize, pos: Option<At>) -> bool {
+        let (a, b) = (self.lhs.at(i, pos), self.rhs.at(i, pos));
+        let prev = || if i == 0 { (f64::NAN, f64::NAN) } else { (self.lhs.at(i - 1, pos), self.rhs.at(i - 1, pos)) };
         match self.op {
             Op::Gt => a > b,
             Op::Lt => a < b,
@@ -174,10 +222,16 @@ pub struct Compiled {
     pub limit_at: Option<Vec<f64>>, pub stop_at: Option<Vec<f64>>,
     /// (actual tick, forward offset, ratio factor) per execution bar; empty for cash.
     pub grid: Vec<(f64,f64,f64)>, pub expiry_bar: Vec<bool>,
+    /// exit.dual_atr levels per daily bar (None: off).
+    pub dual: Option<DualBands>,
 }
+/// Daily levels of exit.dual_atr for this side: the initial and favour stops, the switch band and the close they are
+/// compared with (on W/M: completed periods' values and the period close, held until the next period's last bar, as the
+/// AmiBroker AFL's TimeFrameExpand(…, expandLast)), and which bars end a period (exits tested there only when `end_only`).
+pub struct DualBands { pub init: Vec<f64>, pub fav: Vec<f64>, pub up: Vec<f64>, pub close: Vec<f64>, pub end: Vec<bool>, pub end_only: bool }
 impl Compiled {
     /// Long, market orders at the next open, no price exits (the v1 defaults).
-    pub fn new(entry: Vec<RCond>, exit: Vec<RCond>) -> Compiled { Compiled { entry, exit, exec: Exec::default(), atr: BTreeMap::new(), other: None, cost: 0., limit_at: None, stop_at: None, grid: vec![], expiry_bar: vec![] } }
+    pub fn new(entry: Vec<RCond>, exit: Vec<RCond>) -> Compiled { Compiled { entry, exit, exec: Exec::default(), atr: BTreeMap::new(), other: None, cost: 0., limit_at: None, stop_at: None, grid: vec![], expiry_bar: vec![], dual: None } }
     pub fn has_order(&self) -> bool { self.exec.has_order() }
     /// Price distance of `d` from `px`, using ATR at bar `k` (a bar whose close is already known). NaN while ATR warms up.
     pub fn dist(&self, d: Dist, px: f64, k: usize) -> f64 {
@@ -204,11 +258,30 @@ fn arr(o: &Operand, fr: &Frames, cache: &mut Cache) -> Result<Vec<f64>, LabError
 /// Evaluate a complete operand (including expressions and state) for a portfolio member's score.
 pub fn operand_values(fr: &Frames, others: &Others, cache: &mut Cache, operand: &Operand) -> Result<Vec<f64>, LabError> { arr_in(operand, fr, others, cache) }
 fn val(o: &Operand, fr: &Frames, others: &Others, cache: &mut Cache) -> Result<Val, LabError> {
-    Ok(match o { Operand::Series(s) => Val::Arr(series_in(fr, others, cache, s)?), Operand::Value(x) => Val::Const(*x), Operand::BarsHeld => Val::Held, Operand::Expr(e) => Val::Arr(eval(e, fr, others, cache)?) })
+    Ok(match o {
+        Operand::Series(s) => Val::Arr(series_in(fr, others, cache, s)?), Operand::Value(x) => Val::Const(*x), Operand::BarsHeld => Val::Held, Operand::Expr(e) => Val::Arr(eval(e, fr, others, cache)?),
+        Operand::SinceEntry(s) => {
+            let (mut range, mut count) = (None, Vec::new());
+            match s.kind {
+                SinceKind::Highest | SinceKind::Lowest => {
+                    let of = s.of.as_ref().ok_or_else(|| LabError::Invalid("since_entry highest/lowest needs `of`".into()))?;
+                    range = Some(Rmq::new(&arr_in(of, fr, others, cache)?, s.kind == SinceKind::Highest));
+                }
+                SinceKind::Count => {
+                    let when = s.when.as_ref().ok_or_else(|| LabError::Invalid("since_entry count needs `when`".into()))?;
+                    let mut n = 0u32;
+                    count = mask_in(when, fr, others, cache)?.iter().map(|&m| { if m > 0.5 { n += 1; } n }).collect();
+                }
+                SinceKind::EntryPrice => {}
+            }
+            Val::Since(Box::new(SinceVal { kind: s.kind, range, count, mul: s.mul, add: s.add }))
+        }
+    })
 }
 /// A v1 comparison compiles exactly as before; every other node becomes a precomputed 1/0/NaN array tested with `> 0.5`.
 fn list(ns: &[Node], at: &str, fr: &Frames, others: &Others, cache: &mut Cache) -> Result<Vec<RCond>, LabError> {
-    ns.iter().enumerate().map(|(k, n)| Ok(match n {
+    // switched-off rules are skipped; the others keep their position in the label
+    ns.iter().enumerate().filter(|(_, n)| !matches!(n, Node::Off(_))).map(|(k, n)| Ok(match n {
         Node::Cmp(c) => RCond { lhs: val(&c.lhs, fr, others, cache)?, op: c.op, rhs: val(&c.rhs, fr, others, cache)?, label: format!("{at}[{k}]: {}", describe(c)) },
         _ => RCond { lhs: Val::Arr(mask_in(n, fr, others, cache)?), op: Op::Gt, rhs: Val::Const(0.5), label: format!("{at}[{k}]: {}", describe_node(n)) },
     })).collect()
@@ -218,7 +291,7 @@ fn arr_in(o: &Operand, fr: &Frames, others: &Others, cache: &mut Cache) -> Resul
     match val(o, fr, others, cache)? {
         Val::Arr(v) => Ok(v),
         Val::Const(x) => Ok(vec![x; fr.d.len()]),
-        Val::Held => Err(LabError::Invalid("bars_held is only available in top-level exit conditions".into())),
+        Val::Held | Val::Since(_) => Err(LabError::Invalid("bars_held and since_entry values are only available in top-level exit conditions".into())),
     }
 }
 /// An expression on the daily bars (spec §4.1–§4.2): a NaN input gives NaN, division by zero gives NaN, windows are NaN until full.
@@ -338,6 +411,8 @@ fn cmp_at(op: Op, a: &[f64], b: &[f64], i: usize) -> f64 {
 fn mask_in(n: &Node, fr: &Frames, others: &Others, cache: &mut Cache) -> Result<Vec<f64>, LabError> {
     let len = fr.d.len();
     Ok(match n {
+        // the parser only allows `off` on list items and all/any conditions, which are skipped before evaluation
+        Node::Off(_) => return Err(LabError::Invalid("a switched-off condition is not evaluated".into())),
         Node::Cmp(c) => { let (a, b) = (arr_in(&c.lhs, fr, others, cache)?, arr_in(&c.rhs, fr, others, cache)?); (0..len).map(|i| cmp_at(c.op, &a, &b, i)).collect() }
         Node::Range { x, lo, hi, outside } => {
             let (x, lo, hi) = (arr_in(x, fr, others, cache)?, arr_in(lo, fr, others, cache)?, arr_in(hi, fr, others, cache)?);
@@ -352,7 +427,8 @@ fn mask_in(n: &Node, fr: &Frames, others: &Others, cache: &mut Cache) -> Result<
         }
         Node::All(v) | Node::Any(v) => {
             let all = matches!(n, Node::All(_));
-            let kids = v.iter().map(|c| mask_in(c, fr, others, cache)).collect::<Result<Vec<_>, _>>()?;
+            // a switched-off condition is left out, as if absent (the parser keeps at least one on)
+            let kids = v.iter().filter(|c| !matches!(c, Node::Off(_))).map(|c| mask_in(c, fr, others, cache)).collect::<Result<Vec<_>, _>>()?;
             (0..len).map(|i| {
                 let (decisive, other) = if all { (0., 1.) } else { (1., 0.) };
                 if kids.iter().any(|k| k[i] == decisive) { decisive } else if kids.iter().any(|k| k[i].is_nan()) { f64::NAN } else { other }
@@ -400,10 +476,36 @@ pub fn compile_with(spec: &Spec, fr: &Frames, others: &Others, cache: &mut Cache
         o.exec.sizing = spec.exec.sizing; // one sizing for both sides (optimize changes the spec's)
         c.other = Some(Box::new(o));
     }
+    if let Some(d) = &spec.date_filter {
+        date_gate(&mut c, d, &fr.d.date);
+        if let Some(o) = c.other.as_deref_mut() { date_gate(o, d, &fr.d.date); }
+    }
     Ok(c)
+}
+/// spec.date_filter on one side: the window test joins the entry rules (inside or outside the windows) and, with
+/// exit_at_change, being on the wrong side joins the exits: inside, any bar out of the windows (first: date >= to); outside,
+/// any bar in a window (first: its first bar). Dates compare as YYYY-MM-DD text.
+fn date_gate(c: &mut Compiled, d: &super::rules::DateFilter, dates: &[String]) {
+    let inside: Vec<bool> = dates.iter().map(|t| d.windows.iter().any(|(from, to)| from.as_str() <= t.as_str() && t.as_str() < to.as_str())).collect();
+    let want = d.inside;
+    c.entry.push(RCond { lhs: Val::Arr(inside.iter().map(|&w| if w == want { 1. } else { 0. }).collect()), op: Op::Gt, rhs: Val::Const(0.5),
+        label: format!("date_filter: {} the windows", if want { "inside" } else { "outside" }) });
+    if d.exit_at_change {
+        // every bar on the wrong side, not only the change bar: a position the rule exits could not close there (min_bars,
+        // a delayed or limit fill after the window) still leaves on the next bar it may exit
+        let wrong: Vec<f64> = inside.iter().map(|&w| if w != want { 1. } else { 0. }).collect();
+        c.exit.push(RCond { lhs: Val::Arr(wrong), op: Op::Gt, rhs: Val::Const(0.5),
+            label: (if want { "date_filter: window ended" } else { "date_filter: window started" }).into() });
+    }
 }
 fn side(entry: &[Node], exit: &[Node], x: &Exec, pre: &str, fr: &Frames, others: &Others, cache: &mut Cache) -> Result<Compiled, LabError> {
     let mut c = Compiled { entry: list(entry, &format!("{pre}entry.all"), fr, others, cache)?, exit: list(exit, &format!("{pre}exit.any"), fr, others, cache)?, ..Compiled::new(vec![], vec![]) };
+    for &k in &x.filter_exits {
+        if matches!(entry[k], Node::Off(_)) { continue; }
+        // false, not unknown: a NaN filter value does not exit
+        let not: Vec<f64> = mask_in(&entry[k], fr, others, cache)?.into_iter().map(|v| if v.is_nan() { v } else { 1. - v }).collect();
+        c.exit.push(RCond { lhs: Val::Arr(not), op: Op::Gt, rhs: Val::Const(0.5), label: format!("{pre}entry.all[{k}]: filter turned false") });
+    }
     c.exec = x.clone();
     c.limit_at = x.limit_at.as_ref().map(|o| arr_in(o, fr, others, cache)).transpose()?;
     c.stop_at = x.stop_at.as_ref().map(|o| arr_in(o, fr, others, cache)).transpose()?;
@@ -415,7 +517,31 @@ fn side(entry: &[Node], exit: &[Node], x: &Exec, pre: &str, fr: &Frames, others:
             c.atr.insert(length, series(fr, cache, &r)?);
         }
     }
+    c.dual = x.dual_atr.as_ref().map(|d| dual_bands(d, x.short, fr, cache)).transpose()?;
     Ok(c)
+}
+/// exit.dual_atr levels: ATR = simple average of the true range (AmiBroker AFL sum of ATR(1) / period, catalogue atr
+/// variant 1) on the band's timeframe; a long's stops sit below the price source and its switch band above (a short's mirrored).
+fn dual_bands(d: &DualAtr, short: bool, fr: &Frames, cache: &mut Cache) -> Result<DualBands, LabError> {
+    let sign = if short { -1. } else { 1. };
+    let mut band = |b: &super::rules::AtrBand| -> Result<(Vec<f64>, Vec<f64>), LabError> {
+        let atr = SeriesRef { id: "atr".into(), params: [("length".to_string(), b.period as f64), ("variant".to_string(), 1.)].into(), tf: d.tf, out: 0, offset: 0, foreign: Default::default(), formula: None };
+        let src = SeriesRef { id: b.price.clone(), params: Default::default(), tf: d.tf, out: 0, offset: 0, foreign: Default::default(), formula: None };
+        Ok((series(fr, cache, &atr)?, series(fr, cache, &src)?))
+    };
+    let ((a1, p1), (a2, p2)) = (band(&d.initial)?, band(&d.favour)?);
+    let close = series(fr, cache, &SeriesRef { id: "close".into(), params: Default::default(), tf: d.tf, out: 0, offset: 0, foreign: Default::default(), formula: None })?;
+    let (m1, m2) = (d.initial.mult, d.favour.mult);
+    let n = fr.d.len();
+    let anchor = if d.tf == Tf::W { 1 } else { 2 };
+    // the last bar of the data is not a known period end (the period may continue)
+    let end = (0..n).map(|i| d.tf != Tf::D && i + 1 < n && resample::period_key(&fr.d.date[i], anchor) != resample::period_key(&fr.d.date[i + 1], anchor)).collect();
+    Ok(DualBands {
+        init: (0..n).map(|i| p1[i] - sign * m1 * a1[i]).collect(),
+        fav: (0..n).map(|i| p2[i] - sign * m2 * a2[i]).collect(),
+        up: (0..n).map(|i| p2[i] + sign * m2 * a2[i]).collect(),
+        close, end, end_only: d.period_end_only,
+    })
 }
 
 /// Human-readable condition, recorded as a trade's exit reason, e.g. `rsi(length=2) crosses_above 70`.
@@ -431,6 +557,7 @@ pub const LATE_PARAMS: &[(&str, &str)] = &[
     ("macd", "signal_type"), ("macd", "ma_type"), ("dmi", "variant"), ("efi", "variant"), ("eom", "variant"),
     ("pvo", "exponential"), ("pvo", "points"), ("price_osc", "points"), ("tsf", "horizon"), ("majority_rule", "variant"),
     ("hma", "variant"), ("median", "source"), ("vwap_period", "anchor_date"), ("cdl_kicking_bull", "variant"), ("cdl_kicking_bear", "variant"),
+    ("supertrend", "mode"), ("supertrend", "price"),
 ];
 /// The resolved parameters a label or echo shows: all of them except a `LATE_PARAMS` key at its catalogue default.
 pub fn shown_params<'a>(id: &str, params: &'a catalogue::Params) -> impl Iterator<Item = (&'a String, &'a f64)> {
@@ -442,6 +569,13 @@ pub fn operand_text(o: &Operand) -> String {
     match o {
         Operand::Value(x) => format!("{x}"),
         Operand::BarsHeld => "bars_held".into(),
+        Operand::SinceEntry(s) => {
+            let inner = match (&s.of, &s.when) { (Some(o), _) => format!("({})", operand_text(o)), (_, Some(n)) => format!("({})", describe_node(n)), _ => String::new() };
+            let mut t = format!("since_entry.{}{inner}", s.kind.key());
+            if s.mul != 1. { t = format!("{t} × {}", s.mul); }
+            if s.add != 0. { t = format!("{t} {} {}", if s.add < 0. { "-" } else { "+" }, s.add.abs()); }
+            t
+        }
         Operand::Expr(e) => match &**e {
             Expr::Bin(op, l, r) => format!("{}({}, {})", op.key(), operand_text(l), operand_text(r)),
             Expr::Abs(x) => format!("abs({})", operand_text(x)),
@@ -474,8 +608,10 @@ fn op_text(op: Op) -> &'static str {
 }
 /// Human-readable node, recorded as an exit reason, e.g. `all(rsi(length=2) < 10, close > 5)`.
 pub fn describe_node(n: &Node) -> String {
-    let join = |v: &[Node]| v.iter().map(describe_node).collect::<Vec<_>>().join(", ");
+    // switched-off conditions are not part of the rule the engine runs, so an exit reason does not show them
+    let join = |v: &[Node]| v.iter().filter(|c| !matches!(c, Node::Off(_))).map(describe_node).collect::<Vec<_>>().join(", ");
     match n {
+        Node::Off(c) => format!("off({})", describe_node(c)),
         Node::Cmp(c) => describe(c),
         Node::Range { x, lo, hi, outside } => format!("{} {} {} and {}", operand_text(x), if *outside { "outside" } else { "between" }, operand_text(lo), operand_text(hi)),
         Node::Trend { x, bars, rising } => format!("{} {} {bars} bars", operand_text(x), if *rising { "rising" } else { "falling" }),
@@ -571,7 +707,7 @@ mod tests {
         let ge = c(Op::Ge, vec![10., f64::NAN]);
         assert_eq!((ge.holds(0, None), ge.holds(1, None)), (true, false));
         let held = RCond { lhs: Val::Held, op: Op::Ge, rhs: Val::Const(2.), label: String::new() };
-        assert_eq!((held.holds(5, None), held.holds(5, Some(4)), held.holds(6, Some(4))), (false, false, true));
+        assert_eq!((held.holds(5, None), held.holds(5, Some(At::bar(4))), held.holds(6, Some(At::bar(4)))), (false, false, true));
     }
     #[test] fn needs_volume_is_typed() {
         let fr = Frames::new(business_days(60, false));
@@ -1052,5 +1188,32 @@ mod formula_tests {
         let s = spec(r#"{"lhs":{"formula":"x = 1\nPlot(V, \"X\")"},"op":">","rhs":{"value":0}}"#);
         let e = compile(&s, &Frames::new(walk(50, 1, false)), &mut Cache::new()).err().unwrap();
         assert_eq!((e.status(), e.message()), ("needs_data", "line 2, col 6: volume: volume is missing on some admitted bars of this instrument"));
+    }
+}
+
+#[cfg(test)]
+mod rmq_tests {
+    use super::Rmq;
+    #[test] fn range_table_matches_a_scan_and_skips_nan() {
+        let v: Vec<f64> = (0..37).map(|i| if i % 7 == 3 { f64::NAN } else { ((i * 17 % 23) as f64) - 11. }).collect();
+        let (hi, lo) = (Rmq::new(&v, true), Rmq::new(&v, false));
+        for l in 0..v.len() { for r in l..v.len() {
+            let w: Vec<f64> = v[l..=r].iter().copied().filter(|x| !x.is_nan()).collect();
+            let (mx, mn) = (w.iter().copied().fold(f64::NAN, f64::max), w.iter().copied().fold(f64::NAN, f64::min));
+            assert!(hi.query(l, r) == mx || (mx.is_nan() && hi.query(l, r).is_nan()), "{l}..{r}");
+            assert!(lo.query(l, r) == mn || (mn.is_nan() && lo.query(l, r).is_nan()), "{l}..{r}");
+        } }
+        assert!(Rmq::new(&[f64::NAN, f64::NAN], true).query(0, 1).is_nan());
+    }
+}
+
+#[cfg(test)]
+mod label_stability_tests {
+    #[test] fn supertrend_labels_omit_the_default_mode() {
+        // saved exit reasons from before the AmiBroker AFL mode existed keep their exact text
+        let p: super::catalogue::Params = [("atr_length".to_string(), 10.), ("factor".to_string(), 3.), ("mode".to_string(), 0.)].into();
+        assert_eq!(super::shown_params("supertrend", &p).map(|(k, _)| k.as_str()).collect::<Vec<_>>(), ["atr_length", "factor"]);
+        let p: super::catalogue::Params = [("atr_length".to_string(), 10.), ("factor".to_string(), 3.), ("mode".to_string(), 1.)].into();
+        assert_eq!(super::shown_params("supertrend", &p).count(), 3);
     }
 }

@@ -75,6 +75,9 @@ const bars = (n: number) => `${n} bar${n === 1 ? "" : "s"}`;
 const kind = (k: string) => ENTRY_KIND_LABELS[k] ?? k;
 const cap = (k: string) => k[0].toUpperCase() + k.slice(1);
 
+/** The date filter that ran (none when absent, switched off or empty). */
+const activeDateFilter = (spec: Spec) => (spec.date_filter && !spec.date_filter.off && spec.date_filter.windows.length ? spec.date_filter : undefined);
+
 /** AmiBroker report "Settings" page: what produced the result, from the spec that ran, in readable words. */
 export function settingsLines(spec: Spec, run?: ReportRun): [string, string][] {
   const ex = spec.execution ?? {}, out: [string, string][] = [];
@@ -98,6 +101,8 @@ export function settingsLines(spec: Spec, run?: ReportRun): [string, string][] {
   if (ex.reentry) out.push(["Re-entry delay", Object.entries(ex.reentry).map(([k, v]) => `${bars(v as number)} ${REENTRY[k] ?? k}`).join(" · ")]);
   if (ex.sizing) out.push(["Position size", Object.entries(ex.sizing).map(([k, v]) => SIZING[k]?.(v) ?? `${k} ${v}`).join(" · ")]);
   if (ex.limits) out.push(["Position limits", Object.entries(ex.limits).map(([k, v]) => `${k.replace(/_/g, " ")} ${v}`).join(" · ")]);
+  const df = activeDateFilter(spec);
+  if (df) out.push(["Date filter", `${df.set?.name ? `${df.set.name}: ` : ""}trade only ${df.mode === "outside" ? "outside" : "inside"} ${df.windows.length} window${df.windows.length === 1 ? "" : "s"} (${df.windows[0][0]} → exit date ${df.windows.at(-1)![1]})${df.exit_at_change === false ? "" : "; an open trade closes when the window changes"}`]);
   if (ex.costs) {
     const c = ex.costs, fee = c.commission;
     if (fee) out.push(["Commission", [fee.per_order && `${fee.per_order} per order`, fee.per_unit && `${fee.per_unit} per share`, fee.pct && `${fee.pct}% of value`].filter(Boolean).join(" + ") || "0"]);
@@ -122,7 +127,7 @@ export function parameterLines(spec: Spec): [string, string][] {
   return [...out];
 }
 
-const PRICE_VAR: Record<string, string> = { open: "O", high: "H", low: "L", close: "C", volume: "V", hl2: "(H + L) / 2", hlc3: "(H + L + C) / 3", ohlc4: "(O + H + L + C) / 4" };
+const PRICE_VAR: Record<string, string> = { open: "O", high: "H", low: "L", close: "C", volume: "V", hl2: "(H + L) / 2", hlc3: "(H + L + C) / 3", ohlc4: "(O + H + L + C) / 4", oc2: "(O + C) / 2" };
 const AFL_OP: Record<string, (a: string, b: string) => string> = {
   ">": (a, b) => `${a} > ${b}`, "<": (a, b) => `${a} < ${b}`, ">=": (a, b) => `${a} >= ${b}`, "<=": (a, b) => `${a} <= ${b}`, "=": (a, b) => `${a} == ${b}`, "!=": (a, b) => `${a} != ${b}`,
   crosses_above: (a, b) => `Cross(${a}, ${b})`, crosses_below: (a, b) => `Cross(${b}, ${a})`, crosses: (a, b) => `(Cross(${a}, ${b}) OR Cross(${b}, ${a}))`,
@@ -133,6 +138,12 @@ function aflOperand(o: unknown, held: string): string {
   if (!o || typeof o !== "object") return String(o);
   const x = o as Record<string, unknown>, k = exprKey(o), op = (key: string) => aflOperand(x[key], held), cond = (key: string) => aflNode(x[key], held);
   if ("value" in x && !k) return String(x.value);
+  if ("since_entry" in x) {
+    const base = x.since_entry === "highest" ? `HighestSince(${held}, ${op("of")})` : x.since_entry === "lowest" ? `LowestSince(${held}, ${op("of")})`
+      : x.since_entry === "count" ? `Sum(${cond("when")}, BarsSince(${held}))` : x.since_entry === "entry_price" ? `ValueWhen(${held}, ${held}Price)` : "/* kept as is */";
+    const mul = typeof x.mul === "number" && x.mul !== 1 ? ` * ${x.mul}` : "", add = typeof x.add === "number" && x.add !== 0 ? ` ${x.add < 0 ? "-" : "+"} ${Math.abs(x.add)}` : "";
+    return mul || add ? `(${base}${mul}${add})` : base;
+  }
   if (typeof x.s === "string") {
     const p = x.p && typeof x.p === "object" ? Object.values(x.p) : [], args = [...p, ...(x.vs ? [`"${x.vs}"`] : [])];
     let v = x.s === "bars_held" ? `BarsSince(${held})` : PRICE_VAR[x.s] ?? `${x.s.toUpperCase()}${args.length ? `(${args.join(", ")})` : ""}`;
@@ -173,7 +184,11 @@ function aflNode(n: unknown, held: string): string {
     default: return "/* kept as is */";
   }
 }
-const aflList = (list: unknown[] | undefined, join: string, held: string) => (list?.length ? `(${list.map((c) => aflNode(c, held)).join(join)})` : "0");
+/** Switched-off conditions (rules.rs `off`) are skipped, as the engine skips them. */
+const aflList = (all: unknown[] | undefined, join: string, held: string) => {
+  const list = all?.filter((c) => (c as { off?: unknown })?.off !== true);
+  return list?.length ? `(${list.map((c) => aflNode(c, held)).join(join)})` : "0";
+};
 const aflDist = (d: unknown): [mode: string, amount: string] => {
   const v = (d ?? {}) as Record<string, unknown>;
   return "pct" in v ? ["stopModePercent", String(v.pct)] : "profit_pct" in v ? ["stopModeRisk", String(v.profit_pct)] : "points" in v ? ["stopModePoint", String(v.points)]
@@ -194,15 +209,28 @@ export function formulaText(spec: Spec): string {
     const n = nBarStop(spec, pre), at = n === undefined ? -1 : side.exit.any.findIndex((r) => { const c = r as { lhs?: { s?: string }; op?: string; rhs?: { value?: unknown } }; return c.lhs?.s === "bars_held" && c.op === ">=" && typeof c.rhs?.value === "number"; });
     const rules = side.exit.any.filter((_, i) => i !== at);
     out.push(`${entry} = ${aflList(side.entry.all, " AND ", entry)};`, `${exit} = ${aflList(rules, " OR ", entry)};`);
+    // a filter's "also sell when it turns false" (rules.rs filter_exits), as the AFLs' ST Exit / Base exit
+    for (const r of side.entry.all) { const x = r as Record<string, unknown>; if (x.filter_exit === true && x.off !== true) out.push(`${exit} = ${exit} OR NOT ${aflList([r], " AND ", entry)};`); }
     const e = side.exit, tag = dir === "both" ? ` // ${entry === "Buy" ? "long" : "short"} side` : "";
     // ApplyStop's 4th argument ExitAtStop, written when it is not the default 1
     const at4 = (k: StopKey) => { const m = ex.exit_at_stop?.[k]; return m === undefined || m === 1 ? "" : `, ${m}`; };
     for (const [type, d, k] of [["stopTypeLoss", e.stop_loss, "stop_loss"], ["stopTypeProfit", e.target, "target"], ["stopTypeTrailing", e.trailing, "trailing"]] as const) if (d) out.push(`ApplyStop(${type}, ${aflDist(d).join(", ")}${at4(k)});${tag}${type === "stopTypeTrailing" && e.trailing?.activate ? ` // activates from ${dist(e.trailing.activate)}` : ""}`);
     if (n !== undefined) out.push(`ApplyStop(stopTypeNBar, stopModeBars, ${n}${at4("bars")});${tag}${ex.nbar_has_priority ? " // N-bar stop has priority" : ""}`);
+    const dual = e.dual_atr as { initial: { period: number; mult: number; price?: string }; favour: { period: number; mult: number; price?: string }; tf?: string; period_end_only?: boolean } | undefined;
+    if (dual) out.push(`// Dual ATR exit: initial ${PRICE_VAR[dual.initial.price ?? "hl2"]} - ${dual.initial.mult} * ATR(${dual.initial.period}), favour ${PRICE_VAR[dual.favour.price ?? "hl2"]} -/+ ${dual.favour.mult} * ATR(${dual.favour.period}), ATR = MA(TrueRange)${dual.tf && dual.tf !== "D" ? ` on ${dual.tf} bars${dual.period_end_only ? ", exit tested at the period end" : ""}` : ""}${tag}`);
     if (e.breakeven) out.push(`// Breakeven stop after ${dist(e.breakeven.after)}${e.breakeven.plus ? `, plus ${dist(e.breakeven.plus)}` : ""}${tag}`);
     if (e.take_profits?.length) out.push(`// Take-profits: ${e.take_profits.map((t) => `${t.size}% at ${dist(t)}`).join(", ")}${tag}`);
     if (side.entry.limit) out.push(`// ${entry} limit order at ${dist(side.entry.limit)}${side.entry.valid_bars ? `, valid ${bars(side.entry.valid_bars)}` : ""}`);
     if (side.entry.stop) out.push(`// ${entry} stop order at ${dist(side.entry.stop)}${side.entry.valid_bars ? `, valid ${bars(side.entry.valid_bars)}` : ""}`);
+  }
+  const df = activeDateFilter(spec);
+  if (df) {
+    // AFL DateNum(): (year - 1900) * 10000 + month * 100 + day; windows are [start, exit date)
+    const dn = (iso: string) => (Number(iso.slice(0, 4)) - 1900) * 10000 + Number(iso.slice(5, 7)) * 100 + Number(iso.slice(8, 10));
+    out.push(`// Date filter${df.set?.name ? ` "${df.set.name}"` : ""}: trade only ${df.mode === "outside" ? "outside" : "inside"} these windows [start, exit date)`,
+      `InWindow = ${df.windows.map(([f, t]) => `(DateNum() >= ${dn(f)} AND DateNum() < ${dn(t)})`).join(" OR ")};`,
+      `DateOK = ${df.mode === "outside" ? "NOT InWindow" : "InWindow"};`);
+    for (const [entry, exit, side] of sides) if (side) out.push(`${entry} = ${entry} AND DateOK;`, ...(df.exit_at_change === false ? [] : [`${exit} = ${exit} OR NOT DateOK;`]));
   }
   if (usesTradePrices(ex)) {
     const keys = tradeKeys(spec);
