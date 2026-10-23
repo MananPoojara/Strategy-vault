@@ -174,6 +174,15 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
         }
     }
     // ---- end Joe Ross block ----
+    // ---- Bernstein g2: admitted 30 Days / Ultimate Day Trader / Compleat Day Trader II rules that read the open and
+    // are not clamped by the gate (stop gaps, channel targets, FPO exits): refuse windows with stale US index opens.
+    if crate::instrument_policy::bernstein_g2_reviewed(def) && (books::jb30d::reads_open(def.id) || books::jbudt::reads_open(def.id) || books::jbcdt2::reads_open(def.id))
+        && !crate::gate::get(def.id).is_some_and(|g|g.clamp_open) {
+        if let Some((r,cut))=ctx.r.get(from).and_then(|r|crate::gate::real_open_from(&r.ticker).map(|c|(r,c))).filter(|(r,c)|r.date.as_str()<*c) {
+            return issue("needs_data",format!("This rule fills stops or exits at the opening price; {} opens in this file are real only from {cut}. Choose a start on or after {cut}. Earlier stale opens are not used.",r.ticker));
+        }
+    }
+    // ---- end Bernstein g2
     // Admitted btp rules that read the open but are not clamped by the gate: refuse windows with stale index opens.
     if def.book==books::btp::BOOK && books::btp::reads_open(def.id) && !crate::gate::get(def.id).is_some_and(|g|g.clamp_open) {
         if let Some((r,cut))=ctx.r.get(from).and_then(|r|crate::gate::real_open_from(&r.ticker).map(|c|(r,c))).filter(|(r,c)|r.date.as_str()<*c) {
@@ -465,6 +474,15 @@ mod tests {
         for (t,y,id,refused) in [("SPX","2013","jb624_mac_sr",true),("SPX","2014","jb624_mac_sr",false),("DJI","2015","jb624_mac2_stop",true),("DJI","2015","jbssf_gap",false),("SPX","1990","jbssf_sp_jan",false),("NDX","2000","jb624_gap2",true),
             ("SPX","2013","jb624_mac2_sar",false),("SPX","1990","jbcaf_stoch_2575",false),("SPX","1990","jbssf_ma3",false),("NIFTY 50","2005","jb624_3hl",false),
             ("SPX","2013","jb624_mac5",false),("SPX","2013","jb624_fri_mon",true),("SPX","2014","jb624_fri_mon",false),("SPY","2014","jb624_fri_mon",true)] {
+            let r=at(t,y);let ctx=Ctx::new(&r,&r,&r);
+            assert_eq!(check(&ctx,&definition(id),0,4,&Params::new()).is_some(),refused,"{id} {t} {y}");
+        }
+    }
+    #[test]
+    fn bernstein_g2_open_reading_rules_refuse_stale_us_index_opens() {
+        let at=|t:&str,y:&str|{let mut r=rows();for (i,x) in r.iter_mut().enumerate(){x.ticker=t.into();x.date=format!("{y}-01-0{}",i+2);}r};
+        for (t,y,id,refused) in [("SPX","2013","jb30d_rev_buy_stop",true),("SPX","2014","jb30d_rev_buy_stop",false),("SPX","2013","jbcdt2_dbo_mon",true),
+            ("SPX","2013","jb30d_cmc",true),("SPX","2013","jb30d_sp_seasonal",false),("SPX","2013","jbudt_mac_ad57",false),("SPX","2013","jbcdt2_mon_cc",false),("NIFTY 50","1996","jb30d_cmc",false)] {
             let r=at(t,y);let ctx=Ctx::new(&r,&r,&r);
             assert_eq!(check(&ctx,&definition(id),0,4,&Params::new()).is_some(),refused,"{id} {t} {y}");
         }

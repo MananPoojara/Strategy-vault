@@ -20,6 +20,15 @@ const MAC_RULES: [&str; 2] = [
     "E|\"Two complete consecutive price bars above the MA high line is considered a buy pattern ... Two complete consecutive price bars below the 8 period MA of the low constitutes a sell pattern\" (ch.6, MAC Trading Method Applied)",
 ];
 
+/// Daily rules admitted after the 2026-10-22 full reading (authors/bernstein/agents/jbudt) and an independent
+/// chronological Python ledger check (authors/bernstein/g2-admission). The gap trades are held (no stop: one short
+/// stays open for decades and loses more than the account). The rest are intraday, chart judgement or
+/// left to per-market optimisation (held with the reason on the card).
+pub const REVIEWED_DAILY: &[&str] = &["jbudt_mac_ad57", "jbudt_tb16", "jbudt_tb16_mom"];
+pub fn reviewed_daily(id: &str) -> bool { REVIEWED_DAILY.contains(&id) }
+/// The MAC / Williams A/D rule trades on the close only; the others read the open (gap setup, FPO, stop gaps).
+pub fn reads_open(id: &str) -> bool { reviewed_daily(id) && id != "jbudt_mac_ad57" }
+
 pub fn catalogue() -> Vec<StrategyDef> {
     use Status::{Live, NeedsData, NotTestable};
     vec![
@@ -39,17 +48,17 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "F|\"Some readers may be familiar with my MAC application on daily charts. In such cases I prefer to use ... Williams Accumulation/ Distribution (AD) with its 57 period moving average\" (ch.6)",
               "E|\"When the channel boundary is exceeded and the confirmation signal is giving or has already given the same signal, the trade is triggered\" (ch.6, Fig. 6.4 text): enter on the close of a MAC trigger bar when A/D is on the same side of its 57-bar MA",
               "X|\"The resulting trade can be closed out at support or resistance (i.e., the opposite signal)\" (ch.6): exit on the close of the opposite MAC trigger; it reverses only if A/D confirms the new side"],
-            "Williams A/D as in jb624 (price-only, cumulative). A trigger = a change of MAC trend (two complete bars outside the channel). Entry on the trigger close [book silent on the order]. The intraday version with 28-period momentum is listed separately (needs 30-minute bars)."),
+            "This book never defines Williams A/D: the vault uses the price-only cumulative version of the 6-2-4 report (jb624, p.43), and reads its 57-period average as simple [vault reading]. A trigger = a change of MAC trend (two complete bars outside the channel). Entry on the trigger close [book silent on the order]. The intraday version with 28-period momentum is listed separately (needs 30-minute bars)."),
         def!("jbudt_tb16", "Trend breakout · new 16-bar high/low, stop and reverse", "Ch.13 · Trend Breakout", "Long/Short", Live,
             &["E|\"Buy if price makes a new 16-period high. Sell if price makes a new 16-period low\" (ch.13)",
               "E|\"Note the higher high and the lowest low of the last sixteen price bars. Place a buy stop one tick above the highest high. Please a sell stop below the lowest low of the last sixteen price bars\" (ch.13)",
               "X|\"Trail a stop loss or reverse your position on an opposite signal\" (ch.13): reverse on the opposite stop"],
-            "Daily bars: the book shows the method on daily charts (Fig. 13.5-13.8, incl. S&P 500 daily) and on intraday charts. Last sixteen bars = the 16 completed bars before today. One tick = p.tick (NSE index tick 0.05). If both stops are hit on one bar, the order follows the bar path (open, nearer extreme, other extreme, close)."),
+            "Daily bars: the book shows the method on daily charts (Fig. 13.5-13.8, incl. S&P 500 daily) and on intraday charts. Last sixteen bars = the 16 completed bars before today. One tick = the instrument's real tick (0.05 NSE, 0.01 US; user rule 21 Oct 2026), or p.tick. If both stops are hit on one bar, the order follows the bar path (open, nearer extreme, other extreme, close)."),
         def!("jbudt_tb16_mom", "Trend breakout with momentum 14 / MA 14 filter", "Ch.13 · Trend Breakout", "Long/Short", Live,
             &["E|New 16-bar high / low with stop orders one tick beyond (ch.13)",
               "F|\"The trend filter I suggest is a 14-period moving average of the 14-period momentum. When the 14-period momentum crosses above its 14-period moving average the trend is up and we can buy on new buy triggers ... below ... we can only take the sell signals\" (ch.13, Filtering)",
-              "X|\"Reverse your position on a new signal or if the relationship between momentum and its moving average changes\" (ch.13, Description of Method): exit on the close when the filter flips; the opposite stop is armed only once the filter agrees"],
-            "Momentum = close - close 14 bars ago (ch.9 definition); simple 14-bar MA of it. The filter state is read at the previous close when the stop is placed. Partial exits after the fifth bar and end-of-day exits (intraday) are alternatives, not coded."),
+              "X|\"Reverse your position on a new signal or if the relationship between momentum and its moving average changes\" (ch.13, Description of Method): reverse on the close when the filter flips (p.flip=0 = [old vault reading] exit flat instead, p.164); the opposite stop is armed only once the filter agrees"],
+            "Momentum = close - close 14 bars ago (ch.9 definition); simple 14-bar MA of it. The book shows this filter only on intraday charts (10-, 30- and 240-minute); daily bars are a declared time-frame transfer. The filter state is read at the previous close when the stop is placed. Partial exits after the fifth bar and end-of-day exits (intraday) are alternatives, not coded."),
         def!("jbudt_mac_mom30", "MAC with momentum 28 / MA 28 confirmation (30-minute bars)", "Ch.6 · Moving Average Channel", "Long/Short", NeedsData("intraday 30-minute bars (the method is shown on 30-minute S&P futures with exit at the end of the day)"),
             &[MAC_RULES[0], MAC_RULES[1], "F|\"The trend is confirmed with the use of the 28 period Momentum indicator and its 28 period simple moving average\" (ch.6)", "X|\"Exit at the end of the day and/ or on a profit target\" (ch.6)"],
             "On daily charts the author swaps the confirmation for a 57-period MA (see jbudt_mac_ad57 and jbudt_mac_mom_daily)."),
@@ -110,8 +119,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     Some(match id {
         "jbudt_gap_fpo" | "jbudt_gap_split" => vec![],
         "jbudt_mac_ad57" => vec![p("mah", "MA of highs (bars)", 10., 5., 20., 1.), p("mal", "MA of lows (bars)", 8., 4., 20., 1.), p("bars", "Consecutive complete bars", 2., 1., 4., 1.), p("ad_ma", "MA of Williams A/D (bars)", 57., 20., 80., 1.)],
-        "jbudt_tb16" => vec![p("n", "Breakout lookback (bars)", 16., 5., 50., 1.), p("tick", "One tick (index points)", 0.05, 0., 1., 0.05)],
-        "jbudt_tb16_mom" => vec![p("n", "Breakout lookback (bars)", 16., 5., 50., 1.), p("tick", "One tick (index points)", 0.05, 0., 1., 0.05), p("mom", "Momentum length", 14., 5., 40., 1.), p("ma", "MA of momentum (bars)", 14., 5., 40., 1.)],
+        "jbudt_tb16" => vec![p("n", "Breakout lookback (bars)", 16., 5., 50., 1.), p("tick", "One tick (-1 = the instrument's real tick: 0.05 on NSE indices and Indian stocks, 0.01 on US indices/ETFs/stocks)", -1., -1., 1., 0.01)],
+        "jbudt_tb16_mom" => vec![p("n", "Breakout lookback (bars)", 16., 5., 50., 1.), p("tick", "One tick (-1 = the instrument's real tick: 0.05 on NSE indices and Indian stocks, 0.01 on US indices/ETFs/stocks)", -1., -1., 1., 0.01), p("mom", "Momentum length", 14., 5., 40., 1.), p("ma", "MA of momentum (bars)", 14., 5., 40., 1.),
+            p("flip", "When momentum crosses its MA: 1 = reverse on the close (book, p.164), 0 = exit flat (earlier vault reading)", 1., 0., 1., 1.)],
         _ => return None,
     })
 }
@@ -174,7 +184,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             }
         }
         "jbudt_tb16" | "jbudt_tb16_mom" => {
-            let (n, tick) = (u("n"), g("tick"));
+            let (n, tick) = (u("n"), match g("tick") { t if t < 0.0 => x.market_tick(), t => t });
             let filt: Vec<i8> = if id == "jbudt_tb16_mom" {
                 let k = u("mom");
                 let mom: Vec<f64> = (0..x.c.len()).map(|i| if i >= k { x.c[i] - x.c[i - k] } else { f64::NAN }).collect();
@@ -217,7 +227,11 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 if f != 2 {
                     if let Some(t) = cur.as_ref() {
                         if filt[i] as f64 == -t.dir {
+                            let d = -t.dir;
                             out.push(finish(cur.take().unwrap(), i, x.c[i], i, "Momentum / MA relationship changed"));
+                            if g("flip") >= 0.5 && i < to {
+                                cur = Some(new_trade(d, i, x.c[i], "close", i));
+                            }
                         }
                     }
                 }

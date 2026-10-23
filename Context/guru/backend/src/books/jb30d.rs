@@ -18,6 +18,17 @@ macro_rules! def {
 const REV_BUY: &str = "E|\"low of day 2 is lower than low of day 1; close of day 2 is higher than close of day 1 and close of day 3 is lower than the low of day 2, then buy on the close of day 3\" (Lesson 2, p.13)";
 const REV_NOTE: &str = "Book: S&P 500 futures, Genesis SP-067 back-adjusted continuous contract, 1982-2004, dollars at $250 per point. Stops are kept in S&P points on every index (instrument swap only). SPX opens before about 1999 often equal the prior close, which changes first-profitable-opening exits there.";
 
+/// Daily rules admitted after the 2026-10-22 full reading (authors/bernstein/agents/jb30d) and an independent
+/// chronological Python ledger check (authors/bernstein/g2-admission). Held: the gap trades (same-day stop order
+/// unknown on daily bars), the sell reversal (no stop: a short stays open for decades), the simple reversal, the triggered seasonal, the 3-unit gap, the 8-bar target exits,
+/// the commodity seasonals and the 30-minute breakout.
+pub const REVIEWED_DAILY: &[&str] = &["jb30d_rev_buy_fpo", "jb30d_rev_buy_stop", "jb30d_rev_buy_3pc", "jb30d_sp_seasonal", "jb30d_cmc", "jb30d_oc8"];
+pub fn reviewed_daily(id: &str) -> bool { REVIEWED_DAILY.contains(&id) }
+/// Stops in S&P points (book: dollars on one S&P contract at $250 a point, p.16 and p.44): actual SPX only.
+pub const SPX_POINTS: &[&str] = &["jb30d_rev_buy_stop", "jb30d_rev_buy_3pc"];
+/// Every admitted rule except the close-only seasonal reads the open (FPO exits, stop gaps, channel-target fills, MA of opens).
+pub fn reads_open(id: &str) -> bool { reviewed_daily(id) && id != "jb30d_sp_seasonal" }
+
 pub fn catalogue() -> Vec<StrategyDef> {
     use Status::{Live, NeedsData, NotTestable};
     use crate::connors::claim;
