@@ -22,7 +22,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("elsss_engine_noise", "Engine-noise exits, the market bell, earnings exits", "Ch.6 Selling Engine Noise", "Long",
           Status::NotTestable("discretionary (divergences, 'acting sloppy', psychological signals)"), &[], ""),
         d("elsss_shorting", "Shorting tops, downtrends, fundamentals, futures, options, forex", "Ch.7-8 How to Sell Short", "Short",
-          Status::NotTestable("discretionary chart reading (false breakouts, divergences, 'short near value, cover below the lower channel line', p.186) and option writing"), &[], ""),
+          Status::NotTestable("discretionary chart reading (false breakouts, divergences, shorting near value and covering 'to or below the lower channel line', p.186) and option writing"), &[], ""),
     ]
 }
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> { catalogue().into_iter().find(|d| d.id == id).map(|d| (d.id, d.name, "")) }
