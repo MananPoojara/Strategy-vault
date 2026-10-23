@@ -86,6 +86,19 @@ it("Allow same bar exit / entry signal: checked keeps today's behaviour; uncheck
   expect(host.textContent).not.toContain("not modelled");
 });
 
+it("Re-enter on the exit bar is off by default, stores true when ticked and is fixed off in a portfolio", async () => {
+  const { host, last, rerender } = await exec(defaultSpec());
+  const box = () => [...host.querySelectorAll<HTMLLabelElement>("label.lab-check")].find((l) => l.textContent === "Re-enter on the exit bar")!.querySelector("input")!;
+  expect([box().checked, box().disabled]).toEqual([false, false]);
+  await click(box());
+  expect(last().execution).toEqual({ reenter_on_exit_bar: true });
+  await rerender(last());
+  await click(box());
+  expect(last()).not.toHaveProperty("execution");
+  await rerender({ ...defaultSpec(), execution: { capital: 1e6 }, portfolio: { universe: { basket: "nifty50" } } } as Spec);
+  expect(box().disabled).toBe(true);
+});
+
 it("Count bars held from the signal bar stores bars_held_from and clears it when unchecked", async () => {
   const { host, last, rerender } = await exec(defaultSpec());
   const box = () => [...host.querySelectorAll<HTMLLabelElement>("label.lab-check")].find((l) => l.textContent === "Count bars held from the signal bar")!.querySelector("input")!;

@@ -233,6 +233,9 @@ pub struct Exec {
     /// Indices of entry.all rules marked `"filter": true, "filter_exit": true` (the AFLs' filter sections with a filter exit):
     /// the position also exits on any bar the rule is false (series.rs side).
     pub filter_exits: Vec<usize>,
+    /// `execution.reenter_on_exit_bar`: a new entry may fill on the bar a position closed (an AFL bar loop that runs its exit
+    /// block before its entry block, e.g. sell and buy again at the same Close). Off: the book rule, no entry after an exit.
+    pub reenter_on_exit_bar: bool,
 }
 impl Default for Exec {
     fn default() -> Self {
@@ -241,7 +244,7 @@ impl Default for Exec {
                trail_activate: None, breakeven: None, take_profits: vec![], min_bars: 0, ohlc_path: false, scale_in: None, sizing: Sizing::Full,
                cooldown: None, max_trades: None, risk: Risk::default(), capital: None, costs: MoneyCosts::default(), futures: None, limits: None, market: None, reentry: None,
                exit_at_stop: [1; 4], stops_immediately: true, nbar_first: false, same_bar: true,
-               tick_size: 0., pad_align: false, held_from_signal: false, dual_atr: None, filter_exits: vec![] }
+               tick_size: 0., pad_align: false, held_from_signal: false, dual_atr: None, filter_exits: vec![], reenter_on_exit_bar: false }
     }
 }
 impl Exec {
@@ -323,7 +326,7 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
     };
     let mut cost_bps = None;
     if let Some(ex) = root.get("execution") {
-        fields(ex, "execution", &["fill", "exit_fill", "cost_bps", "opposite", "delay_bars", "entry_on", "intrabar", "sizing", "cooldown", "max_trades", "risk", "capital", "costs", "instrument", "prices", "delays", "reentry", "limits", "exit_at_stop", "activate_stops_immediately", "nbar_has_priority", "allow_same_bar_exit", "report", "tick_size", "pad_align", "bars_held_from"], &["limit", "stop"])?;
+        fields(ex, "execution", &["fill", "exit_fill", "cost_bps", "opposite", "delay_bars", "entry_on", "intrabar", "sizing", "cooldown", "max_trades", "risk", "capital", "costs", "instrument", "prices", "delays", "reentry", "limits", "exit_at_stop", "activate_stops_immediately", "nbar_has_priority", "allow_same_bar_exit", "report", "tick_size", "pad_align", "bars_held_from", "reenter_on_exit_bar"], &["limit", "stop"])?;
         if let Some(v) = ex.get("instrument") { exec.futures = instrument(v)?; }
         if let Some(c) = ex.get("capital") {
             exec.capital = Some(c.as_f64().filter(|c| c.is_finite() && *c > 0. && *c <= MAX_CAPITAL).ok_or_else(|| inv(format!("execution.capital must be a number above 0 and at most {MAX_CAPITAL}")))?);
@@ -414,6 +417,7 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
         }
         let flag = |k: &str, default: bool| match ex.get(k) { None => Ok(default), Some(Json::Bool(b)) => Ok(*b), _ => Err(inv(format!("execution.{k} must be true or false"))) };
         (exec.stops_immediately, exec.nbar_first, exec.same_bar) = (flag("activate_stops_immediately", true)?, flag("nbar_has_priority", false)?, flag("allow_same_bar_exit", true)?);
+        exec.reenter_on_exit_bar = flag("reenter_on_exit_bar", false)?;
         exec.held_from_signal = match ex.get("bars_held_from").map(Json::as_str) {
             None | Some(Some("fill")) => false,
             Some(Some("signal")) => true,
@@ -437,7 +441,7 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
     }
     if let Some(s) = short_side.as_mut() {
         (s.exec.fill, s.exec.exit_fill, s.exec.opposite, s.exec.delay, s.exec.edge, s.exec.ohlc_path) = (exec.fill, exec.exit_fill, exec.opposite, exec.delay, exec.edge, exec.ohlc_path);
-        (s.exec.exit_at_stop, s.exec.stops_immediately, s.exec.nbar_first, s.exec.same_bar) = (exec.exit_at_stop, exec.stops_immediately, exec.nbar_first, exec.same_bar);
+        (s.exec.exit_at_stop, s.exec.stops_immediately, s.exec.nbar_first, s.exec.same_bar, s.exec.reenter_on_exit_bar) = (exec.exit_at_stop, exec.stops_immediately, exec.nbar_first, exec.same_bar, exec.reenter_on_exit_bar);
     }
     // An exitless side relies on the opposite entry to reverse its position.
     let exitless = |x: &Exec, e: &[Node]| e.is_empty() && x.stop_loss.is_none() && x.target.is_none() && x.trailing.is_none() && x.breakeven.is_none() && x.dual_atr.is_none() && !dated;
@@ -727,6 +731,7 @@ fn portfolio_rules(s:&Spec)->Result<(),LabError>{
     if x.delay!=1{return unsupported("execution.delay_bars");}
     if x.market.is_some(){return unsupported("execution.prices / execution.delays");}
     if x.reentry.is_some(){return unsupported("execution.reentry");}
+    if x.reenter_on_exit_bar{return unsupported("execution.reenter_on_exit_bar");}
     if x.exit_at_stop!=[1;4]||!x.stops_immediately||x.nbar_first||!x.same_bar{return unsupported("execution.exit_at_stop, activate_stops_immediately, nbar_has_priority or allow_same_bar_exit");}
     if x.limits.is_some(){return unsupported("execution.limits");}
     if x.tick_size>0.{return unsupported("execution.tick_size");}

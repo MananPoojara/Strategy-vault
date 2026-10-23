@@ -119,6 +119,7 @@ export const CALENDAR_OUTPUTS: { id: string; out: string; label: string }[] = [
   { id: "session", out: "weekdays_left_y", label: "Weekdays left in the year" },
   { id: "calendar", out: "dow", label: "Day of the week (0 Sun … 6 Sat)" }, { id: "calendar", out: "day", label: "Day of the month" },
   { id: "calendar", out: "month", label: "Month (1–12)" }, { id: "calendar", out: "year", label: "Year" }, { id: "calendar", out: "doy", label: "Day of the year" },
+  { id: "calendar", out: "bar_index", label: "Bar number (BarIndex, 0 = first bar)" },
 ];
 export const TF_LABELS: Record<string, string> = { D: "Daily", W: "Weekly", M: "Monthly", Q: "Quarterly", Y: "Yearly" };
 export const ENTRY_KIND_LABELS: Record<string, string> = {

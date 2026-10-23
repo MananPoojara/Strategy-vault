@@ -230,6 +230,8 @@ export function friendlyReason(reason: string): string {
   if (order) return ({ stop_loss: "Stop-loss", target: "Target", trailing: "Trailing stop", breakeven: "Breakeven stop" } as const)[order[1] as "stop_loss"] + (order[2] ?? "");
   const rule = /^(short_side\.)?exit\.any\[(\d+)\]: (.*)$/.exec(reason);
   if (rule) return `${rule[1] ? "Short exit" : "Exit"} rule ${Number(rule[2]) + 1}: ${rule[3]}`;
+  const filter = /^(short_side\.)?entry\.all\[\d+\]: filter turned false: (.*)$/.exec(reason);
+  if (filter) return `${filter[1] ? "Short filter" : "Filter"} turned false: ${filter[2]}`;
   const fixed: Record<string, string> = { "reverse to long": "Reversed to long", "reverse to short": "Reversed to short", "opposite entry": "Opposite signal",
     expiry: "Contract expiry", margin_call: "Margin call", roll: "Contract roll", "exit.dual_atr": "Dual ATR stop" };
   return fixed[reason] ?? reason;

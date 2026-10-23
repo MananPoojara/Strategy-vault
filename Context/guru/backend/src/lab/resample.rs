@@ -76,7 +76,13 @@ pub fn resample(d: &Bars, tf: Tf) -> Bars {
             out.close[j] = d.close[i]; out.end[j] = i; vol[j] += v;
         }
     }
-    out.volume = d.volume.as_ref().map(|_| vol);
+    out.volume = d.volume.as_ref().map(|_| vol.clone());
+    // late volume: from the first period whose bars all have volume
+    if let Some((k, v)) = &d.late_volume {
+        let start = |p: usize| if p == 0 { 0 } else { out.end[p - 1] + 1 };
+        out.late_volume = (0..out.len()).find(|&p| start(p) >= *k)
+            .map(|j| (j, (j..out.len()).map(|p| (start(p)..=out.end[p]).map(|i| v[i - k]).sum()).collect()));
+    }
     out
 }
 /// Spreads higher-timeframe values onto daily bars. The last, possibly in-progress week/month shows the value

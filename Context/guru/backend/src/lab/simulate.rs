@@ -473,7 +473,7 @@ pub fn simulate_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<T
                 }
             }
         }
-        let flat = if shares_open { pos.is_none() || pending_exit.is_some() } else { pos.is_none() && !exited };
+        let flat = if shares_open { pos.is_none() || pending_exit.is_some() } else { pos.is_none() && (!exited || x.reenter_on_exit_bar) };
         let may_enter = flat && pending_entry.is_none() && !blocked;
         // Both sides firing while flat: two order sides each rest an order (a channel breakout); otherwise it is ambiguous
         // and nothing is placed (spec §6.1). One order side rests its order; one market side enters and cancels a resting
@@ -581,6 +581,21 @@ mod tests {
         assert_eq!(fills(&t), vec![(2, 102.5, 4, 104.5), (6, 106.5, 9, 109.5)]);
         assert_eq!((t[0].entry_kind, t[0].signal_i, t[1].open), ("close", 4, true));
         assert!(crate::trade_validation::check(&t, 0, 9, 0.0005).is_ok());
+    }
+    #[test] fn reenter_on_exit_bar_buys_again_at_the_close_that_sold() {
+        // AFL bar loop with the exit block first: sell at bar 4's close and buy again at that close
+        let t = simulate(&with(&[2, 4, 6], &[2, 4], Exec { reenter_on_exit_bar: true, ..close_fill() }), &bars(), 0, 9);
+        assert_eq!(fills(&t), vec![(2, 102.5, 4, 104.5), (4, 104.5, 9, 109.5)]);
+        assert!(crate::trade_validation::check(&t, 0, 9, 0.0005).is_ok());
+        // a stop at the open of the exit bar: the entry still fills at that bar's close
+        let mut b = bars();
+        b.low[5] = 90.;
+        let x = Exec { stop_loss: Some(Dist::Pct(5.)), reenter_on_exit_bar: true, ..close_fill() };
+        let t = simulate(&with(&[2, 5], &[], x), &b, 0, 9);
+        assert_eq!((t[0].exit_i, t[1].legs[0].i, t[1].legs[0].px), (5, 5, b.close[5]));
+        let parsed = |e: &str| crate::lab::rules::parse_spec(&format!(r#"{{"v":1,"entry":{{"all":[{{"lhs":{{"s":"close"}},"op":">","rhs":{{"value":1}}}}]}},"exit":{{"any":[{{"lhs":{{"s":"bars_held"}},"op":">=","rhs":{{"value":5}}}}]}},"execution":{{{e}}}}}"#)).map(|s| s.exec.reenter_on_exit_bar);
+        assert_eq!((parsed("").unwrap(), parsed(r#""reenter_on_exit_bar":true"#).unwrap()), (false, true));
+        assert!(parsed(r#""reenter_on_exit_bar":1"#).is_err());
     }
     #[test] fn close_fill_with_next_open_exit_may_reenter_at_the_exit_bars_close() {
         let exec = Exec { exit_fill: Fill::NextOpen, ..close_fill() };
@@ -1716,7 +1731,7 @@ mod off_run_tests {
         let (with, plain) = (trades(&spec(r#""filter":true,"filter_exit":true,"#, "")), trades(&spec("", not)));
         assert_eq!(at(with.clone()), at(plain));
         assert_ne!(at(with.clone()), at(trades(&spec("", ""))), "the filter exit never fired");
-        assert!(with.iter().any(|t| t.2 == "entry.all[1]: filter turned false"), "{with:?}");
+        assert!(with.iter().any(|t| t.2 == "entry.all[1]: filter turned false: close > 101"), "{with:?}");
         // a switched-off filter takes its exit with it
         assert_eq!(at(trades(&spec(r#""off":true,"filter":true,"filter_exit":true,"#, ""))), at(trades(&spec(r#""off":true,"#, ""))));
     }

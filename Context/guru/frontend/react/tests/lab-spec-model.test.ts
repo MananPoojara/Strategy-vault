@@ -119,8 +119,8 @@ it("split date leaves more than 20 bars each side", () => {
 });
 
 it("maps exit reasons to friendly text and keeps unknown text", () => {
-  expect(["open", "exit.stop_loss", "exit.target (gap at the open)", "exit.trailing", "exit.any[1]: rsi > 70", "something new"].map(m.friendlyReason))
-    .toEqual(["Still open at the end", "Stop-loss", "Target (gap at the open)", "Trailing stop", "Exit rule 2: rsi > 70", "something new"]);
+  expect(["open", "exit.stop_loss", "exit.target (gap at the open)", "exit.trailing", "exit.any[1]: rsi > 70", "entry.all[2]: filter turned false: close > ema(length=50)", "something new"].map(m.friendlyReason))
+    .toEqual(["Still open at the end", "Stop-loss", "Target (gap at the open)", "Trailing stop", "Exit rule 2: rsi > 70", "Filter turned false: close > ema(length=50)", "something new"]);
 });
 
 it("canonical JSON ignores key order (jsonb does not keep it)", () => {

@@ -43,7 +43,7 @@ fn price(b: &Bars, id: &str) -> Option<Result<Vec<f64>, LabError>> {
         "hlc3" => b.hlc3(),
         "ohlc4" => b.ohlc4(),
         "oc2" => b.oc2(),
-        "volume" => return Some(b.volume.clone().ok_or_else(|| LabError::NeedsData("volume: volume is missing on some admitted bars of this instrument".into()))),
+        "volume" => return Some(b.volume_or_late().ok_or_else(|| LabError::NeedsData("volume: volume is missing on some admitted bars of this instrument".into()))),
         _ => return None,
     }))
 }
@@ -504,7 +504,7 @@ fn side(entry: &[Node], exit: &[Node], x: &Exec, pre: &str, fr: &Frames, others:
         if matches!(entry[k], Node::Off(_)) { continue; }
         // false, not unknown: a NaN filter value does not exit
         let not: Vec<f64> = mask_in(&entry[k], fr, others, cache)?.into_iter().map(|v| if v.is_nan() { v } else { 1. - v }).collect();
-        c.exit.push(RCond { lhs: Val::Arr(not), op: Op::Gt, rhs: Val::Const(0.5), label: format!("{pre}entry.all[{k}]: filter turned false") });
+        c.exit.push(RCond { lhs: Val::Arr(not), op: Op::Gt, rhs: Val::Const(0.5), label: format!("{pre}entry.all[{k}]: filter turned false: {}", describe_node(&entry[k])) });
     }
     c.exec = x.clone();
     c.limit_at = x.limit_at.as_ref().map(|o| arr_in(o, fr, others, cache)).transpose()?;

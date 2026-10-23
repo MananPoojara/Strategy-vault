@@ -101,14 +101,16 @@ export function OperandEditor({ operand, side, catalogue, onChange, label, heldO
     </select>}
     {kind === "indicator" && ind && <IndicatorFields operand={series!} ind={ind} computed={computed} groups={groups}
       set={set} replace={(id) => onChange({ ...dropParams(series!), s: id })} />}
-    {kind === "calendar" && <>
-      <select aria-label="Calendar value" value={`${series!.s}.${series!.out ?? catalogue.indicators.find((i) => i.id === series!.s)?.outputs[0] ?? ""}`}
+    {kind === "calendar" && (() => { const calendarValue = `${series!.s}.${series!.out ?? catalogue.indicators.find((i) => i.id === series!.s)?.outputs[0] ?? ""}`; return <>
+      <select aria-label="Calendar value" value={calendarValue}
         onChange={(e) => { const [s, out] = e.target.value.split("."); onChange({ ...dropParams(series!), s, out }); }}>
         {CALENDAR_OUTPUTS.filter((v) => catalogue.indicators.some((i) => i.id === v.id && i.computed && i.outputs.includes(v.out)))
           .map((v) => <option key={`${v.id}.${v.out}`} value={`${v.id}.${v.out}`}>{v.label}</option>)}
+        {/* a value missing from the list shows as itself, not as the first option */}
+        {!CALENDAR_OUTPUTS.some((v) => `${v.id}.${v.out}` === calendarValue) && <option value={calendarValue}>{calendarValue}</option>}
       </select>
       {series!.s === "sessions_left" && <span className="cap">{COPY.sessionDatesHint}</span>}
-    </>}
+    </>; })()}
     {kind === "arith" && <>{pairChild(0)}<select aria-label="Arithmetic" value={key} onChange={(e) => swap(e.target.value)}>
       {ARITH.map((k) => <option key={k} value={k}>{({ add: "plus", sub: "minus", mul: "times", div: "divided by", min: "min", max: "max" })[k]}</option>)}
     </select>{pairChild(1)}</>}

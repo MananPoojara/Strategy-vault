@@ -557,7 +557,7 @@ impl Cx<'_> {
         let b = self.bars;
         Ok(V::S(match lc.as_str() {
             "o" | "open" => b.open.clone(), "h" | "high" => b.high.clone(), "l" | "low" => b.low.clone(), "c" | "close" => b.close.clone(),
-            "v" | "volume" => b.volume.clone().ok_or_else(|| LabError::NeedsData(at(p, "volume: volume is missing on some admitted bars of this instrument")))?,
+            "v" | "volume" => b.volume_or_late().ok_or_else(|| LabError::NeedsData(at(p, "volume: volume is missing on some admitted bars of this instrument")))?,
             "avg" | "hlc3" => b.hlc3(), "hl2" => b.hl2(), "ohlc4" => b.ohlc4(),
             "true" => return Ok(V::K(1.)), "false" => return Ok(V::K(0.)),
             _ if BUILTINS.iter().any(|f| f.0 == lc) || matches!(indicator(&lc), Ok(Some(_))) => return Err(inv(p, format!("{n} is a function; call it with ( )"))),

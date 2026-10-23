@@ -109,7 +109,7 @@ export interface Execution {
   reentry?: { stop_loss?: number; target?: number; trailing?: number; bars?: number }; max_trades?: { count: number; per: "W" | "M" | "Q" | "Y" };
   /** AmiBroker Stops (single instrument, both sides): ExitAtStop per stop (absent = 1), "Activate stops immediately" (absent = true, today's),
    *  N-bar "Has priority", General › "Allow same bar exit / entry signal" (absent = true, today's). */
-  exit_at_stop?: Partial<Record<StopKey, ExitAtStop>>; activate_stops_immediately?: boolean; nbar_has_priority?: boolean; allow_same_bar_exit?: boolean;
+  exit_at_stop?: Partial<Record<StopKey, ExitAtStop>>; activate_stops_immediately?: boolean; nbar_has_priority?: boolean; allow_same_bar_exit?: boolean; reenter_on_exit_bar?: boolean;
   /** "signal": bars_held counts from the entry signal bar (AmiBroker AFL BarsSince(Buy)); default the fill bar. */
   bars_held_from?: "fill" | "signal";
   risk?: { max_consecutive_losses?: number; pause_bars?: number; max_drawdown_pct?: number };

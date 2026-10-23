@@ -116,5 +116,5 @@ it("AmiBroker stop settings: withExitAtStop stores only non-default modes; a por
   expect(withExitAtStop(s, "bars", 1)).not.toHaveProperty("execution");
   expect(amiProblems(ex({ exit_at_stop: { target: 0 }, allow_same_bar_exit: false }))).toEqual([]);
   const port = { ...ex({ capital: 1e6, nbar_has_priority: true }), portfolio: { universe: { basket: "nifty50" } } } as Spec;
-  expect(amiProblems(port)).toEqual(["Exit at stop?, Activate stops immediately, N-bar Has priority, Allow same bar exit / entry signal and Count bars held from the signal bar apply to one instrument only; remove them on the Trades tab."]);
+  expect(amiProblems(port)).toEqual(["Exit at stop?, Activate stops immediately, N-bar Has priority, Allow same bar exit / entry signal, Re-enter on the exit bar and Count bars held from the signal bar apply to one instrument only; remove them on the Trades tab."]);
 });

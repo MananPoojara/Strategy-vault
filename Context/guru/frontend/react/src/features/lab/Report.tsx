@@ -245,6 +245,7 @@ export function formulaText(spec: Spec): string {
   // Settings the lab defaults differently from AmiBroker, or that a spec changed
   out.push(`SetOption("ActivateStopsImmediately", ${ex.activate_stops_immediately === false ? "False" : "True"});`);
   if (ex.allow_same_bar_exit === false) out.push(`SetOption("AllowSameBarExit", False);`);
+  if (ex.reenter_on_exit_bar) out.push("// Re-enter on the exit bar: the sell is checked before the buy on each bar, so a new trade may open on the bar one closed");
   if (ex.limits?.margin_pct !== undefined && ex.limits.margin_pct < 100) out.push(`SetOption("AccountMargin", ${ex.limits.margin_pct});`);
   if (ex.tick_size) out.push(`TickSize = ${ex.tick_size};`);
   return out.join("\n");

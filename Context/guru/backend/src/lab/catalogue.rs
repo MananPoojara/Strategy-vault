@@ -62,7 +62,14 @@ pub fn resolve_params(def: &IndicatorDef, given: &Params) -> Result<Params, Stri
 pub fn run(def: &IndicatorDef, bars: &Bars, given: &Params) -> Output {
     let params = resolve_params(def, given)?;
     if def.needs.intraday { return Err("needs intraday data".into()); }
-    if def.needs.volume && bars.volume.is_none() { return Err("needs volume".into()); }
+    if def.needs.volume && bars.volume.is_none() {
+        // volume only from bar k (NIFTY 50 before 2000): computed from bar k, empty before it (AmiBroker computes from the bars with volume)
+        let plain = !(def.needs.intraday || def.needs.derivatives || def.needs.breadth || def.needs.second_symbol);
+        if let (true, Some((k, tail)), Some(f)) = (plain, bars.late_volume_bars(), def.compute) {
+            return Ok(f(&tail, &resolve_params(def, given)?)?.into_iter().map(|s| std::iter::repeat_n(f64::NAN, k).chain(s).collect()).collect());
+        }
+        return Err("needs volume".into());
+    }
     if def.needs.derivatives && def.compute.is_some() && bars.expiry.is_none() { return Err("needs contract data".into()); }
     if def.needs.breadth && bars.breadth.is_none() { return Err("needs breadth".into()); }
     if def.needs.second_symbol && bars.second.is_none() { return Err("needs a second instrument".into()); }

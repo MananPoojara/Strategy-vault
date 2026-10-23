@@ -97,6 +97,15 @@ it("calendar: one select with plain labels writes id and output", async () => {
   expect(cal.last()).toEqual({ s: "sessions_left", out: "m" });
 });
 
+it("calendar: Bar number shows as itself; a value missing from the list never shows as the first option", async () => {
+  const bar = await setup({ s: "calendar", out: "bar_index" });
+  const sel = bar.host.querySelector<HTMLSelectElement>('select[aria-label="Calendar value"]')!;
+  expect(sel.selectedOptions[0].textContent).toBe("Bar number (BarIndex, 0 = first bar)");
+  await unmount();
+  const odd = await setup({ s: "calendar", out: "future_out" });
+  expect(odd.host.querySelector<HTMLSelectElement>('select[aria-label="Calendar value"]')!.selectedOptions[0].textContent).toBe("calendar.future_out");
+});
+
 it("compress: timeframe without D, mode, and first-expand only with mode first or offset", async () => {
   const { host, last } = await setup({ compress: { s: "high" }, tf: "W", mode: "last" });
   const tf = host.querySelector<HTMLSelectElement>('select[aria-label="Aggregate timeframe"]')!;
@@ -195,7 +204,7 @@ it("shares foreign controls recursively through formula operands only when adver
 it("AmiBroker defaults sets the indicator's AmiBroker parameters over the current ones; indicators without them show no button", async () => {
   const { host, last } = await setup({ s: "stoch", p: { k: 20 } });
   await click(host.querySelector<HTMLButtonElement>("[data-lab-ab-defaults]")!);
-  expect(last()).toEqual({ s: "stoch", p: { k: 14, smooth_k: 3, d: 3, variant: 1 } });
+  expect(last()).toEqual({ s: "stoch", p: { k: 14, smooth_k: 3, d: 3, variant: 0 } }); // AmiBroker StochK/StochD = variant 0 (AmiBroker 6.40 export)
   const sma = await setup({ s: "sma", p: { length: 20 } });
   expect(sma.host.querySelector("[data-lab-ab-defaults]")).toBeNull();
 });
