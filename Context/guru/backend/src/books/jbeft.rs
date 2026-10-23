@@ -15,7 +15,7 @@ macro_rules! def {
     };
 }
 
-const DOW_RULES: &str = "Setup: \"If the close on Friday is greater than the open on Friday, then a buy condition is set for Monday ... less than the open ... a sell condition\"; trigger: \"on Monday buy on stop x ticks above the Friday high ... sell short on stop x ticks below the Friday low\"; \"Exit either at the indicated stop loss or on the first profitable opening\" (p.131); FPO = \"the first opening after you enter that gives you a profit compared to your entry price\" (p.132)";
+const DOW_RULES: &str = "Setup: \"If the close on Friday is greater than the open on Friday, then a buy condition is set for Monday ... less than the open ... a sell condition\"; trigger: \"on Monday buy on stop x ticks above the Friday high ... sell short on stop x ticks below the Friday low\"; \"Exit either at the indicated stop loss or on the first profitable opening\" (p.131); FPO = \"the first opening after you enter that gives you a profit compared to your entry price\" (p.132). Friday = last trading day of the week, Monday = the next trading day [the book does not cover holidays]; the stop counts on the entry day only if the bar path reaches it after the fill [daily-bar convention].";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     use Status::{Live, NeedsData, NotTestable};
@@ -23,13 +23,13 @@ pub fn catalogue() -> Vec<StrategyDef> {
         StrategyDef { claim: crate::connors::claim("50", "78%", "$1,066.50 (1 S&P contract)", "2 bars (winners)", "S&P futures 11/03/97-08/31/99, PF 1.87"),
           ..def!("jbeft_dow_fm97", "S&P day-of-week Friday-Monday · 1997-99 inputs (4 / 2 ticks, $5,500)", "Ch.8 · The S&P Day-of-Week System", "Long/Short", Live,
             &["F|Friday close versus Friday open sets up Monday (p.126, 131)",
-              "E|\"a 4-tick penetration of Friday's high on Monday for buy signals and a 2-tick penetration of Friday's low on Monday for sell signals\" (p.127) = 0.40 / 0.20 S&P points (0.10-point tick of the $250 contract)",
-              "X|\"with a $5500 stop loss\" (p.127) = 22 S&P points at $250 per point; \"Remember that exit is on FPO\" (p.127)"],
+              "E|\"a 4-tick penetration of Friday's high on Monday for buy signals and a 2-tick penetration of Friday's low on Monday for sell signals\" (p.127) = 0.40 / 0.20 S&P points [Not from the book: the book never states the tick size; 0.10 point is the contract specification of the $250-per-point contract]",
+              "X|\"with a $5500 stop loss\" (p.127) = 22 S&P points (\"using the $250 per 100 points S&P value\", p.127; every Fig 8-6 loss is -$5,575); \"Remember that exit is on FPO\" (p.127)"],
             DOW_RULES) },
         StrategyDef { claim: crate::connors::claim("384", "80%", "$370.12 (1 S&P contract)", "2 bars (winners)", "S&P futures 4/21/82-10/31/97, PF 1.58"),
           ..def!("jbeft_dow_wt", "S&P day-of-week Wednesday-Thursday (6 / 22 ticks, $3,850)", "Ch.8 · The S&P Day-of-Week System", "Long/Short", Live,
             &["F|\"Figure 8-7 shows the Wednesday-Thursday relationship in S&P from 1982 to 1997\" (p.127): Wednesday's close versus open sets up Thursday",
-              "E|\"based on a 6-tick penetration of Wednesday's high on Thursday and a 22-tick penetration of Wednesday's low on Thursday\" (p.131) = 0.30 / 1.10 S&P points (0.05-point tick of the $500 contract)",
+              "E|\"based on a 6-tick penetration of Wednesday's high on Thursday and a 22-tick penetration of Wednesday's low on Thursday\" (p.131) = 0.30 / 1.10 S&P points [Not from the book: 0.05-point tick of the $500-per-point contract, from the contract specification]",
               "X|\"with a $3850 stop loss\" (p.131) = 7.7 S&P points at $500 per point; exit on the first profitable opening (p.131)"],
             "Needs a Wednesday bar followed by a Thursday bar. Fills, entry-day stop and FPO as jbcdt2_dbo_thu (CDT II prints other Thursday inputs: 6 / 21 ticks, $3,500).") },
         def!("jbeft_dow_fm82", "S&P day-of-week Friday-Monday · 1982-97 inputs (3 / 26 ticks, $3,400)", "Ch.8 · The S&P Day-of-Week System", "Long/Short", NotTestable("duplicate: identical inputs to jbcdt2_dbo_mon (CDT II Figure 5-8); this book's 1982-97 record (392 trades, 78%, $425.57) is compared there"),
@@ -51,14 +51,23 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|$3,400 long / $2,900 short stop, $1,500 floor, 90% trail (p.134)"], "Book: 136 trades 75% $1,030.88 (Fig 9-2)."),
         def!("jbeft_range_breakout", "Range breakout system", "Ch.9 · Two Breakout Systems", "Long/Short", NotTestable("\"Percentage penetration: 96\" of the 15-bar window and the 21-bar \"momentum filter\" are not defined, and no initial stop is given (p.139)"),
             &["E|\"a volatility breakout system that buys or sells on a penetration above or below the true range of a give number of price bars\" (p.139)"], "Book: 72 trades 72% $1,154.17, hourly data (Fig 9-3)."),
-        def!("jbeft_3_3_channel", "3/3 high/low channel with momentum trend", "Ch.10 · Support and Resistance", "Long/Short", NeedsData("intraday bars (\"Be out of all trades by the end of the day\"; examples on 5- to 60-minute charts)"),
+        def!("jbeft_3_3_channel", "3/3 high/low channel with momentum trend", "Ch.10 · Support and Resistance", "Long/Short", NotTestable("the author: \"The 3/3 channel method is not a trading system per se\" (p.153); its rules conflict on bar size (\"Be out of all trades by the end of the day\", p.144, versus \"designed for short-term trading on daily data\", p.153), and the momentum length behind the trend (14, p.141-142) comes with no entry order rule beyond \"buy at support\""),
             &["E|\"If momentum has been above the zero line for at least two postings, then the trend is considered up. If the trend is up, then buy at support\" = 3-period MA of lows; \"take profit at resistance\" = 3-period MA of highs (p.144)",
               "X|\"Use a stop loss that is 100 percent of the average of the last 3 trading ranges-close only\"; \"Be out of all trades by the end of the day\" (p.144)"], "The daily 3-bar high/low channel with a MACD trend is jb624_3hl."),
         def!("jbeft_dsi", "Daily Sentiment Index extremes", "Ch.12 · Additional Methods", "Long/Short", NeedsData("Daily Sentiment Index history (MBH), plus intraday timing"),
             &["E|\"I prefer to use the 90 and 10 percent levels as trigger points\"; best \"looking for short-term sell signals on intraday data\" (p.169)"], ""),
+        def!("jbeft_gold_kd", "October gold key date · long Sep 4 to Sep 24, 4% stop", "Ch.4 · Seasonality", "Long", NeedsData("October gold futures contract histories (the seasonal belongs to gold; the vault has no metal futures); the book also does not say whether fills are at the open or the close"),
+            &["F|Figure 4-1 (p.62): \"OCT GOLD LONG Enter: 9/4 Exit: 9/24 Stop: 4\"; 24 trades 1975-98, 79.17%"], ""),
         def!("jbeft_add", "Advance/decline derivative (ADD)", "Ch.12 · Additional Methods", "Long/Short", NotTestable("\"objective, but not entirely systematic ... you will need to add a risk management stop loss\" (p.173); the daily ADD of another book is jbsmsw_add"),
             &["E|A/D oscillator against its moving average (p.172-173)"], ""),
     ]
+}
+
+/// Admission (bernstein-g3, 2026-10-22): the two daily S&P day-of-week systems, on the S&P 500 index itself only (the
+/// offsets and stops are S&P points) and only where its opens are real (stop entries and first-profitable-opening exits).
+pub const REVIEWED: &[&str] = &["jbeft_dow_fm97", "jbeft_dow_wt"];
+pub fn reviewed_daily(id: &str) -> bool {
+    REVIEWED.contains(&id)
 }
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
@@ -66,8 +75,9 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "jbeft_dow_fm97" => ("jbeft_dow", "S&P day-of-week system (EFT)", "Friday-Monday · 1997-99 inputs"),
         "jbeft_dow_wt" => ("jbeft_dow", "S&P day-of-week system (EFT)", "Wednesday-Thursday"),
         "jbeft_dow_fm82" => ("jbeft_dow", "S&P day-of-week system (EFT)", "Friday-Monday 1982-97 · see jbcdt2_dbo_mon"),
-        "jbeft_parabolic" | "jbeft_mom_ma" | "jbeft_mom_rise_fall" | "jbeft_oc_osc" | "jbeft_channel_break" | "jbeft_3_3_channel" => ("jbeft_intraday", "EFT intraday systems", "Needs intraday bars"),
-        "jbeft_range_breakout" | "jbeft_dsi" | "jbeft_add" => ("jbeft_other", "EFT other methods", "Not testable / needs data"),
+        "jbeft_parabolic" | "jbeft_mom_ma" | "jbeft_mom_rise_fall" | "jbeft_oc_osc" | "jbeft_channel_break" => ("jbeft_intraday", "EFT intraday systems", "Needs intraday bars"),
+        "jbeft_3_3_channel" => ("jbeft_other", "EFT other methods", "Not testable / needs data"),
+        "jbeft_range_breakout" | "jbeft_dsi" | "jbeft_add" | "jbeft_gold_kd" => ("jbeft_other", "EFT other methods", "Not testable / needs data"),
         _ => return None,
     })
 }
