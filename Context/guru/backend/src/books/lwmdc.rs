@@ -13,6 +13,11 @@ use crate::connors::{claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Tra
 
 pub const BOOK: &str = "lwmdc";
 
+/// Larry Williams block: rules admitted after the 23 Oct 2026 reading and independent ledgers
+/// (authors/lwilliams/admission/SOURCE-CONTRACT.md). SPX_POINTS = dollar stops kept as S&P points: actual SPX only.
+pub const REVIEWED: &[&str] = &["lwmdc_down_smaller", "lwmdc_down_larger", "lwmdc_up_larger", "lwmdc_up_smaller", "lwmdc_up_sell_smaller", "lwmdc_up_sell_larger", "lwmdc_2down", "lwmdc_zone", "lwmdc_fdom_month", "lwmdc_thanksgiving", "lwmdc_od_up_oc", "lwmdc_od_down_oc", "lwmdc_nonod_up_oc", "lwmdc_nonod_down_oc", "lwmdc_od_oops_buy", "lwmdc_od_oops_sell", "lwmdc_od_high_buy", "lwmdc_od_prior_high_buy", "lwmdc_open_up_oc", "lwmdc_open_down_oc", "lwmdc_fdom_oc"];
+pub const SPX_POINTS: &[&str] = &["lwmdc_down_smaller", "lwmdc_down_larger", "lwmdc_up_larger", "lwmdc_up_smaller", "lwmdc_up_sell_smaller", "lwmdc_up_sell_larger", "lwmdc_2down", "lwmdc_zone", "lwmdc_fdom_month", "lwmdc_thanksgiving"];
+
 const BONDS: &str = "Needs daily T-Bond futures (opening and closing prices), and for some rules Gold or the CRB index; the vault has none of these.";
 
 macro_rules! sd {

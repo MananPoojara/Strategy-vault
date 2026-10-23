@@ -16,7 +16,21 @@ use crate::connors::{claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Tra
 
 pub const BOOK: &str = "lwlts";
 
-const SP: &str = "Book: one S&P 500 futures contract, CSI back-adjusted continuous data, $250/point as printed in every report header; dollar amounts here are converted at that rate (p.pt_usd). Run on any index (instrument swap only, same points). SPX cash opens before ~1999 often equal the prior close (stale), so gap/open rules on SPX before 1999 differ from the futures; SPY (1993-) has traded opens.";
+/// Larry Williams block: rules admitted after the 23 Oct 2026 reading and independent ledgers
+/// (authors/lwilliams/admission/SOURCE-CONTRACT.md). SPX_POINTS = dollar stops/targets kept as S&P points: actual SPX only.
+pub const REVIEWED: &[&str] = &["lwlts_mon_gap_t500", "lwlts_mon_gap_t1000", "lwlts_mon_gap_close", "lwlts_mon_gap_next_close", "lwlts_mon_gap_6close",
+    "lwlts_vb_sp_tdw", "lwlts_vb_sp_40_200", "lwlts_talon_sp", "lwlts_mon_oc", "lwlts_mon_3day",
+    "lwlts_tdm6_sp", "lwlts_tdm7_sp", "lwlts_tdm8_sp", "lwlts_tdm19_sp", "lwlts_tdm20_sp", "lwlts_tdm21_sp", "lwlts_tdm22_sp",
+    "lwlts_study_all", "lwlts_study_down1", "lwlts_study_down3", "lwlts_study_trend", "lwlts_study_trend_mon",
+    "lwlts_outside_down", "lwlts_outside_down_xthu", "lwlts_3up_tue_sell", "lwlts_oops_buy", "lwlts_oops_sell_thu", "lwlts_oops_buy_ma9", "lwlts_oops_sell_ma9",
+    "lwlts_month_day1", "lwlts_hh1", "lwlts_hh5", "lwlts_hh10", "lwlts_hh15", "lwlts_hh20"];
+pub const SPX_POINTS: &[&str] = &["lwlts_mon_gap_t500", "lwlts_mon_gap_t1000", "lwlts_mon_gap_close", "lwlts_mon_gap_next_close", "lwlts_mon_gap_6close",
+    "lwlts_talon_sp", "lwlts_tdm6_sp", "lwlts_tdm7_sp", "lwlts_tdm8_sp", "lwlts_tdm19_sp", "lwlts_tdm20_sp", "lwlts_tdm21_sp", "lwlts_tdm22_sp",
+    "lwlts_study_all", "lwlts_study_down1", "lwlts_study_down3", "lwlts_study_trend", "lwlts_study_trend_mon",
+    "lwlts_outside_down", "lwlts_outside_down_xthu", "lwlts_3up_tue_sell", "lwlts_oops_buy", "lwlts_oops_sell_thu", "lwlts_oops_buy_ma9", "lwlts_oops_sell_ma9",
+    "lwlts_month_day1", "lwlts_hh1", "lwlts_hh5", "lwlts_hh10", "lwlts_hh15", "lwlts_hh20"];
+
+const SP: &str = "Book: one S&P 500 futures contract, CSI back-adjusted continuous data, $250/point as printed in every report header; dollar amounts here are converted at that rate (p.pt_usd). Since 23 Oct 2026 rules with dollar amounts run on actual SPX only (the points mean what the book meant only there), from 2014 when SPX opens are real; rules without dollar amounts run on indices, ETFs and stocks.";
 const BONDS: &str = "Needs daily T-Bond futures (and for some rules Gold futures) prices; the vault has no bond or gold futures series.";
 
 macro_rules! live {
@@ -200,7 +214,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["F|Oops! buy when it occurs \"at the end of the month, and trading day after the 17th trading day of the month\" (p.119)"], ""),
         off!("lwlts_swing_points", "Swing-point trend changes and the three-bar high/low system", "Ch 1 / Ch 9 · Quote screen", "Long/Short", NotTestable("Outside days need the intraday open-to-close path ('we will have to study the flow of prices during that day', p.17); the three-bar system is on 5-15 minute bars and passes trades by judgement (p.136-137)."),
             &["F|Short-term high: a high with lower highs on both sides, inside days ignored (p.16-17)", "E|3-bar MA of lows (highs) as entry, 3-bar MA of highs (lows) as target, in the swing trend"], ""),
-        off!("lwlts_eom_sp", "S&P end-of-month: third-to-last trading day, 6 sessions", "Ch 10 · Month-end", "Long", NotTestable("Only an equity chart (Fig. 10.4); the S&P rules are 'the same opportunity' as the bond test, and the entry order (open or close) and the session count are not stated."),
+        off!("lwlts_eom_sp", "S&P end-of-month: third-to-last trading day, 6 sessions", "Ch 10 · Month-end", "Long", NotTestable("Only an equity chart (Fig. 10.4) with no trade figures. Its legend reads \"Buy on open @ 4 trading days starting at 1st day of each month. Exit on close\", which can mean one 4-day hold from the first trading day or four separate one-day trades; the book does not say which, and the bond text rule (third-to-last day, six sessions, $1,500) differs from the Fig. 10.3 legend (fifth-to-last day open to the close of the third day of the next month, no stop)."),
             &["E|Bonds: \"bought one contract ... on the third to the last trading day of each month and held for six trading sessions ... or taking a loss of $1,500\" (p.152)"], ""),
         off!("lwlts_close_65pct", "Buy on the close in the upper 65% of the range (Fig. 15.3)", "Ch 15 · Bad habits", "Long", NotTestable("'With a stop for protection' (p.238) but the stop size and test window are not printed, and the trade counts in the table are inconsistent (533, 334, 537, 199, 178)."),
             &["E|Buy market on close if the close is in the upper 65% of the day's range; exit 5, 10, 15, 20, 25 days later"], ""),

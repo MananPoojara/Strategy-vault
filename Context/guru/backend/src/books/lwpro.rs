@@ -14,6 +14,11 @@ use crate::connors::{claim, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "lwpro";
 
+/// Larry Williams block: rules admitted after the 23 Oct 2026 reading and independent ledgers
+/// (authors/lwilliams/admission/SOURCE-CONTRACT.md). SPX_POINTS = dollar stops kept as S&P points: actual SPX only.
+pub const REVIEWED: &[&str] = &["lwpro_after_up", "lwpro_after_down", "lwpro_open_up", "lwpro_open_down"];
+pub const SPX_POINTS: &[&str] = &["lwpro_after_up", "lwpro_after_down", "lwpro_open_up", "lwpro_open_down"];
+
 macro_rules! sd {
     ($id:expr, $name:expr, $group:expr, $dir:expr, $status:expr, $rules:expr, $notes:expr, $claim:expr) => {
         StrategyDef { id: $id, name: $name, group: $group, session: 0, dir: $dir, status: $status, needs_volume: false,

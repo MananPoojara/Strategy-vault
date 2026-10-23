@@ -6,6 +6,11 @@ use crate::books::rrsim::{g, o, pd, run_ts, sdef, sma, A, P};
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "lwinb";
+
+/// Larry Williams block: rules admitted after the 23 Oct 2026 reading and independent ledgers
+/// (authors/lwilliams/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["lwinb_inside_bar"];
+pub const SPX_POINTS: &[&str] = &[];
 const ID: &str = "lwinb_inside_bar";
 
 pub fn catalogue() -> Vec<StrategyDef> {

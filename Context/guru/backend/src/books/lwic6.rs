@@ -6,6 +6,11 @@ use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "lwic6";
 
+/// Larry Williams block: rules admitted after the 23 Oct 2026 reading and independent ledgers
+/// (authors/lwilliams/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["lwic6_pctr_ma50_long"];
+pub const SPX_POINTS: &[&str] = &[];
+
 macro_rules! sd {
     ($id:expr, $name:expr, $group:expr, $dir:expr, $status:expr, $rules:expr, $notes:expr) => {
         StrategyDef { id: $id, name: $name, group: $group, session: 0, dir: $dir, status: $status, needs_volume: false,
@@ -20,7 +25,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["F|%R = (today's close - lowest low) / (highest high - lowest low) over 10 days; \"greater than 75% tops are usually near and when less than 20% bottoms usually form\" (p.91)",
               "F|\"If the average was in an up trend use the %R buys signals to go long and the sell signals to exit but not sell short\"; down trend = \"today's value was less than yesterdays\" of the 50-day moving average (p.91-92)",
               "E|\"for a buy, ... simply wait for the market to rally above the prior days true high ... I use a trailing stop above each day's prior true high and do not count inside days\" (p.92): buy stop at the true high of the day %R is below 20 with the 50-day average rising, moved each day to the prior day's true high (inside days skipped) until filled",
-              "X|Sell signal = \"%R to enter the sell zone and then we can place our stop at the true low of the day %R entered the sell zone and trail our stop up each day under the true lows\" (p.92): sell stop at the true low of the first day %R is above 75 while long, then the prior day's true low (inside days skipped)",
+              "X|Sell signal = \"%R to enter the sell zone and then we can place our stop at the true low of the day %R entered the sell zone and trail our stop up each day under the true lows\" (p.92): sell stop at the true low of the first day %R is above 75 while long, then raised to each later day's true low when higher (inside days skipped); p.trail_up = 0 lets it fall too (the earlier code)",
               "X|No other stop is given; the pending buy stop is not cancelled (the book gives no cancel rule)"],
             "Book: no test results printed. True high/low = high/low extended to the prior close. The short side is not testable (its exit is \"take profits or tighten stops\", judgement). India: same rules on the index."),
         sd!("lwic6_pctr_ma50_short", "%R with the 50-day average trend (short side)", "The power of %R", "Short",
@@ -59,6 +64,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         p("ma_n", "Trend moving average days (book 50)", 50.0, 10.0, 200.0, 5.0),
         p("buy_zone", "%R buy zone, below (book 20)", 20.0, 5.0, 40.0, 5.0),
         p("sell_zone", "%R sell zone, above (book 75)", 75.0, 60.0, 95.0, 5.0),
+        // Larry Williams block (23 Oct 2026): "trail our stop up each day under the true lows" (p.92): the exit stop only rises.
+        p("trail_up", "Exit stop only moves up, as the book says (1); 0 = follow every true low (earlier code)", 1.0, 0.0, 1.0, 1.0),
     ])
 }
 
@@ -67,6 +74,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let schema = params(id)?;
     let g = super::lwicw::getter(&schema, p);
     let (n, m, bz, sz) = (g("pctr_n") as usize, g("ma_n") as usize, g("buy_zone"), g("sell_zone"));
+    let up_only = g("trail_up") == 1.0;
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let pctr = |i: usize| -> f64 {
         if i + 1 < n { return f64::NAN; }
@@ -98,7 +106,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         // at the close of bar i: arm or trail the stops
         let r = pctr(i);
         match pos {
-            Some((e, px, Some(_))) => { if !inside(i) { pos = Some((e, px, Some(tl(i)))); } }
+            Some((e, px, Some(s))) => { if !inside(i) { pos = Some((e, px, Some(if up_only { s.max(tl(i)) } else { tl(i) }))); } }
             Some((e, px, None)) => { if r > sz { pos = Some((e, px, Some(tl(i)))); } }
             None => match buy_stop {
                 Some(_) => { if !inside(i) { buy_stop = Some(th(i)); } }

@@ -216,6 +216,7 @@ export const sourceReview: Record<string, {type: string; sameWorkAs?: string; pe
   "lwcot": {"type": "book", "people": ["Larry Williams"]},
   "lwdg2": {"type": "book", "people": ["Larry Williams"]},
   "lwdtfo": {"type": "book", "people": ["Larry Williams"]},
+  "lwfc10": {"type": "article", "people": ["Larry Williams"]},
   "lwhtb": {"type": "article", "people": ["Larry Williams"]},
   "lwic6": {"type": "course_manual", "people": ["Larry Williams"]},
   "lwicw": {"type": "course_manual", "people": ["Larry Williams"]},

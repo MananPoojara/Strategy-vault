@@ -154,6 +154,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || schwager_reviewed(def) // Schwager block
         || bernstein_g2_reviewed(def)
         || jb_g3_reviewed(def)
+        || lwilliams_reviewed(def) // Larry Williams block
 }
 // ---- Bernstein g2: 30 Days to Market Mastery (jb30d), The Ultimate Day Trader (jbudt), The Compleat Day Trader II (jbcdt2).
 // Reviewed 22 Oct 2026 (authors/bernstein/agents/<work>, independent ledgers in authors/bernstein/g2-admission).
@@ -342,6 +343,38 @@ pub const R3R4_LOWPRICE_HELD:&str="R3/R4 Low Priced Rules are defined by the sto
 pub fn inr_price_filter_omitted(def:&StrategyDef,market:Market)->bool {
     market==Market::India && def.book=="afactor" && crate::books::afactor::stock_rule(def.id)
 }
+// ---------------------------------------------------------------- Larry Williams (lwilliams author agent) 2026-10-23
+// Admission only for the ids in each module's REVIEWED list (authors/lwilliams/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn lwilliams_reviewed(def:&StrategyDef)->bool { crate::books::lw_admit::reviewed(def.book,def.id) }
+macro_rules! LW_SPX_LABEL {()=>{"Larry Williams' stop, target or gap size is a dollar (or point) amount on one S&P 500 futures contract (the book's own reports value it at $250 or $500 an index point, as printed). The vault keeps the same number of S&P index points, which mean the same thing only on the S&P 500 itself, so this rule runs on actual SPX only, as a declared application of the futures rule to the cash index; other indices, ETFs and stocks are held. SPX opens are real only from 2014, so earlier start dates are refused. Daily bars: stops fill at their price, or at the open when the market gaps through them; inside a day the bar is read open, nearer extreme, other extreme, close. No futures dollars or book results are reproduced."}}
+macro_rules! LW_NDX_LABEL {()=>{"Larry Williams' stop is a dollar amount on one Nasdaq-100 futures contract ($100 an index point in 1996). Those points mean the same thing only on the Nasdaq-100 itself, so this rule runs on actual NDX only, as a declared application of the futures rule to the cash index; other instruments are held. NDX opens are real only from 2001, so earlier start dates are refused. Daily bars: stops fill at their price, or at the open on a gap; inside a day the bar is read open, nearer extreme, other extreme, close. No futures dollars or newsletter results are reproduced."}}
+macro_rules! LW_US_LABEL {()=>{"Larry Williams timed this trade around a US market holiday on S&P 500 futures. It uses no dollar or point amounts, but Indian markets keep a different holiday calendar, so it runs on US indices, ETFs and stocks only, as a declared application; Indian instruments are held. US index opens are real only from 2014 (SPX), 2001 (NDX) and 2016 (DJI), so earlier starts are refused there. No futures dollars or newsletter results are reproduced."}}
+macro_rules! LW_ANY_LABEL {()=>{"Larry Williams tested this rule on futures (mostly S&P 500 futures). Runs on actual indices, ETFs and stocks, US and India, are a declared application, not the author's test. The rule uses no dollar or point amounts. Daily bars: stops fill at their price, or at the open when the market gaps through them; inside a day the bar is read open, nearer extreme, other extreme, close. US index opens are real only from 2014 (SPX), 2001 (NDX) and 2016 (DJI), so rules that read the open refuse earlier starts there; NIFTY opens before late 2010 lie close to the previous close (official data, kept). Cash-index and stock shorts are hypothetical. No futures dollars or book results are reproduced."}}
+fn lwilliams_label_of(id:&str)->&'static str {
+    match crate::books::lw_admit::only_ticker(id) {Some("NDX")=>LW_NDX_LABEL!(),Some(_)=>LW_SPX_LABEL!(),None if crate::books::lw_admit::us_only(id)=>LW_US_LABEL!(),None=>LW_ANY_LABEL!()}
+}
+fn lwilliams_policy(def:&StrategyDef)->Option<Policy> {
+    if !lwilliams_reviewed(def) {return None;}
+    let label=lwilliams_label_of(def.id);
+    let mut p=if crate::books::lw_admit::only_ticker(def.id).is_some() {index(label)} else {requirement("index_etf_or_stock",&["index","etf","individual_stock"],label)};
+    p.market_adaptation=true; Some(p)
+}
+/// `stock_us`: None = not an individual stock; Some(true) = a US stock; Some(false) = an Indian or unknown stock.
+fn lwilliams_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Option<Issue> {
+    if !lwilliams_reviewed(def) {return None;}
+    if let Some(t)=crate::books::lw_admit::only_ticker(def.id).filter(|t|*t!=ticker) {
+        let _=t; return Some(Issue{status:"needs_data",note:format!("{} {ticker} is outside that scope; no result is published.",lwilliams_label_of(def.id))});
+    }
+    let us=stock_us.unwrap_or(!(ticker.starts_with("NIFTY")));
+    if crate::books::lw_admit::us_only(def.id) && !us {
+        return Some(Issue{status:"needs_data",note:format!("{} {ticker} is outside that scope; no result is published.",LW_US_LABEL!())});
+    }
+    None
+}
+fn lwilliams_label(def:&StrategyDef)->Option<&'static str> {
+    lwilliams_reviewed(def).then(||lwilliams_label_of(def.id))
+}
+// ---------------------------------------------------------------- end Larry Williams
 // ---------------------------------------------------------------- Schwager (jscgf, jsgsta, jsats, sofmt, nmwbk) 2026-10-23
 // Admission only for the listed ids (authors/schwager/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn schwager_reviewed(def:&StrategyDef)->bool {
@@ -391,6 +424,7 @@ fn joe_ross_policy(def:&StrategyDef)->Option<Policy> {
 }
 // ---- end Joe Ross block ----
 fn base_policy(def:&StrategyDef)->Policy {
+    if let Some(p)=lwilliams_policy(def) {return p;} // Larry Williams block
     // ---- Schwager block (2026-10-23) ----
     if let Some(p)=schwager_policy(def) {return p;}
     // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
@@ -665,6 +699,7 @@ pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     if let Some(issue)=bernstein_g1_symbol_issue(def,ticker,native_stock){return Some(issue);}
     if let Some(issue)=bernstein_g2_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);}
     if let Some(issue)=jb_g3_symbol_issue(def,ticker){return Some(issue);}
+    if let Some(issue)=lwilliams_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Larry Williams block
     if native_stock {
         if let Some(reason)=p.native_currency_constraint {
             return Some(Issue {status:"needs_data",note:format!("Source currency/tick data missing. {reason} USD amounts cannot silently become INR amounts. A source-supported Indian specification or dated FX treatment and verified local tick rules are required before admission; editing the numeric parameter alone does not establish those inputs. Selected actual stock: {ticker}. No results are published.")});
@@ -691,6 +726,7 @@ pub fn check_native(def:&StrategyDef,ticker:&str,evidence:&NativeEvidence)->Opti
     if let Some(issue)=bernstein_g1_symbol_issue(def,ticker,evidence.asset_type()=="individual_stock"){return Some(issue);}
     if let Some(issue)=bernstein_g2_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);}
     if let Some(issue)=jb_g3_symbol_issue(def,ticker){return Some(issue);}
+    if let Some(issue)=lwilliams_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Larry Williams block
     if let Some(issue)=check_selected(p,def.id,ticker,evidence.asset_type()){return Some(issue);}
     if matches!((def.book,def.id),("r3r4","r3r4_lowprice"|"r3r4_lowprice_scale")) && evidence.market()!=Market::UnitedStates {
         return Some(Issue{status:"not_testable",note:format!("{R3R4_LOWPRICE_HELD} Selected actual stock: {ticker}.")});
@@ -718,6 +754,11 @@ pub fn check_native_market_inputs(def:&StrategyDef,evidence:&NativeEvidence,benc
 /// Plain-language reason for Connors rules that stay unadmitted on every instrument (admission records, 21 Oct 2026).
 pub fn held_reason(id:&str)->Option<&'static str> {
     Some(match id {
+        // ---- Larry Williams block (23 Oct 2026): held Live rules
+        "lwnl_july4_sell"|"lwnl_keyrev_sell"=>"Held: no stop in the newsletter. The only exit is the first profitable opening, so a short that never gets one stays open: on every index, ETF and stock tested the short ran for years and lost more than the whole account, which no account can carry.",
+        "lwlts_mon_vb"=>"Held: needs intraday data. The trade enters on a stop above Monday's open and is stopped out or closed the same day; daily bars cannot show whether the stop or the entry came first, and the accuracy check found most of the gain comes from such same-day trades.",
+        "lwdg2_0105"=>"Held: needs intraday data. The day trade enters on whichever of two stops (the close plus or minus 1.05%) is hit first and exits on the close; when a day reaches both, daily bars cannot show which came first, and the accuracy check found its whole gain comes from such same-day trades.",
+        // ---- end Larry Williams block
         // ---- Bernstein g2 held Live rules
         "jb30d_rev_sell_fpo"=>"Held: no stop in the book. The only exit is the first profitable opening, so a trade that never gets one stays open: on SPY a short entered in 1995 is still open in 2026 and has lost more than the whole account, which no account can carry. The book's own table shows losing trades this exit cannot produce, so its test used an exit it does not print.",
         "jbudt_gap_fpo"|"jbudt_gap_split"=>"Held: no stop in the book. The kept position leaves only on the first opening beyond the entry price, so a short that never gets one stays open: on SPY a short entered in January 1995 is still open in 2026 and has lost more than the whole account, which no account can carry.",
@@ -795,6 +836,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if p.requirement=="index_etf_or_stock" && CONNORS_INDEX_IDS.contains(&def.id) {json.push_str(concat!(",\"declared_application\":\"",CONNORS_INDEX_LABEL!(),"\""));}
     if let Some(label)=bernstein_g1_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));}
     if let Some(label)=schwager_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Schwager block
+    if let Some(label)=lwilliams_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Larry Williams block
     if def.book==crate::books::cwin::BOOK && crate::books::cwin::reviewed_daily(def.id) {json.push_str(concat!(",\"declared_application\":\"",CWIN_INDEX_LABEL!(),"\""));}
     if def.book==crate::books::ccl08::BOOK && crate::books::ccl08::day_trade(def.id) {json.push_str(concat!(",\"declared_application\":\"",CCL08_INDEX_LABEL!(),"\""));}
     if def.book==crate::books::ats::BOOK && crate::books::ats::reviewed_daily(def.id) && (p.requirement=="index_or_etf" || (crate::books::ats::STOCK_TICK_IDS.contains(&def.id) && !CONNORS_INDEX_IDS.contains(&def.id))) {json.push_str(concat!(",\"declared_application\":\"",BTP_INDEX_LABEL!(),"\""));}
@@ -846,6 +888,34 @@ mod tests {
         StrategyDef { id, book, name: "Test", group: "Test", session: 0, dir: "Long", status: Status::Live,
             needs_volume: false, needs_vix: false, needs_series: &[], rules: &[], notes: "", claim: None }
     }
+    // ---- Larry Williams block (2026-10-23) ----
+    #[test]
+    fn lwilliams_review_admits_exact_ids_with_their_instrument_scope() {
+        use crate::books::*;
+        let all:Vec<StrategyDef>=[lwlts::catalogue(),lwicw::catalogue(),lwmdc::catalogue(),lwpro::catalogue(),lwcot::catalogue(),lwdtfo::catalogue(),lwdg2::catalogue(),
+            lwcmc::catalogue(),lwnl::catalogue(),lwfc10::catalogue(),lwic6::catalogue(),lwinb::catalogue()].into_iter().flatten().collect();
+        let want:Vec<&str>=[lwlts::REVIEWED,lwicw::REVIEWED,lwmdc::REVIEWED,lwpro::REVIEWED,lwcot::REVIEWED,lwdtfo::REVIEWED,lwdg2::REVIEWED,lwcmc::REVIEWED,
+            lwnl::REVIEWED,lwfc10::REVIEWED,lwic6::REVIEWED,lwinb::REVIEWED].concat();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|lwilliams_reviewed(d)).map(|d|d.id).collect();
+        let mut w=want.clone();admitted.sort();w.sort();assert_eq!(admitted,w);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert!(reviewed_cash_rule(d),"{}",d.id);assert!(policy(d).market_adaptation,"{}",d.id);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            match crate::books::lw_admit::only_ticker(d.id) {
+                Some(t) => { assert!(check(d,t,false).is_none(),"{} {t}",d.id);
+                    for o in ["SPY","QQQ","NIFTY 50","NIFTYBANK",if t=="SPX" {"NDX"} else {"SPX"}] {assert!(check(d,o,false).is_some(),"{} {o}",d.id);}
+                    assert!(check(d,"AAPL",true).is_some() && check(d,"RELIANCE",true).is_some(),"{}",d.id); }
+                None if crate::books::lw_admit::us_only(d.id) => {
+                    for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+                    for t in ["NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_some(),"{} {t}",d.id);} }
+                None => { for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+                    assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id); }
+            }
+        }
+        for id in ["lwnl_july4_sell","lwnl_keyrev_sell","lwlts_mon_vb","lwdg2_0105"] {assert!(!want.contains(&id) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");}
+        assert!(!lwilliams_reviewed(&def("lwlts_hh5","jbudt")));
+    }
+    // ---- end Larry Williams block
     // ---- Schwager block (2026-10-23) ----
     #[test]
     fn schwager_review_admits_exact_ids_on_indices_etfs_and_stocks() {
