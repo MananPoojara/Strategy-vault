@@ -598,10 +598,13 @@ fn readiness_json(st: &State, q: &BTreeMap<String, String>) -> Result<String, St
     let cat=query_catalogue(q);
     if q.get("id").is_some_and(|id| !cat.iter().any(|d| d.id==id)) { return Err("unknown strategy".into()); }
     let rows:Vec<String>=cat.iter().filter(|d| q.get("id").map_or(true,|id| d.id==id)).map(|d| {
-        let issue=readiness::check(ctx,d,from,to,&p).or_else(||native_admission(ctx,d,from,to,&selected,st,q));
-        let (mut status,note)=issue.as_ref().map_or(("ready","Required data checks passed. This is a new run on the selected instrument, not verification of the book's published results."),|i| (i.status,i.note.as_str()));
+        let admitted=admit(ctx,d,from,to,&p,&selected,st,q);
+        let (start,auto)=admitted.as_ref().map_or((from,None),|(s,n)|(*s,n.clone()));
+        let issue=admitted.err();
+        let ready=format!("{}Required data checks passed. This is a new run on the selected instrument, not verification of the book's published results.",auto.as_ref().map_or(String::new(),|n|format!("{n} ")));
+        let (mut status,note)=issue.as_ref().map_or(("ready",ready.as_str()),|i| (i.status,i.note.as_str()));
         let note=if let Some(roll)=costs.rollover_issue(){if issue.is_none(){status="needs_data";}format!("{note} {roll}")}else{note.into()};
-        format!("{{\"id\":\"{}\",\"status\":\"{}\",\"note\":\"{}\"}}",d.id,status,esc(&note))
+        format!("{{\"id\":\"{}\",\"status\":\"{}\",\"note\":\"{}\",\"from\":\"{}\"{}}}",d.id,status,esc(&note),ctx.r[start].date,auto_start_json(&auto))
     }).collect();
     Ok(format!("{{\"ticker\":\"{}\",\"from\":\"{}\",\"to\":\"{}\",\"strategies\":[{}],\"costs\":{},\"provenance\":{}}}",esc(&ctx.r[0].ticker),ctx.r[from].date,ctx.r[to].date,rows.join(","),if q.get("id").is_some_and(|id|books::hbqts::reviewed::is_dema_index(id)){unit_exposure_report::costs_json(costs)}else{costs.json()},source_provenance(st,q)))
 }
@@ -697,10 +700,19 @@ fn chart_ohlc_json(st:&State,q:&BTreeMap<String,String>)->Result<String,String>{
     for (name,field) in [("o",0),("h",1),("l",2),("c",3)]{let _=write!(out,",\"{name}\":");arr(&mut out,&mut rows.iter().map(|r|source_num([r.open,r.high,r.low,r.close][field])));}
     out.push_str(",\"v\":");arr(&mut out,&mut rows.iter().map(|r|r.volume.map_or("null".into(),source_num)));out.push('}');Ok(out)
 }
+/// Every run's admission (readiness + native source checks) with auto-start: a start refused only because the data a
+/// rule needs begins later moves to the first fully covered date, with a plain note (see readiness::auto_start).
+fn admit(ctx:&Ctx,d:&connors::StrategyDef,from:usize,to:usize,p:&Params,selected:&SelectedContext,st:&State,q:&BTreeMap<String,String>)->Result<(usize,Option<String>),readiness::Issue>{
+    // a native stock's admitted history starts at ctx.r[0]; an earlier requested start begins there
+    let early=q.get("from").filter(|f|selected.evidence().is_some()&&!f.is_empty()&&f.as_str()<ctx.r[0].date.as_str());
+    let requested=early.map_or(ctx.r[from].date.as_str(),|f|f.as_str());
+    let (start,note)=readiness::auto_start(ctx,from,to,requested,|f|readiness::check(ctx,d,f,to,p).or_else(||native_admission(ctx,d,f,to,selected,st,q)))?;
+    Ok((start,note.or_else(||early.map(|f|format!("Started {}: this stock's data in the vault begins then. The requested start {f} is earlier; no prices are filled or estimated.",ctx.r[0].date)))))
+}
+fn auto_start_json(note:&Option<String>)->String{note.as_ref().map_or(String::new(),|n|format!(",\"auto_start\":\"{}\"",esc(n)))}
 fn native_admission(ctx:&Ctx,def:&connors::StrategyDef,from:usize,to:usize,selected:&SelectedContext,st:&State,q:&BTreeMap<String,String>)->Option<readiness::Issue>{
     let Some(evidence)=selected.evidence() else {return instrument_policy::check(def,&ctx.r[0].ticker,false)};
     if let Some(issue)=instrument_policy::check_native(def,&ctx.r[0].ticker,evidence){return Some(issue);}
-    if q.get("from").is_some_and(|f|!f.is_empty()&&f.as_str()<ctx.r[0].date.as_str()){return Some(readiness::Issue{status:"needs_data",note:format!("Selected start precedes admitted native source coverage beginning {}. No unsupported early history is filled; review source prefix exclusions and choose covered dates.",ctx.r[0].date)});}
     let last=&ctx.r.last().unwrap().date;
     if q.get("to").is_some_and(|t|!t.is_empty()&&t.as_str()>last.as_str()){return Some(readiness::Issue{status:"needs_data",note:format!("Selected end exceeds admitted native source coverage ending {last}. Later unsupported prices are unavailable; the requested end is not silently shortened.")});}
     let benchmark=native_benchmark(evidence.market());
@@ -1091,10 +1103,10 @@ fn summary(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     let costs=accounting::Costs::parse(q)?;costs.ensure_rollover()?;
     let mut rows = Vec::new();
     for d in definitions.iter() {
-        if let Some(issue) = readiness::check(ctx, d, from, to, &Params::new()).or_else(||native_admission(ctx,d,from,to,&selected,st,q)) {
+        let (from,auto)=match admit(ctx,d,from,to,&Params::new(),&selected,st,q) {Ok(a)=>a,Err(issue)=>{
             rows.push(format!("{{\"id\":\"{}\",\"blocked\":\"{}\",\"readiness\":\"{}\"}}", d.id, esc(&issue.note), issue.status));
             continue;
-        }
+        }};
         let Some(from) = window_start(ctx, d, from).filter(|&f| f < to || (f==to && reviewed_single_session(d.id))) else {
             let note=if from==to {"Single-session results are not admitted for this method".to_string()}else{window_refusal(ctx, d, from, to)};
             rows.push(format!("{{\"id\":\"{}\",\"blocked\":\"{}\",\"readiness\":\"needs_data\"}}", d.id,esc(&note)));
@@ -1107,6 +1119,7 @@ fn summary(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         rows.push(format!("{{\"id\":\"{}\",\"stats\":{},\"spark\":[{}],\"costs\":{}}}", d.id, if run.unit_exposure_report.is_some(){unit_exposure_report::stats_json(&financial_stats(ctx,&run,costs))}else{stats_json(&financial_stats(ctx, &run, costs))}, spark.join(","),if run.unit_exposure_report.is_some(){unit_exposure_report::costs_json(costs)}else if run.bandy_account.is_some(){bandy_costs_json(costs)}else if run.source_account.is_some(){costs.source_account_json()}else{costs.json()}));
         if d.book==books::chande::BOOK {let item=rows.last_mut().unwrap();item.pop();let _=write!(item,",\"experiment\":{}}}",experiment_json(d.id));}
         if selected.native(){let item=rows.last_mut().unwrap();item.pop();let _=write!(item,",\"provenance\":{}}}",source_provenance(st,q));}
+        if auto.is_some(){let item=rows.last_mut().unwrap();item.pop();let _=write!(item,",\"from\":\"{}\"{}}}",ctx.r[from].date,auto_start_json(&auto));}
     }
     Ok(format!("[{}]", rows.join(",")))
 }
@@ -1330,17 +1343,15 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     let cat = query_catalogue(q);
     let def = cat.iter().find(|d| d.id == id.as_str()).ok_or("unknown strategy")?;
     let p = checked_params_of(q)?;
-    if let Some(issue) = readiness::check(ctx, def, from, to, &p).or_else(||native_admission(ctx,def,from,to,&selected,st,q)) {
-        return Err(format!("{}: {}", issue.status, issue.note));
-    }
+    let (from,auto)=admit(ctx,def,from,to,&p,&selected,st,q).map_err(|issue|format!("{}: {}", issue.status, issue.note))?;
     costs.ensure_rollover()?;
     let from = window_start(ctx, def, from).filter(|&f| f < to || (f==to && reviewed_single_session(id))).ok_or_else(|| window_refusal(ctx, def, from, to))?;
     let run = selected_backtest_costs(&selected,st,q,ctx,id,from,to,costs,&p)?;
     if run.unit_exposure_report.is_some() {
-        let mut output=unit_exposure_detail::render(ctx,&run,costs)?;output.pop();let _=write!(output,",\"provenance\":{}}}",source_provenance(st,q));return Ok(output);
+        let mut output=unit_exposure_detail::render(ctx,&run,costs)?;output.pop();let _=write!(output,",\"provenance\":{}{}}}",source_provenance(st,q),auto_start_json(&auto));return Ok(output);
     }
     if run.bandy_account.is_some() {
-        let mut output=bandy_detail(ctx,id,from,to,costs,&run);output.pop();let _=write!(output,",\"provenance\":{}}}",source_provenance(st,q));return Ok(output);
+        let mut output=bandy_detail(ctx,id,from,to,costs,&run);output.pop();let _=write!(output,",\"provenance\":{}{}}}",source_provenance(st,q),auto_start_json(&auto));return Ok(output);
     }
     let mut diagnostics = diagnostic_series_through(ctx,id,&p,to);
     if books::lkqts::macs_candidate(id){
@@ -1423,6 +1434,7 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         o.push_str("]}");
     }
     if selected.native(){let _=write!(o,",\"provenance\":{}",source_provenance(st,q));}
+    o.push_str(&auto_start_json(&auto));
     if selected.native() || def.book==books::chande::BOOK {
         o.push_str(",\"ohlc\":{");
         o.push_str("\"d\":");arr(&mut o,&mut (from..=to).map(|k|format!("\"{}\"",ctx.r[k].date)));
@@ -1519,9 +1531,7 @@ fn optimize(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> 
     let cat = query_catalogue(q);
     let def = cat.iter().find(|d| d.id == id).ok_or("unknown strategy")?;
     let base = checked_params_of(q)?;
-    if let Some(issue) = readiness::check(ctx, def, from, to, &base).or_else(||native_admission(ctx,def,from,to,&selected,st,q)) {
-        return Err(format!("{}: {}", issue.status, issue.note));
-    }
+    let (from,_auto)=admit(ctx,def,from,to,&base,&selected,st,q).map_err(|issue|format!("{}: {}", issue.status, issue.note))?;
     costs.ensure_rollover()?;
     // A requested grid may select a different volatility series than the base setting.
     if let Some(spec) = q.get("g.src") {
@@ -2289,7 +2299,10 @@ mod tests {
     #[test]
     fn native_requested_coverage_is_not_silently_extended_or_shortened(){
         let (_fixture,state,mut q)=native_us_fixture();
-        for (key,value,reason) in [("from","2019-12-31","precedes"),("to","2020-08-25","exceeds")] {
+        // auto-start (2026-10-23): an earlier start begins at the first actual bar and says so; a later end is still refused
+        q.insert("from".into(),"2019-12-31".into());assert!(readiness_json(&state,&q).unwrap().contains("\"status\":\"ready\""));
+        let body=detail(&state,&q).unwrap();assert!(body.contains("\"auto_start\":\"Started ")&&body.contains("requested start 2019-12-31 is earlier"));q.remove("from");
+        for (key,value,reason) in [("to","2020-08-25","exceeds")] {
             q.insert(key.into(),value.into());let assessment=readiness_json(&state,&q).unwrap();assert!(assessment.contains("needs_data")&&assessment.contains(reason));
             assert!(detail(&state,&q).unwrap_err().contains(reason));assert!(optimize(&state,&q).unwrap_err().contains(reason));
             assert!(!summary(&state,&q).unwrap().contains("\"stats\""));q.remove(key);

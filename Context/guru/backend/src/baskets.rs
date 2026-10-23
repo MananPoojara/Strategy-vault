@@ -302,7 +302,8 @@ mod tests {
         let mut q=std::collections::BTreeMap::from([("ticker".into(),"basket:nifty50:RELIANCE".into()),("id".into(),"f1a".into())]);
         let readiness=crate::readiness_json(&state,&q).unwrap();assert!(readiness.contains("\"status\":\"ready\"")&&readiness.contains("\"symbol\":\"RELIANCE\""));
         let run=crate::detail(&state,&q).unwrap();assert!(run.contains("\"ohlc\":{"));assert!(run.contains("\"o\":[100,105]"));assert!(run.contains("\"v\":[1000,2000]"));assert!(run.contains("\"benchmark_symbol\":\"RELIANCE\""));assert!(!run.contains("777"));
-        q.insert("from".into(),"2019-01-01".into());assert!(crate::readiness_json(&state,&q).unwrap().contains("needs_data"));assert!(crate::detail(&state,&q).unwrap_err().contains("coverage"));
+        // auto-start (2026-10-23): an earlier requested start begins at the stock's first actual bar, with a note
+        q.insert("from".into(),"2019-01-01".into());assert!(crate::readiness_json(&state,&q).unwrap().contains("requested start 2019-01-01 is earlier"));assert!(crate::detail(&state,&q).unwrap().contains("\"auto_start\":\"Started "));
         q.remove("from");q.insert("id".into(),"tps_stocks".into());assert!(crate::readiness_json(&state,&q).unwrap().contains("benchmark"));assert!(crate::detail(&state,&q).unwrap_err().contains("Liquidity Filter"));
     }
     #[test]

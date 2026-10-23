@@ -1123,7 +1123,7 @@ async function marketRows(S, region, api, tickers, CAT) {
     for (const v of CAT) {
       if (v.status !== 'live' || !metaOk(v)) continue;
       const m = main[v.id]; if (!m?.stats || !m.stats.trades) continue; // no data (volume rules on Nifty IT) or no closed trades in the window
-      const r = { v, tk, s: m.stats, sp: m.spark, x: extra?.[v.id]?.stats || null, w, region };
+      const r = { v, tk, s: m.stats, sp: m.spark, x: extra?.[v.id]?.stats || null, w, region, auto: m.auto_start || '' };
       if (T.keep && !T.keep(r)) continue;
       if (S.hold && holdOf(r.s) !== S.hold) continue;
       if (S.verdict && verdictOf(r.s).k !== S.verdict) continue;
@@ -1232,7 +1232,7 @@ function viewStrategies(rs, perVariant, missing = []) {
   return `<div class="grid">${list.map((r, i) => { const vd = verdictOf(r.s); return `<article class="card">
       <div class="rank"><span>#${i + 1}${S.tk === 'ALL' ? ' · ' + esc(LABEL[r.tk]) : ''}</span><span class="stamp" style="color:${vd.c}">${vd.t}</span></div>
       <h3>${title(r)}</h3><div class="by">${sub(r)}${byline(r.v)}</div>
-      ${spark(r)}${kpiTriplet(r)}
+      ${spark(r)}${kpiTriplet(r)}${r.auto ? `<p class="rnote" data-auto-start>${esc(r.auto)}</p>` : ''}
       <div class="tags"><span class="tag">⏱ ${HOLD[holdOf(r.s)]}</span><span class="tag">${esc(r.v.style)}</span><span class="tag">${r.v.dir}</span>${!perVariant && nVar(r) > 1 ? `<span class="tag link" data-fam="${esc(r.v.family)}">${nVar(r)} variants</span>` : ''}${!perVariant && S.tk === 'ALL' && nIdx(r) > 1 ? `<span class="tag">best of ${nIdx(r)} indices</span>` : ''}</div>
       ${rulesList(r.v)}
       <div class="btns"><a class="btn solid" href="${appLink(r)}">Full backtest</a><button class="btn" data-book="${r.v.book}">Book</button><button class="btn" data-guru="${r.v.guru}">Guru</button></div>
@@ -1642,7 +1642,7 @@ function periodPanel(tk, d, issue = null) {
     <label class="dfield">From <input type="date" name="from" value="${f}" min="${first}" max="${last}" required></label>
     <label class="dfield">To <input type="date" name="to" value="${to}" min="${first}" max="${last}" required></label>
     <label class="dfield">Slippage <input type="number" name="slippage" value="${esc(S.slippage)}" min="0" max="500" step="0.1"> bps a side</label><label class="dfield">Rollover <input type="number" name="rollover" value="${esc(S.rollover)}" min="0" max="500" step="0.1"> bps per roll</label>
-    <span class="perr" id="perr"></span></form>${STRAT?varyingControls(STRAT.v,tk):R.id&&CAT.find(v=>v.id===R.id)?varyingControls(CAT.find(v=>v.id===R.id),tk):''}`;
+    <span class="perr" id="perr"></span></form>${d?.auto_start?`<p class="rnote" data-auto-start>${esc(d.auto_start)}</p>`:''}${STRAT?varyingControls(STRAT.v,tk):R.id&&CAT.find(v=>v.id===R.id)?varyingControls(CAT.find(v=>v.id===R.id),tk):''}`;
 }
 const apiError = (e, tk) => `${e} (${LABEL[tk]})`;
 const verdictText = (s) => `<b>${fx(s.trades,0)}</b> closed trades in ${fx(s.years,1)} years, in the market ${pct(s.exposure,0)} of the time. It compounded <b class="${cls(s.cagr)}">${pct(s.cagr,2,true)}</b> a year against <b>${pct(s.bh_cagr,2,true)}</b> for buy &amp; hold, with a worst drawdown of <b class="neg">${pct(s.max_dd,1)}</b> (buy &amp; hold ${pct(s.bh_max_dd,1)}). ${s.trades<30?'Too few trades to judge.':s.t_stat>=2?`The average trade is statistically significant (t = ${fx(s.t_stat)}).`:`The average trade is not statistically different from zero (t = ${fx(s.t_stat)}).`}`;
