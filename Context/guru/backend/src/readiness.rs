@@ -26,6 +26,30 @@ fn event_column(name: &str) -> bool {
     ["LONG_FILLS", "SHORT_FILLS", "LONG_STOPS", "SHORT_STOPS", "VIXFILL_", "VIXUP_", "VIXDN_"].iter().any(|prefix| name.starts_with(prefix))
 }
 
+/// Auto-start (user request 2026-10-23): a run refused only because the data a rule needs begins later in the
+/// window (VIX, volume, real opens, warm-up, stock coverage) or has its last gap later, starts at the first index
+/// from which every check passes, with a plain note. `refuse(f)` is the full admission check for a run starting at
+/// `f` and ending at `to`. Each start-dependent check only gets easier as the start moves later (later data start,
+/// longer warm-up, fewer gaps left in the window), so the first passing start is found by bisection.
+/// Refused unchanged: non-data refusals, no passing start, or a passing start that leaves too short a window.
+/// Prices are never filled; the strategy calculation is untouched (indicators still read the earlier bars).
+pub fn auto_start(ctx:&Ctx,from:usize,to:usize,requested:&str,refuse:impl Fn(usize)->Option<Issue>)->Result<(usize,Option<String>),Issue> {
+    let Some(first)=refuse(from) else {return Ok((from,None))};
+    if first.status!="needs_data" || to<=from {return Err(first);}
+    // most rules need at least two bars; reviewed single-session rules may run on the last bar alone
+    let Some(mut ok)=[to,to-1].into_iter().find(|&f|f>from && refuse(f).is_none()) else {return Err(first)};
+    let mut bad=from;
+    while ok-bad>1 {let mid=(bad+ok)/2; if refuse(mid).is_some() {bad=mid} else {ok=mid}}
+    // ponytail: fixed "usable window" floor (a year, or half a shorter request); make it a parameter if users ask
+    let (want,got)=(to-from+1,to-ok+1);
+    if got<250.min(want/2) {
+        return Err(Issue{status:first.status,note:format!("{} Starting on the first fully covered date, {}, would leave only {got} trading day(s) in the selected period.",first.note,ctx.r[ok].date)});
+    }
+    let why=refuse(bad).map_or(first.note,|i|i.note);
+    let reason=why.split(". ").next().unwrap_or(&why).trim_end_matches('.');
+    Ok((ok,Some(format!("Started {}: {reason}. The requested start {requested} is earlier; no prices are filled or estimated.",ctx.r[ok].date))))
+}
+
 #[cfg(test)]
 mod short_course_readiness_tests {
     use super::*;
@@ -793,5 +817,67 @@ mod kestner_next_readiness_tests {
             let mut future=r.clone();future[111].close=f64::NAN;let futurectx=Ctx::new(&future,&[],&[]);
             assert!(check(&futurectx,&d,100,110,&Params::new()).is_none(),"unused future row {id}");
         }
+    }
+}
+
+#[cfg(test)]
+mod auto_start_tests {
+    use super::*;
+    use crate::Row;
+    fn bars(ticker:&str,n:usize)->Vec<Row> {
+        (0..n).map(|i|Row{ticker:ticker.into(),date:format!("{}-{:02}-{:02}",2012+i/300,(i%300)/25+1,i%25+1),open:100.,high:101.,low:99.,close:100.,volume:Some(1000.)}).collect()
+    }
+    fn def(id:&str)->StrategyDef {crate::connors::catalogue().into_iter().find(|d|d.id==id).unwrap()}
+    fn run(ctx:&Ctx,d:&StrategyDef,from:usize,to:usize,p:&Params)->Result<(usize,Option<String>),Issue> {
+        auto_start(ctx,from,to,&ctx.r[from].date,|f|check(ctx,d,f,to,p))
+    }
+    /// The auto-started run is admitted at the shifted start and refused one bar earlier.
+    fn shifted(ctx:&Ctx,d:&StrategyDef,to:usize,p:&Params,want:usize,why:&str) {
+        assert!(check(ctx,d,0,to,p).is_some_and(|i|i.status=="needs_data"),"{} must be refused at 0",d.id);
+        let (start,note)=run(ctx,d,0,to,p).unwrap();
+        assert_eq!(start,want,"{}",d.id);
+        assert!(check(ctx,d,start,to,p).is_none() && check(ctx,d,start-1,to,p).is_some());
+        let note=note.unwrap();
+        assert!(note.starts_with(&format!("Started {}:",ctx.r[want].date)) && note.contains(why) && note.contains(&format!("requested start {}",ctx.r[0].date)),"{note}");
+        // an explicit later start is untouched
+        assert_eq!(run(ctx,d,want+7,to,p).unwrap(),(want+7,None));
+    }
+    #[test]
+    fn vix_start_and_inner_gap() {
+        let r=bars("NIFTY 50",1000);let vix:Vec<Row>=r[300..].iter().cloned().map(|mut x|{x.ticker="INDIAVIX".into();x}).collect();
+        let ctx=Ctx::new(&r,&r,&vix);
+        shifted(&ctx,&def("vix4"),999,&Params::new(),300,"volatility-index data begins");
+        let gap:Vec<Row>=vix.iter().enumerate().filter(|(i,_)|*i!=200).map(|(_,x)|x.clone()).collect();
+        let ctx=Ctx::new(&r,&r,&gap);
+        shifted(&ctx,&def("vix4"),999,&Params::new(),501,"missing on");
+        // a start that would leave too short a window is still refused, with the reason
+        let late:Vec<Row>=vix[650..].to_vec();let ctx=Ctx::new(&r,&r,&late);
+        let e=run(&ctx,&def("vix4"),0,999,&Params::new()).unwrap_err();
+        assert!(e.note.contains("would leave only 50 trading day(s)"),"{}",e.note);
+        // no VIX at all: refused unchanged
+        let ctx=Ctx::new(&r,&r,&[]);
+        assert!(run(&ctx,&def("vix4"),0,999,&Params::new()).unwrap_err().note.starts_with("VIX data required"));
+    }
+    #[test]
+    fn volume_start() {
+        let mut r=bars("TEST",1000);for x in &mut r[..200] {x.volume=None;}
+        let ctx=Ctx::new(&r,&r,&[]);
+        shifted(&ctx,&def("tps_stocks"),999,&Params::new(),200,"volume");
+    }
+    #[test]
+    fn real_open_start() {
+        let r=bars("SPX",1000);let ctx=Ctx::new(&r,&r,&[]);
+        shifted(&ctx,&def("jr_zulu"),999,&Params::new(),600,"real only from 2014-01-01");
+    }
+    #[test]
+    fn warmup_start() {
+        let r=bars("RELIANCE",100);let ctx=Ctx::new(&r,&r,&[]);
+        shifted(&ctx,&def("kfsc_dsm"),99,&Params::new(),12,"genuine preceding source observations");
+    }
+    #[test]
+    fn non_data_refusals_are_not_shifted() {
+        let r=bars("TEST",1000);let ctx=Ctx::new(&r,&r,&[]);
+        let p=Params::from([("short_ma".into(),2.)]);
+        assert_eq!(run(&ctx,&def("bllstr_vma_1_50_0"),0,999,&p).unwrap_err().status,"not_testable");
     }
 }
