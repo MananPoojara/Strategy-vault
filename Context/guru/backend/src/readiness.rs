@@ -183,6 +183,13 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
         }
     }
     // ---- end Bernstein g2
+    // open-all (23 Oct 2026): the Alpha avalanche sell limit fills at the open when the market gaps through it; refuse
+    // windows that start where the index opens are stale (SPX/NDX/DJI).
+    if def.id=="alpha_etf_avalanches_single" && crate::instrument_policy::open_all(def) {
+        if let Some((r,cut))=ctx.r.get(from).and_then(|r|crate::gate::real_open_from(&r.ticker).map(|c|(r,c))).filter(|(r,c)|r.date.as_str()<*c) {
+            return issue("needs_data",format!("This rule's sell limit fills at the opening price when the market gaps through it; {} opens in this file are real only from {cut}. Choose a start on or after {cut}.",r.ticker));
+        }
+    }
     // Bernstein (bernstein-g3): the admitted MAC pullback limit and the S&P day-of-week stop entries / first-profitable-
     // opening exits read the open; refuse windows that start where the index opens are stale.
     if ((def.book==books::jbsmsw::BOOK && books::jbsmsw::reads_open(def.id)) || (def.book==books::jbeft::BOOK && books::jbeft::reviewed_daily(def.id)) || def.id=="jbtifm_2000st") && !crate::gate::get(def.id).is_some_and(|g|g.clamp_open) {
@@ -325,7 +332,7 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
             return issue("not_testable", format!("Withheld by the accuracy check: {} No results are published.", plain_gate_reason(g.reason)));
         }
         // bernstein-g3: the reviewed S&P day-of-week rules are limited to SPX by instrument_policy instead of the gate list.
-        if let (Some(allowed), Some(row)) = (g.allowed.filter(|_|!(def.book==books::jbeft::BOOK && books::jbeft::reviewed_daily(def.id))), ctx.r.get(from)) {
+        if let (Some(allowed), Some(row)) = (g.allowed.filter(|_|!(def.book==books::jbeft::BOOK && books::jbeft::reviewed_daily(def.id)) && !crate::instrument_policy::open_all(def)), ctx.r.get(from)) {
             // Bernstein g1: the reviewed Friday-Monday system keeps its S&P points on SPX (instrument_policy limits it to SPX).
             let jb_spx=def.id=="jb624_fri_mon" && row.ticker=="SPX" && crate::instrument_policy::bernstein_g1_reviewed(def);
             if !allowed.contains(&row.ticker.as_str()) && !jb_spx {

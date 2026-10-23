@@ -55,8 +55,34 @@ macro_rules! OPEN_LEVERAGED_LABEL {()=>{"Book trades 2x/3x leveraged equity ETFs
 pub fn open_instrument_label(def:&StrategyDef)->Option<&'static str> {
     let key=(def.book,def.id);
     if key==("stc9","s12345") {return Some(OPEN_LEVERAGED_LABEL!());}
+    if OPEN_ALL_RULES.contains(&key) {return Some(OPEN_ALL_LABEL);} // open-all block
     if OPEN_ETF_RULES.contains(&key) {Some(OPEN_ETF_LABEL!())} else if OPEN_STOCK_RULES.contains(&key) {Some(OPEN_STOCK_LABEL!())} else {None}
 }
+// ---------------------------------------------------------------- open-all (user request 23 Oct 2026: "remove the 'Available on X' thing so I can backtest all")
+// Admission only: backtested variants that were refused on some instrument types only because the review named fewer
+// instruments now run on actual indices, ETFs and stocks, US and India. Rules, parameters and calculations are unchanged.
+// Real data limits stay: rules that read the VIX open or a fixed US-VIX level stay off Indian instruments.
+// Not listed (held for a user decision): STC IX dmi_1-5, pctb_2, price, r3 and S&P Market Timing pctb_2 / price: the
+// independent ledgers differ by one trade on an exact tie (floating-point rounding in the engine), authors/open-all/REPORT.md.
+// Also not listed: QTS DEMA 16/8 (hbqts_dema16_8) - its canonical unit-exposure report (frontend) is built for SPX / NIFTY 50 only.
+pub const OPEN_ALL_RULES:&[(&str,&str)]=&[("alpha","alpha_etf_avalanches_single"),("alpha","alpha_trend_6m"),("ats","ats_hv_thrust"),("bllstr","bllstr_fma_1_50_0"),("bllstr","bllstr_vma_1_50_0"),("btp","btp_triple_day_pullback_adx25"),("btp","btp_triple_day_pullback_adx30"),("btp","btp_turtle_thrust"),("ccl08","ccl08_tps_long"),("ccl08","ccl08_tps_research"),("ccl08","ccl08_tps_short"),("kftsm","kftsm_hirsch"),("kftsm","kftsm_month_end"),("lwrsr","lwrsr_apr_oct"),("lwrsr","lwrsr_oct_apr"),("mmft","mmft_nasdaq79"),("otvt","otvt_cvr1_long"),("otvt","otvt_cvr1_short"),("otvt","otvt_hv_thrust"),("ptjmt","ptjmt_cvr1"),("ptjmt","ptjmt_cvr2"),("ptjmt","ptjmt_cvr3"),("ptjmt","ptjmt_cvr5"),("radge","radge_oc_long"),("rsi25","r25_rsi25_15"),("rsi25","r25_rsi25_15_vix"),("rsi25","r25_rsi25_basic_no_filter"),("rsi25","r25_rsi25_official_sma200"),("rsi25","r25_rsi25_vix"),("spmt","spmt_dmi_1"),("spmt","spmt_dmi_2"),("spmt","spmt_dmi_3"),("spmt","spmt_dmi_4"),("spmt","spmt_dmi_5"),("spmt","spmt_eom_cc"),("spmt","spmt_eom_und"),("spmt","spmt_eom_co"),("spmt","spmt_eom_rsi"),("spmt","spmt_pctb_1"),("spmt","spmt_rsi_div2"),("spmt","spmt_rsi_div8"),("spmt","spmt_rsi2_4"),("spmt","spmt_rsi4_25"),("spmt","spmt_rsi_1"),("spmt","spmt_rsi_2"),("spmt","spmt_rsi_3"),("spmt","spmt_short_strong"),("spmt","spmt_short_4up"),("spmt","spmt_short_vix101"),("spmt","spmt_short_vix53"),("spmt","spmt_vix2"),("spmt","spmt_vix200"),("spmt","spmt_vix4"),("spmt","spmt_vix7"),("spmt","spmt_vix8"),("ss","ss_adx_gapper"),("ss","ss_study_channel_2period_sar"),("ss","ss_study_fresh_roc_buy"),("ss","ss_study_fresh_roc_sell"),("ss","ss_study_gap_failure_buy"),("ss","ss_study_gap_failure_sell"),("ss","ss_study_oops_adx_gapper_buy"),("ss","ss_study_oops_adx_gapper_sell"),("ss","ss_study_oops_buy"),("ss","ss_study_oops_sell"),("ss","ss_study_close_lower_10"),("ss","ss_study_close_lower_20"),("ss","ss_study_close_upper_80"),("ss","ss_study_close_upper_90"),("ss","ss_study_wr7_high_close"),("ss","ss_study_wr7_low_close"),("ss","ss_study_rocrsi_buy"),("ss","ss_study_rocrsi_sell"),("ss","ss_whiplash"),("stc9","eom_cc"),("stc9","eom_co"),("stc9","eom_rsi"),("stc9","short_4up"),("stc9","short_strong"),("stc9","vix101_short"),("stc9","vix53_short"),("stc9","pctb_1"),("stc9","rsi_1"),("stc9","rsi_2"),("stc9","rsi2_4"),("stc9","rsi_3"),("stc9","rsi4_25"),("stc9","rsi_div2"),("stc9","rsi_div8"),("stc9","trin2_11"),("stc9","trin3_10"),("stc9","trin3_11"),("stc9","trin4"),("stc9","trin4_12"),("stc9","vix2"),("stc9","vix200"),("stc9","vix4"),("stc9","vix7"),("stc9","vix8"),("ststw","ststw_rsi2_under5"),("ststw","ststw_10d_high_buy"),("ststw","ststw_10d_high_short"),("ststw","ststw_10d_low_buy"),("ststw","ststw_sp_short"),("ststw","ststw_vix_rsi"),("ststw","ststw_vix_stretch"),("vixr","vixr_cvr10"),("vixr","vixr_cvr1"),("vixr","vixr_cvr2"),("vixr","vixr_cvr3"),("vixr","vixr_cvr5_1d"),("vixr","vixr_cvr5_3d"),("vixr","vixr_cvr6"),("vixr","vixr_cvr7"),("vixr","vixr_cvr9"),("ws5","ws5_non_vix_market_timing"),("ws5","ws5_vix_iii_reversal")];
+pub const OPEN_ALL_LABEL:&str="The book used another instrument (futures, a cash index or an ETF); runs on actual indices, ETFs and stocks, US and India, are a declared application (user decision 23 Oct 2026), not the author's test. Rules and parameters are unchanged. Rules that read the VIX use the CBOE VIX on US instruments and India VIX on Indian ones.";
+pub fn open_all(def:&StrategyDef)->bool {OPEN_ALL_RULES.contains(&(def.book,def.id))}
+/// Book-specific symbol lists still decide what the VIX allows: the selected instrument is checked as its market's
+/// reviewed index (US -> SPX, India -> NIFTY 50). us: None = decide from the ticker (NIFTY... = India).
+fn open_all_symbol_issue(def:&StrategyDef,ticker:&str,us:Option<bool>)->Option<Issue> {
+    use crate::books::{vixr,spmt,ptjmt,ss,ws5,ststw,ats,hfm,otvt};
+    let us=us.unwrap_or(!ticker.starts_with("NIFTY"));
+    let t=if us {"SPX"} else {"NIFTY 50"};
+    let ok=match def.book {
+        "vixr"=>vixr::admitted_symbol(def.id,t), "spmt"=>spmt::admitted_symbol(def.id,t), "ptjmt"=>ptjmt::admitted_symbol(def.id,t),
+        "ss"=>ss::admitted_symbol(def.id,t) || !ss::reviewed_daily(def.id), "ws5"=>ws5::admitted_symbol(def.id,t), "ststw"=>ststw::admitted_symbol(def.id,t) || !ststw::reviewed_daily(def.id),
+        "ats"=>ats::admitted_symbol(def.id,t), "hfm"=>hfm::admitted_symbol(def.id,t), "otvt"=>otvt::admitted_symbol(def.id,t),
+        _=>true,
+    };
+    (!ok).then(||Issue{status:"needs_data",note:format!("This rule reads the VIX open or uses VIX levels set for the US (CBOE) VIX. In the vault, India VIX opens repeat the previous close and its levels are not the CBOE VIX, so the rule is not run on Indian instruments ({ticker}). It runs on US indices, ETFs and stocks. No result is published here.")})
+}
+// ---------------------------------------------------------------- end open-all
 
 pub fn reviewed_kestner_stock(def:&StrategyDef)->bool {
     def.book==crate::books::lkqts::BOOK && crate::books::lkqts::stock_research_profile(def.id)
@@ -188,6 +214,7 @@ pub fn newrules_misc(def:&StrategyDef)->bool {
 macro_rules! NEWRULE_ANY_LABEL {()=>{"Index, ETF and stock runs: the source trades US ETFs; actual indices and actual stocks are a declared application (user rule 21 Oct 2026), not the author's test. Close-only rule: no price, volume or tick filter to adapt."}}
 pub fn ststw_symbol_issue(def:&StrategyDef,ticker:&str)->Option<Issue> {
     use crate::books::ststw;
+    if open_all(def) {return open_all_symbol_issue(def,ticker,None);} // open-all block (Indian stocks are refused by check_native)
     if def.book!=ststw::BOOK || !ststw::reviewed_daily(def.id) || ststw::admitted_symbol(def.id,ticker) {return None;}
     Some(Issue{status:"needs_data",note:format!("The VIX RSI Strategy (Short Term Trading Strategies That Work p.96-98) times the S&P 500 on SPY or the SPX and reads today's VIX open. This review admits SPX and SPY with the CBOE VIX only: India VIX opens repeat the previous close, so the rule cannot be read on NIFTY. {ticker} is outside that reviewed scope; no result is published.")})
 }
@@ -624,6 +651,7 @@ pub fn selected_type(ticker:&str,native_stock:bool)->&'static str {
 }
 pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     let p=policy(def);let selected=selected_type(ticker,native_stock);
+    if open_all(def) {return open_all_symbol_issue(def,ticker,native_stock.then_some(false)).or_else(||check_selected(p,def.id,ticker,selected));} // open-all block
     if let Some(issue)=dema_index_symbol_issue(def,ticker,selected){return Some(issue);}
     if let Some(issue)=nse_breadth_held(def,ticker){return Some(issue);}
     if let Some(issue)=vixr_symbol_issue(def,ticker){return Some(issue);}
@@ -649,6 +677,7 @@ pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
 /// source's historical adjusted-price basis or its original execution ticks.
 pub fn check_native(def:&StrategyDef,ticker:&str,evidence:&NativeEvidence)->Option<Issue> {
     let p=policy(def);
+    if open_all(def) {return open_all_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)).or_else(||check_selected(p,def.id,ticker,evidence.asset_type()));} // open-all block
     if let Some(issue)=dema_index_symbol_issue(def,ticker,evidence.asset_type()){return Some(issue);}
     if let Some(issue)=nse_breadth_held(def,ticker){return Some(issue);}
     if let Some(issue)=vixr_symbol_issue(def,ticker){return Some(issue);}
@@ -775,7 +804,14 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if def.book==crate::books::ws5::BOOK && crate::books::ws5::reviewed_daily(def.id) && !crate::books::ws5::TIMING.contains(&def.id) {json.push_str(concat!(",\"stock_adaptation\":\"",WS5_STOCK_LABEL!(),"\""));}
     if def.book=="afactor" && crate::books::afactor::stock_rule(def.id) {json.push_str(concat!(",\"stock_adaptation\":\"",AFACTOR_STOCK_LABEL!(),"\""));}
     if matches!((def.book,def.id),("r3r4","r3r4_lowprice"|"r3r4_lowprice_scale")) {json.push_str(concat!(",\"stock_adaptation\":\"",USD_PRICE_US_LABEL!(),"\""));}
-    if let Some(label)=open_instrument_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));}
+    if let Some(label)=open_instrument_label(def) {
+        // open-all block: a book label already present is kept and the 23 Oct scope sentence is appended to it (one key).
+        let key="\"declared_application\":\"";
+        match json.find(key).filter(|_|open_all(def)) {
+            Some(i)=>{let start=i+key.len();let end=start+json[start..].find('"').unwrap();json.insert_str(end,&format!(" {label}"));}
+            None=>json.push_str(&format!(",\"declared_application\":\"{label}\"")),
+        }
+    }
     if jb_g3_reviewed(def) && !jb_g3_gap(def) && def.book!=crate::books::jbeft::BOOK {json.push_str(if def.book==crate::books::jbsmsw::BOOK {concat!(",\"declared_application\":\"",JBSMSW_LABEL!(),"\"")} else if def.book==crate::books::jbtifm::BOOK {",\"declared_application\":\"Systems tested on FTSE-100 futures (2000ST) or shown on a monthly CAC-40 chart (9/18 crossover); index, ETF and stock runs (US and India) on daily bars are a declared application, not the author's test.\""} else if def.id=="jbtywr_crude_outside" {",\"declared_application\":\"Pattern tested on crude oil futures; index, ETF and stock runs (US and India) are a declared application, not the author's test.\""} else {concat!(",\"declared_application\":\"",JBHSMS_KD_LABEL!(),"\"")});}
     if jb_g3_reviewed(def) && def.book==crate::books::jbeft::BOOK {json.push_str(",\"declared_application\":\"S&P 500 futures rule run on the S&P 500 cash index (SPX) from 2014, not the author's test.\"");}
     if newrules_misc(def) && matches!(def.book,"hpetf"|"etfss") {json.push_str(concat!(",\"declared_application\":\"",NEWRULE_ANY_LABEL!(),"\""));}
@@ -828,6 +864,29 @@ mod tests {
         assert!(!reviewed_cash_rule(&def("jscgf_ma","jbudt")));
     }
     // ---- end Schwager block ----
+    // ---- open-all block (23 Oct 2026) ----
+    #[test]
+    fn open_all_runs_listed_ids_on_every_instrument_type_and_keeps_vix_open_limits() {
+        let us=NativeEvidence::us_test_fixture();let india=NativeEvidence::india_test_fixture();
+        let vix_open=["spmt_vix2","spmt_vix7","vixr_cvr1","vixr_cvr5_1d","vixr_cvr5_3d","vixr_cvr7","vixr_cvr9","vixr_cvr10","ptjmt_cvr1","ptjmt_cvr5","ststw_vix_rsi","otvt_cvr1_long","otvt_cvr1_short"];
+        // (STC IX vix2/vix7 already ran on NIFTY 50 before 23 Oct; that existing route is reported, not changed here.)
+        for &(book,id) in OPEN_ALL_RULES {
+            let d=def(id,book);
+            assert!(open_all(&d) && open_instrument_label(&d)==Some(OPEN_ALL_LABEL),"{id}");
+            assert_ne!(policy(&d).requirement,"source_review_required","{id}");
+            let m=metadata_json(&d);assert!(m.contains("user decision 23 Oct 2026"),"{id}");assert_eq!(m.matches("\"declared_application\"").count(),1,"{id}");
+            for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(&d,t,false).is_none(),"{id} {t}");}
+            assert!(check_native(&d,"AAPL",&us).is_none(),"{id} AAPL");
+            let india_ok=!vix_open.contains(&id);
+            for t in ["NIFTY 50","NIFTYBANK"] {assert_eq!(check(&d,t,false).is_none(),india_ok,"{id} {t}");}
+            assert_eq!(check_native(&d,"RELIANCE",&india).is_none(),india_ok,"{id} RELIANCE");
+            if !india_ok {assert!(check(&d,"NIFTY 50",false).unwrap().note.contains("not run on Indian instruments"));}
+        }
+        // An unlisted sibling keeps its old route; a source-review hold is never opened.
+        assert!(!open_all(&def("vixr_cvr8","vixr")) && check(&def("vixr_cvr8","vixr"),"QQQ",false).is_some());
+        assert!(check(&def("radge_oc_long_stop","radge"),"SPY",false).is_some());
+    }
+    // ---- end open-all block ----
     // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
     #[test]
     fn joe_ross_reviewed_rules_run_on_indices_etfs_and_stocks_and_references_stay_held() {
@@ -894,9 +953,10 @@ mod tests {
             assert!(reviewed_cash_rule(&d));
             assert!(check(&d,"SPY",false).is_none());
             assert!(check(&d,"NIFTY 50",false).is_none());
-            assert!(check(&d,"AAPL",true).is_some());
-            assert!(check(&d,"RELIANCE",true).is_some());
-            assert!(check(&d,"QQQ",false).is_some());
+            let open=open_all(&d); // open-all 23 Oct 2026: live ids run on stocks and every ETF too
+            assert_eq!(check(&d,"AAPL",true).is_none(),open);
+            assert_eq!(check(&d,"RELIANCE",true).is_none(),open);
+            assert_eq!(check(&d,"QQQ",false).is_none(),open);
             assert!(!reviewed_cash_rule(&def(id,"stc9")));
         }
         for id in ["spmt_multi5","spmt_multi9","spmt_mts","spmt_tick","spmt_dt_gapdown","spmt_dt_unch","spmt_dt_gapup","spmt_eom_puts","spmt_future_method"] {
@@ -912,14 +972,18 @@ mod tests {
         assert_eq!(admitted.len(),spmt::REVIEWED_DAILY.len()+spmt::REVIEWED_AUX.len());
         for &id in spmt::REVIEWED_AUX {
             let d=def(id,"spmt");
-            assert_eq!(policy(&d).requirement,"declared_index_timing");assert!(policy(&d).market_adaptation);
+            assert_eq!(policy(&d).requirement,if open_all(&d) {"index_etf_or_stock"} else {"declared_index_timing"});assert!(policy(&d).market_adaptation);
             assert!(policy(&d).source_basis.contains("spmt2-admission"));
             for t in ["SPX","SPY"] {assert!(check(&d,t,false).is_none(),"{id} {t}");}
             // NIFTY 50 TRIN / advancers runs are held (user decision 2026-10-21: NYSE thresholds not calibrated for NSE)
             assert_eq!(check(&d,"NIFTY 50",false).is_none(),!matches!(id,"spmt_vix2"|"spmt_vix7"|"spmt_trin_1"|"spmt_trin_2"|"spmt_trin_3"|"spmt_trin_4"|"spmt_trin_5"|"spmt_nyse_adv"),"{id}");
-            assert_eq!(check(&d,"NIFTYBANK",false).is_none(),id=="spmt_eom_und","{id}");
-            assert_eq!(check(&d,"NDX",false).is_none(),id=="spmt_eom_und","{id}");
-            assert!(check(&d,"QQQ",false).is_some() && check(&d,"AAPL",true).is_some() && check(&d,"RELIANCE",true).is_some(),"{id}");
+            let open=open_all(&d); // open-all: VIX-open ids (vix2, vix7) stay off Indian instruments
+            let india_ok=open && !matches!(id,"spmt_vix2"|"spmt_vix7");
+            assert_eq!(check(&d,"NIFTYBANK",false).is_none(),id=="spmt_eom_und" || india_ok,"{id}");
+            assert_eq!(check(&d,"NDX",false).is_none(),id=="spmt_eom_und" || open,"{id}");
+            assert_eq!(check(&d,"QQQ",false).is_none(),open,"{id}");
+            assert_eq!(check_native(&d,"AAPL",&NativeEvidence::us_test_fixture()).is_none(),open,"{id}");
+            assert_eq!(check(&d,"RELIANCE",true).is_none(),india_ok,"{id}");
         }
         // The first batch keeps its policy text and any-index scope.
         assert!(policy(&def("spmt_rsi_2","spmt")).source_basis.contains("STC IX duplicates"));
@@ -958,9 +1022,10 @@ mod tests {
         assert!(admitted.iter().all(|id|ss::REVIEWED_DAILY.contains(id)));
         for d in cat.iter().filter(|d|reviewed_cash_rule(d)) {
             let stock=ss::STOCK_SHOWN.contains(&d.id);let also=ss::STOCK_ALSO.contains(&d.id);
-            assert_eq!(policy(d).requirement,if stock||also {"index_etf_or_stock"} else {"declared_index_timing"},"{}",d.id);
-            assert_eq!(check(d,"AAPL",true).is_none(),stock||also,"{}",d.id);
-            assert_eq!(check(d,"QQQ",false).is_none(),stock,"{}",d.id);
+            let open=open_all(d); // open-all 23 Oct 2026
+            assert_eq!(policy(d).requirement,if stock||also||open {"index_etf_or_stock"} else {"declared_index_timing"},"{}",d.id);
+            assert_eq!(check(d,"AAPL",true).is_none(),stock||also||open,"{}",d.id);
+            assert_eq!(check(d,"QQQ",false).is_none(),stock||open,"{}",d.id);
             let futures=["SPX","NDX","DJI","SPY","NIFTY 50","NIFTYBANK"];
             match d.id {
                 "ss_ad_market_buster" => for t in futures {assert_eq!(check(d,t,false).is_none(),matches!(t,"SPX"|"SPY"),"{t}");},
@@ -982,11 +1047,15 @@ mod tests {
         let admitted:Vec<&str>=cat.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
         assert_eq!(admitted,["vixr_cvr1","vixr_cvr2","vixr_cvr3","vixr_cvr5_1d","vixr_cvr5_3d","vixr_cvr6","vixr_cvr7","vixr_cvr8","vixr_cvr9","vixr_cvr10","vixr_cvr11"]);
         for d in cat.iter().filter(|d|reviewed_cash_rule(d)) {
-            assert_eq!(policy(d).requirement,"declared_index_timing");
+            let open=open_all(d); // open-all 23 Oct 2026: US instruments all; India only where the review admitted NIFTY 50
+            let india=["vixr_cvr2","vixr_cvr3","vixr_cvr6"].contains(&d.id);
+            assert_eq!(policy(d).requirement,if open {"index_etf_or_stock"} else {"declared_index_timing"});
             assert!(check(d,"SPY",false).is_none() && check(d,"SPX",false).is_none(),"{}",d.id);
-            assert_eq!(check(d,"NIFTY 50",false).is_none(),["vixr_cvr2","vixr_cvr3","vixr_cvr6"].contains(&d.id),"{}",d.id);
-            for t in ["NDX","DJI","QQQ","DIA","NIFTY BANK"] {assert!(check(d,t,false).is_some(),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_some() && check(d,"RELIANCE",true).is_some());
+            assert_eq!(check(d,"NIFTY 50",false).is_none(),india,"{}",d.id);
+            for t in ["NDX","DJI","QQQ","DIA"] {assert_eq!(check(d,t,false).is_none(),open,"{} {t}",d.id);}
+            assert_eq!(check(d,"NIFTY BANK",false).is_none(),open && india,"{}",d.id);
+            assert_eq!(check_native(d,"AAPL",&NativeEvidence::us_test_fixture()).is_none(),open,"{}",d.id);
+            assert_eq!(check(d,"RELIANCE",true).is_none(),open && india,"{}",d.id);
             assert!(!reviewed_cash_rule(&def(d.id,"spmt")));
         }
         for id in ["vixr_all","vixr_stocks","vixr_options","vixr_cvr4"] {
@@ -1002,13 +1071,16 @@ mod tests {
         let admitted:Vec<&str>=cat.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
         assert_eq!(admitted,["ptjmt_cvr1","ptjmt_cvr2","ptjmt_cvr3","ptjmt_cvr5","ptjmt_trin_reversals","ptjmt_trin_reversals_nse","ptjmt_trin_reversals_20","ptjmt_trin_reversals_20_nse","ptjmt_trin_thrusts","ptjmt_trin_thrusts_nse","ptjmt_padi","ptjmt_padi_nse"]);
         for d in cat.iter().filter(|d|reviewed_cash_rule(d)) {
-            assert_eq!(policy(d).requirement,"declared_index_timing");
+            assert_eq!(policy(d).requirement,if open_all(d) {"index_etf_or_stock"} else {"declared_index_timing"});
             let nse=d.id.ends_with("_nse");
             assert_eq!(check(d,"SPY",false).is_none(),!nse,"{}",d.id);
             assert_eq!(check(d,"SPX",false).is_none(),!nse,"{}",d.id);
             assert_eq!(check(d,"NIFTY 50",false).is_none(),["ptjmt_cvr2","ptjmt_cvr3"].contains(&d.id),"{}",d.id); // *_nse held
-            for t in ["NDX","DJI","QQQ","DIA","NIFTY BANK"] {assert!(check(d,t,false).is_some(),"{} {t}",d.id);}
-            assert!(check(d,"AAPL",true).is_some() && check(d,"RELIANCE",true).is_some());
+            let open=open_all(d); // open-all 23 Oct 2026
+            for t in ["NDX","DJI","QQQ","DIA"] {assert_eq!(check(d,t,false).is_none(),open,"{} {t}",d.id);}
+            assert_eq!(check(d,"NIFTY BANK",false).is_none(),open && ["ptjmt_cvr2","ptjmt_cvr3"].contains(&d.id),"{}",d.id);
+            assert_eq!(check_native(d,"AAPL",&NativeEvidence::us_test_fixture()).is_none(),open,"{}",d.id);
+            assert_eq!(check(d,"RELIANCE",true).is_none(),open && ["ptjmt_cvr2","ptjmt_cvr3"].contains(&d.id),"{}",d.id);
         }
         for id in ["ptjmt_cvr4","ptjmt_cvr4_friday"] {
             let d=cat.iter().find(|d|d.id==id).unwrap();
@@ -1064,12 +1136,13 @@ mod tests {
         assert_eq!(admitted,ws5::REVIEWED_DAILY);
         for d in cat.iter().filter(|d|reviewed_cash_rule(d)) {
             let timing=ws5::TIMING.contains(&d.id);let p=policy(d);
-            assert_eq!(p.requirement,if timing {"declared_index_timing"} else {"index_etf_or_stock"},"{}",d.id);assert!(p.market_adaptation);
+            let held=timing && !open_all(d); // open-all 23 Oct 2026: both timing rules run everywhere
+            assert_eq!(p.requirement,if held {"declared_index_timing"} else {"index_etf_or_stock"},"{}",d.id);assert!(p.market_adaptation);
             for t in ["SPX","SPY","NIFTY 50"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
-            for t in ["NDX","DJI","QQQ","NIFTYBANK"] {assert_eq!(check(d,t,false).is_none(),!timing,"{} {t}",d.id);}
+            for t in ["NDX","DJI","QQQ","NIFTYBANK"] {assert_eq!(check(d,t,false).is_none(),!held,"{} {t}",d.id);}
             // User decision 2026-10-21: Windows also run on actual stocks without the filters that cannot be applied.
-            assert_eq!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),!timing,"{}",d.id);
-            assert_eq!(check_native(d,"AAPL",&NativeEvidence::us_test_fixture()).is_none(),!timing,"{}",d.id);
+            assert_eq!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),!held,"{}",d.id);
+            assert_eq!(check_native(d,"AAPL",&NativeEvidence::us_test_fixture()).is_none(),!held,"{}",d.id);
             assert_eq!(metadata_json(d).contains("\"declared_application\":\"Seminar method for US stocks"),!timing);
             assert_eq!(metadata_json(d).contains("\"stock_adaptation\":\"Actual stocks are admitted without the filters"),!timing);
             assert!(!reviewed_cash_rule(&def(d.id,"vixr")));
@@ -1087,9 +1160,10 @@ mod tests {
         for id in ccl08::REVIEWED_DAILY {
             let dt=ccl08::day_trade(id);
             for t in ["SPX","SPY","NIFTY 50","NIFTYBANK"] {assert!(ok(id,t,false),"{id} {t}");}
-            assert_eq!(ok(id,"RELIANCE",true),dt,"{id}");
-            assert!(check_native(&def(id,"ccl08"),"AAPL",&NativeEvidence::us_test_fixture()).is_none()==dt,"{id}");
-            assert_eq!(policy(&def(id,"ccl08")).requirement,if dt {"index_etf_or_stock"} else {"index_or_etf"});
+            let open=dt || open_all(&def(id,"ccl08")); // open-all 23 Oct 2026: TPS also on stocks
+            assert_eq!(ok(id,"RELIANCE",true),open,"{id}");
+            assert!(check_native(&def(id,"ccl08"),"AAPL",&NativeEvidence::us_test_fixture()).is_none()==open,"{id}");
+            assert_eq!(policy(&def(id,"ccl08")).requirement,if open {"index_etf_or_stock"} else {"index_or_etf"});
             assert_eq!(metadata_json(&def(id,"ccl08")).contains("\"declared_application\":\"Book shows these day trades on US stocks"),dt);
         }
         for id in ["ccl08_crdt_emini","ccl08_weekly_rsi_options","ccl08_quick_scalp","ccl08_adx_quiet","ccl08_busted_options"] {
@@ -1109,7 +1183,8 @@ mod tests {
         for id in ["ats_trin_thrust_nse","ats_padi_nse"] {assert!(!ok(id,"NIFTY 50"),"{id}");} // held (NSE breadth)
         for id in ["ats_cvr1","ats_trin_thrust","ats_padi","ats_cvr_equities"] {assert!(!ok(id,"NIFTY 50"),"{id}");}
         for id in ["ats_trin_thrust_nse","ats_padi_nse"] {assert!(!ok(id,"SPX") && !ok(id,"SPY"),"{id}");}
-        for id in ["ats_cvr1","ats_cvr2","ats_hv_thrust"] {assert!(!ok(id,"QQQ") && !ok(id,"NIFTYMIDCAP100"),"{id}");}
+        for id in ["ats_cvr1","ats_cvr2"] {assert!(!ok(id,"QQQ") && !ok(id,"NIFTYMIDCAP100"),"{id}");}
+        assert!(ok("ats_hv_thrust","QQQ") && ok("ats_hv_thrust","NIFTYMIDCAP100") && check(&def("ats_hv_thrust","ats"),"RELIANCE",true).is_none()); // open-all
         for id in ["ats_1234","ats_8day_hl_reversal","ats_smtp","ats_two_for_one","ats_gipsons"] {
             assert_eq!(policy(&def(id,"ats")).requirement,"index_etf_or_stock");
             assert!(ok(id,"NIFTY 50") && ok(id,"NIFTYMIDCAP100") && !ok(id,"AAPL"),"{id}");
@@ -1134,9 +1209,10 @@ mod tests {
         for t in ["SPX","SPY"] {for (id,b) in [("hfm_chadtp","hfm"),("otvt_cvr1_long","otvt"),("otvt_cvr1_short","otvt"),("otvt_hv_thrust","otvt")] {assert!(ok(id,b,t),"{id} {t}");}}
         for t in ["NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(ok("otvt_hv_thrust","otvt",t),"{t}");}
         assert!(!ok("hfm_chadtp_nse","hfm","NIFTY 50") && !ok("hfm_chadtp_nse","hfm","SPX") && !ok("hfm_chadtp","hfm","NIFTY 50"));
-        for id in ["otvt_cvr1_long","otvt_cvr1_short"] {assert!(!ok(id,"otvt","NIFTY 50") && !ok(id,"otvt","QQQ"),"{id}");}
-        assert!(!ok("otvt_hv_thrust","otvt","QQQ") && !ok("otvt_hv_thrust","otvt","NIFTYMIDCAP100") && !ok("hfm_chadtp","hfm","QQQ"));
-        assert!(check(&def("otvt_hv_thrust","otvt"),"RELIANCE",true).is_some());
+        // open-all 23 Oct 2026: CVR I sides run on every US instrument (CBOE VIX), never on Indian ones (VIX open)
+        for id in ["otvt_cvr1_long","otvt_cvr1_short"] {assert!(!ok(id,"otvt","NIFTY 50") && ok(id,"otvt","QQQ") && check(&def(id,"otvt"),"RELIANCE",true).is_some(),"{id}");}
+        assert!(ok("otvt_hv_thrust","otvt","QQQ") && ok("otvt_hv_thrust","otvt","NIFTYMIDCAP100") && !ok("hfm_chadtp","hfm","QQQ"));
+        assert!(check(&def("otvt_hv_thrust","otvt"),"RELIANCE",true).is_none());
         // NDX-SPX: the NASDAQ 100 vs S&P 500 signal, traded on SPX, SPY and DJI only (connors-leftovers)
         for t in ["SPX","SPY","DJI"] {assert!(ok("hfm_ndxspx","hfm",t),"{t}");}
         for t in ["NDX","QQQ","NIFTY 50","NIFTYBANK"] {assert!(!ok("hfm_ndxspx","hfm",t),"{t}");}
@@ -1175,9 +1251,11 @@ mod tests {
             assert!(metadata_json(&def(id,book)).contains("\"declared_application\":\"Index, ETF and stock runs"));
         }
         for t in ["SPX","SPY"] {assert!(ok("ststw_vix_rsi","ststw",t,false));}
-        for t in ["QQQ","NDX","NIFTY 50"] {assert!(!ok("ststw_vix_rsi","ststw",t,false),"{t}");}
+        // open-all 23 Oct 2026: every US instrument (CBOE VIX open); never Indian ones (India VIX open repeats the close)
+        for t in ["QQQ","NDX"] {assert!(ok("ststw_vix_rsi","ststw",t,false),"{t}");}
+        assert!(!ok("ststw_vix_rsi","ststw","NIFTY 50",false));
         assert!(!ok("ststw_vix_rsi","ststw","RELIANCE",true));
-        assert_eq!(policy(&def("ststw_vix_rsi","ststw")).requirement,"declared_index_timing");
+        assert_eq!(policy(&def("ststw_vix_rsi","ststw")).requirement,"index_etf_or_stock");
         // the S&P-down-days variant shares the baseline's stock admission (US: USD price filter kept; India: omitted)
         let af=def("afactor_spx_down","afactor");
         assert_eq!(policy(&af).requirement,"index_etf_or_stock");
@@ -1195,12 +1273,12 @@ mod tests {
         let admitted:Vec<&str>=cat.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
         assert_eq!(admitted,crate::books::btp::REVIEWED_DAILY);
         for d in cat.iter().filter(|d|reviewed_cash_rule(d)) {
-            let stock=crate::books::btp::STOCK_ADMITTED.contains(&d.id);
+            let stock=crate::books::btp::STOCK_ADMITTED.contains(&d.id) || open_all(d); // open-all 23 Oct 2026
             let p=policy(d);assert_eq!(p.requirement,if stock {"index_etf_or_stock"} else {"index_or_etf"});assert!(p.market_adaptation);
             for t in ["SPY","QQQ","MDY","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
             assert_eq!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),stock,"{}",d.id);
             assert!(check(d,"NIFTY FUTURE",false).is_some());
-            assert_eq!(metadata_json(d).contains("1/8-dollar ticks"),stock,"{}",d.id);
+            assert_eq!(metadata_json(d).contains("1/8-dollar ticks"),crate::books::btp::STOCK_ADMITTED.contains(&d.id),"{}",d.id);
             assert!(metadata_json(d).contains("\"declared_application\":\"Book tested or illustrated on futures and US stocks"));
             assert!(!reviewed_cash_rule(&def(d.id,"ats")));
         }
@@ -1264,8 +1342,9 @@ mod tests {
             assert_eq!(policy(&d).requirement,"source_review_required");
             assert!(metadata_json(&d).contains("\"source_rule_reviewed\":false"));
         }
-        assert!(check(&def("kftsm_hirsch","kftsm"),"RELIANCE",true).is_some());
-        assert!(check(&def("kftsm_month_end","kftsm"),"RELIANCE",true).is_some());
+        // open-all 23 Oct 2026: the calendar rules also run on actual stocks
+        assert!(check(&def("kftsm_hirsch","kftsm"),"RELIANCE",true).is_none());
+        assert!(check(&def("kftsm_month_end","kftsm"),"RELIANCE",true).is_none());
     }
     #[test]
     fn stock_studies_admit_stocks_and_declared_index_etf_and_keep_snapshot_limits() {
@@ -1285,8 +1364,8 @@ mod tests {
     fn index_rules_and_real_etf_rules_are_distinct() {
         let d=def("r25_rsi25_official_sma200","rsi25");
         assert!(check(&d,"NIFTY 50",false).is_none());
-        assert!(check(&d,"RELIANCE",true).is_some());
-        assert!(check(&d,"SPY",false).is_some());
+        assert!(check(&d,"RELIANCE",true).is_none() && check(&d,"SPY",false).is_none()); // open-all 23 Oct 2026
+        assert!(check(&def("r25_unlisted","rsi25"),"SPY",false).is_some());
         let etf=def("hpetf_3dhl_long","hpetf");
         assert!(check(&etf,"SPY",false).is_none());
         assert!(check(&etf,"IWM",false).is_none());
@@ -1303,13 +1382,11 @@ mod tests {
         let d=def("radge_oc_long","radge");
         assert!(reviewed_cash_rule(&d));
         let p=policy(&d);
-        assert_eq!(p.requirement,"index");
-        assert_eq!(p.allowed_types,&["index"]);
+        assert_eq!(base_policy(&d).requirement,"index");
+        assert_eq!(p.allowed_types,&["index","etf","individual_stock"]); // open-all 23 Oct 2026
         assert!(p.market_adaptation);
-        assert!(check(&d,"NIFTY 50",false).is_none());
-        assert!(check(&d,"SPX",false).is_none());
-        assert!(check(&d,"SPY",false).is_some());
-        assert!(check(&d,"RELIANCE",true).is_some());
+        for t in ["NIFTY 50","SPX","SPY","NIFTYBANK"] {assert!(check(&d,t,false).is_none(),"{t}");}
+        assert!(check(&d,"RELIANCE",true).is_none());
         for id in ["radge_oc_long_stop","radge_oc_short_stop","radge_ma220"] {
             assert!(!reviewed_cash_rule(&def(id,"radge")));
         }
@@ -1323,12 +1400,11 @@ mod tests {
             if reviewed.contains(&d.id) {
                 assert!(reviewed_cash_rule(&d));
                 let p=policy(&d);
-                assert_eq!(p.requirement,"index");
-                assert_eq!(p.allowed_types,&["index"]);
+                assert_eq!(base_policy(&d).requirement,"index");
+                assert_eq!(p.allowed_types,&["index","etf","individual_stock"]); // open-all 23 Oct 2026
                 assert!(p.market_adaptation);
-                for ticker in ["NIFTY 50","SPX"] {assert!(check(&d,ticker,false).is_none());}
-                for ticker in ["SPY","QQQ"] {assert!(check(&d,ticker,false).is_some());}
-                for ticker in ["RELIANCE","AAPL"] {assert!(check(&d,ticker,true).is_some());}
+                for ticker in ["NIFTY 50","SPX","SPY","QQQ"] {assert!(check(&d,ticker,false).is_none());}
+                for ticker in ["RELIANCE","AAPL"] {assert!(check(&d,ticker,true).is_none());}
                 assert!(metadata_json(&d).contains("\"source_rule_reviewed\":true"));
                 assert!(metadata_json(&d).contains("\"source_performance_reproduced\":false"));
                 assert!(!reviewed_cash_rule(&def(d.id,"kftsm")));
@@ -1375,31 +1451,31 @@ mod tests {
     }
     #[test]
     fn per_rule_exceptions_avoid_a_misleading_book_title_classification() {
-        assert_eq!(policy(&def("lwrsr_oct_apr","lwrsr")).requirement,"index");
+        assert_eq!(base_policy(&def("lwrsr_oct_apr","lwrsr")).requirement,"index");
         assert_eq!(policy(&def("lwrsr_stock_selection","lwrsr")).requirement,"portfolio");
         assert_eq!(policy(&def("alpha_spy_rsi4_mr","alpha")).requirement,"index_etf_or_stock");
         assert_eq!(policy(&def("alpha_weekly_mr_single","alpha")).requirement,"source_review_required");
         // Appendix A1 trend rule: single-instrument, no ranking -> actual ETF, index as a declared application; never a stock.
         let tf=def("alpha_trend_6m","alpha");
-        assert!(reviewed_cash_rule(&tf));assert_eq!(policy(&tf).requirement,"index_or_etf");assert!(policy(&tf).market_adaptation);
+        assert!(reviewed_cash_rule(&tf));assert_eq!(base_policy(&tf).requirement,"index_or_etf");assert!(policy(&tf).market_adaptation);
         for t in ["SPY","QQQ","SMH","SPX","NIFTY 50","NIFTYBANK"] {assert!(check(&tf,t,false).is_none(),"{t}");}
-        assert!(check(&tf,"RELIANCE",true).is_some());
+        assert!(check(&tf,"RELIANCE",true).is_none()); // open-all 23 Oct 2026
         assert!(metadata_json(&tf).contains("\"declared_application\":\"Book tested on nine US sector ETFs"));
         for id in ["alpha_weekly_mr_single","alpha_weekly_mr"] {assert!(!reviewed_cash_rule(&def(id,"alpha")),"{id}");}
         assert_eq!(policy(&def("radge_ma220","radge")).requirement,"futures");
-        assert_eq!(policy(&def("radge_oc_long","radge")).requirement,"index");
+        assert_eq!(base_policy(&def("radge_oc_long","radge")).requirement,"index");
         assert_eq!(policy(&def("jc5dm_long","jc5dm")).requirement,"individual_stock");
         assert!(check(&def("jc5dm_long","jc5dm"),"NIFTY 50",false).is_some());
     }
     #[test]
     fn mixed_stock_etf_and_index_book_uses_the_specific_rule_population() {
         assert!(check(&def("ststw_rsi2_under5","ststw"),"NIFTY 50",false).is_none());
-        assert!(check(&def("ststw_rsi2_under5","ststw"),"SPY",false).is_some());
+        assert!(check(&def("ststw_rsi2_under5","ststw"),"SPY",false).is_none()); // open-all 23 Oct 2026
         assert!(check(&def("ststw_double7","ststw"),"SPY",false).is_none());
         assert!(check(&def("ststw_double7","ststw"),"NIFTY 50",false).is_none());
         assert!(check(&def("ststw_sp_short","ststw"),"SPY",false).is_none());
         assert!(check(&def("ststw_sp_short","ststw"),"NIFTY 50",false).is_none());
-        assert!(check(&def("ststw_sp_short","ststw"),"RELIANCE",true).is_some());
+        assert!(check(&def("ststw_sp_short","ststw"),"RELIANCE",true).is_none()); // open-all 23 Oct 2026
         // Current snapshot stock prices do not enable the absent original pooled universe.
         assert!(check(&def("ststw_intraday_drops_highs","ststw"),"RELIANCE",true).is_some());
     }
