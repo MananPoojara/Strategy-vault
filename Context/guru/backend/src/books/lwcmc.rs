@@ -14,7 +14,7 @@ pub const BOOK: &str = "lwcmc";
 
 /// Larry Williams block: rules admitted after the 23 Oct 2026 reading and independent ledgers
 /// (authors/lwilliams/admission/SOURCE-CONTRACT.md). SPX_POINTS = stops in S&P points: actual SPX only.
-pub const REVIEWED: &[&str] = &["lwcmc_turtle_20_10"];
+pub const REVIEWED: &[&str] = &["lwcmc_turtle_20_10", "lwcmc_dennis_50_25"];
 pub const SPX_POINTS: &[&str] = &[];
 
 macro_rules! off {
@@ -34,9 +34,17 @@ pub fn catalogue() -> Vec<StrategyDef> {
                      "X|\"EXIT LONG RULE: Exit at the Lowest Low of the Last 10 Days\" (p.7.4): sell stop at the lowest low of the 10 bars before today",
                      "E|\"SELL SHORT RULE: Go Short at the Lowest Low of the Last 20 Days\" (p.7.5)",
                      "X|\"EXIT SHORT RULE: Exit at the Highest High of the Last 10 Days\" (p.7.5)",
-                     "F|\"That's all there is to it ... we'll take all the signals\" (p.7.5): no stop, no filter, one unit"],
+                     "F|\"That's all there is to it ... we'll take all the signals\" (p.7.5): no stop, no filter, one unit. Not coded: the same sentence's \"some we will bypass ... figure that out on your own\" and the hint to skip the trade after a big winner (both undefined)"],
             notes: "Book: S&P 500 futures 'since the inception of trading in 1982' (end of window not printed; the commodity tables run to 2001) and 18 commodities. India: same rule on NIFTY 50 (instrument swap). Not cov_turtle_s1: that one is Covel's full Turtle rules (2N stop, 1/2N adds, last-breakout filter, 55-day failsafe). [Book silent] stops fill at their price or at the open on a gap; TradeStation bar path; the exit stop is live on the entry bar; when one bar triggers the exit and the opposite 20-day entry, both fill (exit first).",
             claim: claim("226", "33%", "net -$142,670", "", "S&P 1982-? (p.7.9)") },
+        // Larry Williams block (23 Oct 2026 reading): Dennis' long-term channel as Williams states it, same order handling
+        StrategyDef { id: "lwcmc_dennis_50_25", name: "Dennis long-term channel as stated: 50-day breakout, 25-day exit",
+            group: "Ch 7 · Trend identification", session: 0, dir: "Long/Short", status: Status::Live, needs_volume: false, needs_vix: false,
+            needs_series: &[], book: BOOK,
+            rules: &["E|\"Dennis used a 50-day high to buy and a 50-day low to sell for his long-term system\" (p.7.3): stop entries at the highest high / lowest low of the 50 bars before today",
+                     "X|\"His stop was 1/2 the time period, or a 25-day low to exit if long, and a 25-day high to exit if short\" (p.7.3)"],
+            notes: "Book: described as Dennis' long-term system; no test is printed. Same daily-bar handling as lwcmc_turtle_20_10 [Read].",
+            claim: None },
         off!("lwcmc_turtle_commodities", "Turtle 20/10 on 18 commodities (tables p.7.7, 7.9)", "Ch 7 · Trend identification", "Long/Short",
             NeedsData("Needs daily futures for silver, gold, Swiss franc, pound, yen, cattle, bellies, copper, cocoa, sugar, soybeans, bean oil, wheat, corn, cotton, lumber, coffee, T-bonds."),
             &["E|Same 20/10 rules as lwcmc_turtle_20_10 (p.7.4-7.5)"]),
@@ -60,6 +68,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
     let f = |a, b, c| Some((a, b, c));
     match id {
         "lwcmc_turtle_20_10" => f("lwcmc_turtle", "Turtle as stated by Williams", "S&P / index"),
+        "lwcmc_dennis_50_25" => f("lwcmc_dennis", "Dennis long-term channel as stated by Williams", "50 / 25"),
         "lwcmc_turtle_commodities" => f("lwcmc_turtle", "Turtle as stated by Williams", "Commodities (needs data)"),
         "lwcmc_setup_channel_vstop" | "lwcmc_tools_exits" => f("lwcmc_setups", "Set-ups and tools", ""),
         "lwcmc_sp_patterns" => f("lwcmc_patterns", "S&P short-term patterns", ""),
@@ -72,6 +81,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     match id {
         "lwcmc_turtle_20_10" => Some(vec![p("entry", "Entry: highest high / lowest low of the last N days", 20.0, 5.0, 100.0, 1.0),
                                           p("exit", "Exit: lowest low / highest high of the last N days", 10.0, 2.0, 50.0, 1.0)]),
+        "lwcmc_dennis_50_25" => Some(vec![p("entry", "Entry: highest high / lowest low of the last N days", 50.0, 5.0, 100.0, 1.0),
+                                          p("exit", "Exit: lowest low / highest high of the last N days", 25.0, 2.0, 50.0, 1.0)]),
         _ => None,
     }
 }
