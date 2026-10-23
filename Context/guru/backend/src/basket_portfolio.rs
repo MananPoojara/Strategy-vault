@@ -2,7 +2,7 @@
 //!
 //! This is regular-mode candidate replay, not a reproduction of any author's
 //! cross-sectional portfolio. Capacity/cash-rejected candidates are not retried.
-//! All prices remain actual observations. Unsupported execution ordering and
+//! All prices remain actual observations. Unsupported multi-leg accounting and
 //! missing held-position marks withhold the whole portfolio, never selected losers.
 use crate::{
     accounting::Costs,
@@ -141,7 +141,7 @@ impl Phase {
 /// Exact executor paths reviewed for portfolio event sequencing. A coincidental
 /// equality between an intraday stop and a day's close cannot certify a phase.
 /// Extending this list requires reviewing that source runner's fill operations.
-fn execution_contract(id: &str, book: &str) -> Option<(Phase, Phase)> {
+fn reviewed_execution_contract(id: &str, book: &str) -> Option<(Phase, Phase)> {
     match (book, id) {
         ("stc9", "f1a" | "f3a" | "rsi2_5d") => Some((Phase::Close, Phase::Close)), // connors::simulate, Entry::Close / Exit::Close
         (
@@ -169,6 +169,27 @@ fn execution_contract(id: &str, book: &str) -> Option<(Phase, Phase)> {
     }
 }
 
+const CONSERVATIVE_TIMING: &str = "Portfolio timing: this rule's fill times inside the day are not individually reviewed, so cash is reserved from the open of the entry day and released at the close of the exit day (conservative). This can skip trades that finer timing would allow. Single-stock results are unchanged.";
+
+#[derive(Clone, Copy, Debug)]
+struct ExecutionContract {
+    phases: (Phase, Phase),
+    conservative: bool,
+}
+impl From<(Phase, Phase)> for ExecutionContract {
+    fn from(phases: (Phase, Phase)) -> Self {
+        Self { phases, conservative: false }
+    }
+}
+/// Reservation boundaries for otherwise admitted single-stock ledgers. The
+/// fallback does not infer intraday fill times or change source fill prices.
+fn execution_contract(id: &str, book: &str) -> ExecutionContract {
+    reviewed_execution_contract(id, book).map(Into::into).unwrap_or(ExecutionContract {
+        phases: (Phase::Open, Phase::Close),
+        conservative: true,
+    })
+}
+
 #[derive(Clone, Debug)]
 struct Candidate {
     symbol: String,
@@ -192,32 +213,36 @@ impl Candidate {
         key: &str,
         ctx: &Ctx,
         t: &Trade,
-        contract: (Phase, Phase),
+        contract: ExecutionContract,
     ) -> Result<Self, String> {
         if t.legs.len() != 1 || !t.exits.is_empty() {
             return Err("calculation_unavailable: Basket replay does not yet support scale-in/scale-out event ledgers. No legs are removed or approximated.".into());
         }
         let l = &t.legs[0];
-        let entry_phase=match t.entry_kind{"open"=>Phase::Open,"close"=>Phase::Close,_=>return Err("needs_data: Basket stop/limit entries require verified intraday ordering across competing stock signals. Daily OHLC does not order fills; no portfolio path is invented.".into())};
-        let equal = |a: f64, b: f64| (a - b).abs() <= 1e-10 * a.abs().max(b.abs()).max(1.);
-        if entry_phase != contract.0 {
-            return Err("calculation_unavailable: Source entry phase disagrees with the reviewed portfolio executor contract.".into());
-        }
-        let exit_phase = if t.open { Phase::Close } else { contract.1 };
-        let expected_exit = match exit_phase {
-            Phase::Open => ctx.o[t.exit_i],
-            Phase::Close => ctx.c[t.exit_i],
-        };
-        if !equal(t.exit_px, expected_exit) {
-            return Err("calculation_unavailable: Source exit price disagrees with its reviewed open/close executor contract; an intraday target cannot become a close by approximation.".into());
-        }
-        if !t.open && contract.1 == Phase::Open && t.signal_i >= t.exit_i {
-            return Err("needs_data: Reviewed next-open exit lacks its prior completed-close signal; release timing remains unresolved.".into());
-        }
-        if entry_phase == Phase::Open && !equal(l.px, ctx.o[l.i])
-            || entry_phase == Phase::Close && !equal(l.px, ctx.c[l.i])
-        {
-            return Err("calculation_unavailable: Entry kind disagrees with its observed open/close fill price.".into());
+        let (entry_phase, contract_exit) = contract.phases;
+        let exit_phase = if t.open { Phase::Close } else { contract_exit };
+        if !contract.conservative {
+            let entry_phase=match t.entry_kind{"open"=>Phase::Open,"close"=>Phase::Close,_=>return Err("needs_data: Basket stop/limit entries require verified intraday ordering across competing stock signals. Daily OHLC does not order fills; no portfolio path is invented.".into())};
+            let equal = |a: f64, b: f64| (a - b).abs() <= 1e-10 * a.abs().max(b.abs()).max(1.);
+            if entry_phase != contract.phases.0 {
+                return Err("calculation_unavailable: Source entry phase disagrees with the reviewed portfolio executor contract.".into());
+            }
+            let exit_phase = if t.open { Phase::Close } else { contract.phases.1 };
+            let expected_exit = match exit_phase {
+                Phase::Open => ctx.o[t.exit_i],
+                Phase::Close => ctx.c[t.exit_i],
+            };
+            if !equal(t.exit_px, expected_exit) {
+                return Err("calculation_unavailable: Source exit price disagrees with its reviewed open/close executor contract; an intraday target cannot become a close by approximation.".into());
+            }
+            if !t.open && contract.phases.1 == Phase::Open && t.signal_i >= t.exit_i {
+                return Err("needs_data: Reviewed next-open exit lacks its prior completed-close signal; release timing remains unresolved.".into());
+            }
+            if entry_phase == Phase::Open && !equal(l.px, ctx.o[l.i])
+                || entry_phase == Phase::Close && !equal(l.px, ctx.c[l.i])
+            {
+                return Err("calculation_unavailable: Entry kind disagrees with its observed open/close fill price.".into());
+            }
         }
         if t.exit_i == l.i && exit_phase < entry_phase {
             return Err(
@@ -707,7 +732,6 @@ pub fn run(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
             {
                 return Err(format!("{}: {}", issue.status, issue.note));
             }
-            let contract=contract.ok_or("needs_data: This exact rule has no reviewed portfolio executor phase contract. Single-stock results remain separate; a stop/target price coinciding with the daily close does not establish cash or slot release timing.")?;
             let start = crate::window_start(ctx, def, start)
                 .filter(|&i| i < end)
                 .ok_or(
@@ -806,7 +830,9 @@ pub fn run(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         let gross=t.gross_return();let net=t.net_return(costs.side_rate());
         format!("{{\"symbol\":{},\"ticker\":{},\"dir\":{},\"legs\":[[{},{},{}]],\"entry\":{},\"exit\":{},\"exit_i\":{},\"exit_px\":{},\"avg_px\":{},\"ret\":{},\"bars\":{},\"open\":{},\"reason\":{},\"entry_kind\":{},\"entry_phase\":{},\"exit_phase\":{},\"allocation\":{},\"portfolio_contribution\":{},\"exits\":[],\"accounting\":{{\"symbol\":{},\"signal_side\":{},\"pts\":{},\"days_held\":{},\"gross_ret\":{},\"net_ret\":{},\"slippage_ret\":{},\"fee_ret\":{},\"gross_pnl\":null,\"net_pnl\":null,\"taxes\":null,\"slippage\":null,\"fees\":null,\"mae\":null,\"mfe\":null,\"mae_ret_observed\":null,\"mfe_ret_observed\":null,\"cost_status\":{},\"return_basis\":\"Unchanged source-unit return; portfolio contribution is fixed initial-equity slot times this return. Fractional normalized units, no monetary capital.\"}}}}",quote(&t.symbol),quote(&t.key),t.dir,entry_i,exact(t.entry_px),exact(t.weight),quote(&t.entry),quote(&t.exit),exit_i,exact(t.exit_px),exact(t.entry_px),exact(net),t.bars,t.open,quote(&t.reason),quote(t.entry_kind),quote(t.entry_phase.name()),quote(t.exit_phase.name()),exact(accepted.allocation),exact(accepted.allocation*net),quote(&t.symbol),quote(if t.dir>0.{"Long"}else{"Short"}),exact(t.dir*(t.exit_px-t.entry_px)),crate::day_number(&t.exit)-crate::day_number(&t.entry),exact(gross),exact(net),exact(t.weight*costs.slippage_bps/10000.*if t.open{1.}else{2.}),exact(t.weight*costs.fees_bps/10000.*if t.open{1.}else{2.}),quote(if t.open{"entry_cost_only_actual_open_mark"}else{"modeled_round_trip_cost"}))
     });
-    Ok(format!("{{\"kind\":\"basket\",\"status\":\"ready\",\"basket\":{},\"membership\":\"current\",\"model_initial_equity\":1,\"dates\":{},\"equity\":{},\"gross_equity\":{},\"bh\":{},\"close\":[],\"ohlc\":null,\"trades\":{},\"stats\":{},\"gross_stats\":{},\"benchmark_symbol\":{},\"benchmark_stats\":{},\"costs\":{},\"coverage\":{},\"portfolio\":{{\"effective_from\":{},\"effective_to\":{},\"window_basis\":\"Explicit dates are never silently shortened. Default dates intersect admitted member history with the actual benchmark calendar; full earlier stock history is not implied.\",\"max_positions\":{},\"slot_allocation\":{},\"closed_contribution\":{},\"accepted_positions\":{},\"rejected_capacity\":{},\"rejected_cash\":{},\"source_members\":{},\"cash\":{},\"positions\":{},\"historical_membership_verified\":false,\"compounding_supported\":false,\"ranking\":\"Alphabetical symbol order within each observed open/close phase\",\"signal_mode\":\"Regular-mode replay of unchanged independent-symbol candidate ledgers; rejected entries are not deferred or retried\",\"allocation_basis\":\"Each full position reserves 1/N of initial normalized equity; partially deployed source legs use their observed weight. Unused slots remain cash. Fractional research units; no share lot rounding, leverage, margin financing or interest. Short principal is reserved and short proceeds cannot fund entries.\",\"timing_basis\":\"Observed prior-signal next-open exits before open entries; observed close exits before close entries. Intraday stop/limit ordering and multi-leg positions are withheld.\",\"gross_basis\":\"Zero-cost accounting on the identical accepted fills; gross does not independently select a different candidate list\"}},\"notices\":[\"Source-listed current membership is a static snapshot. A current snapshot alone does not establish historical membership; retrospective selection has survivorship bias and this is not a historical membership reproduction.\",\"This is a declared portfolio application of an admitted stock rule, not the author's published portfolio, rankings or performance.\",\"Net Profit is closed allocated contribution relative to initial unit equity. Avg net pnl is the actual source-unit net return per closed trade; multiplying it by trade count gives the unallocated trade-return sum, not basket Net Profit.\",\"Equity and risk statistics use cash plus simultaneously held actual daily marks. Open positions deduct entry costs only; no guessed closing transaction is applied.\"],\"accounting_basis\":\"Fixed initial-equity slots, chronological cash and actual held-position marks. Basket Net Profit excludes open positions. Overlapping stock returns are never compounded in exit order. No capital-related statistics are supplied.\"}}",quote(req.basket),array(calendar.iter().map(|s|quote(s))),array(replay.equity.iter().map(|v|exact(*v))),array(replay.gross_equity.iter().map(|v|exact(*v))),array(bh.iter().map(|v|exact(*v))),array(trade_json),crate::stats_json(&stats),crate::stats_json(&gross_stats),quote(benchmark_symbol),crate::stats_json(&benchmark_stats),portfolio_costs,array(report.iter().map(Coverage::json)),quote(calendar.first().unwrap()),quote(calendar.last().unwrap()),req.max_positions,exact(1./req.max_positions as f64),exact(stats["net_profit"]),replay.accepted.len(),replay.rejected_capacity,replay.rejected_cash,members.len(),array(replay.cash.iter().map(|v|exact(*v))),array(replay.positions.iter().map(|v|v.to_string()))))
+    Ok(format!("{{\"kind\":\"basket\",\"status\":\"ready\",\"basket\":{},\"membership\":\"current\",\"model_initial_equity\":1,\"dates\":{},\"equity\":{},\"gross_equity\":{},\"bh\":{},\"close\":[],\"ohlc\":null,\"trades\":{},\"stats\":{},\"gross_stats\":{},\"benchmark_symbol\":{},\"benchmark_stats\":{},\"costs\":{},\"coverage\":{},\"portfolio\":{{\"effective_from\":{},\"effective_to\":{},\"window_basis\":\"Explicit dates are never silently shortened. Default dates intersect admitted member history with the actual benchmark calendar; full earlier stock history is not implied.\",\"max_positions\":{},\"slot_allocation\":{},\"closed_contribution\":{},\"accepted_positions\":{},\"rejected_capacity\":{},\"rejected_cash\":{},\"source_members\":{},\"cash\":{},\"positions\":{},\"historical_membership_verified\":false,\"compounding_supported\":false,\"ranking\":\"Alphabetical symbol order within each observed open/close phase\",\"signal_mode\":\"Regular-mode replay of unchanged independent-symbol candidate ledgers; rejected entries are not deferred or retried\",\"allocation_basis\":\"Each full position reserves 1/N of initial normalized equity; partially deployed source legs use their observed weight. Unused slots remain cash. Fractional research units; no share lot rounding, leverage, margin financing or interest. Short principal is reserved and short proceeds cannot fund entries.\",\"timing_contract_reviewed\":{},\"timing_disclosure\":{},\"timing_basis\":{},\"gross_basis\":\"Zero-cost accounting on the identical accepted fills; gross does not independently select a different candidate list\"}},\"notices\":[\"Source-listed current membership is a static snapshot. A current snapshot alone does not establish historical membership; retrospective selection has survivorship bias and this is not a historical membership reproduction.\",\"This is a declared portfolio application of an admitted stock rule, not the author's published portfolio, rankings or performance.\",\"Net Profit is closed allocated contribution relative to initial unit equity. Avg net pnl is the actual source-unit net return per closed trade; multiplying it by trade count gives the unallocated trade-return sum, not basket Net Profit.\",\"Equity and risk statistics use cash plus simultaneously held actual daily marks. Open positions deduct entry costs only; no guessed closing transaction is applied.\"],\"accounting_basis\":\"Fixed initial-equity slots, chronological cash and actual held-position marks. Basket Net Profit excludes open positions. Overlapping stock returns are never compounded in exit order. No capital-related statistics are supplied.\"}}",quote(req.basket),array(calendar.iter().map(|s|quote(s))),array(replay.equity.iter().map(|v|exact(*v))),array(replay.gross_equity.iter().map(|v|exact(*v))),array(bh.iter().map(|v|exact(*v))),array(trade_json),crate::stats_json(&stats),crate::stats_json(&gross_stats),quote(benchmark_symbol),crate::stats_json(&benchmark_stats),portfolio_costs,array(report.iter().map(Coverage::json)),quote(calendar.first().unwrap()),quote(calendar.last().unwrap()),req.max_positions,exact(1./req.max_positions as f64),exact(stats["net_profit"]),replay.accepted.len(),replay.rejected_capacity,replay.rejected_cash,members.len(),array(replay.cash.iter().map(|v|exact(*v))),array(replay.positions.iter().map(|v|v.to_string())), !contract.conservative,
+        if contract.conservative { quote(CONSERVATIVE_TIMING) } else { "null".into() },
+        quote(if contract.conservative { "Cash and slots are reserved from entry-day open through exit-day close. Source fill prices are unchanged; multi-leg positions are withheld." } else { "Observed prior-signal next-open exits before open entries; observed close exits before close entries. Intraday stop/limit ordering and multi-leg positions are withheld." })))
 }
 
 #[cfg(test)]
@@ -1056,13 +1082,13 @@ mod tests {
             exits: vec![],
         };
         assert!(
-            Candidate::from_source("basket:nifty50:A", &ctx, &t, (Phase::Close, Phase::Close))
+            Candidate::from_source("basket:nifty50:A", &ctx, &t, (Phase::Close, Phase::Close).into())
                 .is_ok()
         );
         let mut x = t.clone();
         x.entry_kind = "limit";
         assert!(
-            Candidate::from_source("basket:nifty50:A", &ctx, &x, (Phase::Close, Phase::Close))
+            Candidate::from_source("basket:nifty50:A", &ctx, &x, (Phase::Close, Phase::Close).into())
                 .unwrap_err()
                 .contains("intraday")
         );
@@ -1073,29 +1099,106 @@ mod tests {
             w: 0.25,
         });
         assert!(
-            Candidate::from_source("basket:nifty50:A", &ctx, &x, (Phase::Close, Phase::Close))
+            Candidate::from_source("basket:nifty50:A", &ctx, &x, (Phase::Close, Phase::Close).into())
                 .unwrap_err()
                 .contains("scale-in")
         );
+        let mut x = t.clone();
+        x.exits.push((2, 102., 0.5));
+        assert!(Candidate::from_source("basket:nifty50:A", &ctx, &x,
+            execution_contract("unreviewed", "fixture")).unwrap_err().contains("scale-in/scale-out"));
         let mut x = t;
         x.exit_px = 105.;
         assert!(
-            Candidate::from_source("basket:nifty50:A", &ctx, &x, (Phase::Close, Phase::Close))
+            Candidate::from_source("basket:nifty50:A", &ctx, &x, (Phase::Close, Phase::Close).into())
                 .unwrap_err()
                 .contains("executor contract")
         );
     }
     #[test]
     fn a_target_equal_to_daily_close_still_has_no_reviewed_portfolio_fill_phase() {
-        assert!(execution_contract("hbqts_profit_target", "hbqts").is_none());
-        assert!(execution_contract("elcim_impulse", "elcim").is_none());
-        assert!(execution_contract("hbqts_limit_entry", "hbqts").is_none());
-        assert!(execution_contract("hbqts_ma5_25", "another_book").is_none());
-        assert!(execution_contract("a_new_rule", "hbqts").is_none());
+        assert!(reviewed_execution_contract("hbqts_profit_target", "hbqts").is_none());
+        assert!(reviewed_execution_contract("elcim_impulse", "elcim").is_none());
+        assert!(reviewed_execution_contract("hbqts_limit_entry", "hbqts").is_none());
+        assert!(reviewed_execution_contract("hbqts_ma5_25", "another_book").is_none());
+        assert!(reviewed_execution_contract("a_new_rule", "hbqts").is_none());
         assert_eq!(
-            execution_contract("hbqts_ma5_25", "hbqts"),
+            reviewed_execution_contract("hbqts_ma5_25", "hbqts"),
             Some((Phase::Close, Phase::Close))
         );
+    }
+    #[test]
+    fn conservative_contract_covers_unreviewed_rules_without_relabelling_fills() {
+        let contract = execution_contract("ss_the_anti", "ss");
+        assert!(contract.conservative);
+        assert_eq!(contract.phases, (Phase::Open, Phase::Close));
+        let rows: Vec<_> = dates().into_iter().map(|date| Row {
+            ticker: "A".into(), date, open: 99., high: 110., low: 90.,
+            close: 100., volume: Some(100.),
+        }).collect();
+        let ctx = Ctx::new(&rows, &rows, &[]);
+        for entry_kind in ["close", "open", "stop", "limit"] {
+            let mut trade = Trade {
+                dir: 1., legs: vec![crate::connors::Leg { i: 0, px: 101., w: 1. }],
+                exit_i: 0, exit_px: 105., reason: "target fixture".into(),
+                entry_kind, signal_i: 0, open: false, exits: vec![],
+            };
+            let c = Candidate::from_source("basket:nifty50:A", &ctx, &trade, contract).unwrap();
+            assert_eq!((c.entry_phase, c.exit_phase), contract.phases);
+            assert_eq!(c.entry_kind, entry_kind);
+            near(c.entry_px, 101.);
+            near(c.exit_px, 105.);
+            let replay = replay(&[c], &dates(), 1, 0.).unwrap();
+            assert_eq!(replay.accepted.len(), 1);
+            assert_eq!(replay.positions[0], 0);
+            near(replay.cash[0], 105. / 101.);
+            trade.legs.push(crate::connors::Leg { i: 0, px: 102., w: 0.25 });
+            assert!(Candidate::from_source("basket:nifty50:A", &ctx, &trade, contract)
+                .unwrap_err().contains("scale-in/scale-out"));
+        }
+    }
+    #[test]
+    fn all_reviewed_contracts_keep_their_phases_and_reviewed_flag() {
+        for (book, ids, phases) in [
+            ("stc9", vec!["f1a", "f3a", "rsi2_5d"], (Phase::Close, Phase::Close)),
+            ("hbqts", vec!["hbqts_ma5_25", "hbqts_ma1_36", "hbqts_fixed_interval", "hbqts_entry_id1", "hbqts_bb_breakout", "hbqts_cgo", "hbqts_stoch_rsi", "hbqts_dpo", "hbqts_dom", "hbqts_macd_daily"], (Phase::Close, Phase::Close)),
+            ("ch_bta", vec!["ch_cbpb_time"], (Phase::Open, Phase::Close)),
+            ("ch_bta", vec!["ch_65sma3cc"], (Phase::Open, Phase::Open)),
+            ("kftsm", vec!["kftsm_ma", "kftsm_exp", "kftsm_lrs", "kftsm_ndb", "kftsm_swg", "kftsm_swing", "kftsm_kama", "kftsm_adapt_exp", "kftsm_vidya", "kftsm_adapt_r2", "kftsm_adapt_rsi", "kftsm_month_end", "kftsm_hirsch"], (Phase::Close, Phase::Close)),
+        ] {
+            for id in ids {
+                let contract = execution_contract(id, book);
+                assert!(!contract.conservative, "{book}/{id}");
+                assert_eq!(contract.phases, phases, "{book}/{id}");
+            }
+        }
+    }
+    #[test]
+    fn conservative_entry_cannot_spend_cash_released_later_that_day() {
+        let mut trades = vec![candidate("A", 0, 2, 110.), candidate("B", 0, 4, 110.), candidate("C", 2, 4, 110.)];
+        for t in &mut trades { t.entry_phase = Phase::Open; }
+        let r = replay(&trades, &dates(), 3, 0.001).unwrap();
+        assert_eq!(r.accepted.len(), 2);
+        assert_eq!(r.rejected_cash, 1);
+        assert_eq!(r.rejected_capacity, 0);
+        assert!(r.cash.iter().all(|&cash| cash >= 0.));
+    }
+    #[test]
+    fn conservative_cash_and_slots_wait_for_close_even_for_same_day_round_trips() {
+        let mut a = candidate("A", 0, 2, 110.);
+        let mut b = candidate("B", 2, 2, 120.);
+        let mut c = candidate("C", 3, 3, 100.);
+        for t in [&mut a, &mut b, &mut c] {
+            t.entry_phase = Phase::Open;
+            t.exit_phase = Phase::Close;
+        }
+        let r = replay(&[a, b, c], &dates(), 1, 0.).unwrap();
+        assert_eq!(r.accepted.iter().map(|a| a.candidate).collect::<Vec<_>>(), vec![0, 2]);
+        assert_eq!(r.rejected_capacity, 1);
+        near(r.cash[1], 0.);
+        near(r.cash[2], 1.10);
+        assert_eq!(r.positions[3], 0);
+        assert!(r.cash.iter().all(|&cash| cash >= 0.));
     }
     #[test]
     fn invalid_dates_and_unsupported_funding_are_never_repaired() {
@@ -1210,6 +1313,21 @@ mod tests {
         assert!(body.contains("\"benchmark_symbol\":\"NIFTY 50\""));
         assert!(body.contains("\"open_exit_cost_estimated\":false"));
         assert!(!body.contains("Legacy equity includes estimated exit costs"));
+    }
+    #[test]
+    fn actual_endpoint_discloses_only_conservative_reservation_timing() {
+        let _lock = ENDPOINT_LOCK.lock().unwrap();
+        let (_fixture, state, mut q) = fixture();
+        let reviewed = run(&state, &q).unwrap();
+        assert!(reviewed.contains("\"timing_contract_reviewed\":true"));
+        assert!(reviewed.contains("\"timing_disclosure\":null"));
+        q.insert("id".into(), "hbqts_profit_target".into());
+        let conservative = run(&state, &q).unwrap();
+        assert!(conservative.contains("\"status\":\"ready\""), "{conservative}");
+        assert!(conservative.contains("\"timing_contract_reviewed\":false"));
+        assert!(conservative.contains(CONSERVATIVE_TIMING));
+        assert!(conservative.contains("\"entry_phase\":\"open\""));
+        assert!(conservative.contains("\"exit_phase\":\"close\""));
     }
     #[test]
     fn actual_endpoint_preserves_instrument_readiness_past_and_checksum_guards() {
