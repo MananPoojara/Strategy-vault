@@ -236,6 +236,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || patel_reviewed(def) // Patel block
         || demark_reviewed(def) // DeMark block
         || kroll_reviewed(def) // Kroll block
+        || kaeppel_reviewed(def) // Kaeppel block
         || lebeau_reviewed(def) // LeBeau block
         || tharp_reviewed(def) // Tharp block
         || person_reviewed(def) // Person block
@@ -636,6 +637,23 @@ fn kroll_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Kroll
+// ---------------------------------------------------------------- Kaeppel 2026-10-24
+// Admission only for the module REVIEWED lists (authors/kaeppel/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn kaeppel_reviewed(def:&StrategyDef)->bool {matches!(def.book,"kpss") && (crate::books::kpss::reviewed(def.id))}
+const KAEPPEL_LABEL:&str="Jay Kaeppel tested every rule on the Dow Jones Industrial Average (the Nasdaq rule on the Nasdaq Composite/NASDAQ 100); runs on other indices, ETFs and stocks are a declared application, not the author's test. Rules defined by US market holidays (day before a holiday, Santa Claus rally, the holiday-based models) run on US instruments only. 2:1 positions and shorts are hypothetical exposure; the book's 1% cash interest is not modelled.";
+fn kaeppel_policy(def:&StrategyDef)->Option<Policy> {
+    if !kaeppel_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Jay Kaeppel, Seasonal Stock Market Trends (Wiley 2009): calendar, holiday, monthly-day, decennial, time-cycle, election-cycle, season and Known Trends Index rules (Ch.2-9, p.22-284), each a daily position earning close-to-close. Reviewed in authors/kaeppel/admission/SOURCE-CONTRACT.md with independent chronological ledgers; book rules transcribed in audits/kpss/book_rules.md.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Kaeppel
+// Kaeppel US-holiday rules: US instruments only (stock_us None = not a stock).
+fn kaeppel_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Option<Issue> {
+    if !kaeppel_reviewed(def) || !crate::books::kpss::US_ONLY.contains(&def.id) {return None;}
+    let us=stock_us.unwrap_or(!ticker.starts_with("NIFTY"));
+    if us {return None;}
+    Some(Issue{status:"needs_data",note:format!("This rule's days are set by US stock-market holidays (the trading days before and after a US exchange closure, or the Thanksgiving-to-January Santa Claus window). Indian exchanges keep a different holiday calendar, so the rule runs on US indices, ETFs and stocks only. {ticker} is outside that scope; no result is published.")})
+}
 // ---------------------------------------------------------------- LeBeau 2026-10-24
 // Admission only for the module REVIEWED lists (authors/lebeau/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn lebeau_reviewed(def:&StrategyDef)->bool {matches!(def.book,"lebcafm"|"lebtc"|"lebtcb"|"lebws") && (crate::books::lebcafm::reviewed(def.id) || crate::books::lebtc::reviewed(def.id) || crate::books::lebtcb::reviewed(def.id) || crate::books::lebws::reviewed(def.id))}
@@ -722,6 +740,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=patel_policy(def) {return p;} // Patel block
     if let Some(p)=demark_policy(def) {return p;} // DeMark block
     if let Some(p)=kroll_policy(def) {return p;} // Kroll block
+    if let Some(p)=kaeppel_policy(def) {return p;} // Kaeppel block
     if let Some(p)=lebeau_policy(def) {return p;} // LeBeau block
     if let Some(p)=tharp_policy(def) {return p;} // Tharp block
     if let Some(p)=person_policy(def) {return p;} // Person block
@@ -1003,6 +1022,7 @@ pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     if let Some(issue)=bernstein_g2_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);}
     if let Some(issue)=jb_g3_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=lwilliams_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Larry Williams block
+    if let Some(issue)=kaeppel_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Kaeppel block
     if native_stock {
         if let Some(reason)=p.native_currency_constraint {
             return Some(Issue {status:"needs_data",note:format!("Source currency/tick data missing. {reason} USD amounts cannot silently become INR amounts. A source-supported Indian specification or dated FX treatment and verified local tick rules are required before admission; editing the numeric parameter alone does not establish those inputs. Selected actual stock: {ticker}. No results are published.")});
@@ -1033,6 +1053,7 @@ pub fn check_native(def:&StrategyDef,ticker:&str,evidence:&NativeEvidence)->Opti
     if let Some(issue)=bernstein_g2_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);}
     if let Some(issue)=jb_g3_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=lwilliams_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Larry Williams block
+    if let Some(issue)=kaeppel_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Kaeppel block
     if let Some(issue)=check_selected(p,def.id,ticker,evidence.asset_type()){return Some(issue);}
     if matches!((def.book,def.id),("r3r4","r3r4_lowprice"|"r3r4_lowprice_scale")) && evidence.market()!=Market::UnitedStates {
         return Some(Issue{status:"not_testable",note:format!("{R3R4_LOWPRICE_HELD} Selected actual stock: {ticker}.")});
@@ -1162,6 +1183,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if patel_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",PATEL_LABEL));} // Patel block
     if demark_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",DEMARK_LABEL));} // DeMark block
     if kroll_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",KROLL_LABEL));} // Kroll block
+    if kaeppel_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",KAEPPEL_LABEL));} // Kaeppel block
     if lebeau_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LEBEAU_LABEL));} // LeBeau block
     if tharp_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",THARP_LABEL));} // Tharp block
     if person_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",PERSON_LABEL));} // Person block
@@ -1450,6 +1472,24 @@ mod tests {
         }
     }
     // ---- end Kroll block ----
+    // ---- Kaeppel block (2026-10-24) ----
+    #[test]
+    fn kaeppel_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{kpss};
+        let all:Vec<StrategyDef>=kpss::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=kpss::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|kaeppel_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert!(reviewed_cash_rule(d),"{}",d.id);assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            let us_only=kpss::US_ONLY.contains(&d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            for t in ["NIFTY 50","NIFTYBANK"] {assert_eq!(check(d,t,false).is_some(),us_only,"{} {t}",d.id);}
+            assert_eq!(check(d,"RELIANCE",true).is_some(),us_only,"{}",d.id);
+        }
+    }
+    // ---- end Kaeppel block ----
     // ---- LeBeau block (2026-10-24) ----
     #[test]
     fn lebeau_review_admits_exact_ids_on_indices_etfs_and_stocks() {
