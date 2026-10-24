@@ -7,6 +7,10 @@
 use crate::connors::{sma, wilder, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "bwntd";
+/// Admitted ids (authors/bwilliams/admission/SOURCE-CONTRACT.md). bwntd_dims is held: its 5th dimension (Balance Line) is not
+/// testable and its AC formula is garbled in the book (p.56), so the five-dimension system cannot be run as written.
+pub const REVIEWED: &[&str] = &["bwntd_fractal", "bwntd_ao_flip"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const BL_WHY: &str = "not testable: the Balance Line buy/sell needs 'the bar with the lowest high' as base with no stated look-back, and 'the signal bar is above the Balance Line' does not say which price (high, low, whole bar) or which bar's Blue-line value decides 1 vs 2 higher highs (p.68-71). The 1998 Profitability-Test had to invent a 10-bar look-back.";
 
@@ -27,7 +31,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
     vec![
         make("bwntd_fractal", "Fractal breakout outside the Alligator (fractal dimension only)", "NTD ch. 3-4 & 9 · Alligator + Fractal", "Long/Short", Status::Live,
             &[ALLIGATOR, FRACTAL_DEF, FRACTAL_E, ADD, EXIT_RED, EXIT_FIVE, EXIT_OPT, REV, ORDER],
-            "PDF p.36-45, 72-74. Book's fractal-only result is Table 4-1 (coffee futures Dec 16-Mar 10, 10 fractal entries, 29,705 points, $111,393.75); coffee is not in the vault, so it is not compared. One tick = 0.01 on US indices/ETFs, 0.05 on NSE. Run on the index (instrument swap)."),
+            "PDF p.36-45, 72-74. Book's fractal-only result is Table 4-1 (coffee futures Dec 16-Mar 10, 10 fractal entries, 29,705 points, $111,393.75); coffee is not in the vault, so it is not compared. One tick = 0.01 on US indices, ETFs and stocks, 0.05 on NSE. Run on the index (instrument swap)."),
         make("bwntd_dims", "Five-dimension system: Fractal, AO, AC, Zone (Balance Line not testable)", "NTD ch. 3-9 · Tying it all together", "Long/Short", Status::Live,
             &[ALLIGATOR, FRACTAL_DEF, FRACTAL_E,
               "F|\"After the first fractal breakout has been triggered, we take any and every signal from all five dimensions in that direction ... if the price is above the Alligator's mouth, we would only take buy signals\" (p.38; p.47 \"we do not take any AO signals until the first fractal buy or sell signal is triggered outside the Alligator's mouth\"). The last valid fractal hit sets the direction; AO/AC/zone entries need their order price beyond the Red line (the fractal chapter's mouth test). After a stop-out: \"Reenter on any of the five dimensional signals going your way, provided the current price is still outside the Alligator's mouth\" (p.73).",
@@ -109,10 +113,10 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 
 // ---------------------------------------------------------------- indicators (shared with bwtc2)
 
-/// Tick for "one tick above/below": 0.01 on the US indices/ETFs, 0.05 on NSE (the NSE tick).
+/// Tick for "one tick above/below": the instrument's real tick - 0.01 on US indices, ETFs and stocks, 0.05 on NSE.
+/// (Fix 24 Oct 2026: US stocks used to get 0.05 because only index/ETF tickers were listed.)
 pub fn tick_of(x: &Ctx) -> f64 {
-    let t = x.r.first().map_or("", |r| r.ticker.as_str());
-    if ["SPX", "NDX", "DJI", "SPY", "QQQ", "IWM", "MDY", "SMH"].contains(&t) { 0.01 } else { 0.05 }
+    x.market_tick()
 }
 
 fn shift(v: &[f64], k: usize) -> Vec<f64> {

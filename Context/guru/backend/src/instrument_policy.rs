@@ -228,6 +228,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || schwager_reviewed(def) // Schwager block
         || elder_reviewed(def) // Elder block
         || pring_reviewed(def) // Pring block
+        || bwilliams_reviewed(def) // BWilliams block
         || wirrick_reviewed(def) // Wirrick block
         || sperandeo_reviewed(def) // Sperandeo block
         || csmith_reviewed(def) // CSmith block
@@ -803,6 +804,16 @@ fn wirrick_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Wirrick
+// ---------------------------------------------------------------- BWilliams 2026-10-24
+// Admission only for the module REVIEWED lists (authors/bwilliams/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn bwilliams_reviewed(def:&StrategyDef)->bool {matches!(def.book,"bwntd"|"bwtc1"|"bwtc2") && (crate::books::bwntd::reviewed(def.id) || crate::books::bwtc1::reviewed(def.id) || crate::books::bwtc2::reviewed(def.id))}
+const BWILLIAMS_LABEL:&str="Bill Williams taught these rules on futures (coffee, S&P, gold, bonds) and stocks; runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test. Cash-index shorts are hypothetical exposure.";
+fn bwilliams_policy(def:&StrategyDef)->Option<Policy> {
+    if !bwilliams_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Bill Williams: New Trading Dimensions (1998) fractal outside the Alligator (p.36-45, 72-74) and AO turn system (p.46); Trading Chaos (1995) fractal start/signal/stop (p.135-142) and 5/13/34 rhythm (p.181-186); Trading Chaos 2nd ed. (2004) Fractal + Super AO with trailing stop (p.128-156). Reviewed in authors/bwilliams/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end BWilliams
 // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
 /// Reviewed Joe Ross daily rules (books::joe_ross_rules::REVIEWED): actual indices, ETFs and stocks, US and India, as a
 /// labelled declared application. The source references in books::joe_ross stay held (source review).
@@ -831,6 +842,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=schwager_policy(def) {return p;}
     if let Some(p)=elder_policy(def) {return p;} // Elder block
     if let Some(p)=pring_policy(def) {return p;} // Pring block
+    if let Some(p)=bwilliams_policy(def) {return p;} // BWilliams block
     if let Some(p)=wirrick_policy(def) {return p;} // Wirrick block
     if let Some(p)=sperandeo_policy(def) {return p;} // Sperandeo block
     if let Some(p)=csmith_policy(def) {return p;} // CSmith block
@@ -1283,6 +1295,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if let Some(label)=elder_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Elder block
     if let Some(label)=lwilliams_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Larry Williams block
     if let Some(label)=pring_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Pring block
+    if bwilliams_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BWILLIAMS_LABEL));} // BWilliams block
     if wirrick_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",WIRRICK_LABEL));} // Wirrick block
     if sperandeo_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",SPERANDEO_LABEL));} // Sperandeo block
     if csmith_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",CSMITH_LABEL));} // CSmith block
@@ -1462,6 +1475,22 @@ mod tests {
         assert!(!reviewed_cash_rule(&def("mpts_triple","jbudt")));
     }
     // ---- end Pring block ----
+    // ---- BWilliams block (2026-10-24) ----
+    #[test]
+    fn bwilliams_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{bwntd,bwtc1,bwtc2};
+        let all:Vec<StrategyDef>=bwntd::catalogue().into_iter().chain(bwtc1::catalogue()).chain(bwtc2::catalogue()).collect();
+        let mut want:Vec<&str>=bwntd::REVIEWED.iter().chain(bwtc1::REVIEWED).chain(bwtc2::REVIEWED).copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end BWilliams block ----
     // ---- Wirrick block (2026-10-24) ----
     #[test]
     fn wirrick_review_admits_exact_ids_on_indices_etfs_and_stocks() {

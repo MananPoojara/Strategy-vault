@@ -7,6 +7,9 @@ use super::bwntd::{close_pos, fill_time, fractals, ind, manage, open_pos, path_k
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "bwtc2";
+/// Admitted ids (authors/bwilliams/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["bwtc2_fractal_sao"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let make = |id, name, group, dir, status, rules, notes| StrategyDef {
@@ -24,7 +27,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|\"If the market still continues up, trail a profit-protecting stop just under the lowest low of the last three to five price bars\" (p.148); \"exit bar based on the price dropping below the lowest low of the five preceding bars\" (Costco example, p.155); Apple example \"we were using a three-bar stop\" (p.150). Default p.trail_n=5 (the only worked example with prices), 3 and 4 are the book's alternatives. Stop = lowest low of the N bars before the current bar minus one tick (short: highest high plus one tick), from the bar after entry; fill at the stop or the open if gapped.",
               "X|\"We place our stop either at a reversal Fractal sell signal or just below the lowest low of the past three to five price bars\" (p.148); an opposite signal (valid fractal or Super AO) reverses the whole position (\"stop and reverse\", p.133, 146). p.exit=1: reversal signals only, no trailing stop [non-default].",
               "X|Same-bar order [book silent]: open -> nearer extreme -> other extreme; gaps fill at the open."],
-            "Printed p.128-156 (PDF 161-189). Book results are single chart examples (gold 4 entries p.146, Costco 3 entries p.155, bonds $9,531.25 p.121) on futures/stocks the vault does not hold; none is on an index we have, so none is compared. One tick = 0.01 on US indices/ETFs, 0.05 on NSE. Run on the index (instrument swap). The AO-only always-in system (p.126-127) is the same text as bwntd_ao_flip (duplicate, not repeated)."),
+            "Printed p.128-156 (PDF 161-189). Book results are single chart examples (gold 4 entries p.146, Costco 3 entries p.155, bonds $9,531.25 p.121) on futures/stocks the vault does not hold; none is on an index we have, so none is compared. One tick = 0.01 on US indices, ETFs and stocks, 0.05 on NSE. Run on the index (instrument swap). The AO-only always-in system (p.126-127) is the same text as bwntd_ao_flip (duplicate, not repeated)."),
         make("bwtc2_divergent_bar", "Bullish/bearish divergent bar (1st Wise Man)", "TC2 ch. 9 · First Wise Man", "Long/Short",
             Status::NotTestable("the divergent bar is only valid with 'angulation' - \"Draw or imagine a line that follows the Alligator's mouth ... If those two lines show clearly that they are moving away from each other, you have angulation\" (p.113) - and \"well outside the Alligator's mouth; the farther away, the better\" (p.114): chart judgement"),
             &["E|\"A bullish divergent bar is a bar that has a lower low and closes in the top half of the bar\" (p.110); buy stop just above it, protective stop just below it (p.114, 120).",
