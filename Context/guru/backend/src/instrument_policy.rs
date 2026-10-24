@@ -235,6 +235,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || goslin_reviewed(def) // Goslin block
         || ruggiero_reviewed(def) // Ruggiero block
         || link_reviewed(def) // Link block
+        || campbell_reviewed(def) // Campbell block
         || bwilliams_reviewed(def) // BWilliams block
         || stridsman_reviewed(def) // Stridsman block
         || weissman_reviewed(def) // Weissman block
@@ -1044,6 +1045,16 @@ fn link_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Link
+// ---------------------------------------------------------------- Campbell 2026-10-25
+// Admission only for the module REVIEWED lists (authors/campbell/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn campbell_reviewed(def:&StrategyDef)->bool {(def.book=="sctw" && crate::books::sctw::reviewed(def.id))}
+const CAMPBELL_LABEL:&str="Shay Campbell tested Trend Weaver on a 37-market futures portfolio (1980-2006); runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test.";
+fn campbell_policy(def:&StrategyDef)->Option<Policy> {
+    if !campbell_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Shay Campbell, Trend Weaver Trading System (Timing Charts, 2006): 150-day trend with reversal stops 1% inside the 150-day range, entries at 90%/10% and exits at 40%/60% of the 20-day range above the 20-day low (Trading Rules p.3-9; the system's TradeStation code wins where the prose differs). Reviewed in authors/campbell/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Campbell
 // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
 /// Reviewed Joe Ross daily rules (books::joe_ross_rules::REVIEWED): actual indices, ETFs and stocks, US and India, as a
 /// labelled declared application. The source references in books::joe_ross stay held (source review).
@@ -1079,6 +1090,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=goslin_policy(def) {return p;} // Goslin block
     if let Some(p)=ruggiero_policy(def) {return p;} // Ruggiero block
     if let Some(p)=link_policy(def) {return p;} // Link block
+    if let Some(p)=campbell_policy(def) {return p;} // Campbell block
     if let Some(p)=bwilliams_policy(def) {return p;} // BWilliams block
     if let Some(p)=stridsman_policy(def) {return p;} // Stridsman block
     if let Some(p)=weissman_policy(def) {return p;} // Weissman block
@@ -1557,6 +1569,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if goslin_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",GOSLIN_LABEL));} // Goslin block
     if ruggiero_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",RUGGIERO_LABEL));} // Ruggiero block
     if link_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LINK_LABEL));} // Link block
+    if campbell_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",CAMPBELL_LABEL));} // Campbell block
     if bwilliams_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BWILLIAMS_LABEL));} // BWilliams block
     if stridsman_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",STRIDSMAN_LABEL));} // Stridsman block
     if weissman_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",WEISSMAN_LABEL));} // Weissman block
@@ -1864,6 +1877,22 @@ mod tests {
         }
     }
     // ---- end Link block ----
+    // ---- Campbell block (2026-10-25) ----
+    #[test]
+    fn campbell_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{sctw};
+        let all:Vec<StrategyDef>=sctw::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=sctw::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Campbell block ----
     // ---- BWilliams block (2026-10-24) ----
     #[test]
     fn bwilliams_review_admits_exact_ids_on_indices_etfs_and_stocks() {

@@ -14,6 +14,9 @@
 use crate::connors::{claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "sctw";
+/// Admitted ids (authors/campbell/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["sctw_trend_weaver"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef {
