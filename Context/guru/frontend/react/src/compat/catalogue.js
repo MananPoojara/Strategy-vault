@@ -142,6 +142,12 @@ export const LIB = [
     { id: "skdab", sourceIds: ["title-1a375bb2a1b292dd"], title: "Dragons and Bulls", year: 1994, blurb: "Kroll, 1994 · 50-day trend, 10/20/50-day entries, 4/9/18-day stop-outs and re-entries; the 9/18/50 NIKKEI example is held (exit not exact)" },
     { id: "skfts", sourceIds: ["title-b57e56c915e14bbf"], title: "Kroll on Futures Trading Strategy", year: 1988, blurb: "Kroll, 1988 · strategy and money management; its moving-average examples are already in the vault" }] },
   // ---- end Kroll block ----
+  // ---- Wirrick block (2026-10-24) ----
+  { id: "wirrick", name: "Steve Wirrick", tagline: "Options and swing-trading educator · the two-day pull-back swing set-up above the 50-day average (backtested); option plays held", books: [
+    { id: "swmfst", sourceIds: ["title-ce524e2efcd0c7e6"], title: "Make a Fortune Swing Trading!", year: 2003, blurb: "Wirrick, 2003 · swing trade set-up: two-day pull-back above the 50-day average, break of the prior high, 20-day trailing exit" },
+    { id: "swhoi", sourceIds: ["title-ed1441777051b0e2"], title: "High Octane Investing", year: null, blurb: "Wirrick, Collette & Christensen · option plays and a Bollinger squeeze; held: option prices, no squeeze threshold" },
+    { id: "swhot", sourceIds: ["title-f0c83eda5e62b954"], title: "High Octane Trading", year: 2003, blurb: "Wirrick, 2003 · options primer and chart reading; held: no complete rule" }] },
+  // ---- end Wirrick block ----
   // ---- CSmith block (2026-10-24) ----
   { id: "csmith", name: "Courtney D. Smith", tagline: "FX and futures trader · swing-point trend analysis, enhanced channel breakouts, the Conqueror", books: [
     { id: "csmlt", sourceIds: ["title-bafc2391a8c8f66d"], title: "How to Make a Living Trading Foreign Exchange", year: 2010, blurb: "Smith, 2010 · trend analysis, 55/20 channel breakout with the rejection rule, Conqueror I/II, stochastic 50 line, reversal days and RRR run as declared applications; inside days, slingshot and divergences held" },
