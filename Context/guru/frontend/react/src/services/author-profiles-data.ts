@@ -222,6 +222,21 @@ export const AUTHOR_PROFILE_DATA = {
   "sources": [],
   "confidence": "low"
  },
+ "kroll": {
+  "kind": "person",
+  "mastery": [
+   "Long-term futures trend trading",
+   "Moving-average trend strategies"
+  ],
+  "summary": "Stanley Kroll traded futures on Wall Street from 1960 and wrote several books on futures strategy. Dragons and Bulls gives a complete moving-average trend strategy (50-day trend filter, 10/20/50-day entries, 4/9/18-day stop-outs and re-entries), which is run here; his other chapters are money management and trading discipline. He co-wrote The New Technical Trader with Tushar Chande. This profile rests on the books themselves.",
+  "known_for": [
+   "Dragons and Bulls",
+   "Kroll on Futures Trading Strategy",
+   "The New Technical Trader (with Tushar Chande)"
+  ],
+  "sources": [],
+  "confidence": "low"
+ },
  "carney": {
   "kind": "person",
   "mastery": [

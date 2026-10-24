@@ -278,6 +278,8 @@ export const sourceReview: Record<string, {type: string; sameWorkAs?: string; pe
   "vvmfm": {"type": "book", "people": ["Benjamin Van Vliet"]},
   "vvqmm": {"type": "book", "people": ["Benjamin Van Vliet"]},
   "smcht": {"type": "book", "people": ["Scott M. Carney"]},
+  "skdab": {"type": "book", "people": ["Stanley Kroll"]},
+  "skfts": {"type": "book", "people": ["Stanley Kroll"]},
   "smcv1": {"type": "book", "people": ["Scott M. Carney"]},
   "smcv2": {"type": "book", "people": ["Scott M. Carney"]},
   "jlbcmf": {"type": "book", "people": ["James L. Bickford"]},
