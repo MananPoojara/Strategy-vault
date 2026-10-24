@@ -751,10 +751,11 @@ body.pdf-capture .st-actions, body.pdf-capture #page-action-message, body.pdf-ca
 .tbl.tl td.d { white-space: nowrap; color: var(--ink2); }
 
 /* Statistic tables (Strategy vs benchmark, Detailed statistics): compact, label column first, larger financial figures */
-.tbl.stat-table { width: auto; min-width: min(100%, 640px); max-width: 980px; table-layout: auto; }
-.tbl.stat-table td:first-child { font-size: 14px; color: var(--ink); padding-right: 40px; white-space: nowrap; }
-.tbl.stat-table td.n { font-family: 'Inter Numbers', 'IBM Plex Sans', system-ui, sans-serif; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums lining-nums slashed-zero; font-feature-settings: "tnum" 1, "lnum" 1, "zero" 1; min-width: 150px; padding-left: 28px; white-space: nowrap; }
-.tbl.stat-table th.n { min-width: 150px; padding-left: 28px; }
+.tbl.stat-table { width: 100%; table-layout: fixed; }
+.tbl.stat-table th:first-child, .tbl.stat-table td:first-child { width: 40%; }
+.tbl.stat-table td:first-child { font-size: 14px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tbl.stat-table td.n { font-family: 'Inter Numbers', 'IBM Plex Sans', system-ui, sans-serif; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums lining-nums slashed-zero; font-feature-settings: "tnum" 1, "lnum" 1, "zero" 1; text-align: center; white-space: nowrap; }
+.tbl.stat-table th.n { text-align: center; }
 
 /* Equity range brush (replaces year buttons + two sliders) */
 .range-brush{position:relative;height:56px;margin-top:10px;border:1px solid var(--rule);border-radius:var(--r-field);background:var(--card);cursor:pointer;user-select:none;touch-action:none;overflow:hidden}

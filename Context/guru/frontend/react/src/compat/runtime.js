@@ -125,7 +125,7 @@ const numMinus=t=>String(t).replace(/^-/,'\u2212');
   // Range brush: one window over a mini equity line; drag the window to move, drag either edge to resize, double-click for all.
   const box=document.getElementById('equity-navigator');if(!box)return;const win=box.querySelector('.rb-win'),out=box.querySelector('output'),line=box.querySelector('polyline'),n=d.dates.length;
   if(n<2){win.hidden=true;out.textContent=d.dates[0]||'No dated results';return;}
-  const eq=d.equity||[],step=Math.max(1,Math.floor(n/400)),pts=[];let mn=Infinity,mx=-Infinity;for(let i=0;i<n;i+=step){const v=eq[i];if(Number.isFinite(v)){mn=Math.min(mn,v);mx=Math.max(mx,v);}}
+  const eq=(d.equity||[]).map(v=>v>0?Math.log(v):NaN),step=Math.max(1,Math.floor(n/400)),pts=[];let mn=Infinity,mx=-Infinity;for(let i=0;i<n;i+=step){const v=eq[i];if(Number.isFinite(v)){mn=Math.min(mn,v);mx=Math.max(mx,v);}}
   for(let i=0;i<n;i+=step){const v=eq[i];if(Number.isFinite(v))pts.push(`${(i/(n-1)*1000).toFixed(1)},${(96-(mx>mn?(v-mn)/(mx-mn):.5)*92).toFixed(1)}`);}line.setAttribute('points',pts.join(' '));
   let lo=0,hi=n-1,fromChart=false;const minSpan=Math.min(n-1,5);
   const paint=()=>{win.style.left=`${lo/(n-1)*100}%`;win.style.width=`${(hi-lo)/(n-1)*100}%`;out.textContent=`${d.dates[lo]} — ${d.dates[hi]}`;win.setAttribute('aria-valuetext',out.textContent);};
