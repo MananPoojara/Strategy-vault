@@ -165,6 +165,95 @@ fn min_of(v: &[f64]) -> f64 {
     v.iter().cloned().fold(f64::INFINITY, f64::min)
 }
 
+// ---------------------------------------------------------------- intraday phase 1: minute-path rules
+
+fn mtrade(dir: f64, i: usize, px: f64, xi: usize, xp: f64, why: &str, open: bool) -> Trade {
+    Trade { dir, legs: vec![Leg { i, px, w: 1.0 }], exit_i: xi, exit_px: xp, reason: why.into(), entry_kind: "stop", signal_i: xi, open, exits: Vec::new() }
+}
+
+/// Momentum Pinball (Ch 7) on real 1-minute bars; see the catalogue note. One position at a time.
+fn pinball_minutes(x: &Ctx, from: usize, to: usize, lb: &[f64], bl: f64, sl: f64, lo_ok: bool, sh_ok: bool, tick: &dyn Fn(usize) -> f64) -> Vec<Trade> {
+    use crate::intraday::{first_touch, session_open, touched, Level, Touch};
+    let Some(mm) = x.minutes else { return vec![] };
+    let (h, l, c) = (&x.h, &x.l, &x.c);
+    let mut out = vec![];
+    let mut j = from.max(1);
+    while j <= to {
+        let d = j - 1;
+        let dir = if lo_ok && lb[d] < bl { 1.0 } else if sh_ok && lb[d] > sl { -1.0 } else { 0.0 };
+        let Some(b) = (dir != 0.0).then(|| mm.day(&x.r[j].date)).flatten() else { j += 1; continue };
+        let open = session_open(&x.r[j].ticker, &x.r[j].date);
+        let k0 = b.iter().position(|z| z.m >= open + 60).unwrap_or(b.len());
+        if k0 == 0 || k0 == b.len() { j += 1; continue; }
+        let fh = b[..k0].iter().map(|z| z.h).fold(f64::NEG_INFINITY, f64::max);
+        let fl = b[..k0].iter().map(|z| z.l).fold(f64::INFINITY, f64::min);
+        let t = tick(d);
+        let (entry, stop) = if dir > 0.0 { (Level { up: true, px: fh + t }, Level { up: false, px: fl }) } else { (Level { up: false, px: fl - t }, Level { up: true, px: fh }) };
+        let Touch::Hit { bar: kf, px, .. } = first_touch(&b, k0, &[entry]) else { j += 1; continue };
+        let tr = |xi: usize, xp: f64, why: &str, open: bool| mtrade(dir, j, px, xi, xp, why, open);
+        if touched(&b[kf], stop) {
+            out.push(tr(j, stop.px, "protective stop (same minute as the fill: fill taken first)", false));
+        } else if let Touch::Hit { px: xp, .. } = first_touch(&b, kf + 1, &[stop]) {
+            out.push(tr(j, xp, "protective stop", false));
+        } else if j == to {
+            out.push(tr(j, c[j], "open", true));
+        } else if dir * (c[j] - px) <= 0.0 {
+            out.push(tr(j, c[j], "no profit on the close: out (no losers overnight)", false));
+        } else {
+            let k = j + 1;
+            // day three needs its minutes too; without them the trade cannot be resolved and is not taken
+            let Some(b3) = mm.day(&x.r[k].date) else { j += 1; continue };
+            let target = if dir > 0.0 { Level { up: true, px: h[j] + tick(j) } } else { Level { up: false, px: l[j] - tick(j) } };
+            out.push(match first_touch(&b3, 0, &[stop, target]) {
+                Touch::Hit { k: 0, px: xp, .. } => tr(k, xp, "protective stop", false),
+                Touch::Hit { px: xp, .. } => tr(k, xp, "day 3: limit 1 tick beyond the day-2 extreme", false),
+                Touch::Ambiguous { .. } => tr(k, stop.px, "protective stop (same minute as the day-3 limit: stop taken first)", false),
+                Touch::None => tr(k, c[k], "day 3: out by the close", false),
+            });
+            j = k + 1;
+            continue;
+        }
+        j += 1;
+    }
+    out
+}
+
+/// 80-20's (Ch 6) on real 1-minute bars: after today trades pen ticks beyond yesterday's low (buys), a buy stop at
+/// yesterday's low, live from the break minute if it opened beyond the break level, else from the next minute
+/// [convention: a minute that breaks after its open and trades back cannot show the order]; stop at today's low before
+/// the fill (earlier minutes and the fill minute's open); out on the close. Sells mirrored. Day trade only.
+fn e8020_minutes(x: &Ctx, from: usize, to: usize, op: f64, cp: f64, pen: f64, lo_ok: bool, sh_ok: bool, tick: &dyn Fn(usize) -> f64) -> Vec<Trade> {
+    use crate::intraday::{first_touch, touched, Level, Touch};
+    let Some(mm) = x.minutes else { return vec![] };
+    let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
+    let mut out = vec![];
+    for j in from.max(1)..=to {
+        let d = j - 1;
+        let r = h[d] - l[d];
+        if r <= 0.0 { continue; }
+        let (ol, cl) = ((o[d] - l[d]) / r, (c[d] - l[d]) / r);
+        let dir = if lo_ok && ol >= 1.0 - op && cl <= cp { 1.0 } else if sh_ok && ol <= op && cl >= 1.0 - cp { -1.0 } else { 0.0 };
+        let Some(b) = (dir != 0.0).then(|| mm.day(&x.r[j].date)).flatten() else { continue };
+        let lv = if dir > 0.0 { l[d] } else { h[d] };
+        let brk = Level { up: dir < 0.0, px: lv - dir * pen * tick(d) };
+        let Touch::Hit { bar: kb, .. } = first_touch(&b, 0, &[brk]) else { continue };
+        // a minute that opened beyond the break level broke at its open, so its trade back to the level can fill
+        let opened_beyond = if dir > 0.0 { b[kb].o <= brk.px } else { b[kb].o >= brk.px };
+        let Touch::Hit { bar: kf, px, .. } = first_touch(&b, if opened_beyond { kb } else { kb + 1 }, &[Level { up: dir > 0.0, px: lv }]) else { continue };
+        // today's extreme before the fill: the earlier minutes and the fill minute's own open
+        let ext = if dir > 0.0 { b[..kf].iter().map(|z| z.l).fold(b[kf].o, f64::min) } else { b[..kf].iter().map(|z| z.h).fold(b[kf].o, f64::max) };
+        let stop = Level { up: dir < 0.0, px: ext };
+        out.push(if touched(&b[kf], stop) {
+            mtrade(dir, j, px, j, stop.px, "protective stop (same minute as the fill: fill taken first)", false)
+        } else if let Touch::Hit { px: xp, .. } = first_touch(&b, kf + 1, &[stop]) {
+            mtrade(dir, j, px, j, xp, "protective stop at today's extreme", false)
+        } else {
+            mtrade(dir, j, px, j, c[j], "day trade: out on the close", false)
+        });
+    }
+    out
+}
+
 // ---------------------------------------------------------------- local simulator
 
 #[derive(Clone, Copy)]
@@ -633,8 +722,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("ss_turtle_soup_plus_one", "Turtle Soup Plus One", "Ch 5 · Turtle Soup Plus One", "Long/Short", Live, &[], TSP1, INDEX, None),
         d("ss_80_20", "80-20's", "Ch 6 · 80-20's", "Long/Short", Live, &[], E8020,
           "Day trade built for intraday data; run on daily bars: filled when today's low is at least 10 ticks under yesterday's low and the bar trades back to yesterday's low. Bars that opened above yesterday's low are ambiguous: skipped by default (fill_rule 0); fill_rule 1 counts them all (pessimistic), 2 = close-confirmed (biased upward, the first-round default). The protective stop at today's low cannot be hit after the fill on daily bars. India: NIFTY day session only, as the book asks.", None),
-        d("ss_momentum_pinball", "Momentum Pinball", "Ch 7 · Momentum Pinball", "Long/Short", Live, &["OPEN60_HIGH", "OPEN60_LOW"], PINBALL,
-          "Needs per-ticker series OPEN60_HIGH / OPEN60_LOW = high / low of the first 60 minutes of the session (US 9:30-10:30 ET, NSE 9:15-10:15 IST), from intraday bars. Re-entry after a stop-out is not modelled.", None),
+        d("ss_momentum_pinball", "Momentum Pinball", "Ch 7 · Momentum Pinball", "Long/Short", Live, &[], PINBALL,
+          "Run on real 1-minute bars (intraday phase 1): first hour = the session's first 60 minutes (US 9:30-10:30 ET, NSE 9:15-10:15 IST; 9:55 / 9:00 opens before Oct 2010). Day two: buy stop 1 tick above the first-hour high (sell: below the low), filled at the level or at the minute's open if it gaps through; protective stop at the other end of the first hour. A minute that reaches both the fill and the stop counts as filled then stopped [convention]. Profitable on the close: carried to day three, where a limit 1 tick beyond the day-two extreme and the stop are resolved minute by minute (both in one minute: stop first [convention]); else out on the day-three close. 1 tick = tick_pct % of yesterday's close. Re-entry after a stop-out (rule 5, \"can be\") is not modelled. Days without minute data make no trade. p.path=0 = the old daily approximation on OPEN60_HIGH/LOW series [Not from the book].", None),
         d("ss_2_period_roc", "2-Period ROC", "Ch 8 · 2-Period ROC", "Long/Short", Live, &[], ROC2,
           "ROC = C - C[2] (TradeStation MOMENTUM(C,2)); the prose has the subtraction backwards, the worksheet is right (unit test reproduces every row). Close above the pivot <=> the ROC rose. India: all indices.",
           claim("11", "8 of 11", "-", "1 day", "S&P Dec-94 futures, ~Oct 24 - Dec 1 1994")),
@@ -797,6 +886,10 @@ fn p(key: &'static str, label: &'static str, def: f64, min: f64, max: f64, step:
 fn tick() -> ParamDef {
     p("tick_pct", "1 tick = % of price (−1 = auto: 0.01% of price on an index/ETF as before; on an actual stock its real tick, 0.05 INR NSE / 0.01 USD US, adaptation: the book used 1/8-dollar ticks)", -1.0, -1.0, 0.1, 0.01)
 }
+// intraday phase 1
+fn path() -> ParamDef {
+    p("path", "Same-day order: 1 = real 1-minute bars (book rule; days without minute data make no trade), 0 = [Not from the book] old daily-bar approximation", 1.0, 0.0, 1.0, 1.0)
+}
 fn side() -> ParamDef {
     p("side", "Side: 0 both, 1 long only, -1 short only", 0.0, -1.0, 1.0, 1.0)
 }
@@ -825,8 +918,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("stop_ticks", "Stop: ticks beyond the day-1/day-2 extreme", 1.0, 0.0, 5.0, 1.0),
             p("entry_stop", "Entry-day stop: 0 = under the lower of the day-1/day-2 lows (book rule 3), 1 = [Not from the book] previous reading: under the day-1 low on day two", 0.0, 0.0, 1.0, 1.0), p("half_bar", "Half off on the close of bar N (book 2-6; 0 = off)", 6.0, 0.0, 10.0, 1.0), trail(), side(), tick()],
         "ss_80_20" => vec![p("open_pct", "Opened in the top/bottom % of range", 20.0, 5.0, 40.0, 5.0), p("close_pct", "Closed in the bottom/top % of range", 20.0, 5.0, 40.0, 5.0),
-            p("pen_ticks", "Today trades N ticks beyond yesterday's extreme", 10.0, 0.0, 30.0, 5.0), p("fill_rule", "[Not from the book] bar that opened beyond the level: 0 skip (unbiased), 1 fill (pessimistic), 2 fill if it closed back (biased)", 0.0, 0.0, 2.0, 1.0), side(), tick()],
-        "ss_momentum_pinball" => vec![p("rsi_len", "LBR/RSI period", 3.0, 2.0, 6.0, 1.0), p("buy_level", "Buy setup: LBR/RSI below", 30.0, 10.0, 40.0, 5.0), p("sell_level", "Sell setup: LBR/RSI above", 70.0, 60.0, 90.0, 5.0), side(), tick()],
+            p("pen_ticks", "Today trades N ticks beyond yesterday's extreme", 10.0, 0.0, 30.0, 5.0), path(), p("fill_rule", "[Not from the book] bar that opened beyond the level: 0 skip (unbiased), 1 fill (pessimistic), 2 fill if it closed back (biased)", 0.0, 0.0, 2.0, 1.0), side(), tick()],
+        "ss_momentum_pinball" => vec![p("rsi_len", "LBR/RSI period", 3.0, 2.0, 6.0, 1.0), p("buy_level", "Buy setup: LBR/RSI below", 30.0, 10.0, 40.0, 5.0), p("sell_level", "Sell setup: LBR/RSI above", 70.0, 60.0, 90.0, 5.0), side(), tick(), path()],
         "ss_2_period_roc" => vec![p("roc_len", "ROC period", 2.0, 1.0, 5.0, 1.0), p("hold", "Exit on the close N days later", 1.0, 1.0, 5.0, 1.0), side()],
         "ss_anti" => vec![p("k_len", "Fast line: %K period", 7.0, 5.0, 14.0, 1.0), p("k_smooth", "Fast line: smoothing", 4.0, 1.0, 5.0, 1.0), p("d_len", "Slow line: %D period", 10.0, 5.0, 20.0, 1.0), p("d_mode", "Slow line: 0 = 10-bar SMA of the fast line (book), 1 = [Not from the book] previous reading: TradeStation SlowD (10-bar %K, SMA3 twice)", 0.0, 0.0, 1.0, 1.0),
             p("trend_bars", "Slow line rising N bars", 2.0, 1.0, 5.0, 1.0), p("hold", "Out on the close of day N", 4.0, 2.0, 8.0, 1.0), side(), tick()],
@@ -932,6 +1025,10 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, prm: &Params) -> Option<Ve
             let rule = |j: usize, p: &Pos| (j == p.i).then(|| Act::SetStop(if p.dir > 0.0 { l[p.setup].min(l[j]) - st * tick(j) } else { h[p.setup].max(h[j]) + st * tick(j) }));
             go(v, u0("trail"), u0("half_bar"), &rule)
         }
+        // ---- intraday phase 1: minute-path versions (default path = 1)
+        "ss_80_20" if g("path") >= 0.5 => e8020_minutes(x, from, to, g("open_pct") / 100.0, g("close_pct") / 100.0, g("pen_ticks"), lo_ok(), sh_ok(), &tick),
+        "ss_momentum_pinball" if g("path") >= 0.5 => pinball_minutes(x, from, to, &lbr_rsi(c, u("rsi_len")), g("buy_level"), g("sell_level"), lo_ok(), sh_ok(), &tick),
+        // ---- end intraday phase 1
         "ss_80_20" => {
             let (op, cp, pen, fr) = (g("open_pct") / 100.0, g("close_pct") / 100.0, g("pen_ticks"), u0("fill_rule") as u8);
             for j in 1..=to {
@@ -1350,6 +1447,7 @@ mod tests {
         let n = |fr: f64| {
             let mut p = Params::new();
             p.insert("fill_rule".into(), fr);
+            p.insert("path".into(), 0.0); // intraday phase 1: the daily-bar reading
             run("ss_80_20", &x, 0, 2, &p).unwrap()
         };
         assert!(n(0.0).is_empty() && n(2.0).is_empty());
@@ -1374,5 +1472,36 @@ mod tests {
         assert_eq!((t[1].dir, t[1].legs[0].i), (-1.0, 5));
         assert!((t[1].legs[0].px - 94.99).abs() < 1e-9);
         assert!(t[1].open);
+    }
+}
+
+// intraday phase 1: Momentum Pinball on a synthetic minute file (fill above the first hour, carried, day-3 limit)
+#[cfg(test)]
+mod intraday_p1_tests {
+    use super::*;
+    #[test]
+    fn pinball_minute_path_fills_carries_and_takes_the_day3_limit() {
+        let closes = [100.0, 99.0, 97.0, 94.0, 90.0, 85.0, 87.0, 87.2];
+        let rows: Vec<Row> = closes.iter().enumerate().map(|(i, &c)| Row { ticker: "SPY".into(), date: format!("2020-01-{:02}", i + 1), open: c, high: if i == 6 { 87.5 } else { c + 0.6 }, low: c - 2.0, close: c, volume: None }).collect();
+        let dir = std::env::temp_dir().join(format!("pinball{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut body = String::from("Date,Time,Open,High,Low,Close\n");
+        let mut idx = String::from("Date,offset,bytes\n");
+        for (d, lines) in [("2020-01-07", (0..60).map(|k| format!("{:02}:{:02},85,86,84,85", 9 + (30 + k) / 60, (30 + k) % 60)).chain(["10:30,85.9,86.5,85.8,86.4".to_string(), "10:31,86.4,87.5,86.3,87".to_string()]).collect::<Vec<_>>()),
+                           ("2020-01-08", vec!["09:30,87.2,87.6,87.1,87.5".to_string()])] {
+            let start = body.len();
+            for l in &lines { body.push_str(&format!("{d},{l}\n")); }
+            idx.push_str(&format!("{d},{start},{}\n", body.len() - start));
+        }
+        std::fs::write(dir.join("SPY.m1.csv"), &body).unwrap();
+        std::fs::write(dir.join("SPY.m1idx.csv"), &idx).unwrap();
+        let mut x = Ctx::new(&rows, &rows, &[]);
+        x.minutes = crate::intraday::Minutes::load(dir.to_str().unwrap(), "SPY").map(|m| &*Box::leak(Box::new(m)));
+        let t = run("ss_momentum_pinball", &x, 5, 7, &Params::new()).unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
+        assert_eq!(t.len(), 1, "{:?}", t.iter().map(|t| (&t.reason, t.exit_px)).collect::<Vec<_>>());
+        assert!((t[0].legs[0].px - (86.0 + 85.0 * 1e-4)).abs() < 1e-9 && t[0].legs[0].i == 6);
+        assert_eq!(t[0].exit_i, 7);
+        assert!((t[0].exit_px - (87.5 + 87.0 * 1e-4)).abs() < 1e-9 && t[0].reason.contains("limit"), "{} {}", t[0].exit_px, t[0].reason);
     }
 }

@@ -98,10 +98,12 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let mut v = vec![
         p("adx_n", "ADX / DI period (daily)", 14.0, 5.0, 30.0, 1.0),
         p("adx_min", "ADX above", 30.0, 15.0, 50.0, 1.0),
-        p("tick", "One tick (price units; must equal the series builder's --tick: NSE 0.05, US 0.01)", 0.05, 0.01, 1.0, 0.01),
+        p("tick", "One tick (price units; −1 = auto: the market's tick on the 1-minute path (0.05 NSE, 0.01 US), 0.05 on the old series path, which must equal the series builder's --tick)", -1.0, -1.0, 1.0, 0.01),
         p("max_losses", "Losing trades a day before stopping (1 = no re-entry)", 2.0, 1.0, 5.0, 1.0),
         p("stop_at_low", "Protective stop: 0 = one tick beyond the first-bar extreme, 1 = at it (book offers both)", 0.0, 0.0, 1.0, 1.0),
         p("exit_at", "End-of-day exit: 0 = last intraday bar close [not from book], 1 = daily file close", 0.0, 0.0, 1.0, 1.0),
+        // intraday phase 1
+        p("path", "1 = real 1-minute bars (fills at the level or the minute's open; tick −1 = the market's tick), 0 = [Not from the book] old daily series built by build_series.py", 1.0, 0.0, 1.0, 1.0),
     ];
     match id {
         ADX => {}
@@ -155,6 +157,27 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).unwrap().def);
     let u = |k: &str| g(k).round().max(1.0) as usize;
     let (pdi, mdi, adx) = dmi3(x.r, u("adx_n"));
+    // ---- intraday phase 1: real 1-minute path for the futures/index card (the equities filter needs stock minutes: none held)
+    if id == ADX && g("path") >= 0.5 {
+        let Some(mm) = x.minutes else { return Some(vec![]) };
+        let at = g("stop_at_low") >= 0.5;
+        let t = if g("tick") < 0.0 { x.market_tick() } else { g("tick") };
+        let mut out = Vec::new();
+        for i in from.max(1)..=to {
+            let k = i - 1;
+            if !(adx[k] > g("adx_min")) { continue; }
+            let dir = if pdi[k] > mdi[k] { 1.0 } else if mdi[k] > pdi[k] { -1.0 } else { continue };
+            let Some(b) = mm.day(&x.r[i].date) else { continue };
+            let close = if g("exit_at") >= 0.5 { x.c[i] } else { b[b.len() - 1].c };
+            let open = crate::intraday::session_open(&x.r[i].ticker, &x.r[i].date);
+            for (px, stop, _) in crate::intraday::adx15_day(&b, open, dir > 0.0, t, if at { 0.0 } else { t }, u("max_losses")) {
+                out.push(Trade { dir, legs: vec![Leg { i, px, w: 1.0 }], exit_i: i, exit_px: stop.unwrap_or(close),
+                    reason: if stop.is_some() { "protective stop (first-bar extreme)".into() } else { "end of day".into() }, entry_kind: "stop", signal_i: i, open: false, exits: Vec::new() });
+            }
+        }
+        return Some(out);
+    }
+    // ---- end intraday phase 1
     let hv = (id == ADX_EQ).then(|| if u("hv_n") == 100 { x.hv100.clone() } else { hv(&x.c, u("hv_n")) });
     let s = |k: &str| x.series(k);
     let at = g("stop_at_low") >= 0.5;
@@ -170,7 +193,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         return Some(vec![]);
     };
     let close: &[f64] = if g("exit_at") >= 0.5 { &x.c } else { match s("CLOSE_LAST") { Some(c) => c, None => return Some(vec![]) } };
-    let (adx_min, tick, cap) = (g("adx_min"), g("tick"), u("max_losses"));
+    let (adx_min, tick, cap) = (g("adx_min"), if g("tick") < 0.0 { 0.05 } else { g("tick") }, u("max_losses")); // intraday phase 1: −1 = the old 0.05 default
     let stop_tick = if at { 0.0 } else { tick };
     let mut out = Vec::new();
     for i in from.max(1)..=to {
