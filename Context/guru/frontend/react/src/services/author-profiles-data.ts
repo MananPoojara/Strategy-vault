@@ -147,6 +147,21 @@ export const AUTHOR_PROFILE_DATA = {
   "sources": [],
   "confidence": "low"
  },
+ "murphy": {
+  "kind": "person",
+  "mastery": [
+   "Technical analysis",
+   "Intermarket analysis"
+  ],
+  "summary": "John J. Murphy wrote Technical Analysis of the Financial Markets, the standard textbook of the field, and pioneered intermarket analysis. His books describe the common indicators and other traders' systems (Donchian's 4-week rule, the 4-9-18 averages) rather than systems of his own, so his complete rules run under the vault's existing strategies. This profile rests on the books themselves.",
+  "known_for": [
+   "Technical Analysis of the Financial Markets",
+   "Intermarket Technical Analysis",
+   "The Visual Investor"
+  ],
+  "sources": [],
+  "confidence": "low"
+ },
  "schwager": {
   "kind": "person",
   "mastery": [
