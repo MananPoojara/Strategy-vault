@@ -221,7 +221,10 @@ impl Vx {
         let b = if src == 1 { "VXO_OHLC" } else { "VIX" };
         let col = |k: &str| x.series(&format!("{b}.{k}")).map(<[f64]>::to_vec).unwrap_or_else(|| vec![f64::NAN; n]);
         let (o, h, l, c) = (col("Open"), col("High"), col("Low"), col("Close"));
-        let days: Vec<usize> = (0..n).filter(|&i| [o[i], h[i], l[i], c[i]].iter().all(|v| v.is_finite())).collect();
+        // VIX India (24 Oct 2026): a VIX bar is a day with a finite high, low and close. The India VIX open is NaN where no
+        // 1-minute data gives a real one; rules that read the open are refused there by readiness (reads_vix_open).
+        // CBOE VIX / VXO bars have all four fields, so US results are unchanged.
+        let days: Vec<usize> = (0..n).filter(|&i| [h[i], l[i], c[i]].iter().all(|v| v.is_finite())).collect();
         let mut at = vec![None; n];
         for (k, &i) in days.iter().enumerate() {
             at[i] = Some(k);

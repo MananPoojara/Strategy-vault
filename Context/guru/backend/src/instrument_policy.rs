@@ -52,8 +52,26 @@ macro_rules! OPEN_ETF_LABEL {()=>{"Book tests ETFs; index and stock runs (US and
 macro_rules! OPEN_STOCK_LABEL {()=>{"Book tests stocks; index and ETF runs (US and India) are a declared application (user decision 22 Oct 2026), not the author's test. Rules and parameters are unchanged."}}
 /// connors-leftovers (22 Oct 2026): STC IX 1-2-3-4-5 is written for 2x/3x leveraged ETFs, which the vault does not hold.
 macro_rules! OPEN_LEVERAGED_LABEL {()=>{"Book trades 2x/3x leveraged equity ETFs (STC IX Session 7); the vault holds none, so runs on unleveraged ETFs, indices and stocks (US and India) are a declared application (user decision 22 Oct 2026), not the author's test. Rules and parameters are unchanged; the 21-day share-volume filter is read on the selected instrument's own volume."}}
+// ---------------------------------------------------------------- VIX India (user request 24 Oct 2026: "if you don't find US VIX you can use India VIX data and do backtest")
+// Admission only: every live VIX rule runs on actual indices, ETFs and stocks, US (CBOE VIX) and India (India VIX in place of
+// the CBOE VIX). Rules, parameters and calculations are unchanged; VIX levels printed for the US VIX stay as printed.
+// Real data limits stay: rules that read the VIX open need a real India VIX open (1-minute India VIX, readiness::reads_vix_open).
+pub const VIX_INDIA_RULES:&[(&str,&str)]=&[("stc9","vix200"),("stc9","vix2"),("stc9","vix4"),("stc9","vix7"),("stc9","vix8"),("stc9","vix53_short"),("stc9","vix101_short"),
+    ("spmt","spmt_vix200"),("spmt","spmt_vix2"),("spmt","spmt_vix4"),("spmt","spmt_vix7"),("spmt","spmt_vix8"),("spmt","spmt_short_vix53"),("spmt","spmt_short_vix101"),
+    ("ws5","ws5_momentum_windows_any"),("ws5","ws5_single_window"),("ws5","ws5_double_window"),("ws5","ws5_hanging_window"),("ws5","ws5_gap_window_eod"),("ws5","ws5_gap_window_intraday"),("ws5","ws5_outside_window"),("ws5","ws5_vix_iii_reversal"),
+    ("ats","ats_cvr1"),("ats","ats_cvr2"),("ats","ats_cvr3"),("ats","ats_cvr_equities"),("otvt","otvt_cvr1_long"),("otvt","otvt_cvr1_short"),("rsi25","r25_rsi25_vix"),("rsi25","r25_rsi25_15_vix"),
+    ("ptjmt","ptjmt_cvr1"),("ptjmt","ptjmt_cvr2"),("ptjmt","ptjmt_cvr3"),("ptjmt","ptjmt_cvr5"),("ststw","ststw_vix_stretch"),("ststw","ststw_vix_rsi"),
+    ("vixr","vixr_cvr1"),("vixr","vixr_cvr2"),("vixr","vixr_cvr3"),("vixr","vixr_cvr5_1d"),("vixr","vixr_cvr5_3d"),("vixr","vixr_cvr6"),("vixr","vixr_cvr7"),("vixr","vixr_cvr8"),("vixr","vixr_cvr9"),("vixr","vixr_cvr10"),("vixr","vixr_cvr11")];
+pub const VIX_INDIA_LABEL:&str="The book used another instrument (futures, a cash index or an ETF); runs on actual indices, ETFs and stocks, US and India, are a declared application (user decision 23 Oct 2026; VIX India 24 Oct 2026), not the author's test. US instruments read the CBOE VIX. Indian instruments (NIFTY 50, NIFTYBANK, Indian stocks): declared application: India VIX in place of the CBOE VIX. VIX levels and VIX-point thresholds printed for the US VIX are kept as printed; India VIX runs on a different scale, so on Indian instruments they mark different market conditions. Rules that read the VIX open use the real India VIX open from 1-minute data (the first minute after NSE's 09:15 opening print), available from 2015; NSE's daily India VIX open repeats the previous close and is never used.";
+pub fn vix_india(def:&StrategyDef)->bool {VIX_INDIA_RULES.contains(&(def.book,def.id))}
+/// Held on Indian instruments (user decision): the independent reference and the engine differ on an exact tie.
+pub fn vix_india_held(def:&StrategyDef,ticker:&str,india:bool)->Option<Issue> {
+    (india && def.id=="vixr_cvr11").then(||Issue{status:"not_testable",note:format!("Held on Indian instruments ({ticker}): CVR 11 compares yesterday's VIX 3/10-day oscillator with -1 VIX point. On India VIX the oscillator is exactly -1.00 on 2012-04-03; the book's rule (at or below -1) sells, but the engine's floating-point average gives -0.99999... and does not, so the engine and the independent check differ from that trade on. Not published until the tie handling is decided. US runs (CBOE VIX) match the check.")})
+}
+// ---------------------------------------------------------------- end VIX India
 pub fn open_instrument_label(def:&StrategyDef)->Option<&'static str> {
     let key=(def.book,def.id);
+    if vix_india(def) {return Some(VIX_INDIA_LABEL);} // VIX India block
     if key==("stc9","s12345") {return Some(OPEN_LEVERAGED_LABEL!());}
     if OPEN_ALL_RULES.contains(&key) {return Some(OPEN_ALL_LABEL);} // open-all block
     if OPEN_ETF_RULES.contains(&key) {Some(OPEN_ETF_LABEL!())} else if OPEN_STOCK_RULES.contains(&key) {Some(OPEN_STOCK_LABEL!())} else {None}
@@ -72,6 +90,7 @@ pub fn open_all(def:&StrategyDef)->bool {OPEN_ALL_RULES.contains(&(def.book,def.
 /// reviewed index (US -> SPX, India -> NIFTY 50). us: None = decide from the ticker (NIFTY... = India).
 fn open_all_symbol_issue(def:&StrategyDef,ticker:&str,us:Option<bool>)->Option<Issue> {
     use crate::books::{vixr,spmt,ptjmt,ss,ws5,ststw,ats,hfm,otvt};
+    if vix_india(def) {return None;} // VIX India block: India VIX on Indian instruments, CBOE VIX on US ones
     let us=us.unwrap_or(!ticker.starts_with("NIFTY"));
     let t=if us {"SPX"} else {"NIFTY 50"};
     let ok=match def.book {
@@ -738,6 +757,7 @@ pub fn selected_type(ticker:&str,native_stock:bool)->&'static str {
 }
 pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     let p=policy(def);let selected=selected_type(ticker,native_stock);
+    if vix_india(def) {return vix_india_held(def,ticker,ticker.starts_with("NIFTY")).or_else(||check_selected(p,def.id,ticker,selected));} // VIX India block
     if open_all(def) {return open_all_symbol_issue(def,ticker,native_stock.then_some(false)).or_else(||check_selected(p,def.id,ticker,selected));} // open-all block
     if let Some(issue)=dema_index_symbol_issue(def,ticker,selected){return Some(issue);}
     if let Some(issue)=nse_breadth_held(def,ticker){return Some(issue);}
@@ -765,6 +785,7 @@ pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
 /// source's historical adjusted-price basis or its original execution ticks.
 pub fn check_native(def:&StrategyDef,ticker:&str,evidence:&NativeEvidence)->Option<Issue> {
     let p=policy(def);
+    if vix_india(def) {return vix_india_held(def,ticker,evidence.market()==Market::India).or_else(||check_selected(p,def.id,ticker,evidence.asset_type()));} // VIX India block
     if open_all(def) {return open_all_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)).or_else(||check_selected(p,def.id,ticker,evidence.asset_type()));} // open-all block
     if let Some(issue)=dema_index_symbol_issue(def,ticker,evidence.asset_type()){return Some(issue);}
     if let Some(issue)=nse_breadth_held(def,ticker){return Some(issue);}
@@ -1014,18 +1035,18 @@ mod tests {
         // (STC IX vix2/vix7 already ran on NIFTY 50 before 23 Oct; that existing route is reported, not changed here.)
         for &(book,id) in OPEN_ALL_RULES {
             let d=def(id,book);
-            assert!(open_all(&d) && open_instrument_label(&d)==Some(OPEN_ALL_LABEL),"{id}");
+            assert!(open_all(&d) && open_instrument_label(&d)==Some(if vix_india(&d) {VIX_INDIA_LABEL} else {OPEN_ALL_LABEL}),"{id}");
             assert_ne!(policy(&d).requirement,"source_review_required","{id}");
             let m=metadata_json(&d);assert!(m.contains("user decision 23 Oct 2026"),"{id}");assert_eq!(m.matches("\"declared_application\"").count(),1,"{id}");
             for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(&d,t,false).is_none(),"{id} {t}");}
             assert!(check_native(&d,"AAPL",&us).is_none(),"{id} AAPL");
-            let india_ok=!vix_open.contains(&id);
-            for t in ["NIFTY 50","NIFTYBANK"] {assert_eq!(check(&d,t,false).is_none(),india_ok,"{id} {t}");}
-            assert_eq!(check_native(&d,"RELIANCE",&india).is_none(),india_ok,"{id} RELIANCE");
-            if !india_ok {assert!(check(&d,"NIFTY 50",false).unwrap().note.contains("not run on Indian instruments"));}
+            // VIX India block (24 Oct 2026): the VIX-open rules also run on Indian instruments (real India VIX opens)
+            assert!(!vix_open.contains(&id) || vix_india(&d),"{id}");
+            for t in ["NIFTY 50","NIFTYBANK"] {assert!(check(&d,t,false).is_none(),"{id} {t}");}
+            assert!(check_native(&d,"RELIANCE",&india).is_none(),"{id} RELIANCE");
         }
         // An unlisted sibling keeps its old route; a source-review hold is never opened.
-        assert!(!open_all(&def("vixr_cvr8","vixr")) && check(&def("vixr_cvr8","vixr"),"QQQ",false).is_some());
+        assert!(!open_all(&def("vixr_cvr8","vixr")) && vix_india(&def("vixr_cvr8","vixr")) && check(&def("vixr_cvr8","vixr"),"QQQ",false).is_none());
         assert!(check(&def("radge_oc_long_stop","radge"),"SPY",false).is_some());
     }
     // ---- end open-all block ----
@@ -1137,9 +1158,9 @@ mod tests {
             assert!(policy(&d).source_basis.contains("spmt2-admission"));
             for t in ["SPX","SPY"] {assert!(check(&d,t,false).is_none(),"{id} {t}");}
             // NIFTY 50 TRIN / advancers runs are held (user decision 2026-10-21: NYSE thresholds not calibrated for NSE)
-            assert_eq!(check(&d,"NIFTY 50",false).is_none(),!matches!(id,"spmt_vix2"|"spmt_vix7"|"spmt_trin_1"|"spmt_trin_2"|"spmt_trin_3"|"spmt_trin_4"|"spmt_trin_5"|"spmt_nyse_adv"),"{id}");
+            assert_eq!(check(&d,"NIFTY 50",false).is_none(),!matches!(id,"spmt_trin_1"|"spmt_trin_2"|"spmt_trin_3"|"spmt_trin_4"|"spmt_trin_5"|"spmt_nyse_adv"),"{id}");
             let open=open_all(&d); // open-all: VIX-open ids (vix2, vix7) stay off Indian instruments
-            let india_ok=open && !matches!(id,"spmt_vix2"|"spmt_vix7");
+            let india_ok=open; // VIX India block (24 Oct 2026): vix2 / vix7 read real India VIX opens
             assert_eq!(check(&d,"NIFTYBANK",false).is_none(),id=="spmt_eom_und" || india_ok,"{id}");
             assert_eq!(check(&d,"NDX",false).is_none(),id=="spmt_eom_und" || open,"{id}");
             assert_eq!(check(&d,"QQQ",false).is_none(),open,"{id}");
@@ -1208,15 +1229,15 @@ mod tests {
         let admitted:Vec<&str>=cat.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
         assert_eq!(admitted,["vixr_cvr1","vixr_cvr2","vixr_cvr3","vixr_cvr5_1d","vixr_cvr5_3d","vixr_cvr6","vixr_cvr7","vixr_cvr8","vixr_cvr9","vixr_cvr10","vixr_cvr11"]);
         for d in cat.iter().filter(|d|reviewed_cash_rule(d)) {
-            let open=open_all(d); // open-all 23 Oct 2026: US instruments all; India only where the review admitted NIFTY 50
-            let india=["vixr_cvr2","vixr_cvr3","vixr_cvr6"].contains(&d.id);
+            let open=open_all(d) || vix_india(d); // open-all 23 Oct 2026 + VIX India 24 Oct 2026
+            let india=d.id!="vixr_cvr11"; // VIX India: CVR 11 held on Indian instruments (exact-tie difference)
             assert_eq!(policy(d).requirement,if open {"index_etf_or_stock"} else {"declared_index_timing"});
             assert!(check(d,"SPY",false).is_none() && check(d,"SPX",false).is_none(),"{}",d.id);
             assert_eq!(check(d,"NIFTY 50",false).is_none(),india,"{}",d.id);
             for t in ["NDX","DJI","QQQ","DIA"] {assert_eq!(check(d,t,false).is_none(),open,"{} {t}",d.id);}
             assert_eq!(check(d,"NIFTY BANK",false).is_none(),open && india,"{}",d.id);
             assert_eq!(check_native(d,"AAPL",&NativeEvidence::us_test_fixture()).is_none(),open,"{}",d.id);
-            assert_eq!(check(d,"RELIANCE",true).is_none(),open && india,"{}",d.id);
+            assert_eq!(check_native(d,"RELIANCE",&NativeEvidence::india_test_fixture()).is_none(),open && india,"{}",d.id);
             assert!(!reviewed_cash_rule(&def(d.id,"spmt")));
         }
         for id in ["vixr_all","vixr_stocks","vixr_options","vixr_cvr4"] {
@@ -1236,12 +1257,12 @@ mod tests {
             let nse=d.id.ends_with("_nse");
             assert_eq!(check(d,"SPY",false).is_none(),!nse,"{}",d.id);
             assert_eq!(check(d,"SPX",false).is_none(),!nse,"{}",d.id);
-            assert_eq!(check(d,"NIFTY 50",false).is_none(),["ptjmt_cvr2","ptjmt_cvr3"].contains(&d.id),"{}",d.id); // *_nse held
+            assert_eq!(check(d,"NIFTY 50",false).is_none(),d.id.starts_with("ptjmt_cvr"),"{}",d.id); // *_nse held; CVR rules: VIX India block
             let open=open_all(d); // open-all 23 Oct 2026
             for t in ["NDX","DJI","QQQ","DIA"] {assert_eq!(check(d,t,false).is_none(),open,"{} {t}",d.id);}
-            assert_eq!(check(d,"NIFTY BANK",false).is_none(),open && ["ptjmt_cvr2","ptjmt_cvr3"].contains(&d.id),"{}",d.id);
+            assert_eq!(check(d,"NIFTY BANK",false).is_none(),open && d.id.starts_with("ptjmt_cvr"),"{}",d.id);
             assert_eq!(check_native(d,"AAPL",&NativeEvidence::us_test_fixture()).is_none(),open,"{}",d.id);
-            assert_eq!(check(d,"RELIANCE",true).is_none(),open && ["ptjmt_cvr2","ptjmt_cvr3"].contains(&d.id),"{}",d.id);
+            assert_eq!(check(d,"RELIANCE",true).is_none(),open && d.id.starts_with("ptjmt_cvr"),"{}",d.id);
         }
         for id in ["ptjmt_cvr4","ptjmt_cvr4_friday"] {
             let d=cat.iter().find(|d|d.id==id).unwrap();
@@ -1342,9 +1363,10 @@ mod tests {
         for t in ["SPX","SPY"] {for id in ["ats_cvr1","ats_cvr2","ats_cvr3","ats_trin_thrust","ats_padi","ats_hv_thrust","ats_cvr_equities"] {assert!(ok(id,t),"{id} {t}");}}
         for id in ["ats_cvr2","ats_cvr3","ats_hv_thrust"] {assert!(ok(id,"NIFTY 50"),"{id}");}
         for id in ["ats_trin_thrust_nse","ats_padi_nse"] {assert!(!ok(id,"NIFTY 50"),"{id}");} // held (NSE breadth)
-        for id in ["ats_cvr1","ats_trin_thrust","ats_padi","ats_cvr_equities"] {assert!(!ok(id,"NIFTY 50"),"{id}");}
+        for id in ["ats_trin_thrust","ats_padi"] {assert!(!ok(id,"NIFTY 50"),"{id}");}
+        for id in ["ats_cvr1","ats_cvr_equities"] {assert!(ok(id,"NIFTY 50") && ok(id,"NIFTYBANK"),"{id}");} // VIX India block
         for id in ["ats_trin_thrust_nse","ats_padi_nse"] {assert!(!ok(id,"SPX") && !ok(id,"SPY"),"{id}");}
-        for id in ["ats_cvr1","ats_cvr2"] {assert!(!ok(id,"QQQ") && !ok(id,"NIFTYMIDCAP100"),"{id}");}
+        for id in ["ats_cvr1","ats_cvr2"] {assert!(ok(id,"QQQ") && ok(id,"NIFTYMIDCAP100"),"{id}");} // VIX India block
         assert!(ok("ats_hv_thrust","QQQ") && ok("ats_hv_thrust","NIFTYMIDCAP100") && check(&def("ats_hv_thrust","ats"),"RELIANCE",true).is_none()); // open-all
         for id in ["ats_1234","ats_8day_hl_reversal","ats_smtp","ats_two_for_one","ats_gipsons"] {
             assert_eq!(policy(&def(id,"ats")).requirement,"index_etf_or_stock");
@@ -1353,9 +1375,9 @@ mod tests {
             assert!(metadata_json(&def(id,"ats")).contains("\"stock_adaptation\":\"Actual stocks are admitted"));
             assert!(metadata_json(&def(id,"ats")).contains("\"declared_application\""));
         }
-        // CVR I on stocks: US stocks (CBOE VIX) yes, Indian stocks no (India VIX open repeats the previous close)
+        // CVR I on stocks: US stocks (CBOE VIX) and, VIX India block (24 Oct 2026), Indian stocks (real India VIX opens)
         assert!(check_native(&def("ats_cvr_equities","ats"),"AAPL",&NativeEvidence::us_test_fixture()).is_none());
-        assert!(check(&def("ats_cvr_equities","ats"),"RELIANCE",true).is_some());
+        assert!(check_native(&def("ats_cvr_equities","ats"),"RELIANCE",&NativeEvidence::india_test_fixture()).is_none());
         assert_eq!(policy(&def("ats_dvmtm","ats")).requirement,"index_etf_or_stock");
         for id in ["ats_hv_ratio_setup","ats_cbp","ats_late_earnings","ats_torpedoes","ats_hv_ratio_short_strangle","ats_cvr_options","ats_split_call_selling","ats_sector_options_overpriced","ats_15min_adx_breakout","ats_15min_adx_breakout_equities","ats_10pct_oops","ats_morning_call_reversal","ats_wide_range_gap","ats_flag_within_a_flag","ats_short_term_decline_playbook","ats_large_range_day_combo","ats_after_losses"] {
             assert!(!reviewed_cash_rule(&def(id,"ats")),"{id}");
@@ -1371,7 +1393,8 @@ mod tests {
         for t in ["NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(ok("otvt_hv_thrust","otvt",t),"{t}");}
         assert!(!ok("hfm_chadtp_nse","hfm","NIFTY 50") && !ok("hfm_chadtp_nse","hfm","SPX") && !ok("hfm_chadtp","hfm","NIFTY 50"));
         // open-all 23 Oct 2026: CVR I sides run on every US instrument (CBOE VIX), never on Indian ones (VIX open)
-        for id in ["otvt_cvr1_long","otvt_cvr1_short"] {assert!(!ok(id,"otvt","NIFTY 50") && ok(id,"otvt","QQQ") && check(&def(id,"otvt"),"RELIANCE",true).is_some(),"{id}");}
+        // VIX India block (24 Oct 2026): also on Indian instruments (real India VIX opens from 1-minute data)
+        for id in ["otvt_cvr1_long","otvt_cvr1_short"] {assert!(ok(id,"otvt","NIFTY 50") && ok(id,"otvt","QQQ") && check(&def(id,"otvt"),"RELIANCE",true).is_none(),"{id}");}
         assert!(ok("otvt_hv_thrust","otvt","QQQ") && ok("otvt_hv_thrust","otvt","NIFTYMIDCAP100") && !ok("hfm_chadtp","hfm","QQQ"));
         assert!(check(&def("otvt_hv_thrust","otvt"),"RELIANCE",true).is_none());
         // NDX-SPX: the NASDAQ 100 vs S&P 500 signal, traded on SPX, SPY and DJI only (connors-leftovers)
@@ -1414,8 +1437,8 @@ mod tests {
         for t in ["SPX","SPY"] {assert!(ok("ststw_vix_rsi","ststw",t,false));}
         // open-all 23 Oct 2026: every US instrument (CBOE VIX open); never Indian ones (India VIX open repeats the close)
         for t in ["QQQ","NDX"] {assert!(ok("ststw_vix_rsi","ststw",t,false),"{t}");}
-        assert!(!ok("ststw_vix_rsi","ststw","NIFTY 50",false));
-        assert!(!ok("ststw_vix_rsi","ststw","RELIANCE",true));
+        assert!(ok("ststw_vix_rsi","ststw","NIFTY 50",false)); // VIX India block (24 Oct 2026)
+        assert!(ok("ststw_vix_rsi","ststw","RELIANCE",true));
         assert_eq!(policy(&def("ststw_vix_rsi","ststw")).requirement,"index_etf_or_stock");
         // the S&P-down-days variant shares the baseline's stock admission (US: USD price filter kept; India: omitted)
         let af=def("afactor_spx_down","afactor");
@@ -1796,12 +1819,12 @@ mod connors_index_routing_tests {
             assert_eq!(p.requirement,"index_etf_or_stock");assert!(p.market_adaptation);
             assert!(p.source_basis.contains("index/ETF runs are a declared application, not the author's test"),"{id}");
             assert!(p.source_basis.contains("always met there"));
-            // CVR I reads the VIX open; India VIX opens repeat the previous close, so the ats review keeps it to US instruments.
-            for tk in ["NIFTY 50","NIFTYBANK","SPX","SPY","QQQ"] {assert_eq!(check(&d,tk,false).is_none(),!(id=="ats_cvr_equities" && tk.starts_with("NIFTY")),"{id} {tk}");}
+            // VIX India block (24 Oct 2026): CVR I on stocks also runs on Indian instruments (real India VIX opens from 2015).
+            for tk in ["NIFTY 50","NIFTYBANK","SPX","SPY","QQQ"] {assert!(check(&d,tk,false).is_none(),"{id} {tk}");}
             assert!(check(&d,"NIFTY FUTURE",false).is_some());
             let json=metadata_json(&d);assert!(json.contains("\"declared_application\":\"Book tested on US stocks"));assert!(json.contains("\"market_adaptation\":true")&&json.contains("\"source_performance_reproduced\":false"));
             // Native stocks keep the previous result, including the USD-unit holds.
-            assert_eq!(check(&d,"RELIANCE",true).is_none(),p.native_currency_constraint.is_none() && id!="ats_cvr_equities","{id}");
+            assert_eq!(check(&d,"RELIANCE",true).is_none(),p.native_currency_constraint.is_none(),"{id}"); // VIX India block: ats_cvr_equities too
         }
         for id in ["r3r4_midcap","r3r4_midcap_scale"] {
             let d=find(id);assert_eq!(policy(&d).allowed_types,&["individual_stock"]);

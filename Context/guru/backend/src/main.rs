@@ -622,7 +622,7 @@ fn readiness_json(st: &State, q: &BTreeMap<String, String>) -> Result<String, St
     if q.get("id").is_some_and(|id| !cat.iter().any(|d| d.id==id)) { return Err("unknown strategy".into()); }
     let rows:Vec<String>=cat.iter().filter(|d| q.get("id").map_or(true,|id| d.id==id)).map(|d| {
         let admitted=admit(ctx,d,from,to,&p,&selected,st,q);
-        let (start,auto)=admitted.as_ref().map_or((from,None),|(s,n)|(*s,n.clone()));
+        let (start,auto)=admitted.as_ref().map_or((from,None),|(s,_,n)|(*s,n.clone()));
         let issue=admitted.err();
         let ready=format!("{}Required data checks passed. This is a new run on the selected instrument, not verification of the book's published results.",auto.as_ref().map_or(String::new(),|n|format!("{n} ")));
         let (mut status,note)=issue.as_ref().map_or(("ready",ready.as_str()),|i| (i.status,i.note.as_str()));
@@ -725,12 +725,15 @@ fn chart_ohlc_json(st:&State,q:&BTreeMap<String,String>)->Result<String,String>{
 }
 /// Every run's admission (readiness + native source checks) with auto-start: a start refused only because the data a
 /// rule needs begins later moves to the first fully covered date, with a plain note (see readiness::auto_start).
-fn admit(ctx:&Ctx,d:&connors::StrategyDef,from:usize,to:usize,p:&Params,selected:&SelectedContext,st:&State,q:&BTreeMap<String,String>)->Result<(usize,Option<String>),readiness::Issue>{
+/// Returns (start, end, note): the end moves earlier only for VIX-open rules whose last days lack a real India VIX open.
+fn admit(ctx:&Ctx,d:&connors::StrategyDef,from:usize,to:usize,p:&Params,selected:&SelectedContext,st:&State,q:&BTreeMap<String,String>)->Result<(usize,usize,Option<String>),readiness::Issue>{
     // a native stock's admitted history starts at ctx.r[0]; an earlier requested start begins there
     let early=q.get("from").filter(|f|selected.evidence().is_some()&&!f.is_empty()&&f.as_str()<ctx.r[0].date.as_str());
     let requested=early.map_or(ctx.r[from].date.as_str(),|f|f.as_str());
+    let (to,ended)=readiness::vix_open_end(ctx,d,to); // VIX India block
     let (start,note)=readiness::auto_start(ctx,from,to,requested,|f|readiness::check(ctx,d,f,to,p).or_else(||native_admission(ctx,d,f,to,selected,st,q)))?;
-    Ok((start,note.or_else(||early.map(|f|format!("Started {}: this stock's data in the vault begins then. The requested start {f} is earlier; no prices are filled or estimated.",ctx.r[0].date)))))
+    let note=note.or_else(||early.map(|f|format!("Started {}: this stock's data in the vault begins then. The requested start {f} is earlier; no prices are filled or estimated.",ctx.r[0].date)));
+    Ok((start,to,match (note,ended) {(Some(a),Some(b))=>Some(format!("{a} {b}")),(a,b)=>a.or(b)}))
 }
 fn auto_start_json(note:&Option<String>)->String{note.as_ref().map_or(String::new(),|n|format!(",\"auto_start\":\"{}\"",esc(n)))}
 fn native_admission(ctx:&Ctx,def:&connors::StrategyDef,from:usize,to:usize,selected:&SelectedContext,st:&State,q:&BTreeMap<String,String>)->Option<readiness::Issue>{
@@ -1126,7 +1129,7 @@ fn summary(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     let costs=accounting::Costs::parse(q)?;costs.ensure_rollover()?;
     let mut rows = Vec::new();
     for d in definitions.iter() {
-        let (from,auto)=match admit(ctx,d,from,to,&Params::new(),&selected,st,q) {Ok(a)=>a,Err(issue)=>{
+        let (from,to,auto)=match admit(ctx,d,from,to,&Params::new(),&selected,st,q) {Ok(a)=>a,Err(issue)=>{
             rows.push(format!("{{\"id\":\"{}\",\"blocked\":\"{}\",\"readiness\":\"{}\"}}", d.id, esc(&issue.note), issue.status));
             continue;
         }};
@@ -1367,7 +1370,7 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     let cat = query_catalogue(q);
     let def = cat.iter().find(|d| d.id == id.as_str()).ok_or("unknown strategy")?;
     let p = checked_params_of(q)?;
-    let (from,auto)=admit(ctx,def,from,to,&p,&selected,st,q).map_err(|issue|format!("{}: {}", issue.status, issue.note))?;
+    let (from,to,auto)=admit(ctx,def,from,to,&p,&selected,st,q).map_err(|issue|format!("{}: {}", issue.status, issue.note))?;
     costs.ensure_rollover()?;
     let from = window_start(ctx, def, from).filter(|&f| f < to || (f==to && reviewed_single_session(id))).ok_or_else(|| window_refusal(ctx, def, from, to))?;
     let run = selected_backtest_costs(&selected,st,q,ctx,id,from,to,costs,&p)?;
@@ -1556,7 +1559,7 @@ fn optimize(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> 
     let cat = query_catalogue(q);
     let def = cat.iter().find(|d| d.id == id).ok_or("unknown strategy")?;
     let base = checked_params_of(q)?;
-    let (from,_auto)=admit(ctx,def,from,to,&base,&selected,st,q).map_err(|issue|format!("{}: {}", issue.status, issue.note))?;
+    let (from,to,_auto)=admit(ctx,def,from,to,&base,&selected,st,q).map_err(|issue|format!("{}: {}", issue.status, issue.note))?;
     costs.ensure_rollover()?;
     // A requested grid may select a different volatility series than the base setting.
     if let Some(spec) = q.get("g.src") {
