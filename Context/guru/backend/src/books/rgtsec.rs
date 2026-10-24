@@ -7,6 +7,9 @@ use crate::books::rgcts::{sma, stop_engine, Orders};
 use crate::connors::{true_range, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "rgtsec";
+// Admitted 2026-10-24 (authors/toghraie/admission/SOURCE-CONTRACT.md): complete printed rules with independent US/India ledgers.
+pub const REVIEWED: &[&str] = &["rgt_vol_cbo", "rgt_cbo5", "rgt_cbo14_18", "rgt_ma3", "rgt_cbo12"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let mk = |id, name, group, dir, status, rules: &'static [&'static str], notes| StrategyDef {
