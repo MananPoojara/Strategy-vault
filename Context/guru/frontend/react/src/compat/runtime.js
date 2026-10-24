@@ -315,6 +315,28 @@ function optimBanner(v) {
   return `<div class="pbanner"><span class="olabel">Custom settings</span><span>${Object.entries(p).map(([k, x]) => `<span class="oset">${esc(sLabel(k))} <b>${x}</b>${book[k] !== x ? ` <span class="muted">default ${book[k] ?? '–'}</span>` : ''}</span>`).join(' ')}</span><a href="${href(R.path, { ...S, p: '' })}">Back to default settings</a></div>`;
 }
 
+// Model for the Strategy settings dialog: the variant's parameters (book default vs value used) and the
+// backtest assumptions, all read from the schema, the selection and the run result (nothing is assumed).
+function settingsModel(v, d, sel, { basket = false, fixedNote = '', reportMode = '' } = {}) {
+  const used = decodeP(sel.p), sec = { E: [], X: [], A: [] };
+  (v.rules || []).forEach(x => { const [t, ...r] = x.split('|'); if (sec[t]) sec[t].push(r.join('|')); });
+  const params = (OPT.schemaSync?.[v.id] || []).filter(x => typeof x.key === 'string' && Number.isFinite(x.def))
+    .map(x => ({ key: x.key, label: x.label || x.key, def: x.def, min: x.min, max: x.max, step: x.step, value: used[x.key] ?? x.def }));
+  const path = params.find(x => x.key === 'path'), p = d?.portfolio || {}, dates = d?.dates || [];
+  const acts = sec.E.filter(r => /^(Buy|Short|Sell|Next day|Once|After|Stop)/.test(r));
+  const fills = [sec.E.length ? 'Entry: ' + (acts.length ? acts : sec.E).join(' / ') : '',
+    sec.X.length ? 'Exit: ' + sec.X.join(' / ') : '', path && path.value >= 0.5 ? `Runs on the real 1-minute bar path (${path.label}).` : ''].filter(Boolean).join(' · ');
+  const assumptions = [
+    ['Fills', fills || 'As stated in the Rules section.'],
+    ['Positions', basket ? `${sel.max_positions || '–'} simultaneous positions, 1/${sel.max_positions || '–'} of equity per full position. ${p.allocation_basis || ''} ${p.ranking ? p.ranking + '.' : ''}`.trim()
+      : sec.A.length ? 'One trade at a time; scale-in entries add to the open trade as the rule states.' : 'One position at a time, with the full account equity in each trade.'],
+    ['Costs', `Slippage ${sel.slippage || 0} bps per side · Rollover ${sel.rollover || 0} bps per actual roll${+sel.cost ? ` · Cost ${sel.cost}` : ''}.`],
+    ['Period', `Requested ${sel.from || 'first available bar'} to ${sel.to || 'latest available bar'}${dates.length ? `; calculated ${dates[0]} to ${dates.at(-1)}` : ''}.${d?.auto_start ? ' ' + d.auto_start : ''}`],
+    ['Net profit', reportMode || (sel.report_mode === 'compound' ? 'Compounding' : 'Fixed quantity')],
+    ['Statistics', `Closed trades only; open-position marks are excluded. Sharpe on ${basket ? 'portfolio ' : ''}daily returns, risk-free rate 0.`]];
+  return { params, assumptions, fixedNote };
+}
+
 // ---------------------------------------------------------------- loader: a book flipping its pages
 const bookLoader = (t = 'Loading…') => `<div class="bload" role="status" aria-live="polite"><div class="bflip" aria-hidden="true"><i class="bcv l"></i><i class="bcv r"></i><i class="bpg"></i><i class="bpg"></i><i class="bpg"></i></div><p>${esc(t)}</p></div>`;
 const minWait = (t0, ms) => new Promise(ok => setTimeout(ok, Math.max(0, ms - (performance.now() - t0))));
@@ -1672,6 +1694,7 @@ async function viewBasket(v,tk,crumbs,switches,selection,api,generation){
   const s=d.stats,p=d.portfolio||{},members=d.member_report,name=BASKETS.find(b=>b.id===selection.basket)?.name||selection.basket,runLabel=members?`${name} · ${members.used_members} members`:name;
   const tiles=[['Net Profit',s.net_profit,x=>pct(x,2,true),'Closed allocated return',cls(s.net_profit)],['Avg net pnl',s.avg_net_pnl,x=>pct(x,2,true),'Per closed stock trade',cls(s.avg_net_pnl)],['No. of trades',s.trades,x=>fx(x,0),'Accepted closed positions'],['Win Rate',s.win_rate,x=>pct(x,1),'Closed trades'],['Expectancy',s.expectancy_ratio,x=>fx(x),'Per unit of average loss'],['MaxDD',s.max_dd,x=>pct(x,2),'Portfolio equity decline','neg'],['Sharpe',s.sharpe,x=>fx(x),'Portfolio daily returns · rf = 0']];
   STRAT={d,v,tk:'Basket · '+runLabel,region:selection.region,tiles,px:null,display:{value:s.net_profit,reportMode:'Equal-slot closed portfolio contribution',description:d.accounting_basis,unavailableReason:null}};
+  STRAT.settings=settingsModel(v,d,selection,{basket:true,reportMode:'Equal-slot closed portfolio contribution'});
   RULE_VISUAL=makeRuleVisualModel({strategy:v,run:d,parameters:{...ruleDefaults,...decodeP(selection.p)},symbol:runLabel,basketPriceApi:api,sourceTickers:selection.region==='us'?TICK_ALL_US:TICK_ALL_IN});
   const changed=(d.coverage||[]).filter(c=>c.status!=='ready');
   const memberSummary=members?`${name}: ${members.summary}`:`${name}: ${p.source_members} source members`;
@@ -1749,6 +1772,7 @@ async function viewStrategy() {
   const px=optimization?null:(await chartRequest)||d.ohlc||await ohlc(tk);
   if(generation!==busy)return '';
   STRAT = { d, v, tk,region:selection.region, tiles, px, display, account,unit, sourceView:account?sourceAccountView(account):null, indicatorParameters:parameters };
+  STRAT.settings=settingsModel(v,d,selection,{reportMode:(selection.report_mode==='compound'?'Compounding':'Fixed quantity')+' · '+display.reportMode,fixedNote:account||unit?'Only this reviewed configuration is admitted; other settings need their own review, so they cannot be changed here.':''});
   RULE_VISUAL=makeRuleVisualModel({strategy:{...v,family_name:familyDisplayName(v)},run:d,prices:px,ticker:tk,parameters:STRAT.indicatorParameters,symbol:LABEL[tk]||tk});
   STRAT.indicators=buildStrategyIndicators({id:v.id,book:v.book,ticker:tk,prices:px,fullHistory:px?.full_history===true,parameters:STRAT.indicatorParameters,sourceReport:d});
   if(R.optim) return `${crumbs}<section class="box"><div class="st-head"><h1 class="st">Optimization · ${esc(familyDisplayName(v))}</h1><a class="dbtn sm back-btn" href="${href('/s/'+encodeURIComponent(v.id),{...S})}">${VaultUI.ICON.back} Back to strategy</a></div><p class="rnote">${esc(LABEL[tk])} · ${esc(v.name)}. ${unit?'Only the fixed DEMA16/8 and raw-Buy clock1 configuration is reviewed. Alternative settings and optimizer searches do not inherit this admission.':account?sourceAccountCopy(account).bandy?'Only the fixed reviewed method and allocation are available. Other parameter settings require their own review; closed-display modes cannot resize the cash account.':'Only the fixed reviewed source/account configuration is available. Other indicator, stop and risk settings remain held; closed-display modes cannot resize the account.':'Parameter searches are research; selected settings and before/after displays do not establish an untouched holdout. Net profit sums closed-trade net returns; CAGR and risk measures use the separate compounded model.'}</p>${gateNotice(v,tk)}${experimentNotice(v,d)}${switches}${periodPanel(tk,d)}${optimBanner(v)}${account?'<div data-react-slot="source-account-notice"></div>':unit?'<div data-react-slot="unit-exposure-notice"></div>':''}</section>${unit?'<section class="box"><div class="box-h">Fixed reviewed index configuration</div><p class="rnote">DEMA first length16 / second length8 / Bars since raw Buy1. Only this source-reviewed configuration is admitted; changed parameters require separate review. No optimization or book-performance claim is made.</p></section>':account?sourceAccountCopy(account).bandy?`<section class="box"><div class="box-h">Fixed reviewed cash-account configuration</div><p class="rnote">${esc(v.name)}. ${esc(sourceAccountCopy(account).sizing)} The account allocation stays fixed; new configurations require their own review.</p></section>`:'<section class="box"><div class="box-h">Fixed protected configuration</div><p class="rnote">EMA13 / MACD12-26-9 / weekly EMA26 / SafeZone10-2 / source2%-6% risk. The account controller stays fixed; new configurations require their own review.</p></section>':await optimSection(v,tk,d,true)}`;
@@ -1984,7 +2008,7 @@ async function render() {
     const focus=document.activeElement?.id,pos=document.activeElement?.selectionStart;
     pendingFocus={id:focus,pos};
     const status=custom?.label||(R.name==='strategy'?'Strategy':`${isUS()?'US':'India'} · ${S.tk==='ALL'?'all indices':LABEL[S.tk]||S.tk} · ${TABS[S.tab]?.name||'Research'}`);
-    vaultStore.commit(ticket,{html,home,reading,route,state:{...S},status,strategyRules:route.name==='strategy'?RULE_VISUAL:null,strategyAccount:route.name==='strategy'||route.name==='optimization'?STRAT?.sourceView??null:null,strategyPristine:route.name==='strategy'||route.name==='optimization'?STRAT?.pristine??null:null,strategyUnit:route.name==='strategy'||route.name==='optimization'?STRAT?.unit??null:null});
+    vaultStore.commit(ticket,{html,home,reading,route,state:{...S},status,strategyRules:route.name==='strategy'?RULE_VISUAL:null,strategyAccount:route.name==='strategy'||route.name==='optimization'?STRAT?.sourceView??null:null,strategyPristine:route.name==='strategy'||route.name==='optimization'?STRAT?.pristine??null:null,strategyUnit:route.name==='strategy'||route.name==='optimization'?STRAT?.unit??null:null,strategySettings:route.name==='strategy'?STRAT?.settings??null:null});
   }catch(error){if(my===busy)vaultStore.fail(ticket,error.message||'Research data is unavailable.');}
 }
 let pendingFocus=null;

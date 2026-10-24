@@ -7,6 +7,7 @@ import type { SearchAuthor } from "../services/library-search";
 import type {SourceAccountView} from "../services/source-account";
 import type {RuleVisualModel} from "../services/rule-evidence";
 import type {UnitExposureView} from '../services/unit-exposure-report';
+import type {StrategySettingsModel} from '../components/StrategySettings';
 export interface ViewSnapshot {
   revision: number;
   loading: boolean;
@@ -21,6 +22,7 @@ export interface ViewSnapshot {
   strategyUnit?: UnitExposureView | null;
   strategyPristine?: PristineStrategySnapshot | null;
   strategyRules?: RuleVisualModel | null;
+  strategySettings?: StrategySettingsModel | null;
 }
 export interface PageInfo {
   page: number;
@@ -159,6 +161,7 @@ export function createStore() {
         strategyUnit: null,
         strategyPristine: null,
         strategyRules: null,
+        strategySettings: null,
       };
       notify();
       return true;
