@@ -11,6 +11,9 @@
 use crate::connors::{claim, sma, true_range, wilder, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 const BOOK: &str = "dlost";
+/// Admitted ids (authors/landry/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["dlost_simple_pb", "dlost_od_pb", "dlost_tko", "dlost_dtko", "dlost_tpp", "dlost_bow_tie", "dlost_oss", "dlost_cvr3m"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const MM: &str = "X|Initial stop: \"1/16 below the lowest bar\" of the setup (TKO: below the knockout bar; DT-KO: 1/16 below yesterday's low); \"If this is more than 5% away from your entry, risk no more than 5% of the stock's value\" (pp.12, 44, 62)";
 const MM2: &str = "X|2-for-1: \"as soon as your profits are equal to or greater than your initial risk, you should lock in half of your profits and move your protective stop on your remaining shares to breakeven\" (p.13)";

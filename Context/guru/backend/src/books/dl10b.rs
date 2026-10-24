@@ -15,6 +15,9 @@
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 const BOOK: &str = "dl10b";
+/// Admitted ids (authors/landry/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["dl10b_egp", "dl10b_rgs"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const MM1: &str = "X|\"As soon as your profits (a) are equal to or greater than your initial risk (b), you should lock in half of your profits and move your protective stop on your remaining shares to breakeven (c)\" (Primer p.15; Ingersoll-Rand example p.157: half taken on the gap open)";
 const MM2: &str = "X|Remaining half: \"placing a stop below a two-to-three bar low can often catch the majority of a strongly trending market\" (p.16): trailed `tick` below the lowest low of the last `trail_n` bars (book 2-3; 2 coded as default), only after the half is taken, never lowered";

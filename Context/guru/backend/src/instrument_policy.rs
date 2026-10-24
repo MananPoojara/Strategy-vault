@@ -228,6 +228,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || schwager_reviewed(def) // Schwager block
         || elder_reviewed(def) // Elder block
         || pring_reviewed(def) // Pring block
+        || landry_reviewed(def) // Landry block
         || wirrick_reviewed(def) // Wirrick block
         || sperandeo_reviewed(def) // Sperandeo block
         || csmith_reviewed(def) // CSmith block
@@ -803,6 +804,23 @@ fn wirrick_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Wirrick
+// ---------------------------------------------------------------- Landry 2026-10-24
+// Admission only for the module REVIEWED lists (authors/landry/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn landry_reviewed(def:&StrategyDef)->bool {matches!(def.book,"dlost"|"dl10b") && (crate::books::dlost::reviewed(def.id) || crate::books::dl10b::reviewed(def.id))}
+const LANDRY_LABEL:&str="Dave Landry taught these patterns on US stocks (prices in sixteenths and cents) and timed the S&P 500 futures with the 3-10 oscillator and the VIX; runs on indices, ETFs and stocks are a declared application, not the author's test. The patterns' 1/16 and cent offsets are US-dollar amounts, so the patterns run on US instruments only; OSS and CVR III-Modified also run on India (India VIX). Cash-index shorts are hypothetical exposure.";
+fn landry_policy(def:&StrategyDef)->Option<Policy> {
+    if !landry_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Dave Landry: Dave Landry on Swing Trading (2000) pullback, knockout, trend pivot and bow tie patterns with the book's 2-for-1 money management (ch.5-7, p.12-13, 37-85, 206), the Oscillator Swing System and CVR III-Modified (ch.10, p.129-141); 10 Best Swing Trading Patterns: Explosion Gap Pivots (p.72-79) and Reversal Gap Strategy (p.104-108). Reviewed in authors/landry/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// Landry patterns: 1/16-dollar and cent order offsets are US-dollar amounts -> US instruments only (stock_us None = not a stock).
+const LANDRY_US_ONLY:&[&str]=&["dlost_simple_pb","dlost_od_pb","dlost_tko","dlost_dtko","dlost_tpp","dlost_bow_tie","dl10b_egp","dl10b_rgs"];
+fn landry_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Option<Issue> {
+    if !landry_reviewed(def) || !LANDRY_US_ONLY.contains(&def.id) {return None;}
+    if stock_us.unwrap_or(!ticker.starts_with("NIFTY")) {return None;}
+    Some(Issue{status:"needs_data",note:format!("This pattern's order and stop offsets are US-dollar amounts (1/16 of a dollar, 10 or 25 cents on US stocks), so it runs on US indices, ETFs and stocks only. {ticker} is outside that scope; no result is published.")})
+}
+// ---------------------------------------------------------------- end Landry
 // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
 /// Reviewed Joe Ross daily rules (books::joe_ross_rules::REVIEWED): actual indices, ETFs and stocks, US and India, as a
 /// labelled declared application. The source references in books::joe_ross stay held (source review).
@@ -831,6 +849,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=schwager_policy(def) {return p;}
     if let Some(p)=elder_policy(def) {return p;} // Elder block
     if let Some(p)=pring_policy(def) {return p;} // Pring block
+    if let Some(p)=landry_policy(def) {return p;} // Landry block
     if let Some(p)=wirrick_policy(def) {return p;} // Wirrick block
     if let Some(p)=sperandeo_policy(def) {return p;} // Sperandeo block
     if let Some(p)=csmith_policy(def) {return p;} // CSmith block
@@ -1131,6 +1150,7 @@ pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     if let Some(issue)=jb_g3_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=lwilliams_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Larry Williams block
     if let Some(issue)=kaeppel_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Kaeppel block
+    if let Some(issue)=landry_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Landry block
     if native_stock {
         if let Some(reason)=p.native_currency_constraint {
             return Some(Issue {status:"needs_data",note:format!("Source currency/tick data missing. {reason} USD amounts cannot silently become INR amounts. A source-supported Indian specification or dated FX treatment and verified local tick rules are required before admission; editing the numeric parameter alone does not establish those inputs. Selected actual stock: {ticker}. No results are published.")});
@@ -1162,6 +1182,7 @@ pub fn check_native(def:&StrategyDef,ticker:&str,evidence:&NativeEvidence)->Opti
     if let Some(issue)=jb_g3_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=lwilliams_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Larry Williams block
     if let Some(issue)=kaeppel_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Kaeppel block
+    if let Some(issue)=landry_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Landry block
     if let Some(issue)=check_selected(p,def.id,ticker,evidence.asset_type()){return Some(issue);}
     if matches!((def.book,def.id),("r3r4","r3r4_lowprice"|"r3r4_lowprice_scale")) && evidence.market()!=Market::UnitedStates {
         return Some(Issue{status:"not_testable",note:format!("{R3R4_LOWPRICE_HELD} Selected actual stock: {ticker}.")});
@@ -1283,6 +1304,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if let Some(label)=elder_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Elder block
     if let Some(label)=lwilliams_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Larry Williams block
     if let Some(label)=pring_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Pring block
+    if landry_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LANDRY_LABEL));} // Landry block
     if wirrick_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",WIRRICK_LABEL));} // Wirrick block
     if sperandeo_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",SPERANDEO_LABEL));} // Sperandeo block
     if csmith_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",CSMITH_LABEL));} // CSmith block
@@ -1462,6 +1484,25 @@ mod tests {
         assert!(!reviewed_cash_rule(&def("mpts_triple","jbudt")));
     }
     // ---- end Pring block ----
+    // ---- Landry block (2026-10-24) ----
+    #[test]
+    fn landry_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{dlost,dl10b};
+        let all:Vec<StrategyDef>=dlost::catalogue().into_iter().chain(dl10b::catalogue()).collect();
+        let mut want:Vec<&str>=dlost::REVIEWED.iter().chain(dl10b::REVIEWED).copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            let us_only=LANDRY_US_ONLY.contains(&d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            for t in ["NIFTY 50","NIFTYBANK"] {assert_eq!(check(d,t,false).is_some(),us_only,"{} {t}",d.id);}
+            // check() has no market for a native stock (treated as non-US); the served path uses the stock's real market
+            if !us_only {assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);}
+        }
+    }
+    // ---- end Landry block ----
     // ---- Wirrick block (2026-10-24) ----
     #[test]
     fn wirrick_review_admits_exact_ids_on_indices_etfs_and_stocks() {
