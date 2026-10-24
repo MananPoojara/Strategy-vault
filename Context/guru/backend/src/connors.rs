@@ -232,6 +232,8 @@ pub struct Ctx<'a> {
     /// Trusted market of a server-qualified native stock (set only by the server from catalogue evidence; None for
     /// index/ETF series). Used for the instrument's real tick in stock runs: NSE 0.05 INR, US 0.01 USD.
     pub native_market: Option<crate::baskets::Market>,
+    /// intraday phase 1: real 1-minute bars of this ticker (None = not loaded; minute-path rules then report a data gap)
+    pub minutes: Option<&'static crate::intraday::Minutes>,
 }
 
 /// India VIX facts, computed on the VIX's own daily series, then aligned to this
@@ -324,6 +326,7 @@ impl<'a> Ctx<'a> {
             vix: VixAligned::new(r, vix),
             extra: BTreeMap::new(),
             native_market: None,
+            minutes: None,
             c,
             r,
         }

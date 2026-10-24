@@ -402,7 +402,8 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
             return issue("not_testable", format!("Withheld by the accuracy check: {} No results are published.", plain_gate_reason(g.reason)));
         }
         // bernstein-g3: the reviewed S&P day-of-week rules are limited to SPX by instrument_policy instead of the gate list.
-        if let (Some(allowed), Some(row)) = (g.allowed.filter(|_|!(def.book==books::jbeft::BOOK && books::jbeft::reviewed_daily(def.id)) && !crate::instrument_policy::open_all(def) && !crate::instrument_policy::vix_india(def) && !crate::instrument_policy::lwilliams_reviewed(def)), ctx.r.get(from)) {
+        if let (Some(allowed), Some(row)) = (g.allowed.filter(|_|!(def.book==books::jbeft::BOOK && books::jbeft::reviewed_daily(def.id)) && !crate::instrument_policy::open_all(def) && !crate::instrument_policy::vix_india(def) && !crate::instrument_policy::lwilliams_reviewed(def)
+            && !(crate::instrument_policy::intraday_p1(def) && p.get("path").map_or(true,|v| *v>=0.5))), ctx.r.get(from)) { // intraday phase 1: the minute path uses the market's own tick
             // Bernstein g1: the reviewed Friday-Monday system keeps its S&P points on SPX (instrument_policy limits it to SPX).
             let jb_spx=def.id=="jb624_fri_mon" && row.ticker=="SPX" && crate::instrument_policy::bernstein_g1_reviewed(def);
             if !allowed.contains(&row.ticker.as_str()) && !jb_spx {
@@ -422,7 +423,16 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     if def.needs_volume && ctx.r[from..=to].iter().any(|r| !r.volume.is_some_and(|v| v.is_finite() && v > 0.0)) {
         return issue("needs_data", "Required volume data is missing on one or more trading days in this period. A price-only index cannot substitute for this rule's volume or stock-universe filter.");
     }
+    // ---- intraday phase 1: minute-path rules need this ticker's 1-minute bars over the whole window
+    let minute_path=crate::instrument_policy::intraday_p1(def) && p.get("path").map_or(true,|v| *v>=0.5);
+    if minute_path {
+        let Some(m)=ctx.minutes else { return issue("needs_data","This day-trade rule needs real 1-minute bars to know which price came first during the day; none are loaded for this instrument. No daily-bar substitute is used.") };
+        if ctx.r[from].date.as_str()<m.first() { return issue("needs_data",format!("Required 1-minute bars begin on {}. The selected period includes earlier days with no minute data; choose a fully covered period.",m.first())); }
+        if ctx.r[to].date.as_str()>m.last() { return issue("needs_data",format!("Required 1-minute bars end on {}. The selected period runs past them; choose a period that ends by then (no later prices are estimated).",m.last())); }
+    }
+    // ---- end intraday phase 1
     let mut required=def.needs_series.to_vec();
+    if minute_path {required.clear();} // intraday phase 1: the minute path reads no derived series
     if p.get("src").is_some_and(|v| v.round()==1.0) && (def.id.starts_with("otvt_cvr1") || def.id.starts_with("ptjmt_cvr")) {
         required.extend(["VXO_OHLC.Open","VXO_OHLC.High","VXO_OHLC.Low","VXO_OHLC.Close"]);
     }

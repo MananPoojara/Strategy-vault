@@ -325,7 +325,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("once", "First lower ADX reading only, re-armed under the level (1, book) or every downtick (0)", 1.0, 0.0, 1.0, 1.0)],
         "ats_dvmtm" => vec![p("high_n", "Three-month high: N trading days", 63.0, 40.0, 126.0, 1.0), p("near_pct", "Within % of the high", 0.0, 0.0, 3.0, 0.5),
             p("vol_n", "Average volume days", 15.0, 10.0, 30.0, 1.0), p("vol_x", "Volume multiple", 2.0, 1.5, 3.0, 0.25), tick(), hold(5.0), exitp()],
-        "ats_15min_adx_breakout" => vec![p("adx_n", "ADX/DI period", 14.0, 7.0, 21.0, 1.0), p("adx", "ADX above", 30.0, 20.0, 45.0, 5.0), tick(), losses(), side()],
+        "ats_15min_adx_breakout" => vec![p("adx_n", "ADX/DI period", 14.0, 7.0, 21.0, 1.0), p("adx", "ADX above", 30.0, 20.0, 45.0, 5.0), tick(), losses(), side(),
+            // intraday phase 1
+            p("path", "1 = real 1-minute bars (tick −1 = the market's tick: 0.05 NSE, 0.01 US; fills at the level or the minute's open), 0 = [Not from the book] old OPEN15/fill-count series reading", 1.0, 0.0, 1.0, 1.0)],
         "ats_15min_adx_breakout_equities" => vec![p("adx_n", "ADX/DI period", 14.0, 7.0, 21.0, 1.0), p("adx", "ADX above", 30.0, 20.0, 45.0, 5.0), tick(), losses(),
             p("min_price", "Price above", 40.0, 0.0, 200.0, 5.0), p("min_hv", "HV(100) at or above", 40.0, 10.0, 60.0, 5.0), hvr(), side()],
         "ats_10pct_oops" => vec![p("loc", "Close in bottom/top % of range", 10.0, 5.0, 25.0, 5.0), p("gap", "Gap beyond day-1 low/high (1) or close (0)", 1.0, 0.0, 1.0, 1.0),
@@ -934,6 +936,27 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let (ex, trail) = std_exit(x, g("exit"), u("hold"));
             sim(x, from, to, &Rules { sig: &sig, touch: no_touch, exit: &*ex, reverse: false, extend: false, stop_pct: 0.0, mm: MM0, trail: trail.as_deref() })
         }
+        // ---- intraday phase 1: real 1-minute path (default path = 1); the series reading below stays as path = 0
+        "ats_15min_adx_breakout" if g("path") >= 0.5 => {
+            let Some(mm) = x.minutes else { return Some(vec![]) };
+            let (pdi, mdi, adx) = dmi3(x.r, u("adx_n"));
+            let t = if g("tick") < 0.0 { x.market_tick() } else { g("tick") };
+            let mut out = Vec::new();
+            for i in from.max(1)..=to {
+                let k = i - 1;
+                if !(adx[k] > g("adx")) { continue; }
+                let dir = if pdi[k] > mdi[k] { 1.0 } else if mdi[k] > pdi[k] { -1.0 } else { continue };
+                let Some(b) = ok(dir).then(|| mm.day(&x.r[i].date)).flatten() else { continue };
+                let open = crate::intraday::session_open(&x.r[i].ticker, &x.r[i].date);
+                for (e, (px, stop, _)) in crate::intraday::adx15_day(&b, open, dir > 0.0, t, t, u("max_losses")).into_iter().enumerate() {
+                    let why = match stop { Some(_) => "protective stop", None => "MOC" };
+                    let why = if e > 0 { format!("re-entry: {why}") } else { why.to_string() };
+                    out.push(Trade { dir, legs: vec![Leg { i, px, w: 1.0 }], exit_i: i, exit_px: stop.unwrap_or(c[i]), reason: why, entry_kind: "stop", signal_i: i, open: false, exits: Vec::new() });
+                }
+            }
+            out
+        }
+        // ---- end intraday phase 1
         "ats_15min_adx_breakout" | "ats_15min_adx_breakout_equities" => {
             // missing series = no trades (the API reports the data gap before calling run)
             let s = |k: &str| x.series(k);
@@ -1124,7 +1147,7 @@ mod tests {
         for (k, v) in [("OPEN15_HIGH", 200.0), ("OPEN15_LOW", 198.0), ("LONG_FILLS", 3.0), ("LONG_STOPS", 2.0), ("SHORT_FILLS", 0.0), ("SHORT_STOPS", 0.0)] {
             ctx.extra.insert(k.into(), last(v));
         }
-        let go = |ctx: &Ctx, cap: f64| { let mut p = Params::new(); p.insert("max_losses".into(), cap); run("ats_15min_adx_breakout", ctx, 0, n - 1, &p).unwrap() };
+        let go = |ctx: &Ctx, cap: f64| { let mut p = Params::new(); p.insert("max_losses".into(), cap); p.insert("path".into(), 0.0); run("ats_15min_adx_breakout", ctx, 0, n - 1, &p).unwrap() };
         let t = go(&ctx, 2.0);
         assert_eq!(t.len(), 2, "{t:?}");
         assert!(t.iter().all(|t| t.dir == 1.0 && (t.legs[0].px - 200.05).abs() < 1e-9 && (t.exit_px - 197.95).abs() < 1e-9));

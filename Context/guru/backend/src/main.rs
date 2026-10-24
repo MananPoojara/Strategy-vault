@@ -23,6 +23,7 @@ mod pristine_request;
 mod pristine_transport;
 mod pristine_http;
 mod pristine_api;
+mod intraday; // intraday phase 1: real 1-minute bars (one day at a time)
 
 // Source-prefix loading and exact account work are serialized for this owner.
 // Metadata stays responsive, and concurrent requests receive a retry response.
@@ -2010,6 +2011,9 @@ fn main() {
     let extra_dir = args.get(4).cloned().unwrap_or_else(|| concat!(env!("CARGO_MANIFEST_DIR"), "/../../../extra_data").into());
     let extra = load_extra(&extra_dir);
     println!("extra data: {} series from {extra_dir}", extra.len());
+    // intraday phase 1: optional arg 5 = folder of <TICKER>.m1.csv / .m1idx.csv; missing = no minute data (results unchanged)
+    let intraday_dir = args.get(5).cloned();
+    if let Some(d) = &intraday_dir { println!("intraday minutes: {d}"); }
     let ctxs = data
         .iter()
         .map(|(t, rows)| {
@@ -2017,6 +2021,8 @@ fn main() {
             let bench=market.and_then(|m|data.get(native_benchmark(m))).map(Vec::as_slice).unwrap_or(&[]);
             let (source_vix,volatility_source)=market_vix(&vix,market);
             let mut c = Ctx::new(rows, bench, source_vix);
+            // intraday phase 1: index only; days are read on demand
+            c.minutes = intraday_dir.as_deref().and_then(|d| intraday::Minutes::load(d, t)).map(|m| &*Box::leak(Box::new(m)));
             // the VIX's own daily OHLC as built-in series (VIX.Open/High/Low/Close), aligned by date
             let vx: BTreeMap<&str, &Row> = source_vix.iter().map(|v| (v.date.as_str(), v)).collect();
             for (k, f) in [("Open", 0), ("High", 1), ("Low", 2), ("Close", 3)] {
