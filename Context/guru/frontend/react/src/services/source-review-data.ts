@@ -473,6 +473,7 @@ export const sourceReview: Record<string, {type: string; sameWorkAs?: string; pe
   "tkttl": {"type": "book", "people": ["Thomas K. Carr"]},
   "tltdr": {"type": "code_package", "people": []},
   "ts247": {"type": "other", "people": []},
+  "msfft": {"type": "book", "people": ["Mark McRae"]},
   "tscom": {"type": "code_package", "people": ["Keith Fitschen"]},
   "tsx": {"type": "magazine_volume", "people": []},
   "tttt1": {"type": "code_package", "people": []},
