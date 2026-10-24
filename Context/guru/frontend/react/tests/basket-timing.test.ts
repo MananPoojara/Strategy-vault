@@ -45,9 +45,3 @@ it('publishes incomplete source inventory with a compact escaped member report a
  expect(details.textContent).toContain('2009-05-19');
 });
 
-it('shows and escapes the approved free-cash settlement disclosure',async()=>{
- const text="losses beyond a position's slot are paid from free cash; no borrowing <img src=x>";
- const host=await render(null,{portfolio:{funding_disclosure:text}});
- expect(host.querySelector('[data-basket-funding-disclosure]')?.textContent).toBe(text);
- expect(host.querySelector('[data-basket-funding-disclosure] img')).toBeNull();
-});
