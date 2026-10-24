@@ -68,6 +68,22 @@ export const AUTHOR_PROFILE_DATA = {
   "sources": [],
   "confidence": "low"
  },
+ "fontanills": {
+  "kind": "person",
+  "mastery": [
+   "Options",
+   "Index trading",
+   "Technical analysis"
+  ],
+  "summary": "George A. Fontanills founded the Optionetics trading-education company and wrote option and index trading courses, several with Tom Gentile. Most of his books teach option strategies (which need option prices); the Index Trading Course and the seminar manuals also state complete stock and ETF timing systems. This profile rests on the books themselves.",
+  "known_for": [
+   "The Options Course",
+   "The Index Trading Course",
+   "Trading Options For Dummies"
+  ],
+  "sources": [],
+  "confidence": "low"
+ },
  "schwager": {
   "kind": "person",
   "mastery": [
