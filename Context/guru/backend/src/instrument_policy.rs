@@ -229,6 +229,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || elder_reviewed(def) // Elder block
         || pring_reviewed(def) // Pring block
         || bwilliams_reviewed(def) // BWilliams block
+        || stridsman_reviewed(def) // Stridsman block
         || wirrick_reviewed(def) // Wirrick block
         || sperandeo_reviewed(def) // Sperandeo block
         || csmith_reviewed(def) // CSmith block
@@ -814,6 +815,16 @@ fn bwilliams_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end BWilliams
+// ---------------------------------------------------------------- Stridsman 2026-10-24
+// Admission only for the module REVIEWED lists (authors/stridsman/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn stridsman_reviewed(def:&StrategyDef)->bool {matches!(def.book,"strtw"|"strmm") && (crate::books::strtw::reviewed(def.id) || crate::books::strmm::reviewed(def.id))}
+const STRIDSMAN_LABEL:&str="Thomas Stridsman tested these systems on S&P 500 futures, 16 futures markets and 65 US stocks and indexes; runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test. Cash-index shorts are hypothetical exposure.";
+fn stridsman_policy(def:&StrategyDef)->Option<Policy> {
+    if !stridsman_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Thomas Stridsman: Trading Systems That Work (2000) Gold Digger, Meander, Black Jack, directional slope, dynamic breakout and standard deviation breakout systems (printed TradeStation code p.59-245); Trading Systems and Money Management (2003) Hybrid No. 1, Meander V.1.0, Volume-weighted Average, Harris 3L-R, Expert Exits (printed code ch.8-15, exit code ch.20) and Counterpunch (p.376). Reviewed in authors/stridsman/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Stridsman
 // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
 /// Reviewed Joe Ross daily rules (books::joe_ross_rules::REVIEWED): actual indices, ETFs and stocks, US and India, as a
 /// labelled declared application. The source references in books::joe_ross stay held (source review).
@@ -843,6 +854,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=elder_policy(def) {return p;} // Elder block
     if let Some(p)=pring_policy(def) {return p;} // Pring block
     if let Some(p)=bwilliams_policy(def) {return p;} // BWilliams block
+    if let Some(p)=stridsman_policy(def) {return p;} // Stridsman block
     if let Some(p)=wirrick_policy(def) {return p;} // Wirrick block
     if let Some(p)=sperandeo_policy(def) {return p;} // Sperandeo block
     if let Some(p)=csmith_policy(def) {return p;} // CSmith block
@@ -1296,6 +1308,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if let Some(label)=lwilliams_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Larry Williams block
     if let Some(label)=pring_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Pring block
     if bwilliams_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BWILLIAMS_LABEL));} // BWilliams block
+    if stridsman_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",STRIDSMAN_LABEL));} // Stridsman block
     if wirrick_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",WIRRICK_LABEL));} // Wirrick block
     if sperandeo_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",SPERANDEO_LABEL));} // Sperandeo block
     if csmith_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",CSMITH_LABEL));} // CSmith block
@@ -1491,6 +1504,22 @@ mod tests {
         }
     }
     // ---- end BWilliams block ----
+    // ---- Stridsman block (2026-10-24) ----
+    #[test]
+    fn stridsman_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{strtw,strmm};
+        let all:Vec<StrategyDef>=strtw::catalogue().into_iter().chain(strmm::catalogue()).collect();
+        let mut want:Vec<&str>=strtw::REVIEWED.iter().chain(strmm::REVIEWED).copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Stridsman block ----
     // ---- Wirrick block (2026-10-24) ----
     #[test]
     fn wirrick_review_admits_exact_ids_on_indices_etfs_and_stocks() {
