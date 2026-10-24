@@ -234,6 +234,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || kirkpatrick_reviewed(def) // Kirkpatrick block
         || goslin_reviewed(def) // Goslin block
         || ruggiero_reviewed(def) // Ruggiero block
+        || link_reviewed(def) // Link block
         || bwilliams_reviewed(def) // BWilliams block
         || stridsman_reviewed(def) // Stridsman block
         || weissman_reviewed(def) // Weissman block
@@ -1033,6 +1034,16 @@ fn ruggiero_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Ruggiero
+// ---------------------------------------------------------------- Link 2026-10-24
+// Admission only for the module REVIEWED lists (authors/link/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn link_reviewed(def:&StrategyDef)->bool {matches!(def.book,"mlhpt") && (crate::books::mlhpt::reviewed(def.id))}
+const LINK_LABEL:&str="Marcel Link gives these systems for futures and stocks without a named market or test results; runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test.";
+fn link_policy(def:&StrategyDef)->Option<Policy> {
+    if !link_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Marcel Link, High Probability Trading (2003): 10-bar close breakout with the 3-bar-low exit (p.173); the sample system's TradeStation code with ADX-switched exits and a 2 standard deviation stop (p.263-264). Reviewed in authors/link/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Link
 // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
 /// Reviewed Joe Ross daily rules (books::joe_ross_rules::REVIEWED): actual indices, ETFs and stocks, US and India, as a
 /// labelled declared application. The source references in books::joe_ross stay held (source review).
@@ -1067,6 +1078,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=kirkpatrick_policy(def) {return p;} // Kirkpatrick block
     if let Some(p)=goslin_policy(def) {return p;} // Goslin block
     if let Some(p)=ruggiero_policy(def) {return p;} // Ruggiero block
+    if let Some(p)=link_policy(def) {return p;} // Link block
     if let Some(p)=bwilliams_policy(def) {return p;} // BWilliams block
     if let Some(p)=stridsman_policy(def) {return p;} // Stridsman block
     if let Some(p)=weissman_policy(def) {return p;} // Weissman block
@@ -1544,6 +1556,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if kirkpatrick_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",KIRKPATRICK_LABEL));} // Kirkpatrick block
     if goslin_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",GOSLIN_LABEL));} // Goslin block
     if ruggiero_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",RUGGIERO_LABEL));} // Ruggiero block
+    if link_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LINK_LABEL));} // Link block
     if bwilliams_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BWILLIAMS_LABEL));} // BWilliams block
     if stridsman_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",STRIDSMAN_LABEL));} // Stridsman block
     if weissman_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",WEISSMAN_LABEL));} // Weissman block
@@ -1835,6 +1848,22 @@ mod tests {
         }
     }
     // ---- end Ruggiero block ----
+    // ---- Link block (2026-10-24) ----
+    #[test]
+    fn link_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{mlhpt};
+        let all:Vec<StrategyDef>=mlhpt::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=mlhpt::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Link block ----
     // ---- BWilliams block (2026-10-24) ----
     #[test]
     fn bwilliams_review_admits_exact_ids_on_indices_etfs_and_stocks() {
