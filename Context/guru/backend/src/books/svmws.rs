@@ -3,9 +3,13 @@
 //! 1-2-3 / 2B (Ch. 7), Gordon's 200-day rule ("flattens out"), the oscillators and stock selection are judgement.
 //! Source and checks: library/svmws/.
 use crate::books::swsp::week_ends;
-use crate::connors::{sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
+use crate::books::svtvc::sma_exact;
+use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "svmws";
+/// Admitted ids (authors/sperandeo/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["svmws_10w30w_long", "svmws_10w30w_short"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const LONG: &[&str] = &["E|\"When the 10-week moving average crosses the 30-week moving average and the slope of both averages is up, this comprises a buy signal, provided that prices are above both moving average lines\" (p. 90)", "X|\"When the 10-week moving average crosses the 30-week moving average and the slope of both averages is down, this comprises a sell signal, provided prices are below both moving average lines\" (p. 93)"];
 const SHORT: &[&str] = &["E|\"When the 10-week moving average crosses the 30-week moving average and the slope of both averages is down, this comprises a sell signal, provided prices are below both moving average lines\" (p. 93)", "X|\"When the 10-week moving average crosses the 30-week moving average and the slope of both averages is up, this comprises a buy signal, provided that prices are above both moving average lines\" (p. 90)"];
@@ -79,13 +83,15 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let (nf, ns) = (g("fast", 10.), g("slow", 30.));
     let we: Vec<usize> = week_ends(x).into_iter().filter(|&i| i <= to).collect();
     let wc: Vec<f64> = we.iter().map(|&i| x.c[i]).collect();
-    let (f, s) = (sma(&wc, nf), sma(&wc, ns));
+    let (f, s) = (sma_exact(&wc, nf), sma_exact(&wc, ns));
     let (mut out, mut cur) = (vec![], None::<Trade>);
     for k in 1..we.len() {
         let i = we[k];
         if i < from || !(f[k].is_finite() && s[k].is_finite() && f[k - 1].is_finite() && s[k - 1].is_finite()) { continue; }
-        let buy = f[k - 1] <= s[k - 1] && f[k] > s[k] && f[k] > f[k - 1] && s[k] > s[k - 1] && wc[k] > f[k] && wc[k] > s[k];
-        let sell = f[k - 1] >= s[k - 1] && f[k] < s[k] && f[k] < f[k - 1] && s[k] < s[k - 1] && wc[k] < f[k] && wc[k] < s[k];
+        // slope: this week's MA vs last week's = the week entering vs the week leaving the window (exact; flat = neither)
+        let (fu, fd, su, sd) = (wc[k] > wc[k - nf], wc[k] < wc[k - nf], wc[k] > wc[k - ns], wc[k] < wc[k - ns]);
+        let buy = f[k - 1] <= s[k - 1] && f[k] > s[k] && fu && su && wc[k] > f[k] && wc[k] > s[k];
+        let sell = f[k - 1] >= s[k - 1] && f[k] < s[k] && fd && sd && wc[k] < f[k] && wc[k] < s[k];
         let (enter, exit) = if dir > 0. { (buy, sell) } else { (sell, buy) };
         if let Some(t) = cur.as_mut() {
             if exit {
