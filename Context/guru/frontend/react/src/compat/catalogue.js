@@ -154,6 +154,12 @@ export const LIB = [
     { id: "jfktcc", sourceIds: ["title-2b97623dd448a721", "title-470e0981aec6d750", "title-d3800718e33a5c10", "title-f9eaf33fa949e888"], title: "Trader's Classroom Collection (Vol.1-4)", year: null, blurb: "Kennedy, EWI · 10-day reversal, MACD hooks, three-in-one bar; held: alerts without exits, judged signals" },
     { id: "jfkttl", sourceIds: ["title-afb3f8d044fea3fa"], title: "Trading the Line", year: 2009, blurb: "Kennedy, EWI 2009 · trendline set-ups; held: lines drawn by the trader" }] },
   // ---- end Kennedy block ----
+  // ---- Dittmann block (2026-10-24) ----
+  { id: "dittmann", name: "Karl Dittmann", tagline: "Forex e-book author · short-term pip systems on 15- and 30-minute currency charts (held: no forex data, pip-sized exits)", books: [
+    { id: "kdfnlt", sourceIds: ["title-00f8c0f9d6793707"], title: "Forex Never Lose Trade", year: 2009, blurb: "Dittmann, 2009 · GBP/USD 7-9 am range breakout; held: intraday forex, pip stops" },
+    { id: "kdfus", sourceIds: ["title-2f2153842d6ebee0"], title: "Forex Unknown Secret", year: 2010, blurb: "Dittmann, 2010 · 30-minute start-bar reversal; held: intraday forex, pip thresholds" },
+    { id: "kdsfp", sourceIds: ["title-7e6081991fd067d5"], title: "The Simplest Forex Pips System", year: 2010, blurb: "Dittmann, 2010 · inside-close candle with a trend filter; held: pip target and a trailing stop without a size" }] },
+  // ---- end Dittmann block ----
   // ---- CSmith block (2026-10-24) ----
   { id: "csmith", name: "Courtney D. Smith", tagline: "FX and futures trader · swing-point trend analysis, enhanced channel breakouts, the Conqueror", books: [
     { id: "csmlt", sourceIds: ["title-bafc2391a8c8f66d"], title: "How to Make a Living Trading Foreign Exchange", year: 2010, blurb: "Smith, 2010 · trend analysis, 55/20 channel breakout with the rejection rule, Conqueror I/II, stochastic 50 line, reversal days and RRR run as declared applications; inside days, slingshot and divergences held" },
