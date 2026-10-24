@@ -4,6 +4,10 @@
 //! library/kfst/README.md). Every default is the book's literal number or is labelled.
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
+/// Admitted 2026-10-24 (authors/kaufman/admission/SOURCE-CONTRACT.md): independent ledgers, US and India, 0 mismatches.
+pub const REVIEWED: &[&str] = &["kfst_exp_pt", "kfst_exp_stop"]; // kfst_ama held: its Box 8-5 filter is in price points (engine guard)
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
+
 pub const BOOK: &str = "kfst";
 
 pub fn catalogue() -> Vec<StrategyDef> {

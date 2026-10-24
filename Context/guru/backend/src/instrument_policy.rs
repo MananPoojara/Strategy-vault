@@ -211,6 +211,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || patel_reviewed(def) // Patel block
         || tharp_reviewed(def) // Tharp block
         || person_reviewed(def) // Person block
+        || kaufman_reviewed(def) // Kaufman block
         || bernstein_g2_reviewed(def)
         || jb_g3_reviewed(def)
         || lwilliams_reviewed(def) // Larry Williams block
@@ -606,6 +607,16 @@ fn person_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Person
+// ---------------------------------------------------------------- Kaufman 2026-10-24
+// Admission only for the module REVIEWED lists (authors/kaufman/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn kaufman_reviewed(def:&StrategyDef)->bool {matches!(def.book,"kfgei"|"kfbpm"|"kfst"|"kfcd"|"kftsm") && (crate::books::kfgei::reviewed(def.id) || crate::books::kfbpm::reviewed(def.id) || crate::books::kfst::reviewed(def.id) || crate::books::kfcd::reviewed(def.id) || crate::books::kftsm::reviewed(def.id))}
+const KAUFMAN_LABEL:&str="Perry Kaufman tested these rules on futures, foreign indices or the S&P 500 (workshop, Smarter Trading, Global Equity Investing, the TSM CD programs); index, ETF and stock runs (US and India) are a declared application, not the author's test. Cash-index shorts are hypothetical exposure.";
+fn kaufman_policy(def:&StrategyDef)->Option<Policy> {
+    if !kaufman_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Perry J. Kaufman: Global Equity Investing (with Vivanti) weekly systems A, B, E and UC (p.191-192, 209); The Best (Public) Systems workshop MA countertrend, 2-Systems and TSM Divergence (slides 31-58); Smarter Trading Box 5-1, Ch 6 and Box 8-5; TSM4 CD FC Orson and volume programs; New Trading Systems and Methods Parabolic, Four-Week Rule (p.177), Moon trading and Multiple time periods. Reviewed in authors/kaufman/admission/SOURCE-CONTRACT.md with independent chronological ledgers. Orders follow the printed code; no costs; the book's futures results are not reproduced.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Kaufman
 // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
 /// Reviewed Joe Ross daily rules (books::joe_ross_rules::REVIEWED): actual indices, ETFs and stocks, US and India, as a
 /// labelled declared application. The source references in books::joe_ross stay held (source review).
@@ -641,6 +652,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=patel_policy(def) {return p;} // Patel block
     if let Some(p)=tharp_policy(def) {return p;} // Tharp block
     if let Some(p)=person_policy(def) {return p;} // Person block
+    if let Some(p)=kaufman_policy(def) {return p;} // Kaufman block
     // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
     if let Some(p)=joe_ross_policy(def) {return p;}
     // ---- end Joe Ross block ----
@@ -1073,6 +1085,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if patel_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",PATEL_LABEL));} // Patel block
     if tharp_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",THARP_LABEL));} // Tharp block
     if person_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",PERSON_LABEL));} // Person block
+    if kaufman_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",KAUFMAN_LABEL));} // Kaufman block
     if def.book==crate::books::cwin::BOOK && crate::books::cwin::reviewed_daily(def.id) {json.push_str(concat!(",\"declared_application\":\"",CWIN_INDEX_LABEL!(),"\""));}
     if def.book==crate::books::ccl08::BOOK && crate::books::ccl08::day_trade(def.id) {json.push_str(concat!(",\"declared_application\":\"",CCL08_INDEX_LABEL!(),"\""));}
     if def.book==crate::books::ats::BOOK && crate::books::ats::reviewed_daily(def.id) && (p.requirement=="index_or_etf" || (crate::books::ats::STOCK_TICK_IDS.contains(&def.id) && !CONNORS_INDEX_IDS.contains(&def.id))) {json.push_str(concat!(",\"declared_application\":\"",BTP_INDEX_LABEL!(),"\""));}
@@ -1356,6 +1369,22 @@ mod tests {
         }
     }
     // ---- end Person block ----
+    // ---- Kaufman block (2026-10-24) ----
+    #[test]
+    fn kaufman_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{kfgei,kfbpm,kfst,kfcd,kftsm};
+        let all:Vec<StrategyDef>=kfgei::catalogue().into_iter().chain(kfbpm::catalogue()).chain(kfst::catalogue()).chain(kfcd::catalogue()).chain(kftsm::catalogue()).collect();
+        let mut want:Vec<&str>=kfgei::REVIEWED.iter().chain(kfbpm::REVIEWED).chain(kfst::REVIEWED).chain(kfcd::REVIEWED).chain(kftsm::REVIEWED).copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|kaufman_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert!(reviewed_cash_rule(d),"{}",d.id);assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Kaufman block ----
     // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
     #[test]
     fn joe_ross_reviewed_rules_run_on_indices_etfs_and_stocks_and_references_stay_held() {
@@ -1822,7 +1851,7 @@ mod tests {
         assert!(check(&reviewed,"RELIANCE",true).is_none());
         assert!(metadata_json(&reviewed).contains("\"source_rule_reviewed\":true"));
         assert!(metadata_json(&reviewed).contains("\"source_performance_reproduced\":false"));
-        assert_eq!(policy(&def("kftsm_parabolic","kftsm")).requirement,"source_review_required");
+        assert_eq!(policy(&def("kftsm_pf","kftsm")).requirement,"source_review_required"); // kftsm_parabolic admitted 2026-10-24 (Kaufman block)
         assert_eq!(policy(&def("kftsm_ma","another_book")).requirement,"source_review_required");
     }
     #[test]
@@ -1843,7 +1872,8 @@ mod tests {
                 assert_eq!(check(&d,ticker,false).unwrap().status,"needs_data");
             }
         }
-        for id in ["kftsm_parabolic","kftsm_donchian_4wk","kftsm_pf","kftsm_moon","kftsm_multi_tf","kftsm_new_adaptive_method"] {
+        // kftsm_parabolic, _donchian_4wk, _moon, _multi_tf admitted 2026-10-24 (Kaufman block test)
+        for id in ["kftsm_pf","kftsm_new_adaptive_method"] {
             let d=def(id,"kftsm");
             assert_eq!(policy(&d).requirement,"source_review_required");
             assert!(metadata_json(&d).contains("\"source_rule_reviewed\":false"));
