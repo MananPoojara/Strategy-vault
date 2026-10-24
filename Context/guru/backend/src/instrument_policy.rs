@@ -209,6 +209,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || fontanills_reviewed(def) // Fontanills block
         || thomsett_reviewed(def) // Thomsett block
         || patel_reviewed(def) // Patel block
+        || tharp_reviewed(def) // Tharp block
         || bernstein_g2_reviewed(def)
         || jb_g3_reviewed(def)
         || lwilliams_reviewed(def) // Larry Williams block
@@ -584,6 +585,16 @@ fn patel_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Patel
+// ---------------------------------------------------------------- Tharp 2026-10-24
+// Admission only for the module REVIEWED lists (authors/tharp/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn tharp_reviewed(def:&StrategyDef)->bool {matches!(def.book,"tharp") && (crate::books::tharp::reviewed(def.id))}
+const THARP_LABEL:&str="Trade Your Way to Financial Freedom tested these systems on a basket of futures; index, ETF and stock runs (US and India) are a declared application, not the author's test. Cash-index shorts are hypothetical exposure.";
+fn tharp_policy(def:&StrategyDef)->Option<Policy> {
+    if !tharp_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Van K. Tharp, Trade Your Way to Financial Freedom (1999): random entry with a trailing 3 x volatility stop and 1% risk (p.200-201) and the 55-day breakout with a 21-day trailing stop (p.286), reviewed in authors/tharp/admission/SOURCE-CONTRACT.md with independent chronological ledgers. The coin is a seeded generator (seed option) and fills follow the card's declared readings. No costs; the book's futures results are not reproduced.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Tharp
 // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
 /// Reviewed Joe Ross daily rules (books::joe_ross_rules::REVIEWED): actual indices, ETFs and stocks, US and India, as a
 /// labelled declared application. The source references in books::joe_ross stay held (source review).
@@ -617,6 +628,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=fontanills_policy(def) {return p;} // Fontanills block
     if let Some(p)=thomsett_policy(def) {return p;} // Thomsett block
     if let Some(p)=patel_policy(def) {return p;} // Patel block
+    if let Some(p)=tharp_policy(def) {return p;} // Tharp block
     // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
     if let Some(p)=joe_ross_policy(def) {return p;}
     // ---- end Joe Ross block ----
@@ -1047,6 +1059,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if fontanills_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",FONTANILLS_LABEL));} // Fontanills block
     if thomsett_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",THOMSETT_LABEL));} // Thomsett block
     if patel_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",PATEL_LABEL));} // Patel block
+    if tharp_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",THARP_LABEL));} // Tharp block
     if def.book==crate::books::cwin::BOOK && crate::books::cwin::reviewed_daily(def.id) {json.push_str(concat!(",\"declared_application\":\"",CWIN_INDEX_LABEL!(),"\""));}
     if def.book==crate::books::ccl08::BOOK && crate::books::ccl08::day_trade(def.id) {json.push_str(concat!(",\"declared_application\":\"",CCL08_INDEX_LABEL!(),"\""));}
     if def.book==crate::books::ats::BOOK && crate::books::ats::reviewed_daily(def.id) && (p.requirement=="index_or_etf" || (crate::books::ats::STOCK_TICK_IDS.contains(&def.id) && !CONNORS_INDEX_IDS.contains(&def.id))) {json.push_str(concat!(",\"declared_application\":\"",BTP_INDEX_LABEL!(),"\""));}
@@ -1298,6 +1311,22 @@ mod tests {
         }
     }
     // ---- end Patel block ----
+    // ---- Tharp block (2026-10-24) ----
+    #[test]
+    fn tharp_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{tharp};
+        let all:Vec<StrategyDef>=tharp::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=tharp::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Tharp block ----
     // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
     #[test]
     fn joe_ross_reviewed_rules_run_on_indices_etfs_and_stocks_and_references_stay_held() {
