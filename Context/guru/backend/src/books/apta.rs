@@ -4,6 +4,10 @@
 //! Page refs are printed pages (PDF page = printed + 24). Sources and checks: library/apta/.
 use crate::connors::{sma, Claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
+/// Admitted 2026-10-24 (authors/appel/admission/SOURCE-CONTRACT.md): independent ledgers, US and India, 0 mismatches.
+pub const REVIEWED: &[&str] = &["apta_ma200_dji", "apta_ma100_dji", "apta_triple_mom", "apta_roc15", "apta_six_best", "apta_six_worst", "apta_breadth_impulse", "apta_breadth_impulse_nse", "apta_breadth_macd", "apta_breadth_macd_nse", "apta_vix35", "apta_macd"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
+
 pub const BOOK: &str = "apta";
 
 // ------------------------------------------------------------------ shared helpers (also used by apmacd)
@@ -403,7 +407,9 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let on = |v: f64| v.is_finite();
     Some(match id {
         "apta_ma200_dji" | "apta_ma100_dji" => {
-            let ma = sma(c, u("ma"));
+            // exact-tie safe window sum (apwms::sma): a close equal to the average is not "above" or "below" it (p.48); the
+            // running sum of connors::sma drifts by 1e-14 and turned decimal ties into trades (fixed 2026-10-24, authors/appel)
+            let ma = super::apwms::sma(c, u("ma"));
             run_long(x, &daily, from, to, |_, i, h| {
                 if !on(ma[i]) {
                     None

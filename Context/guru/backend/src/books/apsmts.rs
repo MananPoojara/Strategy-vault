@@ -7,6 +7,10 @@ use super::apta::bars;
 use super::apwms::{a_minus_d, ema_a, moving_total, run_ls, sma, wma, NSE_AD, NYSE_AD};
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
+/// Admitted 2026-10-24 (authors/appel/admission/SOURCE-CONTRACT.md): independent ledgers, US and India, 0 mismatches.
+pub const REVIEWED: &[&str] = &["apsmts_pen", "apsmts_confirm", "apsmts_shift", "apsmts_mmacd", "apsmts_lead", "apsmts_chord", "apsmts_ad_obos", "apsmts_ad_obos_nse", "apsmts_channel"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
+
 pub const BOOK: &str = "apsmts";
 
 pub fn catalogue() -> Vec<StrategyDef> {
