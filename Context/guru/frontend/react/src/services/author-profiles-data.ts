@@ -222,6 +222,20 @@ export const AUTHOR_PROFILE_DATA = {
   "sources": [],
   "confidence": "low"
  },
+ "carney": {
+  "kind": "person",
+  "mastery": [
+   "Harmonic price patterns",
+   "Fibonacci ratios"
+  ],
+  "summary": "Scott M. Carney founded HarmonicTrader.com and named the Bat, Crab and Shark patterns. His books define each pattern by exact Fibonacci ratios between swing points, but the swing points themselves are picked on the chart and the trade management allows discretion, so no complete mechanical rule is given. This profile rests on the books themselves.",
+  "known_for": [
+   "The Harmonic Trader",
+   "Harmonic Trading, Volumes One and Two"
+  ],
+  "sources": [],
+  "confidence": "low"
+ },
  "schwager": {
   "kind": "person",
   "mastery": [

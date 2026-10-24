@@ -137,6 +137,12 @@ export const LIB = [
     { id: "vvmfm", sourceIds: ["title-3801128c46565f3f", "title-04fe541148df6896"], title: "Modeling Financial Markets (with Hendry)", year: 2004, blurb: "Van Vliet & Hendry · VB.NET pricing and trading models; programming examples only" },
     { id: "vvqmm", sourceIds: ["title-b27c205cebe0fc83"], title: "Quality Money Management (with Kumiega)", year: 2008, blurb: "Kumiega & Van Vliet · process engineering; held: pairs and factor examples need a named pair, fundamentals and options" }] },
   // ---- end Van Vliet block ----
+  // ---- Carney block (2026-10-24) ----
+  { id: "carney", name: "Scott M. Carney", tagline: "Harmonic trading · Fibonacci-measured price patterns (Gartley, Bat, Crab, Butterfly) and the RSI BAMM", books: [
+    { id: "smcht", sourceIds: ["title-6e05f4762b245a85", "title-64a46c5083c15151"], title: "The Harmonic Trader", year: 1999, blurb: "Carney, 1999 · AB=CD, Gartley 222, Butterfly, Three Drives; held: patterns picked on the chart" },
+    { id: "smcv1", sourceIds: ["title-88f9c015c806d62e"], title: "Harmonic Trading, Volume One", year: 2010, blurb: "Carney, 2010 · pattern ratios and the trade-management system; held: swing points are chosen by eye" },
+    { id: "smcv2", sourceIds: ["title-c40a0a5184e86423", "title-7b5b4bdbea2bc568"], title: "Harmonic Trading, Volume Two", year: 2010, blurb: "Carney, 2010 · new patterns, BAMM and RSI BAMM; held: needs judgement ('a degree of flexibility')" }] },
+  // ---- end Carney block ----
   // ---- Person block (2026-10-24) ----
   { id: "person", name: "John L. Person", tagline: "Chicago floor trader and educator · pivot points, the three-day pivot average and COMAS crossovers; co-author of the Commodity Trader's Almanac", books: [
     { id: "jpcppt", sourceIds: ["title-9e42d5961530dd6a", "title-a05a280f277befc3", "title-6ad63e85d6185b37"], title: "Candlestick and Pivot Point Trading Triggers", year: 2007, blurb: "Person, 2007 · close or pivot crossing the three-day pivot average (stop and reverse); doji triggers need trend judgement" },
