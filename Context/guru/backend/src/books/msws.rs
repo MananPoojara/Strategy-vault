@@ -237,6 +237,7 @@ fn zip(a: &[f64], b: &[f64], f: impl Fn(f64, f64) -> f64) -> Vec<f64> {
     a.iter().zip(b).map(|(x, y)| if fin(*x) && fin(*y) { let r = f(*x, *y); if r.is_finite() { r } else { NAN } } else { NAN }).collect()
 }
 fn map1(a: &[f64], f: impl Fn(f64) -> f64) -> Vec<f64> { a.iter().map(|x| if fin(*x) { let r = f(*x); if r.is_finite() { r } else { NAN } } else { NAN }).collect() }
+fn near(x: f64, y: f64) -> bool { (x - y).abs() <= 1e-12 * x.abs().max(y.abs()) }
 fn truth(x: f64) -> bool { fin(x) && x != 0.0 }
 /// Least-squares fit over the last n bars, x = 1..n: (value at x = n, slope).
 fn linreg(v: &[f64], n: usize) -> (Vec<f64>, Vec<f64>) {
@@ -323,9 +324,11 @@ impl<'a> Eng<'a> {
                 let r: Vec<f64> = match op {
                     0 => zip(&a, &b, |x, y| ((x != 0.0) || (y != 0.0)) as u8 as f64),
                     1 => zip(&a, &b, |x, y| ((x != 0.0) && (y != 0.0)) as u8 as f64),
-                    2 => zip(&a, &b, |x, y| (x < y) as u8 as f64), 3 => zip(&a, &b, |x, y| (x > y) as u8 as f64),
-                    4 => zip(&a, &b, |x, y| (x <= y) as u8 as f64), 5 => zip(&a, &b, |x, y| (x >= y) as u8 as f64),
-                    6 => zip(&a, &b, |x, y| (x == y) as u8 as f64), 7 => zip(&a, &b, |x, y| (x != y) as u8 as f64),
+                    // comparisons treat values within 1e-12 (relative) as equal: two results that are equal in exact
+                    // arithmetic (e.g. RSI on an unchanged close) must not differ by float rounding (review 25 Oct 2026)
+                    2 => zip(&a, &b, |x, y| (x < y && !near(x, y)) as u8 as f64), 3 => zip(&a, &b, |x, y| (x > y && !near(x, y)) as u8 as f64),
+                    4 => zip(&a, &b, |x, y| (x <= y || near(x, y)) as u8 as f64), 5 => zip(&a, &b, |x, y| (x >= y || near(x, y)) as u8 as f64),
+                    6 => zip(&a, &b, |x, y| near(x, y) as u8 as f64), 7 => zip(&a, &b, |x, y| (!near(x, y)) as u8 as f64),
                     8 => zip(&a, &b, |x, y| x + y), 9 => zip(&a, &b, |x, y| x - y), 10 => zip(&a, &b, |x, y| x * y),
                     _ => zip(&a, &b, |x, y| x / y),
                 };
@@ -764,6 +767,9 @@ impl Book {
 }
 
 pub const BOOK: &str = "msws";
+/// Admitted ids (authors/morris/admission/SOURCE-CONTRACT.md): every Live system of the GM1-GM9 series except the 3 the accuracy gate withholds (fixed point / volume units).
+pub const REVIEWED: &[&str] = &["msws_3_crows_soldiers_mfi", "msws_3_crows_soldiers_pctd", "msws_3_crows_soldiers_rsi", "msws_all_cci", "msws_all_mfi", "msws_all_pctd", "msws_all_rsi", "msws_arms_eom_norm_pmzero", "msws_cci_100_100_crossover", "msws_cci_100_100_crossover_entry_exit_w_stops_chg", "msws_cci_100_100_crossover_entry_exit_w_stops_ma", "msws_cci_100_100_crossover_w_stops", "msws_dark_cloud_piercing_line_cci", "msws_dark_cloud_piercing_line_mfi", "msws_dark_cloud_piercing_line_pctd", "msws_dark_cloud_piercing_line_rsi", "msws_directional_movement_roc_ma_system", "msws_directional_movement_roc_ma_system_w_stops", "msws_directional_movement_roc_system", "msws_doji_stars_cci", "msws_doji_stars_mfi", "msws_doji_stars_pctd", "msws_doji_stars_rsi", "msws_engulfing_cci", "msws_engulfing_mfi", "msws_engulfing_pctd", "msws_engulfing_rsi", "msws_envelope_crossings", "msws_generic_oscillator_w_ma_gm1", "msws_generic_oscillator_w_ma_gm2", "msws_generic_oscillator_w_ma_gm4", "msws_generic_oscillator_w_threshold_and_ma_gm2", "msws_generic_oscillator_w_threshold_and_ma_gm4", "msws_generic_oscillator_w_threshold_gm2", "msws_generic_oscillator_w_threshold_gm4", "msws_gm6_cci_100_100_system", "msws_gm6_cci_zero_cross_system", "msws_gm6_macd_mo_trader", "msws_gm6_pctv_system", "msws_gm6_rsi_quality_system", "msws_gm6_swing_line_crossover", "msws_gm6_va_crossover_system", "msws_gm7_adx_system", "msws_gm7_barics_pctb_system", "msws_gm7_pctm_and_std_dev", "msws_gm8_raff_obv_system", "msws_hanging_man_hammer_cci", "msws_hanging_man_hammer_mfi", "msws_hanging_man_hammer_pctd", "msws_hanging_man_hammer_rsi", "msws_harami_cci", "msws_harami_mfi", "msws_harami_pctd", "msws_harami_rsi", "msws_linear_trend_system", "msws_linear_trend_system_w_entry_exit_chg", "msws_linear_trend_system_w_ma", "msws_macd_true", "msws_meeting_lines_cci", "msws_meeting_lines_mfi", "msws_meeting_lines_pctd", "msws_meeting_lines_rsi", "msws_morris_master_trader", "msws_morris_volume_rsi", "msws_parabolic_sar_crossover", "msws_pctr_20_80_crossover", "msws_pctr_20_80_crossover_entry_exit_w_stops_chg", "msws_pctr_20_80_crossover_entry_exit_w_stops_ma", "msws_pctr_20_80_crossover_w_stops", "msws_positive_vol_crossover", "msws_price_volume_trend_w_ma", "msws_pring_s_kst_w_moving_average", "msws_pring_s_kst_w_threshold_and_ma", "msws_pring_s_short_kst_on_volume_w_moving_avg", "msws_roc_crossover", "msws_roc_crossover_w_stops", "msws_rsi_30_70_crossover", "msws_rsi_30_70_crossover_entry_exit_w_stops_chg", "msws_rsi_30_70_crossover_entry_exit_w_stops_ma", "msws_rsi_30_70_crossover_w_stops", "msws_rsi_pctd_and_cci_trader", "msws_stars_cci", "msws_stars_mfi", "msws_stars_pctd", "msws_stars_rsi", "msws_stochastics_pctd_20_80_w_stops", "msws_stochastics_pctk_20_80_crossover", "msws_stochastics_pctk_20_80_crossover_w_stops", "msws_stochastics_pctk_20_80_entry_exit_w_stops_ma", "msws_triple_averages_in_sync", "msws_trix_entry_exit_chg", "msws_trix_entry_exit_ma", "msws_trix_entry_exit_w_stops_chg"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 pub const EXEC_DEFAULT: Exec = Exec { entry_open: false, exit_open: false };
 pub const EXEC_NEXT_OPEN: Exec = Exec { entry_open: true, exit_open: true };
 const CONV: &str = "One position at a time; a position closes only by its own Close formula (from the bar after a close-filled entry); an exit plus an opposite entry on one bar reverse; no same-direction re-entry on the exit bar; parameter side = 1/-1 runs one side alone. Indicators: MetaStock definitions (library/msws/README.md). India: runs on NIFTY 50 / indices instead of the stocks and futures it was written for (instrument swap only); price-point and volume-unit constants are applied literally.";
