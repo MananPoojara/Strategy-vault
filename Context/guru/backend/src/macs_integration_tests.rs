@@ -45,5 +45,5 @@ fn basket_and_preloaded_index_etf_native_spoofing_stay_held(){
 #[test]
 fn raw_account_domain_stays_separate_from_data_readiness(){
     let series=source(80,false);let mut rows=series.rows().to_vec();rows[80].close=0.05;rows[80].low=0.01;let x=Ctx::new(&rows,&[],&[]);assert!(readiness::check(&x,&definition(),79,80,&Params::new()).is_none());
-    let t=Trade{dir:-1.,legs:vec![connors::Leg{i:80,px:0.01,w:1.}],exit_i:80,exit_px:0.05,signal_i:80,open:true,entry_kind:"open",reason:"synthetic unsupported short mark".into(),exits:vec![]};assert!(normalized_run(&x,vec![t],79,80,0.).err().unwrap().starts_with("calculation_unavailable"));
+    let t=Trade{dir:-1.,legs:vec![connors::Leg{i:80,px:0.01,w:1.}],exit_i:80,exit_px:0.05,signal_i:80,open:true,entry_kind:"open",reason:"synthetic unsupported short mark".into(),exits:vec![]};assert_ruined(&x,&normalized_run(&x,vec![t],79,80,0.).unwrap());
 }

@@ -146,7 +146,7 @@ fn rsi_source_events_do_not_bypass_nonpositive_normalized_accounts() {
     let mut c:Vec<_>=(0..16).map(|i|100.+i as f64).collect();c.extend([400.,400.]);
     let r=observations(&c);let ctx=Ctx::new(&r,&r,&[]);
     let raw=books::lkqts::run("lkqts_rsi14",&ctx,14,17,&Params::new()).unwrap();assert_eq!(raw.len(),1);assert_eq!(raw[0].dir,-1.);
-    assert!(backtest_costs(&ctx,"lkqts_rsi14",14,17,accounting::Costs::default(),&Params::new()).is_err());
+    assert_ruined(&ctx,&backtest_costs(&ctx,"lkqts_rsi14",14,17,accounting::Costs::default(),&Params::new()).unwrap());
 }
 
 #[test]
