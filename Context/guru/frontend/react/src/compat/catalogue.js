@@ -142,6 +142,12 @@ export const LIB = [
     { id: "skdab", sourceIds: ["title-1a375bb2a1b292dd"], title: "Dragons and Bulls", year: 1994, blurb: "Kroll, 1994 · 50-day trend, 10/20/50-day entries, 4/9/18-day stop-outs and re-entries; the 9/18/50 NIKKEI example is held (exit not exact)" },
     { id: "skfts", sourceIds: ["title-b57e56c915e14bbf"], title: "Kroll on Futures Trading Strategy", year: 1988, blurb: "Kroll, 1988 · strategy and money management; its moving-average examples are already in the vault" }] },
   // ---- end Kroll block ----
+  // ---- Wyckoff block (2026-10-24) ----
+  { id: "wyckoff", name: "Richard D. Wyckoff", tagline: "Tape reading and the Wyckoff method of accumulation and distribution (judgement, held)", books: [
+    { id: "rwdtb", sourceIds: ["title-b9d705e1fc938a87", "title-0d03b88d788c0a44", "title-24b512b9bc7d792e", "title-18946614c3ba3f12"], title: "The Day Trader's Bible", year: 1919, blurb: "Wyckoff · tape reading; held" },
+    { id: "rwhit", sourceIds: ["title-7d1fbe74c56129b2", "title-d8b6e05f7d9b1d93"], title: "How I Trade and Invest in Stocks and Bonds", year: 1922, blurb: "Wyckoff · trading principles; held" },
+    { id: "rwsmt", sourceIds: ["title-0cfa0308d47e2924"], title: "Stock Market Technique No. 1", year: 1933, blurb: "Wyckoff · the Wyckoff method (also the course units); held" }] },
+  // ---- end Wyckoff block ----
   // ---- Etzkorn block (2026-10-24) ----
   { id: "etzkorn", name: "Mark Etzkorn", tagline: "Momentum oscillators explained and tested · MACD, RSI and rate-of-change equilibrium systems", books: [
     { id: "metwo", sourceIds: ["title-eaea9328b7643525", "title-959fc0f8fc82690b"], title: "Trading with Oscillators", year: 1997, blurb: "Etzkorn, 1997 · MACD signal-line, RSI 50 and ROC equilibrium stop-and-reverse tests (S&P 500 lengths); stochastic grid and divergences held" },
