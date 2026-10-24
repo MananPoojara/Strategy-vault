@@ -172,6 +172,12 @@ export const LIB = [
     { id: "swhoi", sourceIds: ["title-ed1441777051b0e2"], title: "High Octane Investing", year: null, blurb: "Wirrick, Collette & Christensen · option plays and a Bollinger squeeze; held: option prices, no squeeze threshold" },
     { id: "swhot", sourceIds: ["title-f0c83eda5e62b954"], title: "High Octane Trading", year: 2003, blurb: "Wirrick, 2003 · options primer and chart reading; held: no complete rule" }] },
   // ---- end Wirrick block ----
+  // ---- Borowski block (2026-10-24) ----
+  { id: "borowski", name: "Robert Borowski", tagline: "Rapid Forex e-books · intraday wave surfing, scalping and simple/exponential average trend lines on currency charts (held)", books: [
+    { id: "rbfsurf", sourceIds: ["title-7c06ca1d8e3dfdab", "title-bb98231bb40e960f"], title: "Forex Surfing", year: null, blurb: "Borowski · intraday wave and channel trades; held: lines by hand, pip sizes" },
+    { id: "rbfsail", sourceIds: ["title-fcae7827351fd252"], title: "Forex Sailing", year: null, blurb: "Borowski · S.E.X. 5/20/60 lines; held: 'not meant to be used alone'" },
+    { id: "rbfscalp", sourceIds: ["title-7cd7d14bd81aaa1f"], title: "Forex Scalping", year: null, blurb: "Borowski · 1-minute scalps; held: intraday forex, pip stops" }] },
+  // ---- end Borowski block ----
   // ---- CSmith block (2026-10-24) ----
   { id: "csmith", name: "Courtney D. Smith", tagline: "FX and futures trader · swing-point trend analysis, enhanced channel breakouts, the Conqueror", books: [
     { id: "csmlt", sourceIds: ["title-bafc2391a8c8f66d"], title: "How to Make a Living Trading Foreign Exchange", year: 2010, blurb: "Smith, 2010 · trend analysis, 55/20 channel breakout with the rejection rule, Conqueror I/II, stochastic 50 line, reversal days and RRR run as declared applications; inside days, slingshot and divergences held" },
