@@ -142,6 +142,10 @@ export const LIB = [
     { id: "skdab", sourceIds: ["title-1a375bb2a1b292dd"], title: "Dragons and Bulls", year: 1994, blurb: "Kroll, 1994 · 50-day trend, 10/20/50-day entries, 4/9/18-day stop-outs and re-entries; the 9/18/50 NIKKEI example is held (exit not exact)" },
     { id: "skfts", sourceIds: ["title-b57e56c915e14bbf"], title: "Kroll on Futures Trading Strategy", year: 1988, blurb: "Kroll, 1988 · strategy and money management; its moving-average examples are already in the vault" }] },
   // ---- end Kroll block ----
+  // ---- MacLean block (2026-10-24) ----
+  { id: "maclean", name: "George A. MacLean", tagline: "Fixed-income technical analyst · Fibonacci and Gann tools drawn by the analyst, nothing testable", books: [
+    { id: "gmfg", sourceIds: ["title-b7c5b1cbfeb2e923", "title-938bbaea33f3d1ba"], title: "Fibonacci and Gann Applications in Financial Markets", year: 2005, blurb: "MacLean, 2005 · retracements, fanlines, timelines and Gann swing charts from chosen pivots; held" }] },
+  // ---- end MacLean block ----
   // ---- Nison block (2026-10-24) ----
   { id: "nison", name: "Steve Nison", tagline: "Brought Japanese candlestick charting to the West · pattern definitions and candle-plus-Western confluence; no mechanical rule (held)", books: [
     { id: "snjcct", sourceIds: ["title-81397d6d53d0f930", "title-1364d0fbc6ba6db0", "title-51b23babb9e56ea1"], title: "Japanese Candlestick Charting Techniques", year: 1991, blurb: "Nison, 1991 · reversal and continuation patterns, candles with Western tools; held: trend and candle size judged by eye, no exits" },

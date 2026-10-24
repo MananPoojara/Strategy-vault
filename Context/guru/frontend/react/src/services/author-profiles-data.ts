@@ -409,6 +409,20 @@ export const AUTHOR_PROFILE_DATA = {
   "sources": [],
   "confidence": "low"
  },
+ "maclean": {
+  "kind": "person",
+  "mastery": [
+   "Fibonacci analysis",
+   "Gann analysis",
+   "Fixed income"
+  ],
+  "summary": "George A. MacLean is a technical analyst of fixed-income and futures markets. His book applies Fibonacci retracements, fanlines, timelines and Gann angles and swing charts; every level starts from a high or low the analyst chooses, so the methods cannot be run mechanically. This profile rests on the book itself.",
+  "known_for": [
+   "Fibonacci and Gann Applications in Financial Markets"
+  ],
+  "sources": [],
+  "confidence": "low"
+ },
  "carney": {
   "kind": "person",
   "mastery": [
