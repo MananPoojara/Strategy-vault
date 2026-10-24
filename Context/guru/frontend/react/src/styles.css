@@ -755,3 +755,15 @@ body.pdf-capture .st-actions, body.pdf-capture #page-action-message, body.pdf-ca
 .tbl.stat-table td:first-child { font-size: 14px; color: var(--ink); padding-right: 40px; white-space: nowrap; }
 .tbl.stat-table td.n { font-family: 'Inter Numbers', 'IBM Plex Sans', system-ui, sans-serif; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums lining-nums slashed-zero; font-feature-settings: "tnum" 1, "lnum" 1, "zero" 1; min-width: 150px; padding-left: 28px; white-space: nowrap; }
 .tbl.stat-table th.n { min-width: 150px; padding-left: 28px; }
+
+/* Equity range brush (replaces year buttons + two sliders) */
+.range-brush{position:relative;height:56px;margin-top:10px;border:1px solid var(--rule);border-radius:var(--r-field);background:var(--card);cursor:pointer;user-select:none;touch-action:none;overflow:hidden}
+.range-brush .rb-spark{position:absolute;inset:6px 0 18px 0;width:100%;height:calc(100% - 24px)}
+.range-brush .rb-spark polyline{fill:none;stroke:var(--ink3);stroke-width:1.5;vector-effect:non-scaling-stroke;opacity:.7}
+.range-brush .rb-win{position:absolute;top:0;bottom:16px;background:color-mix(in srgb,var(--blue) 14%,transparent);border:1.5px solid var(--blue);border-radius:6px;cursor:grab;min-width:6px}
+.range-brush .rb-win.on{cursor:grabbing;background:color-mix(in srgb,var(--blue) 22%,transparent)}
+.range-brush .rb-win:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.range-brush .rb-h{position:absolute;top:50%;width:10px;height:26px;margin-top:-13px;background:var(--card);border:1.5px solid var(--blue);border-radius:4px;cursor:ew-resize}
+.range-brush .rb-h[data-h=l]{left:2px}.range-brush .rb-h[data-h=r]{right:2px}
+.range-brush .rb-out{position:absolute;left:8px;bottom:1px;font:500 11px 'Inter Numbers','IBM Plex Sans',system-ui,sans-serif;font-variant-numeric:tabular-nums;color:var(--ink2);pointer-events:none}
+@media print{.range-brush{display:none}}
