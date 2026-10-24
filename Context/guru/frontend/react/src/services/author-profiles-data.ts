@@ -310,6 +310,19 @@ export const AUTHOR_PROFILE_DATA = {
   "sources": [],
   "confidence": "low"
  },
+ "dittmann": {
+  "kind": "person",
+  "mastery": [
+   "Forex trading"
+  ],
+  "summary": "Karl Dittmann sold short forex e-books through his own websites around 2009-2010. Each describes a short-term currency set-up on 15- or 30-minute charts with stops and targets measured in pips. This profile rests on the books themselves.",
+  "known_for": [
+   "Forex Never Lose Trade",
+   "The Simplest Forex Pips System"
+  ],
+  "sources": [],
+  "confidence": "low"
+ },
  "carney": {
   "kind": "person",
   "mastery": [
