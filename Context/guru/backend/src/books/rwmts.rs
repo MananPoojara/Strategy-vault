@@ -12,6 +12,10 @@
 use crate::connors::{dmi, rsi, sma, true_range, wilder, Claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "rwmts";
+/// Admitted ids (authors/weissman/admission/SOURCE-CONTRACT.md). Held: the three futures-dollar rules (macd_pt,
+/// macd_pt_sl, rsi200_usd: $2,500 per E-mini contract), the figure with an unstated ADX filter and the intraday systems.
+pub const REVIEWED: &[&str] = &["rwmts_sma200_sar", "rwmts_sma26_sar", "rwmts_sma26_wait3", "rwmts_env_trend", "rwmts_env_fade", "rwmts_macd_sar", "rwmts_dmi_sar", "rwmts_psar", "rwmts_psar_fade", "rwmts_stoch_ext", "rwmts_rsi_ext", "rwmts_mom10_sar", "rwmts_bb_fade", "rwmts_cci_trend", "rwmts_cci_fade", "rwmts_ma2x", "rwmts_ichi2", "rwmts_ma3x", "rwmts_ichi3", "rwmts_macd", "rwmts_dmi", "rwmts_dmi_adx", "rwmts_cb20", "rwmts_bb_break", "rwmts_cb20_stop3", "rwmts_rsi200", "rwmts_bb200", "rwmts_bb_adx", "rwmts_stoch_cci", "rwmts_stoch_cci_time"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 // ------------------------------------------------------------------ indicators
 

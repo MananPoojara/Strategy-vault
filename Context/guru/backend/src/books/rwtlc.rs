@@ -14,6 +14,10 @@
 use crate::connors::{rsi, sma, true_range, wilder, Claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "rwtlc";
+/// Admitted ids (authors/weissman/admission/SOURCE-CONTRACT.md). Held: RSI Extremes with the $7,500
+/// per-contract stop (rsix, rsix_vol) and the judgement / intraday models.
+pub const REVIEWED: &[&str] = &["rwtlc_adx_lowvol_bb", "rwtlc_adx_hivol_ct", "rwtlc_rsi_trend3", "rwtlc_rsi_trend1", "rwtlc_rsi_trend10", "rwtlc_rsi_trend_ext", "rwtlc_rsi_trend3_time", "rwtlc_ichi_x", "rwtlc_ichi_cloud"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 // ------------------------------------------------------------------ indicators
 
