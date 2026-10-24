@@ -251,6 +251,21 @@ export const AUTHOR_PROFILE_DATA = {
   "sources": [],
   "confidence": "low"
  },
+ "csmith": {
+  "kind": "person",
+  "mastery": [
+   "Currency and futures trend following",
+   "Mechanical trading methods"
+  ],
+  "summary": "Courtney D. Smith is a money manager and former bank trading-desk head who has written on options, seasonals, spreads and currency trading. How to Make a Living Trading Foreign Exchange sets out complete methods (swing-point trend analysis, an enhanced 55/20 channel breakout, the Conqueror adapted from Babcock and Freeburg, a stochastic trend rule and reversal-day trades); these run here on indices, ETFs and stocks as a declared application. This profile rests on the books themselves.",
+  "known_for": [
+   "How to Make a Living Trading Foreign Exchange",
+   "Option Strategies",
+   "Seasonal Charts for Futures Traders"
+  ],
+  "sources": [],
+  "confidence": "low"
+ },
  "carney": {
   "kind": "person",
   "mastery": [

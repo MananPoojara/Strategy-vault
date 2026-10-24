@@ -142,6 +142,12 @@ export const LIB = [
     { id: "skdab", sourceIds: ["title-1a375bb2a1b292dd"], title: "Dragons and Bulls", year: 1994, blurb: "Kroll, 1994 · 50-day trend, 10/20/50-day entries, 4/9/18-day stop-outs and re-entries; the 9/18/50 NIKKEI example is held (exit not exact)" },
     { id: "skfts", sourceIds: ["title-b57e56c915e14bbf"], title: "Kroll on Futures Trading Strategy", year: 1988, blurb: "Kroll, 1988 · strategy and money management; its moving-average examples are already in the vault" }] },
   // ---- end Kroll block ----
+  // ---- CSmith block (2026-10-24) ----
+  { id: "csmith", name: "Courtney D. Smith", tagline: "FX and futures trader · swing-point trend analysis, enhanced channel breakouts, the Conqueror", books: [
+    { id: "csmlt", sourceIds: ["title-bafc2391a8c8f66d"], title: "How to Make a Living Trading Foreign Exchange", year: 2010, blurb: "Smith, 2010 · trend analysis, 55/20 channel breakout with the rejection rule, Conqueror I/II, stochastic 50 line, reversal days and RRR run as declared applications; inside days, slingshot and divergences held" },
+    { id: "csops", sourceIds: ["title-9dfc05d60c19e423"], title: "Option Strategies (2nd ed.)", year: 1996, blurb: "Smith, 1996 · option spread structures picked to a market view; nothing testable on the underlying" },
+    { id: "csscf", sourceIds: ["title-d9e81a63106a6b24"], title: "Seasonal Charts for Futures Traders", year: 1987, blurb: "Smith, 1987 · futures seasonal sourcebook; needs futures prices, no fixed rule" }] },
+  // ---- end CSmith block ----
   // ---- Etzkorn block (2026-10-24) ----
   { id: "etzkorn", name: "Mark Etzkorn", tagline: "Momentum oscillators explained and tested · MACD, RSI and rate-of-change equilibrium systems", books: [
     { id: "metwo", sourceIds: ["title-eaea9328b7643525", "title-959fc0f8fc82690b"], title: "Trading with Oscillators", year: 1997, blurb: "Etzkorn, 1997 · MACD signal-line, RSI 50 and ROC equilibrium stop-and-reverse tests (S&P 500 lengths); stochastic grid and divergences held" },

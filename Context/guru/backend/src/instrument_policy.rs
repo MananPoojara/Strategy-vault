@@ -229,6 +229,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || elder_reviewed(def) // Elder block
         || pring_reviewed(def) // Pring block
         || sperandeo_reviewed(def) // Sperandeo block
+        || csmith_reviewed(def) // CSmith block
         || gregoriou_reviewed(def) // Gregoriou block
         || crisp_reviewed(def) // Crisp block
         || fabozzi_reviewed(def) // Fabozzi block
@@ -759,6 +760,16 @@ fn sperandeo_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Sperandeo
+// ---------------------------------------------------------------- CSmith 2026-10-24
+// Admission only for the module REVIEWED lists (authors/csmith/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn csmith_reviewed(def:&StrategyDef)->bool {matches!(def.book,"csmlt") && (crate::books::csmlt::reviewed(def.id))}
+const CSMITH_LABEL:&str="Courtney Smith wrote these methods for currency pairs; runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test. Cash-index shorts are hypothetical exposure.";
+fn csmith_policy(def:&StrategyDef)->Option<Policy> {
+    if !csmith_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Courtney D. Smith, How to Make a Living Trading Foreign Exchange (Wiley 2010): Ch.2 trend analysis (p.13-30), Ch.3 channel breakouts (p.31-53), Ch.4 the Conqueror (p.55-65), Ch.5 stochastics (p.81), Ch.6 reversal days and RRR (p.97-103). Reviewed in authors/csmith/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end CSmith
 // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
 /// Reviewed Joe Ross daily rules (books::joe_ross_rules::REVIEWED): actual indices, ETFs and stocks, US and India, as a
 /// labelled declared application. The source references in books::joe_ross stay held (source review).
@@ -788,6 +799,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=elder_policy(def) {return p;} // Elder block
     if let Some(p)=pring_policy(def) {return p;} // Pring block
     if let Some(p)=sperandeo_policy(def) {return p;} // Sperandeo block
+    if let Some(p)=csmith_policy(def) {return p;} // CSmith block
     if let Some(p)=gregoriou_policy(def) {return p;} // Gregoriou block
     if let Some(p)=crisp_policy(def) {return p;} // Crisp block
     if let Some(p)=fabozzi_policy(def) {return p;} // Fabozzi block
@@ -1236,6 +1248,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if let Some(label)=lwilliams_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Larry Williams block
     if let Some(label)=pring_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Pring block
     if sperandeo_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",SPERANDEO_LABEL));} // Sperandeo block
+    if csmith_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",CSMITH_LABEL));} // CSmith block
     if let Some(label)=gregoriou_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Gregoriou block
     if crisp_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{CRISP_LABEL}\""));} // Crisp block
     if fabozzi_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",FABOZZI_LABEL));} // Fabozzi block
@@ -1426,6 +1439,22 @@ mod tests {
         }
     }
     // ---- end Sperandeo block ----
+    // ---- CSmith block (2026-10-24) ----
+    #[test]
+    fn csmith_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{csmlt};
+        let all:Vec<StrategyDef>=csmlt::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=csmlt::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end CSmith block ----
     // ---- Gregoriou block (2026-10-24) ----
     #[test]
     fn gregoriou_review_admits_exact_ids_on_indices_etfs_and_stocks() {
