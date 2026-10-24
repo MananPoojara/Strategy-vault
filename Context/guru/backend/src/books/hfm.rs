@@ -1,4 +1,4 @@
-//! Investment Secrets of a Hedge Fund Manager (Larry Connors & Blake E. Hayward, Probus 1995). Book id "hfm".
+//! Investment Secrets of a Hedge Fund Manager (Larry Connors & Blake E. Hayward, Probus 1995). Book id "hfm Intraday wave 1: run on real 1-minute bars by default (p.path=1): fills on the first minute that reaches the level, at the level or at that minute's open when it opened through it; out on the official daily close. Instrument: SPX only, because the levels are the book's fixed S&P points (.50 and 2.00 points: p.off_pts, p.stop_pts; the % params and stop_mode apply to path 0 only) (no conversion to SPY or NSE prices is invented); from 2014, where SPX daily opens are real, to 2026-08. Days without minute data make no trade. p.path=0 = the old daily-bar reading [Not from the book]. A minute that fills and also reaches the protective stop counts as filled then stopped, unless it opened beyond the stop: then only if it closed beyond it [convention]. An unfilled inside day carries the side to the next day; a day without minute data makes no trade and no carry. VIX = CBOE VIX daily close (the book used VXO).".
 //! Extraction: library/hfm/extract-1.md (Ch. 1-3) + extract-2.md (Ch. 4-9). Report: library/hfm/implementation-report.md.
 //!
 //! Conventions (beyond connors.rs):
@@ -184,6 +184,10 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("gap_mode", "No-gap test vs: 0 = prior high/low, 1 = prior close", 0.0, 0.0, 1.0, 1.0),
             p("stop_mode", "Entry-day stop: 2 = bar path O-H-L-C (default), 0 = close only (optimistic), 1 = any touch (pessimistic)", 2.0, 0.0, 2.0, 1.0),
             p("use_vxo", "VIX source: 0 = vault VIX, 1 = series VXO", 0.0, 0.0, 1.0, 1.0),
+            // intraday wave 1
+            p("path", "1 = real 1-minute bars with the book's S&P points (SPX only; off_pts / stop_pts), 0 = [Not from the book] daily bars with the % conversions above and stop_mode", 1.0, 0.0, 1.0, 1.0),
+            p("off_pts", "Minute path: entry .50 S&P points beyond yesterday's high/low (book)", 0.5, 0.0, 5.0, 0.05),
+            p("stop_pts", "Minute path: protective stop 2.00 S&P points from the fill (book)", 2.0, 0.25, 20.0, 0.25),
         ],
         "hfm_globex_fv" => vec![
             p("off", "Sell: points above cash + fair value", 0.5, 0.0, 2.0, 0.05),
@@ -487,6 +491,33 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 out.push(mark_open(t, x, to));
             }
         }
+        // ---- intraday wave 1: real 1-minute path with the book's S&P points (default path = 1)
+        "hfm_vix" if g("path") >= 0.5 => {
+            use crate::intraday::{day_trade, stop_entry_day, Level};
+            let Some(mm) = x.minutes else { return Some(out) };
+            let (hi, lo, off, stp, gap_close) = (g("hi"), g("lo"), g("off_pts"), g("stop_pts"), g("gap_mode") >= 0.5);
+            let vx: Vec<f64> = match (g("use_vxo") >= 0.5).then(|| x.series("VXO")).flatten() {
+                Some(s) => s.to_vec(),
+                None => { let m = vix_closes(); x.r.iter().map(|r| m.get(&r.date).copied().unwrap_or(f64::NAN)).collect() }
+            };
+            let mut carry = 0.0;
+            for i in from.max(1)..=to {
+                let side = if vx[i - 1] >= hi { 1.0 } else if vx[i - 1] <= lo { -1.0 } else { carry };
+                carry = 0.0;
+                if side == 0.0 { continue; }
+                let refp = if gap_close { c[i - 1] } else if side > 0.0 { h[i - 1] } else { l[i - 1] };
+                if side * (o[i] - refp) > 0.0 { continue; }
+                let Some(b) = mm.day(&x.r[i].date) else { continue }; // no minutes: no trade and no carry
+                let lvl = if side > 0.0 { h[i - 1] + off } else { l[i - 1] - off };
+                match stop_entry_day(&b, 0, &[Level { up: side > 0.0, px: lvl }], &|_, px| Some(Level { up: side < 0.0, px: px - side * stp })) {
+                    Some((_, px, Some(xp))) => out.push(day_trade(side, i, px, i, xp, "Stopped", "stop", false)),
+                    Some((_, px, None)) => out.push(day_trade(side, i, px, i, c[i], "Market on close", "stop", false)),
+                    None if h[i] < h[i - 1] && l[i] > l[i - 1] => carry = side,
+                    None => {}
+                }
+            }
+        }
+        // ---- end intraday wave 1
         "hfm_vix" => {
             let (hi, lo, off, stp) = (g("hi"), g("lo"), pct("off"), pct("stop"));
             let (gap_close, mode) = (g("gap_mode") >= 0.5, g("stop_mode").round());
@@ -586,7 +617,7 @@ mod tests {
         let r = rows(&[(463.0, 464.90, 462.0, 464.0), (464.5, 467.5, 464.0, 466.95)]);
         let mut x = Ctx::new(&r, &r, &[]);
         x.extra.insert("VXO".into(), vec![16.36, 14.0]);
-        let t = run("hfm_vix", &x, 0, 1, &ps(&[("use_vxo", 1.0), ("off", 0.5 / 464.90 * 100.0), ("stop", 2.0 / 465.40 * 100.0)])).unwrap();
+        let t = run("hfm_vix", &x, 0, 1, &ps(&[("use_vxo", 1.0), ("off", 0.5 / 464.90 * 100.0), ("stop", 2.0 / 465.40 * 100.0), ("path", 0.0)])).unwrap();
         assert_eq!(t.len(), 1);
         assert!(t[0].dir > 0.0 && (t[0].legs[0].px - 465.40).abs() < 1e-9 && t[0].exit_px == 466.95);
         assert_eq!(t[0].reason, "Market on close"); // low 464.00 never reached the 463.40 stop

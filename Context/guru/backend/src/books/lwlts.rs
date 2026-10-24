@@ -109,7 +109,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
         live!("lwlts_mon_vb", "Monday open + 5% of Friday's range, exit close", "Ch 6 · TDW / TDM", "Long",
             &["E|\"buying the opening Monday +.05 percent of Friday's range\" (p.87): Read: buy stop at the open + 0.05 x the previous bar's range",
               "X|\"we hold the trade to the close\" (p.87)",
-              "X|Read: $3,000 stop (12 points); not in the text, Fig. 6.2's largest loss is exactly $3,000 with $0 commission"],
+              "X|Read: $3,000 stop (12 points); not in the text, Fig. 6.2's largest loss is exactly $3,000 with $0 commission",
+              "X|[intraday wave 1] Intraday wave 1: run on real 1-minute bars by default (p.path=1): the buy stop fills on the first minute that reaches the level, at the level or at that minute's open when it opened through it; out on the official daily close. Instrument: SPX only, because the levels are the book's fixed S&P points (no conversion to SPY or NSE prices is invented); from 2014, where SPX daily opens are real, to 2026-08. Days without minute data make no trade. p.path=0 = the old daily-bar reading [Not from the book]. A minute that fills and also reaches the protective stop counts as filled then stopped, unless it opened beyond the stop: then only if it closed beyond it [convention]."],
             SP, claim("758", "57%", "$125.53", "same day", "07/02/82-08/26/98")),
         live!("lwlts_tdm6_sp", "S&P buy TDM 6", "Ch 6 · TDW / TDM", "Long", TDM_R, TDM_N, claim("166", "58%", "$293", "3 days", "1982-1998")),
         live!("lwlts_tdm7_sp", "S&P buy TDM 7", "Ch 6 · TDW / TDM", "Long", TDM_R, TDM_N, claim("168", "60%", "$322", "3 days", "1982-1998")),
@@ -298,7 +299,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             dows("buy_dow", "Buy days bitmask", 31.0), dows("sell_dow", "Sell days bitmask", 31.0), stop(1750.0), day0(1.0), pt()],
         "lwlts_mon_oc" => vec![p("hold", "Exit on the close N days after entry", 0.0, 0.0, 10.0, 1.0), stop(0.0), day0(1.0), pt()],
         "lwlts_mon_3day" => vec![p("hold", "Exit on the close N days after entry", 3.0, 0.0, 10.0, 1.0), stop(0.0), day0(1.0), pt()],
-        "lwlts_mon_vb" => vec![p("buy_mult", "Buy: open + x Friday's range", 0.05, 0.0, 1.0, 0.05), stop(3000.0), day0(1.0), pt()],
+        "lwlts_mon_vb" => vec![p("buy_mult", "Buy: open + x Friday's range", 0.05, 0.0, 1.0, 0.05), stop(3000.0), day0(1.0), pt(),
+            // intraday wave 1
+            p("path", "1 = real 1-minute bars (fills at the level or the minute's open; days without minute data make no trade), 0 = [Not from the book] daily bar path", 1.0, 0.0, 1.0, 1.0)],
         "lwlts_tdm6_sp" | "lwlts_tdm7_sp" | "lwlts_tdm8_sp" | "lwlts_tdm19_sp" | "lwlts_tdm20_sp" | "lwlts_tdm21_sp" | "lwlts_tdm22_sp" =>
             vec![p("hold", "Exit on the close N days after entry", 3.0, 1.0, 10.0, 1.0), stop(2000.0), day0(0.0), pt()],
         "lwlts_study_all" | "lwlts_study_down1" | "lwlts_study_down3" | "lwlts_study_trend" | "lwlts_study_trend_mon" =>
@@ -479,6 +482,22 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             })
         }
         "lwlts_mon_oc" | "lwlts_mon_3day" => simulate(x, from, to, &cfg, |i| if wd(i) == 1 { (Some(Ent::Open), None) } else { none }),
+        // ---- intraday wave 1: real 1-minute path (default path = 1); the $ stop is S&P points (pt_usd per point)
+        "lwlts_mon_vb" if g("path") >= 0.5 => {
+            use crate::intraday::{day_trade, stop_entry_day, Level};
+            let Some(mm) = x.minutes else { return Some(vec![]) };
+            let (m, sd) = (g("buy_mult"), cfg.stop);
+            let mut out = vec![];
+            for i in from.max(1)..=to {
+                if wd(i) != 1 { continue; }
+                let Some(b) = mm.day(&x.r[i].date) else { continue };
+                let st = |_: usize, px: f64| (sd.is_finite() && cfg.day0).then(|| Level { up: false, px: px - sd });
+                let Some((_, px, xs)) = stop_entry_day(&b, 0, &[Level { up: true, px: o[i] + m * (h[i - 1] - l[i - 1]) }], &st) else { continue };
+                out.push(day_trade(1.0, i, px, i, xs.unwrap_or(c[i]), if xs.is_some() { "stop" } else { "time exit on the close" }, "stop", false));
+            }
+            out
+        }
+        // ---- end intraday wave 1
         "lwlts_mon_vb" => {
             cfg.hold = Some(0);
             let m = g("buy_mult");

@@ -521,10 +521,10 @@ pub fn catalogue() -> Vec<StrategyDef> {
           "Same article as ATS (ats_8day_hl_reversal). Entry window = the condition-3 bar plus the next four (S&P example); a same-bar condition 3 + breakout is allowed (Microsoft example) unless that bar opened above the level, and is not stopped out that bar. The book gives only the stop; the rest of the exit is a labelled non-book set. Run on index ETFs / NSE indices.", None),
         d("btp2_8day_hl_reversal_short", "8-Day High/Low Reversal · sells", "8-Day High/Low Reversal (Vol. II)", "Short", Live, D8_S, "Mirror of the buys (IBM example). Same as ATS.", None),
         d("btp2_10pct_oops_long", "10% Oops · buys", "10% Oops (Vol. II)", "Long", Live, OOPS_L,
-          "Same article as ATS (ats_10pct_oops). Gap = open below the day-one low (Oops convention). Fill at the day-one low, out MOC. Run on index ETFs / NSE indices; check the index open quality before trusting gaps.", None),
-        d("btp2_10pct_oops_short", "10% Oops · sells", "10% Oops (Vol. II)", "Short", Live, OOPS_S, "Mirror of the buys. Same as ATS.", None),
+          "Same article as ATS (ats_10pct_oops). Gap = open below the day-one low (Oops convention). Fill at the day-one low, out MOC. Run on index ETFs / NSE indices; check the index open quality before trusting gaps. Intraday wave 1: run on real 1-minute bars by default (p.path=1): the entry fills on the first minute that reaches it, at the level or at that minute's open when it opened through it; out on the official daily close. Instruments: SPY, SPX (from 2014, real daily opens), NIFTY 50 and NIFTYBANK, the only ones with cleaned minute data (declared application); days without minute data make no trade. p.path=0 = the old daily-bar reading [Not from the book].", None),
+        d("btp2_10pct_oops_short", "10% Oops · sells", "10% Oops (Vol. II)", "Short", Live, OOPS_S, "Mirror of the buys. Same as ATS. Intraday wave 1: run on real 1-minute bars by default (p.path=1): the entry fills on the first minute that reaches it, at the level or at that minute's open when it opened through it; out on the official daily close. Instruments: SPY, SPX (from 2014, real daily opens), NIFTY 50 and NIFTYBANK, the only ones with cleaned minute data (declared application); days without minute data make no trade. p.path=0 = the old daily-bar reading [Not from the book].", None),
         d("btp2_10pct_oops", "10% Oops · buys and sells (the 1996 test)", "10% Oops (Vol. II)", "Long/Short", Live, OOPS_B,
-          "Both sides, as in the book's S&P futures table (ATS prints the same table). The table's 'signal date' is day two (the trade day). $19,880 is after $100 per trade; at $500/point the printed points give $20,375, a $495 gap the book does not explain. SPY opens differ from S&P futures day-session opens, so the dates match only partly.",
+          "Both sides, as in the book's S&P futures table (ATS prints the same table). The table's 'signal date' is day two (the trade day). $19,880 is after $100 per trade; at $500/point the printed points give $20,375, a $495 gap the book does not explain. SPY opens differ from S&P futures day-session opens, so the dates match only partly. Intraday wave 1: run on real 1-minute bars by default (p.path=1): the entry fills on the first minute that reaches it, at the level or at that minute's open when it opened through it; out on the official daily close. Instruments: SPY, SPX (from 2014, real daily opens), NIFTY 50 and NIFTYBANK, the only ones with cleaned minute data (declared application); days without minute data make no trade. p.path=0 = the old daily-bar reading [Not from the book].",
           claim("15 (12 profitable / 3 unprofitable)", "80%", "+2.92 S&P pts (43.75 pts in all)", "same day (MOC)", "S&P futures 1/1/96-12/31/96, no stops; $19,880 after $100/trade")),
         d("btp2_momentum_ma_long", "Momentum Moving Averages · buys", "Momentum Moving Averages (Vol. II)", "Long", Live, MMA_L,
           "SMA. 'First time (only)': one signal per 5/20 up-cross regime; the regime ends when the 5-day crosses back under. Not in ATS. Run on index ETFs / NSE indices.", None),
@@ -535,7 +535,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("btp2_wide_range_exhaustion_gap_long", "Wide-Range Exhaustion Gap Reversal · buys", "Wide-Range Exhaustion Gap Reversals (Vol. II)", "Long", Live, WREG_L,
           "Same article as ATS (ats_wide_range_exhaustion_gap_reversal). 2-SD move = close to close, HV100 measured the day before the move. Gap = open below the day-one low. The market opened under the stop, so the day-two low is taken to come before the entry and the entry day is not stopped out by its low; if day two closes below the stop, price certainly crossed it after the fill and the trade exits at the stop (the ATS extraction suggests a fully conservative reading, which makes every trade a loser). 1 SD uses the daily SD of log returns (the box's annualised HV ÷ √256); the old √252/√256 mix (1.984 SD) is gone. Default tick = one real tick per market [Not from the book]: 0.05 NSE, 0.01 US (the book's 1/8 = tick 0.125). Run on index ETFs / NSE indices.", None),
         d("btp2_wide_range_exhaustion_gap_short", "Wide-Range Exhaustion Gap Reversal · sells", "Wide-Range Exhaustion Gap Reversals (Vol. II)", "Short", Live, WREG_S,
-          "Mirror of the buys (America Online example). Same as ATS.", None),
+          "Mirror of the buys (America Online example). Same as ATS. Intraday wave 1: run on real 1-minute bars by default (p.path=1): the entry fills on the first minute that reaches it, at the level or at that minute's open when it opened through it; out on the official daily close. Instruments: SPY, SPX (from 2014, real daily opens), NIFTY 50 and NIFTYBANK, the only ones with cleaned minute data (declared application); days without minute data make no trade. p.path=0 = the old daily-bar reading [Not from the book]. A minute that fills and also reaches the protective stop counts as filled then stopped, unless it opened beyond the stop: then only if it closed beyond it [convention]. Carried positions exit at the next day's open. The buys stay on their admitted daily reading (p.path=1 is not offered there).", None),
     ]
 }
 
@@ -569,7 +569,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "btp2_1234_long" | "btp2_1234_short" => vec![tick()],
         "btp2_8day_hl_reversal_long" | "btp2_8day_hl_reversal_short" => vec![p("lookback", "Day one: N-day low (high)", 8.0, 5.0, 15.0, 1.0),
             p("cond3_window", "Condition 3 within N bars after day two", 4.0, 2.0, 6.0, 1.0), p("entry_window", "Breakout within N days of condition 3", 4.0, 2.0, 6.0, 1.0), tick()],
-        "btp2_10pct_oops_long" | "btp2_10pct_oops_short" | "btp2_10pct_oops" => vec![p("close_pct", "Day-one close in bottom (top) fraction", 0.10, 0.05, 0.25, 0.05)],
+        "btp2_10pct_oops_long" | "btp2_10pct_oops_short" | "btp2_10pct_oops" => vec![p("close_pct", "Day-one close in bottom (top) fraction", 0.10, 0.05, 0.25, 0.05), /* intraday wave 1 */ p("path", "1 = real 1-minute bars (book rule; fills at the level or the minute's open; days without minute data make no trade), 0 = [Not from the book] old daily-bar reading", 1.0, 0.0, 1.0, 1.0)],
         "btp2_momentum_ma_long" | "btp2_momentum_ma_short" => vec![p("fast_ma", "Fast SMA", 5.0, 3.0, 10.0, 1.0), p("slow_ma", "Slow SMA", 20.0, 10.0, 50.0, 5.0),
             p("confirm_days", "Close back across within N days", 3.0, 1.0, 5.0, 1.0)],
         "btp2_gipsons_long" | "btp2_gipsons_short" => vec![p("hv_short", "Short HV days", 6.0, 4.0, 10.0, 1.0), p("hv_long", "Long HV days", 100.0, 50.0, 200.0, 10.0),
@@ -582,6 +582,10 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("carry_close_pct", "Carry overnight if close in top (bottom) fraction", 0.15, 0.10, 0.15, 0.05)],
         _ => return None,
     };
+    // intraday wave 1: the WREG sells were held for their same-day path (the buys stay on the admitted daily reading)
+    if id == "btp2_wide_range_exhaustion_gap_short" {
+        v.push(p("path", "1 = real 1-minute bars (book rule; fills at the level or the minute's open; days without minute data make no trade), 0 = [Not from the book] old daily-bar reading", 1.0, 0.0, 1.0, 1.0));
+    }
     let adx = match id {
         "btp_triple_day_pullback_adx30" | "btp2_1234_long" | "btp2_1234_short" => Some(30.0),
         "btp_momentum_gap" | "btp_triple_day_pullback_adx25" | "btp2_gipsons_long" | "btp2_gipsons_short" => Some(25.0),
@@ -774,6 +778,40 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             }
             sim(x, orders, &kit(), from, to)
         }
+        // ---- intraday wave 1: real 1-minute path (default for the OOPS ids and the WREG sells); daily readings stay as path = 0
+        "btp2_10pct_oops_long" | "btp2_10pct_oops_short" | "btp2_10pct_oops" | "btp2_wide_range_exhaustion_gap_short" if g("path") >= 0.5 => {
+            use crate::intraday::{day_trade, stop_entry_day, Level};
+            let Some(mm) = x.minutes else { return Some(vec![]) };
+            let wreg = id.contains("wide_range");
+            let hvv = if wreg { hv(c, u("hv_len")) } else { vec![] };
+            let mut out = vec![];
+            for j in from.max(2)..=to {
+                let i = j - 1; // setup day
+                let (dir, lv, sp) = if wreg {
+                    let (k, br) = (g("sd_mult"), g("breath_sd"));
+                    let sd = c[i - 1] * hvv[i - 1] / 100.0 / 252f64.sqrt();
+                    if long_only && c[i] <= c[i - 1] - k * sd && o[j] < l[i] { (1.0, c[i], l[i].min(c[i] - br * sd)) }
+                    else if short_only && c[i] >= c[i - 1] + k * sd && o[j] > h[i] { (-1.0, c[i], h[i].max(c[i] + br * sd)) } else { continue }
+                } else {
+                    let (cp, loc) = (g("close_pct"), x.close_loc(i));
+                    if !short_only && loc <= cp && o[j] < l[i] { (1.0, l[i], f64::NAN) }
+                    else if !long_only && loc >= 1.0 - cp && o[j] > h[i] { (-1.0, h[i], f64::NAN) } else { continue }
+                };
+                let Some(b) = mm.day(&x.r[j].date) else { continue };
+                let st = |_: usize, _: f64| sp.is_finite().then(|| Level { up: dir < 0.0, px: sp });
+                let Some((_, px, xs)) = stop_entry_day(&b, 0, &[Level { up: dir > 0.0, px: lv }], &st) else { continue };
+                let loc = x.close_loc(j);
+                let strong = wreg && if dir > 0.0 { loc >= 1.0 - g("carry_close_pct") } else { loc <= g("carry_close_pct") };
+                out.push(match xs {
+                    Some(xp) => day_trade(dir, j, px, j, xp, "protective stop", "stop", false),
+                    None if strong && j < to => day_trade(dir, j, px, j + 1, o[j + 1], "closed at the extreme: carried, out on the next open", "stop", false),
+                    None if strong => day_trade(dir, j, px, j, c[j], "open", "stop", true),
+                    None => day_trade(dir, j, px, j, c[j], if wreg { "locked in near the close" } else { "MOC" }, "stop", false),
+                });
+            }
+            out
+        }
+        // ---- end intraday wave 1
         "btp2_10pct_oops_long" | "btp2_10pct_oops_short" | "btp2_10pct_oops" => {
             let cp = g("close_pct");
             for i in 0..n - 1 {
@@ -906,13 +944,13 @@ mod tests {
         // day 0 closes in the bottom 10% (100..110, close 100.5); day 1 gaps to 98, trades up through 100, closes 103
         let r = rows(&[(105.0, 110.0, 100.0, 100.5), (98.0, 104.0, 97.0, 103.0), (103.0, 104.0, 102.0, 103.5)]);
         let x = Ctx::new(&r, &r, &[]);
-        let t = run("btp2_10pct_oops_long", &x, 0, 2, &Params::new()).unwrap();
+        let t = run("btp2_10pct_oops_long", &x, 0, 2, &Params::from([("path".to_string(), 0.0)])).unwrap();
         assert_eq!(t.len(), 1);
         assert_eq!((t[0].legs[0].i, t[0].legs[0].px, t[0].exit_i, t[0].exit_px), (1, 100.0, 1, 103.0));
         // no gap below the day-one low -> no trade
         let r = rows(&[(105.0, 110.0, 100.0, 100.5), (100.2, 104.0, 99.0, 103.0), (103.0, 104.0, 102.0, 103.5)]);
         let x = Ctx::new(&r, &r, &[]);
-        assert!(run("btp2_10pct_oops_long", &x, 0, 2, &Params::new()).unwrap().is_empty());
+        assert!(run("btp2_10pct_oops_long", &x, 0, 2, &Params::from([("path".to_string(), 0.0)])).unwrap().is_empty());
     }
 
     #[test]

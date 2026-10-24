@@ -78,7 +78,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["F|\"In stocks the GS should be at least 5 percent of the previous daily trading range ... if a stock had a high of 35 and a low of 33 ... the size of the opening of the next day should be at least 35.10 for a gap up open or a 32.90 for a gap down open\" (p.102)",
               "E|\"In stocks the PA should be at least 5 percent of the previous daily range\" (p.102): buy stop at yesterday's low + 5% of yesterday's range",
               "X|Stop 25% of yesterday's range from the entry; exit at the end of the day (p.102)"],
-            "Cash indices are run with the stock rule here; jb30d_gap_tick is the futures rule."),
+            "Cash indices are run with the stock rule here; jb30d_gap_tick is the futures rule. Intraday wave 1: run on real 1-minute bars by default (p.path=1): the entry fills on the first minute that reaches it, at the level or at that minute's open when it opened through it; out on the official daily close. Instruments: SPY, SPX (from 2014, real daily opens), NIFTY 50 and NIFTYBANK, the only ones with cleaned minute data (declared application); days without minute data make no trade. p.path=0 = the old daily-bar reading [Not from the book]. A minute that fills and also reaches the protective stop counts as filled then stopped, unless it opened beyond the stop: then only if it closed beyond it [convention]."),
         def!("jb30d_gap_thirds", "Gap trade · three-unit follow-through", "Lesson 12 · Gap Trade", "Long/Short", NotTestable("what the last third does when the first target is not reached but the trade is profitable at the close is not stated"),
             &["X|\"When the trade has made a profit equal to the range of the previous day take profit on one-third of your position and place a follow-up stop-loss at breakeven. Exit another third of your position at the end of the day. Exit the remaining third of your position either at the breakeven stop-loss or on the first profitable opening\" (p.102)"], ""),
         def!("jb30d_cmc", "CMC (Cuban Missile Crisis) pattern", "Lesson 14 · CMC", "Long/Short", Live,
@@ -131,7 +131,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "jb30d_gap_tick" => vec![p("tick", "One tick (index points)", 0.05, 0.01, 1., 0.01), p("gs", "Gap size, ticks (at least)", 2., 0., 10., 1.), p("pa", "Penetration, ticks", 2., 0., 10., 1.),
             p("stop_frac", "Stop as a fraction of yesterday's range", 0.25, 0.1, 1., 0.05)],
         "jb30d_gap_pct" => vec![p("gs_pct", "Gap size, % of yesterday's range", 5., 0., 25., 1.), p("pa_pct", "Penetration, % of yesterday's range", 5., 0., 25., 1.),
-            p("stop_frac", "Stop as a fraction of yesterday's range", 0.25, 0.1, 1., 0.05)],
+            p("stop_frac", "Stop as a fraction of yesterday's range", 0.25, 0.1, 1., 0.05),
+            // intraday wave 1
+            p("path", "1 = real 1-minute bars (fills at the level or the minute's open; days without minute data make no trade), 0 = [Not from the book] daily bar path", 1., 0., 1., 1.)],
         "jb30d_cmc" => vec![p("mah", "MA of highs (bars)", 10., 5., 20., 1.), p("mal", "MA of lows (bars)", 8., 4., 20., 1.), p("bars", "Consecutive complete bars for a trigger", 2., 1., 4., 1.)],
         "jb30d_oc8" => vec![p("n", "MA of opens and of closes (bars)", 8., 3., 20., 1.)],
         _ => return None,
@@ -220,6 +222,26 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             out = seasonal(x, from, to, (g("entry_m"), g("entry_d")), (g("exit_m"), g("exit_d")), g("stop_pct"));
             return Some(out);
         }
+        // ---- intraday wave 1: real 1-minute path for the stock (percent) rule (default path = 1)
+        "jb30d_gap_pct" if g("path") >= 0.5 => {
+            use crate::intraday::{day_trade, stop_entry_day, Level};
+            let Some(mm) = x.minutes else { return Some(out) };
+            let sf = g("stop_frac");
+            for i in from.max(1)..=to {
+                let rng = x.h[i - 1] - x.l[i - 1];
+                let (gs, pa) = (g("gs_pct") / 100.0 * rng, g("pa_pct") / 100.0 * rng);
+                let d = if x.o[i] <= x.l[i - 1] - gs && x.o[i] < x.l[i - 1] { 1.0 } else if x.o[i] >= x.h[i - 1] + gs && x.o[i] > x.h[i - 1] { -1.0 } else { continue };
+                let Some(b) = mm.day(&x.r[i].date) else { continue };
+                let lvl = if d > 0.0 { x.l[i - 1] + pa } else { x.h[i - 1] - pa };
+                let Some((_, px, xs)) = stop_entry_day(&b, 0, &[Level { up: d > 0.0, px: lvl }], &|_, px| Some(Level { up: d < 0.0, px: px - d * sf * rng })) else { continue };
+                out.push(match xs {
+                    Some(xp) => day_trade(d, i, px, i, xp, "Stop: 25% of yesterday's range", "stop", false),
+                    None => day_trade(d, i, px, i, x.c[i], "End of day", "stop", false),
+                });
+            }
+            return Some(out);
+        }
+        // ---- end intraday wave 1
         "jb30d_gap_tick" | "jb30d_gap_pct" => {
             let sf = g("stop_frac");
             for i in from.max(1)..=to {
