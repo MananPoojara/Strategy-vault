@@ -240,6 +240,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || pruitt_reviewed(def) // Pruitt block
         || hirsch_reviewed(def) // Hirsch block
         || bandy_reviewed(def) // Bandy block
+        || kestner_reviewed(def) // Kestner block
         || wirrick_reviewed(def) // Wirrick block
         || sperandeo_reviewed(def) // Sperandeo block
         || csmith_reviewed(def) // CSmith block
@@ -949,6 +950,16 @@ fn bandy_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Bandy
+// ---------------------------------------------------------------- Kestner 2026-10-24
+// Admission only for the module REVIEWED lists (authors/kestner/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn kestner_reviewed(def:&StrategyDef)->bool {matches!(def.book,"lkqts"|"lkcpt") && (crate::books::lkqts::reviewed(def.id) || crate::books::lkcpt::reviewed(def.id))}
+const KESTNER_LABEL:&str="Lars Kestner tested these systems on futures portfolios, the S&P 500 and US stocks (Quantitative Trading Strategies) and on S&P 500 futures (A Comparison of Popular Trading Systems); runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test. Cash-index shorts are hypothetical exposure.";
+fn kestner_policy(def:&StrategyDef)->Option<Policy> {
+    if !kestner_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Lars N. Kestner: Quantitative Trading Strategies (2003) momentum, stochastic, Kestner MA, MACD-histogram, NEI, adjusted stochastic, volume reversal, Saitta, channel-breakout exits/filters, relative-value statistics, S&P 500 calendar, VIX and monthly timing, new volatility breakout (ch.6-12); A Comparison of Popular Trading Systems (2nd ed. 1999), 35 systems from Kestner's printed EasyLanguage (App. p.225-244). Reviewed in authors/kestner/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Kestner
 // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
 /// Reviewed Joe Ross daily rules (books::joe_ross_rules::REVIEWED): actual indices, ETFs and stocks, US and India, as a
 /// labelled declared application. The source references in books::joe_ross stay held (source review).
@@ -989,6 +1000,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=pruitt_policy(def) {return p;} // Pruitt block
     if let Some(p)=hirsch_policy(def) {return p;} // Hirsch block
     if let Some(p)=bandy_policy(def) {return p;} // Bandy block
+    if let Some(p)=kestner_policy(def) {return p;} // Kestner block
     if let Some(p)=wirrick_policy(def) {return p;} // Wirrick block
     if let Some(p)=sperandeo_policy(def) {return p;} // Sperandeo block
     if let Some(p)=csmith_policy(def) {return p;} // CSmith block
@@ -1457,6 +1469,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if pruitt_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",PRUITT_LABEL));} // Pruitt block
     if hirsch_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",HIRSCH_LABEL));} // Hirsch block
     if bandy_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BANDY_LABEL));} // Bandy block
+    if kestner_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",KESTNER_LABEL));} // Kestner block
     if wirrick_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",WIRRICK_LABEL));} // Wirrick block
     if sperandeo_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",SPERANDEO_LABEL));} // Sperandeo block
     if csmith_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",CSMITH_LABEL));} // CSmith block
@@ -1835,6 +1848,23 @@ mod tests {
         }
     }
     // ---- end Bandy block ----
+    // ---- Kestner block (2026-10-24) ----
+    #[test]
+    fn kestner_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{lkqts,lkcpt};
+        let all:Vec<StrategyDef>=lkqts::catalogue().into_iter().chain(lkcpt::catalogue()).collect();
+        let mut want:Vec<&str>=lkqts::REVIEWED.iter().chain(lkcpt::REVIEWED).copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|kestner_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert!(reviewed_cash_rule(d),"{}",d.id);
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Kestner block ----
     // ---- Wirrick block (2026-10-24) ----
     #[test]
     fn wirrick_review_admits_exact_ids_on_indices_etfs_and_stocks() {

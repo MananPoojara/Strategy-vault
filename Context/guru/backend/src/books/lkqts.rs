@@ -19,6 +19,9 @@
 use crate::connors::{sma, true_range, Claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "lkqts";
+/// Admitted ids (authors/kestner/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["lkqts_mom20", "lkqts_stoch14", "lkqts_kma", "lkqts_macdhr", "lkqts_nei", "lkqts_adjsto", "lkqts_volrev", "lkqts_saitta", "lkqts_cb_atrstop", "lkqts_cb_ptake", "lkqts_cb_pyr", "lkqts_cb_afterloss", "lkqts_cb_afterwin", "lkqts_d100", "lkqts_d1040", "lkqts_dom1", "lkqts_dom2", "lkqts_vixscore", "lkqts_gross_vix", "lkqts_m_sma12", "lkqts_m_sma6", "lkqts_m_sma3", "lkqts_m_mom12", "lkqts_m_mom6", "lkqts_m_mom3", "lkqts_nvb_entry", "lkqts_nvb_trail"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 /// Exact RAW-native MACS research; separate from original lists/SOB/TIAR.
 pub const MACS_SOURCE_PROFILE: &str =

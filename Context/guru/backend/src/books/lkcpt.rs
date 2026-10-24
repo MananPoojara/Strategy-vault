@@ -17,6 +17,9 @@
 use crate::connors::{rsi, sma, true_range, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "lkcpt";
+/// Admitted ids (authors/kestner/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["lkcpt_cb4020", "lkcpt_stoch2575", "lkcpt_box10", "lkcpt_box40", "lkcpt_drv", "lkcpt_osc", "lkcpt_osc_adx", "lkcpt_spop", "lkcpt_spop_rev", "lkcpt_ctod", "lkcpt_dema", "lkcpt_pctf", "lkcpt_vidya", "lkcpt_qstick8", "lkcpt_qstick20", "lkcpt_cmo", "lkcpt_tdline1", "lkcpt_tdline3", "lkcpt_rsimild", "lkcpt_reimild", "lkcpt_demarker", "lkcpt_obos", "lkcpt_kurt03", "lkcpt_kurt10", "lkcpt_fsrs", "lkcpt_123", "lkcpt_ons", "lkcpt_tts3", "lkcpt_tts10", "lkcpt_qp", "lkcpt_gap", "lkcpt_fib", "lkcpt_jesse", "lkcpt_wvol", "lkcpt_wdmi"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 // ------------------------------------------------------------------ EasyLanguage helpers
 
