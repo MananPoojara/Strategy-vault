@@ -310,6 +310,21 @@ export const AUTHOR_PROFILE_DATA = {
   "sources": [],
   "confidence": "low"
  },
+ "duffy": {
+  "kind": "person",
+  "mastery": [
+   "Gann analysis",
+   "Fibonacci analysis"
+  ],
+  "summary": "Joseph T. Duffy is a former broker and proprietary trader who finished in the top ten of the U.S. Trading and Investing Championship three times. His books in the library combine Gann, Fibonacci, pivot and geometric techniques to locate turning points in price and time; he calls them techniques, not systems. This profile rests on the books themselves.",
+  "known_for": [
+   "The Trading Advantage",
+   "Turning Point Analysis in Price and Time",
+   "Bull's Eye Trading"
+  ],
+  "sources": [],
+  "confidence": "low"
+ },
  "carney": {
   "kind": "person",
   "mastery": [
