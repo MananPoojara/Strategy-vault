@@ -310,6 +310,20 @@ export const AUTHOR_PROFILE_DATA = {
   "sources": [],
   "confidence": "low"
  },
+ "nison": {
+  "kind": "person",
+  "mastery": [
+   "Candlestick charting"
+  ],
+  "summary": "Steve Nison introduced Japanese candlestick charting to Western traders with Japanese Candlestick Charting Techniques (1991). His books in the library define the candle patterns and combine them with Western technical tools; he presents candles as a tool, not a mechanical system, so no complete rule is given. This profile rests on the books themselves.",
+  "known_for": [
+   "Japanese Candlestick Charting Techniques",
+   "Beyond Candlesticks",
+   "The Candlestick Course"
+  ],
+  "sources": [],
+  "confidence": "low"
+ },
  "carney": {
   "kind": "person",
   "mastery": [

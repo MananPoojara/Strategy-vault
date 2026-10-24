@@ -142,6 +142,12 @@ export const LIB = [
     { id: "skdab", sourceIds: ["title-1a375bb2a1b292dd"], title: "Dragons and Bulls", year: 1994, blurb: "Kroll, 1994 · 50-day trend, 10/20/50-day entries, 4/9/18-day stop-outs and re-entries; the 9/18/50 NIKKEI example is held (exit not exact)" },
     { id: "skfts", sourceIds: ["title-b57e56c915e14bbf"], title: "Kroll on Futures Trading Strategy", year: 1988, blurb: "Kroll, 1988 · strategy and money management; its moving-average examples are already in the vault" }] },
   // ---- end Kroll block ----
+  // ---- Nison block (2026-10-24) ----
+  { id: "nison", name: "Steve Nison", tagline: "Brought Japanese candlestick charting to the West · pattern definitions and candle-plus-Western confluence; no mechanical rule (held)", books: [
+    { id: "snjcct", sourceIds: ["title-81397d6d53d0f930", "title-1364d0fbc6ba6db0", "title-51b23babb9e56ea1"], title: "Japanese Candlestick Charting Techniques", year: 1991, blurb: "Nison, 1991 · reversal and continuation patterns, candles with Western tools; held: trend and candle size judged by eye, no exits" },
+    { id: "sncc", sourceIds: ["title-44f8e5d8ecbf5555"], title: "The Candlestick Course", year: 2003, blurb: "Nison, 2003 · workbook; held: 'Candle charts are best used as a tool, not a system'" },
+    { id: "snccb", sourceIds: ["title-3d6f58adfe56a413"], title: "Candlestick Charting Basics (slides)", year: null, blurb: "Nison seminar slides · definitions only" }] },
+  // ---- end Nison block ----
   // ---- CSmith block (2026-10-24) ----
   { id: "csmith", name: "Courtney D. Smith", tagline: "FX and futures trader · swing-point trend analysis, enhanced channel breakouts, the Conqueror", books: [
     { id: "csmlt", sourceIds: ["title-bafc2391a8c8f66d"], title: "How to Make a Living Trading Foreign Exchange", year: 2010, blurb: "Smith, 2010 · trend analysis, 55/20 channel breakout with the rejection rule, Conqueror I/II, stochastic 50 line, reversal days and RRR run as declared applications; inside days, slingshot and divergences held" },
