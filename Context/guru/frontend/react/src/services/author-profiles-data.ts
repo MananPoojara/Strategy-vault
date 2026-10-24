@@ -208,6 +208,20 @@ export const AUTHOR_PROFILE_DATA = {
   "sources": [],
   "confidence": "low"
  },
+ "bickford": {
+  "kind": "person",
+  "mastery": [
+   "Forex charting",
+   "Wave analysis"
+  ],
+  "summary": "James L. Bickford is a software engineer and forex analyst who co-wrote several forex books with Michael D. Archer. His books in the library chart the major currency pairs and forecast wave sizes on swing charts; they give no entry or exit rules, so nothing is tested. This profile rests on the books themselves.",
+  "known_for": [
+   "Forex Wave Theory",
+   "Getting Started in Currency Trading (with Archer)"
+  ],
+  "sources": [],
+  "confidence": "low"
+ },
  "schwager": {
   "kind": "person",
   "mastery": [
