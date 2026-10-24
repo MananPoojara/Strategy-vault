@@ -251,6 +251,20 @@ export const AUTHOR_PROFILE_DATA = {
   "sources": [],
   "confidence": "low"
  },
+ "lien": {
+  "kind": "person",
+  "mastery": [
+   "Currency market strategy",
+   "FX technical and fundamental setups"
+  ],
+  "summary": "Kathy Lien was chief currency strategist at FXCM and co-founded BK Asset Management with Boris Schlossberg. Her books give FX setups; most use pip-sized stops or intraday charts, but the 'Do the Right Thing' CCI trade and the moving-average perfect order are complete daily rules and run here on indices, ETFs and stocks as a declared application. This profile rests on the books themselves.",
+  "known_for": [
+   "Day Trading and Swing Trading the Currency Market",
+   "High Probability Trading Setups for the Currency Market"
+  ],
+  "sources": [],
+  "confidence": "low"
+ },
  "carney": {
   "kind": "person",
   "mastery": [
