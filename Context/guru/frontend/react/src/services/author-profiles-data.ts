@@ -68,6 +68,21 @@ export const AUTHOR_PROFILE_DATA = {
   "sources": [],
   "confidence": "low"
  },
+ "patel": {
+  "kind": "person",
+  "mastery": [
+   "Online trading",
+   "Trading psychology"
+  ],
+  "summary": "Alpesh B. Patel writes guides to online trading and investing and interviewed traders for The Mind of a Trader. His books in the library teach chart reading and trading plans; only the Internet Trading Course states a complete mechanical rule, given as an example. This profile rests on the books themselves.",
+  "known_for": [
+   "Trading Online",
+   "The Mind of a Trader",
+   "The Internet Trading Course"
+  ],
+  "sources": [],
+  "confidence": "low"
+ },
  "schwager": {
   "kind": "person",
   "mastery": [
