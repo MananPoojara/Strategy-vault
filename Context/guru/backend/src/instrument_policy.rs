@@ -235,6 +235,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || thomsett_reviewed(def) // Thomsett block
         || patel_reviewed(def) // Patel block
         || demark_reviewed(def) // DeMark block
+        || kroll_reviewed(def) // Kroll block
         || lebeau_reviewed(def) // LeBeau block
         || tharp_reviewed(def) // Tharp block
         || person_reviewed(def) // Person block
@@ -625,6 +626,16 @@ fn demark_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end DeMark
+// ---------------------------------------------------------------- Kroll 2026-10-24
+// Admission only for the module REVIEWED lists (authors/kroll/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn kroll_reviewed(def:&StrategyDef)->bool {matches!(def.book,"skdab") && (crate::books::skdab::reviewed(def.id))}
+const KROLL_LABEL:&str="Stanley Kroll illustrated this strategy on the NIKKEI and futures; runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test. Cash-index shorts are hypothetical exposure.";
+fn kroll_policy(def:&StrategyDef)->Option<Policy> {
+    if !kroll_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Stanley Kroll, Dragons and Bulls (Addison-Wesley 1994), Ch.11 Long-term versus Short-term Trading (p.59-61): 50-day average trend filter, 10/20/50-day entries, 4/9/18-day stop-outs and re-entries. Reviewed in authors/kroll/admission/SOURCE-CONTRACT.md with independent chronological ledgers; fills at the close; no costs.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Kroll
 // ---------------------------------------------------------------- LeBeau 2026-10-24
 // Admission only for the module REVIEWED lists (authors/lebeau/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn lebeau_reviewed(def:&StrategyDef)->bool {matches!(def.book,"lebcafm"|"lebtc"|"lebtcb"|"lebws") && (crate::books::lebcafm::reviewed(def.id) || crate::books::lebtc::reviewed(def.id) || crate::books::lebtcb::reviewed(def.id) || crate::books::lebws::reviewed(def.id))}
@@ -710,6 +721,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=thomsett_policy(def) {return p;} // Thomsett block
     if let Some(p)=patel_policy(def) {return p;} // Patel block
     if let Some(p)=demark_policy(def) {return p;} // DeMark block
+    if let Some(p)=kroll_policy(def) {return p;} // Kroll block
     if let Some(p)=lebeau_policy(def) {return p;} // LeBeau block
     if let Some(p)=tharp_policy(def) {return p;} // Tharp block
     if let Some(p)=person_policy(def) {return p;} // Person block
@@ -1149,6 +1161,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if thomsett_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",THOMSETT_LABEL));} // Thomsett block
     if patel_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",PATEL_LABEL));} // Patel block
     if demark_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",DEMARK_LABEL));} // DeMark block
+    if kroll_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",KROLL_LABEL));} // Kroll block
     if lebeau_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LEBEAU_LABEL));} // LeBeau block
     if tharp_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",THARP_LABEL));} // Tharp block
     if person_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",PERSON_LABEL));} // Person block
@@ -1421,6 +1434,22 @@ mod tests {
         }
     }
     // ---- end DeMark block ----
+    // ---- Kroll block (2026-10-24) ----
+    #[test]
+    fn kroll_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{skdab};
+        let all:Vec<StrategyDef>=skdab::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=skdab::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|kroll_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert!(reviewed_cash_rule(d),"{}",d.id);assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Kroll block ----
     // ---- LeBeau block (2026-10-24) ----
     #[test]
     fn lebeau_review_admits_exact_ids_on_indices_etfs_and_stocks() {

@@ -137,6 +137,11 @@ export const LIB = [
     { id: "vvmfm", sourceIds: ["title-3801128c46565f3f", "title-04fe541148df6896"], title: "Modeling Financial Markets (with Hendry)", year: 2004, blurb: "Van Vliet & Hendry · VB.NET pricing and trading models; programming examples only" },
     { id: "vvqmm", sourceIds: ["title-b27c205cebe0fc83"], title: "Quality Money Management (with Kumiega)", year: 2008, blurb: "Kumiega & Van Vliet · process engineering; held: pairs and factor examples need a named pair, fundamentals and options" }] },
   // ---- end Van Vliet block ----
+  // ---- Kroll block (2026-10-24) ----
+  { id: "kroll", name: "Stanley Kroll", tagline: "Long-term futures trend trader · 50-day trend filter with moving-average entries and stop-outs", books: [
+    { id: "skdab", sourceIds: ["title-1a375bb2a1b292dd"], title: "Dragons and Bulls", year: 1994, blurb: "Kroll, 1994 · 50-day trend, 10/20/50-day entries, 4/9/18-day stop-outs and re-entries; the 9/18/50 NIKKEI example is held (exit not exact)" },
+    { id: "skfts", sourceIds: ["title-b57e56c915e14bbf"], title: "Kroll on Futures Trading Strategy", year: 1988, blurb: "Kroll, 1988 · strategy and money management; its moving-average examples are already in the vault" }] },
+  // ---- end Kroll block ----
   // ---- Carney block (2026-10-24) ----
   { id: "carney", name: "Scott M. Carney", tagline: "Harmonic trading · Fibonacci-measured price patterns (Gartley, Bat, Crab, Butterfly) and the RSI BAMM", books: [
     { id: "smcht", sourceIds: ["title-6e05f4762b245a85", "title-64a46c5083c15151"], title: "The Harmonic Trader", year: 1999, blurb: "Carney, 1999 · AB=CD, Gartley 222, Butterfly, Three Drives; held: patterns picked on the chart" },
