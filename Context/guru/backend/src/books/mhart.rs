@@ -3,6 +3,9 @@
 use crate::connors::{claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "mhart";
+// Admitted 2026-10-24 (authors/harris/admission/SOURCE-CONTRACT.md): complete pattern rules with independent US/India ledgers.
+pub const REVIEWED: &[&str] = &["mha_3lr", "mha_gap2h"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let d = |id, name, group, dir, status, rules, notes, claim| StrategyDef { id, name, group, session: 0, dir, status, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim };

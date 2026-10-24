@@ -4,6 +4,9 @@
 use crate::connors::{claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "mhpst";
+// Admitted 2026-10-24 (authors/harris/admission/SOURCE-CONTRACT.md): complete pattern rules with independent US/India ledgers.
+pub const REVIEWED: &[&str] = &["mhp_qqqq_1_20050218", "mhp_qqqq_11_20041012", "mhp_qqqq_7_20041101", "mhp_qqqq_7_20041001", "mhp_qqqq_5_20050207", "mhp_qqqq_6_20050120", "mhp_qqqq_2_20050218", "mhp_qqqq_4_20040430", "mhp_qqqq_12_20041111", "mhp_qqqq_4_20041203", "mhp_spy_2_20070807", "mhp_spy_2_20070703", "mhp_spy_10_20061101", "mhp_spy_8_20070511", "mhp_spy_9_20070808", "mhp_spy_2_20070724", "mhp_spy_2_20070327", "mhp_spy_1_20070703", "mhp_spy_1_20070621", "mhp_spy_1_20070424", "mhp_dax_11_20050121", "mhp_dax_10_20050331", "mhp_dax_6_20050223", "mhp_dax_4_20050202", "mhp_ftse_3_20040712", "mhp_ftse_10_20040730", "mhp_ftse_5_20040922", "mhp_ftse_5_20041019", "mhp_ftse_12_20040917", "mhp_ftse_3_20041007", "mhp_ftse_12_20040930", "mhp_ftse_12_20040728"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let d = |id, name, group, dir, status, rules, notes, claim| StrategyDef { id, name, group, session: 0, dir, status, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim };
