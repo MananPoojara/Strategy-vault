@@ -142,6 +142,10 @@ export const LIB = [
     { id: "skdab", sourceIds: ["title-1a375bb2a1b292dd"], title: "Dragons and Bulls", year: 1994, blurb: "Kroll, 1994 · 50-day trend, 10/20/50-day entries, 4/9/18-day stop-outs and re-entries; the 9/18/50 NIKKEI example is held (exit not exact)" },
     { id: "skfts", sourceIds: ["title-b57e56c915e14bbf"], title: "Kroll on Futures Trading Strategy", year: 1988, blurb: "Kroll, 1988 · strategy and money management; its moving-average examples are already in the vault" }] },
   // ---- end Kroll block ----
+  // ---- Jobman block (2026-10-24) ----
+  { id: "jobman", name: "Darrell R. Jobman", tagline: "Former Futures magazine editor · anthology of technical-analysis articles; Dennis Dunn's seven-week moving average", books: [
+    { id: "djhta", sourceIds: ["title-ed296147ee941ead"], title: "The Handbook of Technical Analysis", year: 1995, blurb: "Jobman (ed.), 1995 · Dunn's seven-week Thursday moving average tested; indicator, chart, sentiment and cycle chapters have no complete rules" }] },
+  // ---- end Jobman block ----
   // ---- Nison block (2026-10-24) ----
   { id: "nison", name: "Steve Nison", tagline: "Brought Japanese candlestick charting to the West · pattern definitions and candle-plus-Western confluence; no mechanical rule (held)", books: [
     { id: "snjcct", sourceIds: ["title-81397d6d53d0f930", "title-1364d0fbc6ba6db0", "title-51b23babb9e56ea1"], title: "Japanese Candlestick Charting Techniques", year: 1991, blurb: "Nison, 1991 · reversal and continuation patterns, candles with Western tools; held: trend and candle size judged by eye, no exits" },

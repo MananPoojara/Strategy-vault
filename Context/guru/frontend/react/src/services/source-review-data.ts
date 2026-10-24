@@ -281,6 +281,7 @@ export const sourceReview: Record<string, {type: string; sameWorkAs?: string; pe
   "smcht": {"type": "book", "people": ["Scott M. Carney"]},
   "skdab": {"type": "book", "people": ["Stanley Kroll"]},
   "skfts": {"type": "book", "people": ["Stanley Kroll"]},
+  "djhta": {"type": "book", "people": ["Darrell R. Jobman"]},
   "snjcct": {"type": "book", "people": ["Steve Nison"]},
   "sncc": {"type": "book", "people": ["Steve Nison"]},
   "snccb": {"type": "book", "people": ["Steve Nison"]},
