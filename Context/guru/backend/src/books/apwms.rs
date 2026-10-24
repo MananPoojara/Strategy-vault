@@ -6,6 +6,10 @@
 use super::apta::bars;
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
+/// Admitted 2026-10-24 (authors/appel/admission/SOURCE-CONTRACT.md): independent ledgers, US and India, 0 mismatches.
+pub const REVIEWED: &[&str] = &["apwms_trin5", "apwms_trin5_nse", "apwms_updown_vol", "apwms_updown_vol_nse", "apwms_shadow", "apwms_ad10", "apwms_ad10_nse", "apwms_haurlan_long", "apwms_haurlan_int", "apwms_haurlan_short", "apwms_haurlan_long_nse", "apwms_haurlan_int_nse", "apwms_haurlan_short_nse"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
+
 pub const BOOK: &str = "apwms";
 
 // ------------------------------------------------------------------ shared helpers (also used by apsmts, apoi)

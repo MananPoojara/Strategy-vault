@@ -4,6 +4,10 @@
 use super::apta::{ema, macd_run, run_long, Macd};
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
+/// Admitted 2026-10-24 (authors/appel/admission/SOURCE-CONTRACT.md): independent ledgers, US and India, 0 mismatches.
+pub const REVIEWED: &[&str] = &["apmacd_neutral", "apmacd_uptrend", "apmacd_downtrend", "apmacd_ad_stay"]; // _nse held: +450 is an NYSE A-D amount (engine guard)
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
+
 pub const BOOK: &str = "apmacd";
 
 const COMMON: &str = "F|\"Calculate and construct a very fast 6-unit, 19-unit MACD with a 6-day signal line for buy entries. ... a medium speed 13-unit, 26-unit MACD with a 9-day signal line for buy entries. ... a slow speed 19-unit, 39-unit MACD with a 9-day signal line for sell entries. Exponential averages are employed in all cases.\" (Table 1, p.34)";
