@@ -159,6 +159,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || fabozzi_reviewed(def) // Fabozzi block
         || fontanills_reviewed(def) // Fontanills block
         || thomsett_reviewed(def) // Thomsett block
+        || patel_reviewed(def) // Patel block
         || bernstein_g2_reviewed(def)
         || jb_g3_reviewed(def)
         || lwilliams_reviewed(def) // Larry Williams block
@@ -524,6 +525,16 @@ fn thomsett_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Thomsett
+// ---------------------------------------------------------------- Patel 2026-10-24
+// Admission only for the module REVIEWED lists (authors/patel/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn patel_reviewed(def:&StrategyDef)->bool {matches!(def.book,"apitc") && (crate::books::apitc::reviewed(def.id))}
+const PATEL_LABEL:&str="The Internet Trading Course gives this as an example for US and UK shares; index, ETF and stock runs (US and India) are a declared application, not the author's test.";
+fn patel_policy(def:&StrategyDef)->Option<Policy> {
+    if !patel_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Alpesh B. Patel, The Internet Trading Course, Module 2 (p.23): long while the price is above the 50-day moving average, out otherwise, reviewed in authors/patel/admission/SOURCE-CONTRACT.md with independent chronological ledgers. Closing prices, a simple average and close fills are declared readings. No costs.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Patel
 // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
 /// Reviewed Joe Ross daily rules (books::joe_ross_rules::REVIEWED): actual indices, ETFs and stocks, US and India, as a
 /// labelled declared application. The source references in books::joe_ross stay held (source review).
@@ -554,6 +565,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=fabozzi_policy(def) {return p;} // Fabozzi block
     if let Some(p)=fontanills_policy(def) {return p;} // Fontanills block
     if let Some(p)=thomsett_policy(def) {return p;} // Thomsett block
+    if let Some(p)=patel_policy(def) {return p;} // Patel block
     // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
     if let Some(p)=joe_ross_policy(def) {return p;}
     // ---- end Joe Ross block ----
@@ -971,6 +983,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if fabozzi_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",FABOZZI_LABEL));} // Fabozzi block
     if fontanills_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",FONTANILLS_LABEL));} // Fontanills block
     if thomsett_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",THOMSETT_LABEL));} // Thomsett block
+    if patel_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",PATEL_LABEL));} // Patel block
     if def.book==crate::books::cwin::BOOK && crate::books::cwin::reviewed_daily(def.id) {json.push_str(concat!(",\"declared_application\":\"",CWIN_INDEX_LABEL!(),"\""));}
     if def.book==crate::books::ccl08::BOOK && crate::books::ccl08::day_trade(def.id) {json.push_str(concat!(",\"declared_application\":\"",CCL08_INDEX_LABEL!(),"\""));}
     if def.book==crate::books::ats::BOOK && crate::books::ats::reviewed_daily(def.id) && (p.requirement=="index_or_etf" || (crate::books::ats::STOCK_TICK_IDS.contains(&def.id) && !CONNORS_INDEX_IDS.contains(&def.id))) {json.push_str(concat!(",\"declared_application\":\"",BTP_INDEX_LABEL!(),"\""));}
@@ -1206,6 +1219,22 @@ mod tests {
         }
     }
     // ---- end Thomsett block ----
+    // ---- Patel block (2026-10-24) ----
+    #[test]
+    fn patel_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{apitc};
+        let all:Vec<StrategyDef>=apitc::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=apitc::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Patel block ----
     // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
     #[test]
     fn joe_ross_reviewed_rules_run_on_indices_etfs_and_stocks_and_references_stay_held() {

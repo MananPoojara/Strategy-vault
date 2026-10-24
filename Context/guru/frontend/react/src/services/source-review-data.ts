@@ -273,6 +273,7 @@ export const sourceReview: Record<string, {type: string; sameWorkAs?: string; pe
   "rfcfcp": {"type": "book", "people": ["Robert Fischer"]},
   "rffaps": {"type": "book", "people": ["Robert Fischer"]},
   "rfnft": {"type": "book", "people": ["Robert Fischer"]},
+  "apitc": {"type": "book", "people": ["Alpesh B. Patel"]},
   "mptae": {"type": "book", "people": ["Martin J. Pring"]},
   "mpsel": {"type": "code_package", "people": ["Martin J. Pring"]},
   "mrina": {"type": "magazine_volume", "people": ["Murray Ruggiero"]},
