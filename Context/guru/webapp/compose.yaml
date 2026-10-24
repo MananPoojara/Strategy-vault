@@ -61,7 +61,7 @@ services:
       context: ..
       dockerfile: webapp/infra/engine.Dockerfile
     image: ${VAULT_ENGINE_IMAGE:-strategy-vault-engine:local}
-    command: [/data/idx_data.csv, '8090', /data/india_vix, /data/extra_data/india]
+    command: [/data/idx_data.csv, '8090', /data/india_vix, /data/extra_data/india, /data/intraday]
     environment:
       VAULT_BASKET_DATA_DIR: /basket-data
     volumes:
@@ -73,7 +73,7 @@ services:
     restart: unless-stopped
   engine-us:
     image: ${VAULT_ENGINE_IMAGE:-strategy-vault-engine:local}
-    command: [/data/us_data.csv, '8090', /data/us_vix, /data/extra_data/us]
+    command: [/data/us_data.csv, '8090', /data/us_vix, /data/extra_data/us, /data/intraday]
     environment:
       VAULT_BASKET_DATA_DIR: /us-basket-data
     volumes:
