@@ -305,9 +305,17 @@ fn backtest(ctx: &Ctx, id: &str, from: usize, to: usize, cost: f64, p: &Params) 
 /// Shared ordinary percentage account finalization, also exercised with frozen
 /// event fixtures. Source-account and fixed-unit report models remain separate.
 fn normalized_run(ctx: &Ctx, trades: Vec<Trade>, from: usize, to: usize, cost: f64) -> Result<Run,String> {
-    trade_validation::check(&trades,from,to,cost)?;
-    let equity = equity_curve(&ctx.c, &trades, from, to, cost);
-    if equity.iter().any(|v|!v.is_finite()||*v<=0.) {return Err("calculation_unavailable: Unsupported nonpositive or nonfinite normalized equity; no reset, clipping or invented funding is applied.".into());}
+    trade_validation::check_structure(&trades,from,to)?;
+    let mut equity = equity_curve(&ctx.c, &trades, from, to, cost);
+    if equity.iter().any(|v|!v.is_finite()) {return Err("calculation_unavailable: Unsupported nonfinite normalized equity; no reset, clipping or invented funding is applied.".into());}
+    // Ruin (user request 2026-10-24): the account is wiped out on the first day equity reaches 0. The run stops at the
+    // end of the trade that did it: later trades are dropped, equity stays 0, nothing is borrowed or refunded.
+    let (mut trades,mut to)=(trades,to);
+    if let Some(k)=equity.iter().position(|v|*v<=0.).map(|k|k+from) {
+        let n=trades.iter().position(|t|t.exit_i>=k).ok_or("calculation_unavailable: account wiped out outside any trade")?;
+        trades.truncate(n+1);to=trades[n].exit_i;equity.truncate(to-from+1);
+        trade_validation::check(&trades[..n],from,to,cost)?;
+    } else {trade_validation::check(&trades,from,to,cost)?;}
     let bh = (from..=to).map(|k| ctx.c[k] / ctx.c[from]).collect();
     Ok(Run { trades, from, to, equity, bh,source_account:None,bandy_account:None,unit_exposure_report:None })
 }
@@ -341,7 +349,21 @@ fn equity_curve(close: &[f64], trades: &[Trade], from: usize, to: usize, cost: f
     for k in next..=to {
         equity[k - from] = cur;
     }
+    // a wiped-out account stays at 0 (no borrowing, no recovery from a negative balance); see normalized_run
+    if let Some(k)=equity.iter().position(|v|*v<=0.) {equity[k..].fill(0.);}
     equity
+}
+
+/// Test helper: a wiped-out run is published, never below 0, ends at 0 and carries the plain-English flag.
+#[cfg(test)]
+fn assert_ruined(ctx:&Ctx,run:&Run){
+    assert!(run.equity.iter().all(|v|*v>=0.) && *run.equity.last().unwrap()==0. && ruin_json(ctx,run).contains("Account wiped out on"),"{:?}",run.equity);
+}
+/// Plain-English ruin flag for a run whose equity was wiped out (normalized_run stops it at that trade).
+fn ruin_json(ctx:&Ctx,run:&Run)->String{
+    let Some(k)=run.equity.iter().position(|v|*v<=0.) else {return String::new()};
+    let (date,n,end)=(&ctx.r[run.from+k].date,run.trades.len(),&ctx.r[run.to].date);
+    format!(",\"ruin\":{{\"date\":\"{date}\",\"trade\":{n},\"end\":\"{end}\",\"note\":\"Account wiped out on {date} (trade {n} lost more than the remaining equity); the run stops there.\"}}")
 }
 
 fn max_dd(eq: &[f64]) -> (f64, usize) {
@@ -379,7 +401,8 @@ fn stats(ctx: &Ctx, run: &Run, cost: f64) -> BTreeMap<&'static str, f64> {
     let mut s = BTreeMap::new();
     let eq = &run.equity;
     let yrs = years(ctx, run.from, run.to);
-    let rets: Vec<f64> = std::iter::once(eq[0]-1.).chain(eq.windows(2).map(|w| w[1] / w[0] - 1.0)).collect();
+    // after a ruin (equity 0) nothing is left to gain or lose: those days return 0, not 0/0
+    let rets: Vec<f64> = std::iter::once(eq[0]-1.).chain(eq.windows(2).map(|w| if w[0]==0. {0.} else {w[1] / w[0] - 1.0})).collect();
     let nr = rets.len().max(1) as f64;
     let mean = rets.iter().sum::<f64>() / nr;
     let sd = (rets.iter().map(|r| (r - mean).powi(2)).sum::<f64>() / (nr - 1.0).max(1.0)).sqrt();
@@ -1120,6 +1143,7 @@ fn summary(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         if d.book==books::chande::BOOK {let item=rows.last_mut().unwrap();item.pop();let _=write!(item,",\"experiment\":{}}}",experiment_json(d.id));}
         if selected.native(){let item=rows.last_mut().unwrap();item.pop();let _=write!(item,",\"provenance\":{}}}",source_provenance(st,q));}
         if auto.is_some(){let item=rows.last_mut().unwrap();item.pop();let _=write!(item,",\"from\":\"{}\"{}}}",ctx.r[from].date,auto_start_json(&auto));}
+        let ruin=ruin_json(ctx,&run);if !ruin.is_empty(){let item=rows.last_mut().unwrap();item.pop();let _=write!(item,"{ruin}}}");}
     }
     Ok(format!("[{}]", rows.join(",")))
 }
@@ -1347,6 +1371,7 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     costs.ensure_rollover()?;
     let from = window_start(ctx, def, from).filter(|&f| f < to || (f==to && reviewed_single_session(id))).ok_or_else(|| window_refusal(ctx, def, from, to))?;
     let run = selected_backtest_costs(&selected,st,q,ctx,id,from,to,costs,&p)?;
+    let to=run.to; // earlier than requested only when the account was wiped out (ruin_json)
     if run.unit_exposure_report.is_some() {
         let mut output=unit_exposure_detail::render(ctx,&run,costs)?;output.pop();let _=write!(output,",\"provenance\":{}{}}}",source_provenance(st,q),auto_start_json(&auto));return Ok(output);
     }
@@ -1434,7 +1459,7 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         o.push_str("]}");
     }
     if selected.native(){let _=write!(o,",\"provenance\":{}",source_provenance(st,q));}
-    o.push_str(&auto_start_json(&auto));
+    o.push_str(&auto_start_json(&auto));o.push_str(&ruin_json(ctx,&run));
     if selected.native() || def.book==books::chande::BOOK {
         o.push_str(",\"ohlc\":{");
         o.push_str("\"d\":");arr(&mut o,&mut (from..=to).map(|k|format!("\"{}\"",ctx.r[k].date)));
@@ -2488,6 +2513,27 @@ mod tests {
         assert!(!super::phantom_closure_bar("SPY", "2001-09-11", [1092.54; 4], None));
     }
     #[test]
+    fn ruin_stops_the_run_at_the_wiping_trade() {
+        // closes 100 for 10 bars, 300 on bars 10-12 (a short from 100 loses 200%), back to 100 after
+        let rows:Vec<Row>=(0..30).map(|i|{let c=if (10..13).contains(&i){300.}else{100.+i as f64*0.1};Row{ticker:"SPY".into(),date:format!("2020-01-{:02}",i+1),open:c,high:c,low:c,close:c,volume:None}}).collect();
+        let ctx=Ctx::new(&rows,&rows,&[]);
+        let t=|dir:f64,a:usize,b:usize|Trade{dir,legs:vec![connors::Leg{i:a,px:ctx.c[a],w:1.}],exit_i:b,exit_px:ctx.c[b],reason:"close".into(),entry_kind:"close",signal_i:a,open:false,exits:vec![]};
+        let raw=vec![t(1.,1,4),t(-1.,8,12),t(1.,15,20),t(1.,22,25)];
+        let run=normalized_run(&ctx,raw.clone(),0,29,0.001).unwrap();
+        assert_eq!(run.trades,raw[..2].to_vec(),"pre-ruin trades unchanged, nothing after the ruin trade");
+        assert_eq!(run.to,12);assert_eq!(run.equity.len(),13);
+        assert!(run.equity.iter().all(|v|*v>=0.) && run.equity[10..].iter().all(|v|*v==0.) && run.equity[..10].iter().all(|v|*v>0.));
+        let s=stats(&ctx,&run,0.001);
+        assert_eq!(s["total_return"],-1.);assert_eq!(s["max_dd"],-1.);assert_eq!(s["trades"],2.);
+        assert!(s["sharpe"].is_finite() && s["vol"].is_finite());
+        assert!((s["worst"]-raw[1].ret(0.001)).abs()<1e-12 && s["worst"]< -1.);
+        let j=ruin_json(&ctx,&run);
+        assert!(j.contains("\"date\":\"2020-01-11\",\"trade\":2,\"end\":\"2020-01-13\"") && j.contains("Account wiped out on 2020-01-11 (trade 2 lost more than the remaining equity); the run stops there."),"{j}");
+        // a run that is never wiped out is unchanged and has no flag
+        let safe=normalized_run(&ctx,vec![raw[0].clone(),raw[2].clone()],0,29,0.001).unwrap();
+        assert_eq!(safe.to,29);assert!(ruin_json(&ctx,&safe).is_empty());
+    }
+    #[test]
     fn equity_equals_compounded_trade_returns() {
         // Every live strategy on real data: the final equity must
         // equal the product of (1 + trade return). Catches any drift between trade P&L and the curve.
@@ -2516,13 +2562,19 @@ mod tests {
             }
             for cost in [0.0, 0.0005] {
                 let raw = connors::run(d.id, &ctx, 0, rows.len()-1, &Params::new()).unwrap();
+                let marks=equity_curve(&ctx.c,&raw,0,rows.len()-1,cost);
+                if marks.iter().any(|v|*v<=0.) {
+                    // ruin: published, stopped at the wiping trade (ruin_stops_the_run_at_the_wiping_trade)
+                    let run=backtest(&ctx,d.id,0,rows.len()-1,cost,&Params::new()).unwrap();
+                    assert!(*run.equity.last().unwrap()==0. && raw.starts_with(&run.trades),"{}",d.id);
+                    continue;
+                }
                 if let Err(reason) = trade_validation::check(&raw,0,rows.len()-1,cost) {
                     assert!(backtest(&ctx,d.id,0,rows.len()-1,cost,&Params::new()).unwrap_err().contains(&reason),"{}",d.id);
                     continue;
                 }
-                let marks=equity_curve(&ctx.c,&raw,0,rows.len()-1,cost);
-                if marks.iter().any(|v|!v.is_finite()||*v<=0.) {
-                    assert!(backtest(&ctx,d.id,0,rows.len()-1,cost,&Params::new()).unwrap_err().contains("nonpositive or nonfinite"),"{}",d.id);
+                if marks.iter().any(|v|!v.is_finite()) {
+                    assert!(backtest(&ctx,d.id,0,rows.len()-1,cost,&Params::new()).unwrap_err().contains("nonfinite"),"{}",d.id);
                     continue;
                 }
                 let run = backtest(&ctx, d.id, 0, rows.len() - 1, cost, &Params::new()).unwrap();

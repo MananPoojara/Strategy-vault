@@ -62,7 +62,7 @@ fn tiar_clocks_reversal_and_forged_account_trade_are_guarded(){
 }
 #[test]
 fn tiar_data_readiness_cannot_certify_nonpositive_account_and_basket_stays_held(){
-    let mut c:Vec<_>=(0..18).map(|i|300.-i as f64).collect();c[16]=1000.;c[17]=1000.;let mut r=rows(&c,"AAPL");r[16].open=284.;r[16].low=280.;let x=Ctx::new(&r,&r,&[]);let p=Params::new();assert!(readiness::check(&x,&def(),15,17,&p).is_none());assert_eq!(books::lkqts::run(ID,&x,15,17,&p).unwrap().len(),1);assert!(backtest_costs(&x,ID,15,17,accounting::Costs::default(),&p).err().unwrap().starts_with("calculation_unavailable"));
+    let mut c:Vec<_>=(0..18).map(|i|300.-i as f64).collect();c[16]=1000.;c[17]=1000.;let mut r=rows(&c,"AAPL");r[16].open=284.;r[16].low=280.;let x=Ctx::new(&r,&r,&[]);let p=Params::new();assert!(readiness::check(&x,&def(),15,17,&p).is_none());assert_eq!(books::lkqts::run(ID,&x,15,17,&p).unwrap().len(),1);assert_ruined(&x,&backtest_costs(&x,ID,15,17,accounting::Costs::default(),&p).unwrap());
     let q=owned("id=lkqts_tiar&basket=nifty50&max_positions=10&membership=current");let body=basket_portfolio::run(&empty(),&q).unwrap();assert!(body.contains("Kestner"));assert!(body.contains("\"status\":\"not_testable\""));assert!(body.contains("\"stats\":null,\"trades\":[],\"dates\":[],\"equity\":[]"));
 }
 #[test]

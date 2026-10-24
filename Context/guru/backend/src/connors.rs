@@ -393,14 +393,14 @@ impl<'a> Ctx<'a> {
 
 // ---------------------------------------------------------------- engine
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Leg {
     pub i: usize,
     pub px: f64,
     pub w: f64,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Trade {
     pub dir: f64, // +1 long, -1 short
     pub legs: Vec<Leg>,

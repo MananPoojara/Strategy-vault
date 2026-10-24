@@ -150,6 +150,13 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     }
     if def.book=="elcim" && def.id==books::elcim_account::ID {
         if let Some(note)=books::elcim_account::validate(p){return issue("not_testable",note);}
+        // same warm-up test as elcim_account::run, here so auto_start can move the start to the first ready date
+        if from<ctx.c.len() {
+            let st=books::elcim_account::states(ctx);
+            if !st.weekly_ready[from] || !st.ema13[from].is_finite() || !st.histogram[from].is_finite() {
+                return issue("needs_data","The weekly 26-week moving average (27 completed weeks of actual data) and the daily indicator warm-up are not yet available at the selected start. No indicator history is invented.");
+            }
+        }
     }
     if def.id=="elcim_fi2" { // Elder block 2026-10-23: elcim_ts_fi (SafeZone stop) and eltfl_sroc (book rule has no stop) admitted
         return issue("source_review_required","Held: the Force Index section of Come Into My Trading Room (p.109-114) gives no entry order and no protective stop, and the book says a stop must be placed with every trade (p.169). The same signal with a stop is admitted as the Triple Screen version (elcim_ts_fi) and as Trading for a Living's Force Index rule (eltfl_fi2).");
@@ -841,6 +848,17 @@ mod auto_start_tests {
         assert!(note.starts_with(&format!("Started {}:",ctx.r[want].date)) && note.contains(why) && note.contains(&format!("requested start {}",ctx.r[0].date)),"{note}");
         // an explicit later start is untouched
         assert_eq!(run(ctx,d,want+7,to,p).unwrap(),(want+7,None));
+    }
+    #[test]
+    fn impulse_starts_after_weekly_warmup() {
+        let r=bars("NIFTY 50",1000);let ctx=Ctx::new(&r,&r,&[]);
+        let d=def(crate::books::elcim_account::ID);
+        let st=crate::books::elcim_account::states(&ctx);
+        let want=(0..1000).find(|&i|st.weekly_ready[i]&&st.ema13[i].is_finite()&&st.histogram[i].is_finite()).unwrap();
+        shifted(&ctx,&d,999,&Params::new(),want,"weekly 26-week moving average");
+        // the run itself accepts the shifted start and still refuses one bar earlier
+        assert!(crate::books::elcim_account::run(&ctx,want,999,0.,&Params::new()).is_ok());
+        assert!(crate::books::elcim_account::run(&ctx,want-1,999,0.,&Params::new()).unwrap_err().starts_with("needs_data"));
     }
     #[test]
     fn vix_start_and_inner_gap() {

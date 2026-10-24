@@ -163,7 +163,8 @@ fn account_input_long_large_loss_still_positive()->(Vec<Row>,Vec<Trade>){
 
 fn account_case(r:Vec<Row>,trades:Vec<Trade>,costs:accounting::Costs,eq:&[f64],expected_stats:&[(&str,f64)],ledgers:&[(f64,[f64;8])],held:bool) {
     let ctx=Ctx::new(&r,&r,&[]);let result=normalized_run(&ctx,trades,0,r.len()-1,costs.side_rate());
-    if held {assert!(result.is_err(),"Nonpositive account must remain unavailable");return;}
+    // 2026-10-24: a wiped-out account is published, stopped at the wiping trade (was: refused)
+    if held {assert_ruined(&ctx,&result.unwrap());return;}
     let run=result.unwrap();assert_eq!(run.equity.len(),eq.len());
     for (actual,expected) in run.equity.iter().zip(eq){near(*actual,*expected,"daily equity");}
     let stats=financial_stats(&ctx,&run,costs);

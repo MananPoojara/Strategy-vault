@@ -71,7 +71,7 @@ fn source_readiness_and_account_domain_remain_separate_and_basket_is_held(){
     let mut c:Vec<_>=(0..131).map(|i|300.-i as f64).collect();c[129]=1000.;c[130]=1000.;let r=rows(&c,"AAPL");let x=Ctx::new(&r,&r,&[]);let def=sob_def();
     assert!(readiness::check(&x,&def,118,130,&Params::new()).is_none());
     let raw=books::lkqts::run(ID,&x,118,130,&Params::new()).unwrap();assert_eq!(raw.len(),2);
-    let held=backtest_costs(&x,ID,118,130,accounting::Costs::default(),&Params::new()).err().unwrap();assert!(held.starts_with("calculation_unavailable"));
+    let ruined=backtest_costs(&x,ID,118,130,accounting::Costs::default(),&Params::new()).unwrap();assert_ruined(&x,&ruined);assert!(raw.starts_with(&ruined.trades));
     let q=owned("id=lkqts_sob&basket=nifty50&max_positions=10&membership=current");let body=basket_portfolio::run(&empty(),&q).unwrap();assert!(body.contains("Kestner"));assert!(body.contains("\"status\":\"not_testable\""));assert!(body.contains("\"stats\":null,\"trades\":[],\"dates\":[],\"equity\":[]"));
 }
 
