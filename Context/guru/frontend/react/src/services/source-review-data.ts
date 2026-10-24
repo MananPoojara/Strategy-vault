@@ -19,6 +19,7 @@ export const sourceReview: Record<string, {type: string; sameWorkAs?: string; pe
   "apwms": {"type": "book", "people": ["Gerald Appel"]},
   "aqrtf": {"type": "article", "people": ["Brian Hurst", "Lasse H. Pedersen", "Yao Hua Ooi"]},
   "arebta": {"type": "book", "people": ["David Aronson"]},
+  "cbsiws": {"type": "book", "people": ["Charles B. Schaap"]},
   "ataa": {"type": "magazine_volume", "people": []},
   "atm00": {"type": "magazine_volume", "people": []},
   "atm01": {"type": "magazine_volume", "people": []},
