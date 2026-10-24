@@ -9,7 +9,7 @@
   if(Array.isArray(input?.strategies))return input.strategies.find(row=>row?.id===id);
   return input&&Object.prototype.hasOwnProperty.call(input,id)?input[id]:undefined;
  }
- const requirements=new Set(['individual_stock','index','etf','futures','portfolio','options','leveraged_etf','treasury_etf','index_or_etf','index_etf_or_stock','declared_ohlc_adaptation','declared_index_timing']);
+ const requirements=new Set(['individual_stock','index','etf','futures','portfolio','options','leveraged_etf','treasury_etf','index_or_etf','index_etf_or_stock','declared_ohlc_adaptation','declared_index_timing','options_underlying']);
  function policyKnown(def){return requirements.has(def?.instrument_policy?.requirement)&&Array.isArray(def.instrument_policy.allowed_types);}
  function measuredStats(summary){
   const stats=summary?.stats;
