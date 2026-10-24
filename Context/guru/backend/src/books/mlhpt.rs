@@ -4,6 +4,9 @@
 use crate::connors::{dmi, sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "mlhpt";
+/// Admitted ids (authors/link/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["mlhpt_bo10", "mlhpt_sample"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const BO_NOTE: &str = "Run on the daily index (the book says \"periods\" and gives no time frame for this system). Long only: the book states the short side in prose (\"or to short the lowest low\") but gives no short exit. \"Last three bars\" = the three bars before the current one (the current bar cannot close below its own low). Entry at the next bar's open as stated; the exit is also taken at the next bar's open [Book silent on the exit's timing; p.exit_close = 1 exits on the signal bar's close]. One position at a time.";
 const SAMPLE_NOTE: &str = "TradeStation code p.263-264, run on daily index bars. Entries \"On Close\" fill at the signal bar's close and reverse an opposite position (TradeStation Buy/Sell); a same-direction signal is ignored. StdDev = TradeStation population standard deviation; the entry buffer uses StdDev(Close,10)[1], the stop uses Close - 2*StdDev(Close,10) of the entry bar (at$ = the entry bar) and is active from the next bar (open through it = open fill). ADX(10) = Wilder ADX (engine dmi). SlowD(14) = legacy TradeStation SlowD (FastK 14, SlowK and SlowD smoothed (2*prev + new)/3). The printed exit block has no begin/end; it is coded as the prose says: ADX > 30 -> exit on the 10/35 SMA cross, ADX < 20 -> exit when BarsSinceEntry = 10, otherwise exit when SlowD > 85 (long) / < 15 (short). Exit orders are market orders for the next bar's open and, as in TradeStation, an exit condition true on the entry bar exits that new position at the next open. Exit at the open is processed before the stop and before that bar's close entry.";
