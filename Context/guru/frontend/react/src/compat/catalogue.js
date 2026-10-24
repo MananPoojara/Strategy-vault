@@ -166,6 +166,12 @@ export const LIB = [
     { id: "kmitc", sourceIds: ["title-47b3251474394b71"], title: "In the Trading Cockpit with the O'Neil Disciples", year: 2013, blurb: "Kacher & Morales, 2013 · buyable gap-ups and the seven-week rule; held: gap size 'eyeballed', exit only" },
     { id: "kmssd", sourceIds: ["title-ce28056178d468a8"], title: "Short-Selling with the O'Neil Disciples", year: 2015, blurb: "Morales & Kacher, 2015 · short-sale chart patterns in former leaders; held: chart judgement" }] },
   // ---- end Kacher block ----
+  // ---- Bortucene block (2026-10-24) ----
+  { id: "bortucene", name: "Erol Bortucene", tagline: "Forex day-trading courses (daytradeforex.com) · pip-based intraday systems, held", books: [
+    { id: "ebdtf", sourceIds: ["title-4d2f69fb3c8c5e7b", "title-3b8f399beb3e7b35", "title-c7b2a15f91962795", "title-49874d42323ea583", "title-32890ff3ede78152"], title: "The Day Trade Forex System (with Cynthia Macy)", year: null, blurb: "Bortucene & Macy · 5-minute currency scalps with pip targets; held" },
+    { id: "ebeft", sourceIds: ["title-1293eb6b88467d85", "title-01ada73be922ee55"], title: "The Euro Fractal Trading System", year: null, blurb: "Bortucene · EUR/USD key-level fractal breakouts, 15-pip stops; held" },
+    { id: "ebfps", sourceIds: ["title-6fde110723e9f0ba"], title: "The Forex Profit System", year: null, blurb: "Bortucene · hourly EMA 10/25/50 cross with 15-minute SAR; held: stop and SAR settings not fixed" }] },
+  // ---- end Bortucene block ----
   // ---- Etzkorn block (2026-10-24) ----
   { id: "etzkorn", name: "Mark Etzkorn", tagline: "Momentum oscillators explained and tested · MACD, RSI and rate-of-change equilibrium systems", books: [
     { id: "metwo", sourceIds: ["title-eaea9328b7643525", "title-959fc0f8fc82690b"], title: "Trading with Oscillators", year: 1997, blurb: "Etzkorn, 1997 · MACD signal-line, RSI 50 and ROC equilibrium stop-and-reverse tests (S&P 500 lengths); stochastic grid and divergences held" },
