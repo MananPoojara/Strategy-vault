@@ -160,6 +160,12 @@ export const LIB = [
     { id: "kdfus", sourceIds: ["title-2f2153842d6ebee0"], title: "Forex Unknown Secret", year: 2010, blurb: "Dittmann, 2010 · 30-minute start-bar reversal; held: intraday forex, pip thresholds" },
     { id: "kdsfp", sourceIds: ["title-7e6081991fd067d5"], title: "The Simplest Forex Pips System", year: 2010, blurb: "Dittmann, 2010 · inside-close candle with a trend filter; held: pip target and a trailing stop without a size" }] },
   // ---- end Dittmann block ----
+  // ---- Duffy block (2026-10-24) ----
+  { id: "duffy", name: "Joseph T. Duffy", tagline: "Trading-championship finisher · Gann, Fibonacci and pivot confluence for turning points (held: techniques, not systems)", books: [
+    { id: "jtdbet", sourceIds: ["source-6714799e3e56b338"], title: "Bull's Eye Trading", year: 2001, blurb: "Duffy, 2001 · pivots, pivot channel, 3x5ATR; held: 'techniques, not systems'" },
+    { id: "jtdta", sourceIds: ["source-e1128f42baabdf39"], title: "The Trading Advantage", year: 1991, blurb: "Duffy, 1991 · Gann trend indicator, Fibonacci time, astronomy; held: judgement and forecasting" },
+    { id: "jtdtpa", sourceIds: ["source-595fd2bac63f1e05"], title: "Turning Point Analysis in Price and Time", year: null, blurb: "Duffy · Square of Nine and multi-time-frame pivots; held: confluence by judgement" }] },
+  // ---- end Duffy block ----
   // ---- CSmith block (2026-10-24) ----
   { id: "csmith", name: "Courtney D. Smith", tagline: "FX and futures trader · swing-point trend analysis, enhanced channel breakouts, the Conqueror", books: [
     { id: "csmlt", sourceIds: ["title-bafc2391a8c8f66d"], title: "How to Make a Living Trading Foreign Exchange", year: 2010, blurb: "Smith, 2010 · trend analysis, 55/20 channel breakout with the rejection rule, Conqueror I/II, stochastic 50 line, reversal days and RRR run as declared applications; inside days, slingshot and divergences held" },
