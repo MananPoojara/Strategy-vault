@@ -36,7 +36,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "E|\"add 3.10 points to the close ... a buyer at the higher number, a seller at the lower number\": buy stop at close + 0.0105 x close, sell stop at close - 0.0105 x close, next day (the printed trade list uses the unrounded value: 85.1204 buy 205.99 = 203.85 x 1.0105)",
               "X|\"exiting the position on the close\" (p.133); \"we did not use stops in this system\" (p.133)",
               "X|Option p.reverse=1: \"you may want to reverse in the event the market hits one number and then goes back to the other number\" (p.133) [non-default]"],
-            "Printed: 06/01/82-01/23/87 520 trades, 290 won (55.9%), $69,700, max drawdown $5,000 (p.133); trade list 12/04/85-01/23/87: 132 trades, 77 won (58.3%), $25,775 (p.134-142, transcribed in library/lwdg2/trades_0105.csv). Book traded S&P futures (premium to cash), so SPX dates match only partly. One trade per day: the first stop touched (bar path); with reverse=1 the other stop reverses."),
+            "Printed: 06/01/82-01/23/87 520 trades, 290 won (55.9%), $69,700, max drawdown $5,000 (p.133); trade list 12/04/85-01/23/87: 132 trades, 77 won (58.3%), $25,775 (p.134-142, transcribed in library/lwdg2/trades_0105.csv). Book traded S&P futures (premium to cash), so SPX dates match only partly. One trade per day: the first stop touched (bar path); with reverse=1 the other stop reverses. Intraday wave 1: run on real 1-minute bars by default (p.path=1): whichever number trades first is the day's trade; it fills on the first minute that reaches it, at the level or at that minute's open when it opened through it; out on the official daily close. Instruments: SPY, SPX (from 2014, real daily opens), NIFTY 50 and NIFTYBANK, the only ones with cleaned minute data (declared application); days without minute data make no trade. p.path=0 = the old daily-bar reading [Not from the book]. A minute that reaches both entry levels without opening through one has an unknown order: no trade that day [convention]. reverse=1 runs on the daily bar path."),
         def!("lwdg2_vol_up_up", "Volume up, close up: buy next open (Table 1)", "Ch 8 · Volume myths", "Long", Live, true,
             &["F|\"IF VOLUME GREATER THAN YESTERDAY AND CLOSE GREATER THAN YESTERDAY\"", "E|\"THEN BUY THE OPEN\"", VOL_X], VOL_N),
         def!("lwdg2_vol_dn_up", "Volume down, close up: buy next open (Table 2)", "Ch 8 · Volume myths", "Long", Live, true,
@@ -109,7 +109,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     Some(match id {
         "lwdg2_updown_daytrade" => vec![p("stop_pts", "Stop in index points (book: 200 S&P points = 2.00)", 2.0, 0.0, 10.0, 0.5)],
-        "lwdg2_0105" => vec![p("pct", "Fraction of the close", 0.0105, 0.004, 0.02, 0.0005), p("reverse", "Reverse when the other number trades (non-default)", 0.0, 0.0, 1.0, 1.0)],
+        "lwdg2_0105" => vec![p("pct", "Fraction of the close", 0.0105, 0.004, 0.02, 0.0005), p("reverse", "Reverse when the other number trades (non-default; reverse = 1 runs on the daily bar path)", 0.0, 0.0, 1.0, 1.0),
+            // intraday wave 1: whichever number trades first is the day's trade; a minute reaching both without opening through one = unknown order, no trade
+            p("path", "1 = real 1-minute bars (fills at the level or the minute's open; days without minute data make no trade), 0 = [Not from the book] daily bar path", 1.0, 0.0, 1.0, 1.0)],
         "lwdg2_vol_up_up" | "lwdg2_vol_dn_up" | "lwdg2_vol_up_dn" | "lwdg2_vol_dn_dn" | "lwdg2_sli" | "lwdg2_dc_lower_open" | "lwdg2_hh_gap_sell" => vec![],
         "lwdg2_weekly_entry" => vec![p("ticks", "Ticks beyond last week's low/high", 1.0, 1.0, 4.0, 1.0), p("tick", "Tick size in index points (S&P futures 0.05)", 0.05, 0.01, 1.0, 0.01)],
         _ => return None,
@@ -139,6 +141,22 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "lwdg2_updown_daytrade" => simulate(x, from, to, &day(g("stop_pts"), false), |i| {
             if i < 2 { none } else if c[i - 1] < c[i - 2] { (Some(Ent::Open), None) } else if c[i - 1] > c[i - 2] { (None, Some(Ent::Open)) } else { none }
         }),
+        // ---- intraday wave 1: real 1-minute path (default path = 1, reverse = 0)
+        "lwdg2_0105" if g("path") >= 0.5 && g("reverse") == 0.0 => {
+            use crate::intraday::{day_trade, stop_entry_day, Level};
+            let Some(mm) = x.minutes else { return Some(vec![]) };
+            let k = g("pct");
+            let mut out = vec![];
+            for i in from.max(1)..=to {
+                let Some(b) = mm.day(&x.r[i].date) else { continue };
+                let d = k * c[i - 1];
+                let lv = [Level { up: true, px: c[i - 1] + d }, Level { up: false, px: c[i - 1] - d }];
+                let Some((e, px, _)) = stop_entry_day(&b, 0, &lv, &|_, _| None) else { continue };
+                out.push(day_trade(if e == 0 { 1.0 } else { -1.0 }, i, px, i, c[i], "exit on the close", "stop", false));
+            }
+            out
+        }
+        // ---- end intraday wave 1
         "lwdg2_0105" => {
             let k = g("pct");
             simulate(x, from, to, &day(f64::NAN, g("reverse") != 0.0), |i| {
@@ -268,7 +286,7 @@ mod tests {
     fn day_0105_buys_at_close_plus_pct_and_exits_close() {
         let r = vec![bar("1985-12-03", 200., 204., 199., 203.85), bar("1985-12-04", 204., 208., 203.5, 207.35)];
         let x = Ctx::new(&r, &r, &[]);
-        let t = run("lwdg2_0105", &x, 1, 1, &Params::new()).unwrap();
+        let t = run("lwdg2_0105", &x, 1, 1, &Params::from([("path".to_string(), 0.0)])).unwrap(); // intraday wave 1: daily path
         assert_eq!(t.len(), 1);
         assert!((t[0].legs[0].px - 205.990425).abs() < 1e-6 && t[0].exit_px == 207.35 && t[0].dir == 1.0);
     }

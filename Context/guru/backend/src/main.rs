@@ -1099,7 +1099,7 @@ fn resolve<'a>(st:&'a State,q:&BTreeMap<String,String>)->Result<(&'a Ctx<'a>,usi
 fn window_start(ctx: &Ctx, d: &connors::StrategyDef, from: usize) -> Option<usize> {
     // Accuracy gate: rules that fill at the open start where this index's opens are real (stale earlier).
     let from = match (gate::get(d.id), ctx.r.get(from).and_then(|r| gate::real_open_from(&r.ticker))) {
-        (Some(g), Some(cutoff)) if g.clamp_open => from.max(ctx.r.partition_point(|r| r.date.as_str() < cutoff)),
+        (Some(g), Some(cutoff)) if g.clamp_open || instrument_policy::intraday_w1_spx_id(d.id) => from.max(ctx.r.partition_point(|r| r.date.as_str() < cutoff)), // intraday wave 1: the SPX-only rules read the daily open
         _ => from,
     };
     if !d.needs_vix {
@@ -1112,7 +1112,7 @@ fn window_start(ctx: &Ctx, d: &connors::StrategyDef, from: usize) -> Option<usiz
 /// end, or the volatility index does not cover the period.
 fn window_refusal(ctx: &Ctx, d: &connors::StrategyDef, from: usize, to: usize) -> String {
     if let (Some(g), Some(r)) = (gate::get(d.id), ctx.r.get(from)) {
-        if let Some(cut) = gate::real_open_from(&r.ticker).filter(|c| g.clamp_open && r.date.as_str() < *c && ctx.r.partition_point(|x| x.date.as_str() < *c) >= to) {
+        if let Some(cut) = gate::real_open_from(&r.ticker).filter(|c| (g.clamp_open || instrument_policy::intraday_w1_spx_id(d.id)) && r.date.as_str() < *c && ctx.r.partition_point(|x| x.date.as_str() < *c) >= to) {
             return format!("This rule fills at the opening price; {} opens in this file are real only from {cut} (earlier opens repeat the previous close), and the selected period ends before that. Choose a period that runs past {cut}.", r.ticker);
         }
     }

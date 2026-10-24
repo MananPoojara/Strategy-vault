@@ -120,10 +120,53 @@ pub fn adx15_day(b: &[Bar1], open: u16, up: bool, tick: f64, stop_tick: f64, cap
     out
 }
 
+// ---- intraday wave 1 (claude/intraday-w1): one stop-entry day trade, shared by the wave-1 book modules
+/// Entry levels live from bar `from`: the first one touched fills (at the level, or the minute's open when it opened
+/// through it); two touched in one minute without opening through exactly one = unknown order: no trade. `stop(k, fill)`
+/// = the protective stop for entry k (None = no stop). In the fill minute [convention]: if that minute opened beyond the
+/// stop (its extreme there may have come before the fill), the stop counts only if the minute closed beyond it; otherwise
+/// a touch of the stop counts as filled then stopped (as Pinball / 80-20). Both exit at the stop level. Later minutes fill
+/// the stop at its level or at the minute's open. Returns (entry k, fill, Some(stop exit) | None = not stopped).
+pub fn stop_entry_day(b: &[Bar1], from: usize, entries: &[Level], stop: &dyn Fn(usize, f64) -> Option<Level>) -> Option<(usize, f64, Option<f64>)> {
+    let Touch::Hit { k, bar, px } = first_touch(b, from, entries) else { return None };
+    let Some(s) = stop(k, px) else { return Some((k, px, None)) };
+    let z = &b[bar];
+    let beyond = |v: f64| if s.up { v >= s.px } else { v <= s.px };
+    if if beyond(z.o) { beyond(z.c) } else { touched(z, s) } { return Some((k, px, Some(s.px))); }
+    Some((k, px, match first_touch(b, bar + 1, &[s]) { Touch::Hit { px: xp, .. } => Some(xp), _ => None }))
+}
+
+/// A same-day (or carried) trade on the minute path.
+pub fn day_trade(dir: f64, i: usize, px: f64, xi: usize, xp: f64, why: &str, kind: &'static str, open: bool) -> crate::connors::Trade {
+    crate::connors::Trade { dir, legs: vec![crate::connors::Leg { i, px, w: 1.0 }], exit_i: xi, exit_px: xp, reason: why.into(), entry_kind: kind, signal_i: xi, open, exits: Vec::new() }
+}
+// ---- end intraday wave 1
+
 #[cfg(test)]
 mod tests {
     use super::*;
     fn b(m: u16, o: f64, h: f64, l: f64, c: f64) -> Bar1 { Bar1 { m, o, h, l, c } }
+    // intraday wave 1
+    #[test]
+    fn stop_entry_day_conventions() {
+        let buy = [Level { up: true, px: 101.0 }];
+        let st = |_: usize, px: f64| Some(Level { up: false, px: px - 1.0 }); // stop 100
+        // fill, then stopped two minutes later at the level
+        let v = [b(0, 100.5, 100.8, 100.4, 100.6), b(1, 100.6, 101.2, 100.5, 101.1), b(2, 101.1, 101.3, 99.8, 100.)];
+        assert_eq!(stop_entry_day(&v, 0, &buy, &st), Some((0, 101.0, Some(100.0))));
+        // fill minute also reaches the stop after opening between them: filled then stopped
+        let w = [b(0, 100.5, 101.5, 99.9, 100.2)];
+        assert_eq!(stop_entry_day(&w, 0, &buy, &st), Some((0, 101.0, Some(100.0))));
+        // fill minute opened under the stop: stopped only if it closed under it
+        let u = [b(0, 99.5, 101.5, 99.4, 100.8)];
+        assert_eq!(stop_entry_day(&u, 0, &buy, &st), Some((0, 101.0, None)));
+        let u2 = [b(0, 99.5, 101.5, 99.4, 99.9)];
+        assert_eq!(stop_entry_day(&u2, 0, &buy, &st), Some((0, 101.0, Some(100.0))));
+        // two entry levels in one minute: unknown order, no trade; no stop given: held
+        let two = [Level { up: true, px: 101.0 }, Level { up: false, px: 99.0 }];
+        assert_eq!(stop_entry_day(&[b(0, 100., 101.5, 98.5, 100.)], 0, &two, &|_, _| None), None);
+        assert_eq!(stop_entry_day(&v, 0, &two, &|_, _| None), Some((0, 101.0, None)));
+    }
     #[test]
     fn first_touch_orders_levels_and_fills_at_open_on_gaps() {
         let up = Level { up: true, px: 101.0 };

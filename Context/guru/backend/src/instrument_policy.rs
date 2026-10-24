@@ -147,11 +147,26 @@ fn bernstein_g1_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Op
 /// No stock or other ETF has minute data, so those stay held. Evidence: data-survey/PHASE1-REPORT.md.
 pub const INTRADAY_P1:&[&str]=&["ss_momentum_pinball","ss_80_20","ats_15min_adx_breakout","ptjdt_adx15_breakout"];
 pub const INTRADAY_P1_TICKERS:&[&str]=&["SPY","SPX","NIFTY 50","NIFTYBANK"];
-pub fn intraday_p1_id(id:&str)->bool {INTRADAY_P1.contains(&id)}
-pub fn intraday_p1(def:&StrategyDef)->bool {intraday_p1_id(def.id) && matches!(def.book,"ss"|"ats"|"ptjdt")}
+pub fn intraday_p1_id(id:&str)->bool {INTRADAY_P1.contains(&id) || intraday_w1_id(id)}
+pub fn intraday_p1(def:&StrategyDef)->bool {intraday_p1_id(def.id) && matches!(def.book,"ss"|"ats"|"ptjdt"|"btp"|"hfm"|"tdnmtt"|"baboops"|"tcdt"|"lwdg2"|"lwlts"|"jb30d")}
+// ---- intraday wave 1 (claude/intraday-w1, 2026-10-24): same block, more day-trade rules on the minute path
+/// No fixed amount: run on all four minute tickers (declared application).
+pub const INTRADAY_W1:&[&str]=&["ats_10pct_oops","ats_wide_range_gap","btp2_10pct_oops","btp2_10pct_oops_long","btp2_10pct_oops_short",
+    "btp2_wide_range_exhaustion_gap_short","tdnmtt_trap_long","tdnmtt_trap_short","lwdg2_0105","jb30d_gap_pct"];
+/// Book levels in fixed S&P points (.50/2.00 points, 15 ticks of 0.05, $3,000 = 12 points, Crabel's 80-600 "points"):
+/// SPX only, the market those points belong to. No conversion to SPY or NSE prices is invented.
+pub const INTRADAY_W1_SPX:&[&str]=&["hfm_vix","baboops_oops","lwlts_mon_vb","jb30d_gap_tick"];
+pub fn intraday_w1_id(id:&str)->bool {INTRADAY_W1.contains(&id) || intraday_w1_spx_id(id)}
+pub fn intraday_w1_spx_id(id:&str)->bool {INTRADAY_W1_SPX.contains(&id) || crate::books::tcdt::same_day_orb(id)}
+pub fn intraday_tickers(id:&str)->&'static [&'static str] {if intraday_w1_spx_id(id) {&["SPX"]} else {INTRADAY_P1_TICKERS}}
+const INTRADAY_W1_SPX_BASIS:&str="Intraday wave 1 (2026-10-24): the book's same-day rule is run on real SPX 1-minute bars (cash index, 2008-01..2026-08; rules that read the open start 2014-01, where the daily SPX open is real), cleaned by library/intraday/m1_normalise.py: padded, no-open and stale-open minutes are removed and never fill; excluded days make no trade. The book's levels are fixed S&P 500 points, so the rule runs only on SPX, at those printed points; on today's index levels they are much smaller relative to price than in the book's years. The book traded S&P 500 futures, so SPX runs are a declared application; cash-index shorts are hypothetical exposure. Stops and entries fill at the level, or at the minute's open when the minute opens through it; conventions for a minute that reaches two levels are stated in the notes. Independent Python ledgers matched the engine with zero mismatches. No book performance is reproduced.";
+// ---- end intraday wave 1
 const INTRADAY_P1_BASIS:&str="Intraday phase 1 (2026-10-24): the book's same-day rule is run on real 1-minute bars (SPY 2000-01..2025-10, SPX cash index 2008-01..2026-08, NIFTY 50 2008-01..2026-10, NIFTYBANK 2010-03..2026-04), cleaned by library/intraday/m1_normalise.py: padded, no-open and stale-open minutes are removed and never fill; outage, late-start and truncated days are excluded and make no trade. Stops fill at the level, or at the minute's open when the minute opens through it. The book traded S&P and other futures (and stocks for some setups), so SPY, SPX, NIFTY 50 and NIFTYBANK runs are a declared application, not the author's test; cash-index shorts are hypothetical exposure. Conventions for a minute that reaches two levels are stated in the notes. Licence: the SPY 1-minute and NIFTY 2008-2014 sources state no licence (internal research). Independent Python ledgers matched the engine with zero mismatches. No book performance is reproduced.";
 fn intraday_p1_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
-    if !intraday_p1(def) || (!native_stock && INTRADAY_P1_TICKERS.contains(&ticker)) {return None;}
+    if !intraday_p1(def) || (!native_stock && intraday_tickers(def.id).contains(&ticker)) {return None;}
+    if intraday_w1_spx_id(def.id) && (native_stock || INTRADAY_P1_TICKERS.contains(&ticker)) { // intraday wave 1
+        return Some(Issue{status:"needs_data",note:format!("This day-trade rule uses the book's fixed S&P 500 point levels, which only mean what the book meant on the S&P 500 itself, and it needs real 1-minute bars. It runs on SPX only; {ticker} would need an invented conversion, so no result is published.")});
+    }
     Some(Issue{status:"needs_data",note:format!("This day-trade rule needs real 1-minute bars to know which price came first during the day. The vault holds cleaned 1-minute bars only for SPY, SPX, NIFTY 50 and NIFTYBANK; {ticker} has none, so no result is published.")})
 }
 // ---- end intraday phase 1 block
@@ -589,6 +604,7 @@ fn joe_ross_policy(def:&StrategyDef)->Option<Policy> {
 }
 // ---- end Joe Ross block ----
 fn base_policy(def:&StrategyDef)->Policy {
+    if intraday_p1(def) && intraday_w1_spx_id(def.id) {let mut p=requirement("declared_index_timing", &["index"], INTRADAY_W1_SPX_BASIS);p.market_adaptation=true;return p;} // intraday wave 1
     if intraday_p1(def) {let mut p=requirement("declared_index_timing", &["index","etf"], INTRADAY_P1_BASIS);p.market_adaptation=true;return p;} // intraday phase 1
     if let Some(p)=lwilliams_policy(def) {return p;} // Larry Williams block
     // ---- Schwager block (2026-10-23) ----
@@ -1106,7 +1122,7 @@ mod tests {
                     assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id); }
             }
         }
-        for id in ["lwnl_july4_sell","lwnl_keyrev_sell","lwlts_mon_vb","lwdg2_0105"] {assert!(!want.contains(&id) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");}
+        for id in ["lwnl_july4_sell","lwnl_keyrev_sell"/* lwlts_mon_vb, lwdg2_0105: intraday wave 1 admission */] {assert!(!want.contains(&id) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");}
         assert!(!lwilliams_reviewed(&def("lwlts_hh5","jbudt")));
     }
     // ---- end Larry Williams block
@@ -1420,10 +1436,28 @@ mod tests {
             assert!(check(d,"AAPL",true).is_some());
         }
         // the equities card and the other ATS day trades stay held
-        for id in ["ats_15min_adx_breakout_equities","ptjdt_adx15_equities","ats_10pct_oops"] {
+        for id in ["ats_15min_adx_breakout_equities","ptjdt_adx15_equities","ats_morning_call_reversal"] { // ats_10pct_oops: intraday wave 1
             let d=cats.iter().find(|d|d.id==id).unwrap();
             assert!(!intraday_p1(d),"{id}");
         }
+    }
+    #[test]
+    fn intraday_w1_admits_minute_tickers_and_spx_points_only() { // intraday wave 1
+        use crate::books as b;
+        let cats:Vec<StrategyDef>=[b::ats::catalogue(),b::btp::catalogue(),b::hfm::catalogue(),b::tdnmtt::catalogue(),b::baboops::catalogue(),
+            b::tcdt::catalogue(),b::lwdg2::catalogue(),b::lwlts::catalogue(),b::jb30d::catalogue()].into_iter().flatten().collect();
+        let w1:Vec<&StrategyDef>=cats.iter().filter(|d|intraday_w1_id(d.id)).collect();
+        assert_eq!(w1.len(),INTRADAY_W1.len()+INTRADAY_W1_SPX.len()+68);
+        for d in &w1 {
+            assert!(intraday_p1(d)&&reviewed_cash_rule(d)&&held_reason(d.id).is_none(),"{}",d.id);
+            assert_eq!(policy(d).requirement,"declared_index_timing");
+            let spx=intraday_w1_spx_id(d.id);
+            for t in INTRADAY_P1_TICKERS {assert_eq!(check(d,t,false).is_none(),!spx||*t=="SPX","{} {t}",d.id);}
+            for t in ["NDX","QQQ"] {assert_eq!(check(d,t,false).unwrap().status,"needs_data","{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_some());
+        }
+        // not converted: multi-day ORB rows, open-entry tables, the long WREG (admitted daily), STOOPS
+        for id in ["tcdt_2bnr_p80_h1","tcdt_idp1","tcdt_oc_nr_re","btp2_wide_range_exhaustion_gap_long","baboops_stoops","ststw_intraday"] {assert!(!intraday_w1_id(id),"{id}");}
     }
     #[test]
     fn ss_review_admits_exact_ids_on_reviewed_symbols_only() {
@@ -1609,14 +1643,14 @@ mod tests {
         assert!(check_native(&def("ats_cvr_equities","ats"),"AAPL",&NativeEvidence::us_test_fixture()).is_none());
         assert!(check_native(&def("ats_cvr_equities","ats"),"RELIANCE",&NativeEvidence::india_test_fixture()).is_none());
         assert_eq!(policy(&def("ats_dvmtm","ats")).requirement,"index_etf_or_stock");
-        for id in ["ats_hv_ratio_setup","ats_cbp","ats_late_earnings","ats_torpedoes","ats_hv_ratio_short_strangle","ats_cvr_options","ats_split_call_selling","ats_sector_options_overpriced",/* ats_15min_adx_breakout: intraday phase 1 admission */"ats_15min_adx_breakout_equities","ats_10pct_oops","ats_morning_call_reversal","ats_wide_range_gap","ats_flag_within_a_flag","ats_short_term_decline_playbook","ats_large_range_day_combo","ats_after_losses"] {
+        for id in ["ats_hv_ratio_setup","ats_cbp","ats_late_earnings","ats_torpedoes","ats_hv_ratio_short_strangle","ats_cvr_options","ats_split_call_selling","ats_sector_options_overpriced",/* ats_15min_adx_breakout: intraday phase 1 admission */"ats_15min_adx_breakout_equities",/* ats_10pct_oops, ats_wide_range_gap: intraday wave 1 */"ats_morning_call_reversal","ats_flag_within_a_flag","ats_short_term_decline_playbook","ats_large_range_day_combo","ats_after_losses"] {
             assert!(!reviewed_cash_rule(&def(id,"ats")),"{id}");
         }
     }
     #[test]
     fn hfm_otvt_review_admits_exact_ids_on_reviewed_symbols_only() {
         use crate::books::{hfm,otvt};
-        let admitted:Vec<&str>=hfm::catalogue().iter().chain(otvt::catalogue().iter()).filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        let admitted:Vec<&str>=hfm::catalogue().iter().chain(otvt::catalogue().iter()).filter(|d|reviewed_cash_rule(d)&&!intraday_p1(d)).map(|d|d.id).collect(); // hfm_vix: intraday wave 1
         assert_eq!(admitted,["hfm_chadtp","hfm_chadtp_nse","hfm_ndxspx","otvt_cvr1_long","otvt_cvr1_short","otvt_hv_thrust"]);
         let ok=|id:&'static str,b:&'static str,t:&str|check(&def(id,b),t,false).is_none();
         for t in ["SPX","SPY"] {for (id,b) in [("hfm_chadtp","hfm"),("otvt_cvr1_long","otvt"),("otvt_cvr1_short","otvt"),("otvt_hv_thrust","otvt")] {assert!(ok(id,b,t),"{id} {t}");}}
@@ -1631,7 +1665,7 @@ mod tests {
         for t in ["SPX","SPY","DJI"] {assert!(ok("hfm_ndxspx","hfm",t),"{t}");}
         for t in ["NDX","QQQ","NIFTY 50","NIFTYBANK"] {assert!(!ok("hfm_ndxspx","hfm",t),"{t}");}
         assert!(check(&def("hfm_ndxspx","hfm"),"AAPL",true).is_some());
-        for (id,b) in [("hfm_hv","hfm"),("hfm_und","hfm"),("hfm_und_long","hfm"),("hfm_und_short","hfm"),("hfm_news","hfm"),("hfm_vix","hfm"),("otvt_cvr1","otvt"),("otvt_cvr1_sell_puts","otvt")] { // ptjdt_adx15_breakout: intraday phase 1 admission
+        for (id,b) in [("hfm_hv","hfm"),("hfm_und","hfm"),("hfm_und_long","hfm"),("hfm_und_short","hfm"),("hfm_news","hfm"),/* hfm_vix: intraday wave 1 */("otvt_cvr1","otvt"),("otvt_cvr1_sell_puts","otvt")] { // ptjdt_adx15_breakout: intraday phase 1 admission
             assert!(!reviewed_cash_rule(&def(id,b)),"{id}");assert_eq!(policy(&def(id,b)).requirement,"source_review_required","{id}");
         }
     }
@@ -1684,9 +1718,9 @@ mod tests {
     #[test]
     fn btp_review_admits_exact_ids_on_index_and_etf_only() {
         let cat=crate::books::btp::catalogue();
-        let admitted:Vec<&str>=cat.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        let admitted:Vec<&str>=cat.iter().filter(|d|reviewed_cash_rule(d)&&!intraday_p1(d)).map(|d|d.id).collect(); // intraday wave 1 ids: own test
         assert_eq!(admitted,crate::books::btp::REVIEWED_DAILY);
-        for d in cat.iter().filter(|d|reviewed_cash_rule(d)) {
+        for d in cat.iter().filter(|d|reviewed_cash_rule(d)&&!intraday_p1(d)) {
             let stock=crate::books::btp::STOCK_ADMITTED.contains(&d.id) || open_all(d); // open-all 23 Oct 2026
             let p=policy(d);assert_eq!(p.requirement,if stock {"index_etf_or_stock"} else {"index_or_etf"});assert!(p.market_adaptation);
             for t in ["SPY","QQQ","MDY","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
@@ -1696,7 +1730,7 @@ mod tests {
             assert!(metadata_json(d).contains("\"declared_application\":\"Book tested or illustrated on futures and US stocks"));
             assert!(!reviewed_cash_rule(&def(d.id,"ats")));
         }
-        for id in ["btp_cbp_short","btp_bottom_reversal_long","btp_momentum_gap","btp_large_range_day_strangle","btp_large_range_day_study","btp2_10pct_oops","btp2_10pct_oops_long","btp2_10pct_oops_short","btp2_wide_range_exhaustion_gap_short"] {
+        for id in ["btp_cbp_short","btp_bottom_reversal_long","btp_momentum_gap","btp_large_range_day_strangle","btp_large_range_day_study"/* btp2 10% Oops x3, WREG sells: intraday wave 1 */] {
             let d=def(id,"btp");
             assert!(!reviewed_cash_rule(&d),"{id}");
             assert_eq!(policy(&d).requirement,"source_review_required");
@@ -1832,7 +1866,7 @@ mod tests {
     #[test]
     fn leverage_futures_options_and_portfolios_cannot_become_cash_backtests() {
         // s12345 is opened as a labelled declared application (connors-leftovers), see its own test
-        for (id,book) in [("lwdg2_0105","lwdg2"),("lev_calls","stc9"),("hmrw_sp500_rotation","hmrw"),("alpha_weekly_mr","alpha")] {
+        for (id,book) in [/* lwdg2_0105: intraday wave 1 */("lev_calls","stc9"),("hmrw_sp500_rotation","hmrw"),("alpha_weekly_mr","alpha")] {
             let d=def(id,book);
             for (ticker,native) in [("NIFTY 50",false),("SPY",false),("RELIANCE",true)] {
                 assert_eq!(check(&d,ticker,native).unwrap().status,"needs_data");
@@ -2079,10 +2113,10 @@ mod bernstein_g2_tests {
     fn bernstein_g2_admits_exact_ids_on_their_instruments() {
         use crate::books::{jb30d,jbudt,jbcdt2};
         let cat:Vec<_>=jb30d::catalogue().into_iter().chain(jbudt::catalogue()).chain(jbcdt2::catalogue()).collect();
-        let admitted:Vec<&str>=cat.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        let admitted:Vec<&str>=cat.iter().filter(|d|reviewed_cash_rule(d)&&!intraday_p1(d)).map(|d|d.id).collect(); // jb30d_gap_pct: intraday wave 1
         assert_eq!(admitted.len(),14);
         let (us,india)=(NativeEvidence::us_test_fixture(),NativeEvidence::india_test_fixture());
-        for d in cat.iter().filter(|d|reviewed_cash_rule(d)) {
+        for d in cat.iter().filter(|d|reviewed_cash_rule(d)&&!intraday_p1(d)) {
             assert!(matches!(d.status,crate::connors::Status::Live),"{}",d.id);
             if matches!(d.id,"jb30d_rev_buy_stop"|"jb30d_rev_buy_3pc"|"jbcdt2_dbo_mon"|"jbcdt2_dbo_thu") {
                 assert!(check(d,"SPX",false).is_none(),"{}",d.id);
@@ -2098,7 +2132,7 @@ mod bernstein_g2_tests {
             }
         }
         // Held: same-day gap stops, intraday, missing numbers, chart judgement.
-        for d in cat.iter().filter(|d|matches!(d.id,"jb30d_rev_sell_fpo"|"jbudt_gap_fpo"|"jbudt_gap_split"|"jb30d_gap_tick"|"jb30d_gap_pct"|"jb30d_rev_simple"|"jbudt_dow"|"jbudt_pop"|"jbcdt2_inside_day"|"jbcdt2_or30")) {
+        for d in cat.iter().filter(|d|matches!(d.id,"jb30d_rev_sell_fpo"|"jbudt_gap_fpo"|"jbudt_gap_split"/* jb30d_gap_tick, jb30d_gap_pct: intraday wave 1 */|"jb30d_rev_simple"|"jbudt_dow"|"jbudt_pop"|"jbcdt2_inside_day"|"jbcdt2_or30")) {
             assert!(!reviewed_cash_rule(d),"{}",d.id);
             assert_eq!(policy(d).requirement,"source_review_required");
         }

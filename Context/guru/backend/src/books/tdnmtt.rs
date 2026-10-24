@@ -51,7 +51,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
     let nt = "Not testable; see README for the page and reason.";
     let seqn = "DeMark's 1997 TD Sequential with his own profit level and stop (Perl 2008 gives no exit). The book is an indicator manual (\"presented intentionally in the context of an indicator rather than as a system\", p.98) and prints no statistics. Lowest-low ties: latest bar [book silent]. India: instrument swap only; cash-index shorts are hypothetical.";
     let combon = "DeMark's 1997 TD Combo with the profit level and stop of Ch 3 (p.130-131, identical to Sequential). No statistics printed. India: instrument swap only; cash-index shorts are hypothetical.";
-    let trapn = "TD Trap as a stand-alone day trade with the book's close exit. Cash-index opens are partly stale (see README), which affects open-based rules. India: instrument swap only.";
+    let trapn = "TD Trap as a stand-alone day trade with the book's close exit. Cash-index opens are partly stale (see README), which affects open-based rules. India: instrument swap only. Intraday wave 1: run on real 1-minute bars by default (p.path=1): whichever stop (one tick beyond the prior true high or low) is reached first is the day's trade; it fills on the first minute that reaches it, at the level or at that minute's open when it opened through it; out on the official daily close. Instruments: SPY, SPX (from 2014, real daily opens), NIFTY 50 and NIFTYBANK, the only ones with cleaned minute data (declared application); days without minute data make no trade. p.path=0 = the old daily-bar reading [Not from the book]. A minute that reaches both entry levels without opening through one has an unknown order: no trade that day [convention]. One tick = the market's tick on the minute path (0.01 US, 0.05 NSE); the long card keeps the upside breakouts, the short card the downside ones.";
     vec![
         d("tdnmtt_seq_long", "TD Sequential buy (1997 rules, DeMark's profit level and stop)", "Ch 2 · TD Sequential", "Long", Live, SEQ_RULES, seqn),
         d("tdnmtt_seq_short", "TD Sequential sell (1997 rules, DeMark's profit level and stop)", "Ch 2 · TD Sequential", "Short", Live, SEQ_RULES, seqn),
@@ -110,8 +110,10 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             v
         }
         "tdnmtt_combo1_long" | "tdnmtt_combo1_short" | "tdnmtt_combo2_long" | "tdnmtt_combo2_short" => common(2.),
-        "tdnmtt_trap_long" | "tdnmtt_trap_short" => vec![p("tick", "One tick (price units)", 0.05, 0., 1., 0.01),
-            p("ref_true", "Reference: 1 true high/low, 0 high/low", 1., 0., 1., 1.), p("skip_both", "Skip days breaking both sides", 1., 0., 1., 1.)],
+        "tdnmtt_trap_long" | "tdnmtt_trap_short" => vec![p("tick", "One tick (price units; −1 = auto: the market's tick on the minute path, 0.05 on path 0 as before)", -1., -1., 1., 0.01),
+            p("ref_true", "Reference: 1 true high/low, 0 high/low", 1., 0., 1., 1.), p("skip_both", "Path 0 only: skip days breaking both sides", 1., 0., 1., 1.),
+            // intraday wave 1
+            p("path", "1 = real 1-minute bars: whichever side breaks out first is the trade (book Fig 6.19); 0 = [Not from the book] daily bars (skip_both)", 1., 0., 1., 1.)],
         _ if id.starts_with("tdnmtt_") && catalogue().iter().any(|s| s.id == id) => vec![],
         _ => return None,
     })
@@ -123,7 +125,9 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let defs = params(id)?;
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| defs.iter().find(|d| d.key == k).unwrap().def);
     let short = id.ends_with("_short");
-    if id.starts_with("tdnmtt_trap") { return Some(trap(x, from, to, short, g("tick"), g("ref_true") >= 0.5, g("skip_both") >= 0.5)); }
+    // intraday wave 1: minute path (default); tick −1 = the market's tick there, the old 0.05 on path 0
+    if id.starts_with("tdnmtt_trap") && g("path") >= 0.5 { return Some(trap_minutes(x, from, to, short, if g("tick") < 0. { x.market_tick() } else { g("tick") }, g("ref_true") >= 0.5)); }
+    if id.starts_with("tdnmtt_trap") { return Some(trap(x, from, to, short, if g("tick") < 0. { 0.05 } else { g("tick") }, g("ref_true") >= 0.5, g("skip_both") >= 0.5)); }
     let u = |k: &str| g(k).round() as usize;
     let ver = if id.starts_with("tdnmtt_seq") { Ver::Nmtt } else if id.starts_with("tdnmtt_combo1") { Ver::Combo1 } else { Ver::Combo2 };
     let cfg = Cfg { ver, setup_n: u("setup_n").max(5), look: u("look").max(1), cd_n: u("cd_n").max(8), cd_look: u("cd_look").max(1),
@@ -131,6 +135,29 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let ex = ExitCfg { nsta: false, entry: u("entry") as u8, stop_kind: 1, stop_closes: u("stop_closes"), e3_true: g("e3_true") >= 0.5 };
     Some(run_countdown(x, from, to, short, &cfg, &ex))
 }
+
+// ---- intraday wave 1
+/// TD Trap on real 1-minute bars: open inside the prior (true) range; buy stop one tick above it and sell stop one tick
+/// below it are both live from the open; the first one touched is the day's trade (a minute reaching both without opening
+/// through one: unknown order, no trade); out on the close. The long card keeps the upside trades, the short card the
+/// downside ones. Days without minute data make no trade.
+fn trap_minutes(x: &Ctx, from: usize, to: usize, short: bool, tick: f64, true_ref: bool) -> Vec<Trade> {
+    use crate::intraday::{day_trade, stop_entry_day, Level};
+    let Some(mm) = x.minutes else { return vec![] };
+    let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
+    let mut out = vec![];
+    for i in from.max(2)..=to {
+        let (hi, lo) = if true_ref { (h[i - 1].max(c[i - 2]), l[i - 1].min(c[i - 2])) } else { (h[i - 1], l[i - 1]) };
+        if !(o[i] <= hi && o[i] >= lo) { continue; }
+        let Some(b) = mm.day(&x.r[i].date) else { continue };
+        let lv = [Level { up: true, px: hi + tick }, Level { up: false, px: lo - tick }];
+        let Some((k, px, _)) = stop_entry_day(&b, 0, &lv, &|_, _| None) else { continue };
+        if (k == 1) != short { continue; }
+        out.push(day_trade(if short { -1. } else { 1. }, i, px, i, c[i], "Close of the entry day", "stop", false));
+    }
+    out
+}
+// ---- end intraday wave 1
 
 /// TD Trap: open inside the prior (true) range, stop one tick beyond it, out on the close.
 fn trap(x: &Ctx, from: usize, to: usize, short: bool, tick: f64, true_ref: bool, skip_both: bool) -> Vec<Trade> {
