@@ -5,6 +5,9 @@
 use crate::connors::{claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "ndbrm";
+/// Admitted ids (authors/ndavis/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["ndbrm_spx_reversals", "ndbrm_trin40", "ndbrm_trin40_nse", "ndbrm_ad_line_nse"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const NYSE_TR: &[&str] = &["NYSE_ADV_DEC.Advances", "NYSE_ADV_DEC.Declines", "NYSE_ADV_DEC.AdvVolume", "NYSE_ADV_DEC.DecVolume"];
 const NSE_TR: &[&str] = &["NSE_ADV_DEC.Advances", "NSE_ADV_DEC.Declines", "NSE_ADV_DEC.AdvVolume", "NSE_ADV_DEC.DecVolume"];
