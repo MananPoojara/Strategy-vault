@@ -178,6 +178,12 @@ export const LIB = [
     { id: "gassp", sourceIds: ["title-ffe1b82681a825b6"], title: "Small Stocks for Big Profits", year: 2008, blurb: "Angell, 2008 · small-cap selection and chart reading; held" },
     { id: "gasto", sourceIds: ["title-756076f4305a0b14", "title-f3b8782982320c88"], title: "Sure-Thing Options Trading", year: 1983, blurb: "Angell · option strategies; held" }] },
   // ---- end Angell block ----
+  // ---- Augen block (2026-10-24) ----
+  { id: "augen", name: "Jeff Augen", tagline: "Options trader · volatility analysis and expiration-day option trades (held)", books: [
+    { id: "jaoth", sourceIds: ["title-2b121333ca367e1c"], title: "The Option Trader's Handbook", year: 2004, blurb: "Augen · option structures and adjustments; held" },
+    { id: "javeo", sourceIds: ["title-d6656189ada520c1"], title: "The Volatility Edge in Options Trading", year: 2008, blurb: "Augen, 2008 · price-spike volatility analysis; held" },
+    { id: "jatoe", sourceIds: ["title-4554d758de73b9a1", "title-cbbb8b5db21bbc5f"], title: "Trading Options at Expiration", year: 2009, blurb: "Augen, 2009 · expiration-day single-stock option trades on minute data; held" }] },
+  // ---- end Augen block ----
   // ---- Etzkorn block (2026-10-24) ----
   { id: "etzkorn", name: "Mark Etzkorn", tagline: "Momentum oscillators explained and tested · MACD, RSI and rate-of-change equilibrium systems", books: [
     { id: "metwo", sourceIds: ["title-eaea9328b7643525", "title-959fc0f8fc82690b"], title: "Trading with Oscillators", year: 1997, blurb: "Etzkorn, 1997 · MACD signal-line, RSI 50 and ROC equilibrium stop-and-reverse tests (S&P 500 lengths); stochastic grid and divergences held" },
