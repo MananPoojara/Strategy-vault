@@ -237,6 +237,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || siegel_reviewed(def) // Siegel block
         || lydon_reviewed(def) // Lydon block
         || landry_reviewed(def) // Landry block
+        || pruitt_reviewed(def) // Pruitt block
         || wirrick_reviewed(def) // Wirrick block
         || sperandeo_reviewed(def) // Sperandeo block
         || csmith_reviewed(def) // CSmith block
@@ -909,6 +910,16 @@ fn landry_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Opti
     Some(Issue{status:"needs_data",note:format!("This pattern's order and stop offsets are US-dollar amounts (1/16 of a dollar, 10 or 25 cents on US stocks), so it runs on US indices, ETFs and stocks only. {ticker} is outside that scope; no result is published.")})
 }
 // ---------------------------------------------------------------- end Landry
+// ---------------------------------------------------------------- Pruitt 2026-10-24
+// Admission only for the module REVIEWED lists (authors/pruitt/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn pruitt_reviewed(def:&StrategyDef)->bool {matches!(def.book,"pbwts"|"putg") && (crate::books::pbwts::reviewed(def.id) || crate::books::putg::reviewed(def.id))}
+const PRUITT_LABEL:&str="George Pruitt and John Hill tested these systems on futures (17-29 markets, one contract) and a few US stocks; runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test. The soybean seasonal dates come from soybeans. Cash-index shorts are hypothetical exposure.";
+fn pruitt_policy(def:&StrategyDef)->Option<Policy> {
+    if !pruitt_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"George Pruitt & John R. Hill: Building Winning Trading Systems with TradeStation (2002) King Keltner, Bollinger Bandit, Thermostat, Dynamic Break Out II and its fade, seasonal, Ghost Trader, Money Manager, 40-day channel, ADX/MA, MA channel, %R and day-of-week studies (printed EasyLanguage ch.1-8, App. B); The Ultimate Trading Guide (2000) ch.9 turnkey systems (App. code p.285-291) and ch.3 bar-chart studies. Reviewed in authors/pruitt/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Pruitt
 // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
 /// Reviewed Joe Ross daily rules (books::joe_ross_rules::REVIEWED): actual indices, ETFs and stocks, US and India, as a
 /// labelled declared application. The source references in books::joe_ross stay held (source review).
@@ -946,6 +957,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=siegel_policy(def) {return p;} // Siegel block
     if let Some(p)=lydon_policy(def) {return p;} // Lydon block
     if let Some(p)=landry_policy(def) {return p;} // Landry block
+    if let Some(p)=pruitt_policy(def) {return p;} // Pruitt block
     if let Some(p)=wirrick_policy(def) {return p;} // Wirrick block
     if let Some(p)=sperandeo_policy(def) {return p;} // Sperandeo block
     if let Some(p)=csmith_policy(def) {return p;} // CSmith block
@@ -1409,6 +1421,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if siegel_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",SIEGEL_LABEL));} // Siegel block
     if lydon_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LYDON_LABEL));} // Lydon block
     if landry_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LANDRY_LABEL));} // Landry block
+    if pruitt_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",PRUITT_LABEL));} // Pruitt block
     if wirrick_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",WIRRICK_LABEL));} // Wirrick block
     if sperandeo_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",SPERANDEO_LABEL));} // Sperandeo block
     if csmith_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",CSMITH_LABEL));} // CSmith block
@@ -1735,6 +1748,22 @@ mod tests {
         }
     }
     // ---- end Landry block ----
+    // ---- Pruitt block (2026-10-24) ----
+    #[test]
+    fn pruitt_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{pbwts,putg};
+        let all:Vec<StrategyDef>=pbwts::catalogue().into_iter().chain(putg::catalogue()).collect();
+        let mut want:Vec<&str>=pbwts::REVIEWED.iter().chain(putg::REVIEWED).copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Pruitt block ----
     // ---- Wirrick block (2026-10-24) ----
     #[test]
     fn wirrick_review_admits_exact_ids_on_indices_etfs_and_stocks() {
