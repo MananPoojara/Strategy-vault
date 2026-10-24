@@ -250,6 +250,20 @@ export const AUTHOR_PROFILE_DATA = {
   "sources": [],
   "confidence": "low"
  },
+ "mdarcher": {
+  "kind": "person",
+  "mastery": [
+   "Forex trading",
+   "Goodman Swing Count System"
+  ],
+  "summary": "Michael Duane Archer is a commodity and forex trader who learned the Goodman Swing Count System from Charles B. Goodman and teaches it in his forex books. The set-ups are mapped by eye and the toolbox methods lack settings or exits, so no complete mechanical rule is given. This profile rests on the books themselves.",
+  "known_for": [
+   "Getting Started in Currency Trading",
+   "The Forex Chartist Companion"
+  ],
+  "sources": [],
+  "confidence": "low"
+ },
  "schwager": {
   "kind": "person",
   "mastery": [

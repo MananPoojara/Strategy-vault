@@ -149,6 +149,12 @@ export const LIB = [
     { id: "jlbfwt", sourceIds: ["title-a05ecdb0b6af70ca"], title: "Forex Wave Theory", year: 2007, blurb: "Bickford, 2007 · wave-cycle forecasts on swing charts; held: no entry or exit" },
     { id: "jlbfsa", sourceIds: ["title-23a1d123324dac61"], title: "Forex Shockwave Analysis", year: 2008, blurb: "Bickford, 2008 · activity, range and wave forecasts; held: forecasts only" }] },
   // ---- end Bickford block ----
+  // ---- Archer block (2026-10-24) ----
+  { id: "mdarcher", name: "Michael Duane Archer", tagline: "Forex trading · the Goodman Swing Count System, codex method and reversal charts", books: [
+    { id: "mdagsc", sourceIds: ["title-d84072c1830c9e4d", "title-50d8b2eaa6ec4acc"], title: "Getting Started in Currency Trading", year: 2010, blurb: "Archer (earlier edition with Bickford) · toolbox: Goodman swings, Nofri congestion, Pugh formations; held: no settings or exits" },
+    { id: "mdafts", sourceIds: ["title-fd672d7519f339c9"], title: "Getting Started in Forex Trading Strategies", year: 2007, blurb: "Archer, 2007 · codex method with Goodman swing entries; held: set-ups chosen by eye" },
+    { id: "mdafcc", sourceIds: ["title-5e4b16762691197e"], title: "The Forex Chartist Companion", year: 2007, blurb: "Archer & Bickford, 2007 · P&F, swing, kagi and line-break charts; held: pip box sizes, no exits" }] },
+  // ---- end Archer block ----
   // ---- Person block (2026-10-24) ----
   { id: "person", name: "John L. Person", tagline: "Chicago floor trader and educator · pivot points, the three-day pivot average and COMAS crossovers; co-author of the Commodity Trader's Almanac", books: [
     { id: "jpcppt", sourceIds: ["title-9e42d5961530dd6a", "title-a05a280f277befc3", "title-6ad63e85d6185b37"], title: "Candlestick and Pivot Point Trading Triggers", year: 2007, blurb: "Person, 2007 · close or pivot crossing the three-day pivot average (stop and reverse); doji triggers need trend judgement" },
