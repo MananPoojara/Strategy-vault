@@ -137,6 +137,11 @@ export const LIB = [
     { id: "vvmfm", sourceIds: ["title-3801128c46565f3f", "title-04fe541148df6896"], title: "Modeling Financial Markets (with Hendry)", year: 2004, blurb: "Van Vliet & Hendry · VB.NET pricing and trading models; programming examples only" },
     { id: "vvqmm", sourceIds: ["title-b27c205cebe0fc83"], title: "Quality Money Management (with Kumiega)", year: 2008, blurb: "Kumiega & Van Vliet · process engineering; held: pairs and factor examples need a named pair, fundamentals and options" }] },
   // ---- end Van Vliet block ----
+  // ---- Etzkorn block (2026-10-24) ----
+  { id: "etzkorn", name: "Mark Etzkorn", tagline: "Momentum oscillators explained and tested · MACD, RSI and rate-of-change equilibrium systems", books: [
+    { id: "metwo", sourceIds: ["title-eaea9328b7643525", "title-959fc0f8fc82690b"], title: "Trading with Oscillators", year: 1997, blurb: "Etzkorn, 1997 · MACD signal-line, RSI 50 and ROC equilibrium stop-and-reverse tests (S&P 500 lengths); stochastic grid and divergences held" },
+    { id: "mewwot", sourceIds: ["title-3225f61129ea424c"], title: "What Works in Online Trading (editor)", year: 2001, blurb: "Etzkorn (ed.), 2001 · his spike-reversal day rule (3% spike, out after eight days); the other contributors' articles are counted under their own names" }] },
+  // ---- end Etzkorn block ----
   // ---- Carney block (2026-10-24) ----
   { id: "carney", name: "Scott M. Carney", tagline: "Harmonic trading · Fibonacci-measured price patterns (Gartley, Bat, Crab, Butterfly) and the RSI BAMM", books: [
     { id: "smcht", sourceIds: ["title-6e05f4762b245a85", "title-64a46c5083c15151"], title: "The Harmonic Trader", year: 1999, blurb: "Carney, 1999 · AB=CD, Gartley 222, Butterfly, Three Drives; held: patterns picked on the chart" },

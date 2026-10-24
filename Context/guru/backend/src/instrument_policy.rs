@@ -234,6 +234,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || fontanills_reviewed(def) // Fontanills block
         || thomsett_reviewed(def) // Thomsett block
         || patel_reviewed(def) // Patel block
+        || etzkorn_reviewed(def) // Etzkorn block
         || lebeau_reviewed(def) // LeBeau block
         || tharp_reviewed(def) // Tharp block
         || person_reviewed(def) // Person block
@@ -614,6 +615,16 @@ fn patel_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Patel
+// ---------------------------------------------------------------- Etzkorn 2026-10-24
+// Admission only for the module REVIEWED lists (authors/etzkorn/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn etzkorn_reviewed(def:&StrategyDef)->bool {matches!(def.book,"metwo"|"mewwot") && (crate::books::metwo::reviewed(def.id))}
+const ETZKORN_LABEL:&str="Mark Etzkorn ran these oscillator tests on nine futures markets (1984-1994) and printed the best lengths per market; the S&P 500 row is the default. Runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test. Cash-index shorts are hypothetical exposure.";
+fn etzkorn_policy(def:&StrategyDef)->Option<Policy> {
+    if !etzkorn_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Mark Etzkorn, Trading with Oscillators (Wiley 1997), Ch.5 Simple Tests (p.62-69): MACD signal-line crossover, RSI 50-line and ROC equilibrium crossings as stop-and-reverse systems on the close (Tables 5.2-5.3, S&P 500 lengths by default), and his spike-reversal day rule in What Works in Online Trading (2001, p.125-132: 3% spike, out after eight days). Reviewed in authors/etzkorn/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Etzkorn
 // ---------------------------------------------------------------- LeBeau 2026-10-24
 // Admission only for the module REVIEWED lists (authors/lebeau/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn lebeau_reviewed(def:&StrategyDef)->bool {matches!(def.book,"lebcafm"|"lebtc"|"lebtcb"|"lebws") && (crate::books::lebcafm::reviewed(def.id) || crate::books::lebtc::reviewed(def.id) || crate::books::lebtcb::reviewed(def.id) || crate::books::lebws::reviewed(def.id))}
@@ -698,6 +709,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=fontanills_policy(def) {return p;} // Fontanills block
     if let Some(p)=thomsett_policy(def) {return p;} // Thomsett block
     if let Some(p)=patel_policy(def) {return p;} // Patel block
+    if let Some(p)=etzkorn_policy(def) {return p;} // Etzkorn block
     if let Some(p)=lebeau_policy(def) {return p;} // LeBeau block
     if let Some(p)=tharp_policy(def) {return p;} // Tharp block
     if let Some(p)=person_policy(def) {return p;} // Person block
@@ -1136,6 +1148,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if fontanills_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",FONTANILLS_LABEL));} // Fontanills block
     if thomsett_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",THOMSETT_LABEL));} // Thomsett block
     if patel_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",PATEL_LABEL));} // Patel block
+    if etzkorn_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",ETZKORN_LABEL));} // Etzkorn block
     if lebeau_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LEBEAU_LABEL));} // LeBeau block
     if tharp_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",THARP_LABEL));} // Tharp block
     if person_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",PERSON_LABEL));} // Person block
@@ -1392,6 +1405,22 @@ mod tests {
         }
     }
     // ---- end Patel block ----
+    // ---- Etzkorn block (2026-10-24) ----
+    #[test]
+    fn etzkorn_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{metwo};
+        let all:Vec<StrategyDef>=metwo::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=metwo::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|etzkorn_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert!(reviewed_cash_rule(d),"{}",d.id);assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Etzkorn block ----
     // ---- LeBeau block (2026-10-24) ----
     #[test]
     fn lebeau_review_admits_exact_ids_on_indices_etfs_and_stocks() {
