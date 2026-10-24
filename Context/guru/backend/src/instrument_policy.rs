@@ -240,6 +240,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || lakonishok_reviewed(def) // Lakonishok block
         || sullivan_reviewed(def) // Sullivan block
         || campbell_reviewed(def) // Campbell block
+        || heitkoetter_reviewed(def) // Heitkoetter block
         || bwilliams_reviewed(def) // BWilliams block
         || stridsman_reviewed(def) // Stridsman block
         || weissman_reviewed(def) // Weissman block
@@ -1099,6 +1100,16 @@ fn campbell_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Campbell
+// ---------------------------------------------------------------- Heitkoetter 2026-10-25
+// Admission only for the module REVIEWED lists (authors/heitkoetter/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn heitkoetter_reviewed(def:&StrategyDef)->bool {(def.book=="hkmmts" && crate::books::hkmmts::reviewed(def.id))}
+const HEITKOETTER_LABEL:&str="Markus Heitkoetter tested this sample system intraday on e-mini S&P, DAX, e-mini Nasdaq, EuroStoxx and FTSE futures; runs on daily indices, ETFs and stocks, US and India, are a declared application, not the author's test.";
+fn heitkoetter_policy(def:&StrategyDef)->Option<Policy> {
+    if !heitkoetter_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Markus Heitkoetter, How to Make Money with Trading Systems (Rockwell Trading, 2005): Bollinger Band (34, 2.5) fade - sell above the upper band, buy below the lower band, exit at the close of the same day (p.9-13) or at the close of the 2nd day after entry (p.14). Reviewed in authors/heitkoetter/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Heitkoetter
 // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
 /// Reviewed Joe Ross daily rules (books::joe_ross_rules::REVIEWED): actual indices, ETFs and stocks, US and India, as a
 /// labelled declared application. The source references in books::joe_ross stay held (source review).
@@ -1139,6 +1150,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=lakonishok_policy(def) {return p;} // Lakonishok block
     if let Some(p)=sullivan_policy(def) {return p;} // Sullivan block
     if let Some(p)=campbell_policy(def) {return p;} // Campbell block
+    if let Some(p)=heitkoetter_policy(def) {return p;} // Heitkoetter block
     if let Some(p)=bwilliams_policy(def) {return p;} // BWilliams block
     if let Some(p)=stridsman_policy(def) {return p;} // Stridsman block
     if let Some(p)=weissman_policy(def) {return p;} // Weissman block
@@ -1622,6 +1634,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if lakonishok_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LAKONISHOK_LABEL));} // Lakonishok block
     if sullivan_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",SULLIVAN_LABEL));} // Sullivan block
     if campbell_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",CAMPBELL_LABEL));} // Campbell block
+    if heitkoetter_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",HEITKOETTER_LABEL));} // Heitkoetter block
     if bwilliams_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BWILLIAMS_LABEL));} // BWilliams block
     if stridsman_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",STRIDSMAN_LABEL));} // Stridsman block
     if weissman_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",WEISSMAN_LABEL));} // Weissman block
@@ -2009,6 +2022,22 @@ mod tests {
         }
     }
     // ---- end Campbell block ----
+    // ---- Heitkoetter block (2026-10-25) ----
+    #[test]
+    fn heitkoetter_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{hkmmts};
+        let all:Vec<StrategyDef>=hkmmts::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=hkmmts::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Heitkoetter block ----
     // ---- BWilliams block (2026-10-24) ----
     #[test]
     fn bwilliams_review_admits_exact_ids_on_indices_etfs_and_stocks() {
