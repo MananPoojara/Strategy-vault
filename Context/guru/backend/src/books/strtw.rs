@@ -7,6 +7,9 @@
 use crate::connors::{sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "strtw";
+/// Admitted ids (authors/stridsman/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["strtw_gd1", "strtw_gd2", "strtw_gd2_5d", "strtw_gd", "strtw_gd_bj", "strtw_meander1_long", "strtw_meander1_short", "strtw_meander_wk", "strtw_meander_wk_x", "strtw_meander_bj", "strtw_meander_bj_ma", "strtw_bj1", "strtw_bj_bj", "strtw_bj_obv", "strtw_dirslope", "strtw_dirslope_x", "strtw_dbs1a", "strtw_dbs1b", "strtw_dbs2a", "strtw_dbs2b", "strtw_dbs_x", "strtw_sdb", "strtw_sdb_x"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 macro_rules! sd {
     ($id:expr, $name:expr, $group:expr, $dir:expr, $status:expr, $vol:expr, $rules:expr, $notes:expr) => {

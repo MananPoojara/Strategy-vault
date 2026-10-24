@@ -7,6 +7,10 @@
 use crate::connors::{sma, true_range, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "strmm";
+/// Admitted ids (authors/stridsman/admission/SOURCE-CONTRACT.md). RS System No. 1, Relative Strength Bands and Rotation are held:
+/// they need comparison-market close series (STR_DATA2 / XMKT) that are not in the vault data set.
+pub const REVIEWED: &[&str] = &["strmm_hybrid", "strmm_hybrid_sl", "strmm_hybrid_ts", "strmm_meander", "strmm_meander_sl", "strmm_meander_ts", "strmm_vwa", "strmm_vwa_sl", "strmm_vwa_ts", "strmm_harris", "strmm_harris_orig", "strmm_harris_sl", "strmm_harris_ts", "strmm_expert", "strmm_expert_sl", "strmm_expert_ts", "strmm_counterpunch"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const MULTI: &str = "Needs the closes of the 4 comparison markets aligned to the traded market: per-ticker series XMKT.C2..XMKT.C5 (file <TICKER>__XMKT.csv, columns Date,C2,C3,C4,C5; real index closes; a comparison market without a bar that day keeps its previous close, as TradeStation's DataN does). Book: index version = S&P 500, NASDAQ 100, DJIA, S&P 400 MidCap, Russell 2000. Vault: US SPX/NDX/DJI/MDY/IWM (MDY, IWM = ETF stand-ins for the two mid/small-cap indexes); India NIFTY 50/NIFTYBANK/NIFTYIT/NIFTYMIDCAP100/NIFTYMIDCAPSELECT (instrument swap; MIDCAPSELECT starts 2022, so p.markets=4 drops C5 as a labelled non-default).";
 const DATA2: &str = "Needs Data2 = the market index the stock is compared to (series STR_DATA2, per ticker). Book compared each stock with its index. Vault files: NIFTYBANK/NIFTYIT/NIFTYMIDCAP100 vs NIFTY 50, NDX/DJI/MDY/IWM vs SPX (instrument swap). NIFTY 50 and SPX have no parent index -> data gap.";
