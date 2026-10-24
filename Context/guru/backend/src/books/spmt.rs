@@ -53,7 +53,8 @@ pub fn hold_reason(id: &str) -> Option<&'static str> {
     match id {
         "spmt_tick" => Some("SPMT TICK needs the daily closing NYSE TICK; the vault holds no TICK history (US or NSE), so this rule cannot run."),
         "spmt_multi5" | "spmt_multi9" | "spmt_mts" => Some("The complete SPMT signal basket needs VIX, TRIN, advancers and TICK. The vault has no NYSE or NSE TICK history, so the basket is always incomplete; counting only the available signals changes the strategy. The partial basket is held."),
-        "spmt_eom_puts" | "spmt_put_sale" | "spmt_itm_calls" => Some("Actual option contracts, strikes, expiries, premiums and position accounting are missing. Underlying returns cannot establish options P&L."),
+        // spmt_eom_puts: options phase 2 (real NSE option prices); the other two need the Market Timing signal count / E-mini legs
+        "spmt_put_sale" | "spmt_itm_calls" => Some("Real SPY and NIFTY option prices are now loaded, but these trades are taken on the course's Market Timing buy and sell signals (the 30-signal count, which includes the NYSE TICK the vault does not have), and the call version adds SPY/E-mini legs by the number of signals; the strike is a range ('2-3 strikes'). Counting only some signals would be a different system, so it is held."),
         "spmt_dt_gapdown" | "spmt_dt_unch" | "spmt_dt_gapup" => Some("Intraday methods are outside the approved daily batch. Actual 15-minute execution data and source-supported entry/stop ordering are required; invented ticks, currency conversions and daily paths are held."),
         "spmt_discretion" => Some("The source leaves ranking and allocation discretionary; a complete mechanical portfolio contract is unavailable."),
         _ => None,
@@ -107,9 +108,9 @@ pub fn catalogue() -> Vec<StrategyDef> {
           &["F|Market is above the 200-day MA", "E|On the 25th day of the month or later, the market drops two days in a row", "E|Signal at the close (the book sells SPY puts ~2 strikes / 2% out of the money here; this is the underlying)", "X|RSI 2-period closes above 65: exit at the next morning's open (\"close to open\")"],
           "p.168 options strategy measured on the underlying (\"89% correct on the underlying\", test 1/1/95-11/30/06). The exit level is not restated on p.168; the p.169 example exits on RSI(2) = 76.23 \"for the next morning\", read as the course's RSI(2) > 65 exit taken at the next open. No RSI(2) <= 65 entry cap (p.168 has none). Corresponds to STC IX eom_cc without the cap and with a next-open exit. India: NIFTY 50 / NIFTY BANK underlying.",
           claim("57 signals", "89%", "-", "-", "1/1/95 - 11/30/06, SPY underlying")),
-        d("spmt_eom_puts", "EOM · sell SPY puts", g1, "Long", NotTestable("needs option chains"), none,
+        d("spmt_eom_puts", "EOM · sell SPY puts", g1, "Long", Live, none,
           &["F|Market is above the 200-day MA", "E|On the 25th day of the month or later, if the market drops two days in a row, sell the closest month SPY put options which are approximately two strike prices away (2%)", "X|Exit on the RSI exit signal (next morning)"],
-          "Option P&L needs SPY / NIFTY option-chain history. The underlying signal is spmt_eom_und.",
+          "Options phase 2: real NSE option prices, no pricing model. Signal and exit = spmt_eom_und (p.168-169): entry at the signal close, exit at the next morning's open after RSI(2) closes above 65. Put strike = the listed strike nearest 2% below the close (tie: lower) [convention: the book's 'approximately two strike prices away (2%)'; on SPY two $1 strikes were about 1.4% in 2006, on NIFTY two strikes are 0.2-1%, so the stated 2% is used, the farther and more conservative reading]. Expiry = the closest monthly expiry whose last trading day is after the entry day. Sold at the close and bought back at the next morning's open, each only if the put traded (Contracts > 0); a put with no traded open is bought back at that day's traded close, else the next traded close; a put held to its last trading day settles at intrinsic value on the index close. The open put is valued daily at its own price (traded close, else the exchange settlement price, labelled). Return = put points / index close at entry. India only (NIFTY 50, NIFTY BANK; declared application): the US option data (SPY 2008-2025, the book's instrument) has no option open, so the next-morning exit cannot be priced and SPY is held.",
           claim("57 signals", "89% (underlying)", "-", "-", "1/1/95 - 11/30/06; no position closed in the money")),
         // ---- II. RSI (p.21-49)
         d("spmt_rsi2_4", "RSI(2) < 4", g2, "Long", Live, none,
@@ -270,6 +271,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let b = id.strip_prefix("spmt_")?;
     Some(match b {
         "eom_co" | "eom_cc" | "eom_und" => long(vec![dom(), p("bars", if b == "eom_co" { "Closes below the open in a row" } else { "Lower closes in a row" }, 2.0, 1.0, 4.0, 1.0)]),
+        "eom_puts" => long(vec![dom(), p("bars", "Lower closes in a row", 2.0, 1.0, 4.0, 1.0), p("otm", "Put strike: % below the close (book: about 2%)", 2.0, 0.0, 5.0, 0.5)]),
         "eom_rsi" => long(vec![dom(), lt(25.0, 10.0, 40.0, 5.0)]),
         "rsi2_4" => long(vec![lt(4.0, 1.0, 15.0, 1.0)]),
         "rsi4_25" => long(vec![p("slow_n", "Second RSI period", 4.0, 3.0, 6.0, 1.0), p("slow_lt", "Second RSI below", 25.0, 10.0, 40.0, 5.0)]),
@@ -807,7 +809,38 @@ fn day_trades(id: &str, x: &Ctx, from: usize, to: usize, g: &dyn Fn(&str) -> f64
 
 // ---------------------------------------------------------------- run
 
+/// Options phase 2: EOM put sale (p.168-169) on real NSE option prices; the signal/exit dates are spmt_eom_und's.
+pub fn option_positions(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Result<Vec<crate::options::Pos>, String>> {
+    use crate::options::{self as opt, Contract, Exit};
+    if id != "spmt_eom_puts" { return None; }
+    let g = getter(id, p);
+    let Some(chain) = x.options else { return Some(Err(crate::books::oiss::NO_CHAIN.into())) };
+    let sig = run("spmt_eom_und", x, from, to, p)?;
+    let mut w = opt::Window::new(chain, x, 8);
+    let mut out = Vec::new();
+    let mut busy = 0;
+    for t in sig {
+        let i = t.legs[0].i;
+        if i < busy { continue; }
+        let today = opt::ymd(&x.r[i].date);
+        let day = w.at(i);
+        let pick = opt::expiries(day).into_iter().find(|&e| opt::ltd(x, e) > today).and_then(|e| {
+            opt::nearest(&opt::strikes(day, e, true), x.c[i] * (1.0 - g("otm") / 100.0)).map(|strike| Contract { expiry: e, put: true, strike })
+        });
+        let Some((c, px0)) = pick.and_then(|c| w.quote(i, c).and_then(|q| q.fill_close()).map(|v| (c, v))) else { continue };
+        let exit = (!t.open).then_some(t.exit_i);
+        let (j, pnl, why, open, marks) = opt::follow(&mut w, x, c, -1.0, i, px0, to, &mut |k| {
+            (Some(k) == exit).then(|| (Exit::Open, "RSI(2) > 65: out next open".to_string()))
+        });
+        busy = j + 1;
+        out.push(opt::Pos { dir: 1.0, s0: x.c[i], entry_i: i, exit_i: j, pnl, open,
+            reason: format!("{why} · sold {} put exp {} on {} at {px0:.2} · {}", c.strike, c.expiry, x.r[i].date, marks.text()) });
+    }
+    Some(Ok(out))
+}
+
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+    if let Some(r) = option_positions(id, x, from, to, p) { return Some(crate::options::account(r.unwrap_or_default(), from, to, 0.0).trades); }
     params(id)?;
     let g = getter(id, p);
     let u = |k: &str| g(k).round().max(1.0) as usize;

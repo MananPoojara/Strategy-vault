@@ -1131,6 +1131,7 @@ pub fn run(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         source_account: None,
         bandy_account: None,
         unit_exposure_report: None,
+        option_account: None,
         trades: vec![],
         from: 0,
         to: calendar.len() - 1,

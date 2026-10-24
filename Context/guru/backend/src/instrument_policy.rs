@@ -170,8 +170,33 @@ fn intraday_p1_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Opt
     Some(Issue{status:"needs_data",note:format!("This day-trade rule needs real 1-minute bars to know which price came first during the day. The vault holds cleaned 1-minute bars only for SPY, SPX, NIFTY 50 and NIFTYBANK; {ticker} has none, so no result is published.")})
 }
 // ---- end intraday phase 1 block
+// ---- options phase 2 block (claude/options-p2, 2026-10-24): rules admitted on real EOD option prices
+/// Option rules run on the real monthly-option chain of the underlying (src/options.rs): NSE index options from the
+/// F&O bhavcopy (NIFTY 2001-2026, BANKNIFTY 2005-2026) and SPY/QQQ/IWM options (2008/2011-2025). Each id runs only where
+/// its rule can be priced. Evidence: data-survey/PHASE2-REPORT.md.
+pub fn options_p2(def:&StrategyDef)->bool {crate::options::is_option_rule(def.id) && matches!(def.book,"oiss"|"otvt"|"ccl08"|"mahrs"|"spmt")}
+pub fn options_tickers(id:&str)->&'static [&'static str] {
+    match id {
+        "otvt_cvr1_sell_puts"=>&["SPY"],
+        "ccl08_weekly_rsi_options"|"mahrs_covered_calls"=>&["SPY","QQQ","IWM","NIFTY 50","NIFTYBANK"],
+        _=>&["NIFTY 50","NIFTYBANK"], // OISS, spmt_eom_puts: need the option's own open/high (India only)
+    }
+}
+const OPTIONS_P2_BASIS:&str="Options phase 2 (2026-10-24): the rule trades real option contracts. Prices come from the NSE F&O end-of-day bhavcopy (NIFTY and BANKNIFTY monthly index options) and the SPY/QQQ/IWM 16:00 ET option snapshot (2008-2025; QQQ from 2011), built by library/options/build_{india,us}.py; monthly expiries only. A fill needs a contract that traded that day (India Contracts > 0 at its close or open; US volume > 0 at the 16:00 mid (bid+ask)/2, labelled, no bid/ask edge). Open positions are valued every day at the held contract's own price (India settlement price / US two-sided mid on untraded days, labelled). The books traded OEX, S&P, QQQ, SPY or stock options in 1997-2009, so these runs are a declared application on our market and period. Independent Python ledgers matched the engine with zero mismatches. No book performance is reproduced.";
+fn options_p2_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
+    if !options_p2(def) || (!native_stock && options_tickers(def.id).contains(&ticker)) {return None;}
+    let us=matches!(ticker,"SPY"|"QQQ"|"IWM");
+    let note=if us && options_tickers(def.id)==["NIFTY 50","NIFTYBANK"] {
+        format!("This option rule needs the option's own intraday high or opening price (a 2x stop on the option's high, or a next-morning exit). The US option data hold only the 16:00 snapshot (bid, ask, last), so {ticker} cannot be priced as the book trades it; the rule runs on NIFTY 50 and NIFTY BANK index options. No result is published.")
+    } else {
+        format!("This rule trades real option contracts. The vault holds traded option prices only for NIFTY and BANKNIFTY index options (NSE) and SPY, QQQ and IWM options (US); this rule is admitted on {}. {ticker} has no option prices, and the underlying's own price cannot stand in for an option's, so no result is published.", options_tickers(def.id).join(", "))
+    };
+    Some(Issue{status:"needs_data",note})
+}
+// ---- end options phase 2 block
 pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
     if intraday_p1(def) {return true;} // intraday phase 1
+    if options_p2(def) {return true;} // options phase 2
     ((def.book=="hbqts" && member(def.id,&["hbqts_ma5_25","hbqts_ma1_36","hbqts_limit_entry","hbqts_fixed_interval","hbqts_profit_target","hbqts_entry_id1","hbqts_bb_breakout","hbqts_cgo","hbqts_stoch_rsi","hbqts_dpo","hbqts_dom","hbqts_macd_daily","hbqts_cmo"])) ||
     (def.book=="kftsm" && member(def.id,&["kftsm_ma","kftsm_exp","kftsm_lrs","kftsm_ndb","kftsm_bb_ma","kftsm_ma_pct_band","kftsm_ma_tr_band","kftsm_triple_smooth","kftsm_vol_breakout","kftsm_keltner","kftsm_hh_ma","kftsm_hh_cross","kftsm_hh_channel","kftsm_mod_3ma","kftsm_4_9_18","kftsm_month_end","kftsm_hirsch"]))) || reviewed_adaptive_rule(def)
         || (def.book=="spmt" && crate::books::spmt::reviewed_daily(def.id))
@@ -650,6 +675,7 @@ fn joe_ross_policy(def:&StrategyDef)->Option<Policy> {
 fn base_policy(def:&StrategyDef)->Policy {
     if intraday_p1(def) && intraday_w1_spx_id(def.id) {let mut p=requirement("declared_index_timing", &["index"], INTRADAY_W1_SPX_BASIS);p.market_adaptation=true;return p;} // intraday wave 1
     if intraday_p1(def) {let mut p=requirement("declared_index_timing", &["index","etf"], INTRADAY_P1_BASIS);p.market_adaptation=true;return p;} // intraday phase 1
+    if options_p2(def) {let mut p=requirement("options_underlying", &["index","etf"], OPTIONS_P2_BASIS);p.market_adaptation=true;return p;} // options phase 2
     if let Some(p)=lwilliams_policy(def) {return p;} // Larry Williams block
     // ---- Schwager block (2026-10-23) ----
     if let Some(p)=schwager_policy(def) {return p;}
@@ -924,6 +950,7 @@ pub fn selected_type(ticker:&str,native_stock:bool)->&'static str {
 pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     let p=policy(def);let selected=selected_type(ticker,native_stock);
     if let Some(issue)=intraday_p1_symbol_issue(def,ticker,native_stock){return Some(issue);} // intraday phase 1
+    if let Some(issue)=options_p2_symbol_issue(def,ticker,native_stock){return Some(issue);} // options phase 2
     if vix_india(def) {return vix_india_held(def,ticker,ticker.starts_with("NIFTY")).or_else(||check_selected(p,def.id,ticker,selected));} // VIX India block
     if open_all(def) {return open_all_symbol_issue(def,ticker,native_stock.then_some(false)).or_else(||check_selected(p,def.id,ticker,selected));} // open-all block
     if let Some(issue)=dema_index_symbol_issue(def,ticker,selected){return Some(issue);}
@@ -953,6 +980,7 @@ pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
 pub fn check_native(def:&StrategyDef,ticker:&str,evidence:&NativeEvidence)->Option<Issue> {
     let p=policy(def);
     if let Some(issue)=intraday_p1_symbol_issue(def,ticker,true){return Some(issue);} // intraday phase 1
+    if let Some(issue)=options_p2_symbol_issue(def,ticker,true){return Some(issue);} // options phase 2
     if vix_india(def) {return vix_india_held(def,ticker,evidence.market()==Market::India).or_else(||check_selected(p,def.id,ticker,evidence.asset_type()));} // VIX India block
     if open_all(def) {return open_all_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)).or_else(||check_selected(p,def.id,ticker,evidence.asset_type()));} // open-all block
     if let Some(issue)=dema_index_symbol_issue(def,ticker,evidence.asset_type()){return Some(issue);}
@@ -996,6 +1024,7 @@ pub fn check_native_market_inputs(def:&StrategyDef,evidence:&NativeEvidence,benc
 /// Plain-language reason for Connors rules that stay unadmitted on every instrument (admission records, 21 Oct 2026).
 pub fn held_reason(id:&str)->Option<&'static str> {
     if intraday_p1_id(id) {return None;} // intraday phase 1: admitted on 1-minute bars
+    if crate::options::is_option_rule(id) {return None;} // options phase 2: admitted on real option prices
     // intraday phase 1: minute data now exists for these, so the hold says what still blocks them
     match id {
         "spmt_dt_gapdown"|"spmt_dt_unch"|"spmt_dt_gapup"=>return Some("Held: needs NYSE TICK data. Real 15-minute bars are now built from 1-minute data (SPY 2000-2025, SPX 2008-2026, NIFTY 50 2008-2026), but these day trades are taken only on days the course's 30-signal Market Timing count gives a buy bias, and one of the 30 signals is the NYSE TICK, which the vault does not have; counting only the other signals changes the strategy."),
@@ -1486,7 +1515,7 @@ mod tests {
             assert_eq!(check(&d,"QQQ",false).is_none(),open);
             assert!(!reviewed_cash_rule(&def(id,"stc9")));
         }
-        for id in ["spmt_multi5","spmt_multi9","spmt_mts","spmt_tick","spmt_dt_gapdown","spmt_dt_unch","spmt_dt_gapup","spmt_eom_puts","spmt_future_method"] {
+        for id in ["spmt_multi5","spmt_multi9","spmt_mts","spmt_tick","spmt_dt_gapdown","spmt_dt_unch","spmt_dt_gapup","spmt_future_method"] { // spmt_eom_puts: options phase 2
             assert!(!reviewed_cash_rule(&def(id,"spmt")),"{id}");
             assert!(check(&def(id,"spmt"),"SPY",false).is_some());
         }
@@ -1495,7 +1524,7 @@ mod tests {
     fn spmt_second_admission_is_exact_and_symbol_scoped() {
         use crate::books::spmt;
         let cat=spmt::catalogue();
-        let admitted:Vec<&str>=cat.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        let admitted:Vec<&str>=cat.iter().filter(|d|reviewed_cash_rule(d)&&!options_p2(d)).map(|d|d.id).collect(); // spmt_eom_puts: options phase 2
         assert_eq!(admitted.len(),spmt::REVIEWED_DAILY.len()+spmt::REVIEWED_AUX.len());
         for &id in spmt::REVIEWED_AUX {
             let d=def(id,"spmt");
@@ -1539,6 +1568,21 @@ mod tests {
             let d=cat.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id}"));
             assert!(!reviewed_cash_rule(d),"{id}");assert!(d.status!=Status::Live,"{id}");
         }
+    }
+    #[test]
+    fn options_p2_admits_option_tickers_only() {
+        let book=|id:&str|match &id[..4] {"oiss"=>"oiss","otvt"=>"otvt","ccl0"=>"ccl08","mahr"=>"mahrs",_=>"spmt"};
+        for &id in crate::options::RULES {
+            let d=def(id,book(id));
+            assert!(options_p2(&d)&&reviewed_cash_rule(&d)&&held_reason(id).is_none(),"{id}");
+            for t in options_tickers(id) {assert!(check(&d,t,false).is_none(),"{id} {t}");}
+            for t in ["SPX","NDX","DJI","MDY","SMH","NIFTYIT"] {assert!(check(&d,t,false).is_some(),"{id} {t}");}
+            assert!(check(&d,"RELIANCE",true).is_some()&&check(&d,"AAPL",true).is_some(),"{id}: no stock option prices");
+        }
+        // the US file has no option high/open: OISS (2x stop on the high) and spmt_eom_puts (next-open exit) stay India-only
+        assert!(check(&def("oiss_short_put","oiss"),"SPY",false).unwrap().note.contains("16:00 snapshot"));
+        assert!(check(&def("spmt_eom_puts","spmt"),"SPY",false).is_some());
+        assert!(check(&def("otvt_cvr1_sell_puts","otvt"),"NIFTY 50",false).is_some());
     }
     #[test]
     fn intraday_p1_admits_minute_tickers_only() {
@@ -1716,7 +1760,7 @@ mod tests {
     fn ccl08_review_admits_day_trades_on_stocks_and_indices_tps_on_index_etf() {
         use crate::books::ccl08;
         let cat=ccl08::catalogue();
-        let admitted:Vec<&str>=cat.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        let admitted:Vec<&str>=cat.iter().filter(|d|reviewed_cash_rule(d)&&!options_p2(d)).map(|d|d.id).collect(); // options phase 2 apart
         assert_eq!(admitted.len(),ccl08::REVIEWED_DAILY.len());
         let ok=|id:&'static str,t:&str,stock:bool|check(&def(id,"ccl08"),t,stock).is_none();
         for id in ccl08::REVIEWED_DAILY {
@@ -1728,7 +1772,7 @@ mod tests {
             assert_eq!(policy(&def(id,"ccl08")).requirement,if open {"index_etf_or_stock"} else {"index_or_etf"});
             assert_eq!(metadata_json(&def(id,"ccl08")).contains("\"declared_application\":\"Book shows these day trades on US stocks"),dt);
         }
-        for id in ["ccl08_crdt_emini","ccl08_weekly_rsi_options","ccl08_quick_scalp","ccl08_adx_quiet","ccl08_busted_options"] {
+        for id in ["ccl08_crdt_emini",/* ccl08_weekly_rsi_options: options phase 2 */"ccl08_quick_scalp","ccl08_adx_quiet","ccl08_busted_options"] {
             assert!(!reviewed_cash_rule(&def(id,"ccl08")),"{id}");
         }
     }
@@ -1766,7 +1810,7 @@ mod tests {
     #[test]
     fn hfm_otvt_review_admits_exact_ids_on_reviewed_symbols_only() {
         use crate::books::{hfm,otvt};
-        let admitted:Vec<&str>=hfm::catalogue().iter().chain(otvt::catalogue().iter()).filter(|d|reviewed_cash_rule(d)&&!intraday_p1(d)).map(|d|d.id).collect(); // hfm_vix: intraday wave 1
+        let admitted:Vec<&str>=hfm::catalogue().iter().chain(otvt::catalogue().iter()).filter(|d|reviewed_cash_rule(d)&&!intraday_p1(d)&&!options_p2(d)).map(|d|d.id).collect(); // hfm_vix: intraday wave 1; otvt_cvr1_sell_puts: options phase 2
         assert_eq!(admitted,["hfm_chadtp","hfm_chadtp_nse","hfm_ndxspx","otvt_cvr1_long","otvt_cvr1_short","otvt_hv_thrust"]);
         let ok=|id:&'static str,b:&'static str,t:&str|check(&def(id,b),t,false).is_none();
         for t in ["SPX","SPY"] {for (id,b) in [("hfm_chadtp","hfm"),("otvt_cvr1_long","otvt"),("otvt_cvr1_short","otvt"),("otvt_hv_thrust","otvt")] {assert!(ok(id,b,t),"{id} {t}");}}
@@ -1781,7 +1825,7 @@ mod tests {
         for t in ["SPX","SPY","DJI"] {assert!(ok("hfm_ndxspx","hfm",t),"{t}");}
         for t in ["NDX","QQQ","NIFTY 50","NIFTYBANK"] {assert!(!ok("hfm_ndxspx","hfm",t),"{t}");}
         assert!(check(&def("hfm_ndxspx","hfm"),"AAPL",true).is_some());
-        for (id,b) in [("hfm_hv","hfm"),("hfm_und","hfm"),("hfm_und_long","hfm"),("hfm_und_short","hfm"),("hfm_news","hfm"),/* hfm_vix: intraday wave 1 */("otvt_cvr1","otvt"),("otvt_cvr1_sell_puts","otvt")] { // ptjdt_adx15_breakout: intraday phase 1 admission
+        for (id,b) in [("hfm_hv","hfm"),("hfm_und","hfm"),("hfm_und_long","hfm"),("hfm_und_short","hfm"),("hfm_news","hfm"),/* hfm_vix: intraday wave 1 */("otvt_cvr1","otvt")] { // otvt_cvr1_sell_puts: options phase 2 // ptjdt_adx15_breakout: intraday phase 1 admission
             assert!(!reviewed_cash_rule(&def(id,b)),"{id}");assert_eq!(policy(&def(id,b)).requirement,"source_review_required","{id}");
         }
     }
@@ -1795,7 +1839,7 @@ mod tests {
         }
         assert!(open_instrument_label(&def("s12345","stc9")).unwrap().contains("leveraged"));
         assert!(open_instrument_label(&def("s12345","other")).is_none());
-        for id in ["ss_smart_money_index", /* ss_momentum_pinball: intraday phase 1 admission */"ss_arms_index_5ma","ss_arms_index_5ma_nse","oiss_plus_three_put","oiss_plus_three_call","spmt_tick","spmt_multi5","spmt_multi9","spmt_mts","spmt_dt_gapdown","spmt_dt_unch","spmt_dt_gapup","cwin_vix_gap_window","hfm_hv","hfm_und","btp_bottom_reversal_long","btp_momentum_gap"] {
+        for id in ["ss_smart_money_index", /* ss_momentum_pinball: intraday phase 1 admission */"ss_arms_index_5ma","ss_arms_index_5ma_nse",/* oiss_plus_three_*: options phase 2 admission */"spmt_tick","spmt_multi5","spmt_multi9","spmt_mts","spmt_dt_gapdown","spmt_dt_unch","spmt_dt_gapup","cwin_vix_gap_window","hfm_hv","hfm_und","btp_bottom_reversal_long","btp_momentum_gap"] {
             assert!(held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
         }
         for id in ["hfm_ndxspx","s12345","price","ststw_cum_rsi_35","ststw_cum_rsi_50","ststw_vix_stretch"] {assert!(held_reason(id).is_none(),"{id}");}

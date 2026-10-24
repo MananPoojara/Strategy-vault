@@ -1,31 +1,26 @@
 //! Larry Connors, "Option Income Stream System" (OISS, 2004). Book id "oiss".
 //!
 //! Every tradeable rule acts on an OPTION's own daily chart (3-day RSI of the at-the-money put/call),
-//! filtered by the underlying's 200-day SMA. The vault has no option data yet, so the strategies read
-//! one external per-ticker series per side and run the moment it is dropped into extra_data/:
-//!
-//!   `<TICKER>__OPT_ATM_PUT.csv` / `<TICKER>__OPT_ATM_CALL.csv`, one row per trading day d of the underlying:
+//! filtered by the underlying's 200-day SMA. Options phase 2 (2026-10-24): the rules read the real EOD
+//! monthly-option chain of the underlying (crate::options, built from the NSE F&O bhavcopy; the US chain has no
+//! option high, so the 2x stop cannot be checked there and US runs stay held in instrument_policy).
 //!   * scan contract S(d): the monthly contract of that type whose strike is the listed strike nearest the
 //!     underlying's close on d (tie -> lower strike), front month unless d is in the front month's
-//!     expiration week (the Mon..Fri calendar week holding its last trading day), then the next month.
-//!   * `Strike`, `Expiry` (YYYYMMDD of S(d)'s last trading day), `Open`, `High`, `Close` = S(d)'s bar on d.
-//!   * `B1..B30`: S(d)'s close on the k-th previous trading day (its own history, for the RSI).
-//!   * `O1..O30`, `H1..H30`, `C1..C30`: on day d, the open/high/close of S(d-k) (the contract that was the
-//!     scan contract k trading days ago), so a short contract can be followed after it stops being ATM.
-//!   Empty cell = no price that day (not listed, expired, no trade). Prices in index points / $ per share.
-//!
-//! P&L convention: a short option leg earns (sale premium - buy-back premium) / underlying close at the
-//! first entry. In the engine's Trade the position is a synthetic price that starts at the underlying close
-//! (puts: dir +1, px = S0 + e1 - premium; calls: dir -1, px = S0 - e1 + premium), so Trade::ret() is that
-//! fraction exactly for the first leg and the equity curve marks the trade with the underlying (delta 1)
-//! between entry and exit. The book's own "% gained" (points / sale price) is printed in each trade's reason.
+//!     expiration week (the Mon..Sun calendar week holding its last trading day), then the next month.
+//!   * RSI history of a contract = its own traded closes over the 30 bars before the day it was the scan contract,
+//!     then up to today (untraded days have no close and are skipped).
+//!   * fills only on days the contract traded (Contracts > 0), at its close; the stop on its traded high.
+//! P&L: a short option leg earns (sale premium - buy-back premium) per unit of the underlying; position notional =
+//! underlying close at the first entry. Open positions are valued every day at the held contract's own price
+//! (traded close, else the exchange settlement price, else the last value), so overlapping positions and the
+//! equity curve are real option values (crate::options::account). The book's own "% gained" (points / sale price)
+//! is printed in each trade's reason.
 #![allow(unused_imports, dead_code)]
 use crate::connors::*;
+use crate::options as opt;
 
 pub const BOOK: &str = "oiss";
 
-const PUT: &str = "OPT_ATM_PUT";
-const CALL: &str = "OPT_ATM_CALL";
 
 const RULES_PUT: &[&str] = &[
     "F|The index (or stock) is above its 200-day MA.",
@@ -62,11 +57,11 @@ const RULES_P3_CALL: &[&str] = &[
     "X|[By example, base OISS Trade 12] expiration-day roll to the next month's ATM call.",
 ];
 
-const NOTE: &str = "Needs option data: per-ticker series OPT_ATM_PUT / OPT_ATM_CALL (scan contract = monthly strike nearest the underlying close, next month during expiration week; columns Strike, Expiry, Open, High, Close, B1..B30 own past closes, O/H/C1..30 = today's bar of the contract that was ATM k days ago). India: build from NSE F&O bhavcopy (NIFTY/BANKNIFTY monthly options). US: OEX/SPX/QQQ option EOD history. \
-RSI = Wilder RSI(3) of the contract's own daily closes (TradeStation RSI), computed over the 30 back closes. Trend filter = underlying close vs its 200-day SMA, checked at entry only. Enter at the option close; stop = buy-stop at 2x the sale price on the option's intraday high (a gap above it fills at the open), checked before the close exit, from the day after entry. Exit on the close when the held contract's RSI(3) < 25. Expiration day of the held contract with no exit: buy back at its close, sell the then-ATM next-month contract at its close (no RSI/MA check, stop reset to 2x the new sale). A new signal on a different contract opens an independent, overlapping position (book OEX Trades 8/9); a repeat signal on a held contract adds nothing. \
+const NOTE: &str = "Real NSE option prices (options phase 2): scan contract = the monthly contract whose listed strike is nearest the index close (tie: lower), next month during the front month's expiration week. Fills only on days the contract traded (Contracts > 0): an untraded row is never a fill. Open positions are valued daily at the held contract's own price (traded close; on untraded days the exchange settlement price, labelled; else the last value); the equity curve, drawdown and overlapping positions use these values. Each position = one option per unit of the index, notional = account equity at entry. Book traded OEX/QQQ/stock options 2002-04; NIFTY 50 / NIFTY BANK index options are a declared application. US option data (SPY/QQQ/IWM) has no option high, so the 2x stop cannot be checked: US runs are held. Costs: none in the book; the vault cost setting is charged per side on the notional (0 by default). \
+RSI = Wilder RSI(3) of the contract's own traded daily closes (TradeStation RSI), computed over the 30 back bars (untraded days skipped). Trend filter = underlying close vs its 200-day SMA, checked at entry only. Enter at the option close; stop = buy-stop at 2x the sale price on the option's intraday high (a gap above it fills at the open), checked before the close exit, from the day after entry. Exit on the close when the held contract's RSI(3) < 25. Last trading day of the held contract with no exit: buy back at its traded close (no trade: final settlement = intrinsic value on the index close), sell the then-ATM next-month contract at its close (no RSI/MA check, stop reset to 2x the new sale; if that contract did not trade the position is closed). A new signal on a different contract opens an independent, overlapping position (book OEX Trades 8/9); a repeat signal on a held contract adds nothing. \
 P&L = premium points / underlying close at entry (Trade return); the book's % (points / sale price; for a rolled trade points / last sale, which reproduces Trade 12's 23.60%) is in each trade's reason. Book tested OEX, QQQ, GS, EBAY options Nov 2002-Apr 2004; published results are both sides combined.";
 
-const NOTE_P3: &str = "Same data and mechanics as base OISS, plus one add-on: Day 1 = the entry day (p.57: 3/17 Day 1, 3/19 Day 3); when the held contract's RSI(3) has closed above 80 on add_after_days consecutive days counting the entry day, sell the same contract again (same size) at the close, at most once per trade (every example adds exactly once). The add requires the underlying still on the entry side of its 200-day SMA; the call rule's printed 'still above' is read as BELOW (matches call rule 1; flagged). One stop for all legs at 2x the FIRST sale (the book does not say; the add-on's own 2x stop would be wider). Both legs are bought back together on RSI < 25 / stop / roll; trade return = sum of the legs (position doubles); the book likewise adds each leg's % with the trade count unchanged.";
+const NOTE_P3: &str = "Same data and mechanics as base OISS, plus one add-on: Day 1 = the entry day (p.57: 3/17 Day 1, 3/19 Day 3); when the held contract's RSI(3) has closed above 80 on add_after_days consecutive traded days counting the entry day (an untraded day neither counts nor resets), sell the same contract again (same size) at the close, at most once per trade (every example adds exactly once). The add requires the underlying still on the entry side of its 200-day SMA; the call rule's printed 'still above' is read as BELOW (matches call rule 1; flagged). One stop for all legs at 2x the FIRST sale (the book does not say; the add-on's own 2x stop would be wider). Both legs are bought back together on RSI < 25 / stop / roll; trade return = sum of the legs (position doubles); the book likewise adds each leg's % with the trade count unchanged.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     use Status::*;
@@ -77,10 +72,10 @@ pub fn catalogue() -> Vec<StrategyDef> {
     let base = || claim("12 OEX (both sides); QQQ 14; GS 15; EBAY 8", "100% OEX; 92.86% QQQ; 86% GS; 100% EBAY", "57.85% of premium OEX; 39.59% QQQ; 35.86% GS; 62.10% EBAY", "11 days OEX; 8 QQQ; 9 GS; 8 EBAY", "Nov 2002 - Apr 2004, ATM options");
     let p3 = || claim("12 OEX (both sides); QQQ 14; GS 15", "100% OEX; 92.86% QQQ; 86% GS", "67.04% OEX; 39.49% QQQ; 46.37% GS (legs summed)", "", "Nov 2002 - Apr 2004, ATM options");
     vec![
-        d("oiss_short_put", "OISS · Short the ATM put", "Long", Live, &["OPT_ATM_PUT.Close"], RULES_PUT, NOTE, base()),
-        d("oiss_short_call", "OISS · Short the ATM call", "Short", Live, &["OPT_ATM_CALL.Close"], RULES_CALL, NOTE, base()),
-        d("oiss_plus_three_put", "OISS Plus Three · Short put + add-on", "Long", Live, &["OPT_ATM_PUT.Close"], RULES_P3_PUT, NOTE_P3, p3()),
-        d("oiss_plus_three_call", "OISS Plus Three · Short call + add-on", "Short", Live, &["OPT_ATM_CALL.Close"], RULES_P3_CALL, NOTE_P3, p3()),
+        d("oiss_short_put", "OISS · Short the ATM put", "Long", Live, &[], RULES_PUT, NOTE, base()),
+        d("oiss_short_call", "OISS · Short the ATM call", "Short", Live, &[], RULES_CALL, NOTE, base()),
+        d("oiss_plus_three_put", "OISS Plus Three · Short put + add-on", "Long", Live, &[], RULES_P3_PUT, NOTE_P3, p3()),
+        d("oiss_plus_three_call", "OISS Plus Three · Short call + add-on", "Short", Live, &[], RULES_P3_CALL, NOTE_P3, p3()),
         d("oiss_intraday_exit_variant", "OISS · Intraday RSI exit (untested)", "Long/Short", NotTestable("discretionary / untested in the book"), &[],
           &["X|If you're in a position that turns profitable and the RSI drops below 25 several hours before the close and the option price drops to an attractive level, you might consider an exit at that time.",
             "X|When this happens and the trade is well into substantial gains, you may opt to exit before the \"official\" exit is reached at the end of the day. We have not tested these situations as exits."],
@@ -123,188 +118,175 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
     })
 }
 
-/// Option columns of one side, aligned to the underlying's bars.
-struct Opt<'a> {
-    strike: &'a [f64],
-    expiry: &'a [f64],
-    open: &'a [f64],
-    high: &'a [f64],
-    close: &'a [f64],
-    back: Vec<&'a [f64]>, // back[k-1] = Bk
-    lo: Vec<&'a [f64]>,   // lo[k-1] = Ok
-    lh: Vec<&'a [f64]>,
-    lc: Vec<&'a [f64]>,
-}
-
-impl<'a> Opt<'a> {
-    fn load(x: &'a Ctx, side: &str) -> Option<Self> {
-        let s = |c: &str| x.extra.get(&format!("{side}.{c}")).map(|v| v.as_slice());
-        let many = |p: &str| (1..).map_while(|k| s(&format!("{p}{k}"))).collect::<Vec<_>>();
-        Some(Opt { strike: s("Strike")?, expiry: s("Expiry")?, open: s("Open")?, high: s("High")?, close: x.series(&format!("{side}.Close"))?,
-                   back: many("B"), lo: many("O"), lh: many("H"), lc: many("C") })
-    }
-    /// (open, high, close) on bar i of the contract that was the scan contract on bar o.
-    fn held(&self, o: usize, i: usize) -> (f64, f64, f64) {
-        let k = i - o;
-        let at = |v: &[&[f64]]| v.get(k - 1).map_or(f64::NAN, |c| c[i]);
-        if k == 0 { (self.open[i], self.high[i], self.close[i]) } else { (at(&self.lo), at(&self.lh), at(&self.lc)) }
-    }
-    /// Close history of that contract up to bar i (its back closes at bar o, then o..=i), gaps dropped.
-    fn hist(&self, o: usize, i: usize) -> Vec<f64> {
-        let mut h: Vec<f64> = self.back.iter().rev().map(|b| b[o]).collect();
-        h.extend((o..=i).map(|j| self.held(o, j).2));
-        h.retain(|v| v.is_finite());
-        h
-    }
-}
-
 /// Wilder RSI(n) at the last close of a history (connors::rsi, TradeStation-style).
 fn last_rsi(h: &[f64], n: usize) -> f64 {
     rsi(h, n).last().copied().unwrap_or(f64::NAN)
 }
 
-fn ymd(date: &str) -> f64 {
-    date.replace('-', "").parse().unwrap_or(f64::NAN)
+/// Back closes in the RSI history (the scan contract's own last 30 trading days before the signal day).
+const BACK: usize = 30;
+
+/// The scan contract S(i): monthly contract of the side whose strike is the listed strike nearest the underlying close
+/// (tie -> lower), front month unless bar i lies in the Mon..Fri week of the front month's last trading day.
+fn scan(w: &mut opt::Window, x: &Ctx, i: usize, put: bool) -> Option<opt::Contract> {
+    let day = w.at(i);
+    let ex = opt::expiries(day);
+    let front = *ex.first()?;
+    let expiry = if opt::week_of(opt::ltd(x, front)) == opt::week_of(opt::ymd(&x.r[i].date)) { *ex.get(1)? } else { front };
+    let strike = opt::nearest(&opt::strikes(day, expiry, put), x.c[i])?;
+    Some(opt::Contract { expiry, put, strike })
 }
-/// Calendar day number of a YYYYMMDD value (days_from_civil).
-fn day_no(v: f64) -> i64 {
-    let v = v as i64;
-    let (y, m, d) = (v / 10000, v / 100 % 100, v % 100);
-    let y = if m <= 2 { y - 1 } else { y };
-    let era = y.div_euclid(400);
-    let yoe = y - era * 400;
-    let doy = (153 * (m + if m > 2 { -3 } else { 9 }) + 2) / 5 + d - 1;
-    era * 146_097 + yoe * 365 + yoe / 4 - yoe / 100 + doy
+
+/// Traded closes of one contract over bars a..=b (untraded days skipped: they have no close).
+fn hist(w: &mut opt::Window, c: opt::Contract, a: usize, b: usize) -> Vec<f64> {
+    (a..=b).filter_map(|k| w.quote(k, c).and_then(|q| q.fill_close())).collect()
 }
 
 /// One open short-option position (all legs in the same contract).
 struct Pos {
-    origin: usize,        // bar on which the held contract was the scan contract
-    contract: (f64, f64), // (strike, expiry)
-    s0: f64,              // underlying close at first entry
-    e1: f64,              // first sale premium (anchors the synthetic price)
-    legs: Vec<Leg>,
+    origin: usize,        // bar on which the held contract was the scan contract (start of its RSI history)
+    contract: opt::Contract,
+    entry: usize,
+    s0: f64,              // underlying close at first entry (notional)
     sales: Vec<f64>,      // effective sale premium of each leg
     roll_adj: f64,        // sum over rolls of (buy-back - new sale); effective exit = final buy-back + roll_adj
     last_sale: f64,       // latest sale in the held contract (stop base after a roll; book % of a rolled trade)
     stop: f64,
     streak: usize,        // consecutive RSI closes above the entry level, entry day = 1 (Plus Three)
     added: bool,
-    last_px: f64,         // last known close of the held contract
+    mark: f64,            // last mark of the held contract
+    pnl: Vec<f64>,        // points per bar since entry
+    marks: opt::Marks,
     log: String,
 }
 
-fn simulate_oiss(x: &Ctx, o: &Opt, put: bool, plus3: bool, from: usize, to: usize, g: &dyn Fn(&str) -> f64) -> Vec<Trade> {
-    let sg = if put { 1.0 } else { -1.0 };
+impl Pos {
+    fn value(&self, price: f64) -> f64 { self.sales.iter().map(|e| e - (price + self.roll_adj)).sum() }
+    fn close(mut self, i: usize, buy: f64, reason: &str, open: bool, put: bool) -> opt::Pos {
+        let v = self.value(buy);
+        self.pnl.push(v);
+        let x_eff = buy + self.roll_adj;
+        let den = |e: f64| if self.roll_adj != 0.0 { self.last_sale } else { e };
+        let pts: Vec<String> = self.sales.iter().map(|&e| format!("{:.2}pts book {:.2}%", e - x_eff, (e - x_eff) / den(e) * 100.0)).collect();
+        opt::Pos { dir: if put { 1.0 } else { -1.0 }, s0: self.s0, entry_i: self.entry, exit_i: i, pnl: self.pnl, open,
+                   reason: format!("{reason} · {} · buy back {buy:.2} · {} · {}", self.log, pts.join(" / "), self.marks.text()) }
+    }
+}
+
+fn simulate_oiss(x: &Ctx, chain: &opt::Chain, put: bool, plus3: bool, from: usize, to: usize, g: &dyn Fn(&str) -> f64) -> Vec<opt::Pos> {
     let ma = x.sma_n(g("ma_len").round().max(1.0) as usize);
     let n = g("rsi_len").round().max(1.0) as usize;
     let (hi, lo, sm, dte) = (g("rsi_entry"), g("rsi_exit"), g("stop_mult"), g("min_dte"));
     let addn = if plus3 { g("add_after_days").round().max(1.0) as usize } else { 0 };
     let trend_ok = |i: usize| if put { x.c[i] > ma[i] } else { x.c[i] < ma[i] };
-    let synth = |p: &Pos, prem: f64| p.s0 + sg * p.e1 - sg * prem;
-    // last trading day on or before the contract's expiry date
-    let is_expiry_day = |i: usize, exp: f64| {
-        let d = ymd(&x.r[i].date);
-        d == exp || (d < exp && i + 1 < x.r.len() && ymd(&x.r[i + 1].date) > exp)
-    };
-    let close_out = |p: Pos, i: usize, buy: f64, reason: &str, open: bool| {
-        let x_eff = buy + p.roll_adj;
-        let den = |e: f64| if p.roll_adj != 0.0 { p.last_sale } else { e };
-        let pts: Vec<String> = p.sales.iter().map(|&e| format!("{:.2}pts book {:.2}%", e - x_eff, (e - x_eff) / den(e) * 100.0)).collect();
-        Trade {
-            dir: sg, legs: p.legs.clone(), exit_i: i, exit_px: synth(&p, x_eff), entry_kind: "close", signal_i: i, open,
-            reason: format!("{reason} · {} · buy back {buy:.2} · {}", p.log, pts.join(" / ")), exits: Vec::new()
-        }
-    };
+    let mut w = opt::Window::new(chain, x, 3 * BACK + 40);
     let mut open: Vec<Pos> = Vec::new();
     let mut out = Vec::new();
-    for i in from..=to {
+    for i in from.saturating_sub(BACK)..=to {
+        w.at(i);
+        if i < from { continue; }
         let mut keep = Vec::new();
         for mut p in open.drain(..) {
-            let (op, h, c) = o.held(p.origin, i);
-            if c.is_finite() {
-                p.last_px = c;
-            }
-            // 1. intraday buy-stop at stop_mult x the sale price
-            if h.is_finite() && h >= p.stop {
-                let fill = if op.is_finite() && op >= p.stop { op } else { p.stop };
-                out.push(close_out(p, i, fill, "stop", false));
+            let q = w.quote(i, p.contract);
+            let m = q.and_then(|q| q.mark());
+            p.marks.add(m.map(|m| m.1));
+            if let Some((v, _)) = m { p.mark = v; }
+            let c = q.and_then(|q| q.fill_close());
+            // 1. buy-stop at stop_mult x the sale price on the option's traded high (a gap above it fills at the open)
+            if let Some(h) = q.and_then(|q| q.day_high()).filter(|h| *h >= p.stop) {
+                let _ = h;
+                let fill = q.and_then(|q| q.fill_open()).filter(|o| *o >= p.stop).unwrap_or(p.stop);
+                out.push(p.close(i, fill, "stop", false, put));
                 continue;
             }
-            // 2. RSI of the held option closes below the exit level
-            let r = last_rsi(&o.hist(p.origin, i), n);
-            if c.is_finite() && r < lo {
-                out.push(close_out(p, i, c, &format!("RSI{n}<{lo}"), false));
-                continue;
+            // 2. RSI of the held option (its traded closes) closes below the exit level
+            if let Some(c) = c {
+                if last_rsi(&hist(&mut w, p.contract, p.origin.saturating_sub(BACK), i), n) < lo {
+                    out.push(p.close(i, c, &format!("RSI{n}<{lo}"), false, put));
+                    continue;
+                }
             }
-            // 3. expiration day, no exit: buy back, sell the next month's ATM option at the close
-            if is_expiry_day(i, p.contract.1) {
-                let new = o.close[i];
-                if new.is_finite() && o.expiry[i] > p.contract.1 {
-                    p.roll_adj += p.last_px - new;
-                    p.log += &format!(" → roll {} buy {:.2}, sell {} exp {} @{new:.2}", x.r[i].date, p.last_px, o.strike[i], o.expiry[i]);
-                    p.origin = i;
-                    p.contract = (o.strike[i], o.expiry[i]);
-                    p.last_sale = new;
-                    p.stop = sm * new;
-                    p.streak = 0;
-                    p.last_px = new;
-                    keep.push(p);
-                } else {
-                    let buy = p.last_px;
-                    out.push(close_out(p, i, buy, "expiry (no next-month price)", false));
+            // 3. last trading day of the held contract, no exit: buy back, sell the next month's ATM option at the close
+            if opt::last_day(x, p.contract.expiry) == Some(i) {
+                let (buy, how) = match c { Some(c) => (c, "close"), None => (opt::intrinsic(p.contract, x.c[i]), "final settlement") };
+                let new = scan(&mut w, x, i, put).filter(|s| s.expiry > p.contract.expiry)
+                    .and_then(|s| w.quote(i, s).and_then(|q| q.fill_close()).map(|v| (s, v)));
+                match new {
+                    Some((s, v)) => {
+                        p.roll_adj += buy - v;
+                        p.log += &format!(" → roll {} buy {buy:.2} ({how}), sell {} exp {} @{v:.2}", x.r[i].date, s.strike, s.expiry);
+                        p.origin = i;
+                        p.contract = s;
+                        p.last_sale = v;
+                        p.stop = sm * v;
+                        p.streak = 0;
+                        p.mark = v;
+                        let val = p.value(v);
+                        p.pnl.push(val);
+                        keep.push(p);
+                    }
+                    None => out.push(p.close(i, buy, &format!("expiry ({how}; the next month's ATM option did not trade)"), false, put)),
                 }
                 continue;
             }
             // 4. Plus Three: one add-on after N consecutive closes above the entry level (entry day = Day 1)
             if plus3 {
-                p.streak = if r > hi { p.streak + 1 } else { 0 };
-                if !p.added && p.streak >= addn && c.is_finite() && trend_ok(i) {
-                    p.added = true;
-                    p.log += &format!(" + add {} @{c:.2}", x.r[i].date);
-                    let e = c + p.roll_adj; // sold after any roll: its points are c - final buy-back
-                    p.legs.push(Leg { i, px: synth(&p, e), w: 1.0 });
-                    p.sales.push(e);
+                if let Some(c) = c {
+                    let r = last_rsi(&hist(&mut w, p.contract, p.origin.saturating_sub(BACK), i), n);
+                    p.streak = if r > hi { p.streak + 1 } else { 0 };
+                    if !p.added && p.streak >= addn && trend_ok(i) {
+                        p.added = true;
+                        p.log += &format!(" + add {} @{c:.2}", x.r[i].date);
+                        p.sales.push(c + p.roll_adj); // sold after any roll: its points are c - final buy-back
+                    }
                 }
             }
+            let val = p.value(p.mark);
+            p.pnl.push(val);
             keep.push(p);
         }
         open = keep;
-        // new short on today's scan contract
-        let (c, k, e) = (o.close[i], o.strike[i], o.expiry[i]);
-        if c.is_finite() && c > 0.0 && trend_ok(i) && !open.iter().any(|p| p.contract == (k, e))
-            && (day_no(e) - day_no(ymd(&x.r[i].date))) as f64 >= dte
-            && last_rsi(&o.hist(i, i), n) > hi
+        // new short on today's scan contract (it must trade today)
+        let Some(s) = scan(&mut w, x, i, put) else { continue };
+        let Some(c) = w.quote(i, s).and_then(|q| q.fill_close()) else { continue };
+        if trend_ok(i) && !open.iter().any(|p| p.contract == s)
+            && (opt::day_no(opt::ltd(x, s.expiry)) - opt::day_no(opt::ymd(&x.r[i].date))) as f64 >= dte
+            && last_rsi(&hist(&mut w, s, i.saturating_sub(BACK), i), n) > hi
         {
-            let mut p = Pos { origin: i, contract: (k, e), s0: x.c[i], e1: c, legs: vec![], sales: vec![c], roll_adj: 0.0, last_sale: c,
-                              stop: sm * c, streak: 1, added: false, last_px: c,
-                              log: format!("{} {k} exp {e} sold {c:.2}", if put { "P" } else { "C" }) };
-            p.legs.push(Leg { i, px: synth(&p, c), w: 1.0 });
-            open.push(p);
+            open.push(Pos { origin: i, contract: s, entry: i, s0: x.c[i], sales: vec![c], roll_adj: 0.0, last_sale: c, stop: sm * c, streak: 1,
+                            added: false, mark: c, pnl: vec![0.0], marks: opt::Marks::default(),
+                            log: format!("{} {} exp {} sold {} {c:.2}", if put { "P" } else { "C" }, s.strike, s.expiry, x.r[i].date) });
         }
     }
     for p in open {
-        let buy = p.last_px;
-        out.push(close_out(p, to, buy, "open", true));
+        let buy = p.mark;
+        out.push(p.close(to, buy, "open", true, put));
     }
-    out.sort_by_key(|t| (t.legs[0].i, t.exit_i));
+    out.sort_by_key(|t| (t.entry_i, t.exit_i));
     out
 }
 
-/// None = not a strategy of this book.
-pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+/// Option positions of an OISS rule (None = not an OISS option rule). Err = no option chain for this instrument.
+pub fn option_positions(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Result<Vec<opt::Pos>, String>> {
     let (put, plus3) = match id {
         "oiss_short_put" => (true, false),
         "oiss_short_call" => (false, false),
         "oiss_plus_three_put" => (true, true),
         "oiss_plus_three_call" => (false, true),
-        "oiss_intraday_exit_variant" => return Some(vec![]),
         _ => return None,
     };
     let schema = params(id)?;
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).unwrap_or_else(|| panic!("{id} has no param {k}")).def);
-    let Some(o) = Opt::load(x, if put { PUT } else { CALL }) else { return Some(vec![]) };
-    Some(simulate_oiss(x, &o, put, plus3, from, to, &g))
+    let Some(chain) = x.options else { return Some(Err(NO_CHAIN.into())) };
+    Some(Ok(simulate_oiss(x, chain, put, plus3, from, to, &g)))
+}
+pub const NO_CHAIN: &str = "needs_data: no traded option prices are loaded for this instrument";
+
+/// None = not a strategy of this book.
+pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+    if id == "oiss_intraday_exit_variant" { return Some(vec![]); }
+    let pos = option_positions(id, x, from, to, p)?.unwrap_or_default();
+    Some(opt::account(pos, from, to, 0.0).trades)
 }
 
 #[cfg(test)]
@@ -336,50 +318,44 @@ mod tests {
         assert!(last_rsi(&[6.0, 6.5, 7.6, 8.80, 10.80, 6.0, 2.35], 3) < 25.0);
     }
 
-    /// OEX Trade 12 replayed on synthetic option rows: sell Mar 550 put 6.00 (3/10/04), expiry roll 3/19/04
-    /// (buy 6.30, sell Apr 540 put 8.90), RSI exit 3/26/04 at 6.50: 2.10 points, book 23.60%.
+    /// OEX Trade 12 replayed on a fixture option chain (test arithmetic, not market data): sell Mar 550 put 6.00
+    /// (3/10/04), last-trading-day roll 3/19/04 (buy 6.30, sell Apr 540 put 8.90), RSI exit 3/26/04 at 6.50: 2.10 points, book 23.60%.
     #[test]
     fn trade12_roll() {
         let dates = ["2004-03-03", "2004-03-04", "2004-03-05", "2004-03-08", "2004-03-09", "2004-03-10", "2004-03-11", "2004-03-12", "2004-03-15",
                      "2004-03-16", "2004-03-17", "2004-03-18", "2004-03-19", "2004-03-22", "2004-03-23", "2004-03-24", "2004-03-25", "2004-03-26"];
-        let n = dates.len();
         let bar = |d: String, c: f64| Row { ticker: "OEX".into(), date: d, open: c, high: c, low: c, close: c, volume: None };
         let mut rows: Vec<Row> = (0..250).map(|k| bar(format!("2003-{:02}-{:02}", 1 + k / 28, 1 + k % 28), 500.0)).collect();
         let base = rows.len();
         rows.extend(dates.iter().map(|d| bar(d.to_string(), 552.8)));
-        let len = rows.len();
-        // Mar 550 put: quiet, then RSI(3) > 80 on 3/10 at 6.00; 6.30 on expiry 3/19
         let mar = [5.0, 4.95, 4.9, 4.85, 4.8, 6.0, 5.6, 5.9, 6.4, 6.3, 6.1, 6.2, 6.30];
-        // Apr 540 put from 3/19 (sold 8.90) to 3/26 (RSI(3) < 25, bought back 6.50)
         let apr = [8.90, 9.2, 9.0, 8.8, 8.9, 6.50];
-        let scan_mar = |j: usize| j <= 11;
-        let price = |j: usize| if scan_mar(j) { mar[j] } else { apr[j - 12] };
-        let held = |j: usize, k: usize| if j < k { f64::NAN } else if scan_mar(j - k) { mar.get(j).copied().unwrap_or(f64::NAN) } else { apr[j - 12] };
-        let mut extra = Vec::new();
-        let mut col = |name: String, f: &dyn Fn(usize) -> f64| {
-            let mut v = vec![f64::NAN; len];
-            (0..n).for_each(|j| v[base + j] = f(j));
-            extra.push((format!("OPT_ATM_PUT.{name}"), v));
-        };
-        col("Strike".into(), &|j| if scan_mar(j) { 550.0 } else { 540.0 });
-        col("Expiry".into(), &|j| if scan_mar(j) { 20040319.0 } else { 20040416.0 });
-        col("Open".into(), &price);
-        col("High".into(), &price);
-        col("Close".into(), &price);
-        for k in 1..=10 {
-            col(format!("B{k}"), &|j| if j >= k && scan_mar(j) == scan_mar(j - k) { price(j - k) } else { f64::NAN });
-            for p in ["O", "H", "C"] {
-                col(format!("{p}{k}"), &|j| held(j, k));
-            }
+        let mut csv = String::from("Date,Expiry,Type,Strike,Open,High,Low,Close,Settle,Contracts,OI\n");
+        let mut idx = String::from("Date,offset,bytes\n");
+        for (j, d) in dates.iter().enumerate() {
+            let start = csv.len();
+            if j < mar.len() { csv += &format!("{d},20040319,P,550,{0},{0},{0},{0},{0},10,100\n", mar[j]); }
+            if j >= 12 { csv += &format!("{d},20040416,P,540,{0},{0},{0},{0},{0},10,100\n", apr[j - 12]); }
+            idx += &format!("{d},{start},{}\n", csv.len() - start);
         }
+        let dir = std::env::temp_dir().join(format!("oiss-fixture-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("OEX.opt.csv"), csv).unwrap();
+        std::fs::write(dir.join("OEX.optidx.csv"), idx).unwrap();
+        let chain: &'static opt::Chain = Box::leak(Box::new(opt::Chain::load(dir.to_str().unwrap(), "OEX").unwrap()));
         let mut x = Ctx::new(&rows, &rows, &[]);
-        x.extra.extend(extra);
-        let t = run("oiss_short_put", &x, base, len - 1, &Params::new()).unwrap();
+        x.options = Some(chain);
+        let t = run("oiss_short_put", &x, base, rows.len() - 1, &Params::new()).unwrap();
         assert_eq!(t.len(), 1, "{:?}", t.iter().map(|t| &t.reason).collect::<Vec<_>>());
         let t = &t[0];
         assert_eq!(x.r[t.legs[0].i].date, "2004-03-10");
         assert_eq!(x.r[t.exit_i].date, "2004-03-26");
         assert!(t.reason.contains("roll 2004-03-19") && t.reason.contains("2.10pts book 23.60%"), "{}", t.reason);
         assert!((t.ret(0.0) - 2.10 / 552.8).abs() < 1e-12, "P&L = points / underlying close at entry");
+        // the account marks the open put at its own price: on 3/11 the put closed at 5.60 (sold 6.00) -> +0.40 points
+        let pos = option_positions("oiss_short_put", &x, base, rows.len() - 1, &Params::new()).unwrap().unwrap();
+        let a = opt::account(pos, base, rows.len() - 1, 0.0);
+        assert!((a.equity[6] - (1.0 + 0.40 / 552.8)).abs() < 1e-12, "{:?}", &a.equity[..8]);
+        std::fs::remove_dir_all(dir).ok();
     }
 }

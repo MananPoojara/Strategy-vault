@@ -234,6 +234,8 @@ pub struct Ctx<'a> {
     pub native_market: Option<crate::baskets::Market>,
     /// intraday phase 1: real 1-minute bars of this ticker (None = not loaded; minute-path rules then report a data gap)
     pub minutes: Option<&'static crate::intraday::Minutes>,
+    /// options phase 2: real EOD monthly-option chain of this underlying (None = not loaded; option rules report a data gap)
+    pub options: Option<&'static crate::options::Chain>,
 }
 
 /// India VIX facts, computed on the VIX's own daily series, then aligned to this
@@ -327,6 +329,7 @@ impl<'a> Ctx<'a> {
             extra: BTreeMap::new(),
             native_market: None,
             minutes: None,
+            options: None,
             c,
             r,
         }
