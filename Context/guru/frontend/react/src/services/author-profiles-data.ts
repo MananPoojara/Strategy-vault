@@ -310,6 +310,21 @@ export const AUTHOR_PROFILE_DATA = {
   "sources": [],
   "confidence": "low"
  },
+ "kennedy": {
+  "kind": "person",
+  "mastery": [
+   "Elliott wave analysis",
+   "Technical analysis"
+  ],
+  "summary": "Jeffrey Kennedy is an analyst at Elliott Wave International and edited its futures letters. His e-books in the library teach Elliott wave counting, trendlines and a few bar and MACD set-ups, which he presents as alerts to be combined with a wave count rather than as mechanical systems. This profile rests on the books themselves.",
+  "known_for": [
+   "Trader's Classroom",
+   "Trading the Line",
+   "Elliott Wave Junctures"
+  ],
+  "sources": [],
+  "confidence": "low"
+ },
  "carney": {
   "kind": "person",
   "mastery": [

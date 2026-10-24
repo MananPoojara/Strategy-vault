@@ -142,6 +142,12 @@ export const LIB = [
     { id: "skdab", sourceIds: ["title-1a375bb2a1b292dd"], title: "Dragons and Bulls", year: 1994, blurb: "Kroll, 1994 · 50-day trend, 10/20/50-day entries, 4/9/18-day stop-outs and re-entries; the 9/18/50 NIKKEI example is held (exit not exact)" },
     { id: "skfts", sourceIds: ["title-b57e56c915e14bbf"], title: "Kroll on Futures Trading Strategy", year: 1988, blurb: "Kroll, 1988 · strategy and money management; its moving-average examples are already in the vault" }] },
   // ---- end Kroll block ----
+  // ---- Kennedy block (2026-10-24) ----
+  { id: "kennedy", name: "Jeffrey Kennedy", tagline: "Elliott Wave International analyst · wave-count trades, MACD hooks and bar set-ups offered as alerts; no complete rule (held)", books: [
+    { id: "jfkbotc", sourceIds: ["title-45784acb4b404ed6"], title: "The Best of Trader's Classroom", year: null, blurb: "Kennedy, EWI · Elliott wave lessons; held: wave counts by hand" },
+    { id: "jfktcc", sourceIds: ["title-2b97623dd448a721", "title-470e0981aec6d750", "title-d3800718e33a5c10", "title-f9eaf33fa949e888"], title: "Trader's Classroom Collection (Vol.1-4)", year: null, blurb: "Kennedy, EWI · 10-day reversal, MACD hooks, three-in-one bar; held: alerts without exits, judged signals" },
+    { id: "jfkttl", sourceIds: ["title-afb3f8d044fea3fa"], title: "Trading the Line", year: 2009, blurb: "Kennedy, EWI 2009 · trendline set-ups; held: lines drawn by the trader" }] },
+  // ---- end Kennedy block ----
   // ---- CSmith block (2026-10-24) ----
   { id: "csmith", name: "Courtney D. Smith", tagline: "FX and futures trader · swing-point trend analysis, enhanced channel breakouts, the Conqueror", books: [
     { id: "csmlt", sourceIds: ["title-bafc2391a8c8f66d"], title: "How to Make a Living Trading Foreign Exchange", year: 2010, blurb: "Smith, 2010 · trend analysis, 55/20 channel breakout with the rejection rule, Conqueror I/II, stochastic 50 line, reversal days and RRR run as declared applications; inside days, slingshot and divergences held" },
