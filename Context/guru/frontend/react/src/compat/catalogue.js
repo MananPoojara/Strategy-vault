@@ -142,6 +142,11 @@ export const LIB = [
     { id: "skdab", sourceIds: ["title-1a375bb2a1b292dd"], title: "Dragons and Bulls", year: 1994, blurb: "Kroll, 1994 · 50-day trend, 10/20/50-day entries, 4/9/18-day stop-outs and re-entries; the 9/18/50 NIKKEI example is held (exit not exact)" },
     { id: "skfts", sourceIds: ["title-b57e56c915e14bbf"], title: "Kroll on Futures Trading Strategy", year: 1988, blurb: "Kroll, 1988 · strategy and money management; its moving-average examples are already in the vault" }] },
   // ---- end Kroll block ----
+  // ---- Etzkorn block (2026-10-24) ----
+  { id: "etzkorn", name: "Mark Etzkorn", tagline: "Momentum oscillators explained and tested · MACD, RSI and rate-of-change equilibrium systems", books: [
+    { id: "metwo", sourceIds: ["title-eaea9328b7643525", "title-959fc0f8fc82690b"], title: "Trading with Oscillators", year: 1997, blurb: "Etzkorn, 1997 · MACD signal-line, RSI 50 and ROC equilibrium stop-and-reverse tests (S&P 500 lengths); stochastic grid and divergences held" },
+    { id: "mewwot", sourceIds: ["title-3225f61129ea424c"], title: "What Works in Online Trading (editor)", year: 2001, blurb: "Etzkorn (ed.), 2001 · his spike-reversal day rule (3% spike, out after eight days); the other contributors' articles are counted under their own names" }] },
+  // ---- end Etzkorn block ----
   // ---- Carney block (2026-10-24) ----
   { id: "carney", name: "Scott M. Carney", tagline: "Harmonic trading · Fibonacci-measured price patterns (Gartley, Bat, Crab, Butterfly) and the RSI BAMM", books: [
     { id: "smcht", sourceIds: ["title-6e05f4762b245a85", "title-64a46c5083c15151"], title: "The Harmonic Trader", year: 1999, blurb: "Carney, 1999 · AB=CD, Gartley 222, Butterfly, Three Drives; held: patterns picked on the chart" },

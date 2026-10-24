@@ -280,6 +280,8 @@ export const sourceReview: Record<string, {type: string; sameWorkAs?: string; pe
   "smcht": {"type": "book", "people": ["Scott M. Carney"]},
   "skdab": {"type": "book", "people": ["Stanley Kroll"]},
   "skfts": {"type": "book", "people": ["Stanley Kroll"]},
+  "metwo": {"type": "book", "people": ["Mark Etzkorn"]},
+  "mewwot": {"type": "book", "people": ["Mark Etzkorn"]},
   "smcv1": {"type": "book", "people": ["Scott M. Carney"]},
   "smcv2": {"type": "book", "people": ["Scott M. Carney"]},
   "jlbcmf": {"type": "book", "people": ["James L. Bickford"]},

@@ -237,6 +237,20 @@ export const AUTHOR_PROFILE_DATA = {
   "sources": [],
   "confidence": "low"
  },
+ "etzkorn": {
+  "kind": "person",
+  "mastery": [
+   "Momentum oscillators",
+   "Trading-system testing"
+  ],
+  "summary": "Mark Etzkorn was an editor of Futures and Active Trader magazines. Trading with Oscillators explains how momentum oscillators are built and tests their signals as simple stop-and-reverse systems on nine futures markets; the MACD, RSI and rate-of-change equilibrium tests print exact lengths and are run here. This profile rests on the book itself.",
+  "known_for": [
+   "Trading with Oscillators: Pinpointing Market Extremes",
+   "What Works in Online Trading"
+  ],
+  "sources": [],
+  "confidence": "low"
+ },
  "carney": {
   "kind": "person",
   "mastery": [
