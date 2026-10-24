@@ -164,6 +164,20 @@ export const AUTHOR_PROFILE_DATA = {
   "sources": [],
   "confidence": "low"
  },
+ "bigalow": {
+  "kind": "person",
+  "mastery": [
+   "Candlestick charting"
+  ],
+  "summary": "Stephen W. Bigalow runs the Candlestick Forum and wrote Profitable Candlestick Trading. His e-books in the library define the major Japanese candlestick signals and teach reading them with stochastics; he states that numeric formulas do not work for candle formations, so no complete mechanical rule is given. This profile rests on the books themselves.",
+  "known_for": [
+   "Profitable Candlestick Trading",
+   "The Major Candlestick Signals",
+   "Big Profit Patterns Using Candlestick Signals and Gaps"
+  ],
+  "sources": [],
+  "confidence": "low"
+ },
  "schwager": {
   "kind": "person",
   "mastery": [
