@@ -3,11 +3,16 @@
 //! the close(t-1) -> close(t) change, exactly how the book measures "invested in the Dow only on day X".
 //! Consecutive days with the same position form one trade (enter at the close before the first day,
 //! exit at the close of the last day). Cash interest (1% a year in UJBS/UHTS/UMDS/UTCM/UECS/KTI models)
-//! is not modelled. US holidays / elections are applied as calendar dates to every index (India =
+//! is not modelled. Holiday rules run on US instruments only (2026-10-24 review); elections are calendar dates (India =
 //! instrument swap only). Page refs are printed pages. Sources and checks: library/kpss/.
 use crate::connors::{claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "kpss";
+// Admitted 2026-10-24 (authors/kaeppel/admission/SOURCE-CONTRACT.md): complete calendar rules with independent US/India ledgers.
+pub const REVIEWED: &[&str] = &["kpss_first5", "kpss_last5", "kpss_janbar", "kpss_jbs", "kpss_jaynewary", "kpss_ujbs", "kpss_hol_d1", "kpss_hol_d2", "kpss_hol_3x3", "kpss_hol_top24", "kpss_uhts", "kpss_xmas_week", "kpss_td2", "kpss_td1_5", "kpss_mid4", "kpss_worst14", "kpss_nonworst", "kpss_six", "kpss_monthly10", "kpss_santa", "kpss_m10_santa", "kpss_umds", "kpss_uumds", "kpss_dec_b", "kpss_dec_c", "kpss_middecade", "kpss_latedecade", "kpss_20yr", "kpss_intradecade", "kpss_c212", "kpss_c40w", "kpss_c53d", "kpss_ctcm1", "kpss_ctcm2", "kpss_utcm", "kpss_yr_post", "kpss_yr_mid", "kpss_yr_pre", "kpss_yr_elec", "kpss_yr_post_mid", "kpss_yr_pre_elec", "kpss_stoken15", "kpss_fav14", "kpss_fav21", "kpss_midterm", "kpss_pre_mar_jul", "kpss_uecs", "kpss_nov_may", "kpss_ndx_nov_jun", "kpss_jja", "kpss_sept", "kpss_ex_sept", "kpss_oct7", "kpss_kti_long", "kpss_lopl", "kpss_jusb"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
+/// Rules whose days are defined by US exchange holidays (closures): US instruments only.
+pub const US_ONLY: &[&str] = &["kpss_xmas_week", "kpss_hol_d1", "kpss_hol_d2", "kpss_hol_3x3", "kpss_hol_top24", "kpss_uhts", "kpss_santa", "kpss_m10_santa", "kpss_umds", "kpss_uumds", "kpss_kti_long", "kpss_lopl", "kpss_jusb"];
 
 // ------------------------------------------------------------------ calendar helpers
 
@@ -146,8 +151,22 @@ impl Cal {
         for y in c.y[0] - 1..=c.y[n - 1] {
             let h = holidays(y);
             for (hid, &hd) in h.iter().enumerate() {
-                let p = first(hd);
-                let q = after(hd);
+                // A weekend holiday whose weekday stand-in has a bar was not closed (e.g. Memorial Day on Saturday
+                // 30 May 1970, NYSE open on Friday 29 May): count the trading days around the weekend date itself.
+                let act = match hid {
+                    0 if y < 1971 => Some(days_from_civil(y, 2, 22)),
+                    2 if y < 1971 => Some(days_from_civil(y, 5, 30)),
+                    3 => Some(days_from_civil(y, 7, 4)),
+                    6 => Some(days_from_civil(y, 12, 25)),
+                    7 => Some(days_from_civil(y + 1, 1, 1)),
+                    _ => None,
+                };
+                let day = match act { Some(a) if a != hd && after(hd) > first(hd) => a, _ => hd };
+                let (p, q) = (first(day), after(day));
+                // A holiday before the first bar or after the last bar has no known trading days around it.
+                if p == 0 || p >= n {
+                    continue;
+                }
                 for k in 1..=3usize {
                     if p >= k {
                         c.hol[p - k].push((hid, -(k as i64)));
@@ -182,7 +201,8 @@ impl Cal {
         }
     }
     fn years(&self) -> std::ops::RangeInclusive<i64> {
-        if self.y.is_empty() { 1..=0 } else { self.y[0] - 1..=self.y[self.y.len() - 1] }
+        // from four years before the first bar: a decade or election window that began earlier still holds from the first bar
+        if self.y.is_empty() { 1..=0 } else { self.y[0] - 4..=self.y[self.y.len() - 1] }
     }
 }
 
@@ -312,7 +332,7 @@ impl<'a> Ix<'a> {
 
 // ------------------------------------------------------------------ catalogue
 
-macro_rules! note { () => { "Book index: Dow Jones Industrial Average (vault ticker DJI, 1970-; the book starts 1900-1967 depending on the rule). Runs on SPX/NDX/NIFTY as an instrument swap; US holiday and election dates are applied as calendar dates. Position on day t earns close(t-1)->close(t), as the book measures it. 2:1 and short positions are daily-reset like the leveraged / inverse index funds the book names (Table 1.1, p.11: a 2-to-1 fund \"will gain roughly 2 percent if the Dow rises 1 percent\"): one trade per day [fitted reading: reproduces Table 2.4 year by year]." }; }
+macro_rules! note { () => { "Book index: Dow Jones Industrial Average (vault ticker DJI, 1970-; the book starts 1900-1967 depending on the rule). Runs on other indices, ETFs and stocks as a declared application; rules set by US market holidays (the days around a closure, Christmas week, Santa Claus, UMDS/UUMDS, the KTI models) run on US instruments only, election dates are applied as calendar dates. Position on day t earns close(t-1)->close(t), as the book measures it. 2:1 and short positions are daily-reset like the leveraged / inverse index funds the book names (Table 1.1, p.11: a 2-to-1 fund \"will gain roughly 2 percent if the Dow rises 1 percent\"): one trade per day [fitted reading: reproduces Table 2.4 year by year]." }; }
 macro_rules! cash { () => { " The book adds 1% a year interest while in cash; the vault does not model cash interest (years in cash show 0.0% here, +1.0% in the book)." }; }
 
 pub fn catalogue() -> Vec<StrategyDef> {
