@@ -142,6 +142,12 @@ export const LIB = [
     { id: "skdab", sourceIds: ["title-1a375bb2a1b292dd"], title: "Dragons and Bulls", year: 1994, blurb: "Kroll, 1994 · 50-day trend, 10/20/50-day entries, 4/9/18-day stop-outs and re-entries; the 9/18/50 NIKKEI example is held (exit not exact)" },
     { id: "skfts", sourceIds: ["title-b57e56c915e14bbf"], title: "Kroll on Futures Trading Strategy", year: 1988, blurb: "Kroll, 1988 · strategy and money management; its moving-average examples are already in the vault" }] },
   // ---- end Kroll block ----
+  // ---- Angell block (2026-10-24) ----
+  { id: "angell", name: "George Angell", tagline: "Futures day trader and author · Taylor-book levels, LSS 3-day cycle, small caps, options (held)", books: [
+    { id: "gasnw", sourceIds: ["title-9057d8a9e126225f", "title-03762f250c91daef"], title: "Sniper Trading Workbook", year: 2002, blurb: "Angell, 2002 · buy/sell envelopes and range projections for S&P and bond futures; held: levels need judgement, intraday" },
+    { id: "gassp", sourceIds: ["title-ffe1b82681a825b6"], title: "Small Stocks for Big Profits", year: 2008, blurb: "Angell, 2008 · small-cap selection and chart reading; held" },
+    { id: "gasto", sourceIds: ["title-756076f4305a0b14", "title-f3b8782982320c88"], title: "Sure-Thing Options Trading", year: 1983, blurb: "Angell · option strategies; held" }] },
+  // ---- end Angell block ----
   // ---- Etzkorn block (2026-10-24) ----
   { id: "etzkorn", name: "Mark Etzkorn", tagline: "Momentum oscillators explained and tested · MACD, RSI and rate-of-change equilibrium systems", books: [
     { id: "metwo", sourceIds: ["title-eaea9328b7643525", "title-959fc0f8fc82690b"], title: "Trading with Oscillators", year: 1997, blurb: "Etzkorn, 1997 · MACD signal-line, RSI 50 and ROC equilibrium stop-and-reverse tests (S&P 500 lengths); stochastic grid and divergences held" },
