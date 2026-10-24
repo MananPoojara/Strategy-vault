@@ -7,6 +7,10 @@
 use crate::connors::{claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "hcta";
+/// Admitted 2026-10-24 (authors/person/admission/SOURCE-CONTRACT.md): the four S&P 500 calendar trades on indices, ETFs and
+/// stocks (US and India) as a declared application; independent ledgers, 0 mismatches. Futures trades stay NeedsData.
+pub const REVIEWED: &[&str] = &["hcta_sp_jan_long", "hcta_sp_apr_long", "hcta_sp_jul_short", "hcta_sp_oct_long"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 const FUT: &str = "the named futures contract's daily history (continuously linked, non-adjusted front/next-month contracts as in the book); the vault has no futures data";
 
 pub fn catalogue() -> Vec<StrategyDef> {
@@ -18,22 +22,22 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("hcta_sp_jan_long", "January long S&P 500 (H), TD 15 hold 7", "CTA 2010 p.126-127 · S&P 500 seasonal trades", "Long", Live,
             &["E|Buy the March (H) contract at the close of the 15th trading day of January (Top Percentage Plays table, p.126-127: \"Trading Day 15\")",
               "X|Exit at the close 7 trading days later: \"hold for the specified period\"; \"The hold period begins the day after the purchase. Hold days correlate to the trading days\" (p.126)"],
-            "Book: S&P 500 March futures (1983-2009); p.20 trade list. Run on SPX (and NIFTY) as the index swap: futures prices differ from the index by the basis and the roll, so dates are compared exactly and P/L only by sign. Fills at the close (the book's ENTRY/EXIT CLOSE columns).",
+            "Book: S&P 500 March futures (1983-2009); p.20 trade list. Run on indices, ETFs and stocks (US and India) as a declared application: the book traded S&P 500 futures, whose prices differ from the index by the basis and the roll; the entry day is the Nth trading day of the instrument's own calendar. Fills at the close (the book's ENTRY/EXIT CLOSE columns).",
             claim("27", "70.4% (19 gains / 8 losses)", "total $58,738 (best $13,900, worst -$6,125)", "7 trading days", "1983-2009, March contract, one contract")),
         d("hcta_sp_apr_long", "April long S&P 500 (U), TD 18 hold 28", "CTA 2010 p.126-127 · S&P 500 seasonal trades", "Long", Live,
             &["E|Buy the September (U) contract at the close of the 18th trading day of April (Top Percentage Plays table, p.126-127: \"Trading Day 18\")",
               "X|Exit at the close 28 trading days later: \"hold for the specified period\"; \"The hold period begins the day after the purchase. Hold days correlate to the trading days\" (p.126)"],
-            "Book: S&P 500 September futures (1982-2008); table only. Run on SPX (and NIFTY) as the index swap: futures prices differ from the index by the basis and the roll, so dates are compared exactly and P/L only by sign. Fills at the close (the book's ENTRY/EXIT CLOSE columns).",
+            "Book: S&P 500 September futures (1982-2008); table only. Run on indices, ETFs and stocks (US and India) as a declared application: the book traded S&P 500 futures, whose prices differ from the index by the basis and the roll; the entry day is the Nth trading day of the instrument's own calendar. Fills at the close (the book's ENTRY/EXIT CLOSE columns).",
             claim("26", "70.4% (19 gains / 7 losses)", "total $53,750 (best $23,075, worst -$14,875)", "28 trading days", "1982-2008, September contract, one contract")),
         d("hcta_sp_jul_short", "July short S&P 500 (U), TD 10 hold 7", "CTA 2010 p.126-127 · S&P 500 seasonal trades", "Short", Live,
             &["E|Sell short the September (U) contract at the close of the 10th trading day of July (Top Percentage Plays table, p.126-127: \"Trading Day 10\")",
               "X|Exit at the close 7 trading days later: \"hold for the specified period\"; \"The hold period begins the day after the purchase. Hold days correlate to the trading days\" (p.126)"],
-            "Book: S&P 500 September futures (1982-2008); p.66 trade list. Run on SPX (and NIFTY) as the index swap: futures prices differ from the index by the basis and the roll, so dates are compared exactly and P/L only by sign. Fills at the close (the book's ENTRY/EXIT CLOSE columns).",
+            "Book: S&P 500 September futures (1982-2008); p.66 trade list. Run on indices, ETFs and stocks (US and India) as a declared application: the book traded S&P 500 futures, whose prices differ from the index by the basis and the roll; the entry day is the Nth trading day of the instrument's own calendar. Fills at the close (the book's ENTRY/EXIT CLOSE columns).",
             claim("27", "70.4% (19 gains / 8 losses)", "total $64,728 (best $19,150, worst -$10,575)", "7 trading days", "1982-2008, September contract, one contract")),
         d("hcta_sp_oct_long", "October long S&P 500 (H), TD 19 hold 41", "CTA 2010 p.126-127 · S&P 500 seasonal trades", "Long", Live,
             &["E|Buy the March (H) contract at the close of the 19th trading day of October (Top Percentage Plays table, p.126-127: \"Trading Day 19\")",
               "X|Exit at the close 41 trading days later: \"hold for the specified period\"; \"The hold period begins the day after the purchase. Hold days correlate to the trading days\" (p.126)"],
-            "Book: S&P 500 March futures (1982-2008); p.96 trade list. Run on SPX (and NIFTY) as the index swap: futures prices differ from the index by the basis and the roll, so dates are compared exactly and P/L only by sign. Fills at the close (the book's ENTRY/EXIT CLOSE columns).",
+            "Book: S&P 500 March futures (1982-2008); p.96 trade list. Run on indices, ETFs and stocks (US and India) as a declared application: the book traded S&P 500 futures, whose prices differ from the index by the basis and the roll; the entry day is the Nth trading day of the instrument's own calendar. Fills at the close (the book's ENTRY/EXIT CLOSE columns).",
             claim("27", "74.1% (20 gains / 7 losses)", "total $199,413 (best $38,975, worst -$13,600)", "41 trading days", "1982-2008, March contract, one contract")),
         d("hcta_euro_jan_short", "January short Euro (H), TD 3 hold 24", "CTA 2010 p.126-127 · Euro seasonal trades", "Short", NeedsData(FUT),
             &["E|Sell short the March (H) contract at the close of the 3rd trading day of January (Top Percentage Plays table, p.126-127: \"Trading Day 3\")",

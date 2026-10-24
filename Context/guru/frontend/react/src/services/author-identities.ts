@@ -198,6 +198,9 @@ export const authorIdentities: Record<string, readonly string[]> = {
   "patel": [
     "Alpesh B. Patel"
   ],
+  "person": [
+    "John L. Person"
+  ],
   "sysmisc": [],
   "swingstk": [],
   "vendors": [],
