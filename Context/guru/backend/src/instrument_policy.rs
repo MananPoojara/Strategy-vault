@@ -232,6 +232,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || stridsman_reviewed(def) // Stridsman block
         || weissman_reviewed(def) // Weissman block
         || raschke_reviewed(def) // Raschke block
+        || carnold_reviewed(def) // CArnold block
         || wirrick_reviewed(def) // Wirrick block
         || sperandeo_reviewed(def) // Sperandeo block
         || csmith_reviewed(def) // CSmith block
@@ -847,6 +848,16 @@ fn raschke_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Raschke
+// ---------------------------------------------------------------- CArnold 2026-10-24
+// Admission only for the module REVIEWED lists (authors/carnold/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn carnold_reviewed(def:&StrategyDef)->bool {matches!(def.book,"capttm") && (crate::books::capttm::reviewed(def.id))}
+const CARNOLD_LABEL:&str="Curtis Arnold's moving-average examples come from gold futures (Merrill Lynch study) and general futures/stock charting; runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test. Cash-index shorts are hypothetical exposure.";
+fn carnold_policy(def:&StrategyDef)->Option<Policy> {
+    if !carnold_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Curtis M. Arnold, Timing the Market (1993), ch.13 Moving averages (p.82): the 14/50-day two-crossover model and its modified version (close above/below both averages, exit when the close crosses either). Signals and fills on the close. Reviewed in authors/carnold/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end CArnold
 // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
 /// Reviewed Joe Ross daily rules (books::joe_ross_rules::REVIEWED): actual indices, ETFs and stocks, US and India, as a
 /// labelled declared application. The source references in books::joe_ross stay held (source review).
@@ -879,6 +890,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=stridsman_policy(def) {return p;} // Stridsman block
     if let Some(p)=weissman_policy(def) {return p;} // Weissman block
     if let Some(p)=raschke_policy(def) {return p;} // Raschke block
+    if let Some(p)=carnold_policy(def) {return p;} // CArnold block
     if let Some(p)=wirrick_policy(def) {return p;} // Wirrick block
     if let Some(p)=sperandeo_policy(def) {return p;} // Sperandeo block
     if let Some(p)=csmith_policy(def) {return p;} // CSmith block
@@ -1335,6 +1347,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if stridsman_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",STRIDSMAN_LABEL));} // Stridsman block
     if weissman_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",WEISSMAN_LABEL));} // Weissman block
     if raschke_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",RASCHKE_LABEL));} // Raschke block
+    if carnold_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",CARNOLD_LABEL));} // CArnold block
     if wirrick_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",WIRRICK_LABEL));} // Wirrick block
     if sperandeo_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",SPERANDEO_LABEL));} // Sperandeo block
     if csmith_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",CSMITH_LABEL));} // CSmith block
@@ -1578,6 +1591,22 @@ mod tests {
         }
     }
     // ---- end Raschke block ----
+    // ---- CArnold block (2026-10-24) ----
+    #[test]
+    fn carnold_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{capttm};
+        let all:Vec<StrategyDef>=capttm::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=capttm::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end CArnold block ----
     // ---- Wirrick block (2026-10-24) ----
     #[test]
     fn wirrick_review_admits_exact_ids_on_indices_etfs_and_stocks() {
