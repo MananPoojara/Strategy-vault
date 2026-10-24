@@ -228,6 +228,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || schwager_reviewed(def) // Schwager block
         || elder_reviewed(def) // Elder block
         || pring_reviewed(def) // Pring block
+        || sperandeo_reviewed(def) // Sperandeo block
         || gregoriou_reviewed(def) // Gregoriou block
         || crisp_reviewed(def) // Crisp block
         || fabozzi_reviewed(def) // Fabozzi block
@@ -715,6 +716,16 @@ fn appel_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Appel
+// ---------------------------------------------------------------- Sperandeo 2026-10-24
+// Admission only for the module REVIEWED lists (authors/sperandeo/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn sperandeo_reviewed(def:&StrategyDef)->bool {matches!(def.book,"svtvc"|"svmws") && (crate::books::svtvc::reviewed(def.id) || crate::books::svmws::reviewed(def.id))}
+const SPERANDEO_LABEL:&str="Victor Sperandeo tested the moving-average rules on the S&P 500 cash index, the 7-month 1.6-weighted rule on futures sectors and the 10/30-week rule on stocks, indexes and commodities; runs on ETFs, indices and stocks, US and India, are a declared application, not the author's test. Shorts on a cash index are hypothetical exposure.";
+fn sperandeo_policy(def:&StrategyDef)->Option<Policy> {
+    if !sperandeo_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Victor Sperandeo, Trader Vic on Commodities (Wiley 2008) Ch.6 Tables 6.3-6.5 notes (p.52-64) and App. A (p.155, 173-174); Methods of a Wall Street Master (Wiley 1991) Ch.8 (p.90-93). Reviewed in authors/sperandeo/admission/SOURCE-CONTRACT.md with independent chronological ledgers; fills at the close; no costs.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Sperandeo
 // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
 /// Reviewed Joe Ross daily rules (books::joe_ross_rules::REVIEWED): actual indices, ETFs and stocks, US and India, as a
 /// labelled declared application. The source references in books::joe_ross stay held (source review).
@@ -743,6 +754,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=schwager_policy(def) {return p;}
     if let Some(p)=elder_policy(def) {return p;} // Elder block
     if let Some(p)=pring_policy(def) {return p;} // Pring block
+    if let Some(p)=sperandeo_policy(def) {return p;} // Sperandeo block
     if let Some(p)=gregoriou_policy(def) {return p;} // Gregoriou block
     if let Some(p)=crisp_policy(def) {return p;} // Crisp block
     if let Some(p)=fabozzi_policy(def) {return p;} // Fabozzi block
@@ -1187,6 +1199,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if let Some(label)=elder_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Elder block
     if let Some(label)=lwilliams_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Larry Williams block
     if let Some(label)=pring_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Pring block
+    if sperandeo_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",SPERANDEO_LABEL));} // Sperandeo block
     if let Some(label)=gregoriou_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Gregoriou block
     if crisp_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{CRISP_LABEL}\""));} // Crisp block
     if fabozzi_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",FABOZZI_LABEL));} // Fabozzi block
@@ -1358,6 +1371,22 @@ mod tests {
         assert!(!reviewed_cash_rule(&def("mpts_triple","jbudt")));
     }
     // ---- end Pring block ----
+    // ---- Sperandeo block (2026-10-24) ----
+    #[test]
+    fn sperandeo_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{svtvc,svmws};
+        let all:Vec<StrategyDef>=svtvc::catalogue().into_iter().chain(svmws::catalogue()).collect();
+        let mut want:Vec<&str>=svtvc::REVIEWED.iter().chain(svmws::REVIEWED).copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Sperandeo block ----
     // ---- Gregoriou block (2026-10-24) ----
     #[test]
     fn gregoriou_review_admits_exact_ids_on_indices_etfs_and_stocks() {
