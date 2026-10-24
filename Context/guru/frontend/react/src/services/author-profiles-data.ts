@@ -251,6 +251,22 @@ export const AUTHOR_PROFILE_DATA = {
   "sources": [],
   "confidence": "low"
  },
+ "arms": {
+  "kind": "person",
+  "mastery": [
+   "Volume analysis",
+   "Equivolume charting",
+   "Market breadth (Arms Index)"
+  ],
+  "summary": "Richard W. Arms Jr. created Equivolume charting, the Ease of Movement indicator and the Arms Index (TRIN). Volume Cycles in the Stock Market gives two complete Ease of Movement rules - the 13-day average crossing zero and the weekly 'four-week reversal of the 13' - which run here on indices, ETFs and stocks with volume as a declared application; his chart-pattern and Arms Index methods are judgement. This profile rests on the books themselves.",
+  "known_for": [
+   "Volume Cycles in the Stock Market",
+   "Stop and Make Money",
+   "The Arms Index"
+  ],
+  "sources": [],
+  "confidence": "low"
+ },
  "carney": {
   "kind": "person",
   "mastery": [
