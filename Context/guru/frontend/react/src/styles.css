@@ -744,3 +744,8 @@ body.pdf-capture .st-actions, body.pdf-capture #page-action-message, body.pdf-ca
 [data-basket-coverage] .tbl { min-width: 1100px; }
 [data-basket-coverage] td { vertical-align: top; }
 [data-basket-coverage] td:nth-child(-n+4) { white-space: nowrap; }
+
+/* Tradesheet numbers: financial-table figures (Inter, tabular + lining, slashed zero), right-aligned */
+.tbl.tl td.n, .tbl.tl td.d { font-family: 'Inter Numbers', 'IBM Plex Sans', system-ui, sans-serif; font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums lining-nums slashed-zero; font-feature-settings: "tnum" 1, "lnum" 1, "zero" 1; letter-spacing: 0; }
+.tbl.tl td.n, .tbl.tl th.n { text-align: right; white-space: nowrap; }
+.tbl.tl td.d { white-space: nowrap; color: var(--ink2); }
