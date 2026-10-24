@@ -190,6 +190,11 @@ export const LIB = [
     { id: "rwhit", sourceIds: ["title-7d1fbe74c56129b2", "title-d8b6e05f7d9b1d93"], title: "How I Trade and Invest in Stocks and Bonds", year: 1922, blurb: "Wyckoff · trading principles; held" },
     { id: "rwsmt", sourceIds: ["title-0cfa0308d47e2924"], title: "Stock Market Technique No. 1", year: 1933, blurb: "Wyckoff · the Wyckoff method (also the course units); held" }] },
   // ---- end Wyckoff block ----
+  // ---- Abell block (2026-10-24) ----
+  { id: "abell", name: "Howard Abell", tagline: "Floor trader and author · day-trading patterns and futures spreads (held)", books: [
+    { id: "haddt", sourceIds: ["title-c34b63ac910c13fd"], title: "Digital Day Trading", year: 1999, blurb: "Abell, 1999 · Taylor swing days, inside/constricted-range breakouts, interviews; held: no exits, judgement" },
+    { id: "haspr", sourceIds: ["title-327b1e8156c61ae5"], title: "Spread Trading", year: null, blurb: "Abell · futures spreads; held: needs futures prices (djvu copy not readable here)" }] },
+  // ---- end Abell block ----
   // ---- Etzkorn block (2026-10-24) ----
   { id: "etzkorn", name: "Mark Etzkorn", tagline: "Momentum oscillators explained and tested · MACD, RSI and rate-of-change equilibrium systems", books: [
     { id: "metwo", sourceIds: ["title-eaea9328b7643525", "title-959fc0f8fc82690b"], title: "Trading with Oscillators", year: 1997, blurb: "Etzkorn, 1997 · MACD signal-line, RSI 50 and ROC equilibrium stop-and-reverse tests (S&P 500 lengths); stochastic grid and divergences held" },

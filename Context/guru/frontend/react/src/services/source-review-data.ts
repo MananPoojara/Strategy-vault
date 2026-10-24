@@ -305,6 +305,8 @@ export const sourceReview: Record<string, {type: string; sameWorkAs?: string; pe
   "rwdtb": {"type": "book", "people": ["Richard D. Wyckoff"]},
   "rwhit": {"type": "book", "people": ["Richard D. Wyckoff"]},
   "rwsmt": {"type": "book", "people": ["Richard D. Wyckoff"]},
+  "haddt": {"type": "book", "people": ["Howard Abell"]},
+  "haspr": {"type": "book", "people": ["Howard Abell"]},
   "metwo": {"type": "book", "people": ["Mark Etzkorn"]},
   "mewwot": {"type": "book", "people": ["Mark Etzkorn"]},
   "smcv1": {"type": "book", "people": ["Scott M. Carney"]},
