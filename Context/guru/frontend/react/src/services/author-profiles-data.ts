@@ -409,6 +409,20 @@ export const AUTHOR_PROFILE_DATA = {
   "sources": [],
   "confidence": "low"
  },
+ "langham": {
+  "kind": "person",
+  "mastery": [
+   "Astrology",
+   "Market forecasting"
+  ],
+  "summary": "James Mars Langham wrote planetary forecasting books in the 1930s that relate stock and grain trends to planetary aspects, eclipses, lunations and sun-spots. The rules need daily planetary positions and the author's interpretation, so nothing can be backtested on price data alone. This profile rests on the books themselves.",
+  "known_for": [
+   "Planetary Effects on Stock Market Prices",
+   "Cyclical Market Forecasting: Stocks and Grain"
+  ],
+  "sources": [],
+  "confidence": "low"
+ },
  "carney": {
   "kind": "person",
   "mastery": [

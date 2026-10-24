@@ -142,6 +142,11 @@ export const LIB = [
     { id: "skdab", sourceIds: ["title-1a375bb2a1b292dd"], title: "Dragons and Bulls", year: 1994, blurb: "Kroll, 1994 · 50-day trend, 10/20/50-day entries, 4/9/18-day stop-outs and re-entries; the 9/18/50 NIKKEI example is held (exit not exact)" },
     { id: "skfts", sourceIds: ["title-b57e56c915e14bbf"], title: "Kroll on Futures Trading Strategy", year: 1988, blurb: "Kroll, 1988 · strategy and money management; its moving-average examples are already in the vault" }] },
   // ---- end Kroll block ----
+  // ---- Langham block (2026-10-24) ----
+  { id: "langham", name: "James Mars Langham", tagline: "1930s planetary market forecaster · astrology books held: every rule needs an ephemeris and the author's reading", books: [
+    { id: "jlpe", sourceIds: ["title-d697882d4cbe426d", "title-70b33cca5d0bb8b8"], title: "Planetary Effects on Stock Market Prices", year: null, blurb: "Langham · major-planet aspects and long trends; needs an ephemeris, held" },
+    { id: "jlmf", sourceIds: ["title-aa63a15e57901fbe"], title: "Cyclical Market Forecasting: Stocks and Grain", year: null, blurb: "Langham, c.1938 · planet combinations, lunations, sun-spots and grain; needs an ephemeris, held" }] },
+  // ---- end Langham block ----
   // ---- Nison block (2026-10-24) ----
   { id: "nison", name: "Steve Nison", tagline: "Brought Japanese candlestick charting to the West · pattern definitions and candle-plus-Western confluence; no mechanical rule (held)", books: [
     { id: "snjcct", sourceIds: ["title-81397d6d53d0f930", "title-1364d0fbc6ba6db0", "title-51b23babb9e56ea1"], title: "Japanese Candlestick Charting Techniques", year: 1991, blurb: "Nison, 1991 · reversal and continuation patterns, candles with Western tools; held: trend and candle size judged by eye, no exits" },
