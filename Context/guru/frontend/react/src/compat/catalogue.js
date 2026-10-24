@@ -131,6 +131,12 @@ export const LIB = [
   { id: "patel", name: "Alpesh B. Patel", tagline: "UK online-trading author and broadcaster · the 50-day moving-average example from his trading course; the rest is chart reading and interviews", books: [
     { id: "apitc", sourceIds: ["title-445e010c1da20c14"], title: "The Internet Trading Course", year: null, blurb: "Patel · long above the 50-day average, out below (the course's example of a mechanical system); indicator chapters give no settings" }] },
   // ---- end Patel block ----
+  // ---- Archer block (2026-10-24) ----
+  { id: "mdarcher", name: "Michael Duane Archer", tagline: "Forex trading · the Goodman Swing Count System, codex method and reversal charts", books: [
+    { id: "mdagsc", sourceIds: ["title-d84072c1830c9e4d", "title-50d8b2eaa6ec4acc"], title: "Getting Started in Currency Trading", year: 2010, blurb: "Archer (earlier edition with Bickford) · toolbox: Goodman swings, Nofri congestion, Pugh formations; held: no settings or exits" },
+    { id: "mdafts", sourceIds: ["title-fd672d7519f339c9"], title: "Getting Started in Forex Trading Strategies", year: 2007, blurb: "Archer, 2007 · codex method with Goodman swing entries; held: set-ups chosen by eye" },
+    { id: "mdafcc", sourceIds: ["title-5e4b16762691197e"], title: "The Forex Chartist Companion", year: 2007, blurb: "Archer & Bickford, 2007 · P&F, swing, kagi and line-break charts; held: pip box sizes, no exits" }] },
+  // ---- end Archer block ----
   // ---- Person block (2026-10-24) ----
   { id: "person", name: "John L. Person", tagline: "Chicago floor trader and educator · pivot points, the three-day pivot average and COMAS crossovers; co-author of the Commodity Trader's Almanac", books: [
     { id: "jpcppt", sourceIds: ["title-9e42d5961530dd6a", "title-a05a280f277befc3", "title-6ad63e85d6185b37"], title: "Candlestick and Pivot Point Trading Triggers", year: 2007, blurb: "Person, 2007 · close or pivot crossing the three-day pivot average (stop and reverse); doji triggers need trend judgement" },
