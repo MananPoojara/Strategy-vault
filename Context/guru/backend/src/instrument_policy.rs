@@ -229,6 +229,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || elder_reviewed(def) // Elder block
         || pring_reviewed(def) // Pring block
         || jobman_reviewed(def) // Jobman block
+        || schaap_reviewed(def) // Schaap block
         || bwilliams_reviewed(def) // BWilliams block
         || stridsman_reviewed(def) // Stridsman block
         || weissman_reviewed(def) // Weissman block
@@ -971,6 +972,23 @@ fn jobman_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Jobman
+// ---------------------------------------------------------------- Schaap 2026-10-24
+// Admission only for the module REVIEWED lists (authors/schaap/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn schaap_reviewed(def:&StrategyDef)->bool {matches!(def.book,"cbsiws") && (crate::books::cbsiws::reviewed(def.id))}
+const SCHAAP_LABEL:&str="Charles Schaap applies the 50-50 Strategy to US stocks and ETFs on weekly charts; runs on US indices, ETFs and stocks are a declared application. The $0.25 stop offset is a US-dollar amount, so Indian instruments are not run.";
+fn schaap_policy(def:&StrategyDef)->Option<Policy> {
+    if !schaap_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Charles B. Schaap, Invest with Success (2008): 50-50 Strategy, weekly 50 EMA and RSI 20 double cross (p.96, 196), High Riser entry on the first bar entirely above the rising 50 MA (p.198), stop $0.25 under the 50 MA, breakeven and monthly trailing (p.200, 215-218). Reviewed in authors/schaap/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// Schaap: US instruments only for these ids (stock_us None = not a stock).
+const SCHAAP_US_ONLY:&[&str]=&["cbsiws_5050"];
+fn schaap_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Option<Issue> {
+    if !schaap_reviewed(def) || !SCHAAP_US_ONLY.contains(&def.id) {return None;}
+    if stock_us.unwrap_or(!ticker.starts_with("NIFTY")) {return None;}
+    Some(Issue{status:"needs_data",note:format!("The 50-50 Strategy's stop sits $0.25 under the 50-week average, a US-dollar stock amount, so it runs on US instruments only. {ticker} is outside that scope; no result is published.")})
+}
+// ---------------------------------------------------------------- end Schaap
 // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
 /// Reviewed Joe Ross daily rules (books::joe_ross_rules::REVIEWED): actual indices, ETFs and stocks, US and India, as a
 /// labelled declared application. The source references in books::joe_ross stay held (source review).
@@ -1000,6 +1018,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=elder_policy(def) {return p;} // Elder block
     if let Some(p)=pring_policy(def) {return p;} // Pring block
     if let Some(p)=jobman_policy(def) {return p;} // Jobman block
+    if let Some(p)=schaap_policy(def) {return p;} // Schaap block
     if let Some(p)=bwilliams_policy(def) {return p;} // BWilliams block
     if let Some(p)=stridsman_policy(def) {return p;} // Stridsman block
     if let Some(p)=weissman_policy(def) {return p;} // Weissman block
@@ -1313,6 +1332,7 @@ pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     if let Some(issue)=jb_g3_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=lwilliams_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Larry Williams block
     if let Some(issue)=kaeppel_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Kaeppel block
+    if let Some(issue)=schaap_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Schaap block
     if let Some(issue)=landry_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Landry block
     if let Some(issue)=hirsch_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Hirsch block
     if native_stock {
@@ -1346,6 +1366,7 @@ pub fn check_native(def:&StrategyDef,ticker:&str,evidence:&NativeEvidence)->Opti
     if let Some(issue)=jb_g3_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=lwilliams_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Larry Williams block
     if let Some(issue)=kaeppel_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Kaeppel block
+    if let Some(issue)=schaap_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Schaap block
     if let Some(issue)=landry_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Landry block
     if let Some(issue)=hirsch_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Hirsch block
     if let Some(issue)=check_selected(p,def.id,ticker,evidence.asset_type()){return Some(issue);}
@@ -1470,6 +1491,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if let Some(label)=lwilliams_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Larry Williams block
     if let Some(label)=pring_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Pring block
     if jobman_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",JOBMAN_LABEL));} // Jobman block
+    if schaap_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",SCHAAP_LABEL));} // Schaap block
     if bwilliams_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BWILLIAMS_LABEL));} // BWilliams block
     if stridsman_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",STRIDSMAN_LABEL));} // Stridsman block
     if weissman_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",WEISSMAN_LABEL));} // Weissman block
@@ -1678,6 +1700,25 @@ mod tests {
         }
     }
     // ---- end Jobman block ----
+    // ---- Schaap block (2026-10-24) ----
+    #[test]
+    fn schaap_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{cbsiws};
+        let all:Vec<StrategyDef>=cbsiws::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=cbsiws::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            let us_only=SCHAAP_US_ONLY.contains(&d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            for t in ["NIFTY 50","NIFTYBANK"] {assert_eq!(check(d,t,false).is_some(),us_only,"{} {t}",d.id);}
+            // check() has no market for a native stock (treated as non-US); the served path uses the stock's real market
+            if !us_only {assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);}
+        }
+    }
+    // ---- end Schaap block ----
     // ---- BWilliams block (2026-10-24) ----
     #[test]
     fn bwilliams_review_admits_exact_ids_on_indices_etfs_and_stocks() {
