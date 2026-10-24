@@ -131,6 +131,13 @@ export const LIB = [
   { id: "patel", name: "Alpesh B. Patel", tagline: "UK online-trading author and broadcaster · the 50-day moving-average example from his trading course; the rest is chart reading and interviews", books: [
     { id: "apitc", sourceIds: ["title-445e010c1da20c14"], title: "The Internet Trading Course", year: null, blurb: "Patel · long above the 50-day average, out below (the course's example of a mechanical system); indicator chapters give no settings" }] },
   // ---- end Patel block ----
+  // ---- Bayer block (2026-10-24) ----
+  { id: "gbayer", name: "George Bayer", tagline: "Astrological market timing · planetary rules for wheat, hides and stocks", books: [
+    { id: "gbywol", sourceIds: ["title-5353892c4d912829", "title-78c52b8279f8a517"], title: "George Wollsten, Expert Stock and Grain Trader", year: null, blurb: "Bayer · a novel teaching planetary timing; held: no defined trades" },
+    { id: "gbygn", sourceIds: ["title-a80c67d2ea166ca3"], title: "Gold Nuggets for Stock and Commodity Traders", year: null, blurb: "Bayer · essay; no trading rule" },
+    { id: "gbytd", sourceIds: ["title-583c1f5a443d98a1"], title: "Stock and Commodity Traders' Hand-Book of Trend Determination", year: null, blurb: "Bayer · 59 planetary rules; held: needs an ephemeris, no entry or exit" },
+    { id: "gbytf", sourceIds: ["title-f64006520fcb6e51"], title: "Time Factors in the Stock Market", year: 1937, blurb: "Bayer, 1937 · planetary theory; no trading rule" }] },
+  // ---- end Bayer block ----
   // ---- Person block (2026-10-24) ----
   { id: "person", name: "John L. Person", tagline: "Chicago floor trader and educator · pivot points, the three-day pivot average and COMAS crossovers; co-author of the Commodity Trader's Almanac", books: [
     { id: "jpcppt", sourceIds: ["title-9e42d5961530dd6a", "title-a05a280f277befc3", "title-6ad63e85d6185b37"], title: "Candlestick and Pivot Point Trading Triggers", year: 2007, blurb: "Person, 2007 · close or pivot crossing the three-day pivot average (stop and reverse); doji triggers need trend judgement" },
