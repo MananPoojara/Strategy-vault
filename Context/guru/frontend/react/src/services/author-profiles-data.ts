@@ -296,6 +296,20 @@ export const AUTHOR_PROFILE_DATA = {
   "sources": [],
   "confidence": "low"
  },
+ "kacher": {
+  "kind": "person",
+  "mastery": [
+   "CAN SLIM-style growth-stock trading",
+   "Pocket pivots and gap-up buy points"
+  ],
+  "summary": "Chris Kacher and Gil Morales worked as proprietary traders for William O'Neil + Co. Their books describe pocket pivots, buyable gap-ups and moving-average sell guides used in fundamentally strong leading stocks; the volume and price tests are stated, but stock and base quality and the sell guide are judged by the trader, and their market timing model is not disclosed, so nothing is run. This profile rests on the books themselves.",
+  "known_for": [
+   "Trade Like an O'Neil Disciple",
+   "In the Trading Cockpit with the O'Neil Disciples"
+  ],
+  "sources": [],
+  "confidence": "low"
+ },
  "carney": {
   "kind": "person",
   "mastery": [

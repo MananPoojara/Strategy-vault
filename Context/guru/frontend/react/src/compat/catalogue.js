@@ -160,6 +160,12 @@ export const LIB = [
     { id: "rasmm", sourceIds: ["title-97aa0acf12e5e0cb"], title: "Stop and Make Money", year: 2008, blurb: "Arms, 2008 · power boxes, EMV trend lines, volume-adjusted averages and Arms Index extremes; held: chart judgement" },
     { id: "rateq", sourceIds: ["title-717397b8dab6f36d", "title-99621cc8c1953233"], title: "Trading with Equivolume", year: 2001, blurb: "Arms, 2001 · Equivolume chart patterns; held" }] },
   // ---- end Arms block ----
+  // ---- Kacher block (2026-10-24) ----
+  { id: "kacher", name: "Chris Kacher & Gil Morales", tagline: "O'Neil disciples · pocket pivots, buyable gap-ups and the seven-week rule (judgement-based, held)", books: [
+    { id: "kmtld", sourceIds: ["title-34c3189b69f02c8c", "title-2b9f0c289e337d32"], title: "Trade Like an O'Neil Disciple", year: 2010, blurb: "Morales & Kacher, 2010 · pocket pivots, gap-ups, 10/50-day sell guides, market direction model; held: leading-stock and base-quality judgement, model not disclosed" },
+    { id: "kmitc", sourceIds: ["title-47b3251474394b71"], title: "In the Trading Cockpit with the O'Neil Disciples", year: 2013, blurb: "Kacher & Morales, 2013 · buyable gap-ups and the seven-week rule; held: gap size 'eyeballed', exit only" },
+    { id: "kmssd", sourceIds: ["title-ce28056178d468a8"], title: "Short-Selling with the O'Neil Disciples", year: 2015, blurb: "Morales & Kacher, 2015 · short-sale chart patterns in former leaders; held: chart judgement" }] },
+  // ---- end Kacher block ----
   // ---- Etzkorn block (2026-10-24) ----
   { id: "etzkorn", name: "Mark Etzkorn", tagline: "Momentum oscillators explained and tested · MACD, RSI and rate-of-change equilibrium systems", books: [
     { id: "metwo", sourceIds: ["title-eaea9328b7643525", "title-959fc0f8fc82690b"], title: "Trading with Oscillators", year: 1997, blurb: "Etzkorn, 1997 · MACD signal-line, RSI 50 and ROC equilibrium stop-and-reverse tests (S&P 500 lengths); stochastic grid and divergences held" },
