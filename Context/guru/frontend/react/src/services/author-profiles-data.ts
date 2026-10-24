@@ -367,6 +367,20 @@ export const AUTHOR_PROFILE_DATA = {
   "sources": [],
   "confidence": "low"
  },
+ "wirrick": {
+  "kind": "person",
+  "mastery": [
+   "Swing trading",
+   "Stock options"
+  ],
+  "summary": "Steve Wirrick ran the My Trading Diary newsletter and taught swing trading of stocks with options. His books in the library combine trend reading with moving averages and a two-day pull-back swing set-up, traded through calls and puts. This profile rests on the books themselves.",
+  "known_for": [
+   "Make a Fortune Swing Trading!",
+   "High Octane Trading"
+  ],
+  "sources": [],
+  "confidence": "low"
+ },
  "carney": {
   "kind": "person",
   "mastery": [

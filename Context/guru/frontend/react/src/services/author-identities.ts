@@ -27,6 +27,9 @@ export const authorIdentities: Record<string, readonly string[]> = {
   "duffy": [
     "Joseph T. Duffy"
   ],
+  "wirrick": [
+    "Steve Wirrick"
+  ],
   "csmith": [
     "Courtney D. Smith",
     "Courtney Smith"
