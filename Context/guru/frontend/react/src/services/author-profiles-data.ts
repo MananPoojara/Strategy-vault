@@ -193,6 +193,21 @@ export const AUTHOR_PROFILE_DATA = {
   "sources": [],
   "confidence": "low"
  },
+ "pesavento": {
+  "kind": "person",
+  "mastery": [
+   "Fibonacci ratios",
+   "Pattern recognition"
+  ],
+  "summary": "Larry Pesavento trades Fibonacci ratio patterns (Gartley 222, AB=CD, butterfly) and wrote on the opening price and on market cycles. The patterns start from swing points chosen on the chart, so no complete mechanical rule is given. This profile rests on the books themselves.",
+  "known_for": [
+   "Profitable Patterns for Stock Trading",
+   "Fibonacci Ratios with Pattern Recognition",
+   "The Opening Price Principle"
+  ],
+  "sources": [],
+  "confidence": "low"
+ },
  "schwager": {
   "kind": "person",
   "mastery": [
