@@ -180,6 +180,9 @@ export const authorIdentities: Record<string, readonly string[]> = {
   "gregoriou": [
     "Greg N. Gregoriou"
   ],
+  "crisp": [
+    "Mark Crisp"
+  ],
   "sysmisc": [],
   "swingstk": [],
   "vendors": [],

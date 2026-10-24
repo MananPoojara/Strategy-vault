@@ -242,6 +242,7 @@ export const sourceReview: Record<string, {type: string; sameWorkAs?: string; pe
   "mbsot": {"type": "course_manual", "people": ["Mark Boucher"]},
   "mcmts": {"type": "book", "people": ["Mark Crisp"]},
   "mcstis": {"type": "code_package", "people": ["Mark Crisp"]},
+  "mccic": {"type": "book", "people": ["Mark Crisp"]},
   "mfcat": {"type": "code_package", "people": []},
   "mhart": {"type": "article", "people": ["Michael Harris"]},
   "mhnats": {"type": "book", "people": ["Matthew Hanson"]},
