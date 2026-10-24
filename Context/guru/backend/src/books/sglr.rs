@@ -5,6 +5,9 @@ use crate::books::apta::run_long;
 use crate::connors::{claim, sma, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "sglr";
+/// Admitted ids (authors/siegel/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["sglr_dow_ma200_band", "sglr_nasdaq_ma200_band"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const BAND: &[&str] = &[
     "E|\"Whenever the Dow closed at least 1 percent above its 200-day moving average, stocks were purchased at these closing prices.\" (p.290)",

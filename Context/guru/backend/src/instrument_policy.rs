@@ -234,6 +234,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || raschke_reviewed(def) // Raschke block
         || carnold_reviewed(def) // CArnold block
         || ndavis_reviewed(def) // NDavis block
+        || siegel_reviewed(def) // Siegel block
         || wirrick_reviewed(def) // Wirrick block
         || sperandeo_reviewed(def) // Sperandeo block
         || csmith_reviewed(def) // CSmith block
@@ -869,6 +870,16 @@ fn ndavis_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end NDavis
+// ---------------------------------------------------------------- Siegel 2026-10-24
+// Admission only for the module REVIEWED lists (authors/siegel/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn siegel_reviewed(def:&StrategyDef)->bool {matches!(def.book,"sglr") && (crate::books::sglr::reviewed(def.id))}
+const SIEGEL_LABEL:&str="Jeremy Siegel tested this rule on the Dow (1885-2001) and the Nasdaq Composite; runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test. Price-only; the book adds dividends and T-bill interest.";
+fn siegel_policy(def:&StrategyDef)->Option<Policy> {
+    if !siegel_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Jeremy J. Siegel, Stocks for the Long Run (3rd ed. 2002) ch.17 p.289-294: buy when the index closes at least 1% above its 200-day average, sell when it closes at least 1% below; long or cash at the close. Reviewed in authors/siegel/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Siegel
 // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
 /// Reviewed Joe Ross daily rules (books::joe_ross_rules::REVIEWED): actual indices, ETFs and stocks, US and India, as a
 /// labelled declared application. The source references in books::joe_ross stay held (source review).
@@ -903,6 +914,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=raschke_policy(def) {return p;} // Raschke block
     if let Some(p)=carnold_policy(def) {return p;} // CArnold block
     if let Some(p)=ndavis_policy(def) {return p;} // NDavis block
+    if let Some(p)=siegel_policy(def) {return p;} // Siegel block
     if let Some(p)=wirrick_policy(def) {return p;} // Wirrick block
     if let Some(p)=sperandeo_policy(def) {return p;} // Sperandeo block
     if let Some(p)=csmith_policy(def) {return p;} // CSmith block
@@ -1361,6 +1373,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if raschke_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",RASCHKE_LABEL));} // Raschke block
     if carnold_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",CARNOLD_LABEL));} // CArnold block
     if ndavis_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",NDAVIS_LABEL));} // NDavis block
+    if siegel_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",SIEGEL_LABEL));} // Siegel block
     if wirrick_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",WIRRICK_LABEL));} // Wirrick block
     if sperandeo_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",SPERANDEO_LABEL));} // Sperandeo block
     if csmith_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",CSMITH_LABEL));} // CSmith block
@@ -1636,6 +1649,22 @@ mod tests {
         }
     }
     // ---- end NDavis block ----
+    // ---- Siegel block (2026-10-24) ----
+    #[test]
+    fn siegel_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{sglr};
+        let all:Vec<StrategyDef>=sglr::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=sglr::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Siegel block ----
     // ---- Wirrick block (2026-10-24) ----
     #[test]
     fn wirrick_review_admits_exact_ids_on_indices_etfs_and_stocks() {
