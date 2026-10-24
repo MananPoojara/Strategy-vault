@@ -53,6 +53,44 @@ pub fn vix_open_end(ctx:&Ctx,def:&crate::connors::StrategyDef,to:usize)->(usize,
 }
 // ---------------------------------------------------------------- end VIX India
 
+/// Series a rule reads (shared by check and auto_end). The minute path reads no derived series.
+fn required_series(def:&StrategyDef,p:&Params,minute_path:bool)->Vec<&'static str> {
+    let mut required=if minute_path {vec![]} else {def.needs_series.to_vec()};
+    if p.get("src").is_some_and(|v| v.round()==1.0) && (def.id.starts_with("otvt_cvr1") || def.id.starts_with("ptjmt_cvr")) {
+        required.extend(["VXO_OHLC.Open","VXO_OHLC.High","VXO_OHLC.Low","VXO_OHLC.Close"]);
+    }
+    required
+}
+fn minute_path(def:&StrategyDef,p:&Params)->bool {crate::instrument_policy::intraday_p1(def) && p.get("path").map_or(true,|v| *v>=0.5)}
+
+/// Auto-end (user request 2026-10-24, mirrors auto_start): when a required input (1-minute bars, option prices, a needed
+/// series, the VIX, real India VIX opens) ends before the requested end, the run ends on the last date that input
+/// covers, with a plain note. An end inside coverage is untouched; gaps inside the run are left to check / auto_start.
+/// Nothing is filled or estimated and the strategy calculation is untouched.
+pub fn auto_end(ctx:&Ctx,def:&StrategyDef,from:usize,to:usize,p:&Params)->(usize,Option<String>) {
+    if to>=ctx.r.len() || from>=to {return (to,None);}
+    let ticker=ctx.r[0].ticker.as_str();
+    let upto=|last:&str| ctx.r[..=to].partition_point(|r|r.date.as_str()<=last).checked_sub(1);
+    let mut ends:Vec<(Option<usize>,String)>=vec![];
+    // first, so its wording wins over the plain VIX.Open series end on the same day
+    if let (end,Some(_))=vix_open_end(ctx,def,to) {ends.push((Some(end),"real India VIX opens (from 1-minute India VIX)".into()));}
+    let minutes=minute_path(def,p);
+    if let Some(m)=ctx.minutes.filter(|_|minutes) {ends.push((upto(m.last()),format!("1-minute bars for {ticker}")));}
+    if let Some(ch)=ctx.options.filter(|_|crate::instrument_policy::options_p2(def)) {ends.push((upto(ch.last()),format!("option prices for {ticker}")));}
+    for name in required_series(def,p,minutes).into_iter().filter(|n|!event_column(n)) {
+        if let Some(v)=ctx.series(name) {ends.push(((0..=to.min(v.len().saturating_sub(1))).rev().find(|&i|v[i].is_finite()),format!("{name} data")));}
+    }
+    if def.needs_volume {ends.push(((0..=to).rev().find(|&i|ctx.r[i].volume.is_some_and(|v|v.is_finite()&&v>0.)),format!("daily volume figures for {ticker}")));}
+    // same condition as the ccl08 Liquidity Filter check in `check` (instrument and benchmark close x volume)
+    if def.book==books::ccl08::BOOK && books::ccl08::reviewed_daily(def.id) && books::ccl08::params(def.id).is_some_and(|ps|ps.iter().any(|d|d.key=="lf")) && to<ctx.lf.len() {
+        ends.push(((0..=to).rev().find(|&i|ctx.lf[i].is_finite()),format!("the Liquidity Filter inputs (close x volume of {ticker} and its benchmark)")));
+    }
+    if def.needs_vix && ctx.vix.first.is_some() {ends.push(((0..=to).rev().find(|&i|ctx.vix.has_bar(i)),"volatility-index (VIX) data".into()));}
+    let Some((end,what))=ends.into_iter().filter_map(|(e,w)|Some((e?,w))).filter(|(e,_)|*e<to).min_by_key(|(e,_)|*e) else {return (to,None)};
+    if end<=from {return (to,None);} // nothing covered after the start: check refuses with the full message
+    (end,Some(format!("Ended {}: {what} end then. The requested end {} is later; no prices are filled or estimated.",ctx.r[end].date,ctx.r[to].date)))
+}
+
 /// A fill/stop column is intentionally empty when that event did not happen.
 /// Its raw opening-range fields are still checked on every bar below.
 fn event_column(name: &str) -> bool {
@@ -424,7 +462,7 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
         return issue("needs_data", "Required volume data is missing on one or more trading days in this period. A price-only index cannot substitute for this rule's volume or stock-universe filter.");
     }
     // ---- intraday phase 1: minute-path rules need this ticker's 1-minute bars over the whole window
-    let minute_path=crate::instrument_policy::intraday_p1(def) && p.get("path").map_or(true,|v| *v>=0.5);
+    let minute_path=minute_path(def,p);
     if minute_path {
         let Some(m)=ctx.minutes else { return issue("needs_data","This day-trade rule needs real 1-minute bars to know which price came first during the day; none are loaded for this instrument. No daily-bar substitute is used.") };
         if ctx.r[from].date.as_str()<m.first() { return issue("needs_data",format!("Required 1-minute bars begin on {}. The selected period includes earlier days with no minute data; choose a fully covered period.",m.first())); }
@@ -437,11 +475,7 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
         if ctx.r[from].date.as_str()<ch.first() { return issue("needs_data",format!("Option prices for this instrument begin on {}. The selected period includes earlier days with no option prices; choose a fully covered period.",ch.first())); }
         if ctx.r[to].date.as_str()>ch.last() { return issue("needs_data",format!("Option prices for this instrument end on {}. The selected period runs past them; choose a period that ends by then (no later prices are estimated).",ch.last())); }
     }
-    let mut required=def.needs_series.to_vec();
-    if minute_path {required.clear();} // intraday phase 1: the minute path reads no derived series
-    if p.get("src").is_some_and(|v| v.round()==1.0) && (def.id.starts_with("otvt_cvr1") || def.id.starts_with("ptjmt_cvr")) {
-        required.extend(["VXO_OHLC.Open","VXO_OHLC.High","VXO_OHLC.Low","VXO_OHLC.Close"]);
-    }
+    let required=required_series(def,p,minute_path);
     let missing=ctx.missing(&required);
     if !missing.is_empty() {
         return issue("needs_data",format!("Required market data is missing: {}. No chart, statistics, trades or optimization are available for this instrument.",missing.join(", ")));
@@ -968,6 +1002,9 @@ mod vix_india_tests { // VIX India block (24 Oct 2026)
         assert!(reads_vix_open(&d) && !reads_vix_open(&close_only) && reads_vix_open(&def("otvt_cvr1_long")));
         let (end,note)=vix_open_end(&ctx,&d,699);
         assert_eq!(end,694);assert!(note.unwrap().starts_with(&format!("Ended {}:",r[694].date)));
+        let (end,note)=auto_end(&ctx,&d,0,699,&p);
+        assert_eq!(end,694);assert_eq!(note.unwrap(),format!("Ended {}: real India VIX opens (from 1-minute India VIX) end then. The requested end {} is later; no prices are filled or estimated.",r[694].date,r[699].date));
+        assert_eq!(auto_end(&ctx,&d,0,690,&p),(690,None),"an end inside coverage is untouched");
         assert_eq!(check(&ctx,&d,0,end,&p).unwrap().status,"needs_data");
         let (start,note)=auto_start(&ctx,0,end,&r[0].date,|f|check(&ctx,&d,f,end,&p)).unwrap();
         assert_eq!(start,333,"two bars of open lookback after the bar-330 gap");assert!(note.unwrap().contains(&format!("The VIX open is missing on {}",r[330].date)));
@@ -993,5 +1030,59 @@ mod vix_india_tests { // VIX India block (24 Oct 2026)
             assert_eq!(crate::instrument_policy::open_instrument_label(d),Some(crate::instrument_policy::VIX_INDIA_LABEL));
         }
         assert_eq!(pol(all.iter().find(|d|d.id=="vixr_cvr11").unwrap(),"NIFTY 50",false).unwrap().status,"not_testable");
+    }
+}
+
+#[cfg(test)]
+mod auto_end_tests { // auto-end (24 Oct 2026): data that ends before the requested end
+    use super::*;
+    use crate::Row;
+    fn def(id:&str)->StrategyDef {crate::connors::catalogue().into_iter().find(|d|d.id==id).unwrap()}
+    fn bars(ticker:&str,n:usize)->Vec<Row> {
+        (0..n).map(|i|Row{ticker:ticker.into(),date:format!("{}-{:02}-{:02}",2012+i/300,(i%300)/25+1,i%25+1),open:100.,high:110.,low:99.,close:100.+(i%7) as f64,volume:Some(1000.)}).collect()
+    }
+    /// Day-index files covering r[a..=b] (only the index decides first/last coverage).
+    fn dir(tag:&str,r:&[Row],a:usize,b:usize,files:&[&str])->String {
+        let d=std::env::temp_dir().join(format!("auto-end-{tag}-{}",std::process::id()));std::fs::create_dir_all(&d).unwrap();
+        let idx:String=std::iter::once("Date,offset,bytes\n".to_string()).chain(r[a..=b].iter().map(|x|format!("{},0,0\n",x.date))).collect();
+        for f in files {std::fs::write(d.join(f),if f.ends_with("idx.csv") {idx.as_str()} else {"Date,Expiry,PC,Strike,Bid,Ask\n"}).unwrap();}
+        d.to_str().unwrap().into()
+    }
+    #[test]
+    fn option_prices_end_moves_the_end_and_leaves_inside_ends_alone() {
+        let r=bars("SPY",400);let p=Params::new();let d=def("mahrs_covered_calls");
+        let ch=crate::options::Chain::load(&dir("opt",&r,0,349,&["SPY.opt.csv","SPY.optidx.csv"]),"SPY").unwrap();
+        let mut ctx=Ctx::new(&r,&r,&[]);ctx.options=Some(Box::leak(Box::new(ch)));
+        assert!(check(&ctx,&d,0,399,&p).unwrap().note.contains("Option prices for this instrument end on"));
+        let (end,note)=auto_end(&ctx,&d,0,399,&p);
+        assert_eq!(end,349);assert_eq!(note.unwrap(),format!("Ended {}: option prices for SPY end then. The requested end {} is later; no prices are filled or estimated.",r[349].date,r[399].date));
+        assert!(check(&ctx,&d,0,end,&p).map_or(true,|i|!i.note.contains("end on")));
+        assert_eq!(auto_end(&ctx,&d,0,300,&p),(300,None));
+        assert_eq!(auto_end(&ctx,&d,360,399,&p),(399,None),"a period wholly after the data is refused by check, not shortened");
+        assert_eq!(auto_end(&ctx,&def("vixr_cvr2"),0,399,&p),(399,None),"rules that read no options are untouched");
+    }
+    #[test]
+    fn minute_bars_end_combines_with_auto_start() {
+        let r=bars("SPY",400);let p=Params::new();let d=def("ss_momentum_pinball");
+        let m=crate::intraday::Minutes::load(&dir("m1",&r,100,379,&["SPY.m1idx.csv"]),"SPY").unwrap();
+        let mut ctx=Ctx::new(&r,&r,&[]);ctx.minutes=Some(Box::leak(Box::new(m)));
+        assert!(check(&ctx,&d,0,399,&p).is_some());
+        let (end,note)=auto_end(&ctx,&d,0,399,&p);
+        assert_eq!(end,379);assert!(note.unwrap().starts_with(&format!("Ended {}: 1-minute bars for SPY end then.",r[379].date)));
+        let (start,note)=auto_start(&ctx,0,end,&r[0].date,|f|check(&ctx,&d,f,end,&p)).unwrap();
+        assert_eq!(start,100);assert!(note.unwrap().starts_with(&format!("Started {}: Required 1-minute bars begin on {}",r[100].date,r[100].date)));
+        assert!(check(&ctx,&d,start,end,&p).is_none());
+        assert_eq!(auto_end(&ctx,&d,0,399,&Params::from([("path".into(),0.)])),(399,None),"the daily path reads no minutes");
+    }
+    #[test]
+    fn volume_end_moves_the_end_for_volume_rules_only() {
+        let mut r=bars("SPX",400);for x in &mut r[380..] {x.volume=None;}
+        let ctx=Ctx::new(&r,&r,&[]);let p=Params::new();
+        let d=crate::connors::catalogue().into_iter().find(|d|d.needs_volume).unwrap();
+        assert!(check(&ctx,&d,0,399,&p).is_some_and(|i|i.note.contains("volume")));
+        let (end,note)=auto_end(&ctx,&d,0,399,&p);
+        assert_eq!(end,379);assert!(note.unwrap().starts_with(&format!("Ended {}: daily volume figures for SPX end then.",r[379].date)));
+        assert!(check(&ctx,&d,0,end,&p).map_or(true,|i|!i.note.contains("Required volume")));
+        assert_eq!(auto_end(&ctx,&def("vixr_cvr2"),0,399,&p),(399,None));
     }
 }

@@ -126,5 +126,7 @@ it('runtime model: values from S.p over book defaults, and assumptions from the 
   expect(a.Costs).toBe('Slippage 5 bps per side · Rollover 2 bps per actual roll.');
   expect(a.Period).toBe('Requested first available bar to 2020-12-31; calculated 2001-01-02 to 2020-12-31. Started 2001-01-02, the first day with 200 bars.');
   expect(a['Net profit']).toBe('Compounding');
+  const ended = settingsModel({id: 'v1'}, {dates: ['2010-01-04', '2025-12-12'], auto_end: 'Ended 2025-12-12: option prices for SPY end then.'}, {p: '', from: '', to: ''}, {});
+  expect(Object.fromEntries(ended.assumptions).Period).toBe('Requested first available bar to latest available bar; calculated 2010-01-04 to 2025-12-12. Ended 2025-12-12: option prices for SPY end then.');
   expect(settingsModel({id: 'none'}, null, {p: ''}, {basket: true}).params).toEqual([]);
 });

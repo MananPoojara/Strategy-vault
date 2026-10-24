@@ -651,12 +651,12 @@ fn readiness_json(st: &State, q: &BTreeMap<String, String>) -> Result<String, St
     if q.get("id").is_some_and(|id| !cat.iter().any(|d| d.id==id)) { return Err("unknown strategy".into()); }
     let rows:Vec<String>=cat.iter().filter(|d| q.get("id").map_or(true,|id| d.id==id)).map(|d| {
         let admitted=admit(ctx,d,from,to,&p,&selected,st,q);
-        let (start,auto)=admitted.as_ref().map_or((from,None),|(s,_,n)|(*s,n.clone()));
+        let (start,end,auto)=admitted.as_ref().map_or((from,to,Auto::default()),|(s,e,n)|(*s,*e,n.clone()));
         let issue=admitted.err();
-        let ready=format!("{}Required data checks passed. This is a new run on the selected instrument, not verification of the book's published results.",auto.as_ref().map_or(String::new(),|n|format!("{n} ")));
+        let ready=format!("{}Required data checks passed. This is a new run on the selected instrument, not verification of the book's published results.",auto.text());
         let (mut status,note)=issue.as_ref().map_or(("ready",ready.as_str()),|i| (i.status,i.note.as_str()));
         let note=if let Some(roll)=costs.rollover_issue(){if issue.is_none(){status="needs_data";}format!("{note} {roll}")}else{note.into()};
-        format!("{{\"id\":\"{}\",\"status\":\"{}\",\"note\":\"{}\",\"from\":\"{}\"{}}}",d.id,status,esc(&note),ctx.r[start].date,auto_start_json(&auto))
+        format!("{{\"id\":\"{}\",\"status\":\"{}\",\"note\":\"{}\",\"from\":\"{}\",\"to\":\"{}\"{}}}",d.id,status,esc(&note),ctx.r[start].date,ctx.r[end].date,auto.json())
     }).collect();
     Ok(format!("{{\"ticker\":\"{}\",\"from\":\"{}\",\"to\":\"{}\",\"strategies\":[{}],\"costs\":{},\"provenance\":{}}}",esc(&ctx.r[0].ticker),ctx.r[from].date,ctx.r[to].date,rows.join(","),if q.get("id").is_some_and(|id|books::hbqts::reviewed::is_dema_index(id)){unit_exposure_report::costs_json(costs)}else{costs.json()},source_provenance(st,q)))
 }
@@ -754,17 +754,24 @@ fn chart_ohlc_json(st:&State,q:&BTreeMap<String,String>)->Result<String,String>{
 }
 /// Every run's admission (readiness + native source checks) with auto-start: a start refused only because the data a
 /// rule needs begins later moves to the first fully covered date, with a plain note (see readiness::auto_start).
-/// Returns (start, end, note): the end moves earlier only for VIX-open rules whose last days lack a real India VIX open.
-fn admit(ctx:&Ctx,d:&connors::StrategyDef,from:usize,to:usize,p:&Params,selected:&SelectedContext,st:&State,q:&BTreeMap<String,String>)->Result<(usize,usize,Option<String>),readiness::Issue>{
+/// Returns (start, end, notes): the end moves earlier only when a required input ends first (see readiness::auto_end).
+fn admit(ctx:&Ctx,d:&connors::StrategyDef,from:usize,to:usize,p:&Params,selected:&SelectedContext,st:&State,q:&BTreeMap<String,String>)->Result<(usize,usize,Auto),readiness::Issue>{
     // a native stock's admitted history starts at ctx.r[0]; an earlier requested start begins there
     let early=q.get("from").filter(|f|selected.evidence().is_some()&&!f.is_empty()&&f.as_str()<ctx.r[0].date.as_str());
     let requested=early.map_or(ctx.r[from].date.as_str(),|f|f.as_str());
-    let (to,ended)=readiness::vix_open_end(ctx,d,to); // VIX India block
+    let (to,ended)=readiness::auto_end(ctx,d,from,to,p);
     let (start,note)=readiness::auto_start(ctx,from,to,requested,|f|readiness::check(ctx,d,f,to,p).or_else(||native_admission(ctx,d,f,to,selected,st,q)))?;
     let note=note.or_else(||early.map(|f|format!("Started {}: this stock's data in the vault begins then. The requested start {f} is earlier; no prices are filled or estimated.",ctx.r[0].date)));
-    Ok((start,to,match (note,ended) {(Some(a),Some(b))=>Some(format!("{a} {b}")),(a,b)=>a.or(b)}))
+    Ok((start,to,Auto{start:note,end:ended}))
 }
-fn auto_start_json(note:&Option<String>)->String{note.as_ref().map_or(String::new(),|n|format!(",\"auto_start\":\"{}\"",esc(n)))}
+/// Plain notes for a run whose start or end moved to the data's coverage (API fields auto_start / auto_end).
+#[derive(Clone,Default)]
+struct Auto{start:Option<String>,end:Option<String>}
+impl Auto{
+    fn is_some(&self)->bool{self.start.is_some()||self.end.is_some()}
+    fn text(&self)->String{[&self.start,&self.end].into_iter().flatten().map(|n|format!("{n} ")).collect()}
+    fn json(&self)->String{[("auto_start",&self.start),("auto_end",&self.end)].into_iter().filter_map(|(k,n)|n.as_ref().map(|n|format!(",\"{k}\":\"{}\"",esc(n)))).collect()}
+}
 fn native_admission(ctx:&Ctx,def:&connors::StrategyDef,from:usize,to:usize,selected:&SelectedContext,st:&State,q:&BTreeMap<String,String>)->Option<readiness::Issue>{
     let Some(evidence)=selected.evidence() else {return instrument_policy::check(def,&ctx.r[0].ticker,false)};
     if let Some(issue)=instrument_policy::check_native(def,&ctx.r[0].ticker,evidence){return Some(issue);}
@@ -1179,7 +1186,7 @@ fn summary(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         rows.push(format!("{{\"id\":\"{}\",\"stats\":{},\"spark\":[{}],\"costs\":{}}}", d.id, if run.unit_exposure_report.is_some(){unit_exposure_report::stats_json(&financial_stats(ctx,&run,costs))}else{stats_json(&financial_stats(ctx, &run, costs))}, spark.join(","),if run.unit_exposure_report.is_some(){unit_exposure_report::costs_json(costs)}else if run.bandy_account.is_some(){bandy_costs_json(costs)}else if run.source_account.is_some(){costs.source_account_json()}else{costs.json()}));
         if d.book==books::chande::BOOK {let item=rows.last_mut().unwrap();item.pop();let _=write!(item,",\"experiment\":{}}}",experiment_json(d.id));}
         if selected.native(){let item=rows.last_mut().unwrap();item.pop();let _=write!(item,",\"provenance\":{}}}",source_provenance(st,q));}
-        if auto.is_some(){let item=rows.last_mut().unwrap();item.pop();let _=write!(item,",\"from\":\"{}\"{}}}",ctx.r[from].date,auto_start_json(&auto));}
+        if auto.is_some(){let item=rows.last_mut().unwrap();item.pop();let _=write!(item,",\"from\":\"{}\",\"to\":\"{}\"{}}}",ctx.r[from].date,ctx.r[to].date,auto.json());}
         let ruin=ruin_json(ctx,&run);if !ruin.is_empty(){let item=rows.last_mut().unwrap();item.pop();let _=write!(item,"{ruin}}}");}
     }
     Ok(format!("[{}]", rows.join(",")))
@@ -1410,10 +1417,10 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     let run = selected_backtest_costs(&selected,st,q,ctx,id,from,to,costs,&p)?;
     let to=run.to; // earlier than requested only when the account was wiped out (ruin_json)
     if run.unit_exposure_report.is_some() {
-        let mut output=unit_exposure_detail::render(ctx,&run,costs)?;output.pop();let _=write!(output,",\"provenance\":{}{}}}",source_provenance(st,q),auto_start_json(&auto));return Ok(output);
+        let mut output=unit_exposure_detail::render(ctx,&run,costs)?;output.pop();let _=write!(output,",\"provenance\":{}{}}}",source_provenance(st,q),auto.json());return Ok(output);
     }
     if run.bandy_account.is_some() {
-        let mut output=bandy_detail(ctx,id,from,to,costs,&run);output.pop();let _=write!(output,",\"provenance\":{}{}}}",source_provenance(st,q),auto_start_json(&auto));return Ok(output);
+        let mut output=bandy_detail(ctx,id,from,to,costs,&run);output.pop();let _=write!(output,",\"provenance\":{}{}}}",source_provenance(st,q),auto.json());return Ok(output);
     }
     let mut diagnostics = diagnostic_series_through(ctx,id,&p,to);
     if books::lkqts::macs_candidate(id){
@@ -1499,7 +1506,7 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         o.push_str("]}");
     }
     if selected.native(){let _=write!(o,",\"provenance\":{}",source_provenance(st,q));}
-    o.push_str(&auto_start_json(&auto));o.push_str(&ruin_json(ctx,&run));
+    o.push_str(&auto.json());o.push_str(&ruin_json(ctx,&run));
     if selected.native() || def.book==books::chande::BOOK {
         o.push_str(",\"ohlc\":{");
         o.push_str("\"d\":");arr(&mut o,&mut (from..=to).map(|k|format!("\"{}\"",ctx.r[k].date)));
