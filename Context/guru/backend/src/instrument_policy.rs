@@ -237,6 +237,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || link_reviewed(def) // Link block
         || pardo_reviewed(def) // Pardo block
         || aan_reviewed(def) // Aan block
+        || lakonishok_reviewed(def) // Lakonishok block
         || bwilliams_reviewed(def) // BWilliams block
         || stridsman_reviewed(def) // Stridsman block
         || weissman_reviewed(def) // Weissman block
@@ -1066,6 +1067,16 @@ fn aan_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Aan
+// ---------------------------------------------------------------- Lakonishok 2026-10-25
+// Admission only for the module REVIEWED lists (authors/lakonishok/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn lakonishok_reviewed(def:&StrategyDef)->bool {(def.book=="bllstr" && crate::books::bllstr::reviewed(def.id))}
+const LAKONISHOK_LABEL:&str="Brock, Lakonishok and LeBaron studied these rules on the Dow Jones Industrial Average closes 1897-1986; runs on other indices, ETFs and stocks, US and India, are a declared application, not the authors' test.";
+fn lakonishok_policy(def:&StrategyDef)->Option<Policy> {
+    if !lakonishok_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Brock, Lakonishok and LeBaron (1992), Journal of Finance 47(5): variable-length moving average (p.1735-1738), fixed-length moving average and trading range break with ten-day holding periods and blocked signals (p.1736, 1742, fn 11 p.1740), signal-day close (eq. A6-A8 p.1759). The 24 printed specifications other than the two defaults reviewed on 15 Oct. Reviewed in authors/lakonishok/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Lakonishok
 // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
 /// Reviewed Joe Ross daily rules (books::joe_ross_rules::REVIEWED): actual indices, ETFs and stocks, US and India, as a
 /// labelled declared application. The source references in books::joe_ross stay held (source review).
@@ -1103,6 +1114,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=link_policy(def) {return p;} // Link block
     if let Some(p)=pardo_policy(def) {return p;} // Pardo block
     if let Some(p)=aan_policy(def) {return p;} // Aan block
+    if let Some(p)=lakonishok_policy(def) {return p;} // Lakonishok block
     if let Some(p)=bwilliams_policy(def) {return p;} // BWilliams block
     if let Some(p)=stridsman_policy(def) {return p;} // Stridsman block
     if let Some(p)=weissman_policy(def) {return p;} // Weissman block
@@ -1583,6 +1595,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if link_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LINK_LABEL));} // Link block
     if pardo_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",PARDO_LABEL));} // Pardo block
     if aan_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",AAN_LABEL));} // Aan block
+    if lakonishok_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LAKONISHOK_LABEL));} // Lakonishok block
     if bwilliams_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BWILLIAMS_LABEL));} // BWilliams block
     if stridsman_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",STRIDSMAN_LABEL));} // Stridsman block
     if weissman_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",WEISSMAN_LABEL));} // Weissman block
@@ -1922,6 +1935,22 @@ mod tests {
         }
     }
     // ---- end Aan block ----
+    // ---- Lakonishok block (2026-10-25) ----
+    #[test]
+    fn lakonishok_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{bllstr};
+        let all:Vec<StrategyDef>=bllstr::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=bllstr::REVIEWED.iter().copied().chain(["bllstr_vma_1_50_0","bllstr_fma_1_50_0"]).collect(); // + the 15 Oct pair
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|bllstr::reviewed(d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Lakonishok block ----
     // ---- BWilliams block (2026-10-24) ----
     #[test]
     fn bwilliams_review_admits_exact_ids_on_indices_etfs_and_stocks() {
@@ -3084,8 +3113,9 @@ mod tests {
                 assert!(!reviewed_cash_rule(&def(d.id,"kftsm")));
                 assert!(!reviewed_cash_rule(&def(d.id,"radge")));
             } else {
-                assert!(!reviewed_cash_rule(&d),"{} inherited a review",d.id);
-                assert_eq!(policy(&d).requirement,"source_review_required");
+                // 25 Oct 2026: the other 24 specifications have their own review (Lakonishok block), not an inherited one
+                assert!(crate::books::bllstr::reviewed(d.id) && lakonishok_reviewed(&d),"{} inherited a review",d.id);
+                assert_eq!(policy(&d).requirement,"index_etf_or_stock");
             }
         }
     }
