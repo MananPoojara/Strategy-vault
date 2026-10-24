@@ -297,7 +297,7 @@ export const sourceReview: Record<string, {type: string; sameWorkAs?: string; pe
   "ebeft": {"type": "book", "people": ["Erol Bortucene"]},
   "ebfps": {"type": "book", "people": ["Erol Bortucene"]},
   "gasnw": {"type": "book", "people": ["George Angell"]},
-  "gassp": {"type": "book", "people": ["George Angell"]},
+  "gassp": {"type": "book", "people": ["George Angell"]}, "gacdt": {"type": "course_manual", "people": ["George Angell"]},
   "gasto": {"type": "book", "people": ["George Angell"]},
   "jaoth": {"type": "book", "people": ["Jeff Augen"]},
   "javeo": {"type": "book", "people": ["Jeff Augen"]},
