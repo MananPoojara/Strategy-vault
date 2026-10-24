@@ -5,6 +5,9 @@ use super::rpdt::{check, ma_cross, range_sar};
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "rpeo";
+/// Admitted ids (authors/pardo/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["rpeo_eots_ma", "rpeo_range_bo"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 fn def(id: &'static str, name: &'static str, group: &'static str, status: Status, rules: &'static [&'static str], notes: &'static str) -> StrategyDef {
     StrategyDef { id, name, group, session: 0, dir: "Long/Short", status, needs_volume: false, needs_vix: false,
