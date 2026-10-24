@@ -72,6 +72,7 @@ export const sourceReview: Record<string, {type: string; sameWorkAs?: string; pe
   "ctcn": {"type": "magazine_volume", "people": []},
   "cwin": {"type": "book", "people": ["Larry Connors"]},
   "darvas2m": {"type": "book", "people": ["Nicolas Darvas"]},
+  "dvycs": {"type": "book", "people": ["Nicolas Darvas"]},
   "ddrvi": {"type": "article", "people": ["Donald Dorsey"]},
   "dgdwb": {"type": "course_manual", "people": ["Daryl Guppy"]},
   "dggw": {"type": "course_manual", "people": ["Daryl Guppy"]},
