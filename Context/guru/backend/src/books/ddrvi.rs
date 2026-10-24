@@ -5,6 +5,10 @@
 //! "buys when inertia is above 50 and sells when inertia is below 50".
 use crate::connors::{claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
+/// Admitted ids (authors/dorsey/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["ddrvi_inertia50"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
+
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef {
         id: "ddrvi_inertia50", name: "Inertia above/below 50 (new RVI, 20-bar average)", group: "Refining the RVI (S&C V13, 1995)",
