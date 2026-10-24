@@ -238,6 +238,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || pardo_reviewed(def) // Pardo block
         || aan_reviewed(def) // Aan block
         || lakonishok_reviewed(def) // Lakonishok block
+        || sullivan_reviewed(def) // Sullivan block
         || bwilliams_reviewed(def) // BWilliams block
         || stridsman_reviewed(def) // Stridsman block
         || weissman_reviewed(def) // Weissman block
@@ -1077,6 +1078,16 @@ fn lakonishok_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Lakonishok
+// ---------------------------------------------------------------- Sullivan 2026-10-25
+// Admission only for the module REVIEWED lists (authors/sullivan/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn sullivan_reviewed(def:&StrategyDef)->bool {(def.book=="stwds" && crate::books::stwds::reviewed(def.id))}
+const SULLIVAN_LABEL:&str="Sullivan, Timmermann and White tested these rules on the Dow Jones Industrial Average closes 1897-1996 and S&P 500 futures 1984-1996; runs on other indices, ETFs and stocks, US and India, are a declared application, not the authors' test.";
+fn sullivan_policy(def:&StrategyDef)->Option<Policy> {
+    if !sullivan_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Sullivan, Timmermann and White, Data-Snooping, Technical Trading Rule Performance, and the Bootstrap (UCSD 97-31, 1997; J. Finance 1999): the best rules named in Tables I-II and VI from the filter, moving-average, support and resistance, channel break-out and on-balance volume families (Sec. III p.10-13, Appendix 1 p.25-27), signal-day close. Reviewed in authors/sullivan/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Sullivan
 // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
 /// Reviewed Joe Ross daily rules (books::joe_ross_rules::REVIEWED): actual indices, ETFs and stocks, US and India, as a
 /// labelled declared application. The source references in books::joe_ross stay held (source review).
@@ -1115,6 +1126,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=pardo_policy(def) {return p;} // Pardo block
     if let Some(p)=aan_policy(def) {return p;} // Aan block
     if let Some(p)=lakonishok_policy(def) {return p;} // Lakonishok block
+    if let Some(p)=sullivan_policy(def) {return p;} // Sullivan block
     if let Some(p)=bwilliams_policy(def) {return p;} // BWilliams block
     if let Some(p)=stridsman_policy(def) {return p;} // Stridsman block
     if let Some(p)=weissman_policy(def) {return p;} // Weissman block
@@ -1596,6 +1608,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if pardo_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",PARDO_LABEL));} // Pardo block
     if aan_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",AAN_LABEL));} // Aan block
     if lakonishok_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LAKONISHOK_LABEL));} // Lakonishok block
+    if sullivan_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",SULLIVAN_LABEL));} // Sullivan block
     if bwilliams_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BWILLIAMS_LABEL));} // BWilliams block
     if stridsman_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",STRIDSMAN_LABEL));} // Stridsman block
     if weissman_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",WEISSMAN_LABEL));} // Weissman block
@@ -1951,6 +1964,22 @@ mod tests {
         }
     }
     // ---- end Lakonishok block ----
+    // ---- Sullivan block (2026-10-25) ----
+    #[test]
+    fn sullivan_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{stwds};
+        let all:Vec<StrategyDef>=stwds::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=stwds::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Sullivan block ----
     // ---- BWilliams block (2026-10-24) ----
     #[test]
     fn bwilliams_review_admits_exact_ids_on_indices_etfs_and_stocks() {
