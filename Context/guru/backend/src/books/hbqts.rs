@@ -10,6 +10,9 @@ use crate::connors::{dmi, rsi, true_range, wilder, Ctx, Leg, ParamDef, Params, S
 pub mod reviewed;
 
 pub const BOOK: &str = "hbqts";
+/// Admitted ids (authors/bandy/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["hbqts_ma3_20", "hbqts_stop_entry", "hbqts_scale_in", "hbqts_scale_out", "hbqts_parabolic_stop", "hbqts_chandelier", "hbqts_ma6_35", "hbqts_ma45_26", "hbqts_tbond_overnight", "hbqts_donchian", "hbqts_apz", "hbqts_tdom", "hbqts_opex", "hbqts_moon", "hbqts_pattern33", "hbqts_pattern15", "hbqts_pattern111", "hbqts_common_signal", "hbqts_ma8_7", "hbqts_weekly_pir", "hbqts_macd_weekly", "hbqts_dual_bb", "hbqts_noise0", "hbqts_ma8_7_atr_stop", "hbqts_equity_alloc", "hbqts_ma11_50"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 // ------------------------------------------------------------------ AFL functions
 

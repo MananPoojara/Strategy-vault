@@ -125,7 +125,7 @@ fn exact_three_account_policy_has_no_cross_book_or_legacy_inheritance() {
     }
     for d in books::hbiab::catalogue()
         .iter()
-        .filter(|d| !books::hbiab_reviewed::reviewed(d.id))
+        .filter(|d| !books::hbiab_reviewed::reviewed(d.id) && !books::hbiab::reviewed(d.id)) // Bandy block admits two more (25 Oct 2026)
     {
         assert_eq!(
             instrument_policy::policy(d).requirement,
