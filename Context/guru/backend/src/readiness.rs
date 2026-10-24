@@ -20,6 +20,39 @@ fn issue(status: &'static str, note: impl Into<String>) -> Option<Issue> {
     Some(Issue { status, note: note.into() })
 }
 
+// ---------------------------------------------------------------- VIX India (user request 24 Oct 2026)
+/// Rules that read the VIX open (today's, or up to two VIX bars back). India VIX opens are real only where 1-minute
+/// India VIX exists (from 2015-01-09; staged file india-vix-ohlc-20261024); other days carry NaN, never the close.
+pub fn reads_vix_open(def:&crate::connors::StrategyDef)->bool {
+    matches!(def.id,"vix2"|"vix7"|"spmt_vix2"|"spmt_vix7"|"ststw_vix_rsi"|"vixr_cvr1"|"vixr_cvr5_1d"|"vixr_cvr5_3d"|"vixr_cvr7"|"vixr_cvr9"|"vixr_cvr10"
+        |"ptjmt_cvr1"|"ptjmt_cvr5"|"ats_cvr1"|"ats_cvr_equities")
+        || def.needs_series.iter().any(|s|matches!(*s,"VIX.Open"|"VIX_OHLC.Open"))
+}
+/// The rules read the VIX open of today and of up to two earlier VIX bars (CVR 7 reads two back).
+const VIX_OPEN_LOOKBACK:usize=2;
+const US_REAL_VIX_OPEN_FROM:&str="1992-01-01";
+fn india(ctx:&Ctx)->bool {ctx.native_market==Some(crate::baskets::Market::India) || ctx.r.first().is_some_and(|r|r.ticker.starts_with("NIFTY"))}
+fn vix_open_gap(ctx:&Ctx,def:&crate::connors::StrategyDef,from:usize,to:usize)->Option<Issue> {
+    if !reads_vix_open(def) {return None;}
+    if !india(ctx) { // the served CBOE VIX has close-only bars (open = close) before 1992 (STC IX VIX (2)/(7) had no such check)
+        return ctx.r.get(from).filter(|r|r.date.as_str()<US_REAL_VIX_OPEN_FROM).and_then(|_|issue("needs_data",format!("This rule reads the VIX open; the served CBOE VIX history has close-only bars (open = close) before {US_REAL_VIX_OPEN_FROM}. Choose a later start; close-only bars are not used as opens.")));
+    }
+    let (Some(o),Some(first))=(ctx.series("VIX.Open"),ctx.vix.first) else {return None};
+    let gaps:Vec<usize>=(from.saturating_sub(VIX_OPEN_LOOKBACK).max(first)..=to.min(o.len().saturating_sub(1))).filter(|&i|!o[i].is_finite()).collect();
+    let &g=gaps.last()?;
+    issue("needs_data",format!("The VIX open is missing on {} ({} day(s) in this period, the rule also reads the two days before its start). Real India VIX opens come from 1-minute India VIX (the first minute after NSE's 09:15 opening print) and run from 2015-01-09; NSE's daily India VIX open repeats the previous close and is not used. Choose a period after that day; no open is filled or estimated.",ctx.r[g].date,gaps.len()))
+}
+/// Auto-end: a VIX-open rule ends on the last day with a real VIX open when only the final days lack one (the 1-minute
+/// India VIX ends before the daily NSE bars do). Earlier gaps are left to readiness / auto_start.
+pub fn vix_open_end(ctx:&Ctx,def:&crate::connors::StrategyDef,to:usize)->(usize,Option<String>) {
+    let Some(o)=ctx.series("VIX.Open").filter(|_|reads_vix_open(def) && india(ctx) && ctx.vix.first.is_some_and(|f|f<to) && to<ctx.r.len()) else {return (to,None)};
+    match (0..=to).rev().find(|&i|o[i].is_finite()) {
+        Some(end) if end<to && end>ctx.vix.first.unwrap_or(0) => (end,Some(format!("Ended {}: the real VIX open (1-minute India VIX) is available to that day; the later daily bars open at the previous close, so they are not used.",ctx.r[end].date))),
+        _ => (to,None),
+    }
+}
+// ---------------------------------------------------------------- end VIX India
+
 /// A fill/stop column is intentionally empty when that event did not happen.
 /// Its raw opening-range fields are still checked on every bar below.
 fn event_column(name: &str) -> bool {
@@ -369,7 +402,7 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
             return issue("not_testable", format!("Withheld by the accuracy check: {} No results are published.", plain_gate_reason(g.reason)));
         }
         // bernstein-g3: the reviewed S&P day-of-week rules are limited to SPX by instrument_policy instead of the gate list.
-        if let (Some(allowed), Some(row)) = (g.allowed.filter(|_|!(def.book==books::jbeft::BOOK && books::jbeft::reviewed_daily(def.id)) && !crate::instrument_policy::open_all(def) && !crate::instrument_policy::lwilliams_reviewed(def)), ctx.r.get(from)) {
+        if let (Some(allowed), Some(row)) = (g.allowed.filter(|_|!(def.book==books::jbeft::BOOK && books::jbeft::reviewed_daily(def.id)) && !crate::instrument_policy::open_all(def) && !crate::instrument_policy::vix_india(def) && !crate::instrument_policy::lwilliams_reviewed(def)), ctx.r.get(from)) {
             // Bernstein g1: the reviewed Friday-Monday system keeps its S&P points on SPX (instrument_policy limits it to SPX).
             let jb_spx=def.id=="jb624_fri_mon" && row.ticker=="SPX" && crate::instrument_policy::bernstein_g1_reviewed(def);
             if !allowed.contains(&row.ticker.as_str()) && !jb_spx {
@@ -407,6 +440,8 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
             return issue("needs_data",format!("Required series {name} is missing on {} trading day(s) in this period, first on {}. Loaded coverage: {} to {}. Choose a fully covered period; no missing prices are estimated.",gaps.len(),ctx.r[first].date,dates.first().unwrap_or(&"unknown"),dates.last().unwrap_or(&"unknown")));
         }
     }
+    // VIX India block: say why a rule is held on Indian instruments before any VIX-coverage message
+    if let Some(i)=ctx.r.first().and_then(|r|crate::instrument_policy::vix_india_held(def,&r.ticker,india(ctx))) {return Some(i);}
     if def.needs_vix {
         let Some(start)=ctx.vix.first else { return issue("needs_data","VIX data required: this strategy needs the daily volatility index (VIX) for this market, and that history is not loaded yet, so no backtest is shown. US markets: CBOE VIX data is pending and will be added. India: India VIX is used with NIFTY 50.") };
         if from < start { return issue("needs_data",format!("Required volatility-index data begins on {}. The selected period includes earlier days with no data; choose a fully covered period.",ctx.r[start].date)); }
@@ -415,6 +450,7 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
             return issue("needs_data",format!("Required volatility-index data is missing on {}. Results are withheld for this period.",ctx.r[i].date));
         }
     }
+    if let Some(i)=vix_open_gap(ctx,def,from,to) {return Some(i);} // VIX India block
     if def.book=="oiss" {
         return issue("calculation_unavailable","Option quote series are loaded for this instrument, but this engine marks option positions using the underlying index and does not correctly aggregate overlapping option positions. Option portfolio equity, drawdown and risk statistics are not supported. The complete backtest, charts, trades, rankings and optimization are withheld until held-contract mark-to-market accounting is implemented and validated. This is not a reproduction of the book's reported performance.");
     }
@@ -676,9 +712,9 @@ mod tests {
     #[test]
     fn newrules_misc_guards() {
         let mk=|t:&str,y:&str|{let mut r=rows();for (i,x) in r.iter_mut().enumerate(){x.ticker=t.into();x.date=format!("{y}-06-0{}",i+1);}r};
-        // VIX RSI: India refused for the VIX open (before any VIX-coverage message); close-only CBOE VIX before 1992
+        // VIX RSI: India runs on India VIX (VIX India block); close-only CBOE VIX before 1992
         let r=mk("NIFTY 50","2018");let i=check(&Ctx::new(&r,&r,&[]),&definition("ststw_vix_rsi"),0,4,&Params::new()).unwrap();
-        assert!(i.note.contains("India VIX opens repeat"),"{}",i.note);
+        assert!(i.note.contains("VIX data required"),"{}",i.note); // VIX India block (24 Oct 2026): India VIX opens are real from 2015
         let r=mk("SPY","1991");assert!(check(&Ctx::new(&r,&r,&r),&definition("ststw_vix_rsi"),0,4,&Params::new()).unwrap().note.contains("close-only"));
         // S&P-down-days: benchmark close needed on every setup day; stale SPX opens refused
         let d=definition("afactor_spx_down");
@@ -897,5 +933,52 @@ mod auto_start_tests {
         let r=bars("TEST",1000);let ctx=Ctx::new(&r,&r,&[]);
         let p=Params::from([("short_ma".into(),2.)]);
         assert_eq!(run(&ctx,&def("bllstr_vma_1_50_0"),0,999,&p).unwrap_err().status,"not_testable");
+    }
+}
+
+#[cfg(test)]
+mod vix_india_tests { // VIX India block (24 Oct 2026)
+    use super::*;
+    use crate::Row;
+    fn def(id:&str)->StrategyDef {crate::connors::catalogue().into_iter().find(|d|d.id==id).unwrap()}
+    fn bars(ticker:&str,n:usize)->Vec<Row> {
+        (0..n).map(|i|Row{ticker:ticker.into(),date:format!("{}-{:02}-{:02}",2012+i/300,(i%300)/25+1,i%25+1),open:100.,high:110.,low:99.,close:100.+(i%7) as f64,volume:Some(1000.)}).collect()
+    }
+    #[test]
+    fn vix_open_rules_start_after_the_last_missing_open_and_end_at_the_last_real_one() {
+        let r=bars("NIFTY 50",700);
+        // India VIX: no real open before bar 300, on bar 330 and on the last 5 bars (NaN, never the close)
+        let v:Vec<Row>=r.iter().enumerate().map(|(i,x)|Row{ticker:"INDIA VIX".into(),date:x.date.clone(),open:if i<300||i==330||i>=695 {f64::NAN} else {20.+(i%5) as f64},high:26.,low:18.,close:19.+(i%6) as f64,volume:None}).collect();
+        let mut ctx=Ctx::new(&r,&r,&v);
+        ctx.extra.insert("VIX.Open".into(),v.iter().map(|x|x.open).collect());
+        let (d,close_only,p)=(def("vixr_cvr1"),def("vixr_cvr2"),Params::new());
+        assert!(reads_vix_open(&d) && !reads_vix_open(&close_only) && reads_vix_open(&def("otvt_cvr1_long")));
+        let (end,note)=vix_open_end(&ctx,&d,699);
+        assert_eq!(end,694);assert!(note.unwrap().starts_with(&format!("Ended {}:",r[694].date)));
+        assert_eq!(check(&ctx,&d,0,end,&p).unwrap().status,"needs_data");
+        let (start,note)=auto_start(&ctx,0,end,&r[0].date,|f|check(&ctx,&d,f,end,&p)).unwrap();
+        assert_eq!(start,333,"two bars of open lookback after the bar-330 gap");assert!(note.unwrap().contains(&format!("The VIX open is missing on {}",r[330].date)));
+        assert!(check(&ctx,&d,332,end,&p).is_some() && check(&ctx,&d,333,694,&p).is_none() && check(&ctx,&d,333,695,&p).is_some());
+        // close-only VIX rules are untouched by the missing opens
+        assert_eq!(vix_open_end(&ctx,&close_only,699),(699,None));assert!(check(&ctx,&close_only,0,699,&p).is_none());
+        // CBOE VIX (US): no India rule; close-only bars before 1992 are refused for the STC IX VIX-open rules too
+        let us:Vec<Row>=(0..300).map(|i|Row{ticker:"SPX".into(),date:format!("1991-{:02}-{:02}",i/25+1,i%25+1),open:100.,high:101.,low:99.,close:100.,volume:None}).collect();
+        let uv:Vec<Row>=us.iter().map(|x|Row{ticker:"CBOE VIX".into(),date:x.date.clone(),open:20.,high:20.,low:20.,close:20.,volume:None}).collect();
+        let mut uc=Ctx::new(&us,&us,&uv);uc.extra.insert("VIX.Open".into(),uv.iter().map(|x|x.open).collect());
+        assert!(vix_open_gap(&uc,&def("vix2"),0,299).unwrap().note.contains("close-only bars"));assert_eq!(vix_open_end(&uc,&def("vix2"),299),(299,None));
+    }
+    #[test]
+    fn vix_rules_run_on_indian_and_us_instruments_except_held_ties() {
+        use crate::instrument_policy::{check as pol,check_native,vix_india,VIX_INDIA_RULES};
+        let all=crate::connors::catalogue();
+        for (book,id) in VIX_INDIA_RULES {
+            let d=all.iter().find(|d|d.id==*id&&d.book==*book).unwrap_or_else(||panic!("{book}:{id}"));
+            assert!(vix_india(d) && (d.needs_vix || !d.needs_series.is_empty()));
+            for t in ["NIFTY 50","NIFTYBANK","SPX","SPY"] {assert_eq!(pol(d,t,false).is_none(),!(*id=="vixr_cvr11"&&t.starts_with("NIFTY")),"{id} {t}");}
+            assert_eq!(check_native(d,"RELIANCE",&crate::baskets::NativeEvidence::india_test_fixture()).is_none(),*id!="vixr_cvr11","{id}");
+            assert!(check_native(d,"AAPL",&crate::baskets::NativeEvidence::us_test_fixture()).is_none(),"{id}");
+            assert_eq!(crate::instrument_policy::open_instrument_label(d),Some(crate::instrument_policy::VIX_INDIA_LABEL));
+        }
+        assert_eq!(pol(all.iter().find(|d|d.id=="vixr_cvr11").unwrap(),"NIFTY 50",false).unwrap().status,"not_testable");
     }
 }

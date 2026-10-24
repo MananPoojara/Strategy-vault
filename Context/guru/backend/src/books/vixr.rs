@@ -43,16 +43,16 @@ pub const REAL_VIX_OHLC_FROM: &str = "1992-01-01";
 /// Strategy note + the shared book note (+ the VIX-open caveat for rules that read the VIX open).
 macro_rules! note {
     ($s:literal, open_flag) => {
-        concat!("INDIA: read with care: on India VIX \"VIX close vs its open\" is effectively \"close vs yesterday's close\" (open ~ prior close). ", note!($s, open))
+        note!($s, open)
     };
     ($s:literal) => {
         concat!($s, "Book: 1 S&P 500 futures contract, signals on the original CBOE VIX (OEX-based, today's VXO), 1/28/93-8/6/01, no stops, no costs. Here the traded index is the ticker you pick and the VIX is the server's VIX (India VIX for NIFTY; CBOE VIX for US ETFs). Long and short in one position: an opposite CVR signal stops and reverses.")
     };
     ($s:literal, open_void) => {
-        concat!("INDIA: NOT MEANINGFUL on India VIX (its open is ~ the prior close, so the open-in-range test is degenerate; NIFTY gives ~289 S / 45 L). ", note!($s, open))
+        note!($s, open)
     };
     ($s:literal, open) => {
-        concat!(note!($s), " Uses the VIX OPEN: India VIX opens almost exactly at the prior close (opens above the prior high on 0.28% of days vs 19.67% for the CBOE VIX), so on Indian data \"VIX close vs its open\" behaves like \"VIX close vs yesterday's close\" and the open-in-range tests are degenerate; kept exactly as written (it still fires on NIFTY, see the report).")
+        concat!(note!($s), " Uses the VIX OPEN. On Indian instruments it is the real India VIX open from 1-minute data (the first minute after NSE's 09:15 opening print, from 2015); NSE's daily India VIX open repeats the previous close and is never used (VIX India block, 24 Oct 2026).")
     };
 }
 
