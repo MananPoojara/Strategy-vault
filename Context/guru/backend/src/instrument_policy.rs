@@ -228,6 +228,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || schwager_reviewed(def) // Schwager block
         || elder_reviewed(def) // Elder block
         || pring_reviewed(def) // Pring block
+        || bandy_reviewed(def) // Bandy block
         || wirrick_reviewed(def) // Wirrick block
         || sperandeo_reviewed(def) // Sperandeo block
         || csmith_reviewed(def) // CSmith block
@@ -803,6 +804,16 @@ fn wirrick_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Wirrick
+// ---------------------------------------------------------------- Bandy 2026-10-24
+// Admission only for the module REVIEWED lists (authors/bandy/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn bandy_reviewed(def:&StrategyDef)->bool {matches!(def.book,"hbqts"|"hbiab") && (crate::books::hbqts::reviewed(def.id) || crate::books::hbiab::reviewed(def.id))}
+const BANDY_LABEL:&str="Howard Bandy showed these AmiBroker examples on US stocks, sector ETFs and T-bond futures; runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test. Cash-index shorts are hypothetical exposure.";
+fn bandy_policy(def:&StrategyDef)->Option<Policy> {
+    if !bandy_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Howard B. Bandy: Quantitative Trading Systems (2007) AFL examples (entries and exits ch.5-7, trend and mean-reversion ch.9-10, seasonality and patterns ch.11-13, multi-time-frame filters ch.17, stops and allocation ch.22, App. A); Introduction to AmiBroker (2008) TrendFollowing.afl and MeanReversion.afl (p.542-543). Reviewed in authors/bandy/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs; one position at a time.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Bandy
 // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
 /// Reviewed Joe Ross daily rules (books::joe_ross_rules::REVIEWED): actual indices, ETFs and stocks, US and India, as a
 /// labelled declared application. The source references in books::joe_ross stay held (source review).
@@ -831,6 +842,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=schwager_policy(def) {return p;}
     if let Some(p)=elder_policy(def) {return p;} // Elder block
     if let Some(p)=pring_policy(def) {return p;} // Pring block
+    if let Some(p)=bandy_policy(def) {return p;} // Bandy block
     if let Some(p)=wirrick_policy(def) {return p;} // Wirrick block
     if let Some(p)=sperandeo_policy(def) {return p;} // Sperandeo block
     if let Some(p)=csmith_policy(def) {return p;} // CSmith block
@@ -1283,6 +1295,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if let Some(label)=elder_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Elder block
     if let Some(label)=lwilliams_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Larry Williams block
     if let Some(label)=pring_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Pring block
+    if bandy_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BANDY_LABEL));} // Bandy block
     if wirrick_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",WIRRICK_LABEL));} // Wirrick block
     if sperandeo_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",SPERANDEO_LABEL));} // Sperandeo block
     if csmith_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",CSMITH_LABEL));} // CSmith block
@@ -1462,6 +1475,23 @@ mod tests {
         assert!(!reviewed_cash_rule(&def("mpts_triple","jbudt")));
     }
     // ---- end Pring block ----
+    // ---- Bandy block (2026-10-24) ----
+    #[test]
+    fn bandy_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{hbqts,hbiab};
+        let all:Vec<StrategyDef>=hbqts::catalogue().into_iter().chain(hbiab::catalogue()).collect();
+        let mut want:Vec<&str>=hbqts::REVIEWED.iter().chain(hbiab::REVIEWED).copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|bandy_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert!(reviewed_cash_rule(d),"{}",d.id);
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Bandy block ----
     // ---- Wirrick block (2026-10-24) ----
     #[test]
     fn wirrick_review_admits_exact_ids_on_indices_etfs_and_stocks() {
@@ -1885,7 +1915,8 @@ mod tests {
         }
         let cmo=def("hbqts_cmo","hbqts");assert!(reviewed_cash_rule(&cmo));assert!(check(&cmo,"SPY",false).is_none());
         assert!(check(&cmo,"NIFTY 50",false).is_none());assert!(check(&cmo,"AAPL",true).is_none());
-        for id in ["hbqts_apz","hbqts_stop_entry","hbqts_common_signal","hbqts_rotation"] {
+        // apz, stop_entry and common_signal were admitted in the Bandy block (25 Oct 2026); rotation stays held
+        for id in ["hbqts_rotation"] {
             let d=def(id,"hbqts");assert!(!reviewed_cash_rule(&d));assert_eq!(policy(&d).requirement,"source_review_required");
         }
         assert!(!reviewed_cash_rule(&def("hbqts_ma5_25","another_book")));

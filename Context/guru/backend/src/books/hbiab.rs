@@ -8,6 +8,9 @@
 use crate::connors::{true_range, wilder, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "hbiab";
+/// Admitted ids (authors/bandy/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["hbiab_trend_following", "hbiab_mean_reversion"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 fn ma(v: &[f64], n: usize) -> Vec<f64> {
     (0..v.len()).map(|i| if i + 1 < n { f64::NAN } else { v[i + 1 - n..=i].iter().sum::<f64>() / n as f64 }).collect()
