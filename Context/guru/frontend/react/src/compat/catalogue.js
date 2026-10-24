@@ -143,6 +143,12 @@ export const LIB = [
     { id: "smcv1", sourceIds: ["title-88f9c015c806d62e"], title: "Harmonic Trading, Volume One", year: 2010, blurb: "Carney, 2010 · pattern ratios and the trade-management system; held: swing points are chosen by eye" },
     { id: "smcv2", sourceIds: ["title-c40a0a5184e86423", "title-7b5b4bdbea2bc568"], title: "Harmonic Trading, Volume Two", year: 2010, blurb: "Carney, 2010 · new patterns, BAMM and RSI BAMM; held: needs judgement ('a degree of flexibility')" }] },
   // ---- end Carney block ----
+  // ---- Bickford block (2026-10-24) ----
+  { id: "bickford", name: "James L. Bickford", tagline: "Forex charting and wave theory · swing-chart wave forecasts and activity charts", books: [
+    { id: "jlbcmf", sourceIds: ["title-34c72bf5ac6f798c"], title: "Charting the Major Forex Pairs (with Archer)", year: 2007, blurb: "Archer & Bickford · annual, monthly and composite charts; no trading rule" },
+    { id: "jlbfwt", sourceIds: ["title-a05ecdb0b6af70ca"], title: "Forex Wave Theory", year: 2007, blurb: "Bickford, 2007 · wave-cycle forecasts on swing charts; held: no entry or exit" },
+    { id: "jlbfsa", sourceIds: ["title-23a1d123324dac61"], title: "Forex Shockwave Analysis", year: 2008, blurb: "Bickford, 2008 · activity, range and wave forecasts; held: forecasts only" }] },
+  // ---- end Bickford block ----
   // ---- Person block (2026-10-24) ----
   { id: "person", name: "John L. Person", tagline: "Chicago floor trader and educator · pivot points, the three-day pivot average and COMAS crossovers; co-author of the Commodity Trader's Almanac", books: [
     { id: "jpcppt", sourceIds: ["title-9e42d5961530dd6a", "title-a05a280f277befc3", "title-6ad63e85d6185b37"], title: "Candlestick and Pivot Point Trading Triggers", year: 2007, blurb: "Person, 2007 · close or pivot crossing the three-day pivot average (stop and reverse); doji triggers need trend judgement" },
