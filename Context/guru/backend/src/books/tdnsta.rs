@@ -9,6 +9,9 @@
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "tdnsta";
+// Admitted 2026-10-24 (authors/demark/admission/SOURCE-CONTRACT.md): complete rules with independent US/India ledgers.
+pub const REVIEWED: &[&str] = &["tdnsta_seq_long", "tdnsta_seq_short"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 fn d(id: &'static str, name: &'static str, group: &'static str, dir: &'static str, status: Status,
      rules: &'static [&'static str], notes: &'static str) -> StrategyDef {
