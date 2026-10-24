@@ -10,7 +10,7 @@ FILT = sys.argv[4] if len(sys.argv) > 4 else ""
 D_ = "/home/server/.cache/strategy-vault-webapp/data"
 ALL4 = ["ats_10pct_oops", "ats_wide_range_gap", "btp2_10pct_oops", "btp2_10pct_oops_long", "btp2_10pct_oops_short",
         "btp2_wide_range_exhaustion_gap_short", "tdnmtt_trap_long", "tdnmtt_trap_short", "lwdg2_0105", "jb30d_gap_pct"]
-SPX_ONLY = ["hfm_vix", "baboops_oops", "lwlts_mon_vb"] + R.TCDT_SAME
+SPX_ONLY = ["hfm_vix", "baboops_oops", "lwlts_mon_vb", "jb30d_gap_tick"] + R.TCDT_SAME
 WIN = {"us": {"SPY": [("2000-01-03", "2010-12-31"), ("2011-01-03", "2025-10-21")],
               "SPX": [("2008-01-02", "2016-12-30"), ("2017-01-03", "2026-08-14")]},
        "in": {"NIFTY 50": [("2008-01-01", "2016-12-30"), ("2017-01-02", "2026-10-07")],

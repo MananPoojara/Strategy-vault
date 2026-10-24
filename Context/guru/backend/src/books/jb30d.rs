@@ -73,7 +73,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "E|\"a trigger occurs when and if the market goes back up through the low of the previous day by a certain number of ticks\" (p.100): buy stop at yesterday's low + PA; sell mirrored at yesterday's high - PA",
               "X|\"Use a stop-loss that is 25 percent of the previous daily range above the price at which your trade triggered\" (p.102); below for a long",
               "X|\"Exit your trade at the end of the day if not stopped out\" (p.102)"],
-            "One tick = p.tick (NSE index tick 0.05). Entry-day stop counted along the bar path (open, nearer extreme, other extreme, close). The 3-unit version (1/3 at a profit equal to yesterday's range, 1/3 at the close, 1/3 break-even stop or first profitable opening) is listed separately."),
+            "One tick = p.tick (NSE index tick 0.05). Entry-day stop counted along the bar path (open, nearer extreme, other extreme, close). Intraday wave 1: run on real SPX 1-minute bars by default (p.path=1), SPX only (2 ticks = 0.10 S&P points, the book's futures rule; no conversion to SPY or NSE prices), from 2014 (real SPX daily opens); the entry fills at the level or the minute's open; a minute that fills and also reaches the stop counts as filled then stopped, unless it opened beyond the stop: then only if it closed beyond it [convention]; p.path=0 = the old bar-path reading [Not from the book]. The 3-unit version (1/3 at a profit equal to yesterday's range, 1/3 at the close, 1/3 break-even stop or first profitable opening) is listed separately."),
         def!("jb30d_gap_pct", "Gap trade · stock rule (5% of yesterday's range)", "Lesson 12 · Gap Trade", "Long/Short", Live,
             &["F|\"In stocks the GS should be at least 5 percent of the previous daily trading range ... if a stock had a high of 35 and a low of 33 ... the size of the opening of the next day should be at least 35.10 for a gap up open or a 32.90 for a gap down open\" (p.102)",
               "E|\"In stocks the PA should be at least 5 percent of the previous daily range\" (p.102): buy stop at yesterday's low + 5% of yesterday's range",
@@ -129,7 +129,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "jb30d_sp_seasonal" => vec![p("entry_m", "Entry month", 10., 1., 12., 1.), p("entry_d", "Entry day", 27., 1., 31., 1.), p("exit_m", "Exit month", 11., 1., 12., 1.),
             p("exit_d", "Exit day", 1., 1., 31., 1.), p("stop_pct", "Close-only stop (% below entry)", 1.5, 0.5, 10., 0.5)],
         "jb30d_gap_tick" => vec![p("tick", "One tick (index points)", 0.05, 0.01, 1., 0.01), p("gs", "Gap size, ticks (at least)", 2., 0., 10., 1.), p("pa", "Penetration, ticks", 2., 0., 10., 1.),
-            p("stop_frac", "Stop as a fraction of yesterday's range", 0.25, 0.1, 1., 0.05)],
+            p("stop_frac", "Stop as a fraction of yesterday's range", 0.25, 0.1, 1., 0.05),
+            // intraday wave 1
+            p("path", "1 = real 1-minute bars (SPX only: S&P futures ticks; fills at the level or the minute's open; days without minute data make no trade), 0 = [Not from the book] daily bar path", 1., 0., 1., 1.)],
         "jb30d_gap_pct" => vec![p("gs_pct", "Gap size, % of yesterday's range", 5., 0., 25., 1.), p("pa_pct", "Penetration, % of yesterday's range", 5., 0., 25., 1.),
             p("stop_frac", "Stop as a fraction of yesterday's range", 0.25, 0.1, 1., 0.05),
             // intraday wave 1
@@ -223,13 +225,13 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             return Some(out);
         }
         // ---- intraday wave 1: real 1-minute path for the stock (percent) rule (default path = 1)
-        "jb30d_gap_pct" if g("path") >= 0.5 => {
+        "jb30d_gap_pct" | "jb30d_gap_tick" if g("path") >= 0.5 => {
             use crate::intraday::{day_trade, stop_entry_day, Level};
             let Some(mm) = x.minutes else { return Some(out) };
             let sf = g("stop_frac");
             for i in from.max(1)..=to {
                 let rng = x.h[i - 1] - x.l[i - 1];
-                let (gs, pa) = (g("gs_pct") / 100.0 * rng, g("pa_pct") / 100.0 * rng);
+                let (gs, pa) = if id == "jb30d_gap_tick" { (g("gs") * g("tick"), g("pa") * g("tick")) } else { (g("gs_pct") / 100.0 * rng, g("pa_pct") / 100.0 * rng) };
                 let d = if x.o[i] <= x.l[i - 1] - gs && x.o[i] < x.l[i - 1] { 1.0 } else if x.o[i] >= x.h[i - 1] + gs && x.o[i] > x.h[i - 1] { -1.0 } else { continue };
                 let Some(b) = mm.day(&x.r[i].date) else { continue };
                 let lvl = if d > 0.0 { x.l[i - 1] + pa } else { x.h[i - 1] - pa };

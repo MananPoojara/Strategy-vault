@@ -136,7 +136,7 @@ pub const INTRADAY_W1:&[&str]=&["ats_10pct_oops","ats_wide_range_gap","btp2_10pc
     "btp2_wide_range_exhaustion_gap_short","tdnmtt_trap_long","tdnmtt_trap_short","lwdg2_0105","jb30d_gap_pct"];
 /// Book levels in fixed S&P points (.50/2.00 points, 15 ticks of 0.05, $3,000 = 12 points, Crabel's 80-600 "points"):
 /// SPX only, the market those points belong to. No conversion to SPY or NSE prices is invented.
-pub const INTRADAY_W1_SPX:&[&str]=&["hfm_vix","baboops_oops","lwlts_mon_vb"];
+pub const INTRADAY_W1_SPX:&[&str]=&["hfm_vix","baboops_oops","lwlts_mon_vb","jb30d_gap_tick"];
 pub fn intraday_w1_id(id:&str)->bool {INTRADAY_W1.contains(&id) || intraday_w1_spx_id(id)}
 pub fn intraday_w1_spx_id(id:&str)->bool {INTRADAY_W1_SPX.contains(&id) || crate::books::tcdt::same_day_orb(id)}
 pub fn intraday_tickers(id:&str)->&'static [&'static str] {if intraday_w1_spx_id(id) {&["SPX"]} else {INTRADAY_P1_TICKERS}}
@@ -1249,7 +1249,7 @@ mod tests {
             assert!(check(d,"AAPL",true).is_some());
         }
         // not converted: multi-day ORB rows, open-entry tables, the long WREG (admitted daily), STOOPS
-        for id in ["tcdt_2bnr_p80_h1","tcdt_idp1","tcdt_oc_nr_re","btp2_wide_range_exhaustion_gap_long","baboops_stoops","jb30d_gap_tick","ststw_intraday"] {assert!(!intraday_w1_id(id),"{id}");}
+        for id in ["tcdt_2bnr_p80_h1","tcdt_idp1","tcdt_oc_nr_re","btp2_wide_range_exhaustion_gap_long","baboops_stoops","ststw_intraday"] {assert!(!intraday_w1_id(id),"{id}");}
     }
     #[test]
     fn ss_review_admits_exact_ids_on_reviewed_symbols_only() {
@@ -1922,7 +1922,7 @@ mod bernstein_g2_tests {
             }
         }
         // Held: same-day gap stops, intraday, missing numbers, chart judgement.
-        for d in cat.iter().filter(|d|matches!(d.id,"jb30d_rev_sell_fpo"|"jbudt_gap_fpo"|"jbudt_gap_split"|"jb30d_gap_tick"/* jb30d_gap_pct: intraday wave 1 */|"jb30d_rev_simple"|"jbudt_dow"|"jbudt_pop"|"jbcdt2_inside_day"|"jbcdt2_or30")) {
+        for d in cat.iter().filter(|d|matches!(d.id,"jb30d_rev_sell_fpo"|"jbudt_gap_fpo"|"jbudt_gap_split"/* jb30d_gap_tick, jb30d_gap_pct: intraday wave 1 */|"jb30d_rev_simple"|"jbudt_dow"|"jbudt_pop"|"jbcdt2_inside_day"|"jbcdt2_or30")) {
             assert!(!reviewed_cash_rule(d),"{}",d.id);
             assert_eq!(policy(d).requirement,"source_review_required");
         }

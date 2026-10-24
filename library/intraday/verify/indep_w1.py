@@ -25,6 +25,7 @@ Rules (defaults = the book):
       out on the close; no stop.
   lwlts_mon_vb (Williams LTS p.87, SPX only): Mondays, buy stop at the open + 0.05 x Friday's range; $3,000 stop
       (12 S&P points); out on the close.
+  jb30d_gap_tick (same, futures rule: gap and penetration >= 2 ticks of 0.05 S&P points; SPX only)
   jb30d_gap_pct (Bernstein p.100-102): open beyond yesterday's low/high by >= 5% of yesterday's range; stop entry 5% of
       the range back inside; stop 25% of the range from the fill; out at the end of the day.
 Minute conventions (stated on the cards): a level fills at the level or at the minute's open when the minute opened
@@ -311,9 +312,10 @@ def backtest(id_, D, M, a, b, ticker, amb, vix=None):
             r = day(bars, [(True, O[i] + 0.05 * rng(D, i - 1))], lambda k_, px: (False, px - 3000 / 250), amb, D[i][0])
             if r:
                 tr(1, i, r[1], i, r[2] if r[2] is not None else C[i], "stop" if r[2] is not None else "close")
-    elif id_ == "jb30d_gap_pct":
+    elif id_ in ("jb30d_gap_pct", "jb30d_gap_tick"):
         for i in range(max(a, 1), b + 1):
-            R = rng(D, i - 1); gs = pa = 0.05 * R
+            R = rng(D, i - 1)
+            gs = pa = 0.05 * R if id_ == "jb30d_gap_pct" else 2 * 0.05  # stock rule 5% of the range / futures rule 2 ticks
             if O[i] <= L[i - 1] - gs and O[i] < L[i - 1]:
                 dr, lv = 1, L[i - 1] + pa
             elif O[i] >= H[i - 1] + gs and O[i] > H[i - 1]:
