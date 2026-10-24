@@ -8,6 +8,10 @@
 use crate::connors::{Claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "bllstr";
+/// Admitted ids of the 25 Oct 2026 review (authors/lakonishok/admission/SOURCE-CONTRACT.md): the 24 printed specifications
+/// other than the two defaults reviewed on 15 Oct (reviewed_daily_index), which keep their own contract.
+pub const REVIEWED: &[&str] = &["bllstr_vma_1_50_1", "bllstr_fma_1_50_1", "bllstr_vma_1_150_0", "bllstr_vma_1_150_1", "bllstr_fma_1_150_0", "bllstr_fma_1_150_1", "bllstr_vma_5_150_0", "bllstr_vma_5_150_1", "bllstr_fma_5_150_0", "bllstr_fma_5_150_1", "bllstr_vma_1_200_0", "bllstr_vma_1_200_1", "bllstr_fma_1_200_0", "bllstr_fma_1_200_1", "bllstr_vma_2_200_0", "bllstr_vma_2_200_1", "bllstr_fma_2_200_0", "bllstr_fma_2_200_1", "bllstr_trb_50_0", "bllstr_trb_50_1", "bllstr_trb_150_0", "bllstr_trb_150_1", "bllstr_trb_200_0", "bllstr_trb_200_1"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 #[derive(Clone, Copy, PartialEq)]
 enum Fam { Vma, Fma, Trb }
@@ -164,6 +168,9 @@ fn finish(mut out: Vec<Trade>, cur: Option<Trade>, x: &Ctx, to: usize) -> Vec<Tr
     if let Some(mut t) = cur { t.exit_i = to; t.exit_px = x.c[to]; t.signal_i = to; t.reason = "open".into(); t.open = true; out.push(t); }
     out
 }
+/// Strict a > b as the paper states it, decided so that values equal in exact arithmetic (e.g. a close exactly 1% above
+/// its average, missed by float rounding) are equal, not greater (review 25 Oct 2026).
+fn gt(a: f64, b: f64) -> bool { a - b > 1e-12 * a.abs().max(b.abs()) }
 fn ma(c: &[f64], n: usize, i: usize) -> f64 { c[i + 1 - n..=i].iter().sum::<f64>() / n as f64 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
@@ -181,7 +188,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             for i in from..=to {
                 if i + 1 < l.max(s) { continue; }
                 let (sv, lv) = (ma(c, s, i), ma(c, l, i));
-                let d = side(if sv > lv * (1. + b) { 1. } else if sv < lv * (1. - b) { -1. } else { 0. });
+                let d = side(if gt(sv, lv * (1. + b)) { 1. } else if gt(lv * (1. - b), sv) { -1. } else { 0. });
                 if cur.as_ref().map_or(0., |t| t.dir) == d { continue; }
                 if let Some(mut t) = cur.take() { t.exit_i = i; t.exit_px = c[i]; t.signal_i = i; t.reason = "Signal changed · close".into(); out.push(t); }
                 if d != 0. && i < to { cur = Some(entry(d, i, c[i])); }
@@ -199,12 +206,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 let sig = if r.2 == Fam::Fma {
                     if i < l.max(s) { continue; }
                     let (s0, l0, s1, l1) = (ma(c, s, i), ma(c, l, i), ma(c, s, i - 1), ma(c, l, i - 1));
-                    if s0 > l0 * (1. + b) && s1 < l1 * (1. + b) { 1. } else if s0 < l0 * (1. - b) && s1 > l1 * (1. - b) { -1. } else { 0. }
+                    if gt(s0, l0 * (1. + b)) && gt(l1 * (1. + b), s1) { 1. } else if gt(l0 * (1. - b), s0) && gt(s1, l1 * (1. - b)) { -1. } else { 0. }
                 } else {
                     if i < l { continue; }
                     let w = &c[i - l..i];
                     let (hi, lo) = (w.iter().copied().fold(f64::MIN, f64::max), w.iter().copied().fold(f64::MAX, f64::min));
-                    if c[i] > hi * (1. + b) { 1. } else if c[i] < lo * (1. - b) { -1. } else { 0. }
+                    if gt(c[i], hi * (1. + b)) { 1. } else if gt(lo * (1. - b), c[i]) { -1. } else { 0. }
                 };
                 if sig == 0. { continue; }
                 next_ok = i + hold + 1;
