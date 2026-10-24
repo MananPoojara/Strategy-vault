@@ -388,7 +388,7 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
     }
     // These runners still price options with Black-Scholes. Loading IV or changing
     // a catalogue badge must never enable their modeled performance in the app.
-    if matches!(def.id,"otvt_diz_short_strangle" | "otvt_cvr1_sell_puts" | "otvt_cvr1_buy_puts" | "otvt_sector_options_overpriced") {
+    if matches!(def.id,"otvt_diz_short_strangle" | "otvt_cvr1_buy_puts" | "otvt_sector_options_overpriced") { // otvt_cvr1_sell_puts: options phase 2 (real prices)
         return issue("needs_data","This options runner uses a pricing model, not traded contract prices, and is disabled. Real prices of the exact contracts (strike, expiry and each leg) and a validated option-price implementation are required. Loading an IV or VIX series cannot enable this backtest.");
     }
     match def.status {
@@ -431,6 +431,12 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
         if ctx.r[to].date.as_str()>m.last() { return issue("needs_data",format!("Required 1-minute bars end on {}. The selected period runs past them; choose a period that ends by then (no later prices are estimated).",m.last())); }
     }
     // ---- end intraday phase 1
+    // ---- options phase 2: option rules need this underlying's real option prices over the whole window
+    if crate::instrument_policy::options_p2(def) {
+        let Some(ch)=ctx.options else { return issue("needs_data","This rule trades real option contracts, and no traded option prices are loaded for this instrument. The underlying's own price cannot stand in for an option's, so no result is published.") };
+        if ctx.r[from].date.as_str()<ch.first() { return issue("needs_data",format!("Option prices for this instrument begin on {}. The selected period includes earlier days with no option prices; choose a fully covered period.",ch.first())); }
+        if ctx.r[to].date.as_str()>ch.last() { return issue("needs_data",format!("Option prices for this instrument end on {}. The selected period runs past them; choose a period that ends by then (no later prices are estimated).",ch.last())); }
+    }
     let mut required=def.needs_series.to_vec();
     if minute_path {required.clear();} // intraday phase 1: the minute path reads no derived series
     if p.get("src").is_some_and(|v| v.round()==1.0) && (def.id.starts_with("otvt_cvr1") || def.id.starts_with("ptjmt_cvr")) {
@@ -461,9 +467,6 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
         }
     }
     if let Some(i)=vix_open_gap(ctx,def,from,to) {return Some(i);} // VIX India block
-    if def.book=="oiss" {
-        return issue("calculation_unavailable","Option quote series are loaded for this instrument, but this engine marks option positions using the underlying index and does not correctly aggregate overlapping option positions. Option portfolio equity, drawdown and risk statistics are not supported. The complete backtest, charts, trades, rankings and optimization are withheld until held-contract mark-to-market accounting is implemented and validated. This is not a reproduction of the book's reported performance.");
-    }
     if let Some(note)=books::otvt::gap(def.id,ctx,from,to,p) {
         return issue("needs_data",note);
     }
@@ -750,14 +753,14 @@ mod tests {
         }
     }
     #[test]
-    fn options_quotes_do_not_validate_underlying_based_equity() {
+    fn option_rules_need_real_option_prices() {
+        // options phase 2: no chain loaded -> data gap; an underlying-derived series cannot enable an option rule
         let r=rows();
-        for id in ["oiss_short_put","oiss_plus_three_put","oiss_short_call","oiss_plus_three_call"] {
+        for &id in crate::options::RULES {
             let mut ctx=Ctx::new(&r,&r,&[]);
-            let def=definition(id);
-            assert_eq!(check(&ctx,&def,0,4,&Params::new()).unwrap().status,"needs_data");
-            for name in def.needs_series {ctx.extra.insert((*name).into(),vec![10.0;5]);}
-            assert_eq!(check(&ctx,&def,0,4,&Params::new()).unwrap().status,"calculation_unavailable");
+            ctx.extra.insert("OPT_ATM_PUT.Close".into(),vec![10.0;5]);
+            let e=check(&ctx,&definition(id),0,4,&Params::new()).unwrap();
+            assert_eq!(e.status,"needs_data","{id}");
         }
     }
     #[test]

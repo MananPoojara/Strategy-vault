@@ -131,8 +131,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
           claim("-", ">60%", "-", "1-3 days", "four years to March 1997, S&P, book's VIX = OEX VXO (reproduces with p.src=1: 68.3%; default SPX VIX: 48.6%)"))),
         v(d("otvt_cvr1_long", "CVR I · buys", "Connors VIX Reversal I", "Long", Live, VIX_IV, CVR_BUY, CVR_SIDE_NOTE, None)),
         v(d("otvt_cvr1_short", "CVR I · sells", "Connors VIX Reversal I", "Short", Live, VIX_IV, CVR_SELL, CVR_SIDE_NOTE, None)),
-        v(d("otvt_cvr1_sell_puts", "CVR I buy signal · sell near-the-money puts", "Trading Options with the CVR", "Long", NeedsData("real traded prices of the exact option contracts (strike and expiry the rule picks); option P&L is never computed from a pricing model"), VIX_IV, CVR_PUTS_SELL,
-          "Put priced with Black-Scholes using the volatility index close itself as the implied vol (VIX = 30-day SPX IV, India VIX = NIFTY IV, VXO = OEX IV), so it needs no extra series. Strike otm% below the close (book: 770 put with OEX 781.98 and 760 with 768.54, about 1.3%); dte = days to expiry (book: March options, 21-29 days). Stop: the index trades to the strike (intraday low <= strike; priced at the strike or the open if it gaps through). Partial profit-taking is undefined and not coded. Return = put P&L / underlying price. Runs only on SPY and NIFTY 50, the two tickers whose own option IV the volatility index measures; other tickers return a data gap (their numbers would be priced off another index's IV) [Not from the book]. Model biases [Not from the book]: p.r = risk-free rate (default 0; about 5 for 1990s US, 6.5 for India; r = 0 overprices puts about 8-10%); p.vxo_adj=1 scales VXO by sqrt(22/30) to undo its trading-day upward bias (Carr & Wu 2006); no skew (optimistic for sold puts in sell-offs); no bid/ask. Equity inside a trade moves with the underlying (delta 1), so max DD and Sharpe are approximate; closed-trade returns are exact.",
+        v(d("otvt_cvr1_sell_puts", "CVR I buy signal · sell near-the-money puts", "Trading Options with the CVR", "Long", Live, VIX_IV, CVR_PUTS_SELL,
+          "Options phase 2: real SPY option prices (16:00 ET snapshot, 2008-2025), no pricing model. CVR I buy signal from the CBOE VIX (as otvt_cvr1_long). Put = the third listed SPY strike below the close (p.strikes; the book says \"as near the money as possible (within two to three strike prices)\" and its OEX examples sold 770 with OEX at 781.98 = 3rd strike and 760 at 768.54 = 2nd; 3 is the most conservative reading of the range [convention]); SPY's $1 strikes are about the OEX's 5-point strikes in percent. Expiry: the closest monthly expiry more than one week away (the book's Feb 20/28, 1997 trades sold March options; [convention], as OISS). Sold at the 16:00 mid (bid+ask)/2 only if the put traded that day (volume > 0) [labelled: no bid/ask edge]; otherwise no trade. Exit on the close of day 3 at the mid. Stop: SPY's low reaches the strike -> bought back at that day's 16:00 mid (the data hold no intraday option price; the real fill could be worse or better) [labelled]. An untraded exit day exits on the next traded close; expiry settles at intrinsic value. Half-profit-taking on a sharp move is undefined and not coded. One position at a time. Return = put points / SPY close at entry; the open put is valued daily at its own mid (the equity curve is the option's, not SPY's). Book traded OEX options in 1997; SPY options are the S&P 500 ETF's options (declared application).",
           claim("2 examples", "2/2", "+5 1/2 and +6 1/4 points", "3 days", "Feb 1997, OEX"))),
         v(d("otvt_cvr1_buy_puts", "CVR I sell signal · buy puts", "Trading Options with the CVR", "Short", NeedsData("real traded prices of the exact option contracts (strike and expiry the rule picks); option P&L is never computed from a pricing model"), VIX_IV, CVR_PUTS_BUY,
           "At-the-money put (otm% = 0), priced like the put-selling version. Stop: the index rises 10 S&P points (1.28% of the OEX 781.98 example level) above the entry close, priced at that level or the open if it gaps through. Return = put P&L / underlying price. Runs only on SPY and NIFTY 50, the two tickers whose own option IV the volatility index measures; other tickers return a data gap (their numbers would be priced off another index's IV) [Not from the book]. Model biases [Not from the book]: p.r = risk-free rate (default 0; about 5 for 1990s US, 6.5 for India; r = 0 overprices puts about 8-10%); p.vxo_adj=1 scales VXO by sqrt(22/30) to undo its trading-day upward bias (Carr & Wu 2006); no skew (optimistic for sold puts in sell-offs); no bid/ask. Equity inside a trade moves with the underlying (delta 1), so max DD and Sharpe are approximate; closed-trade returns are exact.", None)),
@@ -177,10 +177,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "otvt_cvr1" => cvr().into_iter().chain([p("rev", "Opposite signal reverses (0/1)", 1.0, 0.0, 1.0, 1.0)]).collect(),
         "otvt_cvr1_long" | "otvt_cvr1_short" => cvr(),
         "otvt_cvr1_sell_puts" => cvr().into_iter().chain([
-            p("otm", "Put strike: % below the close", 1.3, 0.0, 5.0, 0.1),
-            p("dte", "Calendar days to expiry", 25.0, 7.0, 60.0, 1.0),
-            p("r", "Risk-free rate % [Not from the book]", 0.0, 0.0, 10.0, 0.5),
-            p("vxo_adj", "With src=1: scale VXO by sqrt(22/30) (0/1) [Not from the book]", 1.0, 0.0, 1.0, 1.0),
+            p("strikes", "Put strike: the N-th listed strike below the close (book: within two to three strikes)", 3.0, 1.0, 3.0, 1.0),
+            p("min_dte", "Closest month more than N calendar days from expiry [convention]", 7.0, 0.0, 21.0, 1.0),
           ]).collect(),
         "otvt_cvr1_buy_puts" => cvr().into_iter().chain([
             p("otm", "Put strike: % below the close", 0.0, 0.0, 5.0, 0.1),
@@ -323,6 +321,9 @@ fn f2(v: f64) -> String {
 /// Per-ticker / per-parameter data gaps that `needs_series` cannot express. `run` returns no trades when this is Some;
 /// the message is for the API to show (it needs a call to this hook, shared code).
 pub fn gap(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<String> {
+    if id == "otvt_cvr1_sell_puts" { // options phase 2: real SPY option prices
+        return x.options.is_none().then(|| "data gap: no traded option prices are loaded for this instrument (SPY options 2008-2025 only)".into());
+    }
     let puts = matches!(id, "otvt_cvr1_sell_puts" | "otvt_cvr1_buy_puts");
     if !puts && !matches!(id, "otvt_cvr1" | "otvt_cvr1_long" | "otvt_cvr1_short") {
         return None;
@@ -336,7 +337,44 @@ pub fn gap(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Stri
     (vxo && !x.series("VXO_OHLC.Close").map_or(false, has)).then(|| "data gap: needs VXO_OHLC in the test window (CBOE VXO ends 2021-09-23; none for India)".into())
 }
 
+/// Options phase 2: CVR I buy signal -> sell the N-th listed SPY put strike below the close, real prices (see the card note).
+pub fn option_positions(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Result<Vec<crate::options::Pos>, String>> {
+    use crate::options::{self as opt, Contract, Exit};
+    if id != "otvt_cvr1_sell_puts" { return None; }
+    let schema = params(id)?;
+    let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).unwrap_or_else(|| panic!("{id} has no param {k}")).def);
+    let u = |k: &str| g(k).round().max(1.0) as usize;
+    let Some(chain) = x.options else { return Some(Err(crate::books::oiss::NO_CHAIN.into())) };
+    let Some(v) = vix(x, g("src").round() as usize) else { return Some(Err("needs_data: the volatility index OHLC is not loaded for this instrument".into())) };
+    let sig = cvr_signals(v, u("n"));
+    let (hold, k, min_dte) = (u("hold"), u("strikes"), g("min_dte"));
+    let mut w = opt::Window::new(chain, x, 8);
+    let mut out = Vec::new();
+    let mut i = from;
+    while i <= to {
+        if sig[i] != 1 { i += 1; continue; }
+        let today = opt::ymd(&x.r[i].date);
+        let day = w.at(i);
+        let pick = opt::expiries(day).into_iter().find(|&e| (opt::day_no(opt::ltd(x, e)) - opt::day_no(today)) as f64 > min_dte).and_then(|e| {
+            let below: Vec<f64> = opt::strikes(day, e, true).into_iter().rev().filter(|s| *s < x.c[i]).collect();
+            below.get(k - 1).map(|&strike| Contract { expiry: e, put: true, strike })
+        });
+        let Some(c) = pick else { i += 1; continue };
+        let Some(px0) = w.quote(i, c).and_then(|q| q.fill_close()) else { i += 1; continue };
+        let (lo, start) = (&x.l, i);
+        let (j, pnl, why, open, marks) = opt::follow(&mut w, x, c, -1.0, i, px0, to, &mut |k| {
+            if lo[k] <= c.strike { Some((Exit::Close, "stop: SPY reached the strike (bought back at that day's 16:00 mid)".into())) }
+            else if k >= start + hold { Some((Exit::Close, format!("{hold} days held"))) } else { None }
+        });
+        out.push(opt::Pos { dir: 1.0, s0: x.c[i], entry_i: i, exit_i: j, pnl, open,
+            reason: format!("{why} · sold {} put exp {} on {} at {px0:.2} · {}", c.strike, c.expiry, x.r[i].date, marks.text()) });
+        i = j + 1;
+    }
+    Some(Ok(out))
+}
+
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+    if let Some(r) = option_positions(id, x, from, to, p) { return Some(crate::options::account(r.unwrap_or_default(), from, to, 0.0).trades); }
     let schema = params(id)?;
     if gap(id, x, from, to, p).is_some() {
         return Some(vec![]);
