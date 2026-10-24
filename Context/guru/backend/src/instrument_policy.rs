@@ -154,6 +154,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || schwager_reviewed(def) // Schwager block
         || elder_reviewed(def) // Elder block
         || pring_reviewed(def) // Pring block
+        || thomsett_reviewed(def) // Thomsett block
         || bernstein_g2_reviewed(def)
         || jb_g3_reviewed(def)
         || lwilliams_reviewed(def) // Larry Williams block
@@ -455,6 +456,16 @@ fn pring_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Pring
+// ---------------------------------------------------------------- Thomsett 2026-10-24
+// Admission only for the module REVIEWED lists (authors/thomsett/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn thomsett_reviewed(def:&StrategyDef)->bool {matches!(def.book,"mtpos") && (crate::books::mtpos::reviewed(def.id))}
+const THOMSETT_LABEL:&str="Put Option Strategies for Smarter Trading shows this set-up on US stocks; index, ETF and Indian stock runs are a declared application, not the author's test.";
+fn thomsett_policy(def:&StrategyDef)->Option<Policy> {
+    if !thomsett_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Michael C. Thomsett, Put Option Strategies for Smarter Trading (2009), Ch.4 (p.65-69, 73-74): reversal day after three or more trend days, buy at the bottom and sell at the opposite set-up, reviewed in authors/thomsett/admission/SOURCE-CONTRACT.md with independent chronological ledgers. Close fills, no confirmation filters and long-only default are declared readings; no stop (none in the book).");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Thomsett
 // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
 /// Reviewed Joe Ross daily rules (books::joe_ross_rules::REVIEWED): actual indices, ETFs and stocks, US and India, as a
 /// labelled declared application. The source references in books::joe_ross stay held (source review).
@@ -480,6 +491,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=schwager_policy(def) {return p;}
     if let Some(p)=elder_policy(def) {return p;} // Elder block
     if let Some(p)=pring_policy(def) {return p;} // Pring block
+    if let Some(p)=thomsett_policy(def) {return p;} // Thomsett block
     // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
     if let Some(p)=joe_ross_policy(def) {return p;}
     // ---- end Joe Ross block ----
@@ -892,6 +904,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if let Some(label)=elder_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Elder block
     if let Some(label)=lwilliams_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Larry Williams block
     if let Some(label)=pring_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Pring block
+    if thomsett_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",THOMSETT_LABEL));} // Thomsett block
     if def.book==crate::books::cwin::BOOK && crate::books::cwin::reviewed_daily(def.id) {json.push_str(concat!(",\"declared_application\":\"",CWIN_INDEX_LABEL!(),"\""));}
     if def.book==crate::books::ccl08::BOOK && crate::books::ccl08::day_trade(def.id) {json.push_str(concat!(",\"declared_application\":\"",CCL08_INDEX_LABEL!(),"\""));}
     if def.book==crate::books::ats::BOOK && crate::books::ats::reviewed_daily(def.id) && (p.requirement=="index_or_etf" || (crate::books::ats::STOCK_TICK_IDS.contains(&def.id) && !CONNORS_INDEX_IDS.contains(&def.id))) {json.push_str(concat!(",\"declared_application\":\"",BTP_INDEX_LABEL!(),"\""));}
@@ -1048,6 +1061,22 @@ mod tests {
         assert!(!reviewed_cash_rule(&def("mpts_triple","jbudt")));
     }
     // ---- end Pring block ----
+    // ---- Thomsett block (2026-10-24) ----
+    #[test]
+    fn thomsett_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{mtpos};
+        let all:Vec<StrategyDef>=mtpos::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=mtpos::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Thomsett block ----
     // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
     #[test]
     fn joe_ross_reviewed_rules_run_on_indices_etfs_and_stocks_and_references_stay_held() {

@@ -259,6 +259,7 @@ export const sourceReview: Record<string, {type: string; sameWorkAs?: string; pe
   "mpmm": {"type": "book", "people": ["Martin J. Pring"]},
   "mpts": {"type": "book", "people": ["Martin J. Pring"]},
   "mpcse": {"type": "book", "people": ["Martin J. Pring"]},
+  "mtpos": {"type": "book", "people": ["Michael C. Thomsett"]},
   "mptae": {"type": "book", "people": ["Martin J. Pring"]},
   "mpsel": {"type": "code_package", "people": ["Martin J. Pring"]},
   "mrina": {"type": "magazine_volume", "people": ["Murray Ruggiero"]},
