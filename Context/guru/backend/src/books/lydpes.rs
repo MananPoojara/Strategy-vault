@@ -6,6 +6,9 @@
 use crate::connors::{claim, sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "lydpes";
+/// Admitted ids (authors/lydon/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["lydpes_ma200_8pct"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let d = |id, name, group, dir, status, rules, notes, claim| StrategyDef {
