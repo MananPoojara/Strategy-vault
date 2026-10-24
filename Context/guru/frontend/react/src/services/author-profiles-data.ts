@@ -310,6 +310,20 @@ export const AUTHOR_PROFILE_DATA = {
   "sources": [],
   "confidence": "low"
  },
+ "borowski": {
+  "kind": "person",
+  "mastery": [
+   "Forex trading"
+  ],
+  "summary": "Robert Borowski published the Rapid Forex e-books on short-term and trend trading in currencies. They describe wave, channel and moving-average techniques read on intraday and daily forex charts, with stops and targets in pips. This profile rests on the books themselves.",
+  "known_for": [
+   "Forex Surfing",
+   "Forex Sailing",
+   "Forex Scalping"
+  ],
+  "sources": [],
+  "confidence": "low"
+ },
  "carney": {
   "kind": "person",
   "mastery": [

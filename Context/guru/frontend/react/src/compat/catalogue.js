@@ -142,6 +142,12 @@ export const LIB = [
     { id: "skdab", sourceIds: ["title-1a375bb2a1b292dd"], title: "Dragons and Bulls", year: 1994, blurb: "Kroll, 1994 · 50-day trend, 10/20/50-day entries, 4/9/18-day stop-outs and re-entries; the 9/18/50 NIKKEI example is held (exit not exact)" },
     { id: "skfts", sourceIds: ["title-b57e56c915e14bbf"], title: "Kroll on Futures Trading Strategy", year: 1988, blurb: "Kroll, 1988 · strategy and money management; its moving-average examples are already in the vault" }] },
   // ---- end Kroll block ----
+  // ---- Borowski block (2026-10-24) ----
+  { id: "borowski", name: "Robert Borowski", tagline: "Rapid Forex e-books · intraday wave surfing, scalping and simple/exponential average trend lines on currency charts (held)", books: [
+    { id: "rbfsurf", sourceIds: ["title-7c06ca1d8e3dfdab", "title-bb98231bb40e960f"], title: "Forex Surfing", year: null, blurb: "Borowski · intraday wave and channel trades; held: lines by hand, pip sizes" },
+    { id: "rbfsail", sourceIds: ["title-fcae7827351fd252"], title: "Forex Sailing", year: null, blurb: "Borowski · S.E.X. 5/20/60 lines; held: 'not meant to be used alone'" },
+    { id: "rbfscalp", sourceIds: ["title-7cd7d14bd81aaa1f"], title: "Forex Scalping", year: null, blurb: "Borowski · 1-minute scalps; held: intraday forex, pip stops" }] },
+  // ---- end Borowski block ----
   // ---- CSmith block (2026-10-24) ----
   { id: "csmith", name: "Courtney D. Smith", tagline: "FX and futures trader · swing-point trend analysis, enhanced channel breakouts, the Conqueror", books: [
     { id: "csmlt", sourceIds: ["title-bafc2391a8c8f66d"], title: "How to Make a Living Trading Foreign Exchange", year: 2010, blurb: "Smith, 2010 · trend analysis, 55/20 channel breakout with the rejection rule, Conqueror I/II, stochastic 50 line, reversal days and RRR run as declared applications; inside days, slingshot and divergences held" },
