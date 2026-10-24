@@ -172,6 +172,12 @@ export const LIB = [
     { id: "ebeft", sourceIds: ["title-1293eb6b88467d85", "title-01ada73be922ee55"], title: "The Euro Fractal Trading System", year: null, blurb: "Bortucene · EUR/USD key-level fractal breakouts, 15-pip stops; held" },
     { id: "ebfps", sourceIds: ["title-6fde110723e9f0ba"], title: "The Forex Profit System", year: null, blurb: "Bortucene · hourly EMA 10/25/50 cross with 15-minute SAR; held: stop and SAR settings not fixed" }] },
   // ---- end Bortucene block ----
+  // ---- Angell block (2026-10-24) ----
+  { id: "angell", name: "George Angell", tagline: "Futures day trader and author · Taylor-book levels, LSS 3-day cycle, small caps, options (held)", books: [
+    { id: "gasnw", sourceIds: ["title-9057d8a9e126225f", "title-03762f250c91daef"], title: "Sniper Trading Workbook", year: 2002, blurb: "Angell, 2002 · buy/sell envelopes and range projections for S&P and bond futures; held: levels need judgement, intraday" },
+    { id: "gassp", sourceIds: ["title-ffe1b82681a825b6"], title: "Small Stocks for Big Profits", year: 2008, blurb: "Angell, 2008 · small-cap selection and chart reading; held" },
+    { id: "gasto", sourceIds: ["title-756076f4305a0b14", "title-f3b8782982320c88"], title: "Sure-Thing Options Trading", year: 1983, blurb: "Angell · option strategies; held" }] },
+  // ---- end Angell block ----
   // ---- Etzkorn block (2026-10-24) ----
   { id: "etzkorn", name: "Mark Etzkorn", tagline: "Momentum oscillators explained and tested · MACD, RSI and rate-of-change equilibrium systems", books: [
     { id: "metwo", sourceIds: ["title-eaea9328b7643525", "title-959fc0f8fc82690b"], title: "Trading with Oscillators", year: 1997, blurb: "Etzkorn, 1997 · MACD signal-line, RSI 50 and ROC equilibrium stop-and-reverse tests (S&P 500 lengths); stochastic grid and divergences held" },
