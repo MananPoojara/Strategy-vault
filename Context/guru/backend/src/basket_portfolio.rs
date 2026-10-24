@@ -3,7 +3,7 @@
 //! This is regular-mode candidate replay, not a reproduction of any author's
 //! cross-sectional portfolio. Capacity/cash-rejected candidates are not retried.
 //! All prices remain actual observations. Unsupported multi-leg accounting and
-//! missing held-position marks withhold the whole portfolio, never selected losers.
+//! member data windows are decided before results; rule/accounting holds remain global.
 use crate::{
     accounting::Costs,
     baskets::{self, BasketMember},
@@ -17,8 +17,10 @@ use std::{
 };
 
 const MAX_SYMBOLS: usize = 2500;
-const MAX_CANDIDATES: usize = 100_000;
-const MAX_MARKS: usize = 2_000_000;
+// Large source baskets can produce well over 100,000 independent candidates.
+// Keep explicit request bounds without truncating their member/trade lists.
+const MAX_CANDIDATES: usize = 2_000_000;
+const MAX_MARKS: usize = 16_000_000;
 const TIME_LIMIT: Duration = Duration::from_secs(90);
 static RUNNING: AtomicBool = AtomicBool::new(false);
 struct Permit;
@@ -178,16 +180,21 @@ struct ExecutionContract {
 }
 impl From<(Phase, Phase)> for ExecutionContract {
     fn from(phases: (Phase, Phase)) -> Self {
-        Self { phases, conservative: false }
+        Self {
+            phases,
+            conservative: false,
+        }
     }
 }
 /// Reservation boundaries for otherwise admitted single-stock ledgers. The
 /// fallback does not infer intraday fill times or change source fill prices.
 fn execution_contract(id: &str, book: &str) -> ExecutionContract {
-    reviewed_execution_contract(id, book).map(Into::into).unwrap_or(ExecutionContract {
-        phases: (Phase::Open, Phase::Close),
-        conservative: true,
-    })
+    reviewed_execution_contract(id, book)
+        .map(Into::into)
+        .unwrap_or(ExecutionContract {
+            phases: (Phase::Open, Phase::Close),
+            conservative: true,
+        })
 }
 
 #[derive(Clone, Debug)]
@@ -227,7 +234,11 @@ impl Candidate {
             if entry_phase != contract.phases.0 {
                 return Err("calculation_unavailable: Source entry phase disagrees with the reviewed portfolio executor contract.".into());
             }
-            let exit_phase = if t.open { Phase::Close } else { contract.phases.1 };
+            let exit_phase = if t.open {
+                Phase::Close
+            } else {
+                contract.phases.1
+            };
             let expected_exit = match exit_phase {
                 Phase::Open => ctx.o[t.exit_i],
                 Phase::Close => ctx.c[t.exit_i],
@@ -449,17 +460,21 @@ struct Coverage {
     last: String,
     status: &'static str,
     note: String,
+    used_from: Option<String>,
+    used_to: Option<String>,
 }
 impl Coverage {
     fn json(&self) -> String {
         format!(
-            "{{\"symbol\":{},\"ticker\":{},\"first\":{},\"last\":{},\"status\":{},\"note\":{}}}",
+            "{{\"symbol\":{},\"ticker\":{},\"first\":{},\"last\":{},\"status\":{},\"note\":{},\"used_from\":{},\"used_to\":{}}}",
             quote(&self.symbol),
             quote(&self.key),
             quote(&self.first),
             quote(&self.last),
             quote(self.status),
-            quote(&self.note)
+            quote(&self.note),
+            self.used_from.as_deref().map_or("null".into(),quote),
+            self.used_to.as_deref().map_or("null".into(),quote)
         )
     }
 }
@@ -471,6 +486,8 @@ fn coverage(member: &BasketMember, status: &'static str, note: String) -> Covera
         last: member.last.clone(),
         status,
         note,
+        used_from: None,
+        used_to: None,
     }
 }
 fn complete_held_report(members: &[BasketMember], report: &mut Vec<Coverage>) {
@@ -605,6 +622,118 @@ fn portfolio_stats(
     s
 }
 
+/// Last-gap selection is based solely on actual market dates, before results.
+fn covered_window(rows: &[Row], calendar: &[String]) -> Option<(usize, usize, Option<String>)> {
+    let first = rows.first()?.date.as_str().max(calendar.first()?.as_str());
+    let last = rows.last()?.date.as_str().min(calendar.last()?.as_str());
+    if first > last {
+        return None;
+    }
+    let end = rows
+        .partition_point(|r| r.date.as_str() <= last)
+        .checked_sub(1)?;
+    let observed: BTreeSet<_> = rows.iter().map(|r| r.date.as_str()).collect();
+    let gap = calendar
+        .iter()
+        .rev()
+        .find(|d| d.as_str() >= first && d.as_str() <= last && !observed.contains(d.as_str()));
+    let market_dates: BTreeSet<_> = calendar.iter().map(String::as_str).collect();
+    let outside = rows
+        .iter()
+        .rev()
+        .find(|r| {
+            r.date.as_str() >= first
+                && r.date.as_str() <= last
+                && !market_dates.contains(r.date.as_str())
+        })
+        .map(|r| r.date.clone());
+    let gap = gap.cloned().into_iter().chain(outside).max();
+    let start = gap.as_ref().map_or_else(
+        || rows.partition_point(|r| r.date.as_str() < first),
+        |g| rows.partition_point(|r| r.date <= *g),
+    );
+    (start <= end).then(|| (start, end, gap))
+}
+
+/// Observation requirements of the reviewed runners, including chained
+/// windows. This is an admission floor, never a signal/performance test.
+/// Other rules retain their own readiness and NaN warm-up guards.
+fn member_warmup(id: &str, p: &crate::connors::Params) -> usize {
+    let schema = crate::connors::params(id);
+    let u = |key: &str| {
+        p.get(key)
+            .copied()
+            .or_else(|| schema.iter().find(|d| d.key == key).map(|d| d.def))
+            .unwrap_or(0.)
+            .round()
+            .max(0.) as usize
+    };
+    match id {
+        "f1a" | "f3a" => u("trend").max(u("low_n")),
+        "ss_anti" | "ss_anti_trigger" => {
+            let fast = (u("k_len") + u("k_smooth")).saturating_sub(1);
+            let slow = if u("d_mode") == 0 {
+                (fast + u("d_len")).saturating_sub(1)
+            } else {
+                u("d_len") + 4
+            };
+            slow.max(fast) + u("trend_bars").max(2)
+        }
+        "jb624_mac2_stop" => u("mah").max(u("mal")) + u("bars"),
+        "jr_123_std_l" | "jr_123_std_s" => {
+            if u("exit") == 1 {
+                5
+            } else {
+                4
+            }
+        }
+        "eltfl_fi2" => u("ema").max(u("fi") + 1),
+        _ => schema
+            .iter()
+            .filter(|d| {
+                matches!(
+                    d.key,
+                    "fast"
+                        | "slow"
+                        | "trend"
+                        | "ma"
+                        | "len"
+                        | "ema"
+                        | "rsi_n"
+                        | "atr_n"
+                        | "look"
+                        | "lookback"
+                )
+            })
+            .map(|d| u(d.key))
+            .max()
+            .unwrap_or(0),
+    }
+}
+
+/// Replay consumes unchanged source fills, not an independently compounded
+/// single-stock account. Only accepted portfolio positions use cash/collateral;
+/// every source event still passes structural and multi-leg admission.
+fn member_trades(
+    ctx: &Ctx,
+    id: &str,
+    start: usize,
+    end: usize,
+    cost: f64,
+    params: &crate::connors::Params,
+) -> Result<Vec<Trade>, String> {
+    if crate::books::hbiab_reviewed::reviewed(id)
+        || id == crate::books::elcim_account::ID
+        || crate::books::hbqts::reviewed::is_dema_index(id)
+    {
+        return crate::backtest(ctx, id, start, end, cost, params).map(|r| r.trades);
+    }
+    let trades = crate::connors::run(id, ctx, start, end, params)
+        .ok_or("Strategy implementation unavailable")?;
+    crate::trade_validation::check_structure(&trades, start, end)?;
+    Ok(trades)
+}
+
 pub fn run(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     let req = Request::parse(q)?;
     let costs = Costs::parse(q)?;
@@ -614,15 +743,29 @@ pub fn run(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         .iter()
         .find(|d| d.id == req.id)
         .ok_or("unknown strategy")?;
+    match def.status {
+        crate::connors::Status::NeedsData(note) => {
+            return Ok(hold(
+                &req,
+                "needs_data",
+                &format!("Full basket withheld by rule admission: {note}"),
+                &[],
+            ))
+        }
+        crate::connors::Status::NotTestable(note) => {
+            return Ok(hold(
+                &req,
+                "not_testable",
+                &format!("Full basket withheld by rule admission: {note}"),
+                &[],
+            ))
+        }
+        crate::connors::Status::Live => {}
+    }
     if crate::instrument_policy::reviewed_kestner_stock(def) {
         return Ok(hold(&req,"not_testable","The Kestner review covers one actual stock at a time. Simultaneous long/short basket selection, capacity and portfolio accounting have not been reviewed for these methods; no basket result is published.",&[]));
     }
-    let members = st.baskets.members(req.basket);
-    if let Some(expected) = st.baskets.expected_member_count(req.basket) {
-        if members.len() != expected {
-            return Ok(hold(&req,"needs_data",&format!("The source basket expects {expected} members, but only {} actual current members have admitted price data. The full basket is withheld; missing constituent prices are not silently omitted or replaced.",members.len()),&members.iter().map(|m|coverage(m,"not_processed","Named basket coverage is incomplete; no member was selected for a partial published portfolio.".into())).collect::<Vec<_>>()));
-        }
-    }
+    let members = st.baskets.source_members(req.basket);
     if members.is_empty() {
         return Ok(hold(
             &req,
@@ -662,20 +805,32 @@ pub fn run(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     else {
         return Ok(hold(&req,"needs_data","An actual market benchmark calendar is required to detect missing daily marks; no calendar or benchmark prices are invented.",&[]));
     };
+    let mut actual_first: Option<String> = None;
+    let mut actual_last: Option<String> = None;
+    if req.from.is_none() || req.to.is_none() {
+        for member in &members {
+            if let Ok(rows) = st.baskets.basket_rows(&member.key) {
+                let first = &rows[0].date;
+                let last = &rows.last().unwrap().date;
+                if actual_first.as_ref().is_none_or(|f| first < f) {
+                    actual_first = Some(first.clone());
+                }
+                if actual_last.as_ref().is_none_or(|l| last > l) {
+                    actual_last = Some(last.clone());
+                }
+            }
+        }
+    }
     let from = req.from.unwrap_or_else(|| {
-        members
-            .iter()
-            .map(|m| m.first.as_str())
-            .min()
-            .unwrap()
+        actual_first
+            .as_deref()
+            .unwrap_or(&benchmark.r[0].date)
             .max(benchmark.r[0].date.as_str())
     });
     let to = req.to.unwrap_or_else(|| {
-        members
-            .iter()
-            .map(|m| m.last.as_str())
-            .max()
-            .unwrap()
+        actual_last
+            .as_deref()
+            .unwrap_or(&benchmark.r.last().unwrap().date)
             .min(benchmark.r.last().unwrap().date.as_str())
     });
     if from >= to
@@ -701,79 +856,144 @@ pub fn run(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     let mut candidates = Vec::new();
     let mut report = Vec::new();
     let mut total_marks = 0usize;
+    // Complete every data decision before generating any member's candidates.
+    let mut admitted = Vec::new();
     for member in &members {
         if started.elapsed() > TIME_LIMIT {
             complete_held_report(&members, &mut report);
-            return Ok(hold(&req,"unavailable","Basket request reached its checked 90-second resource budget; no partial result is published.",&report));
+            return Ok(hold(&req,"unavailable","Basket admission reached its checked 90-second resource budget; no partial result is published.",&report));
         }
-        if member.first.as_str() > to || member.last.as_str() < from {
-            report.push(coverage(member,"no_coverage","No quotes overlap this requested period; no signals or missing history are invented. This member remains part of the documented source list.".into()));
+        if let Some(evidence) = st.baskets.native_evidence(&member.key) {
+            if let Some(issue) =
+                crate::instrument_policy::check_native(def, &member.symbol, evidence)
+            {
+                return Ok(hold(
+                    &req,
+                    issue.status,
+                    &format!(
+                        "Full basket withheld by rule instrument admission: {}",
+                        issue.note
+                    ),
+                    &report,
+                ));
+            }
+        }
+        let mut item = coverage(member, "excluded", String::new());
+        let rows = match st.baskets.basket_rows(&member.key) {
+            Ok(rows) => rows,
+            Err(note) => {
+                item.first.clear();
+                item.last.clear();
+                item.note = format!("Excluded: {note}. No price, bar or signal is filled.");
+                report.push(item);
+                continue;
+            }
+        };
+        item.first = rows[0].date.clone();
+        item.last = rows.last().unwrap().date.clone();
+        let Some((start, end, gap)) = covered_window(&rows, &calendar) else {
+            item.note = "Excluded: actual prices do not overlap the requested period.".into();
+            report.push(item);
+            continue;
+        };
+        let mut notes = Vec::new();
+        if item.first.as_str() > from || item.last.as_str() < to {
+            notes.push(format!(
+                "Actual source coverage is {} to {} within the requested period.",
+                item.first, item.last
+            ));
+        }
+        if item.first != member.first || item.last != member.last {
+            notes.push("The file's actual first/last bars differ from catalogue dates; actual bars determine this window.".into());
+        }
+        if let Some(date) = &gap {
+            notes.push(format!("Starts after the last missing market date or stock/calendar date mismatch, {date}; earlier signals are not replayed."));
+        }
+        if rows[end].date < *calendar.last().unwrap() {
+            notes.push(format!("Portfolio convention: any position still open is closed at the last available price (data ends {}), using that actual close and normal exit costs. The source strategy is unchanged.",rows[end].date));
+        }
+        let warmup = member_warmup(req.id, &params);
+        // Keep the full real prefix for unchanged indicator calculations. A gap
+        // does not create a new seeded series; the suffix must itself be long enough.
+        if (gap.is_some() || start == 0) && end - start + 1 < warmup + 2 {
+            item.note=format!("Excluded: continuous window {} to {} has {} actual bars; this rule requires {warmup} warm-up bars plus 2 bars. {}",rows[start].date,rows[end].date,end-start+1,notes.join(" "));
+            report.push(item);
             continue;
         }
+        let Some(evidence) = st.baskets.native_evidence(&member.key) else {
+            unreachable!()
+        };
+        let selected = crate::SelectedContext::Native { rows, evidence };
+        let held = selected.context(st);
+        let ctx: &Ctx = &held;
         let mut single = q.clone();
         single.insert("ticker".into(), member.key.clone());
-        // Explicit per-member coverage, not a silent rewrite of the basket window.
-        single.insert("from".into(), from.max(&member.first).into());
-        single.insert("to".into(), to.min(&member.last).into());
-        let attempt = (|| -> Result<Vec<Candidate>, String> {
-            let selected = crate::select_context(st, &single)?;
-            let held = selected.context(st);
-            let (ctx, start, end, cost) = crate::resolve_context(&held, &single)?;
-            let observed: BTreeSet<_> = ctx.r.iter().map(|r| r.date.as_str()).collect();
-            if let Some(date) = calendar.iter().find(|date| {
-                date.as_str() >= single["from"].as_str()
-                    && date.as_str() <= single["to"].as_str()
-                    && !observed.contains(date.as_str())
-            }) {
-                return Err(format!("needs_data: {} has no actual source bar on covered market date {}. A flat-day gap can remove signals or change indicator/bar-count logic, so no sparse-calendar assumption, missing signal or flat return is invented.",member.symbol,date));
+        single.insert("from".into(), ctx.r[start].date.clone());
+        single.insert("to".into(), ctx.r[end].date.clone());
+        let admission = crate::readiness::auto_start(ctx, start, end, &single["from"], |f| {
+            crate::readiness::check(ctx, def, f, end, &params)
+                .or_else(|| crate::native_admission(ctx, def, f, end, &selected, st, &single))
+        });
+        let (start, auto) = match admission {
+            Ok(value) => value,
+            Err(issue) if issue.status == "needs_data" => {
+                item.note = format!("Excluded: {} {}", issue.note, notes.join(" "));
+                report.push(item);
+                continue;
             }
-            if let Some(issue) = crate::readiness::check(ctx, def, start, end, &params)
-                .or_else(|| crate::native_admission(ctx, def, start, end, &selected, st, &single))
-            {
-                return Err(format!("{}: {}", issue.status, issue.note));
-            }
-            let start = crate::window_start(ctx, def, start)
-                .filter(|&i| i < end)
-                .ok_or(
-                    "needs_data: Source rule warmup/volatility does not cover this member window",
-                )?;
-            let source = crate::backtest(ctx, req.id, start, end, cost, &params)?;
-            source
-                .trades
-                .iter()
-                .map(|t| Candidate::from_source(&member.key, ctx, t, contract))
-                .collect()
-        })();
-        match attempt {
-            Ok(mut ledger) => {
-                total_marks += ledger.iter().map(|t| t.marks.len()).sum::<usize>();
-                if total_marks > MAX_MARKS || candidates.len() + ledger.len() > MAX_CANDIDATES {
-                    complete_held_report(&members, &mut report);
-                    return Ok(hold(&req,"unavailable","Basket exceeds its bounded candidate/quote memory budget; no truncated stock or trade list is published.",&report));
-                }
-                let partial = member.first.as_str() > from || member.last.as_str() < to;
-                report.push(coverage(member,if partial{"partial_coverage"}else{"ready"},if partial{format!("Signals use actual source coverage {} to {} within the requested basket period. First/last quotes do not prove listing/delisting dates; held positions still require every actual market-day mark.",member.first,member.last)}else{"Actual source bars and unchanged strategy guards passed; current membership is a snapshot with survivorship bias.".into()}));
-                candidates.append(&mut ledger);
-            }
-            Err(note) => {
-                let status = if note.starts_with("calculation_unavailable") {
-                    "calculation_unavailable"
-                } else if note.starts_with("not_testable") {
-                    "not_testable"
-                } else {
-                    "needs_data"
-                };
-                report.push(coverage(member, status, note.clone()));
+            Err(issue) => {
+                item.status = issue.status;
+                item.note = issue.note.clone();
+                report.push(item);
                 complete_held_report(&members, &mut report);
-                return Ok(hold(&req,status,&format!("Full basket withheld because {} failed source-rule, data or accounting admission: {}. Other members are not cherry-picked into a result.",member.symbol,note),&report));
+                return Ok(hold(
+                    &req,
+                    issue.status,
+                    &format!("Full basket withheld by rule admission: {}", issue.note),
+                    &report,
+                ));
             }
+        };
+        if let Some(note) = auto {
+            notes.push(note);
         }
-        // Native SelectedContext and all indicator arrays dropped at this boundary.
+        let Some(start) = crate::window_start(ctx, def, start).filter(|&i| i < end) else {
+            item.note =
+                "Excluded: source warm-up or volatility does not cover two trading bars.".into();
+            report.push(item);
+            continue;
+        };
+        item.used_from = Some(ctx.r[start].date.clone());
+        item.used_to = Some(ctx.r[end].date.clone());
+        item.status = if notes.is_empty() {
+            "ready"
+        } else {
+            "adjusted"
+        };
+        item.note = if notes.is_empty() {
+            "Actual source bars and unchanged strategy guards passed.".into()
+        } else {
+            notes.join(" ")
+        };
+        // Record dates, not indicators or results; bounded per-member arrays drop here.
+        admitted.push((
+            member.key.clone(),
+            single,
+            ctx.r[start].date.clone(),
+            ctx.r[end].date.clone(),
+        ));
+        report.push(item);
     }
-    if !report
-        .iter()
-        .any(|c| matches!(c.status, "ready" | "partial_coverage"))
-    {
+    let expected = st
+        .baskets
+        .expected_member_count(req.basket)
+        .unwrap_or(members.len())
+        .max(members.len());
+    for i in members.len()..expected {
+        report.push(Coverage{symbol:format!("Unnamed source member {}",i+1),key:String::new(),first:String::new(),last:String::new(),status:"excluded",note:"Excluded: the source count includes this member, but its identity and price file are absent from the supplied catalogue. No identity or prices are invented.".into(),used_from:None,used_to:None});
+    }
+    let used = admitted.len();
+    if used == 0 {
         return Ok(hold(
             &req,
             "needs_data",
@@ -781,6 +1001,61 @@ pub fn run(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
             &report,
         ));
     }
+    for (key, mut single, used_from, used_to) in admitted {
+        if started.elapsed() > TIME_LIMIT {
+            return Ok(hold(&req,"unavailable","Basket request reached its checked 90-second resource budget; no partial result is published.",&report));
+        }
+        single.insert("from".into(), used_from);
+        single.insert("to".into(), used_to);
+        let rows = st.baskets.basket_rows(&key)?;
+        let selected = crate::SelectedContext::Native {
+            rows,
+            evidence: st.baskets.native_evidence(&key).unwrap(),
+        };
+        let held = selected.context(st);
+        let (ctx, start, end, cost) = crate::resolve_context(&held, &single)?;
+        let trades = match member_trades(ctx, req.id, start, end, cost, &params) {
+            Ok(trades) => trades,
+            Err(note) => {
+                return Ok(hold(
+                    &req,
+                    "calculation_unavailable",
+                    &format!("Full basket withheld by rule calculation for {key}: {note}"),
+                    &report,
+                ))
+            }
+        };
+        for trade in &trades {
+            let mut candidate = match Candidate::from_source(&key, ctx, trade, contract) {
+                Ok(candidate) => candidate,
+                Err(note) => {
+                    return Ok(hold(
+                        &req,
+                        "calculation_unavailable",
+                        &format!("Full basket withheld by rule accounting: {note}"),
+                        &report,
+                    ))
+                }
+            };
+            if candidate.open && candidate.exit < *calendar.last().unwrap() {
+                candidate.open = false;
+                candidate.exit_px = ctx.c[trade.exit_i];
+                candidate.exit_phase = Phase::Close;
+                candidate.reason = format!(
+                    "closed at the last available price (data ends {})",
+                    candidate.exit
+                );
+            }
+            total_marks += candidate.marks.len();
+            if total_marks > MAX_MARKS || candidates.len() >= MAX_CANDIDATES {
+                return Ok(hold(&req,"unavailable","Basket exceeds its bounded candidate/quote memory budget; no truncated stock or trade list is published.",&report));
+            }
+            candidates.push(candidate);
+        }
+    }
+    let adjusted = report.iter().filter(|c| c.status == "adjusted").count();
+    let excluded = expected - used;
+    let member_report=format!("{{\"expected_members\":{expected},\"used_members\":{used},\"adjusted_members\":{adjusted},\"excluded_members\":{excluded},\"summary\":{},\"basis\":\"Member windows and exclusions are decided from actual data and rule readiness before any trade results. No prices, bars or signals are filled.\"}}",quote(&format!("{used} of {expected} members used; {adjusted} adjusted; {excluded} excluded.")));
     let replay = match replay(&candidates, &calendar, req.max_positions, costs.side_rate()) {
         Ok(run) => run,
         Err(note) => {
@@ -809,7 +1084,9 @@ pub fn run(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         .collect();
     let bh: Vec<_> = bh.iter().map(|c| c / bh[0]).collect();
     let benchmark_run = crate::Run {
-        source_account:None,bandy_account:None,unit_exposure_report:None,
+        source_account: None,
+        bandy_account: None,
+        unit_exposure_report: None,
         trades: vec![],
         from: 0,
         to: calendar.len() - 1,
@@ -830,7 +1107,7 @@ pub fn run(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         let gross=t.gross_return();let net=t.net_return(costs.side_rate());
         format!("{{\"symbol\":{},\"ticker\":{},\"dir\":{},\"legs\":[[{},{},{}]],\"entry\":{},\"exit\":{},\"exit_i\":{},\"exit_px\":{},\"avg_px\":{},\"ret\":{},\"bars\":{},\"open\":{},\"reason\":{},\"entry_kind\":{},\"entry_phase\":{},\"exit_phase\":{},\"allocation\":{},\"portfolio_contribution\":{},\"exits\":[],\"accounting\":{{\"symbol\":{},\"signal_side\":{},\"pts\":{},\"days_held\":{},\"gross_ret\":{},\"net_ret\":{},\"slippage_ret\":{},\"fee_ret\":{},\"gross_pnl\":null,\"net_pnl\":null,\"taxes\":null,\"slippage\":null,\"fees\":null,\"mae\":null,\"mfe\":null,\"mae_ret_observed\":null,\"mfe_ret_observed\":null,\"cost_status\":{},\"return_basis\":\"Unchanged source-unit return; portfolio contribution is fixed initial-equity slot times this return. Fractional normalized units, no monetary capital.\"}}}}",quote(&t.symbol),quote(&t.key),t.dir,entry_i,exact(t.entry_px),exact(t.weight),quote(&t.entry),quote(&t.exit),exit_i,exact(t.exit_px),exact(t.entry_px),exact(net),t.bars,t.open,quote(&t.reason),quote(t.entry_kind),quote(t.entry_phase.name()),quote(t.exit_phase.name()),exact(accepted.allocation),exact(accepted.allocation*net),quote(&t.symbol),quote(if t.dir>0.{"Long"}else{"Short"}),exact(t.dir*(t.exit_px-t.entry_px)),crate::day_number(&t.exit)-crate::day_number(&t.entry),exact(gross),exact(net),exact(t.weight*costs.slippage_bps/10000.*if t.open{1.}else{2.}),exact(t.weight*costs.fees_bps/10000.*if t.open{1.}else{2.}),quote(if t.open{"entry_cost_only_actual_open_mark"}else{"modeled_round_trip_cost"}))
     });
-    Ok(format!("{{\"kind\":\"basket\",\"status\":\"ready\",\"basket\":{},\"membership\":\"current\",\"model_initial_equity\":1,\"dates\":{},\"equity\":{},\"gross_equity\":{},\"bh\":{},\"close\":[],\"ohlc\":null,\"trades\":{},\"stats\":{},\"gross_stats\":{},\"benchmark_symbol\":{},\"benchmark_stats\":{},\"costs\":{},\"coverage\":{},\"portfolio\":{{\"effective_from\":{},\"effective_to\":{},\"window_basis\":\"Explicit dates are never silently shortened. Default dates intersect admitted member history with the actual benchmark calendar; full earlier stock history is not implied.\",\"max_positions\":{},\"slot_allocation\":{},\"closed_contribution\":{},\"accepted_positions\":{},\"rejected_capacity\":{},\"rejected_cash\":{},\"source_members\":{},\"cash\":{},\"positions\":{},\"historical_membership_verified\":false,\"compounding_supported\":false,\"ranking\":\"Alphabetical symbol order within each observed open/close phase\",\"signal_mode\":\"Regular-mode replay of unchanged independent-symbol candidate ledgers; rejected entries are not deferred or retried\",\"allocation_basis\":\"Each full position reserves 1/N of initial normalized equity; partially deployed source legs use their observed weight. Unused slots remain cash. Fractional research units; no share lot rounding, leverage, margin financing or interest. Short principal is reserved and short proceeds cannot fund entries.\",\"timing_contract_reviewed\":{},\"timing_disclosure\":{},\"timing_basis\":{},\"gross_basis\":\"Zero-cost accounting on the identical accepted fills; gross does not independently select a different candidate list\"}},\"notices\":[\"Source-listed current membership is a static snapshot. A current snapshot alone does not establish historical membership; retrospective selection has survivorship bias and this is not a historical membership reproduction.\",\"This is a declared portfolio application of an admitted stock rule, not the author's published portfolio, rankings or performance.\",\"Net Profit is closed allocated contribution relative to initial unit equity. Avg net pnl is the actual source-unit net return per closed trade; multiplying it by trade count gives the unallocated trade-return sum, not basket Net Profit.\",\"Equity and risk statistics use cash plus simultaneously held actual daily marks. Open positions deduct entry costs only; no guessed closing transaction is applied.\"],\"accounting_basis\":\"Fixed initial-equity slots, chronological cash and actual held-position marks. Basket Net Profit excludes open positions. Overlapping stock returns are never compounded in exit order. No capital-related statistics are supplied.\"}}",quote(req.basket),array(calendar.iter().map(|s|quote(s))),array(replay.equity.iter().map(|v|exact(*v))),array(replay.gross_equity.iter().map(|v|exact(*v))),array(bh.iter().map(|v|exact(*v))),array(trade_json),crate::stats_json(&stats),crate::stats_json(&gross_stats),quote(benchmark_symbol),crate::stats_json(&benchmark_stats),portfolio_costs,array(report.iter().map(Coverage::json)),quote(calendar.first().unwrap()),quote(calendar.last().unwrap()),req.max_positions,exact(1./req.max_positions as f64),exact(stats["net_profit"]),replay.accepted.len(),replay.rejected_capacity,replay.rejected_cash,members.len(),array(replay.cash.iter().map(|v|exact(*v))),array(replay.positions.iter().map(|v|v.to_string())), !contract.conservative,
+    Ok(format!("{{\"kind\":\"basket\",\"status\":\"ready\",\"basket\":{},\"membership\":\"current\",\"model_initial_equity\":1,\"dates\":{},\"equity\":{},\"gross_equity\":{},\"bh\":{},\"close\":[],\"ohlc\":null,\"trades\":{},\"stats\":{},\"gross_stats\":{},\"benchmark_symbol\":{},\"benchmark_stats\":{},\"costs\":{},\"coverage\":{},\"member_report\":{},\"portfolio\":{{\"effective_from\":{},\"effective_to\":{},\"window_basis\":\"Explicit dates are never silently shortened. Default dates intersect admitted member history with the actual benchmark calendar; full earlier stock history is not implied.\",\"max_positions\":{},\"slot_allocation\":{},\"closed_contribution\":{},\"accepted_positions\":{},\"rejected_capacity\":{},\"rejected_cash\":{},\"source_members\":{},\"cash\":{},\"positions\":{},\"historical_membership_verified\":false,\"compounding_supported\":false,\"ranking\":\"Alphabetical symbol order within each observed open/close phase\",\"signal_mode\":\"Regular-mode replay of unchanged independent-symbol candidate ledgers; rejected entries are not deferred or retried\",\"allocation_basis\":\"Each full position reserves 1/N of initial normalized equity; partially deployed source legs use their observed weight. Unused slots remain cash. Fractional research units; no share lot rounding, leverage, margin financing or interest. Short principal is reserved and short proceeds cannot fund entries.\",\"timing_contract_reviewed\":{},\"timing_disclosure\":{},\"timing_basis\":{},\"gross_basis\":\"Zero-cost accounting on the identical accepted fills; gross does not independently select a different candidate list\"}},\"notices\":[\"Source-listed current membership is a static snapshot. A current snapshot alone does not establish historical membership; retrospective selection has survivorship bias and this is not a historical membership reproduction.\",\"This is a declared portfolio application of an admitted stock rule, not the author's published portfolio, rankings or performance.\",\"Net Profit is closed allocated contribution relative to initial unit equity. Avg net pnl is the actual source-unit net return per closed trade; multiplying it by trade count gives the unallocated trade-return sum, not basket Net Profit.\",\"Equity and risk statistics use cash plus simultaneously held actual daily marks. Positions still open at the basket end deduct entry costs only. If a member's data ends sooner, its remaining position closes at its last actual close with normal exit costs, as disclosed in its member report and trade list.\"],\"accounting_basis\":\"Fixed initial-equity slots, chronological cash and actual held-position marks. Basket Net Profit excludes open positions. Overlapping stock returns are never compounded in exit order. No capital-related statistics are supplied.\"}}",quote(req.basket),array(calendar.iter().map(|s|quote(s))),array(replay.equity.iter().map(|v|exact(*v))),array(replay.gross_equity.iter().map(|v|exact(*v))),array(bh.iter().map(|v|exact(*v))),array(trade_json),crate::stats_json(&stats),crate::stats_json(&gross_stats),quote(benchmark_symbol),crate::stats_json(&benchmark_stats),portfolio_costs,array(report.iter().map(Coverage::json)),member_report,quote(calendar.first().unwrap()),quote(calendar.last().unwrap()),req.max_positions,exact(1./req.max_positions as f64),exact(stats["net_profit"]),replay.accepted.len(),replay.rejected_capacity,replay.rejected_cash,expected,array(replay.cash.iter().map(|v|exact(*v))),array(replay.positions.iter().map(|v|v.to_string())), !contract.conservative,
         if contract.conservative { quote(CONSERVATIVE_TIMING) } else { "null".into() },
         quote(if contract.conservative { "Cash and slots are reserved from entry-day open through exit-day close. Source fill prices are unchanged; multi-leg positions are withheld." } else { "Observed prior-signal next-open exits before open entries; observed close exits before close entries. Intraday stop/limit ordering and multi-leg positions are withheld." })))
 }
@@ -941,22 +1218,6 @@ mod tests {
         assert_eq!(r.rejected_capacity, 1);
         near(r.cash[0], 0.);
         near(r.equity[4], 1.20);
-    }
-    #[test]
-    fn closed_partial_short_cannot_draw_on_other_slots_after_exhausting_its_collateral() {
-        let mut short = candidate("A", 0, 4, 300.);
-        short.dir = -1.;
-        short.weight = 0.25;
-        // The original source-unit return is -50%; that does not authorize a
-        // 200% loss on the smaller filled principal plus borrowing other cash.
-        near(short.net_return(0.), -0.5);
-        assert!(replay(&[short], &dates(), 10, 0.)
-            .unwrap_err()
-            .contains("reserved principal"));
-        let mut same = candidate("A", 0, 0, 300.);
-        same.dir = -1.;
-        same.weight = 0.25;
-        assert!(replay(&[same], &dates(), 10, 0.).is_err());
     }
     #[test]
     fn open_exits_free_slots_before_open_entries_but_close_exit_cannot_fund_earlier_open() {
@@ -1081,39 +1342,57 @@ mod tests {
             open: false,
             exits: vec![],
         };
-        assert!(
-            Candidate::from_source("basket:nifty50:A", &ctx, &t, (Phase::Close, Phase::Close).into())
-                .is_ok()
-        );
+        assert!(Candidate::from_source(
+            "basket:nifty50:A",
+            &ctx,
+            &t,
+            (Phase::Close, Phase::Close).into()
+        )
+        .is_ok());
         let mut x = t.clone();
         x.entry_kind = "limit";
-        assert!(
-            Candidate::from_source("basket:nifty50:A", &ctx, &x, (Phase::Close, Phase::Close).into())
-                .unwrap_err()
-                .contains("intraday")
-        );
+        assert!(Candidate::from_source(
+            "basket:nifty50:A",
+            &ctx,
+            &x,
+            (Phase::Close, Phase::Close).into()
+        )
+        .unwrap_err()
+        .contains("intraday"));
         let mut x = t.clone();
         x.legs.push(crate::connors::Leg {
             i: 1,
             px: 100.,
             w: 0.25,
         });
-        assert!(
-            Candidate::from_source("basket:nifty50:A", &ctx, &x, (Phase::Close, Phase::Close).into())
-                .unwrap_err()
-                .contains("scale-in")
-        );
+        assert!(Candidate::from_source(
+            "basket:nifty50:A",
+            &ctx,
+            &x,
+            (Phase::Close, Phase::Close).into()
+        )
+        .unwrap_err()
+        .contains("scale-in"));
         let mut x = t.clone();
         x.exits.push((2, 102., 0.5));
-        assert!(Candidate::from_source("basket:nifty50:A", &ctx, &x,
-            execution_contract("unreviewed", "fixture")).unwrap_err().contains("scale-in/scale-out"));
+        assert!(Candidate::from_source(
+            "basket:nifty50:A",
+            &ctx,
+            &x,
+            execution_contract("unreviewed", "fixture")
+        )
+        .unwrap_err()
+        .contains("scale-in/scale-out"));
         let mut x = t;
         x.exit_px = 105.;
-        assert!(
-            Candidate::from_source("basket:nifty50:A", &ctx, &x, (Phase::Close, Phase::Close).into())
-                .unwrap_err()
-                .contains("executor contract")
-        );
+        assert!(Candidate::from_source(
+            "basket:nifty50:A",
+            &ctx,
+            &x,
+            (Phase::Close, Phase::Close).into()
+        )
+        .unwrap_err()
+        .contains("executor contract"));
     }
     #[test]
     fn a_target_equal_to_daily_close_still_has_no_reviewed_portfolio_fill_phase() {
@@ -1132,16 +1411,34 @@ mod tests {
         let contract = execution_contract("ss_the_anti", "ss");
         assert!(contract.conservative);
         assert_eq!(contract.phases, (Phase::Open, Phase::Close));
-        let rows: Vec<_> = dates().into_iter().map(|date| Row {
-            ticker: "A".into(), date, open: 99., high: 110., low: 90.,
-            close: 100., volume: Some(100.),
-        }).collect();
+        let rows: Vec<_> = dates()
+            .into_iter()
+            .map(|date| Row {
+                ticker: "A".into(),
+                date,
+                open: 99.,
+                high: 110.,
+                low: 90.,
+                close: 100.,
+                volume: Some(100.),
+            })
+            .collect();
         let ctx = Ctx::new(&rows, &rows, &[]);
         for entry_kind in ["close", "open", "stop", "limit"] {
             let mut trade = Trade {
-                dir: 1., legs: vec![crate::connors::Leg { i: 0, px: 101., w: 1. }],
-                exit_i: 0, exit_px: 105., reason: "target fixture".into(),
-                entry_kind, signal_i: 0, open: false, exits: vec![],
+                dir: 1.,
+                legs: vec![crate::connors::Leg {
+                    i: 0,
+                    px: 101.,
+                    w: 1.,
+                }],
+                exit_i: 0,
+                exit_px: 105.,
+                reason: "target fixture".into(),
+                entry_kind,
+                signal_i: 0,
+                open: false,
+                exits: vec![],
             };
             let c = Candidate::from_source("basket:nifty50:A", &ctx, &trade, contract).unwrap();
             assert_eq!((c.entry_phase, c.exit_phase), contract.phases);
@@ -1152,19 +1449,63 @@ mod tests {
             assert_eq!(replay.accepted.len(), 1);
             assert_eq!(replay.positions[0], 0);
             near(replay.cash[0], 105. / 101.);
-            trade.legs.push(crate::connors::Leg { i: 0, px: 102., w: 0.25 });
-            assert!(Candidate::from_source("basket:nifty50:A", &ctx, &trade, contract)
-                .unwrap_err().contains("scale-in/scale-out"));
+            trade.legs.push(crate::connors::Leg {
+                i: 0,
+                px: 102.,
+                w: 0.25,
+            });
+            assert!(
+                Candidate::from_source("basket:nifty50:A", &ctx, &trade, contract)
+                    .unwrap_err()
+                    .contains("scale-in/scale-out")
+            );
         }
     }
     #[test]
     fn all_reviewed_contracts_keep_their_phases_and_reviewed_flag() {
         for (book, ids, phases) in [
-            ("stc9", vec!["f1a", "f3a", "rsi2_5d"], (Phase::Close, Phase::Close)),
-            ("hbqts", vec!["hbqts_ma5_25", "hbqts_ma1_36", "hbqts_fixed_interval", "hbqts_entry_id1", "hbqts_bb_breakout", "hbqts_cgo", "hbqts_stoch_rsi", "hbqts_dpo", "hbqts_dom", "hbqts_macd_daily"], (Phase::Close, Phase::Close)),
+            (
+                "stc9",
+                vec!["f1a", "f3a", "rsi2_5d"],
+                (Phase::Close, Phase::Close),
+            ),
+            (
+                "hbqts",
+                vec![
+                    "hbqts_ma5_25",
+                    "hbqts_ma1_36",
+                    "hbqts_fixed_interval",
+                    "hbqts_entry_id1",
+                    "hbqts_bb_breakout",
+                    "hbqts_cgo",
+                    "hbqts_stoch_rsi",
+                    "hbqts_dpo",
+                    "hbqts_dom",
+                    "hbqts_macd_daily",
+                ],
+                (Phase::Close, Phase::Close),
+            ),
             ("ch_bta", vec!["ch_cbpb_time"], (Phase::Open, Phase::Close)),
             ("ch_bta", vec!["ch_65sma3cc"], (Phase::Open, Phase::Open)),
-            ("kftsm", vec!["kftsm_ma", "kftsm_exp", "kftsm_lrs", "kftsm_ndb", "kftsm_swg", "kftsm_swing", "kftsm_kama", "kftsm_adapt_exp", "kftsm_vidya", "kftsm_adapt_r2", "kftsm_adapt_rsi", "kftsm_month_end", "kftsm_hirsch"], (Phase::Close, Phase::Close)),
+            (
+                "kftsm",
+                vec![
+                    "kftsm_ma",
+                    "kftsm_exp",
+                    "kftsm_lrs",
+                    "kftsm_ndb",
+                    "kftsm_swg",
+                    "kftsm_swing",
+                    "kftsm_kama",
+                    "kftsm_adapt_exp",
+                    "kftsm_vidya",
+                    "kftsm_adapt_r2",
+                    "kftsm_adapt_rsi",
+                    "kftsm_month_end",
+                    "kftsm_hirsch",
+                ],
+                (Phase::Close, Phase::Close),
+            ),
         ] {
             for id in ids {
                 let contract = execution_contract(id, book);
@@ -1175,8 +1516,14 @@ mod tests {
     }
     #[test]
     fn conservative_entry_cannot_spend_cash_released_later_that_day() {
-        let mut trades = vec![candidate("A", 0, 2, 110.), candidate("B", 0, 4, 110.), candidate("C", 2, 4, 110.)];
-        for t in &mut trades { t.entry_phase = Phase::Open; }
+        let mut trades = vec![
+            candidate("A", 0, 2, 110.),
+            candidate("B", 0, 4, 110.),
+            candidate("C", 2, 4, 110.),
+        ];
+        for t in &mut trades {
+            t.entry_phase = Phase::Open;
+        }
         let r = replay(&trades, &dates(), 3, 0.001).unwrap();
         assert_eq!(r.accepted.len(), 2);
         assert_eq!(r.rejected_cash, 1);
@@ -1193,7 +1540,10 @@ mod tests {
             t.exit_phase = Phase::Close;
         }
         let r = replay(&[a, b, c], &dates(), 1, 0.).unwrap();
-        assert_eq!(r.accepted.iter().map(|a| a.candidate).collect::<Vec<_>>(), vec![0, 2]);
+        assert_eq!(
+            r.accepted.iter().map(|a| a.candidate).collect::<Vec<_>>(),
+            vec![0, 2]
+        );
         assert_eq!(r.rejected_capacity, 1);
         near(r.cash[1], 0.);
         near(r.cash[2], 1.10);
@@ -1323,7 +1673,10 @@ mod tests {
         assert!(reviewed.contains("\"timing_disclosure\":null"));
         q.insert("id".into(), "hbqts_profit_target".into());
         let conservative = run(&state, &q).unwrap();
-        assert!(conservative.contains("\"status\":\"ready\""), "{conservative}");
+        assert!(
+            conservative.contains("\"status\":\"ready\""),
+            "{conservative}"
+        );
         assert!(conservative.contains("\"timing_contract_reviewed\":false"));
         assert!(conservative.contains(CONSERVATIVE_TIMING));
         assert!(conservative.contains("\"entry_phase\":\"open\""));
@@ -1368,7 +1721,7 @@ mod tests {
         assert!(body.contains("calendar coverage"));
     }
     #[test]
-    fn a_flat_missing_source_day_cannot_silently_remove_signals_from_basket() {
+    fn a_flat_missing_source_day_uses_disclosed_continuous_suffix() {
         use std::io::Write;
         let _lock = ENDPOINT_LOCK.lock().unwrap();
         let (fixture, state, q) = fixture();
@@ -1379,7 +1732,7 @@ mod tests {
             }
         }
         // Constant closes generate no MA crossover; the missing flat bar must
-        // still hold the portfolio instead of publishing an apparent zero.
+        // move admission after the gap before any trade performance is known.
         let mut process = std::process::Command::new("sha256sum")
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
@@ -1418,12 +1771,12 @@ mod tests {
         state.baskets = baskets::Catalogue::load(&fixture.0).unwrap();
         let body = run(&state, &q).unwrap();
         assert!(body.contains("2020-06-07"));
-        assert!(body.contains("flat-day gap"));
-        assert!(body.contains("\"stats\":null"));
-        assert!(body.contains("\"status\":\"not_processed\""));
+        assert!(body.contains("last missing market date"));
+        assert!(body.contains("\"status\":\"ready\""), "{body}");
+        assert!(body.contains("\"used_from\":\"2020-06-08\""));
     }
     #[test]
-    fn named_source_basket_with_missing_constituent_cannot_publish_an_admitted_subset() {
+    fn named_source_basket_discloses_missing_constituent_and_publishes() {
         let _lock = ENDPOINT_LOCK.lock().unwrap();
         let (fixture, mut state, q) = fixture();
         let old = std::fs::read_to_string(fixture.0.join("index.csv")).unwrap();
@@ -1434,11 +1787,217 @@ mod tests {
         std::fs::write(fixture.0.join("index.csv"), index).unwrap();
         state.baskets = baskets::Catalogue::load(&fixture.0).unwrap();
         let body = run(&state, &q).unwrap();
-        assert!(body.contains("expects 3 members"));
-        assert!(body.contains("only 2 actual current members"));
+        assert!(body.contains("\"status\":\"ready\""), "{body}");
+        assert!(body.contains("\"expected_members\":3"));
+        assert!(body.contains("\"used_members\":2"));
+        assert!(body.contains("\"excluded_members\":1"));
+    }
+    #[test]
+    fn member_window_uses_actual_late_first_and_early_last() {
+        let rows: Vec<_> = dates()
+            .into_iter()
+            .map(|date| Row {
+                ticker: "A".into(),
+                date,
+                open: 1.,
+                high: 1.,
+                low: 1.,
+                close: 1.,
+                volume: None,
+            })
+            .collect();
+        let calendar = dates();
+        let (start, end, gap) = covered_window(&rows[1..4], &calendar).unwrap();
+        assert_eq!((start, end, gap), (0, 2, None));
+    }
+    #[test]
+    fn member_window_uses_suffix_after_last_interior_gap_and_excludes_no_overlap() {
+        let calendar = dates();
+        let rows: Vec<_> = calendar
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i != 1 && *i != 3)
+            .map(|(_, date)| Row {
+                ticker: "A".into(),
+                date: date.clone(),
+                open: 1.,
+                high: 1.,
+                low: 1.,
+                close: 1.,
+                volume: None,
+            })
+            .collect();
+        assert_eq!(
+            covered_window(&rows, &calendar),
+            Some((2, 2, Some("2020-01-04".into())))
+        );
+        assert!(covered_window(&rows, &["1999-01-01".into()]).is_none());
+    }
+    #[test]
+    fn member_bar_outside_benchmark_calendar_uses_common_suffix_before_results() {
+        let rows: Vec<_> = dates()
+            .into_iter()
+            .map(|date| Row {
+                ticker: "A".into(),
+                date,
+                open: 1.,
+                high: 1.,
+                low: 1.,
+                close: 1.,
+                volume: None,
+            })
+            .collect();
+        let calendar = vec![
+            rows[0].date.clone(),
+            rows[1].date.clone(),
+            rows[3].date.clone(),
+            rows[4].date.clone(),
+        ];
+        assert_eq!(
+            covered_window(&rows, &calendar),
+            Some((3, 4, Some(rows[2].date.clone())))
+        );
+    }
+    #[test]
+    fn rule_warmup_floor_excludes_short_suffix_before_results() {
+        assert_eq!(member_warmup("f1a", &Default::default()), 200);
+        assert_eq!(
+            member_warmup("f1a", &BTreeMap::from([("trend".into(), 50.)])),
+            50
+        );
+    }
+    fn change_first_member(
+        fixture: &Fixture,
+        state: &mut State,
+        edit: impl FnOnce(String) -> String,
+    ) {
+        use std::io::Write;
+        let csv = edit(std::fs::read_to_string(fixture.0.join("stock.csv")).unwrap());
+        std::fs::write(fixture.0.join("changed.csv"), &csv).unwrap();
+        let mut hash = std::process::Command::new("sha256sum")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        hash.stdin
+            .take()
+            .unwrap()
+            .write_all(csv.as_bytes())
+            .unwrap();
+        let sha = String::from_utf8(hash.wait_with_output().unwrap().stdout)
+            .unwrap()
+            .split_whitespace()
+            .next()
+            .unwrap()
+            .to_string();
+        let old = std::fs::read_to_string(fixture.0.join("index.csv")).unwrap();
+        let index = old
+            .lines()
+            .map(|line| {
+                if line.starts_with("nifty50,A,") {
+                    let mut fields: Vec<_> = line.split(',').map(str::to_string).collect();
+                    fields[2] = "changed.csv".into();
+                    fields[8] = sha.clone();
+                    fields.join(",")
+                } else {
+                    line.into()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        std::fs::write(fixture.0.join("index.csv"), index).unwrap();
+        state.baskets = baskets::Catalogue::load(&fixture.0).unwrap();
+    }
+    #[test]
+    fn endpoint_uses_actual_first_bar_despite_metadata_mismatch() {
+        let _lock = ENDPOINT_LOCK.lock().unwrap();
+        let (f, mut st, mut q) = fixture();
+        q.remove("from");
+        change_first_member(&f, &mut st, |s| {
+            s.lines()
+                .enumerate()
+                .filter(|(i, _)| *i != 1)
+                .map(|(_, l)| l)
+                .collect::<Vec<_>>()
+                .join("\n")
+        });
+        assert!(st.baskets.rows("basket:nifty50:A").is_err());
+        let body = run(&st, &q).unwrap();
+        assert!(body.contains("\"status\":\"ready\""), "{body}");
+        assert!(body.contains("\"used_from\":\"2020-01-02\""));
+        assert!(body.contains("differ from catalogue dates"));
+    }
+    #[test]
+    fn endpoint_excludes_short_suffix_and_missing_file_without_losing_other_member() {
+        let _lock = ENDPOINT_LOCK.lock().unwrap();
+        let (f, mut st, q) = fixture();
+        change_first_member(&f, &mut st, |s| {
+            s.lines()
+                .filter(|l| !l.starts_with("2020-11-18,"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        });
+        let body = run(&st, &q).unwrap();
+        assert!(body.contains("\"status\":\"ready\""), "{body}");
+        assert!(body.contains("\"used_members\":1"));
+        assert!(body.contains("warm-up bars plus 2"));
+        std::fs::remove_file(f.0.join("changed.csv")).unwrap();
+        let body = run(&st, &q).unwrap();
+        assert!(body.contains("\"status\":\"ready\""), "{body}");
+        assert!(body.contains("CSV unavailable"));
+        assert!(body.contains("\"excluded_members\":1"));
+    }
+    #[test]
+    fn endpoint_auto_starts_volume_before_producing_any_candidates() {
+        let _lock = ENDPOINT_LOCK.lock().unwrap();
+        let (f, mut st, mut q) = fixture();
+        q.remove("from");
+        q.insert("id".into(), "eltfl_fi2".into());
+        change_first_member(&f, &mut st, |s| {
+            s.lines()
+                .enumerate()
+                .map(|(i, l)| {
+                    if i > 0 && i <= 100 {
+                        l.replace(",5000,", ",0,")
+                    } else {
+                        l.into()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        });
+        let body = run(&st, &q).unwrap();
+        assert!(body.contains("\"status\":\"ready\""), "{body}");
+        assert!(body.contains("\"used_from\":\"2020-04-17\""));
+        assert!(body.contains("Required volume data"));
+    }
+    #[test]
+    fn endpoint_rule_level_source_review_holds_even_with_other_usable_members() {
+        let _lock = ENDPOINT_LOCK.lock().unwrap();
+        let (_f, st, mut q) = fixture();
+        q.insert("id".into(), "elcim_fi2".into());
+        let body = run(&st, &q).unwrap();
         assert!(body.contains("\"stats\":null"));
-        assert!(body.contains("\"trades\":[]"));
-        assert!(body.contains("\"status\":\"not_processed\""));
+        assert!(body.contains("Full basket withheld by rule"), "{body}");
+    }
+    #[test]
+    fn endpoint_member_data_end_liquidates_at_actual_close_with_exit_costs() {
+        let _lock = ENDPOINT_LOCK.lock().unwrap();
+        let (f, mut st, mut q) = fixture();
+        q.insert("id".into(), "jb624_mac2_stop".into());
+        q.insert("slippage".into(), "10".into());
+        change_first_member(&f, &mut st, |s| {
+            s.lines().take(201).collect::<Vec<_>>().join("\n")
+        });
+        let body = run(&st, &q).unwrap();
+        assert!(body.contains("\"status\":\"ready\""), "{body}");
+        assert!(
+            body.contains(
+                "\"reason\":\"closed at the last available price (data ends 2020-08-04)\""
+            ),
+            "{body}"
+        );
+        assert!(!body.contains("Held A position has no actual closing quote"));
     }
     #[test]
     fn permit_is_fail_fast_and_released_on_every_exit() {
