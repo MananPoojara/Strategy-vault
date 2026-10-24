@@ -8,6 +8,9 @@
 use crate::connors::*;
 
 pub const BOOK: &str = "lbrtt";
+/// Admitted ids (authors/raschke/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["lbrtt_wide_range_reversal", "lbrtt_extended_run"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const WRR: &[&str] = &[
     "F|(PDF p49, \"Trading Pattern: Wide Range Reversal System\") \"Identify the widest range of the last four days. If the bar closes up from the previous day's close, only a sell can be taken.\"",
