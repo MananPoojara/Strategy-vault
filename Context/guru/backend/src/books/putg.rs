@@ -15,6 +15,9 @@ use super::pbwts::{entry, exit, highest, lowest, sim, ts_avg_tr, Kind};
 use crate::connors::{claim, sma, true_range, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "putg";
+/// Admitted ids (authors/pruitt/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["putg_donchian_mod", "putg_ma_cross", "putg_stvorbo", "putg_pattern_vbo", "putg_four_close", "putg_daily_range", "putg_reversal_day", "putg_hook", "putg_narrow_range", "putg_gap"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 macro_rules! live {
     ($id:expr, $name:expr, $group:expr, $dir:expr, $rules:expr, $notes:expr, $claim:expr) => {

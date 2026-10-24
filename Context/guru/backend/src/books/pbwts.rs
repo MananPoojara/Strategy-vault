@@ -19,6 +19,9 @@
 use crate::connors::{claim, dmi, rsi, sma, true_range, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "pbwts";
+/// Admitted ids (authors/pruitt/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["pbwts_king_keltner", "pbwts_bollinger_bandit", "pbwts_thermostat", "pbwts_dbs2", "pbwts_dbs2_fade", "pbwts_seasonal", "pbwts_ghost_trader", "pbwts_money_manager", "pbwts_donchian40", "pbwts_adx_ma", "pbwts_ma_channel", "pbwts_percent_r", "pbwts_dow_oc", "pbwts_dow_oo"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 // ------------------------------------------------------------------ TradeStation-style order simulator
 
