@@ -148,6 +148,12 @@ export const LIB = [
     { id: "csops", sourceIds: ["title-9dfc05d60c19e423"], title: "Option Strategies (2nd ed.)", year: 1996, blurb: "Smith, 1996 · option spread structures picked to a market view; nothing testable on the underlying" },
     { id: "csscf", sourceIds: ["title-d9e81a63106a6b24"], title: "Seasonal Charts for Futures Traders", year: 1987, blurb: "Smith, 1987 · futures seasonal sourcebook; needs futures prices, no fixed rule" }] },
   // ---- end CSmith block ----
+  // ---- Lien block (2026-10-24) ----
+  { id: "lien", name: "Kathy Lien", tagline: "Currency strategist · FX day- and swing-trading setups; the CCI trade and the moving-average perfect order run here", books: [
+    { id: "klhpt", sourceIds: ["title-366bcc25c9890ea7", "title-db8a0baccba990b1", "title-0cf286a11dbd5ddf"], title: "High Probability Trading Setups for the Currency Market (with Boris Schlossberg)", year: 2006, blurb: "Lien & Schlossberg, 2006 · the 'Do the Right Thing' CCI trade runs on daily bars; the other setups use pips, intraday charts or hand-picked swings" },
+    { id: "kldst", sourceIds: ["title-27677f9123fd300f"], title: "Day Trading and Swing Trading the Currency Market", year: 2008, blurb: "Lien, 2008 · moving-average perfect order runs; pip-based, news and carry strategies held" },
+    { id: "kldtc", sourceIds: ["title-21d3c35d6c2c02be", "title-39a12d5916d733f7"], title: "Day Trading the Currency Market", year: 2005, blurb: "Lien, 2005 · first edition of the same strategies (perfect order counted under the 2008 edition)" }] },
+  // ---- end Lien block ----
   // ---- Etzkorn block (2026-10-24) ----
   { id: "etzkorn", name: "Mark Etzkorn", tagline: "Momentum oscillators explained and tested · MACD, RSI and rate-of-change equilibrium systems", books: [
     { id: "metwo", sourceIds: ["title-eaea9328b7643525", "title-959fc0f8fc82690b"], title: "Trading with Oscillators", year: 1997, blurb: "Etzkorn, 1997 · MACD signal-line, RSI 50 and ROC equilibrium stop-and-reverse tests (S&P 500 lengths); stochastic grid and divergences held" },
