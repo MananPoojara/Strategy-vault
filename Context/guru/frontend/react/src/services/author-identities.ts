@@ -186,6 +186,9 @@ export const authorIdentities: Record<string, readonly string[]> = {
   "fabozzi": [
     "Frank J. Fabozzi"
   ],
+  "fontanills": [
+    "George A. Fontanills"
+  ],
   "sysmisc": [],
   "swingstk": [],
   "vendors": [],
