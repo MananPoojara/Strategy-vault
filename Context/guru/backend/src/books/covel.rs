@@ -9,6 +9,9 @@
 use crate::connors::{atr, sma, true_range, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "covel";
+/// Admitted ids (authors/faith/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["cov_wott_atr_cbo", "cov_wott_bollinger_cbo", "cov_wott_donchian_trend", "cov_wott_donchian_time", "cov_wott_dual_ma", "cov_wott_triple_ma"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const TURTLE_NOTE: &str = "Futures rules run on the index (instrument swap). N = Turtle N: (19*PDN+TR)/20 seeded with the 20-day simple average of TR (OTR p.14). Unit = 1% of equity per N, so each unit's weight = 1% x fill / N (N of the day before the breakout, frozen for the trade's adds and stops, as in the book's worked examples). Stop/limit fills: at the level, or at the open when the market opens through it. Daily-bar order (book silent): on the entry bar entry -> adds -> stops/exit vs the bar's adverse extreme; on later bars open gaps -> stops/exit -> adds; no re-entry on an exit bar. 1 tick = 0.05 points (NSE). Not modelled (need several futures): correlated/direction unit limits, buy-strongest, rolls; contract truncation; the notional-account 20% cut after 10% loss (yearly reset is Rich's subjective call).";
 const WOTT_NOTE: &str = "Way of the Turtle ch.10 test system (27 US futures, Jan 1996-Jun 2006, Trading Blox). Run on one index (instrument swap). Size = 0.5% of equity per ATR (p.136), weight = 0.5% x fill / ATR of the signal day. ATR = the book's N (\"N is simply the 20-day exponential moving average of the True Range, which is now more commonly known as the ATR\", p.252). Table 10-1 is a portfolio result: not comparable to a single index.";
