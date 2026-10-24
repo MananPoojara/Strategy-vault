@@ -116,6 +116,22 @@ export const AUTHOR_PROFILE_DATA = {
   "sources": [],
   "confidence": "low"
  },
+ "thomsett": {
+  "kind": "person",
+  "mastery": [
+   "Options",
+   "Candlesticks",
+   "Swing trading"
+  ],
+  "summary": "Michael C. Thomsett writes on options, stock investing and candlestick charting. His books in the library are mainly option strategies (which need option prices) and candlestick patterns without exits; the three-day swing set-up from Put Option Strategies is the one complete stock rule. This profile rests on the books themselves.",
+  "known_for": [
+   "Options Trading for the Conservative Investor",
+   "Trading with Candlesticks",
+   "The Options Trading Body of Knowledge"
+  ],
+  "sources": [],
+  "confidence": "low"
+ },
  "schwager": {
   "kind": "person",
   "mastery": [

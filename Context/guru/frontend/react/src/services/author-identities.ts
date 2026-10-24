@@ -189,6 +189,9 @@ export const authorIdentities: Record<string, readonly string[]> = {
   "fontanills": [
     "George A. Fontanills"
   ],
+  "thomsett": [
+    "Michael C. Thomsett"
+  ],
   "sysmisc": [],
   "swingstk": [],
   "vendors": [],
