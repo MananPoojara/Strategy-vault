@@ -264,6 +264,19 @@ export const AUTHOR_PROFILE_DATA = {
   "sources": [],
   "confidence": "low"
  },
+ "gbayer": {
+  "kind": "person",
+  "mastery": [
+   "Astrological market timing"
+  ],
+  "summary": "George Bayer was a 1930s-1950s grain and stock trader who timed markets by planetary positions. His books state rules as planetary configurations that mark trend changes, without entries, stops or exits, so nothing is tested. This profile rests on the books themselves.",
+  "known_for": [
+   "Stock and Commodity Traders' Hand-Book of Trend Determination",
+   "Time Factors in the Stock Market"
+  ],
+  "sources": [],
+  "confidence": "low"
+ },
  "schwager": {
   "kind": "person",
   "mastery": [

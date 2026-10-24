@@ -210,6 +210,9 @@ export const authorIdentities: Record<string, readonly string[]> = {
   "mdarcher": [
     "Michael Duane Archer"
   ],
+  "gbayer": [
+    "George Bayer"
+  ],
   "person": [
     "John L. Person"
   ],
