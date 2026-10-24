@@ -235,6 +235,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || goslin_reviewed(def) // Goslin block
         || ruggiero_reviewed(def) // Ruggiero block
         || link_reviewed(def) // Link block
+        || dorsey_reviewed(def) // Dorsey block
         || bwilliams_reviewed(def) // BWilliams block
         || stridsman_reviewed(def) // Stridsman block
         || weissman_reviewed(def) // Weissman block
@@ -1044,6 +1045,16 @@ fn link_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Link
+// ---------------------------------------------------------------- Dorsey 2026-10-25
+// Admission only for the module REVIEWED lists (authors/dorsey/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn dorsey_reviewed(def:&StrategyDef)->bool {(def.book=="ddrvi" && crate::books::ddrvi::reviewed(def.id))}
+const DORSEY_LABEL:&str="Donald Dorsey tested the inertia system on 13 futures markets (10-20 years of daily data to about 1994); runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test.";
+fn dorsey_policy(def:&StrategyDef)->Option<Policy> {
+    if !dorsey_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Donald Dorsey, Refining the Relative Volatility Index (Stocks & Commodities V13, 1995, p.388-391): new RVI = (RVIH + RVIL)/2 from the Fig.4 TradeStation code, inertia = 20-bar average; buy when inertia is above 50, sell when below 50 (Fig.5 text). Reviewed in authors/dorsey/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Dorsey
 // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
 /// Reviewed Joe Ross daily rules (books::joe_ross_rules::REVIEWED): actual indices, ETFs and stocks, US and India, as a
 /// labelled declared application. The source references in books::joe_ross stay held (source review).
@@ -1079,6 +1090,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=goslin_policy(def) {return p;} // Goslin block
     if let Some(p)=ruggiero_policy(def) {return p;} // Ruggiero block
     if let Some(p)=link_policy(def) {return p;} // Link block
+    if let Some(p)=dorsey_policy(def) {return p;} // Dorsey block
     if let Some(p)=bwilliams_policy(def) {return p;} // BWilliams block
     if let Some(p)=stridsman_policy(def) {return p;} // Stridsman block
     if let Some(p)=weissman_policy(def) {return p;} // Weissman block
@@ -1557,6 +1569,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if goslin_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",GOSLIN_LABEL));} // Goslin block
     if ruggiero_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",RUGGIERO_LABEL));} // Ruggiero block
     if link_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LINK_LABEL));} // Link block
+    if dorsey_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",DORSEY_LABEL));} // Dorsey block
     if bwilliams_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BWILLIAMS_LABEL));} // BWilliams block
     if stridsman_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",STRIDSMAN_LABEL));} // Stridsman block
     if weissman_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",WEISSMAN_LABEL));} // Weissman block
@@ -1864,6 +1877,22 @@ mod tests {
         }
     }
     // ---- end Link block ----
+    // ---- Dorsey block (2026-10-25) ----
+    #[test]
+    fn dorsey_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{ddrvi};
+        let all:Vec<StrategyDef>=ddrvi::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=ddrvi::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Dorsey block ----
     // ---- BWilliams block (2026-10-24) ----
     #[test]
     fn bwilliams_review_admits_exact_ids_on_indices_etfs_and_stocks() {
