@@ -310,6 +310,20 @@ export const AUTHOR_PROFILE_DATA = {
   "sources": [],
   "confidence": "low"
  },
+ "merriman": {
+  "kind": "person",
+  "mastery": [
+   "Market cycles",
+   "Financial astrology"
+  ],
+  "summary": "Raymond A. Merriman writes on stock-market cycles and their correlation with planetary and solar-lunar phenomena. His books in the library describe cycle lengths and time bands for turning points and confirm them with technical studies; they give no complete entry and exit rules. This profile rests on the books themselves.",
+  "known_for": [
+   "The Ultimate Book on Stock Market Timing",
+   "Merriman on Market Cycles"
+  ],
+  "sources": [],
+  "confidence": "low"
+ },
  "carney": {
   "kind": "person",
   "mastery": [
