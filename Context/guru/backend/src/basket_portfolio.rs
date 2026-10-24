@@ -304,15 +304,52 @@ struct Replay {
     accepted: Vec<Accepted>,
     rejected_capacity: usize,
     rejected_cash: usize,
+    /// Exits whose net value was negative, i.e. the loss exceeded the slot and
+    /// was paid from free cash.
+    slot_loss_settlements: Vec<Settlement>,
+    /// Lowest cash after any single cash event (not just end of day).
+    minimum_event_cash: f64,
 }
+#[derive(Debug, Clone)]
+struct Settlement {
+    symbol: String,
+    date: String,
+    phase: Phase,
+    cash_before: f64,
+    cash_change: f64,
+}
+const FUNDING_DISCLOSURE: &str = "Losses beyond a position's slot are paid from free cash; no borrowing.";
 
+/// Net cash returned by closing a position. Negative when the loss exceeds the
+/// reserved slot; the caller settles that from free cash.
 fn release_value(t: &Candidate, principal: f64, cost: f64) -> Result<f64, String> {
-    let gross = principal * (1. + t.dir * (t.exit_px / t.entry_px - 1.));
-    let net = gross - principal * cost;
-    if !gross.is_finite() || gross <= 0. || !net.is_finite() || net <= 0. {
-        return Err("calculation_unavailable: Closed position exhausts its reserved principal or requires unsupported exit funding/margin. Other slots' cash cannot silently finance the loss; no portfolio result is published.".into());
+    let net = principal * (1. + t.dir * (t.exit_px / t.entry_px - 1.)) - principal * cost;
+    if !net.is_finite() {
+        return Err("calculation_unavailable: Closed position value is not a finite number; no portfolio result is published.".into());
     }
     Ok(net)
+}
+
+/// Apply one exit's cash. Cash never goes below zero: no borrowing.
+fn settle(
+    cash: &mut f64,
+    result: &mut Replay,
+    t: &Candidate,
+    date: &str,
+    phase: Phase,
+    net: f64,
+) -> Result<(), String> {
+    let before = *cash;
+    let after = before + net;
+    if after < -1e-12 {
+        return Err(format!("calculation_unavailable: The {} {} closed on {} ({}) lost more than its slot, and the portfolio does not have enough free cash to pay the difference. Cash before {:.6}, change {:.6}, after {:.6}. No borrowing is used, so no portfolio result is published.",t.symbol,if t.dir<0.{"short"}else{"long"},date,phase.name(),before,net,after));
+    }
+    *cash = after.max(0.);
+    if net < 0. {
+        result.slot_loss_settlements.push(Settlement { symbol: t.symbol.clone(), date: date.into(), phase, cash_before: before, cash_change: net });
+    }
+    result.minimum_event_cash = result.minimum_event_cash.min(*cash);
+    Ok(())
 }
 
 /// Fixed initial-equity slots. Long principal is invested; short principal is
@@ -372,22 +409,27 @@ fn replay(
         accepted: vec![],
         rejected_capacity: 0,
         rejected_cash: 0,
+        slot_loss_settlements: vec![],
+        minimum_event_cash: 1.,
     };
     for date in dates {
         let mut exposed = !active.is_empty();
         for phase in [Phase::Open, Phase::Close] {
-            let closing: Vec<_> = active
-                .keys()
-                .copied()
-                .filter(|&i| {
-                    let t = &candidates[i];
-                    !t.open && t.exit == *date && t.exit_phase == phase
-                })
-                .collect();
-            for i in closing {
-                let principal = active.remove(&i).unwrap();
+            let mut closing = vec![];
+            for i in active.keys().copied().filter(|&i| {
                 let t = &candidates[i];
-                cash += release_value(t, principal, cost)?;
+                !t.open && t.exit == *date && t.exit_phase == phase
+            }).collect::<Vec<_>>() {
+                let principal = active.remove(&i).unwrap();
+                closing.push((i, principal, release_value(&candidates[i], principal, cost)?));
+            }
+            // Receipts in this phase are banked before losses in this phase are
+            // paid; a later phase's receipts cannot fund this phase.
+            // Stable: without a loss, settlement order is unchanged.
+            closing.sort_by_key(|c| c.2 < 0.);
+            for (i, principal, net) in closing {
+                let t = &candidates[i];
+                settle(&mut cash, &mut result, t, date, phase, net)?;
                 gross_cash += principal * (1. + t.dir * (t.exit_px / t.entry_px - 1.));
             }
             if let Some(new) = entries.get(&(date.as_str(), phase)) {
@@ -410,13 +452,14 @@ fn replay(
                     if cash < 0. && cash > -1e-12 {
                         cash = 0.;
                     }
+                    result.minimum_event_cash = result.minimum_event_cash.min(cash);
                     result.accepted.push(Accepted {
                         candidate: i,
                         allocation: slot,
                     });
                     exposed = true;
                     if !t.open && t.entry == t.exit && t.exit_phase == phase {
-                        cash += release_value(t, principal, cost)?;
+                        settle(&mut cash, &mut result, t, date, phase, release_value(t, principal, cost)?)?;
                         gross_cash += principal * (1. + t.dir * (t.exit_px / t.entry_px - 1.));
                     } else {
                         active.insert(i, principal);
@@ -428,9 +471,10 @@ fn replay(
         for (&i, &principal) in &active {
             let t = &candidates[i];
             let mark=t.marks.get(date).copied().filter(|px|px.is_finite()&&*px>0.).ok_or_else(||format!("needs_data: Held {} position has no actual closing quote on {}. No stale-price carry, guessed delisting exit or forward-filled portfolio value is published.",t.symbol,date))?;
+            // A negative open mark lowers equity; no cash moves until the exit.
             let value = principal * (1. + t.dir * (mark / t.entry_px - 1.));
-            if !value.is_finite() || value <= 0. {
-                return Err("calculation_unavailable: Held position exhausts its reserved principal. A supported margin/default model is unavailable; positive cash in other slots cannot silently fund it.".into());
+            if !value.is_finite() {
+                return Err("calculation_unavailable: Held position value is not a finite number; no portfolio result is published.".into());
             }
             net += value;
             gross += value;
@@ -1107,7 +1151,7 @@ pub fn run(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         let gross=t.gross_return();let net=t.net_return(costs.side_rate());
         format!("{{\"symbol\":{},\"ticker\":{},\"dir\":{},\"legs\":[[{},{},{}]],\"entry\":{},\"exit\":{},\"exit_i\":{},\"exit_px\":{},\"avg_px\":{},\"ret\":{},\"bars\":{},\"open\":{},\"reason\":{},\"entry_kind\":{},\"entry_phase\":{},\"exit_phase\":{},\"allocation\":{},\"portfolio_contribution\":{},\"exits\":[],\"accounting\":{{\"symbol\":{},\"signal_side\":{},\"pts\":{},\"days_held\":{},\"gross_ret\":{},\"net_ret\":{},\"slippage_ret\":{},\"fee_ret\":{},\"gross_pnl\":null,\"net_pnl\":null,\"taxes\":null,\"slippage\":null,\"fees\":null,\"mae\":null,\"mfe\":null,\"mae_ret_observed\":null,\"mfe_ret_observed\":null,\"cost_status\":{},\"return_basis\":\"Unchanged source-unit return; portfolio contribution is fixed initial-equity slot times this return. Fractional normalized units, no monetary capital.\"}}}}",quote(&t.symbol),quote(&t.key),t.dir,entry_i,exact(t.entry_px),exact(t.weight),quote(&t.entry),quote(&t.exit),exit_i,exact(t.exit_px),exact(t.entry_px),exact(net),t.bars,t.open,quote(&t.reason),quote(t.entry_kind),quote(t.entry_phase.name()),quote(t.exit_phase.name()),exact(accepted.allocation),exact(accepted.allocation*net),quote(&t.symbol),quote(if t.dir>0.{"Long"}else{"Short"}),exact(t.dir*(t.exit_px-t.entry_px)),crate::day_number(&t.exit)-crate::day_number(&t.entry),exact(gross),exact(net),exact(t.weight*costs.slippage_bps/10000.*if t.open{1.}else{2.}),exact(t.weight*costs.fees_bps/10000.*if t.open{1.}else{2.}),quote(if t.open{"entry_cost_only_actual_open_mark"}else{"modeled_round_trip_cost"}))
     });
-    Ok(format!("{{\"kind\":\"basket\",\"status\":\"ready\",\"basket\":{},\"membership\":\"current\",\"model_initial_equity\":1,\"dates\":{},\"equity\":{},\"gross_equity\":{},\"bh\":{},\"close\":[],\"ohlc\":null,\"trades\":{},\"stats\":{},\"gross_stats\":{},\"benchmark_symbol\":{},\"benchmark_stats\":{},\"costs\":{},\"coverage\":{},\"member_report\":{},\"portfolio\":{{\"effective_from\":{},\"effective_to\":{},\"window_basis\":\"Explicit dates are never silently shortened. Default dates intersect admitted member history with the actual benchmark calendar; full earlier stock history is not implied.\",\"max_positions\":{},\"slot_allocation\":{},\"closed_contribution\":{},\"accepted_positions\":{},\"rejected_capacity\":{},\"rejected_cash\":{},\"source_members\":{},\"cash\":{},\"positions\":{},\"historical_membership_verified\":false,\"compounding_supported\":false,\"ranking\":\"Alphabetical symbol order within each observed open/close phase\",\"signal_mode\":\"Regular-mode replay of unchanged independent-symbol candidate ledgers; rejected entries are not deferred or retried\",\"allocation_basis\":\"Each full position reserves 1/N of initial normalized equity; partially deployed source legs use their observed weight. Unused slots remain cash. Fractional research units; no share lot rounding, leverage, margin financing or interest. Short principal is reserved and short proceeds cannot fund entries.\",\"timing_contract_reviewed\":{},\"timing_disclosure\":{},\"timing_basis\":{},\"gross_basis\":\"Zero-cost accounting on the identical accepted fills; gross does not independently select a different candidate list\"}},\"notices\":[\"Source-listed current membership is a static snapshot. A current snapshot alone does not establish historical membership; retrospective selection has survivorship bias and this is not a historical membership reproduction.\",\"This is a declared portfolio application of an admitted stock rule, not the author's published portfolio, rankings or performance.\",\"Net Profit is closed allocated contribution relative to initial unit equity. Avg net pnl is the actual source-unit net return per closed trade; multiplying it by trade count gives the unallocated trade-return sum, not basket Net Profit.\",\"Equity and risk statistics use cash plus simultaneously held actual daily marks. Positions still open at the basket end deduct entry costs only. If a member's data ends sooner, its remaining position closes at its last actual close with normal exit costs, as disclosed in its member report and trade list.\"],\"accounting_basis\":\"Fixed initial-equity slots, chronological cash and actual held-position marks. Basket Net Profit excludes open positions. Overlapping stock returns are never compounded in exit order. No capital-related statistics are supplied.\"}}",quote(req.basket),array(calendar.iter().map(|s|quote(s))),array(replay.equity.iter().map(|v|exact(*v))),array(replay.gross_equity.iter().map(|v|exact(*v))),array(bh.iter().map(|v|exact(*v))),array(trade_json),crate::stats_json(&stats),crate::stats_json(&gross_stats),quote(benchmark_symbol),crate::stats_json(&benchmark_stats),portfolio_costs,array(report.iter().map(Coverage::json)),member_report,quote(calendar.first().unwrap()),quote(calendar.last().unwrap()),req.max_positions,exact(1./req.max_positions as f64),exact(stats["net_profit"]),replay.accepted.len(),replay.rejected_capacity,replay.rejected_cash,expected,array(replay.cash.iter().map(|v|exact(*v))),array(replay.positions.iter().map(|v|v.to_string())), !contract.conservative,
+    Ok(format!("{{\"kind\":\"basket\",\"status\":\"ready\",\"basket\":{},\"membership\":\"current\",\"model_initial_equity\":1,\"dates\":{},\"equity\":{},\"gross_equity\":{},\"bh\":{},\"close\":[],\"ohlc\":null,\"trades\":{},\"stats\":{},\"gross_stats\":{},\"benchmark_symbol\":{},\"benchmark_stats\":{},\"costs\":{},\"coverage\":{},\"member_report\":{},\"portfolio\":{{\"effective_from\":{},\"effective_to\":{},\"window_basis\":\"Explicit dates are never silently shortened. Default dates intersect admitted member history with the actual benchmark calendar; full earlier stock history is not implied.\",\"max_positions\":{},\"slot_allocation\":{},\"closed_contribution\":{},\"accepted_positions\":{},\"rejected_capacity\":{},\"rejected_cash\":{},\"slot_loss_settlements\":{},\"funding_disclosure\":{},\"source_members\":{},\"cash\":{},\"positions\":{},\"historical_membership_verified\":false,\"compounding_supported\":false,\"ranking\":\"Alphabetical symbol order within each observed open/close phase\",\"signal_mode\":\"Regular-mode replay of unchanged independent-symbol candidate ledgers; rejected entries are not deferred or retried\",\"allocation_basis\":\"Each full position reserves 1/N of initial normalized equity; partially deployed source legs use their observed weight. Unused slots remain cash. Fractional research units; no share lot rounding, leverage, margin financing or interest. Short principal is reserved and short proceeds cannot fund entries.\",\"timing_contract_reviewed\":{},\"timing_disclosure\":{},\"timing_basis\":{},\"gross_basis\":\"Zero-cost accounting on the identical accepted fills; gross does not independently select a different candidate list\"}},\"notices\":[\"Source-listed current membership is a static snapshot. A current snapshot alone does not establish historical membership; retrospective selection has survivorship bias and this is not a historical membership reproduction.\",\"This is a declared portfolio application of an admitted stock rule, not the author's published portfolio, rankings or performance.\",\"Net Profit is closed allocated contribution relative to initial unit equity. Avg net pnl is the actual source-unit net return per closed trade; multiplying it by trade count gives the unallocated trade-return sum, not basket Net Profit.\",\"Equity and risk statistics use cash plus simultaneously held actual daily marks. Positions still open at the basket end deduct entry costs only. If a member's data ends sooner, its remaining position closes at its last actual close with normal exit costs, as disclosed in its member report and trade list.\"],\"accounting_basis\":\"Fixed initial-equity slots, chronological cash and actual held-position marks. Basket Net Profit excludes open positions. Overlapping stock returns are never compounded in exit order. No capital-related statistics are supplied.\"}}",quote(req.basket),array(calendar.iter().map(|s|quote(s))),array(replay.equity.iter().map(|v|exact(*v))),array(replay.gross_equity.iter().map(|v|exact(*v))),array(bh.iter().map(|v|exact(*v))),array(trade_json),crate::stats_json(&stats),crate::stats_json(&gross_stats),quote(benchmark_symbol),crate::stats_json(&benchmark_stats),portfolio_costs,array(report.iter().map(Coverage::json)),member_report,quote(calendar.first().unwrap()),quote(calendar.last().unwrap()),req.max_positions,exact(1./req.max_positions as f64),exact(stats["net_profit"]),replay.accepted.len(),replay.rejected_capacity,replay.rejected_cash,replay.slot_loss_settlements.len(),quote(FUNDING_DISCLOSURE),expected,array(replay.cash.iter().map(|v|exact(*v))),array(replay.positions.iter().map(|v|v.to_string())), !contract.conservative,
         if contract.conservative { quote(CONSERVATIVE_TIMING) } else { "null".into() },
         quote(if contract.conservative { "Cash and slots are reserved from entry-day open through exit-day close. Source fill prices are unchanged; multi-leg positions are withheld." } else { "Observed prior-signal next-open exits before open entries; observed close exits before close entries. Intraday stop/limit ordering and multi-leg positions are withheld." })))
 }
@@ -1260,6 +1304,66 @@ mod tests {
         assert!(replay(&[a], &dates(), 2, 0.)
             .unwrap_err()
             .contains("2020-01-04"));
+    }
+    fn short(symbol: &str, entry: usize, exit: usize, px: f64) -> Candidate {
+        let mut t = candidate(symbol, entry, exit, px);
+        t.dir = -1.;
+        t
+    }
+    #[test]
+    fn losses_beyond_partial_and_same_day_slots_are_paid_from_free_cash() {
+        let mut a = short("A", 0, 2, 400.);
+        a.weight = 0.5;
+        let b = short("B", 3, 3, 250.);
+        let r = replay(&[a, b], &dates(), 10, 0.).unwrap();
+        assert_eq!(r.slot_loss_settlements.len(), 2);
+        near(r.slot_loss_settlements[0].cash_before, 0.95);
+        near(r.slot_loss_settlements[0].cash_change, -0.1);
+        near(r.slot_loss_settlements[1].cash_before, 0.75);
+        near(r.slot_loss_settlements[1].cash_change, -0.05);
+        near(r.cash[2], 0.85);
+        near(r.cash[4], 0.70);
+        near(r.equity[4], 0.70);
+        near(r.minimum_event_cash, 0.70);
+        assert_eq!(r.positions[3], 0);
+    }
+    #[test]
+    fn a_negative_cash_settlement_refuses_with_auditable_amounts() {
+        let e = replay(&[short("A", 0, 2, 400.)], &dates(), 1, 0.).unwrap_err();
+        assert!(e.starts_with("calculation_unavailable"), "{e}");
+        assert!(e.contains("A short closed on 2020-01-03 (close)"), "{e}");
+        assert!(e.contains("Cash before 0.000000, change -2.000000, after -2.000000"), "{e}");
+        assert!(e.contains("No borrowing"), "{e}");
+    }
+    #[test]
+    fn same_phase_receipts_can_settle_a_loss_but_later_phase_receipts_cannot() {
+        // Short loses 1.0 x slot beyond its 0.5 slot; the long's close-phase
+        // receipt on the same day pays it.
+        let a = short("A", 0, 2, 300.);
+        let b = candidate("B", 0, 2, 120.);
+        let r = replay(&[a.clone(), b.clone()], &dates(), 2, 0.).unwrap();
+        assert_eq!(r.slot_loss_settlements.len(), 1);
+        near(r.slot_loss_settlements[0].cash_before, 0.6);
+        near(r.cash[2], 0.1);
+        assert!(r.minimum_event_cash >= 0.);
+        // Same loss settled at the open: the long's close receipt comes later.
+        let mut a = a;
+        a.exit_phase = Phase::Open;
+        let e = replay(&[a, b], &dates(), 2, 0.).unwrap_err();
+        assert!(e.contains("(open)") && e.contains("Cash before 0.000000, change -0.500000"), "{e}");
+    }
+    #[test]
+    fn a_negative_open_mark_reduces_equity_without_inventing_or_borrowing_cash() {
+        let mut a = short("A", 0, 4, 100.);
+        a.marks.insert(dates()[2].clone(), 300.);
+        let mut b = candidate("B", 0, 4, 200.);
+        b.marks.insert(dates()[2].clone(), 200.);
+        let r = replay(&[a, b], &dates(), 4, 0.).unwrap();
+        near(r.cash[2], 0.5);
+        near(r.equity[2], 0.75);
+        assert!(r.slot_loss_settlements.is_empty());
+        near(r.minimum_event_cash, 0.5);
+        near(r.cash[4], 1.25);
     }
     #[test]
     fn open_marks_charge_entry_only_and_are_excluded_from_closed_profit() {
