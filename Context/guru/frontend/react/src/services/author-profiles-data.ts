@@ -208,6 +208,20 @@ export const AUTHOR_PROFILE_DATA = {
   "sources": [],
   "confidence": "low"
  },
+ "vanvliet": {
+  "kind": "person",
+  "mastery": [
+   "Automated trading systems",
+   "Trading-system development process"
+  ],
+  "summary": "Benjamin Van Vliet teaches and writes on building automated trading systems. His books in the library show how to program and engineer trading and pricing systems in C++/.NET and VB.NET; their example systems are illustrations (futures ticks, spreads, factor rankings) that he says would not make money as written, so no complete mechanical rule is given. This profile rests on the books themselves.",
+  "known_for": [
+   "Building Automated Trading Systems",
+   "Quality Money Management"
+  ],
+  "sources": [],
+  "confidence": "low"
+ },
  "schwager": {
   "kind": "person",
   "mastery": [

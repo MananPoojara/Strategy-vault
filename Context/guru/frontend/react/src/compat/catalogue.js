@@ -131,6 +131,12 @@ export const LIB = [
   { id: "patel", name: "Alpesh B. Patel", tagline: "UK online-trading author and broadcaster · the 50-day moving-average example from his trading course; the rest is chart reading and interviews", books: [
     { id: "apitc", sourceIds: ["title-445e010c1da20c14"], title: "The Internet Trading Course", year: null, blurb: "Patel · long above the 50-day average, out below (the course's example of a mechanical system); indicator chapters give no settings" }] },
   // ---- end Patel block ----
+  // ---- Van Vliet block (2026-10-24) ----
+  { id: "vanvliet", name: "Benjamin Van Vliet", tagline: "Automated-trading software and process engineering · C++/.NET and VB.NET example systems", books: [
+    { id: "vvbats", sourceIds: ["title-7d5fab9b2ef45e33", "title-d9d7febf0c69c956"], title: "Building Automated Trading Systems", year: 2007, blurb: "Van Vliet · C++/.NET architecture; held: the tick MA and ES/NQ spread examples need futures ticks and quotes" },
+    { id: "vvmfm", sourceIds: ["title-3801128c46565f3f", "title-04fe541148df6896"], title: "Modeling Financial Markets (with Hendry)", year: 2004, blurb: "Van Vliet & Hendry · VB.NET pricing and trading models; programming examples only" },
+    { id: "vvqmm", sourceIds: ["title-b27c205cebe0fc83"], title: "Quality Money Management (with Kumiega)", year: 2008, blurb: "Kumiega & Van Vliet · process engineering; held: pairs and factor examples need a named pair, fundamentals and options" }] },
+  // ---- end Van Vliet block ----
   // ---- Person block (2026-10-24) ----
   { id: "person", name: "John L. Person", tagline: "Chicago floor trader and educator · pivot points, the three-day pivot average and COMAS crossovers; co-author of the Commodity Trader's Almanac", books: [
     { id: "jpcppt", sourceIds: ["title-9e42d5961530dd6a", "title-a05a280f277befc3", "title-6ad63e85d6185b37"], title: "Candlestick and Pivot Point Trading Triggers", year: 2007, blurb: "Person, 2007 · close or pivot crossing the three-day pivot average (stop and reverse); doji triggers need trend judgement" },
