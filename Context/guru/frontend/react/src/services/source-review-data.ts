@@ -282,6 +282,8 @@ export const sourceReview: Record<string, {type: string; sameWorkAs?: string; pe
   "skdab": {"type": "book", "people": ["Stanley Kroll"]},
   "skfts": {"type": "book", "people": ["Stanley Kroll"]},
   "djhta": {"type": "book", "people": ["Darrell R. Jobman"]},
+  "jlpe": {"type": "book", "people": ["James Mars Langham"]},
+  "jlmf": {"type": "book", "people": ["James Mars Langham"]},
   "snjcct": {"type": "book", "people": ["Steve Nison"]},
   "sncc": {"type": "book", "people": ["Steve Nison"]},
   "snccb": {"type": "book", "people": ["Steve Nison"]},

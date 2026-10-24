@@ -146,6 +146,11 @@ export const LIB = [
   { id: "jobman", name: "Darrell R. Jobman", tagline: "Former Futures magazine editor · anthology of technical-analysis articles; Dennis Dunn's seven-week moving average", books: [
     { id: "djhta", sourceIds: ["title-ed296147ee941ead"], title: "The Handbook of Technical Analysis", year: 1995, blurb: "Jobman (ed.), 1995 · Dunn's seven-week Thursday moving average tested; indicator, chart, sentiment and cycle chapters have no complete rules" }] },
   // ---- end Jobman block ----
+  // ---- Langham block (2026-10-24) ----
+  { id: "langham", name: "James Mars Langham", tagline: "1930s planetary market forecaster · astrology books held: every rule needs an ephemeris and the author's reading", books: [
+    { id: "jlpe", sourceIds: ["title-d697882d4cbe426d", "title-70b33cca5d0bb8b8"], title: "Planetary Effects on Stock Market Prices", year: null, blurb: "Langham · major-planet aspects and long trends; needs an ephemeris, held" },
+    { id: "jlmf", sourceIds: ["title-aa63a15e57901fbe"], title: "Cyclical Market Forecasting: Stocks and Grain", year: null, blurb: "Langham, c.1938 · planet combinations, lunations, sun-spots and grain; needs an ephemeris, held" }] },
+  // ---- end Langham block ----
   // ---- Nison block (2026-10-24) ----
   { id: "nison", name: "Steve Nison", tagline: "Brought Japanese candlestick charting to the West · pattern definitions and candle-plus-Western confluence; no mechanical rule (held)", books: [
     { id: "snjcct", sourceIds: ["title-81397d6d53d0f930", "title-1364d0fbc6ba6db0", "title-51b23babb9e56ea1"], title: "Japanese Candlestick Charting Techniques", year: 1991, blurb: "Nison, 1991 · reversal and continuation patterns, candles with Western tools; held: trend and candle size judged by eye, no exits" },
