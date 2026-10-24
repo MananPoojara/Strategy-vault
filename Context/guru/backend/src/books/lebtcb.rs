@@ -3,7 +3,12 @@
 //! "Traders Club Full Bulletins.pdf", "TRADERSCLUBBULLETIN.PDF", "TRADERCLUBFORUM.PDF"; copies in
 //! Books/Charles LeBeau/Traders Club Full Bulletins/). Book id "lebtcb". Notes: library/lebtcb/README.md.
 //! Only the posts that state a complete system (entry + exit, exact numbers) are Live. Own simulator (no jkbwts::sim).
-use crate::connors::{dmi, sma, true_range, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade, claim};
+// Exact window-sum SMA (apwms::sma) instead of the drifting running sum (exact-tie fix, 2026-10-24 LeBeau admission).
+use super::apwms::sma;
+use crate::connors::{dmi, true_range, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade, claim};
+// Admitted 2026-10-24 (authors/lebeau/admission/SOURCE-CONTRACT.md): complete rules with independent US/India ledgers.
+pub const REVIEWED: &[&str] = &["lebtcb_acb", "lebtcb_acb_int", "lebtcb_adavol", "lebtcb_tba", "lebtcb_pgo"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 
 pub fn catalogue() -> Vec<StrategyDef> {

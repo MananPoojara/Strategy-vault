@@ -3,11 +3,17 @@
 //! Books "Trade Secrets", (c)1992) - same text, so the day-trading methods are listed here once.
 //! Live: the fully specified systems and the Chapter 3 entry/exit test protocols. Futures dollar stops,
 //! intraday methods and judgement rules are NeedsData / NotTestable. Sources and verification: library/lebcafm/.
-use crate::connors::{rsi, sma, true_range, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
+// Exact window-sum SMA (apwms::sma): the running-sum SMA drifted at exact ties (a touch of a level or a close equal to the
+// average was misread); 2026-10-24 LeBeau admission, book rule wins (see authors/lebeau/lebeau-REPORT.md).
+use super::apwms::sma;
+use crate::connors::{rsi, true_range, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
+// Admitted 2026-10-24 (authors/lebeau/admission/SOURCE-CONTRACT.md): complete rules with independent US/India ledgers.
+pub const REVIEWED: &[&str] = &["lebcafm_adx_parabolic", "lebcafm_vol_breakout", "lebcafm_babcock_dmi28", "lebcafm_cci_lambert", "lebcafm_et_ma918", "lebcafm_et_channel10", "lebcafm_et_rsi14", "lebcafm_et_cci10", "lebcafm_et_mom10", "lebcafm_et_vol", "lebcafm_xt_benchmark", "lebcafm_xt_rsi_trail", "lebcafm_xt_key_reversal", "lebcafm_xt_hl", "lebcafm_xt_volatility", "lebcafm_st_noprofit"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const BOOK: &str = "lebcafm";
 const FUT: &str = "futures dollar amounts (per-contract $ stops, $ targets and $ trailing stops) have no index equivalent";
-const INTRA: &str = "intraday S&P futures bars (the vault has daily bars only)";
+const INTRA: &str = "1992 S&P futures intraday bars with fixed point amounts (e.g. 150, 5 and 75 points = 1.50, 0.05 and 0.75 index points at 1992 prices); the vault's 1-minute bars are cash-index and ETF bars, and the book gives no rule to scale the points";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let make = |id, name, group, dir, status, rules, notes| StrategyDef {

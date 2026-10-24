@@ -7,6 +7,9 @@
 //! The 25x25 and Crossbow code reproduces the manuals' own trade lists exactly on the data files shipped
 //! with them (see tests), but both are futures systems with dollar/tick rules, so they stay NeedsData here.
 use crate::connors::{rsi, sma, true_range, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
+// Admitted 2026-10-24 (authors/lebeau/admission/SOURCE-CONTRACT.md): complete rules with independent US/India ledgers.
+pub const REVIEWED: &[&str] = &["lebtc_highbeta"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const BOOK: &str = "lebtc";
 const BOND: &str = "US 30-year T-bond futures (back-adjusted, day session). The rules are in bond points: entry 18/32 above the close and a $2,500 = 2.5-point money stop; an equity index has no equivalent of either";

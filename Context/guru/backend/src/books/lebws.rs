@@ -4,6 +4,9 @@
 //! shares of ABC stock" (Futures Strategies, p.3). Everything else is an indicator lesson, an exit without an
 //! entry, an entry without an exit, or a chart illustration. Sources and verification: library/lebws/.
 use crate::connors::{sma, true_range, Claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
+// Admitted 2026-10-24 (authors/lebeau/admission/SOURCE-CONTRACT.md): complete rules with independent US/India ledgers.
+pub const REVIEWED: &[&str] = &["lebws_atr_abc"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const BOOK: &str = "lebws";
 
