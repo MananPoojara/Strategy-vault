@@ -11,6 +11,9 @@
 use crate::connors::{rsi, sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "kdta";
+/// Admitted ids (authors/kirkpatrick/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["kdta_vix_ema", "kdta_rsi_wrong_long", "kdta_rsi_wrong_short", "kdta_apple_sar", "kdta_apple_v2", "kdta_may_oct", "kdta_pullback6", "kdta_adline", "kdta_adr191", "kdta_zweig_thrust", "kdta_haurlan200", "kdta_arms265", "kdta_arms_ext", "kdta_arms10ma", "kdta_adline_nse", "kdta_adr191_nse", "kdta_zweig_thrust_nse", "kdta_haurlan200_nse", "kdta_arms265_nse", "kdta_arms_ext_nse", "kdta_arms10ma_nse"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const NYSE_AD: &[&str] = &["NYSE_ADV_DEC.Advances", "NYSE_ADV_DEC.Declines"];
 const NSE_AD: &[&str] = &["NSE_ADV_DEC.Advances", "NSE_ADV_DEC.Declines"];
