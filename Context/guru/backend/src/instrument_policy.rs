@@ -154,6 +154,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || schwager_reviewed(def) // Schwager block
         || elder_reviewed(def) // Elder block
         || pring_reviewed(def) // Pring block
+        || gregoriou_reviewed(def) // Gregoriou block
         || bernstein_g2_reviewed(def)
         || jb_g3_reviewed(def)
         || lwilliams_reviewed(def) // Larry Williams block
@@ -455,6 +456,30 @@ fn pring_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Pring
+// ---------------------------------------------------------------- Gregoriou (ggth, ggeai, gghf) 2026-10-24
+// Admission only for books::gregoriou::REVIEWED (authors/gregoriou/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn gregoriou_reviewed(def:&StrategyDef)->bool {matches!(def.book,"ggth"|"ggeai"|"gghf"|"ggfohf") && crate::books::gregoriou::reviewed(def.id)}
+fn gregoriou_label(def:&StrategyDef)->Option<&'static str> {
+    if !gregoriou_reviewed(def) {return None;}
+    Some(match def.book {
+        "ggth"=>"The Handbook of Trading tests these rules on the FTSE/ASE 20 (Ch.7) and on the S&P 500, NASDAQ and DJIA (Ch.11); other index, ETF and stock runs (US and India) are a declared application, not the authors' test.",
+        "ggeai"=>"The Encyclopedia of Alternative Investments gives this crossover as an example of a futures CTA rule; index, ETF and stock runs (US and India) are a declared application.",
+        "ggfohf"=>"Funds of Hedge Funds builds this trend-following factor from 38 futures markets; index, ETF and stock runs (US and India) are a declared application.",
+        _=>"Hedge Funds (Gregoriou et al., eds., 2005) describes these as rules of simulated futures indexes and benchmarks (Calyon, Spurgin-Schneeweis-Georgiev); index, ETF and stock runs (US and India) are a declared application.",
+    })
+}
+fn gregoriou_policy(def:&StrategyDef)->Option<Policy> {
+    if !gregoriou_reviewed(def) {return None;}
+    let basis=match def.book {
+        "ggth"=>"Gregoriou (ed.), The Handbook of Trading (2010): Kenourgios & Papathanasiou's (1,n) moving-average rule, long above and short below (Ch.7, p.100-105), and Lento's dual-moving-average crossover, traditional and exponentially smoothed, long or cash (Ch.11, p.157-160), reviewed in authors/gregoriou/admission/SOURCE-CONTRACT.md with independent chronological ledgers. Signal-close fills are a declared convention. Commissions, spreads and Lento's savings-account interest are not modelled; no book results are claimed.",
+        "ggeai"=>"Gregoriou (ed.), Encyclopedia of Alternative Investments (2009), Systematic CTA (p.468): 'perhaps 5 day' over 'perhaps 30 day' moving-average crossover, long and short, reviewed in authors/gregoriou/admission/SOURCE-CONTRACT.md with independent chronological ledgers. Simple averages and signal-close fills are declared readings. Cash-index shorts are hypothetical exposure.",
+        "ggfohf"=>"Gregoriou (ed.), Funds of Hedge Funds (2006), Ch.4 Bacmann, Jeanneret & Scholz p.61: closing price vs its m-day moving average (224, 117, 61, 32), long above and short below, reviewed in authors/gregoriou/admission/SOURCE-CONTRACT.md with independent chronological ledgers. Signal-close fills; each average runs on its own (the within-market combination is not stated). Cash-index shorts are hypothetical exposure.",
+        _=>"Gregoriou, Hübner, Papageorgiou and Rouah (eds.), Hedge Funds (2005), Ch.10 p.230: the 80-day range breakout and the 80-day moving-average rule, and Ch.23 p.482: the 15-day momentum rule (long if above the price 15 days ago, otherwise short), always long or short, reviewed in authors/gregoriou/admission/SOURCE-CONTRACT.md with independent chronological ledgers. Closing-price breakouts, simple averages and signal-close fills are declared readings. Cash-index shorts are hypothetical exposure.",
+    };
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],basis);
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Gregoriou
 // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
 /// Reviewed Joe Ross daily rules (books::joe_ross_rules::REVIEWED): actual indices, ETFs and stocks, US and India, as a
 /// labelled declared application. The source references in books::joe_ross stay held (source review).
@@ -480,6 +505,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=schwager_policy(def) {return p;}
     if let Some(p)=elder_policy(def) {return p;} // Elder block
     if let Some(p)=pring_policy(def) {return p;} // Pring block
+    if let Some(p)=gregoriou_policy(def) {return p;} // Gregoriou block
     // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
     if let Some(p)=joe_ross_policy(def) {return p;}
     // ---- end Joe Ross block ----
@@ -892,6 +918,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if let Some(label)=elder_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Elder block
     if let Some(label)=lwilliams_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Larry Williams block
     if let Some(label)=pring_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Pring block
+    if let Some(label)=gregoriou_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Gregoriou block
     if def.book==crate::books::cwin::BOOK && crate::books::cwin::reviewed_daily(def.id) {json.push_str(concat!(",\"declared_application\":\"",CWIN_INDEX_LABEL!(),"\""));}
     if def.book==crate::books::ccl08::BOOK && crate::books::ccl08::day_trade(def.id) {json.push_str(concat!(",\"declared_application\":\"",CCL08_INDEX_LABEL!(),"\""));}
     if def.book==crate::books::ats::BOOK && crate::books::ats::reviewed_daily(def.id) && (p.requirement=="index_or_etf" || (crate::books::ats::STOCK_TICK_IDS.contains(&def.id) && !CONNORS_INDEX_IDS.contains(&def.id))) {json.push_str(concat!(",\"declared_application\":\"",BTP_INDEX_LABEL!(),"\""));}
@@ -1048,6 +1075,22 @@ mod tests {
         assert!(!reviewed_cash_rule(&def("mpts_triple","jbudt")));
     }
     // ---- end Pring block ----
+    // ---- Gregoriou block (2026-10-24) ----
+    #[test]
+    fn gregoriou_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::gregoriou as g;
+        let all=g::catalogue();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        let mut w=g::REVIEWED.to_vec();admitted.sort();w.sort();assert_eq!(admitted,w);
+        for d in all.iter().filter(|d|g::reviewed(d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+        assert!(!reviewed_cash_rule(&def("ggth_dmaco","mpts")));
+    }
+    // ---- end Gregoriou block ----
     // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
     #[test]
     fn joe_ross_reviewed_rules_run_on_indices_etfs_and_stocks_and_references_stay_held() {

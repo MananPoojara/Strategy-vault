@@ -68,6 +68,22 @@ export const AUTHOR_PROFILE_DATA = {
   "sources": [],
   "confidence": "low"
  },
+ "gregoriou": {
+  "kind": "person",
+  "mastery": [
+   "Hedge funds",
+   "Managed futures",
+   "Academic research"
+  ],
+  "summary": "Greg N. Gregoriou edits academic volumes on hedge funds, commodity trading advisors, mutual funds and trading. The rules on this card come from chapters written by his contributors (Kenourgios and Papathanasiou, Lento, Black, and the Calyon index study), not from Gregoriou himself; this profile rests on the books' title pages.",
+  "known_for": [
+   "The Handbook of Trading",
+   "Encyclopedia of Alternative Investments",
+   "Commodity Trading Advisors"
+  ],
+  "sources": [],
+  "confidence": "low"
+ },
  "schwager": {
   "kind": "person",
   "mastery": [
