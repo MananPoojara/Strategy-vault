@@ -192,6 +192,9 @@ export const authorIdentities: Record<string, readonly string[]> = {
   "thomsett": [
     "Michael C. Thomsett"
   ],
+  "fischer": [
+    "Robert Fischer"
+  ],
   "sysmisc": [],
   "swingstk": [],
   "vendors": [],
