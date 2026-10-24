@@ -204,6 +204,9 @@ export const authorIdentities: Record<string, readonly string[]> = {
   "bigalow": [
     "Stephen W. Bigalow"
   ],
+  "murphy": [
+    "John J. Murphy"
+  ],
   "sysmisc": [],
   "swingstk": [],
   "vendors": [],
