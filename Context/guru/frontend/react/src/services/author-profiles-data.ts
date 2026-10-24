@@ -147,6 +147,23 @@ export const AUTHOR_PROFILE_DATA = {
   "sources": [],
   "confidence": "low"
  },
+ "person": {
+  "kind": "person",
+  "mastery": [
+   "Pivot points",
+   "Candlesticks",
+   "Futures and forex"
+  ],
+  "summary": "John L. Person started as a runner on the Chicago Mercantile Exchange floor in 1979, worked with George Lane and teaches pivot-point and candlestick trading. His books combine floor-trader pivot levels with candle patterns; the three-day pivot average and its crossover (COMAS) are stated as mechanical rules. With Jeffrey Hirsch he wrote the Commodity Trader's Almanac. This profile rests on the books themselves.",
+  "known_for": [
+   "Candlestick and Pivot Point Trading Triggers",
+   "Forex Conquered",
+   "A Complete Guide to Technical Trading Tactics",
+   "Commodity Trader's Almanac"
+  ],
+  "sources": [],
+  "confidence": "low"
+ },
  "schwager": {
   "kind": "person",
   "mastery": [
