@@ -156,6 +156,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || pring_reviewed(def) // Pring block
         || gregoriou_reviewed(def) // Gregoriou block
         || crisp_reviewed(def) // Crisp block
+        || fabozzi_reviewed(def) // Fabozzi block
         || bernstein_g2_reviewed(def)
         || jb_g3_reviewed(def)
         || lwilliams_reviewed(def) // Larry Williams block
@@ -491,6 +492,16 @@ fn crisp_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Crisp
+// ---------------------------------------------------------------- Fabozzi 2026-10-24
+// Admission only for the module REVIEWED lists (authors/fabozzi/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn fabozzi_reviewed(def:&StrategyDef)->bool {matches!(def.book,"fzhci") && (crate::books::fzhci::reviewed(def.id))}
+const FABOZZI_LABEL:&str="The Handbook of Commodity Investing describes these rules on commodity futures (gold, crude oil, grains, the GSCI); index, ETF and stock runs (US and India) are a declared application, not the authors' test.";
+fn fabozzi_policy(def:&StrategyDef)->Option<Policy> {
+    if !fabozzi_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Fabozzi, Füss and Kaiser (eds.), The Handbook of Commodity Investing (2008): Lhabitant's price/15-day average cross (Ch.16 p.395-398), the Erb-Harvey 12-month momentum rule (Ch.8 p.221), Park and Irwin's dual moving-average (next-open), outside-channel and Alexander filter definitions (Ch.40 p.914-921), reviewed in authors/fabozzi/admission/SOURCE-CONTRACT.md with independent chronological ledgers. Close fills where the book is silent; defaults are book-printed study settings. No excess-return (T-bill) component or costs. Cash-index shorts are hypothetical exposure.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Fabozzi
 // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
 /// Reviewed Joe Ross daily rules (books::joe_ross_rules::REVIEWED): actual indices, ETFs and stocks, US and India, as a
 /// labelled declared application. The source references in books::joe_ross stay held (source review).
@@ -518,6 +529,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=pring_policy(def) {return p;} // Pring block
     if let Some(p)=gregoriou_policy(def) {return p;} // Gregoriou block
     if let Some(p)=crisp_policy(def) {return p;} // Crisp block
+    if let Some(p)=fabozzi_policy(def) {return p;} // Fabozzi block
     // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
     if let Some(p)=joe_ross_policy(def) {return p;}
     // ---- end Joe Ross block ----
@@ -932,6 +944,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if let Some(label)=pring_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Pring block
     if let Some(label)=gregoriou_label(def) {json.push_str(&format!(",\"declared_application\":\"{label}\""));} // Gregoriou block
     if crisp_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{CRISP_LABEL}\""));} // Crisp block
+    if fabozzi_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",FABOZZI_LABEL));} // Fabozzi block
     if def.book==crate::books::cwin::BOOK && crate::books::cwin::reviewed_daily(def.id) {json.push_str(concat!(",\"declared_application\":\"",CWIN_INDEX_LABEL!(),"\""));}
     if def.book==crate::books::ccl08::BOOK && crate::books::ccl08::day_trade(def.id) {json.push_str(concat!(",\"declared_application\":\"",CCL08_INDEX_LABEL!(),"\""));}
     if def.book==crate::books::ats::BOOK && crate::books::ats::reviewed_daily(def.id) && (p.requirement=="index_or_etf" || (crate::books::ats::STOCK_TICK_IDS.contains(&def.id) && !CONNORS_INDEX_IDS.contains(&def.id))) {json.push_str(concat!(",\"declared_application\":\"",BTP_INDEX_LABEL!(),"\""));}
@@ -1119,6 +1132,22 @@ mod tests {
         }
     }
     // ---- end Crisp block ----
+    // ---- Fabozzi block (2026-10-24) ----
+    #[test]
+    fn fabozzi_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{fzhci};
+        let all:Vec<StrategyDef>=fzhci::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=fzhci::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Fabozzi block ----
     // ---- Joe Ross block (authors/ross admission, 2026-10-23) ----
     #[test]
     fn joe_ross_reviewed_rules_run_on_indices_etfs_and_stocks_and_references_stay_held() {

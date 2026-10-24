@@ -84,6 +84,22 @@ export const AUTHOR_PROFILE_DATA = {
   "sources": [],
   "confidence": "low"
  },
+ "fabozzi": {
+  "kind": "person",
+  "mastery": [
+   "Fixed income",
+   "Quantitative finance",
+   "Commodities"
+  ],
+  "summary": "Frank J. Fabozzi is a finance academic and editor of many investment handbooks. The rules on this card come from chapters by contributors to The Handbook of Commodity Investing (Lhabitant, Park and Irwin, and the Erb-Harvey study they cite); his other books in the library are textbooks without trading rules. This profile rests on the books' title pages.",
+  "known_for": [
+   "Mathematics of Financial Modeling and Investment Management",
+   "The Handbook of Commodity Investing",
+   "Quantitative Equity Investing"
+  ],
+  "sources": [],
+  "confidence": "low"
+ },
  "schwager": {
   "kind": "person",
   "mastery": [

@@ -264,6 +264,7 @@ export const sourceReview: Record<string, {type: string; sameWorkAs?: string; pe
   "ggeai": {"type": "book", "people": ["Greg N. Gregoriou"]},
   "gghf": {"type": "book", "people": ["Greg N. Gregoriou"]},
   "ggfohf": {"type": "book", "people": ["Greg N. Gregoriou"]},
+  "fzhci": {"type": "book", "people": ["Frank J. Fabozzi"]},
   "mptae": {"type": "book", "people": ["Martin J. Pring"]},
   "mpsel": {"type": "code_package", "people": ["Martin J. Pring"]},
   "mrina": {"type": "magazine_volume", "people": ["Murray Ruggiero"]},
