@@ -178,6 +178,12 @@ export const LIB = [
     { id: "rbfsail", sourceIds: ["title-fcae7827351fd252"], title: "Forex Sailing", year: null, blurb: "Borowski · S.E.X. 5/20/60 lines; held: 'not meant to be used alone'" },
     { id: "rbfscalp", sourceIds: ["title-7cd7d14bd81aaa1f"], title: "Forex Scalping", year: null, blurb: "Borowski · 1-minute scalps; held: intraday forex, pip stops" }] },
   // ---- end Borowski block ----
+  // ---- Merriman block (2026-10-24) ----
+  { id: "merriman", name: "Raymond A. Merriman", tagline: "Market-cycles and financial-astrology analyst · cycle time bands and geocosmic correlations (held: no entry/exit rules)", books: [
+    { id: "rmubsmt", sourceIds: ["title-4c11231f4f172433", "title-556136c7d0e2b2d4", "title-87deb7d4dd9b7825", "title-bb075e23f46880ff"], title: "The Ultimate Book on Stock Market Timing (Vol.I-IV)", year: 1997, blurb: "Merriman, 1997- · stock-index cycles and geocosmic correlations; held: cycle bands by the analyst, astrology" },
+    { id: "rmsmt", sourceIds: ["title-9ab831dbe8fdd3ee"], title: "Stock Market Timing (Geocosmic Correlations to Trading Cycles)", year: null, blurb: "Merriman · held: astrology" },
+    { id: "rmsms", sourceIds: ["title-b1c48e72fc0f976f"], title: "The Sun, the Moon and Silver", year: null, blurb: "Merriman · silver cycles; held: futures and astrology" }] },
+  // ---- end Merriman block ----
   // ---- CSmith block (2026-10-24) ----
   { id: "csmith", name: "Courtney D. Smith", tagline: "FX and futures trader · swing-point trend analysis, enhanced channel breakouts, the Conqueror", books: [
     { id: "csmlt", sourceIds: ["title-bafc2391a8c8f66d"], title: "How to Make a Living Trading Foreign Exchange", year: 2010, blurb: "Smith, 2010 · trend analysis, 55/20 channel breakout with the rejection rule, Conqueror I/II, stochastic 50 line, reversal days and RRR run as declared applications; inside days, slingshot and divergences held" },
