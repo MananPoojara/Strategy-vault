@@ -14,6 +14,9 @@
 use crate::connors::{claim, rsi, sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "rinadz";
+/// Admitted ids (authors/stendahl/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["rinadz_rsi9", "rinadz_rsi9_fixed", "rinadz_rsi14s", "rinadz_pctr", "rinadz_xmacd"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const ZONE: &str = "F|Dynamic zones (S&C V15:7 p.306-307): \"For dynamic zone buy: P{X <= V}=P1. For dynamic zone sell: P{X >= V}=P2\" over the lookback of N bars; \"If we multiply 0.1 times 80, which equals 8, and then look for the price that represents the point that the frequency equals 8, adding the last three frequencies (4, 3 and 1) will give us 8 ... x=19 will be the zone with the probability of 0.1\" (k-th largest / smallest of the last N values, k = P x N rounded up)";
 const NOTE: &str = "Article/manual systems for the S&P 500 (cash index, and S&P futures in the manual); run on any index. Orders 'at market' fill at the next open. One unit, percentage returns. The DZBuy/DZSell code is protected; the zone is computed from the article's own algorithm and worked example.";

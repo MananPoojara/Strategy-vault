@@ -235,6 +235,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || goslin_reviewed(def) // Goslin block
         || ruggiero_reviewed(def) // Ruggiero block
         || link_reviewed(def) // Link block
+        || stendahl_reviewed(def) // Stendahl block
         || blau_reviewed(def) // Blau block
         || faith_reviewed(def) // Faith block
         || dunnigan_reviewed(def) // Dunnigan block
@@ -1057,6 +1058,16 @@ fn link_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Link
+// ---------------------------------------------------------------- Stendahl 2026-10-25
+// Admission only for the module REVIEWED lists (authors/stendahl/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn stendahl_reviewed(def:&StrategyDef)->bool {(def.book=="rinadz" && crate::books::rinadz::reviewed(def.id)) || (def.book=="hwdti" && crate::books::hwdti::reviewed(def.id))}
+const STENDAHL_LABEL:&str="Zamansky & Stendahl tested the Dynamic Zone systems on the S&P 500 (cash index and futures); Helweg & Stendahl tested the moving-average system on Treasury bond futures; runs on other indices, ETFs and single stocks (US and India) are a declared application.";
+fn stendahl_policy(def:&StrategyDef)->Option<Policy> {
+    if !stendahl_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Zamansky & Stendahl, Dynamic Zones, S&C V15:7 (1997) p.306-310 and the RINA Dynamic Zone User's Guide pp.10-21 (DZ RSI(9), fixed RSI 30/70, smoothed RSI(14), %R, Extreme MACD); Helweg & Stendahl, Dynamic Trading Indicators (2002) Figure 6.4 p.130 (WMA20 x SMA56 stop-and-reverse). Index/ETF/stock runs are a declared application.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Stendahl
 // ---------------------------------------------------------------- Blau 2026-10-25
 // Admission only for the module REVIEWED lists (authors/blau/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn blau_reviewed(def:&StrategyDef)->bool {(def.book=="wbmdd" && crate::books::wbmdd::reviewed(def.id))}
@@ -1222,6 +1233,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=goslin_policy(def) {return p;} // Goslin block
     if let Some(p)=ruggiero_policy(def) {return p;} // Ruggiero block
     if let Some(p)=link_policy(def) {return p;} // Link block
+    if let Some(p)=stendahl_policy(def) {return p;} // Stendahl block
     if let Some(p)=blau_policy(def) {return p;} // Blau block
     if let Some(p)=faith_policy(def) {return p;} // Faith block
     if let Some(p)=dunnigan_policy(def) {return p;} // Dunnigan block
@@ -1723,6 +1735,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if goslin_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",GOSLIN_LABEL));} // Goslin block
     if ruggiero_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",RUGGIERO_LABEL));} // Ruggiero block
     if link_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LINK_LABEL));} // Link block
+    if stendahl_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",STENDAHL_LABEL));} // Stendahl block
     if blau_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BLAU_LABEL));} // Blau block
     if faith_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",FAITH_LABEL));} // Faith block
     if dunnigan_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",DUNNIGAN_LABEL));} // Dunnigan block
@@ -2043,6 +2056,22 @@ mod tests {
         }
     }
     // ---- end Link block ----
+    // ---- Stendahl block (2026-10-25) ----
+    #[test]
+    fn stendahl_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{rinadz, hwdti};
+        let all:Vec<StrategyDef>=rinadz::catalogue().into_iter().chain(hwdti::catalogue()).collect();
+        let mut want:Vec<&str>=rinadz::REVIEWED.iter().chain(hwdti::REVIEWED.iter()).copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Stendahl block ----
     // ---- Blau block (2026-10-25) ----
     #[test]
     fn blau_review_admits_exact_ids_on_indices_etfs_and_stocks() {
