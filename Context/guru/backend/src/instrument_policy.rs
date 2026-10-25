@@ -235,6 +235,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || goslin_reviewed(def) // Goslin block
         || ruggiero_reviewed(def) // Ruggiero block
         || link_reviewed(def) // Link block
+        || gettess_reviewed(def) // Gettess block
         || primo_reviewed(def) // Primo block
         || meyers_reviewed(def) // Meyers block
         || krutsinger_reviewed(def) // Krutsinger block
@@ -1065,6 +1066,16 @@ fn link_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Link
+// ---------------------------------------------------------------- Gettess 2026-10-25
+// Admission only for the module REVIEWED lists (authors/gettess/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn gettess_reviewed(def:&StrategyDef)->bool {(def.book=="lg3k" && crate::books::lg3k::reviewed(def.id)) || (def.book=="lgtt30" && crate::books::lgtt30::reviewed(def.id)) || (def.book=="lgsc" && crate::books::lgsc::reviewed(def.id))}
+const GETTESS_LABEL:&str="Lee E. Gettess tested these volatility systems on T-Bond and S&P 500 futures; runs on indices, ETFs and single stocks (US and India) are a declared application.";
+fn gettess_policy(def:&StrategyDef)->Option<Policy> {
+    if !gettess_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"The $3000 Secret (Windsor Books, 1991): volatility reversal p.5-11 (4-day actual range 45%, 4-day true range 55%) and S&P 2-day range 50% p.16-19; TT30 with Market Mapping (1994): TT30 System Writer Plus code p.9-10, rules p.2-6; Trading in the Trenches (1993-95): SS-TDA entry p.5 with the user's standard exits (labelled variant, not from the book). Index/ETF/stock runs are a declared application.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Gettess
 // ---------------------------------------------------------------- Primo 2026-10-25
 // Admission only for the module REVIEWED lists (authors/primo/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn primo_reviewed(def:&StrategyDef)->bool {(def.book=="pstc" && crate::books::pstc::reviewed(def.id)) || (def.book=="pstc08" && crate::books::pstc08::reviewed(def.id)) || (def.book=="prap2" && crate::books::prap2::reviewed(def.id))}
@@ -1310,6 +1321,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=goslin_policy(def) {return p;} // Goslin block
     if let Some(p)=ruggiero_policy(def) {return p;} // Ruggiero block
     if let Some(p)=link_policy(def) {return p;} // Link block
+    if let Some(p)=gettess_policy(def) {return p;} // Gettess block
     if let Some(p)=primo_policy(def) {return p;} // Primo block
     if let Some(p)=meyers_policy(def) {return p;} // Meyers block
     if let Some(p)=krutsinger_policy(def) {return p;} // Krutsinger block
@@ -1819,6 +1831,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if goslin_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",GOSLIN_LABEL));} // Goslin block
     if ruggiero_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",RUGGIERO_LABEL));} // Ruggiero block
     if link_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LINK_LABEL));} // Link block
+    if gettess_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",GETTESS_LABEL));} // Gettess block
     if primo_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",PRIMO_LABEL));} // Primo block
     if meyers_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",MEYERS_LABEL));} // Meyers block
     if krutsinger_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",KRUTSINGER_LABEL));} // Krutsinger block
@@ -2147,6 +2160,22 @@ mod tests {
         }
     }
     // ---- end Link block ----
+    // ---- Gettess block (2026-10-25) ----
+    #[test]
+    fn gettess_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{lg3k, lgtt30, lgsc};
+        let all:Vec<StrategyDef>=lg3k::catalogue().into_iter().chain(lgtt30::catalogue()).chain(lgsc::catalogue()).collect();
+        let mut want:Vec<&str>=lg3k::REVIEWED.iter().chain(lgtt30::REVIEWED.iter()).chain(lgsc::REVIEWED.iter()).copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Gettess block ----
     // ---- Primo block (2026-10-25) ----
     #[test]
     fn primo_review_admits_exact_ids_on_indices_etfs_and_stocks() {

@@ -14,6 +14,9 @@
 use crate::connors::{claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "lg3k";
+/// Admitted ids (authors/gettess/admission/SOURCE-CONTRACT.md); lg3k_tr_day stays gate-withheld.
+pub const REVIEWED: &[&str] = &["lg3k_ar_rev", "lg3k_tr_rev", "lg3k_sp_rev"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub(crate) fn roundup(v: f64, tick: f64) -> f64 {
     if tick <= 0.0 { return v; }
@@ -131,7 +134,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
-    let tick = p("tick", "Price increment for rounding up (book: one tick; 0.05 = S&P futures / NSE tick)", 0.05, 0.0, 1.0, 0.01);
+    let tick = p("tick", "Rounding increment: 0 = the instrument's own tick (book: \"round your final figures UP\" to the next tick, p.9-10); e.g. 0.05 = S&P futures / NSE tick", 0.0, 0.0, 1.0, 0.01);
     let (n, pct, tre) = match id {
         "lg3k_ar_rev" => (4., 45., 0.),
         "lg3k_tr_rev" | "lg3k_tr_day" => (4., 55., 1.),
@@ -147,7 +150,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     if from > to || to >= x.c.len() { return None; }
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
     let n = g("days").max(1.0).round() as usize;
-    let (pct, tick) = (g("pct") / 100.0, g("tick"));
+    // Book p.9-10: round UP to the traded instrument's tick; 0 (default) = that tick. Before 2026-10-25 the default was a fixed 0.05.
+    let (pct, tick) = (g("pct") / 100.0, if g("tick") > 0.0 { g("tick") } else { x.market_tick() });
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let rng: Vec<f64> = (0..c.len()).map(|i| if g("true_range") >= 0.5 && i > 0 { h[i].max(c[i - 1]) - l[i].min(c[i - 1]) } else { h[i] - l[i] }).collect();
     let fig = |i: usize| -> f64 {
