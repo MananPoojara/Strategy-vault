@@ -6,6 +6,9 @@ use crate::books::apwms::wma;
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "hwdti";
+/// Admitted ids (authors/stendahl/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["hwdti_ma_sar"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![
