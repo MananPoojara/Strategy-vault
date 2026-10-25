@@ -7,6 +7,9 @@ use super::jkbwts::{avg, buy_monday, entry, exit, sim, Ty};
 use crate::connors::{claim, rsi, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "jkbk";
+/// Admitted ids (authors/krutsinger/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["jkbk_safe", "jkbk_call_buyer"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 const SOLD: &str = "rules not disclosed: the source gives only the optimisation check-list (input names and ranges) of a commercial system; the code is sold separately or only in a compiled .ELD";
 
 pub fn catalogue() -> Vec<StrategyDef> {
