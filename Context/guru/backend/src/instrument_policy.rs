@@ -239,6 +239,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || faith_reviewed(def) // Faith block
         || dunnigan_reviewed(def) // Dunnigan block
         || katsanos_reviewed(def) // Katsanos block
+        || tomasini_reviewed(def) // Tomasini block
         || pardo_reviewed(def) // Pardo block
         || aan_reviewed(def) // Aan block
         || lakonishok_reviewed(def) // Lakonishok block
@@ -1096,6 +1097,16 @@ fn katsanos_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Katsanos
+// ---------------------------------------------------------------- Tomasini 2026-10-25
+// Admission only for the module REVIEWED lists (authors/tomasini/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn tomasini_reviewed(def:&StrategyDef)->bool {(def.book=="jt" && crate::books::jt::reviewed(def.id))}
+const TOMASINI_LABEL:&str="Jaekle & Tomasini tested these systems on futures, GBP/USD, stock indices (BOM) and Dow/S&P 500 stocks; runs on other indices, ETFs and single stocks are a declared application.";
+fn tomasini_policy(def:&StrategyDef)->Option<Policy> {
+    if !tomasini_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Trading Systems, 2nd ed. (Harriman House 2019): 20-day breakout pseudo code (PDF p.24), LUXOR daily 7/26 (p.57-58, App. 3 p.375), Bollinger counter-breakout FOREX (Fig 5.4B p.129), Beginning of Month (p.159), Bollinger 60/2 futures (App. 1.2 p.358), single-stock Bollinger 100/+3/-1 (ch 9.2, p.240, 393). Index/ETF/stock runs are a declared application.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Tomasini
 // ---------------------------------------------------------------- Pardo 2026-10-25
 // Admission only for the module REVIEWED lists (authors/pardo/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn pardo_reviewed(def:&StrategyDef)->bool {(def.book=="rpdt" && crate::books::rpdt::reviewed(def.id)) || (def.book=="rpeo" && crate::books::rpeo::reviewed(def.id))}
@@ -1215,6 +1226,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=faith_policy(def) {return p;} // Faith block
     if let Some(p)=dunnigan_policy(def) {return p;} // Dunnigan block
     if let Some(p)=katsanos_policy(def) {return p;} // Katsanos block
+    if let Some(p)=tomasini_policy(def) {return p;} // Tomasini block
     if let Some(p)=pardo_policy(def) {return p;} // Pardo block
     if let Some(p)=aan_policy(def) {return p;} // Aan block
     if let Some(p)=lakonishok_policy(def) {return p;} // Lakonishok block
@@ -1715,6 +1727,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if faith_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",FAITH_LABEL));} // Faith block
     if dunnigan_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",DUNNIGAN_LABEL));} // Dunnigan block
     if katsanos_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",KATSANOS_LABEL));} // Katsanos block
+    if tomasini_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",TOMASINI_LABEL));} // Tomasini block
     if pardo_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",PARDO_LABEL));} // Pardo block
     if aan_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",AAN_LABEL));} // Aan block
     if lakonishok_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LAKONISHOK_LABEL));} // Lakonishok block
@@ -2094,6 +2107,22 @@ mod tests {
         }
     }
     // ---- end Katsanos block ----
+    // ---- Tomasini block (2026-10-25) ----
+    #[test]
+    fn tomasini_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{jt};
+        let all:Vec<StrategyDef>=jt::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=jt::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Tomasini block ----
     // ---- Pardo block (2026-10-25) ----
     #[test]
     fn pardo_review_admits_exact_ids_on_indices_etfs_and_stocks() {
