@@ -39,7 +39,7 @@ export const sourceReview: Record<string, {type: string; sameWorkAs?: string; pe
   "bcsts": {"type": "course_manual", "people": ["Bulli Castelo"]},
   "bergsth": {"type": "book", "people": ["Jim Berg"]},
   "bfm2c": {"type": "code_package", "sameWorkAs": "bfmm", "people": ["Mike Bryant"]},
-  "bfmm": {"type": "code_package", "people": []},
+  "bfmm": {"type": "code_package", "people": ["Mike Bryant"]},
   "bfmmx": {"type": "code_package", "sameWorkAs": "bfmm", "people": ["Mike Bryant"]},
   "bllstr": {"type": "article", "people": ["Blake LeBaron", "Josef Lakonishok", "William Brock"]},
   "bobb": {"type": "book", "people": ["John Bollinger"]},

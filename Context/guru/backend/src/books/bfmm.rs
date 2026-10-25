@@ -21,6 +21,9 @@
 use crate::connors::{claim, sma, true_range, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "bfmm";
+/// Admitted ids (authors/bryant/admission/SOURCE-CONTRACT.md); bfmm_s_nq stays gate-withheld.
+pub const REVIEWED: &[&str] = &["bfmm_esl", "bfmm_nql", "bfmm_s_es", "bfmm_mm2_es", "bfmm_mm2_nq"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const NOTE1: &str = "MiniMax (2001) on E-mini futures, $75 per trade deducted; here run on the index (S&P 500 for ES, Nasdaq 100 for NQ) as an instrument swap with percentage returns, so only trade counts and win rates are comparable. Day-session data in the book. DMI/ADX per the guide's Appendix (simple 14-bar sums, ADX = 14-bar average of DMI). Stops fill at the stop or the worse open; exits work from the bar after entry (same_bar = 1 also tests the money-management stop on the entry bar, which does not reproduce the book).";
 const NOTE2: &str = "MiniMax II (2002) on E-mini futures, $75 per trade deducted; here run on the index (instrument swap, percentage returns). Long and short sides in one strategy; an opposite entry stop that fills while in a position reverses it at the fill price (TradeStation stop-and-reverse). When a stop and the profit target could both fill on one bar the stop is taken first (conservative). The trailing stop starts at the entry day's close; the target is re-set at each close.";
