@@ -6,6 +6,9 @@
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "nfpk";
+/// Admitted ids (authors/freeburg/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["nfpk_ma20w", "nfpk_ma20w_f1", "nfpk_wma15w", "nfpk_wma15w_swing"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const PANKIN: &str = "The workbook prints only the outline 'Pankin I / Pankin II Trading Rules' (pp.1-3), never the rules; it also needs Fidelity Select sector-fund prices (not in the vault).";
 
