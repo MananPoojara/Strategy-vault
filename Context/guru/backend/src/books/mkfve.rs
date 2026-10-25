@@ -3,6 +3,9 @@
 use crate::connors::{sma, Claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "mkfve";
+/// Admitted ids (authors/katsanos/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["mkfve_div"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const RULES: &[&str] = &[
     "F|MF:=C-(H+L)/2+Typical()-Ref(Typical(),-1); FVE:=Sum(If(MF>0.3*C/100,+V,If(MF<-0.3*C/100,-V,0)),PERIOD)/Mov(V,PERIOD,S)/PERIOD*100; PERIOD 22 (MetaStock formula, p.29)",

@@ -238,6 +238,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || blau_reviewed(def) // Blau block
         || faith_reviewed(def) // Faith block
         || dunnigan_reviewed(def) // Dunnigan block
+        || katsanos_reviewed(def) // Katsanos block
         || pardo_reviewed(def) // Pardo block
         || aan_reviewed(def) // Aan block
         || lakonishok_reviewed(def) // Lakonishok block
@@ -1085,6 +1086,16 @@ fn dunnigan_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Dunnigan
+// ---------------------------------------------------------------- Katsanos 2026-10-25
+// Admission only for the module REVIEWED lists (authors/katsanos/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn katsanos_reviewed(def:&StrategyDef)->bool {(def.book=="mkits" && crate::books::mkits::reviewed(def.id)) || (def.book=="mkfve" && crate::books::mkfve::reviewed(def.id))}
+const KATSANOS_LABEL:&str="Katsanos tested these rules on DAX futures, EUR/USD and one US stock (XM Satellite Radio); runs on indices, ETFs and other stocks are a declared application.";
+fn katsanos_policy(def:&StrategyDef)->Option<Policy> {
+    if !katsanos_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Intermarket Trading Strategies (Wiley 2008): DAX MA Crossover System (App. A.4, Table 13.2 p.210) and the Euro classic MA system (eq. 17.1-17.8 p.281-282, code p.355 without its CRB/TNX line); Detecting Breakouts (S&C April 2003) FVE divergence with linear-regression slopes (p.29, 36). Book markets: DAX futures, EUR/USD, XMSR stock. Index/ETF/stock runs are a declared application.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Katsanos
 // ---------------------------------------------------------------- Pardo 2026-10-25
 // Admission only for the module REVIEWED lists (authors/pardo/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn pardo_reviewed(def:&StrategyDef)->bool {(def.book=="rpdt" && crate::books::rpdt::reviewed(def.id)) || (def.book=="rpeo" && crate::books::rpeo::reviewed(def.id))}
@@ -1203,6 +1214,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=blau_policy(def) {return p;} // Blau block
     if let Some(p)=faith_policy(def) {return p;} // Faith block
     if let Some(p)=dunnigan_policy(def) {return p;} // Dunnigan block
+    if let Some(p)=katsanos_policy(def) {return p;} // Katsanos block
     if let Some(p)=pardo_policy(def) {return p;} // Pardo block
     if let Some(p)=aan_policy(def) {return p;} // Aan block
     if let Some(p)=lakonishok_policy(def) {return p;} // Lakonishok block
@@ -1614,6 +1626,9 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         "wdowf_plan"=>"Held: the engine cannot hold the plan's four lots together. The One-Way Formula Operating Plan buys up to four separate lots (Fund L and Fund S) at different prices, each with its own stop, and sizes the stops from a dollar square-root table that stops at a $150 stock price; index levels are far outside that table.",
         "wdowf_reversal"=>"Held: not the book's plan. Reversal signals with no stop are Plan #1, which Dunnigan tested and rejected (\"It is not good practice to buy and then sit back and do nothing until a sell signal appears\", p.224); the recommended Operating Plan is held for its four lots and dollar table.",
         // ---- end Dunnigan block
+        // ---- Katsanos block (25 Oct 2026): held Live rules
+        "mkits_rs_fut"|"mkits_rs_etf"=>"Held: needs the S&P 500 benchmark series. The relative-strength systems compare each market with the S&P 500 close day by day (Appendix A.7); that benchmark series is not installed with the vault's market data, so the engine would find no benchmark and trade nothing.",
+        // ---- end Katsanos block
         "ss_adx_gapper_no_gap"=>"Held: rules not fully defined. Street Smarts (p.93) presents this as Larry's discussion and calls it \"more subjective\"; it gives no objective entry, so any coded entry would be the vault's, not the book's.",
         "hfm_hv"=>"Held: rules not fully defined. The book (Ch. 3) gives a volatility warning with no direction, entry, exit or stop (\"a personal choice\"); the coded breakout entry and 20-day exit would be vault choices.",
         "hfm_und"|"hfm_und_long"|"hfm_und_short"=>"Held: needs option prices. The book (Ch. 4) trades Undeniables by selling out-of-the-money index puts or calls; a long or short trade in the index itself has a different payoff, and the vault holds no traded option prices.",
@@ -1699,6 +1714,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if blau_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BLAU_LABEL));} // Blau block
     if faith_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",FAITH_LABEL));} // Faith block
     if dunnigan_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",DUNNIGAN_LABEL));} // Dunnigan block
+    if katsanos_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",KATSANOS_LABEL));} // Katsanos block
     if pardo_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",PARDO_LABEL));} // Pardo block
     if aan_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",AAN_LABEL));} // Aan block
     if lakonishok_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LAKONISHOK_LABEL));} // Lakonishok block
@@ -2062,6 +2078,22 @@ mod tests {
         }
     }
     // ---- end Dunnigan block ----
+    // ---- Katsanos block (2026-10-25) ----
+    #[test]
+    fn katsanos_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{mkits, mkfve};
+        let all:Vec<StrategyDef>=mkits::catalogue().into_iter().chain(mkfve::catalogue()).collect();
+        let mut want:Vec<&str>=mkits::REVIEWED.iter().chain(mkfve::REVIEWED.iter()).copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Katsanos block ----
     // ---- Pardo block (2026-10-25) ----
     #[test]
     fn pardo_review_admits_exact_ids_on_indices_etfs_and_stocks() {
