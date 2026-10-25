@@ -380,7 +380,22 @@ export const AUTHOR_PROFILE_DATA = {
   ],
   "sources": [],
   "confidence": "low"
+ }, "jcarter": {
+  "kind": "person",
+  "mastery": [
+   "Stock index futures",
+   "Options",
+   "Swing trading"
+  ],
+  "summary": "John F. Carter trades stock-index futures, currencies and stock options and founded Simpler Trading. Mastering the Trade sets out his day-trading and swing setups: the opening gap, pivots, the Squeeze, HOLP/LOHP and Propulsion plays. This profile rests on the books themselves.",
+  "known_for": [
+   "Mastering the Trade",
+   "The Squeeze"
+  ],
+  "sources": [],
+  "confidence": "low"
  },
+
  "borowski": {
   "kind": "person",
   "mastery": [

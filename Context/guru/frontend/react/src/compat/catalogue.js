@@ -185,6 +185,14 @@ export const LIB = [
     { id: "swhoi", sourceIds: ["title-ed1441777051b0e2"], title: "High Octane Investing", year: null, blurb: "Wirrick, Collette & Christensen · option plays and a Bollinger squeeze; held: option prices, no squeeze threshold" },
     { id: "swhot", sourceIds: ["title-f0c83eda5e62b954"], title: "High Octane Trading", year: 2003, blurb: "Wirrick, 2003 · options primer and chart reading; held: no complete rule" }] },
   // ---- end Wirrick block ----
+  // ---- Carter block (2026-10-25) ----
+  { id: "jcarter", name: "John F. Carter", tagline: "Futures and options trader (Simpler Trading) · the Squeeze, HOLP/LOHP and Propulsion plays (backtested); intraday YM/ES plays held", books: [
+    { id: "jcmtt", sourceIds: ["title-68858e52c624c55c"], title: "Mastering the Trade (3rd edition)", year: 2018, blurb: "Carter, 2018 · the Squeeze, HOLP/LOHP and Propulsion pull-back plays on daily bars; gap, pivot, tick and 3:52 day trades held" },
+    { id: "jcteu", sourceIds: ["title-000348d7a368b51a"], title: "Trading the Euro: Box It, Squeeze It, Love It, Leave It", year: null, blurb: "Carter · euro box play (hand-drawn box) and squeeze; held: forex, chart reading" },
+    { id: "jcym5", sourceIds: ["title-13d8a00ffeb58a5c"], title: "My 5-Minute Method for Trading the Mini-Dow for a Living", year: null, blurb: "Carter · 5-minute YM pivot entries with 20-point stops; held: intraday futures" },
+    { id: "jcags", sourceIds: ["title-526d7a8dfa1e2250"], title: "Online Day Trading Seminar on Grains", year: 2007, blurb: "Carter & Hubert Senters · grain futures setups; held: futures not in the vault" },
+    { id: "jccbot", sourceIds: ["title-260b2a8f34b4cf47"], title: "CBOT Trading Lessons WorkBook", year: null, blurb: "Carter · mini-sized Dow lessons and pivot method; held: intraday futures" }] },
+  // ---- end Carter block ----
   // ---- Borowski block (2026-10-24) ----
   { id: "borowski", name: "Robert Borowski", tagline: "Rapid Forex e-books · intraday wave surfing, scalping and simple/exponential average trend lines on currency charts (held)", books: [
     { id: "rbfsurf", sourceIds: ["title-7c06ca1d8e3dfdab", "title-bb98231bb40e960f"], title: "Forex Surfing", year: null, blurb: "Borowski · intraday wave and channel trades; held: lines by hand, pip sizes" },
