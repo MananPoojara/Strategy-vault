@@ -13,6 +13,9 @@ use crate::books::jkbwts::Ord;
 use crate::connors::{claim, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "lgtt30";
+/// Admitted ids (authors/gettess/admission/SOURCE-CONTRACT.md); lgtt30_sp_plan stays gate-withheld.
+pub const REVIEWED: &[&str] = &["lgtt30_tt30"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 /// A stop/limit already at or through tomorrow's open is sent as a market order (it fills at the open, which the book
 /// states for stops: "If the open of the next day is beyond your stop, you would exit at that point", p.55). Done here
@@ -37,7 +40,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|Place profit target at high of tomorrow (= high of the entry day); place protective stop at l(0) (= low of the day before entry) (code p.9; framework step 7, p.6); short mirror",
             "X|Reversal: a new Kris-Kross sell (buy) stop from each open reverses the position (p.5, framework step 8)",
             "F|Non-re-entry: \"we will not go long again if we came into a day long, and we will not go short again if we came into a day short\" (p.5)"],
-          "Book (System Writer Plus, $50 commission, 1 contract): S&P INDEX 4/29/82-6/30/93 (CSI continuous): 1,059 trades, 72% profitable, avg trade $162.09, net $171,650 (p.19); 11 other futures printed (p.11-22). Code vs framework: framework step 5 says 'Do not reverse' on the entry day, the printed code (which produced the results) reverses through the opposite entry stop; default = code. Target/protective stop start the day after entry (framework step 7). Run on SPX/SPY/NIFTY (instrument swap), tick 0.05.",
+          "Book (System Writer Plus, $50 commission, 1 contract): S&P INDEX 4/29/82-6/30/93 (CSI continuous): 1,059 trades, 72% profitable, avg trade $162.09, net $171,650 (p.19); 11 other futures printed (p.11-22). Code vs framework: framework step 5 says 'Do not reverse' on the entry day, the printed code (which produced the results) reverses through the opposite entry stop; default = code. Target/protective stop start the day after entry (framework step 7). Run on SPX/SPY/NIFTY (instrument swap), rounded to the instrument's own tick (0.05 option).",
           claim("1,059", "72%", "$162.09", "1 bar", "S&P 500 futures 4/1982-6/1993 (p.19)")),
         d("lgtt30_sp_plan", "S&P Plan (Daily Market Mapping: day type x close/open pattern)", "Daily Market Mapping (p.37-58)", Live,
           &["F|Day types: Inside (high <= previous high and low >= previous low), Outside (higher high and lower low), Higher (higher high, low >= previous low), Lower (lower low, high <= previous high) (p.38)",
@@ -67,7 +70,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     Some(match id {
         "lgtt30_tt30" => vec![p("days", "Kris-Kross days", 3., 2., 10., 1.), p("mult", "Multiplier of the Kris-Kross figure", 0.5, 0.1, 2.0, 0.05),
-            p("tick", "Rounding increment (0.05 = S&P / NSE)", 0.05, 0.0, 1.0, 0.01),
+            p("tick", "Rounding increment: 0 = the instrument's own tick (book: rounded UP to the price increment, p.3, 6); e.g. 0.05 = S&P futures / NSE", 0.0, 0.0, 1.0, 0.01),
             p("stop_ref", "Protective stop: 0 = low of the day before entry (code l(0), framework 7), 1 = low of the entry day (text p.4)", 0., 0., 1., 1.)],
         "lgtt30_sp_plan" => vec![p("target_min", "Minimum profit target in index points (book: 20 S&P points = 0.20)", 0.20, 0.0, 5.0, 0.05),
             p("stop_pts", "Money-management stop in index points (book: $1,250 / $500 = 2.50)", 2.5, 0.0, 20.0, 0.25)],
@@ -124,7 +127,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     Some(match id {
         "lgtt30_tt30" => {
             let n = g("days").max(1.0).round() as usize;
-            let (mult, tick, sref) = (g("mult"), g("tick"), g("stop_ref") >= 0.5);
+            let (mult, tick, sref) = (g("mult"), if g("tick") > 0.0 { g("tick") } else { x.market_tick() }, g("stop_ref") >= 0.5);
             sim(x, from, to, 0.0, false, |i, pos, _| {
                 if i + 1 < n { return vec![]; }
                 let w = i + 1 - n..=i;
