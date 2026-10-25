@@ -241,6 +241,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || clayburg_reviewed(def) // Clayburg block
         || stendahl_reviewed(def) // Stendahl block
         || boucher_reviewed(def) // Boucher block
+        || freeburg_reviewed(def) // Freeburg block
         || blau_reviewed(def) // Blau block
         || faith_reviewed(def) // Faith block
         || dunnigan_reviewed(def) // Dunnigan block
@@ -1123,6 +1124,16 @@ fn boucher_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Boucher
+// ---------------------------------------------------------------- Freeburg 2026-10-25
+// Admission only for the module REVIEWED lists (authors/freeburg/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn freeburg_reviewed(def:&StrategyDef)->bool {(def.book=="nfpk" && crate::books::nfpk::reviewed(def.id))}
+const FREEBURG_LABEL:&str="Nelson Freeburg illustrated these weekly moving-average confirmations on the S&P 500 and the NASDAQ Composite; runs on other indices, ETFs and single stocks (US and India) are a declared application.";
+fn freeburg_policy(def:&StrategyDef)->Option<Policy> {
+    if !freeburg_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Trading the Pankin Strategy for 30% Annual Gains and Low Risk (TAG XIX 1997 workbook) Fig. 35 (S&P vs 20-week MA, unfiltered and +/-1%) and Fig. 36 (NASDAQ vs 15-week WMA, crossover and 0.5% MA swing), p.25. Index/ETF/stock runs are a declared application.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Freeburg
 // ---------------------------------------------------------------- Blau 2026-10-25
 // Admission only for the module REVIEWED lists (authors/blau/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn blau_reviewed(def:&StrategyDef)->bool {(def.book=="wbmdd" && crate::books::wbmdd::reviewed(def.id))}
@@ -1294,6 +1305,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=clayburg_policy(def) {return p;} // Clayburg block
     if let Some(p)=stendahl_policy(def) {return p;} // Stendahl block
     if let Some(p)=boucher_policy(def) {return p;} // Boucher block
+    if let Some(p)=freeburg_policy(def) {return p;} // Freeburg block
     if let Some(p)=blau_policy(def) {return p;} // Blau block
     if let Some(p)=faith_policy(def) {return p;} // Faith block
     if let Some(p)=dunnigan_policy(def) {return p;} // Dunnigan block
@@ -1801,6 +1813,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if clayburg_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",CLAYBURG_LABEL));} // Clayburg block
     if stendahl_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",STENDAHL_LABEL));} // Stendahl block
     if boucher_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BOUCHER_LABEL));} // Boucher block
+    if freeburg_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",FREEBURG_LABEL));} // Freeburg block
     if blau_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BLAU_LABEL));} // Blau block
     if faith_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",FAITH_LABEL));} // Faith block
     if dunnigan_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",DUNNIGAN_LABEL));} // Dunnigan block
@@ -2217,6 +2230,22 @@ mod tests {
         }
     }
     // ---- end Boucher block ----
+    // ---- Freeburg block (2026-10-25) ----
+    #[test]
+    fn freeburg_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{nfpk};
+        let all:Vec<StrategyDef>=nfpk::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=nfpk::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Freeburg block ----
     // ---- Blau block (2026-10-25) ----
     #[test]
     fn blau_review_admits_exact_ids_on_indices_etfs_and_stocks() {
