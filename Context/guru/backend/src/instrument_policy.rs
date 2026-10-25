@@ -235,6 +235,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || goslin_reviewed(def) // Goslin block
         || ruggiero_reviewed(def) // Ruggiero block
         || link_reviewed(def) // Link block
+        || rjones_reviewed(def) // RJones block
         || blau_reviewed(def) // Blau block
         || faith_reviewed(def) // Faith block
         || dunnigan_reviewed(def) // Dunnigan block
@@ -1057,6 +1058,16 @@ fn link_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Link
+// ---------------------------------------------------------------- RJones 2026-10-25
+// Admission only for the module REVIEWED lists (authors/rjones/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn rjones_reviewed(def:&StrategyDef)->bool {(def.book=="rjmil" && crate::books::rjmil::reviewed(def.id))}
+const RJONES_LABEL:&str="Ryan Jones tested these systems on futures (crude oil, T-bonds, wheat, soybeans, 10-year notes); runs on indices, ETFs and single stocks (US and India) are a declared application.";
+fn rjones_policy(def:&StrategyDef)->Option<Policy> {
+    if !rjones_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"The Secret to Making $1 Million in 5 Years or Less, Advanced Course workbook (Futures Learning Center 1998), Session 8: MA-MA Divergence (code p.55), FutureVideo (code p.60). Index/ETF/stock runs are a declared application.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end RJones
 // ---------------------------------------------------------------- Blau 2026-10-25
 // Admission only for the module REVIEWED lists (authors/blau/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn blau_reviewed(def:&StrategyDef)->bool {(def.book=="wbmdd" && crate::books::wbmdd::reviewed(def.id))}
@@ -1222,6 +1233,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=goslin_policy(def) {return p;} // Goslin block
     if let Some(p)=ruggiero_policy(def) {return p;} // Ruggiero block
     if let Some(p)=link_policy(def) {return p;} // Link block
+    if let Some(p)=rjones_policy(def) {return p;} // RJones block
     if let Some(p)=blau_policy(def) {return p;} // Blau block
     if let Some(p)=faith_policy(def) {return p;} // Faith block
     if let Some(p)=dunnigan_policy(def) {return p;} // Dunnigan block
@@ -1723,6 +1735,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if goslin_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",GOSLIN_LABEL));} // Goslin block
     if ruggiero_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",RUGGIERO_LABEL));} // Ruggiero block
     if link_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LINK_LABEL));} // Link block
+    if rjones_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",RJONES_LABEL));} // RJones block
     if blau_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BLAU_LABEL));} // Blau block
     if faith_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",FAITH_LABEL));} // Faith block
     if dunnigan_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",DUNNIGAN_LABEL));} // Dunnigan block
@@ -2043,6 +2056,22 @@ mod tests {
         }
     }
     // ---- end Link block ----
+    // ---- RJones block (2026-10-25) ----
+    #[test]
+    fn rjones_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{rjmil};
+        let all:Vec<StrategyDef>=rjmil::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=rjmil::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end RJones block ----
     // ---- Blau block (2026-10-25) ----
     #[test]
     fn blau_review_admits_exact_ids_on_indices_etfs_and_stocks() {
