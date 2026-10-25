@@ -15,6 +15,9 @@
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "dmst2";
+/// Admitted ids (authors/meyers/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["dmst2_xavtr", "dmst2_lsqr_t1", "dmst2_t2", "dmst2_polychrom", "dmst2_maxlik", "dmst2_pctupdn"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 // TradeStation-4 order engine (one contract, stop-and-reverse)
 #[derive(Clone, Copy, PartialEq, Debug)]

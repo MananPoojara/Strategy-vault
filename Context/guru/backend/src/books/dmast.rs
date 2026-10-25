@@ -17,6 +17,9 @@
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "dmast";
+/// Admitted ids (authors/meyers/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["dmast_fixmempoly", "dmast_fadmem2", "dmast_kalman_gh", "dmast_kalman_ghk", "dmast_kalman_fmem"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const FMP2_GAP: &str = "IBM 5-minute intraday bars (June 1999 onward) — the vault has daily bars only. The rule is the Fixed Memory Polynomial code applied to 5-minute bars with a 4-week walk-forward; it cannot be run on daily data without changing the bar size the book specifies.";
 
