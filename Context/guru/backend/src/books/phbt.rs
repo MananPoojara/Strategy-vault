@@ -3,6 +3,9 @@
 //! (p.91-95, TradeStation formula) and the QQQ/SPY volume Bollinger system (p.50-55). Sentiment systems that need
 //! put/call, Rydex or survey data are NeedsData; judgement material is NotTestable. Sources: library/phbt/.
 use crate::connors::{sma, claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
+/// Admitted ids (authors/headley/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["phbt_vix_bb", "phbt_vix45_weekly", "phbt_accel_daily", "phbt_accel_weekly", "phbt_accel_monthly"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const BOOK: &str = "phbt";
 

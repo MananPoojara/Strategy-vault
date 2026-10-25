@@ -236,6 +236,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || ruggiero_reviewed(def) // Ruggiero block
         || link_reviewed(def) // Link block
         || guppy_reviewed(def) // Guppy block
+        || headley_reviewed(def) // Headley block
         || primo_reviewed(def) // Primo block
         || meyers_reviewed(def) // Meyers block
         || krutsinger_reviewed(def) // Krutsinger block
@@ -1076,6 +1077,16 @@ fn guppy_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Guppy
+// ---------------------------------------------------------------- Headley 2026-10-25
+// Admission only for the module REVIEWED lists (authors/headley/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn headley_reviewed(def:&StrategyDef)->bool {(def.book=="phbt" && crate::books::phbt::reviewed(def.id)) || (def.book=="phbttk" && crate::books::phbttk::reviewed(def.id))}
+const HEADLEY_LABEL:&str="Price Headley tested the VIX systems on the S&P 100 (OEX) with the CBOE VIX and applied Acceleration Bands and Percent R to US stocks; runs on other indices, ETFs and single stocks (US and India, India VIX in India) are a declared application.";
+fn headley_policy(def:&StrategyDef)->Option<Policy> {
+    if !headley_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Big Trends in Trading (Wiley 2002): VIX Bollinger system p.38-40 (TradeStation code), weekly VIX > 45 buy p.44-46, Acceleration Bands p.91-95 (TradeStation formula); Big Trends Toolkit 2.0 for MetaStock manual p.36-38 (Percent R confirmation). Index/ETF/stock runs are a declared application.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Headley
 // ---------------------------------------------------------------- Primo 2026-10-25
 // Admission only for the module REVIEWED lists (authors/primo/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn primo_reviewed(def:&StrategyDef)->bool {(def.book=="pstc" && crate::books::pstc::reviewed(def.id)) || (def.book=="pstc08" && crate::books::pstc08::reviewed(def.id)) || (def.book=="prap2" && crate::books::prap2::reviewed(def.id))}
@@ -1322,6 +1333,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=ruggiero_policy(def) {return p;} // Ruggiero block
     if let Some(p)=link_policy(def) {return p;} // Link block
     if let Some(p)=guppy_policy(def) {return p;} // Guppy block
+    if let Some(p)=headley_policy(def) {return p;} // Headley block
     if let Some(p)=primo_policy(def) {return p;} // Primo block
     if let Some(p)=meyers_policy(def) {return p;} // Meyers block
     if let Some(p)=krutsinger_policy(def) {return p;} // Krutsinger block
@@ -1832,6 +1844,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if ruggiero_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",RUGGIERO_LABEL));} // Ruggiero block
     if link_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LINK_LABEL));} // Link block
     if guppy_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",GUPPY_LABEL));} // Guppy block
+    if headley_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",HEADLEY_LABEL));} // Headley block
     if primo_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",PRIMO_LABEL));} // Primo block
     if meyers_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",MEYERS_LABEL));} // Meyers block
     if krutsinger_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",KRUTSINGER_LABEL));} // Krutsinger block
@@ -2176,6 +2189,22 @@ mod tests {
         }
     }
     // ---- end Guppy block ----
+    // ---- Headley block (2026-10-25) ----
+    #[test]
+    fn headley_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{phbt, phbttk};
+        let all:Vec<StrategyDef>=phbt::catalogue().into_iter().chain(phbttk::catalogue()).collect();
+        let mut want:Vec<&str>=phbt::REVIEWED.iter().chain(phbttk::REVIEWED.iter()).copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Headley block ----
     // ---- Primo block (2026-10-25) ----
     #[test]
     fn primo_review_admits_exact_ids_on_indices_etfs_and_stocks() {

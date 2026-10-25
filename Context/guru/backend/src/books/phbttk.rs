@@ -6,6 +6,9 @@
 //! 30 bars) / (highest High of 30 bars - lowest Low of 30 bars) (Williams' %R on Headley's 0-100 scale, 80 = near the
 //! high). "Crosses over 80" = MetaStock Cross: above 80 today, at or below 80 yesterday.
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
+/// Admitted ids (authors/headley/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["phbttk_pctr_long", "phbttk_pctr_short"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub const BOOK: &str = "phbttk";
 const G: &str = "Big Trends Toolkit 2.0";
