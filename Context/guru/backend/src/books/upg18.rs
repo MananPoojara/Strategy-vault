@@ -8,6 +8,9 @@ use crate::books::rrsim::{g, o, pd, run_ts, sdef, A, P, POINT};
 use crate::connors::{claim, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "upg18";
+/// Admitted ids (authors/krutsinger/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["upg18_english_channel", "upg18_english_channel_rar", "upg18_prince", "upg18_parrot", "upg18_safer2005", "upg18_trend_walker"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub fn catalogue() -> Vec<StrategyDef> {
     use Status::*;
@@ -75,6 +78,19 @@ The SAR runs from the first bar of the data. GearShift.pdf prints a Parrot BBE v
             "X|\"XLongVal = entryprice + (maxpositionprofit - StpAmt)/bigpointvalue; If marketposition = 1 and C <= XLongVal then Sell (\\\"XTS lx\\\") Next Bar market;\" (mirror for shorts)",
         ], "Source: T:/Joe Krutsinger - Dealers Choice Pro System for TS (joekrut.com)/Open Code.rar -> Open Code.txt (A0599)."),
     ];
+    v.push(sdef(BOOK, "upg18_safer2005", "Safer 2005 (vendor sheet code)", "Krutsinger Safer 2005", "Long/Short", Status::Live, &[
+        "E|\"If C < c[2] and date>date[1] then Buy (\\\"BuyL1\\\") next bar at c+ JKBuyer stop;\" - checklist: buy next bar at today's close plus today's RANGE times 38.2% on a buy stop (Safer2005.pdf)",
+        "E|\"If C > c[2] and date>date[1] then Sell Short(\\\"SellS1\\\") next bar at c- JKSeller stop;\" - checklist: today's close minus today's RANGE times 61.8% on a sell short stop",
+        "X|\"If MarketPosition = 1 then sell(\\\"LXBail21\\\") this bar at close;\" (mirror for shorts): 'Exit all trades on close of entry day'",
+    ], "Source: research Trading Knowledge/.../Joe Krutsinger - Safer 2005 Trading System (joekrut.com)/From other source/Safer2005.pdf (one-page vendor sheet: code + checklists; scan, OCR 25 Oct 2026, authors/krutsinger). \
+JKBuyer / JKSeller = today's range x 38.2% / 61.8% (the checklist). Equal closes: no order. Entry and exit on the same daily bar: one stop then the close, so the daily bar decides it without intraday data. Daily bars; sold for stock indexes (JK_Systems Intro). India: instrument swap."));
+    v.push(sdef(BOOK, "upg18_trend_walker", "Trend Walker (vendor sheet code)", "Krutsinger Trend Walker", "Long/Short", Status::Live, &[
+        "F|\"Input: BuyBo(2),SellBo(7), Walk(6),Trn(10);\" (TrendWalker.pdf)",
+        "E|\"IF C <= C[2] and C > Average(c,trn)[1] Then Buy (\\\"LE1\\\") Next Bar at C + (Range * 0.10*BuyBo) Stop;\"",
+        "E|\"IF C > C[2] and C < Average(c,trn)[1] Then Sell Short(\\\"SE1\\\") Next Bar C - (Range * 0.10*SellBo) Stop;\"",
+        "X|\"IF MarketPosition=1 and BarsSinceEntry >=Walk Then sell(\\\"LX\\\") Next Bar at Market;\" (mirror for shorts): 'Exit all trades on the open after being in the trade 6 days'",
+    ], "Source: research .../Joe Krutsinger - Trend Walker System for TS (joekrut.com)/TrendWalker.pdf (one-page vendor sheet: code + checklists; scan, OCR 25 Oct 2026, authors/krutsinger). \
+The OCR reads the input as 'Trm(10)' and the code as 'trn'; the checklist says 'the average of the last 10 days'. Average(c,trn)[1] = yesterday's 10-day average. A reversal stop fills while the other side is held (TradeStation stop-and-reverse). Daily bars; India: instrument swap."));
     v[3].claim = claim("90", "45.56%", "$486.67", "same day", "@SP daily 5/9/2001-5/10/2002 (ZAP slide 20)");
     v[2].claim = claim("63", "77.78%", "$443.81", "", "QQQ daily 5/2001-5/2002, 1,000 shares (ZAP slide 31)");
     v
@@ -88,6 +104,8 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "upg18_parrot_bbe" => ("upg18_parrot", "Krutsinger Parrot (code)", "BBE (not testable)"),
         "upg18_prince" => ("upg18_prince", "Krutsinger Prince (code)", "code"),
         "upg18_traders_dream" => ("upg18_traders_dream", "Krutsinger Trader's Dream (code)", "code"),
+        "upg18_safer2005" => ("upg18_safer2005", "Krutsinger Safer 2005 (code)", "code"),
+        "upg18_trend_walker" => ("upg18_trend_walker", "Krutsinger Trend Walker (code)", "code"),
         "upg18_gearshift" => ("upg18_gearshift", "Krutsinger GearShift (code)", "code"),
         "upg18_dealers_choice_pro" => ("upg18_dealers_choice_pro", "Krutsinger Dealer's Choice Pro (code)", "code"),
         _ => return None,
@@ -100,6 +118,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "upg18_english_channel_rar" => vec![pd("length", "Length (channel bars; range average over 2x)", 4., 2., 9., 1.)],
         "upg18_prince" => vec![pd("lag", "Close compared with the close N bars ago", 2., 1., 10., 1.)],
         "upg18_traders_dream" => vec![pd("stop_pts", "Stop loss in points ($300 / $250 per @SP point)", 1.2, 0.2, 20., 0.2), pd("lag", "Close compared with the close N bars ago", 2., 1., 10., 1.)],
+        "upg18_safer2005" => vec![pd("buy_pct", "JKBuyer: % of today's range above the close", 38.2, 5., 100., 0.1), pd("sell_pct", "JKSeller: % of today's range below the close", 61.8, 5., 100., 0.1)],
+        "upg18_trend_walker" => vec![pd("buybo", "BuyBo (tenths of the range)", 2., 0., 20., 1.), pd("sellbo", "SellBo (tenths of the range)", 7., 0., 20., 1.), pd("walk", "Walk: exit after N bars in the trade", 6., 1., 30., 1.), pd("trn", "Trn: average length", 10., 2., 100., 1.)],
         "upg18_parrot" => vec![pd("afstep", "AfStep (acceleration increment)", 0.01, 0.0005, 0.05, 0.0005), pd("aflimit", "AfLimit (maximum acceleration)", 0.1, 0.05, 0.5, 0.01)],
         _ => return None,
     })
@@ -175,6 +195,28 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 // SetStopLoss works from the actual entry price: a stop entry the open gaps through fills at the open
                 if c[i] < c[i - k] { let f = op[i + 1].max(h[i]); next.push(o(A::Buy, P::Stop(h[i]), "LE")); next.push(o(A::Xl, P::Stop(f - stp), "stop loss")); }
                 else { let f = op[i + 1].min(l[i]); next.push(o(A::Sell, P::Stop(l[i]), "SE")); next.push(o(A::Xs, P::Stop(f + stp), "stop loss")); }
+            }))
+        }
+        "upg18_safer2005" => {
+            let (bp, sp) = (g(p, "buy_pct", 38.2) / 100., g(p, "sell_pct", 61.8) / 100.);
+            Some(run_ts(x, from, to, |i, st, now, next| {
+                now.push(o(A::Xl, P::Mkt, "LXBail21")); now.push(o(A::Xs, P::Mkt, "SXBail21"));
+                if i < 2 || st.pos != 0 { return; } // "no trades yet today": a position held into the close is closed there
+                let r = h[i] - l[i];
+                if c[i] < c[i - 2] { next.push(o(A::Buy, P::Stop(c[i] + r * bp), "BuyL1")); }
+                if c[i] > c[i - 2] { next.push(o(A::Sell, P::Stop(c[i] - r * sp), "SellS1")); }
+            }))
+        }
+        "upg18_trend_walker" => {
+            let (bb, sb, walk, n) = (g(p, "buybo", 2.), g(p, "sellbo", 7.), g(p, "walk", 6.).max(1.) as usize, g(p, "trn", 10.).max(1.) as usize);
+            let ma = crate::books::rrsim::sma(c, n);
+            Some(run_ts(x, from, to, |i, st, _now, next| {
+                if i < 2 { return; }
+                let r = h[i] - l[i];
+                if c[i] <= c[i - 2] && c[i] > ma[i - 1] { next.push(o(A::Buy, P::Stop(c[i] + r * 0.10 * bb), "LE1")); }
+                if st.pos == 1 && st.bse(i) >= walk { next.push(o(A::Xl, P::Mkt, "LX")); }
+                if c[i] > c[i - 2] && c[i] < ma[i - 1] { next.push(o(A::Sell, P::Stop(c[i] - r * 0.10 * sb), "SE1")); }
+                if st.pos == -1 && st.bse(i) >= walk { next.push(o(A::Xs, P::Mkt, "SX")); }
             }))
         }
         "upg18_parrot" => {
