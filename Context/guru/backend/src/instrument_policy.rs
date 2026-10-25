@@ -235,6 +235,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || goslin_reviewed(def) // Goslin block
         || ruggiero_reviewed(def) // Ruggiero block
         || link_reviewed(def) // Link block
+        || boucher_reviewed(def) // Boucher block
         || blau_reviewed(def) // Blau block
         || faith_reviewed(def) // Faith block
         || dunnigan_reviewed(def) // Dunnigan block
@@ -1057,6 +1058,16 @@ fn link_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Link
+// ---------------------------------------------------------------- Boucher 2026-10-25
+// Admission only for the module REVIEWED lists (authors/boucher/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn boucher_reviewed(def:&StrategyDef)->bool {(def.book=="mbhfe" && crate::books::mbhfe::reviewed(def.id)) || (def.book=="mbsot" && crate::books::mbsot::reviewed(def.id))}
+const BOUCHER_LABEL:&str="Mark Boucher tested these timing models on the S&P 500 (breadth thrusts, Renshaw, Appel) and the Value Line Composite (Zweig 4%) with NYSE breadth; the _nse versions read NSE breadth for India. Runs on other indices, ETFs and single stocks are a declared application.";
+fn boucher_policy(def:&StrategyDef)->Option<Policy> {
+    if !boucher_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"The Hedge Fund Edge (1999) Ch.4 p.136-139, System Spreadsheets 4.2 (up volume > 77%) and 4.3 (11-day A/D > 1.9); The Science of Trading workbook, Timing Models pp.19-22 (Zweig 4% weekly, Renshaw thrust, Appel Impulse, Appel McClellan, Appel Combo). Index/ETF/stock runs are a declared application.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Boucher
 // ---------------------------------------------------------------- Blau 2026-10-25
 // Admission only for the module REVIEWED lists (authors/blau/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn blau_reviewed(def:&StrategyDef)->bool {(def.book=="wbmdd" && crate::books::wbmdd::reviewed(def.id))}
@@ -1222,6 +1233,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=goslin_policy(def) {return p;} // Goslin block
     if let Some(p)=ruggiero_policy(def) {return p;} // Ruggiero block
     if let Some(p)=link_policy(def) {return p;} // Link block
+    if let Some(p)=boucher_policy(def) {return p;} // Boucher block
     if let Some(p)=blau_policy(def) {return p;} // Blau block
     if let Some(p)=faith_policy(def) {return p;} // Faith block
     if let Some(p)=dunnigan_policy(def) {return p;} // Dunnigan block
@@ -1723,6 +1735,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if goslin_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",GOSLIN_LABEL));} // Goslin block
     if ruggiero_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",RUGGIERO_LABEL));} // Ruggiero block
     if link_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LINK_LABEL));} // Link block
+    if boucher_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BOUCHER_LABEL));} // Boucher block
     if blau_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BLAU_LABEL));} // Blau block
     if faith_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",FAITH_LABEL));} // Faith block
     if dunnigan_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",DUNNIGAN_LABEL));} // Dunnigan block
@@ -2043,6 +2056,22 @@ mod tests {
         }
     }
     // ---- end Link block ----
+    // ---- Boucher block (2026-10-25) ----
+    #[test]
+    fn boucher_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{mbhfe, mbsot};
+        let all:Vec<StrategyDef>=mbhfe::catalogue().into_iter().chain(mbsot::catalogue()).collect();
+        let mut want:Vec<&str>=mbhfe::REVIEWED.iter().chain(mbsot::REVIEWED.iter()).copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Boucher block ----
     // ---- Blau block (2026-10-25) ----
     #[test]
     fn blau_review_admits_exact_ids_on_indices_etfs_and_stocks() {

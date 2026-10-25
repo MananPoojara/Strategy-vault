@@ -8,6 +8,9 @@
 use crate::connors::{claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "mbhfe";
+/// Admitted ids (authors/boucher/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["mbhfe_upvol77", "mbhfe_upvol77_nse", "mbhfe_ad11", "mbhfe_ad11_nse"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const UPVOL_NYSE: &[&str] = &["NYSE_ADV_DEC.AdvVolume", "NYSE_ADV_DEC.DecVolume"];
 const UPVOL_NSE: &[&str] = &["NSE_ADV_DEC.UpVolume", "NSE_ADV_DEC.DownVolume"];
