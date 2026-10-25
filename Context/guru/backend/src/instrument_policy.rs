@@ -235,6 +235,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || goslin_reviewed(def) // Goslin block
         || ruggiero_reviewed(def) // Ruggiero block
         || link_reviewed(def) // Link block
+        || bryant_reviewed(def) // Bryant block
         || primo_reviewed(def) // Primo block
         || meyers_reviewed(def) // Meyers block
         || krutsinger_reviewed(def) // Krutsinger block
@@ -1065,6 +1066,16 @@ fn link_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Link
+// ---------------------------------------------------------------- Bryant 2026-10-25
+// Admission only for the module REVIEWED lists (authors/bryant/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn bryant_reviewed(def:&StrategyDef)->bool {(def.book=="bfmm" && crate::books::bfmm::reviewed(def.id))}
+const BRYANT_LABEL:&str="Michael R. Bryant built and tested the MiniMax systems on daily E-mini S&P 500 and E-mini Nasdaq 100 futures; runs on indices, ETFs and single stocks (US and India) are a declared application.";
+fn bryant_policy(def:&StrategyDef)->Option<Policy> {
+    if !bryant_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"User's Guide: MiniMax Trading Systems (Breakout Futures 2001) ch.2 p.10-11 and Appendix p.37-38 (ESL, NQL, S); User's Guide: MiniMax II System v2 (2002) ch.1 p.4 and ch.2 p.10-11. Index/ETF/stock runs are a declared application.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Bryant
 // ---------------------------------------------------------------- Primo 2026-10-25
 // Admission only for the module REVIEWED lists (authors/primo/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn primo_reviewed(def:&StrategyDef)->bool {(def.book=="pstc" && crate::books::pstc::reviewed(def.id)) || (def.book=="pstc08" && crate::books::pstc08::reviewed(def.id)) || (def.book=="prap2" && crate::books::prap2::reviewed(def.id))}
@@ -1310,6 +1321,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=goslin_policy(def) {return p;} // Goslin block
     if let Some(p)=ruggiero_policy(def) {return p;} // Ruggiero block
     if let Some(p)=link_policy(def) {return p;} // Link block
+    if let Some(p)=bryant_policy(def) {return p;} // Bryant block
     if let Some(p)=primo_policy(def) {return p;} // Primo block
     if let Some(p)=meyers_policy(def) {return p;} // Meyers block
     if let Some(p)=krutsinger_policy(def) {return p;} // Krutsinger block
@@ -1819,6 +1831,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if goslin_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",GOSLIN_LABEL));} // Goslin block
     if ruggiero_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",RUGGIERO_LABEL));} // Ruggiero block
     if link_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LINK_LABEL));} // Link block
+    if bryant_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BRYANT_LABEL));} // Bryant block
     if primo_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",PRIMO_LABEL));} // Primo block
     if meyers_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",MEYERS_LABEL));} // Meyers block
     if krutsinger_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",KRUTSINGER_LABEL));} // Krutsinger block
@@ -2147,6 +2160,22 @@ mod tests {
         }
     }
     // ---- end Link block ----
+    // ---- Bryant block (2026-10-25) ----
+    #[test]
+    fn bryant_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{bfmm};
+        let all:Vec<StrategyDef>=bfmm::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=bfmm::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Bryant block ----
     // ---- Primo block (2026-10-25) ----
     #[test]
     fn primo_review_admits_exact_ids_on_indices_etfs_and_stocks() {
