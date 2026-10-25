@@ -237,6 +237,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || link_reviewed(def) // Link block
         || blau_reviewed(def) // Blau block
         || faith_reviewed(def) // Faith block
+        || dunnigan_reviewed(def) // Dunnigan block
         || pardo_reviewed(def) // Pardo block
         || aan_reviewed(def) // Aan block
         || lakonishok_reviewed(def) // Lakonishok block
@@ -1074,6 +1075,16 @@ fn faith_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Faith
+// ---------------------------------------------------------------- Dunnigan 2026-10-25
+// Admission only for the module REVIEWED lists (authors/dunnigan/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn dunnigan_reviewed(def:&StrategyDef)->bool {(def.book=="wdnbp" && crate::books::wdnbp::reviewed(def.id)) || (def.book=="wdgig" && crate::books::wdgig::reviewed(def.id))}
+const DUNNIGAN_LABEL:&str="Dunnigan applied the New Dow Barometer to the Dow-Jones industrial average (1921-1956) and the 2 1/2%-3-day swings to wheat futures (1930-1942); runs on other indices, ETFs and single stocks are a declared application.";
+fn dunnigan_policy(def:&StrategyDef)->Option<Policy> {
+    if !dunnigan_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"New Blueprints for Gains in Stocks and Grains (1956): New Dow Barometer Rules 1-2 on 4% closing-price swings (Part III p.62-64); 2 1/2%-3-day swing penetration of 1% (Gains in Grains p.113-115, Fig 4.3). All thresholds are percentages. Index/ETF/stock runs are a declared application.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Dunnigan
 // ---------------------------------------------------------------- Pardo 2026-10-25
 // Admission only for the module REVIEWED lists (authors/pardo/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn pardo_reviewed(def:&StrategyDef)->bool {(def.book=="rpdt" && crate::books::rpdt::reviewed(def.id)) || (def.book=="rpeo" && crate::books::rpeo::reviewed(def.id))}
@@ -1191,6 +1202,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=link_policy(def) {return p;} // Link block
     if let Some(p)=blau_policy(def) {return p;} // Blau block
     if let Some(p)=faith_policy(def) {return p;} // Faith block
+    if let Some(p)=dunnigan_policy(def) {return p;} // Dunnigan block
     if let Some(p)=pardo_policy(def) {return p;} // Pardo block
     if let Some(p)=aan_policy(def) {return p;} // Aan block
     if let Some(p)=lakonishok_policy(def) {return p;} // Lakonishok block
@@ -1598,6 +1610,10 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // ---- Faith block (25 Oct 2026): held Live rules
         "cov_turtle_s1"|"cov_turtle_s2"=>"Held: needs leverage. The Original Turtle Rules size each unit at 1% of the account per N and add up to 4 units every 1/2 N; on one index, ETF or stock a unit is about half to almost all of the account (N is 1-2% of the price), so the second or third unit takes the position above 100% of the account, which the vault does not model (the Turtles traded futures on margin across many markets).",
         // ---- end Faith block
+        // ---- Dunnigan block (25 Oct 2026): held Live rules
+        "wdowf_plan"=>"Held: the engine cannot hold the plan's four lots together. The One-Way Formula Operating Plan buys up to four separate lots (Fund L and Fund S) at different prices, each with its own stop, and sizes the stops from a dollar square-root table that stops at a $150 stock price; index levels are far outside that table.",
+        "wdowf_reversal"=>"Held: not the book's plan. Reversal signals with no stop are Plan #1, which Dunnigan tested and rejected (\"It is not good practice to buy and then sit back and do nothing until a sell signal appears\", p.224); the recommended Operating Plan is held for its four lots and dollar table.",
+        // ---- end Dunnigan block
         "ss_adx_gapper_no_gap"=>"Held: rules not fully defined. Street Smarts (p.93) presents this as Larry's discussion and calls it \"more subjective\"; it gives no objective entry, so any coded entry would be the vault's, not the book's.",
         "hfm_hv"=>"Held: rules not fully defined. The book (Ch. 3) gives a volatility warning with no direction, entry, exit or stop (\"a personal choice\"); the coded breakout entry and 20-day exit would be vault choices.",
         "hfm_und"|"hfm_und_long"|"hfm_und_short"=>"Held: needs option prices. The book (Ch. 4) trades Undeniables by selling out-of-the-money index puts or calls; a long or short trade in the index itself has a different payoff, and the vault holds no traded option prices.",
@@ -1682,6 +1698,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if link_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LINK_LABEL));} // Link block
     if blau_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BLAU_LABEL));} // Blau block
     if faith_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",FAITH_LABEL));} // Faith block
+    if dunnigan_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",DUNNIGAN_LABEL));} // Dunnigan block
     if pardo_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",PARDO_LABEL));} // Pardo block
     if aan_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",AAN_LABEL));} // Aan block
     if lakonishok_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LAKONISHOK_LABEL));} // Lakonishok block
@@ -2029,6 +2046,22 @@ mod tests {
         }
     }
     // ---- end Faith block ----
+    // ---- Dunnigan block (2026-10-25) ----
+    #[test]
+    fn dunnigan_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{wdnbp, wdgig};
+        let all:Vec<StrategyDef>=wdnbp::catalogue().into_iter().chain(wdgig::catalogue()).collect();
+        let mut want:Vec<&str>=wdnbp::REVIEWED.iter().chain(wdgig::REVIEWED.iter()).copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Dunnigan block ----
     // ---- Pardo block (2026-10-25) ----
     #[test]
     fn pardo_review_admits_exact_ids_on_indices_etfs_and_stocks() {
