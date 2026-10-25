@@ -235,6 +235,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || goslin_reviewed(def) // Goslin block
         || ruggiero_reviewed(def) // Ruggiero block
         || link_reviewed(def) // Link block
+        || katz_reviewed(def) // Katz block
         || guppy_reviewed(def) // Guppy block
         || headley_reviewed(def) // Headley block
         || jcarter_reviewed(def) // Carter block
@@ -1070,6 +1071,16 @@ fn link_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Link
+// ---------------------------------------------------------------- Katz 2026-10-25
+// Admission only for the module REVIEWED lists (authors/katz/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn katz_reviewed(def:&StrategyDef)->bool {(def.book=="kets" && crate::books::kets::reviewed(def.id))}
+const KATZ_LABEL:&str="Katz and McCormick tested these entry and exit models on a 36-market futures portfolio (1985-1999); runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade, no futures ticks or costs.";
+fn katz_policy(def:&StrategyDef)->Option<Policy> {
+    if !katz_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"The Encyclopedia of Trading Strategies (McGraw-Hill, 2000), printed C++ and the authors' C-Trader Toolkit CD: Ch.5 breakouts p.86-103, Ch.7 oscillators p.141-150, Ch.8 seasonality p.159-174, Ch.9 lunar p.183-195, Ch.10 cycles p.211-221, Ch.13-14 random entries and exits p.295-332. Seasonal and lunar averages use earlier years/cycles only (labelled adaptation). Index/ETF/stock runs are a declared application.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Katz
 // ---------------------------------------------------------------- Guppy 2026-10-25
 // Admission only for the module REVIEWED lists (authors/guppy/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn guppy_reviewed(def:&StrategyDef)->bool {(def.book=="dgdwb" && crate::books::dgdwb::reviewed(def.id))}
@@ -1365,6 +1376,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=goslin_policy(def) {return p;} // Goslin block
     if let Some(p)=ruggiero_policy(def) {return p;} // Ruggiero block
     if let Some(p)=link_policy(def) {return p;} // Link block
+    if let Some(p)=katz_policy(def) {return p;} // Katz block
     if let Some(p)=guppy_policy(def) {return p;} // Guppy block
     if let Some(p)=headley_policy(def) {return p;} // Headley block
     if let Some(p)=jcarter_policy(def) {return p;} // Carter block
@@ -1879,6 +1891,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if goslin_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",GOSLIN_LABEL));} // Goslin block
     if ruggiero_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",RUGGIERO_LABEL));} // Ruggiero block
     if link_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LINK_LABEL));} // Link block
+    if katz_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",KATZ_LABEL));} // Katz block
     if guppy_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",GUPPY_LABEL));} // Guppy block
     if headley_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",HEADLEY_LABEL));} // Headley block
     if jcarter_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",JCARTER_LABEL));} // Carter block
@@ -2212,6 +2225,22 @@ mod tests {
         }
     }
     // ---- end Link block ----
+    // ---- Katz block (2026-10-25) ----
+    #[test]
+    fn katz_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{kets};
+        let all:Vec<StrategyDef>=kets::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=kets::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Katz block ----
     // ---- Guppy block (2026-10-25) ----
     #[test]
     fn guppy_review_admits_exact_ids_on_indices_etfs_and_stocks() {
