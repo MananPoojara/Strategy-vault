@@ -8,6 +8,9 @@
 use crate::connors::*;
 
 pub const BOOK: &str = "prap2";
+/// Admitted ids (authors/primo/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["prap2_raptor2"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const RULES: &[&str] = &[
     "F|\"1. Today's closing price of the stock is greater than its 200-day simple moving average (MA).\" (Guidebook p.5)",
