@@ -18,6 +18,9 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 
 pub const BOOK: &str = "kets";
+/// Admitted ids (authors/katz/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["kets_cb_open", "kets_cb_limit", "kets_hhll_open", "kets_hhll_limit", "kets_hhll_stop", "kets_vb_open", "kets_vb_limit", "kets_vb_limit_long", "kets_vb_limit_adx", "kets_stoch_obos_open", "kets_stoch_obos_limit", "kets_stoch_obos_stop", "kets_rsi_obos_open", "kets_rsi_obos_limit", "kets_rsi_obos_stop", "kets_stoch_sig_open", "kets_stoch_sig_limit", "kets_stoch_sig_stop", "kets_stoch_div_open", "kets_stoch_div_limit", "kets_stoch_div_stop", "kets_cycle_open", "kets_cycle_limit", "kets_cycle_stop", "kets_rand_ses_open", "kets_rand_ses_limit", "kets_rand_ses_stop", "kets_rand_mses", "kets_rand_fixed_opt", "kets_rand_hhll_stop", "kets_rand_atr_stop", "kets_rand_mema_stop", "kets_rand_mema_shrink", "kets_rand_mema_shrink30", "kets_seas_xo_open", "kets_seas_xo_limit", "kets_seas_xo_stop", "kets_seas_mom_open", "kets_seas_mom_limit", "kets_seas_mom_stop", "kets_seas_conf_open", "kets_seas_conf_limit", "kets_seas_conf_stop", "kets_seas_inv_open", "kets_seas_inv_limit", "kets_seas_inv_stop", "kets_lunar_xo_open", "kets_lunar_xo_limit", "kets_lunar_xo_stop", "kets_lunar_mom_open", "kets_lunar_mom_limit", "kets_lunar_mom_stop", "kets_lunar_conf_open", "kets_lunar_conf_limit", "kets_lunar_conf_stop", "kets_lunar_inv_open", "kets_lunar_inv_limit", "kets_lunar_inv_stop"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 /// No orders before this bar: the book's price files began ~6 months (about 120 bars) before its first trade
 /// (TRAPS.H START_DATE 850202 vs IS_DATE 850801), so every look-back was complete. Longer look-backs extend it.
@@ -370,7 +373,7 @@ fn off_list() -> Vec<StrategyDef> {
         off!("kets_neural_exit", "Neural-network exit component (Ch.15)", "Ch.15 AI exits", "Long/Short",
             NotTestable("depends on trained neural networks whose weights the book does not print"), &["X|MEMA stop/shrinking target exit plus a neural-net exit signal (pp.335-345)"], "Not reproducible from the book text."),
         off!("kets_ga_exit", "Genetically evolved rule-based exits (Ch.15)", "Ch.15 AI exits", "Long/Short",
-            NotTestable("the evolved exit rules are listed only as top-10 performance rows; the instantiated rule parameters are not printed"),
+            NotTestable("the evolved exit rules are printed in prose (long: close above its 12-bar EMA and below its 49-bar EMA with a 6-bar new high; short: close above its 16-bar EMA and 22-bar SMA with the MACD(6,10) slope down, pp.345-346), but the new-high recency window and the random-entry sequence they were evolved and tested on are not printed, so the test cannot be reproduced"),
             &["X|Rule-template exits evolved by a genetic algorithm (pp.345-351)"], "Not reproducible from the book text."),
     ]
 }
