@@ -127,3 +127,16 @@ it("one person's work is grouped by day, newest first", async () => {
   expect([...el.querySelectorAll(".rp-day h3")].map(d => d.textContent)).toEqual(["26 Oct 2026", "21 Oct 2026"]);
   expect(el.textContent).toContain("Exit differs");
 });
+
+it("Claude's work lists platform deploys with the backtested count", async () => {
+  const calls = api({
+    "GET /api/app/research/me": asha,
+    "GET /api/app/research/timeline": { total: 1, page: 1, size: 30, pages: 1, items: [
+      { kind: "platform", at: "2026-10-26T10:58:00Z", who: "Platform", actor_id: null, action: "work_timeline", detail: "26 Oct 16:28", text: "Deploy: MAE/MFE shared formula", ref: null, target_type: null, target_key: "x", target_label: null, backtested: 587, proof: "aeb9905" },
+    ] },
+  });
+  const el = await mount("#/research?v=claude");
+  expect(calls.some(c => c.url.includes("kind=platform"))).toBe(true);
+  expect(el.querySelector(".rp-claude")!.textContent).toContain("587");
+  expect(el.querySelector(".rp-claude")!.textContent).toContain("Deploy: MAE/MFE shared formula");
+});

@@ -78,6 +78,7 @@ function Signed({ me, reload }: { me: Me; reload: () => void }) {
   if (p.get("s")) body = <StrategyView key={p.get("s")} sKey={p.get("s")!} me={me} />;
   else if (v === "mine" && who) body = <WorkView person={who} title="My work" admin={false} />;
   else if (v === "team" && me.admin) body = <TeamView />;
+  else if (v === "claude") body = <ClaudeView />;
   else if (v === "emp" && me.admin && p.get("emp")) body = <WorkView person={p.get("emp")!} title={`${p.get("emp")}'s work`} admin />;
   else if (p.get("book")) body = <BookView author={p.get("author") || ""} book={p.get("book")!} />;
   else if (p.get("author")) body = <AuthorView author={p.get("author")!} />;
@@ -89,6 +90,7 @@ function Signed({ me, reload }: { me: Me; reload: () => void }) {
         <nav>
           <a href="#/research" aria-current={!v && !p.get("author") && !p.get("s") ? "page" : undefined}>Authors</a>
           {who && <a href={hashWith({ v: "mine" }, "#/research")} aria-current={v === "mine" ? "page" : undefined}>My work</a>}
+          <a href={hashWith({ v: "claude" }, "#/research")} aria-current={v === "claude" ? "page" : undefined}>Claude's work</a>
           {me.admin && <a href={hashWith({ v: "team" }, "#/research")} aria-current={v === "team" || v === "emp" ? "page" : undefined}>Employees</a>}
         </nav>
         <span className="rp-who">{who ? <>Hi, <b>{who}</b></> : null}{me.admin && <span className="rp-tag">Admin</span>}
@@ -423,6 +425,44 @@ function PersonWork({ person }: { person: string }) {
         ))}
       </div>
     </>
+  );
+}
+
+/* ---------------------------------------------------------------- Claude's work: the platform timeline */
+
+function ClaudeView() {
+  const [page, setPage] = usePage();
+  const list = useLoad(() => research.timeline({ kind: "platform", page, size: 30 }), [page]);
+  const days = new Map<string, TimelineItem[]>();
+  for (const it of list.data?.items || []) { const k = dayKey(it.at); days.set(k, [...(days.get(k) || []), it]); }
+  return (
+    <section>
+      <h1>Claude's work</h1>
+      <p className="rp-muted">What Claude, Codex and the author loop built, deploy by deploy, newest first. The number is how many strategies were backtested on the site after that step.</p>
+      <Problem error={list.error} retry={list.reload} />
+      {!list.data ? <p className="rp-loading">Loading…</p> : (
+        <>
+          {[...days].map(([day, items]) => (
+            <div key={day} className="rp-day">
+              <h3>{fmtDate(items[0].at)}</h3>
+              <ul className="rp-feed rp-claude">
+                {items.map((it, i) => (
+                  <li key={i} className={`w-${it.who.toLowerCase().replace(/\W+/g, "-")}`}>
+                    <span className="rp-count">{it.backtested != null ? <><b>{num(it.backtested)}</b><small>backtested</small></> : null}</span>
+                    <div>
+                      <p className="rp-meta"><span className="rp-pill">{it.who}</span>{it.detail && it.detail !== day && <span> {it.detail}</span>}</p>
+                      <p>{it.text}</p>
+                      {it.proof && <p className="rp-small rp-muted">Proof: {it.proof}</p>}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+          <Pager page={list.data} set={setPage} />
+        </>
+      )}
+    </section>
   );
 }
 
