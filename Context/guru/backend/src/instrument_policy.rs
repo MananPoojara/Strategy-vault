@@ -2008,6 +2008,11 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         "stad2_stoch"=>"Held: the printed code opens with 200 shares and reverses with 400 shares, so every reversal is twice the opening size; the vault trades one unit and refuses the larger position on every market tested, so no result can be published.",
         "stad8_stampede"|"stad9_luxor"|"stad13_luxor"=>"Held: the strategy adds to a winning position (pyramiding up to several entries in the same direction); the vault carries one unit per strategy and refuses the added entries, so no result can be published.",
         // ---- end STAD block
+        // ---- STAD leftovers block (26 Oct 2026, lane B): held Live rules
+        "stad1_volex"=>"Held: fixed dollar amount set for the S&P futures contract. The VolEx code closes any trade older than four bars that shows less than $500 profit on one S&P contract (Vol 1 p.76-82); a fixed point amount has no equivalent on other indices, ETFs or stocks.",
+        "stad13_volex"=>"Held: fixed dollar amounts set for the S&P futures contract. The revisited VolEx uses a $1,000 stop loss and a $200 first-good-open exit per S&P contract at $250 a point (Vol 13 p.153-162); fixed point amounts have no equivalent on other indices, ETFs or stocks.",
+        "stad13_tripleplay"=>"Held: rules not fully defined. The printed Triple Play code reads its WeakLow from Value1, a variable that is not defined anywhere in the code, so it does not do what the text explains (Vol 13 p.138-140; Vol 11 p.118-120 has the same line); choosing the intended value would be a new rule.",
+        // ---- end STAD leftovers held
         // ---- Masonson block (26 Oct 2026): held Live rules
         "masmt_vakkur_lev_seasonal"|"masmt_vakkur_lev_all"|"masmt_pres_lev2"|"masmt_pres_lbm"|"masmt_pres_optimal"=>"Held: the printed strategy invests with 2:1 margin (twice the account) in some months; the vault trades at most one unit without margin financing, so no result can be published.",
         // ---- end Masonson block
@@ -2507,6 +2512,17 @@ mod tests {
         }
     }
     // ---- end STAD block ----
+    // ---- STAD leftovers held (2026-10-26, lane B) ----
+    #[test]
+    fn stadb_held_rules_have_plain_card_reasons() {
+        use crate::books::{stad, stad2};
+        let all:Vec<StrategyDef>=stad::catalogue().into_iter().chain(stad2::catalogue()).collect();
+        for id in ["stad1_volex", "stad13_volex", "stad13_tripleplay"] {
+            let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
+            assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
+        }
+    }
+    // ---- end STAD leftovers held ----
     // ---- Leslie Masonson block (2026-10-25) ----
     #[test]
     fn masonson_review_admits_exact_ids_on_indices_etfs_and_stocks() {
