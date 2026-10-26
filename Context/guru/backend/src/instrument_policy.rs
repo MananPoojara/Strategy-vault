@@ -314,6 +314,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || tillson_reviewed(def) // Tim Tillson block
         || leungchong_reviewed(def) // Leung and Chong block
         || bollinger_reviewed(def) // John Bollinger block
+        || landrystfl_reviewed(def) // Dave Landry 2002 workbook block
         || aqr_reviewed(def) // AQR (Hurst, Ooi and Pedersen) block
         || fejames_reviewed(def) // F. E. James block
         || aronson_reviewed(def) // David Aronson block
@@ -1233,6 +1234,16 @@ fn bollinger_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end John Bollinger
+// ---------------------------------------------------------------- Dave Landry 2002 workbook 2026-10-26 (lane B)
+// Admission only for the module REVIEWED lists (authors/landry/laneb/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn landrystfl_reviewed(def:&StrategyDef)->bool {(def.book=="dlstfl" && crate::books::dlstfl::reviewed(def.id))}
+const LANDRYSTFL_LABEL:&str="Landry tested these market-timing rules on S&P 500 futures (1990-2002) and calls them 'not intended to be a stand alone system'; runs on indices, ETFs and stocks (US with the CBOE VIX, India with India VIX) are a declared application, one unit per trade; cash-index shorts are hypothetical.";
+fn landrystfl_policy(def:&StrategyDef)->Option<Policy> {
+    if !landrystfl_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Dave Landry, Swing Trading For A Living (TradingMarkets workbook 2002), p.41 and p.54");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Dave Landry 2002 workbook
 // ---------------------------------------------------------------- AQR (Hurst, Ooi and Pedersen) 2026-10-25
 // Admission only for the module REVIEWED lists (authors/aqr/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn aqr_reviewed(def:&StrategyDef)->bool {(def.book=="aqrtf" && crate::books::aqrtf::reviewed(def.id))}
@@ -1577,6 +1588,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=tillson_policy(def) {return p;} // Tim Tillson block
     if let Some(p)=leungchong_policy(def) {return p;} // Leung and Chong block
     if let Some(p)=bollinger_policy(def) {return p;} // John Bollinger block
+    if let Some(p)=landrystfl_policy(def) {return p;} // Dave Landry 2002 workbook block
     if let Some(p)=aqr_policy(def) {return p;} // AQR (Hurst, Ooi and Pedersen) block
     if let Some(p)=fejames_policy(def) {return p;} // F. E. James block
     if let Some(p)=aronson_policy(def) {return p;} // David Aronson block
@@ -2120,6 +2132,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if tillson_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",TILLSON_LABEL));} // Tim Tillson block
     if leungchong_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LEUNGCHONG_LABEL));} // Leung and Chong block
     if bollinger_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BOLLINGER_LABEL));} // John Bollinger block
+    if landrystfl_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LANDRYSTFL_LABEL));} // Dave Landry 2002 workbook block
     if aqr_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",AQR_LABEL));} // AQR (Hurst, Ooi and Pedersen) block
     if fejames_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",FEJAMES_LABEL));} // F. E. James block
     if aronson_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",ARONSON_LABEL));} // David Aronson block
@@ -2589,6 +2602,22 @@ mod tests {
         }
     }
     // ---- end John Bollinger block ----
+    // ---- Dave Landry 2002 workbook block (2026-10-26, lane B) ----
+    #[test]
+    fn landrystfl_review_admits_exact_ids() {
+        use crate::books::{dlstfl};
+        let all:Vec<StrategyDef>=dlstfl::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=dlstfl::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Dave Landry 2002 workbook block ----
     // ---- AQR (Hurst, Ooi and Pedersen) block (2026-10-25) ----
     #[test]
     fn aqr_review_admits_exact_ids_on_indices_etfs_and_stocks() {
