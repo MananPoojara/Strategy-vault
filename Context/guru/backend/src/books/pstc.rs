@@ -11,6 +11,9 @@
 use crate::connors::*;
 
 pub const BOOK: &str = "pstc";
+/// Admitted ids (authors/primo/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["pstc_rs2", "pstc_r3_long", "pstc_r3_short", "pstc_r4_long", "pstc_r4_short", "pstc_rsi20_long", "pstc_rsi20_short", "pstc_4_10_60"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 // ---------------------------------------------------------------- rules text
 

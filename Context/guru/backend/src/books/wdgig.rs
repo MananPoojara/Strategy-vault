@@ -4,6 +4,9 @@
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "wdgig";
+/// Admitted ids (authors/dunnigan/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["wdgig_swing25"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const SWING_NOTE: &str = "1940-42 wheat research method (\"fitted ... to the 1930-1941 period\", p.112). Wheat futures rule run on the index (instrument swap; all its numbers are percentages). Swings from daily highs and lows: a Bottom is set when, at least 3 trading days after the lowest low since the last Top, the day's high is 2 1/2% or more above that low (or 6% or more in fewer days); Tops mirror. Signals use swings set by the previous day's close: buy stop 1% above the last Top, sell stop 1% below the last Bottom (\"open stop orders\", p.117-118), fill at the level or at the open if it gaps through; stop-and-reverse with no other exit, as in the book's own March 1954 Wheat test (\"buying on a Buy Signal and this was held, come what may, until a Sell Signal\", p.114). Book silent (assumptions): the 3 days are counted as trading days between the Bottom day and the confirming day; equal lows/highs keep the earliest; if both stops are hit on one day while flat, the one nearer the open is taken. Book result (March 1954 Wheat, 2 gains, 0 losses, 50 3/4c gross, 49 3/4c net per bushel) cannot be compared: no grain futures data.";
 
@@ -99,17 +102,17 @@ pub fn swings(h: &[f64], l: &[f64], to: usize, sw: f64, days: usize, fast: f64) 
         match leg {
             1 => {
                 if h[k] > h[ext] { ext = k; }
-                if ok_dn(ext, k) { top = h[ext]; leg = -1; ext = (ext..=k).fold(k, |a, j| if l[j] < l[a] { j } else { a }); }
+                if ok_dn(ext, k) { top = h[ext]; leg = -1; ext = (ext..=k).fold(ext, |a, j| if l[j] < l[a] { j } else { a }); }
             }
             -1 => {
                 if l[k] < l[ext] { ext = k; }
-                if ok_up(ext, k) { bot = l[ext]; leg = 1; ext = (ext..=k).fold(k, |a, j| if h[j] > h[a] { j } else { a }); }
+                if ok_up(ext, k) { bot = l[ext]; leg = 1; ext = (ext..=k).fold(ext, |a, j| if h[j] > h[a] { j } else { a }); }
             }
             _ => {
                 if l[k] < l[lo0] { lo0 = k; }
                 if h[k] > h[hi0] { hi0 = k; }
-                if ok_up(lo0, k) && (lo0 > hi0 || !ok_dn(hi0, k)) { bot = l[lo0]; leg = 1; ext = (lo0..=k).fold(k, |a, j| if h[j] > h[a] { j } else { a }); }
-                else if ok_dn(hi0, k) { top = h[hi0]; leg = -1; ext = (hi0..=k).fold(k, |a, j| if l[j] < l[a] { j } else { a }); }
+                if ok_up(lo0, k) && (lo0 > hi0 || !ok_dn(hi0, k)) { bot = l[lo0]; leg = 1; ext = (lo0..=k).fold(lo0, |a, j| if h[j] > h[a] { j } else { a }); }
+                else if ok_dn(hi0, k) { top = h[hi0]; leg = -1; ext = (hi0..=k).fold(hi0, |a, j| if l[j] < l[a] { j } else { a }); }
             }
         }
         v.push((top, bot));

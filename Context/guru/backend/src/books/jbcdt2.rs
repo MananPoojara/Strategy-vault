@@ -18,6 +18,17 @@ macro_rules! def {
 /// S&P dates of Figure 5-6 (p.70): "High probability of close higher than open".
 pub const SP_DATES: [(u32, u32); 11] = [(1, 5), (1, 14), (2, 2), (4, 12), (4, 16), (5, 19), (6, 1), (7, 14), (8, 27), (11, 24), (12, 13)];
 
+/// Daily rules admitted after the 2026-10-22 full reading (authors/bernstein/agents/jbcdt2) and an independent
+/// chronological Python ledger check (authors/bernstein/g2-admission). The rest need intraday bars or lack printed numbers.
+pub const REVIEWED_DAILY: &[&str] = &["jbcdt2_dbo_mon", "jbcdt2_dbo_thu", "jbcdt2_dates_oc", "jbcdt2_preholiday_oc", "jbcdt2_mon_cc"];
+pub fn reviewed_daily(id: &str) -> bool { REVIEWED_DAILY.contains(&id) }
+/// Entry offsets and stops in S&P points (book: ticks and dollars on one $500-a-point S&P contract): actual SPX only.
+pub const SPX_POINTS: &[&str] = &["jbcdt2_dbo_mon", "jbcdt2_dbo_thu"];
+/// US market holidays (Merrill): US instruments only.
+pub const US_ONLY: &[&str] = &["jbcdt2_preholiday_oc"];
+/// Everything but the Friday-close-to-Monday-close trade reads the open.
+pub fn reads_open(id: &str) -> bool { reviewed_daily(id) && id != "jbcdt2_mon_cc" }
+
 pub fn catalogue() -> Vec<StrategyDef> {
     use Status::{Live, NeedsData, NotTestable};
     vec![
@@ -29,7 +40,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "E|Figure 5-8 (p.73): \"Long entry, three ticks, above Friday's high; short entry, 26 ticks, below Friday's low\" = 0.15 / 1.30 S&P points (0.05-point tick of the $500 contract)",
               "X|\"Exit on a predetermined risk management stop loss\"; Figure 5-8: \"Stop loss $3400\" = 6.8 S&P points at $500 per point (p.73-74)",
               "X|\"Exit on the first profitable opening (FPO)\" (p.74)"],
-            "Same rule as EFT ch.8 (1982-97 inputs, p.127) and as jb624_fri_mon with other inputs. Points kept as printed on every index (instrument swap only). Week boundary: the next bar falls in a later calendar week. Entry-day stop counted only if the bar path (open, nearer extreme, other extreme, close) reaches it after the entry (the book's own caveat, p.74); p.entry_day=1 counts any touch. One position at a time; FPO = any later opening better than the entry price.") },
+            "Same rule as EFT ch.8 (1982-97 inputs, p.127) and as jb624_fri_mon with other inputs. The 0.05-point tick and $500 a point are the S&P contract specification of 1982-Nov 1997, not printed in the book [outside assumption]. Points kept as printed on every index (instrument swap only). Week boundary: the next bar falls in a later calendar week. Entry-day stop counted only if the bar path (open, nearer extreme, other extreme, close) reaches it after the entry (the book's own caveat, p.74); p.entry_day=1 counts any touch. One position at a time; FPO = any later opening better than the entry price.") },
         StrategyDef { claim: crate::connors::claim("395", "78%", "$363.67 (1 S&P contract)", "2 bars (winners)", "S&P futures 4/21/82-1/09/98, PF 1.56"),
           ..def!("jbcdt2_dbo_thu", "DBO Thursday · 6 ticks above / 21 ticks below Wednesday, $3,500 stop, FPO", "Ch.5 · Day of the Week Patterns", "Long/Short", Live,
             &["F|Figure 5-9 (p.74): \"DBO signals on Thursdays\": setup = Wednesday's close versus Wednesday's open (p.73 rules)",
@@ -47,7 +58,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["F|Merrill's holidays (Figure 5-4, p.68): Good Friday, Memorial Day, Independence Day, Labor Day, Thanksgiving Day, Christmas, New Year's Day",
               "E|\"Another way would be to buy on the opening of the target day and exit on the close. While this would be a true day trade, it would not be a trade made exactly in accordance with the Merrill research\" (p.68-69); target day = the trading day before the holiday",
               "X|Exit on the close of the target day"],
-            "Holiday dates by the US rules (Easter algorithm for Good Friday; Memorial Day = last Monday of May from 1971, May 30 before; Labor Day = first Monday of September; Thanksgiving = fourth Thursday of November; July 4 / Christmas / New Year's observed on Friday when on Saturday and on Monday when on Sunday; a Saturday New Year's Day closes no day, so its pre-holiday day is the Friday before). Target = the last bar dated before the (observed) holiday. p.set=1 keeps only Christmas, New Year's and Independence Day, the three S&P holidays of Figure 5-5. The other variant (\"a long position could be entered on the close of trading the day prior to the target day ... closed out the next day\") is the vault's mzwws_preholiday / kpss_hol_d1."),
+            "Holiday dates by the US rules (Easter algorithm for Good Friday; Memorial Day = last Monday of May from 1971, May 30 before; Labor Day = first Monday of September; Thanksgiving = fourth Thursday of November; July 4 / Christmas / New Year's observed on Friday when on Saturday and on Monday when on Sunday; a Saturday New Year's Day closes no day, so its pre-holiday day is the Friday before). Target = the last bar dated before the (observed) holiday. p.set=1 [Not from the book] keeps only Christmas, New Year's and Independence Day, the three S&P holidays of Figure 5-5; that table (p.69) shows the S&P close below the open before New Year's (75%) and July 4 (68%), so the book gives no long rule for this set. The other variant (\"a long position could be entered on the close of trading the day prior to the target day ... closed out the next day\") is the vault's mzwws_preholiday / kpss_hol_d1."),
         def!("jbcdt2_mon_cc", "Monday pattern · buy Friday's close, exit Monday's close", "Ch.5 · The Monday Pattern", "Long", Live,
             &["E|\"Yet another way to take advantage of the Monday pattern is to buy on the close Friday and exit on the close Monday\" (p.72)",
               "X|Exit on Monday's close"],
@@ -93,7 +104,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     Some(match id {
         "jbcdt2_dbo_mon" => dbo(0.15, 1.3, 6.8),
         "jbcdt2_dbo_thu" => dbo(0.3, 1.05, 7.0),
-        "jbcdt2_preholiday_oc" => vec![p("set", "Holidays: 0 = Merrill's seven (Fig. 5-4), 1 = Christmas/New Year's/July 4 (Fig. 5-5)", 0., 0., 1., 1.)],
+        "jbcdt2_preholiday_oc" => vec![p("set", "Holidays: 0 = Merrill's seven (Fig. 5-4, the book rule), 1 = [Not from the book] Christmas/New Year's/July 4 only (Fig. 5-5 shows S&P closes below the open 75% / 68% of the time before New Year's / July 4)", 0., 0., 1., 1.)],
         "jbcdt2_dates_oc" | "jbcdt2_mon_cc" => vec![],
         _ => return None,
     })
@@ -262,7 +273,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             // target bar = last bar dated before the closure day
             for i in from..=to {
                 let di = days(&x.r[i].date);
-                let next = if i + 1 < x.r.len() { days(&x.r[i + 1].date) } else { i64::MAX };
+                // the last bar of the data has no known next session, so it cannot be dated as a pre-holiday day
+                let Some(next) = x.r.get(i + 1).map(|r| days(&r.date)) else { continue };
                 if targets.iter().any(|&k| di < k && next >= k) {
                     out.push(finish(new_trade(1.0, i, x.o[i], "open", i), i, x.c[i], i, "Close of the pre-holiday day"));
                 }
@@ -299,6 +311,14 @@ mod tests {
         assert!(h.contains(&(k(2004, 12, 24), 5))); // Christmas on Saturday -> Friday
         assert!(us_holidays(2005).contains(&(k(2005, 1, 1), 6))); // Saturday New Year's: kept on the Saturday
         assert_eq!(weekday("2026-10-11"), 6);
+    }
+    #[test]
+    fn preholiday_needs_a_known_next_session() {
+        // 2024-07-03 is the day before July 4: a trade. The data's last bar (2024-07-05) has no next bar: no trade.
+        let r = vec![row("2024-07-02", 100., 101., 99., 100.), row("2024-07-03", 100., 102., 99., 101.), row("2024-07-05", 101., 102., 100., 101.5)];
+        let x = Ctx::new(&r, &r, &[]);
+        let ts = run("jbcdt2_preholiday_oc", &x, 0, 2, &Params::new()).unwrap();
+        assert_eq!(ts.iter().map(|t| t.legs[0].i).collect::<Vec<_>>(), vec![1]);
     }
     #[test]
     fn dbo_thursday_hand_checked() {

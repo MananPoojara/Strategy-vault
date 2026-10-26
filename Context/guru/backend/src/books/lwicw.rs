@@ -4,9 +4,9 @@
 //! "Inner Circle Workshop Book2 (2000).pdf" and "Inner Circle Workshop (2000).pdf" (commodity charts, Australian edition of
 //! the same text). Transcription and checks: library/lwicw/. Page refs = printed page numbers of the notes / Book1.
 //!
-//! The S&P printouts are System Writer tests of "S&P 500 IND-9967" (P.Value $2.500 per 0.01 = $250 per index point, as in
-//! lwlts). Dollar stops are converted at that rate (`pt_usd`); other instruments use the same point distance (instrument
-//! swap only). Stops are armed on the entry day for open entries (the Monday printout, p.30-31, shows losers of 0 bars and
+//! The S&P printouts are System Writer tests of "S&P 500 IND-9967"; the only report header printed in this work (Book1 p.53,
+//! 01/01/83-12/23/98) reads "P.Value $5.000" per 0.01 = $500 per index point (the pre-1997 contract). Dollar stops are
+//! converted at that rate (`pt_usd` 500 since 23 Oct 2026; the earlier $250 reading from lwlts stays as an option). Stops are armed on the entry day for open entries (the Monday printout, p.30-31, shows losers of 0 bars and
 //! a largest loss of $1,800 = $1,750 stop + $50), from the next day for entries on the close.
 //!
 //! This file also holds the small simulator shared by the other Larry Williams seminar modules (lwmdc, lwpro): entries at
@@ -15,6 +15,11 @@
 use crate::connors::{claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "lwicw";
+
+/// Larry Williams block: rules admitted after the 23 Oct 2026 reading and independent ledgers
+/// (authors/lwilliams/admission/SOURCE-CONTRACT.md). SPX_POINTS = dollar stops kept as S&P points: actual SPX only.
+pub const REVIEWED: &[&str] = &["lwicw_sp_tdw_mon", "lwicw_sp_tdw_tue", "lwicw_sp_tdw_wed", "lwicw_sp_tdw_thu", "lwicw_sp_tdw_fri", "lwicw_sp_tdom", "lwicw_sp_holidays", "lwicw_oops_tdom_buy", "lwicw_oops_tdom_sell", "lwicw_mon_gap_bail"];
+pub const SPX_POINTS: &[&str] = &["lwicw_sp_tdw_mon", "lwicw_sp_tdw_tue", "lwicw_sp_tdw_wed", "lwicw_sp_tdw_thu", "lwicw_sp_tdw_fri", "lwicw_sp_tdom", "lwicw_sp_holidays", "lwicw_oops_tdom_buy", "lwicw_oops_tdom_sell", "lwicw_mon_gap_bail"];
 
 const BONDS: &str = "Needs daily T-Bond futures (and Gold futures for the gold filters); the vault has no bond or gold futures series.";
 
@@ -29,7 +34,7 @@ macro_rules! sd {
 }
 
 const TDW_R: &[&str] = &["E|\"buying on the opening ... for every day of the week\" (S&P 500 Trading Rules, p.38): buy the open of the given weekday",
-    "X|\"exiting on the first profitable close with a $3,500 stop\" (p.38): $3,500 = 14 points, armed on the entry day",
+    "X|\"exiting on the first profitable close with a $3,500 stop\" (p.38): $3,500 = 7 points at the work's $500 a point (Book1 p.53), armed on the entry day",
     "X|Read: first profitable close = the first close after the entry day above the entry price (the author's own code 'Exit Long 1ST PROFT CLOSE ... Exit on Entry Bar: False', MDC manual p.99)"];
 const TDW_N: &str = "TDW table p.38 (S&P, test window not printed; the other S&P printouts in these notes run 08/09/82-07/02/99). Each weekday tested on its own; one position at a time.";
 
@@ -44,31 +49,31 @@ pub fn catalogue() -> Vec<StrategyDef> {
         sd!("lwicw_sp_tdw_fri", "S&P buy Friday open, first profitable close", "S&P · Trade day of week", "Long", Live, TDW_R, TDW_N, claim("", "63%", "-$40 (-$34,665)", "", "S&P (window not printed)")),
         sd!("lwicw_sp_tdom", "S&P buy the open of trade day of month N, bailout", "S&P · Trade day of month", "Long", Live,
             &["E|\"Here you see each TDOM with our bail out and $3,500 stop\" (p.38): buy the open of trading day N of the month (p.tdom; the table covers TDOM 1-23)",
-              "X|Bailout: exit on the first opening after the entry day that shows a profit", "X|$3,500 stop = 14 points, armed on the entry day"],
+              "X|Bailout: exit on the first opening after the entry day that shows a profit", "X|$3,500 stop = 7 points at $500 a point, armed on the entry day"],
             "TDOM table p.38: e.g. TDOM 1 64% $20, TDOM 10 69% $237, TDOM 13 65% $268, TDOM 23 90% $398 (S&P, window not printed). Default TDOM 1 = the table's first row; every row is tested in verify_lwicw.py.",
             claim("", "64%", "$20 (TDOM 1)", "", "S&P (window not printed)")),
         sd!("lwicw_sp_holidays", "S&P holiday trades", "S&P · Holidays", "Long/Short", Live,
             &["E|New Year's: buy open 3rd TD before; Presidents' Day: buy open 3rd TD before, sell close 2nd TD before; Easter: buy close 2nd TD before, sell open 1st TD after; Memorial Day: buy close 1st TD before; July 4th: buy open 5th TD before; Labor Day: buy open 1st TD after; Thanksgiving: buy close 3rd TD before; Christmas: buy open 5th TD before (p.42)",
               "F|\"1st TD before\" = the last trading day before the holiday (\"For Easter, sell on the close of the day before the holiday\", p.34); Easter = the Good Friday closure",
               "X|\"The exit was to bail out after holding for one day past entry, in other words buy/sell today, hold tomorrow then look to bailout\" (p.42): bailout eligible from the second opening after entry",
-              "X|\"The stop is a very small $2,500 from entry\" (p.42) = 10 points; armed on the entry day for open entries",
+              "X|\"The stop is a very small $2,500 from entry\" (p.42) = 5 points at $500 a point; armed on the entry day for open entries",
               "X|Read: an opposite holiday entry while in a trade exits and reverses (Presidents' Day and Easter list both a buy and a sell; System Writer reverses on an opposite entry)"],
             "Printout p.42: S&P 500 IND-9967, 08/09/82-07/02/99. US exchange holidays are computed from the calendar (Presidents' Day = 3rd Monday of February, Memorial Day = last Monday of May, Labor Day = 1st Monday of September, Thanksgiving = 4th Thursday of November, Good Friday from the Easter date, New Year's/July 4th/Christmas on their dates). India: the same US holiday dates are used (instrument swap), counting NIFTY sessions before/after the date.",
             claim("170", "63%", "$639.26 ($108,675)", "1 day", "08/09/82-07/02/99")),
         sd!("lwicw_oops_tdom_buy", "S&P Oops! buy on trade day of month N", "S&P · Oops! by TDOM", "Long", Live,
             &["E|Oops! buy: the open is below the previous day's low, buy on a stop at that low (the author's definition, MDC manual p.103 / LTS p.114)",
               "F|Only on trading day of month N (Book1 p.49 table \"S&P OOPS 1 DAY XIT $2750 STOP\"; buys listed for TDOM 4, 5, 6, 13, 16, 19, 20, 22)",
-              "X|$2,750 stop = 11 points, armed on the entry day", "X|\"1 day xit\" read as the bailout: notes p.43 give the same TDOM 19 result (\"$45,000 with 83% winners on 18 trades ... with $2,750 stop and bail out\")"],
+              "X|$2,750 stop = 5.5 points at $500 a point, armed on the entry day", "X|\"1 day xit\" read as the bailout: notes p.43 give the same TDOM 19 result (\"$45,000 with 83% winners on 18 trades ... with $2,750 stop and bail out\")"],
             "Book1 p.49 table (window not printed). Default TDOM 19 (the row the notes quote); verify_lwicw.py runs every row.",
             claim("18", "83%", "$2,500 ($45,000)", "1 day", "S&P (window not printed)")),
         sd!("lwicw_oops_tdom_sell", "S&P Oops! sell on trade day of month N", "S&P · Oops! by TDOM", "Short", Live,
             &["E|Oops! sell: the open is above the previous day's high, sell on a stop at that high",
-              "F|Only on trading day of month N (Book1 p.49 sells: TDOM 3, 5, 6, 17, 22)", "X|$2,750 stop (11 points) and bailout, as the buys"],
+              "F|Only on trading day of month N (Book1 p.49 sells: TDOM 3, 5, 6, 17, 22)", "X|$2,750 stop (5.5 points) and bailout, as the buys"],
             "Book1 p.49 table; notes p.43: \"The best TDOM sell days are 3,6,17 netting $56,675 with 77% accuracy\". Default TDOM 3.",
             claim("29", "72%", "$639 ($18,525, TDOM 3)", "1 day", "S&P (window not printed)")),
         sd!("lwicw_mon_gap_bail", "Monday open below Friday's close · bailout, $1,750 stop", "Money management example", "Long", Live,
             &["E|\"a very simple system that buys on the opening every Monday if that opening is less than Fridays close\" (p.30)",
-              "X|\"Our exit is standard Bail Out with a $1,750 stop\" (p.30): 7 points at $250, armed on the entry day (largest loss $1,800 = stop + $50, losers 0 bars)"],
+              "X|\"Our exit is standard Bail Out with a $1,750 stop\" (p.30): 3.5 points at $500 a point, armed on the entry day (largest loss $1,800 = stop + $50, losers 0 bars)"],
             "One-contract printout p.31: 172 trades, 69%, $460.47, largest loss $1,800. Market and window are not printed (the dollar sizes fit the S&P; the 100-lot run starts 1/1990 and ends 12/20/96). The same entry with other exits is lwlts_mon_gap_*.",
             claim("172", "69%", "$460.47 ($79,200)", "1 day", "not printed (1990-12/1996?)")),
         // ---- Needs data
@@ -120,7 +125,9 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
-    let pt = || p("pt_usd", "Dollars per index point (book: S&P $250)", 250.0, 50.0, 2500.0, 50.0);
+    // Larry Williams block (23 Oct 2026): this work's own S&P report header (Book1 p.53, "S&P 500 IND-9967 ... Conv 2
+    // P.Value $5.000" per 0.01) is $500 a point, so the book's dollar stops are converted at $500; 250 (the lwlts rate) is an option.
+    let pt = || p("pt_usd", "Dollars per index point (book: S&P $500, Book1 p.53 header; 250 = old reading)", 500.0, 50.0, 2500.0, 50.0);
     let stop = |d: f64| p("stop_usd", "Dollar stop (book $)", d, 0.0, 6000.0, 250.0);
     Some(match id {
         "lwicw_sp_tdw_mon" | "lwicw_sp_tdw_tue" | "lwicw_sp_tdw_wed" | "lwicw_sp_tdw_thu" | "lwicw_sp_tdw_fri" => vec![stop(3500.0), pt()],
@@ -165,7 +172,9 @@ fn easter(y: i32) -> (u32, u32) {
     let h = (19 * a + b - d - g + 15) % 30;
     let (i, k) = (c / 4, c % 4);
     let l = (32 + 2 * e + 2 * i - h - k) % 7;
-    let m = (a + 11 * h + 22 * l + 90) / 451;
+    // Larry Williams block (23 Oct 2026): the anonymous algorithm's m has no +90 (that belongs to another variant); with it
+    // Easter came a week early in 10 years since 1950 (e.g. 2000, 2011, 2014, 2025).
+    let m = (a + 11 * h + 22 * l) / 451;
     let mo = (h + l - 7 * m + 114) / 31;
     let da = (h + l - 7 * m + 114) % 31 + 1;
     (mo as u32, da as u32)
@@ -201,6 +210,9 @@ pub(crate) fn td_rel(x: &Ctx, hd: &str, k: i32) -> Option<usize> {
     let first_after = x.r.partition_point(|r| r.date.as_str() <= hd);
     let first_on_or_after = x.r.partition_point(|r| r.date.as_str() < hd);
     if k > 0 {
+        // Larry Williams block (23 Oct 2026): the data must reach the holiday, or the last bars would be taken as the days
+        // before a holiday that lies beyond the data.
+        if first_on_or_after >= x.r.len() { return None; }
         let j = first_on_or_after.checked_sub(k as usize)?;
         Some(j)
     } else {
@@ -389,6 +401,7 @@ mod tests {
         assert_eq!(holiday(Hol::Presidents, 1999), "1999-02-15");
         assert_eq!(holiday(Hol::Memorial, 1999), "1999-05-31");
         assert_eq!(holiday(Hol::Labor, 1998), "1998-09-07");
+        assert_eq!((holiday(Hol::Easter, 2014), holiday(Hol::Easter, 2000), holiday(Hol::Easter, 2025)), ("2014-04-18".into(), "2000-04-21".into(), "2025-04-18".into()));
     }
     #[test]
     fn tdw_first_profitable_close_and_stop() {
@@ -398,8 +411,11 @@ mod tests {
         let x = Ctx::new(&r, &r, &[]);
         let t = run("lwicw_sp_tdw_mon", &x, 1, 3, &Params::new()).unwrap();
         assert_eq!((t[0].legs[0].px, t[0].exit_i, t[0].exit_px), (100.0, 2, 101.0));
-        // a 1-point stop ($250) is hit on Monday's low
-        let p = Params::from([("stop_usd".to_string(), 250.0)]);
+        // a 1-point stop ($500 at the work's $500 a point) is hit on Monday's low; the old $250 rate is still an option
+        let p = Params::from([("stop_usd".to_string(), 500.0)]);
+        let t = run("lwicw_sp_tdw_mon", &x, 1, 3, &p).unwrap();
+        assert_eq!((t[0].exit_i, t[0].exit_px), (1, 99.0));
+        let p = Params::from([("stop_usd".to_string(), 250.0), ("pt_usd".to_string(), 250.0)]);
         let t = run("lwicw_sp_tdw_mon", &x, 1, 3, &p).unwrap();
         assert_eq!((t[0].exit_i, t[0].exit_px), (1, 99.0));
     }

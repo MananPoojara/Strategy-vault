@@ -6,6 +6,10 @@
 use super::apta::run_long;
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
+/// Admitted 2026-10-24 (authors/appel/admission/SOURCE-CONTRACT.md): independent ledgers, US and India, 0 mismatches.
+pub const REVIEWED: &[&str] = &["apoi_pres_s1", "apoi_pres_s2"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
+
 pub const BOOK: &str = "apoi";
 
 pub fn catalogue() -> Vec<StrategyDef> {

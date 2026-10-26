@@ -1,7 +1,7 @@
 /* Generated reviewed evidence. No prices or performance results. */
 window.JoeRossEvidence = {
   "review_date": "2026-10-09",
-  "scope": "Core source review; complete corpus review remains in progress. No complete Joe Ross backtest has been independently verified.",
+  "scope": "Core source review of the held methods. The admitted Joe Ross rules (ZULU, AMBUSH, Trading by the Book ledge, simple count, Bollinger Method #2, 1-2-3 and Ross Hook with labelled standard exits) are backtested separately and matched independent trade ledgers; the methods listed here stay held.",
   "methods": {
     "jr_123_l": {
       "source": {
@@ -876,6 +876,36 @@ window.JoeRossEvidence = {
       "title": "Traders Trick Entry — slides",
       "year": null,
       "blurb": "Early entries, correcting bars and sufficient room to cover real costs. No audited performance is supplied."
+    },
+    {
+      "id": "jr_zulu",
+      "title": "ZULU Trading Method (soybeans)",
+      "year": 2006,
+      "blurb": "Course package: a complete daily gap-reversal rule with a 32-tick target and 16-tick stop. Run on indices, ETFs and stocks as a declared application."
+    },
+    {
+      "id": "jr_ambush",
+      "title": "AMBUSH Trading Method (wheat and corn)",
+      "year": 2006,
+      "blurb": "Course package: a complete daily gap-fade rule with limit entries, a 30-tick target, 40-tick stop, 8-day time stop and reversals. Run on indices, ETFs and stocks as a declared application."
+    },
+    {
+      "id": "jr_tbtb",
+      "title": "Trading by the Book",
+      "year": null,
+      "blurb": "Daily futures manual. Its Part V ledge straddle is a complete rule (3-10 bar ledge, both sides, target = ledge height, out on day 4); run on indices, ETFs and stocks as a declared application."
+    },
+    {
+      "id": "jr_tnt1",
+      "title": "Electronic Trading TNT I - Gorilla Trading Stuff",
+      "year": 1998,
+      "blurb": "Stock day-trading course. The simple count (three higher highs, a correction, buy the break; out on a lower low) is a complete rule, run on daily bars as a declared application."
+    },
+    {
+      "id": "jr_tnt3",
+      "title": "Electronic Trading TNT III - Technical Trading Stuff",
+      "year": 1998,
+      "blurb": "Technical volume of the stock course. Bollinger Bands Method #2 (9-bar bands, touch of the average, break of that bar) is a complete rule, run on daily bars as a declared application."
     }
   ],
   "finding": "The Manual prints 96.5% for two standard deviations; normal coverage is approximately 95.45%, without guaranteed market-band coverage. The printed CCI divisor is 1.5 versus standard 0.015; the source conflict is explicit and no CCI backtest is enabled."

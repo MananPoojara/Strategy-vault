@@ -3,6 +3,7 @@ import {vaultStore} from '../state/store';
 import {resolveRoute} from '../app/routes';
 import {customPages} from '../app/custom-pages';
 import {LIB} from './catalogue.js';
+import {authorProfileHtml} from '../services/author-profiles';
 import {loadOwnerRows} from '../services/summary-loader';
 import {bookContext} from '../services/book-context';
 import {returnDisplay} from '../services/return-display';
@@ -15,8 +16,9 @@ import {UNIT_VISUAL_BASIS,UNIT_CLOSED_BASIS,unitExposureTables,unitExposureMetad
 import {tradeExitCheck,tradeExitCheckMarkup} from '../services/trade-exit-check';
 import {stockChoices,basketSpan,positionLimit,priceRecoveryPeriod} from '../services/stock-selection';
 import {identifiedAuthorCount} from '../services/author-identities';
+import {libraryTotals} from '../services/source-review';
 import {libraryProgress,reasonLabel} from '../services/library-progress';
-import {visibleBacktestCount,linkedBookBacktestCount,measuredWindow} from '../services/library-count-context';
+import {visibleBacktestCount,measuredWindow} from '../services/library-count-context';
 import {unavailableBookMethods} from '../services/unavailable-book-methods';
 import {libraryScope,inLibraryScope} from '../services/library-scope';
 import {libraryMarket,libraryMarketVariants} from '../services/library-market';
@@ -111,10 +113,33 @@ window.VaultUI=(()=>{
   <button type="button" class="sa" data-action="pdf" aria-label="Download page PDF" title="Download this page as PDF">${ICON.download}</button>
   <button type="button" class="sa${saved?' on':''}" data-action="save" aria-label="Save" aria-pressed="${saved}" title="${saved?'Remove from Saved':'Save to your Saved list'}">${saved?ICON.saved:ICON.save}</button><span class="sa-settings" data-react-slot="strategy-settings"></span>
  </div><span role="status" id="page-action-message"></span></div>`;}
- function detailHTML(d){return `<details class="box detailed-stats" id="detailed-stats"><summary>Detailed statistics <span>Additional gross / net measures</span></summary><div class="detail-tools"><button class="dbtn sm" data-report-export="details">Download Excel</button></div><table class="tbl detailed-table"><thead><tr><th>Statistic</th><th class="n">Net</th><th class="n">Gross</th></tr></thead><tbody>${VaultReport.detailRows(d).map(([k,n,g,t])=>`<tr><td>${escText(k)}</td><td class="n">${label(n,t)}</td><td class="n">${label(g,t)}</td></tr>`).join('')}</tbody></table><p class="rnote">${d.source_account?'Gross retains the same accepted quantities and fills, before paid costs; no re-selection or resizing.':d.kind==='basket'?'Gross is zero-cost accounting on the same accepted portfolio fills.':'Gross is the independently compounded zero-cost comparison.'} Net includes the selected fee and slippage rates. Closed-trade measures exclude open positions. Observed excursions omit entry/add-on/exit event bars where intraday order is unknown; they are partial bounds, not exact MAE/MFE. Time in market counts distinct observed daily bars with a held position, including entry/exit bars; it does not measure exact intraday duration. Undefined ratios stay unavailable. ${d.unit_exposure_report?escText(UNIT_VISUAL_BASIS):''}</p></details>`;}
- function benchmarkHTML(d,tk,px){currentBenchmark={d,tk,px};const b=d.unit_exposure_report?{...d.benchmark_stats,from:d.dates[0],to:d.dates.at(-1)}:VaultReport.benchmark(px,d.dates[0],d.dates.at(-1)),keys=[[d.source_account?sourceAccountCopy(d.source_account).accountReturn:d.kind==='basket'?'Portfolio equity return':'Compounded model return','total_return','percent'],['Annualised return','cagr','percent'],['Max drawdown','max_dd','percent'],['Sharpe (rf = 0)','sharpe','ratio'],['Sortino','sortino','ratio'],['Return per drawdown','mar','ratio'],['Annualised volatility','vol','percent'],['Exposure','exposure','percent']];return `<section class="box" data-benchmark-comparison data-benchmark-symbol="${escText(tk)}"><div class="box-h">Strategy vs ${escText(LABEL[tk]||tk)} <button class="dbtn sm" data-report-export="benchmark">Download Excel</button></div><p class="rnote">Computed selected strategy settings against actual ${escText(LABEL[tk]||tk)} buy &amp; hold, with no benchmark execution costs. ${b?`${b.from} to ${b.to}.`:'Benchmark price coverage is missing.'} Book-reported figures remain separate reference claims.</p><table class="tbl"><thead><tr><th>Statistic</th><th class="n">Selected strategy</th><th class="n">${escText(LABEL[tk]||tk)} buy &amp; hold</th></tr></thead><tbody>${keys.map(([name,key,type])=>`<tr><td>${name}</td><td class="n">${label(d.stats[key],type)}</td><td class="n">${label(b?.[key],type)}</td></tr>`).join('')}</tbody></table></section>`;}
- function tradeHTML(d,tk){const rows=tradeRowsFor(d,tk);return `<section class="box" data-tradesheet><div class="box-h">Tradesheet <span class="legend"><small>${rows.length} positions · newest first</small><button class="dbtn sm" id="trades-xlsx">Download Excel</button><button class="dbtn sm" id="csv">Download CSV</button>${d.source_account?'<button class="dbtn sm" data-report-export="account-audit">Account audit Excel</button>':d.unit_exposure_report?'<button class="dbtn sm" data-report-export="unit-audit">Unit audit Excel</button><button class="dbtn sm" data-report-export="unit-daily">Daily audit Excel</button>':''}</span></div><p class="rnote">${d.source_account?sourceAccountCopy(d.source_account).tradeNote:d.unit_exposure_report?'Audited canonical-decimal return fractions; terminal-open costs include an estimated second liquidation side. Gross compounds independently at zero cost; contributions use net pretrade allocation.':'Returns and slippage are percentages of the strategy’s normalized allocation; prices/points use the actual symbol.'} ${d.source_account?'Monetary P&amp;L and Taxes are unavailable: the model has no funded capital, actual share lots or statutory tax schedule.':'Monetary Gross/Net P&amp;L and Taxes are unavailable because no quantity, monetary sizing or tax schedule was supplied.'} MAE/MFE show gross observed daily-bar bounds when available; event bars are excluded. Open exits are marked Open.</p><div class="tlog"><table class="tbl tl" id="tradesheet"><thead><tr>${tradeHeadersFor(d).map(k=>`<th>${escText(k)}</th>`).join('')}</tr></thead><tbody>${rows.map((row,tradeIndex)=>`<tr>${row.map((v,i)=>`<td class="${[8,11,13,14,15].includes(i)?'n '+(v<0?'neg':'pos'):''}">${v===null?'—':[8,11,13,14,15].includes(i)?label(v,'percent'):typeof v==='number'?v.toFixed(i===9?0:2):escText(v)}${i===16?tradeExitCheckMarkup(d.trades[tradeIndex]):''}</td>`).join('')}</tr>`).reverse().join('')}</tbody></table></div></section>`;}
- function equityNavigator(ch,d){const box=document.getElementById('equity-navigator');if(!box)return;const a=box.querySelector('[data-range=start]'),b=box.querySelector('[data-range=end]'),text=box.querySelector('output'),n=d.dates.length;if(n<2){a.disabled=b.disabled=true;text.textContent=d.dates[0]||'No dated results';return;}a.max=b.max=n-1;a.value=0;b.value=n-1;const show=()=>{let lo=+a.value,hi=+b.value;if(lo>=hi){if(document.activeElement===a)lo=Math.max(0,hi-1);else hi=Math.min(n-1,lo+1);}a.value=lo;b.value=hi;ch.timeScale().setVisibleLogicalRange({from:lo,to:hi});text.textContent=`${d.dates[lo]} — ${d.dates[hi]}`;};a.oninput=b.oninput=show;box.querySelectorAll('[data-equity-year]').forEach(btn=>btn.onclick=()=>{const y=btn.dataset.equityYear;if(y==='all'){a.value=0;b.value=n-1;}else{const indices=d.dates.map((x,i)=>x.startsWith(y)?i:-1).filter(i=>i>=0);a.value=indices[0];b.value=indices.at(-1);}show();});ch.timeScale().subscribeVisibleLogicalRangeChange(range=>{if(!range)return;const lo=Math.max(0,Math.min(n-1,Math.ceil(range.from))),hi=Math.max(lo,Math.min(n-1,Math.floor(range.to)));a.value=lo;b.value=hi;text.textContent=`${d.dates[lo]} — ${d.dates[hi]}`;});show();}
+ function detailHTML(d){return `<details class="box detailed-stats" id="detailed-stats"><summary>Detailed statistics <span>Additional gross / net measures</span></summary><div class="detail-tools"><button class="dbtn sm" data-report-export="details">Download Excel</button></div><table class="tbl detailed-table stat-table"><thead><tr><th>Statistic</th><th class="n">Gross</th><th class="n">Net</th></tr></thead><tbody>${VaultReport.detailRows(d).map(([k,n,g,t])=>`<tr><td>${escText(k)}</td><td class="n">${numMinus(label(g,t))}</td><td class="n">${numMinus(label(n,t))}</td></tr>`).join('')}</tbody></table><p class="rnote">${d.source_account?'Gross retains the same accepted quantities and fills, before paid costs; no re-selection or resizing.':d.kind==='basket'?'Gross is zero-cost accounting on the same accepted portfolio fills.':'Gross is the independently compounded zero-cost comparison.'} Net includes the selected fee and slippage rates. Closed-trade measures exclude open positions. Observed excursions omit entry/add-on/exit event bars where intraday order is unknown; they are partial bounds, not exact MAE/MFE. Time in market counts distinct observed daily bars with a held position, including entry/exit bars; it does not measure exact intraday duration. Undefined ratios stay unavailable. ${d.unit_exposure_report?escText(UNIT_VISUAL_BASIS):''}</p></details>`;}
+ function benchmarkHTML(d,tk,px){currentBenchmark={d,tk,px};const b=d.unit_exposure_report?{...d.benchmark_stats,from:d.dates[0],to:d.dates.at(-1)}:VaultReport.benchmark(px,d.dates[0],d.dates.at(-1)),keys=[[d.source_account?sourceAccountCopy(d.source_account).accountReturn:d.kind==='basket'?'Portfolio equity return':'Compounded model return','total_return','percent'],['Annualised return','cagr','percent'],['Max drawdown','max_dd','percent'],['Sharpe (rf = 0)','sharpe','ratio'],['Sortino','sortino','ratio'],['Return per drawdown','mar','ratio'],['Annualised volatility','vol','percent'],['Exposure','exposure','percent']];return `<section class="box" data-benchmark-comparison data-benchmark-symbol="${escText(tk)}"><div class="box-h">Strategy vs ${escText(LABEL[tk]||tk)} <button class="dbtn sm" data-report-export="benchmark">Download Excel</button></div><p class="rnote">Computed selected strategy settings against actual ${escText(LABEL[tk]||tk)} buy &amp; hold, with no benchmark execution costs. ${b?`${b.from} to ${b.to}.`:'Benchmark price coverage is missing.'} Book-reported figures remain separate reference claims.</p><table class="tbl stat-table"><thead><tr><th>Statistic</th><th class="n">Selected strategy</th><th class="n">${escText(LABEL[tk]||tk)} buy &amp; hold</th></tr></thead><tbody>${keys.map(([name,key,type])=>`<tr><td>${name}</td><td class="n">${numMinus(label(d.stats[key],type))}</td><td class="n">${numMinus(label(b?.[key],type))}</td></tr>`).join('')}</tbody></table></section>`;}
+
+// Tradesheet number columns (display only; CSV/Excel exports are unchanged): right-aligned tabular figures and a true minus sign.
+const TS_NUM=[3,5,6,7,8,9,10,11,12,13,14,15], TS_SIGNED=[6,8,13,14,15], TS_DATE=[2,4];
+const tsMinus=(t,i)=>TS_NUM.includes(i)?String(t).replace(/^-/,'\u2212'):t;
+const numMinus=t=>String(t).replace(/^-/,'\u2212');
+ function tradeHTML(d,tk){const rows=tradeRowsFor(d,tk);return `<section class="box" data-tradesheet><div class="box-h">Tradesheet <span class="legend"><small>${rows.length} positions · newest first</small><button class="dbtn sm" id="trades-xlsx">Download Excel</button><button class="dbtn sm" id="csv">Download CSV</button>${d.source_account?'<button class="dbtn sm" data-report-export="account-audit">Account audit Excel</button>':d.unit_exposure_report?'<button class="dbtn sm" data-report-export="unit-audit">Unit audit Excel</button><button class="dbtn sm" data-report-export="unit-daily">Daily audit Excel</button>':''}</span></div><p class="rnote">${d.source_account?sourceAccountCopy(d.source_account).tradeNote:d.unit_exposure_report?'Audited canonical-decimal return fractions; terminal-open costs include an estimated second liquidation side. Gross compounds independently at zero cost; contributions use net pretrade allocation.':'Returns and slippage are percentages of the strategy’s normalized allocation; prices/points use the actual symbol.'} ${d.source_account?'Monetary P&amp;L and Taxes are unavailable: the model has no funded capital, actual share lots or statutory tax schedule.':'Monetary Gross/Net P&amp;L and Taxes are unavailable because no quantity, monetary sizing or tax schedule was supplied.'} MAE/MFE show gross observed daily-bar bounds when available; event bars are excluded. Open exits are marked Open.</p><div class="tlog"><table class="tbl tl" id="tradesheet"><thead><tr>${tradeHeadersFor(d).map((k,i)=>`<th class="${TS_NUM.includes(i)?'n':''}">${escText(k)}</th>`).join('')}</tr></thead><tbody>${rows.map((row,tradeIndex)=>`<tr>${row.map((v,i)=>`<td class="${TS_NUM.includes(i)?'n'+(TS_SIGNED.includes(i)&&typeof v==='number'?(v<0?' neg':' pos'):''):TS_DATE.includes(i)?'d':''}">${v===null?'—':tsMinus([8,11,13,14,15].includes(i)?label(v,'percent'):typeof v==='number'?v.toFixed(i===9?0:2):escText(v),i)}${i===16?tradeExitCheckMarkup(d.trades[tradeIndex]):''}</td>`).join('')}</tr>`).reverse().join('')}</tbody></table></div></section>`;}
+ function equityNavigator(ch,d){
+  // Range brush: one window over a mini equity line; drag the window to move, drag either edge to resize, double-click for all.
+  const box=document.getElementById('equity-navigator');if(!box)return;const win=box.querySelector('.rb-win'),out=box.querySelector('output'),line=box.querySelector('polyline'),n=d.dates.length;
+  if(n<2){win.hidden=true;out.textContent=d.dates[0]||'No dated results';return;}
+  const eq=(d.equity||[]).map(v=>v>0?Math.log(v):NaN),step=Math.max(1,Math.floor(n/400)),pts=[];let mn=Infinity,mx=-Infinity;for(let i=0;i<n;i+=step){const v=eq[i];if(Number.isFinite(v)){mn=Math.min(mn,v);mx=Math.max(mx,v);}}
+  for(let i=0;i<n;i+=step){const v=eq[i];if(Number.isFinite(v))pts.push(`${(i/(n-1)*1000).toFixed(1)},${(96-(mx>mn?(v-mn)/(mx-mn):.5)*92).toFixed(1)}`);}line.setAttribute('points',pts.join(' '));
+  let lo=0,hi=n-1,fromChart=false;const minSpan=Math.min(n-1,5);
+  const paint=()=>{win.style.left=`${lo/(n-1)*100}%`;win.style.width=`${(hi-lo)/(n-1)*100}%`;out.textContent=`${d.dates[lo]} — ${d.dates[hi]}`;win.setAttribute('aria-valuetext',out.textContent);};
+  const apply=()=>{lo=Math.max(0,Math.min(lo,n-1-minSpan));hi=Math.max(lo+minSpan,Math.min(n-1,hi));paint();if(!fromChart)ch.timeScale().setVisibleLogicalRange({from:lo,to:hi});};
+  const idx=x=>{const r=box.getBoundingClientRect();return Math.round(Math.max(0,Math.min(1,(x-r.left)/r.width))*(n-1));};
+  const drag=(mode,e)=>{e.preventDefault();e.stopPropagation();const x0=e.clientX,l0=lo,h0=hi,w=box.getBoundingClientRect().width;win.classList.add('on');
+    const move=ev=>{const di=Math.round((ev.clientX-x0)/w*(n-1));if(mode==='l')lo=Math.min(l0+di,hi-minSpan);else if(mode==='r')hi=Math.max(h0+di,lo+minSpan);else{const span=h0-l0;lo=Math.max(0,Math.min(n-1-span,l0+di));hi=lo+span;}apply();};
+    const up=()=>{win.classList.remove('on');window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',up);};window.addEventListener('pointermove',move);window.addEventListener('pointerup',up);};
+  win.onpointerdown=e=>drag(e.target.dataset.h||'move',e);
+  box.onpointerdown=e=>{if(e.target.closest('.rb-win'))return;const c=idx(e.clientX),span=hi-lo;lo=Math.max(0,Math.min(n-1-span,c-Math.round(span/2)));hi=lo+span;apply();drag('move',e);};
+  box.ondblclick=()=>{lo=0;hi=n-1;apply();};
+  win.onkeydown=e=>{const k=Math.max(1,Math.round((n-1)/100))*(e.shiftKey?10:1);if(e.key==='ArrowLeft'){lo-=k;hi-=k;if(lo<0){hi-=lo;lo=0;}}else if(e.key==='ArrowRight'){lo+=k;hi+=k;if(hi>n-1){lo-=hi-(n-1);hi=n-1;}}else if(e.key==='Home'){lo=0;hi=n-1;}else return;e.preventDefault();apply();};
+  ch.timeScale().subscribeVisibleLogicalRangeChange(range=>{if(!range||win.classList.contains('on'))return;fromChart=true;lo=Math.max(0,Math.min(n-1,Math.ceil(range.from)));hi=Math.max(lo,Math.min(n-1,Math.floor(range.to)));paint();fromChart=false;});
+  apply();}
  const msg=text=>{const el=document.getElementById('page-action-message');if(el)el.textContent=text;};
  const immutable=value=>{if(Array.isArray(value))return Object.freeze(value.map(immutable));if(value&&typeof value==='object')return Object.freeze(Object.fromEntries(Object.entries(value).map(([key,v])=>[key,immutable(v)])));return value;};
  function snapshotContext(){
@@ -311,6 +336,28 @@ function optimBanner(v) {
   const p = decodeP(S.p); if (!Object.keys(p).length) return '';
   const book = bookDefaults(v.id);
   return `<div class="pbanner"><span class="olabel">Custom settings</span><span>${Object.entries(p).map(([k, x]) => `<span class="oset">${esc(sLabel(k))} <b>${x}</b>${book[k] !== x ? ` <span class="muted">default ${book[k] ?? '–'}</span>` : ''}</span>`).join(' ')}</span><a href="${href(R.path, { ...S, p: '' })}">Back to default settings</a></div>`;
+}
+
+// Model for the Strategy settings dialog: the variant's parameters (book default vs value used) and the
+// backtest assumptions, all read from the schema, the selection and the run result (nothing is assumed).
+function settingsModel(v, d, sel, { basket = false, fixedNote = '', reportMode = '' } = {}) {
+  const used = decodeP(sel.p), sec = { E: [], X: [], A: [] };
+  (v.rules || []).forEach(x => { const [t, ...r] = x.split('|'); if (sec[t]) sec[t].push(r.join('|')); });
+  const params = (OPT.schemaSync?.[v.id] || []).filter(x => typeof x.key === 'string' && Number.isFinite(x.def))
+    .map(x => ({ key: x.key, label: x.label || x.key, def: x.def, min: x.min, max: x.max, step: x.step, value: used[x.key] ?? x.def }));
+  const path = params.find(x => x.key === 'path'), p = d?.portfolio || {}, dates = d?.dates || [];
+  const acts = sec.E.filter(r => /^(Buy|Short|Sell|Next day|Once|After|Stop)/.test(r));
+  const fills = [sec.E.length ? 'Entry: ' + (acts.length ? acts : sec.E).join(' / ') : '',
+    sec.X.length ? 'Exit: ' + sec.X.join(' / ') : '', path && path.value >= 0.5 ? `Runs on the real 1-minute bar path (${path.label}).` : ''].filter(Boolean).join(' · ');
+  const assumptions = [
+    ['Fills', fills || 'As stated in the Rules section.'],
+    ['Positions', basket ? `${sel.max_positions || '–'} simultaneous positions, 1/${sel.max_positions || '–'} of equity per full position. ${p.allocation_basis || ''} ${p.ranking ? p.ranking + '.' : ''}`.trim()
+      : sec.A.length ? 'One trade at a time; scale-in entries add to the open trade as the rule states.' : 'One position at a time, with the full account equity in each trade.'],
+    ['Costs', `Slippage ${sel.slippage || 0} bps per side · Rollover ${sel.rollover || 0} bps per actual roll${+sel.cost ? ` · Cost ${sel.cost}` : ''}.`],
+    ['Period', `Requested ${sel.from || 'first available bar'} to ${sel.to || 'latest available bar'}${dates.length ? `; calculated ${dates[0]} to ${dates.at(-1)}` : ''}.${d?.auto_start ? ' ' + d.auto_start : ''}${d?.auto_end ? ' ' + d.auto_end : ''}`],
+    ['Net profit', reportMode || (sel.report_mode === 'compound' ? 'Compounding' : 'Fixed quantity')],
+    ['Statistics', `Closed trades only; open-position marks are excluded. Sharpe on ${basket ? 'portfolio ' : ''}daily returns, risk-free rate 0.`]];
+  return { params, assumptions, fixedNote };
 }
 
 // ---------------------------------------------------------------- loader: a book flipping its pages
@@ -873,6 +920,31 @@ function applyReadingReviews(data){
     if(actual){SOURCE_REVIEWS.catalogue[b.id]={...reviewed,summary:reviewed?.summary||actual.summary};BOOK_CATEGORIES.books[b.id]=reviewed?.categories?{categories:reviewed.categories,certainty:'bounded_actual_source_sections',evidence:reviewed.category_evidence||[]}:actual.category_review;}
   }
 }
+// Whole-share review: each trading source is re-homed under the people credited on it (one card per person;
+// curated pages keep their id). Sources with no credited person go to one collection; non-trading ones leave the trading scope.
+function applyShareReview(data){
+  if(data?.schema_version!==1||!data.sources)return;
+  const group=(id,name)=>{let g=GURU[id];if(!g){g={id,name,books:[],source_group:true,tagline:'Reading sources from the research share, each checked from its first pages. No strategy performance is inferred from the inventory.'};LIB.push(g);GURU[id]=g;}return g;};
+  for(const [id,name] of Object.entries(data.people||{}))if(/^[A-Za-z0-9_-]{1,96}$/.test(id))group(id,name).person=true;
+  for(const id of data.curated||[])if(GURU[id])GURU[id].person=true;
+  const moved=new Map();
+  for(const author of Object.values(BOOK_COVERAGE.authors))author.source_titles=(author.source_titles||[]).filter(source=>{
+    const review=data.sources[source.id];if(!review)return true;
+    if(review.not_trading){source.reviewed_scope='pending';return true;}
+    if(!moved.has(source.id))moved.set(source.id,{...source,reviewed_scope:'trading',reviewed_type:review.type});
+    return false;
+  });
+  for(const [id,source] of moved){
+    const ids=data.sources[id].people.filter(pid=>GURU[pid]);
+    const owners=ids.length?ids:[group('uncredited','Sources with no credited author').id];
+    source.author_metadata=ids.length?ids.map(pid=>GURU[pid].name).join(' · '):'No credited author';
+    for(const pid of owners){const g=GURU[pid];BOOK_COVERAGE.authors[pid]??={id:pid,name:g.name,source_titles:[],catalogue_books:[]};BOOK_COVERAGE.authors[pid].source_titles.push(source);}
+  }
+  for(const g of LIB)for(const b of g.books){const ids=(data.catalogue?.[b.id]||[]).filter(id=>id!==g.id&&GURU[id]);if(ids.length)b.coAuthorIds=ids;}
+  // A source the review identified as a copy of a catalogue book merges into that book (reviewed source id).
+  for(const [id,review] of Object.entries(data.sources))if(review.book&&BOOK[review.book])BOOK[review.book].sourceIds=[...new Set([...(BOOK[review.book].sourceIds||[]),id])];
+  for(let i=LIB.length-1;i>=0;i--){const g=LIB[i];if(g.source_group&&!g.person&&g.id!=='uncredited'&&!g.books.length&&!BOOK_COVERAGE.authors[g.id]?.source_titles?.length){LIB.splice(i,1);delete GURU[g.id];}}
+}
 function finalizeReadingIndex(){
   SOURCE_ROW_BY_ID=new Map();
   for(const g of LIB){const sources=BOOK_COVERAGE.authors[g.id]?.source_titles||[];
@@ -907,8 +979,7 @@ const enginePath = (id, endpoint, api = API) => `${api}/guru/${ownerOf(id)}/${en
 const guruIds = () => GURUS_API.map(g => g.id);
 function sourceEvidence(v) { return v.guru==='chande'?window.ChandeEvidence.methods[v.id]:window.JoeRossEvidence.methods[v.id]; }
 // A table comparison records its source discrepancies; it is not source-performance certification.
-const gateBadge = v => v.gate?.verdict === 'table_compared' ? '<span class="gb un" title="Approximate published-table comparison; original source instrument, universe and trade ledger have not been certified">Published-table comparison</span>'
-  : v.gate?.verdict === 'unverified' ? '<span class="gb un" title="A source comparison is recorded; independent rule and trade verification remains incomplete">Not verified vs book</span>' : '';
+const gateBadge = () => ''; // verification badges hidden (user request 22 Oct 2026); gate data kept for a future UI
 const OPEN_FROM = { SPX: '2014-01-01', NDX: '2001-01-01', DJI: '2016-01-01' };
 function gateNotice(v, tk) {
   const g = v.gate;
@@ -917,8 +988,7 @@ function gateNotice(v, tk) {
   if(declared)return declared+gateNotice({...v,instrument_policy:{...v.instrument_policy,declared_application:''}},tk);
   if(v.instrument_policy?.source_rule_reviewed)return `<div class="rnote" data-rule-review><b>Source rules reviewed · computed market application.</b> Selected trade ledgers matched an independent reference calculation. ${esc(v.instrument_policy.source_basis)} ${clamp} ${v.gate?.book?`<details><summary>Earlier source-study comparison</summary><p>${esc(v.gate.book)}</p><p>${esc(v.gate.note)}</p><p>Original book-study reproduction remains unverified; these figures are separate from this computed backtest.</p></details>`:''}</div>`;
   if (!g) return '';
-  if (g.verdict === 'table_compared') return `<div class="rnote gate un"><b>Published-table comparison; source reproduction not certified.</b><p>Book: ${esc(g.book)}</p><p>Ours: ${esc(g.ours)}</p>${clamp}</div>`;
-  return `<div class="rnote gate un"><b>Not verified against the book.</b> Independent rule and trade verification remains incomplete. ${esc(g.note || 'The book prints no comparable result.')}${clamp}</div>`;
+  return clamp ? `<div class="rnote gate un">${clamp}</div>` : ''; // the unverified-gate notice was removed (user request 22 Oct 2026)
 }
 function calculatedPeriodHTML(d) {
   return Array.isArray(d?.dates)&&d.dates.length ? `<span data-calculated-period><b>Calculated period: ${esc(d.dates[0])} to ${esc(d.dates.at(-1))}.</b> </span>` : '';
@@ -928,8 +998,13 @@ function sourceBlockers(v) {
   const blocks=VaultResearch.blockers(sourceEvidence(v));
   return blocks.length?`<div data-source-blockers>${blocks.map(b=>`<div data-blocker="${b.status}"><h4>${esc(b.label)}</h4><ul>${b.items.map(t=>`<li>${esc(t)}</li>`).join('')}</ul></div>`).join('')}</div>`:'';
 }
+// Joe Ross: admitted rules (backend books/joe_ross_rules) are live and shown like any other book's results;
+// the page-cited references stay held. Counts come from the served catalogue, never from fixed text.
+const rossLiveIds = () => ALLCAT.filter(v => v.guru === 'ross' && v.status === 'live');
+const rossBookLive = id => ALLCAT.some(v => v.book === id && v.guru === 'ross' && v.status === 'live');
+const rossCounts = () => { const live = rossLiveIds(); return { methods: new Set(live.map(v => v.family)).size, rules: live.length }; };
 function sourceResearchAuthors() {
-  return `<section class="box" data-source-research><div class="box-h">Source research <small>Book references awaiting complete rules and market data</small></div><p>These sources are being reviewed. They have no implemented backtests and are excluded from performance rankings.</p><a class="research-author" href="${guruLink('ross')}"><div class="cover">${pframe(GURU.ross)}<div><h3>Joe Ross</h3><p>20 source methods · 40 directional references · 0 implemented backtests</p><p><b>Data missing · Rules unresolved</b></p><span class="dbtn sm">Open source review</span></div></div></a></section>`;
+  return `<section class="box" data-source-research><div class="box-h">Source research <small>Book references awaiting complete rules and market data</small></div><p>These sources are being reviewed. They have no implemented backtests and are excluded from performance rankings.</p><a class="research-author" href="${guruLink('ross')}"><div class="cover">${pframe(GURU.ross)}<div><h3>Joe Ross</h3><p>${rossCounts().methods} methods backtested · other source methods held</p><p><b>Held methods: data missing · rules unresolved</b></p><span class="dbtn sm">Open source review</span></div></div></a></section>`;
 }
 function familyDisplayName(v){return catalogueMethodLabel(v,ALLCAT);}
 function gptSection(v,tk,d=null,issue=null) {
@@ -984,8 +1059,8 @@ async function pristineOwnerRows(url,definitions,kind){
  }catch(error){return {rows:definitions.map(definition=>({id:definition.id,...(kind==='readiness'?{status:'unavailable',note:error.message}:{blocked:error.message,readiness:'unavailable'})})),retryableFailure:true,issue:{owner:'pristine',status:'unavailable',kind:'request_failed',note:error.message||'Pristine owner data is unavailable.'}};}
 }
 
-async function getReadiness(tk, from = '', to = '', id = '', parameters = {}) {
- const api=API,owners=id?[ownerOf(id)]:guruIds(),variants=[...ALLCAT],generation=busy;
+async function getReadiness(tk, from = '', to = '', id = '', parameters = {}, api = API) {
+ const owners=id?[ownerOf(id)]:guruIds(),variants=[...ALLCAT],generation=busy;
  if(!owners.length)return {};
  const query=new URLSearchParams({ticker:tk,from,to,cost:S.cost||'0',...VaultUI.costState(S),...(id?{id}:{})});
  const settings=typeof parameters==='string'?decodeP(parameters):parameters;
@@ -999,8 +1074,8 @@ async function getReadiness(tk, from = '', to = '', id = '', parameters = {}) {
   return Object.fromEntries(outcomes.flatMap(outcome=>outcome.rows).map(row=>[row.id,row]));
  })());
 }
-async function getSum(tk, from = '', to = '') {
- const api=API,owners=guruIds(),variants=[...ALLCAT],generation=busy;
+async function getSum(tk, from = '', to = '', api = API) {
+ const owners=guruIds(),variants=[...ALLCAT],generation=busy;
  if(!owners.length)return {};
  const key=summaryKey(api,tk,from,to),context=summaryContext(tk,from,to),query=new URLSearchParams({ticker:tk,from,to});
  if(SUM_FAILURE_GENERATION[key]!=null&&SUM_FAILURE_GENERATION[key]!==generation)delete SUM[key];
@@ -1024,16 +1099,16 @@ function listSummaryIssues() {
 // "before the book" numbers come from the per-strategy endpoint: the summary endpoint crashes when the end date
 // is before the first India VIX bar (VIX strategies), while /run answers that case cleanly.
 const PRE = {};
-function preMap(tk, to) {
-  const api=API,k = `${api}|${tk}|${to}`;
+function preMap(tk, to, api = API, cat = CAT) {
+  const k = `${api}|${tk}|${to}`;
   if (PRE[k]) return PRE[k];
-  const ids = CAT.filter(v => v.status === 'live' && !v.needs_vix).map(v => v.id), out = {}; // VIX data starts after 2009: nothing to ask
+  const ids = cat.filter(v => v.status === 'live' && !v.needs_vix).map(v => v.id), out = {}; // VIX data starts after 2009: nothing to ask
   let i = 0;
   const worker = async () => { while (i < ids.length) { const id = ids[i++];
     try { const r = await fetch(enginePath(id,'run',api)+'?' + new URLSearchParams({ id, ticker: tk, to })); if (r.ok) out[id] = { stats: (await r.json()).stats }; } catch (e) { /* leave missing */ } } };
   return PRE[k] = Promise.all(Array.from({ length: 6 }, worker)).then(() => out);
 }
-const lastOf = tk => TICKERS.find(t => t.ticker === tk)?.last || '2026-05-15';
+const lastOf = tk => [...TICKERS, ...TICK_IN, ...(TICK_US || [])].find(t => t.ticker === tk)?.last || '2026-05-15';
 const shiftYears = (d, y) => { const t = new Date(d); t.setFullYear(t.getFullYear() - y); return t.toISOString().slice(0, 10); };
 
 // tabs: which data window each one uses and which number it ranks by
@@ -1068,24 +1143,32 @@ const HOLD = { short: '≤ 5 bars', swing: '6–20 bars', long: '> 20 bars' };
 // ---------------------------------------------------------------- rows: one per (variant × index) after market, tab and filters
 async function rows(S = getS()) {
   if (S.market !== 'india') return [];
-  const T = TABS[S.tab], tks = S.tk === 'ALL' ? TICKERS.map(t => t.ticker) : [S.tk];
+  if (S.region === 'all' && TICK_US) {
+    const markets = [['in', API_IN, TICK_IN], ['us', API_US, TICK_US]];
+    const parts = await Promise.all(markets.map(([region, api, ticks]) => marketRows({ ...S, tk: 'ALL', region }, region, api, ticks, libraryMarketVariants(ALLCAT, libraryMarket({ ...S, region }, R.name)))));
+    return S.tab === 'awaiting' ? parts.flat() : sortRows(parts.flat());
+  }
+  return marketRows(S, S.region, API, TICKERS, CAT);
+}
+async function marketRows(S, region, api, tickers, CAT) {
+  const T = TABS[S.tab], tks = S.tk === 'ALL' ? tickers.map(t => t.ticker) : [S.tk];
   const qq = S.q.trim().toLowerCase();
   const textOk = v => !qq || `${v.name} ${v.family_name} ${v.variant || ''} ${v.group} ${v.dir} ${BOOK[v.book].title} ${GURU[v.guru].name} ${(v.rules || []).join(' ')}`.toLowerCase().includes(qq);
   const metaOk = v => textOk(v) && (!S.guru || v.guru === S.guru) && (!S.book || v.book === S.book) && (!S.style || v.style === S.style) && (!S.dir || v.dir === S.dir) && (!S.family || v.family === S.family);
   if (S.tab === 'awaiting') {
-    const availability = await Promise.all(tks.map(tk => getReadiness(tk,S.from,S.to)));
+    const availability = await Promise.all(tks.map(tk => getReadiness(tk,S.from,S.to,'',{},api)));
     return CAT.filter(metaOk).map(v => {
       const issues=tks.map((tk,i)=>({tk,...availability[i][v.id]})).filter(item=>item.status!=='ready');
-      return {v,tk:issues[0]?.tk,s:null,issues};
+      return {v,tk:issues[0]?.tk,s:null,issues,region};
     }).filter(row=>row.issues.length);
   }
   const out = [];
   for (const tk of tks) {
-    const w = S.tab==='sharpe'&&(S.from||S.to)?{from:S.from||'',to:S.to||''}:T.win(tk), main = await getSum(tk, w.from, w.to), ex = T.extra ? T.extra(tk) : null, extra = ex ? await getSum(tk, ex.from, ex.to) : T.pre ? await preMap(tk, T.pre) : null;
+    const w = S.tab==='sharpe'&&(S.from||S.to)?{from:S.from||'',to:S.to||''}:T.win(tk), main = await getSum(tk, w.from, w.to, api), ex = T.extra ? T.extra(tk) : null, extra = ex ? await getSum(tk, ex.from, ex.to, api) : T.pre ? await preMap(tk, T.pre, api, CAT) : null;
     for (const v of CAT) {
       if (v.status !== 'live' || !metaOk(v)) continue;
       const m = main[v.id]; if (!m?.stats || !m.stats.trades) continue; // no data (volume rules on Nifty IT) or no closed trades in the window
-      const r = { v, tk, s: m.stats, sp: m.spark, x: extra?.[v.id]?.stats || null, w };
+      const r = { v, tk, s: m.stats, sp: m.spark, x: extra?.[v.id]?.stats || null, w, region, auto: m.auto_start || '', autoEnd: m.auto_end || '', ruin: m.ruin?.note || '', ruinEnd: m.ruin?.end || '' };
       if (T.keep && !T.keep(r)) continue;
       if (S.hold && holdOf(r.s) !== S.hold) continue;
       if (S.verdict && verdictOf(r.s).k !== S.verdict) continue;
@@ -1102,7 +1185,7 @@ function spark(r, w = 300, h = 86) {
   const L = Math.log, lo = Math.min(...a.map(L)), hi = Math.max(...a.map(L)), n = a.length;
   const X = i => i / (n - 1) * w, Y = v => h - 4 - (L(v) - lo) / ((hi - lo) || 1) * (h - 10);
   const P = a.map((v, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join('');
-  const end = new Date(r.w.to || lastOf(r.tk)), start = new Date(end - r.s.years * 365.25 * 864e5);
+  const end = new Date(r.ruinEnd || r.w.to || lastOf(r.tk)) /* a wiped-out run stops early */, start = new Date(end - r.s.years * 365.25 * 864e5);
   const f = (new Date(`${PUB}-01-01`) - start) / (end - start);
   const mark = f > .03 && f < .97 ? `<rect x="${f * w}" y="0" width="${(1 - f) * w}" height="${h}" fill="var(--blue-soft)" opacity=".55"/><line x1="${f * w}" x2="${f * w}" y1="0" y2="${h}" stroke="var(--chart)" stroke-dasharray="3 3" stroke-width="1"/>` : '';
   const small = w < 200; // table rows: no axis labels, the dashed line still marks the book
@@ -1135,7 +1218,7 @@ function distBox(rs) {
 }
 
 // ---------------------------------------------------------------- shared pieces
-const appLink = r => stratLink(r.v.id, r.tk); // opens the single-strategy page inside this page
+const appLink = r => stratLink(r.v.id, r.tk, r.region); // opens the single-strategy page inside this page
 const RTAG = { F: 'IF', E: 'ENTRY', A: 'ADD', X: 'EXIT' };
 const rulesList = v => `<details class="rules"><summary>Rules as written in the book</summary><ul>${(v.rules || []).map(x => { const [t, ...rest] = x.split('|'); return `<li><span class="t">${RTAG[t] || ''}</span>${esc(rest.join('|') || x)}</li>`; }).join('')}</ul></details>`;
 const kpiTriplet = r => {
@@ -1194,7 +1277,7 @@ function viewStrategies(rs, perVariant, missing = []) {
   return `<div class="grid">${list.map((r, i) => { const vd = verdictOf(r.s); return `<article class="card">
       <div class="rank"><span>#${i + 1}${S.tk === 'ALL' ? ' · ' + esc(LABEL[r.tk]) : ''}</span><span class="stamp" style="color:${vd.c}">${vd.t}</span></div>
       <h3>${title(r)}</h3><div class="by">${sub(r)}${byline(r.v)}</div>
-      ${spark(r)}${kpiTriplet(r)}
+      ${spark(r)}${kpiTriplet(r)}${r.auto ? `<p class="rnote" data-auto-start>${esc(r.auto)}</p>` : ''}${r.autoEnd ? `<p class="rnote" data-auto-end>${esc(r.autoEnd)}</p>` : ''}${r.ruin ? `<p class="rnote gate ruin" data-ruin><b>${esc(r.ruin)}</b></p>` : ''}
       <div class="tags"><span class="tag">⏱ ${HOLD[holdOf(r.s)]}</span><span class="tag">${esc(r.v.style)}</span><span class="tag">${r.v.dir}</span>${!perVariant && nVar(r) > 1 ? `<span class="tag link" data-fam="${esc(r.v.family)}">${nVar(r)} variants</span>` : ''}${!perVariant && S.tk === 'ALL' && nIdx(r) > 1 ? `<span class="tag">best of ${nIdx(r)} indices</span>` : ''}</div>
       ${rulesList(r.v)}
       <div class="btns"><a class="btn solid" href="${appLink(r)}">Full backtest</a><button class="btn" data-book="${r.v.book}">Book</button><button class="btn" data-guru="${r.v.guru}">Guru</button></div>
@@ -1202,7 +1285,7 @@ function viewStrategies(rs, perVariant, missing = []) {
 }
 function awaiting(rs) {
   const reasons = r => sourceBlockers(r.v) || r.issues.map(issue => `<p><b>${esc(LABEL[issue.tk])}: ${esc(heldLabel(issue))}</b><br>${esc(issue.note)}</p>`).join('');
-  const link = r => `<a href="${stratLink(r.v.id,r.tk)}">${esc(familyDisplayName(r.v))}</a>`;
+  const link = r => `<a href="${stratLink(r.v.id,r.tk,r.region)}">${esc(familyDisplayName(r.v))}</a>`;
   if (S.view === 'table' || S.view === 'list') return `<div class="tblwrap"><table class="tbl"><thead><tr><th class="nosort">#</th><th class="nosort">Strategy / source method</th><th class="nosort">Style</th><th class="nosort">Why results are withheld</th></tr></thead><tbody>${rs.map((r,i)=>`<tr><td class="rk">${i+1}</td><td class="nm"><b>${link(r)}</b><span>${r.v.variant?esc(r.v.variant)+' · ':''}${byline(r.v)}</span></td><td>${esc(r.v.style)}</td><td>${reasons(r)}</td></tr>`).join('')}</tbody></table></div>`;
   return `<div class="grid">${rs.map((r,i)=>`<article class="card"><div class="rank"><span>#${i+1}</span><span class="stamp" style="color:#8a6a2f">${r.v.guru==='ross'?'DATA MISSING · RULES UNRESOLVED':'BACKTEST UNAVAILABLE'}</span></div><h3>${link(r)}</h3><div class="by">${r.v.variant?esc(r.v.variant)+' · ':''}${byline(r.v)}</div><div class="unavailable-reasons">${reasons(r)}</div><div class="tags"><span class="tag">${esc(r.v.style)}</span><span class="tag">${r.v.dir}</span></div>${rulesList(r.v)}<a class="btn" href="${stratLink(r.v.id,r.tk)}">View rules and data requirements</a></article>`).join('')}</div>`;
 }
@@ -1308,10 +1391,11 @@ function readRoute() {
   S.position_choice=['10','20','custom'].includes(S.position_choice)?S.position_choice:'10';
   if(!pristineMethod(R.id,PRISTINE_BOOK))S.cost='0'; // Legacy interface retains its existing fee setting.
   if (R.name === 'guru') S.guru = R.id;
-  if (S.book?.startsWith('jr_') && !new URLSearchParams(q).has('tab')) S.tab='awaiting';
-  if (S.book?.startsWith('jr_') && !BOOK[S.book]?.year && S.tab==='working') S.tab='awaiting';
+  // a Ross book without backtested rules opens on its held references; books with measured results behave like any other book
+  if (S.book?.startsWith('jr_') && !rossBookLive(S.book) && !new URLSearchParams(q).has('tab')) S.tab='awaiting';
+  if (S.book?.startsWith('jr_') && !rossBookLive(S.book) && !BOOK[S.book]?.year && S.tab==='working') S.tab='awaiting';
   // Use each source-qualified basket only with the market engine that admitted it.
-  if(S.region==='us'&&(TICK_US||pristineMethod(R.id,PRISTINE_BOOK))){API=API_US;BASKETS=BASKETS_US;}else{S.region='in';API=API_IN;BASKETS=BASKETS_IN;}
+  if(S.region==='us'&&(TICK_US||pristineMethod(R.id,PRISTINE_BOOK))){API=API_US;BASKETS=BASKETS_US;}else{if(!(S.region==='all'&&R.name==='all'&&TICK_US)){S.region='in';}else{S.tk='ALL';S.basket='';}API=API_IN;BASKETS=BASKETS_IN;}
   const pool=S.region==='us'?TICK_ALL_US:TICK_ALL_IN, indices=S.region==='us'?TICK_US:TICK_IN;
   const chosen=R.name==='strategy'?ALLCAT.find(v=>v.id===R.id):null;
   const types=chosen?.instrument_policy?.allowed_types||[];
@@ -1344,17 +1428,17 @@ function readRoute() {
 let ALLCAT = [];
 const foreignTo = (v, us) => (v.needs_series || []).some(n => us ? /^NSE_/.test(n) : /^NYSE_/.test(n));
 const marketCat = () => libraryMarketVariants(ALLCAT,libraryMarket(S,R.name));
-const href = (path, st = {}) => { const q = new URLSearchParams();if(S.research_mode&&!('research_mode' in st))q.set('research_mode',S.research_mode);const catalogue=path==='/'||path==='/strategies'||path.startsWith('/guru/')||path.startsWith('/source/'); if (S.region === 'us' && !('region' in st)) q.set('region', 'us'); if(catalogue&&S.library_market&&!('library_market' in st))q.set('library_market',S.library_market); for (const k in st) if (st[k] !== DEF[k] && st[k] != null && !(path.startsWith('/guru/') && k === 'guru') && (k!=='library_market'||catalogue)) q.set(k, st[k]); const s = q.toString(); return '#' + path + (s ? '?' + s : ''); };
+const href = (path, st = {}) => { const q = new URLSearchParams();if(S.research_mode&&!('research_mode' in st))q.set('research_mode',S.research_mode);const catalogue=path==='/'||path==='/strategies'||path.startsWith('/guru/')||path.startsWith('/source/'); if (S.region !== 'in' && !('region' in st)) q.set('region', S.region); if(catalogue&&S.library_market&&!('library_market' in st))q.set('library_market',S.library_market); for (const k in st) if (st[k] !== DEF[k] && st[k] != null && !(path.startsWith('/guru/') && k === 'guru') && (k!=='library_market'||catalogue)) q.set(k, st[k]); const s = q.toString(); return '#' + path + (s ? '?' + s : ''); };
 const go = (path, st) => { location.hash = href(path, st).slice(1); };
 const setState = patch => { const st = { ...S, ...patch }; if ('guru' in patch && !('book' in patch) && st.book && BOOK[st.book]?.guru.id !== st.guru) st.book = ''; go(R.path, st); };
 const guruLink = id => href('/guru/' + id, {view:'grid',tk:S.tk,basket:S.basket,from:S.from,to:S.to});
-const stratLink = (id, tk) => href('/s/' + encodeURIComponent(id), { ...(tk && tk !== 'NIFTY 50' && tk !== 'ALL' ? { tk } : {}), from: S.from, to: S.to, cost: S.cost,slippage:S.slippage,rollover:S.rollover,basket:S.basket,run_scope:S.run_scope,report_mode:S.report_mode,membership:S.membership,max_positions:S.max_positions,position_choice:S.position_choice });
+const stratLink = (id, tk, region) => href('/s/' + encodeURIComponent(id), { ...(region ? { region } : S.region === 'all' ? { region: 'in' } : {}), ...(tk && tk !== 'NIFTY 50' && tk !== 'ALL' ? { tk } : {}), from: S.from, to: S.to, cost: S.cost,slippage:S.slippage,rollover:S.rollover,basket:S.basket,run_scope:S.run_scope,report_mode:S.report_mode,membership:S.membership,max_positions:S.max_positions,position_choice:S.position_choice });
 
 // ---------------------------------------------------------------- shared bits
 const GUILL = (() => { const paths = [[80, 23, 60, 23], [74, 19, 48, 19], [66, 29, 40, 29]].map(([R_, r, d, turns]) => { let p = ''; for (let k = 0; k <= 2400; k++) { const t = k / 2400 * Math.PI * 2 * turns, x = (R_ - r) * Math.cos(t) + d * Math.cos((R_ - r) / r * t), y = (R_ - r) * Math.sin(t) - d * Math.sin((R_ - r) / r * t); p += `${k ? 'L' : 'M'}${(100 + x * .7).toFixed(2)},${(100 + y * .7).toFixed(2)}`; } return `<path d="${p}"/>`; }); return `<svg viewBox="0 0 200 200">${paths.join('')}</svg>`; })();
 // Card image: the author's portrait in black and white (img/gurus/<id>.jpg, sources in img/gurus/SOURCES.md);
 // authors without a clearly identified public photo get a monogram tile, never a stand-in picture.
-const PORTRAITS = new Set(['appel','bandy','bernstein','bollinger','bwilliams','chande','clayburg','cooper','covel','crabel','demark','elder','guppy','kaufman','landry','lebeau','livermore','lwilliams','minervini','momentum','oneil','primo','quant','radge','raschke','ruggiero','seasonal','sperandeo','swing12','swingstk','tharp','timers','weissman','wilder']);
+const PORTRAITS = new Set(['appel','bandy','bernstein','bollinger','bwilliams','chande','clayburg','cooper','covel','crabel','demark','elder','guppy','kaufman','landry','lebeau','livermore','lwilliams','minervini','momentum','oneil','primo','quant','radge','raschke','ruggiero','seasonal','schwager','sperandeo','swingstk','tharp','timers','weissman','wilder']);
 const initials = n => n.replace(/\(.*?\)/g, '').split(/[\s&,]+/).filter(w => /^[A-Z]/.test(w)).slice(0, 2).map(w => w[0]).join('');
 const photoOf = g => g.photo || (PORTRAITS.has(g.id) ? `img/gurus/${g.id}.jpg` : '');
 const pframe = g => { const ph = photoOf(g);
@@ -1427,7 +1511,7 @@ let PV = true;
 window.togglePV = () => { PV = !PV; render(); };
 async function viewHome() {
   const h = await heroStats(), readiness=await getReadiness(h.tk), allRecords=libraryRecords(), visibleAuthors=VaultLibraryBrowser.matchingAuthors(LIB,allRecords,S.library_q,S.book_category), live = LIB.filter(g => g.books.some(b => b.live)), pre = LIB.filter(g => !g.books.some(b => b.live));
-  const implementedFamilies=new Set(CAT.filter(v=>v.status==='live' && v.guru!=='ross').map(v=>v.family)).size;
+  const implementedFamilies=new Set(CAT.filter(v=>v.status==='live').map(v=>v.family)).size;
   const scoped=Object.fromEntries(await Promise.all(live.map(async g=>[g.id,await heroStats(g.id)])));
   HOME_STATS = scoped;
   const awaitedSummary=await getSum(h.tk),cardStates=Object.fromEntries(LIB.map(g=>[g.id,VaultLibraryDiscovery.authorAvailability(g.books.map(b=>b.id),CAT,awaitedSummary,readiness)]));
@@ -1463,7 +1547,7 @@ const FILTERS = {
   mode: { t: 'Browse', noAll: true, vals: () => Object.entries(MODES) },
   tk: { t: 'Market', noAll: true, cur: () => S.market !== 'india' ? '@' + S.market : S.tk, vals: () => [...TICKERS.map(t => [t.ticker, LABEL[t.ticker]]), ['ALL', isUS() ? 'All US indices' : 'All Indian indices'], ['@global', 'Global · soon'], ['@stocks', 'Single stocks · soon']], set: v => v.startsWith('@') ? { market: v.slice(1) } : { market: 'india', tk: v } },
   tab: { t: 'Rank by', noAll: true, vals: () => Object.entries(TABS).filter(([k])=>PUB || k!=='working').map(([k, x]) => [k, x.name]), set: v => ({ tab: v, sort: 'primary' }) },
-  guru: { t: 'Guru', vals: () => LIB.map(g => [g.id, g.name+(g.id==='ross'?' · Source research':'')]), set: v => ({ guru: v, book: '' }) },
+  guru: { t: 'Guru', vals: () => LIB.map(g => [g.id, g.name+(g.id==='ross'&&!rossLiveIds().length?' · Source research':'')]), set: v => ({ guru: v, book: '' }) },
   book: { t: 'Book', vals: () => Object.values(BOOK).filter(b => !S.guru || b.guru.id === S.guru).map(b => [b.id, b.title + (b.live ? '' : ' · soon')]) },
   style: { t: 'Style', vals: () => [...new Set(CAT.map(v => v.style))].map(x => [x, x]) },
   dir: { t: 'Direction', vals: () => [['Long', 'Long'], ['Short', 'Short']] },
@@ -1489,11 +1573,11 @@ async function filterBar() {
   return `<div class="fbar"><div class="fbar-in">${keys.map(k => dropdown(k, cnt[k])).join('')}<label class="dsearch"><input id="q" type="search" value="${esc(S.q)}" placeholder="Search name, rule, book…"></label></div>
     ${chips.length ? `<div class="chips">${chips.join('')}<button class="link" data-set="${ds({ q: '', ...(R.name === 'guru' ? {} : { guru: '' }), book: '', style: '', dir: '', hold: '', verdict: '', min: '0', family: '' })}">Clear all</button></div>` : ''}</div>`;
 }
-const regionToggle = () => `<div class="join region" title="India: Nifty 50, Bank Nifty, Midcap 100 (NSE daily close) · US: S&amp;P 500, Nasdaq 100, Dow Jones (daily close)">${[['in', 'India'], ['us', 'US']].map(([k, t]) => `<button class="join-item ${S.region === k ? 'active' : ''} ${k === 'us' && !TICK_US ? 'off' : ''}" data-set="${ds({ region: k,basket:'', tk: '', from: '', to: '', market: 'india' })}" ${k === 'us' && !TICK_US ? 'disabled title="US engine (port 8091) is not running"' : ''}>${t}</button>`).join('')}</div>`;
+const regionToggle = (withAll = false) => `<div class="join region" title="India: Nifty 50, Bank Nifty, Midcap 100 (NSE daily close) · US: S&amp;P 500, Nasdaq 100, Dow Jones (daily close)${withAll ? ' · All: both markets together' : ''}">${[...(withAll && TICK_US ? [['all', 'All']] : []), ['in', 'India'], ['us', 'US']].map(([k, t]) => `<button class="join-item ${S.region === k ? 'active' : ''} ${k === 'us' && !TICK_US ? 'off' : ''}" data-set="${ds({ region: k,basket:'', tk: k === 'all' ? 'ALL' : '', from: '', to: '', market: 'india' })}" ${k === 'us' && !TICK_US ? 'disabled title="US engine (port 8091) is not running"' : ''}>${t}</button>`).join('')}</div>`;
 function resultsBar(rs) {
   const M = TABS[S.tab].metric;
   return `<div class="rbar" data-results-controls>
-    ${regionToggle()}<label class="dselect"><select data-key="sort" aria-label="Sort">${Object.entries(SORTS).map(([k, t]) => `<option value="${k}" ${S.sort === k ? 'selected' : ''}>Sort: ${k === 'primary' ? (M?.label || t) : t}</option>`).join('')}</select></label>
+    ${regionToggle(R.name === 'all')}<label class="dselect"><select data-key="sort" aria-label="Sort">${Object.entries(SORTS).map(([k, t]) => `<option value="${k}" ${S.sort === k ? 'selected' : ''}>Sort: ${k === 'primary' ? (M?.label || t) : t}</option>`).join('')}</select></label>
     <div class="join">${[['grid', 'Grid'], ['table', 'Table'], ['list', 'List']].map(([k, t]) => `<button class="join-item ${S.view === k ? 'active' : ''}" data-set="${ds({ view: k })}"><i class="ico ico-${k}"></i>${t}</button>`).join('')}</div></div>`;
 }
 function resultsHtml(rs, missing = []) {
@@ -1515,8 +1599,8 @@ async function viewList() {
   if (R.name === 'guru') {
     const g = GURU[R.id], api = GURUS_API.find(a => a.id === g.id), b = S.book && BOOK[S.book];
     head = `<nav class="crumbs"><a href="#/">Guru's</a><span>/</span>${b ? `<a href="${guruLink(g.id)}">${esc(g.name)}</a><span>/</span><span>${esc(b.title)}</span>` : `<span>${esc(g.name)}</span>`}</nav>
-      <section class="ghero"><div class="guilloche" aria-hidden="true">${GUILL}</div><div class="ghero-copy"><h1>${esc(b ? b.title : g.name)}</h1><p class="lede">${esc(b ? `${g.name} · ${bookYear(b)}` : api?.tagline || g.tagline || 'Reading library · objective strategy review pending')}</p><p class="gbook">${esc(b ? (g.id==='pristine'&&b.id==='p_tpm1'?readingSummary(g,b):(b.blurb || BOOK_BLURB[b.id] || '')) : g.books.filter(x => x.live).map(x => `${x.title} (${bookYear(x)})`).join(' · '))}</p></div><figure class="guru-portrait"><div class="portrait ${g.id==='ross'?'portrait-ross':''}">${pframe(g)}</div>${g.photoSource?`<figcaption class="photo-credit">Photo: <a href="${esc(g.photoSource)}" target="_blank" rel="noopener noreferrer">Trading Educators</a></figcaption>`:''}</figure></section>
-      <dl class="lstrip library-summary" data-author-counts><div><dt>Books</dt><dd>${b?1:libraryEntryCounts(g.id).total}</dd></div><div><dt>Strategies</dt><dd>${currentLibraryProgress().counts(b?[b.id]:g.books.map(x=>x.id)).strategies}</dd></div><div><dt>Backtested</dt><dd>${b?visibleBacktestCount(rs):currentLibraryProgress().counts(g.books.map(x=>x.id)).backtested}</dd></div></dl>${b?`<p class="library-count-note" data-book-result-context>Backtested counts the strategies shown below for ${esc(LABEL[S.tk]||S.tk)} and the selected period and filters. Strategies counts all catalogued entries in this book.</p>`:''}`;
+      <section class="ghero"><div class="guilloche" aria-hidden="true">${GUILL}</div><div class="ghero-copy"><h1>${esc(b ? b.title : g.name)}</h1><p class="lede">${esc(b ? `${g.name} · ${bookYear(b)}` : api?.tagline || g.tagline || 'Reading library · objective strategy review pending')}</p>${b ? `<p class="gbook">${esc(g.id==='pristine'&&b.id==='p_tpm1'?readingSummary(g,b):(b.blurb || BOOK_BLURB[b.id] || ''))}</p>` : authorProfileHtml(g.id)}</div><figure class="guru-portrait"><div class="portrait ${g.id==='ross'?'portrait-ross':''}">${pframe(g)}</div>${g.photoSource?`<figcaption class="photo-credit">Photo: <a href="${esc(g.photoSource)}" target="_blank" rel="noopener noreferrer">Trading Educators</a></figcaption>`:''}</figure></section>
+      <dl class="lstrip library-summary" data-author-counts><div><dt>Books</dt><dd>${b?1:libraryEntryCounts(g.id).total}</dd></div><div><dt>Strategies</dt><dd>${currentLibraryProgress().counts(b?[b.id]:g.books.map(x=>x.id)).strategies}</dd></div><div><dt>Backtested</dt><dd>${currentLibraryProgress().counts(b?[b.id]:g.books.map(x=>x.id)).backtested}</dd></div></dl>${b?`<p class="library-count-note" data-book-result-context>Backtested counts strategies with a result on any instrument, India and US together (same as the book card). All counts are strategies, never variants.</p>`:''}`;
   } else head = `<nav class="crumbs"><a href="#/">Guru's</a><span>/</span><span>All strategies</span></nav><section class="ahero"><h1>All strategies</h1><p class="lede">Explore the catalogued book rules on the selected India or US instrument. Available backtests and unavailable strategies are listed separately; book figures are reference claims.</p></section>`;
   if(S.from||S.to)head+=`<p class="rnote" data-list-period><b>Selected results period:</b> ${esc(S.from||'First available bar')} to ${esc(S.to||'Latest available bar')}. Top Sharpe results and linked backtests use this window.</p>`;
   if(R.name==='guru' && R.id==='chande' && S.book) head+=experimentNotice({guru:'chande'},null);
@@ -1528,7 +1612,9 @@ async function viewList() {
 }
 // A guru's books as covers; opening one shows its strategies.
 function rossResearchNotice() {
-  return `<section class="box" data-ross-review><div class="box-h">Source research — no implemented backtests <small>GPT’s source review · full corpus review in progress</small></div><p><b>Data missing:</b> actual traded futures history, contract identities and roll treatment, tick/point values and execution costs. Some methods also require intraday prices or volume. The loaded cash-index bars do not supply these inputs.</p><p><b>Rules unresolved:</b> entries require context or judgment, and exits, stops or sizing are not fully specified. More data alone does not produce a complete book-faithful strategy. Each method lists its own requirements below.</p><p>${esc(window.JoeRossEvidence.scope)}</p><p>${esc(window.JoeRossEvidence.finding)}</p><p>The original bounded review covered 125 PDF copies with 59 distinct files. The current source inventory below also includes later imports; neither file count establishes a count of distinct books. Sweet Chariot's originally supplied chapter is damaged. No verified Joe Ross US or Indian performance is published; open a reviewed method for its page references and precise blockers.</p></section>`;
+  const n=rossCounts();
+  const admitted=n.methods?`<p><b>Backtested:</b> ${n.methods} methods (${n.rules} rule sets) whose complete rules were read from the books and checked against independent trade ledgers: ZULU, AMBUSH, the Trading by the Book ledge, the TNT I simple count, Bollinger Method #2, and the 1-2-3 and Ross Hook with labelled standard exits. They run on indices, ETFs and stocks as a declared application (Ross traded futures); every convention not from the book is labelled on the strategy page. The source methods below stay held.</p>`:'';
+  return `<section class="box" data-ross-review><div class="box-h">${n.methods?`Joe Ross — ${n.methods} methods backtested, the rest held`:'Source research — no implemented backtests'} <small>Source review · full corpus read 22-23 Oct 2026</small></div>${admitted}<p><b>Held methods — data missing:</b> actual traded futures history, contract identities and roll treatment, tick/point values and execution costs. Some methods also require intraday prices or volume. The loaded cash-index bars do not supply these inputs.</p><p><b>Rules unresolved:</b> entries require context or judgment, and exits, stops or sizing are not fully specified. More data alone does not produce a complete book-faithful strategy. Each method lists its own requirements below.</p><p>${esc(window.JoeRossEvidence.scope)}</p><p>${esc(window.JoeRossEvidence.finding)}</p><p>The original bounded review covered 125 PDF copies with 59 distinct files. The current source inventory below also includes later imports; neither file count establishes a count of distinct books. Sweet Chariot's originally supplied chapter is damaged. Held methods publish no performance; open one for its page references and precise blockers.</p></section>`;
 }
 function sourceBookShelf(g) {
   const audit=BOOK_COVERAGE.authors[g.id];if(!audit)return '';
@@ -1538,11 +1624,11 @@ function sourceBookShelf(g) {
 }
 function authorBookCard(record){
   const b=record.book||record.source||record,link=libraryBookLink(record),progress=recordProgress(record),title=record.title||'Title not recorded';
-  const backtested=record.kind==='catalogue'?linkedBookBacktestCount(currentLibraryProgress().measured,record.id,link):0;
+  const backtested=record.kind==='catalogue'?progress.backtested||0:0; // India and US together, so book cards add up to the author total
   const year=record.year||'Edition unconfirmed',cloth=b.c||CLOTH[3],originals=record.kind==='catalogue'?bookSources(record.author||GURU[record.authorId],b):[b];
   return `<article class="bookcard" data-library-book="${esc(record.id)}"><a class="book-cover-link" href="${link}" aria-label="Open ${esc(title)}"><div class="cover3d ${b.live?'':'pv'}" style="--c:${esc(cloth)}"><div class="c3-spine"></div><div class="c3-face"><span class="c3-author">${esc(record.authorName)}</span><span class="c3-title">${esc(title)}</span><span class="c3-year">${esc(String(year))}</span></div></div></a>
     <div class="bc-body"><span class="olabel">${record.kind==='catalogue'?'Book / course':esc(b.entry_kind_label||'Reading source · identity review')} · ${esc(String(year))}</span><h3><a href="${link}">${esc(title)}</a></h3><span class="book-progress progress-${progress.status}" title="${esc(progress.reason)}">${progress.label}</span><p class="bc-blurb">${esc(record.kind==='catalogue'?readingSummary(record.author||GURU[record.authorId],b):b.summary||'Original reading source; content and mechanical rule review are pending.')}</p>${categoryTags(b,record.kind)}
-    ${record.kind==='catalogue'?`<dl class="bc-stats"><div><dt>Strategies</dt><dd>${progress.strategies}</dd></div><div><dt>Backtested</dt><dd>${backtested}</dd></div></dl><p class="book-progress-reason">Backtested for the data opened by this book link.</p>`:''}<p class="book-progress-reason">${esc(progress.reason)}</p>${sourcePdfLinks(originals)}<a class="dbtn ${backtested?'primary ':''}sm" href="${link}">${record.kind==='catalogue'&&b.live?'Open book & rules':'Open reading page'}</a></div></article>`;
+    ${record.kind==='catalogue'?`<dl class="bc-stats"><div><dt>Strategies</dt><dd>${progress.strategies}</dd></div><div><dt>Backtested</dt><dd>${backtested}</dd></div></dl><p class="book-progress-reason">Backtested counts India and US results together.</p>`:''}<p class="book-progress-reason">${esc(progress.reason)}</p>${sourcePdfLinks(originals)}<a class="dbtn ${backtested?'primary ':''}sm" href="${link}">${record.kind==='catalogue'&&b.live?'Open book & rules':'Open reading page'}</a></div></article>`;
 }
 async function bookShelf(g) {
   const records=VaultLibraryBrowser.search(authorLibraryRecords(g.id),{category:S.book_category,query:S.library_q,sort:S.library_sort});
@@ -1601,7 +1687,7 @@ function periodPanel(tk, d, issue = null) {
     <label class="dfield">From <input type="date" name="from" value="${f}" min="${first}" max="${last}" required></label>
     <label class="dfield">To <input type="date" name="to" value="${to}" min="${first}" max="${last}" required></label>
     <label class="dfield">Slippage <input type="number" name="slippage" value="${esc(S.slippage)}" min="0" max="500" step="0.1"> bps a side</label><label class="dfield">Rollover <input type="number" name="rollover" value="${esc(S.rollover)}" min="0" max="500" step="0.1"> bps per roll</label>
-    <span class="perr" id="perr"></span></form>${STRAT?varyingControls(STRAT.v,tk):R.id&&CAT.find(v=>v.id===R.id)?varyingControls(CAT.find(v=>v.id===R.id),tk):''}`;
+    <span class="perr" id="perr"></span></form>${d?.auto_start?`<p class="rnote" data-auto-start>${esc(d.auto_start)}</p>`:''}${d?.auto_end?`<p class="rnote" data-auto-end>${esc(d.auto_end)}</p>`:''}${d?.ruin?`<p class="rnote gate ruin" data-ruin><b>${esc(d.ruin.note)}</b></p>`:''}${STRAT?varyingControls(STRAT.v,tk):R.id&&CAT.find(v=>v.id===R.id)?varyingControls(CAT.find(v=>v.id===R.id),tk):''}`;
 }
 const apiError = (e, tk) => `${e} (${LABEL[tk]})`;
 const verdictText = (s) => `<b>${fx(s.trades,0)}</b> closed trades in ${fx(s.years,1)} years, in the market ${pct(s.exposure,0)} of the time. It compounded <b class="${cls(s.cagr)}">${pct(s.cagr,2,true)}</b> a year against <b>${pct(s.bh_cagr,2,true)}</b> for buy &amp; hold, with a worst drawdown of <b class="neg">${pct(s.max_dd,1)}</b> (buy &amp; hold ${pct(s.bh_max_dd,1)}). ${s.trades<30?'Too few trades to judge.':s.t_stat>=2?`The average trade is statistically significant (t = ${fx(s.t_stat)}).`:`The average trade is not statistically different from zero (t = ${fx(s.t_stat)}).`}`;
@@ -1619,8 +1705,6 @@ const BASKET_RUNS=new Map();
 async function viewBasket(v,tk,crumbs,switches,selection,api,generation){
   if(R.optim)return withheldStrategy(v,tk,crumbs,switches,{status:'not_testable',note:'Basket parameter optimization is not yet admitted. Open the basket backtest page or choose an individual Stock for existing parameter research.'});
   if(!instrumentControls(v.instrument_policy,v.id,v.book).basket)return withheldStrategy(v,tk,crumbs,switches,{status:'needs_data',note:instrumentControls(v.instrument_policy,v.id,v.book).note||'Basket execution is unavailable for this source method.'});
-  const inventory=BASKETS.find(b=>b.id===selection.basket),counts=inventory?.source_counts;
-  if(counts&&Number.isInteger(counts.expected)&&counts.expected>inventory.symbols.length)return withheldStrategy(v,tk,crumbs,switches,{status:'needs_data',note:`This source list has ${counts.expected} constituents but only ${inventory.symbols.length} admitted price series. The complete basket is withheld; missing stocks are not silently excluded. ${inventory.note||''}`});
   const query=new URLSearchParams({id:v.id,basket:selection.basket,from:selection.from,to:selection.to,cost:'0',...VaultUI.costState(selection),max_positions:selection.max_positions,membership:selection.membership,...Object.fromEntries(Object.entries(decodeP(selection.p)).map(([k,value])=>['p.'+k,value]))});
   const key=api+'|'+query.toString();let d=BASKET_RUNS.get(key);
   try{
@@ -1630,16 +1714,19 @@ async function viewBasket(v,tk,crumbs,switches,selection,api,generation){
   if(d?.status!=='ready'||!d.stats||!d.dates?.length)return withheldStrategy(v,tk,crumbs,switches,{status:d?.status||'unavailable',note:d?.blocked||d?.note||'No complete admitted basket result is available.'});
   const ruleSchema=await optSchema(api);if(generation!==busy)return '';
   const ruleDefaults=Object.fromEntries((Array.isArray(ruleSchema[v.id])?ruleSchema[v.id]:[]).filter(row=>typeof row.key==='string'&&Number.isFinite(row.def)).map(row=>[row.key,row.def]));
-  const s=d.stats,p=d.portfolio||{},name=BASKETS.find(b=>b.id===selection.basket)?.name||selection.basket;
+  const s=d.stats,p=d.portfolio||{},members=d.member_report,name=BASKETS.find(b=>b.id===selection.basket)?.name||selection.basket,runLabel=members?`${name} · ${members.used_members} members`:name;
   const tiles=[['Net Profit',s.net_profit,x=>pct(x,2,true),'Closed allocated return',cls(s.net_profit)],['Avg net pnl',s.avg_net_pnl,x=>pct(x,2,true),'Per closed stock trade',cls(s.avg_net_pnl)],['No. of trades',s.trades,x=>fx(x,0),'Accepted closed positions'],['Win Rate',s.win_rate,x=>pct(x,1),'Closed trades'],['Expectancy',s.expectancy_ratio,x=>fx(x),'Per unit of average loss'],['MaxDD',s.max_dd,x=>pct(x,2),'Portfolio equity decline','neg'],['Sharpe',s.sharpe,x=>fx(x),'Portfolio daily returns · rf = 0']];
-  STRAT={d,v,tk:'Basket · '+name,region:selection.region,tiles,px:null,display:{value:s.net_profit,reportMode:'Equal-slot closed portfolio contribution',description:d.accounting_basis,unavailableReason:null}};
-  RULE_VISUAL=makeRuleVisualModel({strategy:v,run:d,parameters:{...ruleDefaults,...decodeP(selection.p)},symbol:name,basketPriceApi:api,sourceTickers:selection.region==='us'?TICK_ALL_US:TICK_ALL_IN});
-  const coverage=`<details class="box" data-basket-coverage><summary>Constituent coverage · ${esc(p.source_members)} source members</summary><div class="tlog"><table class="tbl"><thead><tr><th>Symbol</th><th>Source first</th><th>Source last</th><th>Status</th><th>Coverage notes</th></tr></thead><tbody>${(d.coverage||[]).map(c=>`<tr><td>${esc(c.symbol)}</td><td>${esc(c.first)}</td><td>${esc(c.last)}</td><td>${esc(c.status)}</td><td>${esc(c.note)}</td></tr>`).join('')}</tbody></table></div></details>`;
+  STRAT={d,v,tk:'Basket · '+runLabel,region:selection.region,tiles,px:null,display:{value:s.net_profit,reportMode:'Equal-slot closed portfolio contribution',description:d.accounting_basis,unavailableReason:null}};
+  STRAT.settings=settingsModel(v,d,selection,{basket:true,reportMode:'Equal-slot closed portfolio contribution'});
+  RULE_VISUAL=makeRuleVisualModel({strategy:v,run:d,parameters:{...ruleDefaults,...decodeP(selection.p)},symbol:runLabel,basketPriceApi:api,sourceTickers:selection.region==='us'?TICK_ALL_US:TICK_ALL_IN});
+  const changed=(d.coverage||[]).filter(c=>c.status!=='ready');
+  const memberSummary=members?`${name}: ${members.summary}`:`${name}: ${p.source_members} source members`;
+  const coverage=`<p class="rnote" data-basket-member-summary>${esc(memberSummary)} ${esc(members?.basis||'')}</p>${changed.length?`<details class="box" data-basket-coverage><summary>Adjusted and excluded members · ${esc(changed.length)}</summary><div class="tlog" tabindex="0" role="region" aria-label="Member dates and data reasons"><table class="tbl"><thead><tr><th>Symbol</th><th>Actual source dates</th><th>Dates used</th><th>Status</th><th>Reason</th></tr></thead><tbody>${changed.map(c=>`<tr><td>${esc(c.symbol)}</td><td>${c.first&&c.last?`${esc(c.first)} to ${esc(c.last)}`:'No admitted price file'}</td><td>${c.used_from&&c.used_to?`${esc(c.used_from)} to ${esc(c.used_to)}`:'Excluded — no trading window'}</td><td>${esc(c.status)}</td><td>${esc(c.note)}</td></tr>`).join('')}</tbody></table></div></details>`:''}`;
   const benchmark=d.benchmark_symbol||(selection.region==='us'?'SPX':'NIFTY 50');
   const benchmarkPrices=await ohlc(benchmark).catch(()=>null);if(generation!==busy)return '';
-  return `${crumbs}<section class="box" data-basket-result><div class="st-head"><h1 class="st">${esc(familyDisplayName(v))}</h1>${VaultUI.toolbar()}</div>${gateNotice(v,tk)}${switches}${periodPanel(tk,d)}${optimBanner(v)}<p class="rnote" data-results-provenance><b>Computed basket application · ${esc(name)} · ${selection.region==='us'?'US':'India'}.</b> ${calculatedPeriodHTML(d)}${esc((d.notices||[]).join(' '))}</p><div class="metrics">${tiles.map(([k,x,f,i,c],n)=>`<div class="metric"><span>${k}</span><b class="${c||''}" data-tile="${n}">${f(x)}</b><i>${i}</i></div>`).join('')}</div><p class="rnote" data-return-definition><b>Basket Net Profit = sum of accepted closed-trade returns × their initial-equity slot allocations.</b> Avg net pnl is the source-unit average per stock trade. Avg × trade count gives an unallocated return sum, not the basket return.</p><div class="portfolio-basis"><b>${esc(selection.max_positions)} simultaneous positions · 1/${esc(selection.max_positions)} per full position.</b> ${esc(p.allocation_basis)}<br>${esc(p.ranking)}. ${esc(p.signal_mode)}.<br>${esc(p.timing_basis)}<br>${esc(p.accepted_positions)} accepted positions · ${esc(p.rejected_capacity)} capacity rejections · ${esc(p.rejected_cash)} cash rejections. ${esc(p.gross_basis)}</div></section>
+  return `${crumbs}<section class="box" data-basket-result><div class="st-head"><h1 class="st">${esc(familyDisplayName(v))}</h1>${VaultUI.toolbar()}</div>${gateNotice(v,tk)}${switches}${periodPanel(tk,d)}${optimBanner(v)}<p class="rnote" data-results-provenance><b>Computed basket application · ${esc(runLabel)} · ${selection.region==='us'?'US':'India'}.</b> ${calculatedPeriodHTML(d)}${esc((d.notices||[]).join(' '))}</p>${p.timing_disclosure?`<p class="rnote" data-basket-timing-disclosure>${esc(p.timing_disclosure)}</p>`:''}${p.funding_disclosure?`<p class="rnote" data-basket-funding-disclosure>${esc(p.funding_disclosure)}</p>`:''}<div class="metrics">${tiles.map(([k,x,f,i,c],n)=>`<div class="metric"><span>${k}</span><b class="${c||''}" data-tile="${n}">${f(x)}</b><i>${i}</i></div>`).join('')}</div><p class="rnote" data-return-definition><b>Basket Net Profit = sum of accepted closed-trade returns × their initial-equity slot allocations.</b> Avg net pnl is the source-unit average per stock trade. Avg × trade count gives an unallocated return sum, not the basket return.</p><div class="portfolio-basis"><b>${esc(selection.max_positions)} simultaneous positions · 1/${esc(selection.max_positions)} per full position.</b> ${esc(p.allocation_basis)}<br>${esc(p.ranking)}. ${esc(p.signal_mode)}.<br>${esc(p.timing_basis)}<br>${esc(p.accepted_positions)} accepted positions · ${esc(p.rejected_capacity)} capacity rejections · ${esc(p.rejected_cash)} cash rejections. ${esc(p.gross_basis)}</div></section>
   <section class="box"><div class="box-h">Rules <span data-react-slot="visual-rules"></span><small>Source stock rule with a declared equal-slot portfolio application</small></div>${rulesPanel(v)}</section>${coverage}
-  <section class="box"><div class="box-h">Basket equity <span class="legend"><span><i class="sw-line" style="background:var(--blue)"></i>Portfolio</span><label class="dcheck"><input type="checkbox" id="cmp">Compare with ${esc(LABEL[benchmark]||benchmark)} buy &amp; hold</label><label class="dcheck"><input type="checkbox" id="logs" checked>Log scale</label></span></div><div class="chart-tools"><button class="dbtn sm" data-chart-snapshot="c-eq">Download PNG</button><button class="dbtn sm" data-report-export="equity">Download Excel</button></div><div class="lwc" id="c-eq"></div><div id="equity-navigator" class="equity-navigator"><div class="year-shortcuts"><button class="dbtn sm" data-equity-year="all">All years</button>${[...new Set(d.dates.map(date=>date.slice(0,4)))].map(year=>`<button class="dbtn sm" data-equity-year="${year}">${year}</button>`).join('')}</div><label>Start <input type="range" data-range="start" min="0" aria-label="Equity range start"></label><label>End <input type="range" data-range="end" min="0" aria-label="Equity range end"></label><output></output></div><div class="cap">Cash plus actual simultaneous position marks · ${d.equity.at(-1).toFixed(2)}× final normalized equity, including open marks</div></section>
+  <section class="box"><div class="box-h">Basket equity <span class="legend"><span><i class="sw-line" style="background:var(--blue)"></i>Portfolio</span><label class="dcheck"><input type="checkbox" id="cmp">Compare with ${esc(LABEL[benchmark]||benchmark)} buy &amp; hold</label><label class="dcheck"><input type="checkbox" id="logs" checked>Log scale</label></span></div><div class="chart-tools"><button class="dbtn sm" data-chart-snapshot="c-eq">Download PNG</button><button class="dbtn sm" data-report-export="equity">Download Excel</button></div><div class="lwc" id="c-eq"></div><div id="equity-navigator" class="range-brush" role="group" aria-label="Visible period of the equity chart"><svg class="rb-spark" viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true"><polyline></polyline></svg><div class="rb-win" tabindex="0" role="slider" aria-label="Visible period: drag to move, drag the edges to resize, double-click to show all"><span class="rb-h" data-h="l" aria-hidden="true"></span><span class="rb-h" data-h="r" aria-hidden="true"></span></div><output class="rb-out"></output></div><div class="cap">Cash plus actual simultaneous position marks · ${d.equity.at(-1).toFixed(2)}× final normalized equity, including open marks</div></section>
   <div class="two"><section class="box"><div class="box-h">Drawdown <small>worst ${pct(s.max_dd,1)}</small></div><div class="chart-tools"><button class="dbtn sm" data-chart-snapshot="c-dd">Download PNG</button></div><div class="bkc" id="c-dd"></div></section><section class="box"><div class="box-h">Calendar-year returns</div><div class="chart-tools"><button class="dbtn sm" data-chart-snapshot="c-yr">Download PNG</button></div><div class="bkc" id="c-yr"></div></section></div>
   ${VaultUI.benchmarkHTML(d,benchmark,benchmarkPrices)}${VaultUI.detailHTML(d)}<section class="box"><div class="box-h">Monthly returns (%)</div><div class="chart-tools"><button class="dbtn sm" data-report-export="monthly">Download Excel</button></div><div id="heatbox">${heatTable(d)}</div><p class="rnote">Calendar returns use the basket equity including held-position marks. Avg/Total is the arithmetic mean of displayed calendar-year returns.</p></section>${VaultUI.tradeHTML(d,STRAT.tk)}`;
 }
@@ -1648,7 +1735,7 @@ function rulesPanel(v) {
   const sec = { F: [], E: [], A: [], X: [] }; (v.rules || []).forEach(x => { const [t, ...r] = x.split('|'); (sec[t] || sec.E).push(r.join('|')); });
   const act = r => /^(Buy|Short|Sell|Cover|Next day|No other signal|Once|After|Stop)/.test(r);
   const col = (t, sub, c, items) => items.length ? `<div class="rcol"><h4><i style="background:${c}"></i>${t}</h4><p class="rsub">${sub}</p><ul>${items.map(r => `<li class="${act(r) ? 'act' : ''}">${esc(r)}</li>`).join('')}</ul></div>` : '';
-  return `<div class="rgrid">${col('Conditions', 'All must be true (trend, liquidity, volatility filters)', 'var(--ink)', sec.F)}${col('Entry', v.guru==='ross'?'Source entry conditions; unresolved choices remain explicit':'When all of these happen on a bar’s close', 'var(--blue)', sec.E)}${col('Scale-in', 'While the trade is open', '#8b93a1', sec.A)}${col('Exit', v.guru==='ross'?'Source management; a complete automatic exit is not assumed':sec.X.length > 1 ? 'Whichever happens first' : 'How the trade is closed', 'var(--red)', sec.X)}</div>${v.notes ? `<p class="rnote">${esc(v.notes)}</p>` : ''}`;
+  return `<div class="rgrid">${col('Conditions', 'All must be true (trend, liquidity, volatility filters)', 'var(--ink)', sec.F)}${col('Entry', v.guru==='ross'&&v.status!=='live'?'Source entry conditions; unresolved choices remain explicit':'When all of these happen on a bar’s close', 'var(--blue)', sec.E)}${col('Scale-in', 'While the trade is open', '#8b93a1', sec.A)}${col('Exit', v.guru==='ross'&&v.status!=='live'?'Source management; a complete automatic exit is not assumed':sec.X.length > 1 ? 'Whichever happens first' : 'How the trade is closed', 'var(--red)', sec.X)}</div>${v.notes ? `<p class="rnote">${esc(v.notes)}</p>` : ''}`;
 }
 async function viewPristineStrategy(v,tk,crumbs,selection,runApi,generation,optimization){
  const stocks=TICK_ALL_US.flatMap(row=>pristineInstrumentContext(row.ticker,'us',[row])?[{ticker:row.ticker,symbol:row.symbol}]:[]);
@@ -1708,6 +1795,7 @@ async function viewStrategy() {
   const px=optimization?null:(await chartRequest)||d.ohlc||await ohlc(tk);
   if(generation!==busy)return '';
   STRAT = { d, v, tk,region:selection.region, tiles, px, display, account,unit, sourceView:account?sourceAccountView(account):null, indicatorParameters:parameters };
+  STRAT.settings=settingsModel(v,d,selection,{reportMode:(selection.report_mode==='compound'?'Compounding':'Fixed quantity')+' · '+display.reportMode,fixedNote:account||unit?'Only this reviewed configuration is admitted; other settings need their own review, so they cannot be changed here.':''});
   RULE_VISUAL=makeRuleVisualModel({strategy:{...v,family_name:familyDisplayName(v)},run:d,prices:px,ticker:tk,parameters:STRAT.indicatorParameters,symbol:LABEL[tk]||tk});
   STRAT.indicators=buildStrategyIndicators({id:v.id,book:v.book,ticker:tk,prices:px,fullHistory:px?.full_history===true,parameters:STRAT.indicatorParameters,sourceReport:d});
   if(R.optim) return `${crumbs}<section class="box"><div class="st-head"><h1 class="st">Optimization · ${esc(familyDisplayName(v))}</h1><a class="dbtn sm back-btn" href="${href('/s/'+encodeURIComponent(v.id),{...S})}">${VaultUI.ICON.back} Back to strategy</a></div><p class="rnote">${esc(LABEL[tk])} · ${esc(v.name)}. ${unit?'Only the fixed DEMA16/8 and raw-Buy clock1 configuration is reviewed. Alternative settings and optimizer searches do not inherit this admission.':account?sourceAccountCopy(account).bandy?'Only the fixed reviewed method and allocation are available. Other parameter settings require their own review; closed-display modes cannot resize the cash account.':'Only the fixed reviewed source/account configuration is available. Other indicator, stop and risk settings remain held; closed-display modes cannot resize the account.':'Parameter searches are research; selected settings and before/after displays do not establish an untouched holdout. Net profit sums closed-trade net returns; CAGR and risk measures use the separate compounded model.'}</p>${gateNotice(v,tk)}${experimentNotice(v,d)}${switches}${periodPanel(tk,d)}${optimBanner(v)}${account?'<div data-react-slot="source-account-notice"></div>':unit?'<div data-react-slot="unit-exposure-notice"></div>':''}</section>${unit?'<section class="box"><div class="box-h">Fixed reviewed index configuration</div><p class="rnote">DEMA first length16 / second length8 / Bars since raw Buy1. Only this source-reviewed configuration is admitted; changed parameters require separate review. No optimization or book-performance claim is made.</p></section>':account?sourceAccountCopy(account).bandy?`<section class="box"><div class="box-h">Fixed reviewed cash-account configuration</div><p class="rnote">${esc(v.name)}. ${esc(sourceAccountCopy(account).sizing)} The account allocation stays fixed; new configurations require their own review.</p></section>`:'<section class="box"><div class="box-h">Fixed protected configuration</div><p class="rnote">EMA13 / MACD12-26-9 / weekly EMA26 / SafeZone10-2 / source2%-6% risk. The account controller stays fixed; new configurations require their own review.</p></section>':await optimSection(v,tk,d,true)}`;
@@ -1715,11 +1803,11 @@ async function viewStrategy() {
     <section class="box"><div class="st-head"><h1 class="st">${esc(familyDisplayName(v))}</h1>${VaultUI.toolbar()}</div>
       ${gateNotice(v,tk)}${experimentNotice(v,d)}${switches}${periodPanel(tk, d)}${optimBanner(v)}${account?'<div data-react-slot="source-account-notice"></div>':unit?'<div data-react-slot="unit-exposure-notice"></div>':''}${v.variant ? `<p class="vname">Variant: <b>${esc(v.variant)}</b></p>` : ''}
       <div class="metrics">${tiles.map(([k, x, f, i, c], n) => `<div class="metric"><span>${k}</span><b class="${c || ''}" data-tile="${n}">${f(x)}</b><i>${i}</i></div>`).join('')}</div>
-      <p class="rnote" data-return-definition><b>${unit?(selection.report_mode==='compound'?'Compounded closed model = engine net equity at the last closed exit minus1; terminal-open marks are excluded.':'Closed return sum = sum of audited closed net returns = unrounded Avg net pnl × No. of trades.'):account?(selection.report_mode==='compound'?'Hypothetical closed compounding = product of (1 + each accepted weighted closed net return) − 1.':'Closed return sum = unrounded weighted Avg net pnl × No. of trades.'):selection.report_mode==='compound'?'Net Profit = product of (1 + each closed-trade net return) − 1.':'Net Profit = sum of closed-trade net returns = unrounded Avg net pnl × No. of trades.'}</b> ${esc(display.unavailableReason||display.description)} ${unit?esc(UNIT_CLOSED_BASIS):account?esc(sourceAccountCopy(account).curveNote):'The separately labelled compounded chart multiplies sequential return factors and includes open marks; it is a normalized research model, not a sized basket portfolio.'}</p><p class="rnote" data-results-provenance><b>Computed backtest · ${esc(LABEL[tk])} · ${isUS()?'US':'India'}.</b> ${calculatedPeriodHTML(d)}Results use loaded local market data and the selected settings. ${unit?'SPX uses the source cash-index illustration; NIFTY 50 is the separately declared adaptation. Book performance and native AmiBroker parity are not reproduced.':tk.startsWith('basket:')?'These are independent cash-stock results from the selected source-listed universe. Historical constituent membership, source adjustment conventions and any disclosed session gaps are unverified. Current & Past collections do not establish membership on each trade date. Cash stocks are not dated futures contracts.': 'This index/ETF application is separate from the book’s original instruments, stock universe and published performance.'} Rule interpretation and source differences are described below.</p></section>
+      </section>
     <section class="box"><div class="box-h">Rules <span data-react-slot="visual-rules"></span><small>${v.guru==='chande'?'Source interpretation and declared adaptation':'implemented interpretation of the'} ${v.book === 'stc9' ? 'course' : 'book'}, ${srcOf(v)}</small></div>${rulesPanel(v)}</section>
     <section class="box" data-book-reference><div class="box-h">Book-reported figures <small>reference only · separate from the computed backtest</small></div>${TRUST.bookReference(cl)}</section>
     <section class="box"><div class="box-h">${unit?'Canonical unit-exposure model':account?sourceAccountCopy(account).accountEquity:'Compounded return model'} <span class="legend"><span><i class="sw-line" style="background:var(--blue)"></i>${account?'Account':'Strategy'}</span><label class="dcheck"><input type="checkbox" id="cmp"> <i class="sw-line" style="background:var(--bh)"></i>Compare with buy &amp; hold</label><label class="dcheck"><input type="checkbox" id="logs" checked> Log scale</label></span></div>
-      <div class="chart-tools"><button class="dbtn sm" data-chart-snapshot="c-eq">Download PNG</button><button class="dbtn sm" data-report-export="equity">Download Excel</button></div><div class="lwc" id="c-eq"></div><div id="equity-navigator" class="equity-navigator"><div class="year-shortcuts"><button class="dbtn sm" data-equity-year="all">All years</button>${[...new Set(d.dates.map(x=>x.slice(0,4)))].map(y=>`<button class="dbtn sm" data-equity-year="${y}">${y}</button>`).join('')}</div><label>Start <input type="range" data-range="start" min="0" aria-label="Equity range start"></label><label>End <input type="range" data-range="end" min="0" aria-label="Equity range end"></label><output></output></div><div class="cap">${account?'Actual source-account return '+pct(s.total_return,2,true)+' · including open marks · account':'Strategy'} ${d.equity[d.equity.length - 1].toFixed(2)}× · buy &amp; hold ${d.bh[d.bh.length - 1].toFixed(2)}× · drag to zoom, hover for values</div></section>
+      <div class="chart-tools"><button class="dbtn sm" data-chart-snapshot="c-eq">Download PNG</button><button class="dbtn sm" data-report-export="equity">Download Excel</button></div><div class="lwc" id="c-eq"></div><div id="equity-navigator" class="range-brush" role="group" aria-label="Visible period of the equity chart"><svg class="rb-spark" viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true"><polyline></polyline></svg><div class="rb-win" tabindex="0" role="slider" aria-label="Visible period: drag to move, drag the edges to resize, double-click to show all"><span class="rb-h" data-h="l" aria-hidden="true"></span><span class="rb-h" data-h="r" aria-hidden="true"></span></div><output class="rb-out"></output></div><div class="cap">${account?'Actual source-account return '+pct(s.total_return,2,true)+' · including open marks · account':'Strategy'} ${d.equity[d.equity.length - 1].toFixed(2)}× · buy &amp; hold ${d.bh[d.bh.length - 1].toFixed(2)}× · drag to zoom, hover for values</div></section>
     <section class="box"><div class="box-h">Price &amp; signals · ${esc(LABEL[tk])} <span class="legend"><span><i class="mk up"></i>Buy / cover</span><span><i class="mk ex"></i>Sell / short</span><span><i class="zk win"></i>Winning trade</span><span><i class="zk loss"></i>${unit?'Non-winning closed trade':'Losing trade'}</span><span><i class="zk open"></i>Open</span><span class="muted">shaded from entry day to exit day · zoom in for each return</span>
         <span class="join sm">${[["D", "Daily"], ["W", "Weekly"], ["M", "Monthly"]].map(([k, t]) => `<button class="join-item ${TF === k ? "active" : ""}" data-tf="${k}">${t}</button>`).join("")}</span><span class="join sm"><button class="join-item active" id="px3">Last 3 years</button><button class="join-item" id="px1">Last year</button><button class="join-item" id="pxall">Show all</button></span></span></div>
       <div class="pxread" id="pxread">Hover the chart: open, high, low, close and the trade you were in.</div><div class="chart-tools"><button class="dbtn sm" data-chart-snapshot="c-px">Download PNG</button></div><div class="lwc px" id="c-px"></div>${indicatorControlsHTML(STRAT.indicators,true)}</section>
@@ -1943,7 +2031,7 @@ async function render() {
     const focus=document.activeElement?.id,pos=document.activeElement?.selectionStart;
     pendingFocus={id:focus,pos};
     const status=custom?.label||(R.name==='strategy'?'Strategy':`${isUS()?'US':'India'} · ${S.tk==='ALL'?'all indices':LABEL[S.tk]||S.tk} · ${TABS[S.tab]?.name||'Research'}`);
-    vaultStore.commit(ticket,{html,home,reading,route,state:{...S},status,strategyRules:route.name==='strategy'?RULE_VISUAL:null,strategyAccount:route.name==='strategy'||route.name==='optimization'?STRAT?.sourceView??null:null,strategyPristine:route.name==='strategy'||route.name==='optimization'?STRAT?.pristine??null:null,strategyUnit:route.name==='strategy'||route.name==='optimization'?STRAT?.unit??null:null});
+    vaultStore.commit(ticket,{html,home,reading,route,state:{...S},status,strategyRules:route.name==='strategy'?RULE_VISUAL:null,strategyAccount:route.name==='strategy'||route.name==='optimization'?STRAT?.sourceView??null:null,strategyPristine:route.name==='strategy'||route.name==='optimization'?STRAT?.pristine??null:null,strategyUnit:route.name==='strategy'||route.name==='optimization'?STRAT?.unit??null:null,strategySettings:route.name==='strategy'?STRAT?.settings??null:null});
   }catch(error){if(my===busy)vaultStore.fail(ticket,error.message||'Research data is unavailable.');}
 }
 let pendingFocus=null;
@@ -1979,7 +2067,7 @@ document.addEventListener('click', e => {
   if (d.set != null) return setState(Object.fromEntries(new URLSearchParams(d.set)));
   if (d.fam) return setState({ family: d.fam, mode: 'variants' });
   if (d.sort) return setState({ sort: d.sort });
-  if (d.book) return go('/guru/' + BOOK[d.book].guru.id, {view:'grid',book:d.book,tk:S.tk,basket:S.basket,from:S.from,to:S.to, ...(BOOK[d.book].guru.id==='ross'?{tab:'awaiting'}:{}) });
+  if (d.book) return go('/guru/' + BOOK[d.book].guru.id, {view:'grid',book:d.book,tk:S.tk,basket:S.basket,from:S.from,to:S.to, ...(BOOK[d.book].guru.id==='ross'&&!rossBookLive(d.book)?{tab:'awaiting'}:{}) });
   if (d.guru) return go('/guru/'+d.guru,{view:'grid',tk:S.tk,basket:S.basket,from:S.from,to:S.to});
   if (d.guruStrats) return go('/guru/'+d.guruStrats,{view:'grid',tk:S.tk,basket:S.basket,from:S.from,to:S.to});
 });
@@ -2009,7 +2097,7 @@ async function initializeRuntime(account) {
     try { const u = await (await fetch(API_US + '/tickers')).json(); TICK_ALL_US=u;u.forEach(t=>{if(!LABEL[t.ticker])LABEL[t.ticker]=t.symbol||t.ticker.split(':').at(-1);}); TICK_US = US_INDICES.map(k => u.find(t => t.ticker === k)).filter(Boolean); if (!TICK_US.length) TICK_US = null; } catch (e) { TICK_US = null; }
     ALLCAT = cat.map((v, i) => ({ ...v, ord: i, book: v.book || 'stc9', style: v.group.split(' · ')[0] })); CAT = marketCat();
     Object.values(BOOK).forEach(b => { if (CAT.some(v => v.book === b.id)) b.live = true; });
-    const metadataFiles=['baskets.json','baskets-us.json','book-coverage.json','pristine-reading-index.json','book-file-index.json','book-categories.json','research-share-library.json','tharp-source-review.json','library-progress.json'];
+    const metadataFiles=['baskets.json','baskets-us.json','book-coverage.json','pristine-reading-index.json','book-file-index.json','book-categories.json','research-share-library.json','tharp-source-review.json','library-progress.json','research-share-review.json'];
     const metadata=await Promise.all(metadataFiles.map(async file=>{try{const response=await fetch('data/'+file);return response.ok?await response.json():null;}catch{return null;}}));
     for(const [offset,region] of [[0,'in'],[1,'us']]){try{const data=metadata[offset];if(data){const pool=region==='us'?TICK_ALL_US:TICK_ALL_IN,keys=new Set(pool.map(t=>t.ticker)),items=(Array.isArray(data)?data:data.baskets||[]).map(b=>({...b,symbols:(b.symbols||[]).filter(key=>keys.has(key))}));if(region==='us')BASKETS_US=items;else BASKETS_IN=items;}}catch{}}
     if(metadata[2])BOOK_COVERAGE=metadata[2];
@@ -2022,6 +2110,7 @@ async function initializeRuntime(account) {
       LIBRARY_PROGRESS=metadata[8];
       for(const link of LIBRARY_PROGRESS.approved_source_book_links||[]){const b=BOOK[link.book_id];if(b&&b.guru.id===link.author_id&&link.evidence&&typeof link.source_id==='string')b.sourceIds=[...new Set([...(b.sourceIds||[]),link.source_id])];}
     }
+    try{if(metadata[9])applyShareReview(metadata[9]);}catch{}
     finalizeReadingIndex();
     readRoute(); render();
   } catch (error) { vaultStore.fail(vaultStore.begin('/'),error.message||'Could not reach the calculation engine.'); }
@@ -2070,7 +2159,7 @@ async function homeModel(){
  const searchAuthors=VaultLibraryBrowser.matchingAuthors(scopeAuthors,allRecords,'',S.book_category).map(g=>({id:g.id,curated:CURATED_AUTHOR_IDS.has(g.id),name:['?','unknown','anonymous'].includes(g.name?.trim().toLowerCase())?'Source credit awaiting review':g.name,photo:photoOf(g),initials:initials(g.name),href:guruLink(g.id)}));
  const indices=S.region==='us'?TICK_US:TICK_IN;
  const enabled=ALLCAT.filter(variant=>variant.status==='live');
- return {identifiedAuthors:identifiedAuthorCount,strategiesFound:progress.strategiesFound,backtestedStrategies:progress.backtestedStrategies,progressCurrent:progress.current,summaryIssues:summaryIssues(h.tk,S.from||'',S.to||''),authorStats:scoped,market:libraryMarket(S),implementedMethods:new Set(enabled.map(variant=>variant.book+':'+variant.family)).size,enabledVariants:enabled.length,implementedBooks:new Set(enabled.map(variant=>variant.book)).size,authors:scopeAuthorIds.size,curatedAuthors:CURATED_AUTHOR_IDS.size,scope:S.library_scope,inventoryGroups:LIB.length,inventoryEntries:inventoryRecords.length,entries:allRecords.length,families:h.tested,symbol:LABEL[h.tk]||h.tk,symbolCount:TICKERS.length,basket:!!S.basket,authorCards,searchAuthors,bookCards,page:{page,pages,total,key:'library_page',label:S.library_view==='books'?'books':'authors'},query:S.library_q,category:S.book_category,view:S.library_view,etfs:etfs.map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),indices:(indices||[]).map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),baskets:BASKETS.map(b=>({id:b.id,name:b.name,symbols:b.symbols||[]})),symbols:TICKERS.map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),usAvailable:!!TICK_US,guilloche:GUILL,connorsLink:guruLink('connors'),strategiesLink:href('/strategies',{tk:S.tk,basket:S.basket})};
+ return {listedPeople:list.filter(g=>g.person).length,identifiedAuthors:identifiedAuthorCount,libraryTotals:libraryTotals(LIB.flatMap(g=>g.books.map(b=>b.id))),strategiesFound:progress.strategiesFound,backtestedStrategies:progress.backtestedStrategies,progressCurrent:progress.current,summaryIssues:summaryIssues(h.tk,S.from||'',S.to||''),authorStats:scoped,market:libraryMarket(S),implementedMethods:new Set(enabled.map(variant=>variant.book+':'+variant.family)).size,enabledVariants:enabled.length,implementedBooks:new Set(enabled.map(variant=>variant.book)).size,authors:scopeAuthorIds.size,curatedAuthors:CURATED_AUTHOR_IDS.size,scope:S.library_scope,inventoryGroups:LIB.length,inventoryEntries:inventoryRecords.length,entries:allRecords.length,families:h.tested,symbol:LABEL[h.tk]||h.tk,symbolCount:TICKERS.length,basket:!!S.basket,authorCards,searchAuthors,bookCards,page:{page,pages,total,key:'library_page',label:S.library_view==='books'?'books':'authors'},query:S.library_q,category:S.book_category,view:S.library_view,etfs:etfs.map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),indices:(indices||[]).map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),baskets:BASKETS.map(b=>({id:b.id,name:b.name,symbols:b.symbols||[]})),symbols:TICKERS.map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),usAvailable:!!TICK_US,guilloche:GUILL,connorsLink:guruLink('connors'),strategiesLink:href('/strategies',{tk:S.tk,basket:S.basket})};
 }
 let startup;
 window.VaultRuntime={

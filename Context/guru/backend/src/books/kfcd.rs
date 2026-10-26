@@ -11,6 +11,10 @@
 //! data; trades entered before `from` are dropped. No bar after `to` is read.
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
+/// Admitted 2026-10-24 (authors/kaufman/admission/SOURCE-CONTRACT.md): independent ledgers, US and India, 0 mismatches.
+pub const REVIEWED: &[&str] = &["kfcd_fc_orson", "kfcd_high_volume", "kfcd_low_volume", "kfcd_volume_filters"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
+
 const BOOK: &str = "kfcd";
 
 pub fn catalogue() -> Vec<StrategyDef> {

@@ -16,7 +16,21 @@ use crate::connors::{claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Tra
 
 pub const BOOK: &str = "lwlts";
 
-const SP: &str = "Book: one S&P 500 futures contract, CSI back-adjusted continuous data, $250/point as printed in every report header; dollar amounts here are converted at that rate (p.pt_usd). Run on any index (instrument swap only, same points). SPX cash opens before ~1999 often equal the prior close (stale), so gap/open rules on SPX before 1999 differ from the futures; SPY (1993-) has traded opens.";
+/// Larry Williams block: rules admitted after the 23 Oct 2026 reading and independent ledgers
+/// (authors/lwilliams/admission/SOURCE-CONTRACT.md). SPX_POINTS = dollar stops/targets kept as S&P points: actual SPX only.
+pub const REVIEWED: &[&str] = &["lwlts_mon_gap_t500", "lwlts_mon_gap_t1000", "lwlts_mon_gap_close", "lwlts_mon_gap_next_close", "lwlts_mon_gap_6close",
+    "lwlts_vb_sp_tdw", "lwlts_vb_sp_40_200", "lwlts_talon_sp", "lwlts_mon_oc", "lwlts_mon_3day",
+    "lwlts_tdm6_sp", "lwlts_tdm7_sp", "lwlts_tdm8_sp", "lwlts_tdm19_sp", "lwlts_tdm20_sp", "lwlts_tdm21_sp", "lwlts_tdm22_sp",
+    "lwlts_study_all", "lwlts_study_down1", "lwlts_study_down3", "lwlts_study_trend", "lwlts_study_trend_mon",
+    "lwlts_outside_down", "lwlts_outside_down_xthu", "lwlts_3up_tue_sell", "lwlts_oops_buy", "lwlts_oops_sell_thu", "lwlts_oops_buy_ma9", "lwlts_oops_sell_ma9",
+    "lwlts_month_day1", "lwlts_hh1", "lwlts_hh5", "lwlts_hh10", "lwlts_hh15", "lwlts_hh20"];
+pub const SPX_POINTS: &[&str] = &["lwlts_mon_gap_t500", "lwlts_mon_gap_t1000", "lwlts_mon_gap_close", "lwlts_mon_gap_next_close", "lwlts_mon_gap_6close",
+    "lwlts_talon_sp", "lwlts_tdm6_sp", "lwlts_tdm7_sp", "lwlts_tdm8_sp", "lwlts_tdm19_sp", "lwlts_tdm20_sp", "lwlts_tdm21_sp", "lwlts_tdm22_sp",
+    "lwlts_study_all", "lwlts_study_down1", "lwlts_study_down3", "lwlts_study_trend", "lwlts_study_trend_mon",
+    "lwlts_outside_down", "lwlts_outside_down_xthu", "lwlts_3up_tue_sell", "lwlts_oops_buy", "lwlts_oops_sell_thu", "lwlts_oops_buy_ma9", "lwlts_oops_sell_ma9",
+    "lwlts_month_day1", "lwlts_hh1", "lwlts_hh5", "lwlts_hh10", "lwlts_hh15", "lwlts_hh20"];
+
+const SP: &str = "Book: one S&P 500 futures contract, CSI back-adjusted continuous data, $250/point as printed in every report header; dollar amounts here are converted at that rate (p.pt_usd). Since 23 Oct 2026 rules with dollar amounts run on actual SPX only (the points mean what the book meant only there), from 2014 when SPX opens are real; rules without dollar amounts run on indices, ETFs and stocks.";
 const BONDS: &str = "Needs daily T-Bond futures (and for some rules Gold futures) prices; the vault has no bond or gold futures series.";
 
 macro_rules! live {
@@ -95,7 +109,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
         live!("lwlts_mon_vb", "Monday open + 5% of Friday's range, exit close", "Ch 6 · TDW / TDM", "Long",
             &["E|\"buying the opening Monday +.05 percent of Friday's range\" (p.87): Read: buy stop at the open + 0.05 x the previous bar's range",
               "X|\"we hold the trade to the close\" (p.87)",
-              "X|Read: $3,000 stop (12 points); not in the text, Fig. 6.2's largest loss is exactly $3,000 with $0 commission"],
+              "X|Read: $3,000 stop (12 points); not in the text, Fig. 6.2's largest loss is exactly $3,000 with $0 commission",
+              "X|[intraday wave 1] Intraday wave 1: run on real 1-minute bars by default (p.path=1): the buy stop fills on the first minute that reaches the level, at the level or at that minute's open when it opened through it; out on the official daily close. Instrument: SPX only, because the levels are the book's fixed S&P points (no conversion to SPY or NSE prices is invented); from 2014, where SPX daily opens are real, to 2026-08. Days without minute data make no trade. p.path=0 = the old daily-bar reading [Not from the book]. A minute that fills and also reaches the protective stop counts as filled then stopped, unless it opened beyond the stop: then only if it closed beyond it [convention]."],
             SP, claim("758", "57%", "$125.53", "same day", "07/02/82-08/26/98")),
         live!("lwlts_tdm6_sp", "S&P buy TDM 6", "Ch 6 · TDW / TDM", "Long", TDM_R, TDM_N, claim("166", "58%", "$293", "3 days", "1982-1998")),
         live!("lwlts_tdm7_sp", "S&P buy TDM 7", "Ch 6 · TDW / TDM", "Long", TDM_R, TDM_N, claim("168", "60%", "$322", "3 days", "1982-1998")),
@@ -200,7 +215,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["F|Oops! buy when it occurs \"at the end of the month, and trading day after the 17th trading day of the month\" (p.119)"], ""),
         off!("lwlts_swing_points", "Swing-point trend changes and the three-bar high/low system", "Ch 1 / Ch 9 · Quote screen", "Long/Short", NotTestable("Outside days need the intraday open-to-close path ('we will have to study the flow of prices during that day', p.17); the three-bar system is on 5-15 minute bars and passes trades by judgement (p.136-137)."),
             &["F|Short-term high: a high with lower highs on both sides, inside days ignored (p.16-17)", "E|3-bar MA of lows (highs) as entry, 3-bar MA of highs (lows) as target, in the swing trend"], ""),
-        off!("lwlts_eom_sp", "S&P end-of-month: third-to-last trading day, 6 sessions", "Ch 10 · Month-end", "Long", NotTestable("Only an equity chart (Fig. 10.4); the S&P rules are 'the same opportunity' as the bond test, and the entry order (open or close) and the session count are not stated."),
+        off!("lwlts_eom_sp", "S&P end-of-month: third-to-last trading day, 6 sessions", "Ch 10 · Month-end", "Long", NotTestable("Only an equity chart (Fig. 10.4) with no trade figures. Its legend reads \"Buy on open @ 4 trading days starting at 1st day of each month. Exit on close\", which can mean one 4-day hold from the first trading day or four separate one-day trades; the book does not say which, and the bond text rule (third-to-last day, six sessions, $1,500) differs from the Fig. 10.3 legend (fifth-to-last day open to the close of the third day of the next month, no stop)."),
             &["E|Bonds: \"bought one contract ... on the third to the last trading day of each month and held for six trading sessions ... or taking a loss of $1,500\" (p.152)"], ""),
         off!("lwlts_close_65pct", "Buy on the close in the upper 65% of the range (Fig. 15.3)", "Ch 15 · Bad habits", "Long", NotTestable("'With a stop for protection' (p.238) but the stop size and test window are not printed, and the trade counts in the table are inconsistent (533, 334, 537, 199, 178)."),
             &["E|Buy market on close if the close is in the upper 65% of the day's range; exit 5, 10, 15, 20, 25 days later"], ""),
@@ -284,7 +299,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             dows("buy_dow", "Buy days bitmask", 31.0), dows("sell_dow", "Sell days bitmask", 31.0), stop(1750.0), day0(1.0), pt()],
         "lwlts_mon_oc" => vec![p("hold", "Exit on the close N days after entry", 0.0, 0.0, 10.0, 1.0), stop(0.0), day0(1.0), pt()],
         "lwlts_mon_3day" => vec![p("hold", "Exit on the close N days after entry", 3.0, 0.0, 10.0, 1.0), stop(0.0), day0(1.0), pt()],
-        "lwlts_mon_vb" => vec![p("buy_mult", "Buy: open + x Friday's range", 0.05, 0.0, 1.0, 0.05), stop(3000.0), day0(1.0), pt()],
+        "lwlts_mon_vb" => vec![p("buy_mult", "Buy: open + x Friday's range", 0.05, 0.0, 1.0, 0.05), stop(3000.0), day0(1.0), pt(),
+            // intraday wave 1
+            p("path", "1 = real 1-minute bars (fills at the level or the minute's open; days without minute data make no trade), 0 = [Not from the book] daily bar path", 1.0, 0.0, 1.0, 1.0)],
         "lwlts_tdm6_sp" | "lwlts_tdm7_sp" | "lwlts_tdm8_sp" | "lwlts_tdm19_sp" | "lwlts_tdm20_sp" | "lwlts_tdm21_sp" | "lwlts_tdm22_sp" =>
             vec![p("hold", "Exit on the close N days after entry", 3.0, 1.0, 10.0, 1.0), stop(2000.0), day0(0.0), pt()],
         "lwlts_study_all" | "lwlts_study_down1" | "lwlts_study_down3" | "lwlts_study_trend" | "lwlts_study_trend_mon" =>
@@ -465,6 +482,22 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             })
         }
         "lwlts_mon_oc" | "lwlts_mon_3day" => simulate(x, from, to, &cfg, |i| if wd(i) == 1 { (Some(Ent::Open), None) } else { none }),
+        // ---- intraday wave 1: real 1-minute path (default path = 1); the $ stop is S&P points (pt_usd per point)
+        "lwlts_mon_vb" if g("path") >= 0.5 => {
+            use crate::intraday::{day_trade, stop_entry_day, Level};
+            let Some(mm) = x.minutes else { return Some(vec![]) };
+            let (m, sd) = (g("buy_mult"), cfg.stop);
+            let mut out = vec![];
+            for i in from.max(1)..=to {
+                if wd(i) != 1 { continue; }
+                let Some(b) = mm.day(&x.r[i].date) else { continue };
+                let st = |_: usize, px: f64| (sd.is_finite() && cfg.day0).then(|| Level { up: false, px: px - sd });
+                let Some((_, px, xs)) = stop_entry_day(&b, 0, &[Level { up: true, px: o[i] + m * (h[i - 1] - l[i - 1]) }], &st) else { continue };
+                out.push(day_trade(1.0, i, px, i, xs.unwrap_or(c[i]), if xs.is_some() { "stop" } else { "time exit on the close" }, "stop", false));
+            }
+            out
+        }
+        // ---- end intraday wave 1
         "lwlts_mon_vb" => {
             cfg.hold = Some(0);
             let m = g("buy_mult");

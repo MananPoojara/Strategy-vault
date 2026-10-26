@@ -3,6 +3,9 @@
 //! Source copies: Books/Daryl Guppy/darvasbook.pdf, mdarvas.pdf (every slide read; notes in library/dgdwb/README.md).
 //! Own simulator (no jkbwts::sim). One position, long only, weight 1.
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
+/// Admitted ids (authors/guppy/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["dgdwb_modern"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const BOX: &str = "F|\"Start with a new high for the selected period / Look for 3 lower highs / Set the top of the D_box / Look for a low followed by 3 higher lows / Set the bottom of the D_Box / Ignore equal highs and lows / Ignore price moves within the box\" (darvasbook slide 4; mdarvas slides 11-13: \"Do not have to be consecutively lower highs\", \"Do not have to be consecutively higher lows\")";
 const SPECIAL: &str = "F|Special Darvas: \"Set the top of the box as normal / Set the bottom of the box on three higher lows / Initial low already established\" (darvasbook slide 6): the low search starts on the bar that set the top";

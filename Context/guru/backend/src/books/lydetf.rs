@@ -6,6 +6,9 @@ use crate::books::apta::{ema_first, run_long};
 use crate::connors::{claim, sma, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "lydetf";
+/// Admitted ids (authors/lydon/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["lydetf_ema200"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef {

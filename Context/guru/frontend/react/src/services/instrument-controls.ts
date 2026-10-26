@@ -1,6 +1,6 @@
 import {bandyAccountMethod} from "./bandy-source-account";
 import {unitExposureMethod} from './unit-exposure-report';
-export interface InstrumentPolicy { allowed_types?: string[]; execution_scope?: string }
+export interface InstrumentPolicy { allowed_types?: string[]; execution_scope?: string; declared_application?: string }
 
 /** A visible ETF button must remain a valid route choice alongside supported indices. */
 export function instrumentTickers<T extends {ticker: string}>(policy: InstrumentPolicy | undefined, indices: T[], etfs: T[], id?:string, book?:string): T[] {
@@ -12,16 +12,18 @@ export function instrumentTickers<T extends {ticker: string}>(policy: Instrument
 /** Navigation follows reviewed types; an unresolved policy still uses the API's admission gate. */
 export function instrumentControls(policy?: InstrumentPolicy, id?: string, book?: string) {
   const types = policy?.allowed_types || [];
+  // A stock-research scope routes to an index/ETF only when the API declares that application (user decision 22 Oct 2026).
+  const declared = !!policy?.declared_application && types.includes('individual_stock');
   if(id==='lkqts_sob'&&book==='lkqts'){
-    const stock=policy?.execution_scope==='single_symbol_stock_price_research'&&types.length===1&&types[0]==='individual_stock';
-    return {index:false,stock,basket:false,etf:false,note:`Second Order Breakout uses declared single-stock percentage research on actual stock prices. ${stock?'Choose an admitted Stock above':'The current policy does not admit a Stock'}; baskets and position limits are unavailable. Original performance and volatility-based quantities are not certified.`};
+    const stock=policy?.execution_scope==='single_symbol_stock_price_research'&&(declared||(types.length===1&&types[0]==='individual_stock'));
+    return {index:declared&&types.includes('index'),stock,basket:false,etf:declared&&types.includes('etf'),note:`Second Order Breakout uses declared single-stock percentage research on actual stock prices. ${stock?'Choose an admitted Stock above':'The current policy does not admit a Stock'}; baskets and position limits are unavailable. Original performance and volatility-based quantities are not certified.`};
   }
   if (unitExposureMethod(id,book)) return {index:types.length===1 && types[0]==='index'
     && policy?.execution_scope==='single_symbol_index_timing_research',stock:false,basket:false,etf:false,
     note:'This reviewed rule uses actual SPX cash-index prices, or NIFTY 50 as a declared adaptation. Other indices, stocks, ETFs and baskets do not inherit this review.'};
   if (policy?.execution_scope === 'single_symbol_stock_price_research') {
     const stock = types.includes('individual_stock');
-    return {index:false,stock,basket:false,etf:false,
+    return {index:declared&&types.includes('index'),stock,basket:false,etf:declared&&types.includes('etf'),
       note:`This method uses percentage research on actual individual stock prices. ${stock ? 'Choose an admitted Stock above' : 'The current policy does not admit a Stock'}; basket execution and position limits are unavailable because no basket execution has been reviewed.`};
   }
   if (!types.length) return { index: true, stock: true, basket: true, etf: false, note: '' };

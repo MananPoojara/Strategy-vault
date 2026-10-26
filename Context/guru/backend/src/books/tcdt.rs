@@ -274,7 +274,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             hold: if o.hold == 0.0 { "exit same-day close" } else if o.hold == 1.0 { "exit close 1 day after entry" } else if o.hold == 2.0 { "exit close 2 days after entry" } else { "exit close 5 days after entry" },
             period: PER });
         d(o.id, o.name, group, dir, Status::Live, rules,
-          "Book: S&P 500 futures, daily OHLC, 1982-88, one contract, no stops, no slippage or commission; avg win/loss in $ per contract ($500 per index point). Run here on cash indices/ETFs (vault convention); the cash S&P open before ~1990 is often yesterday's close, so 1983-88 SPX counts differ from the futures. Default level = the printed S&P points (instrument swap only); on NIFTY these points are tiny relative to price, see level_mode. Overlapping multi-day trades are each counted, as the book's equal trade counts across holding periods show.",
+          if o.hold == 0.0 { "Book: S&P 500 futures, daily OHLC, 1982-88, one contract, no stops, no slippage or commission; avg win/loss in $ per contract ($500 per index point). Run here on cash indices/ETFs (vault convention); the cash S&P open before ~1990 is often yesterday's close, so 1983-88 SPX counts differ from the futures. Default level = the printed S&P points (instrument swap only); on NIFTY these points are tiny relative to price, see level_mode. Overlapping multi-day trades are each counted, as the book's equal trade counts across holding periods show. Intraday wave 1: run on real 1-minute bars by default (p.path=1): fills on the first minute that reaches the level, at the level or at that minute's open when it opened through it; out on the official daily close. Instrument: SPX only, because the levels are the book's fixed S&P points (no conversion to SPY or NSE prices is invented); from 2014, where SPX daily opens are real, to 2026-08. Days without minute data make no trade. p.path=0 = the old daily-bar reading [Not from the book]." } else { "Book: S&P 500 futures, daily OHLC, 1982-88, one contract, no stops, no slippage or commission; avg win/loss in $ per contract ($500 per index point). Run here on cash indices/ETFs (vault convention); the cash S&P open before ~1990 is often yesterday's close, so 1983-88 SPX counts differ from the futures. Default level = the printed S&P points (instrument swap only); on NIFTY these points are tiny relative to price, see level_mode. Overlapping multi-day trades are each counted, as the book's equal trade counts across holding periods show." },
           claim)
     }).collect();
     v.push(d("tcdt_oc_pattern", "Open-to-close patterns (Table A)", "Ch 8/11 · Price Pattern Studies IV · S&P open to close", "Long/Short", Status::Live, R_OC,
@@ -287,13 +287,13 @@ pub fn catalogue() -> Vec<StrategyDef> {
         "20 printed S&P rows in book order (NR4, NR, Control, RE, RE4 for ++, −+, +−, −−); default row 1 = NR4 \"++\" B.",
         Some(Claim { trades: "114 (row 1)", win: "48%", avg: "avg win $1149 / avg loss $862, gross $12,354 (row 1)", hold: "exit same-day close", period: PER })));
     v.push(d("tcdt_gap_orb", "S&P Gaps & ORB", "S&P Gaps and Opening Range Breakout", "Long/Short", Status::Live, R_GAP,
-        "80 printed rows: row = 8 × gap class (20,40,60,80,100,150,200,250,300,400) + 4 if gap down + level (0:+160, 1:+80, 2:−80, 3:−160) + 1. Default row 1 = gap up ≥ 20, open +160, buy.",
+        "80 printed rows: row = 8 × gap class (20,40,60,80,100,150,200,250,300,400) + 4 if gap down + level (0:+160, 1:+80, 2:−80, 3:−160) + 1. Default row 1 = gap up ≥ 20, open +160, buy. Intraday wave 1: run on real 1-minute bars by default (p.path=1): fills on the first minute that reaches the level, at the level or at that minute's open when it opened through it; out on the official daily close. Instrument: SPX only, because the levels are the book's fixed S&P points (no conversion to SPY or NSE prices is invented); from 2014, where SPX daily opens are real, to 2026-08. Days without minute data make no trade. p.path=0 = the old daily-bar reading [Not from the book].",
         Some(Claim { trades: "197 (row 1)", win: "61%", avg: "avg win $873 / avg loss $776, gross $46,674 (row 1)", hold: "exit same-day close", period: PER })));
     v.push(d("tcdt_triseg_orb", "Tri-segment open/close & ORB", "Open to close tri-segment studies", "Long/Short", Status::Live, R_TRI,
-        "18 printed S&P rows (O/3 C/3 +80, O/3 C/3 −80, O/3 C/2 +80 ...). Prices exactly on a boundary go to the upper segment; the top value belongs to the top segment [book silent].",
+        "18 printed S&P rows (O/3 C/3 +80, O/3 C/3 −80, O/3 C/2 +80 ...). Prices exactly on a boundary go to the upper segment; the top value belongs to the top segment [book silent]. Intraday wave 1: run on real 1-minute bars by default (p.path=1): fills on the first minute that reaches the level, at the level or at that minute's open when it opened through it; out on the official daily close. Instrument: SPX only, because the levels are the book's fixed S&P points (no conversion to SPY or NSE prices is invented); from 2014, where SPX daily opens are real, to 2026-08. Days without minute data make no trade. p.path=0 = the old daily-bar reading [Not from the book].",
         Some(Claim { trades: "41 (row 1)", win: "49%", avg: "avg win $838 / avg loss $592, gross $4,324 (row 1)", hold: "exit same-day close", period: PER })));
     v.push(d("tcdt_quad_orb", "5-segment open/close & ORB", "5 segment study and ORB", "Long/Short", Status::Live, R_QUAD,
-        "50 printed S&P rows (O/5 C/5 +80, O/5 C/5 −80, O/5 C/4 +80 ...). Boundary convention as tri-segment [book silent].",
+        "50 printed S&P rows (O/5 C/5 +80, O/5 C/5 −80, O/5 C/4 +80 ...). Boundary convention as tri-segment [book silent]. Intraday wave 1: run on real 1-minute bars by default (p.path=1): fills on the first minute that reaches the level, at the level or at that minute's open when it opened through it; out on the official daily close. Instrument: SPX only, because the levels are the book's fixed S&P points (no conversion to SPY or NSE prices is invented); from 2014, where SPX daily opens are real, to 2026-08. Days without minute data make no trade. p.path=0 = the old daily-bar reading [Not from the book].",
         Some(Claim { trades: "6 (row 1)", win: "67%", avg: "avg win $1,206 / avg loss $350, gross $4,125 (row 1)", hold: "exit same-day close", period: PER })));
     let idnote = "Book: S&P futures 1982-87 daily OHLC, entry on the open, exit on the close, no stop. Higher/lower open = vs yesterday's (Day 2's) close (the book's open-sign convention, printed p.35).";
     v.push(d("tcdt_idp1", "Inside Day pattern 1 · open direction", "Ch 16 · Inside Days in the S&P", "Long/Short", Status::Live, R_P1, idnote,
@@ -388,6 +388,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         if matches!(o.pat, Pat::DojiR1 | Pat::R1) { v.push(p("r1", "R1: yesterday's range below (points)", 2.00, 0., 200., 0.1)); }
         if matches!(o.pat, Pat::Bnr2 | Pat::Bnr3) { v.push(p("look", "Narrowest within the previous N market days", 20., 10., 40., 1.)); }
         level_params(&mut v);
+        if o.hold == 0.0 { v.push(p("path", "Same-day ORB fill: 1 = real 1-minute bars (fills at the level or the minute's open; days without minute data make no trade), 0 = [Not from the book] daily bars (fill at the level)", 1., 0., 1., 1.)); } // intraday wave 1
         return Some(v);
     }
     let rows = |n: f64| vec![p("row", "Book table row", 1., 1., n, 1.), p("side", "Side: 0 = as printed, 1 buy, −1 sell", 0., -1., 1., 1.)];
@@ -397,6 +398,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "tcdt_gap_orb" | "tcdt_triseg_orb" | "tcdt_quad_orb" => {
             let mut v = rows(match id { "tcdt_gap_orb" => 80., "tcdt_triseg_orb" => 18., _ => 50. });
             level_params(&mut v);
+            v.push(p("path", "Same-day ORB fill: 1 = real 1-minute bars (fills at the level or the minute's open; days without minute data make no trade), 0 = [Not from the book] daily bars (fill at the level)", 1., 0., 1., 1.)); // intraday wave 1
             v
         }
         "tcdt_idp1" | "tcdt_idp2" | "tcdt_idp3" | "tcdt_idp4" => vec![],
@@ -479,6 +481,20 @@ fn orb_fill(x: &Ctx, i: usize, lvl: f64, mode: f64, mult: f64, sn: usize) -> Opt
     hit.then_some(px)
 }
 
+// ---- intraday wave 1
+/// The same-day ORB tests that fill on real 1-minute bars (admitted on SPX with the printed S&P points).
+pub fn same_day_orb(id: &str) -> bool { ORBS.iter().any(|o| o.id == id && o.hold == 0.0) || matches!(id, "tcdt_gap_orb" | "tcdt_triseg_orb" | "tcdt_quad_orb") }
+/// ORB fill on real 1-minute bars: the level = today's (daily) open + the signed offset; the first minute that reaches it
+/// fills, at the level or at that minute's open when it opened beyond it (buy stops and sell limits above the open alike).
+/// None: no minute data that day, or never reached.
+fn orb_fill_m(x: &Ctx, i: usize, lvl: f64, mode: f64, mult: f64, sn: usize) -> Option<f64> {
+    let off = if mode >= 0.5 { let s = stretch(x, i, sn); if !s.is_finite() { return None; } lvl.signum() * mult * s } else { lvl };
+    let b = x.minutes?.day(&x.r[i].date)?;
+    let lv = crate::intraday::Level { up: off >= 0.0, px: x.o[i] + off };
+    crate::intraday::stop_entry_day(&b, 0, &[lv], &|_, _| None).map(|(_, px, _)| px)
+}
+// ---- end intraday wave 1
+
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     if !id.starts_with("tcdt_") { return None; }
     let defs = params(id)?;
@@ -491,9 +507,11 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         let lvl = o.lvl.signum() * pts;
         let (doji, r1, look) = (g("doji"), g("r1"), g("look").max(1.0) as usize);
         let (mode, mult, sn) = (g("level_mode"), g("stretch_mult"), g("stretch_n").max(1.0) as usize);
+        let minute = hold == 0 && o.hold == 0.0 && g("path") >= 0.5; // intraday wave 1: same-day rows only
+        if minute && x.minutes.is_none() { return Some(out); }
         for i in start..=to {
             if !pat_ok(x, o.pat, i - 1, doji, r1, look) { continue; }
-            if let Some(px) = orb_fill(x, i, lvl, mode, mult, sn) {
+            if let Some(px) = if minute { orb_fill_m(x, i, lvl, mode, mult, sn) } else { orb_fill(x, i, lvl, mode, mult, sn) } {
                 let kind = if (lvl >= 0.0) == (side > 0.0) { "stop" } else { "limit" };
                 out.push(trade(x, side, i, px, hold, to, kind, o.name));
             }
@@ -504,6 +522,10 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let over = g("side");
     let side_of = |c: char| if over > 0.5 { 1.0 } else if over < -0.5 { -1.0 } else if c == 'B' { 1.0 } else { -1.0 };
     let (mode, mult, sn) = (g("level_mode"), g("stretch_mult"), g("stretch_n").max(1.0) as usize);
+    // intraday wave 1: the gap / segment ORB tables fill on real 1-minute bars by default
+    let minute = matches!(id, "tcdt_gap_orb" | "tcdt_triseg_orb" | "tcdt_quad_orb") && g("path") >= 0.5;
+    if minute && x.minutes.is_none() { return Some(out); }
+    let orb_fill = |x: &Ctx, i: usize, lvl: f64, mode: f64, mult: f64, sn: usize| if minute { orb_fill_m(x, i, lvl, mode, mult, sn) } else { orb_fill(x, i, lvl, mode, mult, sn) };
     match id {
         "tcdt_oc_pattern" | "tcdt_oc_rangeexp" => {
             let t = if id == "tcdt_oc_pattern" { TABLE_A } else { TABLE_B };
@@ -586,13 +608,13 @@ mod tests {
         v.push((100., 102., 99.9, 101.5));
         let r = bars(&v);
         let x = Ctx::new(&r, &r, &[]);
-        let t = run("tcdt_nr7_p80", &x, 0, 7, &Params::new()).unwrap();
+        let t = run("tcdt_nr7_p80", &x, 0, 7, &Params::from([("path".to_string(), 0.0)])).unwrap();
         assert_eq!(t.len(), 1);
         assert_eq!((t[0].legs[0].i, t[0].legs[0].px, t[0].exit_i, t[0].exit_px, t[0].dir), (7, 100.8, 7, 101.5, 1.0));
         // the level is not reached -> no trade
         let mut v2 = v.clone(); v2[7] = (100., 100.7, 99.0, 99.5);
         let r2 = bars(&v2); let x2 = Ctx::new(&r2, &r2, &[]);
-        assert!(run("tcdt_nr7_p80", &x2, 0, 7, &Params::new()).unwrap().is_empty());
+        assert!(run("tcdt_nr7_p80", &x2, 0, 7, &Params::from([("path".to_string(), 0.0)])).unwrap().is_empty());
     }
     #[test]
     fn pattern_strings_and_segments() {

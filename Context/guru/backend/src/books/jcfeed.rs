@@ -5,6 +5,9 @@
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "jcfeed";
+/// Admitted ids (authors/clayburg/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["jcfeed_feeder_trader"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 const FT: &str = "jcfeed_feeder_trader";
 
 // ---------------------------------------------------------------- shared helpers (TradeStation order semantics)

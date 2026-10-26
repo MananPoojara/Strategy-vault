@@ -3,6 +3,9 @@
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "wdnbp";
+/// Admitted ids (authors/dunnigan/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["wdnbp_ndb", "wdnbp_ndb_rule2"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const NDB_NOTE: &str = "DJIA rule (\"We have applied the method to the Dow-Jones industrial average back to 1921\", p.62); runs on DJI/SPX and NIFTY 50 (instrument swap). Swings on closing prices: a Top is set when the close falls 4% below the highest close since the last Bottom; a Bottom when the close rises 4% above the lowest close since the last Top. Rule 1 low/high = the extreme close of the latest Downswing/Upswing (the swing must exist, i.e. its 4% has been reached); it tests either of the two Bottoms (Tops) set before it. Signals are acted on only when they reverse the position; stop-and-reverse, no stops (\"a trade would be held until a reversal signal is given ... no stops have been used\", p.63). Fill at the signal day's close = the book's test (\"signal prices used in this study\"); next_open=1 = the book's practical execution (\"A trade would be made on the morning following the day of the signal\"). The book prints no trade list or totals for this barometer (only \"The evidence favors the New Dow Barometer by a large margin\").";
 

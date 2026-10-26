@@ -163,7 +163,8 @@ fn account_input_long_large_loss_still_positive()->(Vec<Row>,Vec<Trade>){
 
 fn account_case(r:Vec<Row>,trades:Vec<Trade>,costs:accounting::Costs,eq:&[f64],expected_stats:&[(&str,f64)],ledgers:&[(f64,[f64;8])],held:bool) {
     let ctx=Ctx::new(&r,&r,&[]);let result=normalized_run(&ctx,trades,0,r.len()-1,costs.side_rate());
-    if held {assert!(result.is_err(),"Nonpositive account must remain unavailable");return;}
+    // 2026-10-24: a wiped-out account is published, stopped at the wiping trade (was: refused)
+    if held {assert_ruined(&ctx,&result.unwrap());return;}
     let run=result.unwrap();assert_eq!(run.equity.len(),eq.len());
     for (actual,expected) in run.equity.iter().zip(eq){near(*actual,*expected,"daily equity");}
     let stats=financial_stats(&ctx,&run,costs);
@@ -359,9 +360,10 @@ fn candidate_queries_reject_raw_rounding_unknown_fields_and_non_singleton_grids(
         for value in [40.1,f64::NAN,f64::INFINITY] {assert!(books::lkqts::validate_stock_candidate(id,&Params::from([("unknown".into(),value)])).is_some());}
         let d=books::lkqts::catalogue().into_iter().find(|d|d.id==id).unwrap();
         assert!(instrument_policy::reviewed_kestner_stock(&d));
-        assert_eq!(instrument_policy::policy(&d).allowed_types,&["individual_stock"]);
+        assert_eq!(instrument_policy::policy(&d).allowed_types,&["index","etf","individual_stock"]);
         let mut wrong=books::lkqts::catalogue().into_iter().find(|d|d.id==id).unwrap();wrong.book="another_book";assert!(!instrument_policy::reviewed_kestner_stock(&wrong));
-        for ticker in ["NIFTY 50","SPX","NDX","SPY","QQQ","NIFTY31JAN2008FUT","AAPL"] {assert!(instrument_policy::check(&d,ticker,false).is_some(),"Unqualified ticker {ticker} cannot establish native stock identity");}
+        for ticker in ["NIFTY 50","SPX","NDX","SPY","QQQ"] {assert!(instrument_policy::check(&d,ticker,false).is_none());}
+        for ticker in ["NIFTY31JAN2008FUT","AAPL"] {assert!(instrument_policy::check(&d,ticker,false).is_some(),"Unqualified ticker {ticker} cannot establish native stock identity");}
         for setting in books::lkqts::params(id).unwrap() {assert_eq!(setting.min,setting.def);assert_eq!(setting.max,setting.def);}
     }
     assert!(!books::lkqts::stock_candidate("lkqts_mom20"));
@@ -474,7 +476,8 @@ fn selected_stock_policy_cannot_be_forged_with_native_request_flags() {
     }
     let state=State{ctxs:contexts,baskets:baskets::Catalogue::default(),vix:vec![],market_extra:BTreeMap::new()};
     for &id in books::lkqts::STOCK_CANDIDATE_IDS {
-        for ticker in ["NIFTY 50","SPX","SPY","AAPL"] {
+        // Indices/ETFs are admitted since 22 Oct 2026; an unqualified stock ticker still cannot forge native identity.
+        for ticker in ["AAPL"] {
             let q=BTreeMap::from([("id".into(),id.into()),("ticker".into(),ticker.into()),("from".into(),"2020-04-01".into()),("native_stock".into(),"true".into()),("asset_type".into(),"individual_stock".into())]);
             assert!(detail(&state,&q).is_err());assert!(optimize(&state,&q).is_err());
             let summary=summary(&state,&q).unwrap();assert!(summary.contains("\"blocked\""));assert!(!summary.contains("\"stats\""));

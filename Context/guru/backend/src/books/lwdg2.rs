@@ -7,6 +7,11 @@ use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "lwdg2";
 
+/// Larry Williams block: rules admitted after the 23 Oct 2026 reading and independent ledgers
+/// (authors/lwilliams/admission/SOURCE-CONTRACT.md). SPX_POINTS = stops in S&P points: actual SPX only.
+pub const REVIEWED: &[&str] = &["lwdg2_sli", "lwdg2_dc_lower_open", "lwdg2_hh_gap_sell", "lwdg2_updown_daytrade", "lwdg2_vol_up_up", "lwdg2_vol_dn_up", "lwdg2_vol_up_dn", "lwdg2_vol_dn_dn", "lwdg2_weekly_entry"];
+pub const SPX_POINTS: &[&str] = &["lwdg2_updown_daytrade", "lwdg2_weekly_entry"];
+
 
 macro_rules! def {
     ($id:expr, $name:expr, $group:expr, $dir:expr, $status:expr, $vol:expr, $rules:expr, $notes:expr) => {
@@ -31,7 +36,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "E|\"add 3.10 points to the close ... a buyer at the higher number, a seller at the lower number\": buy stop at close + 0.0105 x close, sell stop at close - 0.0105 x close, next day (the printed trade list uses the unrounded value: 85.1204 buy 205.99 = 203.85 x 1.0105)",
               "X|\"exiting the position on the close\" (p.133); \"we did not use stops in this system\" (p.133)",
               "X|Option p.reverse=1: \"you may want to reverse in the event the market hits one number and then goes back to the other number\" (p.133) [non-default]"],
-            "Printed: 06/01/82-01/23/87 520 trades, 290 won (55.9%), $69,700, max drawdown $5,000 (p.133); trade list 12/04/85-01/23/87: 132 trades, 77 won (58.3%), $25,775 (p.134-142, transcribed in library/lwdg2/trades_0105.csv). Book traded S&P futures (premium to cash), so SPX dates match only partly. One trade per day: the first stop touched (bar path); with reverse=1 the other stop reverses."),
+            "Printed: 06/01/82-01/23/87 520 trades, 290 won (55.9%), $69,700, max drawdown $5,000 (p.133); trade list 12/04/85-01/23/87: 132 trades, 77 won (58.3%), $25,775 (p.134-142, transcribed in library/lwdg2/trades_0105.csv). Book traded S&P futures (premium to cash), so SPX dates match only partly. One trade per day: the first stop touched (bar path); with reverse=1 the other stop reverses. Intraday wave 1: run on real 1-minute bars by default (p.path=1): whichever number trades first is the day's trade; it fills on the first minute that reaches it, at the level or at that minute's open when it opened through it; out on the official daily close. Instruments: SPY, SPX (from 2014, real daily opens), NIFTY 50 and NIFTYBANK, the only ones with cleaned minute data (declared application); days without minute data make no trade. p.path=0 = the old daily-bar reading [Not from the book]. A minute that reaches both entry levels without opening through one has an unknown order: no trade that day [convention]. reverse=1 runs on the daily bar path."),
         def!("lwdg2_vol_up_up", "Volume up, close up: buy next open (Table 1)", "Ch 8 · Volume myths", "Long", Live, true,
             &["F|\"IF VOLUME GREATER THAN YESTERDAY AND CLOSE GREATER THAN YESTERDAY\"", "E|\"THEN BUY THE OPEN\"", VOL_X], VOL_N),
         def!("lwdg2_vol_dn_up", "Volume down, close up: buy next open (Table 2)", "Ch 8 · Volume myths", "Long", Live, true,
@@ -48,6 +53,21 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|\"use the low of the week that you buy for the first 3 weeks. Following that, trail up with a stop that is below the lowest low of the last 2 weeks\" (p.35); the trail only moves in the trade's favour",
               "X|\"if you get an opposite signal you should switch\" (p.36): reverse"],
             "Book shows no statistics, only charted examples (S&P 1983-85: Dec 1983 sell stopped out first week of Jan 1984; second week of Jan 1984 sell ~170 out ~159 in Feb; July 1984 buy at the low, a sell 3 weeks later; two small losses before the July 1985 high; no signal at the July or Sept 1985 lows, p.35-36). The alternative \"60% of the true range for the week\" exit (p.39) is not implemented: the book does not say whether it is recalculated each week."),
+        // ---- Larry Williams block (23 Oct 2026 reading, authors/lwilliams/agents/lwdg2): complete rules not coded before
+        def!("lwdg2_sli", "SLI (Simple Little Indicator) day trade", "Closing thoughts · SLI day trade", "Long/Short", Live, false,
+            &["F|Buy: \"a higher high than all previous 13 day's highs\" then \"1) a down close immediately following the 13 day high, 2) an equal or lower opening the next morning\" (printed p.257, PDF 266); Read: equal or lower than that down close",
+              "E|\"trading at last night's close (the down close), where we buy long\" (p.257): buy stop at the down day's close",
+              "E|Sell: \"a low below the previous 13 daily lows, then an up close followed by a higher open, then trading down to the down close [the up close] where a sell is triggered\" (p.257)",
+              "X|\"For this record we used no stops\" (p.257). Read: exit on the close of the entry day (\"SLI day trade system\"; the book does not state the exit)"],
+            "Table p.258 (PDF 267): S&P 1982-87 $15,975, 63.5% winners, $190 a trade; T-Bonds 1979-87 63.6%; Bellies 1978-86 59%. A pattern credited to Ralph Vince. No dollar or point amounts."),
+        def!("lwdg2_dc_lower_open", "Down close below the open, next open lower: buy the open, exit the close", "Ch 8 · Day trading statistics", "Long", Live, false,
+            &["F|\"if price closes down for the day and below the opening, then the next day also opens lower\" (PDF 132); Read: down close = below the prior close; opens lower = below that close",
+              "E|Read: buy that opening", "X|\"57% of the time ... price closes above the opening\" (PDF 132): exit on the close; no stop"],
+            "Statistic, not a full system: S&P 57%, Value Line 59%, Bonds 58%, Silver 57% (PDF 132). No dollar or point amounts."),
+        def!("lwdg2_hh_gap_sell", "Higher high and higher close, next open above that high: sell the open, exit the close", "Ch 8 · Day trading statistics", "Short", Live, false,
+            &["F|A day with a higher high and a higher close than the day before; \"the open has been above the previous day's high\" (PDF 161)",
+              "E|\"Here, day traders, is a great selling pattern\" (PDF 161): sell the opening", "X|\"almost 60% of the time the close of that gap day is lower than the opening\": exit on the close; no stop"],
+            "Statistic (PDF 161): about 60% of such gap days close below the open. No dollar or point amounts."),
     ];
     v.extend([
         def!("lwdg2_money_supply_bonds", "Wednesday close predicts Thursday (bonds/bills)", "Ch 8 · Money supply", "Long/Short", NeedsData("T-Bond / T-Bill futures daily data"), false,
@@ -76,6 +96,9 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "lwdg2_vol_up_dn" => ("lwdg2_vol", "Volume / price studies", "Vol up, close down"),
         "lwdg2_vol_dn_dn" => ("lwdg2_vol", "Volume / price studies", "Vol down, close down"),
         "lwdg2_weekly_entry" => ("lwdg2_weekly", "Weekly entry signal", ""),
+        "lwdg2_sli" => ("lwdg2_daytrade", "Williams day trades (1985 seminar)", "SLI"),
+        "lwdg2_dc_lower_open" => ("lwdg2_daytrade", "Williams day trades (1985 seminar)", "Down close, lower open"),
+        "lwdg2_hh_gap_sell" => ("lwdg2_daytrade", "Williams day trades (1985 seminar)", "Higher high, gap up sell"),
         "lwdg2_ultimate_osc" | "lwdg2_zero_balance" | "lwdg2_half_cycle" | "lwdg2_spread_seasonal" | "lwdg2_three_loss_rule" =>
             ("lwdg2_tools", "Analysis tools", "Not testable"),
         _ => return None,
@@ -86,8 +109,10 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     Some(match id {
         "lwdg2_updown_daytrade" => vec![p("stop_pts", "Stop in index points (book: 200 S&P points = 2.00)", 2.0, 0.0, 10.0, 0.5)],
-        "lwdg2_0105" => vec![p("pct", "Fraction of the close", 0.0105, 0.004, 0.02, 0.0005), p("reverse", "Reverse when the other number trades (non-default)", 0.0, 0.0, 1.0, 1.0)],
-        "lwdg2_vol_up_up" | "lwdg2_vol_dn_up" | "lwdg2_vol_up_dn" | "lwdg2_vol_dn_dn" => vec![],
+        "lwdg2_0105" => vec![p("pct", "Fraction of the close", 0.0105, 0.004, 0.02, 0.0005), p("reverse", "Reverse when the other number trades (non-default; reverse = 1 runs on the daily bar path)", 0.0, 0.0, 1.0, 1.0),
+            // intraday wave 1: whichever number trades first is the day's trade; a minute reaching both without opening through one = unknown order, no trade
+            p("path", "1 = real 1-minute bars (fills at the level or the minute's open; days without minute data make no trade), 0 = [Not from the book] daily bar path", 1.0, 0.0, 1.0, 1.0)],
+        "lwdg2_vol_up_up" | "lwdg2_vol_dn_up" | "lwdg2_vol_up_dn" | "lwdg2_vol_dn_dn" | "lwdg2_sli" | "lwdg2_dc_lower_open" | "lwdg2_hh_gap_sell" => vec![],
         "lwdg2_weekly_entry" => vec![p("ticks", "Ticks beyond last week's low/high", 1.0, 1.0, 4.0, 1.0), p("tick", "Tick size in index points (S&P futures 0.05)", 0.05, 0.01, 1.0, 0.01)],
         _ => return None,
     })
@@ -116,6 +141,22 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "lwdg2_updown_daytrade" => simulate(x, from, to, &day(g("stop_pts"), false), |i| {
             if i < 2 { none } else if c[i - 1] < c[i - 2] { (Some(Ent::Open), None) } else if c[i - 1] > c[i - 2] { (None, Some(Ent::Open)) } else { none }
         }),
+        // ---- intraday wave 1: real 1-minute path (default path = 1, reverse = 0)
+        "lwdg2_0105" if g("path") >= 0.5 && g("reverse") == 0.0 => {
+            use crate::intraday::{day_trade, stop_entry_day, Level};
+            let Some(mm) = x.minutes else { return Some(vec![]) };
+            let k = g("pct");
+            let mut out = vec![];
+            for i in from.max(1)..=to {
+                let Some(b) = mm.day(&x.r[i].date) else { continue };
+                let d = k * c[i - 1];
+                let lv = [Level { up: true, px: c[i - 1] + d }, Level { up: false, px: c[i - 1] - d }];
+                let Some((e, px, _)) = stop_entry_day(&b, 0, &lv, &|_, _| None) else { continue };
+                out.push(day_trade(if e == 0 { 1.0 } else { -1.0 }, i, px, i, c[i], "exit on the close", "stop", false));
+            }
+            out
+        }
+        // ---- end intraday wave 1
         "lwdg2_0105" => {
             let k = g("pct");
             simulate(x, from, to, &day(f64::NAN, g("reverse") != 0.0), |i| {
@@ -135,6 +176,25 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             })
         }
         "lwdg2_weekly_entry" => weekly(x, from, to, g("ticks") * g("tick")),
+        // Larry Williams block: SLI and the two open-to-close statistics (exit on the close, no stop)
+        "lwdg2_sli" => {
+            let (h, l, o) = (&x.h, &x.l, &x.o);
+            simulate(x, from, to, &day(f64::NAN, false), |i| {
+                if i < 16 { return none; }
+                let (t, s) = (i - 1, i - 2);
+                let hi13 = h[s - 13..s].iter().cloned().fold(f64::MIN, f64::max);
+                let lo13 = l[s - 13..s].iter().cloned().fold(f64::MAX, f64::min);
+                let buy = (h[s] > hi13 && c[t] < c[s] && o[i] <= c[t]).then(|| Ent::Stop(c[t]));
+                let sell = (l[s] < lo13 && c[t] > c[s] && o[i] >= c[t]).then(|| Ent::Stop(c[t]));
+                (buy, sell)
+            })
+        }
+        "lwdg2_dc_lower_open" => simulate(x, from, to, &day(f64::NAN, false), |i| {
+            if i < 2 { none } else if c[i - 1] < c[i - 2] && c[i - 1] < x.o[i - 1] && x.o[i] < c[i - 1] { (Some(Ent::Open), None) } else { none }
+        }),
+        "lwdg2_hh_gap_sell" => simulate(x, from, to, &day(f64::NAN, false), |i| {
+            if i < 2 { none } else if x.h[i - 1] > x.h[i - 2] && c[i - 1] > c[i - 2] && x.o[i] > x.h[i - 1] { (None, Some(Ent::Open)) } else { none }
+        }),
         _ => return None,
     })
 }
@@ -226,9 +286,21 @@ mod tests {
     fn day_0105_buys_at_close_plus_pct_and_exits_close() {
         let r = vec![bar("1985-12-03", 200., 204., 199., 203.85), bar("1985-12-04", 204., 208., 203.5, 207.35)];
         let x = Ctx::new(&r, &r, &[]);
-        let t = run("lwdg2_0105", &x, 1, 1, &Params::new()).unwrap();
+        let t = run("lwdg2_0105", &x, 1, 1, &Params::from([("path".to_string(), 0.0)])).unwrap(); // intraday wave 1: daily path
         assert_eq!(t.len(), 1);
         assert!((t[0].legs[0].px - 205.990425).abs() < 1e-6 && t[0].exit_px == 207.35 && t[0].dir == 1.0);
+    }
+    #[test]
+    fn sli_buys_back_at_the_down_close_after_a_13_day_high() {
+        // 14 flat bars, bar 14 a new 13-day high, bar 15 a down close, bar 16 opens below it and trades back up to it.
+        let mut r: Vec<Row> = (0..14).map(|d| bar(&format!("1985-01-{:02}", d + 1), 100., 101., 99., 100.)).collect();
+        r.push(bar("1985-01-15", 100., 103., 99.5, 102.5));
+        r.push(bar("1985-01-16", 102., 102.5, 100., 101.));
+        r.push(bar("1985-01-17", 100.5, 102., 100., 101.8));
+        let x = Ctx::new(&r, &r, &[]);
+        let t = run("lwdg2_sli", &x, 16, 16, &Params::new()).unwrap();
+        assert_eq!(t.len(), 1);
+        assert!(t[0].dir == 1.0 && t[0].legs[0].px == 101. && t[0].exit_px == 101.8 && t[0].exit_i == 16);
     }
     #[test]
     fn weekly_buy_after_open_below_last_week_low() {

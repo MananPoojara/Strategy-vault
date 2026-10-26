@@ -9,6 +9,9 @@ use crate::books::apta::ema;
 use crate::connors::{claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "hsta";
+/// Admitted ids (authors/hirsch/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["hsta_best6", "hsta_best6_macd", "hsta_best8_macd", "hsta_best6_4yr", "hsta_santa", "hsta_stpat", "hsta_midyear", "hsta_first_day", "hsta_thanksgiving", "hsta_super8", "hsta_yk_passover", "hsta_election"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 // ------------------------------------------------------------------ calendar helpers
 

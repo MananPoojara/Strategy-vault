@@ -6,6 +6,9 @@ use super::bwntd::{close_pos, fill_time, fractals, open_pos, path_key, tick_of, 
 use crate::connors::{sma, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "bwtc1";
+/// Admitted ids (authors/bwilliams/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["bwtc1_fractal", "bwtc1_twr"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let make = |id, name, group, dir, status, rules, notes| StrategyDef {
@@ -22,7 +25,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|\"A fractal stop generally occurs two fractals back in the opposite direction, or if a buy/sell signal is created in the opposite direction. In the first case, we would have a stop. In the second case, we would have a stop-and-reverse signal.\" (p.142) An opposite signal hit reverses the position.",
               "F|p.macd=1 [non-default, Level Three worksheet]: \"Take fractal signals only when this momentum indicator is in the direction of the fractal signal\" (p.186) with \"If the histogram is below the signal line, we only take shorts. If the histogram is above the signal line, we only take longs\" (p.130); histogram = SMA5 - SMA34 of (H+L)/2 (CQG '5 SIM(MI) - 34 SIM(MI)'), signal line = its 5-bar SMA (p.122, 182), read at the previous close.",
               "X|Same-bar order [book silent]: open -> nearer extreme -> other extreme; gaps fill at the open. The bracketed-market alternative (exit or reverse on a thumb signal, p.142) is chart judgement and not coded."],
-            "Printed p.133-151 (PDF 136-154). The book's examples (Figs 8-15 to 8-19) are 5-minute S&P futures on Feb 4 and Oct 4, 1994: intraday data the vault lacks, so not compared. One tick = 0.01 on US indices/ETFs, 0.05 on NSE. Run on the index (instrument swap)."),
+            "Printed p.133-151 (PDF 136-154). The book's examples (Figs 8-15 to 8-19) are 5-minute S&P futures on Feb 4 and Oct 4, 1994: intraday data the vault lacks, so not compared. One tick = 0.01 on US indices, ETFs and stocks, 0.05 on NSE. Run on the index (instrument swap)."),
         make("bwtc1_twr", "Tide/wave/ripple 5/13/34 rhythm (long / short / out)", "TC1 ch. 10 · Profitunity Trading Partner", "Long/Short", Status::Live,
             &["F|\"The best way to monitor this market rhythm is to use a 5/13/34 moving average filter\" (p.181); chart legend '5 SIM(MI) / 13 SIM(MI) / 34 SIM(MI)' = simple averages of the bar midpoint (H+L)/2 (Fig. 10-3, p.182).",
               "E|\"i. If 5 is above 13 and 34, you should be long; ii. If 5 is below 13 and 34, you should be short; iii. If 5 is between 13 and 34, you should be out\" (Fig. 10-6, p.186; p.181 \"Be long any time the 5-bar average is higher than both the 13-bar and 34-bar averages\").",

@@ -6,6 +6,9 @@
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "wbmdd";
+/// Admitted ids (authors/blau/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["wbmdd_erg_ema_s1", "wbmdd_erg_ema_s2", "wbmdd_erg_ema_s3", "wbmdd_erg_tsi_s1", "wbmdd_erg_tsi_s2", "wbmdd_erg_tsi_s3"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const R_ERG_EMA: &[&str] = &[
     "F|Ergodic(Close,r) = TSI(Close,r,5); SignalLine(Close,r) = EMA(TSI(Close,r,5),5) (p.18; App. B Fig B-3: Value1 = TSI(Close,r,5,1), Value2 = XAverage(TSI(Close,r,5,1),5))",

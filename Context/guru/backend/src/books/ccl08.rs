@@ -145,11 +145,13 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("ccl08_crdt_emini", "CRDT E-mini/SPY (breakout day trades)", "Session 1/CRDT · E-mini", "Long/Short",
           NotTestable("the rules are not in these files: Session 1 lists it on the agenda and the CRDT deck (s92) shows only 'observations so far' and its relation to EEV; it also needs intraday e-mini data"),
           &["E|\"Breakout trading (e-minis & SPYs)\" (S1 s9); \"CRDT E-mini/SPY - Observations so far\" (CRDT s92)"], "", None),
-        d("ccl08_weekly_rsi_options", "Monthly Options Income I · Weekly RSI Program for ETFs", "Session 2 · Options", "Short",
-          NotTestable("the position is short calls / call spreads (P&L needs option chains); the exit menu is also a choice ('under 80, 70, 60 (the latter is preferred)')"),
+        d("ccl08_weekly_rsi_options", "Monthly Options Income I · Weekly RSI Program for ETFs", "Session 2 · Options", "Short", Live,
           &["F|\"1. No 200 day. 2. Use Weekly Bars. 3. The 2-period RSI (weekly RSI) closes above 85.\" (S2 s32)",
-            "E|\"4. Aggressive - Sell Naked the ATM or OTM calls. 5. More Conservative-Sell the OTM Ratio Call Spread. 6. Even more conservative. Sell OTM Vertical Call Spread.\"",
-            "X|\"7. Exit one week later or when the daily 2-period RSI drops under 80, 70, 60 (the latter is preferred). 8. Possible Stops-2x the premium...\" (s33)"], "", None),
+            "E|\"4. Aggressive - Sell Naked the ATM or OTM calls. For example the ETF is at 98. Sell the 98, 99 or 100 calls.\" Coded: sell the ATM call (listed strike nearest the close, tie lower) at the close of the signal week's last day; p.otm = 1 or 2 sells the 1st/2nd listed strike above the close instead [convention: the slide offers a menu]",
+            "X|\"7. Exit one week later or when the daily 2-period RSI drops under 80, 70, 60 (the latter is preferred).\" Coded: buy back at the close when daily RSI(2) closes under 60 (p.exit_rsi), or at the close of the last trading day of the following week",
+            "X|\"8. Possible Stops-2x the premium you took in. Or once the ETF goes ITM. Or roll to a higher strike price.\" (\"possible\": not coded)"],
+          "Options phase 2: real option prices, no pricing model. Expiry is not on the slide: the closest monthly expiry more than one week away is sold [convention, as Connors' OISS]. A weekly bar = Mon-Sun calendar week; the signal is read on the week's last trading day close (weekly RSI(2), Wilder, of weekly closes). Fill only if the call traded that day: US SPY/QQQ/IWM at the 16:00 mid (bid+ask)/2 with volume > 0 [labelled: no bid/ask edge]; India NIFTY 50 / NIFTY BANK at the traded close. An untraded exit day exits on the next traded close; a call held to its last trading day settles at intrinsic value. One position at a time. The open call is valued daily at its own price (traded close / mid; India settlement price on untraded days, labelled). Return = call points / underlying close at entry. Ratio and vertical spreads (rules 5-6) are not coded: their strike menus are examples only. Book: ETFs (SPY/QQQ/IWM = ETFs with option prices in the vault, 2008/2011-2025); NIFTY 50 / NIFTY BANK index options are a declared application.",
+          None),
         d("ccl08_quick_scalp", "Monthly Options Income II · ETF Quick Scalp", "Session 2 · Options", "Short",
           NotTestable("sells calls / call spreads; P&L needs option chains"),
           &["E|\"1. No 200 day. 2. The 2 (two) period RSI of the ETF is above 97 3. Sell the higher strike price calls\" (S2 s42)", "X|\"5. Exit on the first down close in price.\""], "", None),
@@ -178,7 +180,8 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "ccl08_tps_long" => ("ccl08_tps", "TPS preview (Chairman's Club 2008)", "Long 1-2-3-4"),
         "ccl08_tps_short" => ("ccl08_tps", "TPS preview (Chairman's Club 2008)", "Short 1-2-3-4"),
         "ccl08_tps_research" => ("ccl08_tps", "TPS preview (Chairman's Club 2008)", "Research start 2-4-6-8"),
-        "ccl08_weekly_rsi_options" | "ccl08_quick_scalp" | "ccl08_adx_quiet" | "ccl08_busted_options" =>
+        "ccl08_weekly_rsi_options" => ("ccl08_options", "Chairman's Club 2008 · options income", "Weekly RSI program (short ATM call)"),
+        "ccl08_quick_scalp" | "ccl08_adx_quiet" | "ccl08_busted_options" =>
             ("ccl08_options", "Chairman's Club 2008 · options income", "Options (not testable)"),
         _ => return None,
     })
@@ -208,6 +211,10 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             if id == "ccl08_tps_long" { p("rsi_entry", "Buy when RSI(2) below", 40., 10., 50., 5.) } else { p("rsi_entry", "Short when RSI(2) above (2 days)", 70., 50., 95., 5.) },
             if id == "ccl08_tps_long" { p("rsi_exit", "Sell when RSI(2) above", 70., 50., 95., 5.) } else { p("rsi_exit", "Cover when RSI(2) below", 25., 5., 50., 5.) },
             p("exit_next", "0 = exit at the signal close (rules); 1 = next open (s100 remark) [labelled option]", 0., 0., 1., 1.)],
+        "ccl08_weekly_rsi_options" => vec![p("wrsi_gt", "Weekly RSI(2) closes above", 85., 70., 95., 5.),
+            p("exit_rsi", "Exit: daily RSI(2) under (book menu 80/70/60, 60 preferred)", 60., 50., 80., 10.),
+            p("otm", "Call strike: 0 = ATM, N = N-th listed strike above the close (book menu)", 0., 0., 2., 1.),
+            p("min_dte", "Closest month more than N calendar days from expiry [convention]", 7., 0., 21., 1.)],
         "ccl08_tps_research" => vec![tr(), p("rsi_prev_lt", "Yesterday's RSI(2) below", 75., 10., 95., 5.), p("rsi_exit", "Sell when RSI(2) above", 75., 50., 95., 5.)],
         _ => return None,
     })
@@ -271,7 +278,52 @@ fn scale_sim(x: &Ctx, from: usize, to: usize, dir: f64, entry: &dyn Fn(usize) ->
     out
 }
 
+/// Options phase 2: Weekly RSI Program (S2 s32-33) with real option prices; see the card note.
+pub fn option_positions(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Result<Vec<crate::options::Pos>, String>> {
+    use crate::options::{self as opt, Contract, Exit};
+    if id != "ccl08_weekly_rsi_options" { return None; }
+    let schema = params(id)?;
+    let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
+    let Some(chain) = x.options else { return Some(Err(crate::books::oiss::NO_CHAIN.into())) };
+    let n = x.r.len();
+    let week: Vec<i64> = x.r.iter().map(|r| opt::week_of(opt::ymd(&r.date))).collect();
+    // last bar of each completed calendar week (the bar after it starts a new week)
+    let week_end: Vec<bool> = (0..n).map(|i| i + 1 < n && week[i + 1] != week[i]).collect();
+    let ends: Vec<usize> = (0..n).filter(|&i| week_end[i]).collect();
+    let wc: Vec<f64> = ends.iter().map(|&i| x.c[i]).collect();
+    let wr = rsi(&wc, 2);
+    let mut wrsi = vec![f64::NAN; n];
+    for (k, &i) in ends.iter().enumerate() { wrsi[i] = wr[k]; }
+    let (gt, ex, otm, min_dte) = (g("wrsi_gt"), g("exit_rsi"), g("otm").round().max(0.0) as usize, g("min_dte"));
+    let r2 = &x.rsi2;
+    let mut w = opt::Window::new(chain, x, 8);
+    let mut out = Vec::new();
+    let mut i = from;
+    while i <= to {
+        if !(week_end[i] && wrsi[i] > gt) { i += 1; continue; }
+        let today = opt::ymd(&x.r[i].date);
+        let day = w.at(i);
+        let pick = opt::expiries(day).into_iter().find(|&e| (opt::day_no(opt::ltd(x, e)) - opt::day_no(today)) as f64 > min_dte).and_then(|e| {
+            let ks = opt::strikes(day, e, false);
+            let strike = if otm == 0 { opt::nearest(&ks, x.c[i]) } else { ks.iter().copied().filter(|s| *s > x.c[i]).nth(otm - 1) };
+            strike.map(|strike| Contract { expiry: e, put: false, strike })
+        });
+        let Some(c) = pick else { i += 1; continue };
+        let Some(px0) = w.quote(i, c).and_then(|q| q.fill_close()) else { i += 1; continue };
+        let next_end = (i + 1..n).find(|&k| week_end[k]).unwrap_or(usize::MAX);
+        let (j, pnl, why, open, marks) = opt::follow(&mut w, x, c, -1.0, i, px0, to, &mut |k| {
+            if r2[k] < ex { Some((Exit::Close, format!("daily RSI(2) < {ex}"))) }
+            else if k >= next_end { Some((Exit::Close, "one week later".into())) } else { None }
+        });
+        out.push(opt::Pos { dir: -1.0, s0: x.c[i], entry_i: i, exit_i: j, pnl, open,
+            reason: format!("{why} · weekly RSI(2) {:.1} · sold {} call exp {} on {} at {px0:.2} · {}", wrsi[i], c.strike, c.expiry, x.r[i].date, marks.text()) });
+        i = j + 1;
+    }
+    Some(Ok(out))
+}
+
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+    if let Some(r) = option_positions(id, x, from, to, p) { return Some(crate::options::account(r.unwrap_or_default(), from, to, 0.0).trades); }
     let schema = params(id)?;
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
     let (c, o, h, l) = (&x.c, &x.o, &x.h, &x.l);

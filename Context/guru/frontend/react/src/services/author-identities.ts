@@ -10,8 +10,72 @@ export const authorIdentities: Record<string, readonly string[]> = {
     "Mark Boucher"
   ],
   "chande": [
-    "Stanley Kroll",
     "Tushar Chande"
+  ],
+  "kroll": [
+    "Stanley Kroll"
+  ],
+  "jobman": [
+    "Darrell R. Jobman"
+  ],
+  "langham": [
+    "James Mars Langham"
+  ],
+  "maclean": [
+    "George A. MacLean"
+  ],
+  "nison": [
+    "Steve Nison"
+  ],
+  "kennedy": [
+    "Jeffrey Kennedy"
+  ],
+  "dittmann": [
+    "Karl Dittmann"
+  ],
+  "duffy": [
+    "Joseph T. Duffy"
+  ],
+  "wirrick": [
+    "Steve Wirrick"
+  ],
+  "jcarter": [
+    "John F. Carter"
+  ],
+  "borowski": [
+    "Robert Borowski"
+  ],
+  "merriman": [
+    "Raymond A. Merriman"
+  ],
+  "csmith": [
+    "Courtney D. Smith",
+    "Courtney Smith"
+  ],
+  "lien": [
+    "Kathy Lien"
+  ],
+  "arms": [
+    "Richard W. Arms Jr."
+  ],
+  "kacher": [
+    "Chris Kacher",
+    "Gil Morales"
+  ],
+  "bortucene": [
+    "Erol Bortucene"
+  ],
+  "angell": [
+    "George Angell"
+  ],
+  "augen": [
+    "Jeff Augen"
+  ],
+  "wyckoff": [
+    "Richard D. Wyckoff"
+  ],
+  "abell": [
+    "Howard Abell"
   ],
   "radge": [
     "Nick Radge"
@@ -174,11 +238,68 @@ export const authorIdentities: Record<string, readonly string[]> = {
     "Richard Anderson"
   ],
   "mtiming": [],
+  "pring": [
+    "Martin J. Pring"
+  ],
+  "gregoriou": [
+    "Greg N. Gregoriou"
+  ],
+  "crisp": [
+    "Mark Crisp"
+  ],
+  "fabozzi": [
+    "Frank J. Fabozzi"
+  ],
+  "fontanills": [
+    "George A. Fontanills"
+  ],
+  "thomsett": [
+    "Michael C. Thomsett"
+  ],
+  "fischer": [
+    "Robert Fischer"
+  ],
+  "patel": [
+    "Alpesh B. Patel"
+  ],
+  "vanvliet": [
+    "Benjamin Van Vliet"
+  ],
+  "carney": [
+    "Scott M. Carney"
+  ],
+  "etzkorn": [
+    "Mark Etzkorn"
+  ],
+  "bickford": [
+    "James L. Bickford"
+  ],
+  "mdarcher": [
+    "Michael Duane Archer"
+  ],
+  "gbayer": [
+    "George Bayer"
+  ],
+  "person": [
+    "John L. Person"
+  ],
+  "bigalow": [
+    "Stephen W. Bigalow"
+  ],
+  "murphy": [
+    "John J. Murphy"
+  ],
+  "pesavento": [
+    "Larry Pesavento"
+  ],
   "sysmisc": [],
   "swingstk": [],
   "vendors": [],
   "scart": [],
   "swing12": [],
+  "schwager": [
+    "Jack D. Schwager"
+  ],
   "magazines": [],
   "t2wgrp": [],
   "v6misc": [],

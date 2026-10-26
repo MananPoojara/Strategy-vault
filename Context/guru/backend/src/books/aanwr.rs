@@ -11,6 +11,9 @@ use crate::books::lg3k::reversal;
 use crate::connors::{claim, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "aanwr";
+/// Admitted ids (authors/aan/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["aanwr_weekly_rule"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 /// Days since 1970-01-01 of "YYYY-MM-DD".
 fn days(d: &str) -> i64 {
@@ -63,8 +66,11 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     }
     let lv = |i: usize| {
         let w = idx[i];
-        let b = if w >= nb { wh[w - nb..w].iter().cloned().fold(f64::MIN, f64::max) + tick } else { f64::NAN };
-        let s = if w >= ns { wl[w - ns..w].iter().cloned().fold(f64::MAX, f64::min) - tick } else { f64::NAN };
+        // one tick beyond the extreme; a price exactly at the stop touches it: the level is moved 1e-12 (relative) towards
+        // the market so that float rounding (29.31 - 0.05 = 29.259999999999998) cannot miss a low of 29.26 (review 25 Oct 2026)
+        let (bump_b, bump_s) = (|v: f64| v - 1e-12 * v.abs(), |v: f64| v + 1e-12 * v.abs());
+        let b = if w >= nb { bump_b(wh[w - nb..w].iter().cloned().fold(f64::MIN, f64::max) + tick) } else { f64::NAN };
+        let s = if w >= ns { bump_s(wl[w - ns..w].iter().cloned().fold(f64::MAX, f64::min) - tick) } else { f64::NAN };
         // the data's first (possibly partial) week is not a complete calendar week
         if w < nb.max(ns) + 1 { (f64::NAN, f64::NAN) } else { (b, s) }
     };

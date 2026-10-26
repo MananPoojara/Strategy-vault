@@ -146,7 +146,7 @@ Image: https://static.wixstatic.com/media/98a14b_cdc5e9fb0fcd432e90b687940b07517
 Source page: https://www.victorsperandeo.com/
 Licence: not stated; credited to source
 
-Jack Schwager portrait: photo in his co-founder profile on the FundSeeder "About" page (no clearly identified photo of Ray Chong found), retrieved 2026-10-12.
+Jack Schwager portrait (schwager.jpg, also swing12.jpg before 2026-10-23): photo in his co-founder profile on the FundSeeder "About" page, retrieved 2026-10-12.
 Image: https://cdn.prod.website-files.com/67643ba93310787ab3c356ff/678ed0d39c5a053ca4dcc484_jack.jpg
 Source page: https://www.fundseeder.com/about
 Licence: not stated; credited to source

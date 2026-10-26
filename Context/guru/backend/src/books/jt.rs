@@ -10,6 +10,9 @@
 use crate::connors::{simulate, sma, true_range, Ctx, Entry, Exit, Leg, ParamDef, Params, Spec, Status, StrategyDef, Trade};
 
 const BOOK: &str = "jt";
+/// Admitted ids (authors/tomasini/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["jt_example_20d_breakout", "jt_luxor_daily", "jt_bb_forex", "jt_bom", "jt_bb_futures", "jt_bb_stocks"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const LUXOR_30M_GAP: &str = "needs 30-minute GBP/USD FOREX bars (GMT timestamps) for 21/10/2002-4/7/2008; the vault has daily bars only and no FX";
 const BB_PORTFOLIO_GAP: &str = "needs point-in-time S&P 500 / Nasdaq 100 / S&P 1500 / ASX constituents incl. delisted stocks (Norgate) and a 20-slot portfolio simulator with momentum ranking; NSE baskets are current-membership snapshots (survivorship bias) so not a substitute";
@@ -147,6 +150,10 @@ fn close(mut t: Trade, i: usize, px: f64, sig: usize, why: &str) -> Trade {
 #[derive(Default)]
 struct Orders { le: Option<f64>, se: Option<f64>, lx: Option<f64>, sx: Option<f64>, lt: Option<f64>, st: Option<f64> }
 
+/// A computed stop level (moving averages, bands) equal to a printed price can differ from it in the last binary digit;
+/// a bar that trades exactly at the level reaches it (2026-10-25, authors/tomasini).
+fn tol(l: f64) -> f64 { 1e-11 * l.abs().max(1.) }
+
 const NAMES: [&str; 3] = ["stop exit", "reversal stop", "profit target"];
 
 /// One-position stop-order simulator (stop-and-reverse capable). `orders(i, pos)` runs on bar i's
@@ -161,7 +168,7 @@ fn stop_sim(x: &Ctx, from: usize, to: usize, start: usize, orders: &dyn Fn(usize
             let d = t.dir;
             // stops on the adverse side, in the order price reaches them (nearest first)
             let (stop, rev) = if d > 0. { (o.lx, o.se) } else { (o.sx, o.le) };
-            let hit = |lvl: Option<f64>| lvl.filter(|&l| if d > 0. { lo <= l } else { hi >= l });
+            let hit = |lvl: Option<f64>| lvl.filter(|&l| if d > 0. { lo <= l + tol(l) } else { hi >= l - tol(l) });
             let (s, r) = (hit(stop), hit(rev));
             let first = match (s, r) {
                 (Some(a), Some(b)) => Some(if d > 0. { if b >= a { (b, 1) } else { (a, 0) } } else if b <= a { (b, 1) } else { (a, 0) }),
@@ -169,7 +176,7 @@ fn stop_sim(x: &Ctx, from: usize, to: usize, start: usize, orders: &dyn Fn(usize
                 (None, Some(b)) => Some((b, 1)),
                 _ => None,
             };
-            let tgt = if d > 0. { o.lt.filter(|&l| hi >= l) } else { o.st.filter(|&l| lo <= l) };
+            let tgt = if d > 0. { o.lt.filter(|&l| hi >= l - tol(l)) } else { o.st.filter(|&l| lo <= l + tol(l)) };
             let fill = |l: f64| if d > 0. { op.min(l) } else { op.max(l) };
             if let Some((lvl, k)) = first {
                 let px = fill(lvl);
@@ -184,8 +191,8 @@ fn stop_sim(x: &Ctx, from: usize, to: usize, start: usize, orders: &dyn Fn(usize
                 cur = Some(t);
             }
         } else if j > from.max(start) {
-            let up = o.le.filter(|&l| hi >= l);
-            let dn = o.se.filter(|&l| lo <= l);
+            let up = o.le.filter(|&l| hi >= l - tol(l));
+            let dn = o.se.filter(|&l| lo <= l + tol(l));
             match (up, dn) {
                 (Some(l), None) => cur = Some(trade(1., j, op.max(l), "stop")),
                 (None, Some(l)) => cur = Some(trade(-1., j, op.min(l), "stop")),

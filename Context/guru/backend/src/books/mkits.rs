@@ -5,6 +5,9 @@
 use crate::connors::{sma, Claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "mkits";
+/// Admitted ids (authors/katsanos/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["mkits_dax_ma", "mkits_euro_ma"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 const SPX: &[&str] = &["SPX_CLOSE"];
 
 // ---------------------------------------------------------------- MetaStock functions (NaN = not yet defined)

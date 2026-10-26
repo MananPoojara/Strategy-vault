@@ -4,6 +4,9 @@
 use crate::connors::{claim, sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 const BOOK: &str = "hkmmts";
+/// Admitted ids (authors/heitkoetter/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["hkmmts_bb_fade", "hkmmts_bb_fade_2day"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const RULES_0: &[&str] = &[
     "F|Bollinger Bands: \"a setting of 34 for the Moving Average and 2.5 for the Standard Deviation\" (p.12) on daily closes. Bands = SMA(34) +/- 2.5 x population standard deviation of the 34 closes (TradeStation BollingerBand). [Book silent on the stdev convention]",

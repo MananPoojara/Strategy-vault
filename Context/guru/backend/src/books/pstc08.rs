@@ -7,6 +7,9 @@
 use crate::connors::*;
 
 pub const BOOK: &str = "pstc08";
+/// Admitted ids (authors/primo/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["pstc08_r4", "pstc08_r5", "pstc08_meteors", "pstc08_meteors5", "pstc08_rsi25_20", "pstc08_rsi25_20_noma"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const R4: &[&str] = &[
     "F|\"1. Stock is above its 200-day MA.\" (Session 3, slide 8)",

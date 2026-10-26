@@ -1,4 +1,4 @@
-//! Investment Secrets of a Hedge Fund Manager (Larry Connors & Blake E. Hayward, Probus 1995). Book id "hfm".
+//! Investment Secrets of a Hedge Fund Manager (Larry Connors & Blake E. Hayward, Probus 1995). Book id "hfm Intraday wave 1: run on real 1-minute bars by default (p.path=1): fills on the first minute that reaches the level, at the level or at that minute's open when it opened through it; out on the official daily close. Instrument: SPX only, because the levels are the book's fixed S&P points (.50 and 2.00 points: p.off_pts, p.stop_pts; the % params and stop_mode apply to path 0 only) (no conversion to SPY or NSE prices is invented); from 2014, where SPX daily opens are real, to 2026-08. Days without minute data make no trade. p.path=0 = the old daily-bar reading [Not from the book]. A minute that fills and also reaches the protective stop counts as filled then stopped, unless it opened beyond the stop: then only if it closed beyond it [convention]. An unfilled inside day carries the side to the next day; a day without minute data makes no trade and no carry. VIX = CBOE VIX daily close (the book used VXO).".
 //! Extraction: library/hfm/extract-1.md (Ch. 1-3) + extract-2.md (Ch. 4-9). Report: library/hfm/implementation-report.md.
 //!
 //! Conventions (beyond connors.rs):
@@ -19,15 +19,18 @@ pub const BOOK: &str = "hfm";
 
 /// Daily rules admitted after the 2026-10-21 source review (connors/hfm-admission/SOURCE-CONTRACT.md) and an independent
 /// chronological Python ledger check. Declared application: the book traded S&P 500 futures on NYSE breadth.
-/// Held (not listed): HV signal (no direction, entry or exit), Undeniables (an index-option selling method), NDX-SPX
-/// (LEADER_CLOSE series not loaded), News Reversals and the VIX program (gate withheld), Globex and Bond (data).
-pub const REVIEWED_DAILY: &[&str] = &["hfm_chadtp", "hfm_chadtp_nse"];
+/// NDX-SPX (connors-leftovers, 2026-10-22): the NASDAQ 100 vs S&P 500 cash-index signal of Ch.6, traded on SPX, SPY and DJI.
+/// Held (not listed): HV signal (no direction, entry or exit), Undeniables (an index-option selling method),
+/// News Reversals and the VIX program (same-day stop path), Globex and Bond (data).
+pub const REVIEWED_DAILY: &[&str] = &["hfm_chadtp", "hfm_chadtp_nse", "hfm_ndxspx"];
 pub fn reviewed_daily(id: &str) -> bool { REVIEWED_DAILY.contains(&id) }
 /// CHADTP on NYSE breadth: actual SPX and SPY; the NSE-breadth version: NIFTY 50.
 pub fn admitted_symbol(id: &str, ticker: &str) -> bool {
     match id {
         "hfm_chadtp" => matches!(ticker, "SPX" | "SPY"),
         "hfm_chadtp_nse" => ticker == "NIFTY 50",
+        // the book's signal is NASDAQ 100 vs S&P 500 cash; it traded S&P futures and showed the same signal on the DJIA
+        "hfm_ndxspx" => matches!(ticker, "SPX" | "SPY" | "DJI"),
         _ => false,
     }
 }
@@ -60,7 +63,7 @@ const CHADTP_RULES: &[&str] = &[
 ];
 
 const NDX_RULES: &[&str] = &[
-    "F|1. Take today's closing change of the NASDAQ 100 (series LEADER_CLOSE) and the S&P 500 (this ticker)",
+    "F|1. Take today's closing change of the NASDAQ 100 (series LEADER_CLOSE = NDX close) and the S&P 500 cash index (series FOLLOWER_CLOSE = SPX close), whatever instrument is traded",
     "E|2. If the NASDAQ 100 performance is stronger than the S&P 500, buy on the opening the next day",
     "E|3. The day after the S&P 500 is stronger than the NASDAQ 100, sell (short) on the opening",
     "X|Stop and reverse: always in the market; a tie keeps the current position",
@@ -127,12 +130,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
         StrategyDef { needs_series: &["NSE_ADV", "NSE_DECL"], ..d("hfm_chadtp_nse", "CHADTP · NSE breadth (India)", G5, "Long/Short", Live, CHADTP_RULES,
           "India mapping: NSE_ADV / NSE_DECL = NSE advancing / declining issues per day (NSE market-activity report; the stock universe of the file is under review). NSE issues traded (adv + dec) rose from about 1,500 a day in 2012 to about 3,500 in 2026, so a fixed ±400 changes meaning over time. Default scale = 0: fixed ±400 issues, as the book writes it (the NYSE version). [Not from the book] scale = 1: the threshold is a share of the issues traded, |CHADTP| ≥ thr / base × average (adv + dec) over the same window, with base = 1,900 (the NYSE's average adv + dec in the book's 1988-94 period), so the book's ±400 = ±21% of issues traded.",
           None) },
-        StrategyDef { needs_series: &["LEADER_CLOSE"], ..d("hfm_ndxspx", "NDX-SPX stop and reverse", G6, "Long/Short", Live, NDX_RULES,
-          "LEADER_CLOSE = daily close of the leader index, per ticker: SPY / SPX -> NASDAQ 100 (FRED NASDAQ100), NIFTY 50 -> NIFTY IT. The book compares point changes (\"if the NASDAQ is up 3.61 points today, and the S&P 500 cash market is up 2.41, you will buy\"); default pct = 0 is that book reading. Caveat: points compare like with like only for SPX vs NDX (similar levels in 1991-94); on SPY vs NDX (SPY points are ~1/10 of SPX) or NIFTY 50 vs NIFTY IT the signal becomes mostly \"which index is higher-priced\". [Not from the book] pct = 1 compares % changes, which any other pair needs. Book check (SPX cash 1991-94, pct 0): 442 trades vs the book's 440 and the 9/26/94 trade sheet match; the P/L is not comparable (no SPX opens then, so entries at the prior close inflate P/L by about 50%). The book traded S&P futures at the open; P/L here is on the ticker. The book's Dow table applies the same signal to the DJIA.",
+        StrategyDef { needs_series: &["LEADER_CLOSE", "FOLLOWER_CLOSE"], ..d("hfm_ndxspx", "NDX-SPX stop and reverse", G6, "Long/Short", Live, NDX_RULES,
+          "Signal: LEADER_CLOSE = NASDAQ 100 (NDX) close and FOLLOWER_CLOSE = S&P 500 (SPX) close, both from the vault's US index file, for every US ticker. The book compares point changes (\"if the NASDAQ is up 3.61 points today, and the S&P 500 cash market is up 2.41, you will buy\"); default pct = 0 is that book reading. [Not from the book] pct = 1 compares % changes. The book traded S&P futures at the open and showed the same signal on the DJIA; here it trades SPX, SPY or DJI at the open (declared application). Before 2014 (SPX) / 2016 (DJI) the index opens in the file are stale, so results start where opens are real; SPY opens are real. Book check (SPX cash 1991-94, pct 0): 442 trades vs the book's 440 and the 9/26/94 trade sheet match. India is not run: the book's pair is NASDAQ 100 vs S&P 500 and there is no reviewed Indian pair.",
           claim("440", "56%", "$303.92", "2 bars", "S&P futures 1/2/91 - 11/30/94")) },
         StrategyDef { needs_vix: true, ..d("hfm_vix", "VIX day-trading program", G6, "Long/Short", Live, VIX_RULES, VIX_NOTE,
           claim("24", "58.3% (14/10)", "$453 ($10,875 total, after $50 costs)", "day trade", "S&P futures 1993 - 11/20/94")) },
-        StrategyDef { needs_series: &["FV_PREMIUM", "FUT_ON_HIGH", "FUT_ON_LOW_AFTER_HIGH", "FUT_0830"], ..d("hfm_globex_fv", "Globex S&P Fair Value Program", G6, "Short", NeedsData("index futures overnight series FV_PREMIUM / FUT_ON_HIGH / FUT_ON_LOW_AFTER_HIGH / FUT_0830 (none in the vault)"), GLOBEX_RULES,
+        StrategyDef { needs_series: &["FV_PREMIUM", "FUT_ON_HIGH", "FUT_ON_LOW_AFTER_HIGH", "FUT_0830"], ..d("hfm_globex_fv", "Globex S&P Fair Value Program", G6, "Short", NeedsData("intraday S&P futures prices from the overnight Globex session (4:03 pm to 8:30 am) and each day's futures fair value; the vault holds daily cash-index bars only (series FV_PREMIUM / FUT_ON_HIGH / FUT_ON_LOW_AFTER_HIGH / FUT_0830)"), GLOBEX_RULES,
           "Intraday rule coded against per-day series of the index futures (index points, one row per trading day t, ticker = the cash index): FV_PREMIUM = fair value of the futures over cash; FUT_ON_HIGH = highest futures trade from 16:03 ET day t to 08:30 ET day t+1; FUT_ON_LOW_AFTER_HIGH = lowest futures trade after that high and before 08:30 ET t+1 (conservative: the real fill can come before the high); FUT_0830 = last futures trade before 08:30 ET t+1. India: NIFTY futures vs spot, overnight leg on GIFT Nifty. The MOC-sell variant (futures far above fair value + .50) is not modelled.",
           None) },
         d("hfm_bond_evening", "Bond Market Evening Session Price Persistency", G6, "Short", NotTestable("needs 30-year T-bond futures day + evening session intraday data and an economic calendar; no Indian equivalent"), BOND_RULES,
@@ -181,6 +184,10 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("gap_mode", "No-gap test vs: 0 = prior high/low, 1 = prior close", 0.0, 0.0, 1.0, 1.0),
             p("stop_mode", "Entry-day stop: 2 = bar path O-H-L-C (default), 0 = close only (optimistic), 1 = any touch (pessimistic)", 2.0, 0.0, 2.0, 1.0),
             p("use_vxo", "VIX source: 0 = vault VIX, 1 = series VXO", 0.0, 0.0, 1.0, 1.0),
+            // intraday wave 1
+            p("path", "1 = real 1-minute bars with the book's S&P points (SPX only; off_pts / stop_pts), 0 = [Not from the book] daily bars with the % conversions above and stop_mode", 1.0, 0.0, 1.0, 1.0),
+            p("off_pts", "Minute path: entry .50 S&P points beyond yesterday's high/low (book)", 0.5, 0.0, 5.0, 0.05),
+            p("stop_pts", "Minute path: protective stop 2.00 S&P points from the fill (book)", 2.0, 0.25, 20.0, 0.25),
         ],
         "hfm_globex_fv" => vec![
             p("off", "Sell: points above cash + fair value", 0.5, 0.0, 2.0, 0.05),
@@ -459,6 +466,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         }
         "hfm_ndxspx" => {
             let Some(lc) = x.series("LEADER_CLOSE") else { return Some(out) };
+            // book: the S&P 500 cash index change (FOLLOWER_CLOSE); without it the ticker's own close (SPX itself)
+            let sp = x.series("FOLLOWER_CLOSE").unwrap_or(c);
             let pc = g("pct") >= 0.5;
             let chg = |v: &[f64], i: usize| if pc { v[i] / v[i - 1] - 1.0 } else { v[i] - v[i - 1] };
             let mut want = 0.0; // side wanted from the latest decisive close (NaN / tie keeps it)
@@ -471,7 +480,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                     }
                     cur = Some(mk(want, i, o[i], "open"));
                 }
-                let (dl, ds) = (chg(lc, i), chg(c, i));
+                let (dl, ds) = (chg(lc, i), chg(sp, i));
                 if dl > ds {
                     want = 1.0;
                 } else if dl < ds {
@@ -482,6 +491,33 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 out.push(mark_open(t, x, to));
             }
         }
+        // ---- intraday wave 1: real 1-minute path with the book's S&P points (default path = 1)
+        "hfm_vix" if g("path") >= 0.5 => {
+            use crate::intraday::{day_trade, stop_entry_day, Level};
+            let Some(mm) = x.minutes else { return Some(out) };
+            let (hi, lo, off, stp, gap_close) = (g("hi"), g("lo"), g("off_pts"), g("stop_pts"), g("gap_mode") >= 0.5);
+            let vx: Vec<f64> = match (g("use_vxo") >= 0.5).then(|| x.series("VXO")).flatten() {
+                Some(s) => s.to_vec(),
+                None => { let m = vix_closes(); x.r.iter().map(|r| m.get(&r.date).copied().unwrap_or(f64::NAN)).collect() }
+            };
+            let mut carry = 0.0;
+            for i in from.max(1)..=to {
+                let side = if vx[i - 1] >= hi { 1.0 } else if vx[i - 1] <= lo { -1.0 } else { carry };
+                carry = 0.0;
+                if side == 0.0 { continue; }
+                let refp = if gap_close { c[i - 1] } else if side > 0.0 { h[i - 1] } else { l[i - 1] };
+                if side * (o[i] - refp) > 0.0 { continue; }
+                let Some(b) = mm.day(&x.r[i].date) else { continue }; // no minutes: no trade and no carry
+                let lvl = if side > 0.0 { h[i - 1] + off } else { l[i - 1] - off };
+                match stop_entry_day(&b, 0, &[Level { up: side > 0.0, px: lvl }], &|_, px| Some(Level { up: side < 0.0, px: px - side * stp })) {
+                    Some((_, px, Some(xp))) => out.push(day_trade(side, i, px, i, xp, "Stopped", "stop", false)),
+                    Some((_, px, None)) => out.push(day_trade(side, i, px, i, c[i], "Market on close", "stop", false)),
+                    None if h[i] < h[i - 1] && l[i] > l[i - 1] => carry = side,
+                    None => {}
+                }
+            }
+        }
+        // ---- end intraday wave 1
         "hfm_vix" => {
             let (hi, lo, off, stp) = (g("hi"), g("lo"), pct("off"), pct("stop"));
             let (gap_close, mode) = (g("gap_mode") >= 0.5, g("stop_mode").round());
@@ -581,7 +617,7 @@ mod tests {
         let r = rows(&[(463.0, 464.90, 462.0, 464.0), (464.5, 467.5, 464.0, 466.95)]);
         let mut x = Ctx::new(&r, &r, &[]);
         x.extra.insert("VXO".into(), vec![16.36, 14.0]);
-        let t = run("hfm_vix", &x, 0, 1, &ps(&[("use_vxo", 1.0), ("off", 0.5 / 464.90 * 100.0), ("stop", 2.0 / 465.40 * 100.0)])).unwrap();
+        let t = run("hfm_vix", &x, 0, 1, &ps(&[("use_vxo", 1.0), ("off", 0.5 / 464.90 * 100.0), ("stop", 2.0 / 465.40 * 100.0), ("path", 0.0)])).unwrap();
         assert_eq!(t.len(), 1);
         assert!(t[0].dir > 0.0 && (t[0].legs[0].px - 465.40).abs() < 1e-9 && t[0].exit_px == 466.95);
         assert_eq!(t[0].reason, "Market on close"); // low 464.00 never reached the 463.40 stop

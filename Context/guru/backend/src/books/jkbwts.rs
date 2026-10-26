@@ -17,6 +17,9 @@
 use crate::connors::{claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "jkbwts";
+/// Admitted ids (authors/krutsinger/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["jkbwts_dinapoli5", "jkbwts_rainmaker"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 // ------------------------------------------------------------------ shared daily simulator
 

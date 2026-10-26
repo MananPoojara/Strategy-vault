@@ -52,7 +52,8 @@ function LegacyStrategyPage({ snapshot }: { snapshot: ViewSnapshot }) {
       disabledReason={basket
         ? "Basket returns use the equal-slot portfolio calculation. Closed-trade compounding applies only to one instrument."
         : undefined}
-      onApply={report_mode => window.VaultRuntime.patch({report_mode})}
+      settings={snapshot.strategySettings}
+      onApply={(report_mode, p) => window.VaultRuntime.patch(p === undefined ? {report_mode} : basket ? {p} : {report_mode, p})}
     />,
     "source-account-notice": snapshot.strategyAccount ? <SourceAccountNotice account={snapshot.strategyAccount} /> : null,
     "unit-exposure-notice": snapshot.strategyUnit ? <UnitExposureNotice view={snapshot.strategyUnit} /> : null,

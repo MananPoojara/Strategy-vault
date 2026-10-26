@@ -7,6 +7,9 @@
 use crate::connors::{Claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "stwds";
+/// Admitted ids (authors/sullivan/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["stwds_ma5", "stwds_ma5_b001", "stwds_ma2_b001", "stwds_obv2", "stwds_obv30_75", "stwds_sr5_b005_c5", "stwds_ch20_x075_c5", "stwds_ch200_x15_c50", "stwds_ch20_x01_c10", "stwds_filter_12_10"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const NOTE: &str = "Paper data: DJIA daily closes 1897-1996 (BLL's data) and S&P 500 futures 1984-1996; positions 1 long, 0 neutral, -1 short (p.6), no dividends, no costs. Closing prices only. India = run on the index instead of the DJIA.";
 const MA_R: &[&str] = &[
@@ -108,6 +111,9 @@ fn entry(dir: f64, i: usize, px: f64) -> Trade {
 fn exit(out: &mut Vec<Trade>, cur: &mut Option<Trade>, i: usize, px: f64, why: String) {
     if let Some(mut t) = cur.take() { t.exit_i = i; t.exit_px = px; t.signal_i = i; t.reason = why; out.push(t); }
 }
+/// Strict a > b decided so that values equal in exact arithmetic (a close exactly on its average or band, missed by float
+/// rounding) are equal (review 25 Oct 2026); "at least x per cent" = not strictly below.
+fn gt(a: f64, b: f64) -> bool { a - b > 1e-12 * a.abs().max(b.abs()) }
 fn sma(v: &[f64], n: usize, i: usize) -> f64 { v[i + 1 - n..=i].iter().sum::<f64>() / n as f64 }
 
 /// State rule: desired position at each close (None = no change yet).
@@ -174,7 +180,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 if !(a.is_finite() && m.is_finite()) { return Some(0.); }
                 // OBV can be negative: the band is measured on |MA| so "exceed by b" keeps its direction.
                 let w = b * m.abs();
-                Some(if a > m + w { 1. } else if a < m - w { -1. } else { 0. })
+                Some(if gt(a, m + w) { 1. } else if gt(m - w, a) { -1. } else { 0. })
             })
         }
         "stwds_sr5_b005_c5" => {
@@ -182,7 +188,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             held(x, from, to, hold, |i| {
                 if i < n { return 0.; }
                 let (hi, lo) = extremes(c, i, n);
-                if c[i] > hi * (1. + b) { 1. } else if c[i] < lo * (1. - b) { -1. } else { 0. }
+                if gt(c[i], hi * (1. + b)) { 1. } else if gt(lo * (1. - b), c[i]) { -1. } else { 0. }
             })
         }
         "stwds_ch20_x075_c5" | "stwds_ch200_x15_c50" | "stwds_ch20_x01_c10" => {
@@ -190,7 +196,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             held(x, from, to, hold, |i| {
                 if i < n { return 0.; }
                 let (hi, lo) = extremes(c, i, n);
-                let channel = if on_low { hi <= lo * (1. + xw) } else { hi - lo <= xw * hi };
+                let channel = if on_low { !gt(hi, lo * (1. + xw)) } else { !gt(hi - lo, xw * hi) };
                 if !channel { 0. } else if c[i] > hi { 1. } else if c[i] < lo { -1. } else { 0. }
             })
         }
@@ -203,10 +209,10 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 match pos as i8 {
                     0 => {
                         hi = hi.max(px); lo = lo.min(px);
-                        if px >= lo * (1. + xf) { pos = 1.; hi = px; } else if px <= hi * (1. - xf) { pos = -1.; lo = px; }
+                        if !gt(lo * (1. + xf), px) { pos = 1.; hi = px; } else if !gt(px, hi * (1. - xf)) { pos = -1.; lo = px; }
                     }
-                    1 => { hi = hi.max(px); if px <= hi * (1. - yf) { pos = 0.; lo = px; } }
-                    _ => { lo = lo.min(px); if px >= lo * (1. + yf) { pos = 0.; hi = px; } }
+                    1 => { hi = hi.max(px); if !gt(px, hi * (1. - yf)) { pos = 0.; lo = px; } }
+                    _ => { lo = lo.min(px); if !gt(lo * (1. + yf), px) { pos = 0.; hi = px; } }
                 }
                 Some(pos)
             })

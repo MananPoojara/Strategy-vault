@@ -6,6 +6,9 @@
 use crate::connors::{sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "rjmil";
+/// Admitted ids (authors/rjones/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["rjmil_mama_div", "rjmil_futurevideo"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const NOTE_MA: &str = "Book market: futures (SuperCharts results p.56-59: Crude Oil, T-Bonds, Wheat, Soybeans, 1989/90-1997, one contract, no stops). \
 Code (p.55) wins over prose (p.53): the short average is t2=10 days in the code that produced the results, the prose says 'the last 5 days' (param t2=5 for the prose). \
@@ -137,8 +140,11 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             if let Some((b, sl, s)) = order.take() {
                 // levels known at the open of t
                 let (bl, sl_lvl) = if fv { (al[s], ah[s]) } else { (if plus { o[t] + off } else { o[t] - off }, o[t] - off) };
-                let buy_ok = b && (!fv || o[t] < bl) && h[t] >= bl;
-                let sell_ok = sl && (!fv || o[t] > sl_lvl) && l[t] <= sl_lvl;
+                // FutureVideo levels are averages of printed prices: a tie with the open or the bar's extreme is a tie
+                // (relative 1e-9, as slope_sign), not a last-digit accident of the running sum (2026-10-25, authors/rjones)
+                let (tb, ts) = if fv { (1e-9 * bl.abs(), 1e-9 * sl_lvl.abs()) } else { (0.0, 0.0) };
+                let buy_ok = b && (!fv || o[t] < bl - tb) && h[t] >= bl - tb;
+                let sell_ok = sl && (!fv || o[t] > sl_lvl + ts) && l[t] <= sl_lvl + ts;
                 let cd = cur.as_ref().map(|q| q.dir);
                 let try_go = |d: f64, px: f64, cur: &mut Option<Trade>, out: &mut Vec<Trade>| {
                     if cur.as_ref().map(|q| q.dir) == Some(d) { return; }
@@ -152,7 +158,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             if let Some(q) = cur.as_ref() { if t - q.legs[0].i > hold { exit_next = Some(t); } }
             if t < t1.max(t2) { continue; }
             let (b, sl) = if fv {
-                (l[t] < l[t - t1] && !ac[t].is_nan() && l[t] > ac[t], h[t] > h[t - t1] && !ac[t].is_nan() && h[t] < ac[t])
+                let ta = 1e-9 * ac[t].abs();
+                (l[t] < l[t - t1] && !ac[t].is_nan() && l[t] > ac[t] + ta, h[t] > h[t - t1] && !ac[t].is_nan() && h[t] < ac[t] - ta)
             } else {
                 let lo = l[t + 1 - t1..=t].iter().copied().fold(f64::INFINITY, f64::min);
                 let hi = h[t + 1 - t1..=t].iter().copied().fold(f64::NEG_INFINITY, f64::max);

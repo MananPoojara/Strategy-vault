@@ -8,6 +8,9 @@
 use crate::connors::*;
 
 pub const BOOK: &str = "tdwb";
+// Admitted 2026-10-24 (authors/demark/admission/SOURCE-CONTRACT.md): complete rules with independent US/India ledgers.
+pub const REVIEWED: &[&str] = &["tdwb_tdline_fade_short", "tdwb_tdline_fade_long"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const FADE_S: &[&str] = &[
     "F|TD Point High (Level 1): \"a price bar whose HIGH is ABOVE both the preceding bar's and succeeding bar's HIGHS\" (WB5 TD Points & TD Lines p.1); known after the succeeding bar closes",

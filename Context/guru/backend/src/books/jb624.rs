@@ -13,6 +13,17 @@ use crate::connors::{sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade
 
 pub const BOOK: &str = "jb624";
 
+/// Rules admitted after the 2026-10-22 full reading (authors/bernstein/g1-admission/SOURCE-CONTRACT.md) and an
+/// independent chronological Python ledger check. Futures methods (and stocks for the MAC / 3HL / POP charts):
+/// actual stocks, indices and ETFs are a declared application. The Friday-Monday system uses S&P-futures points
+/// and runs on SPX only. Held: FlatBase, 30-minute breakout, seasonal key dates, stochastic 50/45/55, PMF, COT, MOM/MA.
+pub const REVIEWED: &[&str] = &[
+    "jb624_mac2_sar", "jb624_mac2_stop", "jb624_mac5", "jb624_mac_adma", "jb624_mac_sr", "jb624_3hl", "jb624_pop", "jb624_gap2", "jb624_fri_mon",
+];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
+/// Rules whose fills read the open (gapped stops, limit fills at the open, next-open entries, first profitable opening).
+pub fn reads_open(id: &str) -> bool { matches!(id, "jb624_mac2_stop" | "jb624_mac5" | "jb624_mac_sr" | "jb624_3hl" | "jb624_gap2" | "jb624_fri_mon") }
+
 macro_rules! def {
     ($id:expr, $name:expr, $group:expr, $dir:expr, $status:expr, $rules:expr, $notes:expr) => {
         StrategyDef { id: $id, name: $name, group: $group, session: 0, dir: $dir, status: $status, needs_volume: false,
@@ -488,10 +499,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "jb624_pop" => {
             let k = slow_k(x, u("k"), u("smooth"), if g("k_method") >= 1.5 { 2 } else { 1 });
             let (up, lo) = (g("upper"), g("lower"));
+            // a reading within float noise of a level is on the level (neither above nor below it)
+            let gt = |a: f64, b: f64| a - b > 1e-9 * b.abs();
             for i in from.max(1)..=to {
                 if let Some(t) = cur.as_ref() {
                     let long = t.dir > 0.0;
-                    if (long && k[i] < up) || (!long && k[i] > lo) {
+                    if (long && gt(up, k[i])) || (!long && gt(k[i], lo)) {
                         out.push(finish(cur.take().unwrap(), i, x.c[i], i, if long { "%K back below the upper level" } else { "%K back above the lower level" }));
                     }
                     continue;
@@ -499,9 +512,9 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 if i == to {
                     break;
                 }
-                if k[i] > up && k[i - 1] <= up {
+                if gt(k[i], up) && !gt(k[i - 1], up) && k[i - 1].is_finite() {
                     cur = Some(new_trade(1.0, i, x.c[i], "close", i));
-                } else if k[i] < lo && k[i - 1] >= lo {
+                } else if gt(lo, k[i]) && !gt(lo, k[i - 1]) && k[i - 1].is_finite() {
                     cur = Some(new_trade(-1.0, i, x.c[i], "close", i));
                 }
             }

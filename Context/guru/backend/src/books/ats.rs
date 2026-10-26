@@ -207,7 +207,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "E|Sells: day one closes in the top 10 percent of its range, day two gaps higher, sell at the day-one high",
               "X|Sell MOC (the published 1996 test: mechanical, no stops)",
               "X|Optional (stop=1): initial protective stop near the day-two opening"],
-            "Published 1996 S&P list: 15 trades, 12 profitable, +43.75 points (book total $19,880 does not reconcile with its own list at $500/pt). Gap = open beyond the day-one low/high (gap=1); gap=0 uses the close.",
+            "Published 1996 S&P list: 15 trades, 12 profitable, +43.75 points (book total $19,880 does not reconcile with its own list at $500/pt). Gap = open beyond the day-one low/high (gap=1); gap=0 uses the close. Intraday wave 1: run on real 1-minute bars by default (p.path=1): the entry fills on the first minute that reaches it, at the level or at that minute's open when it opened through it; out on the official daily close. Instruments: SPY, SPX (from 2014, real daily opens), NIFTY 50 and NIFTYBANK, the only ones with cleaned minute data (declared application); days without minute data make no trade. p.path=0 = the old daily-bar reading [Not from the book]. Optional stop=1 (stop near the day-two open): A minute that fills and also reaches the protective stop counts as filled then stopped, unless it opened beyond the stop: then only if it closed beyond it [convention].",
             claim("15", "80% (12 / 3)", "+2.92 S&P pts", "same day (MOC)", "1/1/96-12/31/96, S&P 500 futures, no stops")),
         d("ats_morning_call_reversal", "Reversals off the Morning Call", "Ch 22 · Reversals off the Morning Call", "Long/Short",
             NotTestable("discretionary: needs the pre-open 'called to open' indication and news"),
@@ -222,7 +222,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "E|Day 2: if the market gaps lower (open below the day-one low), buy stop near the previous day's close (not its low)",
               "X|Initial protective stop at the day-one low (sells: day-one high)",
               "X|If the position closes in the top 10 to 15 percent of its daily range carry it into the next morning (exit next open), otherwise lock in profits near the close"],
-            "2-SD box (Ch 27) prints sqrt(265) but its arithmetic uses 256; sd_days param. HV100 = book Appendix HV of the day before the move. Entry-bar stop: the gap-down low came before the fill, so the stop only counts if the bar closes beyond it. No statistics in the book.", None),
+            "2-SD box (Ch 27) prints sqrt(265) but its arithmetic uses 256; sd_days param. HV100 = book Appendix HV of the day before the move. Entry-bar stop: the gap-down low came before the fill, so the stop only counts if the bar closes beyond it. No statistics in the book. Intraday wave 1: run on real 1-minute bars by default (p.path=1): the entry fills on the first minute that reaches it, at the level or at that minute's open when it opened through it; out on the official daily close. Instruments: SPY, SPX (from 2014, real daily opens), NIFTY 50 and NIFTYBANK, the only ones with cleaned minute data (declared application); days without minute data make no trade. p.path=0 = the old daily-bar reading [Not from the book]. A minute that fills and also reaches the protective stop counts as filled then stopped, unless it opened beyond the stop: then only if it closed beyond it [convention]. Carried positions (close in the top/bottom of the range) exit at the next day's open.", None),
         d("ats_flag_within_a_flag", "Trading Runaway Moves: flag within a flag", "Ch 24 · Trading Runaway Moves", "Long",
             NotTestable("discretionary: run-up, large-range day and half-hour upthrust are not quantified; needs half-hour bars and an RS/new-high universe"),
             &["F|New 52-week high after breaking out of a 17+ day flag that did not retrace 38 percent of the run-up",
@@ -325,14 +325,16 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("once", "First lower ADX reading only, re-armed under the level (1, book) or every downtick (0)", 1.0, 0.0, 1.0, 1.0)],
         "ats_dvmtm" => vec![p("high_n", "Three-month high: N trading days", 63.0, 40.0, 126.0, 1.0), p("near_pct", "Within % of the high", 0.0, 0.0, 3.0, 0.5),
             p("vol_n", "Average volume days", 15.0, 10.0, 30.0, 1.0), p("vol_x", "Volume multiple", 2.0, 1.5, 3.0, 0.25), tick(), hold(5.0), exitp()],
-        "ats_15min_adx_breakout" => vec![p("adx_n", "ADX/DI period", 14.0, 7.0, 21.0, 1.0), p("adx", "ADX above", 30.0, 20.0, 45.0, 5.0), tick(), losses(), side()],
+        "ats_15min_adx_breakout" => vec![p("adx_n", "ADX/DI period", 14.0, 7.0, 21.0, 1.0), p("adx", "ADX above", 30.0, 20.0, 45.0, 5.0), tick(), losses(), side(),
+            // intraday phase 1
+            p("path", "1 = real 1-minute bars (tick −1 = the market's tick: 0.05 NSE, 0.01 US; fills at the level or the minute's open), 0 = [Not from the book] old OPEN15/fill-count series reading", 1.0, 0.0, 1.0, 1.0)],
         "ats_15min_adx_breakout_equities" => vec![p("adx_n", "ADX/DI period", 14.0, 7.0, 21.0, 1.0), p("adx", "ADX above", 30.0, 20.0, 45.0, 5.0), tick(), losses(),
             p("min_price", "Price above", 40.0, 0.0, 200.0, 5.0), p("min_hv", "HV(100) at or above", 40.0, 10.0, 60.0, 5.0), hvr(), side()],
         "ats_10pct_oops" => vec![p("loc", "Close in bottom/top % of range", 10.0, 5.0, 25.0, 5.0), p("gap", "Gap beyond day-1 low/high (1) or close (0)", 1.0, 0.0, 1.0, 1.0),
-            p("stop", "Stop at the day-2 open (1) or none (0, book test)", 0.0, 0.0, 1.0, 1.0), side()],
+            p("stop", "Stop at the day-2 open (1) or none (0, book test)", 0.0, 0.0, 1.0, 1.0), side(), /* intraday wave 1 */ p("path", "1 = real 1-minute bars (book rule; fills at the level or the minute's open; days without minute data make no trade), 0 = [Not from the book] old daily-bar reading", 1.0, 0.0, 1.0, 1.0)],
         "ats_wide_range_gap" => vec![p("sd", "Move of at least N standard deviations", 2.0, 1.0, 3.0, 0.25), p("hv_n", "HV period", 100.0, 50.0, 150.0, 10.0),
             p("sd_days", "Days in the SD divisor (sqrt)", 256.0, 252.0, 265.0, 1.0), p("gap", "Gap beyond day-1 low/high (1) or close (0)", 1.0, 0.0, 1.0, 1.0),
-            p("carry", "Carry overnight if close in top/bottom % of range", 15.0, 5.0, 25.0, 5.0), hvr(), side()],
+            p("carry", "Carry overnight if close in top/bottom % of range", 15.0, 5.0, 25.0, 5.0), hvr(), side(), /* intraday wave 1 */ p("path", "1 = real 1-minute bars (book rule; fills at the level or the minute's open; days without minute data make no trade), 0 = [Not from the book] old daily-bar reading", 1.0, 0.0, 1.0, 1.0)],
         "ats_gipsons" => vec![p("adx_n", "ADX/DI period", 14.0, 7.0, 21.0, 1.0), p("adx", "ADX above", 25.0, 15.0, 45.0, 5.0), p("ratio", "HV6/HV100 below", 0.4, 0.2, 0.6, 0.05),
             p("short", "Short HV period", 6.0, 3.0, 10.0, 1.0), p("long", "Long HV period", 100.0, 50.0, 150.0, 10.0), tick(), hvr(), side(),
             p("exit_all", "Exit (c): half off + trail the rest (0, book) or exit all (1, simplified)", 0.0, 0.0, 1.0, 1.0),
@@ -934,6 +936,27 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let (ex, trail) = std_exit(x, g("exit"), u("hold"));
             sim(x, from, to, &Rules { sig: &sig, touch: no_touch, exit: &*ex, reverse: false, extend: false, stop_pct: 0.0, mm: MM0, trail: trail.as_deref() })
         }
+        // ---- intraday phase 1: real 1-minute path (default path = 1); the series reading below stays as path = 0
+        "ats_15min_adx_breakout" if g("path") >= 0.5 => {
+            let Some(mm) = x.minutes else { return Some(vec![]) };
+            let (pdi, mdi, adx) = dmi3(x.r, u("adx_n"));
+            let t = if g("tick") < 0.0 { x.market_tick() } else { g("tick") };
+            let mut out = Vec::new();
+            for i in from.max(1)..=to {
+                let k = i - 1;
+                if !(adx[k] > g("adx")) { continue; }
+                let dir = if pdi[k] > mdi[k] { 1.0 } else if mdi[k] > pdi[k] { -1.0 } else { continue };
+                let Some(b) = ok(dir).then(|| mm.day(&x.r[i].date)).flatten() else { continue };
+                let open = crate::intraday::session_open(&x.r[i].ticker, &x.r[i].date);
+                for (e, (px, stop, _)) in crate::intraday::adx15_day(&b, open, dir > 0.0, t, t, u("max_losses")).into_iter().enumerate() {
+                    let why = match stop { Some(_) => "protective stop", None => "MOC" };
+                    let why = if e > 0 { format!("re-entry: {why}") } else { why.to_string() };
+                    out.push(Trade { dir, legs: vec![Leg { i, px, w: 1.0 }], exit_i: i, exit_px: stop.unwrap_or(c[i]), reason: why, entry_kind: "stop", signal_i: i, open: false, exits: Vec::new() });
+                }
+            }
+            out
+        }
+        // ---- end intraday phase 1
         "ats_15min_adx_breakout" | "ats_15min_adx_breakout_equities" => {
             // missing series = no trades (the API reports the data gap before calling run)
             let s = |k: &str| x.series(k);
@@ -968,6 +991,48 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             }
             out
         }
+        // ---- intraday wave 1: real 1-minute path (default path = 1); the daily-bar readings below stay as path = 0
+        "ats_10pct_oops" if g("path") >= 0.5 => {
+            use crate::intraday::{day_trade, stop_entry_day, Level};
+            let Some(mm) = x.minutes else { return Some(vec![]) };
+            let (loc, gap_low, stop_on) = (g("loc") / 100.0, g("gap") > 0.5, g("stop") > 0.5);
+            let mut out = vec![];
+            for i in from.max(1)..=to {
+                let k = i - 1;
+                let cl = x.close_loc(k);
+                let (dir, lv) = if ok(1.0) && cl <= loc && o[i] < if gap_low { l[k] } else { c[k] } { (1.0, l[k]) }
+                    else if ok(-1.0) && cl >= 1.0 - loc && o[i] > if gap_low { h[k] } else { c[k] } { (-1.0, h[k]) } else { continue };
+                let Some(b) = mm.day(&x.r[i].date) else { continue };
+                let st = |_: usize, _: f64| stop_on.then(|| Level { up: dir < 0.0, px: o[i] });
+                let Some((_, px, xs)) = stop_entry_day(&b, 0, &[Level { up: dir > 0.0, px: lv }], &st) else { continue };
+                out.push(day_trade(dir, i, px, i, xs.unwrap_or(c[i]), if xs.is_some() { "protective stop near the day-two open" } else { "MOC" }, "stop", false));
+            }
+            out
+        }
+        "ats_wide_range_gap" if g("path") >= 0.5 => {
+            use crate::intraday::{day_trade, stop_entry_day, Level};
+            let Some(mm) = x.minutes else { return Some(vec![]) };
+            let hv = book_hv(c, u("hv_n"), hvr());
+            let (k_sd, div, gap_low, carry) = (g("sd"), g("sd_days").sqrt(), g("gap") > 0.5, g("carry") / 100.0);
+            let mut out = vec![];
+            for i in from.max(2)..=to {
+                let k = i - 1;
+                let (sd, mv) = (c[k - 1] * hv[k - 1] / 100.0 / div, c[k] - c[k - 1]);
+                let (dir, lv, sp) = if ok(1.0) && mv <= -k_sd * sd && o[i] < if gap_low { l[k] } else { c[k] } { (1.0, c[k], l[k]) }
+                    else if ok(-1.0) && mv >= k_sd * sd && o[i] > if gap_low { h[k] } else { c[k] } { (-1.0, c[k], h[k]) } else { continue };
+                let Some(b) = mm.day(&x.r[i].date) else { continue };
+                let Some((_, px, xs)) = stop_entry_day(&b, 0, &[Level { up: dir > 0.0, px: lv }], &|_, _| Some(Level { up: dir < 0.0, px: sp })) else { continue };
+                let strong = if dir > 0.0 { x.close_loc(i) >= 1.0 - carry } else { x.close_loc(i) <= carry };
+                out.push(match xs {
+                    Some(xp) => day_trade(dir, i, px, i, xp, "protective stop at the day-one extreme", "stop", false),
+                    None if strong && i < to => day_trade(dir, i, px, i + 1, o[i + 1], "closed in the extreme of its range: exit next morning", "stop", false),
+                    None if strong => day_trade(dir, i, px, i, c[i], "open", "stop", true),
+                    None => day_trade(dir, i, px, i, c[i], "locked in near the close", "stop", false),
+                });
+            }
+            out
+        }
+        // ---- end intraday wave 1
         "ats_10pct_oops" => {
             let (loc, gap_low, stop_on) = (g("loc") / 100.0, g("gap") > 0.5, g("stop") > 0.5);
             let touch = |i: usize| {
@@ -1124,7 +1189,7 @@ mod tests {
         for (k, v) in [("OPEN15_HIGH", 200.0), ("OPEN15_LOW", 198.0), ("LONG_FILLS", 3.0), ("LONG_STOPS", 2.0), ("SHORT_FILLS", 0.0), ("SHORT_STOPS", 0.0)] {
             ctx.extra.insert(k.into(), last(v));
         }
-        let go = |ctx: &Ctx, cap: f64| { let mut p = Params::new(); p.insert("max_losses".into(), cap); run("ats_15min_adx_breakout", ctx, 0, n - 1, &p).unwrap() };
+        let go = |ctx: &Ctx, cap: f64| { let mut p = Params::new(); p.insert("max_losses".into(), cap); p.insert("path".into(), 0.0); run("ats_15min_adx_breakout", ctx, 0, n - 1, &p).unwrap() };
         let t = go(&ctx, 2.0);
         assert_eq!(t.len(), 2, "{t:?}");
         assert!(t.iter().all(|t| t.dir == 1.0 && (t.legs[0].px - 200.05).abs() < 1e-9 && (t.exit_px - 197.95).abs() < 1e-9));
@@ -1163,8 +1228,41 @@ mod tests {
         // day 0 closes near its low (bottom 10%), day 1 opens below that low, rallies through it, closes 103
         let rows = vec![row(0, 105.0, 106.0, 100.0, 100.2), row(1, 98.0, 104.0, 97.0, 103.0), row(2, 103.0, 104.0, 102.0, 103.0)];
         let ctx = Ctx::new(&rows, &rows, &[]);
-        let t = run("ats_10pct_oops", &ctx, 0, 2, &Params::new()).unwrap();
+        let t = run("ats_10pct_oops", &ctx, 0, 2, &Params::from([("path".to_string(), 0.0)])).unwrap(); // intraday wave 1: daily path
         assert_eq!(t.len(), 1);
         assert_eq!((t[0].dir, t[0].legs[0].i, t[0].legs[0].px, t[0].exit_i, t[0].exit_px), (1.0, 1, 100.0, 1, 103.0));
+    }
+}
+
+// intraday wave 1: 10% OOPS and Wide-Range Gap on a small minute file (fill at a minute that gaps through, stop, carry)
+#[cfg(test)]
+mod intraday_w1_tests {
+    use super::*;
+    fn minutes(name: &str, days: &[(&str, &[&str])]) -> &'static crate::intraday::Minutes {
+        let dir = std::env::temp_dir().join(format!("{name}{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (mut body, mut idx) = (String::from("Date,Time,Open,High,Low,Close\n"), String::from("Date,offset,bytes\n"));
+        for (d, lines) in days {
+            let start = body.len();
+            for l in *lines { body.push_str(&format!("{d},{l}\n")); }
+            idx.push_str(&format!("{d},{start},{}\n", body.len() - start));
+        }
+        std::fs::write(dir.join("T.m1.csv"), &body).unwrap();
+        std::fs::write(dir.join("T.m1idx.csv"), &idx).unwrap();
+        // the files stay in the temp dir: days are read on demand
+        Box::leak(Box::new(crate::intraday::Minutes::load(dir.to_str().unwrap(), "T").unwrap()))
+    }
+    #[test]
+    fn oops_minute_fill_at_the_gapping_minute_open() {
+        let rows = vec![Row { ticker: "T".into(), date: "2020-01-01".into(), open: 105., high: 106., low: 100., close: 100.2, volume: None },
+                        Row { ticker: "T".into(), date: "2020-01-02".into(), open: 98., high: 104., low: 97., close: 103., volume: None }];
+        let mut x = Ctx::new(&rows, &rows, &[]);
+        // 09:31 jumps from 99.6 to 100.4: the buy stop at the day-one low 100 fills at that minute's open
+        x.minutes = Some(minutes("oops", &[("2020-01-02", &["09:30,98,99.6,97,99.6", "09:31,100.4,104,100.3,103"])]));
+        let t = run("ats_10pct_oops", &x, 0, 1, &Params::new()).unwrap();
+        assert_eq!((t.len(), t[0].legs[0].px, t[0].exit_px), (1, 100.4, 103.0));
+        // optional stop at the day-two open (98): not reached
+        let t = run("ats_10pct_oops", &x, 0, 1, &Params::from([("stop".to_string(), 1.0)])).unwrap();
+        assert_eq!(t[0].reason, "MOC");
     }
 }

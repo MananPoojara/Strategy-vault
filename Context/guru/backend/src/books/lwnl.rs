@@ -18,6 +18,14 @@ use crate::connors::{claim, sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef
 
 pub const BOOK: &str = "lwnl";
 
+/// Larry Williams block: rules admitted after the 23 Oct 2026 reading and independent ledgers
+/// (authors/lwilliams/admission/SOURCE-CONTRACT.md). SPX_POINTS: S&P-futures dollar stops / point gaps, actual SPX only;
+/// NDX_POINTS: the Nasdaq-100 futures dollar stop, actual NDX only; US_ONLY: US-holiday trades, US instruments only.
+pub const REVIEWED: &[&str] = &["lwnl_jan_rally", "lwnl_mar_short", "lwnl_oct_td9_buy", "lwnl_oct_td17_sell", "lwnl_nov_td17_db7", "lwnl_jan97_td16_buy", "lwnl_jan97_td2_sell", "lwnl_jul97_td4_buy", "lwnl_jul97_td17_buy", "lwnl_jul97_td16_buy_30d", "lwnl_jul97_td14_sell", "lwnl_aug97_td12_buy_bail", "lwnl_aug97_td18_buy_bail", "lwnl_aug97_td7_sell_bail", "lwnl_aug97_td18_buy_7d", "lwnl_aug97_td2_sell_7d", "lwnl_nov97_td17_buy_7d", "lwnl_nov97_td18_buy_7d", "lwnl_nov97_td6_buy_30d", "lwnl_nov97_td15_buy_30d", "lwnl_dec97_td2_buy_1d", "lwnl_dec97_td14_buy_1d", "lwnl_dec97_td9_sell_1d", "lwnl_pullback", "lwnl_krut_buy", "lwnl_krut_sell", "lwnl_proj_contra", "lwnl_truth1_closehigh", "lwnl_gap_fail_300", "lwnl_gap_fail_525", "lwnl_ndx_vb_oops", "lwnl_tg_close", "lwnl_tg_open8", "lwnl_tg_oc", "lwnl_tg_open3_bail", "lwnl_xmas_bail", "lwnl_xmas_bail9", "lwnl_memorial_bail", "lwnl_memorial_bail6", "lwnl_july4_buy", "lwnl_yearend_sell", "lwnl_od_buy", "lwnl_od_buy3", "lwnl_od_sell", "lwnl_od_fade_buy", "lwnl_od_fade_sell", "lwnl_engulf_bull_1", "lwnl_engulf_bull_5", "lwnl_engulf_bull_10", "lwnl_engulf_bear_1", "lwnl_engulf_bear_5", "lwnl_engulf_bear_10", "lwnl_keyrev_buy", "lwnl_proj_limit", "lwnl_tdw_oc_tue", "lwnl_tdw_oc_wed", "lwnl_tdw_oc_thu", "lwnl_tdw_oc_fri"];
+pub const SPX_POINTS: &[&str] = &["lwnl_jan_rally", "lwnl_mar_short", "lwnl_oct_td9_buy", "lwnl_oct_td17_sell", "lwnl_nov_td17_db7", "lwnl_jan97_td16_buy", "lwnl_jan97_td2_sell", "lwnl_jul97_td4_buy", "lwnl_jul97_td17_buy", "lwnl_jul97_td16_buy_30d", "lwnl_jul97_td14_sell", "lwnl_aug97_td12_buy_bail", "lwnl_aug97_td18_buy_bail", "lwnl_aug97_td7_sell_bail", "lwnl_aug97_td18_buy_7d", "lwnl_aug97_td2_sell_7d", "lwnl_nov97_td17_buy_7d", "lwnl_nov97_td18_buy_7d", "lwnl_nov97_td6_buy_30d", "lwnl_nov97_td15_buy_30d", "lwnl_dec97_td2_buy_1d", "lwnl_dec97_td14_buy_1d", "lwnl_dec97_td9_sell_1d", "lwnl_pullback", "lwnl_krut_buy", "lwnl_krut_sell", "lwnl_proj_contra", "lwnl_truth1_closehigh", "lwnl_gap_fail_300", "lwnl_gap_fail_525"];
+pub const NDX_POINTS: &[&str] = &["lwnl_ndx_vb_oops"];
+pub const US_ONLY: &[&str] = &["lwnl_tg_close", "lwnl_tg_open8", "lwnl_tg_oc", "lwnl_tg_open3_bail", "lwnl_xmas_bail", "lwnl_xmas_bail9", "lwnl_memorial_bail", "lwnl_memorial_bail6", "lwnl_july4_buy"];
+
 macro_rules! sd {
     ($id:expr, $name:expr, $group:expr, $dir:expr, $status:expr, $rules:expr, $notes:expr, $claim:expr) => {
         StrategyDef { id: $id, name: $name, group: $group, session: 0, dir: $dir, status: $status, needs_volume: false,
@@ -28,7 +36,7 @@ macro_rules! sd {
     };
 }
 
-const SP: &str = "Book market: S&P 500 futures ($500/pt, $50 commission in the printed $). Run on SPX / NIFTY 50 (instrument swap, same point distance).";
+const SP: &str = "Book market: S&P 500 futures ($500/pt, $50 commission in the printed $). Rules with dollar or point amounts run on actual SPX only (from 2014, when SPX opens are real); rules without them run on indices, ETFs and stocks.";
 const BOND: &str = "Needs daily T-Bond futures (OHLC); the vault has no bond futures series.";
 const FUT: &str = "Needs daily commodity / currency futures (OHLC) for the named markets; the vault has none.";
 
@@ -42,10 +50,12 @@ const SEA: &[Sea] = &[
     ("lwnl_oct_td9_buy", 10, 9, 1.0, 0.0, 1500.0, Some(2), None, false),
     ("lwnl_oct_td17_sell", 10, 17, -1.0, 0.0, 1500.0, Some(2), None, false),
     ("lwnl_nov_td17_db7", 11, 17, 1.0, 0.0, 3000.0, None, Some(7), false),
-    ("lwnl_jan97_td16_buy", 1, 16, 1.0, 0.0005, 1800.0, Some(5), None, false),
-    ("lwnl_jan97_td2_sell", 1, 2, -1.0, 0.0005, 1800.0, Some(5), None, false),
+    // Larry Williams block (23 Oct 2026): Jan 1997 p.7 trades the S&P "on the opening"; the report's 0.05% range stop is an option.
+    ("lwnl_jan97_td16_buy", 1, 16, 1.0, 0.0, 1800.0, Some(5), None, false),
+    ("lwnl_jan97_td2_sell", 1, 2, -1.0, 0.0, 1800.0, Some(5), None, false),
     ("lwnl_jul97_td4_buy", 7, 4, 1.0, 0.07, 1500.0, Some(7), None, false),
     ("lwnl_jul97_td17_buy", 7, 17, 1.0, 0.07, 1500.0, Some(7), None, false),
+    ("lwnl_jul97_td16_buy_30d", 7, 16, 1.0, 0.07, 1500.0, Some(30), None, false), // Larry Williams block: Jul 1997 p.2 30-day hold
     ("lwnl_jul97_td14_sell", 7, 14, -1.0, 0.0, 2500.0, None, Some(0), false),
     ("lwnl_aug97_td12_buy_bail", 8, 12, 1.0, -0.07, 1500.0, None, Some(0), false),
     ("lwnl_aug97_td18_buy_bail", 8, 18, 1.0, -0.07, 1500.0, None, Some(0), false),
@@ -106,12 +116,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|\"use a 7 day Delayed Bailout and $3,000 stop\" (Nov 1996 p.3); Delayed Bailout = \"waiting 9 days ... then exiting on any profitable opening after that point\" (Nov 1996 p.2)"],
             "Printout S&P 09/15/82-10/29/96 Test 6.", claim("13", "76%", "$2,492.31 ($32,400)", "", "S&P 09/15/82-10/29/96")),
         sd!("lwnl_jan97_td16_buy", "S&P January TD16 buy, 5-day exit, $1,800 stop", "Seasonals · 1997 special report", "Long", Live,
-            &["E|\"buy on the open of X TRADING DAY OF THE MONTH ... +/- 0.05% of the previous days range\" (Jan 1997 p.3): buy stop = open + 0.0005 x previous range (literal 0.05%; p.entry_pct = 0.05 for 5%)",
-              "E|\"buying the S&P on the opening of the 16th TRADING DAY OF THE MONTH\" [January] (Jan 1997 p.7)",
+            &["E|\"buying the S&P on the opening of the 16th TRADING DAY OF THE MONTH\" [January] (Jan 1997 p.7): market on open (default since 23 Oct 2026)",
+              "E|Option p.entry_pct = 0.0005: the special report's \"+/- 0.05% of the previous days range\" stop (Jan 1997 p.3), which the letter gives for the report's markets (the earlier default)",
               "X|\"The exit was $1,800 stop or MOC 5 days after entry\" (Jan 1997 p.7)"],
             SP, claim("13", "76%", "$1,715.38 ($22,300)", "5 days", "S&P (window not printed)")),
         sd!("lwnl_jan97_td2_sell", "S&P January TD2 sell, 5-day exit, $1,800 stop", "Seasonals · 1997 special report", "Short", Live,
-            &["E|\"Selling on the opening of the second trade day of the year\" (Jan 1997 p.7), with the report's entry rule open - 0.05% of the previous range (Jan 1997 p.3)",
+            &["E|\"Selling on the opening of the second trade day of the year\" (Jan 1997 p.7): market on open (default since 23 Oct 2026); option p.entry_pct = 0.0005 = the report's open - 0.05% of the previous range (Jan 1997 p.3)",
               "X|the report's exit: \"either a $1,800 stop or getting out on the close of the 5th day after the trade was entered\" (Jan 1997 p.3)"],
             SP, claim("14", "50%", "$1,442.86 ($20,200)", "5 days", "S&P (window not printed)")),
         sd!("lwnl_jul97_td4_buy", "S&P July TD4 buy, 7-day hold, $1,500 stop", "Seasonals · 1997 monthly lists", "Long", Live,
@@ -120,6 +130,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
         sd!("lwnl_jul97_td17_buy", "S&P July TD17 buy, 7-day hold, $1,500 stop", "Seasonals · 1997 monthly lists", "Long", Live,
             &["E|open + 7% of the previous day's range on July TD17 (Jul 1997 p.2-3)", "X|$1,500 stop or the close 7 trading days later (Jul 1997 p.2)"],
             SP, claim("13", "61%", "$3,309 ($43,025)", "7 days", "S&P (letter Jul 1997)")),
+        // Larry Williams block (23 Oct 2026 reading): the July 1997 30-day hold table, not coded before
+        sd!("lwnl_jul97_td16_buy_30d", "S&P July TD16 buy, 30-day hold, $1,500 stop", "Seasonals · 1997 monthly lists", "Long", Live,
+            &["E|\"The entry rule is to buy at 7% of the previous days range added to the opening on the enumerated day\" (Jul 1997 p.2): '30 DAY HOLD BUYS' table, S&P day 16",
+              "X|\"I also ran the best buys for a 30 trading day holding time period\" (Jul 1997 p.2): close 30 trading days after entry",
+              "X|Read: the $1,500 stop of the same paragraph (the 30-day table prints no separate stop)"],
+            SP, claim("13", "53%", "$2,655 ($34,525)", "30 days", "S&P (letter Jul 1997)")),
         sd!("lwnl_jul97_td14_sell", "S&P July TD14 short, bailout, $2,500 stop", "Seasonals · 1997 monthly lists", "Short", Live,
             &["E|\"selling short on the opening of the 14th trading day of the month\" (Jul 1997 p.3, 'the unknown seasonal trade of the month' in the July letter)",
               "X|\"exiting on the first profitable opening, with a $2,500 stop\" (Jul 1997 p.3)"],
@@ -208,21 +224,21 @@ pub fn catalogue() -> Vec<StrategyDef> {
             claim("70", "51%", "$438.21 ($30,675)", "3 days", "S&P to 06/92")),
         sd!("lwnl_krut_buy", "Krutsinger gap buy: high below the prior low, buy the open", "Patterns", "Long", Live,
             &["E|\"If today's high is less than yesterday's low, then buy tomorrow on the open\" (Jul 1991 p.2)",
-              "X|\"Exit the longs the 6th day ... I used a $1,750 stop for the longs\" (Jul 1991 p.3): close of the 6th day after entry"],
-            "The letter also says the best stop 'in the past' was $3,000 for buys and $2,000 for sells (p.2); the printed results use $1,750 / $2,500.",
+              "X|\"It is best to give buy signals more time to work out ... exit on the 6th close following entry, and use a $3,000 stop\" (Jul 1991 p.2): close of the 6th day after entry; $3,000 = 6 S&P points at $500"],
+            "Default since 23 Oct 2026 = the S&P stop of p.2 ($3,000). The $1,750 long stop is from the NIFE paragraph (p.3: \"I used a $1,750 stop for the longs and a $2,500 stop for the short sales\"), kept as the option p.stop_usd = 1750.",
             claim("53", "60%", "$666 ($35,325)", "6 days", "S&P (letter Jul 1991)")),
         sd!("lwnl_krut_sell", "Krutsinger gap sell: low above the prior high, sell the open", "Patterns", "Short", Live,
             &["E|\"If today's low is greater than yesterday's high, then sell tomorrow on the open\" (Jul 1991 p.2)",
-              "X|\"exit sells on the close of the third day following entry. ie. If you sell on a Monday opening you would exit on the close Thursday\"; \"$2,500 stop for the short sales in the results shown here\" (Jul 1991 p.2-3)"],
-            SP, claim("68", "61%", "$732 ($49,825)", "3 days", "S&P (letter Jul 1991)")),
+              "X|\"exit sells on the close of the third day following entry. ie. If you sell on a Monday opening you would exit on the close Thursday. The best stop to use, in the past, has been a $2,000 stop\" (Jul 1991 p.2): $2,000 = 4 S&P points at $500"],
+            "Default since 23 Oct 2026 = the S&P stop of p.2 ($2,000); the NIFE paragraph's $2,500 (p.3) is the option p.stop_usd = 2500.", claim("68", "61%", "$732 ($49,825)", "3 days", "S&P (letter Jul 1991)")),
         sd!("lwnl_od_buy", "Down-close outside day: buy at the high of the day before, exit next day", "Patterns", "Long", Live,
             &["F|Outside day = higher high and lower low than the previous day; '- close' = close below the previous close (Apr 1991 p.1-2)",
               "E|\"buying only on the day after the OD - close, at the high of the day prior to the OD\"; \"IF OPEN LESS THAN HIGH OF THAT DAY\" (Apr 1991 p.2-3): buy stop",
               "X|\"results exiting the next day\" (Apr 1991 p.2): Read: the close of the day after entry (the letters' 'X days later' exits are on the close); no stop"],
-            "Table 'DAY 1' S&P: $25,275, 28 winners, 85% (about 33 trades), avg $902.", claim("33", "85%", "$902 ($25,275)", "1 day", "S&P (letter Apr 1991)")),
+            "Table 'DAY 1' S&P: $25,275, 28 trades (the '#+' column: $25,275 / $902 = 28), 85%, avg $902.", claim("28", "85%", "$902 ($25,275)", "1 day", "S&P (letter Apr 1991)")),
         sd!("lwnl_od_buy3", "Down-close outside day buy, exit 3 days later", "Patterns", "Long", Live,
             &["E|same entry as lwnl_od_buy (Apr 1991 p.2-3)", "X|\"BEST DAY 3\" for the S&P: the close of the 3rd day after entry"],
-            "Table: S&P best day 3 $34,550, 28 winners, 78% (about 36 trades), avg $1,233.", claim("36", "78%", "$1,233 ($34,550)", "3 days", "S&P (letter Apr 1991)")),
+            "Table: S&P best day 3 $34,550, 28 trades, 78%, avg $1,233.", claim("28", "78%", "$1,233 ($34,550)", "3 days", "S&P (letter Apr 1991)")),
         sd!("lwnl_od_sell", "Up-close outside day: sell at the low of the day before, exit next day", "Patterns", "Short", Live,
             &["E|\"A + close OD sets up a sell at the low of the day just prior\" (Apr 1991 p.2), open above that low", "X|exit the next day (Read: the close), as the buy table"],
             "\"The sell side in the S&P generated 26 trades and 21 winners, for a net profit of $8,750\" (Apr 1991 p.3).", claim("26", "81%", "$337 ($8,750)", "1 day", "S&P (letter Apr 1991)")),
@@ -392,8 +408,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "lwnl_yearend_sell" => vec![p("td", "Sell the open after this December trading day", 20.0, 15.0, 23.0, 1.0), hold(3.0),
             p("prof_close", "Exit on the first profitable close", 1.0, 0.0, 1.0, 1.0), stop(0.0), pt(500.0), day0()],
         "lwnl_pullback" => vec![p("ma", "Moving average length", 20.0, 5.0, 50.0, 1.0), p("entry_pct", "Buy stop: open + x set-up day's range", 0.10, 0.0, 1.0, 0.05), stop(1200.0), hold(3.0), pt(500.0), day0()],
-        "lwnl_krut_buy" => vec![stop(1750.0), hold(6.0), pt(500.0), day0()],
-        "lwnl_krut_sell" => vec![stop(2500.0), hold(3.0), pt(500.0), day0()],
+        "lwnl_krut_buy" => vec![stop(3000.0), hold(6.0), pt(500.0), day0()],
+        "lwnl_krut_sell" => vec![stop(2000.0), hold(3.0), pt(500.0), day0()],
         "lwnl_od_buy" | "lwnl_od_sell" => vec![hold(1.0), stop(0.0), pt(500.0), day0()],
         "lwnl_od_buy3" => vec![hold(3.0), stop(0.0), pt(500.0), day0()],
         "lwnl_od_fade_buy" | "lwnl_od_fade_sell" => vec![hold(0.0), stop(0.0), pt(500.0), day0()],

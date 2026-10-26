@@ -1,9 +1,12 @@
 //! Robert Pardo, Design, Testing and Optimization of Trading Systems (Wiley, 1992).
 //! Mostly method (optimization, walk-forward, evaluation); only the fully specified example systems are coded.
 //! Source + verification: ~/.local/share/strategy-vault/library/rpdt/. The SAR helpers are reused by rpeo.rs (2008 edition).
-use crate::connors::{sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
+use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "rpdt";
+/// Admitted ids (authors/pardo/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["rpdt_ma_xover", "rpdt_range_bo", "rpdt_ma_timefilter"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 fn def(id: &'static str, name: &'static str, group: &'static str, status: Status, rules: &'static [&'static str], notes: &'static str) -> StrategyDef {
     StrategyDef { id, name, group, session: 0, dir: "Long/Short", status, needs_volume: false, needs_vix: false,
@@ -150,22 +153,30 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "rpdt_range_bo" => range_sar(x, from, to, g("mult"), g("mult"), true),
         "rpdt_ma_timefilter" => {
             let (f, sl, d) = (g("fast") as usize, g("slow") as usize, g("days") as usize);
-            let m1 = sma(&x.c, f);
+            let m1 = avg(&x.c, f);
             let mid: Vec<f64> = (0..x.r.len()).map(|i| (x.h[i] + x.l[i]) / 2.).collect();
-            let m2 = sma(&mid, sl);
-            let held = |i: usize, s: f64| i + 1 >= d && (i + 1 - d..=i).all(|j| m1[j].is_finite() && m2[j].is_finite() && (m1[j] - m2[j]) * s > 0.);
+            let m2 = avg(&mid, sl);
+            let held = |i: usize, s: f64| i + 1 >= d && (i + 1 - d..=i).all(|j| m1[j].is_finite() && m2[j].is_finite() && (if s > 0. { above(m1[j], m2[j]) } else { above(m2[j], m1[j]) }));
             sar_next_open(x, from, to, |i| if held(i, 1.) { 1 } else if held(i, -1.) { -1 } else { 0 }, "MA1 vs midpoint MA2 held 2 days")
         }
         _ => return None,
     })
 }
 
+/// Strict a > b as the book states it: two averages that are equal in exact arithmetic (float sums can differ
+/// by ~1e-15) count as equal, not as a cross (review 25 Oct 2026; before, a rounding difference could trigger a signal).
+pub fn above(a: f64, b: f64) -> bool { a - b > 1e-12 * a.abs().max(b.abs()) }
+/// Moving average summed afresh over each window (no rolling-sum drift, so `above` can use a 1e-12 tolerance).
+pub fn avg(v: &[f64], n: usize) -> Vec<f64> {
+    (0..v.len()).map(|i| if n == 0 || i + 1 < n { f64::NAN } else { v[i + 1 - n..=i].iter().sum::<f64>() / n as f64 }).collect()
+}
+
 /// Pardo's crossover: MA1(t) > MA2(t) and MA1(t-1) < MA2(t-1) (strict), reverse at the next open.
 pub fn ma_cross(x: &Ctx, from: usize, to: usize, fast: usize, slow: usize) -> Vec<Trade> {
-    let (a, b) = (sma(&x.c, fast), sma(&x.c, slow));
+    let (a, b) = (avg(&x.c, fast), avg(&x.c, slow));
     sar_next_open(x, from, to, |i| {
         if i == 0 || !(a[i].is_finite() && b[i].is_finite() && a[i - 1].is_finite() && b[i - 1].is_finite()) { return 0 }
-        if a[i] > b[i] && a[i - 1] < b[i - 1] { 1 } else if a[i] < b[i] && a[i - 1] > b[i - 1] { -1 } else { 0 }
+        if above(a[i], b[i]) && above(b[i - 1], a[i - 1]) { 1 } else if above(b[i], a[i]) && above(a[i - 1], b[i - 1]) { -1 } else { 0 }
     }, "MA crossover")
 }
 

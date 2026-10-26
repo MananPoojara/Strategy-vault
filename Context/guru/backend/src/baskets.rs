@@ -77,9 +77,10 @@ fn native_evidence<'a>(basket:&str,optional:impl Fn(&str)->Option<&'a str>)->Res
 }
 
 #[derive(Default)]
-pub struct Catalogue {root:PathBuf,entries:BTreeMap<String,Entry>,expected_members:BTreeMap<String,usize>}
+pub struct Catalogue {root:PathBuf,entries:BTreeMap<String,Entry>,expected_members:BTreeMap<String,usize>,unavailable_members:BTreeMap<String,BasketMember>}
 /// Server-owned universe inventory. This exposes no filesystem paths and does
 /// not turn a static source watchlist into dated historical membership.
+#[derive(Clone)]
 pub struct BasketMember {pub key:String,pub symbol:String,pub first:String,pub last:String,pub market:Market,pub membership_kind:String}
 struct Entry {basket:String,symbol:String,path:PathBuf,first:String,last:String,bars:usize,source:String,source_sha:String,csv_sha:String,membership:String,basket_member:bool,has_volume:bool,excluded_prefix:usize,original_bars:usize,coverage_note:String,evidence:NativeEvidence}
 
@@ -127,7 +128,8 @@ impl Catalogue {
         let text=std::str::from_utf8(&bytes).map_err(|_|"Basket whitelist is not UTF-8")?;
         let mut lines=text.lines();let header=parse_csv_fields(lines.next().ok_or("Basket whitelist empty")?);
         if header.iter().any(|name|!text_safe(name))||header.iter().enumerate().any(|(i,name)|header[..i].contains(name)){return Err("Basket whitelist has unsafe or duplicate columns".into());}
-        let mut catalogue=Self{root,entries:BTreeMap::new(),expected_members:BTreeMap::new()};
+        let mut catalogue=Self{root,entries:BTreeMap::new(),expected_members:BTreeMap::new(),unavailable_members:BTreeMap::new()};
+        let mut source_keys=std::collections::BTreeSet::new();
         for line in lines.filter(|line|!line.trim().is_empty()){
             let fields=parse_csv_fields(line);
             let field=|name:&str|header.iter().position(|key|key==name).and_then(|i|fields.get(i)).map(|v|v.trim()).ok_or_else(||format!("Basket whitelist missing {name}"));
@@ -138,7 +140,19 @@ impl Catalogue {
                 if !text_safe(basket)||!basket.bytes().all(|c|c.is_ascii_alphanumeric()||c==b'_'||c==b'-'){return Err("Unsafe expected-basket namespace".into());}
                 if catalogue.expected_members.insert(basket.into(),expected).is_some_and(|old|old!=expected){return Err("Inconsistent expected source-basket member counts".into());}
             }
-            if field("status")?!="ready"{continue;}
+            let source_key=format!("basket:{}:{}",field("basket")?,field("ticker")?);
+            if !source_keys.insert(source_key){return Err("Duplicate qualified basket symbol".into());}
+            if !matches!(optional("basket_member"),None|Some("true")|Some("false")){return Err("Invalid basket member flag".into());}
+            if field("status")?!="ready" {
+                if optional("basket_member")!=Some("false") {
+                    let (basket,symbol)=(field("basket")?,field("ticker")?);
+                    if !text_safe(basket)||!text_safe(symbol)||symbol.contains(':') {return Err("Unsafe missing member identity".into());}
+                    let evidence=native_evidence(basket,&optional)?;
+                    let key=format!("basket:{basket}:{symbol}");
+                    if catalogue.unavailable_members.insert(key.clone(),BasketMember{key,symbol:symbol.into(),first:String::new(),last:String::new(),market:evidence.market(),membership_kind:evidence.membership_kind().into()}).is_some(){return Err("Duplicate missing basket member".into());}
+                }
+                continue;
+            }
             let (basket,symbol,path)=(field("basket")?,field("ticker")?,PathBuf::from(field("path")?));
             if !text_safe(basket)||!basket.bytes().all(|c|c.is_ascii_alphanumeric()||c==b'_'||c==b'-')||!text_safe(symbol)||symbol.contains(':')||path.as_os_str().is_empty()||path.components().any(|c|!matches!(c,Component::Normal(_))){return Err("Unsafe basket namespace or source path".into());}
             let first=field("first")?;let last=field("last")?;let bars=field("bars")?.parse::<usize>().map_err(|_|"Invalid native source bar count")?;
@@ -161,8 +175,18 @@ impl Catalogue {
         let mut members:Vec<_>=self.entries.iter().filter(|(_,e)|e.basket==basket&&e.basket_member).map(|(key,e)|BasketMember{key:key.clone(),symbol:e.symbol.clone(),first:e.first.clone(),last:e.last.clone(),market:e.evidence.market(),membership_kind:e.evidence.membership_kind().into()}).collect();
         members.sort_by(|a,b|a.symbol.cmp(&b.symbol));members
     }
+    /// Includes named source constituents whose price files are not admitted.
+    pub fn source_members(&self,basket:&str)->Vec<BasketMember>{
+        let mut members=self.members(basket);
+        members.extend(self.unavailable_members.values().filter(|m|m.key.starts_with(&format!("basket:{basket}:"))).cloned());
+        members.sort_by(|a,b|a.symbol.cmp(&b.symbol));members
+    }
     pub fn native_evidence(&self,key:&str)->Option<&NativeEvidence>{self.entries.get(key).map(|entry|&entry.evidence)}
-    pub fn rows(&self,key:&str)->Result<Vec<Row>,String>{
+    pub fn rows(&self,key:&str)->Result<Vec<Row>,String>{self.read_rows(key,true)}
+    /// Basket admission uses the verified file's actual dates. Metadata dates
+    /// remain strict on all existing single-symbol and precision-domain paths.
+    pub fn basket_rows(&self,key:&str)->Result<Vec<Row>,String>{self.read_rows(key,false)}
+    fn read_rows(&self,key:&str,strict_coverage:bool)->Result<Vec<Row>,String>{
         let entry=self.entries.get(key).ok_or("Unknown qualified basket symbol")?;
         let path=self.root.join(&entry.path).canonicalize().map_err(|_|"Native source CSV unavailable")?;
         if !path.starts_with(&self.root){return Err("Native source path escapes its whitelist directory".into());}
@@ -171,7 +195,7 @@ impl Catalogue {
         if sha256_hex(&bytes)?!=entry.csv_sha{return Err("Native source SHA-256 mismatch; data changed after whitelist generation".into());}
         let text=std::str::from_utf8(&bytes).map_err(|_|"Native source CSV is not UTF-8")?;
         let rows=parse_rows(text,&entry.symbol)?;
-        if rows.len()!=entry.bars||rows.first().unwrap().date!=entry.first||rows.last().unwrap().date!=entry.last{return Err("Native source coverage disagrees with the whitelist".into());}
+        if strict_coverage && (rows.len()!=entry.bars||rows.first().unwrap().date!=entry.first||rows.last().unwrap().date!=entry.last){return Err("Native source coverage disagrees with the whitelist".into());}
         Ok(rows)
     }
     /// Separate explicit research decoder. Legacy rows()/parse_rows() and all
@@ -262,7 +286,7 @@ mod tests {
     fn expected_coverage_is_strict_consistent_and_includes_unready_source_rows(){
         let f=fixture();let old=fs::read_to_string(f.0.join("index.csv")).unwrap();let header=old.lines().next().unwrap();let row=old.lines().nth(1).unwrap();
         let missing=row.replace(",RELIANCE,",",GSPL,").replace(",ready,",",missing,");let index=format!("{header},basket_expected_members\n{row},2\n{missing},2\n");
-        fs::write(f.0.join("index.csv"),&index).unwrap();let c=Catalogue::load(&f.0).unwrap();assert_eq!(c.expected_member_count("nifty50"),Some(2));assert_eq!(c.members("nifty50").len(),1);assert!(!c.contains("basket:nifty50:GSPL"));assert!(c.tickers_json()[0].contains("\"basket_expected_members\":2"));
+        fs::write(f.0.join("index.csv"),&index).unwrap();let c=Catalogue::load(&f.0).unwrap();assert_eq!(c.expected_member_count("nifty50"),Some(2));assert_eq!(c.members("nifty50").len(),1);assert_eq!(c.source_members("nifty50").len(),2);assert!(c.source_members("nifty50").iter().any(|m|m.symbol=="GSPL"));assert!(!c.contains("basket:nifty50:GSPL"));assert!(c.tickers_json()[0].contains("\"basket_expected_members\":2"));
         fs::write(f.0.join("index.csv"),format!("{header},basket_expected_members\n{row},2\n{missing},3\n")).unwrap();assert!(Catalogue::load(&f.0).is_err());
         for value in ["0","25001","NaN","1.5","-1",""]{fs::write(f.0.join("index.csv"),format!("{header},basket_expected_members\n{row},{value}\n")).unwrap();assert!(Catalogue::load(&f.0).is_err(),"{value}");}
         fs::write(f.0.join("index.csv"),old).unwrap();assert_eq!(Catalogue::load(&f.0).unwrap().expected_member_count("nifty50"),None);
@@ -302,7 +326,8 @@ mod tests {
         let mut q=std::collections::BTreeMap::from([("ticker".into(),"basket:nifty50:RELIANCE".into()),("id".into(),"f1a".into())]);
         let readiness=crate::readiness_json(&state,&q).unwrap();assert!(readiness.contains("\"status\":\"ready\"")&&readiness.contains("\"symbol\":\"RELIANCE\""));
         let run=crate::detail(&state,&q).unwrap();assert!(run.contains("\"ohlc\":{"));assert!(run.contains("\"o\":[100,105]"));assert!(run.contains("\"v\":[1000,2000]"));assert!(run.contains("\"benchmark_symbol\":\"RELIANCE\""));assert!(!run.contains("777"));
-        q.insert("from".into(),"2019-01-01".into());assert!(crate::readiness_json(&state,&q).unwrap().contains("needs_data"));assert!(crate::detail(&state,&q).unwrap_err().contains("coverage"));
+        // auto-start (2026-10-23): an earlier requested start begins at the stock's first actual bar, with a note
+        q.insert("from".into(),"2019-01-01".into());assert!(crate::readiness_json(&state,&q).unwrap().contains("requested start 2019-01-01 is earlier"));assert!(crate::detail(&state,&q).unwrap().contains("\"auto_start\":\"Started "));
         q.remove("from");q.insert("id".into(),"tps_stocks".into());assert!(crate::readiness_json(&state,&q).unwrap().contains("benchmark"));assert!(crate::detail(&state,&q).unwrap_err().contains("Liquidity Filter"));
     }
     #[test]

@@ -11,7 +11,7 @@
   background: color-mix(in srgb, var(--ink) 24%, transparent);
 }
 .strategy-settings-dialog {
-  width: min(460px, 100%); max-height: calc(100dvh - 48px); overflow: auto;
+  width: min(560px, 100%); max-height: calc(100dvh - 48px); overflow: auto;
   padding: 22px; border: 1px solid var(--steel); border-radius: 10px;
   background: var(--card); color: var(--ink); font-family: var(--font);
   box-shadow: 0 18px 64px color-mix(in srgb, var(--ink) 16%, transparent);
@@ -30,6 +30,25 @@
 .strategy-settings-option input { flex: 0 0 auto; margin: 4px 0 0; accent-color: var(--blue); }
 .strategy-settings-option strong { display: block; font-size: 14px; font-weight: 650; }
 .strategy-settings-option small { display: block; margin-top: 4px; color: var(--ink2); font-size: 12px; line-height: 1.5; }
+.strategy-settings-group + .strategy-settings-group, .strategy-settings-note + .strategy-settings-group { margin-top: 22px; }
+.strategy-settings-legend { margin: 0 0 10px; color: var(--ink2); font-size: 11px; font-weight: 700; letter-spacing: .035em; text-transform: uppercase; }
+.strategy-settings-params { width: 100%; border-collapse: collapse; font-size: 13px; }
+.strategy-settings-params th, .strategy-settings-params td { padding: 7px 6px; border-bottom: 1px solid var(--rule); text-align: left; font-weight: 400; vertical-align: middle; }
+.strategy-settings-params thead th { color: var(--ink2); font-size: 11px; font-weight: 650; }
+.strategy-settings-params .n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.strategy-settings-params tr.changed th label { font-weight: 650; }
+.strategy-settings-params input { width: 88px; padding: 5px 7px; border: 1px solid var(--steel); border-radius: 5px; background: var(--card); color: var(--ink); font: inherit; text-align: right; }
+.strategy-settings-params input:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+.strategy-settings-params input[aria-invalid] { border-color: var(--red); }
+.strategy-settings-params input:read-only { background: var(--panel); }
+.strategy-settings-marker { display: block; margin-top: 2px; color: var(--blue); font-size: 11px; font-weight: 600; }
+.strategy-settings-marker.invalid { color: var(--red); }
+.strategy-settings-reset { margin-top: 10px; padding: 6px 12px; border: 1px solid var(--steel); border-radius: 5px; background: var(--card); color: var(--ink); font-weight: 600; font-size: 12px; cursor: pointer; }
+.strategy-settings-reset:hover { border-color: var(--blue); color: var(--blue); }
+.strategy-settings-assumptions { margin: 0; font-size: 12px; line-height: 1.5; }
+.strategy-settings-assumptions div { display: grid; grid-template-columns: 92px 1fr; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--rule); }
+.strategy-settings-assumptions dt { color: var(--ink2); font-weight: 650; }
+.strategy-settings-assumptions dd { margin: 0; }
 .strategy-settings-note { margin: 16px 0 22px; color: var(--ink2); font-size: 11px; line-height: 1.6; }
 .strategy-settings-actions { display: flex; justify-content: end; gap: 8px; border-top: 1px solid var(--rule); padding-top: 16px; }
 .strategy-settings-actions button { padding: 8px 18px; border: 1px solid var(--steel); border-radius: 5px; background: var(--card); color: var(--ink); font-weight: 600; font-size: 12px; cursor: pointer; }

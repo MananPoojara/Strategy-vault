@@ -2,6 +2,11 @@
 //! Only rules whose complete entry AND exit are printed exactly are Live. Source: library/acatr/.
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
+pub const BOOK: &str = "acatr";
+/// Admitted ids (authors/satchell/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["acatr_kuo_gma21", "acatr_gasser_brk", "acatr_filter_05", "acatr_filter_1", "acatr_filter_2"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
+
 const FX: &str = "needs daily FX spot rates (DEM, JPY, CAD, CHF, FRF, GBP vs USD) and, for ch.1, eurodollar/call-money interest rates; not in the vault";
 
 pub fn catalogue() -> Vec<StrategyDef> {

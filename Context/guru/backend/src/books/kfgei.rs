@@ -6,6 +6,10 @@
 use crate::books::swsp::week_ends;
 use crate::connors::{sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
+/// Admitted 2026-10-24 (authors/kaufman/admission/SOURCE-CONTRACT.md): independent ledgers, US and India, 0 mismatches.
+pub const REVIEWED: &[&str] = &["kfgei_sys_a", "kfgei_sys_b", "kfgei_sys_e", "kfgei_uc"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
+
 pub const BOOK: &str = "kfgei";
 
 

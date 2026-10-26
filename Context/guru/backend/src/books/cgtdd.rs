@@ -7,6 +7,9 @@
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 const BOOK: &str = "cgtdd";
+/// Admitted ids (authors/goslin/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["cgtdd_status"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let make = |id, name, group, dir, status, rules, notes| StrategyDef {

@@ -2,9 +2,12 @@
 //! (Wiley, 2008). Mechanical content: Ch. 6 S&P 500 moving-average studies (Tables 6.3-6.5, pp. 52-64) and
 //! the S&P DTI position rule (Appendix A, pp. 155, 171-174). Ch. 4 (2B) is chart judgement.
 //! Source and checks: library/svtvc/.
-use crate::connors::{sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
+use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "svtvc";
+/// Admitted ids (authors/sperandeo/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["svtvc_ma150_t1", "svtvc_ma200_t1", "svtvc_ma250_t1", "svtvc_ma150_t2", "svtvc_ma200_t2", "svtvc_ma250_t2", "svtvc_lsm7"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const MA_NOTE: &str = "Book test: S&P 500 cash index, Aug/Oct 1928 - Dec 2006, price return, no costs (Tables 6.3-6.5, pp. 52-64). \
 Simple MA of daily closes (\"simple moving average tests ... without any weighting\", p. 51). Sloping up/down = today's MA above/below yesterday's MA \
@@ -131,11 +134,12 @@ fn finish(out: &mut Vec<Trade>, cur: Option<Trade>, x: &Ctx, to: usize) {
 
 /// Ch. 6 Tests #1/#2: long/flat state machine evaluated at each close, filled at that close.
 fn run_ma(x: &Ctx, from: usize, to: usize, n: usize, test: u8) -> Vec<Trade> {
-    let m = sma(&x.c, n);
+    // Exact window sums; slope from the bar entering vs the bar leaving the window (a flat MA is neither up nor down).
+    let m = sma_exact(&x.c, n);
     let (mut out, mut cur) = (vec![], None::<Trade>);
-    for i in from.max(1)..=to {
+    for i in from.max(n)..=to {
         if !m[i].is_finite() || !m[i - 1].is_finite() { continue; }
-        let (c, up, dn) = (x.c[i], m[i] > m[i - 1], m[i] < m[i - 1]);
+        let (c, up, dn) = (x.c[i], x.c[i] > x.c[i - n], x.c[i] < x.c[i - n]);
         let long = c > m[i] && (test == 2 || up);
         let flat = c < m[i] && dn;
         if cur.is_none() && long { cur = Some(open_trade(1., i, c)); }
@@ -143,6 +147,11 @@ fn run_ma(x: &Ctx, from: usize, to: usize, n: usize, test: u8) -> Vec<Trade> {
     }
     finish(&mut out, cur, x, to);
     out
+}
+
+/// Simple MA by exact window sums (no running-sum rounding drift at exact ties).
+pub fn sma_exact(v: &[f64], n: usize) -> Vec<f64> {
+    (0..v.len()).map(|i| if i + 1 >= n && n > 0 { v[i + 1 - n..=i].iter().sum::<f64>() / n as f64 } else { f64::NAN }).collect()
 }
 
 fn ym<'a>(x: &'a Ctx, i: usize) -> &'a str { &x.r[i].date[..7] }

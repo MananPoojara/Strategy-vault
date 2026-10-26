@@ -7,6 +7,9 @@ use crate::books::aanwr::week;
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "jhbct";
+// Admitted 2026-10-24 (authors/hamon/admission/SOURCE-CONTRACT.md): complete close-based weekly rules with independent US/India ledgers.
+pub const REVIEWED: &[&str] = &["jhbct_weekly_close", "jhbct_weekly_close4"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const NOTE: &str = "Book market: futures (Sept 82 Corn fig 51, July 82 Coffee fig 52; daily charts with weekly high/low blocks). \
 'Two weeks' = the two previous full calendar weeks (Monday-Sunday) before the current week, the book's 'double charting' weekly blocks (p.119-121, 'two weeks, or ten trading days' p.121); \

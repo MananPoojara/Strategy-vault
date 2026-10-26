@@ -232,6 +232,10 @@ pub struct Ctx<'a> {
     /// Trusted market of a server-qualified native stock (set only by the server from catalogue evidence; None for
     /// index/ETF series). Used for the instrument's real tick in stock runs: NSE 0.05 INR, US 0.01 USD.
     pub native_market: Option<crate::baskets::Market>,
+    /// intraday phase 1: real 1-minute bars of this ticker (None = not loaded; minute-path rules then report a data gap)
+    pub minutes: Option<&'static crate::intraday::Minutes>,
+    /// options phase 2: real EOD monthly-option chain of this underlying (None = not loaded; option rules report a data gap)
+    pub options: Option<&'static crate::options::Chain>,
 }
 
 /// India VIX facts, computed on the VIX's own daily series, then aligned to this
@@ -324,6 +328,8 @@ impl<'a> Ctx<'a> {
             vix: VixAligned::new(r, vix),
             extra: BTreeMap::new(),
             native_market: None,
+            minutes: None,
+            options: None,
             c,
             r,
         }
@@ -393,14 +399,14 @@ impl<'a> Ctx<'a> {
 
 // ---------------------------------------------------------------- engine
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Leg {
     pub i: usize,
     pub px: f64,
     pub w: f64,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Trade {
     pub dir: f64, // +1 long, -1 short
     pub legs: Vec<Leg>,
@@ -622,7 +628,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         id, name, group, session, dir, status, needs_volume: false, needs_vix: false, needs_series: &[], book: "stc9", rules, notes, claim,
     };
     let vx = |def: StrategyDef| StrategyDef { needs_vix: true, ..def };
-    const VIXNOTE: &str = "Course used the CBOE VIX; here India VIX (NSE), daily bars built from 1-minute data (padded bars excluded). Window starts Jan 2015.";
+    const VIXNOTE: &str = "Course used the CBOE VIX on SPY (1995-2009). US runs use the CBOE VIX; India runs use India VIX (NSE), daily bars built from 1-minute data (padded bars excluded).";
     let mut v = vec![
         // ---- Session 1: the 4 keys + RSI2 + R3
         d("f1a", "Test 1a · Above 200-day MA", "Foundation (4 Keys)", 1, "Long", Live,
