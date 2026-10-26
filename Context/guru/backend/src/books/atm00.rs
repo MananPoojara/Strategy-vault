@@ -19,6 +19,9 @@
 use crate::connors::{sma, true_range, wilder, Claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "atm00";
+/// Admitted ids (authors/activetrader2/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["atm00_gold_digger", "atm00_bear_claw", "atm00_ma_9_18", "atm00_pullback1"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 // ------------------------------------------------------------------ shared helpers (used by atm01 / atm02)
 

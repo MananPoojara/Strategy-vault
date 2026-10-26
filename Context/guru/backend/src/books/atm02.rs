@@ -12,6 +12,9 @@ use super::atm00::{avg_tr, levels, prev_week_closes, sim, Ord};
 use crate::connors::{sma, Claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "atm02";
+/// Admitted ids (authors/activetrader2/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["atm02_bandwagon", "atm02_rev_bandwagon", "atm02_pristine", "atm02_ma_9_36", "atm02_idnr4", "atm02_counterpunch_fut"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 macro_rules! def {
     ($id:expr, $name:expr, $g:expr, $dir:expr, $st:expr, $rules:expr, $notes:expr, $claim:expr) => {
