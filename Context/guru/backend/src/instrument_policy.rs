@@ -326,6 +326,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || zweig_reviewed(def) // Martin Zweig block
         || bierovic_reviewed(def) // Tom Bierovic block
         || lukac_reviewed(def) // Lukac, Brorsen and Irwin block
+        || babcock_reviewed(def) // Bruce Babcock block
         || aqr_reviewed(def) // AQR (Hurst, Ooi and Pedersen) block
         || fejames_reviewed(def) // F. E. James block
         || aronson_reviewed(def) // David Aronson block
@@ -1365,6 +1366,16 @@ fn lukac_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Lukac, Brorsen and Irwin
+// ---------------------------------------------------------------- Bruce Babcock 2026-10-26 (lane B)
+// Admission only for the module REVIEWED lists (authors/babcock/laneb/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn babcock_reviewed(def:&StrategyDef)->bool {(def.book=="bab80" && crate::books::bab80::reviewed(def.id))}
+const BABCOCK_LABEL:&str="Babcock tested the November-April calendar rule on S&P 500 futures (weekly bars, Nov 1982-Apr 1997); runs on indices, ETFs and stocks (US and India) are a declared application, one unit per trade, entry at the open and exit at the close as the book's weekly test implies.";
+fn babcock_policy(def:&StrategyDef)->Option<Policy> {
+    if !babcock_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Bruce Babcock, The 80% Solution: S&P Systems (1997), p.16-19");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Bruce Babcock
 // ---------------------------------------------------------------- AQR (Hurst, Ooi and Pedersen) 2026-10-25
 // Admission only for the module REVIEWED lists (authors/aqr/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn aqr_reviewed(def:&StrategyDef)->bool {(def.book=="aqrtf" && crate::books::aqrtf::reviewed(def.id))}
@@ -1721,6 +1732,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=zweig_policy(def) {return p;} // Martin Zweig block
     if let Some(p)=bierovic_policy(def) {return p;} // Tom Bierovic block
     if let Some(p)=lukac_policy(def) {return p;} // Lukac, Brorsen and Irwin block
+    if let Some(p)=babcock_policy(def) {return p;} // Bruce Babcock block
     if let Some(p)=aqr_policy(def) {return p;} // AQR (Hurst, Ooi and Pedersen) block
     if let Some(p)=fejames_policy(def) {return p;} // F. E. James block
     if let Some(p)=aronson_policy(def) {return p;} // David Aronson block
@@ -2212,6 +2224,9 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // ---- Richard L. Weissman block (26 Oct 2026, lane B): held Live rules
         "rwtlc_rsix"=>"Held: fixed dollar stop on futures. RSI Extremes uses 'a fail-safe stop loss exit of $7,500 per contract' (Trade Like a Casino p.157-159), tested on one-lot futures 2000-2009; a dollar stop per contract has no equivalent on an index, ETF or stock, and leaving it out would not be the tested system.",
         // ---- end Richard L. Weissman held
+        // ---- Bruce Babcock block (26 Oct 2026, lane B): held Live rules
+        "bab80_novapr_stop10k"|"bab80_novapr_stop5k"=>"Held: fixed dollar stop on the S&P futures contract. These pages of the calendar test add a $10,000 or $5,000 stop per S&P contract, 20 or 10 S&P points at $500 a point (p.16-19); a fixed point amount has no equivalent on other indices, ETFs or stocks. The rule without a stop is live; running the stops on SPX with the book's points is a decision for the user.",
+        // ---- end Bruce Babcock held
         // ---- Masonson block (26 Oct 2026): held Live rules
         "masmt_vakkur_lev_seasonal"|"masmt_vakkur_lev_all"|"masmt_pres_lev2"|"masmt_pres_lbm"|"masmt_pres_optimal"=>"Held: the printed strategy invests with 2:1 margin (twice the account) in some months; the vault trades at most one unit without margin financing, so no result can be published.",
         // ---- end Masonson block
@@ -2336,6 +2351,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if zweig_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",ZWEIG_LABEL));} // Martin Zweig block
     if bierovic_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BIEROVIC_LABEL));} // Tom Bierovic block
     if lukac_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LUKAC_LABEL));} // Lukac, Brorsen and Irwin block
+    if babcock_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BABCOCK_LABEL));} // Bruce Babcock block
     if aqr_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",AQR_LABEL));} // AQR (Hurst, Ooi and Pedersen) block
     if fejames_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",FEJAMES_LABEL));} // F. E. James block
     if aronson_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",ARONSON_LABEL));} // David Aronson block
@@ -2924,6 +2940,17 @@ mod tests {
         }
     }
     // ---- end Richard L. Weissman held ----
+    // ---- Bruce Babcock held (2026-10-26, lane B) ----
+    #[test]
+    fn babcock_held_rules_have_plain_card_reasons() {
+        use crate::books::{bab80};
+        let all:Vec<StrategyDef>=bab80::catalogue().into_iter().collect();
+        for id in ["bab80_novapr_stop10k", "bab80_novapr_stop5k"] {
+            let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
+            assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
+        }
+    }
+    // ---- end Bruce Babcock held ----
     // ---- Leslie Masonson block (2026-10-25) ----
     #[test]
     fn masonson_review_admits_exact_ids_on_indices_etfs_and_stocks() {
@@ -3134,6 +3161,22 @@ mod tests {
         }
     }
     // ---- end Lukac, Brorsen and Irwin block ----
+    // ---- Bruce Babcock block (2026-10-26, lane B) ----
+    #[test]
+    fn babcock_review_admits_exact_ids() {
+        use crate::books::{bab80};
+        let all:Vec<StrategyDef>=bab80::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=bab80::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|babcock_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Bruce Babcock block ----
     // ---- AQR (Hurst, Ooi and Pedersen) block (2026-10-25) ----
     #[test]
     fn aqr_review_admits_exact_ids_on_indices_etfs_and_stocks() {
