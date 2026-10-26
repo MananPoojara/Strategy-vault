@@ -10,6 +10,9 @@
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "tdperl";
+/// Admitted ids (authors/perl/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["tdperl_tdline_long"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const NO_EXIT: &str = "[Not from the book] Perl gives no profit exit (p.48: \"it's up to you to manage the risk and the take-profit level ... TD Sequential is an indicator, not a system\"). Vault exit: the opposite signal of the same study, at its close (p.49: \"there isn't always a signal in the opposite direction to tell you where to close out a profitable trade\"). Optional time exit max_bars (p.28: \"a meaningful response within twelve price bars\") is off by default.";
 const STOP: &str = "X|TD risk level (p.26-27, 39): \"identify the lowest true low throughout the TD Sequential Buy Countdown process, which includes bars one through thirteen, whether or not it is a numbered price bar; calculate the difference between the true high and true low for that bar; and subtract that true range from its true low.\" Stop = intrabar sell stop at that level (Perl: \"My own preference is to stop out of a long position as soon as the downside risk level is violated on an intrabar basis\", p.28); a gap through it fills at the open. Sell side mirrored.";
