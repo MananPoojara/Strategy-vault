@@ -307,6 +307,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || ruggiero_reviewed(def) // Ruggiero block
         || link_reviewed(def) // Link block
         || katz_reviewed(def) // Katz block
+        || crabel_reviewed(def) // Crabel block
         || guppy_reviewed(def) // Guppy block
         || headley_reviewed(def) // Headley block
         || jcarter_reviewed(def) // Carter block
@@ -1152,6 +1153,16 @@ fn katz_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Katz
+// ---------------------------------------------------------------- Crabel 2026-10-25
+// Admission only for the module REVIEWED lists (authors/crabel/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn crabel_reviewed(def:&StrategyDef)->bool {(def.book=="tcdt" && crate::books::tcdt::reviewed(def.id))}
+const CRABEL_LABEL:&str="Toby Crabel tested these patterns on S&P 500 futures (open-to-close tables, 1982-88) and T-Bond futures (upthrusts, 1978-87); runs on indices, ETFs and single stocks (US and India) are a declared application.";
+fn crabel_policy(def:&StrategyDef)->Option<Policy> {
+    if !crabel_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Day Trading with Short Term Price Patterns and Opening Range Breakout (Traders Press, 1990): Open to Close Bias Tables A and B printed p.67-69 (pattern convention p.51); Upthrust and Spring reversals printed p.261-265, pivot top p.284. Index/ETF/stock runs are a declared application.");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Crabel
 // ---------------------------------------------------------------- Guppy 2026-10-25
 // Admission only for the module REVIEWED lists (authors/guppy/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn guppy_reviewed(def:&StrategyDef)->bool {(def.book=="dgdwb" && crate::books::dgdwb::reviewed(def.id))}
@@ -1449,6 +1460,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=ruggiero_policy(def) {return p;} // Ruggiero block
     if let Some(p)=link_policy(def) {return p;} // Link block
     if let Some(p)=katz_policy(def) {return p;} // Katz block
+    if let Some(p)=crabel_policy(def) {return p;} // Crabel block
     if let Some(p)=guppy_policy(def) {return p;} // Guppy block
     if let Some(p)=headley_policy(def) {return p;} // Headley block
     if let Some(p)=jcarter_policy(def) {return p;} // Carter block
@@ -1868,6 +1880,9 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         "lwlts_mon_vb"=>"Held: needs intraday data. The trade enters on a stop above Monday's open and is stopped out or closed the same day; daily bars cannot show whether the stop or the entry came first, and the accuracy check found most of the gain comes from such same-day trades.",
         "lwdg2_0105"=>"Held: needs intraday data. The day trade enters on whichever of two stops (the close plus or minus 1.05%) is hit first and exits on the close; when a day reaches both, daily bars cannot show which came first, and the accuracy check found its whole gain comes from such same-day trades.",
         // ---- end Larry Williams block
+        // ---- Crabel block (26 Oct 2026): held Live rules
+        "tcdt_ut1"|"tcdt_ut2"|"tcdt_ut3"|"tcdt_ut4"|"tcdt_ut5"=>"Held: the book counts every upthrust, even when a new one comes while the last three-day short is still open, so its trades overlap; one account cannot hold overlapping trades of the same rule, and on several markets the vault therefore refuses the run. A version that skips signals while a trade is open would be a change to the book's test.",
+        // ---- end Crabel block
         // ---- Bernstein g2 held Live rules
         "jb30d_rev_sell_fpo"=>"Held: no stop in the book. The only exit is the first profitable opening, so a trade that never gets one stays open: on SPY a short entered in 1995 is still open in 2026 and has lost more than the whole account, which no account can carry. The book's own table shows losing trades this exit cannot produce, so its test used an exit it does not print.",
         "jbudt_gap_fpo"|"jbudt_gap_split"=>"Held: no stop in the book. The kept position leaves only on the first opening beyond the entry price, so a short that never gets one stays open: on SPY a short entered in January 1995 is still open in 2026 and has lost more than the whole account, which no account can carry.",
@@ -1967,6 +1982,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if ruggiero_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",RUGGIERO_LABEL));} // Ruggiero block
     if link_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LINK_LABEL));} // Link block
     if katz_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",KATZ_LABEL));} // Katz block
+    if crabel_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",CRABEL_LABEL));} // Crabel block
     if guppy_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",GUPPY_LABEL));} // Guppy block
     if headley_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",HEADLEY_LABEL));} // Headley block
     if jcarter_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",JCARTER_LABEL));} // Carter block
@@ -2317,6 +2333,23 @@ mod tests {
         }
     }
     // ---- end Katz block ----
+    // ---- Crabel block (2026-10-25) ----
+    #[test]
+    fn crabel_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{tcdt};
+        let all:Vec<StrategyDef>=tcdt::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=tcdt::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        // tcdt also holds intraday-admitted ids (intraday phase 1); every reviewed id must be admitted
+        admitted.sort();want.sort();for w in &want {assert!(admitted.contains(w),"{w}");}
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Crabel block ----
     // ---- Guppy block (2026-10-25) ----
     #[test]
     fn guppy_review_admits_exact_ids_on_indices_etfs_and_stocks() {
