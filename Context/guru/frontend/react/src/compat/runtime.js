@@ -31,10 +31,12 @@ import {buildStrategyIndicators} from '../services/strategy-indicators';
 import {isKestnerVisualMethod,kestnerReportLogicalRange} from '../services/kestner-visual';
 import {indicatorControlsHTML,mountStrategyIndicators} from '../services/strategy-indicator-charts';
 const CURATED_AUTHOR_IDS=new Set(LIB.map(author=>author.id));
+// US ETFs served by the engine (backend instrument_policy::US_ETFS; connors-final adds the Alpha Formula ETFs).
+const US_ETFS=['SPY','QQQ','MDY','IWM','SMH','DIA','EFA','EEM','VNQ','LQD','GLD','SHY','IEF','TLT','AGG','IEI','TLH','EWA','EWC','EWD','EWG','EWH','EWI','EWJ','EWK','EWL','EWM','EWN','EWO','EWP','EWQ','EWS','EWU','EWW','XLB','XLE','XLF','XLI','XLK','XLP','XLU','XLV','XLY','EZU','EWZ','EWT','EWY','EPP','FXI','EZA'];
 function sourceAdmission(definition,ticker,parameters,region){
   if(definition.id!==BANDY_SIMPLE_METHOD)return undefined;
   const rows=region==='us'?TICK_ALL_US:TICK_ALL_IN;
-  const etfs=region==='us'?rows.filter(row=>['SPY','QQQ','MDY','IWM','SMH','DIA'].includes(row.ticker)):[];
+  const etfs=region==='us'?rows.filter(row=>US_ETFS.includes(row.ticker)):[];
   return {definition,parameters,instrument:simpleInstrumentContext(ticker,rows,etfs)};
 }
 
@@ -1400,7 +1402,7 @@ function readRoute() {
   const pool=S.region==='us'?TICK_ALL_US:TICK_ALL_IN, indices=S.region==='us'?TICK_US:TICK_IN;
   const chosen=R.name==='strategy'?ALLCAT.find(v=>v.id===R.id):null;
   const types=chosen?.instrument_policy?.allowed_types||[];
-  const etfs=S.region==='us'?TICK_ALL_US.filter(t=>['SPY','QQQ','MDY','IWM','SMH','DIA'].includes(t.ticker)):[];
+  const etfs=S.region==='us'?TICK_ALL_US.filter(t=>US_ETFS.includes(t.ticker)):[];
   const basket=BASKETS.find(b=>b.id===S.basket);
   const explicit=new URLSearchParams(q),isDetail=R.name==='strategy';
   if(chosen && types.includes('individual_stock') && !types.includes('index') && !types.includes('etf')
@@ -1659,7 +1661,7 @@ let BASKETS=[],BASKETS_IN=[],BASKETS_US=[],TICK_ALL_IN=[];
 function basketChoices(){const past=S.membership==='past';return S.region==='us'?[['us_sp500','S&P 500'],['us_nasdaq100','Nasdaq 100'],['us_dow30','Dow Jones'],['us_russell2000','Russell 2000']].map(([id,name])=>[id+(past?'_past':''),name]):[['nse500','NSE 500'],['nifty50','Nifty 50'],['midcap100','Midcap100'],['allfo','All F&O']];}
 function marketControls(v,tk){
  const allIndices=S.region==='us'?TICK_US:TICK_IN,unitMethod=unitExposureMethod(v.id,v.book),indices=unitMethod?(allIndices||[]).filter(t=>t.ticker===(S.region==='us'?'SPX':'NIFTY 50')):allIndices,controls=instrumentControls(v.instrument_policy,v.id,v.book),portfolio=S.run_scope==='basket',sourceAccountOnly=v.instrument_policy?.execution_scope==='single_symbol_source_account'||unitMethod;
- const etfs=S.region==='us'&&controls.etf?TICK_ALL_US.filter(t=>['SPY','QQQ','MDY','IWM','SMH','DIA'].includes(t.ticker)):[];
+ const etfs=S.region==='us'&&controls.etf?TICK_ALL_US.filter(t=>US_ETFS.includes(t.ticker)):[];
  const stocks=stockChoices(S.region==='us'?TICK_ALL_US:TICK_ALL_IN,tk);
  const singleState=ticker=>({...S,run_scope:'single',basket:'',tk:ticker,from:'',to:''});
  const indexButtons=(indices||[]).map(t=>controls.index?`<a class="join-item ${!portfolio&&t.ticker===tk?'active':''}" href="${href(R.path,singleState(t.ticker))}">${esc(LABEL[t.ticker]||t.ticker)}</a>`:`<button type="button" class="join-item" disabled title="${esc(controls.note)}">${esc(LABEL[t.ticker]||t.ticker)}</button>`).join('');
@@ -2127,7 +2129,7 @@ async function homeModel(){
  const summary=await getSum(h.tk,S.from||'',S.to||''),states=Object.fromEntries(LIB.map(g=>[g.id,VaultLibraryDiscovery.authorAvailability(g.books.map(b=>b.id),CAT,summary,readiness)]));
  pristineAuthorStatus(states.pristine);
  const scopedRecords=scopedLibraryRecords(allRecords),scopeCounts=new Map([...scopedRecords].map(([id,records])=>[id,{total:records.length,catalogue:records.filter(record=>record.kind==='catalogue').length,reading:records.filter(record=>record.kind==='source').length}]));
- const pool=S.region==='us'?TICK_ALL_US:TICK_ALL_IN,etfs=S.region==='us'?TICK_ALL_US.filter(t=>['SPY','QQQ','MDY','IWM','SMH','DIA'].includes(t.ticker)):[];
+ const pool=S.region==='us'?TICK_ALL_US:TICK_ALL_IN,etfs=S.region==='us'?TICK_ALL_US.filter(t=>US_ETFS.includes(t.ticker)):[];
  const selected={region:S.region,tk:h.tk,basket:S.basket,label:LABEL[h.tk]||h.tk,kind:S.basket?'stock':etfs.some(t=>t.ticker===h.tk)?'ETF':'index',from:S.from||'',to:S.to||''};
  // Discover compatible measured results on at most one stock and one ETF.
  // This never runs an entire basket or treats admissions as backtest results.
