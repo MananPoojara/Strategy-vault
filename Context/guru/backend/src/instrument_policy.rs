@@ -2190,6 +2190,9 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // ---- Murray Ruggiero block (26 Oct 2026, lane B): held Live rules
         "rgt_taylor"=>"Held: incomplete system. Ruggiero prints the Taylor trading code as a shell that is 'missing two patterns ... plus several filters' for the reader to complete (Traders' Secrets p.181-182), and its declared buy and sell filters are unused in the printed code; testing the shell would not be the author's system.",
         // ---- end Murray Ruggiero held
+        // ---- Dennis Meyers block (26 Oct 2026, lane B): held Live rules
+        "dmtad_turbo"=>"Held: needs NYSE 52-week new highs and new lows. The Turbo A/D system buys and sells on NYSE advance/decline ratios together with smoothed counts of NYSE new highs and new lows (S&C 1997, p.339-341); the vault has the NYSE advance/decline series but no new-high/new-low history, and India has neither.",
+        // ---- end Dennis Meyers held
         // ---- Masonson block (26 Oct 2026): held Live rules
         "masmt_vakkur_lev_seasonal"|"masmt_vakkur_lev_all"|"masmt_pres_lev2"|"masmt_pres_lbm"|"masmt_pres_optimal"=>"Held: the printed strategy invests with 2:1 margin (twice the account) in some months; the vault trades at most one unit without margin financing, so no result can be published.",
         // ---- end Masonson block
@@ -2825,6 +2828,17 @@ mod tests {
         }
     }
     // ---- end Murray Ruggiero held ----
+    // ---- Dennis Meyers held (2026-10-26, lane B) ----
+    #[test]
+    fn meyers_held_rules_have_plain_card_reasons() {
+        use crate::books::{dmtad};
+        let all:Vec<StrategyDef>=dmtad::catalogue().into_iter().collect();
+        for id in ["dmtad_turbo"] {
+            let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
+            assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
+        }
+    }
+    // ---- end Dennis Meyers held ----
     // ---- Leslie Masonson block (2026-10-25) ----
     #[test]
     fn masonson_review_admits_exact_ids_on_indices_etfs_and_stocks() {
