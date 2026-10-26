@@ -314,6 +314,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || tillson_reviewed(def) // Tim Tillson block
         || leungchong_reviewed(def) // Leung and Chong block
         || bollinger_reviewed(def) // John Bollinger block
+        || ehlersmd_reviewed(def) // John Ehlers articles block
         || aqr_reviewed(def) // AQR (Hurst, Ooi and Pedersen) block
         || fejames_reviewed(def) // F. E. James block
         || aronson_reviewed(def) // David Aronson block
@@ -1233,6 +1234,16 @@ fn bollinger_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end John Bollinger
+// ---------------------------------------------------------------- John Ehlers articles 2026-10-26 (lane B)
+// Admission only for the module REVIEWED lists (authors/ehlers/laneb/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn ehlersmd_reviewed(def:&StrategyDef)->bool {(def.book=="ehmd" && crate::books::ehmd::reviewed(def.id))}
+const EHLERSMD_LABEL:&str="Ehlers prints these rules as TradeStation indicator signals with no test results; runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade, buy and sell read as stop-and-reverse at the next open.";
+fn ehlersmd_policy(def:&StrategyDef)->Option<Policy> {
+    if !ehlersmd_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"John Ehlers, MESA articles: Time Warp - Without Space Travel (Fig. 9); Linear Prediction (Sidebar 1)");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end John Ehlers articles
 // ---------------------------------------------------------------- AQR (Hurst, Ooi and Pedersen) 2026-10-25
 // Admission only for the module REVIEWED lists (authors/aqr/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn aqr_reviewed(def:&StrategyDef)->bool {(def.book=="aqrtf" && crate::books::aqrtf::reviewed(def.id))}
@@ -1577,6 +1588,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=tillson_policy(def) {return p;} // Tim Tillson block
     if let Some(p)=leungchong_policy(def) {return p;} // Leung and Chong block
     if let Some(p)=bollinger_policy(def) {return p;} // John Bollinger block
+    if let Some(p)=ehlersmd_policy(def) {return p;} // John Ehlers articles block
     if let Some(p)=aqr_policy(def) {return p;} // AQR (Hurst, Ooi and Pedersen) block
     if let Some(p)=fejames_policy(def) {return p;} // F. E. James block
     if let Some(p)=aronson_policy(def) {return p;} // David Aronson block
@@ -2120,6 +2132,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if tillson_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",TILLSON_LABEL));} // Tim Tillson block
     if leungchong_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LEUNGCHONG_LABEL));} // Leung and Chong block
     if bollinger_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BOLLINGER_LABEL));} // John Bollinger block
+    if ehlersmd_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",EHLERSMD_LABEL));} // John Ehlers articles block
     if aqr_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",AQR_LABEL));} // AQR (Hurst, Ooi and Pedersen) block
     if fejames_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",FEJAMES_LABEL));} // F. E. James block
     if aronson_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",ARONSON_LABEL));} // David Aronson block
@@ -2589,6 +2602,22 @@ mod tests {
         }
     }
     // ---- end John Bollinger block ----
+    // ---- John Ehlers articles block (2026-10-26, lane B) ----
+    #[test]
+    fn ehlersmd_review_admits_exact_ids() {
+        use crate::books::{ehmd};
+        let all:Vec<StrategyDef>=ehmd::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=ehmd::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end John Ehlers articles block ----
     // ---- AQR (Hurst, Ooi and Pedersen) block (2026-10-25) ----
     #[test]
     fn aqr_review_admits_exact_ids_on_indices_etfs_and_stocks() {
@@ -4367,7 +4396,7 @@ mod tests {
             assert!(policy(&st).source_basis.contains("Ehlers"));assert!(!policy(&st).source_basis.contains("Kaufman"));
             assert_eq!(policy(&def(id,"other_book")).requirement,"source_review_required");
         }
-        for (id,book) in [("ehrs_sinetrend_cp110","ehrs"),("ehrs_zerolag","ehrs"),("ehrs_sinewave_cycle","ehrs"),("ehrs_optimum_predictor","ehrs"),("ehrs_adaptive_osc","ehrs"),("ehrs_snr_filter","ehrs"),("ehmd_lms_zerolag","ehmd"),("ehmd_new_unreviewed","ehmd")] {
+        for (id,book) in [("ehrs_sinetrend_cp110","ehrs"),("ehrs_zerolag","ehrs"),("ehrs_sinewave_cycle","ehrs"),("ehrs_optimum_predictor","ehrs"),("ehrs_adaptive_osc","ehrs"),("ehrs_snr_filter","ehrs"),("ehmd_new_unreviewed","ehmd")] {
             assert_eq!(policy(&def(id,book)).requirement,"source_review_required");
         }
         assert_eq!(policy(&def("ehmd_mama","other_book")).requirement,"source_review_required");
