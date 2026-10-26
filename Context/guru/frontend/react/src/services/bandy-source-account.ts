@@ -187,8 +187,8 @@ function parseCashAccount(data: unknown, id?: string, book?: string, selectedTic
       || !finite(trade.accounting.pts) || !close(trade.accounting.pts,exitPrice-price)
       || trade.accounting.days_held !== (Date.parse(t.exit)-Date.parse(t.entry))/86400000
       || trade.accounting.cost_status !== (t.open ? "actual_entry_cost_only_open_mark" : "modeled_filled_side_costs")
-      || trade.accounting.excursion_bars !== 0 || trade.accounting.excursion_status !== "unavailable"
-      || trade.accounting.mae_ret_observed !== null || trade.accounting.mfe_ret_observed !== null) return invalid();
+      // shared fill-aware MAE/MFE (Rust accounting::excursion): either unavailable, or finite with MAE <= MFE
+      || !((trade.accounting.excursion_bars === 0 && trade.accounting.excursion_status === 'unavailable' && trade.accounting.mae_ret_observed === null && trade.accounting.mfe_ret_observed === null) || (Number.isInteger(trade.accounting.excursion_bars) && (trade.accounting.excursion_bars as number) > 0 && trade.accounting.excursion_status === 'fill_aware_ohlc_path' && Number.isFinite(trade.accounting.mae_ret_observed) && Number.isFinite(trade.accounting.mfe_ret_observed) && (trade.accounting.mae_ret_observed as number) <= (trade.accounting.mfe_ret_observed as number)))) return invalid();
     lastExit=xi;ledgerSymbol=trade.accounting.symbol;
     if (t.open) {
       openCount++;
