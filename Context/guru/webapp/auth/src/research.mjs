@@ -153,7 +153,7 @@ export function registerResearch(app, { pool, store }) {
     const strip = data.strategies.map(s => [s.author_id, s.site[0], (verdictMap.get(s.key) || 'n')[0]]);
     return c.json({ as_of: data.as_of, generated_at: data.generated_at, run: data.run, totals: data.totals, reasons: data.reasons,
       history: data.history, authors: data.authors, books: data.books, todo_authors: data.todo_authors,
-      deploys: data.events.filter(e => e.count != null).map(e => ({ at: e.at, count: e.count, work: e.work, label: e.label })),
+      deploys: data.events.filter(e => e.count != null && (e.who === 'Platform')).map(e => ({ at: e.at, count: e.count, work: e.work, label: e.label })),
       team, activity: activity.rows, strip,
       author_index: [...store.index.authors.values()].sort((a, b) => a.name.localeCompare(b.name)),
       book_index: [...store.index.books.values()].sort((a, b) => a.author.localeCompare(b.author) || a.title.localeCompare(b.title)) });

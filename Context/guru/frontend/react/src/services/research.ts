@@ -26,7 +26,7 @@ export const SITE: Record<Site, string> = {
 export interface Page<T> { items: T[]; total: number; page: number; size: number; pages: number }
 export interface Strategy {
   key: string; author: string; author_id: string; book: string; book_id: string; name: string; site: Site;
-  reason: string; rules: { kind: string; text: string }[]; variant: string; variants: number; url: string;
+  reason: string; rules: { kind: string; text: string }[]; section?: string; coding_notes?: string; variant: string; variants: number; url: string;
   verdict: Verdict; verdict_by: string | null; verdict_at: string | null; notes: number; rule_errors: number;
 }
 export interface Note {

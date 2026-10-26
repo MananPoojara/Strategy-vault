@@ -37,8 +37,8 @@
   border: 1px solid var(--rp-line); background: var(--rp-surface); color: var(--ink); padding: 6px 14px; border-radius: 6px; font-size: 14px;
 }
 .rp-pager button:hover:not(:disabled), .rp-row button:hover, .rp-close:hover { border-color: var(--ink3); }
-.rp-primary { background: var(--blue) !important; border-color: var(--blue) !important; color: #fff !important; font-weight: 500; padding: 7px 16px; border-radius: 6px; border: 1px solid; }
-.rp-danger { background: var(--rp-bad) !important; border-color: var(--rp-bad) !important; color: #fff !important; }
+.rp-primary { background: var(--blue) !important; border-color: var(--blue) !important; color: var(--card) !important; font-weight: 600; padding: 7px 16px; border-radius: 6px; border: 1px solid; }
+.rp-danger { background: var(--rp-bad) !important; border-color: var(--rp-bad) !important; color: var(--card) !important; }
 .rp-link { background: none; border: 0; padding: 0; color: var(--blue); text-decoration: underline; text-underline-offset: 2px; font-size: inherit; }
 .rp-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 8px 0 0; }
 

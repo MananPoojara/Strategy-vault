@@ -440,7 +440,7 @@ function ReviewTab() {
         <div className="rp-list-pane">
           <Problem error={list.error} retry={list.reload} />
           {list.data && (
-            <p className="rp-count" aria-live="polite">{num(list.data.total)} strategies{list.loading ? " (updating…)" : ""}. <span className="rp-muted"><kbd>j</kbd> <kbd>k</kbd> move, <kbd>n</kbd> new note, <kbd>Esc</kbd> close</span></p>
+            <p className="rp-count" aria-live="polite">{num(list.data.total)} {list.data.total === 1 ? "strategy" : "strategies"}{list.loading ? " (updating…)" : ""}. <span className="rp-muted"><kbd>j</kbd> <kbd>k</kbd> move, <kbd>n</kbd> new note, <kbd>Esc</kbd> close</span></p>
           )}
           {list.data && !items.length && <div className="rp-empty">No strategy matches these filters. Clear a filter or the search.</div>}
           <ol className="rp-list" ref={listRef}>
@@ -496,9 +496,11 @@ function StrategyPanel({ strategyKey, onClose, onChanged }: { strategyKey: strin
             </div>
           )}
           <h3>Rules as coded</h3>
+          {s?.section && <p className="rp-muted small rp-section">Where in the book: {s.section}</p>}
           {s?.rules.length ? (
             <ol className="rp-rules">{s.rules.map((r, i) => <li key={i}><b>{r.kind}</b><span>{r.text}</span></li>)}</ol>
           ) : <p className="rp-muted">No rules are coded for this strategy. It is listed as a held card: {s?.reason || "no reason recorded"}.</p>}
+          {s?.coding_notes && <details className="rp-vhist"><summary>How it is coded (implementation notes)</summary><p className="rp-body">{s.coding_notes}</p></details>}
           <h3>Research verdict</h3>
           <p className="rp-muted small">Your judgement after reading the book pages. It does not change the site status or any calculation.</p>
           <div className="rp-verdicts" role="radiogroup" aria-label="Research verdict">
