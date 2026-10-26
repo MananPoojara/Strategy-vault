@@ -70,11 +70,11 @@
 .rp-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13.5px; color: var(--ink2); margin: 0 0 10px; }
 .rp-legend span { display: inline-flex; align-items: center; gap: 7px; }
 .rp-legend-sep { margin-left: 10px; }
-.sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; background: var(--ink3); }
-.sw.tick { width: 3px; height: 12px; border-radius: 1px; }
-.site-verified { background: var(--rp-ok); } .site-held { background: var(--rp-held); } .site-unreviewed { background: var(--rp-todo); }
-.sw.v-mismatch { background: var(--rp-bad); } .sw.v-matches { background: var(--rp-ok); } .sw.v-unclear { background: var(--rp-held); }
-.sw.bar-v { background: var(--blue); } .sw.bar-n { background: color-mix(in srgb, var(--blue) 45%, var(--rp-surface)); }
+.rp .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; background: var(--ink3); }
+.rp .sw.tick { width: 3px; height: 12px; border-radius: 1px; }
+.rp .site-verified { background: var(--rp-ok); } .rp .site-held { background: var(--rp-held); } .rp .site-unreviewed { background: var(--rp-todo); }
+.rp .sw.v-mismatch { background: var(--rp-bad); } .rp .sw.v-matches { background: var(--rp-ok); } .rp .sw.v-unclear { background: var(--rp-held); }
+.rp .sw.bar-v { background: var(--blue); } .rp .sw.bar-n { background: color-mix(in srgb, var(--blue) 45%, var(--rp-surface)); }
 .rp-tip { position: absolute; top: calc(100% + 6px); transform: translateX(-50%); z-index: 5; min-width: 180px; max-width: 320px; padding: 9px 12px;
   background: var(--ink); color: var(--bg); border-radius: 6px; font-size: 13px; line-height: 1.4; display: grid; gap: 2px; pointer-events: none; box-shadow: 0 6px 20px #0003; }
 .rp-tip b { font-weight: 600; }
