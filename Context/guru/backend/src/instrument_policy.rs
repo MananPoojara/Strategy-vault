@@ -317,6 +317,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || aqr_reviewed(def) // AQR (Hurst, Ooi and Pedersen) block
         || fejames_reviewed(def) // F. E. James block
         || aronson_reviewed(def) // David Aronson block
+        || wilder_reviewed(def) // J. Welles Wilder block
         || guppy_reviewed(def) // Guppy block
         || headley_reviewed(def) // Headley block
         || jcarter_reviewed(def) // Carter block
@@ -1262,6 +1263,16 @@ fn aronson_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end David Aronson
+// ---------------------------------------------------------------- J. Welles Wilder 2026-10-25
+// Admission only for the module REVIEWED lists (authors/wilder/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn wilder_reviewed(def:&StrategyDef)->bool {(def.book=="wwnc" && crate::books::wwnc::reviewed(def.id))}
+const WILDER_LABEL:&str="Wilder worked these systems on 1977-78 commodity futures; runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade, always-in systems reverse as printed.";
+fn wilder_policy(def:&StrategyDef)->Option<Policy> {
+    if !wilder_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"J. Welles Wilder Jr., New Concepts in Technical Trading Systems (1978), Spanish edition");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end J. Welles Wilder
 // ---------------------------------------------------------------- Guppy 2026-10-25
 // Admission only for the module REVIEWED lists (authors/guppy/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn guppy_reviewed(def:&StrategyDef)->bool {(def.book=="dgdwb" && crate::books::dgdwb::reviewed(def.id))}
@@ -1569,6 +1580,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=aqr_policy(def) {return p;} // AQR (Hurst, Ooi and Pedersen) block
     if let Some(p)=fejames_policy(def) {return p;} // F. E. James block
     if let Some(p)=aronson_policy(def) {return p;} // David Aronson block
+    if let Some(p)=wilder_policy(def) {return p;} // J. Welles Wilder block
     if let Some(p)=guppy_policy(def) {return p;} // Guppy block
     if let Some(p)=headley_policy(def) {return p;} // Headley block
     if let Some(p)=jcarter_policy(def) {return p;} // Carter block
@@ -2111,6 +2123,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if aqr_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",AQR_LABEL));} // AQR (Hurst, Ooi and Pedersen) block
     if fejames_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",FEJAMES_LABEL));} // F. E. James block
     if aronson_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",ARONSON_LABEL));} // David Aronson block
+    if wilder_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",WILDER_LABEL));} // J. Welles Wilder block
     if guppy_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",GUPPY_LABEL));} // Guppy block
     if headley_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",HEADLEY_LABEL));} // Headley block
     if jcarter_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",JCARTER_LABEL));} // Carter block
@@ -2624,6 +2637,22 @@ mod tests {
         }
     }
     // ---- end David Aronson block ----
+    // ---- J. Welles Wilder block (2026-10-25) ----
+    #[test]
+    fn wilder_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{wwnc};
+        let all:Vec<StrategyDef>=wwnc::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=wwnc::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end J. Welles Wilder block ----
     // ---- Guppy block (2026-10-25) ----
     #[test]
     fn guppy_review_admits_exact_ids_on_indices_etfs_and_stocks() {
