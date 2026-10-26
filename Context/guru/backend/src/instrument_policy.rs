@@ -306,6 +306,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || goslin_reviewed(def) // Goslin block
         || ruggiero_reviewed(def) // Ruggiero block
         || link_reviewed(def) // Link block
+        || activetrader_reviewed(def) // Active Trader Magazine block
         || katz_reviewed(def) // Katz block
         || crabel_reviewed(def) // Crabel block
         || stad_reviewed(def) // STAD block
@@ -1153,6 +1154,16 @@ fn link_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Link
+// ---------------------------------------------------------------- Active Trader Magazine 2026-10-25
+// Admission only for the module REVIEWED lists (authors/activetrader/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn activetrader_reviewed(def:&StrategyDef)->bool {(def.book=="atm03" && crate::books::atm03::reviewed(def.id)) || (def.book=="atm04" && crate::books::atm04::reviewed(def.id)) || (def.book=="atmmisc" && crate::books::atmmisc::reviewed(def.id)) || (def.book=="atmrc" && crate::books::atmrc::reviewed(def.id)) || (def.book=="atmcsa" && crate::books::atmcsa::reviewed(def.id))}
+const ACTIVETRADER_LABEL:&str="Active Trader tested these columns on an 18-stock portfolio, Nasdaq-100 stocks, QQQ/SPY or futures portfolios with their own position sizing; runs on one index, ETF or single stock (US and India) are a declared application, one unit per position (scale-in legs at the column's equity fraction).";
+fn activetrader_policy(def:&StrategyDef)->Option<Policy> {
+    if !activetrader_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Active Trader Magazine 2003-2006 Trading System Lab and strategy columns (DjVu/PDF copies in Books/Active Trader Magazine)");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Active Trader Magazine
 // ---------------------------------------------------------------- Katz 2026-10-25
 // Admission only for the module REVIEWED lists (authors/katz/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn katz_reviewed(def:&StrategyDef)->bool {(def.book=="kets" && crate::books::kets::reviewed(def.id))}
@@ -1569,6 +1580,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=goslin_policy(def) {return p;} // Goslin block
     if let Some(p)=ruggiero_policy(def) {return p;} // Ruggiero block
     if let Some(p)=link_policy(def) {return p;} // Link block
+    if let Some(p)=activetrader_policy(def) {return p;} // Active Trader Magazine block
     if let Some(p)=katz_policy(def) {return p;} // Katz block
     if let Some(p)=crabel_policy(def) {return p;} // Crabel block
     if let Some(p)=stad_policy(def) {return p;} // STAD block
@@ -2000,6 +2012,9 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         "lwlts_mon_vb"=>"Held: needs intraday data. The trade enters on a stop above Monday's open and is stopped out or closed the same day; daily bars cannot show whether the stop or the entry came first, and the accuracy check found most of the gain comes from such same-day trades.",
         "lwdg2_0105"=>"Held: needs intraday data. The day trade enters on whichever of two stops (the close plus or minus 1.05%) is hit first and exits on the close; when a day reaches both, daily bars cannot show which came first, and the accuracy check found its whole gain comes from such same-day trades.",
         // ---- end Larry Williams block
+        // ---- Active Trader block (26 Oct 2026): held Live rules
+        "atm03_gap_closer"|"atm04_blues"=>"Held: the column holds several separate positions at once (one per gap / per add), and the combined trade's exit price does not match the platform's scale-out ledger, so overlapping runs are refused; no consistent result can be published.",
+        // ---- end Active Trader block
         // ---- Crabel block (26 Oct 2026): held Live rules
         "tcdt_ut1"|"tcdt_ut2"|"tcdt_ut3"|"tcdt_ut4"|"tcdt_ut5"=>"Held: the book counts every upthrust, even when a new one comes while the last three-day short is still open, so its trades overlap; one account cannot hold overlapping trades of the same rule, and on several markets the vault therefore refuses the run. A version that skips signals while a trade is open would be a change to the book's test.",
         // ---- end Crabel block
@@ -2112,6 +2127,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if goslin_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",GOSLIN_LABEL));} // Goslin block
     if ruggiero_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",RUGGIERO_LABEL));} // Ruggiero block
     if link_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LINK_LABEL));} // Link block
+    if activetrader_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",ACTIVETRADER_LABEL));} // Active Trader Magazine block
     if katz_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",KATZ_LABEL));} // Katz block
     if crabel_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",CRABEL_LABEL));} // Crabel block
     if stad_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",STAD_LABEL));} // STAD block
@@ -2458,6 +2474,23 @@ mod tests {
         }
     }
     // ---- end Link block ----
+    // ---- Active Trader Magazine block (2026-10-25) ----
+    #[test]
+    fn activetrader_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{atm03, atm04, atmmisc, atmrc, atmcsa};
+        let all:Vec<StrategyDef>=atm03::catalogue().into_iter().chain(atm04::catalogue()).chain(atmmisc::catalogue()).chain(atmrc::catalogue()).chain(atmcsa::catalogue()).collect();
+        let mut want:Vec<&str>=atm03::REVIEWED.iter().chain(atm04::REVIEWED.iter()).chain(atmmisc::REVIEWED.iter()).chain(atmrc::REVIEWED.iter()).chain(atmcsa::REVIEWED.iter()).copied().collect();
+        for id in ["atm03_gap_closer","atm04_blues"] {assert!(!want.contains(&id) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");}
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Active Trader Magazine block ----
     // ---- Katz block (2026-10-25) ----
     #[test]
     fn katz_review_admits_exact_ids_on_indices_etfs_and_stocks() {
