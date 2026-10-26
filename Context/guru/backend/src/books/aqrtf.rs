@@ -12,6 +12,9 @@
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "aqrtf";
+/// Admitted ids (authors/aqr/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["aqrtf_tsmom_1m", "aqrtf_tsmom_3m", "aqrtf_tsmom_12m", "aqrtf_tsmom_combo"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const MAP: &str = "Paper: 59 futures/forward markets (24 commodities, 11 equity index futures incl. S&P 500 and Russell 2000, 15 bond, 9 FX), Jan 1903-Jun 2012, returns in excess of local short rates. Here the sign rule runs on one index's price series (instrument swap: NIFTY 50 / SPX etc.); index price return stands in for the futures excess return (dividends and financing not included). Unit long/short position; no volatility targeting, no 2/20 fees. Published results are for the 59-market portfolio only, so no single-index figure exists to reproduce.";
 
