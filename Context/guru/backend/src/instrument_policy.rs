@@ -2200,6 +2200,9 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         "kftsm_pf"=>"Held: fixed amounts set for another market. The point-and-figure box is 5 index points, a fixed point value from Kaufman's 2003 table for the S&P and Nasdaq e-mini futures (New Trading Systems and Methods, Table 5.2, p.160); the book gives no box for other indices, ETFs, stocks or NIFTY, and a 5-point box is a different system on each. Running it on SPX/NDX only is a decision for the user.",
         "kfst_ama"=>"Held: rules not fully defined. The Box 8-5 code sets the turn filter at 0.1 price points, a fixed amount for the markets Kaufman tested, while the text defines the filter as a percentage of the standard deviation of the AMA's daily changes (Smarter Trading p.144-151); the two give different systems and which one produced the book's results is not specified.",
         // ---- end Perry Kaufman held
+        // ---- Michael Harris block (26 Oct 2026, lane B): held Live rules
+        "mhs_sp830825_1"|"mhs_sp830120_1"|"mhs_sp830330_1"=>"Held: fixed amounts set for the S&P futures contract. These S&P 500 patterns use a 10-point profit target and a 10-point stop ($2,500 on the 1983-99 contract) (Short-Term Trading with Price Patterns p.180-206); a fixed point amount has no equivalent on other indices, ETFs or stocks, and on today's index levels 10 points is a tiny move. Running them on SPX with the 10-point levels is a decision for the user.",
+        // ---- end Michael Harris held
         // ---- Masonson block (26 Oct 2026): held Live rules
         "masmt_vakkur_lev_seasonal"|"masmt_vakkur_lev_all"|"masmt_pres_lev2"|"masmt_pres_lbm"|"masmt_pres_optimal"=>"Held: the printed strategy invests with 2:1 margin (twice the account) in some months; the vault trades at most one unit without margin financing, so no result can be published.",
         // ---- end Masonson block
@@ -2868,6 +2871,17 @@ mod tests {
         }
     }
     // ---- end Perry Kaufman held ----
+    // ---- Michael Harris held (2026-10-26, lane B) ----
+    #[test]
+    fn harrisb_held_rules_have_plain_card_reasons() {
+        use crate::books::{mhstp};
+        let all:Vec<StrategyDef>=mhstp::catalogue().into_iter().collect();
+        for id in ["mhs_sp830825_1", "mhs_sp830120_1", "mhs_sp830330_1"] {
+            let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
+            assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
+        }
+    }
+    // ---- end Michael Harris held ----
     // ---- Leslie Masonson block (2026-10-25) ----
     #[test]
     fn masonson_review_admits_exact_ids_on_indices_etfs_and_stocks() {
