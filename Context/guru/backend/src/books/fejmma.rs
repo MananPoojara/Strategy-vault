@@ -8,6 +8,9 @@ use crate::books::apta::bars;
 use crate::connors::{claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "fejmma";
+/// Admitted ids (authors/fejames/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["fejmma_sma7", "fejmma_es10_ls", "fejmma_es10_long", "fejmma_es30_long", "fejmma_es40_long"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const MECH: &str = "E|\"the monthly closing price for each month after the 7th month was compared to the Moving Average value. If the closing price ever rose above the Moving Average value by 2 percent or more (if it was 102 percent of the Moving Average value), this was taken as a buy signal, and if this security was not held in a \"long\" condition at the time, a simulated purchase was made at the current price\" (p.322)";
 const MECH2: &str = "X|\"if the closing price ever fell below the Moving Average by 2 percent or more (if it was 98 percent of the Moving Average value), this was taken as a sell signal, and if this security was not held in a \"short\" position at the time, a simulated sale was made\"; \"This position was held until the price movement reversed itself by an amount sufficient to trigger a reverse indicator, at which time the position was closed out, and the funds ... utilized to initiate a position in the opposite direction\" (p.322)";
