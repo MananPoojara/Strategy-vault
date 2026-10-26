@@ -2008,6 +2008,9 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         "stad2_stoch"=>"Held: the printed code opens with 200 shares and reverses with 400 shares, so every reversal is twice the opening size; the vault trades one unit and refuses the larger position on every market tested, so no result can be published.",
         "stad8_stampede"|"stad9_luxor"|"stad13_luxor"=>"Held: the strategy adds to a winning position (pyramiding up to several entries in the same direction); the vault carries one unit per strategy and refuses the added entries, so no result can be published.",
         // ---- end STAD block
+        // ---- Joe Krutsinger block (26 Oct 2026, lane B): held Live rules
+        "jkbwts_gettess30"=>"Held: fixed dollar stop on the S&P futures contract. The Gettess30 sheet trades S&P 500 futures with a $4,000 money-management stop, 8 S&P points at $500 a point (p.12-13); a fixed point amount has no equivalent on other indices, ETFs or stocks, and leaving the stop out would not be the tested system. Running it on SPX with the 8-point stop is a decision for the user.",
+        // ---- end Joe Krutsinger held
         // ---- Masonson block (26 Oct 2026): held Live rules
         "masmt_vakkur_lev_seasonal"|"masmt_vakkur_lev_all"|"masmt_pres_lev2"|"masmt_pres_lbm"|"masmt_pres_optimal"=>"Held: the printed strategy invests with 2:1 margin (twice the account) in some months; the vault trades at most one unit without margin financing, so no result can be published.",
         // ---- end Masonson block
@@ -2507,6 +2510,17 @@ mod tests {
         }
     }
     // ---- end STAD block ----
+    // ---- Joe Krutsinger held (2026-10-26, lane B) ----
+    #[test]
+    fn krutsinger_held_rules_have_plain_card_reasons() {
+        use crate::books::{jkbwts};
+        let all:Vec<StrategyDef>=jkbwts::catalogue().into_iter().collect();
+        for id in ["jkbwts_gettess30"] {
+            let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
+            assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
+        }
+    }
+    // ---- end Joe Krutsinger held ----
     // ---- Leslie Masonson block (2026-10-25) ----
     #[test]
     fn masonson_review_admits_exact_ids_on_indices_etfs_and_stocks() {
