@@ -2,6 +2,9 @@
 //! Only rules whose input is the traded index's own close are Live (input series 1 = S&P 500 close).
 //! Source: library/arebta/.
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
+/// Admitted ids (authors/aronson/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["arebta_tt", "arebta_ti", "arebta_e"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const NOTE: &str = "Case study: 6,402 binary long/short reversal rules on the S&P 500, 1 Nov 1980 - 1 Jul 2005, evaluated on DETRENDED daily returns (mean daily change subtracted, p.391-392); entries and exits \"on the open price of the day following a position-reversal signal\" (p.449). Input series 1 = S&P 500 close; here the traded index's own close (instrument swap for NIFTY). Always in the market once the rule output is defined (the position is taken at the first open after the selected start).";
 const OTHER: &str = "the other 38 inputs (DJIA H/L/C, transports, utilities, NYSE financials, DJ 20 bonds, NASDAQ Composite, Value Line, NYSE advances/declines/unchanged, new highs/lows, total/up/down volume, T-bill, T-bond, AAA, BAA yields and 29 indicators built from them, Table 8.1-8.2) are not in the vault as extra_data series";
