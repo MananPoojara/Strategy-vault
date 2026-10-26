@@ -141,7 +141,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("cwin_weekly_window", "Windows on weekly bars", "Part Four · Other Time Frames", WEEKLY,
           note!("Daily bars are resampled to Monday-Friday weeks using only data up to the test end (no lookahead); signals, stops and the 1-3 week management run on weekly bars (days read as weeks, max_hold_weeks), then each trade is placed on the day its entry or stop actually traded (first day in the week through the price) and on the week's last day for close exits. Fig 4.16 is captioned \"Daily\" but the text says weekly."), None),
         StrategyDef { needs_series: VIX_SERIES, ..d("cwin_vix_gap_window", "VIX Gap Window", "Course · VIX Gap Window", VIX_GAP,
-          "Course only (\"new research\"); no ADX filter; MA = SMA of VIX closes. Intraday rule, coded against per-day series built from synchronized intraday bars: VIX_HIGH / VIX_LOW / VIX_CLOSE = daily VIX (market-wide file; a per-ticker file such as QQQ__VIX_HIGH.csv carries the VXN for QQQ; India: India VIX for NIFTY 50). VIXUP_PX = this ticker's price at the first intraday bar on which the VIX trades above the previous day's VIX high; VIXUP_HOD = this ticker's session high from the open through that bar. VIXDN_PX / VIXDN_LOD = the same when the VIX first trades below the previous day's VIX low (session low). Short at VIXUP_PX, stop = VIXUP_HOD: hit the same day if the day's high exceeds it. Default exit at the entry-day close (\"and daytrade\"); hold_days > 0 trails the stop at the prior bar's high/low. Run on SPY / NIFTY 50 (index or futures). No intraday VIX data exists in the vault, so every run reports a data gap.", None) },
+          "Course only (\"new research\"); no ADX filter; MA = SMA of VIX closes. Intraday rule, coded against per-day series built from synchronized intraday bars: VIX_HIGH / VIX_LOW / VIX_CLOSE = daily VIX (market-wide file; a per-ticker file such as QQQ__VIX_HIGH.csv carries the VXN for QQQ; India: India VIX for NIFTY 50). VIXUP_PX = this ticker's price at the first intraday bar on which the VIX trades above the previous day's VIX high; VIXUP_HOD = this ticker's session high from the open through that bar. VIXDN_PX / VIXDN_LOD = the same when the VIX first trades below the previous day's VIX low (session low). Short at VIXUP_PX, stop = VIXUP_HOD: hit the same day if the day's high exceeds it. Default exit at the entry-day close (\"and daytrade\"); hold_days > 0 trails the stop at the prior bar's high/low. India (connors-final, 26 Oct 2026): NIFTY 50 with India VIX, series built from the vault's cleaned 1-minute India VIX and NIFTY 50 bars (from 2015-01-09; entry = NIFTY 50 close of the minute in which India VIX first breaks yesterday's high/low; the same-day stop is decided on the minutes after entry, VIXUP_POSTHI / VIXDN_POSTLO). Exit at the official daily close. US: there is no intraday CBOE VIX in the vault, so US runs stay held.", None) },
     ]
 }
 
@@ -758,6 +758,9 @@ fn vix_gap(x: &Ctx, from: usize, to: usize, n: usize, hold: usize, side: f64) ->
     let s = |k: &str| x.series(k).map(|v| v.to_vec()).unwrap_or_else(|| vec![f64::NAN; x.c.len()]);
     let (vh, vl, vc) = (s("VIX_HIGH"), s("VIX_LOW"), s("VIX_CLOSE"));
     let (up_px, up_hod, dn_px, dn_lod) = (s("VIXUP_PX"), s("VIXUP_HOD"), s("VIXDN_PX"), s("VIXDN_LOD"));
+    // connors-final 2026-10-26: where the 1-minute build also gives the market's extreme AFTER the entry minute
+    // (VIXUP_POSTHI / VIXDN_POSTLO), the same-day stop is decided on those minutes; otherwise on the daily high/low.
+    let (up_post, dn_post) = (s("VIXUP_POSTHI"), s("VIXDN_POSTLO"));
     let vma = sma_exact(&vc, n);
     let mut out = vec![];
     let mut i = from.max(2);
@@ -772,8 +775,10 @@ fn vix_gap(x: &Ctx, from: usize, to: usize, n: usize, hold: usize, side: f64) ->
         }
         let (px, stop0) = if d > 0.0 { (dn_px[i], dn_lod[i]) } else { (up_px[i], up_hod[i]) };
         let ext = |k: usize| if d > 0.0 { x.l[k] } else { x.h[k] };
+        let post = if d > 0.0 { dn_post[i] } else { up_post[i] };
+        let entry_day_ext = if post.is_finite() { post } else { ext(i) };
         let mut t = Trade { dir: d, legs: vec![Leg { i, px, w: 1.0 }], exit_i: i, exit_px: x.c[i], reason: String::new(), entry_kind: "stop", signal_i: i, open: false, exits: Vec::new() };
-        if d * (stop0 - ext(i)) > 0.0 {
+        if d * (stop0 - entry_day_ext) > 0.0 {
             // the day's extreme went beyond the extreme-so-far at entry, so the stop traded after the fill
             t.exit_px = stop0;
             t.reason = format!("stop at the session {} at entry {}", if d > 0.0 { "low" } else { "high" }, fmt(stop0));

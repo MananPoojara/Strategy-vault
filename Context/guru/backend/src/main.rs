@@ -720,7 +720,8 @@ fn native_benchmark(market:baskets::Market)->&'static str {match market {baskets
 fn preloaded_market(ticker:&str)->Option<baskets::Market>{
     match ticker {
         "NIFTY 50"|"NIFTY BANK"|"NIFTYBANK"|"NIFTY IT"|"NIFTYIT"|"NIFTY MIDCAP 100"|"NIFTYMIDCAP100"=>Some(baskets::Market::India),
-        "SPX"|"NDX"|"DJI"|"SPY"|"QQQ"|"IWM"|"MDY"|"SMH"|"DIA"=>Some(baskets::Market::UnitedStates),
+        "SPX"|"NDX"|"DJI"=>Some(baskets::Market::UnitedStates),
+        t if instrument_policy::US_ETFS.contains(&t)=>Some(baskets::Market::UnitedStates),
         _=>None,
     }
 }
@@ -760,9 +761,39 @@ fn admit(ctx:&Ctx,d:&connors::StrategyDef,from:usize,to:usize,p:&Params,selected
     let early=q.get("from").filter(|f|selected.evidence().is_some()&&!f.is_empty()&&f.as_str()<ctx.r[0].date.as_str());
     let requested=early.map_or(ctx.r[from].date.as_str(),|f|f.as_str());
     let (to,ended)=readiness::auto_end(ctx,d,from,to,p);
-    let (start,note)=readiness::auto_start(ctx,from,to,requested,|f|readiness::check(ctx,d,f,to,p).or_else(||native_admission(ctx,d,f,to,selected,st,q)))?;
+    let refuse=|f:usize,t:usize|readiness::check(ctx,d,f,t,p).or_else(||native_admission(ctx,d,f,t,selected,st,q));
+    let (start,note)=match readiness::auto_start(ctx,from,to,requested,|f|refuse(f,to)) {
+        Ok(found)=>found,
+        Err(issue)=>return longest_span(ctx,d,from,to,p,requested,&refuse).map(|(s,e,mut a)|{if a.end.is_none(){a.end=ended.clone();}(s,e,a)}).ok_or(issue),
+    };
     let note=note.or_else(||early.map(|f|format!("Started {}: this stock's data in the vault begins then. The requested start {f} is earlier; no prices are filled or estimated.",ctx.r[0].date)));
     Ok((start,to,Auto{start:note,end:ended}))
+}
+/// Longest gap-free span (user request 2026-10-26): when a series the rule reads is missing on days inside the window
+/// (e.g. NYSE breadth on 1999-11-26, 2002-06-20, 2019-08-20) and moving the start alone leaves too short a run, the run
+/// uses the longest stretch between missing days that passes every check (auto_start applied inside each stretch).
+/// Same floor as auto_start (a year, or half a shorter request). Nothing is filled; the calculation is untouched.
+fn longest_span(ctx:&Ctx,d:&connors::StrategyDef,from:usize,to:usize,p:&Params,requested:&str,refuse:&dyn Fn(usize,usize)->Option<readiness::Issue>)->Option<(usize,usize,Auto)>{
+    let (gaps,name)=readiness::series_gaps(ctx,d,from,to,p);
+    let name=name?;
+    let mut spans:Vec<(usize,usize)>=std::iter::once(from).chain(gaps.iter().map(|g|g+1)).zip(gaps.iter().map(|&g|g.wrapping_sub(1)).chain(std::iter::once(to)))
+        .filter(|&(a,b)|a<b && b<=to).collect();
+    spans.sort_by_key(|&(a,b)|std::cmp::Reverse(b-a));
+    let mut best:Option<(usize,usize,Option<String>)>=None;
+    for (a,b) in spans {
+        if best.as_ref().is_some_and(|(s,e,_)|e-s>=b-a) {break;}
+        if let Ok((s,n))=readiness::auto_start(ctx,a,b,&ctx.r[a].date,|f|refuse(f,b)) {
+            if best.as_ref().map_or(true,|(bs,be,_)|b-s>be-bs) {best=Some((s,b,n));}
+        }
+    }
+    let (s,e,inner)=best?;
+    if e-s+1<250.min((to-from+1)/2) {return None;}
+    let days:Vec<&str>=gaps.iter().take(6).map(|&g|ctx.r[g].date.as_str()).collect();
+    let more=if gaps.len()>6 {format!(" and {} more",gaps.len()-6)} else {String::new()};
+    let start=format!("Ran {} to {}: the longest stretch with no missing {name} data. {name} (or another series this rule reads) is missing on {} day(s) in the requested period {requested} to {} ({}{more}). No missing values are filled or estimated.{}",
+        ctx.r[s].date,ctx.r[e].date,gaps.len(),ctx.r[to].date,days.join(", "),inner.map_or(String::new(),|n|format!(" {n}")));
+    let end=(e<to).then(||format!("Ended {}: {name} is missing on {}, the next day. The requested end {} is later; no data is filled or estimated.",ctx.r[e].date,ctx.r[e+1].date,ctx.r[to].date));
+    Some((s,e,Auto{start:Some(start),end}))
 }
 /// Plain notes for a run whose start or end moved to the data's coverage (API fields auto_start / auto_end).
 #[derive(Clone,Default)]
@@ -2785,5 +2816,30 @@ mod optimizer_rank_minimum_tests {
         let decade = calendar_years("2001-01-01", "2010-12-31");
         assert_eq!(optimizer_trade_requirement(58.0, decade).1, 29.0);
         assert_eq!(optimizer_trade_requirement(59.0, decade).1, 30.0);
+    }
+}
+
+#[cfg(test)]
+mod connors_final_tests {
+    use super::*;
+    /// Longest gap-free span: NYSE-breadth style gaps inside the window move both ends to the longest stretch.
+    #[test]
+    fn longest_span_picks_the_longest_stretch_between_series_gaps() {
+        let r:Vec<Row>=(0..900).map(|i|Row{ticker:"SPY".into(),date:format!("{:04}-{:02}-{:02}",2000+i/250,i%250/21+1,i%21+1),open:100.,high:110.,low:99.,close:100.+(i%7) as f64,volume:Some(1e6)}).collect();
+        let mut ctx=Ctx::new(&r,&r,&[]);
+        let mut trin=vec![1.0;r.len()];trin[100]=f64::NAN;trin[700]=f64::NAN;
+        ctx.extra.insert("TRIN".into(),trin);
+        let d=connors::catalogue().into_iter().find(|d|d.id=="trin4").unwrap();
+        let p=Params::new();
+        let refuse=|f:usize,t:usize|readiness::check(&ctx,&d,f,t,&p);
+        assert!(refuse(0,899).is_some(),"a gap inside the window refuses it");
+        let (s,e,auto)=longest_span(&ctx,&d,0,899,&p,&r[0].date,&refuse).expect("a long gap-free stretch exists");
+        assert_eq!((s,e),(101,699));
+        assert!(auto.start.unwrap().contains("longest stretch") && auto.end.unwrap().contains(&r[700].date));
+        // no gaps -> nothing to do; a stretch shorter than the floor -> refused
+        assert!(longest_span(&ctx,&d,101,699,&p,&r[101].date,&refuse).is_none());
+        let mut ctx2=Ctx::new(&r,&r,&[]);let mut t2=vec![1.0;r.len()];for g in (50..900).step_by(100){t2[g]=f64::NAN;}ctx2.extra.insert("TRIN".into(),t2);
+        let refuse2=|f:usize,t:usize|readiness::check(&ctx2,&d,f,t,&p);
+        assert!(longest_span(&ctx2,&d,0,899,&p,&r[0].date,&refuse2).is_none(),"99-day stretches are below the floor");
     }
 }

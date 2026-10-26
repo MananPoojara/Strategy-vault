@@ -68,12 +68,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
           DT_RULES,
           "Full strategy: IEF/TLH/TLT each 0-25% (5% per positive lookback), remainder IEI, weekly. India: an Indian G-sec ladder would be the swap (not in the vault).",
           claim("n/a", "n/a", "ann 4.00%", "weekly rebalance", "IEI/IEF/TLH/TLT 01/2007-12/2018: vol 6.60%, maxDD -10.80%, Sharpe 0.61; 2008 +14.03%, 2011 +18.25%")),
-        d(DT1, "CR Dynamic Treasuries · single-ETF sleeve", "Ch 7 · CR Dynamic Treasuries", "Long",
-          NeedsData("Treasury ETF data (IEF, TLH, TLT): the rule is written for bonds; running it on an equity index would swap the asset class, not just the instrument"),
+        d(DT1, "CR Dynamic Treasuries · single-ETF sleeve", "Ch 7 · CR Dynamic Treasuries", "Long", Live,
           DT_RULES,
           concat!("Single-ETF version of the allocation rule (the book applies it to IEF, TLH, TLT): at every week-end close the instrument's weight is reset to 5% x (number of the 21/42/63/84/105-day total returns that are > 0), i.e. 0-25% of capital; the rest (the book's IEI) is idle cash here. \
            Each weekly holding is one trade (weight = that week's allocation; weeks with 0 positive lookbacks hold nothing). Needs 105 bars of history before the first allocation. \
-           The vault has no Treasury ETFs, so on vault data this runs on equity indices (NIFTY 50, SPY...) - the book's instruments are bonds; no published single-ETF result.", tr_note!()),
+           Runs on the actual Treasury ETFs IEF, TLH and TLT (real Yahoo daily prices, connors-final 26 Oct 2026); equity instruments are refused (asset-class swap). No published single-ETF result.", tr_note!()),
           None),
         d(AV, "ETF Avalanches", "Ch 8 · ETF Avalanches", "Short",
           NeedsData("the 40-ETF universe of table 8.1 (vault has SPY, MDY, QQQ, IWM only), 5 short slots ranked by 100-day volatility and SHY for idle cash; see alpha_etf_avalanches_single for the per-ETF rules"),

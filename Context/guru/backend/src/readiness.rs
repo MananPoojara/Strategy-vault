@@ -91,6 +91,20 @@ pub fn auto_end(ctx:&Ctx,def:&StrategyDef,from:usize,to:usize,p:&Params)->(usize
     (end,Some(format!("Ended {}: {what} end then. The requested end {} is later; no prices are filled or estimated.",ctx.r[end].date,ctx.r[to].date)))
 }
 
+/// Longest gap-free span (user request 2026-10-26): the days in from..=to on which a series the rule reads (event
+/// columns excluded) has no value, with the first such series name. A series missing everywhere is not a gap (check
+/// refuses it with its own message). Used by main.rs admit() when auto_start alone cannot find a usable window.
+pub fn series_gaps(ctx:&Ctx,def:&StrategyDef,from:usize,to:usize,p:&Params)->(Vec<usize>,Option<&'static str>) {
+    let mut gaps=std::collections::BTreeSet::new();let mut first=None;
+    for name in required_series(def,p,minute_path(def,p)).into_iter().filter(|n|!event_column(n)) {
+        let Some(v)=ctx.series(name) else {continue};
+        let before=gaps.len();
+        gaps.extend((from..=to).filter(|&i|!v.get(i).is_some_and(|x|x.is_finite())));
+        if gaps.len()>before && first.is_none() {first=Some(name);}
+    }
+    (gaps.into_iter().collect(),first)
+}
+
 /// A fill/stop column is intentionally empty when that event did not happen.
 /// Its raw opening-range fields are still checked on every bar below.
 fn event_column(name: &str) -> bool {
@@ -154,6 +168,10 @@ mod short_course_readiness_tests {
 pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -> Option<Issue> {
     // user-held NSE breadth / TRIN mappings: the hold note wins over any data-coverage message
     if let Some(i)=ctx.r.first().and_then(|r|crate::instrument_policy::nse_breadth_held(def,&r.ticker)) {return Some(i);}
+    // connors-final: the optional p.43 universe filter has a $5 price test; on Indian prices it is not the book's filter
+    if def.book==books::ststw::BOOK && books::ststw::stock_study(def.id) && p.get("universe").is_some_and(|v|*v>=0.5) && india(ctx) {
+        return issue("not_testable","The p.43 universe filter keeps stocks priced above $5; on Indian (INR) prices that is not the book's filter. Use universe 0 (the test's own rules name no filter) on Indian instruments.");
+    }
     if def.book==books::lkqts::BOOK && books::lkqts::stock_research_profile(def.id) {
         if let Some(note)=books::lkqts::validate_stock_research_profile(def.id,p) {return issue("not_testable",note);}
         if let Some(note)=books::lkqts::stock_research_history_issue(def.id,ctx,from,to) {return issue("needs_data",note);}
