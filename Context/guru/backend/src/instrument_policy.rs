@@ -2193,6 +2193,9 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // ---- Dennis Meyers block (26 Oct 2026, lane B): held Live rules
         "dmtad_turbo"=>"Held: needs NYSE 52-week new highs and new lows. The Turbo A/D system buys and sells on NYSE advance/decline ratios together with smoothed counts of NYSE new highs and new lows (S&C 1997, p.339-341); the vault has the NYSE advance/decline series but no new-high/new-low history, and India has neither.",
         // ---- end Dennis Meyers held
+        // ---- Thomas Stridsman block (26 Oct 2026, lane B): held Live rules
+        "strmm_rs1"|"strmm_rsbands"|"strmm_rotation"=>"Held: needs comparison-market data. Stridsman's relative-strength systems compare each market day by day with its index (RS System No. 1) or with four other indices (RS Bands, Rotation) (Trading Systems and Money Management p.105-152); those comparison close series are not in the vault data, so the engine would find no comparison and trade nothing.",
+        // ---- end Thomas Stridsman held
         // ---- Masonson block (26 Oct 2026): held Live rules
         "masmt_vakkur_lev_seasonal"|"masmt_vakkur_lev_all"|"masmt_pres_lev2"|"masmt_pres_lbm"|"masmt_pres_optimal"=>"Held: the printed strategy invests with 2:1 margin (twice the account) in some months; the vault trades at most one unit without margin financing, so no result can be published.",
         // ---- end Masonson block
@@ -2839,6 +2842,17 @@ mod tests {
         }
     }
     // ---- end Dennis Meyers held ----
+    // ---- Thomas Stridsman held (2026-10-26, lane B) ----
+    #[test]
+    fn stridsman_held_rules_have_plain_card_reasons() {
+        use crate::books::{strmm};
+        let all:Vec<StrategyDef>=strmm::catalogue().into_iter().collect();
+        for id in ["strmm_rs1", "strmm_rsbands", "strmm_rotation"] {
+            let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
+            assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
+        }
+    }
+    // ---- end Thomas Stridsman held ----
     // ---- Leslie Masonson block (2026-10-25) ----
     #[test]
     fn masonson_review_admits_exact_ids_on_indices_etfs_and_stocks() {
