@@ -11,6 +11,9 @@
 use crate::connors::{claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "bab80";
+/// Admitted ids (authors/babcock/laneb/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["bab80_novapr"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const SP: &str = "Book: one S&P 500 futures contract (and NYFE), TradeStation, continuous back-adjusted data, $100 per trade deducted (p.6). $3,000 = 6.00 index points at $500/point (p.3); the same points are used on any index (instrument swap only). Back-adjusted futures prices cannot be compared with cash index prices, so only trade dates and counts are comparable. SPX cash opens before ~1999 are often stale (equal to the prior close), which changes the open-based setup and stop-entry fills on SPX in the book's window.";
 
