@@ -6,6 +6,7 @@ import { auth, pool, allowedOrigins } from './config.mjs';
 import { bootstrap } from './bootstrap.mjs';
 import { validateNoteKey, validateTheme, roleAllows, ROLES, validateSavedView, validateAnnotation } from './contracts.mjs';
 import { createBookLibrary, registerBookLibrary } from './book-library.mjs';
+import { createResearchStore, registerResearch } from './research.mjs';
 
 await bootstrap();
 export const app = new Hono();
@@ -37,6 +38,7 @@ app.use('/api/app/*', async (c, next) => {
   await next();
 });
 registerBookLibrary(app, await createBookLibrary());
+registerResearch(app, { pool, store: createResearchStore({ pool, progressPath: process.env.VAULT_RESEARCH_PROGRESS }) });
 app.get('/api/app/me', async c => {
   const user = c.get('user');
   const settings = await pool.query('SELECT theme,last_view FROM vault_settings WHERE user_id = $1', [user.id]);

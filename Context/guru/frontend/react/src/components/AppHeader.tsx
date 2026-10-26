@@ -62,7 +62,7 @@ export function AppHeader({
           {customPages
             .filter((page) => page.showInNavigation)
             .map((page) => (
-              <a href={`#${page.path}`} key={page.path}>
+              <a href={`#${page.path}`} key={page.path} className={location.hash.split("?")[0] === `#${page.path}` ? "on" : ""}>
                 {page.label}
               </a>
             ))}
