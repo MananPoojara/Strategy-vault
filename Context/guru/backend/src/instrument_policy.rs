@@ -2206,6 +2206,9 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // ---- Charles LeBeau block (26 Oct 2026, lane B): held Live rules
         "lebsp_prudent"|"lebsp_remarkable"=>"Held: fixed amounts set for the S&P futures contract. The Prudent and Remarkable S&P systems exit with dollar stops per S&P contract ($1,500 and $4,500 loss stops, $1,000 and $500 break-even stops, i.e. fixed S&P index points at $250 a point) (traderclub manuals, TradeStation code); a fixed point amount has no equivalent on other indices, ETFs or stocks. Running them on SPX with those points is a decision for the user.",
         // ---- end Charles LeBeau held
+        // ---- Leslie Payne block (26 Oct 2026, lane B): held Live rules
+        "lpgap_fade"=>"Held: needs intraday data. The Opening Gap Strategy trades E-mini futures on 1-minute bars: it enters at the 9:30 open and exits the same day at a target, a stop or the close (Gap Strategy documents); daily bars cannot show whether the target or the stop came first, and the gap is measured on the futures' own prior close.",
+        // ---- end Leslie Payne held
         // ---- Masonson block (26 Oct 2026): held Live rules
         "masmt_vakkur_lev_seasonal"|"masmt_vakkur_lev_all"|"masmt_pres_lev2"|"masmt_pres_lbm"|"masmt_pres_optimal"=>"Held: the printed strategy invests with 2:1 margin (twice the account) in some months; the vault trades at most one unit without margin financing, so no result can be published.",
         // ---- end Masonson block
@@ -2896,6 +2899,17 @@ mod tests {
         }
     }
     // ---- end Charles LeBeau held ----
+    // ---- Leslie Payne held (2026-10-26, lane B) ----
+    #[test]
+    fn payneb_held_rules_have_plain_card_reasons() {
+        use crate::books::{lpgap};
+        let all:Vec<StrategyDef>=lpgap::catalogue().into_iter().collect();
+        for id in ["lpgap_fade"] {
+            let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
+            assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
+        }
+    }
+    // ---- end Leslie Payne held ----
     // ---- Leslie Masonson block (2026-10-25) ----
     #[test]
     fn masonson_review_admits_exact_ids_on_indices_etfs_and_stocks() {
