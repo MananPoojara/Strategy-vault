@@ -12,6 +12,9 @@
 use crate::connors::{claim, sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "mjlbb";
+/// Admitted ids (authors/leungchong/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["mjlbb_mae3_10", "mjlbb_mae5_10", "mjlbb_bb2_10", "mjlbb_mae3_20", "mjlbb_mae5_20", "mjlbb_bb2_20", "mjlbb_mae5_50", "mjlbb_bb2_50", "mjlbb_mae3_250", "mjlbb_mae5_250", "mjlbb_bb2_250"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const RULES_MAE: &[&str] = &[
     "F|eq.(1) SMA_N(t) = sum_{i=t-N+1..t} P(i) / N; eq.(2) MAE_N^k%(t) = SMA_N(t) x (1 +/- k%) (p.339)",
