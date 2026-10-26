@@ -67,6 +67,10 @@ export interface Person {
   notes: number; rule_errors: number; edits: number; last_at: string | null; imported: boolean;
 }
 
+export interface Me { employee: { id: number; name: string } | null; admin: boolean; ready: boolean }
+export interface Card { id: string; name: string; author: string; books: number; strategies: number; verified: number; held: number; unreviewed: number; checked: number }
+export interface Employee { id: number; name: string; created_at: string; last_seen_at: string; removed_at: string | null; checks: number; mismatches: number; notes: number; rule_errors: number }
+
 const BASE = "/api/app/research";
 export function query(params: Record<string, string | number | undefined>) {
   const q = new URLSearchParams();
@@ -90,6 +94,13 @@ export const research = {
   noteHistory: (id: number) => apiJson<NoteHistory[]>(`${BASE}/notes/${id}/history`),
   timeline: (p: Record<string, string | number | undefined>) => apiJson<Page<TimelineItem>>(`${BASE}/timeline${query(p)}`),
   people: () => apiJson<Person[]>(`${BASE}/people`),
+  me: () => apiJson<Me>(`${BASE}/me`),
+  enter: (name: string, pin: string) => send<{ employee: Me["employee"] }>("/enter", "POST", { name, pin }),
+  admin: (password: string) => send<{ admin: boolean }>("/admin", "POST", { password }),
+  leave: () => send<{ ok: boolean }>("/leave", "POST"),
+  browse: (author?: string) => apiJson<{ items: Card[] }>(`${BASE}/browse${query({ author })}`),
+  employees: () => apiJson<Employee[]>(`${BASE}/employees`),
+  removeEmployee: (id: number) => send<{ removed: number }>(`/employees/${id}`, "DELETE"),
 };
 
 const IST: Intl.DateTimeFormatOptions = { timeZone: "Asia/Kolkata" };

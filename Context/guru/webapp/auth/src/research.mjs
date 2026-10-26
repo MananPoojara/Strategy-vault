@@ -1,7 +1,8 @@
 // Research portal API: the research team's verdicts, notes and one shared timeline.
 // Identity and time come from the server (session user, database now()); request bodies never set them.
 // Platform progress is read from the generated research-progress.json (make_research_progress.py); it is never written here.
-import { createHash } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
+import { getSignedCookie, setSignedCookie, deleteCookie } from 'hono/cookie';
 import { readFile, stat } from 'node:fs/promises';
 import { roleAllows } from './contracts.mjs';
 
@@ -40,6 +41,22 @@ function optionalDate(value, end) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(value))) throw bad('Use dates like 2026-10-26.');
   return `${value}T${end ? '23:59:59.999' : '00:00:00'}+05:30`;
 }
+// Who is working: employees enter with their name and the team PIN; the admin password unlocks removal.
+// Both live in .env (RESEARCH_PIN, RESEARCH_ADMIN_PASSWORD); the identity is a signed cookie, never a request body.
+const EMP = 'rp_emp', ADM = 'rp_admin';
+const COOKIE = { path: '/api/app/research', httpOnly: true, sameSite: 'Strict', secure: (process.env.VAULT_PUBLIC_URL || '').startsWith('https:'), maxAge: 60 * 60 * 12 };
+const secret = () => process.env.BETTER_AUTH_SECRET;
+export const nameKey = n => String(n || '').replace(/\s+/g, ' ').trim().toLowerCase();
+export function cleanName(value) {
+  if (typeof value !== 'string') throw bad('Type your name.');
+  const name = value.replace(/\s+/g, ' ').trim();
+  if (name.length < 2 || name.length > 60 || /[\x00-\x1f\x7f<>]/.test(name)) throw bad('Type your name (2 to 60 letters).');
+  return name;
+}
+export const sameSecret = (supplied, expected) => {
+  const a = Buffer.from(String(supplied ?? '')), b = Buffer.from(String(expected ?? ''));
+  return b.length > 0 && a.length === b.length && timingSafeEqual(a, b);
+};
 const writer = user => { if (!roleAllows(user.role, 'write')) throw new HttpError(403, 'Researcher access is needed to write. Ask an administrator.'); };
 
 const EXCEL_VERDICT = { 'Matches the book': 'matches', Mismatch: 'mismatch', Unclear: 'unclear' };
@@ -116,14 +133,14 @@ function targetLabel(index, type, key) {
   if (type === 'author') return index.authors.get(key)?.name || key;
   return 'General';
 }
-function noteRow(row, index, user) {
+function noteRow(row, index, who) {
   return {
     id: Number(row.id), target_type: row.target_type, target_key: row.target_key, target_label: targetLabel(index, row.target_type, row.target_key),
     note_type: row.note_type, body: row.deleted_at ? '' : row.body, author_id: row.author_id, author_name: row.author_name,
     imported: Boolean(row.import_ref), created_at: row.created_at, updated_at: row.updated_at, edits: Number(row.edits || 0),
     deleted_at: row.deleted_at, deleted_reason: row.deleted_reason, deleted_by_name: row.deleted_by_name || null,
-    can_edit: !row.deleted_at && Boolean(row.author_id) && row.author_id === user.id && roleAllows(user.role, 'write'),
-    can_delete: !row.deleted_at && roleAllows(user.role, 'write') && ((row.author_id && row.author_id === user.id) || user.role === 'admin'),
+    can_edit: !row.deleted_at && Boolean(who.name) && nameKey(row.author_name) === nameKey(who.name),
+    can_delete: !row.deleted_at && ((Boolean(who.name) && nameKey(row.author_name) === nameKey(who.name)) || who.admin),
   };
 }
 const NOTE_SELECT = `SELECT n.*, (SELECT count(*) FROM research_note_history h WHERE h.note_id=n.id AND h.action='edited') edits,
@@ -131,6 +148,88 @@ const NOTE_SELECT = `SELECT n.*, (SELECT count(*) FROM research_note_history h W
 
 export function registerResearch(app, { pool, store }) {
   const base = '/api/app/research';
+  async function employee(c) {
+    const id = await getSignedCookie(c, secret(), EMP);
+    if (!id || !/^\d+$/.test(id)) return null;
+    const row = (await pool.query('SELECT id, name FROM research_employees WHERE id=$1 AND removed_at IS NULL', [id])).rows[0];
+    return row ? { id: Number(row.id), name: row.name } : null;
+  }
+  const isAdmin = async c => (await getSignedCookie(c, secret(), ADM)) === '1';
+  const viewer = async c => { const [emp, admin] = await Promise.all([employee(c), isAdmin(c)]); return { emp, admin, name: emp?.name || null }; };
+  async function actor(c) {
+    const user = c.get('user'); writer(user);
+    const emp = await employee(c);
+    if (!emp) throw new HttpError(401, 'Enter your name and the PIN first.');
+    return { user, emp };
+  }
+  const needAdmin = async c => { if (!(await isAdmin(c))) throw new HttpError(403, 'Admin password needed.'); };
+
+  app.get(`${base}/me`, route(async c => {
+    const v = await viewer(c);
+    return c.json({ employee: v.emp, admin: v.admin, ready: Boolean(process.env.RESEARCH_PIN) });
+  }));
+
+  app.post(`${base}/enter`, route(async c => {
+    const body = await c.req.json().catch(() => ({}));
+    if (!process.env.RESEARCH_PIN) throw new HttpError(503, 'The research PIN is not set up yet. Ask the admin.');
+    const name = cleanName(body?.name);
+    if (!sameSecret(body?.pin, process.env.RESEARCH_PIN)) throw new HttpError(403, 'Wrong PIN.');
+    const row = (await pool.query(`INSERT INTO research_employees(name,name_key) VALUES($1,$2)
+      ON CONFLICT(name_key) DO UPDATE SET last_seen_at=now() RETURNING id, name, removed_at`, [name, nameKey(name)])).rows[0];
+    if (row.removed_at) throw new HttpError(403, 'This name was removed by the admin.');
+    await setSignedCookie(c, EMP, String(row.id), secret(), COOKIE);
+    return c.json({ employee: { id: Number(row.id), name: row.name } });
+  }));
+
+  app.post(`${base}/admin`, route(async c => {
+    const body = await c.req.json().catch(() => ({}));
+    if (!sameSecret(body?.password, process.env.RESEARCH_ADMIN_PASSWORD)) throw new HttpError(403, 'Wrong admin password.');
+    await setSignedCookie(c, ADM, '1', secret(), { ...COOKIE, maxAge: 60 * 60 * 2 });
+    return c.json({ admin: true });
+  }));
+
+  app.post(`${base}/leave`, route(async c => {
+    deleteCookie(c, EMP, COOKIE); deleteCookie(c, ADM, COOKIE);
+    return c.json({ ok: true });
+  }));
+
+  app.get(`${base}/employees`, route(async c => {
+    await needAdmin(c);
+    const rows = await pool.query(`SELECT e.id, e.name, e.created_at, e.last_seen_at, e.removed_at,
+        (SELECT count(*) FROM research_verdict_history v WHERE lower(v.actor_name)=e.name_key)::int checks,
+        (SELECT count(*) FROM research_verdict_history v WHERE lower(v.actor_name)=e.name_key AND v.verdict='mismatch')::int mismatches,
+        (SELECT count(*) FROM research_notes n WHERE lower(n.author_name)=e.name_key AND n.deleted_at IS NULL)::int notes,
+        (SELECT count(*) FROM research_notes n WHERE lower(n.author_name)=e.name_key AND n.deleted_at IS NULL AND n.note_type='rule_error')::int rule_errors
+      FROM research_employees e ORDER BY e.removed_at NULLS FIRST, e.last_seen_at DESC LIMIT 500`);
+    return c.json(rows.rows.map(r => ({ ...r, id: Number(r.id) })));
+  }));
+
+  app.delete(`${base}/employees/:id`, route(async c => {
+    await needAdmin(c);
+    const id = Number(c.req.param('id'));
+    if (!Number.isSafeInteger(id) || id < 1) throw bad('Unknown employee.');
+    const row = await pool.query('UPDATE research_employees SET removed_at=now() WHERE id=$1 AND removed_at IS NULL RETURNING id', [id]);
+    if (!row.rowCount) throw new HttpError(404, 'Unknown employee.');
+    await pool.query('INSERT INTO vault_audit(actor_id,action,entity) VALUES($1,$2,$3)', [c.get('user').id, 'research.employee.removed', String(id)]);
+    return c.json({ removed: id });
+  }));
+
+  // Card browsing: authors, then one author's books, with counts per card.
+  app.get(`${base}/browse`, route(async c => {
+    const { data } = await store.load();
+    const author = c.req.query('author');
+    const checked = new Set((await pool.query("SELECT strategy_key FROM research_verdicts WHERE verdict<>'not_checked'")).rows.map(r => r.strategy_key));
+    const groups = new Map();
+    for (const s of data.strategies) {
+      if (author && s.author_id !== author) continue;
+      const id = author ? s.book_id : s.author_id;
+      const g = groups.get(id) || { id, name: author ? s.book : s.author, author: s.author, books: new Set(), strategies: 0, verified: 0, held: 0, unreviewed: 0, checked: 0 };
+      g.books.add(s.book_id); g.strategies++; g[s.site]++; if (checked.has(s.key)) g.checked++;
+      groups.set(id, g);
+    }
+    const items = [...groups.values()].map(g => ({ ...g, books: g.books.size })).sort((a, b) => b.strategies - a.strategies || a.name.localeCompare(b.name));
+    return c.json({ items });
+  }));
 
   app.get(`${base}/summary`, route(async c => {
     const { data } = await store.load();
@@ -193,7 +292,7 @@ export function registerResearch(app, { pool, store }) {
     const key = c.req.query('key');
     if (typeof key !== 'string' || !KEY.test(key)) throw bad('Unknown strategy.');
     await store.load(); const { index } = store;
-    const strategy = index.strategies.get(key);
+    const strategy = index.strategies.get(key), who = await viewer(c);
     const [verdict, history, notes] = await Promise.all([
       pool.query('SELECT verdict, author_name, updated_at FROM research_verdicts WHERE strategy_key=$1', [key]),
       pool.query('SELECT verdict, previous, actor_name, created_at FROM research_verdict_history WHERE strategy_key=$1 ORDER BY created_at DESC, id DESC LIMIT 50', [key]),
@@ -201,11 +300,11 @@ export function registerResearch(app, { pool, store }) {
     ]);
     if (!strategy && !history.rowCount && !notes.rowCount) throw new HttpError(404, 'This strategy is not on the site.');
     return c.json({ strategy: strategy || null, verdict: verdict.rows[0] || { verdict: 'not_checked' }, history: history.rows,
-      notes: notes.rows.map(r => noteRow(r, index, c.get('user'))) });
+      notes: notes.rows.map(r => noteRow(r, index, who)) });
   }));
 
   app.put(`${base}/verdict`, route(async c => {
-    const user = c.get('user'); writer(user);
+    const { user, emp } = await actor(c);
     const body = await c.req.json();
     await store.load();
     if (!body || typeof body.key !== 'string' || !store.index.strategies.has(body.key)) throw bad('Unknown strategy.');
@@ -218,9 +317,9 @@ export function registerResearch(app, { pool, store }) {
       if (previous !== body.verdict) {
         await client.query(`INSERT INTO research_verdicts(strategy_key,verdict,author_id,author_name) VALUES($1,$2,$3,$4)
           ON CONFLICT(strategy_key) DO UPDATE SET verdict=EXCLUDED.verdict, author_id=EXCLUDED.author_id, author_name=EXCLUDED.author_name, updated_at=now()`,
-        [body.key, body.verdict, user.id, user.name]);
+        [body.key, body.verdict, user.id, emp.name]);
         await client.query('INSERT INTO research_verdict_history(strategy_key,verdict,previous,actor_id,actor_name) VALUES($1,$2,$3,$4,$5)',
-          [body.key, body.verdict, previous, user.id, user.name]);
+          [body.key, body.verdict, previous, user.id, emp.name]);
         await client.query('INSERT INTO vault_audit(actor_id,action,entity) VALUES($1,$2,$3)', [user.id, 'research.verdict', body.key.slice(0, 80)]);
       }
       await client.query('COMMIT');
@@ -242,12 +341,12 @@ export function registerResearch(app, { pool, store }) {
       pool.query(`${NOTE_SELECT} ${sqlWhere} ORDER BY n.created_at DESC, n.id DESC LIMIT ${paging.size} OFFSET ${paging.offset}`, values),
       pool.query(`SELECT count(*)::int n FROM research_notes n ${sqlWhere}`, values),
     ]);
-    await store.load();
-    return c.json(paged(rows.rows.map(r => noteRow(r, store.index, c.get('user'))), total.rows[0].n, paging));
+    await store.load(); const who = await viewer(c);
+    return c.json(paged(rows.rows.map(r => noteRow(r, store.index, who)), total.rows[0].n, paging));
   }));
 
   app.post(`${base}/notes`, route(async c => {
-    const user = c.get('user'); writer(user);
+    const { user, emp } = await actor(c);
     const body = await c.req.json(); await store.load();
     const { index } = store;
     if (!body || !TARGETS.has(body.target_type)) throw bad('Attach the note to a strategy, book, author or the general log.');
@@ -260,19 +359,19 @@ export function registerResearch(app, { pool, store }) {
     try {
       await client.query('BEGIN');
       const note = await client.query(`INSERT INTO research_notes(target_type,target_key,note_type,body,author_id,author_name)
-        VALUES($1,$2,$3,$4,$5,$6) RETURNING *`, [body.target_type, key, body.note_type, text, user.id, user.name]);
+        VALUES($1,$2,$3,$4,$5,$6) RETURNING *`, [body.target_type, key, body.note_type, text, user.id, emp.name]);
       await client.query(`INSERT INTO research_note_history(note_id,action,note_type,body,actor_id,actor_name,created_at)
-        VALUES($1,'created',$2,$3,$4,$5,$6)`, [note.rows[0].id, body.note_type, text, user.id, user.name, note.rows[0].created_at]);
+        VALUES($1,'created',$2,$3,$4,$5,$6)`, [note.rows[0].id, body.note_type, text, user.id, emp.name, note.rows[0].created_at]);
       await client.query('INSERT INTO vault_audit(actor_id,action,entity) VALUES($1,$2,$3)', [user.id, 'research.note.created', String(note.rows[0].id)]);
       await client.query('COMMIT');
-      return c.json(noteRow(note.rows[0], index, user), 201);
+      return c.json(noteRow(note.rows[0], index, { name: emp.name, admin: false }), 201);
     } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
   }));
 
   const noteId = c => { const id = Number(c.req.param('id')); if (!Number.isSafeInteger(id) || id < 1) throw bad('Unknown note.'); return id; };
 
   app.patch(`${base}/notes/:id`, route(async c => {
-    const user = c.get('user'); writer(user);
+    const { user, emp } = await actor(c), who = { name: emp.name, admin: false };
     const id = noteId(c), body = await c.req.json();
     if (body.note_type !== undefined && !NOTE_TYPES[body.note_type]) throw bad('Choose a note type.');
     const text = body.body === undefined ? undefined : cleanText(body.body);
@@ -283,36 +382,38 @@ export function registerResearch(app, { pool, store }) {
       const note = found.rows[0];
       if (!note) throw new HttpError(404, 'Unknown note.');
       if (note.deleted_at) throw new HttpError(409, 'This note was removed and cannot be edited.');
-      if (!note.author_id || note.author_id !== user.id) throw new HttpError(403, 'Only the person who wrote a note can edit it.');
+      if (nameKey(note.author_name) !== nameKey(emp.name)) throw new HttpError(403, 'Only the person who wrote a note can edit it.');
       const next = { body: text ?? note.body, note_type: body.note_type ?? note.note_type };
-      if (next.body === note.body && next.note_type === note.note_type) { await client.query('ROLLBACK'); return c.json(noteRow({ ...note, edits: 0 }, store.index, user)); }
+      if (next.body === note.body && next.note_type === note.note_type) { await client.query('ROLLBACK'); return c.json(noteRow({ ...note, edits: 0 }, store.index, who)); }
       const saved = await client.query('UPDATE research_notes SET body=$2, note_type=$3, updated_at=now() WHERE id=$1 RETURNING *', [id, next.body, next.note_type]);
       await client.query(`INSERT INTO research_note_history(note_id,action,note_type,body,actor_id,actor_name,created_at) VALUES($1,'edited',$2,$3,$4,$5,$6)`,
-        [id, next.note_type, next.body, user.id, user.name, saved.rows[0].updated_at]);
+        [id, next.note_type, next.body, user.id, emp.name, saved.rows[0].updated_at]);
       await client.query('INSERT INTO vault_audit(actor_id,action,entity) VALUES($1,$2,$3)', [user.id, 'research.note.edited', String(id)]);
       await client.query('COMMIT');
       const edits = (await pool.query("SELECT count(*)::int n FROM research_note_history WHERE note_id=$1 AND action='edited'", [id])).rows[0].n;
-      return c.json(noteRow({ ...saved.rows[0], edits }, store.index, user));
+      return c.json(noteRow({ ...saved.rows[0], edits }, store.index, who));
     } catch (error) { await client.query('ROLLBACK').catch(() => {}); throw error; } finally { client.release(); }
   }));
 
   app.delete(`${base}/notes/:id`, route(async c => {
-    const user = c.get('user'); writer(user);
+    const user = c.get('user'), who = await viewer(c);
+    if (!who.emp && !who.admin) throw new HttpError(401, 'Enter your name and the PIN first.');
     const id = noteId(c), body = await c.req.json().catch(() => ({}));
-    const reason = cleanText(body?.reason ?? '', 500);
+    const reason = body?.reason ? cleanText(body.reason, 500) : (who.admin ? 'Removed by the admin' : 'Removed by the writer');
+    const actorName = who.admin ? 'Admin' : who.name;
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
       const note = (await client.query('SELECT * FROM research_notes WHERE id=$1 FOR UPDATE', [id])).rows[0];
       if (!note) throw new HttpError(404, 'Unknown note.');
       if (note.deleted_at) throw new HttpError(409, 'This note was already removed.');
-      if (!(note.author_id && note.author_id === user.id) && user.role !== 'admin') throw new HttpError(403, 'Only the writer or an administrator can remove a note.');
+      if (!who.admin && nameKey(note.author_name) !== nameKey(who.name)) throw new HttpError(403, 'Only the writer or the admin can remove a note.');
       const saved = await client.query('UPDATE research_notes SET deleted_at=now(), deleted_by=$2, deleted_reason=$3 WHERE id=$1 RETURNING *', [id, user.id, reason]);
       await client.query(`INSERT INTO research_note_history(note_id,action,note_type,body,actor_id,actor_name,created_at) VALUES($1,'deleted',$2,$3,$4,$5,$6)`,
-        [id, note.note_type, `Removed: ${reason}`, user.id, user.name, saved.rows[0].deleted_at]);
+        [id, note.note_type, `Removed: ${reason}`, user.id, actorName, saved.rows[0].deleted_at]);
       await client.query('INSERT INTO vault_audit(actor_id,action,entity) VALUES($1,$2,$3)', [user.id, 'research.note.deleted', String(id)]);
       await client.query('COMMIT');
-      return c.json(noteRow({ ...saved.rows[0], deleted_by_name: user.name }, store.index, user));
+      return c.json(noteRow({ ...saved.rows[0], deleted_by_name: actorName }, store.index, who));
     } catch (error) { await client.query('ROLLBACK').catch(() => {}); throw error; } finally { client.release(); }
   }));
 

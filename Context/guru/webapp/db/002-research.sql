@@ -57,3 +57,12 @@ CREATE TABLE IF NOT EXISTS research_platform_events (
     source text NOT NULL
 );
 CREATE INDEX IF NOT EXISTS research_platform_events_at_idx ON research_platform_events(happened_at DESC);
+-- Employees who enter the research page with their name and the team PIN. Removing one keeps their history.
+CREATE TABLE IF NOT EXISTS research_employees (
+    id bigserial PRIMARY KEY,
+    name text NOT NULL CHECK (length(name) BETWEEN 2 AND 60),
+    name_key text NOT NULL UNIQUE,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    last_seen_at timestamptz NOT NULL DEFAULT now(),
+    removed_at timestamptz
+);
