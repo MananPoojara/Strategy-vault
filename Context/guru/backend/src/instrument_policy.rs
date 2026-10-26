@@ -315,6 +315,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || leungchong_reviewed(def) // Leung and Chong block
         || bollinger_reviewed(def) // John Bollinger block
         || aqr_reviewed(def) // AQR (Hurst, Ooi and Pedersen) block
+        || fejames_reviewed(def) // F. E. James block
         || guppy_reviewed(def) // Guppy block
         || headley_reviewed(def) // Headley block
         || jcarter_reviewed(def) // Carter block
@@ -1240,6 +1241,16 @@ fn aqr_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end AQR (Hurst, Ooi and Pedersen)
+// ---------------------------------------------------------------- F. E. James 2026-10-25
+// Admission only for the module REVIEWED lists (authors/fejames/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn fejames_reviewed(def:&StrategyDef)->bool {(def.book=="fejmma" && crate::books::fejmma::reviewed(def.id))}
+const FEJAMES_LABEL:&str="James tested these monthly moving-average rules on NYSE stocks (1926-1960); runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade, fills at the month-end close.";
+fn fejames_policy(def:&StrategyDef)->Option<Policy> {
+    if !fejames_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"F. E. James Jr., Monthly Moving Averages - An Effective Investment Tool?, JFQA 3(3) 1968, pp.315-326");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end F. E. James
 // ---------------------------------------------------------------- Guppy 2026-10-25
 // Admission only for the module REVIEWED lists (authors/guppy/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn guppy_reviewed(def:&StrategyDef)->bool {(def.book=="dgdwb" && crate::books::dgdwb::reviewed(def.id))}
@@ -1545,6 +1556,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=leungchong_policy(def) {return p;} // Leung and Chong block
     if let Some(p)=bollinger_policy(def) {return p;} // John Bollinger block
     if let Some(p)=aqr_policy(def) {return p;} // AQR (Hurst, Ooi and Pedersen) block
+    if let Some(p)=fejames_policy(def) {return p;} // F. E. James block
     if let Some(p)=guppy_policy(def) {return p;} // Guppy block
     if let Some(p)=headley_policy(def) {return p;} // Headley block
     if let Some(p)=jcarter_policy(def) {return p;} // Carter block
@@ -2085,6 +2097,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if leungchong_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LEUNGCHONG_LABEL));} // Leung and Chong block
     if bollinger_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BOLLINGER_LABEL));} // John Bollinger block
     if aqr_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",AQR_LABEL));} // AQR (Hurst, Ooi and Pedersen) block
+    if fejames_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",FEJAMES_LABEL));} // F. E. James block
     if guppy_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",GUPPY_LABEL));} // Guppy block
     if headley_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",HEADLEY_LABEL));} // Headley block
     if jcarter_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",JCARTER_LABEL));} // Carter block
@@ -2566,6 +2579,22 @@ mod tests {
         }
     }
     // ---- end AQR (Hurst, Ooi and Pedersen) block ----
+    // ---- F. E. James block (2026-10-25) ----
+    #[test]
+    fn fejames_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{fejmma};
+        let all:Vec<StrategyDef>=fejmma::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=fejmma::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end F. E. James block ----
     // ---- Guppy block (2026-10-25) ----
     #[test]
     fn guppy_review_admits_exact_ids_on_indices_etfs_and_stocks() {
