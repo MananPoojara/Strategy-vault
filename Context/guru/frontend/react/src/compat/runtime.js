@@ -372,7 +372,7 @@ async function optimSection(v, tk, d, detailed = true) {
     <table class="ogrid"><thead><tr><th></th><th>Setting</th><th class="n">Default</th><th class="n">From</th><th class="n">To</th><th class="n">Step</th><th class="n">Values</th></tr></thead><tbody>
     ${ps.map(p => { const x = g[p.key]; return `<tr data-k="${p.key}" class="${x.on ? '' : 'offrow'}"><td><input type="checkbox" data-f="on" ${x.on ? 'checked' : ''} aria-label="Vary ${esc(p.label)}"></td><td>${esc(p.label)}</td><td class="n">${p.def}</td>
       ${['min', 'max', 'step'].map(f => `<td class="n"><input type="number" data-f="${f}" value="${x[f]}" step="any"></td>`).join('')}<td class="n muted" data-cnt>${nVals(x)}</td></tr>`; }).join('')}</tbody></table>
-    <form class="obar" id="oform"><span class="grow"></span><span class="ocount" id="ocount"></span><button class="dbtn primary sm" type="submit" id="orun">Run optimization</button></form>
+    <form class="obar" id="oform"><label title="Applied to every backtest in this optimization">Slippage <input class="w60" type="number" name="slippage" value="${esc(S.slippage||'0')}" min="0" max="500" step="0.1"> bps a side</label><label>Rollover <input class="w60" type="number" name="rollover" value="${esc(S.rollover||'0')}" min="0" max="500" step="0.1"> bps per roll</label><span class="grow"></span><span class="ocount" id="ocount"></span><button class="dbtn primary sm" type="submit" id="orun">Run optimization</button></form>
     <p class="ostat" id="otime"></p><div id="opt-out"></div></section>`; })() : '';
   const claude = detailed ? `<section class="box" id="claude-c"><div class="box-h">Claude’s conclusion <small>Top 3 chosen once on all the data (CAGR, Sharpe, monthly thickness, expectancy ratio, CAR/MDD), shown for ${esc(PERIOD_NAME[periodKind()])} and split before / after the book</small></div><p class="rnote">This summary is calculated locally from Rust backtests. Opening a strategy does not call an AI model or use AI tokens. Parameter selection is research, not proof of future performance or reproduction of the book.</p><div id="cc-body">${ps.length ? bookLoader('Rust is testing the parameter grid…') : '<p class="muted">This rule has no settings to vary, so there is nothing to rank.</p>'}</div></section>` : `<section class="box" id="claude-c"><div class="box-h">Claude’s conclusion <small>Parameter research is available on the optimization page</small></div><p>Open Optimization to run the existing full-history parameter ranking, read its comparisons and download its workbook.</p><a class="dbtn sm" href="${href('/o/'+encodeURIComponent(v.id),{...S})}">Open parameter research</a></section>`;
   return `${opt}${claude}${gptSection(v,tk,d)}
@@ -406,7 +406,7 @@ function optimInit() {
     try { const r = await fetch(`${API_IN}/notes?key=${key}`, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: noteText.value }); m.textContent = r.ok ? `Saved at ${new Date().toLocaleTimeString()}` : 'Save failed: ' + await r.text(); } catch (err) { m.textContent = 'Save failed: ' + err.message; } };
 }
 
-const optQuery = (v, tk, w, g, slim) => { const q = new URLSearchParams({ id: v.id, ticker: tk, from: w.from || '', to: w.to || '', cost: S.cost || '0',slippage:S.slippage||'0',rollover:S.rollover||'0', ...(slim ? { slim: '1' } : {}) });
+const optQuery = (v, tk, w, g, slim, c = S) => { const q = new URLSearchParams({ id: v.id, ticker: tk, from: w.from || '', to: w.to || '', cost: S.cost || '0',slippage:c.slippage||'0',rollover:c.rollover||'0', ...(slim ? { slim: '1' } : {}) });
   Object.entries(g).forEach(([k, x]) => { if (x.on) q.set('g.' + k, `${x.min}:${x.max}:${x.step}`); }); return q; };
 async function fetchOpt(q, api=API) { const r = await fetch(enginePath(q.get('id'),'optimize',api)+'?'+q), b = await r.text(); if (!r.ok) { let message = b; try { message = JSON.parse(b).error || b; } catch {} throw new Error(message); } return JSON.parse(b); }
 
@@ -416,7 +416,8 @@ async function runOpt() {
   $('#opt-out').innerHTML = bookLoader(`Running ${n0(n)} backtests in Rust…`);
   const t0 = performance.now();
   try {
-    const res = await fetchOpt(optQuery(v, tk, { from: S.from, to: S.to }, g, false)); await minWait(t0, 900); res.rt = performance.now() - t0;
+    const fd = new FormData($('#oform')), c = { slippage: String(Math.max(0, +fd.get('slippage') || 0)), rollover: String(Math.max(0, +fd.get('rollover') || 0)) };
+    const res = await fetchOpt(optQuery(v, tk, { from: S.from, to: S.to }, g, false, c)); await minWait(t0, 900); res.rt = performance.now() - t0;
     OPT.cache[key] = { res }; if (STRAT && optKey(STRAT.v.id,STRAT.tk)===key && $('#opt-out')===out) showOpt(res);
   } catch (e) { if ($('#opt-out')===out) {out.innerHTML = ''; $('#otime').innerHTML = `<span class="neg">${esc(e.message)}</span>`;} }
   finally { if ($('#orun')) optCount(); }
