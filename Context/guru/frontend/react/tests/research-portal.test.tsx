@@ -114,12 +114,16 @@ it("admin sees employee cards and removes one after confirming", async () => {
 it("one person's work is grouped by day, newest first", async () => {
   api({
     "GET /api/app/research/me": asha,
+    "GET /api/app/research/work": { person: "Asha", totals: { strategies: 1, matches: 1, mismatch: 0, unclear: 0, notes: 1 }, items: [
+      { author: "Larry Connors", author_id: "connors", books: [{ book: "Swing Trading College IX", book_id: "stc9", strategies: [{ key: "k", name: "The 4 Keys", verdict: "matches", notes: 1, errors: 1, at: "2026-10-26T06:00:00Z" }] }] }] },
     "GET /api/app/research/timeline": { total: 2, page: 1, size: 30, pages: 1, items: [
       { kind: "note", at: "2026-10-26T06:00:00Z", who: "Asha", actor_id: "u1", action: "created", detail: "rule_error", text: "Exit differs", ref: 1, target_type: "strategy", target_key: "k", target_label: "The 4 Keys (STC IX)", backtested: null, proof: "" },
       { kind: "verdict", at: "2026-10-21T13:37:00Z", who: "Asha", actor_id: "u1", action: "set", detail: "matches", text: null, ref: 2, target_type: "strategy", target_key: "k", target_label: "The 4 Keys (STC IX)", backtested: null, proof: "" },
     ] },
   });
   const el = await mount("#/research?v=mine");
+  expect(el.querySelector(".rp-work")!.textContent).toContain("Swing Trading College IX");
+  expect(el.querySelector(".rp-work")!.textContent).toContain("Matches the book");
   expect([...el.querySelectorAll(".rp-day h3")].map(d => d.textContent)).toEqual(["26 Oct 2026", "21 Oct 2026"]);
   expect(el.textContent).toContain("Exit differs");
 });

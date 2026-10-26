@@ -71,6 +71,11 @@ export interface Me { employee: { id: number; name: string } | null; admin: bool
 export interface Card { id: string; name: string; author: string; books: number; strategies: number; verified: number; held: number; unreviewed: number; checked: number }
 export interface Employee { id: number; name: string; created_at: string; last_seen_at: string; removed_at: string | null; checks: number; mismatches: number; notes: number; rule_errors: number }
 
+export interface Work {
+  person: string; totals: { strategies: number; matches: number; mismatch: number; unclear: number; notes: number };
+  items: { author: string; author_id: string; books: { book: string; book_id: string; strategies: { key: string; name: string; verdict: Verdict | null; notes: number; errors: number; at: string }[] }[] }[];
+}
+
 const BASE = "/api/app/research";
 export function query(params: Record<string, string | number | undefined>) {
   const q = new URLSearchParams();
@@ -99,6 +104,7 @@ export const research = {
   admin: (password: string) => send<{ admin: boolean }>("/admin", "POST", { password }),
   leave: () => send<{ ok: boolean }>("/leave", "POST"),
   browse: (author?: string) => apiJson<{ items: Card[] }>(`${BASE}/browse${query({ author })}`),
+  work: (person: string) => apiJson<Work>(`${BASE}/work${query({ person })}`),
   employees: () => apiJson<Employee[]>(`${BASE}/employees`),
   removeEmployee: (id: number) => send<{ removed: number }>(`/employees/${id}`, "DELETE"),
 };

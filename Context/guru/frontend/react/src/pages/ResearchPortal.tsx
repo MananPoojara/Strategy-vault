@@ -353,6 +353,8 @@ function WorkView({ person, title, admin }: { person: string; title: string; adm
     <section>
       {admin && <Crumbs items={[["Employees", hashWith({ v: "team" }, "#/research")], [person]]} />}
       <h1>{title}</h1>
+      <PersonWork person={person} />
+      <h2 className="rp-section">Timeline</h2>
       <p className="rp-muted">Every check and note, newest first.</p>
       <Problem error={list.error} retry={list.reload} />
       {!list.data ? <p className="rp-loading">Loading…</p> : !list.data.items.length ? <p className="rp-empty">Nothing yet. Open a strategy and mark it or write a note.</p> : (
@@ -380,6 +382,47 @@ function WorkView({ person, title, admin }: { person: string; title: string; adm
         </>
       )}
     </section>
+  );
+}
+
+/** What one person checked, as author cards with each book's strategies and their verdict. */
+function PersonWork({ person }: { person: string }) {
+  const w = useLoad(() => research.work(person), [person]);
+  if (w.error) return <Problem error={w.error} retry={w.reload} />;
+  if (!w.data) return <p className="rp-loading">Loading…</p>;
+  const t = w.data.totals;
+  if (!t.strategies) return null;
+  return (
+    <>
+      <div className="rp-stats">
+        <Stat n={t.strategies} label="Strategies looked at" cls="team" />
+        <Stat n={t.matches} label="Matches the book" cls="ok" />
+        <Stat n={t.mismatch} label="Mismatch" cls="bad" />
+        <Stat n={t.unclear} label="Unclear" cls="held" />
+        <Stat n={t.notes} label="Notes" cls="todo" />
+      </div>
+      <div className="rp-grid rp-work">
+        {w.data.items.map(a => (
+          <div key={a.author_id} className="rp-card">
+            <h2>{a.author}</h2>
+            {a.books.map(b => (
+              <div key={b.book_id} className="rp-wbook">
+                <p className="rp-small rp-muted">{b.book}</p>
+                <ul>
+                  {b.strategies.map(s => (
+                    <li key={s.key}>
+                      <a href={hashWith({ s: s.key }, "#/research")}>{s.name}</a>
+                      {s.verdict && s.verdict !== "not_checked" ? <VerdictBadge v={s.verdict} /> : null}
+                      {s.notes > 0 && <span className="rp-small rp-muted">{s.notes} {s.notes === 1 ? "note" : "notes"}{s.errors ? ` · ${s.errors} rule error` : ""}</span>}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
 

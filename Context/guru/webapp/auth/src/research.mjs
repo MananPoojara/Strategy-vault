@@ -214,6 +214,37 @@ export function registerResearch(app, { pool, store }) {
     return c.json({ removed: id });
   }));
 
+  // One person's checked and noted strategies, grouped author -> book. The admin sees anyone's; an employee sees their own.
+  app.get(`${base}/work`, route(async c => {
+    const who = await viewer(c), person = cleanName(c.req.query('person') || '');
+    if (!who.admin && nameKey(person) !== nameKey(who.name)) throw new HttpError(403, 'Admin password needed.');
+    const key = nameKey(person);
+    const [verdicts, notes] = await Promise.all([
+      pool.query(`SELECT strategy_key k, (array_agg(verdict ORDER BY created_at DESC, id DESC))[1] verdict, max(created_at) at
+        FROM research_verdict_history WHERE lower(actor_name)=$1 GROUP BY strategy_key`, [key]),
+      pool.query(`SELECT target_key k, count(*)::int n, count(*) FILTER (WHERE note_type='rule_error')::int errors, max(created_at) at
+        FROM research_notes WHERE target_type='strategy' AND deleted_at IS NULL AND lower(author_name)=$1 GROUP BY target_key`, [key]),
+    ]);
+    await store.load();
+    const rows = new Map();
+    for (const v of verdicts.rows) rows.set(v.k, { key: v.k, verdict: v.verdict, notes: 0, errors: 0, at: v.at });
+    for (const n of notes.rows) {
+      const r = rows.get(n.k) || { key: n.k, verdict: null, notes: 0, errors: 0, at: n.at };
+      rows.set(n.k, { ...r, notes: n.n, errors: n.errors, at: r.at > n.at ? r.at : n.at });
+    }
+    const authors = new Map();
+    for (const r of rows.values()) {
+      const s = store.index.strategies.get(r.key) || { name: r.key, author: 'No longer on the site', author_id: '', book: '-', book_id: '' };
+      const a = authors.get(s.author_id) || { author: s.author, author_id: s.author_id, books: new Map() };
+      const b = a.books.get(s.book_id) || { book: s.book, book_id: s.book_id, strategies: [] };
+      b.strategies.push({ ...r, name: s.name, site: s.site || null });
+      a.books.set(s.book_id, b); authors.set(s.author_id, a);
+    }
+    const items = [...authors.values()].map(a => ({ ...a, books: [...a.books.values()] })).sort((x, y) => x.author.localeCompare(y.author));
+    const count = v => verdicts.rows.filter(r => r.verdict === v).length;
+    return c.json({ person, totals: { strategies: rows.size, matches: count('matches'), mismatch: count('mismatch'), unclear: count('unclear'), notes: notes.rows.reduce((t, r) => t + r.n, 0) }, items });
+  }));
+
   // Card browsing: authors, then one author's books, with counts per card.
   app.get(`${base}/browse`, route(async c => {
     const { data } = await store.load();

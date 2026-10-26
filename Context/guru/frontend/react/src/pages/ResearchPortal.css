@@ -114,3 +114,9 @@ a.rp-card:hover, .rp-emp:hover { border-color: var(--blue); box-shadow: 0 6px 18
 .rp-day { margin-bottom: 8px; }
 .rp-feed li { display: grid; grid-template-columns: 56px 1fr; gap: 12px; padding: 12px 14px; border-radius: 10px; background: var(--rp-surface); border: 1px solid var(--rp-line); }
 .rp-feed time { font: 600 14px "Inter Numbers", system-ui, sans-serif; color: var(--ink2); }
+.rp .rp-stat.bad { --c: var(--rp-bad); }
+.rp-section { margin-top: 28px !important; font: 600 21px "Newsreader", Georgia, serif !important; }
+.rp-work { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); margin-bottom: 8px; }
+.rp-wbook + .rp-wbook { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--rp-line); }
+.rp-wbook ul { list-style: none; padding: 0; margin: 4px 0 0; display: grid; gap: 6px; }
+.rp-wbook li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
