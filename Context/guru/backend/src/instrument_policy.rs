@@ -306,6 +306,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || goslin_reviewed(def) // Goslin block
         || ruggiero_reviewed(def) // Ruggiero block
         || link_reviewed(def) // Link block
+        || newsletters_reviewed(def) // Newsletters and magazines (SFO, StockCharts, Working Money, CTCN) block
         || activetrader_reviewed(def) // Active Trader Magazine block
         || katz_reviewed(def) // Katz block
         || crabel_reviewed(def) // Crabel block
@@ -1154,6 +1155,16 @@ fn link_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Link
+// ---------------------------------------------------------------- Newsletters and magazines (SFO, StockCharts, Working Money, CTCN) 2026-10-25
+// Admission only for the module REVIEWED lists (authors/newsletters/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn newsletters_reviewed(def:&StrategyDef)->bool {(def.book=="sfo" && crate::books::sfo::reviewed(def.id)) || (def.book=="stkch" && crate::books::stkch::reviewed(def.id)) || (def.book=="wmny" && crate::books::wmny::reviewed(def.id)) || (def.book=="ctcn" && crate::books::ctcn::reviewed(def.id))}
+const NEWSLETTERS_LABEL:&str="These magazine and newsletter systems were shown on single stocks, sector indices or futures; runs on indices, ETFs and single stocks (US and India; US calendar dates kept as printed) are a declared application, one unit per trade.";
+fn newsletters_policy(def:&StrategyDef)->Option<Policy> {
+    if !newsletters_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"SFO Magazine 2003-04, StockCharts.com ChartSchool articles, Working Money 2001-2004, Commodity Traders Club News (copies in Books/)");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Newsletters and magazines (SFO, StockCharts, Working Money, CTCN)
 // ---------------------------------------------------------------- Active Trader Magazine 2026-10-25
 // Admission only for the module REVIEWED lists (authors/activetrader/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn activetrader_reviewed(def:&StrategyDef)->bool {(def.book=="atm03" && crate::books::atm03::reviewed(def.id)) || (def.book=="atm04" && crate::books::atm04::reviewed(def.id)) || (def.book=="atmmisc" && crate::books::atmmisc::reviewed(def.id)) || (def.book=="atmrc" && crate::books::atmrc::reviewed(def.id)) || (def.book=="atmcsa" && crate::books::atmcsa::reviewed(def.id))}
@@ -1580,6 +1591,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=goslin_policy(def) {return p;} // Goslin block
     if let Some(p)=ruggiero_policy(def) {return p;} // Ruggiero block
     if let Some(p)=link_policy(def) {return p;} // Link block
+    if let Some(p)=newsletters_policy(def) {return p;} // Newsletters and magazines (SFO, StockCharts, Working Money, CTCN) block
     if let Some(p)=activetrader_policy(def) {return p;} // Active Trader Magazine block
     if let Some(p)=katz_policy(def) {return p;} // Katz block
     if let Some(p)=crabel_policy(def) {return p;} // Crabel block
@@ -2127,6 +2139,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if goslin_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",GOSLIN_LABEL));} // Goslin block
     if ruggiero_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",RUGGIERO_LABEL));} // Ruggiero block
     if link_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LINK_LABEL));} // Link block
+    if newsletters_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",NEWSLETTERS_LABEL));} // Newsletters and magazines (SFO, StockCharts, Working Money, CTCN) block
     if activetrader_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",ACTIVETRADER_LABEL));} // Active Trader Magazine block
     if katz_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",KATZ_LABEL));} // Katz block
     if crabel_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",CRABEL_LABEL));} // Crabel block
@@ -2474,6 +2487,22 @@ mod tests {
         }
     }
     // ---- end Link block ----
+    // ---- Newsletters and magazines (SFO, StockCharts, Working Money, CTCN) block (2026-10-25) ----
+    #[test]
+    fn newsletters_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{sfo, stkch, wmny, ctcn};
+        let all:Vec<StrategyDef>=sfo::catalogue().into_iter().chain(stkch::catalogue()).chain(wmny::catalogue()).chain(ctcn::catalogue()).collect();
+        let mut want:Vec<&str>=sfo::REVIEWED.iter().chain(stkch::REVIEWED.iter()).chain(wmny::REVIEWED.iter()).chain(ctcn::REVIEWED.iter()).copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Newsletters and magazines (SFO, StockCharts, Working Money, CTCN) block ----
     // ---- Active Trader Magazine block (2026-10-25) ----
     #[test]
     fn activetrader_review_admits_exact_ids_on_indices_etfs_and_stocks() {

@@ -7,6 +7,9 @@
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "stkch";
+/// Admitted ids (authors/newsletters/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["stkch_ema_30_100", "stkch_ppo_20_60", "stkch_k39"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const EOD: &str = "E|Fill: the article gives no order type for these end-of-day chart signals; the signal is acted on at the close of the signal day [book silent]";
 const EMA_DEF: &str = "F|EMA: \"The 10-period simple moving average is used for the first calculation only. After that the previous period's EMA is used\" (indic_movingAvg.pdf p.4), weight 2/(n+1)";

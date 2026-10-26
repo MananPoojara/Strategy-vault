@@ -6,6 +6,9 @@
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "ctcn";
+/// Admitted ids (authors/newsletters/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["ctcn_dc40", "ctcn_trident", "ctcn_gann1428", "ctcn_moon"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 fn mk(dir: f64, i: usize, px: f64, sig: usize, kind: &'static str) -> Trade {
     Trade { dir, legs: vec![Leg { i, px, w: 1. }], exit_i: i, exit_px: px, reason: String::new(), entry_kind: kind, signal_i: sig, open: false, exits: vec![] }
