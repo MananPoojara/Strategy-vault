@@ -2209,6 +2209,9 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // ---- Leslie Payne block (26 Oct 2026, lane B): held Live rules
         "lpgap_fade"=>"Held: needs intraday data. The Opening Gap Strategy trades E-mini futures on 1-minute bars: it enters at the 9:30 open and exits the same day at a target, a stop or the close (Gap Strategy documents); daily bars cannot show whether the target or the stop came first, and the gap is measured on the futures' own prior close.",
         // ---- end Leslie Payne held
+        // ---- Richard L. Weissman block (26 Oct 2026, lane B): held Live rules
+        "rwtlc_rsix"=>"Held: fixed dollar stop on futures. RSI Extremes uses 'a fail-safe stop loss exit of $7,500 per contract' (Trade Like a Casino p.157-159), tested on one-lot futures 2000-2009; a dollar stop per contract has no equivalent on an index, ETF or stock, and leaving it out would not be the tested system.",
+        // ---- end Richard L. Weissman held
         // ---- Masonson block (26 Oct 2026): held Live rules
         "masmt_vakkur_lev_seasonal"|"masmt_vakkur_lev_all"|"masmt_pres_lev2"|"masmt_pres_lbm"|"masmt_pres_optimal"=>"Held: the printed strategy invests with 2:1 margin (twice the account) in some months; the vault trades at most one unit without margin financing, so no result can be published.",
         // ---- end Masonson block
@@ -2910,6 +2913,17 @@ mod tests {
         }
     }
     // ---- end Leslie Payne held ----
+    // ---- Richard L. Weissman held (2026-10-26, lane B) ----
+    #[test]
+    fn weissmanb_held_rules_have_plain_card_reasons() {
+        use crate::books::{rwtlc};
+        let all:Vec<StrategyDef>=rwtlc::catalogue().into_iter().collect();
+        for id in ["rwtlc_rsix"] {
+            let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
+            assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
+        }
+    }
+    // ---- end Richard L. Weissman held ----
     // ---- Leslie Masonson block (2026-10-25) ----
     #[test]
     fn masonson_review_admits_exact_ids_on_indices_etfs_and_stocks() {
