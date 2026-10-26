@@ -1,4 +1,5 @@
 import type { ComponentType } from "react";
+import { ResearchPortal } from "../pages/ResearchPortal";
 export interface PageRegistration {
   path: string;
   label: string;
@@ -6,4 +7,6 @@ export interface PageRegistration {
   showInNavigation?: boolean;
 }
 /** The second developer registers new JSX pages here. Use a separate branch. */
-export const customPages: PageRegistration[] = [];
+export const customPages: PageRegistration[] = [
+  { path: "/research", label: "Research", component: ResearchPortal, showInNavigation: true },
+];

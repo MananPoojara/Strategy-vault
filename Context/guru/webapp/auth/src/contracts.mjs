@@ -20,7 +20,7 @@ export function safeReturnTo(path) {
 }
 
 export function validateSavedView(value) {
-  if (typeof value !== 'string' || value.length > 4096 || /[\x00-\x1f\x7f]/.test(value) || !/^#\/(?:strategies|guru\/[a-z0-9_]+|[so]\/[A-Za-z0-9_.%~-]+)?(?:\?[^#]*)?$/.test(value)) throw new Error('Invalid saved view');
+  if (typeof value !== 'string' || value.length > 4096 || /[\x00-\x1f\x7f]/.test(value) || !/^#\/(?:strategies|research|guru\/[a-z0-9_]+|[so]\/[A-Za-z0-9_.%~-]+)?(?:\?[^#]*)?$/.test(value)) throw new Error('Invalid saved view');
   try { decodeURIComponent(value.split('?')[0]); } catch { throw new Error('Invalid saved view'); }
   return value;
 }

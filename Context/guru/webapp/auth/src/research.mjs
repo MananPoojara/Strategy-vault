@@ -154,7 +154,9 @@ export function registerResearch(app, { pool, store }) {
     return c.json({ as_of: data.as_of, generated_at: data.generated_at, run: data.run, totals: data.totals, reasons: data.reasons,
       history: data.history, authors: data.authors, books: data.books, todo_authors: data.todo_authors,
       deploys: data.events.filter(e => e.count != null).map(e => ({ at: e.at, count: e.count, work: e.work, label: e.label })),
-      team, activity: activity.rows, strip });
+      team, activity: activity.rows, strip,
+      author_index: [...store.index.authors.values()].sort((a, b) => a.name.localeCompare(b.name)),
+      book_index: [...store.index.books.values()].sort((a, b) => a.author.localeCompare(b.author) || a.title.localeCompare(b.title)) });
   }));
 
   app.get(`${base}/strategies`, route(async c => {
