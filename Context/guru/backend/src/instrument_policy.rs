@@ -309,6 +309,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || katz_reviewed(def) // Katz block
         || crabel_reviewed(def) // Crabel block
         || stad_reviewed(def) // STAD block
+        || masonson_reviewed(def) // Leslie Masonson block
         || guppy_reviewed(def) // Guppy block
         || headley_reviewed(def) // Headley block
         || jcarter_reviewed(def) // Carter block
@@ -1174,6 +1175,16 @@ fn stad_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end STAD
+// ---------------------------------------------------------------- Leslie Masonson 2026-10-25
+// Admission only for the module REVIEWED lists (authors/masonson/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn masonson_reviewed(def:&StrategyDef)->bool {(def.book=="masmt" && crate::books::masmt::reviewed(def.id))}
+const MASONSON_LABEL:&str="Masonson reports these timing rules on the S&P 500, DJIA, Nasdaq and Value Line indices; runs on other indices, ETFs and single stocks (US and India; the US presidential and calendar months kept as printed) are a declared application, one unit per trade, fills at the signal-day close.";
+fn masonson_policy(def:&StrategyDef)->Option<Policy> {
+    if !masonson_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Leslie N. Masonson, All About Market Timing (McGraw-Hill 2004)");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Leslie Masonson
 // ---------------------------------------------------------------- Guppy 2026-10-25
 // Admission only for the module REVIEWED lists (authors/guppy/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn guppy_reviewed(def:&StrategyDef)->bool {(def.book=="dgdwb" && crate::books::dgdwb::reviewed(def.id))}
@@ -1473,6 +1484,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=katz_policy(def) {return p;} // Katz block
     if let Some(p)=crabel_policy(def) {return p;} // Crabel block
     if let Some(p)=stad_policy(def) {return p;} // STAD block
+    if let Some(p)=masonson_policy(def) {return p;} // Leslie Masonson block
     if let Some(p)=guppy_policy(def) {return p;} // Guppy block
     if let Some(p)=headley_policy(def) {return p;} // Headley block
     if let Some(p)=jcarter_policy(def) {return p;} // Carter block
@@ -1900,6 +1912,9 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         "stad2_stoch"=>"Held: the printed code opens with 200 shares and reverses with 400 shares, so every reversal is twice the opening size; the vault trades one unit and refuses the larger position on every market tested, so no result can be published.",
         "stad8_stampede"|"stad9_luxor"|"stad13_luxor"=>"Held: the strategy adds to a winning position (pyramiding up to several entries in the same direction); the vault carries one unit per strategy and refuses the added entries, so no result can be published.",
         // ---- end STAD block
+        // ---- Masonson block (26 Oct 2026): held Live rules
+        "masmt_vakkur_lev_seasonal"|"masmt_vakkur_lev_all"|"masmt_pres_lev2"|"masmt_pres_lbm"|"masmt_pres_optimal"=>"Held: the printed strategy invests with 2:1 margin (twice the account) in some months; the vault trades at most one unit without margin financing, so no result can be published.",
+        // ---- end Masonson block
         // ---- Bernstein g2 held Live rules
         "jb30d_rev_sell_fpo"=>"Held: no stop in the book. The only exit is the first profitable opening, so a trade that never gets one stays open: on SPY a short entered in 1995 is still open in 2026 and has lost more than the whole account, which no account can carry. The book's own table shows losing trades this exit cannot produce, so its test used an exit it does not print.",
         "jbudt_gap_fpo"|"jbudt_gap_split"=>"Held: no stop in the book. The kept position leaves only on the first opening beyond the entry price, so a short that never gets one stays open: on SPY a short entered in January 1995 is still open in 2026 and has lost more than the whole account, which no account can carry.",
@@ -2001,6 +2016,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if katz_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",KATZ_LABEL));} // Katz block
     if crabel_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",CRABEL_LABEL));} // Crabel block
     if stad_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",STAD_LABEL));} // STAD block
+    if masonson_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",MASONSON_LABEL));} // Leslie Masonson block
     if guppy_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",GUPPY_LABEL));} // Guppy block
     if headley_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",HEADLEY_LABEL));} // Headley block
     if jcarter_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",JCARTER_LABEL));} // Carter block
@@ -2384,6 +2400,23 @@ mod tests {
         }
     }
     // ---- end STAD block ----
+    // ---- Leslie Masonson block (2026-10-25) ----
+    #[test]
+    fn masonson_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{masmt};
+        let all:Vec<StrategyDef>=masmt::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=masmt::REVIEWED.iter().copied().collect();
+        for id in ["masmt_vakkur_lev_seasonal","masmt_vakkur_lev_all","masmt_pres_lev2","masmt_pres_lbm","masmt_pres_optimal"] {assert!(!want.contains(&id) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");}
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Leslie Masonson block ----
     // ---- Guppy block (2026-10-25) ----
     #[test]
     fn guppy_review_admits_exact_ids_on_indices_etfs_and_stocks() {

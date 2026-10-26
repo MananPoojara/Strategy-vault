@@ -8,6 +8,9 @@ use crate::books::apta::bars;
 use crate::connors::{claim, sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "masmt";
+/// Admitted ids (authors/masonson/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["masmt_six_pct_weekly", "masmt_six_pct_daily", "masmt_vl4_20dma", "masmt_ma20_sar", "masmt_ma25w_sar", "masmt_ma50_200", "masmt_harding_bsm", "masmt_colby_oct27_sep5", "masmt_ndr_oct1_may3", "masmt_vakkur_switch", "masmt_sept_avoid", "masmt_colby_sept_short", "masmt_pres_best2", "masmt_pres_worst2", "masmt_midterm_nov_apr"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 // ------------------------------------------------------------------ dates
 
