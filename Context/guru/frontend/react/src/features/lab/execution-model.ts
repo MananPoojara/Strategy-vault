@@ -96,8 +96,8 @@ export function amiProblems(spec: Spec): string[] {
   const ex = spec.execution ?? {}, out = tradePriceProblems(spec);
   for (const [k, v] of Object.entries(ex.reentry ?? {})) if (!bounded(v, 0, 1000, true)) out.push(`Re-entry delay (${k.replace("_", "-")}) must be a whole number of bars from 0 to 1000.`);
   // rules.rs refuses the AmiBroker stop settings in a portfolio (its engine keeps today's stops)
-  if (spec.portfolio && [ex.exit_at_stop, ex.activate_stops_immediately, ex.nbar_has_priority, ex.allow_same_bar_exit, ex.bars_held_from, ex.reenter_on_exit_bar].some((x) => x !== undefined))
-    out.push("Exit at stop?, Activate stops immediately, N-bar Has priority, Allow same bar exit / entry signal, Re-enter on the exit bar and Count bars held from the signal bar apply to one instrument only; remove them on the Trades tab.");
+  if (spec.portfolio && [ex.exit_at_stop, ex.activate_stops_immediately, ex.nbar_has_priority, ex.allow_same_bar_exit, ex.bars_held_from, ex.reenter_on_exit_bar, ex.defer_exit_on_circuit].some((x) => x !== undefined))
+    out.push("Exit at stop?, Activate stops immediately, N-bar Has priority, Allow same bar exit / entry signal, Re-enter on the exit bar, Hold the exit on a circuit close and Count bars held from the signal bar apply to one instrument only; remove them on the Trades tab.");
   // rules.rs tick_size / report::rates bounds; execution.report is refused in a portfolio
   if (ex.tick_size !== undefined && !bounded(ex.tick_size, 0, 1e6)) out.push("Tick size must be from 0 (no rounding) to 1,000,000.");
   for (const [k, what] of [["rf_sharpe", "Sharpe ratio"], ["rf_upi", "UPI"]] as const) { const v = ex.report?.[k]; if (v !== undefined && !bounded(v, 0, 100)) out.push(`Risk-free rate for ${what} must be from 0% to 100%.`); }

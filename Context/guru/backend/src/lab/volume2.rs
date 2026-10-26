@@ -29,8 +29,10 @@ fn klinger(b: &Bars, prm: &Params) -> Output {
     Ok(vec![k, sig])
 }
 fn volume(b: &Bars, prm: &Params) -> Output { Ok(vec![vol(b).to_vec(), ta::sma(vol(b), n(prm, "length"))]) }
-fn vwap_period(b: &Bars, prm: &Params) -> Output {
-    let (a, m, v, src) = (n(prm, "anchor"), p(prm, "mult"), vol(b), b.hlc3());
+fn vwap_period(b: &Bars, prm: &Params) -> Output { vwap_src(b, prm, &b.hlc3()) }
+/// vwap_period on any price series (MIDAS reuses anchor 5).
+pub(super) fn vwap_src(b: &Bars, prm: &Params, src: &[f64]) -> Output {
+    let (a, m, v) = (n(prm, "anchor"), p(prm, "mult"), vol(b));
     let len = b.len();
     let (mut w, mut u, mut l) = (vec![NA; len], vec![NA; len], vec![NA; len]);
     let (mut last, mut sv, mut spv, mut spv2) = (None, 0., 0., 0.);

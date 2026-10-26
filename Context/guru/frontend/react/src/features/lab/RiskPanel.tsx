@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { NumField } from "./OperandEditor";
 import { COPY, FUTURES_NOTE, MONEY_BASIS_HINT } from "./labels";
 import { hasShorts, instrumentNotes, modeOf, moneyBlocked, sizingKind, supportsMoney, withMode, withSizingKind, type InstrumentContext, type SizingKind } from "./execution-model";
-import { getAt, putAt, removeAt } from "./spec-model";
+import { getAt, putAt, removeAt, setExecution } from "./spec-model";
 import { Segmented } from "./ui";
 import type { Catalogue, Spec } from "./types";
 import "./risk.css";
@@ -81,7 +81,7 @@ export function InitialEquity({ spec, catalogue, instrument, onChange, instrumen
 
 export function RiskPanel({ spec, catalogue, instrument, onChange }: { spec: Spec; catalogue: Catalogue; instrument: InstrumentContext; onChange(spec: Spec): void }) {
   const ex = spec.execution ?? {};
-  const active = [ex.sizing, ex.capital, ex.cooldown, ex.max_trades, ex.risk].some((x) => x !== undefined);
+  const active = [ex.sizing, ex.capital, ex.cooldown, ex.max_trades, ex.risk, ex.shadow].some((x) => x !== undefined);
   const [open, setOpen] = useState(active);
   useEffect(() => { if (active) setOpen(true); }, [active]);
   if (!catalogue.execution) return null;
@@ -101,6 +101,7 @@ export function RiskPanel({ spec, catalogue, instrument, onChange }: { spec: Spe
   if (ex.max_trades) summary.push(`max ${ex.max_trades.count} per ${PERIODS[ex.max_trades.per] ?? ex.max_trades.per}`);
   if (ex.risk?.max_consecutive_losses !== undefined) summary.push(`pause after ${ex.risk.max_consecutive_losses} losses`);
   if (ex.risk?.max_drawdown_pct !== undefined) summary.push(`stop at ${ex.risk.max_drawdown_pct}% drawdown`);
+  if (ex.shadow) summary.push(`trade after a ${ex.shadow.loss_pct}% paper loss`);
   const change = (path: string, value: unknown) => onChange(changeExecution(spec, path, value));
   const patchRisk = (patch: Record<string, number | undefined>) => {
     const risk = { ...ex.risk, ...patch } as Record<string, unknown>;
@@ -182,8 +183,37 @@ export function RiskPanel({ spec, catalogue, instrument, onChange }: { spec: Spe
         <NumField label="Pause (bars)" value={ex.risk?.pause_bars} min={1} max={cap.max_pause_bars ?? 100000} step={1} onChange={(n) => patchRisk({ pause_bars: n })} />
         <NumField label="Stop new entries at drawdown (%)" value={ex.risk?.max_drawdown_pct} placeholder="off" min={0} max={cap.max_drawdown_pct_below ?? 100} onChange={(n) => patchRisk({ max_drawdown_pct: n })} />
       </div>
+      <ShadowFields spec={spec} onChange={onChange} />
       {notes.length > 0 && <p className="cap">{notes.join(" ")}</p>}
       <p className="cap">{FUTURES_NOTE}</p>
     </div>
   </details>;
 }
+
+type Shadow = NonNullable<NonNullable<Spec["execution"]>["shadow"]>;
+const UNTIL: [NonNullable<Shadow["until"]>, string][] = [["trade_profit", "One real trade makes"], ["total_profit", "Real trades together make"], ["trades", "After this many real trades"]];
+/** execution.shadow: paper-trade the rules, trade for real only after a losing streak, back to paper once the target is met. */
+function ShadowFields({ spec, onChange }: { spec: Spec; onChange(spec: Spec): void }) {
+  const sh = spec.execution?.shadow;
+  const until = sh?.until ?? "trade_profit";
+  const put = (patch: Partial<Shadow> | undefined) => onChange(setExecution(spec, patch === undefined ? { shadow: undefined } : { shadow: { ...(sh as Shadow), ...patch } }));
+  return <fieldset className="lab-shadow" data-lab-shadow>
+    <legend>Trade after a losing streak</legend>
+    <label className="lab-check" title={spec.portfolio ? "A single-instrument setting" : undefined}><input type="checkbox" checked={!!sh} disabled={!!spec.portfolio || (!sh && !!spec.short_side)}
+      onChange={(e) => onChange(setExecution(spec, e.target.checked ? { shadow: { loss_pct: 5, min_bars: 5, until: "trade_profit", profit_pct: 3 }, fill: "close" } : { shadow: undefined }))} />
+      Paper-trade the rules first; trade for real only after they lose</label>
+    {sh && <div className="lab-row">
+      <NumField label="Paper loss (%)" value={sh.loss_pct} min={0} max={1000} onChange={(n) => n !== undefined && n > 0 && put({ loss_pct: n })} />
+      <NumField label="Days in paper trades (at least)" value={sh.min_bars ?? 0} min={0} max={100000} step={1} onChange={(n) => n !== undefined && Number.isInteger(n) && n >= 0 && put({ min_bars: n })} />
+      <label className="dfield">Back to paper when<select aria-label="Back to paper when" value={until}
+        onChange={(e) => { const u = e.target.value as NonNullable<Shadow["until"]>; put(u === "trades" ? { until: u, trades: sh.trades ?? 1, profit_pct: undefined } : { until: u, profit_pct: sh.profit_pct ?? 3, trades: undefined }); }}>
+        {UNTIL.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
+      </select></label>
+      {until === "trades"
+        ? <NumField label="Real trades" value={sh.trades ?? 1} min={1} max={1000} step={1} onChange={(n) => n !== undefined && Number.isInteger(n) && n >= 1 && put({ trades: n })} />
+        : <NumField label="Profit (%)" value={sh.profit_pct ?? 3} min={0} max={1000} onChange={(n) => n !== undefined && n > 0 && put({ profit_pct: n })} />}
+    </div>}
+    {sh && <p className="cap">{SHADOW_NOTE}</p>}
+  </fieldset>;
+}
+const SHADOW_NOTE = "The entry and exit rules run all the time as paper trades. Their % returns are added up (a total above 0 starts again from 0). When the total is below minus the paper loss and the paper trades have spent at least the given days in a position, the next signals become real trades. Rules on the Filters tab gate only the real trades: a signal they block is bought later, on the first close they allow while that signal's trade is still running; tick \"exit when false\" on a filter to sell when it fails. Entries and exits fill at the close. As the AmiBroker \"Long-Loss DD with N Days\" AFL.";

@@ -93,6 +93,8 @@ export interface ExitSpec {
   take_profits?: TakeProfit[]; min_bars?: number;
   /** rules.rs exit.dual_atr: price source ∓ multiple × average true range, initial and favour bands; tf D (default), W or M. */
   dual_atr?: { initial: { period: number; mult: number; price?: string }; favour: { period: number; mult: number; price?: string }; tf?: "D" | "W" | "M"; period_end_only?: boolean };
+  /** rules.rs exit.dual_line: exit on a close beyond the initial line; once a close clears the favour line, beyond that line instead. */
+  dual_line?: { initial: Operand; favour: Operand };
   [extra: string]: unknown;
 }
 export interface ShortSide { entry: EntrySpec; exit: ExitSpec; [extra: string]: unknown }
@@ -110,9 +112,13 @@ export interface Execution {
   /** AmiBroker Stops (single instrument, both sides): ExitAtStop per stop (absent = 1), "Activate stops immediately" (absent = true, today's),
    *  N-bar "Has priority", General › "Allow same bar exit / entry signal" (absent = true, today's). */
   exit_at_stop?: Partial<Record<StopKey, ExitAtStop>>; activate_stops_immediately?: boolean; nbar_has_priority?: boolean; allow_same_bar_exit?: boolean; reenter_on_exit_bar?: boolean;
+  /** rules.rs execution.defer_exit_on_circuit: a close exit on a lower-circuit bar (short: upper) waits for the next unlocked close. */
+  defer_exit_on_circuit?: boolean;
   /** "signal": bars_held counts from the entry signal bar (AmiBroker AFL BarsSince(Buy)); default the fill bar. */
   bars_held_from?: "fill" | "signal";
   risk?: { max_consecutive_losses?: number; pause_bars?: number; max_drawdown_pct?: number };
+  /** rules.rs execution.shadow: paper-trade the rules until their summed loss passes loss_pct, then trade for real until `until`. */
+  shadow?: { loss_pct: number; min_bars?: number; until?: "trade_profit" | "total_profit" | "trades"; profit_pct?: number; trades?: number };
   /** AmiBroker position limits (money mode only): every field optional; absent = no limit. */
   limits?: PositionLimits;
   /** AmiBroker General › Tick size of a cash instrument (0 / absent: no rounding) and Pad and align all data to reference symbol. */

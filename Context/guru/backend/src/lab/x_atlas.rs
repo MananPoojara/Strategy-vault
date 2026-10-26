@@ -16,8 +16,9 @@ const fn listed(id: &'static str, name: &'static str, category: &'static str, ne
 const SECOND: Needs = Needs { second_symbol: true, ..Needs::NONE };
 const DERIVATIVES: Needs = Needs { derivatives: true, ..Needs::NONE };
 const BETA: &[ParamSpec] = &[int("length", "Length", 20., 2., 2000.), int("returns", "Returns (0 simple, 1 log)", 0., 0., 1.)];
-const RENKO: &[ParamSpec] = &[int("mode", "Box size (0 ATR, 1 fixed points)", 0., 0., 1.), len("length", "ATR length", 14.),
-    real("box", "Box size (points, mode 1)", 1., 0.0001, 1e9, 0.0001)];
+pub(super) const RENKO: &[ParamSpec] = &[int("mode", "Box size (0 ATR, 1 fixed points, 2 % of close)", 0., 0., 2.), len("length", "ATR length", 14.),
+    real("box", "Box size (points, mode 1)", 1., 0.0001, 1e9, 0.0001), real("percent", "Box size (% of the bar's close, mode 2)", 1., 0.001, 100., 0.001),
+    int("anchor", "First brick (0 at the first close, 1 AmiBroker grid)", 0., 0., 1.), int("source", "Price (0 close, 1 StockCharts high/low)", 0., 0., 1.)];
 const FIB: &[ParamSpec] = &[len("length", "Length", 100.)];
 const FIB_LEVELS: [f64; 7] = [0., 0.236, 0.382, 0.5, 0.618, 0.786, 1.];
 
@@ -25,9 +26,9 @@ pub const DEFS: &[IndicatorDef] = &[
     def("beta", "Beta", "Second instrument", BETA, &["value"], Placement::Pane, SECOND,
         "TA-Lib BETA (ta_BETA.c): least-squares slope of this instrument's 1-bar returns (y) on the aligned vs instrument's returns (x) over length returns, beta = (n·Σxy − Σx·Σy)/(n·Σx² − (Σx)²); returns 0 = simple ROC (p/p[1] − 1, as TA-Lib), 1 = ln(p/p[1]); a missing pair, zero or non-positive (log) base price blanks the window; zero regressor variance gives 0 as TA-Lib",
         &[20], beta),
-    def("renko", "Renko (bar-aligned)", "Price functions", RENKO, &["brick_close", "direction", "bricks"], Placement::Pane, Needs::NONE,
-        "Classic Renko on closes (TradingView Renko chart, source close): box s = ATR(length) Wilder (ta.atr) at the bar being tested (mode 0; causal — TradingView's ATR box uses one ATR value for the whole chart) or fixed box points (mode 1); anchored at the first close with a box; up bricks while close ≥ top + s, down bricks while close ≤ bottom − s, so a reversal needs 2 boxes (TradingView: brick 52–54, box 2 → next brick at ≥56 or ≤50); outputs last brick close (anchor close before the first brick), direction +1/−1 (0 before the first brick), bricks formed this bar (signed)",
-        &[13, 13, 13], renko),
+    def("renko", "Renko (bar-aligned)", "Price functions", RENKO, &["brick_close", "direction", "bricks", "brick_high", "brick_low", "flip", "run", "confirm2"], Placement::Pane, Needs::NONE,
+        "Classic Renko on closes (TradingView Renko chart, source close): box s = ATR(length) Wilder (ta.atr) at the bar being tested (mode 0; causal — TradingView's ATR box uses one ATR value for the whole chart) or fixed box points (mode 1) or percent × that bar's close / 100 (mode 2; causal — TradingView's Percentage box uses the last price for the whole chart); anchored at the first close with a box; up bricks while close ≥ top + s, down bricks while close ≤ bottom − s, so a reversal needs 2 boxes (TradingView: brick 52–54, box 2 → next brick at ≥56 or ≤50); several bricks per bar, part-box moves dropped (MetaStock: 100 → 103, box 2 → one brick 100–102). First brick 1 (AmiBroker Formula 562): a seed down brick ceil(close/s)·s to that + s on the anchor bar (direction −1, run −1, bricks 0), so with a fixed box every brick edge is a multiple of the box; with an ATR or % box only the seed is on the grid. Price 1 (StockCharts High-Low; declared rule as StockCharts/MetaStock P&F): the high is tested for up bricks and the low for down bricks, the current direction's extreme first (high first before the first brick) and the other only if it formed no brick, at most one direction per bar; no wicks. Outputs: last brick close (anchor close before the first brick), direction +1/−1 (0 before the first brick), bricks formed this bar (signed), last brick top and bottom (both the anchor close before the first brick; top − bottom = the box used), flip 1 on a bar whose bricks reverse the direction (not the first brick off the anchor), run = signed count of consecutive bricks in the current direction including this bar's (0 before the first brick), confirm2 1 on the first bar after a flip on which run reaches ±2 (the flip bar itself when it forms 2 or more bricks)",
+        &[13, 13, 13, 13, 13, 13, 13, 13], renko),
     def("fib_retracement", "Fibonacci Retracement (rolling range)", "Bands & channels", FIB,
         &["level_0", "level_236", "level_382", "level_500", "level_618", "level_786", "level_100", "direction"], Placement::Price, Needs::NONE,
         "Fibonacci retracement of the rolling length-bar range H = highest high, L = lowest low: if H's bar is more recent than L's (direction +1) level_x = H − x·(H − L), else (direction −1) level_x = L + x·(H − L), x = 0, 0.236, 0.382, 0.5, 0.618, 0.786, 1; causal rolling-range version, not TradingView's pivot-based Auto Fib Retracement (which redraws)",
@@ -38,7 +39,7 @@ pub const DEFS: &[IndicatorDef] = &[
 /// (id, platform names, AmiBroker names): one row per id in DEFS.
 pub const SOURCES: &[(&str, &str, &str)] = &[
     ("beta", "TA-Lib: BETA; TradingView: Beta (community ta.correlation/stdev scripts)", ""),
-    ("renko", "TradingView: Renko chart (Traditional / ATR box size)", ""),
+    ("renko", "TradingView: Renko chart (Traditional / ATR box size); StockCharts: Renko (Close / High-Low)", "Renko (Kavanagh AFL library, Formula 562)"),
     ("fib_retracement", "TradingView: Fib Retracement / Auto Fib Retracement (pivot-based; this is a rolling-range version)", ""),
     ("pcr", "NSE: Put-Call Ratio (option chain open interest)", ""),
     ("rollover", "NSE: Futures rollover %", ""),
@@ -64,21 +65,40 @@ fn beta(b: &Bars, prm: &Params) -> Output {
     Ok(vec![out])
 }
 
+/// The box tested on each bar (mode 0 ATR, 1 fixed, 2 % of close).
+pub(super) fn renko_box(b: &Bars, prm: &Params) -> Vec<f64> {
+    match n(prm, "mode") { 1 => vec![p(prm, "box"); b.len()], 2 => b.close.iter().map(|c| c * p(prm, "percent") / 100.).collect(), _ => ta::rma(&ta::tr(b, true), n(prm, "length")) }
+}
 fn renko(b: &Bars, prm: &Params) -> Output {
-    let len = b.len();
-    let size = if n(prm, "mode") == 1 { vec![p(prm, "box"); len] } else { ta::rma(&ta::tr(b, true), n(prm, "length")) };
-    let mut out = vec![vec![NA; len]; 3];
-    let (mut hi, mut lo, mut dir) = (NA, NA, 0.);
+    let (len, size) = (b.len(), renko_box(b, prm));
+    let (hl, grid) = (p(prm, "source") == 1., p(prm, "anchor") == 1.);
+    let mut out = vec![vec![NA; len]; 8];
+    let (mut hi, mut lo, mut dir, mut run, mut after_flip) = (NA, NA, 0., 0f64, false);
     for i in 0..len {
         let (c, s) = (b.close[i], size[i]);
         if c.is_nan() || s.is_nan() { continue; }
-        let mut k = 0.;
-        if hi.is_nan() { hi = c; lo = c; }
-        else if s > 0. && c >= hi + s { k = ((c - hi) / s).floor().max(1.); lo = hi + (k - 1.) * s; hi += k * s; dir = 1.; }
-        else if s > 0. && c <= lo - s { k = ((lo - c) / s).floor().max(1.); hi = lo - (k - 1.) * s; lo -= k * s; dir = -1.; k = -k; }
+        let (u, d) = if hl { (b.high[i], b.low[i]) } else { (c, c) };
+        let (mut k, was) = (0., dir);
+        if hi.is_nan() {
+            if grid && s > 0. { lo = (c / s).ceil() * s; hi = lo + s; dir = -1.; run = -1.; } else { hi = c; lo = c; }
+        } else {
+            // with closes at most one test can pass; with high/low the current direction's extreme goes first
+            let (up, dn) = (s > 0. && u >= hi + s, s > 0. && d <= lo - s);
+            if up && (dir >= 0. || !dn) { k = ((u - hi) / s).floor().max(1.); lo = hi + (k - 1.) * s; hi += k * s; dir = 1.; }
+            else if dn { k = ((lo - d) / s).floor().max(1.); hi = lo - (k - 1.) * s; lo -= k * s; dir = -1.; k = -k; }
+        }
+        let flip = k != 0. && was != 0. && dir != was;
+        let before = if flip { 0. } else { run.abs() };
+        if k != 0. { run = if flip || run == 0. { k } else { run + k }; }
+        if flip { after_flip = true; }
         out[0][i] = if dir < 0. { lo } else { hi };
         out[1][i] = dir;
         out[2][i] = k;
+        out[3][i] = hi;
+        out[4][i] = lo;
+        out[5][i] = if flip { 1. } else { 0. };
+        out[6][i] = run;
+        out[7][i] = if after_flip && before < 2. && run.abs() >= 2. { 1. } else { 0. };
     }
     Ok(out)
 }
@@ -145,6 +165,46 @@ mod tests {
         assert_series(&o[0], &[N, 50., 50., 52., 52., 52., 52., 48.]);
         assert_series(&o[1], &[N, 0., 0., 1., 1., 1., 1., -1.]);
         assert_series(&o[2], &[N, 0., 0., 1., 0., 0., 0., -1.]);
+    }
+    #[test] fn renko_new_outputs_track_edges_flips_runs_and_two_brick_confirmation() {
+        let o = go("renko", &closes(&[50., 52., 54., 55., 56., 51., 50., 45., 49., 50.]), &[("mode", 1.), ("box", 2.)]);
+        assert_series(&o[3], &[50., 52., 54., 54., 56., 54., 52., 48., 48., 50.]);
+        assert_series(&o[4], &[50., 50., 52., 52., 54., 52., 50., 46., 46., 48.]);
+        // the first brick off the anchor is not a flip and its run never confirms
+        assert_series(&o[5], &[0., 0., 0., 0., 0., 1., 0., 0., 0., 1.]);
+        assert_series(&o[6], &[0., 1., 2., 2., 3., -1., -2., -4., -4., 1.]);
+        assert_series(&o[7], &[0., 0., 0., 0., 0., 0., 1., 0., 0., 0.]);
+    }
+    #[test] fn renko_amibroker_grid_seeds_a_down_brick_on_box_multiples() {
+        // 51, box 2 → seed down brick 52–54 (ceil(51/2)·2); up needs ≥ 56, down ≤ 50; a 2-brick flip confirms on its own bar
+        let o = go("renko", &closes(&[51., 52., 53., 55., 56., 52., 47., 54.]), &[("mode", 1.), ("box", 2.), ("anchor", 1.)]);
+        assert_series(&o[0], &[52., 52., 52., 52., 56., 52., 48., 54.]);
+        assert_series(&o[1], &[-1., -1., -1., -1., 1., -1., -1., 1.]);
+        assert_series(&o[2], &[0., 0., 0., 0., 1., -1., -2., 2.]);
+        assert_series(&o[3], &[54., 54., 54., 54., 56., 54., 50., 54.]);
+        assert_series(&o[4], &[52., 52., 52., 52., 54., 52., 48., 52.]);
+        assert_series(&o[5], &[0., 0., 0., 0., 1., 1., 0., 1.]);
+        assert_series(&o[6], &[-1., -1., -1., -1., 1., -1., -3., 2.]);
+        assert_series(&o[7], &[0., 0., 0., 0., 0., 0., 1., 1.]);
+    }
+    #[test] fn renko_percent_box_is_that_bars_close() {
+        // 10 %: bar 1 box 12 → brick 100–112; bar 2 box 9 → 90 ≤ 100 − 9 reverses (a fixed box of 12 would need ≤ 88)
+        let o = go("renko", &closes(&[100., 120., 90.]), &[("mode", 2.), ("percent", 10.)]);
+        assert_series(&o[0], &[100., 112., 91.]);
+        assert_series(&o[2], &[0., 1., -1.]);
+        assert_series(&o[3], &[100., 112., 100.]);
+        assert_series(&o[4], &[100., 100., 91.]);
+    }
+    #[test] fn renko_stockcharts_high_low_tests_the_trend_extreme_first() {
+        let b = from_ohlc(&[(50., 51., 49., 50.), (50., 52.5, 47., 51.), (51., 54.5, 47.5, 48.), (48., 55., 49.9, 50.), (50., 54.2, 47.9, 50.), (48., 52.1, 47., 48.)]);
+        let o = go("renko", &b, &[("mode", 1.), ("box", 2.), ("source", 1.)]);
+        // bar 1: no direction yet → high first; bar 2: up trend → high; bar 4: down trend → low first though the high also reached 54
+        assert_series(&o[0], &[50., 52., 54., 50., 48., 52.]);
+        assert_series(&o[2], &[0., 1., 1., -1., -1., 1.]);
+        assert_series(&o[6], &[0., 1., 2., -1., -2., 1.]);
+        assert_series(&o[7], &[0., 0., 0., 0., 1., 0.]);
+        // on closes the same bars form a different chart
+        assert_series(&go("renko", &b, &[("mode", 1.), ("box", 2.)])[0], &[50., 50., 48., 48., 48., 48.]);
     }
     #[test] fn fib_levels_follow_the_more_recent_extreme() {
         let b = from_ohlc(&[(9., 10., 8., 9.), (10., 12., 9., 11.), (10., 11., 7., 8.), (9., 13., 10., 12.)]);

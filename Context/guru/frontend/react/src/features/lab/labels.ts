@@ -16,6 +16,7 @@ export const COPY = {
   nodeMenu: { wrap_all: "Put in an “all must be true” group", wrap_any: "Put in an “any one is enough” group", wrap_not: "Negate · true when this is false", unwrap: "Ungroup · keep what is inside", up: "Move up", down: "Move down" },
   nodeMenuTitle: "Group or move", addTip: "Add another condition, or a group that combines conditions", nodeMenuTip: "Group this with other conditions, negate it, or change its order",
   heldTopOnly: "Bars held works only in a top-level exit condition (not inside a group, range, trend or formula).",
+  dualLineHint: "The trade exits on a close below the initial line. Once a close is above the favour line, it exits on a close below the favour line instead (short: mirrored). Never on the entry bar. Default: Supertrend (AmiBroker) Initial 5 × 1 and Favour 5 × 4.",
   dualAtrHint: "From the entry bar the initial stop (price − initial ATR × multiple) and the favour stop (price − favour ATR × multiple) only rise, and the switch band (price + favour ATR × multiple) only falls. Once a close is above the switch band and the initial stop, the favour stop is used. The trade exits on a close below the previous bar's stop. ATR = simple average of the true range (AmiBroker AFL). Weekly and monthly bands use completed periods only.",
   sinceTopOnly: "Since-entry values work only in a top-level exit condition (not inside a group, range, trend or formula).",
   tooDeep: "These rules are nested too deeply (the engine reads at most 16 levels). Ungroup a group or remove a formula.",
@@ -120,6 +121,7 @@ export const CALENDAR_OUTPUTS: { id: string; out: string; label: string }[] = [
   { id: "calendar", out: "dow", label: "Day of the week (0 Sun … 6 Sat)" }, { id: "calendar", out: "day", label: "Day of the month" },
   { id: "calendar", out: "month", label: "Month (1–12)" }, { id: "calendar", out: "year", label: "Year" }, { id: "calendar", out: "doy", label: "Day of the year" },
   { id: "calendar", out: "bar_index", label: "Bar number (BarIndex, 0 = first bar)" },
+  { id: "calendar", out: "days_left", label: "Calendar days left in the month" },
 ];
 export const TF_LABELS: Record<string, string> = { D: "Daily", W: "Weekly", M: "Monthly", Q: "Quarterly", Y: "Yearly" };
 export const ENTRY_KIND_LABELS: Record<string, string> = {

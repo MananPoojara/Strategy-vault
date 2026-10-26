@@ -78,7 +78,7 @@ function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market
       <label className="dfield">Slippage (bps / side)<input type="number" aria-label="Slippage (bps / side)" min={0} step="any" placeholder="0" value={settings.slippage} onChange={(e) => onSettings({ slippage: e.target.value })} /></label>
     </>}
   </div>;
-  const stray = !single && [ex.prices, ex.delays, ex.reentry, ex.limits, ex.exit_at_stop, ex.activate_stops_immediately, ex.nbar_has_priority, ex.allow_same_bar_exit, ex.bars_held_from, ex.reenter_on_exit_bar].some((x) => x !== undefined);
+  const stray = !single && [ex.prices, ex.delays, ex.reentry, ex.limits, ex.exit_at_stop, ex.activate_stops_immediately, ex.nbar_has_priority, ex.allow_same_bar_exit, ex.bars_held_from, ex.reenter_on_exit_bar, ex.defer_exit_on_circuit].some((x) => x !== undefined);
   return <section className="box lab-rules" tabIndex={-1}>
     {showRules && <>
     <h2 className="box-h">{simple ? "Your idea" : "Strategy rules"} <small>{COPY.rulesHint}</small>{((!simple && !compact) || warn) && <span className={`cap lab-caps${warn ? " lab-caps-warn" : ""}`} data-lab-caps>{COPY.caps(top, b.leaves, lim.leaves, b.nodes, lim.nodes, (bytes / 1024).toFixed(1))}</span>}</h2>
@@ -126,7 +126,7 @@ function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market
         {stray && <p className="rnote" role="note" data-lab-portfolio-stray>
           Trade prices, re-entry delays, stop exit modes, same-bar and stop activation settings and position limits apply to one instrument only.{" "}
           <button type="button" className="dbtn sm" onClick={() => onChange(setExecution(spec, { prices: undefined, delays: undefined, reentry: undefined, limits: undefined,
-            exit_at_stop: undefined, activate_stops_immediately: undefined, nbar_has_priority: undefined, allow_same_bar_exit: undefined, bars_held_from: undefined, reenter_on_exit_bar: undefined }))}>Remove them</button>
+            exit_at_stop: undefined, activate_stops_immediately: undefined, nbar_has_priority: undefined, allow_same_bar_exit: undefined, bars_held_from: undefined, reenter_on_exit_bar: undefined, defer_exit_on_circuit: undefined }))}>Remove them</button>
         </p>}
       </>
       <>

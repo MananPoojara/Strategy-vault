@@ -202,6 +202,14 @@ pub const MAX_POINTS: f64 = 1e9;
 /// What the other side's entry does while a position is open (`direction: both`, spec §6.1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Opposite { Reverse, Exit, Ignore }
+/// execution.shadow: the rules trade on paper until the paper trades' summed % return is below −loss_pct after at least
+/// min_bars bars in position (a positive sum resets the count); then each signal is a real trade, gated by the entry rows
+/// marked filter, until `until` is met; then back to paper (the AmiBroker "Long-Loss DD with N Days" AFL).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Shadow { pub loss_pct: f64, pub min_bars: usize, pub until: Until, pub profit_pct: f64, pub trades: usize }
+/// When real trading stops: one real trade's return, the summed returns of the real trades since arming, or a trade count.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Until { TradeProfit, TotalProfit, Trades }
 #[derive(Clone, Debug, PartialEq)]
 pub struct Exec {
     pub short: bool, pub fill: Fill, pub exit_fill: Fill, pub limit: Option<Dist>, pub stop_loss: Option<Dist>, pub target: Option<Dist>, pub trailing: Option<Dist>, pub opposite: Opposite,
@@ -230,12 +238,23 @@ pub struct Exec {
     pub held_from_signal: bool,
     /// exit.dual_atr (None: off).
     pub dual_atr: Option<DualAtr>,
+    /// exit.dual_line (None: off): exit on a close beyond the initial line; once a close has cleared the favour line, on a
+    /// close beyond the favour line instead (rust_test main.rs MultiTF Supertrend D1 / D2 exit).
+    pub dual_line: Option<(Operand, Operand)>,
     /// Indices of entry.all rules marked `"filter": true, "filter_exit": true` (the AFLs' filter sections with a filter exit):
     /// the position also exits on any bar the rule is false (series.rs side).
     pub filter_exits: Vec<usize>,
     /// `execution.reenter_on_exit_bar`: a new entry may fill on the bar a position closed (an AFL bar loop that runs its exit
     /// block before its entry block, e.g. sell and buy again at the same Close). Off: the book rule, no entry after an exit.
     pub reenter_on_exit_bar: bool,
+    /// `execution.defer_exit_on_circuit`: a close-priced exit on a bar locked at the exit-side extreme (long: low = close below
+    /// the previous close, a lower circuit; short: high = close above it) waits for the next close that is not locked
+    /// (rust_test main.rs MultiTF Supertrend `lc_exit`).
+    pub defer_exit_on_circuit: bool,
+    /// execution.shadow (None: off).
+    pub shadow: Option<Shadow>,
+    /// Indices of entry.all rules marked `"filter": true` (with execution.shadow they gate only the real trades).
+    pub filter_rows: Vec<usize>,
 }
 impl Default for Exec {
     fn default() -> Self {
@@ -244,7 +263,7 @@ impl Default for Exec {
                trail_activate: None, breakeven: None, take_profits: vec![], min_bars: 0, ohlc_path: false, scale_in: None, sizing: Sizing::Full,
                cooldown: None, max_trades: None, risk: Risk::default(), capital: None, costs: MoneyCosts::default(), futures: None, limits: None, market: None, reentry: None,
                exit_at_stop: [1; 4], stops_immediately: true, nbar_first: false, same_bar: true,
-               tick_size: 0., pad_align: false, held_from_signal: false, dual_atr: None, filter_exits: vec![], reenter_on_exit_bar: false }
+               tick_size: 0., pad_align: false, held_from_signal: false, dual_atr: None, dual_line: None, filter_exits: vec![], reenter_on_exit_bar: false, defer_exit_on_circuit: false, shadow: None, filter_rows: vec![] }
     }
 }
 impl Exec {
@@ -326,7 +345,7 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
     };
     let mut cost_bps = None;
     if let Some(ex) = root.get("execution") {
-        fields(ex, "execution", &["fill", "exit_fill", "cost_bps", "opposite", "delay_bars", "entry_on", "intrabar", "sizing", "cooldown", "max_trades", "risk", "capital", "costs", "instrument", "prices", "delays", "reentry", "limits", "exit_at_stop", "activate_stops_immediately", "nbar_has_priority", "allow_same_bar_exit", "report", "tick_size", "pad_align", "bars_held_from", "reenter_on_exit_bar"], &["limit", "stop"])?;
+        fields(ex, "execution", &["fill", "exit_fill", "cost_bps", "opposite", "delay_bars", "entry_on", "intrabar", "sizing", "cooldown", "max_trades", "risk", "capital", "costs", "instrument", "prices", "delays", "reentry", "limits", "exit_at_stop", "activate_stops_immediately", "nbar_has_priority", "allow_same_bar_exit", "report", "tick_size", "pad_align", "bars_held_from", "reenter_on_exit_bar", "defer_exit_on_circuit", "shadow"], &["limit", "stop"])?;
         if let Some(v) = ex.get("instrument") { exec.futures = instrument(v)?; }
         if let Some(c) = ex.get("capital") {
             exec.capital = Some(c.as_f64().filter(|c| c.is_finite() && *c > 0. && *c <= MAX_CAPITAL).ok_or_else(|| inv(format!("execution.capital must be a number above 0 and at most {MAX_CAPITAL}")))?);
@@ -357,6 +376,18 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
             fields(v, "execution.max_trades", &["count", "per"], &[])?;
             let per = match v.get("per").and_then(Json::as_str) { Some("W") => 1, Some("M") => 2, Some("Q") => 3, Some("Y") => 4, _ => return Err(inv("execution.max_trades.per must be W, M, Q or Y")) };
             exec.max_trades = Some((whole(v.get("count"), "execution.max_trades.count", 1)?, per));
+        }
+        if let Some(v) = ex.get("shadow") {
+            let at = "execution.shadow";
+            fields(v, at, &["loss_pct", "min_bars", "until", "profit_pct", "trades"], &[])?;
+            let pct = |k: &str| v.get(k).and_then(Json::as_f64).filter(|x| *x > 0. && *x <= 1000.).ok_or_else(|| inv(format!("{at}.{k} must be a number above 0 and at most 1000")));
+            let until = match v.get("until").map(Json::as_str) {
+                None | Some(Some("trade_profit")) => Until::TradeProfit, Some(Some("total_profit")) => Until::TotalProfit, Some(Some("trades")) => Until::Trades,
+                _ => return Err(inv(format!("{at}.until must be trade_profit, total_profit or trades"))),
+            };
+            let min_bars = if v.get("min_bars").is_some() { whole(v.get("min_bars"), &format!("{at}.min_bars"), 0)? } else { 0 };
+            let (profit_pct, trades) = if until == Until::Trades { (0., whole(v.get("trades"), &format!("{at}.trades"), 1)?) } else { (pct("profit_pct")?, 0) };
+            exec.shadow = Some(Shadow { loss_pct: pct("loss_pct")?, min_bars, until, profit_pct, trades });
         }
         if let Some(v) = ex.get("risk") {
             fields(v, "execution.risk", &["max_consecutive_losses", "pause_bars", "max_drawdown_pct"], &[])?;
@@ -418,6 +449,7 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
         let flag = |k: &str, default: bool| match ex.get(k) { None => Ok(default), Some(Json::Bool(b)) => Ok(*b), _ => Err(inv(format!("execution.{k} must be true or false"))) };
         (exec.stops_immediately, exec.nbar_first, exec.same_bar) = (flag("activate_stops_immediately", true)?, flag("nbar_has_priority", false)?, flag("allow_same_bar_exit", true)?);
         exec.reenter_on_exit_bar = flag("reenter_on_exit_bar", false)?;
+        exec.defer_exit_on_circuit = flag("defer_exit_on_circuit", false)?;
         exec.held_from_signal = match ex.get("bars_held_from").map(Json::as_str) {
             None | Some(Some("fill")) => false,
             Some(Some("signal")) => true,
@@ -439,12 +471,18 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
             };
         }
     }
+    if exec.shadow.is_some() {
+        if short_side.is_some() { return Err(inv("execution.shadow trades one side: use long or short, not both")); }
+        if exec.fill != Fill::Close || exec.exit_fill != Fill::Close { return Err(inv("execution.shadow needs entries and exits filled at the close")); }
+        if exec.scale_in.is_some() { return Err(inv("execution.shadow cannot combine with entry.scale_in")); }
+    }
     if let Some(s) = short_side.as_mut() {
         (s.exec.fill, s.exec.exit_fill, s.exec.opposite, s.exec.delay, s.exec.edge, s.exec.ohlc_path) = (exec.fill, exec.exit_fill, exec.opposite, exec.delay, exec.edge, exec.ohlc_path);
         (s.exec.exit_at_stop, s.exec.stops_immediately, s.exec.nbar_first, s.exec.same_bar, s.exec.reenter_on_exit_bar) = (exec.exit_at_stop, exec.stops_immediately, exec.nbar_first, exec.same_bar, exec.reenter_on_exit_bar);
+        s.exec.defer_exit_on_circuit = exec.defer_exit_on_circuit;
     }
     // An exitless side relies on the opposite entry to reverse its position.
-    let exitless = |x: &Exec, e: &[Node]| e.is_empty() && x.stop_loss.is_none() && x.target.is_none() && x.trailing.is_none() && x.breakeven.is_none() && x.dual_atr.is_none() && !dated;
+    let exitless = |x: &Exec, e: &[Node]| e.is_empty() && x.stop_loss.is_none() && x.target.is_none() && x.trailing.is_none() && x.breakeven.is_none() && x.dual_atr.is_none() && x.dual_line.is_none() && !dated;
     if both && exec.opposite != Opposite::Reverse && (exitless(&exec,&exit) || short_side.as_ref().is_some_and(|s|exitless(&s.exec,&s.exit))) {
         return Err(inv("a side without exit rules (always in) needs execution.opposite \"reverse\""));
     }
@@ -588,8 +626,14 @@ fn side(entry: Option<&Json>, exit: Option<&Json>, pre: &str, both: bool, rotati
     fields(entry_obj, &format!("{pre}entry"), &["all", "limit", "stop", "valid_bars", "scale_in"], &[])?;
     if let Some(v) = entry_obj.get("scale_in") { exec.scale_in = Some(scale_in(v, &format!("{pre}entry.scale_in"))?); }
     let exit_obj = exit.ok_or_else(|| inv(format!("{pre}exit is required")))?;
-    fields(exit_obj, &format!("{pre}exit"), &["any", "stop_loss", "target", "trailing", "breakeven", "take_profits", "min_bars", "dual_atr"], &[])?;
+    fields(exit_obj, &format!("{pre}exit"), &["any", "stop_loss", "target", "trailing", "breakeven", "take_profits", "min_bars", "dual_atr", "dual_line"], &[])?;
     if let Some(v) = exit_obj.get("dual_atr") { exec.dual_atr = Some(dual_atr(v, &format!("{pre}exit.dual_atr"))?); }
+    if let Some(v) = exit_obj.get("dual_line") {
+        let at = format!("{pre}exit.dual_line");
+        fields(v, &at, &["initial", "favour"], &[])?;
+        let line = |k: &str, b: &mut Budget| operand(v.get(k), &format!("{at}.{k}"), false, b);
+        exec.dual_line = Some((line("initial", b)?, line("favour", b)?));
+    }
     for (slot, at, hi) in SLOTS {
         let order = matches!(slot, Slot::Limit | Slot::Stop);
         let Some(v) = (if order { entry_obj } else { exit_obj }).get(at.split_once('.').unwrap().1) else { continue };
@@ -641,7 +685,7 @@ fn side(entry: Option<&Json>, exit: Option<&Json>, pre: &str, both: bool, rotati
     if exec.scale_in.is_some() && !exec.take_profits.is_empty() {
         return Err(inv(format!("{pre}entry.scale_in cannot combine with {pre}exit.take_profits (a trade's scale-out fractions are of one position)")));
     }
-    let price_exit = exec.stop_loss.is_some() || exec.target.is_some() || exec.trailing.is_some() || exec.breakeven.is_some() || exec.dual_atr.is_some();
+    let price_exit = exec.stop_loss.is_some() || exec.target.is_some() || exec.trailing.is_some() || exec.breakeven.is_some() || exec.dual_atr.is_some() || exec.dual_line.is_some();
     // `filter` only labels a rule for the editor's Filters tab (an entry rule like any other); `filter_exit` also exits when it is false
     let mut all = entry_obj.get("all").cloned();
     if let Some(Json::Arr(items)) = &mut all {
@@ -651,6 +695,7 @@ fn side(entry: Option<&Json>, exit: Option<&Json>, pre: &str, both: bool, rotati
             let (filter, exit) = (flag("filter")?, flag("filter_exit")?);
             if exit && !filter { return Err(inv(format!("{at}.filter_exit applies to a rule marked filter"))); }
             if exit { exec.filter_exits.push(i); }
+            if filter { exec.filter_rows.push(i); }
             *c = without(&without(c, "filter"), "filter_exit");
         }
     }
@@ -737,7 +782,10 @@ fn portfolio_rules(s:&Spec)->Result<(),LabError>{
     if x.tick_size>0.{return unsupported("execution.tick_size");}
     if x.pad_align{return unsupported("execution.pad_align");}
     if x.held_from_signal{return unsupported("execution.bars_held_from");}
+    if x.defer_exit_on_circuit{return unsupported("execution.defer_exit_on_circuit");}
+    if x.shadow.is_some(){return unsupported("execution.shadow");}
     if x.dual_atr.is_some(){return unsupported("exit.dual_atr");}
+    if x.dual_line.is_some(){return unsupported("exit.dual_line");}
     if s.date_filter.is_some(){return unsupported("date_filter");}
     if s.exit.iter().any(|n|matches!(n,Node::Cmp(c) if matches!(c.lhs,Operand::SinceEntry(_))||matches!(c.rhs,Operand::SinceEntry(_)))){return unsupported("since_entry exit values");}
     if x.capital.is_none(){return Err(inv("a portfolio needs execution.capital (shared money mode)"));}
@@ -784,7 +832,7 @@ pub fn validate_applied(s:&Spec)->Result<(),LabError>{
     s.entry.iter().chain(&s.exit).chain(short.into_iter().flatten()).try_for_each(consistent).map_err(inv)?;
     active_rules(s).map_err(inv)?;
     let execs=std::iter::once(&s.exec).chain(s.short_side.as_ref().map(|x|&x.exec));
-    execs.flat_map(|x|[&x.limit_at,&x.stop_at]).flatten().try_for_each(consistent_operand).map_err(inv)?;
+    execs.flat_map(|x|[x.limit_at.as_ref(),x.stop_at.as_ref(),x.dual_line.as_ref().map(|l|&l.0),x.dual_line.as_ref().map(|l|&l.1)]).flatten().try_for_each(consistent_operand).map_err(inv)?;
     if let Some(score)=s.portfolio.as_ref().and_then(|p|p.score.as_ref()){consistent_operand(score).map_err(inv)?;}
     Ok(())
 }
@@ -1355,6 +1403,10 @@ fn walk_levels(x: &mut Exec, pre: &str, f: &mut dyn FnMut(String, Knob)) {
     if let Some(si) = x.scale_in.as_mut() { f(format!("{pre}entry.scale_in.min_bars"), Knob::Whole(&mut si.min_bars)); }
     if let Some(o) = x.limit_at.as_mut() { walk_operand(o, &format!("{pre}entry.limit.at"), f); }
     if let Some(o) = x.stop_at.as_mut() { walk_operand(o, &format!("{pre}entry.stop.at"), f); }
+    if let Some((a, b)) = x.dual_line.as_mut() {
+        walk_operand(a, &format!("{pre}exit.dual_line.initial"), f);
+        walk_operand(b, &format!("{pre}exit.dual_line.favour"), f);
+    }
 }
 fn walk_node(n: &mut Node, at: &str, f: &mut dyn FnMut(String, Knob)) {
     match n {
@@ -2515,7 +2567,11 @@ mod date_filter_tests {
     #[test] fn filters_mark_entry_rules_and_a_filter_exit_counts_as_an_exit() {
         let f = |keys: &str, exit: &str| parse_spec(&format!(r#"{{"v":1,"entry":{{"all":[{{"lhs":{{"s":"close"}},"op":">","rhs":{{"value":1}}}},{{{keys}"lhs":{{"s":"rsi"}},"op":">","rhs":{{"value":50}}}}]}},"exit":{exit}}}"#));
         let x = r#"{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":5}}]}"#;
-        assert_eq!(f(r#""filter":true,"#, x).unwrap(), f("", x).unwrap());
+        // a filter is an entry rule like any other; it is only remembered (execution.shadow gates real trades with it)
+        let mut marked = f(r#""filter":true,"#, x).unwrap();
+        assert_eq!(marked.exec.filter_rows, vec![1]);
+        marked.exec.filter_rows.clear();
+        assert_eq!(marked, f("", x).unwrap());
         assert_eq!(f(r#""filter":true,"filter_exit":true,"#, r#"{"any":[]}"#).unwrap().exec.filter_exits, vec![1]);
         assert!(f(r#""filter":true,"#, r#"{"any":[]}"#).is_err());
         assert!(f(r#""off":true,"filter":true,"filter_exit":true,"#, r#"{"any":[]}"#).is_err());

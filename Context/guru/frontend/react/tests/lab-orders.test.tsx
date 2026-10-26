@@ -102,7 +102,7 @@ it("each stop carries its own re-entry delay when asked", async () => {
 it("exits: add menu lists only unset extra exits; trailing activation; breakeven; take-profits in % of the position; min bars", async () => {
   const { host, last, rerender } = await orders(defaultSpec());
   const add = () => host.querySelector<HTMLSelectElement>('select[aria-label="Add exit (long)"]')!;
-  expect([...add().options].map((o) => o.value)).toEqual(["", "breakeven", "take_profits", "min_bars", "dual_atr"]);
+  expect([...add().options].map((o) => o.value)).toEqual(["", "breakeven", "take_profits", "min_bars", "dual_atr", "dual_line"]);
   await choose(host.querySelector('[data-lab-exit="trailing"] select[aria-label="Trailing stop unit"]')!, "pct");
   await rerender(last());
   await choose(host.querySelector('[data-lab-exit="trailing"] select[aria-label="Trailing activation unit"]')!, "pct");
@@ -180,6 +180,19 @@ it("trailing stop: choosing % of profit writes exit.trailing { profit_pct: 40 }"
   expect([...host.querySelectorAll<HTMLOptionElement>('select[aria-label="Trailing stop unit"] option')].map((o) => o.value)).toContain("profit_pct");
 });
 
+it("Two-line exit: added from More exits with the MultiTF Supertrend lines, each line edited as an operand, removable", async () => {
+  const { host, last, rerender } = await orders(defaultSpec());
+  await choose(host.querySelector('select[aria-label="Add exit (long)"]')!, "dual_line");
+  expect(last().exit.dual_line).toEqual({ initial: { s: "supertrend", p: { atr_length: 5, factor: 1, mode: 1 }, out: "supertrend" },
+    favour: { s: "supertrend", p: { atr_length: 5, factor: 4, mode: 1 }, out: "supertrend" } });
+  await rerender(last());
+  const favour = host.querySelector('[role="group"][aria-label="Favour line"]')!;
+  expect(favour).not.toBeNull();
+  expect(host.querySelector('[role="group"][aria-label="Initial line"]')).not.toBeNull();
+  expect(host.textContent).toContain(COPY.dualLineHint);
+  await click(host.querySelector('button[aria-label="Remove Two-line exit (initial → favour)"]')!);
+  expect(last().exit.dual_line).toBeUndefined();
+});
 it("Dual ATR exit: added from More exits, bands, timeframe and the period-end test; not in a portfolio", async () => {
   const { host, last, rerender } = await orders(defaultSpec());
   await choose(host.querySelector('select[aria-label="Add exit (long)"]')!, "dual_atr");

@@ -208,3 +208,12 @@ it("AmiBroker defaults sets the indicator's AmiBroker parameters over the curren
   const sma = await setup({ s: "sma", p: { length: 20 } });
   expect(sma.host.querySelector("[data-lab-ab-defaults]")).toBeNull();
 });
+
+it("a platform variant is picked by name from a dropdown, not typed as 0/1", async () => {
+  const { host, last } = await setup({ s: "stoch", p: { length: 14 } });
+  const variant = host.querySelector<HTMLSelectElement>('select[aria-label^="Variant"]')!;
+  expect(variant.closest("label")!.firstChild!.textContent).toBe("Variant");
+  expect([...variant.options].map((o) => o.text)).toEqual(["TradingView", "AmiBroker ratio of sums"]);
+  await choose(variant, "1");
+  expect(last()).toEqual({ s: "stoch", p: { length: 14, variant: 1 } });
+});

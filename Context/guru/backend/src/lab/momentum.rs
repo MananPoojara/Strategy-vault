@@ -108,6 +108,13 @@ fn mfi(b: &Bars, prm: &Params) -> Output {
     let v = b.volume.as_ref().ok_or("needs volume")?;
     let (s, l) = (b.hlc3(), n(prm, "length"));
     let d = ta::change(&s, 1);
+    if n(prm, "variant") == 1 {
+        let flow = |i: usize, up: bool| if (up && d[i] > 0.) || (!up && d[i] < 0.) { (d[i] * s[i] * v[i]).abs() } else { 0. };
+        let smooth = |x: Vec<f64>| match n(prm, "smoothing") { 1 => ta::ema(&x, l), 2 => ta::wma(&x, l), 3 => ta::rma(&x, l), _ => ta::sma(&x, l) };
+        let (up, dn) = (smooth((0..b.len()).map(|i| flow(i, true)).collect()), smooth((0..b.len()).map(|i| flow(i, false)).collect()));
+        // TradeTiger 2.6.9.81 MFI DLL: nonpositive negative flow yields 0, including both-zero flow
+        return Ok(vec![zip(&up, &dn, |u, d| if u.is_nan() || d.is_nan() { NA } else if d > 0. { 100. - 100. / (1. + u / d) } else { 0. })]);
+    }
     // NaN change (bar 0) fails both comparisons, so bar 0 counts in both sums (TradingView quirk).
     let up: Vec<f64> = (0..b.len()).map(|i| v[i] * if d[i] <= 0. { 0. } else { s[i] }).collect();
     let dn: Vec<f64> = (0..b.len()).map(|i| v[i] * if d[i] >= 0. { 0. } else { s[i] }).collect();
@@ -238,8 +245,9 @@ pub const DEFS: &[IndicatorDef] = &[
     def("roc", &["roc"], "Rate of Change", &[len("length", "Length", 9.), int("variant", "Variant (0 TradingView/AmiBroker, 1 MetaTrader 5 ROC example)", 0., 0., 1.)], NO,
         "100*(close-close[n])/close[n]; variant 1 (MetaTrader 5 ROC.mq5 example): 100·(close − close[n])/close (divides by the current close; 0 → NaN)", &[9], roc),
     def("willr", &["willr"], "Williams %R", LEN14, NO, "100*(close-highest(high,n))/(highest(high,n)-lowest(low,n)); NaN if range 0", &[13], willr),
-    def("mfi", &["mfi"], "Money Flow Index", LEN14, Needs { volume: true, ..Needs::NONE },
-        "src=hlc3; up=sum(v*(change<=0?0:src),n), dn=sum(v*(change>=0?0:src),n) (bar 0 counts in both); dn==0 -> 100 else 100-100/(1+up/dn)", &[13], mfi),
+    def("mfi", &["mfi"], "Money Flow Index", &[len("length", "Length", 14.), int("variant", "Variant (0 TradingView / AmiBroker, 1 TradeTiger)", 0., 0., 1.),
+        int("smoothing", "TradeTiger smoothing (0 SMA, 1 EMA, 2 WMA, 3 Wilders)", 0., 0., 3.)], Needs { volume: true, ..Needs::NONE },
+        "src=hlc3; up=sum(v*(change<=0?0:src),n), dn=sum(v*(change>=0?0:src),n) (bar 0 counts in both); dn==0 -> 100 else 100-100/(1+up/dn); variant 1 (TradeTiger 2.6.9.81 change-weighted core; float64 smoothing/seed parity not verified): ch = src − src[1], flow = ch·src·v, up = ch > 0 ? flow : 0, dn = ch < 0 ? |flow| : 0 (bar 0 counts in neither), smoothed by sum/SMA, EMA, WMA or RMA over n; dn > 0 → 100 − 100/(1 + up/dn), else 0 (including both-zero flow; differs from the team AFL's Null)", &[13], mfi),
     def("tsi", &["tsi", "signal"], "True Strength Index", &[len("long", "Long length", 25.), len("short", "Short length", 13.), len("signal", "Signal length", 13.)], NO,
         "100*ema(ema(change,long),short)/ema(ema(|change|,long),short); signal=ema(tsi,signal)", &[37, 49], tsi),
     def("cmo", &["cmo"], "Chande Momentum Oscillator", &[len("length", "Length", 9.)], NO, "S1=sum of gains, S2=sum of losses over n; 100*(S1-S2)/(S1+S2); 0/0 -> NaN", &[9], cmo),
@@ -268,6 +276,37 @@ mod tests {
     fn closes(c: &[f64]) -> crate::lab::bars::Bars { from_ohlc(&c.iter().map(|&x| (x, x, x, x)).collect::<Vec<_>>()) }
     fn with(k: &str, v: f64) -> Params { let mut p = Params::new(); p.insert(k.into(), v); p }
     fn many(kv: &[(&str, f64)]) -> Params { kv.iter().map(|(k, v)| (k.to_string(), *v)).collect() }
+    #[test] fn mfi_tradetiger_variant_matches_the_afl_on_nonzero_flow() {
+        // the AFL line by line: TPChange, SignedMF = TPChange·TP·V, Pos/Neg, MA|EMA|WMA|Wilders, then its IIf chain
+        let mut b = from_ohlc(&(0..40).map(|i| { let c = 100. + ((i * 7) % 11) as f64 - (i % 3) as f64; (c, c + 1. + (i % 4) as f64, c - 1.5, c) }).collect::<Vec<_>>());
+        b.volume = Some((0..40).map(|i| 1000. + ((i * 37) % 13) as f64 * 100.).collect());
+        let (tp, v) = (b.hlc3(), b.volume.clone().unwrap());
+        let ch: Vec<f64> = (0..40).map(|i| if i == 0 { N } else { tp[i] - tp[i - 1] }).collect();
+        let pos: Vec<f64> = (0..40).map(|i| if ch[i] > 0. { ch[i] * tp[i] * v[i] } else { 0. }).collect();
+        let neg: Vec<f64> = (0..40).map(|i| if ch[i] < 0. { (ch[i] * tp[i] * v[i]).abs() } else { 0. }).collect();
+        for (k, sm) in [(0., crate::lab::ta::sma as fn(&[f64], usize) -> Vec<f64>), (1., crate::lab::ta::ema), (2., crate::lab::ta::wma), (3., crate::lab::ta::rma)] {
+            let (u, d) = (sm(&pos, 5), sm(&neg, 5));
+            let want: Vec<f64> = (0..40).map(|i| if u[i].is_nan() || d[i].is_nan() { N } else if d[i] > 0. { 100. - 100. / (1. + u[i] / d[i]) } else if u[i] > 0. { 0. } else { N }).collect();
+            assert_series(&run(&get("mfi").unwrap(), &b, &many(&[("length", 5.), ("variant", 1.), ("smoothing", k)])).unwrap()[0], &want);
+        }
+        // only positive flow in the window: the AFL gives 0, the standard MFI 100
+        let mut up = from_ohlc(&(0..8).map(|i| { let c = 100. + i as f64; (c, c, c, c) }).collect::<Vec<_>>());
+        up.volume = Some(vec![10.; 8]);
+        assert_eq!(run(&get("mfi").unwrap(), &up, &many(&[("length", 3.), ("variant", 1.)])).unwrap()[0][7], 0.);
+        assert_eq!(run(&get("mfi").unwrap(), &up, &with("length", 3.)).unwrap()[0][7], 100.);
+    }
+    #[test] fn mfi_tradetiger_flat_price_has_zero_flow_not_a_missing_value() {
+        // MoneyFlowIndex::B/C in the shipped 2.6.9.81 DLL returns 0 when both flow averages are 0.
+        let mut b = from_ohlc(&vec![(100., 100., 100., 100.); 40]);
+        b.volume = Some(vec![10.; 40]);
+        for smoothing in 0..=3 {
+            let out = run(&get("mfi").unwrap(), &b, &many(&[("length", 5.), ("variant", 1.), ("smoothing", smoothing as f64)])).unwrap();
+            assert!(out[0][..4].iter().all(|x| x.is_nan()));
+            assert!(out[0][4..].iter().all(|&x| x == 0.));
+        }
+        // Standard MFI keeps its existing zero-denominator result.
+        assert_eq!(run(&get("mfi").unwrap(), &b, &with("length", 5.)).unwrap()[0][39], 100.);
+    }
     fn hl_rows() -> crate::lab::bars::Bars {
         from_ohlc(&[(1., 2., 0., 1.), (1., 3., 1., 2.), (1., 4., 2., 3.), (1., 5., 3., 5.), (1., 6., 4., 4.)])
     }

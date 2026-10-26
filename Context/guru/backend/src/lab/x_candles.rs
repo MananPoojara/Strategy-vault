@@ -19,36 +19,36 @@ const fn def(id: &'static str, name: &'static str, category: &'static str, param
 enum Rt { Body, Hl, Shadows }
 /// (range type, average period, factor)
 #[derive(Clone, Copy)]
-struct S(Rt, usize, f64);
-const BODY_LONG: S = S(Rt::Body, 10, 1.);
-const BODY_SHORT: S = S(Rt::Body, 10, 1.);
+pub(super) struct S(Rt, usize, f64);
+pub(super) const BODY_LONG: S = S(Rt::Body, 10, 1.);
+pub(super) const BODY_SHORT: S = S(Rt::Body, 10, 1.);
 const BODY_DOJI: S = S(Rt::Hl, 10, 0.1);
 const SHADOW_LONG: S = S(Rt::Body, 0, 1.);
 const SHADOW_VERY_LONG: S = S(Rt::Body, 0, 2.);
 const SHADOW_SHORT: S = S(Rt::Shadows, 10, 1.);
-const SHADOW_VERY_SHORT: S = S(Rt::Hl, 10, 0.1);
+pub(super) const SHADOW_VERY_SHORT: S = S(Rt::Hl, 10, 0.1);
 const NEAR: S = S(Rt::Hl, 5, 0.2);
 const FAR: S = S(Rt::Hl, 5, 0.6);
 const EQUAL: S = S(Rt::Hl, 5, 0.05);
 
-struct K<'a> { o: &'a [f64], h: &'a [f64], l: &'a [f64], c: &'a [f64] }
+pub(super) struct K<'a> { o: &'a [f64], h: &'a [f64], l: &'a [f64], c: &'a [f64] }
 impl K<'_> {
-    fn new(b: &Bars) -> K<'_> { K { o: &b.open, h: &b.high, l: &b.low, c: &b.close } }
-    fn rb(&self, i: usize) -> f64 { (self.c[i] - self.o[i]).abs() }
-    fn top(&self, i: usize) -> f64 { if self.c[i] >= self.o[i] { self.c[i] } else { self.o[i] } }
-    fn bot(&self, i: usize) -> f64 { if self.c[i] >= self.o[i] { self.o[i] } else { self.c[i] } }
-    fn us(&self, i: usize) -> f64 { self.h[i] - self.top(i) }
-    fn ls(&self, i: usize) -> f64 { self.bot(i) - self.l[i] }
+    pub(super) fn new(b: &Bars) -> K<'_> { K { o: &b.open, h: &b.high, l: &b.low, c: &b.close } }
+    pub(super) fn rb(&self, i: usize) -> f64 { (self.c[i] - self.o[i]).abs() }
+    pub(super) fn top(&self, i: usize) -> f64 { if self.c[i] >= self.o[i] { self.c[i] } else { self.o[i] } }
+    pub(super) fn bot(&self, i: usize) -> f64 { if self.c[i] >= self.o[i] { self.o[i] } else { self.c[i] } }
+    pub(super) fn us(&self, i: usize) -> f64 { self.h[i] - self.top(i) }
+    pub(super) fn ls(&self, i: usize) -> f64 { self.bot(i) - self.l[i] }
     /// TA_CANDLECOLOR: close >= open is white (+1).
-    fn col(&self, i: usize) -> i32 { if self.c[i] >= self.o[i] { 1 } else { -1 } }
-    fn gap_up(&self, i2: usize, i1: usize) -> bool { self.bot(i2) > self.top(i1) }
-    fn gap_dn(&self, i2: usize, i1: usize) -> bool { self.top(i2) < self.bot(i1) }
+    pub(super) fn col(&self, i: usize) -> i32 { if self.c[i] >= self.o[i] { 1 } else { -1 } }
+    pub(super) fn gap_up(&self, i2: usize, i1: usize) -> bool { self.bot(i2) > self.top(i1) }
+    pub(super) fn gap_dn(&self, i2: usize, i1: usize) -> bool { self.top(i2) < self.bot(i1) }
     fn range(&self, s: S, i: usize) -> f64 {
         match s.0 { Rt::Body => self.rb(i), Rt::Hl => self.h[i] - self.l[i], Rt::Shadows => self.us(i) + self.ls(i) }
     }
     /// TA_CANDLEAVERAGE for candle `i`: factor × (sum of the range over the `period` bars before `i`) / period, or the candle's own range when period is 0; halved for Shadows.
     // shortcut: a direct window sum where TA-Lib rolls a running total, so equality cases can differ in the last bit; acceptable for 0/1 signals.
-    fn avg(&self, s: S, i: usize) -> f64 {
+    pub(super) fn avg(&self, s: S, i: usize) -> f64 {
         let base = if s.1 == 0 { self.range(s, i) } else { (i - s.1..i).map(|j| self.range(s, j)).sum::<f64>() / s.1 as f64 };
         s.2 * base / if matches!(s.0, Rt::Shadows) { 2. } else { 1. }
     }

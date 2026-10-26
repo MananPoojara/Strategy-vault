@@ -7,6 +7,7 @@ import { ForeignFields } from "./ForeignFields";
 import { infoOf, useFormulaScope, wholeParam } from "./formula";
 import { DetailContext, POPULAR, SHORT, useSimple } from "./simple";
 import { AB_DEFAULTS } from "./catalogue";
+import { isChoice, variantOptions } from "./ParamsDialog";
 import "./rules.css";
 import "./operand.css";
 
@@ -219,7 +220,13 @@ function IndicatorFields({ operand, ind, computed, groups, set, replace }: {
           </optgroup>
         ))}
       </select>
-      {ind.params.map((p) => (
+      {ind.params.map((p) => isChoice(p) ? (
+        <label key={p.key} className="dfield">{p.label.replace(/\s*\(.*\)\s*$/, "")}
+          <select aria-label={p.label} title={p.label} value={operand.p?.[p.key] ?? p.default} onChange={(e) => set({ p: { ...operand.p, [p.key]: Number(e.target.value) } })}>
+            {variantOptions(p).map(([v, text]) => <option key={v} value={v}>{text}</option>)}
+          </select>
+        </label>
+      ) : (
         <NumField key={p.key} label={p.label} value={operand.p?.[p.key] ?? p.default} min={p.min} max={p.max} step={p.step}
           onChange={(n) => n !== undefined && set({ p: { ...operand.p, [p.key]: n } })} />
       ))}

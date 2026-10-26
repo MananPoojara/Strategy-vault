@@ -27,6 +27,8 @@ struct Pos {
     w: f64, base: f64, adds: Vec<Leg>, last: (usize, f64),
     /// exit.dual_atr state (None until the position's first bar is evaluated)
     dual: Option<DualState>,
+    /// exit.dual_line state: (favour line active, last bar evaluated)
+    dline: Option<(bool, usize)>,
 }
 /// exit.dual_atr levels after bar `upto`, signed by the trade direction (a short's levels negated) so both directions
 /// ratchet the same way: stops up, the switch band down; `favour` once a close cleared the switch band and the initial stop.
@@ -52,6 +54,21 @@ fn dual_step(c: &Compiled, p: &mut Pos, i: usize, d: f64) -> bool {
     }
     hit
 }
+/// Advance the open position's exit.dual_line state through bar i; true when bar i's close is beyond the active line (the
+/// initial line, or the favour line once a close cleared it). Never on the entry bar; a NaN line never exits.
+fn dline_step(c: &Compiled, b: &Bars, p: &mut Pos, i: usize, d: f64) -> bool {
+    let Some((init, fav)) = c.dline.as_ref() else { return false };
+    let st = p.dline.get_or_insert((false, p.e));
+    let mut hit = false;
+    while st.1 < i {
+        let k = st.1 + 1;
+        let (close, a, f) = (d * b.close[k], d * init[k], d * fav[k]);
+        if !st.0 && close > f { st.0 = true; }
+        hit = if st.0 { close < f } else { close < a };
+        st.1 = k;
+    }
+    hit
+}
 impl Pos {
     /// Levels are fixed from the entry price and ATR at `sig`, the bar whose close produced the order.
     fn open(c: &Compiled, i: usize, px: f64, sig: usize, kind: &'static str, d: f64) -> Pos {
@@ -68,7 +85,7 @@ impl Pos {
         Pos { e: i, sig, px, kind, stop, target: lvl(x.target, 1.), best: px, limit_bar: kind == "limit", w, base, adds: vec![], last: (i, px),
               arm: lvl(x.trail_activate, 1.), be_after: lvl(x.breakeven.map(|b| b.0), 1.),
               be: x.breakeven.map_or(f64::NAN, |b| b.1.map_or(px, |p| c.round_at(i, px + d * c.dist_at(p, px, sig, i)))),
-              tps: x.take_profits.iter().map(|&(t, size)| (lvl(Some(t), 1.), size, false)).collect(), out: vec![], dual: None }
+              tps: x.take_profits.iter().map(|&(t, size)| (lvl(Some(t), 1.), size, false)).collect(), out: vec![], dual: None, dline: None }
     }
     /// The trade, with the scale-out ledger when take-profits filled: pieces plus the final exit, exit_px their weighted average.
     fn trade(&self, x: usize, px: f64, reason: String, signal_i: usize, d: f64) -> Trade {
@@ -269,6 +286,44 @@ fn exit_kind(c: &Compiled, t: &Trade) -> Option<usize> {
 pub fn simulate(c: &Compiled, b: &Bars, from: usize, to: usize) -> Vec<Trade> { simulate_events(c, b, from, to).0 }
 /// The trades plus the equity-level events that changed them (risk pauses and stops, spec §6.5), for `execution_model.events`.
 pub fn simulate_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<Trade>, Vec<String>) {
+    let (trades, events) = signal_events(c, b, from, to);
+    match &c.shadow { Some((s, ok, filter_exit)) => (shadow_trades(s, ok, *filter_exit, b, trades), events), None => (trades, events) }
+}
+/// execution.shadow over the signal trades (the rules without the filter rows, every one taken): paper trades add their %
+/// returns and their bars in position; a positive sum resets both; a paper trade that leaves the sum below −loss_pct after
+/// min_bars arms the gate. Armed, each signal is a candidate: bought at the first close in its life where every filter row
+/// holds (the signal bar, or later while it runs), sold at its exit or, with a filter exit, on the first later close a
+/// filter fails. A candidate's return counts from the signal close (as the AFL's EntryClose) and resets the paper sums;
+/// `until` decides when the gate disarms.
+fn shadow_trades(s: &super::rules::Shadow, ok: &[bool], filter_exit: bool, b: &Bars, signals: Vec<Trade>) -> Vec<Trade> {
+    use super::rules::Until;
+    let (mut armed, mut loss, mut bars, mut profit, mut n) = (false, 0., 0usize, 0., 0usize);
+    let mut out = vec![];
+    for t in signals {
+        let (e, x, d, px) = (t.legs[0].i, t.exit_i, t.dir, t.legs[0].px);
+        if !armed {
+            bars += x - e;
+            loss += d * (t.exit_px / px - 1.) * 100.;
+            if loss > 0. { loss = 0.; bars = 0; }
+            if loss < -s.loss_pct && bars >= s.min_bars { (armed, profit, n) = (true, 0., 0); }
+            continue;
+        }
+        let k = (e..x).find(|&k| ok[k]);
+        let cut = if filter_exit { k.and_then(|k| (k + 1..x).find(|&j| !ok[j])) } else { None };
+        let xr = cut.unwrap_or(x);
+        let r = d * (if cut.is_some() { b.close[xr] } else { t.exit_px } / px - 1.) * 100.;
+        n += 1;
+        match s.until { Until::TradeProfit => profit = r, Until::TotalProfit => profit += r, Until::Trades => {} }
+        if if s.until == Until::Trades { n >= s.trades } else { profit >= s.profit_pct } { armed = false; }
+        (loss, bars) = (0., 0);
+        if let Some(k) = k {
+            let (exit_px, reason, open) = if cut.is_some() { (b.close[xr], "filter turned false".to_string(), false) } else { (t.exit_px, t.reason.clone(), t.open) };
+            out.push(Trade { legs: vec![Leg { i: k, px: if k == e { px } else { b.close[k] }, w: t.legs[0].w }], exit_i: xr, exit_px, reason, signal_i: k, open, exits: vec![], ..t });
+        }
+    }
+    out
+}
+fn signal_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<Trade>, Vec<String>) {
     let sides: Vec<&Compiled> = std::iter::once(c).chain(c.other.as_deref()).collect();
     let dir = |s: usize| if sides[s].exec.short { -1. } else { 1. };
     let x = &c.exec; // fill, exit_fill, opposite, delay and edge are shared by both sides
@@ -305,6 +360,9 @@ pub fn simulate_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<T
     let mut pos: Option<(usize, Pos)> = None; // (side, position)
     let mut pending_entry: Option<(usize, usize, usize, &'static str, Px)> = None; // (side, signal bar, fill bar, entry kind, field)
     let mut pending_exit: Option<(usize, usize, String, Px)> = None; // (signal bar, fill bar, reason, field); cleared when its position closes
+    // execution.defer_exit_on_circuit: bar i is locked at the exit-side extreme for side s (long: a lower circuit)
+    let locked = |s: usize, i: usize| sides[s].exec.defer_exit_on_circuit && i > 0
+        && if dir(s) > 0. { b.low[i] == b.close[i] && b.close[i] < b.close[i - 1] } else { b.high[i] == b.close[i] && b.close[i] > b.close[i - 1] };
     let mut orders: [Option<Order>; 2] = [None, None]; // one resting order per side
     let mut pending_add: Option<(usize, f64, usize, usize, Px)> = None; // (fill bar, leg weight, side, position entry bar, field)
     // equity-level state from closed trades (spec §6.5): loss streak, compounded closed equity and its peak, pause, stop
@@ -316,6 +374,9 @@ pub fn simulate_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<T
         // first, then the entry, then a scale-in leg; evaluates to whether a position closed.
         macro_rules! fill_due { ($late:expr) => {{
             let mut closed = false;
+            if pending_exit.as_ref().is_some_and(|e| e.1 == i && e.3 == Px::Close && i < to) && pos.as_ref().is_some_and(|(s, _)| locked(*s, i)) {
+                if let Some(e) = pending_exit.as_mut() { e.1 = i + 1; }
+            }
             if pending_exit.as_ref().is_some_and(|e| e.1 == i && (e.3 != Px::Open) == $late) {
                 let (sig, _, why, px) = pending_exit.take().unwrap();
                 if let Some((s, p)) = pos.take() { trades.push(p.trade(i, price(sides[s], b, px, i), why, sig, dir(s))); closed = true; }
@@ -391,6 +452,7 @@ pub fn simulate_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<T
         }
         // exit.dual_atr state advances on every bar of the position, before the exits are tested
         let dual_hit = match (pos.as_mut(), &pending_exit) { (Some((s, p)), None) => dual_step(sides[*s], p, i, dir(*s)), _ => false };
+        let dline_hit = match (pos.as_mut(), &pending_exit) { (Some((s, p)), None) => dline_step(sides[*s], b, p, i, dir(*s)), _ => false };
         if let (Some((s, p)), None) = (&pos, &pending_exit) { // a pending (delayed) exit is not re-placed
             let (s, xs, epx) = (*s, &sides[*s].exec, market(*s)[1].0);
             // ExitAtStop 0 stops on a trade price other than the open: tested on it and filled there on this bar
@@ -400,11 +462,13 @@ pub fn simulate_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<T
             // and delay, except an ExitAtStop 2 N-bar stop: the next bar at the regular trade price
             let hit = if stop0.is_some() { None } else { sides[s].exit.iter().find(|r| i - p.e >= xs.min_bars && r.holds(i, Some(held_from(s, p))))
                 .map(|r| (r.label.clone(), if nbar(r) && xs.exit_at_stop[3] == 2 { (epx, 1) } else { market(s)[1] }))
-                .or_else(|| (dual_hit && i - p.e >= xs.min_bars).then(|| ("exit.dual_atr".to_string(), market(s)[1]))) };
+                .or_else(|| (dual_hit && i - p.e >= xs.min_bars).then(|| ("exit.dual_atr".to_string(), market(s)[1])))
+                .or_else(|| (dline_hit && i - p.e >= xs.min_bars).then(|| ("exit.dual_line".to_string(), market(s)[1]))) };
             let entry_bar = p.e == i;
             if let Some(w) = stop0 { trades.push(pos.take().unwrap().1.trade(i, pv, w.into(), i, dir(s))); exited = true; }
             match hit {
                 Some((_, (_, 0))) if !xs.same_bar && entry_bar => {} // same-bar exit off: no exit on the entry bar
+                Some((why, (_, 0))) if locked(s, i) && i < to => pending_exit = Some((i, i + 1, why, Px::Close)),
                 Some((why, (_, 0))) => { trades.push(pos.take().unwrap().1.trade(i, b.close[i], why, i, dir(s))); exited = true; }
                 Some((why, (px, delay))) if i + delay <= to => pending_exit = Some((i, i + delay, why, px)),
                 _ => {} // no fill inside the window; the position is marked open below
@@ -1633,6 +1697,77 @@ mod tests {
     }
 }
 
+#[cfg(test)]
+mod shadow_tests {
+    use super::*;
+    use crate::lab::rules::{parse_spec, Shadow, Until};
+    use crate::lab::testdata::from_ohlc;
+    fn t(e: usize, x: usize, pe: f64, px: f64) -> Trade { Trade { dir: 1., legs: vec![Leg { i: e, px: pe, w: 1. }], exit_i: x, exit_px: px, reason: "rule".into(), entry_kind: "close", signal_i: e, open: false, exits: vec![] } }
+    fn closes() -> Bars { from_ohlc(&(0..20).map(|i| { let c = 100. + i as f64; (c, c, c, c) }).collect::<Vec<_>>()) }
+    const SH: Shadow = Shadow { loss_pct: 5., min_bars: 3, until: Until::TradeProfit, profit_pct: 3., trades: 0 };
+    #[test] fn paper_losses_arm_real_trades_until_one_makes_the_profit() {
+        // paper: −6 % in 2 bars (too few), −1 % more after 4 bars in all: armed; then +2 % (stays armed), +4 % (disarms), paper again
+        let sig = vec![t(1, 3, 100., 94.), t(4, 6, 100., 99.), t(7, 10, 100., 102.), t(11, 13, 100., 104.), t(14, 16, 100., 101.)];
+        let out = shadow_trades(&SH, &[true; 20], false, &closes(), sig.clone());
+        assert_eq!(out.iter().map(|x| (x.legs[0].i, x.exit_i)).collect::<Vec<_>>(), vec![(7, 10), (11, 13)]);
+        // total profit: +2 and +4 sum past 3 % only at the second; trades: disarm after one real trade
+        let total = shadow_trades(&Shadow { until: Until::TotalProfit, ..SH }, &[true; 20], false, &closes(), sig.clone());
+        assert_eq!(total.len(), 2);
+        let one = shadow_trades(&Shadow { until: Until::Trades, trades: 1, ..SH }, &[true; 20], false, &closes(), sig);
+        assert_eq!(one.iter().map(|x| x.legs[0].i).collect::<Vec<_>>(), vec![7]);
+    }
+    #[test] fn filters_delay_the_real_entry_and_a_filter_exit_cuts_it() {
+        let sig = vec![t(1, 3, 100., 94.), t(4, 6, 100., 99.), t(7, 12, 100., 102.)];
+        let mut ok = [true; 20];
+        ok[7] = false; // the signal bar fails the filter: bought at bar 8's close
+        ok[10] = false; // then the filter fails: sold at bar 10's close
+        let out = shadow_trades(&SH, &ok, true, &closes(), sig.clone());
+        assert_eq!((out[0].legs[0].i, out[0].legs[0].px, out[0].exit_i, out[0].exit_px, out[0].reason.as_str()), (8, 108., 10, 110., "filter turned false"));
+        // without a filter exit the real trade runs to the signal's exit
+        assert_eq!(shadow_trades(&SH, &ok, false, &closes(), sig).first().map(|x| x.exit_i), Some(12));
+    }
+    #[test] fn shadow_specs_are_checked() {
+        let spec = |ex: &str| parse_spec(&format!(r#"{{"v":1,"entry":{{"all":[{{"lhs":{{"s":"close"}},"op":">","rhs":{{"value":1}}}}]}},"exit":{{"any":[{{"lhs":{{"s":"close"}},"op":"<","rhs":{{"value":1}}}}]}},"execution":{ex}}}"#));
+        let s = spec(r#"{"fill":"close","shadow":{"loss_pct":5,"min_bars":5,"until":"total_profit","profit_pct":3}}"#).unwrap();
+        assert_eq!(s.exec.shadow, Some(Shadow { loss_pct: 5., min_bars: 5, until: Until::TotalProfit, profit_pct: 3., trades: 0 }));
+        assert!(format!("{:?}", spec(r#"{"shadow":{"loss_pct":5,"profit_pct":3}}"#).unwrap_err()).contains("filled at the close"));
+        assert!(format!("{:?}", spec(r#"{"fill":"close","shadow":{"loss_pct":5,"until":"trades"}}"#).unwrap_err()).contains("trades"));
+        assert!(spec(r#"{"fill":"close","shadow":{"loss_pct":0,"profit_pct":3}}"#).is_err());
+    }
+}
+#[cfg(test)]
+mod dual_line_circuit_tests {
+    use super::*;
+    use crate::lab::rules::parse_spec;
+    use crate::lab::series::{compile, Cache, Frames};
+    use crate::lab::testdata::from_ohlc;
+
+    fn run(bars: Bars, entry: &str, exit: &str, exec: &str) -> Vec<Trade> {
+        let spec = parse_spec(&format!(r#"{{"v":1,"entry":{{"all":[{entry}]}},"exit":{exit},"execution":{{"fill":"close"{exec}}}}}"#)).unwrap();
+        let fr = Frames::new(bars);
+        simulate(&compile(&spec, &fr, &mut Cache::new()).unwrap(), &fr.d, 0, fr.d.len() - 1)
+    }
+    const CROSS: &str = r#"{"lhs":{"s":"close"},"op":"crosses_above","rhs":{"value":10.5}}"#;
+    fn flat(c: &[f64]) -> Bars { from_ohlc(&c.iter().map(|&x| (x, x + 1., x - 1., x)).collect::<Vec<_>>()) }
+    #[test] fn dual_line_switches_to_the_favour_line_after_a_close_above_it() {
+        let c = [10., 10., 11., 12., 13., 12., 11.4, 11.9, 10.5, 10.];
+        // entry at bar 2's close; bar 4 closes 13 above the favour line 12.5, so bar 5 (12 < 12.5) exits on the favour line
+        let t = run(flat(&c), CROSS, r#"{"any":[],"dual_line":{"initial":{"value":10.8},"favour":{"value":12.5}}}"#, "");
+        assert_eq!((t[0].legs[0].i, t[0].exit_i, t[0].reason.as_str()), (2, 5, "exit.dual_line"));
+        // a favour line never cleared: the initial line exits bar 8 (10.5 < 10.8)
+        let t = run(flat(&c), CROSS, r#"{"any":[],"dual_line":{"initial":{"value":10.8},"favour":{"value":99}}}"#, "");
+        assert_eq!(t[0].exit_i, 8);
+    }
+    #[test] fn a_lower_circuit_close_defers_the_exit_to_the_next_unlocked_close() {
+        // bars 5 and 6 close at their lows below the previous close; bar 7 does not
+        let rows = [(10., 11., 9., 10.), (10., 11., 9., 10.), (10., 11.5, 10., 11.), (11., 12.5, 11., 12.), (12., 13.5, 12., 13.),
+                    (13., 13., 11., 11.), (11., 11., 10.8, 10.8), (10.8, 11.5, 10.6, 11.2), (11., 12., 11., 12.)];
+        let exit = r#"{"any":[{"lhs":{"s":"close"},"op":"<","rhs":{"value":11.5}}]}"#;
+        let t = run(from_ohlc(&rows), CROSS, exit, r#","defer_exit_on_circuit":true"#);
+        assert_eq!((t[0].exit_i, t[0].exit_px), (7, 11.2));
+        assert_eq!(run(from_ohlc(&rows), CROSS, exit, "")[0].exit_i, 5);
+    }
+}
 #[cfg(test)]
 mod dual_since_tests {
     use super::*;

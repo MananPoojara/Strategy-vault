@@ -86,6 +86,10 @@ export function setAt<T>(obj: T, path: string, value: unknown): T {
   return go(obj, 0) as T;
 }
 
+/** One optimizer combination on a spec: a rule switch (`….off`) becomes off: true or no key (rules.rs takes only true/false). */
+export const withCombination = (spec: Spec, dims: { path: string }[], values: number[]): Spec =>
+  dims.reduce((s, d, i) => (d.path.endsWith(".off") ? (values[i] ? setAt(s, d.path, true) : removeAt(s, d.path)) : setAt(s, d.path, values[i])), withOptimize(spec, []));
+
 export function removeAt<T>(obj: T, path: string): T {
   const keys = parsePath(path);
   const go = (o: unknown, i: number): unknown => {
@@ -182,7 +186,7 @@ export function specProblems(spec: Spec, cat: Catalogue): string[] {
   for (const { side, prefix, title } of sides) {
     const dated = !!spec.date_filter && !spec.date_filter.off && spec.date_filter.exit_at_change !== false; // rules.rs: the window-change exit closes trades
     const filterExit = side.entry.all.some((n) => { const x = n as Record<string, unknown>; return x.filter_exit === true && x.off !== true; }); // rules.rs filter_exits
-    const priceExit = ["stop_loss", "target", "trailing", "breakeven", "dual_atr"].some((k) => side.exit[k] !== undefined) || !!side.exit.take_profits?.length || dated || filterExit;
+    const priceExit = ["stop_loss", "target", "trailing", "breakeven", "dual_atr", "dual_line"].some((k) => side.exit[k] !== undefined) || !!side.exit.take_profits?.length || dated || filterExit;
     if (spec.portfolio?.mode!=="rotation" && !alwaysIn && !side.exit.any.length && !priceExit)
       out.push(`${prefix}exit.any needs at least one condition (or a stop_loss, target, trailing, breakeven or take-profit exit)`);
     if (side.entry.all.length + side.exit.any.length > cat.max_conditions)
@@ -233,7 +237,7 @@ export function friendlyReason(reason: string): string {
   const filter = /^(short_side\.)?entry\.all\[\d+\]: filter turned false: (.*)$/.exec(reason);
   if (filter) return `${filter[1] ? "Short filter" : "Filter"} turned false: ${filter[2]}`;
   const fixed: Record<string, string> = { "reverse to long": "Reversed to long", "reverse to short": "Reversed to short", "opposite entry": "Opposite signal",
-    expiry: "Contract expiry", margin_call: "Margin call", roll: "Contract roll", "exit.dual_atr": "Dual ATR stop" };
+    expiry: "Contract expiry", margin_call: "Margin call", roll: "Contract roll", "exit.dual_atr": "Dual ATR stop", "exit.dual_line": "Two-line exit" };
   return fixed[reason] ?? reason;
 }
 

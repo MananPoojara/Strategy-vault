@@ -213,3 +213,22 @@ it("Portfolio tab limits: % of bar volume and previous-bar equity, money mode on
   await show({ ...money, portfolio: { universe: { basket: "nifty50" } } } as Spec);
   expect(host.querySelector("[data-lab-portfolio-limits]")).toBeNull();
 });
+
+it("trade after a losing streak: switching it on sets the AFL defaults and close fills; the target follows the chosen mode", async () => {
+  const { host, last, rerender } = await risk(defaultSpec());
+  const box = () => host.querySelector<HTMLInputElement>("[data-lab-shadow] input[type=checkbox]")!;
+  await click(box());
+  expect(last().execution).toMatchObject({ shadow: { loss_pct: 5, min_bars: 5, until: "trade_profit", profit_pct: 3 }, fill: "close" });
+  await rerender(last());
+  await type(host.querySelector('input[aria-label="Paper loss (%)"]')!, "7");
+  expect(last().execution!.shadow!.loss_pct).toBe(7);
+  await rerender(last());
+  await choose(host.querySelector('select[aria-label="Back to paper when"]')!, "trades");
+  expect(last().execution!.shadow).toMatchObject({ until: "trades", trades: 1 });
+  expect(last().execution!.shadow!.profit_pct).toBeUndefined();
+  await rerender(last());
+  expect(host.querySelector('input[aria-label="Real trades"]')).not.toBeNull();
+  expect(host.querySelector("summary")!.textContent).toContain("trade after a 7% paper loss");
+  await click(box());
+  expect(last().execution?.shadow).toBeUndefined();
+});

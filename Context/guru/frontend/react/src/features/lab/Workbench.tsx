@@ -7,7 +7,8 @@ import { defaultColor, ParamsDialog, plotCss, plotPaint, type LineStyle, type Lo
 import { COPY, TF_LABELS } from "./labels";
 import { formulaQuery } from "./formula";
 import type { Catalogue, ChartRange, Indicator, SavedMarket, SeriesResponse, Trade } from "./types";
-import { ErrorNotice, isProvisional, ProvisionalStrip } from "./ui";
+import { ErrorNotice, isProvisional, ProvisionalStrip, Segmented } from "./ui";
+import { CHART_TYPES, drawTimeless, MAX_SLOTS, nounOf, type ChartType } from "./timeless";
 import { foreignDescription, foreignAdvertised, isPair } from "./foreign-model";
 import type { InstrumentOption } from "./instruments";
 import "./workbench.css";
@@ -95,6 +96,13 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
   const [provisionalNote, setProvisionalNote] = useState<string | undefined>();
   const [foreignNotes,setForeignNotes]=useState<string[]>([]);
   const [adaptations, setAdaptations] = useState<string[]>([]);
+  // Chart type: Candles keep the date axis; the others are rebuilt from their indicator's daily outputs (params per type, set in the Parameters window).
+  const [chartType, setChartType] = useState<ChartType>("candles");
+  const [typeParams, setTypeParams] = useState<Partial<Record<ChartType, Record<string, number>>>>({});
+  const [typeOpen, setTypeOpen] = useState(false);
+  const [shown, setShown] = useState<{ slots: number; total: number } | null>(null);
+  const timeless = chartType !== "candles";
+  const typeKey = JSON.stringify([chartType, typeParams[chartType]]);
   // Prices depend only on market+ticker, so chip edits reuse the in-flight or finished OHLC requests.
   const ohlcCache = useRef<{ key: string; p: Promise<PromiseSettledResult<SeriesResponse>[]> } | null>(null);
   // Indicator series by query: a look change or a value seen before redraws without a request (failed requests are not kept).
@@ -120,6 +128,22 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
     let live = true;
     const disposers: Disposable[] = [];
     let unsync: (() => void) | undefined;
+    const cleanup = () => { live = false; priceApi.current = null; unsync?.(); disposers.forEach((d) => d.dispose()); legendRef.current?.replaceChildren(); panesRef.current?.querySelectorAll(".lab-legend-tv").forEach((el) => el.replaceChildren()); };
+    if (timeless) {
+      // daily bars only: the engine's outputs are one value per daily bar, and a resampled event would repeat over the period
+      const ind = find(chartType), params = typeParams[chartType] ?? {};
+      setShown(null);
+      void cachedSeries({ id: chartType, tf: "D", p: params }).then((res) => {
+        if (!live || !priceRef.current || !ind) return;
+        setOhlcError(null); setChipErrors({}); setForeignNotes([]); setAdaptations(res.adaptations ?? []);
+        const view = drawTimeless(priceRef.current, legendRef.current, { type: chartType, name: ind.name.replace(/\s*\(bar-aligned\)$/, ""), ticker, res, params, trades, range, onBehind: setBehind });
+        if (!view) return;
+        disposers.push(view);
+        toLatest.current = view.toLatest;
+        setShown({ slots: view.slots.length, total: view.total });
+      }, (e) => live && setOhlcError(e));
+      return cleanup;
+    }
     const drawn = chips.flatMap((chip, index) => {
       const ind = find(chip.id);
       return ind?.computed && !pairProblem(chip) ? [{ chip, ind, index }] : [];
@@ -278,9 +302,9 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
       if (last) legend(last);
       for (const { chart: ch } of charts) ch.subscribeCrosshairMove?.((param) => legend(param.time && at.has(param.time) ? param.time : last));
     })();
-    return () => { live = false; priceApi.current = null; unsync?.(); disposers.forEach((d) => d.dispose()); legendRef.current?.replaceChildren(); panesRef.current?.querySelectorAll(".lab-legend-tv").forEach((el) => el.replaceChildren()); };
+    return cleanup;
     // loadSeries and find are read fresh per run; chips are tracked by their canonical key.
-  }, [market, ticker, tf, range, chipsKey, trades, themeKey, catalogue, comparisonsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [market, ticker, tf, range, chipsKey, trades, themeKey, catalogue, comparisonsKey, typeKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const api = priceApi.current;
@@ -318,10 +342,11 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
     return () => { api.chart.unsubscribeClick?.(onClick); window.removeEventListener("keydown", onKey); };
   }, [tool, chartVersion, drawings]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const panes = chips.filter((c) => find(c.id)?.placement === "pane" && !pairProblem(c));
+  const panes = timeless ? [] : chips.filter((c) => find(c.id)?.placement === "pane" && !pairProblem(c));
+  const typeName = CHART_TYPES.find(([t]) => t === chartType)?.[1] ?? chartType, typeInd = timeless ? find(chartType) : undefined;
   return (
     <section className="box lab-workbench">
-      <div className="box-h">{ticker} · {TF_NAMES[tf] ?? tf} bars <small>{COPY.chartHint}</small></div>
+      <div className="box-h">{timeless ? <>{ticker} · {typeName} from daily bars</> : <>{ticker} · {TF_NAMES[tf] ?? tf} bars</>} <small>{COPY.chartHint}</small></div>
       {isProvisional(market) && <ProvisionalStrip note={provisionalNote} instrumentLabel={instrumentLabel} />}
       {chips.length ? (
         <div className="lab-chips">
@@ -332,7 +357,12 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
         </div>
       ) : <p className="cap">{COPY.noChips}</p>}
       {ohlcError !== null && <ErrorNotice error={ohlcError} market={market} instrumentLabel={instrumentLabel} />}
-      <div className="lab-draw" role="toolbar" aria-label="Drawing tools" hidden={ohlcError !== null}>
+      <div className="lab-draw" data-lab-chart-type>
+        <Segmented label="Chart type" value={chartType} onChange={(t) => { setChartType(t); setTypeOpen(false); setTool(null); }}
+          options={CHART_TYPES.map(([value, label]) => ({ value, label, disabled: value !== "candles" && !find(value)?.computed, title: value !== "candles" && !find(value)?.computed ? "Not offered by this engine" : undefined }))} />
+        {typeInd && <button type="button" className="dbtn sm" data-lab-type-params aria-haspopup="dialog" aria-expanded={typeOpen} onClick={() => setTypeOpen(true)}>{typeName} parameters…</button>}
+      </div>
+      <div className="lab-draw" role="toolbar" aria-label="Drawing tools" hidden={ohlcError !== null || timeless}>
         <button type="button" className="dbtn sm" data-lab-draw="t" aria-pressed={tool === "t"} onClick={() => setTool(tool === "t" ? null : "t")}>╱ Trend line</button>
         <button type="button" className="dbtn sm" data-lab-draw="h" aria-pressed={tool === "h"} onClick={() => setTool(tool === "h" ? null : "h")}>─ Horizontal line</button>
         {drawings.length > 0 && <>
@@ -344,7 +374,7 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
       <div className="lab-stage">
         <div hidden={ohlcError !== null}>
           <div className={`lab-price${tool ? " lab-drawing" : ""}`}>
-            <div className="lwc px" ref={priceRef} data-lab-chart role="img" aria-label={`${ticker} price chart`} />
+            <div className="lwc px" ref={priceRef} data-lab-chart role="img" aria-label={timeless ? `${ticker} ${typeName} chart` : `${ticker} price chart`} />
             <div className="lab-legend-tv" ref={legendRef} aria-hidden="true" />
             {behind && <button type="button" className="lab-latest" data-lab-latest title="Scroll to the latest bar" aria-label="Scroll to the latest bar" onClick={() => toLatest.current?.()}>»</button>}
           </div>
@@ -357,7 +387,9 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
             ))}
           </div>
         </div>
-        {(() => {
+        {typeInd && typeOpen && <ParamsDialog key={chartType} name={typeName} indicator={typeInd} params={typeParams[chartType] ?? {}} index={0} showComparison={false} showLooks={false}
+          onParams={(p) => setTypeParams((all) => ({ ...all, [chartType]: p }))} onLook={() => undefined} onClose={() => { setTypeOpen(false); document.querySelector<HTMLButtonElement>("[data-lab-type-params]")?.focus(); }} />}
+        {!(typeInd && typeOpen) && (() => {
           const index = chips.findIndex((c) => c.key === openKey), chip = chips[index], ind = chip && find(chip.id);
           if (!chip || !ind) return null;
           const close = () => { setOpenKey(null); document.querySelector<HTMLElement>(`[data-lab-chip="${chip.key}"] .lab-chip-open`)?.focus(); };
@@ -368,11 +400,15 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
             onParams={(params) => onChipChange(chip.key, params)} onLook={(looks) => onChipLook?.(chip.key, looks)} onVs={(vs) => onChipVsChange?.(chip.key, vs)} onClose={close} />;
         })()}
       </div>
-      <p className="cap">{COPY.chartNote}</p>
+      {timeless ? <p className="cap" data-lab-timeless-note>
+        {`${typeName} is drawn without a date axis from the engine's ${typeName} outputs on daily bars (the same values the rules use); hover a ${nounOf(chartType)} for its dates. The last ${nounOf(chartType)} can still change until the next one forms. Indicator chips, drawings and the candle size apply to Candles only.`}
+        {shown && shown.total > shown.slots && ` Showing the latest ${MAX_SLOTS.toLocaleString("en-US")} of ${shown.total.toLocaleString("en-US")} ${nounOf(chartType, true)}; a larger box shows more history.`}
+      </p> : <p className="cap">{COPY.chartNote}</p>}
       {foreignNotes.map(note=><p className="cap" role="note" key={note}>{note}</p>)}
       {adaptations.map((note) => <p className="rnote" role="note" data-lab-adaptations key={note}>{note}</p>)}
-      {tf !== "D" && <p className="cap">{COPY.inProgress(tf)}</p>}
-      {!!trades?.length && (
+      {tf !== "D" && !timeless && <p className="cap">{COPY.inProgress(tf)}</p>}
+      {!!trades?.length && timeless && <p className="cap"><span style={{ color: "var(--green)" }}>▲ Buy</span> · <span style={{ color: "var(--red)" }}>▼ Sell</span>. Triangles point at the real fill price, on the {nounOf(chartType)} that holds the fill date.</p>}
+      {!!trades?.length && !timeless && (
         <p className="cap">
           <span style={{ color: "var(--green)" }}>↑ Buy</span> · <span style={{ color: "var(--red)" }}>↓ Sell</span>. Arrows show backtest actions; smaller arrows show added legs. Shaded spans are trades: green won, red lost, grey still open.{tf !== "D" && " Trades run on daily bars and are mapped onto this timeframe."}
         </p>

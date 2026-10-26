@@ -207,6 +207,21 @@ it("changing the instrument clears the optimization result", async () => {
   expect(host.querySelector("[data-lab-optimize-result]")).toBeNull();
 });
 
+it.each([["From", "01-01-2010"], ["To", "01-01-2020"], ["Fees (bps / side)", "4"], ["Slippage (bps / side)", "2"]])("changing %s clears optimization results and their downloads", async (label, value) => {
+  const { host } = await go("#/indicators?tk=NIFTY%2050");
+  await act(async () => host.querySelector<HTMLInputElement>("[data-lab-dim] input[type=checkbox]")!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-action="optimize"]')!.click());
+  await flush();
+  expect(host.querySelector("[data-lab-optimize-result]")).not.toBeNull();
+  const input = host.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(host.querySelector("[data-lab-optimize-result]")).toBeNull();
+  expect(host.querySelector("[data-lab-tradesheets]")).toBeNull();
+});
+
 it("an unavailable template leaves the open snapshot named in the URL", async () => {
   templateAnswer = unavailableTemplateFixture;
   usTickers = [...tickersFixture, spy];

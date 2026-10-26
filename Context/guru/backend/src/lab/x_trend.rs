@@ -227,7 +227,7 @@ fn nrtr(b: &Bars, prm: &Params) -> Output {
 
 const OT: &[ParamSpec] = &[len("length", "VAR length", 2.), real("percent", "Percent", 1.4, 0.1, 50., 0.1)];
 /// Kivanc OTT on `c`: [ott, mavg, direction].
-fn ott_s(c: &[f64], k: usize, pct: f64) -> Vec<Vec<f64>> {
+pub(super) fn ott_s(c: &[f64], k: usize, pct: f64) -> Vec<Vec<f64>> {
     let m = c.len();
     let a = 2. / (k as f64 + 1.);
     let ud: Vec<f64> = (0..m).map(|i| if i > 0 && c[i] > c[i - 1] { c[i] - c[i - 1] } else { 0. }).collect();

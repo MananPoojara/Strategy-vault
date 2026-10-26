@@ -224,6 +224,10 @@ pub struct Compiled {
     pub grid: Vec<(f64,f64,f64)>, pub expiry_bar: Vec<bool>,
     /// exit.dual_atr levels per daily bar (None: off).
     pub dual: Option<DualBands>,
+    /// exit.dual_line: the initial and favour lines per daily bar (None: off).
+    pub dline: Option<(Vec<f64>, Vec<f64>)>,
+    /// execution.shadow: the settings, whether every filter row holds on each daily bar, and whether a filter row also exits.
+    pub shadow: Option<(super::rules::Shadow, Vec<bool>, bool)>,
 }
 /// Daily levels of exit.dual_atr for this side: the initial and favour stops, the switch band and the close they are
 /// compared with (on W/M: completed periods' values and the period close, held until the next period's last bar, as the
@@ -231,7 +235,7 @@ pub struct Compiled {
 pub struct DualBands { pub init: Vec<f64>, pub fav: Vec<f64>, pub up: Vec<f64>, pub close: Vec<f64>, pub end: Vec<bool>, pub end_only: bool }
 impl Compiled {
     /// Long, market orders at the next open, no price exits (the v1 defaults).
-    pub fn new(entry: Vec<RCond>, exit: Vec<RCond>) -> Compiled { Compiled { entry, exit, exec: Exec::default(), atr: BTreeMap::new(), other: None, cost: 0., limit_at: None, stop_at: None, grid: vec![], expiry_bar: vec![], dual: None } }
+    pub fn new(entry: Vec<RCond>, exit: Vec<RCond>) -> Compiled { Compiled { entry, exit, exec: Exec::default(), atr: BTreeMap::new(), other: None, cost: 0., limit_at: None, stop_at: None, grid: vec![], expiry_bar: vec![], dual: None, dline: None, shadow: None } }
     pub fn has_order(&self) -> bool { self.exec.has_order() }
     /// Price distance of `d` from `px`, using ATR at bar `k` (a bar whose close is already known). NaN while ATR warms up.
     pub fn dist(&self, d: Dist, px: f64, k: usize) -> f64 {
@@ -499,8 +503,19 @@ fn date_gate(c: &mut Compiled, d: &super::rules::DateFilter, dates: &[String]) {
     }
 }
 fn side(entry: &[Node], exit: &[Node], x: &Exec, pre: &str, fr: &Frames, others: &Others, cache: &mut Cache) -> Result<Compiled, LabError> {
-    let mut c = Compiled { entry: list(entry, &format!("{pre}entry.all"), fr, others, cache)?, exit: list(exit, &format!("{pre}exit.any"), fr, others, cache)?, ..Compiled::new(vec![], vec![]) };
-    for &k in &x.filter_exits {
+    // execution.shadow: the filter rows gate only the real trades, so the signal (paper) trades leave them out
+    let live = |k: usize| !matches!(entry[k], Node::Off(_));
+    let signal: Vec<Node> = entry.iter().enumerate()
+        .map(|(k, n)| if x.shadow.is_some() && x.filter_rows.contains(&k) && live(k) { Node::Off(Box::new(n.clone())) } else { n.clone() }).collect();
+    let mut c = Compiled { entry: list(&signal, &format!("{pre}entry.all"), fr, others, cache)?, exit: list(exit, &format!("{pre}exit.any"), fr, others, cache)?, ..Compiled::new(vec![], vec![]) };
+    if let Some(sh) = &x.shadow {
+        let mut ok = vec![true; fr.d.len()];
+        for &k in x.filter_rows.iter().filter(|&&k| live(k)) {
+            for (o, v) in ok.iter_mut().zip(mask_in(&entry[k], fr, others, cache)?) { *o = *o && v == 1.; }
+        }
+        c.shadow = Some((sh.clone(), ok, x.filter_exits.iter().any(|&k| live(k))));
+    }
+    for &k in x.filter_exits.iter().filter(|_| x.shadow.is_none()) {
         if matches!(entry[k], Node::Off(_)) { continue; }
         // false, not unknown: a NaN filter value does not exit
         let not: Vec<f64> = mask_in(&entry[k], fr, others, cache)?.into_iter().map(|v| if v.is_nan() { v } else { 1. - v }).collect();
@@ -518,6 +533,7 @@ fn side(entry: &[Node], exit: &[Node], x: &Exec, pre: &str, fr: &Frames, others:
         }
     }
     c.dual = x.dual_atr.as_ref().map(|d| dual_bands(d, x.short, fr, cache)).transpose()?;
+    c.dline = x.dual_line.as_ref().map(|(a, f)| Ok::<_, LabError>((arr_in(a, fr, others, cache)?, arr_in(f, fr, others, cache)?))).transpose()?;
     Ok(c)
 }
 /// exit.dual_atr levels: ATR = simple average of the true range (AmiBroker AFL sum of ATR(1) / period, catalogue atr

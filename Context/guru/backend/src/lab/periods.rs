@@ -18,7 +18,7 @@ const PV: &[ParamSpec] = &[int("type", "Type (0 Traditional, 1 Fibonacci, 2 Wood
 const PE: &[ParamSpec] = &[int("period", "Period (1 week, 2 month, 3 quarter, 4 year)", 1., 1., 4.)];
 const LN: &[ParamSpec] = &[len("length", "Length", 20.)];
 
-fn levels(t: usize, h: f64, l: f64, c: f64, o_prev: f64, o_cur: f64) -> [f64; 11] {
+pub(super) fn levels(t: usize, h: f64, l: f64, c: f64, o_prev: f64, o_cur: f64) -> [f64; 11] {
     let (p, r) = ((h + l + c) / 3., h - l);
     match t {
         0 => [p, 2. * p - l, p + r, h + 2. * (p - l), 3. * p + (h - 3. * l), 4. * p + (h - 4. * l), 2. * p - h, p - r, l - 2. * (h - p), 3. * p - (3. * h - l), 4. * p - (4. * h - l)],
@@ -69,7 +69,7 @@ fn performance(b: &Bars, _: &Params) -> Output {
 }
 fn calendar(b: &Bars, _: &Params) -> Output {
     let len = b.len();
-    let mut out = vec![vec![NA; len]; 6];
+    let mut out = vec![vec![NA; len]; 7];
     for i in 0..len {
         let d = &b.date[i];
         let dn = day_number(d);
@@ -78,6 +78,9 @@ fn calendar(b: &Bars, _: &Params) -> Output {
         out[1][i] = num(8..10); out[2][i] = num(5..7); out[3][i] = num(0..4);
         out[4][i] = (dn - day_number(&format!("{}-01-01", d.get(0..4).unwrap_or("1970"))) + 1) as f64;
         out[5][i] = i as f64;
+        let (y, m) = (out[3][i] as i64, out[2][i] as i64);
+        let next = if m == 12 { format!("{:04}-01-01", y + 1) } else { format!("{y:04}-{:02}-01", m + 1) };
+        out[6][i] = (day_number(&next) - dn - 1) as f64; // calendar days after today in this month (holidays and weekends count)
     }
     Ok(out)
 }
@@ -176,7 +179,7 @@ pub const DEFS: &[IndicatorDef] = &[
     def("pivots_std", "Pivot Points Standard", PV, &["p", "r1", "r2", "r3", "r4", "r5", "s1", "s2", "s3", "s4", "s5"], PR, NO, "levels from the previous completed period's H, L, C (DM: and its open; Woodie: the current period's first open): Traditional P=(H+L+C)/3, R1=2P−L, R2=P+(H−L), R3=H+2(P−L), R4=3P+(H−3L), R5=4P+(H−4L), S mirror; Fibonacci P±0.382/0.618/1.0·(H−L); Woodie P=(H+L+2·O)/4, R3=H+2(P−L), R4=R3+(H−L); Classic P±1/2/3·(H−L) (R1/S1 as Traditional); DM X = C<O ? H+2L+C : C>O ? 2H+L+C : H+L+2C, P=X/4, R1=X/2−L, S1=X/2−H; Camarilla C±1.1(H−L)/12, /6, /4, /2, R5=(H/L)·C, S5=C−(R5−C); undefined levels NaN", &[5; 11], false, pivots_std),
     def("mtp", "Multi-Time Period Charts", PE, &["open", "high", "low", "prev_high", "prev_low", "prev_close"], PR, NO, "current period's first open and high/low so far; previous completed period's high, low, close", &[0,0,0,5,5,5], false, mtp),
     def("performance", "Performance", &[], &["w1", "m1", "m3", "m6", "ytd", "y1"], PN, NO, "roc(close, 5/21/63/126/252 bars) (declared bar horizons); ytd = 100·(close/last close of the previous calendar year − 1)", &[5,21,63,126,366,252], false, performance),
-    def("calendar", "Calendar", &[], &["dow", "day", "month", "year", "doy", "bar_index"], PN, NO, "AmiBroker DayOfWeek (0 Sunday … 6 Saturday), Day, Month, Year, DayOfYear (1–366), BarIndex (0-based) of the bar's date", &[0,0,0,0,0,0], false, calendar),
+    def("calendar", "Calendar", &[], &["dow", "day", "month", "year", "doy", "bar_index", "days_left"], PN, NO, "AmiBroker DayOfWeek (0 Sunday … 6 Saturday), Day, Month, Year, DayOfYear (1–366), BarIndex (0-based) of the bar's date; days_left = calendar days after the bar's date in its month (days in month − Day)", &[0,0,0,0,0,0,0], false, calendar),
     def("session", "Trading Session Counters", &[], &["tdom", "tdoq", "tdoy", "tdow", "week_of_month", "quarter", "weekdays_left_m", "weekdays_left_q", "weekdays_left_y"], PN, NO, "session number in its month / quarter / year / week (1 = first; NaN until the data's first boundary of that period), week of the month (NaN until the first month boundary), quarter 1–4, Monday–Friday dates left after today in the month / quarter / year (holidays unknown; causal)", &[31, 91, 366, 5, 31, 0, 0, 0, 0], false, session),
     def("sessions_left", "Sessions Left in Period", &[], &["m", "q", "y"], PN, NO, "sessions after today in the month / quarter / year from the instrument's own session dates (the published exchange calendar), never prices; NaN in the data's last period (declared adaptation, spec §5.2)", &[0; 3], true, sessions_left),
     def("moon_phases", "Moon Phases", &[], &["new_moon", "full_moon"], PR, NO, "1 on the first bar dated on or after a new (full) moon, UTC, Meeus ch. 49 with 15 periodic terms; else 0 (declared)", &[0,0], false, moon_phases),
@@ -233,7 +236,9 @@ mod tests {
         assert_eq!((o[0][0], o[1][0], o[2][0], o[3][0], o[4][0], o[5][0]), (1., 1., 1., 2024., 1., 0.)); // Monday 2024-01-01
         assert_eq!((o[0][7], o[1][7], o[4][7], o[5][7]), (1., 8., 8., 7.));
         let leap = go("calendar", &dated(&[(1., 1., 1., 1.)], &["2024-12-31"]), &[]);
-        assert_eq!((leap[0][0], leap[4][0]), (2., 366.)); // Tuesday, day 366
+        assert_eq!((leap[0][0], leap[4][0], leap[6][0]), (2., 366., 0.)); // Tuesday, day 366, last day of December
+        let feb = go("calendar", &dated(&[(1., 1., 1., 1.); 3], &["2024-02-19", "2023-02-19", "2024-11-20"]), &[]);
+        assert_eq!(feb[6], vec![10., 9., 10.]); // leap February has 29 days; November 30
     }
     #[test] fn moon_phases_january_2024() {
         let dates: Vec<String> = (1..=31).map(|d| format!("2024-01-{d:02}")).collect();

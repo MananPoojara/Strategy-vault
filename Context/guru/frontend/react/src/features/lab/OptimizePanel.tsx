@@ -1,7 +1,7 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { COPY } from "./labels";
 import { int, num, pct } from "./format";
-import { canonicalJson, comboCount, setAt, specTooLong, splitDate, valuesCount, withOptimize } from "./spec-model";
+import { canonicalJson, comboCount, setAt, specTooLong, splitDate, valuesCount, withCombination, withOptimize } from "./spec-model";
 import { optimizablePaths, type OptimizableSetting } from "./optimize-paths";
 import { useFormulaScope } from "./formula";
 import {foreignDescription} from "./foreign-model";
@@ -10,7 +10,8 @@ import { ExecutionStrip } from "./RunResults";
 import { ErrorNotice, isProvisional, Loading, ProvisionalStrip, ServerLabel, tone } from "./ui";
 import { InfoLog, WalkForward } from "./WalkForward";
 import { OptimizeSurface } from "./OptimizeSurface";
-import type { Catalogue, IndividualOptimizeResult, OptimizeDim, LabOptimizeResult, Role, SavedMarket, Spec, WalkforwardOptions, WalkforwardResult } from "./types";
+import { TradesheetButton, TradesheetDownloads } from "./TradesheetDownloads";
+import type { Catalogue, IndividualOptimizeResult, OptimizeDim, LabOptimizeResult, LabRunResult, Role, SavedMarket, Spec, WalkforwardOptions, WalkforwardResult } from "./types";
 import "./optimize.css";
 
 const MAX_VALUES = 1000;
@@ -41,8 +42,10 @@ export function OptimizePanel(props: {
   onWalkforward?(spec: Spec, o: WalkforwardOptions): Promise<WalkforwardResult>;
   /** AmiBroker Individual Optimize (portfolio universe): each symbol optimized alone. */
   onIndividual?(spec: Spec): Promise<IndividualOptimizeResult>;
+  /** One backtest of a spec on this instrument: the tradesheet downloads re-run each combination with it. */
+  onRun?(spec: Spec): Promise<LabRunResult>; ticker?: string;
 }) {
-  const { spec, catalogue, market, role, dates, onOptimize, onApply, onTried, tried, instrumentLabel, onWalkforward, onIndividual } = props;
+  const { spec, catalogue, market, role, dates, onOptimize, onApply, onTried, tried, instrumentLabel, onWalkforward, onIndividual, onRun, ticker } = props;
   const [individual, setIndividual] = useState(false);
   const each = individual && !!spec.portfolio && !!onIndividual; // portfolio settings do not apply to a symbol run alone
   const { infos } = useFormulaScope();
@@ -168,7 +171,7 @@ export function OptimizePanel(props: {
       {error !== null && <ErrorNotice error={error} market={market} instrumentLabel={instrumentLabel}
         onRetry={() => last.current && run(last.current)} />}
       {result && (result.kind === "lab_individual_optimization" ? <IndividualResults result={result} label={(p) => settings.find((s) => s.path === p)?.label ?? p} />
-        : <LabOptimizeResultView result={result} spec={spec} ranSpec={last.current?.spec ?? spec} catalogue={catalogue} settings={settings} market={market} instrumentLabel={instrumentLabel} onApply={onApply} />)}
+        : <LabOptimizeResultView result={result} spec={spec} ranSpec={last.current?.spec ?? spec} catalogue={catalogue} settings={settings} market={market} instrumentLabel={instrumentLabel} onApply={onApply} onRun={onRun} ticker={ticker} />)}
       {!result && !error && running === null && <p className="empty">{spec.portfolio?"Portfolio optimization ranks the full period using shared cash.":COPY.emptyOptimize}</p>}
       {onWalkforward && !spec.portfolio && <WalkForward dates={dates} spec={withOptimize(spec, dims)} blocked={tooLong || combos === 0 || tooBig || running !== null || retryUntil > 0}
         onTried={onTried} onRunning={setWalking}
@@ -177,16 +180,20 @@ export function OptimizePanel(props: {
   );
 }
 
-function LabOptimizeResultView({ result, spec, ranSpec, catalogue, settings, market, instrumentLabel, onApply }: {
+function LabOptimizeResultView({ result, spec, ranSpec, catalogue, settings, market, instrumentLabel, onApply, onRun, ticker = "" }: {
   result: LabOptimizeResult; spec: Spec; ranSpec: Spec; catalogue: Catalogue; settings: OptimizableSetting[]; market: SavedMarket; instrumentLabel?: string; onApply(spec: Spec): void;
+  onRun?(spec: Spec): Promise<LabRunResult>; ticker?: string;
 }) {
   const { rank, dims } = result;
   const stats = rank.stats ?? [];
   const phases = result.split ? (["is", "oos"] as const) : [];
   const apply = (values: number[]) =>
-    onApply(dims.reduce((s, d, i) => setAt(s, d.path, values[i]), withOptimize(spec, [])));
+    onApply(withCombination(spec, dims, values));
   const setting = (path: string) => settings.find((s) => s.path === path);
   const ranSettings = optimizablePaths(ranSpec, catalogue, useFormulaScope().infos); // "Now" = the spec that was optimized
+  const label = (p: string) => setting(p)?.label ?? ranSettings.find((s) => s.path === p)?.label ?? p;
+  // tradesheets: single-instrument runs of the optimized spec (a portfolio has no one tradesheet per combination)
+  const sheets = onRun && !ranSpec.portfolio ? { dims, ranSpec, label, onRun, ticker } : null;
   // With a split the backend ranks on the in-sample window and returns those values as is_*.
   const rankCol = (s: string) => (result.split && result.cols.includes(`is_${s}`) ? `is_${s}` : s);
   const rows = [
@@ -236,7 +243,8 @@ function LabOptimizeResultView({ result, spec, ranSpec, catalogue, settings, mar
                   })}
                   {phases.map((ph) => SPLIT_STATS.map(([k]) => { const x = colValue(result, r.values, `${ph}_${k}`); return <td className={k === "trades" ? "n" : tone(x)} key={`${ph}_${k}`}>{fmt(k, x)}</td>; }))}
                   <td>{r.pct && r.values.length === result.cols.length && dims.every((d) => setting(d.path)) &&
-                    <button type="button" className="dbtn sm" aria-label={`Apply ${r.name}`} onClick={() => apply(r.values)}>Apply</button>}</td>
+                    <button type="button" className="dbtn sm" aria-label={`Apply ${r.name}`} onClick={() => apply(r.values)}>Apply</button>}
+                    {sheets && r.pct && r.values.length === result.cols.length && <TradesheetButton {...sheets} values={r.values.slice(0, dims.length)} />}</td>
                 </tr>
               ))}
             </tbody>
@@ -247,7 +255,9 @@ function LabOptimizeResultView({ result, spec, ranSpec, catalogue, settings, mar
       {dims.length === 2 && result.table && result.table_cols && <OptimizeSurface dims={dims} table={result.table} cols={result.table_cols}
         metricLabel={(k) => TABLE_LABELS[k] ?? k} show={tableShow} label={(p) => setting(p)?.label ?? p} />}
       {dims.length === 2 && result.table && result.split && <p className="cap">Chart: in-sample (ranking period) values.</p>}
-      <AllResults result={result} label={(p) => setting(p)?.label ?? p} />
+      {sheets && result.table && <TradesheetDownloads {...sheets} table={result.table} />}
+      <AllResults result={result} label={(p) => setting(p)?.label ?? p}
+        excel={sheets ? (row) => <TradesheetButton {...sheets} values={row.slice(0, dims.length) as number[]} /> : undefined} />
       <InfoLog info={result.info} />
     </div>
   );
@@ -289,10 +299,12 @@ function IndividualResults({ result, label }: { result: IndividualOptimizeResult
 }
 
 /** AmiBroker's optimization result list: every combination, click a header to sort. Collapsed until asked for. */
-function AllResults({ result, label, title = "All results", total }: {
+function AllResults({ result, label, title = "All results", total, excel }: {
   result: Pick<LabOptimizeResult, "dims" | "table" | "table_cols" | "split"> & { money?: { capital: number } }; label(path: string): string; title?: string;
   /** Rows the server had before capping the list (Individual optimize). */
   total?: number;
+  /** A last column per row, e.g. its tradesheet download. */
+  excel?(row: (number | null)[]): ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const [all, setAll] = useState(false);
@@ -330,9 +342,9 @@ function AllResults({ result, label, title = "All results", total }: {
               <th key={col.label + i} className={`n${i === sort.col ? " on" : ""}`} aria-sort={i === sort.col ? (sort.dir === 1 ? "ascending" : "descending") : "none"}>
                 <button type="button" className="lab-sort" onClick={() => by(i)}>{col.label}{i === sort.col ? (sort.dir === 1 ? " ▲" : " ▼") : ""}</button>
               </th>
-            ))}</tr></thead>
+            ))}{excel && <th>Tradesheet</th>}</tr></thead>
             <tbody>{shown.map((i) => (
-              <tr key={i}>{cols.map((col, k) => { const v = col.get(table[i], i); return <td key={k} className={col.signed ? tone(v) : "n"}>{col.show(v)}</td>; })}</tr>
+              <tr key={i}>{cols.map((col, k) => { const v = col.get(table[i], i); return <td key={k} className={col.signed ? tone(v) : "n"}>{col.show(v)}</td>; })}{excel && <td>{excel(table[i])}</td>}</tr>
             ))}</tbody>
           </table>
         </div>

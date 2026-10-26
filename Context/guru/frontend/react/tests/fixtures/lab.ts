@@ -193,7 +193,7 @@ export const catalogue7Fixture: Catalogue = {
     max_consecutive_losses: 1000, max_pause_bars: 100000, max_drawdown_pct_below: 100,
   },
   indicators: [...catalogueFixture.indicators,
-    ind({ id: "calendar", name: "Calendar", category: "Periods & calendar", outputs: ["dow", "day", "month", "year", "doy", "bar_index"], first: [0, 0, 0, 0, 0, 0] }),
+    ind({ id: "calendar", name: "Calendar", category: "Periods & calendar", outputs: ["dow", "day", "month", "year", "doy", "bar_index", "days_left"], first: [0, 0, 0, 0, 0, 0, 0] }),
     ind({ id: "session", name: "Session", category: "Periods & calendar",
       outputs: ["tdom", "tdoq", "tdoy", "tdow", "week_of_month", "quarter", "weekdays_left_m", "weekdays_left_q", "weekdays_left_y"],
       first: [31, 91, 366, 5, 31, 0, 0, 0, 0] }),

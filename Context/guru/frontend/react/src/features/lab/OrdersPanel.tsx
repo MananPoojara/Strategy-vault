@@ -141,6 +141,8 @@ const EXITS = [
   { key: "breakeven", label: "Breakeven", initial: { after: { pct: 2 } } },
   { key: "take_profits", label: "Take-profits", initial: [{ pct: 5, size: 0.5 }] }, { key: "min_bars", label: "Minimum bars", initial: 1 },
   { key: "dual_atr", label: "Dual ATR exit", initial: { initial: { period: 5, mult: 2, price: "hl2" }, favour: { period: 5, mult: 4, price: "hl2" } } },
+  { key: "dual_line", label: "Two-line exit (initial → favour)", initial: {
+    initial: { s: "supertrend", p: { atr_length: 5, factor: 1, mode: 1 }, out: "supertrend" }, favour: { s: "supertrend", p: { atr_length: 5, factor: 4, mode: 1 }, out: "supertrend" } } },
 ] as const;
 /** rules.rs DUAL_ATR_PRICES, in the AmiBroker AFL "ATR Avg Val" list's order. */
 const DUAL_PRICES: [string, string][] = [["open", "Open"], ["high", "High"], ["low", "Low"], ["close", "Close"], ["oc2", "(Open+Close)/2"],
@@ -246,6 +248,14 @@ export function OrdersPanel({ spec, onChange, pre = "", catalogue, reentry = fal
           {key === "min_bars" && <><NumField label="Rule exits wait (bars)" value={side.exit.min_bars} min={0} max={1000} step={1}
             onChange={(n) => n !== undefined && onChange(putAt(spec, `${pre}exit.min_bars`, n))} /><span className="cap">{COPY.minBarsHint}</span></>}
           {key === "dual_atr" && <DualAtrFields value={side.exit.dual_atr as DualAtr} onChange={(v) => onChange(putAt(spec, `${pre}exit.dual_atr`, v))} />}
+          {key === "dual_line" && side.exit.dual_line && (catalogue ? <>
+            {(["initial", "favour"] as const).map((k) => <span className="lab-row" role="group" aria-label={`${k === "initial" ? "Initial" : "Favour"} line`} key={k}>
+              <span className="dfield">{k === "initial" ? "Initial line" : "Favour line"}</span>
+              <OperandEditor operand={side.exit.dual_line![k]} side="exit" heldOk={false} catalogue={catalogue} label={`${k === "initial" ? "Initial" : "Favour"} line`}
+                onChange={(o) => onChange(putAt(spec, `${pre}exit.dual_line.${k}`, o))} />
+            </span>)}
+            <span className="cap">{COPY.dualLineHint}</span>
+          </> : <span className="lab-kept">{COPY.keptAsIs} <code>{JSON.stringify(side.exit.dual_line)}</code></span>)}
           {key === "take_profits" && (editableTps ? <>
             {tps.map((tp, i) => <div className="lab-tp-row" key={i}>
               <NumField label={`Take-profit ${i + 1} size (%)`} value={tp.size * 100} min={0} max={100} step={1}
@@ -270,7 +280,7 @@ export function OrdersPanel({ spec, onChange, pre = "", catalogue, reentry = fal
       }}>
         <option value="">+ More exits…</option>
         {EXITS.filter(({ key }) => side.exit[key] === undefined).map(({ key, label }) => <option key={key} value={key}
-          disabled={(key === "take_profits" && !!side.entry.scale_in) || (key === "dual_atr" && !!spec.portfolio)}>{label}</option>)}
+          disabled={(key === "take_profits" && !!side.entry.scale_in) || ((key === "dual_atr" || key === "dual_line") && !!spec.portfolio)}>{label}</option>)}
       </select>
     </div>
   </div>;

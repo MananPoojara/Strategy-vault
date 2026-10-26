@@ -43,7 +43,7 @@ pub fn base() -> Vec<IndicatorDef> {
     [super::ma::DEFS, super::momentum::DEFS, super::trend::DEFS, super::volatility::DEFS, super::volume::DEFS, super::price::DEFS, super::listed::DEFS, super::breadth::DEFS, super::ma2::DEFS, super::bands::DEFS, super::stats::DEFS, super::osc2::DEFS, super::vol2::DEFS, super::stops::DEFS, super::volume2::DEFS, super::periods::DEFS, super::patterns::DEFS, super::candles::DEFS, super::ratings::DEFS, super::futures::DEFS, super::pairs::DEFS].concat()
 }
 pub fn all() -> Vec<IndicatorDef> {
-    [&base()[..], super::x_ma::DEFS, super::x_momentum::DEFS, super::x_momentum2::DEFS, super::x_trend::DEFS, super::x_volatility::DEFS, super::x_volume::DEFS, super::x_candles::DEFS, super::x_cycles::DEFS, super::x_derived::DEFS, super::x_atlas::DEFS].concat()
+    [&base()[..], super::x_ma::DEFS, super::x_momentum::DEFS, super::x_momentum2::DEFS, super::x_trend::DEFS, super::x_volatility::DEFS, super::x_volume::DEFS, super::x_candles::DEFS, super::x_cycles::DEFS, super::x_derived::DEFS, super::x_atlas::DEFS, super::x_timeless::DEFS, super::x_census_trend::DEFS, super::x_census_momentum::DEFS, super::x_census_candles::DEFS, super::x_census_stats::DEFS, super::x_census_misc::DEFS, super::x_census_patterns::DEFS, super::x_census_harmonic::DEFS].concat()
 }
 pub fn get(id: &str) -> Option<IndicatorDef> { all().into_iter().find(|d| d.id == id) }
 pub fn resolve_params(def: &IndicatorDef, given: &Params) -> Result<Params, String> {

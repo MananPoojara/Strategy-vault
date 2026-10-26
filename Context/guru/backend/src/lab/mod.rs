@@ -54,6 +54,14 @@ pub mod x_candles;
 pub mod x_cycles;
 pub mod x_derived;
 pub mod x_atlas;
+pub mod x_timeless;
+pub mod x_census_trend;
+pub mod x_census_momentum;
+pub mod x_census_candles;
+pub mod x_census_stats;
+pub mod x_census_misc;
+pub mod x_census_patterns;
+pub mod x_census_harmonic;
 #[cfg(test)]
 pub mod testdata;
 #[cfg(test)]

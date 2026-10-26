@@ -406,7 +406,7 @@ function IndicatorsLab() {
         </div>
         <div role="tabpanel" id="lab-panel-optimization" aria-labelledby="lab-tab-optimization" hidden={tab !== "optimization"} className="lab-tab-panel">
         <p className="lab-tab-intro">Compare settings for <b>{state.spec.portfolio?"the selected portfolio":ticker}</b>. Your strategy rules stay the same until you apply a result.</p>
-        <Part key={`${market}|${ticker}`}>{/* a ticker change remounts it: an optimization belongs to one instrument */}
+        <Part key={JSON.stringify([market, ticker, settings.from, settings.to, settings.fees, settings.slippage])}>{/* Results and exports belong to the same instrument, dates and costs. */}
           <OptimizePanel spec={state.spec} catalogue={cat} market={savedMarketValue} role={role} dates={result?.dates ?? []}
             onOptimize={(spec, split) => { assertRunnable(spec); return lab.optimize(market, spec, {
               ticker, from: settings.from || undefined, to: settings.to || undefined, ...runQuery(spec, settings.fees, settings.slippage), split,
@@ -416,7 +416,10 @@ function IndicatorsLab() {
             }); }}
             onIndividual={(spec) => { assertRunnable(spec); return lab.optimizeIndividual(market, spec, { from: settings.from || undefined, to: settings.to || undefined }); }}
             onApply={(spec) => { setTab("strategy"); dispatch({ type: "spec", spec }); void run(spec); }}
-            onTried={(n) => dispatch({ type: "tried", n })} tried={state.tried} instrumentLabel={option?.instrumentLabel} />
+            onTried={(n) => dispatch({ type: "tried", n })} tried={state.tried} instrumentLabel={option?.instrumentLabel}
+            onRun={(spec) => { assertRunnable(spec); return lab.run(market, spec, {
+              ticker, from: settings.from || undefined, to: settings.to || undefined, ...runQuery(spec, settings.fees, settings.slippage),
+            }); }} ticker={ticker} />
         </Part>
         </div>
         <div role="tabpanel" id="lab-panel-customize" aria-labelledby="lab-tab-customize" hidden={tab !== "customize"} className="lab-tab-panel">

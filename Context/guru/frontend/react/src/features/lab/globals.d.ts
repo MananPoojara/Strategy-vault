@@ -12,6 +12,8 @@ export interface LabChartApi {
   addLineSeries(options: Record<string, unknown>): LabSeriesApi;
   addAreaSeries(options: Record<string, unknown>): LabSeriesApi;
   addHistogramSeries?(options: Record<string, unknown>): LabSeriesApi;
+  /** Plugin API (4.1+): `view` draws the items itself (timeless.ts). */
+  addCustomSeries?(view: object, options?: Record<string, unknown>): LabSeriesApi;
   priceScale?(id: string): { applyOptions(options: Record<string, unknown>): void; width?(): number };
   timeScale(): {
     fitContent(): void; getVisibleRange?(): { from: string; to: string } | null; setVisibleRange(range: { from: string; to: string }): void;

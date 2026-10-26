@@ -27,6 +27,8 @@ export const SLIDE_MS = 200;
 
 /** A variant's choices named as the catalogue label lists them ("Variant (0 Wilder/TradingView, 1 Cutler/TradeStation RSI JP)");
  *  a value the label does not name shows its number. */
+/** A whole-number param whose label names its values ("Smoothing (0 Sum/SMA, 1 EMA)") is picked from a list, like Variant. */
+export const isChoice = (p: IndicatorParam) => p.key === "variant" || (p.integer && p.max - p.min <= 10 && /\(0 .+, 1 .+\)\s*$/.test(p.label));
 export function variantOptions(p: IndicatorParam): [number, string][] {
   const listed = (p.label.match(/\((.*)\)\s*$/)?.[1] ?? "").split(/,\s*(?=\d+ )/).map((s) => s.match(/^(\d+) (.+)$/));
   const names = new Map(listed.flatMap((m) => (m ? [[Number(m[1]), m[2]] as const] : [])));
@@ -37,13 +39,15 @@ export interface ParamsDialogProps {
   name: string; indicator: Indicator; params: Record<string, number>; looks?: Record<string, Look>; index: number;
   vs?: string; comparisonOptions?: readonly InstrumentOption[]; showComparison: boolean; tf?: string; timeframes?: readonly string[]; onTf?(tf?: string): void; levels?: number[]; onLevels?(levels: number[]): void;
   onParams(params: Record<string, number>): void; onLook(looks: Record<string, Look> | undefined): void; onVs?(vs?: string): void; onClose(): void;
+  /** false: no Color / Style rows (a chart type draws its own elements, not plots). */
+  showLooks?: boolean;
 }
 
 /**
  * AmiBroker-style Parameters window ("Properties of …"): one section per indicator, name | value rows, changes apply live,
  * Reset all restores defaults, OK closes. Axes & Grid is shown disabled, as the lab charts keep the house axes.
  */
-export function ParamsDialog({ name, indicator, params, looks, index, vs, comparisonOptions = [], showComparison, tf, timeframes = [], onTf, levels, onLevels, onParams, onLook, onVs, onClose }: ParamsDialogProps) {
+export function ParamsDialog({ name, indicator, params, looks, index, vs, comparisonOptions = [], showComparison, tf, timeframes = [], onTf, levels, onLevels, onParams, onLook, onVs, onClose, showLooks = true }: ParamsDialogProps) {
   const box = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(true);
   const titleId = `lab-params-${indicator.id}`;
@@ -65,8 +69,8 @@ export function ParamsDialog({ name, indicator, params, looks, index, vs, compar
         {open && <>
           {indicator.params.map((p) => (
             <div className="lab-prow" key={p.key}>
-              <span>{p.key === "variant" ? p.label.replace(/\s*\(.*\)\s*$/, "") : p.label}</span>
-              {p.key === "variant" ? (
+              <span>{isChoice(p) ? p.label.replace(/\s*\(.*\)\s*$/, "") : p.label}</span>
+              {isChoice(p) ? (
                 <select aria-label={`${name} ${p.label}`} value={params[p.key] ?? p.default} onChange={(e) => set(p.key, Number(e.target.value))}>
                   {variantOptions(p).map(([v, text]) => <option key={v} value={v}>{text}</option>)}
                 </select>
@@ -98,7 +102,7 @@ export function ParamsDialog({ name, indicator, params, looks, index, vs, compar
               </select>
             </div>
           )}
-          {outputs.map((out, k) => {
+          {showLooks && outputs.map((out, k) => {
             // one Color / Style pair per plot, as AmiBroker's ParamColor / ParamStyle per Plot()
             const color = looks?.[out]?.color ?? defaultColor(index, k), plot = outputs.length > 1 ? ` ${out}` : "";
             return <div key={out} className="lab-plot-look">

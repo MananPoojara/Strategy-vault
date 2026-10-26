@@ -344,7 +344,7 @@ fn voss(b: &Bars, prm: &Params) -> Output {
     }
     Ok(vec![mask(filt, 5), mask(v, 5)])
 }
-fn cyber(x: &[f64], alpha: impl Fn(usize) -> f64) -> Vec<f64> {
+pub(super) fn cyber(x: &[f64], alpha: impl Fn(usize) -> f64) -> Vec<f64> {
     let s: Vec<f64> = (0..x.len()).map(|i| if i < 3 { NA } else { (x[i] + 2. * x[i - 1] + 2. * x[i - 2] + x[i - 3]) / 6. }).collect();
     rec(x.len(), start(x, 2), |i, y1, y2| if i < 6 { (x[i] - 2. * x[i - 1] + x[i - 2]) / 4. } else {
         let a = alpha(i);
