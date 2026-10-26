@@ -314,6 +314,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || tillson_reviewed(def) // Tim Tillson block
         || leungchong_reviewed(def) // Leung and Chong block
         || bollinger_reviewed(def) // John Bollinger block
+        || covelown_reviewed(def) // Michael Covel block
         || aqr_reviewed(def) // AQR (Hurst, Ooi and Pedersen) block
         || fejames_reviewed(def) // F. E. James block
         || aronson_reviewed(def) // David Aronson block
@@ -1233,6 +1234,16 @@ fn bollinger_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end John Bollinger
+// ---------------------------------------------------------------- Michael Covel 2026-10-26 (lane B)
+// Admission only for the module REVIEWED lists (authors/covel/laneb/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn covelown_reviewed(def:&StrategyDef)->bool {(def.book=="covel" && crate::books::covel::reviewed_covel(def.id))}
+const COVELOWN_LABEL:&str="Covel's examples come from futures portfolios (Mechanica: 15 futures 1991-2000) and course chart examples with no per-market results; runs on one index, ETF or stock (US and India) are a declared application, one unit per trade except the Mechanica code's 2% risk sizing, shorts included.";
+fn covelown_policy(def:&StrategyDef)->Option<Policy> {
+    if !covelown_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Michael Covel, Trend Commandments p.60-61; Trend Following (Updated Ed.) App. F p.387; Trend Following Manifesto course, Alternative Trend Following Entries guide");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Michael Covel
 // ---------------------------------------------------------------- AQR (Hurst, Ooi and Pedersen) 2026-10-25
 // Admission only for the module REVIEWED lists (authors/aqr/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn aqr_reviewed(def:&StrategyDef)->bool {(def.book=="aqrtf" && crate::books::aqrtf::reviewed(def.id))}
@@ -1577,6 +1588,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=tillson_policy(def) {return p;} // Tim Tillson block
     if let Some(p)=leungchong_policy(def) {return p;} // Leung and Chong block
     if let Some(p)=bollinger_policy(def) {return p;} // John Bollinger block
+    if let Some(p)=covelown_policy(def) {return p;} // Michael Covel block
     if let Some(p)=aqr_policy(def) {return p;} // AQR (Hurst, Ooi and Pedersen) block
     if let Some(p)=fejames_policy(def) {return p;} // F. E. James block
     if let Some(p)=aronson_policy(def) {return p;} // David Aronson block
@@ -2120,6 +2132,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if tillson_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",TILLSON_LABEL));} // Tim Tillson block
     if leungchong_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LEUNGCHONG_LABEL));} // Leung and Chong block
     if bollinger_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BOLLINGER_LABEL));} // John Bollinger block
+    if covelown_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",COVELOWN_LABEL));} // Michael Covel block
     if aqr_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",AQR_LABEL));} // AQR (Hurst, Ooi and Pedersen) block
     if fejames_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",FEJAMES_LABEL));} // F. E. James block
     if aronson_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",ARONSON_LABEL));} // David Aronson block
@@ -2589,6 +2602,22 @@ mod tests {
         }
     }
     // ---- end John Bollinger block ----
+    // ---- Michael Covel block (2026-10-26, lane B) ----
+    #[test]
+    fn covelown_review_admits_exact_ids() {
+        use crate::books::{covel};
+        let all:Vec<StrategyDef>=covel::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=covel::REVIEWED_COVEL.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|covelown_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Michael Covel block ----
     // ---- AQR (Hurst, Ooi and Pedersen) block (2026-10-25) ----
     #[test]
     fn aqr_review_admits_exact_ids_on_indices_etfs_and_stocks() {
@@ -2883,7 +2912,7 @@ mod tests {
         use crate::books::{covel};
         let all:Vec<StrategyDef>=covel::catalogue().into_iter().collect();
         let mut want:Vec<&str>=covel::REVIEWED.iter().copied().collect();
-        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|faith_reviewed(d)).map(|d|d.id).collect(); // Covel's own rules: covelown block
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);

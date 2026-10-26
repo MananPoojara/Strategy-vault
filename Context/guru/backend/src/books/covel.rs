@@ -9,6 +9,9 @@
 use crate::connors::{atr, sma, true_range, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "covel";
+/// Admitted ids (authors/covel/laneb/SOURCE-CONTRACT.md).
+pub const REVIEWED_COVEL: &[&str] = &["cov_tc_100day_reversal", "cov_tc_4week_reversal", "cov_tf_mechanica_89_13", "cov_tfm_bollinger_75", "cov_tfm_sma_75", "cov_tfm_ma_cross_50_75", "cov_tfm_hh75_ll25"];
+pub fn reviewed_covel(id: &str) -> bool { REVIEWED_COVEL.contains(&id) }
 /// Admitted ids (authors/faith/admission/SOURCE-CONTRACT.md).
 pub const REVIEWED: &[&str] = &["cov_wott_atr_cbo", "cov_wott_bollinger_cbo", "cov_wott_donchian_trend", "cov_wott_donchian_time", "cov_wott_dual_ma", "cov_wott_triple_ma"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
