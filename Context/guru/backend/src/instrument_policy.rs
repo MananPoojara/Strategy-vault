@@ -324,6 +324,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || ehlersmd_reviewed(def) // John Ehlers articles block
         || covelown_reviewed(def) // Michael Covel block
         || zweig_reviewed(def) // Martin Zweig block
+        || bierovic_reviewed(def) // Tom Bierovic block
         || aqr_reviewed(def) // AQR (Hurst, Ooi and Pedersen) block
         || fejames_reviewed(def) // F. E. James block
         || aronson_reviewed(def) // David Aronson block
@@ -1343,6 +1344,16 @@ fn zweig_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Martin Zweig
+// ---------------------------------------------------------------- Tom Bierovic 2026-10-26 (lane B)
+// Admission only for the module REVIEWED lists (authors/bierovic/laneb/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn bierovic_reviewed(def:&StrategyDef)->bool {(def.book=="tbabc" && crate::books::tbabc::reviewed(def.id))}
+const BIEROVIC_LABEL:&str="Bierovic shows these rules on stock and futures charts (STAMPEDE on SUNW, POWERTOOL on PMC-Sierra and yen futures); runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade, with TradeStation's bar path for orders on the same bar.";
+fn bierovic_policy(def:&StrategyDef)->Option<Policy> {
+    if !bierovic_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Tom Bierovic, The ABCs of Trading and Technical Analysis (Online Investor Expo 2000), p.33-40, 82-100");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Tom Bierovic
 // ---------------------------------------------------------------- AQR (Hurst, Ooi and Pedersen) 2026-10-25
 // Admission only for the module REVIEWED lists (authors/aqr/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn aqr_reviewed(def:&StrategyDef)->bool {(def.book=="aqrtf" && crate::books::aqrtf::reviewed(def.id))}
@@ -1697,6 +1708,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=ehlersmd_policy(def) {return p;} // John Ehlers articles block
     if let Some(p)=covelown_policy(def) {return p;} // Michael Covel block
     if let Some(p)=zweig_policy(def) {return p;} // Martin Zweig block
+    if let Some(p)=bierovic_policy(def) {return p;} // Tom Bierovic block
     if let Some(p)=aqr_policy(def) {return p;} // AQR (Hurst, Ooi and Pedersen) block
     if let Some(p)=fejames_policy(def) {return p;} // F. E. James block
     if let Some(p)=aronson_policy(def) {return p;} // David Aronson block
@@ -2264,6 +2276,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if ehlersmd_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",EHLERSMD_LABEL));} // John Ehlers articles block
     if covelown_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",COVELOWN_LABEL));} // Michael Covel block
     if zweig_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",ZWEIG_LABEL));} // Martin Zweig block
+    if bierovic_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BIEROVIC_LABEL));} // Tom Bierovic block
     if aqr_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",AQR_LABEL));} // AQR (Hurst, Ooi and Pedersen) block
     if fejames_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",FEJAMES_LABEL));} // F. E. James block
     if aronson_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",ARONSON_LABEL));} // David Aronson block
@@ -2907,6 +2920,22 @@ mod tests {
         }
     }
     // ---- end Martin Zweig block ----
+    // ---- Tom Bierovic block (2026-10-26, lane B) ----
+    #[test]
+    fn bierovic_review_admits_exact_ids() {
+        use crate::books::{tbabc};
+        let all:Vec<StrategyDef>=tbabc::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=tbabc::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|bierovic_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Tom Bierovic block ----
     // ---- AQR (Hurst, Ooi and Pedersen) block (2026-10-25) ----
     #[test]
     fn aqr_review_admits_exact_ids_on_indices_etfs_and_stocks() {
