@@ -540,20 +540,17 @@ impl Report {
         index: usize,
     ) -> Result<String, String> {
         let a = &self.trade_returns[index];
-        let mut mae: Option<f64> = None;
-        let mut mfe: Option<f64> = None;
-        let mut bars = 0;
-        for k in t.legs[0].i + 1..t.exit_i {
-            let low = relative(t.legs[0].px, ctx.l[k])?;
-            let high = relative(t.legs[0].px, ctx.h[k])?;
-            mae = Some(mae.unwrap_or(0.).min(low).min(high));
-            mfe = Some(mfe.unwrap_or(0.).max(low).max(high));
-            bars += 1;
-        }
+        // the shared fill-aware path (accounting::path_points), in this report's exact decimal arithmetic
+        let path = crate::accounting::path_points(ctx, t);
+        let bars = path.iter().map(|p| p.0).collect::<std::collections::BTreeSet<_>>().len();
+        let lo = path.iter().map(|p| p.1).reduce(f64::min);
+        let hi = path.iter().map(|p| p.1).reduce(f64::max);
+        let mae = lo.map(|v| relative(t.legs[0].px, v)).transpose()?;
+        let mfe = hi.map(|v| relative(t.legs[0].px, v)).transpose()?;
         let pts = t.exit_px - t.legs[0].px;
         let days =
             crate::day_number(&ctx.r[t.exit_i].date) - crate::day_number(&ctx.r[t.legs[0].i].date);
-        Ok(format!("{{\"symbol\":\"{}\",\"signal_side\":\"Long\",\"pts\":{},\"days_held\":{},\"gross_ret\":{},\"net_ret\":{},\"fee_ret\":{},\"slippage_ret\":{},\"gross_pnl\":null,\"fees\":null,\"slippage\":null,\"taxes\":null,\"net_pnl\":null,\"money_status\":\"No position quantities or monetary sizing supplied\",\"return_basis\":\"Canonical-decimal unit exposure; audited return fractions, not contract quantities\",\"pts_basis\":\"Actual close exit or mark minus actual close entry; not monetary profit\",\"cost_status\":\"{}\",\"mae\":null,\"mfe\":null,\"mae_ret_observed\":{},\"mfe_ret_observed\":{},\"excursion_bars\":{},\"excursion_status\":\"{}\",\"excursion_basis\":\"Canonical gross returns on event-free full held OHLC bars only; event-day ordering and exact full-trade excursions remain unavailable\"}}",crate::esc(&ctx.r[t.legs[0].i].ticker),number(pts),days,number(a.gross_return),number(a.net_return),number(a.fee_return),number(a.slippage_return),if t.open{"open_liquidation_estimate"}else{"modeled_round_trip_cost"},mae.map_or("null".into(),number),mfe.map_or("null".into(),number),bars,if bars>0{"partial_daily_ohlc_bounds"}else{"unavailable"}))
+        Ok(format!("{{\"symbol\":\"{}\",\"signal_side\":\"Long\",\"pts\":{},\"days_held\":{},\"gross_ret\":{},\"net_ret\":{},\"fee_ret\":{},\"slippage_ret\":{},\"gross_pnl\":null,\"fees\":null,\"slippage\":null,\"taxes\":null,\"net_pnl\":null,\"money_status\":\"No position quantities or monetary sizing supplied\",\"return_basis\":\"Canonical-decimal unit exposure; audited return fractions, not contract quantities\",\"pts_basis\":\"Actual close exit or mark minus actual close entry; not monetary profit\",\"cost_status\":\"{}\",\"mae\":null,\"mfe\":null,\"mae_ret_observed\":{},\"mfe_ret_observed\":{},\"excursion_bars\":{},\"excursion_status\":\"{}\",\"excursion_basis\":\"{}\"}}",crate::esc(&ctx.r[t.legs[0].i].ticker),number(pts),days,number(a.gross_return),number(a.net_return),number(a.fee_return),number(a.slippage_return),if t.open{"open_liquidation_estimate"}else{"modeled_round_trip_cost"},mae.map_or("null".into(),number),mfe.map_or("null".into(),number),bars,if bars>0{crate::accounting::EXCURSION_STATUS}else{"unavailable"},crate::accounting::EXCURSION_BASIS))
     }
 }
 pub fn costs_json(costs: Costs) -> String {
