@@ -2171,6 +2171,19 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         "stad13_volex"=>"Held: fixed dollar amounts set for the S&P futures contract. The revisited VolEx uses a $1,000 stop loss and a $200 first-good-open exit per S&P contract at $250 a point (Vol 13 p.153-162); fixed point amounts have no equivalent on other indices, ETFs or stocks.",
         "stad13_tripleplay"=>"Held: rules not fully defined. The printed Triple Play code reads its WeakLow from Value1, a variable that is not defined anywhere in the code, so it does not do what the text explains (Vol 13 p.138-140; Vol 11 p.118-120 has the same line); choosing the intended value would be a new rule.",
         // ---- end STAD leftovers held
+        // ---- Chande block (26 Oct 2026, lane B): held Live rules
+        "ch_bta2_adx30"|"ch_bta2_adx_rising"|"ch_bta2_cbo_trail5"|"ch_bta2_cbo_volexit"|"ch_bta2_cbo_inside"|"ch_bta2_cbo_ref"|"ch_bta2_pullback"=>"Held: fixed dollar stop on futures. Chande tests this system on a group of futures markets (currencies, metals, grains, bonds, oil) with a $1,500 initial stop per contract (Beyond Technical Analysis, Ch 5); a dollar stop per contract has no equivalent on an index, ETF or stock, and leaving the stop out would not be his test.",
+        "ch_bta2_bottom_fish_generic"=>"Held: fixed dollar stop on futures. The generic bottom-fishing pattern is tested on 17 futures markets with a $2,000 initial stop per contract (p.137); a dollar stop per contract has no equivalent on an index, ETF or stock, and leaving the stop out would not be his test.",
+        "ch_bta2_vol2x"=>"Held: fixed dollar stop on futures. Chande tests the 2x-range volatility system on Swiss franc futures (1989-95) with a $3,000 initial stop per contract (p.236-239); a dollar stop per contract has no equivalent on an index, ETF or stock.",
+        "ch_bta2_long_bomb"=>"Held: futures sizing and dollar stop. The Long Bomb buys a number of contracts set by $10,000 of risk per contract point value, with a $1,500 stop per contract, on 10 futures markets (p.173-177); neither the sizing nor the dollar stop has an equivalent on an index, ETF or stock.",
+        "ch_bta2_bottom_fish"=>"Held: fixed amounts set for the S&P futures contract. The pattern needs a day's range above 4 S&P points and a close-open gain above 3 points, with a $2,000 stop (4 points at $500 a point) (p.134); fixed point amounts from the 1982-95 contract have no equivalent on other indices, ETFs or stocks. Running it on SPX with these points kept is a decision for the user.",
+        "ch_bta2_ma1011_trend"|"ch_bta2_ma1011_anti"=>"Held: fixed dollar stop on the S&P futures contract. Chande tests the 10/11-day crossovers on S&P 500 futures (1982-95) with a $2,000 initial stop, 4 S&P points at $500 a point (p.133-134); a fixed point amount has no equivalent on other indices, ETFs or stocks. Running it on SPX with the 4-point stop is a decision for the user.",
+        "ch_bta2_tat"=>"Held: fixed dollar stop on the S&P futures contract. The Trend-Anti-trend test (Table 4.14) uses a $5,000 initial stop on S&P 500 futures, 10 S&P points at $500 a point (p.116-123); a fixed point amount has no equivalent on other indices, ETFs or stocks. Running it on SPX with the 10-point stop is a decision for the user.",
+        "ch_bta2_xopp"|"ch_bta2_xopp_trail"=>"Held: fixed dollar stop on the S&P futures contract. The extraordinary-opportunity tests (Tables 4.22-4.23) use a $3,000 initial stop on S&P 500 futures, 6 S&P points at $500 a point (p.140-144); a fixed point amount has no equivalent on other indices, ETFs or stocks. Running it on SPX with the 6-point stop is a decision for the user.",
+        "ch_ntt_to_buy"|"ch_ntt_to_buy_nse"=>"Held: not a trade with an exit. The New Technical Trader gives only the thrust-oscillator buy signal and reports the market's gain 3, 6, 12 and 24 months after each signal (Table 6.2, p.157); these are observation horizons, not a trade exit, and no stop or sell rule is printed.",
+        "ch_ntt_vidya_cmo"=>"Held: fixed dollar stop on futures. The VIDYA system is tested on futures with orders one contract tick beyond the day's high or low and a $1,500 initial stop per contract (p.181-183); a contract tick and a dollar stop have no equivalent on an index, ETF or stock.",
+        "ch_pbs_cbpb_trail3"=>"Held: no exit before a new high. This workshop chart (S&P Sep-95 futures) sets a 3-day-low trailing stop only after the trade makes a new 20-day high; until then the only protection is the workshop's $1,500 stop per contract (p.23), which has no equivalent on an index, ETF or stock. Chande's complete CB-PB rule is already live as a separate strategy.",
+        // ---- end Chande block
         // ---- Masonson block (26 Oct 2026): held Live rules
         "masmt_vakkur_lev_seasonal"|"masmt_vakkur_lev_all"|"masmt_pres_lev2"|"masmt_pres_lbm"|"masmt_pres_optimal"=>"Held: the printed strategy invests with 2:1 margin (twice the account) in some months; the vault trades at most one unit without margin financing, so no result can be published.",
         // ---- end Masonson block
@@ -2771,6 +2784,19 @@ mod tests {
         }
     }
     // ---- end STAD leftovers held ----
+    // ---- Chande block (2026-10-26, lane B) ----
+    #[test]
+    fn chande_held_rules_have_plain_card_reasons_and_are_not_admitted() {
+        use crate::books::{chbta2, chntt, chpbs};
+        let all:Vec<StrategyDef>=chbta2::catalogue().into_iter().chain(chntt::catalogue()).chain(chpbs::catalogue()).collect();
+        for id in ["ch_bta2_adx30","ch_bta2_adx_rising","ch_bta2_cbo_trail5","ch_bta2_cbo_volexit","ch_bta2_cbo_inside","ch_bta2_cbo_ref","ch_bta2_pullback",
+                   "ch_bta2_bottom_fish_generic","ch_bta2_vol2x","ch_bta2_long_bomb","ch_bta2_bottom_fish","ch_bta2_ma1011_trend","ch_bta2_ma1011_anti",
+                   "ch_bta2_tat","ch_bta2_xopp","ch_bta2_xopp_trail","ch_ntt_to_buy","ch_ntt_to_buy_nse","ch_ntt_vidya_cmo","ch_pbs_cbpb_trail3"] {
+            let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
+            assert!(!reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
+        }
+    }
+    // ---- end Chande block ----
     // ---- Leslie Masonson block (2026-10-25) ----
     #[test]
     fn masonson_review_admits_exact_ids_on_indices_etfs_and_stocks() {
