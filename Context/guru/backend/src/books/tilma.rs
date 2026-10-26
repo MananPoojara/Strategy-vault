@@ -7,6 +7,9 @@
 use crate::connors::*;
 
 pub const BOOK: &str = "tilma";
+/// Admitted ids (authors/tillson/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["tilma_t3", "tilma_dema", "tilma_ema", "tilma_ilrs"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const ENTRY: &str = "E|\"res:=Mov(C,opt1,E); d1:=ROC(res,1,points); d1 > Ref(d1,-1) AND Ref(d1,-1) < Ref(d1,-2)\" (enter long; the EMA code printed in 'Trading Results'; the other averages replace res) = d1 turns up from a bottom";
 const EXIT: &str = "X|\"A long position was entered at bottoms, and closed at tops, of the derivative.\" = close long when d1 < Ref(d1,-1) AND Ref(d1,-1) > Ref(d1,-2) (the mirror of the printed entry code)";
