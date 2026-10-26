@@ -5,6 +5,9 @@
 use crate::connors::{pct_b, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "bobb";
+/// Admitted ids (authors/bollinger/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["bobb_m2_band", "bobb_m2_sar", "bobb_m3_long"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let d = |id, name, group, dir, status, vol, rules, notes| StrategyDef {

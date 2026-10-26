@@ -235,6 +235,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || goslin_reviewed(def) // Goslin block
         || ruggiero_reviewed(def) // Ruggiero block
         || link_reviewed(def) // Link block
+        || bollinger_reviewed(def) // John Bollinger block
         || guppy_reviewed(def) // Guppy block
         || headley_reviewed(def) // Headley block
         || jcarter_reviewed(def) // Carter block
@@ -1070,6 +1071,16 @@ fn link_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Link
+// ---------------------------------------------------------------- John Bollinger 2026-10-25
+// Admission only for the module REVIEWED lists (authors/bollinger/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn bollinger_reviewed(def:&StrategyDef)->bool {(def.book=="bobb" && crate::books::bobb::reviewed(def.id))}
+const BOLLINGER_LABEL:&str="Bollinger states these methods for stocks with volume indicators and prints no test; runs on indices, ETFs and single stocks with volume (US and India) are a declared application, one unit per trade, entry at the next open.";
+fn bollinger_policy(def:&StrategyDef)->Option<Policy> {
+    if !bollinger_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"John Bollinger, Bollinger on Bollinger Bands (McGraw-Hill 2002), Ch 19-20");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end John Bollinger
 // ---------------------------------------------------------------- Guppy 2026-10-25
 // Admission only for the module REVIEWED lists (authors/guppy/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn guppy_reviewed(def:&StrategyDef)->bool {(def.book=="dgdwb" && crate::books::dgdwb::reviewed(def.id))}
@@ -1365,6 +1376,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=goslin_policy(def) {return p;} // Goslin block
     if let Some(p)=ruggiero_policy(def) {return p;} // Ruggiero block
     if let Some(p)=link_policy(def) {return p;} // Link block
+    if let Some(p)=bollinger_policy(def) {return p;} // John Bollinger block
     if let Some(p)=guppy_policy(def) {return p;} // Guppy block
     if let Some(p)=headley_policy(def) {return p;} // Headley block
     if let Some(p)=jcarter_policy(def) {return p;} // Carter block
@@ -1879,6 +1891,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if goslin_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",GOSLIN_LABEL));} // Goslin block
     if ruggiero_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",RUGGIERO_LABEL));} // Ruggiero block
     if link_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LINK_LABEL));} // Link block
+    if bollinger_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BOLLINGER_LABEL));} // John Bollinger block
     if guppy_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",GUPPY_LABEL));} // Guppy block
     if headley_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",HEADLEY_LABEL));} // Headley block
     if jcarter_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",JCARTER_LABEL));} // Carter block
@@ -2212,6 +2225,22 @@ mod tests {
         }
     }
     // ---- end Link block ----
+    // ---- John Bollinger block (2026-10-25) ----
+    #[test]
+    fn bollinger_review_admits_exact_ids_on_indices_etfs_and_stocks() {
+        use crate::books::{bobb};
+        let all:Vec<StrategyDef>=bobb::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=bobb::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end John Bollinger block ----
     // ---- Guppy block (2026-10-25) ----
     #[test]
     fn guppy_review_admits_exact_ids_on_indices_etfs_and_stocks() {
