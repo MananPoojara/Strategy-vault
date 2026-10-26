@@ -2196,6 +2196,10 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // ---- Thomas Stridsman block (26 Oct 2026, lane B): held Live rules
         "strmm_rs1"|"strmm_rsbands"|"strmm_rotation"=>"Held: needs comparison-market data. Stridsman's relative-strength systems compare each market day by day with its index (RS System No. 1) or with four other indices (RS Bands, Rotation) (Trading Systems and Money Management p.105-152); those comparison close series are not in the vault data, so the engine would find no comparison and trade nothing.",
         // ---- end Thomas Stridsman held
+        // ---- Perry Kaufman block (26 Oct 2026, lane B): held Live rules
+        "kftsm_pf"=>"Held: fixed amounts set for another market. The point-and-figure box is 5 index points, a fixed point value from Kaufman's 2003 table for the S&P and Nasdaq e-mini futures (New Trading Systems and Methods, Table 5.2, p.160); the book gives no box for other indices, ETFs, stocks or NIFTY, and a 5-point box is a different system on each. Running it on SPX/NDX only is a decision for the user.",
+        "kfst_ama"=>"Held: rules not fully defined. The Box 8-5 code sets the turn filter at 0.1 price points, a fixed amount for the markets Kaufman tested, while the text defines the filter as a percentage of the standard deviation of the AMA's daily changes (Smarter Trading p.144-151); the two give different systems and which one produced the book's results is not specified.",
+        // ---- end Perry Kaufman held
         // ---- Masonson block (26 Oct 2026): held Live rules
         "masmt_vakkur_lev_seasonal"|"masmt_vakkur_lev_all"|"masmt_pres_lev2"|"masmt_pres_lbm"|"masmt_pres_optimal"=>"Held: the printed strategy invests with 2:1 margin (twice the account) in some months; the vault trades at most one unit without margin financing, so no result can be published.",
         // ---- end Masonson block
@@ -2853,6 +2857,17 @@ mod tests {
         }
     }
     // ---- end Thomas Stridsman held ----
+    // ---- Perry Kaufman held (2026-10-26, lane B) ----
+    #[test]
+    fn kaufmanb_held_rules_have_plain_card_reasons() {
+        use crate::books::{kftsm, kfst};
+        let all:Vec<StrategyDef>=kftsm::catalogue().into_iter().chain(kfst::catalogue()).collect();
+        for id in ["kftsm_pf", "kfst_ama"] {
+            let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
+            assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
+        }
+    }
+    // ---- end Perry Kaufman held ----
     // ---- Leslie Masonson block (2026-10-25) ----
     #[test]
     fn masonson_review_admits_exact_ids_on_indices_etfs_and_stocks() {
