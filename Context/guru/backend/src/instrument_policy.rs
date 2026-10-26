@@ -315,6 +315,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || tillson_reviewed(def) // Tim Tillson block
         || leungchong_reviewed(def) // Leung and Chong block
         || bollinger_reviewed(def) // John Bollinger block
+        || lukac_reviewed(def) // Lukac, Brorsen and Irwin block
         || aqr_reviewed(def) // AQR (Hurst, Ooi and Pedersen) block
         || fejames_reviewed(def) // F. E. James block
         || aronson_reviewed(def) // David Aronson block
@@ -1244,6 +1245,16 @@ fn bollinger_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end John Bollinger
+// ---------------------------------------------------------------- Lukac, Brorsen and Irwin 2026-10-26 (lane B)
+// Admission only for the module REVIEWED lists (authors/lukac/laneb/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn lukac_reviewed(def:&StrategyDef)->bool {(def.book=="lbi12" && crate::books::lbi12::reviewed(def.id))}
+const LUKAC_LABEL:&str="Lukac, Brorsen and Irwin tested these twelve systems on 12 futures markets (1978-84), choosing each year's parameters by the best profit of the three years before; runs on one index, ETF or stock (US and India) use the same yearly re-optimisation over the book's grids and are a declared application, one unit per trade, shorts included.";
+fn lukac_policy(def:&StrategyDef)->Option<Policy> {
+    if !lukac_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Lukac, Brorsen and Irwin, A Comparison of Twelve Technical Trading Systems (1985; Traders Press 2004), Appendix A p.33-45 and Tables A.1-A.12");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Lukac, Brorsen and Irwin
 // ---------------------------------------------------------------- AQR (Hurst, Ooi and Pedersen) 2026-10-25
 // Admission only for the module REVIEWED lists (authors/aqr/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn aqr_reviewed(def:&StrategyDef)->bool {(def.book=="aqrtf" && crate::books::aqrtf::reviewed(def.id))}
@@ -1589,6 +1600,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=tillson_policy(def) {return p;} // Tim Tillson block
     if let Some(p)=leungchong_policy(def) {return p;} // Leung and Chong block
     if let Some(p)=bollinger_policy(def) {return p;} // John Bollinger block
+    if let Some(p)=lukac_policy(def) {return p;} // Lukac, Brorsen and Irwin block
     if let Some(p)=aqr_policy(def) {return p;} // AQR (Hurst, Ooi and Pedersen) block
     if let Some(p)=fejames_policy(def) {return p;} // F. E. James block
     if let Some(p)=aronson_policy(def) {return p;} // David Aronson block
@@ -2136,6 +2148,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if tillson_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",TILLSON_LABEL));} // Tim Tillson block
     if leungchong_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LEUNGCHONG_LABEL));} // Leung and Chong block
     if bollinger_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BOLLINGER_LABEL));} // John Bollinger block
+    if lukac_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LUKAC_LABEL));} // Lukac, Brorsen and Irwin block
     if aqr_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",AQR_LABEL));} // AQR (Hurst, Ooi and Pedersen) block
     if fejames_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",FEJAMES_LABEL));} // F. E. James block
     if aronson_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",ARONSON_LABEL));} // David Aronson block
@@ -2622,6 +2635,22 @@ mod tests {
         }
     }
     // ---- end John Bollinger block ----
+    // ---- Lukac, Brorsen and Irwin block (2026-10-26, lane B) ----
+    #[test]
+    fn lukac_review_admits_exact_ids() {
+        use crate::books::{lbi12};
+        let all:Vec<StrategyDef>=lbi12::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=lbi12::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|lukac_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Lukac, Brorsen and Irwin block ----
     // ---- AQR (Hurst, Ooi and Pedersen) block (2026-10-25) ----
     #[test]
     fn aqr_review_admits_exact_ids_on_indices_etfs_and_stocks() {

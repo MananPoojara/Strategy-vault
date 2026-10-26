@@ -9,6 +9,9 @@ use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 use std::collections::VecDeque;
 
 pub const BOOK: &str = "lbi12";
+/// Admitted ids (authors/lukac/laneb/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["lbi12_chl", "lbi12_par", "lbi12_drm", "lbi12_rnq", "lbi12_drp", "lbi12_mii", "lbi12_lso", "lbi12_ref", "lbi12_dmc", "lbi12_dri", "lbi12_mab", "lbi12_alx"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 macro_rules! adapt { () => { "Default = the book's procedure (p.6, p.12): for every calendar year Y the parameter set from the printed grid with the highest profit over the three preceding calendar years (fresh one-unit simulation, points, minus opt_cost% of price per round turn; book: $100 per contract, not convertible to an index, so 0 by default) trades year Y; ties keep the first grid value. A year is traded only when three full calendar years precede it (the book starts BP/DM in 1980 'as soon as three years of data are available', p.8). When the new year's parameter holds a different position than the one carried, the carried position is closed and the new one opened at the year's first open (the book's own dominant-contract roll rule, p.4, applied to the parameter switch: book silent). The run starts flat at the selected start. adaptive=0 runs the fixed parameters below instead (not the book's procedure). Futures system run on the index (instrument swap); no limit days on an index." }; }
 macro_rules! d { ($id:expr, $name:expr, $dir:expr, $rules:expr, $notes:expr) => { mk($id, $name, $dir, $rules, concat!(adapt!(), " ", $notes)) }; }
