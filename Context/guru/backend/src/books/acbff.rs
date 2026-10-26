@@ -17,6 +17,9 @@
 use crate::connors::{Claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "acbff";
+/// Admitted ids (authors/collins/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["acbff_cup_overnight", "acbff_cup_3day", "acbff_eight_lim25", "acbff_eight_lim25_3", "acbff_2hl", "acbff_2hl_tick", "acbff_2hl_4", "acbff_rx15", "acbff_short_dom", "acbff_dom", "acbff_moy", "acbff_moy_dom", "acbff_moy_dom_day", "acbff_cal3", "acbff_cal2_day", "acbff_cal_eight", "acbff_3rd_fade", "acbff_5v15", "acbff_3v30", "acbff_5d_avg_fade", "acbff_nday_10stop", "acbff_fade_rev", "acbff_rx4day", "acbff_mom66", "acbff_contract", "acbff_15_30", "acbff_wk_rx"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 const NAN: f64 = f64::NAN;
 
 // ---------------------------------------------------------------- order engine
