@@ -18,6 +18,9 @@
 use crate::connors::{true_range, sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "fsi23";
+/// Admitted ids (authors/lanea/elmtrader/decisions.json).
+pub const REVIEWED_LANEA: &[&str] = &["fsi23_rsi23"];
+pub fn reviewed_lanea(id: &str) -> bool { REVIEWED_LANEA.contains(&id) }
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef {

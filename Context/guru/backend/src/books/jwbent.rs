@@ -4,6 +4,9 @@
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "jwbent";
+/// Admitted ids (authors/lanea/elmtrader/decisions.json).
+pub const REVIEWED_LANEA: &[&str] = &["jwbent_bent_nail"];
+pub fn reviewed_lanea(id: &str) -> bool { REVIEWED_LANEA.contains(&id) }
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef {
