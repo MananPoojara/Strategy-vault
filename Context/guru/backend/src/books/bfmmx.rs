@@ -6,6 +6,9 @@ use crate::books::rrsim::{g, o, pd, run_ts, sdef, sma, true_range, A, P};
 use crate::connors::{wilder, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "bfmmx";
+/// Admitted ids (authors/lanea/vendor2/decisions.json).
+pub const REVIEWED_LANEA: &[&str] = &["bfmmx_esl4", "bfmmx_nql4", "bfmmx_s4"];
+pub fn reviewed_lanea(id: &str) -> bool { REVIEWED_LANEA.contains(&id) }
 const ESL4: &str = "bfmmx_esl4";
 const NQL4: &str = "bfmmx_nql4";
 const S4: &str = "bfmmx_s4";

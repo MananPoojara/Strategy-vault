@@ -6,6 +6,9 @@ use crate::books::rrsim::{g, lowest, highest, o, pd, run_ts, sdef, sma, A, P};
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "jhsto";
+/// Admitted ids (authors/lanea/vendor2/decisions.json).
+pub const REVIEWED_LANEA: &[&str] = &["jhsto_stoch_basics"];
+pub fn reviewed_lanea(id: &str) -> bool { REVIEWED_LANEA.contains(&id) }
 const ID: &str = "jhsto_stoch_basics";
 
 pub fn catalogue() -> Vec<StrategyDef> {
