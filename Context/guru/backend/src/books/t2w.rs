@@ -7,6 +7,9 @@
 use crate::connors::{claim, rsi, sma, wilder, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "t2w";
+/// Admitted ids (authors/vendor/laneb/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["t2w_cts", "t2w_cts_plus", "t2w_cts_stock", "t2w_mrx", "t2w_mrx_plus", "t2w_mrx_stock", "t2w_oops_11", "t2w_oops_12", "t2w_oops_13", "t2w_oops_14", "t2w_oops_21", "t2w_oops_22", "t2w_oops_23", "t2w_oops_31", "t2w_oops_32", "t2w_oops_33", "t2w_oops_34", "t2w_oops_i1", "t2w_oops_i2", "t2w_oops_i3"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 // ------------------------------------------------------------------ indicators
 /// TradeStation XAverage: alpha = 2/(n+1), seeded with the first price.

@@ -9,6 +9,9 @@
 use crate::connors::{dmi, hv_ddof, sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "rarsys";
+/// Admitted ids (authors/vendor/laneb/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["rarsys_cts_std", "rarsys_ste", "rarsys_trend_weaver"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const TW: &str = "rarsys_trend_weaver";
 const CTS: [&str; 3] = ["rarsys_cts_std", "rarsys_cts_plus", "rarsys_cts_stocks"];

@@ -318,6 +318,10 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || tillson_reviewed(def) // Tim Tillson block
         || leungchong_reviewed(def) // Leung and Chong block
         || bollinger_reviewed(def) // John Bollinger block
+        || rarsysb_reviewed(def) // Vendor code archives block
+        || t2wb_reviewed(def) // Trade-to-Win systems block
+        || mslibb_reviewed(def) // Libanes MetaStock strategies block
+        || msaddb_reviewed(def) // MetaStock add-on pack (Equis) block
         || perl_reviewed(def) // Jason Perl block
         || mjohnson_reviewed(def) // Mark Johnson block
         || landrystfl_reviewed(def) // Dave Landry 2002 workbook block
@@ -1286,6 +1290,46 @@ fn bollinger_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end John Bollinger
+// ---------------------------------------------------------------- Vendor code archives 2026-10-26 (lane B)
+// Admission only for the module REVIEWED lists (authors/vendor/laneb/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn rarsysb_reviewed(def:&StrategyDef)->bool {(def.book=="rarsys" && crate::books::rarsys::reviewed(def.id))}
+const RARSYSB_LABEL:&str="Vendor and newsletter code with no per-market test the vault can compare; runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade.";
+fn rarsysb_policy(def:&StrategyDef)->Option<Policy> {
+    if !rarsysb_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Vendor TradeStation code archives (Crouching Tiger, Swing Traders Edge, Trend Weaver)");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Vendor code archives
+// ---------------------------------------------------------------- Trade-to-Win systems 2026-10-26 (lane B)
+// Admission only for the module REVIEWED lists (authors/vendor/laneb/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn t2wb_reviewed(def:&StrategyDef)->bool {(def.book=="t2w" && crate::books::t2w::reviewed(def.id))}
+const T2WB_LABEL:&str="Vendor and newsletter code with no per-market test the vault can compare; runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade.";
+fn t2wb_policy(def:&StrategyDef)->Option<Policy> {
+    if !t2wb_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Trade-to-Win / vendor manuals and TradeStation code (MRX, Crouching Tiger, Oops)");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Trade-to-Win systems
+// ---------------------------------------------------------------- Libanes MetaStock strategies 2026-10-26 (lane B)
+// Admission only for the module REVIEWED lists (authors/vendor/laneb/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn mslibb_reviewed(def:&StrategyDef)->bool {(def.book=="mslib" && crate::books::mslib::reviewed(def.id))}
+const MSLIBB_LABEL:&str="MetaStock System Tester code with no per-market test the vault can compare; runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade, fills as stated on the card.";
+fn mslibb_policy(def:&StrategyDef)->Option<Policy> {
+    if !mslibb_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Estrategias de inversion con Metastock (Libanes collection, 1998-99)");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Libanes MetaStock strategies
+// ---------------------------------------------------------------- MetaStock add-on pack (Equis) 2026-10-26 (lane B)
+// Admission only for the module REVIEWED lists (authors/vendor/laneb/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn msaddb_reviewed(def:&StrategyDef)->bool {(def.book=="msadd" && crate::books::msadd::reviewed(def.id))}
+const MSADDB_LABEL:&str="MetaStock System Tester code with no per-market test the vault can compare; runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade, fills as stated on the card.";
+fn msaddb_policy(def:&StrategyDef)->Option<Policy> {
+    if !msaddb_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"MetaStock add-on pack (Equis Systems! MS65PRFT.DTA, MS50PRFT.DTA)");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end MetaStock add-on pack (Equis)
 // ---------------------------------------------------------------- Jason Perl 2026-10-26 (lane B)
 // Admission only for the module REVIEWED lists (authors/perl/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn perl_reviewed(def:&StrategyDef)->bool {(def.book=="tdperl" && crate::books::tdperl::reviewed(def.id))}
@@ -1724,6 +1768,10 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=tillson_policy(def) {return p;} // Tim Tillson block
     if let Some(p)=leungchong_policy(def) {return p;} // Leung and Chong block
     if let Some(p)=bollinger_policy(def) {return p;} // John Bollinger block
+    if let Some(p)=rarsysb_policy(def) {return p;} // Vendor code archives block
+    if let Some(p)=t2wb_policy(def) {return p;} // Trade-to-Win systems block
+    if let Some(p)=mslibb_policy(def) {return p;} // Libanes MetaStock strategies block
+    if let Some(p)=msaddb_policy(def) {return p;} // MetaStock add-on pack (Equis) block
     if let Some(p)=perl_policy(def) {return p;} // Jason Perl block
     if let Some(p)=mjohnson_policy(def) {return p;} // Mark Johnson block
     if let Some(p)=landrystfl_policy(def) {return p;} // Dave Landry 2002 workbook block
@@ -2343,6 +2391,10 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if tillson_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",TILLSON_LABEL));} // Tim Tillson block
     if leungchong_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LEUNGCHONG_LABEL));} // Leung and Chong block
     if bollinger_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BOLLINGER_LABEL));} // John Bollinger block
+    if rarsysb_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",RARSYSB_LABEL));} // Vendor code archives block
+    if t2wb_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",T2WB_LABEL));} // Trade-to-Win systems block
+    if mslibb_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",MSLIBB_LABEL));} // Libanes MetaStock strategies block
+    if msaddb_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",MSADDB_LABEL));} // MetaStock add-on pack (Equis) block
     if perl_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",PERL_LABEL));} // Jason Perl block
     if mjohnson_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",MJOHNSON_LABEL));} // Mark Johnson block
     if landrystfl_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LANDRYSTFL_LABEL));} // Dave Landry 2002 workbook block
@@ -3033,6 +3085,70 @@ mod tests {
         }
     }
     // ---- end John Bollinger block ----
+    // ---- Vendor code archives block (2026-10-26, lane B) ----
+    #[test]
+    fn rarsysb_review_admits_exact_ids() {
+        use crate::books::{rarsys};
+        let all:Vec<StrategyDef>=rarsys::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=rarsys::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|rarsysb_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Vendor code archives block ----
+    // ---- Trade-to-Win systems block (2026-10-26, lane B) ----
+    #[test]
+    fn t2wb_review_admits_exact_ids() {
+        use crate::books::{t2w};
+        let all:Vec<StrategyDef>=t2w::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=t2w::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|t2wb_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Trade-to-Win systems block ----
+    // ---- Libanes MetaStock strategies block (2026-10-26, lane B) ----
+    #[test]
+    fn mslibb_review_admits_exact_ids() {
+        use crate::books::{mslib};
+        let all:Vec<StrategyDef>=mslib::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=mslib::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|mslibb_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Libanes MetaStock strategies block ----
+    // ---- MetaStock add-on pack (Equis) block (2026-10-26, lane B) ----
+    #[test]
+    fn msaddb_review_admits_exact_ids() {
+        use crate::books::{msadd};
+        let all:Vec<StrategyDef>=msadd::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=msadd::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|msaddb_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end MetaStock add-on pack (Equis) block ----
     // ---- Jason Perl block (2026-10-26, lane B) ----
     #[test]
     fn perl_review_admits_exact_ids() {
