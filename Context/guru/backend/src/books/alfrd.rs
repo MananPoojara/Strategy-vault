@@ -6,6 +6,9 @@ use super::jcfeed::{gp, Sim};
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "alfrd";
+/// Admitted ids (authors/vendor/laneb/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["alfrd_magnet", "alfrd_onyx_daily"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 const MAG: &str = "alfrd_magnet";
 const ONX: &str = "alfrd_onyx_daily";
 const ONXI: &str = "alfrd_onyx_intraday";
