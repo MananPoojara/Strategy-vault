@@ -217,6 +217,10 @@ export const LIB = [
     { id: "kldst", sourceIds: ["title-27677f9123fd300f"], title: "Day Trading and Swing Trading the Currency Market", year: 2008, blurb: "Lien, 2008 · moving-average perfect order runs; pip-based, news and carry strategies held" },
     { id: "kldtc", sourceIds: ["title-21d3c35d6c2c02be", "title-39a12d5916d733f7"], title: "Day Trading the Currency Market", year: 2005, blurb: "Lien, 2005 · first edition of the same strategies (perfect order counted under the 2008 edition)" }] },
   // ---- end Lien block ----
+  // ---- Ponsi block (27 Oct 2026, lane B)
+  { id: "ponsi", name: "Ed Ponsi", tagline: "Forex trader and educator (FXEducator) · the FX-Ed Trend Technique runs here; Fibonacci, pattern, pip and carry trades held", books: [
+    { id: "epfpp", sourceIds: ["title-360d41abd111aa32", "title-10a678f7dce48921"], title: "Forex Patterns & Probabilities (and The Ed Ponsi Forex Playbook)", year: 2007, blurb: "Ponsi, 2007 · FX-Ed Trend Technique (10-day EMA pullback, half-ATR trailing stop) runs on daily bars; the Playbook repeats it with carry trades" }] },
+  // ---- end Ponsi block ----
   // ---- Arms block (2026-10-24) ----
   { id: "arms", name: "Richard W. Arms Jr.", tagline: "Inventor of Equivolume, Ease of Movement and the Arms Index · the two EMV rules run here", books: [
     { id: "ravcs", sourceIds: ["title-bdb6dd066565a040"], title: "Volume Cycles in the Stock Market", year: 1994, blurb: "Arms · 13-day Ease of Movement zero cross and the weekly four-week reversal of the 13 run; shorter EMVs and cycle reading held" },
