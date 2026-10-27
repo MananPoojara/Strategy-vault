@@ -330,6 +330,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || la_newsletters_reviewed(def) // Lane A newsletters block
         || la_vendor1_reviewed(def) // Lane A vendor1 block
         || la_vendor2_reviewed(def) // Lane A vendor2 block
+        || la_elmtrader_reviewed(def) // Lane A elmtrader block
         || rarsysb_reviewed(def) // Vendor code archives block
         || t2wb_reviewed(def) // Trade-to-Win systems block
         || mslibb_reviewed(def) // Libanes MetaStock strategies block
@@ -1426,6 +1427,16 @@ fn la_vendor2_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Lane A vendor2
+// ---------------------------------------------------------------- Lane A elmtrader 2026-10-26 (lane B)
+// Admission only for the module REVIEWED lists (authors/lanea/elmtrader/decisions.json); kept in one block to merge.
+pub fn la_elmtrader_reviewed(def:&StrategyDef)->bool {(def.book=="mjthir" && crate::books::mjthir::reviewed_lanea(def.id)) || (def.book=="pwabal" && crate::books::pwabal::reviewed_lanea(def.id)) || (def.book=="jwbent" && crate::books::jwbent::reviewed_lanea(def.id)) || (def.book=="fcfail" && crate::books::fcfail::reviewed_lanea(def.id)) || (def.book=="kfaber" && crate::books::kfaber::reviewed_lanea(def.id)) || (def.book=="mstt" && crate::books::mstt::reviewed_lanea(def.id)) || (def.book=="ts247" && crate::books::ts247::reviewed_lanea(def.id)) || (def.book=="fsi23" && crate::books::fsi23::reviewed_lanea(def.id))}
+const LA_ELMTRADER_LABEL:&str="Vendor / newsletter system code with no per-market test the vault can compare; runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade.";
+fn la_elmtrader_policy(def:&StrategyDef)->Option<Policy> {
+    if !la_elmtrader_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Vendor and newsletter system codes (M. G. Johnson, P. B. Waite, J. Wolf, F. Corrias, Aberration copy, Equis Traders' Tips, B. Castelo, 24-7 System, ForexSuperInvestor RSI 2.3)");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Lane A elmtrader
 // ---------------------------------------------------------------- Vendor code archives 2026-10-26 (lane B)
 // Admission only for the module REVIEWED lists (authors/vendor/laneb/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn rarsysb_reviewed(def:&StrategyDef)->bool {(def.book=="rarsys" && crate::books::rarsys::reviewed(def.id))}
@@ -1956,6 +1967,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=la_newsletters_policy(def) {return p;} // Lane A newsletters block
     if let Some(p)=la_vendor1_policy(def) {return p;} // Lane A vendor1 block
     if let Some(p)=la_vendor2_policy(def) {return p;} // Lane A vendor2 block
+    if let Some(p)=la_elmtrader_policy(def) {return p;} // Lane A elmtrader block
     if let Some(p)=rarsysb_policy(def) {return p;} // Vendor code archives block
     if let Some(p)=t2wb_policy(def) {return p;} // Trade-to-Win systems block
     if let Some(p)=mslibb_policy(def) {return p;} // Libanes MetaStock strategies block
@@ -2432,6 +2444,11 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // ---- Lane A vendor2 block (26 Oct 2026, lane B): held Live rules
         "bfm2c_es"=>"Held: the code itself is reproduced exactly (0 differences on every US and India window), but run on SPY for the guide's own test period 1/1/98-6/25/02 it does not come near the User's Guide result for the E-mini S&P (MiniMaxIIv2UG.pdf, Fig. 1, printed p.13): 246 trades, 38.2% winners, net -$6,524 after $75 per trade, profit factor 0.93, against the printed 242 trades, 47.93% winners, net +$42,450, profit factor 1.58. Same situation as the Nasdaq version, which is already Not testable.",
         // ---- end Lane A vendor2 held
+        // ---- Lane A elmtrader block (26 Oct 2026, lane B): held Live rules
+        "elmts4_first_day"=>"Held: the rule's only protection is a fixed 150-point stop set for the Dow (Dow TS4 guide p.15), placed by a spread-bet firm that guarantees the exit level even on a gap. On every other instrument 150 points means something different, and on the Dow itself our daily bars cannot reproduce a guaranteed fill, so the vault's accuracy gate keeps it off every market; publishing needs your decision on how to scale the 150 points.",
+        "mstt_kaeppel_ma_9_50_80"=>"Held: the Kaeppel 9/50/80 system (Trading Tech. Systems and Indicators for MetaStock, p.25, Equis Traders' Tips) prints Close Long as the 9/50 down-cross with the close still above the 80-day average, so when the short entry fires below the 80-day average the long is not closed by its own rule. Whether MetaStock's System Tester then closes and reverses the long is not printed on the page, and the two readings give different trades (559 US / 165 India trade rows change). The engine trades the literal reading, which also wipes out the account on several runs (QQQ 2000, NDX 2007, AAPL 1987, NIFTY 50 2000).",
+        "bcsts_a2"|"bcsts_a4"|"bcsts_a11"=>"Held: every buy and sell in the course (Aula 2 p.6-7, Aula 4 p.17-18, Aula 11 p.42-43) comes from ExtFml(\"ForumDll.Latch\",LE,LX,SE,SX), a free add-in whose behaviour is not printed. When a buy condition and a sell condition fall on the same bar, the trades depend on which one the add-in obeys, and the readings give different trades on both US and India data (Aula 11 in every window, Aula 2 and 4 in a few windows). The engine's reading (sell wins when long, buy wins when flat) matches the reference exactly, but the source cannot confirm it.",
+        // ---- end Lane A elmtrader held
         // ---- Guppy MetaStock Formula Index block (26 Oct 2026, lane B): held Live rules
         "dgmf_21d_rev_di"|"dgmf_katz_cyclical"|"dgmf_roc_ma"|"dgmf_stoch_ma"=>"Held: rules not fully defined for the tester. The result depends on what MetaStock's System Tester does with an opposite Enter signal while a position is open and its own Close formula is false (close and reverse, or ignore it); the collection does not print the tester setting, the MetaStock 7 manual does not say, and in MetaStock 8 it is a user setting (Portfolio Bias), so the behaviour is not specified and either reading would be a guess.",
         // ---- end Guppy MetaStock Formula Index held
@@ -2617,6 +2634,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if la_newsletters_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LA_NEWSLETTERS_LABEL));} // Lane A newsletters block
     if la_vendor1_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LA_VENDOR1_LABEL));} // Lane A vendor1 block
     if la_vendor2_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LA_VENDOR2_LABEL));} // Lane A vendor2 block
+    if la_elmtrader_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LA_ELMTRADER_LABEL));} // Lane A elmtrader block
     if rarsysb_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",RARSYSB_LABEL));} // Vendor code archives block
     if t2wb_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",T2WB_LABEL));} // Trade-to-Win systems block
     if mslibb_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",MSLIBB_LABEL));} // Libanes MetaStock strategies block
@@ -3690,6 +3708,33 @@ mod tests {
         }
     }
     // ---- end Lane A vendor2 block ----
+    // ---- Lane A elmtrader held (2026-10-26, lane B) ----
+    #[test]
+    fn la_elmtrader_held_rules_have_plain_card_reasons() {
+        use crate::books::{bcsts, elmts4, mstt};
+        let all:Vec<StrategyDef>=bcsts::catalogue().into_iter().chain(elmts4::catalogue()).chain(mstt::catalogue()).collect();
+        for id in ["elmts4_first_day", "mstt_kaeppel_ma_9_50_80", "bcsts_a2", "bcsts_a4", "bcsts_a11"] {
+            let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
+            assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
+        }
+    }
+    // ---- end Lane A elmtrader held ----
+    // ---- Lane A elmtrader block (2026-10-26, lane B) ----
+    #[test]
+    fn la_elmtrader_review_admits_exact_ids() {
+        use crate::books::{mjthir, pwabal, jwbent, fcfail, kfaber, mstt, ts247, fsi23};
+        let all:Vec<StrategyDef>=mjthir::catalogue().into_iter().chain(pwabal::catalogue()).chain(jwbent::catalogue()).chain(fcfail::catalogue()).chain(kfaber::catalogue()).chain(mstt::catalogue()).chain(ts247::catalogue()).chain(fsi23::catalogue()).collect();
+        let mut want:Vec<&str>=mjthir::REVIEWED_LANEA.iter().chain(pwabal::REVIEWED_LANEA.iter()).chain(jwbent::REVIEWED_LANEA.iter()).chain(fcfail::REVIEWED_LANEA.iter()).chain(kfaber::REVIEWED_LANEA.iter()).chain(mstt::REVIEWED_LANEA.iter()).chain(ts247::REVIEWED_LANEA.iter()).chain(fsi23::REVIEWED_LANEA.iter()).copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|la_elmtrader_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Lane A elmtrader block ----
     // ---- Jason Perl block (2026-10-26, lane B) ----
     #[test]
     fn perl_review_admits_exact_ids() {

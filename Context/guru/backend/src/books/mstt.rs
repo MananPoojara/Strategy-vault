@@ -12,6 +12,9 @@ use crate::connors::Status::{Live, NeedsData, NotTestable};
 use std::sync::OnceLock;
 
 pub const BOOK: &str = "mstt";
+/// Admitted ids (authors/lanea/elmtrader/decisions.json).
+pub const REVIEWED_LANEA: &[&str] = &["mstt_four_bar_fear", "mstt_rainbow_chart_system"];
+pub fn reviewed_lanea(id: &str) -> bool { REVIEWED_LANEA.contains(&id) }
 const CONV: &str = "One position at a time; a position closes only by its own exit formula; an exit plus an opposite entry on one bar reverse; no same-direction re-entry on the exit bar; parameter side = 1/-1 runs one side alone. Indicators: MetaStock definitions (library/msws/README.md). India: runs on NIFTY 50 / indices instead of the stocks and futures it was written for (instrument swap only); price-point, price-level and volume-unit constants are applied literally.";
 pub static MSTT: Book = Book { id: BOOK, sys: SYS, fml: FML, conv: CONV, cat: OnceLock::new(), par: OnceLock::new() };
 pub fn catalogue() -> Vec<StrategyDef> { MSTT.catalogue() }

@@ -5,6 +5,9 @@
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "fcfail";
+/// Admitted ids (authors/lanea/elmtrader/decisions.json).
+pub const REVIEWED_LANEA: &[&str] = &["fcfail_long", "fcfail_short"];
+pub fn reviewed_lanea(id: &str) -> bool { REVIEWED_LANEA.contains(&id) }
 const NOTE: &str = "System Tester formulas (MS70PRFT.DTA) are the default. Mov(x,n,E) = EMA with smoothing 2/(n+1) seeded with the first value; BarsSince(Event) counts from the most recent Event (a new Event while in a trade restarts the count). The DTA does not store a readable trade price/delay, so fills are at the signal close (MetaStock System Tester default: price Close, delay 0) [assumption]. Long and short are separate strategies (the tester's 'positions' setting is not readable). No result is printed. India: instrument swap; index shorts are hypothetical.";
 
 pub fn catalogue() -> Vec<StrategyDef> {

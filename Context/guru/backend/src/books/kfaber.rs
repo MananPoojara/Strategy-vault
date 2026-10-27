@@ -5,6 +5,9 @@
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "kfaber";
+/// Admitted ids (authors/lanea/elmtrader/decisions.json).
+pub const REVIEWED_LANEA: &[&str] = &["kfaber_ts34"];
+pub fn reviewed_lanea(id: &str) -> bool { REVIEWED_LANEA.contains(&id) }
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let d = |id, name, status, rules, notes| StrategyDef { id, name, group: "Aberration (third-party code)", session: 0, dir: "Long/Short", status,
