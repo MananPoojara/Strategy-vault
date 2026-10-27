@@ -318,6 +318,13 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || tillson_reviewed(def) // Tim Tillson block
         || leungchong_reviewed(def) // Leung and Chong block
         || bollinger_reviewed(def) // John Bollinger block
+        || la_aatt_reviewed(def) // Andrew Abraham (aatt, lane A) block
+        || la_awab_reviewed(def) // Anthony W. Warren (awab, lane A) block
+        || la_jswct_reviewed(def) // John Sweeney (jswct, lane A) block
+        || la_bergsth_reviewed(def) // Jim Berg (bergsth, lane A) block
+        || la_vsbrw_reviewed(def) // Vijay Singal (vsbrw, lane A) block
+        || la_jkofc_reviewed(def) // Jay Kaeppel, Robin Lofton & Brad Zigler (jkofc, lane A) block
+        || la_swsp_reviewed(def) // Stan Weinstein (swsp, lane A) block
         || rarsysb_reviewed(def) // Vendor code archives block
         || t2wb_reviewed(def) // Trade-to-Win systems block
         || mslibb_reviewed(def) // Libanes MetaStock strategies block
@@ -1294,6 +1301,76 @@ fn bollinger_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end John Bollinger
+// ---------------------------------------------------------------- Andrew Abraham (aatt, lane A) 2026-10-26 (lane B)
+// Admission only for the module REVIEWED lists (authors/lanea/singles/decisions.json); kept in one block to merge.
+pub fn la_aatt_reviewed(def:&StrategyDef)->bool {(def.book=="aatt" && crate::books::aatt::reviewed_lanea(def.id))}
+const LA_AATT_LABEL:&str="Abraham's volatility stop-and-reverse was written for futures and stocks (corn, Swiss franc, Chase Manhattan); Runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade.";
+fn la_aatt_policy(def:&StrategyDef)->Option<Policy> {
+    if !la_aatt_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Andrew Abraham / Trading the Trend, Technical Analysis of Stocks & Commodities V16:9 (1998)");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Andrew Abraham (aatt, lane A)
+// ---------------------------------------------------------------- Anthony W. Warren (awab, lane A) 2026-10-26 (lane B)
+// Admission only for the module REVIEWED lists (authors/lanea/singles/decisions.json); kept in one block to merge.
+pub fn la_awab_reviewed(def:&StrategyDef)->bool {(def.book=="awab" && crate::books::awab::reviewed_lanea(def.id))}
+const LA_AWAB_LABEL:&str="Warren's alpha-beta trend channel was written for weekly mutual-fund, stock and S&P 400 prices; Runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade.";
+fn la_awab_policy(def:&StrategyDef)->Option<Policy> {
+    if !la_awab_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Anthony W. Warren / Technical Analysis of Stocks & Commodities V3:3, V3:8, V7:4 (1985-1989)");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Anthony W. Warren (awab, lane A)
+// ---------------------------------------------------------------- John Sweeney (jswct, lane A) 2026-10-26 (lane B)
+// Admission only for the module REVIEWED lists (authors/lanea/singles/decisions.json); kept in one block to merge.
+pub fn la_jswct_reviewed(def:&StrategyDef)->bool {(def.book=="jswct" && crate::books::jswct::reviewed_lanea(def.id))}
+const LA_JSWCT_LABEL:&str="Sweeney's two-average trend rule was written for New York light crude futures; Runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade.";
+fn la_jswct_policy(def:&StrategyDef)->Option<Policy> {
+    if !la_jswct_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"John Sweeney / Campaign Trading (1996)");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end John Sweeney (jswct, lane A)
+// ---------------------------------------------------------------- Jim Berg (bergsth, lane A) 2026-10-26 (lane B)
+// Admission only for the module REVIEWED lists (authors/lanea/singles/decisions.json); kept in one block to merge.
+pub fn la_bergsth_reviewed(def:&StrategyDef)->bool {(def.book=="bergsth" && crate::books::bergsth::reviewed_lanea(def.id))}
+const LA_BERGSTH_LABEL:&str="Berg's moving-average crossover was written for ASX shares; Runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade.";
+fn la_bergsth_policy(def:&StrategyDef)->Option<Policy> {
+    if !la_bergsth_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Jim Berg / The Stock Trading Handbook (2005)");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Jim Berg (bergsth, lane A)
+// ---------------------------------------------------------------- Vijay Singal (vsbrw, lane A) 2026-10-26 (lane B)
+// Admission only for the module REVIEWED lists (authors/lanea/singles/decisions.json); kept in one block to merge.
+pub fn la_vsbrw_reviewed(def:&StrategyDef)->bool {(def.book=="vsbrw" && crate::books::vsbrw::reviewed_lanea(def.id))}
+const LA_VSBRW_LABEL:&str="Singal's December trade was written for the S&P 500 (SPDR, futures, index funds) and the Nasdaq 100; Runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade.";
+fn la_vsbrw_policy(def:&StrategyDef)->Option<Policy> {
+    if !la_vsbrw_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Vijay Singal / Beyond the Random Walk (2004)");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Vijay Singal (vsbrw, lane A)
+// ---------------------------------------------------------------- Jay Kaeppel, Robin Lofton & Brad Zigler (jkofc, lane A) 2026-10-26 (lane B)
+// Admission only for the module REVIEWED lists (authors/lanea/singles/decisions.json); kept in one block to merge.
+pub fn la_jkofc_reviewed(def:&StrategyDef)->bool {(def.book=="jkofc" && crate::books::jkofc::reviewed_lanea(def.id))}
+const LA_JKOFC_LABEL:&str="Kaeppel's 4-day average reversal was written for futures (February gold); Runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade.";
+fn la_jkofc_policy(def:&StrategyDef)->Option<Policy> {
+    if !la_jkofc_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Jay Kaeppel, Robin Lofton & Brad Zigler / Optionetics Futures & Commodity Home Study Course 2 (2007)");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Jay Kaeppel, Robin Lofton & Brad Zigler (jkofc, lane A)
+// ---------------------------------------------------------------- Stan Weinstein (swsp, lane A) 2026-10-26 (lane B)
+// Admission only for the module REVIEWED lists (authors/lanea/singles/decisions.json); kept in one block to merge.
+pub fn la_swsp_reviewed(def:&StrategyDef)->bool {(def.book=="swsp" && crate::books::swsp::reviewed_lanea(def.id))}
+const LA_SWSP_LABEL:&str="Weinstein's switching rule was written for no-load stock mutual funds; runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade.";
+fn la_swsp_policy(def:&StrategyDef)->Option<Policy> {
+    if !la_swsp_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Stan Weinstein / Secrets for Profiting in Bull and Bear Markets (1988)");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Stan Weinstein (swsp, lane A)
 // ---------------------------------------------------------------- Vendor code archives 2026-10-26 (lane B)
 // Admission only for the module REVIEWED lists (authors/vendor/laneb/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn rarsysb_reviewed(def:&StrategyDef)->bool {(def.book=="rarsys" && crate::books::rarsys::reviewed(def.id))}
@@ -1812,6 +1889,13 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=tillson_policy(def) {return p;} // Tim Tillson block
     if let Some(p)=leungchong_policy(def) {return p;} // Leung and Chong block
     if let Some(p)=bollinger_policy(def) {return p;} // John Bollinger block
+    if let Some(p)=la_aatt_policy(def) {return p;} // Andrew Abraham (aatt, lane A) block
+    if let Some(p)=la_awab_policy(def) {return p;} // Anthony W. Warren (awab, lane A) block
+    if let Some(p)=la_jswct_policy(def) {return p;} // John Sweeney (jswct, lane A) block
+    if let Some(p)=la_bergsth_policy(def) {return p;} // Jim Berg (bergsth, lane A) block
+    if let Some(p)=la_vsbrw_policy(def) {return p;} // Vijay Singal (vsbrw, lane A) block
+    if let Some(p)=la_jkofc_policy(def) {return p;} // Jay Kaeppel, Robin Lofton & Brad Zigler (jkofc, lane A) block
+    if let Some(p)=la_swsp_policy(def) {return p;} // Stan Weinstein (swsp, lane A) block
     if let Some(p)=rarsysb_policy(def) {return p;} // Vendor code archives block
     if let Some(p)=t2wb_policy(def) {return p;} // Trade-to-Win systems block
     if let Some(p)=mslibb_policy(def) {return p;} // Libanes MetaStock strategies block
@@ -2269,6 +2353,13 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         "stad2_stoch"=>"Held: the printed code opens with 200 shares and reverses with 400 shares, so every reversal is twice the opening size; the vault trades one unit and refuses the larger position on every market tested, so no result can be published.",
         "stad8_stampede"|"stad9_luxor"|"stad13_luxor"=>"Held: the strategy adds to a winning position (pyramiding up to several entries in the same direction); the vault carries one unit per strategy and refuses the added entries, so no result can be published.",
         // ---- end STAD block
+        // ---- Lane A singles block (26 Oct 2026, lane B): held Live rules
+        "elcim_fi2"=>"Held: the Force Index section of Come Into My Trading Room (p.109-114) gives no entry order and no protective stop, and the book says a stop must be placed with every trade (p.169). The same signal with a stop is admitted as the Triple Screen version (elcim_ts_fi) and as Trading for a Living's Force Index rule (eltfl_fi2).",
+        "nftm_accutrack"=>"Held: needs data the vault does not have. AccuTrack (Timing Models p.E-16, Fig. 20-22) switches between two mutual funds (Vanguard Small-Cap Index and Index 500) by comparing their returns; the partner price series it needs is not in the vault's data, so there is nothing to test.",
+        "nfhp_quadram_ct"|"nfhp_quadram_ct_nse"|"nfhp_quadram_tf"|"nfhp_quadram_tf_nse"=>"Held: the exits are a $500 initial stop and a $500 trailing stop on S&P 500 futures (Building High-Performance Trading Systems Fig. 46, p.21), fixed dollar amounts for a contract the vault does not hold; on indices, ETFs and stocks they would not mean what the book meant, and the book's printed result is the two modes traded together. The vault's accuracy gate blocks it; publishing needs your decision on how to scale the stops.",
+        "jhs35_spike35"=>"Held: the trend-change rule needs a fixed 'variance' in price points set per market (Spike 35 manual p.1 and p.3: S&P 500 40 points); the manual gives no value for the NIFTY 50, ETFs or stocks, so the rule can only run on the S&P 500 index and cannot be checked on Indian markets.",
+        "pstc_20_40_75"=>"Held: the course trades this signal by buying long-dated call contracts (LEAPS) on S&P 100 / Nasdaq 100 stocks (Professional Swing Trading College, Week 8 notes); the vault holds no history of those contract prices, and a stock or index price cannot stand in for them. The course's own table also reports the move in the underlying stock, and our independent check of that signal on the underlying matched with 0 differences, so it can be published as the underlying-stock signal if you accept that measure.",
+        // ---- end Lane A singles held
         // ---- Guppy MetaStock Formula Index block (26 Oct 2026, lane B): held Live rules
         "dgmf_21d_rev_di"|"dgmf_katz_cyclical"|"dgmf_roc_ma"|"dgmf_stoch_ma"=>"Held: rules not fully defined for the tester. The result depends on what MetaStock's System Tester does with an opposite Enter signal while a position is open and its own Close formula is false (close and reverse, or ignore it); the collection does not print the tester setting, the MetaStock 7 manual does not say, and in MetaStock 8 it is a user setting (Portfolio Bias), so the behaviour is not specified and either reading would be a guess.",
         // ---- end Guppy MetaStock Formula Index held
@@ -2442,6 +2533,13 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if tillson_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",TILLSON_LABEL));} // Tim Tillson block
     if leungchong_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LEUNGCHONG_LABEL));} // Leung and Chong block
     if bollinger_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BOLLINGER_LABEL));} // John Bollinger block
+    if la_aatt_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LA_AATT_LABEL));} // Andrew Abraham (aatt, lane A) block
+    if la_awab_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LA_AWAB_LABEL));} // Anthony W. Warren (awab, lane A) block
+    if la_jswct_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LA_JSWCT_LABEL));} // John Sweeney (jswct, lane A) block
+    if la_bergsth_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LA_BERGSTH_LABEL));} // Jim Berg (bergsth, lane A) block
+    if la_vsbrw_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LA_VSBRW_LABEL));} // Vijay Singal (vsbrw, lane A) block
+    if la_jkofc_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LA_JKOFC_LABEL));} // Jay Kaeppel, Robin Lofton & Brad Zigler (jkofc, lane A) block
+    if la_swsp_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LA_SWSP_LABEL));} // Stan Weinstein (swsp, lane A) block
     if rarsysb_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",RARSYSB_LABEL));} // Vendor code archives block
     if t2wb_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",T2WB_LABEL));} // Trade-to-Win systems block
     if mslibb_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",MSLIBB_LABEL));} // Libanes MetaStock strategies block
@@ -2913,6 +3011,17 @@ mod tests {
         }
     }
     // ---- end STAD block ----
+    // ---- Lane A singles held (2026-10-26, lane B) ----
+    #[test]
+    fn la_singles_held_rules_have_plain_card_reasons() {
+        use crate::books::{elcim, jhs35, nfhp, nftm, pstc};
+        let all:Vec<StrategyDef>=elcim::catalogue().into_iter().chain(jhs35::catalogue()).chain(nfhp::catalogue()).chain(nftm::catalogue()).chain(pstc::catalogue()).collect();
+        for id in ["elcim_fi2", "nftm_accutrack", "nfhp_quadram_ct", "nfhp_quadram_ct_nse", "nfhp_quadram_tf", "nfhp_quadram_tf_nse", "jhs35_spike35", "pstc_20_40_75"] {
+            let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
+            assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
+        }
+    }
+    // ---- end Lane A singles held ----
     // ---- Guppy MetaStock Formula Index held (2026-10-26, lane B) ----
     #[test]
     fn guppyf_held_rules_have_plain_card_reasons() {
@@ -3151,6 +3260,118 @@ mod tests {
         }
     }
     // ---- end John Bollinger block ----
+    // ---- Andrew Abraham (aatt, lane A) block (2026-10-26, lane B) ----
+    #[test]
+    fn la_aatt_review_admits_exact_ids() {
+        use crate::books::{aatt};
+        let all:Vec<StrategyDef>=aatt::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=aatt::REVIEWED_LANEA.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|la_aatt_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Andrew Abraham (aatt, lane A) block ----
+    // ---- Anthony W. Warren (awab, lane A) block (2026-10-26, lane B) ----
+    #[test]
+    fn la_awab_review_admits_exact_ids() {
+        use crate::books::{awab};
+        let all:Vec<StrategyDef>=awab::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=awab::REVIEWED_LANEA.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|la_awab_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Anthony W. Warren (awab, lane A) block ----
+    // ---- John Sweeney (jswct, lane A) block (2026-10-26, lane B) ----
+    #[test]
+    fn la_jswct_review_admits_exact_ids() {
+        use crate::books::{jswct};
+        let all:Vec<StrategyDef>=jswct::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=jswct::REVIEWED_LANEA.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|la_jswct_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end John Sweeney (jswct, lane A) block ----
+    // ---- Jim Berg (bergsth, lane A) block (2026-10-26, lane B) ----
+    #[test]
+    fn la_bergsth_review_admits_exact_ids() {
+        use crate::books::{bergsth};
+        let all:Vec<StrategyDef>=bergsth::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=bergsth::REVIEWED_LANEA.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|la_bergsth_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Jim Berg (bergsth, lane A) block ----
+    // ---- Vijay Singal (vsbrw, lane A) block (2026-10-26, lane B) ----
+    #[test]
+    fn la_vsbrw_review_admits_exact_ids() {
+        use crate::books::{vsbrw};
+        let all:Vec<StrategyDef>=vsbrw::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=vsbrw::REVIEWED_LANEA.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|la_vsbrw_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Vijay Singal (vsbrw, lane A) block ----
+    // ---- Jay Kaeppel, Robin Lofton & Brad Zigler (jkofc, lane A) block (2026-10-26, lane B) ----
+    #[test]
+    fn la_jkofc_review_admits_exact_ids() {
+        use crate::books::{jkofc};
+        let all:Vec<StrategyDef>=jkofc::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=jkofc::REVIEWED_LANEA.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|la_jkofc_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Jay Kaeppel, Robin Lofton & Brad Zigler (jkofc, lane A) block ----
+    // ---- Stan Weinstein (swsp, lane A) block (2026-10-26, lane B) ----
+    #[test]
+    fn la_swsp_review_admits_exact_ids() {
+        use crate::books::{swsp};
+        let all:Vec<StrategyDef>=swsp::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=swsp::REVIEWED_LANEA.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|la_swsp_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Stan Weinstein (swsp, lane A) block ----
     // ---- Vendor code archives block (2026-10-26, lane B) ----
     #[test]
     fn rarsysb_review_admits_exact_ids() {

@@ -12,6 +12,9 @@
 use crate::connors::{claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "vsbrw";
+/// Admitted ids (authors/lanea/singles/decisions.json).
+pub const REVIEWED_LANEA: &[&str] = &["vsbrw_dec5", "vsbrw_decmonth"];
+pub fn reviewed_lanea(id: &str) -> bool { REVIEWED_LANEA.contains(&id) }
 
 const DEC_NOTE: &str = "Trading days are counted from the exchange calendar of the ticker being tested (the December bars of \
 that year). A year is used only when its December is complete in the data (a later month exists), so the 7th-last day is known. \
