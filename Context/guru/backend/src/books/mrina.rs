@@ -7,6 +7,9 @@
 use crate::connors::{sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "mrina";
+/// Admitted ids (authors/lanea/newsletters/decisions.json).
+pub const REVIEWED_LANEA: &[&str] = &["mrina_xstoch14"];
+pub fn reviewed_lanea(id: &str) -> bool { REVIEWED_LANEA.contains(&id) }
 
 fn mk(dir: f64, i: usize, px: f64, sig: usize) -> Trade {
     Trade { dir, legs: vec![Leg { i, px, w: 1. }], exit_i: i, exit_px: px, reason: String::new(), entry_kind: "open", signal_i: sig, open: false, exits: vec![] }

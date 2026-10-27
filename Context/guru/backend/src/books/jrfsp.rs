@@ -8,6 +8,9 @@
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "jrfsp";
+/// Admitted ids (authors/lanea/newsletters/decisions.json).
+pub const REVIEWED_LANEA: &[&str] = &["jrfsp_weekly_breakout"];
+pub fn reviewed_lanea(id: &str) -> bool { REVIEWED_LANEA.contains(&id) }
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef {

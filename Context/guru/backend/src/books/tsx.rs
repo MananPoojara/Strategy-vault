@@ -6,6 +6,9 @@
 use crate::connors::{sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "tsx";
+/// Admitted ids (authors/lanea/newsletters/decisions.json).
+pub const REVIEWED_LANEA: &[&str] = &["tsx_dma"];
+pub fn reviewed_lanea(id: &str) -> bool { REVIEWED_LANEA.contains(&id) }
 
 pub fn catalogue() -> Vec<StrategyDef> {
     use Status::*;

@@ -327,6 +327,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || la_vsbrw_reviewed(def) // Vijay Singal (vsbrw, lane A) block
         || la_jkofc_reviewed(def) // Jay Kaeppel, Robin Lofton & Brad Zigler (jkofc, lane A) block
         || la_swsp_reviewed(def) // Stan Weinstein (swsp, lane A) block
+        || la_newsletters_reviewed(def) // Lane A newsletters block
         || rarsysb_reviewed(def) // Vendor code archives block
         || t2wb_reviewed(def) // Trade-to-Win systems block
         || mslibb_reviewed(def) // Libanes MetaStock strategies block
@@ -1393,6 +1394,16 @@ fn la_swsp_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Stan Weinstein (swsp, lane A)
+// ---------------------------------------------------------------- Lane A newsletters 2026-10-26 (lane B)
+// Admission only for the module REVIEWED lists (authors/lanea/newsletters/decisions.json); kept in one block to merge.
+pub fn la_newsletters_reviewed(def:&StrategyDef)->bool {(def.book=="mrina" && crate::books::mrina::reviewed_lanea(def.id)) || (def.book=="tsx" && crate::books::tsx::reviewed_lanea(def.id)) || (def.book=="jrfsp" && crate::books::jrfsp::reviewed_lanea(def.id)) || (def.book=="bpqst" && crate::books::bpqst::reviewed_lanea(def.id)) || (def.book=="wmmts" && crate::books::wmmts::reviewed_lanea(def.id))}
+const LA_NEWSLETTERS_LABEL:&str="Newsletter / course rule with no per-market test the vault can compare; runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade.";
+fn la_newsletters_policy(def:&StrategyDef)->Option<Policy> {
+    if !la_newsletters_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Newsletters and courses: Futures Magazine (Ruggiero, Aug 2003), Inside Advantage (Ruggiero, Oct 1996), TS Express (Brower, Sep/Oct 1997), FirstStrike Plus (Rensink), Quantum Swing Trader (Poulos), Market Turn Strategy (McWilliams)");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Lane A newsletters
 // ---------------------------------------------------------------- Vendor code archives 2026-10-26 (lane B)
 // Admission only for the module REVIEWED lists (authors/vendor/laneb/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn rarsysb_reviewed(def:&StrategyDef)->bool {(def.book=="rarsys" && crate::books::rarsys::reviewed(def.id))}
@@ -1920,6 +1931,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=la_vsbrw_policy(def) {return p;} // Vijay Singal (vsbrw, lane A) block
     if let Some(p)=la_jkofc_policy(def) {return p;} // Jay Kaeppel, Robin Lofton & Brad Zigler (jkofc, lane A) block
     if let Some(p)=la_swsp_policy(def) {return p;} // Stan Weinstein (swsp, lane A) block
+    if let Some(p)=la_newsletters_policy(def) {return p;} // Lane A newsletters block
     if let Some(p)=rarsysb_policy(def) {return p;} // Vendor code archives block
     if let Some(p)=t2wb_policy(def) {return p;} // Trade-to-Win systems block
     if let Some(p)=mslibb_policy(def) {return p;} // Libanes MetaStock strategies block
@@ -2384,6 +2396,12 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         "jhs35_spike35"=>"Held: the trend-change rule needs a fixed 'variance' in price points set per market (Spike 35 manual p.1 and p.3: S&P 500 40 points); the manual gives no value for the NIFTY 50, ETFs or stocks, so the rule can only run on the S&P 500 index and cannot be checked on Indian markets.",
         "pstc_20_40_75"=>"Held: the course trades this signal by buying long-dated call contracts (LEAPS) on S&P 100 / Nasdaq 100 stocks (Professional Swing Trading College, Week 8 notes); the vault holds no history of those contract prices, and a stock or index price cannot stand in for them. The course's own table also reports the move in the underlying stock, and our independent check of that signal on the underlying matched with 0 differences, so it can be published as the underlying-stock signal if you accept that measure.",
         // ---- end Lane A singles held
+        // ---- Lane A newsletters block (26 Oct 2026, lane B): held Live rules
+        "wmny_nhnl_ratio"|"wmny_nhnl_cci"=>"Held: needs data the vault does not have. Both Working Money systems (WM2002 p.71-81) are built on the daily count of Nasdaq new 52-week highs and new lows; no such series is in the vault, so there is nothing to test.",
+        "wmny_pct_nh"=>"Held: needs data the vault does not have. The rule (WM2003 p.147-156) uses the daily count of NYSE new 52-week highs and new lows; the vault's US breadth has advances, declines and TRIN only, so there is nothing to test.",
+        "wmny_bond_band"=>"Held: needs data the vault does not have. The switch (WM2004 p.61-63) is driven by Treasury-bond futures high/low/close prices; the vault holds no bond futures history, and a stock index cannot stand in for bond prices.",
+        "rcmm_20"|"rcmm_55"=>"Held: the system adds up to four units to a winning position at fixed ATR steps from the first entry (Market Millions p.40-49, the pyramid matrix); the vault carries one unit per strategy and refuses the added units, so no result can be published.",
+        // ---- end Lane A newsletters held
         // ---- Guppy MetaStock Formula Index block (26 Oct 2026, lane B): held Live rules
         "dgmf_21d_rev_di"|"dgmf_katz_cyclical"|"dgmf_roc_ma"|"dgmf_stoch_ma"=>"Held: rules not fully defined for the tester. The result depends on what MetaStock's System Tester does with an opposite Enter signal while a position is open and its own Close formula is false (close and reverse, or ignore it); the collection does not print the tester setting, the MetaStock 7 manual does not say, and in MetaStock 8 it is a user setting (Portfolio Bias), so the behaviour is not specified and either reading would be a guess.",
         // ---- end Guppy MetaStock Formula Index held
@@ -2566,6 +2584,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if la_vsbrw_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LA_VSBRW_LABEL));} // Vijay Singal (vsbrw, lane A) block
     if la_jkofc_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LA_JKOFC_LABEL));} // Jay Kaeppel, Robin Lofton & Brad Zigler (jkofc, lane A) block
     if la_swsp_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LA_SWSP_LABEL));} // Stan Weinstein (swsp, lane A) block
+    if la_newsletters_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LA_NEWSLETTERS_LABEL));} // Lane A newsletters block
     if rarsysb_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",RARSYSB_LABEL));} // Vendor code archives block
     if t2wb_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",T2WB_LABEL));} // Trade-to-Win systems block
     if mslibb_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",MSLIBB_LABEL));} // Libanes MetaStock strategies block
@@ -3558,6 +3577,33 @@ mod tests {
         }
     }
     // ---- end Stan Weinstein (swsp, lane A) block ----
+    // ---- Lane A newsletters held (2026-10-26, lane B) ----
+    #[test]
+    fn la_newsletters_held_rules_have_plain_card_reasons() {
+        use crate::books::{rcmm, wmny};
+        let all:Vec<StrategyDef>=rcmm::catalogue().into_iter().chain(wmny::catalogue()).collect();
+        for id in ["wmny_nhnl_ratio", "wmny_nhnl_cci", "wmny_pct_nh", "wmny_bond_band", "rcmm_20", "rcmm_55"] {
+            let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
+            assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
+        }
+    }
+    // ---- end Lane A newsletters held ----
+    // ---- Lane A newsletters block (2026-10-26, lane B) ----
+    #[test]
+    fn la_newsletters_review_admits_exact_ids() {
+        use crate::books::{mrina, tsx, jrfsp, bpqst, wmmts};
+        let all:Vec<StrategyDef>=mrina::catalogue().into_iter().chain(tsx::catalogue()).chain(jrfsp::catalogue()).chain(bpqst::catalogue()).chain(wmmts::catalogue()).collect();
+        let mut want:Vec<&str>=mrina::REVIEWED_LANEA.iter().chain(tsx::REVIEWED_LANEA.iter()).chain(jrfsp::REVIEWED_LANEA.iter()).chain(bpqst::REVIEWED_LANEA.iter()).chain(wmmts::REVIEWED_LANEA.iter()).copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|la_newsletters_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Lane A newsletters block ----
     // ---- Jason Perl block (2026-10-26, lane B) ----
     #[test]
     fn perl_review_admits_exact_ids() {
