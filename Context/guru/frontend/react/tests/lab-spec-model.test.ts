@@ -166,7 +166,7 @@ it("pre-checks: entry, exit (price exits incl. breakeven and take-profits; alway
   expect(m.specProblems(many, cat)).toContain("Use at most 12 conditions in total.");
   const shortMany = { ...s, direction: "both", short_side: { entry: { all: Array(12).fill(s.entry.all[0]) }, exit: { any: [s.exit.any[0]] } } } as Spec;
   expect(m.specProblems(shortMany, cat)).toContain("Short side: use at most 12 conditions in total.");
-  expect(m.specProblems({ ...s, entry: { all: [] } }, cat)).toContain("Add at least one entry condition.");
+  expect(m.specProblems({ ...s, entry: { all: [] } }, cat)).toContain("Add a buy rule first: pick a suggestion under “Buy when…” in Your idea, or press + Add condition.");
 });
 
 it("money mode sends no cost or slippage query; otherwise as before", () => {

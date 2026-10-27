@@ -1,7 +1,7 @@
 import { Fragment, useRef, useState, type ReactNode } from "react";
 import { COPY } from "./labels";
 import { NumField, OperandEditor } from "./OperandEditor";
-import { OPERATOR_LABELS, isSeries, isValue, type Side } from "./spec-model";
+import { CANDLES, OPERATOR_LABELS, candleCount, candleCountNode, isSeries, isValue, ordinal, rulePhrase, setAt, type CandleKind, type Side } from "./spec-model";
 import { EXIT_PRESETS, MAX_STEPS, MAX_WHOLE, describeNode, isLeaf, move, newNode, nodeKind, unwrap, withOp, wrap, type ListPath } from "./rule-tree";
 import type { Catalogue, Operand, RuleNode } from "./types";
 import { DetailContext, useCompact, useSimple } from "./simple";
@@ -16,38 +16,68 @@ type AddKind = Parameters<typeof newNode>[0];
 const ADD_KINDS = Object.keys(COPY.addOptions) as AddKind[];
 const GROUP_TITLES: Record<string, string> = { all: "All of", any: "Any of", not: "Not", at_least: "At least", then: "Sequence" };
 
-export function RuleList({ list, onChange, listPath, title, tag, catalogue, caps, short = listPath.startsWith("short_side."), filters = false }: {
+export function RuleList({ list, onChange, listPath, title, tag, catalogue, caps, short = listPath.startsWith("short_side."), filters = false, notice, footer }: {
   list: RuleNode[]; onChange(list: RuleNode[]): void; listPath: ListPath; title: string; tag: string; catalogue: Catalogue; caps: TreeCaps;
   /** The list belongs to a short position (ready-made exits are mirrored). */
   short?: boolean;
   /** The Filters tab: entry rules marked `filter` (rules.rs), each with its `filter_exit` box. */
   filters?: boolean;
+  /** Shown above the rows: the first-rule suggestions of an empty buy list, or the default exit a sell list falls back to. */
+  notice?: ReactNode;
+  /** Shown under the rows: the order type of a buy list, the stops and targets of a sell list. */
+  footer?: ReactNode;
 }) {
   const side: Side = listPath.endsWith("exit.any") ? "exit" : "entry";
   const put = (i: number, n: RuleNode) => onChange(list.map((v, j) => j === i ? n : v));
+  const simple = useSimple(), [fresh, setFresh] = useState(-1); // Simple: a row added by hand opens in its editor
   return <div className="lab-list" data-lab-list={filters ? `${listPath}.filters` : listPath}>
     <h3>{title}</h3>
     <p className="cap lab-list-help">{filters ? COPY.filterListHelp : side === "exit" ? COPY.exitListHelp : COPY.entryListHelp}</p>
+    {notice}
     {list.map((node, i) => {
       // the filter marks stay on the row, outside the editor: a row wrapped in a group must not carry them inside
       const x = node as Obj, bare = { ...x };
       delete bare.filter; delete bare.filter_exit;
       const mark = (n: RuleNode, exit = x.filter_exit === true) => ({ ...n, filter: true, ...(exit ? { filter_exit: true } : {}) }) as RuleNode;
+      const remove = () => onChange(list.filter((_, j) => j !== i));
+      const editor = <NodeEditor node={filters ? bare as RuleNode : node} onChange={(n) => put(i, filters ? mark(n) : n)}
+          onRemove={remove} onMove={(d) => onChange(move(list, i, d))} canUp={i > 0} canDown={i < list.length - 1}
+          catalogue={catalogue} side={side} top caps={caps} label={`${tag} ${i + 1}`} />;
       return <Fragment key={i}>
-        <NodeEditor node={filters ? bare as RuleNode : node} onChange={(n) => put(i, filters ? mark(n) : n)}
-          onRemove={() => onChange(list.filter((_, j) => j !== i))} onMove={(d) => onChange(move(list, i, d))} canUp={i > 0} canDown={i < list.length - 1}
-          catalogue={catalogue} side={side} top caps={caps} label={`${tag} ${i + 1}`} />
+        {simple ? <SentenceRow node={node} catalogue={catalogue} label={`${tag} ${i + 1}`} onChange={(n) => put(i, n)} onRemove={remove} editor={editor} open={i === fresh} /> : editor}
         {filters && <label className="lab-check lab-filter-exit" title="As the AFLs' filter exits (ST Exit, Base exit): the trade closes on any candle where this filter is false">
           <input type="checkbox" aria-label={`${tag} ${i + 1}: ${COPY.filterExit}`} checked={x.filter_exit === true} onChange={(e) => put(i, mark(bare as RuleNode, e.target.checked))} />{COPY.filterExit}</label>}
       </Fragment>;
     })}
-    <AddMenu title={title} caps={caps} top onAdd={(n) => onChange([...list, filters ? { ...n, filter: true } as RuleNode : n])} />
+    <div className="lab-list-actions">
+    <AddMenu title={title} caps={caps} top onAdd={(n) => { setFresh(list.length); onChange([...list, filters ? { ...n, filter: true } as RuleNode : n]); }} />
     {side === "exit" && <select data-lab-exit-presets aria-label={`Add a ready-made exit to ${title}`} value=""
       title="Exits measured from the entry: the Nth candle of a kind, a trail on an indicator or the close, or a stop / target on the close"
       onChange={(e) => { const p = EXIT_PRESETS.find((x) => x.id === e.target.value); if (p && !(caps.leaves || caps.nodes || caps.top)) onChange([...list, p.node(short)]); }}>
       <option value="">+ Ready-made exit…</option>
       {EXIT_PRESETS.map((p) => <option key={p.id} value={p.id} disabled={caps.leaves || caps.nodes || caps.top}>{p.label(short)}</option>)}
     </select>}
+    </div>
+    {footer}
+  </div>;
+}
+
+/** Simple view: a rule as one sentence with its numbers editable in place; Edit opens the full row, × removes it. */
+function SentenceRow({ node, catalogue, label, onChange, onRemove, editor, open = false }: {
+  node: RuleNode; catalogue: Catalogue; label: string; onChange(n: RuleNode): void; onRemove(): void; editor: ReactNode; open?: boolean;
+}) {
+  const [editing, setEditing] = useState(open);
+  const x = node as Obj, off = x.off === true, phrase = rulePhrase(node, catalogue)?.phrase;
+  if (editing) return <div className="lab-sentence-edit" data-lab-sentence-edit>{editor}
+    <button type="button" className="dbtn sm primary" onClick={() => setEditing(false)}>Done</button></div>;
+  return <div className={`lab-sentence${off ? " lab-off" : ""}`} data-lab-sentence data-lab-off={off || undefined}>
+    <span className="lab-sentence-text">{off && <b>Off: </b>}{phrase ? phrase.map((part, i) => typeof part === "string" ? part
+      : <NumField key={i} hideLabel label={`${label}: ${part.label}`} value={part.value} min={part.min} max={part.max} step={part.step}
+        onChange={(n) => n !== undefined && (!part.integer || Number.isInteger(n)) && onChange(setAt(node, part.path, n))} />)
+      : describeNode(node, catalogue)}</span>
+    {off && <button type="button" className="dbtn sm" onClick={() => { const on = { ...x }; delete on.off; onChange(on as RuleNode); }}>Switch on</button>}
+    <button type="button" className="dbtn sm ghost" aria-label={`Edit ${label}`} onClick={() => setEditing(true)}>Edit</button>
+    <button type="button" className="dbtn sm ghost" aria-label={`Remove ${label}`} title="Remove this rule" onClick={onRemove}>×</button>
   </div>;
 }
 
@@ -86,6 +116,7 @@ export function NodeEditor({ node, onChange, onRemove, onMove, canUp = false, ca
   const [open, setOpen] = useState(true);
   const compact = useCompact(), simple = useSimple();
   const [more, setMore] = useState(!compact); // the page keeps a row's timing, source and group/move behind "More"
+  const [parts, setParts] = useState(false); // an "Nth up close after entry" exit opened as its full condition
   const kind = nodeKind(node), x = node as Obj;
   const set = (patch: Obj) => onChange({ ...x, ...patch } as RuleNode);
   const scope = useForeignScope(), latest = useRef({ node, onChange });
@@ -114,10 +145,25 @@ export function NodeEditor({ node, onChange, onRemove, onMove, canUp = false, ca
     renderNode={renderNode} nodesFull={caps.nodes} />;
   const number = (field: string, name: string) => <NumField label={name} value={x[field] as number} min={1} max={MAX_WHOLE} step={1}
     onChange={(n) => n !== undefined && Number.isInteger(n) && n >= 1 && n <= MAX_WHOLE && set({ [field]: n })} />;
-  // Simple view: a small caption over each part of a top-level row
-  const part = (caption: string, el: ReactNode) => simple && top ? <span className="lab-part"><small className="lab-part-cap">{caption}</small><span className="lab-part-body">{el}</span></span> : el;
+  // a small caption over each part of a top-level row (both views), so a row reads "what to check · condition · compared with"
+  const part = (caption: string, el: ReactNode) => top ? <span className="lab-part"><small className="lab-part-cap">{caption}</small><span className="lab-part-body">{el}</span></span> : el;
   if (kind === "unknown") return <div className="lab-cond lab-node" data-lab-node data-lab-kind="unknown">
     <span className="lab-kept">{COPY.keptAsIs} <code>{JSON.stringify(node)}</code></span>{remove}
+  </div>;
+  // the ready-made and default exits read as one sentence; "Edit as condition" shows every part
+  const candle = top && side === "exit" && !parts ? candleCount(node) : undefined;
+  if (candle) return <div className={`lab-cond lab-node lab-candle${offClass}`} data-lab-node data-lab-kind="candle" data-lab-off={off || undefined}>
+    {onOff}
+    <span className="lab-word">Exit at the</span>
+    <NumField label={`${label}: which one`} hideLabel value={candle.n} min={1} max={MAX_WHOLE} step={1}
+      onChange={(n) => n !== undefined && Number.isInteger(n) && n >= 1 && n <= MAX_WHOLE && set({ rhs: { value: n } })} />
+    <span className="lab-word lab-ord">{ordinal(candle.n).replace(/^\d+/, "")}</span>
+    <select aria-label={`${label}: candle`} value={candle.kind} onChange={(e) => onChange({ ...candleCountNode(e.target.value as CandleKind, candle.n), ...(off ? { off: true } : {}) } as RuleNode)}>
+      {(Object.keys(CANDLES) as CandleKind[]).map((k) => <option key={k} value={k}>{CANDLES[k].word}</option>)}
+    </select>
+    <span className="lab-word">after entry</span>
+    {!simple && <button type="button" className="dbtn sm ghost lab-more-btn" title="Show this exit as a full condition you can change part by part" onClick={() => setParts(true)}>Edit as condition</button>}
+    {remove}
   </div>;
   if (isLeaf(kind)) return <div className={`lab-cond lab-node${offClass}`} data-lab-node data-lab-kind={kind} data-lab-off={off || undefined}>
     {onOff}

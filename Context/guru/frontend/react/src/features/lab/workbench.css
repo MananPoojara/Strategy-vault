@@ -26,3 +26,98 @@
 .lab-legend-tv > div { width: max-content; max-width: 100%; padding: 0 4px; background: color-mix(in srgb, var(--panel) 82%, transparent); white-space: pre; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 /* Phones: the legend wraps inside the chart (the grid column may shrink below the one-line width). */
 @media (max-width: 600px) { .lab-legend-tv { font-size: 11px; width: calc(100% - 80px); grid-template-columns: minmax(0, 1fr); } .lab-legend-tv > div { white-space: normal; width: auto; } }
+
+/* One browser/settings dock replaces competing left and right sidebars. */
+.lab-chart-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:0 0 10px; }
+.lab-chart-actions .cap { margin:0 0 0 auto; }
+.lab-workbench .lab-chips .chip { border-radius:5px; background:var(--panel); border:1px solid var(--rule); padding:5px 8px; }
+.lab-indicator-browser[hidden] { display:none; }
+.lab-browser-heading { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 12px; border-bottom:1px solid var(--rule); }
+.lab-browser-heading h2 { margin:0; font:600 15px var(--font); }
+.lab-workbench .lab-library-docked { position:static; max-height:none; overflow:visible; margin:0; padding:10px 12px; border:0; background:transparent; }
+.lab-library-docked > .box-h { display:none; }
+.lab-pane-settings { position:absolute; z-index:5; top:4px; right:82px; display:grid; place-items:center; width:28px; height:26px; padding:0; border:1px solid var(--rule); border-radius:4px; background:var(--card); color:var(--ink2); cursor:pointer; }
+.lab-pane-settings:hover { color:var(--blue); border-color:var(--blue); }
+.lab-pane-settings:focus-visible { outline:2px solid var(--blue); outline-offset:2px; }
+.lab-chart-dock-panel .lab-params { border:0; max-height:none; }
+@media(max-width:700px) { .lab-chart-actions .cap { flex-basis:100%; margin-left:0; } }
+.lab-workbench .lab-chips .chip, .lab-workbench .lab-chips .chip .lab-chip-open { color:var(--ink); }
+.lab-tab-panel:has(.lab-workbench) { grid-template-columns:minmax(0,1fr); }
+.lab-step:has(> .lab-workbench) { min-width:0; }
+.lab-workbench > .box-h { flex-wrap:wrap; gap:6px; }
+.lab-workbench > .box-h small { white-space:normal; }
+.lab-workbench .lab-draw .join { max-width:100%; flex-wrap:wrap; height:auto; }
+.lab-workbench .lab-draw .join-item { min-height:30px; }
+.lab-chart-tools { display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; margin-bottom:8px; }
+.lab-chart-tools .lab-draw { margin:0; }
+.lab-chart-popup .lab-params { border:0; }
+.lab-page[data-chart-workspace] > header h1 { font-size:24px; }
+.lab-page[data-chart-workspace] > header > p:not(.lab-label) { display:none; }
+
+/* One chart workspace: controls across the top, drawings at the left, ranges below. */
+.lab-page[data-chart-workspace] { gap:6px; }
+.lab-page[data-chart-workspace] > header { display:flex; align-items:center; flex-wrap:wrap; gap:8px 14px; }
+.lab-page[data-chart-workspace] > header h1 { font-size:18px; margin:0; }
+.lab-page[data-chart-workspace] > header .lab-label { margin:0; font-size:11px; }
+.lab-page[data-chart-workspace] .lab-tabs-row { order:2; }
+.lab-page[data-chart-workspace] .lab-tab-panel { gap:6px; }
+.lab-page[data-chart-workspace] .lab-stepbar { order:2; margin:0; border-radius:0; }
+.lab-page[data-chart-workspace] .lab-step-btn { justify-content:flex-start; flex:0 1 auto; padding:8px 18px; font-size:12px; }
+.lab-page[data-chart-workspace] .lab-step-n { display:none; }
+.lab-page[data-chart-workspace] .lab-step-btn[aria-current=step] { background:var(--panel); color:var(--blue); box-shadow:inset 0 2px var(--blue); }
+.lab-page[data-chart-workspace] .lab-step-nav { order:3; margin-top:0; }
+.lab-page .lab-workbench { position:relative; padding:0; border:1px solid var(--rule); border-radius:0; background:var(--card); }
+.lab-chart-caption,.lab-control-name { position:absolute; width:1px; height:1px; padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+.lab-chart-topbar { display:flex; align-items:center; flex-wrap:wrap; min-height:42px; border-bottom:1px solid var(--rule); }
+.lab-chart-topbar .lab-toolbar { width:100%; border:0; background:none; padding:0; }
+.lab-chart-topbar .lab-chart-actions { margin:0; gap:8px; }
+.lab-chart-topbar .lab-chart-actions .dbtn { border:0; box-shadow:none; background:none; font-size:13px; padding:7px 10px; color:var(--ink); }
+.lab-chart-topbar .lab-chart-actions .dbtn:hover { background:var(--panel); }
+.lab-chart-topbar .lab-add-indicator { display:inline-flex; align-items:center; gap:7px; }
+.lab-page .lab-chart-type-control select { border:0; border-radius:0; border-right:1px solid var(--rule); background:transparent; min-height:32px; font:500 12px var(--font); color:var(--ink); padding:4px 10px; }
+.lab-chart-body { display:grid; grid-template-columns:44px minmax(0,1fr); min-width:0; }
+.lab-chart-body > div:last-child { min-width:0; }
+.lab-workbench .lab-draw-rail { display:flex; align-content:start; align-items:center; flex-flow:column; gap:7px; border-right:1px solid var(--rule); margin:0; padding:8px 3px; }
+.lab-workbench .lab-draw-rail button { display:grid; place-items:center; width:36px; height:36px; padding:7px; border:0; box-shadow:none; background:transparent; color:var(--ink2); border-radius:4px; }
+.lab-workbench .lab-draw-rail button svg { width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:1.4; }
+.lab-workbench .lab-draw-rail button:hover { background:var(--panel); color:var(--ink); }
+.lab-workbench .lab-draw-rail button[aria-pressed=true] { color:var(--blue); background:color-mix(in srgb,var(--blue) 10%,var(--card)); }
+.lab-chart-footer { display:flex; align-items:center; gap:3px; padding:3px 10px 3px 52px; border-top:1px solid var(--rule); }
+.lab-chart-footer button { font:600 12px var(--font); color:var(--ink2); background:none; border:0; padding:7px 10px; border-radius:3px; cursor:pointer; }
+.lab-chart-footer button:hover,.lab-chart-footer button[aria-pressed=true] { background:var(--panel); color:var(--blue); }
+.lab-chart-footer > span { margin-left:auto; font-size:11px; color:var(--ink3); }
+.lab-workbench > :is(.cap,.rnote,.lab-error,.lab-chips) { margin:6px 12px; }
+.lab-workbench > .lab-drawing-hint { position:absolute; left:52px; bottom:70px; z-index:6; padding:5px 8px; background:var(--card); box-shadow:0 1px 6px rgb(0 0 0 / .12); }
+@media(max-width:600px) {
+ .lab-chart-body { grid-template-columns:36px minmax(0,1fr); }
+ .lab-workbench .lab-draw-rail { padding-inline:1px; }
+ .lab-workbench .lab-draw-rail button { width:32px; height:36px; padding:6px; }
+ .lab-chart-footer { padding-left:40px; }
+ .lab-page[data-chart-workspace] .lab-step-btn { flex:1 1 45%; padding:8px; }
+ .lab-chart-footer > span { font-size:10px; }
+}
+
+.lab-chart-popup .lab-detail > .box-h { display:none; }
+.lab-chart-popup .lab-detail { border:0; background:none; }
+
+/* The workspace tabs (Chart · Strategy & backtest · Saved strategies) and Simple/Advanced stay at the top of the page. */
+.lab-page[data-lab-page][data-chart-workspace] > .lab-tabs-row { order: 0; }
+.lab-chart-next { align-items: center; gap: 12px; }
+/* One compact header on every tab of the Indicators page (title and label on one line), as on the Chart tab. */
+.lab-page[data-lab-page="indicators"] { gap: 8px; }
+.lab-page[data-lab-page="indicators"] > header { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; }
+.lab-page[data-lab-page="indicators"] > header h1 { font-size: 18px; margin: 0; }
+.lab-page[data-lab-page="indicators"] > header > p:not(.lab-label) { display: none; }
+.lab-page[data-lab-page="indicators"] > header .lab-label { margin: 0; font-size: 11px; }
+.lab-draw-layer { position: absolute; left: 0; top: 0; width: 100%; z-index: 2; overflow: hidden; pointer-events: none; touch-action: none; }
+.lab-draw-layer.on { pointer-events: all; cursor: crosshair; }
+.lab-draw-layer .lab-draw-hit { stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: move; }
+.lab-draw-layer .lab-draw-end { pointer-events: all; cursor: grab; }
+.lab-draw-layer.on .lab-draw-hit, .lab-draw-layer.on .lab-draw-end { pointer-events: none; }
+.lab-workbench .lab-fullscreen { margin-left:auto; display:grid; place-items:center; width:32px; height:32px; padding:5px; }
+.lab-workbench .lab-fullscreen svg { width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.6; }
+.lab-chart-actions:has(.lab-fullscreen) { flex:1; }
+.lab-maximized { position:fixed; inset:0; z-index:1000; overflow:auto; padding:6px; background:var(--bg, #fff); }
+.lab-maximized .lab-chart-next { display:none; }
+/* Renko, Kagi and the other timeless types have no drawing rail: the chart takes the whole row */
+.lab-workbench .lab-chart-body:has(> .lab-draw-rail[hidden]) { grid-template-columns: minmax(0,1fr); }

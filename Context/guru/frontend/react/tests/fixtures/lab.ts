@@ -7,7 +7,7 @@ import type {
 
 import { MODEL_NOTE, MONEY_BASIS_HINT } from "../../src/features/lab/labels";
 
-const needs = { volume: false, intraday: false, breadth: false, second_symbol: false, fundamentals: false, derivatives: false, onchain: false };
+const needs = { volume: false, intraday: false, breadth: false, second_symbol: false, fundamentals: false, derivatives: false, onchain: false, order_flow: false, order_book: false };
 const ind = (patch: Partial<Indicator> & Pick<Indicator, "id" | "name" | "category">): Indicator => ({
   placement: "price", needs, computed: true, params: [], outputs: [patch.id], first: [0], sparse: false,
   definition: `${patch.id}(close)`, note: "", tv: "", ab: "", ...patch,
@@ -57,7 +57,7 @@ export const glInstrumentsFixture: InstrumentsResponse = {
   ],
 };
 
-const dates = ["2024-01-05", "2024-01-08", "2024-01-09", "2024-01-15", "2024-02-01", "2024-02-02"];
+export const dates = ["2024-01-05", "2024-01-08", "2024-01-09", "2024-01-15", "2024-02-01", "2024-02-02"];
 export const seriesFixture = (id: string, outputs: string[], values: Record<string, (number | null)[]>): SeriesResponse => ({
   label: catalogueFixture.label, id, tf: "D", params: {}, outputs, dates, series: values, provenance: null,
   instrument: { ticker: "NIFTY 50", type: "index", native: false, market: "in", currency: "INR" },
@@ -222,3 +222,9 @@ export const money7Fixture: RunResult = {
     { entry: "2024-02-01", qty: 10, notional: 1050, costs: 21, pnl: -10.5 },
   ],
 };
+
+/** Picks an indicator in a rule's searchable picker (the "Indicator" button opens the list; an option is chosen on mousedown). */
+export async function pickIndicator(scope: ParentNode, id: string) {
+  await act(async () => scope.querySelector<HTMLButtonElement>('button[aria-label="Indicator"]')!.click());
+  await act(async () => { scope.querySelector<HTMLElement>(`[role="option"][data-id="${id}"]`)!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true })); });
+}

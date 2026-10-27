@@ -2628,6 +2628,11 @@ mod tests {
                 assert!(backtest(&ctx,d.id,0,rows.len()-1,0.,&Params::new()).unwrap_err().contains("separate fee/slippage"));
                 continue;
             }
+            if books::lkqts::macs_candidate(d.id) {
+                // MACS runs only on the selected RAW native series (selected_backtest_costs); the generic Ctx path has no runner
+                assert!(connors::run(d.id,&ctx,0,rows.len()-1,&Params::new()).is_none());
+                continue;
+            }
             for cost in [0.0, 0.0005] {
                 let raw = connors::run(d.id, &ctx, 0, rows.len()-1, &Params::new()).unwrap_or_else(|| panic!("{} has no runner", d.id));
                 let marks=equity_curve(&ctx.c,&raw,0,rows.len()-1,cost);

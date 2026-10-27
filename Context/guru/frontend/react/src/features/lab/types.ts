@@ -9,7 +9,7 @@ export type ChartRange = "1Y" | "3Y" | "All";
 export interface ForeignDisclosure { ticker: string; type: string; alignment: "same_date" | "prior_date"; fixup: boolean; first: string; last: string; uses?: {path:string;source:string;source_scope?:"portfolio_member";alignment:"same_date"|"prior_date";fixup:boolean}[] }
 export interface Provisional { provisional?: true; provisional_note?: string }
 export interface IndicatorParam { key: string; label: string; default: number; min: number; max: number; step: number | null; integer: boolean }
-export interface Needs { volume: boolean; intraday: boolean; breadth: boolean; second_symbol: boolean; fundamentals: boolean; derivatives: boolean; onchain: boolean }
+export interface Needs { volume: boolean; intraday: boolean; breadth: boolean; second_symbol: boolean; fundamentals: boolean; derivatives: boolean; onchain: boolean; order_flow: boolean; order_book: boolean }
 export interface Indicator {
   id: string; name: string; category: string; placement: "price" | "pane"; needs: Needs; computed: boolean;
   params: IndicatorParam[]; outputs: string[]; first: (number | null)[]; sparse: boolean;

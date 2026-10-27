@@ -1950,10 +1950,11 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if def.book==crate::books::ws5::BOOK && crate::books::ws5::reviewed_daily(def.id) && !crate::books::ws5::TIMING.contains(&def.id) {json.push_str(concat!(",\"stock_adaptation\":\"",WS5_STOCK_LABEL!(),"\""));}
     if def.book=="afactor" && crate::books::afactor::stock_rule(def.id) {json.push_str(concat!(",\"stock_adaptation\":\"",AFACTOR_STOCK_LABEL!(),"\""));}
     if matches!((def.book,def.id),("r3r4","r3r4_lowprice"|"r3r4_lowprice_scale")) {json.push_str(concat!(",\"stock_adaptation\":\"",USD_PRICE_US_LABEL!(),"\""));}
+    if def.book==crate::books::ws5::BOOK && crate::books::ws5::reviewed_daily(def.id) && !crate::books::ws5::TIMING.contains(&def.id) {json.push_str(concat!(",\"declared_application\":\"",WS5_INDEX_LABEL!(),"\""));}
     if let Some(label)=open_instrument_label(def) {
         // open-all block: a book label already present is kept and the 23 Oct scope sentence is appended to it (one key).
         let key="\"declared_application\":\"";
-        match json.find(key).filter(|_|open_all(def)) {
+        match json.find(key) { // any earlier book label keeps the one key (no duplicate JSON keys)
             Some(i)=>{let start=i+key.len();let end=start+json[start..].find('"').unwrap();json.insert_str(end,&format!(" {label}"));}
             None=>json.push_str(&format!(",\"declared_application\":\"{label}\"")),
         }
@@ -1961,7 +1962,6 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if jb_g3_reviewed(def) && !jb_g3_gap(def) && def.book!=crate::books::jbeft::BOOK {json.push_str(if def.book==crate::books::jbsmsw::BOOK {concat!(",\"declared_application\":\"",JBSMSW_LABEL!(),"\"")} else if def.book==crate::books::jbtifm::BOOK {",\"declared_application\":\"Systems tested on FTSE-100 futures (2000ST) or shown on a monthly CAC-40 chart (9/18 crossover); index, ETF and stock runs (US and India) on daily bars are a declared application, not the author's test.\""} else if def.id=="jbtywr_crude_outside" {",\"declared_application\":\"Pattern tested on crude oil futures; index, ETF and stock runs (US and India) are a declared application, not the author's test.\""} else {concat!(",\"declared_application\":\"",JBHSMS_KD_LABEL!(),"\"")});}
     if jb_g3_reviewed(def) && def.book==crate::books::jbeft::BOOK {json.push_str(",\"declared_application\":\"S&P 500 futures rule run on the S&P 500 cash index (SPX) from 2014, not the author's test.\"");}
     if newrules_misc(def) && matches!(def.book,"hpetf"|"etfss") {json.push_str(concat!(",\"declared_application\":\"",NEWRULE_ANY_LABEL!(),"\""));}
-    if def.book==crate::books::ws5::BOOK && crate::books::ws5::reviewed_daily(def.id) && !crate::books::ws5::TIMING.contains(&def.id) {json.push_str(concat!(",\"declared_application\":\"",WS5_INDEX_LABEL!(),"\""));}
     if def.book=="kfsc" && crate::books::kfsc::reviewed_hv_rule(def.id) {
         json.push_str(&format!(",\"source_convention\":\"{}\"",escape(crate::books::kfsc::HV_CONVENTION)));
     }

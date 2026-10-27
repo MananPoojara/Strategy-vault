@@ -35,7 +35,7 @@ pub fn unavailable(d: &StrategyDef) -> Option<String> {
     let (status, why) = book_status(d);
     if status != "live" { return Some(format!("the book method is not admitted for backtesting ({status}): {why}")); } // checked first: a demoted method never keeps its template
     if template(d.id).is_some() { return None; }
-    let named = NO_TEMPLATE.iter().find(|(id, _)| *id == d.id).map(|(_, r)| *r);
+    let named = NO_TEMPLATE.iter().find(|(id, _)| *id == d.id).map(|(_, r)| *r).or(NEW_ADMISSIONS_OCT25.contains(&d.id).then_some(NEW_ADMISSION_OCT25));
     let two_sided = (d.dir != "Long" && d.dir != "Short").then_some(TWO_SIDED);
     Some(named.or(two_sided).unwrap_or(NOT_YET).to_string())
 }
@@ -61,6 +61,76 @@ pub const SIGNAL_CLOCK: &str = "the time exit counts bars since the latest buy s
 pub const MULTI_DAY: &str = "the entry is a multi-day setup with a pending order window, which the lab does not model";
 /// Methods Manan admitted to the book engine on 2026-10-21/22 (merged into Nandini 2026-10-22) whose lab template is still to be reviewed.
 pub const NEW_ADMISSION: &str = "admitted to the book engine in the 2026-10-21/22 book work; no lab template has been written or compared with the book engine yet";
+/// Methods that became live in the lab when Manan's 2026-10-22/25 book work was merged into Nandini (2026-10-26); their lab template is still to be reviewed.
+pub const NEW_ADMISSION_OCT25: &str = "admitted to the book engine in the 2026-10-22/25 book work; no lab template has been written or compared with the book engine yet";
+pub const NEW_ADMISSIONS_OCT25: &[&str] = &[
+    "price", "oiss_short_put", "oiss_short_call", "oiss_plus_three_put", "oiss_plus_three_call", "otvt_cvr1_sell_puts", "spmt_eom_puts", "btp2_10pct_oops_long",
+    "btp2_10pct_oops_short", "btp2_wide_range_exhaustion_gap_short", "jr_sne_l", "jr_sne_s", "jr_bb2_l", "jr_bb2_s", "jr_123_std_l", "jr_123_std_s", "jr_hook_std_l",
+    "jr_hook_std_s", "jsats_stock1", "nmwbk_penny", "ststw_cum_rsi_35", "ststw_cum_rsi_50", "ststw_vix_stretch", "lwlts_mon_gap_t500", "lwlts_mon_gap_t1000", "lwlts_mon_gap_close",
+    "lwlts_mon_gap_next_close", "lwlts_mon_gap_6close", "lwlts_mon_oc", "lwlts_mon_3day", "lwlts_mon_vb", "lwlts_tdm6_sp", "lwlts_tdm7_sp", "lwlts_tdm8_sp", "lwlts_tdm19_sp",
+    "lwlts_tdm20_sp", "lwlts_tdm21_sp", "lwlts_tdm22_sp", "lwlts_study_all", "lwlts_study_down1", "lwlts_study_down3", "lwlts_study_trend", "lwlts_study_trend_mon",
+    "lwlts_outside_down", "lwlts_outside_down_xthu", "lwlts_3up_tue_sell", "lwlts_oops_buy", "lwlts_oops_sell_thu", "lwlts_oops_buy_ma9", "lwlts_oops_sell_ma9", "lwlts_month_day1",
+    "lwlts_hh1", "lwlts_hh5", "lwlts_hh10", "lwlts_hh15", "lwlts_hh20", "lwdg2_dc_lower_open", "lwdg2_hh_gap_sell", "tcdt_ctl_p80", "tcdt_ctl_p160", "tcdt_ctl_p300",
+    "tcdt_ctl_p600", "tcdt_ctl_m80", "tcdt_ctl_m160", "tcdt_ctl_m300", "tcdt_ctl_m600", "tcdt_id_p160", "tcdt_id_p80", "tcdt_id_m80", "tcdt_id_m160", "tcdt_doji_p160",
+    "tcdt_doji_p80", "tcdt_doji_m80", "tcdt_doji_m160", "tcdt_nr4_p160", "tcdt_nr4_p80", "tcdt_nr4_m80", "tcdt_nr4_m160", "tcdt_dojinr4_p160", "tcdt_dojinr4_p80",
+    "tcdt_dojinr4_m80", "tcdt_dojinr4_m160", "tcdt_idnr4_p160", "tcdt_idnr4_p80", "tcdt_idnr4_m80", "tcdt_idnr4_m160", "tcdt_nr7_p160", "tcdt_nr7_p80", "tcdt_nr7_m80",
+    "tcdt_nr7_m160", "tcdt_ws4_p160", "tcdt_ws4_p80", "tcdt_ws4_m80", "tcdt_ws4_m160", "tcdt_ws7_p160", "tcdt_ws7_p80", "tcdt_ws7_m80", "tcdt_ws7_m160", "tcdt_bearhook_p160",
+    "tcdt_bearhook_p80", "tcdt_bearhook_m80", "tcdt_bearhook_m160", "tcdt_bullhook_p160", "tcdt_bullhook_p80", "tcdt_bullhook_m80", "tcdt_bullhook_m160", "tcdt_dr1_1",
+    "tcdt_dr1_2", "tcdt_dr1_3", "tcdt_dr1_4", "tcdt_dr1_5", "tcdt_dr1_6", "tcdt_dr1_7", "tcdt_dr1_8", "tcdt_dr1_9", "tcdt_2bnr_p180_h0", "tcdt_2bnr_p80_h0", "tcdt_2bnr_m80_h0",
+    "tcdt_2bnr_m160_h0", "tcdt_3bnr_p160_h0", "tcdt_3bnr_p80_h0", "tcdt_3bnr_m80_h0", "tcdt_3bnr_m160_h0", "jt_bom", "jt_bb_stocks", "mha_3lr", "mha_gap2h", "mhp_qqqq_1_20050218",
+    "mhp_qqqq_11_20041012", "mhp_qqqq_7_20041101", "mhp_qqqq_7_20041001", "mhp_qqqq_5_20050207", "mhp_qqqq_6_20050120", "mhp_qqqq_2_20050218", "mhp_qqqq_4_20040430",
+    "mhp_qqqq_12_20041111", "mhp_qqqq_4_20041203", "mhp_spy_2_20070807", "mhp_spy_2_20070703", "mhp_spy_10_20061101", "mhp_spy_8_20070511", "mhp_spy_9_20070808",
+    "mhp_spy_2_20070724", "mhp_spy_2_20070327", "mhp_spy_1_20070703", "mhp_spy_1_20070621", "mhp_spy_1_20070424", "mhp_dax_11_20050121", "mhp_dax_10_20050331",
+    "mhp_dax_6_20050223", "mhp_dax_4_20050202", "mhp_ftse_3_20040712", "mhp_ftse_10_20040730", "mhp_ftse_5_20040922", "mhp_ftse_5_20041019", "mhp_ftse_12_20040917",
+    "mhp_ftse_3_20041007", "mhp_ftse_12_20040930", "mhp_ftse_12_20040728", "strmm_hybrid", "strmm_hybrid_sl", "strmm_hybrid_ts", "strmm_meander", "strmm_meander_sl",
+    "strmm_meander_ts", "strmm_vwa_sl", "strmm_vwa_ts", "strmm_harris_orig", "strmm_harris_sl", "strmm_harris_ts", "strmm_expert_sl", "strmm_expert_ts", "strtw_meander1_long",
+    "strtw_meander1_short", "apta_ma200_dji", "apta_ma100_dji", "apta_triple_mom", "apta_roc15", "apta_six_best", "apta_six_worst", "apta_breadth_impulse",
+    "apta_breadth_impulse_nse", "apta_breadth_macd", "apta_breadth_macd_nse", "apta_vix35", "apta_macd", "apmacd_neutral", "apmacd_uptrend", "apmacd_downtrend", "apmacd_ad_stay",
+    "lebtc_highbeta", "jb30d_rev_buy_fpo", "jb30d_rev_buy_stop", "jb30d_rev_buy_3pc", "jb30d_sp_seasonal", "jbsmsw_mom_ma", "jbssf_sp_jan", "hsta_best6", "hsta_best6_macd",
+    "hsta_best8_macd", "hsta_best6_4yr", "hsta_santa", "hsta_stpat", "hsta_midyear", "hsta_first_day", "hsta_thanksgiving", "hsta_super8", "hsta_yk_passover", "hsta_election",
+    "hcta_sp_jan_long", "hcta_sp_apr_long", "hcta_sp_jul_short", "hcta_sp_oct_long", "jkbwts_rainmaker", "jkbk_call_buyer", "rgc_cdow_mon_long", "rgc_tdom17_long",
+    "rgc_tdom2_short", "rgc_elliott", "rgc_ga1723", "apsmts_confirm", "apsmts_shift", "apsmts_mmacd", "apsmts_chord", "apsmts_ad_obos", "apsmts_ad_obos_nse", "apoi_pres_s1",
+    "apoi_pres_s2", "lwicw_sp_tdw_mon", "lwicw_sp_tdw_tue", "lwicw_sp_tdw_wed", "lwicw_sp_tdw_thu", "lwicw_sp_tdw_fri", "lwicw_sp_tdom", "lwicw_oops_tdom_buy",
+    "lwicw_oops_tdom_sell", "lwicw_mon_gap_bail", "lwmdc_down_smaller", "lwmdc_down_larger", "lwmdc_up_larger", "lwmdc_up_smaller", "lwmdc_up_sell_smaller", "lwmdc_up_sell_larger",
+    "lwmdc_2down", "lwmdc_zone", "lwmdc_od_up_oc", "lwmdc_od_down_oc", "lwmdc_nonod_up_oc", "lwmdc_nonod_down_oc", "lwmdc_od_oops_buy", "lwmdc_od_oops_sell", "lwmdc_od_high_buy",
+    "lwmdc_od_prior_high_buy", "lwmdc_open_up_oc", "lwmdc_open_down_oc", "lwmdc_fdom_oc", "lwmdc_fdom_month", "lwmdc_thanksgiving", "lwpro_after_up", "lwpro_after_down",
+    "lwpro_open_up", "lwpro_open_down", "tdnsta_seq_long", "tdnsta_seq_short", "tdnmtt_seq_long", "tdnmtt_seq_short", "tdnmtt_combo1_long", "tdnmtt_combo1_short",
+    "tdnmtt_combo2_long", "tdnmtt_combo2_short", "tdnmtt_trap_long", "tdnmtt_trap_short", "mbhfe_upvol77", "mbhfe_upvol77_nse", "mbhfe_ad11", "mbhfe_ad11_nse", "mbsot_zweig4",
+    "mbsot_renshaw_thrust", "mbsot_renshaw_thrust_nse", "mbsot_appel_impulse", "mbsot_appel_impulse_nse", "mbsot_appel_mcclellan", "mbsot_appel_mcclellan_nse", "mbsot_appel_combo",
+    "mbsot_appel_combo_nse", "mkfve_div", "hbqts_ma3_20", "hbqts_stop_entry", "hbqts_scale_in", "hbqts_scale_out", "hbqts_parabolic_stop", "hbqts_chandelier", "hbqts_ma6_35",
+    "hbqts_ma45_26", "hbqts_apz", "hbqts_tdom", "hbqts_pattern111", "hbqts_common_signal", "hbqts_ma8_7", "hbqts_weekly_pir", "hbqts_macd_weekly", "hbqts_noise0",
+    "hbqts_ma8_7_atr_stop", "hbqts_equity_alloc", "hbqts_ma11_50", "hbiab_trend_following", "hbiab_mean_reversion", "eltfl_sroc", "lwic6_pctr_ma50_long", "lwcot_vol_p5up_v5up",
+    "lwcot_vol_p5up_v5dn", "lwcot_vol_dn_vdn", "lwcot_vol_dn_vup", "lwcot_vol_t50dn_p8up_v8up", "lwcot_vol_t50dn_p8up_v8dn", "lwcot_vol_t50dn_p8dn_v8up",
+    "lwcot_vol_t50dn_p8dn_v8dn", "lwcot_down_closes_daytrade", "lwcot_every_day_bail", "pstc_rs2", "pstc_r3_long", "pstc_r3_short", "pstc_rsi20_long", "pstc_rsi20_short",
+    "pstc_r4_long", "pstc_r4_short", "pstc_4_10_60", "prap2_raptor2", "acatr_kuo_gma21", "kpss_first5", "kpss_last5", "kpss_janbar", "kpss_jbs", "kpss_jaynewary", "kpss_hol_d1",
+    "kpss_hol_d2", "kpss_hol_3x3", "kpss_hol_top24", "kpss_uhts", "kpss_xmas_week", "kpss_td2", "kpss_td1_5", "kpss_mid4", "kpss_worst14", "kpss_nonworst", "kpss_six",
+    "kpss_monthly10", "kpss_santa", "kpss_m10_santa", "kpss_umds", "kpss_uumds", "kpss_dec_b", "kpss_dec_c", "kpss_middecade", "kpss_latedecade", "kpss_20yr", "kpss_intradecade",
+    "kpss_c212", "kpss_c40w", "kpss_c53d", "kpss_ctcm1", "kpss_ctcm2", "kpss_utcm", "kpss_yr_post", "kpss_yr_mid", "kpss_yr_pre", "kpss_yr_elec", "kpss_yr_post_mid",
+    "kpss_yr_pre_elec", "kpss_stoken15", "kpss_fav14", "kpss_fav21", "kpss_midterm", "kpss_pre_mar_jul", "kpss_uecs", "kpss_nov_may", "kpss_ndx_nov_jun", "kpss_jja", "kpss_sept",
+    "kpss_ex_sept", "kpss_oct7", "kpss_kti_long", "kpss_lopl", "mahrs_covered_calls", "lkqts_dom1", "lkqts_dom2", "lkqts_vixscore", "lkqts_gross_vix", "lkqts_m_sma12",
+    "lkqts_m_sma6", "lkqts_m_sma3", "lkqts_m_mom12", "lkqts_m_mom6", "lkqts_m_mom3", "nfpk_ma20w", "nfpk_ma20w_f1", "nfpk_wma15w", "nfpk_wma15w_swing", "ndbrm_spx_reversals",
+    "ndbrm_trin40", "ndbrm_trin40_nse", "ndbrm_ad_line_nse", "svmws_10w30w_long", "svmws_10w30w_short", "svtvc_ma150_t1", "svtvc_ma200_t1", "svtvc_ma250_t1", "svtvc_ma150_t2",
+    "svtvc_ma200_t2", "svtvc_ma250_t2", "pstc08_r4", "pstc08_r5", "pstc08_meteors", "pstc08_meteors5", "pstc08_rsi25_20", "pstc08_rsi25_20_noma", "tdwb_tdline_fade_short",
+    "tdwb_tdline_fade_long", "jbcdt2_dates_oc", "jbcdt2_preholiday_oc", "jbcdt2_mon_cc", "jbhsms_sp_0113", "jbhsms_sp_0226", "jbhsms_sp_0301", "jbhsms_sp_0414", "jbhsms_sp_0601",
+    "jbhsms_sp_0710", "jbhsms_sp_0815", "jbhsms_sp_1220", "jbhsms_dj_0405", "jbhsms_dj_1117", "jbhsms_dj_1203", "jbhsms_dj_0218", "jbhsms_dj_0313", "jbhsms_dj_0407",
+    "jbhsms_dj_0528", "jbhsms_stk_aa", "jbhsms_stk_ko", "jbhsms_stk_ge", "jbhsms_stk_msft", "jbhsms_stk_pg", "jbhsms_stk_txn", "jbtywr_dj_1215", "jbtywr_dj_0406",
+    "jbtywr_crude_outside", "jbhpp_dj_1026", "kfgei_sys_a", "kfgei_sys_b", "kfgei_sys_e", "kfgei_uc", "lebws_atr_abc", "dgdwb_modern", "sglr_dow_ma200_band",
+    "sglr_nasdaq_ma200_band", "lydetf_ema200", "mpts_ma2d_long", "mpts_ma10m_long", "mpmm_cm_rsi50_21w", "mpmm_cm_wma69w", "mpmm_cm_ema42w", "mpmm_cm_sma45w", "mpmm_gartley_25a3",
+    "mpmm_cm_15_36w", "mpmm_kst_lt", "mpmm_summation35", "mpmm_summation35_nse", "mpmm_dev26_40w", "mpmm_dev26_40w_adv10", "mpmm_kst_wk", "mpmm_roc12_dir", "kdta_vix_ema",
+    "kdta_rsi_wrong_long", "kdta_rsi_wrong_short", "kdta_apple_v2", "kdta_pullback6", "kdta_adr191", "kdta_zweig_thrust", "kdta_haurlan200", "kdta_arms265", "kdta_arms_ext",
+    "kdta_arms10ma", "kdta_adr191_nse", "kdta_zweig_thrust_nse", "kdta_haurlan200_nse", "kdta_arms265_nse", "kdta_arms_ext_nse", "kdta_arms10ma_nse", "phbt_vix45_weekly",
+    "phbt_accel_daily", "phbt_accel_weekly", "phbt_accel_monthly", "lydpes_ma200_8pct", "mpasi_sp_ma12", "capttm_ma14_50", "ddrvi_inertia50", "mlhpt_bo10", "lwnl_jan_rally",
+    "lwnl_mar_short", "lwnl_oct_td9_buy", "lwnl_oct_td17_sell", "lwnl_nov_td17_db7", "lwnl_jan97_td16_buy", "lwnl_jan97_td2_sell", "lwnl_jul97_td4_buy", "lwnl_jul97_td17_buy",
+    "lwnl_jul97_td16_buy_30d", "lwnl_jul97_td14_sell", "lwnl_aug97_td12_buy_bail", "lwnl_aug97_td18_buy_bail", "lwnl_aug97_td7_sell_bail", "lwnl_aug97_td18_buy_7d",
+    "lwnl_aug97_td2_sell_7d", "lwnl_nov97_td17_buy_7d", "lwnl_nov97_td18_buy_7d", "lwnl_nov97_td6_buy_30d", "lwnl_nov97_td15_buy_30d", "lwnl_dec97_td2_buy_1d",
+    "lwnl_dec97_td14_buy_1d", "lwnl_dec97_td9_sell_1d", "lwnl_yearend_sell", "lwnl_tg_close", "lwnl_tg_open8", "lwnl_tg_oc", "lwnl_tg_open3_bail", "lwnl_xmas_bail",
+    "lwnl_xmas_bail9", "lwnl_memorial_bail", "lwnl_memorial_bail6", "lwnl_july4_buy", "lwnl_pullback", "lwnl_krut_buy", "lwnl_krut_sell", "lwnl_od_buy", "lwnl_od_buy3",
+    "lwnl_od_sell", "lwnl_od_fade_buy", "lwnl_od_fade_sell", "lwnl_engulf_bull_1", "lwnl_engulf_bull_5", "lwnl_engulf_bull_10", "lwnl_engulf_bear_1", "lwnl_engulf_bear_5",
+    "lwnl_engulf_bear_10", "lwnl_keyrev_buy", "lwnl_proj_limit", "lwnl_truth1_closehigh", "lwnl_tdw_oc_tue", "lwnl_tdw_oc_wed", "lwnl_tdw_oc_thu", "lwnl_tdw_oc_fri",
+    "msws_positive_vol_crossover", "lwinb_inside_bar", "lwfc10_tdlm", "lwfc10_tdoy", "lwfc10_midterm", "ccl08_weekly_rsi_options", "bfmm_esl", "bfmm_nql", "bfmm_s_es",
+    "rinadz_rsi14s", "rinadz_pctr", "rinadz_xmacd", "phbttk_pctr_long", "phbttk_pctr_short", "mptae_ma40w", "mptae_1030w", "mptae_russell", "mptae_tw9m", "mptae_coppock",
+    "mpsel_kst_lt", "ggth_dmaco", "ggth_dmaco_es", "fgitc_rocadx", "fgitc_qqqvol", "fgitc_ema1020", "fgsmc_ma50_200", "fgtofd_ema20_50", "apitc_ma50", "cbsiws_5050",
+];
 pub const NO_TEMPLATE: &[(&str, &str)] = &[
     ("spmt_vix200", VIX), ("spmt_vix2", VIX), ("spmt_vix4", VIX), ("spmt_vix7", VIX), ("spmt_vix8", VIX), ("spmt_short_vix53", VIX), ("spmt_short_vix101", VIX), ("ststw_vix_rsi", VIX),
     ("spmt_trin_1", SERIES), ("spmt_trin_2", SERIES), ("spmt_trin_3", SERIES), ("spmt_trin_4", SERIES), ("spmt_trin_5", SERIES), ("spmt_nyse_adv", SERIES),

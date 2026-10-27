@@ -9,7 +9,7 @@ import { usesTradePrices } from "./AmiSettings";
 import "./orders.css";
 
 /** `part` splits the panel for the AmiBroker-style layout: "direction" (positions) above the rules, "fills" (Trades tab). */
-export function ExecutionPanel({ spec, catalogue, onChange, part = "all" }: { spec: Spec; catalogue: Catalogue; onChange(spec: Spec): void; part?: "all" | "direction" | "fills" }) {
+export function ExecutionPanel({ spec, catalogue, onChange, part = "all" }: { spec: Spec; catalogue: Catalogue; onChange(spec: Spec): void; part?: "all" | "direction" | "fills" | "positions" | "options" }) {
   const kept = useRef<ShortSide | undefined>(undefined);
   const ex = spec.execution ?? {};
   const [timing, setTiming] = useState(ex.delay_bars !== undefined || ex.entry_on !== undefined || ex.intrabar !== undefined);
@@ -18,7 +18,9 @@ export function ExecutionPanel({ spec, catalogue, onChange, part = "all" }: { sp
   const ordered = entryOrderType(spec.entry) !== "market" || (direction === "both" && !!spec.short_side && entryOrderType(spec.short_side.entry) !== "market");
   const delayed = fill === "next_open" && exitFill === "next_open", sameBar = ex.allow_same_bar_exit ?? true;
   const fills: { value: Fill; label: string }[] = [{ value: "next_open", label: "Next open" }, { value: "close", label: "Same close" }];
-  const showDirection = part !== "fills", showFills = part !== "direction", ami = usesTradePrices(ex); // AmiBroker per-side prices replace fill/exit_fill/delay
+  // "direction" = positions and the same-bar options; the Settings basics show "positions", More settings the "options"
+  const showDirection = ["all", "direction", "positions"].includes(part), showOptions = ["all", "direction", "options"].includes(part);
+  const showFills = part === "all" || part === "fills", ami = usesTradePrices(ex); // AmiBroker per-side prices replace fill/exit_fill/delay
   return <div className="lab-exec" data-lab-exec={part}>
     <div className="lab-row">
       {showDirection && <><span className="dfield">Positions</span>
@@ -26,8 +28,8 @@ export function ExecutionPanel({ spec, catalogue, onChange, part = "all" }: { sp
         onChange={(d) => { if (spec.short_side) kept.current = spec.short_side; onChange(withDirection(spec, d, kept.current)); }} />
       {direction === "both" && <Segmented label="When the other side signals" value={opposite}
         options={[{ value: "reverse", label: "Reverse" }, { value: "exit", label: "Exit only" }, { value: "ignore", label: "Ignore" }]}
-        onChange={(o) => onChange(setExecution(spec, { opposite: o === "reverse" ? undefined : o }))} />}
-      <label className="lab-check" title={spec.portfolio ? "A single-instrument setting" : undefined}><input type="checkbox" disabled={!!spec.portfolio} checked={sameBar}
+        onChange={(o) => onChange(setExecution(spec, { opposite: o === "reverse" ? undefined : o }))} />}</>}
+      {showOptions && <><label className="lab-check" title={spec.portfolio ? "A single-instrument setting" : undefined}><input type="checkbox" disabled={!!spec.portfolio} checked={sameBar}
         onChange={(e) => onChange(setExecution(spec, { allow_same_bar_exit: e.target.checked ? undefined : false }))} />Allow same bar exit / entry signal</label>
       <label className="lab-check" title={spec.portfolio ? "A single-instrument setting" : "As an AFL bar loop that runs its sell block before its buy block: a trade that closes on a bar may be followed by a new buy on that same bar (e.g. sell and buy again at the same Close). Off: no new entry on a bar a position closed."}>
         <input type="checkbox" disabled={!!spec.portfolio} checked={ex.reenter_on_exit_bar === true}
@@ -49,7 +51,7 @@ export function ExecutionPanel({ spec, catalogue, onChange, part = "all" }: { sp
       <button type="button" className="dbtn sm ghost" data-lab-timing-options aria-expanded={timing} onClick={() => setTiming(!timing)}>{timing ? "▾" : "▸"} Timing options</button></>}
     </div>
     {showDirection && direction === "both" && <p className="cap">{COPY.oppositeHelp[opposite]} {COPY.bothFlat}</p>}
-    {showDirection && <p className="cap" data-lab-same-bar>{sameBar ? "Checked (default): an exit and a new entry may fill on one bar, except a close fill or a limit/stop order after a stop or close exit inside that bar." : "Unchecked: no entry fills on a bar where a position closed, and no position exits on its entry bar (a reversal stays one fill)."}</p>}
+    {showOptions && <p className="cap" data-lab-same-bar>{sameBar ? "Checked (default): an exit and a new entry may fill on one bar, except a close fill or a limit/stop order after a stop or close exit inside that bar." : "Unchecked: no entry fills on a bar where a position closed, and no position exits on its entry bar (a reversal stays one fill)."}</p>}
     {showFills && !ordered && !ami && ex.exit_fill === undefined && <p className="cap">Changing the entry fill also moves exits until an exit fill is chosen.</p>}
     {showFills && timing && <>
       <div className="lab-row">

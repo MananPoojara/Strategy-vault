@@ -40,7 +40,7 @@ export const myId = (id: number) => `my:${id}`;
 export function formulaIndicator(row: Pick<SavedIndicator, "id" | "name" | "formula">, info: FormulaInfo): Indicator {
   return {
     id: myId(row.id), name: row.name, category: "My indicators", placement: info.placement, computed: true, formula: row.formula,
-    needs: { volume: false, intraday: false, breadth: false, second_symbol: false, fundamentals: false, derivatives: false, onchain: false },
+    needs: { volume: false, intraday: false, breadth: false, second_symbol: false, fundamentals: false, derivatives: false, onchain: false, order_flow: false, order_book: false },
     params: info.params.map((p) => ({ key: p.key, label: p.key, default: p.default, min: p.min, max: p.max, step: p.step || null, integer: wholeParam(p) })),
     outputs: info.plots, first: info.plots.map(() => null), sparse: false, definition: row.formula, note: "", tv: "", ab: "",
   };

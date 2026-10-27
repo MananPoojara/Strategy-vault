@@ -136,3 +136,20 @@
 .lab-datesets-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--rule); }
 .lab-datesets-list li > span:first-child { flex: 1 1 260px; }
 .lab-datesets-list .tag { margin-left: 6px; }
+
+/* Compact Your idea: a rule row as wide as its sentence, the add buttons on one line, the stops in a tight row. */
+.lab-rules .lab-sides { gap: 10px; }
+.lab-rules .lab-list-help { margin: -2px 0 4px; }
+.lab-rules .lab-sentence { width: fit-content; max-width: 100%; padding: 3px 8px; margin: 0 0 4px; gap: 4px 6px; }
+.lab-rules .lab-sentence-text { flex: 0 1 auto; line-height: 1.9; }
+.lab-list-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.lab-list-actions > select { width: auto; max-width: 100%; }
+.lab-orders-box { margin-top: 2px; }
+.lab-orders-box > summary { cursor: pointer; font-size: 13px; font-weight: 600; }
+.lab-orders-box > summary .cap { font-weight: 400; color: var(--ink2); }
+.lab-orders-box[open] > summary { margin-bottom: 6px; }
+.lab-orders-box .lab-stops { grid-template-columns: repeat(auto-fill, minmax(180px, max-content)); gap: 6px; }
+.lab-orders-box .lab-fieldset { padding: 4px 8px 6px; }
+.lab-orders-box .lab-exits > select { width: auto; }
+.lab-rules .lab-words { padding: 8px 12px; gap: 2px; }
+.lab-rules :is(.lab-starter, .lab-default-exit) { padding: 8px 10px; gap: 4px; margin-bottom: 6px; }

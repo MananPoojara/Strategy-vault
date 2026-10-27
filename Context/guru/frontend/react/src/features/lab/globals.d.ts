@@ -6,6 +6,7 @@ export interface LabSeriesApi {
   createPriceLine?(options: Record<string, unknown>): unknown;
   removePriceLine?(line: unknown): void;
   coordinateToPrice?(y: number): number | null;
+  priceToCoordinate?(price: number): number | null;
 }
 export interface LabChartApi {
   addCandlestickSeries(options: Record<string, unknown>): LabSeriesApi;
@@ -17,7 +18,8 @@ export interface LabChartApi {
   priceScale?(id: string): { applyOptions(options: Record<string, unknown>): void; width?(): number };
   timeScale(): {
     fitContent(): void; getVisibleRange?(): { from: string; to: string } | null; setVisibleRange(range: { from: string; to: string }): void;
-    getVisibleLogicalRange?(): { from: number; to: number } | null; setVisibleLogicalRange?(range: { from: number; to: number }): void;
+    getVisibleLogicalRange?(): { from: number; to: number } | null;
+    coordinateToLogical?(x: number): number | null; logicalToCoordinate?(logical: number): number | null; setVisibleLogicalRange?(range: { from: number; to: number }): void;
     subscribeVisibleTimeRangeChange?(handler: (range: { from: string; to: string } | null) => void): void;
     unsubscribeVisibleTimeRangeChange?(handler: (range: { from: string; to: string } | null) => void): void;
     subscribeVisibleLogicalRangeChange?(handler: (range: { from: number; to: number } | null) => void): void;

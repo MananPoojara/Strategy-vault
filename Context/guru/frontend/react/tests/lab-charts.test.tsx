@@ -61,3 +61,18 @@ it("useThemeKey changes when the theme attribute changes", async () => {
   await act(async () => { document.documentElement.setAttribute("data-theme", "midnight"); await new Promise((r) => setTimeout(r, 0)); });
   expect(host.textContent).toBe("midnight");
 });
+
+
+it("resizes an opted-in pane vertically while preserving the visible dates", () => {
+  let notify: ResizeObserverCallback | undefined;
+  vi.stubGlobal("ResizeObserver", class { constructor(fn: ResizeObserverCallback) { notify = fn; } observe(){} disconnect(){} });
+  const resize = vi.fn(), setVisibleRange = vi.fn(), range = { from:"2024-01-01", to:"2024-06-01" };
+  const library = { createChart: vi.fn(() => ({ resize, remove:vi.fn(), timeScale:() => ({ getVisibleRange:() => range, setVisibleRange }) }) as never) };
+  const el = document.createElement("div");
+  Object.defineProperties(el, { clientWidth:{ value:800 }, clientHeight:{ value:240 } });
+  const view = createLabChart(el,150,{},library,true);
+  notify!([],{} as ResizeObserver);
+  expect(resize).toHaveBeenCalledWith(800,240);
+  expect(setVisibleRange).toHaveBeenCalledWith(range);
+  view!.dispose();
+});

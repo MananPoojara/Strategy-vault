@@ -71,14 +71,10 @@ pub const SOURCES: &[(&str, &str, &str)] = &[
     ("correlation_log", "Correlation - Log", ""),
     ("ratio", "Ratio", "RelStrength"),
     ("spread", "Spread", ""),
-    ("cvd", "Cumulative Volume Delta", ""),
-    ("volume_delta", "Volume Delta", ""),
-    ("up_down_volume", "Up/Down Volume", ""),
     ("net_volume", "Net Volume", ""),
     ("rvol_at_time", "Relative Volume at Time", ""),
     ("trading_sessions", "Trading Sessions", ""),
     ("volume_24h", "24-hour Volume", ""),
-    ("volume_profile", "Volume Profile Fixed Range; Volume Profile Visible Range; Session Volume Profile", "PlotVAPOverlayA"),
     ("rob_booker_intraday_pivots", "Rob Booker Intraday Pivot Points", ""),
     ("analyst_forecast", "Analyst price forecast", ""),
     ("price_target", "Price target - indicator", ""),
@@ -286,6 +282,6 @@ pub const SOURCES: &[(&str, &str, &str)] = &[
 ];
 /// (TradingView names, AmiBroker names) of an id; empty strings when the id has no row.
 /// Rows of the 2026-10-19 cross-platform families (the middle column names the platforms that ship the indicator).
-const EXTRA: &[&[(&str, &str, &str)]] = &[super::x_ma::SOURCES, super::x_momentum::SOURCES, super::x_momentum2::SOURCES, super::x_trend::SOURCES, super::x_volatility::SOURCES, super::x_volume::SOURCES, super::x_candles::SOURCES, super::x_cycles::SOURCES, super::x_derived::SOURCES, super::x_atlas::SOURCES, super::x_timeless::SOURCES, super::x_census_trend::SOURCES, super::x_census_momentum::SOURCES, super::x_census_candles::SOURCES, super::x_census_stats::SOURCES, super::x_census_misc::SOURCES, super::x_census_patterns::SOURCES, super::x_census_harmonic::SOURCES];
+const EXTRA: &[&[(&str, &str, &str)]] = &[super::x_ma::SOURCES, super::x_momentum::SOURCES, super::x_momentum2::SOURCES, super::x_trend::SOURCES, super::x_volatility::SOURCES, super::x_volume::SOURCES, super::x_candles::SOURCES, super::x_cycles::SOURCES, super::x_derived::SOURCES, super::x_atlas::SOURCES, super::x_timeless::SOURCES, super::x_census_trend::SOURCES, super::x_census_momentum::SOURCES, super::x_census_candles::SOURCES, super::x_census_stats::SOURCES, super::x_census_misc::SOURCES, super::x_census_patterns::SOURCES, super::x_census_harmonic::SOURCES, super::x_orderflow::SOURCES];
 pub fn rows() -> impl Iterator<Item = &'static (&'static str, &'static str, &'static str)> { SOURCES.iter().chain(EXTRA.iter().flat_map(|s| s.iter())) }
 pub fn names(id: &str) -> (&'static str, &'static str) { rows().find(|r| r.0 == id).map_or(("", ""), |r| (r.1, r.2)) }

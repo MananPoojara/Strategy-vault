@@ -23,6 +23,9 @@ export const defaultSpec = (): Spec => ({
   entry: { all: [{ lhs: { s: "close" }, op: ">", rhs: { s: "ema", p: { length: 50 } } }] },
   exit: { any: [{ lhs: { s: "bars_held" }, op: ">=", rhs: { value: 5 } }] },
 });
+/** A new strategy on the page: no buy rule until the user picks one (a hidden example row once made every RSI idea
+ *  0 trades), no sell rule (the test uses the default exit, defaults.ts), trades at the signal bar's close. */
+export const starterSpec = (): Spec => ({ v: 1, entry: { all: [] }, exit: { any: [] }, execution: { fill: "close" } });
 
 export const isValue = (o: unknown): o is ValueOperand =>
   typeof o === "object" && o !== null && Object.keys(o).length === 1 && typeof (o as ValueOperand).value === "number";
@@ -245,6 +248,26 @@ export const canonicalJson = (value: unknown): string =>
   JSON.stringify(value, (_key, x) =>
     x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : x);
 
+/** The since-entry candle counts of the ready-made exits and the default exit ("the 1st up close after entry");
+ *  rules.rs counts from the bar after the entry bar. */
+export const CANDLES = {
+  up: { word: "up close", when: { lhs: { s: "close" }, op: ">", rhs: { s: "close", offset: 1 } } },
+  down: { word: "down close", when: { lhs: { s: "close" }, op: "<", rhs: { s: "close", offset: 1 } } },
+  green: { word: "green candle", when: { lhs: { s: "close" }, op: ">", rhs: { s: "open" } } },
+  red: { word: "red candle", when: { lhs: { s: "close" }, op: "<", rhs: { s: "open" } } },
+} satisfies Record<string, { word: string; when: Cond }>;
+export type CandleKind = keyof typeof CANDLES;
+export const candleCountNode = (kind: CandleKind, n: number): RuleNode => ({ lhs: { since_entry: "count", when: structuredClone(CANDLES[kind].when) }, op: ">=", rhs: { value: n } });
+/** The kind and count of an "Nth up close after entry" row (an `off` switch allowed), else undefined. */
+export function candleCount(node: RuleNode): { kind: CandleKind; n: number } | undefined {
+  const x = node as Record<string, unknown>, lhs = x.lhs as Record<string, unknown> | undefined;
+  if (Object.keys(x).some((k) => !["lhs", "op", "rhs", "off"].includes(k)) || x.op !== ">=" || !isValue(x.rhs) || !Number.isInteger(x.rhs.value) || x.rhs.value < 1) return undefined;
+  if (!lhs || lhs.since_entry !== "count" || Object.keys(lhs).length !== 2) return undefined;
+  const when = canonicalJson(lhs.when), kind = (Object.keys(CANDLES) as CandleKind[]).find((k) => canonicalJson(CANDLES[k].when) === when);
+  return kind && { kind, n: x.rhs.value };
+}
+export const ordinal = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] ?? "th"}`;
+
 export function operandLabel(o: Operand, cat: Catalogue): string {
   if (isValue(o)) return String(o.value);
   if (isFormulaOperand(o)) return [formulaLabel(o), o.tf && o.tf !== "D" ? o.tf : "", o.offset ? `${o.offset} bar${o.offset === 1 ? "" : "s"} ago` : ""].filter(Boolean).join(" · ");
@@ -270,7 +293,13 @@ const SHORT: Record<string, string> = { bbpct: "Bollinger %B" };
 const OUT_SHORT: Record<string, string> = { plus_di: "+DI", minus_di: "−DI" };
 const shortName = (id: string, name?: string) => SHORT[id] ?? (id.length <= 4 || !name ? id.toUpperCase() : name);
 
+/** A value read from another instrument names it: "the close of NIFTYBANK". */
 function operandPhrase(o: Operand, base: string, cat: Catalogue): Phrase {
+  const symbol = (o as { symbol?: unknown }).symbol;
+  const own = ownPhrase(o, base, cat);
+  return typeof symbol === "string" && symbol ? [...own, ` of ${symbol.split(":").pop()}`] : own;
+}
+function ownPhrase(o: Operand, base: string, cat: Catalogue): Phrase {
   if (isValue(o)) return [{ path: `${base}.value`, value: o.value, label: "Threshold" }];
   if (!isSeries(o)) return ["a value kept as is"];
   const tf = o.tf ?? "D";
@@ -297,6 +326,9 @@ function operandPhrase(o: Operand, base: string, cat: Catalogue): Phrase {
 
 function condPhrase(c: RuleNode, base: string, cat: Catalogue): { phrase: Phrase; when: boolean } {
   if (!isCond(c)) return { when: true, phrase: ["a rule shown only in Strategy rules"] };
+  const candle = candleCount(c);
+  if (candle) return { when: false, phrase: ["at the ", { path: `${base}.rhs.value`, value: candle.n, label: `${CANDLES[candle.kind].word}s after entry`, min: 1, step: 1, integer: true },
+    `${ordinal(candle.n).replace(/^\d+/, "")} ${CANDLES[candle.kind].word} after entry`] };
   if (isSeries(c.lhs) && c.lhs.s === "bars_held" && isValue(c.rhs) && c.op === ">=")
     return { when: false, phrase: ["after ", { path: `${base}.rhs.value`, value: c.rhs.value, label: "Days held", min: 1, step: 1, integer: true }, ` ${plural("day", c.rhs.value)}`] };
   const side = (o: Operand, slot: string) => (isSeries(o) && o.s === "bars_held" ? ["the days held"] : operandPhrase(o, `${base}.${slot}`, cat));
@@ -316,6 +348,19 @@ function orderPhrase(spec: Spec, order: PriceOrder): Phrase | null {
        { path: `${path}.atr_length`, value: d.atr_length ?? 14, label: `${order.label} ATR length`, min: 1, max: 500, step: 1, integer: true }, ")"];
   if (order.key === "limit") return ["using a limit order ", ...size, ` ${spec.direction === "short" ? "above" : "below"} the signal close`];
   return ["at a ", ...size, ` ${ORDER_WORDS[order.key]}`];
+}
+
+/** One rule as a phrase whose number slots are paths inside the rule ("RSI(", lhs.p.length, ") is below ", rhs.value):
+ *  `when` is true for a condition read after "when", false for "at the 1st up close after entry" or "after 5 days";
+ *  undefined for a group. */
+export function rulePhrase(node: RuleNode, cat: Catalogue): { phrase: Phrase; when: boolean } | undefined {
+  if (!isCond(node)) return undefined;
+  const { phrase, when } = condPhrase(node, "@", cat);
+  return { when, phrase: phrase.map((x) => (typeof x === "string" ? x : { ...x, path: x.path.replace(/^@\./, "") })) };
+}
+export function ruleWords(node: RuleNode, cat: Catalogue): { text: string; when: boolean } | undefined {
+  const r = rulePhrase(node, cat);
+  return r && { text: phraseText(r.phrase), when: r.when };
 }
 
 const tagged = (tag: string, p: Phrase): Phrase => p.map((x) => (typeof x === "string" ? x : { ...x, label: `${tag} · ${x.label}` }));

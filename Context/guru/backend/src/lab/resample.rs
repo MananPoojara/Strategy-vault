@@ -44,7 +44,7 @@ pub fn day_number(date: &str) -> i64 {
     let doy = (153 * (m + if m > 2 { -3 } else { 9 }) + 2) / 5 + d - 1;
     era * 146_097 + (yoe * 365 + yoe / 4 - yoe / 100 + doy) - 719_468
 }
-fn key(date: &str, tf: Tf) -> i64 {
+pub(crate) fn key(date: &str, tf: Tf) -> i64 {
     match tf {
         Tf::D | Tf::Days(_) => day_number(date),
         Tf::Q => period_key(date, 3),

@@ -3,7 +3,7 @@ import { act, useState } from "react";
 import { RuleBuilder } from "../src/features/lab/RuleBuilder";
 import { defaultSpec, addCond } from "../src/features/lab/spec-model";
 import type { Spec } from "../src/features/lab/types";
-import { catalogueFixture as cat, catalogue7Fixture, mount, templateFixture, unmount } from "./fixtures/lab";
+import { catalogueFixture as cat, catalogue7Fixture, mount, pickIndicator, templateFixture, unmount } from "./fixtures/lab";
 
 afterEach(unmount);
 const settings = { from: "", to: "", fees: "", slippage: "" };
@@ -98,7 +98,7 @@ it("operand edits: D deletes tf, 0 deletes offset, a new indicator drops params,
   await typeIn(lhs.querySelector<HTMLInputElement>('input[aria-label="periods ago"]')!, "0");
   expect(last().entry.all[0].lhs).toEqual({ s: "close", tf: "W" });
   expect(rhs.querySelector<HTMLSelectElement>('select[aria-label="Output"]')!.value).toBe("signal");
-  await choose(rhs.querySelector<HTMLSelectElement>('select[aria-label="Indicator"]')!, "rsi");
+  await pickIndicator(rhs, "rsi");
   expect(last().entry.all[0].rhs).toEqual({ s: "rsi", tf: "W" });
   await choose(rhs.querySelector<HTMLSelectElement>('select[aria-label="Operand type"]')!, "price");
   expect(last().entry.all[0].rhs).toEqual({ s: "close", tf: "W" });
@@ -201,14 +201,19 @@ const scenario = (host: HTMLElement) => host.querySelector<HTMLSelectElement>('s
 
 it("settings tabs follow AmiBroker and the ARIA tab pattern; hidden panels stay mounted", async () => {
   const { host } = await tree(defaultSpec(), { portfolio: <p data-portfolio-slot>portfolio controls</p> });
-  expect(tabs(host).map((t) => t.textContent)).toEqual(["General", "Trades", "Orders & stops", "Report", "Portfolio"]);
-  expect(tabs(host).map((t) => t.tabIndex)).toEqual([0, -1, -1, -1, -1]);
+  expect(tabs(host).map((t) => t.textContent)).toEqual(["General", "Trades", "Report", "Portfolio"]); // stops and targets sit with the sell rules
+  expect(tabs(host).map((t) => t.tabIndex)).toEqual([0, -1, -1, -1]);
   expect(panel(host, "Report").querySelector("[data-lab-report-settings]")).not.toBeNull(); // risk-free rates on their own tab, as in AmiBroker
   for (const t of tabs(host)) expect(panel(host, t.textContent!).getAttribute("aria-labelledby")).toBe(t.id);
-  expect(panel(host, "General").querySelector('[data-lab-exec="direction"]')).not.toBeNull(); // Positions sit in General
-  // labelled groups; Initial equity first, as in AmiBroker
-  expect([...panel(host, "General").querySelectorAll(".lab-sgroup > h4")].map((h) => h.textContent)).toEqual(["Capital", "Test period & costs", "Trading", "Position size & risk"]);
-  expect(panel(host, "General").querySelector(".lab-sgroup > div")!.firstElementChild!.hasAttribute("data-lab-equity")).toBe(true);
+  // the basics come first, outside the tabs; every AmiBroker tab is folded under More settings, named when something is changed
+  const basics = host.querySelector("[data-lab-basics]")!;
+  expect([...basics.querySelectorAll(".lab-sgroup > h4")].map((h) => h.textContent)).toEqual(["Trade", "Test period & costs", "Starting money"]);
+  expect(basics.querySelector('[data-lab-exec="positions"]')).not.toBeNull();
+  expect(basics.querySelector("[data-lab-equity]")).not.toBeNull();
+  expect(host.querySelector("[data-lab-more-settings] > summary")!.textContent).toBe("More settings (AmiBroker) · all at their defaults");
+  expect(host.querySelector("[data-lab-more-settings] [role=tablist]")).not.toBeNull();
+  expect([...panel(host, "General").querySelectorAll(".lab-sgroup > h4")].map((h) => h.textContent)).toEqual(["Position size & risk", "Trading options"]);
+  expect(panel(host, "General").querySelector('[data-lab-exec="options"]')).not.toBeNull(); // same-bar options and instrument data
   expect(host.querySelector(".lab-settings-h")!.textContent).toContain("Backtest settings");
   expect(panel(host, "Trades").querySelector('[data-lab-trade-prices="preset"]')).not.toBeNull(); // grid always visible, greyed for presets
   expect(panel(host, "Portfolio").querySelector("[data-portfolio-slot]")).not.toBeNull();
@@ -217,7 +222,7 @@ it("settings tabs follow AmiBroker and the ARIA tab pattern; hidden panels stay 
   expect(tabs(host)[1].getAttribute("aria-selected")).toBe("true");
   expect(document.activeElement).toBe(tabs(host)[1]);
   await act(async () => list.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true })));
-  expect(tabs(host)[4].tabIndex).toBe(0);
+  expect(tabs(host)[3].tabIndex).toBe(0);
   await act(async () => list.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
   expect(tabs(host)[0].getAttribute("aria-selected")).toBe("true"); // wraps
   await act(async () => tabs(host)[2].click());
@@ -261,23 +266,26 @@ it("stop scenarios set Exit at stop? of all four stops and are recognised back; 
   expect([...scenario(port.host).options].filter((o) => o.disabled).map((o) => o.value)).toEqual(["next_open_stops_open", "close_stops_close"]); // single-instrument modes
 });
 
-it("Activate stops immediately is a real toggle whose default keeps today's behaviour, with a disclosure", async () => {
+it("Activate stops immediately is a real toggle in the Trades tab whose default keeps today's behaviour, with a disclosure", async () => {
   const { host, last } = await tree(defaultSpec());
-  const box = () => [...panel(host, "Orders & stops").querySelectorAll<HTMLLabelElement>("label.lab-check")].find((l) => l.textContent === "Activate stops immediately")!.querySelector("input")!;
+  const box = () => [...panel(host, "Trades").querySelectorAll<HTMLLabelElement>("label.lab-check")].find((l) => l.textContent === "Activate stops immediately")!.querySelector("input")!;
   expect([box().checked, box().disabled]).toEqual([true, false]);
-  expect(panel(host, "Orders & stops").textContent).toContain("AmiBroker's default is unchecked");
+  expect(panel(host, "Trades").textContent).toContain("AmiBroker's default is unchecked");
   await act(async () => box().click());
   expect(last().execution).toEqual({ activate_stops_immediately: false });
   const off = await tree(last());
-  expect(panel(off.host, "Orders & stops").textContent).toContain("Stops are first checked on the bar after the entry bar.");
+  expect(panel(off.host, "Trades").textContent).toContain("Stops are first checked on the bar after the entry bar.");
 });
 
-it("Orders & stops has an N-bar stop per side; a portfolio hides per-side prices and re-entry and offers to remove kept ones", async () => {
+it("Stops & targets under the sell rules have an N-bar stop; a portfolio hides per-side prices and re-entry and offers to remove kept ones", async () => {
   const { host, last } = await tree({ ...defaultSpec(), exit: { any: [] } });
-  const nbar = panel(host, "Orders & stops").querySelector<HTMLInputElement>('[data-lab-exit="n_bar"] input[aria-label="Bars held"]')!;
+  const stops = host.querySelector<HTMLElement>('[data-lab-list="exit.any"] [data-lab-orders-box="exits"]')!;
+  expect(stops.querySelector("summary")!.textContent).toBe("Stops & targets · none (optional)");
+  expect(host.querySelector('[data-lab-orders-box="entry"] summary')!.textContent).toContain("Order type"); // right under the buy rules
+  const nbar = stops.querySelector<HTMLInputElement>('[data-lab-exit="n_bar"] input[aria-label="Bars held"]')!;
   await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(nbar, "4"); nbar.dispatchEvent(new Event("input", { bubbles: true })); });
   expect(last().exit.any).toEqual([{ lhs: { s: "bars_held" }, op: ">=", rhs: { value: 4 } }]);
-  expect(panel(host, "Orders & stops").querySelectorAll('input[aria-label="Re-entry delay (bars)"]')).toHaveLength(4);
+  expect(host.querySelector('[data-lab-orders-box="exits"]')!.querySelectorAll('input[aria-label="Re-entry delay (bars)"]')).toHaveLength(4);
   const port = { ...defaultSpec(), execution: { capital: 1e6, reentry: { stop_loss: 2 }, prices: { buy: "close" as const }, delays: { buy: 0 } }, portfolio: { universe: { basket: "nifty50" } } } as Spec;
   const p = await tree(port);
   expect(p.host.querySelector('input[aria-label^="Re-entry delay"]')).toBeNull();

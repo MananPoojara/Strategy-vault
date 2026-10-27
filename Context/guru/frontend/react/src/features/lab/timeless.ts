@@ -178,7 +178,7 @@ export function drawTimeless(el: HTMLElement, legend: HTMLElement | null, opts: 
 }) {
   const { type, res } = opts;
   const { slots, total } = rebuild(type, res, opts.params);
-  const price = createLabChart(el, 420);
+  const price = createLabChart(el, 420, {}, undefined, true);
   if (!price) return null;
   const { chart, colors } = price;
   const marks = tradeMarks(opts.trades ?? [], slots);

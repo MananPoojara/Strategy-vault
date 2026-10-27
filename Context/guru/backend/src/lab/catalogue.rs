@@ -9,11 +9,13 @@ pub enum Placement { Price, Pane }
 #[derive(Clone, Copy, Debug)]
 pub struct ParamSpec { pub key: &'static str, pub label: &'static str, pub default: f64, pub min: f64, pub max: f64, pub step: f64, pub integer: bool }
 #[derive(Clone, Copy, Debug, Default)]
-pub struct Needs { pub volume: bool, pub intraday: bool, pub breadth: bool, pub second_symbol: bool, pub fundamentals: bool, pub derivatives: bool, pub onchain: bool }
+pub struct Needs { pub volume: bool, pub intraday: bool, pub breadth: bool, pub second_symbol: bool, pub fundamentals: bool, pub derivatives: bool, pub onchain: bool,
+    /// Footprint (volume at bid/ask per price level per session) and order-book depth: see x_orderflow.rs.
+    pub order_flow: bool, pub order_book: bool }
 impl Needs {
-    pub const NONE: Needs = Needs { volume: false, intraday: false, breadth: false, second_symbol: false, fundamentals: false, derivatives: false, onchain: false };
+    pub const NONE: Needs = Needs { volume: false, intraday: false, breadth: false, second_symbol: false, fundamentals: false, derivatives: false, onchain: false, order_flow: false, order_book: false };
     /// Data the lab does not hold for every market (volume is per instrument and checked at run time).
-    pub const fn any_data(&self) -> bool { self.intraday || self.breadth || self.second_symbol || self.fundamentals || self.derivatives || self.onchain }
+    pub const fn any_data(&self) -> bool { self.intraday || self.breadth || self.second_symbol || self.fundamentals || self.derivatives || self.onchain || self.order_flow || self.order_book }
 }
 #[derive(Clone, Copy)]
 pub struct IndicatorDef {
@@ -43,7 +45,7 @@ pub fn base() -> Vec<IndicatorDef> {
     [super::ma::DEFS, super::momentum::DEFS, super::trend::DEFS, super::volatility::DEFS, super::volume::DEFS, super::price::DEFS, super::listed::DEFS, super::breadth::DEFS, super::ma2::DEFS, super::bands::DEFS, super::stats::DEFS, super::osc2::DEFS, super::vol2::DEFS, super::stops::DEFS, super::volume2::DEFS, super::periods::DEFS, super::patterns::DEFS, super::candles::DEFS, super::ratings::DEFS, super::futures::DEFS, super::pairs::DEFS].concat()
 }
 pub fn all() -> Vec<IndicatorDef> {
-    [&base()[..], super::x_ma::DEFS, super::x_momentum::DEFS, super::x_momentum2::DEFS, super::x_trend::DEFS, super::x_volatility::DEFS, super::x_volume::DEFS, super::x_candles::DEFS, super::x_cycles::DEFS, super::x_derived::DEFS, super::x_atlas::DEFS, super::x_timeless::DEFS, super::x_census_trend::DEFS, super::x_census_momentum::DEFS, super::x_census_candles::DEFS, super::x_census_stats::DEFS, super::x_census_misc::DEFS, super::x_census_patterns::DEFS, super::x_census_harmonic::DEFS].concat()
+    [&base()[..], super::x_ma::DEFS, super::x_momentum::DEFS, super::x_momentum2::DEFS, super::x_trend::DEFS, super::x_volatility::DEFS, super::x_volume::DEFS, super::x_candles::DEFS, super::x_cycles::DEFS, super::x_derived::DEFS, super::x_atlas::DEFS, super::x_timeless::DEFS, super::x_census_trend::DEFS, super::x_census_momentum::DEFS, super::x_census_candles::DEFS, super::x_census_stats::DEFS, super::x_census_misc::DEFS, super::x_census_patterns::DEFS, super::x_census_harmonic::DEFS, super::x_orderflow::DEFS].concat()
 }
 pub fn get(id: &str) -> Option<IndicatorDef> { all().into_iter().find(|d| d.id == id) }
 pub fn resolve_params(def: &IndicatorDef, given: &Params) -> Result<Params, String> {
@@ -62,6 +64,7 @@ pub fn resolve_params(def: &IndicatorDef, given: &Params) -> Result<Params, Stri
 pub fn run(def: &IndicatorDef, bars: &Bars, given: &Params) -> Output {
     let params = resolve_params(def, given)?;
     if def.needs.intraday { return Err("needs intraday data".into()); }
+    if def.needs.order_flow && def.compute.is_some() && bars.footprint.is_none() { return Err(format!("needs order-flow data|{}", bars.footprint_file)); }
     if def.needs.volume && bars.volume.is_none() {
         // volume only from bar k (NIFTY 50 before 2000): computed from bar k, empty before it (AmiBroker computes from the bars with volume)
         let plain = !(def.needs.intraday || def.needs.derivatives || def.needs.breadth || def.needs.second_symbol);
@@ -84,7 +87,7 @@ mod tests {
     use super::*;
     use crate::lab::testdata::{close_eq, walk};
     /// Breadth indicators need market breadth on the bars; Task 2 tests them with testdata::with_breadth.
-    fn computable(d: &IndicatorDef) -> bool { d.compute.is_some() && !d.needs.breadth && !d.needs.derivatives && !d.needs.second_symbol }
+    fn computable(d: &IndicatorDef) -> bool { d.compute.is_some() && !d.needs.breadth && !d.needs.derivatives && !d.needs.second_symbol && !d.needs.order_flow } // order flow: x_orderflow tests
     #[test] fn listed_entries_carry_a_note() {
         for d in all() {
             if d.compute.is_some() { assert!(d.note.is_empty(), "{}: computed entries have no note", d.id); continue; }
@@ -158,14 +161,14 @@ mod tests {
     }
     #[test] fn catalogue_matches_the_phase6_master_list() {
         let defs = base();
-        assert_eq!(defs.len(), 302, "Phase 6 master list: 66 Batch A + 233 new; Phase 7: session, sessions_left, expiry");
+        assert_eq!(defs.len(), 298, "Phase 6 master list: 66 Batch A + 233 new; Phase 7: session, sessions_left, expiry; 2026-10-26: cvd, volume_delta, up_down_volume, volume_profile moved to x_orderflow");
         assert_eq!(defs.iter().filter(|d| d.compute.is_some()).count(), 190);
-        assert_eq!(defs.iter().filter(|d| d.compute.is_none()).count(), 112);
+        assert_eq!(defs.iter().filter(|d| d.compute.is_none()).count(), 108);
         let mut c = std::collections::BTreeMap::new();
         for (_, tv, ab) in crate::lab::sources::SOURCES {
             *c.entry(match (tv.is_empty(), ab.is_empty()) { (false, false) => "both", (false, true) => "tv", (true, false) => "ab", _ => "lab" }).or_insert(0) += 1;
         }
-        assert_eq!((c["tv"], c["ab"], c["both"], c["lab"]), (234, 26, 41, 1));
+        assert_eq!((c["tv"], c["ab"], c["both"], c["lab"]), (231, 26, 40, 1)); // 3 tv rows and volume_profile (both) moved to x_orderflow
     }
     #[test] fn volume_indicators_refuse_without_volume() {
         let bars = walk(300, 3, false);

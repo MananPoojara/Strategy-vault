@@ -1,4 +1,4 @@
-import { useContext, useEffect, useState, type ReactNode } from "react";
+import { Fragment, useContext, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { CALENDAR_OUTPUTS, COPY, EXPAND_FIRST_REFUSED, OPERAND_KIND_LABELS, TF_LABELS } from "./labels";
 import { isSeries, isValue, type Side } from "./spec-model";
 import { ARITH, CALENDAR_IDS, MAX_NTH, MAX_WHOLE, SINCE_ENTRY_KINDS, WINDOWS, convertOperand, describeNode, exprKey, firstAllowed, innerOperand, operandKind, sinceEntry, type OperandKind, type SinceEntryKind } from "./rule-tree";
@@ -145,9 +145,9 @@ export function OperandEditor({ operand, side, catalogue, onChange, label, heldO
       <NumField label="+ amount" value={(x.add ?? 0) as number} step={0.5}
         onChange={(n) => n !== undefined && set({ add: n === 0 ? undefined : n })} />
     </>}
-    {(kind === "price" || kind === "indicator" || kind === "calendar" || kind === "compress" || kind === "formula") && (!brief || timed || kind === "price" || kind === "indicator") &&
+    {(kind === "price" || kind === "indicator" || kind === "calendar" || kind === "compress" || kind === "formula") && (!brief || timed || (!simple && (kind === "price" || kind === "indicator"))) &&
       <Timing operand={operand} catalogue={catalogue} onChange={onChange} compress={kind === "compress"} />}
-    {series && (!brief || sourced) && <ForeignFields operand={operand} onChange={onChange} label={label} />}
+    {series && (!brief || sourced || simple) && <ForeignFields operand={operand} onChange={onChange} label={label} />}
     {expression && <button type="button" className="dbtn sm ghost" aria-label="Remove formula" title="Remove formula, keep the inner value"
       onClick={() => onChange(innerOperand(operand) ?? { s: "close" })}>×</button>}
   </span>;
@@ -203,23 +203,55 @@ function Timing({ operand, catalogue, onChange, compress }: {
   </>;
 }
 
+/** The indicator of a rule, chosen by typing any part of its name (as in the chart's Indicators search): Popular first,
+ *  then each category; arrows and Enter pick, Escape closes. */
+function IndicatorSearch({ ind, computed, groups, onPick }: { ind: Indicator; computed: Indicator[]; groups: string[]; onPick(id: string): void }) {
+  const [open, setOpen] = useState(false), [q, setQ] = useState(""), [hi, setHi] = useState(0);
+  const box = useRef<HTMLSpanElement>(null), listId = useId();
+  const label = (x: Indicator) => (x.name.toUpperCase().startsWith(SHORT[x.id] ?? "") ? x.name : `${SHORT[x.id]} · ${x.name}`);
+  const needle = q.trim().toLowerCase();
+  const rank = (x: Indicator) => (x.id === needle || SHORT[x.id]?.toLowerCase() === needle ? 0 : x.name.toLowerCase().startsWith(needle) ? 1 : 2);
+  const items = needle
+    ? computed.filter((x) => [x.name, x.id, SHORT[x.id], x.category, x.tv, x.ab].some((v) => v?.toLowerCase().includes(needle))).sort((a, b) => rank(a) - rank(b)).map((x) => ({ x, group: "Matches" }))
+    : [...POPULAR.flatMap((id) => computed.filter((x) => x.id === id)).map((x) => ({ x, group: "Popular" })), ...groups.flatMap((g) => computed.filter((x) => x.category === g).map((x) => ({ x, group: g })))];
+  useEffect(() => { // a click anywhere else closes the list
+    if (!open) return;
+    const away = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", away);
+    return () => document.removeEventListener("mousedown", away);
+  }, [open]);
+  useEffect(() => { if (open) document.getElementById(`${listId}-${hi}`)?.scrollIntoView?.({ block: "nearest" }); }, [open, hi, listId]);
+  const pick = (id: string) => { setOpen(false); setQ(""); onPick(id); };
+  return <span className="lab-ind-search" ref={box}>
+    <button type="button" className="lab-ind-btn" aria-label="Indicator" aria-haspopup="listbox" aria-expanded={open} data-value={ind.id} title="Choose an indicator: click, then type to search"
+      onClick={() => { setOpen(!open); setHi(0); }}>{ind.computed ? label(ind) : `${ind.name} (listed only)`} <span aria-hidden="true">▾</span></button>
+    {open && <div className="lab-ind-pop">
+      <input autoFocus type="search" role="combobox" aria-label="Search indicators" aria-expanded="true" aria-controls={listId} aria-activedescendant={items[hi] ? `${listId}-${hi}` : undefined}
+        placeholder="Type to search: RSI, moving average, bollinger…" value={q} onChange={(e) => { setQ(e.target.value); setHi(0); }}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown") { e.preventDefault(); setHi((h) => Math.min(h + 1, items.length - 1)); }
+          else if (e.key === "ArrowUp") { e.preventDefault(); setHi((h) => Math.max(h - 1, 0)); }
+          else if (e.key === "Enter") { e.preventDefault(); if (items[hi]) pick(items[hi].x.id); }
+          else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setOpen(false); }
+        }} />
+      <ul id={listId} role="listbox" aria-label="Indicators">
+        {items.length ? items.map(({ x, group }, i) => <Fragment key={`${group}-${x.id}`}>
+          {(i === 0 || items[i - 1].group !== group) && <li role="presentation" className="lab-ind-group">{group}</li>}
+          <li role="option" id={`${listId}-${i}`} data-id={x.id} aria-selected={x.id === ind.id} className={i === hi ? "lab-ind-hi" : undefined}
+            onMouseDown={(e) => { e.preventDefault(); pick(x.id); }} onMouseEnter={() => setHi(i)}>{label(x)}{needle && <small> · {x.category}</small>}</li>
+        </Fragment>) : <li role="presentation" className="lab-ind-none">No indicator matches “{q}”.</li>}
+      </ul>
+    </div>}
+  </span>;
+}
+
 function IndicatorFields({ operand, ind, computed, groups, set, replace }: {
   operand: SeriesOperand; ind: Indicator; computed: Indicator[]; groups: string[];
   set(patch: Partial<SeriesOperand>): void; replace(id: string): void;
 }) {
   return (
     <>
-      <select aria-label="Indicator" value={ind.id} onChange={(e) => replace(e.target.value)}>
-        {!ind.computed && <option value={ind.id} disabled>{ind.name} (listed only)</option>}
-        {/* typing "RSI" in the list jumps here first, not to "RSI Divergence" */}
-        <optgroup label="Popular">{POPULAR.flatMap((id) => computed.filter((x) => x.id === id)).map((x) =>
-          <option key={x.id} value={x.id}>{x.name.toUpperCase().startsWith(SHORT[x.id] ?? "") ? x.name : `${SHORT[x.id]} · ${x.name}`}</option>)}</optgroup>
-        {groups.map((g) => (
-          <optgroup key={g} label={g}>
-            {computed.filter((x) => x.category === g).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-          </optgroup>
-        ))}
-      </select>
+      <IndicatorSearch ind={ind} computed={computed} groups={groups} onPick={replace} />
       {ind.params.map((p) => isChoice(p) ? (
         <label key={p.key} className="dfield">{p.label.replace(/\s*\(.*\)\s*$/, "")}
           <select aria-label={p.label} title={p.label} value={operand.p?.[p.key] ?? p.default} onChange={(e) => set({ p: { ...operand.p, [p.key]: Number(e.target.value) } })}>

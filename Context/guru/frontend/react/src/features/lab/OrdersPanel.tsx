@@ -138,10 +138,11 @@ function ScaleInEditor({ spec, pre, catalogue, onChange }: { spec: Spec; pre: Si
 
 /** Exits beyond AmiBroker's four fixed stops, added on demand. */
 const EXITS = [
-  { key: "breakeven", label: "Breakeven", initial: { after: { pct: 2 } } },
-  { key: "take_profits", label: "Take-profits", initial: [{ pct: 5, size: 0.5 }] }, { key: "min_bars", label: "Minimum bars", initial: 1 },
-  { key: "dual_atr", label: "Dual ATR exit", initial: { initial: { period: 5, mult: 2, price: "hl2" }, favour: { period: 5, mult: 4, price: "hl2" } } },
-  { key: "dual_line", label: "Two-line exit (initial → favour)", initial: {
+  { key: "breakeven", label: "Breakeven stop (stop moves to the entry price after a gain)", initial: { after: { pct: 2 } } },
+  { key: "take_profits", label: "Take-profits (sell part of the trade at set gains)", initial: [{ pct: 5, size: 0.5 }] },
+  { key: "min_bars", label: "Minimum bars (sell rules wait N bars)", initial: 1 },
+  { key: "dual_atr", label: "Two ATR stops (tight first, wider once in profit)", initial: { initial: { period: 5, mult: 2, price: "hl2" }, favour: { period: 5, mult: 4, price: "hl2" } } },
+  { key: "dual_line", label: "Two-line exit (tight line first, wider line once the trend is confirmed)", initial: {
     initial: { s: "supertrend", p: { atr_length: 5, factor: 1, mode: 1 }, out: "supertrend" }, favour: { s: "supertrend", p: { atr_length: 5, factor: 4, mode: 1 }, out: "supertrend" } } },
 ] as const;
 /** rules.rs DUAL_ATR_PRICES, in the AmiBroker AFL "ATR Avg Val" list's order. */
@@ -188,10 +189,14 @@ const STOP_NOTES = {
   portfolio: "Portfolio runs exit stops intraday at the stop level; exit modes, N-bar priority and re-entry delays are single-instrument settings.",
 };
 
-export function OrdersPanel({ spec, onChange, pre = "", catalogue, reentry = false }: {
+export function OrdersPanel({ spec, onChange, pre = "", catalogue, reentry = false, part = "all", brief = false }: {
   spec: Spec; onChange(spec: Spec): void; pre?: SidePre; catalogue?: Catalogue;
   /** Show each stop's re-entry delay, exit mode and the N-bar priority (single instrument; one value shared by both sides). */
   reentry?: boolean;
+  /** Your idea shows the entry order with the buy rules and the exits with the sell rules. */
+  part?: "all" | "entry" | "exits";
+  /** Simple view: each stop's value only (no AmiBroker exit modes, re-entry delays or notes). */
+  brief?: boolean;
 }) {
   // The original builder has no catalogue prop until Phase 7 assembly wires the shared execution panel.
   if (!catalogue && !pre) return <LegacyOrdersPanel spec={spec} onChange={onChange} />;
@@ -204,8 +209,10 @@ export function OrdersPanel({ spec, onChange, pre = "", catalogue, reentry = fal
   const editableTps = Array.isArray(side.exit.take_profits) && tps.every((tp) => tp && typeof tp === "object" && typeof tp.size === "number");
   const level = (slot: LevelSlot, label: string, allowOff = false) => <LevelEditor value={levelAt(spec, pre, slot)} slot={slot} short={short}
     onChange={(d) => onChange(withLevel(spec, pre, slot, d))} catalogue={catalogue} label={label} allowOff={allowOff} />;
-  return <div className="lab-orders" data-lab-orders={pre ? "short" : "long"}>
-    <div className="lab-row">
+  const showEntry = part !== "exits", showExits = part !== "entry";
+  if (brief) reentry = false;
+  return <div className="lab-orders" data-lab-orders={pre ? "short" : "long"} data-lab-orders-part={part}>
+    {showEntry && <><div className="lab-row">
       <span className="dfield">Entry order</span>
       <Segmented label={`${sideName} entry order`} value={order} options={[
         { value: "market", label: "Market" }, { value: "limit", label: "Limit" }, { value: "stop", label: "Stop" }, { value: "stop_limit", label: "Stop-limit" },
@@ -216,8 +223,8 @@ export function OrdersPanel({ spec, onChange, pre = "", catalogue, reentry = fal
         onChange={(n) => n !== undefined && onChange(putAt(spec, `${pre}entry.valid_bars`, n === 1 ? undefined : n))} />}
     </div>
     {order === "stop_limit" && levelForm(side.entry.limit) !== "at" && <p className="cap">{COPY.stopLimitHint}</p>}
-    {catalogue?.execution && <ScaleInEditor spec={spec} pre={pre} catalogue={catalogue} onChange={onChange} />}
-    <div className="lab-stops">
+    {catalogue?.execution && <ScaleInEditor spec={spec} pre={pre} catalogue={catalogue} onChange={onChange} />}</>}
+    {showExits && <><div className="lab-stops">
       {STOPS.map(({ key, legend, label }) => <fieldset className="lab-fieldset" data-lab-exit={key} key={key}>
         <legend>{legend}</legend>
         <div className="lab-row">
@@ -240,7 +247,7 @@ export function OrdersPanel({ spec, onChange, pre = "", catalogue, reentry = fal
       </fieldset>
     </div>
     {reentry && <p className="cap" data-lab-stop-modes>{both ? "Exit at stop? applies to both sides. " : ""}{STOP_NOTES.modes}</p>}
-    {!reentry && !pre && <p className="cap">{STOP_NOTES.portfolio}</p>}
+    {!reentry && !pre && !brief && <p className="cap">{STOP_NOTES.portfolio}</p>}
     <div className="lab-exits">
       {EXITS.filter(({ key }) => side.exit[key] !== undefined).map(({ key, label }) => {
         const controls = <>
@@ -279,9 +286,10 @@ export function OrdersPanel({ spec, onChange, pre = "", catalogue, reentry = fal
         if (item) onChange(putAt(spec, `${pre}exit.${item.key}`, structuredClone(item.initial)));
       }}>
         <option value="">+ More exits…</option>
-        {EXITS.filter(({ key }) => side.exit[key] === undefined).map(({ key, label }) => <option key={key} value={key}
+        {/* the AmiBroker-parity exits (two ATR stops, two-line) only in Advanced; one already on still shows above */}
+        {EXITS.filter(({ key }) => side.exit[key] === undefined && !(brief && (key === "dual_atr" || key === "dual_line"))).map(({ key, label }) => <option key={key} value={key}
           disabled={(key === "take_profits" && !!side.entry.scale_in) || ((key === "dual_atr" || key === "dual_line") && !!spec.portfolio)}>{label}</option>)}
       </select>
-    </div>
+    </div></>}
   </div>;
 }

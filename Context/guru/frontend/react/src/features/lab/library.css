@@ -33,3 +33,33 @@
 .lab-library li > .dbtn.sm.lab-mine-edit { width: auto; border-radius: var(--r-field); padding: 0 8px; font: 600 11px var(--font); font-style: normal; }
 .lab-library .lab-mine-new { margin: 2px 0 4px; }
 .lab-library .lab-mine li.cap { padding: 4px 2px; font-size: 12px; }
+
+/* Popup picker: one search, category navigation and a flat list of real catalogue entries. */
+.lab-workbench .lab-library.lab-indicator-picker { padding:0 20px 12px; }
+.lab-indicator-picker > input[type=search] { min-height:40px; margin:0 0 14px; padding:9px 12px; border-color:var(--rule); border-radius:6px; }
+.lab-picker-body { display:grid; grid-template-columns:190px minmax(0,1fr); min-width:0; height:min(440px,52vh); }
+.lab-picker-categories { display:flex; flex-direction:column; gap:2px; min-width:0; overflow:auto; padding:0 12px 12px 0; border-right:1px solid var(--rule); }
+.lab-picker-categories > span { padding:12px 10px 6px; color:var(--ink3); font:500 10px var(--font); text-transform:uppercase; letter-spacing:.05em; }
+.lab-picker-categories > button { flex:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:9px 10px; border:0; border-radius:5px; background:none; color:var(--ink2); text-align:left; font:500 13px var(--font); cursor:pointer; }
+.lab-picker-categories > button:hover, .lab-picker-categories > button[aria-pressed=true] { background:var(--panel); color:var(--ink); }
+.lab-picker-categories > button:focus-visible { outline:2px solid var(--blue); outline-offset:-2px; }
+.lab-picker-results { min-width:0; overflow:auto; padding:0 0 12px 14px; }
+.lab-picker-results > h3 { margin:0; padding:10px 8px; color:var(--ink3); font:500 11px var(--font); }
+.lab-indicator-picker .lab-picker-results li { padding:4px 8px; min-height:36px; border-radius:4px; }
+.lab-indicator-picker .lab-picker-results li > button[data-lab-item] { align-items:center; flex-wrap:wrap; gap:2px 10px; padding:4px 0; }
+.lab-indicator-picker .lab-picker-results li > button[data-lab-item] b { max-width:100%; font-weight:500; white-space:normal; }
+.lab-indicator-picker .lab-picker-results li > button[data-lab-item] small { flex:1 0 90px; text-align:right; }
+.lab-indicator-picker .lab-picker-results li > button[data-lab-item]:disabled small { flex-basis:100%; white-space:normal; text-align:left; }
+.lab-indicator-picker .lab-lib-foot { margin:0; font-size:11px; }
+@media(max-width:600px) {
+  .lab-workbench .lab-library.lab-indicator-picker { padding:0 12px 10px; }
+  .lab-picker-body { grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); height:49vh; }
+  .lab-picker-categories { flex-direction:row; overflow:auto; padding:0 0 8px; border-right:0; border-bottom:1px solid var(--rule); }
+  .lab-picker-categories > span { display:none; }
+  .lab-picker-categories > button { max-width:180px; }
+  .lab-picker-results { padding:0 0 10px; }
+  .lab-indicator-picker .lab-picker-results li { padding:4px; }
+  .lab-indicator-picker .lab-picker-results li > button[data-lab-item] { flex-direction:column; align-items:start; }
+  .lab-indicator-picker .lab-picker-results li > button[data-lab-item] small { flex-basis:auto; text-align:left; width:100%; }
+  .lab-indicator-picker .lab-lib-foot { line-height:1.5; }
+}

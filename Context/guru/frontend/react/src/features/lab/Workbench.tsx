@@ -1,22 +1,26 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { aggregate, booleanMarkers, candles, isBooleanOutput, linePoints, ohlcFromSeries, rangeStart, tradeSpans } from "./bars";
 import { createLabChart, syncPanes, themeColors, tint, useThemeKey, type SyncedPane } from "./charts";
 import type { LabChartApi, LabSeriesApi } from "./globals";
 import { shortName } from "./catalogue";
-import { defaultColor, ParamsDialog, plotCss, plotPaint, type LineStyle, type Look } from "./ParamsDialog";
+import { defaultColor, isChoice, variantOptions, ParamsDialog, plotCss, plotPaint, type LineStyle, type Look } from "./ParamsDialog";
 import { COPY, TF_LABELS } from "./labels";
 import { formulaQuery } from "./formula";
 import type { Catalogue, ChartRange, Indicator, SavedMarket, SeriesResponse, Trade } from "./types";
-import { ErrorNotice, isProvisional, ProvisionalStrip, Segmented } from "./ui";
+import { ErrorNotice, isProvisional, ProvisionalStrip } from "./ui";
+import { DrawingLayer, type Drawing } from "./DrawingLayer";
 import { CHART_TYPES, drawTimeless, MAX_SLOTS, nounOf, type ChartType } from "./timeless";
 import { foreignDescription, foreignAdvertised, isPair } from "./foreign-model";
 import type { InstrumentOption } from "./instruments";
+import { ChartPaneDivider } from "./ChartPaneDivider";
+import { ChartPopup } from "./ChartPopup";
+import { ChartIndicatorLabel } from "./ChartIndicatorLabel";
 import "./workbench.css";
 
-/** Platform-formula option keys (MetaTrader/AmiBroker/… variants): shown on a chip only when set away from the default, so "MACD 12, 26, 9" stays short. */
-const OPTION_KEYS = new Set(["variant", "source", "basis_type", "range", "days", "signal_type", "ma_type", "exponential", "points", "horizon", "anchor_date"]);
+/** The chart legend includes every active input, including default calculation/source choices. */
 const chipValues = (ind: Indicator, params: Record<string, number>) =>
-  ind.params.filter((p) => p.key !== "variant" && !(OPTION_KEYS.has(p.key) && (params[p.key] ?? p.default) === p.default)).map((p) => params[p.key] ?? p.default);
+  ind.params.filter((p) => !(ind.id === "mfi" && p.key === "smoothing" && (params.variant ?? 0) === 0))
+    .map((p) => isChoice(p) ? variantOptions(p).find(([value]) => value === (params[p.key] ?? p.default))?.[1] ?? String(params[p.key] ?? p.default) : params[p.key] ?? p.default);
 
 /** `looks`: colour and style per plotted output (AmiBroker ParamColor / ParamStyle per Plot). */
 /** `tf`: the indicator's own timeframe (weekly RSI on a daily chart); absent = the chart's. */
@@ -45,13 +49,13 @@ export const levelsOf = (chip: Chip) => chip.levels ?? DEFAULT_LEVELS[chip.id] ?
 const LINE_LOOK: Record<LineStyle, Record<string, unknown>> = {
   line: { lineWidth: 2, lineStyle: 0 }, thick: { lineWidth: 4, lineStyle: 0 }, dashed: { lineWidth: 2, lineStyle: 2 }, dotted: { lineWidth: 2, lineStyle: 1 }, hidden: { visible: false },
 };
-/** TradingView-style drawings: a horizontal price line, or a trend line between two clicked bars. */
-type Drawing = { kind: "h"; price: number } | { kind: "t"; a: [string, number]; b: [string, number] };
 const loadDrawings = (key: string): Drawing[] => { try { return JSON.parse(localStorage.getItem(key) ?? "[]"); } catch { return []; } };
 const outputsOf = (chip: Chip, catalogue: Catalogue) => catalogue.indicators.find((i) => i.id === chip.id)?.outputs ?? [];
 /** Output k's colour: its own look, else the k-th palette entry after the chip's. */
 const plotColor = (chip: Chip, index: number, out: string | undefined, k: number) => (out && chip.looks?.[out]?.color) || defaultColor(index, k);
 export interface WorkbenchProps {
+  library?: ReactNode;
+  toolbar?(controls: ReactNode): ReactNode; onRange?(range: ChartRange): void;
   market: SavedMarket; ticker: string; tf: string; range: ChartRange; catalogue: Catalogue; chips: Chip[];
   trades?: Trade[];
   /** `formula`/`name` are set for a "My indicators" chip. */
@@ -67,7 +71,8 @@ const PRICE_IDS = ["open", "high", "low", "close"] as const;
 type Marker = { time: string; position: string; shape: string; color: string; text?: string; size?: number };
 type Disposable = NonNullable<ReturnType<typeof createLabChart>>;
 
-export function Workbench({ market, ticker, tf, range, catalogue, chips, trades, loadSeries, onChipChange, onChipRemove, onChipLook, instrumentLabel, comparisonOptions = [], onChipVsChange, onChipTfChange, onChipLevels }: WorkbenchProps) {
+export function Workbench({ market, ticker, tf, range, catalogue, chips, trades, loadSeries, onChipChange, onChipRemove, onChipLook, instrumentLabel, comparisonOptions = [], onChipVsChange, onChipTfChange, onChipLevels, library, toolbar, onRange }: WorkbenchProps) {
+  const workspaceRef = useRef<HTMLElement>(null);
   const priceRef = useRef<HTMLDivElement>(null);
   const panesRef = useRef<HTMLDivElement>(null);
   const legendRef = useRef<HTMLDivElement>(null);
@@ -79,15 +84,29 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
   useEffect(() => setDrawings(loadDrawings(drawKey)), [drawKey]);
   const saveDrawings = (next: Drawing[]) => { setDrawings(next); try { localStorage.setItem(drawKey, JSON.stringify(next)); } catch { /* kept for this visit */ } };
   const [tool, setTool] = useState<"t" | "h" | null>(null);
+  const [paneHeights, setPaneHeights] = useState<Record<string, number>>({});
+  const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(() => new Set());
+  const hiddenRef = useRef(hiddenKeys);
+  hiddenRef.current = hiddenKeys;
+  const valueLabels = useRef(new Map<string, HTMLSpanElement>());
+  const applyVisibility = useRef<((hidden: Set<string>) => void) | null>(null);
+  useEffect(() => { applyVisibility.current?.(hiddenKeys); }, [hiddenKeys]);
+  useEffect(() => { setHiddenKeys((before) => {
+    const keys = new Set(chips.map((c) => c.key)), next = new Set([...before].filter((key) => keys.has(key)));
+    return next.size === before.size ? before : next;
+  }); }, [chips]);
   const priceApi = useRef<{ chart: LabChartApi; series: LabSeriesApi } | null>(null);
+  const barTimes = useRef<string[]>([]); // the price chart's bar dates, for drawings
+  const keptView = useRef<{ key: string; range: { from: string; to: string } } | null>(null);
   const [chartVersion, setChartVersion] = useState(0); // the latest bar is off screen: show TradingView's "scroll to latest" button
   // AmiBroker "Ask for parameters of newly inserted indicators": a chip added after the first render opens its Parameters window.
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const [openKey, setOpenKey] = useState<string | null>(null);
   const seenKeys = useRef(new Set(chips.map((c) => c.key)));
   useEffect(() => {
     const fresh = chips.filter((c) => !seenKeys.current.has(c.key));
     fresh.forEach((c) => seenKeys.current.add(c.key));
-    if (fresh.length) setOpenKey(fresh[fresh.length - 1].key);
+    if (fresh.length) { setOpenKey(fresh[fresh.length - 1].key); setLibraryOpen(false); }
     else if (openKey && !chips.some((c) => c.key === openKey)) setOpenKey(null);
   }, [chips]); // eslint-disable-line react-hooks/exhaustive-deps
   const themeKey = useThemeKey();
@@ -128,7 +147,12 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
     let live = true;
     const disposers: Disposable[] = [];
     let unsync: (() => void) | undefined;
-    const cleanup = () => { live = false; priceApi.current = null; unsync?.(); disposers.forEach((d) => d.dispose()); legendRef.current?.replaceChildren(); panesRef.current?.querySelectorAll(".lab-legend-tv").forEach((el) => el.replaceChildren()); };
+    // a rebuild for an indicator or its settings keeps the user's zoom and scroll; a new instrument, timeframe, chart type or range preset starts fresh
+    const viewKey = `${market}|${ticker}|${tf}|${range}|${chartType}`;
+    const cleanup = () => {
+      const shown = priceApi.current?.chart.timeScale().getVisibleRange?.();
+      if (shown) keptView.current = { key: viewKey, range: shown };
+      live = false; priceApi.current = null; applyVisibility.current = null; unsync?.(); disposers.forEach((d) => d.dispose()); legendRef.current?.replaceChildren(); panesRef.current?.querySelectorAll(".lab-legend-tv").forEach((el) => el.replaceChildren()); };
     if (timeless) {
       // daily bars only: the engine's outputs are one value per daily bar, and a resampled event would repeat over the period
       const ind = find(chartType), params = typeParams[chartType] ?? {};
@@ -173,7 +197,9 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
       const daily = ohlcFromSeries({ open: o, high: h, low: l, close: c });
       const px = aggregate(daily, tf);
       const keep = tf === "D" ? undefined : new Set(px.d);
-      const price = createLabChart(priceRef.current, 420);
+      const gridColor = themeColors(priceRef.current).rule;
+      const grid = { vertLines: { visible: true, color: gridColor }, horzLines: { color: gridColor } };
+      const price = createLabChart(priceRef.current, 420, { grid }, undefined, true);
       if (!price) return;
       disposers.push(price);
       const { chart, colors } = price;
@@ -198,10 +224,12 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
         downColor: colors.red, borderDownColor: colors.red, wickDownColor: colors.red, priceLineVisible: false,
       });
       priceSeries.setData(candles(px));
-      priceApi.current = { chart, series: priceSeries };
+      priceApi.current = { chart, series: priceSeries }; barTimes.current = px.d;
       setChartVersion((v) => v + 1);
       const markers: Marker[] = [];
-      const readouts: { box: HTMLElement | null; label: string; color: string; values: Map<string, number | null> }[] = [];
+      const markerGroups = new Map<string, Marker[]>();
+      const seriesViews: { key: string; series: LabSeriesApi; visible: boolean }[] = [];
+      const readouts: { key: string; out: string; box: HTMLElement | null; label: string; color: string; values: Map<string, number | null> }[] = [];
       const charts: SyncedPane[] = [{ chart, el: priceRef.current, series: priceSeries }];
       // Every line carries exactly the price bars (blank where it has no value), so the panes line up bar for bar.
       const onBars = (dates: string[], values: (number | null)[]) => {
@@ -221,24 +249,27 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
           const values = res.series[out] ?? [];
           const color = plotPaint(plotColor(chip, index, out, k), colors), look = LINE_LOOK[chip.looks?.[out]?.style ?? "line"];
           if (isBooleanOutput(values)) {
-            markers.push(...booleanMarkers(res.dates, values, `${ind.name}${res.outputs.length > 1 ? "." + out : ""}`, color, keep));
+            markerGroups.set(chip.key, [...(markerGroups.get(chip.key) ?? []), ...booleanMarkers(res.dates, values, `${ind.name}${res.outputs.length > 1 ? "." + out : ""}`, color, keep)]);
             return;
           }
-          readouts.push({ box, label: `${shortName(ind)}${res.outputs.length > 1 ? "." + out : ""}${settings ? `(${settings})` : ""}`, color, values: new Map(res.dates.map((d, k) => [d, values[k]])) });
+          readouts.push({ key: chip.key, out, box, label: `${shortName(ind)}${res.outputs.length > 1 ? "." + out : ""}${settings ? `(${settings})` : ""}`, color, values: new Map(res.dates.map((d, k) => [d, values[k]])) });
           if (!target) {
             // A pane chart is created only when the chip has a line to draw; boolean-only chips mark the price chart.
-            const pane = host && createLabChart(host, 150);
+            const pane = host && createLabChart(host, 150, { grid }, undefined, true);
             if (!pane) return;
             disposers.push(pane);
             target = pane.chart;
             const line = target.addLineSeries({ color, ...look, priceLineVisible: false, lastValueVisible: true });
             line.setData(onBars(res.dates, values));
+            seriesViews.push({ key: chip.key, series: line, visible: look.visible !== false });
             // threshold lines (RSI 70 / 30 …), dashed, with their value on the axis
             for (const price of levelsOf(chip)) line.createPriceLine?.({ price, color: colors.ink3, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "" });
             charts.push({ chart: pane.chart, el: host, series: line });
             return;
           }
-          target.addLineSeries({ color, ...look, priceLineVisible: false, lastValueVisible: true }).setData(onBars(res.dates, values));
+          const line = target.addLineSeries({ color, ...look, priceLineVisible: false, lastValueVisible: true });
+          line.setData(onBars(res.dates, values));
+          seriesViews.push({ key: chip.key, series: line, visible: look.visible !== false });
         });
       });
       const actionTrades = (trades ?? []).map((trade) => ({
@@ -251,10 +282,17 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
       markers.push(...actions.filter((marker) => priceDates.has(marker.time)));
       const last = px.d[px.d.length - 1];
       if (keep && last) markers.push({ time: last, position: "aboveBar", shape: "square", color: colors.ink3, text: "in progress" });
-      priceSeries.setMarkers?.(markers.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0)));
+      applyVisibility.current = (hidden) => {
+        for (const view of seriesViews) view.series.applyOptions({ visible: view.visible && !hidden.has(view.key) });
+        const visibleMarkers = [...markers, ...[...markerGroups].flatMap(([key, group]) => hidden.has(key) ? [] : group)];
+        priceSeries.setMarkers?.(visibleMarkers.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0)));
+      };
+      applyVisibility.current(hiddenRef.current);
       const from = rangeStart(px.d, range) ?? px.d[0]; // "All" is an explicit range too, so panes with different warm-up start together
+      const kept = keptView.current?.key === viewKey ? keptView.current.range : null;
       for (const { chart: ch } of charts) {
-        if (from && last) ch.timeScale().setVisibleRange({ from, to: last });
+        if (kept) ch.timeScale().setVisibleRange(kept);
+        else if (from && last) ch.timeScale().setVisibleRange({ from, to: last });
         else ch.timeScale().fitContent();
       }
       // One date axis, under the bottom chart (AmiBroker / TradingView stacked panes).
@@ -290,7 +328,10 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
         };
         const rows = (target: HTMLElement | null) => readouts.flatMap(({ box: b, label, color, values }) => {
           const v = values.get(time);
-          return b !== target || v == null || !Number.isFinite(v) ? [] : [line([[label + " = ", color], [num(v), color]])];
+          if (b !== target || v == null || !Number.isFinite(v)) return [];
+          const row = line([[label + " = ", color], [num(v), color]]);
+          row.className = "lab-legend-output";
+          return [row];
         });
         box.replaceChildren(
           line([[`${ticker} · ${TF_NAMES[tf] ?? tf} · ${time}  `], ["O ", colors.ink2], [num(px.o[i]) + "  ", tone], ["H ", colors.ink2], [num(px.h[i]) + "  ", tone],
@@ -298,6 +339,17 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
           ...rows(box),
         );
         for (const pane of new Set(readouts.map((r) => r.box))) if (pane && pane !== box) pane.replaceChildren(...rows(pane));
+        // Only replace value text: the label buttons keep focus while the crosshair moves.
+        for (const [key, label] of valueLabels.current) {
+          const values = readouts.filter((r) => r.key === key).flatMap((r) => {
+            const value = r.values.get(time);
+            if (value == null || !Number.isFinite(value)) return [];
+            const span = document.createElement("span");
+            span.textContent = num(value); span.style.color = r.color; span.title = r.out;
+            return [span];
+          });
+          label.replaceChildren(...(values.length ? values : [document.createTextNode("—")]));
+        }
       };
       if (last) legend(last);
       for (const { chart: ch } of charts) ch.subscribeCrosshairMove?.((param) => legend(param.time && at.has(param.time) ? param.time : last));
@@ -306,100 +358,146 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
     // loadSeries and find are read fresh per run; chips are tracked by their canonical key.
   }, [market, ticker, tf, range, chipsKey, trades, themeKey, catalogue, comparisonsKey, typeKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    const api = priceApi.current;
-    if (!api || !priceRef.current) return;
-    const { chart, series } = api, color = themeColors(priceRef.current).blue;
-    const lines = drawings.flatMap((d) => d.kind === "h" ? [series.createPriceLine?.({ price: d.price, color, lineWidth: 1, lineStyle: 0, axisLabelVisible: true })] : []);
-    const trends = drawings.flatMap((d) => {
-      if (d.kind !== "t") return [];
-      // its own series that never rescales the price axis
-      const line = chart.addLineSeries({ color, lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, autoscaleInfoProvider: () => null });
-      line.setData([d.a, d.b].sort(([x], [y]) => (x < y ? -1 : 1)).map(([time, value]) => ({ time, value })));
-      return [line];
-    });
-    return () => {
-      if (priceApi.current?.chart !== chart) return; // the chart itself was removed with its lines
-      lines.forEach((l) => series.removePriceLine?.(l));
-      trends.forEach((l) => chart.removeSeries?.(l));
-    };
-  }, [drawings, chartVersion]);
-
-  useEffect(() => {
-    const api = priceApi.current;
-    if (!api || !tool) return;
-    let start: [string, number] | null = null;
-    const onClick = (param: { time?: string; point?: { x: number; y: number } }) => {
-      const price = param.point && api.series.coordinateToPrice?.(param.point.y);
-      if (!param.time || price === undefined || price === null) return;
-      if (tool === "h") { saveDrawings([...drawings, { kind: "h", price }]); setTool(null); }
-      else if (!start) start = [param.time, price];
-      else if (param.time !== start[0]) { saveDrawings([...drawings, { kind: "t", a: start, b: [param.time, price] }]); setTool(null); }
-    };
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setTool(null); };
-    api.chart.subscribeClick?.(onClick);
-    window.addEventListener("keydown", onKey);
-    return () => { api.chart.unsubscribeClick?.(onClick); window.removeEventListener("keydown", onKey); };
-  }, [tool, chartVersion, drawings]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const panes = timeless ? [] : chips.filter((c) => find(c.id)?.placement === "pane" && !pairProblem(c));
+  // TradingView: the price chart fills the screen below the toolbar (its panes included) until its height is dragged;
+  // Full screen shows the whole chart tab on the screen
+  const [fit, setFit] = useState(420), [full, setFull] = useState(false);
+  const panesHeight = panes.reduce((sum, c) => sum + (paneHeights[c.key] ?? 150) + 8, 0);
+  useEffect(() => {
+    const measure = () => {
+      const el = priceRef.current, fs = !!workspaceRef.current?.closest(".lab-maximized");
+      setFull(fs);
+      if (!el) return;
+      const top = el.getBoundingClientRect().top + (fs ? 0 : window.scrollY);
+      setFit(Math.max(360, Math.round(window.innerHeight - top - panesHeight - (fs ? 48 : 72))));
+    };
+    measure();
+    // leaving the browser's full screen (Esc) also leaves the window-filling view
+    const left = () => { if (!document.fullscreenElement) maximize(false); else measure(); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape" && !document.fullscreenElement) maximize(false); };
+    window.addEventListener("resize", measure); document.addEventListener("fullscreenchange", left); window.addEventListener("keydown", esc);
+    return () => { window.removeEventListener("resize", measure); document.removeEventListener("fullscreenchange", left); window.removeEventListener("keydown", esc); };
+  }, [panesHeight, chips.length, ohlcError]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The chart tab fills the window, and the screen when the browser allows it (it needs the user's own click).
+  const maximize = (on: boolean) => {
+    const panel = workspaceRef.current?.closest<HTMLElement>("[role=tabpanel]") ?? workspaceRef.current;
+    if (!panel || panel.classList.contains("lab-maximized") === on) return;
+    panel.classList.toggle("lab-maximized", on);
+    if (on) panel.requestFullscreen?.().catch(() => { /* the window-filling view stays */ });
+    else if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined);
+    window.dispatchEvent(new Event("resize"));
+  };
+  const toggleFull = () => maximize(!full);
   const typeName = CHART_TYPES.find(([t]) => t === chartType)?.[1] ?? chartType, typeInd = timeless ? find(chartType) : undefined;
-  return (
-    <section className="box lab-workbench">
-      <div className="box-h">{timeless ? <>{ticker} · {typeName} from daily bars</> : <>{ticker} · {TF_NAMES[tf] ?? tf} bars</>} <small>{COPY.chartHint}</small></div>
-      {isProvisional(market) && <ProvisionalStrip note={provisionalNote} instrumentLabel={instrumentLabel} />}
-      {chips.length ? (
-        <div className="lab-chips">
-          {chips.map((chip, index) => (
-            <ChipView key={chip.key} chip={chip} index={index} catalogue={catalogue} error={chipErrors[chip.key]} market={market}
-              instrumentLabel={instrumentLabel} onRemove={onChipRemove} pairProblem={pairProblem(chip)} open={openKey === chip.key} onOpen={() => setOpenKey(chip.key)} />
-          ))}
-        </div>
-      ) : <p className="cap">{COPY.noChips}</p>}
-      {ohlcError !== null && <ErrorNotice error={ohlcError} market={market} instrumentLabel={instrumentLabel} />}
-      <div className="lab-draw" data-lab-chart-type>
-        <Segmented label="Chart type" value={chartType} onChange={(t) => { setChartType(t); setTypeOpen(false); setTool(null); }}
-          options={CHART_TYPES.map(([value, label]) => ({ value, label, disabled: value !== "candles" && !find(value)?.computed, title: value !== "candles" && !find(value)?.computed ? "Not offered by this engine" : undefined }))} />
-        {typeInd && <button type="button" className="dbtn sm" data-lab-type-params aria-haspopup="dialog" aria-expanded={typeOpen} onClick={() => setTypeOpen(true)}>{typeName} parameters…</button>}
-      </div>
-      <div className="lab-draw" role="toolbar" aria-label="Drawing tools" hidden={ohlcError !== null || timeless}>
-        <button type="button" className="dbtn sm" data-lab-draw="t" aria-pressed={tool === "t"} onClick={() => setTool(tool === "t" ? null : "t")}>╱ Trend line</button>
-        <button type="button" className="dbtn sm" data-lab-draw="h" aria-pressed={tool === "h"} onClick={() => setTool(tool === "h" ? null : "h")}>─ Horizontal line</button>
-        {drawings.length > 0 && <>
-          <button type="button" className="dbtn sm ghost" data-lab-draw-undo onClick={() => saveDrawings(drawings.slice(0, -1))}>Undo</button>
-          <button type="button" className="dbtn sm ghost" data-lab-draw-clear onClick={() => saveDrawings([])}>Clear drawings ({drawings.length})</button>
-        </>}
-        {tool && <span className="cap" data-lab-draw-hint>{tool === "t" ? "Click the start, then the end of the line on the price chart" : "Click a price on the chart"} · Esc cancels</span>}
-      </div>
-      <div className="lab-stage">
-        <div hidden={ohlcError !== null}>
-          <div className={`lab-price${tool ? " lab-drawing" : ""}`}>
-            <div className="lwc px" ref={priceRef} data-lab-chart role="img" aria-label={timeless ? `${ticker} ${typeName} chart` : `${ticker} price chart`} />
-            <div className="lab-legend-tv" ref={legendRef} aria-hidden="true" />
-            {behind && <button type="button" className="lab-latest" data-lab-latest title="Scroll to the latest bar" aria-label="Scroll to the latest bar" onClick={() => toLatest.current?.()}>»</button>}
-          </div>
-          <div ref={panesRef}>
-            {panes.map((c) => (
-              <div key={c.key} className="lab-pane-box">
-                <div className="lab-pane" data-lab-pane={c.key} role="img" aria-label={`${find(c.id)?.name ?? c.id} chart`} />
-                <div className="lab-legend-tv" aria-hidden="true" />
-              </div>
-            ))}
-          </div>
-        </div>
-        {typeInd && typeOpen && <ParamsDialog key={chartType} name={typeName} indicator={typeInd} params={typeParams[chartType] ?? {}} index={0} showComparison={false} showLooks={false}
+  const panel = <>
+    <div className="lab-indicator-browser" hidden={!libraryOpen}>
+      <div className="lab-browser-heading"><h2>Indicators</h2><button type="button" className="dbtn sm ghost" aria-label="Close indicator browser" onClick={() => setLibraryOpen(false)}>×</button></div>
+      {library}
+    </div>
+    {!libraryOpen && <>
+      {typeInd && typeOpen && <ParamsDialog key={chartType} name={typeName} indicator={typeInd} params={typeParams[chartType] ?? {}} index={0} showComparison={false} showLooks={false}
           onParams={(p) => setTypeParams((all) => ({ ...all, [chartType]: p }))} onLook={() => undefined} onClose={() => { setTypeOpen(false); document.querySelector<HTMLButtonElement>("[data-lab-type-params]")?.focus(); }} />}
         {!(typeInd && typeOpen) && (() => {
           const index = chips.findIndex((c) => c.key === openKey), chip = chips[index], ind = chip && find(chip.id);
           if (!chip || !ind) return null;
-          const close = () => { setOpenKey(null); document.querySelector<HTMLElement>(`[data-lab-chip="${chip.key}"] .lab-chip-open`)?.focus(); };
+          const close = () => {
+            setOpenKey(null);
+            const control = !timeless
+              ? valueLabels.current.get(chip.key)?.closest('[data-lab-chart-label]')?.querySelector<HTMLElement>('button')
+              : document.querySelector<HTMLElement>(`[data-lab-chip="${chip.key}"] .lab-chip-open`);
+            control?.focus();
+          };
           // keyed by chip: another chip's window starts fresh (section open, focus, typed drafts)
           return <ParamsDialog key={chip.key} name={ind.name} indicator={ind} params={chip.params} looks={chip.looks} index={index} vs={chip.vs} tf={chip.tf} timeframes={catalogue.timeframes} onTf={(t) => onChipTfChange?.(chip.key, t)}
             levels={ind.placement === "pane" ? levelsOf(chip) : undefined} onLevels={(l) => onChipLevels?.(chip.key, l)}
             comparisonOptions={comparisonOptions} showComparison={isPair(chip.id) && foreignAdvertised(catalogue)}
             onParams={(params) => onChipChange(chip.key, params)} onLook={(looks) => onChipLook?.(chip.key, looks)} onVs={(vs) => onChipVsChange?.(chip.key, vs)} onClose={close} />;
         })()}
+    </>}
+  </>;
+  const panelOpen = libraryOpen || !!(typeInd && typeOpen) || chips.some((c) => c.key === openKey);
+  const labelFor = (chip: Chip, index: number) => {
+    const ind = find(chip.id);
+    if (!ind?.computed || pairProblem(chip)) return null;
+    const fullSettings = [...chipValues(ind, chip.params), ...(chip.tf ? [TF_LABELS[chip.tf] ?? chip.tf] : [])].join(" ");
+    const settings = fullSettings.replace(/Wilder\/TradingView\/AmiBroker(?: after warm-up)?/g, "Wilder").replace(/Cutler\/TradeStation RSI JP/g, "Cutler") + (ind.id === "rsi" ? " close" : "");
+    return <div key={chip.key} data-lab-chart-label={chip.key}><ChartIndicatorLabel name={shortName(ind)} settings={settings} settingsTitle={fullSettings}
+      color={plotCss(plotColor(chip, index, ind.outputs[0], 0))} hidden={hiddenKeys.has(chip.key)}
+      valuesRef={(element) => { if (element) valueLabels.current.set(chip.key, element); else valueLabels.current.delete(chip.key); }}
+      onSettings={() => { closePanel(); setLibraryOpen(false); setTypeOpen(false); setOpenKey(chip.key); }}
+      onToggle={() => setHiddenKeys((before) => { const next = new Set(before); if (!next.delete(chip.key)) next.add(chip.key); return next; })}
+      onRemove={() => onChipRemove(chip.key)} /></div>;
+  };
+  const closePanel = () => {
+    const cancel = workspaceRef.current?.querySelector<HTMLButtonElement>('.lab-params [aria-label="Close parameters"]');
+    if (cancel) cancel.click();
+    else { setLibraryOpen(false); setOpenKey(null); setTypeOpen(false); }
+  };
+  const fullButton = <button type="button" className="dbtn sm ghost lab-fullscreen" data-lab-fullscreen aria-pressed={full} title={full ? "Exit full screen (Esc)" : "Full screen"}
+    aria-label={full ? "Exit full screen" : "Full screen"} onClick={toggleFull}><svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d={full ? "M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" : "M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"} /></svg></button>;
+  const controls = <div className="lab-chart-actions" role="toolbar" aria-label="Chart workspace">
+    <label className="lab-chart-type-control"><span className="lab-control-name">Chart type</span><select aria-label="Chart type" value={chartType} onChange={(event) => { closePanel(); setChartType(event.target.value as ChartType); setTypeOpen(false); setOpenKey(null); setTool(null); }}>
+      {CHART_TYPES.map(([value, label]) => <option key={value} value={value} disabled={value !== "candles" && !find(value)?.computed}>{label}</option>)}
+    </select></label>
+    {typeInd && <button type="button" className="dbtn sm" data-lab-type-params aria-expanded={typeOpen} onClick={() => { setLibraryOpen(false); setTypeOpen(true); }}>{typeName} settings</button>}
+    {library && <button type="button" className="dbtn sm lab-add-indicator" aria-expanded={libraryOpen} onClick={() => { if (!libraryOpen) { closePanel(); setOpenKey(null); setTypeOpen(false); } setLibraryOpen(!libraryOpen); }}><svg width="19" height="19" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><path d="M2 17h16M4 15V9m5 6V5m5 10v-4M2 7l5-5 5 4 6-5" /></svg>Indicators</button>}
+    {fullButton}
+  </div>;
+  return (
+    <section ref={workspaceRef} className="box lab-workbench" data-indicator-display={timeless ? "chips" : "on-chart"}>
+      <div className="lab-chart-caption">{timeless ? <>{ticker} · {typeName} from daily bars</> : <>{ticker} · {TF_NAMES[tf] ?? tf} bars</>}</div>
+      <div className="lab-chart-topbar">{toolbar ? toolbar(controls) : controls}</div>
+      {isProvisional(market) && <ProvisionalStrip note={provisionalNote} instrumentLabel={instrumentLabel} />}
+      {chips.length ? (
+        <div className="lab-chips">
+          {chips.map((chip, index) => (
+            <ChipView key={chip.key} chip={chip} index={index} catalogue={catalogue} error={chipErrors[chip.key]} market={market}
+              instrumentLabel={instrumentLabel} onRemove={onChipRemove} pairProblem={pairProblem(chip)} open={!libraryOpen && !typeOpen && openKey === chip.key} onOpen={() => { setLibraryOpen(false); setTypeOpen(false); setOpenKey(chip.key); }} />
+          ))}
+        </div>
+      ) : null}
+      {ohlcError !== null && <ErrorNotice error={ohlcError} market={market} instrumentLabel={instrumentLabel} />}
+      <div className="lab-chart-body">
+      <div className="lab-draw lab-draw-rail" role="toolbar" aria-label="Drawing tools" hidden={ohlcError !== null || timeless}>
+        <button type="button" className="dbtn sm" title="Crosshair" aria-label="Crosshair" aria-pressed={tool === null} onClick={() => setTool(null)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v7m0 6v7M2 12h7m6 0h7" /></svg></button>
+        <button type="button" className="dbtn sm" title="Trend line" aria-label="Trend line" data-lab-draw="t" aria-pressed={tool === "t"} onClick={() => setTool(tool === "t" ? null : "t")}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 19 14-14"/><circle cx="4" cy="20" r="2"/><circle cx="20" cy="4" r="2"/></svg></button>
+        <button type="button" className="dbtn sm" title="Horizontal line" aria-label="Horizontal line" data-lab-draw="h" aria-pressed={tool === "h"} onClick={() => setTool(tool === "h" ? null : "h")}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12h20"/><circle cx="9" cy="12" r="2"/></svg></button>
+        {drawings.length > 0 && <>
+          <button type="button" className="dbtn sm ghost" title="Undo drawing" aria-label="Undo drawing" data-lab-draw-undo onClick={() => saveDrawings(drawings.slice(0, -1))}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5-5 5 5 5M3 10h11a6 6 0 0 1 0 12"/></svg></button>
+          <button type="button" className="dbtn sm ghost" title={`Clear drawings (${drawings.length})`} aria-label={`Clear drawings (${drawings.length})`} data-lab-draw-clear onClick={() => saveDrawings([])}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7"/></svg></button>
+        </>}
       </div>
+        <div hidden={ohlcError !== null}>
+          <div className={`lab-price${tool ? " lab-drawing" : ""}`}>
+            <div className="lwc px" ref={priceRef} style={{ height: paneHeights.price ?? fit }} data-lab-chart role="img" aria-label={timeless ? `${ticker} ${typeName} chart` : `${ticker} price chart`} />
+            {!timeless && priceApi.current && priceRef.current && <DrawingLayer key={chartVersion} chart={priceApi.current.chart} series={priceApi.current.series}
+              times={barTimes.current} drawings={drawings} tool={tool} color={themeColors(priceRef.current).blue} height={paneHeights.price ?? fit}
+              onChange={saveDrawings} onDone={() => setTool(null)} />}
+            <div className="lab-legend-tv" ref={legendRef} aria-hidden="true" />
+            {!timeless && <div className="lab-chart-indicators">{chips.map((chip, index) => find(chip.id)?.placement !== "pane" ? labelFor(chip, index) : null)}</div>}
+            {behind && <button type="button" className="lab-latest" data-lab-latest title="Scroll to the latest bar" aria-label="Scroll to the latest bar" onClick={() => toLatest.current?.()}>»</button>}
+          </div>
+          <ChartPaneDivider label="Price pane height" height={paneHeights.price ?? fit} defaultHeight={fit} onChange={(height) => setPaneHeights((all) => ({ ...all, price: height }))} />
+          <div ref={panesRef}>
+            {panes.map((c) => (
+              <div key={c.key} className="lab-pane-box">
+                <button type="button" className="lab-pane-settings" aria-label={`Settings for ${find(c.id)?.name ?? c.id}`} title="Indicator settings" onClick={() => { setLibraryOpen(false); setTypeOpen(false); setOpenKey(c.key); }}>
+                  <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14M7 2v6M13 7v6M8 12v6" /></svg>
+                </button>
+                <div className="lab-pane" style={{ height: paneHeights[c.key] ?? 150 }} data-lab-pane={c.key} role="img" aria-label={`${find(c.id)?.name ?? c.id} chart`} />
+                <div className="lab-legend-tv" aria-hidden="true" />
+                <div className="lab-chart-indicators">{labelFor(c, chips.findIndex((chip) => chip.key === c.key))}</div>
+                <ChartPaneDivider label={`${find(c.id)?.name ?? c.id} pane height`} height={paneHeights[c.key] ?? 150} defaultHeight={150} onChange={(height) => setPaneHeights((all) => ({ ...all, [c.key]: height }))} />
+              </div>
+            ))}
+          </div>
+        </div>
+
+      </div>
+      {tool && <p className="cap lab-drawing-hint" data-lab-draw-hint>{tool === "t" ? "Press on the chart and drag to the end of the line (or click the start, then the end)" : "Move to a price and click"} · Esc cancels</p>}
+      {onRange && <div className="lab-chart-footer" role="group" aria-label="Chart range">{(["1Y", "3Y", "All"] as ChartRange[]).map((value) => <button key={value} type="button" aria-pressed={range === value} onClick={() => onRange(value)}>{value}</button>)}<span>{TF_NAMES[tf] ?? tf} · {ticker}</span></div>}
+      {panelOpen && <ChartPopup key={libraryOpen ? "library" : openKey ?? chartType} wide={libraryOpen} title={libraryOpen ? "Indicators" : "Indicator settings"} onClose={closePanel}>{panel}</ChartPopup>}
       {timeless ? <p className="cap" data-lab-timeless-note>
         {`${typeName} is drawn without a date axis from the engine's ${typeName} outputs on daily bars (the same values the rules use); hover a ${nounOf(chartType)} for its dates. The last ${nounOf(chartType)} can still change until the next one forms. Indicator chips, drawings and the candle size apply to Candles only.`}
         {shown && shown.total > shown.slots && ` Showing the latest ${MAX_SLOTS.toLocaleString("en-US")} of ${shown.total.toLocaleString("en-US")} ${nounOf(chartType, true)}; a larger box shows more history.`}
@@ -426,7 +524,7 @@ function ChipView({ chip, index, catalogue, error, market, instrumentLabel, onRe
   const values = [...(ind ? chipValues(ind, chip.params) : []), ...(chip.vs ? [`vs ${chip.vs}`] : []), ...(chip.tf ? [TF_LABELS[chip.tf] ?? chip.tf] : [])].join(", ");
   return (
     <div className="chip" data-lab-chip={chip.key}>
-      <button type="button" className="lab-chip-open" aria-haspopup="dialog" aria-expanded={open} title={`Parameters of ${name}`} onClick={onOpen}>
+      <button type="button" className="lab-chip-open" aria-expanded={open} title={`Parameters of ${name}`} onClick={onOpen}>
         <i className="lab-dot" style={{ background: plotCss(plotColor(chip, index, outputsOf(chip, catalogue)[0], 0)), opacity: chip.looks?.[outputsOf(chip, catalogue)[0]]?.style === "hidden" ? 0.35 : 1 }} aria-hidden="true" />
         <b>{ind ? shortName(ind) : chip.id}</b>{values && <span className="lab-chip-vals">{values}</span>}
       </button>

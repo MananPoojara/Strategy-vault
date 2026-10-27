@@ -20,6 +20,10 @@ pub struct Bars {
     /// `volume` stays None, so whatever needs volume on every bar is unchanged; catalogue::run starts volume
     /// indicators at that bar, as AmiBroker computes from the bars that have volume.
     pub late_volume: Option<(usize, Vec<f64>)>,
+    /// Order-flow footprint aligned to these daily bars (footprint.rs); None on W/M bars and tickers without a file.
+    pub footprint: Option<super::footprint::Footprint>,
+    /// The footprint file this ticker would read (named in needs_data notes); empty outside daily ticker bars.
+    pub footprint_file: String,
 }
 
 /// Market breadth of the instrument's market, aligned to its daily bars (NaN = no value that day).
@@ -51,7 +55,7 @@ impl Bars {
             close: rows.iter().map(|r| r.close).collect(),
             volume,
             end: (0..rows.len()).collect(),
-            breadth: None, second: None, expiry: None, expiry_sessions: None, late_volume,
+            breadth: None, second: None, expiry: None, expiry_sessions: None, late_volume, footprint: None, footprint_file: String::new(),
         }
     }
     /// Volume on every bar, or the late volume with the bars before it empty (NaN).
@@ -70,6 +74,10 @@ impl Bars {
     /// Each engine instance serves one market, so the `_ADV_DEC.` suffix is unique.
     pub fn from_ctx(ctx: &crate::connors::Ctx) -> Bars {
         let mut b = Bars::from_rows(ctx.r);
+        if let Some(t) = ctx.r.first().map(|r| r.ticker.as_str()) {
+            b.footprint_file = super::footprint::file_name(t);
+            b.footprint = super::footprint::load(t, &b.date);
+        }
         let key = |c: &str| ctx.extra.keys().find(|k| k.ends_with(&format!("_ADV_DEC.{c}"))).cloned();
         let col = |c: &str| key(c).map(|k| ctx.extra[&k].clone());
         // gl/crypto ids are "EXCHANGE:SYMBOL"; a wildcard extra file must not hand them an India/US market's breadth.

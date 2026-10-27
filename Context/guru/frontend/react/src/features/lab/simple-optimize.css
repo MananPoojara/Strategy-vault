@@ -1,0 +1,19 @@
+/* Simple view "Test every combination" (SimpleOptimize.tsx): one line per number, its range under it, then the best results. */
+.lab-sopt { display: grid; gap: 12px; min-width: 0; }
+.lab-sopt p { margin: 0; }
+.lab-sopt-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.lab-sopt-line { display: grid; gap: 8px; padding: 8px 10px; border: 1px solid var(--rule); border-radius: var(--r-field); background: var(--card); }
+.lab-sopt-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.lab-sopt-words { flex: 1 1 260px; min-width: 0; font-size: 14px; line-height: 1.5; }
+.lab-sopt-words b { color: var(--blue); }
+.lab-sopt-range { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding-top: 8px; border-top: 1px solid var(--rule); }
+.lab-sopt-range .dfield input[type=number] { width: 84px; }
+.lab-sopt-range .cap { margin: 0; color: var(--ink2); }
+.lab-sopt-run { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.lab-sopt-count { font-weight: 600; }
+.lab-sopt-results { display: grid; gap: 8px; min-width: 0; }
+.lab-sopt-scroll { overflow-x: auto; }
+.lab-sopt-table { border-collapse: collapse; font-size: 13.5px; }
+.lab-sopt-table :is(th, td) { padding: 6px 10px; border-bottom: 1px solid var(--rule); text-align: left; }
+.lab-sopt-table thead th { max-width: 24ch; font-size: 12px; font-weight: 600; color: var(--ink2); vertical-align: bottom; }
+.lab-sopt-table .n { text-align: right; white-space: nowrap; font-family: "IBM Plex Mono", monospace; }

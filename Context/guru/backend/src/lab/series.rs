@@ -95,6 +95,8 @@ pub fn catalogue_error(def: &catalogue::IndicatorDef, e: String) -> LabError {
         "needs index member breadth" => LabError::NeedsData(format!("{}: counts only this index's own member stocks, and that data is loaded for NIFTY 50 only", def.name)),
         "needs contract data" => LabError::NeedsData(format!("{}: needs admitted futures contract metadata",def.name)),
         "needs intraday data" => LabError::NeedsData(format!("{}: needs intraday data", def.name)),
+        s if s.starts_with("needs order-flow data|") => LabError::NeedsData(format!("{}: needs order-flow data (trades at bid/ask) — supply {} in the order-flow folder (VAULT_ORDERFLOW_DIR); daily bars only",
+            def.name, if s.len() > 22 { &s[22..] } else { "<TICKER>__FOOTPRINT.csv" })),
         _ => LabError::Invalid(format!("{}: {e}", def.id)),
     }
 }
@@ -662,7 +664,7 @@ mod tests {
     }
 
     #[test] fn every_computed_indicator_is_reachable_from_a_rule() {
-        for d in all().iter().filter(|d| d.compute.is_some() && !d.needs.derivatives && !d.needs.second_symbol) {
+        for d in all().iter().filter(|d| d.compute.is_some() && !d.needs.derivatives && !d.needs.second_symbol && !d.needs.order_flow) {
             let out = d.outputs[d.outputs.len() - 1];
             if let Err(e) = crate::lab::testdata::compiles(d.id, out) { panic!("{}.{out}: {} {}", d.id, e.status(), e.message()); }
         }
@@ -703,7 +705,7 @@ mod tests {
         for d in all().iter().filter(|d| d.compute.is_some() && !d.needs.second_symbol && !crate::lab::periods::USES_SESSION_DATES.contains(&d.id)) {
             for tf in [Tf::D, Tf::W, Tf::M, Tf::Q, Tf::Y, Tf::Days(5)] {
                 let r = sref(d.id, tf, d.outputs.len() - 1, 0);
-                if (d.needs.breadth && tf != Tf::D) || d.needs.derivatives { assert_eq!(series(&full, &mut Cache::new(), &r).unwrap_err().status(), "needs_data"); continue; }
+                if (d.needs.breadth && tf != Tf::D) || d.needs.derivatives || d.needs.order_flow { assert_eq!(series(&full, &mut Cache::new(), &r).unwrap_err().status(), "needs_data"); continue; }
                 let want = series(&full, &mut Cache::new(), &r).unwrap();
                 for cut in (60..400usize).step_by(7) {
                     let pre = crate::lab::testdata::cut(&full_bars, cut);
@@ -748,7 +750,7 @@ mod tests {
                     let params: Params = d.params.iter().map(|p| (p.key.to_string(), pick(p))).collect();
                     for tf in [Tf::D, Tf::W, Tf::M, Tf::Q, Tf::Y, Tf::Days(5)] {
                         let r = SeriesRef { id: d.id.into(), params: params.clone(), tf, out: 0, offset: 0, foreign: Default::default(), formula: None };
-                        if (d.needs.breadth && tf != Tf::D) || d.needs.derivatives { assert_eq!(series(&fr, &mut Cache::new(), &r).unwrap_err().status(), "needs_data"); continue; }
+                        if (d.needs.breadth && tf != Tf::D) || d.needs.derivatives || d.needs.order_flow { assert_eq!(series(&fr, &mut Cache::new(), &r).unwrap_err().status(), "needs_data"); continue; }
                         assert_eq!(series(&fr, &mut Cache::new(), &r).unwrap().len(), fr.d.len(), "{} {tf:?}", d.id);
                     }
                 }

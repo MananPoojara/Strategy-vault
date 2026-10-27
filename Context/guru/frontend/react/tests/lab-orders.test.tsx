@@ -119,7 +119,7 @@ it("exits: add menu lists only unset extra exits; trailing activation; breakeven
   expect(last().exit.min_bars).toBe(1);
   await rerender(last());
   expect(host.textContent).toContain(COPY.minBarsHint);
-  await click(host.querySelector('[data-lab-exit="min_bars"] button[aria-label="Remove Minimum bars"]')!);
+  await click(host.querySelector('[data-lab-exit="min_bars"] button[aria-label="Remove Minimum bars (sell rules wait N bars)"]')!);
   expect(last().exit).not.toHaveProperty("min_bars");
 });
 
@@ -190,8 +190,15 @@ it("Two-line exit: added from More exits with the MultiTF Supertrend lines, each
   expect(favour).not.toBeNull();
   expect(host.querySelector('[role="group"][aria-label="Initial line"]')).not.toBeNull();
   expect(host.textContent).toContain(COPY.dualLineHint);
-  await click(host.querySelector('button[aria-label="Remove Two-line exit (initial → favour)"]')!);
+  await click(host.querySelector('button[aria-label="Remove Two-line exit (tight line first, wider line once the trend is confirmed)"]')!);
   expect(last().exit.dual_line).toBeUndefined();
+});
+it("Simple view: More exits leaves out the AmiBroker-parity two ATR stops and two-line exit", async () => {
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host); active.push({ root, host });
+  await act(async () => root.render(<OrdersPanel spec={defaultSpec()} catalogue={catalogue7Fixture} onChange={vi.fn()} part="exits" brief />));
+  const keys = [...host.querySelectorAll<HTMLOptionElement>('select[aria-label="Add exit (long)"] option')].map((o) => o.value);
+  expect(keys).toEqual(["", "breakeven", "take_profits", "min_bars"]);
 });
 it("Dual ATR exit: added from More exits, bands, timeframe and the period-end test; not in a portfolio", async () => {
   const { host, last, rerender } = await orders(defaultSpec());
@@ -213,7 +220,7 @@ it("Dual ATR exit: added from More exits, bands, timeframe and the period-end te
   await rerender(last());
   await clickIn(host, '[aria-label="Dual ATR timeframe"]', "Daily");
   expect(last().exit.dual_atr).toEqual({ initial: { period: 5, mult: 2, price: "open" }, favour: { period: 5, mult: 3, price: "hl2" } });
-  await click(host.querySelector('button[aria-label="Remove Dual ATR exit"]')!);
+  await click(host.querySelector('button[aria-label="Remove Two ATR stops (tight first, wider once in profit)"]')!);
   expect(last().exit.dual_atr).toBeUndefined();
   const port = await orders({ ...defaultSpec(), execution: { capital: 1e6 }, portfolio: { universe: { basket: "nifty50" } } } as Spec);
   expect(port.host.querySelector<HTMLOptionElement>('select[aria-label="Add exit (long)"] option[value="dual_atr"]')!.disabled).toBe(true);

@@ -1,0 +1,22 @@
+.lab-chart-indicators { position:absolute; z-index:4; top:32px; left:8px; display:grid; align-content:start; gap:2px; max-width:calc(100% - 86px); pointer-events:none; }
+.lab-pane-box > .lab-chart-indicators { top:4px; }
+.lab-indicator-label { display:flex; align-items:center; gap:7px; min-width:0; max-width:100%; min-height:26px; flex-wrap:wrap; padding:0 3px; color:var(--ink); background:color-mix(in srgb,var(--panel) 86%,transparent); font:500 12px/1.4 var(--font); pointer-events:auto; }
+.lab-indicator-name { flex:0 1 auto; min-width:0; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:2px 0; border:0; background:none; color:inherit; font:inherit; text-align:left; cursor:pointer; }
+.lab-indicator-name:hover { color:var(--blue); }
+.lab-indicator-settings { flex:0 1 auto; min-width:0; max-width:100%; overflow-wrap:anywhere; white-space:normal; color:var(--ink2); font-weight:400; }
+.lab-indicator-values { flex:none; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.lab-indicator-label-hidden .lab-indicator-name { color:var(--ink2); }
+.lab-indicator-actions { display:inline-flex; flex:none; align-items:center; gap:1px; opacity:0; pointer-events:none; }
+.lab-indicator-label:is(:hover,:focus-within) .lab-indicator-actions { opacity:1; pointer-events:auto; }
+.lab-indicator-actions button { display:grid; place-items:center; width:26px; height:26px; padding:0; border:0; border-radius:3px; background:none; color:var(--ink2); cursor:pointer; }
+.lab-indicator-actions button:hover { color:var(--ink); background:var(--rule); }
+.lab-indicator-label button:focus-visible { outline:2px solid var(--blue); outline-offset:1px; }
+@media (hover:none) { .lab-indicator-actions { opacity:1; pointer-events:auto; } .lab-indicator-actions button { width:32px; height:32px; } }
+@media (max-width:600px) { .lab-indicator-label { gap:4px; flex-wrap:wrap; } .lab-indicator-name { max-width:160px; } .lab-indicator-settings { max-width:110px; } }
+.lab-indicator-values { display:inline-flex; gap:8px; }
+.lab-indicator-label-hidden .lab-indicator-values { visibility:hidden; }
+.lab-workbench[data-indicator-display="on-chart"] .lab-legend-output { display:none; }
+.lab-workbench[data-indicator-display="on-chart"] .lab-chips:not(:has(.lab-error,.cap)) { display:none; }
+.lab-workbench[data-indicator-display="on-chart"] .lab-chips .chip:not(:has(.lab-error,.cap)) { display:none; }
+.lab-workbench[data-indicator-display="on-chart"] .lab-pane-settings { display:none; }
+.lab-workbench[data-indicator-display="chips"] .lab-chart-indicators { display:none; }

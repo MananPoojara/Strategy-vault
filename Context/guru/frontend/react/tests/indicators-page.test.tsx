@@ -5,7 +5,7 @@ import { IndicatorsPage } from "../src/pages/IndicatorsPage";
 import { clearLabCache } from "../src/features/lab/client";
 import {
   catalogueFixture, catalogue7Fixture, fetchRouter, flush, glInstrumentsFixture, jsonResponse, mount, optimizeFixture, publishedFixture, runFixture,
-  seriesFixture, templateFixture, templatesFixture, tickersFixture, unavailableTemplateFixture, unmount,
+  seriesFixture, templateFixture, templatesFixture, tickersFixture, unavailableTemplateFixture, unmount, pickIndicator,
 } from "./fixtures/lab";
 
 const me = (role: string) => jsonResponse({ user: { id: "u1", name: "N", email: "n@x", role }, settings: { theme: "aqua" } });
@@ -31,27 +31,50 @@ const routes = (role = "researcher") => fetchRouter([
 ]);
 beforeEach(() => { catalogueAnswer = catalogueFixture; clearLabCache(); runAnswer = () => jsonResponse(runFixture); usTickers = tickersFixture; templateAnswer = templateFixture; });
 afterEach(async () => { await unmount(); vi.unstubAllGlobals(); history.replaceState(null, "", "/"); });
-const go = async (hash: string, role = "researcher") => {
+/** A new strategy starts with no rules; these tests begin from the old starter rows instead: close above EMA 50, plus
+ *  "bars held ≥ 5" on an engine without the rule tree (the rule tree falls back to the default exit). */
+const starterRows = async (host: HTMLElement) => {
+  const tree = host.querySelector<HTMLButtonElement>('[data-lab-list="entry.all"] [data-lab-add-cond]');
+  if (tree) return act(async () => tree.click());
+  for (const b of host.querySelectorAll<HTMLButtonElement>(".lab-side > button")) await act(async () => b.click());
+};
+const go = async (hash: string, role = "researcher", { empty = false } = {}) => {
   history.replaceState(null, "", `/${hash}`);
   const f = routes(role);
   vi.stubGlobal("fetch", f);
   const host = await mount(<IndicatorsPage />);
   await flush(); await flush();
+  if (!empty && !/[?&](customize|strategy|published)=/.test(hash)) await starterRows(host);
   return { host, f };
 };
 const pick = async (host: HTMLElement, tk: string) => {
-  const sel = host.querySelector<HTMLSelectElement>(".lab-toolbar select")!;
-  await act(async () => { sel.value = tk; sel.dispatchEvent(new Event("change", { bubbles: true })); });
+  await act(async () => host.querySelector<HTMLButtonElement>("#lab-tab-chart")!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Symbol search"]')!.click());
+  const dialog = host.querySelector('[role="dialog"][aria-label="Symbol search"]')!;
+  const search = dialog.querySelector<HTMLInputElement>('[aria-label="Search instruments"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, tk);
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const result = [...dialog.querySelectorAll<HTMLButtonElement>('.lab-symbol-results button')].find(button => button.querySelector('b')?.textContent === tk)!;
+  expect(result.disabled).toBe(false);
+  await act(async () => result.click());
   await flush();
+  expect(host.querySelector('[role="dialog"][aria-label="Symbol search"]')).toBeNull();
+  expect(host.querySelector('[aria-label="Symbol search"]')?.textContent).toContain(tk);
 };
+/** A portfolio has no default exit (it cannot read since-entry values): add an exit row of its own. */
+const exitRow = async (host: HTMLElement) => act(async () => host.querySelector<HTMLButtonElement>('[data-lab-list="exit.any"] [data-lab-add-cond]')!.click());
 const run = async (host: HTMLElement) => { await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-action="run"]')!.click()); await flush(); };
 
 it("renders the catalogue label, library and default instrument; saved-strategy errors stay local", async () => {
   const { host } = await go("#/indicators");
   expect(host.querySelector('[data-lab-page="indicators"]')).not.toBeNull();
   expect(host.querySelector("[data-server-label]")?.textContent).toBe(catalogueFixture.label);
+  expect(host.querySelectorAll("[data-lab-item]")).toHaveLength(0);
+  await act(async () => [...host.querySelectorAll(".lab-chart-actions button")].find((b) => b.textContent === "Indicators")!.dispatchEvent(new MouseEvent("click", { bubbles:true })));
   expect(host.querySelectorAll("[data-lab-item]")).toHaveLength(catalogueFixture.indicators.length);
-  expect(host.querySelector<HTMLSelectElement>(".lab-toolbar select")!.value).toBe("NIFTY 50");
+  expect(host.querySelector('[aria-label="Symbol search"]')?.textContent).toBe("NIFTY 50");
   expect(host.querySelector("[data-lab-saved] [data-lab-error]")?.textContent).toContain("auth service");
   expect(host.querySelector("[data-lab-saved] [data-lab-error]")?.textContent).toContain("Could not load");
   expect(host.querySelector("[data-lab-saved] [data-lab-error]")?.textContent).not.toContain("Not saved");
@@ -62,38 +85,44 @@ it("an unknown ?tf= falls back to daily once the catalogue loads", async () => {
   expect(location.hash).not.toContain("tf=");
 });
 
-it("four plain steps: chart, idea, settings, results; a run opens Results", async () => {
+it("the chart is its own tab; Strategy & backtest opens on Your idea, with Your idea, Settings and Results as tabs; a run opens Results", async () => {
   catalogueAnswer = catalogue7Fixture;
   const { host } = await go("#/indicators?tk=NIFTY%2050");
+  expect([...host.querySelectorAll(".lab-tabs [role=tab]")].map((t) => [t.textContent, t.getAttribute("aria-selected")])).toEqual([
+    ["Chart", "true"], ["Strategy & backtest", "false"], ["Optimization", "false"], ["Customize", "false"], ["Saved strategies", "false"]]);
+  expect(host.querySelector<HTMLElement>("#lab-panel-chart")!.hidden).toBe(false);
+  expect(host.querySelector<HTMLElement>("#lab-panel-strategy")!.hidden).toBe(true);
+  expect(host.querySelector(".lab-library-slot")).toBeNull(); // library opens on demand without taking chart space
+  await act(async () => host.querySelector<HTMLButtonElement>("[data-lab-build]")!.click()); // Build a strategy ›
+  expect(host.querySelector<HTMLElement>("#lab-panel-strategy")!.hidden).toBe(false);
   const steps = [...host.querySelectorAll<HTMLButtonElement>("[data-lab-steps] button")];
-  expect(steps.map((b) => b.textContent)).toEqual(["1Chart & indicators", "2Your idea", "3Settings", "4Results"]);
-  const panel = (i: number) => host.querySelectorAll<HTMLElement>(".lab-step")[i];
+  expect(steps.map((b) => b.textContent)).toEqual(["1Your idea", "2Settings", "3Results"]);
   expect(steps[0].getAttribute("aria-current")).toBe("step");
-  expect(host.querySelector<HTMLElement>(".lab-library-slot")!.hidden).toBe(false); // the library sits beside the chart step
-  expect(panel(1).hidden && panel(2).hidden && panel(3).hidden).toBe(true);
-  await act(async () => host.querySelector<HTMLButtonElement>("[data-lab-next]")!.click());
-  expect(panel(1).hidden).toBe(false);
-  expect(panel(1).querySelector(".lab-rules [data-lab-list]")).not.toBeNull();
-  expect(host.querySelector<HTMLElement>(".lab-library-slot")!.hidden).toBe(true);
-  expect(panel(2).querySelector('[aria-label="Analysis settings"]')).not.toBeNull(); // settings live in step 3
-  expect(panel(1).querySelector('[aria-label="Analysis settings"]')).toBeNull();
+  const panel = (i: number) => host.querySelectorAll<HTMLElement>("#lab-panel-strategy .lab-step")[i];
+  expect(panel(0).hidden).toBe(false);
+  expect(panel(1).hidden && panel(2).hidden).toBe(true);
+  expect(panel(0).querySelector(".lab-rules [data-lab-list]")).not.toBeNull();
+  expect(panel(1).querySelector('[aria-label="Analysis settings"]')).not.toBeNull(); // settings live in step 2
+  expect(panel(0).querySelector('[aria-label="Analysis settings"]')).toBeNull();
   // Advanced rules: AmiBroker-style Entry / Exit tabs; the timeframe stays on every price or indicator row; source and group/move sit behind More
-  expect([...panel(1).querySelectorAll('[aria-label="Rules"] [role=tab]')].map((t) => t.textContent)).toEqual(["Entry · Buy", "Filters", "Exit · Sell"]);
-  const row = panel(1).querySelector<HTMLElement>(".lab-cond")!;
+  expect([...panel(0).querySelectorAll('[aria-label="Rules"] [role=tab]')].map((t) => t.textContent)).toEqual(["Entry · Buy", "Filters", "Exit · Sell"]);
+  const row = panel(0).querySelector<HTMLElement>(".lab-cond")!;
   expect(row.querySelector("[data-lab-node-menu]")).toBeNull();
   expect(row.querySelector("[data-lab-timing]")!.textContent).toContain("Daily");
   await act(async () => row.querySelector<HTMLButtonElement>(".lab-more-btn")!.click());
   expect(row.querySelector("[data-lab-node-menu]")).not.toBeNull();
-  expect(panel(1).querySelector("[data-lab-caps]")).toBeNull(); // counters only near a limit
-  expect(panel(3).querySelector("[data-lab-no-result]")).not.toBeNull();
+  expect(panel(0).querySelector("[data-lab-caps]")).toBeNull(); // counters only near a limit
+  expect(panel(2).querySelector("[data-lab-no-result]")).not.toBeNull();
   let release!: (r: Response) => void;
   runAnswer = () => new Promise<Response>((resolve) => { release = resolve; });
   await run(host);
-  expect(panel(3).hidden).toBe(false);
-  expect(panel(3).querySelector("[role=status]")?.textContent).toBe("Running backtest…");
+  expect(panel(2).hidden).toBe(false);
+  expect(panel(2).querySelector("[role=status]")?.textContent).toBe("Running backtest…");
   await act(async () => release(jsonResponse(runFixture)));
   await flush();
-  expect(panel(3).querySelector("[data-lab-result]")).not.toBeNull();
+  expect(panel(2).querySelector("[data-lab-result]")).not.toBeNull();
+  await act(async () => host.querySelector<HTMLButtonElement>("[data-lab-see-chart]")!.click()); // the trades are drawn on the chart
+  expect(host.querySelector<HTMLElement>("#lab-panel-chart")!.hidden).toBe(false);
 });
 
 it("a failed run clears the previous result", async () => {
@@ -159,7 +188,7 @@ const spy = { ticker: "SPY", first: "2000-01-03", last: "2026-10-14", has_volume
 it("a published snapshot opens as an unsaved draft on its own market and instrument", async () => {
   usTickers = [...tickersFixture, spy];
   const { host, f } = await go("#/indicators?published=12");
-  expect(host.querySelector<HTMLSelectElement>(".lab-toolbar select")!.value).toBe("SPY");
+  expect(host.querySelector('[aria-label="Symbol search"]')?.textContent).toBe("SPY");
   expect(host.querySelector("[data-lab-swap]")).toBeNull();
   await run(host);
   const url = new URL(f.calls.find((c) => c.url.includes("/lab/run"))!.url, "http://x");
@@ -171,7 +200,7 @@ it("a published snapshot opens as an unsaved draft on its own market and instrum
 
 it("a snapshot whose instrument is missing says which one replaced it", async () => {
   const { host } = await go("#/indicators?published=12");
-  expect(host.querySelector<HTMLSelectElement>(".lab-toolbar select")!.value).toBe("NIFTY 50");
+  expect(host.querySelector('[aria-label="Symbol search"]')?.textContent).toBe("NIFTY 50");
   expect(host.querySelector("[data-lab-swap]")?.textContent).toBe("SPY is not available here; showing NIFTY 50.");
   await pick(host, "NIFTYBANK");
   expect(host.querySelector("[data-lab-swap]")).toBeNull();
@@ -273,6 +302,8 @@ it("workspace tabs separate optimization and customize while keeping edits and r
   const { host } = await go("#/indicators?tk=NIFTY%2050");
   const panel = (id: string) => host.querySelector<HTMLElement>(`#lab-panel-${id}`)!;
   const choose = async (id: string) => { await act(async () => host.querySelector<HTMLButtonElement>(`#lab-tab-${id}`)!.click()); };
+  expect(panel("chart").hidden).toBe(false); // the page opens on the chart
+  await choose("strategy");
   expect(panel("strategy").hidden).toBe(false);
   expect(panel("optimization").hidden).toBe(true);
   expect(panel("customize").hidden).toBe(true);
@@ -285,7 +316,7 @@ it("workspace tabs separate optimization and customize while keeping edits and r
   await act(async () => checked.click());
   await choose("customize");
   expect(panel("customize").hidden).toBe(false);
-  expect(host.querySelector(".lab-library-slot")?.hasAttribute("hidden")).toBe(true);
+  expect(host.querySelector(".lab-library-slot")).toBeNull();
   await choose("strategy");
   expect(host.querySelector("[data-lab-result]")).toBe(result);
   await choose("optimization");
@@ -318,9 +349,9 @@ it("a book variant can replace an indicator through the full editor and retain i
   const edit = host.querySelector<HTMLButtonElement>('[data-lab-action="jump-rules"]')!;
   expect(edit.textContent).toBe("Edit indicators & rules");
   await act(async () => edit.click());
-  const indicator = host.querySelector<HTMLSelectElement>('.lab-rules [aria-label="Entry 1 left"] select[aria-label="Indicator"]')!;
-  expect(indicator).not.toBeNull();
-  await act(async () => { indicator.value = "ema"; indicator.dispatchEvent(new Event("change", { bubbles: true })); });
+  const left = host.querySelector('.lab-rules [aria-label="Entry 1 left"]')!;
+  expect(left.querySelector('button[aria-label="Indicator"]')).not.toBeNull();
+  await pickIndicator(left, "ema");
   await run(host);
   const spec = JSON.parse(new URL(f.calls.find((c) => c.url.includes("/lab/run"))!.url, "http://x").searchParams.get("spec")!);
   expect(spec.entry.all[0].lhs.s).toBe("ema");
@@ -353,7 +384,7 @@ it("runs a shared-money portfolio while leaving the chart instrument as referenc
  catalogueAnswer=portfolioCatalogueFixture;runAnswer=()=>jsonResponse(portfolioResultFixture);
  const {host,f}=await go("#/indicators?tk=NIFTY%2050");
  const choose=async(label:string,value:string)=>act(async()=>{const el=host.querySelector<HTMLSelectElement>(`[aria-label="${label}"]`)!;el.value=value;el.dispatchEvent(new Event("change",{bubbles:true}));});
- await choose("Strategy mode","signals");await choose("Portfolio universe","nifty50");
+ await choose("Strategy mode","signals");await choose("Portfolio universe","nifty50");await exitRow(host);
  const money=[...host.querySelectorAll<HTMLButtonElement>('[aria-label="Results in"] button')].find(b=>b.textContent==="Cash amounts")!;
  expect(money.disabled).toBe(false);await act(async()=>money.click());
  expect(host.querySelector<HTMLButtonElement>('[data-lab-action="run"]')!.disabled).toBe(false);await run(host);
@@ -363,7 +394,7 @@ it("runs a shared-money portfolio while leaving the chart instrument as referenc
 it("an old portfolio run cannot land after its universe changes",async()=>{
  catalogueAnswer=portfolioCatalogueFixture;let release!:(r:Response)=>void;runAnswer=()=>new Promise<Response>(resolve=>{release=resolve;});
  const {host}=await go("#/indicators?tk=NIFTY%2050");const choose=async(label:string,value:string)=>act(async()=>{const el=host.querySelector<HTMLSelectElement>(`[aria-label="${label}"]`)!;el.value=value;el.dispatchEvent(new Event("change",{bubbles:true}));});
- await choose("Strategy mode","signals");await choose("Portfolio universe","nifty50");await act(async()=>[...host.querySelectorAll<HTMLButtonElement>('[aria-label="Results in"] button')].find(b=>b.textContent==="Cash amounts")!.click());await run(host);
+ await choose("Strategy mode","signals");await choose("Portfolio universe","nifty50");await exitRow(host);await act(async()=>[...host.querySelectorAll<HTMLButtonElement>('[aria-label="Results in"] button')].find(b=>b.textContent==="Cash amounts")!.click());await run(host);
  await choose("Portfolio universe","list");await act(async()=>release(jsonResponse(portfolioResultFixture)));await flush();
  expect(host.querySelector('[data-lab-portfolio-result]')).toBeNull();expect(host.querySelector('[data-lab-no-result]')).not.toBeNull();
 });

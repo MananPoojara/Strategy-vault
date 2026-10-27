@@ -30,18 +30,21 @@ export function groupByCategory(list: Indicator[]): [string, Indicator[]][] {
   return [...groups];
 }
 
+/** Footprint files are per ticker and the catalogue cannot see them: the indicator stays addable and the engine answers needs_data where none exists. */
+export const ORDER_FLOW_NOTE = "Needs order-flow data (trades at bid/ask); shows Data needed until this instrument has a footprint file.";
 /** First matching rule wins (plan Task 7). */
 export function availability(ind: Indicator, { market, hasVolume, tf, maxForeign }: { market: Market; hasVolume: boolean; tf: Timeframe; maxForeign?: number }): { ok: boolean; reason?: string } {
   const n = ind.needs;
   if (!ind.computed) return { ok: false, reason: ind.note || "Listed only; the engine does not compute it yet." };
   if (n.volume && !hasVolume) return { ok: false, reason: "Needs volume; this instrument has no volume in its data." };
   if (n.breadth && (market === "gl" || tf !== "D")) return { ok: false, reason: "Breadth data exists only for India and US daily bars." };
+  if (n.order_flow) return tf === "D" ? { ok: true, reason: ORDER_FLOW_NOTE } : { ok: false, reason: "Order-flow indicators use daily (D) bars only." };
   if (n.second_symbol) {
     if (!isPair(ind.id) || !Number.isInteger(maxForeign) || !(maxForeign! > 0)) return { ok: false, reason: ind.note || "Comparison instruments are not advertised by this engine yet." };
     if (tf !== "D") return { ok: false, reason: "Pair indicators use daily (D) values only." };
     return { ok: true, reason: "Choose a comparison instrument on the chart." };
   }
-  if (n.intraday || n.fundamentals || n.derivatives || n.onchain)
-    return { ok: false, reason: ind.note || "Needs data Strategy Vault does not have yet." };
+  if (n.intraday || n.fundamentals || n.derivatives || n.onchain || n.order_book)
+    return { ok: false, reason: ind.note || (n.order_book ? "Needs order-book (depth) data; not available yet." : "Needs data Strategy Vault does not have yet.") };
   return { ok: true };
 }

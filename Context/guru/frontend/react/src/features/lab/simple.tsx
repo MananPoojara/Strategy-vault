@@ -101,11 +101,20 @@ export const ExamplePicker = ({ spec, onChange }: { spec: Spec; onChange(spec: S
     {EXAMPLES.map((e) => <button key={e.id} type="button" className="dbtn sm" title={e.hint} data-lab-example={e.id} onClick={() => onChange(withExample(spec, e.id))}>{e.label}</button>)}
   </p>;
 
+/** Next day's open or the signal day's close for both buys and sells; nothing when orders or per-side prices decide. */
+export function FillChoice({ spec, onChange }: { spec: Spec; onChange(spec: Spec): void }) {
+  const ex = spec.execution, entryFill = ex?.fill ?? "next_open", exitFill = ex?.exit_fill ?? entryFill;
+  if (entryOrderType(spec.entry) !== "market" || usesTradePrices(ex) || entryFill !== exitFill) return null;
+  return <div className="lab-row"><span className="dfield">Buy and sell at</span>
+    <Segmented label="Buy and sell at" value={entryFill} options={[{ value: "next_open", label: "Next day's open" }, { value: "close", label: "Signal day's close" }]}
+      onChange={(f) => onChange(setExecution(spec, { fill: f === "close" ? f : undefined, exit_fill: undefined, ...(f === "close" ? { delay_bars: undefined } : {}) }))} /></div>;
+}
+
 /** One line saying what the test assumes; Change opens the few settings an analyst adjusts. */
 export function SimpleSettings({ spec, settings, onChange, children, open: initial = false }: { spec: Spec; settings: RunSettings; onChange(spec: Spec): void; children: ReactNode; open?: boolean }) {
   const [open, setOpen] = useState(initial);
   const money = modeOf(spec) === "money", dir = directionOf(spec), cost = spec.execution?.cost_bps;
-  const period = settings.from || settings.to ? `${settings.from ? dayFirst(settings.from) : "first bar"} → ${settings.to ? dayFirst(settings.to) : "last bar"}` : "All data";
+  const period = settings.from || settings.to ? `${settings.from ? dayFirst(settings.from) : "first bar"} → ${settings.to ? dayFirst(settings.to) + (settings.to === settings.latest ? " (latest data)" : "") : "last bar"}` : "All data";
   const costs = money ? "costs from the cash settings" : `costs ${cost ?? (Number(settings.fees) || 0)} bps + slippage ${Number(settings.slippage) || 0} bps per side`;
   const side = dir === "short" ? "short only" : dir === "both" ? "long and short" : "long only";
   // Rules read the bar's close; this picks the price trades fill at. Orders, AmiBroker prices or split fills are set in Advanced.
@@ -119,9 +128,7 @@ export function SimpleSettings({ spec, settings, onChange, children, open: initi
       <div className="lab-row"><span className="dfield">Trade</span>
         <Segmented label="Positions" value={dir === "short" ? "short" : "long"} options={[{ value: "long", label: "Long only" }, { value: "short", label: "Short only" }]}
           onChange={(d) => onChange(withDirection(spec, d))} /></div>
-      {!custom && <div className="lab-row"><span className="dfield">Buy and sell at</span>
-        <Segmented label="Buy and sell at" value={entryFill} options={[{ value: "next_open", label: "Next day's open" }, { value: "close", label: "Signal day's close" }]}
-          onChange={(f) => onChange(setExecution(spec, { fill: f === "close" ? f : undefined, exit_fill: undefined, ...(f === "close" ? { delay_bars: undefined } : {}) }))} /></div>}
+      <FillChoice spec={spec} onChange={onChange} />
       {children}
     </div>}
   </div>;

@@ -10,7 +10,7 @@ vi.mock("../src/features/lab/client", () => ({
 const { RuleList } = await import("../src/features/lab/NodeEditor");
 const { ForeignProvider } = await import("../src/features/lab/ForeignFields");
 const { canMeet, neverMeets } = await import("../src/features/lab/scale-check");
-const { catalogue7Fixture, mount, unmount } = await import("./fixtures/lab");
+const { catalogue7Fixture, mount, unmount, pickIndicator } = await import("./fixtures/lab");
 import type { Cond, RuleNode, Spec } from "../src/features/lab/types";
 
 afterEach(unmount);
@@ -31,21 +31,21 @@ it("each indicator picked on the left gets the right side it is read against", a
   const pick = async (id: string) => {
     await unmount();
     const { host, calls } = await setup(false);
-    await choose(host.querySelector('[aria-label="Entry 1 left"] select[aria-label="Indicator"]')!, id);
+    await pickIndicator(host.querySelector('[aria-label="Entry 1 left"]')!, id);
     return calls().at(-1)!;
   };
   expect(await pick("rsi")).toMatchObject({ lhs: { s: "rsi" }, rhs: { value: 70 } }); // its usual level
   expect(await pick("macd")).toMatchObject({ lhs: { s: "macd" }, rhs: { s: "macd", out: "signal" } }); // its own signal line
   const { host, calls } = await setup(false);
-  const left = () => host.querySelector<HTMLSelectElement>('[aria-label="Entry 1 left"] select[aria-label="Indicator"]')!;
-  await choose(left(), "rsi");
-  await choose(left(), "ema");
+  const left = () => host.querySelector('[aria-label="Entry 1 left"]')!;
+  await pickIndicator(left(), "rsi");
+  await pickIndicator(left(), "ema");
   expect(calls().at(-1)).toMatchObject({ lhs: { s: "ema" }, rhs: { s: "close" } }); // a moving average against the price
 });
 
 it("without a usual level the right side becomes the indicator's typical value on this instrument", async () => {
   const { host, calls } = await setup(true);
-  await choose(host.querySelector('[aria-label="Entry 1 left"] select[aria-label="Indicator"]')!, "obv");
+  await pickIndicator(host.querySelector('[aria-label="Entry 1 left"]')!, "obv");
   await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
   expect(calls().map((c) => c.rhs)).toEqual([{ value: 0 }, { value: 4.2 }]);
 });

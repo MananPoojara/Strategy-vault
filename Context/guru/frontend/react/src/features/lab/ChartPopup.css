@@ -1,0 +1,8 @@
+.lab-chart-popup { position:fixed; z-index:90; box-sizing:border-box; width:min(460px,calc(100% - 24px)); min-width:min(280px,calc(100% - 24px)); max-width:calc(100% - 24px); min-height:min(200px,calc(100vh - 24px)); max-height:min(680px,80vh); overflow:auto; resize:both; overscroll-behavior:contain; background:var(--card); color:var(--ink); border:1px solid var(--steel); border-radius:8px; box-shadow:0 12px 32px rgb(0 0 0 / .18); }
+.lab-chart-popup :is(.lab-params-h,.lab-browser-heading) { cursor:move; touch-action:none; user-select:none; }
+.lab-chart-popup :is(.lab-params-h,.lab-browser-heading) :is(button,input,select,a) { cursor:auto; touch-action:auto; }
+.lab-chart-popup :is(.lab-params-h,.lab-browser-heading) button { cursor:pointer; }
+.lab-chart-popup:focus-visible { outline:2px solid var(--blue); outline-offset:2px; }
+@media(max-width:600px) { .lab-chart-popup { width:calc(100% - 24px); max-height:70vh; } }
+
+.lab-chart-popup-wide { width:min(800px,calc(100% - 24px)); }

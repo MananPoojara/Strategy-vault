@@ -135,7 +135,7 @@ it("editor: the Blocks tab drives the same draft through the blocksEditor slot",
 });
 
 it("chart: a custom indicator chip loads its series by formula", async () => {
-  window.LightweightCharts = { createChart: vi.fn(() => ({ addCandlestickSeries: () => ({ setData: vi.fn(), setMarkers: vi.fn() }), addLineSeries: () => ({ setData: vi.fn() }),
+  window.LightweightCharts = { createChart: vi.fn(() => ({ addCandlestickSeries: () => ({ setData: vi.fn(), setMarkers: vi.fn() }), addLineSeries: () => ({ setData: vi.fn(), applyOptions: vi.fn() }),
     remove: vi.fn(), resize: vi.fn(), applyOptions: vi.fn(), timeScale: () => ({ fitContent: vi.fn(), setVisibleRange: vi.fn() }) })), CrosshairMode: { Normal: 0 } } as never;
   const ind = formulaIndicator(row, info);
   const load = vi.fn(async (q: { id: string }) => seriesFixture(q.id, q.id.startsWith("my:") ? ["Osc", "Signal"] : [q.id], { [q.id]: [1, 2], Osc: [1, 2], Signal: [1, 2] }));

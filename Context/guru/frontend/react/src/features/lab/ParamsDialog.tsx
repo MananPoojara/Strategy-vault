@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { PALETTE, themeColors, type ChartColors } from "./charts";
 import type { Indicator, IndicatorParam } from "./types";
 import type { InstrumentOption } from "./instruments";
@@ -22,8 +22,6 @@ export const plotCss = (c: PlotColor) => (isHex(c) ? c : `var(--${c})`);
 export const plotPaint = (c: PlotColor, colors: ChartColors) => (isHex(c) ? c : colors[c as keyof ChartColors]);
 /** Default colour of output k of the chip at `index`: successive palette entries, so MACD's lines differ. */
 export const defaultColor = (index: number, k = 0): keyof ChartColors => PALETTE[(index + k) % PALETTE.length];
-/** Slider commits wait this long after the last move, so a drag sends one series request, not one per step. */
-export const SLIDE_MS = 200;
 
 /** A variant's choices named as the catalogue label lists them ("Variant (0 Wilder/TradingView, 1 Cutler/TradeStation RSI JP)");
  *  a value the label does not name shows its number. */
@@ -43,33 +41,51 @@ export interface ParamsDialogProps {
   showLooks?: boolean;
 }
 
-/**
- * AmiBroker-style Parameters window ("Properties of …"): one section per indicator, name | value rows, changes apply live,
- * Reset all restores defaults, OK closes. Axes & Grid is shown disabled, as the lab charts keep the house axes.
- */
+/** Nonmodal chart settings: changes apply live, while Inputs / Style keep their drafts when switching tabs. */
 export function ParamsDialog({ name, indicator, params, looks, index, vs, comparisonOptions = [], showComparison, tf, timeframes = [], onTf, levels, onLevels, onParams, onLook, onVs, onClose, showLooks = true }: ParamsDialogProps) {
   const box = useRef<HTMLDivElement>(null);
-  const [open, setOpen] = useState(true);
-  const titleId = `lab-params-${indicator.id}`;
+  const initial = useRef({ params: { ...params }, looks: looks && Object.fromEntries(Object.entries(looks).map(([out, value]) => [out, { ...value }])), vs, tf, levels: levels?.slice() });
+  const cancel = () => {
+    const saved = initial.current;
+    onParams(saved.params); onLook(saved.looks); onVs?.(saved.vs); onTf?.(saved.tf);
+    if (saved.levels) onLevels?.(saved.levels);
+    onClose();
+  };
+  const confirm = () => {
+    const invalid = box.current?.querySelector<HTMLInputElement>('input[aria-invalid="true"]');
+    if (invalid) { invalid.focus(); invalid.reportValidity(); return; }
+    onClose();
+  };
+  const [tab, setTab] = useState<"inputs" | "style">("inputs");
+  const activeTab = showLooks ? tab : "inputs";
+  const titleId = useId();
   useEffect(() => { box.current?.querySelector<HTMLElement>("input, select")?.focus(); }, []);
   const set = (k: string, v: number) => onParams({ ...params, [k]: v });
   const reset = () => { onParams(Object.fromEntries(indicator.params.map((p) => [p.key, p.default]))); onLook(undefined); };
   const outputs = indicator.outputs.length ? indicator.outputs : [indicator.id];
   const look = (out: string, patch: Look) => onLook({ ...looks, [out]: { ...looks?.[out], ...patch } });
   return (
-    <div className="lab-params" role="dialog" aria-labelledby={titleId} ref={box} data-lab-params={indicator.id}
-      onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } }}>
+    <div className="lab-params" role="region" aria-labelledby={titleId} ref={box} data-lab-params={indicator.id}
+      onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); cancel(); } }}>
       <div className="lab-params-h">
-        <b id={titleId}>Properties of {name}</b>
-        <button type="button" aria-label="Close parameters" onClick={onClose}>×</button>
+        <b id={titleId}>{name}</b>
+        <button type="button" aria-label="Close parameters" onClick={cancel}>×</button>
       </div>
-      <div className="lab-params-tabs"><span>Parameters</span><span aria-disabled="true" title="Not offered in the lab: charts keep the house axes and grid">Axes &amp; Grid</span></div>
+      <div className="lab-params-tabs" role="tablist" aria-label={`${name} settings`} onKeyDown={(e) => {
+        const buttons = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+        const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
+        const next = e.key === "ArrowRight" ? (at + 1) % buttons.length : e.key === "ArrowLeft" ? (at + buttons.length - 1) % buttons.length : e.key === "Home" ? 0 : e.key === "End" ? buttons.length - 1 : undefined;
+        if (next !== undefined) { e.preventDefault(); buttons[next].click(); buttons[next].focus(); }
+      }}>
+        <button type="button" role="tab" id={`${titleId}-inputs-tab`} aria-controls={`${titleId}-inputs`} aria-selected={activeTab === "inputs"} tabIndex={activeTab === "inputs" ? 0 : -1} onClick={() => setTab("inputs")}>Inputs</button>
+        {showLooks && <button type="button" role="tab" id={`${titleId}-style-tab`} aria-controls={`${titleId}-style`} aria-selected={activeTab === "style"} tabIndex={activeTab === "style" ? 0 : -1} onClick={() => setTab("style")}>Style</button>}
+      </div>
       <div className="lab-params-grid">
-        <button type="button" className="lab-params-sec" aria-expanded={open} onClick={() => setOpen((o) => !o)}>{name}</button>
-        {open && <>
-          {indicator.params.map((p) => (
+        <div role="tabpanel" id={`${titleId}-inputs`} aria-labelledby={`${titleId}-inputs-tab`} hidden={activeTab !== "inputs"}>
+
+          {indicator.params.filter((p) => indicator.id !== "mfi" || p.key !== "smoothing" || (params.variant ?? indicator.params.find((v) => v.key === "variant")?.default ?? 0) === 1).map((p) => (
             <div className="lab-prow" key={p.key}>
-              <span>{isChoice(p) ? p.label.replace(/\s*\(.*\)\s*$/, "") : p.label}</span>
+              <span>{p.key === "variant" ? "Calculation" : indicator.id === "mfi" && p.key === "smoothing" ? "Smoothing" : isChoice(p) ? p.label.replace(/\s*\(.*\)\s*$/, "") : p.label}</span>
               {isChoice(p) ? (
                 <select aria-label={`${name} ${p.label}`} value={params[p.key] ?? p.default} onChange={(e) => set(p.key, Number(e.target.value))}>
                   {variantOptions(p).map(([v, text]) => <option key={v} value={v}>{text}</option>)}
@@ -102,7 +118,10 @@ export function ParamsDialog({ name, indicator, params, looks, index, vs, compar
               </select>
             </div>
           )}
-          {showLooks && outputs.map((out, k) => {
+          <div className="lab-prow lab-prow-info"><span>Plotted</span><span>{indicator.placement === "price" ? "On the price chart" : "In its own pane"}</span></div>
+        </div>
+        {showLooks && <div role="tabpanel" id={`${titleId}-style`} aria-labelledby={`${titleId}-style-tab`} hidden={activeTab !== "style"}>
+          {outputs.map((out, k) => {
             // one Color / Style pair per plot, as AmiBroker's ParamColor / ParamStyle per Plot()
             const color = looks?.[out]?.color ?? defaultColor(index, k), plot = outputs.length > 1 ? ` ${out}` : "";
             return <div key={out} className="lab-plot-look">
@@ -131,44 +150,31 @@ export function ParamsDialog({ name, indicator, params, looks, index, vs, compar
               </div>
             </div>;
           })}
-          <div className="lab-prow lab-prow-info"><span>Plotted</span><span>{indicator.placement === "price" ? "On the price chart" : "In its own pane"}</span></div>
-        </>}
+        </div>}
       </div>
       <div className="lab-params-f">
-        <button type="button" className="dbtn sm" onClick={reset}>Reset all</button>
+        <button type="button" className="dbtn sm" onClick={reset}>Defaults</button>
         {AB_DEFAULTS[indicator.id] && <button type="button" className="dbtn sm" data-lab-ab-defaults title="Set the parameters to AmiBroker's own defaults for this indicator"
           onClick={() => onParams({ ...params, ...AB_DEFAULTS[indicator.id] })}>AmiBroker defaults</button>}
-        <button type="button" className="dbtn sm primary" onClick={onClose}>OK</button>
+        <button type="button" className="dbtn sm" onClick={cancel}>Cancel</button>
+        <button type="button" className="dbtn sm primary" onClick={confirm}>OK</button>
       </div>
     </div>
   );
 }
 
-/** Edit field plus slider (AmiBroker numeric Param). Typed drafts stay local so an out-of-range value does not snap back. */
+/** Typed drafts stay local: invalid inputs never update the plotted series. */
 function ParamValue({ param, name, value, onValid }: { param: IndicatorParam; name: string; value: number; onValid(v: number): void }) {
   const [text, setText] = useState(String(value));
-  const [slide, setSlide] = useState<number | null>(null); // the slider's position while a drag waits to commit
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => setText(String(value)), [value]);
-  useEffect(() => () => clearTimeout(timer.current), []);
-  // A 1–2000 slider cannot pick 9 or 14; the typed field keeps the full range.
-  const top = param.max > 500 ? Math.min(param.max, Math.max(200, param.default * 10)) : param.max;
-  const accept = (raw: number) => {
-    const v = param.integer ? Math.round(raw) : raw;
-    if (Number.isFinite(v) && v >= param.min && v <= param.max) onValid(v);
-  };
-  return (
-    <span className="lab-pval">
-      <input type="number" aria-label={`${name} ${param.label}`} min={param.min} max={param.max} step={param.step ?? "any"} value={text}
-        onChange={(e) => { setText(e.target.value); accept(e.target.value.trim() === "" ? NaN : Number(e.target.value)); }} />
-      <input type="range" aria-label={`${name} ${param.label} slider`} min={param.min} max={top}
-        step={param.step ?? (param.integer ? 1 : (top - param.min) / 100)} value={slide ?? value} onChange={(e) => {
-          const v = Number(e.target.value);
-          setSlide(v); setText(String(v)); clearTimeout(timer.current);
-          timer.current = setTimeout(() => { setSlide(null); accept(v); }, SLIDE_MS);
-        }} />
-    </span>
-  );
+  const number = text.trim() === "" ? NaN : Number(text);
+  const valid = Number.isFinite(number) && number >= param.min && number <= param.max && (!param.integer || Number.isInteger(number));
+  return <input type="number" aria-label={`${name} ${param.label}`} min={param.min} max={param.max} step={param.step ?? "any"} value={text} aria-invalid={!valid}
+    onChange={(event) => {
+      const raw = event.target.value, number = raw.trim() === "" ? NaN : Number(raw), next = param.integer ? Math.round(number) : number;
+      setText(raw);
+      if (Number.isFinite(next) && next >= param.min && next <= param.max) onValid(next);
+    }} />;
 }
 
 /** Threshold lines as "70, 30": applied on Enter or when the field loses focus; empty removes them. */

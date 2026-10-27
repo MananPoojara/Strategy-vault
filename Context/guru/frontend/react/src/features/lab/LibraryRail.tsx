@@ -11,10 +11,11 @@ const MINE = "My indicators", POPULAR_GROUP = "Popular";
 export interface MineProps { list: SavedIndicator[]; error?: unknown; canEdit: boolean; onAdd(row: SavedIndicator): void; onEdit(row: SavedIndicator | null): void }
 const narrow = () => typeof window !== "undefined" && !!window.matchMedia?.("(max-width: 900px)").matches;
 
-export function LibraryRail({ catalogue, market, hasVolume, tf, onAdd, onRead, mine }: {
-  catalogue: Catalogue; market: Market; hasVolume: boolean; tf: Timeframe; onAdd(ind: Indicator): void; onRead(ind: Indicator): void; mine?: MineProps;
+export function LibraryRail({ catalogue, market, hasVolume, tf, onAdd, onRead, mine, docked = false }: {
+  catalogue: Catalogue; market: Market; hasVolume: boolean; tf: Timeframe; onAdd(ind: Indicator): void; onRead(ind: Indicator): void; mine?: MineProps; docked?: boolean;
 }) {
   const [query, setQuery] = useState("");
+  const [category, setCategory] = useState("All indicators");
   const [manual, setManual] = useState<Record<string, boolean>>({}); // the user's own open/closed choices, kept across searches
   const [searchShut, setSearchShut] = useState<Set<string>>(new Set()); // groups closed by hand while a search is showing
   const [mobile, setMobile] = useState(narrow);
@@ -37,6 +38,49 @@ export function LibraryRail({ catalogue, market, hasVolume, tf, onAdd, onRead, m
   const toggle = (category: string) => searching
     ? setSearchShut((s) => { const n = new Set(s); if (!n.delete(category)) n.add(category); return n; })
     : setManual((m) => ({ ...m, [category]: !(m[category] ?? false) }));
+  const indicatorRow = (ind: Indicator, fullName = false) => {
+    const { ok, reason } = availability(ind, { market, hasVolume, tf, maxForeign: catalogue.max_foreign });
+    return <li key={ind.id}>
+      <button type="button" data-lab-item={ind.id} disabled={!ok} title={reason || ind.definition} onClick={() => onAdd(ind)}>
+        <b title={ind.name}>{fullName ? ind.name : shortName(ind)}</b>
+        <small>{reason || (fullName ? ind.category : (simple && plainOf(ind)) || ind.definition)}</small>
+      </button>
+      {!ok && <span className={`tag${ind.needs.volume && !hasVolume ? " warn" : ""}`}>{ind.needs.volume && !hasVolume ? "volume" : "needs data"}</span>}
+      <button type="button" className="dbtn ghost sm" aria-label={`About ${ind.name}`} onClick={() => onRead(ind)}>i</button>
+    </li>;
+  };
+  if (docked) {
+    const categories = groupByCategory(catalogue.indicators);
+    const visible = searchIndicators(catalogue.indicators, query).filter((ind) => searching || category === "All indicators" || ind.category === category)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const showMine = !!mine && (category === MINE || searching && !!myList.length);
+    return <aside className="box lab-library lab-library-docked lab-indicator-picker" data-lab-library aria-label="Indicator library">
+      <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search indicators" aria-label="Search indicators" />
+      <div className="lab-picker-body">
+        <nav className="lab-picker-categories" aria-label="Indicator categories">
+          <span>Built-in</span>
+          {["All indicators", ...categories.map(([name]) => name)].map((name) => <button key={name} type="button" aria-pressed={category === name && !searching}
+            title={name} onClick={() => { setQuery(""); setCategory(name); }}>{name}</button>)}
+          {mine && <><span>Personal</span><button type="button" aria-pressed={category === MINE && !searching} onClick={() => { setQuery(""); setCategory(MINE); }}>{MINE}</button></>}
+        </nav>
+        <div className="lab-picker-results">
+          <h3 aria-live="polite">{searching ? `Search results · ${visible.length + myList.length}` : category}</h3>
+          {showMine && <div className="lab-mine" data-lab-mine>
+            {mine!.canEdit && category === MINE && <button type="button" className="dbtn sm lab-mine-new" onClick={() => mine!.onEdit(null)}>+ New indicator</button>}
+            {mine!.error !== undefined && mine!.error !== null && <ErrorNotice error={mine!.error} market={market} />}
+            <ul>{myList.map((row) => <li key={row.id}>
+              <button type="button" data-lab-item={myId(row.id)} title={row.formula} onClick={() => mine!.onAdd(row)}><b title={row.name}>{row.name}</b><small>Custom formula</small></button>
+              <button type="button" className="dbtn ghost sm lab-mine-edit" aria-label={`${mine!.canEdit ? "Edit" : "View"} ${row.name}`} onClick={() => mine!.onEdit(row)}>{mine!.canEdit ? "Edit" : "View"}</button>
+            </li>)}</ul>
+            {!myList.length && !mine!.error && <p className="empty">{searching ? "No saved indicator matches." : "No saved indicators yet."}</p>}
+          </div>}
+          {(category !== MINE || searching) && <ul>{visible.map((ind) => indicatorRow(ind, true))}</ul>}
+          {!visible.length && !showMine && <p className="empty">No indicator matches "{query}".</p>}
+        </div>
+      </div>
+      <p className="lab-lib-foot">Click a name to add it to the chart · <span className="tag">needs data</span> listed, not available yet · <b>i</b> formula and sources</p>
+    </aside>;
+  }
   const body = (
     <>
       <input type="search" value={query} onChange={(e) => { setQuery(e.target.value); setSearchShut(new Set()); }}
@@ -68,19 +112,7 @@ export function LibraryRail({ catalogue, market, hasVolume, tf, onAdd, onRead, m
             {category} <small>{list.length}</small>
           </button>
           <ul hidden={!isOpen(category)}>
-            {list.map((ind) => {
-              const { ok, reason } = availability(ind, { market, hasVolume, tf, maxForeign: catalogue.max_foreign });
-              return (
-                <li key={ind.id}>
-                  <button type="button" data-lab-item={ind.id} disabled={!ok} title={ok ? ind.definition : reason} onClick={() => onAdd(ind)}>
-                    <b title={ind.name}>{shortName(ind)}</b>
-                    <small>{!ok || ind.needs.second_symbol ? reason : (simple && plainOf(ind)) || ind.definition}</small>
-                  </button>
-                  {!ok && <span className={`tag${ind.needs.volume && !hasVolume ? " warn" : ""}`}>{ind.needs.volume && !hasVolume ? "volume" : "needs data"}</span>}
-                  <button type="button" className="dbtn ghost sm" aria-label={`About ${ind.name}`} onClick={() => onRead(ind)}>i</button>
-                </li>
-              );
-            })}
+            {list.map((ind) => indicatorRow(ind))}
           </ul>
         </div>
       ))}
@@ -90,8 +122,8 @@ export function LibraryRail({ catalogue, market, hasVolume, tf, onAdd, onRead, m
     </>
   );
   return (
-    <aside className="box lab-library" data-lab-library>
-      {mobile
+    <aside className={`box lab-library${docked ? " lab-library-docked" : ""}`} data-lab-library>
+      {mobile && !docked
         ? <details><summary>Library <small>{count}</small></summary>{body}</details>
         : <><h2 className="box-h">Library <small>{count}</small></h2>{body}</>}
     </aside>

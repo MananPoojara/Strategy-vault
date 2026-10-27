@@ -1,6 +1,6 @@
 import { portfolioIdentity } from "./portfolio-model";
 import { MAX_PANES, MAX_PRICE_OVERLAYS } from "./catalogue";
-import { canonicalJson, defaultSpec } from "./spec-model";
+import { canonicalJson, starterSpec } from "./spec-model";
 import type { EditorState } from "./SavedStrategies";
 import type { LabQuery } from "./url-state";
 import type { Chip } from "./Workbench";
@@ -23,7 +23,7 @@ export const runKey = (spec: Spec, market: SavedMarket, ticker: string) => canon
 /** The page passes regionFallback only when the hash has no `region` (then the research pages' region wins). */
 export function initialLabState(q: LabQuery, regionFallback?: string): LabState {
   const market: Market = regionFallback === "us" ? "us" : q.region;
-  return { market, ticker: q.tk, tf: q.tf, range: q.range, spec: { ...defaultSpec(), execution: { fill: "close" } }, chips: [], placements: {}, nextChip: 1, row: null, lastRun: null, tried: 0 };
+  return { market, ticker: q.tk, tf: q.tf, range: q.range, spec: starterSpec(), chips: [], placements: {}, nextChip: 1, row: null, lastRun: null, tried: 0 };
 }
 
 export function labReducer(state: LabState, action: LabAction): LabState {

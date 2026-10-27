@@ -31,7 +31,7 @@ it("renders every node kind with its kind attribute", async () => {
 
 it("the add menu appends each kind and resets", async () => {
   const { host, onChange } = await setup([C]);
-  const add = host.querySelector<HTMLSelectElement>("[data-lab-list='entry.all'] > select[data-lab-add]")!;
+  const add = host.querySelector<HTMLSelectElement>("[data-lab-list='entry.all'] > .lab-list-actions > select[data-lab-add]")!;
   for (const k of ["cond", "all", "any", "not", "at_least", "then"]) await choose(add, k);
   // the list prop is static (onChange is a spy), so every call appends to [C]
   expect(onChange.mock.calls.map(([l]) => (l as RuleNode[]).map(nodeKind)[1])).toEqual(["cmp", "all", "any", "not", "at_least", "then"]);
@@ -86,7 +86,7 @@ it("caps disable adding and wrapping", async () => {
   const n = await setup([C], { caps: { leaves: false, nodes: true, top: false } });
   expect(n.host.querySelector<HTMLOptionElement>("select[data-lab-node-menu] option[value='wrap_all']")!.disabled).toBe(true);
   const top = await setup([C], { caps: { leaves: false, nodes: false, top: true } });
-  expect(top.host.querySelector<HTMLOptionElement>("[data-lab-list] > select[data-lab-add] option[value='any']")!.disabled).toBe(true);
+  expect(top.host.querySelector<HTMLOptionElement>("[data-lab-list] > .lab-list-actions > select[data-lab-add] option[value='any']")!.disabled).toBe(true);
 });
 
 it("unknown nodes are kept read-only and can be removed", async () => {

@@ -83,8 +83,8 @@ pub fn catalogue_json() -> String {
             "{{\"key\":\"{}\",\"label\":\"{}\",\"default\":{},\"min\":{},\"max\":{},\"step\":{},\"integer\":{}}}",
             p.key, esc(p.label), full(p.default), full(p.min), full(p.max), full(p.step), p.integer)));
         format!(
-            "{{\"id\":\"{}\",\"name\":\"{}\",\"category\":\"{}\",\"placement\":\"{}\",\"needs\":{{\"volume\":{},\"intraday\":{},\"breadth\":{},\"second_symbol\":{},\"fundamentals\":{},\"derivatives\":{},\"onchain\":{}}},\"computed\":{},\"params\":{params},\"outputs\":{},\"first\":{},\"sparse\":{},\"definition\":\"{}\",\"note\":\"{}\",\"tv\":\"{}\",\"ab\":\"{}\"}}",
-            d.id, esc(d.name), esc(d.category), if d.placement == Placement::Price { "price" } else { "pane" }, d.needs.volume, d.needs.intraday, d.needs.breadth, d.needs.second_symbol, d.needs.fundamentals, d.needs.derivatives, d.needs.onchain,
+            "{{\"id\":\"{}\",\"name\":\"{}\",\"category\":\"{}\",\"placement\":\"{}\",\"needs\":{{\"volume\":{},\"intraday\":{},\"breadth\":{},\"second_symbol\":{},\"fundamentals\":{},\"derivatives\":{},\"onchain\":{},\"order_flow\":{},\"order_book\":{}}},\"computed\":{},\"params\":{params},\"outputs\":{},\"first\":{},\"sparse\":{},\"definition\":\"{}\",\"note\":\"{}\",\"tv\":\"{}\",\"ab\":\"{}\"}}",
+            d.id, esc(d.name), esc(d.category), if d.placement == Placement::Price { "price" } else { "pane" }, d.needs.volume, d.needs.intraday, d.needs.breadth, d.needs.second_symbol, d.needs.fundamentals, d.needs.derivatives, d.needs.onchain, d.needs.order_flow, d.needs.order_book,
             d.compute.is_some(), quoted(d.outputs.iter().copied()), arr(d.first.iter().map(|&f| if f == usize::MAX { "null".into() } else { f.to_string() })), d.sparse, esc(d.definition), esc(d.note), esc(tv), esc(ab))
     });
     let mut body = format!(
@@ -349,7 +349,7 @@ fn backtest(ctx: &Ctx, c: &Compiled, d: &Bars, from: usize, to: usize, cost: f64
     };
     if equity.iter().any(|v| !v.is_finite() || *v <= 0.) { return Err(LabError::Invalid("calculation_unavailable: nonpositive or nonfinite equity; no result is published".into())); }
     let bh = (from..=to).map(|k| ctx.c[k] / ctx.c[from]).collect();
-    Ok((crate::Run { trades, from, to, equity, bh, source_account: None, bandy_account: None, unit_exposure_report: None }, events, booked))
+    Ok((crate::Run { trades, from, to, equity, bh, source_account: None, bandy_account: None, unit_exposure_report: None, option_account: None }, events, booked))
 }
 /// Money mode on a cash instrument: capital, sizing and the declared costs (futures add their contract in lab/futures.rs).
 fn money_of(spec: &Spec, q: &Query, market: Option<&str>) -> Result<Option<ledger::Money>, LabError> {
@@ -409,9 +409,9 @@ fn money_json(b: &ledger::Booked, m: &ledger::Money, currency: Option<&str>) -> 
 fn gross_run(ctx: &Ctx, run: &crate::Run, booked: Option<&ledger::Booked>, money: Option<&ledger::Money>) -> crate::Run {
     match (booked, money) {
         (Some(b), Some(m)) => crate::Run { trades: b.fills(), from: run.from, to: run.to,
-            equity: b.equity(&ctx.c, &ctx.r.iter().map(|r| r.date.clone()).collect::<Vec<_>>(), run.from, run.to, m, false), bh: run.bh.clone(), source_account: None, bandy_account: None, unit_exposure_report: None },
+            equity: b.equity(&ctx.c, &ctx.r.iter().map(|r| r.date.clone()).collect::<Vec<_>>(), run.from, run.to, m, false), bh: run.bh.clone(), source_account: None, bandy_account: None, unit_exposure_report: None, option_account: None },
         _ => crate::Run { trades: run.trades.clone(), from: run.from, to: run.to,
-            equity: crate::equity_curve(&ctx.c, &run.trades, run.from, run.to, 0.), bh: run.bh.clone(), source_account: None, bandy_account: None, unit_exposure_report: None },
+            equity: crate::equity_curve(&ctx.c, &run.trades, run.from, run.to, 0.), bh: run.bh.clone(), source_account: None, bandy_account: None, unit_exposure_report: None, option_account: None },
     }
 }
 fn result_stats(ctx: &Ctx, run: &crate::Run, costs: accounting::Costs, booked: Option<&ledger::Booked>, money: Option<&ledger::Money>) -> BTreeMap<&'static str, f64> {
@@ -778,7 +778,7 @@ fn portfolio_book(spec:&Spec)->Result<super::portfolio::Book,LabError>{
 }
 fn portfolio_stats(ctx:&Ctx,prepared:&PreparedPortfolio,led:&super::portfolio::Ledger,capital:f64,net:bool)->BTreeMap<&'static str,f64>{
     let mut trades:Vec<_>=led.trades.iter().map(|t|t.as_trade(net)).collect();trades.sort_by_key(|t|(t.legs[0].i,t.exit_i));
-    let run=crate::Run{trades,from:prepared.from,to:prepared.to,equity:if net{&led.equity}else{&led.gross_equity}.iter().map(|v|v/capital).collect(),bh:(prepared.from..=prepared.to).map(|i|ctx.c[i]/ctx.c[prepared.from]).collect(),source_account:None,bandy_account:None,unit_exposure_report:None};
+    let run=crate::Run{trades,from:prepared.from,to:prepared.to,equity:if net{&led.equity}else{&led.gross_equity}.iter().map(|v|v/capital).collect(),bh:(prepared.from..=prepared.to).map(|i|ctx.c[i]/ctx.c[prepared.from]).collect(),source_account:None,bandy_account:None,unit_exposure_report:None,option_account:None};
     let mut stats=crate::stats(ctx,&run,0.);stats.insert("avg_exposure",led.invested.iter().zip(&led.equity).map(|(v,e)|v/e).sum::<f64>()/led.equity.len() as f64);stats.insert("max_positions",led.positions.iter().copied().max().unwrap_or(0) as f64);stats
 }
 fn membership_json(loaded:&super::universe::Loaded)->String{format!("{{\"kind\":\"{}\",\"historical_membership_verified\":false,\"note\":\"{}\"}}",loaded.membership.0,esc(loaded.membership.1))}
@@ -1162,7 +1162,7 @@ mod tests {
         assert!(crate::lab::json::parse(&j).is_ok());
         assert!(j.contains("\"id\":\"cvd\"") && j.contains("\"note\":\"not available yet — needs intraday (lower-timeframe/tick) bars\""));
         assert!(j.contains("\"tv\":\"Relative Strength Index (RSI)\"") && j.contains("\"ab\":\"RSI; RSIa on close"));
-        assert!(j.contains("\"needs\":{\"volume\":false,\"intraday\":false,\"breadth\":false,\"second_symbol\":false,\"fundamentals\":false,\"derivatives\":false,\"onchain\":false}"));
+        assert!(j.contains("\"needs\":{\"volume\":false,\"intraday\":false,\"breadth\":false,\"second_symbol\":false,\"fundamentals\":false,\"derivatives\":false,\"onchain\":false,\"order_flow\":false,\"order_book\":false}"));
         assert!(j.contains("\"id\":\"correlation\"") && j.contains("\"second_symbol\":true"));
     }
     #[test] fn catalogue_lists_every_indicator_with_label() {
@@ -1831,7 +1831,8 @@ mod origin_admission_tests {
         let stock = templates::method("hbqts_ma5_25").unwrap();
         assert!(origin_admits(Some(&stock), "individual_stock", "RELIANCE").is_ok(), "a stock method's variant runs on an actual stock");
         assert!(origin_admits(Some(&stock), "index", "SPX").is_err());
-        let etf = templates::method("hpetf_rsi75_short").unwrap();
+        // hpetf_3dhl_short stays ETF-only; Manan opened hpetf_rsi75_short to indices as a declared application (cbd6eb9)
+        let etf = templates::method("hpetf_3dhl_short").unwrap();
         assert!(origin_admits(Some(&etf), "etf", "SPY").is_ok());
         assert!(origin_admits(Some(&etf), "index", "SPX").is_err(), "an index never stands in for an ETF");
         assert!(origin_admits(None, "index", "SPX").is_ok(), "plain lab strategies have no admission rule");

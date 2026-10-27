@@ -88,7 +88,8 @@ it("toolbar shows the provisional strip on gl and reports choices", async () => 
   const host = await mount(<Toolbar market="gl" onMarket={onMarket} options={optionsFromGl(glInstrumentsFixture)} ticker="CRYPTO:BTCUSD" onTicker={() => {}}
     tf="D" timeframes={["D", "W", "M", "Q"]} onTf={() => {}} range="3Y" onRange={() => {}} provisionalNote={glInstrumentsFixture.provisional_note} />);
   expect(host.querySelector("[data-lab-provisional]")?.textContent).toContain("CRYPTO:BTCUSD, daily");
-  expect([...host.querySelectorAll<HTMLButtonElement>(".join-item")].map((b) => b.textContent)).toEqual(expect.arrayContaining(["Daily", "Weekly", "Monthly", "Quarterly"]));
+  expect([...host.querySelectorAll<HTMLButtonElement>(".join-item")].map((b) => b.textContent)).toEqual(expect.arrayContaining(["1D", "1W", "1M"]));
+  expect(host.querySelector<HTMLOptionElement>('[aria-label="More timeframes"] option[value="Q"]')?.textContent).toBe("3M");
   await act(async () => [...host.querySelectorAll<HTMLButtonElement>(".join-item")].find((b) => b.textContent === "US")!.click());
   expect(onMarket).toHaveBeenCalledWith("us");
 });
@@ -141,4 +142,45 @@ it("uses server-advertised preloaded ETF metadata without guessing an index's ex
  const rows=[{ticker:"SPY",first:"2024-01-01",last:"2024-02-01",has_volume:true,series:[]}];
  expect(optionsFromTickers(rows,undefined,[{ticker:"SPY",type:"etf",market:"us"}])[0].type).toBe("etf");
  expect(optionsFromTickers(rows)[0].type).toBeUndefined();
+});
+
+it("popup picker shows full names, filters categories and searches the full catalogue", async () => {
+  const onAdd = vi.fn(), onRead = vi.fn();
+  const host = await mount(<LibraryRail docked catalogue={cat} market="in" hasVolume={false} tf="D" onAdd={onAdd} onRead={onRead} />);
+  expect(host.querySelector('.lab-group-h')).toBeNull();
+  expect(host.querySelector('[data-lab-item="rsi"] b')!.textContent).toBe("Relative Strength Index");
+  const categories = host.querySelector('[aria-label="Indicator categories"]')!;
+  const category = [...categories.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent === 'Oscillators')!;
+  await act(async () => category.click());
+  expect(host.querySelector('[data-lab-item="ema"]')).toBeNull();
+  expect(host.querySelector('[data-lab-item="rsi"]')).not.toBeNull();
+  const search = host.querySelector<HTMLInputElement>('[aria-label="Search indicators"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, "ema");
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect([...host.querySelectorAll<HTMLElement>('[data-lab-item]')].map(b => b.dataset.labItem)).toEqual(['ema']);
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-item="ema"]')!.click());
+  expect(onAdd).toHaveBeenCalledWith(byId('ema'));
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="About Exponential Moving Average"]')!.click());
+  expect(onRead).toHaveBeenCalledWith(byId('ema'));
+});
+
+it("popup picker retains admission reasons and custom indicator actions", async () => {
+  const row = { id:7, name:'My momentum', formula:'Plot(C,"C");', version:1, createdAt:'', updatedAt:'' };
+  const onAdd = vi.fn(), onEdit = vi.fn();
+  const host = await mount(<LibraryRail docked catalogue={cat} market="in" hasVolume={false} tf="D" onAdd={() => {}} onRead={() => {}}
+    mine={{list:[row],canEdit:true,onAdd,onEdit}} />);
+  const refused = host.querySelector<HTMLButtonElement>('[data-lab-item="obv"]')!;
+  expect(refused.disabled).toBe(true);
+  expect(refused.closest('li')!.textContent).toContain('Needs volume; this instrument has no volume in its data.');
+  const personal = [...host.querySelectorAll<HTMLButtonElement>('[aria-label="Indicator categories"] button')].find(b => b.textContent === 'My indicators')!;
+  await act(async () => personal.click());
+  expect(host.querySelector('[data-lab-item="ema"]')).toBeNull();
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-item="my:7"]')!.click());
+  expect(onAdd).toHaveBeenCalledWith(row);
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Edit My momentum"]')!.click());
+  expect(onEdit).toHaveBeenCalledWith(row);
+  await act(async () => host.querySelector<HTMLButtonElement>('.lab-mine-new')!.click());
+  expect(onEdit).toHaveBeenLastCalledWith(null);
 });

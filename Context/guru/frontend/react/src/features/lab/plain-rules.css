@@ -1,0 +1,46 @@
+/* The strategy as sentences, the empty-buy suggestions and the default exit (PlainRules.tsx). */
+.lab-words { display: grid; gap: 6px; margin: 0 0 4px; padding: 12px 14px; border: 1px solid var(--rule); border-left: 4px solid var(--blue); border-radius: 6px; background: var(--bg); }
+.lab-words h3 { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--blue); }
+.lab-words h4 { margin: 4px 0 0; font-size: 13px; color: var(--ink2); }
+.lab-words p { margin: 0; font-size: 14px; line-height: 1.5; }
+.lab-words-side { display: grid; gap: 2px; }
+.lab-words-missing { color: var(--red); }
+.lab-words .lab-tag { display: inline-block; margin-left: 4px; padding: 1px 6px; border: 1px solid var(--blue); border-radius: 10px; font-size: 11px; font-weight: 600; color: var(--blue); vertical-align: 1px; }
+.lab-words-blockers ul { display: grid; gap: 4px; margin: 4px 0 0; padding-left: 18px; font-size: 13.5px; }
+.lab-words-blockers li .dbtn { margin-left: 8px; }
+
+.lab-starter, .lab-default-exit { display: grid; gap: 8px; margin: 0 0 10px; padding: 10px 12px; border: 1px dashed var(--steel); border-radius: var(--r-field); background: var(--card); }
+.lab-starter p, .lab-default-exit p { margin: 0; font-size: 14px; }
+.lab-starter-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.lab-starter-row .cap { margin: 0; min-width: 104px; }
+.lab-default-exit-rule { line-height: 2.1; }
+:is(.lab-default-exit-rule, .lab-default-exit-parts, .lab-sentence-text, .lab-candle) .lab-inline-num { display: inline-flex; vertical-align: baseline; margin: 0 2px; }
+:is(.lab-default-exit-rule, .lab-default-exit-parts, .lab-sentence-text, .lab-candle) .lab-inline-num input { width: 58px; padding: 1px 4px; font: 600 13.5px var(--font); text-align: right; background: var(--card); color: var(--ink); border: 1px solid var(--steel); border-radius: 4px; }
+.lab-candle .lab-ord { margin-left: -4px; }
+.lab-no-trades { display: grid; gap: 6px; }
+.lab-no-trades p { margin: 0; }
+.lab-no-trades-rows { display: grid; gap: 4px; margin: 0; padding-left: 18px; }
+.lab-no-trades-rows .dbtn { margin-left: 8px; }
+
+/* Simple view: each rule is one sentence; Edit opens the full row (NodeEditor.tsx SentenceRow). */
+.lab-sentence { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0 0 6px; padding: 7px 10px; border: 1px solid var(--rule); border-radius: var(--r-field); background: var(--card); }
+.lab-sentence-text { flex: 1 1 260px; min-width: 0; font-size: 14px; line-height: 2.1; }
+.lab-sentence.lab-off .lab-sentence-text { color: var(--ink3); }
+.lab-sentence-edit { display: grid; gap: 8px; margin: 0 0 6px; padding: 8px 10px; border: 1px solid var(--blue); border-radius: var(--r-field); }
+.lab-sentence-edit > .dbtn { justify-self: start; }
+.lab-try-ranges > summary { cursor: pointer; font-weight: 600; font-size: 14px; color: var(--blue); }
+.lab-try-ranges[open] > summary { margin-bottom: 10px; }
+/* Settings (Advanced): the basics, then one folded box for every AmiBroker setting. */
+.lab-basics { display: grid; gap: 4px; }
+.lab-more-settings { margin-top: 10px; border-top: 1px solid var(--rule); padding-top: 10px; }
+.lab-more-settings > summary { cursor: pointer; font-weight: 600; font-size: 14px; color: var(--blue); }
+.lab-more-settings > summary .cap { font-weight: 400; color: var(--ink2); margin-left: 4px; }
+.lab-more-settings[open] > summary { margin-bottom: 10px; }
+.lab-chart-match { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 13.5px; }
+.lab-chart-match .cap { margin: 0; }
+.lab-match-ok { color: var(--green); }
+.lab-match-diff { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.lab-default-exit-parts { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; font-size: 14px; }
+.lab-default-exit-parts li { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; line-height: 2; }
+.lab-default-exit-parts li:has(input[type=checkbox]:not(:checked)) { color: var(--ink3); }
+.lab-add-filter { display:flex; flex-wrap:wrap; align-items:center; gap:4px 10px; margin:2px 0 8px; }

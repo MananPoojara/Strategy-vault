@@ -14,14 +14,10 @@ const fn l(id: &'static str, name: &'static str, category: &'static str, needs: 
 }
 
 pub const DEFS: &[IndicatorDef] = &[
-    l("cvd", "Cumulative Volume Delta", "Intraday & order flow", INTRADAY, "not available yet — needs intraday (lower-timeframe/tick) bars"),
-    l("volume_delta", "Volume Delta", "Intraday & order flow", INTRADAY, "not available yet — needs intraday (lower-timeframe/tick) bars"),
-    l("up_down_volume", "Up/Down Volume", "Intraday & order flow", INTRADAY, "not available yet — needs intraday (lower-timeframe/tick) bars"),
     l("net_volume", "Net Volume", "Intraday & order flow", INTRADAY, "not available yet — needs intraday (lower-timeframe/tick) bars"),
     l("rvol_at_time", "Relative Volume at Time", "Intraday & order flow", INTRADAY, "not available yet — needs intraday (lower-timeframe/tick) bars"),
     l("trading_sessions", "Trading Sessions", "Intraday & order flow", INTRADAY, "not available yet — needs intraday (lower-timeframe/tick) bars"),
     l("volume_24h", "24-hour Volume", "Intraday & order flow", INTRADAY, "not available yet — needs intraday (lower-timeframe/tick) bars"),
-    l("volume_profile", "Volume Profile Fixed Range", "Intraday & order flow", INTRADAY, "not available yet — needs intraday (lower-timeframe/tick) bars"),
     l("rob_booker_intraday_pivots", "Rob Booker Intraday Pivot Points", "Intraday & order flow", INTRADAY, "not available yet — needs intraday (lower-timeframe/tick) bars"),
     l("analyst_forecast", "Analyst price forecast", "Fundamentals", FUNDAMENTALS, "not available yet — needs company fundamentals/estimates data"),
     l("price_target", "Price target - indicator", "Fundamentals", FUNDAMENTALS, "not available yet — needs company fundamentals/estimates data"),

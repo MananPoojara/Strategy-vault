@@ -1,39 +1,36 @@
-/* AmiBroker-style Parameters window: docked beside the chart so it never covers bars; the chart narrows and updates live. */
-.lab-stage { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; align-items: start; }
-.lab-stage:has(> .lab-params) { grid-template-columns: minmax(0, 1fr) 330px; }
-.lab-params { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; max-height: 520px; min-width: 0;
-  background: var(--card); color: var(--ink); border: 1px solid var(--steel); border-radius: var(--r-field); font-size: 13px; }
-.lab-params-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px 6px 12px; }
-.lab-params-h b { font-size: 13.5px; }
-.lab-params-h button { border: 0; background: none; color: var(--ink2); font-size: 18px; line-height: 1; cursor: pointer; padding: 2px 6px; }
-.lab-params-h button:hover { color: var(--ink); }
-.lab-params-tabs { display: flex; gap: 2px; padding: 0 10px; border-bottom: 1px solid var(--steel); }
-.lab-params-tabs > span { padding: 4px 10px; border: 1px solid var(--steel); border-bottom: 0; border-radius: 4px 4px 0 0; background: var(--panel); font-size: 12px; font-weight: 600; margin-bottom: -1px; }
-.lab-params-tabs > span[aria-disabled] { background: none; border-color: var(--rule); color: var(--ink3); font-weight: 500; cursor: not-allowed; }
-.lab-params-grid { overflow: auto; margin: 8px 10px; border: 1px solid var(--rule); }
-.lab-params-sec { display: flex; width: 100%; align-items: center; gap: 6px; border: 0; border-bottom: 1px solid var(--rule); background: var(--panel); padding: 5px 8px; font: 700 12px var(--font); text-align: left; cursor: pointer; color: var(--ink); }
-.lab-params-sec::before { content: "\229F"; color: var(--ink3); }
-.lab-params-sec[aria-expanded="false"]::before { content: "\229E"; }
-.lab-prow { display: grid; grid-template-columns: minmax(0, 42%) minmax(0, 1fr); align-items: center; border-bottom: 1px solid var(--rule); min-height: 30px; }
-.lab-prow:last-child { border-bottom: 0; }
-.lab-prow > span:first-child { padding: 4px 8px 4px 20px; color: var(--ink2); border-right: 1px solid var(--rule); align-self: stretch; display: flex; align-items: center; }
-.lab-prow > select, .lab-prow > .lab-pval { margin: 3px 6px; min-width: 0; }
-.lab-prow select, .lab-prow input[type=number] { font: 500 12.5px var(--font); color: var(--ink); background: var(--card); border: 1px solid var(--rule); border-radius: 4px; padding: 3px 6px; min-width: 0; }
-.lab-pval { display: flex; align-items: center; gap: 6px; }
-.lab-pval input[type=number] { width: 72px; flex: none; font-variant-numeric: tabular-nums; }
-.lab-pval input[type=range] { flex: 1; min-width: 0; accent-color: var(--blue); }
-.lab-pval select { flex: 1; }
-.lab-swatch { width: 14px; height: 14px; flex: none; border-radius: 3px; border: 1px solid var(--steel); }
-.lab-prow-info > span:last-child { padding: 4px 8px; color: var(--ink2); font-size: 12px; }
-.lab-params-f { display: flex; justify-content: flex-end; gap: 8px; padding: 0 10px 10px; }
-
-/* Compact chips: the summary opens the Parameters window. */
-.lab-chips .chip .lab-chip-open { width: auto; height: auto; min-width: 0; border-radius: 0; display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; padding: 0; }
-.lab-chips .chip .lab-chip-open:hover b { text-decoration: underline; }
-.lab-chips .chip .lab-chip-open .lab-dot { flex: none; }
-.lab-chips .chip .lab-chip-vals { color: var(--ink2); font-variant-numeric: tabular-nums; }
-/* Narrow screens: the window stacks above the chart; touch-sized controls on phones. */
-@media (max-width: 1100px) { .lab-stage:has(> .lab-params) { grid-template-columns: minmax(0, 1fr); } .lab-stage > .lab-params { order: -1; max-height: none; } }
-@media (max-width: 600px) { .lab-params-h button { min-width: 36px; min-height: 36px; } .lab-params select, .lab-params input[type=number] { min-height: 32px; } }
-/* ParamColor Custom…: the native colour well, sized like the swatch row. */
-.lab-pval input.lab-color { flex: none; width: 32px; height: 24px; padding: 1px 2px; border: 1px solid var(--rule); border-radius: 4px; background: var(--card); cursor: pointer; }
+/* Floating chart settings keep inputs and actions in a compact, scrollable window. */
+.lab-params { display:flex; flex-direction:column; height:100%; min-height:0; min-width:0; background:var(--card); color:var(--ink); font:400 13px/1.5 var(--font); }
+.lab-params [hidden] { display:none !important; }
+.lab-params-h { display:flex; flex:none; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px 10px; }
+.lab-params-h b { min-width:0; font-size:15px; line-height:1.4; font-weight:600; overflow-wrap:anywhere; }
+.lab-params-h button { flex:none; display:grid; place-items:center; min-width:32px; min-height:32px; border:0; border-radius:5px; background:transparent; color:var(--ink2); font:400 22px/1 var(--font); cursor:pointer; }
+.lab-params-h button:hover { color:var(--ink); background:var(--panel); }
+.lab-params-tabs { display:flex; flex:none; gap:20px; padding:0 16px; border-bottom:1px solid var(--rule); }
+.lab-params-tabs > button { min-height:40px; padding:8px 1px; border:0; border-bottom:2px solid transparent; background:none; color:var(--ink2); font:500 13px var(--font); cursor:pointer; }
+.lab-params-tabs > button[aria-selected=true] { border-bottom-color:var(--blue); color:var(--blue); font-weight:600; }
+.lab-params-tabs > button:hover { color:var(--ink); }
+.lab-params-grid { flex:1; min-height:0; overflow:auto; padding:8px 16px 16px; }
+.lab-prow { display:grid; grid-template-columns:minmax(0,40%) minmax(0,1fr); align-items:center; gap:10px; min-height:48px; padding:5px 0; }
+.lab-prow:last-child { border-bottom:0; }
+.lab-prow > span:first-child { min-width:0; color:var(--ink2); overflow-wrap:anywhere; }
+.lab-prow > select, .lab-prow > .lab-pval, .lab-prow > input { min-width:0; width:100%; margin:0; }
+.lab-prow select, .lab-prow input:not([type=range]) { box-sizing:border-box; min-height:38px; padding:7px 9px; border:1px solid var(--steel); border-radius:5px; background:var(--card); color:var(--ink); font:400 13px var(--font); }
+.lab-prow input { font-variant-numeric:tabular-nums; caret-color:var(--blue); }
+.lab-pval { display:flex; align-items:center; gap:8px; }
+.lab-pval select { flex:1; min-width:0; }
+.lab-swatch { flex:none; width:14px; height:14px; border:1px solid var(--steel); border-radius:3px; }
+.lab-plot-look + .lab-plot-look { margin-top:12px; }
+.lab-prow-info > span:last-child { color:var(--ink2); }
+.lab-params-f { position:sticky; bottom:0; display:flex; flex:none; flex-wrap:wrap; justify-content:flex-end; gap:8px; padding:12px 16px; border-top:1px solid var(--rule); background:var(--card); }
+.lab-params-f .dbtn { min-height:36px; padding:7px 11px; font-size:12px; }
+.lab-params-f > button:first-child { margin-right:auto; }
+.lab-prow input[aria-invalid=true] { border-color:var(--red); }
+.lab-params :is(button,input,select):focus-visible { outline:2px solid var(--blue); outline-offset:2px; }
+.lab-params :is(button,input,select):disabled { cursor:not-allowed; opacity:.5; }
+.lab-pval input.lab-color { flex:none; width:32px; min-height:30px; height:30px; padding:2px; border:1px solid var(--rule); border-radius:4px; background:var(--card); cursor:pointer; }
+/* Indicator summaries open the same floating settings window from the chart. */
+.lab-chips .chip .lab-chip-open { width:auto; height:auto; min-width:0; border-radius:0; display:inline-flex; align-items:center; gap:6px; border:0; background:none; color:inherit; font:inherit; cursor:pointer; padding:0; }
+.lab-chips .chip .lab-chip-open:hover b { text-decoration:underline; }
+.lab-chips .chip .lab-chip-open .lab-dot { flex:none; }
+.lab-chips .chip .lab-chip-vals { color:var(--ink2); font-variant-numeric:tabular-nums; }
+@media (max-width:600px) { .lab-params-h button { min-width:38px; min-height:38px; } }

@@ -1,9 +1,9 @@
-import { useId, useRef, useState } from "react";
+import { Fragment, useId, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import { COPY } from "./labels";
 import { NumField, OperandEditor } from "./OperandEditor";
 import { OrdersPanel } from "./OrdersPanel";
-import { toTradePrices, TradePrices, usesTradePrices } from "./AmiSettings";
+import { nBarStop, toTradePrices, TradePrices, usesTradePrices } from "./AmiSettings";
 import { addCond, conditionCount, conds, isCond, isSeries, OPERATOR_LABELS, removeCond, setCond, setExecution, type Side } from "./spec-model";
 import type { Catalogue, Cond, ExitAtStop, Spec, StopKey } from "./types";
 import { ExecutionPanel } from "./ExecutionPanel";
@@ -11,14 +11,16 @@ import { DateField } from "./DateField";
 import { GeneralData, InitialEquity, PortfolioLimits, RiskPanel } from "./RiskPanel";
 import { ReportSettings } from "./ReportSettings";
 import { RuleList, type TreeCaps } from "./NodeEditor";
-import { budget, limits, readsSessionDates, usesHigherTimeframes, type ListPath } from "./rule-tree";
+import { budget, limits, newNode, readsSessionDates, usesHigherTimeframes, type ListPath } from "./rule-tree";
 import { modeOf, entryOrderType, type InstrumentContext } from "./execution-model";
 import { getAt, setAt, specBytes, SPEC_BYTE_BUDGET } from "./spec-model";
 import type { RuleNode } from "./types";
-import { ExamplePicker, SimpleSettings, useCompact, useSimple } from "./simple";
+import { ExamplePicker, FillChoice, SimpleSettings, useCompact, useSimple } from "./simple";
+import { BuyStarter, DefaultExitCard, pickName, StrategyInWords, type ChartPick } from "./PlainRules";
+import { changedSettings, ownExit, stopsOn, usesDefaultExit, type DefaultExit } from "./defaults";
 import "./rules.css";
 
-export interface RunSettings { from: string; to: string; fees: string; slippage: string }
+export interface RunSettings { from: string; to: string; fees: string; slippage: string; /** the instrument's latest data date (To's default) */ latest?: string }
 
 const NEW_COND: Record<Side, Cond> = {
   entry: { lhs: { s: "close" }, op: ">", rhs: { s: "ema", p: { length: 50 } } },
@@ -39,35 +41,88 @@ export function RuleBuilder(props: {
   dates?: ReactNode;
   /** Step layout: "rules" (Your idea) or "settings" (Settings) only; both by default. */
   part?: "rules" | "settings";
+  /** The exit a test uses when no sell rule is on (defaults.ts), editable here; absent: no fallback is shown. */
+  defaultExit?: DefaultExit; onDefaultExit?(d: DefaultExit): void;
+  /** Indicators drawn on the chart, offered as first buy rules. */
+  chartPicks?: ChartPick[];
+  /** Whether the chart shows the rules' indicators with the same settings (PlainRules ChartMatch). */
+  chartMatch?: ReactNode;
 }) {
   // Older engines keep their existing editor until they advertise the extended grammar.
   if (!props.catalogue.execution) return props.part === "settings" ? <p className="box cap">This engine shows the test period and costs with the rules, in step 2.</p> : <LegacyRuleBuilder {...props} />;
   return <TreeRuleBuilder {...props} />;
 }
-function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market: "in" }, onChange, settings, onSettings, problems, running, onRun, portfolio, part, dates }: Parameters<typeof RuleBuilder>[0]) {
+function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market: "in" }, onChange, settings, onSettings, problems, running, onRun, portfolio, part, dates, defaultExit, onDefaultExit, chartPicks = [], chartMatch }: Parameters<typeof RuleBuilder>[0]) {
   const showRules = part !== "settings", showSettings = part !== "rules";
   const both = spec.direction === "both", b = budget(spec), lim = limits(catalogue), bytes = specBytes(spec);
+  const single = !spec.portfolio; // per-side prices, re-entry delays and limits are single-instrument settings
   const caps = (top: number): TreeCaps => ({ leaves: b.leaves >= lim.leaves, nodes: b.nodes >= lim.nodes, top: top >= lim.top });
   const warn = b.leaves >= 0.9 * lim.leaves || b.nodes >= 0.9 * lim.nodes || bytes >= 0.9 * SPEC_BYTE_BUDGET || b.top.long >= lim.top || b.top.short >= lim.top;
   const top = `Top-level ${b.top.long}/${lim.top}${both ? ` · short ${b.top.short}/${lim.top}` : ""}`;
-  const list = (path: ListPath, title: string, tag: string, count: number) => <RuleList listPath={path} title={title} tag={tag} catalogue={catalogue} caps={caps(count)} list={(getAt(spec, path) as RuleNode[]) ?? []} onChange={(nodes) => onChange(setAt(spec, path, nodes))}
-    short={path.startsWith("short_side.") || spec.direction === "short"} />;
+  const list = (path: ListPath, title: string, tag: string, count: number) => {
+    const short = path.startsWith("short_side.") || spec.direction === "short";
+    const fallback = defaultExit && onDefaultExit && usesDefaultExit(spec, path.startsWith("short_side."));
+    const nodes = (getAt(spec, path) as RuleNode[]) ?? [];
+    const own = fallback ? ownExits(spec, path.replace("exit.any", "entry.all") as ListPath, short) : [];
+    return <RuleList listPath={path} title={title} tag={tag} catalogue={catalogue} caps={caps(count)} list={nodes} onChange={(next) => onChange(setAt(spec, path, next))}
+      short={short} notice={fallback ? <DefaultExitCard value={defaultExit} short={short} onChange={onDefaultExit} own={own} onOwn={(n) => onChange(setAt(spec, path, [...nodes, n]))} /> : undefined}
+      footer={ordersBox(path.startsWith("short_side.") ? "short_side." : "", "exits")} />;
+  };
+  /** Exits that close a trade by price (stops, targets, N-bar, more exits) sit with the sell rules; the entry order type and
+   *  scale-in (limit and stop orders are for live-style fills) in Settings. Folded unless one is set, the heading names what is on. */
+  const ordersBox = (pre: "" | "short_side.", part: "entry" | "exits") => {
+    const side = pre ? spec.short_side : spec;
+    if (!side) return null;
+    const on = part === "entry" ? [entryOrderType(side.entry) !== "market" ? `${entryOrderType(side.entry).replace("_", "-")} order` : "", side.entry.scale_in ? "scale in" : ""].filter(Boolean)
+      : stopsOn(side.exit as unknown as Record<string, unknown>, nBarStop(spec, pre));
+    return <details className="lab-orders-box" data-lab-orders-box={part} open={on.length > 0}>
+      <summary>{part === "entry" ? "Order type" : "Stops & targets"} <span className="cap">· {on.length ? on.join(", ") : part === "entry" ? "market order (buy at the fill price)" : "none (optional)"}</span></summary>
+      <OrdersPanel spec={spec} catalogue={catalogue} pre={pre} reentry={single && !pre} part={part} brief={simple} onChange={onChange} />
+    </details>;
+  };
+  const entryOrders = () => <>{ordersBox("", "entry")}{spec.short_side && ordersBox("short_side.", "entry")}</>;
+  /** The buy rules' indicators that have their own exit, by name ("RSI 14's own exit"). */
+  const ownExits = (s: Spec, entryPath: ListPath, short: boolean) => {
+    const seen = new Set<string>(), out: { label: string; node: RuleNode }[] = [];
+    const visit = (x: unknown) => {
+      if (Array.isArray(x)) { x.forEach(visit); return; }
+      if (!x || typeof x !== "object") return;
+      const o = x as Record<string, unknown>, ind = typeof o.s === "string" ? catalogue.indicators.find((i) => i.id === o.s) : undefined;
+      const p = (o.p ?? {}) as Record<string, number>, node = ind && ownExit(ind, p, short), label = ind && `${pickName(ind, p)}'s own exit`;
+      if (node && label && !seen.has(label)) { seen.add(label); out.push({ label, node }); }
+      Object.values(o).forEach(visit);
+    };
+    ((getAt(s, entryPath) as RuleNode[]) ?? []).filter((n) => (n as Record<string, unknown>).off !== true).forEach(visit);
+    return out;
+  };
   // the AFLs' filter sections: entry.all rows marked `filter`, kept after the signal rows so those keep their entry.all[i] paths
   const entryLists = (path: ListPath, title: string, tag: string, count: number) => {
     const all = (getAt(spec, path) as RuleNode[]) ?? [], isFilter = (n: RuleNode) => (n as Record<string, unknown>).filter === true;
     const signals = all.filter((n) => !isFilter(n)), filters = all.filter(isFilter), short = path.startsWith("short_side.") || spec.direction === "short";
-    const one = (rows: RuleNode[], keep: (rows: RuleNode[]) => RuleNode[], title: string, tag: string, f = false) => <RuleList key={tag} listPath={path} title={title} tag={tag}
-      catalogue={catalogue} caps={caps(count)} list={rows} onChange={(nodes) => onChange(setAt(spec, path, keep(nodes)))} short={short} filters={f} />;
-    return [one(signals, (n) => [...n, ...filters], title, tag),
-      one(filters, (n) => [...signals, ...n], path.startsWith("short_side.") ? "Short filters · the short sale also needs all of these" : COPY.filtersTitle,
-        path.startsWith("short_side.") ? "Short filter" : "Filter", true)] as const;
+    const one = (rows: RuleNode[], keep: (rows: RuleNode[]) => RuleNode[], title: string, tag: string, f = false, notice?: ReactNode) => <RuleList key={tag} listPath={path} title={title} tag={tag}
+      catalogue={catalogue} caps={caps(count)} list={rows} onChange={(nodes) => onChange(setAt(spec, path, keep(nodes)))} short={short} filters={f} notice={notice} />;
+    const exitPath = path.replace("entry.all", "exit.any") as ListPath;
+    const starter = !signals.length && <BuyStarter catalogue={catalogue} chart={chartPicks} short={short} onPick={(entry, exit) => {
+      const next = setAt(spec, path, [entry, ...filters]); // the indicator's own exit fills an empty sell list
+      onChange(exit && !((getAt(next, exitPath) as RuleNode[]) ?? []).length ? setAt(next, exitPath, [exit]) : next);
+    }}>
+      {!simple && path === "entry.all" && <ExamplePicker spec={spec} onChange={onChange} />}</BuyStarter>;
+    // Simple is a plain entry and exit: filters show once a strategy has one; until then one small button adds the first
+    const addFilter = () => onChange(setAt(spec, path, [...all, { ...newNode("cond"), filter: true } as RuleNode]));
+    const filterList = simple && !filters.length
+      ? <p key={`${tag} add-filter`} className="lab-add-filter"><button type="button" className="dbtn sm ghost" data-lab-add-filter onClick={addFilter}>+ Add a filter</button>
+        <span className="cap">optional: buy only while another condition holds, e.g. NIFTYBANK above its 50-day EMA (Edit › Source picks another instrument)</span></p>
+      : one(filters, (n) => [...signals, ...n], path.startsWith("short_side.") ? "Short filters · the short sale also needs all of these" : COPY.filtersTitle,
+        path.startsWith("short_side.") ? "Short filter" : "Filter", true);
+    return [<Fragment key={`${tag} signals`}>{one(signals, (n) => [...n, ...filters], title, tag, false, starter || undefined)}</Fragment>, filterList] as const;
   };
+  const simple = useSimple(), compact = useCompact();
   const [longEntry, longFilters] = entryLists("entry.all", both ? "Buy (long) when all of these are true" : COPY.simpleEntryTitle, both ? "Long entry" : "Entry", b.top.long);
   const money = modeOf(spec) === "money", cost = spec.execution?.cost_bps;
   const ordered = entryOrderType(spec.entry) !== "market" || (!!spec.short_side && entryOrderType(spec.short_side.entry) !== "market");
   const fill = ordered ? "order level" : usesTradePrices(spec.execution) ? "price and delay set in Trades" : spec.execution?.fill === "close" ? "same close" : "next open";
-  const ex = spec.execution ?? {}, single = !spec.portfolio; // per-side prices, re-entry delays and limits are single-instrument settings
-  const simple = useSimple(), compact = useCompact();
+  const ex = spec.execution ?? {};
+  const changed = changedSettings(spec);
   const tabbed = compact && !simple; // Advanced in the page: AmiBroker-style Entry / Exit tabs
   const entryTitle = simple ? COPY.simpleEntryTitle : COPY.entryTitle, exitTitle = simple ? COPY.simpleExitTitle : COPY.exitTitle;
   const period = <div className="lab-row lab-settings">
@@ -82,6 +137,8 @@ function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market
   return <section className="box lab-rules" tabIndex={-1}>
     {showRules && <>
     <h2 className="box-h">{simple ? "Your idea" : "Strategy rules"} <small>{COPY.rulesHint}</small>{((!simple && !compact) || warn) && <span className={`cap lab-caps${warn ? " lab-caps-warn" : ""}`} data-lab-caps>{COPY.caps(top, b.leaves, lim.leaves, b.nodes, lim.nodes, (bytes / 1024).toFixed(1))}</span>}</h2>
+    {defaultExit && <StrategyInWords spec={spec} catalogue={catalogue} defaultExit={defaultExit} period={settings} onChange={onChange} />}
+    {chartMatch}
     {simple && <ExamplePicker spec={spec} onChange={onChange} />}
     {tabbed ? <SettingsTabs ariaLabel="Rules" labels={["Entry · Buy", "Filters", "Exit · Sell", ...(both && spec.short_side ? ["Short entry", "Short filters", "Short exit"] : [])]}>
       {[longEntry, <>{longFilters}{dates && <SettingGroup title="Date filter (Base 1 / Base 2 windows)">{dates}</SettingGroup>}</>,
@@ -103,40 +160,41 @@ function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market
     {showSettings && <>
     {simple ? <SimpleSettings spec={spec} settings={settings} onChange={onChange} open={part === "settings"}>
       {period}
-      {dates}
+      {entryOrders()}
+      {spec.date_filter && dates}
       <InitialEquity spec={spec} catalogue={catalogue} instrument={instrument} onChange={onChange} instrumentData={false} />
     </SimpleSettings> : <>{part !== "settings" && <h3 className="lab-settings-h">Backtest settings <small>how trades are filled, sized and charged</small></h3>}
-    <SettingsTabs labels={["General", "Trades", "Orders & stops", "Report", "Portfolio"]}>
+    {/* the basics first; every AmiBroker setting folded under one heading that names what is changed */}
+    <div className="lab-basics" data-lab-basics>
+      <SettingGroup title="Trade"><ExecutionPanel spec={spec} catalogue={catalogue} onChange={onChange} part="positions" /><FillChoice spec={spec} onChange={onChange} />{entryOrders()}</SettingGroup>
+      <SettingGroup title="Test period & costs">{period}</SettingGroup>
+      <SettingGroup title="Starting money"><InitialEquity spec={spec} catalogue={catalogue} instrument={instrument} onChange={onChange} instrumentData={false} /></SettingGroup>
+    </div>
+    <details className="lab-more-settings" data-lab-more-settings>
+      <summary>More settings (AmiBroker) <span className="cap">{changed.length ? `· ${changed.length} changed: ${changed.join(", ")}` : "· all at their defaults"}</span></summary>
+    <SettingsTabs labels={["General", "Trades", "Report", "Portfolio"]}>
       <>
-        <p className="cap lab-stab-intro">The basics: starting money, the test period and costs, long or short, and how big each trade is.</p>
-        <SettingGroup title="Capital"><InitialEquity spec={spec} catalogue={catalogue} instrument={instrument} onChange={onChange} instrumentData={false} /></SettingGroup>
-        <SettingGroup title="Test period & costs">{period}</SettingGroup>
+        <p className="cap lab-stab-intro">Position size and risk, the date filter, same-bar options and instrument data.</p>
+        <SettingGroup title="Position size & risk"><RiskPanel spec={spec} catalogue={catalogue} instrument={instrument} onChange={onChange} /></SettingGroup>
         {dates && !tabbed && <SettingGroup title="Date filter">{dates}</SettingGroup>}
-        <SettingGroup title="Trading">
-          <ExecutionPanel spec={spec} catalogue={catalogue} onChange={onChange} part="direction" />
+        <SettingGroup title="Trading options">
+          <ExecutionPanel spec={spec} catalogue={catalogue} onChange={onChange} part="options" />
           {!spec.portfolio && <GeneralData spec={spec} instrument={instrument} onChange={onChange} />}
         </SettingGroup>
-        <SettingGroup title="Position size & risk"><RiskPanel spec={spec} catalogue={catalogue} instrument={instrument} onChange={onChange} /></SettingGroup>
       </>
       <>
-        <p className="cap lab-stab-intro">When orders fill and at what price: the bar, the price for each side and any delay.</p>
+        <p className="cap lab-stab-intro">When orders fill and at what price: the bar, the price for each side, any delay, and when stops start checking.</p>
         {!ordered && <ScenarioPreset spec={spec} custom={single} onChange={onChange} />}
         {single && <TradePrices spec={spec} preset={!usesTradePrices(spec.execution)} onChange={onChange} />}
         <ExecutionPanel spec={spec} catalogue={catalogue} onChange={onChange} part="fills" />
+        <label className="lab-check" title={single ? undefined : "A portfolio checks stops from the entry bar (a single-instrument setting)"}><input type="checkbox" disabled={!single}
+          checked={ex.activate_stops_immediately ?? true} onChange={(e) => onChange(setExecution(spec, { activate_stops_immediately: e.target.checked ? undefined : false }))} />Activate stops immediately</label>
+        <p className="cap">{(ex.activate_stops_immediately ?? true) ? "Checked by default here (AmiBroker's default is unchecked): a stop can trigger on the entry bar when the entry fills at the open or as a limit/stop order; an entry at the close or another later price is checked from the next bar." : "Stops are first checked on the bar after the entry bar."} Stops and targets themselves are set under the sell rules in Your idea.</p>
         {stray && <p className="rnote" role="note" data-lab-portfolio-stray>
           Trade prices, re-entry delays, stop exit modes, same-bar and stop activation settings and position limits apply to one instrument only.{" "}
           <button type="button" className="dbtn sm" onClick={() => onChange(setExecution(spec, { prices: undefined, delays: undefined, reentry: undefined, limits: undefined,
             exit_at_stop: undefined, activate_stops_immediately: undefined, nbar_has_priority: undefined, allow_same_bar_exit: undefined, bars_held_from: undefined, reenter_on_exit_bar: undefined, defer_exit_on_circuit: undefined }))}>Remove them</button>
         </p>}
-      </>
-      <>
-        <p className="cap lab-stab-intro">Entry orders (limit or stop) and the exits that close a trade automatically: stop loss, profit target, trailing, breakeven, N-bar.</p>
-        <label className="lab-check" title={single ? undefined : "A portfolio checks stops from the entry bar (a single-instrument setting)"}><input type="checkbox" disabled={!single}
-          checked={ex.activate_stops_immediately ?? true} onChange={(e) => onChange(setExecution(spec, { activate_stops_immediately: e.target.checked ? undefined : false }))} />Activate stops immediately</label>
-        <p className="cap">{(ex.activate_stops_immediately ?? true) ? "Checked by default here (AmiBroker's default is unchecked): a stop can trigger on the entry bar when the entry fills at the open or as a limit/stop order; an entry at the close or another later price is checked from the next bar." : "Stops are first checked on the bar after the entry bar."}</p>
-        {both && <h3 className="lab-side-h">{COPY.longSide}</h3>}
-        <OrdersPanel spec={spec} catalogue={catalogue} pre="" reentry={single} onChange={onChange} />
-        {both && spec.short_side && <><h3 className="lab-side-h">{COPY.shortSide}</h3><OrdersPanel spec={spec} catalogue={catalogue} pre="short_side." onChange={onChange} /></>}
       </>
       <>
         <p className="cap lab-stab-intro">Risk-free rates the performance report uses for the Sharpe ratio of trades and the Ulcer performance index (UPI).</p>
@@ -147,7 +205,7 @@ function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market
         {portfolio}
         <PortfolioLimits spec={spec} onChange={onChange} />
       </>
-    </SettingsTabs></>}
+    </SettingsTabs></details></>}
     </>}
     {readsSessionDates(spec) && <p className="cap">{COPY.sessionDatesHint}</p>}
     {usesHigherTimeframes(spec) && <p className="cap">{COPY.wmRule}</p>}

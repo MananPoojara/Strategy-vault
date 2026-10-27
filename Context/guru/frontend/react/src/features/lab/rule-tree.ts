@@ -1,7 +1,7 @@
 /** Phase 7 rule tree (rules.rs grammar): kinds, value-based edits, the walker that follows the engine's optimize paths,
  *  the engine's comparison/node budget, location labels and UX pre-checks. The engine stays the authority. */
 import { COPY, EXPAND_FIRST_REFUSED, OPERAND_KIND_LABELS } from "./labels";
-import { getAt, isCond, isSeries, isValue, OPERATOR_LABELS, operandLabel } from "./spec-model";
+import { candleCountNode, getAt, isCond, isSeries, isValue, OPERATOR_LABELS, operandLabel } from "./spec-model";
 import { isFormulaOperand } from "./formula";
 import type { Catalogue, Cond, Operand, RuleNode, Spec } from "./types";
 
@@ -401,14 +401,13 @@ export function describeNode(n: RuleNode, cat: Catalogue): string {
 }
 
 /** Ready-made since-entry exits (the AmiBroker AFL exits users ask for by name), added to an exit list as normal conditions. */
-const candle = (when: Cond): RuleNode => ({ lhs: { since_entry: "count", when }, op: ">=", rhs: { value: 3 } });
 const RSI14 = { s: "rsi", p: { length: 14 } };
 /** Each preset for a long position and its mirror for a short one (trails run from the lowest value, stops sit above). */
 export const EXIT_PRESETS: { id: string; label(short: boolean): string; node(short: boolean): RuleNode }[] = [
-  { id: "green", label: () => "Nth green candle since entry", node: () => candle({ lhs: { s: "close" }, op: ">", rhs: { s: "open" } }) },
-  { id: "upclose", label: () => "Nth up-close since entry", node: () => candle({ lhs: { s: "close" }, op: ">", rhs: { s: "close", offset: 1 } }) },
-  { id: "red", label: () => "Nth red candle since entry", node: () => candle({ lhs: { s: "close" }, op: "<", rhs: { s: "open" } }) },
-  { id: "downclose", label: () => "Nth down-close since entry", node: () => candle({ lhs: { s: "close" }, op: "<", rhs: { s: "close", offset: 1 } }) },
+  { id: "green", label: () => "Nth green candle since entry", node: () => candleCountNode("green", 3) },
+  { id: "upclose", label: () => "Nth up-close since entry", node: () => candleCountNode("up", 3) },
+  { id: "red", label: () => "Nth red candle since entry", node: () => candleCountNode("red", 3) },
+  { id: "downclose", label: () => "Nth down-close since entry", node: () => candleCountNode("down", 3) },
   { id: "rsi_trail", label: (short) => short ? "RSI rises 10 above its lowest since entry" : "RSI falls 10 below its highest since entry",
     node: (short) => short ? { lhs: { ...RSI14 }, op: ">", rhs: { since_entry: "lowest", of: { ...RSI14 }, add: 10 } } : { lhs: { ...RSI14 }, op: "<", rhs: { since_entry: "highest", of: { ...RSI14 }, add: -10 } } },
   { id: "close_drop", label: (short) => short ? "Close 5 % above its lowest since entry" : "Close 5 % below its highest since entry",

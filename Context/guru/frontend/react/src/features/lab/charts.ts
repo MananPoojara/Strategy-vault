@@ -23,7 +23,7 @@ export function tint(color: string, alpha: number) {
 }
 
 /** Lab pages bypass VaultRuntime.cleanup, so every chart owns its resize observer and removal. */
-export function createLabChart(el: HTMLElement, height: number, options: Record<string, unknown> = {}, library: LabChartLibrary | undefined = window.LightweightCharts) {
+export function createLabChart(el: HTMLElement, height: number, options: Record<string, unknown> = {}, library: LabChartLibrary | undefined = window.LightweightCharts, resizeHeight = false) {
   if (!library) return null;
   const colors = themeColors(el);
   const chart: LabChartApi = library.createChart(el, {
@@ -40,7 +40,7 @@ export function createLabChart(el: HTMLElement, height: number, options: Record<
   const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => {
     // A resize changes the bars shown; keep the time range the user (or the preset) chose.
     const range = chart.timeScale().getVisibleRange?.();
-    chart.resize(el.clientWidth, height);
+    chart.resize(el.clientWidth, resizeHeight ? el.clientHeight || height : height);
     if (range) chart.timeScale().setVisibleRange(range);
   });
   observer?.observe(el);

@@ -4,27 +4,28 @@ import { runInNewContext } from "node:vm";
 import { act, useState } from "react";
 import { Workbench, type Chip } from "../src/features/lab/Workbench";
 import { variantOptions } from "../src/features/lab/ParamsDialog";
-import { catalogueFixture as cat, flush, mount, runFixture, seriesFixture, unmount } from "./fixtures/lab";
+import { catalogueFixture as cat, dates, flush, mount, runFixture, seriesFixture, unmount } from "./fixtures/lab";
 
 /** Chip settings live in the AmiBroker-style Parameters window; clicking a chip opens it. */
 const openParams = (host: HTMLElement, key: string) => act(async () => host.querySelector<HTMLButtonElement>(`[data-lab-chip="${key}"] .lab-chip-open`)!.click());
 
 type Spy = { setData: ReturnType<typeof vi.fn>; setMarkers: ReturnType<typeof vi.fn>; applyOptions: ReturnType<typeof vi.fn>; createPriceLine?: ReturnType<typeof vi.fn>; removePriceLine?: ReturnType<typeof vi.fn> };
 const truthModule = { exports: {} };
-runInNewContext(readFileSync("../backtest-trust.js", "utf8"), { module: truthModule });
+runInNewContext(readFileSync("public/backtest-trust.js", "utf8"), { module: truthModule });
 const truth = truthModule.exports as NonNullable<Window["VaultTruth"]>;
 
-let charts: { remove: ReturnType<typeof vi.fn>; series: Spy[]; kinds: string[]; click?: (p: { time?: string; point?: { x: number; y: number } }) => void; removeSeries: ReturnType<typeof vi.fn> }[] = [];
+let charts: { remove: ReturnType<typeof vi.fn>; series: Spy[]; kinds: string[]; click?: (p: { time?: string; point?: { x: number; y: number } }) => void; crosshair?: (p: { time?: string }) => void; removeSeries: ReturnType<typeof vi.fn> }[] = [];
 beforeEach(() => {
   charts = [];
   window.VaultTruth = truth;
   const make = () => {
-    const c = { remove: vi.fn(), series: [] as Spy[], kinds: [] as string[], click: undefined as ((p: object) => void) | undefined, removeSeries: vi.fn() };
+    const c = { remove: vi.fn(), series: [] as Spy[], kinds: [] as string[], click: undefined as ((p: object) => void) | undefined, crosshair: undefined as ((p: { time?: string }) => void) | undefined, removeSeries: vi.fn() };
     charts.push(c);
-    const add = (kind: string) => () => { const s = { setData: vi.fn(), setMarkers: vi.fn(), applyOptions: vi.fn(), createPriceLine: vi.fn((o: object) => o), removePriceLine: vi.fn(), coordinateToPrice: vi.fn((y: number) => y * 10) }; c.series.push(s); c.kinds.push(kind); return s; };
+    const add = (kind: string) => () => { const s = { setData: vi.fn(), setMarkers: vi.fn(), applyOptions: vi.fn(), createPriceLine: vi.fn((o: object) => o), removePriceLine: vi.fn(), coordinateToPrice: vi.fn((y: number) => y * 10), priceToCoordinate: (p: number) => p / 10 }; c.series.push(s); c.kinds.push(kind); return s; };
     return { addCandlestickSeries: add("candle"), addLineSeries: add("line"), addAreaSeries: add("area"), remove: c.remove, resize: vi.fn(), removeSeries: c.removeSeries,
+      subscribeCrosshairMove: (h: (p: { time?: string }) => void) => { c.crosshair = h; },
       subscribeClick: (h: (p: object) => void) => { c.click = h; }, unsubscribeClick: () => { c.click = undefined; },
-      applyOptions: vi.fn(), timeScale: () => ({ fitContent: vi.fn(), setVisibleRange: vi.fn() }) };
+      applyOptions: vi.fn(), timeScale: () => ({ fitContent: vi.fn(), setVisibleRange: vi.fn(), coordinateToLogical: (x: number) => x / 10, logicalToCoordinate: (l: number) => l * 10 }) };
   };
   window.LightweightCharts = { createChart: vi.fn(make), CrosshairMode: { Normal: 0 } } as never;
 });
@@ -128,7 +129,7 @@ it("renders chips and notes without the chart library", async () => {
   delete window.LightweightCharts;
   const host = await mount(<Workbench {...props} chips={[]} />);
   await flush();
-  expect(host.textContent).toContain("No indicators on the chart");
+  expect(host.querySelectorAll("[data-lab-chart-label]")).toHaveLength(0);
   expect(host.textContent).toContain("Indicators are calculated from the full history");
   expect(host.textContent).toContain("NIFTY 50 · Daily bars");
 });
@@ -232,31 +233,50 @@ it("an indicator can use its own timeframe: weekly EMA on a daily chart, set fro
   expect(onTf).toHaveBeenCalledWith("w1", undefined);
 });
 
-it("draws TradingView-style horizontal and trend lines, kept per instrument and timeframe; Undo and Clear remove them", async () => {
+it("draws horizontal and trend lines by press and drag with a live preview; lines move, reshape and delete; kept per instrument and timeframe", async () => {
   localStorage.removeItem("lab.drawings|in|NIFTY 50|D");
   const host = await mount(<Workbench {...props} chips={[]} />);
   await flush();
-  const price = () => charts.at(-1)!, candles = () => price().series[price().kinds.indexOf("candle")];
+  const saved = () => JSON.parse(localStorage.getItem("lab.drawings|in|NIFTY 50|D") ?? "[]");
   const press = async (sel: string) => { await act(async () => host.querySelector<HTMLButtonElement>(sel)!.click()); await flush(); };
-  const at = async (time: string, y: number) => { await act(async () => price().click!({ time, point: { x: 1, y } })); await flush(); };
+  const ptr = async (type: string, x: number, y: number, el: Element = host.querySelector("[data-lab-draw-layer]")!) =>
+    act(async () => { el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y })); });
+  const d = dates;
   await press('[data-lab-draw="h"]');
-  expect(host.querySelector("[data-lab-draw-hint]")!.textContent).toContain("Click a price");
-  await at("2024-01-03", 100);
-  expect(candles().createPriceLine).toHaveBeenLastCalledWith(expect.objectContaining({ price: 1000 }));
-  expect(host.querySelector("[data-lab-draw-hint]")).toBeNull(); // one line per click of the tool, as TradingView
+  expect(host.querySelector("[data-lab-draw-hint]")!.textContent).toContain("click");
+  await ptr("pointermove", 20, 100);
+  expect(host.querySelector('[data-lab-draw-layer] [data-lab-drawing="h"] line')!.getAttribute("stroke-dasharray")).toBe("6 4"); // the preview follows the pointer
+  await ptr("pointerdown", 20, 100); await ptr("pointerup", 20, 100);
+  expect(saved()).toEqual([{ kind: "h", price: 1000 }]);
+  expect(host.querySelector("[data-lab-draw-hint]")).toBeNull(); // one line per use of the tool, as TradingView
   await press('[data-lab-draw="t"]');
-  const lines = price().kinds.filter((k) => k === "line").length;
-  await at("2024-01-05", 30);
-  await at("2024-01-02", 20); // clicked right to left: still drawn left to right
-  expect(price().kinds.filter((k) => k === "line")).toHaveLength(lines + 1);
-  expect(price().series.at(-1)!.setData).toHaveBeenLastCalledWith([{ time: "2024-01-02", value: 200 }, { time: "2024-01-05", value: 300 }]);
-  expect(JSON.parse(localStorage.getItem("lab.drawings|in|NIFTY 50|D")!)).toEqual([{ kind: "h", price: 1000 }, { kind: "t", a: ["2024-01-05", 300], b: ["2024-01-02", 200] }]);
+  await ptr("pointerdown", 40, 30);
+  await ptr("pointermove", 10, 20);
+  expect(host.querySelectorAll('[data-lab-draw-layer] [data-lab-drawing="t"]')).toHaveLength(1); // drawn while dragging
+  await ptr("pointerup", 10, 20);
+  expect(saved()[1]).toEqual({ kind: "t", a: [d[4], 300], b: [d[1], 200] });
+  // click, click works too: the end follows the pointer until the second click
+  await press('[data-lab-draw="t"]');
+  await ptr("pointerdown", 0, 10); await ptr("pointerup", 0, 10);
+  await ptr("pointermove", 20, 10);
+  expect(saved()).toHaveLength(2);
+  await ptr("pointerdown", 20, 10); await ptr("pointerup", 20, 10);
+  expect(saved()[2]).toEqual({ kind: "t", a: [d[0], 100], b: [d[2], 100] });
+  // drag the first trend line by its body one bar right and 100 up; drag its end; select and Delete removes it
+  await ptr("pointerdown", 40, 30, host.querySelector('[data-i="1"][data-part="line"]')!);
+  await ptr("pointermove", 50, 40); await ptr("pointerup", 50, 40);
+  expect(saved()[1]).toEqual({ kind: "t", a: [d[5], 400], b: [d[2], 300] });
+  await ptr("pointerdown", 20, 30, host.querySelector('[data-i="1"][data-part="b"]')!);
+  await ptr("pointermove", 30, 50); await ptr("pointerup", 30, 50);
+  expect(saved()[1]).toEqual({ kind: "t", a: [d[5], 400], b: [d[3], 500] });
+  expect(host.querySelector("[data-lab-draw-selected]")!.textContent).toContain("Delete removes it");
+  await act(async () => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete" })); });
+  expect(saved()).toEqual([{ kind: "h", price: 1000 }, { kind: "t", a: [d[0], 100], b: [d[2], 100] }]);
   await press("[data-lab-draw-undo]");
-  expect(price().removeSeries).toHaveBeenCalled();
-  expect(JSON.parse(localStorage.getItem("lab.drawings|in|NIFTY 50|D")!)).toEqual([{ kind: "h", price: 1000 }]);
+  expect(saved()).toEqual([{ kind: "h", price: 1000 }]);
   await press("[data-lab-draw-clear]");
-  expect(candles().removePriceLine).toHaveBeenCalled();
   expect(host.querySelector("[data-lab-draw-clear]")).toBeNull();
+  expect(host.querySelectorAll("[data-lab-drawing]")).toHaveLength(0);
 });
 
 it("oscillator panes draw TradingView's threshold levels (Stochastic 80 / 20); the Properties window edits or removes them", async () => {
@@ -317,7 +337,7 @@ it("keeps every pane on one bar range and crosshair bar, and unsubscribes on unm
   price.range[0]({ from: 0, to: 10 });
   expect(pane.setRange.mock.calls.length).toBe(initial);
   await unmount();
-  expect(price.unRange).toHaveBeenCalledTimes(1);
+  expect(price.unRange).toHaveBeenCalledTimes(2); // the pane sync and the drawings layer
   expect(pane.unRange).toHaveBeenCalledTimes(1);
   expect(pane.unCross).toHaveBeenCalledTimes(1);
 });
@@ -349,7 +369,7 @@ it("inherits the software font and price-chart interaction options", async () =>
     const options = vi.mocked(window.LightweightCharts!.createChart).mock.calls[0][1];
     expect(options).toMatchObject({
       layout: { attributionLogo: false, fontFamily: getComputedStyle(document.body).fontFamily, fontSize: 11, textColor: "#8b8d93" },
-      grid: { vertLines: { visible: false }, horzLines: { color: "#e3e3e4" } },
+      grid: { vertLines: { visible: true }, horzLines: { color: "#e3e3e4" } },
       timeScale: { minBarSpacing: 0.05 }, crosshair: { mode: 0 }, handleScale: { axisPressedMouseMove: true, mouseWheel: true }, handleScroll: { mouseWheel: true, pressedMouseMove: true },
     });
   } finally { document.body.style.fontFamily = previousFont; }
@@ -428,7 +448,7 @@ it("changing only vs redraws a mounted pair chip while reusing OHLC requests", a
   expect(pairLoad.mock.calls.filter(([q])=>q.id==="open")).toHaveLength(1);
 });
 
-it("Parameters window: opens for a newly added indicator, changes look live, Reset all restores defaults, Escape closes", async () => {
+it("Parameters window: opens for a newly added indicator, previews looks, Defaults resets and Escape cancels", async () => {
   const onLook = vi.fn(), onChange = vi.fn();
   function Harness() {
     const [list, setList] = useState<Chip[]>([{ key: "c1", id: "ema", params: { length: 20 } }]);
@@ -442,13 +462,13 @@ it("Parameters window: opens for a newly added indicator, changes look live, Res
   expect(host.querySelector(".lab-params")).toBeNull(); // chips present at mount do not pop a window
   await act(async () => host.querySelector<HTMLButtonElement>("[data-add]")!.click());
   const dialog = host.querySelector<HTMLElement>(".lab-params")!;
-  expect(dialog.getAttribute("role")).toBe("dialog");
-  expect(dialog.textContent).toContain("Properties of Exponential Moving Average");
+  expect(dialog.getAttribute("role")).toBe("region");
+  expect(dialog.textContent).toContain("Exponential Moving Average");
   expect(host.querySelector<HTMLInputElement>(".lab-params input[type=number]")!.value).toBe("33");
   const style = host.querySelector<HTMLSelectElement>('.lab-params select[aria-label$="Style"]')!;
   await act(async () => { style.value = "dashed"; style.dispatchEvent(new Event("change", { bubbles: true })); });
   expect(onLook).toHaveBeenLastCalledWith("c2", { ema: { style: "dashed" } }); // per plot (output)
-  await act(async () => [...dialog.querySelectorAll("button")].find((b) => b.textContent === "Reset all")!.click());
+  await act(async () => [...dialog.querySelectorAll("button")].find((b) => b.textContent === "Defaults")!.click());
   expect(onChange).toHaveBeenLastCalledWith("c2", { length: cat.indicators.find((i) => i.id === "ema")!.params[0].default });
   expect(onLook).toHaveBeenLastCalledWith("c2", undefined);
   await act(async () => dialog.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
@@ -485,20 +505,20 @@ it("stacked panes: each pane reads out in its own legend and only the bottom cha
   const legends = [...host.querySelectorAll(".lab-legend-tv")].map((el) => el.textContent);
   expect(legends[0]).toContain("EMA(20) = ");
   expect(legends[0]).not.toContain("STOCH");
-  expect(host.querySelector('[data-lab-pane="c4"]')!.parentElement!.querySelector(".lab-legend-tv")!.textContent).toBe("STOCH(14) = 5.00");
+  expect(host.querySelector('[data-lab-pane="c4"]')!.parentElement!.querySelector(".lab-legend-tv")!.textContent).toBe("STOCH(14, AmiBroker ratio of sums) = 5.00");
   const made = vi.mocked(window.LightweightCharts!.createChart).mock.results.map((r) => r.value.applyOptions as ReturnType<typeof vi.fn>);
   expect(made[0]).toHaveBeenCalledWith({ timeScale: { visible: false } });
   expect(made.at(-1)).toHaveBeenCalledWith({ timeScale: { visible: true } });
   expect(vi.mocked(window.LightweightCharts!.createChart).mock.calls[0][1]).toMatchObject({ rightPriceScale: { minimumWidth: 78 } });
 });
 
-it("Parameters: the slider covers usable lengths, Axes & Grid is shown disabled, colours are named by role", async () => {
+it("Parameters: full-range numeric fields, working Inputs and Style tabs, colours named by role", async () => {
   const host = await mount(<Workbench {...props} chips={[{ key: "c1", id: "ema", params: { length: 20 } }, { key: "c2", id: "ema", params: { length: 9 }, looks: { ema: { color: "bh" } } }]} />);
   await flush();
   await openParams(host, "c1");
   expect(host.querySelector('.lab-params input[type=number]')!.getAttribute("max")).toBe("5000");
-  expect(host.querySelector('.lab-params input[type=range]')!.getAttribute("max")).toBe("200");
-  expect(host.querySelector('.lab-params-tabs [aria-disabled="true"]')?.textContent).toBe("Axes & Grid");
+  expect(host.querySelector('.lab-params input[type=range]')).toBeNull();
+  expect([...host.querySelectorAll('.lab-params-tabs [role="tab"]')].map((t) => t.textContent)).toEqual(["Inputs", "Style"]);
   const color = () => host.querySelector<HTMLSelectElement>('.lab-params select[aria-label$="Color"]')!;
   expect([...color().options].map((o) => o.textContent)).toEqual(["Theme main", "Red", "Green", "Theme accent", "Dark grey", "Custom…"]);
   await openParams(host, "c2");
@@ -506,7 +526,7 @@ it("Parameters: the slider covers usable lengths, Axes & Grid is shown disabled,
   expect(color().selectedOptions[0].textContent).toBe("Muted");
 });
 
-it("Parameters: a slider drag commits once, a look change redraws without refetching, each chip gets a fresh window", async () => {
+it("Parameters: typed values preview live, looks redraw without refetching, each chip gets a fresh window", async () => {
   const onChange = vi.fn();
   function Harness() {
     const [list, setList] = useState<Chip[]>([{ key: "c1", id: "ema", params: { length: 20 } }, { key: "c2", id: "macd", params: { fast: 12, slow: 26, signal: 9 } }]);
@@ -519,23 +539,19 @@ it("Parameters: a slider drag commits once, a look change redraws without refetc
   const emaCalls = () => load.mock.calls.filter(([q]) => q.id === "ema").length;
   expect(emaCalls()).toBe(1);
   await openParams(host, "c1");
-  const slider = host.querySelector<HTMLInputElement>('.lab-params input[type=range]')!;
-  for (const v of ["21", "22", "23"]) await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(slider, v); slider.dispatchEvent(new Event("input", { bubbles: true })); });
-  expect(onChange).not.toHaveBeenCalled(); // still dragging
-  await act(async () => { await new Promise((r) => setTimeout(r, 260)); });
+  const number = host.querySelector<HTMLInputElement>('.lab-params input[type=number]')!;
+  await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(number, "23"); number.dispatchEvent(new Event("input", { bubbles:true })); });
   await flush();
-  expect(onChange.mock.calls).toEqual([["c1", { length: 23 }]]);
+  expect(onChange.mock.calls).toEqual([["c1", { length:23 }]]);
   expect(emaCalls()).toBe(2);
   const style = host.querySelector<HTMLSelectElement>('.lab-params select[aria-label$="Style"]')!;
   await act(async () => { style.value = "dotted"; style.dispatchEvent(new Event("change", { bubbles: true })); });
   await flush();
   expect(emaCalls()).toBe(2); // the look changed, the data did not: served from the series cache
-  await act(async () => host.querySelector<HTMLButtonElement>(".lab-params-sec")!.click());
-  expect(host.querySelector(".lab-params-sec")!.getAttribute("aria-expanded")).toBe("false");
   await openParams(host, "c2");
-  expect(host.querySelector(".lab-params")!.textContent).toContain("Properties of MACD");
-  expect(host.querySelector(".lab-params-sec")!.getAttribute("aria-expanded")).toBe("true"); // a fresh window
-  expect(host.querySelector(".lab-params [role=tablist]")).toBeNull();
+  expect(host.querySelector(".lab-params")!.textContent).toContain("MACD");
+  expect(host.querySelector(".lab-params-sec")).toBeNull(); // fields are directly visible, without a duplicate heading
+  expect(host.querySelector(".lab-params [role=tablist]")).not.toBeNull();
   // one Color / Style pair per plot, with different default colours
   const colors = [...host.querySelectorAll<HTMLSelectElement>('.lab-params select[aria-label$="Color"]')];
   expect(colors.map((c) => c.getAttribute("aria-label"))).toEqual(["MACD macd Color", "MACD signal Color", "MACD hist Color"]);
@@ -579,4 +595,73 @@ it("variant choices follow the catalogue label; an unnamed value shows its numbe
   expect(variantOptions(p("Variant (0 % of MA, 1 % of close (NinjaTrader), 2 close/MA×100 (TradeStation))", 2)).map(([, t]) => t))
     .toEqual(["% of MA", "% of close (NinjaTrader)", "close/MA×100 (TradeStation)"]);
   expect(variantOptions(p("Variant", 2))).toEqual([[0, "0"], [1, "1"], [2, "2"]]);
+});
+
+it("switches the floating window between the library and settings without remounting the chart", async () => {
+  const host = await mount(<Workbench {...props} library={<p data-browser>Indicator library</p>} />);
+  await flush();
+  const chart = host.querySelector('[data-lab-chart]');
+  const count = charts.length;
+  await act(async () => [...host.querySelectorAll<HTMLButtonElement>('.lab-chart-actions button')].find(b => b.textContent === 'Indicators')!.click());
+  expect(host.querySelector('[role="dialog"][aria-label="Indicators"] [data-browser]')).not.toBeNull();
+  await openParams(host, 'c1');
+  expect(host.querySelector('.lab-indicator-browser')!.hasAttribute('hidden')).toBe(true);
+  expect(host.querySelector('.lab-params')!.getAttribute('role')).toBe('region');
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Close parameters"]')!.click());
+  expect(host.querySelector('.lab-chart-dock-panel')).toBeNull();
+  expect(host.querySelector('[data-lab-chart]')).toBe(chart);
+  expect(charts).toHaveLength(count);
+  expect(charts.every(c => c.remove.mock.calls.length === 0)).toBe(true);
+});
+
+it("opens indicator settings directly from its oscillator pane", async () => {
+  const host = await mount(<Workbench {...props} />);
+  await flush();
+  const settings = host.querySelector<HTMLButtonElement>('.lab-pane-box .lab-indicator-actions button[aria-label^="Indicator settings"]')!;
+  expect(settings.getAttribute('aria-label')).toContain('Indicator settings for');
+  await act(async () => settings.click());
+  expect(host.querySelector('.lab-params')).not.toBeNull();
+});
+
+it("updates on-chart values on hover with one popup-based display", async () => {
+  const host = await mount(<Workbench {...props} />);
+  await flush();
+  const label = host.querySelector('[data-lab-chart-label="c1"] .lab-indicator-values')!;
+  expect(label.textContent).toBe('5.00');
+  charts[0].crosshair?.({ time: seriesFixture('ema', ['ema'], { ema:[null, 1, 2, 3, 4, 5] }).dates[1] });
+  expect(label.textContent).toBe('1.00');
+  expect(host.querySelector('[aria-label="Indicator display"]')).toBeNull();
+  expect(host.querySelector('[aria-label="Settings window"]')).toBeNull();
+  expect(host.querySelector('.lab-workbench')!.getAttribute('data-indicator-display')).toBe('on-chart');
+});
+
+it("hides lines and pattern markers without changing parameters, refetching or resetting the charts", async () => {
+  load.mockClear();
+  const change = vi.fn();
+  const host = await mount(<Workbench {...props} onChipChange={change} />);
+  await flush();
+  const count = charts.length, calls = load.mock.calls.length, ema = charts[0].series[1];
+  const eye = host.querySelector<HTMLButtonElement>('[data-lab-chart-label="c1"] [aria-pressed]')!;
+  await act(async () => eye.click());
+  expect(eye.getAttribute('aria-pressed')).toBe('true');
+  expect(ema.applyOptions).toHaveBeenLastCalledWith({ visible:false });
+  await act(async () => eye.click());
+  expect(ema.applyOptions).toHaveBeenLastCalledWith({ visible:true });
+  const patternEye = host.querySelector<HTMLButtonElement>('[data-lab-chart-label="c3"] [aria-pressed]')!;
+  await act(async () => patternEye.click());
+  expect(charts[0].series[0].setMarkers!.mock.calls.at(-1)![0].some((m: {text:string}) => m.text === 'Doji')).toBe(false);
+  expect(charts).toHaveLength(count);
+  expect(load.mock.calls).toHaveLength(calls);
+  expect(change).not.toHaveBeenCalled();
+});
+
+
+it("shows default input choices in the chart legend and opens their full settings", async () => {
+  const ema = cat.indicators.find((i) => i.id === "ema")!;
+  const catalogue = { ...cat, indicators: cat.indicators.map((i) => i.id === "ema" ? { ...i, params: [...i.params, { key:"source", label:"Source (0 close, 1 open)", default:0, min:0, max:1, integer:true, step:1 }] } : i) };
+  const host = await mount(<Workbench {...props} catalogue={catalogue} />);
+  await flush();
+  expect(host.querySelector('[data-lab-chart-label="c1"] .lab-indicator-settings')!.textContent).toContain("close");
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-chart-label="c1"] .lab-indicator-name')!.click());
+  expect(host.querySelector('.lab-params select[aria-label="' + ema.name + ' Source (0 close, 1 open)"]')).not.toBeNull();
 });

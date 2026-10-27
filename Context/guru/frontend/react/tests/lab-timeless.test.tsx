@@ -126,11 +126,10 @@ it("switches to Renko: one custom series on synthetic times, dated hover, parame
   const host = await mount(<Workbench market="in" ticker="NIFTY 50" tf="W" range="All" catalogue={catalogue} chips={[{ key: "c1", id: "ema", params: { length: 20 } }]} loadSeries={load} onChipChange={vi.fn()} onChipRemove={vi.fn()} />);
   await flush();
   expect(created[0].kinds[0]).toBe("candle");
-  const buttons = [...host.querySelectorAll<HTMLButtonElement>('[data-lab-chart-type] button')];
-  expect(buttons.map((b) => b.textContent)).toEqual(["Candles", "Heikin Ashi", "Renko", "Point & Figure", "Kagi", "Line Break"]);
-  // types this engine does not list are disabled
-  expect(buttons.map((b) => b.disabled)).toEqual([false, true, false, true, true, false]);
-  await act(async () => buttons[2].click());
+  const types = host.querySelector<HTMLSelectElement>('select[aria-label="Chart type"]')!;
+  expect([...types.options].map((o) => o.textContent)).toEqual(["Candles", "Heikin Ashi", "Renko", "Point & Figure", "Kagi", "Line Break"]);
+  expect([...types.options].map((o) => o.disabled)).toEqual([false, true, false, true, true, false]);
+  await act(async () => { types.value = "renko"; types.dispatchEvent(new Event("change", { bubbles:true })); });
   await flush();
   const chart = created.at(-1)!;
   expect(chart.kinds).toEqual(["custom"]);
@@ -141,11 +140,11 @@ it("switches to Renko: one custom series on synthetic times, dated hover, parame
   expect(items.map((i) => [i.slot.open, i.slot.close])).toEqual([[50, 52], [52, 54], [52, 50], [50, 48]]);
   const fmt = chart.options.find((o) => o.localization) as { localization: { timeFormatter(t: number): string } };
   expect(fmt.localization.timeFormatter(3)).toBe("2024-01-15 → 2024-02-01");
-  expect(host.querySelector(".box-h")?.textContent).toContain("NIFTY 50 · Renko from daily bars");
+  expect(host.querySelector(".lab-chart-caption")?.textContent).toContain("NIFTY 50 · Renko from daily bars");
   expect(host.querySelector('[aria-label="Drawing tools"]')?.hasAttribute("hidden")).toBe(true);
   expect(host.querySelector("[data-lab-timeless-note]")?.textContent).toContain("hover a brick for its dates");
   await act(async () => host.querySelector<HTMLButtonElement>("[data-lab-type-params]")!.click());
-  expect(host.querySelector(".lab-params b")?.textContent).toBe("Properties of Renko");
+  expect(host.querySelector(".lab-params b")?.textContent).toBe("Renko");
   expect(host.querySelector(".lab-params .lab-plot-look")).toBeNull();
   const input = host.querySelector<HTMLInputElement>(".lab-params input[type=number]")!;
   await act(async () => {
@@ -155,7 +154,7 @@ it("switches to Renko: one custom series on synthetic times, dated hover, parame
   await flush(); await act(async () => new Promise((r) => setTimeout(r, 250))); await flush();
   expect(load).toHaveBeenLastCalledWith({ id: "renko", tf: "D", p: { box: 2 } });
   // back to Candles: the date-axis chart and its chip come back
-  await act(async () => buttons[0].click());
+  await act(async () => { types.value = "candles"; types.dispatchEvent(new Event("change", { bubbles:true })); });
   await flush();
   expect(created.at(-1)!.kinds[0]).not.toBe("custom");
   expect(created.some((c) => c.kinds[0] === "candle")).toBe(true);
