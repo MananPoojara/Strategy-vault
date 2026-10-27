@@ -4,6 +4,8 @@ import { createLabChart, themeColors, useThemeKey } from "./charts";
 import { DASH, int, num, pct } from "./format";
 import { COPY, ENTRY_KIND_LABELS } from "./labels";
 import { friendlyReason } from "./spec-model";
+import { reasonLabeler, rulesSheet, type RunContext } from "./trade-explain";
+import { saveBytes, xlsx, XLSX_TYPE } from "./xlsx";
 import type { Catalogue, RunResult, SavedMarket, Spec, Stats, Piece, ExecutionModel, MoneySummary, Instrument } from "./types";
 import { neverMeets } from "./scale-check";
 import { MetricTiles, ProvisionalStrip, Segmented, ServerLabel, isProvisional } from "./ui";
@@ -30,7 +32,8 @@ export interface TradeTable { header: string[]; rows: (string | ReactNode)[][]; 
 const ledgerAligned = ({ trades, ledger }: Pick<RunResult, "trades" | "ledger">) => !!ledger?.length && ledger.length === trades.length && ledger.every((r, i) => r.entry === trades[i].entry);
 const pieceText = (pieces: Piece[]) => pieces.map(([date, price, weight]) => `${date} @ ${num(price)} × ${Math.round(weight * 100)}%`).join("; ");
 const NUMERIC = new Set(["Price", "Ex. Price", "Cum. Profit", "Cum. %", "Profit", "% Profit", "Shares", "Position value", "Allocation", "# bars", "MAE", "MFE", "Profit/bar", "Costs"]);
-export function tradeTable(result: Pick<RunResult, "trades" | "ledger"> & { money?: Pick<MoneySummary, "capital">; instrument?: Pick<Instrument, "ticker"> }): TradeTable {
+export function tradeTable(result: Pick<RunResult, "trades" | "ledger"> & { money?: Pick<MoneySummary, "capital">; instrument?: Pick<Instrument, "ticker"> },
+  reasonOf: (reason: string) => string = friendlyReason): TradeTable {
   const { trades, ledger } = result;
   const legs = trades.some((t) => !!t.legs?.length), fills = trades.some((t) => !!t.fills?.length), sized = trades.some((t) => t.weight !== undefined), money = ledgerAligned(result);
   const excursions = trades.some((t) => typeof t.mae === "number");
@@ -50,7 +53,7 @@ export function tradeTable(result: Pick<RunResult, "trades" | "ledger"> & { mone
       Allocation: pct(t.weight ?? 1), "# bars": int(t.bars), MAE: pct(t.mae, 2), MFE: pct(t.mfe, 2),
       // AmiBroker # bars counts the entry and the exit bar
       "Profit/bar": r ? num(r.pnl / (t.bars + 1)) : pct(typeof t.ret === "number" ? t.ret / (t.bars + 1) : null, 3),
-      "Scale in": t.legs?.length ? pieceText(t.legs) : "1", "Scale out": t.fills?.length ? pieceText(t.fills) : DASH, Costs: num(r?.costs), "Exit reason": friendlyReason(t.reason),
+      "Scale in": t.legs?.length ? pieceText(t.legs) : "1", "Scale out": t.fills?.length ? pieceText(t.fills) : DASH, Costs: num(r?.costs), "Exit reason": reasonOf(t.reason),
     };
     const row = header.map((h) => cell[h]);
     csv.push(row);
@@ -166,28 +169,20 @@ export function RunResults({ result, market }: { result: RunResult; market: Save
 
 /** AmiBroker Profit Table and the tradesheet (result list): a full-width row under the rules/backtest pair. */
 /** `part` shows only the Profit Table ("monthly") or only the Tradesheet and ledger ("trades"); both when absent. */
-export function RunTables({ result, part }: { result: RunResult; part?: "monthly" | "trades" }) {
+export function RunTables({ result, part, explain }: { result: RunResult; part?: "monthly" | "trades";
+  /** The test behind the result: exit reasons name the rule that closed each trade; the Excel download adds a Rules sheet. */
+  explain?: RunContext }) {
   const { instrument, trades } = result;
   const [order, setOrder] = useState<"oldest" | "newest">("oldest");
   const [page, setPage] = useState(0);
   useEffect(() => setPage(0), [result]); // a new backtest starts on its first page
   const report = window.VaultReport;
   const monthly = report && result.equity.length ? report.monthly({ dates: result.dates, equity: result.equity.map((v) => v / result.equity[0]) }) : null;
-  const table = tradeTable(result), pages = Math.max(1, Math.ceil(table.rows.length / PAGE)), at = Math.min(page, pages - 1);
+  const table = tradeTable(result, explain ? reasonLabeler(explain) : undefined), pages = Math.max(1, Math.ceil(table.rows.length / PAGE)), at = Math.min(page, pages - 1);
   const shown = (order === "oldest" ? table.rows.map((_, k) => k) : table.rows.map((_, k) => table.rows.length - 1 - k)).slice(at * PAGE, (at + 1) * PAGE);
 
-  const download = () => {
-    if (!report) return;
-    const blob = new Blob([report.csv(table.csv)], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `lab-${instrument.ticker}-${result.from}-${result.to}.csv`;
-    document.body.append(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  };
+  const download = () => saveBytes(xlsx([...(explain ? [{ name: "Rules", rows: rulesSheet(explain, result) }] : []), { name: "Tradesheet", rows: table.csv }]),
+    `lab-${instrument.ticker}-${result.from}-${result.to}.xlsx`, XLSX_TYPE);
 
   return (
     <section className="box lab-result-tables" data-lab-result-tables>
@@ -220,7 +215,7 @@ export function RunTables({ result, part }: { result: RunResult; part?: "monthly
           <h3 className="box-h">Tradesheet <small>{trades.length} trades</small></h3>
           {trades.length > 1 && <Segmented label="Trade order" value={order} onChange={(v) => { setOrder(v); setPage(0); }}
             options={[{ value: "oldest", label: "Oldest first" }, { value: "newest", label: "Newest first" }]} />}
-          {report && trades.length > 0 && <button type="button" className="dbtn sm" onClick={download}>Download CSV</button>}
+          {trades.length > 0 && <button type="button" className="dbtn sm" data-lab-download-trades onClick={download}>Download Excel</button>}
         </div>
         {trades.length ? (
           <>

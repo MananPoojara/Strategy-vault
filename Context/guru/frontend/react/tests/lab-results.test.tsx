@@ -1,3 +1,4 @@
+import { XLSX_TYPE } from "../src/features/lab/xlsx";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { act } from "react";
@@ -66,20 +67,18 @@ it("no trades shows the fixed copy", async () => {
   expect(host.querySelector("table.tl")).toBeNull();
 });
 
-it("CSV download uses VaultReport.csv with every trade and the file name", async () => {
-  const createObjectURL = vi.fn((_: Blob) => "blob:x"), revokeObjectURL = vi.fn();
-  Object.assign(URL, { createObjectURL, revokeObjectURL }); // jsdom has neither
-  const names: string[] = [];
+it("Excel download: a Tradesheet with every trade, and a Rules sheet when the test behind it is known", async () => {
+  const blobs: Blob[] = [], names: string[] = [];
+  Object.assign(URL, { createObjectURL: vi.fn((b: Blob) => { blobs.push(b); return "blob:x"; }), revokeObjectURL: vi.fn() }); // jsdom has neither
   const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) { names.push(this.download); });
   const many = { ...runFixture, trades: Array.from({ length: 205 }, () => runFixture.trades[0]) };
   const host = await mount(<RunTables result={many} />);
-  await act(async () => [...host.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "Download CSV")!.click());
-  const rows = (window.VaultReport!.csv as ReturnType<typeof vi.fn>).mock.calls[0][0] as string[][];
-  expect(rows[0][0]).toBe("Symbol");
-  expect(rows).toHaveLength(206);
-  expect(createObjectURL.mock.calls[0][0].type).toBe("text/csv;charset=utf-8");
-  expect(names).toEqual([`lab-NIFTY 50-${runFixture.from}-${runFixture.to}.csv`]);
-  expect(revokeObjectURL).toHaveBeenCalledWith("blob:x");
+  await act(async () => [...host.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "Download Excel")!.click());
+  expect(names).toEqual([`lab-NIFTY 50-${runFixture.from}-${runFixture.to}.xlsx`]);
+  expect(blobs[0].type).toBe(XLSX_TYPE);
+  const text = new TextDecoder().decode(new Uint8Array(await blobs[0].arrayBuffer()));
+  expect(text).toContain("Tradesheet");
+  expect(text).not.toContain("Rules"); // no test context: trades only
   click.mockRestore();
 });
 
@@ -96,7 +95,7 @@ it("monthly table from VaultReport; table and CSV button absent without it", asy
   delete window.VaultReport;
   host = await mount(<RunTables result={runFixture} />);
   expect(host.querySelector(".lab-monthly")).toBeNull();
-  expect([...host.querySelectorAll("button")].some((b) => b.textContent === "Download CSV")).toBe(false);
+  expect(host.querySelector(".lab-monthly")).toBeNull(); // the Excel download needs no VaultReport
 });
 
 it("monthly normalizes equity to start at 1", async () => {
@@ -135,14 +134,14 @@ it("provisional strip on gl and drawdown math", async () => {
 it("monthly table and tradesheet live in RunTables, outside the backtest summary box", async () => {
   const summary = await mount(<RunResults result={runFixture} market="in" />);
   expect(summary.querySelector("[data-lab-result] .lab-monthly, [data-lab-result] .lab-trades, [data-lab-result] table")).toBeNull();
-  expect([...summary.querySelectorAll("button")].some((b) => b.textContent === "Download CSV")).toBe(false);
+  expect([...summary.querySelectorAll("button")].some((b) => b.textContent === "Download Excel")).toBe(false);
   await unmount();
   const host = await mount(<RunTables result={runFixture} />);
   const box = host.querySelector("section[data-lab-result-tables]")!;
   expect(box.querySelector("[data-lab-result]")).toBeNull();
   expect(box.querySelector(".lab-monthly")).not.toBeNull();
   expect(box.querySelector(".lab-trades table.tl")).not.toBeNull();
-  expect([...box.querySelectorAll("button")].some((b) => b.textContent === "Download CSV")).toBe(true);
+  expect([...box.querySelectorAll("button")].some((b) => b.textContent === "Download Excel")).toBe(true);
 });
 
 it("library rail is sticky below the topbar, with a static bounded stacked layout", () => {

@@ -100,6 +100,7 @@ function IndicatorsLab() {
   const [role, setRole] = useState<Role | null>(null);
   const [data, setData] = useState<MarketData | null>(null);
   const [result, setResult] = useState<LabRunResult | null>(null);
+  const [ranOwn, setRanOwn] = useState<Spec | null>(null); // the user's own rules behind `result` (ranSpec adds the default exit)
   const [ranSpec, setRanSpec] = useState<Spec | null>(null); // the spec behind `result`, for the report's Settings block
   const [runError, setRunError] = useState<unknown>(null);
   const [running, setRunning] = useState(false);
@@ -279,7 +280,7 @@ function IndicatorsLab() {
         ticker, from: settings.from || undefined, to: settings.to || undefined, ...runQuery(spec, settings.fees, settings.slippage),
       });
       if (n !== runSeq.current || sentContext!==currentContext.current) return;
-      setResult(r); setRanSpec(spec); setRanDefault(filled !== current ? defaultExitWords(defaultExit, current.direction === "short") : "");
+      setResult(r); setRanSpec(spec); setRanOwn(current); setRanDefault(filled !== current ? defaultExitWords(defaultExit, current.direction === "short") : "");
       dispatch({ type: "ran", key: runKey(spec, savedMarketValue, ticker), combos: 0 });
     } catch (e) {
       if (n === runSeq.current) setRunError(e);
@@ -424,7 +425,7 @@ function IndicatorsLab() {
                     ...(result.report ? [["Performance metrics", <ReportPanel report={result.report} trades={result.trades} spec={ranSpec ?? undefined} run={result} />] as [string, ReactNode]] : []),
                     ["Equity & drawdown", <RunResults result={result} market={savedMarketValue} />],
                     ["Monthly returns", <RunTables result={result} part="monthly" />],
-                    ["Trades", <RunTables result={result} part="trades" />],
+                    ["Trades", <RunTables result={result} part="trades" explain={ranSpec && ranOwn && cat ? { spec: ranSpec, own: ranOwn, catalogue: cat, tf: state.tf, fees: settings.fees, slippage: settings.slippage } : undefined} />],
                     ...(result.report ? [["Monte Carlo", <MonteCarloPanel trades={result.trades} from={result.from} to={result.to} ledger={result.ledger} capital={result.money?.capital} />] as [string, ReactNode]] : []),
                   ];
                 if (ticker) tabs.push(["Scan / Explore", <ExplorePanel spec={runSpec} catalogue={chartCat!} chips={state.chips} portfolio={!!state.spec.portfolio} market={savedMarketValue} loadSeries={loadSeries}
