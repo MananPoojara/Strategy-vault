@@ -10,6 +10,9 @@ use crate::books::ajmisc::{first_ok, ord, Sim, Ty, K};
 use crate::connors::{sma, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "tscom";
+/// Admitted ids (authors/lanea/vendor1/decisions.json).
+pub const REVIEWED_LANEA: &[&str] = &["tscom_aberration_plus"];
+pub fn reviewed_lanea(id: &str) -> bool { REVIEWED_LANEA.contains(&id) }
 const ABP: &str = "tscom_aberration_plus";
 const AZT: &str = "tscom_aztec";
 

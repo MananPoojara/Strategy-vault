@@ -4,6 +4,9 @@ use crate::books::ajmisc::{ord, Sim, Ty, K};
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "axsym";
+/// Admitted ids (authors/lanea/vendor1/decisions.json).
+pub const REVIEWED_LANEA: &[&str] = &["axsym_gap_breakout"];
+pub fn reviewed_lanea(id: &str) -> bool { REVIEWED_LANEA.contains(&id) }
 const ID: &str = "axsym_gap_breakout";
 
 pub fn catalogue() -> Vec<StrategyDef> {

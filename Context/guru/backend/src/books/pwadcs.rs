@@ -5,6 +5,9 @@ use crate::books::ajmisc::{back, highest, lowest, ord, Sim, Ty, K, POINT};
 use crate::connors::{sma, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "pwadcs";
+/// Admitted ids (authors/lanea/vendor1/decisions.json).
+pub const REVIEWED_LANEA: &[&str] = &["pwadcs_dcs2"];
+pub fn reviewed_lanea(id: &str) -> bool { REVIEWED_LANEA.contains(&id) }
 const ID: &str = "pwadcs_dcs2";
 
 pub fn catalogue() -> Vec<StrategyDef> {
