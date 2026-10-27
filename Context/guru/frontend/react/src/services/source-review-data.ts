@@ -299,6 +299,7 @@ export const sourceReview: Record<string, {type: string; sameWorkAs?: string; pe
   "jtdta": {"type": "book", "people": ["Joseph T. Duffy"]},
   "jtdtpa": {"type": "book", "people": ["Joseph T. Duffy"]},
   "swmfst": {"type": "book", "people": ["Steve Wirrick"]},
+  "bstacm": {"type": "book", "people": ["Boris Schlossberg"]},
   "jcmtt": {"type": "book", "people": ["John F. Carter"]},
   "jcteu": {"type": "article", "people": ["John F. Carter"]},
   "jcym5": {"type": "course_manual", "people": ["John F. Carter"]},

@@ -217,6 +217,10 @@ export const LIB = [
     { id: "kldst", sourceIds: ["title-27677f9123fd300f"], title: "Day Trading and Swing Trading the Currency Market", year: 2008, blurb: "Lien, 2008 · moving-average perfect order runs; pip-based, news and carry strategies held" },
     { id: "kldtc", sourceIds: ["title-21d3c35d6c2c02be", "title-39a12d5916d733f7"], title: "Day Trading the Currency Market", year: 2005, blurb: "Lien, 2005 · first edition of the same strategies (perfect order counted under the 2008 edition)" }] },
   // ---- end Lien block ----
+  // ---- Schlossberg block (27 Oct 2026, lane B)
+  { id: "schlossberg", name: "Boris Schlossberg", tagline: "Currency strategist (BK Asset Management) · Bollinger band \"bands\" trend trade and the Tao of RSI run here; swing-picked, scale-in and pip setups held", books: [
+    { id: "bstacm", sourceIds: ["title-ebd4d46abe3e06cd", "title-ab7f977352944a34"], title: "Technical Analysis of the Currency Market", year: 2006, blurb: "Schlossberg, 2006 · Ch.10 setups: Bollinger band trend and the Tao of RSI (three exits) run on daily bars; range, exhaustion, MACD turn and 3-SMA setups held" }] },
+  // ---- end Schlossberg block ----
   // ---- Arms block (2026-10-24) ----
   { id: "arms", name: "Richard W. Arms Jr.", tagline: "Inventor of Equivolume, Ease of Movement and the Arms Index · the two EMV rules run here", books: [
     { id: "ravcs", sourceIds: ["title-bdb6dd066565a040"], title: "Volume Cycles in the Stock Market", year: 1994, blurb: "Arms · 13-day Ease of Movement zero cross and the weekly four-week reversal of the 13 run; shorter EMVs and cycle reading held" },
