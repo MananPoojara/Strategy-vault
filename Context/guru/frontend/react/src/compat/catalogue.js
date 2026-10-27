@@ -221,6 +221,10 @@ export const LIB = [
   { id: "schlossberg", name: "Boris Schlossberg", tagline: "Currency strategist (BK Asset Management) · Bollinger band \"bands\" trend trade and the Tao of RSI run here; swing-picked, scale-in and pip setups held", books: [
     { id: "bstacm", sourceIds: ["title-ebd4d46abe3e06cd", "title-ab7f977352944a34"], title: "Technical Analysis of the Currency Market", year: 2006, blurb: "Schlossberg, 2006 · Ch.10 setups: Bollinger band trend and the Tao of RSI (three exits) run on daily bars; range, exhaustion, MACD turn and 3-SMA setups held" }] },
   // ---- end Schlossberg block ----
+  // ---- Ponsi block (27 Oct 2026, lane B)
+  { id: "ponsi", name: "Ed Ponsi", tagline: "Forex trader and educator (FXEducator) · the FX-Ed Trend Technique runs here; Fibonacci, pattern, pip and carry trades held", books: [
+    { id: "epfpp", sourceIds: ["title-360d41abd111aa32", "title-10a678f7dce48921"], title: "Forex Patterns & Probabilities (and The Ed Ponsi Forex Playbook)", year: 2007, blurb: "Ponsi, 2007 · FX-Ed Trend Technique (10-day EMA pullback, half-ATR trailing stop) runs on daily bars; the Playbook repeats it with carry trades" }] },
+  // ---- end Ponsi block ----
   // ---- Arms block (2026-10-24) ----
   { id: "arms", name: "Richard W. Arms Jr.", tagline: "Inventor of Equivolume, Ease of Movement and the Arms Index · the two EMV rules run here", books: [
     { id: "ravcs", sourceIds: ["title-bdb6dd066565a040"], title: "Volume Cycles in the Stock Market", year: 1994, blurb: "Arms · 13-day Ease of Movement zero cross and the weekly four-week reversal of the 13 run; shorter EMVs and cycle reading held" },

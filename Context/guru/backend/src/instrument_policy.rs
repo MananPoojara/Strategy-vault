@@ -319,6 +319,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || leungchong_reviewed(def) // Leung and Chong block
         || bollinger_reviewed(def) // John Bollinger block
         || schlossberg_reviewed(def) // Boris Schlossberg block
+        || ponsi_reviewed(def) // Ed Ponsi block
         || rarsysb_reviewed(def) // Vendor code archives block
         || t2wb_reviewed(def) // Trade-to-Win systems block
         || mslibb_reviewed(def) // Libanes MetaStock strategies block
@@ -1305,6 +1306,16 @@ fn schlossberg_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Boris Schlossberg
+// ---------------------------------------------------------------- Ed Ponsi 2026-10-26 (lane B)
+// Admission only for the module REVIEWED lists (authors/ponsi/admission/ponsi_ref.py (header)); kept in one block to merge.
+pub fn ponsi_reviewed(def:&StrategyDef)->bool {(def.book=="epfpp" && crate::books::epfpp::reviewed(def.id))}
+const PONSI_LABEL:&str="Ed Ponsi wrote the FX-Ed Trend Technique for currency pairs; runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test. Cash-index shorts are hypothetical.";
+fn ponsi_policy(def:&StrategyDef)->Option<Policy> {
+    if !ponsi_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Ed Ponsi, Forex Patterns & Probabilities (Wiley 2007), Ch.9 The FX-Ed Trend Technique (p.99-130)");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Ed Ponsi
 // ---------------------------------------------------------------- Vendor code archives 2026-10-26 (lane B)
 // Admission only for the module REVIEWED lists (authors/vendor/laneb/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn rarsysb_reviewed(def:&StrategyDef)->bool {(def.book=="rarsys" && crate::books::rarsys::reviewed(def.id))}
@@ -1824,6 +1835,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=leungchong_policy(def) {return p;} // Leung and Chong block
     if let Some(p)=bollinger_policy(def) {return p;} // John Bollinger block
     if let Some(p)=schlossberg_policy(def) {return p;} // Boris Schlossberg block
+    if let Some(p)=ponsi_policy(def) {return p;} // Ed Ponsi block
     if let Some(p)=rarsysb_policy(def) {return p;} // Vendor code archives block
     if let Some(p)=t2wb_policy(def) {return p;} // Trade-to-Win systems block
     if let Some(p)=mslibb_policy(def) {return p;} // Libanes MetaStock strategies block
@@ -2455,6 +2467,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if leungchong_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LEUNGCHONG_LABEL));} // Leung and Chong block
     if bollinger_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BOLLINGER_LABEL));} // John Bollinger block
     if schlossberg_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",SCHLOSSBERG_LABEL));} // Boris Schlossberg block
+    if ponsi_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",PONSI_LABEL));} // Ed Ponsi block
     if rarsysb_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",RARSYSB_LABEL));} // Vendor code archives block
     if t2wb_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",T2WB_LABEL));} // Trade-to-Win systems block
     if mslibb_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",MSLIBB_LABEL));} // Libanes MetaStock strategies block
@@ -3180,6 +3193,22 @@ mod tests {
         }
     }
     // ---- end Boris Schlossberg block ----
+    // ---- Ed Ponsi block (2026-10-26, lane B) ----
+    #[test]
+    fn ponsi_review_admits_exact_ids() {
+        use crate::books::{epfpp};
+        let all:Vec<StrategyDef>=epfpp::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=epfpp::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|ponsi_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Ed Ponsi block ----
     // ---- Vendor code archives block (2026-10-26, lane B) ----
     #[test]
     fn rarsysb_review_admits_exact_ids() {

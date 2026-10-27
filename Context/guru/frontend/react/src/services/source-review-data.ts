@@ -300,6 +300,7 @@ export const sourceReview: Record<string, {type: string; sameWorkAs?: string; pe
   "jtdtpa": {"type": "book", "people": ["Joseph T. Duffy"]},
   "swmfst": {"type": "book", "people": ["Steve Wirrick"]},
   "bstacm": {"type": "book", "people": ["Boris Schlossberg"]},
+  "epfpp": {"type": "book", "people": ["Ed Ponsi"]},
   "jcmtt": {"type": "book", "people": ["John F. Carter"]},
   "jcteu": {"type": "article", "people": ["John F. Carter"]},
   "jcym5": {"type": "course_manual", "people": ["John F. Carter"]},
