@@ -7,6 +7,9 @@ use crate::books::rrsim::{g, o, pd, run_ts, sdef, sma, xavg, A, P};
 use crate::connors::{rsi, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "tchnl";
+/// Admitted ids (authors/lanea/vendor2/decisions.json).
+pub const REVIEWED_LANEA: &[&str] = &["tchnl_bands", "tchnl_rsi34"];
+pub fn reviewed_lanea(id: &str) -> bool { REVIEWED_LANEA.contains(&id) }
 const BANDS: &str = "tchnl_bands";
 const RSI: &str = "tchnl_rsi34";
 const NOTE: &str = "Manual: 'All calculations ... are based on end-of-day settlement prices'; 'Positions are entered or exited \"at the market\" on the next open'; 'No intra-day stops are used'. \
