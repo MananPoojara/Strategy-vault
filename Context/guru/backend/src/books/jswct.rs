@@ -5,6 +5,9 @@
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 const BOOK: &str = "jswct";
+/// Admitted ids (authors/lanea/singles/decisions.json).
+pub const REVIEWED_LANEA: &[&str] = &["jswct_trend2ma"];
+pub fn reviewed_lanea(id: &str) -> bool { REVIEWED_LANEA.contains(&id) }
 const MAE: &str = "level is a crude-oil MAE stop (.31 trading points = $310/contract, fitted on 1984-94 crude); the book gives no index value and says stops must be derived per market, so any index number would be invented";
 
 pub fn catalogue() -> Vec<StrategyDef> {

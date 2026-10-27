@@ -7,6 +7,9 @@
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "swsp";
+/// Admitted ids (authors/lanea/singles/decisions.json).
+pub const REVIEWED_LANEA: &[&str] = &["swsp_fund_30w"];
+pub fn reviewed_lanea(id: &str) -> bool { REVIEWED_LANEA.contains(&id) }
 
 const JUDGE_STAGE: &str = "Stage 1/2/3/4 classification, 'resistance', 'support' and 'significant' breaks are read off the chart; the book gives no formula for any of them.";
 const JUDGE_STOP: &str = "Initial and trailing sell-stops are placed under the prior 'significant' low / support zone / trendline chosen on the chart; no formula is given.";

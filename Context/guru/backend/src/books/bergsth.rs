@@ -5,6 +5,9 @@
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "bergsth";
+/// Admitted ids (authors/lanea/singles/decisions.json).
+pub const REVIEWED_LANEA: &[&str] = &["bergsth_ma_cross"];
+pub fn reviewed_lanea(id: &str) -> bool { REVIEWED_LANEA.contains(&id) }
 
 const NT_SHORT: &str = "not testable: weekly 'higher highs & higher lows' are hand-labelled swing points (p.174, Chart 8.22), the initial stop is 'below the recent low' with no lookback (p.177), the RSI(7)-to-entry window is not given, and the JB Profit Taker's moving-average length is never stated (p.178)";
 const NT_ARTICLE: &str = "not testable: 'higher highs and higher lows on a weekly chart' is chart reading, the initial stop is 'just under the recent low' (no lookback), and the article gives no fill rule or RSI-to-entry window";

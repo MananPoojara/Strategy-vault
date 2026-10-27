@@ -10,6 +10,9 @@
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 const BOOK: &str = "awab";
+/// Admitted ids (authors/lanea/singles/decisions.json).
+pub const REVIEWED_LANEA: &[&str] = &["awab_ls", "awab_long"];
+pub fn reviewed_lanea(id: &str) -> bool { REVIEWED_LANEA.contains(&id) }
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let make = |id, name, dir, status, rules: &'static [&'static str], notes| StrategyDef {

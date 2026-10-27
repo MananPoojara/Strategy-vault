@@ -4,6 +4,9 @@
 //! Live: the volatility indicator used "as a stop-and-reverse method". The wave-filtered trading plan and the
 //! multiple-time-frame method are recorded as not testable.
 use crate::connors::{true_range, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
+/// Admitted ids (authors/lanea/singles/decisions.json).
+pub const REVIEWED_LANEA: &[&str] = &["aatt_vstop_sar"];
+pub fn reviewed_lanea(id: &str) -> bool { REVIEWED_LANEA.contains(&id) }
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let d = |id, name, dir, status, rules, notes| StrategyDef { id, name, group: "Trading the Trend (S&C V16:9, 1998)", session: 0, dir, status,
