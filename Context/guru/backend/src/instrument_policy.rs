@@ -328,6 +328,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || la_jkofc_reviewed(def) // Jay Kaeppel, Robin Lofton & Brad Zigler (jkofc, lane A) block
         || la_swsp_reviewed(def) // Stan Weinstein (swsp, lane A) block
         || la_newsletters_reviewed(def) // Lane A newsletters block
+        || la_vendor1_reviewed(def) // Lane A vendor1 block
         || rarsysb_reviewed(def) // Vendor code archives block
         || t2wb_reviewed(def) // Trade-to-Win systems block
         || mslibb_reviewed(def) // Libanes MetaStock strategies block
@@ -1404,6 +1405,16 @@ fn la_newsletters_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Lane A newsletters
+// ---------------------------------------------------------------- Lane A vendor1 2026-10-26 (lane B)
+// Admission only for the module REVIEWED lists (authors/lanea/vendor1/decisions.json); kept in one block to merge.
+pub fn la_vendor1_reviewed(def:&StrategyDef)->bool {(def.book=="tscom" && crate::books::tscom::reviewed_lanea(def.id)) || (def.book=="alfar" && crate::books::alfar::reviewed_lanea(def.id)) || (def.book=="axsym" && crate::books::axsym::reviewed_lanea(def.id)) || (def.book=="barra" && crate::books::barra::reviewed_lanea(def.id)) || (def.book=="ltcoat" && crate::books::ltcoat::reviewed_lanea(def.id)) || (def.book=="pwadcs" && crate::books::pwadcs::reviewed_lanea(def.id)) || (def.book=="ltsfut" && crate::books::ltsfut::reviewed_lanea(def.id)) || (def.book=="qsfund" && crate::books::qsfund::reviewed_lanea(def.id)) || (def.book=="rvecl" && crate::books::rvecl::reviewed_lanea(def.id))}
+const LA_VENDOR1_LABEL:&str="Vendor TradeStation code with no per-market test the vault can compare; runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade.";
+fn la_vendor1_policy(def:&StrategyDef)->Option<Policy> {
+    if !la_vendor1_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"TradeStation vendor system code (trade-system.com, alfaranda.com, i8i.com, Baramundi/Intervest, longtermtrading.com, pwafutures.com, LTS-Futures, Quadriga Superfund, Ralph Vince Eclipse) - research share 'TradeStation Systems & Indicators'");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Lane A vendor1
 // ---------------------------------------------------------------- Vendor code archives 2026-10-26 (lane B)
 // Admission only for the module REVIEWED lists (authors/vendor/laneb/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn rarsysb_reviewed(def:&StrategyDef)->bool {(def.book=="rarsys" && crate::books::rarsys::reviewed(def.id))}
@@ -1932,6 +1943,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=la_jkofc_policy(def) {return p;} // Jay Kaeppel, Robin Lofton & Brad Zigler (jkofc, lane A) block
     if let Some(p)=la_swsp_policy(def) {return p;} // Stan Weinstein (swsp, lane A) block
     if let Some(p)=la_newsletters_policy(def) {return p;} // Lane A newsletters block
+    if let Some(p)=la_vendor1_policy(def) {return p;} // Lane A vendor1 block
     if let Some(p)=rarsysb_policy(def) {return p;} // Vendor code archives block
     if let Some(p)=t2wb_policy(def) {return p;} // Trade-to-Win systems block
     if let Some(p)=mslibb_policy(def) {return p;} // Libanes MetaStock strategies block
@@ -2402,6 +2414,9 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         "wmny_bond_band"=>"Held: needs data the vault does not have. The switch (WM2004 p.61-63) is driven by Treasury-bond futures high/low/close prices; the vault holds no bond futures history, and a stock index cannot stand in for bond prices.",
         "rcmm_20"|"rcmm_55"=>"Held: the system adds up to four units to a winning position at fixed ATR steps from the first entry (Market Millions p.40-49, the pyramid matrix); the vault carries one unit per strategy and refuses the added units, so no result can be published.",
         // ---- end Lane A newsletters held
+        // ---- Lane A vendor1 block (26 Oct 2026, lane B): held Live rules
+        "gunsl_gunslinger"=>"Held: the entry stops are tomorrow's open plus or minus 0.81 x (range plus or minus 'thrustTax' 0.6), and thrustTax is a fixed price amount in the vendor code (Gunslinger Code.txt) with no market named. On indices, ETFs and stocks a fixed 0.6 means something different on each instrument, so the vault's accuracy gate blocks it everywhere; publishing needs your decision on how to scale it.",
+        // ---- end Lane A vendor1 held
         // ---- Guppy MetaStock Formula Index block (26 Oct 2026, lane B): held Live rules
         "dgmf_21d_rev_di"|"dgmf_katz_cyclical"|"dgmf_roc_ma"|"dgmf_stoch_ma"=>"Held: rules not fully defined for the tester. The result depends on what MetaStock's System Tester does with an opposite Enter signal while a position is open and its own Close formula is false (close and reverse, or ignore it); the collection does not print the tester setting, the MetaStock 7 manual does not say, and in MetaStock 8 it is a user setting (Portfolio Bias), so the behaviour is not specified and either reading would be a guess.",
         // ---- end Guppy MetaStock Formula Index held
@@ -2585,6 +2600,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if la_jkofc_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LA_JKOFC_LABEL));} // Jay Kaeppel, Robin Lofton & Brad Zigler (jkofc, lane A) block
     if la_swsp_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LA_SWSP_LABEL));} // Stan Weinstein (swsp, lane A) block
     if la_newsletters_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LA_NEWSLETTERS_LABEL));} // Lane A newsletters block
+    if la_vendor1_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LA_VENDOR1_LABEL));} // Lane A vendor1 block
     if rarsysb_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",RARSYSB_LABEL));} // Vendor code archives block
     if t2wb_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",T2WB_LABEL));} // Trade-to-Win systems block
     if mslibb_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",MSLIBB_LABEL));} // Libanes MetaStock strategies block
@@ -3604,6 +3620,33 @@ mod tests {
         }
     }
     // ---- end Lane A newsletters block ----
+    // ---- Lane A vendor1 held (2026-10-26, lane B) ----
+    #[test]
+    fn la_vendor1_held_rules_have_plain_card_reasons() {
+        use crate::books::{gunsl};
+        let all:Vec<StrategyDef>=gunsl::catalogue().into_iter().collect();
+        for id in ["gunsl_gunslinger"] {
+            let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
+            assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
+        }
+    }
+    // ---- end Lane A vendor1 held ----
+    // ---- Lane A vendor1 block (2026-10-26, lane B) ----
+    #[test]
+    fn la_vendor1_review_admits_exact_ids() {
+        use crate::books::{tscom, alfar, axsym, barra, ltcoat, pwadcs, ltsfut, qsfund, rvecl};
+        let all:Vec<StrategyDef>=tscom::catalogue().into_iter().chain(alfar::catalogue()).chain(axsym::catalogue()).chain(barra::catalogue()).chain(ltcoat::catalogue()).chain(pwadcs::catalogue()).chain(ltsfut::catalogue()).chain(qsfund::catalogue()).chain(rvecl::catalogue()).collect();
+        let mut want:Vec<&str>=tscom::REVIEWED_LANEA.iter().chain(alfar::REVIEWED_LANEA.iter()).chain(axsym::REVIEWED_LANEA.iter()).chain(barra::REVIEWED_LANEA.iter()).chain(ltcoat::REVIEWED_LANEA.iter()).chain(pwadcs::REVIEWED_LANEA.iter()).chain(ltsfut::REVIEWED_LANEA.iter()).chain(qsfund::REVIEWED_LANEA.iter()).chain(rvecl::REVIEWED_LANEA.iter()).copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|la_vendor1_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Lane A vendor1 block ----
     // ---- Jason Perl block (2026-10-26, lane B) ----
     #[test]
     fn perl_review_admits_exact_ids() {

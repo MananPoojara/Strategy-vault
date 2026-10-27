@@ -6,6 +6,9 @@ use super::jcfeed::{gp, Sim};
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "ltsfut";
+/// Admitted ids (authors/lanea/vendor1/decisions.json).
+pub const REVIEWED_LANEA: &[&str] = &["ltsfut_stingray"];
+pub fn reviewed_lanea(id: &str) -> bool { REVIEWED_LANEA.contains(&id) }
 const STG: &str = "ltsfut_stingray";
 
 fn def(id: &'static str, name: &'static str, status: Status, rules: &'static [&'static str], notes: &'static str) -> StrategyDef {
