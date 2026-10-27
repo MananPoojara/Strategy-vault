@@ -62,6 +62,10 @@ pub mod x_census_stats;
 pub mod x_census_misc;
 pub mod x_census_patterns;
 pub mod x_census_harmonic;
+pub mod x_census2_a;
+pub mod x_census2_b;
+pub mod x_census2_c;
+pub mod x_census2_d;
 pub mod footprint;
 pub mod x_orderflow;
 #[cfg(test)]
