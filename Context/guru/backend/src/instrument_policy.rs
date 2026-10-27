@@ -325,6 +325,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || alfrdb_reviewed(def) // Alfaranda Magnet and Onyx block
         || jcurtb_reviewed(def) // J. Curtis systems block
         || ajmiscb_reviewed(def) // Angus Jackson systems block
+        || guppyf_reviewed(def) // Guppy MetaStock Formula Index block
         || perl_reviewed(def) // Jason Perl block
         || mjohnson_reviewed(def) // Mark Johnson block
         || landrystfl_reviewed(def) // Dave Landry 2002 workbook block
@@ -1363,6 +1364,16 @@ fn ajmiscb_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Angus Jackson systems
+// ---------------------------------------------------------------- Guppy MetaStock Formula Index 2026-10-26 (lane B)
+// Admission only for the module REVIEWED lists (authors/guppyf/laneb/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn guppyf_reviewed(def:&StrategyDef)->bool {(def.book=="dgmf" && crate::books::dgmf::reviewed(def.id))}
+const GUPPYF_LABEL:&str="MetaStock System Tester code with no per-market test the vault can compare; runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade, fills as stated on the card.";
+fn guppyf_policy(def:&StrategyDef)->Option<Policy> {
+    if !guppyf_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Daryl Guppy / guppytraders.com, MetaStock Formula Index (2002)");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Guppy MetaStock Formula Index
 // ---------------------------------------------------------------- Jason Perl 2026-10-26 (lane B)
 // Admission only for the module REVIEWED lists (authors/perl/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn perl_reviewed(def:&StrategyDef)->bool {(def.book=="tdperl" && crate::books::tdperl::reviewed(def.id))}
@@ -1808,6 +1819,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=alfrdb_policy(def) {return p;} // Alfaranda Magnet and Onyx block
     if let Some(p)=jcurtb_policy(def) {return p;} // J. Curtis systems block
     if let Some(p)=ajmiscb_policy(def) {return p;} // Angus Jackson systems block
+    if let Some(p)=guppyf_policy(def) {return p;} // Guppy MetaStock Formula Index block
     if let Some(p)=perl_policy(def) {return p;} // Jason Perl block
     if let Some(p)=mjohnson_policy(def) {return p;} // Mark Johnson block
     if let Some(p)=landrystfl_policy(def) {return p;} // Dave Landry 2002 workbook block
@@ -2257,6 +2269,9 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         "stad2_stoch"=>"Held: the printed code opens with 200 shares and reverses with 400 shares, so every reversal is twice the opening size; the vault trades one unit and refuses the larger position on every market tested, so no result can be published.",
         "stad8_stampede"|"stad9_luxor"|"stad13_luxor"=>"Held: the strategy adds to a winning position (pyramiding up to several entries in the same direction); the vault carries one unit per strategy and refuses the added entries, so no result can be published.",
         // ---- end STAD block
+        // ---- Guppy MetaStock Formula Index block (26 Oct 2026, lane B): held Live rules
+        "dgmf_21d_rev_di"|"dgmf_katz_cyclical"|"dgmf_roc_ma"|"dgmf_stoch_ma"=>"Held: rules not fully defined for the tester. The result depends on what MetaStock's System Tester does with an opposite Enter signal while a position is open and its own Close formula is false (close and reverse, or ignore it); the collection does not print the tester setting, the MetaStock 7 manual does not say, and in MetaStock 8 it is a user setting (Portfolio Bias), so the behaviour is not specified and either reading would be a guess.",
+        // ---- end Guppy MetaStock Formula Index held
         // ---- Jason Perl block (26 Oct 2026, lane B): held Live rules
         "tdperl_setup_long"|"tdperl_setup_short"=>"Held: rules not fully defined. Perl trades a completed TD Setup only when three conditions hold, and the third, that the close of setup bar nine is 'in close proximity to' TDST support (resistance for sells) (p.13, 16), is not quantified; leaving it out or picking a distance would not be his rule.",
         "tdperl_diff_up"|"tdperl_diff_down"|"tdperl_clopwin_long"|"tdperl_clopwin_short"=>"Held: not a trade rule. Perl presents TD Differential and TD Clopwin as forecasts of the next price bar (p.26, 165-166) with no stop or exit; the vault's next-close measurement tests the forecast, not a trading strategy from the book.",
@@ -2434,6 +2449,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if alfrdb_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",ALFRDB_LABEL));} // Alfaranda Magnet and Onyx block
     if jcurtb_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",JCURTB_LABEL));} // J. Curtis systems block
     if ajmiscb_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",AJMISCB_LABEL));} // Angus Jackson systems block
+    if guppyf_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",GUPPYF_LABEL));} // Guppy MetaStock Formula Index block
     if perl_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",PERL_LABEL));} // Jason Perl block
     if mjohnson_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",MJOHNSON_LABEL));} // Mark Johnson block
     if landrystfl_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LANDRYSTFL_LABEL));} // Dave Landry 2002 workbook block
@@ -2897,6 +2913,17 @@ mod tests {
         }
     }
     // ---- end STAD block ----
+    // ---- Guppy MetaStock Formula Index held (2026-10-26, lane B) ----
+    #[test]
+    fn guppyf_held_rules_have_plain_card_reasons() {
+        use crate::books::{dgmf};
+        let all:Vec<StrategyDef>=dgmf::catalogue().into_iter().collect();
+        for id in ["dgmf_21d_rev_di", "dgmf_katz_cyclical", "dgmf_roc_ma", "dgmf_stoch_ma"] {
+            let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
+            assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
+        }
+    }
+    // ---- end Guppy MetaStock Formula Index held ----
     // ---- Jason Perl held (2026-10-26, lane B) ----
     #[test]
     fn perl_held_rules_have_plain_card_reasons() {
@@ -3236,6 +3263,22 @@ mod tests {
         }
     }
     // ---- end Angus Jackson systems block ----
+    // ---- Guppy MetaStock Formula Index block (2026-10-26, lane B) ----
+    #[test]
+    fn guppyf_review_admits_exact_ids() {
+        use crate::books::{dgmf};
+        let all:Vec<StrategyDef>=dgmf::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=dgmf::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|guppyf_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Guppy MetaStock Formula Index block ----
     // ---- Jason Perl block (2026-10-26, lane B) ----
     #[test]
     fn perl_review_admits_exact_ids() {
