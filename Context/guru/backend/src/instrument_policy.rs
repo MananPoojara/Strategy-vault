@@ -318,6 +318,9 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || tillson_reviewed(def) // Tim Tillson block
         || leungchong_reviewed(def) // Leung and Chong block
         || bollinger_reviewed(def) // John Bollinger block
+        || alfrdb_reviewed(def) // Alfaranda Magnet and Onyx block
+        || jcurtb_reviewed(def) // J. Curtis systems block
+        || ajmiscb_reviewed(def) // Angus Jackson systems block
         || perl_reviewed(def) // Jason Perl block
         || mjohnson_reviewed(def) // Mark Johnson block
         || landrystfl_reviewed(def) // Dave Landry 2002 workbook block
@@ -1286,6 +1289,36 @@ fn bollinger_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end John Bollinger
+// ---------------------------------------------------------------- Alfaranda Magnet and Onyx 2026-10-26 (lane B)
+// Admission only for the module REVIEWED lists (authors/vendor/laneb/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn alfrdb_reviewed(def:&StrategyDef)->bool {(def.book=="alfrd" && crate::books::alfrd::reviewed(def.id))}
+const ALFRDB_LABEL:&str="Vendor and newsletter code with no per-market test the vault can compare; runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade.";
+fn alfrdb_policy(def:&StrategyDef)->Option<Policy> {
+    if !alfrdb_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Alfaranda Magnet and Onyx TradeStation code");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Alfaranda Magnet and Onyx
+// ---------------------------------------------------------------- J. Curtis systems 2026-10-26 (lane B)
+// Admission only for the module REVIEWED lists (authors/vendor/laneb/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn jcurtb_reviewed(def:&StrategyDef)->bool {(def.book=="jcurt" && crate::books::jcurt::reviewed(def.id))}
+const JCURTB_LABEL:&str="Vendor and newsletter code with no per-market test the vault can compare; runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade.";
+fn jcurtb_policy(def:&StrategyDef)->Option<Policy> {
+    if !jcurtb_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"J. Curtis TradeStation system code (JK-24, JK-31)");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end J. Curtis systems
+// ---------------------------------------------------------------- Angus Jackson systems 2026-10-26 (lane B)
+// Admission only for the module REVIEWED lists (authors/vendor/laneb/SOURCE-CONTRACT.md); kept in one block to merge.
+pub fn ajmiscb_reviewed(def:&StrategyDef)->bool {(def.book=="ajmisc" && crate::books::ajmisc::reviewed(def.id))}
+const AJMISCB_LABEL:&str="Vendor and newsletter code with no per-market test the vault can compare; runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade.";
+fn ajmiscb_policy(def:&StrategyDef)->Option<Policy> {
+    if !ajmiscb_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Angus Jackson, Omega-list TradeStation 2000i code");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Angus Jackson systems
 // ---------------------------------------------------------------- Jason Perl 2026-10-26 (lane B)
 // Admission only for the module REVIEWED lists (authors/perl/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn perl_reviewed(def:&StrategyDef)->bool {(def.book=="tdperl" && crate::books::tdperl::reviewed(def.id))}
@@ -1724,6 +1757,9 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=tillson_policy(def) {return p;} // Tim Tillson block
     if let Some(p)=leungchong_policy(def) {return p;} // Leung and Chong block
     if let Some(p)=bollinger_policy(def) {return p;} // John Bollinger block
+    if let Some(p)=alfrdb_policy(def) {return p;} // Alfaranda Magnet and Onyx block
+    if let Some(p)=jcurtb_policy(def) {return p;} // J. Curtis systems block
+    if let Some(p)=ajmiscb_policy(def) {return p;} // Angus Jackson systems block
     if let Some(p)=perl_policy(def) {return p;} // Jason Perl block
     if let Some(p)=mjohnson_policy(def) {return p;} // Mark Johnson block
     if let Some(p)=landrystfl_policy(def) {return p;} // Dave Landry 2002 workbook block
@@ -2343,6 +2379,9 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if tillson_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",TILLSON_LABEL));} // Tim Tillson block
     if leungchong_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LEUNGCHONG_LABEL));} // Leung and Chong block
     if bollinger_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BOLLINGER_LABEL));} // John Bollinger block
+    if alfrdb_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",ALFRDB_LABEL));} // Alfaranda Magnet and Onyx block
+    if jcurtb_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",JCURTB_LABEL));} // J. Curtis systems block
+    if ajmiscb_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",AJMISCB_LABEL));} // Angus Jackson systems block
     if perl_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",PERL_LABEL));} // Jason Perl block
     if mjohnson_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",MJOHNSON_LABEL));} // Mark Johnson block
     if landrystfl_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LANDRYSTFL_LABEL));} // Dave Landry 2002 workbook block
@@ -3033,6 +3072,54 @@ mod tests {
         }
     }
     // ---- end John Bollinger block ----
+    // ---- Alfaranda Magnet and Onyx block (2026-10-26, lane B) ----
+    #[test]
+    fn alfrdb_review_admits_exact_ids() {
+        use crate::books::{alfrd};
+        let all:Vec<StrategyDef>=alfrd::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=alfrd::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|alfrdb_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Alfaranda Magnet and Onyx block ----
+    // ---- J. Curtis systems block (2026-10-26, lane B) ----
+    #[test]
+    fn jcurtb_review_admits_exact_ids() {
+        use crate::books::{jcurt};
+        let all:Vec<StrategyDef>=jcurt::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=jcurt::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|jcurtb_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end J. Curtis systems block ----
+    // ---- Angus Jackson systems block (2026-10-26, lane B) ----
+    #[test]
+    fn ajmiscb_review_admits_exact_ids() {
+        use crate::books::{ajmisc};
+        let all:Vec<StrategyDef>=ajmisc::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=ajmisc::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|ajmiscb_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Angus Jackson systems block ----
     // ---- Jason Perl block (2026-10-26, lane B) ----
     #[test]
     fn perl_review_admits_exact_ids() {

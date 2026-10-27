@@ -15,6 +15,9 @@
 use crate::connors::{sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "ajmisc";
+/// Admitted ids (authors/vendor/laneb/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["ajmisc_delayed_cbo", "ajmisc_r_osc", "ajmisc_tr_breakout", "ajmisc_turtle", "ajmisc_vol_rev"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 // ------------------------------------------------------------------------------------------------ simulator
 

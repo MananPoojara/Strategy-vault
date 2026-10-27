@@ -5,6 +5,9 @@ use crate::books::ajmisc::{back, first_ok, highest, lowest, ord, Sim, Ty, K, POI
 use crate::connors::{sma, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "jcurt";
+/// Admitted ids (authors/vendor/laneb/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["jcurt_jk24_hl_bands", "jcurt_jk31_pattern"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 const J24: &str = "jcurt_jk24_hl_bands";
 const J31: &str = "jcurt_jk31_pattern";
 
