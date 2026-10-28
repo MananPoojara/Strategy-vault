@@ -144,17 +144,17 @@ const numMinus=t=>String(t).replace(/^-/,'\u2212');
   apply();}
  const msg=text=>{const el=document.getElementById('page-action-message');if(el)el.textContent=text;};
  const immutable=value=>{if(Array.isArray(value))return Object.freeze(value.map(immutable));if(value&&typeof value==='object')return Object.freeze(Object.fromEntries(Object.entries(value).map(([key,v])=>[key,immutable(v)])));return value;};
- function snapshotContext(){
-  if(!STRAT?.d||!STRAT?.v)throw Error('No completed backtest is available for export.');
-  const state=immutable(S),region=STRAT.region||state.region,unit=unitFor({...STRAT,state,params:STRAT.indicatorParameters,region}),d=unit?STRAT.d:immutable(STRAT.d),v=immutable(STRAT.v);
-  const benchmark=currentBenchmark?.d===STRAT.d?currentBenchmark:null;
+ function snapshotContext(run=STRAT){
+  if(!run?.d||!run?.v)throw Error('No completed backtest is available for export.');
+  const state=immutable(S),region=run.region||state.region,unit=unitFor({...run,state,params:run.indicatorParameters,region}),d=unit?run.d:immutable(run.d),v=immutable(run.v);
+  const benchmark=currentBenchmark?.d===run.d?currentBenchmark:null;
   const benchmarkTk=document.querySelector('[data-benchmark-comparison]')?.getAttribute('data-benchmark-symbol')||benchmark?.tk||(region==='us'?'SPX':'NIFTY 50');
-  return Object.freeze({d,v,unit,display:immutable(STRAT.display),tk:STRAT.tk,region,state,url:location.href,params:immutable(STRAT.account||unit?STRAT.indicatorParameters:STRAT.d.params||state.p||{}),px:immutable(STRAT.px),
-   actualSymbol:d.kind==='basket'?d.basket:d.provenance?.symbol||d.trades?.find(t=>t.accounting?.symbol)?.accounting.symbol||STRAT.tk,
-   benchmarkTk,benchmarkLabel:LABEL[benchmarkTk]||benchmarkTk,benchmarkPx:immutable(benchmark?.px)});
+  return Object.freeze({d,v,unit,display:immutable(run.display),tk:run.tk,region,state,url:location.href,params:immutable(run.params||(run.account||unit?run.indicatorParameters:run.d.params||state.p||{})),px:immutable(run.px),
+   actualSymbol:d.kind==='basket'?d.basket:d.provenance?.symbol||d.trades?.find(t=>t.accounting?.symbol)?.accounting.symbol||run.tk,
+   benchmarkTk,benchmarkLabel:LABEL[benchmarkTk]||benchmarkTk,benchmarkPx:immutable(benchmark?.px),fileTag:run.fileTag});
  }
  const filePart=value=>String(value??'report').replace(/[^a-zA-Z0-9._-]+/g,'-').replace(/^-+|-+$/g,'').slice(0,90)||'report';
- const reportName=(st,kind,extension)=>`${filePart(st.v.id)}-${filePart(st.actualSymbol)}-${filePart(st.d.dates?.[0]||'period')}-${filePart(st.d.dates?.at(-1)||'end')}-${filePart(kind)}.${extension}`;
+ const reportName=(st,kind,extension)=>`${filePart(st.v.id)}-${filePart(st.actualSymbol)}-${filePart(st.d.dates?.[0]||'period')}-${filePart(st.d.dates?.at(-1)||'end')}-${filePart(kind)}${st.fileTag?'-'+filePart(st.fileTag):''}.${extension}`;
  function downloadBlob(blob,name){const link=document.createElement('a'),url=URL.createObjectURL(blob);link.href=url;link.download=name;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),4000);}
  const csvSafeRows=rows=>rows.map(row=>row.map(v=>typeof v==='string'&&/^[\s\uFEFF]*[=+\-@]/.test(v)?"'"+v:v));
  const cellValue=v=>typeof v==='number'?(Number.isFinite(v)?v:null):v==null?null:typeof v==='string'||typeof v==='boolean'?v:String(v);
@@ -270,9 +270,10 @@ const numMinus=t=>String(t).replace(/^-/,'\u2212');
   const enc=encodeURIComponent,links={wa:`https://wa.me/?text=${enc(text+' '+url)}`,x:`https://twitter.com/intent/tweet?text=${enc(text)}&url=${enc(url)}`,tg:`https://t.me/share/url?url=${enc(url)}&text=${enc(text)}`,mail:`mailto:?subject=${enc(text)}&body=${enc(text+'\n\n'+url+'\n\nTip: use "Send as PDF file" or the download icon to attach the page as a PDF.')}`};
   window.open(links[kind],'_blank','noopener');msg('Link shared. Recipients need a Vault login to open it; send the PDF instead for anyone without one.');}
  async function action(name){if(name==='like'){toggleLike();return;}if(name==='pdf'){msg('Preparing PDF…');try{download(await pagePdf());msg('PDF downloaded.');}catch(e){if(e?.name==='ReportChangedError'){msg(e.message);return;}msg('PDF failed, opening print instead: '+(e?.message||e));finishMetricAnimations();window.print();}return;}if(name==='share-menu'){const m=document.querySelector('.share-menu');if(m){m.hidden=!m.hidden;document.querySelector('[data-action=share-menu]')?.setAttribute('aria-expanded',String(!m.hidden));if(!m.hidden)m.querySelector('button')?.focus();}return;}if(name==='save'){const key=savedKey();if(!key)return;let list=savedList();const was=list.some(x=>x.key===key);list=was?list.filter(x=>x.key!==key):[{key,id:R.id,tk:S.tk,region:S.region,name:(document.querySelector('h1.st')?.textContent||R.id).trim(),hash:location.hash,at:new Date().toISOString().slice(0,10)},...list];writeSaved(list);const b=document.querySelector('[data-action=save]');if(b){const on=!was;b.classList.toggle('on',on);b.setAttribute('aria-pressed',on);b.title=on?'Remove from Saved':'Save to your Saved list';b.innerHTML=(on?ICON.saved:ICON.save);}msg(was?'Removed from Saved.':'Saved. Open it any time from Saved in the top menu.');return;}if(name==='share'){const link=location.href;try{await navigator.clipboard.writeText(link);msg('Page link copied. Recipients need a Vault login.');}catch{const field=document.createElement('input');field.value=link;field.setAttribute('aria-label','Shareable page link');const host=document.getElementById('page-action-message');host.replaceChildren(field);field.select();try{if(document.execCommand('copy'))msg('Page link copied. Recipients need a Vault login.');}catch{}}return;}}
+ async function exportRunTrades(run){if(run.d.source_account||run.d.unit_exposure_report)throw Error('Account-sized tradesheet: use Apply, then download it from Positions.');const st=snapshotContext(run);return xlsx('trades',[tradeHeadersFor(st.d),...tradeRowsFor(st.d,st.tk)],[8,11,13,14,15],st);}
  const KIND=b=>b.dataset.chartSnapshot?'png':b.id==='csv'?'csv':'xls';
  function iconize(root=document){
-  root.querySelectorAll('[data-chart-snapshot],[data-report-export],#csv,#trades-xlsx').forEach(b=>{if(b.classList.contains('ibtn'))return;const label=b.textContent.trim()||'Download';const k=KIND(b);b.className=`ibtn`;b.title=label;b.setAttribute('aria-label',label);b.innerHTML=ICON[k];});
+  root.querySelectorAll('[data-chart-snapshot],[data-report-export],#csv,#trades-xlsx').forEach(b=>{if(b.classList.contains('ibtn'))return;const label=b.textContent.trim()||'Download';const k=KIND(b);const text=b.id==='csv'?'CSV':b.id==='trades-xlsx'?'Excel':'';b.className=text?'ibtn ibtn-text':'ibtn';b.title=label;b.setAttribute('aria-label',label);b.innerHTML=ICON[k]+(text?`<span aria-hidden="true">${text}</span>`:'');});
   root.querySelectorAll('.box > .chart-tools, .box > .detail-tools, .report-panel > .chart-tools').forEach(t=>{const h=t.parentElement.querySelector(':scope > .box-h');if(h&&!h.querySelector('.box-tools')){t.classList.add('box-tools');h.append(t);}});
   
  }
@@ -284,7 +285,7 @@ const numMinus=t=>String(t).replace(/^-/,'\u2212');
  addEventListener('beforeprint',()=>{finishMetricAnimations();refreshHeat();});
  addEventListener('afterprint',refreshHeat);
  addEventListener('afterprint',()=>document.querySelectorAll('details[data-print-closed]').forEach(d=>{d.open=false;delete d.dataset.printClosed;}));
- return {costState,actions,toolbar,savedList,writeSaved,detailHTML,benchmarkHTML,tradeHTML,equityNavigator,init,iconize,pristineExport,ICON};
+ return {costState,exportRunTrades,actions,toolbar,savedList,writeSaved,detailHTML,benchmarkHTML,tradeHTML,equityNavigator,init,iconize,pristineExport,ICON};
 })();
 
 // Optimization research on the strategy page: parameter ranges, Rust grid run, Claude's conclusion (top 3 by the
@@ -419,13 +420,19 @@ async function runOpt() {
   const t0 = performance.now();
   try {
     const fd = new FormData($('#oform')), c = { slippage: String(Math.max(0, +fd.get('slippage') || 0)), rollover: String(Math.max(0, +fd.get('rollover') || 0)) };
-    const res = await fetchOpt(optQuery(v, tk, { from: S.from, to: S.to }, g, false, c)); await minWait(t0, 900); res.rt = performance.now() - t0;
+    const res = await fetchOpt(optQuery(v, tk, { from: S.from, to: S.to }, g, false, c)); await minWait(t0, 900); res.rt = performance.now() - t0; res.exec = c;
     OPT.cache[key] = { res }; if (STRAT && optKey(STRAT.v.id,STRAT.tk)===key && $('#opt-out')===out) showOpt(res);
   } catch (e) { if ($('#opt-out')===out) {out.innerHTML = ''; $('#otime').innerHTML = `<span class="neg">${esc(e.message)}</span>`;} }
   finally { if ($('#orun')) optCount(); }
 }
 
 const applyLink = p => `<button class="olink" data-apply="${esc(encodeP(p))}">Apply</button>`;
+const tradesLink = p => `<button class="olink" data-trades="${esc(encodeP(p))}">Download trades</button>`;
+// Re-runs one optimizer row through the normal backtest (same window and costs) and downloads its tradesheet as Excel.
+async function optTrades(b, res) { const { v, tk } = STRAT, label = b.textContent; b.disabled = true; b.textContent = 'Preparing…';
+  try { const d = await runData(v.id, tk, S.from || '', S.to || '', S.cost || '0', b.dataset.trades, API, { ...VaultUI.costState(S), ...res.exec }); if (d.error) throw Error(d.error);
+    const p = decodeP(b.dataset.trades); await VaultUI.exportRunTrades({ ...STRAT, d, params: { ...bookDefaults(v.id), ...p }, fileTag: Object.keys(p).length ? Object.entries(p).map(([k, x]) => k + x).join('_') : 'default' }); b.textContent = label; }
+  catch (err) { b.textContent = 'Failed: ' + err.message; } finally { b.disabled = false; } }
 const setLine = (p, def) => Object.keys(def).map(k => `<span class="oset">${esc(sLabel(k))} <b class="${Math.abs((p[k] ?? def[k]) - def[k]) > 1e-9 ? 'chg' : ''}">${p[k] ?? def[k]}</b></span>`).join(' ');
 const statCells = m => CC_STATS.map(([k, , f, signed]) => `<td class="n ${k === 'max_dd' ? 'neg' : signed ? cls(m[k]) : ''}">${f(m[k])}</td>`).join('');
 const statHead = () => CC_STATS.map(([, t]) => `<th class="n">${t}</th>`).join('');
@@ -436,8 +443,8 @@ function showOpt(res) {
   const def = bookDefaults(v.id), rk = res.rank, rows = res.rows.map(r => rowOf(res, r)), top = (rk.top3 || []).map(c => ({ ...rows[c.row], c }));
   $('#otime').textContent = `${n0(res.combos)} settings on ${res.from} to ${res.to} in ${res.ms} ms (Rust, ${res.threads} threads). ${n0(rk.eligible)} had ${rk.min_trades}+ trades (${fx(rk.per_year, 1)} a year) and were ranked.`;
   const tbl = `<table class="tbl ocmp cc-tbl"><thead><tr><th></th><th>Settings</th>${statHead()}<th class="n">Score</th><th></th></tr></thead><tbody>
-    <tr class="book"><td>Default</td><td class="cset">${setLine({}, def)}</td>${statCells(bookRow(res).m)}<td class="n">–</td><td></td></tr>
-    ${top.map((t, k) => `<tr class="${k ? '' : 'pick'}"><td>#${k + 1}</td><td class="cset">${setLine(t.p, def)}</td>${statCells(t.m)}<td class="n">${fx(t.c.score, 1)}</td><td class="n">${sameP(t.p, def) ? '<span class="muted">default</span>' : applyLink(t.p)}</td></tr>`).join('')}</tbody></table>`;
+    <tr class="book"><td>Default</td><td class="cset">${setLine({}, def)}</td>${statCells(bookRow(res).m)}<td class="n">–</td><td class="n">${tradesLink({})}</td></tr>
+    ${top.map((t, k) => `<tr class="${k ? '' : 'pick'}"><td>#${k + 1}</td><td class="cset">${setLine(t.p, def)}</td>${statCells(t.m)}<td class="n">${fx(t.c.score, 1)}</td><td class="n">${sameP(t.p, def) ? '<span class="muted">default</span>' : applyLink(t.p) + ' · ' + tradesLink(t.p)}</td></tr>`).join('')}</tbody></table>`;
   const dims = res.dims, big = [...dims].sort((a, b) => b.values.length - a.values.length);
   OPT.hx ??= {}; const hx = OPT.hx[v.id] && dims.find(d => d.key === OPT.hx[v.id][0]) ? OPT.hx[v.id] : [big[0]?.key, big[1]?.key || '', 'sharpe'];
   const sel = (id, cur, opts) => `<select id="${id}">${opts.map(([k, t]) => `<option value="${k}" ${k === cur ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
@@ -448,7 +455,7 @@ function showOpt(res) {
   const an = { res, rows, pick: top[0], def };
   const drawHx = () => { OPT.hx[v.id] = [$('#hx-x').value, $('#hx-y').value, $('#hx-m').value]; $('#hx').innerHTML = heatGrid(an, ...OPT.hx[v.id]); };
   if (dims.length) { drawHx(); ['#hx-x', '#hx-y', '#hx-m'].forEach(s => $(s).onchange = drawHx); }
-  out.onclick = e => { const b_ = e.target.closest('[data-apply]'); if (b_) go(R.path, { ...S, p: b_.dataset.apply }); };
+  out.onclick = e => { const t_ = e.target.closest('[data-trades]'); if (t_) return optTrades(t_, res); const b_ = e.target.closest('[data-apply]'); if (b_) go(R.path, { ...S, p: b_.dataset.apply }); };
   if ($('#grid-xlsx')) $('#grid-xlsx').onclick=async()=>{const b=$('#grid-xlsx');b.disabled=true;try{await exportFullGrid(res,v,STRAT.tk);}catch(err){b.textContent='Export failed: '+err.message;}finally{b.disabled=false;}};
   if ($('#oxlsx')) $('#oxlsx').onclick = async () => { const b = $('#oxlsx'); b.disabled = true; b.textContent = 'Building Excel…';
     const tk=STRAT.tk,win={from:S.from,to:S.to},context={api:API,cost:S.cost,slippage:S.slippage||'0',rollover:S.rollover||'0',pub:PUB,us:isUS(),first:tkSpan(tk).first,selectionLabel:'Manual grid window'};
