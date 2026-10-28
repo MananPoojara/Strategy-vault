@@ -2,6 +2,22 @@ import { describe, expect, it } from 'vitest';
 import { instrumentControls, instrumentTickers } from '../src/services/instrument-controls';
 
 describe('compatible instrument controls', () => {
+  it('offers Kora BuyShort only the Nifty 50 and Nifty Bank spot indices', () => {
+    const policy = { allowed_types: ['index'] };
+    const idx = [{ ticker: 'NIFTY 50' }, { ticker: 'NIFTYBANK' }, { ticker: 'NIFTYMIDCAP100' }], fut = [{ ticker: 'NIFTY FUT' }];
+    expect(instrumentTickers(policy, idx, [], 'ytkr_buyshort_open_or_close', 'yt_kr', fut).map(t => t.ticker)).toEqual(['NIFTY 50', 'NIFTYBANK']);
+    const controls = instrumentControls(policy, 'ytkr_buyshort_open_or_close', 'yt_kr');
+    expect([controls.index, controls.futures, controls.basket]).toEqual([true, false, false]);
+    expect(controls.note).toContain('spot indices');
+  });
+  it('offers only the futures series to a futures method, never the cash index', () => {
+    const controls = instrumentControls({ allowed_types: ['futures'] });
+    expect([controls.futures, controls.index, controls.stock, controls.basket, controls.etf]).toEqual([true, false, false, false, false]);
+    expect(controls.note).toContain('near-month index futures');
+    const idx = [{ ticker: 'NIFTY 50' }], fut = [{ ticker: 'NIFTY FUT' }, { ticker: 'BANKNIFTY FUT' }];
+    expect(instrumentTickers({ allowed_types: ['futures'] }, idx, [], undefined, undefined, fut)).toEqual(fut);
+    expect(instrumentTickers({ allowed_types: ['index', 'etf'] }, idx, [], undefined, undefined, fut)).toEqual(idx);
+  });
   it('explains and disables stock baskets for an index method', () => {
     const controls = instrumentControls({ allowed_types: ['index'] });
     expect(controls.basket).toBe(false);

@@ -242,9 +242,11 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     if let Some((mut t, ..)) = cur {
         t.exit_i = to;
         t.exit_px = x.c[to];
-        t.reason = "open".into();
+        // A position still held on the last bar of the selected period closes at that bar's close (team convention:
+        // the AFL tradesheets end the last trade on the period's final bar). Entered on that bar: nothing to close.
+        t.open = t.legs[0].i == to;
+        t.reason = if t.open { "open".into() } else { "End of period".into() };
         t.signal_i = to;
-        t.open = true;
         trades.push(t);
     }
     Some(trades)
@@ -409,8 +411,8 @@ mod tests {
         assert_eq!((t[0].exit_i, t[0].exit_px), (4, 89.0));
         // Hard SL only for the first N bars: a later breach is ignored
         let t = run(ID, &x, 0, r.len() - 1, &ps(&[("hsl_on", 1.0), ("hsl_pct", 11.5), ("upclose_n", 10.0)])).unwrap();
-        // stop 88.5: bar 3 low 89 stays above it; bar 4 low 88 is past the 1-bar window
-        assert!(t[0].open);
+        // stop 88.5: bar 3 low 89 stays above it; bar 4 low 88 is past the 1-bar window, so the trade runs to the end
+        assert_eq!((t[0].exit_i, t[0].exit_px, t[0].open, t[0].reason.as_str()), (5, 88.0, false, "End of period"));
     }
 
     #[test]

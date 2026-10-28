@@ -64,6 +64,7 @@ services:
     command: [/data/idx_data.csv, '8090', /data/india_vix, /data/extra_data/india]
     environment:
       VAULT_BASKET_DATA_DIR: /basket-data
+      VAULT_FUTURES_CSV: /data/futures_daily.csv
     volumes:
       - '${VAULT_RUNTIME_ROOT}/data:/data:ro'
       - '${VAULT_BASKET_DATA_ROOT:-/home/server/.cache/strategy-vault/market-data}:/basket-data:ro'

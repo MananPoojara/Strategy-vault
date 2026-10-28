@@ -18,6 +18,10 @@ for source, target in [
     if not source.exists(): raise SystemExit(f'Missing required data: {source}')
     if source.is_dir(): shutil.copytree(source,target,dirs_exist_ok=True)
     else: shutil.copy2(source,target)
+# Optional: NSE near-month index futures for the Kora Reddy strategies (built from the NSE F&O daily files by
+# jay-local/Data/futures/build_bhavcopy_daily.py); the engine runs without it and holds those strategies.
+if (root/'futures_daily.csv').exists():
+    shutil.copy2(root/'futures_daily.csv',data/'futures_daily.csv')
 for item in [data, *data.rglob('*')]: item.chmod(0o755 if item.is_dir() else 0o644)
 frontend_data=root/'Context/guru/frontend/data'
 if frontend_data.is_dir():

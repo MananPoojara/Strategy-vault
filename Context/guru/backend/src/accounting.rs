@@ -6,7 +6,8 @@ use std::collections::BTreeMap;
 pub struct Costs { pub fees_bps:f64,pub slippage_bps:f64,pub rollover_bps:f64 }
 impl Costs {
     pub fn parse(q:&BTreeMap<String,String>)->Result<Self,String>{
-        if q.contains_key("capital") {return Err("Capital sizing is not supported by this percentage-based report".into());}
+        // Only the YT (AmiBroker-port) catalogue has a whole-unit money account; see main::yt_capital.
+        if q.contains_key("capital") && q.get("_guru").map(String::as_str)!=Some("yt") {return Err("Capital sizing is not supported by this percentage-based report".into());}
         let value=|key:&str|->Result<f64,String>{
             match q.get(key) {
                 None=>Ok(0.),
@@ -34,11 +35,31 @@ pub struct TradeLedger {
     symbol:String,side:&'static str,open:bool,
     pub gross_pnl:f64,pub fees:f64,pub slippage:f64,pub net_pnl:f64,
     pub gross_ret:f64,pub net_ret:f64,pub fee_ret:f64,pub slippage_ret:f64,pub pts:f64,pub days_held:i64,
-    pub observed_mae:Option<f64>,pub observed_mfe:Option<f64>,pub excursion_bars:usize,allocation:f64,entry_only_open:bool
+    pub observed_mae:Option<f64>,pub observed_mfe:Option<f64>,pub excursion_bars:usize,allocation:f64,entry_only_open:bool,amibroker_excursions:bool
 }
 impl TradeLedger {
     pub fn new(ctx:&Ctx,t:&Trade,allocation:f64,costs:Costs)->Self{
         Self::with_open_cost_basis(ctx,t,allocation,costs,false)
+    }
+    /// AmiBroker trade-list MAE/MFE for books ported from AmiBroker AFLs: the high/low of every bar from the
+    /// entry bar up to the bar before the exit (the entry bar's full range counts even for a close fill, as
+    /// AmiBroker does), plus the exit fill itself on the exit bar.
+    pub fn amibroker(ctx:&Ctx,t:&Trade,allocation:f64,costs:Costs)->Self{
+        let mut s=Self::new(ctx,t,allocation,costs);
+        let (mut mae,mut mfe,mut bars)=(0f64,0f64,0);
+        for k in t.legs[0].i..t.exit_i {
+            let bounds=[ctx.l[k],ctx.h[k]].map(|px|{
+                let mark=t.mark(k,px);
+                t.legs.iter().filter(|l|l.i<=k).map(|l|l.w*t.dir*(mark/l.px-1.)).sum::<f64>()*allocation
+            });
+            if !bounds.iter().all(|n|n.is_finite()){continue;}
+            bars+=1;
+            mae=mae.min(bounds[0]).min(bounds[1]);mfe=mfe.max(bounds[0]).max(bounds[1]);
+        }
+        let exit=s.gross_ret*allocation;
+        if exit.is_finite() {mae=mae.min(exit);mfe=mfe.max(exit);}
+        s.observed_mae=Some(mae);s.observed_mfe=Some(mfe);s.excursion_bars=bars;s.amibroker_excursions=true;
+        s
     }
     pub fn source_account(ctx:&Ctx,t:&Trade,allocation:f64,costs:Costs)->Self{
         Self::with_open_cost_basis(ctx,t,allocation,costs,true)
@@ -63,12 +84,14 @@ impl TradeLedger {
             observed_mfe=Some(observed_mfe.unwrap_or(0.).max(bounds[0]).max(bounds[1]));
         }
         Self{symbol:ctx.r[t.legs[0].i].ticker.clone(),side:if t.dir>0.{"Long"}else{"Short"},open:t.open,gross_pnl:allocation*gross_ret,fees:allocation*fee_ret,slippage:allocation*slippage_ret,net_pnl:allocation*net_ret,
-            gross_ret,net_ret,fee_ret,slippage_ret,pts:t.dir*(t.exit_px-t.avg_px()),days_held:day_number(&ctx.r[t.exit_i].date)-day_number(&ctx.r[t.legs[0].i].date),observed_mae,observed_mfe,excursion_bars,allocation,entry_only_open}
+            gross_ret,net_ret,fee_ret,slippage_ret,pts:t.dir*(t.exit_px-t.avg_px()),days_held:day_number(&ctx.r[t.exit_i].date)-day_number(&ctx.r[t.legs[0].i].date),observed_mae,observed_mfe,excursion_bars,allocation,entry_only_open,amibroker_excursions:false}
     }
     pub fn json(&self)->String{
         let pct=|v:Option<f64>|v.map_or("null".into(),|n|num(n/self.allocation));
-        format!("{{\"symbol\":\"{}\",\"signal_side\":\"{}\",\"pts\":{},\"days_held\":{},\"gross_ret\":{},\"net_ret\":{},\"fee_ret\":{},\"slippage_ret\":{},\"gross_pnl\":null,\"fees\":null,\"slippage\":null,\"taxes\":null,\"net_pnl\":null,\"money_status\":\"No position quantities or monetary sizing supplied\",\"return_basis\":\"Existing normalized allocation and actual filled leg weights; not contract quantities\",\"pts_basis\":\"Direction-adjusted effective exit price minus weighted average entry price; not monetary profit\",\"cost_status\":\"{}\",\"mae\":null,\"mfe\":null,\"mae_ret_observed\":{},\"mfe_ret_observed\":{},\"excursion_bars\":{},\"excursion_status\":\"{}\",\"excursion_basis\":\"Gross allocation returns on event-free full held OHLC bars only, preserving banked scale-out fills. Execution-day ordering is unknown; exact full-trade MAE/MFE remains unavailable.\"}}",
-            esc(&self.symbol),self.side,num(self.pts),self.days_held,num(self.gross_ret),num(self.net_ret),num(self.fee_ret),num(self.slippage_ret),if self.open&&self.entry_only_open{"actual_entry_cost_only_open_mark"}else if self.open{"open_liquidation_estimate"}else{"modeled_round_trip_cost"},pct(self.observed_mae),pct(self.observed_mfe),self.excursion_bars,if self.excursion_bars>0{"partial_daily_ohlc_bounds"}else{"unavailable"})
+        format!("{{\"symbol\":\"{}\",\"signal_side\":\"{}\",\"pts\":{},\"days_held\":{},\"gross_ret\":{},\"net_ret\":{},\"fee_ret\":{},\"slippage_ret\":{},\"gross_pnl\":null,\"fees\":null,\"slippage\":null,\"taxes\":null,\"net_pnl\":null,\"money_status\":\"No position quantities or monetary sizing supplied\",\"return_basis\":\"Existing normalized allocation and actual filled leg weights; not contract quantities\",\"pts_basis\":\"Direction-adjusted effective exit price minus weighted average entry price; not monetary profit\",\"cost_status\":\"{}\",\"mae\":null,\"mfe\":null,\"mae_ret_observed\":{},\"mfe_ret_observed\":{},\"excursion_bars\":{},\"excursion_status\":\"{}\",\"excursion_basis\":\"{}\"}}",
+            esc(&self.symbol),self.side,num(self.pts),self.days_held,num(self.gross_ret),num(self.net_ret),num(self.fee_ret),num(self.slippage_ret),if self.open&&self.entry_only_open{"actual_entry_cost_only_open_mark"}else if self.open{"open_liquidation_estimate"}else{"modeled_round_trip_cost"},pct(self.observed_mae),pct(self.observed_mfe),self.excursion_bars,
+            if self.amibroker_excursions{"amibroker_daily_ohlc"}else if self.excursion_bars>0{"partial_daily_ohlc_bounds"}else{"unavailable"},
+            if self.amibroker_excursions{"AmiBroker trade-list convention on gross allocation returns: high/low of the entry bar through the bar before the exit, plus the exit fill. The entry bar's full range is counted even when the fill is at its close."}else{"Gross allocation returns on event-free full held OHLC bars only, preserving banked scale-out fills. Execution-day ordering is unknown; exact full-trade MAE/MFE remains unavailable."})
     }
 }
 #[cfg(test)]
@@ -114,6 +137,20 @@ mod tests {
         near(a.observed_mae.unwrap(),-1687.5);near(a.observed_mfe.unwrap(),3062.5);assert_eq!(a.excursion_bars,1);
         let s=Trade{dir:-1.,..t};let b=TradeLedger::new(&ctx,&s,10000.,inputs(&[]));near(b.observed_mae.unwrap(),-3062.5);near(b.observed_mfe.unwrap(),1687.5);
         assert!(a.json().contains("\"mae\":null"));assert!(a.json().contains("partial_daily_ohlc_bounds"));
+    }
+    #[test]
+    fn amibroker_excursions_count_entry_bar_range_and_exit_fill(){
+        // Entry at the close of bar 0 (100; bar range 70-120), held bars 1-2, exit at 95 on bar 3 (range 80-120).
+        let r=rows();let ctx=Ctx::new(&r,&r,&[]);
+        let t=Trade{legs:vec![Leg{i:0,px:100.,w:1.}],exit_px:95.,..trade()};
+        let a=TradeLedger::amibroker(&ctx,&t,1.,inputs(&[]));
+        near(a.observed_mae.unwrap(),-0.4);near(a.observed_mfe.unwrap(),0.2);assert_eq!(a.excursion_bars,3);
+        assert!(a.json().contains("amibroker_daily_ohlc"));
+        // The exit bar's own high/low is not used, only the exit fill.
+        let r2:Vec<Row>=[(100.,100.,100.),(100.,100.,100.),(95.,200.,10.)].iter().enumerate().map(|(i,&(c,h,l))|Row{ticker:"TEST".into(),date:format!("2020-01-0{}",i+1),open:c,high:h,low:l,close:c,volume:None}).collect();
+        let x=Ctx::new(&r2,&r2,&[]);let u=Trade{legs:vec![Leg{i:0,px:100.,w:1.}],exit_i:2,signal_i:2,exit_px:95.,..trade()};
+        let b=TradeLedger::amibroker(&x,&u,1.,inputs(&[]));near(b.observed_mae.unwrap(),-0.05);near(b.observed_mfe.unwrap(),0.);
+        let s=TradeLedger::amibroker(&x,&Trade{dir:-1.,..u},1.,inputs(&[]));near(s.observed_mae.unwrap(),0.);near(s.observed_mfe.unwrap(),0.05);
     }
     #[test]
     fn scale_out_bank_is_retained_and_same_day_excursions_remain_unavailable(){

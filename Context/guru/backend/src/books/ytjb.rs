@@ -326,9 +326,11 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     if let Some(Open { mut t, .. }) = cur {
         t.exit_i = to;
         t.exit_px = x.c[to];
-        t.reason = "open".into();
+        // A position still held on the last bar of the selected period closes at that bar's close (team convention:
+        // the AFL tradesheets end the last trade on the period's final bar). Entered on that bar: nothing to close.
+        t.open = t.legs[0].i == to;
+        t.reason = if t.open { "open".into() } else { "End of period".into() };
         t.signal_i = to;
-        t.open = true;
         trades.push(t);
     }
     Some(trades)
@@ -398,7 +400,7 @@ mod tests {
         // A1, A2 hold too; with the December exit off the trade stays open to the last bar
         assert_eq!(go(&r, &[("cond_d", 0.0), ("cond_a1", 1.0)]).len(), 1);
         assert_eq!(go(&r, &[("cond_d", 0.0), ("cond_a2", 1.0)]).len(), 1);
-        assert_eq!(go(&r, &[("dec_exit", 0.0)])[0].4, "open");
+        assert_eq!(go(&r, &[("dec_exit", 0.0)])[0].4, "End of period");
         // all conditions off: no entry
         assert!(go(&r, &[("cond_d", 0.0)]).is_empty());
     }

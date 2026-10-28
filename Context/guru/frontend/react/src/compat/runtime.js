@@ -3,6 +3,7 @@ import {vaultStore} from '../state/store';
 import {resolveRoute} from '../app/routes';
 import {customPages} from '../app/custom-pages';
 import {LIB} from './catalogue.js';
+import {buildFormat2,format2SheetName,writeFormat2Xlsx} from '../services/yt-format2';
 import {loadOwnerRows} from '../services/summary-loader';
 import {bookContext} from '../services/book-context';
 import {returnDisplay} from '../services/return-display';
@@ -22,7 +23,7 @@ import {libraryScope,inLibraryScope} from '../services/library-scope';
 import {libraryMarket,libraryMarketVariants} from '../services/library-market';
 import {orderAuthors} from '../services/author-order';
 import {chooseBacktestContext,referenceBacktestContexts} from '../services/library-backtest-context';
-import {instrumentControls,instrumentTickers} from '../services/instrument-controls';
+import {instrumentControls,instrumentTickers,krSpotMethod} from '../services/instrument-controls';
 import {catalogueMethodLabel,kestnerSourceAssessment} from '../services/kestner-presentation';
 import {makeRuleVisualModel} from '../services/rule-evidence';
 import {buildStrategyIndicators} from '../services/strategy-indicators';
@@ -111,9 +112,11 @@ window.VaultUI=(()=>{
   <button type="button" class="sa" data-action="pdf" aria-label="Download page PDF" title="Download this page as PDF">${ICON.download}</button>
   <button type="button" class="sa${saved?' on':''}" data-action="save" aria-label="Save" aria-pressed="${saved}" title="${saved?'Remove from Saved':'Save to your Saved list'}">${saved?ICON.saved:ICON.save}</button><span class="sa-settings" data-react-slot="strategy-settings"></span>
  </div><span role="status" id="page-action-message"></span></div>`;}
- function detailHTML(d){return `<details class="box detailed-stats" id="detailed-stats"><summary>Detailed statistics <span>Additional gross / net measures</span></summary><div class="detail-tools"><button class="dbtn sm" data-report-export="details">Download Excel</button></div><table class="tbl detailed-table"><thead><tr><th>Statistic</th><th class="n">Net</th><th class="n">Gross</th></tr></thead><tbody>${VaultReport.detailRows(d).map(([k,n,g,t])=>`<tr><td>${escText(k)}</td><td class="n">${label(n,t)}</td><td class="n">${label(g,t)}</td></tr>`).join('')}</tbody></table><p class="rnote">${d.source_account?'Gross retains the same accepted quantities and fills, before paid costs; no re-selection or resizing.':d.kind==='basket'?'Gross is zero-cost accounting on the same accepted portfolio fills.':'Gross is the independently compounded zero-cost comparison.'} Net includes the selected fee and slippage rates. Closed-trade measures exclude open positions. Observed excursions omit entry/add-on/exit event bars where intraday order is unknown; they are partial bounds, not exact MAE/MFE. Time in market counts distinct observed daily bars with a held position, including entry/exit bars; it does not measure exact intraday duration. Undefined ratios stay unavailable. ${d.unit_exposure_report?escText(UNIT_VISUAL_BASIS):''}</p></details>`;}
+ const AMIBROKER_EXCURSION_NOTE='MAE/MFE follow the AmiBroker trade list: the high/low of the entry bar through the bar before the exit, plus the exit fill (the entry bar counts in full even for a close fill).';
+ function amibrokerExcursions(d){return (d.trades||[]).some(t=>t?.accounting?.excursion_status==='amibroker_daily_ohlc');}
+ function detailHTML(d){return `<details class="box detailed-stats" id="detailed-stats"><summary>Detailed statistics <span>Additional gross / net measures</span></summary><div class="detail-tools"><button class="dbtn sm" data-report-export="details">Download Excel</button></div><table class="tbl detailed-table"><thead><tr><th>Statistic</th><th class="n">Net</th><th class="n">Gross</th></tr></thead><tbody>${VaultReport.detailRows(d).map(([k,n,g,t])=>`<tr><td>${escText(k)}</td><td class="n">${label(n,t)}</td><td class="n">${label(g,t)}</td></tr>`).join('')}</tbody></table><p class="rnote">${d.source_account?'Gross retains the same accepted quantities and fills, before paid costs; no re-selection or resizing.':d.kind==='basket'?'Gross is zero-cost accounting on the same accepted portfolio fills.':'Gross is the independently compounded zero-cost comparison.'} Net includes the selected fee and slippage rates. Closed-trade measures exclude open positions. ${amibrokerExcursions(d)?AMIBROKER_EXCURSION_NOTE:'Observed excursions omit entry/add-on/exit event bars where intraday order is unknown; they are partial bounds, not exact MAE/MFE.'} Time in market counts distinct observed daily bars with a held position, including entry/exit bars; it does not measure exact intraday duration. Undefined ratios stay unavailable. ${d.unit_exposure_report?escText(UNIT_VISUAL_BASIS):''}</p></details>`;}
  function benchmarkHTML(d,tk,px){currentBenchmark={d,tk,px};const b=d.unit_exposure_report?{...d.benchmark_stats,from:d.dates[0],to:d.dates.at(-1)}:VaultReport.benchmark(px,d.dates[0],d.dates.at(-1)),keys=[[d.source_account?sourceAccountCopy(d.source_account).accountReturn:d.kind==='basket'?'Portfolio equity return':'Compounded model return','total_return','percent'],['Annualised return','cagr','percent'],['Max drawdown','max_dd','percent'],['Sharpe (rf = 0)','sharpe','ratio'],['Sortino','sortino','ratio'],['Return per drawdown','mar','ratio'],['Annualised volatility','vol','percent'],['Exposure','exposure','percent']];return `<section class="box" data-benchmark-comparison data-benchmark-symbol="${escText(tk)}"><div class="box-h">Strategy vs ${escText(LABEL[tk]||tk)} <button class="dbtn sm" data-report-export="benchmark">Download Excel</button></div><p class="rnote">Computed selected strategy settings against actual ${escText(LABEL[tk]||tk)} buy &amp; hold, with no benchmark execution costs. ${b?`${b.from} to ${b.to}.`:'Benchmark price coverage is missing.'} Book-reported figures remain separate reference claims.</p><table class="tbl"><thead><tr><th>Statistic</th><th class="n">Selected strategy</th><th class="n">${escText(LABEL[tk]||tk)} buy &amp; hold</th></tr></thead><tbody>${keys.map(([name,key,type])=>`<tr><td>${name}</td><td class="n">${label(d.stats[key],type)}</td><td class="n">${label(b?.[key],type)}</td></tr>`).join('')}</tbody></table></section>`;}
- function tradeHTML(d,tk){const rows=tradeRowsFor(d,tk);return `<section class="box" data-tradesheet><div class="box-h">Tradesheet <span class="legend"><small>${rows.length} positions · newest first</small><button class="dbtn sm" id="trades-xlsx">Download Excel</button><button class="dbtn sm" id="csv">Download CSV</button>${d.source_account?'<button class="dbtn sm" data-report-export="account-audit">Account audit Excel</button>':d.unit_exposure_report?'<button class="dbtn sm" data-report-export="unit-audit">Unit audit Excel</button><button class="dbtn sm" data-report-export="unit-daily">Daily audit Excel</button>':''}</span></div><p class="rnote">${d.source_account?sourceAccountCopy(d.source_account).tradeNote:d.unit_exposure_report?'Audited canonical-decimal return fractions; terminal-open costs include an estimated second liquidation side. Gross compounds independently at zero cost; contributions use net pretrade allocation.':'Returns and slippage are percentages of the strategy’s normalized allocation; prices/points use the actual symbol.'} ${d.source_account?'Monetary P&amp;L and Taxes are unavailable: the model has no funded capital, actual share lots or statutory tax schedule.':'Monetary Gross/Net P&amp;L and Taxes are unavailable because no quantity, monetary sizing or tax schedule was supplied.'} MAE/MFE show gross observed daily-bar bounds when available; event bars are excluded. Open exits are marked Open.</p><div class="tlog"><table class="tbl tl" id="tradesheet"><thead><tr>${tradeHeadersFor(d).map(k=>`<th>${escText(k)}</th>`).join('')}</tr></thead><tbody>${rows.map((row,tradeIndex)=>`<tr>${row.map((v,i)=>`<td class="${[8,11,13,14,15].includes(i)?'n '+(v<0?'neg':'pos'):''}">${v===null?'—':[8,11,13,14,15].includes(i)?label(v,'percent'):typeof v==='number'?v.toFixed(i===9?0:2):escText(v)}${i===16?tradeExitCheckMarkup(d.trades[tradeIndex]):''}</td>`).join('')}</tr>`).reverse().join('')}</tbody></table></div></section>`;}
+ function tradeHTML(d,tk){const rows=tradeRowsFor(d,tk);return `<section class="box" data-tradesheet><div class="box-h">Tradesheet <span class="legend"><small>${rows.length} positions · newest first</small><button class="dbtn sm" id="trades-xlsx">Download Excel</button><button class="dbtn sm" id="csv">Download CSV</button>${d.source_account?'<button class="dbtn sm" data-report-export="account-audit">Account audit Excel</button>':d.unit_exposure_report?'<button class="dbtn sm" data-report-export="unit-audit">Unit audit Excel</button><button class="dbtn sm" data-report-export="unit-daily">Daily audit Excel</button>':''}</span></div><p class="rnote">${d.source_account?sourceAccountCopy(d.source_account).tradeNote:d.unit_exposure_report?'Audited canonical-decimal return fractions; terminal-open costs include an estimated second liquidation side. Gross compounds independently at zero cost; contributions use net pretrade allocation.':'Returns and slippage are percentages of the strategy’s normalized allocation; prices/points use the actual symbol.'} ${d.source_account?'Monetary P&amp;L and Taxes are unavailable: the model has no funded capital, actual share lots or statutory tax schedule.':'Monetary Gross/Net P&amp;L and Taxes are unavailable because no quantity, monetary sizing or tax schedule was supplied.'} ${amibrokerExcursions(d)?AMIBROKER_EXCURSION_NOTE:'MAE/MFE show gross observed daily-bar bounds when available; event bars are excluded.'} Open exits are marked Open.</p><div class="tlog"><table class="tbl tl" id="tradesheet"><thead><tr>${tradeHeadersFor(d).map(k=>`<th>${escText(k)}</th>`).join('')}</tr></thead><tbody>${rows.map((row,tradeIndex)=>`<tr>${row.map((v,i)=>`<td class="${[8,11,13,14,15].includes(i)?'n '+(v<0?'neg':'pos'):''}">${v===null?'—':[8,11,13,14,15].includes(i)?label(v,'percent'):typeof v==='number'?v.toFixed(i===9?0:2):escText(v)}${i===16?tradeExitCheckMarkup(d.trades[tradeIndex]):''}</td>`).join('')}</tr>`).reverse().join('')}</tbody></table></div></section>`;}
  function equityNavigator(ch,d){const box=document.getElementById('equity-navigator');if(!box)return;const a=box.querySelector('[data-range=start]'),b=box.querySelector('[data-range=end]'),text=box.querySelector('output'),n=d.dates.length;if(n<2){a.disabled=b.disabled=true;text.textContent=d.dates[0]||'No dated results';return;}a.max=b.max=n-1;a.value=0;b.value=n-1;const show=()=>{let lo=+a.value,hi=+b.value;if(lo>=hi){if(document.activeElement===a)lo=Math.max(0,hi-1);else hi=Math.min(n-1,lo+1);}a.value=lo;b.value=hi;ch.timeScale().setVisibleLogicalRange({from:lo,to:hi});text.textContent=`${d.dates[lo]} — ${d.dates[hi]}`;};a.oninput=b.oninput=show;box.querySelectorAll('[data-equity-year]').forEach(btn=>btn.onclick=()=>{const y=btn.dataset.equityYear;if(y==='all'){a.value=0;b.value=n-1;}else{const indices=d.dates.map((x,i)=>x.startsWith(y)?i:-1).filter(i=>i>=0);a.value=indices[0];b.value=indices.at(-1);}show();});ch.timeScale().subscribeVisibleLogicalRangeChange(range=>{if(!range)return;const lo=Math.max(0,Math.min(n-1,Math.ceil(range.from))),hi=Math.max(lo,Math.min(n-1,Math.floor(range.to)));a.value=lo;b.value=hi;text.textContent=`${d.dates[lo]} — ${d.dates[hi]}`;});show();}
  const msg=text=>{const el=document.getElementById('page-action-message');if(el)el.textContent=text;};
  const immutable=value=>{if(Array.isArray(value))return Object.freeze(value.map(immutable));if(value&&typeof value==='object')return Object.freeze(Object.fromEntries(Object.entries(value).map(([key,v])=>[key,immutable(v)])));return value;};
@@ -257,7 +260,16 @@ window.VaultUI=(()=>{
  addEventListener('beforeprint',()=>{finishMetricAnimations();refreshHeat();});
  addEventListener('afterprint',refreshHeat);
  addEventListener('afterprint',()=>document.querySelectorAll('details[data-print-closed]').forEach(d=>{d.open=false;delete d.dataset.printClosed;}));
- return {costState,actions,toolbar,savedList,writeSaved,detailHTML,benchmarkHTML,tradeHTML,equityNavigator,init,iconize,pristineExport,ICON};
+ /** A styled multi-sheet workbook: sheets = [{name, rows, percent?, types?}]. */
+ async function workbook(name,sheets){
+  await (typeof loadXlsx==='function'?loadXlsx():loadScript('vendor/xlsx-js-style-1.2.0.min.js'));
+  if(!window.XLSX?.utils)throw Error('The Excel library did not load.');
+  const book=XLSX.utils.book_new();
+  for(const sheet of sheets)XLSX.utils.book_append_sheet(book,styledSheet(sheet.rows,sheet.percent||[],sheet.types||[]),sheet.name);
+  downloadBlob(new Blob([XLSX.write(book,{bookType:'xlsx',type:'array',cellStyles:true,compression:true})],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),`${filePart(name)}.xlsx`);
+ }
+ const tradeTable=(d,tk)=>[tradeHeadersFor(d),...tradeRowsFor(d,tk)];
+ return {costState,actions,toolbar,savedList,writeSaved,detailHTML,benchmarkHTML,tradeHTML,equityNavigator,init,iconize,pristineExport,workbook,tradeTable,ICON};
 })();
 
 // Optimization research on the strategy page: parameter ranges, Rust grid run, Claude's conclusion (top 3 by the
@@ -270,7 +282,11 @@ const decodeP = s => Object.fromEntries((s || '').split(',').filter(Boolean).map
 const encodeP = p => Object.entries(p).map(([k, v]) => `${k}:${v}`).join(',');
 const optKey = (id, tk) => [id, tk, S.from, S.to, S.cost, S.slippage, S.rollover, S.region, S.basket].join('|');
 const nVals = g => g.step > 0 && g.max >= g.min ? Math.floor((g.max - g.min) / g.step + 1e-9) + 1 : 0;
-const pLabel = (id, k) => (OPT.schemaSync?.[id] || []).find(x => x.key === k)?.label || k;
+const pLabel = (id, k) => labelOf((OPT.schemaSync?.[id] || []).find(x => x.key === k)) || k;
+// A setting whose label is "Name::A|B|C" is a list: value 1 = A, 2 = B, ... (the engine's YT Holidays event list).
+const labelOf = p => String(p?.label ?? '').split('::')[0];
+const choicesOf = p => (String(p?.label ?? '').split('::')[1] || '').split('|').filter(Boolean);
+const choiceName = (p, v) => choicesOf(p)[Math.round(+v) - 1] ?? v;
 // compact column names for tables
 const SHORT = { trend: 'Trend SMA', rsi_n: 'RSI period', exit_rsi: 'Exit RSI', rsi_lt: 'Entry RSI <', rsi_gt: 'Entry RSI >', hold: 'Hold bars', ma: 'Short SMA', low_n: 'Lookback', limit: 'Limit %',
   fall: 'Falling days', first_lt: 'First RSI <', add_fall: 'Add after', down: 'Down days', add_pct: 'Add %', stretch: 'Stretch %', limit_min: 'Min limit %', profit: 'Profit %', hh_n: 'High lookback',
@@ -325,7 +341,7 @@ async function optimSection(v, tk, d, detailed = true) {
   const opt = detailed && ps.length ? (() => { const g = OPT.grids[v.id] || (OPT.grids[v.id] = isYt(v) ? ytGrid(ps) : OptimCore.defaultGrid(ps, OPT_LIMIT));
     return `<section class="box" id="optim"><div class="box-h">Optimization <small>Tick the settings to vary. Unticked settings stay at the default value. Runs on the period selected above.</small></div>
     <table class="ogrid"><thead><tr><th></th><th>Setting</th><th class="n">Default</th><th class="n">From</th><th class="n">To</th><th class="n">Step</th><th class="n">Values</th></tr></thead><tbody>
-    ${ps.map(p => { const x = g[p.key]; return `<tr data-k="${p.key}" class="${x.on ? '' : 'offrow'}"><td><input type="checkbox" data-f="on" ${x.on ? 'checked' : ''} aria-label="Vary ${esc(p.label)}"></td><td>${esc(p.label)}</td><td class="n">${p.def}</td>
+    ${ps.map(p => { const x = g[p.key]; return `<tr data-k="${p.key}" class="${x.on ? '' : 'offrow'}"><td><input type="checkbox" data-f="on" ${x.on ? 'checked' : ''} aria-label="Vary ${esc(labelOf(p))}"></td><td>${esc(labelOf(p))}${choicesOf(p).length ? ` <small class="muted">(1–${choicesOf(p).length}; default ${esc(choiceName(p, p.def))})</small>` : ''}</td><td class="n">${p.def}</td>
       ${['min', 'max', 'step'].map(f => `<td class="n"><input type="number" data-f="${f}" value="${x[f]}" step="any"></td>`).join('')}<td class="n muted" data-cnt>${nVals(x)}</td></tr>`; }).join('')}</tbody></table>
     <form class="obar" id="oform"><span class="grow"></span><span class="ocount" id="ocount"></span><button class="dbtn primary sm" type="submit" id="orun">Run optimization</button></form>
     <p class="ostat" id="otime"></p><div id="opt-out"></div></section>`; })() : '';
@@ -364,7 +380,7 @@ function optimInit() {
 
 const optQuery = (v, tk, w, g, slim) => { const q = new URLSearchParams({ id: v.id, ticker: tk, from: w.from || '', to: w.to || '', cost: S.cost || '0',slippage:S.slippage||'0',rollover:S.rollover||'0', ...(slim ? { slim: '1' } : {}) });
   Object.entries(g).forEach(([k, x]) => { if (x.on) q.set('g.' + k, `${x.min}:${x.max}:${x.step}`); }); return q; };
-async function fetchOpt(q, api=API) { const r = await fetch(enginePath(q.get('id'),'optimize',api)+'?'+q), b = await r.text(); if (!r.ok) { let message = b; try { message = JSON.parse(b).error || b; } catch {} throw new Error(message); } return JSON.parse(b); }
+async function fetchOpt(q, api=API) { if (ownerOf(q.get('id')) === 'yt' && !q.has('capital')) q.set('capital', ytCapital(S)); const r = await fetch(enginePath(q.get('id'),'optimize',api)+'?'+q), b = await r.text(); if (!r.ok) { let message = b; try { message = JSON.parse(b).error || b; } catch {} throw new Error(message); } return JSON.parse(b); }
 
 async function runOpt() {
   const pending = ytPeriod(); if (Object.keys(pending).length) { OPT.runAfterPeriod = true; return go(R.path, { ...S, ...pending }); }
@@ -406,7 +422,9 @@ function showOpt(res) {
   if ($('#grid-xlsx')) $('#grid-xlsx').onclick=async()=>{const b=$('#grid-xlsx');b.disabled=true;try{await exportFullGrid(res,v,STRAT.tk);}catch(err){b.textContent='Export failed: '+err.message;}finally{b.disabled=false;}};
   if ($('#oxlsx')) $('#oxlsx').onclick = async () => { const b = $('#oxlsx'); b.disabled = true; b.textContent = 'Building Excel…';
     const tk=STRAT.tk,win={from:S.from,to:S.to},context={api:API,cost:S.cost,slippage:S.slippage||'0',rollover:S.rollover||'0',pub:PUB,us:isUS(),first:tkSpan(tk).first,selectionLabel:'Manual grid window'};
-    try { await exportXlsx(await conclusionData(v, tk, res, win, context)); b.textContent = 'Conclusion workbook'; } catch (err) { b.textContent = 'Excel failed: ' + err.message; } finally { b.disabled = false; } };
+    try { const D = await conclusionData(v, tk, res, win, context);
+      Object.assign(D, await gridTrades(v, tk, res, win, context, (n, N) => { b.textContent = `Running settings ${n0(n)} of ${n0(N)}…`; }));
+      b.textContent = 'Building Excel…'; await exportXlsx(D); b.textContent = 'Conclusion workbook'; } catch (err) { b.textContent = 'Excel failed: ' + err.message; } finally { b.disabled = false; } };
   if ($('#gpt-grid-review')) $('#gpt-grid-review').onclick=async()=>{
     const b=$('#gpt-grid-review'),body=$('#gpt-body'),tk=STRAT.tk,key=optKey(v.id,tk),win={from:S.from,to:S.to},context={api:API,cost:S.cost,slippage:S.slippage||'0',rollover:S.rollover||'0',pub:PUB,us:isUS(),first:tkSpan(tk).first,selectionLabel:'Manual grid window'};
     OPT.gptGeneration=(OPT.gptGeneration||0)+1;b.disabled=true;b.textContent='Comparing the recorded grid…';
@@ -444,6 +462,24 @@ async function conclusionRun(v, tk) {
     $('#cc-body').innerHTML = conclusionHtml(data); conclusionWire(data); if(gptGeneration===(OPT.gptGeneration||0)){OPT.last = data;gptConclusionWire(data);}
     anim($('#cc-body'), { opacity: [0, 1], transform: ['translateY(6px)', 'translateY(0)'] }, { duration: .35 });
   } catch (e) { delete OPT.cc[key]; if (STRAT?.v.id === v.id && STRAT.tk === tk && optKey(v.id,tk)===viewKey && $('#cc-body')===el) {if($('#gpt-body'))$('#gpt-body').innerHTML=`<p class="muted">Parameter analysis unavailable: ${esc(e.message)}</p>`;$('#cc-body').innerHTML = `<div class="empty"><b>No conclusion for this rule on ${esc(LABEL[tk] || tk)}</b>${esc(e.message)}</div>`;} }
+}
+
+/** Every setting of a manual optimization grid, run on `win` for its trades and stats (for the Conclusion workbook).
+ * Capped at GRID_SHEETS_MAX settings so the workbook stays usable; the note says when the grid was larger. */
+const GRID_SHEETS_MAX = 250;
+async function gridTrades(v, tk, res, win, context, onStep) {
+  const { api, cost, slippage = '0', rollover = '0' } = context, ps = (OPT.schemaSync || {})[v.id] || [], def = bookDefaults(v.id);
+  const all = (res.rows || []).map(r => rowOf(res, r)), rows = all.slice(0, GRID_SHEETS_MAX), grid = new Array(rows.length);
+  const label = p => Object.keys(def).map(k => { const d = ps.find(x => x.key === k), val = p[k] ?? def[k]; return `${sLabel(k)} ${d && choicesOf(d).length ? choiceName(d, val) : val}`; }).join(' · ');
+  let next = 0, done = 0;
+  await Promise.all(Array.from({ length: Math.min(4, rows.length) }, async () => {
+    while (next < rows.length) {
+      const i = next++, r = rows[i], d = await runData(v.id, tk, win.from, win.to, cost, encodeP(r.p), api, { slippage, rollover });
+      if (d?.error) throw new Error(d.error);
+      grid[i] = { p: r.p, label: label(r.p), d, m: statsM(d.stats) }; onStep?.(++done, rows.length);
+    }
+  }));
+  return { grid, gridNote: all.length > rows.length ? `Only the first ${n0(rows.length)} of ${n0(all.length)} settings have a sheet (workbook size). ` : '' };
 }
 
 /** Default settings + top 3 of `res`: full runs on the viewed window `win`, and the same settings before / after the book. */
@@ -798,8 +834,35 @@ async function exportXlsx(D, analyst = false) {
     [null, ...runs.flatMap(() => [P, P])], [], [0, ...runs.flatMap(() => [capY, capD])]);
   X.book_append_sheet(wb, dd.done([8, ...Array(runs.length * 2).fill(14)]), 'Drawdown');
 
-  // Sheet order: Summary, Formulas, Method, MoM, Drawdown, Trades…, Daily
-  const order = ['Summary', 'Formulas', 'Method', 'MoM', 'Drawdown', ...runs.map((_, i) => tName(i)), 'Daily'];
+  // ---- Every optimization setting: an index with each setting's stats, then one sheet per setting (stats, then trades)
+  const grid = D.grid || [], gName = k => `Set ${k + 1}`;
+  if (grid.length) {
+    const ix = xSheet(); let g = 0;
+    ix.put(g, 0, `All ${n0(grid.length)} optimization settings`, XS.title); ix.height(g, 28); g++;
+    ix.put(g, 0, `${D.gridNote || ''}Each setting has its own sheet (Set 1, Set 2, …) with its stats and trades. Engine stats on ${grid[0].d.dates[0]} to ${grid[0].d.dates.at(-1)}; * = differs from the default settings.`, XS.muted); ix.merge(g, 0, 11); ix.height(g, 30); g += 2;
+    xTable(ix, g, 0, ['Sheet', 'Settings', ...CC_STATS.map(x => x[1])],
+      grid.map((x, k) => [gName(k), x.label + (sameP(x.p, D.def) ? ' (default)' : ''), ...CC_STATS.map(([q]) => x.m[q] ?? null)]),
+      [null, null, ...CC_STATS.map(([q]) => fmtOf(q))], [0, 0, ...CC_STATS.map(x => x[3])]);
+    X.book_append_sheet(wb, ix.done([9, 70, ...Array(CC_STATS.length).fill(13)], `A${g + 1}:${X.encode_col(1 + CC_STATS.length)}${g + 1 + grid.length}`, { ySplit: g + 1 }), 'All settings');
+    grid.forEach((x, k) => {
+      const t = xSheet(), closed = x.d.trades.filter(q => !q.open);
+      t.put(0, 0, `${gName(k)} · ${familyDisplayName(v)}${v.variant ? ' · ' + v.variant : ''}`, XS.title); t.height(0, 26);
+      t.put(1, 0, x.label, XS.sub); t.merge(1, 0, 10);
+      ['Stat', 'Value'].forEach((h, j) => t.put(3, j, h, j ? XS.th : XS.thL));
+      CC_STATS.forEach(([q, name, , signed], j) => { t.put(4 + j, 0, name, XS.key); t.put(4 + j, 1, x.m[q] ?? null, xCell(fmtOf(q), x.m[q], j % 2 === 1, signed)); });
+      const h = 5 + CC_STATS.length;
+      ['#', 'Entry', 'Exit', 'Return', 'Holding days', 'Win', 'Equity after', 'Pieces', 'Avg entry', 'Exit price', 'Exit reason'].forEach((c, j) => t.put(h, j, c, j ? XS.th : XS.thL)); t.height(h, 30);
+      closed.forEach((q, n) => { const rr = h + 1 + n, e = rr + 1, z = n % 2 === 1;
+        t.put(rr, 0, n + 1, xCell('0', 1, z)); t.put(rr, 1, xDate(q.entry), xCell(DF, 1, z)); t.put(rr, 2, xDate(q.exit), xCell(DF, 1, z)); t.put(rr, 3, q.ret, xCell(P, q.ret, z, 1));
+        t.put(rr, 4, { f: `MAX(1,C${e}-B${e})` }, xCell('0', 1, z)); t.put(rr, 5, { f: `IF(D${e}>0,1,0)` }, xCell('0', 1, z)); t.put(rr, 6, { f: n ? `G${e - 1}*(1+D${e})` : `1+D${e}` }, xCell('0.0000', 1, z));
+        t.put(rr, 7, q.legs.length, xCell('0', 1, z)); t.put(rr, 8, q.avg_px, xCell('#,##0.00', 1, z)); t.put(rr, 9, q.exit_px, xCell('#,##0.00', 1, z)); t.put(rr, 10, q.reason, xCell(null, 's', z)); });
+      if (!closed.length) t.put(h + 1, 0, 'No closed trades with these settings.', XS.muted);
+      X.book_append_sheet(wb, t.done([18, 12, 12, 10, 12, 6, 12, 8, 12, 12, 40], `A${h + 1}:K${h + 1 + closed.length}`, { ySplit: h + 1 }), gName(k));
+    });
+  }
+
+  // Sheet order: Summary, Formulas, Method, MoM, Drawdown, Trades…, All settings, Set 1…, Daily
+  const order = ['Summary', 'Formulas', 'Method', 'MoM', 'Drawdown', ...runs.map((_, i) => tName(i)), ...(grid.length ? ['All settings', ...grid.map((_, k) => gName(k))] : []), 'Daily'];
   wb.SheetNames = order.filter(n => wb.SheetNames.includes(n));
   XLSX.writeFile(wb, `${analyst?'gpt-':''}conclusion-${v.id}-${tk.replace(/\s/g, '')}-${dates[0]}_${dates[nd - 1]}.xlsx`);
 }
@@ -816,8 +879,9 @@ const bookCtx = id => {
  TABS.working.note=PUB?`Compare Sharpe since publication (${PUB}) with the period before it. Missing history remains unavailable; this is a research comparison, not a certified holdout.`:'The publication year is not established for this book.';
 };
 const srcOf = v => v.api === 'yt' ? 'Team-supplied AFL rules' : v.guru === 'ross' ? (sourceEvidence(v)?.pages || 'Source reference') : v.session ? `Session ${v.session}` : 'Part III';
-let TICK_IN = [], TICK_US = null;
-const IN_INDICES = ['NIFTY 50', 'NIFTYBANK', 'NIFTYMIDCAP100'], US_INDICES = ['SPX', 'NDX', 'DJI']; // the Indian indices the vault shows (Nifty IT and Midcap Select are left out)
+let TICK_IN = [], TICK_US = null, TICK_FUT = [];
+const IN_INDICES = ['NIFTY 50', 'NIFTYBANK', 'NIFTYMIDCAP100'], US_INDICES = ['SPX', 'NDX', 'DJI'];
+const IN_FUTURES = ['NIFTY FUT', 'BANKNIFTY FUT']; // NSE near-month index futures (daily, from the NSE F&O files) // the Indian indices the vault shows (Nifty IT and Midcap Select are left out)
 const isUS = () => API === API_US;
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -825,7 +889,7 @@ const pct = (v, d, s = false) => v == null || !isFinite(v) ? '–' : (s && v > 0
 const fx = (v, d = 2) => v == null || !isFinite(v) ? '–' : v.toFixed(d);
 const cls = v => v == null ? '' : v >= 0 ? 'pos' : 'neg';
 const med = a => { const s = a.filter(isFinite).sort((x, y) => x - y), n = s.length; return n ? (n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2) : null; };
-const LABEL = { 'NIFTY 50': 'Nifty 50', NIFTYBANK: 'Bank Nifty', NIFTYIT: 'Nifty IT', NIFTYMIDCAP100: 'Midcap 100', NIFTYMIDCAPSELECT: 'Midcap Select', SPY: 'SPY (S&P 500)', QQQ: 'QQQ (Nasdaq 100)', MDY: 'MDY (S&P MidCap 400)', IWM: 'IWM (Russell 2000)', SMH: 'SMH (Semiconductors)', SPX: 'S&P 500', NDX: 'Nasdaq 100', DJI: 'Dow Jones' };
+const LABEL = { 'NIFTY 50': 'Nifty 50', NIFTYBANK: 'Bank Nifty', NIFTYIT: 'Nifty IT', NIFTYMIDCAP100: 'Midcap 100', NIFTYMIDCAPSELECT: 'Midcap Select', SPY: 'SPY (S&P 500)', QQQ: 'QQQ (Nasdaq 100)', MDY: 'MDY (S&P MidCap 400)', IWM: 'IWM (Russell 2000)', SMH: 'SMH (Semiconductors)', 'NIFTY FUT': 'Nifty Futures', 'BANKNIFTY FUT': 'Bank Nifty Futures', SPX: 'S&P 500', NDX: 'Nasdaq 100', DJI: 'Dow Jones' };
 const CLOTH = ['#1f3a5f', '#7a2e2e', '#2f5140', '#8a6a2f', '#4a5563', '#5b3b5e'];
 
 // ---------------------------------------------------------------- the library (hierarchy: guru → book → strategy → variant)
@@ -948,7 +1012,7 @@ function gptSection(v,tk,d=null,issue=null) {
 
 
 // ---------------------------------------------------------------- state (kept in the URL hash so any view can be shared)
-const DEF = { mode: 'strategies', market: 'india', tk: 'NIFTY 50', tab: 'sharpe', q: '', guru: '', book: '', style: '', dir: '', hold: '', verdict: '', min: '0', family: '', sort: 'primary', view: 'grid' };
+const DEF = { mode: 'strategies', market: 'india', tk: 'NIFTY 50', tab: 'sharpe', q: '', guru: '', book: '', style: '', dir: '', hold: '', verdict: '', min: '0', family: '', sort: 'primary', view: 'grid', set: '' };
 let S = { ...DEF };
 const readHash = () => { const q = new URLSearchParams(location.hash.slice(1)); S = { ...DEF }; for (const k in DEF) if (q.has(k)) S[k] = q.get(k); };
 const writeHash = () => { const q = new URLSearchParams(); for (const k in DEF) if (S[k] !== DEF[k]) q.set(k, S[k]); history.replaceState(null, '', '#' + q); };
@@ -1002,12 +1066,12 @@ async function getReadiness(tk, from = '', to = '', id = '', parameters = {}) {
 async function getSum(tk, from = '', to = '') {
  const api=API,owners=guruIds(),variants=[...ALLCAT],generation=busy;
  if(!owners.length)return {};
- const key=summaryKey(api,tk,from,to),context=summaryContext(tk,from,to),query=new URLSearchParams({ticker:tk,from,to});
- if(SUM_FAILURE_GENERATION[key]!=null&&SUM_FAILURE_GENERATION[key]!==generation)delete SUM[key];
- return SUM[key]||(SUM[key]=(async()=>{
-  const outcomes=await Promise.all(owners.map(owner=>owner==='pristine'?pristineOwnerRows(api+'/guru/pristine/summary?'+ownerQuery(owner,query),ownedDefinitions(variants,owner),'summary'):loadOwnerRows({owner,definitions:ownedDefinitions(variants,owner),context,url:api+'/guru/'+owner+'/summary?'+query,kind:'summary',fetcher:fetch,wait:ms=>new Promise(resolve=>setTimeout(resolve,ms))})));
+ const key=summaryKey(api,tk,from,to),sumKey=key+'|capital='+ytCapital(S),context=summaryContext(tk,from,to),query=new URLSearchParams({ticker:tk,from,to});
+ if(SUM_FAILURE_GENERATION[sumKey]!=null&&SUM_FAILURE_GENERATION[sumKey]!==generation)delete SUM[sumKey];
+ return SUM[sumKey]||(SUM[sumKey]=(async()=>{
+  const outcomes=await Promise.all(owners.map(owner=>owner==='pristine'?pristineOwnerRows(api+'/guru/pristine/summary?'+ownerQuery(owner,query),ownedDefinitions(variants,owner),'summary'):loadOwnerRows({owner,definitions:ownedDefinitions(variants,owner),context,url:api+'/guru/'+owner+'/summary?'+query+(owner==='yt'?'&capital='+encodeURIComponent(ytCapital(S)):''),kind:'summary',fetcher:fetch,wait:ms=>new Promise(resolve=>setTimeout(resolve,ms))})));
   SUMMARY_ISSUES[key]=outcomes.flatMap(outcome=>outcome.issue?[outcome.issue]:[]);
-  if(outcomes.some(outcome=>outcome.issue))SUM_FAILURE_GENERATION[key]=generation;else delete SUM_FAILURE_GENERATION[key];
+  if(outcomes.some(outcome=>outcome.issue))SUM_FAILURE_GENERATION[sumKey]=generation;else delete SUM_FAILURE_GENERATION[sumKey];
   return Object.fromEntries(outcomes.flatMap(outcome=>outcome.rows).map(row=>[row.id,row]));
  })());
 }
@@ -1071,7 +1135,7 @@ async function rows(S = getS()) {
   const T = TABS[S.tab], tks = S.tk === 'ALL' ? TICKERS.map(t => t.ticker) : [S.tk];
   const qq = S.q.trim().toLowerCase();
   const textOk = v => !qq || `${v.name} ${v.family_name} ${v.variant || ''} ${v.group} ${v.dir} ${BOOK[v.book]?.title || ''} ${GURU[v.guru]?.name || ''} ${(v.rules || []).join(' ')}`.toLowerCase().includes(qq);
-  const metaOk = v => (R.name === 'yt') === isYt(v) && textOk(v) && (!S.guru || v.guru === S.guru) && (!S.book || v.book === S.book) && (!S.style || v.style === S.style) && (!S.dir || v.dir === S.dir) && (!S.family || v.family === S.family);
+  const metaOk = v => (R.name === 'yt') === isYt(v) && (R.name !== 'yt' || ytSetOf(v) === S.set) && textOk(v) && (!S.guru || v.guru === S.guru) && (!S.book || v.book === S.book) && (!S.style || v.style === S.style) && (!S.dir || v.dir === S.dir) && (!S.family || v.family === S.family);
   if (S.tab === 'awaiting') {
     const availability = await Promise.all(tks.map(tk => getReadiness(tk,S.from,S.to)));
     return CAT.filter(metaOk).map(v => {
@@ -1167,7 +1231,17 @@ async function unavailableForSelectedBook(){
   const query=S.q.trim().toLowerCase(),matching=defs.filter(v=>(!query||`${v.name} ${v.family_name} ${v.variant||''} ${v.group} ${v.dir} ${BOOK[v.book]?.title||''} ${GURU[v.guru]?.name||''} ${(v.rules||[]).join(' ')}`.toLowerCase().includes(query))&&(!S.style||v.style===S.style)&&(!S.dir||v.dir===S.dir)&&(!S.family||v.family===S.family));
   return unavailableBookMethods(matching,[...merged.values()]);
 }
+function ytSetCards() {
+  if (R.name !== 'yt' || S.set) return '';
+  return Object.entries(YT_SETS).map(([k, set]) => { const n = ALLCAT.filter(v => isYt(v) && ytSetOf(v) === k).length; return n ? `<article class="card yt-set" data-yt-set="${k}">
+      <div class="rank"><span>Collection</span><span class="stamp">${n} strategies</span></div>
+      <h3>${esc(set.name)}</h3><div class="by">YT Strategies · Team-supplied AFL rules</div>
+      <p class="lede">${esc(set.blurb)}</p>
+      <div class="btns"><a class="btn solid" href="${href('/yt', { ...S, set: k })}">Open ${esc(set.name)}</a></div>
+    </article>` : ''; }).join('');
+}
 function viewStrategies(rs, perVariant, missing = []) {
+  const blocks = ytSetCards(), blockGrid = blocks ? `<div class="grid">${blocks}</div>` : '';
   const missingGrid=missing.length?`<div class="grid unavailable-method-grid">${missing.map(unavailableBookCard).join('')}</div>`:'';
   // strategies = one entry per family (best variant by the current sort); variants = every rule set
   let list = rs;
@@ -1175,10 +1249,10 @@ function viewStrategies(rs, perVariant, missing = []) {
   const nVar = r => r.all ? new Set(r.all.map(x => x.v.id)).size : 1, nIdx = r => r.all ? new Set(r.all.map(x => x.tk)).size : 1;
   const title = r => esc(familyDisplayName(r.v)) + gateBadge(r.v);
   const sub = r => perVariant && r.v.variant ? `<b style="font-weight:600">${esc(r.v.variant)}</b> · ` : '';
-  if (S.tab === 'awaiting') return S.book&&missing.length?`<div class="grid">${missing.map(unavailableBookCard).join('')}</div>`:awaiting(rs);
+  if (S.tab === 'awaiting') return blockGrid + (S.book&&missing.length?`<div class="grid">${missing.map(unavailableBookCard).join('')}</div>`:awaiting(rs));
   if (S.view === 'list') {
     const M = TABS[S.tab].metric, ruleLine = v => { const e = (v.rules || []).find(x => x.startsWith('E|')), x = (v.rules || []).find(x => x.startsWith('X|')); return [e && 'Entry: ' + e.slice(2), x && 'Exit: ' + x.slice(2)].filter(Boolean).map(esc).join(' · '); };
-    return `<div class="list">${list.map((r, i) => { const vd = verdictOf(r.s); return `<div class="lr"><span class="ln">${i + 1}</span><div class="sp">${spark(r, 110, 40)}</div>
+    return `${blockGrid}<div class="list">${list.map((r, i) => { const vd = verdictOf(r.s); return `<div class="lr"><span class="ln">${i + 1}</span><div class="sp">${spark(r, 110, 40)}</div>
       <div class="lt"><b>${title(r)}</b><small>${sub(r)}${byline(r.v)}${S.tk === 'ALL' ? ' · ' + esc(LABEL[r.tk]) : ''}</small><span class="rl">${ruleLine(r.v)}</span>
         <span class="ltags"><span class="tag">⏱ ${HOLD[holdOf(r.s)]}</span><span class="tag">${esc(r.v.style)}</span><span class="tag">${r.v.dir}</span>${!perVariant && nVar(r) > 1 ? `<span class="tag link" data-fam="${esc(r.v.family)}">${nVar(r)} variants</span>` : ''}</span></div>
       <div class="lk"><span>${esc(M.label)}<b class="p">${M.fmt(M.get(r))}</b></span><span>CAGR<b class="${cls(r.s.cagr)}">${pct(r.s.cagr, 1, true)}</b></span><span>Max DD<b class="neg">${pct(r.s.max_dd, 1)}</b></span><span>Trades<b>${fx(r.s.trades, 0)}</b></span></div>
@@ -1186,12 +1260,12 @@ function viewStrategies(rs, perVariant, missing = []) {
   }
   if (S.view === 'table') {
     const M = TABS[S.tab].metric, th = (k, t, n) => `<th class="${n ? 'n' : ''} ${S.sort === k ? 'on' : ''}" data-sort="${k}">${t}</th>`;
-    return `<div class="tblwrap"><table class="tbl"><thead><tr><th class="nosort">#</th>${th('name', 'Strategy')}<th class="nosort">Style</th>${S.tk === 'ALL' ? '<th class="nosort">Index</th>' : ''}<th class="nosort">Hold</th><th class="nosort">Equity</th>${th('primary', esc(M.label), 1)}${S.tab === 'working' ? `<th class="n nosort">Before ${PUB}</th>` : S.tab === 'trending' ? '<th class="n nosort">Sharpe (full)</th>' : ''}${th('cagr', 'CAGR', 1)}${th('maxdd', 'Max DD', 1)}${th('win', 'Win', 1)}${th('trades', 'Trades', 1)}${th('t', 't', 1)}<th class="nosort"></th></tr></thead><tbody>
+    return `${blockGrid}<div class="tblwrap"><table class="tbl"><thead><tr><th class="nosort">#</th>${th('name', 'Strategy')}<th class="nosort">Style</th>${S.tk === 'ALL' ? '<th class="nosort">Index</th>' : ''}<th class="nosort">Hold</th><th class="nosort">Equity</th>${th('primary', esc(M.label), 1)}${S.tab === 'working' ? `<th class="n nosort">Before ${PUB}</th>` : S.tab === 'trending' ? '<th class="n nosort">Sharpe (full)</th>' : ''}${th('cagr', 'CAGR', 1)}${th('maxdd', 'Max DD', 1)}${th('win', 'Win', 1)}${th('trades', 'Trades', 1)}${th('t', 't', 1)}<th class="nosort"></th></tr></thead><tbody>
       ${list.map((r, i) => `<tr><td class="rk">${i + 1}</td><td class="nm"><b>${title(r)}</b><span>${sub(r)}${byline(r.v)}${!perVariant && nVar(r) > 1 ? ` · <a href="#" data-fam="${esc(r.v.family)}">${nVar(r)} variants</a>` : ''}</span></td><td>${esc(r.v.style)}<br><span class="muted">${r.v.dir}</span></td>${S.tk === 'ALL' ? `<td>${esc(LABEL[r.tk])}</td>` : ''}<td>${HOLD[holdOf(r.s)]}</td><td style="width:150px">${spark(r, 150, 34)}</td>
         <td class="n p">${M.fmt(M.get(r))}</td>${S.tab === 'working' || S.tab === 'trending' ? `<td class="n">${fx(r.x?.sharpe)}</td>` : ''}<td class="n ${cls(r.s.cagr)}">${pct(r.s.cagr, 1, true)}</td><td class="n neg">${pct(r.s.max_dd, 1)}</td><td class="n">${pct(r.s.win_rate, 0)}</td><td class="n">${fx(r.s.trades, 0)}</td><td class="n">${fx(r.s.t_stat)}</td><td><a class="go" href="${appLink(r)}">Backtest</a></td></tr>`).join('')}
       </tbody></table></div>${missingGrid}`;
   }
-  return `<div class="grid">${list.map((r, i) => { const vd = verdictOf(r.s); return `<article class="card">
+  return `<div class="grid">${blocks}${list.map((r, i) => { const vd = verdictOf(r.s); return `<article class="card">
       <div class="rank"><span>#${i + 1}${S.tk === 'ALL' ? ' · ' + esc(LABEL[r.tk]) : ''}</span><span class="stamp" style="color:${vd.c}">${vd.t}</span></div>
       <h3>${title(r)}</h3><div class="by">${sub(r)}${byline(r.v)}</div>
       ${spark(r)}${kpiTriplet(r)}
@@ -1200,11 +1274,21 @@ function viewStrategies(rs, perVariant, missing = []) {
       <div class="btns"><a class="btn solid" href="${appLink(r)}">Full backtest</a>${isYt(r.v) ? '' : `<button class="btn" data-book="${r.v.book}">Book</button><button class="btn" data-guru="${r.v.guru}">Guru</button>`}</div>
     </article>`; }).join('')}${missing.map(unavailableBookCard).join('')}</div>`;
 }
+// Kora rules run on the data the team tested them on (futures; BuyShort on spot). Returns the kind of data the
+// selected instrument is when the rule is not available on it: 'futures' | 'index' | ''.
+const wrongDataKind = (v, tk) => { const types = v?.instrument_policy?.allowed_types || [];
+  if (v?.book !== 'yt_kr') return '';
+  if (IN_FUTURES.includes(tk) && !types.includes('futures')) return 'futures';
+  if (IN_INDICES.includes(tk) && !types.includes('index')) return 'index';
+  return ''; };
+const DATA_KIND = { futures: 'futures', index: 'index (spot)' };
 function awaiting(rs) {
-  const reasons = r => sourceBlockers(r.v) || r.issues.map(issue => `<p><b>${esc(LABEL[issue.tk])}: ${TRUST.statusLabel(issue.status)}</b><br>${esc(issue.note)}</p>`).join('');
+  const reasons = r => sourceBlockers(r.v) || r.issues.map(issue => { const kind = wrongDataKind(r.v, issue.tk);
+    const note = kind ? issue.note.replace(/^Not available on [^.]*data\.\s*/, '') : issue.note; // the bold label already says it
+    return `<p><b>${esc(LABEL[issue.tk])}: ${kind ? `Not available on ${DATA_KIND[kind]} data` : TRUST.statusLabel(issue.status)}</b><br>${esc(note)}</p>`; }).join('');
   const link = r => `<a href="${stratLink(r.v.id,r.tk)}">${esc(familyDisplayName(r.v))}</a>`;
   if (S.view === 'table' || S.view === 'list') return `<div class="tblwrap"><table class="tbl"><thead><tr><th class="nosort">#</th><th class="nosort">Strategy / source method</th><th class="nosort">Style</th><th class="nosort">Why results are withheld</th></tr></thead><tbody>${rs.map((r,i)=>`<tr><td class="rk">${i+1}</td><td class="nm"><b>${link(r)}</b><span>${r.v.variant?esc(r.v.variant)+' · ':''}${byline(r.v)}</span></td><td>${esc(r.v.style)}</td><td>${reasons(r)}</td></tr>`).join('')}</tbody></table></div>`;
-  return `<div class="grid">${rs.map((r,i)=>`<article class="card"><div class="rank"><span>#${i+1}</span><span class="stamp" style="color:#8a6a2f">${r.v.guru==='ross'?'DATA MISSING · RULES UNRESOLVED':'BACKTEST UNAVAILABLE'}</span></div><h3>${link(r)}</h3><div class="by">${r.v.variant?esc(r.v.variant)+' · ':''}${byline(r.v)}</div><div class="unavailable-reasons">${reasons(r)}</div><div class="tags"><span class="tag">${esc(r.v.style)}</span><span class="tag">${r.v.dir}</span></div>${rulesList(r.v)}<a class="btn" href="${stratLink(r.v.id,r.tk)}">View rules and data requirements</a></article>`).join('')}</div>`;
+  return `<div class="grid">${rs.map((r,i)=>`<article class="card"><div class="rank"><span>#${i+1}</span><span class="stamp" style="color:#8a6a2f">${r.v.guru==='ross'?'DATA MISSING · RULES UNRESOLVED':wrongDataKind(r.v,r.tk)?`NOT AVAILABLE ON ${wrongDataKind(r.v,r.tk)==='futures'?'FUTURES':'INDEX'} DATA`:'BACKTEST UNAVAILABLE'}</span></div><h3>${link(r)}</h3><div class="by">${r.v.variant?esc(r.v.variant)+' · ':''}${byline(r.v)}</div><div class="unavailable-reasons">${reasons(r)}</div><div class="tags"><span class="tag">${esc(r.v.style)}</span><span class="tag">${r.v.dir}</span></div>${rulesList(r.v)}<a class="btn" href="${stratLink(r.v.id,r.tk)}">View rules and data requirements</a></article>`).join('')}</div>`;
 }
 function groupBy(rs, key) { const m = new Map(); for (const r of rs) { const k = key(r); if (!m.has(k)) m.set(k, []); m.get(k).push(r); } return m; }
 function summarise(list) {
@@ -1284,7 +1368,7 @@ function exitCheck(t) { return tradeExitCheck(t); }
 // ================================================================ FULL VARIANT 1
 // Routes:  #/  landing (legends)  ·  #/guru/<id>  author grid  ·  #/strategies  all gurus  ·  #/s/<id>  one strategy
 // Filters live in a top navbar of dropdowns (DaisyUI-style); animation by motion.dev; charts in the Bklit style.
-DEF.research_mode=''; DEF.view = 'grid'; DEF.region = 'in'; DEF.from = ''; DEF.to = ''; DEF.cost = '0'; DEF.slippage='0'; DEF.rollover='0'; DEF.basket=''; DEF.run_scope='single'; DEF.report_mode='fixed'; DEF.membership='current'; DEF.max_positions='10'; DEF.position_choice='10'; DEF.p = ''; DEF.library_scope='trading'; DEF.library_market=''; DEF.library_q=''; DEF.library_view='authors'; DEF.library_sort='default'; DEF.book_category=''; DEF.library_limit='24'; DEF.library_page='1'; DEF.source_page='1'; DEF.book_progress=''; // p = custom strategy settings 'key:value,…' (empty = the book's) // custom backtest period, kept in the link
+DEF.research_mode=''; DEF.capital=''; DEF.view = 'grid'; DEF.region = 'in'; DEF.from = ''; DEF.to = ''; DEF.cost = '0'; DEF.slippage='0'; DEF.rollover='0'; DEF.basket=''; DEF.run_scope='single'; DEF.report_mode='fixed'; DEF.membership='current'; DEF.max_positions='10'; DEF.position_choice='10'; DEF.p = ''; DEF.library_scope='trading'; DEF.library_market=''; DEF.library_q=''; DEF.library_view='authors'; DEF.library_sort='default'; DEF.book_category=''; DEF.library_limit='24'; DEF.library_page='1'; DEF.source_page='1'; DEF.book_progress=''; // p = custom strategy settings 'key:value,…' (empty = the book's) // custom backtest period, kept in the link
 const getS = () => S;
 const MO = window.Motion, CALM = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const anim = (el, kf, o) => { if (MO && !CALM && el && (el.length === undefined || el.length)) try { return MO.animate(el, kf, o); } catch (e) {} };
@@ -1309,12 +1393,13 @@ function readRoute() {
   if(!pristineMethod(R.id,PRISTINE_BOOK))S.cost='0'; // Legacy interface retains its existing fee setting.
   if (R.name === 'guru') S.guru = R.id;
   // YT strategies have no author or book: drop those filters and the book-based views.
-  if (R.name === 'yt') { S.guru = ''; S.book = ''; if (!['strategies', 'variants'].includes(S.mode)) S.mode = 'strategies'; if (S.tab === 'working') S.tab = 'sharpe'; }
+  if (R.name === 'yt') { S.guru = ''; S.book = ''; if (!YT_SETS[S.set]) S.set = ''; if (!['strategies', 'variants'].includes(S.mode)) S.mode = 'strategies'; if (S.tab === 'working') S.tab = 'sharpe'; }
+  if (R.name !== 'yt') S.set = '';
   if (S.book?.startsWith('jr_') && !new URLSearchParams(q).has('tab')) S.tab='awaiting';
   if (S.book?.startsWith('jr_') && !BOOK[S.book]?.year && S.tab==='working') S.tab='awaiting';
   // Use each source-qualified basket only with the market engine that admitted it.
   if(S.region==='us'&&(TICK_US||pristineMethod(R.id,PRISTINE_BOOK))){API=API_US;BASKETS=BASKETS_US;}else{S.region='in';API=API_IN;BASKETS=BASKETS_IN;}
-  const pool=S.region==='us'?TICK_ALL_US:TICK_ALL_IN, indices=S.region==='us'?TICK_US:TICK_IN;
+  const pool=S.region==='us'?TICK_ALL_US:TICK_ALL_IN, indices=S.region==='us'?TICK_US:TICK_IN, futures=S.region==='us'?[]:TICK_FUT;
   const chosen=R.name==='strategy'?ALLCAT.find(v=>v.id===R.id):null;
   const types=chosen?.instrument_policy?.allowed_types||[];
   const etfs=S.region==='us'?TICK_ALL_US.filter(t=>['SPY','QQQ','MDY','IWM','SMH','DIA'].includes(t.ticker)):[];
@@ -1327,9 +1412,12 @@ function readRoute() {
   }
   const stocks=isDetail&&types.includes('individual_stock')?stockChoices(pool,S.tk):[];
   TICKERS=isDetail&&S.run_scope==='single'
-    ? [...instrumentTickers(chosen?.instrument_policy,indices,etfs,chosen?.id,chosen?.book),...stocks]
+    ? [...instrumentTickers(chosen?.instrument_policy,indices,etfs,chosen?.id,chosen?.book,futures),...stocks]
     : S.basket&&basket?.symbols?.length?pool.filter(t=>basket.symbols.includes(t.ticker))
-    : instrumentTickers(['home','guru','all','yt'].includes(R.name)?{allowed_types:['index','etf']}:chosen?.instrument_policy,indices,etfs,chosen?.id,chosen?.book);
+    : R.name==='yt'&&YT_SETS[S.set]?.futures ? (YT_SETS[S.set].openSpot // % Swing: the spot indices first, then the futures
+      ? [...(indices||[]).filter(t=>(YT_SETS[S.set].spot||[]).includes(t.ticker)), ...futures]
+      : [...futures, ...(indices||[]).filter(t=>(YT_SETS[S.set].spot||[]).includes(t.ticker))]) // Kora: futures, plus the spot indices BuyShort was run on
+    : instrumentTickers(['home','guru','all','yt'].includes(R.name)?{allowed_types:['index','etf']}:chosen?.instrument_policy,indices,etfs,chosen?.id,chosen?.book,futures);
   // Keep an explicitly named, admitted source even when its instrument is
   // incompatible. The readiness gate explains the mismatch without replacing it.
   const explicitStock=isDetail&&S.run_scope==='single'&&explicit.get('tk')?.startsWith('basket:')?pool.find(t=>t.ticker===S.tk):null;
@@ -1337,6 +1425,8 @@ function readRoute() {
   const explicitUnitSelection=isDetail&&unitExposureMethod(chosen?.id,chosen?.book)&&explicit.get('tk')?pool.find(t=>t.ticker===S.tk):null;
   if(explicitUnitSelection&&!TICKERS.some(t=>t.ticker===S.tk))TICKERS.push(explicitUnitSelection); // Preserve actual incompatible URLs for an honest admission hold.
   const explicitPristine=isDetail&&pristineMethod(chosen?.id,chosen?.book)&&explicit.has('tk');
+  // Kora: open on futures (25 of its rules); a spot index (BuyShort only) is shown only when picked explicitly
+  if(R.name==='yt'&&YT_SETS[S.set]?.futures&&!YT_SETS[S.set].openSpot&&!explicit.get('tk')&&!futures.some(t=>t.ticker===S.tk))S.tk=futures[0]?.ticker||S.tk;
   if(S.tk!=='ALL'&&!TICKERS.some(t=>t.ticker===S.tk)&&!explicitPristine)S.tk=TICKERS[0]?.ticker||S.tk;
   // Preserve explicit basket URLs: the readiness gate explains incompatible instruments.
   // Silent substitution back to an index made basket clicks appear stuck.
@@ -1346,12 +1436,216 @@ function readRoute() {
 let ALLCAT = [];
 const foreignTo = (v, us) => (v.needs_series || []).some(n => us ? /^NSE_/.test(n) : /^NYSE_/.test(n));
 const marketCat = () => libraryMarketVariants(ALLCAT,libraryMarket(S,R.name));
-const href = (path, st = {}) => { const q = new URLSearchParams();if(S.research_mode&&!('research_mode' in st))q.set('research_mode',S.research_mode);const catalogue=path==='/'||path==='/strategies'||path==='/yt'||path.startsWith('/guru/')||path.startsWith('/source/'); if (S.region === 'us' && !('region' in st)) q.set('region', 'us'); if(catalogue&&S.library_market&&!('library_market' in st))q.set('library_market',S.library_market); for (const k in st) if (st[k] !== DEF[k] && st[k] != null && !(path.startsWith('/guru/') && k === 'guru') && (k!=='library_market'||catalogue)) q.set(k, st[k]); const s = q.toString(); return '#' + path + (s ? '?' + s : ''); };
+const href = (path, st = {}) => { const q = new URLSearchParams();if(S.research_mode&&!('research_mode' in st))q.set('research_mode',S.research_mode);const catalogue=path==='/'||path==='/strategies'||path==='/yt'||path.startsWith('/guru/')||path.startsWith('/source/'); if (S.region === 'us' && !('region' in st)) q.set('region', 'us'); if(catalogue&&S.library_market&&!('library_market' in st))q.set('library_market',S.library_market); for (const k in st) if ((st[k] !== DEF[k] || (k === 'tk' && path === '/yt' && YT_SETS[st.set]?.futures)) && st[k] != null && !(path.startsWith('/guru/') && k === 'guru') && (k!=='library_market'||catalogue)) q.set(k, st[k]); const s = q.toString(); return '#' + path + (s ? '?' + s : ''); };
 const go = (path, st) => { location.hash = href(path, st).slice(1); };
 const isYt = v => v.api === 'yt'; // YT strategies: no author or book, own tab
+// YT whole-unit account: starting capital in rupees (blank = the AmiBroker default of 10,00,000).
+const YT_CAPITAL_DEFAULT = '1000000';
+const ytCapital = st => String(st?.capital || YT_CAPITAL_DEFAULT);
+const ytCapitalValid = c => { const x = +c; return c !== '' && Number.isFinite(x) && x >= 1 && x <= 1e12; };
+// YT collections: strategies grouped behind one block on the YT Strategies page (#/yt?set=<key>).
+const YT_SETS = { kora: { name: 'Kora Reddy', book: 'yt_kr', futures: true, spot: ['NIFTY 50', 'NIFTYBANK'], blurb: "Day-of-week and gap rules from the team's Kora Reddy AFLs, run on NSE near-month Nifty / Bank Nifty futures (BuyShort at Open or Close on the Nifty 50 / Nifty Bank spot indices)." },
+  swing: { name: '% Swing', book: 'yt_sw', futures: true, openSpot: true, spot: ['NIFTY 50', 'NIFTYBANK', 'NIFTYMIDCAP100'], blurb: "Percentage-swing trend rules from the team's % Swing AFLs: single and different entry/exit swings, monthly Supertrend filters, Supertrend entries and exits, buy on dip with scale-out. Coded as the AFLs are written; run on the spot indices (four also on Nifty / Bank Nifty near-month futures)."  },
+  pmh: { name: 'Close above PMH', book: 'yt_pmh', blurb: "Buy when the close is above the previous month's high, with the AFLs' monthly counter, wait and ATR exits (versions 1-6). Coded from the team's AFLs as written; daily spot index data." },
+  negexp: { name: 'Negative Expiry', book: 'yt_ne', blurb: "Long on a Supertrend 5/2 - 5/4 setup after a negative expiry-day, month-end or five-days-before-month-end close, with and without a trend filter. Coded from the team's AFLs as written; daily spot index data." },
+  sniper: { name: 'Sniper System', book: 'yt_sn', blurb: "Entry when the daily close crosses above the monthly Supertrend; exits on the Supertrend, % swing, stops or bar count. Coded from the team's AFLs as written; daily spot index data." },
+  wh52: { name: '52 Week High', book: 'yt_wh', blurb: "Breakouts to a 52-week closing high with % swing or Supertrend exits and profit booking. Coded from the team's AFLs as written; daily spot index data." },
+  antiturtle: { name: 'Anti Turtle', book: 'yt_at', blurb: "Buy the breakdown below an N-day low, with the AFL's stop, target and time exits. Coded from the team's AFLs as written; daily spot index data." },
+  tharp: { name: 'Van Tharp', book: 'yt_vt', blurb: "Index Channeling with and without the Williams %R cool-off. Coded from the team's AFLs as written; daily spot index data." },
+  pinbar: { name: 'Inverted Pin Bar', book: 'yt_pin', blurb: "Short after an inverted pin bar. Coded from the team's AFLs as written; daily spot index data." },
+  roc: { name: 'ROC', book: 'yt_roc', blurb: "Long after an X% rate-of-change drop (RSI versions) and after N red candles. Coded from the team's AFLs as written; daily spot index data." },
+  ulcer: { name: 'Ulcer Performance Index', book: 'yt_ui', blurb: "Ulcer Index crossovers, alone or with a Supertrend entry. Coded from the team's AFLs as written; daily spot index data." },
+  double7: { name: 'Double 7', book: 'yt_d7', blurb: "Larry Connors' Double 7 as the team coded it: long and short, with off / Supertrend / moving-average filters. Coded from the team's AFLs as written; daily spot index data." },
+  engulf: { name: 'Engulfing Candle', book: 'yt_eng', blurb: "Long on a bullish engulfing candle after N red candles. Coded from the team's AFLs as written; daily spot index data." },
+  freshst: { name: 'Fresh ST Buy', book: 'yt_fst', blurb: "Buy when the close clears the high of the bar that started a Supertrend up-phase; trailing-stop exit. Coded from the team's AFLs as written; daily spot index data." },
+  ichimoku: { name: 'Ichimoku', book: 'yt_ich', blurb: "Conversion / base line crosses and cloud breakouts, forward and current cloud versions. Coded from the team's AFLs as written; daily spot index data." },
+  insidebar: { name: 'Inside Bar', book: 'yt_ib', blurb: "Daily and weekly inside-bar breakouts with same-day, low-break and Supertrend exits. Coded from the team's AFLs as written; daily spot index data."  },
+  bbands: { name: 'Bollinger Band', book: 'yt_bb', stocks: true, blurb: "Bollinger band breakouts on a 100-period average, with and without a market filter. Coded from the team's stock AFLs as written; runs on one stock at a time (stock data to be added)." },
+  gann: { name: 'Gann HiLo', book: 'yt_gann', stocks: true, blurb: "Gann HiLo regime systems with monthly Gann or Supertrend filters, long and short. Coded from the team's stock AFLs as written; runs on one stock at a time (stock data to be added)." },
+  candlerange: { name: 'Candle Range and Volume', book: 'yt_cr', stocks: true, blurb: "Buy when the candle range narrows while volume rises, with Supertrend filter and hard-stop versions. Coded from the team's stock AFLs as written; runs on one stock at a time (stock data to be added)." },
+  nr7: { name: 'NR7', book: 'yt_nr7', stocks: true, blurb: "Narrow-range-7, inside-bar and mother-bar entries with Supertrend or lowest-low exits. Coded from the team's stock AFLs as written; runs on one stock at a time (stock data to be added)." },
+  tharpstocks: { name: 'Van Tharp (Stocks)', book: 'yt_vts', stocks: true, blurb: "Five Days Down, Five Five One W, two moving averages with a gap, and Washout. Coded from the team's stock AFLs as written; runs on one stock at a time (stock data to be added)." },
+  freshstvol: { name: 'Fresh ST Buy (Volume)', book: 'yt_fsv', stocks: true, blurb: "Fresh Supertrend buys confirmed by volume, with RSI-crossover versions. Coded from the team's stock AFLs as written; runs on one stock at a time (stock data to be added)." },
+  nickradge: { name: 'Nick Radge', book: 'yt_nr', stocks: true, blurb: "Next-day limit buys and shorts below the setup low (ATR offset), exited at that day's close. Coded from the team's stock AFLs as written; runs on one stock at a time (stock data to be added)." },
+  rank: { name: 'Rank From Lowest Low', book: 'yt_rank', stocks: true, blurb: "Stock entries timed by the Nifty Supertrend buy after its lowest low. Coded from the team's stock AFLs as written; runs on one stock at a time (stock data to be added)." },
+  ichimokustocks: { name: 'Ichimoku (Stocks)', book: 'yt_ichs', stocks: true, blurb: "Ichimoku entries with all-time-high, RSI and ADX conditions. Coded from the team's stock AFLs as written; runs on one stock at a time (stock data to be added)." },
+  negexpstocks: { name: 'Negative Expiry (Stocks)', book: 'yt_nes', stocks: true, blurb: "Negative expiry, month-end and five-day setups with all-time-high and 52-week filters. Coded from the team's stock AFLs as written; runs on one stock at a time (stock data to be added)." },
+  swingstocks: { name: '% Swing (Stocks)', book: 'yt_sws', stocks: true, blurb: "The 20% flippers, the bear-market 5-day entry and the single-trade % swing. Coded from the team's stock AFLs as written; runs on one stock at a time (stock data to be added)." },
+  stockmisc: { name: '52 Week High and ROC (Stocks)', book: 'yt_stk', stocks: true, blurb: "52-week-high breakouts with % swing exits and profit booking; ROC trend-intensity shorts. Coded from the team's stock AFLs as written; runs on one stock at a time (stock data to be added)." } };
+const ytSetOf = v => Object.keys(YT_SETS).find(k => YT_SETS[k].book === v.book) || '';
+// The team files each YT strategy was built from, relative to its set's folder (jay-local/Kora Reddy for Kora).
+const KR_DATA = 'NSE FO database (Nifty / Bank Nifty near-month futures), daily, to 26-10-2021.';
+const KR_DEFAULTS = 'Default settings from Kora Reddy Rules & summary sheet.xlsx (Nifty).';
+const YT_REFERENCES = {
+  ytkr_inside_day: { afl: 'Inside Day (Kora Reddy)/Inside Day (Kora Reddy).afl', aflNote: KR_DATA, sheet: 'Inside Day (Kora Reddy)/Inside Day (Kora Reddy).xlsx', sheetNote: `sheets <b>Nifty</b>, <b>Banknifty</b> (optimization) and <b>Nifty TL</b>, <b>Banknifty TL</b> (trade lists at open 0.25%) · ${KR_DEFAULTS}` },
+  ytkr_outside_day: { afl: 'Outside Day (Kora Reddy)/Outside Day (Kora Reddy).afl', aflNote: KR_DATA, sheet: 'Outside Day (Kora Reddy)/Outside Day (Kora Reddy).xlsx', sheetNote: `sheets <b>Nifty</b>, <b>Banknifty</b> (optimization) and <b>Nifty TL</b>, <b>Banknifty TL</b> (trade lists at open 0.25%) · ${KR_DEFAULTS}` },
+  ytkr_turtle_short: { afl: 'Turtle Short(Kora Reddy)/Turtle Short(Kora Reddy).afl', aflNote: KR_DATA, sheet: 'Turtle Short(Kora Reddy)/Turtle Short(Kora Reddy).xlsx', sheetNote: `sheets <b>Nifty</b>, <b>Banknifty</b> (optimization: day of week, open %, lowest close period) · ${KR_DEFAULTS}` },
+  ytkr_turtle_short_gapup: { afl: 'Turtle Short on GapUp (Kora Reddy)/Turtle Short on GapUp (Kora Reddy).afl', aflNote: KR_DATA, sheet: 'Turtle Short on GapUp (Kora Reddy)/Turtle Short on GapUp (Kora Reddy).xlsx', sheetNote: `sheets <b>Nifty</b>, <b>Banknifty</b> (optimization: day of week, open %, lowest close period) · ${KR_DEFAULTS}` },
+  ytkr_momentum_manic_monday: { afl: 'Momentum Aided Manic Monday(Kora Reddy)/Momentum Aided Manic Monday(Kora Reddy).afl', aflNote: KR_DATA, sheet: 'Momentum Aided Manic Monday(Kora Reddy)/Momentum Aided Manic Monday(Kora Reddy).xlsx', sheetNote: `sheets <b>Nifty</b>, <b>nifty 1</b>, <b>Banknifty</b> (optimization: entry and exit day, lowest close period; run at 0.04% commission a side) · ${KR_DEFAULTS}` },
+  ytkr_gap_open_to_close: { afl: 'Buy at GapUp or GapDown & Sell at Close(Kora Reddy)/Buy at GapUp or GapDown & Sell at Close(Kora Reddy).afl', aflNote: KR_DATA, sheet: 'Buy at GapUp or GapDown & Sell at Close(Kora Reddy)/Buy at GapUp or GapDown & Sell at Close(Kora Reddy).xlsx', sheetNote: `sheets <b>GapUp-Long</b> … <b>LapDown-Short</b> (8 sheets, BankNifty table on the left, Nifty on the right; run from the start of the data) · ${KR_DEFAULTS}` },
+};
+// The 15 the team's Checklist.xlsx marks "Incorrect": coded as their AFLs are written; the note gives the checklist remark.
+const krIncorrect = remark => `${KR_DATA} Team checklist: Incorrect ("${remark}"); coded as the AFL is written, which is what the team's workbook tests.`;
+const KR_INFO = 'Default settings from the Info sheet.';
+const DUDD_WB = 'DUDD/NSE FO_KORA_DUDD 7 versions_Bktst & summary.xlsx';
+const DUDD_TL = {1: ['Nifty V-1 ', 'Banknifty V-1 TL'], 2: ['nifty(V-2) TL', 'Banknifty(V-2) TL'], 3: ['Nifty v-3 TL', 'Banknifty V-3 TL'], 4: ['Nifty V-4 TL', 'Banknifty V-4 '], 5: ['Nifty V-5 TL', 'Banknifty V-5 TL'], 6: ['Nifty V-6', 'Banknifty V-6 '], 7: ['Nifty V-7', 'Banknifty V-7']};
+const DUDD_REMARK = {1: "Today's open is down", 2: 'down close', 3: "Today's open is down", 4: "Today's open is down", 5: "Today's open is down", 6: "Today's open is down", 7: "Today's open is down"};
+Object.assign(YT_REFERENCES, {
+  ytkr_blood_on_street: { afl: 'Buy when there is blood on street(Kora Reddy)/Buy when there is blood on street(Kora Reddy).afl', aflNote: krIncorrect('down day'), sheet: 'Buy when there is blood on street(Kora Reddy)/Buy when there is blood on street(Kora Reddy) 1.xlsx', sheetNote: `sheets <b>Nifty V1</b>, <b>NIFTY V2</b>, <b>Nifty V3</b>, <b>Banknifty V1</b>, <b>BANKNIFTY V2</b>, <b>Banknifty V3</b> (optimization: entry day, lowest close period; 0.04% commission a side) · ${KR_INFO}` },
+  ytkr_buying_thursday: { afl: 'Buying Thursday(Kora Reddy)/Buying Thursday(Kora Reddy).afl', aflNote: krIncorrect('Today\'s close was up and above R1'), sheet: 'Buying Thursday(Kora Reddy)/Buying Thursday(Kora Reddy).xlsx', sheetNote: 'sheets <b>Nifty</b>, <b>Banknifty</b> (one row per entry day; 0.04% commission a side; results match a run to 26-10-2021, not the 06-09-2021 in its info sheet)' },
+  ytkr_buying_thursday_modified: { afl: 'Buying Thursday (Modified) (Kora Reddy)/Buying Thursday (Modified) (Kora Reddy).afl', aflNote: krIncorrect('Tuesday\'s (or Monday\'s if Tuesday happens to be a holiday) close was down'), sheet: 'Buying Thursday (Modified) (Kora Reddy)/BUY THURSDAY modified SUMMARY.xlsx', sheetNote: 'sheets <b>NIFTY_TL</b>, <b>BANKNIFTY_TL</b> (trade lists, Thursday entries; 0.04% commission a side)' },
+  ytkr_manic_monday: { afl: 'Manic Monday(Kora Reddy)/Manic Monday(Kora Reddy).afl', aflNote: krIncorrect('Today\'s open is down'), sheet: 'Manic Monday(Kora Reddy)/Manic Monday(Kora Reddy).xlsx', sheetNote: `sheets <b>Nifty</b>, <b>Banknifty</b> (optimization: entry and exit day; run at 0.04% commission a side) · ${KR_INFO}` },
+  ytkr_three_tumbles: { afl: 'Three tumbles and a jump(Kora Reddy)/Three tumbles and a jump(Kora Reddy).afl', aflNote: krIncorrect('Last three trading days were down closes'), sheet: 'Three tumbles and a jump(Kora Reddy)/Three tumbles and a jump(Kora Reddy).xlsx', sheetNote: `sheets <b>Nifty</b>, <b>Banknifty</b> (optimization: open %; its day-of-week column is not used by the AFL) · ${KR_INFO}` },
+  ytkr_modified_three_tumbles: { afl: 'Modified Three tumbles and a jump(Kora Reddy)/Modified Three tumbles and a jump(Kora Reddy).afl', aflNote: krIncorrect('Previous 3 days were down closes'), sheet: 'Modified Three tumbles and a jump(Kora Reddy)/Modified Three tumbles and a jump(Kora Reddy).xlsx', sheetNote: `sheets <b>Nifty</b>, <b>Banknifty</b> (optimization: day of week, open %, lowest close period) · ${KR_INFO}` },
+  ytkr_two_tumble: { afl: 'Two Tumble & ANother Tumble for Short Intraday FO/Two Tumble & ANother Tumble for Short Intraday FO.afl', aflNote: krIncorrect('Yesterday and day before yesterday were down closes'), sheet: 'Two Tumble & ANother Tumble for Short Intraday FO/Two Tumble & ANother Tumble for Short Intraday FO-BT.xlsx', sheetNote: `sheet <b>Optim</b> (Nifty table on the left, BankNifty on the right; 0.02% commission a side; results match a run from the start of the data) · ${KR_INFO}` },
+  ytkr_three_steps: { afl: 'Three steps and a stumble (Kora Reddy)/Three steps and a stumble (Kora Reddy).afl', aflNote: krIncorrect('close up'), sheet: 'Three steps and a stumble (Kora Reddy)/Three steps and a stumble (Kora Reddy).xlsx', sheetNote: `sheets <b>Nifty</b>, <b>Banknifty</b> (optimization: day of week, open %, highest close period) · ${KR_INFO}` },
+}, Object.fromEntries([1, 2, 3, 4, 5, 6, 7].map(v => [`ytkr_dudd${v}`, { afl: `DUDD/DUDD Version ${v} (Kora Reddy).afl`, aflNote: krIncorrect(DUDD_REMARK[v]), sheet: DUDD_WB, sheetNote: `sheets <b>${esc(DUDD_TL[v][0].trim())}</b>, <b>${esc(DUDD_TL[v][1].trim())}</b> (trade lists; ${v === 1 ? '0.04' : '0.02'}% commission a side; they match a run from the start of the data, not the 2007 in its info sheet)` }])));
+// The 5 the checklist gives no verdict for, coded as their AFLs are written.
+const krNoVerdict = `${KR_DATA} Team checklist: no verdict; coded as the AFL is written.`;
+const KR_OPEN_CLOSE = 'Buy at Open or Close and Sell at same day Close Or Next day Close';
+Object.assign(YT_REFERENCES, {
+  ytkr_buy_open_or_close: { afl: `${KR_OPEN_CLOSE}/${KR_OPEN_CLOSE}(Kora Reddy).afl`, aflNote: krNoVerdict, sheet: `${KR_OPEN_CLOSE}/${KR_OPEN_CLOSE}.xlsx`, sheetNote: 'sheets <b>Buy at Open</b> (mode 1, 0.02% commission a side) and <b>Buy at close</b> (mode 2, 0.04%), BankNifty and Nifty tables side by side; all quotes. Mode 1 loses about 99%, so AmiBroker then skips trades the account cannot buy one unit of.' },
+  ytkr_buyshort_open_or_close: { afl: `${KR_OPEN_CLOSE}/BuyShort at Open or Close and SellCover at same day Close Or Next day Close(Kora Reddy).afl`, aflNote: 'NSE spot indices (not futures): Nifty 50 from 03-01-2000 and Nifty Bank from 09-06-2005, to 31-03-2022. Team checklist: no verdict; coded as the AFL is written.', sheet: `${KR_OPEN_CLOSE}/BuyShort at Open or Close and SellCover at same day Close Or Next day Close(Kora Reddy)-NIFTY optim(JAN-2000 MAR-2022).xlsx`, sheetNote: 'and the matching <b>BANKNIFTY optim(JUN-2000 MAR-2022)</b> workbook (four sheets each: buy/sell at open or close, one row per weekday; open % 0, no commission). All 40 rows reproduced exactly on the spot indices.' },
+  ytkr_buying_mondays_fridays: { afl: 'Buying Mondays & Fridays for Intraday FO/Buying Mondays & Fridays for Intraday FO.afl', aflNote: krNoVerdict, sheet: 'Buying Mondays & Fridays for Intraday FO/Buying Mondays & Fridays for Intraday FO_optim_Comm 0.02.xlsx', sheetNote: `sheets <b>Nifty</b>, <b>BankNifty</b> (optimization: day of week, open %; 0.02% commission a side) · ${KR_INFO}` },
+  ytkr_candle_colour: { afl: 'Entry Based on Candle Color (Kora Reddy)/Entry Based on Candle Color (Kora Reddy).afl', aflNote: krNoVerdict, sheet: 'Entry Based on Candle Color (Kora Reddy)/Entry Based on Candle Color (Kora Reddy).xlsx', sheetNote: 'trade lists for green/red × long/short, e.g. <b>Nifty TL(Green Long)</b>, <b>Banknifty (RS) TL</b> (0.04% commission a side; they match a run from the start of the data, not the 2007 in its info sheet)' },
+  ytkr_uuddd: { afl: 'UUDDD (Kora Reddy)/UUDDD (Kora Reddy).afl', aflNote: krNoVerdict, sheet: 'UUDDD (Kora Reddy)/UUDDD (Kora Reddy).xlsx', sheetNote: 'sheets <b>NIFTY</b>, <b>BANKNIFTY</b> (trade lists; 0.04% commission a side; they match a run from the start of the data)' },
+});
+const ytReferenceHTML = v => { const r = YT_REFERENCES[v.id], set = YT_SETS[ytSetOf(v)]; if (!r || !set) return '';
+  return `<section class="box" data-yt-reference><div class="box-h">Reference <small>the team's own files, inside the ${esc(set.name)} folder</small></div><div class="ref-grid">
+    <span class="swl">Reference AFL</span><div><div class="ref-path">${esc(r.afl)}</div><div class="ref-sub">${esc(r.aflNote)}</div></div>
+    <span class="swl">Reference trade sheet</span><div><div class="ref-path">${esc(r.sheet)}</div><div class="ref-sub">${r.sheetNote}</div></div></div></section>`; };
+// YT "Run backtest": a pop-up with the period, costs and every strategy setting. A run there can be downloaded as one
+// workbook (Settings, Statistics, Trades) or shown on the page; the page's own state is untouched until then.
+// Pop-up edits are kept per strategy for the session, so reopening shows them; the period and costs are the page's
+// period bar values, and edits in the pop-up are written back to that bar (no run until the page is applied).
+const YTBT_STATE = {};
+function syncYtPeriod(form) {
+  const page = document.getElementById('period'); if (!page) return;
+  for (const k of ['from', 'to', 'slippage', 'rollover', 'capital']) if (page.elements[k] && form.elements[k]) page.elements[k].value = form.elements[k].value;
+}
+function saveYtState(v, form) {
+  const params = {}; form.querySelectorAll('[data-param]').forEach(i => { params[i.dataset.param] = i.value; });
+  YTBT_STATE[v.id] = { params };
+}
+async function openYtBacktest() {
+  const v = CAT.find(x => x.id === R.id); if (!v) return;
+  const tk = S.tk === 'ALL' ? TICKERS[0].ticker : S.tk, span = selectedSpan(tk), period = document.getElementById('period');
+  const fd = period ? new FormData(period) : null, cost = VaultUI.costState(S);
+  const from = fd?.get('from') || S.from || span.first, to = fd?.get('to') || S.to || span.last;
+  const ps = (await optSchema())[v.id] || [], cur = { ...decodeP(S.p), ...(YTBT_STATE[v.id]?.params || {}) };
+  closeYtBacktest();
+  const field = (name, label, value, attrs) => `<label class="dfield">${esc(label)} <input ${attrs} name="${name}" value="${esc(value)}" required></label>`;
+  const el = document.createElement('div'); el.className = 'gmodal ytbt'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-labelledby', 'ytbt-title');
+  el.innerHTML = `<div class="gmodal-card ytbt-card"><button type="button" class="gm-x" aria-label="Close" data-ytbt-close>×</button>
+    <h2 id="ytbt-title">Backtest settings</h2><p class="gm-tag">${esc(familyDisplayName(v))} · ${esc(v.variant || v.name)} · ${esc(LABEL[tk] || tk)}</p>
+    <form id="ytbt-form" novalidate><h4>Period and costs</h4><div class="ytbt-grid">
+      ${field('from', 'From', from, `type="date" min="${span.first}" max="${span.last}"`)}${field('to', 'To', to, `type="date" min="${span.first}" max="${span.last}"`)}
+      ${field('slippage', 'Slippage (bps a side)', fd?.get('slippage') ?? cost.slippage ?? 0, 'type="number" min="0" max="500" step="0.1"')}${field('rollover', 'Rollover (bps per roll)', fd?.get('rollover') ?? cost.rollover ?? 0, 'type="number" min="0" max="500" step="0.1"')}${field('capital', 'Starting capital (₹, whole units)', fd?.get('capital') ?? ytCapital(S), 'type="number" min="1" max="1000000000000" step="1"')}</div>
+      ${ps.length ? `<h4>Strategy settings</h4><div class="ytbt-grid">${ps.map(p => choicesOf(p).length ? `<label class="dfield ytbt-wide" title="Default ${esc(choiceName(p, p.def))}">${esc(labelOf(p))} <select data-param="${esc(p.key)}" data-def="${p.def}">${choicesOf(p).map((c, i) => `<option value="${i + 1}" ${+(cur[p.key] ?? p.def) === i + 1 ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select><small class="muted">default ${esc(choiceName(p, p.def))}</small></label>` : `<label class="dfield" title="Default ${p.def}">${esc(p.label)} <input type="number" data-param="${esc(p.key)}" data-def="${p.def}" value="${cur[p.key] ?? p.def}" min="${p.min}" max="${p.max}" step="${p.step || 'any'}" required><small class="muted">default ${p.def}</small></label>`).join('')}</div>` : ''}
+      <h4>Result format</h4><div class="join sm ytbt-format" role="radiogroup" aria-label="Result format">${[['1', 'Format 1', 'Settings, Statistics and Trades'], ['2', 'Format 2', "Team tradesheet: Rules, 2008-2011 Summary, YOY Summary, trade sheet with live formulas, All Index Explore"]].map(([k, t, d]) => `<label class="join-item ${ytFormat() === k ? 'active' : ''}" title="${esc(d)}"><input type="radio" name="format" value="${k}" ${ytFormat() === k ? 'checked' : ''}>${t}</label>`).join('')}</div>
+      <p class="perr" id="ytbt-err" role="alert"></p>
+      <div class="gm-foot"><button type="submit" class="dbtn primary">Run backtest</button>${ps.length ? '<button type="button" class="dbtn" data-ytbt-reset>Reset to defaults</button>' : ''}<button type="button" class="dbtn ghost" data-ytbt-close>Cancel</button></div></form>
+    <div id="ytbt-out" aria-live="polite"></div></div>`;
+  document.body.append(el); document.body.style.overflow = 'hidden';
+  el.addEventListener('click', e => { if (e.target === el || e.target.closest('[data-ytbt-close]')) closeYtBacktest(); });
+  const form = el.querySelector('#ytbt-form');
+  el.querySelector('[data-ytbt-reset]')?.addEventListener('click', () => { el.querySelectorAll('[data-param]').forEach(i => { i.value = i.dataset.def; }); saveYtState(v, form); });
+  form.addEventListener('input', e => { if (e.target.matches('[data-param]')) saveYtState(v, form); else if (['from', 'to', 'slippage', 'rollover', 'capital'].includes(e.target.name)) syncYtPeriod(form); });
+  form.addEventListener('submit', e => { e.preventDefault(); saveYtState(v, form); syncYtPeriod(form); runYtBacktest(v, tk, span, e.target); });
+  el.querySelectorAll('.ytbt-format input').forEach(i => i.addEventListener('change', () => { setYtFormat(i.value); el.querySelectorAll('.ytbt-format label').forEach(l => l.classList.toggle('active', l.querySelector('input').checked)); }));
+  el.querySelector('input')?.focus();
+}
+function closeYtBacktest() { document.querySelectorAll('.gmodal.ytbt').forEach(m => m.remove()); document.body.style.overflow = ''; }
+async function runYtBacktest(v, tk, span, form) {
+  const err = form.querySelector('#ytbt-err'), out = document.getElementById('ytbt-out'), fd = new FormData(form);
+  const from = String(fd.get('from') || ''), to = String(fd.get('to') || ''), slippage = String(Math.max(0, +fd.get('slippage') || 0)), rollover = String(Math.max(0, +fd.get('rollover') || 0));
+  const capital = String(fd.get('capital') ?? ytCapital(S)).trim();
+  err.textContent = '';
+  if (!from || !to || from >= to) { err.textContent = 'From must be before To.'; return; }
+  if (!ytCapitalValid(capital)) { err.textContent = 'Starting capital must be a number from 1 to 1,000,000,000,000.'; return; }
+  const params = {}, changed = {};
+  for (const i of form.querySelectorAll('[data-param]')) {
+    const x = +i.value, lo = i.tagName === 'SELECT' ? 1 : +i.min, hi = i.tagName === 'SELECT' ? i.options.length : +i.max;
+    if (i.value === '' || !Number.isFinite(x) || x < lo || x > hi) { err.textContent = `${i.closest('label').firstChild.textContent.trim()} must be between ${lo} and ${hi}.`; i.focus(); return; }
+    params[i.dataset.param] = x; if (x !== +i.dataset.def) changed[i.dataset.param] = x;
+  }
+  const btn = form.querySelector('[type=submit]'); btn.disabled = true; out.innerHTML = bookLoader('Running the backtest…');
+  const p = encodeP(changed), f = from <= span.first ? '' : from, t = to >= span.last ? '' : to;
+  const d = await runData(v.id, tk, f, t, '0', p, API, { ...VaultUI.costState(S), slippage, rollover, capital });
+  btn.disabled = false;
+  if (!document.body.contains(out)) return;
+  if (!d || d.error) { out.innerHTML = `<p class="perr">Backtest failed: ${esc(d?.error || 'no response')}</p>`; return; }
+  const s = d.stats || {}, tile = (k, label, val) => `<div><dt>${label}</dt><dd class="${k ? cls(s[k]) : ''}">${val}</dd></div>`;
+  out.innerHTML = `<h4>Result · ${esc(d.dates?.[0] || from)} to ${esc(d.dates?.at(-1) || to)}</h4>
+    <dl class="lc-stats">${tile('', 'Trades', fx(s.trades, 0))}${tile('net_profit', 'Net profit', pct(s.net_profit, 2, true))}${tile('', 'Win rate', pct(s.win_rate, 2))}${tile('cagr', 'CAGR', pct(s.cagr, 2, true))}${tile('', 'Max DD', pct(s.max_dd, 2))}${tile('', 'Sharpe', fx(s.sharpe))}</dl>
+    <div class="gm-foot"><button type="button" class="dbtn primary" data-ytbt-xlsx>Download trades and stats (Excel)</button><a class="dbtn" href="${href(R.path, { ...S, from: f, to: t, slippage, rollover, capital: capital === YT_CAPITAL_DEFAULT ? '' : capital, p })}" data-ytbt-close>Show on page</a></div>`;
+  out.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  out.querySelector('[data-ytbt-xlsx]').onclick = async e => { const b = e.currentTarget; b.disabled = true; b.textContent = 'Building Excel…';
+    try { await ytBacktestDownload(v, tk, d, { from: d.dates?.[0] || from, to: d.dates?.at(-1) || to, slippage, rollover, capital }, params); b.textContent = `Downloaded Format ${ytFormat()} · download again`; }
+    catch (x) { b.textContent = 'Excel failed: ' + x.message; } finally { b.disabled = false; } };
+}
+// Result format for YT downloads: 1 = Settings/Statistics/Trades, 2 = the team's Tradesheet Format (per-viewer choice).
+const ytFormat = () => { try { return localStorage.getItem('yt-result-format') === '2' ? '2' : '1'; } catch { return '1'; } };
+const setYtFormat = k => { try { localStorage.setItem('yt-result-format', k === '2' ? '2' : '1'); } catch {} };
+const ytBacktestDownload = (v, tk, d, run, params) => ytFormat() === '2' ? ytFormat2Xlsx(v, tk, d, run, params) : ytBacktestXlsx(v, tk, d, run, params);
+const dmy = iso => iso ? `${iso.slice(8, 10)}-${iso.slice(5, 7)}-${iso.slice(0, 4)}` : '';
+/** The selected event of a YT Holidays run ("" for other strategies). */
+const ytEventName = (v, p) => { const e = ((OPT.schemaSync || {})[v.id] || []).find(x => x.key === 'event'); return e ? String(choiceName(e, p.event ?? e.def)) : ''; };
+/** Rules sheet text from the strategy and its settings. */
+function ytRulesText(v, tk, run, p) {
+  const ruleLines = k => (v.rules || []).filter(r => r.startsWith(k + '|')).map(r => r.slice(2));
+  const afl = (String(v.notes || '').match(/AFL "([^"]+)"/) || [])[1];
+  const hol = v.id.startsWith('ythol_'), short = v.dir === 'Short';
+  const exits = hol ? [p.nc_n > 0 && `N Candles (${p.nc_n})`, p.atr_on && (short ? `Dual ATR (${p.atr_n},${p.atr_mult}), favour (${p.fav_n},${p.fav_mult})` : `ATR (${p.atr_n},${p.atr_mult})`),
+    p.hsl === 1 && 'HSL Live', p.hsl === 2 && 'HSL Close', p.st_on && `STR (${p.st_factor}) ${p.st_running ? 'Running' : 'Fresh'}`, p.base2 && 'BASE 2 period exit date'].filter(Boolean) : ruleLines('X');
+  return { timeframe: 'Daily', index: `${LABEL[tk] || tk} (${dmy(run.from)} to ${dmy(run.to)})`, aflPath: afl ? `${afl}.afl` : 'Team AFL (see the strategy notes)',
+    doneBy: 'Strategy Vault (YT backtest)', verifiedBy: '', strategy: hol ? ytEventName(v, p) : `${familyDisplayName(v)} · ${v.variant || v.name}`,
+    position: v.dir, filter: 'base2' in p ? (p.base2 ? 'Base 2 Bull' : 'Without Filter') : 'Without Filter', setup: '',
+    entry: hol ? `${p.after ? 'After' : 'Before'} ${p.days} day${+p.days === 1 ? '' : 's'}` : ruleLines('E').join(' / '), exit: exits.length ? exits : ['—'] };
+}
+/** Format 2: the team's Tradesheet Format, with live formulas and the app's values. */
+async function ytFormat2Xlsx(v, tk, d, run, params) {
+  await loadXlsx(); if (!window.XLSX?.utils) throw Error('The Excel library did not load.');
+  const px = await fullOhlc(tk, API); if (!px?.d) throw Error('Index prices for the All Index Explore sheet are unavailable.');
+  const trades = (d.trades || []).filter(t => !t.open).map(t => ({ symbol: tk, side: t.dir > 0 ? 'Long' : 'Short', entry: t.entry, entryPx: t.legs[0][1], exit: t.exit, exitPx: t.exit_px }));
+  const sheetName = format2SheetName(tk, v.id, v.variant || v.name, params), rules = ytRulesText(v, tk, run, params);
+  rules.setup = sheetName;
+  const sheets = buildFormat2({ sheetName, trades, bars: { ticker: tk, d: px.d, o: px.o, h: px.h, l: px.l, c: px.c }, rules });
+  const bytes = writeFormat2Xlsx(XLSX, sheets);
+  const link = document.createElement('a'), url = URL.createObjectURL(new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  link.href = url; link.download = `${String([v.id, ytEventName(v, params), tk, run.from, run.to].filter(Boolean).join('-')).replace(/[^a-zA-Z0-9._-]+/g, '-')}-format2.xlsx`; document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+async function ytBacktestXlsx(v, tk, d, run, params) {
+  const ps = (OPT.schemaSync || {})[v.id] || [], detail = VaultReport.detailRows(d);
+  const settings = [['Setting', 'Value', 'Default'], ['Strategy', `${familyDisplayName(v)} · ${v.variant || v.name}`, null], ['Strategy ID', v.id, null], ['Index', LABEL[tk] || tk, null],
+    ['From', dmy(run.from), null], ['To', dmy(run.to), null], ['Slippage (bps a side)', +run.slippage, null], ['Rollover (bps per roll)', +run.rollover, null],
+    ...(d.whole_unit_account ? [['Starting capital (₹, whole units)', +d.whole_unit_account.capital, +YT_CAPITAL_DEFAULT]] : []),
+    ...ps.map(p => choicesOf(p).length ? [labelOf(p), choiceName(p, params[p.key] ?? p.def), choiceName(p, p.def)] : [p.label, params[p.key] ?? p.def, p.def]), ['Note', 'Simulated on the selected index; YT strategy from the team AFL, not a book method.', null]];
+  await VaultUI.workbook([v.id, ytEventName(v, params), tk, run.from, run.to, 'backtest'].filter(Boolean).join('-'), [
+    { name: 'Settings', rows: settings },
+    { name: 'Statistics', rows: [['Statistic', 'Net', 'Gross'], ...detail.map(r => r.slice(0, 3))], types: ['header', ...detail.map(r => r[3])] },
+    { name: 'Trades', rows: ytUnitColumns(d, VaultUI.tradeTable(d, tk)), percent: [8, 11, 13, 14, 15] }]);
+}
+/** Whole-unit account columns for the YT trades sheet: units bought, their entry value and the account at entry. */
+const ytUnitColumns = (d, rows) => !d.whole_unit_account ? rows : rows.map((row, i) => i === 0
+  ? [...row, 'Units', 'Position value', 'Account at entry']
+  : [...row, d.trades[i - 1]?.units ?? null, d.trades[i - 1]?.position_value ?? null, d.trades[i - 1]?.entry_equity ?? null]);
+// The page's own run: same workbook as the pop-up, for the backtest currently shown.
+async function downloadYtPage(b) {
+  const v = STRAT?.v, d = STRAT?.d;
+  if (!v || !d || STRAT.v.id !== R.id || !Array.isArray(d.trades)) { b.textContent = 'Run a backtest first'; return; }
+  const label = b.textContent; b.disabled = true; b.textContent = 'Building Excel…';
+  try {
+    await optSchema();
+    await ytBacktestDownload(v, STRAT.tk, d, { from: d.dates?.[0] || '', to: d.dates?.at(-1) || '', slippage: S.slippage || 0, rollover: S.rollover || 0, capital: ytCapital(S) }, { ...bookDefaults(v.id), ...decodeP(S.p) });
+    b.textContent = `Downloaded Format ${ytFormat()} · download again`;
+  } catch (x) { b.textContent = 'Excel failed: ' + x.message; } finally { b.disabled = false; if (b.textContent === 'Building Excel…') b.textContent = label; }
+}
+document.addEventListener('click', e => { if (e.target.closest('[data-yt-backtest]')) { e.preventDefault(); openYtBacktest(); } const dl = e.target.closest('[data-yt-download]'); if (dl) { e.preventDefault(); downloadYtPage(dl); } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.querySelector('.gmodal.ytbt')) closeYtBacktest(); });
 const setState = patch => { const st = { ...S, ...patch }; if ('guru' in patch && !('book' in patch) && st.book && BOOK[st.book]?.guru.id !== st.guru) st.book = ''; go(R.path, st); };
 const guruLink = id => href('/guru/' + id, {view:'grid',tk:S.tk,basket:S.basket,from:S.from,to:S.to});
-const stratLink = (id, tk) => href('/s/' + encodeURIComponent(id), { ...(tk && tk !== 'NIFTY 50' && tk !== 'ALL' ? { tk } : {}), from: S.from, to: S.to, cost: S.cost,slippage:S.slippage,rollover:S.rollover,basket:S.basket,run_scope:S.run_scope,report_mode:S.report_mode,membership:S.membership,max_positions:S.max_positions,position_choice:S.position_choice });
+const stratLink = (id, tk) => href('/s/' + encodeURIComponent(id), { ...(tk && tk !== 'NIFTY 50' && tk !== 'ALL' ? { tk } : {}), from: S.from, to: S.to, cost: S.cost,slippage:S.slippage,rollover:S.rollover,capital:S.capital,basket:S.basket,run_scope:S.run_scope,report_mode:S.report_mode,membership:S.membership,max_positions:S.max_positions,position_choice:S.position_choice });
 
 // ---------------------------------------------------------------- shared bits
 const GUILL = (() => { const paths = [[80, 23, 60, 23], [74, 19, 48, 19], [66, 29, 40, 29]].map(([R_, r, d, turns]) => { let p = ''; for (let k = 0; k <= 2400; k++) { const t = k / 2400 * Math.PI * 2 * turns, x = (R_ - r) * Math.cos(t) + d * Math.cos((R_ - r) / r * t), y = (R_ - r) * Math.sin(t) - d * Math.sin((R_ - r) / r * t); p += `${k ? 'L' : 'M'}${(100 + x * .7).toFixed(2)},${(100 + y * .7).toFixed(2)}`; } return `<path d="${p}"/>`; }); return `<svg viewBox="0 0 200 200">${paths.join('')}</svg>`; })();
@@ -1520,6 +1814,8 @@ async function viewList() {
     head = `<nav class="crumbs"><a href="#/">Guru's</a><span>/</span>${b ? `<a href="${guruLink(g.id)}">${esc(g.name)}</a><span>/</span><span>${esc(b.title)}</span>` : `<span>${esc(g.name)}</span>`}</nav>
       <section class="ghero"><div class="guilloche" aria-hidden="true">${GUILL}</div><div class="ghero-copy"><h1>${esc(b ? b.title : g.name)}</h1><p class="lede">${esc(b ? `${g.name} · ${bookYear(b)}` : api?.tagline || g.tagline || 'Reading library · objective strategy review pending')}</p><p class="gbook">${esc(b ? (g.id==='pristine'&&b.id==='p_tpm1'?readingSummary(g,b):(b.blurb || BOOK_BLURB[b.id] || '')) : g.books.filter(x => x.live).map(x => `${x.title} (${bookYear(x)})`).join(' · '))}</p></div><figure class="guru-portrait"><div class="portrait ${g.id==='ross'?'portrait-ross':''}">${pframe(g)}</div>${g.photoSource?`<figcaption class="photo-credit">Photo: <a href="${esc(g.photoSource)}" target="_blank" rel="noopener noreferrer">Trading Educators</a></figcaption>`:''}</figure></section>
       <dl class="lstrip library-summary" data-author-counts><div><dt>Books</dt><dd>${b?1:libraryEntryCounts(g.id).total}</dd></div><div><dt>Strategies</dt><dd>${currentLibraryProgress().counts(b?[b.id]:g.books.map(x=>x.id)).strategies}</dd></div><div><dt>Backtested</dt><dd>${b?visibleBacktestCount(rs):currentLibraryProgress().counts(g.books.map(x=>x.id)).backtested}</dd></div></dl>${b?`<p class="library-count-note" data-book-result-context>Backtested counts the strategies shown below for ${esc(LABEL[S.tk]||S.tk)} and the selected period and filters. Strategies counts all catalogued entries in this book.</p>`:''}`;
+  } else if (R.name === 'yt' && S.set) { const set = YT_SETS[S.set], back = href('/yt', { ...S, set: '' });
+    head = `<nav class="crumbs"><a href="#/">Guru's</a><span>/</span><a href="${back}">YT Strategies</a><span>/</span><span>${esc(set.name)}</span></nav><section class="ahero"><h1>${esc(set.name)}</h1><p class="lede">${esc(set.blurb)} Simulated results on the selected instrument; no published figures exist for them.</p><p><a class="dbtn sm back-btn" data-yt-back href="${back}">Back to YT Strategies</a></p></section>`;
   } else if (R.name === 'yt') head = `<nav class="crumbs"><a href="#/">Guru's</a><span>/</span><span>YT Strategies</span></nav><section class="ahero"><h1>YT Strategies</h1><p class="lede">Rule sets the team sourced outside the book library, backtested on the selected India or US instrument. These are simulated results; no published figures exist for them.</p></section>`;
   else head = `<nav class="crumbs"><a href="#/">Guru's</a><span>/</span><span>All strategies</span></nav><section class="ahero"><h1>All strategies</h1><p class="lede">Explore the catalogued book rules on the selected India or US instrument. Available backtests and unavailable strategies are listed separately; book figures are reference claims.</p></section>`;
   if(S.from||S.to)head+=`<p class="rnote" data-list-period><b>Selected results period:</b> ${esc(S.from||'First available bar')} to ${esc(S.to||'Latest available bar')}. Top Sharpe results and linked backtests use this window.</p>`;
@@ -1528,6 +1824,11 @@ async function viewList() {
   if(R.name==='guru'&&S.book&&!BOOK[S.book]?.live)return readingBookPage(GURU[R.id],BOOK[S.book]);
   if (R.name === 'guru' && !S.book) return `${head}${summaryNoticeHTML(listSummaryIssues())}${R.id==='ross'?rossResearchNotice():R.id==='chande'?experimentNotice({guru:'chande'},null):''}${libraryFiltersHTML(true)}${await bookShelf(GURU[R.id])}`;
   const missing=await unavailableForSelectedBook();
+  if (R.name === 'yt' && S.set && !rs.length && S.tab !== 'awaiting') { const tab = S.tab; S.tab = 'awaiting'; const held = await rows(); S.tab = tab;
+    const kind = held.length && held.every(r => wrongDataKind(r.v, r.tk)) ? wrongDataKind(held[0].v, held[0].tk) : '';
+    const note = kind ? `${held.length === 1 ? 'This strategy is' : 'These strategies are'} not available on ${DATA_KIND[kind]} data (${esc(LABEL[S.tk] || S.tk)}). ${kind === 'futures' ? 'Choose Nifty 50 or Nifty Bank in Market' : 'Choose Nifty Futures or Bank Nifty Futures in Market'} to run ${held.length === 1 ? 'it' : 'them'}.`
+      : 'No backtest is available yet for these strategies; each is listed with the reason.';
+    if (held.length) return `${head}<p class="rnote" data-yt-set-held>${note}</p><div id="results">${awaiting(held)}</div>`; }
   return `${head}${await filterBar()}${summaryNoticeHTML(listSummaryIssues())}${resultsBar(rs)}<div id="results">${resultsHtml(rs,missing)}</div>`;
 }
 // A guru's books as covers; opening one shows its strategies.
@@ -1567,7 +1868,7 @@ const RUNS = {}, OHLC = {}, FULL_OHLC={},PRISTINE_READY={};
 const fullOhlc=(tk,api=API)=>{const key=api+'|'+tk;return FULL_OHLC[key]||(FULL_OHLC[key]=fetch(api+'/ohlc?'+new URLSearchParams({ticker:tk}),{signal:AbortSignal.timeout(30000)}).then(async r=>{if(!r.ok)throw Error('Full chart history unavailable');return r.json();}).catch(error=>{delete FULL_OHLC[key];throw error;}));};
 const ohlc = (tk, tf = 'D') => OHLC[tk + tf] || (OHLC[tk + tf] = fetch(`data/ohlc-${tk.replace(/\s/g, '')}${tf === 'D' ? '' : '-' + tf}.json`).then(r => r.ok ? r.json() : null).catch(() => null));
 let TF = 'D';
-const runData = (id, tk, from = '', to = '', cost = '0', p = '', api = API,execution=VaultUI.costState(S)) => { const k = [api, id, tk, from, to, cost, p,execution.slippage,execution.rollover,...(pristineMethod(id,PRISTINE_BOOK)?[execution.research_mode||'']:[])].join('|');
+const runData = (id, tk, from = '', to = '', cost = '0', p = '', api = API,execution=VaultUI.costState(S)) => { if (ownerOf(id) === 'yt') execution = { ...execution, capital: ytCapital(execution.capital ? execution : S) }; const k = [api, id, tk, from, to, cost, p,execution.slippage,execution.rollover,execution.capital||'',...(pristineMethod(id,PRISTINE_BOOK)?[execution.research_mode||'']:[])].join('|');
   return RUNS[k] || (RUNS[k] = (async () => { const t0 = performance.now();
     try { const r = await fetch(enginePath(id,'run',api)+'?' + new URLSearchParams({ id, ticker: tk, from, to, cost, ...execution, ...Object.fromEntries(Object.entries(decodeP(p)).map(([k, v]) => ['p.' + k, v])) })); if (!r.ok) { delete RUNS[k]; return { error: await r.text() }; }
       const j = await r.json(); if(!pristineMethod(id,PRISTINE_BOOK))j._ms = performance.now() - t0; return j; } catch (e) { delete RUNS[k]; return { error: e.message }; } })()); };
@@ -1575,15 +1876,16 @@ const runData = (id, tk, from = '', to = '', cost = '0', p = '', api = API,execu
 let BASKETS=[],BASKETS_IN=[],BASKETS_US=[],TICK_ALL_IN=[];
 function basketChoices(){const past=S.membership==='past';return S.region==='us'?[['us_sp500','S&P 500'],['us_nasdaq100','Nasdaq 100'],['us_dow30','Dow Jones'],['us_russell2000','Russell 2000']].map(([id,name])=>[id+(past?'_past':''),name]):[['nse500','NSE 500'],['nifty50','Nifty 50'],['midcap100','Midcap100'],['allfo','All F&O']];}
 function marketControls(v,tk){
- const allIndices=S.region==='us'?TICK_US:TICK_IN,unitMethod=unitExposureMethod(v.id,v.book),indices=unitMethod?(allIndices||[]).filter(t=>t.ticker===(S.region==='us'?'SPX':'NIFTY 50')):allIndices,controls=instrumentControls(v.instrument_policy,v.id,v.book),portfolio=S.run_scope==='basket',sourceAccountOnly=v.instrument_policy?.execution_scope==='single_symbol_source_account'||unitMethod;
+ const allIndices=S.region==='us'?TICK_US:TICK_IN,unitMethod=unitExposureMethod(v.id,v.book),indices=unitMethod?(allIndices||[]).filter(t=>t.ticker===(S.region==='us'?'SPX':'NIFTY 50')):krSpotMethod(v.id,v.book)?(allIndices||[]).filter(t=>['NIFTY 50','NIFTYBANK'].includes(t.ticker)):allIndices,controls=instrumentControls(v.instrument_policy,v.id,v.book),portfolio=S.run_scope==='basket',sourceAccountOnly=v.instrument_policy?.execution_scope==='single_symbol_source_account'||unitMethod;
  const etfs=S.region==='us'&&controls.etf?TICK_ALL_US.filter(t=>['SPY','QQQ','MDY','IWM','SMH','DIA'].includes(t.ticker)):[];
+ const futures=S.region!=='us'&&controls.futures?TICK_FUT:[];
  const stocks=stockChoices(S.region==='us'?TICK_ALL_US:TICK_ALL_IN,tk);
- const singleState=ticker=>({...S,run_scope:'single',basket:'',tk:ticker,from:'',to:''});
+ const singleState=ticker=>{const span=tkSpan(ticker),keep=isYt(v);return {...S,run_scope:'single',basket:'',tk:ticker,from:keep&&S.from&&S.from>span.first?S.from:'',to:keep&&S.to&&S.to<span.last?S.to:''};}; // YT keeps the chosen period when switching index/ETF
  const indexButtons=(indices||[]).map(t=>controls.index?`<a class="join-item ${!portfolio&&t.ticker===tk?'active':''}" href="${href(R.path,singleState(t.ticker))}">${esc(LABEL[t.ticker]||t.ticker)}</a>`:`<button type="button" class="join-item" disabled title="${esc(controls.note)}">${esc(LABEL[t.ticker]||t.ticker)}</button>`).join('');
  const basketButtons=basketChoices().map(([key,name])=>{const entry=BASKETS.find(b=>b.id===key),missing=!entry?.symbols?.length;return `<button type="button" class="join-item ${portfolio&&S.basket===key?'active':''}" data-basket="${key}" ${!controls.basket||missing?`disabled title="${esc(!controls.basket?controls.note:'No admitted constituent prices are available for this basket.')}"`:''}>${esc(name)}</button>`;}).join('');
  const stockPicker=controls.stock?`<label class="dfield stock-picker"><span class="swl">Stock</span><select id="strategy-stock" aria-label="Stock"><option value="" ${portfolio||!tk.startsWith('basket:')?'selected':''}>Select a stock</option>${stocks.map(t=>`<option value="${esc(t.ticker)}" ${!portfolio&&t.ticker===tk?'selected':''}>${esc(t.symbol||t.ticker.split(':').at(-1))}</option>`).join('')}</select></label>`:'';
  const pastTooltip=S.region==='us'?'Includes current and former constituents.\nDate-specific membership remains unverified.':'Historical constituent lists were found.\nPrice admission and dated membership are under review.';
- return `<div class="sw research-controls" data-market-controls><div class="swg"><span class="swl">Market</span>${regionToggle()}</div><div class="swg"><span class="swl">Index</span><div class="join sm">${indexButtons}</div></div>${stockPicker}${etfs.length?`<div class="swg"><span class="swl">ETF</span><div class="join sm">${etfs.map(t=>`<a class="join-item ${!portfolio&&t.ticker===tk?'active':''}" href="${href(R.path,singleState(t.ticker))}">${esc(t.ticker)}</a>`).join('')}</div></div>`:''}${sourceAccountOnly?'':`<div class="basket-selector" data-selector-panel><div class="basket-heading"><span class="swl">Basket</span><div class="join sm membership-toggle" role="group" aria-label="Basket membership"><button type="button" class="join-item ${S.membership==='current'?'active':''}" data-membership="current" aria-pressed="${S.membership==='current'}" title="Source-listed current constituents; historical tests can have survivorship bias.">Current</button><button type="button" class="join-item ${S.membership==='past'?'active':''}" data-membership="past" aria-pressed="${S.membership==='past'}" title="${esc(pastTooltip)}">Past</button></div></div><div class="join sm">${basketButtons}</div></div>`}<div class="control-run"><button class="dbtn primary sm" type="submit" form="period">Run backtest</button>${v.status==='live'&&!portfolio?`<a class="dbtn sm back-btn" id="open-optimization" href="${href('/'+(R.optim?'s':'o')+'/'+encodeURIComponent(v.id),{...S})}">${R.optim?'Back to backtest':'Optimization'}</a>`:''}</div></div>${controls.note?`<p class="instrument-note" data-instrument-note>${esc(controls.note)}</p>`:''}`;
+ return `<div class="sw research-controls" data-market-controls><div class="swg"><span class="swl">Market</span>${regionToggle()}</div><div class="swg"><span class="swl">Index</span><div class="join sm">${indexButtons}</div></div>${futures.length?`<div class="swg"><span class="swl">Futures</span><div class="join sm">${futures.map(t=>`<a class="join-item ${!portfolio&&t.ticker===tk?'active':''}" href="${href(R.path,singleState(t.ticker))}">${esc(LABEL[t.ticker]||t.ticker)}</a>`).join('')}</div></div>`:''}${stockPicker}${etfs.length?`<div class="swg"><span class="swl">ETF</span><div class="join sm">${etfs.map(t=>`<a class="join-item ${!portfolio&&t.ticker===tk?'active':''}" href="${href(R.path,singleState(t.ticker))}">${esc(t.ticker)}</a>`).join('')}</div></div>`:''}${sourceAccountOnly?'':`<div class="basket-selector" data-selector-panel><div class="basket-heading"><span class="swl">Basket</span><div class="join sm membership-toggle" role="group" aria-label="Basket membership"><button type="button" class="join-item ${S.membership==='current'?'active':''}" data-membership="current" aria-pressed="${S.membership==='current'}" title="Source-listed current constituents; historical tests can have survivorship bias.">Current</button><button type="button" class="join-item ${S.membership==='past'?'active':''}" data-membership="past" aria-pressed="${S.membership==='past'}" title="${esc(pastTooltip)}">Past</button></div></div><div class="join sm">${basketButtons}</div></div>`}<div class="control-run">${isYt(v)?'<button class="dbtn primary sm" type="button" data-yt-backtest aria-haspopup="dialog">Run backtest</button><button class="dbtn sm" type="button" data-yt-download title="Excel with the settings, statistics and trades of the backtest shown on this page">Download trades and stats</button>':'<button class="dbtn primary sm" type="submit" form="period">Run backtest</button>'}${v.status==='live'&&!portfolio?`<a class="dbtn sm back-btn" id="open-optimization" href="${href('/'+(R.optim?'s':'o')+'/'+encodeURIComponent(v.id),{...S})}">${R.optim?'Back to backtest':'Optimization'}</a>`:''}</div></div>${controls.note?`<p class="instrument-note" data-instrument-note>${esc(controls.note)}</p>`:''}`;
 }
 function varyingControls(v,tk) {
  const fam=CAT.filter(x=>x.family===v.family),stock=instrumentControls(v.instrument_policy,v.id,v.book).basket;
@@ -1594,6 +1896,7 @@ function selectedSpan(tk){
  if(span){const calendar=(S.region==='us'?TICK_US:TICK_IN)?.find(t=>t.ticker===(S.region==='us'?'SPX':'NIFTY 50'));if(calendar?.first&&calendar?.last)return {first:span.first>calendar.first?span.first:calendar.first,last:span.last<calendar.last?span.last:calendar.last};}
  return span||TICKERS.find(x=>x.ticker===tk)||TICKERS[0]||{first:'',last:''};
 }
+const ytPagePeriod = () => { const v = STRAT?.v || (R.id && CAT.find(x => x.id === R.id)); return !!v && isYt(v); };
 function periodPanel(tk, d, issue = null) {
   const t = selectedSpan(tk), first = t.first, last = t.last, f = S.from || first, to = S.to || last;
   // All / Before book / After book (the book's publication year splits the data like in-sample and out-of-sample)
@@ -1604,7 +1907,7 @@ function periodPanel(tk, d, issue = null) {
     <div class="join sm ptog" role="group" aria-label="Period">${tog.map(x => `<button type="button" class="join-item ${on(x) ? 'active' : ''} ${x[4] ? 'off' : ''}" data-period="${x[1]}|${x[2]}" aria-pressed="${on(x)}" ${x[4] ? 'disabled title="No data before the book was published"' : ''}>${x[0]}<small>${x[3]}</small></button>`).join('')}</div>
     <label class="dfield">From <input type="date" name="from" value="${f}" min="${first}" max="${last}" required></label>
     <label class="dfield">To <input type="date" name="to" value="${to}" min="${first}" max="${last}" required></label>
-    <label class="dfield">Slippage <input type="number" name="slippage" value="${esc(S.slippage)}" min="0" max="500" step="0.1"> bps a side</label><label class="dfield">Rollover <input type="number" name="rollover" value="${esc(S.rollover)}" min="0" max="500" step="0.1"> bps per roll</label>
+    <label class="dfield">Slippage <input type="number" name="slippage" value="${esc(S.slippage)}" min="0" max="500" step="0.1"> bps a side</label><label class="dfield">Rollover <input type="number" name="rollover" value="${esc(S.rollover)}" min="0" max="500" step="0.1"> bps per roll</label>${ytPagePeriod() ? `<label class="dfield" title="Whole units are bought from this capital, as in AmiBroker">Starting capital ₹ <input type="number" name="capital" value="${esc(ytCapital(S))}" min="1" max="1000000000000" step="1"></label>` : ''}
     <span class="perr" id="perr"></span></form>${STRAT?varyingControls(STRAT.v,tk):R.id&&CAT.find(v=>v.id===R.id)?varyingControls(CAT.find(v=>v.id===R.id),tk):''}`;
 }
 const apiError = (e, tk) => `${e} (${LABEL[tk]})`;
@@ -1690,7 +1993,7 @@ async function viewStrategy() {
   if (v) bookCtx(v.book);
   if (!v) return `<nav class="crumbs"><a href="#/">Guru's</a></nav><div class="empty"><b>This strategy is not in the vault</b>The link may be old.</div>`;
   const g = GURU[v.guru], b = BOOK[v.book], fam = CAT.filter(x => x.family === v.family), tk = S.tk === 'ALL'&&!pristineMethod(v.id,v.book) ? TICKERS[0].ticker : S.tk;
-  const crumbs = isYt(v) ? `<nav class="crumbs"><a href="#/">Guru's</a><span>/</span><a href="${href('/yt',{tk:S.tk,from:S.from,to:S.to})}">YT Strategies</a><span>/</span><span>${esc(familyDisplayName(v))}</span><a class="back" href="${LIST_HASH || href('/yt')}">Back to strategies</a></nav>` : `<nav class="crumbs"><a href="#/">Guru's</a><span>/</span><a href="${guruLink(g.id)}">${esc(g.name)}</a><span>/</span><a href="${href('/guru/' + g.id, {view:'grid',book:b.id,tk:S.tk,basket:S.basket,from:S.from,to:S.to})}">${esc(b.title)}</a><span>/</span><span>${esc(familyDisplayName(v))}</span><a class="back" href="${LIST_HASH || guruLink(g.id)}">Back to strategies</a></nav>`;
+  const crumbs = isYt(v) ? `<nav class="crumbs"><a href="#/">Guru's</a><span>/</span><a href="${href('/yt',{tk:S.tk,from:S.from,to:S.to})}">YT Strategies</a><span>/</span>${ytSetOf(v)?`<a href="${href('/yt',{tk:S.tk,from:S.from,to:S.to,set:ytSetOf(v)})}">${esc(YT_SETS[ytSetOf(v)].name)}</a><span>/</span>`:''}<span>${esc(familyDisplayName(v))}</span><a class="back" href="${LIST_HASH || href('/yt')}">Back to strategies</a></nav>` : `<nav class="crumbs"><a href="#/">Guru's</a><span>/</span><a href="${guruLink(g.id)}">${esc(g.name)}</a><span>/</span><a href="${href('/guru/' + g.id, {view:'grid',book:b.id,tk:S.tk,basket:S.basket,from:S.from,to:S.to})}">${esc(b.title)}</a><span>/</span><span>${esc(familyDisplayName(v))}</span><a class="back" href="${LIST_HASH || guruLink(g.id)}">Back to strategies</a></nav>`;
   if(pristineMethod(v.id,v.book))return viewPristineStrategy(v,tk,crumbs,selection,runApi,generation,optimization);
   const switches = marketControls(v,tk);
   const selectedBasket=BASKETS.find(b=>b.id===S.basket);
@@ -1719,9 +2022,9 @@ async function viewStrategy() {
     <section class="box"><div class="st-head"><h1 class="st">${esc(familyDisplayName(v))}</h1>${VaultUI.toolbar()}</div>
       ${gateNotice(v,tk)}${experimentNotice(v,d)}${switches}${periodPanel(tk, d)}${optimBanner(v)}${account?'<div data-react-slot="source-account-notice"></div>':unit?'<div data-react-slot="unit-exposure-notice"></div>':''}${v.variant ? `<p class="vname">Variant: <b>${esc(v.variant)}</b></p>` : ''}
       <div class="metrics">${tiles.map(([k, x, f, i, c], n) => `<div class="metric"><span>${k}</span><b class="${c || ''}" data-tile="${n}">${f(x)}</b><i>${i}</i></div>`).join('')}</div>
-      <p class="rnote" data-return-definition><b>${unit?(selection.report_mode==='compound'?'Compounded closed model = engine net equity at the last closed exit minus1; terminal-open marks are excluded.':'Closed return sum = sum of audited closed net returns = unrounded Avg net pnl × No. of trades.'):account?(selection.report_mode==='compound'?'Hypothetical closed compounding = product of (1 + each accepted weighted closed net return) − 1.':'Closed return sum = unrounded weighted Avg net pnl × No. of trades.'):selection.report_mode==='compound'?'Net Profit = product of (1 + each closed-trade net return) − 1.':'Net Profit = sum of closed-trade net returns = unrounded Avg net pnl × No. of trades.'}</b> ${esc(display.unavailableReason||display.description)} ${unit?esc(UNIT_CLOSED_BASIS):account?esc(sourceAccountCopy(account).curveNote):'The separately labelled compounded chart multiplies sequential return factors and includes open marks; it is a normalized research model, not a sized basket portfolio.'}</p><p class="rnote" data-results-provenance><b>Computed backtest · ${esc(LABEL[tk])} · ${isUS()?'US':'India'}.</b> ${calculatedPeriodHTML(d)}Results use loaded local market data and the selected settings. ${unit?'SPX uses the source cash-index illustration; NIFTY 50 is the separately declared adaptation. Book performance and native AmiBroker parity are not reproduced.':tk.startsWith('basket:')?'These are independent cash-stock results from the selected source-listed universe. Historical constituent membership, source adjustment conventions and any disclosed session gaps are unverified. Current & Past collections do not establish membership on each trade date. Cash stocks are not dated futures contracts.': isYt(v)?'YT strategy simulated on the selected index/ETF; there are no published figures to compare.':'This index/ETF application is separate from the book’s original instruments, stock universe and published performance.'} Rule interpretation and source differences are described below.</p></section>
+      <p class="rnote" data-return-definition><b>${unit?(selection.report_mode==='compound'?'Compounded closed model = engine net equity at the last closed exit minus1; terminal-open marks are excluded.':'Closed return sum = sum of audited closed net returns = unrounded Avg net pnl × No. of trades.'):account?(selection.report_mode==='compound'?'Hypothetical closed compounding = product of (1 + each accepted weighted closed net return) − 1.':'Closed return sum = unrounded weighted Avg net pnl × No. of trades.'):selection.report_mode==='compound'?'Net Profit = product of (1 + each closed-trade net return) − 1.':'Net Profit = sum of closed-trade net returns = unrounded Avg net pnl × No. of trades.'}</b> ${esc(display.unavailableReason||display.description)} ${unit?esc(UNIT_CLOSED_BASIS):account?esc(sourceAccountCopy(account).curveNote):'The separately labelled compounded chart multiplies sequential return factors and includes open marks; it is a normalized research model, not a sized basket portfolio.'}</p><p class="rnote" data-results-provenance><b>Computed backtest · ${esc(LABEL[tk])} · ${isUS()?'US':'India'}.</b> ${calculatedPeriodHTML(d)}Results use loaded local market data and the selected settings. ${unit?'SPX uses the source cash-index illustration; NIFTY 50 is the separately declared adaptation. Book performance and native AmiBroker parity are not reproduced.':tk.startsWith('basket:')?'These are independent cash-stock results from the selected source-listed universe. Historical constituent membership, source adjustment conventions and any disclosed session gaps are unverified. Current & Past collections do not establish membership on each trade date. Cash stocks are not dated futures contracts.': isYt(v)?(YT_SETS[ytSetOf(v)]?.futures?'YT strategy simulated on the selected NSE near-month index futures series; there are no published figures to compare.':'YT strategy simulated on the selected index/ETF; there are no published figures to compare.'):'This index/ETF application is separate from the book’s original instruments, stock universe and published performance.'} Rule interpretation and source differences are described below.</p></section>
     <section class="box"><div class="box-h">Rules <span data-react-slot="visual-rules"></span><small>${isYt(v)?'implemented interpretation of the team-supplied AFL rules':`${v.guru==='chande'?'Source interpretation and declared adaptation':'implemented interpretation of the'} ${v.book === 'stc9' ? 'course' : 'book'}, ${srcOf(v)}`}</small></div>${rulesPanel(v)}</section>
-    ${isYt(v)?'':`<section class="box" data-book-reference><div class="box-h">Book-reported figures <small>reference only · separate from the computed backtest</small></div>${TRUST.bookReference(cl)}</section>`}
+    ${isYt(v)?ytReferenceHTML(v):`<section class="box" data-book-reference><div class="box-h">Book-reported figures <small>reference only · separate from the computed backtest</small></div>${TRUST.bookReference(cl)}</section>`}
     <section class="box"><div class="box-h">${unit?'Canonical unit-exposure model':account?sourceAccountCopy(account).accountEquity:'Compounded return model'} <span class="legend"><span><i class="sw-line" style="background:var(--blue)"></i>${account?'Account':'Strategy'}</span><label class="dcheck"><input type="checkbox" id="cmp"> <i class="sw-line" style="background:var(--bh)"></i>Compare with buy &amp; hold</label><label class="dcheck"><input type="checkbox" id="logs" checked> Log scale</label></span></div>
       <div class="chart-tools"><button class="dbtn sm" data-chart-snapshot="c-eq">Download PNG</button><button class="dbtn sm" data-report-export="equity">Download Excel</button></div><div class="lwc" id="c-eq"></div><div id="equity-navigator" class="equity-navigator"><div class="year-shortcuts"><button class="dbtn sm" data-equity-year="all">All years</button>${[...new Set(d.dates.map(x=>x.slice(0,4)))].map(y=>`<button class="dbtn sm" data-equity-year="${y}">${y}</button>`).join('')}</div><label>Start <input type="range" data-range="start" min="0" aria-label="Equity range start"></label><label>End <input type="range" data-range="end" min="0" aria-label="Equity range end"></label><output></output></div><div class="cap">${account?'Actual source-account return '+pct(s.total_return,2,true)+' · including open marks · account':'Strategy'} ${d.equity[d.equity.length - 1].toFixed(2)}× · buy &amp; hold ${d.bh[d.bh.length - 1].toFixed(2)}× · drag to zoom, hover for values</div></section>
     <section class="box"><div class="box-h">Price &amp; signals · ${esc(LABEL[tk])} <span class="legend"><span><i class="mk up"></i>Buy / cover</span><span><i class="mk ex"></i>Sell / short</span><span><i class="zk win"></i>Winning trade</span><span><i class="zk loss"></i>${unit?'Non-winning closed trade':'Losing trade'}</span><span><i class="zk open"></i>Open</span><span class="muted">shaded from entry day to exit day · zoom in for each return</span>
@@ -1988,9 +2291,10 @@ document.addEventListener('click', e => {
   if (d.guruStrats) return go('/guru/'+d.guruStrats,{view:'grid',tk:S.tk,basket:S.basket,from:S.from,to:S.to});
 });
 document.addEventListener('submit', e => { if(e.target.id==='position-limit'){e.preventDefault();const count=positionLimit(String(new FormData(e.target).get('max_positions')));if(!count){document.getElementById('position-error').textContent='Use a whole number from 1 to 100.';return;}return setState({max_positions:String(count),position_choice:'custom'});} if(e.target.id==='library-search-form'){e.preventDefault();return setState({library_q:document.getElementById('library-query').value.trim(),library_limit:'24',library_page:'1',source_page:'1'});}if (e.target.id !== 'period') return; e.preventDefault();
-  const fd = new FormData(e.target), t = selectedSpan(S.tk), from = fd.get('from'), to = fd.get('to'), cost = '0',slippage=String(Math.max(0,+fd.get('slippage')||0)),rollover=String(Math.max(0,+fd.get('rollover')||0));
+  const fd = new FormData(e.target), t = selectedSpan(S.tk), from = fd.get('from'), to = fd.get('to'), cost = '0',slippage=String(Math.max(0,+fd.get('slippage')||0)),rollover=String(Math.max(0,+fd.get('rollover')||0)),capital=fd.has('capital')?String(fd.get('capital')).trim():S.capital;
   if (!from || !to || from >= to) { $('#perr').textContent = 'From must be before To.'; return; }
-  go(R.path, { ...S, from: from <= t.first ? '' : from, to: to >= t.last ? '' : to, cost,slippage,rollover }); });
+  if (fd.has('capital') && !ytCapitalValid(capital)) { $('#perr').textContent = 'Starting capital must be a number from 1 to 1,000,000,000,000.'; return; }
+  go(R.path, { ...S, from: from <= t.first ? '' : from, to: to >= t.last ? '' : to, cost,slippage,rollover,capital:capital===YT_CAPITAL_DEFAULT?'':capital }); });
 // YT strategies: the backtest and optimization pages share one From/To. A typed date applies by itself once it is a
 // complete date inside the data range, and Run optimization, Apply and the page links use a date not yet applied.
 function ytPeriod() {
@@ -2020,7 +2324,7 @@ async function initializeRuntime(account) {
     const ytCat=gurus.some(owner=>owner.id==='yt')?await get('/guru/yt/strategies'):[];
     const cat=[...connorsCat.map(v=>({...v,api:'connors',guru:BOOK[v.book]?.guru.id||'connors'})),...rossCat.map(v=>({...v,api:'ross',guru:'ross'})),...chandeCat.map(v=>({...v,api:'chande',guru:'chande'})),...pristineCat.map(v=>({...v,api:'pristine',guru:'pristine'})),...ytCat.map(v=>({...v,api:'yt',guru:'yt'}))]; // guru = the book's author; api = the engine namespace that serves it
     TICK_ALL_IN=tk;tk.forEach(t=>{if(!LABEL[t.ticker])LABEL[t.ticker]=t.symbol||t.ticker.split(':').at(-1);});
-    TICKERS = TICK_IN = tk.filter(t => IN_INDICES.includes(t.ticker)); GURUS_API = gurus;
+    TICKERS = TICK_IN = tk.filter(t => IN_INDICES.includes(t.ticker)); TICK_FUT = IN_FUTURES.map(k => tk.find(t => t.ticker === k)).filter(Boolean); GURUS_API = gurus;
     try { const u = await (await fetch(API_US + '/tickers')).json(); TICK_ALL_US=u;u.forEach(t=>{if(!LABEL[t.ticker])LABEL[t.ticker]=t.symbol||t.ticker.split(':').at(-1);}); TICK_US = US_INDICES.map(k => u.find(t => t.ticker === k)).filter(Boolean); if (!TICK_US.length) TICK_US = null; } catch (e) { TICK_US = null; }
     ALLCAT = cat.map((v, i) => ({ ...v, ord: i, book: v.book || 'stc9', style: v.group.split(' · ')[0] })); CAT = marketCat();
     Object.values(BOOK).forEach(b => { if (CAT.some(v => v.book === b.id)) b.live = true; });

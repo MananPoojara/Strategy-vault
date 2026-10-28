@@ -64,7 +64,7 @@ mod guru_ownership_tests {
         assert_eq!(chande.len(),5);
         assert!(chande.iter().all(|d|d.book==books::chande::BOOK && d.claim.is_none()));
         let yt=guru_catalogue("yt");
-        assert!(yt.iter().any(|d|d.id==books::ytmr::ID) && yt.iter().any(|d|d.id==books::ytjb::ID));
+        assert!(yt.iter().any(|d|d.id==books::ytmr::ID) && yt.iter().any(|d|d.id==books::ytjb::ID) && books::ytkr::IDS.iter().all(|id|yt.iter().any(|d|d.id==*id)) && [books::ythol::ID, books::ythol::SHORT_ID].iter().all(|id|yt.iter().any(|d|d.id==*id)));
         assert!(yt.iter().all(|d|d.book.starts_with("yt_") && d.claim.is_none()));
         assert!(connors.iter().all(|d|!d.book.starts_with("yt_")));
     }
@@ -252,6 +252,8 @@ struct Run {
     source_account:Option<books::elcim_account::Account>,
     bandy_account:Option<books::hbiab_reviewed::Account>,
     unit_exposure_report:Option<unit_exposure_report::Report>,
+    /// YT (AmiBroker-port) money account: starting capital when equity is whole units bought from that capital.
+    whole_units:Option<f64>,
 }
 
 fn backtest_costs(ctx:&Ctx,id:&str,from:usize,to:usize,costs:accounting::Costs,p:&Params)->Result<Run,String>{
@@ -260,13 +262,13 @@ fn backtest_costs(ctx:&Ctx,id:&str,from:usize,to:usize,costs:accounting::Costs,p
         let trades=connors::run(id,ctx,from,to,p).ok_or("QTS DEMA source implementation unavailable")?;
         trade_validation::check_structure(&trades,from,to)?;
         let report=unit_exposure_report::build(ctx,&trades,from,to,costs)?;
-        return Ok(Run{trades,from,to,equity:report.days.iter().map(|d|d.equity).collect(),bh:report.days.iter().map(|d|d.benchmark_equity).collect(),source_account:None,bandy_account:None,unit_exposure_report:Some(report)});
+        return Ok(Run{trades,from,to,equity:report.days.iter().map(|d|d.equity).collect(),bh:report.days.iter().map(|d|d.benchmark_equity).collect(),source_account:None,bandy_account:None,unit_exposure_report:Some(report),whole_units:None});
     }
 
     if !books::hbiab_reviewed::reviewed(id){return backtest(ctx,id,from,to,costs.side_rate(),p);}
     let account=books::hbiab_reviewed::run_with_bps(id,ctx,from,to,costs.fees_bps,costs.slippage_bps,p)?;
     trade_validation::check(&account.trades,from,to,0.)?;
-    Ok(Run{trades:account.trades.clone(),from,to,equity:account.days.iter().map(|d|d.equity).collect(),bh:(from..=to).map(|k|ctx.c[k]/ctx.c[from]).collect(),source_account:None,bandy_account:Some(account),unit_exposure_report:None})
+    Ok(Run{trades:account.trades.clone(),from,to,equity:account.days.iter().map(|d|d.equity).collect(),bh:(from..=to).map(|k|ctx.c[k]/ctx.c[from]).collect(),source_account:None,bandy_account:Some(account),unit_exposure_report:None,whole_units:None})
 }
 
 fn selected_backtest_costs(selected:&SelectedContext,st:&State,q:&BTreeMap<String,String>,ctx:&Ctx,id:&str,from:usize,to:usize,costs:accounting::Costs,p:&Params)->Result<Run,String>{
@@ -284,12 +286,12 @@ fn backtest(ctx: &Ctx, id: &str, from: usize, to: usize, cost: f64, p: &Params) 
         let account=books::hbiab_reviewed::run(id,ctx,from,to,cost,p)?;
         // This cash account validates paid fees on true filled notionals itself.
         trade_validation::check(&account.trades,from,to,0.)?;
-        return Ok(Run{trades:account.trades.clone(),from,to,equity:account.days.iter().map(|d|d.equity).collect(),bh:(from..=to).map(|k|ctx.c[k]/ctx.c[from]).collect(),source_account:None,bandy_account:Some(account),unit_exposure_report:None});
+        return Ok(Run{trades:account.trades.clone(),from,to,equity:account.days.iter().map(|d|d.equity).collect(),bh:(from..=to).map(|k|ctx.c[k]/ctx.c[from]).collect(),source_account:None,bandy_account:Some(account),unit_exposure_report:None,whole_units:None});
     }
     if id==books::elcim_account::ID {
         let account=books::elcim_account::run(ctx,from,to,cost,p)?;
         trade_validation::check(&account.trades,from,to,cost)?;
-        return Ok(Run{trades:account.trades.clone(),from,to,equity:account.days.iter().map(|d|d.equity).collect(),bh:(from..=to).map(|k|ctx.c[k]/ctx.c[from]).collect(),source_account:Some(account),bandy_account:None,unit_exposure_report:None});
+        return Ok(Run{trades:account.trades.clone(),from,to,equity:account.days.iter().map(|d|d.equity).collect(),bh:(from..=to).map(|k|ctx.c[k]/ctx.c[from]).collect(),source_account:Some(account),bandy_account:None,unit_exposure_report:None,whole_units:None});
     }
     let trades = connors::run(id, ctx, from, to, p).ok_or("Strategy implementation unavailable")?;
     normalized_run(ctx,trades,from,to,cost)
@@ -302,7 +304,7 @@ fn normalized_run(ctx: &Ctx, trades: Vec<Trade>, from: usize, to: usize, cost: f
     let equity = equity_curve(&ctx.c, &trades, from, to, cost);
     if equity.iter().any(|v|!v.is_finite()||*v<=0.) {return Err("calculation_unavailable: Unsupported nonpositive or nonfinite normalized equity; no reset, clipping or invented funding is applied.".into());}
     let bh = (from..=to).map(|k| ctx.c[k] / ctx.c[from]).collect();
-    Ok(Run { trades, from, to, equity, bh,source_account:None,bandy_account:None,unit_exposure_report:None })
+    Ok(Run { trades, from, to, equity, bh,source_account:None,bandy_account:None,unit_exposure_report:None,whole_units:None })
 }
 
 /// Daily equity: each trade's legs marked to the close (scale-out pieces at their fill once out).
@@ -337,6 +339,73 @@ fn equity_curve(close: &[f64], trades: &[Trade], from: usize, to: usize, cost: f
     equity
 }
 
+/// Starting capital for the YT whole-unit account: the `capital` setting (default 10,00,000, as in AmiBroker),
+/// or None for every other catalogue, which keeps the normalized percentage model.
+const YT_DEFAULT_CAPITAL: f64 = 1_000_000.0;
+fn yt_capital(q: &BTreeMap<String, String>) -> Result<Option<f64>, String> {
+    if q.get("_guru").map(String::as_str) != Some("yt") {return Ok(None);}
+    match q.get("capital").filter(|v| !v.is_empty()) {
+        None => Ok(Some(YT_DEFAULT_CAPITAL)),
+        Some(raw) => raw.parse::<f64>().ok().filter(|c| c.is_finite() && *c >= 1.0 && *c <= 1e12).map(Some)
+            .ok_or_else(|| "capital must be a number from 1 to 1,000,000,000,000".into()),
+    }
+}
+
+/// Whole-unit money account (AmiBroker style): at each entry, buy the largest whole number of units the
+/// account can pay for including the entry cost, leave the remainder as idle cash, and mark the position to
+/// each close. Returns the money equity per bar in [from, to] and the units bought per trade leg.
+#[derive(Debug)]
+struct WholeUnitAccount { equity: Vec<f64>, units: Vec<Vec<f64>>, entry_cash: Vec<f64>, gross_pnl: f64, turnover: f64 }
+fn whole_unit_account(ctx: &Ctx, trades: &[Trade], from: usize, to: usize, cost: f64, capital: f64) -> Result<WholeUnitAccount, String> {
+    let close = &ctx.c;
+    let mut equity = vec![capital; to - from + 1];
+    let (mut cash, mut next, mut units_all, mut entry_cash, mut gross_pnl, mut turnover) = (capital, from, Vec::new(), Vec::new(), 0.0, 0.0);
+    for t in trades {
+        let start = t.legs[0].i;
+        for k in next..start {equity[k - from] = cash;}
+        let units: Vec<f64> = t.legs.iter().map(|l| (cash * l.w / (l.px * (1.0 + cost))).floor()).collect();
+        if units.iter().all(|u| *u < 1.0) {
+            return Err(format!("calculation_unavailable: Starting capital {} cannot buy one whole unit of {} at {} on {}", num(capital), ctx.r[start].ticker, num(t.legs[0].px), ctx.r[start].date));
+        }
+        let e0 = cash;
+        for k in start..=t.exit_i {
+            let px = if k == t.exit_i { t.exit_px } else { t.mark(k, close[k]) };
+            let mut v = e0;
+            for (l, u) in t.legs.iter().zip(&units).filter(|(l, _)| l.i <= k) {
+                v += u * (t.dir * (px - l.px) - l.px * cost);
+                if k == t.exit_i {v -= u * px * cost;}
+            }
+            equity[k - from] = v;
+        }
+        for (l, u) in t.legs.iter().zip(&units) {gross_pnl += u * t.dir * (t.exit_px - l.px); turnover += u * (l.px + t.exit_px);}
+        cash = equity[t.exit_i - from];
+        next = t.exit_i + 1;
+        units_all.push(units);
+        entry_cash.push(e0);
+    }
+    for k in next..=to {equity[k - from] = cash;}
+    if equity.iter().any(|v| !v.is_finite() || *v <= 0.) {return Err("calculation_unavailable: Unsupported nonpositive or nonfinite whole-unit equity; no reset, clipping or invented funding is applied.".into());}
+    Ok(WholeUnitAccount { equity, units: units_all, entry_cash, gross_pnl, turnover })
+}
+
+/// Zero-cost equity for the gross comparison, on the same account model as the run.
+fn gross_equity_of(ctx: &Ctx, run: &Run) -> Vec<f64> {
+    match run.whole_units.map(|capital|(capital,whole_unit_account(ctx,&run.trades,run.from,run.to,0.,capital))) {
+        Some((capital,Ok(a))) => a.equity.iter().map(|v| v / capital).collect(),
+        _ => equity_curve(&ctx.c,&run.trades,run.from,run.to,0.),
+    }
+}
+
+/// Re-express a YT run on the whole-unit account: equity becomes money equity divided by the starting capital.
+fn whole_unit_run(ctx: &Ctx, mut run: Run, cost: f64, capital: Option<f64>) -> Result<Run, String> {
+    let Some(capital) = capital else {return Ok(run)};
+    if run.source_account.is_some() || run.bandy_account.is_some() || run.unit_exposure_report.is_some() {return Ok(run);}
+    let account = whole_unit_account(ctx, &run.trades, run.from, run.to, cost, capital)?;
+    run.equity = account.equity.iter().map(|v| v / capital).collect();
+    run.whole_units = Some(capital);
+    Ok(run)
+}
+
 fn max_dd(eq: &[f64]) -> (f64, usize) {
     // Position zero is the declared pre-event unit baseline, not a fabricated quote/date.
     let (mut peak, mut dd, mut peak_i, mut longest) = (1.0, 0.0f64, 0, 0);
@@ -365,13 +434,18 @@ fn day_number(date: &str) -> i64 {
 fn years(ctx: &Ctx, from: usize, to: usize) -> f64 {
     ((day_number(&ctx.r[to].date) - day_number(&ctx.r[from].date)) as f64 / 365.25).max(1.0 / 365.25)
 }
+/// The YT whole-unit account counts 365-day years, as AmiBroker's CAR does.
+fn run_years(ctx: &Ctx, run: &Run) -> f64 {
+    if run.whole_units.is_none() {return years(ctx, run.from, run.to);}
+    ((day_number(&ctx.r[run.to].date) - day_number(&ctx.r[run.from].date)) as f64 / 365.0).max(1.0 / 365.0)
+}
 
 fn stats(ctx: &Ctx, run: &Run, cost: f64) -> BTreeMap<&'static str, f64> {
     if let Some(report)=&run.unit_exposure_report {return report.common_stats(ctx,&run.trades,run.from,run.to,unit_exposure_report::View::Net);}
 
     let mut s = BTreeMap::new();
     let eq = &run.equity;
-    let yrs = years(ctx, run.from, run.to);
+    let yrs = run_years(ctx, run);
     let rets: Vec<f64> = std::iter::once(eq[0]-1.).chain(eq.windows(2).map(|w| w[1] / w[0] - 1.0)).collect();
     let nr = rets.len().max(1) as f64;
     let mean = rets.iter().sum::<f64>() / nr;
@@ -471,7 +545,7 @@ fn financial_stats(ctx: &Ctx, run: &Run, costs: accounting::Costs) -> BTreeMap<&
 
     if let Some(account)=&run.bandy_account {
         let mut s=stats(ctx,run,costs.side_rate());
-        let zero=Run{trades:run.trades.clone(),from:run.from,to:run.to,equity:account.days.iter().map(|d|d.gross).collect(),bh:run.bh.clone(),source_account:None,bandy_account:Some(account.clone()),unit_exposure_report:None};
+        let zero=Run{trades:run.trades.clone(),from:run.from,to:run.to,equity:account.days.iter().map(|d|d.gross).collect(),bh:run.bh.clone(),source_account:None,bandy_account:Some(account.clone()),unit_exposure_report:None,whole_units:None};
         let gross=stats(ctx,&zero,0.);
         for (key,source) in [("gross_total_return","total_return"),("gross_avg_trade","avg_trade"),("gross_win_rate","win_rate"),("gross_sharpe","sharpe"),("gross_max_dd","max_dd")] {s.insert(key,gross[source]);}
         let (mut ledger,mut fees,mut slips)=(0.,0.,0.);
@@ -482,10 +556,10 @@ fn financial_stats(ctx: &Ctx, run: &Run, costs: accounting::Costs) -> BTreeMap<&
     }
     let mut s=stats(ctx,run,costs.side_rate());
     let gross=if let Some(account)=&run.source_account {
-        let zero=Run{trades:run.trades.clone(),from:run.from,to:run.to,equity:account.days.iter().map(|d|d.gross).collect(),bh:run.bh.clone(),source_account:None,bandy_account:None,unit_exposure_report:None};
+        let zero=Run{trades:run.trades.clone(),from:run.from,to:run.to,equity:account.days.iter().map(|d|d.gross).collect(),bh:run.bh.clone(),source_account:None,bandy_account:None,unit_exposure_report:None,whole_units:None};
         stats(ctx,&zero,0.)
     } else if costs.side_rate()==0. {s.clone()} else {
-        let zero=Run{trades:run.trades.clone(),from:run.from,to:run.to,equity:equity_curve(&ctx.c,&run.trades,run.from,run.to,0.),bh:run.bh.clone(),source_account:None,bandy_account:None,unit_exposure_report:None};
+        let zero=Run{trades:run.trades.clone(),from:run.from,to:run.to,equity:gross_equity_of(ctx,run),bh:run.bh.clone(),source_account:None,bandy_account:None,unit_exposure_report:None,whole_units:run.whole_units};
         stats(ctx,&zero,0.)
     };
     for (key,source) in [("gross_total_return","total_return"),("gross_avg_trade","avg_trade"),("gross_win_rate","win_rate"),("gross_sharpe","sharpe"),("gross_max_dd","max_dd")] {s.insert(key,gross[source]);}
@@ -502,6 +576,10 @@ fn financial_stats(ctx: &Ctx, run: &Run, costs: accounting::Costs) -> BTreeMap<&
         }
     }
     if let Some(account)=&run.source_account {s.insert("open_trade",account.trades.iter().enumerate().find(|(_,t)|t.open).map_or(f64::NAN,|(i,_)|account.trade_audit[i].net/account.trade_audit[i].entry_equity));}
+    // Whole-unit account: the same reconciliation in money, as fractions of the starting capital.
+    if let Some(account)=run.whole_units.and_then(|capital|whole_unit_account(ctx,&run.trades,run.from,run.to,costs.side_rate(),capital).ok().map(|a|(a,capital))) {
+        let (a,capital)=account;ledger_gross=a.gross_pnl/capital;fee_return=a.turnover*costs.fees_bps/10000./capital;slippage_return=a.turnover*costs.slippage_bps/10000./capital;
+    }
     s.insert("ledger_gross_return",ledger_gross);
     s.insert("fee_return",fee_return);s.insert("slippage_return",slippage_return);
     s
@@ -510,7 +588,7 @@ fn financial_stats(ctx: &Ctx, run: &Run, costs: accounting::Costs) -> BTreeMap<&
 fn benchmark_stats(ctx:&Ctx,run:&Run)->BTreeMap<&'static str,f64>{
     if let Some(report)=&run.unit_exposure_report {return report.benchmark_stats(ctx,run.from,run.to);}
 
-    let benchmark=Run{trades:vec![],from:run.from,to:run.to,equity:run.bh.clone(),bh:run.bh.clone(),source_account:None,bandy_account:None,unit_exposure_report:None};
+    let benchmark=Run{trades:vec![],from:run.from,to:run.to,equity:run.bh.clone(),bh:run.bh.clone(),source_account:None,bandy_account:None,unit_exposure_report:None,whole_units:run.whole_units};
     let all=stats(ctx,&benchmark,0.);
     ["total_return","cagr","sharpe","max_dd","vol","sortino","mar"].into_iter().map(|k|(k,all[k])).collect()
 }
@@ -636,6 +714,12 @@ impl SelectedContext<'_>{
                 for (name,field) in [("Open",0),("High",1),("Low",2),("Close",3)]{
                     let values:Vec<f64>=rows.iter().map(|r|vix.get(r.date.as_str()).map_or(f64::NAN,|v|[v.open,v.high,v.low,v.close][field])).collect();
                     ctx.extra.insert(format!("VIX_OHLC.{name}"),values.clone());ctx.extra.insert(format!("VIX.{name}"),values);
+                }
+                // The market's benchmark index (NIFTY 50 for India) on the stock's dates: the team's stock AFLs use it as
+                // a market filter (their Foreign("NSENIFTY", ...)). NaN where the index has no bar.
+                let bench_rows:BTreeMap<&str,&Row>=bench.iter().map(|r|(r.date.as_str(),r)).collect();
+                for (name,field) in [("Open",0),("High",1),("Low",2),("Close",3)]{
+                    ctx.extra.insert(format!("BENCH.{name}"),rows.iter().map(|r|bench_rows.get(r.date.as_str()).map_or(f64::NAN,|v|[v.open,v.high,v.low,v.close][field])).collect());
                 }
                 for ((symbol,key),values) in &st.market_extra {
                     if is_vix_series(key)&&self.volatility_source(st).is_none(){continue;}
@@ -1069,6 +1153,7 @@ fn summary(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     let single_session_catalogue=!q.contains_key("id") && definitions.iter().any(|d|reviewed_single_session(d.id));
     let (ctx, from, to, _cost) = resolve_context_window(&held, q, single_session_catalogue)?;
     let costs=accounting::Costs::parse(q)?;costs.ensure_rollover()?;
+    let capital=yt_capital(q)?;
     let mut rows = Vec::new();
     for d in definitions.iter() {
         if let Some(issue) = readiness::check(ctx, d, from, to, &Params::new()).or_else(||native_admission(ctx,d,from,to,&selected,st,q)) {
@@ -1080,7 +1165,7 @@ fn summary(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
             rows.push(format!("{{\"id\":\"{}\",\"blocked\":\"{}\",\"readiness\":\"needs_data\"}}", d.id,note));
             continue;
         };
-        let run = match selected_backtest_costs(&selected,st,q,ctx,d.id,from,to,costs,&Params::new()){Ok(run)=>run,Err(note)=>{rows.push(format!("{{\"id\":\"{}\",\"blocked\":\"{}\",\"readiness\":\"calculation_unavailable\"}}",d.id,esc(&note)));continue;}};
+        let run = match selected_backtest_costs(&selected,st,q,ctx,d.id,from,to,costs,&Params::new()).and_then(|run|whole_unit_run(ctx,run,costs.side_rate(),capital)){Ok(run)=>run,Err(note)=>{rows.push(format!("{{\"id\":\"{}\",\"blocked\":\"{}\",\"readiness\":\"calculation_unavailable\"}}",d.id,esc(&note)));continue;}};
         // ~120-point equity sparkline for the strategy list
         let step = (run.equity.len() / 120).max(1);
         let spark: Vec<String> = run.equity.iter().step_by(step).map(|v| if run.unit_exposure_report.is_some(){unit_exposure_report::number(*v)}else{num(*v)}).collect();
@@ -1296,7 +1381,7 @@ fn bandy_detail(ctx:&Ctx,id:&str,from:usize,to:usize,costs:accounting::Costs,run
         let snapshot=|index:usize,phase:&str,px:f64|format!("{{\"date\":\"{}\",\"phase\":\"{}\",\"execution_px\":{},\"basis\":\"Fill or mark event; completed future-close indicators omitted\"}}",ctx.r[index].date,phase,precise(px));
         trades.push(format!("{{\"dir\":1,\"legs\":{},\"entry\":\"{}\",\"exit\":\"{}\",\"exit_i\":{},\"exit_px\":{},\"avg_px\":{},\"ret\":{},\"ret_full_precision\":{},\"bars\":{},\"open\":{},\"reason\":\"{}\",\"entry_kind\":\"{}\",\"at_entry\":{},\"at_exit\":{},\"signal\":\"{}\",\"exits\":[],\"accounting\":{}}}",legs,ctx.r[t.legs[0].i].date,ctx.r[t.exit_i].date,t.exit_i-from,precise(t.exit_px),precise(t.legs[0].px),precise(a.net/a.entry_equity),precise(a.net/a.entry_equity),t.exit_i-t.legs[0].i,t.open,esc(&t.reason),t.entry_kind,snapshot(t.legs[0].i,t.entry_kind,t.legs[0].px),snapshot(t.exit_i,if t.open{"mark"}else{t.entry_kind},t.exit_px),ctx.r[t.signal_i].date,account.ledger_json(i,ctx,costs.fees_bps,costs.slippage_bps)));
     }
-    let gross=Run{trades:run.trades.clone(),from,to,equity:account.days.iter().map(|d|d.gross).collect(),bh:run.bh.clone(),source_account:None,bandy_account:Some(account.clone()),unit_exposure_report:None};
+    let gross=Run{trades:run.trades.clone(),from,to,equity:account.days.iter().map(|d|d.gross).collect(),bh:run.bh.clone(),source_account:None,bandy_account:Some(account.clone()),unit_exposure_report:None,whole_units:None};
     let ohlc=format!("{{\"d\":{},\"o\":{},\"h\":{},\"l\":{},\"c\":{},\"v\":{}}}",dates,numbers(&ctx.o[from..=to]),numbers(&ctx.h[from..=to]),numbers(&ctx.l[from..=to]),numbers(&ctx.c[from..=to]),list((from..=to).map(|i|ctx.r[i].volume.map_or("null".into(),precise)).collect()));
     format!("{{\"id\":\"{}\",\"book\":\"hbiab\",\"dates\":{},\"close\":{},\"equity\":{},\"gross_equity\":{},\"bh\":{},\"trades\":{},\"ohlc\":{},\"source_account\":{},\"model_initial_equity\":1,\"stats\":{},\"gross_stats\":{},\"benchmark_symbol\":\"{}\",\"benchmark_stats\":{},\"costs\":{},\"accounting_basis\":\"{}\"}}",id,dates,numbers(&ctx.c[from..=to]),numbers(&run.equity),numbers(&gross.equity),numbers(&run.bh),list(trades),ohlc,account.json(ctx),stats_json(&financial_stats(ctx,run,costs)),stats_json(&stats(ctx,&gross,0.)),esc(&ctx.r[from].ticker),stats_json(&benchmark_stats(ctx,run)),bandy_costs_json(costs),esc(books::hbiab_reviewed::basis(id)))
 }
@@ -1315,7 +1400,8 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     }
     costs.ensure_rollover()?;
     let from = window_start(ctx, def, from).filter(|&f| f < to || (f==to && reviewed_single_session(id))).ok_or("Required volatility-index data does not cover this period")?;
-    let run = selected_backtest_costs(&selected,st,q,ctx,id,from,to,costs,&p)?;
+    let capital=yt_capital(q)?;
+    let run = whole_unit_run(ctx,selected_backtest_costs(&selected,st,q,ctx,id,from,to,costs,&p)?,costs.side_rate(),capital)?;
     if run.unit_exposure_report.is_some() {
         let mut output=unit_exposure_detail::render(ctx,&run,costs)?;output.pop();let _=write!(output,",\"provenance\":{}}}",source_provenance(st,q));return Ok(output);
     }
@@ -1351,9 +1437,10 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     arr(&mut o, &mut run.bh.iter().map(|v| num(*v)));
     o.push_str(",\"trades\":");
     let mut allocation=1.;
+    let unit_account=run.whole_units.map(|capital|whole_unit_account(ctx,&run.trades,from,to,costs.side_rate(),capital)).transpose()?;
     arr(&mut o, &mut run.trades.iter().enumerate().map(|(i,t)| {
         if let Some(account)=&run.source_account {allocation=account.trade_audit[i].entry_equity;}
-        let ledger=if run.source_account.is_some(){accounting::TradeLedger::source_account(ctx,t,allocation,costs)}else{accounting::TradeLedger::new(ctx,t,allocation,costs)};
+        let ledger=if run.source_account.is_some(){accounting::TradeLedger::source_account(ctx,t,allocation,costs)}else if def.book.starts_with("yt_"){accounting::TradeLedger::amibroker(ctx,t,allocation,costs)}else{accounting::TradeLedger::new(ctx,t,allocation,costs)};
         allocation*=1.+ledger.net_ret;
         let legs: Vec<String> = t.legs.iter().map(|l| format!("[{},{},{}]", l.i - from, fill_number(l.px), num(l.w))).collect();
         let mut row=format!(
@@ -1364,6 +1451,12 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
             t.exits.iter().map(|(i, px, f)| format!("[{},{},{}]", i - from, num(*px), num(*f))).collect::<Vec<_>>().join(","),ledger.json()
         );
         if books::lkqts::stock_research_profile(id) {row.pop();let _=write!(row,",\"execution_clock\":{}}}",kestner_execution_clock(ctx,id,t,&diagnostics));}
+        if let Some(account)=&unit_account {
+            // Money columns of the whole-unit account: units bought, their entry value and the account value at entry.
+            let units:f64=account.units[i].iter().sum();
+            let value:f64=t.legs.iter().zip(&account.units[i]).map(|(l,u)|u*l.px).sum();
+            row.pop();let _=write!(row,",\"units\":{},\"position_value\":{},\"entry_equity\":{}}}",num(units),num(value),num(account.entry_cash[i]));
+        }
         row
     }));
     if let Some(d)=&diagnostics.kestner_next {
@@ -1429,15 +1522,20 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         for (i,value) in run.equity.iter().enumerate(){if i>0{o.push(',');}o.push_str(&precise(*value));}
         o.push_str("]}");
     }
-    let gross_equity=run.source_account.as_ref().map_or_else(||equity_curve(&ctx.c,&run.trades,from,to,0.),|a|a.days.iter().map(|d|d.gross).collect());
+    let gross_equity=run.source_account.as_ref().map_or_else(||gross_equity_of(ctx,&run),|a|a.days.iter().map(|d|d.gross).collect());
     o.push_str(",\"gross_equity\":");arr(&mut o,&mut gross_equity.iter().copied().map(num));
-    let gross=Run{trades:run.trades.clone(),from,to,equity:gross_equity,bh:run.bh.clone(),source_account:None,bandy_account:None,unit_exposure_report:None};
+    let gross=Run{trades:run.trades.clone(),from,to,equity:gross_equity,bh:run.bh.clone(),source_account:None,bandy_account:None,unit_exposure_report:None,whole_units:run.whole_units};
     if let Some(account)=&run.source_account {
         let _=write!(o,",\"source_account\":{},\"model_initial_equity\":1,\"stats\":{},\"gross_stats\":{},\"benchmark_symbol\":\"{}\",\"benchmark_stats\":{},\"costs\":{},\"accounting_basis\":\"{}\"}}",account.json(ctx),stats_json(&financial_stats(ctx,&run,costs)),stats_json(&stats(ctx,&gross,0.)),esc(&ctx.r[from].ticker),stats_json(&benchmark_stats(ctx,&run)),costs.source_account_json(),esc(books::elcim_account::BASIS));
         return Ok(o);
     }
-    let _ = write!(o, ",\"model_initial_equity\":1,\"stats\":{},\"gross_stats\":{},\"benchmark_symbol\":\"{}\",\"benchmark_stats\":{},\"costs\":{},\"accounting_basis\":\"Return-only report. The normalized compounding model begins at unit equity 1 before the first event. The first daily model return is equity[0]/1 - 1, including an initial fee or loss, and risk/drawdown reports retain that initial event. Net profit/closed_return_sum sums actual closed-trade net percentage returns and equals unrounded avg_net_pnl times closed trades. Open marks are excluded from that sum. total_return/compounded_return and charts use a separately labelled sequential unit-exposure compounding model including open liquidation estimates. No sized portfolio result is implied. Gross equity/stats independently compound the same fills at zero cost. Ledger gross/fee/slippage returns use the actual net pretrade allocation, so ledger_gross_return minus fee_return minus slippage_return reconciles net total_return. Open trades include modeled liquidation costs. No monetary sizing, statutory tax schedule or verified futures roll events are supplied.\"}}", stats_json(&financial_stats(ctx, &run, costs)),stats_json(&stats(ctx,&gross,0.)),esc(&ctx.r[from].ticker),stats_json(&benchmark_stats(ctx,&run)),costs.json());
+    let normalized_basis="Return-only report. The normalized compounding model begins at unit equity 1 before the first event. The first daily model return is equity[0]/1 - 1, including an initial fee or loss, and risk/drawdown reports retain that initial event. Net profit/closed_return_sum sums actual closed-trade net percentage returns and equals unrounded avg_net_pnl times closed trades. Open marks are excluded from that sum. total_return/compounded_return and charts use a separately labelled sequential unit-exposure compounding model including open liquidation estimates. No sized portfolio result is implied. Gross equity/stats independently compound the same fills at zero cost. Ledger gross/fee/slippage returns use the actual net pretrade allocation, so ledger_gross_return minus fee_return minus slippage_return reconciles net total_return. Open trades include modeled liquidation costs. No monetary sizing, statutory tax schedule or verified futures roll events are supplied.";
+    let basis=if run.whole_units.is_some(){"Whole-unit money account (see whole_unit_account): equity, total return, CAGR and drawdown follow AmiBroker-style whole units bought from the starting capital, with idle cash, marked to each close; CAGR counts 365-day years. Trade percentages are per unit. Net profit/closed_return_sum sums actual closed-trade net percentage returns. Gross equity/stats buy whole units on the same fills at zero cost. Ledger gross/fee/slippage returns are money amounts divided by the starting capital and reconcile net total_return. Open trades include modeled liquidation costs. No statutory tax schedule or verified futures roll events are supplied."}else{normalized_basis};
+    let _ = write!(o, ",\"model_initial_equity\":1,\"stats\":{},\"gross_stats\":{},\"benchmark_symbol\":\"{}\",\"benchmark_stats\":{},\"costs\":{},\"accounting_basis\":\"{}\"}}", stats_json(&financial_stats(ctx, &run, costs)),stats_json(&stats(ctx,&gross,0.)),esc(&ctx.r[from].ticker),stats_json(&benchmark_stats(ctx,&run)),costs.json(),esc(basis));
     if def.book==books::chande::BOOK {o.pop();let _=write!(o,",\"experiment\":{}}}",experiment_json(id));}
+    if let Some(capital)=run.whole_units {
+        o.pop();let _=write!(o,",\"whole_unit_account\":{{\"capital\":{},\"basis\":\"AmiBroker-style money account: starting capital {}; each entry buys the largest whole number of units the account can pay for including the entry cost, and the remainder stays as idle cash. Equity, CAGR and drawdown are on this account, marked to each close; CAGR counts 365-day years. Equity series are this money equity divided by the starting capital. Trade percentages are per unit, unchanged.\"}}}}",num(capital),num(capital));
+    }
     Ok(o)
 }
 
@@ -1499,6 +1597,7 @@ fn optimize(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> 
     let cat = query_catalogue(q);
     let def = cat.iter().find(|d| d.id == id).ok_or("unknown strategy")?;
     let base = checked_params_of(q)?;
+    let capital=yt_capital(q)?;
     if let Some(issue) = readiness::check(ctx, def, from, to, &base).or_else(||native_admission(ctx,def,from,to,&selected,st,q)) {
         return Err(format!("{}: {}", issue.status, issue.note));
     }
@@ -1544,11 +1643,11 @@ fn optimize(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> 
         .filter(|&s| s > from + 20 && s + 20 < to);
     let metrics_v = |p: &Params| -> Result<Vec<f64>,String> {
         if let Some(issue)=readiness::check(ctx,def,from,to,p){return Err(issue.note);}
-        let full = selected_backtest_costs(&selected,st,q,ctx,id,from,to,costs,p)?;
+        let full = whole_unit_run(ctx,selected_backtest_costs(&selected,st,q,ctx,id,from,to,costs,p)?,costs.side_rate(),capital)?;
         let s = financial_stats(ctx, &full, costs);
         let mut out: Vec<f64> = FULL_COLS.iter().map(|k| s[k]).collect();
         for (a, b) in split.map(|s| [(from, s - 1), (s, to)]).into_iter().flatten() {
-            let r = selected_backtest_costs(&selected,st,q,ctx,id,a,b,costs,p)?;
+            let r = whole_unit_run(ctx,selected_backtest_costs(&selected,st,q,ctx,id,a,b,costs,p)?,costs.side_rate(),capital)?;
             let s = financial_stats(ctx, &r, costs);
             out.extend(PART_COLS.iter().map(|k| s[k]));
         }
@@ -1822,7 +1921,7 @@ fn handle(mut stream: TcpStream, st: Arc<State>) {
             let live = cat.iter().filter(|d| d.status == Status::Live).count();
             let thesis: Vec<String> = connors::THESIS.iter().map(|(h, b)| format!("{{\"title\":\"{}\",\"body\":\"{}\"}}", esc(h), esc(b))).collect();
             json(Ok(format!(
-                "[{{\"id\":\"{}\",\"name\":\"{}\",\"tagline\":\"{}\",\"book\":\"{}\",\"strategies\":{},\"testable\":{},\"thesis\":[{}]}},{{\"id\":\"ross\",\"name\":\"Joe Ross\",\"tagline\":\"Price-action methods, source evidence and discretionary trade management. Complete backtests remain unavailable.\",\"book\":\"Reviewed core sources; full corpus review in progress\",\"strategies\":{},\"testable\":0,\"thesis\":[]}},{{\"id\":\"chande\",\"name\":\"Tushar Chande\",\"tagline\":\"Trend reversal and breakout-pullback rules with independently checked OHLC execution. Original futures studies are not reproduced.\",\"book\":\"Beyond Technical Analysis (1997, supplied partial edition)\",\"strategies\":5,\"testable\":2,\"thesis\":[]}},{{\"id\":\"pristine\",\"name\":\"Pristine Trading\",\"tagline\":\"Two source-reviewed daily stock adaptations. Explicit supplied-USD-series research only; original book performance and historical-dollar equivalence remain unverified.\",\"book\":\"Trading the Pristine Method, Part 1 (supplied manual; edition year unconfirmed)\",\"strategies\":2,\"testable\":2,\"thesis\":[]}},{{\"id\":\"yt\",\"name\":\"YT Strategies\",\"tagline\":\"Rule sets the team sourced outside the book library, simulated on the selected index or ETF. No published performance figures.\",\"book\":\"Team-supplied AFL rules\",\"strategies\":{},\"testable\":{},\"thesis\":[]}}]",
+                "[{{\"id\":\"{}\",\"name\":\"{}\",\"tagline\":\"{}\",\"book\":\"{}\",\"strategies\":{},\"testable\":{},\"thesis\":[{}]}},{{\"id\":\"ross\",\"name\":\"Joe Ross\",\"tagline\":\"Price-action methods, source evidence and discretionary trade management. Complete backtests remain unavailable.\",\"book\":\"Reviewed core sources; full corpus review in progress\",\"strategies\":{},\"testable\":0,\"thesis\":[]}},{{\"id\":\"chande\",\"name\":\"Tushar Chande\",\"tagline\":\"Trend reversal and breakout-pullback rules with independently checked OHLC execution. Original futures studies are not reproduced.\",\"book\":\"Beyond Technical Analysis (1997, supplied partial edition)\",\"strategies\":5,\"testable\":2,\"thesis\":[]}},{{\"id\":\"pristine\",\"name\":\"Pristine Trading\",\"tagline\":\"Two source-reviewed daily stock adaptations. Explicit supplied-USD-series research only; original book performance and historical-dollar equivalence remain unverified.\",\"book\":\"Trading the Pristine Method, Part 1 (supplied manual; edition year unconfirmed)\",\"strategies\":2,\"testable\":2,\"thesis\":[]}},{{\"id\":\"yt\",\"name\":\"YT Strategies\",\"tagline\":\"Rule sets the team sourced outside the book library, simulated on the selected index or ETF (Kora Reddy: NSE index futures). No published performance figures.\",\"book\":\"Team-supplied AFL rules\",\"strategies\":{},\"testable\":{},\"thesis\":[]}}]",
                 connors::GURU_ID, esc(connors::GURU_NAME), esc(connors::TAGLINE), esc(connors::BOOK), cat.len(), live, thesis.join(","), ross.len(), yt.len(), yt.iter().filter(|d| d.status == Status::Live).count()
             )), &mut stream)
         }
@@ -1953,7 +2052,22 @@ fn main() {
         (Some(a), Some(b)) => println!("Volatility source {}: {} daily bars {} → {} ({:.1?}); market admission checks preserve the actual source identity",a.ticker, vix.len(), a.date, b.date, t0.elapsed()),
         _ => eprintln!("warning: no consistent volatility-index data in {vix_dir}; VIX strategies will be blocked"),
     }
-    let data = load_csv(&csv).unwrap_or_else(|e| panic!("load data: {e}"));
+    let mut data = load_csv(&csv).unwrap_or_else(|e| panic!("load data: {e}"));
+    // Optional NSE near-month index futures (Ticker,Date,Open,High,Low,Close[,Volume]); only tickers the admission
+    // policy types as futures are taken, so this file cannot replace or add cash indices.
+    if let Ok(path) = std::env::var("VAULT_FUTURES_CSV") {
+        match load_csv(&path) {
+            Ok(futures) => for (ticker, rows) in futures {
+                if instrument_policy::selected_type(&ticker, false) == "futures" {
+                    println!("futures {ticker}: {} daily bars {} → {}", rows.len(), rows[0].date, rows[rows.len() - 1].date);
+                    data.insert(ticker, rows);
+                } else {
+                    eprintln!("warning: {path}: ticker {ticker} is not an admitted futures series; skipped");
+                }
+            },
+            Err(e) => eprintln!("warning: futures data unavailable: {e}"),
+        }
+    }
     // ponytail: rows leaked for a 'static borrow — data is loaded once for the server's lifetime.
     let data: &'static BTreeMap<String, Vec<Row>> = Box::leak(Box::new(data));
     let extra_dir = args.get(4).cloned().unwrap_or_else(|| concat!(env!("CARGO_MANIFEST_DIR"), "/../../../extra_data").into());
@@ -1996,6 +2110,41 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn yt_whole_unit_account_buys_whole_units_and_keeps_idle_cash() {
+        // Closes 300, 310, 320, 330, 330 over 2023-01-01..2023-12-31 (364 days). Long entry at 300 (bar 0), exit at 330 (bar 3).
+        let dates=["2023-01-01","2023-01-02","2023-01-03","2023-01-04","2023-12-31"];
+        let rows:Vec<Row>=[300.,310.,320.,330.,330.].iter().zip(dates).map(|(&c,d)|Row{ticker:"NIFTYBANK".into(),date:d.into(),open:c,high:c,low:c,close:c,volume:None}).collect();
+        let ctx=Ctx::new(&rows,&rows,&[]);
+        let t=Trade{dir:1.,legs:vec![connors::Leg{i:0,px:300.,w:1.}],exit_i:3,exit_px:330.,reason:String::new(),entry_kind:"close",signal_i:3,open:false,exits:vec![]};
+        // 1,000 buys 3 units (900) and keeps 100 idle: 1,000 -> 1,090, not the fractional 1,100.
+        let a=whole_unit_account(&ctx,std::slice::from_ref(&t),0,4,0.,1000.).unwrap();
+        assert_eq!(a.units,vec![vec![3.]]);assert_eq!(a.entry_cash,vec![1000.]);
+        assert_eq!(a.equity,vec![1000.,1030.,1060.,1090.,1090.]);
+        // A 1% cost a side: 3 units cost 909 with the fee, then the exit fee 9.9 -> 1,000 + 90 - 9 - 9.9.
+        let c=whole_unit_account(&ctx,std::slice::from_ref(&t),0,4,0.01,1000.).unwrap();
+        assert_eq!(c.units,vec![vec![3.]]);assert!((c.equity[3]-1071.1).abs()<1e-9);assert!((c.turnover-1890.).abs()<1e-9);
+        // Too little capital for one unit is reported, not silently skipped.
+        assert!(whole_unit_account(&ctx,std::slice::from_ref(&t),0,4,0.,299.).unwrap_err().contains("cannot buy one whole unit"));
+        // The run reports the money equity over the starting capital and counts 365-day years.
+        let run=Run{trades:vec![t.clone()],from:0,to:4,equity:equity_curve(&ctx.c,std::slice::from_ref(&t),0,4,0.),bh:vec![1.;5],source_account:None,bandy_account:None,unit_exposure_report:None,whole_units:None};
+        let run=whole_unit_run(&ctx,run,0.,Some(1000.)).unwrap();
+        assert!((run.equity[4]-1.09).abs()<1e-12);
+        let s=stats(&ctx,&run,0.);assert!((s["years"]-364./365.).abs()<1e-12);assert!((s["cagr"]-(1.09f64.powf(365./364.)-1.)).abs()<1e-12);
+        let f=financial_stats(&ctx,&run,accounting::Costs::default());assert!((f["ledger_gross_return"]-0.09).abs()<1e-12);
+        // Short: 3 units sold at 300 and bought back at 330 lose 90.
+        let short=Trade{dir:-1.,..t};let sa=whole_unit_account(&ctx,&[short],0,4,0.,1000.).unwrap();assert_eq!(sa.equity[3],910.);
+    }
+    #[test]
+    fn yt_capital_is_yt_only_with_the_amibroker_default() {
+        let q=|pairs:&[(&str,&str)]|pairs.iter().map(|(k,v)|(k.to_string(),v.to_string())).collect::<BTreeMap<String,String>>();
+        assert_eq!(yt_capital(&q(&[("_guru","yt")])).unwrap(),Some(1_000_000.));
+        assert_eq!(yt_capital(&q(&[("_guru","yt"),("capital","250000")])).unwrap(),Some(250_000.));
+        assert!(yt_capital(&q(&[("_guru","yt"),("capital","0")])).is_err());assert!(yt_capital(&q(&[("_guru","yt"),("capital","abc")])).is_err());
+        assert_eq!(yt_capital(&q(&[("_guru","connors"),("capital","250000")])).unwrap(),None);
+        assert!(accounting::Costs::parse(&q(&[("_guru","yt"),("capital","250000")])).is_ok());
+        assert!(accounting::Costs::parse(&q(&[("_guru","connors"),("capital","250000")])).is_err());
+    }
     #[test]
     fn hv_exit_diagnostic_uses_actual_open_date_without_future_close_indicators() {
         let rows=vec![Row{ticker:"AAPL".into(),date:"2024-04-01".into(),open:100.,high:110.,low:99.,close:109.,volume:None},Row{ticker:"AAPL".into(),date:"2024-04-02".into(),open:112.,high:120.,low:110.,close:119.,volume:None}];
@@ -2346,7 +2495,7 @@ mod tests {
         let state=accounting_state();let ctx=&state.ctxs["SPX"];
         let trade=Trade{dir:1.,legs:vec![connors::Leg{i:0,px:100.,w:1.}],exit_i:5,exit_px:110.,reason:"arithmetic close".into(),entry_kind:"close",signal_i:5,open:false,exits:vec![]};
         let costs=accounting::Costs::parse(&accounting_query()).unwrap();
-        let run=Run{trades:vec![trade],from:0,to:5,equity:equity_curve(&ctx.c,&[Trade{dir:1.,legs:vec![connors::Leg{i:0,px:100.,w:1.}],exit_i:5,exit_px:110.,reason:String::new(),entry_kind:"close",signal_i:5,open:false,exits:vec![]}],0,5,costs.side_rate()),bh:vec![1.;6],source_account:None,bandy_account:None,unit_exposure_report:None};
+        let run=Run{trades:vec![trade],from:0,to:5,equity:equity_curve(&ctx.c,&[Trade{dir:1.,legs:vec![connors::Leg{i:0,px:100.,w:1.}],exit_i:5,exit_px:110.,reason:String::new(),entry_kind:"close",signal_i:5,open:false,exits:vec![]}],0,5,costs.side_rate()),bh:vec![1.;6],source_account:None,bandy_account:None,unit_exposure_report:None,whole_units:None};
         let legacy=stats(ctx,&run,costs.side_rate());let added=financial_stats(ctx,&run,costs);
         for (key,value) in legacy {assert!(added[key].to_bits()==value.to_bits(),"Legacy statistic {key} changed");}
         assert!((added["ledger_gross_return"]-added["fee_return"]-added["slippage_return"]-added["total_return"]).abs()<1e-12);
@@ -2361,7 +2510,7 @@ mod tests {
         let state=accounting_state();let ctx=&state.ctxs["SPX"];
         let make=|start,end,exit_px,open|Trade{dir:1.,legs:vec![connors::Leg{i:start,px:100.,w:1.}],exit_i:end,exit_px,reason:String::new(),entry_kind:"close",signal_i:start,open,exits:vec![]};
         let trades=vec![make(0,2,110.,false),make(3,5,80.,false),make(6,7,150.,true)];
-        let run=Run{equity:equity_curve(&ctx.c,&trades,0,7,0.),trades,from:0,to:7,bh:vec![1.;8],source_account:None,bandy_account:None,unit_exposure_report:None};
+        let run=Run{equity:equity_curve(&ctx.c,&trades,0,7,0.),trades,from:0,to:7,bh:vec![1.;8],source_account:None,bandy_account:None,unit_exposure_report:None,whole_units:None};
         let s=financial_stats(ctx,&run,accounting::Costs{fees_bps:0.,slippage_bps:0.,rollover_bps:0.});
         assert_eq!(s["trades"],2.);
         assert!((s["net_profit"]+0.1).abs()<1e-12);
@@ -2372,7 +2521,7 @@ mod tests {
     #[test]
     fn initial_loss_or_fee_is_in_daily_risk_and_drawdown(){
         let state=accounting_state();let ctx=&state.ctxs["SPX"];
-        let run=Run{trades:vec![],from:0,to:2,equity:vec![0.9,0.99,0.98],bh:vec![1.;3],source_account:None,bandy_account:None,unit_exposure_report:None};
+        let run=Run{trades:vec![],from:0,to:2,equity:vec![0.9,0.99,0.98],bh:vec![1.;3],source_account:None,bandy_account:None,unit_exposure_report:None,whole_units:None};
         let s=stats(ctx,&run,0.);
         assert!((s["total_return"]+0.02).abs()<1e-12);
         assert!((s["max_dd"]+0.1).abs()<1e-12);
@@ -2482,6 +2631,26 @@ mod tests {
                 }
                 let run = backtest(&ctx, d.id, 0, rows.len() - 1, cost, &Params::new()).unwrap();
                 // an open trade is marked as if closed at the last close, exit cost included
+                let want: f64 = run.trades.iter().map(|t| 1.0 + t.ret(cost)).product();
+                let got = *run.equity.last().unwrap();
+                assert!((got / want - 1.0).abs() < 1e-9, "{} cost {}: equity {} vs trades {}", d.id, cost, got, want);
+            }
+        }
+    }
+
+    #[test]
+    fn yt_strategies_run_with_defaults_and_conserve_equity() {
+        // Every YT strategy (team AFLs) on real NIFTY 50 data with its default settings: it runs, its trades pass
+        // validation, and the final equity equals the product of (1 + trade return).
+        let path = std::env::var("VAULT_IDX").unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/../../../idx_data.csv").into());
+        let data = load_csv(&path).unwrap();
+        let rows = &data["NIFTY 50"];
+        let ctx = Ctx::new(rows, rows, &[]);
+        for d in connors::catalogue().iter().filter(|d| d.book.starts_with("yt_") && d.status == Status::Live) {
+            for cost in [0.0, 0.0005] {
+                let raw = connors::run(d.id, &ctx, 0, rows.len() - 1, &Params::new()).unwrap_or_else(|| panic!("{} returned no run", d.id));
+                trade_validation::check(&raw, 0, rows.len() - 1, cost).unwrap_or_else(|e| panic!("{}: {e}", d.id));
+                let run = backtest(&ctx, d.id, 0, rows.len() - 1, cost, &Params::new()).unwrap_or_else(|e| panic!("{}: {e}", d.id));
                 let want: f64 = run.trades.iter().map(|t| 1.0 + t.ret(cost)).product();
                 let got = *run.equity.last().unwrap();
                 assert!((got / want - 1.0).abs() < 1e-9, "{} cost {}: equity {} vs trades {}", d.id, cost, got, want);
