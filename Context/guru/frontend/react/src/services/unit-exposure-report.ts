@@ -187,9 +187,10 @@ function core(data: unknown, admission: UnitExposureAdmission, adapter: boolean)
       || account.gross_ret !== audit.gross_return || account.net_ret !== audit.net_return
       || account.fee_ret !== audit.fee_return || account.slippage_ret !== audit.slippage_return
       || account.cost_status !== (a.open ? 'open_liquidation_estimate' : 'modeled_round_trip_cost')
-      || ['gross_pnl','fees','slippage','taxes','net_pnl','mae','mfe','mae_ret_observed','mfe_ret_observed'].some(k => account[k] !== null)
+      || ['gross_pnl','fees','slippage','taxes','net_pnl','mae','mfe'].some(k => account[k] !== null)
       || ['money_status','return_basis','pts_basis','excursion_basis'].some(k => !text(account[k]))
-      || account.excursion_bars !== 0 || account.excursion_status !== 'unavailable') return invalid();
+      // shared fill-aware MAE/MFE (Rust accounting::excursion): either unavailable, or finite with MAE <= MFE
+      || !((account.excursion_bars === 0 && account.excursion_status === 'unavailable' && account.mae_ret_observed === null && account.mfe_ret_observed === null) || (Number.isInteger(account.excursion_bars) && (account.excursion_bars as number) > 0 && account.excursion_status === 'fill_aware_ohlc_path' && Number.isFinite(account.mae_ret_observed) && Number.isFinite(account.mfe_ret_observed) && (account.mae_ret_observed as number) <= (account.mfe_ret_observed as number)))) return invalid();
     for (let j = entry; j <= exit; j++) covered.add(j);
     lastExit = exit; audits.push(audit);
   }

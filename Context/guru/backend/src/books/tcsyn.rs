@@ -5,6 +5,9 @@ use crate::books::rrsim::{g, o, pd, run_ts, sdef, true_high, true_low, A, P};
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "tcsyn";
+/// Admitted ids (authors/lanea/vendor2/decisions.json).
+pub const REVIEWED_LANEA: &[&str] = &["tcsyn_synergy"];
+pub fn reviewed_lanea(id: &str) -> bool { REVIEWED_LANEA.contains(&id) }
 const ID: &str = "tcsyn_synergy";
 
 pub fn catalogue() -> Vec<StrategyDef> {

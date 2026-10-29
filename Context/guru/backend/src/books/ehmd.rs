@@ -6,6 +6,9 @@ use super::ehrs::{atan_d, cross_over, cross_under, homodyne_with_mbb, next_open_
 use crate::connors::{claim, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "ehmd";
+/// Admitted ids (authors/ehlers/laneb/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["ehmd_laguerre_rsi", "ehmd_lms_zerolag"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 /// MAMA / FAMA exactly as the S&C sidebar (alpha also capped at FastLimit, a no-op since DeltaPhase >= 1).
 pub fn mama(x: &Ctx, fast: f64, slow: f64) -> (Vec<f64>, Vec<f64>) {

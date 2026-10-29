@@ -30,9 +30,12 @@ services:
       VAULT_ADMIN_EMAIL: ${VAULT_ADMIN_EMAIL}
       VAULT_ADMIN_NAME: ${VAULT_ADMIN_NAME}
       VAULT_ADMIN_PASSWORD: ${VAULT_ADMIN_PASSWORD}
+      RESEARCH_PIN: ${RESEARCH_PIN:-}
+      RESEARCH_ADMIN_PASSWORD: ${RESEARCH_ADMIN_PASSWORD:-}
       VAULT_NOTES_DIR: /app/import-notes
       VAULT_BOOKS_DIR: /app/books
       VAULT_BOOK_MANIFEST: /app/book-index.json
+      VAULT_RESEARCH_PROGRESS: /app/frontend-data/research-progress.json
       NODE_ENV: production
       AUTH_BIND: 0.0.0.0
       AUTH_PORT: 8102
@@ -45,6 +48,11 @@ services:
       - type: bind
         source: ${VAULT_RUNTIME_ROOT}/book-index.json
         target: /app/book-index.json
+        read_only: true
+      # Research portal progress (make_research_progress.py). A folder mount, so a regenerated file is seen without a restart.
+      - type: bind
+        source: ${VAULT_FRONTEND_DATA_ROOT:-${VAULT_RUNTIME_ROOT}/frontend-data}
+        target: /app/frontend-data
         read_only: true
     depends_on:
       postgres: {condition: service_healthy}

@@ -12,6 +12,9 @@ use crate::books::rrsim::{g, o, pd, run_ts, sdef, A, P};
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "mxswg";
+/// Admitted ids (authors/lanea/vendor2/decisions.json).
+pub const REVIEWED_LANEA: &[&str] = &["mxswg_demo", "mxswg_demo2"];
+pub fn reviewed_lanea(id: &str) -> bool { REVIEWED_LANEA.contains(&id) }
 
 const NOTE: &str = "Code literal (EasyLanguage, 'Buy/Sell/Sell Short/Buy to Cover Next Bar at Market', one unit). AND binds tighter than OR \
 (Pruitt & Hill pp.6-7), so in Demo 'trend AND P1 OR P2' = (trend AND P1) OR P2 and in every exit/short test 'S1 OR S2a AND S2b ...' = S1 OR (S2a AND S2b ...). \

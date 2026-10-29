@@ -15,7 +15,7 @@ use crate::connors::{claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Tra
 
 pub const BOOK: &str = "lg3k";
 /// Admitted ids (authors/gettess/admission/SOURCE-CONTRACT.md); lg3k_tr_day stays gate-withheld.
-pub const REVIEWED: &[&str] = &["lg3k_ar_rev", "lg3k_tr_rev", "lg3k_sp_rev"];
+pub const REVIEWED: &[&str] = &["lg3k_ar_rev", "lg3k_tr_rev", "lg3k_sp_rev", "lg3k_tr_day" /* intraday wave 2b: daily bars decide every trade */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub(crate) fn roundup(v: f64, tick: f64) -> f64 {

@@ -19,6 +19,6 @@ try {
   const html = `<!doctype html><html lang="en" data-vault-maintenance><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="theme-color" content="#f3f5f7"><title>Updating Strategy Vault</title><link rel="icon" href="data:,"><style>${fonts}${maintenanceStyles}</style><script src="/maintenance-watch.js" defer></script></head><body>${markup}</body></html>`;
   await mkdir(out, { recursive: true });
   await writeFile(resolve(out, 'maintenance.html'), html);
-  await writeFile(resolve(out, 'maintenance-watch.js'), await readFile(resolve(root, 'public/maintenance-watch.js')));
+  await writeFile(resolve(out, 'maintenance-watch.js'), await readFile(resolve(root, 'src/services/maintenance-watch.js')));
   console.log('Built standalone maintenance page and reconnect checker.');
 } finally { await server.close(); }

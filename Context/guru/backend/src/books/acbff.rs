@@ -17,6 +17,9 @@
 use crate::connors::{Claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "acbff";
+/// Admitted ids (authors/collins/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["acbff_cup_overnight", "acbff_cup_3day", "acbff_eight_lim25", "acbff_eight_lim25_3", "acbff_2hl", "acbff_2hl_tick", "acbff_2hl_4", "acbff_rx15", "acbff_short_dom", "acbff_dom", "acbff_moy", "acbff_moy_dom", "acbff_moy_dom_day", "acbff_cal3", "acbff_cal2_day", "acbff_cal_eight", "acbff_3rd_fade", "acbff_5v15", "acbff_3v30", "acbff_5d_avg_fade", "acbff_nday_10stop", "acbff_fade_rev", "acbff_rx4day", "acbff_mom66", "acbff_contract", "acbff_15_30", "acbff_wk_rx", "acbff_2v5", "acbff_5c_day", "acbff_c3_124", "acbff_c3_125", "acbff_c3_134", "acbff_c3_135", "acbff_c3_145", "acbff_c3_234", "acbff_c3_235", "acbff_c3_245", "acbff_c3_345", "acbff_c40", "acbff_cup_day", "acbff_dom_day", "acbff_dom_day_cc", "acbff_dow", "acbff_eight", "acbff_eight_3", "acbff_eight_stop33", "acbff_eight_stop33_3", "acbff_eight_stop66", "acbff_ext50", "acbff_fade23oc", "acbff_fade2c", "acbff_fade2oc", "acbff_fade_oc", "acbff_five", "acbff_five_4of5", "acbff_hl15", "acbff_monday", "acbff_nee5", "acbff_range10", "acbff_six", "acbff_six_q", "acbff_six_q66", "acbff_six_q66_v2", "acbff_six_stop66", "acbff_sr20", "acbff_three", "acbff_tuesday", "acbff_wed_fri" /* intraday wave 2b: daily bars decide every trade */];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 const NAN: f64 = f64::NAN;
 
 // ---------------------------------------------------------------- order engine
@@ -612,6 +615,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "acbff_rx4day" => vec![p("k", "Range multiple", 2., 0.5, 4., 0.25)],
         "acbff_mom66" => vec![p("n", "Lookback", 9., 3., 30., 1.), p("k", "Entry fraction", 0.66, 0.1, 1.5, 0.01), p("s", "Stop multiple", 1.32, 0.5, 3., 0.01)],
         "acbff_15_30" => vec![p("a", "Near close back", 15., 2., 60., 1.), p("b", "Far close back", 30., 4., 120., 1.)],
+        "acbff_5c_day" => vec![p("swap", "Sides: 0 = book (Table 36.1: buy the up close after five down closes), 1 = [Not from the book] old swapped sides", 0., 0., 1., 1.)], // intraday wave 2b
         _ => vec![],
     };
     Some(v)
@@ -868,7 +872,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 put(nx, Cover, T::Stop(o1 + d), "exit stop");
             })
         }
-        "acbff_5c_day" => day(&|i| (run_rev(c, i, 0, 5, false), run_rev(c, i, 0, 5, true))),
+        // intraday wave 2b: code-vs-book fix (Table 36.1 printed code: BUY = up close after five down closes); swap = 1 keeps the old sides
+        "acbff_5c_day" => { let sw = g("swap") >= 0.5; day(&|i| (run_rev(c, i, 0, 5, !sw), run_rev(c, i, 0, 5, sw))) }
         "acbff_5c_perp" => perp(&|i| (run_rev(c, i, 0, 5, true), run_rev(c, i, 0, 5, false))),
         "acbff_5c1_perp" => perp(&|i| (run_rev(c, i, 1, 5, true), run_rev(c, i, 1, 5, false))),
         "acbff_5c1_day" => day(&|i| (run_rev(c, i, 1, 5, true), run_rev(c, i, 1, 5, false))),

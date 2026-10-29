@@ -10,6 +10,15 @@
 use crate::connors::{Claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "tcdt";
+/// Admitted ids (authors/crabel/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["tcdt_oc_pattern", "tcdt_oc_rangeexp", "tcdt_cc_pattern"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) || W2A_REVIEWED.contains(&id) }
+// ---- intraday wave 2a block (claude/intraday-w2a, 2026-10-29)
+/// Open-to-close rules (Table E printed p.72; Inside Day patterns 1-4 printed p.115): entry on the open, exit on the same
+/// close, no stop, so daily bars decide every trade (no intraday order question). Admitted after an independent daily
+/// ledger (library/intraday/verify/crabel_w2a_ref.py) matched the engine, US and India.
+pub const W2A_REVIEWED: &[&str] = &["tcdt_oc_nr_re", "tcdt_idp1", "tcdt_idp2", "tcdt_idp3", "tcdt_idp4"];
+// ---- end intraday wave 2a block ----
 
 #[derive(Clone, Copy, PartialEq)]
 enum Pat { Any, Id, Doji, Nr4, DojiNr4, IdNr4, Nr7, Ws4, Ws7, BearHook, BullHook, Bnr2, Bnr3, DojiR1, R1 }
@@ -148,7 +157,7 @@ static TABLE_B: &[(&str, char, u32, u32, u32, u32, i32)] = &[
     ("++++",'B',41,51,907,842,2200),("+++-",'B',54,59,583,672,3875),("++-+",'B',47,66,791,775,12124),("++--",'B',41,66,1110,1117,14324),
     ("+-++",'S',58,59,691,638,8175),("+-+-",'S',54,61,1177,804,21949),("+--+",'S',42,52,1037,691,9000),("+---",'S',36,47,1408,586,13448),
     ("----",'S',23,30,5371,671,26849),("---+",'S',38,55,802,660,5624),("--+-",'B',29,66,715,490,8700),("--++",'S',31,58,1223,709,12799),
-    ("-+++",'S',53,64,659,598,11050),("-++-",'S',37,54,791,729,3424),("-+-+",'S',47,57,992,427,18249),("-+--",'B',51,57,1002,854,10274),
+    ("-+++",'S',53,64,659,598,11050),("-++-",'S',37,54,791,729,3424),("-+-+",'B',47,57,992,427,18249),("-+--",'B',51,57,1002,854,10274),
     ("-----",'S',6,33,1587,518,1100),("----+",'S',15,60,911,758,3649),("---+-",'B',19,63,704,614,4150),("---++",'S',12,58,1375,965,4799),
     ("--+--",'B',23,65,831,993,4524),("--+-+",'B',24,54,867,502,5749),("--++-",'S',18,56,777,859,899),("--+++",'S',27,67,738,400,9700),
     ("-+---",'S',13,46,1008,410,3175),("-+--+",'S',21,71,1075,545,12850),("-+-+-",'S',28,57,979,935,4449),("-+-++",'S',26,58,735,618,4224),
@@ -157,6 +166,11 @@ static TABLE_B: &[(&str, char, u32, u32, u32, u32, i32)] = &[
     ("++-++",'S',28,54,575,655,100),("++-+-",'S',26,65,1363,630,17500),("++--+",'B',21,67,753,957,3849),("++---",'S',25,40,1537,638,5799),
     ("+-+++",'S',25,60,601,777,1250),("+-++-",'S',19,53,805,613,2524),("+-+-+",'B',22,59,1167,336,12149),("+-+--",'B',27,52,1185,715,7300),
     ("+--++",'S',19,58,1127,550,8000),("+--+-",'B',10,70,735,200,4549),("+---+",'S',23,52,720,606,1975),("+----",'S',17,29,6885,722,25749),
+];
+/// S&C V.7:10 (1989) "Trading close-to-close patterns", Figure 1 (T-bond futures 1978-87): (pattern, B/S, trades).
+/// Every sign is a close vs the close before it; entry on the last close of the pattern, exit on the next close.
+static TABLE_CC: &[(&str, char, u32)] = &[
+    ("++",'S',517), ("-+",'S',555), ("+-",'S',561), ("--",'B',564), ("+++",'S',239), ("++-",'S',272), ("+-+",'S',259), ("+--",'B',287), ("---",'B',267), ("--+",'S',288), ("-++",'S',262), ("-+-",'S',281), ("++++",'S',110), ("+++-",'S',127), ("++-+",'S',131), ("++--",'B',135), ("+-++",'B',123), ("+-+-",'S',131), ("+--+",'B',153), ("+---",'S',130), ("----",'B',131), ("---+",'S',131), ("--+-",'B',148), ("--++",'S',132), ("-+--",'S',146), ("-+-+",'B',126), ("-++-",'B',138), ("-+++",'S',122), ("+++++",'S',52), ("++++-",'S',58), ("+++-+",'S',59), ("+++--",'B',64), ("++-++",'B',62), ("++-+-",'S',64), ("++--+",'B',76), ("++---",'S',62), ("+-+++",'S',63), ("+-++-",'B',62), ("+-+-+",'S',53), ("+-+--",'B',77), ("+--++",'S',70), ("+--+-",'B',81), ("+---+",'S',55), ("+----",'B',71), ("-----",'B',57), ("----+",'S',73), ("---+-",'B',65), ("---++",'S',61), ("--+--",'S',67), ("--+-+",'B',72), ("--++-",'S',75), ("--+++",'S',53), ("-+---",'S',65), ("-+--+",'B',74), ("-+-+-",'S',66), ("-+-++",'B',60), ("-++--",'S',68), ("-++-+",'B',68), ("-+++-",'S',64), ("-++++",'B',55),
 ];
 /// Table E printed p.72: range condition on Day 2 (0 control, 1 NR, 2 NR4, 3 RE, 4 RE4) x two-day pattern.
 static TABLE_E: &[(u8, &str, char, u32, u32, u32, u32, i32)] = &[
@@ -237,6 +251,8 @@ const R_OC: &[&str] = &["F|Table A (printed p.68; 5-day rows also p.52): pattern
     "E|\"A trade is taken on Day 1's open and exited on the close of Day 1\" (printed p.67). B/S as printed for the row (side = 0); side = ±1 overrides.", "X|Exit on the close of Day 1. No stops (printed p.36)."];
 const R_OCRE: &[&str] = &["F|Table B (printed p.69): \"same as Table A except Day 2 had an expanding daily range relative to the previous day\" (printed p.67). row = the book's pattern number.",
     "E|Buy/sell on Day 1's open as printed (side = 0); side = ±1 overrides.", "X|Exit on the close of Day 1."];
+const R_CC: &[&str] = &["F|Figure 1 of Crabel, \"Trading close-to-close patterns\" (Stocks & Commodities V.7:10, 1989, p.372-374): all two- to five-day patterns of closes, + = a higher close and - = a lower close than the close before; row = the figure's pattern number (1-60).",
+    "E|Enter on the close of the last day of the pattern as printed (B buy, S sell; side = ±1 overrides).", "X|Exit on the next day's close (\"exited on the next day's close. Stops were not used\")."];
 const R_OCNR: &[&str] = &["F|Table E (printed p.72): yesterday's close direction and today's open direction, with yesterday being NR4 / NR (range below the day before) / control / RE (range above the day before) / RE4 (range above each of the previous three).",
     "E|Entry on today's open, B/S as printed (side = 0).", "X|Exit on today's close."];
 const R_GAP: &[&str] = &["F|S&P Gaps and ORB (printed pp.243-248): today's open at least `gap` points above (gap_dir +1) or below (−1) yesterday's close. Gaps of 20, 40, 60, 80, 100, 150, 200, 250, 300, 400 points. The tables' trade counts prove the gap classes are cumulative (\"at least\"), not buckets: the +80 rows sum to 2,147 trades, more than the ~1,700 days of 1982-88.",
@@ -283,6 +299,9 @@ pub fn catalogue() -> Vec<StrategyDef> {
     v.push(d("tcdt_oc_rangeexp", "Range expansion & open-to-close (Table B)", "Ch 11 · Range expansion S&P", "Long/Short", Status::Live, R_OCRE,
         "60 printed S&P rows; param row = book pattern number (default 1 = \"++\" S, 193 trades, 59%).",
         Some(Claim { trades: "193 (row 1)", win: "59%", avg: "avg win $803 / avg loss $721, total $34,599 (row 1)", hold: "exit same-day close", period: PER })));
+    v.push(d("tcdt_cc_pattern", "Close-to-close patterns (S&C 1989, Figure 1)", "S&C article · T-bond close to close", "Long/Short", Status::Live, R_CC,
+        "60 printed T-bond rows (1978-87); param row = the figure's pattern number (default 1 = \"++\" S, 517 trades, 52%). Equal closes match neither + nor - [article silent]. The article tested T-bond futures only; index, ETF and stock runs are a declared application.",
+        Some(Claim { trades: "517 (row 1)", win: "52%", avg: "gross profit $12,791 (row 1)", hold: "exit next day's close", period: "T-bond futures 1978-87" })));
     v.push(d("tcdt_oc_nr_re", "NR4 / NR / RE / RE4 two-day patterns (Table E)", "Ch 11 · Range expansion S&P", "Long/Short", Status::Live, R_OCNR,
         "20 printed S&P rows in book order (NR4, NR, Control, RE, RE4 for ++, −+, +−, −−); default row 1 = NR4 \"++\" B.",
         Some(Claim { trades: "114 (row 1)", win: "48%", avg: "avg win $1149 / avg loss $862, gross $12,354 (row 1)", hold: "exit same-day close", period: PER })));
@@ -348,7 +367,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "nr7" => fam("tcdt_nr7", "Crabel · NR7 ORB"), "ws4" => fam("tcdt_ws4", "Crabel · WS4 ORB"), "ws7" => fam("tcdt_ws7", "Crabel · WS7 ORB"),
         "bearhook" => fam("tcdt_bearhook", "Crabel · Bear Hook ORB"), "bullhook" => fam("tcdt_bullhook", "Crabel · Bull Hook ORB"),
         "dr1" => fam("tcdt_dr1", "Crabel · Doji Lines & NR"), "2bnr" => fam("tcdt_2bnr", "Crabel · 2 Bar NR ORB"), "3bnr" => fam("tcdt_3bnr", "Crabel · 3 Bar NR ORB"),
-        "oc" => fam("tcdt_oc", "Crabel · Open-to-close pattern tables"), "gap" | "triseg" | "quad" => fam("tcdt_openloc", "Crabel · Gap / segment ORB tables"),
+        "oc" => fam("tcdt_oc", "Crabel · Open-to-close pattern tables"), "cc" => fam("tcdt_cc", "Crabel · Close-to-close patterns (S&C)"), "gap" | "triseg" | "quad" => fam("tcdt_openloc", "Crabel · Gap / segment ORB tables"),
         "idp1" | "idp2" | "idp3" | "idp4" | "id_retrace" | "200pt" => fam("tcdt_idpat", "Crabel · Inside Day open patterns"),
         "ut1" | "ut2" | "ut3" | "ut4" | "ut5" => fam("tcdt_ut", "Crabel · Upthrust"),
         _ => fam("tcdt_other", "Crabel · ORB concepts (not testable)"),
@@ -358,7 +377,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 }
 fn catalogue_name(id: &str) -> Option<&'static str> {
     Some(match id {
-        "tcdt_oc_pattern" => "Table A", "tcdt_oc_rangeexp" => "Table B (range expansion)", "tcdt_oc_nr_re" => "Table E (NR4/NR/RE/RE4)",
+        "tcdt_oc_pattern" => "Table A", "tcdt_cc_pattern" => "Close-to-close (S&C 1989)", "tcdt_oc_rangeexp" => "Table B (range expansion)", "tcdt_oc_nr_re" => "Table E (NR4/NR/RE/RE4)",
         "tcdt_gap_orb" => "Gaps", "tcdt_triseg_orb" => "Tri-segment", "tcdt_quad_orb" => "5-segment",
         "tcdt_idp1" => "Pattern 1", "tcdt_idp2" => "Pattern 2a/2b", "tcdt_idp3" => "Pattern 3", "tcdt_idp4" => "Pattern 4",
         "tcdt_ut1" => "Pivot Day 3", "tcdt_ut2" => "Pivot Day 4", "tcdt_ut3" => "Pivot Day 5", "tcdt_ut4" => "Pivot Day 6", "tcdt_ut5" => "Pivot Day 7",
@@ -393,7 +412,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     }
     let rows = |n: f64| vec![p("row", "Book table row", 1., 1., n, 1.), p("side", "Side: 0 = as printed, 1 buy, −1 sell", 0., -1., 1., 1.)];
     Some(match id {
-        "tcdt_oc_pattern" | "tcdt_oc_rangeexp" => rows(60.),
+        "tcdt_oc_pattern" | "tcdt_oc_rangeexp" | "tcdt_cc_pattern" => rows(60.),
         "tcdt_oc_nr_re" => rows(20.),
         "tcdt_gap_orb" | "tcdt_triseg_orb" | "tcdt_quad_orb" => {
             let mut v = rows(match id { "tcdt_gap_orb" => 80., "tcdt_triseg_orb" => 18., _ => 50. });
@@ -535,6 +554,15 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 if pattern_ok(x, i, pat) { out.push(trade(x, side_of(bs), i, x.o[i], 0, to, "open", pat)); }
             }
         }
+        "tcdt_cc_pattern" => {
+            let (pat, bs, _) = *TABLE_CC.get(row)?;
+            let n = pat.len();
+            for i in start..=to {
+                if i < n { continue; }
+                let ok = pat.chars().enumerate().all(|(k, ch)| { let j = i + 1 - n + k; sign(x.c[j], x.c[j - 1]) == Some(ch) });
+                if ok { let mut t = trade(x, side_of(bs), i, x.c[i], 1, to, "close", pat); t.signal_i = i; out.push(t); }
+            }
+        }
         "tcdt_oc_nr_re" => {
             let (cond, pat, bs, ..) = *TABLE_E.get(row)?;
             for i in start..=to {
@@ -616,6 +644,20 @@ mod tests {
         let r2 = bars(&v2); let x2 = Ctx::new(&r2, &r2, &[]);
         assert!(run("tcdt_nr7_p80", &x2, 0, 7, &Params::from([("path".to_string(), 0.0)])).unwrap().is_empty());
     }
+    // ---- intraday wave 2a block: open-to-close inside-day patterns (printed p.115), hand-checked
+    #[test]
+    fn w2a_inside_day_patterns_open_to_close() {
+        // bar 3 inside bar 2 with a higher close; bar 4 opens above bar 3's close
+        let r = bars(&[(10., 12., 8., 11.), (11., 13., 9., 12.), (12., 14., 10., 13.), (13., 13.5, 10.5, 13.2), (13.5, 14., 13., 13.8)]);
+        let x = Ctx::new(&r, &r, &[]);
+        let t = run("tcdt_idp1", &x, 0, 4, &Params::new()).unwrap();
+        assert_eq!(t.len(), 1);
+        assert_eq!((t[0].dir, t[0].legs[0].i, t[0].legs[0].px, t[0].exit_i, t[0].exit_px), (1.0, 4, 13.5, 4, 13.8));
+        assert_eq!(run("tcdt_idp2", &x, 0, 4, &Params::new()).unwrap().len(), 1);
+        assert!(run("tcdt_idp4", &x, 0, 4, &Params::new()).unwrap().is_empty()); // bar 2's high is not below bar 1's
+        assert!(super::reviewed("tcdt_idp3") && super::reviewed("tcdt_oc_nr_re"));
+    }
+    // ---- end intraday wave 2a block ----
     #[test]
     fn pattern_strings_and_segments() {
         let r = bars(&[(10., 11., 9., 10.), (10., 12., 9., 11.), (11., 12., 9., 10.), (9.5, 10., 9., 9.8)]);

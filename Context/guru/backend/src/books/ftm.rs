@@ -8,6 +8,9 @@
 use crate::connors::{rsi, sma, true_range, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "ftm";
+/// Admitted ids (authors/futuresmag/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["ftm_km_co_open", "ftm_km_co_limit", "ftm_km_hh_open", "ftm_km_hh_limit", "ftm_rg_dip", "ftm_cvr9", "ftm_zg_weak2r", "ftm_kf_sd", "ftm_kf_sd_full", "ftm_mt_macd", "ftm_mt_macd_rsi", "ftm_mt_macd_stoch", "ftm_rg_feedback"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 // ------------------------------------------------------------------ helpers
 

@@ -5,6 +5,9 @@ use super::jcfeed::{ext, gp, Sim};
 use crate::connors::{sma, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "rvecl";
+/// Admitted ids (authors/lanea/vendor1/decisions.json).
+pub const REVIEWED_LANEA: &[&str] = &["rvecl_eclipse"];
+pub fn reviewed_lanea(id: &str) -> bool { REVIEWED_LANEA.contains(&id) }
 const EC: &str = "rvecl_eclipse";
 
 pub fn catalogue() -> Vec<StrategyDef> {

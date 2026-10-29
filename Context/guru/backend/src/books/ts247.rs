@@ -10,6 +10,9 @@
 use crate::connors::{claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "ts247";
+/// Admitted ids (authors/lanea/elmtrader/decisions.json).
+pub const REVIEWED_LANEA: &[&str] = &["ts247_long", "ts247_short", "ts247_oct_apr"];
+pub fn reviewed_lanea(id: &str) -> bool { REVIEWED_LANEA.contains(&id) }
 
 const NOTE: &str = "FTSE cash-index spread bet run on the index (instrument swap; percentage returns, one unit). The 0.5% stop is checked on every bar in the trade against the day's low (high for shorts): it fills at the stop, or at the open when the open is already through it. The stop is re-set to 0.5% from each close while the next trading day is still in the window. The book's statistics count every window day as a trade (890 trades in 9 years, ~one per window day) while its practical rule holds one position through the window; daily re-set stops make the two P&L-identical before costs. Book stats are net of a 2-point spread and carry; the vault has no FTSE data, so they cannot be reproduced.";
 

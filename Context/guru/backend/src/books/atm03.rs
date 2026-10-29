@@ -6,6 +6,9 @@ use crate::connors::{atr, dmi, rsi, sma, Ctx, Leg, ParamDef, Params, Status, Str
 use Status::*;
 
 pub const BOOK: &str = "atm03";
+/// Admitted ids (authors/activetrader/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["atm03_bb60", "atm03_pullback6", "atm03_pullback_fut", "atm03_tpe", "atm03_tpe_ls", "atm03_ch100_20", "atm03_triple2", "atm03_triple5", "atm03_blood", "atm03_mfi", "atm03_twobar", "atm03_cmo_srsi", "atm03_ob_cont", "atm03_memorial", "atm03_july4"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 // ------------------------------------------------------------------ helpers (shared with atm04)
 

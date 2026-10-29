@@ -26,7 +26,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "F|#1: CLOSE C < CLOSE D, CLOSE B > CLOSE C, CLOSE A < CLOSE B -> BUY point at HIGH A provided the OPEN is below it; mirror '+ - +' -> SELL point at LOW A provided the OPEN is above it (p.15)",
             "F|A pattern BUY point replaces the BUY point only if it is lower; a pattern SELL point replaces the SELL point only if it is higher (p.16, 18, 20)",
             "E|\"Each order should be entered every day. When one order is executed the other becomes the stop-loss point for the trade\" (p.21) - buy stop / sell stop",
-            "X|\"Whenever you are filled on one of your orders you should place an order to exit the position Market On Close\" (p.21); the other order is the stop (OCO)"],
+            "X|\"Whenever you are filled on one of your orders you should place an order to exit the position Market On Close\" (p.21); the other order is the stop (OCO)",
+            "X|[intraday wave 2b] Default p.path=1: real 1-minute bars decide which order filled first and whether the other (the stop) was reached after the fill (fills at the level, or the minute's open when it opened through it). A minute that reaches both points without opening through exactly one: order unknown, no trade [convention]; fill minute that also reaches the stop: filled then stopped, unless that minute opened beyond the stop, then stopped only if it closed beyond it [convention]. Runs on SPY, SPX (from 2014, real daily opens), NIFTY 50, NIFTYBANK; the 0.05 rounding is the book's S&P tick, kept on every instrument. NIFTY 50 days from 2026-08-11 skipped (bad closing minutes). p.path=0 = the old daily bar path [Not from the book]."],
           "Book trade listing: S&P INDEX D0691 (June 1991 futures) 3/1-6/12/1991, $0 costs, 31 trades, total +$11,900 = 23.8 points at $500 (p.29); D0991 6/19-7/1/1991 (p.30). 1991-2001 summary (3 contracts): 955 trades, 61% (p.52) - that table is for the later first-profitable-open version, not this one. Run on SPX/SPY/NIFTY (instrument swap); rounding tick 0.05 (S&P / NSE). Pattern precedence: by default the first pattern number found on either side is the only pattern used that day (p.14 literal); param pat_scope = 1 looks per side.",
           claim("31 (list)", "", "23.8 pts total", "same day", "S&P June 1991 futures 3/1-6/12/1991 (p.29)")),
         d("lgvp_volpat_fpo", "VOLPAT with first-profitable-open exit (addendum)", "VOLPAT addenda (p.49-52)",
@@ -56,7 +57,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         p("k_open", "Fraction of the 3-day range from the open", 0.75, 0.1, 2.0, 0.05),
         p("patterns", "Pattern recognition on (1, book) / off (0 = System #1 only)", 1., 0., 1., 1.),
         p("pat_scope", "Pattern precedence: 0 = first pattern found on either side (book p.14), 1 = per side", 0., 0., 1., 1.),
-        p("tick", "Rounding increment (0.05 = S&P / NSE)", 0.05, 0.0, 1.0, 0.01)])
+        p("tick", "Rounding increment (0.05 = S&P / NSE)", 0.05, 0.0, 1.0, 0.01),
+        p("path", "1 = real 1-minute bars (default; days without minute data make no trade), 0 = [Not from the book] daily bar path", 1., 0., 1., 1.)]) // intraday wave 2b
 }
 
 /// (buy, sell) points for bar i (uses bars <= i-1 and o[i]); NaN when not enough history.
@@ -94,8 +96,32 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     if from > to || to >= x.c.len() { return None; }
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
     let (kc, ko, tick, pat, side) = (g("k_close"), g("k_open"), g("tick"), g("patterns") >= 0.5, g("pat_scope") >= 0.5);
+    if g("path") >= 0.5 { return Some(oco_minutes(x, from, to, |i| volpat_points(x, i, kc, ko, tick, pat, side))); } // intraday wave 2b
     Some(oco_day(x, from, to, |i| volpat_points(x, i, kc, ko, tick, pat, side)))
 }
+
+// ---- intraday wave 2b block: VOLPAT OCO on real 1-minute bars
+/// Both stops live from the first minute; the first one touched fills (at the level, or the minute's open when it opened
+/// through it) and the other becomes the stop-loss; otherwise market on close. A minute reaching both entry levels without
+/// opening through exactly one: order unknown, no trade [wave-1 convention]. Days without minute data make no trade.
+fn oco_minutes(x: &Ctx, from: usize, to: usize, lv: impl Fn(usize) -> (f64, f64)) -> Vec<Trade> {
+    use crate::intraday::{day_trade, stop_entry_day, Level};
+    let mut out = vec![];
+    for i in from..=to {
+        let (b, s) = lv(i);
+        if !b.is_finite() || !s.is_finite() { continue; }
+        let Some(m) = crate::intraday_w2b::day(x, i) else { continue };
+        let lvls = [Level { up: true, px: b }, Level { up: false, px: s }];
+        let Some((k, px, st)) = stop_entry_day(&m, 0, &lvls, &|k, _| Some(lvls[1 - k])) else { continue };
+        let dir = if k == 0 { 1.0 } else { -1.0 };
+        out.push(match st {
+            Some(xp) => day_trade(dir, i, px, i, xp, if k == 0 { "Stopped by the sell point" } else { "Stopped by the buy point" }, "stop", false),
+            None => day_trade(dir, i, px, i, x.c[i], "Market on close", "stop", false),
+        });
+    }
+    out
+}
+// ---- end intraday wave 2b block ----
 
 #[cfg(test)]
 mod tests {

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd -- "$(dirname -- "$0")/.."
-node --experimental-test-coverage --test tests/contracts.test.mjs tests/lab-strategies.test.mjs tests/lab-indicators.test.mjs tests/backtest-trust.test.mjs tests/research-review.test.mjs tests/optimization-export.test.mjs tests/analyst-conclusion.test.mjs tests/conclusion-presentation.test.mjs tests/report-data.test.mjs tests/legacy-response.test.mjs
+node --experimental-test-coverage --test tests/contracts.test.mjs tests/lab-strategies.test.mjs tests/lab-indicators.test.mjs tests/backtest-trust.test.mjs tests/research-review.test.mjs tests/optimization-export.test.mjs tests/analyst-conclusion.test.mjs tests/conclusion-presentation.test.mjs tests/report-data.test.mjs tests/legacy-response.test.mjs tests/research-portal.test.mjs
 node --import ./tests/ts-loader.mjs --test tests/library-context-integration.test.mjs
 CARGO_BUILD_JOBS=2 CARGO_TARGET_DIR="${VAULT_RUNTIME_ROOT:-$HOME/.cache/strategy-vault-webapp}/test-target" nice -n 10 cargo test --locked --manifest-path gateway/Cargo.toml
 node --test tests/integration.test.mjs

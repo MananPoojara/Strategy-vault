@@ -9,6 +9,9 @@
 use crate::connors::{sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "bpqst";
+/// Admitted ids (authors/lanea/newsletters/decisions.json).
+pub const REVIEWED_LANEA: &[&str] = &["bpqst_uptrend", "bpqst_downtrend"];
+pub fn reviewed_lanea(id: &str) -> bool { REVIEWED_LANEA.contains(&id) }
 
 const C0: &str = "F|[Book silent] One position at a time; setups are not taken while a position is open. Same-day order of fills: open -> nearer extreme -> other extreme -> close; gaps fill at the open. The breakeven stop and both trailing stops work from the moment the target fills; trailing levels use the bars up to the previous close. Each third's stop is the higher (long) / lower (short) of the breakeven stop and its trailing stop (both orders work on the same shares).";
 const C1: &str = "F|Stocks of $10-$200 with 50-day average volume >= 1,000,000 shares (Master List, p.99) - run on the index (instrument swap); the price/volume screen does not apply to an index.";

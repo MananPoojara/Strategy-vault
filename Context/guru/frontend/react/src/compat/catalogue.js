@@ -217,6 +217,67 @@ export const LIB = [
     { id: "kldst", sourceIds: ["title-27677f9123fd300f"], title: "Day Trading and Swing Trading the Currency Market", year: 2008, blurb: "Lien, 2008 · moving-average perfect order runs; pip-based, news and carry strategies held" },
     { id: "kldtc", sourceIds: ["title-21d3c35d6c2c02be", "title-39a12d5916d733f7"], title: "Day Trading the Currency Market", year: 2005, blurb: "Lien, 2005 · first edition of the same strategies (perfect order counted under the 2008 edition)" }] },
   // ---- end Lien block ----
+  // ---- Schlossberg block (27 Oct 2026, lane B)
+  { id: "schlossberg", name: "Boris Schlossberg", tagline: "Currency strategist (BK Asset Management) · Bollinger band \"bands\" trend trade and the Tao of RSI run here; swing-picked, scale-in and pip setups held", books: [
+    { id: "bstacm", sourceIds: ["title-ebd4d46abe3e06cd", "title-ab7f977352944a34"], title: "Technical Analysis of the Currency Market", year: 2006, blurb: "Schlossberg, 2006 · Ch.10 setups: Bollinger band trend and the Tao of RSI (three exits) run on daily bars; range, exhaustion, MACD turn and 3-SMA setups held" }] },
+  // ---- end Schlossberg block ----
+  // ---- Ponsi block (27 Oct 2026, lane B)
+  { id: "ponsi", name: "Ed Ponsi", tagline: "Forex trader and educator (FXEducator) · the FX-Ed Trend Technique runs here; Fibonacci, pattern, pip and carry trades held", books: [
+    { id: "epfpp", sourceIds: ["title-360d41abd111aa32", "title-10a678f7dce48921"], title: "Forex Patterns & Probabilities (and The Ed Ponsi Forex Playbook)", year: 2007, blurb: "Ponsi, 2007 · FX-Ed Trend Technique (10-day EMA pullback, half-ATR trailing stop) runs on daily bars; the Playbook repeats it with carry trades" }] },
+  // ---- end Ponsi block ----
+  // ---- Downs block (29 Oct 2026, lane B)
+  { id: "downs", name: "Walter T. Downs", tagline: "Pattern researcher and forex system seller · the Forex Gambit pullback and 37 Trading for Tigers bar patterns run here; open-interest patterns held", books: [
+    { id: "wtdfg", sourceIds: ["title-32a9f443563ba84c"], title: "The Forex Gambit", year: null, blurb: "Downs, e-book · inside-down bar above the 30-day Bollinger middle line, buy at the close, stop at the bar low, out after a 2 SD close and a lower close, breakeven after 4 days, 16-day time exit" },
+    { id: "wtdtt", sourceIds: ["title-40f478385458a965"], title: "Trading for Tigers", year: null, blurb: "Downs · 14 monthly and 8 weekly breakout patterns (out at the end of the month/week), 9 market-on-close weekly/monthly patterns (out at the next open) and 6 MIST daily patterns (US only); open-interest versions and code-only patterns held" }] },
+  // ---- end Downs block ----
+  // ---- Goodwin block (29 Oct 2026, lane C)
+  { id: "goodwin", name: "Andrew Goodwin", tagline: "Hedge-fund S&P trader · eight of his printed TradeStation rules run here; breadth, Treasury, VIX and fixed-point patterns held", books: [
+    { id: "agtsic", sourceIds: ["title-8c40d4a149da20e6"], title: "Trading Secrets of the Inner Circle", year: 1997, blurb: "Goodwin, 1997 · basic 8-day RSI, options-expiration range rule, daily patterns #5, #6, #8, #10, #12 and the 6-day reversal, all from the printed S&P futures code" }] },
+  // ---- end Goodwin block ----
+  // ---- Lane C 29 Oct block (Wright, Cohen, Sadekar, Gujral, Sabatini)
+  { id: "cfwright", name: "Charles F. Wright", tagline: "Trader and trading-system designer · six of his printed TradeStation strategies run here; RangeLeader held (futures-dollar stop and target)", books: [
+    { id: "cfwtab", sourceIds: ["title-63bdacda30f9b1cd", "source-384f6c256b2a2aa5", "title-dfebd207e13bbd34"], title: "Trading as a Business", year: 1998, blurb: "Wright · 9/18 MA cross, stochastic cross, gap-open breakout, 50-day channel, MA direction + %R (weekly) and the up-key-reversal breakout, all from the printed code" }] },
+  { id: "acohen", name: "A. W. Cohen", tagline: "Chartcraft founder · the three-point reversal point & figure signal-to-signal rule runs here (US instruments: dollar box sizes)", books: [
+    { id: "awcpf", sourceIds: ["title-fcfca896c4fe5bfb"], title: "How to Use the Three-Point Reversal Method of Point & Figure Stock Market Trading", year: 1984, blurb: "Cohen · buy on an X above the last X column, sell on an O below the last O column; trend lines and counts held" }] },
+  { id: "sadekar", name: "Balkrishna M. Sadekar", tagline: "Ichimoku trader · the five basic Ichimoku strategies with the Kijun-close exit run here; the high-probability versions are judgement", books: [
+    { id: "bsichi", sourceIds: ["title-a3ce6fb5f0b6e094", "title-105a46211861a7b4"], title: "How to Make Money Trading the Ichimoku System", year: 2010, blurb: "Sadekar · T/K cross, Kumo breakout, Kijun cross, Chikou breakout and Kumo twist, each out on a close beyond the Kijun" }] },
+  { id: "gujral", name: "Ashwani Gujral", tagline: "Indian market technician · the 23-30 EMA band and the MACD histogram turn run here; his other MA and MACD rules are already in the vault", books: [
+    { id: "ggcharts", sourceIds: ["title-434e9480e707efd1"], title: "How to Make Money Trading with Charts", year: 2009, blurb: "Gujral · 23-30 EMA band with a confirming close, MACD histogram turn below/above zero; Railway-Line Theory and patterns held" }] },
+  { id: "sabatini", name: "Alberto Sabatini", tagline: "Italian trader and author · the Gann one-bar swing chart trend method runs here; outside-bar orders and Gann angles held", books: [
+    { id: "astk3", sourceIds: ["title-d13dcf241ff9a9ab"], title: "Trading Toolkit Collection Vol.3: Gli Swing Chart di W.D. Gann", year: 2001, blurb: "Sabatini · buy above the last swing top, out below the last swing bottom (Italian, scanned)" }] },
+  { id: "krausz", name: "Robert Krausz", tagline: "Gann swing trader (New Market Wizards) · the Basic Gann Swing Plan runs here; the Professional Plan needs 10/20-minute T-bond bars", books: [
+    { id: "krgann", sourceIds: ["title-d7c844f5d172b872"], title: "W.D. Gann Treasure Discovered: Simple Trading Plans for Stocks & Commodities", year: 1998, blurb: "Krausz · 2-bar Gann swing trend + 3-day HiLo Activator entry and trailing exit, 38% swing retracement exit (scanned)" }] },
+  { id: "sheimo", name: "Michael D. Sheimo", tagline: "Stockbroker and author (Stock Market Rules) · the day-after-Thanksgiving to year-end Santa Claus window runs here (US only)", books: [
+    { id: "mdssc", sourceIds: ["live-file-e0ed60451244fcb0b32f24cf25f265c3", "live-file-add5a1522d31ae044e4f01c4cc40f9c1", "live-file-7d66ee9631ad9fab22c4e34119a7580b", "live-file-d85f9b0830c24046a1c3e0d32bdcc129"], title: "Trading The Santa Claus Rally (Stocks & Commodities, Dec 1992)", year: 1992, blurb: "Sheimo · buy the close of the day after Thanksgiving, sell the close of the year's last trading day" }] },
+  { id: "mcdonald", name: "Michael McDonald", tagline: "Author of Predict Market Swings With Technical Analysis · the moving-average timing and Bollinger trading-range rules of Ch.8 run here", books: [
+    { id: "mcdpms", sourceIds: ["title-33042c847823ca05"], title: "Predict Market Swings With Technical Analysis", year: 2002, blurb: "McDonald · in above 98.5% of the 130-day average, out below (next-day close); 2-sd Bollinger sell/buy overlay of the 1966-1982 study" }] },
+  { id: "melzl", name: "Mark Melzl", tagline: "Compiler of The TradeStation Cookbook · six printed daily systems run here; systems with missing pages or functions held", books: [
+    { id: "tscb2", sourceIds: ["title-e54ec3553f6be961"], title: "The TradeStation Cookbook II", year: 1997, blurb: "Melzl (compiler) · James Bond %K(100), Daily Smash YX, BB AVG, Consecutive Closes, CCI 200, Average Volume (scanned code listing)" }] },
+  // ---- end Lane C 29 Oct block ----
+  // ---- Graeme-Smith block (29 Oct 2026, lane B)
+  { id: "graemesmith", name: "David Graeme-Smith", tagline: "UK share swing trader (shortswingtrading.com) · the six-rule Short Swing Trading strategy runs here", books: [
+    { id: "dgsst", sourceIds: ["title-7f5a3a12b1c58816"], title: "Short Swing Trading v6.0", year: 2004, blurb: "Graeme-Smith, 2004 · with the 50-day average, an 8-day +DI/-DI cross, buy above the last significant (non-inside) day's high, stop 0.5% under its low, trailed under each new significant day" }] },
+  // ---- end Graeme-Smith block ----
+  // ---- Sands block (29 Oct 2026, lane B)
+  { id: "sands", name: "Russell Sands", tagline: "One of the original Turtle traders · the Simple Turtle Breakout System runs here", books: [
+    { id: "rsotr", sourceIds: ["title-d35ce795ae9f8c1c"], title: "The Original Turtle Trading Rules", year: null, blurb: "Sands · buy above the highest high of the past 20 bars (sell below the 20-bar low), exit on a 10-bar low (high), stop at 2% of the account, no profit target" }] },
+  // ---- end Sands block ----
+  // ---- Hyerczyk block (29 Oct 2026, lane B)
+  { id: "hyerczyk", name: "James A. Hyerczyk", tagline: "Gann analyst and futures market writer · the swing-chart stop and reverse runs here", books: [
+    { id: "jhppt", sourceIds: ["title-f4dad71e89ea05e4"], title: "Pattern, Price & Time: Using Gann Theory in Trading Systems (2nd ed.)", year: 2009, blurb: "Hyerczyk · Gann 1-, 2- and 3-bar swing charts; buy on a stop over the last swing top, sell and reverse under the last swing bottom, the stop following each new swing" }] },
+  // ---- end Hyerczyk block ----
+  // ---- Linton block (29 Oct 2026, lane B)
+  { id: "linton", name: "David Linton", tagline: "Ichimoku cloud chart analyst · the cloud stop and reverse runs here", books: [
+    { id: "dlccs", sourceIds: ["title-488a6153eb6af4ce"], title: "Cloud Charts: Trading Success with the Ichimoku Technique", year: 2010, blurb: "Linton · buy when the close moves above the cloud after the last outside close was below it, sell and reverse when it closes below; signal delay of 1-5 days and the lagging-line version as options" }] },
+  // ---- end Linton block ----
+  // ---- Forman block (29 Oct 2026, lane B)
+  { id: "forman", name: "John Forman", tagline: "Currency trader and trading educator · the four Ch.7 test systems and the stochastic 40/60 system run here", books: [
+    { id: "jfeot", sourceIds: ["title-25c31f3ca7f1f280"], title: "The Essentials of Trading: From the Basics to Building a Winning Strategy", year: 2006, blurb: "Forman · close crosses the 92-day average to enter and the 50-day to exit; Parabolic SAR 0.02/0.20 stop and reverse; 20-day average entry with SAR 0.09/0.50 exit; SAR entry with 60-day average exit; 5-period stochastic through 40/60" }] },
+  // ---- end Forman block ----
+  // ---- Kedrick Brown block (29 Oct 2026, lane B)
+  { id: "kbrown", name: "Kedrick F. Brown", tagline: "Equity market maker and trend trader · the 32-day close Donchian and the all-time-high breakout run here", books: [
+    { id: "kbttm", sourceIds: ["title-3a876c2b43f2c9cc"], title: "Trend Trading: Timing Market Tides", year: 2006, blurb: "Brown · buy when the close beats the highest close of the past 32 days and sell below the lowest, on the next close; buy a new all-time high with a 96% stop and a 32-day-low exit; NASDAQ pilot signals and basket averages held" }] },
+  // ---- end Kedrick Brown block ----
   // ---- Arms block (2026-10-24) ----
   { id: "arms", name: "Richard W. Arms Jr.", tagline: "Inventor of Equivolume, Ease of Movement and the Arms Index · the two EMV rules run here", books: [
     { id: "ravcs", sourceIds: ["title-bdb6dd066565a040"], title: "Volume Cycles in the Stock Market", year: 1994, blurb: "Arms · 13-day Ease of Movement zero cross and the weekly four-week reversal of the 13 run; shorter EMVs and cycle reading held" },

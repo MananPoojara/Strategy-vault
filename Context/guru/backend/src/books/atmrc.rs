@@ -7,6 +7,9 @@ use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 use Status::*;
 
 pub const BOOK: &str = "atmrc";
+/// Admitted ids (authors/activetrader/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["atmrc_swing_stop", "atmrc_swing_trail"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const ENTRY: &str = "E|\"The strategy goes long today if the following criteria are met (reverse the rules for short trades): 1. the market breaks above yesterday's high; 2. yesterday's close was lower than yesterday's open; and 3. yesterday's high was below the high two days prior to yesterday.\" Code: \"If High < High[2] and Close < Open and Open Next Bar < High Then Buy Next Bar at High Stop\"; short: \"If Low > Low[2] and Close > Open and Open Next Bar > Low Then Sell Next Bar at Low Stop\"";
 

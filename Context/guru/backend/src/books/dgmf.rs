@@ -7,6 +7,9 @@
 use crate::connors::{true_range, wilder, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "dgmf";
+/// Admitted ids (authors/guppyf/laneb/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["dgmf_bb7", "dgmf_brow_dmi", "dgmf_cci_spike", "dgmf_ccifp", "dgmf_disp_ema", "dgmf_ema_5_21", "dgmf_evans_ema", "dgmf_fosc_alt", "dgmf_fosc_sys", "dgmf_gapup_5d", "dgmf_gap1", "dgmf_gap2", "dgmf_gap3", "dgmf_karnish_bbh", "dgmf_maas_rsi5", "dgmf_stoch_cross", "dgmf_tezel_ma", "dgmf_tezel_reg", "dgmf_triple_ma", "dgmf_williams_exp", "dgmf_vbo_taylor" /* intraday wave 2b: daily bars decide every trade */];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 const NAN: f64 = f64::NAN;
 
 // ------------------------------------------------------------------ MetaStock-style indicators

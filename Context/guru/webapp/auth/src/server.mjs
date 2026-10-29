@@ -9,6 +9,7 @@ import { createBookLibrary, registerBookLibrary } from './book-library.mjs';
 import { registerLabStrategies } from './lab-strategies.mjs';
 import { registerLabIndicators } from './lab-indicators.mjs';
 import { registerLabDateSets } from './lab-date-sets.mjs';
+import { createResearchStore, registerResearch } from './research.mjs';
 
 await bootstrap();
 export const app = new Hono();
@@ -43,6 +44,7 @@ registerBookLibrary(app, await createBookLibrary());
 registerLabStrategies(app, pool);
 registerLabIndicators(app, pool);
 registerLabDateSets(app, pool);
+registerResearch(app, { pool, store: createResearchStore({ pool, progressPath: process.env.VAULT_RESEARCH_PROGRESS }) });
 app.get('/api/app/me', async c => {
   const user = c.get('user');
   const settings = await pool.query('SELECT theme,last_view FROM vault_settings WHERE user_id = $1', [user.id]);

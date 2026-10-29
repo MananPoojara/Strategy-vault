@@ -4,6 +4,9 @@
 //! Optionetics Futures & Commodity Home Study Course (2007, Videos & Manuals) (optionetics.com)/Home Study Course 2.pdf`.
 //! Notes: library/jkofc/README.md.
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
+/// Admitted ids (authors/lanea/singles/decisions.json).
+pub const REVIEWED_LANEA: &[&str] = &["jkofc_sma4_reverse"];
+pub fn reviewed_lanea(id: &str) -> bool { REVIEWED_LANEA.contains(&id) }
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let d = |id, name, dir, status, rules, notes| StrategyDef {

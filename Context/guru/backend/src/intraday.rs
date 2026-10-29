@@ -142,6 +142,13 @@ pub fn day_trade(dir: f64, i: usize, px: f64, xi: usize, xp: f64, why: &str, kin
 }
 // ---- end intraday wave 1
 
+// ---- intraday wave 2a block (claude/intraday-w2a, 2026-10-29)
+/// Minute days known to be wrong (data-verification-20261027): NIFTY 50 from 2026-08-11 has frozen 15:15-15:19 minutes and
+/// a 15:20 spike outside NSE's official day range on every day. Wave-2a rules make no trade on such a day.
+// ponytail: one hard-coded range; move to a rejected-days list in the minute builder when the file is re-sourced.
+pub fn rejected_day(ticker: &str, date: &str) -> bool { ticker == "NIFTY 50" && date >= "2026-08-11" }
+// ---- end intraday wave 2a block ----
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -299,6 +299,26 @@ export const sourceReview: Record<string, {type: string; sameWorkAs?: string; pe
   "jtdta": {"type": "book", "people": ["Joseph T. Duffy"]},
   "jtdtpa": {"type": "book", "people": ["Joseph T. Duffy"]},
   "swmfst": {"type": "book", "people": ["Steve Wirrick"]},
+  "bstacm": {"type": "book", "people": ["Boris Schlossberg"]},
+  "epfpp": {"type": "book", "people": ["Ed Ponsi"]},
+  "wtdfg": {"type": "book", "people": ["Walter T. Downs"]},
+  "wtdtt": {"type": "book", "people": ["Walter T. Downs"]},
+  "agtsic": {"type": "book", "people": ["Andrew Goodwin"]},
+  "cfwtab": {"type": "book", "people": ["Charles F. Wright"]},
+  "awcpf": {"type": "book", "people": ["A. W. Cohen"]},
+  "bsichi": {"type": "book", "people": ["Balkrishna M. Sadekar"]},
+  "ggcharts": {"type": "book", "people": ["Ashwani Gujral"]},
+  "astk3": {"type": "book", "people": ["Alberto Sabatini"]},
+  "krgann": {"type": "book", "people": ["Robert Krausz"]},
+  "mdssc": {"type": "article", "people": ["Michael D. Sheimo"]},
+  "mcdpms": {"type": "book", "people": ["Michael McDonald"]},
+  "tscb2": {"type": "book", "people": ["Mark Melzl"]},
+  "dgsst": {"type": "book", "people": ["David Smith"]},
+  "rsotr": {"type": "book", "people": ["Russell Sands"]},
+  "jhppt": {"type": "book", "people": ["James A. Hyerczyk"]},
+  "dlccs": {"type": "book", "people": ["David Linton"]},
+  "jfeot": {"type": "book", "people": ["John Forman"]},
+  "kbttm": {"type": "book", "people": ["Kedrick Brown"]},
   "jcmtt": {"type": "book", "people": ["John F. Carter"]},
   "jcteu": {"type": "article", "people": ["John F. Carter"]},
   "jcym5": {"type": "course_manual", "people": ["John F. Carter"]},
@@ -503,3 +523,6 @@ export const sourceReview: Record<string, {type: string; sameWorkAs?: string; pe
 // Whole research-share trading library (every census entry classified from its first pages, 2026-10-22):
 // copies, editions, translations and parts of one work count once; authors are distinct credited people.
 export const shareReview = {"asOf": "2026-10-22", "works": 2748, "authors": 1541, "books": 1109, "articles": 672, "courseManuals": 454, "codePackages": 305, "magazinesAndNewsletters": 119, "videoCourses": 59, "otherSources": 30};
+
+/** File-level count of the research share (\\192.168.4.50\research), duplicates removed (same name and size kept once). Source: deliverables/Research-Share-Resource-Count.xlsx. */
+export const shareFiles = {"asOf": "2026-10-29", "found": 311994, "duplicates": 95826, "unique": 216168, "books": 15238, "articles": 17188, "papers": 262, "blogs": 25, "audio": 5913, "video": 25843, "other": 151699, "images": 63825, "webPages": 42382, "tradingCode": 5511, "data": 4056, "programs": 3893, "archives": 1932, "text": 3328, "noExtension": 12626, "unidentified": 14146, "sizeTB": 2.17};

@@ -7,6 +7,9 @@ use crate::connors::{atr, rsi, sma, Ctx, Leg, ParamDef, Params, Status, Strategy
 use Status::*;
 
 pub const BOOK: &str = "atm04";
+/// Admitted ids (authors/activetrader/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["atm04_glitch", "atm04_monthly_bo", "atm04_cci_weekly", "atm04_wma", "atm04_55_trail", "atm04_55_simple", "atm04_four_pct", "atm04_rsi_agita"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let d = |id, name, group, dir, status, vol: bool, rules, notes, claim| StrategyDef { id, name, group, session: 0, dir, status, needs_volume: vol, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim };

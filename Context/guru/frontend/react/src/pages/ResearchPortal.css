@@ -1,0 +1,129 @@
+/* Research page. Inherits the app theme tokens (--card, --ink, --ink2, --ink3, --rule, --blue, --green, --red),
+   so every app theme works, including dark Midnight. Everything is scoped under .rp. */
+.rp {
+  --rp-ok: var(--green);
+  --rp-held: #b07216;
+  --rp-bad: var(--red);
+  --rp-todo: color-mix(in srgb, var(--ink3) 40%, transparent);
+  --rp-team: var(--blue);
+  --rp-line: var(--rule);
+  --rp-surface: var(--card);
+  --rp-radius: 12px;
+  font: 15px/1.55 "IBM Plex Sans", system-ui, sans-serif;
+  color: var(--ink);
+  padding: 8px 0 64px;
+}
+:root[data-theme="midnight"] .rp { --rp-held: #dfb276; }
+.rp h1 { font: 600 clamp(26px, 3vw, 34px)/1.15 "Newsreader", Georgia, serif; margin: 8px 0 14px; }
+.rp h2 { font-size: 17px; font-weight: 600; line-height: 1.3; margin: 0 0 6px; }
+.rp h3 { font-size: 14px; font-weight: 600; color: var(--ink2); margin: 22px 0 8px; text-transform: uppercase; letter-spacing: .04em; }
+.rp a { color: var(--blue); text-underline-offset: 2px; }
+.rp :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.rp p { margin: 0 0 6px; }
+.rp-muted { color: var(--ink2); }
+.rp-small { font-size: 13px; }
+.rp-loading { color: var(--ink2); padding: 32px 0; }
+.rp-empty { padding: 24px; border: 1px dashed var(--rp-line); border-radius: var(--rp-radius); color: var(--ink2); background: var(--rp-surface); }
+.rp-problem { margin: 10px 0; padding: 10px 14px; border-left: 3px solid var(--rp-bad); background: color-mix(in srgb, var(--rp-bad) 8%, var(--rp-surface)); border-radius: 0 8px 8px 0; }
+.rp button { font: inherit; cursor: pointer; border: 1px solid var(--rp-line); background: var(--rp-surface); color: var(--ink); padding: 6px 14px; border-radius: 8px; font-size: 14px; }
+.rp button:hover:not(:disabled) { border-color: var(--ink3); }
+.rp button:disabled { cursor: default; opacity: .5; }
+.rp .rp-primary { background: var(--blue); border-color: var(--blue); color: var(--card); font-weight: 600; padding: 9px 20px; }
+.rp .rp-link { border: 0; background: none; color: var(--blue); padding: 4px 6px; text-decoration: underline; text-underline-offset: 2px; }
+.rp .danger { border-color: var(--rp-bad); color: var(--rp-bad); }
+.rp input, .rp textarea { font: inherit; color: var(--ink); background: var(--rp-surface); border: 1px solid var(--rp-line); border-radius: 8px; padding: 9px 12px; width: 100%; box-sizing: border-box; }
+.rp textarea { resize: vertical; }
+
+/* entry */
+.rp-gate { max-width: 400px; margin: 48px auto; padding: 32px; background: var(--rp-surface); border: 1px solid var(--rp-line); border-radius: 16px; display: grid; gap: 14px; box-shadow: 0 10px 30px color-mix(in srgb, var(--ink) 8%, transparent); }
+.rp-gate h1 { margin: 0; }
+.rp-field { display: grid; gap: 6px; font-size: 14px; font-weight: 600; }
+
+/* top bar */
+.rp-bar { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; padding: 10px 0 14px; border-bottom: 1px solid var(--rp-line); margin-bottom: 18px; }
+.rp-brand { font: 600 22px "Newsreader", Georgia, serif; color: var(--ink) !important; text-decoration: none; }
+.rp-bar nav { display: flex; gap: 6px; flex: 1; }
+.rp-bar nav a { padding: 6px 14px; border-radius: 999px; text-decoration: none; color: var(--ink2); font-weight: 500; }
+.rp-bar nav a[aria-current="page"] { background: color-mix(in srgb, var(--blue) 12%, var(--rp-surface)); color: var(--ink); }
+.rp-who { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+.rp-tag { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--ink); color: var(--card); }
+.rp-crumbs { display: flex; flex-wrap: wrap; gap: 6px; font-size: 14px; color: var(--ink2); }
+.rp-crumbs span + span::before { content: "›"; margin-right: 6px; color: var(--ink3); }
+
+/* numbers */
+.rp-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.rp-stat { padding: 16px 18px; border-radius: var(--rp-radius); background: var(--rp-surface); border: 1px solid var(--rp-line); border-top: 4px solid var(--c); display: grid; }
+.rp-stat b { font: 600 30px/1.1 "Inter Numbers", system-ui, sans-serif; }
+.rp-stat span { color: var(--ink2); font-size: 14px; }
+.rp-stat.ok { --c: var(--rp-ok); } .rp-stat.held { --c: var(--rp-held); } .rp-stat.todo { --c: var(--ink3); } .rp-stat.team { --c: var(--rp-team); }
+.rp-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin: 14px 0; }
+.rp-tools input { max-width: 320px; }
+.rp-legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--ink2); margin: 0 0 10px; }
+.rp-legend i, .rp-bar3 i { display: inline-block; }
+.rp-legend i { width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.rp .ok { --c: var(--rp-ok); } .rp .held { --c: var(--rp-held); } .rp .todo { --c: var(--rp-todo); }
+.rp-legend i, .rp-bar3 i { background: var(--c); }
+
+/* cards */
+.rp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+.rp-card { display: block; padding: 18px; border-radius: var(--rp-radius); background: var(--rp-surface); border: 1px solid var(--rp-line); color: var(--ink) !important; text-decoration: none; transition: border-color .15s, box-shadow .15s, transform .15s; }
+a.rp-card:hover, .rp-emp:hover { border-color: var(--blue); box-shadow: 0 6px 18px color-mix(in srgb, var(--ink) 8%, transparent); transform: translateY(-1px); }
+.rp-bar3 { display: flex; height: 8px; border-radius: 99px; overflow: hidden; background: var(--rp-todo); margin: 10px 0 8px; }
+.rp-bar3 i { height: 100%; }
+.rp-s { border-left: 5px solid var(--rp-line); }
+.rp-s.v-matches { border-left-color: var(--rp-ok); } .rp-s.v-mismatch { border-left-color: var(--rp-bad); } .rp-s.v-unclear { border-left-color: var(--rp-held); }
+.rp-pills { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 4px 0 8px; }
+.rp-pill { font-size: 12.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: color-mix(in srgb, var(--c, var(--ink3)) 14%, var(--rp-surface)); color: var(--ink); }
+.rp :is(.site-verified, .v-matches) { --c: var(--rp-ok); } .site-held, .v-unclear { --c: var(--rp-held); } .site-unreviewed, .v-not_checked { --c: var(--ink3); } .v-mismatch { --c: var(--rp-bad); }
+.rp-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 16px; }
+.rp-chips button { border-radius: 999px; }
+.rp-chips button[aria-pressed="true"] { background: var(--ink); color: var(--card); border-color: var(--ink); }
+.rp-pager { display: flex; align-items: center; justify-content: center; gap: 16px; margin: 22px 0 0; color: var(--ink2); }
+.rp-emp.removed { opacity: .55; }
+.rp-emp a { text-decoration: none; color: var(--ink); }
+.rp-nums { display: flex; gap: 16px; flex-wrap: wrap; }
+.rp-nums b { font: 600 20px "Inter Numbers", system-ui, sans-serif; margin-right: 4px; }
+.rp-confirm { display: inline-flex; gap: 8px; align-items: center; font-size: 14px; }
+
+/* one strategy */
+.rp-reason { padding: 10px 14px; border-radius: 8px; background: color-mix(in srgb, var(--rp-held) 10%, var(--rp-surface)); }
+.rp-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 16px; margin-top: 14px; }
+@media (max-width: 860px) { .rp-cols { grid-template-columns: 1fr; } }
+.rp-panel { padding: 20px; border-radius: var(--rp-radius); background: var(--rp-surface); border: 1px solid var(--rp-line); }
+.rp-panel h2 + * { margin-top: 8px; }
+.rp-panel h2:not(:first-child) { margin-top: 22px; }
+.rp-rules { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.rp-rules li { padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--blue) 5%, var(--rp-surface)); }
+.rp-rules span { display: inline-block; min-width: 18px; font-weight: 700; color: var(--ink2); margin-right: 8px; }
+.rp-verdicts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0 8px; }
+.rp-verdicts button { padding: 12px 8px; font-weight: 600; font-size: 15px; }
+.rp-verdicts button[aria-pressed="true"] { background: var(--c); border-color: var(--c); color: var(--card); }
+.rp-noteform { display: grid; gap: 10px; margin-bottom: 16px; }
+.rp-noteform .rp-chips { margin: 0; }
+.rp-noteform .rp-primary { justify-self: start; }
+.rp-notes, .rp-feed { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.rp-notes li { padding: 12px 14px; border-radius: 10px; border: 1px solid var(--rp-line); border-left: 4px solid var(--c, var(--ink3)); }
+.rp .t-rule_error { --c: var(--rp-bad); } .t-data_issue { --c: var(--rp-held); } .t-question { --c: var(--blue); } .t-verified_ok { --c: var(--rp-ok); }
+.rp-meta { font-size: 13px; color: var(--ink2); }
+.rp-type { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--ink2); }
+.rp-body { white-space: pre-wrap; }
+.rp-actions { display: flex; gap: 8px; margin-top: 6px; }
+.rp-actions button, .rp-feed button { padding: 3px 10px; font-size: 13px; }
+
+/* one person's timeline */
+.rp-day { margin-bottom: 8px; }
+.rp-feed li { display: grid; grid-template-columns: 56px 1fr; gap: 12px; padding: 12px 14px; border-radius: 10px; background: var(--rp-surface); border: 1px solid var(--rp-line); }
+.rp-feed time { font: 600 14px "Inter Numbers", system-ui, sans-serif; color: var(--ink2); }
+.rp .rp-stat.bad { --c: var(--rp-bad); }
+.rp-section { margin-top: 28px !important; font: 600 21px "Newsreader", Georgia, serif !important; }
+.rp-work { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); margin-bottom: 8px; }
+.rp-wbook + .rp-wbook { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--rp-line); }
+.rp-wbook ul { list-style: none; padding: 0; margin: 4px 0 0; display: grid; gap: 6px; }
+.rp-wbook li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.rp-claude li { grid-template-columns: 96px 1fr; }
+.rp-count { display: grid; align-content: start; }
+.rp-count b { font: 600 22px/1.1 "Inter Numbers", system-ui, sans-serif; color: var(--rp-ok); }
+.rp-count small { font-size: 11.5px; color: var(--ink2); }
+.rp-claude .w-platform .rp-pill { --c: var(--rp-ok); }
+.rp-claude .w-claude .rp-pill { --c: var(--blue); }
+.rp-claude .w-codex .rp-pill { --c: var(--rp-held); }

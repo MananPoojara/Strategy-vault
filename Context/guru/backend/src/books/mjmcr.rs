@@ -7,6 +7,9 @@ use crate::books::rgcts::{stop_engine, Orders};
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "mjmcr";
+/// Admitted ids (authors/mjohnson/admission/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["mjmcr_ema_xo", "mjmcr_dcbo"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![

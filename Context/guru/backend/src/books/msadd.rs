@@ -29,6 +29,9 @@ use crate::connors::Status::{Live, NeedsData, NotTestable};
 use std::sync::OnceLock;
 
 pub const BOOK: &str = "msadd";
+/// Admitted ids (authors/vendor/laneb/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["msadd_n_can_9p", "msadd_n_can_bh", "msadd_n_can_ca", "msadd_n_can_ds", "msadd_n_can_el", "msadd_n_can_ha", "msadd_n_can_hi", "msadd_n_can_pl", "msadd_n_can_ss", "msadd_n_can_st", "msadd_n_mv2_c", "msadd_n_mac_m", "msadd_n_mac_r", "msadd_pop_cci_xover_w_stops_dta", "msadd_n_rsi_c", "msadd_n_rsi_cs", "msadd_n_rsi_fps", "msadd_n_rsi_ps", "msadd_n_rwh_c", "msadd_n_rwl_c", "msadd_n_trx_m", "msadd_n_txm_fp", "msadd_n_txm_p", "msadd_n_wil_c", "msadd_n_wil_cs", "msadd_n_wil_ps"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 #[allow(dead_code)]
 fn _exec_type_check(e: Exec) -> Exec { e }
 

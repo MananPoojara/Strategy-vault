@@ -17,6 +17,9 @@
 //! (they are issued inside `If MarketPosition = 1`). Micro-M/W and SIX-SHOOTER (prose rules) place
 //! the protective stop and target as soon as the entry fills.
 use crate::books::bwntd::tick_of;
+/// Admitted ids (authors/bierovic/laneb/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["tbabc_micro_m", "tbabc_micro_w", "tbabc_six_long", "tbabc_six_short", "tbabc_stampede_long", "tbabc_powertool"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 use crate::connors::{true_range, sma, Claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub fn catalogue() -> Vec<StrategyDef> {

@@ -31,10 +31,12 @@ import {buildStrategyIndicators} from '../services/strategy-indicators';
 import {isKestnerVisualMethod,kestnerReportLogicalRange} from '../services/kestner-visual';
 import {indicatorControlsHTML,mountStrategyIndicators} from '../services/strategy-indicator-charts';
 const CURATED_AUTHOR_IDS=new Set(LIB.map(author=>author.id));
+// US ETFs served by the engine (backend instrument_policy::US_ETFS; connors-final adds the Alpha Formula ETFs).
+const US_ETFS=['SPY','QQQ','MDY','IWM','SMH','DIA','EFA','EEM','VNQ','LQD','GLD','SHY','IEF','TLT','AGG','IEI','TLH','EWA','EWC','EWD','EWG','EWH','EWI','EWJ','EWK','EWL','EWM','EWN','EWO','EWP','EWQ','EWS','EWU','EWW','XLB','XLE','XLF','XLI','XLK','XLP','XLU','XLV','XLY','EZU','EWZ','EWT','EWY','EPP','FXI','EZA'];
 function sourceAdmission(definition,ticker,parameters,region){
   if(definition.id!==BANDY_SIMPLE_METHOD)return undefined;
   const rows=region==='us'?TICK_ALL_US:TICK_ALL_IN;
-  const etfs=region==='us'?rows.filter(row=>['SPY','QQQ','MDY','IWM','SMH','DIA'].includes(row.ticker)):[];
+  const etfs=region==='us'?rows.filter(row=>US_ETFS.includes(row.ticker)):[];
   return {definition,parameters,instrument:simpleInstrumentContext(ticker,rows,etfs)};
 }
 
@@ -113,14 +115,14 @@ window.VaultUI=(()=>{
   <button type="button" class="sa" data-action="pdf" aria-label="Download page PDF" title="Download this page as PDF">${ICON.download}</button>
   <button type="button" class="sa${saved?' on':''}" data-action="save" aria-label="Save" aria-pressed="${saved}" title="${saved?'Remove from Saved':'Save to your Saved list'}">${saved?ICON.saved:ICON.save}</button><span class="sa-settings" data-react-slot="strategy-settings"></span>
  </div><span role="status" id="page-action-message"></span></div>`;}
- function detailHTML(d){return `<details class="box detailed-stats" id="detailed-stats"><summary>Detailed statistics <span>Additional gross / net measures</span></summary><div class="detail-tools"><button class="dbtn sm" data-report-export="details">Download Excel</button></div><table class="tbl detailed-table stat-table"><thead><tr><th>Statistic</th><th class="n">Gross</th><th class="n">Net</th></tr></thead><tbody>${VaultReport.detailRows(d).map(([k,n,g,t])=>`<tr><td>${escText(k)}</td><td class="n">${numMinus(label(g,t))}</td><td class="n">${numMinus(label(n,t))}</td></tr>`).join('')}</tbody></table><p class="rnote">${d.source_account?'Gross retains the same accepted quantities and fills, before paid costs; no re-selection or resizing.':d.kind==='basket'?'Gross is zero-cost accounting on the same accepted portfolio fills.':'Gross is the independently compounded zero-cost comparison.'} Net includes the selected fee and slippage rates. Closed-trade measures exclude open positions. Observed excursions omit entry/add-on/exit event bars where intraday order is unknown; they are partial bounds, not exact MAE/MFE. Time in market counts distinct observed daily bars with a held position, including entry/exit bars; it does not measure exact intraday duration. Undefined ratios stay unavailable. ${d.unit_exposure_report?escText(UNIT_VISUAL_BASIS):''}</p></details>`;}
+ function detailHTML(d){return `<details class="box detailed-stats" id="detailed-stats"><summary>Detailed statistics <span>Additional gross / net measures</span></summary><div class="detail-tools"><button class="dbtn sm" data-report-export="details">Download Excel</button></div><table class="tbl detailed-table stat-table"><thead><tr><th>Statistic</th><th class="n">Gross</th><th class="n">Net</th></tr></thead><tbody>${VaultReport.detailRows(d).map(([k,n,g,t])=>`<tr><td>${escText(k)}</td><td class="n">${numMinus(label(g,t))}</td><td class="n">${numMinus(label(n,t))}</td></tr>`).join('')}</tbody></table><p class="rnote">${d.source_account?'Gross retains the same accepted quantities and fills, before paid costs; no re-selection or resizing.':d.kind==='basket'?'Gross is zero-cost accounting on the same accepted portfolio fills.':'Gross is the independently compounded zero-cost comparison.'} Net includes the selected fee and slippage rates. Closed-trade measures exclude open positions. Observed adverse move = each trade's MAE (lowest price lived through / entry - 1, gross; shorts mirrored; not clamped), from the fill-aware window described under the tradesheet. Time in market counts distinct observed daily bars with a held position, including entry/exit bars; it does not measure exact intraday duration. Undefined ratios stay unavailable. ${d.unit_exposure_report?escText(UNIT_VISUAL_BASIS):''}</p></details>`;}
  function benchmarkHTML(d,tk,px){currentBenchmark={d,tk,px};const b=d.unit_exposure_report?{...d.benchmark_stats,from:d.dates[0],to:d.dates.at(-1)}:VaultReport.benchmark(px,d.dates[0],d.dates.at(-1)),keys=[[d.source_account?sourceAccountCopy(d.source_account).accountReturn:d.kind==='basket'?'Portfolio equity return':'Compounded model return','total_return','percent'],['Annualised return','cagr','percent'],['Max drawdown','max_dd','percent'],['Sharpe (rf = 0)','sharpe','ratio'],['Sortino','sortino','ratio'],['Return per drawdown','mar','ratio'],['Annualised volatility','vol','percent'],['Exposure','exposure','percent']];return `<section class="box" data-benchmark-comparison data-benchmark-symbol="${escText(tk)}"><div class="box-h">Strategy vs ${escText(LABEL[tk]||tk)} <button class="dbtn sm" data-report-export="benchmark">Download Excel</button></div><p class="rnote">Computed selected strategy settings against actual ${escText(LABEL[tk]||tk)} buy &amp; hold, with no benchmark execution costs. ${b?`${b.from} to ${b.to}.`:'Benchmark price coverage is missing.'} Book-reported figures remain separate reference claims.</p><table class="tbl stat-table"><thead><tr><th>Statistic</th><th class="n">Selected strategy</th><th class="n">${escText(LABEL[tk]||tk)} buy &amp; hold</th></tr></thead><tbody>${keys.map(([name,key,type])=>`<tr><td>${name}</td><td class="n">${numMinus(label(d.stats[key],type))}</td><td class="n">${numMinus(label(b?.[key],type))}</td></tr>`).join('')}</tbody></table></section>`;}
 
 // Tradesheet number columns (display only; CSV/Excel exports are unchanged): right-aligned tabular figures and a true minus sign.
 const TS_NUM=[3,5,6,7,8,9,10,11,12,13,14,15], TS_SIGNED=[6,8,13,14,15], TS_DATE=[2,4];
 const tsMinus=(t,i)=>TS_NUM.includes(i)?String(t).replace(/^-/,'\u2212'):t;
 const numMinus=t=>String(t).replace(/^-/,'\u2212');
- function tradeHTML(d,tk){const rows=tradeRowsFor(d,tk);return `<section class="box" data-tradesheet><div class="box-h">Tradesheet <span class="legend"><small>${rows.length} positions · newest first</small><button class="dbtn sm" id="trades-xlsx">Download Excel</button><button class="dbtn sm" id="csv">Download CSV</button>${d.source_account?'<button class="dbtn sm" data-report-export="account-audit">Account audit Excel</button>':d.unit_exposure_report?'<button class="dbtn sm" data-report-export="unit-audit">Unit audit Excel</button><button class="dbtn sm" data-report-export="unit-daily">Daily audit Excel</button>':''}</span></div><p class="rnote">${d.source_account?sourceAccountCopy(d.source_account).tradeNote:d.unit_exposure_report?'Audited canonical-decimal return fractions; terminal-open costs include an estimated second liquidation side. Gross compounds independently at zero cost; contributions use net pretrade allocation.':'Returns and slippage are percentages of the strategy’s normalized allocation; prices/points use the actual symbol.'} ${d.source_account?'Monetary P&amp;L and Taxes are unavailable: the model has no funded capital, actual share lots or statutory tax schedule.':'Monetary Gross/Net P&amp;L and Taxes are unavailable because no quantity, monetary sizing or tax schedule was supplied.'} MAE/MFE show gross observed daily-bar bounds when available; event bars are excluded. Open exits are marked Open.</p><div class="tlog"><table class="tbl tl" id="tradesheet"><thead><tr>${tradeHeadersFor(d).map((k,i)=>`<th class="${TS_NUM.includes(i)?'n':''}">${escText(k)}</th>`).join('')}</tr></thead><tbody>${rows.map((row,tradeIndex)=>`<tr>${row.map((v,i)=>`<td class="${TS_NUM.includes(i)?'n'+(TS_SIGNED.includes(i)&&typeof v==='number'?(v<0?' neg':' pos'):''):TS_DATE.includes(i)?'d':''}">${v===null?'—':tsMinus([8,11,13,14,15].includes(i)?label(v,'percent'):typeof v==='number'?v.toFixed(i===9?0:2):escText(v),i)}${i===16?tradeExitCheckMarkup(d.trades[tradeIndex]):''}</td>`).join('')}</tr>`).reverse().join('')}</tbody></table></div></section>`;}
+ function tradeHTML(d,tk){const rows=tradeRowsFor(d,tk);return `<section class="box" data-tradesheet><div class="box-h">Tradesheet <span class="legend"><small>${rows.length} positions · newest first</small><button class="dbtn sm" id="trades-xlsx">Download Excel</button><button class="dbtn sm" id="csv">Download CSV</button>${d.source_account?'<button class="dbtn sm" data-report-export="account-audit">Account audit Excel</button>':d.unit_exposure_report?'<button class="dbtn sm" data-report-export="unit-audit">Unit audit Excel</button><button class="dbtn sm" data-report-export="unit-daily">Daily audit Excel</button>':''}</span></div><p class="rnote">${d.source_account?sourceAccountCopy(d.source_account).tradeNote:d.unit_exposure_report?'Audited canonical-decimal return fractions; terminal-open costs include an estimated second liquidation side. Gross compounds independently at zero cost; contributions use net pretrade allocation.':'Returns and slippage are percentages of the strategy’s normalized allocation; prices/points use the actual symbol.'} ${d.source_account?'Monetary P&amp;L and Taxes are unavailable: the model has no funded capital, actual share lots or statutory tax schedule.':'Monetary Gross/Net P&amp;L and Taxes are unavailable because no quantity, monetary sizing or tax schedule was supplied.'} MAE = lowest price / entry - 1 and MFE = highest price / entry - 1 over the bars the position lived through (shorts mirrored, gross, not clamped: MAE can be above 0, MFE below 0). An entry at the close starts with the next bar; an entry at the open counts its whole bar; a stop/limit entry counts only its fill price on that bar (a gap fill counts as the open). An exit at the close or an end-of-data mark counts its whole bar; an exit at the open or by a stop/limit counts only its fill price. When 1-minute bars exist for a stop/limit fill day, the minutes between fill and exit are used. Open exits are marked Open.</p><div class="tlog"><table class="tbl tl" id="tradesheet"><thead><tr>${tradeHeadersFor(d).map((k,i)=>`<th class="${TS_NUM.includes(i)?'n':''}">${escText(k)}</th>`).join('')}</tr></thead><tbody>${rows.map((row,tradeIndex)=>`<tr>${row.map((v,i)=>`<td class="${TS_NUM.includes(i)?'n'+(TS_SIGNED.includes(i)&&typeof v==='number'?(v<0?' neg':' pos'):''):TS_DATE.includes(i)?'d':''}">${v===null?'—':tsMinus([8,11,13,14,15].includes(i)?label(v,'percent'):typeof v==='number'?v.toFixed(i===9?0:2):escText(v),i)}${i===16?tradeExitCheckMarkup(d.trades[tradeIndex]):''}</td>`).join('')}</tr>`).reverse().join('')}</tbody></table></div></section>`;}
  function equityNavigator(ch,d){
   // Range brush: one window over a mini equity line; drag the window to move, drag either edge to resize, double-click for all.
   const box=document.getElementById('equity-navigator');if(!box)return;const win=box.querySelector('.rb-win'),out=box.querySelector('output'),line=box.querySelector('polyline'),n=d.dates.length;
@@ -142,17 +144,17 @@ const numMinus=t=>String(t).replace(/^-/,'\u2212');
   apply();}
  const msg=text=>{const el=document.getElementById('page-action-message');if(el)el.textContent=text;};
  const immutable=value=>{if(Array.isArray(value))return Object.freeze(value.map(immutable));if(value&&typeof value==='object')return Object.freeze(Object.fromEntries(Object.entries(value).map(([key,v])=>[key,immutable(v)])));return value;};
- function snapshotContext(){
-  if(!STRAT?.d||!STRAT?.v)throw Error('No completed backtest is available for export.');
-  const state=immutable(S),region=STRAT.region||state.region,unit=unitFor({...STRAT,state,params:STRAT.indicatorParameters,region}),d=unit?STRAT.d:immutable(STRAT.d),v=immutable(STRAT.v);
-  const benchmark=currentBenchmark?.d===STRAT.d?currentBenchmark:null;
+ function snapshotContext(run=STRAT){
+  if(!run?.d||!run?.v)throw Error('No completed backtest is available for export.');
+  const state=immutable(S),region=run.region||state.region,unit=unitFor({...run,state,params:run.indicatorParameters,region}),d=unit?run.d:immutable(run.d),v=immutable(run.v);
+  const benchmark=currentBenchmark?.d===run.d?currentBenchmark:null;
   const benchmarkTk=document.querySelector('[data-benchmark-comparison]')?.getAttribute('data-benchmark-symbol')||benchmark?.tk||(region==='us'?'SPX':'NIFTY 50');
-  return Object.freeze({d,v,unit,display:immutable(STRAT.display),tk:STRAT.tk,region,state,url:location.href,params:immutable(STRAT.account||unit?STRAT.indicatorParameters:STRAT.d.params||state.p||{}),px:immutable(STRAT.px),
-   actualSymbol:d.kind==='basket'?d.basket:d.provenance?.symbol||d.trades?.find(t=>t.accounting?.symbol)?.accounting.symbol||STRAT.tk,
-   benchmarkTk,benchmarkLabel:LABEL[benchmarkTk]||benchmarkTk,benchmarkPx:immutable(benchmark?.px)});
+  return Object.freeze({d,v,unit,display:immutable(run.display),tk:run.tk,region,state,url:location.href,params:immutable(run.params||(run.account||unit?run.indicatorParameters:run.d.params||state.p||{})),px:immutable(run.px),
+   actualSymbol:d.kind==='basket'?d.basket:d.provenance?.symbol||d.trades?.find(t=>t.accounting?.symbol)?.accounting.symbol||run.tk,
+   benchmarkTk,benchmarkLabel:LABEL[benchmarkTk]||benchmarkTk,benchmarkPx:immutable(benchmark?.px),fileTag:run.fileTag});
  }
  const filePart=value=>String(value??'report').replace(/[^a-zA-Z0-9._-]+/g,'-').replace(/^-+|-+$/g,'').slice(0,90)||'report';
- const reportName=(st,kind,extension)=>`${filePart(st.v.id)}-${filePart(st.actualSymbol)}-${filePart(st.d.dates?.[0]||'period')}-${filePart(st.d.dates?.at(-1)||'end')}-${filePart(kind)}.${extension}`;
+ const reportName=(st,kind,extension)=>`${filePart(st.v.id)}-${filePart(st.actualSymbol)}-${filePart(st.d.dates?.[0]||'period')}-${filePart(st.d.dates?.at(-1)||'end')}-${filePart(kind)}${st.fileTag?'-'+filePart(st.fileTag):''}.${extension}`;
  function downloadBlob(blob,name){const link=document.createElement('a'),url=URL.createObjectURL(blob);link.href=url;link.download=name;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),4000);}
  const csvSafeRows=rows=>rows.map(row=>row.map(v=>typeof v==='string'&&/^[\s\uFEFF]*[=+\-@]/.test(v)?"'"+v:v));
  const cellValue=v=>typeof v==='number'?(Number.isFinite(v)?v:null):v==null?null:typeof v==='string'||typeof v==='boolean'?v:String(v);
@@ -268,9 +270,10 @@ const numMinus=t=>String(t).replace(/^-/,'\u2212');
   const enc=encodeURIComponent,links={wa:`https://wa.me/?text=${enc(text+' '+url)}`,x:`https://twitter.com/intent/tweet?text=${enc(text)}&url=${enc(url)}`,tg:`https://t.me/share/url?url=${enc(url)}&text=${enc(text)}`,mail:`mailto:?subject=${enc(text)}&body=${enc(text+'\n\n'+url+'\n\nTip: use "Send as PDF file" or the download icon to attach the page as a PDF.')}`};
   window.open(links[kind],'_blank','noopener');msg('Link shared. Recipients need a Vault login to open it; send the PDF instead for anyone without one.');}
  async function action(name){if(name==='like'){toggleLike();return;}if(name==='pdf'){msg('Preparing PDF…');try{download(await pagePdf());msg('PDF downloaded.');}catch(e){if(e?.name==='ReportChangedError'){msg(e.message);return;}msg('PDF failed, opening print instead: '+(e?.message||e));finishMetricAnimations();window.print();}return;}if(name==='share-menu'){const m=document.querySelector('.share-menu');if(m){m.hidden=!m.hidden;document.querySelector('[data-action=share-menu]')?.setAttribute('aria-expanded',String(!m.hidden));if(!m.hidden)m.querySelector('button')?.focus();}return;}if(name==='save'){const key=savedKey();if(!key)return;let list=savedList();const was=list.some(x=>x.key===key);list=was?list.filter(x=>x.key!==key):[{key,id:R.id,tk:S.tk,region:S.region,name:(document.querySelector('h1.st')?.textContent||R.id).trim(),hash:location.hash,at:new Date().toISOString().slice(0,10)},...list];writeSaved(list);const b=document.querySelector('[data-action=save]');if(b){const on=!was;b.classList.toggle('on',on);b.setAttribute('aria-pressed',on);b.title=on?'Remove from Saved':'Save to your Saved list';b.innerHTML=(on?ICON.saved:ICON.save);}msg(was?'Removed from Saved.':'Saved. Open it any time from Saved in the top menu.');return;}if(name==='share'){const link=location.href;try{await navigator.clipboard.writeText(link);msg('Page link copied. Recipients need a Vault login.');}catch{const field=document.createElement('input');field.value=link;field.setAttribute('aria-label','Shareable page link');const host=document.getElementById('page-action-message');host.replaceChildren(field);field.select();try{if(document.execCommand('copy'))msg('Page link copied. Recipients need a Vault login.');}catch{}}return;}}
+ async function exportRunTrades(run){if(run.d.source_account||run.d.unit_exposure_report)throw Error('Account-sized tradesheet: use Apply, then download it from Positions.');const st=snapshotContext(run);return xlsx('trades',[tradeHeadersFor(st.d),...tradeRowsFor(st.d,st.tk)],[8,11,13,14,15],st);}
  const KIND=b=>b.dataset.chartSnapshot?'png':b.id==='csv'?'csv':'xls';
  function iconize(root=document){
-  root.querySelectorAll('[data-chart-snapshot],[data-report-export],#csv,#trades-xlsx').forEach(b=>{if(b.classList.contains('ibtn'))return;const label=b.textContent.trim()||'Download';const k=KIND(b);b.className=`ibtn`;b.title=label;b.setAttribute('aria-label',label);b.innerHTML=ICON[k];});
+  root.querySelectorAll('[data-chart-snapshot],[data-report-export],#csv,#trades-xlsx').forEach(b=>{if(b.classList.contains('ibtn'))return;const label=b.textContent.trim()||'Download';const k=KIND(b);const text=b.id==='csv'?'CSV':b.id==='trades-xlsx'?'Excel':'';b.className=text?'ibtn ibtn-text':'ibtn';b.title=label;b.setAttribute('aria-label',label);b.innerHTML=ICON[k]+(text?`<span aria-hidden="true">${text}</span>`:'');});
   root.querySelectorAll('.box > .chart-tools, .box > .detail-tools, .report-panel > .chart-tools').forEach(t=>{const h=t.parentElement.querySelector(':scope > .box-h');if(h&&!h.querySelector('.box-tools')){t.classList.add('box-tools');h.append(t);}});
   
  }
@@ -282,7 +285,7 @@ const numMinus=t=>String(t).replace(/^-/,'\u2212');
  addEventListener('beforeprint',()=>{finishMetricAnimations();refreshHeat();});
  addEventListener('afterprint',refreshHeat);
  addEventListener('afterprint',()=>document.querySelectorAll('details[data-print-closed]').forEach(d=>{d.open=false;delete d.dataset.printClosed;}));
- return {costState,actions,toolbar,savedList,writeSaved,detailHTML,benchmarkHTML,tradeHTML,equityNavigator,init,iconize,pristineExport,ICON};
+ return {costState,exportRunTrades,actions,toolbar,savedList,writeSaved,detailHTML,benchmarkHTML,tradeHTML,equityNavigator,init,iconize,pristineExport,ICON};
 })();
 
 // Optimization research on the strategy page: parameter ranges, Rust grid run, Claude's conclusion (top 3 by the
@@ -372,7 +375,7 @@ async function optimSection(v, tk, d, detailed = true) {
     <table class="ogrid"><thead><tr><th></th><th>Setting</th><th class="n">Default</th><th class="n">From</th><th class="n">To</th><th class="n">Step</th><th class="n">Values</th></tr></thead><tbody>
     ${ps.map(p => { const x = g[p.key]; return `<tr data-k="${p.key}" class="${x.on ? '' : 'offrow'}"><td><input type="checkbox" data-f="on" ${x.on ? 'checked' : ''} aria-label="Vary ${esc(p.label)}"></td><td>${esc(p.label)}</td><td class="n">${p.def}</td>
       ${['min', 'max', 'step'].map(f => `<td class="n"><input type="number" data-f="${f}" value="${x[f]}" step="any"></td>`).join('')}<td class="n muted" data-cnt>${nVals(x)}</td></tr>`; }).join('')}</tbody></table>
-    <form class="obar" id="oform"><span class="grow"></span><span class="ocount" id="ocount"></span><button class="dbtn primary sm" type="submit" id="orun">Run optimization</button></form>
+    <form class="obar" id="oform"><label title="Applied to every backtest in this optimization">Slippage <input class="w60" type="number" name="slippage" value="${esc(S.slippage||'0')}" min="0" max="500" step="0.1"> bps a side</label><label>Rollover <input class="w60" type="number" name="rollover" value="${esc(S.rollover||'0')}" min="0" max="500" step="0.1"> bps per roll</label><span class="grow"></span><span class="ocount" id="ocount"></span><button class="dbtn primary sm" type="submit" id="orun">Run optimization</button></form>
     <p class="ostat" id="otime"></p><div id="opt-out"></div></section>`; })() : '';
   const claude = detailed ? `<section class="box" id="claude-c"><div class="box-h">Claude’s conclusion <small>Top 3 chosen once on all the data (CAGR, Sharpe, monthly thickness, expectancy ratio, CAR/MDD), shown for ${esc(PERIOD_NAME[periodKind()])} and split before / after the book</small></div><p class="rnote">This summary is calculated locally from Rust backtests. Opening a strategy does not call an AI model or use AI tokens. Parameter selection is research, not proof of future performance or reproduction of the book.</p><div id="cc-body">${ps.length ? bookLoader('Rust is testing the parameter grid…') : '<p class="muted">This rule has no settings to vary, so there is nothing to rank.</p>'}</div></section>` : `<section class="box" id="claude-c"><div class="box-h">Claude’s conclusion <small>Parameter research is available on the optimization page</small></div><p>Open Optimization to run the existing full-history parameter ranking, read its comparisons and download its workbook.</p><a class="dbtn sm" href="${href('/o/'+encodeURIComponent(v.id),{...S})}">Open parameter research</a></section>`;
   return `${opt}${claude}${gptSection(v,tk,d)}
@@ -406,7 +409,7 @@ function optimInit() {
     try { const r = await fetch(`${API_IN}/notes?key=${key}`, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: noteText.value }); m.textContent = r.ok ? `Saved at ${new Date().toLocaleTimeString()}` : 'Save failed: ' + await r.text(); } catch (err) { m.textContent = 'Save failed: ' + err.message; } };
 }
 
-const optQuery = (v, tk, w, g, slim) => { const q = new URLSearchParams({ id: v.id, ticker: tk, from: w.from || '', to: w.to || '', cost: S.cost || '0',slippage:S.slippage||'0',rollover:S.rollover||'0', ...(slim ? { slim: '1' } : {}) });
+const optQuery = (v, tk, w, g, slim, c = S) => { const q = new URLSearchParams({ id: v.id, ticker: tk, from: w.from || '', to: w.to || '', cost: S.cost || '0',slippage:c.slippage||'0',rollover:c.rollover||'0', ...(slim ? { slim: '1' } : {}) });
   Object.entries(g).forEach(([k, x]) => { if (x.on) q.set('g.' + k, `${x.min}:${x.max}:${x.step}`); }); return q; };
 async function fetchOpt(q, api=API) { const r = await fetch(enginePath(q.get('id'),'optimize',api)+'?'+q), b = await r.text(); if (!r.ok) { let message = b; try { message = JSON.parse(b).error || b; } catch {} throw new Error(message); } return JSON.parse(b); }
 
@@ -416,13 +419,20 @@ async function runOpt() {
   $('#opt-out').innerHTML = bookLoader(`Running ${n0(n)} backtests in Rust…`);
   const t0 = performance.now();
   try {
-    const res = await fetchOpt(optQuery(v, tk, { from: S.from, to: S.to }, g, false)); await minWait(t0, 900); res.rt = performance.now() - t0;
+    const fd = new FormData($('#oform')), c = { slippage: String(Math.max(0, +fd.get('slippage') || 0)), rollover: String(Math.max(0, +fd.get('rollover') || 0)) };
+    const res = await fetchOpt(optQuery(v, tk, { from: S.from, to: S.to }, g, false, c)); await minWait(t0, 900); res.rt = performance.now() - t0; res.exec = c;
     OPT.cache[key] = { res }; if (STRAT && optKey(STRAT.v.id,STRAT.tk)===key && $('#opt-out')===out) showOpt(res);
   } catch (e) { if ($('#opt-out')===out) {out.innerHTML = ''; $('#otime').innerHTML = `<span class="neg">${esc(e.message)}</span>`;} }
   finally { if ($('#orun')) optCount(); }
 }
 
 const applyLink = p => `<button class="olink" data-apply="${esc(encodeP(p))}">Apply</button>`;
+const tradesLink = p => `<button class="olink" data-trades="${esc(encodeP(p))}">Download trades</button>`;
+// Re-runs one optimizer row through the normal backtest (same window and costs) and downloads its tradesheet as Excel.
+async function optTrades(b, res) { const { v, tk } = STRAT, label = b.textContent; b.disabled = true; b.textContent = 'Preparing…';
+  try { const d = await runData(v.id, tk, S.from || '', S.to || '', S.cost || '0', b.dataset.trades, API, { ...VaultUI.costState(S), ...res.exec }); if (d.error) throw Error(d.error);
+    const p = decodeP(b.dataset.trades); await VaultUI.exportRunTrades({ ...STRAT, d, params: { ...bookDefaults(v.id), ...p }, fileTag: Object.keys(p).length ? Object.entries(p).map(([k, x]) => k + x).join('_') : 'default' }); b.textContent = label; }
+  catch (err) { b.textContent = 'Failed: ' + err.message; } finally { b.disabled = false; } }
 const setLine = (p, def) => Object.keys(def).map(k => `<span class="oset">${esc(sLabel(k))} <b class="${Math.abs((p[k] ?? def[k]) - def[k]) > 1e-9 ? 'chg' : ''}">${p[k] ?? def[k]}</b></span>`).join(' ');
 const statCells = m => CC_STATS.map(([k, , f, signed]) => `<td class="n ${k === 'max_dd' ? 'neg' : signed ? cls(m[k]) : ''}">${f(m[k])}</td>`).join('');
 const statHead = () => CC_STATS.map(([, t]) => `<th class="n">${t}</th>`).join('');
@@ -433,8 +443,8 @@ function showOpt(res) {
   const def = bookDefaults(v.id), rk = res.rank, rows = res.rows.map(r => rowOf(res, r)), top = (rk.top3 || []).map(c => ({ ...rows[c.row], c }));
   $('#otime').textContent = `${n0(res.combos)} settings on ${res.from} to ${res.to} in ${res.ms} ms (Rust, ${res.threads} threads). ${n0(rk.eligible)} had ${rk.min_trades}+ trades (${fx(rk.per_year, 1)} a year) and were ranked.`;
   const tbl = `<table class="tbl ocmp cc-tbl"><thead><tr><th></th><th>Settings</th>${statHead()}<th class="n">Score</th><th></th></tr></thead><tbody>
-    <tr class="book"><td>Default</td><td class="cset">${setLine({}, def)}</td>${statCells(bookRow(res).m)}<td class="n">–</td><td></td></tr>
-    ${top.map((t, k) => `<tr class="${k ? '' : 'pick'}"><td>#${k + 1}</td><td class="cset">${setLine(t.p, def)}</td>${statCells(t.m)}<td class="n">${fx(t.c.score, 1)}</td><td class="n">${sameP(t.p, def) ? '<span class="muted">default</span>' : applyLink(t.p)}</td></tr>`).join('')}</tbody></table>`;
+    <tr class="book"><td>Default</td><td class="cset">${setLine({}, def)}</td>${statCells(bookRow(res).m)}<td class="n">–</td><td class="n">${tradesLink({})}</td></tr>
+    ${top.map((t, k) => `<tr class="${k ? '' : 'pick'}"><td>#${k + 1}</td><td class="cset">${setLine(t.p, def)}</td>${statCells(t.m)}<td class="n">${fx(t.c.score, 1)}</td><td class="n">${sameP(t.p, def) ? '<span class="muted">default</span>' : applyLink(t.p) + ' · ' + tradesLink(t.p)}</td></tr>`).join('')}</tbody></table>`;
   const dims = res.dims, big = [...dims].sort((a, b) => b.values.length - a.values.length);
   OPT.hx ??= {}; const hx = OPT.hx[v.id] && dims.find(d => d.key === OPT.hx[v.id][0]) ? OPT.hx[v.id] : [big[0]?.key, big[1]?.key || '', 'sharpe'];
   const sel = (id, cur, opts) => `<select id="${id}">${opts.map(([k, t]) => `<option value="${k}" ${k === cur ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
@@ -445,7 +455,7 @@ function showOpt(res) {
   const an = { res, rows, pick: top[0], def };
   const drawHx = () => { OPT.hx[v.id] = [$('#hx-x').value, $('#hx-y').value, $('#hx-m').value]; $('#hx').innerHTML = heatGrid(an, ...OPT.hx[v.id]); };
   if (dims.length) { drawHx(); ['#hx-x', '#hx-y', '#hx-m'].forEach(s => $(s).onchange = drawHx); }
-  out.onclick = e => { const b_ = e.target.closest('[data-apply]'); if (b_) go(R.path, { ...S, p: b_.dataset.apply }); };
+  out.onclick = e => { const t_ = e.target.closest('[data-trades]'); if (t_) return optTrades(t_, res); const b_ = e.target.closest('[data-apply]'); if (b_) go(R.path, { ...S, p: b_.dataset.apply }); };
   if ($('#grid-xlsx')) $('#grid-xlsx').onclick=async()=>{const b=$('#grid-xlsx');b.disabled=true;try{await exportFullGrid(res,v,STRAT.tk);}catch(err){b.textContent='Export failed: '+err.message;}finally{b.disabled=false;}};
   if ($('#oxlsx')) $('#oxlsx').onclick = async () => { const b = $('#oxlsx'); b.disabled = true; b.textContent = 'Building Excel…';
     const tk=STRAT.tk,win={from:S.from,to:S.to},context={api:API,cost:S.cost,slippage:S.slippage||'0',rollover:S.rollover||'0',pub:PUB,us:isUS(),first:tkSpan(tk).first,selectionLabel:'Manual grid window'};
@@ -1221,12 +1231,10 @@ function distBox(rs) {
 const appLink = r => stratLink(r.v.id, r.tk, r.region); // opens the single-strategy page inside this page
 const RTAG = { F: 'IF', E: 'ENTRY', A: 'ADD', X: 'EXIT' };
 const rulesList = v => `<details class="rules"><summary>Rules as written in the book</summary><ul>${(v.rules || []).map(x => { const [t, ...rest] = x.split('|'); return `<li><span class="t">${RTAG[t] || ''}</span>${esc(rest.join('|') || x)}</li>`; }).join('')}</ul></details>`;
+// Card stats (user layout 29 Oct 2026): Net Return (fixed size, not compounded; B&H same period) | Max DD (CAGR) | Win % (closed trades).
 const kpiTriplet = r => {
-  const M = TABS[S.tab].metric, s = r.s;
-  const second = S.tab === 'working' ? `<div><span>Before ${PUB}</span><b>${fx(r.x?.sharpe)}</b><i>${r.x ? (r.x.sharpe > 0 && s.sharpe > 0 ? 'still working' : s.sharpe > 0 ? 'works since book' : r.x.sharpe > 0 ? 'decayed' : 'never worked') : 'Before-book result unavailable'}</i></div>`
-    : S.tab === 'trending' ? `<div><span>Sharpe (full)</span><b>${fx(r.x?.sharpe)}</b><i>${fx(r.s.trades, 0)} trades in 12M</i></div>`
-    : `<div><span>CAGR</span><b class="${cls(s.cagr)}">${pct(s.cagr, 1, true)}</b><i>B&amp;H ${pct(s.bh_cagr, 1, true)}</i></div>`;
-  return `<div class="kpis"><div><span>${esc(M.label)}</span><b class="p">${M.fmt(M.get(r))}</b><i>${S.tab === 'sig' ? 'Sharpe ' + fx(s.sharpe) : 'win ' + pct(s.win_rate, 0)}</i></div>${second}<div><span>Max DD</span><b class="neg">${pct(s.max_dd, 1)}</b><i>${fx(s.trades, 0)} trades</i></div></div>`;
+  const s = r.s;
+  return `<div class="kpis"><div title="Net return with a fixed position size (closed-trade returns added, not compounded), same as Net Profit on the strategy page; B&amp;H = buy and hold of the same instrument and period"><span>Net Return</span><b class="${cls(s.net_profit)}">${pct(s.net_profit, 1, true)}</b><i>B&amp;H ${pct(s.bh_total, 1, true)}</i></div><div><span>Max DD</span><b class="neg">${pct(s.max_dd, 1)}</b><i>CAGR ${pct(s.cagr, 1, true)}</i></div><div><span>Win</span><b class="p">${pct(s.win_rate, 0)}</b><i>${fx(s.trades, 0)} trades</i></div></div>`;
 };
 const byline = v => `${esc(GURU[v.guru].name)} · ${esc(BOOK[v.book].title)} (${bookYear(BOOK[v.book])}) · ${srcOf(v)}`;
 
@@ -1399,7 +1407,7 @@ function readRoute() {
   const pool=S.region==='us'?TICK_ALL_US:TICK_ALL_IN, indices=S.region==='us'?TICK_US:TICK_IN;
   const chosen=R.name==='strategy'?ALLCAT.find(v=>v.id===R.id):null;
   const types=chosen?.instrument_policy?.allowed_types||[];
-  const etfs=S.region==='us'?TICK_ALL_US.filter(t=>['SPY','QQQ','MDY','IWM','SMH','DIA'].includes(t.ticker)):[];
+  const etfs=S.region==='us'?TICK_ALL_US.filter(t=>US_ETFS.includes(t.ticker)):[];
   const basket=BASKETS.find(b=>b.id===S.basket);
   const explicit=new URLSearchParams(q),isDetail=R.name==='strategy';
   if(chosen && types.includes('individual_stock') && !types.includes('index') && !types.includes('etf')
@@ -1658,7 +1666,7 @@ let BASKETS=[],BASKETS_IN=[],BASKETS_US=[],TICK_ALL_IN=[];
 function basketChoices(){const past=S.membership==='past';return S.region==='us'?[['us_sp500','S&P 500'],['us_nasdaq100','Nasdaq 100'],['us_dow30','Dow Jones'],['us_russell2000','Russell 2000']].map(([id,name])=>[id+(past?'_past':''),name]):[['nse500','NSE 500'],['nifty50','Nifty 50'],['midcap100','Midcap100'],['allfo','All F&O']];}
 function marketControls(v,tk){
  const allIndices=S.region==='us'?TICK_US:TICK_IN,unitMethod=unitExposureMethod(v.id,v.book),indices=unitMethod?(allIndices||[]).filter(t=>t.ticker===(S.region==='us'?'SPX':'NIFTY 50')):allIndices,controls=instrumentControls(v.instrument_policy,v.id,v.book),portfolio=S.run_scope==='basket',sourceAccountOnly=v.instrument_policy?.execution_scope==='single_symbol_source_account'||unitMethod;
- const etfs=S.region==='us'&&controls.etf?TICK_ALL_US.filter(t=>['SPY','QQQ','MDY','IWM','SMH','DIA'].includes(t.ticker)):[];
+ const etfs=S.region==='us'&&controls.etf?TICK_ALL_US.filter(t=>US_ETFS.includes(t.ticker)):[];
  const stocks=stockChoices(S.region==='us'?TICK_ALL_US:TICK_ALL_IN,tk);
  const singleState=ticker=>({...S,run_scope:'single',basket:'',tk:ticker,from:'',to:''});
  const indexButtons=(indices||[]).map(t=>controls.index?`<a class="join-item ${!portfolio&&t.ticker===tk?'active':''}" href="${href(R.path,singleState(t.ticker))}">${esc(LABEL[t.ticker]||t.ticker)}</a>`:`<button type="button" class="join-item" disabled title="${esc(controls.note)}">${esc(LABEL[t.ticker]||t.ticker)}</button>`).join('');
@@ -2126,7 +2134,7 @@ async function homeModel(){
  const summary=await getSum(h.tk,S.from||'',S.to||''),states=Object.fromEntries(LIB.map(g=>[g.id,VaultLibraryDiscovery.authorAvailability(g.books.map(b=>b.id),CAT,summary,readiness)]));
  pristineAuthorStatus(states.pristine);
  const scopedRecords=scopedLibraryRecords(allRecords),scopeCounts=new Map([...scopedRecords].map(([id,records])=>[id,{total:records.length,catalogue:records.filter(record=>record.kind==='catalogue').length,reading:records.filter(record=>record.kind==='source').length}]));
- const pool=S.region==='us'?TICK_ALL_US:TICK_ALL_IN,etfs=S.region==='us'?TICK_ALL_US.filter(t=>['SPY','QQQ','MDY','IWM','SMH','DIA'].includes(t.ticker)):[];
+ const pool=S.region==='us'?TICK_ALL_US:TICK_ALL_IN,etfs=S.region==='us'?TICK_ALL_US.filter(t=>US_ETFS.includes(t.ticker)):[];
  const selected={region:S.region,tk:h.tk,basket:S.basket,label:LABEL[h.tk]||h.tk,kind:S.basket?'stock':etfs.some(t=>t.ticker===h.tk)?'ETF':'index',from:S.from||'',to:S.to||''};
  // Discover compatible measured results on at most one stock and one ETF.
  // This never runs an entire basket or treats admissions as backtest results.

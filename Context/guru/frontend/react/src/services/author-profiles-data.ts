@@ -380,6 +380,180 @@ export const AUTHOR_PROFILE_DATA = {
   ],
   "sources": [],
   "confidence": "low"
+ }, "schlossberg": {
+  "kind": "person",
+  "mastery": [
+   "Currency trading",
+   "Technical analysis"
+  ],
+  "summary": "Boris Schlossberg is a currency strategist and co-founder of BK Asset Management with Kathy Lien. Technical Analysis of the Currency Market applies classic indicators to FX; its Ch.10 prints rule-based setups with Bollinger band bands, RSI and moving averages. This profile rests on the book itself.",
+  "known_for": [
+   "Technical Analysis of the Currency Market",
+   "High Probability Trading Setups for the Currency Market (with Kathy Lien)"
+  ],
+  "sources": [],
+  "confidence": "low"
+ }, "downs": {
+  "kind": "person",
+  "mastery": [
+   "Currency trading",
+   "Bar pattern research"
+  ],
+  "summary": "Walter T. Downs sold The Forex Gambit, a daily currency system: buy an inside-down bar that closes in its upper half above a rising 30-day Bollinger middle line, stop at the bar's low, exit after a close above the 2 SD band followed by a lower close. In Trading for Tigers he catalogued short-term monthly, weekly and market-on-close bar patterns tested across futures and stocks, and the MIST short-term trend definition. This profile rests on the two books themselves.",
+  "known_for": [
+   "The Forex Gambit",
+   "Trading for Tigers"
+  ],
+  "sources": [],
+  "confidence": "low"
+ }, "goodwin": {
+  "kind": "person",
+  "mastery": [
+   "S&P 500 futures trading",
+   "Short-term pattern systems"
+  ],
+  "summary": "Andrew Goodwin wrote Trading Secrets of the Inner Circle (1997), a collection of S&P 500 futures rules with their TradeStation code: oscillator systems filtered by breadth and interest rates, an options-expiration rule, daily day-of-week patterns and a short-term reversal system. This profile rests on the book itself.",
+  "known_for": [
+   "Trading Secrets of the Inner Circle"
+  ],
+  "sources": [],
+  "confidence": "low" }, "cfwright": {
+  "kind": "person",
+  "mastery": ["Trading-system design", "TradeStation strategies"],
+  "summary": "Charles F. Wright wrote Trading as a Business (1998), a step-by-step account of designing, testing and trading mechanical strategies with printed TradeStation code for stocks and S&P 500 futures. This profile rests on the book itself.",
+  "known_for": ["Trading as a Business"],
+  "sources": [],
+  "confidence": "low"
+ }, "acohen": {
+  "kind": "person",
+  "mastery": ["Point & figure charting"],
+  "summary": "A. W. Cohen founded Chartcraft and wrote the standard guide to three-point reversal point & figure charts of stocks, with signal formations, trend lines and price counts. This profile rests on the book itself.",
+  "known_for": ["How to Use the Three-Point Reversal Method of Point & Figure Stock Market Trading"],
+  "sources": [],
+  "confidence": "low"
+ }, "sadekar": {
+  "kind": "person",
+  "mastery": ["Ichimoku charts", "Indian stocks"],
+  "summary": "Balkrishna M. Sadekar teaches the Ichimoku system on Indian stocks: its five components, five basic strategies and stricter high-probability versions. This profile rests on the book itself.",
+  "known_for": ["How to Make Money Trading the Ichimoku System"],
+  "sources": [],
+  "confidence": "low"
+ }, "gujral": {
+  "kind": "person",
+  "mastery": ["Chart patterns", "Indian markets", "Moving averages and oscillators"],
+  "summary": "Ashwani Gujral is an Indian market technician whose book covers trend, patterns, moving averages, oscillators and his Railway-Line Theory for Indian stocks. This profile rests on the book itself.",
+  "known_for": ["How to Make Money Trading with Charts"],
+  "sources": [],
+  "confidence": "low"
+ }, "sabatini": {
+  "kind": "person",
+  "mastery": ["Gann swing charts", "Italian stocks"],
+  "summary": "Alberto Sabatini wrote the Trading Toolkit Collection; volume 3 explains W.D. Gann's one-bar swing charts, outside bars and Gann angles on Italian stocks. This profile rests on the book itself.",
+  "known_for": ["Trading Toolkit Collection Vol.3"],
+  "sources": [],
+  "confidence": "low"
+ }, "krausz": {
+  "kind": "person",
+  "mastery": ["Gann swing charts", "Multiple time frames", "T-bond futures"],
+  "summary": "Robert Krausz, interviewed in Jack Schwager's The New Market Wizards, wrote W.D. Gann Treasure Discovered (1998): Gann swing charts, the HiLo Activator and mechanical swing plans tested trade by trade on T-bond futures and five US stocks. This profile rests on the book itself.",
+  "known_for": ["W.D. Gann Treasure Discovered", "Fibonacci Trader"],
+  "sources": [],
+  "confidence": "low"
+ }, "sheimo": {
+  "kind": "person",
+  "mastery": ["Seasonal stock patterns", "Stock selection"],
+  "summary": "Michael D. Sheimo, a Minneapolis stockbroker and registered options principal, wrote Stock Market Rules and The Stock Selector System; his 1992 Stocks & Commodities article tested the Thanksgiving-to-year-end rally on five Dow stocks. This profile rests on the article and the book.",
+  "known_for": ["Stock Market Rules", "Trading The Santa Claus Rally"],
+  "sources": [],
+  "confidence": "low"
+ }, "mcdonald": {
+  "kind": "person",
+  "mastery": ["Moving-average timing", "Market cycles", "Trading ranges"],
+  "summary": "Michael McDonald wrote Predict Market Swings With Technical Analysis (2002): a fair-value and feedback-loop model of the stock market and moving-average timing studies on the S&P 500 (1929-1998 and 1966-1982). This profile rests on the book itself.",
+  "known_for": ["Predict Market Swings With Technical Analysis"],
+  "sources": [],
+  "confidence": "low"
+ }, "melzl": {
+  "kind": "person",
+  "mastery": ["TradeStation EasyLanguage"],
+  "summary": "Mark Melzl compiled The TradeStation Cookbook I and II (GraphFax, 1997): a TradeStation 4.0 how-to manual and a listing of indicator and system code. This profile rests on the books themselves.",
+  "known_for": ["The TradeStation Cookbook"],
+  "sources": [],
+  "confidence": "low"
+ }, "kbrown": {
+  "kind": "person",
+  "mastery": [
+   "Equity trend following"
+  ],
+  "summary": "Kedrick F. Brown is a former equity market maker. Trend Trading: Timing Market Tides (Wiley, 2006) adapts futures trend-following discipline to stocks: Donchian, stochastic and peak breakouts, index 'pilot' signals, stop placement and position sizing, with a ten-year test of a 32-day close Donchian rule on three US indices. This profile rests on the book itself.",
+  "known_for": [
+   "Trend Trading: Timing Market Tides"
+  ],
+  "sources": [],
+  "confidence": "low" }, "forman": {
+  "kind": "person",
+  "mastery": [
+   "Currency trading",
+   "Trading system design"
+  ],
+  "summary": "John Forman is a currency trader and trading educator. The Essentials of Trading (Wiley, 2006) walks through building a mechanical trend system on daily USD/JPY: moving-average and Parabolic SAR entries and exits tested in four combinations, then a GBP/USD fast stochastic system and position sizing. This profile rests on the book itself.",
+  "known_for": [
+   "The Essentials of Trading"
+  ],
+  "sources": [],
+  "confidence": "low" }, "linton": {
+  "kind": "person",
+  "mastery": [
+   "Ichimoku cloud charts"
+  ],
+  "summary": "David Linton is a technical analyst. Cloud Charts (published by Updata, 2010) explains how the Ichimoku cloud is built and read, and back-tests a simple stop and reverse: buy when the close moves above the cloud, sell and reverse when it closes below, optionally waiting a few days to filter short breaches. This profile rests on the book itself.",
+  "known_for": [
+   "Cloud Charts"
+  ],
+  "sources": [],
+  "confidence": "low" }, "hyerczyk": {
+  "kind": "person",
+  "mastery": [
+   "Gann analysis"
+  ],
+  "summary": "James A. Hyerczyk is a market analyst who writes on W.D. Gann's methods. Pattern, Price & Time explains Gann swing charts (1-, 2- and 3-bar trend indicators) and trades them with a buy stop over the last swing top and a sell-and-reverse stop under the last swing bottom. This profile rests on the book itself.",
+  "known_for": [
+   "Pattern, Price & Time"
+  ],
+  "sources": [],
+  "confidence": "low" }, "sands": {
+  "kind": "person",
+  "mastery": [
+   "Trend following"
+  ],
+  "summary": "Russell Sands was one of Richard Dennis's original Turtle traders. His booklet The Original Turtle Trading Rules states a Simple Turtle Breakout System: buy above the highest high of the past 20 bars, sell below the lowest low, exit on the opposite 10-bar extreme, with a stop at 2% of the account. This profile rests on the booklet itself.",
+  "known_for": [
+   "The Original Turtle Trading Rules"
+  ],
+  "sources": [],
+  "confidence": "low" }, "graemesmith": {
+  "kind": "person",
+  "mastery": [
+   "Share swing trading"
+  ],
+  "summary": "David Graeme-Smith (catalogued as David Smith) sold Short Swing Trading, a six-rule method for UK shares: trade with the 50-day average, wait for the 8-day +DI and -DI lines to cross, buy above the last significant day's high, and trail a stop 0.5% under each new significant day's low. This profile rests on the e-book itself.",
+  "known_for": [
+   "Short Swing Trading"
+  ],
+  "sources": [],
+  "confidence": "low" }, "ponsi": {
+  "kind": "person",
+  "mastery": [
+   "Currency trading",
+   "Trend following"
+  ],
+  "summary": "Ed Ponsi is a forex trader and educator (FXEducator). Forex Patterns & Probabilities sets out his trend and range setups for currency pairs; the FX-Ed Trend Technique buys pullbacks to the 10-day EMA in a 10/20/50/200 EMA uptrend with a half-ATR trailing stop. This profile rests on the books themselves.",
+  "known_for": [
+   "Forex Patterns & Probabilities",
+   "The Ed Ponsi Forex Playbook"
+  ],
+  "sources": [],
+  "confidence": "low"
  }, "jcarter": {
   "kind": "person",
   "mastery": [

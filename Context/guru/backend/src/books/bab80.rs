@@ -11,6 +11,9 @@
 use crate::connors::{claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "bab80";
+/// Admitted ids (authors/babcock/laneb/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["bab80_novapr"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const SP: &str = "Book: one S&P 500 futures contract (and NYFE), TradeStation, continuous back-adjusted data, $100 per trade deducted (p.6). $3,000 = 6.00 index points at $500/point (p.3); the same points are used on any index (instrument swap only). Back-adjusted futures prices cannot be compared with cash index prices, so only trade dates and counts are comparable. SPX cash opens before ~1999 are often stale (equal to the prior close), which changes the open-based setup and stop-entry fills on SPX in the book's window.";
 
@@ -21,6 +24,7 @@ const DT_R: &[&str] = &[
     "E|\"place an order to enter on stop if the market reaches a point equal to yesterday's True Range added to yesterday's Close\" (p.3); True Range = greater of the prior close or the high minus the lesser of the prior close or the low (p.3). A gap open above the level fills at the open",
     "X|\"a money management stop of $3,000 ... Subtract 600 points from the system entry point and place your stop there. Do not subtract from your actual fill but rather the entry price calculated by the system\" (p.3): 6.00 points below the entry level, intraday, from the entry bar (the book's 5/28/87 and 8/21/92 trades are stopped on the entry day)",
     "X|\"If you are day trading, exit your position on the close\" (p.3)",
+    "X|[intraday wave 2b] Default p.path=1: real SPX 1-minute bars decide the entry fill and whether the 6.00-point stop was reached after it (fill at the level, or the minute's open when it opened through it). Fill minute that also reaches the stop: filled then stopped, unless that minute opened under the stop, then stopped only if it closed under it [convention]. SPX only: the stop is the book's fixed S&P points (no conversion to SPY or NSE prices is invented); from 2014, where SPX daily opens are real, to 2026-08. p.path=0 = the old daily bar path [Not from the book].",
 ];
 const ST_R: &[&str] = &[
     "F|\"These systems never trade from the short side\" (p.2)",
@@ -77,7 +81,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     Some(match id {
         "bab80_daytrade" | "bab80_shortterm" => vec![
             p("mom", "Momentum length (book 11; tables p.7-8 test 10-35)", 11.0, 2.0, 40.0, 1.0),
-            p("stop_usd", "Money-management stop, $ (book 3,000; p.8 tests 1,000-10,000)", 3000.0, 0.0, 10000.0, 500.0), pt()],
+            p("stop_usd", "Money-management stop, $ (book 3,000; p.8 tests 1,000-10,000)", 3000.0, 0.0, 10000.0, 500.0), pt()]
+            .into_iter().chain((id == "bab80_daytrade").then(|| p("path", "1 = real 1-minute bars (default; SPX only; days without minute data make no trade), 0 = [Not from the book] daily bar path", 1.0, 0.0, 1.0, 1.0))).collect(), // intraday wave 2b
         "bab80_novapr" => vec![p("stop_usd", "Stop, $ (0 = none; book pages: none, 10,000, 5,000)", 0.0, 0.0, 20000.0, 1000.0), pt()],
         "bab80_novapr_stop10k" => vec![p("stop_usd", "Stop, $ (book 10,000)", 10000.0, 0.0, 20000.0, 1000.0), pt()],
         "bab80_novapr_stop5k" => vec![p("stop_usd", "Stop, $ (book 5,000)", 5000.0, 0.0, 20000.0, 1000.0), pt()],
@@ -123,6 +128,31 @@ fn momentum(x: &Ctx, from: usize, to: usize, n: usize, stop_pts: f64, daytrade: 
     }
     out
 }
+
+// ---- intraday wave 2b block: the day trade on real 1-minute bars (SPX only, the book's 6.00 S&P points)
+/// Same setup on the daily bars (momentum, today's daily open above yesterday's pivot); the buy stop at yesterday's close +
+/// true range fills on the first minute that reaches it (at the level, or the minute's open when it opened through it); the
+/// stop 6.00 points under the system entry level (p.3: not from the fill) counts on later minutes [fill-minute convention as
+/// wave 1]; otherwise out on the official close. Days without minute data make no trade.
+fn daytrade_minutes(x: &Ctx, from: usize, to: usize, n: usize, stop_pts: f64) -> Vec<Trade> {
+    use crate::intraday::{stop_entry_day, Level};
+    let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
+    let mut out = vec![];
+    for i in from.max(n + 2)..=to {
+        let tr = h[i - 1].max(c[i - 2]) - l[i - 1].min(c[i - 2]);
+        if !(c[i - 1] - c[i - 1 - n] > c[i - 2] - c[i - 2 - n] && o[i] > (h[i - 1] + l[i - 1] + c[i - 1]) / 3.0) { continue; }
+        let lv = c[i - 1] + tr;
+        let Some(b) = crate::intraday_w2b::day(x, i) else { continue };
+        let stop = |_: usize, _: f64| (stop_pts > 0.0).then(|| Level { up: false, px: lv - stop_pts });
+        let Some((_, px, st)) = stop_entry_day(&b, 0, &[Level { up: true, px: lv }], &stop) else { continue };
+        out.push(match st {
+            Some(xp) => trade(i, px, i, xp, "stop", "stop"),
+            None => trade(i, px, i, c[i], "exit on the close", "stop"),
+        });
+    }
+    out
+}
+// ---- end intraday wave 2b block ----
 
 fn ymd(d: &str) -> (i64, i64, i64) { (d[0..4].parse().unwrap_or(0), d[5..7].parse().unwrap_or(0), d[8..10].parse().unwrap_or(0)) }
 
@@ -179,6 +209,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
     let stop_pts = { let v = g("stop_usd") / g("pt_usd"); if v.is_finite() && v > 0.0 { v } else { 0.0 } };
     Some(match id {
+        "bab80_daytrade" if g("path") >= 0.5 => daytrade_minutes(x, from, to, g("mom").round().max(1.0) as usize, stop_pts), // intraday wave 2b
         "bab80_daytrade" | "bab80_shortterm" => momentum(x, from, to, g("mom").round().max(1.0) as usize, stop_pts, id == "bab80_daytrade"),
         _ => calendar(x, from, to, stop_pts),
     })
@@ -216,7 +247,7 @@ mod tests {
         assert_eq!((x.r[t[0].legs[0].i].date.as_str(), t[0].legs[0].px), ("1997-03-07", 824.85));
         // 3/10 open 823.85 < 824.85 holds; 3/11 open 831.95 exits (book: 3/11/97 831.95)
         assert!((t[0].exit_px - 831.95).abs() < 1e-9 && x.r[t[0].exit_i].date == "1997-03-11");
-        let t = run("bab80_daytrade", &x, 0, r.len() - 1, &Params::new()).unwrap();
+        let t = run("bab80_daytrade", &x, 0, r.len() - 1, &Params::from([("path".to_string(), 0.0)])).unwrap();
         assert_eq!((t[0].exit_px, t[0].exit_i), (823.75, 13)); // "a loss on the trade of March 7th" (p.6)
     }
 }

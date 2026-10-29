@@ -5,8 +5,11 @@ use crate::books::rcmm::{path_entry, ts_path};
 use crate::connors::{hv, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "sprfs";
+/// Admitted ids (lane C, authors/pierce/admission).
+pub const REVIEWED_LANEC: &[&str] = &["sprfs_nr4ib", "sprfs_hvr_nr4ib", "sprfs_hvr_nr4"];
+pub fn reviewed_lanec(id: &str) -> bool { REVIEWED_LANEC.contains(&id) }
 
-const NOTE: &str = "Futures rules run on the index (instrument swap). Range = high - low. NR4 = today's range strictly smaller than each of the 3 prior ranges (p.8 \"the smallest of the last four days\"; ties are not 'smallest') [Book silent on ties]. Inside bar (p.8): high <= prior high and low >= prior low, not both equal. Orders for the next session only: buy stop 1 tick above the setup high, sell stop 1 tick below its low (1 tick = 0.05 index points, p.tick). If the bar opens through a stop it fills at the open. Entry bar [Book silent]: TradeStation's bar path (open, the extreme nearer the open, the other extreme, close) decides which stop fills first and whether the protective stop (Rule 3) is reached after the fill on the same bar. Protective stop fills at its level, or at the open on a gap. Exit MOC on the 3rd day counting the entry day as day 1 (examples p.13, 14, 25: entry Aug 14, exit MOC Aug 16). Rule 4's optional profit objective / tightened stop is the trader's choice (\"or exit on the 3-Day Rule\"); Rule 5 applies when \"you have no pre-identified profit exit\", which is the path every worked example follows. Setups are taken only while flat.";
+const NOTE: &str = "Futures rules run on the index (instrument swap). Range = high - low. NR4 = today's range strictly smaller than each of the 3 prior ranges (p.8 \"the smallest of the last four days\"; ties are not 'smallest') [Book silent on ties]. Inside bar (p.8): high <= prior high and low >= prior low, not both equal. Orders for the next session only: buy stop 1 tick above the setup high, sell stop 1 tick below its low (one real tick of the traded instrument: 0.05 on NSE, 0.01 on US indices, ETFs and stocks; p.tick=0.05 keeps the earlier fixed 0.05 everywhere). If the bar opens through a stop it fills at the open. Entry bar [Book silent]: TradeStation's bar path (open, the extreme nearer the open, the other extreme, close) decides which stop fills first and whether the protective stop (Rule 3) is reached after the fill on the same bar. Protective stop fills at its level, or at the open on a gap. Exit MOC on the 3rd day counting the entry day as day 1 (examples p.13, 14, 25: entry Aug 14, exit MOC Aug 16). Rule 4's optional profit objective / tightened stop is the trader's choice (\"or exit on the 3-Day Rule\"); Rule 5 applies when \"you have no pre-identified profit exit\", which is the path every worked example follows. Setups are taken only while flat.";
 const SAR_GAP: &str = "Discretionary: \"We handle this by using our own discretion, as you should too on doing a 'Stop and Reverse' (SAR) ... you can elect to initially put a SAR on the opposite side\" (p.23). The NASDAQ example then holds \"until either a new NR4/IB signal is generated while the market remained under 50% in the HVR or the HVR rose above 50%\" with no stop stated.";
 const POS_GAP: &str = "One example only (British Pound, p.15): \"If you were entering short ... on a position trade and were using a protective stop at the 3-day high, you would have been stopped out on the open of September 21st\". The book does not say whether the 3-day high trails daily, includes the entry day, or replaces the NR4/IB protective stop.";
 
@@ -39,7 +42,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("sprfs_position", "Position trade with a 3-day-high protective stop", NotTestable(POS_GAP), &["X|\"using a protective stop at the 3-day high\" p.15"], POS_GAP),
     ]
 }
-const HVR_NOTE: &str = concat!("Futures rules run on the index (instrument swap). Range = high - low. NR4 = today's range strictly smaller than each of the 3 prior ranges (p.8; ties are not 'smallest') [Book silent on ties]. Inside bar (p.8): high <= prior high and low >= prior low, not both equal. Orders for the next session only, 1 tick (0.05) beyond the setup bar; open through a stop = open fill; on the entry bar TradeStation's bar path (open, nearer extreme, other extreme, close) decides the side and whether the protective stop is reached after the fill [Book silent]. Exit MOC on the 3rd day counting the entry day as day 1 (p.13, 14, 25). Setups taken only while flat. ",
+const HVR_NOTE: &str = concat!("Futures rules run on the index (instrument swap). Range = high - low. NR4 = today's range strictly smaller than each of the 3 prior ranges (p.8; ties are not 'smallest') [Book silent on ties]. Inside bar (p.8): high <= prior high and low >= prior low, not both equal. Orders for the next session only, 1 real tick (NSE 0.05, US 0.01) beyond the setup bar; open through a stop = open fill; on the entry bar TradeStation's bar path (open, nearer extreme, other extreme, close) decides the side and whether the protective stop is reached after the fill [Book silent]. Exit MOC on the 3rd day counting the entry day as day 1 (p.13, 14, 25). Setups taken only while flat. ",
     "HV = annualised sample standard deviation of daily log returns (engine hv()); the book gives no formula for its Dynamic Trader HVR and the ratio does not depend on the annualisation. Setup valid when HV(10)/HV(100) < 0.50 or HV(6)/HV(100) < 0.50 on the setup bar (p.16).");
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
@@ -55,7 +58,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
-    let mut v = vec![p("tick", "One tick in index points (NSE 0.05)", 0.05, 0.0, 1.0, 0.05), p("hold", "MOC exit on day (entry day = 1)", 3.0, 1.0, 10.0, 1.0)];
+    let mut v = vec![p("tick", "One tick in price points (-1 = the instrument's real tick: NSE 0.05, US 0.01)", -1.0, -1.0, 1.0, 0.01), p("hold", "MOC exit on day (entry day = 1)", 3.0, 1.0, 10.0, 1.0)];
     match id {
         "sprfs_nr4ib" => {}
         "sprfs_hvr_nr4ib" | "sprfs_hvr_nr4" => v.extend([p("hv_a", "Short HV days (1)", 10.0, 3.0, 30.0, 1.0), p("hv_b", "Short HV days (2)", 6.0, 3.0, 30.0, 1.0),
@@ -122,7 +125,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let schema = params(id)?;
     if validate(id, p).is_some() || from > to || to >= x.r.len() { return None; }
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).unwrap().def);
-    let (tick, hold) = (g("tick"), g("hold") as usize);
+    let (tick, hold) = (if g("tick") < 0.0 { x.market_tick() } else { g("tick") }, g("hold") as usize);
     Some(match id {
         "sprfs_nr4ib" => nr4_trades(x, from, to, tick, hold, &|s| nr4(x, s) && inside(x, s)),
         _ => {
@@ -149,14 +152,14 @@ mod tests {
         r.push(bar(90., 92., 88., 89.)); // day 3 MOC 89
         r.push(bar(89., 120., 80., 100.));
         let x = Ctx::new(&r, &r, &[]);
-        let t = run("sprfs_nr4ib", &x, 0, r.len() - 1, &Params::new()).unwrap();
+        let t = run("sprfs_nr4ib", &x, 0, r.len() - 1, &Params::from([("tick".to_string(), 0.05)])).unwrap();
         assert_eq!(t.len(), 1);
         assert_eq!((t[0].dir, t[0].legs[0].i, t[0].exit_i), (-1.0, 4, 6));
         assert!((t[0].legs[0].px - 94.95).abs() < 1e-9 && t[0].exit_px == 89.0);
         // both sides on the entry bar: open equidistant -> low first (TradeStation path): short, then stopped at the high side
         r[4] = bar(100., 106., 94., 100.);
         let x = Ctx::new(&r, &r, &[]);
-        let t = run("sprfs_nr4ib", &x, 0, r.len() - 1, &Params::new()).unwrap();
+        let t = run("sprfs_nr4ib", &x, 0, r.len() - 1, &Params::from([("tick".to_string(), 0.05)])).unwrap();
         assert_eq!(t[0].exit_i, 4);
         assert_eq!(t[0].dir, -1.0);
         assert!((t[0].ret(0.0) + 10.1 / 94.95).abs() < 1e-9);

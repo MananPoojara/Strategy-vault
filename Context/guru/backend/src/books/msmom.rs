@@ -7,6 +7,9 @@ use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 use std::sync::OnceLock;
 
 pub const BOOK: &str = "msmom";
+/// Admitted ids (authors/lanea/vendor2/decisions.json).
+pub const REVIEWED_LANEA: &[&str] = &["msmom_macd_momentum"];
+pub fn reviewed_lanea(id: &str) -> bool { REVIEWED_LANEA.contains(&id) }
 
 const EL: &str = r##"TmpA:=Mov(CLOSE,8,E)-Mov(CLOSE,14,E); MACDH:= TmpA-Mov(TmpA,8,E); TmpB:=MACDH - Ref(MACDH,-8); MACDMO:=Mov(TmpB,3,S); (MACDH<0) AND (MACDMO<0)"##;
 const XL: &str = r##"TmpA:=Mov(CLOSE,8,E)-Mov(CLOSE,14,E); MACDH:= TmpA-Mov(TmpA,8,E); TmpB:=MACDH - Ref(MACDH,-8); MACDMO:=Mov(TmpB,3,S); (MACDMO>0)"##;

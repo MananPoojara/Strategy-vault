@@ -21,6 +21,9 @@ use crate::connors::Status::{Live, NeedsData, NotTestable};
 use std::sync::OnceLock;
 
 pub const BOOK: &str = "mslib";
+/// Admitted ids (authors/vendor/laneb/SOURCE-CONTRACT.md).
+pub const REVIEWED: &[&str] = &["mslib_alligator_charlis", "mslib_alligator_eiv", "mslib_manda_carayo", "mslib_1234", "mslib_180", "mslib_boomer", "mslib_expansion", "mslib_gilligan", "mslib_lizard", "mslib_pivot"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 #[allow(dead_code)]
 fn _exec_type_check(e: Exec) -> Exec { e }
 

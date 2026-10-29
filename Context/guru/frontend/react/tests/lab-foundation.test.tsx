@@ -8,11 +8,13 @@ import type { ViewSnapshot } from "../src/state/store";
 
 afterEach(() => history.replaceState(null, "", "/"));
 
-it("registers both lab pages in navigation", () => {
-  expect(customPages.map((p) => [p.path, p.label, p.showInNavigation])).toEqual([
+it("registers both lab pages in navigation, after Manan's Research page", () => {
+  expect(customPages.filter((p) => p.showInNavigation).map((p) => [p.path, p.label, p.showInNavigation])).toEqual([
+    ["/research", "Research", true],
     ["/indicators", "Indicators", true],
     ["/yt-strategies", "YT Strategies", true],
   ]);
+  expect(customPages.find((p) => p.path === "/maintenance")?.showInNavigation).toBe(false);
 });
 
 it("shows one YT Strategies link, no 'soon' placeholder, and marks the open custom page", () => {

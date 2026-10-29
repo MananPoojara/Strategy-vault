@@ -493,7 +493,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
     let tdp = "Book: 15 futures over 'this decade' (~1990-98), one row per market; the vault has no futures, so the reproduction runs SPY/QQQ/MDY. Both sides in one test, one position at a time. The streak must be exactly 3 on the entry day ('three consecutive down days'), so a 4th or 5th down close does not re-enter. Not in Advanced Trading Strategies. India: runs directly on the NSE indices.";
     vec![
         d("btp_cbp_short", "Crash, Burn, and Profit (CBP)", "Crash, Burn, and Profit (Vol. I)", "Short", Live, CBP,
-          "Weekly bars are built from the daily file (Monday-Friday weeks); weekly ADX = Wilder 14. Fires once per excursion above 60 (re-arms when ADX falls back under 60). The book screens single high-flying stocks (IBD RS 98-99); a weekly ADX above 60 is very rare on indices and ETFs, so expect few or no trades. Same article as ATS (ats_cbp), same wording. The half cover at 20% is the book's; the trail on the other half is not. India: runs on the NSE indices.", None),
+          "Weekly bars are built from the daily file (Monday-Friday weeks); weekly ADX = Wilder 14. Fires once per excursion above 60 (re-arms when ADX falls back under 60). The book screens single high-flying stocks (IBD RS 98-99); a weekly ADX above 60 is very rare on indices and ETFs, so expect few or no trades. Same article as ATS (ats_cbp), same wording. The half cover at 20% is the book's; the trail on the other half is not (it starts after the half cover; trail_whole 1 = the earlier reading, whole position). US data only: the $20 filter is in dollars (connors-final 26 Oct 2026).", None),
         StrategyDef { needs_volume: true, ..d("btp_dvmtm_short", "Double-Volume Market Top (DVMTM)", "Double-Volume Market Top (Vol. I)", "Short", Live, DVMTM,
           "Book: single stocks. Needs volume (SPY/QQQ; NIFTY 50, BANK, MIDCAP 100). 'Three-month calendar-day high' = 63 trading days, tolerance parameter (book reading 0% = a new high, as in every example). Same article as ATS (ats_dvmtm), same wording. The exit after the initial stop is a labelled non-book set.", None) },
         d("btp_bottom_reversal_long", "Bottom Reversals", "Bottom Reversals (Vol. I)", "Long", Live, BOTREV,
@@ -552,7 +552,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let mut v: Vec<ParamDef> = match id {
         "btp_cbp_short" => vec![p("adx_len", "Weekly ADX period", 14.0, 10.0, 20.0, 1.0), p("adx_level", "Weekly ADX above", 60.0, 40.0, 70.0, 5.0),
             p("min_price", "Price above", 20.0, 0.0, 50.0, 5.0), p("stop_pct", "Protective buy stop % above entry", 15.0, 5.0, 25.0, 5.0),
-            p("target_pct", "Cover half at % profit", 20.0, 10.0, 40.0, 5.0), p("trail_n", "[Not in book] trail the other half at the prior N-day high", 20.0, 5.0, 60.0, 5.0)],
+            p("target_pct", "Cover half at % profit", 20.0, 10.0, 40.0, 5.0), p("trail_n", "[Not in book] trail the other half at the prior N-day high", 20.0, 5.0, 60.0, 5.0),
+            p("trail_whole", "Trail: 0 = the other half after the half cover (book), 1 = [old vault reading] whole position from the day after entry", 0.0, 0.0, 1.0, 1.0)],
         "btp_dvmtm_short" => vec![p("high_lookback", "3-month high: prior N days", 63.0, 40.0, 90.0, 5.0), p("near_high_pct", "'Near' the high: % tolerance (0 = new high)", 0.0, 0.0, 3.0, 0.5),
             p("vol_avg_len", "Volume average days", 15.0, 10.0, 30.0, 5.0), p("vol_mult", "Volume ≥ N × average", 2.0, 1.5, 3.0, 0.25),
             p("rule3_window", "Close < open within N days (incl. the volume day)", 3.0, 1.0, 3.0, 1.0), p("entry_window", "Sell stop live N days", 2.0, 1.0, 3.0, 1.0), tick()],
@@ -648,7 +649,9 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                     orders.push(ord(-1.0, Fill::Close, i, i, i, c[i] * stop));
                 }
             }
-            sim(x, orders, &Ex { half_at_pct: Some(tgt), trail: Some(u("trail_n")), ..Default::default() }, from, to)
+            // connors-final 2026-10-26: the article trails "the other half", i.e. after the half cover (book default);
+            // trail_whole 1 = the earlier vault reading (trail the whole position from the day after entry), labelled.
+            sim(x, orders, &Ex { half_at_pct: Some(tgt), trail: Some(u("trail_n")), trail_after_half: g("trail_whole") < 0.5, ..Default::default() }, from, to)
         }
         "btp_dvmtm_short" => {
             let vol: Vec<f64> = x.r.iter().map(|r| r.volume.unwrap_or(f64::NAN)).collect();

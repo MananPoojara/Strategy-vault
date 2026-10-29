@@ -71,9 +71,8 @@ export function AppHeader({
               </a>
             ))}
         </nav>
-        <div className="status" id="status">
-          {snapshot.status}
-        </div>
+        {/* Spacer only: the market · instrument · tab line was removed at the user's request (27 Oct 2026). */}
+        <div className="status" id="status" aria-hidden="true" />
         <div className="themes" id="themes" aria-label="Colour theme">
           <span>Theme</span>
           {themes.map(([key, label, base, accent]) => (

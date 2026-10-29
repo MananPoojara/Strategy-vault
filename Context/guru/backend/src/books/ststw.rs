@@ -11,6 +11,12 @@ pub const BOOK: &str = "ststw";
 
 /// Admitted after the 2026-10-21 source review (connors/newrules-misc/SOURCE-CONTRACT.md) and an independent ledger check.
 pub const REVIEWED_DAILY: &[&str] = &["ststw_vix_rsi"];
+/// connors-final (2026-10-26): the Ch 6 / 8 / 13 stock tests coded from the book text and checked with an independent
+/// ledger (authors/connors-final). One position at a time per stock; basket runs replay them across a stock universe.
+/// The Ch 8 drops tests filter price > $5: US instruments only (user rule: $-amount rules run on US data only).
+pub const STOCK_STUDIES: &[&str] = &["ststw_intraday_drops_highs", "ststw_intraday_drops_lows", "ststw_stops_hurt", "ststw_exit_study"];
+pub fn stock_study(id: &str) -> bool { STOCK_STUDIES.contains(&id) }
+pub fn usd_filter(id: &str) -> bool { matches!(id, "ststw_intraday_drops_highs" | "ststw_intraday_drops_lows") }
 pub fn reviewed_daily(id: &str) -> bool {
     REVIEWED_DAILY.contains(&id)
 }
@@ -104,21 +110,25 @@ pub fn catalogue() -> Vec<StrategyDef> {
           concat!("p.106-108: 1995-2007, 16 trades, 68.75%, 169.91 S&P points, under five days. Differs from stc9 'short_4up' (the course adds Close >= 5-day SMA).", " Book tested the S&P 500 cash index; the vault runs the same rules on Indian and US indices (instrument swap only). One position at a time, no costs in the book."),
           claim("16", "68.75%", "169.91 S&P pts total", "< 5 days", "1995 - 2007, SPX")),
         // ---- stock-universe tests: rules listed, never run on an index
-        d("ststw_intraday_drops_highs", "Buying into further strength intraday (stocks)", "Ch 8 · Trading with Intra-day Drops", "Long", NeedsData(STOCKS),
-          &["F|(p43) Stock closes at a 10-period high and is above its 200-day SMA; 100-day average volume >= 250,000 shares; price > $5", "E|Buy on the close, or (p44) \"Buy on a limit order the next day 1% above the previous day's close\" (also 3, 5, 7, 10%)", "X|Exit on the close 5 trading days later"],
-          "p.43-46: close entry 1,264,571 trades / 50% / +0.06%; limits +1% 597,063 / 49% / +0.02%, +3% 47% / -0.18%, +5% 45% / -0.42%, +7% 43% / -0.62%, +10% 42% / -0.90%.", None),
-        d("ststw_intraday_drops_lows", "Buying into further weakness intraday (stocks)", "Ch 8 · Trading with Intra-day Drops", "Long", NeedsData(STOCKS),
-          &["F|(p46) Stock closes at a 10-period low and is above its 200-day SMA; 100-day average volume >= 250,000; price > $5", "E|Buy on the close, or on a limit the next day 1/3/5/7/10% below the previous close", "X|Exit on the close 5 trading days later"],
-          "p.46-47: close 661,570 / 54% / +0.61%; -1% 342,091 / 55% / +0.62%; -3% 134,436 / 57% / +1.17%; -5% 63,154 / 59% / +1.97%; -7% 33,831 / 62% / +2.95%; -10% 14,939 / 63% / +4.35%. (vault stc9 f3a/f4a/f4c run similar course tests on indices.)", None),
-        d("ststw_stops_hurt", "Stop test: 10-day low, exit above 10-day MA or x% stop (stocks)", "Ch 6 · Rule 5 Stops Hurt", "Long", NeedsData(STOCKS),
-          &["F|(p32) A stock is above its 200-day moving average", "E|and closes at a 10-day low", "X|The exit is a close above its 10-day moving average, or when a stop is hit x% below the entry (none, 1, 3, 5, 7, 10, 20, 50%)"],
-          "p.32 table: no stop 236,237 trades / 0.58% / 7.74 bars / 69.81%; 1% stop 0.19%; ... 50% stop 0.56%.", None),
+        StrategyDef { needs_volume: true, ..d("ststw_intraday_drops_highs", "Buying into further strength intraday (stocks)", "Ch 8 · Trading with Intra-day Drops", "Long", Live,
+          &["F|(p43-44) \"1. Stock closes at a 10-period high and is above its 200-day simple moving average\"", "F|\"2. Average volume over the past 100 days is at least 250,000 shares per day.\" \"3. Price is greater than $5 per share.\"",
+            "E|\"4. Buy on the close.\" or (p44) \"Buy on a limit order the next day 1% above the previous day's close. We also tested buying 3% higher, 5% higher, 7% higher and 10% higher\" (param pct; 0 = buy on the close)",
+            "X|\"5. Exit on the close 5 trading days later.\""],
+          "p.43-46, every stock 1995-2007: close entry 1,264,571 trades / 50% / +0.06%; +1% 597,063 / 49% / +0.02%; +3% 201,156 / 47% / -0.18%; +5% 87,606 / 45% / -0.42%; +7% 44,131 / 43% / -0.62%; +10% 18,784 / 42% / -0.90%. Vault reading: 10-period high = today's close is the highest close of the last 10 days (incl. today); the next-day order to buy x% ABOVE the close is read as a buy stop (\"buy into further strength\"): it fills when the day's high reaches the level, at the level or at the open if the stock opens above it, and is cancelled at that day's close if not reached [declared reading]. Exit at the close 5 trading days after the entry day. One position at a time per stock (a signal during a trade is skipped). Average volume = mean of the last 100 daily share volumes incl. the signal day; price = the signal-day close (split/dividend-adjusted vault prices). US stocks / US index and ETF data only ($ price filter).", None) },
+        StrategyDef { needs_volume: true, ..d("ststw_intraday_drops_lows", "Buying into further weakness intraday (stocks)", "Ch 8 · Trading with Intra-day Drops", "Long", Live,
+          &["F|(p46) \"1. Stock closes at a 10-period low and is above its 200-day simple moving average\"", "F|\"2. Average volume over the past 100-days is at least 250,000 shares per day.\" \"3. Price is greater than $5 per share.\"",
+            "E|\"4. Buy on the close.\" or (p47) \"buying on a limit the next day 1% lower\" (also 3, 5, 7, 10%; param pct, 0 = buy on the close)", "X|\"5. Exit on the close 5 trading days later.\""],
+          "p.46-48: close 661,570 / 54% / +0.61%; -1% 342,091 / 55% / +0.62%; -3% 134,436 / 57% / +1.17%; -5% 63,154 / 59% / +1.97%; -7% 33,831 / 62% / +2.95%; -10% 14,939 / 63% / +4.35%. The next-day buy limit x% below the signal close fills when the day's low reaches it, at the limit or at the open if the stock opens below it; cancelled at that day's close. Exit at the close 5 trading days after the entry day. One position at a time per stock. Same filters as the 10-day-high test. US data only ($ price filter).", None) },
+        d("ststw_stops_hurt", "Stop test: 10-day low, exit above 10-day MA or x% stop (stocks)", "Ch 6 · Rule 5 Stops Hurt", "Long", Live,
+          &["F|(p32) \"A stock is above its 200-day moving average", "E|and closes at a 10-day low.\" Buy on the close [declared: the book's tests buy on the close]", "X|\"The exit is a close above its 10-day moving average, or when a stop is hit x% below the entry\" (param stop: 0 = none, the book's first row; 1, 3, 5, 7, 10, 20, 50)"],
+          "p.32 table, stocks: none 236,237 trades / +0.58% / 7.74 bars / 69.81%; 1% 394,480 / 0.19% / 2.89 / 26.89%; 3% 321,824 / 0.20%; 5% 286,991 / 0.20%; 7% 268,410 / 0.22%; 10% 253,863 / 0.27%; 20% 239,605 / 0.39%; 50% 236,337 / 0.56% / 7.70 / 69.81%. The trade count rises with tighter stops, so the test re-enters after a stop: one position at a time per stock. Stop checked from the day after entry on the day's low, filled at the stop or at the open if the stock opens below it; a stop day cannot also be a new entry. The text names no volume/price filter for this test: none by default (param universe 1 = the book's standard stock universe of p.43, 100-day average volume >= 250,000 and price > $5, US data only).", None),
         d("ststw_cum_rsi_stocks", "Cumulative RSI for stocks (sum < 10)", g9, "Long", NeedsData(STOCKS),
           &["F|(p71) Stocks above the 200-day MA, average daily volume 250,000, price > $5", "E|Cumulative (2-day) 2-period RSI below 10; buy on the close", "X|Exit when the 2-period RSI closes above 65"],
           "p.71: 77,068 trades since 1995, 69% profitable.", None),
-        d("ststw_exit_study", "Exit comparison: 10-day low + 5% limit (stocks)", "Ch 13 · Exit Strategies", "Long", NeedsData(STOCKS),
-          &["F|(p114) All stocks above the 200-day MA that closed at a 10-day low", "E|Entered the next day on a 5% limit (below the close)", "X|One of: 1/3/5-day hold, 7-day high, C > MA5, C > MA10, RSI2 > 65 / 70 / 75"],
-          "p.114 table: 63,101 trades each; 1 day 0.61% / 56%, 3 day 1.76% / 60%, 5 day 1.97% / 59%, 7-day high 2.05% / 58%, C>MA5 2.65% / 70%, C>MA10 2.80% / 69%, RSI2>65 2.76% / 70%, RSI2>70 2.83% / 70%, RSI2>75 2.93% / 69%.", None),
+        d("ststw_exit_study", "Exit comparison: 10-day low + 5% limit (stocks)", "Ch 13 · Exit Strategies", "Long", Live,
+          &["F|(p114) \"all stocks above the 200 day MA ... which had closed at a 10-day low", "E|and entered the next day on a 5% limit.\" (a buy limit 5% below the signal close, good for that day)",
+            "X|\"We then tested various exits\" (param exit): 1 = 1-day hold, 2 = 3-day hold, 3 = 5-day hold, 4 = 7-day high, 5 = C > MA5, 6 = C > MA10, 7 = RSI2 > 65, 8 = RSI2 > 70, 9 = RSI2 > 75"],
+          "p.114 table, 63,101 trades each: 1 day 0.61% / 56%, 3 day 1.76% / 60%, 5 day 1.97% / 59%, 7-day high 2.05% / 58%, C>MA5 2.65% / 70%, C>MA10 2.80% / 69%, RSI2>65 2.76% / 70%, RSI2>70 2.83% / 70%, RSI2>75 2.93% / 69%. The table has no default row: the default is its first row (1-day hold) [declared]. N-day hold = exit at the close N trading days after the entry day; 7-day high = the first close that is the highest close of the last 7 days; MA and RSI2 exits at the close (checked from the entry day's close, as an exit 'on the close'). The same count for every exit means the book counted every signal even while a trade was open; the vault holds one position at a time per stock, so its counts differ by exit. No filter named for this test (param universe 1 = the p.43 standard universe, US data only).", None),
     ]
 }
 
@@ -140,10 +150,10 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "ststw_vix_stretch" => ("ststw_vix_stretch", "VIX Stretches (STSTW)", ""),
         "ststw_vix_rsi" => ("ststw_vix_rsi", "VIX RSI Strategy (STSTW)", ""),
         "ststw_sp_short" => ("ststw_sp_short", "S&P Short Strategy (STSTW)", ""),
-        "ststw_intraday_drops_highs" => ("ststw_drops", "Intra-day drops, stocks (STSTW)", "10-day highs · data missing"),
-        "ststw_intraday_drops_lows" => ("ststw_drops", "Intra-day drops, stocks (STSTW)", "10-day lows · data missing"),
-        "ststw_stops_hurt" => ("ststw_stops_hurt", "Stops Hurt test, stocks (STSTW)", "data missing"),
-        "ststw_exit_study" => ("ststw_exit_study", "Exit comparison, stocks (STSTW)", "data missing"),
+        "ststw_intraday_drops_highs" => ("ststw_drops", "Intra-day drops, stocks (STSTW)", "10-day highs"),
+        "ststw_intraday_drops_lows" => ("ststw_drops", "Intra-day drops, stocks (STSTW)", "10-day lows"),
+        "ststw_stops_hurt" => ("ststw_stops_hurt", "Stops Hurt test, stocks (STSTW)", ""),
+        "ststw_exit_study" => ("ststw_exit_study", "Exit comparison, stocks (STSTW)", ""),
         _ => return None,
     })
 }
@@ -170,8 +180,72 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("entry", "RSI(2) below", 30.0, 10.0, 40.0, 5.0), p("exit", "Exit when RSI(2) closes above", 65.0, 50.0, 80.0, 5.0)],
         "ststw_sp_short" => vec![p("trend", "Trend SMA", 200.0, 50.0, 300.0, 10.0), p("up", "Up closes in a row, at least", 4.0, 2.0, 7.0, 1.0),
             p("exit_ma", "Cover: close below SMA", 5.0, 3.0, 10.0, 1.0)],
+        "ststw_intraday_drops_highs" | "ststw_intraday_drops_lows" => vec![p("pct", "Next-day order % beyond the signal close (0 = buy on the close)", 0.0, 0.0, 10.0, 1.0)],
+        "ststw_stops_hurt" => vec![p("stop", "Stop % below the entry (0 = none)", 0.0, 0.0, 50.0, 1.0), p("universe", "1 = p.43 universe filters (US data only)", 0.0, 0.0, 1.0, 1.0)],
+        "ststw_exit_study" => vec![p("exit", "Exit: 1 1-day, 2 3-day, 3 5-day hold, 4 7-day high, 5 C>MA5, 6 C>MA10, 7 RSI2>65, 8 >70, 9 >75", 1.0, 1.0, 9.0, 1.0),
+            p("universe", "1 = p.43 universe filters (US data only)", 0.0, 0.0, 1.0, 1.0)],
         _ => return None,
     })
+}
+
+/// Ch 6 / 8 / 13 stock tests (connors-final). `signal(i)` decides on bar i's close; entry on that close (pct 0) or a
+/// next-day order; `exit(i, t)` closes at bar i's close, except the Stops Hurt stop (intraday, from the day after entry).
+fn stock_study_run(id: &str, x: &Ctx, from: usize, to: usize, g: &dyn Fn(&str) -> f64) -> Vec<Trade> {
+    let c = &x.c;
+    let (ma200, ma5, ma10) = (x.sma_n(200), x.sma_n(5), x.sma_n(10));
+    let r2 = &x.rsi2;
+    let filtered = usd_filter(id) || g("universe") >= 0.5;
+    let liquid = |i: usize| -> bool {
+        !filtered || (i + 1 >= 100 && c[i] > 5.0 && x.r[i + 1 - 100..=i].iter().map(|r| r.volume.unwrap_or(0.0)).sum::<f64>() / 100.0 >= 250_000.0)
+    };
+    let high10 = |i: usize| i + 1 >= 10 && c[i + 1 - 10..=i].iter().all(|&v| c[i] >= v);
+    let signal = |i: usize| -> bool {
+        above(c[i], ma200[i]) && liquid(i) && if id == "ststw_intraday_drops_highs" { high10(i) } else { x.lowest_close(i, 10) }
+    };
+    let pct = match id { "ststw_intraday_drops_highs" | "ststw_intraday_drops_lows" => g("pct"), "ststw_exit_study" => 5.0, _ => 0.0 };
+    let (stop, exit) = (g("stop"), g("exit").round() as i64);
+    let hold = |e: usize, i: usize| -> Option<String> {
+        let held = i - e;
+        match id {
+            "ststw_intraday_drops_highs" | "ststw_intraday_drops_lows" => (held >= 5).then(|| "close 5 trading days later".into()),
+            "ststw_stops_hurt" => above(c[i], ma10[i]).then(|| "Close > 10-day SMA".into()),
+            _ => match exit {
+                1 | 2 | 3 => { let n = [1, 3, 5][(exit - 1) as usize]; (held >= n).then(|| format!("{n}-day hold")) }
+                4 => (i + 1 >= 7 && c[i + 1 - 7..=i].iter().all(|&v| c[i] >= v)).then(|| "7-day closing high".into()),
+                5 => above(c[i], ma5[i]).then(|| "Close > 5-day SMA".into()),
+                6 => above(c[i], ma10[i]).then(|| "Close > 10-day SMA".into()),
+                k => { let lv = [65.0, 70.0, 75.0][((k - 7).clamp(0, 2)) as usize]; (r2[i] > lv).then(|| format!("RSI(2) {:.1} > {lv}", r2[i])) }
+            },
+        }
+    };
+    let mut out = vec![];
+    let mut i = from;
+    while i <= to {
+        if !signal(i) || i == to { i += 1; continue; }
+        // entry
+        let (e, px, kind) = if pct == 0.0 { (i, c[i], "close") } else {
+            let k = i + 1;
+            let fill = if id == "ststw_intraday_drops_highs" {
+                let lvl = c[i] * (1.0 + pct / 100.0); (x.h[k] >= lvl).then(|| x.o[k].max(lvl))
+            } else {
+                let lvl = c[i] * (1.0 - pct / 100.0); (x.l[k] <= lvl).then(|| x.o[k].min(lvl))
+            };
+            match fill { Some(px) => (k, px, if id == "ststw_intraday_drops_highs" { "stop" } else { "limit" }), None => { i += 1; continue; } }
+        };
+        let mut t = Trade { dir: 1.0, legs: vec![Leg { i: e, px, w: 1.0 }], exit_i: to, exit_px: c[to], reason: "open".into(), entry_kind: kind, signal_i: to, open: true, exits: vec![] };
+        // a next-day limit fill can exit at that day's close (time exits count trading days after the entry day)
+        let first = if kind == "close" { e + 1 } else { e };
+        for k in first..=to {
+            if id == "ststw_stops_hurt" && stop > 0.0 && k > e {
+                let lvl = t.legs[0].px * (1.0 - stop / 100.0);
+                if x.l[k] <= lvl { t.exit_i = k; t.exit_px = x.o[k].min(lvl); t.reason = format!("{stop}% stop"); t.signal_i = k; t.open = false; break; }
+            }
+            if let Some(why) = hold(e, k) { t.exit_i = k; t.exit_px = c[k]; t.reason = why; t.signal_i = k; t.open = false; break; }
+        }
+        i = t.exit_i + 1;
+        out.push(t);
+    }
+    out
 }
 
 fn trade(dir: f64, i: usize, px: f64, kind: &'static str) -> Trade {
@@ -191,6 +265,9 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         let xf = |i: usize, _: &Trade| exit(i).map(Exit::Close);
         simulate(x, &Spec { dir, weights: &[1.0], entry: &e, add: &no_add, exit: &xf }, from, to)
     };
+    if stock_study(id) {
+        return Some(stock_study_run(id, x, from, to, &g));
+    }
     Some(match id {
         "ststw_10d_high_buy" | "ststw_10d_high_short" | "ststw_10d_low_buy" => {
             let (n, ma, hl) = (u("n"), x.sma_n(u("ma")), g("hl") >= 0.5);

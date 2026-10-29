@@ -24,6 +24,8 @@ pub fn book_status(d: &StrategyDef) -> (&'static str, &'static str) {
     let gated = crate::gate::get(d.id);
     match d.status {
         Status::Live if gated.is_some_and(|g| g.verdict == "withheld") && !crate::instrument_policy::reviewed_cash_rule(d) => ("not_testable", gated.map_or("", |g| g.reason)),
+        // a held rule's plain-language card reason replaces the generic review note (main.rs, as on the cards)
+        Status::Live if crate::instrument_policy::held_reason(d.id).is_some() => ("not_testable", crate::instrument_policy::held_reason(d.id).unwrap_or("")),
         Status::Live if crate::instrument_policy::policy(d).requirement == "source_review_required" => ("not_testable", "Source-specific rules and required instrument have not completed admission review; no backtest is published."),
         Status::Live => ("live", ""),
         Status::NeedsData(w) => ("needs_data", w),
@@ -35,7 +37,8 @@ pub fn unavailable(d: &StrategyDef) -> Option<String> {
     let (status, why) = book_status(d);
     if status != "live" { return Some(format!("the book method is not admitted for backtesting ({status}): {why}")); } // checked first: a demoted method never keeps its template
     if template(d.id).is_some() { return None; }
-    let named = NO_TEMPLATE.iter().find(|(id, _)| *id == d.id).map(|(_, r)| *r).or(NEW_ADMISSIONS_OCT25.contains(&d.id).then_some(NEW_ADMISSION_OCT25));
+    let named = NO_TEMPLATE.iter().find(|(id, _)| *id == d.id).map(|(_, r)| *r).or(NEW_ADMISSIONS_OCT25.contains(&d.id).then_some(NEW_ADMISSION_OCT25))
+        .or(NEW_ADMISSIONS_OCT29.contains(&d.id).then_some(NEW_ADMISSION_OCT29));
     let two_sided = (d.dir != "Long" && d.dir != "Short").then_some(TWO_SIDED);
     Some(named.or(two_sided).unwrap_or(NOT_YET).to_string())
 }
@@ -63,6 +66,37 @@ pub const MULTI_DAY: &str = "the entry is a multi-day setup with a pending order
 pub const NEW_ADMISSION: &str = "admitted to the book engine in the 2026-10-21/22 book work; no lab template has been written or compared with the book engine yet";
 /// Methods that became live in the lab when Manan's 2026-10-22/25 book work was merged into Nandini (2026-10-26); their lab template is still to be reviewed.
 pub const NEW_ADMISSION_OCT25: &str = "admitted to the book engine in the 2026-10-22/25 book work; no lab template has been written or compared with the book engine yet";
+pub const NEW_ADMISSION_OCT29: &str = "admitted to the book engine on Manan's branch up to 2026-10-29 (merged into Nandini); no lab template has been written or compared with the book engine yet";
+/// The methods Manan's branch admitted after the 25 Oct batch, as of the 29 Oct merge (every_live_method_has_a_template_or_a_named_reason).
+pub const NEW_ADMISSIONS_OCT29: &[&str] = &[
+    "ats_cbp", "hfm_news_long", "hfm_news_short", "btp_cbp_short", "alpha_dyn_treasuries_sleeve", "ststw_intraday", "ststw_intraday_drops_highs",
+    "ststw_intraday_drops_lows", "ststw_stops_hurt", "ststw_exit_study", "tcdt_idp3", "tcdt_idp4", "mhp_ftse_12_20041015", "mhp_ftse_3_20040804",
+    "stad2_stats2", "stad2_stats3", "stad4_momret", "kets_vb_limit_long", "tdperl_tdline_long", "tdperl_clop_long", "tdperl_clop_short",
+    "bab80_daytrade", "bab80_novapr", "jkbwts_buymon1400", "jk36k_jk1_buy_monday", "jkbk_buy_monday_ts83", "rgc_dow_oc", "rgc_dowm_thu_jul_long",
+    "rgc_dowm_mon_dec_long", "rgc_dowm_thu_dec_short", "rgc_cdow_fri_short", "stad9_skinny", "bobb_m3_long", "swsp_fund_30w", "dgmf_bb7",
+    "dgmf_ema_5_21", "dgmf_evans_ema", "dgmf_tezel_ma", "dgmf_tezel_reg", "dgmf_gapup_5d", "dgmf_brow_dmi", "dgmf_ccifp", "dgmf_fosc_alt",
+    "dgmf_fosc_sys", "dgmf_cci_spike", "dgmf_gap1", "dgmf_gap2", "dgmf_maas_rsi5", "dgmf_disp_ema", "dgmf_stoch_cross", "dgmf_williams_exp",
+    "dgmf_vbo_taylor", "acbff_short_dom", "cbpst_v", "mzwws_ad_2to1", "mzwws_ad_2to1_nse", "mzwws_double_91", "mzwws_double_91_nse",
+    "mzwws_preholiday", "mzwws_summer", "bergsth_ma_cross", "tbabc_micro_m", "tbabc_micro_w", "tbabc_six_long", "tbabc_six_short",
+    "tbabc_stampede_long", "masmt_ma50_200", "masmt_sept_avoid", "masmt_ndr_oct1_may3", "masmt_harding_bsm", "masmt_vakkur_switch",
+    "masmt_pres_best2", "masmt_pres_worst2", "masmt_midterm_nov_apr", "fejmma_es10_long", "fejmma_es30_long", "fejmma_es40_long", "awab_long",
+    "palets_abovebb_basic", "palets_abovebb", "palets_belowbb_inverse", "palets_belowbb", "palets_dvpullback", "palets_avbottom", "palets_avtop",
+    "vsbrw_dec5", "vsbrw_decmonth", "fcfail_long", "fcfail_short", "atm00_bear_claw", "atm00_ma_9_18", "atm00_pullback1", "atm01_five_for_five",
+    "atm02_pristine", "atm02_ma_9_36", "atm03_pullback6", "atm03_pullback_fut", "atm03_tpe", "atm03_blood", "atm03_mfi", "atm03_cmo_srsi",
+    "atm03_memorial", "atm03_july4", "atm04_glitch", "atm04_monthly_bo", "atm04_wma", "atm04_55_trail", "atm04_55_simple", "atm04_four_pct",
+    "atm04_rsi_agita", "atm10_rsi_scaleout", "atm10_vol_scalein", "atmmisc_sma_contra", "ftm_km_co_open", "ftm_km_co_limit", "ftm_km_hh_open",
+    "ftm_km_hh_limit", "ftm_rg_dip", "ftm_zg_weak2r", "wmny_belt_hold", "wmny_lazy_year", "wmny_engulf", "wmny_zscore", "wmny_candle_short",
+    "wmny_willr", "wmny_dji_5_21m", "sfo_sec_sox_jan", "sfo_sec_sox_may", "sfo_sec_sox_sep", "sfo_sec_sox_oct_apr", "sfo_sec_ndx_nov_jan",
+    "sfo_sec_rut_jul_oct", "sfo_sec_rut_dec_may", "ftm2_rg_santa", "ftm2_rg_santa_up", "ftm2_dm_skew", "stkch_ema_30_100", "stkch_ppo_20_60",
+    "t2w_oops_21", "t2w_oops_22", "t2w_oops_23", "t2w_oops_31", "t2w_oops_32", "t2w_oops_33", "t2w_oops_34", "ts247_long", "ts247_short",
+    "ts247_oct_apr", "mjlbb_mae3_10", "mjlbb_mae5_10", "mjlbb_bb2_10", "mjlbb_mae3_20", "mjlbb_mae5_20", "mjlbb_bb2_20", "mjlbb_mae5_50",
+    "mjlbb_bb2_50", "mjlbb_mae3_250", "mjlbb_mae5_250", "mjlbb_bb2_250", "mstt_rainbow_chart_system", "rarsys_ste", "barra_baramundi", "bfmmx_esl4",
+    "bfmmx_nql4", "bfmmx_s4", "msmom_macd_momentum", "tilma_t3", "tilma_dema", "tilma_ema", "tilma_ilrs", "mslib_alligator_charlis",
+    "mslib_alligator_eiv", "mslib_1234", "mslib_180", "mslib_boomer", "mslib_expansion", "mslib_gilligan", "mslib_lizard", "mslib_pivot",
+    "mslib_manda_carayo", "msadd_n_rwh_c", "msadd_n_rwl_c", "kbttm_donchian32", "kbttm_ath_breakout", "agtsic_rsi8", "agtsic_expiry", "agtsic_p5",
+    "agtsic_p6", "agtsic_p8", "agtsic_p10", "agtsic_p12", "cfwtab_ukr", "astk3_swing", "mdssc_santa", "mcdpms_ma", "mcdpms_bb", "tscb2_smash",
+    "wtdtt_m_fractal",
+];
 pub const NEW_ADMISSIONS_OCT25: &[&str] = &[
     "price", "oiss_short_put", "oiss_short_call", "oiss_plus_three_put", "oiss_plus_three_call", "otvt_cvr1_sell_puts", "spmt_eom_puts", "btp2_10pct_oops_long",
     "btp2_10pct_oops_short", "btp2_wide_range_exhaustion_gap_short", "jr_sne_l", "jr_sne_s", "jr_bb2_l", "jr_bb2_s", "jr_123_std_l", "jr_123_std_s", "jr_hook_std_l",
