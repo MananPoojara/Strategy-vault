@@ -318,6 +318,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || tillson_reviewed(def) // Tim Tillson block
         || leungchong_reviewed(def) // Leung and Chong block
         || bollinger_reviewed(def) // John Bollinger block
+        || sands_reviewed(def) // Russell Sands block
         || graemesmith_reviewed(def) // David Graeme-Smith block
         || schlossberg_reviewed(def) // Boris Schlossberg block
         || ponsi_reviewed(def) // Ed Ponsi block
@@ -1308,6 +1309,16 @@ fn bollinger_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end John Bollinger
+// ---------------------------------------------------------------- Russell Sands 2026-10-26 (lane B)
+// Admission only for the module REVIEWED lists (authors/sands/admission/stb_ref.py (header)); kept in one block to merge.
+pub fn sands_reviewed(def:&StrategyDef)->bool {(def.book=="rsotr" && crate::books::rsotr::reviewed(def.id))}
+const SANDS_LABEL:&str="Russell Sands states the Simple Turtle Breakout System for futures markets; runs on indices, ETFs and US/India stocks are a declared application, not the author's test. Cash-index shorts are hypothetical.";
+fn sands_policy(def:&StrategyDef)->Option<Policy> {
+    if !sands_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Russell Sands, The Original Turtle Trading Rules (slide booklet), The Simple Turtle Breakout System (PDF 2)");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Russell Sands
 // ---------------------------------------------------------------- David Graeme-Smith 2026-10-26 (lane B)
 // Admission only for the module REVIEWED lists (authors/dsmith/admission/sst_ref.py (header)); kept in one block to merge.
 pub fn graemesmith_reviewed(def:&StrategyDef)->bool {(def.book=="dgsst" && crate::books::dgsst::reviewed(def.id))}
@@ -1966,6 +1977,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=tillson_policy(def) {return p;} // Tim Tillson block
     if let Some(p)=leungchong_policy(def) {return p;} // Leung and Chong block
     if let Some(p)=bollinger_policy(def) {return p;} // John Bollinger block
+    if let Some(p)=sands_policy(def) {return p;} // Russell Sands block
     if let Some(p)=graemesmith_policy(def) {return p;} // David Graeme-Smith block
     if let Some(p)=schlossberg_policy(def) {return p;} // Boris Schlossberg block
     if let Some(p)=ponsi_policy(def) {return p;} // Ed Ponsi block
@@ -2634,6 +2646,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if tillson_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",TILLSON_LABEL));} // Tim Tillson block
     if leungchong_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LEUNGCHONG_LABEL));} // Leung and Chong block
     if bollinger_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BOLLINGER_LABEL));} // John Bollinger block
+    if sands_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",SANDS_LABEL));} // Russell Sands block
     if graemesmith_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",GRAEMESMITH_LABEL));} // David Graeme-Smith block
     if schlossberg_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",SCHLOSSBERG_LABEL));} // Boris Schlossberg block
     if ponsi_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",PONSI_LABEL));} // Ed Ponsi block
@@ -3368,6 +3381,22 @@ mod tests {
         }
     }
     // ---- end John Bollinger block ----
+    // ---- Russell Sands block (2026-10-26, lane B) ----
+    #[test]
+    fn sands_review_admits_exact_ids() {
+        use crate::books::{rsotr};
+        let all:Vec<StrategyDef>=rsotr::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=rsotr::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|sands_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Russell Sands block ----
     // ---- David Graeme-Smith block (2026-10-26, lane B) ----
     #[test]
     fn graemesmith_review_admits_exact_ids() {

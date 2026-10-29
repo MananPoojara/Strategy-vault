@@ -302,6 +302,7 @@ export const sourceReview: Record<string, {type: string; sameWorkAs?: string; pe
   "bstacm": {"type": "book", "people": ["Boris Schlossberg"]},
   "epfpp": {"type": "book", "people": ["Ed Ponsi"]},
   "dgsst": {"type": "book", "people": ["David Smith"]},
+  "rsotr": {"type": "book", "people": ["Russell Sands"]},
   "jcmtt": {"type": "book", "people": ["John F. Carter"]},
   "jcteu": {"type": "article", "people": ["John F. Carter"]},
   "jcym5": {"type": "course_manual", "people": ["John F. Carter"]},

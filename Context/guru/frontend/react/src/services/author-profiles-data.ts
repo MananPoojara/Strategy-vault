@@ -393,7 +393,17 @@ export const AUTHOR_PROFILE_DATA = {
   ],
   "sources": [],
   "confidence": "low"
- }, "graemesmith": {
+ }, "sands": {
+  "kind": "person",
+  "mastery": [
+   "Trend following"
+  ],
+  "summary": "Russell Sands was one of Richard Dennis's original Turtle traders. His booklet The Original Turtle Trading Rules states a Simple Turtle Breakout System: buy above the highest high of the past 20 bars, sell below the lowest low, exit on the opposite 10-bar extreme, with a stop at 2% of the account. This profile rests on the booklet itself.",
+  "known_for": [
+   "The Original Turtle Trading Rules"
+  ],
+  "sources": [],
+  "confidence": "low" }, "graemesmith": {
   "kind": "person",
   "mastery": [
    "Share swing trading"

@@ -229,6 +229,10 @@ export const LIB = [
   { id: "graemesmith", name: "David Graeme-Smith", tagline: "UK share swing trader (shortswingtrading.com) · the six-rule Short Swing Trading strategy runs here", books: [
     { id: "dgsst", sourceIds: ["title-7f5a3a12b1c58816"], title: "Short Swing Trading v6.0", year: 2004, blurb: "Graeme-Smith, 2004 · with the 50-day average, an 8-day +DI/-DI cross, buy above the last significant (non-inside) day's high, stop 0.5% under its low, trailed under each new significant day" }] },
   // ---- end Graeme-Smith block ----
+  // ---- Sands block (29 Oct 2026, lane B)
+  { id: "sands", name: "Russell Sands", tagline: "One of the original Turtle traders · the Simple Turtle Breakout System runs here", books: [
+    { id: "rsotr", sourceIds: ["title-d35ce795ae9f8c1c"], title: "The Original Turtle Trading Rules", year: null, blurb: "Sands · buy above the highest high of the past 20 bars (sell below the 20-bar low), exit on a 10-bar low (high), stop at 2% of the account, no profit target" }] },
+  // ---- end Sands block ----
   // ---- Arms block (2026-10-24) ----
   { id: "arms", name: "Richard W. Arms Jr.", tagline: "Inventor of Equivolume, Ease of Movement and the Arms Index · the two EMV rules run here", books: [
     { id: "ravcs", sourceIds: ["title-bdb6dd066565a040"], title: "Volume Cycles in the Stock Market", year: 1994, blurb: "Arms · 13-day Ease of Movement zero cross and the weekly four-week reversal of the 13 run; shorter EMVs and cycle reading held" },
