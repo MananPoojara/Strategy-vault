@@ -12,7 +12,13 @@ use crate::connors::{Claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Tra
 pub const BOOK: &str = "tcdt";
 /// Admitted ids (authors/crabel/admission/SOURCE-CONTRACT.md).
 pub const REVIEWED: &[&str] = &["tcdt_oc_pattern", "tcdt_oc_rangeexp", "tcdt_cc_pattern"];
-pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) || W2A_REVIEWED.contains(&id) }
+// ---- intraday wave 2a block (claude/intraday-w2a, 2026-10-29)
+/// Open-to-close rules (Table E printed p.72; Inside Day patterns 1-4 printed p.115): entry on the open, exit on the same
+/// close, no stop, so daily bars decide every trade (no intraday order question). Admitted after an independent daily
+/// ledger (library/intraday/verify/crabel_w2a_ref.py) matched the engine, US and India.
+pub const W2A_REVIEWED: &[&str] = &["tcdt_oc_nr_re", "tcdt_idp1", "tcdt_idp2", "tcdt_idp3", "tcdt_idp4"];
+// ---- end intraday wave 2a block ----
 
 #[derive(Clone, Copy, PartialEq)]
 enum Pat { Any, Id, Doji, Nr4, DojiNr4, IdNr4, Nr7, Ws4, Ws7, BearHook, BullHook, Bnr2, Bnr3, DojiR1, R1 }
@@ -638,6 +644,20 @@ mod tests {
         let r2 = bars(&v2); let x2 = Ctx::new(&r2, &r2, &[]);
         assert!(run("tcdt_nr7_p80", &x2, 0, 7, &Params::from([("path".to_string(), 0.0)])).unwrap().is_empty());
     }
+    // ---- intraday wave 2a block: open-to-close inside-day patterns (printed p.115), hand-checked
+    #[test]
+    fn w2a_inside_day_patterns_open_to_close() {
+        // bar 3 inside bar 2 with a higher close; bar 4 opens above bar 3's close
+        let r = bars(&[(10., 12., 8., 11.), (11., 13., 9., 12.), (12., 14., 10., 13.), (13., 13.5, 10.5, 13.2), (13.5, 14., 13., 13.8)]);
+        let x = Ctx::new(&r, &r, &[]);
+        let t = run("tcdt_idp1", &x, 0, 4, &Params::new()).unwrap();
+        assert_eq!(t.len(), 1);
+        assert_eq!((t[0].dir, t[0].legs[0].i, t[0].legs[0].px, t[0].exit_i, t[0].exit_px), (1.0, 4, 13.5, 4, 13.8));
+        assert_eq!(run("tcdt_idp2", &x, 0, 4, &Params::new()).unwrap().len(), 1);
+        assert!(run("tcdt_idp4", &x, 0, 4, &Params::new()).unwrap().is_empty()); // bar 2's high is not below bar 1's
+        assert!(super::reviewed("tcdt_idp3") && super::reviewed("tcdt_oc_nr_re"));
+    }
+    // ---- end intraday wave 2a block ----
     #[test]
     fn pattern_strings_and_segments() {
         let r = bars(&[(10., 11., 9., 10.), (10., 12., 9., 11.), (11., 12., 9., 10.), (9.5, 10., 9., 9.8)]);
