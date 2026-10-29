@@ -393,7 +393,17 @@ export const AUTHOR_PROFILE_DATA = {
   ],
   "sources": [],
   "confidence": "low"
- }, "sands": {
+ }, "hyerczyk": {
+  "kind": "person",
+  "mastery": [
+   "Gann analysis"
+  ],
+  "summary": "James A. Hyerczyk is a market analyst who writes on W.D. Gann's methods. Pattern, Price & Time explains Gann swing charts (1-, 2- and 3-bar trend indicators) and trades them with a buy stop over the last swing top and a sell-and-reverse stop under the last swing bottom. This profile rests on the book itself.",
+  "known_for": [
+   "Pattern, Price & Time"
+  ],
+  "sources": [],
+  "confidence": "low" }, "sands": {
   "kind": "person",
   "mastery": [
    "Trend following"
