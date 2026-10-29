@@ -1231,12 +1231,10 @@ function distBox(rs) {
 const appLink = r => stratLink(r.v.id, r.tk, r.region); // opens the single-strategy page inside this page
 const RTAG = { F: 'IF', E: 'ENTRY', A: 'ADD', X: 'EXIT' };
 const rulesList = v => `<details class="rules"><summary>Rules as written in the book</summary><ul>${(v.rules || []).map(x => { const [t, ...rest] = x.split('|'); return `<li><span class="t">${RTAG[t] || ''}</span>${esc(rest.join('|') || x)}</li>`; }).join('')}</ul></details>`;
+// Card stats (user layout 29 Oct 2026): Net Return (compounded, B&H same period) | Max DD (CAGR) | Win % (closed trades).
 const kpiTriplet = r => {
-  const M = TABS[S.tab].metric, s = r.s;
-  const second = S.tab === 'working' ? `<div><span>Before ${PUB}</span><b>${fx(r.x?.sharpe)}</b><i>${r.x ? (r.x.sharpe > 0 && s.sharpe > 0 ? 'still working' : s.sharpe > 0 ? 'works since book' : r.x.sharpe > 0 ? 'decayed' : 'never worked') : 'Before-book result unavailable'}</i></div>`
-    : S.tab === 'trending' ? `<div><span>Sharpe (full)</span><b>${fx(r.x?.sharpe)}</b><i>${fx(r.s.trades, 0)} trades in 12M</i></div>`
-    : `<div><span>CAGR</span><b class="${cls(s.cagr)}">${pct(s.cagr, 1, true)}</b><i>B&amp;H ${pct(s.bh_cagr, 1, true)}</i></div>`;
-  return `<div class="kpis"><div><span>${esc(M.label)}</span><b class="p">${M.fmt(M.get(r))}</b><i>${S.tab === 'sig' ? 'Sharpe ' + fx(s.sharpe) : 'win ' + pct(s.win_rate, 0)}</i></div>${second}<div><span>Max DD</span><b class="neg">${pct(s.max_dd, 1)}</b><i>${fx(s.trades, 0)} trades</i></div></div>`;
+  const s = r.s;
+  return `<div class="kpis"><div title="Compounded net return over the period; B&amp;H = buy and hold of the same instrument and period"><span>Net Return</span><b class="${cls(s.total_return)}">${pct(s.total_return, 1, true)}</b><i>B&amp;H ${pct(s.bh_total, 1, true)}</i></div><div><span>Max DD</span><b class="neg">${pct(s.max_dd, 1)}</b><i>CAGR ${pct(s.cagr, 1, true)}</i></div><div><span>Win</span><b class="p">${pct(s.win_rate, 0)}</b><i>${fx(s.trades, 0)} trades</i></div></div>`;
 };
 const byline = v => `${esc(GURU[v.guru].name)} · ${esc(BOOK[v.book].title)} (${bookYear(BOOK[v.book])}) · ${srcOf(v)}`;
 
