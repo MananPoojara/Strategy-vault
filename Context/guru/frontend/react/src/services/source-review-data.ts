@@ -304,6 +304,7 @@ export const sourceReview: Record<string, {type: string; sameWorkAs?: string; pe
   "dgsst": {"type": "book", "people": ["David Smith"]},
   "rsotr": {"type": "book", "people": ["Russell Sands"]},
   "jhppt": {"type": "book", "people": ["James A. Hyerczyk"]},
+  "dlccs": {"type": "book", "people": ["David Linton"]},
   "jcmtt": {"type": "book", "people": ["John F. Carter"]},
   "jcteu": {"type": "article", "people": ["John F. Carter"]},
   "jcym5": {"type": "course_manual", "people": ["John F. Carter"]},

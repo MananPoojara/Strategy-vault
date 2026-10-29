@@ -320,6 +320,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || bollinger_reviewed(def) // John Bollinger block
         || sands_reviewed(def) // Russell Sands block
         || hyerczyk_reviewed(def) // James A. Hyerczyk block
+        || linton_reviewed(def) // David Linton block
         || graemesmith_reviewed(def) // David Graeme-Smith block
         || schlossberg_reviewed(def) // Boris Schlossberg block
         || ponsi_reviewed(def) // Ed Ponsi block
@@ -1330,6 +1331,16 @@ fn hyerczyk_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end James A. Hyerczyk
+// ---------------------------------------------------------------- David Linton 2026-10-29 (lane B)
+// Admission only for the module REVIEWED lists (authors/linton/admission/cloud_ref.py (header)); kept in one block to merge.
+pub fn linton_reviewed(def:&StrategyDef)->bool {def.book=="dlccs" && crate::books::dlccs::reviewed(def.id)}
+const LINTON_LABEL:&str="David Linton back-tests the cloud stop and reverse on the Euro, currencies and S&P 500 / FTSE 100 stocks; runs on indices, ETFs and US/India stocks are a declared application, not the author's test. Cash-index shorts are hypothetical.";
+fn linton_policy(def:&StrategyDef)->Option<Policy> {
+    if !linton_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"David Linton, Cloud Charts (2010), Ch.8 cloud construction and Ch.14 back-testing (PDF p.100-105)");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end David Linton
 // ---------------------------------------------------------------- David Graeme-Smith 2026-10-26 (lane B)
 // Admission only for the module REVIEWED lists (authors/dsmith/admission/sst_ref.py (header)); kept in one block to merge.
 pub fn graemesmith_reviewed(def:&StrategyDef)->bool {(def.book=="dgsst" && crate::books::dgsst::reviewed(def.id))}
@@ -1990,6 +2001,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=bollinger_policy(def) {return p;} // John Bollinger block
     if let Some(p)=sands_policy(def) {return p;} // Russell Sands block
     if let Some(p)=hyerczyk_policy(def) {return p;} // James A. Hyerczyk block
+    if let Some(p)=linton_policy(def) {return p;} // David Linton block
     if let Some(p)=graemesmith_policy(def) {return p;} // David Graeme-Smith block
     if let Some(p)=schlossberg_policy(def) {return p;} // Boris Schlossberg block
     if let Some(p)=ponsi_policy(def) {return p;} // Ed Ponsi block
@@ -2660,6 +2672,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if bollinger_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BOLLINGER_LABEL));} // John Bollinger block
     if sands_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",SANDS_LABEL));} // Russell Sands block
     if hyerczyk_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",HYERCZYK_LABEL));} // James A. Hyerczyk block
+    if linton_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LINTON_LABEL));} // David Linton block
     if graemesmith_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",GRAEMESMITH_LABEL));} // David Graeme-Smith block
     if schlossberg_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",SCHLOSSBERG_LABEL));} // Boris Schlossberg block
     if ponsi_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",PONSI_LABEL));} // Ed Ponsi block
@@ -3426,6 +3439,22 @@ mod tests {
         }
     }
     // ---- end James A. Hyerczyk block ----
+    // ---- David Linton block (2026-10-29, lane B) ----
+    #[test]
+    fn linton_review_admits_exact_ids() {
+        use crate::books::{dlccs};
+        let all:Vec<StrategyDef>=dlccs::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=dlccs::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|linton_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end David Linton block ----
     // ---- David Graeme-Smith block (2026-10-26, lane B) ----
     #[test]
     fn graemesmith_review_admits_exact_ids() {

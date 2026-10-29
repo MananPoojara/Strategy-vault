@@ -237,6 +237,10 @@ export const LIB = [
   { id: "hyerczyk", name: "James A. Hyerczyk", tagline: "Gann analyst and futures market writer · the swing-chart stop and reverse runs here", books: [
     { id: "jhppt", sourceIds: ["title-f4dad71e89ea05e4"], title: "Pattern, Price & Time: Using Gann Theory in Trading Systems (2nd ed.)", year: 2009, blurb: "Hyerczyk · Gann 1-, 2- and 3-bar swing charts; buy on a stop over the last swing top, sell and reverse under the last swing bottom, the stop following each new swing" }] },
   // ---- end Hyerczyk block ----
+  // ---- Linton block (29 Oct 2026, lane B)
+  { id: "linton", name: "David Linton", tagline: "Ichimoku cloud chart analyst · the cloud stop and reverse runs here", books: [
+    { id: "dlccs", sourceIds: ["title-488a6153eb6af4ce"], title: "Cloud Charts: Trading Success with the Ichimoku Technique", year: 2010, blurb: "Linton · buy when the close moves above the cloud after the last outside close was below it, sell and reverse when it closes below; signal delay of 1-5 days and the lagging-line version as options" }] },
+  // ---- end Linton block ----
   // ---- Arms block (2026-10-24) ----
   { id: "arms", name: "Richard W. Arms Jr.", tagline: "Inventor of Equivolume, Ease of Movement and the Arms Index · the two EMV rules run here", books: [
     { id: "ravcs", sourceIds: ["title-bdb6dd066565a040"], title: "Volume Cycles in the Stock Market", year: 1994, blurb: "Arms · 13-day Ease of Movement zero cross and the weekly four-week reversal of the 13 run; shorter EMVs and cycle reading held" },

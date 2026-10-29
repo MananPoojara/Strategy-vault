@@ -393,7 +393,17 @@ export const AUTHOR_PROFILE_DATA = {
   ],
   "sources": [],
   "confidence": "low"
- }, "hyerczyk": {
+ }, "linton": {
+  "kind": "person",
+  "mastery": [
+   "Ichimoku cloud charts"
+  ],
+  "summary": "David Linton is a technical analyst. Cloud Charts (published by Updata, 2010) explains how the Ichimoku cloud is built and read, and back-tests a simple stop and reverse: buy when the close moves above the cloud, sell and reverse when it closes below, optionally waiting a few days to filter short breaches. This profile rests on the book itself.",
+  "known_for": [
+   "Cloud Charts"
+  ],
+  "sources": [],
+  "confidence": "low" }, "hyerczyk": {
   "kind": "person",
   "mastery": [
    "Gann analysis"
