@@ -305,6 +305,8 @@ export const sourceReview: Record<string, {type: string; sameWorkAs?: string; pe
   "rsotr": {"type": "book", "people": ["Russell Sands"]},
   "jhppt": {"type": "book", "people": ["James A. Hyerczyk"]},
   "dlccs": {"type": "book", "people": ["David Linton"]},
+  "jfeot": {"type": "book", "people": ["John Forman"]},
+  "kbttm": {"type": "book", "people": ["Kedrick Brown"]},
   "jcmtt": {"type": "book", "people": ["John F. Carter"]},
   "jcteu": {"type": "article", "people": ["John F. Carter"]},
   "jcym5": {"type": "course_manual", "people": ["John F. Carter"]},

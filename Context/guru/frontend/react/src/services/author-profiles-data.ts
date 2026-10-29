@@ -393,7 +393,28 @@ export const AUTHOR_PROFILE_DATA = {
   ],
   "sources": [],
   "confidence": "low"
- }, "linton": {
+ }, "kbrown": {
+  "kind": "person",
+  "mastery": [
+   "Equity trend following"
+  ],
+  "summary": "Kedrick F. Brown is a former equity market maker. Trend Trading: Timing Market Tides (Wiley, 2006) adapts futures trend-following discipline to stocks: Donchian, stochastic and peak breakouts, index 'pilot' signals, stop placement and position sizing, with a ten-year test of a 32-day close Donchian rule on three US indices. This profile rests on the book itself.",
+  "known_for": [
+   "Trend Trading: Timing Market Tides"
+  ],
+  "sources": [],
+  "confidence": "low" }, "forman": {
+  "kind": "person",
+  "mastery": [
+   "Currency trading",
+   "Trading system design"
+  ],
+  "summary": "John Forman is a currency trader and trading educator. The Essentials of Trading (Wiley, 2006) walks through building a mechanical trend system on daily USD/JPY: moving-average and Parabolic SAR entries and exits tested in four combinations, then a GBP/USD fast stochastic system and position sizing. This profile rests on the book itself.",
+  "known_for": [
+   "The Essentials of Trading"
+  ],
+  "sources": [],
+  "confidence": "low" }, "linton": {
   "kind": "person",
   "mastery": [
    "Ichimoku cloud charts"

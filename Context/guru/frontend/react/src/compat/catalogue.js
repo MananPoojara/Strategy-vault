@@ -241,6 +241,14 @@ export const LIB = [
   { id: "linton", name: "David Linton", tagline: "Ichimoku cloud chart analyst · the cloud stop and reverse runs here", books: [
     { id: "dlccs", sourceIds: ["title-488a6153eb6af4ce"], title: "Cloud Charts: Trading Success with the Ichimoku Technique", year: 2010, blurb: "Linton · buy when the close moves above the cloud after the last outside close was below it, sell and reverse when it closes below; signal delay of 1-5 days and the lagging-line version as options" }] },
   // ---- end Linton block ----
+  // ---- Forman block (29 Oct 2026, lane B)
+  { id: "forman", name: "John Forman", tagline: "Currency trader and trading educator · the four Ch.7 test systems and the stochastic 40/60 system run here", books: [
+    { id: "jfeot", sourceIds: ["title-25c31f3ca7f1f280"], title: "The Essentials of Trading: From the Basics to Building a Winning Strategy", year: 2006, blurb: "Forman · close crosses the 92-day average to enter and the 50-day to exit; Parabolic SAR 0.02/0.20 stop and reverse; 20-day average entry with SAR 0.09/0.50 exit; SAR entry with 60-day average exit; 5-period stochastic through 40/60" }] },
+  // ---- end Forman block ----
+  // ---- Kedrick Brown block (29 Oct 2026, lane B)
+  { id: "kbrown", name: "Kedrick F. Brown", tagline: "Equity market maker and trend trader · the 32-day close Donchian and the all-time-high breakout run here", books: [
+    { id: "kbttm", sourceIds: ["title-3a876c2b43f2c9cc"], title: "Trend Trading: Timing Market Tides", year: 2006, blurb: "Brown · buy when the close beats the highest close of the past 32 days and sell below the lowest, on the next close; buy a new all-time high with a 96% stop and a 32-day-low exit; NASDAQ pilot signals and basket averages held" }] },
+  // ---- end Kedrick Brown block ----
   // ---- Arms block (2026-10-24) ----
   { id: "arms", name: "Richard W. Arms Jr.", tagline: "Inventor of Equivolume, Ease of Movement and the Arms Index · the two EMV rules run here", books: [
     { id: "ravcs", sourceIds: ["title-bdb6dd066565a040"], title: "Volume Cycles in the Stock Market", year: 1994, blurb: "Arms · 13-day Ease of Movement zero cross and the weekly four-week reversal of the 13 run; shorter EMVs and cycle reading held" },

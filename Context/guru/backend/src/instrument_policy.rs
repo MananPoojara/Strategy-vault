@@ -318,6 +318,8 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || tillson_reviewed(def) // Tim Tillson block
         || leungchong_reviewed(def) // Leung and Chong block
         || bollinger_reviewed(def) // John Bollinger block
+        || kbrown_reviewed(def) // Kedrick F. Brown block
+        || forman_reviewed(def) // John Forman block
         || sands_reviewed(def) // Russell Sands block
         || hyerczyk_reviewed(def) // James A. Hyerczyk block
         || linton_reviewed(def) // David Linton block
@@ -1311,6 +1313,26 @@ fn bollinger_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end John Bollinger
+// ---------------------------------------------------------------- Kedrick F. Brown 2026-10-29 (lane B)
+// Admission only for the module REVIEWED lists (authors/kbrown/admission/tt_ref.py (header)); kept in one block to merge.
+pub fn kbrown_reviewed(def:&StrategyDef)->bool {(def.book=="kbttm" && crate::books::kbttm::reviewed(def.id))}
+const KBROWN_LABEL:&str="Kedrick Brown tests the 32-day close Donchian rule on the NASDAQ Composite, XOI and UTY indices and writes the all-time-high breakout for US stocks; runs on other indices, ETFs and US/India stocks are a declared application, not the author's test.";
+fn kbrown_policy(def:&StrategyDef)->Option<Policy> {
+    if !kbrown_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Kedrick F. Brown, Trend Trading: Timing Market Tides (2006), Ch.4 p.78-81, Ch.6 p.167-168, Ch.7 p.184-193");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Kedrick F. Brown
+// ---------------------------------------------------------------- John Forman 2026-10-29 (lane B)
+// Admission only for the module REVIEWED lists (authors/forman/admission/eot_ref.py (header)); kept in one block to merge.
+pub fn forman_reviewed(def:&StrategyDef)->bool {(def.book=="jfeot" && crate::books::jfeot::reviewed(def.id))}
+const FORMAN_LABEL:&str="John Forman tests these systems on daily USD/JPY (Ch.7) and GBP/USD (Ch.8) spot currency prices; runs on indices, ETFs and US/India stocks are a declared application, not the author's test. Cash-index shorts are hypothetical.";
+fn forman_policy(def:&StrategyDef)->Option<Policy> {
+    if !forman_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"John Forman, The Essentials of Trading (2006), Ch.7 System Design and Testing p.162-202 and Ch.8 p.203-235");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end John Forman
 // ---------------------------------------------------------------- Russell Sands 2026-10-26 (lane B)
 // Admission only for the module REVIEWED lists (authors/sands/admission/stb_ref.py (header)); kept in one block to merge.
 pub fn sands_reviewed(def:&StrategyDef)->bool {(def.book=="rsotr" && crate::books::rsotr::reviewed(def.id))}
@@ -1999,6 +2021,8 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=tillson_policy(def) {return p;} // Tim Tillson block
     if let Some(p)=leungchong_policy(def) {return p;} // Leung and Chong block
     if let Some(p)=bollinger_policy(def) {return p;} // John Bollinger block
+    if let Some(p)=kbrown_policy(def) {return p;} // Kedrick F. Brown block
+    if let Some(p)=forman_policy(def) {return p;} // John Forman block
     if let Some(p)=sands_policy(def) {return p;} // Russell Sands block
     if let Some(p)=hyerczyk_policy(def) {return p;} // James A. Hyerczyk block
     if let Some(p)=linton_policy(def) {return p;} // David Linton block
@@ -2670,6 +2694,8 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if tillson_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",TILLSON_LABEL));} // Tim Tillson block
     if leungchong_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LEUNGCHONG_LABEL));} // Leung and Chong block
     if bollinger_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BOLLINGER_LABEL));} // John Bollinger block
+    if kbrown_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",KBROWN_LABEL));} // Kedrick F. Brown block
+    if forman_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",FORMAN_LABEL));} // John Forman block
     if sands_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",SANDS_LABEL));} // Russell Sands block
     if hyerczyk_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",HYERCZYK_LABEL));} // James A. Hyerczyk block
     if linton_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LINTON_LABEL));} // David Linton block
@@ -3407,6 +3433,38 @@ mod tests {
         }
     }
     // ---- end John Bollinger block ----
+    // ---- Kedrick F. Brown block (2026-10-29, lane B) ----
+    #[test]
+    fn kbrown_review_admits_exact_ids() {
+        use crate::books::{kbttm};
+        let all:Vec<StrategyDef>=kbttm::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=kbttm::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|kbrown_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Kedrick F. Brown block ----
+    // ---- John Forman block (2026-10-29, lane B) ----
+    #[test]
+    fn forman_review_admits_exact_ids() {
+        use crate::books::{jfeot};
+        let all:Vec<StrategyDef>=jfeot::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=jfeot::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|forman_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end John Forman block ----
     // ---- Russell Sands block (2026-10-26, lane B) ----
     #[test]
     fn sands_review_admits_exact_ids() {
