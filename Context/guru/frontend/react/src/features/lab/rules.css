@@ -264,3 +264,4 @@
 .lab-ami-h .cap { margin-left: 6px; font-size: 12px; font-weight: 500; }
 .lab-rules .lab-idea-basics .lab-run-top .dbtn { height: 36px; }
 .lab-rules .lab-idea-basics .lab-run-top > .cap { white-space: nowrap; max-width: none; }
+.lab-rules > .box-h .lab-settings-aside { margin-left: auto; display: inline-flex; align-items: center; font-weight: 400; gap: 14px; }

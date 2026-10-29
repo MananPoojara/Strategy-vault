@@ -73,9 +73,10 @@ function IndicatorsLab() {
   const [tab, setTab] = useState<LabTab>("chart"); // the chart first; Strategy & backtest opens on Your idea
   const [mode, setModeState] = useState<LabMode>(storedMode);
   const simple = mode === "simple";
-  // Optimization opens from the Optimize button beside Run backtest, not from the tab bar; Simple also hides Customize
-  const tabs = LAB_TABS.filter((t) => t.id !== "optimization" && (!simple || t.id === "chart" || t.id === "strategy" || t.id === "saved"));
-  const setMode = (m: LabMode) => { setModeState(m); storeMode(m); if (m === "simple" && tab === "customize") setTab("strategy"); };
+  // Optimization opens from the Optimize button beside Run backtest, not from the tab bar
+  const tabs = LAB_TABS.filter((t) => t.id !== "optimization");
+  // Simple / Advanced is a Settings choice (its switch is in the Settings heading); the rules and the chart always show everything
+  const setMode = (m: LabMode) => { setModeState(m); storeMode(m); };
   const [step, setStep] = useState<Step>("idea");
   const stepIndex = STEPS.findIndex((s) => s.id === step);
   const showStrategy = (selector = ".lab-rules") => {
@@ -329,6 +330,7 @@ function IndicatorsLab() {
     <LabModeContext.Provider value={mode}><CompactContext.Provider value={true}><ForeignProvider value={foreignScope!}><FormulaContext.Provider value={formulaScope}>
     <div className="lab-grid lab-grid-focused">
       <div className="lab-main">
+        <LabModeContext.Provider value="advanced">
         <div role="tabpanel" id="lab-panel-chart" aria-labelledby="lab-tab-chart" hidden={tab !== "chart"} className="lab-tab-panel">
         <Part>
           {ticker ? (
@@ -354,11 +356,13 @@ function IndicatorsLab() {
         <div className="lab-step-nav lab-chart-next"><span className="cap">{chartPicks.length ? "Your indicators are on the chart. Turn them into buy and sell rules and test them:" : "Add indicators to the chart, or go straight to buy and sell rules:"}</span>
           <button type="button" className="dbtn primary" data-lab-build onClick={() => { setTab("strategy"); setStep("idea"); }}>Build a strategy ›</button></div>
         </div>
+        </LabModeContext.Provider>
         <div role="tabpanel" id="lab-panel-strategy" aria-labelledby="lab-tab-strategy" hidden={tab !== "strategy"} className="lab-tab-panel">
         <nav className="lab-stepbar" aria-label="Steps" data-lab-steps>
           {STEPS.map((s, i) => <button key={s.id} type="button" className="lab-step-btn" aria-current={step === s.id ? "step" : undefined} data-lab-step={s.id}
             onClick={() => setStep(s.id)}><span className="lab-step-n">{i + 1}</span>{s.label}</button>)}
         </nav>
+        <LabModeContext.Provider value="advanced">
         <div className="lab-step" hidden={step !== "idea"}>
         <Part>
           <div className="lab-rules-col">
@@ -381,11 +385,13 @@ function IndicatorsLab() {
           </div>
         </Part>
         </div>
+        </LabModeContext.Provider>
         <div className="lab-step" hidden={step !== "settings"}>
         <Part>
           <RuleBuilder spec={state.spec} catalogue={cat} instrument={instrument} onChange={(spec) => dispatch({ type: "spec", spec })}
             settings={runSettings} onSettings={changeSettings}
-            problems={problems} running={running} onRun={() => void run()} portfolio={portfolioPanel} part="settings" dates={datesPanel} />
+            problems={problems} running={running} onRun={() => void run()} portfolio={portfolioPanel} part="settings" dates={datesPanel}
+            settingsAside={<ModeSwitch mode={mode} onChange={setMode} />} />
         </Part>
         </div>
         <div className="lab-step" hidden={step !== "results"} data-lab-step-results>
@@ -416,7 +422,7 @@ function IndicatorsLab() {
           ? <NoTradesHelp spec={ranSpec} catalogue={cat} market={savedMarketValue} ticker={ticker} period={runSettings} scan={scanSignals} onFix={fixAndRun} /> : null}
         {result?.kind === "lab_simulation" && !runError && result.trades.length > 0 && <button type="button" className="dbtn sm" data-lab-see-chart onClick={() => setTab("chart")}>See the trades on the chart ›</button>}
         {result?.foreign?.length && !runError ? <div className="rnote" role="note" data-lab-foreign-disclosure>{result.foreign.map((source) => <p key={source.ticker}>{foreignDescription(source)}</p>)}</div> : null}
-        {!backtestShown && !simple && ticker && <Part key={`explore|${market}|${ticker}`}><ExplorePanel spec={runSpec} catalogue={chartCat!} chips={state.chips} portfolio={!!state.spec.portfolio} market={savedMarketValue} loadSeries={loadSeries}
+        {!backtestShown && ticker && <Part key={`explore|${market}|${ticker}`}><ExplorePanel spec={runSpec} catalogue={chartCat!} chips={state.chips} portfolio={!!state.spec.portfolio} market={savedMarketValue} loadSeries={loadSeries}
           onScan={(apply) => { assertRunnable(runSpec); return lab.scan(market, runSpec, { ticker, apply, from: settings.from || undefined, to: settings.to || undefined }); }}
           onExplore={() => { assertRunnable(runSpec); return lab.explore(market, runSpec, { ticker, from: settings.from || undefined, to: settings.to || undefined }); }} /></Part>}
         </div>
@@ -485,7 +491,6 @@ function IndicatorsLab() {
             if (next !== undefined) { event.preventDefault(); setTab(tabs[next].id); document.getElementById(`lab-tab-${tabs[next].id}`)?.focus(); }
           }}>{item.label}</button>)}
       </div>
-      <ModeSwitch mode={mode} onChange={setMode} />
       </div>
       {swapNote && <p className="rnote" data-lab-swap>{swapNote}</p>}
       {work}

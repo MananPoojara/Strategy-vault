@@ -38,6 +38,8 @@ export function RuleBuilder(props: {
   spec: Spec; catalogue: Catalogue; instrument?: InstrumentContext; onChange(spec: Spec): void;
   settings: RunSettings; onSettings(patch: Partial<RunSettings>): void;
   problems: string[]; running: boolean; onRun(): void;
+  /** Shown at the right of the Settings heading (the Simple / Advanced switch). */
+  settingsAside?: ReactNode;
   /** Opens the optimizer for these rules (the Optimize button beside Run backtest). */
   onOptimize?(): void;
   /** The portfolio controls (PortfolioPanel), shown on the Portfolio tab. */
@@ -78,8 +80,9 @@ function FilterChoice({ dates, indicator, onDates, onIndicator, onNone }: { date
   </div>;
 }
 
-function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market: "in" }, onChange, settings, onSettings, problems, running, onRun, onOptimize, portfolio, part, dates, chartMatch }: Parameters<typeof RuleBuilder>[0]) {
+function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market: "in" }, onChange, settings, onSettings, problems, running, onRun, onOptimize, portfolio, part, dates, chartMatch, settingsAside }: Parameters<typeof RuleBuilder>[0]) {
   const showRules = part !== "settings", showSettings = part !== "rules";
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const both = spec.direction === "both", b = budget(spec), lim = limits(catalogue), bytes = specBytes(spec);
   const single = !spec.portfolio; // per-side prices, re-entry delays and limits are single-instrument settings
   const caps = (top: number): TreeCaps => ({ leaves: b.leaves >= lim.leaves, nodes: b.nodes >= lim.nodes, top: top >= lim.top });
@@ -186,8 +189,10 @@ function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market
     {cards(false)}
     {both && spec.short_side && cards(true)}
     </>}
-    {part === "settings" && <h2 className="box-h">Settings</h2>}
-    {showSettings && <>
+    {/* Settings is closed until asked for; its defaults apply either way */}
+    {part === "settings" && <h2 className="box-h">Settings<span className="lab-settings-aside">{settingsOpen && settingsAside}
+      <button type="button" className="dbtn sm" data-lab-settings-toggle aria-expanded={settingsOpen} onClick={() => setSettingsOpen(!settingsOpen)}>{settingsOpen ? "Hide settings ▴" : "Show settings ▾"}</button></span></h2>}
+    {showSettings && <div className="lab-settings-body" data-lab-settings-body hidden={part === "settings" && !settingsOpen}>
     {part !== "settings" && <h3 className="lab-settings-h">Backtest settings <small>how trades are filled, sized and charged</small></h3>}
     {/* the basics, in both views; Simple leaves out the AmiBroker settings below them */}
     <div className="lab-basics" data-lab-basics>
@@ -230,7 +235,7 @@ function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market
         <PortfolioLimits spec={spec} onChange={onChange} />
       </>
     </SettingsTabs></section></>}
-    </>}
+    </div>}
     {readsSessionDates(spec) && <p className="cap">{COPY.sessionDatesHint}</p>}
     {usesHigherTimeframes(spec) && <p className="cap">{COPY.wmRule}</p>}
     {problems.length > 0 && <ul className="rnote">{problems.map((p, i) => <li key={i}>{p}</li>)}</ul>}
