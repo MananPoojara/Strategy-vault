@@ -225,6 +225,11 @@ export const LIB = [
   { id: "ponsi", name: "Ed Ponsi", tagline: "Forex trader and educator (FXEducator) · the FX-Ed Trend Technique runs here; Fibonacci, pattern, pip and carry trades held", books: [
     { id: "epfpp", sourceIds: ["title-360d41abd111aa32", "title-10a678f7dce48921"], title: "Forex Patterns & Probabilities (and The Ed Ponsi Forex Playbook)", year: 2007, blurb: "Ponsi, 2007 · FX-Ed Trend Technique (10-day EMA pullback, half-ATR trailing stop) runs on daily bars; the Playbook repeats it with carry trades" }] },
   // ---- end Ponsi block ----
+  // ---- Downs block (29 Oct 2026, lane B)
+  { id: "downs", name: "Walter T. Downs", tagline: "Pattern researcher and forex system seller · the Forex Gambit pullback and 37 Trading for Tigers bar patterns run here; open-interest patterns held", books: [
+    { id: "wtdfg", sourceIds: ["title-32a9f443563ba84c"], title: "The Forex Gambit", year: null, blurb: "Downs, e-book · inside-down bar above the 30-day Bollinger middle line, buy at the close, stop at the bar low, out after a 2 SD close and a lower close, breakeven after 4 days, 16-day time exit" },
+    { id: "wtdtt", sourceIds: ["title-40f478385458a965"], title: "Trading for Tigers", year: null, blurb: "Downs · 14 monthly and 8 weekly breakout patterns (out at the end of the month/week), 9 market-on-close weekly/monthly patterns (out at the next open) and 6 MIST daily patterns (US only); open-interest versions and code-only patterns held" }] },
+  // ---- end Downs block ----
   // ---- Arms block (2026-10-24) ----
   { id: "arms", name: "Richard W. Arms Jr.", tagline: "Inventor of Equivolume, Ease of Movement and the Arms Index · the two EMV rules run here", books: [
     { id: "ravcs", sourceIds: ["title-bdb6dd066565a040"], title: "Volume Cycles in the Stock Market", year: 1994, blurb: "Arms · 13-day Ease of Movement zero cross and the weekly four-week reversal of the 13 run; shorter EMVs and cycle reading held" },

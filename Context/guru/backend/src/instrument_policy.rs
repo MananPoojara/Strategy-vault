@@ -318,6 +318,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || tillson_reviewed(def) // Tim Tillson block
         || leungchong_reviewed(def) // Leung and Chong block
         || bollinger_reviewed(def) // John Bollinger block
+        || downs_reviewed(def) // Walter T. Downs block
         || schlossberg_reviewed(def) // Boris Schlossberg block
         || ponsi_reviewed(def) // Ed Ponsi block
         || la_aatt_reviewed(def) // Andrew Abraham (aatt, lane A) block
@@ -1308,6 +1309,23 @@ fn bollinger_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end John Bollinger
+// ---------------------------------------------------------------- Walter T. Downs 2026-10-26 (lane B)
+// Admission only for the module REVIEWED lists (authors/downs/admission/downs_ref.py (header)); kept in one block to merge.
+pub fn downs_reviewed(def:&StrategyDef)->bool {(def.book=="wtdfg" && crate::books::wtdfg::reviewed(def.id)) || (def.book=="wtdtt" && crate::books::wtdtt::reviewed(def.id))}
+const DOWNS_LABEL:&str="Walter Downs wrote The Forex Gambit for currency pairs on daily bars, and tested the Trading for Tigers patterns on futures and US stocks to 1996/98; runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test. The Tigers MIST patterns start their trailing stop after a $100 profit, so they run on US instruments only. Cash-index shorts are hypothetical.";
+fn downs_policy(def:&StrategyDef)->Option<Policy> {
+    if !downs_reviewed(def) {return None;}
+    let src=if def.book=="wtdtt" {"Walter T. Downs, Trading for Tigers: monthly (Ch.5), weekly (Ch.6), market-on-close (Ch.7) and MIST daily (Ch.8) bar patterns, page images 006-145"} else {"Walter T. Downs, The Forex Gambit (e-book), The System: buy/sell patterns and exits (PDF p.7-9)"};
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],src);
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// Tigers MIST rules: the $100 trailing-stop trigger is a dollar amount -> US instruments only (stock_us None = not a stock).
+fn downs_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Option<Issue> {
+    if !downs_reviewed(def) || !crate::books::wtdtt::US_ONLY.contains(&def.id) {return None;}
+    if stock_us.unwrap_or(!ticker.starts_with("NIFTY")) {return None;}
+    Some(Issue{status:"needs_data",note:format!("This MIST rule starts its trailing stop after a profit of one hundred dollars, a US-dollar amount. Dollar-amount rules run on US indices, ETFs and stocks only; {ticker} is outside that scope, so no result is published.")})
+}
+// ---------------------------------------------------------------- end Walter T. Downs
 // ---------------------------------------------------------------- Boris Schlossberg 2026-10-26 (lane B)
 // Admission only for the module REVIEWED lists (authors/schlossberg/admission/bs_ref.py (header)); kept in one block to merge.
 pub fn schlossberg_reviewed(def:&StrategyDef)->bool {(def.book=="bstacm" && crate::books::bstacm::reviewed(def.id))}
@@ -1991,6 +2009,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=tillson_policy(def) {return p;} // Tim Tillson block
     if let Some(p)=leungchong_policy(def) {return p;} // Leung and Chong block
     if let Some(p)=bollinger_policy(def) {return p;} // John Bollinger block
+    if let Some(p)=downs_policy(def) {return p;} // Walter T. Downs block
     if let Some(p)=schlossberg_policy(def) {return p;} // Boris Schlossberg block
     if let Some(p)=ponsi_policy(def) {return p;} // Ed Ponsi block
     if let Some(p)=la_aatt_policy(def) {return p;} // Andrew Abraham (aatt, lane A) block
@@ -2367,6 +2386,7 @@ pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     if let Some(issue)=jb_g3_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=lwilliams_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Larry Williams block
     if let Some(issue)=kaeppel_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Kaeppel block
+    if let Some(issue)=downs_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Walter T. Downs block
     if let Some(issue)=schaap_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Schaap block
     if let Some(issue)=landry_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Landry block
     if let Some(issue)=hirsch_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Hirsch block
@@ -2403,6 +2423,7 @@ pub fn check_native(def:&StrategyDef,ticker:&str,evidence:&NativeEvidence)->Opti
     if let Some(issue)=jb_g3_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=lwilliams_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Larry Williams block
     if let Some(issue)=kaeppel_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Kaeppel block
+    if let Some(issue)=downs_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Walter T. Downs block
     if let Some(issue)=schaap_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Schaap block
     if let Some(issue)=landry_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Landry block
     if let Some(issue)=hirsch_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Hirsch block
@@ -2661,6 +2682,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if tillson_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",TILLSON_LABEL));} // Tim Tillson block
     if leungchong_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LEUNGCHONG_LABEL));} // Leung and Chong block
     if bollinger_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BOLLINGER_LABEL));} // John Bollinger block
+    if downs_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",DOWNS_LABEL));} // Walter T. Downs block
     if schlossberg_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",SCHLOSSBERG_LABEL));} // Boris Schlossberg block
     if ponsi_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",PONSI_LABEL));} // Ed Ponsi block
     if la_aatt_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LA_AATT_LABEL));} // Andrew Abraham (aatt, lane A) block
@@ -3395,6 +3417,24 @@ mod tests {
         }
     }
     // ---- end John Bollinger block ----
+    // ---- Walter T. Downs block (2026-10-26, lane B) ----
+    #[test]
+    fn downs_review_admits_exact_ids() {
+        use crate::books::{wtdfg, wtdtt};
+        let all:Vec<StrategyDef>=wtdfg::catalogue().into_iter().chain(wtdtt::catalogue()).collect();
+        let mut want:Vec<&str>=wtdfg::REVIEWED.iter().chain(wtdtt::REVIEWED.iter()).copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|downs_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            let us_only=wtdtt::US_ONLY.contains(&d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            for t in ["NIFTY 50","NIFTYBANK"] {assert_eq!(check(d,t,false).is_some(),us_only,"{} {t}",d.id);}
+            if !us_only {assert!(check(d,"AAPL",true).is_none(),"{}",d.id);} assert_eq!(check(d,"RELIANCE",true).is_some(),us_only,"{}",d.id);
+        }
+    }
+    // ---- end Walter T. Downs block ----
     // ---- Boris Schlossberg block (2026-10-26, lane B) ----
     #[test]
     fn schlossberg_review_admits_exact_ids() {
