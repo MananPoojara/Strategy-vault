@@ -393,7 +393,18 @@ export const AUTHOR_PROFILE_DATA = {
   ],
   "sources": [],
   "confidence": "low"
- }, "ponsi": {
+ }, "downs": {
+  "kind": "person",
+  "mastery": [
+   "Currency trading"
+  ],
+  "summary": "Walter T. Downs sold The Forex Gambit, a daily currency system: buy an inside-down bar that closes in its upper half above a rising 30-day Bollinger middle line, stop at the bar's low, exit after a close above the 2 SD band followed by a lower close. This profile rests on the e-book itself.",
+  "known_for": [
+   "The Forex Gambit",
+   "Trading for Tigers"
+  ],
+  "sources": [],
+  "confidence": "low" }, "ponsi": {
   "kind": "person",
   "mastery": [
    "Currency trading",
