@@ -225,6 +225,10 @@ export const LIB = [
   { id: "ponsi", name: "Ed Ponsi", tagline: "Forex trader and educator (FXEducator) · the FX-Ed Trend Technique runs here; Fibonacci, pattern, pip and carry trades held", books: [
     { id: "epfpp", sourceIds: ["title-360d41abd111aa32", "title-10a678f7dce48921"], title: "Forex Patterns & Probabilities (and The Ed Ponsi Forex Playbook)", year: 2007, blurb: "Ponsi, 2007 · FX-Ed Trend Technique (10-day EMA pullback, half-ATR trailing stop) runs on daily bars; the Playbook repeats it with carry trades" }] },
   // ---- end Ponsi block ----
+  // ---- Goodwin block (29 Oct 2026, lane C)
+  { id: "goodwin", name: "Andrew Goodwin", tagline: "Hedge-fund S&P trader · eight of his printed TradeStation rules run here; breadth, Treasury, VIX and fixed-point patterns held", books: [
+    { id: "agtsic", sourceIds: ["title-8c40d4a149da20e6"], title: "Trading Secrets of the Inner Circle", year: 1997, blurb: "Goodwin, 1997 · basic 8-day RSI, options-expiration range rule, daily patterns #5, #6, #8, #10, #12 and the 6-day reversal, all from the printed S&P futures code" }] },
+  // ---- end Goodwin block ----
   // ---- Arms block (2026-10-24) ----
   { id: "arms", name: "Richard W. Arms Jr.", tagline: "Inventor of Equivolume, Ease of Movement and the Arms Index · the two EMV rules run here", books: [
     { id: "ravcs", sourceIds: ["title-bdb6dd066565a040"], title: "Volume Cycles in the Stock Market", year: 1994, blurb: "Arms · 13-day Ease of Movement zero cross and the weekly four-week reversal of the 13 run; shorter EMVs and cycle reading held" },

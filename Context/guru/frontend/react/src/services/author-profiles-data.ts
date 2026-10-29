@@ -393,7 +393,18 @@ export const AUTHOR_PROFILE_DATA = {
   ],
   "sources": [],
   "confidence": "low"
- }, "ponsi": {
+ }, "goodwin": {
+  "kind": "person",
+  "mastery": [
+   "S&P 500 futures trading",
+   "Short-term pattern systems"
+  ],
+  "summary": "Andrew Goodwin wrote Trading Secrets of the Inner Circle (1997), a collection of S&P 500 futures rules with their TradeStation code: oscillator systems filtered by breadth and interest rates, an options-expiration rule, daily day-of-week patterns and a short-term reversal system. This profile rests on the book itself.",
+  "known_for": [
+   "Trading Secrets of the Inner Circle"
+  ],
+  "sources": [],
+  "confidence": "low" }, "ponsi": {
   "kind": "person",
   "mastery": [
    "Currency trading",
