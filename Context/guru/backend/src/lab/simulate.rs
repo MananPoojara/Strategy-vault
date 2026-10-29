@@ -356,7 +356,7 @@ fn signal_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<Trade>,
         (limit.map_or(true, f64::is_finite) && stop.map_or(true, f64::is_finite))
             .then_some(Order { side: s, sig: i, limit: side.round_at(i, limit.unwrap_or(f64::NAN)), stop: side.round_at(i, stop.unwrap_or(f64::NAN)), until: i + side.exec.valid_bars })
     };
-    let mut trades = Vec::new();
+    let mut trades: Vec<Trade> = Vec::new();
     let mut pos: Option<(usize, Pos)> = None; // (side, position)
     let mut pending_entry: Option<(usize, usize, usize, &'static str, Px)> = None; // (side, signal bar, fill bar, entry kind, field)
     let mut pending_exit: Option<(usize, usize, String, Px)> = None; // (signal bar, fill bar, reason, field); cleared when its position closes
@@ -365,9 +365,24 @@ fn signal_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<Trade>,
         && if dir(s) > 0. { b.low[i] == b.close[i] && b.close[i] < b.close[i - 1] } else { b.high[i] == b.close[i] && b.close[i] > b.close[i - 1] };
     let mut orders: [Option<Order>; 2] = [None, None]; // one resting order per side
     let mut pending_add: Option<(usize, f64, usize, usize, Px)> = None; // (fill bar, leg weight, side, position entry bar, field)
+    // Accepted scale-in signals disarm setups on the signal bar, including when their fill is delayed or later cancelled.
+    let mut add_signal = [None; 2];
     // equity-level state from closed trades (spec §6.5): loss streak, compounded closed equity and its peak, pause, stop
     let (mut events, mut risk) = (Vec::new(), RiskState::new());
+    for s in &sides { s.reset_setups(); }
     for i in from..=to {
+        // setup nodes step past bar i - 1 here, before bar i changes the state: a side disarms on its entry or exit signal
+        // bar (the AFL loop's own bar, not a later fill), whether the order fills or not
+        if i > from {
+            let j = i - 1;
+            for (s, side) in sides.iter().enumerate() {
+                let traded = || pending_entry.is_some_and(|e| e.0 == s && e.1 == j) || orders.iter().flatten().any(|o| o.side == s && o.sig == j)
+                    || add_signal[s] == Some(j)
+                    || pos.as_ref().is_some_and(|(ps, p)| *ps == s && (p.sig == j || pending_exit.as_ref().is_some_and(|e| e.0 == j)))
+                    || trades.iter().rev().take_while(|t| t.exit_i >= j).any(|t| t.signal_i == j && (t.dir < 0.) == side.exec.short);
+                side.step_setups(j, |_| traded());
+            }
+        }
         let expiry = c.expiry_bar.get(i).copied().unwrap_or(false);
         if expiry { pending_entry = None; pending_add = None; orders = [None,None]; }
         // Market orders due on bar i at a stage: the open (field open) or after the rule exits (any other field). Exit
@@ -532,8 +547,8 @@ fn signal_events(c: &Compiled, b: &Bars, from: usize, to: usize) -> (Vec<Trade>,
                 let w = p.base * si.legs[p.adds.len() + 1];
                 match (ok, market(s)[0]) {
                     (false, _) => {}
-                    (true, (_, 0)) => p.add(i, b.close[i], w),
-                    (true, (px, delay)) => if i + delay <= to { pending_add = Some((i + delay, w, s, p.e, px)); },
+                    (true, (_, 0)) => { p.add(i, b.close[i], w); add_signal[s] = Some(i); }
+                    (true, (px, delay)) => if i + delay <= to { pending_add = Some((i + delay, w, s, p.e, px)); add_signal[s] = Some(i); },
                 }
             }
         }
@@ -1902,5 +1917,264 @@ mod date_filter_run_tests {
         // the position from the 1st exits on the 4th (window starts); no entry inside; re-entry on the 9th, open at the end
         assert_eq!(t[0], ("2024-01-01".to_string(), "2024-01-04".to_string(), "date_filter: window started".to_string()));
         assert_eq!((t[1].0.as_str(), t[1].2.as_str()), ("2024-01-09", "open"));
+    }
+}
+
+/// The setup / trigger / cancel node (AmiBroker's armed-flag loop) through the trade loop.
+#[cfg(test)]
+mod setup_tests {
+    use super::simulate;
+    use crate::lab::bars::Bars;
+    use crate::lab::series::{compile, Cache, Compiled, Frames};
+    use crate::lab::rules::parse_spec;
+    use crate::lab::testdata::from_ohlc;
+    const SETUP: &str = r#""setup":{"lhs":{"s":"low"},"op":"<","rhs":{"value":5}},"trigger":{"lhs":{"s":"close"},"op":">","rhs":{"value":200}}"#;
+    const CANCEL: &str = r#","cancel":{"lhs":{"s":"high"},"op":">","rhs":{"value":500}}"#;
+    const HELD2: &str = r#"{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":2}}"#;
+    const AT_CLOSE: &str = r#","execution":{"fill":"close","exit_fill":"close"}"#;
+    /// 40 calendar days from Monday 2024-01-01 of flat bars (100, 110, 90, 100); marked bars get low 1 (setup), high 600
+    /// (cancel), close 250 (trigger) or open 200.
+    fn marked(setup: &[usize], cancel: &[usize], trigger: &[usize], open: &[usize]) -> Bars {
+        let f = |v: &[usize], i, on, off| if v.contains(&i) { on } else { off };
+        let mut b = from_ohlc(&(0..40).map(|i| (f(open, i, 200., 100.), f(cancel, i, 600., 110.), f(setup, i, 1., 90.), f(trigger, i, 250., 100.))).collect::<Vec<_>>());
+        b.date = (0..40).map(|i| crate::lab::resample::civil(crate::lab::resample::day_number("2024-01-01") + i)).collect();
+        b
+    }
+    fn compiled(spec: &str, b: &Bars) -> Compiled { compile(&parse_spec(spec).unwrap(), &Frames::new(b.clone()), &mut Cache::new()).unwrap() }
+    /// (entry bar, exit bar, direction) of every closed trade.
+    fn run(spec: &str, b: &Bars) -> Vec<(usize, usize, f64)> { simulate(&compiled(spec, b), b, 0, b.len() - 1).iter().filter(|t| !t.open).map(|t| (t.legs[0].i, t.exit_i, t.dir)).collect() }
+    fn armed_entry(extra: &str, exec: &str) -> String { format!(r#"{{"v":1,"entry":{{"all":[{{{SETUP}{extra}}}]}},"exit":{{"any":[{HELD2}]}}{exec}}}"#) }
+
+    #[test] fn a_cancel_before_the_trigger_means_no_entry() {
+        assert!(run(&armed_entry(CANCEL, AT_CLOSE), &marked(&[2], &[4], &[6], &[])).is_empty());
+        // the cancel bar's own setup re-arms (cancel runs before setup)
+        assert_eq!(run(&armed_entry(CANCEL, AT_CLOSE), &marked(&[2, 4], &[4], &[6], &[])), [(6, 8, 1.)]);
+    }
+    #[test] fn a_setup_has_no_window_limit() {
+        assert_eq!(run(&armed_entry(CANCEL, AT_CLOSE), &marked(&[2], &[], &[32], &[])), [(32, 34, 1.)]);
+    }
+    #[test] fn an_entry_and_an_exit_disarm_the_setup() {
+        let spec = armed_entry("", AT_CLOSE);
+        // one setup, two triggers with a trade between: only the first enters; a new setup arms again
+        assert_eq!(run(&spec, &marked(&[2, 12], &[], &[5, 10, 14], &[])), [(5, 7, 1.), (14, 16, 1.)]);
+        // a setup inside the position (bar 6) is cleared by the exit on bar 7; one on the exit bar itself survives
+        assert_eq!(run(&spec, &marked(&[2, 6], &[], &[5, 10], &[])), [(5, 7, 1.)]);
+        assert_eq!(run(&spec, &marked(&[2, 7], &[], &[5, 10], &[])), [(5, 7, 1.), (10, 12, 1.)]);
+        // next-open fills disarm on the signal bars, not the fill bars: entry signal 5 (fill 6), exit signal 8 (fill 9); a
+        // setup on the exit signal bar 8 survives and arms the trigger on 12
+        assert_eq!(run(&armed_entry("", ""), &marked(&[2], &[], &[5, 12], &[])), [(6, 9, 1.)]);
+        assert_eq!(run(&armed_entry("", ""), &marked(&[2, 8], &[], &[5, 12], &[])), [(6, 9, 1.), (13, 16, 1.)]);
+    }
+    #[test] fn a_setup_on_the_trigger_bar_counts_from_the_next_bar() {
+        assert_eq!(run(&armed_entry("", AT_CLOSE), &marked(&[3], &[], &[3], &[])), []);
+        assert_eq!(run(&armed_entry("", AT_CLOSE), &marked(&[3], &[], &[3, 4], &[])), [(4, 6, 1.)]);
+    }
+    fn scaling_setup(exec: &str, price: &str, min_bars: usize, short: bool) -> String {
+        armed_entry("", exec).replace(r#""entry":{"all"#, &format!(r#""entry":{{"scale_in":{{"legs":[0.4,0.3,0.3],"min_bars":{min_bars},"price":"{price}"}},"all"#))
+            .replace(HELD2, &HELD2.replace(r#""value":2"#, r#""value":20"#))
+            .replacen(r#""v":1"#, if short { r#""v":1,"direction":"short""# } else { r#""v":1"# }, 1)
+    }
+    fn entry_legs(spec: &str, b: &Bars) -> Vec<(usize, f64)> {
+        let t = simulate(&compiled(spec, b), b, 0, b.len() - 1);
+        assert_eq!(t.len(), 1, "{spec}");
+        t[0].legs.iter().map(|l| (l.i, l.w)).collect()
+    }
+    #[test] fn setup_disarms_after_an_accepted_same_close_scale_in() {
+        for short in [false, true] {
+            let spec = scaling_setup(AT_CLOSE, "any", 1, short);
+            // Setup 5 allows the add at 7; trigger 10 needs a fresh setup before taking the third leg.
+            assert_eq!(entry_legs(&spec, &marked(&[1, 5], &[], &[2, 7, 10], &[])), [(2, 0.4), (7, 0.3)]);
+        }
+    }
+    #[test] fn setup_disarms_on_the_delayed_scale_in_signal() {
+        for (exec, delay) in [
+            ("", 1),
+            (r#","execution":{"delay_bars":2}"#, 2),
+            (r#","execution":{"prices":{"buy":"high"},"delays":{"buy":2}}"#, 2),
+        ] {
+            for short in [false, true] {
+                let exec = if short { exec.replace("buy", "short") } else { exec.into() };
+                let spec = scaling_setup(&exec, "any", 1, short);
+                assert_eq!(entry_legs(&spec, &marked(&[1, 5], &[], &[2, 7, 10], &[])), [(2 + delay, 0.4), (7 + delay, 0.3)], "{spec}");
+            }
+        }
+    }
+    #[test] fn setup_on_or_after_an_add_signal_survives_its_later_fill() {
+        let exec = r#","execution":{"delay_bars":2}"#;
+        for rearm in [7, 8] {
+            let spec = scaling_setup(&exec, "any", 1, false);
+            // Signal 7 fills on 9; setup 7 or 8 must survive that fill and allow signal 10.
+            assert_eq!(entry_legs(&spec, &marked(&[1, 5, rearm], &[], &[2, 7, 8, 10], &[])), [(4, 0.4), (9, 0.3), (12, 0.3)]);
+        }
+        let spec = scaling_setup(AT_CLOSE, "any", 1, false);
+        assert_eq!(entry_legs(&spec, &marked(&[1, 5, 7], &[], &[2, 7, 10], &[])), [(2, 0.4), (7, 0.3), (10, 0.3)]);
+    }
+    #[test] fn rejected_scale_in_signals_leave_the_setup_armed() {
+        for short in [false, true] {
+            let spec = scaling_setup(AT_CLOSE, "better", 1, short);
+            let mut b = marked(&[1, 5], &[], &[2, 7, 10], &[]);
+            // Reject 7's price, then accept 10 without another setup.
+            b.close[7] = if short { 240. } else { 260. };
+            b.close[10] = if short { 260. } else { 240. };
+            assert_eq!(entry_legs(&spec, &b), [(2, 0.4), (10, 0.3)]);
+        }
+        let spec = scaling_setup(AT_CLOSE, "any", 6, false);
+        assert_eq!(entry_legs(&spec, &marked(&[1, 3], &[], &[2, 4, 8], &[])), [(2, 0.4), (8, 0.3)]);
+    }
+    #[test] fn an_accepted_scale_in_disarms_the_sides_exit_setup_too() {
+        let exit_setup = r#"{"setup":{"lhs":{"s":"high"},"op":">","rhs":{"value":500}},"trigger":{"lhs":{"s":"open"},"op":">","rhs":{"value":150}}}"#;
+        let spec = scaling_setup(AT_CLOSE, "any", 1, false).replace(r#""exit":{"any":["#, &format!(r#""exit":{{"any":[{exit_setup},"#));
+        for (rearm, exit) in [(false, 22), (true, 10)] {
+            let b = marked(&[1, 5], if rearm { &[6, 7] } else { &[6] }, &[2, 7], &[10]);
+            let t = simulate(&compiled(&spec, &b), &b, 0, b.len() - 1);
+            assert_eq!((t.len(), t[0].legs.len(), t[0].exit_i), (1, 2, exit));
+        }
+    }
+    #[test] fn an_exit_list_setup_arms_only_inside_the_position() {
+        let spec = format!(r#"{{"v":1,"entry":{{"all":[{{"lhs":{{"s":"open"}},"op":">","rhs":{{"value":150}}}}]}},"exit":{{"any":[{{{SETUP}}}]}}{AT_CLOSE}}}"#);
+        // the flat-time setup on bar 2 is cleared by the entry on bar 5, so the trigger on 7 does not exit; the setup on 9 arms 11
+        assert_eq!(run(&spec, &marked(&[2, 9], &[], &[7, 11], &[5])), [(5, 11, 1.)]);
+        // next-open: an exit setup on the entry signal bar 5 (fill 6) is kept, so the trigger on 8 exits at the open of 9
+        assert_eq!(run(&spec.replace(AT_CLOSE, ""), &marked(&[5], &[], &[8], &[5])), [(6, 9, 1.)]);
+        assert_eq!(compiled(&spec, &marked(&[], &[], &[], &[])).exit[0].label, "exit.any[0]: setup(low < 5) then trigger(close > 200)");
+    }
+    #[test] fn a_short_setup_mirrors_the_long_one() {
+        let short = armed_entry("", AT_CLOSE).replacen(r#"{"v":1,"#, r#"{"v":1,"direction":"short","#, 1);
+        assert_eq!(run(&short, &marked(&[2, 12], &[], &[5, 10, 14], &[])), [(5, 7, -1.), (14, 16, -1.)]);
+        // direction both: the long side's trade does not disarm the short side's own setup (armed on 3, fires on 20)
+        let both = format!(r#"{{"v":1,"direction":"both","entry":{{"all":[{{{SETUP}}}]}},"exit":{{"any":[{HELD2}]}},"short_side":{{"entry":{{"all":[{{"setup":{{"lhs":{{"s":"high"}},"op":">","rhs":{{"value":500}}}},"trigger":{{"lhs":{{"s":"open"}},"op":">","rhs":{{"value":150}}}}}}]}},"exit":{{"any":[{HELD2}]}}}}{AT_CLOSE}}}"#);
+        assert_eq!(run(&both, &marked(&[2], &[3], &[5], &[20])), [(5, 7, 1.), (20, 22, -1.)]);
+    }
+    #[test] fn period_end_gates_only_the_trigger() {
+        let m = |extra: &str| armed_entry(&format!(r#"{extra},"period_end":"M""#), AT_CLOSE);
+        // bar 30 is 2024-01-31 (month end); bar 20 is mid-month
+        assert_eq!(run(&m(""), &marked(&[2], &[], &[20, 30], &[])), [(30, 32, 1.)]);
+        // a cancel on a mid-month bar still disarms
+        assert!(run(&m(CANCEL), &marked(&[2], &[10], &[30], &[])).is_empty());
+        // W: Sunday 2024-01-07 (bar 6) ends the week; the data's last bar is never a period end
+        let w = armed_entry(r#","period_end":"W""#, AT_CLOSE);
+        assert_eq!(run(&w, &marked(&[2], &[], &[5, 6], &[])), [(6, 8, 1.)]);
+        assert!(simulate(&compiled(&w, &marked(&[2], &[], &[39], &[])), &marked(&[2], &[], &[39], &[]), 0, 39).is_empty());
+        assert_eq!(crate::lab::series::describe_node(&parse_spec(&w).unwrap().entry[0]), "setup(low < 5) then trigger(close > 200) at week end");
+    }
+    #[test] fn a_rerun_of_the_same_compiled_spec_starts_disarmed() {
+        let b = marked(&[2], &[], &[5, 30], &[]);
+        let c = compiled(&armed_entry("", AT_CLOSE), &b);
+        assert_eq!(simulate(&c, &b, 0, 39).len(), 1);
+        assert!(simulate(&c, &b, 10, 39).is_empty()); // a later window does not inherit the earlier setup
+    }
+    #[test] fn scan_disarms_a_setup_when_it_fires() {
+        let b = marked(&[2], &[], &[5, 6], &[]);
+        let sig = crate::lab::scan::signals(&compiled(&armed_entry("", AT_CLOSE), &b), b.len());
+        assert_eq!((0..40).filter(|&i| sig[0][i]).collect::<Vec<_>>(), [5]);
+    }
+    /// AFL parity on real data: VAULT_IDX_CSV=<idx_data.csv> cargo test -j 4 nifty_afl_parity -- --nocapture
+    #[test] fn nifty_afl_parity() {
+        let Ok(path) = std::env::var("VAULT_IDX_CSV") else { eprintln!("VAULT_IDX_CSV not set; NIFTY 50 parity skipped"); return };
+        let b = Bars::from_rows(&crate::load_csv(&path).unwrap()["NIFTY 50"]);
+        let (bb, band) = (r#"{"s":"bbpct","p":{"length":5,"mult":1}}"#, |out: &str| format!(r#"{{"s":"bb","p":{{"length":5,"mult":1}},"out":"{out}"}}"#));
+        let spec = format!(r#"{{"v":1,"entry":{{"all":[{{"setup":{{"lhs":{bb},"op":"<","rhs":{{"value":0}}}},"trigger":{{"all":[{{"lhs":{{"s":"close"}},"op":">","rhs":{{"s":"open"}}}},{{"lhs":{{"s":"close"}},"op":">","rhs":{lo}}},{{"lhs":{{"s":"close"}},"op":"<","rhs":{up}}}]}},"cancel":{{"lhs":{{"s":"close"}},"op":">","rhs":{up}}}}}]}},"exit":{{"any":[{{"lhs":{{"s":"bars_held"}},"op":">=","rhs":{{"value":10}}}}]}}{AT_CLOSE}}}"#, lo = band("lower"), up = band("upper"));
+        let t = simulate(&compiled(&spec, &b), &b, 0, b.len() - 1);
+        eprintln!("{} trades; {}", t.len(), crate::lab::series::describe_node(&parse_spec(&spec).unwrap().entry[0]));
+        for t in t.iter().take(5) { eprintln!("entry {} exit {}", b.date[t.legs[0].i], b.date[t.exit_i]); }
+    }
+    /// TradeTiger MATCH ST_SMA AFL (Supertrend 5 × 1, (H+L)/2, SMA of TR): the engine's AmiBroker Supertrend equals the AFL loop
+    /// re-written here on every NIFTY 50 bar, and the 07-09-2012 trade exits on 08-10-2012 as in the AFL (needs VAULT_IDX_CSV).
+    #[test] fn nifty_supertrend_afl_parity() {
+        let Ok(path) = std::env::var("VAULT_IDX_CSV") else { eprintln!("VAULT_IDX_CSV not set; Supertrend parity skipped"); return };
+        let b = Bars::from_rows(&crate::load_csv(&path).unwrap()["NIFTY 50"]);
+        let (n, p, f) = (b.len(), 5usize, 1.);
+        let tr: Vec<f64> = (0..n).map(|i| if i == 0 { b.high[0] - b.low[0] } else { (b.high[i] - b.low[i]).max((b.high[i] - b.close[i - 1]).abs()).max((b.low[i] - b.close[i - 1]).abs()) }).collect();
+        let atr: Vec<f64> = (0..n).map(|i| if i + 1 < p { f64::NAN } else { tr[i + 1 - p..=i].iter().sum::<f64>() / p as f64 }).collect();
+        let (mut up, mut dn): (Vec<f64>, Vec<f64>) = (0..n).map(|i| { let m = (b.high[i] + b.low[i]) / 2.; (m + atr[i] * f, m - atr[i] * f) }).unzip();
+        let mut is_up = vec![true; n];
+        for i in p..n {
+            let c = b.close[i];
+            is_up[i] = if c > up[i - 1] && c < dn[i - 1] && dn[i - 1] == dn[i - 2] { false } else if c > up[i - 1] { true } else if c < dn[i - 1] { false } else { is_up[i - 1] };
+            if is_up[i] && is_up[i - 1] { dn[i] = dn[i].max(dn[i - 1]) } else if !is_up[i] && !is_up[i - 1] { up[i] = up[i].min(up[i - 1]) }
+        }
+        let eng = &super::super::testdata::go("supertrend", &b, &[("atr_length", 5.), ("factor", 1.), ("mode", 1.), ("price", 0.)])[0];
+        let diff = (p..n).filter(|&i| eng[i].is_finite() && ((if is_up[i] { dn[i] } else { up[i] }) - eng[i]).abs() > 1e-9).count();
+        assert_eq!(diff, 0, "bars where the engine's Supertrend differs from the AFL loop");
+        let st = r#"{"s":"supertrend","p":{"atr_length":5,"factor":1,"mode":1,"price":0}"#;
+        let spec = format!(r#"{{"v":1,"entry":{{"all":[{{"lhs":{{"s":"close"}},"op":"crosses_above","rhs":{st},"out":"supertrend","offset":1}}}}]}},"exit":{{"any":[{{"lhs":{st},"out":"direction"}},"op":"crosses_above","rhs":{{"value":0}}}}]}}{AT_CLOSE}}}"#);
+        let t = simulate(&compiled(&spec, &b), &b, 0, b.len() - 1);
+        let sep = t.iter().find(|t| b.date[t.legs[0].i].to_string().starts_with("2012-09-07")).expect("the 07-09-2012 trade");
+        eprintln!("{} trades; 07-09-2012 trade exits {}", t.len(), b.date[sep.exit_i]);
+        assert!(b.date[sep.exit_i].to_string().starts_with("2012-10-08"));
+    }
+
+    // Candle Exit TimeFrame (Ritik Jain AFL "Candle Exit Parameter"): from the bar after the entry, count W/M period-end bars
+    // (Upclose: the period closed above the previous period's close) and exit when the count reaches N.
+    const WEEK_END: &str = r#"{"lhs":{"s":"period_end","out":"w"},"op":">","rhs":{"value":0}}"#;
+    const MONTH_END: &str = r#"{"lhs":{"s":"period_end","out":"m"},"op":">","rhs":{"value":0}}"#;
+    /// Close crosses above 150 enters at the close; the exit is since_entry count of `when` >= n.
+    fn candle_exit(when: &str, n: u32) -> String {
+        format!(r#"{{"v":1,"entry":{{"all":[{{"lhs":{{"s":"close"}},"op":"crosses_above","rhs":{{"value":150}}}}]}},"exit":{{"any":[{{"lhs":{{"since_entry":"count","when":{when}}},"op":">=","rhs":{{"value":{n}}}}}]}}{AT_CLOSE}}}"#)
+    }
+    /// Upclose: on the period's last bar, close > the previous completed period's close (tf offset 1; offset 0 is this period's own close).
+    fn upclose(end: &str, tf: &str) -> String { format!(r#"{{"all":[{end},{{"lhs":{{"s":"close"}},"op":">","rhs":{{"s":"close","tf":"{tf}","offset":1}}}}]}}"#) }
+    /// 70 weekday bars from Monday 2024-01-01 (Fridays are bars 4, 9, 14, …; month ends 22 = 31 Jan, 43 = 29 Feb, 64 = 29 Mar),
+    /// close 100 except the given (bar, close) pairs.
+    fn weekdays(set: &[(usize, f64)]) -> Bars {
+        use crate::lab::resample::{civil, day_number};
+        let mut c = vec![100.; 70];
+        for &(i, v) in set { c[i] = v; }
+        let mut b = from_ohlc(&c.iter().map(|&x| (x, x, x, x)).collect::<Vec<_>>());
+        b.date = (day_number("2024-01-01")..).map(civil).filter(|d| (day_number(d) + 3).rem_euclid(7) < 5).take(70).collect();
+        b
+    }
+    #[test] fn weekly_and_monthly_n_candle_exits_count_period_ends_after_the_entry_bar() {
+        assert_eq!(weekdays(&[]).date[22], "2024-01-31");
+        // entry Wednesday (bar 2): this week's Friday (4) is the first count, the 2nd week end (9) exits
+        assert_eq!(run(&candle_exit(WEEK_END, 2), &weekdays(&[(2, 200.)])), [(2, 9, 1.)]);
+        // entry on a Friday: its own week end is the entry bar and does not count
+        assert_eq!(run(&candle_exit(WEEK_END, 2), &weekdays(&[(4, 200.)])), [(4, 14, 1.)]);
+        assert_eq!(run(&candle_exit(MONTH_END, 2), &weekdays(&[(2, 200.)])), [(2, 43, 1.)]);
+    }
+    #[test] fn upclose_counts_only_periods_that_closed_above_the_previous_period() {
+        // Friday closes 100, 90, 95, 80, 99: weeks 3 (bar 14) and 5 (bar 24) closed up; the Thursday before each closed 100,
+        // so a bar-to-bar up-close would never count them
+        let b = weekdays(&[(2, 200.), (9, 90.), (14, 95.), (19, 80.), (24, 99.)]);
+        assert_eq!(run(&candle_exit(&upclose(WEEK_END, "W"), 2), &b), [(2, 24, 1.)]);
+        // without the offset, close.W on the week's last bar is that week's own close: close > close.W never holds
+        let same_week = upclose(WEEK_END, "W").replace(r#","offset":1"#, "");
+        let t = simulate(&compiled(&candle_exit(&same_week, 1), &b), &b, 0, 69);
+        assert!(t.len() == 1 && t[0].open);
+        // months closing 100, 90, 120: March (bar 64) is the first up month
+        let m = weekdays(&[(2, 200.), (43, 90.), (64, 120.)]);
+        assert_eq!(run(&candle_exit(&upclose(MONTH_END, "M"), 1), &m), [(2, 64, 1.)]);
+    }
+    /// The AFL Exitcount loop re-written here on NIFTY 50 (Cross(C, MA(C, 20)) at the close; exit on the 3rd WeekEnd after the
+    /// entry bar, WeekEnd as the AFL's DayOfWeek test): the engine's trades equal it (needs VAULT_IDX_CSV).
+    #[test] fn nifty_weekly_candle_exit_afl_parity() {
+        let Ok(path) = std::env::var("VAULT_IDX_CSV") else { eprintln!("VAULT_IDX_CSV not set; candle-exit parity skipped"); return };
+        let b = Bars::from_rows(&crate::load_csv(&path).unwrap()["NIFTY 50"]);
+        let n = b.len();
+        let c = &b.close;
+        let sma: Vec<f64> = (0..n).map(|i| if i < 19 { f64::NAN } else { c[i - 19..=i].iter().sum::<f64>() / 20. }).collect();
+        let dow: Vec<i64> = b.date.iter().map(|d| (crate::lab::resample::day_number(d) + 4).rem_euclid(7)).collect(); // 0 Sunday
+        // AFL: (Days > Ref(Days,-1) AND Days > Ref(Days,1) AND Ref(Days,1) != 0) OR Days == 0; Null neighbours are false
+        let week_end: Vec<bool> = (0..n).map(|i| dow[i] == 0 || (i > 0 && i + 1 < n && dow[i] > dow[i - 1] && dow[i] > dow[i + 1] && dow[i + 1] != 0)).collect();
+        for (name, when) in [("N candle", WEEK_END.to_string()), ("Upclose", upclose(WEEK_END, "W"))] {
+            let mut prev_week_close = f64::NAN; // TimeFrameSet(inWeekly) Ref(Close, -1), read on the week's last bar
+            let mut afl: Vec<(usize, Option<usize>)> = vec![];
+            let (mut long, mut count) = (false, 0);
+            for i in 1..n {
+                let up = c[i] > prev_week_close;
+                if !long && c[i] > sma[i] && c[i - 1] <= sma[i - 1] { afl.push((i, None)); long = true; count = 0; }
+                else if long {
+                    if week_end[i] && (name == "N candle" || up) { count += 1; }
+                    if count == 3 { afl.last_mut().unwrap().1 = Some(i); long = false; }
+                }
+                if week_end[i] { prev_week_close = c[i]; }
+            }
+            let spec = candle_exit(&when, 3).replace(r#"{"value":150}"#, r#"{"s":"sma","p":{"length":20}}"#);
+            let eng: Vec<(usize, Option<usize>)> = simulate(&compiled(&spec, &b), &b, 0, n - 1).iter().map(|t| (t.legs[0].i, (!t.open).then_some(t.exit_i))).collect();
+            eprintln!("{name}: engine {} trades, AFL loop {} trades", eng.len(), afl.len());
+            for (e, x) in eng.iter().take(5) { eprintln!("  entry {} exit {}", b.date[*e], x.map_or("open".into(), |x| b.date[x].clone())); }
+            let first = eng.iter().zip(&afl).position(|(a, b)| a != b);
+            assert!(eng == afl, "{name}: first difference at trade {first:?}: engine {:?} AFL {:?}", first.map(|k| eng[k]), first.and_then(|k| afl.get(k)));
+        }
     }
 }

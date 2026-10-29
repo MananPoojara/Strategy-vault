@@ -68,6 +68,7 @@ pub mod x_census2_c;
 pub mod x_census2_d;
 pub mod footprint;
 pub mod x_orderflow;
+pub mod x_smc;
 #[cfg(test)]
 pub mod testdata;
 #[cfg(test)]

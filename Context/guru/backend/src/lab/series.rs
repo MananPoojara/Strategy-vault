@@ -6,6 +6,7 @@ use super::foreign;
 use super::resample::{self, Expand, Tf};
 use super::rules::{Agg, Bin, Cond, Dist, DualAtr, Exec, Expr, LabError, Node, Op, Operand, SeriesRef, SinceKind, Spec, Win};
 use std::borrow::Cow;
+use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 use std::sync::{Arc, atomic::{AtomicU64, Ordering}};
@@ -140,7 +141,7 @@ fn series_mode_in(fr: &Frames, others: &Others, cache: &mut Cache, s: &SeriesRef
     }
 }
 
-pub enum Val { Arr(Vec<f64>), Const(f64), Held, Since(Box<SinceVal>) }
+pub enum Val { Arr(Vec<f64>), Const(f64), Held, Since(Box<SinceVal>), Setup(Box<SetupVal>) }
 /// The open position a top-level exit condition reads: `held` is the bar bars_held counts from (the fill bar, or the
 /// signal bar with execution.bars_held_from "signal"), `entry` the fill bar and `px` the entry fill price.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -162,6 +163,20 @@ impl SinceVal {
             SinceKind::EntryPrice => p.px,
         };
         v * self.mul + self.add
+    }
+}
+/// A compiled setup node: `armed[i]` is the armed flag at the start of bar i, written by the bar loop through
+/// [`Compiled::step_setups`]; `trigger` already holds the period-end gate. Its value on bar i is armed[i] && trigger[i].
+pub struct SetupVal { setup: Vec<f64>, trigger: Vec<f64>, cancel: Option<Vec<f64>>, armed: Vec<Cell<bool>> }
+impl SetupVal {
+    fn new(setup: Vec<f64>, trigger: Vec<f64>, cancel: Option<Vec<f64>>) -> SetupVal { let armed = (0..setup.len()).map(|_| Cell::new(false)).collect(); SetupVal { setup, trigger, cancel, armed } }
+    fn at(&self, i: usize) -> bool { self.armed[i].get() && self.trigger[i] == 1. }
+    /// After bar i's decisions: `clear` (the side entered or exited on bar i), then cancel, then setup (AFL loop order).
+    fn step(&self, i: usize, clear: bool) {
+        let mut a = self.armed[i].get() && !clear;
+        if self.cancel.as_ref().is_some_and(|c| c[i] == 1.) { a = false; }
+        if self.setup[i] == 1. { a = true; }
+        if let Some(n) = self.armed.get(i + 1) { n.set(a); }
     }
 }
 /// Sparse table for the highest / lowest value over an inclusive bar range in O(1); NaN values are skipped and a range
@@ -194,6 +209,7 @@ impl Val {
             Val::Const(x) => *x,
             Val::Held => pos.filter(|p| p.held <= i).map_or(f64::NAN, |p| (i - p.held) as f64),
             Val::Since(s) => pos.map_or(f64::NAN, |p| s.at(i, p)),
+            Val::Setup(s) => truth(s.at(i)),
         }
     }
 }
@@ -239,6 +255,13 @@ impl Compiled {
     /// Long, market orders at the next open, no price exits (the v1 defaults).
     pub fn new(entry: Vec<RCond>, exit: Vec<RCond>) -> Compiled { Compiled { entry, exit, exec: Exec::default(), atr: BTreeMap::new(), other: None, cost: 0., limit_at: None, stop_at: None, grid: vec![], expiry_bar: vec![], dual: None, dline: None, shadow: None } }
     pub fn has_order(&self) -> bool { self.exec.has_order() }
+    /// Setup nodes start disarmed: a Compiled is run again per window (walk-forward, optimize).
+    pub fn reset_setups(&self) { for s in self.setups() { s.armed.iter().for_each(|a| a.set(false)); } }
+    /// Advance this side's setup nodes past bar i; `clear(r)`: rule r disarms on bar i before its cancel and setup.
+    pub fn step_setups(&self, i: usize, clear: impl Fn(&RCond) -> bool) {
+        for r in self.entry.iter().chain(&self.exit) { if let Val::Setup(s) = &r.lhs { s.step(i, clear(r)); } }
+    }
+    fn setups(&self) -> impl Iterator<Item = &SetupVal> { self.entry.iter().chain(&self.exit).filter_map(|r| if let Val::Setup(s) = &r.lhs { Some(&**s) } else { None }) }
     /// Price distance of `d` from `px`, using ATR at bar `k` (a bar whose close is already known). NaN while ATR warms up.
     pub fn dist(&self, d: Dist, px: f64, k: usize) -> f64 {
         self.dist_at(d,px,k,k)
@@ -289,6 +312,10 @@ fn list(ns: &[Node], at: &str, fr: &Frames, others: &Others, cache: &mut Cache) 
     // switched-off rules are skipped; the others keep their position in the label
     ns.iter().enumerate().filter(|(_, n)| !matches!(n, Node::Off(_))).map(|(k, n)| Ok(match n {
         Node::Cmp(c) => RCond { lhs: val(&c.lhs, fr, others, cache)?, op: c.op, rhs: val(&c.rhs, fr, others, cache)?, label: format!("{at}[{k}]: {}", describe(c)) },
+        Node::Setup { setup, trigger, cancel, period_end } => {
+            let (setup, trigger, cancel) = setup_masks(setup, trigger, cancel.as_deref(), *period_end, fr, others, cache)?;
+            RCond { lhs: Val::Setup(Box::new(SetupVal::new(setup, trigger, cancel))), op: Op::Gt, rhs: Val::Const(0.5), label: format!("{at}[{k}]: {}", describe_node(n)) }
+        }
         _ => RCond { lhs: Val::Arr(mask_in(n, fr, others, cache)?), op: Op::Gt, rhs: Val::Const(0.5), label: format!("{at}[{k}]: {}", describe_node(n)) },
     })).collect()
 }
@@ -297,8 +324,22 @@ fn arr_in(o: &Operand, fr: &Frames, others: &Others, cache: &mut Cache) -> Resul
     match val(o, fr, others, cache)? {
         Val::Arr(v) => Ok(v),
         Val::Const(x) => Ok(vec![x; fr.d.len()]),
-        Val::Held | Val::Since(_) => Err(LabError::Invalid("bars_held and since_entry values are only available in top-level exit conditions".into())),
+        Val::Held | Val::Since(_) | Val::Setup(_) => Err(LabError::Invalid("bars_held and since_entry values are only available in top-level exit conditions".into())),
     }
+}
+/// A setup node's setup, trigger (false off its period's last bar when `period_end` is set) and cancel arrays.
+fn setup_masks(setup: &Node, trigger: &Node, cancel: Option<&Node>, period_end: Option<Tf>, fr: &Frames, others: &Others, cache: &mut Cache) -> Result<(Vec<f64>, Vec<f64>, Option<Vec<f64>>), LabError> {
+    let mut t = mask_in(trigger, fr, others, cache)?;
+    if let Some(tf) = period_end {
+        for (v, end) in t.iter_mut().zip(period_ends(&fr.d.date, tf)) { if !end { *v = 0.; } }
+    }
+    Ok((mask_in(setup, fr, others, cache)?, t, cancel.map(|c| mask_in(c, fr, others, cache)).transpose()?))
+}
+/// Last daily bar of each W or M period; the data's final bar is not one (its period may continue), as exit.dual_atr.
+/// Also the `period_end` catalogue series (periods.rs).
+pub(super) fn period_ends(dates: &[String], tf: Tf) -> Vec<bool> {
+    let anchor = if tf == Tf::W { 1 } else { 2 };
+    (0..dates.len()).map(|i| i + 1 < dates.len() && resample::period_key(&dates[i], anchor) != resample::period_key(&dates[i + 1], anchor)).collect()
 }
 /// An expression on the daily bars (spec §4.1–§4.2): a NaN input gives NaN, division by zero gives NaN, windows are NaN until full.
 fn eval(e: &Expr, fr: &Frames, others: &Others, cache: &mut Cache) -> Result<Vec<f64>, LabError> {
@@ -473,6 +514,12 @@ fn mask_in(n: &Node, fr: &Frames, others: &Others, cache: &mut Cache) -> Result<
                 if last[i] == 1. && unk[i + 1] - unk[i.saturating_sub(*within)] > 0 { f64::NAN } else { 0. }
             }).collect()
         }
+        Node::Setup { setup, trigger, cancel, period_end } => {
+            // No trade loop here (execution.shadow filter rows, filter exits): the node disarms when it fires instead of on
+            // the side's entry/exit, as scan::signals.
+            let s = { let (a, b, c) = setup_masks(setup, trigger, cancel.as_deref(), *period_end, fr, others, cache)?; SetupVal::new(a, b, c) };
+            (0..len).map(|i| { let v = s.at(i); s.step(i, v); truth(v) }).collect()
+        }
     })
 }
 pub fn compile_with(spec: &Spec, fr: &Frames, others: &Others, cache: &mut Cache) -> Result<Compiled, LabError> {
@@ -551,9 +598,7 @@ fn dual_bands(d: &DualAtr, short: bool, fr: &Frames, cache: &mut Cache) -> Resul
     let close = series(fr, cache, &SeriesRef { id: "close".into(), params: Default::default(), tf: d.tf, out: 0, offset: 0, foreign: Default::default(), formula: None })?;
     let (m1, m2) = (d.initial.mult, d.favour.mult);
     let n = fr.d.len();
-    let anchor = if d.tf == Tf::W { 1 } else { 2 };
-    // the last bar of the data is not a known period end (the period may continue)
-    let end = (0..n).map(|i| d.tf != Tf::D && i + 1 < n && resample::period_key(&fr.d.date[i], anchor) != resample::period_key(&fr.d.date[i + 1], anchor)).collect();
+    let end = if d.tf == Tf::D { vec![false; n] } else { period_ends(&fr.d.date, d.tf) };
     Ok(DualBands {
         init: (0..n).map(|i| p1[i] - sign * m1 * a1[i]).collect(),
         fav: (0..n).map(|i| p2[i] - sign * m2 * a2[i]).collect(),
@@ -638,6 +683,12 @@ pub fn describe_node(n: &Node) -> String {
         Node::Not(c) => format!("not({})", describe_node(c)),
         Node::AtLeast { k, of, when } => format!("at_least {k} of {of}({})", describe_node(when)),
         Node::Then { steps, within } => format!("then({}) within {within}", join(steps)),
+        Node::Setup { setup, trigger, cancel, period_end } => {
+            let mut t = format!("setup({}) then trigger({})", describe_node(setup), describe_node(trigger));
+            if let Some(c) = cancel { t = format!("{t} cancel({})", describe_node(c)); }
+            if let Some(tf) = period_end { t = format!("{t} at {} end", if *tf == Tf::W { "week" } else { "month" }); }
+            t
+        }
     }
 }
 

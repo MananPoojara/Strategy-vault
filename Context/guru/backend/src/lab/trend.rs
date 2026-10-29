@@ -68,9 +68,12 @@ fn supertrend_afl(b: &Bars, f: f64, len: usize, hl2: Vec<f64>) -> Output {
     for i in len.max(1)..m {
         let (u1, d1, c) = (up[i - 1], dn[i - 1], b.close[i]);
         // AFL: a comparison with Null on the previous band counts as Close > band
-        is_up[i] = if u1.is_nan() || c > u1 { true } else if !d1.is_nan() && c < d1 { false } else { is_up[i - 1] };
-        if is_up[i] { if !d1.is_nan() { dn[i] = if dn[i].is_nan() { d1 } else { dn[i].max(d1) }; } }
-        else if !u1.is_nan() { up[i] = if up[i].is_nan() { u1 } else { up[i].min(u1) }; }
+        // AFL's first test: bands crossed (a freak bar pulls up below dn) with the close between them and dn held flat → down
+        let crossed = i >= 2 && c > u1 && c < d1 && d1 == dn[i - 2];
+        is_up[i] = if crossed { false } else if u1.is_nan() || c > u1 { true } else if !d1.is_nan() && c < d1 { false } else { is_up[i - 1] };
+        // AFL: the active band tightens only while the trend holds (IsUp[i] && IsUp[i-1]); a flip bar keeps its raw band
+        if is_up[i] && is_up[i - 1] { if !d1.is_nan() { dn[i] = if dn[i].is_nan() { d1 } else { dn[i].max(d1) }; } }
+        else if !is_up[i] && !is_up[i - 1] && !u1.is_nan() { up[i] = if up[i].is_nan() { u1 } else { up[i].min(u1) }; }
     }
     let st: Vec<f64> = (0..m).map(|i| if is_up[i] { dn[i] } else { up[i] }).collect();
     let dir = (0..m).map(|i| if st[i].is_nan() { NA } else if is_up[i] { -1. } else { 1. }).collect();
@@ -178,7 +181,7 @@ pub const DEFS: &[IndicatorDef] = &[
     def("supertrend", "Supertrend", &[len("atr_length", "ATR length", 10.), real("factor", "Factor", 3., 0.5, 20., 0.5),
         int("mode", "Mode (0 TradingView, 1 AmiBroker)", 0., 0., 1.),
         int("price", "Price (0 (H+L)/2, 1 Close, 2 Open, 3 High, 4 Low, 5 (O+C)/2, 6 (H+L+C)/3, 7 (O+H+L+C)/4)", 0., 0., 7.)], &["supertrend", "direction"], Placement::Price,
-        "atr=rma(tr(true)); bands hl2+-factor*atr with carry rules; direction -1 uptrend / +1 downtrend; NaN where atr is NaN; mode 1 (the user's AmiBroker Supertrend AFL): atr = sma(tr(true), atr_length), up = hl2 + factor·atr, dn = hl2 − factor·atr, isUp true on every bar before atr_length; from bar atr_length: close > up[1] (or up[1] NaN) → up, close < dn[1] → down, else unchanged; in an uptrend dn = max(dn, dn[1]), in a downtrend up = min(up, up[1]) (the inactive band is not carried, no reset); supertrend = isUp ? dn : up; price (both modes) sets the band centre instead of hl2: 1 close, 2 open, 3 high, 4 low, 5 (O+C)/2, 6 (H+L+C)/3, 7 (O+H+L+C)/4", &[9, 9], supertrend),
+        "atr=rma(tr(true)); bands hl2+-factor*atr with carry rules; direction -1 uptrend / +1 downtrend; NaN where atr is NaN; mode 1 (the user's AmiBroker Supertrend AFL): atr = sma(tr(true), atr_length), up = hl2 + factor·atr, dn = hl2 − factor·atr, isUp true on every bar before atr_length; from bar atr_length: close > up[1] and < dn[1] with dn[1] = dn[2] (crossed bands) → down, else close > up[1] (or up[1] NaN) → up, close < dn[1] → down, else unchanged; while the trend holds (this bar and the last both up) dn = max(dn, dn[1]), both down up = min(up, up[1]); a flip bar keeps its raw band (the inactive band is not carried, no reset); supertrend = isUp ? dn : up; price (both modes) sets the band centre instead of hl2: 1 close, 2 open, 3 high, 4 low, 5 (O+C)/2, 6 (H+L+C)/3, 7 (O+H+L+C)/4", &[9, 9], supertrend),
     def("sar", "Parabolic SAR", &[real("start", "Start", 0.02, 0.001, 1., 0.001), real("increment", "Increment", 0.02, 0.001, 1., 0.001), real("max", "Maximum", 0.2, 0.01, 1., 0.01)], &["sar"], Placement::Price,
         "TradingView ta.sar: initial direction long if high[1]>high[0]; sar+=af*(ep-sar); reverse on strict penetration; clipped to the last two lows (long) / highs (short)", &[1], sar),
     def("aroon", "Aroon", LEN14, &["up", "down"], Placement::Pane,
@@ -256,10 +259,11 @@ mod tests {
         }
     }
     #[test] fn supertrend_amibroker_afl_starts_up_and_ratchets_only_the_active_band() {
-        // TR 2, 2, 3.5, 3, 6.5 (n 1: atr = TR); dn = hl2 − atr = 8, 9, 10, 11.5 ratcheted up; bar 4 closes below dn[3] = 11.5 → down, up = min(18.75, 17.5)
+        // TR 2, 2, 3.5, 3, 6.5 (n 1: atr = TR); dn = hl2 − atr = 8, 9, 10, 11.5 ratcheted up; bar 4 closes below dn[3] = 11.5 → down,
+        // and on that flip bar the up band stays raw (AFL tightens only while the trend holds): up = hl2 + atr = 12.25 + 6.5 = 18.75
         let b = from_ohlc(&[(10., 11., 9., 10.), (11., 12., 10., 11.5), (13., 15., 12., 14.), (14., 16., 13., 15.), (15., 15.5, 9., 9.5)]);
         let o = go("supertrend", &b, &many(&[("atr_length", 1.), ("factor", 1.), ("mode", 1.)]));
-        assert_series(&o[0], &[8., 9., 10., 11.5, 17.5]);
+        assert_series(&o[0], &[8., 9., 10., 11.5, 18.75]);
         assert_series(&o[1], &[-1., -1., -1., -1., 1.]);
     }
 }

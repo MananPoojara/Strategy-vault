@@ -28,6 +28,11 @@ fn inv(m: impl Into<String>) -> LabError { LabError::Invalid(m.into()) }
 
 /// Buy, Sell, Short, Cover per bar 0..n of a compiled spec (no open position: `entry` is None).
 pub fn signals(c: &Compiled, n: usize) -> [Vec<bool>; 4] {
+    // setup nodes without a position: each disarms on the bar it fires (not on an entry/exit), as series::mask_in
+    for s in std::iter::once(c).chain(c.other.as_deref()) {
+        s.reset_setups();
+        for i in 0..n { s.step_setups(i, |r| r.holds(i, None)); }
+    }
     let entry = |s: &Compiled, i| !s.entry.is_empty() && s.entry.iter().all(|r| r.holds(i, None));
     let exit = |s: &Compiled, i| s.exit.iter().any(|r| r.holds(i, None));
     let (long, short) = if c.exec.short { (None, Some(c)) } else { (Some(c), c.other.as_deref()) };

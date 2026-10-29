@@ -25,7 +25,7 @@ pub const NOTES: &[&str] = &[
     "Exposure as AmiBroker: bars in a position from the entry bar to the bar before the exit, over all bars of the run. Net RAR, RAR and RAR/MaxDD follow it.",
     "Sharpe ratio of trades: average trade % return × (bars per year / average bars held), minus {sharpe} % risk-free (Settings › Report; AmiBroker default 5 %), divided by the population standard deviation of trade % returns × √(bars per year / average bars held). Risk-reward ratio: slope × bars per year / standard error.",
     "Ulcer performance index uses a {upi} % risk-free rate (Settings › Report; AmiBroker default 5.4 %). K-ratio as AmiBroker prints it: slope / (standard error of the slope × bars), on the linear equity line.",
-    "Trade statistics count closed trades only, like the run's stats; a position still open at the end is in the trade list, the equity line and the system metrics.",
+    "Trade statistics count every trade of the trade list, the last one still open included, valued at the last close as in the tradesheet; the run's headline stats count closed trades only.",
     "Profit factor, payoff ratio and Profit are from each trade's money profit (× initial equity: the ledger P&L in money mode, otherwise equity before the trade × its return), as AmiBroker does; Sum of trade % adds the trade % returns.",
     "Bars held count the entry and the exit bar (AmiBroker # bars): a same-bar trade is 1 bar. The trade list's bars column is exit bar − entry bar.",
     "Buy&Hold: the same system metrics on the instrument's close from the first bar, always invested; its statistics column is one trade from the first to the last bar of the run, marked at the last close.",
@@ -155,7 +155,7 @@ pub fn system(rows: &[Row], equity: &[f64], trades: &[ReportTrade], cagr: f64, e
 }
 
 /// The `report` object of a lab run: AmiBroker statistics columns plus system metrics (the strategy's and buy-and-hold's on
-/// `bh`), the risk-free rates used and the declared conventions. `trades` are the closed trades.
+/// `bh`), the risk-free rates used and the declared conventions. `trades` are the trade list's trades, an open one marked at the last close.
 /// Contract (Report.tsx): `report.buyhold` has the same keys as `report.all` (null when not applicable) — the Buy&Hold
 /// statistics column: one long trade from the first to the last bar of the run on the same instrument, marked at the last close.
 /// `report.rates` = {"sharpe": %, "upi": %}, the risk-free rates the Sharpe ratio of trades and the UPI used.

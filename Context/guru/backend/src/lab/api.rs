@@ -497,8 +497,6 @@ pub(super) fn run_spec(st: &State, q: &Query, spec: Spec) -> Result<String, LabE
         before += profit;
         report::ReportTrade { dir: t.dir, entry_i: t.legs[0].i, exit_i: t.exit_i, entry_px: t.legs[0].px, ret, profit }
     }).collect();
-    // the statistics count closed trades, like `stats`; the open position stays in the trade list
-    let closed: Vec<report::ReportTrade> = shown.iter().zip(&report_trades).filter(|(t, _)| !t.open).map(|(_, r)| *r).collect();
     let trades = arr(shown.iter().zip(&run.trades).zip(&report_trades).map(|((t, effective), rt)| { let (mae, mfe) = report::excursion(&ctx.r, rt); format!(
         "{{\"entry\":\"{}\",\"exit\":\"{}\",\"entry_i\":{},\"exit_i\":{},\"entry_px\":{},\"exit_px\":{},\"ret\":{},\"bars\":{},\"open\":{},\"signal\":\"{}\",\"reason\":\"{}\",\"dir\":{},\"entry_kind\":\"{}\",\"mae\":{},\"mfe\":{}{}{}{}}}",
         ctx.r[t.legs[0].i].date, ctx.r[t.exit_i].date, t.legs[0].i - from, t.exit_i - from, crate::num(t.legs[0].px), crate::num(t.exit_px),
@@ -513,7 +511,7 @@ pub(super) fn run_spec(st: &State, q: &Query, spec: Spec) -> Result<String, LabE
     let stats = result_stats(ctx, &run, costs, booked.as_ref(), money.as_ref());
     // AmiBroker's calendar (365-day years, actual bars per year) and exposure for the report only: `stats` keeps the shared definitions
     let years = report::years(&ctx.r, from, to);
-    let report = report::report_json(&ctx.r, &run.equity, &closed, report::car(&run.equity, years), report::exposure(&report_trades, from, to),
+    let report = report::report_json(&ctx.r, &run.equity, &report_trades, report::car(&run.equity, years), report::exposure(&report_trades, from, to),
         run.equity.len() as f64 / years, &run.bh, report::car(&run.bh, years), spec.report.unwrap_or(report::DEFAULT_RATES));
     let cost_json = money.as_ref().map_or_else(|| costs.json(), declared_costs_json);
     Ok(format!(
@@ -707,6 +705,7 @@ fn operand_cells(o:&rules::Operand)->usize{
 fn node_cells(n:&rules::Node)->usize{use rules::Node;1+match n{
     Node::Cmp(c)=>operand_cells(&c.lhs)+operand_cells(&c.rhs),Node::Range{x,lo,hi,..}=>operand_cells(x)+operand_cells(lo)+operand_cells(hi),Node::Trend{x,..}=>operand_cells(x),
     Node::Off(n)=>node_cells(n),Node::All(v)|Node::Any(v)=>v.iter().map(node_cells).sum(),Node::Not(n)|Node::AtLeast{when:n,..}=>node_cells(n),Node::Then{steps,..}=>steps.iter().map(node_cells).sum(),
+    Node::Setup{setup,trigger,cancel,..}=>node_cells(setup)+node_cells(trigger)+cancel.as_deref().map_or(0,node_cells),
 }}
 fn portfolio_resource_counts(member_bars:&[usize],other_bars:usize,units:usize)->Result<usize,LabError>{
     let refuse=|why:String|LabError::Invalid(format!("portfolio resource limit: {why}; use fewer members or shorter admitted histories (from/to does not truncate indicator warm-up)"));
@@ -1623,7 +1622,7 @@ mod tests {
         assert_eq!((c.get("max_leaves").and_then(|v| v.as_f64()), c.get("max_query_bytes").and_then(|v| v.as_f64())), (Some(40.), Some(16384.)));
         let ex = c.get("execution").unwrap();
         assert_eq!((ex.get("max_pause_bars").and_then(|v| v.as_f64()), catalogue_json().contains("\"ticks\"")), (Some(100000.), false));
-        assert!(catalogue_json().contains("\"node_kinds\":[\"all\",\"any\",\"not\",\"at_least\",\"then\"]") && catalogue_json().contains("\"timeframes\":[\"D\",\"W\",\"M\",\"Q\",\"Y\"]"));
+        assert!(catalogue_json().contains("\"node_kinds\":[\"all\",\"any\",\"not\",\"at_least\",\"then\",\"setup\"]") && catalogue_json().contains("\"timeframes\":[\"D\",\"W\",\"M\",\"Q\",\"Y\"]"));
     }
     #[test] fn each_instrument_kind_labels_or_refuses_its_result() {
         use crate::lab::model::{CRYPTO_SHORT, INDEX, US_SHORT_UNIT};
@@ -1785,7 +1784,7 @@ mod amibroker_report_tests {
         assert!(!close_fills(&both(r#"{"delays":{"buy":1,"sell":1,"short":1,"cover":1}}"#)));
         assert!(long(r#"{"prices":{"cover":"close"},"delays":{"cover":0}}"#).is_err(), "a key of a side not traded is refused, not ignored");
     }
-    #[test] fn the_report_counts_closed_trades_by_side_and_every_trade_has_excursions() {
+    #[test] fn the_report_counts_every_listed_trade_by_side_and_every_trade_has_excursions() {
         let rows: &'static [crate::Row] = Box::leak((0..400).map(|i| {
             let c = 100. + (i as f64 * 0.3).sin() * 8.;
             crate::Row { ticker: "SPX".into(), date: format!("{}-{:02}-{:02}", 2015 + i / 336, 1 + (i / 28) % 12, 1 + i % 28), open: c - 0.2, high: c + 1., low: c - 1., close: c, volume: None }
@@ -1798,8 +1797,11 @@ mod amibroker_report_tests {
         let closed = trades.iter().filter(|t| !matches!(t.get("open"), Some(Json::Bool(true)))).count() as f64;
         let n = |side: &str| v.get("report").unwrap().get(side).unwrap().get("trades").unwrap().as_f64().unwrap();
         assert!(n("long") > 0. && n("short") > 0.);
-        assert_eq!((n("all"), n("long") + n("short")), (closed, closed));
-        assert_eq!(Some(closed), v.get("stats").unwrap().get("trades").and_then(Json::as_f64), "the report and the stats count the same trades");
+        // the report counts the open trade too (valued at the last close, as the tradesheet); the headline stats stay closed-only
+        let listed = trades.len() as f64;
+        assert!(listed > closed, "the fixture ends with a trade still open");
+        assert_eq!((n("all"), n("long") + n("short")), (listed, listed));
+        assert_eq!(Some(closed), v.get("stats").unwrap().get("trades").and_then(Json::as_f64), "the headline stats count closed trades");
         for t in trades {
             let (mae, mfe) = (t.get("mae").unwrap().as_f64().unwrap(), t.get("mfe").unwrap().as_f64().unwrap());
             assert!(mae <= 0. && 0. <= mfe);

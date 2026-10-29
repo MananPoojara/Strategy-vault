@@ -45,7 +45,7 @@ pub fn base() -> Vec<IndicatorDef> {
     [super::ma::DEFS, super::momentum::DEFS, super::trend::DEFS, super::volatility::DEFS, super::volume::DEFS, super::price::DEFS, super::listed::DEFS, super::breadth::DEFS, super::ma2::DEFS, super::bands::DEFS, super::stats::DEFS, super::osc2::DEFS, super::vol2::DEFS, super::stops::DEFS, super::volume2::DEFS, super::periods::DEFS, super::patterns::DEFS, super::candles::DEFS, super::ratings::DEFS, super::futures::DEFS, super::pairs::DEFS].concat()
 }
 pub fn all() -> Vec<IndicatorDef> {
-    [&base()[..], super::x_ma::DEFS, super::x_momentum::DEFS, super::x_momentum2::DEFS, super::x_trend::DEFS, super::x_volatility::DEFS, super::x_volume::DEFS, super::x_candles::DEFS, super::x_cycles::DEFS, super::x_derived::DEFS, super::x_atlas::DEFS, super::x_timeless::DEFS, super::x_census_trend::DEFS, super::x_census_momentum::DEFS, super::x_census_candles::DEFS, super::x_census_stats::DEFS, super::x_census_misc::DEFS, super::x_census_patterns::DEFS, super::x_census_harmonic::DEFS, super::x_census2_a::DEFS, super::x_census2_b::DEFS, super::x_census2_c::DEFS, super::x_census2_d::DEFS, super::x_orderflow::DEFS].concat()
+    [&base()[..], super::x_ma::DEFS, super::x_momentum::DEFS, super::x_momentum2::DEFS, super::x_trend::DEFS, super::x_volatility::DEFS, super::x_volume::DEFS, super::x_candles::DEFS, super::x_cycles::DEFS, super::x_derived::DEFS, super::x_atlas::DEFS, super::x_timeless::DEFS, super::x_census_trend::DEFS, super::x_census_momentum::DEFS, super::x_census_candles::DEFS, super::x_census_stats::DEFS, super::x_census_misc::DEFS, super::x_census_patterns::DEFS, super::x_census_harmonic::DEFS, super::x_census2_a::DEFS, super::x_census2_b::DEFS, super::x_census2_c::DEFS, super::x_census2_d::DEFS, super::x_orderflow::DEFS, super::x_smc::DEFS].concat()
 }
 pub fn get(id: &str) -> Option<IndicatorDef> { all().into_iter().find(|d| d.id == id) }
 pub fn resolve_params(def: &IndicatorDef, given: &Params) -> Result<Params, String> {
@@ -161,14 +161,14 @@ mod tests {
     }
     #[test] fn catalogue_matches_the_phase6_master_list() {
         let defs = base();
-        assert_eq!(defs.len(), 298, "Phase 6 master list: 66 Batch A + 233 new; Phase 7: session, sessions_left, expiry; 2026-10-26: cvd, volume_delta, up_down_volume, volume_profile moved to x_orderflow");
-        assert_eq!(defs.iter().filter(|d| d.compute.is_some()).count(), 190);
+        assert_eq!(defs.len(), 299, "Phase 6 master list: 66 Batch A + 233 new; Phase 7: session, sessions_left, expiry; 2026-10-26: cvd, volume_delta, up_down_volume, volume_profile moved to x_orderflow; 2026-10-29: period_end");
+        assert_eq!(defs.iter().filter(|d| d.compute.is_some()).count(), 191);
         assert_eq!(defs.iter().filter(|d| d.compute.is_none()).count(), 108);
         let mut c = std::collections::BTreeMap::new();
         for (_, tv, ab) in crate::lab::sources::SOURCES {
             *c.entry(match (tv.is_empty(), ab.is_empty()) { (false, false) => "both", (false, true) => "tv", (true, false) => "ab", _ => "lab" }).or_insert(0) += 1;
         }
-        assert_eq!((c["tv"], c["ab"], c["both"], c["lab"]), (231, 26, 40, 1)); // 3 tv rows and volume_profile (both) moved to x_orderflow
+        assert_eq!((c["tv"], c["ab"], c["both"], c["lab"]), (231, 27, 40, 1)); // 3 tv rows and volume_profile (both) moved to x_orderflow; +period_end (ab)
     }
     #[test] fn volume_indicators_refuse_without_volume() {
         let bars = walk(300, 3, false);

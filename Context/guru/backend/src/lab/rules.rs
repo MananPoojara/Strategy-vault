@@ -11,7 +11,7 @@ pub const MAX_OFFSET: usize = 1000;
 pub const PRICE_SOURCES: &[&str] = &["open", "high", "low", "close", "hl2", "hlc3", "ohlc4", "oc2", "volume"];
 pub const OPERATORS: &[&str] = &["crosses_above", "crosses_below", ">", "<", ">=", "<=", "=", "!=", "crosses", "between", "outside", "rising", "falling"];
 /// Group kinds a rule list may hold besides comparisons (spec §4.1).
-pub const NODE_KINDS: &[&str] = &["all", "any", "not", "at_least", "then"];
+pub const NODE_KINDS: &[&str] = &["all", "any", "not", "at_least", "then", "setup"];
 /// Whole-spec bounds (spec §4.3): comparisons, and comparisons + groups + expressions, over every rule list.
 pub const MAX_LEAVES: usize = 40;
 pub const MAX_NODES: usize = 120;
@@ -122,6 +122,10 @@ pub enum Node {
     Not(Box<Node>),
     AtLeast { k: usize, of: usize, when: Box<Node> },
     Then { steps: Vec<Node>, within: usize },
+    /// Armed by `setup`, disarmed by `cancel` or by the side's entry/exit, true on a later bar where `trigger` holds (and the
+    /// bar ends its W/M period when `period_end` is set): AmiBroker's loop flag pattern. Top-level entry/exit rule only,
+    /// because its state follows the trade loop (series::SetupVal).
+    Setup { setup: Box<Node>, trigger: Box<Node>, cancel: Option<Box<Node>>, period_end: Option<Tf> },
     /// A rule switched off (`"off": true`): kept, validated and walked like the rule, skipped by the engine. Only a
     /// top-level entry/exit rule or a condition of an all/any group.
     Off(Box<Node>),
@@ -775,6 +779,8 @@ fn portfolio_rules(s:&Spec)->Result<(),LabError>{
     if x.futures.is_some(){return unsupported("execution.instrument futures");}
     if x.delay!=1{return unsupported("execution.delay_bars");}
     if x.market.is_some(){return unsupported("execution.prices / execution.delays");}
+    // its armed state follows the single-instrument trade loop; the portfolio ledger does not step it
+    if s.entry.iter().chain(&s.exit).any(|n|matches!(n,Node::Setup{..})||matches!(n,Node::Off(x) if matches!(**x,Node::Setup{..}))){return unsupported("a setup/trigger rule");}
     if x.reentry.is_some(){return unsupported("execution.reentry");}
     if x.reenter_on_exit_bar{return unsupported("execution.reenter_on_exit_bar");}
     if x.exit_at_stop!=[1;4]||!x.stops_immediately||x.nbar_first||!x.same_bar{return unsupported("execution.exit_at_stop, activate_stops_immediately, nbar_has_priority or allow_same_bar_exit");}
@@ -1031,29 +1037,32 @@ fn conds(v: Option<&Json>, at: &str, exit: bool, may_be_empty: bool, b: &mut Bud
     let Some(Json::Arr(items)) = v else { return Err(inv(format!("{at} must be a list of conditions"))) };
     if items.is_empty() && !may_be_empty { return Err(inv(format!("{at} needs at least one condition{}", if exit { " (or a stop_loss, target or trailing exit)" } else { "" }))); }
     if items.len() > MAX_CONDITIONS { return Err(inv(format!("{at} has {} conditions; the limit is {MAX_CONDITIONS}", items.len()))); }
-    let list: Vec<Node> = items.iter().enumerate().map(|(i, c)| switchable(c, &format!("{at}[{i}]"), exit, b)).collect::<Result<_, _>>()?;
+    let list: Vec<Node> = items.iter().enumerate().map(|(i, c)| switchable(c, &format!("{at}[{i}]"), exit, true, b)).collect::<Result<_, _>>()?;
     if !may_be_empty && list.iter().all(|n| matches!(n, Node::Off(_))) { return Err(inv(format!("{at}: every rule is switched off; switch one on"))); }
     Ok(list)
 }
 
 /// One rule-list entry. `held` allows bars_held: top-level exit comparisons only, because every other node is a precomputed array.
 /// A rule that may carry `"off"` (a top-level entry/exit rule or a condition of an all/any group).
-fn switchable(v: &Json, at: &str, held: bool, b: &mut Budget) -> Result<Node, LabError> {
+/// `top`: a rule-list item, where a setup node may stand.
+fn switchable(v: &Json, at: &str, held: bool, top: bool, b: &mut Budget) -> Result<Node, LabError> {
+    let one = |v: &Json, b: &mut Budget| if top && (v.get("setup").is_some() || v.get("trigger").is_some()) { setup(v, at, b) } else { node(v, at, held, b) };
     match v.get("off") {
-        None => node(v, at, held, b),
-        Some(Json::Bool(off)) => { let n = node(&without(v, "off"), at, held, b)?; Ok(if *off { Node::Off(Box::new(n)) } else { n }) }
+        None => one(v, b),
+        Some(Json::Bool(off)) => { let n = one(&without(v, "off"), b)?; Ok(if *off { Node::Off(Box::new(n)) } else { n }) }
         Some(_) => Err(inv(format!("{at}.off must be true or false"))),
     }
 }
 fn node(v: &Json, at: &str, held: bool, b: &mut Budget) -> Result<Node, LabError> {
     if v.get("off").is_some() { return Err(inv(format!("{at}.off: only a top-level rule or a condition of an all/any group can be switched off"))); }
     if v.get("lhs").is_some() { return leaf(v, at, held, b); }
+    if v.get("setup").is_some() || v.get("trigger").is_some() { return Err(inv(format!("{at}: a setup node is only allowed as a top-level entry or exit rule"))); }
     b.take(false)?;
     let list = |key: &str, b: &mut Budget| -> Result<Vec<Node>, LabError> {
         let Some(Json::Arr(items)) = v.get(key) else { return Err(inv(format!("{at}.{key} must be a list"))) };
         if items.is_empty() { return Err(inv(format!("{at}.{key} needs at least one entry"))); }
         let group = key != "then";
-        let kids: Vec<Node> = items.iter().enumerate().map(|(i, c)| { let a = format!("{at}.{key}[{i}]"); if group { switchable(c, &a, false, b) } else { node(c, &a, false, b) } }).collect::<Result<_, _>>()?;
+        let kids: Vec<Node> = items.iter().enumerate().map(|(i, c)| { let a = format!("{at}.{key}[{i}]"); if group { switchable(c, &a, false, false, b) } else { node(c, &a, false, b) } }).collect::<Result<_, _>>()?;
         if kids.iter().all(|k| matches!(k, Node::Off(_))) { return Err(inv(format!("{at}.{key}: every condition is switched off; switch one on or remove the group"))); }
         Ok(kids)
     };
@@ -1078,6 +1087,19 @@ fn node(v: &Json, at: &str, held: bool, b: &mut Budget) -> Result<Node, LabError
     Err(inv(format!("{at} must be a comparison (lhs, op, rhs) or a group ({})", NODE_KINDS.join(", "))))
 }
 
+fn setup(v: &Json, at: &str, b: &mut Budget) -> Result<Node, LabError> {
+    fields(v, at, &["setup", "trigger", "cancel", "period_end"], &[])?;
+    b.take(false)?;
+    let kid = |k: &str, b: &mut Budget| v.get(k).map(|n| node(n, &format!("{at}.{k}"), false, b).map(Box::new)).transpose();
+    let (setup, trigger, cancel) = (kid("setup", b)?, kid("trigger", b)?, kid("cancel", b)?);
+    let setup = setup.ok_or_else(|| inv(format!("{at}.setup is required")))?;
+    let trigger = trigger.ok_or_else(|| inv(format!("{at}.trigger is required")))?;
+    let period_end = match v.get("period_end") {
+        None => None,
+        Some(p) => Some(p.as_str().and_then(Tf::parse).filter(|t| matches!(t, Tf::W | Tf::M)).ok_or_else(|| inv(format!("{at}.period_end must be W or M")))?),
+    };
+    Ok(Node::Setup { setup, trigger, cancel, period_end })
+}
 /// A whole number from `min` to MAX_OFFSET (window lengths, counts, sequence spans).
 fn whole(v: Option<&Json>, at: &str, min: usize) -> Result<usize, LabError> {
     v.and_then(Json::as_f64).filter(|n| n.fract() == 0. && *n >= min as f64 && *n <= MAX_OFFSET as f64).map(|n| n as usize)
@@ -1422,6 +1444,10 @@ fn walk_node(n: &mut Node, at: &str, f: &mut dyn FnMut(String, Knob)) {
             for (k, c) in steps.iter_mut().enumerate() { walk_node(c, &format!("{at}.then[{k}]"), f); }
             f(format!("{at}.within"), Knob::Whole(within));
         }
+        Node::Setup { setup, trigger, cancel, .. } => {
+            walk_node(setup, &format!("{at}.setup"), f); walk_node(trigger, &format!("{at}.trigger"), f);
+            if let Some(c) = cancel { walk_node(c, &format!("{at}.cancel"), f); }
+        }
     }
 }
 fn walk_operand(o: &mut Operand, at: &str, f: &mut dyn FnMut(String, Knob)) {
@@ -1490,6 +1516,7 @@ fn consistent(n: &Node) -> Result<(), String> {
         Node::Range { lo: Operand::Value(l), hi: Operand::Value(h), .. } if l > h => Err(format!("lo ({l}) is above hi ({h})")),
         Node::AtLeast { when, .. } | Node::Not(when) => consistent(when),
         Node::All(v) | Node::Any(v) | Node::Then { steps: v, .. } => v.iter().try_for_each(consistent),
+        Node::Setup { setup, trigger, cancel, .. } => [Some(setup), Some(trigger), cancel.as_ref()].into_iter().flatten().try_for_each(|n| consistent(n)),
         Node::Cmp(c) => [&c.lhs, &c.rhs].into_iter().try_for_each(consistent_operand),
         Node::Range { x, lo, hi, .. } => [x, lo, hi].into_iter().try_for_each(consistent_operand),
         Node::Trend { x, .. } => consistent_operand(x),
@@ -1595,10 +1622,18 @@ fn check_value(spec: &Spec, t: &Target, x: f64) -> Result<(), String> {
     if let Some(score)=s.portfolio.as_ref().and_then(|p|p.score.as_ref()){consistent_operand(score)?;}
     Ok(())
 }
-/// Every catalogue or price series id the rule lists read, nested ones included.
+/// Every catalogue or price series id the rule lists read, nested ones and implicit setup period-end gates included.
 pub fn series_ids(spec: &Spec) -> Vec<String> {
+    fn gated_setup(n: &Node) -> bool {
+        match n { Node::Off(n) => gated_setup(n), Node::Setup { period_end: Some(_), .. } => true, _ => false }
+    }
     let mut ids = Vec::new();
-    walk(&mut spec.clone(), &mut |_, k| if let Knob::Series(r) = k { ids.push(r.id.clone()); });
+    walk(&mut spec.clone(), &mut |_, k| match k {
+        Knob::Series(r) => ids.push(r.id.clone()),
+        // Setup nodes are top-level switchable rules. Their W/M gate reads the same future dates as this series.
+        Knob::Switch(n) if gated_setup(n) => ids.push("period_end".into()),
+        _ => {}
+    });
     ids
 }
 /// The spec's own value at an optimize target (the "base" setting the ranking prefers on ties).
@@ -1807,7 +1842,7 @@ mod tests {
             (r#"{"lhs":{"s":"close"},"op":"between","lo":{"value":1}}"#, "entry.all[0].hi is required"),
             (r#"{"lhs":{"s":"close"},"op":"between","lo":{"value":1},"hi":{"value":2},"rhs":{"value":3}}"#, "unknown field 'rhs' in entry.all[0]"),
             (r#"{"not":{"lhs":{"s":"bars_held"},"op":">","rhs":{"value":1}}}"#, "only available as a plain comparison"),
-            (r#"{"maybe":[]}"#, "must be a comparison (lhs, op, rhs) or a group (all, any, not, at_least, then)"),
+            (r#"{"maybe":[]}"#, "must be a comparison (lhs, op, rhs) or a group (all, any, not, at_least, then, setup)"),
         ] {
             let e = err(&ONE_EXIT.replace("NODE", node));
             assert_eq!(e.status(), "invalid", "{node}");
@@ -1817,6 +1852,32 @@ mod tests {
         let grouped = ONE_EXIT.replace("NODE", r#"{"lhs":{"s":"close"},"op":">","rhs":{"value":1}}"#)
             .replace(r#""any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":5}}]"#, r#""any":[{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":5}}]}]"#);
         assert!(err(&grouped).message().contains("only available as a plain comparison"));
+    }
+    #[test] fn setup_nodes_parse_top_level_only() {
+        let (c, d) = (r#"{"lhs":{"s":"close"},"op":">","rhs":{"value":1}}"#, r#"{"lhs":{"s":"close"},"op":"<","rhs":{"value":1}}"#);
+        let s = parse_spec(&ONE_EXIT.replace("NODE", &format!(r#"{{"setup":{c},"trigger":{{"all":[{c},{d}]}},"cancel":{d},"period_end":"M"}}"#))).unwrap();
+        assert!(matches!(&s.entry[0], Node::Setup { cancel: Some(_), period_end: Some(Tf::M), trigger, .. } if matches!(**trigger, Node::All(_))));
+        assert_eq!(crate::lab::series::describe_node(&s.entry[0]), "setup(close > 1) then trigger(all(close > 1, close < 1)) cancel(close < 1) at month end");
+        assert!(parse_spec(&ONE_EXIT.replace("NODE", &format!(r#"{{"setup":{c},"trigger":{d},"off":true}},{c}"#))).is_ok_and(|s| matches!(&s.entry[0], Node::Off(n) if matches!(**n, Node::Setup { cancel: None, period_end: None, .. }))));
+        for (node, needle) in [
+            (format!(r#"{{"setup":{c}}}"#), "entry.all[0].trigger is required"),
+            (format!(r#"{{"trigger":{c},"cancel":{d}}}"#), "entry.all[0].setup is required"),
+            (format!(r#"{{"setup":{c},"trigger":{d},"within":3}}"#), "unknown field 'within' in entry.all[0]"),
+            (format!(r#"{{"setup":{c},"trigger":{d},"period_end":"D"}}"#), "entry.all[0].period_end must be W or M"),
+            (format!(r#"{{"setup":{c},"trigger":{{"lhs":{{"s":"bars_held"}},"op":">","rhs":{{"value":1}}}}}}"#), "only available as a plain comparison"),
+            (format!(r#"{{"any":[{{"setup":{c},"trigger":{d}}}]}}"#), "entry.all[0].any[0]: a setup node is only allowed as a top-level entry or exit rule"),
+            (format!(r#"{{"setup":{{"setup":{c},"trigger":{d}}},"trigger":{d}}}"#), "entry.all[0].setup: a setup node is only allowed"),
+            (format!(r#"{{"lhs":{{"bars_since":{{"setup":{c},"trigger":{d}}}}},"op":">","rhs":{{"value":1}}}}"#), "a setup node is only allowed"),
+        ] {
+            let e = err(&ONE_EXIT.replace("NODE", &node));
+            assert_eq!(e.status(), "invalid", "{node}");
+            assert!(e.message().contains(needle), "{needle:?} not in {:?}", e.message());
+        }
+        // the portfolio ledger does not step setup state: refused there
+        let port = r#"{"v":1,"entry":{"all":[NODE]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":5}}]},"execution":{"capital":1000000},"portfolio":{"universe":{"basket":"nifty50"},"max_open":5}}"#;
+        assert!(parse_spec(&port.replace("NODE", c)).is_ok());
+        let e = err(&port.replace("NODE", &format!(r#"{{"setup":{c},"trigger":{d}}}"#)));
+        assert_eq!((e.status(), e.message().contains("a setup/trigger rule")), ("unsupported", true), "{}", e.message());
     }
     #[test] fn whole_spec_bounds_count_nested_comparisons_and_nodes() {
         let c = r#"{"lhs":{"s":"close"},"op":">","rhs":{"value":1}}"#;
@@ -1985,6 +2046,36 @@ mod tests {
         for text in [short_entry, short_exit, stop_at, short_limit_at] {
             assert!(text.contains("sessions_left"));
             assert!(series_ids(&parse_spec(&text).unwrap()).iter().any(|id| id == "sessions_left"), "{text}");
+        }
+    }
+    #[test] fn setup_period_end_is_an_implicit_calendar_dependency() {
+        use std::collections::BTreeMap;
+        let price = r#"{"lhs":{"s":"close"},"op":">","rhs":{"value":100}}"#;
+        let rows = Box::leak((0..70).map(|i| crate::Row {
+            ticker: "SPX".into(), date: crate::lab::resample::civil(crate::lab::resample::day_number("2024-01-01") + i),
+            open: 101., high: 102., low: 100., close: 101., volume: Some(1000.),
+        }).collect::<Vec<_>>().into_boxed_slice());
+        let st = crate::State { ctxs: BTreeMap::from([("SPX".into(), crate::connors::Ctx::new(rows, rows, &[]))]),
+            baskets: Default::default(), vix: vec![], market_extra: Default::default() };
+        for tf in ["W", "M"] {
+            for location in 0..4 {
+                for off in [false, true] {
+                    let gate = format!(r#"{{"setup":{price},"trigger":{price},"period_end":"{tf}","off":{off}}}"#);
+                    let lists: Vec<String> = (0..4).map(|i| if i == location { format!("{price},{gate}") } else { price.into() }).collect();
+                    let text = format!(r#"{{"v":1,"direction":"both","entry":{{"all":[{}]}},"exit":{{"any":[{}]}},"short_side":{{"entry":{{"all":[{}]}},"exit":{{"any":[{}]}}}},"execution":{{"sizing":{{"pct_equity":50}}}},"optimize":[{{"path":"execution.sizing.pct_equity","from":25,"to":50,"step":25}}]}}"#, lists[0], lists[1], lists[2], lists[3]);
+                    let s = parse_spec(&text).unwrap();
+                    // Run and optimize use this dependency list, including when a rule is switched off.
+                    assert!(series_ids(&s).iter().any(|id| id == "period_end"), "{text}");
+                    assert!(series_ids(&apply(&s, &s.optimize, &[25.])).iter().any(|id| id == "period_end"), "optimized {text}");
+                    let q = BTreeMap::from([("ticker".into(), "SPX".into()), ("spec".into(), text.clone()), ("threads".into(), "1".into())]);
+                    for body in [crate::lab::api::run_json(&st, &q), crate::lab::api::optimize_json(&st, &q)] {
+                        let body = crate::lab::json::parse(&body.unwrap()).unwrap();
+                        assert!(matches!(body.get("adaptations"), Some(Json::Arr(notes)) if notes.iter().any(|n| n.as_str() == Some(crate::lab::periods::SESSION_DATES_NOTE))), "{text}");
+                    }
+                    let ungated = parse_spec(&text.replace(&format!(r#","period_end":"{tf}""#), "")).unwrap();
+                    assert!(!series_ids(&ungated).iter().any(|id| id == "period_end"));
+                }
+            }
         }
     }
     #[test] fn optimize_reaches_the_short_side() {

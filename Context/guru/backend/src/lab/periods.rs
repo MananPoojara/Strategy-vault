@@ -1,7 +1,7 @@
 //! Periods and calendar family (TradingView / AmiBroker built-ins, Phase 6). Formulas: see each definition string.
 use super::bars::Bars;
 use super::catalogue::{int, len, n, IndicatorDef, Needs, Output, ParamSpec, Params, Placement};
-use super::resample::{day_number, period_key};
+use super::resample::{day_number, period_key, Tf};
 use super::ta::NA;
 
 const CAT: &str = "Periods & calendar";
@@ -157,9 +157,9 @@ fn session(b: &Bars, _: &Params) -> Output {
     Ok(out)
 }
 /// Indicators that read future session *dates* (never prices); the generic truncation tests exempt them (spec §5.2).
-pub const USES_SESSION_DATES: &[&str] = &["sessions_left"];
+pub const USES_SESSION_DATES: &[&str] = &["sessions_left", "period_end"];
 /// Result-level note every run / optimize / series response carries when it reads one of USES_SESSION_DATES.
-pub const SESSION_DATES_NOTE: &str = "sessions_left reads this instrument's future session dates (published holidays, but also unscheduled closures, late-announced special sessions and data gaps); a live signal can differ — session.weekdays_left_* is the strictly causal alternative";
+pub const SESSION_DATES_NOTE: &str = "sessions_left and period_end read this instrument's future session dates (published holidays, but also unscheduled closures, late-announced special sessions and data gaps); a live signal can differ — session.weekdays_left_* is the strictly causal alternative to sessions_left";
 /// Sessions after this one in its month / quarter / year, from the instrument's own session dates (the published exchange
 /// calendar); NaN throughout the data's last period, whose remaining sessions are not in the data.
 fn sessions_left(b: &Bars, _: &Params) -> Output {
@@ -174,6 +174,11 @@ fn sessions_left(b: &Bars, _: &Params) -> Output {
         v
     }).collect())
 }
+/// 1 on the last bar of its week (Mon–Sun) / calendar month, else 0: the next session falls in a later period. The data's
+/// final bar is 0 (its period may continue). Same helper as exit.dual_atr period_end_only and the setup node's period_end.
+fn period_end(b: &Bars, _: &Params) -> Output {
+    Ok([Tf::W, Tf::M].into_iter().map(|tf| super::series::period_ends(&b.date, tf).into_iter().map(|e| if e { 1. } else { 0. }).collect()).collect())
+}
 
 pub const DEFS: &[IndicatorDef] = &[
     def("pivots_std", "Pivot Points Standard", PV, &["p", "r1", "r2", "r3", "r4", "r5", "s1", "s2", "s3", "s4", "s5"], PR, NO, "levels from the previous completed period's H, L, C (DM: and its open; Woodie: the current period's first open): Traditional P=(H+L+C)/3, R1=2P−L, R2=P+(H−L), R3=H+2(P−L), R4=3P+(H−3L), R5=4P+(H−4L), S mirror; Fibonacci P±0.382/0.618/1.0·(H−L); Woodie P=(H+L+2·O)/4, R3=H+2(P−L), R4=R3+(H−L); Classic P±1/2/3·(H−L) (R1/S1 as Traditional); DM X = C<O ? H+2L+C : C>O ? 2H+L+C : H+L+2C, P=X/4, R1=X/2−L, S1=X/2−H; Camarilla C±1.1(H−L)/12, /6, /4, /2, R5=(H/L)·C, S5=C−(R5−C); undefined levels NaN", &[5; 11], false, pivots_std),
@@ -182,6 +187,7 @@ pub const DEFS: &[IndicatorDef] = &[
     def("calendar", "Calendar", &[], &["dow", "day", "month", "year", "doy", "bar_index", "days_left"], PN, NO, "AmiBroker DayOfWeek (0 Sunday … 6 Saturday), Day, Month, Year, DayOfYear (1–366), BarIndex (0-based) of the bar's date; days_left = calendar days after the bar's date in its month (days in month − Day)", &[0,0,0,0,0,0,0], false, calendar),
     def("session", "Trading Session Counters", &[], &["tdom", "tdoq", "tdoy", "tdow", "week_of_month", "quarter", "weekdays_left_m", "weekdays_left_q", "weekdays_left_y"], PN, NO, "session number in its month / quarter / year / week (1 = first; NaN until the data's first boundary of that period), week of the month (NaN until the first month boundary), quarter 1–4, Monday–Friday dates left after today in the month / quarter / year (holidays unknown; causal)", &[31, 91, 366, 5, 31, 0, 0, 0, 0], false, session),
     def("sessions_left", "Sessions Left in Period", &[], &["m", "q", "y"], PN, NO, "sessions after today in the month / quarter / year from the instrument's own session dates (the published exchange calendar), never prices; NaN in the data's last period (declared adaptation, spec §5.2)", &[0; 3], true, sessions_left),
+    def("period_end", "Period End", &[], &["w", "m"], PN, NO, "1 on the last bar of its week (Monday–Sunday) / calendar month — the next session is in a later period — else 0; the data's final bar is 0 (its period may continue); reads the next session's date (declared adaptation, spec §5.2); AFL WeekEnd / MonthEnd for the N-candle exit: since_entry count when period_end > 0", &[0; 2], false, period_end),
     def("moon_phases", "Moon Phases", &[], &["new_moon", "full_moon"], PR, NO, "1 on the first bar dated on or after a new (full) moon, UTC, Meeus ch. 49 with 15 periodic terms; else 0 (declared)", &[0,0], false, moon_phases),
     def("highest_bars", "Bars Since Highest High", LN, &["bars"], PN, NO, "bars since the highest high of the last length bars (0 = this bar; ties → the most recent) (AmiBroker HHVBars, TradingView ta.highestbars as a positive count)", &[19], false, highest_bars),
     def("lowest_bars", "Bars Since Lowest Low", LN, &["bars"], PN, NO, "bars since the lowest low of the last length bars (0 = this bar; ties → the most recent)", &[19], false, lowest_bars),
@@ -254,7 +260,7 @@ mod tests {
         assert_series(&go("highest_bars", &d1(), &[("length", 3.)])[0], &[N, N, 0., 1., 2., 2., 0., 0.]);
         assert_series(&go("lowest_bars", &d1(), &[("length", 3.)])[0], &[N, N, 2., 2., 0., 0., 1., 2.]);
     }
-    #[test] fn rules_reach_periods() { for (id, out) in [("pivots_std", "s5"), ("mtp", "prev_close"), ("calendar", "dow"), ("moon_phases", "full_moon"), ("performance", "ytd")] { compiles(id, out).unwrap(); } }
+    #[test] fn rules_reach_periods() { for (id, out) in [("pivots_std", "s5"), ("mtp", "prev_close"), ("calendar", "dow"), ("moon_phases", "full_moon"), ("performance", "ytd"), ("period_end", "m")] { compiles(id, out).unwrap(); } }
 
     #[test] fn session_counters_are_causal_calendar_arithmetic() {
         let b = dated(&[(1., 1., 1., 1.); 4], &["2024-03-27", "2024-03-28", "2024-04-01", "2024-04-02"]);
@@ -293,6 +299,15 @@ mod tests {
         assert_eq!((first(0), first(1), first(2), first(3), first(4)), (at("2024-08-01"), at("2024-10-01"), at("2025-01-02"), at("2024-07-22"), at("2024-08-01")));
         assert_eq!((o[2][at("2025-01-02")], o[2][at("2025-01-03")], o[0][at("2024-08-02")], o[1][at("2024-10-02")]), (1., 2., 2., 2.));
         assert!(o[2][at("2025-01-02")..].iter().all(|v| v.is_finite()));
+    }
+    #[test] fn period_end_marks_week_and_month_ends_and_never_the_final_bar() {
+        // Thu, Fri, Mon, Thu (Friday 12th a holiday), Mon, Wed 31 Jan, Thu 1 Feb, Fri 2 Feb (the data's final bar)
+        let dates = ["2024-01-04", "2024-01-05", "2024-01-08", "2024-01-11", "2024-01-15", "2024-01-31", "2024-02-01", "2024-02-02"];
+        let o = go("period_end", &dated(&[(1., 1., 1., 1.); 8], &dates), &[]);
+        assert_series(&o[0], &[0., 1., 0., 1., 1., 0., 0., 0.]); // 31 Jan and 1 Feb share the week of 29 Jan
+        assert_series(&o[1], &[0., 0., 0., 0., 0., 1., 0., 0.]);
+        // a Sunday session ends its Monday–Sunday week; the Friday before it does not
+        assert_series(&go("period_end", &dated(&[(1., 1., 1., 1.); 3], &["2023-11-10", "2023-11-12", "2023-11-13"]), &[])[0], &[0., 1., 0.]);
     }
     #[test] fn sessions_left_reads_dates_only_and_is_unknown_in_the_last_period() {
         let x = f64::NAN;
