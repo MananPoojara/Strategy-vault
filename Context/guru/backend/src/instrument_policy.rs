@@ -1350,7 +1350,7 @@ fn barrie_policy(def:&StrategyDef)->Option<Policy> {
 // authors/jennings/admission/djcs_ref.py).
 pub fn k2_reviewed(def:&StrategyDef)->bool {(def.book=="slmma" && crate::books::slmma::reviewed(def.id)) || (def.book=="dwsr" && crate::books::dwsr::reviewed(def.id)) || (def.book=="djcs" && crate::books::djcs::reviewed(def.id))}
 const LOWRY_LABEL:&str="Scot Lowry trades the Delphic Phenomenon on US commodity futures charts (soybeans, cattle, corn, cocoa); runs on indices, ETFs and US/India stocks are a declared application, not the author's test. Cash-index shorts are hypothetical.";
-const JENNINGS_LABEL:&str="David Jennings' Code Snippets collects TradeStation code by other traders (Bob Fulks' percent reversal stops; James Taylor's version of Bryan Strain's TFS system) without naming a market or a test; runs on indices, ETFs and US/India stocks are a declared application. Cash-index shorts are hypothetical.";
+const JENNINGS_LABEL:&str="David Jennings' Code Snippets collects TradeStation, MetaStock and WealthLab code by other traders (Bob Fulks, James Taylor / Bryan Strain, MarketSpace, Glenn Wallace, WealthLab scripts) without naming a market or a test (the Dead Cat Catcher's 30% five-day fall is a stock event); runs on indices, ETFs and US/India stocks are a declared application. Cash-index shorts are hypothetical.";
 const WOODING_LABEL:&str="Dave Wooding wrote the Stock Rocket for US stocks; its $10 price and 500,000-share volume limits keep it on US stocks and ETFs only. ETF runs are a declared application, not the author's test.";
 fn k2_policy(def:&StrategyDef)->Option<Policy> {
     if !k2_reviewed(def) {return None;}
@@ -1358,7 +1358,7 @@ fn k2_policy(def:&StrategyDef)->Option<Policy> {
         let mut p=requirement("etf_or_stock",&["etf","individual_stock"],"Dave Wooding, The Stock Rocket Stock Trading System (2001), Ch.2 PDF 9-26, appendix scan PDF 56");
         p.preferred_basket=Some("us_sp500");p.market_adaptation=true;return Some(p);
     }
-    let src=if def.book=="djcs" {"David Jennings, Code Snippets & How To (Word file): TradeStation 'Highest High' how-to (Bob Fulks) and TFS Trend Following System (James Taylor / Bryan Strain)"} else {"Scot Lowry, The Magic of Moving Averages, Ch.3 PDF 14-17 and chart key PDF 25"};
+    let src=if def.book=="djcs" {"David Jennings, Code Snippets & How To (Word file): TradeStation 'Highest High' how-to (Bob Fulks), TFS Trend Following System (James Taylor / Bryan Strain), MetaStock MarketSpace Stock System and Buy trigger (Glenn Wallace), WealthScript Dead Cat Catcher and CMO/CumDown scripts"} else {"Scot Lowry, The Magic of Moving Averages, Ch.3 PDF 14-17 and chart key PDF 25"};
     let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],src);
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
