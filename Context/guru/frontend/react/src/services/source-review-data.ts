@@ -321,6 +321,7 @@ export const sourceReview: Record<string, {type: string; sameWorkAs?: string; pe
   "slmma": {"type": "book", "people": ["Scot Lowry"]},
   "dwsr": {"type": "book", "people": ["Dave Wooding"]},
   "djcs": {"type": "book", "people": ["David Jennings"]},
+  "essw5": {"type": "article", "people": ["Erik Skyba"]},
   "jfeot": {"type": "book", "people": ["John Forman"]},
   "kbttm": {"type": "book", "people": ["Kedrick Brown"]},
   "jcmtt": {"type": "book", "people": ["John F. Carter"]},

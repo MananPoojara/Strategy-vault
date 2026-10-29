@@ -1348,9 +1348,10 @@ fn barrie_policy(def:&StrategyDef)->Option<Policy> {
 // ---------------------------------------------------------------- overnight K2 2026-10-29 (Scot Lowry, Dave Wooding)
 // Admission only for the module REVIEWED lists (authors/lowry/admission/mma_ref.py, authors/wooding/admission/sr_ref.py,
 // authors/jennings/admission/djcs_ref.py).
-pub fn k2_reviewed(def:&StrategyDef)->bool {(def.book=="slmma" && crate::books::slmma::reviewed(def.id)) || (def.book=="dwsr" && crate::books::dwsr::reviewed(def.id)) || (def.book=="djcs" && crate::books::djcs::reviewed(def.id))}
+pub fn k2_reviewed(def:&StrategyDef)->bool {(def.book=="slmma" && crate::books::slmma::reviewed(def.id)) || (def.book=="dwsr" && crate::books::dwsr::reviewed(def.id)) || (def.book=="djcs" && crate::books::djcs::reviewed(def.id)) || (def.book=="essw5" && crate::books::essw5::reviewed(def.id))}
 const LOWRY_LABEL:&str="Scot Lowry trades the Delphic Phenomenon on US commodity futures charts (soybeans, cattle, corn, cocoa); runs on indices, ETFs and US/India stocks are a declared application, not the author's test. Cash-index shorts are hypothetical.";
 const JENNINGS_LABEL:&str="David Jennings' Code Snippets collects TradeStation, MetaStock and WealthLab code by other traders (Bob Fulks, James Taylor / Bryan Strain, MarketSpace, Glenn Wallace, WealthLab scripts) without naming a market or a test (the Dead Cat Catcher's 30% five-day fall is a stock event); runs on indices, ETFs and US/India stocks are a declared application. Cash-index shorts are hypothetical.";
+const SKYBA_LABEL:&str="Erik Skyba tested the Swing 5 RSI strategy on SPY daily bars (2000-2010); runs on other ETFs, indices and US/India stocks are a declared application, not the author's test.";
 const WOODING_LABEL:&str="Dave Wooding wrote the Stock Rocket for US stocks; its $10 price and 500,000-share volume limits keep it on US stocks and ETFs only. ETF runs are a declared application, not the author's test.";
 fn k2_policy(def:&StrategyDef)->Option<Policy> {
     if !k2_reviewed(def) {return None;}
@@ -1358,7 +1359,7 @@ fn k2_policy(def:&StrategyDef)->Option<Policy> {
         let mut p=requirement("etf_or_stock",&["etf","individual_stock"],"Dave Wooding, The Stock Rocket Stock Trading System (2001), Ch.2 PDF 9-26, appendix scan PDF 56");
         p.preferred_basket=Some("us_sp500");p.market_adaptation=true;return Some(p);
     }
-    let src=if def.book=="djcs" {"David Jennings, Code Snippets & How To (Word file): TradeStation 'Highest High' how-to (Bob Fulks), TFS Trend Following System (James Taylor / Bryan Strain), MetaStock MarketSpace Stock System and Buy trigger (Glenn Wallace), WealthScript Dead Cat Catcher and CMO/CumDown scripts"} else {"Scot Lowry, The Magic of Moving Averages, Ch.3 PDF 14-17 and chart key PDF 25"};
+    let src=if def.book=="essw5" {"Erik Skyba, Swing 5 - Relative Strength Index Strategy (TradeStation Labs, 15 June 2010): Defining Strategy Rules, Strategy Inputs"} else if def.book=="djcs" {"David Jennings, Code Snippets & How To (Word file): TradeStation 'Highest High' how-to (Bob Fulks), TFS Trend Following System (James Taylor / Bryan Strain), MetaStock MarketSpace Stock System and Buy trigger (Glenn Wallace), WealthScript Dead Cat Catcher and CMO/CumDown scripts"} else {"Scot Lowry, The Magic of Moving Averages, Ch.3 PDF 14-17 and chart key PDF 25"};
     let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],src);
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
@@ -2835,7 +2836,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if bollinger_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BOLLINGER_LABEL));} // John Bollinger block
     if downs_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",DOWNS_LABEL));} // Walter T. Downs block
     if barrie_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BARRIE_LABEL));} // Scott W. Barrie block
-    if k2_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",match def.book {"dwsr"=>WOODING_LABEL,"djcs"=>JENNINGS_LABEL,_=>LOWRY_LABEL}));} // overnight K2 block
+    if k2_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",match def.book {"dwsr"=>WOODING_LABEL,"djcs"=>JENNINGS_LABEL,"essw5"=>SKYBA_LABEL,_=>LOWRY_LABEL}));} // overnight K2 block
     if kbrown_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",KBROWN_LABEL));} // Kedrick F. Brown block
     if forman_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",FORMAN_LABEL));} // John Forman block
     if sands_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",SANDS_LABEL));} // Russell Sands block
@@ -3614,9 +3615,9 @@ mod tests {
     // ---- overnight K2 block (2026-10-29) ----
     #[test]
     fn k2_review_admits_exact_ids() {
-        use crate::books::{djcs, dwsr, slmma};
-        let all:Vec<StrategyDef>=slmma::catalogue().into_iter().chain(dwsr::catalogue()).chain(djcs::catalogue()).collect();
-        let mut want:Vec<&str>=slmma::REVIEWED.iter().chain(dwsr::REVIEWED.iter()).chain(djcs::REVIEWED.iter()).copied().collect();
+        use crate::books::{djcs, dwsr, essw5, slmma};
+        let all:Vec<StrategyDef>=slmma::catalogue().into_iter().chain(dwsr::catalogue()).chain(djcs::catalogue()).chain(essw5::catalogue()).collect();
+        let mut want:Vec<&str>=slmma::REVIEWED.iter().chain(dwsr::REVIEWED.iter()).chain(djcs::REVIEWED.iter()).chain(essw5::REVIEWED.iter()).copied().collect();
         let mut admitted:Vec<&str>=all.iter().filter(|d|k2_reviewed(d)).map(|d|d.id).collect();
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {

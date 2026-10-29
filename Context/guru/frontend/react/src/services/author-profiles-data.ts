@@ -511,6 +511,17 @@ export const AUTHOR_PROFILE_DATA = {
    "Code Snippets & How To (MetaStock, TradeStation, AIQ)"
   ],
   "sources": [],
+  "confidence": "low" }, "skyba": {
+  "kind": "person",
+  "mastery": [
+   "Short-term mean-reversion strategies",
+   "TradeStation strategy research"
+  ],
+  "summary": "Erik D. Skyba, CMT, was a senior market technician at TradeStation, writing the TradeStation Labs 'Technical Focus' strategy reports. His Swing 5 - Relative Strength Index Strategy (June 2010) buys 5-day RSI pullbacks with a 200-day exponential average filter and was tested on SPY. This profile rests on that report.",
+  "known_for": [
+   "Swing 5 - Relative Strength Index Strategy (TradeStation Labs, 2010)"
+  ],
+  "sources": [],
   "confidence": "low" }, "barrie": {
   "kind": "person",
   "mastery": [
