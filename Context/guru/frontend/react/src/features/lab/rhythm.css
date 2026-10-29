@@ -1,0 +1,68 @@
+/* One type scale and one spacing scale for the whole Indicators lab (every tab, every panel).
+   Scoped under .lab-page so the rest of the app keeps its own sizes; it loads after the lab sheets and wins on scope. */
+.lab-page[data-lab-page] {
+  --fs-xs: 13px;   /* uppercase group labels */
+  --fs-sm: 14px;   /* captions, help, field labels, meta */
+  --fs-base: 16px; /* controls, table cells, body text */
+  --fs-md: 17px;   /* card and section titles */
+  --fs-lg: 24px;   /* box headings */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px;
+}
+
+/* ---- type ---- */
+.lab-page[data-lab-page] :is(p, li, td, label, summary, .lab-word, .lab-check, .lab-sentence-text) { font-size: var(--fs-base); }
+.lab-page[data-lab-page] :is(select, input:not([type=checkbox], [type=radio]), textarea, .dbtn, .btn, .join-item, .dd-btn, .lab-filter-chip, .lab-ind-btn, [role=tab]) { font-size: var(--fs-base); }
+.lab-page[data-lab-page] :is(.cap, small, .lab-param-k, .lab-mode-help, .lab-caps, .rnote, .lab-report-constants, .lab-datestrip-axis, .lab-datestrip-key) { font-size: var(--fs-sm); }
+.lab-page[data-lab-page] .dfield { font-size: var(--fs-sm); }
+.lab-page[data-lab-page] .dfield :is(input, select) { font-size: var(--fs-base); }
+.lab-page[data-lab-page] :is(.lab-sgroup > h4, .lab-ts-k, .tbl th, .lab-words h3) { font-size: var(--fs-xs); }
+/* the Entry / Filters / Exit card titles: the card's name, one step above the group labels */
+.lab-page[data-lab-page] :is(.lab-rule-card > h3, .lab-rule-card > .lab-list > h3) { font-size: var(--fs-sm); }
+.lab-page[data-lab-page] :is(h3, .lab-param-h b, .lab-exit-part > header b, .lab-ami-h, .lab-settings-h, .lab-trades .box-h, .lab-report-chart figcaption) { font-size: var(--fs-md); }
+.lab-page[data-lab-page] .lab-rule-card[data-lab-card="filters"] > .lab-list > h3 { font-size: var(--fs-md); }
+.lab-page[data-lab-page] .box-h { font-size: var(--fs-lg); }
+.lab-page[data-lab-page] .box-h small { font-size: var(--fs-sm); }
+.lab-page[data-lab-page] .lab-step-btn { font-size: var(--fs-md); }
+.lab-page[data-lab-page] .lab-tabs :is(button, a, [role=tab]) { font-size: var(--fs-md); }
+/* weights: 500 text, 600 emphasis/controls, 700 headings and labels */
+.lab-page[data-lab-page] :is(.cap, small, .lab-param-k, .dfield, td) { font-weight: 500; }
+.lab-page[data-lab-page] :is(h3, h4, .box-h, .lab-param-h b, .tbl th) { font-weight: 700; }
+
+/* ---- spacing: rows 8, groups 12, sections 16, box padding 16 ---- */
+.lab-page[data-lab-page] { gap: var(--sp-4); }
+.lab-page[data-lab-page] .box { padding: var(--sp-4); }
+.lab-page[data-lab-page] .box-h { margin-bottom: var(--sp-3); }
+.lab-page[data-lab-page] .lab-rules { gap: var(--sp-4); }
+.lab-page[data-lab-page] .lab-row { gap: var(--sp-2) var(--sp-3); }
+.lab-page[data-lab-page] .lab-rule-cards { gap: var(--sp-4); }
+.lab-page[data-lab-page] .lab-rule-card { padding: var(--sp-4); }
+.lab-page[data-lab-page] .lab-param { gap: var(--sp-2); padding: var(--sp-3) 0; }
+.lab-page[data-lab-page] .lab-param-row { gap: var(--sp-3); }
+.lab-page[data-lab-page] .lab-exit-choice, .lab-page[data-lab-page] .lab-list { gap: var(--sp-3); }
+.lab-page[data-lab-page] .lab-sgroup { padding: var(--sp-3) 0; gap: var(--sp-2) var(--sp-4); }
+.lab-page[data-lab-page] .lab-sgroup > div { gap: var(--sp-2); }
+.lab-page[data-lab-page] .lab-basics, .lab-page[data-lab-page] .lab-more-settings { padding: var(--sp-2) var(--sp-4); }
+.lab-page[data-lab-page] .lab-stab-panel { padding: var(--sp-3) var(--sp-4) var(--sp-4); gap: var(--sp-3); }
+.lab-page[data-lab-page] .lab-trades { gap: var(--sp-3); }
+.lab-page[data-lab-page] .tbl :is(td, th) { padding-block: var(--sp-2); }
+
+/* ---- craft floor: no thick coloured side stripes on callouts; a hairline border with a tint instead ---- */
+.lab-page[data-lab-page] .lab-words { border-left-width: 1px; border-color: color-mix(in srgb, var(--blue) 35%, var(--rule)); background: color-mix(in srgb, var(--blue) 4%, var(--card)); }
+.lab-page[data-lab-page] .lab-rule-card .lab-exit-part { border-left-width: 1px; border-color: color-mix(in srgb, var(--acc) 30%, var(--rule)); }
+
+/* ---- strays the scale did not reach (measured in Chrome): bring them onto it ---- */
+.lab-page[data-lab-page] :is(.lab-m-name, .lab-match-diff, .lab-chart-match, .lab-run-top .dbtn, .lab-step-nav .dbtn, .lab-chart-timeframes button, .tbl td) { font-size: var(--fs-base); }
+.lab-page[data-lab-page] :is(p.cap, .lab-stab-intro, .lab-chart-footer span, .lab-m-meta, .lab-m-desc) { font-size: var(--fs-sm); }
+.lab-page[data-lab-page] :is(.tag, .lab-status, .lab-step-n) { font-size: var(--fs-xs); }
+.lab-page[data-lab-page] .lab-dims td, .lab-page[data-lab-page] .tblwrap .tbl td { font-size: var(--fs-base); }
+.lab-page[data-lab-page] .lab-book > summary > span { font-size: var(--fs-sm); }
+.lab-page[data-lab-page] :is(.lab-run-top, .lab-step-nav) .dbtn.primary { font-size: var(--fs-base); }
+
+/* ---- Optimization: the settings table spans the box; the setting name takes the free width ---- */
+.lab-page[data-lab-page] .lab-dims { width: 100%; }
+.lab-page[data-lab-page] .lab-dims td:nth-child(2) { max-width: none; }
+
+/* ---- cover the window: the Indicators page uses the full width (the app's 1320px column leaves wide margins on big screens) ---- */
+.page .lab-page[data-lab-page], .page .lab-page[data-lab-page]:not([data-chart-workspace]) { max-width: none; width: 100%; margin-inline: 0; }
+/* Customize: the method list runs to the bottom of the window instead of a fixed 420px box */
+.lab-page[data-lab-page] .lab-customize .lab-books, .lab-page[data-lab-page] .lab-books { max-height: max(420px, calc(100vh - 330px)); }

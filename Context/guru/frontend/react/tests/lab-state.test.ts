@@ -47,8 +47,8 @@ it("submit readiness: unchanged row, same instrument, fresh successful run", () 
   const reordered = labReducer(s, { type: "row", row: { ...row, version: 4, spec: JSON.parse(JSON.stringify(row.spec, ["v", "exit", "any", "lhs", "s", "op", "rhs", "value", "entry", "all", "p", "length"])) } });
   expect(editorState(reordered, "in").unchanged).toBe(true);
   expect(labReducer(s, { type: "tried", n: 3 }).tried).toBe(4);
-  expect(initialLabState(readLabQuery("#/indicators")).spec).toEqual(starterSpec()); // no rules yet (the default exit applies), trades at the signal bar's close
-  expect(starterSpec()).toEqual({ v: 1, entry: { all: [] }, exit: { any: [] }, execution: { fill: "close" } });
+  expect(initialLabState(readLabQuery("#/indicators")).spec).toEqual(starterSpec()); // one RSI buy rule to change, no sell rule (the default exit applies), the signal bar's close
+  expect(starterSpec()).toEqual({ v: 1, entry: { all: [{ lhs: { s: "rsi", p: { length: 14 } }, op: "crosses_above", rhs: { value: 30 } }] }, exit: { any: [] }, execution: { fill: "close" } });
 });
 it("uses a portfolio save/run identity independently of the chart ticker",()=>{
  const spec={...defaultSpec(),portfolio:{universe:{basket:"nifty50"},mode:"signals" as const}};

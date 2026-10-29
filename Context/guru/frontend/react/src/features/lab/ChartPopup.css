@@ -6,3 +6,15 @@
 @media(max-width:600px) { .lab-chart-popup { width:calc(100% - 24px); max-height:70vh; } }
 
 .lab-chart-popup-wide { width:min(800px,calc(100% - 24px)); }
+
+/* ---- Finish for chart windows: card radius, a lifted shadow, a title bar that stays put while the body scrolls, and one short fade-in on open. */
+.lab-chart-popup { border-color: var(--rule); border-radius: var(--r-box); box-shadow: 0 2px 6px rgb(0 0 0 / .06), 0 18px 44px -12px rgb(0 0 0 / .3); }
+.lab-chart-popup:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent), 0 18px 44px -12px rgb(0 0 0 / .3); }
+.lab-chart-popup > .lab-browser-heading { position: sticky; top: 0; z-index: 2; padding: 10px 10px 10px 16px; background: var(--card); }
+.lab-chart-popup .lab-browser-heading h2 { font: 700 14px var(--font); letter-spacing: .01em; }
+.lab-chart-popup .lab-browser-heading .dbtn.ghost { width: 30px; height: 30px; padding: 0; font-size: 18px; color: var(--ink2); }
+.lab-chart-popup .lab-browser-heading .dbtn.ghost:hover { color: var(--ink); background: var(--hover); }
+@media (prefers-reduced-motion: no-preference) {
+  .lab-chart-popup { transition: opacity 160ms ease-out, transform 160ms cubic-bezier(0.23, 1, 0.32, 1); }
+  @starting-style { .lab-chart-popup { opacity: 0; transform: translateY(4px) scale(.985); } }
+}

@@ -1,17 +1,20 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { dayFirst } from "./DateField";
 import { linePoints } from "./bars";
 import { createLabChart, themeColors, useThemeKey } from "./charts";
 import { DASH, int, num, pct } from "./format";
-import { COPY, ENTRY_KIND_LABELS } from "./labels";
+import { COPY } from "./labels";
 import { friendlyReason } from "./spec-model";
-import { reasonLabeler, rulesSheet, type RunContext } from "./trade-explain";
-import { saveBytes, xlsx, XLSX_TYPE } from "./xlsx";
+import { reasonLabeler, type RunContext } from "./trade-explain";
+import { TsDownload } from "./TsDownload";
 import type { Catalogue, RunResult, SavedMarket, Spec, Stats, Piece, ExecutionModel, MoneySummary, Instrument } from "./types";
 import { neverMeets } from "./scale-check";
 import { MetricTiles, ProvisionalStrip, Segmented, ServerLabel, isProvisional } from "./ui";
 import "./results.css";
 
 const PAGE = 100;
+/** Profit Table cell: blank for a month or year with no return (flat equity, or not reached yet). */
+const ret = (v: number | null | undefined) => (typeof v === "number" && Math.abs(v) > 1e-12 ? pct(v) : "");
 const sign = (v: number | null | undefined) => (typeof v === "number" ? (v > 0 ? "n pos" : v < 0 ? "n neg" : "n") : "n");
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -31,38 +34,48 @@ export const kpiItems = (s: Stats) => {
 export interface TradeTable { header: string[]; rows: (string | ReactNode)[][]; csv: string[][]; cls: (string | undefined)[][] }
 const ledgerAligned = ({ trades, ledger }: Pick<RunResult, "trades" | "ledger">) => !!ledger?.length && ledger.length === trades.length && ledger.every((r, i) => r.entry === trades[i].entry);
 const pieceText = (pieces: Piece[]) => pieces.map(([date, price, weight]) => `${date} @ ${num(price)} × ${Math.round(weight * 100)}%`).join("; ");
-const NUMERIC = new Set(["Price", "Ex. Price", "Cum. Profit", "Cum. %", "Profit", "% Profit", "Shares", "Position value", "Allocation", "# bars", "MAE", "MFE", "Profit/bar", "Costs"]);
+/** Dates and the side read centred in their column; numbers right-aligned; the symbol left. */
+const CENTRED = new Set(["Trade type", "Entry date", "Exit date"]);
+const NUMERIC = new Set(["Entry price", "Exit price", "% Change", "Bars held", "Days", "Net profit", "MAE", "MFE", "DD %", "Shares", "Position value", "Allocation", "Costs"]);
 export function tradeTable(result: Pick<RunResult, "trades" | "ledger"> & { money?: Pick<MoneySummary, "capital">; instrument?: Pick<Instrument, "ticker"> },
   reasonOf: (reason: string) => string = friendlyReason): TradeTable {
   const { trades, ledger } = result;
   const legs = trades.some((t) => !!t.legs?.length), fills = trades.some((t) => !!t.fills?.length), sized = trades.some((t) => t.weight !== undefined), money = ledgerAligned(result);
   const excursions = trades.some((t) => typeof t.mae === "number");
-  // AmiBroker result-list names and order; Order, Allocation, Costs and Exit reason are this lab's own columns.
-  const header = ["Symbol", "Trade", "Order", "Date", "Price", "Ex. date", "Ex. Price", ...(money ? ["Cum. Profit", "Profit", "% Profit", "Shares", "Position value"] : ["Cum. %", "% Profit"]),
-    ...(sized ? ["Allocation"] : []), "# bars", ...(excursions ? ["MAE", "MFE"] : []), "Profit/bar", ...(legs ? ["Scale in"] : []), ...(fills ? ["Scale out"] : []), ...(money ? ["Costs"] : []), "Exit reason"];
+  // The analyst's order: the trade, its prices, the move, how long it ran, the profit, then the running result and its drawdown.
+  // Allocation, scale-in/out and the money columns appear only when the run has them; the Excel download adds the exit reason.
+  const header = ["Symbol", "Trade type", "Entry date", "Entry price", "Exit date", "Exit price", "% Change", "Bars held", "Days", "Net profit",
+    ...(excursions ? ["MAE", "MFE"] : []), "DD %",
+    ...(sized ? ["Allocation"] : []), ...(money ? ["Shares", "Position value", "Costs"] : []), ...(legs ? ["Scale in"] : []), ...(fills ? ["Scale out"] : [])];
   // Cumulative in trade order, the open (marked) trade included: unit mode compounds the trade returns (the unit equity
-  // line); money mode sums ledger P&L (cash equity, before idle-cash interest).
-  let growth = 1, pnl = 0;
-  const csv: string[][] = [header], rows: (string | ReactNode)[][] = [], cls: (string | undefined)[][] = [];
+  // line); money mode sums ledger P&L (cash equity, before idle-cash interest). DD % is that equity against its running peak.
+  let growth = 1, pnl = 0, peak = 1;
+  const capital = result.money?.capital ?? 1;
+  const csv: string[][] = [[...header, "Exit reason"]], rows: (string | ReactNode)[][] = [], cls: (string | undefined)[][] = [];
   trades.forEach((t, i) => {
-    const r = money ? ledger![i] : undefined, cum = r ? (pnl += r.pnl) : (growth *= 1 + (t.ret ?? 0)) - 1;
+    const r = money ? ledger![i] : undefined, before = growth;
+    const cum = r ? (pnl += r.pnl) : (growth *= 1 + (t.ret ?? 0)) - 1;
+    const equity = r ? 1 + cum / capital : growth, dd = equity / (peak = Math.max(peak, equity)) - 1;
+    // unit mode: the trade's profit as a share of the starting equity (the % change on the equity it was opened with)
+    const net = r ? r.pnl : typeof t.ret === "number" ? before * t.ret : null;
+    const days = t.exit && t.entry ? Math.round((Date.parse(t.exit) - Date.parse(t.entry)) / 864e5) : null;
     const cell: Record<string, string> = {
-      Symbol: result.instrument?.ticker ?? "", Trade: t.dir === -1 ? "Short" : "Long", Order: ENTRY_KIND_LABELS[t.entry_kind] ?? t.entry_kind,
-      Date: t.entry, Price: num(t.entry_px), "Ex. date": t.open ? "Open" : t.exit, "Ex. Price": num(t.exit_px),
-      "Cum. Profit": num(cum), "Cum. %": pct(cum, 1), Profit: num(r?.pnl), "% Profit": pct(t.ret, 2), Shares: int(r?.qty), "Position value": num(r?.notional),
-      Allocation: pct(t.weight ?? 1), "# bars": int(t.bars), MAE: pct(t.mae, 2), MFE: pct(t.mfe, 2),
-      // AmiBroker # bars counts the entry and the exit bar
-      "Profit/bar": r ? num(r.pnl / (t.bars + 1)) : pct(typeof t.ret === "number" ? t.ret / (t.bars + 1) : null, 3),
-      "Scale in": t.legs?.length ? pieceText(t.legs) : "1", "Scale out": t.fills?.length ? pieceText(t.fills) : DASH, Costs: num(r?.costs), "Exit reason": reasonOf(t.reason),
+      Symbol: result.instrument?.ticker ?? "", "Trade type": t.dir === -1 ? "Short" : "Long",
+      "Entry date": dayFirst(t.entry), "Entry price": num(t.entry_px), "Exit date": t.open ? "Open" : dayFirst(t.exit), "Exit price": num(t.exit_px),
+      "% Change": pct(t.ret, 2), "Bars held": int(t.bars), Days: days === null ? DASH : int(days), "Net profit": r ? num(net) : pct(net, 2),
+      MAE: pct(t.mae, 2), MFE: pct(t.mfe, 2), "DD %": pct(dd, 1),
+      Allocation: pct(t.weight ?? 1), Shares: int(r?.qty), "Position value": num(r?.notional), Costs: num(r?.costs),
+      "Scale in": t.legs?.length ? pieceText(t.legs) : "1", "Scale out": t.fills?.length ? pieceText(t.fills) : DASH,
     };
     const row = header.map((h) => cell[h]);
-    csv.push(row);
+    csv.push([...row, reasonOf(t.reason)]);
     const view: (string | ReactNode)[] = [...row];
     for (const [label, pieces, word] of [["Scale in", t.legs, "legs"], ["Scale out", t.fills, "scale-outs"]] as const) {
       if (pieces?.length) view[header.indexOf(label)] = <details><summary>{pieces.length} {word}</summary>{pieceText(pieces)}</details>;
     }
     rows.push(view);
-    cls.push(header.map((h) => (h === "% Profit" ? sign(t.ret) : h === "Profit" || h === "Cum. Profit" ? sign(h === "Profit" ? r?.pnl : cum) : NUMERIC.has(h) ? "n" : undefined)));
+    const tone: Record<string, number | null | undefined> = { "% Change": t.ret, "Net profit": net, "DD %": dd < 0 ? dd : null };
+    cls.push(header.map((h) => (h in tone ? sign(tone[h]) : NUMERIC.has(h) ? "n" : CENTRED.has(h) ? "c" : undefined)));
   });
   return { header, rows, csv, cls };
 }
@@ -82,7 +95,9 @@ export function drawdown(equity: number[]): number[] {
   return equity.map((v) => { peak = Math.max(peak, v); return v / peak - 1; });
 }
 
-export function RunResults({ result, market }: { result: RunResult; market: SavedMarket }) {
+/** `chartsOnly`: the Stats tab's top, the headline return and risk tiles and the two charts; the trade counts are in the
+ *  statistics cards below it (which also count a trade still open). */
+export function RunResults({ result, market, chartsOnly = false }: { result: RunResult; market: SavedMarket; chartsOnly?: boolean }) {
   const { instrument, stats, costs } = result;
   const equityRef = useRef<HTMLDivElement>(null);
   const ddRef = useRef<HTMLDivElement>(null);
@@ -120,7 +135,7 @@ export function RunResults({ result, market }: { result: RunResult; market: Save
       }
       // The shared renderer needs at least two x coordinates. Never invent a second session for a single observation.
       if (values.length === 1) {
-        ddEl.classList.add("lab-chart-empty"); ddEl.textContent = `Drawdown ${pct(values[0], 2)} · ${result.dates[0]}`; return;
+        ddEl.classList.add("lab-chart-empty"); ddEl.textContent = `Drawdown ${pct(values[0], 2)} · ${dayFirst(result.dates[0])}`; return;
       }
       const render = window.VaultRuntime?.renderAreaChart;
       if (!render) { ddEl.classList.add("lab-chart-empty"); ddEl.textContent = "Drawdown chart is unavailable."; return; }
@@ -135,17 +150,20 @@ export function RunResults({ result, market }: { result: RunResult; market: Save
 
   return (
     <section className="box lab-result" data-lab-result tabIndex={-1}>
-      <h2 className="box-h">Backtest <small>{result.from} → {result.to} · {instrument.name ?? instrument.ticker}</small></h2>
-      <ServerLabel text={result.label} />
+      <h2 className="box-h">Backtest <small>{dayFirst(result.from)} → {dayFirst(result.to)} · {instrument.name ?? instrument.ticker}</small></h2>
       {isProvisional(market) && <ProvisionalStrip note={result.provisional_note} instrumentLabel={instrument.label} />}
       {result.start && <p className="rnote">{COPY.startMoved(result.start.date)}</p>}
 
-      <ExecutionStrip model={result.execution_model} money={result.money} adaptations={result.adaptations} />
+      {/* the Stats tab drops the run's labels (the page header keeps "simulated · not a book method"); elsewhere they stay */}
+      {!chartsOnly && <><ServerLabel text={result.label} /><ExecutionStrip model={result.execution_model} money={result.money} adaptations={result.adaptations} /></>}
+      {chartsOnly && <MetricTiles items={kpiItems(stats).filter((k) => !/#|Avg\./.test(k.label))} />}
+      {!chartsOnly && <>
       <MetricTiles items={[...(result.money ? [{ label: "Final equity", value: num(result.money.final_equity) }, { label: "Costs paid", value: num(result.money.costs_total) }] : []), ...kpiItems(stats)]} />
       <p className="cap">Exposure {pct(stats.exposure)} · before costs: {pct(stats.gross_total_return)}</p>
       {result.money ? <><p className="cap">{result.money.basis}</p>{result.money.skipped > 0 && <p className="cap">{result.money.skipped} trade{result.money.skipped === 1 ? "" : "s"} skipped ({result.money.limits
         ? Object.entries(result.money.limits.skip_reasons).map(([k, n]) => `${k.replaceAll("_", " ")}: ${n}`).join(" · ") : "size rounded to 0"})</p>}
         {result.money.limits && <p className="cap" data-lab-limits-basis>Interest on idle cash: {result.money.limits.interest.toLocaleString("en-US", { maximumFractionDigits: 2 })}.{result.money.limits.margin_interest !== undefined && <> Margin loan interest paid: <span data-lab-margin-interest>{result.money.limits.margin_interest.toLocaleString("en-US", { maximumFractionDigits: 2 })}</span>.</>} {result.money.limits.basis}</p>}</> : <p className="cap">Fees {costs.fees_bps} bps + slippage {costs.slippage_bps} bps per side · taxes not modelled</p>}
+      </>}
 
       <div className="lab-result-charts">
         <figure className="lab-result-chart" data-lab-chart="equity">
@@ -167,6 +185,15 @@ export function RunResults({ result, market }: { result: RunResult; market: Save
   );
 }
 
+/** YOY-Monthly pivot totals, Excel-style sums: each year across its months, each month across the years, and all of them.
+ *  Blank months add nothing; a row or column with no month at all stays blank. */
+export function monthPivot(years: string[], months: Record<string, number | null | undefined>) {
+  const add = (vs: (number | null | undefined)[]) => { const n = vs.filter((v): v is number => typeof v === "number" && Number.isFinite(v)); return n.length ? n.reduce((a, b) => a + b, 0) : undefined; };
+  const cell = (y: string, i: number) => months[`${y}-${String(i + 1).padStart(2, "0")}`];
+  return { rows: Object.fromEntries(years.map((y) => [y, add(MONTHS.map((_, i) => cell(y, i)))])) as Record<string, number | undefined>,
+    cols: MONTHS.map((_, i) => add(years.map((y) => cell(y, i)))), all: add(years.flatMap((y) => MONTHS.map((_, i) => cell(y, i)))) };
+}
+
 /** AmiBroker Profit Table and the tradesheet (result list): a full-width row under the rules/backtest pair. */
 /** `part` shows only the Profit Table ("monthly") or only the Tradesheet and ledger ("trades"); both when absent. */
 export function RunTables({ result, part, explain }: { result: RunResult; part?: "monthly" | "trades";
@@ -175,36 +202,41 @@ export function RunTables({ result, part, explain }: { result: RunResult; part?:
   const { instrument, trades } = result;
   const [order, setOrder] = useState<"oldest" | "newest">("oldest");
   const [page, setPage] = useState(0);
+  const [tsSlot, setTsSlot] = useState<HTMLSpanElement | null>(null); // Download TS renders here, beside the order toggle
   useEffect(() => setPage(0), [result]); // a new backtest starts on its first page
   const report = window.VaultReport;
   const monthly = report && result.equity.length ? report.monthly({ dates: result.dates, equity: result.equity.map((v) => v / result.equity[0]) }) : null;
+  const pivot = monthly ? monthPivot(monthly.years, monthly.months) : { rows: {}, cols: [], all: undefined };
   const table = tradeTable(result, explain ? reasonLabeler(explain) : undefined), pages = Math.max(1, Math.ceil(table.rows.length / PAGE)), at = Math.min(page, pages - 1);
   const shown = (order === "oldest" ? table.rows.map((_, k) => k) : table.rows.map((_, k) => table.rows.length - 1 - k)).slice(at * PAGE, (at + 1) * PAGE);
 
-  const download = () => saveBytes(xlsx([...(explain ? [{ name: "Rules", rows: rulesSheet(explain, result) }] : []), { name: "Tradesheet", rows: table.csv }]),
-    `lab-${instrument.ticker}-${result.from}-${result.to}.xlsx`, XLSX_TYPE);
 
   return (
     <section className="box lab-result-tables" data-lab-result-tables>
       {part !== "trades" && monthly && (
         <div className="tblwrap lab-monthly">
           <table className="tbl">
-            <caption>Profit Table</caption>
-            <thead><tr><th>Year</th>{MONTHS.map((m) => <th className="n" key={m}>{m}</th>)}<th className="n">Yr%</th></tr></thead>
+            <caption>YOY-Monthly</caption>
+            <thead><tr><th>Year</th>{MONTHS.map((m) => <th className="n" key={m}>{m}</th>)}<th className="n" title="Sum of the year's monthly returns">Total</th><th className="n" title="The year's compounded return">Yr%</th></tr></thead>
             <tbody>
               {monthly.years.map((y) => (
                 <tr key={y}>
                   <td>{y}</td>
                   {MONTHS.map((_, i) => {
                     const v = monthly.months[`${y}-${String(i + 1).padStart(2, "0")}`];
-                    return <td className={sign(v)} key={i}>{pct(v)}</td>;
+                    return <td className={sign(v)} key={i}>{ret(v)}</td>;
                   })}
-                  <td className={sign(monthly.annual[y])}>{pct(monthly.annual[y])}</td>
+                  <td className={sign(pivot.rows[y])}>{ret(pivot.rows[y])}</td>
+                  <td className={sign(monthly.annual[y])}>{ret(monthly.annual[y])}</td>
                 </tr>
               ))}
             </tbody>
-            {!!monthly.averages?.length && <tfoot><tr><td>Avg</td>{MONTHS.map((_, i) => <td className={sign(monthly.averages[i])} key={i}>{pct(monthly.averages[i])}</td>)}
-              <td className={sign(monthly.annualAverage)}>{pct(monthly.annualAverage)}</td></tr></tfoot>}
+            <tfoot>
+              <tr data-lab-pivot-total><td>Total</td>{pivot.cols.map((v, i) => <td className={sign(v)} key={i}>{ret(v)}</td>)}
+                <td className={sign(pivot.all)}>{ret(pivot.all)}</td><td /></tr>
+              {!!monthly.averages?.length && <tr><td>Avg</td>{MONTHS.map((_, i) => <td className={sign(monthly.averages[i])} key={i}>{pct(monthly.averages[i])}</td>)}
+                <td /><td className={sign(monthly.annualAverage)}>{pct(monthly.annualAverage)}</td></tr>}
+            </tfoot>
           </table>
         </div>
       )}
@@ -215,13 +247,14 @@ export function RunTables({ result, part, explain }: { result: RunResult; part?:
           <h3 className="box-h">Tradesheet <small>{trades.length} trades</small></h3>
           {trades.length > 1 && <Segmented label="Trade order" value={order} onChange={(v) => { setOrder(v); setPage(0); }}
             options={[{ value: "oldest", label: "Oldest first" }, { value: "newest", label: "Newest first" }]} />}
-          {trades.length > 0 && <button type="button" className="dbtn sm" data-lab-download-trades onClick={download}>Download Excel</button>}
+          {trades.length > 0 && explain && <span className="lab-ts-slot" ref={setTsSlot} />}
         </div>
+        {trades.length > 0 && explain && <TsDownload result={result} explain={explain} buttonSlot={tsSlot} />}
         {trades.length ? (
           <>
             <div className="tlog">
               <table className="tbl tl" data-lab-trades>
-                <thead><tr>{table.header.map((h) => <th key={h} className={NUMERIC.has(h) ? "n" : undefined}>{h}</th>)}</tr></thead>
+                <thead><tr>{table.header.map((h) => <th key={h} className={NUMERIC.has(h) ? "n" : CENTRED.has(h) ? "c" : undefined}>{h}</th>)}</tr></thead>
                 <tbody>
                   {shown.map((k) => <tr key={k}>{table.rows[k].map((cell, i) => <td key={i} className={table.cls[k][i]}>{cell}</td>)}</tr>)}
                 </tbody>

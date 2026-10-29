@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { act, useState } from "react";
 import { Workbench, type Chip } from "../src/features/lab/Workbench";
-import { variantOptions } from "../src/features/lab/ParamsDialog";
+import { variantChoices, variantOptions } from "../src/features/lab/ParamsDialog";
 import { catalogueFixture as cat, dates, flush, mount, runFixture, seriesFixture, unmount } from "./fixtures/lab";
 
 /** Chip settings live in the AmiBroker-style Parameters window; clicking a chip opens it. */
@@ -65,8 +65,8 @@ it("draws candles, overlays with gaps, boolean markers and a pane; a failing chi
   expect(host.querySelector('[data-lab-chip="c5"] [data-lab-error]')?.textContent).toContain("rsi: needs more history");
   await openParams(host, "c4");
   expect(host.querySelector<HTMLSelectElement>('.lab-params select')?.value).toBe("1");
-  // the choices are the catalogue's own variant names, not a fixed TradingView/AmiBroker pair
-  expect([...host.querySelectorAll('.lab-params select')[0].querySelectorAll("option")].map((o) => o.textContent)).toEqual(["TradingView", "AmiBroker ratio of sums"]);
+  // the choices are the catalogue's variants, named by the platform that uses each (AmiBroker, TradingView…)
+  expect([...host.querySelectorAll('.lab-params select')[0].querySelectorAll("option")].map((o) => o.textContent)).toEqual(["TradingView", "AmiBroker"]);
   expect(host.querySelector(".lab-params [data-lab-ab-defaults]")?.textContent).toBe("AmiBroker defaults");
   // the failed pane chip draws no chart; the stoch pane does
   expect(charts).toHaveLength(2);
@@ -360,19 +360,22 @@ it("shows unique server series adaptations verbatim", async () => {
 });
 
 
-it("inherits the software font and price-chart interaction options", async () => {
+it("uses the lab font for chart text and keeps price-chart interaction options", async () => {
   const previousFont = document.body.style.fontFamily;
   document.body.style.fontFamily = '"House Sans", sans-serif';
+  const style = document.createElement("style");
+  style.textContent = '[data-lab-chart] { font-family: "IBM Plex Sans", sans-serif; --lab-type-label: 14px; }';
+  document.head.append(style);
   try {
     await mount(<Workbench {...props} chips={[]} />);
     await flush();
     const options = vi.mocked(window.LightweightCharts!.createChart).mock.calls[0][1];
     expect(options).toMatchObject({
-      layout: { attributionLogo: false, fontFamily: getComputedStyle(document.body).fontFamily, fontSize: 11, textColor: "#8b8d93" },
+      layout: { attributionLogo: false, fontFamily: '"IBM Plex Sans", sans-serif', fontSize: 14, textColor: "#8b8d93" },
       grid: { vertLines: { visible: true }, horzLines: { color: "#e3e3e4" } },
       timeScale: { minBarSpacing: 0.05 }, crosshair: { mode: 0 }, handleScale: { axisPressedMouseMove: true, mouseWheel: true }, handleScroll: { mouseWheel: true, pressedMouseMove: true },
     });
-  } finally { document.body.style.fontFamily = previousFont; }
+  } finally { style.remove(); document.body.style.fontFamily = previousFont; }
 });
 
 it("uses the shared action arrows for every scale-in leg, preserving short covers on weekly bars", async () => {
@@ -495,7 +498,7 @@ it("trade spans shade won / still-open trades behind the price, and the legend l
   // won (green tint) on its two bars; the open short (grey) runs to the last bar; never shaded outside a trade
   expect(shade).toEqual([null, "#2e7d4f14", "#2e7d4f14", null, "#8b8d9314", "#8b8d9314"]);
   const legend = host.querySelector(".lab-legend-tv")!.textContent!;
-  expect(legend).toContain("NIFTY 50 · Daily · 2024-02-02");
+  expect(legend).toContain("NIFTY 50 · Daily · 02-02-2024");
   expect(legend).toContain("EMA(20) = 5.00"); // AmiBroker title: short name(settings) = value
 });
 
@@ -595,6 +598,14 @@ it("variant choices follow the catalogue label; an unnamed value shows its numbe
   expect(variantOptions(p("Variant (0 % of MA, 1 % of close (NinjaTrader), 2 close/MA×100 (TradeStation))", 2)).map(([, t]) => t))
     .toEqual(["% of MA", "% of close (NinjaTrader)", "close/MA×100 (TradeStation)"]);
   expect(variantOptions(p("Variant", 2))).toEqual([[0, "0"], [1, "1"], [2, "2"]]);
+});
+
+it("the Calculation list names AmiBroker and the other platforms, and hides a choice that gives the same results", () => {
+  const rsi = { key: "variant", label: "Variant (0 Wilder/TradingView/AmiBroker after warm-up, 1 Cutler/TradeStation RSI JP, 2 AmiBroker from bar 1)", default: 0, min: 0, max: 2, step: 1, integer: true };
+  expect(variantChoices(rsi, 0)).toEqual([[0, "AmiBroker"], [1, "TradeStation"]]); // from bar 1 equals the default after the warm-up
+  expect(variantChoices(rsi, 2).map(([, t]) => t)).toEqual(["Wilder/TradingView/AmiBroker after warm-up", "TradeStation", "AmiBroker from bar 1"]); // kept when in use; same names keep their full words
+  const ranks = { ...rsi, label: "Variant (0 interpolated, 1 nearest rank)", max: 1 };
+  expect(variantChoices(ranks, 0)).toEqual([[0, "interpolated"], [1, "nearest rank"]]); // no platform: the catalogue's words
 });
 
 it("switches the floating window between the library and settings without remounting the chart", async () => {

@@ -17,3 +17,39 @@
 .lab-sopt-table :is(th, td) { padding: 6px 10px; border-bottom: 1px solid var(--rule); text-align: left; }
 .lab-sopt-table thead th { max-width: 24ch; font-size: 12px; font-weight: 600; color: var(--ink2); vertical-align: bottom; }
 .lab-sopt-table .n { text-align: right; white-space: nowrap; font-family: "IBM Plex Mono", monospace; }
+
+/* Finish for the Simple optimizer: same language as "Finish for Your idea" (rules.css). Theme tokens only; no motion on controls. */
+/* it sits inside the "Try ranges" box: drop the second frame so it is not a box inside a box */
+.lab-page .lab-try-ranges > .box.lab-sopt { margin: 0; padding: 0; border: 0; background: transparent; }
+.lab-page .lab-sopt > .box-h { font-size: 15px; }
+/* each number: a soft card; once "Try a range" is on it is tinted and marked like a varied setting */
+.lab-page .lab-sopt-line { padding: 10px 12px; border-radius: var(--r-box); }
+.lab-page .lab-sopt-line:has(> .lab-sopt-range) { border-color: color-mix(in srgb, var(--blue) 30%, var(--rule)); background: color-mix(in srgb, var(--blue) 3%, var(--card)); box-shadow: inset 3px 0 var(--blue); }
+.lab-page .lab-sopt-words b { font-variant-numeric: tabular-nums; }
+.lab-page .lab-sopt .lab-check { cursor: pointer; }
+.lab-page .lab-sopt input[type=checkbox] { accent-color: var(--blue); cursor: pointer; }
+.lab-page .lab-sopt-range .dfield input[type=number] { height: 32px; padding-block: 0; border-color: var(--steel); border-radius: var(--r-field); font: 500 13px 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; transition: border-color 150ms ease, box-shadow 150ms ease; }
+.lab-page .lab-sopt-range .dfield input[type=number]:hover { border-color: var(--ink3); }
+.lab-page .lab-sopt-range .dfield input[type=number]:focus-visible { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent); }
+.lab-page .lab-sopt-range .cap { font: 600 12.5px 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; }
+/* run row: the count in figures, Run a size up, disabled reads as disabled */
+.lab-page .lab-sopt-count { font-family: 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; font-size: 13.5px; color: var(--ink); }
+.lab-page .lab-sopt .dbtn { transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), background-color 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease; }
+.lab-page .lab-sopt-run .dbtn.primary { min-height: 34px; padding: 0 18px; box-shadow: 0 1px 2px rgb(0 0 0 / .08), 0 4px 12px -6px color-mix(in srgb, var(--blue) 60%, transparent); }
+.lab-page .lab-sopt .dbtn:disabled { opacity: .55; cursor: not-allowed; box-shadow: none; transform: none; }
+.lab-page .lab-sopt .dbtn.primary:disabled { background: var(--blue); border-color: var(--blue); }
+.lab-page .lab-sopt > .empty { border-radius: var(--r-box); line-height: 1.5; }
+.lab-page .lab-sopt .rnote { border-radius: 0 var(--r-field) var(--r-field) 0; line-height: 1.5; }
+/* best results: a soft card around the table, tinted header, Inter Numbers figures, the best row marked */
+.lab-page .lab-sopt-scroll { width: fit-content; max-width: 100%; border: 1px solid var(--rule); border-radius: var(--r-box); background: var(--card); box-shadow: 0 1px 2px rgb(0 0 0 / .04), 0 6px 16px -10px rgb(0 0 0 / .18); }
+.lab-page .lab-sopt-table thead th { padding-top: 8px; padding-bottom: 8px; background: var(--thead); border-bottom-color: var(--steel); }
+.lab-page .lab-sopt-table .n { font: 500 13.5px 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; }
+.lab-page .lab-sopt-table thead th.n { font: 600 12px var(--font); }
+.lab-page .lab-sopt-table tbody tr:last-child td { border-bottom: 0; }
+.lab-page .lab-sopt-table tbody tr:first-child td { background: color-mix(in srgb, var(--blue) 5%, var(--card)); }
+.lab-page .lab-sopt-table tbody tr:first-child td:first-child { box-shadow: inset 3px 0 var(--blue); }
+.lab-page .lab-sopt-table tbody tr:hover td { background: var(--hover); }
+@media (prefers-reduced-motion: no-preference) {
+  .lab-page .lab-sopt-results { transition: opacity 180ms ease-out; }
+  @starting-style { .lab-page .lab-sopt-results { opacity: 0; } }
+}

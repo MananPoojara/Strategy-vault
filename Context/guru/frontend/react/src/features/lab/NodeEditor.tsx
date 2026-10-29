@@ -2,11 +2,12 @@ import { Fragment, useRef, useState, type ReactNode } from "react";
 import { COPY } from "./labels";
 import { NumField, OperandEditor } from "./OperandEditor";
 import { CANDLES, OPERATOR_LABELS, candleCount, candleCountNode, isSeries, isValue, ordinal, rulePhrase, setAt, type CandleKind, type Side } from "./spec-model";
-import { EXIT_PRESETS, MAX_STEPS, MAX_WHOLE, describeNode, isLeaf, move, newNode, nodeKind, unwrap, withOp, wrap, type ListPath } from "./rule-tree";
+import { EXIT_PRESETS, MAX_STEPS, MAX_WHOLE, describeNode, isLeaf, move, newFilter, newNode, nodeKind, unwrap, withOp, wrap, type ListPath } from "./rule-tree";
 import type { Catalogue, Operand, RuleNode } from "./types";
 import { DetailContext, useCompact, useSimple } from "./simple";
-import { DEFAULT_LEVELS } from "./Workbench";
 import { useForeignScope } from "./ForeignFields";
+import { ParamRule, plainRule, useParamList } from "./ParamRule";
+import { BandRule, bandOf, defaultBand, parseBand, simpleOf } from "./BandRule";
 import { defaultRhs, round2, seriesRange } from "./scale-check";
 import "./tree.css";
 
@@ -29,10 +30,10 @@ export function RuleList({ list, onChange, listPath, title, tag, catalogue, caps
 }) {
   const side: Side = listPath.endsWith("exit.any") ? "exit" : "entry";
   const put = (i: number, n: RuleNode) => onChange(list.map((v, j) => j === i ? n : v));
-  const simple = useSimple(), [fresh, setFresh] = useState(-1); // Simple: a row added by hand opens in its editor
+  const simple = useSimple(), params = useParamList(), [fresh, setFresh] = useState(-1); // Simple: a row added by hand opens in its editor
   return <div className="lab-list" data-lab-list={filters ? `${listPath}.filters` : listPath}>
     <h3>{title}</h3>
-    <p className="cap lab-list-help">{filters ? COPY.filterListHelp : side === "exit" ? COPY.exitListHelp : COPY.entryListHelp}</p>
+    {!simple && !params && <p className="cap lab-list-help">{filters ? COPY.filterListHelp : side === "exit" ? COPY.exitListHelp : COPY.entryListHelp}</p>}
     {notice}
     {list.map((node, i) => {
       // the filter marks stay on the row, outside the editor: a row wrapped in a group must not carry them inside
@@ -44,13 +45,13 @@ export function RuleList({ list, onChange, listPath, title, tag, catalogue, caps
           onRemove={remove} onMove={(d) => onChange(move(list, i, d))} canUp={i > 0} canDown={i < list.length - 1}
           catalogue={catalogue} side={side} top caps={caps} label={`${tag} ${i + 1}`} />;
       return <Fragment key={i}>
-        {simple ? <SentenceRow node={node} catalogue={catalogue} label={`${tag} ${i + 1}`} onChange={(n) => put(i, n)} onRemove={remove} editor={editor} open={i === fresh} /> : editor}
+        {simple && !(params && (plainRule(node, catalogue) || nodeKind(node) === "setup")) ? <SentenceRow node={node} catalogue={catalogue} label={`${tag} ${i + 1}`} onChange={(n) => put(i, n)} onRemove={remove} editor={editor} open={i === fresh} /> : editor}
         {filters && <label className="lab-check lab-filter-exit" title="As the AFLs' filter exits (ST Exit, Base exit): the trade closes on any candle where this filter is false">
           <input type="checkbox" aria-label={`${tag} ${i + 1}: ${COPY.filterExit}`} checked={x.filter_exit === true} onChange={(e) => put(i, mark(bare as RuleNode, e.target.checked))} />{COPY.filterExit}</label>}
       </Fragment>;
     })}
     <div className="lab-list-actions">
-    <AddMenu title={title} caps={caps} top onAdd={(n) => { setFresh(list.length); onChange([...list, filters ? { ...n, filter: true } as RuleNode : n]); }} />
+    <AddMenu title={title} caps={caps} top onAdd={(n) => { setFresh(list.length); onChange([...list, filters ? newFilter() : n]); }} />
     {side === "exit" && <select data-lab-exit-presets aria-label={`Add a ready-made exit to ${title}`} value=""
       title="Exits measured from the entry: the Nth candle of a kind, a trail on an indicator or the close, or a stop / target on the close"
       onChange={(e) => { const p = EXIT_PRESETS.find((x) => x.id === e.target.value); if (p && !(caps.leaves || caps.nodes || caps.top)) onChange([...list, p.node(short)]); }}>
@@ -114,7 +115,7 @@ export function NodeEditor({ node, onChange, onRemove, onMove, canUp = false, ca
   switchable?: boolean;
 }) {
   const [open, setOpen] = useState(true);
-  const compact = useCompact(), simple = useSimple();
+  const compact = useCompact(), simple = useSimple(), params = useParamList();
   const [more, setMore] = useState(!compact); // the page keeps a row's timing, source and group/move behind "More"
   const [parts, setParts] = useState(false); // an "Nth up close after entry" exit opened as its full condition
   const kind = nodeKind(node), x = node as Obj;
@@ -124,6 +125,9 @@ export function NodeEditor({ node, onChange, onRemove, onMove, canUp = false, ca
   // picking an indicator on the left compares it with what that indicator is read against (scale-check defaultRhs); another indicator is the user's explicit choice
   const setLhs = (o: Operand) => {
     const before = x.lhs as Operand;
+    // a price compared with an oscillator's threshold (RSI's 30) is meaningless: switching to a price compares it with an EMA
+    if (kind === "cmp" && isSeries(o) && catalogue.price_sources.includes(o.s) && isValue(x.rhs) && !(isSeries(before) && catalogue.price_sources.includes(before.s)))
+      return set({ lhs: o, rhs: { s: "ema", p: { length: 20 }, ...(o.tf ? { tf: o.tf } : {}) } });
     if (kind !== "cmp" || !isSeries(o) || (isSeries(before) && before.s === o.s) || !catalogue.indicators.some((i) => i.id === o.s)) return set({ lhs: o });
     const rhs = defaultRhs(o, catalogue);
     set({ lhs: o, rhs: rhs ?? { value: 0 } });
@@ -147,6 +151,9 @@ export function NodeEditor({ node, onChange, onRemove, onMove, canUp = false, ca
     onChange={(n) => n !== undefined && Number.isInteger(n) && n >= 1 && n <= MAX_WHOLE && set({ [field]: n })} />;
   // a small caption over each part of a top-level row (both views), so a row reads "what to check · condition · compared with"
   const part = (caption: string, el: ReactNode) => top ? <span className="lab-part"><small className="lab-part-cap">{caption}</small><span className="lab-part-body">{el}</span></span> : el;
+  // a band setup (close outside a band, then back inside) as one parameter list; "Simple compare" turns it back into a crossing
+  if (kind === "setup") return <BandRule node={node} catalogue={catalogue} label={label} exit={side === "exit"} onChange={onChange} onOff={onOff} remove={remove}
+    renderNode={renderNode} onSimple={() => { const b = parseBand(node, catalogue); onChange(b ? { ...simpleOf(b), ...(off ? { off: true } : {}) } as RuleNode : x.setup as RuleNode); }} />;
   if (kind === "unknown") return <div className="lab-cond lab-node" data-lab-node data-lab-kind="unknown">
     <span className="lab-kept">{COPY.keptAsIs} <code>{JSON.stringify(node)}</code></span>{remove}
   </div>;
@@ -165,6 +172,10 @@ export function NodeEditor({ node, onChange, onRemove, onMove, canUp = false, ca
     {!simple && <button type="button" className="dbtn sm ghost lab-more-btn" title="Show this exit as a full condition you can change part by part" onClick={() => setParts(true)}>Edit as condition</button>}
     {remove}
   </div>;
+  const listed = params && top && plainRule(node, catalogue);
+  const band = kind === "cmp" ? bandOf(x.lhs as Operand, catalogue) ?? bandOf(x.rhs as Operand, catalogue) : undefined;
+  if (listed) return <ParamRule node={node} catalogue={catalogue} label={label} onChange={onChange} onLhs={setLhs} onOff={onOff} remove={remove}
+    onBand={band && (() => onChange({ ...defaultBand(band, side === "exit"), ...(off ? { off: true } : {}) } as RuleNode))} />;
   if (isLeaf(kind)) return <div className={`lab-cond lab-node${offClass}`} data-lab-node data-lab-kind={kind} data-lab-off={off || undefined}>
     {onOff}
     <DetailContext.Provider value={more}>
@@ -175,7 +186,6 @@ export function NodeEditor({ node, onChange, onRemove, onMove, canUp = false, ca
     {kind === "cmp" ? part("Compared with", operand("rhs", "right")) : kind === "range" ? <>{part("Lower limit", operand("lo", "low"))}<span className="lab-word">and</span>{part("Upper limit", operand("hi", "high"))}</>
       : part("For how long", <>{number("bars", "bars")}<span className="lab-word">bars</span></>)}
     </DetailContext.Provider>
-    {kind === "cmp" && <Levels of={x.lhs as Operand} onPick={(value) => set({ rhs: { value } })} />}
     {compact && !simple && <button type="button" className="dbtn sm ghost lab-more-btn" aria-expanded={more} title="Timeframe, bars ago, another symbol, group or move" onClick={() => setMore(!more)}>{more ? "Less ▴" : "More ▾"}</button>}
     {menu}{remove}
   </div>;
@@ -229,13 +239,4 @@ function NodeMenu({ node, onChange, onMove, canUp, canDown, caps, label }: {
     {unwrapped !== undefined && <option value="unwrap">{COPY.nodeMenu.unwrap}</option>}
     {onMove && <><option value="up" disabled={!canUp}>{COPY.nodeMenu.up}</option><option value="down" disabled={!canDown}>{COPY.nodeMenu.down}</option></>}
   </select>;
-}
-
-/** The usual threshold lines of the left-hand oscillator (RSI 70/30, MFI 80/20…); a click compares against that number. */
-function Levels({ of, onPick }: { of: Operand; onPick(value: number): void }) {
-  const levels = DEFAULT_LEVELS[(of as { s?: string }).s ?? ""];
-  if (!levels) return null;
-  return <span className="lab-levels" data-lab-levels><span className="lab-word">Levels</span>
-    {levels.map((l) => <button key={l} type="button" className="dbtn sm ghost" title={`Compare with ${l}`} onClick={() => onPick(l)}>{l}</button>)}
-  </span>;
 }

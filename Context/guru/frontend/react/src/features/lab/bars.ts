@@ -51,8 +51,16 @@ export const linePoints = (dates: string[], values: (number | null)[], keep?: Se
 
 export const isBooleanOutput = (values: (number | null)[]) => values.some((v) => v === 1) && values.every((v) => v === null || v === 0 || v === 1);
 
-export const booleanMarkers = (dates: string[], values: (number | null)[], text: string, color: string, keep?: Set<string>) =>
-  dates.flatMap((time, i) => (values[i] === 1 && (!keep || keep.has(time)) ? [{ time, position: "aboveBar", shape: "circle", color, text }] : []));
+/** `out` named bull/up/buy (bear/down/sell): a small unlabelled dot under (over) the bar, as TradingView's SMC scripts draw them. */
+export const booleanMarkers = (dates: string[], values: (number | null)[], text: string, color: string, keep?: Set<string>, out = "") => {
+  const side = /^(bull|up|buy|long)/i.test(out) ? "belowBar" : /^(bear|down|sell|short)/i.test(out) ? "aboveBar" : "";
+  return dates.flatMap((time, i) => (values[i] === 1 && (!keep || keep.has(time))
+    ? [side ? { time, position: side, shape: "circle", color, text: "", size: 0.6 } : { time, position: "aboveBar", shape: "circle", color, text }] : []));
+};
+
+/** `x_top` / `x_bottom` output pairs (FVG zones): drawn as one shaded box per zone instead of two step lines. */
+export const zonePairs = (outputs: string[]) =>
+  outputs.flatMap((o) => { const m = /^(.*)_top$/.exec(o); return m && outputs.includes(`${m[1]}_bottom`) ? [m[1]] : []; });
 
 export function rangeStart(dates: string[], range: ChartRange): string | null {
   if (range === "All" || !dates.length) return null;
@@ -72,4 +80,49 @@ export function tradeSpans(trades: { entry: string; exit: string; open: boolean;
     for (let i = a; i <= b; i++) shade[i] = color(t);
   }
   return shade;
+}
+
+const BREAK_TAGS: Record<string, string> = { bos: "BOS", choch: "CHoCH", mss: "MSS", eqh: "EQH", eql: "EQL" };
+export interface BreakLine { from: number; to: number; price: number; text: string; up: boolean; dotted: boolean; above: boolean; solid?: boolean; atEnd?: boolean }
+/** `bull_bos` / `bear_choch` / `bear_eqh` … events with a `<side>_level` or `<tag>_level` output: TradingView's line from the
+ *  swing bar (the latest bar whose high, or low, is that level) to the event bar, labelled BOS / CHoCH / EQH / EQL. */
+export function breakLines(outputs: string[], series: Record<string, (number | null)[]>, dates: string[], px: Ohlc, lookback = 300): BreakLine[] {
+  const at = new Map(px.d.map((d, i) => [d, i])), out: BreakLine[] = [];
+  for (const o of outputs) {
+    const m = /^(bull|bear)_([a-z]+)$/.exec(o), tag = m?.[2];
+    const level = m && tag && BREAK_TAGS[tag] ? [`${m[1]}_level`, `${tag}_level`].find((k) => outputs.includes(k)) : undefined;
+    if (!m || !tag || !level) continue;
+    const sig = series[o] ?? [], lvl = series[level] ?? [];
+    dates.forEach((d, k) => {
+      const t = at.get(d), p = lvl[k];
+      if (sig[k] !== 1 || t === undefined || typeof p !== "number") return;
+      // a bull break (and EQH) is a swing high's level, a bear break (and EQL) a swing low's
+      const up = m[1] === "bull", dotted = tag.startsWith("eq"), high = up !== dotted;
+      let from = -1, best = Infinity;
+      for (let i = t - 1; i >= Math.max(0, t - lookback) && best > 0; i--) {
+        const gap = Math.abs((high ? px.h[i] : px.l[i]) - p);
+        if (gap < best) { best = gap; from = i; }
+      }
+      if (from >= 0) out.push({ from, to: t, price: p, text: BREAK_TAGS[tag], up, dotted, above: up !== dotted });
+    });
+  }
+  return out;
+}
+/** The outputs breakLines draws (events and their levels), so they are not drawn again as dots. */
+export const breakOutputs = (lines: BreakLine[], outputs: string[]) => lines.length
+  ? new Set(outputs.filter((o) => { const m = /^(bull|bear)_([a-z]+)$/.exec(o); return (m && BREAK_TAGS[m[2]]) || /_level$/.test(o); })) : new Set<string>();
+
+/** `trailing_high` / `trailing_low` / `bias` (Strong / Weak High-Low, LuxAlgo): only the latest top and bottom, a solid line
+ *  from the bar that made it to the last bar, labelled at its right end; the top is Strong in a down bias, the bottom in an up bias. */
+export function strongWeakLines(outputs: string[], series: Record<string, (number | null)[]>, dates: string[], px: Ohlc): BreakLine[] {
+  if (!["trailing_high", "trailing_low", "bias"].every((o) => outputs.includes(o)) || !dates.length) return [];
+  const last = px.d.indexOf(dates[dates.length - 1]), k = dates.length - 1, bias = series.bias?.[k];
+  const line = (price: number | null | undefined, high: boolean): BreakLine[] => {
+    if (typeof price !== "number" || last < 0) return [];
+    let from = last;
+    while (from > 0 && (high ? px.h[from] : px.l[from]) !== price) from--;
+    const strong = high ? bias === -1 : bias === 1;
+    return [{ from, to: last, price, text: `${strong ? "Strong" : "Weak"} ${high ? "High" : "Low"}`, up: !high, dotted: false, above: high, solid: true, atEnd: true }];
+  };
+  return [...line(series.trailing_high?.[k], true), ...line(series.trailing_low?.[k], false)];
 }

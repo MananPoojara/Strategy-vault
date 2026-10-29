@@ -29,7 +29,10 @@ export function DrawingLayer({ chart, series, times, drawings, tool, color, heig
     box?.addEventListener("pointermove", tick); box?.addEventListener("wheel", tick, { passive: true });
     const ro = typeof ResizeObserver !== "undefined" && box ? new ResizeObserver(tick) : null;
     if (ro && box) ro.observe(box);
-    return () => { ts.unsubscribeVisibleLogicalRangeChange?.(tick); box?.removeEventListener("pointermove", tick); box?.removeEventListener("wheel", tick); ro?.disconnect(); };
+    return () => {
+      try { ts.unsubscribeVisibleLogicalRangeChange?.(tick); } catch { /* the chart was already removed by a rebuild */ }
+      box?.removeEventListener("pointermove", tick); box?.removeEventListener("wheel", tick); ro?.disconnect();
+    };
   }, [chart]);
   useEffect(() => { setDraft(null); pressed.current = false; }, [tool]);
   useEffect(() => {
@@ -43,6 +46,9 @@ export function DrawingLayer({ chart, series, times, drawings, tool, color, heig
     return () => window.removeEventListener("keydown", onKey);
   }, [sel, drawings, onChange, onDone]);
 
+  // new settings rebuild the chart: for that render the old chart is already removed and its API throws, so draw nothing
+  let axis = 0;
+  try { axis = chart.priceScale?.("right").width?.() ?? 0; } catch { return null; }
   const ts = chart.timeScale(), last = times.length - 1;
   const bar = (l: number) => times[Math.max(0, Math.min(last, Math.round(l)))];
   const xOf = (t: string) => { const i = index.get(t); return i === undefined ? null : ts.logicalToCoordinate?.(i) ?? null; };
@@ -111,7 +117,7 @@ export function DrawingLayer({ chart, series, times, drawings, tool, color, heig
     onDone();
   };
 
-  const width = svg.current?.clientWidth ?? 0, axis = chart.priceScale?.("right").width?.() ?? 0, plot = Math.max(0, width - axis);
+  const width = svg.current?.clientWidth ?? 0, plot = Math.max(0, width - axis);
   const shapes = drawings.map((d, i) => (moving?.i === i ? moving.d : d));
   const shape = (d: Drawing, i: number | null) => {
     const live = i === null || i === sel || moving?.i === i, key = i ?? "draft";

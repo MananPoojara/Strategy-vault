@@ -10,3 +10,82 @@
 .lab-extra-exit summary { cursor: pointer; font: 500 12px var(--font); color: var(--ink2); }
 .lab-extra-exit[open] summary { margin-bottom: 4px; }
 .lab-orders .lab-kept { max-width: 100%; overflow-wrap: anywhere; }
+
+/* Finish for Settings (test period, costs and money): same language as the Your idea cards.
+   Scoped to .lab-basics / .lab-more-settings so the rule cards are untouched. Theme tokens only; no motion on controls used all the time. */
+.lab-rules > .lab-basics { gap: 0; padding: 2px 18px; background: var(--card); border: 1px solid var(--rule); border-radius: var(--r-box); box-shadow: 0 1px 2px rgb(0 0 0 / .04), 0 6px 16px -10px rgb(0 0 0 / .18); }
+.lab-rules > .lab-basics > .lab-sgroup, .lab-rules > .lab-basics > .lab-sgroup:first-child { padding: 14px 0; }
+/* group label: small uppercase, centred on the first 32px control row */
+.lab-rules :is(.lab-basics, .lab-stab-panel) > .lab-sgroup > h4 { margin: 0; font: 700 11.5px/var(--lab-ctl) var(--font); letter-spacing: .1em; color: var(--ink2); }
+.lab-rules :is(.lab-basics, .lab-stab-panel) > .lab-sgroup > div { gap: 12px; }
+/* row captions (Positions, Buy and sell at) share one width so the choices line up */
+.lab-rules .lab-basics .lab-row > span.dfield:first-child { min-width: 104px; }
+
+/* fields: one border, hover and focus language; figures and dates in Inter Numbers */
+.lab-rules :is(.lab-basics, .lab-more-settings) :is(select, input:not([type=checkbox], [type=radio], [type=range])) { border-color: var(--steel); border-radius: var(--r-field); background-color: var(--card); color: var(--ink); transition: border-color 150ms ease, box-shadow 150ms ease; }
+.lab-rules :is(.lab-basics, .lab-more-settings) :is(select, input:not([type=checkbox], [type=radio], [type=range])):not(:disabled):hover { border-color: var(--ink3); }
+.lab-rules :is(.lab-basics, .lab-more-settings) :is(select, input:not([type=checkbox], [type=radio], [type=range])):focus-visible { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent); }
+.lab-rules :is(.lab-basics, .lab-more-settings) :is(select, input):disabled { background-color: color-mix(in srgb, var(--ink) 4%, var(--card)); color: var(--ink3); cursor: not-allowed; }
+.lab-rules :is(.lab-basics, .lab-more-settings) input::placeholder { color: var(--ink3); opacity: 1; }
+.lab-rules :is(.lab-basics, .lab-more-settings) :is(input[type=number], .lab-datefield input) { font-family: 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; font-weight: 500; }
+.lab-rules :is(.lab-basics, .lab-more-settings) .lab-datefield-pick:hover { color: var(--blue); background: color-mix(in srgb, var(--blue) 10%, var(--card)); }
+.lab-rules :is(.lab-basics, .lab-more-settings) .lab-check { cursor: pointer; }
+.lab-rules :is(.lab-basics, .lab-more-settings) .lab-check input { accent-color: var(--blue); }
+.lab-rules :is(.lab-basics, .lab-more-settings) .lab-check:has(input:disabled) { color: var(--ink3); cursor: not-allowed; }
+
+/* segmented choices: the group is exactly one control tall, the focus ring sits inside (the group clips outside rings) */
+.lab-page .lab-rules :is(.lab-basics, .lab-more-settings) .join { border-color: var(--steel); border-radius: var(--r-field); background: var(--card); }
+.lab-rules :is(.lab-basics, .lab-more-settings) .join-item { height: calc(var(--lab-ctl) - 2px); padding-inline: 12px; transition: background-color 150ms ease, color 150ms ease, transform 160ms cubic-bezier(0.23, 1, 0.32, 1); }
+.lab-rules :is(.lab-basics, .lab-more-settings) .join-item:focus-visible { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--blue) 45%, transparent); }
+.lab-page .lab-rules :is(.lab-basics, .lab-more-settings) .join-item:disabled, .lab-page .lab-rules :is(.lab-basics, .lab-more-settings) .join-item:disabled:hover { background: none; color: var(--ink3); cursor: not-allowed; }
+
+/* help text: quieter weight and a readable measure */
+.lab-rules :is(.lab-basics, .lab-more-settings) p.cap { margin: 0; max-width: 78ch; font-size: 12.5px; font-weight: 500; line-height: 1.5; }
+
+/* Order type (shown only when a loaded strategy sets one) folds like the other boxes */
+.lab-rules .lab-basics .lab-orders-box { padding: 8px 12px; border: 1px solid var(--rule); border-radius: var(--r-field); background: color-mix(in srgb, var(--ink) 2%, var(--card)); }
+.lab-rules .lab-basics .lab-orders-box[open] > summary { margin-bottom: 8px; }
+
+/* More settings (AmiBroker): a second card whose header folds it; a chevron replaces the bullet marker */
+.lab-rules > .lab-more-settings { margin: 0; padding: 0; background: var(--card); border: 1px solid var(--rule); border-radius: var(--r-box); box-shadow: 0 1px 2px rgb(0 0 0 / .04), 0 6px 16px -10px rgb(0 0 0 / .18); }
+.lab-rules > .lab-more-settings > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; padding: 12px 16px; list-style: none; font: 600 13.5px var(--font); color: var(--ink); border-radius: calc(var(--r-box) - 1px); transition: background-color 150ms ease; }
+/* no overflow:hidden on the card: pickers inside (Portfolio rank score) may open past its edge */
+.lab-rules > .lab-more-settings > summary::-webkit-details-marker { display: none; }
+.lab-rules > .lab-more-settings > summary::before { content: ""; flex: none; align-self: center; width: 6px; height: 6px; margin: 0 4px 0 2px; border: solid var(--ink3); border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); }
+.lab-rules > .lab-more-settings[open] > summary::before { transform: rotate(45deg) translate(-2px, -1px); }
+.lab-rules > .lab-more-settings > summary:hover { background: color-mix(in srgb, var(--ink) 3%, var(--card)); }
+.lab-rules > .lab-more-settings > summary:focus-visible { outline: none; box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--blue) 45%, transparent); }
+.lab-rules > .lab-more-settings > summary .cap { margin: 0; font-size: 12.5px; font-weight: 500; color: var(--ink2); }
+.lab-rules > .lab-more-settings[open] > summary { margin: 0; border-bottom: 1px solid var(--rule); border-radius: calc(var(--r-box) - 1px) calc(var(--r-box) - 1px) 0 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .lab-rules > .lab-more-settings > summary::before { transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1); }
+}
+/* the tabs sit flush inside the card: underline tabs instead of folder tabs */
+.lab-rules > .lab-more-settings .lab-settings-tabs { border: 0; border-radius: 0; }
+.lab-rules > .lab-more-settings .lab-stabs { gap: 4px; padding: 0 12px; background: color-mix(in srgb, var(--thead) 70%, var(--card)); }
+.lab-rules > .lab-more-settings .lab-stabs [role=tab] { padding: 10px 12px; border: 0; border-radius: 0; background: none; font: 600 13px var(--font); color: var(--ink2); transition: color 150ms ease, box-shadow 150ms ease; }
+.lab-rules > .lab-more-settings .lab-stabs [role=tab]:hover { color: var(--ink); box-shadow: inset 0 -2px var(--steel); }
+.lab-rules > .lab-more-settings .lab-stabs [role=tab][aria-selected=true] { color: var(--ink); box-shadow: inset 0 -2px 0 var(--blue); }
+.lab-rules > .lab-more-settings .lab-stabs [role=tab]:focus-visible { outline: 2px solid color-mix(in srgb, var(--blue) 45%, transparent); outline-offset: -2px; }
+.lab-rules > .lab-more-settings .lab-stab-panel { gap: 14px; padding: 14px 16px 16px; }
+.lab-rules > .lab-more-settings .lab-stab-panel > .lab-stab-intro { color: var(--ink2); }
+.lab-rules > .lab-more-settings .lab-stab-panel > .lab-sgroup { padding: 14px 0 0; }
+.lab-rules > .lab-more-settings :is(.lab-fieldset, .lab-trade-prices fieldset) { border-color: var(--rule); background: color-mix(in srgb, var(--ink) 1.5%, var(--card)); }
+
+/* Run: a footer under the settings cards */
+.lab-rules > .lab-more-settings ~ .lab-run { gap: 12px; padding-top: 14px; border-top: 1px solid var(--rule); }
+.lab-rules > .lab-more-settings ~ .lab-run .cap { font-size: 12.5px; font-weight: 500; }
+.lab-rules :is(.lab-basics, .lab-more-settings, .lab-run) .dbtn { transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease, box-shadow 150ms ease, transform 160ms cubic-bezier(0.23, 1, 0.32, 1); }
+
+@media (max-width: 700px) {
+  .lab-rules :is(.lab-basics, .lab-stab-panel) > .lab-sgroup > h4 { line-height: 1.4; }
+  .lab-rules > .lab-basics > .lab-sgroup, .lab-rules > .lab-basics > .lab-sgroup:first-child { gap: 8px; }
+}
+@media (max-width: 600px) {
+  .lab-rules > .lab-basics { padding: 0 12px; }
+  .lab-rules > .lab-more-settings > summary { padding: 12px; }
+  .lab-rules > .lab-more-settings .lab-stabs { padding: 0 4px; }
+  .lab-rules > .lab-more-settings .lab-stabs [role=tab] { padding: 10px 8px; }
+  .lab-rules > .lab-more-settings .lab-stab-panel { padding: 12px; }
+  .lab-rules .lab-basics .lab-row > span.dfield:first-child { min-width: 0; flex-basis: 100%; }
+}

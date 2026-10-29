@@ -1,5 +1,5 @@
 import { Fragment, useContext, useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { CALENDAR_OUTPUTS, COPY, EXPAND_FIRST_REFUSED, OPERAND_KIND_LABELS, TF_LABELS } from "./labels";
+import { CALENDAR_OUTPUTS, COPY, EXPAND_FIRST_REFUSED, OPERAND_KIND_LABELS, TF_LABELS, paramLabel } from "./labels";
 import { isSeries, isValue, type Side } from "./spec-model";
 import { ARITH, CALENDAR_IDS, MAX_NTH, MAX_WHOLE, SINCE_ENTRY_KINDS, WINDOWS, convertOperand, describeNode, exprKey, firstAllowed, innerOperand, operandKind, sinceEntry, type OperandKind, type SinceEntryKind } from "./rule-tree";
 import type { Catalogue, FormulaOperand, Indicator, Operand, RuleNode, SavedIndicator, SeriesOperand } from "./types";
@@ -7,7 +7,7 @@ import { ForeignFields } from "./ForeignFields";
 import { infoOf, useFormulaScope, wholeParam } from "./formula";
 import { DetailContext, POPULAR, SHORT, useSimple } from "./simple";
 import { AB_DEFAULTS } from "./catalogue";
-import { isChoice, variantOptions } from "./ParamsDialog";
+import { isChoice, variantChoices } from "./ParamsDialog";
 import "./rules.css";
 import "./operand.css";
 
@@ -95,13 +95,13 @@ export function OperandEditor({ operand, side, catalogue, onChange, label, heldO
       {(!simple || expression) && <optgroup label="Formula">{FORMULAS.map(kindOptions)}</optgroup>}
       {(!simple || expression) && <optgroup label="Since a condition">{STATES.map(kindOptions)}</optgroup>}
     </select>
-    {kind === "number" && isValue(operand) && <NumField label="Number" value={operand.value}
+    {kind === "number" && isValue(operand) && <NumField label="Threshold" value={operand.value}
       onChange={(n) => n !== undefined && onChange({ ...operand, value: n })} />}
     {kind === "price" && <select aria-label="Price source" value={series!.s} onChange={(e) => onChange(updatedTiming({ ...dropParams(series!), s: e.target.value }, {}, false))}>
       {catalogue.price_sources.map((s) => <option key={s} value={s}>{s}</option>)}
     </select>}
     {kind === "indicator" && ind && <IndicatorFields operand={series!} ind={ind} computed={computed} groups={groups}
-      set={set} replace={(id) => onChange({ ...dropParams(series!), s: id })} />}
+      set={set} replace={(id) => onChange({ ...dropParams(series!), s: id })} brief={brief} />}
     {kind === "calendar" && (() => { const calendarValue = `${series!.s}.${series!.out ?? catalogue.indicators.find((i) => i.id === series!.s)?.outputs[0] ?? ""}`; return <>
       <select aria-label="Calendar value" value={calendarValue}
         onChange={(e) => { const [s, out] = e.target.value.split("."); onChange({ ...dropParams(series!), s, out }); }}>
@@ -160,7 +160,7 @@ function updatedTiming(operand: Operand, patch: Obj, compress: boolean): Operand
   if (next.expand === "last" || (next.expand === "first" && !firstAllowed(next, compress))) delete next.expand;
   return next;
 }
-function TimeframeField({ operand, catalogue, onChange, compress = false }: {
+export function TimeframeField({ operand, catalogue, onChange, compress = false }: {
   operand: Operand; catalogue: Catalogue; onChange(o: Operand): void; compress?: boolean;
 }) {
   const x = operand as Obj, tf = (x.tf ?? (compress ? "W" : "D")) as string, custom = /^\d+D$/.test(tf);
@@ -205,9 +205,22 @@ function Timing({ operand, catalogue, onChange, compress }: {
 
 /** The indicator of a rule, chosen by typing any part of its name (as in the chart's Indicators search): Popular first,
  *  then each category; arrows and Enter pick, Escape closes. */
-function IndicatorSearch({ ind, computed, groups, onPick }: { ind: Indicator; computed: Indicator[]; groups: string[]; onPick(id: string): void }) {
+export function IndicatorSearch({ ind, computed, groups, onPick }: { ind: Indicator; computed: Indicator[]; groups: string[]; onPick(id: string): void }) {
   const [open, setOpen] = useState(false), [q, setQ] = useState(""), [hi, setHi] = useState(0);
   const box = useRef<HTMLSpanElement>(null), listId = useId();
+  const button = useRef<HTMLButtonElement>(null), menu = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState({ left: 16, top: 16, width: 360, maxHeight: 420, above: false });
+  const toggle = () => {
+    if (!open && button.current) {
+      const anchor = button.current.getBoundingClientRect();
+      const vw = document.documentElement.clientWidth || window.innerWidth, vh = document.documentElement.clientHeight || window.innerHeight;
+      const width = Math.min(360, Math.max(1, vw - 32)), below = vh - anchor.bottom - 24;
+      const above = below < 180 && anchor.top - 24 > below, top = Math.max(16, Math.min(vh - 16, above ? anchor.top - 8 : anchor.bottom + 8));
+      setPosition({ left: Math.max(16, Math.min(anchor.left, vw - width - 16)), top,
+        width, maxHeight: Math.max(1, Math.min(420, above ? top - 16 : vh - top - 16)), above });
+    }
+    setOpen(!open); setHi(0);
+  };
   const label = (x: Indicator) => (x.name.toUpperCase().startsWith(SHORT[x.id] ?? "") ? x.name : `${SHORT[x.id]} · ${x.name}`);
   const needle = q.trim().toLowerCase();
   const rank = (x: Indicator) => (x.id === needle || SHORT[x.id]?.toLowerCase() === needle ? 0 : x.name.toLowerCase().startsWith(needle) ? 1 : 2);
@@ -220,19 +233,37 @@ function IndicatorSearch({ ind, computed, groups, onPick }: { ind: Indicator; co
     document.addEventListener("mousedown", away);
     return () => document.removeEventListener("mousedown", away);
   }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    const popup = menu.current;
+    popup?.showPopover?.();
+    popup?.querySelector<HTMLInputElement>('input')?.focus();
+    const moved = (event: Event) => {
+      if (event.type === "scroll" && event.target instanceof Node && popup?.contains(event.target)) return;
+      setOpen(false);
+    };
+    window.addEventListener("resize", moved);
+    window.addEventListener("scroll", moved, true);
+    return () => {
+      window.removeEventListener("resize", moved);
+      window.removeEventListener("scroll", moved, true);
+      if (popup?.isConnected) popup.hidePopover?.();
+    };
+  }, [open]);
   useEffect(() => { if (open) document.getElementById(`${listId}-${hi}`)?.scrollIntoView?.({ block: "nearest" }); }, [open, hi, listId]);
   const pick = (id: string) => { setOpen(false); setQ(""); onPick(id); };
   return <span className="lab-ind-search" ref={box}>
-    <button type="button" className="lab-ind-btn" aria-label="Indicator" aria-haspopup="listbox" aria-expanded={open} data-value={ind.id} title="Choose an indicator: click, then type to search"
-      onClick={() => { setOpen(!open); setHi(0); }}>{ind.computed ? label(ind) : `${ind.name} (listed only)`} <span aria-hidden="true">▾</span></button>
-    {open && <div className="lab-ind-pop">
+    <button ref={button} type="button" className="lab-ind-btn" aria-label="Indicator" aria-haspopup="listbox" aria-expanded={open} data-value={ind.id} title="Choose an indicator: click, then type to search"
+      onClick={toggle}>{ind.computed ? label(ind) : `${ind.name} (listed only)`} <span aria-hidden="true">▾</span></button>
+    {open && <div className="lab-ind-pop" ref={menu} popover="auto" onToggle={(event) => { if (event.newState === "closed") setOpen(false); }}
+      style={{ position: "fixed", inset: "auto", margin: 0, left: position.left, top: position.top, width: position.width, maxHeight: position.maxHeight, transform: position.above ? "translateY(-100%)" : undefined }}>
       <input autoFocus type="search" role="combobox" aria-label="Search indicators" aria-expanded="true" aria-controls={listId} aria-activedescendant={items[hi] ? `${listId}-${hi}` : undefined}
         placeholder="Type to search: RSI, moving average, bollinger…" value={q} onChange={(e) => { setQ(e.target.value); setHi(0); }}
         onKeyDown={(e) => {
           if (e.key === "ArrowDown") { e.preventDefault(); setHi((h) => Math.min(h + 1, items.length - 1)); }
           else if (e.key === "ArrowUp") { e.preventDefault(); setHi((h) => Math.max(h - 1, 0)); }
           else if (e.key === "Enter") { e.preventDefault(); if (items[hi]) pick(items[hi].x.id); }
-          else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setOpen(false); }
+          else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setOpen(false); button.current?.focus(); }
         }} />
       <ul id={listId} role="listbox" aria-label="Indicators">
         {items.length ? items.map(({ x, group }, i) => <Fragment key={`${group}-${x.id}`}>
@@ -245,21 +276,21 @@ function IndicatorSearch({ ind, computed, groups, onPick }: { ind: Indicator; co
   </span>;
 }
 
-function IndicatorFields({ operand, ind, computed, groups, set, replace }: {
+function IndicatorFields({ operand, ind, computed, groups, set, replace, brief }: {
   operand: SeriesOperand; ind: Indicator; computed: Indicator[]; groups: string[];
-  set(patch: Partial<SeriesOperand>): void; replace(id: string): void;
+  set(patch: Partial<SeriesOperand>): void; replace(id: string): void; brief: boolean;
 }) {
   return (
     <>
       <IndicatorSearch ind={ind} computed={computed} groups={groups} onPick={replace} />
-      {ind.params.map((p) => isChoice(p) ? (
+      {ind.params.filter((p) => !isChoice(p) || !brief || (operand.p?.[p.key] ?? p.default) !== p.default).map((p) => isChoice(p) ? (
         <label key={p.key} className="dfield">{p.label.replace(/\s*\(.*\)\s*$/, "")}
           <select aria-label={p.label} title={p.label} value={operand.p?.[p.key] ?? p.default} onChange={(e) => set({ p: { ...operand.p, [p.key]: Number(e.target.value) } })}>
-            {variantOptions(p).map(([v, text]) => <option key={v} value={v}>{text}</option>)}
+            {variantChoices(p, operand.p?.[p.key] ?? p.default).map(([v, text]) => <option key={v} value={v}>{text}</option>)}
           </select>
         </label>
       ) : (
-        <NumField key={p.key} label={p.label} value={operand.p?.[p.key] ?? p.default} min={p.min} max={p.max} step={p.step}
+        <NumField key={p.key} label={paramLabel(p.label)} value={operand.p?.[p.key] ?? p.default} min={p.min} max={p.max} step={p.step}
           onChange={(n) => n !== undefined && set({ p: { ...operand.p, [p.key]: n } })} />
       ))}
       {AB_DEFAULTS[ind.id] && <button type="button" className="dbtn sm ghost" data-lab-ab-defaults title="Set the parameters to AmiBroker's own defaults for this indicator"

@@ -20,3 +20,12 @@
 .lab-workbench[data-indicator-display="on-chart"] .lab-chips .chip:not(:has(.lab-error,.cap)) { display:none; }
 .lab-workbench[data-indicator-display="on-chart"] .lab-pane-settings { display:none; }
 .lab-workbench[data-indicator-display="chips"] .lab-chart-indicators { display:none; }
+
+/* ---- Finish for on-chart indicator labels: a soft rounded tag, the name a step bolder, figures in Inter Numbers, the house focus ring. */
+.lab-chart-indicators { gap: 3px; }
+.lab-indicator-label { padding: 0 3px 0 7px; border-radius: 4px; }
+.lab-indicator-name { font-weight: 600; }
+.lab-indicator-values { font-family: 'Inter Numbers', var(--font); font-size: 11.5px; }
+.lab-indicator-actions button { border-radius: var(--r-field); }
+.lab-indicator-actions button:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); }
+.lab-indicator-label button:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent), inset 0 0 0 1px var(--blue); }

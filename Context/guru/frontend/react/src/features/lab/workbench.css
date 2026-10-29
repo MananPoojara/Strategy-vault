@@ -121,3 +121,59 @@
 .lab-maximized .lab-chart-next { display:none; }
 /* Renko, Kagi and the other timeless types have no drawing rail: the chart takes the whole row */
 .lab-workbench .lab-chart-body:has(> .lab-draw-rail[hidden]) { grid-template-columns: minmax(0,1fr); }
+
+/* ---- Finish for the chart workspace: one card with a light top bar, quiet tools that tint when on, footnotes set apart, and a clear next step.
+   Theme tokens only. Hover and press feedback only (under 200ms, transform/colour); nothing animates on its own. */
+.lab-page[data-lab-page="indicators"] { gap: 10px; }
+.lab-page[data-lab-page][data-chart-workspace] .lab-tab-panel { gap: 10px; }
+/* header: the title, then the server label as a small tag (same text) */
+.lab-page[data-lab-page="indicators"] > header h1 { font-size: 20px; font-weight: 800; letter-spacing: -.01em; }
+.lab-page[data-lab-page="indicators"] > header .lab-label { padding: 2px 9px; border: 1px solid var(--rule); border-radius: 999px; background: var(--card); color: var(--ink2); font: 500 11px var(--font); }
+/* the card (beats the theme's .box panel/steel paint) */
+.lab-page[data-lab-page] section.lab-workbench { padding-bottom: 8px; border: 1px solid var(--rule); border-radius: var(--r-box); background: var(--panel); box-shadow: 0 1px 2px rgb(0 0 0 / .04), 0 6px 16px -10px rgb(0 0 0 / .18); }
+.lab-page .lab-maximized section.lab-workbench { border-radius: 0; box-shadow: none; }
+.lab-page .lab-workbench > .lab-chart-topbar { background: var(--card); border-radius: var(--r-box) var(--r-box) 0 0; }
+.lab-page .lab-maximized .lab-workbench > .lab-chart-topbar { border-radius: 0; }
+/* top-bar actions: Chart type · (type settings) · Indicators · full screen, borderless until hovered, tinted while open */
+.lab-page[data-lab-page] .lab-chart-topbar .lab-chart-actions { gap: 4px; }
+.lab-page[data-lab-page] .lab-chart-type-control { display: inline-flex; align-items: center; padding-right: 6px; border-right: 1px solid var(--rule); }
+.lab-page[data-lab-page] .lab-chart-type-control select { border: 0; border-radius: var(--r-field); padding: 0 6px 0 9px; font: 600 12.5px var(--font); color: var(--ink); cursor: pointer; transition: background-color 120ms ease; }
+.lab-page[data-lab-page] .lab-chart-type-control select:hover { background: var(--hover); }
+.lab-page[data-lab-page] .lab-chart-type-control select:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent), inset 0 0 0 1px var(--blue); }
+.lab-page[data-lab-page] .lab-chart-topbar .lab-chart-actions .dbtn { border: 0; border-radius: var(--r-field); background: transparent; box-shadow: none; padding: 7px 11px; font: 600 13px var(--font); color: var(--ink); transition: background-color 120ms ease, color 120ms ease, transform 160ms cubic-bezier(0.23, 1, 0.32, 1); }
+.lab-page[data-lab-page] .lab-chart-topbar .lab-chart-actions .dbtn svg { color: var(--ink2); }
+.lab-page[data-lab-page] .lab-chart-topbar .lab-chart-actions .dbtn:hover { background: var(--hover); }
+.lab-page[data-lab-page] .lab-chart-topbar .lab-chart-actions .dbtn:hover svg { color: var(--ink); }
+.lab-page[data-lab-page] .lab-chart-topbar .lab-chart-actions .dbtn:is([aria-expanded=true], [aria-pressed=true]) { color: var(--blue); background: color-mix(in srgb, var(--blue) 12%, var(--card)); }
+.lab-page[data-lab-page] .lab-chart-topbar .lab-chart-actions .dbtn:is([aria-expanded=true], [aria-pressed=true]) svg { color: var(--blue); }
+.lab-page[data-lab-page] .lab-chart-topbar .lab-chart-actions .dbtn:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent), inset 0 0 0 1px var(--blue); }
+.lab-page[data-lab-page] .lab-chart-topbar .lab-chart-actions .lab-fullscreen { width: 34px; height: 34px; padding: 0; }
+/* drawing rail: transparent tools (the theme paints .dbtn), the chosen tool tinted and outlined */
+.lab-page .lab-workbench .lab-draw-rail { gap: 4px; padding: 8px 4px; }
+.lab-page .lab-workbench .lab-draw-rail button { background: transparent; border-radius: var(--r-field); color: var(--ink2); transition: background-color 120ms ease, color 120ms ease, transform 160ms cubic-bezier(0.23, 1, 0.32, 1); }
+.lab-page .lab-workbench .lab-draw-rail button:hover { background: var(--hover); color: var(--ink); }
+.lab-page .lab-workbench .lab-draw-rail button[aria-pressed=true] { color: var(--blue); background: color-mix(in srgb, var(--blue) 12%, var(--card)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--blue) 30%, transparent); }
+.lab-page .lab-workbench .lab-draw-rail button:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent), inset 0 0 0 1px var(--blue); }
+.lab-page .lab-workbench .lab-draw-rail button[data-lab-draw-undo] { margin-top: 6px; }
+/* legend readout and pane settings: figures in Inter Numbers, field radius */
+.lab-workbench .lab-legend-tv { font-family: 'Inter Numbers', var(--font); }
+.lab-workbench .lab-legend-tv > div { border-radius: 3px; }
+.lab-workbench .lab-pane-settings { border-radius: var(--r-field); transition: color 120ms ease, border-color 120ms ease; }
+.lab-workbench .lab-latest:hover { background: var(--hover); }
+/* range footer: 1Y · 3Y · All as a light segmented row; the chosen range tinted, distinct from hover */
+.lab-workbench .lab-chart-footer { gap: 2px; padding-block: 5px; margin-bottom: 6px; }
+.lab-workbench .lab-chart-footer button { padding: 6px 11px; border-radius: var(--r-field); font: 600 12px 'Inter Numbers', var(--font); color: var(--ink2); transition: background-color 120ms ease, color 120ms ease, transform 160ms cubic-bezier(0.23, 1, 0.32, 1); }
+.lab-workbench .lab-chart-footer button:active { transform: scale(.97); }
+.lab-workbench .lab-chart-footer button:hover { background: var(--hover); color: var(--ink); }
+.lab-workbench .lab-chart-footer button[aria-pressed=true] { background: color-mix(in srgb, var(--blue) 12%, var(--card)); color: var(--blue); }
+.lab-workbench .lab-chart-footer button:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent), inset 0 0 0 1px var(--blue); }
+.lab-workbench .lab-chart-footer > span { font: 500 11.5px var(--font); color: var(--ink3); }
+/* footnotes under the chart: one readable size, a little air from the footer */
+.lab-workbench > p.cap:not(.lab-drawing-hint) { margin: 4px 14px; font-weight: 500; line-height: 1.5; }
+.lab-workbench > .lab-drawing-hint { border-radius: var(--r-field); border: 1px solid var(--rule); }
+/* "Build a strategy ›": the next step as a tinted strip with the one primary action */
+.lab-page[data-lab-page] .lab-step-nav.lab-chart-next { flex-wrap: wrap; gap: 10px 16px; padding: 10px 10px 10px 16px; border: 1px solid var(--rule); border-radius: var(--r-box); background: color-mix(in srgb, var(--blue) 5%, var(--card)); }
+.lab-page[data-lab-page] .lab-chart-next > .cap { flex: 1 1 260px; margin: 0; font: 500 13px var(--font); color: var(--ink2); }
+.lab-page[data-lab-page] .lab-chart-next > .dbtn.primary { margin-left: auto; min-height: 36px; padding: 0 18px; font-size: 13.5px; box-shadow: 0 1px 2px rgb(0 0 0 / .08), 0 4px 12px -6px color-mix(in srgb, var(--blue) 60%, transparent); transition: background-color 150ms ease, transform 160ms cubic-bezier(0.23, 1, 0.32, 1); }
+.lab-page[data-lab-page] .lab-chart-next > .dbtn.primary:focus-visible { box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 30%, transparent); }
+@media (max-width: 600px) { .lab-page[data-lab-page] .lab-step-nav.lab-chart-next { padding: 10px 12px; } .lab-page[data-lab-page] .lab-chart-next > .dbtn.primary { width: 100%; } }

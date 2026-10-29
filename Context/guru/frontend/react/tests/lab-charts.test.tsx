@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { act } from "react";
-import { aggregate, booleanMarkers, candles, isBooleanOutput, linePoints, ohlcFromSeries, periodKey, rangeStart } from "../src/features/lab/bars";
+import { aggregate, booleanMarkers, candles, isBooleanOutput, linePoints, zonePairs, ohlcFromSeries, periodKey, rangeStart } from "../src/features/lab/bars";
 import { createLabChart, useThemeKey } from "../src/features/lab/charts";
 import { mount, seriesFixture, unmount } from "./fixtures/lab";
 
@@ -75,4 +75,35 @@ it("resizes an opted-in pane vertically while preserving the visible dates", () 
   expect(resize).toHaveBeenCalledWith(800,240);
   expect(setVisibleRange).toHaveBeenCalledWith(range);
   view!.dispose();
+});
+
+it("bull / bear signals are small unlabelled dots under / over the bar; top+bottom pairs are zones", () => {
+  expect(booleanMarkers(["a", "b"], [1, 0], "FVG.bull", "#0a0", undefined, "bull")).toEqual([{ time: "a", position: "belowBar", shape: "circle", color: "#0a0", text: "", size: 0.6 }]);
+  expect(booleanMarkers(["a"], [1], "FVG.bear", "#a00", undefined, "bear")[0]).toMatchObject({ position: "aboveBar", text: "" });
+  expect(zonePairs(["bull", "bear", "bull_top", "bull_bottom", "bear_top", "bear_bottom", "msh"])).toEqual(["bull", "bear"]);
+  expect(zonePairs(["upper", "lower", "x_top"])).toEqual([]);
+});
+
+it("BOS / CHoCH / EQH events become labelled lines from the swing bar to the break", async () => {
+  const { breakLines, breakOutputs } = await import("../src/features/lab/bars");
+  const px = { d: ["a", "b", "c", "d", "e"], o: [1, 1, 1, 1, 1], h: [2, 5, 3, 4, 6], l: [1, 2, 1, 2, 3], c: [1.5, 3, 2, 3, 5.5] };
+  const outputs = ["bull_bos", "bear_bos", "bull_level", "bear_level", "trend"];
+  const series = { bull_bos: [0, 0, 0, 0, 1], bear_bos: [0, 0, 0, 0, 0], bull_level: [null, null, null, null, 5], bear_level: [null, null, null, null, null], trend: [0, 0, 0, 0, 1] };
+  const lines = breakLines(outputs, series, px.d, px);
+  expect(lines).toEqual([{ from: 1, to: 4, price: 5, text: "BOS", up: true, dotted: false, above: true }]);
+  expect([...breakOutputs(lines, outputs)].sort()).toEqual(["bear_bos", "bear_level", "bull_bos", "bull_level"]);
+  expect(breakLines(["bull", "bull_level"], { bull: [1], bull_level: [2] }, ["a"], px)).toEqual([]);
+  // a gap candle breaking a swing high still matches the high, not a nearby low
+  const gap = { d: ["a", "b", "c"], o: [1, 1, 9], h: [5, 4, 10], l: [1, 5, 9], c: [4, 4.5, 9.5] };
+  expect(breakLines(["bull_bos", "bull_level"], { bull_bos: [0, 0, 1], bull_level: [null, null, 5] }, gap.d, gap)[0].from).toBe(0);
+});
+
+it("Strong / Weak High-Low: the latest top and bottom only, labelled by the swing bias", async () => {
+  const { strongWeakLines } = await import("../src/features/lab/bars");
+  const px = { d: ["a", "b", "c", "d"], o: [1, 1, 1, 1], h: [3, 6, 4, 5], l: [1, 2, 0.5, 2], c: [2, 5, 1, 4] };
+  const series = { trailing_high: [null, 6, 6, 6], trailing_low: [null, 1, 0.5, 0.5], bias: [null, 1, 1, -1] };
+  expect(strongWeakLines(["trailing_high", "trailing_low", "bias"], series, px.d, px)).toEqual([
+    { from: 1, to: 3, price: 6, text: "Strong High", up: false, dotted: false, above: true, solid: true, atEnd: true },
+    { from: 2, to: 3, price: 0.5, text: "Weak Low", up: true, dotted: false, above: false, solid: true, atEnd: true }]);
+  expect(strongWeakLines(["trailing_high"], series, px.d, px)).toEqual([]);
 });

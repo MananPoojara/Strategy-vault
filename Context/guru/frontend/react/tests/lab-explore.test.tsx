@@ -36,7 +36,7 @@ it("is collapsed until opened, and Scan lists Symbol, Date/Time, Trade, Close", 
   await flush();
   expect(p.onScan).toHaveBeenCalledWith("current");
   expect(heads(host, "scan")).toEqual(["Symbol", "Date/Time", "Trade", "Close"]);
-  expect(table(host, "scan")).toEqual([["NIFTY 50", "2024-01-01", "Buy", "100.00"], ["NIFTY 50", "2024-01-02", "Sell", "137.00"], ["NIFTY 50", "2024-01-03", "Buy", "124.00"]]);
+  expect(table(host, "scan")).toEqual([["NIFTY 50", "01-01-2024", "Entry", "100.00"], ["NIFTY 50", "02-01-2024", "Exit", "137.00"], ["NIFTY 50", "03-01-2024", "Entry", "124.00"]]);
   expect(host.textContent).toContain("not filled trades");
 });
 
@@ -78,20 +78,23 @@ it("Apply to: All symbols is offered with a portfolio universe and sent as apply
   expect(p.onScan).toHaveBeenCalledWith("all");
 });
 
-it("Explore: OHLCV, one column per chart indicator output, signals as 0/1, recent bars and failed columns disclosed", async () => {
+it("Explore: OHLCV, one column per indicator the rules read, Entry / Exit as 0/1, recent bars and failed columns disclosed", async () => {
   const loadSeries = vi.fn(({ id }: { id: string }) => id === "ema"
     ? Promise.resolve({ ...seriesFixture("ema", ["ema"], { ema: [1.23456, null, 3] }), dates: ["2024-01-01", "2024-01-02", "2024-01-03"] })
     : Promise.reject(new Error("no data")));
-  const chips: Chip[] = [{ key: "c1", id: "ema", params: { length: 9 } }, { key: "c2", id: "rsi", params: { length: 14 } }, { key: "c3", id: "or_range", params: {} }];
-  const p = props({ chips, loadSeries });
+  // the chart's indicators are not columns; the rules' are (EMA in the entry, RSI in the exit, each once)
+  const chips: Chip[] = [{ key: "c1", id: "or_range", params: {} }];
+  const spec = { ...defaultSpec(), entry: { all: [{ lhs: { s: "close" }, op: "crosses_above", rhs: { s: "ema", p: { length: 9 } } }] },
+    exit: { any: [{ lhs: { s: "rsi", p: { length: 14 } }, op: ">", rhs: { value: 70 } }, { lhs: { s: "rsi", p: { length: 14 }, offset: 1 }, op: ">", rhs: { value: 80 } }] } } as ExplorePanelProps["spec"];
+  const p = props({ chips, loadSeries, spec });
   const host = await mount(<ExplorePanel {...p} />);
   await click(pick(host, "Explore"));
   await click(host.querySelector('[data-lab-action="explore"]'));
   await flush();
-  expect(loadSeries).toHaveBeenCalledTimes(2); // the not-computed chip is not requested
-  expect(loadSeries).toHaveBeenCalledWith({ id: "ema", tf: "D", p: { length: 9 }, vs: undefined });
-  expect(heads(host, "explore")).toEqual(["Date", "Open", "High", "Low", "Close", "Volume", "EMA(9)", "Buy", "Sell", "Short", "Cover"]);
-  expect(table(host, "explore")[0]).toEqual(["2024-01-01", "1.00", "2.00", "0.50", "1.50", "100", "1.2346", "0", "0", "0", "0"]);
+  expect(loadSeries).toHaveBeenCalledTimes(2); // RSI once although two rules read it
+  expect(loadSeries).toHaveBeenCalledWith(expect.objectContaining({ id: "ema", tf: "D", p: { length: 9 } }));
+  expect(heads(host, "explore")).toEqual(["Date", "Open", "High", "Low", "Close", "Volume", "EMA(9)", "Entry", "Exit"]);
+  expect(table(host, "explore")[0]).toEqual(["01-01-2024", "1.00", "2.00", "0.50", "1.50", "100", "1.23", "0", "0"]);
   expect(table(host, "explore")[1][7]).toBe("1");
   expect(host.querySelector("[data-lab-explore-failed]")!.textContent).toContain("RSI(14): no data");
   await click(pick(host, "Recent bar(s)"));
@@ -100,7 +103,7 @@ it("Explore: OHLCV, one column per chart indicator output, signals as 0/1, recen
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(n, "2");
     n.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  expect(table(host, "explore").map((r) => r[0])).toEqual(["2024-01-02", "2024-01-03"]);
+  expect(table(host, "explore").map((r) => r[0])).toEqual(["02-01-2024", "03-01-2024"]);
 });
 
 it("a rule error is shown and a changed spec clears the list", async () => {

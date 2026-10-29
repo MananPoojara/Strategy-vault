@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { PALETTE, themeColors, type ChartColors } from "./charts";
 import type { Indicator, IndicatorParam } from "./types";
 import type { InstrumentOption } from "./instruments";
-import { TF_LABELS } from "./labels";
+import { TF_LABELS, paramLabel } from "./labels";
 import { AB_DEFAULTS } from "./catalogue";
 import "./params.css";
 
@@ -26,11 +26,26 @@ export const defaultColor = (index: number, k = 0): keyof ChartColors => PALETTE
 /** A variant's choices named as the catalogue label lists them ("Variant (0 Wilder/TradingView, 1 Cutler/TradeStation RSI JP)");
  *  a value the label does not name shows its number. */
 /** A whole-number param whose label names its values ("Smoothing (0 Sum/SMA, 1 EMA)") is picked from a list, like Variant. */
-export const isChoice = (p: IndicatorParam) => p.key === "variant" || (p.integer && p.max - p.min <= 10 && /\(0 .+, 1 .+\)\s*$/.test(p.label));
+import { isChoice } from "./spec-model";
+export { isChoice };
 export function variantOptions(p: IndicatorParam): [number, string][] {
   const listed = (p.label.match(/\((.*)\)\s*$/)?.[1] ?? "").split(/,\s*(?=\d+ )/).map((s) => s.match(/^(\d+) (.+)$/));
   const names = new Map(listed.flatMap((m) => (m ? [[Number(m[1]), m[2]] as const] : [])));
   return Array.from({ length: p.max - p.min + 1 }, (_, k) => [p.min + k, names.get(p.min + k) ?? String(p.min + k)]);
+}
+
+const PLATFORMS = ["TradingView", "TradeStation", "MetaTrader", "NinjaTrader", "thinkorswim", "MetaStock", "TA-Lib", "TradeTiger", "ChartIQ", "Hull Suite"];
+/** Choices that give the same results as the default once the warm-up is over (RSI's AmiBroker from-bar-1 loop, momentum.rs):
+ *  listed only when a strategy already uses one. */
+const SAME_AS_DEFAULT = ["AmiBroker from bar 1"];
+/** The Calculation list in plain names: a choice AmiBroker uses is "AmiBroker", another is its platform ("TradeStation"); two
+ *  choices that would share a name, and choices with no platform, keep the catalogue's words. */
+export function variantChoices(p: IndicatorParam, current: number): [number, string][] {
+  const all = variantOptions(p);
+  if (p.key !== "variant") return all;
+  const kept = all.filter(([v, text]) => v === current || !SAME_AS_DEFAULT.includes(text));
+  const short = kept.map(([v, text]) => [v, text.includes("AmiBroker") ? "AmiBroker" : PLATFORMS.find((x) => text.includes(x)) ?? text] as [number, string]);
+  return short.map(([v, name], i) => short.filter(([, n]) => n === name).length > 1 ? kept[i] : [v, name]);
 }
 
 export interface ParamsDialogProps {
@@ -85,10 +100,10 @@ export function ParamsDialog({ name, indicator, params, looks, index, vs, compar
 
           {indicator.params.filter((p) => indicator.id !== "mfi" || p.key !== "smoothing" || (params.variant ?? indicator.params.find((v) => v.key === "variant")?.default ?? 0) === 1).map((p) => (
             <div className="lab-prow" key={p.key}>
-              <span>{p.key === "variant" ? "Calculation" : indicator.id === "mfi" && p.key === "smoothing" ? "Smoothing" : isChoice(p) ? p.label.replace(/\s*\(.*\)\s*$/, "") : p.label}</span>
+              <span>{p.key === "variant" ? "Calculation" : indicator.id === "mfi" && p.key === "smoothing" ? "Smoothing" : isChoice(p) ? p.label.replace(/\s*\(.*\)\s*$/, "") : paramLabel(p.label)}</span>
               {isChoice(p) ? (
                 <select aria-label={`${name} ${p.label}`} value={params[p.key] ?? p.default} onChange={(e) => set(p.key, Number(e.target.value))}>
-                  {variantOptions(p).map(([v, text]) => <option key={v} value={v}>{text}</option>)}
+                  {variantChoices(p, params[p.key] ?? p.default).map(([v, text]) => <option key={v} value={v}>{text}</option>)}
                 </select>
               ) : <ParamValue param={p} name={name} value={params[p.key] ?? p.default} onValid={(v) => set(p.key, v)} />}
             </div>

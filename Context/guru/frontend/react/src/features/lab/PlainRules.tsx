@@ -1,8 +1,11 @@
-import type { ReactNode } from "react";
+import { useState } from "react";
 import { NumField } from "./OperandEditor";
+import { multiCompare } from "./ParamRule";
+import { isSupertrendExit, nCandleOf } from "./ExitChoice";
 import { describeNode } from "./rule-tree";
+import { bandWords } from "./BandRule";
 import { ordinal, ruleWords } from "./spec-model";
-import { alwaysIn, defaultExitParts, firstRule, MAX_DEFAULT_COUNT, ownExit, STARTER_PICKS, stopsOn, tradeBlockers, usesDefaultExit, validDefaultExit, type DefaultExit } from "./defaults";
+import { alwaysIn, defaultExitParts, MAX_DEFAULT_COUNT, stopsOn, tradeBlockers, usesDefaultExit, validDefaultExit, type DefaultExit } from "./defaults";
 import { SHORT } from "./simple";
 import type { Catalogue, Indicator, RuleNode, Spec } from "./types";
 import "./plain-rules.css";
@@ -13,13 +16,32 @@ const isFilter = (n: RuleNode) => (n as Obj).filter === true;
 /** A rule as words; a group or a trend falls back to the rule tree's description. */
 export function words(n: RuleNode, cat: Catalogue): { text: string; when: boolean } {
   const bare = { ...(n as Obj) }; delete bare.off; delete bare.filter; delete bare.filter_exit;
+  if (isSupertrendExit(bare as RuleNode)) { const p = ((bare.lhs as Obj).p ?? {}) as Record<string, number>; return { text: `Supertrend (${p.atr_length ?? 10}, ${p.factor ?? 3}) turns ${bare.op === "crosses_below" ? "up" : "down"}`, when: true }; }
+  // one line against several: "the 9-day EMA crosses above the 14-day EMA and the 21-day EMA"
+  const many = multiCompare(bare as RuleNode), parts = many?.kids.map((k) => ruleWords(k as RuleNode, cat)?.text);
+  // the shared start ("the 9-day EMA crosses above ") is the sentence for a comparison with 0, without the 0
+  const probe = many && ruleWords({ ...many.kids[0], rhs: { value: 0 } } as RuleNode, cat)?.text, head = probe && probe.endsWith(" 0") ? probe.slice(0, -1) : undefined;
+  if (many && head && parts?.every((t) => t?.startsWith(head)))
+  {
+    const tails = (parts as string[]).map((t) => t.slice(head.length)), musts = tails.filter((_, i) => many.must[i]), eithers = tails.filter((_, i) => !many.must[i]);
+    const anyOne = eithers.length > 1 ? `${musts.length ? "either " : ""}${join(eithers, "or")}` : eithers.join("");
+    return { text: head + (!musts.length ? anyOne : join(eithers.length ? [...musts, anyOne] : musts, "and")), when: true };
+  }
+  // N candle on a weekly / monthly timeframe: "after 3 weekly candles", "at the 3rd weekly up close after entry"
+  const nc = nCandleOf(bare as RuleNode);
+  if (nc && nc.tf !== "D") {
+    const per = nc.tf === "W" ? "weekly" : "monthly";
+    return { text: nc.kind === "any" ? `after ${nc.n} ${per} candle${nc.n === 1 ? "" : "s"}` : `at the ${ordinal(nc.n)} ${per} ${nc.kind} close after entry`, when: false };
+  }
+  const band = bandWords(bare as RuleNode, cat);
+  if (band) return { text: band, when: true };
   return ruleWords(bare as RuleNode, cat) ?? { text: describeNode(bare as RuleNode, cat), when: true };
 }
 const join = (xs: string[], word: string) => xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} ${word} ${xs[xs.length - 1]}`;
 
 /** Everything the test will do, as sentences, including rows switched off and the settings that can stop a trade. */
-export function StrategyInWords({ spec, catalogue, defaultExit, period, onChange }: {
-  spec: Spec; catalogue: Catalogue; defaultExit: DefaultExit; period?: { from?: string; to?: string; latest?: string }; onChange(spec: Spec): void;
+export function StrategyInWords({ spec, catalogue, period, onChange }: {
+  spec: Spec; catalogue: Catalogue; period?: { from?: string; to?: string; latest?: string }; onChange(spec: Spec): void;
 }) {
   const both = spec.direction === "both" && !!spec.short_side;
   const sides = [{ s: spec, short: spec.direction === "short", other: false, title: both ? "Long" : "" },
@@ -38,10 +60,10 @@ export function StrategyInWords({ spec, catalogue, defaultExit, period, onChange
       const [open, close] = short ? ["Sell short", "Cover"] : ["Buy", "Sell"];
       return <div key={title || "main"} className="lab-words-side" data-lab-words-side={title || "main"}>
         {title && <h4>{title}</h4>}
-        <p data-lab-words-buy><b>{open}</b> {buy.length ? <>when {join(buy, "and")}.</> : <span className="lab-words-missing">— no {short ? "short-sale" : "buy"} rule yet. Pick one below.</span>}</p>
+        <p data-lab-words-buy><b>{open}</b> {buy.length ? <>when {join(buy, "and")}.</> : <span className="lab-words-missing">— no {short ? "short-sale" : "buy"} rule yet. Press + Add condition below.</span>}</p>
         {only.length > 0 && <p><b>Only if</b> {join(only, "and")} <span className="cap">(filter)</span>.</p>}
         <p data-lab-words-sell><b>{close}</b> {[...sells, ...priced].length ? <>{join([...sells, ...priced], "or")}.</>
-          : fallback ? <>{defaultWords(defaultExit, short)}. <span className="lab-tag" title="No sell rule is switched on, so the test uses the default exit">default exit</span></>
+          : fallback ? <span className="lab-words-missing">— no exit yet. Pick one in the Exit card.</span>
           : alwaysIn(spec) ? <span className="cap">when the opposite signal comes (always in the market: each signal flips the position).</span>
           : <span className="cap">when the date window or a filter closes the trade.</span>}</p>
       </div>;
@@ -53,70 +75,13 @@ export function StrategyInWords({ spec, catalogue, defaultExit, period, onChange
     </div>}
   </section>;
 }
-const defaultWords = (d: DefaultExit, short: boolean) => defaultExitParts(d, short).join(", or ");
-
-/** The sell list's fallback when no sell rule is on: the default exit, each part on or off with its number (kept per browser). */
-export function DefaultExitCard({ value, short, onChange, own = [], onOwn }: {
-  value: DefaultExit; short: boolean; onChange(d: DefaultExit): void;
-  /** The buy rules' indicators that have their own exit (TradingView style), offered instead of the default exit. */
-  own?: { label: string; node: RuleNode }[]; onOwn?(node: RuleNode): void;
-}) {
-  const set = (patch: Partial<DefaultExit>) => { const next = { ...value, ...patch }; if (validDefaultExit(next)) onChange(next); };
-  const onCount = [!value.upOff, !value.downOff, !!value.days, !!value.stopPct, !!value.targetPct, !!value.trailPct].filter(Boolean).length;
-  const [win, lose] = short ? ["down", "up"] : ["up", "down"];
-  // the last part switched on cannot be switched off: a test always has an exit
-  const tick = (on: boolean, name: string, toggle: (on: boolean) => void) => <input type="checkbox" aria-label={`Default exit: use ${name}`} checked={on}
-    disabled={on && onCount === 1} title={on && onCount === 1 ? "At least one part stays on" : undefined} onChange={(e) => toggle(e.target.checked)} />;
-  const num = (v: number, label: string, min: number, max: number, step: number, put: (n: number) => void, off: boolean) =>
-    <NumField label={label} hideLabel value={v} min={min} max={max} step={step} disabled={off} onChange={(n) => n !== undefined && n >= min && n <= max && put(n)} />;
-  return <div className="lab-default-exit" data-lab-default-exit role="note">
-    <p><b>No sell rule yet</b>, so the test uses your <b>default exit</b>, for every indicator. Tick the parts you want:</p>
-    <ul className="lab-default-exit-parts">
-      <li>{tick(!value.upOff, `the ${win} close`, (on) => set({ upOff: on ? undefined : true }))}{short ? "Cover" : "Sell"} at the{num(value.up, `Default exit: which ${win} close`, 1, MAX_DEFAULT_COUNT, 1, (n) => set({ up: n }), !!value.upOff)}
-        <span>{ordinal(value.up).replace(/^\d+/, "")} {win} close after entry</span></li>
-      <li>{tick(!value.downOff, `the ${lose} close`, (on) => set({ downOff: on ? undefined : true }))}or at the{num(value.down, `Default exit: which ${lose} close`, 1, MAX_DEFAULT_COUNT, 1, (n) => set({ down: n }), !!value.downOff)}
-        <span>{ordinal(value.down).replace(/^\d+/, "")} {lose} close (a losing streak)</span></li>
-      <li>{tick(!!value.days, "days in the trade", (on) => set({ days: on ? 10 : undefined }))}or after{num(value.days ?? 10, "Default exit: days in the trade", 1, 1000, 1, (n) => set({ days: n }), !value.days)}<span>days in the trade</span></li>
-      <li>{tick(!!value.stopPct, "a stop-loss", (on) => set({ stopPct: on ? 5 : undefined }))}or at a{num(value.stopPct ?? 5, "Default exit: stop-loss %", 0.1, 99, 0.5, (n) => set({ stopPct: n }), !value.stopPct)}<span>% stop-loss</span></li>
-      <li>{tick(!!value.targetPct, "a profit target", (on) => set({ targetPct: on ? 10 : undefined }))}or at a{num(value.targetPct ?? 10, "Default exit: profit target %", 0.1, 1000, 0.5, (n) => set({ targetPct: n }), !value.targetPct)}<span>% profit target</span></li>
-      <li>{tick(!!value.trailPct, "a trailing stop", (on) => set({ trailPct: on ? 5 : undefined }))}or with a{num(value.trailPct ?? 5, "Default exit: trailing stop %", 0.1, 99, 0.5, (n) => set({ trailPct: n }), !value.trailPct)}<span>% trailing stop</span></li>
-    </ul>
-    {own.length > 0 && onOwn && <p className="lab-starter-row"><span className="cap">Or use:</span>
-      {own.map((o) => <button key={o.label} type="button" className="dbtn sm" data-lab-own-exit title={o.label} onClick={() => onOwn(o.node)}>{o.label}</button>)}</p>}
-    <p className="cap">Remembered in this browser. Add a sell rule, or Stops &amp; targets below, to use your own exit instead.</p>
-  </div>;
-}
-
 /** An indicator drawn on the chart, offered as a first rule with the same settings. */
 export interface ChartPick { indicator: Indicator; params: Record<string, number> }
-/** An empty buy list: one-click first rules from the chart's indicators and the usual starting points. */
-export function BuyStarter({ catalogue, chart, short, onPick, children }: {
-  catalogue: Catalogue; chart: ChartPick[]; short: boolean;
-  /** The indicator's first rule and, when it has one, its own exit (TradingView style). */
-  onPick(entry: RuleNode, exit?: RuleNode): void; children?: ReactNode;
-}) {
-  const popular = STARTER_PICKS.flatMap(({ id, p }) => { const ind = catalogue.indicators.find((i) => i.id === id && i.computed); return ind ? [{ indicator: ind, params: p }] : []; });
-  const button = (key: string, { indicator, params }: ChartPick) => {
-    const p = shown(indicator, params), entry = firstRule(indicator, p, short), exit = ownExit(indicator, p, short);
-    const hint = `${short ? "Sell short" : "Buy"} when ${words(entry, catalogue).text}${exit ? `; ${short ? "cover" : "sell"} ${words(exit, catalogue).when ? "when " : ""}${words(exit, catalogue).text}` : ""}`;
-    return <button key={key} type="button" className="dbtn sm" data-lab-pick={key} title={hint} onClick={() => onPick(entry, exit)}>{pickName(indicator, p)}</button>;
-  };
-  return <div className="lab-starter" data-lab-starter>
-    <p><b>No {short ? "short-sale" : "buy"} rule yet.</b> Pick an indicator: it adds its usual {short ? "short-sale" : "buy"} rule and, where it has one, its own exit (as on TradingView). You can change every number afterwards.</p>
-    {chart.length > 0 && <p className="lab-starter-row"><span className="cap">From your chart:</span>{chart.map((c, i) => button(`chart-${i}-${c.indicator.id}`, c))}</p>}
-    {popular.length > 0 && <p className="lab-starter-row"><span className="cap">Popular:</span>{popular.map((c) => button(c.indicator.id, c))}</p>}
-    {children}
-  </div>;
-}
 /** "RSI 14", "EMA 50", "MACD 12": the short name and the first parameter. */
 export const pickName = (ind: Indicator, p: Record<string, number>) => {
   const first = ind.params[0], n = first ? p[first.key] ?? first.default : undefined;
   return `${SHORT[ind.id] ?? ind.name}${n !== undefined ? ` ${n}` : ""}`;
 };
-/** A chart chip's parameters for the rule: the ones changed from the defaults, and always the first (so "RSI(14)" reads whole). */
-const shown = (ind: Indicator, params: Record<string, number>) =>
-  Object.fromEntries(ind.params.filter((p, i) => params[p.key] !== undefined && (i === 0 || params[p.key] !== p.default)).map((p) => [p.key, params[p.key]]));
-
 /** An indicator the rules use, with every parameter (defaults filled in) so it compares with a chart chip. */
 interface RuleIndicator { ind: Indicator; p: Record<string, number> }
 export function ruleIndicators(spec: Spec, cat: Catalogue): RuleIndicator[] {

@@ -9,8 +9,8 @@
 .lab-words-blockers ul { display: grid; gap: 4px; margin: 4px 0 0; padding-left: 18px; font-size: 13.5px; }
 .lab-words-blockers li .dbtn { margin-left: 8px; }
 
-.lab-starter, .lab-default-exit { display: grid; gap: 8px; margin: 0 0 10px; padding: 10px 12px; border: 1px dashed var(--steel); border-radius: var(--r-field); background: var(--card); }
-.lab-starter p, .lab-default-exit p { margin: 0; font-size: 14px; }
+.lab-default-exit { display: grid; gap: 8px; margin: 0 0 10px; padding: 10px 12px; border: 1px dashed var(--steel); border-radius: var(--r-field); background: var(--card); }
+.lab-default-exit p { margin: 0; font-size: 14px; }
 .lab-starter-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
 .lab-starter-row .cap { margin: 0; min-width: 104px; }
 .lab-default-exit-rule { line-height: 2.1; }
@@ -44,3 +44,8 @@
 .lab-default-exit-parts li { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; line-height: 2; }
 .lab-default-exit-parts li:has(input[type=checkbox]:not(:checked)) { color: var(--ink3); }
 .lab-add-filter { display:flex; flex-wrap:wrap; align-items:center; gap:4px 10px; margin:2px 0 8px; }
+/* Buy / Sell as small coloured tags so the two lines scan at once */
+.lab-words { background: var(--card); box-shadow: 0 1px 2px rgb(0 0 0 / .03); }
+.lab-words :is([data-lab-words-buy], [data-lab-words-sell]) > b:first-child { display: inline-block; min-width: 3.4em; margin-right: 6px; padding: 1px 7px; border-radius: 4px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; text-align: center; vertical-align: 1px; }
+.lab-words [data-lab-words-buy] > b:first-child { color: var(--green); background: color-mix(in srgb, var(--green) 12%, var(--card)); }
+.lab-words [data-lab-words-sell] > b:first-child { color: var(--red); background: color-mix(in srgb, var(--red) 12%, var(--card)); }

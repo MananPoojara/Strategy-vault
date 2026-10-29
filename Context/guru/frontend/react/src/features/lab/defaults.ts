@@ -5,6 +5,8 @@ import { DEFAULT_LEVELS } from "./Workbench";
 import { candleCountNode, ordinal, setExecution } from "./spec-model";
 import { entryOrderType } from "./execution-model";
 import { INDICATOR_RULES } from "./indicator-rules";
+import { BUILT_IN } from "./builtin-periods";
+import { chosenPhase } from "./date-sets";
 import type { Indicator, RuleNode, SeriesOperand, Spec } from "./types";
 
 /** The exit used when a side has no sell rule switched on, for every indicator. Each part can be on or off: the Nth up close
@@ -57,7 +59,6 @@ export function usesDefaultExit(spec: Spec, shortSide = false): boolean {
   if (!side || spec.portfolio || alwaysIn(spec)) return false;
   const exit = side.exit as unknown as Obj;
   if ((side.exit.any ?? []).some(on) || PRICE_EXITS.some((k) => exit[k] !== undefined) || (side.exit.take_profits?.length ?? 0) > 0) return false;
-  if (spec.date_filter && !spec.date_filter.off && spec.date_filter.exit_at_change !== false) return false; // the window change closes trades
   return !side.entry.all.some((n) => (n as Obj).filter_exit === true && on(n));
 }
 /** The spec a test runs: each side without a sell rule gets the default exit; otherwise the same object. */
@@ -101,18 +102,20 @@ export function firstRule(ind: Indicator, p: Record<string, number>, short = fal
   }
   return { lhs: o, op: short ? "falling" : "rising", bars: 3 } as RuleNode;
 }
-/** The suggestions shown on an empty buy list (catalogue ids with the parameters analysts start from). */
-export const STARTER_PICKS: { id: string; p: Record<string, number> }[] = [
-  { id: "rsi", p: { length: 14 } }, { id: "ema", p: { length: 50 } }, { id: "macd", p: { fast: 12, slow: 26, signal: 9 } },
-  { id: "supertrend", p: { atr_length: 10, factor: 3 } }, { id: "donchian", p: { length: 20 } }, { id: "stoch", p: { k: 14, d: 3 } }, { id: "bb", p: { length: 20, mult: 2 } },
-];
 
 /** The price exits that are on, with their size: "stop-loss 5%", "N-bar stop 10 bars". */
 export function stopsOn(exit: Record<string, unknown>, nbar: number | undefined): string[] {
   const size = (d: unknown) => { const x = (d ?? {}) as Record<string, number>; return x.pct !== undefined ? ` ${x.pct}%` : x.points !== undefined ? ` ${x.points} points` : x.atr !== undefined ? ` ${x.atr} × ATR` : ""; };
   const out = ([["stop_loss", "stop-loss"], ["target", "target"], ["trailing", "trailing stop"]] as const).filter(([k]) => exit[k] !== undefined).map(([k, name]) => name + size(exit[k]));
   if (nbar !== undefined) out.push(`N-bar stop ${nbar} bars`);
-  for (const [k, name] of [["breakeven", "breakeven"], ["take_profits", "take-profits"], ["min_bars", "minimum bars"], ["dual_atr", "two ATR stops"], ["dual_line", "two-line exit"]] as const)
+  // a two-line Supertrend reads as its periods and multipliers, "Supertrend (5, 1 → 2) stop"
+  const dl = exit.dual_line as { initial?: { s?: string; p?: Record<string, number> }; favour?: { p?: Record<string, number> } } | undefined;
+  const TFW: Record<string, string> = { W: " weekly", M: " monthly" };
+  const stLine = dl?.initial?.s === "supertrend" ? `Supertrend (${dl.initial.p?.atr_length ?? 10}, ${dl.initial.p?.factor ?? 3} → ${dl.favour?.p?.factor ?? "?"})${TFW[(dl.initial as { tf?: string }).tf ?? ""] ?? ""} stop` : "two-line exit";
+  // the Dual ATR stop with its numbers and timeframe, "ATR (5, 2) (5, 4) weekly", so a tradesheet says which ATR ran
+  const da = exit.dual_atr as { initial?: { period?: number; mult?: number }; favour?: { period?: number; mult?: number }; tf?: string } | undefined;
+  const atrName = da ? `ATR (${da.initial?.period}, ${da.initial?.mult}) (${da.favour?.period}, ${da.favour?.mult})${TFW[da.tf ?? ""] ?? ""}` : "two ATR stops";
+  for (const [k, name] of [["breakeven", "breakeven"], ["take_profits", "take-profits"], ["min_bars", "minimum bars"], ["dual_atr", atrName], ["dual_line", stLine]] as const)
     if (exit[k] !== undefined && !(Array.isArray(exit[k]) && !(exit[k] as unknown[]).length)) out.push(name);
   return out;
 }
@@ -138,8 +141,11 @@ export function tradeBlockers(spec: Spec, period?: { from?: string; to?: string;
   const filters = spec.entry.all.filter((n) => (n as Obj).filter === true && on(n)).length;
   if (filters) out.push({ id: "filters", text: `${filters} filter${filters === 1 ? "" : "s"}: a buy also needs ${filters === 1 ? "it" : "each of them"} to be true`,
     off: (s) => ({ ...s, entry: { ...s.entry, all: s.entry.all.map((n) => (n as Obj).filter === true ? { ...n, off: true } as RuleNode : n) } }) });
-  if (df && !df.off) out.push({ id: "date_filter", text: `Date filter${df.set?.name ? ` “${df.set.name}”` : ""}: trades only ${df.mode === "outside" ? "outside" : "inside"} its date windows`,
-    off: (s) => s.date_filter ? { ...s, date_filter: { ...s.date_filter, off: true } } : s });
+  if (df && !df.off) {
+    const built = BUILT_IN.find((b) => b.name === df.set?.name && df.set?.id === undefined);
+    const phase = df.mode === "outside" ? "outside its" : built ? `its ${(chosenPhase(df.windows, built.windows) ?? "Bull").toLowerCase()}` : "its chosen";
+    out.push({ id: "date_filter", text: `Dates${df.set?.name ? ` “${df.set.name}”` : ""}: trades only in ${phase} periods`, off: (s) => { const { date_filter: _, ...rest } = s; return rest as Spec; } });
+  }
   if (ex.shadow) out.push({ id: "shadow", text: `Trade after a losing streak: real trades start only after the paper trades lose ${ex.shadow.loss_pct}%`, off: (s) => setExecution(s, { shadow: undefined }) });
   if (ex.risk?.max_consecutive_losses) out.push({ id: "loss_pause", text: `Loss-streak pause: no new trade for ${ex.risk.pause_bars} bars after ${ex.risk.max_consecutive_losses} losses in a row`,
     off: (s) => setExecution(s, { risk: dropKeys(s.execution?.risk, "max_consecutive_losses", "pause_bars") }) });

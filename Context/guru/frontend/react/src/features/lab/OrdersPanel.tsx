@@ -138,15 +138,15 @@ function ScaleInEditor({ spec, pre, catalogue, onChange }: { spec: Spec; pre: Si
 
 /** Exits beyond AmiBroker's four fixed stops, added on demand. */
 const EXITS = [
-  { key: "breakeven", label: "Breakeven stop (stop moves to the entry price after a gain)", initial: { after: { pct: 2 } } },
-  { key: "take_profits", label: "Take-profits (sell part of the trade at set gains)", initial: [{ pct: 5, size: 0.5 }] },
-  { key: "min_bars", label: "Minimum bars (sell rules wait N bars)", initial: 1 },
-  { key: "dual_atr", label: "Two ATR stops (tight first, wider once in profit)", initial: { initial: { period: 5, mult: 2, price: "hl2" }, favour: { period: 5, mult: 4, price: "hl2" } } },
-  { key: "dual_line", label: "Two-line exit (tight line first, wider line once the trend is confirmed)", initial: {
+  { key: "breakeven", label: "Breakeven stop (after a gain, the stop moves up to the buy price)", initial: { after: { pct: 2 } } },
+  { key: "take_profits", label: "Partial profit booking (sell part of the position at set gains)", initial: [{ pct: 5, size: 0.5 }] },
+  { key: "min_bars", label: "Minimum holding period (sell rules wait N candles; stops still work)", initial: 1 },
+  { key: "dual_atr", label: "Widening ATR stop (tight at first, wider once the trade is in profit)", initial: { initial: { period: 5, mult: 2, price: "hl2" }, favour: { period: 5, mult: 4, price: "hl2" } } },
+  { key: "dual_line", label: "Widening Supertrend stop (tight line first, wider once the trend is confirmed)", initial: {
     initial: { s: "supertrend", p: { atr_length: 5, factor: 1, mode: 1 }, out: "supertrend" }, favour: { s: "supertrend", p: { atr_length: 5, factor: 4, mode: 1 }, out: "supertrend" } } },
 ] as const;
 /** rules.rs DUAL_ATR_PRICES, in the AmiBroker AFL "ATR Avg Val" list's order. */
-const DUAL_PRICES: [string, string][] = [["open", "Open"], ["high", "High"], ["low", "Low"], ["close", "Close"], ["oc2", "(Open+Close)/2"],
+export const DUAL_PRICES: [string, string][] = [["open", "Open"], ["high", "High"], ["low", "Low"], ["close", "Close"], ["oc2", "(Open+Close)/2"],
   ["hl2", "(High+Low)/2"], ["hlc3", "(H+L+C)/3"], ["ohlc4", "(O+H+L+C)/4"]];
 type DualBand = { period: number; mult: number; price?: string };
 type DualAtr = { initial: DualBand; favour: DualBand; tf?: "D" | "W" | "M"; period_end_only?: boolean };
@@ -169,8 +169,10 @@ function DualAtrFields({ value, onChange }: { value: DualAtr; onChange(v: DualAt
     {band("initial", "Initial")}
     {band("favour", "Favour")}
     <span className="lab-row">
-      <Segmented label="Dual ATR timeframe" value={tf} options={[{ value: "D", label: "Daily" }, { value: "W", label: "Weekly" }, { value: "M", label: "Monthly" }]}
-        onChange={(t) => onChange({ ...value, tf: t === "D" ? undefined : t, period_end_only: t === "D" ? undefined : value.period_end_only })} />
+      <label className="dfield">Timeframe<select aria-label="Dual ATR timeframe" value={tf}
+        onChange={(e) => { const t = e.target.value as "D" | "W" | "M"; onChange({ ...value, tf: t === "D" ? undefined : t, period_end_only: t === "D" ? undefined : value.period_end_only }); }}>
+        <option value="D">Daily</option><option value="W">Weekly</option><option value="M">Monthly</option>
+      </select></label>
       {tf !== "D" && <label className="lab-check"><input type="checkbox" checked={!!value.period_end_only}
         onChange={(e) => onChange({ ...value, period_end_only: e.target.checked || undefined })} />Exit only on the {tf === "W" ? "week's" : "month's"} last bar</label>}
     </span>
@@ -189,7 +191,7 @@ const STOP_NOTES = {
   portfolio: "Portfolio runs exit stops intraday at the stop level; exit modes, N-bar priority and re-entry delays are single-instrument settings.",
 };
 
-export function OrdersPanel({ spec, onChange, pre = "", catalogue, reentry = false, part = "all", brief = false }: {
+export function OrdersPanel({ spec, onChange, pre = "", catalogue, reentry = false, part = "all", brief = false, extrasOnly = false }: {
   spec: Spec; onChange(spec: Spec): void; pre?: SidePre; catalogue?: Catalogue;
   /** Show each stop's re-entry delay, exit mode and the N-bar priority (single instrument; one value shared by both sides). */
   reentry?: boolean;
@@ -197,6 +199,8 @@ export function OrdersPanel({ spec, onChange, pre = "", catalogue, reentry = fal
   part?: "all" | "entry" | "exits";
   /** Simple view: each stop's value only (no AmiBroker exit modes, re-entry delays or notes). */
   brief?: boolean;
+  /** The Exit card sets the stop-loss, target, trailing and N-bar stops itself: show only the other exits (+ More exits…). */
+  extrasOnly?: boolean;
 }) {
   // The original builder has no catalogue prop until Phase 7 assembly wires the shared execution panel.
   if (!catalogue && !pre) return <LegacyOrdersPanel spec={spec} onChange={onChange} />;
@@ -224,7 +228,7 @@ export function OrdersPanel({ spec, onChange, pre = "", catalogue, reentry = fal
     </div>
     {order === "stop_limit" && levelForm(side.entry.limit) !== "at" && <p className="cap">{COPY.stopLimitHint}</p>}
     {catalogue?.execution && <ScaleInEditor spec={spec} pre={pre} catalogue={catalogue} onChange={onChange} />}</>}
-    {showExits && <><div className="lab-stops">
+    {showExits && <>{!extrasOnly && <><div className="lab-stops">
       {STOPS.map(({ key, legend, label }) => <fieldset className="lab-fieldset" data-lab-exit={key} key={key}>
         <legend>{legend}</legend>
         <div className="lab-row">
@@ -247,9 +251,9 @@ export function OrdersPanel({ spec, onChange, pre = "", catalogue, reentry = fal
       </fieldset>
     </div>
     {reentry && <p className="cap" data-lab-stop-modes>{both ? "Exit at stop? applies to both sides. " : ""}{STOP_NOTES.modes}</p>}
-    {!reentry && !pre && !brief && <p className="cap">{STOP_NOTES.portfolio}</p>}
+    {!reentry && !pre && !brief && <p className="cap">{STOP_NOTES.portfolio}</p>}</>}
     <div className="lab-exits">
-      {EXITS.filter(({ key }) => side.exit[key] !== undefined).map(({ key, label }) => {
+      {EXITS.filter(({ key }) => side.exit[key] !== undefined && !(extrasOnly && (key === "dual_atr" || (key === "dual_line" && (side.exit.dual_line?.initial as { s?: string } | undefined)?.s === "supertrend")))).map(({ key, label }) => { // the Exit card's ATR and Supertrend buttons show these
         const controls = <>
           {key === "breakeven" && <>{level("exit.breakeven.after", "Breakeven after")}{level("exit.breakeven.plus", "Breakeven plus", true)}</>}
           {key === "min_bars" && <><NumField label="Rule exits wait (bars)" value={side.exit.min_bars} min={0} max={1000} step={1}
@@ -287,7 +291,7 @@ export function OrdersPanel({ spec, onChange, pre = "", catalogue, reentry = fal
       }}>
         <option value="">+ More exits…</option>
         {/* the AmiBroker-parity exits (two ATR stops, two-line) only in Advanced; one already on still shows above */}
-        {EXITS.filter(({ key }) => side.exit[key] === undefined && !(brief && (key === "dual_atr" || key === "dual_line"))).map(({ key, label }) => <option key={key} value={key}
+        {EXITS.filter(({ key }) => side.exit[key] === undefined && !(extrasOnly && (key === "dual_atr" || key === "dual_line")) && !(brief && (key === "dual_atr" || key === "dual_line"))).map(({ key, label }) => <option key={key} value={key}
           disabled={(key === "take_profits" && !!side.entry.scale_in) || ((key === "dual_atr" || key === "dual_line") && !!spec.portfolio)}>{label}</option>)}
       </select>
     </div></>}

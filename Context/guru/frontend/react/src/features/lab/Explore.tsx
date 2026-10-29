@@ -1,9 +1,11 @@
 import { formulaQuery } from "./formula";
+import { dayFirst } from "./DateField";
 import { useEffect, useMemo, useState } from "react";
+import { operandLabel } from "./spec-model";
 import { shortName } from "./catalogue";
 import type { ExploreResult, ScanResult } from "./client";
 import { DASH, int, num } from "./format";
-import type { Catalogue, SavedMarket, SeriesResponse, Spec } from "./types";
+import type { Catalogue, Operand, SavedMarket, SeriesResponse, Spec } from "./types";
 import { ErrorNotice, Loading, Segmented } from "./ui";
 import type { Chip } from "./Workbench";
 import "./explore.css";
@@ -13,7 +15,9 @@ export const ANALYSIS_NOTE = "Raw rule signals on daily bars, not filled trades:
 const PAGE = 100;
 type Cell = string | number | null;
 type Fmt = (v: Cell) => string;
-const SIGNALS = [["buy", "Buy"], ["sell", "Sell"], ["short", "Short"], ["cover", "Cover"]] as const;
+/** Entry / Exit: a long strategy's buy and sell, a short one's short and cover (one side per bar, so they never clash). */
+const SIGNALS = [["entry", "Entry", ["buy", "short"]], ["exit", "Exit", ["sell", "cover"]]] as const;
+const TRADE_WORDS: Record<string, string> = { Buy: "Entry", Sell: "Exit", Short: "Entry (short)", Cover: "Exit (short)" };
 
 const cmp = (a: Cell, b: Cell) => a === null ? (b === null ? 0 : 1) : b === null ? -1
   : typeof a === "number" && typeof b === "number" ? a - b : String(a).localeCompare(String(b));
@@ -42,10 +46,10 @@ function ResultTable({ name, header, rows, fmt }: { name: string; header: string
     </div>
     <div className="tlog lab-explore-table">
       <table className="tbl tl" data-lab-analysis={name}>
-        <thead><tr>{header.map((h, c) => <th key={c} className={fmt[c] === text ? undefined : "n"} aria-sort={sort?.col === c ? (sort.dir === 1 ? "ascending" : "descending") : "none"}>
+        <thead><tr>{header.map((h, c) => <th key={c} className={fmt[c] === text || fmt[c] === date ? undefined : "n"} aria-sort={sort?.col === c ? (sort.dir === 1 ? "ascending" : "descending") : "none"}>
           <button type="button" onClick={() => { setSort((s) => ({ col: c, dir: s?.col === c && s.dir === 1 ? -1 : 1 })); setPage(0); }}>{h}{sort?.col === c ? (sort.dir === 1 ? " ▲" : " ▼") : ""}</button>
         </th>)}</tr></thead>
-        <tbody>{order.slice(at * PAGE, (at + 1) * PAGE).map((i) => <tr key={i}>{rows[i].map((v, c) => <td key={c} className={fmt[c] === text ? undefined : "n"}>{fmt[c](v)}</td>)}</tr>)}</tbody>
+        <tbody>{order.slice(at * PAGE, (at + 1) * PAGE).map((i) => <tr key={i}>{rows[i].map((v, c) => <td key={c} className={fmt[c] === text || fmt[c] === date ? undefined : "n"}>{fmt[c](v)}</td>)}</tr>)}</tbody>
       </table>
     </div>
     {pages > 1 && <div className="lab-row lab-pager" data-lab-pager>
@@ -57,7 +61,9 @@ function ResultTable({ name, header, rows, fmt }: { name: string; header: string
 }
 const text: Fmt = (v) => v === null ? DASH : String(v);
 const price: Fmt = (v) => num(v, 2);
-const value: Fmt = (v) => num(v, 4);
+const value: Fmt = (v) => num(v, 2);
+/** Dates show DD-MM-YYYY; the cell keeps the ISO date, so sorting stays in time order. */
+const date: Fmt = (v) => (typeof v === "string" ? dayFirst(v) : DASH);
 const whole: Fmt = (v) => int(v);
 
 export interface ExplorePanelProps {
@@ -70,13 +76,31 @@ type Table = { header: string[]; rows: Cell[][]; fmt: Fmt[] };
 type Loaded<T> = { result: T; table: Table; failed: string[] };
 
 /** Scan rows as AmiBroker lists them: Symbol, Date/Time, Trade, Close. */
-export const scanTable = (r: ScanResult): Table => ({ header: ["Symbol", "Date/Time", "Trade", "Close"], rows: r.rows, fmt: [text, text, text, price] });
+export const scanTable = (r: ScanResult): Table => ({ header: ["Symbol", "Date/Time", "Trade", "Close"], fmt: [text, date, text, price],
+  rows: r.rows.map((row) => row.map((c, k) => (k === 2 && typeof c === "string" ? TRADE_WORDS[c] ?? c : c))) });
 
-/** Explore columns: Date, O/H/L/C/V, one per chart indicator output (daily values), then the signals as 0/1. */
+/** The indicators the strategy's rules read (entry, exit, filters, both sides), once each: RSI(14), Supertrend(5, 1) … */
+export function ruleIndicators(spec: Spec, cat: Catalogue): Operand[] {
+  const seen = new Map<string, Operand>();
+  const walk = (v: unknown) => {
+    if (Array.isArray(v)) { v.forEach(walk); return; }
+    if (!v || typeof v !== "object") return;
+    const o = v as Record<string, unknown>;
+    if (typeof o.s === "string" && cat.indicators.some((i) => i.id === o.s && i.computed && !cat.price_sources.includes(i.id))) {
+      const { offset: _o, ...one } = o; // the value itself, not n bars ago
+      seen.set(JSON.stringify([one.s, one.p ?? {}, one.out ?? "", one.tf ?? "D", one.symbol ?? ""]), one as Operand);
+    }
+    Object.values(o).forEach(walk);
+  };
+  walk([spec.entry, spec.exit, (spec as { short_side?: unknown }).short_side]);
+  return [...seen.values()];
+}
+
+/** Explore columns: Date, O/H/L/C/V, one per indicator the rules read, then Entry and Exit as 0/1. */
 export function exploreTable(r: ExploreResult, columns: { name: string; at: Map<string, number | null> }[]): Table {
   const header = ["Date", "Open", "High", "Low", "Close", ...(r.volume ? ["Volume"] : []), ...columns.map((c) => c.name), ...SIGNALS.map(([, h]) => h)];
-  const fmt = [text, price, price, price, price, ...(r.volume ? [whole] : []), ...columns.map(() => value), ...SIGNALS.map(() => whole)];
-  const rows = r.dates.map((d, i): Cell[] => [d, r.open[i], r.high[i], r.low[i], r.close[i], ...(r.volume ? [r.volume[i]] : []), ...columns.map((c) => c.at.get(d) ?? null), ...SIGNALS.map(([k]) => r.signals[k][i])]);
+  const fmt = [date, price, price, price, price, ...(r.volume ? [whole] : []), ...columns.map(() => value), ...SIGNALS.map(() => whole)];
+  const rows = r.dates.map((d, i): Cell[] => [d, r.open[i], r.high[i], r.low[i], r.close[i], ...(r.volume ? [r.volume[i]] : []), ...columns.map((c) => c.at.get(d) ?? null), ...SIGNALS.map(([, , ks]) => (ks.some((k) => r.signals[k]?.[i] === 1) ? 1 : 0))]);
   return { header, rows, fmt };
 }
 
@@ -99,13 +123,15 @@ export function ExplorePanel({ spec, catalogue, chips, portfolio, market, onScan
     try {
       if (view === "scan") { const result = await onScan(apply); setScanned({ result, table: scanTable(result), failed: [] }); return; }
       const result = await onExplore();
-      const shown = chips.flatMap((chip) => { const ind = catalogue.indicators.find((i) => i.id === chip.id); return ind?.computed ? [{ chip, ind }] : []; });
-      const parts = await Promise.allSettled(shown.map(({ chip, ind }) => loadSeries({ id: chip.id, tf: "D", p: chip.params, vs: chip.vs, ...formulaQuery(ind) })));
+      // the indicators the rules read, with the rule's own settings, line and timeframe (RSI for an RSI rule)
+      const shown = ruleIndicators(spec, catalogue).flatMap((o) => { const s = o as { s: string; p?: Record<string, number>; out?: string; tf?: string }, ind = catalogue.indicators.find((i) => i.id === s.s); return ind ? [{ s, ind, label: operandLabel(o, catalogue).replace(ind.name, shortName(ind)) }] : []; });
+      const parts = await Promise.allSettled(shown.map(({ s, ind }) => loadSeries({ id: s.s, tf: s.tf ?? "D", p: s.p, ...formulaQuery(ind) })));
       const failed: string[] = [], columns: { name: string; at: Map<string, number | null> }[] = [];
       parts.forEach((p, k) => {
-        const { chip, ind } = shown[k], label = `${shortName(ind)}(${Object.values(chip.params).join(",")}${chip.vs ? ` vs ${chip.vs}` : ""})`;
+        const { s, label } = shown[k];
         if (p.status === "rejected") { failed.push(`${label}: ${p.reason instanceof Error ? p.reason.message : String(p.reason)}`); return; }
-        for (const out of p.value.outputs) columns.push({ name: p.value.outputs.length > 1 ? `${label} ${out}` : label, at: new Map(p.value.dates.map((d, i) => [d, p.value.series[out]?.[i] ?? null])) });
+        const out = s.out ?? p.value.outputs[0];
+        columns.push({ name: label, at: new Map(p.value.dates.map((d, i) => [d, p.value.series[out]?.[i] ?? null])) });
       });
       setExplored({ result, table: exploreTable(result, columns), failed });
     } catch (e) { setError(e); } finally { setBusy(false); }
@@ -130,12 +156,12 @@ export function ExplorePanel({ spec, catalogue, chips, portfolio, market, onScan
           </>}
           <button type="button" className="dbtn primary" data-lab-action={view} disabled={busy || badRecent} onClick={() => void go()}>{view === "scan" ? "Scan" : "Explore"}</button>
         </div>
-        <p className="cap" role="note">{ANALYSIS_NOTE}{view === "scan" ? (portfolio ? " All symbols scans each admitted universe member on its own bars." : " All symbols needs a portfolio universe.") : " Explore runs on the current symbol; indicator columns are the chart's indicators on daily bars."}</p>
+        <p className="cap" role="note">{ANALYSIS_NOTE}{view === "scan" ? (portfolio ? " All symbols scans each admitted universe member on its own bars." : " All symbols needs a portfolio universe.") : " Explore runs on the current symbol; the indicator columns are the ones your rules use."}</p>
         {busy ? <Loading text={view === "scan" ? "Scanning…" : "Exploring…"} />
           : error ? <ErrorNotice error={error} market={market} />
           : result && <>
             {view === "scan" && scanned && <>
-              <p className="cap">{int(scanned.result.symbols)} symbol{scanned.result.symbols === 1 ? "" : "s"} scanned{scanned.result.from ? ` · ${scanned.result.from} to ${scanned.result.to}` : ""}</p>
+              <p className="cap">{int(scanned.result.symbols)} symbol{scanned.result.symbols === 1 ? "" : "s"} scanned{scanned.result.from ? ` · ${dayFirst(scanned.result.from)} to ${dayFirst(scanned.result.to!)}` : ""}</p>
               {scanned.result.membership && <p className="cap">{scanned.result.membership.note}</p>}
               {!!scanned.result.refused.length && <p className="cap" data-lab-scan-refused>Not scanned: {scanned.result.refused.map((r) => `${r.ticker} (${r.reason})`).join("; ")}</p>}
               <ResultTable name="scan" {...scanned.table} />

@@ -3,6 +3,7 @@ import { strategies, type StrategiesApi } from "./client";
 import { COPY, variantLabel } from "./labels";
 import { ErrorNotice, Loading, isProvisional } from "./ui";
 import type { LabStrategy, Role, SavedMarket, Spec, StrategyStatus } from "./types";
+import { dayFirst } from "./DateField";
 import "./saved.css";
 
 export interface EditorState { spec: Spec; market: SavedMarket; ticker: string; row: LabStrategy | null; unchanged: boolean; ranFresh: boolean }
@@ -126,7 +127,7 @@ export function SavedStrategies({ role, api = strategies, editor, methodNames = 
           {row.origin && <span className="tag">{variantLabel(row.origin.book, method).split(" · user variant")[0]}</span>}
           <span className={`tag lab-status lab-status-${row.status}`}>{STATUS_LABEL[row.status]}</span>
           <span className="lab-saved-meta">
-            {row.instrument} · {row.market} · {row.spec.entry?.all?.length ?? 0} entry / {row.spec.exit?.any?.length ?? 0} exit · updated {row.updatedAt.slice(0, 10)}
+            {row.instrument} · {row.market} · {row.spec.entry?.all?.length ?? 0} entry / {row.spec.exit?.any?.length ?? 0} exit · updated {dayFirst(row.updatedAt.slice(0, 10))}
           </span>
           <span className="lab-saved-actions">
             <button type="button" className="dbtn sm" onClick={() => onOpen(row)}>Open</button>

@@ -189,8 +189,8 @@ it("visits order levels before the short side, matching rules.rs, without mutati
   expect(paths).toEqual(["exit.any[0].rhs.value", "entry.limit.at.value", "entry.stop.at.value", "short_side.entry.all[0].rhs.value", "short_side.entry.limit.at.value", "short_side.entry.stop.at.value"]);
   expect(s).toEqual(before);
   const first = t.newNode("cond") as Cond, second = t.newNode("cond") as Cond;
-  (first.rhs as { p: { length: number } }).p.length = 7;
-  expect((second.rhs as { p: { length: number } }).p.length).toBe(50);
+  (first.lhs as { p: { length: number } }).p.length = 7;
+  expect((second.lhs as { p: { length: number } }).p.length).toBe(14);
   const list = [C, second];
   expect(t.move(list, 0, -1)).toBe(list);
   expect(t.move(list, 0, 1)).toEqual([second, C]);

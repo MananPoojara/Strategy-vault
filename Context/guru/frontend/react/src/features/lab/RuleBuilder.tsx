@@ -11,13 +11,16 @@ import { DateField } from "./DateField";
 import { GeneralData, InitialEquity, PortfolioLimits, RiskPanel } from "./RiskPanel";
 import { ReportSettings } from "./ReportSettings";
 import { RuleList, type TreeCaps } from "./NodeEditor";
-import { budget, limits, newNode, readsSessionDates, usesHigherTimeframes, type ListPath } from "./rule-tree";
+import { budget, limits, newFilter, readsSessionDates, usesHigherTimeframes, type ListPath } from "./rule-tree";
 import { modeOf, entryOrderType, type InstrumentContext } from "./execution-model";
 import { getAt, setAt, specBytes, SPEC_BYTE_BUDGET } from "./spec-model";
 import type { RuleNode } from "./types";
-import { ExamplePicker, FillChoice, SimpleSettings, useCompact, useSimple } from "./simple";
-import { BuyStarter, DefaultExitCard, pickName, StrategyInWords, type ChartPick } from "./PlainRules";
-import { changedSettings, ownExit, stopsOn, usesDefaultExit, type DefaultExit } from "./defaults";
+import { FillChoice, useCompact, useSimple } from "./simple";
+import { ParamListContext } from "./ParamRule";
+import { StrategyInWords } from "./PlainRules";
+import { ExitChoice, isIndicatorExit } from "./ExitChoice";
+import { defaultDates } from "./DateFilterPanel";
+import { changedSettings, stopsOn } from "./defaults";
 import "./rules.css";
 
 export interface RunSettings { from: string; to: string; fees: string; slippage: string; /** the instrument's latest data date (To's default) */ latest?: string }
@@ -35,6 +38,8 @@ export function RuleBuilder(props: {
   spec: Spec; catalogue: Catalogue; instrument?: InstrumentContext; onChange(spec: Spec): void;
   settings: RunSettings; onSettings(patch: Partial<RunSettings>): void;
   problems: string[]; running: boolean; onRun(): void;
+  /** Opens the optimizer for these rules (the Optimize button beside Run backtest). */
+  onOptimize?(): void;
   /** The portfolio controls (PortfolioPanel), shown on the Portfolio tab. */
   portfolio?: ReactNode;
   /** The custom date filter (DateFilterPanel), shown with the test period. */
@@ -42,9 +47,6 @@ export function RuleBuilder(props: {
   /** Step layout: "rules" (Your idea) or "settings" (Settings) only; both by default. */
   part?: "rules" | "settings";
   /** The exit a test uses when no sell rule is on (defaults.ts), editable here; absent: no fallback is shown. */
-  defaultExit?: DefaultExit; onDefaultExit?(d: DefaultExit): void;
-  /** Indicators drawn on the chart, offered as first buy rules. */
-  chartPicks?: ChartPick[];
   /** Whether the chart shows the rules' indicators with the same settings (PlainRules ChartMatch). */
   chartMatch?: ReactNode;
 }) {
@@ -52,21 +54,48 @@ export function RuleBuilder(props: {
   if (!props.catalogue.execution) return props.part === "settings" ? <p className="box cap">This engine shows the test period and costs with the rules, in step 2.</p> : <LegacyRuleBuilder {...props} />;
   return <TreeRuleBuilder {...props} />;
 }
-function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market: "in" }, onChange, settings, onSettings, problems, running, onRun, portfolio, part, dates, defaultExit, onDefaultExit, chartPicks = [], chartMatch }: Parameters<typeof RuleBuilder>[0]) {
+const isFilterRow = (n: RuleNode) => (n as Record<string, unknown>).filter === true;
+/** The Indicator filter on (one condition to set, after the buy rows) or off (its rows removed). */
+const withFilters = (spec: Spec, path: ListPath, on: boolean) => {
+  const all = (getAt(spec, path) as RuleNode[]) ?? [];
+  if (on === all.some(isFilterRow)) return spec;
+  return setAt(spec, path, on ? [...all, newFilter()] : all.filter((n) => !isFilterRow(n)));
+};
+/** The Dates filter on (Base 1's bull periods to start) or off. */
+const withDates = (spec: Spec, on: boolean): Spec => {
+  if (on === !!spec.date_filter) return spec;
+  if (on) return { ...spec, date_filter: defaultDates() };
+  const { date_filter: _, ...rest } = spec;
+  return rest as Spec;
+};
+/** No filter (the default), Dates and Indicator: the last two can be on together. Instant toggles, no motion: used often. */
+function FilterChoice({ dates, indicator, onDates, onIndicator, onNone }: { dates?: boolean; indicator: boolean; onDates(on: boolean): void; onIndicator(on: boolean): void; onNone(): void }) {
+  const chip = (label: string, on: boolean, click: () => void) => <button type="button" className="lab-filter-chip" aria-pressed={on} onClick={click}>{label}</button>;
+  return <div className="lab-filter-choice" role="group" aria-label="Filters" data-lab-filter-choice>
+    {chip("No filter", !dates && !indicator, onNone)}
+    {dates !== undefined && chip("Dates", dates, () => onDates(!dates))}
+    {chip("Indicator", indicator, () => onIndicator(!indicator))}
+  </div>;
+}
+
+function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market: "in" }, onChange, settings, onSettings, problems, running, onRun, onOptimize, portfolio, part, dates, chartMatch }: Parameters<typeof RuleBuilder>[0]) {
   const showRules = part !== "settings", showSettings = part !== "rules";
   const both = spec.direction === "both", b = budget(spec), lim = limits(catalogue), bytes = specBytes(spec);
   const single = !spec.portfolio; // per-side prices, re-entry delays and limits are single-instrument settings
   const caps = (top: number): TreeCaps => ({ leaves: b.leaves >= lim.leaves, nodes: b.nodes >= lim.nodes, top: top >= lim.top });
   const warn = b.leaves >= 0.9 * lim.leaves || b.nodes >= 0.9 * lim.nodes || bytes >= 0.9 * SPEC_BYTE_BUDGET || b.top.long >= lim.top || b.top.short >= lim.top;
   const top = `Top-level ${b.top.long}/${lim.top}${both ? ` · short ${b.top.short}/${lim.top}` : ""}`;
+  /** The Exit card: N candle, ATR, Supertrend, HSL, Profit booking and Indicator (its own sell rows, the others kept apart);
+   *  the other AmiBroker exits (breakeven, take-profits, two ATR stops…) stay folded under More exit settings in Advanced. */
   const list = (path: ListPath, title: string, tag: string, count: number) => {
-    const short = path.startsWith("short_side.") || spec.direction === "short";
-    const fallback = defaultExit && onDefaultExit && usesDefaultExit(spec, path.startsWith("short_side."));
-    const nodes = (getAt(spec, path) as RuleNode[]) ?? [];
-    const own = fallback ? ownExits(spec, path.replace("exit.any", "entry.all") as ListPath, short) : [];
-    return <RuleList listPath={path} title={title} tag={tag} catalogue={catalogue} caps={caps(count)} list={nodes} onChange={(next) => onChange(setAt(spec, path, next))}
-      short={short} notice={fallback ? <DefaultExitCard value={defaultExit} short={short} onChange={onDefaultExit} own={own} onOwn={(n) => onChange(setAt(spec, path, [...nodes, n]))} /> : undefined}
-      footer={ordersBox(path.startsWith("short_side.") ? "short_side." : "", "exits")} />;
+    const short = path.startsWith("short_side.") || spec.direction === "short", pre = path.startsWith("short_side.") ? "short_side." : "";
+    const rows = (getAt(spec, path) as RuleNode[]) ?? [], mine = rows.filter(isIndicatorExit), kept = rows.filter((r) => !isIndicatorExit(r));
+    return <div className="lab-list" data-lab-list={path}>
+      <h3>{title}</h3>
+      <ExitChoice spec={spec} pre={pre} onChange={onChange} indicatorList={<RuleList listPath={path} title="Indicator" tag={tag} catalogue={catalogue} caps={caps(count)} list={mine}
+        onChange={(next) => onChange(setAt(spec, path, [...kept, ...next]))} short={short} />} />
+      <OrdersPanel spec={spec} catalogue={catalogue} pre={pre} part="exits" brief={simple} extrasOnly onChange={onChange} />
+    </div>;
   };
   /** Exits that close a trade by price (stops, targets, N-bar, more exits) sit with the sell rules; the entry order type and
    *  scale-in (limit and stop orders are for live-style fills) in Settings. Folded unless one is set, the heading names what is on. */
@@ -75,108 +104,103 @@ function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market
     if (!side) return null;
     const on = part === "entry" ? [entryOrderType(side.entry) !== "market" ? `${entryOrderType(side.entry).replace("_", "-")} order` : "", side.entry.scale_in ? "scale in" : ""].filter(Boolean)
       : stopsOn(side.exit as unknown as Record<string, unknown>, nBarStop(spec, pre));
+    // Order type is not offered in Settings; it shows only when a loaded strategy already sets one, so it can be seen and cleared
+    if (part === "entry" && !on.length) return null;
     return <details className="lab-orders-box" data-lab-orders-box={part} open={on.length > 0}>
-      <summary>{part === "entry" ? "Order type" : "Stops & targets"} <span className="cap">· {on.length ? on.join(", ") : part === "entry" ? "market order (buy at the fill price)" : "none (optional)"}</span></summary>
+      <summary>{part === "entry" ? "Order type" : "More exit settings"} <span className="cap">· {on.length ? on.join(", ") : part === "entry" ? "market order (buy at the fill price)" : "none (optional)"}</span></summary>
       <OrdersPanel spec={spec} catalogue={catalogue} pre={pre} reentry={single && !pre} part={part} brief={simple} onChange={onChange} />
     </details>;
   };
   const entryOrders = () => <>{ordersBox("", "entry")}{spec.short_side && ordersBox("short_side.", "entry")}</>;
-  /** The buy rules' indicators that have their own exit, by name ("RSI 14's own exit"). */
-  const ownExits = (s: Spec, entryPath: ListPath, short: boolean) => {
-    const seen = new Set<string>(), out: { label: string; node: RuleNode }[] = [];
-    const visit = (x: unknown) => {
-      if (Array.isArray(x)) { x.forEach(visit); return; }
-      if (!x || typeof x !== "object") return;
-      const o = x as Record<string, unknown>, ind = typeof o.s === "string" ? catalogue.indicators.find((i) => i.id === o.s) : undefined;
-      const p = (o.p ?? {}) as Record<string, number>, node = ind && ownExit(ind, p, short), label = ind && `${pickName(ind, p)}'s own exit`;
-      if (node && label && !seen.has(label)) { seen.add(label); out.push({ label, node }); }
-      Object.values(o).forEach(visit);
-    };
-    ((getAt(s, entryPath) as RuleNode[]) ?? []).filter((n) => (n as Record<string, unknown>).off !== true).forEach(visit);
-    return out;
-  };
   // the AFLs' filter sections: entry.all rows marked `filter`, kept after the signal rows so those keep their entry.all[i] paths
   const entryLists = (path: ListPath, title: string, tag: string, count: number) => {
     const all = (getAt(spec, path) as RuleNode[]) ?? [], isFilter = (n: RuleNode) => (n as Record<string, unknown>).filter === true;
     const signals = all.filter((n) => !isFilter(n)), filters = all.filter(isFilter), short = path.startsWith("short_side.") || spec.direction === "short";
     const one = (rows: RuleNode[], keep: (rows: RuleNode[]) => RuleNode[], title: string, tag: string, f = false, notice?: ReactNode) => <RuleList key={tag} listPath={path} title={title} tag={tag}
       catalogue={catalogue} caps={caps(count)} list={rows} onChange={(nodes) => onChange(setAt(spec, path, keep(nodes)))} short={short} filters={f} notice={notice} />;
-    const exitPath = path.replace("entry.all", "exit.any") as ListPath;
-    const starter = !signals.length && <BuyStarter catalogue={catalogue} chart={chartPicks} short={short} onPick={(entry, exit) => {
-      const next = setAt(spec, path, [entry, ...filters]); // the indicator's own exit fills an empty sell list
-      onChange(exit && !((getAt(next, exitPath) as RuleNode[]) ?? []).length ? setAt(next, exitPath, [exit]) : next);
-    }}>
-      {!simple && path === "entry.all" && <ExamplePicker spec={spec} onChange={onChange} />}</BuyStarter>;
-    // Simple is a plain entry and exit: filters show once a strategy has one; until then one small button adds the first
-    const addFilter = () => onChange(setAt(spec, path, [...all, { ...newNode("cond"), filter: true } as RuleNode]));
-    const filterList = simple && !filters.length
-      ? <p key={`${tag} add-filter`} className="lab-add-filter"><button type="button" className="dbtn sm ghost" data-lab-add-filter onClick={addFilter}>+ Add a filter</button>
-        <span className="cap">optional: buy only while another condition holds, e.g. NIFTYBANK above its 50-day EMA (Edit › Source picks another instrument)</span></p>
-      : one(filters, (n) => [...signals, ...n], path.startsWith("short_side.") ? "Short filters · the short sale also needs all of these" : COPY.filtersTitle,
-        path.startsWith("short_side.") ? "Short filter" : "Filter", true);
-    return [<Fragment key={`${tag} signals`}>{one(signals, (n) => [...n, ...filters], title, tag, false, starter || undefined)}</Fragment>, filterList] as const;
+    // the filter rows show once the Indicator filter is on (FilterChoice); the card heading names the section
+    const filterList = filters.length > 0 && one(filters, (n) => [...signals, ...n], "Indicator",
+      path.startsWith("short_side.") ? "Short filter" : "Filter", true);
+    return [<Fragment key={`${tag} signals`}>{one(signals, (n) => [...n, ...filters], title, tag)}</Fragment>, filterList] as const;
   };
   const simple = useSimple(), compact = useCompact();
-  const [longEntry, longFilters] = entryLists("entry.all", both ? "Buy (long) when all of these are true" : COPY.simpleEntryTitle, both ? "Long entry" : "Entry", b.top.long);
   const money = modeOf(spec) === "money", cost = spec.execution?.cost_bps;
   const ordered = entryOrderType(spec.entry) !== "market" || (!!spec.short_side && entryOrderType(spec.short_side.entry) !== "market");
   const fill = ordered ? "order level" : usesTradePrices(spec.execution) ? "price and delay set in Trades" : spec.execution?.fill === "close" ? "same close" : "next open";
   const ex = spec.execution ?? {};
   const changed = changedSettings(spec);
-  const tabbed = compact && !simple; // Advanced in the page: AmiBroker-style Entry / Exit tabs
-  const entryTitle = simple ? COPY.simpleEntryTitle : COPY.entryTitle, exitTitle = simple ? COPY.simpleExitTitle : COPY.exitTitle;
-  const period = <div className="lab-row lab-settings">
+  const hasFilters = (path: ListPath) => ((getAt(spec, path) as RuleNode[]) ?? []).some(isFilterRow);
+  /** The same entry, filter and exit controls, grouped into readable sections for each side. */
+  const cards = (short: boolean) => {
+    const pre = short ? "short_side." : "", count = short ? b.top.short : b.top.long;
+    const [entry, filters] = entryLists(`${pre}entry.all` as ListPath, short ? "Short entry" : both ? "Long entry" : "Entry", short ? "Short entry" : both ? "Long entry" : "Entry", count);
+    return <div className="lab-side-panel" data-lab-side={short ? "short" : "long"}>
+      {both && <h3 className="lab-side-h">{short ? COPY.shortSide : COPY.longSide}</h3>}
+      <ParamListContext.Provider value={true}><div className="lab-rule-cards">
+        <div className="lab-rule-card" data-lab-card="entry">
+          <header className="lab-rule-section-h"><h3>{short ? "Short entry" : both ? "Long entry" : "Entry"}</h3></header>
+          <div className="lab-rule-section-body">{entry}</div>
+        </div>
+        <div className="lab-rule-card" data-lab-card="filters">
+          <header className="lab-rule-section-h"><h3>{short ? "Short filters" : "Filters"}</h3></header>
+          <div className="lab-rule-section-body">
+          <h3>{short ? "Short filters" : "Filters"}</h3>
+          <FilterChoice dates={short || !dates ? undefined : !!spec.date_filter} indicator={hasFilters(`${pre}entry.all` as ListPath)}
+            onDates={(on) => onChange(withDates(spec, on))} onIndicator={(on) => onChange(withFilters(spec, `${pre}entry.all` as ListPath, on))}
+            onNone={() => onChange(withFilters(withDates(spec, false), `${pre}entry.all` as ListPath, false))} />
+          {!short && spec.date_filter && dates}
+          {filters}
+          </div>
+        </div>
+        <div className="lab-rule-card" data-lab-card="exit">
+          <header className="lab-rule-section-h"><h3>{short ? "Short exit" : both ? "Long exit" : "Exit"}</h3></header>
+          <div className="lab-rule-section-body">{list(`${pre}exit.any` as ListPath, short ? "Short exit" : both ? "Long exit" : "Exit", short ? "Short exit" : both ? "Long exit" : "Exit", count)}</div>
+        </div>
+      </div></ParamListContext.Provider>
+    </div>;
+  };
+  const testDates = <>
     <label className="dfield">From<DateField label="From" title="Empty: from the first bar" value={settings.from} onChange={(from) => onSettings({ from })} /></label>
     <label className="dfield">To<DateField label="To" title="Empty: to the last bar" value={settings.to} onChange={(to) => onSettings({ to })} /></label>
-    {money ? <span className="cap">{COPY.moneyCostsHere}</span> : <>
-      {cost !== undefined ? <NumField label="Fees (bps / side)" value={cost} min={0} placeholder="0" onChange={(n) => n !== undefined && onChange(setExecution(spec, { cost_bps: n }))} /> : <label className="dfield">Fees (bps / side)<input type="number" aria-label="Fees (bps / side)" min={0} step="any" placeholder="0" value={settings.fees} onChange={(e) => onSettings({ fees: e.target.value })} /></label>}
+  </>;
+  const costs = money ? null : <div className="lab-row lab-settings">
+    <>
+      {/* Fees are not offered; the box shows only when a fee is already set (a loaded strategy or an earlier entry), so no hidden cost runs */}
+      {cost !== undefined ? <NumField label="Fees (bps / side)" value={cost} min={0} placeholder="0" onChange={(n) => n !== undefined && onChange(setExecution(spec, { cost_bps: n }))} /> : Number(settings.fees) ? <label className="dfield">Fees (bps / side)<input type="number" aria-label="Fees (bps / side)" min={0} step="any" placeholder="0" value={settings.fees} onChange={(e) => onSettings({ fees: e.target.value })} /></label> : null}
       <label className="dfield">Slippage (bps / side)<input type="number" aria-label="Slippage (bps / side)" min={0} step="any" placeholder="0" value={settings.slippage} onChange={(e) => onSettings({ slippage: e.target.value })} /></label>
-    </>}
+    </>
   </div>;
+  const run = <button type="button" className="dbtn primary" data-lab-action="run" disabled={running || problems.length > 0} title={problems[0] ?? `Signal at the bar's close · fill at the ${fill}`} onClick={onRun}>{!running && <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 2.5v11L13 8 4 2.5Z" /></svg>}{running ? "Running…" : "Run backtest"}</button>;
+  // the run and Optimize buttons sit at the right of the Positions · From · To row (Your idea only), with how trades fill beside them
+  // after the rules are set, Optimize tries ranges of their numbers (AmiBroker's Optimize beside Backtest)
+  const optimize = onOptimize && <button type="button" className="dbtn" data-lab-open-optimize disabled={problems.length > 0} title={problems[0] ?? "Try ranges of this strategy's numbers"} onClick={onOptimize}>Optimize</button>;
+  // how trades fill is the Run backtest tooltip, not a line of text beside it
+  const runTop = <span className="lab-run-top">{optimize}{run}</span>;
   const stray = !single && [ex.prices, ex.delays, ex.reentry, ex.limits, ex.exit_at_stop, ex.activate_stops_immediately, ex.nbar_has_priority, ex.allow_same_bar_exit, ex.bars_held_from, ex.reenter_on_exit_bar, ex.defer_exit_on_circuit].some((x) => x !== undefined);
-  return <section className="box lab-rules" tabIndex={-1}>
+  return <section className="box lab-rules lab-design-studio" tabIndex={-1}>
     {showRules && <>
-    <h2 className="box-h">{simple ? "Your idea" : "Strategy rules"} <small>{COPY.rulesHint}</small>{((!simple && !compact) || warn) && <span className={`cap lab-caps${warn ? " lab-caps-warn" : ""}`} data-lab-caps>{COPY.caps(top, b.leaves, lim.leaves, b.nodes, lim.nodes, (bytes / 1024).toFixed(1))}</span>}</h2>
-    {defaultExit && <StrategyInWords spec={spec} catalogue={catalogue} defaultExit={defaultExit} period={settings} onChange={onChange} />}
+    <h2 className="box-h">Strategy rules <small>{COPY.rulesHint}</small>{((!simple && !compact) || warn) && <span className={`cap lab-caps${warn ? " lab-caps-warn" : ""}`} data-lab-caps>{COPY.caps(top, b.leaves, lim.leaves, b.nodes, lim.nodes, (bytes / 1024).toFixed(1))}</span>}</h2>
+    <StrategyInWords spec={spec} catalogue={catalogue} period={settings} onChange={onChange} />
     {chartMatch}
-    {simple && <ExamplePicker spec={spec} onChange={onChange} />}
-    {tabbed ? <SettingsTabs ariaLabel="Rules" labels={["Entry · Buy", "Filters", "Exit · Sell", ...(both && spec.short_side ? ["Short entry", "Short filters", "Short exit"] : [])]}>
-      {[longEntry, <>{longFilters}{dates && <SettingGroup title="Date filter (Base 1 / Base 2 windows)">{dates}</SettingGroup>}</>,
-        list("exit.any", both ? "Sell the long when any of these is true" : COPY.simpleExitTitle, both ? "Long exit" : "Exit", b.top.long),
-        ...(both && spec.short_side ? [...entryLists("short_side.entry.all", "Sell short when all of these are true", "Short entry", b.top.short),
-          list("short_side.exit.any", "Cover the short when any of these is true", "Short exit", b.top.short)] : [])]}
-    </SettingsTabs> : <>
-    <div className="lab-side-panel" data-lab-side="long">
-      {both && <h3 className="lab-side-h">{COPY.longSide}</h3>}
-      <div className="lab-sides">{entryLists("entry.all", both ? COPY.longEntryTitle : entryTitle, both ? "Long entry" : "Entry", b.top.long)}{list("exit.any", both ? COPY.longExitTitle : exitTitle, both ? "Long exit" : "Exit", b.top.long)}</div>
-    </div>
-    {both && spec.short_side && <div className="lab-side-panel" data-lab-side="short">
-      <h3 className="lab-side-h">{COPY.shortSide}</h3>
-      <div className="lab-sides">{entryLists("short_side.entry.all", COPY.shortEntryTitle, "Short entry", b.top.short)}{list("short_side.exit.any", COPY.shortExitTitle, "Short exit", b.top.short)}</div>
-    </div>}
+    {<div className="lab-row lab-idea-basics" data-lab-idea-basics><ExecutionPanel spec={spec} catalogue={catalogue} onChange={onChange} part="positions" />{testDates}{runTop}</div>}
+    {cards(false)}
+    {both && spec.short_side && cards(true)}
     </>}
-    </>}
-    {part === "settings" && <h2 className="box-h">Settings <small>test period, costs and money</small></h2>}
+    {part === "settings" && <h2 className="box-h">Settings</h2>}
     {showSettings && <>
-    {simple ? <SimpleSettings spec={spec} settings={settings} onChange={onChange} open={part === "settings"}>
-      {period}
-      {entryOrders()}
-      {spec.date_filter && dates}
-      <InitialEquity spec={spec} catalogue={catalogue} instrument={instrument} onChange={onChange} instrumentData={false} />
-    </SimpleSettings> : <>{part !== "settings" && <h3 className="lab-settings-h">Backtest settings <small>how trades are filled, sized and charged</small></h3>}
-    {/* the basics first; every AmiBroker setting folded under one heading that names what is changed */}
+    {part !== "settings" && <h3 className="lab-settings-h">Backtest settings <small>how trades are filled, sized and charged</small></h3>}
+    {/* the basics, in both views; Simple leaves out the AmiBroker settings below them */}
     <div className="lab-basics" data-lab-basics>
-      <SettingGroup title="Trade"><ExecutionPanel spec={spec} catalogue={catalogue} onChange={onChange} part="positions" /><FillChoice spec={spec} onChange={onChange} />{entryOrders()}</SettingGroup>
-      <SettingGroup title="Test period & costs">{period}</SettingGroup>
+      <SettingGroup title="Trade"><FillChoice spec={spec} onChange={onChange} />{entryOrders()}{costs}</SettingGroup>
       <SettingGroup title="Starting money"><InitialEquity spec={spec} catalogue={catalogue} instrument={instrument} onChange={onChange} instrumentData={false} /></SettingGroup>
     </div>
-    <details className="lab-more-settings" data-lab-more-settings>
-      <summary>More settings (AmiBroker) <span className="cap">{changed.length ? `· ${changed.length} changed: ${changed.join(", ")}` : "· all at their defaults"}</span></summary>
+    {!simple && <>
+    <section className="lab-more-settings lab-ami" data-lab-more-settings aria-label="AmiBroker settings">
+      <h3 className="lab-ami-h">AmiBroker settings <span className="cap">{changed.length ? `· ${changed.length} changed: ${changed.join(", ")}` : "· all at their defaults"}</span></h3>
     <SettingsTabs labels={["General", "Trades", "Report", "Portfolio"]}>
       <>
-        <p className="cap lab-stab-intro">Position size and risk, the date filter, same-bar options and instrument data.</p>
+        <p className="cap lab-stab-intro">Position size and risk, same-bar options and instrument data.</p>
         <SettingGroup title="Position size & risk"><RiskPanel spec={spec} catalogue={catalogue} instrument={instrument} onChange={onChange} /></SettingGroup>
-        {dates && !tabbed && <SettingGroup title="Date filter">{dates}</SettingGroup>}
         <SettingGroup title="Trading options">
           <ExecutionPanel spec={spec} catalogue={catalogue} onChange={onChange} part="options" />
           {!spec.portfolio && <GeneralData spec={spec} instrument={instrument} onChange={onChange} />}
@@ -205,22 +229,18 @@ function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market
         {portfolio}
         <PortfolioLimits spec={spec} onChange={onChange} />
       </>
-    </SettingsTabs></details></>}
+    </SettingsTabs></section></>}
     </>}
     {readsSessionDates(spec) && <p className="cap">{COPY.sessionDatesHint}</p>}
     {usesHigherTimeframes(spec) && <p className="cap">{COPY.wmRule}</p>}
-    <div className="lab-row lab-run">
-      <button type="button" className="dbtn primary" data-lab-action="run" disabled={running || problems.length > 0} onClick={onRun}>{running ? "Running…" : simple ? "▶ Test this idea" : "Run backtest"}</button>
-      <span className="cap">Signal at the bar's close · fill at the {fill}</span>
-    </div>
     {problems.length > 0 && <ul className="rnote">{problems.map((p, i) => <li key={i}>{p}</li>)}</ul>}
   </section>;
 }
 
-function LegacyRuleBuilder({ spec, catalogue, onChange, settings, onSettings, problems, running, onRun }: {
+function LegacyRuleBuilder({ spec, catalogue, onChange, settings, onSettings, problems, running, onRun, onOptimize }: {
   spec: Spec; catalogue: Catalogue; onChange(spec: Spec): void;
   settings: RunSettings; onSettings(patch: Partial<RunSettings>): void;
-  problems: string[]; running: boolean; onRun(): void;
+  problems: string[]; running: boolean; onRun(): void; onOptimize?(): void;
 }) {
   const full = conditionCount(spec) >= catalogue.max_conditions;
   const all = [...spec.entry.all, ...spec.exit.any];
@@ -275,10 +295,10 @@ function LegacyRuleBuilder({ spec, catalogue, onChange, settings, onSettings, pr
         <label className="dfield">Slippage (bps / side)
           <input type="number" aria-label="Slippage (bps / side)" min={0} step="any" value={settings.slippage} onChange={(e) => onSettings({ slippage: e.target.value })} />
         </label>
-        <button type="button" className="dbtn primary" data-lab-action="run" disabled={running || problems.length > 0} onClick={onRun}>
+        <button type="button" className="dbtn primary" data-lab-action="run" disabled={running || problems.length > 0} title={`Signal at the bar's close · fill at the ${fill}`} onClick={onRun}>
           {running ? "Running…" : "Run backtest"}
         </button>
-        <span className="cap">Signal at the bar's close · fill at the {fill}</span>
+        {onOptimize && <button type="button" className="dbtn" data-lab-open-optimize disabled={problems.length > 0} onClick={onOptimize}>Optimize</button>}
       </div>
       {problems.length > 0 && <ul className="rnote">{problems.map((p, i) => <li key={i}>{p}</li>)}</ul>}
     </section>

@@ -1,10 +1,9 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { act } from "react";
 import { NoTradesHelp } from "../src/features/lab/NoTrades";
-import { DefaultExitCard, StrategyInWords } from "../src/features/lab/PlainRules";
+import { StrategyInWords } from "../src/features/lab/PlainRules";
 import { RuleList } from "../src/features/lab/NodeEditor";
 import { candleCountNode, starterSpec } from "../src/features/lab/spec-model";
-import { DEFAULT_EXIT } from "../src/features/lab/defaults";
 import type { ScanResult } from "../src/features/lab/client";
 import type { RuleNode, Spec } from "../src/features/lab/types";
 import { catalogue7Fixture as cat, flush, mount, unmount } from "./fixtures/lab";
@@ -48,12 +47,12 @@ it("0 trades with signal days: the settings that can stop a trade are listed wit
 it("plain words list switched-off rows and offer to turn off settings that block trades", async () => {
   const onChange = vi.fn();
   const s = spec([rsi, { ...ema, off: true } as RuleNode], { date_filter: { windows: [["2020-01-01", "2021-01-01"]] } });
-  const host = await mount(<StrategyInWords spec={s} catalogue={cat} defaultExit={DEFAULT_EXIT} onChange={onChange} />);
+  const host = await mount(<StrategyInWords spec={s} catalogue={cat} onChange={onChange} />);
   expect(host.querySelector("[data-lab-words-buy]")!.textContent).toBe("Buy when RSI(14) is below 30.");
-  expect(host.querySelector("[data-lab-words-sell]")!.textContent).toContain("when the date window or a filter closes the trade");
+  expect(host.querySelector("[data-lab-words-sell]")!.textContent).toContain("no exit yet"); // no hidden default exit
   expect(host.querySelector("[data-lab-words-off]")!.textContent).toContain("the close is above the 50-day EMA");
   await act(async () => host.querySelector<HTMLButtonElement>("[data-lab-words-blockers] button")!.click());
-  expect(onChange.mock.calls[0][0].date_filter.off).toBe(true);
+  expect(onChange.mock.calls[0][0].date_filter).toBeUndefined(); // Turn off removes the Dates filter
 });
 
 it("an Nth-candle exit reads as one sentence; its count and kind change in place", async () => {
@@ -73,24 +72,8 @@ it("an Nth-candle exit reads as one sentence; its count and kind change in place
   expect(host.querySelector('[data-lab-operand-kind="since_entry"]')).not.toBeNull();
 });
 
-it("the default exit card switches parts on with a starting number, and keeps the last part on", async () => {
-  const onChange = vi.fn();
-  const host = await mount(<DefaultExitCard value={DEFAULT_EXIT} short={false} onChange={onChange} />);
-  const box = (name: string) => host.querySelector<HTMLInputElement>(`input[aria-label="Default exit: use ${name}"]`)!;
-  expect(host.querySelector<HTMLInputElement>('input[aria-label="Default exit: days in the trade"]')!.disabled).toBe(true);
-  await act(async () => box("days in the trade").click());
-  expect(onChange.mock.calls.at(-1)![0]).toEqual({ up: 1, down: 4, days: 10 });
-  await act(async () => box("a stop-loss").click());
-  expect(onChange.mock.calls.at(-1)![0]).toEqual({ up: 1, down: 4, stopPct: 5 });
-  await act(async () => box("the down close").click());
-  expect(onChange.mock.calls.at(-1)![0]).toEqual({ up: 1, down: 4, downOff: true });
-  await unmount();
-  const one = await mount(<DefaultExitCard value={{ up: 1, down: 4, downOff: true }} short={false} onChange={onChange} />);
-  expect(one.querySelector<HTMLInputElement>('input[aria-label="Default exit: use the up close"]')!.disabled).toBe(true);
-});
-
 it("a value read from another instrument names it in plain words", async () => {
   const foreign = { lhs: { s: "close", symbol: "NIFTYBANK" }, op: ">", rhs: { s: "ema", p: { length: 50 }, symbol: "NIFTYBANK" }, filter: true } as RuleNode;
-  const host = await mount(<StrategyInWords spec={spec([rsi, foreign])} catalogue={cat} defaultExit={DEFAULT_EXIT} onChange={vi.fn()} />);
+  const host = await mount(<StrategyInWords spec={spec([rsi, foreign])} catalogue={cat} onChange={vi.fn()} />);
   expect(host.textContent).toContain("the close of NIFTYBANK is above the 50-day EMA of NIFTYBANK");
 });

@@ -63,9 +63,13 @@ const pick = async (host: HTMLElement, tk: string) => {
   expect(host.querySelector('[role="dialog"][aria-label="Symbol search"]')).toBeNull();
   expect(host.querySelector('[aria-label="Symbol search"]')?.textContent).toContain(tk);
 };
-/** A portfolio has no default exit (it cannot read since-entry values): add an exit row of its own. */
-const exitRow = async (host: HTMLElement) => act(async () => host.querySelector<HTMLButtonElement>('[data-lab-list="exit.any"] [data-lab-add-cond]')!.click());
-const run = async (host: HTMLElement) => { await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-action="run"]')!.click()); await flush(); };
+/** A portfolio cannot read since-entry values: its exit is an indicator row (Exit card › Indicator). */
+const exitRow = async (host: HTMLElement) => act(async () => host.querySelector<HTMLButtonElement>('[data-lab-exit="indicator"]')!.click());
+/** There is no hidden default exit: a run without one first picks N candle in the Exit card. */
+const run = async (host: HTMLElement) => {
+  if (host.textContent?.includes("Pick an exit in the Exit card.")) await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-exit="ncandle"]')!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-action="run"]')!.click()); await flush();
+};
 
 it("renders the catalogue label, library and default instrument; saved-strategy errors stay local", async () => {
   const { host } = await go("#/indicators");
@@ -89,7 +93,7 @@ it("the chart is its own tab; Strategy & backtest opens on Your idea, with Your 
   catalogueAnswer = catalogue7Fixture;
   const { host } = await go("#/indicators?tk=NIFTY%2050");
   expect([...host.querySelectorAll(".lab-tabs [role=tab]")].map((t) => [t.textContent, t.getAttribute("aria-selected")])).toEqual([
-    ["Chart", "true"], ["Strategy & backtest", "false"], ["Optimization", "false"], ["Customize", "false"], ["Saved strategies", "false"]]);
+    ["Chart", "true"], ["Strategy & backtest", "false"], ["Customize", "false"], ["Saved strategies", "false"]]); // Optimize sits beside Run backtest
   expect(host.querySelector<HTMLElement>("#lab-panel-chart")!.hidden).toBe(false);
   expect(host.querySelector<HTMLElement>("#lab-panel-strategy")!.hidden).toBe(true);
   expect(host.querySelector(".lab-library-slot")).toBeNull(); // library opens on demand without taking chart space
@@ -104,13 +108,14 @@ it("the chart is its own tab; Strategy & backtest opens on Your idea, with Your 
   expect(panel(0).querySelector(".lab-rules [data-lab-list]")).not.toBeNull();
   expect(panel(1).querySelector('[aria-label="Analysis settings"]')).not.toBeNull(); // settings live in step 2
   expect(panel(0).querySelector('[aria-label="Analysis settings"]')).toBeNull();
-  // Advanced rules: AmiBroker-style Entry / Exit tabs; the timeframe stays on every price or indicator row; source and group/move sit behind More
-  expect([...panel(0).querySelectorAll('[aria-label="Rules"] [role=tab]')].map((t) => t.textContent)).toEqual(["Entry · Buy", "Filters", "Exit · Sell"]);
-  const row = panel(0).querySelector<HTMLElement>(".lab-cond")!;
-  expect(row.querySelector("[data-lab-node-menu]")).toBeNull();
-  expect(row.querySelector("[data-lab-timing]")!.textContent).toContain("Daily");
-  await act(async () => row.querySelector<HTMLButtonElement>(".lab-more-btn")!.click());
-  expect(row.querySelector("[data-lab-node-menu]")).not.toBeNull();
+  // Entry, Filters and Exit side by side; a plain condition is a parameter list with its timeframe; More options opens every control
+  expect([...panel(0).querySelectorAll("[data-lab-card]")].map((c) => c.getAttribute("data-lab-card"))).toEqual(["entry", "filters", "exit"]);
+  const param = panel(0).querySelector<HTMLElement>("[data-lab-param]")!;
+  expect(param.querySelector<HTMLSelectElement>('select[aria-label="Timeframe"]')!.value).toBe("D");
+  expect(param.querySelector("[data-lab-node-menu]")).toBeNull();
+  expect(param.querySelector('input[aria-label="Entry 1 check bars ago"]')).toBeNull(); // the extras sit behind More
+  await act(async () => param.querySelector<HTMLButtonElement>("[data-lab-param-more]")!.click());
+  expect(param.querySelector<HTMLInputElement>('input[aria-label="Entry 1 check bars ago"]')!.value).toBe("0");
   expect(panel(0).querySelector("[data-lab-caps]")).toBeNull(); // counters only near a limit
   expect(panel(2).querySelector("[data-lab-no-result]")).not.toBeNull();
   let release!: (r: Response) => void;
@@ -133,7 +138,7 @@ it("a failed run clears the previous result", async () => {
   expect(tables).not.toBeNull();
   expect(tables.closest("[data-lab-results-tabs]")).not.toBeNull(); // every result view is a tab of the Results box under Run backtest
   const tabs = [...host.querySelectorAll<HTMLElement>('[data-lab-results-tabs] [role=tab]')].map((t) => t.textContent);
-  expect(tabs).toEqual(expect.arrayContaining(["Equity & drawdown", "Monthly returns", "Trades", "Scan / Explore"]));
+  expect(tabs).toEqual(["Trades", "Stats & equity drawdown", "YOY-Monthly", "Scan / Explore"]); // no Monte Carlo; stats and charts are one tab
   expect(host.querySelector("[data-lab-step-results] [data-lab-result]")).not.toBeNull();
   runAnswer = () => jsonResponse({ status: "needs_data", error: "NIFTY 50: invalid OHLC bar on 2001-03-02", label: catalogueFixture.label }, 400);
   await run(host);
@@ -307,9 +312,11 @@ it("workspace tabs separate optimization and customize while keeping edits and r
   expect(panel("strategy").hidden).toBe(false);
   expect(panel("optimization").hidden).toBe(true);
   expect(panel("customize").hidden).toBe(true);
+  expect(host.querySelector("#lab-tab-optimization")).toBeNull(); // no Optimization tab: the Optimize button beside Run backtest opens it
   await run(host);
   const result = host.querySelector("[data-lab-result]");
-  await choose("optimization");
+  await choose("strategy");
+  await act(async () => host.querySelector<HTMLButtonElement>("[data-lab-open-optimize]")!.click());
   expect(panel("strategy").hidden).toBe(true);
   expect(panel("optimization").hidden).toBe(false);
   const checked = host.querySelector<HTMLInputElement>("[data-lab-dim] input[type=checkbox]")!;
@@ -319,9 +326,9 @@ it("workspace tabs separate optimization and customize while keeping edits and r
   expect(host.querySelector(".lab-library-slot")).toBeNull();
   await choose("strategy");
   expect(host.querySelector("[data-lab-result]")).toBe(result);
-  await choose("optimization");
+  await act(async () => host.querySelector<HTMLButtonElement>("[data-lab-open-optimize]")!.click());
   expect(checked.checked).toBe(true);
-  await act(async () => host.querySelector("#lab-tab-optimization")!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
+  await act(async () => host.querySelector("#lab-tab-strategy")!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
   expect(host.querySelector("#lab-tab-customize")?.getAttribute("aria-selected")).toBe("true");
   expect(document.activeElement).toBe(host.querySelector("#lab-tab-customize"));
 });
@@ -361,8 +368,8 @@ it("a book variant can replace an indicator through the full editor and retain i
 it("exposes foreign source choices only for an advertised engine and sends the edited rule", async () => {
   catalogueAnswer={...catalogue7Fixture,max_foreign:4} as typeof catalogueFixture;
   const {host,f}=await go("#/indicators?tk=NIFTY%2050");
-  await act(async()=>host.querySelector<HTMLButtonElement>(".lab-cond .lab-more-btn")!.click()); // source sits behind More
-  const source=host.querySelector<HTMLSelectElement>('[aria-label="Entry 1 › left · Read from"]') ?? host.querySelector<HTMLSelectElement>('[aria-label$="· Read from"]');
+  await act(async()=>host.querySelector<HTMLButtonElement>("[data-lab-param-more]")!.click()); // Symbol sits behind More
+  const source=host.querySelector<HTMLSelectElement>('select[aria-label="Entry 1 check symbol"]');
   expect(source).not.toBeNull();
   const other=[...source!.options].find(o=>o.value&&o.value!=="NIFTY 50")!.value;
   await act(async()=>{source!.value=other;source!.dispatchEvent(new Event("change",{bubbles:true}));});await run(host);

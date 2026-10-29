@@ -76,7 +76,7 @@ it("pre-checks: two numbers, empty exit without a price exit, listed indicators,
   expect(m.specProblems(m.setCond(s, "entry", 0, { lhs: { value: 1 }, op: ">", rhs: { value: 2 } }), cat))
     .toContain("Entry 1: a condition cannot compare two numbers; one side must be a series.");
   const noExit = m.removeCond(s, "exit", 0);
-  expect(m.specProblems(noExit, cat)).toContain("exit.any needs at least one condition (or a stop_loss, target, trailing, breakeven or take-profit exit)");
+  expect(m.specProblems(noExit, cat)).toContain("Pick an exit in the Exit card.");
   expect(m.specProblems(m.setOrder(noExit, "trailing", { pct: 5 }), cat)).toEqual([]);
   expect(m.specProblems(m.setCond(s, "entry", 0, { lhs: { s: "or_range" }, op: ">", rhs: { value: 1 } }), cat)[0])
     .toBe("Entry 1: Opening Range is listed only and cannot be used in rules. Needs intraday (minute) bars; not available yet.");
@@ -155,18 +155,18 @@ it("removeAt and putAt edit by engine path and never mutate", () => {
 it("pre-checks: entry, exit (price exits incl. breakeven and take-profits; always-in), per-side top-level cap, size", () => {
   const s = m.defaultSpec();
   const noExit = m.removeCond(s, "exit", 0);
-  expect(m.specProblems(noExit, cat)).toContain("exit.any needs at least one condition (or a stop_loss, target, trailing, breakeven or take-profit exit)");
+  expect(m.specProblems(noExit, cat)).toContain("Pick an exit in the Exit card.");
   expect(m.specProblems(m.setAt(noExit, "exit.breakeven.after.pct", 2), cat)).toEqual([]);
   expect(m.specProblems(m.setAt(noExit, "exit.take_profits", [{ pct: 2, size: 0.5 }]), cat)).toEqual([]);
   const always = { ...noExit, direction: "both", short_side: { entry: { all: [s.entry.all[0]] }, exit: { any: [] } } } as Spec;
   expect(m.specProblems(always, cat)).toEqual([]);
-  expect(m.specProblems(m.setExecution(always, { opposite: "exit" }), cat)).toContain("exit.any needs at least one condition (or a stop_loss, target, trailing, breakeven or take-profit exit)");
+  expect(m.specProblems(m.setExecution(always, { opposite: "exit" }), cat)).toContain("Pick an exit in the Exit card.");
   let many = s;
   for (let i = 0; i < 11; i++) many = m.addCond(many, "entry", s.entry.all[0]);
   expect(m.specProblems(many, cat)).toContain("Use at most 12 conditions in total.");
   const shortMany = { ...s, direction: "both", short_side: { entry: { all: Array(12).fill(s.entry.all[0]) }, exit: { any: [s.exit.any[0]] } } } as Spec;
   expect(m.specProblems(shortMany, cat)).toContain("Short side: use at most 12 conditions in total.");
-  expect(m.specProblems({ ...s, entry: { all: [] } }, cat)).toContain("Add a buy rule first: pick a suggestion under “Buy when…” in Your idea, or press + Add condition.");
+  expect(m.specProblems({ ...s, entry: { all: [] } }, cat)).toContain("Add a buy rule first: press + Add condition in the Entry card.");
 });
 
 it("money mode sends no cost or slippage query; otherwise as before", () => {

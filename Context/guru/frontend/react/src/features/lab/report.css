@@ -2,7 +2,7 @@
 .lab-report { display: grid; gap: 10px; }
 .lab-report .box-h { margin: 0; }
 .lab-report .lab-report-constants { margin: 0; color: var(--ink2); font-size: 12px; }
-.lab-report [data-lab-report-stats] { max-width: 980px; }
+.lab-report [data-lab-report-stats] { max-width: none; }
 .lab-report .tbl td, .lab-report .tbl th { padding-top: 4px; padding-bottom: 4px; }
 .lab-report [data-lab-report-stats] tbody + tbody tr:first-child > * { border-top: 1px solid var(--steel); }
 .lab-report-block td { font-weight: 600; color: var(--ink); }
@@ -31,3 +31,26 @@
   font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .lab-report-formula .rnote, [data-lab-report-symbols] .rnote { margin: 0; font-size: 12px; }
 [data-lab-report-symbols] { max-width: 980px; }
+/* Statistics laid out like AmiBroker's Backtest Report: a title band, plain sans figures, groups split by a rule and a gap,
+   the rows of a counted group (All trades, Winners, Losers) indented under its bold line. */
+.lab-report [data-lab-report-stats] { border-collapse: collapse; }
+.lab-report [data-lab-report-stats] caption { padding: 5px 8px; background: var(--thead); border: 1px solid var(--rule); border-bottom: 0; font: 700 14px var(--font); color: var(--ink); text-align: center; }
+.lab-report [data-lab-report-stats] thead th { font: 700 13px var(--font); letter-spacing: 0; text-transform: none; color: var(--ink); background: none; border-bottom: 0; }
+.lab-report [data-lab-report-stats] td { border-bottom: 0; font-size: 13px; }
+.lab-report [data-lab-report-stats] td.n { font-family: 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; font-weight: 500; white-space: nowrap; }
+.lab-report [data-lab-report-stats] tbody + tbody tr:first-child > * { border-top: 1px solid var(--steel); padding-top: 14px; }
+.lab-report [data-lab-report-stats] tbody:not(:last-child) tr:last-child > * { padding-bottom: 12px; }
+.lab-report [data-lab-report-stats] .lab-report-block td { font-weight: 700; }
+.lab-report [data-lab-report-stats] .lab-report-group tr:not(.lab-report-block) td:first-child { padding-left: 22px; }
+.lab-report [data-lab-report-stats] tbody tr:hover > * { background: var(--hover); }
+
+/* statistics cards: titled blocks flowing in two columns (masonry), each a compact table, labels on one line */
+.lab-report .lab-report-cards { columns: 2 600px; column-gap: 18px; max-width: none; }
+.lab-report .lab-report-card { break-inside: avoid; display: table; width: 100%; margin: 0 0 18px; border: 1px solid var(--rule); border-radius: var(--r-box, 8px); background: var(--card); border-collapse: separate; border-spacing: 0; overflow: hidden; }
+.lab-report .lab-report-card caption { caption-side: top; text-align: left; padding: 0 2px 6px; background: none; font: 700 13px var(--font); letter-spacing: 0; text-transform: none; color: var(--ink); }
+.lab-report .lab-report-card thead th { font-size: 11.5px; font-weight: 600; color: var(--ink2); background: var(--panel); white-space: nowrap; }
+.lab-report .lab-report-card td:first-child { white-space: nowrap; color: var(--ink2); }
+.lab-report .lab-report-card td.n { width: 1%; white-space: nowrap; padding-left: 18px; }
+.lab-report .lab-report-card tbody tr:last-child > * { border-bottom: 0; }
+.lab-report-how > summary { cursor: pointer; font-weight: 600; font-size: 13px; color: var(--ink2); }
+.lab-report-how[open] > summary { margin-bottom: 6px; }

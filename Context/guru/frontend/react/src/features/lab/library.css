@@ -63,3 +63,53 @@
   .lab-indicator-picker .lab-picker-results li > button[data-lab-item] small { flex-basis:auto; text-align:left; width:100%; }
   .lab-indicator-picker .lab-lib-foot { line-height:1.5; }
 }
+
+/* Finish for the library rail and the indicator picker popover: theme tokens only, tracked section labels,
+   one hover tint, a visible focus ring on every row, tags as small rounded labels. No motion: used constantly. */
+.lab-library { --lib-focus: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent); }
+.lab-library input[type=search] { min-height: 32px; transition: border-color 150ms ease, box-shadow 150ms ease; }
+.lab-library input[type=search]::placeholder { color: var(--ink3); }
+.lab-library input[type=search]:hover { border-color: var(--ink3); }
+.lab-library input[type=search]:focus-visible { outline: none; border-color: var(--blue); box-shadow: var(--lib-focus); }
+.lab-library li { border-radius: var(--r-field); }
+.lab-library li:hover { background: var(--hover, var(--panel)); }
+.lab-library li > button[data-lab-item] { border-radius: var(--r-field); }
+.lab-library li > button[data-lab-item]:focus-visible { outline: none; box-shadow: var(--lib-focus); }
+.lab-library li > button[data-lab-item]:hover:not(:disabled) b { color: var(--blue); }
+.lab-library .tag { font: 700 9.5px var(--font); letter-spacing: .08em; padding: 2px 6px; border-radius: 4px; border-color: var(--rule); background: var(--panel); color: var(--ink2); }
+.lab-library .tag.warn { border-color: color-mix(in srgb, var(--red) 40%, var(--card)); background: color-mix(in srgb, var(--red) 8%, var(--card)); color: var(--red); }
+.lab-library li > .dbtn.sm:hover { color: var(--blue); border-color: var(--blue); background: color-mix(in srgb, var(--blue) 8%, var(--card)); }
+.lab-library li > .dbtn.sm:focus-visible { outline: none; box-shadow: var(--lib-focus); }
+.lab-library .lab-group-h { letter-spacing: .1em; font-weight: 700; border-radius: var(--r-field); }
+.lab-library .lab-group-h:hover { color: var(--ink); }
+.lab-library .lab-group-h::before { color: var(--ink3); }
+.lab-library .lab-group-h small, .lab-library .box-h small, .lab-library summary small { font-family: 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; font-weight: 500; }
+.lab-library .lab-group-h:focus-visible { box-shadow: var(--lib-focus); }
+.lab-library .lab-popular-more { margin-top: 8px; }
+.lab-lib-foot { color: var(--ink3); }
+.lab-lib-foot b { display: inline-grid; place-items: center; width: 16px; height: 16px; border: 1px solid var(--rule); border-radius: 50%; font: italic 600 10px Georgia, serif; color: var(--ink2); vertical-align: 1px; }
+/* indicator reference card */
+.lab-detail pre { padding: 10px 12px; border: 1px solid var(--rule); border-radius: var(--r-field); line-height: 1.55; overflow-x: auto; }
+.lab-detail dt { font-size: 12px; }
+
+/* picker popover */
+.lab-indicator-picker > input[type=search] { border-color: var(--steel); border-radius: var(--r-field); font-size: 14px; }
+.lab-picker-categories { gap: 1px; }
+.lab-picker-categories > span { padding: 14px 10px 6px; font: 700 10.5px var(--font); letter-spacing: .12em; color: var(--ink3); }
+.lab-picker-categories > span:first-child { padding-top: 4px; }
+.lab-picker-categories > button { padding: 8px 10px; border-radius: var(--r-field); }
+.lab-picker-categories > button:hover { background: var(--hover, var(--panel)); color: var(--ink); }
+.lab-picker-categories > button[aria-pressed=true] { background: color-mix(in srgb, var(--blue) 9%, var(--card)); color: var(--blue); font-weight: 600; box-shadow: inset 3px 0 0 var(--blue); }
+.lab-picker-categories > button:focus-visible { outline: none; box-shadow: var(--lib-focus); }
+.lab-picker-results > h3 { padding: 4px 8px 8px; font: 700 11px var(--font); letter-spacing: .1em; text-transform: uppercase; color: var(--ink2); font-variant-numeric: tabular-nums; }
+.lab-indicator-picker .lab-picker-results li { border-radius: var(--r-field); }
+.lab-indicator-picker .lab-picker-results li + li { margin-top: 1px; }
+.lab-indicator-picker .lab-picker-results li > button[data-lab-item] b { color: var(--ink); }
+.lab-indicator-picker .lab-picker-results li > button[data-lab-item]:hover:not(:disabled) b { color: var(--blue); }
+.lab-indicator-picker .lab-picker-results li > button[data-lab-item]:disabled b { color: var(--ink3); }
+.lab-indicator-picker .lab-picker-results .empty { padding: 28px 16px; border-radius: var(--r-box); border-color: var(--rule); }
+.lab-indicator-picker .lab-lib-foot { padding-top: 10px; }
+@media (max-width: 600px) {
+  .lab-picker-categories { gap: 4px; }
+  .lab-picker-categories > button[aria-pressed=true] { box-shadow: inset 0 -2px 0 var(--blue); }
+}

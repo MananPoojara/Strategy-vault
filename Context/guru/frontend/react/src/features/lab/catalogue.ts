@@ -4,6 +4,10 @@ import type { Indicator, Market, Timeframe } from "./types";
 export const MAX_PRICE_OVERLAYS = 4;
 /** AmiBroker's own defaults as SV parameters (AFL function signatures; the @AB columns of AllIndicators_AB_vs_SV_Exploration.afl):
  *  only the keys that differ from SV's defaults or pick the AmiBroker variant. Supertrend mode 1 is the user's AmiBroker AFL. */
+/** Parameters a rule starts with when the indicator is picked: the research team's AFL settings (Supertrend 5 × 1, AmiBroker SMA of TR, (H+L)/2). */
+export const PICK_DEFAULTS: Record<string, Record<string, number>> = { supertrend: { atr_length: 5, factor: 1, mode: 1, price: 0 } };
+/** A setting's name in a rule, as the Exit card and the AFLs call it. */
+export const PARAM_NAMES: Record<string, Record<string, string>> = { supertrend: { atr_length: "Period", factor: "Multiplier", mode: "Calculation", price: "Avg Val" } };
 export const AB_DEFAULTS: Record<string, Record<string, number>> = {
   rsi: { length: 14, variant: 2 }, stoch: { k: 14, smooth_k: 3, d: 3, variant: 0 }, cci: { length: 14 }, roc: { length: 12, variant: 0 },
   trix: { length: 9, variant: 1 }, dpo: { length: 20, variant: 0 }, bb: { length: 15, mult: 2, source: 0 },

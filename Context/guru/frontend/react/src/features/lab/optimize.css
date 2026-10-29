@@ -58,3 +58,79 @@
 .lab-page .lab-info { margin-top: 8px; display: grid; gap: 4px; justify-items: start; }
 .lab-page .lab-info-log { margin: 0; padding-left: 18px; font-size: 12px; color: var(--ink2); overflow-wrap: anywhere; }
 .lab-page .lab-info-warn { color: var(--red); }
+
+/* Finish for the Optimization tab: same language as "Finish for Your idea" (rules.css).
+   Theme tokens only, so every header theme applies. No motion on controls: they are used many times a session.
+   Scoped under [data-lab-optimize] so the :root[data-theme] colour rules in styles.css (0,3,1) are outranked. */
+/* controls: one 32px height, steel border, hover ink3, soft blue focus ring, figures in Inter Numbers */
+.lab-page [data-lab-optimize] .dfield :is(input:not([type=checkbox]), select) { height: 32px; padding-block: 0; border-color: var(--steel); border-radius: var(--r-field); transition: border-color 150ms ease, box-shadow 150ms ease; }
+.lab-page [data-lab-optimize] .dfield input[type=number] { font: 500 13px 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; }
+.lab-page [data-lab-optimize] .dfield select { cursor: pointer; }
+.lab-page [data-lab-optimize] .dfield :is(input:not([type=checkbox]), select):hover:not(:disabled) { border-color: var(--ink3); }
+.lab-page [data-lab-optimize] .dfield :is(input:not([type=checkbox]), select):focus-visible { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent); }
+.lab-page [data-lab-optimize] input[type=checkbox] { accent-color: var(--blue); cursor: pointer; }
+/* buttons: pressed scale with the house curve; Run is a size up with a soft accent shadow; disabled reads as disabled */
+.lab-page [data-lab-optimize] .dbtn { transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), background-color 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease; }
+.lab-page [data-lab-optimize] .dbtn.primary { min-height: 34px; padding: 0 18px; box-shadow: 0 1px 2px rgb(0 0 0 / .08), 0 4px 12px -6px color-mix(in srgb, var(--blue) 60%, transparent); }
+.lab-page [data-lab-optimize] .dbtn:disabled { opacity: .55; cursor: not-allowed; box-shadow: none; transform: none; }
+.lab-page [data-lab-optimize] .dbtn.primary:disabled { background: var(--blue); border-color: var(--blue); }
+
+/* Settings table: a soft card, quiet tracked headers, group rows as small section labels, varied rows tinted. */
+.lab-page [data-lab-optimize] .tbl.lab-dims { border-color: var(--rule); box-shadow: 0 1px 2px rgb(0 0 0 / .04), 0 6px 16px -10px rgb(0 0 0 / .18); }
+.lab-page [data-lab-optimize] .lab-dims thead th { padding-top: 9px; padding-bottom: 9px; font: 700 11px var(--font); letter-spacing: .08em; color: var(--ink2); cursor: default; }
+.lab-page [data-lab-optimize] .lab-dims thead th:last-child { text-align: right; }
+.lab-page [data-lab-optimize] .lab-dims tr.lab-dim-group th { padding: 14px 10px 6px; font: 700 11px var(--font); letter-spacing: .12em; color: var(--blue); background: var(--card); border-bottom: 1px solid var(--rule); cursor: default; }
+.lab-page [data-lab-optimize] .lab-dims tbody tr.lab-dim-group:first-child th { padding-top: 10px; }
+.lab-page [data-lab-optimize] .lab-dims tr[data-lab-dim] td { padding-top: 6px; padding-bottom: 6px; }
+.lab-page [data-lab-optimize] .lab-dims tr[data-lab-dim] td:nth-child(2) { font-size: 13.5px; line-height: 1.4; }
+.lab-page [data-lab-optimize] .lab-dims tr[data-lab-dim]:has(input[type=checkbox]:checked) td { background: color-mix(in srgb, var(--blue) 5%, var(--card)); }
+.lab-page [data-lab-optimize] .lab-dims tr[data-lab-dim]:has(input[type=checkbox]:checked) td:first-child { box-shadow: inset 3px 0 var(--blue); }
+.lab-page [data-lab-optimize] .lab-dims tr[data-lab-dim]:has(input[type=checkbox]:checked) td:nth-child(2) { font-weight: 600; color: var(--ink); }
+/* a setting that is not varied: its fields read as fixed values, not as empty inputs */
+.lab-page [data-lab-optimize] .lab-dims .dfield input:disabled { background: transparent; border-color: var(--rule); color: var(--ink3); -webkit-text-fill-color: var(--ink3); opacity: 1; cursor: not-allowed; }
+.lab-page [data-lab-optimize] .lab-dims td.lab-dim-values { text-align: right; font: 600 13px 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; color: var(--blue); }
+.lab-page [data-lab-optimize] .lab-dims td.lab-dim-values .cap { font: 500 12px var(--font); color: var(--ink3); }
+
+/* Run row: the combination count leads, the session counter sits quietly at the end. */
+.lab-page [data-lab-optimize] > .lab-optimize-run { margin-top: 14px; gap: 8px 14px; }
+.lab-page [data-lab-optimize] > .lab-optimize-run > .cap:first-child { font: 600 13px 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; color: var(--ink); }
+.lab-page [data-lab-optimize] > .lab-optimize-run > .cap:last-child { margin-left: auto; font: 500 12px 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; color: var(--ink3); }
+/* Empty result: a light dashed note with rounded corners instead of a hard box. */
+.lab-page [data-lab-optimize] > .empty { margin-top: 12px; padding: 12px 14px; border: 1px dashed var(--steel); border-radius: var(--r-box); background: color-mix(in srgb, var(--blue) 3%, var(--card)); color: var(--ink2); font-size: 13px; line-height: 1.5; }
+.lab-page [data-lab-optimize] .rnote { border-radius: 0 var(--r-field) var(--r-field) 0; line-height: 1.5; }
+
+/* Result tables (ranking, all results, walk-forward): soft border, Archivo tracked headers, Inter Numbers figures. */
+.lab-page [data-lab-optimize] .tbl.ocmp { border-color: var(--rule); }
+.lab-page [data-lab-optimize] .ocmp thead th { padding-top: 8px; padding-bottom: 8px; font: 700 10.5px var(--font); letter-spacing: .07em; line-height: 1.3; color: var(--ink2); vertical-align: bottom; cursor: default; }
+.lab-page [data-lab-optimize] .ocmp thead th.on { color: var(--blue); }
+.lab-page [data-lab-optimize] .ocmp td { padding: 5px 10px; }
+.lab-page [data-lab-optimize] .ocmp td.n { font: 500 13px 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; }
+.lab-page [data-lab-optimize] .lab-sort { cursor: pointer; }
+.lab-page [data-lab-optimize] .lab-sort:hover { color: var(--blue); }
+/* ranking table: the split header groups centred over their columns, "Now" as a quiet baseline row, #1 marked */
+.lab-page [data-lab-optimize-result] > .tblwrap > .ocmp thead tr:not(:last-child) th { text-align: center; color: var(--ink); letter-spacing: .1em; border-bottom: 1px solid var(--rule); }
+.lab-page [data-lab-optimize-result] > .tblwrap > .ocmp tbody td:first-child { font-weight: 700; }
+.lab-page [data-lab-optimize-result] > .tblwrap > .ocmp tbody tr:first-child td { background: var(--panel); }
+.lab-page [data-lab-optimize-result] > .tblwrap > .ocmp tbody tr:first-child td:first-child { color: var(--ink2); }
+.lab-page [data-lab-optimize-result] > .tblwrap > .ocmp tbody tr:nth-child(2) td:first-child { color: var(--blue); box-shadow: inset 3px 0 var(--blue); }
+/* scrolling lists keep their header in view; overflow: clip (not hidden) so the outer box stays the scroller */
+.lab-page [data-lab-optimize] :is(.lab-opt-all, .lab-wf-preview) .tbl { overflow: clip; }
+.lab-page [data-lab-optimize] :is(.lab-opt-all, .lab-wf-preview) thead th { position: sticky; top: 0; z-index: 1; box-shadow: inset 0 -1px var(--steel); }
+.lab-page [data-lab-optimize] :is(.lab-opt-all .tblwrap, .lab-wf-preview) { border-radius: var(--r-box); }
+
+/* Walk-forward: its own sub-heading, the form grouped on one soft card, dates as quiet tabular figures. */
+.lab-page [data-lab-optimize] .lab-wf { margin-top: 20px; padding-top: 16px; gap: 10px; }
+.lab-page [data-lab-optimize] .lab-wf > .box-h { font-size: 15px; }
+.lab-page [data-lab-optimize] .lab-wf-form { padding: 10px 12px; gap: 10px 16px; border: 1px solid var(--rule); border-radius: var(--r-box); background: var(--card); box-shadow: 0 1px 2px rgb(0 0 0 / .04); }
+.lab-page [data-lab-optimize] .lab-wf-form .lab-wf-span { font: 500 12px 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; color: var(--ink3); }
+.lab-page [data-lab-optimize] .lab-wf .ocmp td:is(:nth-child(2), :nth-child(3)) { font-family: 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lab-page [data-lab-optimize] .lab-wf tr[data-lab-wf-mode] td:first-child { font: 700 10.5px var(--font); letter-spacing: .08em; }
+.lab-page [data-lab-optimize] .lab-wf tr[data-lab-wf-mode] td:first-child small { font: 500 11.5px var(--font); letter-spacing: 0; color: var(--ink3); }
+.lab-page [data-lab-optimize] .lab-wf tr[data-lab-wf-mode="oos"] td { background: color-mix(in srgb, var(--blue) 4%, var(--card)); }
+.lab-page [data-lab-optimize] .lab-wf tr[data-lab-wf-mode="oos"] td:first-child { color: var(--blue); }
+
+/* A fresh result fades in once (opacity only, under 200 ms). */
+@media (prefers-reduced-motion: no-preference) {
+  .lab-page :is([data-lab-optimize-result], [data-lab-wf-result]) { transition: opacity 180ms ease-out; }
+  @starting-style { .lab-page :is([data-lab-optimize-result], [data-lab-wf-result]) { opacity: 0; } }
+}

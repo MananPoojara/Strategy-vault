@@ -95,3 +95,53 @@ button.fb-slot[data-type=whole], button.fb-slot[data-type=number] { min-width: 4
   .fb-name { width: 7em; }
 }
 @media (prefers-reduced-motion: reduce) { .fb-palette { transition: none; } }
+
+/* Finish for the block builder: rows as light cards, one hover/focus treatment, numbers in Inter Numbers,
+   destructive row tools turn red on hover. Theme tokens only; the drawer keeps its existing reduced-motion guard. */
+.fb { --fb-focus: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent); }
+.fb-bar { gap: 8px; }
+.fb-bin { padding: 5px 12px; }
+.fb-bin[data-over=no] { border-color: var(--ink3); }
+.fb-palette { padding: 8px; border-radius: var(--r-box); }
+.fb-pal-top input[type=search] { box-sizing: border-box; height: 32px; transition: border-color 150ms ease, box-shadow 150ms ease; }
+.fb-pal-top input[type=search]:hover { border-color: var(--ink3); }
+.fb-pal-top input[type=search]:focus-visible { outline: none; border-color: var(--blue); box-shadow: var(--fb-focus); }
+.fb-pal-tip { color: var(--ink3); line-height: 1.45; }
+.fb-pal-h { font-weight: 700; letter-spacing: .1em; border-radius: var(--r-field); }
+.fb-pal-h:hover { color: var(--ink); }
+.fb-pal-h::before { color: var(--ink3); }
+.fb-pal-h small { font-family: 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; font-weight: 500; }
+.fb-pal-item { border-color: var(--rule); box-shadow: 0 1px 2px rgb(0 0 0 / .04); transition: border-color 150ms ease, box-shadow 150ms ease; }
+.fb-pal-item:hover { background: var(--card); border-top-color: var(--ink3); border-right-color: var(--ink3); border-bottom-color: var(--ink3); }
+.fb-pal-item:focus-visible { box-shadow: var(--fb-focus); }
+.fb-canvas h3 { margin-top: 8px; font: 700 11.5px var(--font); letter-spacing: .1em; text-transform: uppercase; color: var(--ink2); }
+.fb-canvas h3 small { font-weight: 500; letter-spacing: 0; text-transform: none; }
+.fb-row { gap: 6px 10px; padding: 8px 10px; box-shadow: 0 1px 2px rgb(0 0 0 / .04); transition: border-color 150ms ease; }
+.fb-row:hover { border-color: var(--steel); }
+.fb-row[data-row-error=true] { background: color-mix(in srgb, var(--red) 3%, var(--card)); }
+.fb-line { font-family: 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; }
+.fb-name, .fb-num, .fb-block select, .fb-param input[type=text] { transition: border-color 150ms ease, box-shadow 150ms ease; }
+.fb-name { box-sizing: border-box; height: 28px; }
+.fb-name:hover, .fb-num:hover, .fb-block select:hover, .fb-param input[type=text]:hover { border-color: var(--ink3); }
+.fb-name:focus-visible, .fb-num:focus-visible, .fb-block select:focus-visible, .fb-param input[type=text]:focus-visible { outline: none; border-color: var(--blue); box-shadow: var(--fb-focus); }
+.fb-name[aria-invalid=true], .fb-num[aria-invalid=true] { border-color: var(--red); }
+.fb-num { font-family: 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; }
+.fb-mini { border-color: var(--rule); transition: border-color 150ms ease, color 150ms ease, transform 160ms cubic-bezier(0.23, 1, 0.32, 1); }
+.fb-mini:hover:not(:disabled) { border-color: var(--ink3); color: var(--ink); }
+.fb-mini[aria-label^="Remove"]:hover:not(:disabled) { border-color: var(--red); color: var(--red); }
+.fb-mini:active:not(:disabled) { transform: scale(.97); }
+button.fb-slot { transition: border-color 150ms ease, color 150ms ease; }
+button.fb-slot:hover { border-color: var(--ink3); color: var(--ink2); }
+.fb-block { box-shadow: 0 1px 1px rgb(0 0 0 / .03); }
+.fb-param label { font-weight: 600; }
+.fb-link { text-underline-offset: 2px; }
+.fb-link:hover { text-decoration-thickness: 2px; }
+.fb-preview summary { width: fit-content; font-size: 13px; }
+.fb-preview summary:hover { color: var(--blue); }
+.fb-preview summary:focus-visible { outline: none; box-shadow: var(--fb-focus); border-radius: var(--r-field); }
+.fb-preview pre { border: 1px solid var(--rule); border-radius: var(--r-field); padding: 10px 12px; }
+.fb-ghost { box-shadow: 0 1px 2px rgb(0 0 0 / .06), 0 10px 24px -8px rgb(0 0 0 / .28); }
+@media (max-width: 640px) {
+  .fb-palette { border-radius: 0; transition: transform 180ms cubic-bezier(0.23, 1, 0.32, 1), visibility 180ms; }
+}
+@media (max-width: 640px) and (prefers-reduced-motion: reduce) { .fb-palette { transition: none; } }

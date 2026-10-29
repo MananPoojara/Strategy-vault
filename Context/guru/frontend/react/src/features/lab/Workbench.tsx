@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { aggregate, booleanMarkers, candles, isBooleanOutput, linePoints, ohlcFromSeries, rangeStart, tradeSpans } from "./bars";
+import { aggregate, booleanMarkers, candles, isBooleanOutput, linePoints, zonePairs, breakLines, breakOutputs, strongWeakLines, ohlcFromSeries, rangeStart, tradeSpans } from "./bars";
 import { createLabChart, syncPanes, themeColors, tint, useThemeKey, type SyncedPane } from "./charts";
 import type { LabChartApi, LabSeriesApi } from "./globals";
 import { shortName } from "./catalogue";
@@ -149,10 +149,11 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
     let unsync: (() => void) | undefined;
     // a rebuild for an indicator or its settings keeps the user's zoom and scroll; a new instrument, timeframe, chart type or range preset starts fresh
     const viewKey = `${market}|${ticker}|${tf}|${range}|${chartType}`;
+    // the old chart is removed here: the zoom is read first, then nothing (the » latest button included) may call it again
     const cleanup = () => {
       const shown = priceApi.current?.chart.timeScale().getVisibleRange?.();
       if (shown) keptView.current = { key: viewKey, range: shown };
-      live = false; priceApi.current = null; applyVisibility.current = null; unsync?.(); disposers.forEach((d) => d.dispose()); legendRef.current?.replaceChildren(); panesRef.current?.querySelectorAll(".lab-legend-tv").forEach((el) => el.replaceChildren()); };
+      live = false; priceApi.current = null; applyVisibility.current = null; toLatest.current = undefined; unsync?.(); disposers.forEach((d) => d.dispose()); legendRef.current?.replaceChildren(); panesRef.current?.querySelectorAll(".lab-legend-tv").forEach((el) => el.replaceChildren()); };
     if (timeless) {
       // daily bars only: the engine's outputs are one value per daily bar, and a resampled event would repeat over the period
       const ind = find(chartType), params = typeParams[chartType] ?? {};
@@ -245,14 +246,85 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
         // each pane reads out in its own legend, the price legend keeps the overlays
         const box = target ? legendRef.current : host?.parentElement?.querySelector<HTMLElement>(".lab-legend-tv") ?? null;
         const settings = [...chipValues(ind, chip.params), ...(chip.tf ? [TF_LABELS[chip.tf] ?? chip.tf] : [])].join(", ");
+        const zones = target ? zonePairs(res.outputs) : [];
+        for (const z of zones) {
+          const top = res.series[`${z}_top`] ?? [], bottom = res.series[`${z}_bottom`] ?? [];
+          const at = new Map(res.dates.map((d, k) => [d, [top[k], bottom[k]] as const]));
+          const items = px.d.map((time) => { const [t, b] = at.get(time) ?? []; return typeof t === "number" && typeof b === "number" ? { time, top: t, bottom: b } : { time }; });
+          const own = chip.looks?.[z]?.color, fill = own ? plotPaint(own, colors) // TradingView: bull / discount green, bear / premium red, equilibrium grey
+            : /^(bear|premium|supply)/.test(z) ? colors.red : /^(equilibrium|eq$|mid)/.test(z) ? colors.ink3 : /block/.test(chip.id) ? colors.blue : colors.green;
+          let view: { bars: readonly { x: number; originalData: { top?: number; bottom?: number } }[]; barSpacing: number; visibleRange: { from: number; to: number } | null } | null = null;
+          const zone = chart.addCustomSeries?.({
+            renderer: () => ({ draw: (t: { useMediaCoordinateSpace(f: (s: { context: CanvasRenderingContext2D }) => void): void }, toY: (p: number) => number | null) => t.useMediaCoordinateSpace(({ context: g }) => {
+              if (!view?.visibleRange) return;
+              g.fillStyle = fill; g.globalAlpha = /block/.test(chip.id) && /^bull/.test(z) ? 0.28 : 0.18;
+              // one solid box per run of bars holding the same zone (per-bar slices overlap into stripes)
+              const half = view.barSpacing / 2;
+              for (let i = view.visibleRange.from; i < view.visibleRange.to; i++) {
+                const d = view.bars[i].originalData;
+                if (d.top === undefined || d.bottom === undefined) continue;
+                let j = i;
+                while (j + 1 < view.visibleRange.to && view.bars[j + 1].originalData.top === d.top && view.bars[j + 1].originalData.bottom === d.bottom) j++;
+                const y1 = toY(d.top), y2 = toY(d.bottom);
+                if (y1 !== null && y2 !== null) g.fillRect(view.bars[i].x - half, Math.min(y1, y2), view.bars[j].x - view.bars[i].x + 2 * half, Math.max(1, Math.abs(y2 - y1)));
+                i = j;
+              }
+              g.globalAlpha = 1;
+            }) }),
+            update: (data: typeof view) => { view = data; },
+            priceValueBuilder: (d: { top: number; bottom: number }) => [d.bottom, d.top, d.top],
+            isWhitespace: (d: { top?: number }) => d.top === undefined,
+            defaultOptions: () => ({ color: fill }),
+          }, { priceLineVisible: false, lastValueVisible: false });
+          zone?.setData(items);
+          if (zone) seriesViews.push({ key: chip.key, series: zone, visible: true });
+        }
+        // BOS / CHoCH / EQH / EQL: TradingView's line from the swing bar to the break, dashed (dotted for equal highs/lows), labelled
+        const lines = target && !keep ? [...breakLines(res.outputs, res.series, res.dates, px), ...strongWeakLines(res.outputs, res.series, res.dates, px)] : [];
+        const drawnByLines = new Set([...breakOutputs(lines, res.outputs), ...(lines.some((l) => l.atEnd) ? ["trailing_high", "trailing_low", "bias"] : [])]);
+        if (lines.length) {
+          // LuxAlgo: swing structure (length 50) solid, internal structure (a short length) dashed
+          const len = Number(chip.params?.length ?? ind.params.find((q) => q.key === "length")?.default ?? 50), internal = len < 50;
+          const ts = chart.timeScale();
+          const struct = chart.addCustomSeries?.({
+            renderer: () => ({ draw: (t: { useMediaCoordinateSpace(f: (s: { context: CanvasRenderingContext2D }) => void): void }, toY: (p: number) => number | null) => t.useMediaCoordinateSpace(({ context: g }) => {
+              g.font = "10px system-ui, sans-serif"; g.textAlign = "center"; g.lineWidth = 1;
+              for (const ln of lines) {
+                const x1 = ts.logicalToCoordinate?.(ln.from), x2 = ts.logicalToCoordinate?.(ln.to), y = toY(ln.price);
+                if (x1 == null || x2 == null || y === null || x2 < 0 || x1 > g.canvas.width) continue;
+                g.strokeStyle = g.fillStyle = ln.up ? colors.green : colors.red;
+                g.setLineDash(ln.solid || (!ln.dotted && !internal) ? [] : ln.dotted ? [2, 2] : [4, 3]);
+                g.beginPath(); g.moveTo(x1, y); g.lineTo(x2, y); g.stroke();
+                g.textAlign = ln.atEnd ? "right" : "center";
+                g.fillText(ln.text, ln.atEnd ? x2 : (x1 + x2) / 2, ln.above ? y - 4 : y + 11);
+              }
+              g.setLineDash([]);
+            }) }),
+            update: () => undefined,
+            priceValueBuilder: (d: { v: number }) => [d.v],
+            isWhitespace: (d: { v?: number }) => d.v === undefined,
+            defaultOptions: () => ({ color: colors.ink3 }),
+          }, { priceLineVisible: false, lastValueVisible: false });
+          struct?.setData(px.d.map((time, i) => ({ time, v: px.c[i] })));
+          if (struct) seriesViews.push({ key: chip.key, series: struct, visible: true });
+        }
         res.outputs.forEach((out, k) => {
+          if (drawnByLines.has(out) && isBooleanOutput(res.series[out] ?? [])) return; // drawn as the labelled line above
+          // a zone's own birth / mitigation events (order block bull, bull_mitigated): the box already shows them
+          if (zones.some((z) => out === z || out === `${z}_mitigated`) && isBooleanOutput(res.series[out] ?? [])) return;
           const values = res.series[out] ?? [];
-          const color = plotPaint(plotColor(chip, index, out, k), colors), look = LINE_LOOK[chip.looks?.[out]?.style ?? "line"];
+          const color = plotPaint(plotColor(chip, index, out, k), colors), styled = LINE_LOOK[chip.looks?.[out]?.style ?? "line"];
+          // a level set on a few bars only (sweep levels, pivots): dots, since the line would join far-apart points across the gaps
+          const sparse = values.filter((v) => typeof v === "number").length < values.length * 0.25;
+          const look = sparse && styled.visible !== false ? { lineVisible: false, pointMarkersVisible: true, pointMarkersRadius: 2.5 } : styled;
           if (isBooleanOutput(values)) {
-            markerGroups.set(chip.key, [...(markerGroups.get(chip.key) ?? []), ...booleanMarkers(res.dates, values, `${ind.name}${res.outputs.length > 1 ? "." + out : ""}`, color, keep)]);
+            markerGroups.set(chip.key, [...(markerGroups.get(chip.key) ?? []), ...booleanMarkers(res.dates, values, `${ind.name}${res.outputs.length > 1 ? "." + out : ""}`, color, keep, out)]);
             return;
           }
           readouts.push({ key: chip.key, out, box, label: `${shortName(ind)}${res.outputs.length > 1 ? "." + out : ""}${settings ? `(${settings})` : ""}`, color, values: new Map(res.dates.map((d, k) => [d, values[k]])) });
+          if (zones.some((z) => out === `${z}_top` || out === `${z}_bottom`) || drawnByLines.has(out)) return; // drawn as the zone box / line above
+          // a −1 / 0 / +1 state (trend direction) is no price: on the price chart it shows in the legend only
+          if (target && values.every((v) => v === null || v === -1 || v === 0 || v === 1)) return;
           if (!target) {
             // A pane chart is created only when the chip has a line to draw; boolean-only chips mark the price chart.
             const pane = host && createLabChart(host, 150, { grid }, undefined, true);
@@ -334,7 +406,7 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
           return [row];
         });
         box.replaceChildren(
-          line([[`${ticker} · ${TF_NAMES[tf] ?? tf} · ${time}  `], ["O ", colors.ink2], [num(px.o[i]) + "  ", tone], ["H ", colors.ink2], [num(px.h[i]) + "  ", tone],
+          line([[`${ticker} · ${TF_NAMES[tf] ?? tf} · ${time.replace(/^(\d{4})-(\d{2})-(\d{2})/, "$3-$2-$1")}  `], ["O ", colors.ink2], [num(px.o[i]) + "  ", tone], ["H ", colors.ink2], [num(px.h[i]) + "  ", tone],
             ["L ", colors.ink2], [num(px.l[i]) + "  ", tone], ["C ", colors.ink2], [num(px.c[i]) + "  ", tone], [`${change >= 0 ? "+" : ""}${num(change)} (${change >= 0 ? "+" : ""}${((change / prev) * 100).toFixed(2)}%)`, tone]]),
           ...rows(box),
         );

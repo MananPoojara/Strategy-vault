@@ -17,12 +17,12 @@ it("a side with no sell rule switched on gets the default exit; anything that cl
   for (const kept of [
     spec({ exit: { any: [rsi] } }),
     spec({ exit: { any: [], stop_loss: { pct: 5 } } }),
-    spec({ date_filter: { windows: [["2020-01-01", "2021-01-01"]] } }),
     spec({ entry: { all: [rsi, { ...rsi, filter: true, filter_exit: true } as RuleNode] } }),
     spec({ direction: "both", short_side: { entry: { all: [rsi] }, exit: { any: [] } } }), // reversing, always in the market
     spec({ portfolio: { mode: "signals", universe: { basket: "nifty50" } } as Spec["portfolio"] }), // no since-entry values in a portfolio
   ]) expect(withDefaultExit(kept, DEFAULT_EXIT)).toBe(kept);
-  // a dated filter that does not close trades on a window change still needs an exit
+  // Dates never replace the sell rule: the default exit still applies, closing at the period end or not
+  expect(usesDefaultExit(spec({ date_filter: { windows: [["2020-01-01", "2021-01-01"]] } }))).toBe(true);
   expect(usesDefaultExit(spec({ date_filter: { windows: [["2020-01-01", "2021-01-01"]], exit_at_change: false } }))).toBe(true);
 });
 

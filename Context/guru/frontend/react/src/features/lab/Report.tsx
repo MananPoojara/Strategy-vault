@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { dayFirst } from "./DateField";
 import { DASH, int, num, pct } from "./format";
 import { nBarStop } from "./AmiSettings";
 import { directionOf, SIDE_LABEL, TRADE_SIDES, tradeKeys, usesTradePrices } from "./execution-model";
@@ -16,6 +17,10 @@ const COLS: [Col, string][] = [["all", "All trades"], ["long", "Long trades"], [
 type Line = [label: string, cell: (c: Col) => string];
 type Block = { key: string; head?: Line; rows: Line[] };
 
+/** Rows coloured by sign as in AmiBroker's report: profit, loss, return and drawdown figures (green gain, red loss). */
+const SIGNED = /Profit|Loss|Return|drawdown|Largest|Recovery|CAR\/MaxDD|RAR\/MaxDD/;
+const tone = (v: string) => (/^-\d|^−\d/.test(v) ? " neg" : /^[1-9]|^0\.\d*[1-9]/.test(v) ? " pos" : "");
+
 /** Trade-based rows have no buy-and-hold value. */
 const NO_BH = new Set(["max_trade_dd", "sharpe_trades"]);
 
@@ -23,6 +28,8 @@ const NO_BH = new Set(["max_trade_dd", "sharpe_trades"]);
  * One AmiBroker statistics table (All | Long | Short | Buy&Hold): the capital block, trades, winners, losers, then the
  * system rows. The engine computes system metrics on the whole equity line only, so Long/Short show "—" there.
  */
+const BLOCK_TITLES: Record<string, string> = { capital: "Returns", trades: "Trades", winners: "Winners", losers: "Losers", system: "Risk & ratios" };
+
 export function reportBlocks(report: LabReport, run?: ReportRun): Block[] {
   const bh = report.buy_hold, money = run?.money, start = money?.capital ?? 1, cash = (v: number | null | undefined) => num(v, money ? 2 : 3);
   const sys = (key: string, fmt: (v: number | null | undefined) => string): Line[1] => (c) =>
@@ -81,7 +88,7 @@ const activeDateFilter = (spec: Spec) => (spec.date_filter && !spec.date_filter.
 /** AmiBroker report "Settings" page: what produced the result, from the spec that ran, in readable words. */
 export function settingsLines(spec: Spec, run?: ReportRun): [string, string][] {
   const ex = spec.execution ?? {}, out: [string, string][] = [];
-  if (run) out.push(["Range", `${run.from} → ${run.to}`]);
+  if (run) out.push(["Range", `${dayFirst(run.from)} → ${dayFirst(run.to)}`]);
   out.push(["Periodicity", "Daily"], ["Positions", POSITIONS[directionOf(spec)]]);
   if (ex.capital !== undefined) out.push(["Initial equity", ex.capital.toLocaleString("en-US")]);
   if (usesTradePrices(ex)) for (const k of tradeKeys(spec)) out.push([`${SIDE_LABEL[k]} price`, `${cap(ex.prices?.[k] ?? "open")}, delay ${bars(ex.delays?.[k] ?? 1)}`]);
@@ -181,6 +188,7 @@ function aflNode(n: unknown, held: string): string {
     case "not": return `NOT ${aflNode(x.not, held)}`;
     case "at_least": return `Sum(${aflNode(x.when, held)}, ${x.of}) >= ${x.at_least}`;
     case "then": return `Then(${(x.then as unknown[]).map((c) => aflNode(c, held)).join(", ")}; within ${x.within} bars)`;
+    case "setup": return `Setup(${aflNode(x.setup, held)}; trigger ${aflNode(x.trigger, held)}${x.cancel ? `; cancel ${aflNode(x.cancel, held)}` : ""}${x.period_end ? `; at ${x.period_end} end` : ""})`;
     default: return "/* kept as is */";
   }
 }
@@ -328,43 +336,26 @@ export function ReportPanel({ report, trades, spec, run }: { report: LabReport; 
   const excursion = (field: "mae" | "mfe", title: string) => mode === "scatter" ? <Excursions trades={trades} field={field} title={title} />
     : <Histogram values={trades.flatMap((t) => (typeof t[field] === "number" ? [t[field] as number] : []))} caption={`${title} distribution`} axis={`${field.toUpperCase()} %`} data={{ "data-lab-excursion": field }} />;
   const params = spec ? parameterLines(spec) : [];
-  const [page, setPage] = useState<"stats" | "formula" | "symbols">("stats");
-  const [copied, setCopied] = useState(false);
   // the Buy&Hold column only when the engine sent buy-and-hold figures (older responses may have none)
   const cols = report.buy_hold || report.buyhold ? COLS : COLS.filter(([c]) => c !== "bh");
-  const formula = spec && page === "formula" ? formulaText(spec) : "";
-  const copy = () => navigator.clipboard?.writeText(formula).then(() => setCopied(true), () => undefined);
   return (
     <section className="box lab-report" data-lab-report>
       <h3 className="box-h">Report <small>AmiBroker-style statistics · simulated · not a book method</small></h3>
-      <Segmented<"stats" | "formula" | "symbols"> label="Report page" value={page} onChange={(p) => { setPage(p); setCopied(false); }}
-        options={[{ value: "stats", label: "Statistics" }, ...(spec ? [{ value: "formula" as const, label: "Formula" }] : []), { value: "symbols", label: "Symbols" }]} />
-      {page === "formula" && spec && <div className="lab-report-formula" data-lab-report-formula>
-        <p className="rnote">Readable rendering of the rules in AmiBroker AFL-like syntax: not real AFL, and not run by AmiBroker. Settings has prices, costs and limits.</p>
-        <pre>{formula}</pre>
-        <button type="button" className="dbtn sm" onClick={copy}>{copied ? "Copied" : "Copy formula"}</button>
-      </div>}
-      {page === "symbols" && <div className="tblwrap" data-lab-report-symbols>
-        <table className="tbl">
-          <thead><tr><th>Symbol</th><th>From</th><th>To</th><th className="n">Bars</th><th className="n">Trades</th><th className="n">Net Profit</th><th className="n">Win %</th></tr></thead>
-          <tbody>{symbolRows(trades, run, report).map((r) => <tr key={r[0]}>{r.map((v, i) => <td key={i} className={i > 2 ? "n" : undefined}>{v}</td>)}</tr>)}</tbody>
-        </table>
-        <p className="rnote">Win % counts closed trades. {trades.some((t) => "ticker" in t) ? "Net profit per symbol: closed trades, (exit − entry) × quantity − declared costs." : run?.money ? "Net profit in money." : "Net profit as a % of initial equity."}</p>
-      </div>}
-      {page === "stats" && <>
       <p className="cap lab-report-constants" data-lab-report-constants>
         Risk-free rate {report.rates?.sharpe ?? 5} % (Sharpe of trades) · {report.rates?.upi ?? 5.4} % (Ulcer performance index) · distribution buckets 5 % · Buy&amp;Hold: {run?.instrument?.ticker ?? "the same instrument"}{report.buyhold ? " (trade columns: one buy-and-hold trade over the run)" : ""}
       </p>
-      <div className="tblwrap">
-        <table className="tbl" data-lab-report-stats>
-          <thead><tr><th>Statistics</th>{cols.map(([k, label]) => <th className="n" key={k}>{k === "bh" && run?.instrument ? `${label} (${run.instrument.ticker})` : label}</th>)}</tr></thead>
-          {reportBlocks(report, run).map(({ key, head, rows }) => (
-            <tbody key={key} {...(key === "system" ? { "data-lab-report-system": "" } : {})}>
+      {/* one titled card per AmiBroker block, flowing in columns across the width (no tall table beside an empty half page) */}
+      <div className="lab-report-cards" data-lab-report-stats>
+        {reportBlocks(report, run).map(({ key, head, rows }) => (
+          <table className="tbl lab-report-card" key={key} {...(key === "system" ? { "data-lab-report-system": "" } : {})}>
+            <caption>{BLOCK_TITLES[key] ?? key}</caption>
+            <thead><tr><th><span className="sr-only">Statistics</span></th>{cols.map(([k, label]) => <th className="n" key={k}>{k === "bh" && run?.instrument ? `${label} (${run.instrument.ticker})` : label}</th>)}</tr></thead>
+            <tbody className={head ? "lab-report-group" : undefined}>
               {head && <tr className="lab-report-block"><td>{head[0]}</td>{cols.map(([c]) => <td className="n" key={c}>{head[1](c)}</td>)}</tr>}
-              {rows.map(([label, cell]) => <tr key={label}><td>{label}</td>{cols.map(([c]) => <td className="n" key={c}>{cell(c)}</td>)}</tr>)}
+              {rows.map(([label, cell]) => <tr key={label}><td>{label}</td>{cols.map(([c]) => { const v = cell(c); return <td className={`n${SIGNED.test(label) ? tone(v) : ""}`} key={c}>{v}</td>; })}</tr>)}
             </tbody>
-          ))}
-        </table>
+          </table>
+        ))}
       </div>
       {trades.some((t) => typeof t.mae === "number") && <Segmented<"scatter" | "histogram"> label="MAE/MFE chart" value={mode} onChange={setMode}
         options={[{ value: "scatter", label: "MAE/MFE vs trade %" }, { value: "histogram", label: "MAE/MFE distribution" }]} />}
@@ -378,8 +369,8 @@ export function ReportPanel({ report, trades, spec, run }: { report: LabReport; 
         <table className="tbl"><tbody>{settingsLines(spec, run).map(([k, v]) => <tr key={k}><td className="lab-report-key">{k}</td><td>{v}</td></tr>)}</tbody></table>
         {!!params.length && <table className="tbl" data-lab-report-params><caption>Parameters</caption><tbody>{params.map(([k, v]) => <tr key={k}><td className="lab-report-key">{k}</td><td className="n">{v}</td></tr>)}</tbody></table>}
       </details>}
-      <ul className="rnote lab-report-notes">{report.notes.map((n) => <li key={n}>{n}</li>)}</ul>
-      </>}
+      <details className="lab-report-how" data-lab-report-how><summary>How these numbers are calculated</summary>
+        <ul className="rnote lab-report-notes">{report.notes.map((n) => <li key={n}>{n}</li>)}</ul></details>
     </section>
   );
 }

@@ -1,156 +1,127 @@
-/** Custom date filter (the AFLs' Base 1 / Base 2 windows): pick a saved set for this strategy, and upload / re-upload / delete sets.
- *  Sets live in the auth service (/api/app/lab/date-sets); the strategy carries the windows, refreshed from the set on load. */
+/** The Dates filter: trade only in the bull or the bear periods of Base 1, Base 2 (built in) or the user's own dates, uploaded
+ *  as CSV / Excel or pasted in any date format. The strategy carries the chosen periods; saved sets live in the auth service. */
 import { useState } from "react";
 import { dateSets as defaultApi, type DateSetsApi } from "./client";
-import { dayFirst } from "./DateField";
-import { MAX_WINDOWS, pairs, parseDateLists, parseDateTable, type Parsed } from "./date-sets";
+import { BUILT_IN } from "./builtin-periods";
+import { chosenPhase, dmy, pairs, parseDateTable, parseSheets, phaseWindows, withBear, type Parsed, type Phase } from "./date-sets";
+import { readXlsx } from "./xlsx-read";
 import { Segmented } from "./ui";
-import type { DateFilter, DateSet, DateWindow, Spec } from "./types";
+import type { DateSet, DateWindow, Spec } from "./types";
 import "./rules.css";
 
 const message = (e: unknown) => (e instanceof Error ? e.message : "Something went wrong.");
-const range = (w: readonly DateWindow[]) => {
-  if (!w.length) return "no windows";
-  const from = w.reduce((a, x) => (x.from < a ? x.from : a), w[0].from), to = w.reduce((a, x) => (x.to > a ? x.to : a), w[0].to);
-  return `${w.length} window${w.length === 1 ? "" : "s"}, ${dayFirst(from)} to ${dayFirst(to)}`;
-};
+const PHASES: Phase[] = ["Bull", "Bear"];
+const span = (w: readonly DateWindow[]) => (w.length ? `${dmy(w.reduce((a, x) => (x.from < a ? x.from : a), w[0].from))} to ${dmy(w.reduce((a, x) => (x.to > a ? x.to : a), w[0].to))}` : "");
 
 export interface DateSetsState { list: DateSet[] | null; error?: unknown; reload(): Promise<DateSet[] | undefined>; canSave: boolean; canShare: boolean; api?: DateSetsApi }
+interface Base { key: string; name: string; id?: number; windows: DateWindow[] }
+
+/** The Dates filter turned on with nothing chosen yet: Base 1's bull periods. */
+export const defaultDates = () => ({ set: { name: BUILT_IN[0].name }, windows: pairs(phaseWindows(BUILT_IN[0].windows, "Bull")) });
 
 export function DateFilterPanel({ spec, onChange, sets }: { spec: Spec; onChange(spec: Spec): void; sets: DateSetsState }) {
-  const df = spec.date_filter, list = sets.list ?? [];
-  const chosen = df?.set?.id !== undefined ? list.find((s) => s.id === df.set!.id) : undefined;
-  const [managing, setManaging] = useState(false);
-  const set = (patch: Partial<DateFilter>) => df && onChange({ ...spec, date_filter: { ...df, ...patch } });
-  const pick = (id: string) => {
-    if (!id) { const { date_filter: _, ...rest } = spec; onChange(rest as Spec); return; }
-    const s = list.find((x) => String(x.id) === id);
-    if (s) apply(s);
+  const df = spec.date_filter;
+  const [own, setOwn] = useState<Base | null>(null); // dates used in this visit that could not be saved
+  const bases: Base[] = [...BUILT_IN.map((b) => ({ key: b.name, ...b })), ...(sets.list ?? []).filter((s) => !BUILT_IN.some((b) => b.name === s.name)).map((s) => ({ key: `set-${s.id}`, name: s.name, id: s.id, windows: s.windows })),
+    ...(own && !(sets.list ?? []).some((s) => s.name === own.name) ? [own] : [])];
+  if (!df) return null;
+  const base = bases.find((b) => (df.set?.id !== undefined ? b.id === df.set.id : b.id === undefined && b.name === df.set?.name));
+  const phase: Phase = df.mode === "outside" ? "Bear" : base ? chosenPhase(df.windows, base.windows) ?? "Bull" : "Bull";
+  const use = (b: Base, p: Phase) => {
+    const { mode: _, ...rest } = df;
+    onChange({ ...spec, date_filter: { ...rest, set: b.id !== undefined ? { id: b.id, name: b.name } : { name: b.name }, windows: pairs(phaseWindows(b.windows, p)) } });
   };
-  // keeps the strategy's inside/outside, exit and on/off choices when the set changes
-  const apply = (s: DateSet) => onChange({ ...spec, date_filter: { ...(df?.mode === "outside" ? { mode: "outside" as const } : {}), ...(df?.exit_at_change === false ? { exit_at_change: false } : {}), ...(df?.off ? { off: true } : {}), set: { id: s.id, name: s.name }, windows: pairs(s.windows) } });
-  const inside = (df?.mode ?? "inside") === "inside";
-  const shared = list.filter((s) => s.shared), mine = list.filter((s) => !s.shared);
+  const traded = base ? phaseWindows(base.windows, phase) : df.windows.map(([from, to]) => ({ from, to }));
   return <div className="lab-datefilter" data-lab-date-filter>
-    <p className="cap">Trade only during chosen date windows (for example the Base 1 / Base 2 bull periods), or only outside them.</p>
-    <div className="lab-row">
-      <label className="dfield">Date filter
-        <select aria-label="Date filter set" value={df?.set?.id !== undefined ? String(df.set.id) : ""} onChange={(e) => pick(e.target.value)}>
-          <option value="">No date filter (trade on every date)</option>
-          {df?.set?.id !== undefined && !chosen && <option value={String(df.set.id)}>{df.set.name ?? "Saved windows"} (set not found)</option>}
-          {shared.length > 0 && <optgroup label="Shared with everyone">{shared.map((s) => <option key={s.id} value={String(s.id)}>{s.name}</option>)}</optgroup>}
-          {mine.length > 0 && <optgroup label="My date filters">{mine.map((s) => <option key={s.id} value={String(s.id)}>{s.name}</option>)}</optgroup>}
-        </select>
-      </label>
-      {df && <label className="lab-check"><input type="checkbox" aria-label="Date filter on" checked={!df.off} onChange={(e) => set({ off: e.target.checked ? undefined : true })} />On</label>}
-      <button type="button" className="dbtn sm" aria-expanded={managing} onClick={() => setManaging(!managing)} data-lab-date-manage>
-        {managing ? "Close upload" : "Upload or manage dates…"}</button>
+    <div className="lab-param-row"><span className="lab-param-k">Dates</span><span className="lab-param-v">
+      <Segmented label="Dates" value={base?.key ?? "?"} options={[...bases.map((b) => ({ value: b.key, label: b.name })), ...(base ? [] : [{ value: "?", label: df.set?.name ?? "Saved dates" }])]}
+        onChange={(k) => { const b = bases.find((x) => x.key === k); if (b) use(b, phase); }} />
+    </span></div>
+    <div className="lab-param-row"><span className="lab-param-k">Trade in</span><span className="lab-param-v">
+      <Segmented label="Trade in" value={phase} options={PHASES.map((p) => ({ value: p, label: p }))} onChange={(p) => base && use(base, p as Phase)} />
+    </span></div>
+    {/* an open trade always closes when its period ends (the AFLs' forced exit); the box shows only for a strategy that turned it off */}
+    {df.exit_at_change === false && <label className="lab-check"><input type="checkbox" checked={false} onChange={() => { const { exit_at_change: _, ...rest } = df; onChange({ ...spec, date_filter: rest }); }} />
+      Close an open trade when the period ends</label>}
+    <details className="lab-datefilter-dates"><summary>See the {traded.length} {phase.toLowerCase()} periods</summary><WindowTable windows={traded} /></details>
+    <OwnDates sets={sets} onUse={(b) => { setOwn(b); use(b, b.windows.some((w) => w.label === "Bull") || !b.windows.some((w) => w.label === "Bear") ? "Bull" : "Bear"); }} />
+    {spec.portfolio && !df.off && <p className="rnote" role="note">Dates work on a single instrument only; turn them off for a portfolio.</p>}
+  </div>;
+}
+
+/** Every period on one line through time: bull green, bear red; the traded ones solid, the rest faded. No motion: the filter
+ *  is switched often, the highlight just changes. */
+export function DateStrip({ windows, active }: { windows: readonly DateWindow[]; active?: Phase }) {
+  if (!windows.length) return null;
+  const t = (iso: string) => Date.parse(iso), lo = Math.min(...windows.map((w) => t(w.from))), hi = Math.max(...windows.map((w) => t(w.to))), width = hi - lo || 1;
+  const count = (p: Phase) => windows.filter((w) => w.label === p).length, year = (ms: number) => new Date(ms).getUTCFullYear();
+  return <div className="lab-datestrip" data-lab-date-strip>
+    <div className="lab-datestrip-bar" role="img" aria-label={`${count("Bull")} bull and ${count("Bear")} bear periods, ${span(windows)}`}>
+      {windows.map((w, i) => <span key={i} className={`lab-datestrip-w ${w.label === "Bear" ? "bear" : "bull"}`} data-on={!active || w.label === active || undefined}
+        style={{ left: `${((t(w.from) - lo) / width) * 100}%`, width: `${Math.max(0.4, ((t(w.to) - t(w.from)) / width) * 100)}%` }} title={`${w.label ?? "Period"} · ${dmy(w.from)} to ${dmy(w.to)}`} />)}
     </div>
-    {sets.error !== undefined && <p className="rnote" role="alert">Could not load the date filters: {message(sets.error)}</p>}
-    {df && <>
-      <div className="lab-row">
-        <Segmented label="Date filter mode" value={inside ? "inside" : "outside"} options={[{ value: "inside", label: "Trade only inside the windows" }, { value: "outside", label: "Trade only outside the windows" }]}
-          onChange={(m) => set({ mode: m === "outside" ? "outside" : undefined })} />
-        <label className="lab-check"><input type="checkbox" checked={df.exit_at_change !== false} onChange={(e) => set({ exit_at_change: e.target.checked ? undefined : false })} />
-          {inside ? "Close an open trade when a window ends" : "Close an open trade when a window starts"}</label>
-      </div>
-      <details className="lab-datefilter-dates"><summary>{df.set?.name ?? "Windows"}: {range(df.windows.map(([from, to]) => ({ from, to })))}</summary>
-        <WindowTable windows={chosen?.windows ?? df.windows.map(([from, to]) => ({ from, to }))} />
-      </details>
-      {spec.portfolio && !df.off && <p className="rnote" role="note">A date filter works on a single instrument only; switch it off for a portfolio.</p>}
-    </>}
-    {managing && <DateSetManager sets={sets} onSaved={apply} onDeleted={(id) => { if (df?.set?.id === id) pick(""); }} />}
+    <div className="lab-datestrip-axis">
+      <span>{year(lo)}</span>
+      <span className="lab-datestrip-key">{PHASES.filter(count).map((p) => <span key={p}><i className={p.toLowerCase()} />{p} · {count(p)}</span>)}</span>
+      <span>{year(hi)}</span>
+    </div>
   </div>;
 }
 
 function WindowTable({ windows }: { windows: readonly DateWindow[] }) {
   return <div className="lab-datefilter-table"><table className="tbl">
-    <thead><tr><th>#</th><th>Start</th><th title="The first day outside the window: no entry on it, and a position closes there">Exit date</th><th>Name</th></tr></thead>
-    <tbody>{windows.map((w, i) => <tr key={i}><td>{i + 1}</td><td>{dayFirst(w.from)}</td><td>{dayFirst(w.to)}</td><td>{w.label ?? ""}</td></tr>)}</tbody>
+    <thead><tr><th>#</th><th>Start</th><th title="The first day outside the period: no entry on it, and a position closes there">Exit date</th></tr></thead>
+    <tbody>{windows.map((w, i) => <tr key={i}><td>{i + 1}</td><td>{dmy(w.from)}</td><td>{dmy(w.to)}</td></tr>)}</tbody>
   </table></div>;
 }
 
-const EXAMPLE = "Start date, Exit date, Name\n01-01-2008, 31-01-2008, Crash\n21-11-2008, 31-12-2010, Recovery";
+const EXAMPLE = "21/11/2008  31/12/2010\n2011-09-26, 2011-11-25\n15 Jun 2012 – 01 Mar 2013";
 
-/** Upload (file or paste), preview, save as new or replace an existing set's dates, delete. */
-function DateSetManager({ sets, onSaved, onDeleted }: { sets: DateSetsState; onSaved(s: DateSet): void; onDeleted(id: number): void }) {
+/** Your own dates: a CSV / Excel file or pasted text, any date format (read day first). Used for this strategy at once, and
+ *  saved for reuse when the account can save. */
+function OwnDates({ sets, onUse }: { sets: DateSetsState; onUse(b: Base): void }) {
   const api = sets.api ?? defaultApi;
-  const [form, setForm] = useState<"table" | "lists">("table");
-  const [name, setName] = useState(""), [text, setText] = useState(""), [starts, setStarts] = useState(""), [ends, setEnds] = useState("");
-  const [share, setShare] = useState(false), [editing, setEditing] = useState<DateSet | null>(null);
-  const [busy, setBusy] = useState(false), [error, setError] = useState(""), [done, setDone] = useState(""), [deleting, setDeleting] = useState<number | null>(null);
-  const empty = form === "table" ? !text.trim() : !starts.trim() && !ends.trim();
-  const parsed: Parsed | null = empty ? null : form === "table" ? parseDateTable(text) : parseDateLists(starts, ends);
-  const ok = !!parsed && !parsed.errors.length && !!name.trim() && name.trim().length <= 60;
+  const [text, setText] = useState(""), [tag, setTag] = useState<Phase>("Bull"), [fromFile, setFromFile] = useState<{ name: string; parsed: Parsed } | null>(null);
+  const [name, setName] = useState(""), [busy, setBusy] = useState(false), [note, setNote] = useState(""), [error, setError] = useState("");
+  const parsed = fromFile?.parsed ?? (text.trim() ? parseDateTable(text, tag) : null);
   const file = async (f: File | undefined) => {
     if (!f) return;
-    if (f.size > 200_000) { setError("That file is too large; a date list is only a few kilobytes."); return; }
-    setForm("table"); setText(await f.text()); setError("");
-    if (!name.trim()) setName(f.name.replace(/\.[^.]+$/, "").slice(0, 60));
-  };
-  const save = async () => {
-    if (!ok || !parsed) return;
-    setBusy(true); setError(""); setDone("");
+    setError(""); setNote("");
+    if (/\.xls$/i.test(f.name)) { setError("Old .xls files cannot be read: save it as .xlsx or CSV and choose it again."); return; }
     try {
-      const draft = { name: name.trim(), windows: parsed.windows };
-      const saved = editing ? await api.update(editing.id, editing.version, draft) : await api.create({ ...draft, ...(share ? { shared: true } : {}) });
-      await sets.reload();
-      onSaved(saved);
-      setDone(`Saved “${saved.name}” (${range(saved.windows)}) and chose it for this strategy.`);
-      setEditing(null); setText(""); setStarts(""); setEnds(""); setName(""); setShare(false);
-    } catch (e) { setError(message(e)); } finally { setBusy(false); }
+      setFromFile({ name: f.name, parsed: /\.xlsx$/i.test(f.name) ? parseSheets(await readXlsx(await f.arrayBuffer())) : parseDateTable(await f.text(), tag) });
+      if (!name.trim()) setName(f.name.replace(/\.[^.]+$/, "").slice(0, 60));
+    } catch (e) { setError(message(e)); }
   };
-  const remove = async (s: DateSet) => {
-    setBusy(true); setError(""); setDone("");
-    try { await api.remove(s.id, s.version); await sets.reload(); onDeleted(s.id); setDone(`Deleted “${s.name}”.`); if (editing?.id === s.id) setEditing(null); }
-    catch (e) { setError(message(e)); } finally { setBusy(false); setDeleting(null); }
+  const use = async () => {
+    if (!parsed || parsed.errors.length) return;
+    const label = name.trim() || "My dates", windows = parsed.windows;
+    setBusy(true); setError(""); setNote("");
+    try {
+      const saved = sets.canSave ? await api.create({ name: label, windows }) : null;
+      if (saved) { await sets.reload(); onUse({ key: `set-${saved.id}`, name: saved.name, id: saved.id, windows: saved.windows }); setNote(`Saved “${saved.name}”: pick it any time under Dates.`); }
+      else onUse({ key: `own-${label}`, name: label, windows });
+    } catch (e) { onUse({ key: `own-${label}`, name: label, windows }); setNote(`Used for this strategy; not saved for later (${message(e)})`); }
+    finally { setBusy(false); setText(""); setFromFile(null); }
   };
-  const edit = (s: DateSet) => {
-    setEditing(s); setName(s.name); setForm("table"); setDone(""); setError("");
-    setText(["Start date, Exit date, Name", ...s.windows.map((w) => [dayFirst(w.from), dayFirst(w.to), w.label ?? ""].filter(Boolean).join(", "))].join("\n"));
-  };
-  const editable = (sets.list ?? []).filter((s) => s.editable);
-  return <section className="lab-datesets" aria-label="Upload date filters" data-lab-date-sets>
-    {!sets.canSave ? <p className="cap">Your account can use the shared date filters but cannot upload new ones.</p> : <>
-      <h4>{editing ? `Replace the dates in “${editing.name}”` : "Upload a new date filter"}</h4>
-      <ol className="cap lab-datesets-steps">
-        <li>Give it a name, for example <i>Base 2 bull periods</i>.</li>
-        <li>Choose a CSV or text file, or paste the dates: one window per line, <b>start date, exit date</b> and an optional name. The exit date is the first day <i>outside</i> the window, as in AmiBroker end-date lists: nothing is bought on it and an open trade closes there. Dates as dd-mm-yyyy (yyyy-mm-dd also works). From Excel, copy the two date columns and paste them here.</li>
-        <li>Check the preview, then save. Up to {MAX_WINDOWS} windows.</li>
-      </ol>
-      <div className="lab-row">
-        <label className="dfield">Name<input aria-label="Date filter name" maxLength={60} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Base 2 bull periods" /></label>
-        <Segmented label="How the dates are written" value={form} options={[{ value: "table", label: "Table (start, exit date per line)" }, { value: "lists", label: "AmiBroker start / end lists" }]} onChange={(v) => setForm(v === "lists" ? "lists" : "table")} />
-        <label className="dbtn sm lab-datesets-file">Choose file…<input type="file" accept=".csv,.txt,.tsv,text/csv,text/plain" aria-label="Date filter file" onChange={(e) => { void file(e.target.files?.[0]); e.target.value = ""; }} /></label>
-      </div>
-      {form === "table"
-        ? <textarea aria-label="Date windows" className="lab-datesets-text" rows={7} value={text} placeholder={EXAMPLE} onChange={(e) => setText(e.target.value)} />
-        : <div className="lab-datesets-lists">
-            <label className="dfield">Start dates<textarea aria-label="Start dates" rows={4} value={starts} placeholder={'"01-01-2008, 21-11-2008"'} onChange={(e) => setStarts(e.target.value)} /></label>
-            <label className="dfield">Exit (end) dates<textarea aria-label="End dates" rows={4} value={ends} placeholder={'"31-01-2008, 31-12-2010"'} onChange={(e) => setEnds(e.target.value)} /></label>
-          </div>}
-      {parsed && (parsed.errors.length
-        ? <ul className="rnote lab-datesets-errors" role="alert">{parsed.errors.slice(0, 8).map((e) => <li key={e}>{e}</li>)}{parsed.errors.length > 8 && <li>…and {parsed.errors.length - 8} more.</li>}</ul>
-        : <div className="lab-datesets-preview" data-lab-date-preview><p className="cap">Preview: {range(parsed.windows)}</p><WindowTable windows={parsed.windows} /></div>)}
-      <div className="lab-row">
-        {sets.canShare && !editing && <label className="lab-check"><input type="checkbox" checked={share} onChange={(e) => setShare(e.target.checked)} />Share with everyone (an official set; only admins can change it)</label>}
-        <button type="button" className="dbtn primary" disabled={!ok || busy} onClick={() => void save()} data-lab-date-save>
-          {busy ? "Saving…" : editing ? "Save new dates" : "Save date filter"}</button>
-        {editing && <button type="button" className="dbtn" onClick={() => { setEditing(null); setText(""); setName(""); }}>Cancel</button>}
-        {!name.trim() && parsed && !parsed.errors.length && <span className="cap">Add a name to save.</span>}
-      </div>
-    </>}
+  return <details className="lab-owndates" data-lab-own-dates>
+    <summary>Use my own dates</summary>
+    <p className="cap">Any date format, read as day / month / year. One period per line: start date and exit date. A line or Excel sheet named bull or bear is tagged so.</p>
+    <div className="lab-row">
+      <label className="dbtn sm lab-datesets-file">Upload CSV or Excel…<input type="file" accept=".xlsx,.csv,.txt,.tsv,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" aria-label="Date filter file" onChange={(e) => { void file(e.target.files?.[0]); e.target.value = ""; }} /></label>
+      {fromFile && <span className="cap">{fromFile.name} <button type="button" className="dbtn sm ghost" onClick={() => setFromFile(null)}>×</button></span>}
+    </div>
+    {!fromFile && <textarea aria-label="Date windows" className="lab-datesets-text" rows={4} value={text} placeholder={EXAMPLE} onChange={(e) => setText(e.target.value)} />}
+    {!fromFile && <div className="lab-row"><span className="cap">Pasted periods are</span>
+      <Segmented label="Pasted periods are" value={tag} options={PHASES.map((p) => ({ value: p, label: p }))} onChange={(p) => setTag(p as Phase)} /></div>}
+    {parsed && (parsed.errors.length
+      ? <ul className="rnote lab-datesets-errors" role="alert">{parsed.errors.slice(0, 6).map((e) => <li key={e}>{e}</li>)}{parsed.errors.length > 6 && <li>…and {parsed.errors.length - 6} more.</li>}</ul>
+      : <div data-lab-date-preview><p className="cap">{parsed.windows.length} periods, {span(parsed.windows)}</p><DateStrip windows={withBear(parsed.windows)} /></div>)}
+    <div className="lab-row">
+      <label className="dfield">Name<input aria-label="Date filter name" maxLength={60} value={name} placeholder="My dates" onChange={(e) => setName(e.target.value)} /></label>
+      <button type="button" className="dbtn primary" disabled={!parsed || !!parsed.errors.length || busy} onClick={() => void use()} data-lab-date-save>{busy ? "Saving…" : "Use these dates"}</button>
+    </div>
     {error && <p className="rnote" role="alert">{error}</p>}
-    {done && <p className="cap" role="status">{done}</p>}
-    {editable.length > 0 && <>
-      <h4>Date filters you can change</h4>
-      <ul className="lab-datesets-list">{editable.map((s) => <li key={s.id}>
-        <span><b>{s.name}</b>{s.shared && <span className="tag">shared</span>} <small>{range(s.windows)}</small></span>
-        <button type="button" className="dbtn sm ghost" disabled={busy} onClick={() => edit(s)}>Re-upload dates</button>
-        {deleting === s.id
-          ? <><button type="button" className="dbtn sm" disabled={busy} onClick={() => void remove(s)}>Yes, delete</button><button type="button" className="dbtn sm ghost" onClick={() => setDeleting(null)}>Keep</button></>
-          : <button type="button" className="dbtn sm ghost" disabled={busy} onClick={() => setDeleting(s.id)} aria-label={`Delete ${s.name}`}>Delete</button>}
-      </li>)}</ul>
-    </>}
-  </section>;
+    {note && <p className="cap" role="status">{note}</p>}
+  </details>;
 }

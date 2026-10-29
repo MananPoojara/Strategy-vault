@@ -1,1 +1,8 @@
 .lab-portfolio>details{margin-top:10px}.lab-portfolio summary{cursor:pointer;color:var(--ink2);font-size:13px}.lab-portfolio details>.lab-row{margin-top:10px;flex-wrap:wrap;gap:8px}.lab-portfolio select[multiple]{min-height:100px;max-width:300px}.lab-portfolio .lab-row{align-items:flex-start}.lab-portfolio-result .tblwrap{margin-top:12px}.lab-portfolio-series{display:grid;grid-template-columns:3fr 2fr;gap:14px}@media(max-width:850px){.lab-portfolio-series{grid-template-columns:1fr}}
+
+/* Finish for Settings › Portfolio tab: the member list matches the other fields; the summary reads as a link-like fold. */
+.lab-more-settings .lab-portfolio select[multiple] { padding: 4px; border: 1px solid var(--steel); border-radius: var(--r-field); background: var(--card); color: var(--ink); font: 500 13px var(--font); }
+.lab-more-settings .lab-portfolio select[multiple]:focus-visible { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent); }
+.lab-more-settings .lab-portfolio summary { font-weight: 600; }
+.lab-more-settings .lab-portfolio summary:hover { color: var(--ink); }
+.lab-more-settings .lab-portfolio .rnote { max-width: 78ch; font-size: 12.5px; line-height: 1.5; }

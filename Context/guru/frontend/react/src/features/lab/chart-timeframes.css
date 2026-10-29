@@ -39,3 +39,39 @@
   .lab-intervals-flat > button, .lab-interval-menu summary { min-width:30px; padding-inline:6px; }
   .lab-interval-list { left:auto; right:0; }
 }
+
+/* ---- Finish for the chart top bar and symbol search: the symbol is the anchor, the chosen interval tinted (distinct from hover),
+   field-radius controls, the house focus ring. Press feedback only; no entrance motion on menus used all day. */
+.lab-toolbar-chart .lab-symbol-button { padding: 5px 12px 5px 10px; border-radius: var(--r-field); font: 700 14px var(--font); letter-spacing: .01em; transition: background-color 120ms ease, transform 160ms cubic-bezier(0.23, 1, 0.32, 1); }
+.lab-toolbar-chart .lab-symbol-button svg { flex: none; color: var(--ink3); }
+.lab-toolbar-chart .lab-symbol-button:hover svg { color: var(--ink); }
+.lab-toolbar-chart :is(.lab-intervals-flat > button, .lab-interval-menu summary) { border-radius: var(--r-field); font-weight: 600; font-size: 12.5px; transition: background-color 120ms ease, color 120ms ease, transform 160ms cubic-bezier(0.23, 1, 0.32, 1); }
+.lab-toolbar-chart :is(.lab-symbol-button, .lab-intervals-flat > button, .lab-interval-menu summary):hover { background: var(--hover); color: var(--ink); }
+.lab-toolbar-chart :is(.lab-symbol-button, .lab-intervals-flat > button, .lab-interval-menu summary):active { transform: scale(.97); }
+.lab-toolbar-chart .lab-interval-menu[open] > summary { background: var(--hover); color: var(--ink); }
+.lab-toolbar-chart .lab-intervals-flat > button[aria-pressed=true] { color: var(--blue); background: color-mix(in srgb, var(--blue) 12%, var(--card)); }
+.lab-toolbar-chart :is(button, summary):focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent), inset 0 0 0 1px var(--blue); }
+/* the interval menu: a card with a tracked section label */
+.lab-toolbar-chart .lab-interval-list { border-color: var(--rule); border-radius: var(--r-box); box-shadow: 0 2px 6px rgb(0 0 0 / .06), 0 14px 32px -12px rgb(0 0 0 / .28); }
+.lab-toolbar-chart .lab-interval-list > span { padding: 6px 10px 4px; font: 700 11px var(--font); letter-spacing: .12em; }
+.lab-toolbar-chart .lab-interval-list > button { padding: 8px 10px; border-radius: var(--r-field); font: 500 13px var(--font); }
+.lab-toolbar-chart .lab-interval-list > button small { font: 500 11px 'Inter Numbers', var(--font); }
+.lab-toolbar-chart .lab-interval-list > button:hover { background: var(--hover); }
+.lab-toolbar-chart .lab-interval-list > button[aria-checked=true] { color: var(--blue); background: color-mix(in srgb, var(--blue) 12%, var(--card)); font-weight: 600; }
+.lab-toolbar-chart .lab-interval-list > button[aria-checked=true] small { color: inherit; }
+/* symbol search window: field states as in the rule cards, results as rounded rows, the current symbol marked */
+.lab-symbol-search { gap: 10px; padding: 14px 16px; }
+.lab-symbol-search input { border-radius: var(--r-field); transition: border-color 150ms ease, box-shadow 150ms ease; }
+.lab-symbol-search input:hover { border-color: var(--ink3); }
+.lab-symbol-search input:focus-visible { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent); }
+.lab-symbol-results { padding: 6px; }
+.lab-symbol-results > button { padding: 9px 10px; border-radius: var(--r-field); }
+.lab-symbol-results > button b { font: 600 13px var(--font); color: var(--ink); }
+.lab-symbol-results > button small { font-size: 11.5px; }
+.lab-symbol-results > button:hover:not(:disabled) { background: var(--hover); }
+.lab-symbol-results > button[aria-pressed=true] { background: color-mix(in srgb, var(--blue) 10%, var(--card)); box-shadow: inset 3px 0 var(--blue); }
+.lab-symbol-results > button[aria-pressed=true] b { color: var(--blue); }
+.lab-symbol-results > button:disabled b { color: inherit; }
+.lab-symbol-results > button:focus-visible { outline: none; box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--blue) 45%, transparent); }
+.lab-symbol-results > .empty { margin: 6px 10px; }
+@media (max-width: 600px) { .lab-toolbar-chart .lab-symbol-button { padding-inline: 6px; font-size: 12.5px; } }

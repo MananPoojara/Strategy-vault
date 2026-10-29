@@ -2,6 +2,9 @@ import { COPY } from "./labels";
 import { formulaLabel, isFormulaOperand } from "./formula";
 import type { Catalogue, Cond, Dist, IndicatorParam, Operand, OptimizeDim, RuleNode, SeriesOperand, Spec, ValueOperand } from "./types";
 
+/** A calculation choice rather than a number: a variant, or a small integer list such as "Mode (0 TradingView, 1 AmiBroker)". */
+export const isChoice = (p: IndicatorParam) => p.key === "variant" || (p.integer && p.max - p.min <= 10 && /\(0 .+, 1 .+\)\s*$/.test(p.label));
+
 export type Side = "entry" | "exit";
 /** Operands that are not catalogue series. Phase 7 adds entries here (or the catalogue starts listing them). */
 export const SPECIAL_OPERANDS: { s: string; label: string; sides: Side[] }[] = [{ s: "bars_held", label: "Bars held", sides: ["exit"] }];
@@ -23,9 +26,9 @@ export const defaultSpec = (): Spec => ({
   entry: { all: [{ lhs: { s: "close" }, op: ">", rhs: { s: "ema", p: { length: 50 } } }] },
   exit: { any: [{ lhs: { s: "bars_held" }, op: ">=", rhs: { value: 5 } }] },
 });
-/** A new strategy on the page: no buy rule until the user picks one (a hidden example row once made every RSI idea
- *  0 trades), no sell rule (the test uses the default exit, defaults.ts), trades at the signal bar's close. */
-export const starterSpec = (): Spec => ({ v: 1, entry: { all: [] }, exit: { any: [] }, execution: { fill: "close" } });
+/** A new strategy on the page: one indicator buy rule shown in the Entry card, ready to change (RSI 14 crosses above 30),
+ *  no sell rule (the test uses the default exit, defaults.ts), trades at the signal bar's close. */
+export const starterSpec = (): Spec => ({ v: 1, entry: { all: [{ lhs: { s: "rsi", p: { length: 14 } }, op: "crosses_above", rhs: { value: 30 } }] }, exit: { any: [] }, execution: { fill: "close" } });
 
 export const isValue = (o: unknown): o is ValueOperand =>
   typeof o === "object" && o !== null && Object.keys(o).length === 1 && typeof (o as ValueOperand).value === "number";
@@ -191,7 +194,7 @@ export function specProblems(spec: Spec, cat: Catalogue): string[] {
     const filterExit = side.entry.all.some((n) => { const x = n as Record<string, unknown>; return x.filter_exit === true && x.off !== true; }); // rules.rs filter_exits
     const priceExit = ["stop_loss", "target", "trailing", "breakeven", "dual_atr", "dual_line"].some((k) => side.exit[k] !== undefined) || !!side.exit.take_profits?.length || dated || filterExit;
     if (spec.portfolio?.mode!=="rotation" && !alwaysIn && !side.exit.any.length && !priceExit)
-      out.push(`${prefix}exit.any needs at least one condition (or a stop_loss, target, trailing, breakeven or take-profit exit)`);
+      out.push(`${prefix ? "Short side: p" : "P"}ick an exit in the Exit card.`);
     if (side.entry.all.length + side.exit.any.length > cat.max_conditions)
       out.push(`${title}${title ? "use" : "Use"} at most ${cat.max_conditions} conditions in total.`);
   }
@@ -275,7 +278,8 @@ export function operandLabel(o: Operand, cat: Catalogue): string {
   const special = SPECIAL_OPERANDS.find((x) => x.s === o.s);
   if (special) return special.label;
   const ind = cat.indicators.find((x) => x.id === o.s);
-  const params = ind && o.p ? `(${ind.params.filter((p) => o.p![p.key] !== undefined).map((p) => o.p![p.key]).join(", ")})` : "";
+  // the numbers only: a calculation choice (variant, Supertrend mode / Avg Val) is not part of the name ("Supertrend(5, 1)")
+  const params = ind && o.p ? `(${ind.params.filter((p) => o.p![p.key] !== undefined && !isChoice(p)).map((p) => o.p![p.key]).join(", ")})` : "";
   return [`${ind?.name ?? o.s}${params}${o.out ? `.${o.out}` : ""}`, o.tf && o.tf !== "D" ? o.tf : "",
     o.offset ? `${o.offset} bar${o.offset === 1 ? "" : "s"} ago` : ""].filter(Boolean).join(" · ");
 }
@@ -308,7 +312,8 @@ function ownPhrase(o: Operand, base: string, cat: Catalogue): Phrase {
     ? [" ", { path: `${base}.offset`, value: o.offset, label: `${plural(unit, 2)} ago`, min: 1, step: 1, integer: true }, ` ${plural(unit, o.offset)} ago`] : [];
   if (cat.price_sources.includes(o.s)) return [`the ${PERIOD[tf] ?? ""}${o.s}`, ...ago];
   const ind = cat.indicators.find((x) => x.id === o.s);
-  const params = ind ? ind.params.filter((p) => !o.p || o.p[p.key] !== undefined) : Object.keys(o.p ?? {}).map((key) => ({ key, label: key }));
+  // numbers only: a calculation choice (variant, Supertrend mode / Avg Val) is not part of the sentence ("Supertrend(5, 1)")
+  const params = ind ? ind.params.filter((p) => (!o.p || o.p[p.key] !== undefined) && !isChoice(p)) : Object.keys(o.p ?? {}).map((key) => ({ key, label: key }));
   const slots: NumSlot[] = params.map((p) => {
     const meta = p as Partial<IndicatorParam>;
     return { path: `${base}.p.${p.key}`, value: o.p?.[p.key] ?? meta.default ?? 0, label: `${ind?.name ?? o.s} ${p.label}`,

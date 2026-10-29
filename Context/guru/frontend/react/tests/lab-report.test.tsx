@@ -18,7 +18,7 @@ it("buckets trade returns by 5 % including negatives and the edges", () => {
 
 it("one AmiBroker table: All | Long | Short (always), no Buy&Hold column without buy-and-hold figures, capital block first, system rows last, the declared notes", async () => {
   const host = await mount(<ReportPanel report={report} trades={[trade(0.1, -0.02, 0.12), trade(-0.05, -0.07, 0.01)]} />);
-  const head = [...host.querySelectorAll("[data-lab-report-stats] thead th")].map((th) => th.textContent);
+  const head = [...host.querySelectorAll("[data-lab-report-stats] table:first-of-type thead th")].map((th) => th.textContent);
   expect(head).toEqual(["Statistics", "All trades", "Long trades", "Short trades"]);
   const rows = [...host.querySelectorAll("[data-lab-report-stats] tbody tr")].map((r) => [...r.children].map((c) => c.textContent));
   expect(rows.slice(0, 3)).toEqual([["Initial capital", "1.000", "1.000", "1.000"], ["Ending capital", "1.120", "—", "—"], ["Net Profit", "0.120", "—", "—"]]);
@@ -66,7 +66,7 @@ it("is labelled simulated · not a book method, Buy&Hold beside the system rows,
   expect(rows.find((r) => r[0] === "Max. trade % drawdown")!.at(-1)).toBe("—");
   expect(rows.find((r) => r[0] === "Total Profit (× initial equity)")![1]).toBe("0.200");
   const settings = host.querySelector("[data-lab-report-settings]")!.textContent!;
-  for (const text of ["Range2020-01-01 → 2021-01-01", "PeriodicityDaily", "Initial equity100,000", "Buy priceClose, delay 0 bars", "Sell priceOpen, delay 1 bar", "Stop-loss 2%", "Trailing stop 40% of profit", "N-bar stop 5 bars", "3 bars after a stop-loss", "round lot 10"]) expect(settings).toContain(text);
+  for (const text of ["Range01-01-2020 → 01-01-2021", "PeriodicityDaily", "Initial equity100,000", "Buy priceClose, delay 0 bars", "Sell priceOpen, delay 1 bar", "Stop-loss 2%", "Trailing stop 40% of profit", "N-bar stop 5 bars", "3 bars after a stop-loss", "round lot 10"]) expect(settings).toContain(text);
   expect(settingsLines(defaultSpec())).toEqual([["Periodicity", "Daily"], ["Positions", "Long"], ["Entry price", "Next open"], ["Exit price", "Next open"], ["Orders and stops", "N-bar stop 5 bars"]]);
 });
 
@@ -90,7 +90,7 @@ it("Buy&Hold per-side column: report.buyhold fills the trade rows, null stays a 
   const old = await mount(<ReportPanel report={{ ...report, buy_hold: { net_profit: 0.3 } }} trades={[]} />);
   expect(rowsOf(old).find((r) => r[0] === "All trades")).toEqual(["All trades", "2", "2", "0", "—"]);
   const nullSide = await mount(<ReportPanel report={{ ...report, buyhold: null }} trades={[]} />);
-  expect(nullSide.querySelectorAll("[data-lab-report-stats] thead th")).toHaveLength(4); // no buy-and-hold figures: no column
+  expect(nullSide.querySelectorAll("[data-lab-report-stats] table:first-of-type thead th")).toHaveLength(4); // no buy-and-hold figures: no column
 });
 
 it("Formula page renders the rules as labelled AFL-like text with stops and trade settings, and copies it", async () => {
@@ -122,18 +122,10 @@ it("Formula page renders the rules as labelled AFL-like text with stops and trad
   const set = formulaText({ ...spec, execution: { exit_at_stop: { stop_loss: 0, bars: 2 }, nbar_has_priority: true, activate_stops_immediately: false, allow_same_bar_exit: false, tick_size: 0.05, capital: 1e5, limits: { margin_pct: 50 } } } as never).split("\n");
   expect(set).toEqual(expect.arrayContaining(["ApplyStop(stopTypeLoss, stopModePercent, 2, 0); // long side", "ApplyStop(stopTypeTrailing, stopModeRisk, 40); // long side",
     "ApplyStop(stopTypeNBar, stopModeBars, 5, 2); // long side // N-bar stop has priority", 'SetOption("ActivateStopsImmediately", False);', 'SetOption("AllowSameBarExit", False);', 'SetOption("AccountMargin", 50);', "TickSize = 0.05;"]));
-  const writeText = vi.fn(() => Promise.resolve());
-  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
   const host = await mount(<ReportPanel report={report} trades={[]} spec={spec as never} />);
-  expect(host.querySelector("[data-lab-report-formula]")).toBeNull();
-  await act(async () => pageButton(host, "Formula").click());
-  expect(host.querySelector("[data-lab-report-stats]")).toBeNull();
-  expect(host.querySelector("[data-lab-report-formula] pre")!.textContent).toBe(text);
-  expect(host.querySelector("[data-lab-report-formula] .rnote")!.textContent).toContain("not real AFL");
-  await act(async () => pageButton(host, "Copy formula").click());
-  expect(writeText).toHaveBeenCalledWith(text);
-  expect(pageButton(host, "Copied")).toBeTruthy();
-  await act(async () => pageButton(host, "Statistics").click());
+  // Stats shows the statistics only: no Formula or Symbols page
+  expect(host.querySelector("[aria-label='Report page']")).toBeNull();
+  expect(host.querySelector("[data-lab-report-formula], [data-lab-report-symbols]")).toBeNull();
   expect(host.querySelector("[data-lab-report-stats]")).not.toBeNull();
 });
 
@@ -146,10 +138,6 @@ it("Symbols page: one row for a single instrument, per-symbol rows for a portfol
     ({ ticker, entry, exit, entry_px, exit_px, qty, dir, open, costs: 10, ret: ((exit_px - entry_px) / entry_px) * dir }) as unknown as Trade;
   const port = [pt("TCS", "2020-02-01", "2020-03-01", 100, 110, 10, 1), pt("INFY", "2020-01-05", "2020-01-20", 50, 45, 20, 1), pt("TCS", "2020-04-01", "2020-05-01", 100, 90, 5, -1), pt("TCS", "2020-06-01", "", 100, 120, 5, 1, true)];
   expect(symbolRows(port, run)).toEqual([["INFY", "2020-01-05", "2020-01-20", "—", "1", "-110.00", "0.0%"], ["TCS", "2020-02-01", "2020-05-01", "—", "3", "130.00", "100.0%"]]);
-  const host = await mount(<ReportPanel report={report} trades={ts} run={run} />);
-  expect([...host.querySelectorAll("[data-lab-report-page] button, [aria-label='Report page'] button")].map((b) => b.textContent)).toEqual(["Statistics", "Symbols"]); // no Formula without a spec
-  await act(async () => pageButton(host, "Symbols").click());
-  expect([...host.querySelectorAll("[data-lab-report-symbols] tbody td")].map((td) => td.textContent)).toEqual(symbolRows(ts, run)[0]);
 });
 
 it("the formula page writes the Dual ATR exit and since-entry values readably", () => {
@@ -180,4 +168,14 @@ it("settings and formula pages show an active date filter and its window-change 
   expect(text).toContain("Sell = Sell OR NOT DateOK;");
   expect(formulaText({ ...spec, date_filter: { ...spec.date_filter, off: true } })).not.toContain("DateOK");
   expect(settingsLines({ ...spec, date_filter: { ...spec.date_filter, exit_at_change: false } }).find(([k]) => k === "Date filter")?.[1]).not.toContain("closes");
+});
+
+it("Stats colours profit and drawdown figures by sign, as AmiBroker's report does; counts and dashes stay plain", async () => {
+  const host = await mount(<ReportPanel report={{ ...report, system: { ...report.system, max_sys_dd: -0.35, exposure: 0.5 } }} trades={[]} />);
+  const cell = (label: string) => [...host.querySelectorAll("[data-lab-report-stats] tbody tr")].find((r) => r.children[0].textContent === label)!.children[1];
+  expect(cell("Net Profit %").className).toBe("n pos");
+  expect(cell("Max. system % drawdown").className).toBe("n neg");
+  expect(cell("Exposure %").className).toBe("n");
+  expect(cell("Recovery Factor").className).toBe("n"); // "—"
+  expect([...host.querySelectorAll("[data-lab-report-stats] caption")].map((c) => c.textContent)).toEqual(["Returns", "Trades", "Winners", "Losers", "Risk & ratios"]);
 });

@@ -26,10 +26,13 @@ export function tint(color: string, alpha: number) {
 export function createLabChart(el: HTMLElement, height: number, options: Record<string, unknown> = {}, library: LabChartLibrary | undefined = window.LightweightCharts, resizeHeight = false) {
   if (!library) return null;
   const colors = themeColors(el);
+  const type = getComputedStyle(el);
+  const fontFamily = type.fontFamily;
+  const fontSize = Number.parseFloat(type.getPropertyValue("--lab-type-label")) || 14;
   const chart: LabChartApi = library.createChart(el, {
     width: el.clientWidth || 600, height,
     layout: { attributionLogo: false, background: { color: colors.panel }, textColor: colors.ink3,
-      fontFamily: getComputedStyle(document.body).fontFamily, fontSize: 11 },
+      fontFamily, fontSize },
     grid: { vertLines: { visible: false }, horzLines: { color: colors.rule } },
     // minimumWidth: one price-axis width, so stacked panes line up
     rightPriceScale: { borderColor: colors.steel, minimumWidth: 78 }, timeScale: { borderColor: colors.steel, minBarSpacing: 0.05 },
@@ -44,7 +47,10 @@ export function createLabChart(el: HTMLElement, height: number, options: Record<
     if (range) chart.timeScale().setVisibleRange(range);
   });
   observer?.observe(el);
-  return { chart, colors, dispose() { observer?.disconnect(); chart.remove(); } };
+  let disposed = false;
+  // Redraw text once the self-hosted face is ready, including a cold first visit.
+  void document.fonts?.ready?.then(() => { if (!disposed) chart.applyOptions({ layout: { fontFamily, fontSize } }); });
+  return { chart, colors, dispose() { disposed = true; observer?.disconnect(); chart.remove(); } };
 }
 
 function subscribe(onChange: () => void) {

@@ -1,3 +1,5 @@
+import "../features/lab/rhythm.css";
+import "../features/lab/builder-studio.css";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
 import { getAccount } from "../services/api";
 import { vaultStore } from "../state/store";
@@ -25,25 +27,24 @@ import { IndicatorDetail } from "../features/lab/IndicatorDetail";
 import { ChartPopup } from "../features/lab/ChartPopup";
 import { Workbench } from "../features/lab/Workbench";
 import { RuleBuilder, SettingsTabs, type RunSettings } from "../features/lab/RuleBuilder";
-import { StepGuide } from "../features/lab/StepGuide";
 import { DateFilterPanel } from "../features/lab/DateFilterPanel";
 import { withCurrentDateSet } from "../features/lab/date-sets";
 import { RunResults, RunTables } from "../features/lab/RunResults";
 import { NoTradesHelp } from "../features/lab/NoTrades";
 import { SimpleOptimize } from "../features/lab/SimpleOptimize";
-import { DEFAULT_FROM, defaultExitWords, firstRule, loadDefaultExit, storeDefaultExit, withDefaultExit, type DefaultExit } from "../features/lab/defaults";
+import { DEFAULT_FROM, firstRule } from "../features/lab/defaults";
 import { ChartMatch, type ChartPick } from "../features/lab/PlainRules";
 import { ReportPanel } from "../features/lab/Report";
-import { MonteCarloPanel } from "../features/lab/MonteCarlo";
 import { ExplorePanel } from "../features/lab/Explore";
 import { OptimizePanel } from "../features/lab/OptimizePanel";
 import { CustomizePanel } from "../features/lab/CustomizePanel";
 import { SavedStrategies } from "../features/lab/SavedStrategies";
 import { ReviewQueue } from "../features/lab/ReviewQueue";
-import { CompactContext, LabModeContext, ModeSwitch, SimpleSummary, storedMode, storeMode, type LabMode } from "../features/lab/simple";
+import { CompactContext, LabModeContext, ModeSwitch, storedMode, storeMode, type LabMode } from "../features/lab/simple";
 import type {
   Catalogue, DateSet, FormulaInfo, Indicator, InstrumentsResponse, SavedIndicator, LabStrategy, Market, Role, LabRunResult, Spec, TemplateResponse, TemplatesResponse, TickerRow,
 } from "../features/lab/types";
+import "../features/lab/typography.css";
 
 export function IndicatorsPage() {
   return <LabErrorBoundary><IndicatorsLab /></LabErrorBoundary>;
@@ -57,21 +58,9 @@ type LabTab = typeof LAB_TABS[number]["id"];
 
 /** The Strategy & backtest tab as three plain-language steps, each a tab (the chart has its own tab). */
 const STEPS = [
-  { id: "idea", label: "Your idea", hint: "Say when to buy. Selling is already set: the default exit, unless you add your own.", tips: [
-    "No buy rule yet? Click a suggestion (indicators on your chart come first) or an example. You can change every number afterwards.",
-    "Every buy row must be true on the same candle, so each extra row means fewer trades. Remove a row you do not need with ×.",
-    "No sell rule? The test sells at the 1st up close after entry, or at the 4th down close. Change those two numbers in the Sell box, or add your own sell rule.",
-    "“Your strategy in plain words” at the top shows exactly what will be tested, and any setting that can stop a trade." ] },
-  { id: "settings", label: "Settings", hint: "The test period, trading costs and how money is counted.", tips: [
-    "Leave From and To empty to test all the data. Type dates as dd-mm-yyyy, or use the calendar button.",
-    "Fees and slippage are in basis points per side: 10 bps = 0.10% on every buy and every sell.",
-    "“Signal day's close” trades at the close of the candle that gave the signal. “Next day's open” waits for the next candle's open.",
-    "If you are unsure, keep the defaults and go to Results." ] },
-  { id: "results", label: "Results", hint: "How the idea did, compared with simply holding the market.", tips: [
-    "Press “Test this idea” to run the backtest.",
-    "Compare your strategy with buy-and-hold: simply buying once and holding for the whole period.",
-    "Check the list of trades to see each buy and sell date and its result.",
-    "Results are simulated on past data; they are not a promise of future returns." ] },
+  { id: "idea", label: "Your idea" },
+  { id: "settings", label: "Settings" },
+  { id: "results", label: "Results" },
 ] as const;
 type Step = typeof STEPS[number]["id"];
 
@@ -84,9 +73,9 @@ function IndicatorsLab() {
   const [tab, setTab] = useState<LabTab>("chart"); // the chart first; Strategy & backtest opens on Your idea
   const [mode, setModeState] = useState<LabMode>(storedMode);
   const simple = mode === "simple";
-  const tabs = LAB_TABS.filter((t) => !simple || t.id === "chart" || t.id === "strategy" || t.id === "saved"); // Simple hides Optimization and Customize
-  const setMode = (m: LabMode) => { setModeState(m); storeMode(m); if (m === "simple" && (tab === "optimization" || tab === "customize")) setTab("strategy"); };
-  const [details, setDetails] = useState(false); // Simple: the full Results tabs after the summary
+  // Optimization opens from the Optimize button beside Run backtest, not from the tab bar; Simple also hides Customize
+  const tabs = LAB_TABS.filter((t) => t.id !== "optimization" && (!simple || t.id === "chart" || t.id === "strategy" || t.id === "saved"));
+  const setMode = (m: LabMode) => { setModeState(m); storeMode(m); if (m === "simple" && tab === "customize") setTab("strategy"); };
   const [step, setStep] = useState<Step>("idea");
   const stepIndex = STEPS.findIndex((s) => s.id === step);
   const showStrategy = (selector = ".lab-rules") => {
@@ -106,9 +95,6 @@ function IndicatorsLab() {
   const [running, setRunning] = useState(false);
   const [settings, setSettings] = useState<RunSettings>({ from: DEFAULT_FROM, to: "", fees: "", slippage: "" }); // tests start in 2000 unless cleared
   // the exit a test uses when no sell rule is on (defaults.ts): the user's two numbers, kept per browser
-  const [defaultExit, setDefaultExitState] = useState<DefaultExit>(loadDefaultExit);
-  const setDefaultExit = (d: DefaultExit) => { setDefaultExitState(d); storeDefaultExit(d); };
-  const [ranDefault, setRanDefault] = useState(""); // the default exit's words when the shown result used it
   const [reading, setReading] = useState<Indicator | null>(null);
   const [templates, setTemplates] = useState<TemplatesResponse | null>(null);
   const [templatesError, setTemplatesError] = useState<unknown>(null);
@@ -163,9 +149,8 @@ function IndicatorsLab() {
   const allowedTypes = template?.status === "available" ? template.instrument.allowed_types : undefined;
   const loaded = data?.market === market ? data : null;
   const cat = loaded && "cat" in loaded ? loaded.cat : null;
-  /** What a test runs: the edited rules, with the default exit on a side that has no sell rule (an engine without the
-   *  rule tree cannot read since-entry counts, so its strategies keep their own exits). */
-  const runSpec = useMemo(() => cat?.execution ? withDefaultExit(state.spec, defaultExit) : state.spec, [cat, state.spec, defaultExit]);
+  /** What a test runs: the edited rules as they are (the Exit card sets how a trade closes; there is no hidden default exit). */
+  const runSpec = state.spec;
   const options = useMemo(() => {
     if (!loaded || !("cat" in loaded)) return null;
     return loaded.gl ? optionsFromGl(loaded.gl, allowedTypes) : optionsFromTickers(loaded.rows ?? [], allowedTypes, loaded.cat.portfolio?.instruments);
@@ -268,8 +253,7 @@ function IndicatorsLab() {
   const assertRunnable = (spec: Spec) => { const issues = problemsFor(spec); if (issues.length) throw new Error(issues.join("\n")); };
 
   const run = async (current: Spec = state.spec) => {
-    const filled = cat?.execution ? withDefaultExit(current, defaultExit) : current; // no sell rule: the default exit
-    const spec = dateSetList ? withCurrentDateSet(filled, dateSetList) : filled; // a re-uploaded date filter reaches the run
+    const spec = dateSetList ? withCurrentDateSet(current, dateSetList) : current; // a re-uploaded date filter reaches the run
     if (!ticker && !spec.portfolio) return; // no selectable instrument on this market
     const n = ++runSeq.current;
     const sentContext=canonicalJson([market,spec.portfolio??null]);issuedContext.current=sentContext;currentContext.current=sentContext;
@@ -280,7 +264,7 @@ function IndicatorsLab() {
         ticker, from: settings.from || undefined, to: settings.to || undefined, ...runQuery(spec, settings.fees, settings.slippage),
       });
       if (n !== runSeq.current || sentContext!==currentContext.current) return;
-      setResult(r); setRanSpec(spec); setRanOwn(current); setRanDefault(filled !== current ? defaultExitWords(defaultExit, current.direction === "short") : "");
+      setResult(r); setRanSpec(spec); setRanOwn(current);
       dispatch({ type: "ran", key: runKey(spec, savedMarketValue, ticker), combos: 0 });
     } catch (e) {
       if (n === runSeq.current) setRunError(e);
@@ -375,7 +359,6 @@ function IndicatorsLab() {
           {STEPS.map((s, i) => <button key={s.id} type="button" className="lab-step-btn" aria-current={step === s.id ? "step" : undefined} data-lab-step={s.id}
             onClick={() => setStep(s.id)}><span className="lab-step-n">{i + 1}</span>{s.label}</button>)}
         </nav>
-        <StepGuide n={stepIndex + 1} of={STEPS.length} step={STEPS[stepIndex]} />
         <div className="lab-step" hidden={step !== "idea"}>
         <Part>
           <div className="lab-rules-col">
@@ -384,8 +367,7 @@ function IndicatorsLab() {
           {!cat.execution && portfolioPanel}
           <RuleBuilder spec={state.spec} catalogue={cat} instrument={instrument} onChange={(spec) => dispatch({ type: "spec", spec })}
             settings={runSettings} onSettings={changeSettings}
-            problems={problems} running={running} onRun={() => void run()} portfolio={portfolioPanel} part="rules" dates={datesPanel}
-            defaultExit={defaultExit} onDefaultExit={setDefaultExit} chartPicks={chartPicks}
+            problems={problems} running={running} onRun={() => void run()} onOptimize={() => setTab("optimization")} portfolio={portfolioPanel} part="rules" dates={datesPanel}
             chartMatch={<ChartMatch spec={state.spec} catalogue={cat} chips={state.chips} onSpec={(spec) => dispatch({ type: "spec", spec })}
               onChartSet={(key, params) => dispatch({ type: "chip-set", key, params })}
               onChartAdd={(ind, params) => { const key = `c${state.nextChip}`; dispatch({ type: "chip-add", indicator: ind }); dispatch({ type: "chip-set", key, params }); }} />} />
@@ -403,7 +385,7 @@ function IndicatorsLab() {
         <Part>
           <RuleBuilder spec={state.spec} catalogue={cat} instrument={instrument} onChange={(spec) => dispatch({ type: "spec", spec })}
             settings={runSettings} onSettings={changeSettings}
-            problems={problems} running={running} onRun={() => void run()} portfolio={portfolioPanel} part="settings" dates={datesPanel} defaultExit={defaultExit} onDefaultExit={setDefaultExit} />
+            problems={problems} running={running} onRun={() => void run()} portfolio={portfolioPanel} part="settings" dates={datesPanel} />
         </Part>
         </div>
         <div className="lab-step" hidden={step !== "results"} data-lab-step-results>
@@ -411,22 +393,17 @@ function IndicatorsLab() {
         {backtestShown ? <Part>
           {runError ? <ErrorNotice error={runError} market={savedMarketValue} instrumentLabel={option?.instrumentLabel} />
             : !result ? <Loading text="Running backtest…" />
-            : simple && !details && result.kind === "lab_simulation" ? <div className="lab-simple-results" data-lab-simple-results>
-              <SimpleSummary result={result} />
-              <RunResults result={result} market={savedMarketValue} />
-              <button type="button" className="dbtn sm lab-more" data-lab-more onClick={() => setDetails(true)}>More detail ▸ performance report, trades, monthly returns, Monte Carlo</button>
-            </div>
-            : <section className="box lab-results-tabs" data-lab-results-tabs>
-              <h2 className="box-h">Results{simple && result.kind === "lab_simulation" && <button type="button" className="dbtn sm ghost" onClick={() => setDetails(false)}>◂ Back to the summary</button>}</h2>
+            : <section className="box lab-results-tabs" data-lab-results-tabs>{/* Simple and Advanced show the same Results tabs */}
+              <h2 className="box-h">Results</h2>
               {(() => {
                 const tabs: [string, ReactNode][] = result.kind === "lab_portfolio_simulation"
                   ? [["Portfolio results", <PortfolioResults result={result} />]]
                   : [
-                    ...(result.report ? [["Performance metrics", <ReportPanel report={result.report} trades={result.trades} spec={ranSpec ?? undefined} run={result} />] as [string, ReactNode]] : []),
-                    ["Equity & drawdown", <RunResults result={result} market={savedMarketValue} />],
-                    ["Monthly returns", <RunTables result={result} part="monthly" />],
                     ["Trades", <RunTables result={result} part="trades" explain={ranSpec && ranOwn && cat ? { spec: ranSpec, own: ranOwn, catalogue: cat, tf: state.tf, fees: settings.fees, slippage: settings.slippage } : undefined} />],
-                    ...(result.report ? [["Monte Carlo", <MonteCarloPanel trades={result.trades} from={result.from} to={result.to} ledger={result.ledger} capital={result.money?.capital} />] as [string, ReactNode]] : []),
+                    // the equity and underwater charts above the AmiBroker statistics, one tab
+                    ["Stats & equity drawdown", <><RunResults result={result} market={savedMarketValue} chartsOnly={!!result.report} />
+                      {result.report && <ReportPanel report={result.report} trades={result.trades} spec={ranSpec ?? undefined} run={result} />}</>],
+                    ["YOY-Monthly", <RunTables result={result} part="monthly" />],
                   ];
                 if (ticker) tabs.push(["Scan / Explore", <ExplorePanel spec={runSpec} catalogue={chartCat!} chips={state.chips} portfolio={!!state.spec.portfolio} market={savedMarketValue} loadSeries={loadSeries}
           onScan={(apply) => { assertRunnable(runSpec); return lab.scan(market, runSpec, { ticker, apply, from: settings.from || undefined, to: settings.to || undefined }); }}
@@ -434,11 +411,10 @@ function IndicatorsLab() {
                 return <SettingsTabs ariaLabel="Backtest results" labels={tabs.map(([l]) => l)}>{tabs.map(([, el]) => el)}</SettingsTabs>;
               })()}
             </section>}
-        </Part> : <div className="box empty" data-lab-no-result>No test yet. Set up your idea in step 2, then press <b>{simple ? "▶ Test this idea" : "Run backtest"}</b>.</div>}
+        </Part> : <div className="box empty" data-lab-no-result>No test yet. Set up your idea in step 2, then press <b>▶ Run backtest</b>.</div>}
         {result?.kind === "lab_simulation" && !result.trades.length && !runError && ranSpec && cat && ticker
           ? <NoTradesHelp spec={ranSpec} catalogue={cat} market={savedMarketValue} ticker={ticker} period={runSettings} scan={scanSignals} onFix={fixAndRun} /> : null}
         {result?.kind === "lab_simulation" && !runError && result.trades.length > 0 && <button type="button" className="dbtn sm" data-lab-see-chart onClick={() => setTab("chart")}>See the trades on the chart ›</button>}
-        {result && !runError && ranDefault ? <p className="rnote" role="note" data-lab-default-exit-used>No sell rule was set, so this test used the default exit: {ranDefault}. Change it in “Your idea”.</p> : null}
         {result?.foreign?.length && !runError ? <div className="rnote" role="note" data-lab-foreign-disclosure>{result.foreign.map((source) => <p key={source.ticker}>{foreignDescription(source)}</p>)}</div> : null}
         {!backtestShown && !simple && ticker && <Part key={`explore|${market}|${ticker}`}><ExplorePanel spec={runSpec} catalogue={chartCat!} chips={state.chips} portfolio={!!state.spec.portfolio} market={savedMarketValue} loadSeries={loadSeries}
           onScan={(apply) => { assertRunnable(runSpec); return lab.scan(market, runSpec, { ticker, apply, from: settings.from || undefined, to: settings.to || undefined }); }}
@@ -450,6 +426,7 @@ function IndicatorsLab() {
         </div>
         </div>
         <div role="tabpanel" id="lab-panel-optimization" aria-labelledby="lab-tab-optimization" hidden={tab !== "optimization"} className="lab-tab-panel">
+        <div className="lab-step-nav lab-opt-back"><button type="button" className="dbtn" data-lab-back-strategy onClick={() => { setTab("strategy"); setStep("idea"); }}>‹ Back to your strategy</button></div>
         <p className="lab-tab-intro">Compare settings for <b>{state.spec.portfolio?"the selected portfolio":ticker}</b>. Your strategy rules stay the same until you apply a result.</p>
         <Part key={JSON.stringify([market, ticker, settings.from, settings.to, settings.fees, settings.slippage])}>{/* Results and exports belong to the same instrument, dates and costs. */}
           <OptimizePanel spec={runSpec} catalogue={cat} market={savedMarketValue} role={role} dates={result?.dates ?? []}

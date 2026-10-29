@@ -9,3 +9,32 @@
 .lab-explore-table th button { all: unset; cursor: pointer; white-space: nowrap; }
 .lab-explore-table th button:focus-visible { outline: 2px solid var(--ink2); outline-offset: 2px; }
 .lab-explore-table td { white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* ---------- Finish for Scan / Explore (same language as "Finish for Your idea" in rules.css) ---------- */
+/* summary as a clear disclosure row with its own chevron */
+.lab-explore > summary { display: flex; align-items: center; gap: 8px; min-height: 32px; list-style: none; font: 700 12.5px var(--font); letter-spacing: .08em; text-transform: uppercase; color: var(--ink2); }
+.lab-explore > summary::-webkit-details-marker { display: none; }
+.lab-explore > summary::before { content: ""; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); }
+.lab-explore[open] > summary::before { transform: rotate(45deg); }
+.lab-explore > summary:hover { color: var(--ink); }
+.lab-explore > summary:focus-visible { outline: none; border-radius: var(--r-field); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent); }
+@media (prefers-reduced-motion: no-preference) { .lab-explore > summary::before { transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1); } }
+/* controls: one 32px row */
+.lab-explore-body { gap: 10px; }
+.lab-explore-body > .lab-row { align-items: center; gap: 10px 14px; }
+.lab-explore-body > .lab-row :is(.join, .dbtn, select, input) { height: 32px; box-sizing: border-box; }
+.lab-explore-body > .lab-row .join .join-item { padding: 0 12px; }
+.lab-explore-body > .lab-row .dbtn { padding: 0 16px; }
+.lab-explore-body > .lab-row :is(select, input) { padding: 0 8px; border: 1px solid var(--steel); border-radius: var(--r-field); background: var(--card); color: var(--ink); transition: border-color 150ms ease, box-shadow 150ms ease; }
+.lab-explore-body > .lab-row input[type=number] { font: 500 13px 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; }
+.lab-explore-body > .lab-row :is(select, input):hover { border-color: var(--ink3); }
+.lab-explore-body :is(select, input, .dbtn, .join-item):focus-visible { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent); }
+.lab-explore-body .dbtn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+.lab-explore-body > .cap[role=note] { padding: 8px 12px; border-left: 3px solid var(--steel); border-radius: 0 var(--r-field) var(--r-field) 0; background: color-mix(in srgb, var(--thead) 55%, var(--card)); font-size: 12.5px; line-height: 1.5; }
+/* result table: sortable headers show hover and the sorted column */
+.lab-explore-table { border-color: var(--rule); border-radius: var(--r-box); }
+.lab-explore-table th button:hover { color: var(--ink); }
+/* .tbl in the chain: the themed :root[data-theme] .tbl th colour is (0,4,1) and loads later */
+.lab-page .lab-explore .lab-explore-table .tbl th:not([aria-sort=none]) { color: var(--blue); }
+.lab-explore-table th button:focus-visible { outline: none; border-radius: 3px; box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent); }
+.lab-explore-table td.n { font-family: 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; }

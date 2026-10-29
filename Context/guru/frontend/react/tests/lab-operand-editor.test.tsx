@@ -213,7 +213,7 @@ it("a platform variant is picked by name from a dropdown, not typed as 0/1", asy
   const { host, last } = await setup({ s: "stoch", p: { length: 14 } });
   const variant = host.querySelector<HTMLSelectElement>('select[aria-label^="Variant"]')!;
   expect(variant.closest("label")!.firstChild!.textContent).toBe("Variant");
-  expect([...variant.options].map((o) => o.text)).toEqual(["TradingView", "AmiBroker ratio of sums"]);
+  expect([...variant.options].map((o) => o.text)).toEqual(["TradingView", "AmiBroker"]);
   await choose(variant, "1");
   expect(last()).toEqual({ s: "stoch", p: { length: 14, variant: 1 } });
 });

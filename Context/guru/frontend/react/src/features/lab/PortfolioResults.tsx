@@ -1,4 +1,5 @@
 import {foreignDescription} from "./foreign-model";
+import { dayFirst } from "./DateField";
 import {useEffect,useRef} from "react";
 import {createLabChart,themeColors,useThemeKey} from "./charts";
 import {linePoints} from "./bars";
@@ -8,7 +9,7 @@ import {MetricTiles,ServerLabel} from "./ui";
 import type {PortfolioRunResult} from "./types";
 import "./results.css";
 import "./portfolio.css";
-export function portfolioTradeRows(r:PortfolioRunResult):string[][]{return [["Ticker","Entry","Entry signal","Order","Raw entry fill","Exit","Raw exit fill","Qty","Notional","Declared costs","Contribution / signal equity","Bars","Rank","Score","Reason"],...[...r.trades].reverse().map(t=>[t.ticker,t.entry,t.entry_signal,t.entry_kind,num(t.entry_px),t.open?"Open":t.exit,num(t.exit_px),num(t.qty),num(t.notional),num(t.costs),pct(t.ret,2),int(t.bars),int(t.rank),num(t.score),t.reason])];}
+export function portfolioTradeRows(r:PortfolioRunResult):string[][]{return [["Ticker","Entry","Entry signal","Order","Raw entry fill","Exit","Raw exit fill","Qty","Notional","Declared costs","Contribution / signal equity","Bars","Rank","Score","Reason"],...[...r.trades].reverse().map(t=>[t.ticker,dayFirst(t.entry),dayFirst(t.entry_signal),t.entry_kind,num(t.entry_px),t.open?"Open":dayFirst(t.exit),num(t.exit_px),num(t.qty),num(t.notional),num(t.costs),pct(t.ret,2),int(t.bars),int(t.rank),num(t.score),t.reason])];}
 export function PortfolioResults({result:r}:{result:PortfolioRunResult}){
  const eq=useRef<HTMLDivElement>(null),dd=useRef<HTMLDivElement>(null),theme=useThemeKey();
  useEffect(()=>{
@@ -19,7 +20,7 @@ export function PortfolioResults({result:r}:{result:PortfolioRunResult}){
  },[r,theme]);
  const table=portfolioTradeRows(r);const download=()=>{const report=window.VaultReport;if(!report)return;const url=URL.createObjectURL(new Blob([report.csv(table)],{type:"text/csv;charset=utf-8"}));const a=document.createElement("a");a.href=url;a.download=`portfolio-${r.from}-${r.to}.csv`;a.click();URL.revokeObjectURL(url);};
  return <section className="box lab-portfolio-result" data-lab-portfolio-result tabIndex={-1}>
-  <h2 className="box-h">Portfolio backtest <small>{r.from} → {r.to} · {r.reference.ticker} reference</small></h2><ServerLabel text={r.label}/>
+  <h2 className="box-h">Portfolio backtest <small>{dayFirst(r.from)} → {dayFirst(r.to)} · {r.reference.ticker} reference</small></h2><ServerLabel text={r.label}/>
   <ExecutionStrip model={r.execution_model} money={r.money} adaptations={r.adaptations}/>
   <p className="rnote" data-lab-membership>{r.membership.note} Historical membership verified: {String(r.membership.historical_membership_verified)}.</p>
   <p className="cap">{r.portfolio.universe.admitted} admitted of {r.portfolio.universe.members} requested names · {r.portfolio.mode} · {r.portfolio.max_open} maximum positions. Gross revalues the same booked fills and quantities before declared costs.</p>

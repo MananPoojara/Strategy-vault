@@ -52,16 +52,16 @@ export const COPY = {
   wmRule: "Higher-timeframe values are used only after that period closes (unless a timing option says otherwise).",
   notChecked: "Not yet checked against TradingView.",
   rulesHint: "values from completed bars only",
-  entryTitle: "Entry · all of these",
-  entryListHelp: "A trade opens on a candle where every row below is true at the same time, so each extra row means fewer trades.",
-  exitListHelp: "The open trade closes on the first candle where any one row below is true.",
-  filtersTitle: "Filters · the buy also needs all of these",
-  filterListHelp: "Optional. While a filter is on, a buy also needs it to be true (like the AFL filter sections). Tick “also sell” to close the trade when the filter turns false.",
+  entryTitle: "Entry · buy when all are true",
+  entryListHelp: "Every row must be true on the same candle.",
+  exitListHelp: "The first row that is true closes the trade.",
+  filtersTitle: "Filters · buy only while all are true",
+  filterListHelp: "Optional. Tick “also sell” to close the trade when a filter turns false.",
   filterExit: "Also sell when it turns false",
   simpleEntryTitle: "Buy when all of these are true", simpleExitTitle: "Sell when any of these is true",
-  exitTitle: "Exit · any of these",
+  exitTitle: "Exit · sell when any is true",
   addCondition: "+ Add condition",
-  emptyEntry: "Add a buy rule first: pick a suggestion under “Buy when…” in Your idea, or press + Add condition.",
+  emptyEntry: "Add a buy rule first: press + Add condition in the Entry card.",
   keptAsIs: "Kept as is: this page cannot edit this rule type yet.",
   startMoved: (date: string) => `Results start on ${date}, not the requested start: earlier opens on this instrument are not reliable enough for next-open fills.`,
   noTrades: "No trades. The entry conditions never lined up on this instrument.",
@@ -104,7 +104,7 @@ export const MONEY_BLOCKED = {
 export const FUTURES_NOTE = "Futures: the contract model exists, but no futures contract data (contract chain with expiries, lot sizes and tick size) is admitted, so futures runs answer “Data needed”. The index or spot series is never used as a stand-in.";
 export const MONEY_BASIS_HINT = "User-declared costs; not a verified statutory schedule.";
 export const OPERAND_KIND_LABELS: Record<string, string> = {
-  price: "Price", indicator: "Indicator", calendar: "Calendar", number: "Number", bars_held: "Bars held (candles in the trade)", since_entry: "Since entry",
+  price: "Price", indicator: "Indicator", calendar: "Calendar", number: "Threshold", bars_held: "Bars held (candles in the trade)", since_entry: "Since entry",
   arith: "Arithmetic", pct: "% difference", abs: "Absolute value", ref: "N bars ago", window: "Rolling window", change: "Change over N bars",
   compress: "Higher-timeframe aggregate", bars_since: "Bars since", value_when: "Value when", since: "Highest / lowest since", count: "Count of bars",
   formula: "My indicator",
@@ -128,3 +128,5 @@ export const ENTRY_KIND_LABELS: Record<string, string> = {
   next_open: "Next open", close: "Close", limit: "Limit", stop: "Stop", stop_limit: "Stop-limit", reverse: "Reversal", roll: "Contract roll",
   high: "Bar high", low: "Bar low", average: "Bar average",
 };
+/** AmiBroker's words for an indicator's settings: a length is its Period. */
+export const paramLabel = (label: string) => label.replace(/^Length\b/, "Period");

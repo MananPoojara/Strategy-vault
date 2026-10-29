@@ -1,12 +1,11 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
-import { directionOf, entryOrderType, modeOf, usesTradePrices, withDirection } from "./execution-model";
+import { createContext, useContext } from "react";
+import { entryOrderType, usesTradePrices } from "./execution-model";
 import { setExecution } from "./spec-model";
 import { drawdown } from "./RunResults";
 import { int, pct } from "./format";
 import { Segmented } from "./ui";
 import { dayFirst } from "./DateField";
-import type { RunResult, RuleNode, Spec } from "./types";
-import type { RunSettings } from "./RuleBuilder";
+import type { RunResult, Spec } from "./types";
 import "./simple.css";
 
 /** Simple view (the default) hides the AmiBroker power-user controls; Advanced shows everything. Kept per browser. */
@@ -79,28 +78,6 @@ export const plainOf = (ind: { id: string; category: string }) => PLAIN[ind.id] 
 /** The abbreviation analysts type to find an indicator in a list. */
 export const SHORT: Record<string, string> = { sma: "SMA", ema: "EMA", wma: "WMA", rsi: "RSI", macd: "MACD", bb: "BB", atr: "ATR", dmi: "DMI", obv: "OBV", cci: "CCI", mfi: "MFI", roc: "ROC", kc: "KC" };
 
-const series = (s: string, p?: Record<string, number>, extra: Record<string, unknown> = {}) => ({ s, ...(p ? { p } : {}), ...extra });
-const cond = (lhs: object, op: string, rhs: object) => ({ lhs, op, rhs }) as RuleNode;
-export const EXAMPLES: { id: string; label: string; hint: string; entry: RuleNode[]; exit: RuleNode[] }[] = [
-  { id: "ma_cross", label: "Moving-average crossover", hint: "Buy when the 50-day average crosses above the 200-day; sell when it crosses back below",
-    entry: [cond(series("sma", { length: 50 }), "crosses_above", series("sma", { length: 200 }))],
-    exit: [cond(series("sma", { length: 50 }), "crosses_below", series("sma", { length: 200 }))] },
-  { id: "rsi_oversold", label: "RSI oversold", hint: "Buy when the 14-day RSI drops below 30; sell when it rises above 70",
-    entry: [cond(series("rsi", { length: 14 }), "<", { value: 30 })],
-    exit: [cond(series("rsi", { length: 14 }), ">", { value: 70 })] },
-  { id: "breakout", label: "52-week breakout", hint: "Buy when the close breaks above the previous 252-day high; sell when it closes below the 50-day average",
-    entry: [cond(series("close"), "crosses_above", series("donchian", { length: 252 }, { out: "upper", offset: 1 }))],
-    exit: [cond(series("close"), "crosses_below", series("sma", { length: 50 }))] },
-];
-export function withExample(spec: Spec, id: string): Spec {
-  const ex = EXAMPLES.find((e) => e.id === id);
-  return ex ? { ...spec, entry: { all: ex.entry }, exit: { any: ex.exit } } : spec;
-}
-export const ExamplePicker = ({ spec, onChange }: { spec: Spec; onChange(spec: Spec): void }) =>
-  <p className="lab-examples" data-lab-examples><span className="cap">Start from an example:</span>
-    {EXAMPLES.map((e) => <button key={e.id} type="button" className="dbtn sm" title={e.hint} data-lab-example={e.id} onClick={() => onChange(withExample(spec, e.id))}>{e.label}</button>)}
-  </p>;
-
 /** Next day's open or the signal day's close for both buys and sells; nothing when orders or per-side prices decide. */
 export function FillChoice({ spec, onChange }: { spec: Spec; onChange(spec: Spec): void }) {
   const ex = spec.execution, entryFill = ex?.fill ?? "next_open", exitFill = ex?.exit_fill ?? entryFill;
@@ -108,30 +85,6 @@ export function FillChoice({ spec, onChange }: { spec: Spec; onChange(spec: Spec
   return <div className="lab-row"><span className="dfield">Buy and sell at</span>
     <Segmented label="Buy and sell at" value={entryFill} options={[{ value: "next_open", label: "Next day's open" }, { value: "close", label: "Signal day's close" }]}
       onChange={(f) => onChange(setExecution(spec, { fill: f === "close" ? f : undefined, exit_fill: undefined, ...(f === "close" ? { delay_bars: undefined } : {}) }))} /></div>;
-}
-
-/** One line saying what the test assumes; Change opens the few settings an analyst adjusts. */
-export function SimpleSettings({ spec, settings, onChange, children, open: initial = false }: { spec: Spec; settings: RunSettings; onChange(spec: Spec): void; children: ReactNode; open?: boolean }) {
-  const [open, setOpen] = useState(initial);
-  const money = modeOf(spec) === "money", dir = directionOf(spec), cost = spec.execution?.cost_bps;
-  const period = settings.from || settings.to ? `${settings.from ? dayFirst(settings.from) : "first bar"} → ${settings.to ? dayFirst(settings.to) + (settings.to === settings.latest ? " (latest data)" : "") : "last bar"}` : "All data";
-  const costs = money ? "costs from the cash settings" : `costs ${cost ?? (Number(settings.fees) || 0)} bps + slippage ${Number(settings.slippage) || 0} bps per side`;
-  const side = dir === "short" ? "short only" : dir === "both" ? "long and short" : "long only";
-  // Rules read the bar's close; this picks the price trades fill at. Orders, AmiBroker prices or split fills are set in Advanced.
-  const ex = spec.execution, entryFill = ex?.fill ?? "next_open", exitFill = ex?.exit_fill ?? entryFill;
-  const custom = entryOrderType(spec.entry) !== "market" || usesTradePrices(ex) || entryFill !== exitFill;
-  const fillText = custom ? "trade prices set in Advanced" : entryFill === "close" ? "trade at the signal day's close" : "trade at the next day's open";
-  return <div className="lab-simple-settings" data-lab-simple-settings>
-    <p className="lab-simple-summary"><span>{period} · {fillText} · {costs} · {side} · {money ? "cash amounts" : "% returns"}</span>
-      <button type="button" className="dbtn sm ghost" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? "Done" : "Change"}</button></p>
-    {open && <div className="lab-simple-panel">
-      <div className="lab-row"><span className="dfield">Trade</span>
-        <Segmented label="Positions" value={dir === "short" ? "short" : "long"} options={[{ value: "long", label: "Long only" }, { value: "short", label: "Short only" }]}
-          onChange={(d) => onChange(withDirection(spec, d))} /></div>
-      <FillChoice spec={spec} onChange={onChange} />
-      {children}
-    </div>}
-  </div>;
 }
 
 /** The analyst's first question: did the idea beat simply holding? Same run numbers as the Advanced report. */

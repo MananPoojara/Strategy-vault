@@ -59,7 +59,7 @@ it("walk-forward result: IS/OOS rows per window, held-flat window, summary and s
   const result = host.querySelector("[data-lab-wf-result]")!;
   const rows = [...result.querySelectorAll("tbody tr")].map((r) => [...r.children].map((c) => c.textContent));
   expect(rows.map((r) => r[0])).toEqual(["IS", "OOS", "IS", "OOS"]);
-  expect(rows[1].slice(1, 3)).toEqual(["2017-01-02", "2017-12-29"]);
+  expect(rows[1].slice(1, 3)).toEqual(["02-01-2017", "29-12-2017"]); // dates read DD-MM-YYYY
   expect(rows[1][3]).toContain("52");
   expect(rows[1][4]).toBe("10.0%");
   expect(rows[3][3]).toBe("held flat");
@@ -124,8 +124,8 @@ it("walk-forward preview: Optimization target, window table and dates beside the
   expect(wf.querySelector('[data-lab-action="walkforward"]')!.className).toContain("primary");
   const preview = wf.querySelector("[data-lab-wf-preview]")!;
   expect([...preview.querySelectorAll("tbody tr")].slice(0, 2).map((r) => [...r.children].map((c) => c.textContent))).toEqual([
-    ["IS", "2015-01-01", "2016-12-31"], ["OOS", "2017-01-01", "2017-12-31"]]);
-  expect(wf.querySelector(".lab-wf-form")!.textContent).toContain("2015-01-01 – 2016-12-31");
+    ["IS", "01-01-2015", "31-12-2016"], ["OOS", "01-01-2017", "31-12-2017"]]);
+  expect(wf.querySelector(".lab-wf-form")!.textContent).toContain("01-01-2015 – 31-12-2016");
   await tick(host);
   await act(async () => wf.querySelector<HTMLButtonElement>('[data-lab-action="walkforward"]')!.click());
   await flush();

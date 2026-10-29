@@ -46,3 +46,56 @@
 /* Wide box: steps 1-2 and 3-4 side by side instead of four full-width strips. */
 @container (min-width: 900px) { .lab-steps { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; } }
 @media (max-width: 600px) { .lab-steps > li { padding: 10px 10px 10px 38px; } .lab-steps > li::before { left: 8px; } .lab-books { max-height: 360px; } }
+
+/* Finish for Customize (same language as "Your idea" in rules.css): theme tokens only, small tracked labels,
+   cards with one soft shadow, 32px controls with one hover/focus treatment. No motion on things used constantly. */
+.lab-customize { --cz-focus: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent); --cz-shadow: 0 1px 2px rgb(0 0 0 / .04), 0 6px 16px -10px rgb(0 0 0 / .18); }
+.lab-customize .lab-cz-tools { gap: 8px 14px; align-items: center; }
+.lab-customize .lab-cz-tools .cap { font-family: 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; font-weight: 500; color: var(--ink3); }
+.lab-customize :is(.dfield input, .lab-inline-num input) { border-color: var(--steel); background: var(--card); transition: border-color 150ms ease, box-shadow 150ms ease; }
+.lab-customize .lab-cz-tools .dfield input { box-sizing: border-box; height: 32px; }
+.lab-customize :is(.dfield input, .lab-inline-num input):hover { border-color: var(--ink3); }
+.lab-customize :is(.dfield input, .lab-inline-num input):focus-visible { outline: none; border-color: var(--blue); box-shadow: var(--cz-focus); }
+.lab-customize .lab-inline-num input { box-sizing: border-box; height: 26px; border-radius: var(--r-field); font-family: 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; font-weight: 600; }
+/* book list: each book name is a section label that stays visible while its methods scroll */
+.lab-customize .lab-books { gap: 2px; padding: 0 4px 4px 0; scrollbar-gutter: stable; }
+.lab-customize .lab-book > summary { position: sticky; top: 0; z-index: 1; padding: 8px 2px 6px; background: var(--panel); font: 700 11.5px var(--font); letter-spacing: .08em; text-transform: uppercase; color: var(--ink2); }
+.lab-customize .lab-book > summary:hover { color: var(--ink); }
+.lab-customize .lab-book > summary:focus-visible { outline: none; box-shadow: var(--cz-focus); border-radius: var(--r-field); }
+.lab-customize .lab-book > summary b { font-weight: 700; }
+.lab-customize .lab-book > summary span { font: 500 11.5px 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; letter-spacing: 0; text-transform: none; color: var(--ink3); }
+/* method cards */
+.lab-customize .lab-methods { gap: 8px; }
+.lab-customize .lab-methods button { gap: 3px; padding: 9px 12px; border-color: var(--rule); border-radius: var(--r-field); box-shadow: 0 1px 2px rgb(0 0 0 / .04); transition: border-color 150ms ease, box-shadow 150ms ease, transform 160ms cubic-bezier(0.23, 1, 0.32, 1); }
+.lab-customize .lab-methods button:hover:not(:disabled) { border-color: var(--ink3); background: var(--card); box-shadow: var(--cz-shadow); }
+.lab-customize .lab-methods button:active:not(:disabled) { transform: scale(.99); }
+.lab-customize .lab-methods button:focus-visible { outline: none; border-color: var(--blue); box-shadow: var(--cz-focus); }
+.lab-customize .lab-methods button[aria-pressed="true"] { background: color-mix(in srgb, var(--blue) 6%, var(--card)); border-color: var(--blue); box-shadow: inset 3px 0 0 var(--blue); }
+.lab-customize .lab-methods button[aria-pressed="true"] .lab-m-name { color: var(--blue); }
+.lab-customize .lab-methods button:disabled { box-shadow: none; }
+.lab-customize .lab-m-name { font-size: 13.5px; color: var(--ink); }
+/* the chosen template */
+.lab-customize .lab-template { margin-top: 18px; padding-top: 16px; }
+.lab-customize .lab-cz-head h3 { font-size: 16.5px; font-weight: 700; line-height: 1.3; }
+.lab-customize .lab-cz-head + .cap { margin: 2px 0 0; font: 700 11px var(--font); letter-spacing: .1em; text-transform: uppercase; color: var(--ink3); }
+.lab-customize .lab-steps { gap: 12px; margin-top: 14px; }
+.lab-customize .lab-steps > li { padding: 14px 16px 14px 50px; border-radius: var(--r-box); box-shadow: var(--cz-shadow); }
+.lab-customize .lab-steps > li::before { left: 16px; top: 13px; width: 24px; height: 24px; font: 700 12px/24px 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; }
+.lab-customize .lab-steps h4 { margin: 0 0 8px; font: 700 12px/24px var(--font); letter-spacing: .1em; text-transform: uppercase; color: var(--ink); }
+.lab-customize .lab-steps .lab-row { gap: 6px 8px; flex-wrap: wrap; align-items: center; }
+.lab-customize .lab-steps p { line-height: 1.5; }
+.lab-customize .lab-phrases li { line-height: 2; }
+.lab-customize .lab-phrases li::marker { color: var(--ink3); }
+/* fidelity badge: tinted pill, figures aligned */
+.lab-customize .lab-badge { padding: 4px 11px; font-family: 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; line-height: 1.4; }
+.lab-customize .lab-badge.ok { background: color-mix(in srgb, var(--green) 9%, var(--card)); border-color: color-mix(in srgb, var(--green) 45%, var(--card)); }
+.lab-customize .lab-badge.warn { background: color-mix(in srgb, var(--red) 8%, var(--card)); border-color: color-mix(in srgb, var(--red) 45%, var(--card)); }
+.lab-customize .lab-about > summary { width: fit-content; padding: 2px 0; font-weight: 600; font-size: 12.5px; }
+.lab-customize .lab-about > summary:hover { color: var(--blue); }
+.lab-customize .lab-about > summary:focus-visible { outline: none; box-shadow: var(--cz-focus); border-radius: var(--r-field); }
+.lab-customize .lab-about[open] > summary { color: var(--ink); margin-bottom: 4px; }
+@media (max-width: 600px) {
+  .lab-customize .lab-steps > li { padding: 12px 12px 12px 44px; }
+  .lab-customize .lab-steps > li::before { left: 12px; top: 11px; }
+  .lab-customize .lab-cz-tools .dfield { max-width: none; }
+}

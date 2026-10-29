@@ -1,4 +1,5 @@
 import { Fragment, useRef, useState } from "react";
+import { dayFirst } from "./DateField";
 import { int, num, pct } from "./format";
 import { ErrorNotice, Loading, MetricTiles, ServerLabel, tone } from "./ui";
 import type { LabInfo, SavedMarket, Spec, WalkforwardMetrics, WalkforwardOptions, WalkforwardResult, WalkforwardTarget } from "./types";
@@ -42,7 +43,7 @@ function Equity({ dates, equity }: { dates: string[]; equity: number[] }) {
       <svg viewBox="0 0 100 60" preserveAspectRatio="none" role="img" aria-label="Stitched out-of-sample equity chart">
         <polyline points={idx.map((i) => `${sx(i).toFixed(2)},${sy(equity[i]).toFixed(2)}`).join(" ")} />
       </svg>
-      <div className="lab-report-axis"><span>{dates[0]}</span><span>{dates[dates.length - 1]}</span></div>
+      <div className="lab-report-axis"><span>{dayFirst(dates[0])}</span><span>{dayFirst(dates[dates.length - 1])}</span></div>
     </figure>
   );
 }
@@ -111,9 +112,9 @@ export function WalkForward({ spec, dates = [], blocked, market, instrumentLabel
     <div className="lab-wf" data-lab-walkforward>
       <h3 className="box-h">Walk-forward <small>{WF_LABEL}</small></h3>
       <div className="lab-row lab-wf-form">
-        {lengthField("is", "In-sample", first && `${first.is[0]} – ${first.is[1]}`)}
-        {lengthField("oos", "Out-of-sample", first && `${first.oos[0]} – ${first.oos[1]}`)}
-        {lengthField("step", "Step", lastW && `last ends ${lastW.oos[1]}`)}
+        {lengthField("is", "In-sample", first && `${dayFirst(first.is[0])} – ${dayFirst(first.is[1])}`)}
+        {lengthField("oos", "Out-of-sample", first && `${dayFirst(first.oos[0])} – ${dayFirst(first.oos[1])}`)}
+        {lengthField("step", "Step", lastW && `last ends ${dayFirst(lastW.oos[1])}`)}
         <label className="dfield">Unit
           <select aria-label="Walk-forward unit" value={o.unit} onChange={(e) => set("unit", e.target.value as WalkforwardOptions["unit"])}>
             <option value="years">years</option><option value="months">months</option>
@@ -134,8 +135,8 @@ export function WalkForward({ spec, dates = [], blocked, market, instrumentLabel
           <table className="tbl ocmp">
             <thead><tr><th>Mode</th><th>Start</th><th>End</th></tr></thead>
             <tbody>{preview.windows.map((w) => <Fragment key={w.is[0] + w.oos[0]}>
-              <tr data-lab-wf-mode="is"><td>IS</td><td>{w.is[0]}</td><td>{w.is[1]}</td></tr>
-              <tr data-lab-wf-mode="oos"><td>OOS</td><td>{w.oos[0]}</td><td>{w.oos[1]}</td></tr>
+              <tr data-lab-wf-mode="is"><td>IS</td><td>{dayFirst(w.is[0])}</td><td>{dayFirst(w.is[1])}</td></tr>
+              <tr data-lab-wf-mode="oos"><td>OOS</td><td>{dayFirst(w.oos[0])}</td><td>{dayFirst(w.oos[1])}</td></tr>
             </Fragment>)}</tbody>
           </table>
         </div>}
@@ -151,7 +152,7 @@ export function WalkForward({ spec, dates = [], blocked, market, instrumentLabel
             { label: "Trades", value: int(sum.trades) }, { label: "Win %", value: pct(sum.win_rate) }, { label: "Windows", value: int(sum.windows) },
           ]} />}
           <p className="cap" data-lab-wf-summary>
-            Out-of-sample {result.summary.from} – {result.summary.to}
+            Out-of-sample {dayFirst(result.summary.from)} – {dayFirst(result.summary.to)}
             {result.summary.skipped ? ` · ${result.summary.skipped} held flat: no eligible setting in-sample` : ""}
             {result.summary.open_at_edge ? ` · ${result.summary.open_at_edge} window${result.summary.open_at_edge === 1 ? "" : "s"} ended with a position open (marked, not counted as a trade)` : ""}
             {result.summary.gaps ? " · gaps between windows are not traded and not in the CAGR" : ""}
@@ -164,9 +165,9 @@ export function WalkForward({ spec, dates = [], blocked, market, instrumentLabel
               <tbody>
                 {result.windows.map((w) => (
                   <Fragment key={w.is.from + w.oos.from}>
-                    <tr data-lab-wf-mode="is"><td>IS</td><td>{w.is.from}</td><td>{w.is.to}</td>{params(w.params)}{cells(w.is_metrics)}</tr>
+                    <tr data-lab-wf-mode="is"><td>IS</td><td>{dayFirst(w.is.from)}</td><td>{dayFirst(w.is.to)}</td>{params(w.params)}{cells(w.is_metrics)}</tr>
                     <tr data-lab-wf-mode="oos"><td><b>OOS</b>{w.open_at_end && <small title="A position was open at the window's end (marked at its last close)"> · open at end</small>}</td>
-                      <td>{w.oos.from}</td><td>{w.oos.to}</td>{w.skipped ? <td colSpan={paths.length || 1}>held flat</td> : params(w.params)}{cells(w.oos_metrics)}</tr>
+                      <td>{dayFirst(w.oos.from)}</td><td>{dayFirst(w.oos.to)}</td>{w.skipped ? <td colSpan={paths.length || 1}>held flat</td> : params(w.params)}{cells(w.oos_metrics)}</tr>
                   </Fragment>
                 ))}
               </tbody>

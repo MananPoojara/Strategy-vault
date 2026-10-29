@@ -152,4 +152,115 @@
 .lab-orders-box .lab-fieldset { padding: 4px 8px 6px; }
 .lab-orders-box .lab-exits > select { width: auto; }
 .lab-rules .lab-words { padding: 8px 12px; gap: 2px; }
-.lab-rules :is(.lab-starter, .lab-default-exit) { padding: 8px 10px; gap: 4px; margin-bottom: 6px; }
+.lab-rules .lab-default-exit { padding: 8px 10px; gap: 4px; margin-bottom: 6px; }
+
+/* Entry, Filters and Exit side by side (AmiBroker's Parameters sections); one column when the box is narrow */
+.lab-rule-cards { display: grid; gap: 14px; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; }
+@container (max-width: 980px) { .lab-rule-cards { grid-template-columns: minmax(0, 1fr); } }
+.lab-rule-card { min-width: 0; padding: 12px 14px 14px; background: var(--card); border: 1px solid var(--rule); border-radius: var(--r-box); }
+.lab-rule-card .lab-list { display: grid; gap: 8px; }
+.lab-rule-card h3 { font-size: 14px; }
+.lab-add-filter-h { display: block; margin-bottom: 6px; font-size: 14px; color: var(--ink); }
+/* one condition: a label column and a value column, one setting per line */
+.lab-param { display: grid; gap: 6px; padding: 10px 0 12px; border-bottom: 1px solid var(--rule); }
+.lab-param-h { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+.lab-param-h b { font-size: 12.5px; }
+.lab-param-tools { margin-left: auto; display: flex; gap: 4px; }
+.lab-param-row { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr); gap: 10px; align-items: center; }
+.lab-param-k { font-size: 12px; color: var(--ink2); }
+.lab-param-v { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; }
+.lab-param-v select, .lab-param-v .lab-ind-btn { max-width: 100%; }
+.lab-rules .lab-param-v .dfield input[type=number] { width: 80px; }
+.lab-param.lab-off .lab-param-row { opacity: 0.55; }
+
+/* Market periods on one line through time: bull green, bear red, the traded ones solid (no transition: it is switched often) */
+.lab-datestrip { display: grid; gap: 4px; margin: 8px 0 6px; }
+.lab-datestrip-bar { position: relative; height: 16px; border-radius: 4px; background: var(--bg); box-shadow: inset 0 0 0 1px var(--rule); overflow: hidden; }
+.lab-datestrip-w { position: absolute; top: 2px; bottom: 2px; border-radius: 2px; opacity: 0.25; }
+.lab-datestrip-w[data-on] { opacity: 1; }
+.lab-datestrip-w.bull, .lab-datestrip-key i.bull { background: var(--green); }
+.lab-datestrip-w.bear, .lab-datestrip-key i.bear { background: var(--red); }
+.lab-datestrip-w.plain { background: var(--blue); }
+.lab-datestrip-axis { display: flex; justify-content: space-between; gap: 8px; font-size: 11.5px; color: var(--ink2); font-variant-numeric: tabular-nums; }
+.lab-datestrip-key { display: flex; gap: 14px; }
+.lab-datestrip-key i { display: inline-block; width: 9px; height: 9px; margin-right: 5px; border-radius: 2px; vertical-align: -1px; }
+/* inside an Entry / Filters / Exit card a setting group stacks: heading over its controls, the full card width */
+.lab-rule-card .lab-sgroup { grid-template-columns: minmax(0, 1fr); gap: 6px; margin-top: 8px; }
+.lab-rule-card .lab-sgroup > h4 { margin: 0; }
+/* Filters: No filter / Dates / Indicator as pill toggles; Dates and Indicator can both be on */
+.lab-filter-choice { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 4px; }
+.lab-filter-chip { font: 600 13px var(--font); padding: 6px 14px; border: 1px solid var(--steel); border-radius: 999px; background: var(--card); color: var(--ink); cursor: pointer; transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1); }
+.lab-filter-chip[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--card); }
+.lab-filter-chip:active { transform: scale(0.97); }
+.lab-filter-chip:focus-visible { outline: none; box-shadow: var(--ring); }
+.lab-rule-card .lab-datefilter { display: grid; gap: 8px; padding: 10px 0 4px; border-top: 1px solid var(--rule); }
+.lab-owndates summary { cursor: pointer; font-size: 13px; color: var(--blue); }
+.lab-owndates[open] { display: grid; gap: 8px; }
+/* each line a condition is compared with: its own small block */
+.lab-param-line { display: grid; gap: 6px; padding-top: 6px; border-top: 1px dashed var(--rule); }
+.lab-param-addline, .lab-param-remove { justify-self: start; }
+.lab-param-either { margin: 2px 0 0; font-weight: 600; color: var(--ink); }
+/* the Exit card: each chosen exit is a compact block with its own × */
+.lab-exit-choice { display: grid; gap: 10px; }
+.lab-exit-part { display: grid; gap: 6px; padding: 8px 10px 10px; border: 1px solid var(--rule); border-radius: var(--r-field); background: var(--panel); }
+.lab-exit-part > header { display: flex; align-items: center; justify-content: space-between; min-height: 26px; }
+.lab-exit-part > header b { font-size: 13px; }
+/* Entry / Filters / Exit: a short centred title over each card, its toggles centred under it */
+.lab-rule-card > h3, .lab-rule-card > .lab-list > h3 { text-align: center; font-size: 15px; letter-spacing: .01em; margin: 0 0 8px; }
+.lab-rule-card .lab-filter-choice { justify-content: center; }
+/* a section inside a card (Filters › Indicator) keeps a small left-aligned heading */
+.lab-rule-card[data-lab-card="filters"] > .lab-list > h3 { text-align: left; font-size: 13px; margin-top: 8px; }
+
+/* Finish for Your idea: one accent per card (buy green, filter neutral, sell red) so the three read at a glance.
+   Theme tokens only, so every header theme still applies. No motion on controls: they are used many times a session. */
+.lab-rule-cards { gap: 16px; }
+.lab-rule-card { --acc: var(--blue); position: relative; overflow: hidden; padding: 18px 16px 16px; box-shadow: 0 1px 2px rgb(0 0 0 / .04), 0 6px 16px -10px rgb(0 0 0 / .18); }
+.lab-rule-card[data-lab-card="entry"] { --acc: var(--green); }
+.lab-rule-card[data-lab-card="exit"] { --acc: var(--red); }
+/* filters stay neutral: the theme colour can be green, which would echo Entry */
+.lab-rule-card[data-lab-card="filters"] { --acc: var(--ink2); }
+.lab-rule-card::before { content: ""; position: absolute; inset: 0 0 auto; height: 3px; background: var(--acc); }
+.lab-rule-card > h3, .lab-rule-card > .lab-list > h3 { font: 700 12.5px var(--font); letter-spacing: .14em; text-transform: uppercase; color: var(--acc); margin: 0 0 6px; }
+.lab-rule-card[data-lab-card="filters"] > .lab-list > h3 { font: 600 13px var(--font); letter-spacing: 0; text-transform: none; color: var(--ink); }
+/* toggles: the chosen one takes the card's colour */
+.lab-rule-card .lab-filter-chip { font-size: 12.5px; padding: 6px 13px; border-color: var(--rule); color: var(--ink2); transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), border-color 150ms ease, color 150ms ease; }
+.lab-rule-card .lab-filter-chip:hover { border-color: var(--acc); color: var(--ink); }
+.lab-rule-card .lab-filter-chip[aria-pressed="true"] { background: var(--acc); border-color: var(--acc); color: var(--card); }
+/* one condition: a quiet label column, controls with one height, hover and focus states */
+.lab-rule-card .lab-param { gap: 8px; padding: 12px 0 14px; }
+.lab-rule-card .lab-param-h b { font-size: 13px; }
+.lab-rule-card .lab-param-k { font-weight: 500; color: var(--ink2); }
+.lab-rule-card :is(select, input:not([type=checkbox], [type=radio]), .lab-ind-btn) { border-color: var(--steel); border-radius: var(--r-field); transition: border-color 150ms ease, box-shadow 150ms ease; }
+.lab-rule-card :is(select, input:not([type=checkbox], [type=radio]), .lab-ind-btn):hover { border-color: var(--ink3); }
+.lab-rule-card :is(select, input:not([type=checkbox], [type=radio]), .lab-ind-btn):focus-visible { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent); }
+.lab-rule-card input[type=number] { font-family: 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; font-weight: 500; }
+.lab-rule-card input[type=checkbox] { accent-color: var(--acc); }
+/* each chosen exit: a tinted block marked with the exit colour */
+.lab-rule-card .lab-exit-part { border-color: var(--rule); border-left: 3px solid var(--acc); background: color-mix(in srgb, var(--acc) 2.5%, var(--card)); }
+.lab-rule-card .lab-param-line { border-top-style: solid; }
+/* a block the user just added fades in once */
+@media (prefers-reduced-motion: no-preference) {
+  .lab-rule-card :is(.lab-exit-part, .lab-param-line, .lab-datefilter) { transition: opacity 180ms ease-out, transform 180ms cubic-bezier(0.23, 1, 0.32, 1); }
+  @starting-style { .lab-rule-card :is(.lab-exit-part, .lab-param-line, .lab-datefilter) { opacity: 0; transform: translateY(-4px); } }
+}
+/* Run: the one primary action, a size up from the rest */
+.lab-rules .lab-run .dbtn.primary { height: 40px; padding: 0 22px; font-size: 14px; box-shadow: 0 1px 2px rgb(0 0 0 / .08), 0 4px 12px -6px color-mix(in srgb, var(--blue) 60%, transparent); }
+.lab-rules .lab-run .dbtn.primary:disabled { box-shadow: none; opacity: .55; cursor: not-allowed; }
+/* step bar: the current step tinted and underlined instead of a solid block */
+.lab-page:not([data-chart-workspace]) .lab-stepbar .lab-step-btn[aria-current=step] { background: color-mix(in srgb, var(--blue) 9%, var(--card)); color: var(--blue); box-shadow: inset 0 -3px var(--blue); }
+.lab-page:not([data-chart-workspace]) .lab-stepbar .lab-step-btn[aria-current=step] .lab-step-n { background: var(--blue); border-color: var(--blue); color: var(--card); }
+/* Band setup (BandRule.tsx): a small tag beside the rule name, and the sentence words between its selects */
+.lab-band .lab-tag { padding: 1px 7px; border-radius: 4px; font: 700 10.5px var(--font); letter-spacing: .08em; text-transform: uppercase; color: var(--acc, var(--blue)); background: color-mix(in srgb, var(--acc, var(--blue)) 12%, var(--card)); }
+.lab-band .lab-word { font-size: 12.5px; color: var(--ink2); }
+/* Run backtest at the top right of the page heading; Positions and the test dates in one row over the Entry/Filters/Exit cards */
+.lab-rules :is(.box-h, .lab-idea-basics) .lab-run-top { margin-left: auto; display: inline-flex; align-items: center; gap: 10px; font-size: 13px; }
+.lab-rules :is(.box-h, .lab-idea-basics) .lab-run-top .cap { font-weight: 500; }
+.lab-rules :is(.box-h, .lab-idea-basics) .lab-run-top .dbtn.primary { height: 36px; padding: 0 18px; font-size: 13.5px; }
+.lab-rules :is(.box-h, .lab-idea-basics) .lab-run-top .dbtn.primary:disabled { opacity: .55; cursor: not-allowed; }
+.lab-idea-basics { align-items: center; gap: 10px 22px; padding: 10px 14px; background: var(--card); border: 1px solid var(--rule); border-radius: var(--r-box); }
+.lab-idea-basics > * { margin: 0; }
+/* AmiBroker settings: always open, a heading over its tabs */
+.lab-ami-h { margin: 0; padding: 12px 14px 8px; font: 700 14px var(--font); color: var(--ink); }
+.lab-ami-h .cap { margin-left: 6px; font-size: 12px; font-weight: 500; }
+.lab-rules .lab-idea-basics .lab-run-top .dbtn { height: 36px; }
+.lab-rules .lab-idea-basics .lab-run-top > .cap { white-space: nowrap; max-width: none; }

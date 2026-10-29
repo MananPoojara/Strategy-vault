@@ -15,7 +15,7 @@ const RANGE_OPS = ["between", "outside"], TREND_OPS = ["rising", "falling"];
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === "object" && v !== null && !Array.isArray(v);
 
-export type NodeKind = "cmp" | "range" | "trend" | "all" | "any" | "not" | "at_least" | "then" | "unknown";
+export type NodeKind = "cmp" | "range" | "trend" | "all" | "any" | "not" | "at_least" | "then" | "setup" | "unknown";
 export function nodeKind(n: unknown): NodeKind {
   if (!isObj(n)) return "unknown";
   if ("lhs" in n) return RANGE_OPS.includes(n.op as string) ? "range" : TREND_OPS.includes(n.op as string) ? "trend" : isCond(n) ? "cmp" : "unknown";
@@ -23,6 +23,7 @@ export function nodeKind(n: unknown): NodeKind {
   if (Array.isArray(n.any)) return "any";
   if ("not" in n) return "not";
   if ("at_least" in n) return "at_least";
+  if ("setup" in n && "trigger" in n) return "setup";
   return Array.isArray(n.then) ? "then" : "unknown";
 }
 export const isLeaf = (k: NodeKind) => k === "cmp" || k === "range" || k === "trend";
@@ -31,7 +32,7 @@ export const exprKey = (o: unknown): ExprKey | undefined => (isObj(o) && !("sinc
 
 export type OperandKind = "number" | "price" | "indicator" | "calendar" | "bars_held" | "since_entry" | "arith" | "pct" | "abs" | "ref" | "window" | "change"
   | "compress" | "bars_since" | "value_when" | "since" | "count" | "formula" | "unknown";
-export const CALENDAR_IDS = ["calendar", "session", "sessions_left"];
+export const CALENDAR_IDS = ["calendar", "session", "sessions_left", "period_end"];
 /** rules.rs SINCE_KINDS: a value of the open position, top-level exit comparisons only (like bars_held). */
 export const SINCE_ENTRY_KINDS = ["highest", "lowest", "count", "entry_price"] as const;
 export type SinceEntryKind = (typeof SINCE_ENTRY_KINDS)[number];
@@ -58,8 +59,11 @@ export function operandKind(o: Operand, cat: Catalogue): OperandKind {
   return cat.indicators.some((i) => i.id === o.s) ? "indicator" : "unknown";
 }
 
-export const DEFAULT_COND: Cond = { lhs: { s: "close" }, op: ">", rhs: { s: "ema", p: { length: 50 } } };
+/** + Add condition: an indicator against a threshold, the usual first rule (every part can be changed in the card). */
+export const DEFAULT_COND: Cond = { lhs: { s: "rsi", p: { length: 14 } }, op: "crosses_above", rhs: { value: 30 } };
 export const DEFAULT_STATE_COND: Cond = { lhs: { s: "close" }, op: "crosses_above", rhs: { s: "ema", p: { length: 50 } } };
+/** A new Indicator filter row: a trend state that holds over days (a crossing lasts one candle), close above its 200-day EMA. */
+export const newFilter = (): RuleNode => ({ lhs: { s: "close" }, op: ">", rhs: { s: "ema", p: { length: 200 } }, filter: true } as RuleNode);
 export function newNode(kind: "cond" | "all" | "any" | "not" | "at_least" | "then"): RuleNode {
   const c = structuredClone(DEFAULT_COND);
   switch (kind) {
@@ -175,6 +179,7 @@ function walkNode(n: RuleNode, path: string, root: string, top: boolean, f: Emit
     case "not": walkNode(x.not as RuleNode, `${path}.not`, root, false, f); break;
     case "at_least": knob(f, `${path}.at_least`, root, x.at_least, 1); knob(f, `${path}.of`, root, x.of, 1); walkNode(x.when as RuleNode, `${path}.when`, root, false, f); break;
     case "then": kids("then").forEach((c, i) => walkNode(c, `${path}.then[${i}]`, root, false, f)); knob(f, `${path}.within`, root, x.within, 1); break;
+    case "setup": for (const k of ["setup", "trigger", "cancel"]) if (x[k] !== undefined) walkNode(x[k] as RuleNode, `${path}.${k}`, root, false, f); break;
   }
 }
 function walkOperand(o: Operand | undefined, path: string, root: string, held: boolean, f: Emit) {
@@ -396,6 +401,7 @@ export function describeNode(n: RuleNode, cat: Catalogue): string {
     case "not": return `not (${describeNode(x.not as RuleNode, cat)})`;
     case "at_least": return `At least ${x.at_least} of ${x.of} bars: ${describeNode(x.when as RuleNode, cat)}`;
     case "then": return `${(x.then as RuleNode[]).map((c) => describeNode(c, cat)).join(" then ")} within ${x.within} bars`;
+    case "setup": return `after ${describeNode(x.setup as RuleNode, cat)}, ${describeNode(x.trigger as RuleNode, cat)}${x.cancel ? `; cancelled by ${describeNode(x.cancel as RuleNode, cat)}` : ""}${x.period_end ? ` (at ${x.period_end === "W" ? "week" : "month"} end)` : ""}`;
     default: return "kept as is";
   }
 }
