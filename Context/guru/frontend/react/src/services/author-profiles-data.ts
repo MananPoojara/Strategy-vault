@@ -480,7 +480,22 @@ export const AUTHOR_PROFILE_DATA = {
   "known_for": ["The TradeStation Cookbook"],
   "sources": [],
   "confidence": "low"
- }, "barrie": {
+ }, "lcrane": {"kind": "person",
+  "mastery": ["Stock trading", "Moving-average momentum"],
+  "summary": "Les Crane wrote WaveSurfer (2002), a short e-book for stock traders built on one spreadsheet number, the Impulse Ratio: the day-to-day change of the 10-day average of closing prices. The book gives fixed buy and sell levels for it and a Ford Motor example. This profile rests on the book itself.",
+  "known_for": ["WaveSurfer"],
+  "sources": [],
+  "confidence": "low" }, "burke": {"kind": "person",
+  "mastery": ["Equity trend following", "Moving averages"],
+  "summary": "Ed Burke (Big Wednesday Capital Management) won the 2008 CNBC Million Dollar Portfolio Challenge and wrote How I Won: Making Money in Stock Trends (2009), which sets out a 3-6-18 exponential moving average trend system for stocks with long and short rules; later tutorials add trade management. This profile rests on the e-book itself.",
+  "known_for": ["How I Won: Making Money in Stock Trends", "2008 CNBC Million Dollar Portfolio Challenge"],
+  "sources": [],
+  "confidence": "low" }, "lakhi": {"kind": "person",
+  "mastery": ["Index trading", "Pivot patterns"],
+  "summary": "Shiraz A. Lakhi wrote Champion Trader (2001), a home-study course for trading the FTSE 100 index with index options or spread bets using his CT-formula: a 14-day average of the daily midpoint for the trend, and three-bar pivots that set a signal line and an abort line. This profile rests on the book itself.",
+  "known_for": ["Champion Trader"],
+  "sources": [],
+  "confidence": "low" }, "barrie": {
   "kind": "person",
   "mastery": [
    "Market timing",

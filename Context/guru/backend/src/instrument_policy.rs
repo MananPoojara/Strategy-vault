@@ -318,6 +318,9 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || tillson_reviewed(def) // Tim Tillson block
         || leungchong_reviewed(def) // Leung and Chong block
         || bollinger_reviewed(def) // John Bollinger block
+        || lakhi_reviewed(def) // Shiraz A. Lakhi block
+        || burke_reviewed(def) // Edward Burke block
+        || lcrane_reviewed(def) // Les Crane block
         || downs_reviewed(def) // Walter T. Downs block
         || barrie_reviewed(def) // Scott W. Barrie block
         || kbrown_reviewed(def) // Kedrick F. Brown block
@@ -1317,6 +1320,36 @@ fn bollinger_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end John Bollinger
+// ---------------------------------------------------------------- Shiraz A. Lakhi 2026-10-29 (lane K1)
+// Admission only for the module REVIEWED lists (authors/lakhi/admission/ct_ref.py (header)); kept in one block to merge.
+pub fn lakhi_reviewed(def:&StrategyDef)->bool {(def.book=="slct" && crate::books::slct::reviewed(def.id))}
+const LAKHI_LABEL:&str="Shiraz Lakhi trades the CT-formula on the FTSE 100 index with index options or spread bets; runs on the cash index, ETFs and US/India stocks are a declared application, not the author's test.";
+fn lakhi_policy(def:&StrategyDef)->Option<Policy> {
+    if !lakhi_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Shiraz A. Lakhi, Champion Trader (2001), Section 3 p.73-102, Section 4 p.105-107");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Shiraz A. Lakhi
+// ---------------------------------------------------------------- Edward Burke 2026-10-29 (lane K1)
+// Admission only for the module REVIEWED lists (authors/burke/admission/hiw_ref.py (header)); kept in one block to merge.
+pub fn burke_reviewed(def:&StrategyDef)->bool {(def.book=="ebmst" && crate::books::ebmst::reviewed(def.id))}
+const BURKE_LABEL:&str="Ed Burke shows the 3-6-18 EMA system on US stocks (IBM, CAT); runs on indices, ETFs and other US/India stocks are a declared application, not the author's test.";
+fn burke_policy(def:&StrategyDef)->Option<Policy> {
+    if !burke_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Edward Burke, How I Won: Making Money in Stock Trends (2009), Ch.3-5 p.10-23");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Edward Burke
+// ---------------------------------------------------------------- Les Crane 2026-10-29 (lane K1)
+// Admission only for the module REVIEWED lists (authors/lcrane/admission/ws_ref.py (header)); kept in one block to merge.
+pub fn lcrane_reviewed(def:&StrategyDef)->bool {(def.book=="lcws" && crate::books::lcws::reviewed(def.id))}
+const LCRANE_LABEL:&str="Les Crane applies the WaveSurfer Impulse Ratio to NYSE stocks; runs on indices, ETFs and other US/India stocks are a declared application, not the author's test.";
+fn lcrane_policy(def:&StrategyDef)->Option<Policy> {
+    if !lcrane_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Les Crane, WaveSurfer (2002), p.32-34 (ratio), p.42-43 (buy), p.45 (sell), p.46 (short)");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Les Crane
 // ---------------------------------------------------------------- Walter T. Downs 2026-10-26 (lane B)
 // Admission only for the module REVIEWED lists (authors/downs/admission/downs_ref.py (header)); kept in one block to merge.
 pub fn downs_reviewed(def:&StrategyDef)->bool {(def.book=="wtdfg" && crate::books::wtdfg::reviewed(def.id)) || (def.book=="wtdtt" && crate::books::wtdtt::reviewed(def.id))}
@@ -2122,6 +2155,9 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=tillson_policy(def) {return p;} // Tim Tillson block
     if let Some(p)=leungchong_policy(def) {return p;} // Leung and Chong block
     if let Some(p)=bollinger_policy(def) {return p;} // John Bollinger block
+    if let Some(p)=lakhi_policy(def) {return p;} // Shiraz A. Lakhi block
+    if let Some(p)=burke_policy(def) {return p;} // Edward Burke block
+    if let Some(p)=lcrane_policy(def) {return p;} // Les Crane block
     if let Some(p)=downs_policy(def) {return p;} // Walter T. Downs block
     if let Some(p)=barrie_policy(def) {return p;} // Scott W. Barrie block
     if let Some(p)=kbrown_policy(def) {return p;} // Kedrick F. Brown block
@@ -2805,6 +2841,9 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if tillson_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",TILLSON_LABEL));} // Tim Tillson block
     if leungchong_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LEUNGCHONG_LABEL));} // Leung and Chong block
     if bollinger_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BOLLINGER_LABEL));} // John Bollinger block
+    if lakhi_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LAKHI_LABEL));} // Shiraz A. Lakhi block
+    if burke_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BURKE_LABEL));} // Edward Burke block
+    if lcrane_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LCRANE_LABEL));} // Les Crane block
     if downs_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",DOWNS_LABEL));} // Walter T. Downs block
     if barrie_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BARRIE_LABEL));} // Scott W. Barrie block
     if kbrown_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",KBROWN_LABEL));} // Kedrick F. Brown block
@@ -3548,6 +3587,54 @@ mod tests {
         }
     }
     // ---- end John Bollinger block ----
+    // ---- Shiraz A. Lakhi block (2026-10-29, lane K1) ----
+    #[test]
+    fn lakhi_review_admits_exact_ids() {
+        use crate::books::{slct};
+        let all:Vec<StrategyDef>=slct::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=slct::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|lakhi_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Shiraz A. Lakhi block ----
+    // ---- Edward Burke block (2026-10-29, lane K1) ----
+    #[test]
+    fn burke_review_admits_exact_ids() {
+        use crate::books::{ebmst};
+        let all:Vec<StrategyDef>=ebmst::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=ebmst::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|burke_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Edward Burke block ----
+    // ---- Les Crane block (2026-10-29, lane K1) ----
+    #[test]
+    fn lcrane_review_admits_exact_ids() {
+        use crate::books::{lcws};
+        let all:Vec<StrategyDef>=lcws::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=lcws::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|lcrane_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Les Crane block ----
     // ---- Walter T. Downs block (2026-10-26, lane B) ----
     #[test]
     fn downs_review_admits_exact_ids() {

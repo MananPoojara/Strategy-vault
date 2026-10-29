@@ -274,6 +274,14 @@ export const LIB = [
   { id: "barrie", name: "Scott W. Barrie", tagline: "Market-timing writer · three Dow calendar rules run here", books: [
     { id: "sbcig", sourceIds: ["title-9adc5f14e8e6359a"], title: "The Complete Idiot's Guide to Market Timing", year: 2003, blurb: "Barrie · hold the Dow from an up January to the next down January; hold only trading days 8 to 11 of each month; hold from the end of October two years before the election to the end of April of the election year. The 2.5% band on the 200-day average and the last-day-plus-four rule are the same calculations already in the vault; the S&P/NASDAQ switch is held (needs NASDAQ Composite prices)" }] },
   // ---- end Barrie block ----
+  // ---- K1 block (29 Oct 2026, overnight lane K1)
+  { id: "lcrane", name: "Les Crane", tagline: "Stock trader and author of WaveSurfer · the Impulse Ratio rule runs here", books: [
+    { id: "lcws", sourceIds: [], title: "WaveSurfer", year: 2002, blurb: "Crane · the daily change of the 10-day average of closes (the Impulse Ratio): buy the next day once it closes at +0.010 or more after 10 or more negative days, sell when it falls below +0.010; the short mirror is an option" }] },
+  { id: "burke", name: "Edward Burke", tagline: "CNBC Million Dollar Portfolio Challenge winner · the 3-6-18 EMA continuation system runs here", books: [
+    { id: "ebmst", sourceIds: [], title: "How I Won: Making Money in Stock Trends", year: 2009, blurb: "Burke · buy when the 3-day EMA crosses above the 6-day while the 6 is above the 18, sell when the 3 crosses back below the 6; short is the mirror" }] },
+  { id: "lakhi", name: "Shiraz A. Lakhi", tagline: "FTSE 100 index trader · the Champion Trader CT-formula runs here", books: [
+    { id: "slct", sourceIds: [], title: "Champion Trader", year: 2001, blurb: "Lakhi · with the 14-day average of the daily midpoint rising, a fresh low pivot sets an abort line at its low and a signal line at the next bar's high; buy when the signal line is hit first, stop at the abort line, sell when the average turns down. Falling average: the mirror" }] },
+  // ---- end K1 block ----
   // ---- Forman block (29 Oct 2026, lane B)
   { id: "forman", name: "John Forman", tagline: "Currency trader and trading educator · the four Ch.7 test systems and the stochastic 40/60 system run here", books: [
     { id: "jfeot", sourceIds: ["title-25c31f3ca7f1f280"], title: "The Essentials of Trading: From the Basics to Building a Winning Strategy", year: 2006, blurb: "Forman · close crosses the 92-day average to enter and the 50-day to exit; Parabolic SAR 0.02/0.20 stop and reverse; 20-day average entry with SAR 0.09/0.50 exit; SAR entry with 60-day average exit; 5-period stochastic through 40/60" }] },
