@@ -405,7 +405,7 @@ export const AUTHOR_PROFILE_DATA = {
    "Trading for Tigers"
   ],
   "sources": [],
-  "confidence": "low" }
+  "confidence": "low"
  }, "goodwin": {
   "kind": "person",
   "mastery": [
@@ -480,7 +480,6 @@ export const AUTHOR_PROFILE_DATA = {
   "known_for": ["The TradeStation Cookbook"],
   "sources": [],
   "confidence": "low"
- }
  }, "kbrown": {
   "kind": "person",
   "mastery": [
