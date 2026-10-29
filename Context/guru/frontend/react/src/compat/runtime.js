@@ -1231,10 +1231,10 @@ function distBox(rs) {
 const appLink = r => stratLink(r.v.id, r.tk, r.region); // opens the single-strategy page inside this page
 const RTAG = { F: 'IF', E: 'ENTRY', A: 'ADD', X: 'EXIT' };
 const rulesList = v => `<details class="rules"><summary>Rules as written in the book</summary><ul>${(v.rules || []).map(x => { const [t, ...rest] = x.split('|'); return `<li><span class="t">${RTAG[t] || ''}</span>${esc(rest.join('|') || x)}</li>`; }).join('')}</ul></details>`;
-// Card stats (user layout 29 Oct 2026): Net Return (compounded, B&H same period) | Max DD (CAGR) | Win % (closed trades).
+// Card stats (user layout 29 Oct 2026): Net Return (fixed size, not compounded; B&H same period) | Max DD (CAGR) | Win % (closed trades).
 const kpiTriplet = r => {
   const s = r.s;
-  return `<div class="kpis"><div title="Compounded net return over the period; B&amp;H = buy and hold of the same instrument and period"><span>Net Return</span><b class="${cls(s.total_return)}">${pct(s.total_return, 1, true)}</b><i>B&amp;H ${pct(s.bh_total, 1, true)}</i></div><div><span>Max DD</span><b class="neg">${pct(s.max_dd, 1)}</b><i>CAGR ${pct(s.cagr, 1, true)}</i></div><div><span>Win</span><b class="p">${pct(s.win_rate, 0)}</b><i>${fx(s.trades, 0)} trades</i></div></div>`;
+  return `<div class="kpis"><div title="Net return with a fixed position size (closed-trade returns added, not compounded), same as Net Profit on the strategy page; B&amp;H = buy and hold of the same instrument and period"><span>Net Return</span><b class="${cls(s.net_profit)}">${pct(s.net_profit, 1, true)}</b><i>B&amp;H ${pct(s.bh_total, 1, true)}</i></div><div><span>Max DD</span><b class="neg">${pct(s.max_dd, 1)}</b><i>CAGR ${pct(s.cagr, 1, true)}</i></div><div><span>Win</span><b class="p">${pct(s.win_rate, 0)}</b><i>${fx(s.trades, 0)} trades</i></div></div>`;
 };
 const byline = v => `${esc(GURU[v.guru].name)} · ${esc(BOOK[v.book].title)} (${bookYear(BOOK[v.book])}) · ${srcOf(v)}`;
 
