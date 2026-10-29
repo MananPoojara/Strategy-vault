@@ -109,7 +109,10 @@ export function RunResults({ result, market, chartsOnly = false }: { result: Run
   useEffect(() => {
     if (!equityRef.current || !ddRef.current) return;
     const el = equityRef.current, ddEl = ddRef.current;
-    const eq = createLabChart(el, 300, { timeScale: { minBarSpacing: 0.01, borderColor: themeColors(el).steel }, rightPriceScale: { mode: 1, borderColor: themeColors(el).steel } });
+    // both charts: hover dates DD-MM-YYYY
+    const day = (t: unknown) => typeof t === "string" ? dayFirst(t) : t && typeof t === "object" && "year" in t && "month" in t && "day" in t
+      ? `${String((t as { day: number }).day).padStart(2, "0")}-${String((t as { month: number }).month).padStart(2, "0")}-${(t as { year: number }).year}` : "";
+    const eq = createLabChart(el, 300, { timeScale: { minBarSpacing: 0.01, borderColor: themeColors(el).steel }, rightPriceScale: { mode: 1, borderColor: themeColors(el).steel }, localization: { timeFormatter: day } });
     let offCross: (() => void) | undefined;
     if (eq) {
       const { chart, colors } = eq;
@@ -122,30 +125,40 @@ export function RunResults({ result, market, chartsOnly = false }: { result: Run
         const date = typeof value === "string" ? value : value && typeof value === "object" && "year" in value && "month" in value && "day" in value
           ? `${value.year}-${String(value.month).padStart(2, "0")}-${String(value.day).padStart(2, "0")}` : undefined;
         const i = date ? byDate.get(date) : undefined;
-        if (equityValueRef.current) equityValueRef.current.textContent = i === undefined ? `Latest ${num(result.equity.at(-1))}×` : `${result.dates[i]} · ${num(result.equity[i])}×`;
+        if (equityValueRef.current) equityValueRef.current.textContent = i === undefined ? `Latest ${num(result.equity.at(-1))}×` : `${dayFirst(result.dates[i])} · ${num(result.equity[i])}×`;
       };
       chart.subscribeCrosshairMove?.(onCross);
       offCross = () => chart.unsubscribeCrosshairMove?.(onCross);
     }
+    // Underwater: equity ÷ its running peak − 1, on the same chart engine as Portfolio Equity (DD-MM-YYYY hover inside
+    // the chart, the deepest point marked), shaded from 0 % down to the line
     const values = drawdown(result.equity);
-    const renderDrawdown = () => {
-      ddEl.classList.remove("lab-chart-empty");
-      if (!values.length || values.length !== result.dates.length || values.some((value) => !Number.isFinite(value))) {
-        ddEl.classList.add("lab-chart-empty"); ddEl.textContent = "No drawdown data for this period."; return;
+    let dd: ReturnType<typeof createLabChart> = null, offDd: (() => void) | undefined;
+    ddEl.classList.remove("lab-chart-empty");
+    if (!values.length || values.length !== result.dates.length || values.some((value) => !Number.isFinite(value))) {
+      ddEl.classList.add("lab-chart-empty"); ddEl.textContent = "No drawdown data for this period.";
+    } else if (values.length === 1) {
+      ddEl.classList.add("lab-chart-empty"); ddEl.textContent = `Drawdown ${pct(values[0], 2)} · ${dayFirst(result.dates[0])}`;
+    } else {
+      dd = createLabChart(ddEl, 300, { timeScale: { minBarSpacing: 0.01, borderColor: themeColors(ddEl).steel }, rightPriceScale: { borderColor: themeColors(ddEl).steel, scaleMargins: { top: 0, bottom: 0.1 } }, // 0 % (the peak) is the top edge
+        localization: { timeFormatter: day, priceFormatter: (v: number) => pct(v, 1) } });
+      if (dd) {
+        const { chart, colors } = dd;
+        const area = chart.addAreaSeries({ lineColor: colors.red, topColor: colors.red + "22", bottomColor: colors.red + "66", invertFilledArea: true, lineWidth: 1, priceLineVisible: false });
+        area.setData(linePoints(result.dates, values));
+        const worst = values.reduce((k, v, i) => (v < values[k] ? i : k), 0);
+        area.setMarkers?.([{ time: result.dates[worst], position: "belowBar", shape: "circle", color: colors.red, text: `Worst ${pct(values[worst], 2)} · ${dayFirst(result.dates[worst])}` }]);
+        chart.timeScale().fitContent();
+        const at = new Map(result.dates.map((date, i) => [date, i]));
+        const onDd = ({ time }: { time?: string }) => {
+          const i = typeof time === "string" ? at.get(time) : undefined;
+          if (ddValueRef.current) ddValueRef.current.textContent = i === undefined ? `Latest ${pct(values.at(-1))}` : `${dayFirst(result.dates[i])} · ${pct(values[i], 2)}`;
+        };
+        chart.subscribeCrosshairMove?.(onDd);
+        offDd = () => chart.unsubscribeCrosshairMove?.(onDd);
       }
-      // The shared renderer needs at least two x coordinates. Never invent a second session for a single observation.
-      if (values.length === 1) {
-        ddEl.classList.add("lab-chart-empty"); ddEl.textContent = `Drawdown ${pct(values[0], 2)} · ${dayFirst(result.dates[0])}`; return;
-      }
-      const render = window.VaultRuntime?.renderAreaChart;
-      if (!render) { ddEl.classList.add("lab-chart-empty"); ddEl.textContent = "Drawdown chart is unavailable."; return; }
-      // One renderer and the same house chart as book results: gradient, minimum marker, crosshair and tooltip.
-      render(ddEl, result.dates, values, { color: themeColors(ddEl).red, fmt: (value) => pct(value, 2), axFmt: (value) => pct(value, 0), markMin: true, h: 300 });
-    };
-    renderDrawdown();
-    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(renderDrawdown);
-    observer?.observe(ddEl);
-    return () => { observer?.disconnect(); offCross?.(); eq?.dispose(); ddEl.replaceChildren(); };
+    }
+    return () => { offCross?.(); offDd?.(); eq?.dispose(); dd?.dispose(); ddEl.replaceChildren(); };
   }, [result, themeKey]);
 
   return (
@@ -207,6 +220,9 @@ export function RunTables({ result, part, explain }: { result: RunResult; part?:
   const report = window.VaultReport;
   const monthly = report && result.equity.length ? report.monthly({ dates: result.dates, equity: result.equity.map((v) => v / result.equity[0]) }) : null;
   const pivot = monthly ? monthPivot(monthly.years, monthly.months) : { rows: {}, cols: [], all: undefined };
+  // the Avg row's Total: the average of the yearly Totals (sums, like the column above it)
+  const totals = monthly ? monthly.years.map((y) => pivot.rows[y]).filter((v): v is number => typeof v === "number") : [];
+  const avgTotal = totals.length ? totals.reduce((a, b) => a + b, 0) / totals.length : null;
   const table = tradeTable(result, explain ? reasonLabeler(explain) : undefined), pages = Math.max(1, Math.ceil(table.rows.length / PAGE)), at = Math.min(page, pages - 1);
   const shown = (order === "oldest" ? table.rows.map((_, k) => k) : table.rows.map((_, k) => table.rows.length - 1 - k)).slice(at * PAGE, (at + 1) * PAGE);
 
@@ -217,7 +233,7 @@ export function RunTables({ result, part, explain }: { result: RunResult; part?:
         <div className="tblwrap lab-monthly">
           <table className="tbl">
             <caption>YOY-Monthly</caption>
-            <thead><tr><th>Year</th>{MONTHS.map((m) => <th className="n" key={m}>{m}</th>)}<th className="n" title="Sum of the year's monthly returns">Total</th><th className="n" title="The year's compounded return">Yr%</th></tr></thead>
+            <thead><tr><th>Year</th>{MONTHS.map((m) => <th className="n" key={m}>{m}</th>)}<th className="n" title="Sum of the year's monthly returns">Total</th></tr></thead>
             <tbody>
               {monthly.years.map((y) => (
                 <tr key={y}>
@@ -227,15 +243,14 @@ export function RunTables({ result, part, explain }: { result: RunResult; part?:
                     return <td className={sign(v)} key={i}>{ret(v)}</td>;
                   })}
                   <td className={sign(pivot.rows[y])}>{ret(pivot.rows[y])}</td>
-                  <td className={sign(monthly.annual[y])}>{ret(monthly.annual[y])}</td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
               <tr data-lab-pivot-total><td>Total</td>{pivot.cols.map((v, i) => <td className={sign(v)} key={i}>{ret(v)}</td>)}
-                <td className={sign(pivot.all)}>{ret(pivot.all)}</td><td /></tr>
+                <td className={sign(pivot.all)}>{ret(pivot.all)}</td></tr>
               {!!monthly.averages?.length && <tr><td>Avg</td>{MONTHS.map((_, i) => <td className={sign(monthly.averages[i])} key={i}>{pct(monthly.averages[i])}</td>)}
-                <td /><td className={sign(monthly.annualAverage)}>{pct(monthly.annualAverage)}</td></tr>}
+                <td className={sign(avgTotal)}>{pct(avgTotal)}</td></tr>}
             </tfoot>
           </table>
         </div>

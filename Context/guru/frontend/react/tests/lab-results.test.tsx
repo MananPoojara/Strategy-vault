@@ -78,12 +78,11 @@ it("monthly table from VaultReport; table and CSV button absent without it", asy
   const cells = [...host.querySelectorAll(".lab-monthly tbody td")].map((td) => td.textContent);
   expect(cells[0]).toBe("2024");
   expect(cells[1]).toBe("2.0%");
-  expect(cells[14]).toBe("5.0%"); // Yr%, after the Total column
+  expect(cells).toHaveLength(14); // Year, 12 months, Total (no Yr% column)
   expect(cells.slice(1, 13).filter((c) => c === "0.0%" || c === "—")).toEqual([]); // a month with no return is blank
   expect(host.querySelector(".lab-monthly caption")!.textContent).toBe("YOY-Monthly");
-  expect(host.querySelector(".lab-monthly thead th:nth-last-child(2)")!.textContent).toBe("Total");
   expect(host.querySelector("[data-lab-pivot-total] td")!.textContent).toBe("Total");
-  expect(host.querySelector(".lab-monthly thead th:last-child")!.textContent).toBe("Yr%");
+  expect(host.querySelector(".lab-monthly thead th:last-child")!.textContent).toBe("Total");
   await unmount();
   delete window.VaultReport;
   host = await mount(<RunTables result={runFixture} />);
@@ -96,26 +95,31 @@ it("monthly normalizes equity to start at 1", async () => {
   expect((window.VaultReport!.monthly as ReturnType<typeof vi.fn>).mock.calls[0][0].equity).toEqual(runFixture.equity);
 });
 
-it("equity chart keeps its log scale and full data and is removed on unmount", async () => {
-  const removed: number[] = [], options: Record<string, unknown>[] = [], series: { kind: string; data: unknown[] }[] = [];
-  window.LightweightCharts = { createChart: (_el, o) => {
-    const id = options.push(o);
-    const add = (kind: string) => () => { const s = { kind, data: [] as unknown[] }; series.push(s);
-      return { setData: (d: unknown[]) => { s.data = d; }, applyOptions() {} }; };
-    return { addCandlestickSeries: add("candle"), addLineSeries: add("line"), addAreaSeries: add("area"),
-      timeScale: () => ({ fitContent() {}, setVisibleRange() {} }), applyOptions() {}, resize() {}, remove: () => removed.push(id) };
-  } };
+/** A fake Lightweight Charts that records each chart's options, series (kind, options, data, markers) and removal. */
+function chartLab() {
+  const charts: { options: Record<string, unknown>; series: { kind: string; opts: Record<string, unknown>; data: unknown[]; markers: unknown[] }[]; removed: boolean }[] = [];
+  window.LightweightCharts = { createChart: (_el: HTMLElement, options: Record<string, unknown>) => {
+    const c = { options, series: [] as (typeof charts)[number]["series"], removed: false }; charts.push(c);
+    const add = (kind: string) => (opts: Record<string, unknown>) => { const s = { kind, opts, data: [] as unknown[], markers: [] as unknown[] }; c.series.push(s);
+      return { setData: (d: unknown[]) => { s.data = d; }, setMarkers: (m: unknown[]) => { s.markers = m; }, applyOptions() {} }; };
+    return { addCandlestickSeries: add("candle"), addLineSeries: add("line"), addAreaSeries: add("area"), timeScale: () => ({ fitContent() {}, setVisibleRange() {} }),
+      applyOptions() {}, resize() {}, remove: () => { c.removed = true; }, subscribeCrosshairMove() {}, unsubscribeCrosshairMove() {} };
+  } } as unknown as Window["LightweightCharts"];
+  return charts;
+}
+
+it("equity chart keeps its log scale and full data; both charts are removed on unmount", async () => {
+  const charts = chartLab();
   await mount(<RunResults result={runFixture} market="in" />);
-  expect(options).toHaveLength(1);
-  expect((options[0].rightPriceScale as { mode: number }).mode).toBe(1);
-  expect(series.map((s) => s.kind)).toEqual(["area", "line"]);
-  expect(series[0].data[2]).toEqual({ time: runFixture.dates[2], value: 1.02 });
-  expect(series[1].data[1]).toEqual({ time: runFixture.dates[1], value: 1.01 });
+  expect(charts).toHaveLength(2); // Portfolio Equity, then Underwater Equity
+  expect((charts[0].options.rightPriceScale as { mode: number }).mode).toBe(1);
+  expect(charts[0].series.map((x) => x.kind)).toEqual(["area", "line"]);
+  expect(charts[0].series[0].data[2]).toEqual({ time: runFixture.dates[2], value: 1.02 });
+  expect(charts[0].series[1].data[1]).toEqual({ time: runFixture.dates[1], value: 1.01 });
   expect(drawdown(runFixture.equity)[3]).toBeCloseTo(1.01 / 1.02 - 1);
   await unmount();
-  expect(removed).toEqual([1]);
+  expect(charts.every((c) => c.removed)).toBe(true);
 });
-
 it("provisional strip on gl and drawdown math", async () => {
   const gl = { ...runFixture, provisional: true as const, instrument: { ...runFixture.instrument, label: "Provisional · TradingView export HSI:HSI, daily" } };
   const host = await mount(<RunResults result={gl} market="gl" />);
@@ -200,41 +204,32 @@ it("shows a nondefault allocation even on a single-leg trade and keeps CSV plain
   expect(table.csv.flat().every((cell) => typeof cell === "string")).toBe(true);
 });
 
-it("calls the exact shared area renderer with full drawdown dates, percentages and worst marker", async () => {
-  const renderAreaChart = vi.fn((el: HTMLElement) => { el.innerHTML = '<svg class="shared-test-chart"></svg>'; });
-  window.VaultRuntime = { renderAreaChart } as unknown as Window["VaultRuntime"];
-  const charts: Record<string, unknown>[] = [];
-  window.LightweightCharts = { createChart: (_el, options) => {
-    charts.push(options); const add = () => ({setData() {}, applyOptions() {}});
-    return {addCandlestickSeries:add,addLineSeries:add,addAreaSeries:add,timeScale:()=>({fitContent() {},setVisibleRange() {}}),applyOptions() {},resize() {},remove() {}};
-  } };
+it("Underwater Equity: equity ÷ running peak − 1 on the lab chart engine, shaded from 0 %, worst point and hover dates DD-MM-YYYY", async () => {
+  const charts = chartLab();
   const host = await mount(<RunResults result={runFixture} market="in" />);
   expect(host.querySelector('[data-lab-chart="equity"] h3')?.textContent).toBe("Portfolio Equity");
   expect(host.querySelector('[data-lab-chart="drawdown"] h3')?.textContent).toBe("Underwater Equity");
-  expect(charts).toHaveLength(1); expect(charts[0].height).toBe(300);
-  expect((charts[0].timeScale as {minBarSpacing:number}).minBarSpacing).toBe(0.01);
-  const [el, dates, values, options] = renderAreaChart.mock.calls[0] as unknown as [HTMLElement,string[],number[],{fmt:(n:number)=>string;axFmt:(n:number)=>string;markMin:boolean;h:number;color:string}];
-  expect(el).toBe(host.querySelector('[data-lab-drawdown]'));
-  expect(dates).toEqual(runFixture.dates); expect(values).toEqual(drawdown(runFixture.equity));
-  expect(options).toMatchObject({markMin:true,h:300,color:"#c43c3c"});
-  expect(options.fmt(-0.1234)).toBe("-12.34%"); expect(options.axFmt(-0.1234)).toBe("-12%");
-  expect(host.querySelector('.shared-test-chart')).not.toBeNull();
-  expect(readFileSync("src/compat/runtime.js","utf8")).toMatch(/renderAreaChart:\s*bkArea/);
+  expect(charts[0].options.height).toBe(300); expect((charts[0].options.timeScale as { minBarSpacing: number }).minBarSpacing).toBe(0.01);
+  const dd = charts[1], area = dd.series[0], values = drawdown(runFixture.equity);
+  expect(area.kind).toBe("area"); expect(area.opts).toMatchObject({ invertFilledArea: true });
+  expect(area.data).toEqual(runFixture.dates.map((time, i) => ({ time, value: values[i] })));
+  const worst = values.reduce((k, v, i) => (v < values[k] ? i : k), 0);
+  expect(area.markers).toEqual([expect.objectContaining({ time: runFixture.dates[worst], text: `Worst ${(values[worst] * 100).toFixed(2)}% · ${runFixture.dates[worst].split("-").reverse().join("-")}` })]);
+  const loc = dd.options.localization as { timeFormatter(t: unknown): string; priceFormatter(v: number): string };
+  expect(loc.timeFormatter("2020-03-25")).toBe("25-03-2020"); expect(loc.timeFormatter({ year: 2020, month: 3, day: 5 })).toBe("05-03-2020");
+  expect(loc.priceFormatter(-0.1234)).toBe("-12.3%");
+  expect((charts[0].options.localization as { timeFormatter(t: unknown): string }).timeFormatter("2020-03-25")).toBe("25-03-2020");
 });
-it("redraws the same shared renderer for resizing and theme changes, then cleans up", async () => {
-  const observers: {callback:()=>void; disconnect:ReturnType<typeof vi.fn>}[] = [];
-  vi.stubGlobal("ResizeObserver",class {disconnect=vi.fn(); constructor(public callback:()=>void){observers.push(this);} observe(){} });
-  const renderAreaChart = vi.fn((el:HTMLElement) => {el.innerHTML='<svg></svg>';});
-  window.VaultRuntime = {renderAreaChart} as unknown as Window["VaultRuntime"];
-  const host=await mount(<RunResults result={runFixture} market="in" />), el=host.querySelector('[data-lab-drawdown]')!;
-  const count=renderAreaChart.mock.calls.length;
-  await act(async()=>{observers.at(-1)!.callback();});
-  expect(renderAreaChart.mock.calls.length).toBeGreaterThan(count);
-  await act(async()=>{document.documentElement.setAttribute("data-theme","midnight");await new Promise((r)=>setTimeout(r,0));});
-  expect(renderAreaChart.mock.calls.length).toBeGreaterThan(count+1);
-  await unmount(); expect(el.childNodes).toHaveLength(0); expect(observers.every((o)=>o.disconnect.mock.calls.length>0)).toBe(true);
+it("a theme change redraws both charts and leaving removes every chart", async () => {
+  const charts = chartLab();
+  await mount(<RunResults result={runFixture} market="in" />);
+  expect(charts).toHaveLength(2);
+  await act(async () => { document.documentElement.setAttribute("data-theme", "midnight"); await new Promise((r) => setTimeout(r, 0)); });
+  expect(charts.length).toBeGreaterThan(2);
+  expect(charts.slice(0, 2).every((c) => c.removed)).toBe(true); // the old pair is gone
+  await unmount();
+  expect(charts.every((c) => c.removed)).toBe(true);
 });
-
 it("drawdown includes a first-day loss against the declared starting equity", () => {
   expect(drawdown([0.9, 0.8]).map((v) => Number(v.toFixed(6)))).toEqual([-0.1, -0.2]);
   expect(drawdown([1, 1.2, 1.08]).map((v) => Number(v.toFixed(6)))).toEqual([0, 0, -0.1]);
@@ -242,17 +237,18 @@ it("drawdown includes a first-day loss against the declared starting equity", ()
 
 
 it("guards empty and one-session drawdown without fabricating bars; flat periods stay flat", async () => {
-  const renderAreaChart=vi.fn();window.VaultRuntime={renderAreaChart} as unknown as Window["VaultRuntime"];
-  let host=await mount(<RunResults result={{...runFixture,dates:[],equity:[],bh:[]}} market="in" />);
-  expect(renderAreaChart).not.toHaveBeenCalled();expect(host.querySelector('[data-lab-drawdown]')?.textContent).toContain("No drawdown data");
+  let charts = chartLab();
+  let host = await mount(<RunResults result={{ ...runFixture, dates: [], equity: [], bh: [] }} market="in" />);
+  expect(charts).toHaveLength(1); expect(host.querySelector('[data-lab-drawdown]')?.textContent).toContain("No drawdown data"); // no underwater chart
   await unmount();
-  host=await mount(<RunResults result={{...runFixture,dates:["2024-01-01"],equity:[0.9],bh:[1]}} market="in" />);
-  expect(renderAreaChart).not.toHaveBeenCalled();expect(host.querySelector('[data-lab-drawdown]')?.textContent).toContain("-10.00% · 01-01-2024");
+  charts = chartLab();
+  host = await mount(<RunResults result={{ ...runFixture, dates: ["2024-01-01"], equity: [0.9], bh: [1] }} market="in" />);
+  expect(charts).toHaveLength(1); expect(host.querySelector('[data-lab-drawdown]')?.textContent).toContain("-10.00% · 01-01-2024");
   await unmount();
-  await mount(<RunResults result={{...runFixture,equity:runFixture.equity.map(()=>1)}} market="in" />);
-  expect(renderAreaChart.mock.calls[0][1]).toEqual(runFixture.dates);expect(renderAreaChart.mock.calls[0][2]).toEqual(runFixture.dates.map(()=>0));
+  charts = chartLab();
+  await mount(<RunResults result={{ ...runFixture, equity: runFixture.equity.map(() => 1) }} market="in" />);
+  expect(charts[1].series[0].data).toEqual(runFixture.dates.map((time) => ({ time, value: 0 })));
 });
-
 it("Download TS sits under the tradesheet: the format picked from the start date, the template's costs shown and editable", async () => {
   const { TsDownload } = await import("../src/features/lab/TsDownload");
   const ctx = { spec: { v: 1, entry: { all: [] }, exit: { any: [] } }, own: { v: 1, entry: { all: [] }, exit: { any: [] } }, catalogue: { indicators: [] } } as never;

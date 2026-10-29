@@ -341,9 +341,6 @@ export function ReportPanel({ report, trades, spec, run }: { report: LabReport; 
   return (
     <section className="box lab-report" data-lab-report>
       <h3 className="box-h">Report <small>AmiBroker-style statistics · simulated · not a book method</small></h3>
-      <p className="cap lab-report-constants" data-lab-report-constants>
-        Risk-free rate {report.rates?.sharpe ?? 5} % (Sharpe of trades) · {report.rates?.upi ?? 5.4} % (Ulcer performance index) · distribution buckets 5 % · Buy&amp;Hold: {run?.instrument?.ticker ?? "the same instrument"}{report.buyhold ? " (trade columns: one buy-and-hold trade over the run)" : ""}
-      </p>
       {/* one titled card per AmiBroker block, flowing in columns across the width (no tall table beside an empty half page) */}
       <div className="lab-report-cards" data-lab-report-stats>
         {reportBlocks(report, run).map(({ key, head, rows }) => (
@@ -370,6 +367,9 @@ export function ReportPanel({ report, trades, spec, run }: { report: LabReport; 
         {!!params.length && <table className="tbl" data-lab-report-params><caption>Parameters</caption><tbody>{params.map(([k, v]) => <tr key={k}><td className="lab-report-key">{k}</td><td className="n">{v}</td></tr>)}</tbody></table>}
       </details>}
       <details className="lab-report-how" data-lab-report-how><summary>How these numbers are calculated</summary>
+        <p className="cap lab-report-constants" data-lab-report-constants>
+        Risk-free rate {report.rates?.sharpe ?? 5} % (Sharpe of trades) · {report.rates?.upi ?? 5.4} % (Ulcer performance index) · distribution buckets 5 % · Buy&amp;Hold: {run?.instrument?.ticker ?? "the same instrument"}{report.buyhold ? " (trade columns: one buy-and-hold trade over the run)" : ""}
+      </p>
         <ul className="rnote lab-report-notes">{report.notes.map((n) => <li key={n}>{n}</li>)}</ul></details>
     </section>
   );
