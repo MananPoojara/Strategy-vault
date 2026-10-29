@@ -126,7 +126,7 @@ services:
     restart: unless-stopped
   web:
     image: caddy:2-alpine
-    volumes: ['${VAULT_RUNTIME_ROOT}/Caddyfile:/etc/caddy/Caddyfile:ro']
+    volumes: ['${VAULT_RUNTIME_ROOT}/Caddyfile:/etc/caddy/Caddyfile:ro', '${VAULT_RUNTIME_ROOT}/maintenance:/srv/maintenance:ro']
     ports: ['${VAULT_BIND_HOST:-127.0.0.1}:${VAULT_PORT:-8180}:8080']
     depends_on:
       gateway: {condition: service_healthy}

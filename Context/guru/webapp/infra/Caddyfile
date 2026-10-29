@@ -7,7 +7,72 @@
         not path /api/app/books/files/*
     }
     encode @compressible gzip
-    reverse_proxy gateway:8181 {
-        header_up X-Vault-Client-IP {remote_host}
+    @maintenance file {
+        root /srv/maintenance
+        try_files enabled
+    }
+    @maintenance_api {
+        path /api/*
+        file {
+            root /srv/maintenance
+            try_files enabled
+        }
+    }
+    handle /healthz {
+        reverse_proxy gateway:8181
+    }
+    handle /__maintenance/status {
+        header Content-Type application/json
+        header Cache-Control no-store
+        respond @maintenance `{"maintenance":true}` 200
+        respond `{"maintenance":false}` 200
+    }
+    handle /maintenance-watch.js {
+        root * /srv/maintenance
+        header Cache-Control no-store
+        file_server
+    }
+    handle /maintenance.html {
+        root * /srv/maintenance
+        header Cache-Control no-store
+        file_server
+    }
+    handle @maintenance_api {
+        header Content-Type application/json
+        header Cache-Control no-store
+        header Retry-After 10
+        respond `{"error":"maintenance","message":"Strategy Vault is being updated. Please retry shortly."}` 503
+    }
+    handle @maintenance {
+        root * /srv/maintenance
+        rewrite * /maintenance.html
+        header Cache-Control no-store
+        header Retry-After 10
+        file_server {
+            status 503
+        }
+    }
+    handle {
+        reverse_proxy gateway:8181 {
+            header_up X-Vault-Client-IP {remote_host}
+        }
+    }
+    handle_errors {
+        @error_api path /api/*
+        handle @error_api {
+            header Content-Type application/json
+            header Cache-Control no-store
+            header Retry-After 10
+            respond `{"error":"temporarily_unavailable","message":"Strategy Vault is temporarily unavailable."}` 503
+        }
+        handle {
+            root * /srv/maintenance
+            rewrite * /maintenance.html
+            header Cache-Control no-store
+            header Retry-After 10
+            file_server {
+                status 503
+            }
+        }
     }
 }
