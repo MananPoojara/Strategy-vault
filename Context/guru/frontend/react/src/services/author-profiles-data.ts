@@ -439,6 +439,13 @@ export const AUTHOR_PROFILE_DATA = {
   "known_for": ["Trading Toolkit Collection Vol.3"],
   "sources": [],
   "confidence": "low"
+ }, "krausz": {
+  "kind": "person",
+  "mastery": ["Gann swing charts", "Multiple time frames", "T-bond futures"],
+  "summary": "Robert Krausz, interviewed in Jack Schwager's The New Market Wizards, wrote W.D. Gann Treasure Discovered (1998): Gann swing charts, the HiLo Activator and mechanical swing plans tested trade by trade on T-bond futures and five US stocks. This profile rests on the book itself.",
+  "known_for": ["W.D. Gann Treasure Discovered", "Fibonacci Trader"],
+  "sources": [],
+  "confidence": "low"
  }, "ponsi": {
   "kind": "person",
   "mastery": [

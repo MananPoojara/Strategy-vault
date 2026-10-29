@@ -307,6 +307,7 @@ export const sourceReview: Record<string, {type: string; sameWorkAs?: string; pe
   "bsichi": {"type": "book", "people": ["Balkrishna M. Sadekar"]},
   "ggcharts": {"type": "book", "people": ["Ashwani Gujral"]},
   "astk3": {"type": "book", "people": ["Alberto Sabatini"]},
+  "krgann": {"type": "book", "people": ["Robert Krausz"]},
   "jcmtt": {"type": "book", "people": ["John F. Carter"]},
   "jcteu": {"type": "article", "people": ["John F. Carter"]},
   "jcym5": {"type": "course_manual", "people": ["John F. Carter"]},

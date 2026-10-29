@@ -1401,7 +1401,7 @@ fn la_swsp_policy(def:&StrategyDef)->Option<Policy> {
 // ---------------------------------------------------------------- Lane C2 singles 2026-10-29 (lane C)
 // Admission only for the module REVIEWED lists (authors/goodwin/admission/goodwin_ref.py (header)); kept in one block to merge.
 pub fn lc2_agtsic_reviewed(def:&StrategyDef)->bool {(def.book=="agtsic" && crate::books::agtsic::reviewed(def.id))}
-pub fn lc3_reviewed(def:&StrategyDef)->bool {use crate::books::{cfwtab,bsichi,ggcharts,awcpf,astk3};match def.book {"cfwtab"=>cfwtab::reviewed(def.id),"bsichi"=>bsichi::reviewed(def.id),"ggcharts"=>ggcharts::reviewed(def.id),"awcpf"=>awcpf::reviewed(def.id),"astk3"=>astk3::reviewed(def.id),_=>false}}
+pub fn lc3_reviewed(def:&StrategyDef)->bool {use crate::books::{cfwtab,bsichi,ggcharts,awcpf,astk3,krgann};match def.book {"krgann"=>krgann::reviewed(def.id),"cfwtab"=>cfwtab::reviewed(def.id),"bsichi"=>bsichi::reviewed(def.id),"ggcharts"=>ggcharts::reviewed(def.id),"awcpf"=>awcpf::reviewed(def.id),"astk3"=>astk3::reviewed(def.id),_=>false}}
 pub fn lanec2_reviewed(def:&StrategyDef)->bool {lc2_agtsic_reviewed(def) || lc3_reviewed(def)}
 fn lc2_label(def:&StrategyDef)->&'static str {match def.book {
     "cfwtab"=>"Charles F. Wright tested these TradeStation strategies on US stocks (Disney, Caterpillar, IBM, Coca-Cola) and S&P 500 futures; runs on indices, ETFs and single stocks, US and India, are a declared application, one unit per trade, no costs. Shorts on a cash index are hypothetical.",
@@ -1409,11 +1409,12 @@ fn lc2_label(def:&StrategyDef)->&'static str {match def.book {
     "ggcharts"=>"Ashwani Gujral shows these rules on Indian stocks; runs on indices, ETFs and other stocks, US and India, are a declared application, one unit per trade, no costs. Shorts on a cash index are hypothetical.",
     "awcpf"=>"A. W. Cohen's point & figure box sizes are dollar amounts for NYSE stocks; this rule runs on US stocks, ETFs and indices only (a declared application for ETFs and indices), one unit per trade, no costs. Shorts on a cash index are hypothetical.",
     "astk3"=>"Alberto Sabatini shows the swing chart on Italian stocks; runs on indices, ETFs and single stocks, US and India, are a declared application, one unit per trade, no costs.",
+    "krgann"=>"Robert Krausz tested the Basic Gann Swing Plan on 30-year T-bond futures and on five US stocks (IBM, Eli Lilly, Philip Morris, Intel, J.P. Morgan, 1992-1996); runs on indices, ETFs and other stocks, US and India, are a declared application, one unit per trade, no costs. Shorts on a cash index are hypothetical.",
     _=>LC2_AGTSIC_LABEL}}
 const LC2_AGTSIC_LABEL:&str="Andrew Goodwin tested these rules on S&P 500 futures (continuous contract, 1982-1997); runs on indices, ETFs and single stocks, US and India, are a declared application, one unit per trade, no costs. The options-expiration rule runs on US instruments only (US monthly expiration calendar). Shorts on a cash index are hypothetical.";
 fn lanec2_policy(def:&StrategyDef)->Option<Policy> {
     if !lanec2_reviewed(def) {return None;}
-    let src=match def.book {"cfwtab"=>"Charles F. Wright / Trading as a Business (1998), printed TradeStation code","bsichi"=>"Balkrishna Sadekar / How to Make Money Trading the Ichimoku System, Ch.3 basic strategies","ggcharts"=>"Ashwani Gujral / How to Make Money Trading with Charts, Ch.9-10","awcpf"=>"A. W. Cohen / Three-Point Reversal Method of Point & Figure (1984)","astk3"=>"Alberto Sabatini / Trading Toolkit Collection Vol.3, Gann swing charts",_=>"Andrew Goodwin / Trading Secrets of the Inner Circle (1997), printed TradeStation code"};
+    let src=match def.book {"cfwtab"=>"Charles F. Wright / Trading as a Business (1998), printed TradeStation code","bsichi"=>"Balkrishna Sadekar / How to Make Money Trading the Ichimoku System, Ch.3 basic strategies","ggcharts"=>"Ashwani Gujral / How to Make Money Trading with Charts, Ch.9-10","awcpf"=>"A. W. Cohen / Three-Point Reversal Method of Point & Figure (1984)","astk3"=>"Alberto Sabatini / Trading Toolkit Collection Vol.3, Gann swing charts","krgann"=>"Robert Krausz / W.D. Gann Treasure Discovered (1998), Basic Gann Swing Plan",_=>"Andrew Goodwin / Trading Secrets of the Inner Circle (1997), printed TradeStation code"};
     let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],src);
     p.preferred_basket=Some(if def.id=="agtsic_expiry" || matches!(def.book,"awcpf"|"cfwtab") {"us_sp500"} else {"nifty50"});p.market_adaptation=true;Some(p)
 }
@@ -3684,9 +3685,9 @@ mod tests {
     }
     #[test]
     fn lc3_review_admits_exact_ids() {
-        use crate::books::{cfwtab,bsichi,ggcharts,awcpf,astk3};
-        let all:Vec<StrategyDef>=cfwtab::catalogue().into_iter().chain(bsichi::catalogue()).chain(ggcharts::catalogue()).chain(awcpf::catalogue()).chain(astk3::catalogue()).collect();
-        let mut want:Vec<&str>=[cfwtab::REVIEWED,bsichi::REVIEWED,ggcharts::REVIEWED,awcpf::REVIEWED,astk3::REVIEWED].concat();
+        use crate::books::{cfwtab,bsichi,ggcharts,awcpf,astk3,krgann};
+        let all:Vec<StrategyDef>=cfwtab::catalogue().into_iter().chain(bsichi::catalogue()).chain(ggcharts::catalogue()).chain(awcpf::catalogue()).chain(astk3::catalogue()).chain(krgann::catalogue()).collect();
+        let mut want:Vec<&str>=[cfwtab::REVIEWED,bsichi::REVIEWED,ggcharts::REVIEWED,awcpf::REVIEWED,astk3::REVIEWED,krgann::REVIEWED].concat();
         let mut admitted:Vec<&str>=all.iter().filter(|d|lanec2_reviewed(d)).map(|d|d.id).collect();
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {
@@ -3703,7 +3704,7 @@ mod tests {
                 assert!(check(d,"RELIANCE",true).is_none(),"{}",d.id);
             }
         }
-        for id in ["cfwtab_rangeleader","astk3_outside"] {assert!(!all.iter().any(|d|d.id==id && lanec2_reviewed(d)),"{id}");}
+        for id in ["cfwtab_rangeleader","astk3_outside","krgann_pro"] {assert!(!all.iter().any(|d|d.id==id && lanec2_reviewed(d)),"{id}");}
     }
     // ---- end Lane C2 singles block ----
     // ---- Lane A newsletters held (2026-10-26, lane B) ----

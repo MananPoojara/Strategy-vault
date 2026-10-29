@@ -240,6 +240,8 @@ export const LIB = [
     { id: "ggcharts", sourceIds: ["title-434e9480e707efd1"], title: "How to Make Money Trading with Charts", year: 2009, blurb: "Gujral · 23-30 EMA band with a confirming close, MACD histogram turn below/above zero; Railway-Line Theory and patterns held" }] },
   { id: "sabatini", name: "Alberto Sabatini", tagline: "Italian trader and author · the Gann one-bar swing chart trend method runs here; outside-bar orders and Gann angles held", books: [
     { id: "astk3", sourceIds: ["title-d13dcf241ff9a9ab"], title: "Trading Toolkit Collection Vol.3: Gli Swing Chart di W.D. Gann", year: 2001, blurb: "Sabatini · buy above the last swing top, out below the last swing bottom (Italian, scanned)" }] },
+  { id: "krausz", name: "Robert Krausz", tagline: "Gann swing trader (New Market Wizards) · the Basic Gann Swing Plan runs here; the Professional Plan needs 10/20-minute T-bond bars", books: [
+    { id: "krgann", sourceIds: ["title-d7c844f5d172b872"], title: "W.D. Gann Treasure Discovered: Simple Trading Plans for Stocks & Commodities", year: 1998, blurb: "Krausz · 2-bar Gann swing trend + 3-day HiLo Activator entry and trailing exit, 38% swing retracement exit (scanned)" }] },
   // ---- end Lane C 29 Oct block ----
   // ---- Arms block (2026-10-24) ----
   { id: "arms", name: "Richard W. Arms Jr.", tagline: "Inventor of Equivolume, Ease of Movement and the Arms Index · the two EMV rules run here", books: [
