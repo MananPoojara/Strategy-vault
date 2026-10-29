@@ -3555,13 +3555,6 @@ mod tests {
         let all:Vec<StrategyDef>=wtdfg::catalogue().into_iter().chain(wtdtt::catalogue()).collect();
         let mut want:Vec<&str>=wtdfg::REVIEWED.iter().chain(wtdtt::REVIEWED.iter()).copied().collect();
         let mut admitted:Vec<&str>=all.iter().filter(|d|downs_reviewed(d)).map(|d|d.id).collect();
-    // ---- Scott W. Barrie block (2026-10-29, lane B) ----
-    #[test]
-    fn barrie_review_admits_exact_ids() {
-        use crate::books::{sbcig};
-        let all:Vec<StrategyDef>=sbcig::catalogue().into_iter().collect();
-        let mut want:Vec<&str>=sbcig::REVIEWED.iter().copied().collect();
-        let mut admitted:Vec<&str>=all.iter().filter(|d|barrie_reviewed(d)).map(|d|d.id).collect();
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
@@ -3573,6 +3566,17 @@ mod tests {
         }
     }
     // ---- end Walter T. Downs block ----
+    // ---- Scott W. Barrie block (2026-10-29, lane B) ----
+    #[test]
+    fn barrie_review_admits_exact_ids() {
+        use crate::books::{sbcig};
+        let all:Vec<StrategyDef>=sbcig::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=sbcig::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|barrie_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
             for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
             assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
         }
