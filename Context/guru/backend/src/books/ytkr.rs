@@ -198,15 +198,15 @@ pub fn catalogue() -> Vec<StrategyDef> {
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     let pct = |d: f64| p("open_pct", "Open % (entry level from the open)", d, 0.0, 4.0, 0.25);
-    let day = |d: f64| p("weekday", "Weekday (1 Mon .. 5 Fri)", d, 1.0, 5.0, 1.0);
+    let day = |d: f64| p("weekday", "Weekday (1 Monday, 2 Tuesday, 3 Wednesday, 4 Thursday, 5 Friday)", d, 1.0, 5.0, 1.0);
     Some(match id {
         INSIDE => vec![pct(0.25)],
         OUTSIDE => vec![pct(0.75)],
         TURTLE => vec![day(1.0), pct(0.5), p("low_n", "Lowest close period (days, incl. yesterday)", 14.0, 2.0, 25.0, 1.0)],
         TURTLE_GAPUP => vec![day(5.0), pct(1.0), p("low_n", "Lowest close period (days, incl. yesterday)", 4.0, 2.0, 25.0, 1.0)],
         MAMM => vec![
-            p("entry_day", "Entry weekday (1 Mon .. 5 Fri)", 5.0, 1.0, 5.0, 1.0),
-            p("exit_day", "Exit weekday (1 Mon .. 5 Fri)", 1.0, 1.0, 5.0, 1.0),
+            p("entry_day", "Entry weekday (1 Monday, 2 Tuesday, 3 Wednesday, 4 Thursday, 5 Friday)", 5.0, 1.0, 5.0, 1.0),
+            p("exit_day", "Exit weekday (1 Monday, 2 Tuesday, 3 Wednesday, 4 Thursday, 5 Friday)", 1.0, 1.0, 5.0, 1.0),
             p("low_n", "Lowest close period (previous days)", 14.0, 2.0, 24.0, 1.0),
         ],
         GAP => vec![
@@ -216,14 +216,14 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             pct(0.25),
         ],
         BLOOD => vec![
-            p("version", "Version (1 and 2 are the same AFL code; 3 adds close below yesterday's low)", 1.0, 1.0, 3.0, 1.0),
-            p("entry_day", "Entry weekday (1 Mon .. 5 Fri)", 2.0, 1.0, 5.0, 1.0),
+            p("version", "Version (1 Version 1, 2 Version 2, the same AFL code as version 1, 3 Version 3, adds close below yesterday's low)", 1.0, 1.0, 3.0, 1.0),
+            p("entry_day", "Entry weekday (1 Monday, 2 Tuesday, 3 Wednesday, 4 Thursday, 5 Friday)", 2.0, 1.0, 5.0, 1.0),
             p("low_n", "Lowest close period (previous days)", 10.0, 2.0, 24.0, 1.0),
         ],
-        THURSDAY | THURSDAY_MOD => vec![p("entry_day", "Entry weekday (1 Mon .. 5 Fri)", 4.0, 1.0, 5.0, 1.0)],
+        THURSDAY | THURSDAY_MOD => vec![p("entry_day", "Entry weekday (1 Monday, 2 Tuesday, 3 Wednesday, 4 Thursday, 5 Friday)", 4.0, 1.0, 5.0, 1.0)],
         MANIC => vec![
-            p("entry_day", "Entry weekday (1 Mon .. 5 Fri)", 5.0, 1.0, 5.0, 1.0),
-            p("exit_day", "Exit weekday (1 Mon .. 5 Fri)", 1.0, 1.0, 5.0, 1.0),
+            p("entry_day", "Entry weekday (1 Monday, 2 Tuesday, 3 Wednesday, 4 Thursday, 5 Friday)", 5.0, 1.0, 5.0, 1.0),
+            p("exit_day", "Exit weekday (1 Monday, 2 Tuesday, 3 Wednesday, 4 Thursday, 5 Friday)", 1.0, 1.0, 5.0, 1.0),
         ],
         TUMBLES => vec![p("open_pct", "Open % (entry level from the open)", 0.25, 0.0, 3.0, 0.25)],
         TUMBLES_MOD => vec![day(3.0), pct(0.25), p("low_n", "Lowest close period (days, incl. yesterday)", 6.0, 2.0, 24.0, 1.0)],

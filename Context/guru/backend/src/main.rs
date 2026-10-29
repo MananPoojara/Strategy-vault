@@ -440,6 +440,18 @@ fn run_years(ctx: &Ctx, run: &Run) -> f64 {
     ((day_number(&ctx.r[run.to].date) - day_number(&ctx.r[run.from].date)) as f64 / 365.0).max(1.0 / 365.0)
 }
 
+/// AmiBroker's Risk-Reward Ratio: the slope of the least-squares line through the daily equity, annualised with
+/// the test's bars per year, divided by the line's standard error (the standard deviation of equity around it).
+fn risk_reward(eq: &[f64], bars_per_year: f64) -> f64 {
+    let n = eq.len() as f64;
+    if n < 3.0 {return f64::NAN;}
+    let (mx, my) = ((n - 1.0) / 2.0, eq.iter().sum::<f64>() / n);
+    let sxx = eq.iter().enumerate().map(|(i, _)| (i as f64 - mx).powi(2)).sum::<f64>();
+    let slope = eq.iter().enumerate().map(|(i, y)| (i as f64 - mx) * (y - my)).sum::<f64>() / sxx;
+    let se = (eq.iter().enumerate().map(|(i, y)| (y - my - slope * (i as f64 - mx)).powi(2)).sum::<f64>() / (n - 2.0)).sqrt();
+    slope * bars_per_year / se
+}
+
 fn stats(ctx: &Ctx, run: &Run, cost: f64) -> BTreeMap<&'static str, f64> {
     if let Some(report)=&run.unit_exposure_report {return report.common_stats(ctx,&run.trades,run.from,run.to,unit_exposure_report::View::Net);}
 
@@ -485,6 +497,14 @@ fn stats(ctx: &Ctx, run: &Run, cost: f64) -> BTreeMap<&'static str, f64> {
     }
     let avg_win = wins.iter().sum::<f64>() / wins.len() as f64;
     let avg_loss = losses.iter().sum::<f64>() / losses.len() as f64;
+    // YT whole-unit account: profit factor on money P&L per closed trade, as AmiBroker (position sizes differ, so
+    // this is not the ratio of summed percentage returns).
+    let money_pnl: Option<Vec<f64>> = run.whole_units.and_then(|capital| whole_unit_account(ctx, &run.trades, run.from, run.to, cost, capital).ok())
+        .map(|a| run.trades.iter().zip(&a.entry_cash).filter(|(t, _)| !t.open).map(|(t, e0)| a.equity[t.exit_i - run.from] - e0).collect());
+    let profit_factor = match &money_pnl {
+        Some(p) => p.iter().filter(|v| **v > 0.0).sum::<f64>() / -p.iter().filter(|v| **v < 0.0).sum::<f64>(),
+        None => gross_win / gross_loss,
+    };
 
     s.insert("total_return", total);
     s.insert("cagr", cagr);
@@ -511,7 +531,8 @@ fn stats(ctx: &Ctx, run: &Run, cost: f64) -> BTreeMap<&'static str, f64> {
     s.insert("avg_win", avg_win);
     s.insert("avg_loss", avg_loss);
     s.insert("payoff", avg_win / -avg_loss);
-    s.insert("profit_factor", gross_win / gross_loss);
+    s.insert("profit_factor", profit_factor);
+    s.insert("risk_reward", risk_reward(eq, eq.len() as f64 / yrs));
     s.insert("best", sorted.last().copied().unwrap_or(f64::NAN));
     s.insert("worst", sorted.first().copied().unwrap_or(f64::NAN));
     s.insert("t_stat", avg / (tsd / n.sqrt()));
@@ -2134,6 +2155,23 @@ mod tests {
         let f=financial_stats(&ctx,&run,accounting::Costs::default());assert!((f["ledger_gross_return"]-0.09).abs()<1e-12);
         // Short: 3 units sold at 300 and bought back at 330 lose 90.
         let short=Trade{dir:-1.,..t};let sa=whole_unit_account(&ctx,&[short],0,4,0.,1000.).unwrap();assert_eq!(sa.equity[3],910.);
+    }
+    #[test]
+    fn yt_profit_factor_is_on_money_pnl_and_risk_reward_follows_amibroker() {
+        // Win: 10 units 100 -> 110 = +100 (+10%). Loss: 22 units 50 -> 47.5 = -55 (-5%).
+        // Money profit factor 100 / 55, not the 10% / 5% = 2 of summed percentages.
+        let dates=["2023-01-02","2023-01-03","2023-01-04","2023-01-05","2023-01-06"];
+        let rows:Vec<Row>=[100.,110.,50.,47.5,47.5].iter().zip(dates).map(|(&c,d)|Row{ticker:"NIFTY 50".into(),date:d.into(),open:c,high:c,low:c,close:c,volume:None}).collect();
+        let ctx=Ctx::new(&rows,&rows,&[]);
+        let t=|i:usize,px:f64,x:usize,xp:f64|Trade{dir:1.,legs:vec![connors::Leg{i,px,w:1.}],exit_i:x,exit_px:xp,reason:String::new(),entry_kind:"close",signal_i:x,open:false,exits:vec![]};
+        let trades=vec![t(0,100.,1,110.),t(2,50.,3,47.5)];
+        let run=Run{trades:trades.clone(),from:0,to:4,equity:equity_curve(&ctx.c,&trades,0,4,0.),bh:vec![1.;5],source_account:None,bandy_account:None,unit_exposure_report:None,whole_units:None};
+        assert!((stats(&ctx,&run,0.)["profit_factor"]-2.).abs()<1e-12);
+        let yt=whole_unit_run(&ctx,run,0.,Some(1000.)).unwrap();
+        assert!((stats(&ctx,&yt,0.)["profit_factor"]-100./55.).abs()<1e-12);
+        // Line through 1, 2, 2, 3: slope 0.6 a bar, standard error sqrt(0.2 / 2).
+        assert!((risk_reward(&[1.,2.,2.,3.],1.)-0.6/0.1f64.sqrt()).abs()<1e-12);
+        assert!((risk_reward(&[1.,2.,2.,3.],252.)-252.*0.6/0.1f64.sqrt()).abs()<1e-9);
     }
     #[test]
     fn yt_capital_is_yt_only_with_the_amibroker_default() {

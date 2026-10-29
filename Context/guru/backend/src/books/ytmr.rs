@@ -6,14 +6,21 @@
 //! A Friday/Monday pair is the Monday bar whose previous bar is the Friday three calendar days earlier; any trading day
 //! between them (e.g. a Saturday session) or a missing Friday/Monday skips the pair. Entry at the Monday close.
 //! Exits are checked from the bar after entry: the Hard SL first (fills at the stop, or at the open less the buffer
-//! when the open gaps through it), then the selected exit and the Days exit at the close. No new entry on an exit bar
-//! (AFL `i != exitIndex`). Dropped from the AFL: Profit Target, SuperTrend/ATHC filters, Base 2 dates, candle colour,
-//! upper-circuit, penny and turnover filters, weekly/monthly ATR timeframes and the "N Candles Exit Only" counter.
+//! when the open gaps through it), then the Candle exit, the Dual ATR exit and the Weekday exit at the close; each has its
+//! own switch, as in the AFL. No new entry on an exit bar (AFL `i != exitIndex`). The BASE 2 filter uses this AFL's own
+//! bull-period dates. Dropped from the AFL: Profit Target,
+//! SuperTrend/ATHC filters, candle colour, upper-circuit, penny and turnover filters, weekly/monthly ATR
+//! and candle timeframes, ATR reference prices other than (High+Low)/2 and the "N Candles Exit Only" counter.
 #![allow(dead_code)]
+use super::ythol::base2_periods;
 use crate::connors::{true_range, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "yt_mr";
 pub const ID: &str = "ytmr_monday_reversal_t1";
+
+/// AFL `BASE15DP_EntryDates` / `BASE1_ExitDates`: bull periods [entry, exit), as listed in this AFL.
+const BASE2_ENTRY: &str = "01-01-2008, 21-11-2008, 26-09-2011, 31-05-2012, 30-08-2013, 29-02-2016, 23-12-2016, 28-02-2019, 30-08-2019, 24-03-2020, 24-06-2022, 28-02-2023, 28-02-2025";
+const BASE2_EXIT: &str = "31-01-2008, 31-12-2010, 25-11-2011, 01-03-2013, 31-08-2015, 11-11-2016, 09-02-2018, 10-05-2019, 28-02-2020, 30-11-2021, 23-12-2022, 25-10-2024, 23-01-2026";
 
 /// Entry comparisons in the order of the entry-condition toggle (1-based).
 pub const ENTRY: [&str; 5] = [
@@ -27,13 +34,17 @@ pub const ENTRY: [&str; 5] = [
 const NOTES: &str = "YT strategy, not a book method. Rules from the team's AFL \"Buy_on_Monday_Base2_ATR (2)_Modified\" as specified for the YT Strategies tab. \
 Entry condition (1-5): 1 Friday open > Monday high; 2 Friday low > Monday low; 3 Friday low > Monday close; 4 Friday close > Monday close; 5 Friday high > Monday high (strict >). \
 Entry condition 2 (0 = off, default; 1-5 as above): when on, both selected conditions must hold on the same Friday/Monday pair (condition 1 AND condition 2). \
-Exit type: 1 = N up-close candles (exit at the close of the Nth bar after entry that closes above the previous close); 2 = Dual ATR on daily bars. \
-ATR = simple average of the 1-bar true range over the period (AFL sum of ATR(1)); reference price (High+Low)/2. Initial stop = mid - ATR x mult, raised only; \
+BASE 2 filter (0 = off, default): 1 Bull (AFL BASE 2 5-DP BULL filter) = entries only inside the AFL's 13 bull periods (01-01-2008 to 23-01-2026), and an open trade exits at the close of the period's exit date; \
+2 Bear (AFL BASE 2 5-DP BEAR filter) = entries only outside them, and an open trade exits at the close of the first bar of a bull period. The AFL's two toggles are one setting here (both on together allow no entry). \
+Candle exit (on by default; its switch or N = 0 turns it off): exit at the close of the Nth candle of the selected type after entry; type 1 N Candle counts every bar, \
+2 Green Candle counts a close above the open, 3 UpClose (default) counts a close above the previous close. \
+Dual ATR exit (off by default, on daily bars; independent of the Candle exit, whichever fires first): ATR = simple average of the 1-bar true range over the period (AFL sum of ATR(1)); reference price (High+Low)/2. Initial stop = mid - ATR x mult, raised only; \
 favour band upper = mid + ATR' x mult', lowered only, and once a close exceeds it the favour stop mid - ATR' x mult' (raised only) replaces the initial stop. \
 A close below the previous bar's active stop exits at that close. Entries wait until the ATR values exist. \
 Hard SL (off by default): long stop pct% below the entry close, active for the first N bars after entry; fills at the stop, or at the open less the buffer % when the open is at or below it. \
-Days exit (off by default): exit at the close of the Nth bar after entry. \
-Dropped from the AFL: Profit Target, SuperTrend/ATHC filters, Base 2 dates, candle colour, upper-circuit/penny/turnover filters, weekly/monthly ATR timeframes. Results are simulated on the selected instrument; no published figures exist for this strategy.";
+Weekday exit (off by default; not in the AFL, added by the team): 1 Wednesday = exit at the close of the first Wednesday after entry, or the next trading day when that Wednesday is a holiday; \
+2 Friday = exit at the close of the first Friday after entry, or the trading day before it when that Friday is a holiday (if no trading day falls between the entry and that Friday, the next trading day). \
+Dropped from the AFL: Profit Target, SuperTrend/ATHC filters, candle colour, upper-circuit/penny/turnover filters, weekly/monthly ATR and candle timeframes, ATR reference prices other than (High+Low)/2, N Candles Exit Only. Results are simulated on the selected instrument; no published figures exist for this strategy.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef {
@@ -51,10 +62,13 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "F|Use a Friday and the Monday right after it; skip the pair if any trading day falls between them",
             "E|Selected entry condition (one of): Friday open > Monday high; Friday low > Monday low; Friday low > Monday close; Friday close > Monday close; Friday high > Monday high",
             "E|Optional entry condition 2 (same five choices, off by default): when on, both conditions must hold together",
+            "F|Optional BASE 2 filter (off by default): Bull = only inside the team's BASE 2 bull periods, Bear = only outside them",
             "E|Buy at the Monday close; no entry on a bar where a trade exited",
-            "X|Exit type 1: exit at the close of the Nth up-close candle after entry (close above the previous close)",
-            "X|Exit type 2: Dual ATR trailing stop on daily bars; exit at the close when the close falls below the active stop",
-            "X|Optional: Hard SL % for the first N bars after entry; Days exit after N bars",
+            "X|Candle exit (on by default; switch off or N = 0): exit at the close of the Nth candle after entry of the selected type (every candle, green candle or up close)",
+            "X|Dual ATR exit (off by default): trailing stop on daily bars; exit at the close when the close falls below the active stop",
+            "X|Optional: Hard SL % for the first N bars after entry",
+            "X|Optional Weekday exit (off by default): close of the first Wednesday after entry (holiday: next trading day) or the first Friday after entry (holiday: trading day before)",
+            "X|BASE 2 exit (with the filter on): Bull = the bull period's exit date, Bear = the first bar of a bull period, at the close",
         ],
         notes: NOTES,
         claim: None,
@@ -69,8 +83,11 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     Some(vec![
         p("entry", "Entry condition (1 Fri O>Mon H, 2 Fri L>Mon L, 3 Fri L>Mon C, 4 Fri C>Mon C, 5 Fri H>Mon H)", 1.0, 1.0, 5.0, 1.0),
         p("entry2", "Entry condition 2, both must hold (0 off, 1 Fri O>Mon H, 2 Fri L>Mon L, 3 Fri L>Mon C, 4 Fri C>Mon C, 5 Fri H>Mon H)", 0.0, 0.0, 5.0, 1.0),
-        p("exit_type", "Exit type (1 = N up-close candles, 2 = Dual ATR)", 1.0, 1.0, 2.0, 1.0),
-        p("upclose_n", "Exit: N up-close candles", 1.0, 1.0, 10.0, 1.0),
+        p("base2", "BASE 2 filter (0 off, 1 Bull, 2 Bear)", 0.0, 0.0, 2.0, 1.0),
+        p("nc_on", "Candle exit (0 = off, 1 = on)", 1.0, 0.0, 1.0, 1.0),
+        p("candle_type", "Type of exit candle (1 N Candle, 2 Green Candle, 3 UpClose)", 3.0, 1.0, 3.0, 1.0),
+        p("upclose_n", "N candles of that type for exit (0 off)", 1.0, 0.0, 10.0, 1.0),
+        p("atr_on", "Dual ATR exit (0 = off, 1 = on)", 0.0, 0.0, 1.0, 1.0),
         p("atr_n", "Initial ATR period", 5.0, 5.0, 15.0, 5.0),
         p("atr_mult", "Initial ATR multiplier", 2.0, 1.0, 6.0, 1.0),
         p("fav_n", "Favour ATR period", 5.0, 5.0, 15.0, 5.0),
@@ -79,8 +96,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         p("hsl_pct", "Hard SL %", 5.0, 0.5, 20.0, 0.5),
         p("hsl_days", "Hard SL active for N bars", 1.0, 1.0, 4.0, 1.0),
         p("sl_buffer", "Gap fill buffer % (open through the SL)", 0.25, 0.0, 10.0, 0.05),
-        p("days_on", "Days exit (0 = off, 1 = on)", 0.0, 0.0, 1.0, 1.0),
-        p("days_n", "Days exit after N bars", 2.0, 1.0, 10.0, 1.0),
+        p("wd_on", "Weekday exit (0 = off, 1 = on)", 0.0, 0.0, 1.0, 1.0),
+        p("wd_day", "Weekday exit day (1 Wednesday, 2 Friday)", 1.0, 1.0, 2.0, 1.0),
     ])
 }
 
@@ -156,21 +173,44 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let u = |k: &str| g(k).round().max(1.0) as usize;
     let kind = g("entry").round() as usize;
     let kind2 = g("entry2").round().max(0.0) as usize;
-    let atr_exit = g("exit_type").round() as i64 == 2;
-    let n_up = u("upclose_n");
+    let candle = g("candle_type").round() as i64;
+    // Candle exit: off with its switch or with N = 0
+    let n_candle = if g("nc_on") >= 0.5 { g("upclose_n").round().max(0.0) as usize } else { 0 };
+    let atr_exit = g("atr_on") >= 0.5;
     let (m1, m2) = (g("atr_mult"), g("fav_mult"));
     let (hsl_on, hsl_pct, hsl_days, buffer) = (g("hsl_on") >= 0.5, g("hsl_pct"), u("hsl_days"), g("sl_buffer") / 100.0);
-    let (days_on, days_n) = (g("days_on") >= 0.5, u("days_n"));
+    // Weekday exit: 3 = Wednesday (holiday: next trading day), 5 = Friday (holiday: the trading day before)
+    let wd_exit = (g("wd_on") >= 0.5).then(|| if g("wd_day").round() as i64 == 2 { 5 } else { 3 });
+    let day = |i: usize| day_number(&x.r[i].date).unwrap_or(i64::MIN);
     let (atr1, atr2) = if atr_exit { (avg_true_range(x, u("atr_n")), avg_true_range(x, u("fav_n"))) } else { (Vec::new(), Vec::new()) };
     let mid = |i: usize| (x.h[i] + x.l[i]) / 2.0;
+    // BASE 2: 1 Bull (enter inside a bull period, exit on its exit date), 2 Bear (enter outside, exit when one starts)
+    let base_mode = g("base2").round() as i64;
+    let (inside, base_end) = if base_mode != 0 { base2_periods(x, BASE2_ENTRY, BASE2_EXIT) } else { (Vec::new(), Vec::new()) };
+    let base_ok = |i: usize| match base_mode {
+        1 => inside[i],
+        2 => !inside[i],
+        _ => true,
+    };
 
     let mut trades = Vec::new();
-    let mut cur: Option<(Trade, f64, usize, usize, Dual)> = None; // trade, hard-SL level, bars held, up-closes, ATR state
+    // AFL candle flags: N Candle counts every bar, Green Candle a close above the open, UpClose a close above a non-zero previous close
+    let counts = |i: usize| match candle {
+        1 => true,
+        2 => x.c[i] > x.o[i],
+        _ => x.c[i] > x.c[i - 1] && x.c[i - 1] != 0.0,
+    };
+    let candle_word = match candle {
+        1 => "candle",
+        2 => "green candle",
+        _ => "up-close candle",
+    };
+    let mut cur: Option<(Trade, f64, usize, usize, Dual, i64)> = None; // trade, hard-SL level, bars held, counted candles, ATR state, weekday-exit date
     let mut exit_bar = usize::MAX;
     for i in from.max(1)..=to {
-        if let Some((mut t, hsl, held, ups, mut d)) = cur.take() {
+        if let Some((mut t, hsl, held, ups, mut d, wd_date)) = cur.take() {
             let held = held + 1;
-            let ups = ups + usize::from(x.c[i] > x.c[i - 1] && x.c[i - 1] != 0.0);
+            let ups = ups + usize::from(counts(i));
             let (prev_stop, prev_fav) = (d.stop, d.fav_stop);
             if atr_exit {
                 d.stop = (mid(i) - atr1[i] * m1).max(d.stop);
@@ -188,14 +228,21 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let why = if sl_hit {
                 let fill = if x.o[i] <= hsl { x.o[i] * (1.0 - buffer) } else { hsl };
                 Some((fill, format!("Hard SL {hsl_pct}%")))
-            } else if !atr_exit && ups >= n_up {
-                Some((x.c[i], format!("{n_up} up-close candle{}", if n_up == 1 { "" } else { "s" })))
+            } else if base_mode == 1 && base_end[i] {
+                Some((x.c[i], "BASE 2 period exit".into()))
+            } else if base_mode == 2 && inside[i] && !inside[i - 1] {
+                Some((x.c[i], "BASE 2 bull period starts".into()))
+            } else if n_candle > 0 && ups >= n_candle {
+                Some((x.c[i], format!("{n_candle} {candle_word}{}", if n_candle == 1 { "" } else { "s" })))
             } else if atr_exit && !d.favour && x.c[i] < prev_stop {
                 Some((x.c[i], "Initial ATR stop".into()))
             } else if atr_exit && d.favour && x.c[i] < prev_fav {
                 Some((x.c[i], "Favour ATR stop".into()))
-            } else if days_on && held >= days_n {
-                Some((x.c[i], format!("Days exit ({days_n} bars)")))
+            } else if wd_exit.is_some_and(|w| {
+                // that day, or the first trading day after it; for Friday also the last trading day before it
+                day(i) >= wd_date || w == 5 && i + 1 < x.r.len() && day(i + 1) > wd_date
+            }) {
+                Some((x.c[i], if wd_exit == Some(3) { "Wednesday exit".into() } else { "Friday exit".into() }))
             } else {
                 None
             };
@@ -208,11 +255,11 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                     trades.push(t);
                     exit_bar = i;
                 }
-                None => cur = Some((t, hsl, held, ups, d)),
+                None => cur = Some((t, hsl, held, ups, d, wd_date)),
             }
             continue;
         }
-        if i == to || i == exit_bar || !friday_monday(x, i) || !entry_signal(x, i, kind) || (kind2 != 0 && !entry_signal(x, i, kind2)) {
+        if i == to || i == exit_bar || !friday_monday(x, i) || !entry_signal(x, i, kind) || (kind2 != 0 && !entry_signal(x, i, kind2)) || !base_ok(i) {
             continue;
         }
         let dual = if atr_exit {
@@ -237,7 +284,9 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             open: false,
             exits: Vec::new(),
         };
-        cur = Some((t, hsl, 0, 0, dual));
+        // the first Wednesday / Friday after the entry date
+        let wd_date = wd_exit.map_or(i64::MAX, |w| { let e = day(i); e + (w - weekday(e) + 6).rem_euclid(7) + 1 });
+        cur = Some((t, hsl, 0, 0, dual, wd_date));
     }
     if let Some((mut t, ..)) = cur {
         t.exit_i = to;
@@ -386,7 +435,7 @@ mod tests {
     }
 
     #[test]
-    fn hard_sl_fills_at_stop_or_gapped_open_and_days_exit() {
+    fn hard_sl_fills_at_stop_or_gapped_open() {
         let entry = [FLAT, (110.0, 111.0, 104.0, 106.0), (104.0, 105.0, 100.0, 100.0)];
         // Tuesday trades down to 94 (5% stop = 95), opens above it: fill 95
         let mut b = entry.to_vec();
@@ -402,13 +451,11 @@ mod tests {
         let x = Ctx::new(&r, &r, &[]);
         let t = run(ID, &x, 0, r.len() - 1, &ps(&[("hsl_on", 1.0)])).unwrap();
         assert!((t[0].exit_px - 90.0 * 0.9975).abs() < 1e-9);
-        // off by default: the same bar does not stop out; with Days exit 2 the trade leaves on bar 4's close
+        // off by default: the same bar does not stop out
         let mut b = entry.to_vec();
         b.extend([(90.0, 92.0, 89.0, 91.0), (91.0, 91.0, 88.0, 89.0), (89.0, 89.0, 87.0, 88.0)]);
         let r = bars(&b);
         let x = Ctx::new(&r, &r, &[]);
-        let t = run(ID, &x, 0, r.len() - 1, &ps(&[("days_on", 1.0), ("upclose_n", 10.0)])).unwrap();
-        assert_eq!((t[0].exit_i, t[0].exit_px), (4, 89.0));
         // Hard SL only for the first N bars: a later breach is ignored
         let t = run(ID, &x, 0, r.len() - 1, &ps(&[("hsl_on", 1.0), ("hsl_pct", 11.5), ("upclose_n", 10.0)])).unwrap();
         // stop 88.5: bar 3 low 89 stays above it; bar 4 low 88 is past the 1-bar window, so the trade runs to the end
@@ -431,7 +478,7 @@ mod tests {
         b.push(FLAT);
         let r = bars(&b);
         let x = Ctx::new(&r, &r, &[]);
-        let t = run(ID, &x, 0, r.len() - 1, &ps(&[("exit_type", 2.0)])).unwrap();
+        let t = run(ID, &x, 0, r.len() - 1, &ps(&[("atr_on", 1.0), ("upclose_n", 0.0)])).unwrap();
         assert_eq!((t[0].legs[0].i, t[0].exit_i, t[0].exit_px, t[0].reason.as_str()), (7, 8, 95.0, "Initial ATR stop"));
         // Upper favour band = 104 + 4 x 2 = 112 (only lowered). Close 114 > 112 switches to the favour stop
         // (max(mid 109.5 - ATR 5.8 x 2, 96) = 97.9); the next close 91 < 97.9 exits.
@@ -440,8 +487,124 @@ mod tests {
         b2.push((112.0, 112.0, 90.0, 91.0));
         let r = bars(&b2);
         let x = Ctx::new(&r, &r, &[]);
-        let t = run(ID, &x, 0, r.len() - 1, &ps(&[("exit_type", 2.0)])).unwrap();
+        let t = run(ID, &x, 0, r.len() - 1, &ps(&[("atr_on", 1.0), ("upclose_n", 0.0)])).unwrap();
         assert_eq!((t[0].legs[0].i, t[0].exit_i, t[0].reason.as_str()), (7, 9, "Favour ATR stop"));
-        // bar 8 closed up, but up-close candles do not exit in ATR mode
+        // bar 8 closed up, but the Candle exit is off (N = 0); with it on as well, that up close exits first
+        let t = run(ID, &x, 0, r.len() - 1, &ps(&[("atr_on", 1.0)])).unwrap();
+        assert_eq!((t[0].exit_i, t[0].reason.as_str()), (8, "1 up-close candle"));
+    }
+
+    /// The Candle and Dual ATR exits are independent switches: both on, whichever fires first closes the trade.
+    #[test]
+    fn candle_and_atr_exits_combine() {
+        let mut b = vec![FLAT; 6];
+        b.push((110.0, 111.0, 104.0, 106.0));
+        b.push((104.0, 105.0, 103.0, 104.0));
+        b.push((103.0, 103.5, 94.0, 95.0)); // close 95 < initial stop 96, and a down close
+        b.push((95.0, 97.0, 94.0, 96.0)); // up close
+        b.push(FLAT);
+        let r = bars(&b);
+        let x = Ctx::new(&r, &r, &[]);
+        // Candle exit alone waits for the up close on bar 9; with the Dual ATR exit on, the stop exits on bar 8
+        let t = run(ID, &x, 0, r.len() - 1, &Params::new()).unwrap();
+        assert_eq!((t[0].exit_i, t[0].reason.as_str()), (9, "1 up-close candle"));
+        let t = run(ID, &x, 0, r.len() - 1, &ps(&[("atr_on", 1.0)])).unwrap();
+        assert_eq!((t[0].exit_i, t[0].reason.as_str()), (8, "Initial ATR stop"));
+        // both off: the trade runs to the end of the period
+        let t = run(ID, &x, 0, r.len() - 1, &ps(&[("upclose_n", 0.0)])).unwrap();
+        assert_eq!((t[0].exit_i, t[0].reason.as_str()), (10, "End of period"));
+        // the Candle exit switch off does the same as N = 0
+        let t = run(ID, &x, 0, r.len() - 1, &ps(&[("nc_on", 0.0)])).unwrap();
+        assert_eq!((t[0].exit_i, t[0].reason.as_str()), (10, "End of period"));
+    }
+
+    /// Weekdays from a Thursday; bars `sig` + 1 (Friday) and `sig` + 2 (Monday) carry the condition-1 signal, the rest are flat.
+    fn dated(start: &str, len: usize, sig: &[usize]) -> Vec<Row> {
+        let mut day = day_number(start).unwrap();
+        (0..len)
+            .map(|k| {
+                let (open, high, low, close) = if sig.iter().any(|&s| k == s + 1) {
+                    (110.0, 111.0, 104.0, 106.0)
+                } else if sig.iter().any(|&s| k == s + 2) {
+                    (104.0, 105.0, 100.0, 102.0)
+                } else {
+                    FLAT
+                };
+                let date = civil(day);
+                day += if weekday(day) == 5 { 3 } else { 1 };
+                Row { ticker: "T".into(), date, open, high, low, close, volume: None }
+            })
+            .collect()
+    }
+
+    /// BASE 2 Bull: 2008-01-01..2008-01-31 is a bull period; Bear: entries only outside one, exit when 2008-11-21 starts one.
+    #[test]
+    fn base2_bull_and_bear() {
+        // Mon 2008-01-28 (bar 2) is inside the period, Mon 2008-02-04 (bar 7) after it; Thu 2008-01-31 (bar 5) is its exit date
+        let r = dated("2008-01-24", 12, &[0, 5]);
+        assert_eq!((r[2].date.as_str(), r[5].date.as_str(), r[7].date.as_str()), ("2008-01-28", "2008-01-31", "2008-02-04"));
+        let x = Ctx::new(&r, &r, &[]);
+        let go = |kv: &[(&str, f64)]| -> Vec<(usize, usize, String)> {
+            run(ID, &x, 0, r.len() - 1, &ps(kv)).unwrap().into_iter().map(|t| (t.legs[0].i, t.exit_i, t.reason)).collect()
+        };
+        assert_eq!(go(&[("upclose_n", 0.0)]), vec![(2, 11, "End of period".into())]);
+        assert_eq!(go(&[("upclose_n", 0.0), ("base2", 1.0)]), vec![(2, 5, "BASE 2 period exit".into())]);
+        assert_eq!(go(&[("upclose_n", 0.0), ("base2", 2.0)]), vec![(7, 11, "End of period".into())]);
+        // Bear: Mon 2008-11-17 is outside every period; Fri 2008-11-21 (bar 6) starts one and closes the trade
+        let r = dated("2008-11-13", 9, &[0]);
+        assert_eq!(r[6].date, "2008-11-21");
+        let x = Ctx::new(&r, &r, &[]);
+        let t = run(ID, &x, 0, r.len() - 1, &ps(&[("upclose_n", 0.0), ("base2", 2.0)])).unwrap();
+        assert_eq!((t[0].legs[0].i, t[0].exit_i, t[0].reason.as_str()), (2, 6, "BASE 2 bull period starts"));
+    }
+
+    /// Weekday exit: Wednesday (holiday: next trading day) or Friday (holiday: the trading day before).
+    #[test]
+    fn weekday_exit_wednesday_and_friday() {
+        // Thu 2024-01-04, Fri 01-05, Mon 01-08 (entry, bar 2), Tue 01-09 .. Fri 01-12, Mon 01-15
+        let r = dated("2024-01-04", 8, &[0]);
+        let x = Ctx::new(&r, &r, &[]);
+        let go = |r: &[Row], kv: &[(&str, f64)]| {
+            let x = Ctx::new(r, r, &[]);
+            let t = run(ID, &x, 0, r.len() - 1, &ps(&[&[("upclose_n", 0.0), ("wd_on", 1.0)], kv].concat())).unwrap();
+            (r[t[0].exit_i].date.clone(), t[0].reason.clone())
+        };
+        // off by default: runs to the end
+        assert_eq!(run(ID, &x, 0, r.len() - 1, &ps(&[("upclose_n", 0.0)])).unwrap()[0].reason, "End of period");
+        assert_eq!(go(&r, &[]), ("2024-01-10".into(), "Wednesday exit".into()));
+        assert_eq!(go(&r, &[("wd_day", 2.0)]), ("2024-01-12".into(), "Friday exit".into()));
+        // Wednesday 01-10 a holiday: the next trading day (Thursday)
+        let mut h = r.clone();
+        h.remove(4);
+        assert_eq!(go(&h, &[]), ("2024-01-11".into(), "Wednesday exit".into()));
+        // Wednesday and Thursday holidays: Friday
+        h.remove(4);
+        assert_eq!(go(&h, &[]), ("2024-01-12".into(), "Wednesday exit".into()));
+        // Friday 01-12 a holiday: the trading day before (Thursday); Thursday too: Wednesday
+        let mut h = r.clone();
+        h.remove(6);
+        assert_eq!(go(&h, &[("wd_day", 2.0)]), ("2024-01-11".into(), "Friday exit".into()));
+        h.remove(5);
+        assert_eq!(go(&h, &[("wd_day", 2.0)]), ("2024-01-10".into(), "Friday exit".into()));
+        // Tuesday to Friday all holidays: the next trading day (Monday 01-15)
+        let mut h = r.clone();
+        h.drain(3..7);
+        assert_eq!(go(&h, &[("wd_day", 2.0)]), ("2024-01-15".into(), "Friday exit".into()));
+        // an earlier exit wins: the up close on Tuesday exits before Wednesday
+        let mut h = r.clone();
+        h[3].close = 103.0;
+        assert_eq!(go(&h, &[("upclose_n", 1.0)]), ("2024-01-09".into(), "1 up-close candle".into()));
+    }
+
+    #[test]
+    fn candle_types_n_candle_and_green() {
+        // after entry: green down close (O 100 C 101 < prev 102), red up close (O 104 C 103 > 101), flat
+        let r = bars(&[FLAT, (110.0, 111.0, 104.0, 106.0), (104.0, 105.0, 100.0, 102.0), (100.0, 102.0, 99.0, 101.0),
+            (104.0, 105.0, 102.0, 103.0), FLAT, FLAT]);
+        let x = Ctx::new(&r, &r, &[]);
+        let exit = |kv: &[(&str, f64)]| { let t = run(ID, &x, 0, r.len() - 1, &ps(kv)).unwrap(); (t[0].exit_i, t[0].reason.clone()) };
+        assert_eq!(exit(&[]), (4, "1 up-close candle".into()));
+        assert_eq!(exit(&[("candle_type", 2.0)]), (3, "1 green candle".into()));
+        assert_eq!(exit(&[("candle_type", 1.0), ("upclose_n", 3.0)]), (5, "3 candles".into()));
     }
 }

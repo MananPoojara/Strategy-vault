@@ -70,7 +70,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         p("st_exit_src", src, 5.0, 0.0, 7.0, 1.0),
         p("rsi_exit_on", "RSI exit (0 off, 1 on)", 0.0, 0.0, 1.0, 1.0),
         p("rsi_period", "RSI period", 14.0, 1.0, 80.0, 1.0),
-        p("rsi_dir", "RSI exit when it crosses (0 below, 1 above) the threshold", 0.0, 0.0, 1.0, 1.0),
+        p("rsi_dir", "RSI exit when it crosses the threshold (0 below, 1 above)", 0.0, 0.0, 1.0, 1.0),
         p("rsi_thr", "RSI threshold", 1.0, 1.0, 100.0, 1.0),
         p("rsi_trail_on", "RSI trail exit (0 off, 1 on)", 0.0, 0.0, 1.0, 1.0),
         p("rsi_drop", "RSI drop value", 20.0, 1.0, 100.0, 1.0),

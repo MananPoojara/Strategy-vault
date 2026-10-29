@@ -56,7 +56,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         p("st_exit", "Daily ST exit (0 off, 1 on)", 0.0, 0.0, 1.0, 1.0),
         p("st_period", "Exit ST period", 5.0, 1.0, 9.0, 1.0),
         p("st_factor", "Exit ST factor", 1.0, 1.0, 6.0, 1.0),
-        p("st_src", "Exit ST average value (same list as the filter)", 6.0, 1.0, 8.0, 1.0),
+        p("st_src", "Exit ST average value (1 close, 2 open, 3 high, 4 low, 5 (O+C)/2, 6 (H+L)/2, 7 (H+L+C)/3, 8 (O+H+L+C)/4)", 6.0, 1.0, 8.0, 1.0),
     ])
 }
 

@@ -4,6 +4,8 @@ import {resolveRoute} from '../app/routes';
 import {customPages} from '../app/custom-pages';
 import {LIB} from './catalogue.js';
 import {buildFormat2,format2SheetName,writeFormat2Xlsx} from '../services/yt-format2';
+import {groupSettings,settingOptions,settingName,settingValueText,idleKeys,isSwitch} from '../services/yt-settings';
+import {amiStats,sheetNames,resultSheet,rulesSheet} from '../services/optim-f2';
 import {loadOwnerRows} from '../services/summary-loader';
 import {bookContext} from '../services/book-context';
 import {returnDisplay} from '../services/return-display';
@@ -133,14 +135,16 @@ window.VaultUI=(()=>{
  const reportName=(st,kind,extension)=>`${filePart(st.v.id)}-${filePart(st.actualSymbol)}-${filePart(st.d.dates?.[0]||'period')}-${filePart(st.d.dates?.at(-1)||'end')}-${filePart(kind)}.${extension}`;
  function downloadBlob(blob,name){const link=document.createElement('a'),url=URL.createObjectURL(blob);link.href=url;link.download=name;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),4000);}
  const csvSafeRows=rows=>rows.map(row=>row.map(v=>typeof v==='string'&&/^[\s\uFEFF]*[=+\-@]/.test(v)?"'"+v:v));
+ // A real Excel date: {excelDate: serial day number}, shown as dd/mm/yyyy.
+ const isXlDate=v=>v!==null&&typeof v==='object'&&typeof v.excelDate==='number';
  const cellValue=v=>typeof v==='number'?(Number.isFinite(v)?v:null):v==null?null:typeof v==='string'||typeof v==='boolean'?v:String(v);
  function styledSheet(rows,percentColumns=[],rowTypes=[],precisionColumns=[]){
-  const clean=rows.map(row=>row.map(cellValue)),sheet=XLSX.utils.aoa_to_sheet(clean),width=rows.reduce((n,r)=>Math.max(n,r.length),0);
+  const clean=rows.map(row=>row.map(v=>isXlDate(v)?v.excelDate:cellValue(v))),sheet=XLSX.utils.aoa_to_sheet(clean),width=rows.reduce((n,r)=>Math.max(n,r.length),0);
   for(let r=0;r<rows.length;r++)for(let c=0;c<width;c++){
    const address=XLSX.utils.encode_cell({r,c}),value=clean[r]?.[c];if(!sheet[address])sheet[address]={t:'z'};const cell=sheet[address];
    if(typeof value==='string'){cell.t='s';cell.v=value;delete cell.f;}
    const percent=r>0&&typeof value==='number'&&(percentColumns.includes(c)||rowTypes[r]==='percent');
-   const z=percent?'0.00%;[Red]-0.00%;0.00%':rowTypes[r]==='count'?'0':rowTypes[r]==='days'?'0.0':r>0&&precisionColumns.includes(c)?'0.000000':'0.00';
+   const z=isXlDate(rows[r]?.[c])?'dd/mm/yyyy':percent?'0.00%;[Red]-0.00%;0.00%':rowTypes[r]==='count'?'0':rowTypes[r]==='days'?'0.0':r>0&&precisionColumns.includes(c)?'0.000000':'0.00';
    cell.s={font:{name:'Calibri',sz:11,color:{rgb:r===0?'FFFFFF':typeof value==='number'&&value<0?'C00000':'000000'},bold:r===0},
     fill:{fgColor:{rgb:r===0?'1F3864':r%2?'FFFFFF':'F3F6FA'}},alignment:{vertical:'center',horizontal:typeof value==='number'?'right':'left',wrapText:true},
     border:{bottom:{style:'thin',color:{rgb:'DCE2EA'}}},...(typeof value==='number'?{numFmt:z}:{})};if(typeof value==='number')cell.z=z;
@@ -333,12 +337,43 @@ function optimBanner(v) {
 const bookLoader = (t = 'Loading…') => `<div class="bload" role="status" aria-live="polite"><div class="bflip" aria-hidden="true"><i class="bcv l"></i><i class="bcv r"></i><i class="bpg"></i><i class="bpg"></i><i class="bpg"></i></div><p>${esc(t)}</p></div>`;
 const minWait = (t0, ms) => new Promise(ok => setTimeout(ok, Math.max(0, ms - (performance.now() - t0))));
 
-// YT strategies open the manual grid on the default settings (From = To = default), so a run tests exactly the values entered.
-const ytGrid = ps => Object.fromEntries(ps.map(p => [p.key, { on: true, min: p.def, max: p.def, step: p.step }]));
+// YT strategies open the manual grid on the default settings (From = To = default). A setting varies when its From and To
+// differ and otherwise runs at From; an Off/On setting is a toggle (`val`) and is not varied.
+const ytGrid = ps => Object.fromEntries(ps.map(p => [p.key, { yt: true, val: p.def, def: p.def, min: p.def, max: p.def, step: p.step }]));
+const ytVaried = x => x.max > x.min;
+/** Settings switched off by their section's Off/On toggle: not varied, not sent and not counted. */
+const ytIdle = (ps, g) => idleKeys(groupSettings(ps), k => g[k]?.val ?? 0);
+// ---- YT settings panel, laid out like AmiBroker's Parameters window: headed sections that fold, one setting per row,
+// choices as dropdowns. Rows greyed as idle are switched off by their section's Off/On setting.
+const ytInput = (p, val, attrs) => { const o = settingOptions(p); return o.length
+  ? `<select ${attrs}>${o.map(x => `<option value="${x.value}" ${Math.round(+val) === x.value ? 'selected' : ''}>${esc(x.text)}</option>`).join('')}</select>`
+  : `<input type="number" ${attrs} value="${esc(val)}" min="${p.min}" max="${p.max}" step="${p.step || 'any'}">`; };
+const pgrpToggle = name => `<button type="button" class="pgrp-t" aria-expanded="true" data-pgrp-toggle><span class="pgrp-i" aria-hidden="true"></span>${esc(name)}</button>`;
+const prow = (name, control, extra = '') => `<label class="prow" ${extra}><span class="prow-n">${esc(name)}</span><span class="prow-v">${control}</span></label>`;
+const pgrp = (name, rows) => `<section class="pgrp"><div class="pgrp-h">${pgrpToggle(name)}</div><div class="pgrp-b">${rows}</div></section>`;
+document.addEventListener('click', e => { const b = e.target.closest('[data-pgrp-toggle]'); if (!b) return; const open = b.getAttribute('aria-expanded') !== 'true'; b.setAttribute('aria-expanded', String(open)); b.closest('.pgrp')?.classList.toggle('shut', !open); });
+/** Grey idle rows and mark changed ones in a YT panel; `value` reads a setting's effective value. */
+function ytMarks(root, ps, value, changed) {
+  const idle = idleKeys(groupSettings(ps), value);
+  root.querySelectorAll('[data-k]').forEach(r => { r.classList.toggle('idle', idle.has(r.dataset.k)); r.classList.toggle('chg', changed(r.dataset.k)); });
+}
+function ytOptTable(ps, g) {
+  const head = '<thead><tr><th>Setting</th><th class="n">From</th><th class="n">To</th><th class="n">Step</th><th class="n">Values</th></tr></thead>';
+  return `<table class="ogrid ytgrid">${head}${groupSettings(ps).map(gr => `<tbody class="pgrp"><tr class="pgrp-h"><th colspan="5">${pgrpToggle(gr.name)}</th></tr>${gr.settings.map(p => {
+    const x = g[p.key], name = settingName(p), choice = settingOptions(p).length > 0, title = `title="Default ${esc(settingValueText(p, p.def))}"`;
+    if (isSwitch(p)) return `<tr data-k="${p.key}" class="swrow" ${title}><td>${esc(name)}</td><td class="n" colspan="3"><label class="tgl"><input type="checkbox" role="switch" data-f="sw" ${x.val >= 0.5 ? 'checked' : ''} aria-label="${esc(name)}"><span class="tgl-t" aria-hidden="true"></span><span class="tgl-l" data-sw>${x.val >= 0.5 ? 'On' : 'Off'}</span></label></td><td class="n muted">1</td></tr>`;
+    const range = f => choice ? ytInput(p, x[f], `data-f="${f}" aria-label="${f === 'min' ? 'From' : 'To'} ${esc(name)}"`) : `<input type="number" data-f="${f}" value="${x[f]}" step="any" aria-label="${f === 'min' ? 'From' : 'To'} ${esc(name)}">`;
+    return `<tr data-k="${p.key}" ${title}><td>${esc(name)}</td><td class="n">${range('min')}</td><td class="n">${range('max')}</td>
+      <td class="n">${choice ? '<span class="muted">1</span>' : `<input type="number" data-f="step" value="${x.step}" step="any" aria-label="Step ${esc(name)}">`}</td><td class="n muted" data-cnt>${nVals(x)}</td></tr>`; }).join('')}</tbody>`).join('')}</table>`;
+}
 async function optimSection(v, tk, d, detailed = true) {
   OPT.schemaSync = await optSchema();
   const ps = OPT.schemaSync[v.id] || [];
   const opt = detailed && ps.length ? (() => { const g = OPT.grids[v.id] || (OPT.grids[v.id] = isYt(v) ? ytGrid(ps) : OptimCore.defaultGrid(ps, OPT_LIMIT));
+    if (isYt(v)) return `<section class="box" id="optim"><div class="box-h">Optimization <small>A setting is varied from From to To; with From equal to To it runs at that value. Off/On settings such as Dual ATR exit are switched with their toggle. Runs on the period selected above.</small></div>
+    ${ytOptTable(ps, g)}
+    <form class="obar" id="oform"><span class="grow"></span><span class="ocount" id="ocount"></span><button class="dbtn sm" type="button" id="orun" disabled title="Optimisation F1 is switched off">Optimisation F1</button><button class="dbtn primary sm" type="submit" id="orun2" title="AmiBroker-style optimisation workbook: a Rules sheet and one sheet per dropdown combination">Optimisation F2</button></form>
+    <p class="ostat" id="otime"></p><div id="opt-out"></div></section>`;
     return `<section class="box" id="optim"><div class="box-h">Optimization <small>Tick the settings to vary. Unticked settings stay at the default value. Runs on the period selected above.</small></div>
     <table class="ogrid"><thead><tr><th></th><th>Setting</th><th class="n">Default</th><th class="n">From</th><th class="n">To</th><th class="n">Step</th><th class="n">Values</th></tr></thead><tbody>
     ${ps.map(p => { const x = g[p.key]; return `<tr data-k="${p.key}" class="${x.on ? '' : 'offrow'}"><td><input type="checkbox" data-f="on" ${x.on ? 'checked' : ''} aria-label="Vary ${esc(labelOf(p))}"></td><td>${esc(labelOf(p))}${choicesOf(p).length ? ` <small class="muted">(1–${choicesOf(p).length}; default ${esc(choiceName(p, p.def))})</small>` : ''}</td><td class="n">${p.def}</td>
@@ -354,9 +389,11 @@ async function optimSection(v, tk, d, detailed = true) {
 
 function optCount() {
   const el = $('#optim'); if (!el) return 0;
-  let n = 1, on = 0; el.querySelectorAll('tr[data-k]').forEach(tr => { const x = OPT.grids[R.id][tr.dataset.k], k = nVals(x); tr.querySelector('[data-cnt]').textContent = k || '–'; tr.classList.toggle('offrow', !x.on); if (x.on) { n *= k; on++; } });
+  const g = OPT.grids[R.id], yt = !!el.querySelector('.ytgrid'), idle = yt ? ytIdle(OPT.schemaSync[R.id] || [], g) : new Set(); let n = 1, on = 0; el.querySelectorAll('tr[data-k]').forEach(tr => { const x = g[tr.dataset.k], k = nVals(x); if (tr.classList.contains('swrow')) return; if (idle.has(tr.dataset.k)) { tr.querySelector('[data-cnt]').textContent = 'Off'; return; } tr.querySelector('[data-cnt]').textContent = k || '–'; if (yt) { if (!k) n = 0; else if (ytVaried(x)) { n *= k; on++; } return; } tr.classList.toggle('offrow', !x.on); if (x.on) { n *= k; on++; } });
+  if (yt) { ytMarks(el, OPT.schemaSync[R.id] || [], k => g[k].val, k => isSwitch((OPT.schemaSync[R.id] || []).find(p => p.key === k) || {label: ''}) ? Math.abs(g[k].val - g[k].def) > 1e-9 : g[k].min !== g[k].def || g[k].max !== g[k].def); on = 1; }
   $('#ocount').innerHTML = on ? `<b class="${n > OPT_LIMIT || !n ? 'neg' : ''}">${n0(n)}</b> combinations${n > OPT_LIMIT ? `, limit ${n0(OPT_LIMIT)}` : ''}` : 'Tick a setting to vary';
-  $('#orun').disabled = !on || !n || n > OPT_LIMIT || (window.VAULT_APP && window.VAULT_USER?.role === 'viewer'); return n;
+  const off = !on || !n || n > OPT_LIMIT || (window.VAULT_APP && window.VAULT_USER?.role === 'viewer');
+  if ($('#orun2')) { $('#orun').disabled = true; $('#orun2').disabled = off || n > F2_MAX; if (n > F2_MAX) $('#ocount').innerHTML = `<b class="neg">${n0(n)}</b> combinations, F2 limit ${n0(F2_MAX)}`; } else $('#orun').disabled = off; return n;
 }
 
 function optimInit() {
@@ -364,22 +401,24 @@ function optimInit() {
   const { v, tk } = STRAT, el = $('#optim');
   if (el) {
     const g = OPT.grids[v.id];
-    el.addEventListener('input', e => { const tr = e.target.closest('tr[data-k]'); if (!tr) return; const f = e.target.dataset.f; g[tr.dataset.k][f] = f === 'on' ? e.target.checked : +e.target.value; optCount(); });
-    $('#oform').addEventListener('submit', e => { e.preventDefault(); runOpt(); });
+    el.addEventListener('input', e => { const tr = e.target.closest('tr[data-k]'); if (!tr) return; const f = e.target.dataset.f, t = e.target;
+      if (f === 'sw') { g[tr.dataset.k].val = t.checked ? 1 : 0; tr.querySelector('[data-sw]').textContent = t.checked ? 'On' : 'Off'; } else { const x = g[tr.dataset.k]; x[f] = f === 'on' ? t.checked : +t.value; if (x.yt) x.val = x.min; } optCount(); });
+    $('#oform').addEventListener('submit', e => { e.preventDefault(); if ($('#orun2')) runF2(); else runOpt(); });
     optCount();
     const c = OPT.cache[optKey(v.id, tk)]; if (c) showOpt(c.res);
-    if (OPT.runAfterPeriod) { OPT.runAfterPeriod = false; if (!c && !$('#orun').disabled) runOpt(); }
+    if ($('#orun2') && OPT.f2?.key === optKey(v.id, tk)) showF2(OPT.f2);
+    if (OPT.runAfterPeriod) { OPT.runAfterPeriod = false; if ($('#orun2')) { if (!$('#orun2').disabled) runF2(); } else if (!c && !$('#orun').disabled) runOpt(); }
   }
   if ($('#cc-body') && (OPT.schemaSync[v.id] || []).length && (!window.VAULT_APP || window.VAULT_USER?.role !== 'viewer')) conclusionRun(v, tk);
   const key = `${v.id}.${S.region}`, noteText = $('#yt-text'), noteMessage = $('#yt-msg');
   fetch(`${API_IN}/notes?key=${key}`).then(r => r.ok ? r.text() : '').then(t => { if (noteText && $('#yt-text') === noteText) noteText.value = t; }).catch(() => {});
-  if (window.VAULT_APP && window.VAULT_USER?.role === 'viewer') { if ($('#gpt-body')) $('#gpt-body').innerHTML = '<p class="muted">Parameter research requires researcher access.</p>'; if ($('#cc-body')) $('#cc-body').innerHTML = '<p class="muted">Automatic parameter search requires researcher access. You can read saved conclusions below and run the default settings above.</p>'; if ($('#yt-save')) { $('#yt-save').disabled = true; $('#yt-save').title = 'Researcher access is required to save conclusions'; } if ($('#yt-text')) $('#yt-text').readOnly = true; if ($('#orun')) { $('#orun').disabled = true; $('#orun').title = 'Researcher access is required to optimize'; } return; }
+  if (window.VAULT_APP && window.VAULT_USER?.role === 'viewer') { if ($('#gpt-body')) $('#gpt-body').innerHTML = '<p class="muted">Parameter research requires researcher access.</p>'; if ($('#cc-body')) $('#cc-body').innerHTML = '<p class="muted">Automatic parameter search requires researcher access. You can read saved conclusions below and run the default settings above.</p>'; if ($('#yt-save')) { $('#yt-save').disabled = true; $('#yt-save').title = 'Researcher access is required to save conclusions'; } if ($('#yt-text')) $('#yt-text').readOnly = true; if ($('#orun')) { $('#orun').disabled = true; $('#orun').title = 'Researcher access is required to optimize'; } if ($('#orun2')) { $('#orun2').disabled = true; $('#orun2').title = 'Researcher access is required to optimize'; } return; }
   if ($('#yt-save')) $('#yt-save').onclick = async () => { const m = noteMessage; m.textContent = 'Saving…';
     try { const r = await fetch(`${API_IN}/notes?key=${key}`, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: noteText.value }); m.textContent = r.ok ? `Saved at ${new Date().toLocaleTimeString()}` : 'Save failed: ' + await r.text(); } catch (err) { m.textContent = 'Save failed: ' + err.message; } };
 }
 
 const optQuery = (v, tk, w, g, slim) => { const q = new URLSearchParams({ id: v.id, ticker: tk, from: w.from || '', to: w.to || '', cost: S.cost || '0',slippage:S.slippage||'0',rollover:S.rollover||'0', ...(slim ? { slim: '1' } : {}) });
-  Object.entries(g).forEach(([k, x]) => { if (x.on) q.set('g.' + k, `${x.min}:${x.max}:${x.step}`); }); return q; };
+  Object.entries(g).forEach(([k, x]) => { if (x.yt ? ytVaried(x) : x.on) q.set('g.' + k, `${x.min}:${x.max}:${x.step}`); else if (x.yt && Math.abs(x.val - x.def) > 1e-9) q.set('p.' + k, x.val); }); return q; };
 async function fetchOpt(q, api=API) { if (ownerOf(q.get('id')) === 'yt' && !q.has('capital')) q.set('capital', ytCapital(S)); const r = await fetch(enginePath(q.get('id'),'optimize',api)+'?'+q), b = await r.text(); if (!r.ok) { let message = b; try { message = JSON.parse(b).error || b; } catch {} throw new Error(message); } return JSON.parse(b); }
 
 async function runOpt() {
@@ -393,6 +432,73 @@ async function runOpt() {
     OPT.cache[key] = { res }; if (STRAT && optKey(STRAT.v.id,STRAT.tk)===key && $('#opt-out')===out) showOpt(res);
   } catch (e) { if ($('#opt-out')===out) {out.innerHTML = ''; $('#otime').innerHTML = `<span class="neg">${esc(e.message)}</span>`;} }
   finally { if ($('#orun')) optCount(); }
+}
+
+// ---- Optimisation F2 (YT): every combination of the grid is backtested (four at a time) and reported as the team's
+// AmiBroker optimisation workbook: a Rules sheet, then one sheet per combination of the varied dropdown settings, named
+// from their values, with one row per combination of the varied number settings.
+const F2_MAX = 400;
+const F2_NOTE = "Statistics are calculated by Strategy Vault from each run's whole-unit trades and closes, to AmiBroker's optimisation definitions as checked against 20 AmiBroker optimisation rows (Kora Reddy BuyShort at Open or Close, Nifty 50): all columns matched except Sharpe Ratio, whose AmiBroker definition is not reproduced and is left empty. Simulated results, not AmiBroker output.";
+/** One backtest for F2, not kept in the page's run cache (a grid can be hundreds of full runs). */
+async function f2Run(v, tk, p) {
+  const q = new URLSearchParams({ id: v.id, ticker: tk, from: S.from || '', to: S.to || '', cost: S.cost || '0', ...VaultUI.costState(S), capital: ytCapital(S), ...Object.fromEntries(Object.entries(p).map(([k, x]) => ['p.' + k, x])) });
+  const r = await fetch(enginePath(v.id, 'run', API) + '?' + q), b = await r.text();
+  if (!r.ok) { let m = b; try { m = JSON.parse(b).error || b; } catch {} throw new Error(m); }
+  return JSON.parse(b);
+}
+async function runF2() {
+  const pending = ytPeriod(); if (Object.keys(pending).length) { OPT.runAfterPeriod = true; return go(R.path, { ...S, ...pending }); }
+  const { v, tk } = STRAT, ps = OPT.schemaSync[v.id] || [], g = OPT.grids[v.id], key = optKey(v.id, tk), out = $('#opt-out');
+  const idle = ytIdle(ps, g), varied = ps.filter(p => !isSwitch(p) && !idle.has(p.key) && ytVaried(g[p.key])), drops = varied.filter(p => settingOptions(p).length), nums = varied.filter(p => !settingOptions(p).length);
+  const valuesOf = p => { const x = g[p.key]; return Array.from({ length: nVals(x) }, (_, i) => Math.round((x.min + i * x.step) * 1e9) / 1e9); };
+  const fixed = Object.fromEntries(ps.filter(p => !varied.includes(p) && !idle.has(p.key) && Math.abs(g[p.key].val - p.def) > 1e-9).map(p => [p.key, g[p.key].val]));
+  let combos = [{}]; for (const p of [...drops, ...nums]) combos = combos.flatMap(c => valuesOf(p).map(x => ({ ...c, [p.key]: x })));
+  if (combos.length > F2_MAX) { $('#otime').innerHTML = `<span class="neg">${n0(combos.length)} combinations; Optimisation F2 runs up to ${n0(F2_MAX)}. Narrow a range or raise a step.</span>`; return; }
+  $('#orun2').disabled = true; out.innerHTML = bookLoader(`Running ${n0(combos.length)} backtests in Rust…`);
+  const t0 = performance.now(), res = new Array(combos.length); let next = 0, done = 0, first = null;
+  try {
+    await Promise.all(Array.from({ length: Math.min(4, combos.length) }, async () => {
+      while (next < combos.length) {
+        const i = next++, d = await f2Run(v, tk, { ...fixed, ...combos[i] });
+        first ??= d;
+        res[i] = amiStats({ dates: d.dates, close: d.close, equity: d.equity, capital: d.whole_unit_account?.capital ?? +ytCapital(S), costRate: (d.costs?.total_side_bps || 0) / 1e4, trades: d.trades });
+        $('#otime').textContent = `Ran ${n0(++done)} of ${n0(combos.length)} backtests…`;
+      }
+    }));
+  } catch (e) { if ($('#opt-out') === out) { out.innerHTML = ''; $('#otime').innerHTML = `<span class="neg">${esc(e.message)}</span>`; } if ($('#orun2')) optCount(); return; }
+  // sheets: one per dropdown combination, named from the dropdown values (or the strategy when none is varied)
+  const groups = new Map();
+  combos.forEach((c, i) => { const k = drops.map(p => c[p.key]).join('|'); if (!groups.has(k)) groups.set(k, { c, rows: [] }); groups.get(k).rows.push({ no: i + 1, stats: res[i], params: nums.map(p => c[p.key]) }); });
+  const raw = [...groups.values()].map(gr => drops.length ? drops.map(p => settingValueText(p, gr.c[p.key])).join('.') : (v.variant || v.name));
+  const names = sheetNames(raw), paramNames = nums.map(settingName);
+  const sheets = [...groups.values()].map((gr, i) => ({ name: names[i], paramNames, rows: gr.rows }));
+  const range = p => { const x = g[p.key]; return settingOptions(p).length ? `${settingValueText(p, x.min)} to ${settingValueText(p, x.max)}` : `(${x.min},${x.max},${x.step})`; };
+  const costs = first?.costs || {}, afl = (String(v.notes || '').match(/AFL "([^"]+)"/) || [])[1];
+  const rules = { index: LABEL[tk] || tk, from: first?.dates?.[0] || S.from, to: first?.dates?.at(-1) || S.to, capital: +ytCapital(S),
+    brokerage: `${costs.fees_bps ?? 0} bps a side; slippage ${costs.slippage_bps ?? 0} bps a side`, strategy: `${familyDisplayName(v)} · ${v.variant || v.name}`, aflPath: afl ? `${afl}.afl` : 'Team AFL (see the strategy notes)',
+    settings: ps.map(p => [settingName(p), idle.has(p.key) ? 'Not used (switched off)' : varied.includes(p) ? range(p) : settingValueText(p, g[p.key].val)]), note: F2_NOTE };
+  OPT.f2 = { key, v, tk, rules, sheets, ms: performance.now() - t0, n: combos.length };
+  if (STRAT && optKey(STRAT.v.id, STRAT.tk) === key && $('#opt-out') === out) showF2(OPT.f2);
+  if ($('#orun2')) optCount();
+}
+const F2_VIEW = [['Net Profit', v => n0(Math.round(v))], ['CAR', v => fx(v)], ['Max. Sys % Drawdown', v => fx(v)], ['CAR/MDD', v => fx(v)], ['# Trades', v => fx(v, 0)], ['% of Winners', v => fx(v)],
+  ['Avg % Profit/Loss', v => fx(v)], ['Avg Bars Held', v => fx(v)], ['Profit Factor', v => fx(v)], ['Ulcer Index', v => fx(v)], ['K-Ratio', v => fx(v, 4)]];
+function showF2(f) {
+  const out = $('#opt-out'); if (!out) return;
+  $('#otime').textContent = `Optimisation F2: ${n0(f.n)} backtests on ${f.rules.from} to ${f.rules.to} in ${(f.ms / 1000).toFixed(1)} s, ${f.sheets.length} sheet${f.sheets.length === 1 ? '' : 's'}.`;
+  const cell = (fmt, x) => x === null || x === undefined || !Number.isFinite(x) ? '–' : fmt(x);
+  out.innerHTML = `<div class="ohead"><h4>Optimisation F2</h4><span><button class="dbtn primary sm" id="f2-xlsx">Download F2 workbook</button></span></div>
+    <p class="cap">${esc(F2_NOTE)} The workbook has every AmiBroker column and the team's formula columns; the page shows the main ones.</p>
+    ${f.sheets.map(sh => `<h4 class="f2-sheet">${esc(sh.name)}</h4><div class="f2wrap"><table class="tbl f2tbl"><thead><tr><th class="n">No.</th>${sh.paramNames.map(n => `<th class="n">${esc(n)}</th>`).join('')}${F2_VIEW.map(([h]) => `<th class="n">${esc(h)}</th>`).join('')}</tr></thead><tbody>
+      ${sh.rows.map(r => `<tr><td class="n">${r.no}</td>${r.params.map(x => `<td class="n">${x}</td>`).join('')}${F2_VIEW.map(([h, fmt]) => `<td class="n ${['Net Profit', 'CAR'].includes(h) ? cls(r.stats[h]) : ''}">${cell(fmt, r.stats[h])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`).join('')}`;
+  $('#f2-xlsx').onclick = async e => { const b = e.currentTarget; b.disabled = true; b.textContent = 'Building Excel…';
+    try { await f2Xlsx(f); b.textContent = 'Downloaded · download again'; } catch (x) { b.textContent = 'Excel failed: ' + x.message; } finally { b.disabled = false; } };
+}
+async function f2Xlsx(f) {
+  await loadXlsx(); if (!window.XLSX?.utils) throw Error('The Excel library did not load.');
+  const bytes = writeFormat2Xlsx(XLSX, [rulesSheet(f.rules), ...f.sheets.map(resultSheet)]);
+  const link = document.createElement('a'), url = URL.createObjectURL(new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  link.href = url; link.download = `${f.rules.index}- ${String(f.v.variant || f.v.name).replace(/[^\w ,.&()-]+/g, ' ')} Optim F2 ${f.rules.from}_${f.rules.to}.xlsx`; document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
 const applyLink = p => `<button class="olink" data-apply="${esc(encodeP(p))}">Apply</button>`;
@@ -1534,23 +1640,27 @@ async function openYtBacktest() {
   const from = fd?.get('from') || S.from || span.first, to = fd?.get('to') || S.to || span.last;
   const ps = (await optSchema())[v.id] || [], cur = { ...decodeP(S.p), ...(YTBT_STATE[v.id]?.params || {}) };
   closeYtBacktest();
-  const field = (name, label, value, attrs) => `<label class="dfield">${esc(label)} <input ${attrs} name="${name}" value="${esc(value)}" required></label>`;
+  const field = (name, label, value, attrs) => prow(label, `<input ${attrs} name="${name}" value="${esc(value)}" required>`);
+  const setting = p => prow(settingName(p), ytInput(p, cur[p.key] ?? p.def, `data-param="${esc(p.key)}" data-def="${p.def}" data-name="${esc(settingName(p))}" required`), `data-k="${esc(p.key)}" title="Default ${esc(settingValueText(p, p.def))}"`);
   const el = document.createElement('div'); el.className = 'gmodal ytbt'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-labelledby', 'ytbt-title');
   el.innerHTML = `<div class="gmodal-card ytbt-card"><button type="button" class="gm-x" aria-label="Close" data-ytbt-close>×</button>
     <h2 id="ytbt-title">Backtest settings</h2><p class="gm-tag">${esc(familyDisplayName(v))} · ${esc(v.variant || v.name)} · ${esc(LABEL[tk] || tk)}</p>
-    <form id="ytbt-form" novalidate><h4>Period and costs</h4><div class="ytbt-grid">
-      ${field('from', 'From', from, `type="date" min="${span.first}" max="${span.last}"`)}${field('to', 'To', to, `type="date" min="${span.first}" max="${span.last}"`)}
-      ${field('slippage', 'Slippage (bps a side)', fd?.get('slippage') ?? cost.slippage ?? 0, 'type="number" min="0" max="500" step="0.1"')}${field('rollover', 'Rollover (bps per roll)', fd?.get('rollover') ?? cost.rollover ?? 0, 'type="number" min="0" max="500" step="0.1"')}${field('capital', 'Starting capital (₹, whole units)', fd?.get('capital') ?? ytCapital(S), 'type="number" min="1" max="1000000000000" step="1"')}</div>
-      ${ps.length ? `<h4>Strategy settings</h4><div class="ytbt-grid">${ps.map(p => choicesOf(p).length ? `<label class="dfield ytbt-wide" title="Default ${esc(choiceName(p, p.def))}">${esc(labelOf(p))} <select data-param="${esc(p.key)}" data-def="${p.def}">${choicesOf(p).map((c, i) => `<option value="${i + 1}" ${+(cur[p.key] ?? p.def) === i + 1 ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select><small class="muted">default ${esc(choiceName(p, p.def))}</small></label>` : `<label class="dfield" title="Default ${p.def}">${esc(p.label)} <input type="number" data-param="${esc(p.key)}" data-def="${p.def}" value="${cur[p.key] ?? p.def}" min="${p.min}" max="${p.max}" step="${p.step || 'any'}" required><small class="muted">default ${p.def}</small></label>`).join('')}</div>` : ''}
+    <form id="ytbt-form" novalidate><div class="ppanel">${pgrp('Backtest parameter', field('from', 'From', from, `type="date" min="${span.first}" max="${span.last}"`) + field('to', 'To', to, `type="date" min="${span.first}" max="${span.last}"`)
+      + field('slippage', 'Slippage (bps a side)', fd?.get('slippage') ?? cost.slippage ?? 0, 'type="number" min="0" max="500" step="0.1"') + field('rollover', 'Rollover (bps per roll)', fd?.get('rollover') ?? cost.rollover ?? 0, 'type="number" min="0" max="500" step="0.1"') + field('capital', 'Starting capital (₹, whole units)', fd?.get('capital') ?? ytCapital(S), 'type="number" min="1" max="1000000000000" step="1"'))}
+      ${groupSettings(ps).map(g => pgrp(g.name, g.settings.map(setting).join(''))).join('')}</div>
+      <p class="muted ppanel-note">Hover a setting for its default. Changed settings are in bold; greyed settings are switched off by their section's Off/On setting.</p>
       <h4>Result format</h4><div class="join sm ytbt-format" role="radiogroup" aria-label="Result format">${[['1', 'Format 1', 'Settings, Statistics and Trades'], ['2', 'Format 2', "Team tradesheet: Rules, 2008-2011 Summary, YOY Summary, trade sheet with live formulas, All Index Explore"]].map(([k, t, d]) => `<label class="join-item ${ytFormat() === k ? 'active' : ''}" title="${esc(d)}"><input type="radio" name="format" value="${k}" ${ytFormat() === k ? 'checked' : ''}>${t}</label>`).join('')}</div>
       <p class="perr" id="ytbt-err" role="alert"></p>
-      <div class="gm-foot"><button type="submit" class="dbtn primary">Run backtest</button>${ps.length ? '<button type="button" class="dbtn" data-ytbt-reset>Reset to defaults</button>' : ''}<button type="button" class="dbtn ghost" data-ytbt-close>Cancel</button></div></form>
+      <div class="gm-foot"><button type="submit" class="dbtn primary">Run backtest</button>${ps.length ? '<button type="button" class="dbtn" data-ytbt-reset>Reset all</button>' : ''}<button type="button" class="dbtn ghost" data-ytbt-close>Cancel</button></div></form>
     <div id="ytbt-out" aria-live="polite"></div></div>`;
   document.body.append(el); document.body.style.overflow = 'hidden';
   el.addEventListener('click', e => { if (e.target === el || e.target.closest('[data-ytbt-close]')) closeYtBacktest(); });
   const form = el.querySelector('#ytbt-form');
-  el.querySelector('[data-ytbt-reset]')?.addEventListener('click', () => { el.querySelectorAll('[data-param]').forEach(i => { i.value = i.dataset.def; }); saveYtState(v, form); });
-  form.addEventListener('input', e => { if (e.target.matches('[data-param]')) saveYtState(v, form); else if (['from', 'to', 'slippage', 'rollover', 'capital'].includes(e.target.name)) syncYtPeriod(form); });
+  const input = k => form.querySelector(`[data-param="${CSS.escape(k)}"]`);
+  const marks = () => ytMarks(form, ps, k => +input(k).value, k => +input(k).value !== +input(k).dataset.def);
+  el.querySelector('[data-ytbt-reset]')?.addEventListener('click', () => { el.querySelectorAll('[data-param]').forEach(i => { i.value = i.dataset.def; }); saveYtState(v, form); marks(); });
+  marks();
+  form.addEventListener('input', e => { if (e.target.matches('[data-param]')) { saveYtState(v, form); marks(); } else if (['from', 'to', 'slippage', 'rollover', 'capital'].includes(e.target.name)) syncYtPeriod(form); });
   form.addEventListener('submit', e => { e.preventDefault(); saveYtState(v, form); syncYtPeriod(form); runYtBacktest(v, tk, span, e.target); });
   el.querySelectorAll('.ytbt-format input').forEach(i => i.addEventListener('change', () => { setYtFormat(i.value); el.querySelectorAll('.ytbt-format label').forEach(l => l.classList.toggle('active', l.querySelector('input').checked)); }));
   el.querySelector('input')?.focus();
@@ -1565,8 +1675,8 @@ async function runYtBacktest(v, tk, span, form) {
   if (!ytCapitalValid(capital)) { err.textContent = 'Starting capital must be a number from 1 to 1,000,000,000,000.'; return; }
   const params = {}, changed = {};
   for (const i of form.querySelectorAll('[data-param]')) {
-    const x = +i.value, lo = i.tagName === 'SELECT' ? 1 : +i.min, hi = i.tagName === 'SELECT' ? i.options.length : +i.max;
-    if (i.value === '' || !Number.isFinite(x) || x < lo || x > hi) { err.textContent = `${i.closest('label').firstChild.textContent.trim()} must be between ${lo} and ${hi}.`; i.focus(); return; }
+    const x = +i.value, opts = i.tagName === 'SELECT' ? [...i.options].map(o => +o.value) : null, lo = opts ? Math.min(...opts) : +i.min, hi = opts ? Math.max(...opts) : +i.max;
+    if (i.value === '' || !Number.isFinite(x) || x < lo || x > hi) { err.textContent = `${i.dataset.name} must be between ${lo} and ${hi}.`; i.focus(); return; }
     params[i.dataset.param] = x; if (x !== +i.dataset.def) changed[i.dataset.param] = x;
   }
   const btn = form.querySelector('[type=submit]'); btn.disabled = true; out.innerHTML = bookLoader('Running the backtest…');
@@ -1618,14 +1728,17 @@ async function ytFormat2Xlsx(v, tk, d, run, params) {
 async function ytBacktestXlsx(v, tk, d, run, params) {
   const ps = (OPT.schemaSync || {})[v.id] || [], detail = VaultReport.detailRows(d);
   const settings = [['Setting', 'Value', 'Default'], ['Strategy', `${familyDisplayName(v)} · ${v.variant || v.name}`, null], ['Strategy ID', v.id, null], ['Index', LABEL[tk] || tk, null],
-    ['From', dmy(run.from), null], ['To', dmy(run.to), null], ['Slippage (bps a side)', +run.slippage, null], ['Rollover (bps per roll)', +run.rollover, null],
+    ['From', xlDate(run.from), null], ['To', xlDate(run.to), null], ['Slippage (bps a side)', +run.slippage, null], ['Rollover (bps per roll)', +run.rollover, null],
     ...(d.whole_unit_account ? [['Starting capital (₹, whole units)', +d.whole_unit_account.capital, +YT_CAPITAL_DEFAULT]] : []),
-    ...ps.map(p => choicesOf(p).length ? [labelOf(p), choiceName(p, params[p.key] ?? p.def), choiceName(p, p.def)] : [p.label, params[p.key] ?? p.def, p.def]), ['Note', 'Simulated on the selected index; YT strategy from the team AFL, not a book method.', null]];
+    ...ps.map(p => settingOptions(p).length ? [settingName(p), settingValueText(p, params[p.key] ?? p.def), settingValueText(p, p.def)] : [p.label, params[p.key] ?? p.def, p.def]), ['Note', 'Simulated on the selected index; YT strategy from the team AFL, not a book method.', null]];
   await VaultUI.workbook([v.id, ytEventName(v, params), tk, run.from, run.to, 'backtest'].filter(Boolean).join('-'), [
     { name: 'Settings', rows: settings },
     { name: 'Statistics', rows: [['Statistic', 'Net', 'Gross'], ...detail.map(r => r.slice(0, 3))], types: ['header', ...detail.map(r => r[3])] },
-    { name: 'Trades', rows: ytUnitColumns(d, VaultUI.tradeTable(d, tk)), percent: [8, 11, 13, 14, 15] }]);
+    { name: 'Trades', rows: excelDates(ytUnitColumns(d, VaultUI.tradeTable(d, tk))), percent: [8, 11, 13, 14, 15] }]);
 }
+/** Format 1 writes real Excel dates shown as dd/mm/yyyy (the page and the CSV keep dd-mm-yyyy text). */
+const xlDate = iso => /^\d{4}-\d{2}-\d{2}$/.test(iso || '') ? { excelDate: Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)) / 86400000 + 25569 } : iso || '';
+const excelDates = rows => rows.map((row, i) => i === 0 ? row : row.map(v => typeof v === 'string' && /^\d{2}-\d{2}-\d{4}$/.test(v) ? xlDate(v.split('-').reverse().join('-')) : v));
 /** Whole-unit account columns for the YT trades sheet: units bought, their entry value and the account at entry. */
 const ytUnitColumns = (d, rows) => !d.whole_unit_account ? rows : rows.map((row, i) => i === 0
   ? [...row, 'Units', 'Position value', 'Account at entry']
@@ -1955,7 +2068,7 @@ function rulesPanel(v) {
   const sec = { F: [], E: [], A: [], X: [] }; (v.rules || []).forEach(x => { const [t, ...r] = x.split('|'); (sec[t] || sec.E).push(r.join('|')); });
   const act = r => /^(Buy|Short|Sell|Cover|Next day|No other signal|Once|After|Stop)/.test(r);
   const col = (t, sub, c, items) => items.length ? `<div class="rcol"><h4><i style="background:${c}"></i>${t}</h4><p class="rsub">${sub}</p><ul>${items.map(r => `<li class="${act(r) ? 'act' : ''}">${esc(r)}</li>`).join('')}</ul></div>` : '';
-  return `<div class="rgrid">${col('Conditions', 'All must be true (trend, liquidity, volatility filters)', 'var(--ink)', sec.F)}${col('Entry', v.guru==='ross'?'Source entry conditions; unresolved choices remain explicit':'When all of these happen on a bar’s close', 'var(--blue)', sec.E)}${col('Scale-in', 'While the trade is open', '#8b93a1', sec.A)}${col('Exit', v.guru==='ross'?'Source management; a complete automatic exit is not assumed':isYt(v)&&v.id.startsWith('ytmr_')?'The exit type is a toggle; the optional stops apply alongside it':sec.X.length > 1 ? 'Whichever happens first' : 'How the trade is closed', 'var(--red)', sec.X)}</div>${v.notes ? `<p class="rnote">${esc(v.notes)}</p>` : ''}`;
+  return `<div class="rgrid">${col('Conditions', 'All must be true (trend, liquidity, volatility filters)', 'var(--ink)', sec.F)}${col('Entry', v.guru==='ross'?'Source entry conditions; unresolved choices remain explicit':'When all of these happen on a bar’s close', 'var(--blue)', sec.E)}${col('Scale-in', 'While the trade is open', '#8b93a1', sec.A)}${col('Exit', v.guru==='ross'?'Source management; a complete automatic exit is not assumed':isYt(v)&&v.id.startsWith('ytmr_')?'Each exit has its own switch; whichever fires first closes the trade':sec.X.length > 1 ? 'Whichever happens first' : 'How the trade is closed', 'var(--red)', sec.X)}</div>${v.notes ? `<p class="rnote">${esc(v.notes)}</p>` : ''}`;
 }
 async function viewPristineStrategy(v,tk,crumbs,selection,runApi,generation,optimization){
  const stocks=TICK_ALL_US.flatMap(row=>pristineInstrumentContext(row.ticker,'us',[row])?[{ticker:row.ticker,symbol:row.symbol}]:[]);

@@ -194,10 +194,15 @@ pub fn holiday_signals(x: &Ctx, holidays: &str, days: usize, after: bool) -> Vec
 
 /// AFL BASE2SigFunc: (inside a bull period [entry, exit), exit-date bar). The scan resumes from the last exit bar found.
 pub fn base2(x: &Ctx) -> (Vec<bool>, Vec<bool>) {
+    base2_periods(x, BASE2_ENTRY, BASE2_EXIT)
+}
+
+/// BASE2SigFunc on an AFL's own entry/exit date lists (dd-mm-yyyy, comma separated).
+pub fn base2_periods(x: &Ctx, entry: &str, exit_dates: &str) -> (Vec<bool>, Vec<bool>) {
     let n = x.c.len();
     let (mut inside, mut exit) = (vec![false; n], vec![false; n]);
     let mut idx = 0;
-    for (a, b) in dates(BASE2_ENTRY).into_iter().zip(dates(BASE2_EXIT)) {
+    for (a, b) in dates(entry).into_iter().zip(dates(exit_dates)) {
         for k in idx..n {
             let d = x.r[k].date.as_str();
             if d >= a.as_str() && d < b.as_str() {

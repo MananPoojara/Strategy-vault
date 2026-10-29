@@ -47,7 +47,9 @@ impl TradeLedger {
     pub fn amibroker(ctx:&Ctx,t:&Trade,allocation:f64,costs:Costs)->Self{
         let mut s=Self::new(ctx,t,allocation,costs);
         let (mut mae,mut mfe,mut bars)=(0f64,0f64,0);
-        for k in t.legs[0].i..t.exit_i {
+        // Every bar from entry up to the bar before the exit counts its high and low; a same-day trade's only bar is
+        // the entry bar, so its high and low count too (AmiBroker, checked on the team's Outside Day trade lists).
+        for k in t.legs[0].i..t.exit_i.max(t.legs[0].i+1) {
             let bounds=[ctx.l[k],ctx.h[k]].map(|px|{
                 let mark=t.mark(k,px);
                 t.legs.iter().filter(|l|l.i<=k).map(|l|l.w*t.dir*(mark/l.px-1.)).sum::<f64>()*allocation
@@ -56,8 +58,12 @@ impl TradeLedger {
             bars+=1;
             mae=mae.min(bounds[0]).min(bounds[1]);mfe=mfe.max(bounds[0]).max(bounds[1]);
         }
-        let exit=s.gross_ret*allocation;
-        if exit.is_finite() {mae=mae.min(exit);mfe=mfe.max(exit);}
+        // On the exit bar only its open and the exit fill are known to have traded while the trade was open.
+        let open_mark=if !t.open && t.exit_i>t.legs[0].i {
+            let mark=t.mark(t.exit_i,ctx.o[t.exit_i]);
+            t.legs.iter().map(|l|l.w*t.dir*(mark/l.px-1.)).sum::<f64>()*allocation
+        }else{f64::NAN};
+        for n in [s.gross_ret*allocation,open_mark] {if n.is_finite() {mae=mae.min(n);mfe=mfe.max(n);}}
         s.observed_mae=Some(mae);s.observed_mfe=Some(mfe);s.excursion_bars=bars;s.amibroker_excursions=true;
         s
     }
@@ -150,7 +156,13 @@ mod tests {
         let r2:Vec<Row>=[(100.,100.,100.),(100.,100.,100.),(95.,200.,10.)].iter().enumerate().map(|(i,&(c,h,l))|Row{ticker:"TEST".into(),date:format!("2020-01-0{}",i+1),open:c,high:h,low:l,close:c,volume:None}).collect();
         let x=Ctx::new(&r2,&r2,&[]);let u=Trade{legs:vec![Leg{i:0,px:100.,w:1.}],exit_i:2,signal_i:2,exit_px:95.,..trade()};
         let b=TradeLedger::amibroker(&x,&u,1.,inputs(&[]));near(b.observed_mae.unwrap(),-0.05);near(b.observed_mfe.unwrap(),0.);
-        let s=TradeLedger::amibroker(&x,&Trade{dir:-1.,..u},1.,inputs(&[]));near(s.observed_mae.unwrap(),0.);near(s.observed_mfe.unwrap(),0.05);
+        let s=TradeLedger::amibroker(&x,&Trade{dir:-1.,..u.clone()},1.,inputs(&[]));near(s.observed_mae.unwrap(),0.);near(s.observed_mfe.unwrap(),0.05);
+        // The exit bar's open does count: a short exiting at the close after opening 3% higher saw a 3% adverse move.
+        let mut r3=r2.clone();r3[2].open=103.;let y=Ctx::new(&r3,&r3,&[]);
+        let o=TradeLedger::amibroker(&y,&Trade{dir:-1.,..u.clone()},1.,inputs(&[]));near(o.observed_mae.unwrap(),-0.03);near(o.observed_mfe.unwrap(),0.05);
+        // A same-day trade (entry and exit on bar 2, range 10-200) counts that day's high and low.
+        let d=TradeLedger::amibroker(&x,&Trade{legs:vec![Leg{i:2,px:100.,w:1.}],exit_i:2,signal_i:2,exit_px:95.,..u},1.,inputs(&[]));
+        near(d.observed_mae.unwrap(),-0.9);near(d.observed_mfe.unwrap(),1.0);
     }
     #[test]
     fn scale_out_bank_is_retained_and_same_day_excursions_remain_unavailable(){
