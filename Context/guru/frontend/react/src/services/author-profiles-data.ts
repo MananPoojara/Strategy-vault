@@ -525,6 +525,49 @@ export const AUTHOR_PROFILE_DATA = {
   "summary": "Timothy W. Hayes, a strategist at Ned Davis Research, wrote The Research Driven Investor (2001), which explains how to build and test market indicators from price, breadth, sentiment and economic data, with many NDR chart examples. This profile rests on the book itself.",
   "known_for": ["The Research Driven Investor"],
   "sources": [],
+  "confidence": "low"
+ }, "lowry": {
+  "kind": "person",
+  "mastery": [
+   "Commodity futures",
+   "Moving-average trading"
+  ],
+  "summary": "Scot Lowry is a futures trader who wrote The Magic of Moving Averages, a short self-published manual (late 1990s, charts from 1997) on what he calls the Delphic Phenomenon: trading the first pullback through the 18-day average after it crosses the 40-day, with later chapters on the convergence of the 4-, 18- and 40-day averages. This profile rests on the book itself.",
+  "known_for": [
+   "The Magic of Moving Averages"
+  ],
+  "sources": [],
+  "confidence": "low" }, "wooding": {
+  "kind": "person",
+  "mastery": [
+   "Stock breakout trading"
+  ],
+  "summary": "Dave Wooding (The Wooding Trading Company) wrote The Stock Rocket Stock Trading System (2001), a short manual for buying US stocks that break to new 52-week highs on very heavy volume, with exact entry, stop, half-profit and trailing-stop rules and seven 1999-2000 case studies. This profile rests on the manual itself.",
+  "known_for": [
+   "The Stock Rocket Stock Trading System"
+  ],
+  "sources": [],
+  "confidence": "low" }, "jennings": {
+  "kind": "person",
+  "mastery": [
+   "Trading-software code (MetaStock, TradeStation, AIQ, WealthLab)"
+  ],
+  "summary": "David Jennings (The Performance Factory) compiled Code Snippets & How To, a large Word file of indicator and system code for MetaStock, TradeStation, AIQ and WealthLab gathered from trader mailing lists around 2000-2002, each piece credited to its writer. The systems in it are other people's work; this profile rests on the file itself.",
+  "known_for": [
+   "Code Snippets & How To (MetaStock, TradeStation, AIQ)"
+  ],
+  "sources": [],
+  "confidence": "low" }, "skyba": {
+  "kind": "person",
+  "mastery": [
+   "Short-term mean-reversion strategies",
+   "TradeStation strategy research"
+  ],
+  "summary": "Erik D. Skyba, CMT, was a senior market technician at TradeStation, writing the TradeStation Labs 'Technical Focus' strategy reports. His Swing 5 - Relative Strength Index Strategy (June 2010) buys 5-day RSI pullbacks with a 200-day exponential average filter and was tested on SPY. This profile rests on that report.",
+  "known_for": [
+   "Swing 5 - Relative Strength Index Strategy (TradeStation Labs, 2010)"
+  ],
+  "sources": [],
   "confidence": "low" }, "barrie": {
   "kind": "person",
   "mastery": [
