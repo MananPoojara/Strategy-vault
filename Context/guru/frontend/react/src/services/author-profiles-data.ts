@@ -480,7 +480,69 @@ export const AUTHOR_PROFILE_DATA = {
   "known_for": ["The TradeStation Cookbook"],
   "sources": [],
   "confidence": "low"
- }, "ponsi": {
+ }
+ }, "kbrown": {
+  "kind": "person",
+  "mastery": [
+   "Equity trend following"
+  ],
+  "summary": "Kedrick F. Brown is a former equity market maker. Trend Trading: Timing Market Tides (Wiley, 2006) adapts futures trend-following discipline to stocks: Donchian, stochastic and peak breakouts, index 'pilot' signals, stop placement and position sizing, with a ten-year test of a 32-day close Donchian rule on three US indices. This profile rests on the book itself.",
+  "known_for": [
+   "Trend Trading: Timing Market Tides"
+  ],
+  "sources": [],
+  "confidence": "low" }, "forman": {
+  "kind": "person",
+  "mastery": [
+   "Currency trading",
+   "Trading system design"
+  ],
+  "summary": "John Forman is a currency trader and trading educator. The Essentials of Trading (Wiley, 2006) walks through building a mechanical trend system on daily USD/JPY: moving-average and Parabolic SAR entries and exits tested in four combinations, then a GBP/USD fast stochastic system and position sizing. This profile rests on the book itself.",
+  "known_for": [
+   "The Essentials of Trading"
+  ],
+  "sources": [],
+  "confidence": "low" }, "linton": {
+  "kind": "person",
+  "mastery": [
+   "Ichimoku cloud charts"
+  ],
+  "summary": "David Linton is a technical analyst. Cloud Charts (published by Updata, 2010) explains how the Ichimoku cloud is built and read, and back-tests a simple stop and reverse: buy when the close moves above the cloud, sell and reverse when it closes below, optionally waiting a few days to filter short breaches. This profile rests on the book itself.",
+  "known_for": [
+   "Cloud Charts"
+  ],
+  "sources": [],
+  "confidence": "low" }, "hyerczyk": {
+  "kind": "person",
+  "mastery": [
+   "Gann analysis"
+  ],
+  "summary": "James A. Hyerczyk is a market analyst who writes on W.D. Gann's methods. Pattern, Price & Time explains Gann swing charts (1-, 2- and 3-bar trend indicators) and trades them with a buy stop over the last swing top and a sell-and-reverse stop under the last swing bottom. This profile rests on the book itself.",
+  "known_for": [
+   "Pattern, Price & Time"
+  ],
+  "sources": [],
+  "confidence": "low" }, "sands": {
+  "kind": "person",
+  "mastery": [
+   "Trend following"
+  ],
+  "summary": "Russell Sands was one of Richard Dennis's original Turtle traders. His booklet The Original Turtle Trading Rules states a Simple Turtle Breakout System: buy above the highest high of the past 20 bars, sell below the lowest low, exit on the opposite 10-bar extreme, with a stop at 2% of the account. This profile rests on the booklet itself.",
+  "known_for": [
+   "The Original Turtle Trading Rules"
+  ],
+  "sources": [],
+  "confidence": "low" }, "graemesmith": {
+  "kind": "person",
+  "mastery": [
+   "Share swing trading"
+  ],
+  "summary": "David Graeme-Smith (catalogued as David Smith) sold Short Swing Trading, a six-rule method for UK shares: trade with the 50-day average, wait for the 8-day +DI and -DI lines to cross, buy above the last significant day's high, and trail a stop 0.5% under each new significant day's low. This profile rests on the e-book itself.",
+  "known_for": [
+   "Short Swing Trading"
+  ],
+  "sources": [],
+  "confidence": "low" }, "ponsi": {
   "kind": "person",
   "mastery": [
    "Currency trading",

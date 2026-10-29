@@ -75,6 +75,24 @@ export const authorIdentities: Record<string, readonly string[]> = {
   "melzl": [
     "Mark Melzl"
   ],
+  "graemesmith": [
+    "David Smith"
+  ],
+  "sands": [
+    "Russell Sands"
+  ],
+  "hyerczyk": [
+    "James A. Hyerczyk"
+  ],
+  "linton": [
+    "David Linton"
+  ],
+  "forman": [
+    "John Forman"
+  ],
+  "kbrown": [
+    "Kedrick Brown"
+  ],
   "ponsi": [
     "Ed Ponsi"
   ],

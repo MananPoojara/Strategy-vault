@@ -319,6 +319,12 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || leungchong_reviewed(def) // Leung and Chong block
         || bollinger_reviewed(def) // John Bollinger block
         || downs_reviewed(def) // Walter T. Downs block
+        || kbrown_reviewed(def) // Kedrick F. Brown block
+        || forman_reviewed(def) // John Forman block
+        || sands_reviewed(def) // Russell Sands block
+        || hyerczyk_reviewed(def) // James A. Hyerczyk block
+        || linton_reviewed(def) // David Linton block
+        || graemesmith_reviewed(def) // David Graeme-Smith block
         || schlossberg_reviewed(def) // Boris Schlossberg block
         || ponsi_reviewed(def) // Ed Ponsi block
         || la_aatt_reviewed(def) // Andrew Abraham (aatt, lane A) block
@@ -1327,6 +1333,66 @@ fn downs_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Optio
     Some(Issue{status:"needs_data",note:format!("This MIST rule starts its trailing stop after a profit of one hundred dollars, a US-dollar amount. Dollar-amount rules run on US indices, ETFs and stocks only; {ticker} is outside that scope, so no result is published.")})
 }
 // ---------------------------------------------------------------- end Walter T. Downs
+// ---------------------------------------------------------------- Kedrick F. Brown 2026-10-29 (lane B)
+// Admission only for the module REVIEWED lists (authors/kbrown/admission/tt_ref.py (header)); kept in one block to merge.
+pub fn kbrown_reviewed(def:&StrategyDef)->bool {(def.book=="kbttm" && crate::books::kbttm::reviewed(def.id))}
+const KBROWN_LABEL:&str="Kedrick Brown tests the 32-day close Donchian rule on the NASDAQ Composite, XOI and UTY indices and writes the all-time-high breakout for US stocks; runs on other indices, ETFs and US/India stocks are a declared application, not the author's test.";
+fn kbrown_policy(def:&StrategyDef)->Option<Policy> {
+    if !kbrown_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Kedrick F. Brown, Trend Trading: Timing Market Tides (2006), Ch.4 p.78-81, Ch.6 p.167-168, Ch.7 p.184-193");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Kedrick F. Brown
+// ---------------------------------------------------------------- John Forman 2026-10-29 (lane B)
+// Admission only for the module REVIEWED lists (authors/forman/admission/eot_ref.py (header)); kept in one block to merge.
+pub fn forman_reviewed(def:&StrategyDef)->bool {(def.book=="jfeot" && crate::books::jfeot::reviewed(def.id))}
+const FORMAN_LABEL:&str="John Forman tests these systems on daily USD/JPY (Ch.7) and GBP/USD (Ch.8) spot currency prices; runs on indices, ETFs and US/India stocks are a declared application, not the author's test. Cash-index shorts are hypothetical.";
+fn forman_policy(def:&StrategyDef)->Option<Policy> {
+    if !forman_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"John Forman, The Essentials of Trading (2006), Ch.7 System Design and Testing p.162-202 and Ch.8 p.203-235");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end John Forman
+// ---------------------------------------------------------------- Russell Sands 2026-10-26 (lane B)
+// Admission only for the module REVIEWED lists (authors/sands/admission/stb_ref.py (header)); kept in one block to merge.
+pub fn sands_reviewed(def:&StrategyDef)->bool {(def.book=="rsotr" && crate::books::rsotr::reviewed(def.id))}
+const SANDS_LABEL:&str="Russell Sands states the Simple Turtle Breakout System for futures markets; runs on indices, ETFs and US/India stocks are a declared application, not the author's test. Cash-index shorts are hypothetical.";
+fn sands_policy(def:&StrategyDef)->Option<Policy> {
+    if !sands_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Russell Sands, The Original Turtle Trading Rules (slide booklet), The Simple Turtle Breakout System (PDF 2)");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Russell Sands
+// ---------------------------------------------------------------- James A. Hyerczyk 2026-10-29 (lane B)
+// Admission only for the module REVIEWED lists (authors/hyerczyk/admission/swing_ref.py (header)); kept in one block to merge.
+pub fn hyerczyk_reviewed(def:&StrategyDef)->bool {def.book=="jhppt" && crate::books::jhppt::reviewed(def.id)}
+const HYERCZYK_LABEL:&str="James A. Hyerczyk shows the swing-chart stop and reverse on futures, Forex and stock charts; runs on indices, ETFs and US/India stocks are a declared application, not the author's test. Cash-index shorts are hypothetical.";
+fn hyerczyk_policy(def:&StrategyDef)->Option<Policy> {
+    if !hyerczyk_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"James A. Hyerczyk, Pattern, Price & Time (2nd ed.), Ch.5-6 trend indicator charts, p.69-97");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end James A. Hyerczyk
+// ---------------------------------------------------------------- David Linton 2026-10-29 (lane B)
+// Admission only for the module REVIEWED lists (authors/linton/admission/cloud_ref.py (header)); kept in one block to merge.
+pub fn linton_reviewed(def:&StrategyDef)->bool {def.book=="dlccs" && crate::books::dlccs::reviewed(def.id)}
+const LINTON_LABEL:&str="David Linton back-tests the cloud stop and reverse on the Euro, currencies and S&P 500 / FTSE 100 stocks; runs on indices, ETFs and US/India stocks are a declared application, not the author's test. Cash-index shorts are hypothetical.";
+fn linton_policy(def:&StrategyDef)->Option<Policy> {
+    if !linton_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"David Linton, Cloud Charts (2010), Ch.8 cloud construction and Ch.14 back-testing (PDF p.100-105)");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end David Linton
+// ---------------------------------------------------------------- David Graeme-Smith 2026-10-26 (lane B)
+// Admission only for the module REVIEWED lists (authors/dsmith/admission/sst_ref.py (header)); kept in one block to merge.
+pub fn graemesmith_reviewed(def:&StrategyDef)->bool {(def.book=="dgsst" && crate::books::dgsst::reviewed(def.id))}
+const GRAEMESMITH_LABEL:&str="David Graeme-Smith wrote Short Swing Trading for UK shares (FTSE 250 type); runs on indices, ETFs and US/India stocks are a declared application, not the author's test, and he warns indices may need more stop space. Cash-index shorts are hypothetical.";
+fn graemesmith_policy(def:&StrategyDef)->Option<Policy> {
+    if !graemesmith_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"David Graeme-Smith, Short Swing Trading v6.0 (e-book, 2004), Ch.7-9 the six SST rules (PDF 46-70)");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end David Graeme-Smith
 // ---------------------------------------------------------------- Boris Schlossberg 2026-10-26 (lane B)
 // Admission only for the module REVIEWED lists (authors/schlossberg/admission/bs_ref.py (header)); kept in one block to merge.
 pub fn schlossberg_reviewed(def:&StrategyDef)->bool {(def.book=="bstacm" && crate::books::bstacm::reviewed(def.id))}
@@ -2046,6 +2112,12 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=leungchong_policy(def) {return p;} // Leung and Chong block
     if let Some(p)=bollinger_policy(def) {return p;} // John Bollinger block
     if let Some(p)=downs_policy(def) {return p;} // Walter T. Downs block
+    if let Some(p)=kbrown_policy(def) {return p;} // Kedrick F. Brown block
+    if let Some(p)=forman_policy(def) {return p;} // John Forman block
+    if let Some(p)=sands_policy(def) {return p;} // Russell Sands block
+    if let Some(p)=hyerczyk_policy(def) {return p;} // James A. Hyerczyk block
+    if let Some(p)=linton_policy(def) {return p;} // David Linton block
+    if let Some(p)=graemesmith_policy(def) {return p;} // David Graeme-Smith block
     if let Some(p)=schlossberg_policy(def) {return p;} // Boris Schlossberg block
     if let Some(p)=ponsi_policy(def) {return p;} // Ed Ponsi block
     if let Some(p)=la_aatt_policy(def) {return p;} // Andrew Abraham (aatt, lane A) block
@@ -2722,6 +2794,12 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if leungchong_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LEUNGCHONG_LABEL));} // Leung and Chong block
     if bollinger_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BOLLINGER_LABEL));} // John Bollinger block
     if downs_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",DOWNS_LABEL));} // Walter T. Downs block
+    if kbrown_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",KBROWN_LABEL));} // Kedrick F. Brown block
+    if forman_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",FORMAN_LABEL));} // John Forman block
+    if sands_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",SANDS_LABEL));} // Russell Sands block
+    if hyerczyk_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",HYERCZYK_LABEL));} // James A. Hyerczyk block
+    if linton_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LINTON_LABEL));} // David Linton block
+    if graemesmith_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",GRAEMESMITH_LABEL));} // David Graeme-Smith block
     if schlossberg_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",SCHLOSSBERG_LABEL));} // Boris Schlossberg block
     if ponsi_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",PONSI_LABEL));} // Ed Ponsi block
     if la_aatt_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LA_AATT_LABEL));} // Andrew Abraham (aatt, lane A) block
@@ -3475,6 +3553,102 @@ mod tests {
         }
     }
     // ---- end Walter T. Downs block ----
+    // ---- Kedrick F. Brown block (2026-10-29, lane B) ----
+    #[test]
+    fn kbrown_review_admits_exact_ids() {
+        use crate::books::{kbttm};
+        let all:Vec<StrategyDef>=kbttm::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=kbttm::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|kbrown_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Kedrick F. Brown block ----
+    // ---- John Forman block (2026-10-29, lane B) ----
+    #[test]
+    fn forman_review_admits_exact_ids() {
+        use crate::books::{jfeot};
+        let all:Vec<StrategyDef>=jfeot::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=jfeot::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|forman_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end John Forman block ----
+    // ---- Russell Sands block (2026-10-26, lane B) ----
+    #[test]
+    fn sands_review_admits_exact_ids() {
+        use crate::books::{rsotr};
+        let all:Vec<StrategyDef>=rsotr::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=rsotr::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|sands_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Russell Sands block ----
+    // ---- James A. Hyerczyk block (2026-10-29, lane B) ----
+    #[test]
+    fn hyerczyk_review_admits_exact_ids() {
+        use crate::books::{jhppt};
+        let all:Vec<StrategyDef>=jhppt::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=jhppt::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|hyerczyk_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end James A. Hyerczyk block ----
+    // ---- David Linton block (2026-10-29, lane B) ----
+    #[test]
+    fn linton_review_admits_exact_ids() {
+        use crate::books::{dlccs};
+        let all:Vec<StrategyDef>=dlccs::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=dlccs::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|linton_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end David Linton block ----
+    // ---- David Graeme-Smith block (2026-10-26, lane B) ----
+    #[test]
+    fn graemesmith_review_admits_exact_ids() {
+        use crate::books::{dgsst};
+        let all:Vec<StrategyDef>=dgsst::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=dgsst::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|graemesmith_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end David Graeme-Smith block ----
     // ---- Boris Schlossberg block (2026-10-26, lane B) ----
     #[test]
     fn schlossberg_review_admits_exact_ids() {

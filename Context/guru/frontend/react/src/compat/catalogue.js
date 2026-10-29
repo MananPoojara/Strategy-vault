@@ -254,6 +254,30 @@ export const LIB = [
   { id: "melzl", name: "Mark Melzl", tagline: "Compiler of The TradeStation Cookbook · six printed daily systems run here; systems with missing pages or functions held", books: [
     { id: "tscb2", sourceIds: ["title-e54ec3553f6be961"], title: "The TradeStation Cookbook II", year: 1997, blurb: "Melzl (compiler) · James Bond %K(100), Daily Smash YX, BB AVG, Consecutive Closes, CCI 200, Average Volume (scanned code listing)" }] },
   // ---- end Lane C 29 Oct block ----
+  // ---- Graeme-Smith block (29 Oct 2026, lane B)
+  { id: "graemesmith", name: "David Graeme-Smith", tagline: "UK share swing trader (shortswingtrading.com) · the six-rule Short Swing Trading strategy runs here", books: [
+    { id: "dgsst", sourceIds: ["title-7f5a3a12b1c58816"], title: "Short Swing Trading v6.0", year: 2004, blurb: "Graeme-Smith, 2004 · with the 50-day average, an 8-day +DI/-DI cross, buy above the last significant (non-inside) day's high, stop 0.5% under its low, trailed under each new significant day" }] },
+  // ---- end Graeme-Smith block ----
+  // ---- Sands block (29 Oct 2026, lane B)
+  { id: "sands", name: "Russell Sands", tagline: "One of the original Turtle traders · the Simple Turtle Breakout System runs here", books: [
+    { id: "rsotr", sourceIds: ["title-d35ce795ae9f8c1c"], title: "The Original Turtle Trading Rules", year: null, blurb: "Sands · buy above the highest high of the past 20 bars (sell below the 20-bar low), exit on a 10-bar low (high), stop at 2% of the account, no profit target" }] },
+  // ---- end Sands block ----
+  // ---- Hyerczyk block (29 Oct 2026, lane B)
+  { id: "hyerczyk", name: "James A. Hyerczyk", tagline: "Gann analyst and futures market writer · the swing-chart stop and reverse runs here", books: [
+    { id: "jhppt", sourceIds: ["title-f4dad71e89ea05e4"], title: "Pattern, Price & Time: Using Gann Theory in Trading Systems (2nd ed.)", year: 2009, blurb: "Hyerczyk · Gann 1-, 2- and 3-bar swing charts; buy on a stop over the last swing top, sell and reverse under the last swing bottom, the stop following each new swing" }] },
+  // ---- end Hyerczyk block ----
+  // ---- Linton block (29 Oct 2026, lane B)
+  { id: "linton", name: "David Linton", tagline: "Ichimoku cloud chart analyst · the cloud stop and reverse runs here", books: [
+    { id: "dlccs", sourceIds: ["title-488a6153eb6af4ce"], title: "Cloud Charts: Trading Success with the Ichimoku Technique", year: 2010, blurb: "Linton · buy when the close moves above the cloud after the last outside close was below it, sell and reverse when it closes below; signal delay of 1-5 days and the lagging-line version as options" }] },
+  // ---- end Linton block ----
+  // ---- Forman block (29 Oct 2026, lane B)
+  { id: "forman", name: "John Forman", tagline: "Currency trader and trading educator · the four Ch.7 test systems and the stochastic 40/60 system run here", books: [
+    { id: "jfeot", sourceIds: ["title-25c31f3ca7f1f280"], title: "The Essentials of Trading: From the Basics to Building a Winning Strategy", year: 2006, blurb: "Forman · close crosses the 92-day average to enter and the 50-day to exit; Parabolic SAR 0.02/0.20 stop and reverse; 20-day average entry with SAR 0.09/0.50 exit; SAR entry with 60-day average exit; 5-period stochastic through 40/60" }] },
+  // ---- end Forman block ----
+  // ---- Kedrick Brown block (29 Oct 2026, lane B)
+  { id: "kbrown", name: "Kedrick F. Brown", tagline: "Equity market maker and trend trader · the 32-day close Donchian and the all-time-high breakout run here", books: [
+    { id: "kbttm", sourceIds: ["title-3a876c2b43f2c9cc"], title: "Trend Trading: Timing Market Tides", year: 2006, blurb: "Brown · buy when the close beats the highest close of the past 32 days and sell below the lowest, on the next close; buy a new all-time high with a 96% stop and a 32-day-low exit; NASDAQ pilot signals and basket averages held" }] },
+  // ---- end Kedrick Brown block ----
   // ---- Arms block (2026-10-24) ----
   { id: "arms", name: "Richard W. Arms Jr.", tagline: "Inventor of Equivolume, Ease of Movement and the Arms Index · the two EMV rules run here", books: [
     { id: "ravcs", sourceIds: ["title-bdb6dd066565a040"], title: "Volume Cycles in the Stock Market", year: 1994, blurb: "Arms · 13-day Ease of Movement zero cross and the weekly four-week reversal of the 13 run; shorter EMVs and cycle reading held" },
