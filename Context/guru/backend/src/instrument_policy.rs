@@ -318,6 +318,9 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || tillson_reviewed(def) // Tim Tillson block
         || leungchong_reviewed(def) // Leung and Chong block
         || bollinger_reviewed(def) // John Bollinger block
+        || jjburns_reviewed(def) // Jeremy J. Burns block
+        || meissner_reviewed(def) // Gunter Meissner block
+        || schutzman_reviewed(def) // Fred G. Schutzman block
         || lakhi_reviewed(def) // Shiraz A. Lakhi block
         || burke_reviewed(def) // Edward Burke block
         || lcrane_reviewed(def) // Les Crane block
@@ -1320,6 +1323,36 @@ fn bollinger_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end John Bollinger
+// ---------------------------------------------------------------- Jeremy J. Burns 2026-10-29 (lane K1)
+// Admission only for the module REVIEWED lists (authors/jjburns/admission/id_ref.py (header)); kept in one block to merge.
+pub fn jjburns_reviewed(def:&StrategyDef)->bool {(def.book=="jbid" && crate::books::jbid::reviewed(def.id))}
+const JJBURNS_LABEL:&str="Jeremy Burns trades inside days on US stocks; runs on indices, ETFs and India stocks are a declared application, not the author's test.";
+fn jjburns_policy(def:&StrategyDef)->Option<Policy> {
+    if !jjburns_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Jeremy J. Burns, Inside Days (TradeCashSystem.com, 2009), PDF 7-17");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Jeremy J. Burns
+// ---------------------------------------------------------------- Gunter Meissner 2026-10-29 (lane K1)
+// Admission only for the module REVIEWED lists (authors/meissner/admission/rm_ref.py (header)); kept in one block to merge.
+pub fn meissner_reviewed(def:&StrategyDef)->bool {(def.book=="gmrm" && crate::books::gmrm::reviewed(def.id))}
+const MEISSNER_LABEL:&str="Meissner, Alex and Nolte test the refined MACD on NASDAQ-100 stocks (rules derived on the DJIA); runs on indices, ETFs and other US/India stocks are a declared application, not the authors' test.";
+fn meissner_policy(def:&StrategyDef)->Option<Policy> {
+    if !meissner_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"G. Meissner, A. Alex, K. Nolte, A Refined MACD Indicator (article), PDF 4-6");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Gunter Meissner
+// ---------------------------------------------------------------- Fred G. Schutzman 2026-10-29 (lane K1)
+// Admission only for the module REVIEWED lists (authors/schutzman/admission/dps_ref.py (header)); kept in one block to merge.
+pub fn schutzman_reviewed(def:&StrategyDef)->bool {(def.book=="fsdps" && crate::books::fsdps::reviewed(def.id))}
+const SCHUTZMAN_LABEL:&str="Fred Schutzman tests these EasyLanguage systems on S&P 500, silver, copper and Canadian dollar futures; runs on indices, ETFs and US/India stocks are a declared application, not the author's test.";
+fn schutzman_policy(def:&StrategyDef)->Option<Policy> {
+    if !schutzman_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Fred G. Schutzman, Developing Profitable Trading Systems (TAG 1997 workbook), PDF 7 and 15");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Fred G. Schutzman
 // ---------------------------------------------------------------- Shiraz A. Lakhi 2026-10-29 (lane K1)
 // Admission only for the module REVIEWED lists (authors/lakhi/admission/ct_ref.py (header)); kept in one block to merge.
 pub fn lakhi_reviewed(def:&StrategyDef)->bool {(def.book=="slct" && crate::books::slct::reviewed(def.id))}
@@ -2155,6 +2188,9 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=tillson_policy(def) {return p;} // Tim Tillson block
     if let Some(p)=leungchong_policy(def) {return p;} // Leung and Chong block
     if let Some(p)=bollinger_policy(def) {return p;} // John Bollinger block
+    if let Some(p)=jjburns_policy(def) {return p;} // Jeremy J. Burns block
+    if let Some(p)=meissner_policy(def) {return p;} // Gunter Meissner block
+    if let Some(p)=schutzman_policy(def) {return p;} // Fred G. Schutzman block
     if let Some(p)=lakhi_policy(def) {return p;} // Shiraz A. Lakhi block
     if let Some(p)=burke_policy(def) {return p;} // Edward Burke block
     if let Some(p)=lcrane_policy(def) {return p;} // Les Crane block
@@ -2841,6 +2877,9 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if tillson_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",TILLSON_LABEL));} // Tim Tillson block
     if leungchong_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LEUNGCHONG_LABEL));} // Leung and Chong block
     if bollinger_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BOLLINGER_LABEL));} // John Bollinger block
+    if jjburns_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",JJBURNS_LABEL));} // Jeremy J. Burns block
+    if meissner_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",MEISSNER_LABEL));} // Gunter Meissner block
+    if schutzman_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",SCHUTZMAN_LABEL));} // Fred G. Schutzman block
     if lakhi_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LAKHI_LABEL));} // Shiraz A. Lakhi block
     if burke_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BURKE_LABEL));} // Edward Burke block
     if lcrane_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LCRANE_LABEL));} // Les Crane block
@@ -3587,6 +3626,54 @@ mod tests {
         }
     }
     // ---- end John Bollinger block ----
+    // ---- Jeremy J. Burns block (2026-10-29, lane K1) ----
+    #[test]
+    fn jjburns_review_admits_exact_ids() {
+        use crate::books::{jbid};
+        let all:Vec<StrategyDef>=jbid::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=jbid::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|jjburns_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Jeremy J. Burns block ----
+    // ---- Gunter Meissner block (2026-10-29, lane K1) ----
+    #[test]
+    fn meissner_review_admits_exact_ids() {
+        use crate::books::{gmrm};
+        let all:Vec<StrategyDef>=gmrm::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=gmrm::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|meissner_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Gunter Meissner block ----
+    // ---- Fred G. Schutzman block (2026-10-29, lane K1) ----
+    #[test]
+    fn schutzman_review_admits_exact_ids() {
+        use crate::books::{fsdps};
+        let all:Vec<StrategyDef>=fsdps::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=fsdps::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|schutzman_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Fred G. Schutzman block ----
     // ---- Shiraz A. Lakhi block (2026-10-29, lane K1) ----
     #[test]
     fn lakhi_review_admits_exact_ids() {

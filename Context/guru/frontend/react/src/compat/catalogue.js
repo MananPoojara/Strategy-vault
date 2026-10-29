@@ -282,6 +282,14 @@ export const LIB = [
   { id: "lakhi", name: "Shiraz A. Lakhi", tagline: "FTSE 100 index trader · the Champion Trader CT-formula runs here", books: [
     { id: "slct", sourceIds: [], title: "Champion Trader", year: 2001, blurb: "Lakhi · with the 14-day average of the daily midpoint rising, a fresh low pivot sets an abort line at its low and a signal line at the next bar's high; buy when the signal line is hit first, stop at the abort line, sell when the average turns down. Falling average: the mirror" }] },
   // ---- end K1 block ----
+  // ---- K1 block 2 (29 Oct 2026, overnight lane K1)
+  { id: "schutzman", name: "Fred G. Schutzman", tagline: "CMT, system developer and money manager · two printed TradeStation systems run here", books: [
+    { id: "fsdps", sourceIds: [], title: "Developing Profitable Trading Systems: from Discretionary to Mechanical", year: 1997, blurb: "Schutzman (TAG seminar workbook) · Zweig-style reversal on a 2% rise from the lowest close or a 6% fall from the highest close; MACD rising with a close under the 5-day Bollinger band buys, MACD falling with a close over the upper band sells (stop and reverse). The counter-trend stochastic system is held (TradeStation's SlowD smoothing not printed)" }] },
+  { id: "meissner", name: "Gunter Meissner", tagline: "Finance professor, derivatives author · the refined MACD runs here", books: [
+    { id: "gmrm", sourceIds: [], title: "A Refined MACD Indicator: Evidence against the Random Walk Hypothesis?", year: 2001, blurb: "Meissner, Alex and Nolte · enter at the close of the third day after a MACD / signal crossing if no new crossing came; close at a 3% (or 5%) gain or the next crossing; a minimum day-3 gap (MACDR2) as an option" }] },
+  { id: "jjburns", name: "Jeremy J. Burns", tagline: "TradeCashSystem stock trader · the inside-day breakout runs here", books: [
+    { id: "jbid", sourceIds: [], title: "The One Trading Secret That Could Make You Rich: Inside Days", year: 2009, blurb: "Burns · after an inside day, buy one cent over its high or sell one cent under its low the next day; stop at the other side; out at target 1 (the inside day's range) or the close of day 3" }] },
+  // ---- end K1 block 2 ----
   // ---- Forman block (29 Oct 2026, lane B)
   { id: "forman", name: "John Forman", tagline: "Currency trader and trading educator · the four Ch.7 test systems and the stochastic 40/60 system run here", books: [
     { id: "jfeot", sourceIds: ["title-25c31f3ca7f1f280"], title: "The Essentials of Trading: From the Basics to Building a Winning Strategy", year: 2006, blurb: "Forman · close crosses the 92-day average to enter and the 50-day to exit; Parabolic SAR 0.02/0.20 stop and reverse; 20-day average entry with SAR 0.09/0.50 exit; SAR entry with 60-day average exit; 5-period stochastic through 40/60" }] },

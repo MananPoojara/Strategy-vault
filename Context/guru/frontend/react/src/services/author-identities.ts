@@ -99,6 +99,15 @@ export const authorIdentities: Record<string, readonly string[]> = {
   "lakhi": [
     "Shiraz A. Lakhi"
   ],
+  "schutzman": [
+    "Fred G. Schutzman"
+  ],
+  "meissner": [
+    "Gunter Meissner"
+  ],
+  "jjburns": [
+    "Jeremy J. Burns"
+  ],
   "forman": [
     "John Forman"
   ],
