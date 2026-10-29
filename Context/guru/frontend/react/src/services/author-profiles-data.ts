@@ -446,6 +446,27 @@ export const AUTHOR_PROFILE_DATA = {
   "known_for": ["W.D. Gann Treasure Discovered", "Fibonacci Trader"],
   "sources": [],
   "confidence": "low"
+ }, "sheimo": {
+  "kind": "person",
+  "mastery": ["Seasonal stock patterns", "Stock selection"],
+  "summary": "Michael D. Sheimo, a Minneapolis stockbroker and registered options principal, wrote Stock Market Rules and The Stock Selector System; his 1992 Stocks & Commodities article tested the Thanksgiving-to-year-end rally on five Dow stocks. This profile rests on the article and the book.",
+  "known_for": ["Stock Market Rules", "Trading The Santa Claus Rally"],
+  "sources": [],
+  "confidence": "low"
+ }, "mcdonald": {
+  "kind": "person",
+  "mastery": ["Moving-average timing", "Market cycles", "Trading ranges"],
+  "summary": "Michael McDonald wrote Predict Market Swings With Technical Analysis (2002): a fair-value and feedback-loop model of the stock market and moving-average timing studies on the S&P 500 (1929-1998 and 1966-1982). This profile rests on the book itself.",
+  "known_for": ["Predict Market Swings With Technical Analysis"],
+  "sources": [],
+  "confidence": "low"
+ }, "melzl": {
+  "kind": "person",
+  "mastery": ["TradeStation EasyLanguage"],
+  "summary": "Mark Melzl compiled The TradeStation Cookbook I and II (GraphFax, 1997): a TradeStation 4.0 how-to manual and a listing of indicator and system code. This profile rests on the books themselves.",
+  "known_for": ["The TradeStation Cookbook"],
+  "sources": [],
+  "confidence": "low"
  }, "ponsi": {
   "kind": "person",
   "mastery": [

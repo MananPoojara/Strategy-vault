@@ -242,6 +242,12 @@ export const LIB = [
     { id: "astk3", sourceIds: ["title-d13dcf241ff9a9ab"], title: "Trading Toolkit Collection Vol.3: Gli Swing Chart di W.D. Gann", year: 2001, blurb: "Sabatini · buy above the last swing top, out below the last swing bottom (Italian, scanned)" }] },
   { id: "krausz", name: "Robert Krausz", tagline: "Gann swing trader (New Market Wizards) · the Basic Gann Swing Plan runs here; the Professional Plan needs 10/20-minute T-bond bars", books: [
     { id: "krgann", sourceIds: ["title-d7c844f5d172b872"], title: "W.D. Gann Treasure Discovered: Simple Trading Plans for Stocks & Commodities", year: 1998, blurb: "Krausz · 2-bar Gann swing trend + 3-day HiLo Activator entry and trailing exit, 38% swing retracement exit (scanned)" }] },
+  { id: "sheimo", name: "Michael D. Sheimo", tagline: "Stockbroker and author (Stock Market Rules) · the day-after-Thanksgiving to year-end Santa Claus window runs here (US only)", books: [
+    { id: "mdssc", sourceIds: ["live-file-e0ed60451244fcb0b32f24cf25f265c3", "live-file-add5a1522d31ae044e4f01c4cc40f9c1", "live-file-7d66ee9631ad9fab22c4e34119a7580b", "live-file-d85f9b0830c24046a1c3e0d32bdcc129"], title: "Trading The Santa Claus Rally (Stocks & Commodities, Dec 1992)", year: 1992, blurb: "Sheimo · buy the close of the day after Thanksgiving, sell the close of the year's last trading day" }] },
+  { id: "mcdonald", name: "Michael McDonald", tagline: "Author of Predict Market Swings With Technical Analysis · the moving-average timing and Bollinger trading-range rules of Ch.8 run here", books: [
+    { id: "mcdpms", sourceIds: ["title-33042c847823ca05"], title: "Predict Market Swings With Technical Analysis", year: 2002, blurb: "McDonald · in above 98.5% of the 130-day average, out below (next-day close); 2-sd Bollinger sell/buy overlay of the 1966-1982 study" }] },
+  { id: "melzl", name: "Mark Melzl", tagline: "Compiler of The TradeStation Cookbook · six printed daily systems run here; systems with missing pages or functions held", books: [
+    { id: "tscb2", sourceIds: ["title-e54ec3553f6be961"], title: "The TradeStation Cookbook II", year: 1997, blurb: "Melzl (compiler) · James Bond %K(100), Daily Smash YX, BB AVG, Consecutive Closes, CCI 200, Average Volume (scanned code listing)" }] },
   // ---- end Lane C 29 Oct block ----
   // ---- Arms block (2026-10-24) ----
   { id: "arms", name: "Richard W. Arms Jr.", tagline: "Inventor of Equivolume, Ease of Movement and the Arms Index · the two EMV rules run here", books: [
