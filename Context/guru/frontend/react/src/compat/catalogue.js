@@ -229,6 +229,18 @@ export const LIB = [
   { id: "goodwin", name: "Andrew Goodwin", tagline: "Hedge-fund S&P trader · eight of his printed TradeStation rules run here; breadth, Treasury, VIX and fixed-point patterns held", books: [
     { id: "agtsic", sourceIds: ["title-8c40d4a149da20e6"], title: "Trading Secrets of the Inner Circle", year: 1997, blurb: "Goodwin, 1997 · basic 8-day RSI, options-expiration range rule, daily patterns #5, #6, #8, #10, #12 and the 6-day reversal, all from the printed S&P futures code" }] },
   // ---- end Goodwin block ----
+  // ---- Lane C 29 Oct block (Wright, Cohen, Sadekar, Gujral, Sabatini)
+  { id: "cfwright", name: "Charles F. Wright", tagline: "Trader and trading-system designer · six of his printed TradeStation strategies run here; RangeLeader held (futures-dollar stop and target)", books: [
+    { id: "cfwtab", sourceIds: ["title-63bdacda30f9b1cd", "source-384f6c256b2a2aa5", "title-dfebd207e13bbd34"], title: "Trading as a Business", year: 1998, blurb: "Wright · 9/18 MA cross, stochastic cross, gap-open breakout, 50-day channel, MA direction + %R (weekly) and the up-key-reversal breakout, all from the printed code" }] },
+  { id: "acohen", name: "A. W. Cohen", tagline: "Chartcraft founder · the three-point reversal point & figure signal-to-signal rule runs here (US instruments: dollar box sizes)", books: [
+    { id: "awcpf", sourceIds: ["title-fcfca896c4fe5bfb"], title: "How to Use the Three-Point Reversal Method of Point & Figure Stock Market Trading", year: 1984, blurb: "Cohen · buy on an X above the last X column, sell on an O below the last O column; trend lines and counts held" }] },
+  { id: "sadekar", name: "Balkrishna M. Sadekar", tagline: "Ichimoku trader · the five basic Ichimoku strategies with the Kijun-close exit run here; the high-probability versions are judgement", books: [
+    { id: "bsichi", sourceIds: ["title-a3ce6fb5f0b6e094", "title-105a46211861a7b4"], title: "How to Make Money Trading the Ichimoku System", year: 2010, blurb: "Sadekar · T/K cross, Kumo breakout, Kijun cross, Chikou breakout and Kumo twist, each out on a close beyond the Kijun" }] },
+  { id: "gujral", name: "Ashwani Gujral", tagline: "Indian market technician · the 23-30 EMA band and the MACD histogram turn run here; his other MA and MACD rules are already in the vault", books: [
+    { id: "ggcharts", sourceIds: ["title-434e9480e707efd1"], title: "How to Make Money Trading with Charts", year: 2009, blurb: "Gujral · 23-30 EMA band with a confirming close, MACD histogram turn below/above zero; Railway-Line Theory and patterns held" }] },
+  { id: "sabatini", name: "Alberto Sabatini", tagline: "Italian trader and author · the Gann one-bar swing chart trend method runs here; outside-bar orders and Gann angles held", books: [
+    { id: "astk3", sourceIds: ["title-d13dcf241ff9a9ab"], title: "Trading Toolkit Collection Vol.3: Gli Swing Chart di W.D. Gann", year: 2001, blurb: "Sabatini · buy above the last swing top, out below the last swing bottom (Italian, scanned)" }] },
+  // ---- end Lane C 29 Oct block ----
   // ---- Arms block (2026-10-24) ----
   { id: "arms", name: "Richard W. Arms Jr.", tagline: "Inventor of Equivolume, Ease of Movement and the Arms Index · the two EMV rules run here", books: [
     { id: "ravcs", sourceIds: ["title-bdb6dd066565a040"], title: "Volume Cycles in the Stock Market", year: 1994, blurb: "Arms · 13-day Ease of Movement zero cross and the weekly four-week reversal of the 13 run; shorter EMVs and cycle reading held" },

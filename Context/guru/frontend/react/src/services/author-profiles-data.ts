@@ -404,7 +404,42 @@ export const AUTHOR_PROFILE_DATA = {
    "Trading Secrets of the Inner Circle"
   ],
   "sources": [],
-  "confidence": "low" }, "ponsi": {
+  "confidence": "low" }, "cfwright": {
+  "kind": "person",
+  "mastery": ["Trading-system design", "TradeStation strategies"],
+  "summary": "Charles F. Wright wrote Trading as a Business (1998), a step-by-step account of designing, testing and trading mechanical strategies with printed TradeStation code for stocks and S&P 500 futures. This profile rests on the book itself.",
+  "known_for": ["Trading as a Business"],
+  "sources": [],
+  "confidence": "low"
+ }, "acohen": {
+  "kind": "person",
+  "mastery": ["Point & figure charting"],
+  "summary": "A. W. Cohen founded Chartcraft and wrote the standard guide to three-point reversal point & figure charts of stocks, with signal formations, trend lines and price counts. This profile rests on the book itself.",
+  "known_for": ["How to Use the Three-Point Reversal Method of Point & Figure Stock Market Trading"],
+  "sources": [],
+  "confidence": "low"
+ }, "sadekar": {
+  "kind": "person",
+  "mastery": ["Ichimoku charts", "Indian stocks"],
+  "summary": "Balkrishna M. Sadekar teaches the Ichimoku system on Indian stocks: its five components, five basic strategies and stricter high-probability versions. This profile rests on the book itself.",
+  "known_for": ["How to Make Money Trading the Ichimoku System"],
+  "sources": [],
+  "confidence": "low"
+ }, "gujral": {
+  "kind": "person",
+  "mastery": ["Chart patterns", "Indian markets", "Moving averages and oscillators"],
+  "summary": "Ashwani Gujral is an Indian market technician whose book covers trend, patterns, moving averages, oscillators and his Railway-Line Theory for Indian stocks. This profile rests on the book itself.",
+  "known_for": ["How to Make Money Trading with Charts"],
+  "sources": [],
+  "confidence": "low"
+ }, "sabatini": {
+  "kind": "person",
+  "mastery": ["Gann swing charts", "Italian stocks"],
+  "summary": "Alberto Sabatini wrote the Trading Toolkit Collection; volume 3 explains W.D. Gann's one-bar swing charts, outside bars and Gann angles on Italian stocks. This profile rests on the book itself.",
+  "known_for": ["Trading Toolkit Collection Vol.3"],
+  "sources": [],
+  "confidence": "low"
+ }, "ponsi": {
   "kind": "person",
   "mastery": [
    "Currency trading",

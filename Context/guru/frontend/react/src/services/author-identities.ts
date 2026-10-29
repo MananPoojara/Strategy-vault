@@ -45,6 +45,21 @@ export const authorIdentities: Record<string, readonly string[]> = {
   "goodwin": [
     "Andrew Goodwin"
   ],
+  "cfwright": [
+    "Charles F. Wright"
+  ],
+  "acohen": [
+    "A. W. Cohen"
+  ],
+  "sadekar": [
+    "Balkrishna M. Sadekar"
+  ],
+  "gujral": [
+    "Ashwani Gujral"
+  ],
+  "sabatini": [
+    "Alberto Sabatini"
+  ],
   "ponsi": [
     "Ed Ponsi"
   ],
