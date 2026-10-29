@@ -769,3 +769,5 @@ body.pdf-capture .st-actions, body.pdf-capture #page-action-message, body.pdf-ca
 .range-brush .rb-h[data-h=l]{left:2px}.range-brush .rb-h[data-h=r]{right:2px}
 .range-brush .rb-out{position:absolute;left:8px;bottom:1px;font:500 11px 'Inter Numbers','IBM Plex Sans',system-ui,sans-serif;font-variant-numeric:tabular-nums;color:var(--ink2);pointer-events:none}
 @media print{.range-brush{display:none}}
+
+.share-files{margin:8px 0 28px}.share-files .section-h{margin:0 0 8px}.lstrip.share-files-strip{grid-template-columns:repeat(6,minmax(0,1fr))}.share-files-strip dd{font-size:26px}@media(max-width:760px){.lstrip.share-files-strip{grid-template-columns:repeat(2,minmax(0,1fr))}}
