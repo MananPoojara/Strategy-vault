@@ -1402,21 +1402,34 @@ fn la_swsp_policy(def:&StrategyDef)->Option<Policy> {
 // Admission only for the module REVIEWED_LANEC lists (authors/palmquist/admission, authors/pierce/admission); kept in one block to merge.
 pub fn lc_palets_reviewed(def:&StrategyDef)->bool {(def.book=="palets" && crate::books::palets::reviewed_lanec(def.id))}
 pub fn lc_sprfs_reviewed(def:&StrategyDef)->bool {(def.book=="sprfs" && crate::books::sprfs::reviewed_lanec(def.id))}
-pub fn lanec_reviewed(def:&StrategyDef)->bool {lc_palets_reviewed(def) || lc_sprfs_reviewed(def)}
+pub fn lc_cbpst_reviewed(def:&StrategyDef)->bool {(def.book=="cbpst" && crate::books::cbpst::reviewed_lanec(def.id))}
+pub fn lanec_reviewed(def:&StrategyDef)->bool {lc_palets_reviewed(def) || lc_sprfs_reviewed(def) || lc_cbpst_reviewed(def)}
 const LC_PALETS_LABEL:&str="Palmquist tested these rules on about 2,500 US stocks (AIQ, 2002-2008); the vault runs one instrument at a time, so his portfolio statistics are not reproduced. The rules keep their US-dollar close filters ($5 / $10 / $25) and share-volume filters (200,000 / 300,000 shares) as printed, so they run on US stocks and on US indices and ETFs that have volume (a declared application); Indian instruments are not run (user rule: dollar-amount rules run on US data only). One position at a time; a signal while a position is open is ignored.";
 const LC_SPRFS_LABEL:&str="Pierce's NR4 / inside-bar breakouts were shown on futures (S&P 500, feeder cattle, lumber, British pound); runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade. The entry and protective stops sit one real tick beyond the setup bar (NSE 0.05, US 0.01). Rule 4's discretionary stop tightening and profit objective are not applied: every trade exits at the protective stop or market-on-close on the 3rd day (Rule 5).";
+const LC_CBPST_V_LABEL:&str="Conway & Behle built the Acme V system for US stocks and sector indices (p.124); runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade. Exits are the book's Acme Trade Manager: a stop 0.25 ATR beyond the prior bar, two half-position profit targets (reported as one trade at the size-weighted exit price) and a time exit on the 5th bar's open.";
+const LC_CBPST_US_LABEL:&str="Conway & Behle's Acme M and R systems keep the book's default trade filters in US dollars (close above $15, 20-day average range at least $1.00), so they run on US stocks, ETFs and indices only (user rule: dollar-amount rules run on US data); on a US cash index the filters never bind, which is the book's own index setting (filters off, p.79). Indian instruments are not run. Exits are the Acme Trade Manager (stop, two half-position targets reported as one trade at the size-weighted exit price, 5-bar time exit). One unit per trade.";
+const LC_CBPST_N_LABEL:&str="Conway & Behle's Acme N system keeps the book's stock filters (close above $20, ADX(14) at least 18, annualised volatility at least 50%), so it runs on actual US stocks only. The book turns the filters off for indices (p.145); the engine's default keeps them on, so index and ETF runs are held until that setting is decided. Exits are the Acme Trade Manager. One unit per trade.";
 fn lanec_policy(def:&StrategyDef)->Option<Policy> {
+    if lc_cbpst_reviewed(def) {
+        let n=def.id=="cbpst_n";
+        let mut p=if n {requirement("individual_stock",&["individual_stock"],"Mark Conway & Aaron Behle / Professional Stock Trading (2003)")} else {requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Mark Conway & Aaron Behle / Professional Stock Trading (2003)")};
+        p.preferred_basket=Some(if def.id=="cbpst_v" {"nifty50"} else {"us_sp500"});p.market_adaptation=true;return Some(p);
+    }
     let src=if lc_palets_reviewed(def) {"Steve Palmquist / Effective Trading Strategies (daisydogger.com, 2008)"} else if lc_sprfs_reviewed(def) {"Stephen A. Pierce / Rapid Fire Swing Trading (2001-2002)"} else {return None;};
     let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],src);
     p.preferred_basket=Some(if lc_palets_reviewed(def) {"us_sp500"} else {"nifty50"});p.market_adaptation=true;Some(p)
 }
 fn lanec_label(def:&StrategyDef)->Option<&'static str> {
-    if lc_palets_reviewed(def) {Some(LC_PALETS_LABEL)} else if lc_sprfs_reviewed(def) {Some(LC_SPRFS_LABEL)} else {None}
+    if lc_palets_reviewed(def) {Some(LC_PALETS_LABEL)} else if lc_sprfs_reviewed(def) {Some(LC_SPRFS_LABEL)} else if lc_cbpst_reviewed(def) {Some(match def.id {"cbpst_v"=>LC_CBPST_V_LABEL,"cbpst_n"=>LC_CBPST_N_LABEL,_=>LC_CBPST_US_LABEL})} else {None}
 }
 /// us: whether the selected instrument is a US one (None = decide from the ticker).
 fn lanec_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool,us:Option<bool>)->Option<Issue> {
-    if !lc_palets_reviewed(def) {return None;}
     let us=us.unwrap_or(!native_stock && !ticker.starts_with("NIFTY"));
+    if lc_cbpst_reviewed(def) && def.id!="cbpst_v" {
+        if def.id=="cbpst_n" && !native_stock {return Some(Issue{status:"not_testable",note:format!("Held on {ticker}: the Acme N system's stock filters (ADX, 50% volatility, $20) are on by default, but the book turns them off for indices (p.145); which setting applies to indices and ETFs is not yet decided, so no result is published. It runs on actual US stocks.")});}
+        return (!us).then(||Issue{status:"needs_data",note:format!("This Acme system keeps US-dollar trade filters (minimum price, minimum average range in dollars). Dollar amounts mean what the book meant only on US prices, so it runs on US instruments only (user rule). {ticker} is not a US instrument; no result is published.")});
+    }
+    if !lc_palets_reviewed(def) {return None;}
     (!us).then(||Issue{status:"needs_data",note:format!("Palmquist's rules keep only shares closing above a US-dollar price ($5, $10 or $25) with an average volume of 200,000-300,000 shares. Dollar amounts mean what the book meant only on US prices, so these rules run on US stocks, indices and ETFs only (user rule: dollar-amount rules run on US data with the literal amount). {ticker} is not a US instrument; no result is published.")})
 }
 // ---------------------------------------------------------------- end Lane C singles
@@ -3657,17 +3670,19 @@ mod tests {
     // ---- Lane C singles block (2026-10-29, lane C) ----
     #[test]
     fn lanec_review_admits_exact_ids() {
-        use crate::books::{palets, sprfs};
-        let all:Vec<StrategyDef>=palets::catalogue().into_iter().chain(sprfs::catalogue()).collect();
-        let mut want:Vec<&str>=palets::REVIEWED_LANEC.iter().chain(sprfs::REVIEWED_LANEC).copied().collect();
+        use crate::books::{cbpst, palets, sprfs};
+        let all:Vec<StrategyDef>=palets::catalogue().into_iter().chain(sprfs::catalogue()).chain(cbpst::catalogue()).collect();
+        let mut want:Vec<&str>=palets::REVIEWED_LANEC.iter().chain(sprfs::REVIEWED_LANEC).chain(cbpst::REVIEWED_LANEC).copied().collect();
         let mut admitted:Vec<&str>=all.iter().filter(|d|lanec_reviewed(d)).map(|d|d.id).collect();
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert!(d.status==crate::connors::Status::Live,"{}",d.id);
-            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(policy(d).market_adaptation,"{}",d.id);
             assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            if d.id=="cbpst_n" {assert_eq!(policy(d).requirement,"individual_stock");for t in ["SPY","SPX","NIFTY 50"] {assert!(check(d,t,false).is_some(),"{t}");} continue;}
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);
             for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
-            if lc_palets_reviewed(d) {
+            if lc_palets_reviewed(d) || (lc_cbpst_reviewed(d) && d.id!="cbpst_v") {
                 for t in ["NIFTY 50","NIFTYBANK"] {assert_eq!(check(d,t,false).map(|i|i.status),Some("needs_data"),"{} {t}",d.id);}
                 assert!(check(d,"RELIANCE",true).is_some(),"{}",d.id);
             } else {
