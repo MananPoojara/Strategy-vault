@@ -24,6 +24,7 @@ mod pristine_transport;
 mod pristine_http;
 mod pristine_api;
 mod intraday; // intraday phase 1: real 1-minute bars (one day at a time)
+mod intraday_w2b; // ---- intraday wave 2b block: more same-day rules on 1-minute bars ---- end intraday wave 2b block ----
 mod options; // options phase 2: real EOD option chains (one day at a time) + held-contract mark-to-market account
 
 // Source-prefix loading and exact account work are serialized for this owner.
