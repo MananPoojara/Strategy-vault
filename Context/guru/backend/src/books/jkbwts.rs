@@ -18,7 +18,7 @@ use crate::connors::{claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Tra
 
 pub const BOOK: &str = "jkbwts";
 /// Admitted ids (authors/krutsinger/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["jkbwts_dinapoli5", "jkbwts_rainmaker"];
+pub const REVIEWED: &[&str] = &["jkbwts_dinapoli5", "jkbwts_rainmaker", "jkbwts_buymon1400" /* intraday wave 2b: daily bars decide every trade */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 // ------------------------------------------------------------------ shared daily simulator
@@ -89,7 +89,10 @@ impl St<'_> {
         for q in ords {
             if q.ty == Ty::Mkt { self.fill(i, &q, o); } else { live.push(q); }
         }
-        // 2. walk the path; at the open itself a stop/limit already through fills at the open
+        self.walk(i, o, h, l, &mut live);
+    }
+    /// 2. walk the path of one bar (or one minute: intraday wave 2b); at the open itself a stop/limit already through fills at the open
+    fn walk(&mut self, i: usize, o: f64, h: f64, l: f64, live: &mut Vec<Ord>) {
         let path = if o - l <= h - o { [o, l, h] } else { [o, h, l] };
         let mut at = o;
         let mut first = true;
@@ -129,10 +132,24 @@ impl St<'_> {
 /// `eod` = exit any position at the close of every bar. Positions still open at `to` are marked to market.
 pub(crate) fn sim(x: &Ctx, from: usize, to: usize, stop: f64, eod: bool,
                   mut rule: impl FnMut(usize, Option<&Pos>, usize) -> Vec<Ord>) -> Vec<Trade> {
+    sim_path(x, from, to, stop, eod, false, rule)
+}
+
+// ---- intraday wave 2b block: the same order model walked minute by minute
+/// `minutes` = walk each day's real 1-minute bars (in time order, each minute along the same open -> nearer extreme ->
+/// other extreme path) instead of the daily bar; a day without minute data fills no order. Only stop/limit orders and the
+/// money-management stop (market orders are not used by the minute-path rules).
+pub(crate) fn sim_path(x: &Ctx, from: usize, to: usize, stop: f64, eod: bool, minutes: bool,
+                  mut rule: impl FnMut(usize, Option<&Pos>, usize) -> Vec<Ord>) -> Vec<Trade> {
     let mut st = St { x, pos: None, out: vec![], stop, ids: 0, entries_on_bar: 0 };
     let mut pending: Vec<Ord> = vec![];
     for i in from..=to {
-        if i > from { st.bar(i, std::mem::take(&mut pending)); }
+        if i > from && minutes {
+            st.entries_on_bar = 0;
+            let mut live: Vec<Ord> = std::mem::take(&mut pending).into_iter().filter(|q| q.ty != Ty::Mkt).collect();
+            for m in crate::intraday_w2b::day(x, i).unwrap_or_default() { st.walk(i, m.o, m.h, m.l, &mut live); }
+        } else if i > from { st.bar(i, std::mem::take(&mut pending)); }
+        // ---- end intraday wave 2b block ----
         if eod && st.pos.is_some() { st.close(i, x.c[i], "End of day", i); }
         if i < to {
             let pid = st.pos.as_ref().map_or(0, |p| p.id);
@@ -179,7 +196,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("jkbwts_saidenberg30", "Saidenberg30 (range breakout day trade)", "S&P 500 systems", "Long/Short", Live,
           &["E|If TradesToday(Date) < 2: Buy at H + (Range*0.66) stop; Sell at L - (Range*0.66) stop (next bar) (p.27 code)",
             "X|Daily S&P 500 bars: exit market on close, $1,000 money management stop = 2 S&P points at $500/point (code comment p.27)",
-            "F|TradesToday counts entries on the bar just closed: after a 2-trade day no orders are placed for the next day"],
+            "F|TradesToday counts entries on the bar just closed: after a 2-trade day no orders are placed for the next day",
+            "X|[intraday wave 2b] Default p.path=1: the day is walked on real SPX 1-minute bars in time order, so the minutes show which stop came first (each order fills at most once a day, at its level or at the minute's open when it opened through it; the second entry reverses the first; the $1,000 = 2.00-point stop works from each fill). Inside one minute the module's TradeStation path is used (open, nearer extreme, other extreme) [convention]. SPX only (the book's fixed S&P points; no conversion is invented), 2014-01..2026-08 (SPX-only minute rules start where SPX daily opens are real). p.path=0 = the old daily bar path [Not from the book]."],
           "p.26-27. Book: S&P 500 INDEX 67/99, daily, 01/02/85-12/26/97: 1,107 trades, 48% profitable, net $122,080, avg $110.28 ($50 commission per the code comment). The code comment also gives a US Bonds version ($500 stop) - NeedsData (no bond futures).",
           claim("1107", "48%", "$110.28", "same day", "S&P 500 futures 1/1985-12/1997 (p.26)")),
         d("jkbwts_rainmaker", "JK RainMaker Index", "S&P 500 systems", "Long", Live,
@@ -257,7 +275,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "jkbwts_dinapoli5" => vec![p("len1", "Length1 (fast average)", 3., 2., 10., 1.), p("len2", "Length2", 7., 4., 20., 1.), p("len3", "Length3", 25., 10., 60., 5.)],
         "jkbwts_gettess30" => vec![p("consec", "LEConsec (down closes)", 2., 1., 6., 1.), p("stop_usd", "Money management stop $ (0 = none)", 4000., 0., 8000., 250.), pt],
         "jkbwts_buymon1400" => vec![p("stop_usd", "Money management stop $ (0 = none)", 1400., 0., 5000., 100.), pt],
-        "jkbwts_saidenberg30" => vec![p("k", "Range multiple for the stops", 0.66, 0.1, 2.0, 0.02), p("max_trades", "TradesToday limit", 2., 1., 5., 1.), p("stop_usd", "Money management stop $ (0 = none)", 1000., 0., 5000., 100.), pt],
+        "jkbwts_saidenberg30" => vec![p("k", "Range multiple for the stops", 0.66, 0.1, 2.0, 0.02), p("max_trades", "TradesToday limit", 2., 1., 5., 1.), p("stop_usd", "Money management stop $ (0 = none)", 1000., 0., 5000., 100.), pt,
+            p("path", "1 = real 1-minute bars (default; SPX only; days without minute data make no trade), 0 = [Not from the book] daily bar path", 1., 0., 1., 1.)], // intraday wave 2b
         "jkbwts_rainmaker" => vec![p("div", "Range divisor", 9., 2., 20., 1.), p("ma", "Average length", 3., 2., 10., 1.), p("bse", "Bonus exit after N bars", 5., 2., 15., 1.),
             p("jk1", "JK1 entry on (1/0)", 1., 0., 1., 1.), p("jk2", "JK2 entry on (1/0)", 1., 0., 1., 1.), p("jk3", "JK3 exit on (1/0)", 1., 0., 1., 1.), p("jk4", "JK4 exit on (1/0)", 1., 0., 1., 1.),
             p("stop_usd", "Money management stop $ (0 = none, book; 5000 = code comment's suggestion)", 0., 0., 10000., 500.), pt],
@@ -296,7 +315,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "jkbwts_buymon1400" => buy_monday(x, from, to, stop),
         "jkbwts_saidenberg30" => {
             let (k, mt) = (g("k"), u("max_trades"));
-            sim(x, from, to, stop, true, |i, _, today| {
+            sim_path(x, from, to, stop, true, g("path") >= 0.5, |i, _, today| { // intraday wave 2b: path 1 = 1-minute bars
                 if today >= mt { return vec![]; }
                 let r = h[i] - l[i];
                 vec![entry(1, Ty::Stop, h[i] + r * k, "Saidenberg buy stop"), entry(-1, Ty::Stop, l[i] - r * k, "Saidenberg sell stop")]

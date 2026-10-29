@@ -42,6 +42,7 @@ const NEWS_RULES: &[&str] = &[
     "X|Rule #4: after you are filled, stops should be placed at the morning's opening price",
     "X|[Not from the book] Whether the opening-price stop traded after the fill on the entry day is decided by the TradeStation bar path (O-H-L-C if the open is nearer the high, else O-L-H-C); stop_mode 0 = only if the close is beyond the open (optimistic upper bound), 1 = conservative (the extreme went more than one tick beyond the open and the close is no better than the fill)",
     "X|Exit on the close of the entry day (the book values its examples as a \"day trading profit\"); hold = N keeps the opening-price stop for N days",
+    "X|[intraday wave 2b] Default p.path=1: the entry day runs on real 1-minute bars: the entry stop fills on the first minute that reaches it (at the level, or the minute's open when it opened through it); the stop at the morning's opening price (official daily open) then counts on the minutes after the fill. Fill minute that also reaches the open [convention]: filled then stopped, unless that minute opened beyond the stop, then stopped only if it closed beyond it. Runs on SPY, SPX (from 2014, real daily opens), NIFTY 50 and NIFTYBANK; NIFTY 50 days from 2026-08-11 are skipped (bad closing minutes in the source). Later days of hold > 1 use the daily stop. p.path=0 = the old daily reading (stop_mode) [Not from the book].",
 ];
 
 const UND_RULES: &[&str] = &[
@@ -151,7 +152,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("tick", "Entry: points beyond prior high/low (1 tick; 0 = instrument tick)", 0.0, 0.0, 5.0, 0.01),
             p("off", "Entry: % of price instead of tick (0 = use tick; old default 0.01)", 0.0, 0.0, 0.5, 0.01),
             p("hold", "Exit on the close of day N (1 = same day)", 1.0, 1.0, 10.0, 1.0),
-            p("stop_mode", "Entry-day stop: 2 = bar path O-H-L-C (default), 0 = close only (optimistic), 1 = conservative", 2.0, 0.0, 2.0, 1.0),
+            p("stop_mode", "Entry-day stop on daily bars (path 0 only): 2 = bar path O-H-L-C, 0 = close only (optimistic), 1 = conservative", 2.0, 0.0, 2.0, 1.0),
+            p("path", "1 = real 1-minute bars on the entry day (default; days without minute data make no trade), 0 = [Not from the book] daily-bar reading (stop_mode)", 1.0, 0.0, 1.0, 1.0), // intraday wave 2b
         ],
         "hfm_hv" => vec![
             p("n_short", "Short HV period", 10.0, 5.0, 30.0, 1.0),
@@ -295,19 +297,26 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 let side = if o[i] < l[i - 1] { 1.0 } else if o[i] > h[i - 1] { -1.0 } else { 0.0 };
                 let ref_ = if side > 0.0 { l[i - 1] } else { h[i - 1] };
                 let lvl = ref_ + side * if off > 0.0 { ref_ * off } else { tick };
-                let Some(px) = (side != 0.0 && dirs.contains(&side)).then(|| stop_fill(x, i, side, lvl)).flatten() else {
+                // ---- intraday wave 2b: entry day on real 1-minute bars (path = 1, default); path = 0 = the old daily reading
+                let minute = g("path") >= 0.5;
+                let entry = if side == 0.0 || !dirs.contains(&side) { None } else if minute {
+                    crate::intraday_w2b::day(x, i).and_then(|b| crate::intraday::stop_entry_day(&b, 0, &[crate::intraday::Level { up: side > 0.0, px: lvl }],
+                        &|_, _| Some(crate::intraday::Level { up: side < 0.0, px: o[i] }))).map(|(_, px, st)| (px, Some(st)))
+                } else { stop_fill(x, i, side, lvl).map(|px| (px, None)) };
+                let Some((px, minute_stop)) = entry else {
                     i += 1;
                     continue;
                 };
+                // ---- end intraday wave 2b block ----
                 let (t, stop, last) = (mk(side, i, px, "stop"), o[i], i + hold - 1);
-                let stopped = match mode as i32 {
+                let stopped = if let Some(s) = minute_stop { s.is_some() } else { match mode as i32 {
                     0 => entry_bar_stop(x, i, side, stop, false),
                     // the extreme went more than one tick beyond the open and the close is no better than the fill
                     1 => side * ((if side > 0.0 { l[i] } else { h[i] }) - (stop - side * tick)) < 0.0 && side * (c[i] - px) <= 0.0,
                     _ => bar_path_stop(x, i, side, lvl, stop),
-                };
+                } };
                 let done = if stopped {
-                    shut(t, i, stop, "Stopped at the day's open".into())
+                    shut(t, i, minute_stop.flatten().unwrap_or(stop), "Stopped at the day's open".into()) // intraday wave 2b: a minute opening through the stop fills at its open
                 } else if last == i {
                     shut(t, i, c[i], "Day trade: out on the close".into())
                 } else {
@@ -625,7 +634,7 @@ mod tests {
         // News reversal, Copley Pharmaceutical Oct 11 1993: Friday high 50, opens 53, short 1/8 below at 49 7/8, closes 46.
         let r = rows(&[(48.0, 50.0, 47.5, 49.75), (53.0, 53.0, 45.5, 46.0)]);
         let x = Ctx::new(&r, &r, &[]);
-        let t = run("hfm_news_short", &x, 0, 1, &ps(&[("off", 0.125 / 50.0 * 100.0)])).unwrap();
+        let t = run("hfm_news_short", &x, 0, 1, &ps(&[("off", 0.125 / 50.0 * 100.0), ("path", 0.0)])).unwrap();
         assert_eq!(t.len(), 1);
         assert!((t[0].legs[0].px - 49.875).abs() < 1e-9 && t[0].exit_px == 46.0); // +3 7/8 points as in the book
         assert!(run("hfm_news_long", &x, 0, 1, &Params::new()).unwrap().is_empty());
@@ -642,9 +651,9 @@ mod tests {
         let r = rows(&[(101.0, 102.0, 100.0, 101.0), (99.5, 101.5, 97.0, 100.0)]);
         let x = Ctx::new(&r, &r, &[]);
         assert!(bar_path_stop(&x, 1, 1.0, 101.0, 99.5));
-        let t = run("hfm_news_long", &x, 0, 1, &ps(&[("tick", 1.0)])).unwrap();
+        let t = run("hfm_news_long", &x, 0, 1, &ps(&[("tick", 1.0), ("path", 0.0)])).unwrap();
         assert_eq!((t.len(), t[0].exit_px), (1, 99.5));
-        assert_eq!(run("hfm_news_long", &x, 0, 1, &ps(&[("tick", 1.0), ("stop_mode", 0.0)])).unwrap()[0].exit_px, 100.0);
+        assert_eq!(run("hfm_news_long", &x, 0, 1, &ps(&[("tick", 1.0), ("stop_mode", 0.0), ("path", 0.0)])).unwrap()[0].exit_px, 100.0);
     }
 
     #[test]
