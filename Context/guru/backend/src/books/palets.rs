@@ -5,6 +5,9 @@
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 const BOOK: &str = "palets";
+/// Admitted ids (lane C, authors/palmquist/admission): US instruments only (dollar price and share-volume filters).
+pub const REVIEWED_LANEC: &[&str] = &["palets_abovebb_basic", "palets_abovebb", "palets_belowbb_inverse", "palets_belowbb", "palets_dvpullback", "palets_avbottom", "palets_avtop"];
+pub fn reviewed_lanec(id: &str) -> bool { REVIEWED_LANEC.contains(&id) }
 const NOTE_STOCKS: &str = "Book universe: about 2,500 US stocks in AIQ Trading Expert Pro; results are portfolio statistics of every signal (annualized ROI, win %). This engine runs one instrument at a time, so the book's numbers cannot be reproduced; the rules are run per stock (NSE basket tickers) or per index/ETF that has volume (NIFTY 50 has no volume -> no trades). $ thresholds and share-volume thresholds are kept literally in the instrument's own currency/units. One position at a time; a signal while a position is open is ignored.";
 const BB: &str = "F|Bollinger Bands: 20-day simple moving average of the close +/- 2 standard deviations (p.5: \"around the 20-day moving average\", \"95% of the time the prices will be contained within the Bollinger Bands\" = 2 sigma; population SD as in Bollinger's definition)";
 const HOLD: &str = "X|\"Hold the position for 3 days, then close the position on the next open\" (p.6, p.75): enter at the open of day 1, exit at the open of day 4 (example p.7: in 7/1, held 7/1-7/3, out at the next open)";

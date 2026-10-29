@@ -327,6 +327,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || la_vsbrw_reviewed(def) // Vijay Singal (vsbrw, lane A) block
         || la_jkofc_reviewed(def) // Jay Kaeppel, Robin Lofton & Brad Zigler (jkofc, lane A) block
         || la_swsp_reviewed(def) // Stan Weinstein (swsp, lane A) block
+        || lanec_reviewed(def) // Lane C singles block
         || la_newsletters_reviewed(def) // Lane A newsletters block
         || la_vendor1_reviewed(def) // Lane A vendor1 block
         || la_vendor2_reviewed(def) // Lane A vendor2 block
@@ -1397,6 +1398,28 @@ fn la_swsp_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Stan Weinstein (swsp, lane A)
+// ---------------------------------------------------------------- Lane C singles 2026-10-29 (lane C)
+// Admission only for the module REVIEWED_LANEC lists (authors/palmquist/admission, authors/pierce/admission); kept in one block to merge.
+pub fn lc_palets_reviewed(def:&StrategyDef)->bool {(def.book=="palets" && crate::books::palets::reviewed_lanec(def.id))}
+pub fn lc_sprfs_reviewed(def:&StrategyDef)->bool {(def.book=="sprfs" && crate::books::sprfs::reviewed_lanec(def.id))}
+pub fn lanec_reviewed(def:&StrategyDef)->bool {lc_palets_reviewed(def) || lc_sprfs_reviewed(def)}
+const LC_PALETS_LABEL:&str="Palmquist tested these rules on about 2,500 US stocks (AIQ, 2002-2008); the vault runs one instrument at a time, so his portfolio statistics are not reproduced. The rules keep their US-dollar close filters ($5 / $10 / $25) and share-volume filters (200,000 / 300,000 shares) as printed, so they run on US stocks and on US indices and ETFs that have volume (a declared application); Indian instruments are not run (user rule: dollar-amount rules run on US data only). One position at a time; a signal while a position is open is ignored.";
+const LC_SPRFS_LABEL:&str="Pierce's NR4 / inside-bar breakouts were shown on futures (S&P 500, feeder cattle, lumber, British pound); runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade. The entry and protective stops sit one real tick beyond the setup bar (NSE 0.05, US 0.01). Rule 4's discretionary stop tightening and profit objective are not applied: every trade exits at the protective stop or market-on-close on the 3rd day (Rule 5).";
+fn lanec_policy(def:&StrategyDef)->Option<Policy> {
+    let src=if lc_palets_reviewed(def) {"Steve Palmquist / Effective Trading Strategies (daisydogger.com, 2008)"} else if lc_sprfs_reviewed(def) {"Stephen A. Pierce / Rapid Fire Swing Trading (2001-2002)"} else {return None;};
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],src);
+    p.preferred_basket=Some(if lc_palets_reviewed(def) {"us_sp500"} else {"nifty50"});p.market_adaptation=true;Some(p)
+}
+fn lanec_label(def:&StrategyDef)->Option<&'static str> {
+    if lc_palets_reviewed(def) {Some(LC_PALETS_LABEL)} else if lc_sprfs_reviewed(def) {Some(LC_SPRFS_LABEL)} else {None}
+}
+/// us: whether the selected instrument is a US one (None = decide from the ticker).
+fn lanec_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool,us:Option<bool>)->Option<Issue> {
+    if !lc_palets_reviewed(def) {return None;}
+    let us=us.unwrap_or(!native_stock && !ticker.starts_with("NIFTY"));
+    (!us).then(||Issue{status:"needs_data",note:format!("Palmquist's rules keep only shares closing above a US-dollar price ($5, $10 or $25) with an average volume of 200,000-300,000 shares. Dollar amounts mean what the book meant only on US prices, so these rules run on US stocks, indices and ETFs only (user rule: dollar-amount rules run on US data with the literal amount). {ticker} is not a US instrument; no result is published.")})
+}
+// ---------------------------------------------------------------- end Lane C singles
 // ---------------------------------------------------------------- Lane A newsletters 2026-10-26 (lane B)
 // Admission only for the module REVIEWED lists (authors/lanea/newsletters/decisions.json); kept in one block to merge.
 pub fn la_newsletters_reviewed(def:&StrategyDef)->bool {(def.book=="mrina" && crate::books::mrina::reviewed_lanea(def.id)) || (def.book=="tsx" && crate::books::tsx::reviewed_lanea(def.id)) || (def.book=="jrfsp" && crate::books::jrfsp::reviewed_lanea(def.id)) || (def.book=="bpqst" && crate::books::bpqst::reviewed_lanea(def.id)) || (def.book=="wmmts" && crate::books::wmmts::reviewed_lanea(def.id))}
@@ -1964,6 +1987,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=la_vsbrw_policy(def) {return p;} // Vijay Singal (vsbrw, lane A) block
     if let Some(p)=la_jkofc_policy(def) {return p;} // Jay Kaeppel, Robin Lofton & Brad Zigler (jkofc, lane A) block
     if let Some(p)=la_swsp_policy(def) {return p;} // Stan Weinstein (swsp, lane A) block
+    if let Some(p)=lanec_policy(def) {return p;} // Lane C singles block
     if let Some(p)=la_newsletters_policy(def) {return p;} // Lane A newsletters block
     if let Some(p)=la_vendor1_policy(def) {return p;} // Lane A vendor1 block
     if let Some(p)=la_vendor2_policy(def) {return p;} // Lane A vendor2 block
@@ -2312,6 +2336,7 @@ pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     if let Some(issue)=intraday_p1_symbol_issue(def,ticker,native_stock){return Some(issue);} // intraday phase 1
     if let Some(issue)=options_p2_symbol_issue(def,ticker,native_stock){return Some(issue);} // options phase 2
     if let Some(issue)=connors_final_symbol_issue(def,ticker,native_stock,native_stock.then_some(false)){return Some(issue);} // connors-final block
+    if let Some(issue)=lanec_symbol_issue(def,ticker,native_stock,native_stock.then_some(false)){return Some(issue);} // Lane C singles block
     if vix_india(def) {return vix_india_held(def,ticker,ticker.starts_with("NIFTY")).or_else(||check_selected(p,def.id,ticker,selected));} // VIX India block
     if open_all(def) {return open_all_symbol_issue(def,ticker,native_stock.then_some(false)).or_else(||check_selected(p,def.id,ticker,selected));} // open-all block
     if let Some(issue)=dema_index_symbol_issue(def,ticker,selected){return Some(issue);}
@@ -2347,6 +2372,7 @@ pub fn check_native(def:&StrategyDef,ticker:&str,evidence:&NativeEvidence)->Opti
     if let Some(issue)=intraday_p1_symbol_issue(def,ticker,true){return Some(issue);} // intraday phase 1
     if let Some(issue)=options_p2_symbol_issue(def,ticker,true){return Some(issue);} // options phase 2
     if let Some(issue)=connors_final_symbol_issue(def,ticker,true,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // connors-final block
+    if let Some(issue)=lanec_symbol_issue(def,ticker,true,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Lane C singles block
     if vix_india(def) {return vix_india_held(def,ticker,evidence.market()==Market::India).or_else(||check_selected(p,def.id,ticker,evidence.asset_type()));} // VIX India block
     if open_all(def) {return open_all_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)).or_else(||check_selected(p,def.id,ticker,evidence.asset_type()));} // open-all block
     if let Some(issue)=dema_index_symbol_issue(def,ticker,evidence.asset_type()){return Some(issue);}
@@ -2631,6 +2657,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if la_vsbrw_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LA_VSBRW_LABEL));} // Vijay Singal (vsbrw, lane A) block
     if la_jkofc_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LA_JKOFC_LABEL));} // Jay Kaeppel, Robin Lofton & Brad Zigler (jkofc, lane A) block
     if la_swsp_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LA_SWSP_LABEL));} // Stan Weinstein (swsp, lane A) block
+    if let Some(l)=lanec_label(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",l));} // Lane C singles block
     if la_newsletters_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LA_NEWSLETTERS_LABEL));} // Lane A newsletters block
     if la_vendor1_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LA_VENDOR1_LABEL));} // Lane A vendor1 block
     if la_vendor2_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LA_VENDOR2_LABEL));} // Lane A vendor2 block
@@ -3627,6 +3654,29 @@ mod tests {
         }
     }
     // ---- end Stan Weinstein (swsp, lane A) block ----
+    // ---- Lane C singles block (2026-10-29, lane C) ----
+    #[test]
+    fn lanec_review_admits_exact_ids() {
+        use crate::books::{palets, sprfs};
+        let all:Vec<StrategyDef>=palets::catalogue().into_iter().chain(sprfs::catalogue()).collect();
+        let mut want:Vec<&str>=palets::REVIEWED_LANEC.iter().chain(sprfs::REVIEWED_LANEC).copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|lanec_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert!(d.status==crate::connors::Status::Live,"{}",d.id);
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            if lc_palets_reviewed(d) {
+                for t in ["NIFTY 50","NIFTYBANK"] {assert_eq!(check(d,t,false).map(|i|i.status),Some("needs_data"),"{} {t}",d.id);}
+                assert!(check(d,"RELIANCE",true).is_some(),"{}",d.id);
+            } else {
+                for t in ["NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+                assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            }
+        }
+    }
+    // ---- end Lane C singles block ----
     // ---- Lane A newsletters held (2026-10-26, lane B) ----
     #[test]
     fn la_newsletters_held_rules_have_plain_card_reasons() {
