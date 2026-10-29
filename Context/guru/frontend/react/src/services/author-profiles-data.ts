@@ -393,7 +393,17 @@ export const AUTHOR_PROFILE_DATA = {
   ],
   "sources": [],
   "confidence": "low"
- }, "ponsi": {
+ }, "graemesmith": {
+  "kind": "person",
+  "mastery": [
+   "Share swing trading"
+  ],
+  "summary": "David Graeme-Smith (catalogued as David Smith) sold Short Swing Trading, a six-rule method for UK shares: trade with the 50-day average, wait for the 8-day +DI and -DI lines to cross, buy above the last significant day's high, and trail a stop 0.5% under each new significant day's low. This profile rests on the e-book itself.",
+  "known_for": [
+   "Short Swing Trading"
+  ],
+  "sources": [],
+  "confidence": "low" }, "ponsi": {
   "kind": "person",
   "mastery": [
    "Currency trading",
