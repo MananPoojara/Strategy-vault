@@ -53,13 +53,14 @@ export function HomePage({ snapshot }: { snapshot: ViewSnapshot }) {
       <section className="share-files" aria-labelledby="share-files-h">
         <h2 id="share-files-h" className="section-h">Research share files</h2>
         <dl className="lstrip share-files-strip">
-          {([["Book files", files.books], ["Articles", files.articles], ["Research papers", files.papers], ["Audio", files.audio], ["Video", files.video], ["Unique files", files.unique]] as const).map(([label, value]) => (
+          {([["Authors", files.authors], ["Book files", files.books], ["Articles", files.articles], ["Research papers", files.papers], ["Audio", files.audio], ["Video", files.video], ["Unique files", files.unique]] as const).map(([label, value]) => (
             <div key={label}><dt>{label}</dt><dd>{n(value)}</dd></div>
           ))}
         </dl>
         <p className="library-count-note">
           Every file in the research share, counted on {new Date(files.asOf).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}: {n(files.found)} files found, {n(files.duplicates)} duplicate copies removed (same name and size in more than one folder), {n(files.unique)} unique files ({files.sizeTB} TB).
           The other {n(files.other)} files support the material above: {n(files.images)} images and {n(files.webPages)} web pages (mostly books and courses saved as web pages), {n(files.tradingCode)} trading software files, {n(files.data)} spreadsheets and data, {n(files.programs)} programs and installers, {n(files.archives)} archives, {n(files.text)} text notes, {n(files.blogs)} blog files and {n(files.noExtension + files.unidentified)} files of other types.
+          Authors are the {n(files.authors)} distinct people named on these files (co-authors counted separately, spelling variants of one name merged); {n(files.companies)} companies and websites are not counted as authors.
           These are file counts; one book can be several files, so they differ from the reviewed book and author totals above.
         </p>
       </section>
