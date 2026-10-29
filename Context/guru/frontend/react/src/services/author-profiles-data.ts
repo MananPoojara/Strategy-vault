@@ -480,7 +480,18 @@ export const AUTHOR_PROFILE_DATA = {
   "known_for": ["The TradeStation Cookbook"],
   "sources": [],
   "confidence": "low"
- }, "kbrown": {
+ }, "barrie": {
+  "kind": "person",
+  "mastery": [
+   "Market timing",
+   "Seasonal and calendar patterns"
+  ],
+  "summary": "Scott W. Barrie writes on market timing and futures spreads (soybean and grain spread articles are in the research share). The Complete Idiot's Guide to Market Timing (Alpha Books, 2003) surveys timing tools for stock investors: moving averages with filters, percentage swing rules, calendar and presidential-cycle windows and the January Barometer, each measured on the Dow or the S&P 500. This profile rests on the book itself.",
+  "known_for": [
+   "The Complete Idiot's Guide to Market Timing"
+  ],
+  "sources": [],
+  "confidence": "low" }, "kbrown": {
   "kind": "person",
   "mastery": [
    "Equity trend following"

@@ -319,6 +319,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || leungchong_reviewed(def) // Leung and Chong block
         || bollinger_reviewed(def) // John Bollinger block
         || downs_reviewed(def) // Walter T. Downs block
+        || barrie_reviewed(def) // Scott W. Barrie block
         || kbrown_reviewed(def) // Kedrick F. Brown block
         || forman_reviewed(def) // John Forman block
         || sands_reviewed(def) // Russell Sands block
@@ -1333,6 +1334,16 @@ fn downs_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Optio
     Some(Issue{status:"needs_data",note:format!("This MIST rule starts its trailing stop after a profit of one hundred dollars, a US-dollar amount. Dollar-amount rules run on US indices, ETFs and stocks only; {ticker} is outside that scope, so no result is published.")})
 }
 // ---------------------------------------------------------------- end Walter T. Downs
+// ---------------------------------------------------------------- Scott W. Barrie 2026-10-29 (lane B)
+// Admission only for the module REVIEWED lists (authors/barrie/admission/cig_ref.py (header)); kept in one block to merge.
+pub fn barrie_reviewed(def:&StrategyDef)->bool {(def.book=="sbcig" && crate::books::sbcig::reviewed(def.id))}
+const BARRIE_LABEL:&str="Scott Barrie measures these calendar rules on the Dow Jones Industrial Average with the US election calendar; runs on other indices, ETFs and US/India stocks are a declared application, not the author's test.";
+fn barrie_policy(def:&StrategyDef)->Option<Policy> {
+    if !barrie_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Scott W. Barrie, The Complete Idiot's Guide to Market Timing (2003), Ch.12 p.157, Ch.13 p.172-173, Ch.20 p.269-271");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Scott W. Barrie
 // ---------------------------------------------------------------- Kedrick F. Brown 2026-10-29 (lane B)
 // Admission only for the module REVIEWED lists (authors/kbrown/admission/tt_ref.py (header)); kept in one block to merge.
 pub fn kbrown_reviewed(def:&StrategyDef)->bool {(def.book=="kbttm" && crate::books::kbttm::reviewed(def.id))}
@@ -2112,6 +2123,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=leungchong_policy(def) {return p;} // Leung and Chong block
     if let Some(p)=bollinger_policy(def) {return p;} // John Bollinger block
     if let Some(p)=downs_policy(def) {return p;} // Walter T. Downs block
+    if let Some(p)=barrie_policy(def) {return p;} // Scott W. Barrie block
     if let Some(p)=kbrown_policy(def) {return p;} // Kedrick F. Brown block
     if let Some(p)=forman_policy(def) {return p;} // John Forman block
     if let Some(p)=sands_policy(def) {return p;} // Russell Sands block
@@ -2794,6 +2806,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if leungchong_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LEUNGCHONG_LABEL));} // Leung and Chong block
     if bollinger_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BOLLINGER_LABEL));} // John Bollinger block
     if downs_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",DOWNS_LABEL));} // Walter T. Downs block
+    if barrie_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BARRIE_LABEL));} // Scott W. Barrie block
     if kbrown_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",KBROWN_LABEL));} // Kedrick F. Brown block
     if forman_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",FORMAN_LABEL));} // John Forman block
     if sands_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",SANDS_LABEL));} // Russell Sands block
@@ -3542,6 +3555,13 @@ mod tests {
         let all:Vec<StrategyDef>=wtdfg::catalogue().into_iter().chain(wtdtt::catalogue()).collect();
         let mut want:Vec<&str>=wtdfg::REVIEWED.iter().chain(wtdtt::REVIEWED.iter()).copied().collect();
         let mut admitted:Vec<&str>=all.iter().filter(|d|downs_reviewed(d)).map(|d|d.id).collect();
+    // ---- Scott W. Barrie block (2026-10-29, lane B) ----
+    #[test]
+    fn barrie_review_admits_exact_ids() {
+        use crate::books::{sbcig};
+        let all:Vec<StrategyDef>=sbcig::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=sbcig::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|barrie_reviewed(d)).map(|d|d.id).collect();
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
@@ -3553,6 +3573,11 @@ mod tests {
         }
     }
     // ---- end Walter T. Downs block ----
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Scott W. Barrie block ----
     // ---- Kedrick F. Brown block (2026-10-29, lane B) ----
     #[test]
     fn kbrown_review_admits_exact_ids() {
