@@ -6,6 +6,9 @@
 use crate::connors::{wilder, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "cbpst";
+/// Admitted ids (lane C, authors/conway): M and R on US instruments, N on US stocks, V everywhere.
+pub const REVIEWED_LANEC: &[&str] = &["cbpst_m", "cbpst_n", "cbpst_r", "cbpst_v"];
+pub fn reviewed_lanec(id: &str) -> bool { REVIEWED_LANEC.contains(&id) }
 
 const TM: &str = "X|Acme Trade Manager (code p.272-273; Example 1.3): ATR = Volatility(20); SellStop = Lowest(Low, StopBars=1) - ExitFactor(0.25) x ATR, all shares, next bar stop; CoverStop = Highest(High,1) + 0.25 x ATR";
 const TM2: &str = "X|Profit targets (ProfitTarget=True): CurrentContracts/2 at High + ProfitFactor(0.9) x ATR, and CurrentContracts/2 at High[ProfitBars] + 2 x 0.9 x ATR, next bar limit; ProfitBars = IntPortion(HoldBars/2)+1 = 3; short side mirrored (Low - ..., Low[ProfitBars] - ...)";
