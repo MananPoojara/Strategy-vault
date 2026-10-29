@@ -480,7 +480,38 @@ export const AUTHOR_PROFILE_DATA = {
   "known_for": ["The TradeStation Cookbook"],
   "sources": [],
   "confidence": "low"
- }, "barrie": {
+ }, "lowry": {
+  "kind": "person",
+  "mastery": [
+   "Commodity futures",
+   "Moving-average trading"
+  ],
+  "summary": "Scot Lowry is a futures trader who wrote The Magic of Moving Averages, a short self-published manual (late 1990s, charts from 1997) on what he calls the Delphic Phenomenon: trading the first pullback through the 18-day average after it crosses the 40-day, with later chapters on the convergence of the 4-, 18- and 40-day averages. This profile rests on the book itself.",
+  "known_for": [
+   "The Magic of Moving Averages"
+  ],
+  "sources": [],
+  "confidence": "low" }, "wooding": {
+  "kind": "person",
+  "mastery": [
+   "Stock breakout trading"
+  ],
+  "summary": "Dave Wooding (The Wooding Trading Company) wrote The Stock Rocket Stock Trading System (2001), a short manual for buying US stocks that break to new 52-week highs on very heavy volume, with exact entry, stop, half-profit and trailing-stop rules and seven 1999-2000 case studies. This profile rests on the manual itself.",
+  "known_for": [
+   "The Stock Rocket Stock Trading System"
+  ],
+  "sources": [],
+  "confidence": "low" }, "jennings": {
+  "kind": "person",
+  "mastery": [
+   "Trading-software code (MetaStock, TradeStation, AIQ, WealthLab)"
+  ],
+  "summary": "David Jennings (The Performance Factory) compiled Code Snippets & How To, a large Word file of indicator and system code for MetaStock, TradeStation, AIQ and WealthLab gathered from trader mailing lists around 2000-2002, each piece credited to its writer. The systems in it are other people's work; this profile rests on the file itself.",
+  "known_for": [
+   "Code Snippets & How To (MetaStock, TradeStation, AIQ)"
+  ],
+  "sources": [],
+  "confidence": "low" }, "barrie": {
   "kind": "person",
   "mastery": [
    "Market timing",

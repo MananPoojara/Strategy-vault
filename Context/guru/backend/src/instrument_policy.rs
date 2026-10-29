@@ -320,6 +320,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || bollinger_reviewed(def) // John Bollinger block
         || downs_reviewed(def) // Walter T. Downs block
         || barrie_reviewed(def) // Scott W. Barrie block
+        || k2_reviewed(def) // overnight K2 block (Lowry, Wooding)
         || kbrown_reviewed(def) // Kedrick F. Brown block
         || forman_reviewed(def) // John Forman block
         || sands_reviewed(def) // Russell Sands block
@@ -1344,6 +1345,30 @@ fn barrie_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Scott W. Barrie
+// ---------------------------------------------------------------- overnight K2 2026-10-29 (Scot Lowry, Dave Wooding)
+// Admission only for the module REVIEWED lists (authors/lowry/admission/mma_ref.py, authors/wooding/admission/sr_ref.py,
+// authors/jennings/admission/djcs_ref.py).
+pub fn k2_reviewed(def:&StrategyDef)->bool {(def.book=="slmma" && crate::books::slmma::reviewed(def.id)) || (def.book=="dwsr" && crate::books::dwsr::reviewed(def.id)) || (def.book=="djcs" && crate::books::djcs::reviewed(def.id))}
+const LOWRY_LABEL:&str="Scot Lowry trades the Delphic Phenomenon on US commodity futures charts (soybeans, cattle, corn, cocoa); runs on indices, ETFs and US/India stocks are a declared application, not the author's test. Cash-index shorts are hypothetical.";
+const JENNINGS_LABEL:&str="David Jennings' Code Snippets collects TradeStation code by other traders (Bob Fulks' percent reversal stops; James Taylor's version of Bryan Strain's TFS system) without naming a market or a test; runs on indices, ETFs and US/India stocks are a declared application. Cash-index shorts are hypothetical.";
+const WOODING_LABEL:&str="Dave Wooding wrote the Stock Rocket for US stocks; its $10 price and 500,000-share volume limits keep it on US stocks and ETFs only. ETF runs are a declared application, not the author's test.";
+fn k2_policy(def:&StrategyDef)->Option<Policy> {
+    if !k2_reviewed(def) {return None;}
+    if def.book=="dwsr" {
+        let mut p=requirement("etf_or_stock",&["etf","individual_stock"],"Dave Wooding, The Stock Rocket Stock Trading System (2001), Ch.2 PDF 9-26, appendix scan PDF 56");
+        p.preferred_basket=Some("us_sp500");p.market_adaptation=true;return Some(p);
+    }
+    let src=if def.book=="djcs" {"David Jennings, Code Snippets & How To (Word file): TradeStation 'Highest High' how-to (Bob Fulks) and TFS Trend Following System (James Taylor / Bryan Strain)"} else {"Scot Lowry, The Magic of Moving Averages, Ch.3 PDF 14-17 and chart key PDF 25"};
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],src);
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// Stock Rocket: $10 close and 500,000 shares are US amounts -> US instruments only (stock_us None = not a stock).
+fn k2_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Option<Issue> {
+    if !k2_reviewed(def) || def.book!="dwsr" {return None;}
+    if stock_us.unwrap_or(!ticker.starts_with("NIFTY")) {return None;}
+    Some(Issue{status:"needs_data",note:format!("The Stock Rocket needs a close above $10 and volume above 500,000 shares, US-dollar and US-share amounts. Dollar-amount rules run on US ETFs and stocks only; {ticker} is outside that scope, so no result is published.")})
+}
+// ---------------------------------------------------------------- end overnight K2
 // ---------------------------------------------------------------- Kedrick F. Brown 2026-10-29 (lane B)
 // Admission only for the module REVIEWED lists (authors/kbrown/admission/tt_ref.py (header)); kept in one block to merge.
 pub fn kbrown_reviewed(def:&StrategyDef)->bool {(def.book=="kbttm" && crate::books::kbttm::reviewed(def.id))}
@@ -2124,6 +2149,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=bollinger_policy(def) {return p;} // John Bollinger block
     if let Some(p)=downs_policy(def) {return p;} // Walter T. Downs block
     if let Some(p)=barrie_policy(def) {return p;} // Scott W. Barrie block
+    if let Some(p)=k2_policy(def) {return p;} // overnight K2 block
     if let Some(p)=kbrown_policy(def) {return p;} // Kedrick F. Brown block
     if let Some(p)=forman_policy(def) {return p;} // John Forman block
     if let Some(p)=sands_policy(def) {return p;} // Russell Sands block
@@ -2512,6 +2538,7 @@ pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     if let Some(issue)=schaap_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Schaap block
     if let Some(issue)=landry_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Landry block
     if let Some(issue)=hirsch_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Hirsch block
+    if let Some(issue)=k2_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // overnight K2 block
     if native_stock {
         if let Some(reason)=p.native_currency_constraint {
             return Some(Issue {status:"needs_data",note:format!("Source currency/tick data missing. {reason} USD amounts cannot silently become INR amounts. A source-supported Indian specification or dated FX treatment and verified local tick rules are required before admission; editing the numeric parameter alone does not establish those inputs. Selected actual stock: {ticker}. No results are published.")});
@@ -2550,6 +2577,7 @@ pub fn check_native(def:&StrategyDef,ticker:&str,evidence:&NativeEvidence)->Opti
     if let Some(issue)=schaap_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Schaap block
     if let Some(issue)=landry_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Landry block
     if let Some(issue)=hirsch_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Hirsch block
+    if let Some(issue)=k2_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // overnight K2 block
     if let Some(issue)=check_selected(p,def.id,ticker,evidence.asset_type()){return Some(issue);}
     if matches!((def.book,def.id),("r3r4","r3r4_lowprice"|"r3r4_lowprice_scale")) && evidence.market()!=Market::UnitedStates {
         return Some(Issue{status:"not_testable",note:format!("{R3R4_LOWPRICE_HELD} Selected actual stock: {ticker}.")});
@@ -2807,6 +2835,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if bollinger_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BOLLINGER_LABEL));} // John Bollinger block
     if downs_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",DOWNS_LABEL));} // Walter T. Downs block
     if barrie_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BARRIE_LABEL));} // Scott W. Barrie block
+    if k2_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",match def.book {"dwsr"=>WOODING_LABEL,"djcs"=>JENNINGS_LABEL,_=>LOWRY_LABEL}));} // overnight K2 block
     if kbrown_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",KBROWN_LABEL));} // Kedrick F. Brown block
     if forman_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",FORMAN_LABEL));} // John Forman block
     if sands_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",SANDS_LABEL));} // Russell Sands block
@@ -3582,6 +3611,29 @@ mod tests {
         }
     }
     // ---- end Scott W. Barrie block ----
+    // ---- overnight K2 block (2026-10-29) ----
+    #[test]
+    fn k2_review_admits_exact_ids() {
+        use crate::books::{djcs, dwsr, slmma};
+        let all:Vec<StrategyDef>=slmma::catalogue().into_iter().chain(dwsr::catalogue()).chain(djcs::catalogue()).collect();
+        let mut want:Vec<&str>=slmma::REVIEWED.iter().chain(dwsr::REVIEWED.iter()).chain(djcs::REVIEWED.iter()).copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|k2_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert!(policy(d).market_adaptation,"{}",d.id);assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            if d.book=="dwsr" {
+                assert_eq!(policy(d).requirement,"etf_or_stock");
+                for t in ["SPY","QQQ"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+                for t in ["SPX","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_some(),"{} {t}",d.id);}
+                assert!(check(d,"RELIANCE",true).is_some(),"{}",d.id);
+            } else {
+                assert_eq!(policy(d).requirement,"index_etf_or_stock");
+                for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+                assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            }
+        }
+    }
+    // ---- end overnight K2 block ----
     // ---- Kedrick F. Brown block (2026-10-29, lane B) ----
     #[test]
     fn kbrown_review_admits_exact_ids() {

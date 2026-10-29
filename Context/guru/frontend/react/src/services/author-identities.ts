@@ -90,6 +90,15 @@ export const authorIdentities: Record<string, readonly string[]> = {
   "barrie": [
     "Scott W. Barrie"
   ],
+  "lowry": [
+    "Scot Lowry"
+  ],
+  "wooding": [
+    "Dave Wooding"
+  ],
+  "jennings": [
+    "David Jennings"
+  ],
   "forman": [
     "John Forman"
   ],
