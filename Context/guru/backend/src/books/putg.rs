@@ -98,7 +98,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["F|Inside day: \"the entire day's price action is within the range of the previous day\" (p.49): High < High[1] and Low > Low[1]",
               "E|\"have a buy order three ticks above the high of the bar with a sell order three ticks below the low of the bar\" (p.49-50)",
               "X|Day trade: liquidate on the close (Table 3.6 header 'Buy/sell breakout from inside bar - day trade')",
-              "F|\"Trading in the direction of the close of the bar immediately preceding the inside bar\" (item 3, p.50): buy only if that bar closed above its open, sell only if it closed below; \"Tables 3.5 and 3.6 show that it is statistically significant ... if the preceding bar showed evidence of demand by closing above the opening (item 3 above)\" (p.50). Option dir_filter = 0: both stops every inside day"],
+              "F|\"Trading in the direction of the close of the bar immediately preceding the inside bar\" (item 3, p.50): buy only if that bar closed above its open, sell only if it closed below; \"Tables 3.5 and 3.6 show that it is statistically significant ... if the preceding bar showed evidence of demand by closing above the opening (item 3 above)\" (p.50). Option dir_filter = 0: both stops every inside day",
+              "X|[intraday wave 2b] Default p.path=1: the breakout day is walked on real 1-minute bars in time order, so the minutes show which stop came first; each stop fills at most once (at its level, or the minute's open when it opened through it) and a second fill reverses the first; inside one minute the module's TradeStation path is used (open, nearer extreme, other extreme) [convention]. Runs on SPY, SPX, NIFTY 50, NIFTYBANK with the book's 3 x 0.05 offset on every instrument (no daily open is read). NIFTY 50 days from 2026-08-11 skipped (bad closing minutes). p.path=0 = the old daily bar path [Not from the book]."],
             "Fitted reading (C): the text ties the tables to item 3, and SPX 1984-1999 gives 15 trades/yr with it vs 33 without (book 17). Tick: 0.05 index points (S&P 500 futures minimum tick 1984-1997, also the NSE tick); 3 ticks = 0.15. Table 3.6 (p.51): 22 futures 1/1/84-6/30/99, no costs; S&P 500 row: 17 trades/yr, 49.6%, $5,245.",
             claim("17/yr (S&P 500 futures)", "49.6%", "$5,245 total", "day trade", "1/1/84-6/30/99")),
         live!("putg_reversal_day", "Reversal day (trend filtered)", CH3, "Long/Short",
@@ -185,7 +186,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("trend", "Trend: close N days ago", 50., 10., 100., 5.), p("pct", "Opening range fraction", 0.62, 0.3, 1.5, 0.02), longs()],
         "putg_daily_range" | "putg_hook" => vec![longs()],
         "putg_inside_day" => vec![p("ticks", "Ticks beyond the inside bar", 3., 0., 10., 1.), p("tick", "Tick size (index points)", 0.05, 0.01, 1., 0.01),
-            p("dir_filter", "Trade in the direction of the preceding bar (item 3)", 1., 0., 1., 1.)],
+            p("dir_filter", "Trade in the direction of the preceding bar (item 3)", 1., 0., 1., 1.),
+            p("path", "1 = real 1-minute bars (default; days without minute data make no trade), 0 = [Not from the book] daily bar path", 1., 0., 1., 1.)], // intraday wave 2b
         "putg_reversal_day" => vec![p("trend", "Trend: close N days ago", 50., 10., 100., 5.), p("orb", "Exit opening range breakout (0.6 text, 0.5 table)", 0.6, 0.3, 1., 0.05)],
         "putg_narrow_range" => vec![p("lookback", "Narrower than N prior days", 5., 2., 10., 1.), p("trend", "Trend: close N days ago", 50., 10., 100., 5.),
             p("pct", "Opening range fraction", 0.5, 0.2, 1., 0.05)],
@@ -320,6 +322,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             if c[i] > o[i] && c[i] > mid && !longs_only { v.push(entry(S, Open, f64::NAN, "sell up close")); v.push(exit(B, Close, f64::NAN, "close")); }
             v
         }),
+        "putg_inside_day" if g("path") >= 0.5 => inside_minutes(x, from, to, g("ticks") * g("tick"), g("dir_filter") >= 0.5), // intraday wave 2b
         "putg_inside_day" => {
             let off = g("ticks") * g("tick");
             let prior_up = g("dir_filter") >= 0.5;
@@ -370,6 +373,47 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         _ => return None,
     })
 }
+
+// ---- intraday wave 2b block: inside-day breakout on real 1-minute bars
+/// The day after an inside day: both stops live from the first minute; minutes are walked in time order, each one along
+/// open -> nearer extreme -> other extreme (the module's TradeStation path, applied to the minute) [convention]; each order
+/// fills at most once (at its level, or the minute's open when it opened through it); the second fill reverses the first;
+/// out on the official close. Days without minute data make no trade.
+fn inside_minutes(x: &Ctx, from: usize, to: usize, off: f64, prior_up: bool) -> Vec<Trade> {
+    let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
+    let mut out = Vec::new();
+    let push = |out: &mut Vec<Trade>, p: (f64, f64, &'static str), j: usize, px: f64, why: &str| out.push(Trade { dir: p.0,
+        legs: vec![Leg { i: j, px: p.1, w: 1.0 }], exit_i: j, exit_px: px, reason: format!("{} → {why}", p.2), entry_kind: "stop", signal_i: j, open: false, exits: vec![] });
+    for j in from.max(3)..=to {
+        let i = j - 1;
+        if !(h[i] < h[i - 1] && l[i] > l[i - 1]) { continue; }
+        let mut live: Vec<(f64, f64, &'static str)> = vec![];
+        if !prior_up || c[i - 1] > o[i - 1] { live.push((1.0, h[i] + off, "inside buy")); }
+        if !prior_up || c[i - 1] < o[i - 1] { live.push((-1.0, l[i] - off, "inside sell")); }
+        let Some(b) = crate::intraday_w2b::day(x, j) else { continue };
+        let mut pos: Option<(f64, f64, &'static str)> = None;
+        for m in &b {
+            let p = if m.o - m.l < m.h - m.o { [m.o, m.l, m.h] } else { [m.o, m.h, m.l] };
+            let at = |side: f64, px: f64| -> Option<(f64, f64)> {
+                if side * (p[0] - px) >= 0.0 { return Some((0.0, p[0])); }
+                (0..2).find_map(|k| { let (a, z) = (p[k], p[k + 1]); (if side > 0.0 { a < px && px <= z } else { a > px && px >= z }).then(|| (k as f64 + (px - a) / (z - a), px)) })
+            };
+            let mut ev: Vec<(f64, usize, f64)> = live.iter().enumerate().filter_map(|(k, q)| at(q.0, q.1).map(|(t, px)| (t, k, px))).collect();
+            ev.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap().then(a.1.cmp(&b.1)));
+            let hit: Vec<usize> = ev.iter().map(|e| e.1).collect();
+            for (_, k, px) in ev {
+                let q = live[k];
+                if pos.is_some_and(|p| p.0 == q.0) { continue; }
+                if let Some(pp) = pos.take() { push(&mut out, pp, j, px, &format!("reversed by {} stop", q.2)); }
+                pos = Some((q.0, px, q.2));
+            }
+            let mut k = 0; live.retain(|_| { k += 1; !hit.contains(&(k - 1)) });
+        }
+        if let Some(pp) = pos { push(&mut out, pp, j, c[j], "close close"); }
+    }
+    out
+}
+// ---- end intraday wave 2b block ----
 
 /// Reversal day: entry on the close of the pattern day, then the adverse opening-range-breakout stop on each later
 /// day (fills at the stop, or at the open if the day opens through it). An opposite reversal day reverses at its close.

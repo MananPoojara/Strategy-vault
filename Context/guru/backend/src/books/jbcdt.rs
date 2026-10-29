@@ -21,7 +21,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["F|\"An opening gap occurs when today's opening price is either greater than yesterday's high price or less than yesterday's low price\" (p.56)",
               "E|\"If a lower opening price gap occurs, then you will place an order to buy once the market has come back up and penetrated the previous day's low by a given number of ticks ... a buy stop ... two ticks above the low of the previous day which would be 408.10 (408.00 + 0.10)\" (p.58-59); sell mirrored two ticks below yesterday's high (p.60-61)",
               "X|\"You will use a stop loss either at a predetermined dollar amount or several ticks below the day's low ... I prefer the money management dollar stop loss\"; \"a stop loss of as much as $2500 in S&P futures (500 points) is preferable\" (p.59-60): 5.00 S&P points from the entry",
-              "X|\"both the gap lower buy trade and gap higher sell trade are closed out by the end of the trading session\" (p.62)"],
+              "X|\"both the gap lower buy trade and gap higher sell trade are closed out by the end of the trading session\" (p.62)",
+              "X|[intraday wave 2b] Default p.path=1: real SPX 1-minute bars decide the entry fill (at the level, or the minute's open when it opened through it) and whether the 5.00-point stop from the fill was reached after it. Fill minute that also reaches the stop: filled then stopped, unless it opened beyond the stop, then stopped only if it closed beyond it [convention]. SPX only (the book's fixed S&P points and 2 ticks of 0.05; no conversion is invented); from 2014, where SPX daily opens are real. p.path=0 = the old daily bar path [Not from the book]."],
             "Two ticks = 0.10 S&P points as in the book's example. Points kept on every index (instrument swap only). Entry-day stop counted along the bar path (open, nearer extreme, other extreme, close). The alternative 'several ticks below the day's low at the time of the fill' needs intraday data."),
         def!("jbcdt_gap_dgo", "Delayed gap open (DGO)", "Ch.6 · Gaps, Gaps, Gaps", "Long/Short", NeedsData("intraday bars (price at the end of the first hour)"),
             &["E|\"If at the end of the first hour of trading the buy stop has not been elected ... If the current price is higher than the opening price by two ticks after the end of the first hour of trading, you will enter the long position at market\" (p.64-65)"], ""),
@@ -66,7 +67,8 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     Some(match id {
-        "jbcdt_gap_go" => vec![p("pa", "Penetration beyond yesterday's low/high (points; 2 ticks)", 0.1, 0., 2., 0.05), p("stop", "Stop loss (points; $2,500 at $500 per point)", 5., 1., 20., 0.5)],
+        "jbcdt_gap_go" => vec![p("pa", "Penetration beyond yesterday's low/high (points; 2 ticks)", 0.1, 0., 2., 0.05), p("stop", "Stop loss (points; $2,500 at $500 per point)", 5., 1., 20., 0.5),
+            p("path", "1 = real 1-minute bars (default; SPX only; days without minute data make no trade), 0 = [Not from the book] daily bar path", 1., 0., 1., 1.)], // intraday wave 2b
         _ => return None,
     })
 }
@@ -79,6 +81,16 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let mut out = Vec::new();
     for i in from.max(1)..=to {
         let (d, lvl) = if x.o[i] < x.l[i - 1] { (1.0, x.l[i - 1] + pa) } else if x.o[i] > x.h[i - 1] { (-1.0, x.h[i - 1] - pa) } else { continue };
+        // ---- intraday wave 2b block: real SPX 1-minute bars (path = 1, default)
+        if getp(id, p, "path") >= 0.5 {
+            use crate::intraday::{stop_entry_day, Level};
+            let Some(b) = crate::intraday_w2b::day(x, i) else { continue };
+            let Some((_, px, st)) = stop_entry_day(&b, 0, &[Level { up: d > 0.0, px: lvl }], &|_, f| Some(Level { up: d < 0.0, px: f - d * sl })) else { continue };
+            let t = new_trade(d, i, px, "stop", i - 1);
+            out.push(match st { Some(xp) => finish(t, i, xp, i, "Stop loss ($2,500)"), None => finish(t, i, x.c[i], i, "End of day") });
+            continue;
+        }
+        // ---- end intraday wave 2b block ----
         let Some(px) = stop_fill(x, i, d, lvl) else { continue };
         let stop = px - d * sl;
         let path = bar_path(x, i);

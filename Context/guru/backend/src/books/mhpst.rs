@@ -87,7 +87,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["F|APS header {File:FTSE.txt Index:3 Index Date:20040712 PL:15.71% PS:84.29% Trades:70 CL:2} {SHORT, %, TARGET: 2, STOP: 4, ENTRY PRICE: OPEN, DELAY: 0} PST p.169", "E|EasyLanguage: \"if h[1] > h[0] AND h[0] > h[2] AND h[2] > l[1] AND l[1] > l[0] AND l[0] > l[2] then begin Sell Short Next Bar at open\" p.169", "X|\"profitprice = O of tomorrow * (1-ptarget/100); stopprice = O of tomorrow * (1+stopl/100); buy to cover next bar at profitprice limit; buy to cover next bar at stopprice stop\" (orders placed on the signal bar, so they work on the entry bar too) p.169"],
             "Book market: FTSE 100 index futures; run on an equity index (instrument swap; no FTSE data in the vault): SPX / NIFTY 50. EasyLanguage code wins over the Metastock header (Metastock DELAY counts the next-bar entry; EasyLanguage DELAY = Metastock DELAY - 1 with the bars already shifted). One position at a time (EasyLanguage 'if Marketposition = 0'; Wealth-Lab 'if not LastPositionActive'). Same-bar target+stop: stop assumed first (book silent). Opened through a level: fill at the open. The APS search period of this file is not printed (Index Date is APS's internal classification), so header stats are compared approximately.", claim("70","84.29%","n/a","max 2 consecutive losers","APS FTSE.txt, period not printed")),
         d("mhp_ftse_12_20041015", "FTSE pattern 12/20041015 · long · 2%/4% · next open", "Appendix · FTSE patterns", "Long", Status::Live,
-            &["F|APS header {File:FTSE.txt Index:12 Index Date:20041015 PL:81.97% PS:18.03% Trades:61 CL:2} {LONG, %, TARGET: 2, STOP: 4, ENTRY PRICE: OPEN, DELAY: 0} PST p.169", "E|EasyLanguage: \"if l[4] > h[0] AND h[0] > l[3] AND l[3] > l[2] AND l[2] > l[1] then begin Buy Next Bar at open\" p.169", "X|\"profitprice = O of tomorrow * (1+ptarget/100); stopprice = O of tomorrow * (1-stopl/100); sell next bar at profitprice limit; sell next bar at stopprice stop\" (orders placed on the signal bar, so they work on the entry bar too) p.169"],
+            &["F|APS header {File:FTSE.txt Index:12 Index Date:20041015 PL:81.97% PS:18.03% Trades:61 CL:2} {LONG, %, TARGET: 2, STOP: 4, ENTRY PRICE: OPEN, DELAY: 0} PST p.169", "E|EasyLanguage: \"if l[4] > h[0] AND h[0] > l[3] AND l[3] > l[2] AND l[2] > l[1] then begin Buy Next Bar at open\" p.169", "X|\"profitprice = O of tomorrow * (1+ptarget/100); stopprice = O of tomorrow * (1-stopl/100); sell next bar at profitprice limit; sell next bar at stopprice stop\" (orders placed on the signal bar, so they work on the entry bar too) p.169", "X|[intraday wave 2b] Default p.path=1: on each day the trade is held, real 1-minute bars decide whether the target or the stop came first (fill at the level, or the minute's open when it opened through it; both in one minute: the level nearer the minute's open [convention]). Days without minute data, and NIFTY 50 days from 2026-08-11 (bad closing minutes), keep the daily reading, which is exact unless both levels are inside that day's bar (then the stop is assumed first, as before). Runs on SPY, SPX (from 2014, real daily opens), NIFTY 50, NIFTYBANK within their minute periods. p.path=0 = the old daily reading [Not from the book]."],
             "Book market: FTSE 100 index futures; run on an equity index (instrument swap; no FTSE data in the vault): SPX / NIFTY 50. EasyLanguage code wins over the Metastock header (Metastock DELAY counts the next-bar entry; EasyLanguage DELAY = Metastock DELAY - 1 with the bars already shifted). One position at a time (EasyLanguage 'if Marketposition = 0'; Wealth-Lab 'if not LastPositionActive'). Same-bar target+stop: stop assumed first (book silent). Opened through a level: fill at the open. The APS search period of this file is not printed (Index Date is APS's internal classification), so header stats are compared approximately. Same pattern as Fig 7.3-7.6 (Example 1: 82% profitable, profit factor 2.2, RWL 0.48 in Metastock, p.116-118).", claim("61","81.97%","n/a","max 2 consecutive losers","APS FTSE.txt, period not printed")),
         d("mhp_ftse_10_20040730", "FTSE pattern 10/20040730 · short · 2%/4% · next open", "Appendix · FTSE patterns", "Short", Status::Live,
             &["F|APS header {File:FTSE.txt Index:10 Index Date:20040730 PL:19.64% PS:80.36% Trades:56 CL:1} {SHORT, %, TARGET: 2, STOP: 4, ENTRY PRICE: OPEN, DELAY: 1} PST p.170", "E|EasyLanguage: \"if h[1] > h[2] AND h[2] > c[1] AND c[1] > l[1] AND l[1] > h[3] AND h[3] > l[2] AND l[2] > l[3] then begin Sell Short Next Bar at open\" p.170", "X|\"profitprice = O of tomorrow * (1-ptarget/100); stopprice = O of tomorrow * (1+stopl/100); buy to cover next bar at profitprice limit; buy to cover next bar at stopprice stop\" (orders placed on the signal bar, so they work on the entry bar too) p.170"],
@@ -111,7 +111,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["F|APS header {File:FTSE.txt Index:12 Index Date:20040728 PL:16.28% PS:83.72% Trades:43 CL:1} {SHORT, %, TARGET: 2, STOP: 4, ENTRY PRICE: OPEN, DELAY: 2} PST p.172", "E|EasyLanguage: \"if h[2] > l[5] AND l[5] > l[6] AND l[6] > l[3] AND l[3] > l[4] then begin Sell Short Next Bar at open\" p.172", "X|\"profitprice = O of tomorrow * (1-ptarget/100); stopprice = O of tomorrow * (1+stopl/100); buy to cover next bar at profitprice limit; buy to cover next bar at stopprice stop\" (orders placed on the signal bar, so they work on the entry bar too) p.172"],
             "Book market: FTSE 100 index futures; run on an equity index (instrument swap; no FTSE data in the vault): SPX / NIFTY 50. EasyLanguage code wins over the Metastock header (Metastock DELAY counts the next-bar entry; EasyLanguage DELAY = Metastock DELAY - 1 with the bars already shifted). One position at a time (EasyLanguage 'if Marketposition = 0'; Wealth-Lab 'if not LastPositionActive'). Same-bar target+stop: stop assumed first (book silent). Opened through a level: fill at the open. The APS search period of this file is not printed (Index Date is APS's internal classification), so header stats are compared approximately.", claim("43","83.72%","n/a","max 1 consecutive losers","APS FTSE.txt, period not printed")),
         d("mhp_ftse_3_20040804", "FTSE pattern 3/20040804 · long · 2%/4% · next open", "Appendix · FTSE patterns", "Long", Status::Live,
-            &["F|APS header {File:FTSE.txt Index:3 Index Date:20040804 PL:80.95% PS:19.05% Trades:42 CL:2} {LONG, %, TARGET: 2, STOP: 4, ENTRY PRICE: OPEN, DELAY: 3} PST p.173", "E|EasyLanguage: \"if h[4] > h[3] AND h[3] > h[5] AND h[5] > l[4] AND l[4] > l[5] AND l[5] > l[3] then begin Buy Next Bar at open\" p.173", "X|\"profitprice = O of tomorrow * (1+ptarget/100); stopprice = O of tomorrow * (1-stopl/100); sell next bar at profitprice limit; sell next bar at stopprice stop\" (orders placed on the signal bar, so they work on the entry bar too) p.173"],
+            &["F|APS header {File:FTSE.txt Index:3 Index Date:20040804 PL:80.95% PS:19.05% Trades:42 CL:2} {LONG, %, TARGET: 2, STOP: 4, ENTRY PRICE: OPEN, DELAY: 3} PST p.173", "E|EasyLanguage: \"if h[4] > h[3] AND h[3] > h[5] AND h[5] > l[4] AND l[4] > l[5] AND l[5] > l[3] then begin Buy Next Bar at open\" p.173", "X|\"profitprice = O of tomorrow * (1+ptarget/100); stopprice = O of tomorrow * (1-stopl/100); sell next bar at profitprice limit; sell next bar at stopprice stop\" (orders placed on the signal bar, so they work on the entry bar too) p.173", "X|[intraday wave 2b] Default p.path=1: on each day the trade is held, real 1-minute bars decide whether the target or the stop came first (fill at the level, or the minute's open when it opened through it; both in one minute: the level nearer the minute's open [convention]). Days without minute data, and NIFTY 50 days from 2026-08-11 (bad closing minutes), keep the daily reading, which is exact unless both levels are inside that day's bar (then the stop is assumed first, as before). Runs on SPY, SPX (from 2014, real daily opens), NIFTY 50, NIFTYBANK within their minute periods. p.path=0 = the old daily reading [Not from the book]."],
             "Book market: FTSE 100 index futures; run on an equity index (instrument swap; no FTSE data in the vault): SPX / NIFTY 50. EasyLanguage code wins over the Metastock header (Metastock DELAY counts the next-bar entry; EasyLanguage DELAY = Metastock DELAY - 1 with the bars already shifted). One position at a time (EasyLanguage 'if Marketposition = 0'; Wealth-Lab 'if not LastPositionActive'). Same-bar target+stop: stop assumed first (book silent). Opened through a level: fill at the open. The APS search period of this file is not printed (Index Date is APS's internal classification), so header stats are compared approximately.", claim("42","80.95%","n/a","max 2 consecutive losers","APS FTSE.txt, period not printed")),
         d("mhp_rsi_ma_example", "RSI(14) < 30 AND MA(5) > MA(30) (synthesis illustration)", "Ch.7 The process of synthesis", "Long", Status::NotTestable("Illustrative output the synthesis process 'may determine' (p.109); never tested or reported, and order timing, RSI type and sizing are not stated."),
             &["E|\"Long entry signal if: RSI(14) < 30 AND [MA(5) > MA(30)]\" PST p.109", "X|\"Long exit signal if: MA(5) < MA(30)\" p.109"],
@@ -208,7 +208,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "mhp_dax_6_20050223" => vec![p("target","Profit target (% of entry)",2.0,0.5,20.0,0.5), p("stop","Stop-loss (% of entry)",4.0,0.5,20.0,0.5)],
         "mhp_dax_4_20050202" => vec![p("target","Profit target (% of entry)",2.0,0.5,20.0,0.5), p("stop","Stop-loss (% of entry)",4.0,0.5,20.0,0.5)],
         "mhp_ftse_3_20040712" => vec![p("target","Profit target (% of entry)",2.0,0.5,20.0,0.5), p("stop","Stop-loss (% of entry)",4.0,0.5,20.0,0.5)],
-        "mhp_ftse_12_20041015" => vec![p("target","Profit target (% of entry)",2.0,0.5,20.0,0.5), p("stop","Stop-loss (% of entry)",4.0,0.5,20.0,0.5)],
+        "mhp_ftse_12_20041015" => vec![p("target","Profit target (% of entry)",2.0,0.5,20.0,0.5), p("stop","Stop-loss (% of entry)",4.0,0.5,20.0,0.5),
+            p("path","1 = real 1-minute bars decide stop vs target (default), 0 = [Not from the book] daily bar, stop assumed first",1.0,0.0,1.0,1.0)], // intraday wave 2b
         "mhp_ftse_10_20040730" => vec![p("target","Profit target (% of entry)",2.0,0.5,20.0,0.5), p("stop","Stop-loss (% of entry)",4.0,0.5,20.0,0.5)],
         "mhp_ftse_5_20040922" => vec![p("target","Profit target (% of entry)",2.0,0.5,20.0,0.5), p("stop","Stop-loss (% of entry)",4.0,0.5,20.0,0.5)],
         "mhp_ftse_5_20041019" => vec![p("target","Profit target (% of entry)",2.0,0.5,20.0,0.5), p("stop","Stop-loss (% of entry)",4.0,0.5,20.0,0.5)],
@@ -216,7 +217,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "mhp_ftse_3_20041007" => vec![p("target","Profit target (% of entry)",2.0,0.5,20.0,0.5), p("stop","Stop-loss (% of entry)",4.0,0.5,20.0,0.5)],
         "mhp_ftse_12_20040930" => vec![p("target","Profit target (% of entry)",2.0,0.5,20.0,0.5), p("stop","Stop-loss (% of entry)",4.0,0.5,20.0,0.5)],
         "mhp_ftse_12_20040728" => vec![p("target","Profit target (% of entry)",2.0,0.5,20.0,0.5), p("stop","Stop-loss (% of entry)",4.0,0.5,20.0,0.5)],
-        "mhp_ftse_3_20040804" => vec![p("target","Profit target (% of entry)",2.0,0.5,20.0,0.5), p("stop","Stop-loss (% of entry)",4.0,0.5,20.0,0.5)],
+        "mhp_ftse_3_20040804" => vec![p("target","Profit target (% of entry)",2.0,0.5,20.0,0.5), p("stop","Stop-loss (% of entry)",4.0,0.5,20.0,0.5),
+            p("path","1 = real 1-minute bars decide stop vs target (default), 0 = [Not from the book] daily bar, stop assumed first",1.0,0.0,1.0,1.0)], // intraday wave 2b
         _ => return None,
     })
 }
@@ -263,7 +265,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         _ => return None,
     };
     // EasyLanguage places the limit/stop on the signal bar from "O of tomorrow" -> working on the entry bar
-    Some(simulate(x, from, to, logic, dir, true, true, level_fn(dir, g("target"), g("stop"), true)))
+    let minutes = matches!(id, "mhp_ftse_12_20041015" | "mhp_ftse_3_20040804") && g("path") >= 0.5; // intraday wave 2b
+    Some(simulate_path(x, from, to, logic, dir, true, true, level_fn(dir, g("target"), g("stop"), true), minutes))
 }
 
 // ---- pattern engine (one position per pattern; same code in mhstp/mhpst/mhart so each module stands alone) ----
@@ -294,14 +297,28 @@ fn exit_on(x: &Ctx, i: usize, dir: f64, tp: f64, sp: f64) -> Option<(f64, &'stat
 /// at_open: signal on bar i's close, fill at bar i+1's open; else fill at bar i's close.
 /// entry_bar_exits: target/stop already working on the open-entry bar (otherwise from the next bar).
 fn simulate(x: &Ctx, from: usize, to: usize, logic: &str, dir: f64, at_open: bool, entry_bar_exits: bool,
-            levels: impl Fn(f64) -> (f64, f64)) -> Vec<Trade> {
+            levels: impl Fn(f64) -> (f64, f64)) -> Vec<Trade> { simulate_path(x, from, to, logic, dir, at_open, entry_bar_exits, levels, false) }
+// ---- intraday wave 2b block: target/stop order from real 1-minute bars
+/// On a held day with minute data the first of stop/target touched in time order decides (at the level, or the minute's
+/// open when it opened through it; both in one minute: the level nearer the minute's open [convention]). A day without
+/// minutes keeps the daily reading, which is exact unless both levels are inside that day's bar (stop assumed first).
+fn exit_minutes(x: &Ctx, i: usize, dir: f64, tp: f64, sp: f64) -> Option<(f64, &'static str)> {
+    use crate::intraday::Level;
+    let Some(b) = crate::intraday_w2b::day(x, i) else { return exit_on(x, i, dir, tp, sp) };
+    let lv = [Level { up: dir < 0., px: sp }, Level { up: dir > 0., px: tp }];
+    crate::intraday_w2b::first_exit(&b, 0, &lv).map(|(k, bar, px, _)| (px, match (k, bar == 0 && px == b[0].o) {
+        (0, true) => "stop (opened through)", (0, false) => "stop", (_, true) => "target (opened through)", _ => "target" }))
+}
+// ---- end intraday wave 2b block ----
+fn simulate_path(x: &Ctx, from: usize, to: usize, logic: &str, dir: f64, at_open: bool, entry_bar_exits: bool,
+            levels: impl Fn(f64) -> (f64, f64), minutes: bool) -> Vec<Trade> {
     let dnf = parse(logic);
     let mut out = vec![];
     let mut cur: Option<(Trade, f64, f64, usize)> = None;
     for i in from..=to {
         if let Some((t, tp, sp, active)) = cur.as_mut() {
             if i >= *active {
-                if let Some((p, why)) = exit_on(x, i, dir, *tp, *sp) {
+                if let Some((p, why)) = if minutes { exit_minutes(x, i, dir, *tp, *sp) } else { exit_on(x, i, dir, *tp, *sp) } { // intraday wave 2b
                     t.exit_i = i; t.exit_px = p; t.signal_i = i; t.reason = why.into();
                     out.push(cur.take().unwrap().0);
                 }

@@ -8,7 +8,7 @@ use crate::connors::{claim, rsi, Ctx, ParamDef, Params, Status, StrategyDef, Tra
 
 pub const BOOK: &str = "jkbk";
 /// Admitted ids (authors/krutsinger/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["jkbk_safe", "jkbk_call_buyer"];
+pub const REVIEWED: &[&str] = &["jkbk_safe", "jkbk_call_buyer", "jkbk_buy_monday_ts83" /* intraday wave 2b: daily bars decide every trade */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 const SOLD: &str = "rules not disclosed: the source gives only the optimisation check-list (input names and ranges) of a commercial system; the code is sold separately or only in a compiled .ELD";
 

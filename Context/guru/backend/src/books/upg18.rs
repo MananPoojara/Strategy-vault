@@ -44,6 +44,7 @@ that open when it is beyond the entry price (no other use of future data). Daily
             "E|\"IF C >= C[2] Then Sell Short Next Bar L Stop;\"",
             "X|\"Inputs:STP(300); SetStopLoss(STP); SetStopContract;\" = $300 per contract: 1.2 points of the @SP contract ($250 per point) the system was sold and reported on (ZAP slide 20)",
             "X|\"SetExitOnClose;\" (exit at the close of the entry day; 'no trades overnight', slide 17)",
+            "X|[intraday wave 2b] Default p.path=1: real SPX 1-minute bars decide the entry fill (at yesterday's high/low, or the minute's open when it opened through it) and whether the 1.2-point stop from the fill was reached after it. Fill minute that also reaches the stop: filled then stopped, unless it opened beyond the stop, then stopped only if it closed beyond it [convention]. SPX only (the book's fixed $300 = 1.2 @SP points; no conversion is invented); from 2014, where SPX daily opens are real. p.path=0 = the old daily bar path [Not from the book].",
         ], "Source: T:/Joe Krutsinger - Traders Dream for TS (joekrut.com)/Open Code.rar -> Open Code.txt (A0600). Daily bars (@SP daily 5/9/2001-5/10/2002, slide 20). \
 The only conversion: $300 / $250 per @SP point = 1.2 index points (param stop_pts; the big S&P contract was $500/point before Nov 1997, which would be 0.6). \
 The stop works from the actual fill (a gap through H or L fills at the open, stop = fill -/+ 1.2), on the entry bar too, path O -> nearer extreme -> other extreme -> C. \
@@ -117,7 +118,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "upg18_english_channel" => vec![pd("length", "Length (channel bars; range average over 2x)", 8., 2., 9., 1.)],
         "upg18_english_channel_rar" => vec![pd("length", "Length (channel bars; range average over 2x)", 4., 2., 9., 1.)],
         "upg18_prince" => vec![pd("lag", "Close compared with the close N bars ago", 2., 1., 10., 1.)],
-        "upg18_traders_dream" => vec![pd("stop_pts", "Stop loss in points ($300 / $250 per @SP point)", 1.2, 0.2, 20., 0.2), pd("lag", "Close compared with the close N bars ago", 2., 1., 10., 1.)],
+        "upg18_traders_dream" => vec![pd("stop_pts", "Stop loss in points ($300 / $250 per @SP point)", 1.2, 0.2, 20., 0.2), pd("lag", "Close compared with the close N bars ago", 2., 1., 10., 1.), pd("path", "1 = real 1-minute bars (default; SPX only; days without minute data make no trade), 0 = [Not from the book] daily bar path", 1., 0., 1., 1.) /* intraday wave 2b */],
         "upg18_safer2005" => vec![pd("buy_pct", "JKBuyer: % of today's range above the close", 38.2, 5., 100., 0.1), pd("sell_pct", "JKSeller: % of today's range below the close", 61.8, 5., 100., 0.1)],
         "upg18_trend_walker" => vec![pd("buybo", "BuyBo (tenths of the range)", 2., 0., 20., 1.), pd("sellbo", "SellBo (tenths of the range)", 7., 0., 20., 1.), pd("walk", "Walk: exit after N bars in the trade", 6., 1., 30., 1.), pd("trn", "Trn: average length", 10., 2., 100., 1.)],
         "upg18_parrot" => vec![pd("afstep", "AfStep (acceleration increment)", 0.01, 0.0005, 0.05, 0.0005), pd("aflimit", "AfLimit (maximum acceleration)", 0.1, 0.05, 0.5, 0.01)],
@@ -187,6 +188,24 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 if st.pos == -1 && op[i + 1] < st.entry_px { next.push(o(A::Xs, P::Mkt, "prosx")); }
             }))
         }
+        // ---- intraday wave 2b block: real SPX 1-minute bars (path = 1, default)
+        "upg18_traders_dream" if g(p, "path", 1.) >= 0.5 => {
+            use crate::intraday::{day_trade, stop_entry_day, Level};
+            let (stp, k) = (g(p, "stop_pts", 1.2), g(p, "lag", 2.).max(1.) as usize);
+            let (h, l) = (&x.h, &x.l);
+            let mut out = vec![];
+            for j in from + 1..=to {
+                let i = j - 1;
+                if i < k { continue; }
+                let d = if c[i] < c[i - k] { 1.0 } else { -1.0 };
+                let Some(b) = crate::intraday_w2b::day(x, j) else { continue };
+                let lv = if d > 0.0 { h[i] } else { l[i] };
+                let Some((_, px, st)) = stop_entry_day(&b, 0, &[Level { up: d > 0.0, px: lv }], &|_, f| Some(Level { up: d < 0.0, px: f - d * stp })) else { continue };
+                out.push(match st { Some(xp) => day_trade(d, j, px, j, xp, "stop loss", "stop", false), None => day_trade(d, j, px, j, c[j], "exit on close", "stop", false) });
+            }
+            Some(out)
+        }
+        // ---- end intraday wave 2b block ----
         "upg18_traders_dream" => {
             let (stp, k) = (g(p, "stop_pts", 1.2), g(p, "lag", 2.).max(1.) as usize);
             Some(run_ts(x, from, to, |i, _st, now, next| {

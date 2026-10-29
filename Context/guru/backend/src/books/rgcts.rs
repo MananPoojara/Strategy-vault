@@ -11,7 +11,7 @@ use crate::connors::{true_range, Ctx, Leg, ParamDef, Params, Status, StrategyDef
 
 pub const BOOK: &str = "rgcts";
 /// Admitted ids (authors/ruggiero/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["rgc_cdow_mon_long", "rgc_tdom17_long", "rgc_tdom2_short", "rgc_cbo20", "rgc_volbo", "rgc_cbo17_10", "rgc_mom_first", "rgc_elliott", "rgc_ga1723"];
+pub const REVIEWED: &[&str] = &["rgc_cdow_mon_long", "rgc_tdom17_long", "rgc_tdom2_short", "rgc_cbo20", "rgc_volbo", "rgc_cbo17_10", "rgc_mom_first", "rgc_elliott", "rgc_ga1723", "rgc_cdow_fri_short", "rgc_dow_oc", "rgc_dowm_mon_dec_long", "rgc_dowm_thu_dec_short", "rgc_dowm_thu_jul_long", "rgc_runaway_gap", "rgc_runaway_gap_f5" /* intraday wave 2b: daily bars decide every trade */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const FUT: &str = "needs the book's futures/intermarket series (T-Bond, Eurodollar, T-Bill, Dollar index, CRB, XAU, XOI, UTY, gold, crude, D-Mark, Yen, silver, Kodak etc.) - none is in the vault (only NIFTY indices, SPX/NDX/DJI, VIX/India VIX, NSE breadth)";

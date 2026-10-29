@@ -11,7 +11,7 @@ use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "tdperl";
 /// Admitted ids (authors/perl/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["tdperl_tdline_long"];
+pub const REVIEWED: &[&str] = &["tdperl_tdline_long", "tdperl_clop_long", "tdperl_clop_short" /* intraday wave 2b: daily bars decide every trade */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const NO_EXIT: &str = "[Not from the book] Perl gives no profit exit (p.48: \"it's up to you to manage the risk and the take-profit level ... TD Sequential is an indicator, not a system\"). Vault exit: the opposite signal of the same study, at its close (p.49: \"there isn't always a signal in the opposite direction to tell you where to close out a profitable trade\"). Optional time exit max_bars (p.28: \"a meaningful response within twelve price bars\") is off by default.";

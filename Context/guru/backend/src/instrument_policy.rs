@@ -217,8 +217,8 @@ fn bernstein_g1_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Op
 /// No stock or other ETF has minute data, so those stay held. Evidence: data-survey/PHASE1-REPORT.md.
 pub const INTRADAY_P1:&[&str]=&["ss_momentum_pinball","ss_80_20","ats_15min_adx_breakout","ptjdt_adx15_breakout"];
 pub const INTRADAY_P1_TICKERS:&[&str]=&["SPY","SPX","NIFTY 50","NIFTYBANK"];
-pub fn intraday_p1_id(id:&str)->bool {INTRADAY_P1.contains(&id) || intraday_w1_id(id)}
-pub fn intraday_p1(def:&StrategyDef)->bool {intraday_p1_id(def.id) && matches!(def.book,"ss"|"ats"|"ptjdt"|"btp"|"hfm"|"tdnmtt"|"baboops"|"tcdt"|"lwdg2"|"lwlts"|"jb30d")}
+pub fn intraday_p1_id(id:&str)->bool {INTRADAY_P1.contains(&id) || intraday_w1_id(id) || crate::intraday_w2b::id(id)} // + intraday wave 2b
+pub fn intraday_p1(def:&StrategyDef)->bool {intraday_p1_id(def.id) && (matches!(def.book,"ss"|"ats"|"ptjdt"|"btp"|"hfm"|"tdnmtt"|"baboops"|"tcdt"|"lwdg2"|"lwlts"|"jb30d") || crate::intraday_w2b::book(def.book))} // + intraday wave 2b
 // ---- intraday wave 1 (claude/intraday-w1, 2026-10-24): same block, more day-trade rules on the minute path
 /// No fixed amount: run on all four minute tickers (declared application).
 pub const INTRADAY_W1:&[&str]=&["ats_10pct_oops","ats_wide_range_gap","btp2_10pct_oops","btp2_10pct_oops_long","btp2_10pct_oops_short",
@@ -227,7 +227,7 @@ pub const INTRADAY_W1:&[&str]=&["ats_10pct_oops","ats_wide_range_gap","btp2_10pc
 /// SPX only, the market those points belong to. No conversion to SPY or NSE prices is invented.
 pub const INTRADAY_W1_SPX:&[&str]=&["hfm_vix","baboops_oops","lwlts_mon_vb","jb30d_gap_tick"];
 pub fn intraday_w1_id(id:&str)->bool {INTRADAY_W1.contains(&id) || intraday_w1_spx_id(id)}
-pub fn intraday_w1_spx_id(id:&str)->bool {INTRADAY_W1_SPX.contains(&id) || crate::books::tcdt::same_day_orb(id)}
+pub fn intraday_w1_spx_id(id:&str)->bool {INTRADAY_W1_SPX.contains(&id) || crate::books::tcdt::same_day_orb(id) || crate::intraday_w2b::spx_id(id)} // + intraday wave 2b
 pub fn intraday_tickers(id:&str)->&'static [&'static str] {if intraday_w1_spx_id(id) {&["SPX"]} else {INTRADAY_P1_TICKERS}}
 const INTRADAY_W1_SPX_BASIS:&str="Intraday wave 1 (2026-10-24): the book's same-day rule is run on real SPX 1-minute bars (cash index, 2008-01..2026-08; rules that read the open start 2014-01, where the daily SPX open is real), cleaned by library/intraday/m1_normalise.py: padded, no-open and stale-open minutes are removed and never fill; excluded days make no trade. The book's levels are fixed S&P 500 points, so the rule runs only on SPX, at those printed points; on today's index levels they are much smaller relative to price than in the book's years. The book traded S&P 500 futures, so SPX runs are a declared application; cash-index shorts are hypothetical exposure. Stops and entries fill at the level, or at the minute's open when the minute opens through it; conventions for a minute that reaches two levels are stated in the notes. Independent Python ledgers matched the engine with zero mismatches. No book performance is reproduced.";
 // ---- end intraday wave 1
@@ -1875,7 +1875,7 @@ fn meyers_policy(def:&StrategyDef)->Option<Policy> {
 // ---------------------------------------------------------------- end Meyers
 // ---------------------------------------------------------------- Krutsinger 2026-10-25
 // Admission only for the module REVIEWED lists (authors/krutsinger/admission/SOURCE-CONTRACT.md); kept in one block to merge.
-pub fn krutsinger_reviewed(def:&StrategyDef)->bool {(def.book=="jkbwts" && crate::books::jkbwts::reviewed(def.id)) || (def.book=="jkbk" && crate::books::jkbk::reviewed(def.id)) || (def.book=="upg18" && crate::books::upg18::reviewed(def.id))}
+pub fn krutsinger_reviewed(def:&StrategyDef)->bool {(def.book=="jkbwts" && crate::books::jkbwts::reviewed(def.id)) || (def.book=="jkbk" && crate::books::jkbk::reviewed(def.id)) || (def.book=="upg18" && crate::books::upg18::reviewed(def.id)) || (def.book=="jk36k" && def.id=="jk36k_jk1_buy_monday") /* intraday wave 2b */}
 const KRUTSINGER_LABEL:&str="Joe Krutsinger built and reported these systems on S&P 500 futures (Dinapoli5, RainMaker, JK-Call Buyer), stock-index futures (SAFE) and QQQ / any market (Prince, English Channel, Parrot); runs on other indices, ETFs and single stocks (US and India) are a declared application.";
 fn krutsinger_policy(def:&StrategyDef)->Option<Policy> {
     if !krutsinger_reviewed(def) {return None;}
@@ -4426,7 +4426,7 @@ mod tests {
         use crate::books::{jkbwts, jkbk, upg18};
         let all:Vec<StrategyDef>=jkbwts::catalogue().into_iter().chain(jkbk::catalogue()).chain(upg18::catalogue()).collect();
         let mut want:Vec<&str>=jkbwts::REVIEWED.iter().chain(jkbk::REVIEWED.iter()).chain(upg18::REVIEWED.iter()).copied().collect();
-        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)&&!intraday_p1(d)).map(|d|d.id).collect(); // intraday wave 2b: minute-path ids have their own test
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
@@ -4877,7 +4877,7 @@ mod tests {
         use crate::books::{pbwts,putg};
         let all:Vec<StrategyDef>=pbwts::catalogue().into_iter().chain(putg::catalogue()).collect();
         let mut want:Vec<&str>=pbwts::REVIEWED.iter().chain(putg::REVIEWED).copied().collect();
-        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)&&!intraday_p1(d)).map(|d|d.id).collect(); // intraday wave 2b: minute-path ids have their own test
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
@@ -5696,7 +5696,7 @@ mod tests {
         for t in ["SPX","SPY","DJI"] {assert!(ok("hfm_ndxspx","hfm",t),"{t}");}
         for t in ["NDX","QQQ","NIFTY 50","NIFTYBANK"] {assert!(!ok("hfm_ndxspx","hfm",t),"{t}");}
         assert!(check(&def("hfm_ndxspx","hfm"),"AAPL",true).is_some());
-        for (id,b) in [("hfm_hv","hfm"),("hfm_und","hfm"),("hfm_und_long","hfm"),("hfm_und_short","hfm"),("hfm_news","hfm"),/* hfm_vix: intraday wave 1 */("otvt_cvr1","otvt")] { // otvt_cvr1_sell_puts: options phase 2 // ptjdt_adx15_breakout: intraday phase 1 admission
+        for (id,b) in [("hfm_hv","hfm"),("hfm_und","hfm"),("hfm_und_long","hfm"),("hfm_und_short","hfm"),/* hfm_news: intraday wave 2b */ /* hfm_vix: intraday wave 1 */("otvt_cvr1","otvt")] { // otvt_cvr1_sell_puts: options phase 2 // ptjdt_adx15_breakout: intraday phase 1 admission
             assert!(!reviewed_cash_rule(&def(id,b)),"{id}");assert_eq!(policy(&def(id,b)).requirement,"source_review_required","{id}");
         }
     }
@@ -6172,7 +6172,7 @@ mod bernstein_g2_tests {
             assert!(!reviewed_cash_rule(d),"{}",d.id);
             assert_eq!(policy(d).requirement,"source_review_required");
         }
-        assert!(crate::books::jbcdt::catalogue().iter().all(|d|!reviewed_cash_rule(d)));
+        assert!(crate::books::jbcdt::catalogue().iter().all(|d|!reviewed_cash_rule(d)||intraday_p1(d))); // intraday wave 2b: jbcdt_gap_go on 1-minute bars
     }
 }
 #[cfg(test)]
