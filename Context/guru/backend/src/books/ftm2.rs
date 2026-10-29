@@ -10,7 +10,7 @@ use crate::connors::{claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Tra
 
 pub const BOOK: &str = "ftm2";
 /// Admitted ids (authors/futuresmag/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["ftm2_zg_nday", "ftm2_rg_santa", "ftm2_rg_santa_up", "ftm2_mm_macd_r1", "ftm2_mm_macd_r2"];
+pub const REVIEWED: &[&str] = &["ftm2_zg_nday", "ftm2_rg_santa", "ftm2_rg_santa_up", "ftm2_mm_macd_r1", "ftm2_mm_macd_r2", "ftm2_ac_vote", "ftm2_dm_skew" /* intraday wave 2b: daily bars decide every trade */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 // ------------------------------------------------------------------ helpers

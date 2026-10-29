@@ -21,7 +21,7 @@ use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "stad";
 /// Admitted ids (authors/stad/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["stad1_maco", "stad1_macdbo", "stad1_tf", "stad1_sr", "stad1_pivot", "stad1_chbo", "stad2_adxdiff", "stad2_hs", "stad2_addiv", "stad2_ccibb", "stad2_pctchan", "stad2_stats3", "stad3_bdsr", "stad3_engulf", "stad3_ochist", "stad3_bb", "stad3_varzones", "stad3_sdv", "stad3_volclus", "stad4_dmiadx", "stad4_keltner", "stad4_linreg", "stad4_cc", "stad4_3xa", "stad4_dmacv", "stad4_pricedist", "stad4_momret", "stad7_vix", "stad3_mmmw"];
+pub const REVIEWED: &[&str] = &["stad1_maco", "stad1_macdbo", "stad1_tf", "stad1_sr", "stad1_pivot", "stad1_chbo", "stad2_adxdiff", "stad2_hs", "stad2_addiv", "stad2_ccibb", "stad2_pctchan", "stad2_stats3", "stad3_bdsr", "stad3_engulf", "stad3_ochist", "stad3_bb", "stad3_varzones", "stad3_sdv", "stad3_volclus", "stad4_dmiadx", "stad4_keltner", "stad4_linreg", "stad4_cc", "stad4_3xa", "stad4_dmacv", "stad4_pricedist", "stad4_momret", "stad7_vix", "stad3_mmmw", "stad10_mwt", "stad2_stats2" /* intraday wave 2b: daily bars decide every trade */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 // ------------------------------------------------------------------ TradeStation functions
