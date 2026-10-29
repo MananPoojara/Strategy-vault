@@ -318,6 +318,9 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || tillson_reviewed(def) // Tim Tillson block
         || leungchong_reviewed(def) // Leung and Chong block
         || bollinger_reviewed(def) // John Bollinger block
+        || lstephens_reviewed(def) // Lank Stephens block
+        || fpjackson_reviewed(def) // Franklin Paul Jackson block
+        || thayes_reviewed(def) // Timothy Hayes block
         || jjburns_reviewed(def) // Jeremy J. Burns block
         || meissner_reviewed(def) // Gunter Meissner block
         || schutzman_reviewed(def) // Fred G. Schutzman block
@@ -1323,6 +1326,36 @@ fn bollinger_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end John Bollinger
+// ---------------------------------------------------------------- Lank Stephens 2026-10-29 (lane K1)
+// Admission only for the module REVIEWED lists (authors/lstephens/admission/fb_ref.py (header)); kept in one block to merge.
+pub fn lstephens_reviewed(def:&StrategyDef)->bool {(def.book=="lsfb" && crate::books::lsfb::reviewed(def.id))}
+const LSTEPHENS_LABEL:&str="Lank Stephens trades the 4 Bar Fact and THE CLINCHER on T-bond, grain, currency, gold and eMini futures (some stocks); runs on indices, ETFs and US/India stocks are a declared application, not the author's test.";
+fn lstephens_policy(def:&StrategyDef)->Option<Policy> {
+    if !lstephens_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Lank Stephens, Trading the 4 Bar Fact & Calculating THE CLINCHER (2nd ed., 2007), PDF 16-19, 25, 47-53");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Lank Stephens
+// ---------------------------------------------------------------- Franklin Paul Jackson 2026-10-29 (lane K1)
+// Admission only for the module REVIEWED lists (authors/fpjackson/admission/is_ref.py (header)); kept in one block to merge.
+pub fn fpjackson_reviewed(def:&StrategyDef)->bool {(def.book=="fpjis" && crate::books::fpjis::reviewed(def.id))}
+const FPJACKSON_LABEL:&str="Franklin Paul Jackson applies the I-S Method to individual US stocks on weekly charts; runs on indices, ETFs and India stocks are a declared application, not the author's test.";
+fn fpjackson_policy(def:&StrategyDef)->Option<Policy> {
+    if !fpjackson_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Franklin Paul Jackson, The I-S Method (Studies in Market Action and Speculative Technique), Study II PDF 88-95");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Franklin Paul Jackson
+// ---------------------------------------------------------------- Timothy Hayes 2026-10-29 (lane K1)
+// Admission only for the module REVIEWED lists (authors/thayes/admission/rdi_ref.py (header)); kept in one block to merge.
+pub fn thayes_reviewed(def:&StrategyDef)->bool {(def.book=="thrdi" && crate::books::thrdi::reviewed(def.id))}
+const THAYES_LABEL:&str="Timothy Hayes times the S&P 500 with the Value Line Composite's 30-week rate of change; here the rate of change of the traded index, ETF or US/India stock itself is used, a declared application, not the author's test.";
+fn thayes_policy(def:&StrategyDef)->Option<Policy> {
+    if !thayes_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Timothy W. Hayes, The Research Driven Investor (2001), Fig 4-9 p.72-75");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Timothy Hayes
 // ---------------------------------------------------------------- Jeremy J. Burns 2026-10-29 (lane K1)
 // Admission only for the module REVIEWED lists (authors/jjburns/admission/id_ref.py (header)); kept in one block to merge.
 pub fn jjburns_reviewed(def:&StrategyDef)->bool {(def.book=="jbid" && crate::books::jbid::reviewed(def.id))}
@@ -2188,6 +2221,9 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=tillson_policy(def) {return p;} // Tim Tillson block
     if let Some(p)=leungchong_policy(def) {return p;} // Leung and Chong block
     if let Some(p)=bollinger_policy(def) {return p;} // John Bollinger block
+    if let Some(p)=lstephens_policy(def) {return p;} // Lank Stephens block
+    if let Some(p)=fpjackson_policy(def) {return p;} // Franklin Paul Jackson block
+    if let Some(p)=thayes_policy(def) {return p;} // Timothy Hayes block
     if let Some(p)=jjburns_policy(def) {return p;} // Jeremy J. Burns block
     if let Some(p)=meissner_policy(def) {return p;} // Gunter Meissner block
     if let Some(p)=schutzman_policy(def) {return p;} // Fred G. Schutzman block
@@ -2877,6 +2913,9 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if tillson_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",TILLSON_LABEL));} // Tim Tillson block
     if leungchong_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LEUNGCHONG_LABEL));} // Leung and Chong block
     if bollinger_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BOLLINGER_LABEL));} // John Bollinger block
+    if lstephens_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LSTEPHENS_LABEL));} // Lank Stephens block
+    if fpjackson_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",FPJACKSON_LABEL));} // Franklin Paul Jackson block
+    if thayes_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",THAYES_LABEL));} // Timothy Hayes block
     if jjburns_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",JJBURNS_LABEL));} // Jeremy J. Burns block
     if meissner_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",MEISSNER_LABEL));} // Gunter Meissner block
     if schutzman_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",SCHUTZMAN_LABEL));} // Fred G. Schutzman block
@@ -3626,6 +3665,54 @@ mod tests {
         }
     }
     // ---- end John Bollinger block ----
+    // ---- Lank Stephens block (2026-10-26, lane B) ----
+    #[test]
+    fn lstephens_review_admits_exact_ids() {
+        use crate::books::{lsfb};
+        let all:Vec<StrategyDef>=lsfb::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=lsfb::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|lstephens_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Lank Stephens block ----
+    // ---- Franklin Paul Jackson block (2026-10-26, lane B) ----
+    #[test]
+    fn fpjackson_review_admits_exact_ids() {
+        use crate::books::{fpjis};
+        let all:Vec<StrategyDef>=fpjis::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=fpjis::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|fpjackson_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Franklin Paul Jackson block ----
+    // ---- Timothy Hayes block (2026-10-26, lane B) ----
+    #[test]
+    fn thayes_review_admits_exact_ids() {
+        use crate::books::{thrdi};
+        let all:Vec<StrategyDef>=thrdi::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=thrdi::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|thayes_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Timothy Hayes block ----
     // ---- Jeremy J. Burns block (2026-10-29, lane K1) ----
     #[test]
     fn jjburns_review_admits_exact_ids() {

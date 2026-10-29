@@ -290,6 +290,14 @@ export const LIB = [
   { id: "jjburns", name: "Jeremy J. Burns", tagline: "TradeCashSystem stock trader · the inside-day breakout runs here", books: [
     { id: "jbid", sourceIds: [], title: "The One Trading Secret That Could Make You Rich: Inside Days", year: 2009, blurb: "Burns · after an inside day, buy one cent over its high or sell one cent under its low the next day; stop at the other side; out at target 1 (the inside day's range) or the close of day 3" }] },
   // ---- end K1 block 2 ----
+  // ---- K1 block 3 (29-30 Oct 2026, overnight lane K1)
+  { id: "lstephens", name: "Lank Stephens", tagline: "Futures day and position trader · the 4 Bar Fact and THE CLINCHER run here", books: [
+    { id: "lsfb", sourceIds: [], title: "Trading the 4 Bar Fact & Calculating THE CLINCHER", year: 2007, blurb: "Stephens · a close beyond the bars 2 and 4 back flips the position at the close (only reversals count); the square root of high x low turning the other way gives tomorrow's one-way trade from the open to the close" }] },
+  { id: "fpjackson", name: "Franklin Paul Jackson", tagline: "Spice Market Institute · the I-S Method's Key MA-1 runs here", books: [
+    { id: "fpjis", sourceIds: [], title: "Studies in Market Action and Speculative Technique: The I-S Method", year: null, blurb: "Jackson · 10-week average plotted three weeks ahead; a weekly stop one-fourth of its square root beyond it gets you out, and the average turning the same way completes the reversal (Pre signals alone as an option)" }] },
+  { id: "thayes", name: "Timothy Hayes", tagline: "Ned Davis Research strategist · the 30-week rate-of-change brackets run here", books: [
+    { id: "thrdi", sourceIds: [], title: "The Research Driven Investor", year: 2001, blurb: "Hayes · buy when the 30-week rate of change rises back above 3% after dipping below, switch to cash when it falls back below 15% after rising above (Fig 4-9); the other figure indicators are held" }] },
+  // ---- end K1 block 3 ----
   // ---- Forman block (29 Oct 2026, lane B)
   { id: "forman", name: "John Forman", tagline: "Currency trader and trading educator · the four Ch.7 test systems and the stochastic 40/60 system run here", books: [
     { id: "jfeot", sourceIds: ["title-25c31f3ca7f1f280"], title: "The Essentials of Trading: From the Basics to Building a Winning Strategy", year: 2006, blurb: "Forman · close crosses the 92-day average to enter and the 50-day to exit; Parabolic SAR 0.02/0.20 stop and reverse; 20-day average entry with SAR 0.09/0.50 exit; SAR entry with 60-day average exit; 5-period stochastic through 40/60" }] },

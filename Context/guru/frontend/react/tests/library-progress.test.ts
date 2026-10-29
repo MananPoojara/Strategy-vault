@@ -33,7 +33,7 @@ it('rejects missing and stale availability snapshots rather than publishing stal
  }
 });
 it('counts explicitly identified people instead of folders or curated profiles',()=>{
- expect(identifiedAuthorCount).toBe(144);expect(authorIdentities.livermore).toContain('Edwin LeFevre');
+ expect(identifiedAuthorCount).toBe(147);expect(authorIdentities.livermore).toContain('Edwin LeFevre');
  expect(identifiedAuthorCount).toBe(new Set(Object.values(authorIdentities).flat()).size);
  expect(authorIdentities.connors).toContain('Cesar Alvarez');expect(authorIdentities.pristine).toContain('Oliver Velez');
  expect(Object.values(authorIdentities).flat()).not.toContain('Pristine Trading');
