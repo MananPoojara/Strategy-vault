@@ -45,6 +45,36 @@ export const authorIdentities: Record<string, readonly string[]> = {
   "downs": [
     "Walter T. Downs"
   ],
+  "goodwin": [
+    "Andrew Goodwin"
+  ],
+  "cfwright": [
+    "Charles F. Wright"
+  ],
+  "acohen": [
+    "A. W. Cohen"
+  ],
+  "sadekar": [
+    "Balkrishna M. Sadekar"
+  ],
+  "gujral": [
+    "Ashwani Gujral"
+  ],
+  "sabatini": [
+    "Alberto Sabatini"
+  ],
+  "krausz": [
+    "Robert Krausz"
+  ],
+  "sheimo": [
+    "Michael D. Sheimo"
+  ],
+  "mcdonald": [
+    "Michael McDonald"
+  ],
+  "melzl": [
+    "Mark Melzl"
+  ],
   "ponsi": [
     "Ed Ponsi"
   ],

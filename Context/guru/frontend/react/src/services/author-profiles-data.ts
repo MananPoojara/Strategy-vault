@@ -405,7 +405,82 @@ export const AUTHOR_PROFILE_DATA = {
    "Trading for Tigers"
   ],
   "sources": [],
-  "confidence": "low" }, "ponsi": {
+  "confidence": "low" }
+ }, "goodwin": {
+  "kind": "person",
+  "mastery": [
+   "S&P 500 futures trading",
+   "Short-term pattern systems"
+  ],
+  "summary": "Andrew Goodwin wrote Trading Secrets of the Inner Circle (1997), a collection of S&P 500 futures rules with their TradeStation code: oscillator systems filtered by breadth and interest rates, an options-expiration rule, daily day-of-week patterns and a short-term reversal system. This profile rests on the book itself.",
+  "known_for": [
+   "Trading Secrets of the Inner Circle"
+  ],
+  "sources": [],
+  "confidence": "low" }, "cfwright": {
+  "kind": "person",
+  "mastery": ["Trading-system design", "TradeStation strategies"],
+  "summary": "Charles F. Wright wrote Trading as a Business (1998), a step-by-step account of designing, testing and trading mechanical strategies with printed TradeStation code for stocks and S&P 500 futures. This profile rests on the book itself.",
+  "known_for": ["Trading as a Business"],
+  "sources": [],
+  "confidence": "low"
+ }, "acohen": {
+  "kind": "person",
+  "mastery": ["Point & figure charting"],
+  "summary": "A. W. Cohen founded Chartcraft and wrote the standard guide to three-point reversal point & figure charts of stocks, with signal formations, trend lines and price counts. This profile rests on the book itself.",
+  "known_for": ["How to Use the Three-Point Reversal Method of Point & Figure Stock Market Trading"],
+  "sources": [],
+  "confidence": "low"
+ }, "sadekar": {
+  "kind": "person",
+  "mastery": ["Ichimoku charts", "Indian stocks"],
+  "summary": "Balkrishna M. Sadekar teaches the Ichimoku system on Indian stocks: its five components, five basic strategies and stricter high-probability versions. This profile rests on the book itself.",
+  "known_for": ["How to Make Money Trading the Ichimoku System"],
+  "sources": [],
+  "confidence": "low"
+ }, "gujral": {
+  "kind": "person",
+  "mastery": ["Chart patterns", "Indian markets", "Moving averages and oscillators"],
+  "summary": "Ashwani Gujral is an Indian market technician whose book covers trend, patterns, moving averages, oscillators and his Railway-Line Theory for Indian stocks. This profile rests on the book itself.",
+  "known_for": ["How to Make Money Trading with Charts"],
+  "sources": [],
+  "confidence": "low"
+ }, "sabatini": {
+  "kind": "person",
+  "mastery": ["Gann swing charts", "Italian stocks"],
+  "summary": "Alberto Sabatini wrote the Trading Toolkit Collection; volume 3 explains W.D. Gann's one-bar swing charts, outside bars and Gann angles on Italian stocks. This profile rests on the book itself.",
+  "known_for": ["Trading Toolkit Collection Vol.3"],
+  "sources": [],
+  "confidence": "low"
+ }, "krausz": {
+  "kind": "person",
+  "mastery": ["Gann swing charts", "Multiple time frames", "T-bond futures"],
+  "summary": "Robert Krausz, interviewed in Jack Schwager's The New Market Wizards, wrote W.D. Gann Treasure Discovered (1998): Gann swing charts, the HiLo Activator and mechanical swing plans tested trade by trade on T-bond futures and five US stocks. This profile rests on the book itself.",
+  "known_for": ["W.D. Gann Treasure Discovered", "Fibonacci Trader"],
+  "sources": [],
+  "confidence": "low"
+ }, "sheimo": {
+  "kind": "person",
+  "mastery": ["Seasonal stock patterns", "Stock selection"],
+  "summary": "Michael D. Sheimo, a Minneapolis stockbroker and registered options principal, wrote Stock Market Rules and The Stock Selector System; his 1992 Stocks & Commodities article tested the Thanksgiving-to-year-end rally on five Dow stocks. This profile rests on the article and the book.",
+  "known_for": ["Stock Market Rules", "Trading The Santa Claus Rally"],
+  "sources": [],
+  "confidence": "low"
+ }, "mcdonald": {
+  "kind": "person",
+  "mastery": ["Moving-average timing", "Market cycles", "Trading ranges"],
+  "summary": "Michael McDonald wrote Predict Market Swings With Technical Analysis (2002): a fair-value and feedback-loop model of the stock market and moving-average timing studies on the S&P 500 (1929-1998 and 1966-1982). This profile rests on the book itself.",
+  "known_for": ["Predict Market Swings With Technical Analysis"],
+  "sources": [],
+  "confidence": "low"
+ }, "melzl": {
+  "kind": "person",
+  "mastery": ["TradeStation EasyLanguage"],
+  "summary": "Mark Melzl compiled The TradeStation Cookbook I and II (GraphFax, 1997): a TradeStation 4.0 how-to manual and a listing of indicator and system code. This profile rests on the books themselves.",
+  "known_for": ["The TradeStation Cookbook"],
+  "sources": [],
+  "confidence": "low"
+ }, "ponsi": {
   "kind": "person",
   "mastery": [
    "Currency trading",

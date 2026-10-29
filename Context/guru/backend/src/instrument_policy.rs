@@ -329,6 +329,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || la_jkofc_reviewed(def) // Jay Kaeppel, Robin Lofton & Brad Zigler (jkofc, lane A) block
         || la_swsp_reviewed(def) // Stan Weinstein (swsp, lane A) block
         || lanec_reviewed(def) // Lane C singles block
+        || lanec2_reviewed(def) // Lane C2 singles block
         || la_newsletters_reviewed(def) // Lane A newsletters block
         || la_vendor1_reviewed(def) // Lane A vendor1 block
         || la_vendor2_reviewed(def) // Lane A vendor2 block
@@ -1451,6 +1452,41 @@ fn lanec_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool,us:Option<b
     (!us).then(||Issue{status:"needs_data",note:format!("Palmquist's rules keep only shares closing above a US-dollar price ($5, $10 or $25) with an average volume of 200,000-300,000 shares. Dollar amounts mean what the book meant only on US prices, so these rules run on US stocks, indices and ETFs only (user rule: dollar-amount rules run on US data with the literal amount). {ticker} is not a US instrument; no result is published.")})
 }
 // ---------------------------------------------------------------- end Lane C singles
+// ---------------------------------------------------------------- Lane C2 singles 2026-10-29 (lane C)
+// Admission only for the module REVIEWED lists (authors/goodwin/admission/goodwin_ref.py (header)); kept in one block to merge.
+pub fn lc2_agtsic_reviewed(def:&StrategyDef)->bool {(def.book=="agtsic" && crate::books::agtsic::reviewed(def.id))}
+pub fn lc3_reviewed(def:&StrategyDef)->bool {use crate::books::{cfwtab,bsichi,ggcharts,awcpf,astk3,krgann,mdssc,mcdpms,tscb2};match def.book {"tscb2"=>tscb2::reviewed(def.id),"mdssc"=>mdssc::reviewed(def.id),"mcdpms"=>mcdpms::reviewed(def.id),"krgann"=>krgann::reviewed(def.id),"cfwtab"=>cfwtab::reviewed(def.id),"bsichi"=>bsichi::reviewed(def.id),"ggcharts"=>ggcharts::reviewed(def.id),"awcpf"=>awcpf::reviewed(def.id),"astk3"=>astk3::reviewed(def.id),_=>false}}
+pub fn lanec2_reviewed(def:&StrategyDef)->bool {lc2_agtsic_reviewed(def) || lc3_reviewed(def)}
+fn lc2_label(def:&StrategyDef)->&'static str {match def.book {
+    "cfwtab"=>"Charles F. Wright tested these TradeStation strategies on US stocks (Disney, Caterpillar, IBM, Coca-Cola) and S&P 500 futures; runs on indices, ETFs and single stocks, US and India, are a declared application, one unit per trade, no costs. Shorts on a cash index are hypothetical.",
+    "bsichi"=>"Balkrishna Sadekar shows these Ichimoku rules on Indian (NSE) stocks; runs on indices, ETFs and other stocks, US and India, are a declared application, one unit per trade, no costs. Shorts on a cash index are hypothetical.",
+    "ggcharts"=>"Ashwani Gujral shows these rules on Indian stocks; runs on indices, ETFs and other stocks, US and India, are a declared application, one unit per trade, no costs. Shorts on a cash index are hypothetical.",
+    "awcpf"=>"A. W. Cohen's point & figure box sizes are dollar amounts for NYSE stocks; this rule runs on US stocks, ETFs and indices only (a declared application for ETFs and indices), one unit per trade, no costs. Shorts on a cash index are hypothetical.",
+    "astk3"=>"Alberto Sabatini shows the swing chart on Italian stocks; runs on indices, ETFs and single stocks, US and India, are a declared application, one unit per trade, no costs.",
+    "krgann"=>"Robert Krausz tested the Basic Gann Swing Plan on 30-year T-bond futures and on five US stocks (IBM, Eli Lilly, Philip Morris, Intel, J.P. Morgan, 1992-1996); runs on indices, ETFs and other stocks, US and India, are a declared application, one unit per trade, no costs. Shorts on a cash index are hypothetical.",
+    "tscb2"=>"The TradeStation Cookbook II prints these systems as code only, with no instrument or results (its examples are S&P futures charts); runs on indices, ETFs and single stocks, US and India, are a declared application, one unit per trade, no costs. Daily Smash YX has a dollar money stop and runs on US instruments only; Average Volume needs volume. Shorts on a cash index are hypothetical.",
+    "mdssc"=>"Michael Sheimo tested the day-after-Thanksgiving to year-end window on five Dow stocks (1989-1991); runs on other US stocks, ETFs and indices are a declared application, one unit per trade, no costs. The window is set by the US Thanksgiving holiday, so it runs on US instruments only.",
+    "mcdpms"=>"Michael McDonald tested these moving-average rules on the S&P 500 index (1929-1998 and 1966-1982) with dividends and T-bill interest while out; runs on other indices, ETFs and single stocks, US and India, are a declared application: price only, flat while out, one unit per trade, no costs.",
+    _=>LC2_AGTSIC_LABEL}}
+const LC2_AGTSIC_LABEL:&str="Andrew Goodwin tested these rules on S&P 500 futures (continuous contract, 1982-1997); runs on indices, ETFs and single stocks, US and India, are a declared application, one unit per trade, no costs. The options-expiration rule runs on US instruments only (US monthly expiration calendar). Shorts on a cash index are hypothetical.";
+fn lanec2_policy(def:&StrategyDef)->Option<Policy> {
+    if !lanec2_reviewed(def) {return None;}
+    let src=match def.book {"cfwtab"=>"Charles F. Wright / Trading as a Business (1998), printed TradeStation code","bsichi"=>"Balkrishna Sadekar / How to Make Money Trading the Ichimoku System, Ch.3 basic strategies","ggcharts"=>"Ashwani Gujral / How to Make Money Trading with Charts, Ch.9-10","awcpf"=>"A. W. Cohen / Three-Point Reversal Method of Point & Figure (1984)","astk3"=>"Alberto Sabatini / Trading Toolkit Collection Vol.3, Gann swing charts","krgann"=>"Robert Krausz / W.D. Gann Treasure Discovered (1998), Basic Gann Swing Plan","tscb2"=>"Mark Melzl (compiler) / The TradeStation Cookbook II (1997), printed TradeStation systems","mdssc"=>"Michael D. Sheimo / Trading The Santa Claus Rally (Stocks & Commodities, Dec 1992)","mcdpms"=>"Michael McDonald / Predict Market Swings With Technical Analysis (2002), Ch.8 moving-average studies",_=>"Andrew Goodwin / Trading Secrets of the Inner Circle (1997), printed TradeStation code"};
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],src);
+    p.preferred_basket=Some(if def.id=="agtsic_expiry" || (matches!(def.book,"awcpf"|"cfwtab"|"mdssc") || def.id=="tscb2_smash") {"us_sp500"} else {"nifty50"});p.market_adaptation=true;Some(p)
+}
+/// us: whether the selected instrument is a US one (None = decide from the ticker).
+fn lanec2_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool,us:Option<bool>)->Option<Issue> {
+    let cohen=lc3_reviewed(def) && def.book=="awcpf";
+    let sheimo=lc3_reviewed(def) && (def.book=="mdssc" || def.id=="tscb2_smash");
+    if !((lc2_agtsic_reviewed(def) && def.id=="agtsic_expiry") || cohen || sheimo) {return None;}
+    let us=us.unwrap_or(!native_stock && !ticker.starts_with("NIFTY"));
+    if sheimo && def.id=="tscb2_smash" {return (!us).then(||Issue{status:"needs_data",note:format!("Daily Smash YX uses a $3000 money stop (dollars per contract / BigPointValue), a US dollar amount, so this rule runs on US stocks, ETFs and indices only. {ticker} is not a US instrument; no result is published.")});}
+    if sheimo {return (!us).then(||Issue{status:"needs_data",note:format!("Sheimo's window starts the day after the US Thanksgiving holiday (fourth Thursday of November), a US exchange closure; Indian markets keep a different holiday calendar, so this rule runs on US stocks, ETFs and indices only. {ticker} is not a US instrument; no result is published.")});}
+    if cohen {return (!us).then(||Issue{status:"needs_data",note:format!("Cohen's point & figure box sizes are dollar amounts (1/2 point under $20, 1 point to $100, 2 points above), so this rule runs on US stocks, ETFs and indices only. {ticker} is not a US instrument; no result is published.")});}
+    (!us).then(||Issue{status:"needs_data",note:format!("Goodwin's rule counts five trading days back from the US monthly options expiration (third Friday). Indian options expire on a different calendar, so this rule runs on US stocks, indices and ETFs only. {ticker} is not a US instrument; no result is published.")})
+}
+// ---------------------------------------------------------------- end Lane C2 singles
 // ---------------------------------------------------------------- Lane A newsletters 2026-10-26 (lane B)
 // Admission only for the module REVIEWED lists (authors/lanea/newsletters/decisions.json); kept in one block to merge.
 pub fn la_newsletters_reviewed(def:&StrategyDef)->bool {(def.book=="mrina" && crate::books::mrina::reviewed_lanea(def.id)) || (def.book=="tsx" && crate::books::tsx::reviewed_lanea(def.id)) || (def.book=="jrfsp" && crate::books::jrfsp::reviewed_lanea(def.id)) || (def.book=="bpqst" && crate::books::bpqst::reviewed_lanea(def.id)) || (def.book=="wmmts" && crate::books::wmmts::reviewed_lanea(def.id))}
@@ -2020,6 +2056,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=la_jkofc_policy(def) {return p;} // Jay Kaeppel, Robin Lofton & Brad Zigler (jkofc, lane A) block
     if let Some(p)=la_swsp_policy(def) {return p;} // Stan Weinstein (swsp, lane A) block
     if let Some(p)=lanec_policy(def) {return p;} // Lane C singles block
+    if let Some(p)=lanec2_policy(def) {return p;} // Lane C2 singles block
     if let Some(p)=la_newsletters_policy(def) {return p;} // Lane A newsletters block
     if let Some(p)=la_vendor1_policy(def) {return p;} // Lane A vendor1 block
     if let Some(p)=la_vendor2_policy(def) {return p;} // Lane A vendor2 block
@@ -2369,6 +2406,7 @@ pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     if let Some(issue)=options_p2_symbol_issue(def,ticker,native_stock){return Some(issue);} // options phase 2
     if let Some(issue)=connors_final_symbol_issue(def,ticker,native_stock,native_stock.then_some(false)){return Some(issue);} // connors-final block
     if let Some(issue)=lanec_symbol_issue(def,ticker,native_stock,native_stock.then_some(false)){return Some(issue);} // Lane C singles block
+    if let Some(issue)=lanec2_symbol_issue(def,ticker,native_stock,native_stock.then_some(false)){return Some(issue);} // Lane C2 singles block
     if vix_india(def) {return vix_india_held(def,ticker,ticker.starts_with("NIFTY")).or_else(||check_selected(p,def.id,ticker,selected));} // VIX India block
     if open_all(def) {return open_all_symbol_issue(def,ticker,native_stock.then_some(false)).or_else(||check_selected(p,def.id,ticker,selected));} // open-all block
     if let Some(issue)=dema_index_symbol_issue(def,ticker,selected){return Some(issue);}
@@ -2406,6 +2444,7 @@ pub fn check_native(def:&StrategyDef,ticker:&str,evidence:&NativeEvidence)->Opti
     if let Some(issue)=options_p2_symbol_issue(def,ticker,true){return Some(issue);} // options phase 2
     if let Some(issue)=connors_final_symbol_issue(def,ticker,true,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // connors-final block
     if let Some(issue)=lanec_symbol_issue(def,ticker,true,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Lane C singles block
+    if let Some(issue)=lanec2_symbol_issue(def,ticker,true,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Lane C2 singles block
     if vix_india(def) {return vix_india_held(def,ticker,evidence.market()==Market::India).or_else(||check_selected(p,def.id,ticker,evidence.asset_type()));} // VIX India block
     if open_all(def) {return open_all_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)).or_else(||check_selected(p,def.id,ticker,evidence.asset_type()));} // open-all block
     if let Some(issue)=dema_index_symbol_issue(def,ticker,evidence.asset_type()){return Some(issue);}
@@ -2693,6 +2732,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if la_jkofc_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LA_JKOFC_LABEL));} // Jay Kaeppel, Robin Lofton & Brad Zigler (jkofc, lane A) block
     if la_swsp_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LA_SWSP_LABEL));} // Stan Weinstein (swsp, lane A) block
     if let Some(l)=lanec_label(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",l));} // Lane C singles block
+    if lanec2_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",lc2_label(def)));} // Lane C2 singles block
     if la_newsletters_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LA_NEWSLETTERS_LABEL));} // Lane A newsletters block
     if la_vendor1_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LA_VENDOR1_LABEL));} // Lane A vendor1 block
     if la_vendor2_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LA_VENDOR2_LABEL));} // Lane A vendor2 block
@@ -3732,6 +3772,52 @@ mod tests {
         }
     }
     // ---- end Lane C singles block ----
+    // ---- Lane C2 singles block (2026-10-29, lane C) ----
+    #[test]
+    fn lanec2_review_admits_exact_ids() {
+        use crate::books::agtsic;
+        let all:Vec<StrategyDef>=agtsic::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=agtsic::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|lanec2_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert!(d.status==crate::connors::Status::Live,"{}",d.id);
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            if d.id=="agtsic_expiry" {
+                for t in ["NIFTY 50","NIFTYBANK"] {assert_eq!(check(d,t,false).map(|i|i.status),Some("needs_data"),"{} {t}",d.id);}
+                assert!(check(d,"RELIANCE",true).is_some(),"{}",d.id);
+            } else {
+                for t in ["NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+                assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            }
+        }
+    }
+    #[test]
+    fn lc3_review_admits_exact_ids() {
+        use crate::books::{cfwtab,bsichi,ggcharts,awcpf,astk3,krgann,mdssc,mcdpms,tscb2};
+        let all:Vec<StrategyDef>=cfwtab::catalogue().into_iter().chain(bsichi::catalogue()).chain(ggcharts::catalogue()).chain(awcpf::catalogue()).chain(astk3::catalogue()).chain(krgann::catalogue()).chain(mdssc::catalogue()).chain(mcdpms::catalogue()).chain(tscb2::catalogue()).collect();
+        let mut want:Vec<&str>=[cfwtab::REVIEWED,bsichi::REVIEWED,ggcharts::REVIEWED,awcpf::REVIEWED,astk3::REVIEWED,krgann::REVIEWED,mdssc::REVIEWED,mcdpms::REVIEWED,tscb2::REVIEWED].concat();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|lanec2_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert!(d.status==crate::connors::Status::Live,"{}",d.id);
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            if !(matches!(d.book,"awcpf"|"mdssc") || d.id=="tscb2_smash") {assert!(check(d,"AAPL",true).is_none(),"{}",d.id);}
+            if matches!(d.book,"awcpf"|"mdssc") || d.id=="tscb2_smash" {
+                for t in ["NIFTY 50","NIFTYBANK"] {assert_eq!(check(d,t,false).map(|i|i.status),Some("needs_data"),"{} {t}",d.id);}
+                assert!(check(d,"RELIANCE",true).is_some(),"{}",d.id);
+            } else {
+                for t in ["NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+                assert!(check(d,"RELIANCE",true).is_none(),"{}",d.id);
+            }
+        }
+        for id in ["cfwtab_rangeleader","astk3_outside","krgann_pro","tscb2_balloon"] {assert!(!all.iter().any(|d|d.id==id && lanec2_reviewed(d)),"{id}");}
+    }
+    // ---- end Lane C2 singles block ----
     // ---- Lane A newsletters held (2026-10-26, lane B) ----
     #[test]
     fn la_newsletters_held_rules_have_plain_card_reasons() {
