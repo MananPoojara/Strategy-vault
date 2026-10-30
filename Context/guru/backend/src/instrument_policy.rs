@@ -362,6 +362,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || t2wb_reviewed(def) // Trade-to-Win systems block
         || mslibb_reviewed(def) // Libanes MetaStock strategies block
         || msaddb_reviewed(def) // MetaStock add-on pack (Equis) block
+        || tk1_reviewed(def) // titles K1 block
         || alfrdb_reviewed(def) // Alfaranda Magnet and Onyx block
         || jcurtb_reviewed(def) // J. Curtis systems block
         || ajmiscb_reviewed(def) // Angus Jackson systems block
@@ -1856,6 +1857,19 @@ fn msaddb_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end MetaStock add-on pack (Equis)
+// ---------------------------------------------------------------- titles K1 2026-10-30 (NIKSAN PS systems, Success System)
+// Admission only for the module REVIEWED lists (authors/niksan/admission/nkms_ref.py, authors/tlsuc/admission/succ_ref.py
+// (headers)); kept in one block to merge.
+pub fn tk1_reviewed(def:&StrategyDef)->bool {(def.book=="nkms" && crate::books::nkms::reviewed(def.id)) || (def.book=="tlsuc" && crate::books::tlsuc::reviewed(def.id))}
+const NKMS_LABEL:&str="Equis MetaStock System Tester sample code (NIKSAN pack) with no per-market test the vault can compare; runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade, fills as stated on the card.";
+const TLSUC_LABEL:&str="The Success System was posted for FTSE 100 futures (one contract); runs on indices, ETFs and US/India stocks are a declared application, not the author's test, and its $3,500 money stop is left out.";
+fn tk1_policy(def:&StrategyDef)->Option<Policy> {
+    if !tk1_reviewed(def) {return None;}
+    let src=if def.book=="nkms" {"NIKSAN MetaStock pack, MS72PRFT.DTA records 16-53 (Equis PS sample systems)"} else {"Success System, anonymous TradeStation-list post (SuccessSystem.doc, items 1-8)"};
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],src);
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end titles K1
 // ---------------------------------------------------------------- Alfaranda Magnet and Onyx 2026-10-26 (lane B)
 // Admission only for the module REVIEWED lists (authors/vendor/laneb/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn alfrdb_reviewed(def:&StrategyDef)->bool {(def.book=="alfrd" && crate::books::alfrd::reviewed(def.id))}
@@ -2378,6 +2392,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=t2wb_policy(def) {return p;} // Trade-to-Win systems block
     if let Some(p)=mslibb_policy(def) {return p;} // Libanes MetaStock strategies block
     if let Some(p)=msaddb_policy(def) {return p;} // MetaStock add-on pack (Equis) block
+    if let Some(p)=tk1_policy(def) {return p;} // titles K1 block
     if let Some(p)=alfrdb_policy(def) {return p;} // Alfaranda Magnet and Onyx block
     if let Some(p)=jcurtb_policy(def) {return p;} // J. Curtis systems block
     if let Some(p)=ajmiscb_policy(def) {return p;} // Angus Jackson systems block
@@ -3082,6 +3097,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if t2wb_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",T2WB_LABEL));} // Trade-to-Win systems block
     if mslibb_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",MSLIBB_LABEL));} // Libanes MetaStock strategies block
     if msaddb_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",MSADDB_LABEL));} // MetaStock add-on pack (Equis) block
+    if tk1_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",if def.book=="nkms" {NKMS_LABEL} else {TLSUC_LABEL}));} // titles K1 block
     if alfrdb_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",ALFRDB_LABEL));} // Alfaranda Magnet and Onyx block
     if jcurtb_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",JCURTB_LABEL));} // J. Curtis systems block
     if ajmiscb_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",AJMISCB_LABEL));} // Angus Jackson systems block
@@ -4304,6 +4320,22 @@ mod tests {
         }
     }
     // ---- end MetaStock add-on pack (Equis) block ----
+    // ---- titles K1 block (2026-10-30) ----
+    #[test]
+    fn tk1_review_admits_exact_ids() {
+        use crate::books::{nkms, tlsuc};
+        let all:Vec<StrategyDef>=nkms::catalogue().into_iter().chain(tlsuc::catalogue()).collect();
+        let mut want:Vec<&str>=nkms::REVIEWED.iter().chain(tlsuc::REVIEWED.iter()).copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|tk1_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end titles K1 block ----
     // ---- Alfaranda Magnet and Onyx block (2026-10-26, lane B) ----
     #[test]
     fn alfrdb_review_admits_exact_ids() {
