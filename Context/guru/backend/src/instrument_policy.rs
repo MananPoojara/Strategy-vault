@@ -322,6 +322,8 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || dpenn_reviewed(def) // David Penn block
         || dbowden_reviewed(def) // David Bowden block
         || csatchwell_reviewed(def) // Chris Satchwell block
+        || rrotella_reviewed(def) // Robert P. Rotella block
+        || bmillard_reviewed(def) // Brian J. Millard block
         || lstephens_reviewed(def) // Lank Stephens block
         || fpjackson_reviewed(def) // Franklin Paul Jackson block
         || thayes_reviewed(def) // Timothy Hayes block
@@ -1378,6 +1380,26 @@ fn csatchwell_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Chris Satchwell
+// ---------------------------------------------------------------- Robert P. Rotella 2026-10-30 (day lane A3)
+// Admission only for the module REVIEWED lists (authors/rrotella/admission/ets_ref.py (header)); kept in one block to merge.
+pub fn rrotella_reviewed(def:&StrategyDef)->bool {(def.book=="rpets" && crate::books::rpets::reviewed(def.id))}
+const RROTELLA_LABEL:&str="Robert Rotella states these pattern rules for futures; runs on indices, ETFs and US/India stocks are a declared application, not the author's test.";
+fn rrotella_policy(def:&StrategyDef)->Option<Policy> {
+    if !rrotella_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Robert P. Rotella, The Elements of Successful Trading (1992), p.270 and p.274");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Robert P. Rotella
+// ---------------------------------------------------------------- Brian J. Millard 2026-10-30 (day lane A3)
+// Admission only for the module REVIEWED lists (authors/bmillard/admission/wsm_ref.py (header)); kept in one block to merge.
+pub fn bmillard_reviewed(def:&StrategyDef)->bool {(def.book=="bmwsm" && crate::books::bmwsm::reviewed(def.id))}
+const BMILLARD_LABEL:&str="Brian Millard buys UK shares when the dominant trend of both the share and the FTSE 100 is rising; here the trend estimate is taken on the traded series itself (an index or ETF is its own market; on single stocks the S&P 500 / NIFTY 50 condition is not applied), a declared application, not the author's test.";
+fn bmillard_policy(def:&StrategyDef)->Option<Policy> {
+    if !bmillard_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Brian J. Millard, Winning on the Stock Market (2nd ed., 1998), p.57-60, 103-106, 139-158");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Brian J. Millard
 // ---------------------------------------------------------------- Lank Stephens 2026-10-29 (lane K1)
 // Admission only for the module REVIEWED lists (authors/lstephens/admission/fb_ref.py (header)); kept in one block to merge.
 pub fn lstephens_reviewed(def:&StrategyDef)->bool {(def.book=="lsfb" && crate::books::lsfb::reviewed(def.id))}
@@ -2316,6 +2338,8 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=dpenn_policy(def) {return p;} // David Penn block
     if let Some(p)=dbowden_policy(def) {return p;} // David Bowden block
     if let Some(p)=csatchwell_policy(def) {return p;} // Chris Satchwell block
+    if let Some(p)=rrotella_policy(def) {return p;} // Robert P. Rotella block
+    if let Some(p)=bmillard_policy(def) {return p;} // Brian J. Millard block
     if let Some(p)=lstephens_policy(def) {return p;} // Lank Stephens block
     if let Some(p)=fpjackson_policy(def) {return p;} // Franklin Paul Jackson block
     if let Some(p)=thayes_policy(def) {return p;} // Timothy Hayes block
@@ -3018,6 +3042,8 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if dpenn_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",DPENN_LABEL));} // David Penn block
     if dbowden_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",DBOWDEN_LABEL));} // David Bowden block
     if csatchwell_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",CSATCHWELL_LABEL));} // Chris Satchwell block
+    if rrotella_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",RROTELLA_LABEL));} // Robert P. Rotella block
+    if bmillard_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BMILLARD_LABEL));} // Brian J. Millard block
     if lstephens_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LSTEPHENS_LABEL));} // Lank Stephens block
     if fpjackson_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",FPJACKSON_LABEL));} // Franklin Paul Jackson block
     if thayes_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",THAYES_LABEL));} // Timothy Hayes block
@@ -3837,6 +3863,38 @@ mod tests {
         }
     }
     // ---- end Chris Satchwell block ----
+    // ---- Robert P. Rotella block 2026-10-30 (day lane A3) ----
+    #[test]
+    fn rrotella_review_admits_exact_ids() {
+        use crate::books::{rpets};
+        let all:Vec<StrategyDef>=rpets::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=rpets::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|rrotella_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Robert P. Rotella block ----
+    // ---- Brian J. Millard block 2026-10-30 (day lane A3) ----
+    #[test]
+    fn bmillard_review_admits_exact_ids() {
+        use crate::books::{bmwsm};
+        let all:Vec<StrategyDef>=bmwsm::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=bmwsm::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|bmillard_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Brian J. Millard block ----
     // ---- Lank Stephens block (2026-10-26, lane B) ----
     #[test]
     fn lstephens_review_admits_exact_ids() {
