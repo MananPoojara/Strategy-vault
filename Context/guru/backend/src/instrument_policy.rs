@@ -326,6 +326,8 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || rlarsen_reviewed(def) // Roy Larsen (Trade Equity PS Fractal sample) block
         || nasdaqprofits_reviewed(def) // NasdaqProfits.com (Nasdaq Profits ebook) block
         || connorscc07_reviewed(def) // Larry Connors (Chairman's Club Dec 2007) block
+        || niksan3_reviewed(def) // NIKSAN MetaStock pack (PS RSI Trailing Exit) block
+        || adaptrade_reviewed(def) // Adaptrade Builder bonus strategies block
         || dgagne_reviewed(def) // Dave Gagné block
         || dpenn_reviewed(def) // David Penn block
         || dbowden_reviewed(def) // David Bowden block
@@ -1423,6 +1425,26 @@ fn connorscc07_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end Larry Connors (Chairman's Club Dec 2007)
+// ---------------------------------------------------------------- Adaptrade Builder bonus strategies 2026-10-30 (titles lane K4)
+// Admission only for the module REVIEWED lists (authors/titles-1030/K4w/k4_ref.py (header)); kept in one block to merge.
+pub fn adaptrade_reviewed(def:&StrategyDef)->bool {(def.book=="adbld" && crate::books::adbld::reviewed(def.id))}
+const ADAPTRADE_LABEL:&str="Adaptrade Builder fitted each system to one market (Apple, Amazon, E-mini S&P futures); other stocks, ETFs, indices and India are a declared application, and the cash index or ETF stands in for the E-mini.";
+fn adaptrade_policy(def:&StrategyDef)->Option<Policy> {
+    if !adaptrade_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Adaptrade Builder bonus strategies, adaptrade systems.doc; results Builder-BonusStrategies.pdf PDF p.6, 9, 10");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Adaptrade Builder bonus strategies
+// ---------------------------------------------------------------- NIKSAN MetaStock pack (PS RSI Trailing Exit) 2026-10-30 (titles lane K4)
+// Admission only for the module REVIEWED lists (authors/titles-1030/K4w/k4_ref.py (header)); kept in one block to merge.
+pub fn niksan3_reviewed(def:&StrategyDef)->bool {(def.book=="nkms3" && crate::books::nkms3::reviewed(def.id))}
+const NIKSAN3_LABEL:&str="Equis's PS sample record names no market; runs on indices, ETFs and single stocks (US and India) are a declared application, not the author's test.";
+fn niksan3_policy(def:&StrategyDef)->Option<Policy> {
+    if !niksan3_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"NIKSAN MetaStock pack, MS72PRFT.DTA record 81; MetaStock 7.2 manual, The System Editor Dialog");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end NIKSAN MetaStock pack (PS RSI Trailing Exit)
 // ---------------------------------------------------------------- Dave Gagné 2026-10-30 (day lane A1)
 // Admission only for the module REVIEWED lists (authors/gagne/admission/spring_ref.py (header)); kept in one block to merge.
 pub fn dgagne_reviewed(def:&StrategyDef)->bool {(def.book=="dgtmp" && crate::books::dgtmp::reviewed(def.id))}
@@ -2444,6 +2466,8 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=rlarsen_policy(def) {return p;} // Roy Larsen (Trade Equity PS Fractal sample) block
     if let Some(p)=nasdaqprofits_policy(def) {return p;} // NasdaqProfits.com (Nasdaq Profits ebook) block
     if let Some(p)=connorscc07_policy(def) {return p;} // Larry Connors (Chairman's Club Dec 2007) block
+    if let Some(p)=niksan3_policy(def) {return p;} // NIKSAN MetaStock pack (PS RSI Trailing Exit) block
+    if let Some(p)=adaptrade_policy(def) {return p;} // Adaptrade Builder bonus strategies block
     if let Some(p)=dgagne_policy(def) {return p;} // Dave Gagné block
     if let Some(p)=dpenn_policy(def) {return p;} // David Penn block
     if let Some(p)=dbowden_policy(def) {return p;} // David Bowden block
@@ -3157,6 +3181,8 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if rlarsen_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",RLARSEN_LABEL));} // Roy Larsen (Trade Equity PS Fractal sample) block
     if nasdaqprofits_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",NASDAQPROFITS_LABEL));} // NasdaqProfits.com (Nasdaq Profits ebook) block
     if connorscc07_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",CONNORSCC07_LABEL));} // Larry Connors (Chairman's Club Dec 2007) block
+    if niksan3_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",NIKSAN3_LABEL));} // NIKSAN MetaStock pack (PS RSI Trailing Exit) block
+    if adaptrade_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",ADAPTRADE_LABEL));} // Adaptrade Builder bonus strategies block
     if dgagne_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",DGAGNE_LABEL));} // Dave Gagné block
     if dpenn_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",DPENN_LABEL));} // David Penn block
     if dbowden_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",DBOWDEN_LABEL));} // David Bowden block
@@ -3932,6 +3958,13 @@ mod tests {
         let all:Vec<StrategyDef>=jcsis::catalogue().into_iter().collect();
         let mut want:Vec<&str>=jcsis::REVIEWED.iter().copied().collect();
         let mut admitted:Vec<&str>=all.iter().filter(|d|jlcava_reviewed(d)).map(|d|d.id).collect();
+    // ---- Adaptrade Builder bonus strategies block (2026-10-30, titles lane K4) ----
+    #[test]
+    fn adaptrade_review_admits_exact_ids() {
+        use crate::books::{adbld};
+        let all:Vec<StrategyDef>=adbld::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=adbld::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|adaptrade_reviewed(d)).map(|d|d.id).collect();
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
@@ -3956,6 +3989,14 @@ mod tests {
         let all:Vec<StrategyDef>=rlpsf::catalogue().into_iter().collect();
         let mut want:Vec<&str>=rlpsf::REVIEWED.iter().copied().collect();
         let mut admitted:Vec<&str>=all.iter().filter(|d|rlarsen_reviewed(d)).map(|d|d.id).collect();
+    // ---- end Adaptrade Builder bonus strategies block ----
+    // ---- NIKSAN MetaStock pack (PS RSI Trailing Exit) block (2026-10-30, titles lane K4) ----
+    #[test]
+    fn niksan3_review_admits_exact_ids() {
+        use crate::books::{nkms3};
+        let all:Vec<StrategyDef>=nkms3::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=nkms3::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|niksan3_reviewed(d)).map(|d|d.id).collect();
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
@@ -4014,6 +4055,7 @@ mod tests {
     }
     // ---- end NIKSAN MetaStock pack part 2 (Equis PS systems) block ----
     // ---- end Larry Connors (Chairman's Club Dec 2007) block ----
+    // ---- end NIKSAN MetaStock pack (PS RSI Trailing Exit) block ----
     // ---- Dave Gagné block (2026-10-26, lane B) ----
     #[test]
     fn dgagne_review_admits_exact_ids() {
