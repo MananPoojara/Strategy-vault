@@ -12,7 +12,9 @@ const STAND_R = 88, STAND_H = 5;
 const READ = 2.4, DRAW = 2.6, HOLD = 0.8, TURN = 1.4, CYCLE = READ + DRAW + HOLD + TURN;
 
 const disc = { x: -STAND_R, y: -STAND_R, w: 2 * STAND_R, d: 2 * STAND_R, r: STAND_R };
-const P: Projection = k.fitProjection([...k.boxCorners(disc, -STAND_H - 3, 0), [0, 0, ZP + W * 0.9]], WIDTH, HEIGHT, { pad: 10, azimuth: 62, elevation: 32 });
+// Fit to the round stand itself (its square bounding box pushed the drawing off-centre), plus the turning page's top and free edge.
+const rim = k.circleRing(0, 0, STAND_R, 96);
+const P: Projection = k.fitProjection([...rim.map(([x, y]): Point3 => [x, y, 0]), ...rim.map(([x, y]): Point3 => [x, y, -STAND_H - 3]), [0, Y0, ZP + W], [0, Y1, ZP + W]], WIDTH, HEIGHT, { pad: 6, azimuth: 62, elevation: 32 });
 const at = (p: Point3) => k.iso(p, P);
 
 function staticSvg(): string {
