@@ -1,6 +1,12 @@
 // Explicit people in curated credits and reviewed source bylines. Unresolved credits are excluded.
 // Reviewed minimum, not an exhaustive census. Van K. Tharp and Van Tharp are the same person.
 export const authorIdentities: Record<string, readonly string[]> = {
+  "rlarsen": [
+    "Roy Larsen"
+  ],
+  "jlcava": [
+    "José Luis Cava"
+  ],
   "connors": [
     "Blake Hayward",
     "Cesar Alvarez",

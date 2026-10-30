@@ -1,5 +1,21 @@
 // Generated from claude-continuation-20261020/author-profiles/profiles.json (researched 22 Oct 2026; sources cited per author).
 export const AUTHOR_PROFILE_DATA = {
+ "rlarsen": {
+  "kind": "person",
+  "mastery": ["MetaStock programming"],
+  "summary": "Roy Larsen wrote Trade Equity, a MetaStock add-on for portfolio equity testing; its user guide prints the PS Fractal sample entry and exit code. This profile rests on that guide alone.",
+  "known_for": ["Trade Equity for MetaStock"],
+  "sources": [],
+  "confidence": "low"
+ },
+ "jlcava": {
+  "kind": "person",
+  "mastery": ["Technical analysis", "Spanish stock market"],
+  "summary": "José Luis Cava wrote Sistemas de Especulación en Bolsa (2001), a Spanish book on trading systems. This profile rests on the book itself.",
+  "known_for": ["Sistemas de Especulación en Bolsa"],
+  "sources": [],
+  "confidence": "low"
+ },
  "appel": {
   "kind": "person",
   "mastery": [

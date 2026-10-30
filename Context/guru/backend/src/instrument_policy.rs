@@ -3951,20 +3951,6 @@ mod tests {
         let all:Vec<StrategyDef>=hcta12::catalogue().into_iter().collect();
         let mut want:Vec<&str>=hcta12::REVIEWED.iter().copied().collect();
         let mut admitted:Vec<&str>=all.iter().filter(|d|hirschperson12_reviewed(d)).map(|d|d.id).collect();
-    // ---- José Luis Cava (Sistemas de Especulación en Bolsa) block (2026-10-30, titles lane K3) ----
-    #[test]
-    fn jlcava_review_admits_exact_ids() {
-        use crate::books::{jcsis};
-        let all:Vec<StrategyDef>=jcsis::catalogue().into_iter().collect();
-        let mut want:Vec<&str>=jcsis::REVIEWED.iter().copied().collect();
-        let mut admitted:Vec<&str>=all.iter().filter(|d|jlcava_reviewed(d)).map(|d|d.id).collect();
-    // ---- Adaptrade Builder bonus strategies block (2026-10-30, titles lane K4) ----
-    #[test]
-    fn adaptrade_review_admits_exact_ids() {
-        use crate::books::{adbld};
-        let all:Vec<StrategyDef>=adbld::catalogue().into_iter().collect();
-        let mut want:Vec<&str>=adbld::REVIEWED.iter().copied().collect();
-        let mut admitted:Vec<&str>=all.iter().filter(|d|adaptrade_reviewed(d)).map(|d|d.id).collect();
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
@@ -3981,22 +3967,6 @@ mod tests {
         let all:Vec<StrategyDef>=hsta25::catalogue().into_iter().collect();
         let mut want:Vec<&str>=hsta25::REVIEWED.iter().copied().collect();
         let mut admitted:Vec<&str>=all.iter().filter(|d|jhirsch25_reviewed(d)).map(|d|d.id).collect();
-    // ---- end José Luis Cava (Sistemas de Especulación en Bolsa) block ----
-    // ---- Roy Larsen (Trade Equity PS Fractal sample) block (2026-10-30, titles lane K3) ----
-    #[test]
-    fn rlarsen_review_admits_exact_ids() {
-        use crate::books::{rlpsf};
-        let all:Vec<StrategyDef>=rlpsf::catalogue().into_iter().collect();
-        let mut want:Vec<&str>=rlpsf::REVIEWED.iter().copied().collect();
-        let mut admitted:Vec<&str>=all.iter().filter(|d|rlarsen_reviewed(d)).map(|d|d.id).collect();
-    // ---- end Adaptrade Builder bonus strategies block ----
-    // ---- NIKSAN MetaStock pack (PS RSI Trailing Exit) block (2026-10-30, titles lane K4) ----
-    #[test]
-    fn niksan3_review_admits_exact_ids() {
-        use crate::books::{nkms3};
-        let all:Vec<StrategyDef>=nkms3::catalogue().into_iter().collect();
-        let mut want:Vec<&str>=nkms3::REVIEWED.iter().copied().collect();
-        let mut admitted:Vec<&str>=all.iter().filter(|d|niksan3_reviewed(d)).map(|d|d.id).collect();
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
@@ -4013,14 +3983,6 @@ mod tests {
         let all:Vec<StrategyDef>=nfce5::catalogue().into_iter().collect();
         let mut want:Vec<&str>=nfce5::REVIEWED.iter().copied().collect();
         let mut admitted:Vec<&str>=all.iter().filter(|d|nfreeburg2_reviewed(d)).map(|d|d.id).collect();
-    // ---- end Roy Larsen (Trade Equity PS Fractal sample) block ----
-    // ---- NasdaqProfits.com (Nasdaq Profits ebook) block (2026-10-30, titles lane K3) ----
-    #[test]
-    fn nasdaqprofits_review_admits_exact_ids() {
-        use crate::books::{nqpcal};
-        let all:Vec<StrategyDef>=nqpcal::catalogue().into_iter().collect();
-        let mut want:Vec<&str>=nqpcal::REVIEWED.iter().copied().collect();
-        let mut admitted:Vec<&str>=all.iter().filter(|d|nasdaqprofits_reviewed(d)).map(|d|d.id).collect();
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
@@ -4037,6 +3999,62 @@ mod tests {
         let all:Vec<StrategyDef>=nkms2::catalogue().into_iter().collect();
         let mut want:Vec<&str>=nkms2::REVIEWED.iter().copied().collect();
         let mut admitted:Vec<&str>=all.iter().filter(|d|niksan2_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end NIKSAN MetaStock pack part 2 (Equis PS systems) block ----
+    // ---- José Luis Cava (Sistemas de Especulación en Bolsa) block (2026-10-30, titles lane K3) ----
+    #[test]
+    fn jlcava_review_admits_exact_ids() {
+        use crate::books::{jcsis};
+        let all:Vec<StrategyDef>=jcsis::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=jcsis::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|jlcava_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end José Luis Cava (Sistemas de Especulación en Bolsa) block ----
+    // ---- Roy Larsen (Trade Equity PS Fractal sample) block (2026-10-30, titles lane K3) ----
+    #[test]
+    fn rlarsen_review_admits_exact_ids() {
+        use crate::books::{rlpsf};
+        let all:Vec<StrategyDef>=rlpsf::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=rlpsf::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|rlarsen_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Roy Larsen (Trade Equity PS Fractal sample) block ----
+    // ---- NasdaqProfits.com (Nasdaq Profits ebook) block (2026-10-30, titles lane K3) ----
+    #[test]
+    fn nasdaqprofits_review_admits_exact_ids() {
+        use crate::books::{nqpcal};
+        let all:Vec<StrategyDef>=nqpcal::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=nqpcal::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|nasdaqprofits_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
     // ---- end NasdaqProfits.com (Nasdaq Profits ebook) block ----
     // ---- Larry Connors (Chairman's Club Dec 2007) block (2026-10-30, titles lane K3) ----
     #[test]
@@ -4053,8 +4071,38 @@ mod tests {
             assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
         }
     }
-    // ---- end NIKSAN MetaStock pack part 2 (Equis PS systems) block ----
     // ---- end Larry Connors (Chairman's Club Dec 2007) block ----
+    // ---- Adaptrade Builder bonus strategies block (2026-10-30, titles lane K4) ----
+    #[test]
+    fn adaptrade_review_admits_exact_ids() {
+        use crate::books::{adbld};
+        let all:Vec<StrategyDef>=adbld::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=adbld::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|adaptrade_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Adaptrade Builder bonus strategies block ----
+    // ---- NIKSAN MetaStock pack (PS RSI Trailing Exit) block (2026-10-30, titles lane K4) ----
+    #[test]
+    fn niksan3_review_admits_exact_ids() {
+        use crate::books::{nkms3};
+        let all:Vec<StrategyDef>=nkms3::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=nkms3::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|niksan3_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
     // ---- end NIKSAN MetaStock pack (PS RSI Trailing Exit) block ----
     // ---- Dave Gagné block (2026-10-26, lane B) ----
     #[test]
