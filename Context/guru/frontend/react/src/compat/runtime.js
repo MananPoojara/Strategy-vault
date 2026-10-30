@@ -1269,8 +1269,14 @@ async function unavailableForSelectedBook(){
   const query=S.q.trim().toLowerCase(),matching=defs.filter(v=>(!query||`${v.name} ${v.family_name} ${v.variant||''} ${v.group} ${v.dir} ${BOOK[v.book]?.title||''} ${GURU[v.guru]?.name||''} ${(v.rules||[]).join(' ')}`.toLowerCase().includes(query))&&(!S.style||v.style===S.style)&&(!S.dir||v.dir===S.dir)&&(!S.family||v.family===S.family));
   return unavailableBookMethods(matching,[...merged.values()]);
 }
+// One page of a ranked list. Ranking and filters have already run over every row; only the drawing is limited.
+function listPage(rows) {
+  const pages = Math.max(1, Math.ceil(rows.length / 24)), page = Math.max(1, Math.min(pages, +S.list_page || 1)), start = (page - 1) * 24;
+  return { rows: rows.slice(start, start + 24), start, page, last: page === pages, total: rows.length };
+}
+const listTotal = (p, what, extra = '') => `<p class="rnote" data-list-total><b>${p.total} ${what}</b>${p.total ? ` · showing ${p.start + 1}–${p.start + p.rows.length}` : ''}${extra}</p>`;
+const listPager = (p, what) => libraryPagination(p.total, p.page, 'list_page', what);
 function viewStrategies(rs, perVariant, missing = []) {
-  const missingGrid=missing.length?`<div class="grid unavailable-method-grid">${missing.map(unavailableBookCard).join('')}</div>`:'';
   // strategies = one entry per family (best variant by the current sort); variants = every rule set
   let list = rs;
   if (!perVariant) { const seen = new Map(); for (const r of rs) { const k = r.v.family; if (!seen.has(k)) seen.set(k, { ...r, all: [] }); seen.get(k).all.push(r); } list = [...seen.values()]; }
@@ -1278,35 +1284,39 @@ function viewStrategies(rs, perVariant, missing = []) {
   const title = r => esc(familyDisplayName(r.v)) + gateBadge(r.v);
   const sub = r => perVariant && r.v.variant ? `<b style="font-weight:600">${esc(r.v.variant)}</b> · ` : '';
   if (S.tab === 'awaiting') return S.book&&missing.length?`<div class="grid">${missing.map(unavailableBookCard).join('')}</div>`:awaiting(rs);
+  const what = perVariant ? 'rule sets' : 'strategies', shown = listPage(list), first = shown.start;
+  const missingGrid = missing.length && shown.last ? `<div class="grid unavailable-method-grid">${missing.map(unavailableBookCard).join('')}</div>` : '';
+  const counted = listTotal(shown, what, missing.length ? ` · ${missing.length} unavailable listed ${shown.last ? 'below' : 'on the last page'}` : ''), pager = listPager(shown, what);
   if (S.view === 'list') {
     const M = TABS[S.tab].metric, ruleLine = v => { const e = (v.rules || []).find(x => x.startsWith('E|')), x = (v.rules || []).find(x => x.startsWith('X|')); return [e && 'Entry: ' + e.slice(2), x && 'Exit: ' + x.slice(2)].filter(Boolean).map(esc).join(' · '); };
-    return `<div class="list">${list.map((r, i) => { const vd = verdictOf(r.s); return `<div class="lr"><span class="ln">${i + 1}</span><div class="sp">${spark(r, 110, 40)}</div>
+    return `${counted}<div class="list">${shown.rows.map((r, i) => { const vd = verdictOf(r.s); return `<div class="lr"><span class="ln">${first + i + 1}</span><div class="sp">${spark(r, 110, 40)}</div>
       <div class="lt"><b>${title(r)}</b><small>${sub(r)}${byline(r.v)}${S.tk === 'ALL' ? ' · ' + esc(LABEL[r.tk]) : ''}</small><span class="rl">${ruleLine(r.v)}</span>
         <span class="ltags"><span class="tag">⏱ ${HOLD[holdOf(r.s)]}</span><span class="tag">${esc(r.v.style)}</span><span class="tag">${r.v.dir}</span>${!perVariant && nVar(r) > 1 ? `<span class="tag link" data-fam="${esc(r.v.family)}">${nVar(r)} variants</span>` : ''}</span></div>
       <div class="lk"><span>${esc(M.label)}<b class="p">${M.fmt(M.get(r))}</b></span><span>CAGR<b class="${cls(r.s.cagr)}">${pct(r.s.cagr, 1, true)}</b></span><span>Max DD<b class="neg">${pct(r.s.max_dd, 1)}</b></span><span>Trades<b>${fx(r.s.trades, 0)}</b></span></div>
-      <div class="la"><span class="stamp" style="color:${vd.c}">${vd.t}</span><a class="go" href="${appLink(r)}">Full backtest</a></div></div>`; }).join('')}</div>${missingGrid}`;
+      <div class="la"><span class="stamp" style="color:${vd.c}">${vd.t}</span><a class="go" href="${appLink(r)}">Full backtest</a></div></div>`; }).join('')}</div>${pager}${missingGrid}`;
   }
   if (S.view === 'table') {
     const M = TABS[S.tab].metric, th = (k, t, n) => `<th class="${n ? 'n' : ''} ${S.sort === k ? 'on' : ''}" data-sort="${k}">${t}</th>`;
-    return `<div class="tblwrap"><table class="tbl"><thead><tr><th class="nosort">#</th>${th('name', 'Strategy')}<th class="nosort">Style</th>${S.tk === 'ALL' ? '<th class="nosort">Index</th>' : ''}<th class="nosort">Hold</th><th class="nosort">Equity</th>${th('primary', esc(M.label), 1)}${S.tab === 'working' ? `<th class="n nosort">Before ${PUB}</th>` : S.tab === 'trending' ? '<th class="n nosort">Sharpe (full)</th>' : ''}${th('cagr', 'CAGR', 1)}${th('maxdd', 'Max DD', 1)}${th('win', 'Win', 1)}${th('trades', 'Trades', 1)}${th('t', 't', 1)}<th class="nosort"></th></tr></thead><tbody>
-      ${list.map((r, i) => `<tr><td class="rk">${i + 1}</td><td class="nm"><b>${title(r)}</b><span>${sub(r)}${byline(r.v)}${!perVariant && nVar(r) > 1 ? ` · <a href="#" data-fam="${esc(r.v.family)}">${nVar(r)} variants</a>` : ''}</span></td><td>${esc(r.v.style)}<br><span class="muted">${r.v.dir}</span></td>${S.tk === 'ALL' ? `<td>${esc(LABEL[r.tk])}</td>` : ''}<td>${HOLD[holdOf(r.s)]}</td><td style="width:150px">${spark(r, 150, 34)}</td>
+    return `${counted}<div class="tblwrap"><table class="tbl"><thead><tr><th class="nosort">#</th>${th('name', 'Strategy')}<th class="nosort">Style</th>${S.tk === 'ALL' ? '<th class="nosort">Index</th>' : ''}<th class="nosort">Hold</th><th class="nosort">Equity</th>${th('primary', esc(M.label), 1)}${S.tab === 'working' ? `<th class="n nosort">Before ${PUB}</th>` : S.tab === 'trending' ? '<th class="n nosort">Sharpe (full)</th>' : ''}${th('cagr', 'CAGR', 1)}${th('maxdd', 'Max DD', 1)}${th('win', 'Win', 1)}${th('trades', 'Trades', 1)}${th('t', 't', 1)}<th class="nosort"></th></tr></thead><tbody>
+      ${shown.rows.map((r, i) => `<tr><td class="rk">${first + i + 1}</td><td class="nm"><b>${title(r)}</b><span>${sub(r)}${byline(r.v)}${!perVariant && nVar(r) > 1 ? ` · <a href="#" data-fam="${esc(r.v.family)}">${nVar(r)} variants</a>` : ''}</span></td><td>${esc(r.v.style)}<br><span class="muted">${r.v.dir}</span></td>${S.tk === 'ALL' ? `<td>${esc(LABEL[r.tk])}</td>` : ''}<td>${HOLD[holdOf(r.s)]}</td><td style="width:150px">${spark(r, 150, 34)}</td>
         <td class="n p">${M.fmt(M.get(r))}</td>${S.tab === 'working' || S.tab === 'trending' ? `<td class="n">${fx(r.x?.sharpe)}</td>` : ''}<td class="n ${cls(r.s.cagr)}">${pct(r.s.cagr, 1, true)}</td><td class="n neg">${pct(r.s.max_dd, 1)}</td><td class="n">${pct(r.s.win_rate, 0)}</td><td class="n">${fx(r.s.trades, 0)}</td><td class="n">${fx(r.s.t_stat)}</td><td><a class="go" href="${appLink(r)}">Backtest</a></td></tr>`).join('')}
-      </tbody></table></div>${missingGrid}`;
+      </tbody></table></div>${pager}${missingGrid}`;
   }
-  return `<div class="grid">${list.map((r, i) => { const vd = verdictOf(r.s); return `<article class="card">
-      <div class="rank"><span>#${i + 1}${S.tk === 'ALL' ? ' · ' + esc(LABEL[r.tk]) : ''}</span><span class="stamp" style="color:${vd.c}">${vd.t}</span></div>
+  return `${counted}<div class="grid">${shown.rows.map((r, i) => { const vd = verdictOf(r.s); return `<article class="card">
+      <div class="rank"><span>#${first + i + 1}${S.tk === 'ALL' ? ' · ' + esc(LABEL[r.tk]) : ''}</span><span class="stamp" style="color:${vd.c}">${vd.t}</span></div>
       <h3>${title(r)}</h3><div class="by">${sub(r)}${byline(r.v)}</div>
       ${spark(r)}${kpiTriplet(r)}${r.auto ? `<p class="rnote" data-auto-start>${esc(r.auto)}</p>` : ''}${r.autoEnd ? `<p class="rnote" data-auto-end>${esc(r.autoEnd)}</p>` : ''}${r.ruin ? `<p class="rnote gate ruin" data-ruin><b>${esc(r.ruin)}</b></p>` : ''}
       <div class="tags"><span class="tag">⏱ ${HOLD[holdOf(r.s)]}</span><span class="tag">${esc(r.v.style)}</span><span class="tag">${r.v.dir}</span>${!perVariant && nVar(r) > 1 ? `<span class="tag link" data-fam="${esc(r.v.family)}">${nVar(r)} variants</span>` : ''}${!perVariant && S.tk === 'ALL' && nIdx(r) > 1 ? `<span class="tag">best of ${nIdx(r)} indices</span>` : ''}</div>
       ${rulesList(r.v)}
       <div class="btns"><a class="btn solid" href="${appLink(r)}">Full backtest</a><button class="btn" data-book="${r.v.book}">Book</button><button class="btn" data-guru="${r.v.guru}">Guru</button></div>
-    </article>`; }).join('')}${missing.map(unavailableBookCard).join('')}</div>`;
+    </article>`; }).join('')}${shown.last ? missing.map(unavailableBookCard).join('') : ''}</div>${pager}`;
 }
 function awaiting(rs) {
   const reasons = r => sourceBlockers(r.v) || r.issues.map(issue => `<p><b>${esc(LABEL[issue.tk])}: ${esc(heldLabel(issue))}</b><br>${esc(issue.note)}</p>`).join('');
   const link = r => `<a href="${stratLink(r.v.id,r.tk,r.region)}">${esc(familyDisplayName(r.v))}</a>`;
-  if (S.view === 'table' || S.view === 'list') return `<div class="tblwrap"><table class="tbl"><thead><tr><th class="nosort">#</th><th class="nosort">Strategy / source method</th><th class="nosort">Style</th><th class="nosort">Why results are withheld</th></tr></thead><tbody>${rs.map((r,i)=>`<tr><td class="rk">${i+1}</td><td class="nm"><b>${link(r)}</b><span>${r.v.variant?esc(r.v.variant)+' · ':''}${byline(r.v)}</span></td><td>${esc(r.v.style)}</td><td>${reasons(r)}</td></tr>`).join('')}</tbody></table></div>`;
-  return `<div class="grid">${rs.map((r,i)=>`<article class="card"><div class="rank"><span>#${i+1}</span><span class="stamp" style="color:#8a6a2f">${r.v.guru==='ross'?'DATA MISSING · RULES UNRESOLVED':'BACKTEST UNAVAILABLE'}</span></div><h3>${link(r)}</h3><div class="by">${r.v.variant?esc(r.v.variant)+' · ':''}${byline(r.v)}</div><div class="unavailable-reasons">${reasons(r)}</div><div class="tags"><span class="tag">${esc(r.v.style)}</span><span class="tag">${r.v.dir}</span></div>${rulesList(r.v)}<a class="btn" href="${stratLink(r.v.id,r.tk)}">View rules and data requirements</a></article>`).join('')}</div>`;
+  const shown = listPage(rs), first = shown.start, counted = listTotal(shown, 'unavailable'), pager = listPager(shown, 'unavailable');
+  if (S.view === 'table' || S.view === 'list') return `${counted}<div class="tblwrap"><table class="tbl"><thead><tr><th class="nosort">#</th><th class="nosort">Strategy / source method</th><th class="nosort">Style</th><th class="nosort">Why results are withheld</th></tr></thead><tbody>${shown.rows.map((r,i)=>`<tr><td class="rk">${first+i+1}</td><td class="nm"><b>${link(r)}</b><span>${r.v.variant?esc(r.v.variant)+' · ':''}${byline(r.v)}</span></td><td>${esc(r.v.style)}</td><td>${reasons(r)}</td></tr>`).join('')}</tbody></table></div>${pager}`;
+  return `${counted}<div class="grid">${shown.rows.map((r,i)=>`<article class="card"><div class="rank"><span>#${first+i+1}</span><span class="stamp" style="color:#8a6a2f">${r.v.guru==='ross'?'DATA MISSING · RULES UNRESOLVED':'BACKTEST UNAVAILABLE'}</span></div><h3>${link(r)}</h3><div class="by">${r.v.variant?esc(r.v.variant)+' · ':''}${byline(r.v)}</div><div class="unavailable-reasons">${reasons(r)}</div><div class="tags"><span class="tag">${esc(r.v.style)}</span><span class="tag">${r.v.dir}</span></div>${rulesList(r.v)}<a class="btn" href="${stratLink(r.v.id,r.tk)}">View rules and data requirements</a></article>`).join('')}</div>${pager}`;
 }
 function groupBy(rs, key) { const m = new Map(); for (const r of rs) { const k = key(r); if (!m.has(k)) m.set(k, []); m.get(k).push(r); } return m; }
 function summarise(list) {
@@ -1386,7 +1396,7 @@ function exitCheck(t) { return tradeExitCheck(t); }
 // ================================================================ FULL VARIANT 1
 // Routes:  #/  landing (legends)  ·  #/guru/<id>  author grid  ·  #/strategies  all gurus  ·  #/s/<id>  one strategy
 // Filters live in a top navbar of dropdowns (DaisyUI-style); animation by motion.dev; charts in the Bklit style.
-DEF.research_mode=''; DEF.view = 'grid'; DEF.region = 'in'; DEF.from = ''; DEF.to = ''; DEF.cost = '0'; DEF.slippage='0'; DEF.rollover='0'; DEF.basket=''; DEF.run_scope='single'; DEF.report_mode='fixed'; DEF.membership='current'; DEF.max_positions='10'; DEF.position_choice='10'; DEF.p = ''; DEF.library_scope='trading'; DEF.library_market=''; DEF.library_q=''; DEF.library_view='authors'; DEF.library_sort='default'; DEF.book_category=''; DEF.library_limit='24'; DEF.library_page='1'; DEF.source_page='1'; DEF.book_progress=''; // p = custom strategy settings 'key:value,…' (empty = the book's) // custom backtest period, kept in the link
+DEF.research_mode=''; DEF.view = 'grid'; DEF.region = 'in'; DEF.from = ''; DEF.to = ''; DEF.cost = '0'; DEF.slippage='0'; DEF.rollover='0'; DEF.basket=''; DEF.run_scope='single'; DEF.report_mode='fixed'; DEF.membership='current'; DEF.max_positions='10'; DEF.position_choice='10'; DEF.p = ''; DEF.library_scope='trading'; DEF.library_market=''; DEF.library_q=''; DEF.library_view='authors'; DEF.library_sort='default'; DEF.book_category=''; DEF.library_limit='24'; DEF.library_page='1';DEF.list_page='1'; DEF.source_page='1'; DEF.book_progress=''; // p = custom strategy settings 'key:value,…' (empty = the book's) // custom backtest period, kept in the link
 const getS = () => S;
 const MO = window.Motion, CALM = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const anim = (el, kf, o) => { if (MO && !CALM && el && (el.length === undefined || el.length)) try { return MO.animate(el, kf, o); } catch (e) {} };
@@ -1449,7 +1459,8 @@ const foreignTo = (v, us) => (v.needs_series || []).some(n => us ? /^NSE_/.test(
 const marketCat = () => libraryMarketVariants(ALLCAT,libraryMarket(S,R.name));
 const href = (path, st = {}) => { const q = new URLSearchParams();if(S.research_mode&&!('research_mode' in st))q.set('research_mode',S.research_mode);const catalogue=path==='/'||path==='/strategies'||path.startsWith('/guru/')||path.startsWith('/source/'); if (S.region !== 'in' && !('region' in st)) q.set('region', S.region); if(catalogue&&S.library_market&&!('library_market' in st))q.set('library_market',S.library_market); for (const k in st) if (st[k] !== DEF[k] && st[k] != null && !(path.startsWith('/guru/') && k === 'guru') && (k!=='library_market'||catalogue)) q.set(k, st[k]); const s = q.toString(); return '#' + path + (s ? '?' + s : ''); };
 const go = (path, st) => { location.hash = href(path, st).slice(1); };
-const setState = patch => { const st = { ...S, ...patch }; if ('guru' in patch && !('book' in patch) && st.book && BOOK[st.book]?.guru.id !== st.guru) st.book = ''; go(R.path, st); };
+const setState = patch => { const st = { ...S, ...patch }; if (!('list_page' in patch)) st.list_page = '1'; // a new sort or filter starts over at the top of the ranking
+ if ('guru' in patch && !('book' in patch) && st.book && BOOK[st.book]?.guru.id !== st.guru) st.book = ''; go(R.path, st); };
 const guruLink = id => href('/guru/' + id, {view:'grid',tk:S.tk,basket:S.basket,from:S.from,to:S.to});
 const stratLink = (id, tk, region) => href('/s/' + encodeURIComponent(id), { ...(region ? { region } : S.region === 'all' ? { region: 'in' } : {}), ...(tk && tk !== 'NIFTY 50' && tk !== 'ALL' ? { tk } : {}), from: S.from, to: S.to, cost: S.cost,slippage:S.slippage,rollover:S.rollover,basket:S.basket,run_scope:S.run_scope,report_mode:S.report_mode,membership:S.membership,max_positions:S.max_positions,position_choice:S.position_choice });
 
@@ -1603,9 +1614,10 @@ function resultsBar(rs) {
 function pendingCards() {
   const seen = new Set(), list = PAINT.held().filter(r => { const k = S.mode === 'variants' ? r.v.id : r.v.family; return !seen.has(k) && seen.add(k); });
   if (!list.length) return `<div class="empty" role="status"><b>Checking availability…</b>The reasons appear here once the engine has answered.</div>`;
-  return `<div class="grid">${list.map(r => `<article class="card" data-result-pending><div class="rank"><span>${esc(LABEL[r.tk] || r.tk)}</span><span class="stamp">CALCULATING</span></div>
+  const what = S.mode === 'variants' ? 'rule sets' : 'strategies', shown = listPage(list);
+  return `${listTotal(shown, `${what} listed`, ' · results loading')}<div class="grid">${shown.rows.map(r => `<article class="card" data-result-pending><div class="rank"><span>${esc(LABEL[r.tk] || r.tk)}</span><span class="stamp">CALCULATING</span></div>
       <h3>${esc(familyDisplayName(r.v))}${gateBadge(r.v)}</h3><div class="by">${byline(r.v)}</div>${rulesList(r.v)}
-      <div class="btns"><a class="btn solid" href="${stratLink(r.v.id, r.tk, r.region)}">Full backtest</a><button class="btn" data-book="${r.v.book}">Book</button><button class="btn" data-guru="${r.v.guru}">Guru</button></div></article>`).join('')}</div>`;
+      <div class="btns"><a class="btn solid" href="${stratLink(r.v.id, r.tk, r.region)}">Full backtest</a><button class="btn" data-book="${r.v.book}">Book</button><button class="btn" data-guru="${r.v.guru}">Guru</button></div></article>`).join('')}</div>${listPager(shown, what)}`;
 }
 const pendingNote = rs => PAINT.waiting() ? `<p class="rnote" role="status" data-results-pending>${rs.length ? 'More results are still calculating. This ranking can change until they arrive.' : 'Backtests are calculating. Each result fills in here when it arrives; filters on results apply then.'}</p>` : '';
 function resultsHtml(rs, missing = []) {
@@ -2079,7 +2091,8 @@ async function render() {
     });
   }catch(error){if(my===busy)vaultStore.fail(ticket,error.message||'Research data is unavailable.');}
 }
-let pendingFocus=null;
+let pendingFocus=null,lastListPage='1';
+const LIST_TOP_GAP=140; // clears the sticky header and filter bar when a new page of results scrolls into view
 function cleanupCharts(){
   SIGNAL_REQUEST++;SIGNAL_PENDING=null;
   REPORT_OBSERVER?.disconnect();REPORT_OBSERVER=null;
@@ -2091,7 +2104,10 @@ function commitReactPage(){
   VaultUI.init();
   const focus=pendingFocus;pendingFocus=null;
   if(focus?.id){const element=document.getElementById(focus.id);if(element){element.focus();try{element.setSelectionRange(focus.pos,focus.pos);}catch{}}}
-  const key=R.name+(R.id||'')+(R.optim?'/optimization':'');if(key!==lastName)scrollTo(0,0);lastName=key;
+  const key=R.name+(R.id||'')+(R.optim?'/optimization':'');
+  if(key!==lastName)scrollTo(0,0);
+  else if(S.list_page!==lastListPage){const results=$('#results');if(results)scrollTo(0,Math.max(0,results.getBoundingClientRect().top+scrollY-LIST_TOP_GAP));}
+  lastName=key;lastListPage=S.list_page;
   drawStrategy();
 }
 // ---------------------------------------------------------------- events
