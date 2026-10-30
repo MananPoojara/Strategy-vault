@@ -126,6 +126,15 @@ export const authorIdentities: Record<string, readonly string[]> = {
   "jennings": [
     "David Jennings"
   ],
+  "ribakov": [
+    "Vladimir Ribakov"
+  ],
+  "dorfman": [
+    "Robert Dorfman"
+  ],
+  "deaton": [
+    "Mark Deaton"
+  ],
   "skyba": [
     "Erik Skyba"
   ],
