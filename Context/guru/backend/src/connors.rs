@@ -142,13 +142,18 @@ pub fn hv(c: &[f64], n: usize) -> Vec<f64> {
 /// Same with a chosen degrees-of-freedom correction: 1 = sample sd (Swing Trading College), 0 = population sd
 /// (TradeStation's StdDev, which reproduces the ETF Sweet Spot book's published trades).
 pub fn hv_ddof(c: &[f64], n: usize, ddof: f64) -> Vec<f64> {
+    hv_days(c, n, ddof, 252.0)
+}
+
+/// Same with a chosen number of trading days per year (the ETF Sweet Spot seminar prints 256).
+pub fn hv_days(c: &[f64], n: usize, ddof: f64, days: f64) -> Vec<f64> {
     let mut out = vec![f64::NAN; c.len()];
     let lr: Vec<f64> = (1..c.len()).map(|i| (c[i] / c[i - 1]).ln()).collect();
     for i in n..c.len() {
         let w = &lr[i - n..i]; // returns ending at bar i
         let m = w.iter().sum::<f64>() / n as f64;
         let var = w.iter().map(|x| (x - m).powi(2)).sum::<f64>() / (n as f64 - ddof);
-        out[i] = var.sqrt() * 252f64.sqrt() * 100.0;
+        out[i] = var.sqrt() * days.sqrt() * 100.0;
     }
     out
 }
@@ -768,7 +773,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
     ]);
     // ---- The ETF Sweet Spot Trading System (Connors Research, 2004), Part III rules p.10-11
     let ss = |id, name, dir, rules, claim| StrategyDef { book: "etfss", ..d(id, name, "ETF Mean Reversion", 0, dir, Live, rules, SSNOTE, claim) };
-    const SSNOTE: &str = "The book counts each unit as a separate trade and reports points per unit; here a position is 2 equal units and returns are on the full position. HV = 40-day historical volatility: population standard deviation of daily log returns × √252 (not defined in the book; TradeStation's convention, which reproduces the book's trade list). Book tests: SPY, QQQ, IWM, SMH, MDY, 1/3/00 - 6/16/04, close-to-close, no costs.";
+    const SSNOTE: &str = "The book counts each unit as a separate trade and reports points per unit; here a position is 2 equal units and returns are on the full position. HV = 40-day historical volatility: population standard deviation of daily log returns × √256: the book does not define it; the Tortoise Capital ETF seminar slides of the same system print HV(40) = STD(ln(close/yesterday's close),40)*100*sqrt(256) (ETFseminar1.pdf p.163). √252 is available as a labelled option. Book tests: SPY, QQQ, IWM, SMH, MDY, 1/3/00 - 6/16/04, close-to-close, no costs.";
     const SSL: &[&str] = &["F|The ETF closes above its 200-day SMA", "E|Today's high is below the 10-day SMA", "E|Today's close is at least 1% below its 10-day SMA for each 15% of its 40-day historical volatility (HV)", "E|Buy at the close", "A|Buy an additional unit if the stretch repeats itself while you are in the trade", "X|Exit at today's close when yesterday's close is above its 10-day SMA"];
     const SSS: &[&str] = &["F|The ETF closes below its 200-day SMA", "E|Today's low is above the 10-day SMA", "E|Today's close is at least 1% above its 10-day SMA for each 15% of its 40-day historical volatility (HV)", "E|Enter short at the close", "A|Short an additional unit if the stretch repeats itself while you are in the trade", "X|Exit at today's close when yesterday's close is below its 10-day SMA"];
     const SSB: &[&str] = &["F|Long side: close above the 200-day SMA; short side: close below it", "E|Long: today's high below the 10-day SMA and the close at least max(1%, HV(40)/15) below it; short: the mirror", "E|Enter at the close", "A|Add one more unit if the stretch repeats while in the trade", "X|Exit at today's close when yesterday's close crossed back over the 10-day SMA"];
@@ -957,7 +962,9 @@ pub fn params(id: &str) -> Vec<ParamDef> {
         }
         "short_4up" => vec![trend(), p("up", "Up closes in a row", 4.0, 2.0, 7.0, 1.0), ma()],
         "ss_long" | "ss_short" | "ss_both" | "ss_long_2nd" | "ss_short_2nd" => vec![trend(), p("ma", "Mean SMA length (setup, stretch, exit)", 10.0, 5.0, 20.0, 1.0), p("hv_n", "Volatility lookback (HV days)", 40.0, 20.0, 60.0, 5.0),
-            p("hv_div", "HV per 1% of stretch", 15.0, 10.0, 25.0, 1.0), p("min_stretch", "Minimum stretch %", 1.0, 0.0, 2.0, 0.25)],
+            p("hv_div", "HV per 1% of stretch", 15.0, 10.0, 25.0, 1.0), p("min_stretch", "Minimum stretch %", 1.0, 0.0, 2.0, 0.25),
+            // the user's 30 Oct approval names ss_long, ss_short and ss_both: the two 2nd-signal cards stay on 252 until extended
+            p("hv_days", "Trading days per year in HV (256 = seminar p.163; 252 = common convention)", if id.ends_with("_2nd") { 252.0 } else { 256.0 }, 252.0, 256.0, 4.0)],
         "short_strong" => vec![trend(), p("rise", "2-day rise above %", 3.0, 1.0, 6.0, 0.5), rsi_n(), gt(80.0, 60.0, 95.0, 5.0), ma()],
         _ if MT_IDS.contains(&id) => vec![trend(), rsi_n(), ex(65.0, 50.0, 85.0, 5.0)],
         _ => vec![],
@@ -1185,7 +1192,7 @@ pub fn run(id: &str, ctx: &Ctx, from: usize, to: usize, p: &Params) -> Option<Ve
             long(&|i| at_close(c[i] > tr[i] && cond(i)), &|i, _| (rs[i] > ex).then(|| Exit::Close(format!("RSI({n}) > {ex}"))))
         }
         "ss_long" | "ss_short" | "ss_both" | "ss_long_2nd" | "ss_short_2nd" => {
-            let (tr, ma, m, hvv) = (trend(), x.sma_n(u("ma")), u("ma"), hv_ddof(c, u("hv_n"), 0.0));
+            let (tr, ma, m, hvv) = (trend(), x.sma_n(u("ma")), u("ma"), hv_days(c, u("hv_n"), 0.0, g("hv_days")));
             let (div, floor) = (g("hv_div"), g("min_stretch"));
             // stretch = at least `floor`% beyond the SMA, or 1% for every `div`% of HV if that is larger (book: max(1%, HV/15))
             let st = |i: usize| (hvv[i] / div).max(floor) / 100.0;
@@ -1266,6 +1273,17 @@ mod tests {
         assert!(r[1].is_nan());
         assert!((r[2] - 50.0).abs() < 1e-9);
         assert!((r[3] - (100.0 - 100.0 / 6.0)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn sweet_spot_hv_uses_256_days_and_keeps_252_as_option() {
+        let c: Vec<f64> = (0..60).map(|i| 100.0 + (i as f64 * 0.7).sin() * 3.0).collect();
+        let (a, b) = (hv_days(&c, 40, 0.0, 256.0)[50], hv_days(&c, 40, 0.0, 252.0)[50]);
+        assert!((a / b - (256.0f64 / 252.0).sqrt()).abs() < 1e-12);
+        assert_eq!(hv_ddof(&c, 40, 0.0)[50], b); // every other caller stays on 252, bit for bit
+        let def = |id: &str| params(id).iter().find(|d| d.key == "hv_days").unwrap().def;
+        for id in ["ss_long", "ss_short", "ss_both"] { assert_eq!(def(id), 256.0); }
+        for id in ["ss_long_2nd", "ss_short_2nd"] { assert_eq!(def(id), 252.0); }
     }
 
     #[test]
