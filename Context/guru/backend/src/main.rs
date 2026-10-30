@@ -2629,12 +2629,20 @@ mod tests {
     fn equity_equals_compounded_trade_returns() {
         // Every live strategy on real data: the final equity must
         // equal the product of (1 + trade return). Catches any drift between trade P&L and the curve.
-        // VAULT_IDX overrides the data path, so the test also runs from a private copy of the backend.
+        // VAULT_IDX gives the data path (the file is outside Git, so worktrees have no default). A missing file is a failure, never a skip.
         let path = std::env::var("VAULT_IDX").unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/../../../idx_data.csv").into());
-        let data = load_csv(&path).unwrap();
+        let data = load_csv(&path).unwrap_or_else(|e| panic!("this test needs real data: set VAULT_IDX to idx_data.csv ({e})"));
         let rows = &data["NIFTY 50"];
         let ctx = Ctx::new(rows, rows, &[]);
+        let (mut compared, mut other_path) = (0, 0); // other_path: refused by design, ruin or invalid trades, each asserted below
         for d in connors::catalogue().iter().filter(|d| d.status == Status::Live && !d.needs_vix) {
+            if books::lkqts::macs_candidate(d.id) {
+                // MACS needs the selected server-qualified RAW native series, so the generic path refuses it by design.
+                assert!(connors::run(d.id,&ctx,0,rows.len()-1,&Params::new()).is_none());
+                assert!(backtest_costs(&ctx,d.id,0,rows.len()-1,accounting::Costs::default(),&Params::new()).unwrap_err().starts_with("needs_data"));
+                other_path += 1;
+                continue;
+            }
             if d.id==books::elcim_account::ID || (d.book=="hbiab" && books::hbiab_reviewed::reviewed(d.id)) {
                 // These source cash accounts exclude cash indices and use
                 // independently checked actual-stock/ETF account conservation.
@@ -2643,11 +2651,13 @@ mod tests {
                 // conservation; a Nifty/from-zero corpus shortcut cannot do so.
                 // Elder Impulse is opened to indices as a declared application (22 Oct 2026); the hbiab accounts stay stock-only.
                 assert_eq!(instrument_policy::check(d,"NIFTY 50",false).is_none(),d.id==books::elcim_account::ID);
+                other_path += 1;
                 continue;
             }
             if options::is_option_rule(d.id) {
                 // options phase 2: own account (overlapping positions, held-contract marks; options::tests); no chain here
                 assert!(backtest(&ctx,d.id,0,rows.len()-1,0.,&Params::new()).unwrap_err().starts_with("needs_data"));
+                other_path += 1;
                 continue;
             }
             if books::hbqts::reviewed::is_dema_index(d.id) {
@@ -2655,6 +2665,7 @@ mod tests {
                 // this preserved legacy Trade::ret shortcut is not its model.
                 assert!(instrument_policy::check(d,"NIFTY 50",false).is_none());
                 assert!(backtest(&ctx,d.id,0,rows.len()-1,0.,&Params::new()).unwrap_err().contains("separate fee/slippage"));
+                other_path += 1;
                 continue;
             }
             for cost in [0.0, 0.0005] {
@@ -2664,14 +2675,17 @@ mod tests {
                     // ruin: published, stopped at the wiping trade (ruin_stops_the_run_at_the_wiping_trade)
                     let run=backtest(&ctx,d.id,0,rows.len()-1,cost,&Params::new()).unwrap();
                     assert!(*run.equity.last().unwrap()==0. && raw.starts_with(&run.trades),"{}",d.id);
+                    other_path += 1;
                     continue;
                 }
                 if let Err(reason) = trade_validation::check(&raw,0,rows.len()-1,cost) {
                     assert!(backtest(&ctx,d.id,0,rows.len()-1,cost,&Params::new()).unwrap_err().contains(&reason),"{}",d.id);
+                    other_path += 1;
                     continue;
                 }
                 if marks.iter().any(|v|!v.is_finite()) {
                     assert!(backtest(&ctx,d.id,0,rows.len()-1,cost,&Params::new()).unwrap_err().contains("nonfinite"),"{}",d.id);
+                    other_path += 1;
                     continue;
                 }
                 let run = backtest(&ctx, d.id, 0, rows.len() - 1, cost, &Params::new()).unwrap();
@@ -2679,8 +2693,11 @@ mod tests {
                 let want: f64 = run.trades.iter().map(|t| 1.0 + t.ret(cost)).product();
                 let got = *run.equity.last().unwrap();
                 assert!((got / want - 1.0).abs() < 1e-9, "{} cost {}: equity {} vs trades {}", d.id, cost, got, want);
+                compared += 1;
             }
         }
+        println!("equity_equals_compounded_trade_returns: {compared} runs compared on {} bars, {other_path} on other asserted paths",rows.len());
+        assert!(compared>2000,"only {compared} runs compared: the test has stopped testing"); // two costs per strategy; today about 5,000
     }
 }
 
