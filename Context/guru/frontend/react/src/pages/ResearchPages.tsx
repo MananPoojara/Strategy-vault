@@ -1,7 +1,7 @@
 import {PristineStrategyReport} from '../components/PristineStrategyReport';
 import type { ViewSnapshot } from "../state/store";
 import { ResearchMarkup } from "../components/ResearchMarkup";
-import { StrategySettings } from "../components/StrategySettings";
+import { StrategyParameters, StrategySettings } from "../components/StrategySettings";
 import {SourceAccountNotice} from "../components/SourceAccountNotice";
 import {UnitExposureNotice} from '../components/UnitExposureNotice';
 import {RulesVisualGuide} from "../components/RulesVisualGuide";
@@ -46,7 +46,6 @@ function LegacyStrategyPage({ snapshot }: { snapshot: ViewSnapshot }) {
     </div>,
     "visual-rules": snapshot.strategyRules ? <RulesVisualGuide model={snapshot.strategyRules} /> : null,
     "strategy-settings": <StrategySettings
-      inline
       mode={mode}
       sourceAccount={snapshot.strategyAccount || false}
       unitExposure={Boolean(snapshot.strategyUnit)}
@@ -54,8 +53,10 @@ function LegacyStrategyPage({ snapshot }: { snapshot: ViewSnapshot }) {
         ? "Basket returns use the equal-slot portfolio calculation. Closed-trade compounding applies only to one instrument."
         : undefined}
       settings={snapshot.strategySettings}
+      hideParameters
       onApply={(report_mode, p) => window.VaultRuntime.patch(p === undefined ? {report_mode} : basket ? {p} : {report_mode, p})}
     />,
+    "strategy-params": <StrategyParameters settings={snapshot.strategySettings} onApply={p => window.VaultRuntime.patch({p})} />,
     "source-account-notice": snapshot.strategyAccount ? <SourceAccountNotice account={snapshot.strategyAccount} /> : null,
     "unit-exposure-notice": snapshot.strategyUnit ? <UnitExposureNotice view={snapshot.strategyUnit} /> : null,
   }} />;

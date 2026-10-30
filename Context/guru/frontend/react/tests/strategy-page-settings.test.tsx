@@ -24,9 +24,10 @@ async function mount(state: Record<string, string>, source: boolean | SourceAcco
   window.VaultRuntime = {patch} as unknown as Window["VaultRuntime"];
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   await act(async () => root!.render(<StrategyPage snapshot={{...snapshot(state), strategyAccount:typeof source === "object" ? source : source?sourceAccountView(sourceAccount(accountFixture(),"elcim_impulse","elcim")!):null}} />));
+  await act(async () => host!.querySelector<HTMLButtonElement>('[aria-label="Strategy settings"]')!.click());
   return patch;
 }
-const dialog = () => document.querySelector<HTMLElement>('[data-strategy-settings]')!;
+const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]')!;
 const radio = (value: string) => dialog().querySelector<HTMLInputElement>(`input[value="${value}"]`)!;
 const button = (text: string) => [...dialog().querySelectorAll<HTMLButtonElement>("button")].find(b => b.textContent === text)!;
 
@@ -42,7 +43,7 @@ it("defaults an unknown display mode to fixed and Cancel leaves the route and re
   const patch = await mount({report_mode: "invalid"});
   expect(radio("fixed").checked).toBe(true);
   await act(async () => radio("compound").click());
-  await act(async () => button("Undo changes").click());
+  await act(async () => button("Cancel").click());
   expect(patch).not.toHaveBeenCalled();
 });
 it("keeps the basket's portfolio accounting and never offers closing-order trade compounding", async () => {
@@ -51,6 +52,7 @@ it("keeps the basket's portfolio accounting and never offers closing-order trade
   expect(radio("compound").matches(":disabled")).toBe(true);
   expect(radio("fixed").matches(":disabled")).toBe(true);
   expect(button("Apply").disabled).toBe(true);
+  expect(document.activeElement).toBe(dialog().querySelector('[aria-label="Close strategy settings"]'));
   await act(async () => button("Apply").click());
   expect(patch).not.toHaveBeenCalled();
 });
@@ -80,17 +82,4 @@ it('keeps Simple teaching/source conventions and the accepted cash account separ
  expect(notice.textContent).toContain('SimpleSystem teaching example');expect(notice.textContent).toContain('100%');expect(notice.textContent).toContain('every true raw Buy resets');expect(notice.textContent).toContain('not five bars from entry');
  expect(notice.textContent).not.toMatch(/2%|6%|monthly|SafeZone|₹/);expect(dialog().textContent).toContain('reviewed fixed allocation');
  await act(async()=>radio('compound').click());await act(async()=>button('Apply').click());expect(patch).toHaveBeenCalledExactlyOnceWith({report_mode:'compound'});
-});
-
-it("shows the settings open on the page, with no icon button and no pop-up", async () => {
-  await mount({report_mode: "fixed"});
-  expect(dialog()).not.toBeNull();
-  expect(host!.querySelector('[aria-label="Strategy settings"]')).toBeNull();
-  expect(document.querySelector('[role="dialog"]')).toBeNull();
-  expect(button("Apply").disabled).toBe(true);
-  expect(button("Undo changes").disabled).toBe(true);
-  await act(async () => radio("compound").click());
-  expect(button("Apply").disabled).toBe(false);
-  await act(async () => button("Undo changes").click());
-  expect(radio("fixed").checked).toBe(true);
 });
