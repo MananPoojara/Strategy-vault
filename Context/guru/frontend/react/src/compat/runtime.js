@@ -4,7 +4,8 @@ import {resolveRoute} from '../app/routes';
 import {customPages} from '../app/custom-pages';
 import {LIB} from './catalogue.js';
 import {authorProfileHtml} from '../services/author-profiles';
-import {loadOwnerRows} from '../services/summary-loader';
+import {loadOwnerRows,failureRecord,retryDue} from '../services/summary-loader';
+import {engineCalls} from '../services/engine-calls';
 import {bookContext} from '../services/book-context';
 import {returnDisplay} from '../services/return-display';
 import {sourceAccount,sourceAccountView,sourceTradeHeaders,sourceAccountTables,sourceAccountCopy} from '../services/source-account';
@@ -411,7 +412,7 @@ function optimInit() {
 
 const optQuery = (v, tk, w, g, slim, c = S) => { const q = new URLSearchParams({ id: v.id, ticker: tk, from: w.from || '', to: w.to || '', cost: S.cost || '0',slippage:c.slippage||'0',rollover:c.rollover||'0', ...(slim ? { slim: '1' } : {}) });
   Object.entries(g).forEach(([k, x]) => { if (x.on) q.set('g.' + k, `${x.min}:${x.max}:${x.step}`); }); return q; };
-async function fetchOpt(q, api=API) { const r = await fetch(enginePath(q.get('id'),'optimize',api)+'?'+q), b = await r.text(); if (!r.ok) { let message = b; try { message = JSON.parse(b).error || b; } catch {} throw new Error(message); } return JSON.parse(b); }
+async function fetchOpt(q, api=API) { return ENGINE.run('opt:' + q, async signal => { const r = await fetch(enginePath(q.get('id'),'optimize',api)+'?'+q, { signal }), b = await r.text(); if (!r.ok) { let message = b; try { message = JSON.parse(b).error || b; } catch {} throw new Error(message); } return JSON.parse(b); }); }
 
 async function runOpt() {
   const { v, tk } = STRAT, g = OPT.grids[v.id], key=optKey(v.id,tk), out=$('#opt-out');
@@ -1054,11 +1055,10 @@ function ownerQuery(owner,query){
 }
 // A distinct owner has a distinct inclusive-session protocol. Do not weaken
 // the shared legacy loader's date/window semantics to admit this model.
-async function pristineOwnerRows(url,definitions,kind){
+async function pristineOwnerRows(group,url,definitions,kind){
  try{
   if(S.p)throw Error('These fixed Pristine branches accept no parameter settings.');
-  const response=await fetch(url);if(!response.ok)throw Error(await response.text());
-  const payload=await response.json(),rows=kind==='readiness'?payload?.strategies:payload,selected=new URL(url,location.href).searchParams;
+  const payload=await ENGINE.run(group,async signal=>{const response=await fetch(url,{signal});if(!response.ok)throw Error(await response.text());return response.json();}),rows=kind==='readiness'?payload?.strategies:payload,selected=new URL(url,location.href).searchParams;
   if(!Array.isArray(rows)||rows.length!==definitions.length)throw Error('Pristine owner response shape is unavailable.');
   const expected=new Set(definitions.map(definition=>definition.id)),seen=new Set();
   for(const row of rows){
@@ -1066,9 +1066,11 @@ async function pristineOwnerRows(url,definitions,kind){
    if(kind==='summary'&&!row.blocked){const model=row.pristine_summary;if(!model||model.id!==row.id||model.book!==PRISTINE_BOOK||model.owner!=='pristine'||model.model!=='pristine_daily_supplied_series_summary_v1'||model.research_mode!==selected.get('research_mode')||model.qualified_ticker!==selected.get('ticker')||model.market!=='us'||model.asset_type!=='individual_stock'||model.book_performance_reproduced!==false||model.native_historical_dollars_verified!==false||model.historical_membership_verified!==false)throw Error('Pristine summary model does not match current research scope.');}
   }
   return {rows,retryableFailure:false};
- }catch(error){return {rows:definitions.map(definition=>({id:definition.id,...(kind==='readiness'?{status:'unavailable',note:error.message}:{blocked:error.message,readiness:'unavailable'})})),retryableFailure:true,issue:{owner:'pristine',status:'unavailable',kind:'request_failed',note:error.message||'Pristine owner data is unavailable.'}};}
+ }catch(error){if(error.name==='AbortError')return {rows:[],retryableFailure:true,aborted:true};return {rows:definitions.map(definition=>({id:definition.id,...(kind==='readiness'?{status:'unavailable',note:error.message}:{blocked:error.message,readiness:'unavailable'})})),retryableFailure:true,issue:{owner:'pristine',status:'unavailable',kind:'request_failed',note:error.message||'Pristine owner data is unavailable.'}};}
 }
 
+const ENGINE=engineCalls(2);
+const engineOwnerRows=(group,options)=>ENGINE.run(group,signal=>loadOwnerRows({...options,fetcher:fetch,signal})).catch(error=>{if(error.name==='AbortError')return {rows:[],retryableFailure:true,aborted:true};throw error;});
 async function getReadiness(tk, from = '', to = '', id = '', parameters = {}, api = API) {
  const owners=id?[ownerOf(id)]:guruIds(),variants=[...ALLCAT],generation=busy;
  if(!owners.length)return {};
@@ -1076,11 +1078,13 @@ async function getReadiness(tk, from = '', to = '', id = '', parameters = {}, ap
  const settings=typeof parameters==='string'?decodeP(parameters):parameters;
  for(const [key,value] of Object.entries(settings))query.set('p.'+key,value);
  const key=api+'|'+(id?owners[0]:'all')+'?'+query+(owners.includes('pristine')?'|research_mode='+S.research_mode:''),context=summaryContext(tk,from,to);
- // Failed requests are shared within a render, then retried on the next user navigation.
- if(READINESS_FAILURE_GENERATION[key]!=null&&READINESS_FAILURE_GENERATION[key]!==generation)delete READINESS[key];
+ // Failed requests are shared within a render, then asked again on a later navigation once any cool-down has passed.
+ const group='ready:'+key;
+ if(retryDue(READINESS_FAILURE_GENERATION[key],generation))delete READINESS[key];
  return READINESS[key]||(READINESS[key]=(async()=>{
-  const outcomes=await Promise.all(owners.map(owner=>owner==='pristine'?pristineOwnerRows(api+'/guru/pristine/readiness?'+ownerQuery(owner,query),ownedDefinitions(variants,owner,id),'readiness'):loadOwnerRows({owner,definitions:ownedDefinitions(variants,owner,id),context,url:api+'/guru/'+owner+'/readiness?'+query,kind:'readiness',fetcher:fetch,wait:ms=>new Promise(resolve=>setTimeout(resolve,ms))})));
-  if(outcomes.some(outcome=>outcome.issue))READINESS_FAILURE_GENERATION[key]=generation;else delete READINESS_FAILURE_GENERATION[key];
+  const outcomes=await Promise.all(owners.map(owner=>owner==='pristine'?pristineOwnerRows(group,api+'/guru/pristine/readiness?'+ownerQuery(owner,query),ownedDefinitions(variants,owner,id),'readiness'):engineOwnerRows(group,{owner,definitions:ownedDefinitions(variants,owner,id),context,url:api+'/guru/'+owner+'/readiness?'+query,kind:'readiness'})));
+  if(outcomes.some(outcome=>outcome.aborted)){delete READINESS[key];return {};}
+  READINESS_FAILURE_GENERATION[key]=failureRecord(outcomes,generation);
   return Object.fromEntries(outcomes.flatMap(outcome=>outcome.rows).map(row=>[row.id,row]));
  })());
 }
@@ -1088,11 +1092,13 @@ async function getSum(tk, from = '', to = '', api = API) {
  const owners=guruIds(),variants=[...ALLCAT],generation=busy;
  if(!owners.length)return {};
  const key=summaryKey(api,tk,from,to),context=summaryContext(tk,from,to),query=new URLSearchParams({ticker:tk,from,to});
- if(SUM_FAILURE_GENERATION[key]!=null&&SUM_FAILURE_GENERATION[key]!==generation)delete SUM[key];
+ const group='sum:'+key;
+ if(retryDue(SUM_FAILURE_GENERATION[key],generation))delete SUM[key];
  return SUM[key]||(SUM[key]=(async()=>{
-  const outcomes=await Promise.all(owners.map(owner=>owner==='pristine'?pristineOwnerRows(api+'/guru/pristine/summary?'+ownerQuery(owner,query),ownedDefinitions(variants,owner),'summary'):loadOwnerRows({owner,definitions:ownedDefinitions(variants,owner),context,url:api+'/guru/'+owner+'/summary?'+query,kind:'summary',fetcher:fetch,wait:ms=>new Promise(resolve=>setTimeout(resolve,ms))})));
+  const outcomes=await Promise.all(owners.map(owner=>owner==='pristine'?pristineOwnerRows(group,api+'/guru/pristine/summary?'+ownerQuery(owner,query),ownedDefinitions(variants,owner),'summary'):engineOwnerRows(group,{owner,definitions:ownedDefinitions(variants,owner),context,url:api+'/guru/'+owner+'/summary?'+query,kind:'summary'})));
+  if(outcomes.some(outcome=>outcome.aborted)){delete SUM[key];return {};}
   SUMMARY_ISSUES[key]=outcomes.flatMap(outcome=>outcome.issue?[outcome.issue]:[]);
-  if(outcomes.some(outcome=>outcome.issue))SUM_FAILURE_GENERATION[key]=generation;else delete SUM_FAILURE_GENERATION[key];
+  SUM_FAILURE_GENERATION[key]=failureRecord(outcomes,generation);
   return Object.fromEntries(outcomes.flatMap(outcome=>outcome.rows).map(row=>[row.id,row]));
  })());
 }
@@ -1113,10 +1119,10 @@ function preMap(tk, to, api = API, cat = CAT) {
   const k = `${api}|${tk}|${to}`;
   if (PRE[k]) return PRE[k];
   const ids = cat.filter(v => v.status === 'live' && !v.needs_vix).map(v => v.id), out = {}; // VIX data starts after 2009: nothing to ask
-  let i = 0;
-  const worker = async () => { while (i < ids.length) { const id = ids[i++];
-    try { const r = await fetch(enginePath(id,'run',api)+'?' + new URLSearchParams({ id, ticker: tk, to })); if (r.ok) out[id] = { stats: (await r.json()).stats }; } catch (e) { /* leave missing */ } } };
-  return PRE[k] = Promise.all(Array.from({ length: 6 }, worker)).then(() => out);
+  let left = false;
+  return PRE[k] = Promise.all(ids.map(id => ENGINE.run('pre:' + k, async signal => {
+    const r = await fetch(enginePath(id,'run',api)+'?' + new URLSearchParams({ id, ticker: tk, to }), { signal }); if (r.ok) out[id] = { stats: (await r.json()).stats };
+  }).catch(e => { if (e.name === 'AbortError') left = true; /* otherwise leave missing */ }))).then(() => { if (left) delete PRE[k]; return out; });
 }
 const lastOf = tk => [...TICKERS, ...TICK_IN, ...(TICK_US || [])].find(t => t.ticker === tk)?.last || '2026-05-15';
 const shiftYears = (d, y) => { const t = new Date(d); t.setFullYear(t.getFullYear() - y); return t.toISOString().slice(0, 10); };
@@ -1659,8 +1665,8 @@ const ohlc = (tk, tf = 'D') => OHLC[tk + tf] || (OHLC[tk + tf] = fetch(`data/ohl
 let TF = 'D';
 const runData = (id, tk, from = '', to = '', cost = '0', p = '', api = API,execution=VaultUI.costState(S)) => { const k = [api, id, tk, from, to, cost, p,execution.slippage,execution.rollover,...(pristineMethod(id,PRISTINE_BOOK)?[execution.research_mode||'']:[])].join('|');
   return RUNS[k] || (RUNS[k] = (async () => { const t0 = performance.now();
-    try { const r = await fetch(enginePath(id,'run',api)+'?' + new URLSearchParams({ id, ticker: tk, from, to, cost, ...execution, ...Object.fromEntries(Object.entries(decodeP(p)).map(([k, v]) => ['p.' + k, v])) })); if (!r.ok) { delete RUNS[k]; return { error: await r.text() }; }
-      const j = await r.json(); if(!pristineMethod(id,PRISTINE_BOOK))j._ms = performance.now() - t0; return j; } catch (e) { delete RUNS[k]; return { error: e.message }; } })()); };
+    try { const answer = await ENGINE.run('run:' + k, async signal => { const r = await fetch(enginePath(id,'run',api)+'?' + new URLSearchParams({ id, ticker: tk, from, to, cost, ...execution, ...Object.fromEntries(Object.entries(decodeP(p)).map(([k, v]) => ['p.' + k, v])) }), { signal }); return r.ok ? { body: await r.json() } : { error: await r.text() }; }); if ('error' in answer) { delete RUNS[k]; return { error: answer.error }; }
+      const j = answer.body; if(!pristineMethod(id,PRISTINE_BOOK))j._ms = performance.now() - t0; return j; } catch (e) { delete RUNS[k]; return { error: e.message }; } })()); };
 // the period bar: dates, quick presets, cost, and a Run button (the Rust API recomputes the whole backtest for that window)
 let BASKETS=[],BASKETS_IN=[],BASKETS_US=[],TICK_ALL_IN=[];
 function basketChoices(){const past=S.membership==='past';return S.region==='us'?[['us_sp500','S&P 500'],['us_nasdaq100','Nasdaq 100'],['us_dow30','Dow Jones'],['us_russell2000','Russell 2000']].map(([id,name])=>[id+(past?'_past':''),name]):[['nse500','NSE 500'],['nifty50','Nifty 50'],['midcap100','Midcap100'],['allfo','All F&O']];}
@@ -1716,7 +1722,7 @@ async function viewBasket(v,tk,crumbs,switches,selection,api,generation){
   const query=new URLSearchParams({id:v.id,basket:selection.basket,from:selection.from,to:selection.to,cost:'0',...VaultUI.costState(selection),max_positions:selection.max_positions,membership:selection.membership,...Object.fromEntries(Object.entries(decodeP(selection.p)).map(([k,value])=>['p.'+k,value]))});
   const key=api+'|'+query.toString();let d=BASKET_RUNS.get(key);
   try{
-    if(!d){const response=await fetch(enginePath(v.id,'basket-run',api)+'?'+query,{signal:AbortSignal.timeout(95000)});if(!response.ok)throw Error(await response.text());d=await response.json();if(d.status==='ready'){BASKET_RUNS.set(key,d);while(BASKET_RUNS.size>4)BASKET_RUNS.delete(BASKET_RUNS.keys().next().value);}}
+    if(!d){d=await ENGINE.run('basket:'+key,async signal=>{const response=await fetch(enginePath(v.id,'basket-run',api)+'?'+query,{signal:AbortSignal.any([signal,AbortSignal.timeout(95000)])});if(!response.ok)throw Error(await response.text());return response.json();});if(d.status==='ready'){BASKET_RUNS.set(key,d);while(BASKET_RUNS.size>4)BASKET_RUNS.delete(BASKET_RUNS.keys().next().value);}}
   }catch(error){if(generation!==busy)return '';return withheldStrategy(v,tk,crumbs,switches,{status:'unavailable',note:error.name==='TimeoutError'?'Basket request reached its time limit. No partial result is displayed; retry with a shorter covered period.':error.message});}
   if(generation!==busy)return '';
   if(d?.status!=='ready'||!d.stats||!d.dates?.length)return withheldStrategy(v,tk,crumbs,switches,{status:d?.status||'unavailable',note:d?.blocked||d?.note||'No complete admitted basket result is available.'});
@@ -2021,8 +2027,13 @@ function viewSaved() {
 function savedCount() { const n = VaultUI.savedList().length, el = $('#saved-count'); if (el) { el.textContent = n; el.hidden = !n; } }
 document.addEventListener('vault-saved', () => { savedCount(); if (R.name === 'saved') render(); });
 document.addEventListener('click', e => { const b = e.target.closest('[data-unsave]'); if (b) VaultUI.writeSaved(VaultUI.savedList().filter(x => x.key !== b.dataset.unsave)); });
+// Everything that decides which calculation a page asks for. A sort, a view or a theme change leaves calls running.
+let ENGINE_PAGE='';
+const enginePage=()=>[R.path,...['region','tk','tab','from','to','cost','slippage','rollover','p','basket','run_scope','research_mode','membership','max_positions'].map(key=>S[key])].join('|');
 async function render() {
   const my=++busy,ticket=vaultStore.begin(R.path),route=resolveRoute(location.hash);
+  // The user left: abort what this page no longer needs. The engine cannot stop a started run yet (see A2), the browser's share ends here.
+  if(enginePage()!==ENGINE_PAGE){ENGINE.keepOnly(new Set());ENGINE_PAGE=enginePage();}
   if(R.name==='guru'||R.name==='all')LIST_HASH=location.hash||'#/';
   STRAT=null;RULE_VISUAL=null;if(R.name!=='strategy')bookCtx(S.book||'stc9');
   try {

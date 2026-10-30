@@ -11,7 +11,7 @@ async function render(disclosure: string | null, extra: Record<string, unknown> 
   R:{optim:false}, instrumentControls:()=>({basket:true}), BASKETS:[{id:'nifty50',name:'NIFTY 50',symbols:['A'],source_counts:{expected:500}}], VaultUI:{costState:()=>({}),toolbar:()=>'',benchmarkHTML:()=>'',detailHTML:()=>'',tradeHTML:()=>''},
   decodeP:()=>({}), enginePath:()=>'/basket-run', busy:1, fetch:vi.fn(async()=>({ok:true,json:async()=>data})), optSchema:async()=>({}),
   cls:()=>'',pct:()=>'',fx:()=>'',makeRuleVisualModel:()=>null,TICK_ALL_US:[],TICK_ALL_IN:[],ohlc:async()=>[],esc,
-  settingsModel:()=>null,familyDisplayName:()=> 'Fixture rule', gateNotice:()=>'',periodPanel:()=>'',optimBanner:()=>'',calculatedPeriodHTML:()=>'',rulesPanel:()=>'',LABEL:{},heatTable:()=>'',
+  ENGINE:{run:(_group:string,task:(signal:AbortSignal)=>Promise<unknown>)=>task(new AbortController().signal)},settingsModel:()=>null,familyDisplayName:()=> 'Fixture rule', gateNotice:()=>'',periodPanel:()=>'',optimBanner:()=>'',calculatedPeriodHTML:()=>'',rulesPanel:()=>'',LABEL:{},heatTable:()=>'',
  };
  const make = new Function('deps', `const {${Object.keys(deps).join(',')}}=deps;let STRAT,RULE_VISUAL;${source};return viewBasket;`);
  const html = await make(deps)({id:'fixture',instrument_policy:{}},'A','','',{basket:'nifty50',region:'in',from:'',to:'',max_positions:'10',membership:'current'},'',1);
