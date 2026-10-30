@@ -104,7 +104,7 @@ export function LivingBook() {
       sheetG.innerHTML = s + `<path class="iso-edge" style="fill:none" d="${outline}"/></g>`;
     };
     const ease = (x: number) => (x < 0.5 ? 4 * x ** 3 : 1 - (-2 * x + 2) ** 3 / 2);
-    let t = 0, last = 0, frame = 0, visible = false;
+    let t = 0, last = 0, drawnAt = 0, frame = 0, visible = false;
     const render = () => {
       const read = Math.min(1, t / READ) * 9, drawn = Math.max(0, Math.min(1, (t - READ) / DRAW));
       const turn = Math.max(0, Math.min(1, (t - READ - DRAW - HOLD) / TURN));
@@ -116,7 +116,7 @@ export function LivingBook() {
       const dt = last ? Math.min((now - last) / 1000, 1 / 30) : 1 / 60;
       last = now; t += dt;
       if (t >= CYCLE) { t = 0; left = nextLeft; right = nextRight; nextLeft = rulesPage(); nextRight = chartPage(); }
-      render();
+      if (now - drawnAt >= 50) { drawnAt = now; render(); } // 20 redraws a second: it moves slowly, and each one rebuilds the SVG
       frame = visible ? requestAnimationFrame(tick) : 0;
     };
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) { t = READ + DRAW; render(); return; }
