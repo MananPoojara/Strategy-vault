@@ -329,6 +329,8 @@ export const sourceReview: Record<string, {type: string; sameWorkAs?: string; pe
   "thrdi": {"type": "book", "people": ["Timothy Hayes"]},
   "bmwsm": {"type": "book", "people": ["Brian J. Millard"]},
   "rpets": {"type": "book", "people": ["Robert P. Rotella"]},
+  "nkms": {"type": "code_package", "people": []},
+  "tlsuc": {"type": "code_package", "people": []},
   "slmma": {"type": "book", "people": ["Scot Lowry"]},
   "dwsr": {"type": "book", "people": ["Dave Wooding"]},
   "djcs": {"type": "book", "people": ["David Jennings"]},
