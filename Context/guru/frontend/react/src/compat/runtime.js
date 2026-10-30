@@ -2210,7 +2210,7 @@ async function homeModel(){
  const [h,readiness]=await Promise.all([heroStats(),getReadiness(selectedTicker,S.from||'',S.to||'')]);
  const inventoryRecords=libraryRecords(),allRecords=inventoryRecords.filter(record=>inLibraryScope(libraryScope(record,CURATED_AUTHOR_IDS),S.library_scope)),scopeAuthorIds=new Set(allRecords.flatMap(recordAuthorIds)),scopeAuthors=LIB.filter(author=>scopeAuthorIds.has(author.id)),authors=VaultLibraryBrowser.matchingAuthors(scopeAuthors,allRecords,S.library_q,S.book_category),live=LIB.filter(g=>g.books.some(b=>b.live));
  const scoped=Object.fromEntries(await Promise.all(live.map(async g=>[g.id,await heroStats(g.id)])));
- const summary=await getSum(h.tk,S.from||'',S.to||''),states=Object.fromEntries(LIB.map(g=>[g.id,VaultLibraryDiscovery.authorAvailability(g.books.map(b=>b.id),CAT,summary,readiness)]));
+ const summary=await getSum(h.tk,S.from||'',S.to||''),states=Object.fromEntries(LIB.map(g=>[g.id,VaultLibraryDiscovery.authorAvailability(g.books.map(b=>b.id),g.books.length?CAT:[],summary,readiness)])); // reading-only authors (most of the library) have no definitions to scan
  pristineAuthorStatus(states.pristine);
  const scopedRecords=scopedLibraryRecords(allRecords),scopeCounts=new Map([...scopedRecords].map(([id,records])=>[id,{total:records.length,catalogue:records.filter(record=>record.kind==='catalogue').length,reading:records.filter(record=>record.kind==='source').length}]));
  const pool=S.region==='us'?TICK_ALL_US:TICK_ALL_IN,etfs=S.region==='us'?TICK_ALL_US.filter(t=>US_ETFS.includes(t.ticker)):[];
@@ -2226,7 +2226,7 @@ async function homeModel(){
  }
  const contexts=Object.fromEntries(authors.map(g=>{
   const selectedResult={context:selected,availability:states[g.id],summary,readiness};
-  const alternatives=references.map(sample=>({...sample,availability:VaultLibraryDiscovery.authorAvailability(g.books.map(b=>b.id),CAT,sample.summary,sample.readiness)}));
+  const alternatives=references.map(sample=>({...sample,availability:VaultLibraryDiscovery.authorAvailability(g.books.map(b=>b.id),g.books.length?CAT:[],sample.summary,sample.readiness)}));
   return [g.id,chooseBacktestContext(selectedResult,alternatives)];
  }));
  const progress=currentLibraryProgress();
