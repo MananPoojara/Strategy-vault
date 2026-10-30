@@ -7,6 +7,7 @@ import {authorProfileHtml} from '../services/author-profiles';
 import {loadOwnerRows,failureRecord,retryDue} from '../services/summary-loader';
 import {engineCalls} from '../services/engine-calls';
 import {createPaint,NOT_READY} from '../services/first-paint';
+import {routeData} from '../services/route-data';
 import {bookContext} from '../services/book-context';
 import {returnDisplay} from '../services/return-display';
 import {sourceAccount,sourceAccountView,sourceTradeHeaders,sourceAccountTables,sourceAccountCopy} from '../services/source-account';
@@ -1605,7 +1606,7 @@ async function filterBar() {
   return `<div class="fbar"><div class="fbar-in">${keys.map(k => dropdown(k, cnt[k])).join('')}<label class="dsearch"><input id="q" type="search" value="${esc(S.q)}" placeholder="Search name, rule, book…"></label></div>
     ${chips.length ? `<div class="chips">${chips.join('')}<button class="link" data-set="${ds({ q: '', ...(R.name === 'guru' ? {} : { guru: '' }), book: '', style: '', dir: '', hold: '', verdict: '', min: '0', family: '' })}">Clear all</button></div>` : ''}</div>`;
 }
-const regionToggle = (withAll = false) => `<div class="join region" title="India: Nifty 50, Bank Nifty, Midcap 100 (NSE daily close) · US: S&amp;P 500, Nasdaq 100, Dow Jones (daily close)${withAll ? ' · All: both markets together' : ''}">${[...(withAll && TICK_US ? [['all', 'All']] : []), ['in', 'India'], ['us', 'US']].map(([k, t]) => `<button class="join-item ${S.region === k ? 'active' : ''} ${k === 'us' && !TICK_US ? 'off' : ''}" data-set="${ds({ region: k,basket:'', tk: k === 'all' ? 'ALL' : '', from: '', to: '', market: 'india' })}" ${k === 'us' && !TICK_US ? 'disabled title="US engine (port 8091) is not running"' : ''}>${t}</button>`).join('')}</div>`;
+const regionToggle = (withAll = false) => `<div class="join region" title="India: Nifty 50, Bank Nifty, Midcap 100 (NSE daily close) · US: S&amp;P 500, Nasdaq 100, Dow Jones (daily close)${withAll ? ' · All: both markets together' : ''}">${[...(withAll && usOffered() ? [['all', 'All']] : []), ['in', 'India'], ['us', 'US']].map(([k, t]) => `<button class="join-item ${S.region === k ? 'active' : ''} ${k === 'us' && !usOffered() ? 'off' : ''}" data-set="${ds({ region: k,basket:'', tk: k === 'all' ? 'ALL' : '', from: '', to: '', market: 'india' })}" ${k === 'us' && !usOffered() ? 'disabled title="US engine (port 8091) is not running"' : ''}>${t}</button>`).join('')}</div>`;
 function resultsBar(rs) {
   const M = TABS[S.tab].metric;
   return `<div class="rbar" data-results-controls>
@@ -2053,7 +2054,7 @@ addEventListener('afterprint',()=>{document.body.classList.remove('report-print'
 let busy = 0, lastName = '', LIST_HASH = ''; // the list (with its filters) the user last looked at
 function viewSaved() {
   const list = VaultUI.savedList(), I = VaultUI.ICON;
-  const rows = list.map(x => { const v = ALLCAT.find(c => c.id === x.id); return `<div class="saved-row">${I.saved}<div><a class="t" href="${esc(x.hash)}">${esc(x.name)}</a><small>${esc(v ? BOOK[v.book]?.title || '' : '')}${v ? ' · ' : ''}${esc(LABEL[x.tk] || x.tk)} · saved ${esc(x.at)}</small></div><button type="button" class="ibtn" data-unsave="${esc(x.key)}" title="Remove from Saved" aria-label="Remove from Saved">${I.save}</button></div>`; }).join('');
+  const rows = list.map(x => { const v = ALLCAT.find(c => c.id === x.id); return `<div class="saved-row">${I.saved}<div><a class="t" href="${esc(x.hash)}">${esc(x.name)}</a><small>${esc(v ? BOOK[v.book]?.title || '' : '')}${v ? ' · ' : ''}${esc(LABEL[x.tk] || x.tk.split(':').at(-1))} · saved ${esc(x.at)}</small></div><button type="button" class="ibtn" data-unsave="${esc(x.key)}" title="Remove from Saved" aria-label="Remove from Saved">${I.save}</button></div>`; }).join('');
   return `<section class="box"><div class="box-h">Saved strategies <small>${list.length} saved · stored in this browser</small></div>${list.length ? `<div class="saved-list">${rows}</div>` : '<p class="rnote">Nothing saved yet. Open a strategy and press Save to keep it here, with its index and settings.</p>'}</section>`;
 }
 function savedCount() { const n = VaultUI.savedList().length, el = $('#saved-count'); if (el) { el.textContent = n; el.hidden = !n; } }
@@ -2146,39 +2147,59 @@ document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.ma
 document.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('details.dd[open]').forEach(d => d.removeAttribute('open')); });
 document.addEventListener('change', e => {if(e.target.id==='strategy-stock'){if(!e.target.value)return;return setState({run_scope:'single',basket:'',tk:e.target.value,from:'',to:''});}if(e.target.id==='library-stock')return setState({tk:e.target.value,from:'',to:''});if(e.target.id==='library-instrument'){const value=e.target.value;if(value.startsWith('i:'))return setState({basket:'',tk:value.slice(2),from:'',to:''});const key=value.slice(2),basket=BASKETS.find(b=>b.id===key);if(basket?.symbols?.length)return setState({basket:key,tk:basket.symbols[0],from:'',to:''});return;}if(e.target.id==='library-sort')return setState({library_sort:e.target.value,library_limit:'24',library_page:'1',source_page:'1'}); if(e.target.id==='basket-universe'){const base=S.basket.replace(/_past$/,''),key=base+(e.target.value==='current_plus_past'?'_past':''),basket=BASKETS.find(b=>b.id===key),symbol=S.tk.split(':').at(-1),match=basket?.symbols?.find(x=>x.split(':').at(-1)===symbol);return setState({basket:key,tk:match||basket?.symbols?.[0]||S.tk,from:'',to:''});} if(e.target.id==='basket-symbol')return setState({tk:e.target.value});const k = e.target.dataset?.key; if (k) setState({ [k]: e.target.value }); });
 let qt; document.addEventListener('input', e => { if (e.target.id !== 'q') return; clearTimeout(qt); qt = setTimeout(() => setState({ q: e.target.value }), 300); });
-addEventListener('hashchange', () => { if(!GURUS_API.length||!ALLCAT.length)return;readRoute(); render(); });
+addEventListener('hashchange', () => { if(!GURUS_API.length||!ALLCAT.length)return;void showRoute(); });
 
 const THEMES = [['midnight','Midnight','linear-gradient(135deg,#0d1727 50%,#4eade8 50%)'],['forest','Forest','linear-gradient(135deg,#eef4ed 50%,#357552 50%)'],['sand','Sand','linear-gradient(135deg,#f6f0e5 50%,#bd6935 50%)'],['plum','Plum','linear-gradient(135deg,#f6edf3 50%,#8c477d 50%)'],['cobalt','Cobalt','linear-gradient(135deg,#edf2fc 50%,#315ad6 50%)'],['steel', 'Steel', 'linear-gradient(135deg,#f3f3f3 50%,#2f5a8f 50%)'], ['aqua', 'Aqua', 'linear-gradient(135deg,#ffffff 50%,#10adbc 50%)'], ['lagoon', 'Lagoon', 'linear-gradient(135deg,#e9f8fa 50%,#00798a 50%)'], ['glacier', 'Glacier', 'linear-gradient(135deg,#f8fcfd 50%,#3cc0c9 50%)']];
 function setTheme(t, redraw) { if (t === 'steel') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t; try { localStorage.setItem('vault-theme', t); } catch (e) {}
   document.querySelectorAll('#themes button').forEach(b => b.classList.toggle('on', b.dataset.theme === t)); if (redraw && ALLCAT.length) { lastName = ''; render(); } }
+const dataFile=async file=>{try{const response=await fetch('data/'+file);return response.ok?await response.json():null;}catch{return null;}};
+const applyBaskets=(data,region)=>{try{if(data){const pool=region==='us'?TICK_ALL_US:TICK_ALL_IN,keys=new Set(pool.map(t=>t.ticker)),items=(Array.isArray(data)?data:data.baskets||[]).map(b=>({...b,symbols:(b.symbols||[]).filter(key=>keys.has(key))}));if(region==='us')BASKETS_US=items;else BASKETS_IN=items;}}catch{}};
+// US tickers and the library are loaded once, by the first page that reads them (services/route-data).
+let US_DATA=null,US_FAILED=false,LIBRARY_DATA=null,DATA_READY=new Set();
+const usOffered=()=>!US_FAILED; // the region switch stays on until a US view has actually failed to load
+const usData=()=>US_DATA||(US_DATA=(async()=>{
+  const baskets=dataFile('baskets-us.json');
+  try { const u = await (await fetch(API_US + '/tickers')).json(); TICK_ALL_US=u;u.forEach(t=>{if(!LABEL[t.ticker])LABEL[t.ticker]=t.symbol||t.ticker.split(':').at(-1);}); TICK_US = US_INDICES.map(k => u.find(t => t.ticker === k)).filter(Boolean); if (!TICK_US.length) TICK_US = null; } catch (e) { TICK_US = null; }
+  US_FAILED=!TICK_US;applyBaskets(await baskets,'us');DATA_READY.add('us');
+})());
+const libraryData=()=>LIBRARY_DATA||(LIBRARY_DATA=(async()=>{
+  const metadataFiles=['book-coverage.json','pristine-reading-index.json','book-file-index.json','book-categories.json','research-share-library.json','tharp-source-review.json','library-progress.json','research-share-review.json'];
+  const metadata=await Promise.all(metadataFiles.map(dataFile));
+  if(metadata[0])BOOK_COVERAGE=metadata[0];
+  try{const data=metadata[1];if(data){const entries=(data.entries||[]).map(b=>({...b,author_metadata:b.source_author,years_reported:b.year?[String(b.year)]:[]}));BOOK_COVERAGE.authors.pristine={id:'pristine',name:'Pristine Trading',source_titles:entries,catalogue_books:GURU.pristine.books.map(b=>({id:b.id,title:b.title,summary:b.blurb})),counts:{catalogue_books:3,source_title_candidates:entries.length,local_pdf_files:(data.counts?.source_locations||0)},note:'Three curated reading entries, plus related Pristine manuals and articles with their recorded author credits. Source-title candidates, document versions and split materials are not independently verified distinct authored books. Original source bytes were preserved. Selected TPM1 daily branches have separate source review; other sources, execution modes and original performance are not thereby certified.'};}}catch{}
+  if(metadata[2])BOOK_FILE_INDEX=metadata[2];
+  if(metadata[3])BOOK_CATEGORIES=metadata[3];
+  try{if(metadata[4])mergeResearchLibrary(metadata[4]);}catch{}
+  try{if(metadata[5])applyReadingReviews(metadata[5]);}catch{}
+  if(metadata[6]){
+    LIBRARY_PROGRESS=metadata[6];
+    for(const link of LIBRARY_PROGRESS.approved_source_book_links||[]){const b=BOOK[link.book_id];if(b&&b.guru.id===link.author_id&&link.evidence&&typeof link.source_id==='string')b.sourceIds=[...new Set([...(b.sourceIds||[]),link.source_id])];}
+  }
+  try{if(metadata[7])applyShareReview(metadata[7]);}catch{}
+  finalizeReadingIndex();DATA_READY.add('library');
+})());
+async function showRoute(){
+  const at=location.hash,need=routeData(at,{isCustom:path=>customPages.some(page=>page.path===path),isUsOnly:id=>pristineMethod(id,PRISTINE_BOOK),isGuru:id=>!!GURU[id]});
+  if((need.us&&!DATA_READY.has('us'))||(need.library&&!DATA_READY.has('library'))){
+    vaultStore.begin(at);
+    await Promise.all([need.us?usData():null,need.library?libraryData():null]);
+    if(location.hash!==at)return; // the user moved on; that navigation draws its own page
+  }
+  readRoute();render();
+}
 async function initializeRuntime(account) {
   try {
     setTheme(account.settings.theme||'aqua', false);
     const get = async u => { const response = await fetch(API + u); if (!response.ok) throw new Error(await response.text()); return response.json(); };
-    const [connorsCat, rossCat, chandeCat, tk, gurus] = await Promise.all([get('/guru/connors/strategies'), get('/guru/ross/strategies'), get('/guru/chande/strategies'), get('/tickers'), get('/gurus')]);
+    const [connorsCat, rossCat, chandeCat, tk, gurus, baskets] = await Promise.all([get('/guru/connors/strategies'), get('/guru/ross/strategies'), get('/guru/chande/strategies'), get('/tickers'), get('/gurus'), dataFile('baskets.json')]);
     const pristineCat=gurus.some(owner=>owner.id==='pristine')?await get('/guru/pristine/strategies'):[];
     const cat=[...connorsCat.map(v=>({...v,api:'connors',guru:BOOK[v.book]?.guru.id||'connors'})),...rossCat.map(v=>({...v,api:'ross',guru:'ross'})),...chandeCat.map(v=>({...v,api:'chande',guru:'chande'})),...pristineCat.map(v=>({...v,api:'pristine',guru:'pristine'}))]; // guru = the book's author; api = the engine namespace that serves it
     TICK_ALL_IN=tk;tk.forEach(t=>{if(!LABEL[t.ticker])LABEL[t.ticker]=t.symbol||t.ticker.split(':').at(-1);});
     TICKERS = TICK_IN = tk.filter(t => IN_INDICES.includes(t.ticker)); GURUS_API = gurus;
-    try { const u = await (await fetch(API_US + '/tickers')).json(); TICK_ALL_US=u;u.forEach(t=>{if(!LABEL[t.ticker])LABEL[t.ticker]=t.symbol||t.ticker.split(':').at(-1);}); TICK_US = US_INDICES.map(k => u.find(t => t.ticker === k)).filter(Boolean); if (!TICK_US.length) TICK_US = null; } catch (e) { TICK_US = null; }
     ALLCAT = cat.map((v, i) => ({ ...v, ord: i, book: v.book || 'stc9', style: v.group.split(' · ')[0] })); CAT = marketCat();
     Object.values(BOOK).forEach(b => { if (CAT.some(v => v.book === b.id)) b.live = true; });
-    const metadataFiles=['baskets.json','baskets-us.json','book-coverage.json','pristine-reading-index.json','book-file-index.json','book-categories.json','research-share-library.json','tharp-source-review.json','library-progress.json','research-share-review.json'];
-    const metadata=await Promise.all(metadataFiles.map(async file=>{try{const response=await fetch('data/'+file);return response.ok?await response.json():null;}catch{return null;}}));
-    for(const [offset,region] of [[0,'in'],[1,'us']]){try{const data=metadata[offset];if(data){const pool=region==='us'?TICK_ALL_US:TICK_ALL_IN,keys=new Set(pool.map(t=>t.ticker)),items=(Array.isArray(data)?data:data.baskets||[]).map(b=>({...b,symbols:(b.symbols||[]).filter(key=>keys.has(key))}));if(region==='us')BASKETS_US=items;else BASKETS_IN=items;}}catch{}}
-    if(metadata[2])BOOK_COVERAGE=metadata[2];
-    try{const data=metadata[3];if(data){const entries=(data.entries||[]).map(b=>({...b,author_metadata:b.source_author,years_reported:b.year?[String(b.year)]:[]}));BOOK_COVERAGE.authors.pristine={id:'pristine',name:'Pristine Trading',source_titles:entries,catalogue_books:GURU.pristine.books.map(b=>({id:b.id,title:b.title,summary:b.blurb})),counts:{catalogue_books:3,source_title_candidates:entries.length,local_pdf_files:(data.counts?.source_locations||0)},note:'Three curated reading entries, plus related Pristine manuals and articles with their recorded author credits. Source-title candidates, document versions and split materials are not independently verified distinct authored books. Original source bytes were preserved. Selected TPM1 daily branches have separate source review; other sources, execution modes and original performance are not thereby certified.'};}}catch{}
-    if(metadata[4])BOOK_FILE_INDEX=metadata[4];
-    if(metadata[5])BOOK_CATEGORIES=metadata[5];
-    try{if(metadata[6])mergeResearchLibrary(metadata[6]);}catch{}
-    try{if(metadata[7])applyReadingReviews(metadata[7]);}catch{}
-    if(metadata[8]){
-      LIBRARY_PROGRESS=metadata[8];
-      for(const link of LIBRARY_PROGRESS.approved_source_book_links||[]){const b=BOOK[link.book_id];if(b&&b.guru.id===link.author_id&&link.evidence&&typeof link.source_id==='string')b.sourceIds=[...new Set([...(b.sourceIds||[]),link.source_id])];}
-    }
-    try{if(metadata[9])applyShareReview(metadata[9]);}catch{}
-    finalizeReadingIndex();
-    readRoute(); render();
+    applyBaskets(baskets,'in');
+    await showRoute();
   } catch (error) { vaultStore.fail(vaultStore.begin('/'),error.message||'Could not reach the calculation engine.'); }
 }
 
@@ -2225,14 +2246,14 @@ async function homeModel(){
  const searchAuthors=VaultLibraryBrowser.matchingAuthors(scopeAuthors,allRecords,'',S.book_category).map(g=>({id:g.id,curated:CURATED_AUTHOR_IDS.has(g.id),name:['?','unknown','anonymous'].includes(g.name?.trim().toLowerCase())?'Source credit awaiting review':g.name,photo:photoOf(g),initials:initials(g.name),href:guruLink(g.id)}));
  const indices=S.region==='us'?TICK_US:TICK_IN;
  const enabled=ALLCAT.filter(variant=>variant.status==='live');
- return {listedPeople:list.filter(g=>g.person).length,identifiedAuthors:identifiedAuthorCount,libraryTotals:libraryTotals(LIB.flatMap(g=>g.books.map(b=>b.id))),strategiesFound:progress.strategiesFound,backtestedStrategies:progress.backtestedStrategies,progressCurrent:progress.current,summaryIssues:summaryIssues(h.tk,S.from||'',S.to||''),resultsPending:PAINT.waiting(),authorStats:scoped,market:libraryMarket(S),implementedMethods:new Set(enabled.map(variant=>variant.book+':'+variant.family)).size,enabledVariants:enabled.length,implementedBooks:new Set(enabled.map(variant=>variant.book)).size,authors:scopeAuthorIds.size,curatedAuthors:CURATED_AUTHOR_IDS.size,scope:S.library_scope,inventoryGroups:LIB.length,inventoryEntries:inventoryRecords.length,entries:allRecords.length,families:h.tested,symbol:LABEL[h.tk]||h.tk,symbolCount:TICKERS.length,basket:!!S.basket,authorCards,searchAuthors,bookCards,page:{page,pages,total,key:'library_page',label:S.library_view==='books'?'books':'authors'},query:S.library_q,category:S.book_category,view:S.library_view,etfs:etfs.map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),indices:(indices||[]).map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),baskets:BASKETS.map(b=>({id:b.id,name:b.name,symbols:b.symbols||[]})),symbols:TICKERS.map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),usAvailable:!!TICK_US,guilloche:GUILL,connorsLink:guruLink('connors'),strategiesLink:href('/strategies',{tk:S.tk,basket:S.basket})};
+ return {listedPeople:list.filter(g=>g.person).length,identifiedAuthors:identifiedAuthorCount,libraryTotals:libraryTotals(LIB.flatMap(g=>g.books.map(b=>b.id))),strategiesFound:progress.strategiesFound,backtestedStrategies:progress.backtestedStrategies,progressCurrent:progress.current,summaryIssues:summaryIssues(h.tk,S.from||'',S.to||''),resultsPending:PAINT.waiting(),authorStats:scoped,market:libraryMarket(S),implementedMethods:new Set(enabled.map(variant=>variant.book+':'+variant.family)).size,enabledVariants:enabled.length,implementedBooks:new Set(enabled.map(variant=>variant.book)).size,authors:scopeAuthorIds.size,curatedAuthors:CURATED_AUTHOR_IDS.size,scope:S.library_scope,inventoryGroups:LIB.length,inventoryEntries:inventoryRecords.length,entries:allRecords.length,families:h.tested,symbol:LABEL[h.tk]||h.tk,symbolCount:TICKERS.length,basket:!!S.basket,authorCards,searchAuthors,bookCards,page:{page,pages,total,key:'library_page',label:S.library_view==='books'?'books':'authors'},query:S.library_q,category:S.book_category,view:S.library_view,etfs:etfs.map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),indices:(indices||[]).map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),baskets:BASKETS.map(b=>({id:b.id,name:b.name,symbols:b.symbols||[]})),symbols:TICKERS.map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),usAvailable:usOffered(),guilloche:GUILL,connorsLink:guruLink('connors'),strategiesLink:href('/strategies',{tk:S.tk,basket:S.basket})};
 }
 let startup;
 window.VaultRuntime={
  bootstrap:account=>startup||(startup=initializeRuntime(account)),commit:commitReactPage,cleanup:cleanupCharts,patch:setState,changeTheme:theme=>setTheme(theme,true),
  activateReportTab:resizeVisibleReportCharts,pristineCurrent,exportPristine:(data,view,kind)=>VaultUI.pristineExport(data,view,kind),
  openAuthor:(id,event)=>window.openGuru(id,event),closeAuthor:()=>window.closeGuru(),actions:()=>VaultUI.actions(),themes:THEMES,
- saved:()=>VaultUI.savedList().map(item=>({...item,book:BOOK[ALLCAT.find(v=>v.id===item.id)?.book]?.title||'',symbol:LABEL[item.tk]||item.tk})),removeSaved:key=>VaultUI.writeSaved(VaultUI.savedList().filter(item=>item.key!==key))
+ saved:()=>VaultUI.savedList().map(item=>({...item,book:BOOK[ALLCAT.find(v=>v.id===item.id)?.book]?.title||'',symbol:LABEL[item.tk]||item.tk.split(':').at(-1)})),removeSaved:key=>VaultUI.writeSaved(VaultUI.savedList().filter(item=>item.key!==key))
 };
 
 function readingModel(){
