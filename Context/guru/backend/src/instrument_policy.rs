@@ -318,6 +318,8 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || tillson_reviewed(def) // Tim Tillson block
         || leungchong_reviewed(def) // Leung and Chong block
         || bollinger_reviewed(def) // John Bollinger block
+        || niksan3_reviewed(def) // NIKSAN MetaStock pack (PS RSI Trailing Exit) block
+        || adaptrade_reviewed(def) // Adaptrade Builder bonus strategies block
         || dgagne_reviewed(def) // Dave Gagné block
         || dpenn_reviewed(def) // David Penn block
         || dbowden_reviewed(def) // David Bowden block
@@ -1334,6 +1336,26 @@ fn bollinger_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end John Bollinger
+// ---------------------------------------------------------------- Adaptrade Builder bonus strategies 2026-10-30 (titles lane K4)
+// Admission only for the module REVIEWED lists (authors/titles-1030/K4w/k4_ref.py (header)); kept in one block to merge.
+pub fn adaptrade_reviewed(def:&StrategyDef)->bool {(def.book=="adbld" && crate::books::adbld::reviewed(def.id))}
+const ADAPTRADE_LABEL:&str="Adaptrade Builder fitted each system to one market (Apple, Amazon, E-mini S&P futures); other stocks, ETFs, indices and India are a declared application, and the cash index or ETF stands in for the E-mini.";
+fn adaptrade_policy(def:&StrategyDef)->Option<Policy> {
+    if !adaptrade_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Adaptrade Builder bonus strategies, adaptrade systems.doc; results Builder-BonusStrategies.pdf PDF p.6, 9, 10");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Adaptrade Builder bonus strategies
+// ---------------------------------------------------------------- NIKSAN MetaStock pack (PS RSI Trailing Exit) 2026-10-30 (titles lane K4)
+// Admission only for the module REVIEWED lists (authors/titles-1030/K4w/k4_ref.py (header)); kept in one block to merge.
+pub fn niksan3_reviewed(def:&StrategyDef)->bool {(def.book=="nkms3" && crate::books::nkms3::reviewed(def.id))}
+const NIKSAN3_LABEL:&str="Equis's PS sample record names no market; runs on indices, ETFs and single stocks (US and India) are a declared application, not the author's test.";
+fn niksan3_policy(def:&StrategyDef)->Option<Policy> {
+    if !niksan3_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"NIKSAN MetaStock pack, MS72PRFT.DTA record 81; MetaStock 7.2 manual, The System Editor Dialog");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end NIKSAN MetaStock pack (PS RSI Trailing Exit)
 // ---------------------------------------------------------------- Dave Gagné 2026-10-30 (day lane A1)
 // Admission only for the module REVIEWED lists (authors/gagne/admission/spring_ref.py (header)); kept in one block to merge.
 pub fn dgagne_reviewed(def:&StrategyDef)->bool {(def.book=="dgtmp" && crate::books::dgtmp::reviewed(def.id))}
@@ -2334,6 +2356,8 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=tillson_policy(def) {return p;} // Tim Tillson block
     if let Some(p)=leungchong_policy(def) {return p;} // Leung and Chong block
     if let Some(p)=bollinger_policy(def) {return p;} // John Bollinger block
+    if let Some(p)=niksan3_policy(def) {return p;} // NIKSAN MetaStock pack (PS RSI Trailing Exit) block
+    if let Some(p)=adaptrade_policy(def) {return p;} // Adaptrade Builder bonus strategies block
     if let Some(p)=dgagne_policy(def) {return p;} // Dave Gagné block
     if let Some(p)=dpenn_policy(def) {return p;} // David Penn block
     if let Some(p)=dbowden_policy(def) {return p;} // David Bowden block
@@ -3038,6 +3062,8 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if tillson_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",TILLSON_LABEL));} // Tim Tillson block
     if leungchong_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LEUNGCHONG_LABEL));} // Leung and Chong block
     if bollinger_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BOLLINGER_LABEL));} // John Bollinger block
+    if niksan3_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",NIKSAN3_LABEL));} // NIKSAN MetaStock pack (PS RSI Trailing Exit) block
+    if adaptrade_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",ADAPTRADE_LABEL));} // Adaptrade Builder bonus strategies block
     if dgagne_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",DGAGNE_LABEL));} // Dave Gagné block
     if dpenn_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",DPENN_LABEL));} // David Penn block
     if dbowden_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",DBOWDEN_LABEL));} // David Bowden block
@@ -3798,6 +3824,38 @@ mod tests {
         }
     }
     // ---- end John Bollinger block ----
+    // ---- Adaptrade Builder bonus strategies block (2026-10-30, titles lane K4) ----
+    #[test]
+    fn adaptrade_review_admits_exact_ids() {
+        use crate::books::{adbld};
+        let all:Vec<StrategyDef>=adbld::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=adbld::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|adaptrade_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Adaptrade Builder bonus strategies block ----
+    // ---- NIKSAN MetaStock pack (PS RSI Trailing Exit) block (2026-10-30, titles lane K4) ----
+    #[test]
+    fn niksan3_review_admits_exact_ids() {
+        use crate::books::{nkms3};
+        let all:Vec<StrategyDef>=nkms3::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=nkms3::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|niksan3_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end NIKSAN MetaStock pack (PS RSI Trailing Exit) block ----
     // ---- Dave Gagné block (2026-10-26, lane B) ----
     #[test]
     fn dgagne_review_admits_exact_ids() {
