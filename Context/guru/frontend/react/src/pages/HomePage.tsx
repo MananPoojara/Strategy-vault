@@ -3,8 +3,8 @@ import { LibraryControls, LibrarySearch } from "../components/LibraryControls";
 import { AuthorCard } from "../components/AuthorCard";
 import { BookCard } from "../components/BookCard";
 import { Pagination } from "../components/Pagination";
-import { ResearchMarkup } from "../components/ResearchMarkup";
 import { DataCoverageNotice } from "../components/DataCoverageNotice";
+import { LivingBook } from "../components/LivingBook";
 import { shareReview as share, shareFiles as files } from "../services/source-review-data";
 const n = (v: number) => v.toLocaleString("en-IN");
 export function HomePage({ snapshot }: { snapshot: ViewSnapshot }) {
@@ -14,7 +14,7 @@ export function HomePage({ snapshot }: { snapshot: ViewSnapshot }) {
     <>
       <section className="lhero">
         <div className="hero-art" aria-hidden="true">
-          <div className="guilloche"><ResearchMarkup html={model.guilloche} /></div>
+          <LivingBook />
         </div>
         <h1>Guru's</h1>
         <p className="lede">

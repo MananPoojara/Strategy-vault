@@ -771,3 +771,15 @@ body.pdf-capture .st-actions, body.pdf-capture #page-action-message, body.pdf-ca
 @media print{.range-brush{display:none}}
 
 .share-files{margin:8px 0 28px}.share-files .section-h{margin:0 0 8px}.lstrip.share-files-strip{grid-template-columns:repeat(7,minmax(0,1fr))}.share-files-strip dd{font-size:26px}@media(max-width:760px){.lstrip.share-files-strip{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Home hero figure (LivingBook, 30 Oct 2026): anatomy iso kit tones taken from the active site theme. */
+.living-book{position:absolute;right:max(24px,calc(50vw - 640px));top:50%;transform:translateY(-50%);width:clamp(400px,42vw,640px)}
+.iso.living-book[data-theme]{--anatomy-page:transparent;--anatomy-card:transparent;--anatomy-paper:var(--card);--anatomy-face:var(--card);--anatomy-top:var(--card);
+--anatomy-shade-0:color-mix(in srgb,var(--steel) 95%,var(--ink3));--anatomy-shade-1:var(--steel);--anatomy-shade-2:color-mix(in srgb,var(--steel) 60%,var(--card));--anatomy-shade-3:color-mix(in srgb,var(--steel) 30%,var(--card));
+--anatomy-lit-top:var(--card);--anatomy-lit-shade:var(--blue-soft,var(--steel));
+--anatomy-hi:var(--ink);--anatomy-mid:var(--ink2);--anatomy-lo:var(--ink3);--anatomy-faint:var(--steel);--anatomy-lit:var(--blue);
+--anatomy-halo:var(--ink2);--anatomy-halo-opacity:.28;--anatomy-dot:var(--ink)}
+.living-book .iso-edge{stroke-width:1.1}
+.living-book .lb-cover>.iso-top{fill:var(--blue)}
+.living-book .lb-cover>.iso-shade,.living-book .lb-cover>.iso-fill{fill:color-mix(in srgb,var(--blue) 75%,var(--ink))}
+@media (max-width:900px){.living-book{display:none}}
