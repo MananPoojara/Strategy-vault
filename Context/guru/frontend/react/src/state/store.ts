@@ -76,6 +76,8 @@ export interface HomeModel {
   backtestedStrategies?: number;
   progressCurrent?: boolean;
   summaryIssues?: SummaryIssue[];
+  /** Backtests are still on their way; library counts come from static files and are already final. */
+  resultsPending?: boolean;
   market: LibraryMarket;
   implementedMethods: number;
   enabledVariants: number;
@@ -144,6 +146,13 @@ export function createStore() {
         loading: false,
         error: null,
       };
+      notify();
+      return true;
+    },
+    /** Update the page in place (a backtest arrived): no remount, no loader, nothing lost on screen. */
+    fill: (ticket: number, patch: Partial<ViewSnapshot>) => {
+      if (ticket !== generation) return false;
+      snapshot = { ...snapshot, ...patch };
       notify();
       return true;
     },

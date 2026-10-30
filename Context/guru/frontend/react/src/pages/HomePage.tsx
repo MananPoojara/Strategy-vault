@@ -67,6 +67,9 @@ export function HomePage({ snapshot }: { snapshot: ViewSnapshot }) {
       {!model.progressCurrent ? <p className="rnote" role="status">Backtest progress is being checked against the current catalogue. No completion is inferred from enabled code.</p> : null}
       <LibraryControls model={model} state={snapshot.state} />
       <DataCoverageNotice issues={model.summaryIssues} />
+      {model.resultsPending ? <p className="rnote" role="status" data-results-pending>
+        Backtest details for {model.symbol} are still calculating and fill in here when ready. The counts above are already final.
+      </p> : null}
       {model.view === "authors" ? <p className="library-backtest-note">
         Authors with available backtests appear first. Open an author to see all indexed books and their review status.
       </p> : null}

@@ -6,6 +6,7 @@ import {LIB} from './catalogue.js';
 import {authorProfileHtml} from '../services/author-profiles';
 import {loadOwnerRows,failureRecord,retryDue} from '../services/summary-loader';
 import {engineCalls} from '../services/engine-calls';
+import {createPaint,NOT_READY} from '../services/first-paint';
 import {bookContext} from '../services/book-context';
 import {returnDisplay} from '../services/return-display';
 import {sourceAccount,sourceAccountView,sourceTradeHeaders,sourceAccountTables,sourceAccountCopy} from '../services/source-account';
@@ -1069,7 +1070,7 @@ async function pristineOwnerRows(group,url,definitions,kind){
  }catch(error){if(error.name==='AbortError')return {rows:[],retryableFailure:true,aborted:true};return {rows:definitions.map(definition=>({id:definition.id,...(kind==='readiness'?{status:'unavailable',note:error.message}:{blocked:error.message,readiness:'unavailable'})})),retryableFailure:true,issue:{owner:'pristine',status:'unavailable',kind:'request_failed',note:error.message||'Pristine owner data is unavailable.'}};}
 }
 
-const ENGINE=engineCalls(2);
+const ENGINE=engineCalls(2),PAINT=createPaint();
 const engineOwnerRows=(group,options)=>ENGINE.run(group,signal=>loadOwnerRows({...options,fetcher:fetch,signal})).catch(error=>{if(error.name==='AbortError')return {rows:[],retryableFailure:true,aborted:true};throw error;});
 async function getReadiness(tk, from = '', to = '', id = '', parameters = {}, api = API) {
  const owners=id?[ownerOf(id)]:guruIds(),variants=[...ALLCAT],generation=busy;
@@ -1081,12 +1082,12 @@ async function getReadiness(tk, from = '', to = '', id = '', parameters = {}, ap
  // Failed requests are shared within a render, then asked again on a later navigation once any cool-down has passed.
  const group='ready:'+key;
  if(retryDue(READINESS_FAILURE_GENERATION[key],generation))delete READINESS[key];
- return READINESS[key]||(READINESS[key]=(async()=>{
+ return PAINT.ask(READINESS,key,group,async()=>{
   const outcomes=await Promise.all(owners.map(owner=>owner==='pristine'?pristineOwnerRows(group,api+'/guru/pristine/readiness?'+ownerQuery(owner,query),ownedDefinitions(variants,owner,id),'readiness'):engineOwnerRows(group,{owner,definitions:ownedDefinitions(variants,owner,id),context,url:api+'/guru/'+owner+'/readiness?'+query,kind:'readiness'})));
   if(outcomes.some(outcome=>outcome.aborted)){delete READINESS[key];return {};}
   READINESS_FAILURE_GENERATION[key]=failureRecord(outcomes,generation);
   return Object.fromEntries(outcomes.flatMap(outcome=>outcome.rows).map(row=>[row.id,row]));
- })());
+ });
 }
 async function getSum(tk, from = '', to = '', api = API) {
  const owners=guruIds(),variants=[...ALLCAT],generation=busy;
@@ -1094,13 +1095,13 @@ async function getSum(tk, from = '', to = '', api = API) {
  const key=summaryKey(api,tk,from,to),context=summaryContext(tk,from,to),query=new URLSearchParams({ticker:tk,from,to});
  const group='sum:'+key;
  if(retryDue(SUM_FAILURE_GENERATION[key],generation))delete SUM[key];
- return SUM[key]||(SUM[key]=(async()=>{
+ return PAINT.ask(SUM,key,group,async()=>{
   const outcomes=await Promise.all(owners.map(owner=>owner==='pristine'?pristineOwnerRows(group,api+'/guru/pristine/summary?'+ownerQuery(owner,query),ownedDefinitions(variants,owner),'summary'):engineOwnerRows(group,{owner,definitions:ownedDefinitions(variants,owner),context,url:api+'/guru/'+owner+'/summary?'+query,kind:'summary'})));
   if(outcomes.some(outcome=>outcome.aborted)){delete SUM[key];return {};}
   SUMMARY_ISSUES[key]=outcomes.flatMap(outcome=>outcome.issue?[outcome.issue]:[]);
   SUM_FAILURE_GENERATION[key]=failureRecord(outcomes,generation);
   return Object.fromEntries(outcomes.flatMap(outcome=>outcome.rows).map(row=>[row.id,row]));
- })());
+ });
 }
 function summaryNoticeHTML(issues) {
  if(!issues.length)return '';
@@ -1117,12 +1118,13 @@ function listSummaryIssues() {
 const PRE = {};
 function preMap(tk, to, api = API, cat = CAT) {
   const k = `${api}|${tk}|${to}`;
-  if (PRE[k]) return PRE[k];
+  return PAINT.ask(PRE, k, 'pre:' + k, () => {
   const ids = cat.filter(v => v.status === 'live' && !v.needs_vix).map(v => v.id), out = {}; // VIX data starts after 2009: nothing to ask
   let left = false;
-  return PRE[k] = Promise.all(ids.map(id => ENGINE.run('pre:' + k, async signal => {
+  return Promise.all(ids.map(id => ENGINE.run('pre:' + k, async signal => {
     const r = await fetch(enginePath(id,'run',api)+'?' + new URLSearchParams({ id, ticker: tk, to }), { signal }); if (r.ok) out[id] = { stats: (await r.json()).stats };
   }).catch(e => { if (e.name === 'AbortError') left = true; /* otherwise leave missing */ }))).then(() => { if (left) delete PRE[k]; return out; });
+  });
 }
 const lastOf = tk => [...TICKERS, ...TICK_IN, ...(TICK_US || [])].find(t => t.ticker === tk)?.last || '2026-05-15';
 const shiftYears = (d, y) => { const t = new Date(d); t.setFullYear(t.getFullYear() - y); return t.toISOString().slice(0, 10); };
@@ -1173,6 +1175,7 @@ async function marketRows(S, region, api, tickers, CAT) {
   const metaOk = v => textOk(v) && (!S.guru || v.guru === S.guru) && (!S.book || v.book === S.book) && (!S.style || v.style === S.style) && (!S.dir || v.dir === S.dir) && (!S.family || v.family === S.family);
   if (S.tab === 'awaiting') {
     const availability = await Promise.all(tks.map(tk => getReadiness(tk,S.from,S.to,'',{},api)));
+    if (availability.includes(NOT_READY)) return []; // not known yet is not "unavailable"
     return CAT.filter(metaOk).map(v => {
       const issues=tks.map((tk,i)=>({tk,...availability[i][v.id]})).filter(item=>item.status!=='ready');
       return {v,tk:issues[0]?.tk,s:null,issues,region};
@@ -1181,6 +1184,7 @@ async function marketRows(S, region, api, tickers, CAT) {
   const out = [];
   for (const tk of tks) {
     const w = S.tab==='sharpe'&&(S.from||S.to)?{from:S.from||'',to:S.to||''}:T.win(tk), main = await getSum(tk, w.from, w.to, api), ex = T.extra ? T.extra(tk) : null, extra = ex ? await getSum(tk, ex.from, ex.to, api) : T.pre ? await preMap(tk, T.pre, api, CAT) : null;
+    if (main === NOT_READY) { PAINT.hold(CAT.filter(v => v.status === 'live' && metaOk(v)).map(v => ({ v, tk, region }))); continue; }
     for (const v of CAT) {
       if (v.status !== 'live' || !metaOk(v)) continue;
       const m = main[v.id]; if (!m?.stats || !m.stats.trades) continue; // no data (volume rules on Nifty IT) or no closed trades in the window
@@ -1256,6 +1260,7 @@ async function unavailableForSelectedBook(){
   for(const tk of tickers){
     const w=S.tab==='sharpe'&&(S.from||S.to)?{from:S.from||'',to:S.to||''}:TABS[S.tab].win?.(tk)||{from:S.from||'',to:S.to||''};
     const [summary,ready]=await Promise.all([getSum(tk,w.from,w.to),getReadiness(tk,w.from,w.to)]);
+    if(summary===NOT_READY||ready===NOT_READY)return []; // listed as unavailable only once the engine has said so
     reasons.push(...VaultLibraryDiscovery.authorAvailability([S.book],defs,summary,ready).variantReasons);
   }
   // A ready result on any selected instrument admits the method; never let a later
@@ -1575,12 +1580,12 @@ const setFor = (k, v) => { const F = FILTERS[k]; if (!F.noAll && curOf(k) === v)
 function dropdown(k, cnt) {
   const F = FILTERS[k], c = curOf(k), on = F.vals().find(([v]) => v === c), set = isSet(k) || F.noAll;
   const items = (F.noAll ? '' : `<li><a class="${isSet(k) ? '' : 'active'}" data-set="${ds({ [k]: F.zero || '' })}"><span>All</span></a></li>`) +
-    F.vals().map(([v, t]) => { const n = cnt?.[v]; return `<li><a class="${c === v ? 'active' : ''} ${cnt && !n && !v.startsWith('@') && v !== 'ALL' && Object.keys(cnt).length ? 'muted' : ''}" data-set="${ds(setFor(k, v))}"><span>${esc(t)}</span>${n != null ? `<span class="badge">${n}</span>` : ''}</a></li>`; }).join('');
+    F.vals().map(([v, t]) => { const n = cnt?.[v]; return `<li><a class="${c === v ? 'active' : ''} ${k !== 'tk' && cnt && !n && !v.startsWith('@') && v !== 'ALL' && Object.keys(cnt).length ? 'muted' : ''}" data-set="${ds(setFor(k, v))}"><span>${esc(t)}</span>${n != null ? `<span class="badge">${n}</span>` : ''}</a></li>`; }).join('');
   return `<details class="dd ${isSet(k) ? 'set' : ''}"><summary class="dd-btn"><span class="dd-l">${F.t}</span>${set && on ? `<b>${esc(on[1])}</b>` : ''}<i class="chev"></i></summary><ul class="menu">${items}</ul></details>`;
 }
 async function filterBar() {
   const keys = ['mode', 'tk', 'tab', ...(R.name === 'guru' ? [] : ['guru']), 'book', 'style', 'dir', 'hold', 'verdict', 'min'];
-  const cnt = {}; for (const k of keys) if (!['mode', 'tab'].includes(k)) cnt[k] = await counts(k);
+  const cnt = {}; for (const k of keys) if (!['mode', 'tab'].includes(k)) cnt[k] = await PAINT.peek(() => counts(k));
   const chips = ['guru', 'book', 'style', 'dir', 'hold', 'verdict', 'min'].filter(k => isSet(k) && !(R.name === 'guru' && k === 'guru')).map(k => { const F = FILTERS[k], c = curOf(k); return `<span class="chip">${F.t}: ${esc(F.vals().find(([v]) => v === c)?.[1] || c)}<button data-set="${ds({ [k]: F.zero || '' })}" aria-label="Remove">×</button></span>`; });
   if (S.family) chips.push(`<span class="chip">Strategy: ${esc((CAT.find(v => v.family === S.family)?familyDisplayName(CAT.find(v => v.family === S.family)):''))}<button data-set="${ds({ family: '', mode: 'strategies' })}" aria-label="Remove">×</button></span>`);
   if (S.q) chips.push(`<span class="chip">“${esc(S.q)}”<button data-set="${ds({ q: '' })}" aria-label="Remove">×</button></span>`);
@@ -1594,10 +1599,20 @@ function resultsBar(rs) {
     ${regionToggle(R.name === 'all')}<label class="dselect"><select data-key="sort" aria-label="Sort">${Object.entries(SORTS).map(([k, t]) => `<option value="${k}" ${S.sort === k ? 'selected' : ''}>Sort: ${k === 'primary' ? (M?.label || t) : t}</option>`).join('')}</select></label>
     <div class="join">${[['grid', 'Grid'], ['table', 'Table'], ['list', 'List']].map(([k, t]) => `<button class="join-item ${S.view === k ? 'active' : ''}" data-set="${ds({ view: k })}"><i class="ico ico-${k}"></i>${t}</button>`).join('')}</div></div>`;
 }
+// Cards from the catalogue while backtests calculate. No figure appears until it is measured; a strategy with no closed trades leaves the list once its result is in.
+function pendingCards() {
+  const seen = new Set(), list = PAINT.held().filter(r => { const k = S.mode === 'variants' ? r.v.id : r.v.family; return !seen.has(k) && seen.add(k); });
+  if (!list.length) return `<div class="empty" role="status"><b>Checking availability…</b>The reasons appear here once the engine has answered.</div>`;
+  return `<div class="grid">${list.map(r => `<article class="card" data-result-pending><div class="rank"><span>${esc(LABEL[r.tk] || r.tk)}</span><span class="stamp">CALCULATING</span></div>
+      <h3>${esc(familyDisplayName(r.v))}${gateBadge(r.v)}</h3><div class="by">${byline(r.v)}</div>${rulesList(r.v)}
+      <div class="btns"><a class="btn solid" href="${stratLink(r.v.id, r.tk, r.region)}">Full backtest</a><button class="btn" data-book="${r.v.book}">Book</button><button class="btn" data-guru="${r.v.guru}">Guru</button></div></article>`).join('')}</div>`;
+}
+const pendingNote = rs => PAINT.waiting() ? `<p class="rnote" role="status" data-results-pending>${rs.length ? 'More results are still calculating. This ranking can change until they arrive.' : 'Backtests are calculating. Each result fills in here when it arrives; filters on results apply then.'}</p>` : '';
 function resultsHtml(rs, missing = []) {
   if (S.market !== 'india') return `<div class="empty"><b>${S.market === 'global' ? 'Global markets' : 'Single stocks'}: no data loaded yet</b>The same gurus, books and strategies appear here once that data is in the Rust backend.</div>`;
   const pv = S.book && !BOOK[S.book].live ? BOOK[S.book].title : S.guru && !GURU[S.guru].books.some(b => b.live) ? GURU[S.guru].name : '';
   if (pv && !rs.length) return `<div class="empty"><b>${esc(pv)}: not converted yet</b>Its strategies, stats and charts appear here once its rules are coded in Rust.</div>`;
+  if (PAINT.waiting() && !rs.length && !missing.length) return pendingCards();
   if (!rs.length && missing.length) return viewStrategies([],S.mode==='variants',missing);
   if (!rs.length && (S.mode === 'strategies' || S.mode === 'variants')) return `<div class="empty"><b>Nothing matches</b>Loosen a filter or press Clear all.</div>`;
   if (S.tab === 'awaiting') return S.book&&missing.length?`<div class="grid">${missing.map(unavailableBookCard).join('')}</div>`:awaiting(rs);
@@ -1622,7 +1637,7 @@ async function viewList() {
   if(R.name==='guru'&&S.book&&!BOOK[S.book]?.live)return readingBookPage(GURU[R.id],BOOK[S.book]);
   if (R.name === 'guru' && !S.book) return `${head}${summaryNoticeHTML(listSummaryIssues())}${R.id==='ross'?rossResearchNotice():R.id==='chande'?experimentNotice({guru:'chande'},null):''}${libraryFiltersHTML(true)}${await bookShelf(GURU[R.id])}`;
   const missing=await unavailableForSelectedBook();
-  return `${head}${await filterBar()}${summaryNoticeHTML(listSummaryIssues())}${resultsBar(rs)}<div id="results">${resultsHtml(rs,missing)}</div>`;
+  return `${head}${await filterBar()}${summaryNoticeHTML(listSummaryIssues())}${resultsBar(rs)}${pendingNote(rs)}<div id="results">${resultsHtml(rs,missing)}</div>`;
 }
 // A guru's books as covers; opening one shows its strategies.
 function rossResearchNotice() {
@@ -2030,17 +2045,23 @@ document.addEventListener('click', e => { const b = e.target.closest('[data-unsa
 // Everything that decides which calculation a page asks for. A sort, a view or a theme change leaves calls running.
 let ENGINE_PAGE='';
 const enginePage=()=>[R.path,...['region','tk','tab','from','to','cost','slippage','rollover','p','basket','run_scope','research_mode','membership','max_positions'].map(key=>S[key])].join('|');
+// One draw of a page that shows first and fills in. Its calculations are all asked here, so anything else in flight is no longer wanted;
+// the next page keeps a calculation it also needs. The engine cannot stop a started run yet (see A2), the browser's share ends here.
+async function paintPass(){
+  const pass=await PAINT.run(()=>R.name==='home'?homeModel():viewList());
+  ENGINE.keepOnly(pass.wanted);
+  return pass;
+}
 async function render() {
-  const my=++busy,ticket=vaultStore.begin(R.path),route=resolveRoute(location.hash);
-  // The user left: abort what this page no longer needs. The engine cannot stop a started run yet (see A2), the browser's share ends here.
-  if(enginePage()!==ENGINE_PAGE){ENGINE.keepOnly(new Set());ENGINE_PAGE=enginePage();}
+  const my=++busy,ticket=vaultStore.begin(R.path),route=resolveRoute(location.hash),custom=customPages.find(page=>page.path===route.path),paints=!custom&&['home','guru','all'].includes(R.name);
+  if(paints)ENGINE_PAGE='';
+  else if(enginePage()!==ENGINE_PAGE){ENGINE.keepOnly(new Set());ENGINE_PAGE=enginePage();}
   if(R.name==='guru'||R.name==='all')LIST_HASH=location.hash||'#/';
   STRAT=null;RULE_VISUAL=null;if(R.name!=='strategy')bookCtx(S.book||'stc9');
   try {
-    const custom=customPages.find(page=>page.path===route.path);
-    let home=null,reading=null,html='';
+    let home=null,reading=null,html='',pending=null;
     if(!custom){
-      if(R.name==='home')home=await homeModel();
+      if(paints){const pass=await paintPass();pending=pass.pending;if(R.name==='home')home=pass.value;else html=pass.value;}
       else if(R.name==='source')reading=readingModel();
       else html=R.name==='saved'?viewSaved():R.name==='strategy'?await viewStrategy():await viewList();
     }
@@ -2051,6 +2072,11 @@ async function render() {
     pendingFocus={id:focus,pos};
     const status=custom?.label||(R.name==='strategy'?'Strategy':`${isUS()?'US':'India'} · ${S.tk==='ALL'?'all indices':LABEL[S.tk]||S.tk} · ${TABS[S.tab]?.name||'Research'}`);
     vaultStore.commit(ticket,{html,home,reading,route,state:{...S},status,strategyRules:route.name==='strategy'?RULE_VISUAL:null,strategyAccount:route.name==='strategy'||route.name==='optimization'?STRAT?.sourceView??null:null,strategyPristine:route.name==='strategy'||route.name==='optimization'?STRAT?.pristine??null:null,strategyUnit:route.name==='strategy'||route.name==='optimization'?STRAT?.unit??null:null,strategySettings:route.name==='strategy'?STRAT?.settings??null:null});
+    if(pending?.size)await PAINT.until(pending,()=>my!==busy,async()=>{
+      const pass=await paintPass();
+      if(my===busy){if(R.name==='home')HOME_STATS=pass.value.authorStats;vaultStore.fill(ticket,R.name==='home'?{home:pass.value}:{html:pass.value});}
+      return pass;
+    });
   }catch(error){if(my===busy)vaultStore.fail(ticket,error.message||'Research data is unavailable.');}
 }
 let pendingFocus=null;
@@ -2150,7 +2176,7 @@ async function homeModel(){
  // Discover compatible measured results on at most one stock and one ETF.
  // This never runs an entire basket or treats admissions as backtest results.
  const references=[];
- if(S.library_view!=='books'&&authors.some(g=>!states[g.id].availableFamilies&&CAT.some(v=>v.guru===g.id&&v.status==='live'&&v.instrument_policy?.allowed_types?.some(type=>['individual_stock','etf'].includes(type))))) {
+ if(summary!==NOT_READY&&readiness!==NOT_READY&&S.library_view!=='books'&&authors.some(g=>!states[g.id].availableFamilies&&CAT.some(v=>v.guru===g.id&&v.status==='live'&&v.instrument_policy?.allowed_types?.some(type=>['individual_stock','etf'].includes(type))))) {
   for(const context of referenceBacktestContexts(S.region,BASKETS,pool,etfs)) {
    try {const sample=await getSum(context.tk,context.from,context.to),ready=await getReadiness(context.tk,context.from,context.to);references.push({context,summary:sample,readiness:ready});}
    catch { /* No successful measured summary: leave the selected context honest. */ }
@@ -2178,7 +2204,7 @@ async function homeModel(){
  const searchAuthors=VaultLibraryBrowser.matchingAuthors(scopeAuthors,allRecords,'',S.book_category).map(g=>({id:g.id,curated:CURATED_AUTHOR_IDS.has(g.id),name:['?','unknown','anonymous'].includes(g.name?.trim().toLowerCase())?'Source credit awaiting review':g.name,photo:photoOf(g),initials:initials(g.name),href:guruLink(g.id)}));
  const indices=S.region==='us'?TICK_US:TICK_IN;
  const enabled=ALLCAT.filter(variant=>variant.status==='live');
- return {listedPeople:list.filter(g=>g.person).length,identifiedAuthors:identifiedAuthorCount,libraryTotals:libraryTotals(LIB.flatMap(g=>g.books.map(b=>b.id))),strategiesFound:progress.strategiesFound,backtestedStrategies:progress.backtestedStrategies,progressCurrent:progress.current,summaryIssues:summaryIssues(h.tk,S.from||'',S.to||''),authorStats:scoped,market:libraryMarket(S),implementedMethods:new Set(enabled.map(variant=>variant.book+':'+variant.family)).size,enabledVariants:enabled.length,implementedBooks:new Set(enabled.map(variant=>variant.book)).size,authors:scopeAuthorIds.size,curatedAuthors:CURATED_AUTHOR_IDS.size,scope:S.library_scope,inventoryGroups:LIB.length,inventoryEntries:inventoryRecords.length,entries:allRecords.length,families:h.tested,symbol:LABEL[h.tk]||h.tk,symbolCount:TICKERS.length,basket:!!S.basket,authorCards,searchAuthors,bookCards,page:{page,pages,total,key:'library_page',label:S.library_view==='books'?'books':'authors'},query:S.library_q,category:S.book_category,view:S.library_view,etfs:etfs.map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),indices:(indices||[]).map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),baskets:BASKETS.map(b=>({id:b.id,name:b.name,symbols:b.symbols||[]})),symbols:TICKERS.map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),usAvailable:!!TICK_US,guilloche:GUILL,connorsLink:guruLink('connors'),strategiesLink:href('/strategies',{tk:S.tk,basket:S.basket})};
+ return {listedPeople:list.filter(g=>g.person).length,identifiedAuthors:identifiedAuthorCount,libraryTotals:libraryTotals(LIB.flatMap(g=>g.books.map(b=>b.id))),strategiesFound:progress.strategiesFound,backtestedStrategies:progress.backtestedStrategies,progressCurrent:progress.current,summaryIssues:summaryIssues(h.tk,S.from||'',S.to||''),resultsPending:PAINT.waiting(),authorStats:scoped,market:libraryMarket(S),implementedMethods:new Set(enabled.map(variant=>variant.book+':'+variant.family)).size,enabledVariants:enabled.length,implementedBooks:new Set(enabled.map(variant=>variant.book)).size,authors:scopeAuthorIds.size,curatedAuthors:CURATED_AUTHOR_IDS.size,scope:S.library_scope,inventoryGroups:LIB.length,inventoryEntries:inventoryRecords.length,entries:allRecords.length,families:h.tested,symbol:LABEL[h.tk]||h.tk,symbolCount:TICKERS.length,basket:!!S.basket,authorCards,searchAuthors,bookCards,page:{page,pages,total,key:'library_page',label:S.library_view==='books'?'books':'authors'},query:S.library_q,category:S.book_category,view:S.library_view,etfs:etfs.map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),indices:(indices||[]).map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),baskets:BASKETS.map(b=>({id:b.id,name:b.name,symbols:b.symbols||[]})),symbols:TICKERS.map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),usAvailable:!!TICK_US,guilloche:GUILL,connorsLink:guruLink('connors'),strategiesLink:href('/strategies',{tk:S.tk,basket:S.basket})};
 }
 let startup;
 window.VaultRuntime={
