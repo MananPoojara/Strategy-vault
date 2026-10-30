@@ -318,6 +318,10 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || tillson_reviewed(def) // Tim Tillson block
         || leungchong_reviewed(def) // Leung and Chong block
         || bollinger_reviewed(def) // John Bollinger block
+        || hirschperson12_reviewed(def) // Jeffrey A. Hirsch and John L. Person (Commodity Trader's Almanac 2012) block
+        || jhirsch25_reviewed(def) // Jeffrey A. Hirsch (Stock Trader's Almanac 2025) block
+        || nfreeburg2_reviewed(def) // Nelson Freeburg (Chicago 2005 handout) block
+        || niksan2_reviewed(def) // NIKSAN MetaStock pack part 2 (Equis PS systems) block
         || dgagne_reviewed(def) // Dave Gagné block
         || dpenn_reviewed(def) // David Penn block
         || dbowden_reviewed(def) // David Bowden block
@@ -1335,6 +1339,46 @@ fn bollinger_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end John Bollinger
+// ---------------------------------------------------------------- Jeffrey A. Hirsch and John L. Person (Commodity Trader's Almanac 2012) 2026-10-30 (titles lane K2)
+// Admission only for the module REVIEWED lists (authors/niksan-k2/admission/k2b_ref.py (header)); kept in one block to merge.
+pub fn hirschperson12_reviewed(def:&StrategyDef)->bool {(def.book=="hcta12" && crate::books::hcta12::reviewed(def.id))}
+const HIRSCHPERSON12_LABEL:&str="The Almanac trades March S&P 500 futures; the cash index, ETFs, single stocks and India are a declared application (instrument swap).";
+fn hirschperson12_policy(def:&StrategyDef)->Option<Policy> {
+    if !hirschperson12_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Jeffrey A. Hirsch and John L. Person, Commodity Trader's Almanac 2012, ch.1 (January)");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Jeffrey A. Hirsch and John L. Person (Commodity Trader's Almanac 2012)
+// ---------------------------------------------------------------- Jeffrey A. Hirsch (Stock Trader's Almanac 2025) 2026-10-30 (titles lane K2)
+// Admission only for the module REVIEWED lists (authors/niksan-k2/admission/k2b_ref.py (header)); kept in one block to merge.
+pub fn jhirsch25_reviewed(def:&StrategyDef)->bool {(def.book=="hsta25" && crate::books::hsta25::reviewed(def.id))}
+const JHIRSCH25_LABEL:&str="The Almanac tests this trade on the Russell 2000 (S&P 500 and NASDAQ quoted); other indices, ETFs, single stocks and India (on the US Thanksgiving date) are a declared application.";
+fn jhirsch25_policy(def:&StrategyDef)->Option<Policy> {
+    if !jhirsch25_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Jeffrey A. Hirsch, Stock Trader's Almanac 2025, p.165");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Jeffrey A. Hirsch (Stock Trader's Almanac 2025)
+// ---------------------------------------------------------------- Nelson Freeburg (Chicago 2005 handout) 2026-10-30 (titles lane K2)
+// Admission only for the module REVIEWED lists (authors/niksan-k2/admission/k2b_ref.py (header)); kept in one block to merge.
+pub fn nfreeburg2_reviewed(def:&StrategyDef)->bool {(def.book=="nfce5" && crate::books::nfce5::reviewed(def.id))}
+const NFREEBURG2_LABEL:&str="Nelson Freeburg presents these timing models on the S&P 500 index; ETFs, other indices and single stocks (US and India) are a declared application, not the author's test.";
+fn nfreeburg2_policy(def:&StrategyDef)->Option<Policy> {
+    if !nfreeburg2_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Nelson Freeburg, CD Handouts, Chicago 2005 Traders Expo, PDF p.30-39");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Nelson Freeburg (Chicago 2005 handout)
+// ---------------------------------------------------------------- NIKSAN MetaStock pack part 2 (Equis PS systems) 2026-10-30 (titles lane K2)
+// Admission only for the module REVIEWED lists (authors/niksan-k2/admission/nkms2_ref.py (header)); kept in one block to merge.
+pub fn niksan2_reviewed(def:&StrategyDef)->bool {(def.book=="nkms2" && crate::books::nkms2::reviewed(def.id))}
+const NIKSAN2_LABEL:&str="Equis MetaStock System Tester samples stored in the NIKSAN formula pack, with no market, notes or results; runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade, trade at the close.";
+fn niksan2_policy(def:&StrategyDef)->Option<Policy> {
+    if !niksan2_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"NIKSAN MetaStock formula pack, MS72PRFT.DTA (Equis PS System Tester records 54-96)");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end NIKSAN MetaStock pack part 2 (Equis PS systems)
 // ---------------------------------------------------------------- Dave Gagné 2026-10-30 (day lane A1)
 // Admission only for the module REVIEWED lists (authors/gagne/admission/spring_ref.py (header)); kept in one block to merge.
 pub fn dgagne_reviewed(def:&StrategyDef)->bool {(def.book=="dgtmp" && crate::books::dgtmp::reviewed(def.id))}
@@ -2348,6 +2392,10 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=tillson_policy(def) {return p;} // Tim Tillson block
     if let Some(p)=leungchong_policy(def) {return p;} // Leung and Chong block
     if let Some(p)=bollinger_policy(def) {return p;} // John Bollinger block
+    if let Some(p)=hirschperson12_policy(def) {return p;} // Jeffrey A. Hirsch and John L. Person (Commodity Trader's Almanac 2012) block
+    if let Some(p)=jhirsch25_policy(def) {return p;} // Jeffrey A. Hirsch (Stock Trader's Almanac 2025) block
+    if let Some(p)=nfreeburg2_policy(def) {return p;} // Nelson Freeburg (Chicago 2005 handout) block
+    if let Some(p)=niksan2_policy(def) {return p;} // NIKSAN MetaStock pack part 2 (Equis PS systems) block
     if let Some(p)=dgagne_policy(def) {return p;} // Dave Gagné block
     if let Some(p)=dpenn_policy(def) {return p;} // David Penn block
     if let Some(p)=dbowden_policy(def) {return p;} // David Bowden block
@@ -3053,6 +3101,10 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if tillson_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",TILLSON_LABEL));} // Tim Tillson block
     if leungchong_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LEUNGCHONG_LABEL));} // Leung and Chong block
     if bollinger_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BOLLINGER_LABEL));} // John Bollinger block
+    if hirschperson12_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",HIRSCHPERSON12_LABEL));} // Jeffrey A. Hirsch and John L. Person (Commodity Trader's Almanac 2012) block
+    if jhirsch25_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",JHIRSCH25_LABEL));} // Jeffrey A. Hirsch (Stock Trader's Almanac 2025) block
+    if nfreeburg2_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",NFREEBURG2_LABEL));} // Nelson Freeburg (Chicago 2005 handout) block
+    if niksan2_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",NIKSAN2_LABEL));} // NIKSAN MetaStock pack part 2 (Equis PS systems) block
     if dgagne_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",DGAGNE_LABEL));} // Dave Gagné block
     if dpenn_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",DPENN_LABEL));} // David Penn block
     if dbowden_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",DBOWDEN_LABEL));} // David Bowden block
@@ -3814,6 +3866,70 @@ mod tests {
         }
     }
     // ---- end John Bollinger block ----
+    // ---- Jeffrey A. Hirsch and John L. Person (Commodity Trader's Almanac 2012) block (2026-10-30, titles lane K2) ----
+    #[test]
+    fn hirschperson12_review_admits_exact_ids() {
+        use crate::books::{hcta12};
+        let all:Vec<StrategyDef>=hcta12::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=hcta12::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|hirschperson12_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Jeffrey A. Hirsch and John L. Person (Commodity Trader's Almanac 2012) block ----
+    // ---- Jeffrey A. Hirsch (Stock Trader's Almanac 2025) block (2026-10-30, titles lane K2) ----
+    #[test]
+    fn jhirsch25_review_admits_exact_ids() {
+        use crate::books::{hsta25};
+        let all:Vec<StrategyDef>=hsta25::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=hsta25::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|jhirsch25_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Jeffrey A. Hirsch (Stock Trader's Almanac 2025) block ----
+    // ---- Nelson Freeburg (Chicago 2005 handout) block (2026-10-30, titles lane K2) ----
+    #[test]
+    fn nfreeburg2_review_admits_exact_ids() {
+        use crate::books::{nfce5};
+        let all:Vec<StrategyDef>=nfce5::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=nfce5::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|nfreeburg2_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Nelson Freeburg (Chicago 2005 handout) block ----
+    // ---- NIKSAN MetaStock pack part 2 (Equis PS systems) block (2026-10-30, titles lane K2) ----
+    #[test]
+    fn niksan2_review_admits_exact_ids() {
+        use crate::books::{nkms2};
+        let all:Vec<StrategyDef>=nkms2::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=nkms2::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|niksan2_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end NIKSAN MetaStock pack part 2 (Equis PS systems) block ----
     // ---- Dave Gagné block (2026-10-26, lane B) ----
     #[test]
     fn dgagne_review_admits_exact_ids() {
