@@ -525,6 +525,16 @@ export const AUTHOR_PROFILE_DATA = {
   "summary": "Timothy W. Hayes, a strategist at Ned Davis Research, wrote The Research Driven Investor (2001), which explains how to build and test market indicators from price, breadth, sentiment and economic data, with many NDR chart examples. This profile rests on the book itself.",
   "known_for": ["The Research Driven Investor"],
   "sources": [],
+  "confidence": "low" }, "bmillard": {"kind": "person",
+  "mastery": ["UK share investing", "Moving averages"],
+  "summary": "Brian J. Millard wrote Winning on the Stock Market (Wiley, 2nd edition 1998), a guide for private investors in UK shares built on stop-loss floors, the dominant trend of the 41-week average estimated ahead by price analysis, and five-week average buying signals. This profile rests on the book itself.",
+  "known_for": ["Winning on the Stock Market"],
+  "sources": [],
+  "confidence": "low" }, "rrotella": {"kind": "person",
+  "mastery": ["Futures trading", "Trading system testing"],
+  "summary": "Robert P. Rotella wrote The Elements of Successful Trading (New York Institute of Finance, 1992), a broad text on futures trading methods, pattern testing, money management and trader psychology. This profile rests on the book itself.",
+  "known_for": ["The Elements of Successful Trading"],
+  "sources": [],
   "confidence": "low"
  }, "lowry": {
   "kind": "person",

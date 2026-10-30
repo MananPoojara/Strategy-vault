@@ -308,6 +308,12 @@ export const LIB = [
   { id: "skyba", name: "Erik Skyba", tagline: "TradeStation market technician (CMT) · the Swing 5 RSI strategy runs here", books: [
     { id: "essw5", sourceIds: [], readerPaths: ["USB HDD 1/2011/_TradeStation/Erik Skyba - Swing 5 Relative Strength Index/TradeStation Labs.mht"], title: "Swing 5 - Relative Strength Index Strategy (TradeStation Labs)", year: 2010, blurb: "Skyba · buy when the 5-day RSI is under 30 with the close above the 200-day exponential average, or under 25 below it on a long black candle; sell when the RSI crosses above 40. Tested by the author on SPY 2000-2010" }] },
   // ---- end overnight K2 block ----
+  // ---- day A3 block (30 Oct 2026, day lane A3)
+  { id: "bmillard", name: "Brian J. Millard", tagline: "UK share analyst and author · the five-week turn with the 41-week trend estimate runs here", books: [
+    { id: "bmwsm", sourceIds: [], readerPaths: ["USB HDD 2/tRADING KNO-2/Brian J.Millard - Winning on the Stock Market/Brian J.Millard - Winning on the Stock Market.pdf"], title: "Winning on the Stock Market", year: 1998, blurb: "Millard · weekly: buy when the five-week average turns up on a rising close above the close three weeks ago while the 41-week price-analysis estimate is rising; out on a close 7.5% under the highest close since purchase or after 20 weeks" }] },
+  { id: "rrotella", name: "Robert P. Rotella", tagline: "Futures trader and author · two Chapter 13 pattern rules run here", books: [
+    { id: "rpets", sourceIds: [], readerPaths: ["USB HDD 2/tRADING KNO-2/Robert P.Rotella - The Elements of Successful Trading/Rotella, R.P. -  The Elements of Successful Trading.PDF"], title: "The Elements of Successful Trading", year: 1992, blurb: "Rotella · fade a 1% opening gap from the open to that day's close; three higher (lower) closes in a row bought (sold) on the close and closed out at the close of the fifth day" }] },
+  // ---- end day A3 block ----
   // ---- Forman block (29 Oct 2026, lane B)
   { id: "forman", name: "John Forman", tagline: "Currency trader and trading educator · the four Ch.7 test systems and the stochastic 40/60 system run here", books: [
     { id: "jfeot", sourceIds: ["title-25c31f3ca7f1f280"], title: "The Essentials of Trading: From the Basics to Building a Winning Strategy", year: 2006, blurb: "Forman · close crosses the 92-day average to enter and the 50-day to exit; Parabolic SAR 0.02/0.20 stop and reverse; 20-day average entry with SAR 0.09/0.50 exit; SAR entry with 60-day average exit; 5-period stochastic through 40/60" }] },
