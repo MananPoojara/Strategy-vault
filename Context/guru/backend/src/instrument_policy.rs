@@ -318,6 +318,10 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || tillson_reviewed(def) // Tim Tillson block
         || leungchong_reviewed(def) // Leung and Chong block
         || bollinger_reviewed(def) // John Bollinger block
+        || dgagne_reviewed(def) // Dave Gagné block
+        || dpenn_reviewed(def) // David Penn block
+        || dbowden_reviewed(def) // David Bowden block
+        || csatchwell_reviewed(def) // Chris Satchwell block
         || lstephens_reviewed(def) // Lank Stephens block
         || fpjackson_reviewed(def) // Franklin Paul Jackson block
         || thayes_reviewed(def) // Timothy Hayes block
@@ -1327,6 +1331,52 @@ fn bollinger_policy(def:&StrategyDef)->Option<Policy> {
     p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
 }
 // ---------------------------------------------------------------- end John Bollinger
+// ---------------------------------------------------------------- Dave Gagné 2026-10-30 (day lane A1)
+// Admission only for the module REVIEWED lists (authors/gagne/admission/spring_ref.py (header)); kept in one block to merge.
+pub fn dgagne_reviewed(def:&StrategyDef)->bool {(def.book=="dgtmp" && crate::books::dgtmp::reviewed(def.id))}
+const DGAGNE_LABEL:&str="Dave Gagné trades the spring setup on US stocks with dollar-amount entry and stop offsets; runs on US indices and ETFs are a declared application, and the dollar amounts keep it to US instruments.";
+fn dgagne_policy(def:&StrategyDef)->Option<Policy> {
+    if !dgagne_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Dave Gagné, Trading Master Plan (2005), Spring buy/sell setup p.112-116, entry and management rules p.164-166");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// Gagné spring setup: $0.01 entry, $0.05 stop and $0.25 chase offsets are US-dollar amounts -> US instruments only (stock_us None = not a stock).
+fn dgagne_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Option<Issue> {
+    if !dgagne_reviewed(def) {return None;}
+    if stock_us.unwrap_or(!ticker.starts_with("NIFTY")) {return None;}
+    Some(Issue{status:"needs_data",note:format!("The spring setup's entry, stop and chase limits are US-dollar amounts (1 cent, 5 cents, 25 cents on US stocks), so it runs on US indices, ETFs and stocks only. {ticker} is outside that scope; no result is published.")})
+}
+// ---------------------------------------------------------------- end Dave Gagné
+// ---------------------------------------------------------------- David Penn 2026-10-30 (day lane A1)
+// Admission only for the module REVIEWED lists (authors/penn/admission/boso_ref.py (header)); kept in one block to merge.
+pub fn dpenn_reviewed(def:&StrategyDef)->bool {(def.book=="dpstmi" && crate::books::dpstmi::reviewed(def.id))}
+const DPENN_LABEL:&str="David Penn shows BOSO on S&P 500, currency pair and futures daily charts; runs on indices, ETFs and US/India stocks are a declared application, not the author's test.";
+fn dpenn_policy(def:&StrategyDef)->Option<Policy> {
+    if !dpenn_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"David Penn, The Three Secrets to Trading Momentum Indicators (2009), Ch.6 Stochastics: BOSO");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end David Penn
+// ---------------------------------------------------------------- David Bowden 2026-10-30 (day lane A1)
+// Admission only for the module REVIEWED lists (authors/bowden/admission/abc_ref.py (header)); kept in one block to merge.
+pub fn dbowden_reviewed(def:&StrategyDef)->bool {(def.book=="dbnotp" && crate::books::dbnotp::reviewed(def.id))}
+const DBOWDEN_LABEL:&str="David Bowden trades the ABC swing method on stocks, stock index futures and currencies; runs on indices, ETFs and US/India stocks are a declared application of his three exit styles, not the author's test.";
+fn dbowden_policy(def:&StrategyDef)->Option<Policy> {
+    if !dbowden_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"David Bowden, The Number One Trading Plan (Safety in the Market), ABC trading rules p.46-49, swing charts p.62-65, trailing swing stop p.73, entry stop p.76");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end David Bowden
+// ---------------------------------------------------------------- Chris Satchwell 2026-10-30 (day lane A1)
+// Admission only for the module REVIEWED lists (authors/csatchwell/admission/t2n_ref.py (header)); kept in one block to merge.
+pub fn csatchwell_reviewed(def:&StrategyDef)->bool {(def.book=="cspr" && crate::books::cspr::reviewed(def.id))}
+const CSATCHWELL_LABEL:&str="Chris Satchwell tests the Trend2Noise system on U.S. Treasury bond futures and illustrates it on the weekly Dow; runs on indices and ETFs follow the Dow example, US/India stocks are a declared application, not the author's test.";
+fn csatchwell_policy(def:&StrategyDef)->Option<Policy> {
+    if !csatchwell_reviewed(def) {return None;}
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],"Chris Satchwell, Pattern Recognition and Trading Decisions (2005), Ch.10 p.177-178, 187-188; Ch.14 p.247-248; Ch.15 p.262; Ch.17 p.293-294");
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end Chris Satchwell
 // ---------------------------------------------------------------- Lank Stephens 2026-10-29 (lane K1)
 // Admission only for the module REVIEWED lists (authors/lstephens/admission/fb_ref.py (header)); kept in one block to merge.
 pub fn lstephens_reviewed(def:&StrategyDef)->bool {(def.book=="lsfb" && crate::books::lsfb::reviewed(def.id))}
@@ -2247,6 +2297,10 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=tillson_policy(def) {return p;} // Tim Tillson block
     if let Some(p)=leungchong_policy(def) {return p;} // Leung and Chong block
     if let Some(p)=bollinger_policy(def) {return p;} // John Bollinger block
+    if let Some(p)=dgagne_policy(def) {return p;} // Dave Gagné block
+    if let Some(p)=dpenn_policy(def) {return p;} // David Penn block
+    if let Some(p)=dbowden_policy(def) {return p;} // David Bowden block
+    if let Some(p)=csatchwell_policy(def) {return p;} // Chris Satchwell block
     if let Some(p)=lstephens_policy(def) {return p;} // Lank Stephens block
     if let Some(p)=fpjackson_policy(def) {return p;} // Franklin Paul Jackson block
     if let Some(p)=thayes_policy(def) {return p;} // Timothy Hayes block
@@ -2646,6 +2700,7 @@ pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     if let Some(issue)=downs_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Walter T. Downs block
     if let Some(issue)=schaap_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Schaap block
     if let Some(issue)=landry_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Landry block
+    if let Some(issue)=dgagne_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Dave Gagné block
     if let Some(issue)=hirsch_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Hirsch block
     if let Some(issue)=k2_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // overnight K2 block
     if native_stock {
@@ -2685,6 +2740,7 @@ pub fn check_native(def:&StrategyDef,ticker:&str,evidence:&NativeEvidence)->Opti
     if let Some(issue)=downs_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Walter T. Downs block
     if let Some(issue)=schaap_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Schaap block
     if let Some(issue)=landry_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Landry block
+    if let Some(issue)=dgagne_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Dave Gagné block
     if let Some(issue)=hirsch_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Hirsch block
     if let Some(issue)=k2_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // overnight K2 block
     if let Some(issue)=check_selected(p,def.id,ticker,evidence.asset_type()){return Some(issue);}
@@ -2942,6 +2998,10 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if tillson_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",TILLSON_LABEL));} // Tim Tillson block
     if leungchong_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LEUNGCHONG_LABEL));} // Leung and Chong block
     if bollinger_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BOLLINGER_LABEL));} // John Bollinger block
+    if dgagne_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",DGAGNE_LABEL));} // Dave Gagné block
+    if dpenn_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",DPENN_LABEL));} // David Penn block
+    if dbowden_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",DBOWDEN_LABEL));} // David Bowden block
+    if csatchwell_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",CSATCHWELL_LABEL));} // Chris Satchwell block
     if lstephens_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",LSTEPHENS_LABEL));} // Lank Stephens block
     if fpjackson_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",FPJACKSON_LABEL));} // Franklin Paul Jackson block
     if thayes_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",THAYES_LABEL));} // Timothy Hayes block
@@ -3695,6 +3755,71 @@ mod tests {
         }
     }
     // ---- end John Bollinger block ----
+    // ---- Dave Gagné block (2026-10-26, lane B) ----
+    #[test]
+    fn dgagne_review_admits_exact_ids() {
+        use crate::books::{dgtmp};
+        let all:Vec<StrategyDef>=dgtmp::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=dgtmp::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|dgagne_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            for t in ["NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_some(),"{} {t}",d.id);}
+            assert!(check(d,"RELIANCE",true).is_some(),"{}",d.id);
+        }
+    }
+    // ---- end Dave Gagné block ----
+    // ---- David Penn block (2026-10-26, lane B) ----
+    #[test]
+    fn dpenn_review_admits_exact_ids() {
+        use crate::books::{dpstmi};
+        let all:Vec<StrategyDef>=dpstmi::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=dpstmi::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|dpenn_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end David Penn block ----
+    // ---- David Bowden block (2026-10-26, lane B) ----
+    #[test]
+    fn dbowden_review_admits_exact_ids() {
+        use crate::books::{dbnotp};
+        let all:Vec<StrategyDef>=dbnotp::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=dbnotp::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|dbowden_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end David Bowden block ----
+    // ---- Chris Satchwell block (2026-10-26, lane B) ----
+    #[test]
+    fn csatchwell_review_admits_exact_ids() {
+        use crate::books::{cspr};
+        let all:Vec<StrategyDef>=cspr::catalogue().into_iter().collect();
+        let mut want:Vec<&str>=cspr::REVIEWED.iter().copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|csatchwell_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end Chris Satchwell block ----
     // ---- Lank Stephens block (2026-10-26, lane B) ----
     #[test]
     fn lstephens_review_admits_exact_ids() {
