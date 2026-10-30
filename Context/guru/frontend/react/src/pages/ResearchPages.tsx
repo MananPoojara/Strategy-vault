@@ -46,6 +46,7 @@ function LegacyStrategyPage({ snapshot }: { snapshot: ViewSnapshot }) {
     </div>,
     "visual-rules": snapshot.strategyRules ? <RulesVisualGuide model={snapshot.strategyRules} /> : null,
     "strategy-settings": <StrategySettings
+      inline
       mode={mode}
       sourceAccount={snapshot.strategyAccount || false}
       unitExposure={Boolean(snapshot.strategyUnit)}

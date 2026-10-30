@@ -21,8 +21,10 @@ export function encodeSettings(params: StrategyParameter[], values: Record<strin
   return params.some(p => values[p.key] !== p.def) ? params.map(p => `${p.key}:${values[p.key]}`).join(",") : "";
 }
 
-export function StrategySettings({mode = "fixed", onApply, disabledReason, sourceAccount = false, unitExposure = false, pristine = false, settings}: {
+export function StrategySettings({mode = "fixed", onApply, disabledReason, sourceAccount = false, unitExposure = false, pristine = false, settings, inline = false}: {
   mode?: ReturnDisplayMode;
+  /** Always open on the page (user request 30 Oct 2026) instead of an icon and a dialog. */
+  inline?: boolean;
   /** `params` is passed only when the strategy settings changed (the encoded S.p). */
   onApply: (mode: ReturnDisplayMode, params?: string) => void;
   settings?: StrategySettingsModel | null;
@@ -47,9 +49,14 @@ export function StrategySettings({mode = "fixed", onApply, disabledReason, sourc
   const panel = useRef<HTMLDivElement>(null);
   const id = useId();
   const close = () => setOpen(false);
+  const dirty = paramsChanged || invalid || draft !== mode;
+  const undo = () => {setDraft(mode); setValues(current());};
+  // On the page there is no "open" moment to reload from, so follow each new run.
+  const applied = params.map(p => `${p.key}:${p.value}`).join(",");
+  useEffect(() => {if (inline) undo();}, [inline, mode, applied]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || inline) return;
     const initial = panel.current?.querySelector<HTMLElement>("input:checked:not(:disabled)")
       || panel.current?.querySelector<HTMLElement>("button:not([disabled])");
     initial?.focus();
@@ -75,32 +82,12 @@ export function StrategySettings({mode = "fixed", onApply, disabledReason, sourc
       document.removeEventListener("keydown", onKeyDown, true);
       if (trigger.current?.isConnected) trigger.current.focus();
     };
-  }, [open]);
+  }, [open, inline]);
 
-  return <>
-    <button ref={trigger} type="button" className="strategy-settings-trigger"
-      aria-label="Strategy settings" title="Strategy settings" aria-haspopup="dialog"
-      aria-expanded={open} aria-controls={open ? `${id}-dialog` : undefined}
-      onClick={() => {setDraft(mode); setValues(current()); setOpen(true);}}>
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-        strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4" />
-      </svg>
-    </button>
-    {open && createPortal(
-      <div className="strategy-settings-backdrop" data-strategy-settings-backdrop
-        onClick={event => {if (event.target === event.currentTarget) {event.stopPropagation(); close();}}}>
-        <div ref={panel} id={`${id}-dialog`} className="strategy-settings-dialog"
-          role="dialog" aria-modal="true" aria-labelledby={`${id}-title`}
-          aria-describedby={`${id}-description`} tabIndex={-1}>
-          <header className="strategy-settings-heading">
-            <h2 id={`${id}-title`}>Strategy settings</h2>
-            <button type="button" className="strategy-settings-close" aria-label="Close strategy settings" onClick={close}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                strokeWidth="1.75" strokeLinecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
-            </button>
-          </header>
+  const body = <>
           <p id={`${id}-description`} className="strategy-settings-intro">{settings ? "The settings and assumptions this backtest used. Change a setting and Apply to re-run it on the same instrument and period." : "Choose how closed-trade returns are displayed."}</p>
+          <div className="strategy-settings-columns">
+            <div>
           {settings && <section className="strategy-settings-group" data-settings-group="parameters" aria-labelledby={`${id}-params`}>
             <h3 id={`${id}-params`} className="strategy-settings-legend">Strategy settings used in this backtest</h3>
             {params.length ? <>
@@ -145,15 +132,50 @@ export function StrategySettings({mode = "fixed", onApply, disabledReason, sourc
           <p className="strategy-settings-note">{disabledReason || (pristine ? PRISTINE_CLOSED_BASIS : unitExposure ? UNIT_CLOSED_BASIS : sourceAccount
             ? sourceAccountCopy(typeof sourceAccount === "object" ? sourceAccount : {model:"elder_protected_impulse_fractional_cash_v1"}).settingsNote
             : "Percentage report using closed trades only. Open-position marks are excluded.")}</p>
+            </div>
+            <div>
           {settings && <section className="strategy-settings-group" data-settings-group="assumptions" aria-labelledby={`${id}-assumptions`}>
             <h3 id={`${id}-assumptions`} className="strategy-settings-legend">Backtest assumptions</h3>
             <dl className="strategy-settings-assumptions">{settings.assumptions.map(([term, text]) => <div key={term}><dt>{term}</dt><dd>{text}</dd></div>)}</dl>
           </section>}
+            </div>
+          </div>
           <footer className="strategy-settings-actions">
-            <button type="button" onClick={close}>Cancel</button>
-            <button type="button" className="strategy-settings-apply" disabled={invalid || (Boolean(disabledReason) && !paramsChanged)}
-              onClick={() => {close(); if (paramsChanged) onApply(draft, encoded!); else onApply(draft);}}>Apply</button>
+            <button type="button" disabled={inline && !dirty} onClick={inline ? undo : close}>{inline ? "Undo changes" : "Cancel"}</button>
+            <button type="button" className="strategy-settings-apply" disabled={invalid || (Boolean(disabledReason) && !paramsChanged) || (inline && !dirty)}
+              onClick={() => {if (!inline) close(); if (paramsChanged) onApply(draft, encoded!); else onApply(draft);}}>Apply</button>
           </footer>
+  </>;
+
+  if (inline) return <section className="box strategy-settings-inline" data-strategy-settings aria-labelledby={`${id}-title`} aria-describedby={`${id}-description`}>
+    <header className="strategy-settings-heading"><h2 id={`${id}-title`}>Strategy settings</h2></header>
+    {body}
+  </section>;
+
+  return <>
+    <button ref={trigger} type="button" className="strategy-settings-trigger"
+      aria-label="Strategy settings" title="Strategy settings" aria-haspopup="dialog"
+      aria-expanded={open} aria-controls={open ? `${id}-dialog` : undefined}
+      onClick={() => {setDraft(mode); setValues(current()); setOpen(true);}}>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4" />
+      </svg>
+    </button>
+    {open && createPortal(
+      <div className="strategy-settings-backdrop" data-strategy-settings-backdrop
+        onClick={event => {if (event.target === event.currentTarget) {event.stopPropagation(); close();}}}>
+        <div ref={panel} id={`${id}-dialog`} className="strategy-settings-dialog"
+          role="dialog" aria-modal="true" aria-labelledby={`${id}-title`}
+          aria-describedby={`${id}-description`} tabIndex={-1}>
+          <header className="strategy-settings-heading">
+            <h2 id={`${id}-title`}>Strategy settings</h2>
+            <button type="button" className="strategy-settings-close" aria-label="Close strategy settings" onClick={close}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                strokeWidth="1.75" strokeLinecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+            </button>
+          </header>
+          {body}
         </div>
       </div>, document.body,
     )}

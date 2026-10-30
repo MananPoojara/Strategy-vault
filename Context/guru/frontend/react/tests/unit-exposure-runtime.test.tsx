@@ -89,7 +89,7 @@ it('shows the separate unit notice, six tabs and display-only settings without c
  const html='<header><span data-react-slot="strategy-settings"></span></header><div data-react-slot="unit-exposure-notice"></div>'+['c-eq','c-dd','heatbox','c-yr','c-px'].map(id=>`<section class="box"><div id="${id}"></div></section>`).join('')+'<section class="box" data-tradesheet></section>';
  await act(async()=>root!.render(<StrategyPage snapshot={{revision:1,loading:false,html,error:null,route:null,status:'Strategy',state:{report_mode:'fixed'},home:null,reading:null,strategyUnit:view}}/>));
  expect(host.querySelectorAll('[role=tab]')).toHaveLength(6);expect(host.querySelector('[data-unit-exposure-notice]')?.textContent).toContain(UNIT_VISUAL_BASIS);expect(host.textContent).not.toMatch(/2%|6%|SafeZone|₹/);
- await act(async()=>host!.querySelector<HTMLButtonElement>('[aria-label="Strategy settings"]')!.click());const dialog=document.querySelector('[role=dialog]')!;
+ const dialog=document.querySelector('[data-strategy-settings]')!;
  expect(dialog.textContent).toContain('Compounded closed model');expect(dialog.textContent).not.toContain('Fixed quantity');expect(dialog.textContent).toContain('independently rounded factors');
  await act(async()=>dialog.querySelector<HTMLInputElement>('input[value=compound]')!.click());await act(async()=>[...dialog.querySelectorAll<HTMLButtonElement>('button')].find(b=>b.textContent==='Apply')!.click());expect(patch).toHaveBeenCalledExactlyOnceWith({report_mode:'compound'});
 });

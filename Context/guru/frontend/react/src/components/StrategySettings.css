@@ -57,3 +57,8 @@
 @keyframes strategy-settings-enter { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) { .strategy-settings-dialog { animation: none; } }
 @media (max-width: 480px) { .strategy-settings-backdrop { padding: 16px; } .strategy-settings-dialog { padding: 18px; max-height: calc(100dvh - 32px); } }
+.strategy-settings-columns > div + div:not(:empty) { margin-top: 22px; }
+.strategy-settings-inline .strategy-settings-intro { margin-bottom: 16px; }
+.strategy-settings-inline .strategy-settings-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; align-items: start; }
+.strategy-settings-inline .strategy-settings-columns > div + div { margin-top: 0; }
+@media (max-width: 860px) { .strategy-settings-inline .strategy-settings-columns { grid-template-columns: minmax(0, 1fr); gap: 22px; } }
