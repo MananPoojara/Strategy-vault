@@ -330,6 +330,7 @@ pub fn reviewed_cash_rule(def:&StrategyDef)->bool {
         || downs_reviewed(def) // Walter T. Downs block
         || barrie_reviewed(def) // Scott W. Barrie block
         || k2_reviewed(def) // overnight K2 block (Lowry, Wooding)
+        || a2_reviewed(def) // day lane A2 block (Ribakov, Dorfman, Deaton)
         || kbrown_reviewed(def) // Kedrick F. Brown block
         || forman_reviewed(def) // John Forman block
         || sands_reviewed(def) // Russell Sands block
@@ -1469,6 +1470,20 @@ fn k2_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Option<I
     Some(Issue{status:"needs_data",note:format!("The Stock Rocket needs a close above $10 and volume above 500,000 shares, US-dollar and US-share amounts. Dollar-amount rules run on US ETFs and stocks only; {ticker} is outside that scope, so no result is published.")})
 }
 // ---------------------------------------------------------------- end overnight K2
+// ---------------------------------------------------------------- day lane A2 2026-10-30 (Ribakov, Dorfman, Deaton)
+// Admission only for the module REVIEWED lists (authors/ribakov/admission/dd_ref.py, authors/dorfman/admission/hf_ref.py,
+// authors/deaton/admission/stmm_ref.py).
+pub fn a2_reviewed(def:&StrategyDef)->bool {(def.book=="vrsdd" && crate::books::vrsdd::reviewed(def.id)) || (def.book=="rdhft" && crate::books::rdhft::reviewed(def.id)) || (def.book=="mdstm" && crate::books::mdstm::reviewed(def.id))}
+const RIBAKOV_LABEL:&str="Vladimir Ribakov trades the double doji on forex pairs (1-hour, 4-hour and daily charts) with pip-sized dojis; here a doji is a small body relative to the day's range and runs on indices, ETFs and US/India stocks are a declared application, not the author's test. Cash-index shorts are hypothetical.";
+const DORFMAN_LABEL:&str="Robert Dorfman applies the 3-period EMA method to stocks and forex pairs; runs on indices, ETFs and US/India stocks on daily bars are a declared application, not the author's test. Cash-index shorts are hypothetical.";
+const DEATON_LABEL:&str="Mark Deaton shows the signal and trigger swings on ETF and index charts (QQQ, XLE, XLF, SPY, OEX), daily and intraday; daily runs on indices, ETFs and US/India stocks are a declared application, not the author's test. Cash-index shorts are hypothetical.";
+fn a2_policy(def:&StrategyDef)->Option<Policy> {
+    if !a2_reviewed(def) {return None;}
+    let src=match def.book {"vrsdd"=>"Vladimir Ribakov, The Secret of the Double Doji Forex Trading Strategy (2009), p.5-13","rdhft"=>"Robert Dorfman, Hedge Fund Trading Secrets Revealed, Ch.22 p.252-254 (moving averages p.186)",_=>"Mark Deaton, Swing Trading Money Machine (Renegade Trader, 2007), PDF 3, 6-9, 14-15, 18-19, 22"};
+    let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],src);
+    p.preferred_basket=Some("nifty50");p.market_adaptation=true;Some(p)
+}
+// ---------------------------------------------------------------- end day lane A2
 // ---------------------------------------------------------------- Kedrick F. Brown 2026-10-29 (lane B)
 // Admission only for the module REVIEWED lists (authors/kbrown/admission/tt_ref.py (header)); kept in one block to merge.
 pub fn kbrown_reviewed(def:&StrategyDef)->bool {(def.book=="kbttm" && crate::books::kbttm::reviewed(def.id))}
@@ -2259,6 +2274,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=downs_policy(def) {return p;} // Walter T. Downs block
     if let Some(p)=barrie_policy(def) {return p;} // Scott W. Barrie block
     if let Some(p)=k2_policy(def) {return p;} // overnight K2 block
+    if let Some(p)=a2_policy(def) {return p;} // day lane A2 block
     if let Some(p)=kbrown_policy(def) {return p;} // Kedrick F. Brown block
     if let Some(p)=forman_policy(def) {return p;} // John Forman block
     if let Some(p)=sands_policy(def) {return p;} // Russell Sands block
@@ -2954,6 +2970,7 @@ pub fn metadata_json(def:&StrategyDef)->String {
     if downs_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",DOWNS_LABEL));} // Walter T. Downs block
     if barrie_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",BARRIE_LABEL));} // Scott W. Barrie block
     if k2_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",match def.book {"dwsr"=>WOODING_LABEL,"djcs"=>JENNINGS_LABEL,"essw5"=>SKYBA_LABEL,_=>LOWRY_LABEL}));} // overnight K2 block
+    if a2_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",match def.book {"vrsdd"=>RIBAKOV_LABEL,"rdhft"=>DORFMAN_LABEL,_=>DEATON_LABEL}));} // day lane A2 block
     if kbrown_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",KBROWN_LABEL));} // Kedrick F. Brown block
     if forman_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",FORMAN_LABEL));} // John Forman block
     if sands_reviewed(def) {json.push_str(&format!(",\"declared_application\":\"{}\"",SANDS_LABEL));} // Russell Sands block
@@ -3896,6 +3913,22 @@ mod tests {
         }
     }
     // ---- end overnight K2 block ----
+    // ---- day lane A2 block (2026-10-30) ----
+    #[test]
+    fn a2_review_admits_exact_ids() {
+        use crate::books::{mdstm, rdhft, vrsdd};
+        let all:Vec<StrategyDef>=vrsdd::catalogue().into_iter().chain(rdhft::catalogue()).chain(mdstm::catalogue()).collect();
+        let mut want:Vec<&str>=vrsdd::REVIEWED.iter().chain(rdhft::REVIEWED.iter()).chain(mdstm::REVIEWED.iter()).copied().collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|a2_reviewed(d)).map(|d|d.id).collect();
+        admitted.sort();want.sort();assert_eq!(admitted,want);
+        for d in all.iter().filter(|d|want.contains(&d.id)) {
+            assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
+            assert!(metadata_json(d).contains("\"declared_application\""),"{}",d.id);
+            for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none(),"{} {t}",d.id);}
+            assert!(check(d,"AAPL",true).is_none() && check(d,"RELIANCE",true).is_none(),"{}",d.id);
+        }
+    }
+    // ---- end day lane A2 block ----
     // ---- Kedrick F. Brown block (2026-10-29, lane B) ----
     #[test]
     fn kbrown_review_admits_exact_ids() {

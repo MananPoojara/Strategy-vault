@@ -308,6 +308,14 @@ export const LIB = [
   { id: "skyba", name: "Erik Skyba", tagline: "TradeStation market technician (CMT) · the Swing 5 RSI strategy runs here", books: [
     { id: "essw5", sourceIds: [], readerPaths: ["USB HDD 1/2011/_TradeStation/Erik Skyba - Swing 5 Relative Strength Index/TradeStation Labs.mht"], title: "Swing 5 - Relative Strength Index Strategy (TradeStation Labs)", year: 2010, blurb: "Skyba · buy when the 5-day RSI is under 30 with the close above the 200-day exponential average, or under 25 below it on a long black candle; sell when the RSI crosses above 40. Tested by the author on SPY 2000-2010" }] },
   // ---- end overnight K2 block ----
+  // ---- day lane A2 block (30 Oct 2026)
+  { id: "ribakov", name: "Vladimir Ribakov", tagline: "Forex trader and educator · the double doji breakout runs here", books: [
+    { id: "vrsdd", sourceIds: ["title-f8e033f2bd32cc88"], title: "The Secret of the Double Doji Forex Trading Strategy", year: 2009, blurb: "Ribakov · two dojis in a row (a body of at most a tenth of the range here; the book says 2-4 pips), stop orders just beyond their high and low, stop at the other side, target equal to the stop distance (the half-and-double and 80/20 methods as options)" }] },
+  { id: "dorfman", name: "Robert Dorfman", tagline: "Hedge fund trader (SilverHawk Funds) · the 3-period EMA turn runs here", books: [
+    { id: "rdhft", sourceIds: ["title-3ef05b0007493018"], title: "Hedge Fund Trading Secrets Revealed", year: 2008, blurb: "Dorfman · after three lower bars a close back above the 3-period EMA; buy over that bar's high with a stop under its low; half out at the nearer of the 10-day and 20-day averages, stop to break-even, the rest at the next average (short: the mirror)" }] },
+  { id: "deaton", name: "Mark Deaton", tagline: "Renegade Trader · the signal and trigger swings run here", books: [
+    { id: "mdstm", sourceIds: ["title-a0cd64c8be7bdfd8"], title: "Swing Trading Money Machine", year: 2007, blurb: "Deaton · a low, a lower low and a higher low make a swing; the next swing with a higher lower low is the trigger: buy as price passes its first bar's high, stop under its lower low, out on the 3-5 bar count (5 by default; 161.8% / 261.8% targets as options)" }] },
+  // ---- end day lane A2 block ----
   // ---- Forman block (29 Oct 2026, lane B)
   { id: "forman", name: "John Forman", tagline: "Currency trader and trading educator · the four Ch.7 test systems and the stochastic 40/60 system run here", books: [
     { id: "jfeot", sourceIds: ["title-25c31f3ca7f1f280"], title: "The Essentials of Trading: From the Basics to Building a Winning Strategy", year: 2006, blurb: "Forman · close crosses the 92-day average to enter and the 50-day to exit; Parabolic SAR 0.02/0.20 stop and reverse; 20-day average entry with SAR 0.09/0.50 exit; SAR entry with 60-day average exit; 5-period stochastic through 40/60" }] },

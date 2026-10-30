@@ -557,6 +557,21 @@ export const AUTHOR_PROFILE_DATA = {
    "Code Snippets & How To (MetaStock, TradeStation, AIQ)"
   ],
   "sources": [],
+  "confidence": "low" }, "ribakov": {"kind": "person",
+  "mastery": ["Forex trading", "Candlestick patterns"],
+  "summary": "Vladimir Ribakov, a forex trader and the creator of the Broker Nightmare and sRs Trend Rider products, wrote The Secret of the Double Doji (2009), a short e-book on trading the breakout of two consecutive doji candles on forex charts with three ways of managing the trade. This profile rests on the e-book itself.",
+  "known_for": ["The Secret of the Double Doji Forex Trading Strategy"],
+  "sources": [],
+  "confidence": "low" }, "dorfman": {"kind": "person",
+  "mastery": ["Stock and forex trading", "Moving averages"],
+  "summary": "L. Robert 'The Hawk' Dorfman, founder of SilverHawk Funds, wrote Hedge Fund Trading Secrets Revealed (2008), part memoir of his hedge fund career and part trading manual built around the 3-period EMA, his chart moving averages and candlestick patterns for stocks and currencies. This profile rests on the book itself.",
+  "known_for": ["Hedge Fund Trading Secrets Revealed"],
+  "sources": [],
+  "confidence": "low" }, "deaton": {"kind": "person",
+  "mastery": ["Swing trading", "Price swings and Fibonacci targets"],
+  "summary": "Mark Deaton (Renegade Trader) wrote the Swing Trading Money Machine course (2007), which enters on 'signal' and 'trigger' price swings and exits on a 3-5 bar count or Fibonacci extensions, shown on ETF and index charts, plus candlestick and options workbooks. This profile rests on the course manual itself.",
+  "known_for": ["Swing Trading Money Machine"],
+  "sources": [],
   "confidence": "low" }, "skyba": {
   "kind": "person",
   "mastery": [
