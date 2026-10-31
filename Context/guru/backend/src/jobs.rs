@@ -10,8 +10,9 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering::SeqCst};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-/// Cache budget. Engine base is about 200-290 MB under a 1 GiB container cap.
-const MAX_CACHE_BYTES: usize = 150 << 20;
+/// Cache budget. Engine base is about 200-290 MB under a 1 GiB container cap. Measured: retained bodies cost about 2.7x their
+/// size in resident memory (allocator fragmentation), and 150 MB plus four concurrent US /tickers was OOM-killed at 1 GiB.
+const MAX_CACHE_BYTES: usize = 64 << 20;
 /// One optimizer or basket body above this is kept out, so it cannot empty the cache on its own.
 const MAX_ENTRY_BYTES: usize = 32 << 20;
 /// Results cheaper than this are recomputed: a 16 ms run (2.5-4 MB) must not evict a 13 s summary.
