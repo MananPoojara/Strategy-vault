@@ -1,0 +1,62 @@
+import type {AuthorFile} from '../author-files';
+
+export default {
+  order: 1510,
+  author: { id: 'vcode', name: "Vendor system code (TradeStation / MetaStock)", tagline: "Systems read from vendors’ open code archives", books: [{ id: 'ajmisc', title: "Angus Jackson systems", year: null, blurb: "Five systems from his TradeStation code" }, { id: 'tscom', title: "Aberration Plus & Aztec (trade-system.com)", year: null, blurb: "Aberration Plus live; Aztec’s dollar floors have no stated point value" }, { id: 'alfar', title: "Alfanet Basis II", year: null, blurb: "From the vendor’s open code" }, { id: 'andro', title: "Andromeda", year: null, blurb: "Dollar risk filter with no stated point value, not testable" }, { id: 'axsym', title: "AxSym", year: null, blurb: "From the vendor’s open code" }, { id: 'barra', title: "Baramundi", year: null, blurb: "Same code as Intervest-ES" }, { id: 'ltcoat', title: "Coat Tails (longtermtrading.com)", year: null, blurb: "From the vendor’s open code" }, { id: 'pwadcs', title: "DCS II (PWA Futures)", year: null, blurb: "From the vendor’s open code" }, { id: 'gunsl', title: "Gunslinger", year: null, blurb: "From the vendor’s open code" }, { id: 'ginyd', title: "Ginyard NR11", year: null, blurb: "$500 stop with no stated point value, not testable" }, { id: 'jcurt', title: "J. Curtis systems", year: null, blurb: "JK-24 and JK-31" }, { id: 'dtrend', title: "DirecTrend", year: null, blurb: "From the vendor’s open code" }, { id: 'jcfeed', title: "Clayburg Feeder Trader", year: null, blurb: "From the vendor’s open code" }, { id: 'alfrd', title: "Alfaranda Magnet & Onyx", year: null, blurb: "Daily versions; Onyx intraday needs data" }, { id: 'ltsfut', title: "LTS-Futures systems", year: null, blurb: "Stingray live; the others need intraday or futures data" }, { id: 'qsfund', title: "Quadriga Superfund trendline", year: null, blurb: "From the vendor’s open code" }, { id: 'rvecl', title: "Eclipse-ER2 (Ralph Vince)", year: null, blurb: "From the vendor’s open code" }, { id: 'sktbw', title: "Binary Wave (S.K. Tennis)", year: null, blurb: "Code thresholds kept as written" }, { id: 'dtwxp', title: "Trend XP", year: null, blurb: "From the vendor’s open code" }, { id: 'tchnl', title: "TrendChannel (code and manual)", year: null, blurb: "Band code and the manual’s RSI(34) formula" }, { id: 'tcrsi', title: "TrendChannel (Tolan, manual)", year: null, blurb: "Same trades as tchnl_rsi34, listed once" }, { id: 'stfun', title: "Universal 2M (Stafford)", year: null, blurb: "Universal LT’s exit depends on an unstated chart setting" }, { id: 'jhsto', title: "Jack Hershey stochastics", year: null, blurb: "From the strategy code" }, { id: 'bfmmx', title: "MiniMax I (vendor code)", year: null, blurb: "ESL4, NQL4, S4 from the code" }, { id: 'bfmm', title: "MiniMax I & II (manuals)", year: null, blurb: "Manual versions; MiniMax II setups stay active until filled" }, { id: 'tcsyn', title: "Synergy (traderstech)", year: null, blurb: "From the vendor’s open code" }, { id: 'zstrt', title: "Zone Strategy", year: null, blurb: "Literal settings make no trades on daily indices" }, { id: 'tttt1', title: "TradeTimer TT1", year: null, blurb: "From the vendor’s open code" }, { id: 'msmom', title: "MACD Momentum (Aspray, MetaStock)", year: null, blurb: "Run on the MetaStock formula engine" }, { id: 'rrsim', title: "Shared TradeStation order engine", year: null, blurb: "Engine only, no strategies" }, { id: 'rinadz', title: "Dynamic Zones (RINA)", year: null, blurb: "DZ %R on SPX 71 trades / 75% vs 63 / 78%" }, { id: 'mxswg', title: "SwingTrader (code)", year: null, blurb: "AND before OR per Pruitt & Hill; two demo systems" }, { id: 'jlmms', title: "Livermore Market Method signal (code)", year: null, blurb: "Code’s 6-point threshold, unscaled" }, { id: 'bfm2c', title: "MiniMax II v2 (code)", year: null, blurb: "ES 238 trades vs the book’s 242" }, { id: 'tltdr', title: "TrendLine Trader (code)", year: null, blurb: "Default inputs" }, { id: 'rrlft', title: "Other vendor code (TrendyWendy, Checkmate, statsignals, Schaff, Commando II)", year: null, blurb: "Nothing runnable: unstated units, FX minute data, missing functions" }, { id: 'upg18', title: "Krutsinger-listed systems from their code (English Channel, Prince, Trader’s Dream, Parrot)", year: null, blurb: "Prince on QQQ 58 trades / 82.8% vs the book’s 63 / 77.8%; GearShift and Dealers Choice need intraday bars" }] },
+  identities: [],
+  profile: {
+    "kind": "collection",
+    "mastery": [
+      "System design & testing",
+      "Trend following",
+      "Futures"
+    ],
+    "summary": "TradeStation and MetaStock code for commercial trading systems, mostly futures-oriented. Examples are Aberration Plus, Aztec, DCS II, Gunslinger, DirecTrend and Ginyard NR11. The rules come from vendor code, not books, so completeness varies.",
+    "known_for": [
+      "Aberration Plus",
+      "DCS II (PWA Futures)",
+      "Ginyard NR11"
+    ],
+    "sources": [],
+    "confidence": "low"
+  },
+  sourceReview: {
+    "ajmisc": {"type":"code_package","people":["Angus Jackson"]},
+    "tscom": {"type":"code_package","people":["Keith Fitschen"]},
+    "alfar": {"type":"code_package","people":[]},
+    "andro": {"type":"code_package","people":[]},
+    "axsym": {"type":"code_package","people":[]},
+    "barra": {"type":"code_package","people":[]},
+    "ltcoat": {"type":"code_package","people":[]},
+    "pwadcs": {"type":"code_package","people":[]},
+    "gunsl": {"type":"code_package","people":[]},
+    "ginyd": {"type":"code_package","people":[]},
+    "jcurt": {"type":"code_package","people":["J. Curtis"]},
+    "dtrend": {"type":"code_package","people":[]},
+    "jcfeed": {"type":"code_package","people":["John Clayburg"]},
+    "alfrd": {"type":"code_package","people":[]},
+    "ltsfut": {"type":"code_package","people":[]},
+    "qsfund": {"type":"code_package","people":[]},
+    "rvecl": {"type":"code_package","people":["Ralph Vince"]},
+    "sktbw": {"type":"code_package","people":["Samuel K. Tennis"]},
+    "dtwxp": {"type":"code_package","people":[]},
+    "tchnl": {"type":"code_package","people":["John Tolan"]},
+    "tcrsi": {"type":"code_package","sameWorkAs":"tchnl","people":["John Tolan"]},
+    "stfun": {"type":"code_package","people":[]},
+    "jhsto": {"type":"code_package","people":["Jack Hershey"]},
+    "bfmmx": {"type":"code_package","sameWorkAs":"bfmm","people":["Mike Bryant"]},
+    "bfmm": {"type":"code_package","people":["Mike Bryant"]},
+    "tcsyn": {"type":"code_package","people":[]},
+    "zstrt": {"type":"code_package","people":[]},
+    "tttt1": {"type":"code_package","people":[]},
+    "msmom": {"type":"code_package","people":["Thomas Aspray"]},
+    "rrsim": {"type":"other","people":[]},
+    "rinadz": {"type":"article","people":["David Stendahl","Leo Zamansky"]},
+    "mxswg": {"type":"code_package","people":[]},
+    "jlmms": {"type":"code_package","people":["G. H. Kramer"]},
+    "bfm2c": {"type":"code_package","sameWorkAs":"bfmm","people":["Mike Bryant"]},
+    "tltdr": {"type":"code_package","people":[]},
+    "rrlft": {"type":"code_package","people":[]},
+    "upg18": {"type":"code_package","people":["Joe Krutsinger"]},
+  },
+} satisfies AuthorFile;
