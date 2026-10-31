@@ -2,8 +2,8 @@ import type {AuthorFile} from '../author-files';
 
 export default {
   order: 1210,
-  author: { id: "jlcava", name: "José Luis Cava", tagline: "Spanish technical analyst · the three-indicator trend rule from his book runs here", books: [
-    { id: "jcsis", sourceIds: [], title: "Sistemas de Especulación en Bolsa", year: 2001, blurb: "Cava · the 50-bar mid-line, 7-day signed volume and MBO three-indicator rule (Spanish, scanned)" }] },
+  author: { id: "jlcava", name: "José Luis Cava", tagline: "Spanish technical analyst · three systems from his book run here", books: [
+    { id: "jcsis", sourceIds: [], title: "Sistemas de Especulación en Bolsa", year: 2001, blurb: "Cava · the 50-bar mid-line, volume and MBO three-indicator rule, the RSI + Momentum system and the Three-Bar Rule (Spanish, scanned)" }] },
   identities: ["José Luis Cava"],
   profile: {
     "kind": "person",

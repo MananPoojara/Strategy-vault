@@ -1541,7 +1541,8 @@ mod tests {
             let books:Vec<&str>=admitted.iter().map(|d|d.book).collect();
             // Books where another rule or a second entry also admits strategies (31 Oct 2026); in every other book the
             // entry must be the only route, so nothing else in the book is admitted by accident.
-            const SHARED:&[&str]=&["bab80","bllstr","covel","hbqts","hbiab","jkbwts","upg18","kftsm","lkqts","mhpst","putg","tcdt","tdnmtt"];
+            // ccl07, jcsis: a second entry (ADMISSION_K5, 31 Oct 2026) admits the K5 ids with their own label, so the K3 ids keep theirs.
+            const SHARED:&[&str]=&["bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","putg","tcdt","tdnmtt"];
             for d in all.iter().filter(|d|books.contains(&d.book) && !SHARED.contains(&d.book) && reviewed_cash_rule(d)!=(a.reviewed)(d)) {other.push((d.book,d.id));}
             for d in admitted {
                 assert_eq!(admission(d).map(|x|x.label),Some(a.label),"{}",d.id);

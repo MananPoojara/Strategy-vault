@@ -3,7 +3,7 @@ import type {AuthorFile} from '../author-files';
 export default {
   order: 10,
   author: { id: 'connors', name: 'Larry Connors', photo: 'img/gurus/connors.jpg', books: [
-    { id: "ccl07", sourceIds: [], title: "Chairman's Club December 2007 (Las Vegas manual)", year: 2007, blurb: "Connors / TradingMarkets · RSI 10 Scale-In on SPY and the 10 Worst Performers rule run here; the Short Selling Methodology is the live h10 rule" },
+    { id: "ccl07", sourceIds: [], title: "Chairman's Club December 2007 (Las Vegas manual)", year: 2007, blurb: "Connors / TradingMarkets · RSI 10 Scale-In on SPY, the 10 Worst Performers rule, the AmiBroker class project and Curt Carlson's breakout study run here; the Short Selling Methodology is the live h10 rule" },
     { id: 'stc9', sourceIds: ['source-a9f1f241140ddd2d'], title: 'Swing Trading College IX', year: 2010, live: true },
     { id: 'alpha', sourceIds: ['source-8e3431fb32b0bfa0'], title: 'The Alpha Formula (with Chris Cain)', year: 2020, blurb: 'Connors Research, 2020 · Rising Assets, Weekly Mean Reversion, Dynamic Treasuries, ETF Avalanches and the combined Alpha Formula portfolio' },
     { id: 'ststw', sourceIds: ['source-1c33291f12e18958', 'source-4f5d6fe3e3f4f2e0'], title: 'Short Term Trading Strategies That Work (with Cesar Alvarez)', year: 2008, blurb: 'Connors & Alvarez, 2008 · 10-day highs/lows, RSI(2), cumulative RSI, Double 7s, VIX Stretches, S&P Short · stock-universe rules need data' },
@@ -52,7 +52,7 @@ export default {
     "confidence": "high"
   },
   sourceReview: {
-    "ccl07": {"type":"course_manual","people":["Larry Connors"]},
+    "ccl07": {"type":"course_manual","people":["Larry Connors","Curt Carlson"]},
     "stc9": {"type":"course_manual","people":[]},
     "alpha": {"type":"book","people":["Chris Cain","Larry Connors"]},
     "ststw": {"type":"book","people":["Cesar Alvarez","Larry Connors"]},
