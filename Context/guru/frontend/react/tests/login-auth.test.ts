@@ -1,5 +1,5 @@
 import {describe,it,expect,vi} from 'vitest';
-import {safeLoginNext,signInEmail} from '../src/login/auth';
+import {safeLoginNext,signInEmail,loginEmail} from '../src/login/auth';
 describe('login return routing',()=>{
  const origin='http://vault.test';
  it.each(['https://evil.invalid/','javascript:alert(1)','//evil.invalid/','/\\evil.invalid','/path\\x','/path\nx','/login.html','/nested/../login.html?next=/','/%6cogin.html','/%2f%2fevil.invalid','/%5cevil.invalid','/%0alogin','/LOGIN.html'])('rejects unsafe or looping return %s',value=>expect(safeLoginNext(value,'',origin)).toBe('/'));
@@ -19,6 +19,7 @@ describe('real email authentication contract',()=>{
   await signInEmail('  test@example.invalid  ','  correct password  ',fetcher);
   expect(fetcher).toHaveBeenCalledOnce();
   const [url,init]=fetcher.mock.calls[0];expect(url).toBe('/api/auth/sign-in/email');expect(init.credentials).toBe('same-origin');expect(init.method).toBe('POST');expect(JSON.parse(init.body)).toEqual({email:'test@example.invalid',password:'  correct password  '});
+  expect(loginEmail(' Kripalsinh ')).toBe('kripalsinh@vault.local');expect(loginEmail('A@B.io')).toBe('a@b.io');
  });
  it.each([401,403,429,500])('does not accept a failed auth response (%s) or expose its server body',async status=>{
   const fetcher=vi.fn().mockResolvedValue(new Response('private server stack',{status}));
