@@ -596,9 +596,9 @@ fn adx_k(x: &Ctx, len: usize) -> Vec<f64> {
 
 // ---------------------------------------------------------------- calendar / moon (SC1 + Numerical Recipes)
 
-fn ymd(s: &str) -> (i64, i64, i64) { (s[0..4].parse().unwrap_or(0), s[5..7].parse().unwrap_or(0), s[8..10].parse().unwrap_or(0)) }
+pub(crate) fn ymd(s: &str) -> (i64, i64, i64) { (s[0..4].parse().unwrap_or(0), s[5..7].parse().unwrap_or(0), s[8..10].parse().unwrap_or(0)) }
 /// Julian day number of a Gregorian date (NR julday).
-fn jdn(y: i64, m: i64, d: i64) -> i64 {
+pub(crate) fn jdn(y: i64, m: i64, d: i64) -> i64 {
     let a = (14 - m) / 12; let yy = y + 4800 - a; let mm = m + 12 * a - 3;
     d + (153 * mm + 2) / 5 + 365 * yy + yy / 4 - yy / 100 + yy / 400 - 32045
 }
@@ -616,7 +616,7 @@ fn flmoon(n: i64, nph: i64) -> (i64, f64) {
     (jd, xtra - i as f64)
 }
 /// LunarEventDates: civil (US Eastern) date, as a day number, of quarter-phase event n.
-fn lunar_event(n: i64) -> i64 {
+pub(crate) fn lunar_event(n: i64) -> i64 {
     let (mut nd, frac) = flmoon(n.div_euclid(4), n.rem_euclid(4));
     let mut f = 24.0 * (frac - 5.0 / 24.0);
     if f < 0. { nd -= 1; f += 24.; }

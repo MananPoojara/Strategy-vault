@@ -2604,6 +2604,7 @@ static GATE: &[G] = &[
     G { id: r##"wwnc_tbp"##, verdict: r##"unverified"##, reason: r##"Only 1977-78 futures examples are printed."##, allowed: None, clamp_open: false, book: r##""##, ours: r##""## },
     G { id: r##"wwnc_vol"##, verdict: r##"unverified"##, reason: r##"Only 1977-78 futures examples are printed (gold p.32); the worksheet reproduces."##, allowed: None, clamp_open: false, book: r##""##, ours: r##""## },
     G { id: r##"x555"##, verdict: r##"unverified"##, reason: r##"No printed result; exits at next day's open."##, allowed: None, clamp_open: true, book: r##""##, ours: r##""## },
+    G { id: r##"yzzlp_lunar"##, verdict: r##"unverified"##, reason: r##"The paper's 4.2% a year is for an equal-weighted portfolio of 48 country indices, not one index; not compared. Close fills (next open is an option)."##, allowed: None, clamp_open: false, book: r##"48-country equal-weighted portfolio, 15-day window: 4.2% a year (not comparable)"##, ours: r##""## },
     G { id: r##"zstrt_zone"##, verdict: r##"withheld"##, reason: r##"it uses a fixed point or dollar amount set for an instrument this vault does not hold. The ZoneStrat code uses fixed point distances (-73 / -98 points and +1 point) for an instrument it does not state, so no ticker is valid. The literal defaults give 0 trades on NIFTY 50 and SPX. Nothing published."##, allowed: None, clamp_open: false, book: r##""##, ours: r##""## },
 ];
 // ---- intraday wave 2b block (claude/intraday-w2b, 2026-10-29): verdicts for the same-day rules reviewed in this wave; get() reads these first
