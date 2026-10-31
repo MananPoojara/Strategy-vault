@@ -15,7 +15,7 @@ pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 macro_rules! common { () => { " TradeStation semantics: the strategy runs at each bar's close; 'next bar' orders are for the following bar only (a market order fills at its open; a stop fills at the stop price, or at the open if the open is already through it; a limit fills at the limit, or at the open if the open is already better); one position, no pyramiding, a same-direction entry is ignored and an opposite entry reverses (TradeStation SellShort / Buy). Daily bars are a declared application: the course's chart examples are intraday CSCO, INTC and AAPL. A teaching example: the course teaches EasyLanguage and does not recommend these strategies (lead decision 49). No printed results; the vault's standard costs (decision 50)." } }
 
 const BRK: &str = concat!("[Declared readings] Exercise #24 Breakout (printed p.86-92): at every close, Buy next bar at the highest high of the last 8 bars (current bar included, 'we do not refer to 1 bar ago') + .02 stop and Sell Short next bar at the lowest low of the last 8 bars - .02 stop; 'there are no exits in this strategy since it continually closes and then reverses the open position'. The .02 / '2 points' offset = 2 minimum price ticks of the instrument (0.01 US, 0.05 NSE; lead decision 57); p.tick = 0 removes it. While long only the sell-short stop can act (and the mirror); when flat and one bar reaches both stops, the one nearer the open fills first and the other is not taken that bar. Option p.n = 4: the Russian Omega course 'BreakOut' (same code with 4 bars and 2-point stops). Not coded: #29 Breakout2's built-in $0.20 stop, $0.30 target and $0.15 breakeven per share, tuned to 10-minute bars and active inside the entry bar, which daily bars cannot order.", common!());
-const MAC: &str = concat!("[Declared readings] Challenge #25 Mov Avg Cross (task p.92, answer code p.210-211): ShortMA = Average(Close,9), LongMA = Average(Close,18); ShortMA crosses over LongMA -> Buy next bar at market, crosses under -> Sell Short next bar at market (each reverses). Stale-trade exit: if BarsSinceEntry > 8 (the entry bar is 0) and OpenPositionProfit < $150 at the close -> Sell / Buy To Cover next bar at market, then flat until the next cross; a cross on the same close wins (it reverses). $150 on the course's 100-share trade size (p.91) = $1.50 a share. Dollar amount: US instruments only (lead decision 58); on Indian instruments the crossover runs without it ('dollar exit held'). p.stale = 0 removes it everywhere. Option p.mode = 1: the Russian Omega course 'MACross' (TELETRADE translation): the same 9/18 crosses but Buy / Sell 'this bar on close', and exit this bar on close if BarsSinceEntry > 8 and PositionProfit < 1000 ($1,000 read on 100 shares = $10 a share, US only).", common!());
+const MAC: &str = concat!("[Declared readings] Challenge #25 Mov Avg Cross (task p.92, answer code p.210-211): ShortMA = Average(Close,9), LongMA = Average(Close,18); ShortMA crosses over LongMA -> Buy next bar at market, crosses under -> Sell Short next bar at market (each reverses). Stale-trade exit: if BarsSinceEntry > 8 (the entry bar is 0) and OpenPositionProfit < $150 at the close -> Sell / Buy To Cover next bar at market, then flat until the next cross; a cross on the same close wins (it reverses). $150 on the course's 100-share trade size (p.91) = $1.50 a share. Dollar amount: US instruments only (lead decision 58); on Indian instruments the crossover runs without it ('dollar exit held'). p.stale = 0 removes it everywhere. The Russian Omega course version 'MACross' (this bar on close, PositionProfit < 1000) is not offered: its dollar amount has no stated share count and dollar amounts are not converted (lead decisions 19, 32, 63).", common!());
 const RB: &str = concat!("[Declared readings] Exercise #26 Real Body Avg (printed p.93-95): RB = Close - Open, AvgRB = Average(RB,10) (simple). AvgRB crosses over 0 (above 0 now, at or below 0 on the prior bar) -> Buy next bar at market; crosses under 0 (below now, at or above before) -> Sell Short next bar at market. Always in after the first signal; no stop, no other exit.", common!());
 const MOM: &str = concat!("[Declared readings] Exercise #27 Momentum Cross (printed p.96-98, final listing): Mom = Close - Close[10]. BullCx = Mom crosses over 0, BearCx = Mom crosses under 0. BullCx and MRO(BearCx,4,1) = -1 (no BearCx in the last 4 bars, current bar included) -> Buy next bar at a limit = this bar's close; BearCx with no BullCx in the last 4 bars -> Sell Short next bar at a limit = this bar's close (a short fill reverses a long, and the mirror). Exits, checked at every close while in a position, the entry bar included: Mom < Mom[1] and Mom[1] < Mom[2] -> Sell this bar on close; Mom > Mom[1] > Mom[2] -> Buy To Cover this bar on close. Option p.exit = 1: the first draft on p.96, exits next bar at market.", common!());
 
@@ -55,7 +55,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     Some(match id {
         "tselhs_breakout8" => vec![p("n", "Bars in the high / low (8; Russian course BreakOut: 4)", 8., 2., 50., 1.), p("tick", "Stop offset in ticks (2; 0 = none)", 2., 0., 10., 1.)],
-        "tselhs_ma_cross" => vec![p("stale", "Stale-trade exit, US only: 1 on (course), 0 off", 1., 0., 1., 1.), p("mode", "0 = Home Study #25 (next-bar orders), 1 = Russian course MACross (this bar on close, $1,000)", 0., 0., 1., 1.)],
+        "tselhs_ma_cross" => vec![p("stale", "Stale-trade exit, US only: 1 on (course), 0 off", 1., 0., 1., 1.)],
         "tselhs_rb_avg" => vec![],
         "tselhs_mom_cross" => vec![p("exit", "Exits: 0 = this bar on close (final listing), 1 = next bar at market (first draft)", 0., 0., 1., 1.)],
         _ => return None,
@@ -106,18 +106,15 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "tselhs_ma_cross" => {
             let (s, lg) = (sma(c, 9), sma(c, 18));
             let us = g(p, "stale", id) > 0.5 && !india(x);
-            let close_mode = g(p, "mode", id) > 0.5;
-            let min_prof = if close_mode { 10. } else { 1.5 }; // $1,000 / $150 on 100 shares
             let mut pend: Option<f64> = None; // next-open order: +1 / -1 entry (reversing), 0 exit
             for i in from..=to {
                 if let Some(a) = pend.take() {
                     if a == 0. { pos.exit(i, o[i], "stale trade"); } else { pos.enter(a, i, o[i], "open"); }
                 }
                 let sig = if over(&s, &lg, i) { 1. } else if under(&s, &lg, i) { -1. } else { 0. };
-                let stale = us && pos.entry_bar().is_some_and(|e| i - e > 8) && pos.side() * (c[i] - pos.entry_px()) < min_prof;
-                if close_mode {
-                    if sig != 0. && sig != pos.side() { pos.enter(sig, i, c[i], "close"); } else if stale { pos.exit(i, c[i], "stale trade"); }
-                } else if i < to {
+                // $150 on the course's 100-share trade size (p.91) = $1.50 a share
+                let stale = us && pos.entry_bar().is_some_and(|e| i - e > 8) && pos.side() * (c[i] - pos.entry_px()) < 1.5;
+                if i < to {
                     if sig != 0. && sig != pos.side() { pend = Some(sig); } else if stale { pend = Some(0.); }
                 }
             }
