@@ -91,7 +91,7 @@ fn cci(x: &Ctx, n: usize) -> Vec<f64> {
 }
 /// SlowK(n), legacy TradeStation smoothing (help.tradestation.com, Stochastic SmoothingType 2): FastK smoothed
 /// as ((3-1)*prev + FastK)/3, seeded with FastK.
-fn slowk(x: &Ctx, n: usize) -> Vec<f64> {
+pub(crate) fn slowk(x: &Ctx, n: usize) -> Vec<f64> {
     let mut out = vec![f64::NAN; x.c.len()];
     for i in 0..x.c.len() {
         if i + 1 < n { continue; }
