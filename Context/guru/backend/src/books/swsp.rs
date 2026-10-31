@@ -171,3 +171,12 @@ mod tests {
         assert_eq!(t[0].exit_i, 32 * 5 + 4); assert_eq!(t[0].exit_px, 90.); assert!(!t[0].open);
     }
 }
+
+// Instrument admission: Stan Weinstein (swsp, lane A) 2026-10-26 (lane B) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/lanea/singles/decisions.json); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="swsp" && crate::books::swsp::reviewed_lanea(def.id),
+    label: "Weinstein's switching rule was written for no-load stock mutual funds; runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade.",
+    basis: "Stan Weinstein / Secrets for Profiting in Bull and Bear Markets (1988)",
+};

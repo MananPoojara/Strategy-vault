@@ -77,3 +77,12 @@ mod tests {
         assert!(run("rlpsf_x", &x, 0, r.len() - 1, &Params::new()).is_none());
     }
 }
+
+// Instrument admission: Roy Larsen (Trade Equity PS Fractal sample) 2026-10-30 (titles lane K3) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/rlarsen/admission/k3f_ref.py (header)); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="rlpsf" && crate::books::rlpsf::reviewed(def.id),
+    label: "A MetaStock sample formula for any security; indices, ETFs and US/India stocks are all a declared application, not the author's test.",
+    basis: "Roy Larsen, Trade Equity for MetaStock, 'PS Fractal Entry/Exit' sample formulas (TE LE Explorations Using GlobalVar.doc, 2002)",
+};

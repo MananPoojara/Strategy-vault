@@ -184,3 +184,12 @@ mod tests {
         assert!((routine(&z, 2, 2, 2.).2 - tf).abs() < 1e-12);
     }
 }
+
+// Instrument admission: Anthony W. Warren (awab, lane A) 2026-10-26 (lane B) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/lanea/singles/decisions.json); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="awab" && crate::books::awab::reviewed_lanea(def.id),
+    label: "Warren's alpha-beta trend channel was written for weekly mutual-fund, stock and S&P 400 prices; Runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade.",
+    basis: "Anthony W. Warren / Technical Analysis of Stocks & Commodities V3:3, V3:8, V7:4 (1985-1989)",
+};

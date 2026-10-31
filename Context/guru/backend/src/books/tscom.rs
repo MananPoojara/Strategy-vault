@@ -213,3 +213,12 @@ mod tests {
         assert_eq!(s[6], s[5]); // 4,4,4: sum of squares 0 -> previous value
     }
 }
+
+// Instrument admission: Lane A vendor1 2026-10-26 (lane B) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/lanea/vendor1/decisions.json); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| (def.book=="tscom" && crate::books::tscom::reviewed_lanea(def.id)) || (def.book=="alfar" && crate::books::alfar::reviewed_lanea(def.id)) || (def.book=="axsym" && crate::books::axsym::reviewed_lanea(def.id)) || (def.book=="barra" && crate::books::barra::reviewed_lanea(def.id)) || (def.book=="ltcoat" && crate::books::ltcoat::reviewed_lanea(def.id)) || (def.book=="pwadcs" && crate::books::pwadcs::reviewed_lanea(def.id)) || (def.book=="ltsfut" && crate::books::ltsfut::reviewed_lanea(def.id)) || (def.book=="qsfund" && crate::books::qsfund::reviewed_lanea(def.id)) || (def.book=="rvecl" && crate::books::rvecl::reviewed_lanea(def.id)),
+    label: "Vendor TradeStation code with no per-market test the vault can compare; runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade.",
+    basis: "TradeStation vendor system code (trade-system.com, alfaranda.com, i8i.com, Baramundi/Intervest, longtermtrading.com, pwafutures.com, LTS-Futures, Quadriga Superfund, Ralph Vince Eclipse) - research share 'TradeStation Systems & Indicators'",
+};

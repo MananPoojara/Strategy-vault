@@ -1005,3 +1005,12 @@ mod tests {
         let m = va.iter().sum::<f64>() / 1000.; assert!((m - 0.5).abs() < 0.05);
     }
 }
+
+// Instrument admission: Katz 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/katz/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="kets" && crate::books::kets::reviewed(def.id),
+    label: "Katz and McCormick tested these entry and exit models on a 36-market futures portfolio (1985-1999); runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade, no futures ticks or costs.",
+    basis: "The Encyclopedia of Trading Strategies (McGraw-Hill, 2000), printed C++ and the authors' C-Trader Toolkit CD: Ch.5 breakouts p.86-103, Ch.7 oscillators p.141-150, Ch.8 seasonality p.159-174, Ch.9 lunar p.183-195, Ch.10 cycles p.211-221, Ch.13-14 random entries and exits p.295-332. Seasonal and lunar averages use earlier years/cycles only (labelled adaptation). Index/ETF/stock runs are a declared application.",
+};

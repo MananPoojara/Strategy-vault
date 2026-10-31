@@ -128,3 +128,12 @@ fn spike_rev(x: &Ctx, from: usize, to: usize, p: &Params) -> Vec<Trade> {
     }
     out
 }
+
+// Instrument admission: Etzkorn 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/etzkorn/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"metwo"|"mewwot") && (crate::books::metwo::reviewed(def.id)),
+    label: "Mark Etzkorn ran these oscillator tests on nine futures markets (1984-1994) and printed the best lengths per market; the S&P 500 row is the default. Runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test. Cash-index shorts are hypothetical exposure.",
+    basis: "Mark Etzkorn, Trading with Oscillators (Wiley 1997), Ch.5 Simple Tests (p.62-69): MACD signal-line crossover, RSI 50-line and ROC equilibrium crossings as stop-and-reverse systems on the close (Tables 5.2-5.3, S&P 500 lengths by default), and his spike-reversal day rule in What Works in Online Trading (2001, p.125-132: 3% spike, out after eight days). Reviewed in authors/etzkorn/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
+};

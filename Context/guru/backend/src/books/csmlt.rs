@@ -389,3 +389,12 @@ mod tests {
         assert_eq!(swings(&[1., 3., 2., 3., 1.], true, 3), vec![]); // equal high stops the count
     }
 }
+
+// Instrument admission: CSmith 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/csmith/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"csmlt") && (crate::books::csmlt::reviewed(def.id)),
+    label: "Courtney Smith wrote these methods for currency pairs; runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test. Cash-index shorts are hypothetical exposure.",
+    basis: "Courtney D. Smith, How to Make a Living Trading Foreign Exchange (Wiley 2010): Ch.2 trend analysis (p.13-30), Ch.3 channel breakouts (p.31-53), Ch.4 the Conqueror (p.55-65), Ch.5 stochastics (p.81), Ch.6 reversal days and RRR (p.97-103). Reviewed in authors/csmith/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
+};

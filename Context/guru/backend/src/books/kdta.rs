@@ -515,3 +515,12 @@ mod tests {
         assert_eq!(civil(dnum("2001-12-31")), (2001, 12, 31));
     }
 }
+
+// Instrument admission: Kirkpatrick 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/kirkpatrick/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"kdta") && (crate::books::kdta::reviewed(def.id)),
+    label: "Kirkpatrick and Dahlquist cite or test these rules on the DJIA, S&P 500, NYSE breadth, 18 or 19 futures/stocks and AAPL; runs on indices, ETFs and stocks, US and India, are a declared application, not the authors' test. Breadth rules read NYSE breadth on US instruments and NSE breadth on Indian ones (thresholds unchanged).",
+    basis: "Kirkpatrick and Dahlquist, Technical Analysis (FT Press 2006): VIX 10-day EMA (Box 7.3 p.98), RSI is wrong (p.440), Apple-a-Day systems (Box 22.1-22.2 p.551-564), May-October (p.165), 6% pullback (p.387), one-day A/D line (p.133), 10-day A/D ratio 1.91 (p.138), Zweig breadth thrust (p.142), Haurlan 200-day (p.136), Arms Index rules (p.143-145). Reviewed in authors/kirkpatrick/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
+};

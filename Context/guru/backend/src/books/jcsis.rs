@@ -84,3 +84,12 @@ mod tests {
         assert!(run("jcsis_x", &x, 0, r.len() - 1, &Params::new()).is_none());
     }
 }
+
+// Instrument admission: José Luis Cava (Sistemas de Especulación en Bolsa) 2026-10-30 (titles lane K3) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/jlcava/admission/k3c_ref.py (header)); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="jcsis" && crate::books::jcsis::reviewed(def.id),
+    label: "The book applies this system to very liquid Spanish stocks; US and NSE stocks, ETFs and any index with volume are a declared application, not the author's test.",
+    basis: "José Luis Cava, Sistemas de Especulación en Bolsa (2001), section IX.1.3, PDF p.184-187",
+};

@@ -470,3 +470,12 @@ mod tests {
         assert_eq!(fill_time(&x, 1, Stop { px: 12.5, dir: 1 }).map(|v| v.1), Some(12.5));
     }
 }
+
+// Instrument admission: BWilliams 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/bwilliams/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"bwntd"|"bwtc1"|"bwtc2") && (crate::books::bwntd::reviewed(def.id) || crate::books::bwtc1::reviewed(def.id) || crate::books::bwtc2::reviewed(def.id)),
+    label: "Bill Williams taught these rules on futures (coffee, S&P, gold, bonds) and stocks; runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test. Cash-index shorts are hypothetical exposure.",
+    basis: "Bill Williams: New Trading Dimensions (1998) fractal outside the Alligator (p.36-45, 72-74) and AO turn system (p.46); Trading Chaos (1995) fractal start/signal/stop (p.135-142) and 5/13/34 rhythm (p.181-186); Trading Chaos 2nd ed. (2004) Fractal + Super AO with trailing stop (p.128-156). Reviewed in authors/bwilliams/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
+};

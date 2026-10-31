@@ -81,3 +81,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         }
     }))
 }
+
+// Instrument admission: Siegel 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/siegel/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"sglr") && (crate::books::sglr::reviewed(def.id)),
+    label: "Jeremy Siegel tested this rule on the Dow (1885-2001) and the Nasdaq Composite; runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test. Price-only; the book adds dividends and T-bill interest.",
+    basis: "Jeremy J. Siegel, Stocks for the Long Run (3rd ed. 2002) ch.17 p.289-294: buy when the index closes at least 1% above its 200-day average, sell when it closes at least 1% below; long or cash at the close. Reviewed in authors/siegel/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
+};

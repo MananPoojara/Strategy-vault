@@ -126,3 +126,12 @@ mod tests {
         assert!(w[1].is_nan());
     }
 }
+
+// Instrument admission: Freeburg 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/freeburg/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="nfpk" && crate::books::nfpk::reviewed(def.id),
+    label: "Nelson Freeburg illustrated these weekly moving-average confirmations on the S&P 500 and the NASDAQ Composite; runs on other indices, ETFs and single stocks (US and India) are a declared application.",
+    basis: "Trading the Pankin Strategy for 30% Annual Gains and Low Risk (TAG XIX 1997 workbook) Fig. 35 (S&P vs 20-week MA, unfiltered and +/-1%) and Fig. 36 (NASDAQ vs 15-week WMA, crossover and 0.5% MA swing), p.25. Index/ETF/stock runs are a declared application.",
+};

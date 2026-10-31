@@ -424,3 +424,12 @@ mod tests {
         assert_eq!(t.legs[0].px, x.o[t.legs[0].i].max(x.h[ci]));
     }
 }
+
+// Instrument admission: J. Welles Wilder 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/wilder/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="wwnc" && crate::books::wwnc::reviewed(def.id),
+    label: "Wilder worked these systems on 1977-78 commodity futures; runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade, always-in systems reverse as printed.",
+    basis: "J. Welles Wilder Jr., New Concepts in Technical Trading Systems (1978), Spanish edition",
+};

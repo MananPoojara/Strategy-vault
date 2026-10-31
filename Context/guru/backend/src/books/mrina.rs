@@ -118,3 +118,12 @@ mod tests {
         assert_eq!(ts[0].legs[0].i, e + 1, "{:?}", ts); assert_eq!(ts[0].dir, 1.);
     }
 }
+
+// Instrument admission: Lane A newsletters 2026-10-26 (lane B) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/lanea/newsletters/decisions.json); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| (def.book=="mrina" && crate::books::mrina::reviewed_lanea(def.id)) || (def.book=="tsx" && crate::books::tsx::reviewed_lanea(def.id)) || (def.book=="jrfsp" && crate::books::jrfsp::reviewed_lanea(def.id)) || (def.book=="bpqst" && crate::books::bpqst::reviewed_lanea(def.id)) || (def.book=="wmmts" && crate::books::wmmts::reviewed_lanea(def.id)),
+    label: "Newsletter / course rule with no per-market test the vault can compare; runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade.",
+    basis: "Newsletters and courses: Futures Magazine (Ruggiero, Aug 2003), Inside Advantage (Ruggiero, Oct 1996), TS Express (Brower, Sep/Oct 1997), FirstStrike Plus (Rensink), Quantum Swing Trader (Poulos), Market Turn Strategy (McWilliams)",
+};

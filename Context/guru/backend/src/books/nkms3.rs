@@ -45,3 +45,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     for q in t.iter_mut().filter(|q| !q.open && !(if q.dir > 0. { xl[q.exit_i] } else { xs[q.exit_i] })) { q.reason = "reversed by the opposite Enter · close".into(); }
     Some(t)
 }
+
+// Instrument admission: NIKSAN MetaStock pack (PS RSI Trailing Exit) 2026-10-30 (titles lane K4) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/titles-1030/K4w/k4_ref.py (header)); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="nkms3" && crate::books::nkms3::reviewed(def.id),
+    label: "Equis's PS sample record names no market; runs on indices, ETFs and single stocks (US and India) are a declared application, not the author's test.",
+    basis: "NIKSAN MetaStock pack, MS72PRFT.DTA record 81; MetaStock 7.2 manual, The System Editor Dialog",
+};

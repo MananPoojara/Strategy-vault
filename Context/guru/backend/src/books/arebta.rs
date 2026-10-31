@@ -125,3 +125,12 @@ mod tests {
         assert_eq!(ti[0].dir, -1.);
     }
 }
+
+// Instrument admission: David Aronson 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/aronson/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="arebta" && crate::books::arebta::reviewed(def.id),
+    label: "Aronson data-mined these rules on the S&P 500 (1980-2005, detrended returns); runs on other indices, ETFs and single stocks (US and India) on their own closes are a declared application, one unit per trade, next-open fills, no detrending.",
+    basis: "David Aronson, Evidence-Based Technical Analysis (Wiley 2007), ch.8, p.397-449",
+};

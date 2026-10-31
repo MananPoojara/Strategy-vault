@@ -181,3 +181,12 @@ mod tests {
         assert_eq!((t[0].legs[0].i, t[0].exit_i, t[0].exit_px), (1, 4, 104.));
     }
 }
+
+// Instrument admission: Newsletters and magazines (SFO, StockCharts, Working Money, CTCN) 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/newsletters/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| (def.book=="sfo" && crate::books::sfo::reviewed(def.id)) || (def.book=="stkch" && crate::books::stkch::reviewed(def.id)) || (def.book=="wmny" && crate::books::wmny::reviewed(def.id)) || (def.book=="ctcn" && crate::books::ctcn::reviewed(def.id)),
+    label: "These magazine and newsletter systems were shown on single stocks, sector indices or futures; runs on indices, ETFs and single stocks (US and India; US calendar dates kept as printed) are a declared application, one unit per trade.",
+    basis: "SFO Magazine 2003-04, StockCharts.com ChartSchool articles, Working Money 2001-2004, Commodity Traders Club News (copies in Books/)",
+};

@@ -1723,3 +1723,12 @@ mod sob_proposed_tests {
         let d=catalogue().into_iter().find(|d|d.id=="lkqts_sob").unwrap();assert!(matches!(d.status,Status::Live));
     }
 }
+
+// Instrument admission: Kestner 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/kestner/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"lkqts"|"lkcpt") && (crate::books::lkqts::reviewed(def.id) || crate::books::lkcpt::reviewed(def.id)),
+    label: "Lars Kestner tested these systems on futures portfolios, the S&P 500 and US stocks (Quantitative Trading Strategies) and on S&P 500 futures (A Comparison of Popular Trading Systems); runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test. Cash-index shorts are hypothetical exposure.",
+    basis: "Lars N. Kestner: Quantitative Trading Strategies (2003) momentum, stochastic, Kestner MA, MACD-histogram, NEI, adjusted stochastic, volume reversal, Saitta, channel-breakout exits/filters, relative-value statistics, S&P 500 calendar, VIX and monthly timing, new volatility breakout (ch.6-12); A Comparison of Popular Trading Systems (2nd ed. 1999), 35 systems from Kestner's printed EasyLanguage (App. p.225-244). Reviewed in authors/kestner/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
+};

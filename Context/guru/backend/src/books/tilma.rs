@@ -159,3 +159,12 @@ mod tests {
         assert!((t[49] - 5.).abs() < 1e-9);
     }
 }
+
+// Instrument admission: Tim Tillson 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/tillson/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="tilma" && crate::books::tilma::reviewed(def.id),
+    label: "Tillson tested these moving-average turns on the Nasdaq 100 (1993-97, MetaStock); runs on other indices, ETFs and single stocks (US and India) are a declared application, long only, one unit per trade, fills at the signal-bar close.",
+    basis: "Tim Tillson, Better Moving Averages and Oscillators (MetaStock 6.5 article)",
+};

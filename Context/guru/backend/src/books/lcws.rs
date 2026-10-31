@@ -85,3 +85,12 @@ mod tests {
         assert!(run("lcws_x", &x, 0, r.len() - 1, &Params::new()).is_none());
     }
 }
+
+// Instrument admission: Les Crane 2026-10-29 (lane K1) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/lcrane/admission/ws_ref.py (header)); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="lcws" && crate::books::lcws::reviewed(def.id),
+    label: "Les Crane applies the WaveSurfer Impulse Ratio to NYSE stocks; runs on indices, ETFs and other US/India stocks are a declared application, not the author's test.",
+    basis: "Les Crane, WaveSurfer (2002), p.32-34 (ratio), p.42-43 (buy), p.45 (sell), p.46 (short)",
+};

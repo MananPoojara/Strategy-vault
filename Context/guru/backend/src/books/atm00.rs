@@ -373,3 +373,12 @@ mod tests {
         assert_eq!((t[0].exit_i, t[0].exit_px), (64, 101.0));
     }
 }
+
+// Instrument admission: Active Trader Trading System Lab 2000-2002 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/activetrader2/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| (def.book=="atm00" && crate::books::atm00::reviewed(def.id)) || (def.book=="atm01" && crate::books::atm01::reviewed(def.id)) || (def.book=="atm02" && crate::books::atm02::reviewed(def.id)) || (def.book=="atm10" && crate::books::atm10::reviewed(def.id)),
+    label: "Thomas Stridsman's Trading System Lab columns tested Dow / Nasdaq-100 stock portfolios, S&P and currency futures with fixed-fractional sizing; runs on one index, ETF or single stock (US and India) are a declared application, one unit per trade.",
+    basis: "Active Trader Magazine 2000-2002 Trading System Lab columns (PDF and DjVu copies in Books/Active Trader Magazine)",
+};

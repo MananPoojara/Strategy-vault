@@ -93,3 +93,12 @@ mod tests {
         assert!(run("jbid_x", &x, 0, r.len() - 1, &Params::new()).is_none());
     }
 }
+
+// Instrument admission: Jeremy J. Burns 2026-10-29 (lane K1) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/jjburns/admission/id_ref.py (header)); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="jbid" && crate::books::jbid::reviewed(def.id),
+    label: "Jeremy Burns trades inside days on US stocks; runs on indices, ETFs and India stocks are a declared application, not the author's test.",
+    basis: "Jeremy J. Burns, Inside Days (TradeCashSystem.com, 2009), PDF 7-17",
+};

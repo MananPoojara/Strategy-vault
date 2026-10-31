@@ -91,3 +91,12 @@ mod tests {
         assert!(run("ebmst_x", &x, 0, r.len() - 1, &Params::new()).is_none());
     }
 }
+
+// Instrument admission: Edward Burke 2026-10-29 (lane K1) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/burke/admission/hiw_ref.py (header)); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="ebmst" && crate::books::ebmst::reviewed(def.id),
+    label: "Ed Burke shows the 3-6-18 EMA system on US stocks (IBM, CAT); runs on indices, ETFs and other US/India stocks are a declared application, not the author's test.",
+    basis: "Edward Burke, How I Won: Making Money in Stock Trends (2009), Ch.3-5 p.10-23",
+};

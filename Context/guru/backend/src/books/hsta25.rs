@@ -58,3 +58,12 @@ mod tests {
         assert_eq!(super::tuesday_before(2023), 21); assert_eq!(super::tuesday_before(2024), 26); assert_eq!(super::tuesday_before(1979), 20);
     }
 }
+
+// Instrument admission: Jeffrey A. Hirsch (Stock Trader's Almanac 2025) 2026-10-30 (titles lane K2) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/niksan-k2/admission/k2b_ref.py (header)); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="hsta25" && crate::books::hsta25::reviewed(def.id),
+    label: "The Almanac tests this trade on the Russell 2000 (S&P 500 and NASDAQ quoted); other indices, ETFs, single stocks and India (on the US Thanksgiving date) are a declared application.",
+    basis: "Jeffrey A. Hirsch, Stock Trader's Almanac 2025, p.165",
+};

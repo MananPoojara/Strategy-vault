@@ -74,3 +74,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     if let Some(mut t) = cur { t.exit_i = to; t.exit_px = x.c[to]; t.signal_i = to; t.reason = "open".into(); t.open = true; out.push(t); }
     Some(out)
 }
+
+// Instrument admission: Thomsett 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/thomsett/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"mtpos") && (crate::books::mtpos::reviewed(def.id)),
+    label: "Put Option Strategies for Smarter Trading shows this set-up on US stocks; index, ETF and Indian stock runs are a declared application, not the author's test.",
+    basis: "Michael C. Thomsett, Put Option Strategies for Smarter Trading (2009), Ch.4 (p.65-69, 73-74): reversal day after three or more trend days, buy at the bottom and sell at the opposite set-up, reviewed in authors/thomsett/admission/SOURCE-CONTRACT.md with independent chronological ledgers. Close fills, no confirmation filters and long-only default are declared readings; no stop (none in the book).",
+};

@@ -142,3 +142,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     }
     Some(s.done(x, to))
 }
+
+// Instrument admission: Adaptrade Builder bonus strategies 2026-10-30 (titles lane K4) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/titles-1030/K4w/k4_ref.py (header)); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="adbld" && crate::books::adbld::reviewed(def.id),
+    label: "Adaptrade Builder fitted each system to one market (Apple, Amazon, E-mini S&P futures); other stocks, ETFs, indices and India are a declared application, and the cash index or ETF stands in for the E-mini.",
+    basis: "Adaptrade Builder bonus strategies, adaptrade systems.doc; results Builder-BonusStrategies.pdf PDF p.6, 9, 10",
+};

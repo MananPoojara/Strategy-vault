@@ -264,3 +264,12 @@ mod tests {
         for t in &ts { assert!(t.exit_px >= x.l[t.exit_i] - 1e-9 && t.exit_px <= x.h[t.exit_i] + 1e-9); }
     }
 }
+
+// Instrument admission: Tharp 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/tharp/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"tharp") && (crate::books::tharp::reviewed(def.id)),
+    label: "Trade Your Way to Financial Freedom tested these systems on a basket of futures; index, ETF and stock runs (US and India) are a declared application, not the author's test. Cash-index shorts are hypothetical exposure.",
+    basis: "Van K. Tharp, Trade Your Way to Financial Freedom (1999): random entry with a trailing 3 x volatility stop and 1% risk (p.200-201) and the 55-day breakout with a 21-day trailing stop (p.286), reviewed in authors/tharp/admission/SOURCE-CONTRACT.md with independent chronological ledgers. The coin is a seeded generator (seed option) and fills follow the card's declared readings. No costs; the book's futures results are not reproduced.",
+};

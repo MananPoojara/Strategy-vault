@@ -198,3 +198,12 @@ mod tests {
         fav(&mut sh, 7.9, 0, 0.03, 0.); assert!((sh.stop - 9.47).abs() < 1e-12);
     }
 }
+
+// Instrument admission: David Bowden 2026-10-30 (day lane A1) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/bowden/admission/abc_ref.py (header)); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="dbnotp" && crate::books::dbnotp::reviewed(def.id),
+    label: "David Bowden trades the ABC swing method on stocks, stock index futures and currencies; runs on indices, ETFs and US/India stocks are a declared application of his three exit styles, not the author's test.",
+    basis: "David Bowden, The Number One Trading Plan (Safety in the Market), ABC trading rules p.46-49, swing charts p.62-65, trailing swing stop p.73, entry stop p.76",
+};

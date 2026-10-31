@@ -342,3 +342,12 @@ mod tests {
         assert_eq!(add_months(0, 3, (2001, 11, 30)), dnum(2002, 2, 28));
     }
 }
+
+// Instrument admission: Martin Zweig 2026-10-26 (lane B) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/zweig/laneb/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="mzwws" && crate::books::mzwws::reviewed(def.id),
+    label: "Zweig measured these rules on his Zweig Unweighted Price Index (1952-1985 calendar, breadth signals since the 1960s), which the vault does not have; runs on indices, ETFs and stocks (US with NYSE breadth, India with NSE breadth and US holiday dates) are a declared application, one unit per trade.",
+    basis: "Martin Zweig, Winning on Wall Street (updated ed. 1994), Ch 6 and 9",
+};

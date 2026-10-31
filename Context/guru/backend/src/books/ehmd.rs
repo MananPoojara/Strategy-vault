@@ -231,3 +231,12 @@ mod tests {
         assert!(lo.iter().all(|t| t.dir == 1.));
     }
 }
+
+// Instrument admission: John Ehlers articles 2026-10-26 (lane B) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/ehlers/laneb/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="ehmd" && crate::books::ehmd::reviewed(def.id),
+    label: "Ehlers prints these rules as TradeStation indicator signals with no test results; runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade, buy and sell read as stop-and-reverse at the next open.",
+    basis: "John Ehlers, MESA articles: Time Warp - Without Space Travel (Fig. 9); Linear Prediction (Sidebar 1)",
+};

@@ -444,3 +444,12 @@ mod tests {
         assert!(run("dmast_fixmempoly", &x, 0, 399, &Params::from([("zz".into(), 1.)])).is_none());
     }
 }
+
+// Instrument admission: Meyers 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/meyers/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| (def.book=="dmast" && crate::books::dmast::reviewed(def.id)) || (def.book=="dmst2" && crate::books::dmst2::reviewed(def.id)),
+    label: "Dennis Meyers tested these stop-and-reverse systems on single futures contracts (British pound, yen, D-mark, US bonds, gold, S&P 500); runs on indices, ETFs and single stocks are a declared application (one unit, percentage thresholds unchanged).",
+    basis: "Advanced Short Term Systems & Indicators v1.01 (ASTMAN10): Fixed Memory Polynomial III-11, Fading Memory Polynomial II V-8, Kalman g-h VI-9, g-h-k VII-9, Fading Memory Kalman VIII-10; Short Term Systems & Indicators v2.0 (STMANUAL): xAvTR V-10, Least Squares t+1 VII-9, T**2 VIII-9, Polychromatic Momentum IX-9, Maximum Likelihood Range X-9, %Up-%Down XI-5. Printed TradeStation 4 code; index/ETF/stock runs are a declared application.",
+};

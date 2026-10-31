@@ -149,3 +149,12 @@ mod tests {
         assert_eq!(ts[0].exit_i, flip + 1); assert_eq!(ts[1].dir, -1.); assert_eq!(ts[1].legs[0].px, r[flip + 1].open);
     }
 }
+
+// Instrument admission: Mark Johnson 2026-10-26 (lane B) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/mjohnson/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="mjmcr" && crate::books::mjmcr::reviewed(def.id),
+    label: "Johnson ran these systems on a 57-market futures portfolio with volatility position sizing and shows only Monte Carlo distributions; runs on one index, ETF or stock (US and India) are a declared application, one unit per trade, shorts included.",
+    basis: "Mark Johnson, Monte Carlo Resampling of Equity Curves using N-bar Segments (Austin Trading Workshop 2005), Figures 1-2",
+};

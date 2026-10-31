@@ -667,3 +667,12 @@ mod tests {
         assert!((s[0].risk - (c[27] - 1. - 3.)).abs() < 1e-9);
     }
 }
+
+// Instrument admission: Jason Perl 2026-10-26 (lane B) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/perl/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="tdperl" && crate::books::tdperl::reviewed(def.id),
+    label: "Perl prints no test of these rules; runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade.",
+    basis: "Jason Perl, DeMark Indicators (Bloomberg Press 2008), Ch 4",
+};

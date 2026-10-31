@@ -114,3 +114,12 @@ mod tests {
         assert_eq!(hits(&[1, -1, 1], 0), vec![0, -1, 1]);
     }
 }
+
+// Instrument admission: David Linton 2026-10-29 (lane B) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/linton/admission/cloud_ref.py (header)); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="dlccs" && crate::books::dlccs::reviewed(def.id),
+    label: "David Linton back-tests the cloud stop and reverse on the Euro, currencies and S&P 500 / FTSE 100 stocks; runs on indices, ETFs and US/India stocks are a declared application, not the author's test. Cash-index shorts are hypothetical.",
+    basis: "David Linton, Cloud Charts (2010), Ch.8 cloud construction and Ch.14 back-testing (PDF p.100-105)",
+};

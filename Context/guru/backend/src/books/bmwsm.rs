@@ -127,3 +127,12 @@ mod tests {
         assert!(run("bmwsm_x", &x, 0, r.len() - 1, &Params::new()).is_none());
     }
 }
+
+// Instrument admission: Brian J. Millard 2026-10-30 (day lane A3) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/bmillard/admission/wsm_ref.py (header)); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="bmwsm" && crate::books::bmwsm::reviewed(def.id),
+    label: "Brian Millard buys UK shares when the dominant trend of both the share and the FTSE 100 is rising; here the trend estimate is taken on the traded series itself (an index or ETF is its own market; on single stocks the S&P 500 / NIFTY 50 condition is not applied), a declared application, not the author's test.",
+    basis: "Brian J. Millard, Winning on the Stock Market (2nd ed., 1998), p.57-60, 103-106, 139-158",
+};

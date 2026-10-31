@@ -377,3 +377,12 @@ mod tests {
         assert_eq!((t[1].dir, t[1].legs[0].px, t[1].exit_px), (1., 105., 100.));
     }
 }
+
+// Instrument admission: Krutsinger 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/krutsinger/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| (def.book=="jkbwts" && crate::books::jkbwts::reviewed(def.id)) || (def.book=="jkbk" && crate::books::jkbk::reviewed(def.id)) || (def.book=="upg18" && crate::books::upg18::reviewed(def.id)) || (def.book=="jk36k" && def.id=="jk36k_jk1_buy_monday") /* intraday wave 2b */,
+    label: "Joe Krutsinger built and reported these systems on S&P 500 futures (Dinapoli5, RainMaker, JK-Call Buyer), stock-index futures (SAFE) and QQQ / any market (Prince, English Channel, Parrot); runs on other indices, ETFs and single stocks (US and India) are a declared application.",
+    basis: "Building Winning Trading Systems (1997): Dinapoli5 p.5, JK RainMaker p.37; joe_krut.pdf: SAFE worksheet p.22, JK-Call Buyer p.34-35 (Active Trader Sept 2000); vendor code: English Channel (EnglishChannel.pdf, English_Channel.txt), Prince 2002 (Open Code.txt), Parrot (Parrot.txt). Index/ETF/stock runs are a declared application.",
+};

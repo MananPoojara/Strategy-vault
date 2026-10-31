@@ -417,3 +417,12 @@ mod tests {
         assert!((t[0].exit_px - (98.21 + (98.21 - 94.99))).abs() < 1e-9);
     }
 }
+
+// Instrument admission: Tom Bierovic 2026-10-26 (lane B) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/bierovic/laneb/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="tbabc" && crate::books::tbabc::reviewed(def.id),
+    label: "Bierovic shows these rules on stock and futures charts (STAMPEDE on SUNW, POWERTOOL on PMC-Sierra and yen futures); runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade, with TradeStation's bar path for orders on the same bar.",
+    basis: "Tom Bierovic, The ABCs of Trading and Technical Analysis (Online Investor Expo 2000), p.33-40, 82-100",
+};

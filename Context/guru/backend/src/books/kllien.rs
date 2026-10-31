@@ -182,3 +182,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         _ => return None,
     })
 }
+
+// Instrument admission: Lien 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/lien/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"klhpt"|"kldst"|"kldtc") && (crate::books::kllien::reviewed(def.id)),
+    label: "Kathy Lien and Boris Schlossberg wrote these setups for currency pairs; runs on indices, ETFs and stocks, US and India, are a declared application, not the authors' test. Cash-index shorts are hypothetical exposure.",
+    basis: "Kathy Lien and Boris Schlossberg, High Probability Trading Setups for the Currency Market (Investopedia 2006), Setup 2 Do the Right Thing (p.27-33); Kathy Lien, Day Trading and Swing Trading the Currency Market (Wiley 2008) Ch.9 Perfect Order (p.138-140), same rule in Day Trading the Currency Market (Wiley 2005) Ch.8. Reviewed in authors/lien/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
+};

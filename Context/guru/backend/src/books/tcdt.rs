@@ -677,3 +677,12 @@ mod tests {
         }
     }
 }
+
+// Instrument admission: Crabel 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/crabel/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="tcdt" && crate::books::tcdt::reviewed(def.id),
+    label: "Toby Crabel tested these patterns on S&P 500 futures (open-to-close tables, 1982-88) and T-Bond futures (upthrusts, 1978-87); runs on indices, ETFs and single stocks (US and India) are a declared application.",
+    basis: "Day Trading with Short Term Price Patterns and Opening Range Breakout (Traders Press, 1990): Open to Close Bias Tables A and B printed p.67-69 (pattern convention p.51); Upthrust and Spring reversals printed p.261-265, pivot top p.284. Index/ETF/stock runs are a declared application.",
+};

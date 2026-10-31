@@ -115,3 +115,12 @@ mod tests {
         assert_eq!(got, vec![(1., 3, 6, 9.5, false)]); // the short on the last bar is not opened
     }
 }
+
+// Instrument admission: Lank Stephens 2026-10-29 (lane K1) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/lstephens/admission/fb_ref.py (header)); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="lsfb" && crate::books::lsfb::reviewed(def.id),
+    label: "Lank Stephens trades the 4 Bar Fact and THE CLINCHER on T-bond, grain, currency, gold and eMini futures (some stocks); runs on indices, ETFs and US/India stocks are a declared application, not the author's test.",
+    basis: "Lank Stephens, Trading the 4 Bar Fact & Calculating THE CLINCHER (2nd ed., 2007), PDF 16-19, 25, 47-53",
+};

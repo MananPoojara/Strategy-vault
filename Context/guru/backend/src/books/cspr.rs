@@ -152,3 +152,12 @@ mod tests {
         assert!(t2n(&c, &h, &l, 19, 21).is_nan());
     }
 }
+
+// Instrument admission: Chris Satchwell 2026-10-30 (day lane A1) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/csatchwell/admission/t2n_ref.py (header)); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="cspr" && crate::books::cspr::reviewed(def.id),
+    label: "Chris Satchwell tests the Trend2Noise system on U.S. Treasury bond futures and illustrates it on the weekly Dow; runs on indices and ETFs follow the Dow example, US/India stocks are a declared application, not the author's test.",
+    basis: "Chris Satchwell, Pattern Recognition and Trading Decisions (2005), Ch.10 p.177-178, 187-188; Ch.14 p.247-248; Ch.15 p.262; Ch.17 p.293-294",
+};

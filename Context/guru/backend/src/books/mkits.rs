@@ -506,3 +506,12 @@ mod tests {
         for d in &cat { assert!(family_of(d.id).is_some()); }
     }
 }
+
+// Instrument admission: Katsanos 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/katsanos/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| (def.book=="mkits" && crate::books::mkits::reviewed(def.id)) || (def.book=="mkfve" && crate::books::mkfve::reviewed(def.id)),
+    label: "Katsanos tested these rules on DAX futures, EUR/USD and one US stock (XM Satellite Radio); runs on indices, ETFs and other stocks are a declared application.",
+    basis: "Intermarket Trading Strategies (Wiley 2008): DAX MA Crossover System (App. A.4, Table 13.2 p.210) and the Euro classic MA system (eq. 17.1-17.8 p.281-282, code p.355 without its CRB/TNX line); Detecting Breakouts (S&C April 2003) FVE divergence with linear-regression slopes (p.29, 36). Book markets: DAX futures, EUR/USD, XMSR stock. Index/ETF/stock runs are a declared application.",
+};

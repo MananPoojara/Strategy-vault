@@ -559,3 +559,21 @@ mod tests {
         for d in &c { assert!(family_of(d.id).is_some()); assert_eq!(d.status == Status::Live, params(d.id).is_some()); }
     }
 }
+
+// Instrument admission: Michael Covel 2026-10-26 (lane B) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/covel/laneb/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="covel" && crate::books::covel::reviewed_covel(def.id),
+    label: "Covel's examples come from futures portfolios (Mechanica: 15 futures 1991-2000) and course chart examples with no per-market results; runs on one index, ETF or stock (US and India) are a declared application, one unit per trade except the Mechanica code's 2% risk sizing, shorts included.",
+    basis: "Michael Covel, Trend Commandments p.60-61; Trend Following (Updated Ed.) App. F p.387; Trend Following Manifesto course, Alternative Trend Following Entries guide",
+};
+
+// Instrument admission: Faith 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/faith/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION_FAITH: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="covel" && crate::books::covel::reviewed(def.id),
+    label: "Curtis Faith tested these six systems on a 27-market US futures portfolio (Trading Blox, 1996-2006); runs on one index, ETF or stock at a time are a declared application.",
+    basis: "Way of the Turtle (McGraw-Hill 2007) ch.10 p.131-142: ATR Channel Breakout, Bollinger Breakout, Donchian Trend, Donchian Trend with Time Exit, Dual and Triple Moving Average; 0.5% of equity per ATR (p.136). Book market: US futures portfolio. Index/ETF/stock runs are a declared application.",
+};

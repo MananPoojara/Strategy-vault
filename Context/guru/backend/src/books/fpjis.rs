@@ -111,3 +111,12 @@ mod tests {
         assert!(run("fpjis_x", &x, 0, r.len() - 1, &Params::new()).is_none());
     }
 }
+
+// Instrument admission: Franklin Paul Jackson 2026-10-29 (lane K1) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/fpjackson/admission/is_ref.py (header)); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="fpjis" && crate::books::fpjis::reviewed(def.id),
+    label: "Franklin Paul Jackson applies the I-S Method to individual US stocks on weekly charts; runs on indices, ETFs and India stocks are a declared application, not the author's test.",
+    basis: "Franklin Paul Jackson, The I-S Method (Studies in Market Action and Speculative Technique), Study II PDF 88-95",
+};

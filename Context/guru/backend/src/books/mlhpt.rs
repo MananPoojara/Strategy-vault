@@ -208,3 +208,12 @@ mod tests {
         assert_eq!((t[0].legs[0].i, t[0].legs[0].px, t[0].exit_i, t[0].exit_px), (13, 102.5, 16, 99.0));
     }
 }
+
+// Instrument admission: Link 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/link/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"mlhpt") && (crate::books::mlhpt::reviewed(def.id)),
+    label: "Marcel Link gives these systems for futures and stocks without a named market or test results; runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test.",
+    basis: "Marcel Link, High Probability Trading (2003): 10-bar close breakout with the 3-bar-low exit (p.173); the sample system's TradeStation code with ADX-switched exits and a 2 standard deviation stop (p.263-264). Reviewed in authors/link/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
+};

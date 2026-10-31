@@ -88,3 +88,12 @@ mod tests {
         assert!(run("gmrm_x", &x, 0, r.len() - 1, &Params::new()).is_none());
     }
 }
+
+// Instrument admission: Gunter Meissner 2026-10-29 (lane K1) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/meissner/admission/rm_ref.py (header)); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="gmrm" && crate::books::gmrm::reviewed(def.id),
+    label: "Meissner, Alex and Nolte test the refined MACD on NASDAQ-100 stocks (rules derived on the DJIA); runs on indices, ETFs and other US/India stocks are a declared application, not the authors' test.",
+    basis: "G. Meissner, A. Alex, K. Nolte, A Refined MACD Indicator (article), PDF 4-6",
+};

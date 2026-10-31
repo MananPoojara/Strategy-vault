@@ -170,3 +170,12 @@ mod tests {
         assert_eq!(ts[0].exit_px, 104.);
     }
 }
+
+// Instrument admission: Campbell 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/campbell/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="sctw" && crate::books::sctw::reviewed(def.id),
+    label: "Shay Campbell tested Trend Weaver on a 37-market futures portfolio (1980-2006); runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test.",
+    basis: "Shay Campbell, Trend Weaver Trading System (Timing Charts, 2006): 150-day trend with reversal stops 1% inside the 150-day range, entries at 90%/10% and exits at 40%/60% of the 20-day range above the 20-day low (Trading Rules p.3-9; the system's TradeStation code wins where the prose differs). Reviewed in authors/campbell/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
+};

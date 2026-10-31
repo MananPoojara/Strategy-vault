@@ -124,3 +124,12 @@ mod tests {
         assert_eq!((ch.dir, ch.top), (-1, Some(12.)));
     }
 }
+
+// Instrument admission: James A. Hyerczyk 2026-10-29 (lane B) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/hyerczyk/admission/swing_ref.py (header)); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="jhppt" && crate::books::jhppt::reviewed(def.id),
+    label: "James A. Hyerczyk shows the swing-chart stop and reverse on futures, Forex and stock charts; runs on indices, ETFs and US/India stocks are a declared application, not the author's test. Cash-index shorts are hypothetical.",
+    basis: "James A. Hyerczyk, Pattern, Price & Time (2nd ed.), Ch.5-6 trend indicator charts, p.69-97",
+};

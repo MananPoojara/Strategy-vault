@@ -128,3 +128,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     if let Some((mut t, _, _, _)) = cur { t.exit_i = to; t.exit_px = x.c[to]; t.signal_i = to; t.reason = "open".into(); t.open = true; out.push(t); }
     Some(out)
 }
+
+// Instrument admission: Crisp (mccic) 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for books::mccic::REVIEWED (authors/crisp/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book==crate::books::mccic::BOOK && crate::books::mccic::reviewed(def.id),
+    label: "Cashing in with Commodities trades this breakout on commodity futures (crude oil, bean oil, sugar, cocoa); index, ETF and stock runs (US and India) are a declared application, not the author's test.",
+    basis: "Mark Crisp, Cashing in with Commodities (pdf p.17-43): weekly two-week breakout, buy/sell stop at the two-week high/low, 2.5 x 30-day ATR initial stop, weekly-low trail, 50% / 75% profit protection at 2R / 5R, reviewed in authors/crisp/admission/SOURCE-CONTRACT.md with independent chronological ledgers. Which level, gap fills, one-tick trail offset and ignoring breakouts while in a trade are declared readings. One unit; no 4% sizing. Cash-index shorts are hypothetical exposure.",
+};

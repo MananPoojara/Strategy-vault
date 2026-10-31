@@ -640,3 +640,12 @@ mod tests {
         }
     }
 }
+
+// Instrument admission: Guppy MetaStock Formula Index 2026-10-26 (lane B) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/guppyf/laneb/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="dgmf" && crate::books::dgmf::reviewed(def.id),
+    label: "MetaStock System Tester code with no per-market test the vault can compare; runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade, fills as stated on the card.",
+    basis: "Daryl Guppy / guppytraders.com, MetaStock Formula Index (2002)",
+};

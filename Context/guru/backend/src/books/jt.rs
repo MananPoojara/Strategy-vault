@@ -391,3 +391,12 @@ mod tests {
         for t in &ts { assert!(t.exit_px >= x.l[t.exit_i] - 1e-9 && t.exit_px <= x.h[t.exit_i] + 1e-9); }
     }
 }
+
+// Instrument admission: Tomasini 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/tomasini/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="jt" && crate::books::jt::reviewed(def.id),
+    label: "Jaekle & Tomasini tested these systems on futures, GBP/USD, stock indices (BOM) and Dow/S&P 500 stocks; runs on other indices, ETFs and single stocks are a declared application.",
+    basis: "Trading Systems, 2nd ed. (Harriman House 2019): 20-day breakout pseudo code (PDF p.24), LUXOR daily 7/26 (p.57-58, App. 3 p.375), Bollinger counter-breakout FOREX (Fig 5.4B p.129), Beginning of Month (p.159), Bollinger 60/2 futures (App. 1.2 p.358), single-stock Bollinger 100/+3/-1 (ch 9.2, p.240, 393). Index/ETF/stock runs are a declared application.",
+};

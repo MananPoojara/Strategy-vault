@@ -251,3 +251,12 @@ mod tests {
         assert_eq!(lo.len(), 1);
     }
 }
+
+// Instrument admission: Lakonishok 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/lakonishok/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="bllstr" && crate::books::bllstr::reviewed(def.id),
+    label: "Brock, Lakonishok and LeBaron studied these rules on the Dow Jones Industrial Average closes 1897-1986; runs on other indices, ETFs and stocks, US and India, are a declared application, not the authors' test.",
+    basis: "Brock, Lakonishok and LeBaron (1992), Journal of Finance 47(5): variable-length moving average (p.1735-1738), fixed-length moving average and trading range break with ten-day holding periods and blocked signals (p.1736, 1742, fn 11 p.1740), signal-day close (eq. A6-A8 p.1759). The 24 printed specifications other than the two defaults reviewed on 15 Oct. Reviewed in authors/lakonishok/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
+};

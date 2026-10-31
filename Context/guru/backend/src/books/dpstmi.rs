@@ -96,3 +96,12 @@ mod tests {
         assert_eq!(params("dpstmi_boso").unwrap()[3].def, 80.);
     }
 }
+
+// Instrument admission: David Penn 2026-10-30 (day lane A1) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/penn/admission/boso_ref.py (header)); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="dpstmi" && crate::books::dpstmi::reviewed(def.id),
+    label: "David Penn shows BOSO on S&P 500, currency pair and futures daily charts; runs on indices, ETFs and US/India stocks are a declared application, not the author's test.",
+    basis: "David Penn, The Three Secrets to Trading Momentum Indicators (2009), Ch.6 Stochastics: BOSO",
+};

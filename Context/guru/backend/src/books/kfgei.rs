@@ -258,3 +258,12 @@ mod tests {
         assert!(!ts[0].open);
     }
 }
+
+// Instrument admission: Kaufman 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/kaufman/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"kfgei"|"kfbpm"|"kfst"|"kfcd"|"kftsm") && (crate::books::kfgei::reviewed(def.id) || crate::books::kfbpm::reviewed(def.id) || crate::books::kfst::reviewed(def.id) || crate::books::kfcd::reviewed(def.id) || crate::books::kftsm::reviewed(def.id)),
+    label: "Perry Kaufman tested these rules on futures, foreign indices or the S&P 500 (workshop, Smarter Trading, Global Equity Investing, the TSM CD programs); index, ETF and stock runs (US and India) are a declared application, not the author's test. Cash-index shorts are hypothetical exposure.",
+    basis: "Perry J. Kaufman: Global Equity Investing (with Vivanti) weekly systems A, B, E and UC (p.191-192, 209); The Best (Public) Systems workshop MA countertrend, 2-Systems and TSM Divergence (slides 31-58); Smarter Trading Box 5-1, Ch 6 and Box 8-5; TSM4 CD FC Orson and volume programs; New Trading Systems and Methods Parabolic, Four-Week Rule (p.177), Moon trading and Multiple time periods. Reviewed in authors/kaufman/admission/SOURCE-CONTRACT.md with independent chronological ledgers. Orders follow the printed code; no costs; the book's futures results are not reproduced.",
+};

@@ -138,3 +138,12 @@ mod tests {
         assert_eq!((ts[0].dir, ts[0].legs[0].i, ts[0].legs[0].px, ts[0].exit_i, ts[0].exit_px), (1.0, 16, 101.5, 18, 99.5));
     }
 }
+
+// Instrument admission: Hamon 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/hamon/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"jhbct") && (crate::books::jhbct::reviewed(def.id)),
+    label: "J. D. Hamon showed the weekly rule on futures charts (Sept 82 corn, July 82 coffee); runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test. Cash-index shorts are hypothetical exposure.",
+    basis: "J. D. Hamon, Breakthroughs in Commodity Technical Analysis (Windsor Books), Ch.7 Improving Your Charting Ability (p.119-124): the weekly rule on the two previous calendar weeks, close only (stop and reverse), and the close entry with the four-close exit. Reviewed in authors/hamon/admission/SOURCE-CONTRACT.md with independent chronological ledgers. Fills at the close; no costs.",
+};

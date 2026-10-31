@@ -59,3 +59,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         }
     }))
 }
+
+// Instrument admission: Lydon 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/lydon/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"lydetf"|"lydpes") && (crate::books::lydetf::reviewed(def.id) || crate::books::lydpes::reviewed(def.id)),
+    label: "Tom Lydon applied these trend rules to ETFs (asset classes, sectors, regions) and the S&P 500; runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test.",
+    basis: "Tom Lydon: The ETF Trend Following Playbook (2010) 200-day EMA long/cash (p.25-32); iMoney / Profitable ETF Strategies (2008, with John F. Wasik) 200-day average with the 8% trailing exit and 5% re-entry (p.149-152). Signals and fills on the close. Reviewed in authors/lydon/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
+};

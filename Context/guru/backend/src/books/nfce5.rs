@@ -67,3 +67,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     if let Some(e) = cur { out.push(mk(e, to, "open", true)); }
     Some(out)
 }
+
+// Instrument admission: Nelson Freeburg (Chicago 2005 handout) 2026-10-30 (titles lane K2) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/niksan-k2/admission/k2b_ref.py (header)); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="nfce5" && crate::books::nfce5::reviewed(def.id),
+    label: "Nelson Freeburg presents these timing models on the S&P 500 index; ETFs, other indices and single stocks (US and India) are a declared application, not the author's test.",
+    basis: "Nelson Freeburg, CD Handouts, Chicago 2005 Traders Expo, PDF p.30-39",
+};

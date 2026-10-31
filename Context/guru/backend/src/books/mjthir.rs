@@ -93,3 +93,12 @@ mod tests {
         assert_eq!(ts[1].dir, -1.); assert!(ts[1].open);
     }
 }
+
+// Instrument admission: Lane A elmtrader 2026-10-26 (lane B) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/lanea/elmtrader/decisions.json); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| (def.book=="mjthir" && crate::books::mjthir::reviewed_lanea(def.id)) || (def.book=="pwabal" && crate::books::pwabal::reviewed_lanea(def.id)) || (def.book=="jwbent" && crate::books::jwbent::reviewed_lanea(def.id)) || (def.book=="fcfail" && crate::books::fcfail::reviewed_lanea(def.id)) || (def.book=="kfaber" && crate::books::kfaber::reviewed_lanea(def.id)) || (def.book=="mstt" && crate::books::mstt::reviewed_lanea(def.id)) || (def.book=="ts247" && crate::books::ts247::reviewed_lanea(def.id)) || (def.book=="fsi23" && crate::books::fsi23::reviewed_lanea(def.id)),
+    label: "Vendor / newsletter system code with no per-market test the vault can compare; runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade.",
+    basis: "Vendor and newsletter system codes (M. G. Johnson, P. B. Waite, J. Wolf, F. Corrias, Aberration copy, Equis Traders' Tips, B. Castelo, 24-7 System, ForexSuperInvestor RSI 2.3)",
+};

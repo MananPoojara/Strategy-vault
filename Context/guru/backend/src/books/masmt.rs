@@ -542,3 +542,12 @@ mod tests {
         assert_eq!(cross_events(&idx, &[1.0, 2.0, 2.0, 0.5], &[1.5, 1.5, 1.5, 1.5]), vec![(1, 1), (3, -1)]);
     }
 }
+
+// Instrument admission: Leslie Masonson 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/masonson/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="masmt" && crate::books::masmt::reviewed(def.id),
+    label: "Masonson reports these timing rules on the S&P 500, DJIA, Nasdaq and Value Line indices; runs on other indices, ETFs and single stocks (US and India; the US presidential and calendar months kept as printed) are a declared application, one unit per trade, fills at the signal-day close.",
+    basis: "Leslie N. Masonson, All About Market Timing (McGraw-Hill 2004)",
+};

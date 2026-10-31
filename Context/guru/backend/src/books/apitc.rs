@@ -54,3 +54,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     if let Some(mut t) = cur { t.exit_i = to; t.exit_px = x.c[to]; t.signal_i = to; t.reason = "open".into(); t.open = true; out.push(t); }
     Some(out)
 }
+
+// Instrument admission: Patel 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/patel/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"apitc") && (crate::books::apitc::reviewed(def.id)),
+    label: "The Internet Trading Course gives this as an example for US and UK shares; index, ETF and stock runs (US and India) are a declared application, not the author's test.",
+    basis: "Alpesh B. Patel, The Internet Trading Course, Module 2 (p.23): long while the price is above the 50-day moving average, out otherwise, reviewed in authors/patel/admission/SOURCE-CONTRACT.md with independent chronological ledgers. Closing prices, a simple average and close fills are declared readings. No costs.",
+};

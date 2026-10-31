@@ -42,3 +42,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     }
     Some(out)
 }
+
+// Instrument admission: Jeffrey A. Hirsch and John L. Person (Commodity Trader's Almanac 2012) 2026-10-30 (titles lane K2) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/niksan-k2/admission/k2b_ref.py (header)); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="hcta12" && crate::books::hcta12::reviewed(def.id),
+    label: "The Almanac trades March S&P 500 futures; the cash index, ETFs, single stocks and India are a declared application (instrument swap).",
+    basis: "Jeffrey A. Hirsch and John L. Person, Commodity Trader's Almanac 2012, ch.1 (January)",
+};

@@ -1441,3 +1441,12 @@ mod tests {
         }
     }
 }
+
+// Instrument admission: STAD 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/stad/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| (def.book=="stad" && crate::books::stad::reviewed(def.id)) || (def.book=="stad2" && crate::books::stad2::reviewed(def.id)),
+    label: "Omega Research printed these TradeStation systems with examples on stocks, indices and futures (1997-2000); runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade.",
+    basis: "Omega Research System Trading and Development Club Vol. 1-13 (1997-2000): the printed EasyLanguage of each system, run with the book's bar assumptions and 10% bouncing ticks (Vol 5 ch.1). Index/ETF/stock runs are a declared application.",
+};

@@ -763,3 +763,12 @@ mod tests {
         assert!((100. - lo_ - (hi_ - 100.)).abs() < 1e-9 && lo_ < 100.);
     }
 }
+
+// Instrument admission: Stridsman 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/stridsman/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"strtw"|"strmm") && (crate::books::strtw::reviewed(def.id) || crate::books::strmm::reviewed(def.id)),
+    label: "Thomas Stridsman tested these systems on S&P 500 futures, 16 futures markets and 65 US stocks and indexes; runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test. Cash-index shorts are hypothetical exposure.",
+    basis: "Thomas Stridsman: Trading Systems That Work (2000) Gold Digger, Meander, Black Jack, directional slope, dynamic breakout and standard deviation breakout systems (printed TradeStation code p.59-245); Trading Systems and Money Management (2003) Hybrid No. 1, Meander V.1.0, Volume-weighted Average, Harris 3L-R, Expert Exits (printed code ch.8-15, exit code ch.20) and Counterpunch (p.376). Reviewed in authors/stridsman/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
+};

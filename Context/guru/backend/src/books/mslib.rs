@@ -254,3 +254,12 @@ const SYS: &[Sys] = &[
     Sys { id: "mslib_carayo4", name: r##"Estrategia carayo-4 (Carlos Fierro)"##, group: r##"Otras"##, family: ("mslib_carayo", r##"Manda carayo family"##), page: "64-65", status: NotTestable(r##"periods are given only as optimisation ranges (OPT1 10-30); the source states no single value"##), f: [Some(r##"HHV(C,opt1)=C"##), Some(r##"LLV(C,opt1)=C"##), None, None], exec: EXEC_DEFAULT, notes: r##""## },
     Sys { id: "mslib_cci_ma", name: r##"Estrategia con medias móviles del CCI"##, group: r##"Otras"##, family: ("mslib_misc", r##"Other strategies"##), page: "65-66", status: NotTestable(r##"periods are given only as optimisation ranges (OPT1 5-40, OPT2 5-40); the source states no single value"##), f: [Some(r##"When(CCI(opt1),<,Mov(CCI(opt1),opt2,E)) AND When(Ref(CCI(opt1),-1),>=,Ref(Mov(CCI(opt1),opt2,E),-1))"##), Some(r##"When(CCI(opt1),>,Mov(CCI(opt1),opt2,E)) AND When(Ref(CCI(opt1),-1),<=,Ref(Mov(CCI(opt1),opt2,E),-1))"##), None, None], exec: EXEC_DEFAULT, notes: r##""## },
 ];
+
+// Instrument admission: Libanes MetaStock strategies 2026-10-26 (lane B) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/vendor/laneb/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="mslib" && crate::books::mslib::reviewed(def.id),
+    label: "MetaStock System Tester code with no per-market test the vault can compare; runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade, fills as stated on the card.",
+    basis: "Estrategias de inversion con Metastock (Libanes collection, 1998-99)",
+};

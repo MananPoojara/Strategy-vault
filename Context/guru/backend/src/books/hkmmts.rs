@@ -111,3 +111,12 @@ mod tests {
         assert_eq!((t2[0].legs[0].i, t2[0].exit_i), (50, 52)); // bar 51 signal ignored while in trade
     }
 }
+
+// Instrument admission: Heitkoetter 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/heitkoetter/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="hkmmts" && crate::books::hkmmts::reviewed(def.id),
+    label: "Markus Heitkoetter tested this sample system intraday on e-mini S&P, DAX, e-mini Nasdaq, EuroStoxx and FTSE futures; runs on daily indices, ETFs and stocks, US and India, are a declared application, not the author's test.",
+    basis: "Markus Heitkoetter, How to Make Money with Trading Systems (Rockwell Trading, 2005): Bollinger Band (34, 2.5) fade - sell above the upper band, buy below the lower band, exit at the close of the same day (p.9-13) or at the close of the 2nd day after entry (p.14). Reviewed in authors/heitkoetter/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
+};

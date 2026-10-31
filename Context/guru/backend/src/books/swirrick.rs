@@ -135,3 +135,12 @@ mod tests {
         assert_eq!((t[0].exit_i, t[0].exit_px), (6, 12.5)); // stop at the set-up day's low 12.5
     }
 }
+
+// Instrument admission: Wirrick 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/wirrick/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"swmfst"|"swhoi"|"swhot") && (crate::books::swirrick::reviewed(def.id)),
+    label: "Steve Wirrick taught this set-up on US stocks traded with options; runs on the stock and index prices of indices, ETFs and stocks, US and India, are a declared application, not the author's test. Cash-index shorts are hypothetical exposure.",
+    basis: "Steve Wirrick, Make a Fortune Swing Trading! (2003), The Swing Trade Set-up (p.38, 43, 50-53, 58): pull-back of two closes in a row above the 50-day average, next-day break of the set-up high, stop below the set-up low, close below the 20-day average exits; bearish mirror. Reviewed in authors/wirrick/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
+};

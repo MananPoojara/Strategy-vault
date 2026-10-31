@@ -93,3 +93,12 @@ mod tests {
         assert_eq!(t.iter().map(|z| (z.dir, z.legs[0].i, z.exit_i)).collect::<Vec<_>>(), vec![(1., 0, 0), (-1., 2, 2)]);
     }
 }
+
+// Instrument admission: NasdaqProfits.com (Nasdaq Profits ebook) 2026-10-30 (titles lane K3) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/nqprofits/admission/k3n_ref.py (header)); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="nqpcal" && crate::books::nqpcal::reviewed(def.id),
+    label: "The ebook's date statistics are for the Nasdaq Composite (not held); the Nasdaq-100, QQQ, other indices, ETFs, single stocks and India are a declared application of the printed calendar.",
+    basis: "NasdaqProfits.com, Nasdaq Profits ebook (2008), PDF p.2-12",
+};

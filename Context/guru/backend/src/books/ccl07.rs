@@ -110,3 +110,12 @@ mod tests {
         assert!(run("ccl07_x", &x, 0, r.len() - 1, &Params::new()).is_none());
     }
 }
+
+// Instrument admission: Larry Connors (Chairman's Club Dec 2007) 2026-10-30 (titles lane K3) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/ccl07/admission/k3_ref.py (header)); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="ccl07" && crate::books::ccl07::reviewed(def.id),
+    label: "The RSI 10 Scale-In is shown on S&P e-minis with SPY as the filter and the 10 Worst Performers on US stocks; other indices, ETFs, single stocks and India are a declared application (the traded series is its own filter).",
+    basis: "Larry Connors / TradingMarkets, Chairman's Club December 2007 (Las Vegas) manual, slides 78-80 and 214-216",
+};

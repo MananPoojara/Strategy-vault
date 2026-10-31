@@ -199,3 +199,12 @@ mod tests {
         assert!(t[1].open && t[1].dir < 0.0);
     }
 }
+
+// Instrument admission: Gettess 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/gettess/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| (def.book=="lg3k" && crate::books::lg3k::reviewed(def.id)) || (def.book=="lgtt30" && crate::books::lgtt30::reviewed(def.id)) || (def.book=="lgsc" && crate::books::lgsc::reviewed(def.id)),
+    label: "Lee E. Gettess tested these volatility systems on T-Bond and S&P 500 futures; runs on indices, ETFs and single stocks (US and India) are a declared application.",
+    basis: "The $3000 Secret (Windsor Books, 1991): volatility reversal p.5-11 (4-day actual range 45%, 4-day true range 55%) and S&P 2-day range 50% p.16-19; TT30 with Market Mapping (1994): TT30 System Writer Plus code p.9-10, rules p.2-6; Trading in the Trenches (1993-95): SS-TDA entry p.5 with the user's standard exits (labelled variant, not from the book). Index/ETF/stock runs are a declared application.",
+};

@@ -1041,3 +1041,12 @@ mod tests {
         for tr in t.iter().filter(|t| t.dir > 0.) { let i = tr.legs[0].i; assert!(rs[i - 1] < 30. && rs[i] > 30.); assert_eq!(tr.legs[0].px, x.c[i]); }
     }
 }
+
+// Instrument admission: Morris 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/morris/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="msws" && crate::books::msws::reviewed(def.id),
+    label: "Gregory L. Morris wrote these MetaStock systems (GM1-GM9, partly his codings of Stocks & Commodities articles) for stocks and futures without a named test market; runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test.",
+    basis: "Gregory L. Morris, Indicators & Trading Systems GM1-GM9 (Wallstreet Trade Systems & Indicators for MetaStock): the printed Enter/Close Long/Short formulas with the series' own Fml() indicator definitions, MetaStock System Tester defaults (trade price = close, trade delay = 0). Reviewed in authors/morris/admission/SOURCE-CONTRACT.md with an independent MetaStock-formula reference and chronological ledgers; no costs.",
+};
