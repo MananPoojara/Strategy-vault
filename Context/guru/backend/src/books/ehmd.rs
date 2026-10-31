@@ -7,7 +7,7 @@ use crate::connors::{claim, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "ehmd";
 /// Admitted ids (authors/ehlers/laneb/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["ehmd_laguerre_rsi", "ehmd_lms_zerolag"];
+pub const REVIEWED: &[&str] = &["ehmd_laguerre_rsi", "ehmd_lms_zerolag", "ehmd_lms_stoch"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 /// MAMA / FAMA exactly as the S&C sidebar (alpha also capped at FastLimit, a no-op since DeltaPhase >= 1).
@@ -79,6 +79,35 @@ pub fn lms_zerolag(x: &Ctx, len: usize) -> (Vec<f64>, Vec<f64>) {
     (v1, v2)
 }
 
+/// The same LMS predictor on the cycle-mode input (Sidebar 1, second Value1 line): Value1 = .2*(2*(SlowK(Length)/100 - .5))
+/// + .8*Value1[1], SlowK = TradeStation's legacy SlowK (stad::slowk). Returns (Value1, Value2 = 2-bar prediction).
+/// Lane K9 (1 Nov 2026), to-code row 145; independent check authors/titles-1030/K9w/k9_ref.py.
+pub fn lms_stoch(x: &Ctx, len: usize) -> (Vec<f64>, Vec<f64>) {
+    let n = x.c.len();
+    let k = super::stad::slowk(x, len);
+    let (mut v1, mut v2) = (vec![0f64; n], vec![0f64; n]);
+    let mut g = vec![0f64; len + 1];
+    let mut sp = vec![0f64; len + 6];
+    let mut mu = 0.;
+    for i in MBB..n {
+        v2[i] = v2[i - 1];
+        v1[i] = 0.2 * (2. * (k[i] / 100. - 0.5)) + 0.8 * v1[i - 1];
+        let pow = (0..len).map(|j| v1[i - j] * v1[i - j]).sum::<f64>() / len as f64;
+        if pow > 0. { mu = 0.25 / (pow * len as f64); }
+        if i - MBB + 1 > len {
+            let xbar: f64 = (1..=len).map(|j| v1[i - j] * g[j]).sum();
+            for j in 1..=len { g[j] += mu * (v1[i] - xbar) * v1[i - j]; }
+            for j in 0..=len { sp[j] = v1[i - (len - j)]; }
+            for j in len + 1..=len + 5 {
+                sp[j] = 0.;
+                for j1 in 1..=len { sp[j] += sp[j - j1] * g[j1]; }
+            }
+            v2[i] = sp[len + 2];
+        }
+    }
+    (v1, v2)
+}
+
 const NT: &str = "Mesa articles · indicators without trading rules";
 pub fn catalogue() -> Vec<StrategyDef> {
     let d = |id, name, group, dir, status, rules, notes, claim| StrategyDef { id, name, group, session: 0, dir, status,
@@ -105,9 +134,13 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|No separate exit is stated: the opposite signal reverses the position."],
           "Signals stated as counter-trend line crossings; positions read as long/short reversals (the text walks from a long to a short signal). TS next-bar market fills. No published statistics.",
           None),
-        nt("ehmd_lms_stoch", "LMS predictor of the Slow Stochastic",
-           "SlowK(10) is a TradeStation 2000i built-in whose smoothing (legacy vs Lane original) the article does not define",
-           &["E|Buy when the 2-day prediction crosses over the Stochastic; sell when it crosses under (Linear Prediction article)."], ""),
+        d("ehmd_lms_stoch", "LMS predictor of the Slow Stochastic (cycle mode)", "Linear Prediction", "Long/Short", Status::Live,
+          &["F|Value1 = .2*(2*(SlowK(Length)/100 - .5)) + .8*Value1[1] ('To be used as a cycle mode indicator'); Griffiths LMS predictor, Length = 10, Mu = .25/(SigPower*Length); Value2 = 2-bar prediction (Sidebar 1).",
+            "E|\"The signal to buy is when the 2 day prediction crosses over the Stochastic\" (fill next open).",
+            "E|\"the signal to sell is when the 2 day prediction crosses under the Stochastic\" (fill next open).",
+            "X|No separate exit is stated: the opposite signal reverses the position (the Real World Example walks long, short, long)."],
+          "[Declared readings] SlowK(Length) = TradeStation's legacy SlowK (help.tradestation.com, Stochastic SmoothingType 2: FastK smoothed as (2 x previous + FastK) / 3, as in the vault's Strategy Trading and Development cards); Lane's original 3-bar SMA smoothing is not offered. 'The Stochastic' line the prediction crosses is Value1 (the plotted 'SlowK' line of Sidebar 1). Same LMS code and research MaxBarsBack (50) as the zero-lag card; TS crossings, next-bar market fills. No published statistics (chart example only).",
+          None),
         nt("ehmd_market_mode", "Instantaneous Trendline trend rule (Market Mode Strategies)",
            "prose guideline; the author says 'In future articles we will develop filters to engage these rules with greater precision' - the precise version is RSFT SineTrend (ehrs)",
            &["E|Don't trade the trend until price has crossed the Instantaneous Trendline more than a half dominant cycle ago; stop trading the trend when price crosses again."], "Duplicate in spirit of ehrs_sinetrend_trend."),
@@ -142,6 +175,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "ehmd_laguerre_rsi" => vec![p("gamma", "Laguerre damping gamma", 0.5, 0.1, 0.9, 0.05), p("lower", "Buy level", 0.2, 0.05, 0.4, 0.05),
             p("upper", "Sell level", 0.8, 0.6, 0.95, 0.05), p("long_only", "Long only (1 = 'sell' only exits; not the default reading)", 0., 0., 1., 1.)],
         "ehmd_lms_zerolag" => vec![p("length", "LMS Length", 10., 4., 25., 1.)],
+        "ehmd_lms_stoch" => vec![p("length", "LMS Length (also the SlowK length)", 10., 4., 25., 1.)],
         _ => return None,
     })
 }
@@ -187,6 +221,15 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             next_open_sim(x, from, to, |i, _| {
                 if i < MBB + len as usize + 1 { None } else if cross_over(&v1, &v2, i) { Some((1, "Zero-lag avg crosses over 2-bar prediction · buy")) }
                 else if cross_under(&v1, &v2, i) { Some((-1, "Zero-lag avg crosses under 2-bar prediction · sell")) } else { None }
+            })
+        }
+        "ehmd_lms_stoch" => {
+            let len = g("length");
+            if len.fract() != 0. { return None; }
+            let (v1, v2) = lms_stoch(x, len as usize);
+            next_open_sim(x, from, to, |i, _| {
+                if i < MBB + len as usize + 1 { None } else if cross_over(&v2, &v1, i) { Some((1, "2-bar prediction crosses over the Stochastic · buy")) }
+                else if cross_under(&v2, &v1, i) { Some((-1, "2-bar prediction crosses under the Stochastic · sell")) } else { None }
             })
         }
         _ => return None,
