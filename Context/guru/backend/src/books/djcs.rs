@@ -6,8 +6,9 @@
 //! Strain's original cross logic (commented out in the same code) as an option; the MarketSpace Stock System (MetaStock
 //! text run by the msws formula engine); Glenn Wallace's Buy trigger system (MetaStock, PREV state written out); the
 //! WealthLab Dead Cat Catcher and CMO(20) / CumDown accumulation scripts. Held: Party Girl I Optimized and the CandleCode
-//! system (their only exits are WealthLab auto stops whose fill rules the file does not give); the MarketSpace
-//! short-term system (the file says only the other system "works with daily data").
+//! system (their only exits are WealthLab auto stops whose fill rules the file does not give). The MarketSpace
+//! short-term system (the file says only the other system "works with daily data") is live on weekly bars since lane K9
+//! (1 Nov 2026): Metastock Zone.pdf p.545-547 prints the same code as Gil Raff's Timing System for weekly data.
 //! Source markets: not stated (generic TradeStation code); indices, ETFs and stocks here are a declared application.
 use crate::books::msws::{self, Book, Sys, EXEC_DEFAULT};
 use crate::connors::{sma, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
@@ -16,14 +17,23 @@ use std::sync::OnceLock;
 // MarketSpace Stock System, printed MetaStock text; TRUE / FALSE written as 1 / 0 (MetaStock: TRUE = 1, FALSE = 0).
 const MS_BUY: &str = r##"((MACD()>Mov(MACD(),45,E) AND C>Mov(C,25,E))=1) AND (Ref(MACD()>Mov(MACD(),45,E) AND C>Mov(C,25,E),-1)=0) AND BarsSince(Ref(((MACD()>Mov(MACD(),45,E) AND C>Mov(C,25,E))=1) AND (Ref(MACD()>Mov(MACD(),45,E) AND C>Mov(C,25,E),-1)=0),-1)) >= BarsSince(Ref(Cross(0.9*Ref(C,-7),C),-1))"##;
 const MS_SELL: &str = r##"(Cross(0.9*Ref(C,-7),C) AND BarsSince(((MACD()>Mov(MACD(),45,E) AND C>Mov(C,25,E))=1) AND (Ref(MACD()>Mov(MACD(),45,E) AND C>Mov(C,25,E),-1)=0))<= BarsSince(Ref(Cross(0.9*Ref(C,-7),C),-1)))"##;
+// Gil Raff MarketSpace Timing System - Weekly Data (Metastock Zone.pdf p.545-547, posted by Erich Kohlhofer with the daily
+// Stock System above): the same text with 9/5/15-week averages and a 4.5% two-week drop. TRUE / FALSE written as 1 / 0.
+// Lane K9 (1 Nov 2026), to-code row 151; independent check authors/titles-1030/K9w/k9_ref.py.
+const MSW_BUY: &str = r##"((MACD()>Mov(MACD(),9,E) AND C>Mov(C,5,E) AND C>Mov(C,15,E))=1) AND (Ref(MACD()>Mov(MACD(),9,E) AND C>Mov(C,5,E) AND C>Mov(C,15,E),-1)=0) AND BarsSince(Ref( ((MACD()>Mov(MACD(),9,E) AND C>Mov(C,5,E) AND C>Mov(C,15,E))=1) AND (Ref(MACD()>Mov(MACD(),9,E) AND C>Mov(C,5,E) AND C>Mov(C,15,E),-1)=0),-1)) >= BarsSince(Ref(Cross(0.955*Ref(C,-2),C),-1))"##;
+const MSW_SELL: &str = r##"Cross(0.955*Ref(C,-2),C) AND BarsSince(((MACD()>Mov(MACD(),9,E) AND C>Mov(C,5,E) AND C>Mov(C,15,E))=1) AND (Ref(MACD()>Mov(MACD(),9,E) AND C>Mov(C,5,E)AND C>Mov(C,15,E),-1)=0)) <= BarsSince(Ref(Cross(0.955*Ref(C,-2),C),-1))"##;
 static MS_SYS: &[Sys] = &[Sys { id: "djcs_marketspace", name: "MarketSpace Stock System: MACD above its 45-day average and close above the 25-day, out on a close 10% under the close 7 days earlier",
     group: "Jennings code snippets", family: ("djcs_marketspace", "MarketSpace Stock System"), page: "file TOC p.27-28 'MetaStock Code - MarketSpace Stock System'",
     status: Status::Live, f: [Some(MS_BUY), Some(MS_SELL), None, None], exec: EXEC_DEFAULT,
-    notes: "Printed as 'Primary Buy Signal' / 'Primary Sell Signal' (long only) for 'the MarketSpace Stock System which works with daily data'. TRUE/FALSE are written 1/0. The BarsSince tests make each buy the first new MACD/average set-up since the last 10% drop signal and each sell the first such drop since the set-up." }];
+    notes: "Printed as 'Primary Buy Signal' / 'Primary Sell Signal' (long only) for 'the MarketSpace Stock System which works with daily data'. TRUE/FALSE are written 1/0. The BarsSince tests make each buy the first new MACD/average set-up since the last 10% drop signal and each sell the first such drop since the set-up." },
+    Sys { id: "djcs_marketspace_weekly", name: "MarketSpace Timing System (weekly): MACD above its 9-week average and close above the 5- and 15-week, out on a close 4.5% under the close 2 weeks earlier",
+    group: "Jennings code snippets", family: ("djcs_marketspace_weekly", "MarketSpace Timing System (weekly)"), page: "file TOC p.27 'MetaStock Code - MarketSpace' (the short-term system); same code in Metastock Zone.pdf p.545-547 'Gil Raff MarketSpace Timing System - Weekly Data'",
+    status: Status::Live, f: [Some(MSW_BUY), Some(MSW_SELL), None, None], exec: EXEC_DEFAULT,
+    notes: "Gil Raff's MarketSpace Timing System, printed as 'Primary Buy Signal' / 'Primary Sell Signal' (long only). The Jennings file gives no time frame for it (it was held here); the Metastock Zone post of the same code says 'Remember your data must be in weekly format' (to-code row 151). Weekly bars are built from the vault's daily bars: one bar per calendar week (Monday-Sunday) with the week's first open, highest high, lowest low and last close; the week of the window's last day ends on that day. Signals and fills at the weekly close, i.e. the close of the week's last trading day. TRUE/FALSE are written 1/0." }];
 const MS_CONV: &str = "One position at a time; a position closes only by its own Close formula (from the bar after a close-filled entry). Indicators: MetaStock definitions as in module msws (MACD() = 0.15 / 0.075 exponential averages of the close, Mov E seeded with the first value, BarsSince undefined before the first occurrence). Source markets not stated; indices, ETFs and stocks are a declared application.";
 static MS: Book = Book { id: "djcs", sys: MS_SYS, fml: &[], conv: MS_CONV, cat: OnceLock::new(), par: OnceLock::new() };
 /// Admitted ids (authors/jennings/admission/djcs_ref.py (header)).
-pub const REVIEWED: &[&str] = &["djcs_pct_reversal", "djcs_tfs", "djcs_marketspace", "djcs_buy_trigger", "djcs_dead_cat", "djcs_cmo_cumdown"];
+pub const REVIEWED: &[&str] = &["djcs_pct_reversal", "djcs_tfs", "djcs_marketspace", "djcs_buy_trigger", "djcs_dead_cat", "djcs_cmo_cumdown", "djcs_marketspace_weekly"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const NOTE_P: &str = "[Declared readings] Always in after the first fill, stop and reverse. HHigh = the highest high and LLow = the lowest low since the position last changed (both restart at the high and low of the bar where it changed; the code's zero start value is read as the first bar of the test window, where the run starts flat). While long or flat: sell stop for the next bar at HHigh less SZ%; while short or flat: buy stop at LLow plus BZ%. A stop fills at its level or at the open if the day opens beyond it; the reverse position starts at the same price. While flat, a day that reaches both levels is skipped (order inside the day unknown). On the last bar a stop still closes the trade but opens nothing; a position still open is marked at the last close.";
@@ -208,6 +218,39 @@ fn cmo_cumdown(x: &Ctx, from: usize, to: usize, units: usize) -> Vec<Trade> {
     out
 }
 
+fn day_number(d: &str) -> i64 {
+    let (y, m, dd): (i64, i64, i64) = (d[0..4].parse().unwrap_or(0), d[5..7].parse().unwrap_or(1), d[8..10].parse().unwrap_or(1));
+    let y = if m <= 2 { y - 1 } else { y };
+    let (era, yoe) = (y.div_euclid(400), y.rem_euclid(400));
+    let doy = (153 * ((m + 9) % 12) + 2) / 5 + dd - 1;
+    era * 146097 + yoe * 365 + yoe / 4 - yoe / 100 + doy - 719468
+}
+
+/// Runs a weekly MetaStock system on weekly bars built from days 0..=to; trade bars map back to each week's last day.
+fn weekly_run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+    let (mut rows, mut last): (Vec<crate::Row>, Vec<usize>) = (vec![], vec![]);
+    let wk = |i: usize| (day_number(&x.r[i].date) + 3).div_euclid(7);
+    for i in 0..=to {
+        let r = &x.r[i];
+        if i > 0 && wk(i) == wk(i - 1) {
+            let w = rows.last_mut().unwrap();
+            w.high = w.high.max(r.high); w.low = w.low.min(r.low); w.close = r.close; w.date = r.date.clone();
+            *last.last_mut().unwrap() = i;
+        } else {
+            rows.push(crate::Row { ticker: r.ticker.clone(), date: r.date.clone(), open: r.open, high: r.high, low: r.low, close: r.close, volume: None });
+            last.push(i);
+        }
+    }
+    let wf = last.iter().position(|&e| e >= from)?;
+    let wx = Ctx::new(&rows, &rows, &[]);
+    let mut t = MS.run(id, &wx, wf, rows.len() - 1, p)?;
+    for z in t.iter_mut() {
+        for l in z.legs.iter_mut() { l.i = last[l.i]; }
+        z.exit_i = last[z.exit_i]; z.signal_i = last[z.signal_i];
+    }
+    Some(t)
+}
+
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     if !reviewed(id) || from >= to || to >= x.r.len() { return None; }
     let schema = params(id)?;
@@ -220,6 +263,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "djcs_dead_cat" => dead_cat(x, from, to, g("side").round() as i32, u("cmo"), g("hold").round().max(0.) as usize, g("roc_long"), g("roc_short")),
         "djcs_cmo_cumdown" => cmo_cumdown(x, from, to, u("units")),
         "djcs_marketspace" => return MS.run(id, x, from, to, p),
+        "djcs_marketspace_weekly" => return weekly_run(id, x, from, to, p),
         _ => return None,
     })
 }
@@ -230,7 +274,7 @@ mod tests {
     #[test]
     fn ids_and_params() {
         assert!(reviewed("djcs_pct_reversal") && reviewed("djcs_tfs") && !reviewed("djcs_party_girl"));
-        assert_eq!(catalogue().len(), 6);
+        assert_eq!(catalogue().len(), 7);
         assert!(catalogue().iter().all(|d| reviewed(d.id)));
         assert!(catalogue().iter().find(|d| d.id == "djcs_tfs").unwrap().needs_volume);
     }
