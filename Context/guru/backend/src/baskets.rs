@@ -181,6 +181,7 @@ impl Catalogue {
         members.extend(self.unavailable_members.values().filter(|m|m.key.starts_with(&format!("basket:{basket}:"))).cloned());
         members.sort_by(|a,b|a.symbol.cmp(&b.symbol));members
     }
+    pub fn source_path(&self,key:&str)->Option<PathBuf>{self.entries.get(key).map(|entry|self.root.join(&entry.path))}
     pub fn native_evidence(&self,key:&str)->Option<&NativeEvidence>{self.entries.get(key).map(|entry|&entry.evidence)}
     pub fn rows(&self,key:&str)->Result<Vec<Row>,String>{self.read_rows(key,true)}
     /// Basket admission uses the verified file's actual dates. Metadata dates

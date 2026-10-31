@@ -25,6 +25,8 @@ struct App {
     public: PathBuf,
     optimization: Arc<Semaphore>,
     reads: Arc<Semaphore>,
+    expensive_in: Arc<Semaphore>,
+    expensive_us: Arc<Semaphore>,
 }
 #[derive(Deserialize)]
 struct Session {
@@ -268,8 +270,12 @@ async fn engine_proxy(
     }
     let slots = if optimizing {
         &app.optimization
-    } else {
+    } else if !policy::is_expensive_path(&path) {
         &app.reads
+    } else if market == "in" {
+        &app.expensive_in
+    } else {
+        &app.expensive_us
     };
     let acquired = if optimizing {
         slots.clone().try_acquire_owned().map_err(|_| ())
@@ -375,8 +381,29 @@ async fn static_files(State(app): State<App>, request: Request<Body>) -> Respons
     } else {
         &app.frontend
     };
+    // ServeDir alone answers 304 on If-Modified-Since "not older than", so restoring an older file (a rollback) would stay
+    // stale in browsers. An exact-match ETag cannot. The file is opened but its body is only read if it is sent.
+    let revalidates = policy::revalidates(&path);
+    let if_none_match = request.headers().get(header::IF_NONE_MATCH).cloned();
+    let mut request = request;
+    if revalidates {
+        request.headers_mut().remove(header::IF_MODIFIED_SINCE);
+    }
     match ServeDir::new(root).try_call(request).await {
-        Ok(response) => response.map(Body::new),
+        Ok(response) => {
+            let mut response = response.map(Body::new);
+            if !revalidates || response.status() != StatusCode::OK {
+                return response;
+            }
+            let stamp = |name: header::HeaderName| response.headers().get(name).and_then(|v| v.to_str().ok()).unwrap_or("");
+            let etag = policy::file_etag(stamp(header::LAST_MODIFIED), stamp(header::CONTENT_LENGTH));
+            let Ok(etag) = header::HeaderValue::from_str(&etag) else { return response };
+            if if_none_match.as_ref() == Some(&etag) {
+                return (StatusCode::NOT_MODIFIED, [(header::ETAG, etag)]).into_response();
+            }
+            response.headers_mut().insert(header::ETAG, etag);
+            response
+        }
         Err(_) => error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "Could not load this page.",
@@ -384,14 +411,15 @@ async fn static_files(State(app): State<App>, request: Request<Body>) -> Respons
     }
 }
 async fn headers(request: Request<Body>, next: axum::middleware::Next) -> Response {
-    let private_book=request.uri().path().starts_with("/api/app/books/files/");
+    let path=request.uri().path().to_string();
+    let private_book=path.starts_with("/api/app/books/files/");
     let mut response = next.run(request).await;
     for (name,value) in [
         ("x-content-type-options","nosniff"),
         ("x-frame-options","DENY"),
         ("referrer-policy","same-origin"),
         ("content-security-policy","default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"),
-        ("cache-control","no-store"),
+        ("cache-control",policy::cache_control(&path,response.status().as_u16())),
     ] { response.headers_mut().insert(header::HeaderName::from_static(name),header::HeaderValue::from_static(value)); }
     if private_book {response.headers_mut().insert(header::CACHE_CONTROL,header::HeaderValue::from_static("private, no-store"));}
     response
@@ -430,6 +458,9 @@ async fn main() {
         public: PathBuf::from(env("VAULT_PUBLIC", "public")),
         optimization: Arc::new(Semaphore::new(1)),
         reads: Arc::new(Semaphore::new(4)),
+        // The engines bound the real work (2 workers, shared identical jobs); these only bound buffered responses.
+        expensive_in: Arc::new(Semaphore::new(8)),
+        expensive_us: Arc::new(Semaphore::new(8)),
     };
     let router = Router::new()
         .route("/healthz", get(health))

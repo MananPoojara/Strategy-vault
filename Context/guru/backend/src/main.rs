@@ -2,6 +2,7 @@
 // std only, same style as Context/main.rs.
 //   cargo run --release -- [idx_data.csv] [port=8090] [india_vix dir]
 mod books;
+mod jobs;
 mod connors;
 mod readiness;
 mod gate;
@@ -36,7 +37,8 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool,Ordering};
+use std::sync::{Arc,OnceLock};
 
 #[derive(Clone, Debug)]
 pub struct Row {
@@ -1191,7 +1193,10 @@ fn window_refusal(ctx: &Ctx, d: &connors::StrategyDef, from: usize, to: usize) -
     "Required volatility-index data does not cover this period".into()
 }
 
-fn summary(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
+#[cfg(test)]
+fn summary(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {summary_until(st,q,&AtomicBool::new(false))}
+/// `stop` is set by the job table when no client is left; checked once per strategy. A stopped run is an Err nobody reads.
+fn summary_until(st: &State, q: &BTreeMap<String, String>, stop: &AtomicBool) -> Result<String, String> {
     if q.contains_key("p.__raw_query_error") || q.get("id").is_some_and(|id|books::hbqts::reviewed::is_dema_index(id) || books::lkqts::stock_research_profile(id)){checked_params_of(q)?;}
 
     let selected=select_context(st,q)?;let held=selected.context(st);
@@ -1202,6 +1207,7 @@ fn summary(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     let costs=accounting::Costs::parse(q)?;costs.ensure_rollover()?;
     let mut rows = Vec::new();
     for d in definitions.iter() {
+        if stop.load(Ordering::Relaxed) {return Err("cancelled".into());}
         let (from,to,auto)=match admit(ctx,d,from,to,&Params::new(),&selected,st,q) {Ok(a)=>a,Err(issue)=>{
             rows.push(format!("{{\"id\":\"{}\",\"blocked\":\"{}\",\"readiness\":\"{}\"}}", d.id, esc(&issue.note), issue.status));
             continue;
@@ -1583,11 +1589,67 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
 
 /// Basket jobs use their own bounded, fail-fast permit. The shared single-stock
 /// strategy engine and its calculation guards are unchanged.
-fn basket_json(st:&State,q:&BTreeMap<String,String>,stream:&mut TcpStream){
-    match basket_portfolio::run(st,q){
-        Ok(body)=>respond(stream,"200 OK","application/json; charset=utf-8",body.as_bytes()),
-        Err(note) if note.starts_with("busy:")=>respond(stream,"429 Too Many Requests","text/plain; charset=utf-8",note.as_bytes()),
-        Err(note)=>respond(stream,"400 Bad Request","text/plain; charset=utf-8",note.as_bytes()),
+const JSON_TYPE:&str="application/json; charset=utf-8";
+const TEXT_TYPE:&str="text/plain; charset=utf-8";
+fn compute_endpoint(st:&State,endpoint:&str,q:&BTreeMap<String,String>,stop:&AtomicBool)->jobs::Outcome {
+    let result=match endpoint {
+        "summary"=>summary_until(st,q,stop),
+        "optimize"=>optimize_until(st,q,stop),
+        "readiness"=>readiness_json(st,q),
+        "run"=>detail(st,q),
+        _=>basket_portfolio::run_until(st,q,stop),
+    };
+    match result {
+        Ok(body)=>{
+            // The basket time budget depends on the moment and on host load, not on the request.
+            let cacheable=!(endpoint=="basket-run"&&body.contains("checked 90-second resource budget"));
+            jobs::Outcome{status:"200 OK",ctype:JSON_TYPE,body:body.into_bytes(),cacheable}
+        }
+        Err(note)=>jobs::Outcome{status:if note.starts_with("busy:")&&endpoint=="basket-run"{"429 Too Many Requests"}else{"400 Bad Request"},ctype:TEXT_TYPE,body:note.into_bytes(),cacheable:false},
+    }
+}
+/// Files a result can depend on after startup. Rows in memory cannot change, so a changed preloaded file only causes a
+/// harmless recompute; the stock CSVs and minute/option files are read per request, and a hit must not hide a change to
+/// them (baskets.rs re-hashes each read and refuses a changed file; the recompute this forces keeps that refusal).
+static DATA_FILES:OnceLock<Vec<std::path::PathBuf>>=OnceLock::new();
+fn collect_data_files(file:Option<&str>,dirs:&[Option<&str>],basket_index:Option<std::path::PathBuf>)->Vec<std::path::PathBuf>{
+    let mut files:Vec<_>=file.map(std::path::PathBuf::from).into_iter().chain(basket_index).collect();
+    for dir in dirs.iter().flatten() {
+        files.push(dir.into());
+        if let Ok(entries)=std::fs::read_dir(dir){files.extend(entries.flatten().map(|e|e.path()));}
+    }
+    files
+}
+fn data_fingerprint(st:&State,q:&BTreeMap<String,String>)->u64{
+    use std::hash::{Hash,Hasher};use std::os::unix::fs::MetadataExt;
+    let mut hash=std::collections::hash_map::DefaultHasher::new();
+    let mut stamp=|path:&std::path::Path|{
+        path.hash(&mut hash);
+        if let Ok(m)=std::fs::metadata(path){(m.len(),m.ino(),m.mtime(),m.mtime_nsec(),m.ctime(),m.ctime_nsec()).hash(&mut hash);}
+    };
+    for path in DATA_FILES.get().into_iter().flatten(){stamp(path);}
+    if let Some(path)=q.get("ticker").and_then(|key|st.baskets.source_path(key)){stamp(&path);}
+    if let Some(basket)=q.get("basket"){for member in st.baskets.source_members(basket){if let Some(path)=st.baskets.source_path(&member.key){stamp(&path);}}}
+    hash.finish()
+}
+/// Two workers for whole-catalogue work on the engine's two cores, two more so a 16 ms single backtest never waits behind a 13 s summary.
+fn job_table()->&'static jobs::Table{
+    static TABLE:OnceLock<Arc<jobs::Table>>=OnceLock::new();
+    TABLE.get_or_init(||jobs::Table::start(2,2))
+}
+fn serve_job(mut stream:TcpStream,st:Arc<State>,path:&str,guru:&str,endpoint:&str,q:BTreeMap<String,String>){
+    let key=format!("{path}\0{q:?}\0{:x}",data_fingerprint(&st,&q));
+    let lane=if matches!(endpoint,"run"|"readiness"){jobs::Lane::Light}else{jobs::Lane::Heavy};
+    let (guru,endpoint)=(guru.to_string(),endpoint.to_string());
+    let compute:jobs::Compute=Box::new(move|stop|compute_endpoint(&st,&endpoint,&owned_query(&q,&guru),stop));
+    match job_table().serve(key,lane,compute,&||jobs::peer_gone(&stream)) {
+        jobs::Reply::Done(out)=>respond(&mut stream,out.status,out.ctype,&out.body),
+        jobs::Reply::Busy=>{
+            let note=b"busy: The research queue is full; retry shortly.";
+            let head=format!("HTTP/1.1 429 Too Many Requests\r\nContent-Type: {TEXT_TYPE}\r\nContent-Length: {}\r\nRetry-After: 5\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n",note.len());
+            let _=stream.write_all(head.as_bytes());let _=stream.write_all(note);
+        }
+        jobs::Reply::Gone=>{}
     }
 }
 
@@ -1629,7 +1691,9 @@ const PART_COLS: &[&str] = &["total_return", "cagr", "sharpe", "max_dd", "trades
 /// Every combination of the requested parameter ranges, run in parallel. Rows come in
 /// mixed-radix order (last dimension changes fastest) so the UI can find grid neighbours.
 /// With `split`, each combo is also run on [from, split) (in-sample) and [split, to] (out-of-sample).
-fn optimize(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
+#[cfg(test)]
+fn optimize(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {optimize_until(st,q,&AtomicBool::new(false))}
+fn optimize_until(st: &State, q: &BTreeMap<String, String>, stop: &AtomicBool) -> Result<String, String> {
     if q.contains_key("p.__raw_query_error") || q.get("id").is_some_and(|id|books::lkqts::stock_research_profile(id)) {checked_params_of(q)?;}
     let t0 = std::time::Instant::now();
     let selected=select_context(st,q)?;let held=selected.context(st);
@@ -1705,6 +1769,7 @@ fn optimize(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> 
                     (t..combos)
                         .step_by(threads)
                         .map(|k| {
+                            if stop.load(Ordering::Relaxed) {return Err("cancelled".to_string());}
                             let (mut p, mut r, mut vals) = (base.clone(), k, vec![0.0; dims.len()]);
                             for (j, (key, vs)) in dims.iter().enumerate().rev() {
                                 let v = vs[r % vs.len()];
@@ -1938,6 +2003,10 @@ fn handle(mut stream: TcpStream, st: Arc<State>) {
     if method != "GET" {
         return respond(&mut stream, "405 Method Not Allowed", "text/plain", b"GET only");
     }
+    if let Some((guru,endpoint))=path.strip_prefix("/api/guru/").and_then(|rest|rest.split_once('/'))
+        .filter(|(guru,endpoint)|matches!(*guru,"connors"|"chande"|"ross")&&matches!(*endpoint,"summary"|"optimize"|"basket-run"|"run"|"readiness")) {
+        return serve_job(stream,st,&path,guru,endpoint,q);
+    }
     let json = |r: Result<String, String>, s: &mut TcpStream| match r {
         Ok(b) => respond(s, "200 OK", "application/json; charset=utf-8", b.as_bytes()),
         Err(e) => respond(s, "400 Bad Request", "text/plain; charset=utf-8", e.as_bytes()),
@@ -1964,26 +2033,11 @@ fn handle(mut stream: TcpStream, st: Arc<State>) {
             )), &mut stream)
         }
         "/api/guru/connors/strategies" => json(Ok(catalogue_json("connors")), &mut stream),
-        "/api/guru/connors/readiness" => json(readiness_json(&st, &owned_query(&q,"connors")), &mut stream),
-        "/api/guru/connors/summary" => json(summary(&st, &owned_query(&q,"connors")), &mut stream),
-        "/api/guru/connors/run" => json(detail(&st, &owned_query(&q,"connors")), &mut stream),
-        "/api/guru/connors/basket-run" => basket_json(&st,&owned_query(&q,"connors"),&mut stream),
         "/api/guru/connors/params" => json(Ok(params_json("connors")), &mut stream),
-        "/api/guru/connors/optimize" => json(optimize(&st, &owned_query(&q,"connors")), &mut stream),
         "/api/guru/chande/strategies" => json(Ok(catalogue_json("chande")), &mut stream),
         "/api/guru/chande/params" => json(Ok(params_json("chande")), &mut stream),
-        "/api/guru/chande/readiness" => json(readiness_json(&st, &owned_query(&q,"chande")), &mut stream),
-        "/api/guru/chande/summary" => json(summary(&st, &owned_query(&q,"chande")), &mut stream),
-        "/api/guru/chande/run" => json(detail(&st, &owned_query(&q,"chande")), &mut stream),
-        "/api/guru/chande/basket-run" => basket_json(&st,&owned_query(&q,"chande"),&mut stream),
-        "/api/guru/chande/optimize" => json(optimize(&st, &owned_query(&q,"chande")), &mut stream),
         "/api/guru/ross/strategies" => json(Ok(catalogue_json("ross")), &mut stream),
-        "/api/guru/ross/readiness" => json(readiness_json(&st, &owned_query(&q,"ross")), &mut stream),
-        "/api/guru/ross/summary" => json(summary(&st, &owned_query(&q,"ross")), &mut stream),
-        "/api/guru/ross/run" => json(detail(&st, &owned_query(&q,"ross")), &mut stream),
-        "/api/guru/ross/basket-run" => basket_json(&st,&owned_query(&q,"ross"),&mut stream),
         "/api/guru/ross/params" => json(Ok(params_json("ross")), &mut stream),
-        "/api/guru/ross/optimize" => json(optimize(&st, &owned_query(&q,"ross")), &mut stream),
         "/api/notes" => match note_path(&q) {
             Ok(f) => respond(&mut stream, "200 OK", "text/plain; charset=utf-8", &std::fs::read(f).unwrap_or_default()),
             Err(e) => respond(&mut stream, "400 Bad Request", "text/plain", e.as_bytes()),
@@ -2135,6 +2189,7 @@ fn main() {
         .collect();
     let baskets=std::env::var("VAULT_BASKET_DATA_DIR").ok().map_or_else(baskets::Catalogue::default,|directory|baskets::Catalogue::load(std::path::Path::new(&directory)).unwrap_or_else(|error|{eprintln!("warning: basket admission unavailable: {error}");baskets::Catalogue::default()}));
     let st = Arc::new(State { ctxs,baskets,vix,market_extra:extra });
+    let _=DATA_FILES.set(collect_data_files(Some(&csv),&[Some(&vix_dir),Some(&extra_dir),intraday_dir.as_deref(),options_dir.as_deref()],std::env::var("VAULT_BASKET_DATA_DIR").ok().map(|d|std::path::Path::new(&d).join("index.csv"))));
     let listener = TcpListener::bind(format!("0.0.0.0:{port}")).expect("bind");
     println!("Guru API on http://localhost:{port}/api/gurus  ({} tickers from {csv})", data.len());
     for s in listener.incoming().flatten() {
