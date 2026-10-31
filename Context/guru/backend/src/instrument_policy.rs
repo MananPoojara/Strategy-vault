@@ -656,6 +656,13 @@ fn kaeppel_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Opt
     if us {return None;}
     Some(Issue{status:"needs_data",note:format!("This rule's days are set by US stock-market holidays (the trading days before and after a US exchange closure, or the Thanksgiving-to-January Santa Claus window). Indian exchanges keep a different holiday calendar, so the rule runs on US indices, ETFs and stocks only. {ticker} is outside that scope; no result is published.")})
 }
+// Fosback Seasonality Indicator (lane K5, 31 Oct 2026): its pre-holiday days are US exchange holidays and no official NSE
+// holiday list is held (lead decision R3 #4: no holidays inferred from data gaps), so US instruments only.
+fn fosback_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Option<Issue> {
+    if !(crate::books::nfsml::ADMISSION.reviewed)(def) || !crate::books::nfsml::US_ONLY.contains(&def.id) {return None;}
+    if stock_us.unwrap_or(!ticker.starts_with("NIFTY")) {return None;}
+    Some(Issue{status:"needs_data",note:format!("This rule's pre-holiday days are set by US stock-market holiday closings. Indian exchanges keep a different holiday calendar and the vault holds no official NSE holiday list, so the rule runs on US indices, ETFs and stocks only. {ticker} is outside that scope; no result is published.")})
+}
 // ---------------------------------------------------------------- Landry 2026-10-24
 // Admission only for the module REVIEWED lists (authors/landry/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn landry_reviewed(def:&StrategyDef)->bool {matches!(def.book,"dlost"|"dl10b") && (crate::books::dlost::reviewed(def.id) || crate::books::dl10b::reviewed(def.id))}
@@ -1183,6 +1190,7 @@ pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     if let Some(issue)=jb_g3_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=lwilliams_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Larry Williams block
     if let Some(issue)=kaeppel_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Kaeppel block
+    if let Some(issue)=fosback_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Fosback (K5)
     if let Some(issue)=downs_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Walter T. Downs block
     if let Some(issue)=schaap_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Schaap block
     if let Some(issue)=landry_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Landry block
@@ -1223,6 +1231,7 @@ pub fn check_native(def:&StrategyDef,ticker:&str,evidence:&NativeEvidence)->Opti
     if let Some(issue)=jb_g3_symbol_issue(def,ticker){return Some(issue);}
     if let Some(issue)=lwilliams_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Larry Williams block
     if let Some(issue)=kaeppel_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Kaeppel block
+    if let Some(issue)=fosback_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Fosback (K5)
     if let Some(issue)=downs_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Walter T. Downs block
     if let Some(issue)=schaap_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Schaap block
     if let Some(issue)=landry_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Landry block
@@ -1550,7 +1559,8 @@ mod tests {
                 assert!(metadata_json(d).contains(&format!("\"declared_application\":\"{}\"",a.label)),"{}",d.id);
                 for (t,stock) in [("SPY",false),("QQQ",false),("SPX",false),("NDX",false),("DJI",false),("NIFTY 50",false),("NIFTYBANK",false),("AAPL",true),("RELIANCE",true)] {
                     // Kaeppel's US-only rules keep their own symbol check (kaeppel_symbol_issue; kaeppel_review_... test).
-                    if check(d,t,stock).is_some() && !crate::books::kpss::US_ONLY.contains(&d.id) {refused.push((d.id,t));}
+                    // Fosback's Seasonality Indicator likewise (fosback_symbol_issue; fosback_seasonality_runs_on_us_instruments_only test).
+                    if check(d,t,stock).is_some() && !crate::books::kpss::US_ONLY.contains(&d.id) && !crate::books::nfsml::US_ONLY.contains(&d.id) {refused.push((d.id,t));}
                 }
             }
         }
@@ -2688,6 +2698,14 @@ mod tests {
         }
     }
     // ---- end Kaeppel block ----
+    #[test]
+    fn fosback_seasonality_runs_on_us_instruments_only() {
+        for d in crate::books::nfsml::catalogue() {
+            for t in ["SPY","QQQ","SPX","NDX","DJI"] {assert!(check(&d,t,false).is_none(),"{} {t}",d.id);}
+            for t in ["NIFTY 50","NIFTYBANK"] {assert!(check(&d,t,false).is_some(),"{} {t}",d.id);}
+            assert!(check(&d,"RELIANCE",true).is_some(),"{}",d.id);
+        }
+    }
     // ---- Hamon block (2026-10-24) ----
     #[test]
     fn hamon_review_admits_exact_ids_on_indices_etfs_and_stocks() {
