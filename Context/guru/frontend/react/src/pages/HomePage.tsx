@@ -6,6 +6,7 @@ import { Pagination } from "../components/Pagination";
 import { DataCoverageNotice } from "../components/DataCoverageNotice";
 import { LivingBook } from "../components/LivingBook";
 import { shareReview as share, shareFiles as files } from "../services/source-review-data";
+import { CLEAR_ALL } from "../services/author-filters";
 const n = (v: number) => v.toLocaleString("en-IN");
 export function HomePage({ snapshot }: { snapshot: ViewSnapshot }) {
   const model = snapshot.home;
@@ -70,7 +71,7 @@ export function HomePage({ snapshot }: { snapshot: ViewSnapshot }) {
       {model.resultsPending ? <p className="rnote" role="status" data-results-pending>
         Backtest details for {model.symbol} are still calculating and fill in here when ready. The counts above are already final.
       </p> : null}
-      {model.view === "authors" ? <p className="library-backtest-note">
+      {model.view === "authors" && (snapshot.state.library_sort || "default") === "default" ? <p className="library-backtest-note">
         Authors with available backtests appear first. Open an author to see all indexed books and their review status.
       </p> : null}
       <div id="library-results" aria-live="polite">
@@ -84,9 +85,13 @@ export function HomePage({ snapshot }: { snapshot: ViewSnapshot }) {
           </h2>
           <span>
             {model.view === "books"
-              ? `${model.page.total} indexed entries`
+              ? model.totals && model.page.total !== model.totals.books
+                ? `Showing ${model.page.total} of ${model.totals.books} indexed entries`
+                : `${model.page.total} indexed entries`
               : model.listedPeople !== undefined
-                ? `${model.listedPeople} authors · ${model.page.total - model.listedPeople} collections`
+                ? model.totals && model.page.total !== model.totals.people + model.totals.collections
+                  ? `Showing ${model.listedPeople} of ${model.totals.people} authors · ${model.page.total - model.listedPeople} of ${model.totals.collections} collections`
+                  : `${model.listedPeople} authors · ${model.page.total - model.listedPeople} collections`
                 : `${model.page.total} author and collection records`}
             {model.query ? ` matching “${model.query}”` : ""}
           </span>
@@ -115,13 +120,7 @@ export function HomePage({ snapshot }: { snapshot: ViewSnapshot }) {
             category.
             <button
               className="dbtn sm"
-              onClick={() =>
-                window.VaultRuntime.patch({
-                  library_q: "",
-                  book_category: "",
-                  library_page: "1",
-                })
-              }
+              onClick={() => window.VaultRuntime.patch({ ...CLEAR_ALL, library_page: "1" })}
             >
               Clear search and filters
             </button>
