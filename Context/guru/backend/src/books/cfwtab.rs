@@ -2,14 +2,15 @@
 //! Reading: claude-continuation-20261020/authors/cfwright (agents/cfwtab) and authors/lanec/admission3/lanec3_ref.py. Every admitted rule is the
 //! book's printed TradeStation EasyLanguage strategy (checked against the page images): 9/18 average cross (p.46), stochastic
 //! cross (p.49), gap-open volatility breakout (p.53), channel breakout on close (p.57-59), "S&E 4 modified" average direction +
-//! %R + 50-bar failsafe (p.78-89) and the up-key-reversal breakout (p.113-118).
+//! %R + 50-bar failsafe (p.78-89), the up-key-reversal breakout (p.113-118) and the weekly HHLL breakout of Ch.7 (p.135-143;
+//! lane K9, 1 Nov 2026, to-code row 159; independent check authors/titles-1030/K9w/k9_ref.py).
 //! Held: RangeLeader breakout (p.60-62; $500 money stop and $1,500 target are S&P futures contract dollars), its 30-minute
 //! versions (intraday), the UKR $5,000 stop/target versions (contract dollars).
 //! Book: Disney, Caterpillar, IBM, Coca-Cola stocks and S&P 500 futures; other instruments are a declared application.
 use crate::books::lc3::{bars, high_first, hi, lo, sma, Pos};
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
-pub const REVIEWED: &[&str] = &["cfwtab_ma918", "cfwtab_stoch", "cfwtab_gap", "cfwtab_chan", "cfwtab_se4", "cfwtab_ukr"];
+pub const REVIEWED: &[&str] = &["cfwtab_ma918", "cfwtab_stoch", "cfwtab_gap", "cfwtab_chan", "cfwtab_se4", "cfwtab_ukr", "cfwtab_hhll"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const TS: &str = "[Declared readings] TradeStation conventions: 'crosses over' = above today and at or below yesterday; 'on Close' = filled at the signal bar's close; 'next bar at market' = the next bar's open; a stop order lives for the next bar only and fills at its price, or at the open when the open is already beyond it; when both a buy and a sell stop are hit in one bar, the extreme nearer the open is taken as reached first (TradeStation's bar path). '1 point' = one tick of the instrument (0.01 US, 0.05 NSE). One position; an opposite entry reverses; a same-direction entry while in a position is ignored. No costs or slippage.";
@@ -49,6 +50,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|\"IF BarsSinceEntry(0) = BSI then Exitlong on Close;\" (p.117) with BSI = 8 (PS 5): out on the close 8 bars after the entry bar",
             "F|\"the breakout must occur on the day following the UKR\" (p.114); 'If TradeStation is long on an UKR breakout, it will ignore any subsequent signals until it is flat' (p.120)"],
           "Book: S&P 500 futures daily 4/21/82-4/2/97 (PS 5: the 10-low / 8-day version, no stop, no target). The later $5,000 money-stop and $5,000 target versions (PS 7-10) are S&P contract dollars and are held; the 1987 crash-date exclusion belongs to those versions. p.bsi / p.ll change the hold and the low look-back (book's first test: 5 days)."),
+        d("cfwtab_hhll", "HHLL breakouts (weekly): buy stop over the 20-week high, reverse short under the 50-week low, always in", "Ch.7 Optimization, The Double-Edged Sword (p.135-143)", "Long/Short",
+          &["E|\"Buy(\"hh\") at Highest(High,HH) + 1 point Stop;\" (PS 1, p.137); SPF 1: 'Stops None, Exits None'",
+            "X|\"Sell(\"ll\") at Lowest(Low,LL) - 1 point Stop;\" (p.137) - stop and reverse",
+            "F|\"So, now let's put together the whole picture for the 20/50\"; \"Would you rather trade the 20/50 than the 50/50. I would.\" (p.140-143)"],
+          "Book: DJIA weekly 1/9/70-8/8/97: the 50/50 captured 4,642 Dow points (PS 1, p.138); 20/50 = 17 trades, 53% profitable, net 6,146.20 points, profit factor 7.20 (Opt Tables 1 and 5, p.139-141). [Declared readings] Default HH = 20 and LL = 50 weeks, the author's chosen lengths (SPF 1's 50/50 and other lengths are options). The channel is the highest high (lowest low) of the HH (LL) completed weekly bars before the current week, i.e. up to and including the signal week; both stops work every day of the current week, filled at the stop or at the open on a gap; when one day touches both, the buy stop is taken first (as the S&E 4 card). Weekly bars = Monday-based calendar weeks. 'IncludeStrategy: Exit on 8/8/97' only ends the book's test and is not applied. Options from the text (p.142): long only ('Get long on the 20-week upside breakout and get out of the market on the 50-week downside breakout') and close-confirmed entries ('insist that the week's close be above the 20-week high or below the 50-week low', filled at that weekly close). The author also ran the 30 Dow stocks and other weeklies; other indices, ETFs and stocks are a declared application."),
         StrategyDef { status: Status::NotTestable("The $500 money stop and $1,500 profit target (SPF 6) are S&P 500 futures contract dollars (1993); the book gives no amount for other instruments. The 30-minute versions need intraday data."),
             ..d("cfwtab_rangeleader", "RangeLeader breakout (held: fixed futures-dollar stop and target)", "Ch.3 Markets, Strategies & Time Frames (p.60-62)", "Long/Short",
           &["E|\"Value1 = (High + Low) / 2 ; Cond1 = Value1 > High[1] OR Value1 < Low[1] ; Cond2 = Range[0] > Range[1] ;\" (Chart 14, p.61); \"If RangeLeader = 1 then begin Buy at High + 1 point stop; Sell at Low - 1 point stop; end;\" (SPF 6, p.61)",
@@ -59,7 +65,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
     let f = match id {
         "cfwtab_ma918" => "9/18 MA cross", "cfwtab_stoch" => "Stochastic cross", "cfwtab_gap" => "Gap open breakout", "cfwtab_chan" => "Channel breakout",
-        "cfwtab_se4" => "MA direction + %R", "cfwtab_ukr" => "Up key reversal", "cfwtab_rangeleader" => "RangeLeader",
+        "cfwtab_se4" => "MA direction + %R", "cfwtab_ukr" => "Up key reversal", "cfwtab_hhll" => "HHLL weekly breakout", "cfwtab_rangeleader" => "RangeLeader",
         _ => return None,
     };
     let id = REVIEWED.iter().chain(["cfwtab_rangeleader"].iter()).copied().find(|r| *r == id)?;
@@ -72,6 +78,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "cfwtab_chan" => Some(vec![p("len", "Channel bars (SPF 4: 50; weekly test: 10)", 50., 2., 200., 1.), p("weekly", "Weekly bars (1) - the book's second test", 0., 0., 1., 1.)]),
         "cfwtab_se4" => Some(vec![p("weekly", "Weekly bars (1 = book) / daily (0)", 1., 0., 1., 1.)]),
         "cfwtab_ukr" => Some(vec![p("bsi", "Bars held after entry (book optimum 8)", 8., 1., 30., 1.), p("ll", "Low look-back (book 10)", 10., 1., 50., 1.)]),
+        "cfwtab_hhll" => Some(vec![p("hh", "Buy-stop channel weeks HH (author's choice 20; SPF 1: 50)", 20., 2., 100., 1.), p("ll", "Sell-stop channel weeks LL (book 50)", 50., 2., 100., 1.),
+            p("long", "Long only (1): the 50-week low only exits (p.142)", 0., 0., 1., 1.), p("close", "Close-confirmed entries (1): the week's close beyond the channel, filled at that close (p.142)", 0., 0., 1., 1.)]),
         _ if reviewed(id) || id == "cfwtab_rangeleader" => Some(vec![]),
         _ => None,
     }
@@ -148,6 +156,38 @@ fn se4(x: &Ctx, from: usize, to: usize, weekly: bool) -> Vec<Trade> {
     p.done(to, x.c[to])
 }
 
+fn hhll(x: &Ctx, from: usize, to: usize, hh: usize, ll: usize, long_only: bool, on_close: bool) -> Vec<Trade> {
+    let b = bars(x, to, true);
+    let (bh, bl): (Vec<f64>, Vec<f64>) = (b.iter().map(|z| z.3).collect(), b.iter().map(|z| z.4).collect());
+    let t = x.market_tick();
+    let mut p = Pos::new();
+    for w in 1..b.len() {
+        let (s, e) = (b[w].0, b[w].1);
+        if on_close {
+            if e < from { continue; }
+            let cl = b[w].5;
+            if w >= hh && cl > hi(&bh, w - hh, w - 1) { p.enter(1., e, cl, "close"); }
+            else if w >= ll && cl < lo(&bl, w - ll, w - 1) {
+                if !long_only { p.enter(-1., e, cl, "close"); } else if p.side() > 0. { p.exit(e, cl, "close under the LL-week low"); }
+            }
+            continue;
+        }
+        for dd in s.max(from)..=e {
+            if w >= hh && p.side() != 1. {
+                let bs = hi(&bh, w - hh, w - 1) + t;
+                if x.h[dd] >= bs { p.enter(1., dd, x.o[dd].max(bs), "stop"); }
+            }
+            if w >= ll && p.side() != -1. {
+                let ss = lo(&bl, w - ll, w - 1) - t;
+                if x.l[dd] <= ss {
+                    if !long_only { p.enter(-1., dd, x.o[dd].min(ss), "stop"); } else if p.side() > 0. { p.exit(dd, x.o[dd].min(ss), "LL-week low stop"); }
+                }
+            }
+        }
+    }
+    p.done(to, x.c[to])
+}
+
 fn ukr(x: &Ctx, from: usize, to: usize, bsi: usize, ll: usize) -> Vec<Trade> {
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let t = x.market_tick();
@@ -177,7 +217,26 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "cfwtab_gap" => gap(x, from, to),
         "cfwtab_chan" => chan(x, from, to, g("len").round().max(1.) as usize, g("weekly") > 0.5),
         "cfwtab_se4" => se4(x, from, to, g("weekly") > 0.5),
+        "cfwtab_hhll" => hhll(x, from, to, g("hh").round().max(1.) as usize, g("ll").round().max(1.) as usize, g("long") > 0.5, g("close") > 0.5),
         "cfwtab_ukr" => ukr(x, from, to, g("bsi").round().max(1.) as usize, g("ll").round().max(1.) as usize),
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Row;
+    #[test]
+    fn hhll_reverses_on_the_weekly_channel_stops() {
+        // 1,500 days on 28-day months (monotonic dates; weeks come from the calendar) with a slow cycle
+        let r: Vec<Row> = (0..1500).map(|k| { let f = k as f64; let c = 100. + 30. * (f / 160.).sin() + 0.01 * f;
+            Row { ticker: "T".into(), date: format!("{:04}-{:02}-{:02}", 2001 + k / 336, 1 + k % 336 / 28, 1 + k % 28), open: c, high: c + 1., low: c - 1., close: c, volume: None } }).collect();
+        let x = Ctx::new(&r, &r, &[]);
+        let t = run("cfwtab_hhll", &x, 0, r.len() - 1, &Params::new()).unwrap();
+        assert!(t.iter().any(|z| z.dir > 0.) && t.iter().any(|z| z.dir < 0.));
+        for w in t.windows(2) { assert_eq!(w[0].exit_i, w[1].legs[0].i); assert!(w[0].dir != w[1].dir); }
+        let lo_ = run("cfwtab_hhll", &x, 0, r.len() - 1, &Params::from([("long".to_string(), 1.)])).unwrap();
+        assert!(lo_.iter().all(|z| z.dir > 0.));
+    }
 }
