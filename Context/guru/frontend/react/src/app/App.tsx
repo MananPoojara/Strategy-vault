@@ -86,7 +86,7 @@ export function App() {
       .then(async (account) => {
         if (!mounted) return;
         setAccount(account);
-        await window.VaultRuntime.bootstrap(account);
+        window.VaultRuntime.changeTheme?.(account.settings.theme || "aqua");
       })
       .catch((error) => {
         if (!mounted) return;
@@ -125,6 +125,10 @@ export function App() {
   const Custom = customPages.find(
     (page) => page.path === resolveRoute(hash).path,
   )?.component;
+  // A custom page brings its own data: the catalogues and library wait for the first page that reads them.
+  useEffect(() => {
+    if (account && !Custom) void window.VaultRuntime.bootstrap(account);
+  }, [account, Custom]);
   return (
     <>
       <AppHeader

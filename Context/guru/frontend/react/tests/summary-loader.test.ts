@@ -1,5 +1,5 @@
 import {expect, it} from 'vitest';
-import {dateCoverageIssue, loadOwnerRows, type OwnerRowsOptions} from '../src/services/summary-loader';
+import {dateCoverageIssue, failureRecord, loadOwnerRows, retryAfterMs, retryDue, type OwnerRowsOptions} from '../src/services/summary-loader';
 
 const base = {owner: 'connors', definitions: [{id: 'one'}], context: {ticker: 'AAPL', from: '2024-01-01', to: '2025-12-31', first: '1980-12-12', last: '2020-09-11'}, url: '/api/us/summary', kind: 'summary' as const};
 it('blocks an uncovered period without a network request or zero-valued statistics', async () => {
@@ -81,7 +81,7 @@ it('handles bounded transient errors, captured URLs, JSON error fields and acces
   const exhausted = await request(async url => {urls.push(url); return reply(503, {error: {field: 'server', message: 'busy'}});},
     {retries: 999, wait: async ms => {delays.push(ms);}});
   expect(urls).toEqual([base.url, base.url, base.url]);
-  expect(delays).toEqual([300, 300]);
+  expect(delays).toEqual([5000, 5000]);
   expect(exhausted.retryableFailure).toBe(true);
   expect(exhausted.rows[0]).not.toHaveProperty('stats');
   expect((await request(async () => {throw new TypeError('network');}, {retries: 1})).retryableFailure).toBe(true);
@@ -115,8 +115,66 @@ it('skips unused owners and recovers through the default bounded wait', async ()
   expect(calls).toBe(0);
   const recovered = await loadOwnerRows({...base, context: {ticker: 'AAPL'}, fetcher: async () => {
     calls++;
-    return calls === 1 ? reply(429, 'limited') : reply(200, [{id: 'one'}]);
+    return calls === 1 ? {...reply(429, 'limited'), headers: new Headers({'Retry-After': '0'})} : reply(200, [{id: 'one'}]);
   }});
   expect(calls).toBe(2);
   expect(recovered.issue).toBeUndefined();
+});
+
+const timedOut = () => Object.assign(new Error('signal timed out'), {name: 'TimeoutError'});
+it('never repeats a timed-out, dropped or 5xx call, and asks the engine to be left alone afterwards', async () => {
+  for (const fail of [async () => {throw timedOut();}, async () => {throw new TypeError('network');}, async () => reply(504, 'gateway timeout'), async () => reply(500, 'boom')]) {
+    let calls = 0;
+    const result = await request(async () => {calls++; return fail();});
+    expect(calls).toBe(1);
+    expect(result.retryableFailure).toBe(true);
+    expect(result.retryAfterMs).toBe(30_000);
+    expect(result.rows[0]).not.toHaveProperty('stats');
+  }
+});
+it('waits exactly what Retry-After asks, then gives up on a wait too long to hold the page', async () => {
+  const delays: number[] = [];
+  const busy = (after: string) => ({...reply(429, 'busy'), headers: new Headers({'Retry-After': after})});
+  let calls = 0;
+  const recovered = await request(async () => ++calls === 1 ? busy('7') : reply(200, [{id: 'one'}]), {wait: async ms => {delays.push(ms);}});
+  expect(delays).toEqual([7000]);
+  expect(recovered.rows).toEqual([{id: 'one'}]);
+  calls = 0;
+  const tooLong = await request(async () => {calls++; return busy('600');});
+  expect(calls).toBe(1);
+  expect(tooLong.retryAfterMs).toBe(600_000);
+  expect(retryAfterMs('3')).toBe(3000);
+  expect(retryAfterMs('Thu, 01 Jan 2026 00:00:10 GMT', Date.parse('2026-01-01T00:00:00Z'))).toBe(10_000);
+  expect(retryAfterMs('soon')).toBeUndefined();
+  expect(retryAfterMs(null)).toBeUndefined();
+});
+it('stops at once when the user leaves: no retry, no blocked rows, nothing to cache', async () => {
+  const leaving = new AbortController();
+  let calls = 0;
+  const inFlight = request((_url, init) => new Promise((_resolve, reject) => {
+    calls++;
+    init!.signal!.addEventListener('abort', () => reject(new DOMException('left', 'AbortError')));
+  }), {signal: leaving.signal});
+  leaving.abort();
+  expect(await inFlight).toEqual({rows: [], retryableFailure: true, aborted: true});
+  expect(calls).toBe(1);
+  const waiting = new AbortController();
+  calls = 0;
+  const duringWait = loadOwnerRows({...base, context: {ticker: 'AAPL'}, signal: waiting.signal, fetcher: async () => {
+    calls++;
+    setTimeout(() => waiting.abort(), 0);
+    return reply(503, 'busy');
+  }});
+  expect((await duringWait).aborted).toBe(true);
+  expect(calls).toBe(1);
+});
+it('holds a failed result through the cool-down, shares it within a render, and then allows a new ask', () => {
+  const issue = {owner: 'x', status: 'unavailable' as const, kind: 'request_failed' as const, note: 'n'};
+  const record = failureRecord([{rows: [], retryableFailure: false}, {rows: [], issue, retryableFailure: true, retryAfterMs: 30_000}], 5, 1000)!;
+  expect(record).toEqual({generation: 5, notBefore: 31_000});
+  expect(failureRecord([{rows: [], retryableFailure: false}], 5)).toBeUndefined();
+  expect(retryDue(record, 5, 99_000)).toBe(false);
+  expect(retryDue(record, 6, 30_999)).toBe(false);
+  expect(retryDue(record, 6, 31_000)).toBe(true);
+  expect(retryDue(undefined, 6, 31_000)).toBe(false);
 });

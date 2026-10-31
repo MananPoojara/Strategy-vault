@@ -4,7 +4,10 @@ import {resolveRoute} from '../app/routes';
 import {customPages} from '../app/custom-pages';
 import {LIB} from './catalogue.js';
 import {authorProfileHtml} from '../services/author-profiles';
-import {loadOwnerRows} from '../services/summary-loader';
+import {loadOwnerRows,failureRecord,retryDue} from '../services/summary-loader';
+import {engineCalls} from '../services/engine-calls';
+import {createPaint,NOT_READY} from '../services/first-paint';
+import {routeData} from '../services/route-data';
 import {bookContext} from '../services/book-context';
 import {returnDisplay} from '../services/return-display';
 import {sourceAccount,sourceAccountView,sourceTradeHeaders,sourceAccountTables,sourceAccountCopy} from '../services/source-account';
@@ -122,7 +125,9 @@ window.VaultUI=(()=>{
 const TS_NUM=[3,5,6,7,8,9,10,11,12,13,14,15], TS_SIGNED=[6,8,13,14,15], TS_DATE=[2,4];
 const tsMinus=(t,i)=>TS_NUM.includes(i)?String(t).replace(/^-/,'\u2212'):t;
 const numMinus=t=>String(t).replace(/^-/,'\u2212');
- function tradeHTML(d,tk){const rows=tradeRowsFor(d,tk);return `<section class="box" data-tradesheet><div class="box-h">Tradesheet <span class="legend"><small>${rows.length} positions · newest first</small><button class="dbtn sm" id="trades-xlsx">Download Excel</button><button class="dbtn sm" id="csv">Download CSV</button>${d.source_account?'<button class="dbtn sm" data-report-export="account-audit">Account audit Excel</button>':d.unit_exposure_report?'<button class="dbtn sm" data-report-export="unit-audit">Unit audit Excel</button><button class="dbtn sm" data-report-export="unit-daily">Daily audit Excel</button>':''}</span></div><p class="rnote">${d.source_account?sourceAccountCopy(d.source_account).tradeNote:d.unit_exposure_report?'Audited canonical-decimal return fractions; terminal-open costs include an estimated second liquidation side. Gross compounds independently at zero cost; contributions use net pretrade allocation.':'Returns and slippage are percentages of the strategy’s normalized allocation; prices/points use the actual symbol.'} ${d.source_account?'Monetary P&amp;L and Taxes are unavailable: the model has no funded capital, actual share lots or statutory tax schedule.':'Monetary Gross/Net P&amp;L and Taxes are unavailable because no quantity, monetary sizing or tax schedule was supplied.'} MAE = lowest price / entry - 1 and MFE = highest price / entry - 1 over the bars the position lived through (shorts mirrored, gross, not clamped: MAE can be above 0, MFE below 0). An entry at the close starts with the next bar; an entry at the open counts its whole bar; a stop/limit entry counts only its fill price on that bar (a gap fill counts as the open). An exit at the close or an end-of-data mark counts its whole bar; an exit at the open or by a stop/limit counts only its fill price. When 1-minute bars exist for a stop/limit fill day, the minutes between fill and exit are used. Open exits are marked Open.</p><div class="tlog"><table class="tbl tl" id="tradesheet"><thead><tr>${tradeHeadersFor(d).map((k,i)=>`<th class="${TS_NUM.includes(i)?'n':''}">${escText(k)}</th>`).join('')}</tr></thead><tbody>${rows.map((row,tradeIndex)=>`<tr>${row.map((v,i)=>`<td class="${TS_NUM.includes(i)?'n'+(TS_SIGNED.includes(i)&&typeof v==='number'?(v<0?' neg':' pos'):''):TS_DATE.includes(i)?'d':''}">${v===null?'—':tsMinus([8,11,13,14,15].includes(i)?label(v,'percent'):typeof v==='number'?v.toFixed(i===9?0:2):escText(v),i)}${i===16?tradeExitCheckMarkup(d.trades[tradeIndex]):''}</td>`).join('')}</tr>`).reverse().join('')}</tbody></table></div></section>`;}
+ function tradeHTML(d){return `<section class="box" data-tradesheet><div class="box-h">Tradesheet <span class="legend"><small>${(d.trades||[]).length} positions · newest first</small><button class="dbtn sm" id="trades-xlsx">Download Excel</button><button class="dbtn sm" id="csv">Download CSV</button>${d.source_account?'<button class="dbtn sm" data-report-export="account-audit">Account audit Excel</button>':d.unit_exposure_report?'<button class="dbtn sm" data-report-export="unit-audit">Unit audit Excel</button><button class="dbtn sm" data-report-export="unit-daily">Daily audit Excel</button>':''}</span></div><p class="rnote">${d.source_account?sourceAccountCopy(d.source_account).tradeNote:d.unit_exposure_report?'Audited canonical-decimal return fractions; terminal-open costs include an estimated second liquidation side. Gross compounds independently at zero cost; contributions use net pretrade allocation.':'Returns and slippage are percentages of the strategy’s normalized allocation; prices/points use the actual symbol.'} ${d.source_account?'Monetary P&amp;L and Taxes are unavailable: the model has no funded capital, actual share lots or statutory tax schedule.':'Monetary Gross/Net P&amp;L and Taxes are unavailable because no quantity, monetary sizing or tax schedule was supplied.'} MAE = lowest price / entry - 1 and MFE = highest price / entry - 1 over the bars the position lived through (shorts mirrored, gross, not clamped: MAE can be above 0, MFE below 0). An entry at the close starts with the next bar; an entry at the open counts its whole bar; a stop/limit entry counts only its fill price on that bar (a gap fill counts as the open). An exit at the close or an end-of-data mark counts its whole bar; an exit at the open or by a stop/limit counts only its fill price. When 1-minute bars exist for a stop/limit fill day, the minutes between fill and exit are used. Open exits are marked Open.</p><div class="tlog" data-tradesheet-table></div></section>`;}
+ // The rows are built when the Positions tab opens, or for a PDF or print. Exports read the run data, never this table.
+ function tradeTableHTML(d,tk){const rows=tradeRowsFor(d,tk);return `<table class="tbl tl" id="tradesheet"><thead><tr>${tradeHeadersFor(d).map((k,i)=>`<th class="${TS_NUM.includes(i)?'n':''}">${escText(k)}</th>`).join('')}</tr></thead><tbody>${rows.map((row,tradeIndex)=>`<tr>${row.map((v,i)=>`<td class="${TS_NUM.includes(i)?'n'+(TS_SIGNED.includes(i)&&typeof v==='number'?(v<0?' neg':' pos'):''):TS_DATE.includes(i)?'d':''}">${v===null?'—':tsMinus([8,11,13,14,15].includes(i)?label(v,'percent'):typeof v==='number'?v.toFixed(i===9?0:2):escText(v),i)}${i===16?tradeExitCheckMarkup(d.trades[tradeIndex]):''}</td>`).join('')}</tr>`).reverse().join('')}</tbody></table>`;}
  function equityNavigator(ch,d){
   // Range brush: one window over a mini equity line; drag the window to move, drag either edge to resize, double-click for all.
   const box=document.getElementById('equity-navigator');if(!box)return;const win=box.querySelector('.rb-win'),out=box.querySelector('output'),line=box.querySelector('polyline'),n=d.dates.length;
@@ -285,7 +290,7 @@ const numMinus=t=>String(t).replace(/^-/,'\u2212');
  addEventListener('beforeprint',()=>{finishMetricAnimations();refreshHeat();});
  addEventListener('afterprint',refreshHeat);
  addEventListener('afterprint',()=>document.querySelectorAll('details[data-print-closed]').forEach(d=>{d.open=false;delete d.dataset.printClosed;}));
- return {costState,exportRunTrades,actions,toolbar,savedList,writeSaved,detailHTML,benchmarkHTML,tradeHTML,equityNavigator,init,iconize,pristineExport,ICON};
+ return {costState,exportRunTrades,actions,toolbar,savedList,writeSaved,detailHTML,benchmarkHTML,tradeHTML,tradeTableHTML,equityNavigator,init,iconize,pristineExport,ICON};
 })();
 
 // Optimization research on the strategy page: parameter ranges, Rust grid run, Claude's conclusion (top 3 by the
@@ -411,7 +416,7 @@ function optimInit() {
 
 const optQuery = (v, tk, w, g, slim, c = S) => { const q = new URLSearchParams({ id: v.id, ticker: tk, from: w.from || '', to: w.to || '', cost: S.cost || '0',slippage:c.slippage||'0',rollover:c.rollover||'0', ...(slim ? { slim: '1' } : {}) });
   Object.entries(g).forEach(([k, x]) => { if (x.on) q.set('g.' + k, `${x.min}:${x.max}:${x.step}`); }); return q; };
-async function fetchOpt(q, api=API) { const r = await fetch(enginePath(q.get('id'),'optimize',api)+'?'+q), b = await r.text(); if (!r.ok) { let message = b; try { message = JSON.parse(b).error || b; } catch {} throw new Error(message); } return JSON.parse(b); }
+async function fetchOpt(q, api=API) { return ENGINE.run('opt:' + q, async signal => { const r = await fetch(enginePath(q.get('id'),'optimize',api)+'?'+q, { signal }), b = await r.text(); if (!r.ok) { let message = b; try { message = JSON.parse(b).error || b; } catch {} throw new Error(message); } return JSON.parse(b); }); }
 
 async function runOpt() {
   const { v, tk } = STRAT, g = OPT.grids[v.id], key=optKey(v.id,tk), out=$('#opt-out');
@@ -1054,11 +1059,10 @@ function ownerQuery(owner,query){
 }
 // A distinct owner has a distinct inclusive-session protocol. Do not weaken
 // the shared legacy loader's date/window semantics to admit this model.
-async function pristineOwnerRows(url,definitions,kind){
+async function pristineOwnerRows(group,url,definitions,kind){
  try{
   if(S.p)throw Error('These fixed Pristine branches accept no parameter settings.');
-  const response=await fetch(url);if(!response.ok)throw Error(await response.text());
-  const payload=await response.json(),rows=kind==='readiness'?payload?.strategies:payload,selected=new URL(url,location.href).searchParams;
+  const payload=await ENGINE.run(group,async signal=>{const response=await fetch(url,{signal});if(!response.ok)throw Error(await response.text());return response.json();}),rows=kind==='readiness'?payload?.strategies:payload,selected=new URL(url,location.href).searchParams;
   if(!Array.isArray(rows)||rows.length!==definitions.length)throw Error('Pristine owner response shape is unavailable.');
   const expected=new Set(definitions.map(definition=>definition.id)),seen=new Set();
   for(const row of rows){
@@ -1066,9 +1070,11 @@ async function pristineOwnerRows(url,definitions,kind){
    if(kind==='summary'&&!row.blocked){const model=row.pristine_summary;if(!model||model.id!==row.id||model.book!==PRISTINE_BOOK||model.owner!=='pristine'||model.model!=='pristine_daily_supplied_series_summary_v1'||model.research_mode!==selected.get('research_mode')||model.qualified_ticker!==selected.get('ticker')||model.market!=='us'||model.asset_type!=='individual_stock'||model.book_performance_reproduced!==false||model.native_historical_dollars_verified!==false||model.historical_membership_verified!==false)throw Error('Pristine summary model does not match current research scope.');}
   }
   return {rows,retryableFailure:false};
- }catch(error){return {rows:definitions.map(definition=>({id:definition.id,...(kind==='readiness'?{status:'unavailable',note:error.message}:{blocked:error.message,readiness:'unavailable'})})),retryableFailure:true,issue:{owner:'pristine',status:'unavailable',kind:'request_failed',note:error.message||'Pristine owner data is unavailable.'}};}
+ }catch(error){if(error.name==='AbortError')return {rows:[],retryableFailure:true,aborted:true};return {rows:definitions.map(definition=>({id:definition.id,...(kind==='readiness'?{status:'unavailable',note:error.message}:{blocked:error.message,readiness:'unavailable'})})),retryableFailure:true,issue:{owner:'pristine',status:'unavailable',kind:'request_failed',note:error.message||'Pristine owner data is unavailable.'}};}
 }
 
+const ENGINE=engineCalls(2),PAINT=createPaint();
+const engineOwnerRows=(group,options)=>ENGINE.run(group,signal=>loadOwnerRows({...options,fetcher:fetch,signal})).catch(error=>{if(error.name==='AbortError')return {rows:[],retryableFailure:true,aborted:true};throw error;});
 async function getReadiness(tk, from = '', to = '', id = '', parameters = {}, api = API) {
  const owners=id?[ownerOf(id)]:guruIds(),variants=[...ALLCAT],generation=busy;
  if(!owners.length)return {};
@@ -1076,25 +1082,29 @@ async function getReadiness(tk, from = '', to = '', id = '', parameters = {}, ap
  const settings=typeof parameters==='string'?decodeP(parameters):parameters;
  for(const [key,value] of Object.entries(settings))query.set('p.'+key,value);
  const key=api+'|'+(id?owners[0]:'all')+'?'+query+(owners.includes('pristine')?'|research_mode='+S.research_mode:''),context=summaryContext(tk,from,to);
- // Failed requests are shared within a render, then retried on the next user navigation.
- if(READINESS_FAILURE_GENERATION[key]!=null&&READINESS_FAILURE_GENERATION[key]!==generation)delete READINESS[key];
- return READINESS[key]||(READINESS[key]=(async()=>{
-  const outcomes=await Promise.all(owners.map(owner=>owner==='pristine'?pristineOwnerRows(api+'/guru/pristine/readiness?'+ownerQuery(owner,query),ownedDefinitions(variants,owner,id),'readiness'):loadOwnerRows({owner,definitions:ownedDefinitions(variants,owner,id),context,url:api+'/guru/'+owner+'/readiness?'+query,kind:'readiness',fetcher:fetch,wait:ms=>new Promise(resolve=>setTimeout(resolve,ms))})));
-  if(outcomes.some(outcome=>outcome.issue))READINESS_FAILURE_GENERATION[key]=generation;else delete READINESS_FAILURE_GENERATION[key];
+ // Failed requests are shared within a render, then asked again on a later navigation once any cool-down has passed.
+ const group='ready:'+key;
+ if(retryDue(READINESS_FAILURE_GENERATION[key],generation))delete READINESS[key];
+ return PAINT.ask(READINESS,key,group,async()=>{
+  const outcomes=await Promise.all(owners.map(owner=>owner==='pristine'?pristineOwnerRows(group,api+'/guru/pristine/readiness?'+ownerQuery(owner,query),ownedDefinitions(variants,owner,id),'readiness'):engineOwnerRows(group,{owner,definitions:ownedDefinitions(variants,owner,id),context,url:api+'/guru/'+owner+'/readiness?'+query,kind:'readiness'})));
+  if(outcomes.some(outcome=>outcome.aborted)){delete READINESS[key];return {};}
+  READINESS_FAILURE_GENERATION[key]=failureRecord(outcomes,generation);
   return Object.fromEntries(outcomes.flatMap(outcome=>outcome.rows).map(row=>[row.id,row]));
- })());
+ });
 }
 async function getSum(tk, from = '', to = '', api = API) {
  const owners=guruIds(),variants=[...ALLCAT],generation=busy;
  if(!owners.length)return {};
  const key=summaryKey(api,tk,from,to),context=summaryContext(tk,from,to),query=new URLSearchParams({ticker:tk,from,to});
- if(SUM_FAILURE_GENERATION[key]!=null&&SUM_FAILURE_GENERATION[key]!==generation)delete SUM[key];
- return SUM[key]||(SUM[key]=(async()=>{
-  const outcomes=await Promise.all(owners.map(owner=>owner==='pristine'?pristineOwnerRows(api+'/guru/pristine/summary?'+ownerQuery(owner,query),ownedDefinitions(variants,owner),'summary'):loadOwnerRows({owner,definitions:ownedDefinitions(variants,owner),context,url:api+'/guru/'+owner+'/summary?'+query,kind:'summary',fetcher:fetch,wait:ms=>new Promise(resolve=>setTimeout(resolve,ms))})));
+ const group='sum:'+key;
+ if(retryDue(SUM_FAILURE_GENERATION[key],generation))delete SUM[key];
+ return PAINT.ask(SUM,key,group,async()=>{
+  const outcomes=await Promise.all(owners.map(owner=>owner==='pristine'?pristineOwnerRows(group,api+'/guru/pristine/summary?'+ownerQuery(owner,query),ownedDefinitions(variants,owner),'summary'):engineOwnerRows(group,{owner,definitions:ownedDefinitions(variants,owner),context,url:api+'/guru/'+owner+'/summary?'+query,kind:'summary'})));
+  if(outcomes.some(outcome=>outcome.aborted)){delete SUM[key];return {};}
   SUMMARY_ISSUES[key]=outcomes.flatMap(outcome=>outcome.issue?[outcome.issue]:[]);
-  if(outcomes.some(outcome=>outcome.issue))SUM_FAILURE_GENERATION[key]=generation;else delete SUM_FAILURE_GENERATION[key];
+  SUM_FAILURE_GENERATION[key]=failureRecord(outcomes,generation);
   return Object.fromEntries(outcomes.flatMap(outcome=>outcome.rows).map(row=>[row.id,row]));
- })());
+ });
 }
 function summaryNoticeHTML(issues) {
  if(!issues.length)return '';
@@ -1111,12 +1121,13 @@ function listSummaryIssues() {
 const PRE = {};
 function preMap(tk, to, api = API, cat = CAT) {
   const k = `${api}|${tk}|${to}`;
-  if (PRE[k]) return PRE[k];
+  return PAINT.ask(PRE, k, 'pre:' + k, () => {
   const ids = cat.filter(v => v.status === 'live' && !v.needs_vix).map(v => v.id), out = {}; // VIX data starts after 2009: nothing to ask
-  let i = 0;
-  const worker = async () => { while (i < ids.length) { const id = ids[i++];
-    try { const r = await fetch(enginePath(id,'run',api)+'?' + new URLSearchParams({ id, ticker: tk, to })); if (r.ok) out[id] = { stats: (await r.json()).stats }; } catch (e) { /* leave missing */ } } };
-  return PRE[k] = Promise.all(Array.from({ length: 6 }, worker)).then(() => out);
+  let left = false;
+  return Promise.all(ids.map(id => ENGINE.run('pre:' + k, async signal => {
+    const r = await fetch(enginePath(id,'run',api)+'?' + new URLSearchParams({ id, ticker: tk, to }), { signal }); if (r.ok) out[id] = { stats: (await r.json()).stats };
+  }).catch(e => { if (e.name === 'AbortError') left = true; /* otherwise leave missing */ }))).then(() => { if (left) delete PRE[k]; return out; });
+  });
 }
 const lastOf = tk => [...TICKERS, ...TICK_IN, ...(TICK_US || [])].find(t => t.ticker === tk)?.last || '2026-05-15';
 const shiftYears = (d, y) => { const t = new Date(d); t.setFullYear(t.getFullYear() - y); return t.toISOString().slice(0, 10); };
@@ -1167,6 +1178,7 @@ async function marketRows(S, region, api, tickers, CAT) {
   const metaOk = v => textOk(v) && (!S.guru || v.guru === S.guru) && (!S.book || v.book === S.book) && (!S.style || v.style === S.style) && (!S.dir || v.dir === S.dir) && (!S.family || v.family === S.family);
   if (S.tab === 'awaiting') {
     const availability = await Promise.all(tks.map(tk => getReadiness(tk,S.from,S.to,'',{},api)));
+    if (availability.includes(NOT_READY)) return []; // not known yet is not "unavailable"
     return CAT.filter(metaOk).map(v => {
       const issues=tks.map((tk,i)=>({tk,...availability[i][v.id]})).filter(item=>item.status!=='ready');
       return {v,tk:issues[0]?.tk,s:null,issues,region};
@@ -1175,6 +1187,7 @@ async function marketRows(S, region, api, tickers, CAT) {
   const out = [];
   for (const tk of tks) {
     const w = S.tab==='sharpe'&&(S.from||S.to)?{from:S.from||'',to:S.to||''}:T.win(tk), main = await getSum(tk, w.from, w.to, api), ex = T.extra ? T.extra(tk) : null, extra = ex ? await getSum(tk, ex.from, ex.to, api) : T.pre ? await preMap(tk, T.pre, api, CAT) : null;
+    if (main === NOT_READY) { PAINT.hold(CAT.filter(v => v.status === 'live' && metaOk(v)).map(v => ({ v, tk, region }))); continue; }
     for (const v of CAT) {
       if (v.status !== 'live' || !metaOk(v)) continue;
       const m = main[v.id]; if (!m?.stats || !m.stats.trades) continue; // no data (volume rules on Nifty IT) or no closed trades in the window
@@ -1250,6 +1263,7 @@ async function unavailableForSelectedBook(){
   for(const tk of tickers){
     const w=S.tab==='sharpe'&&(S.from||S.to)?{from:S.from||'',to:S.to||''}:TABS[S.tab].win?.(tk)||{from:S.from||'',to:S.to||''};
     const [summary,ready]=await Promise.all([getSum(tk,w.from,w.to),getReadiness(tk,w.from,w.to)]);
+    if(summary===NOT_READY||ready===NOT_READY)return []; // listed as unavailable only once the engine has said so
     reasons.push(...VaultLibraryDiscovery.authorAvailability([S.book],defs,summary,ready).variantReasons);
   }
   // A ready result on any selected instrument admits the method; never let a later
@@ -1258,8 +1272,14 @@ async function unavailableForSelectedBook(){
   const query=S.q.trim().toLowerCase(),matching=defs.filter(v=>(!query||`${v.name} ${v.family_name} ${v.variant||''} ${v.group} ${v.dir} ${BOOK[v.book]?.title||''} ${GURU[v.guru]?.name||''} ${(v.rules||[]).join(' ')}`.toLowerCase().includes(query))&&(!S.style||v.style===S.style)&&(!S.dir||v.dir===S.dir)&&(!S.family||v.family===S.family));
   return unavailableBookMethods(matching,[...merged.values()]);
 }
+// One page of a ranked list. Ranking and filters have already run over every row; only the drawing is limited.
+function listPage(rows) {
+  const pages = Math.max(1, Math.ceil(rows.length / 24)), page = Math.max(1, Math.min(pages, +S.list_page || 1)), start = (page - 1) * 24;
+  return { rows: rows.slice(start, start + 24), start, page, last: page === pages, total: rows.length };
+}
+const listTotal = (p, what, extra = '') => `<p class="rnote" data-list-total><b>${p.total} ${what}</b>${p.total ? ` · showing ${p.start + 1}–${p.start + p.rows.length}` : ''}${extra}</p>`;
+const listPager = (p, what) => libraryPagination(p.total, p.page, 'list_page', what);
 function viewStrategies(rs, perVariant, missing = []) {
-  const missingGrid=missing.length?`<div class="grid unavailable-method-grid">${missing.map(unavailableBookCard).join('')}</div>`:'';
   // strategies = one entry per family (best variant by the current sort); variants = every rule set
   let list = rs;
   if (!perVariant) { const seen = new Map(); for (const r of rs) { const k = r.v.family; if (!seen.has(k)) seen.set(k, { ...r, all: [] }); seen.get(k).all.push(r); } list = [...seen.values()]; }
@@ -1267,35 +1287,39 @@ function viewStrategies(rs, perVariant, missing = []) {
   const title = r => esc(familyDisplayName(r.v)) + gateBadge(r.v);
   const sub = r => perVariant && r.v.variant ? `<b style="font-weight:600">${esc(r.v.variant)}</b> · ` : '';
   if (S.tab === 'awaiting') return S.book&&missing.length?`<div class="grid">${missing.map(unavailableBookCard).join('')}</div>`:awaiting(rs);
+  const what = perVariant ? 'rule sets' : 'strategies', shown = listPage(list), first = shown.start;
+  const missingGrid = missing.length && shown.last ? `<div class="grid unavailable-method-grid">${missing.map(unavailableBookCard).join('')}</div>` : '';
+  const counted = listTotal(shown, what, missing.length ? ` · ${missing.length} unavailable listed ${shown.last ? 'below' : 'on the last page'}` : ''), pager = listPager(shown, what);
   if (S.view === 'list') {
     const M = TABS[S.tab].metric, ruleLine = v => { const e = (v.rules || []).find(x => x.startsWith('E|')), x = (v.rules || []).find(x => x.startsWith('X|')); return [e && 'Entry: ' + e.slice(2), x && 'Exit: ' + x.slice(2)].filter(Boolean).map(esc).join(' · '); };
-    return `<div class="list">${list.map((r, i) => { const vd = verdictOf(r.s); return `<div class="lr"><span class="ln">${i + 1}</span><div class="sp">${spark(r, 110, 40)}</div>
+    return `${counted}<div class="list">${shown.rows.map((r, i) => { const vd = verdictOf(r.s); return `<div class="lr"><span class="ln">${first + i + 1}</span><div class="sp">${spark(r, 110, 40)}</div>
       <div class="lt"><b>${title(r)}</b><small>${sub(r)}${byline(r.v)}${S.tk === 'ALL' ? ' · ' + esc(LABEL[r.tk]) : ''}</small><span class="rl">${ruleLine(r.v)}</span>
         <span class="ltags"><span class="tag">⏱ ${HOLD[holdOf(r.s)]}</span><span class="tag">${esc(r.v.style)}</span><span class="tag">${r.v.dir}</span>${!perVariant && nVar(r) > 1 ? `<span class="tag link" data-fam="${esc(r.v.family)}">${nVar(r)} variants</span>` : ''}</span></div>
       <div class="lk"><span>${esc(M.label)}<b class="p">${M.fmt(M.get(r))}</b></span><span>CAGR<b class="${cls(r.s.cagr)}">${pct(r.s.cagr, 1, true)}</b></span><span>Max DD<b class="neg">${pct(r.s.max_dd, 1)}</b></span><span>Trades<b>${fx(r.s.trades, 0)}</b></span></div>
-      <div class="la"><span class="stamp" style="color:${vd.c}">${vd.t}</span><a class="go" href="${appLink(r)}">Full backtest</a></div></div>`; }).join('')}</div>${missingGrid}`;
+      <div class="la"><span class="stamp" style="color:${vd.c}">${vd.t}</span><a class="go" href="${appLink(r)}">Full backtest</a></div></div>`; }).join('')}</div>${pager}${missingGrid}`;
   }
   if (S.view === 'table') {
     const M = TABS[S.tab].metric, th = (k, t, n) => `<th class="${n ? 'n' : ''} ${S.sort === k ? 'on' : ''}" data-sort="${k}">${t}</th>`;
-    return `<div class="tblwrap"><table class="tbl"><thead><tr><th class="nosort">#</th>${th('name', 'Strategy')}<th class="nosort">Style</th>${S.tk === 'ALL' ? '<th class="nosort">Index</th>' : ''}<th class="nosort">Hold</th><th class="nosort">Equity</th>${th('primary', esc(M.label), 1)}${S.tab === 'working' ? `<th class="n nosort">Before ${PUB}</th>` : S.tab === 'trending' ? '<th class="n nosort">Sharpe (full)</th>' : ''}${th('cagr', 'CAGR', 1)}${th('maxdd', 'Max DD', 1)}${th('win', 'Win', 1)}${th('trades', 'Trades', 1)}${th('t', 't', 1)}<th class="nosort"></th></tr></thead><tbody>
-      ${list.map((r, i) => `<tr><td class="rk">${i + 1}</td><td class="nm"><b>${title(r)}</b><span>${sub(r)}${byline(r.v)}${!perVariant && nVar(r) > 1 ? ` · <a href="#" data-fam="${esc(r.v.family)}">${nVar(r)} variants</a>` : ''}</span></td><td>${esc(r.v.style)}<br><span class="muted">${r.v.dir}</span></td>${S.tk === 'ALL' ? `<td>${esc(LABEL[r.tk])}</td>` : ''}<td>${HOLD[holdOf(r.s)]}</td><td style="width:150px">${spark(r, 150, 34)}</td>
+    return `${counted}<div class="tblwrap"><table class="tbl"><thead><tr><th class="nosort">#</th>${th('name', 'Strategy')}<th class="nosort">Style</th>${S.tk === 'ALL' ? '<th class="nosort">Index</th>' : ''}<th class="nosort">Hold</th><th class="nosort">Equity</th>${th('primary', esc(M.label), 1)}${S.tab === 'working' ? `<th class="n nosort">Before ${PUB}</th>` : S.tab === 'trending' ? '<th class="n nosort">Sharpe (full)</th>' : ''}${th('cagr', 'CAGR', 1)}${th('maxdd', 'Max DD', 1)}${th('win', 'Win', 1)}${th('trades', 'Trades', 1)}${th('t', 't', 1)}<th class="nosort"></th></tr></thead><tbody>
+      ${shown.rows.map((r, i) => `<tr><td class="rk">${first + i + 1}</td><td class="nm"><b>${title(r)}</b><span>${sub(r)}${byline(r.v)}${!perVariant && nVar(r) > 1 ? ` · <a href="#" data-fam="${esc(r.v.family)}">${nVar(r)} variants</a>` : ''}</span></td><td>${esc(r.v.style)}<br><span class="muted">${r.v.dir}</span></td>${S.tk === 'ALL' ? `<td>${esc(LABEL[r.tk])}</td>` : ''}<td>${HOLD[holdOf(r.s)]}</td><td style="width:150px">${spark(r, 150, 34)}</td>
         <td class="n p">${M.fmt(M.get(r))}</td>${S.tab === 'working' || S.tab === 'trending' ? `<td class="n">${fx(r.x?.sharpe)}</td>` : ''}<td class="n ${cls(r.s.cagr)}">${pct(r.s.cagr, 1, true)}</td><td class="n neg">${pct(r.s.max_dd, 1)}</td><td class="n">${pct(r.s.win_rate, 0)}</td><td class="n">${fx(r.s.trades, 0)}</td><td class="n">${fx(r.s.t_stat)}</td><td><a class="go" href="${appLink(r)}">Backtest</a></td></tr>`).join('')}
-      </tbody></table></div>${missingGrid}`;
+      </tbody></table></div>${pager}${missingGrid}`;
   }
-  return `<div class="grid">${list.map((r, i) => { const vd = verdictOf(r.s); return `<article class="card">
-      <div class="rank"><span>#${i + 1}${S.tk === 'ALL' ? ' · ' + esc(LABEL[r.tk]) : ''}</span><span class="stamp" style="color:${vd.c}">${vd.t}</span></div>
+  return `${counted}<div class="grid">${shown.rows.map((r, i) => { const vd = verdictOf(r.s); return `<article class="card">
+      <div class="rank"><span>#${first + i + 1}${S.tk === 'ALL' ? ' · ' + esc(LABEL[r.tk]) : ''}</span><span class="stamp" style="color:${vd.c}">${vd.t}</span></div>
       <h3>${title(r)}</h3><div class="by">${sub(r)}${byline(r.v)}</div>
       ${spark(r)}${kpiTriplet(r)}${r.auto ? `<p class="rnote" data-auto-start>${esc(r.auto)}</p>` : ''}${r.autoEnd ? `<p class="rnote" data-auto-end>${esc(r.autoEnd)}</p>` : ''}${r.ruin ? `<p class="rnote gate ruin" data-ruin><b>${esc(r.ruin)}</b></p>` : ''}
       <div class="tags"><span class="tag">⏱ ${HOLD[holdOf(r.s)]}</span><span class="tag">${esc(r.v.style)}</span><span class="tag">${r.v.dir}</span>${!perVariant && nVar(r) > 1 ? `<span class="tag link" data-fam="${esc(r.v.family)}">${nVar(r)} variants</span>` : ''}${!perVariant && S.tk === 'ALL' && nIdx(r) > 1 ? `<span class="tag">best of ${nIdx(r)} indices</span>` : ''}</div>
       ${rulesList(r.v)}
       <div class="btns"><a class="btn solid" href="${appLink(r)}">Full backtest</a><button class="btn" data-book="${r.v.book}">Book</button><button class="btn" data-guru="${r.v.guru}">Guru</button></div>
-    </article>`; }).join('')}${missing.map(unavailableBookCard).join('')}</div>`;
+    </article>`; }).join('')}${shown.last ? missing.map(unavailableBookCard).join('') : ''}</div>${pager}`;
 }
 function awaiting(rs) {
   const reasons = r => sourceBlockers(r.v) || r.issues.map(issue => `<p><b>${esc(LABEL[issue.tk])}: ${esc(heldLabel(issue))}</b><br>${esc(issue.note)}</p>`).join('');
   const link = r => `<a href="${stratLink(r.v.id,r.tk,r.region)}">${esc(familyDisplayName(r.v))}</a>`;
-  if (S.view === 'table' || S.view === 'list') return `<div class="tblwrap"><table class="tbl"><thead><tr><th class="nosort">#</th><th class="nosort">Strategy / source method</th><th class="nosort">Style</th><th class="nosort">Why results are withheld</th></tr></thead><tbody>${rs.map((r,i)=>`<tr><td class="rk">${i+1}</td><td class="nm"><b>${link(r)}</b><span>${r.v.variant?esc(r.v.variant)+' · ':''}${byline(r.v)}</span></td><td>${esc(r.v.style)}</td><td>${reasons(r)}</td></tr>`).join('')}</tbody></table></div>`;
-  return `<div class="grid">${rs.map((r,i)=>`<article class="card"><div class="rank"><span>#${i+1}</span><span class="stamp" style="color:#8a6a2f">${r.v.guru==='ross'?'DATA MISSING · RULES UNRESOLVED':'BACKTEST UNAVAILABLE'}</span></div><h3>${link(r)}</h3><div class="by">${r.v.variant?esc(r.v.variant)+' · ':''}${byline(r.v)}</div><div class="unavailable-reasons">${reasons(r)}</div><div class="tags"><span class="tag">${esc(r.v.style)}</span><span class="tag">${r.v.dir}</span></div>${rulesList(r.v)}<a class="btn" href="${stratLink(r.v.id,r.tk)}">View rules and data requirements</a></article>`).join('')}</div>`;
+  const shown = listPage(rs), first = shown.start, counted = listTotal(shown, 'unavailable'), pager = listPager(shown, 'unavailable');
+  if (S.view === 'table' || S.view === 'list') return `${counted}<div class="tblwrap"><table class="tbl"><thead><tr><th class="nosort">#</th><th class="nosort">Strategy / source method</th><th class="nosort">Style</th><th class="nosort">Why results are withheld</th></tr></thead><tbody>${shown.rows.map((r,i)=>`<tr><td class="rk">${first+i+1}</td><td class="nm"><b>${link(r)}</b><span>${r.v.variant?esc(r.v.variant)+' · ':''}${byline(r.v)}</span></td><td>${esc(r.v.style)}</td><td>${reasons(r)}</td></tr>`).join('')}</tbody></table></div>${pager}`;
+  return `${counted}<div class="grid">${shown.rows.map((r,i)=>`<article class="card"><div class="rank"><span>#${first+i+1}</span><span class="stamp" style="color:#8a6a2f">${r.v.guru==='ross'?'DATA MISSING · RULES UNRESOLVED':'BACKTEST UNAVAILABLE'}</span></div><h3>${link(r)}</h3><div class="by">${r.v.variant?esc(r.v.variant)+' · ':''}${byline(r.v)}</div><div class="unavailable-reasons">${reasons(r)}</div><div class="tags"><span class="tag">${esc(r.v.style)}</span><span class="tag">${r.v.dir}</span></div>${rulesList(r.v)}<a class="btn" href="${stratLink(r.v.id,r.tk)}">View rules and data requirements</a></article>`).join('')}</div>${pager}`;
 }
 function groupBy(rs, key) { const m = new Map(); for (const r of rs) { const k = key(r); if (!m.has(k)) m.set(k, []); m.get(k).push(r); } return m; }
 function summarise(list) {
@@ -1375,7 +1399,7 @@ function exitCheck(t) { return tradeExitCheck(t); }
 // ================================================================ FULL VARIANT 1
 // Routes:  #/  landing (legends)  ·  #/guru/<id>  author grid  ·  #/strategies  all gurus  ·  #/s/<id>  one strategy
 // Filters live in a top navbar of dropdowns (DaisyUI-style); animation by motion.dev; charts in the Bklit style.
-DEF.research_mode=''; DEF.view = 'grid'; DEF.region = 'in'; DEF.from = ''; DEF.to = ''; DEF.cost = '0'; DEF.slippage='0'; DEF.rollover='0'; DEF.basket=''; DEF.run_scope='single'; DEF.report_mode='fixed'; DEF.membership='current'; DEF.max_positions='10'; DEF.position_choice='10'; DEF.p = ''; DEF.library_scope='trading'; DEF.library_market=''; DEF.library_q=''; DEF.library_view='authors'; DEF.library_sort='default'; DEF.book_category=''; DEF.library_limit='24'; DEF.library_page='1'; DEF.source_page='1'; DEF.book_progress=''; // p = custom strategy settings 'key:value,…' (empty = the book's) // custom backtest period, kept in the link
+DEF.research_mode=''; DEF.view = 'grid'; DEF.region = 'in'; DEF.from = ''; DEF.to = ''; DEF.cost = '0'; DEF.slippage='0'; DEF.rollover='0'; DEF.basket=''; DEF.run_scope='single'; DEF.report_mode='fixed'; DEF.membership='current'; DEF.max_positions='10'; DEF.position_choice='10'; DEF.p = ''; DEF.library_scope='trading'; DEF.library_market=''; DEF.library_q=''; DEF.library_view='authors'; DEF.library_sort='default'; DEF.book_category=''; DEF.library_limit='24'; DEF.library_page='1';DEF.list_page='1'; DEF.source_page='1'; DEF.book_progress=''; // p = custom strategy settings 'key:value,…' (empty = the book's) // custom backtest period, kept in the link
 const getS = () => S;
 const MO = window.Motion, CALM = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const anim = (el, kf, o) => { if (MO && !CALM && el && (el.length === undefined || el.length)) try { return MO.animate(el, kf, o); } catch (e) {} };
@@ -1438,7 +1462,8 @@ const foreignTo = (v, us) => (v.needs_series || []).some(n => us ? /^NSE_/.test(
 const marketCat = () => libraryMarketVariants(ALLCAT,libraryMarket(S,R.name));
 const href = (path, st = {}) => { const q = new URLSearchParams();if(S.research_mode&&!('research_mode' in st))q.set('research_mode',S.research_mode);const catalogue=path==='/'||path==='/strategies'||path.startsWith('/guru/')||path.startsWith('/source/'); if (S.region !== 'in' && !('region' in st)) q.set('region', S.region); if(catalogue&&S.library_market&&!('library_market' in st))q.set('library_market',S.library_market); for (const k in st) if (st[k] !== DEF[k] && st[k] != null && !(path.startsWith('/guru/') && k === 'guru') && (k!=='library_market'||catalogue)) q.set(k, st[k]); const s = q.toString(); return '#' + path + (s ? '?' + s : ''); };
 const go = (path, st) => { location.hash = href(path, st).slice(1); };
-const setState = patch => { const st = { ...S, ...patch }; if ('guru' in patch && !('book' in patch) && st.book && BOOK[st.book]?.guru.id !== st.guru) st.book = ''; go(R.path, st); };
+const setState = patch => { const st = { ...S, ...patch }; if (!('list_page' in patch)) st.list_page = '1'; // a new sort or filter starts over at the top of the ranking
+ if ('guru' in patch && !('book' in patch) && st.book && BOOK[st.book]?.guru.id !== st.guru) st.book = ''; go(R.path, st); };
 const guruLink = id => href('/guru/' + id, {view:'grid',tk:S.tk,basket:S.basket,from:S.from,to:S.to});
 const stratLink = (id, tk, region) => href('/s/' + encodeURIComponent(id), { ...(region ? { region } : S.region === 'all' ? { region: 'in' } : {}), ...(tk && tk !== 'NIFTY 50' && tk !== 'ALL' ? { tk } : {}), from: S.from, to: S.to, cost: S.cost,slippage:S.slippage,rollover:S.rollover,basket:S.basket,run_scope:S.run_scope,report_mode:S.report_mode,membership:S.membership,max_positions:S.max_positions,position_choice:S.position_choice });
 
@@ -1569,29 +1594,40 @@ const setFor = (k, v) => { const F = FILTERS[k]; if (!F.noAll && curOf(k) === v)
 function dropdown(k, cnt) {
   const F = FILTERS[k], c = curOf(k), on = F.vals().find(([v]) => v === c), set = isSet(k) || F.noAll;
   const items = (F.noAll ? '' : `<li><a class="${isSet(k) ? '' : 'active'}" data-set="${ds({ [k]: F.zero || '' })}"><span>All</span></a></li>`) +
-    F.vals().map(([v, t]) => { const n = cnt?.[v]; return `<li><a class="${c === v ? 'active' : ''} ${cnt && !n && !v.startsWith('@') && v !== 'ALL' && Object.keys(cnt).length ? 'muted' : ''}" data-set="${ds(setFor(k, v))}"><span>${esc(t)}</span>${n != null ? `<span class="badge">${n}</span>` : ''}</a></li>`; }).join('');
+    F.vals().map(([v, t]) => { const n = cnt?.[v]; return `<li><a class="${c === v ? 'active' : ''} ${k !== 'tk' && cnt && !n && !v.startsWith('@') && v !== 'ALL' && Object.keys(cnt).length ? 'muted' : ''}" data-set="${ds(setFor(k, v))}"><span>${esc(t)}</span>${n != null ? `<span class="badge">${n}</span>` : ''}</a></li>`; }).join('');
   return `<details class="dd ${isSet(k) ? 'set' : ''}"><summary class="dd-btn"><span class="dd-l">${F.t}</span>${set && on ? `<b>${esc(on[1])}</b>` : ''}<i class="chev"></i></summary><ul class="menu">${items}</ul></details>`;
 }
 async function filterBar() {
   const keys = ['mode', 'tk', 'tab', ...(R.name === 'guru' ? [] : ['guru']), 'book', 'style', 'dir', 'hold', 'verdict', 'min'];
-  const cnt = {}; for (const k of keys) if (!['mode', 'tab'].includes(k)) cnt[k] = await counts(k);
+  const cnt = {}; for (const k of keys) if (!['mode', 'tab'].includes(k)) cnt[k] = await PAINT.peek(() => counts(k));
   const chips = ['guru', 'book', 'style', 'dir', 'hold', 'verdict', 'min'].filter(k => isSet(k) && !(R.name === 'guru' && k === 'guru')).map(k => { const F = FILTERS[k], c = curOf(k); return `<span class="chip">${F.t}: ${esc(F.vals().find(([v]) => v === c)?.[1] || c)}<button data-set="${ds({ [k]: F.zero || '' })}" aria-label="Remove">×</button></span>`; });
   if (S.family) chips.push(`<span class="chip">Strategy: ${esc((CAT.find(v => v.family === S.family)?familyDisplayName(CAT.find(v => v.family === S.family)):''))}<button data-set="${ds({ family: '', mode: 'strategies' })}" aria-label="Remove">×</button></span>`);
   if (S.q) chips.push(`<span class="chip">“${esc(S.q)}”<button data-set="${ds({ q: '' })}" aria-label="Remove">×</button></span>`);
   return `<div class="fbar"><div class="fbar-in">${keys.map(k => dropdown(k, cnt[k])).join('')}<label class="dsearch"><input id="q" type="search" value="${esc(S.q)}" placeholder="Search name, rule, book…"></label></div>
     ${chips.length ? `<div class="chips">${chips.join('')}<button class="link" data-set="${ds({ q: '', ...(R.name === 'guru' ? {} : { guru: '' }), book: '', style: '', dir: '', hold: '', verdict: '', min: '0', family: '' })}">Clear all</button></div>` : ''}</div>`;
 }
-const regionToggle = (withAll = false) => `<div class="join region" title="India: Nifty 50, Bank Nifty, Midcap 100 (NSE daily close) · US: S&amp;P 500, Nasdaq 100, Dow Jones (daily close)${withAll ? ' · All: both markets together' : ''}">${[...(withAll && TICK_US ? [['all', 'All']] : []), ['in', 'India'], ['us', 'US']].map(([k, t]) => `<button class="join-item ${S.region === k ? 'active' : ''} ${k === 'us' && !TICK_US ? 'off' : ''}" data-set="${ds({ region: k,basket:'', tk: k === 'all' ? 'ALL' : '', from: '', to: '', market: 'india' })}" ${k === 'us' && !TICK_US ? 'disabled title="US engine (port 8091) is not running"' : ''}>${t}</button>`).join('')}</div>`;
+const regionToggle = (withAll = false) => `<div class="join region" title="India: Nifty 50, Bank Nifty, Midcap 100 (NSE daily close) · US: S&amp;P 500, Nasdaq 100, Dow Jones (daily close)${withAll ? ' · All: both markets together' : ''}">${[...(withAll && usOffered() ? [['all', 'All']] : []), ['in', 'India'], ['us', 'US']].map(([k, t]) => `<button class="join-item ${S.region === k ? 'active' : ''} ${k === 'us' && !usOffered() ? 'off' : ''}" data-set="${ds({ region: k,basket:'', tk: k === 'all' ? 'ALL' : '', from: '', to: '', market: 'india' })}" ${k === 'us' && !usOffered() ? 'disabled title="US engine (port 8091) is not running"' : ''}>${t}</button>`).join('')}</div>`;
 function resultsBar(rs) {
   const M = TABS[S.tab].metric;
   return `<div class="rbar" data-results-controls>
     ${regionToggle(R.name === 'all')}<label class="dselect"><select data-key="sort" aria-label="Sort">${Object.entries(SORTS).map(([k, t]) => `<option value="${k}" ${S.sort === k ? 'selected' : ''}>Sort: ${k === 'primary' ? (M?.label || t) : t}</option>`).join('')}</select></label>
     <div class="join">${[['grid', 'Grid'], ['table', 'Table'], ['list', 'List']].map(([k, t]) => `<button class="join-item ${S.view === k ? 'active' : ''}" data-set="${ds({ view: k })}"><i class="ico ico-${k}"></i>${t}</button>`).join('')}</div></div>`;
 }
+// Cards from the catalogue while backtests calculate. No figure appears until it is measured; a strategy with no closed trades leaves the list once its result is in.
+function pendingCards() {
+  const seen = new Set(), list = PAINT.held().filter(r => { const k = S.mode === 'variants' ? r.v.id : r.v.family; return !seen.has(k) && seen.add(k); });
+  if (!list.length) return `<div class="empty" role="status"><b>Checking availability…</b>The reasons appear here once the engine has answered.</div>`;
+  const what = S.mode === 'variants' ? 'rule sets' : 'strategies', shown = listPage(list);
+  return `${listTotal(shown, `${what} listed`, ' · results loading')}<div class="grid">${shown.rows.map(r => `<article class="card" data-result-pending><div class="rank"><span>${esc(LABEL[r.tk] || r.tk)}</span><span class="stamp">CALCULATING</span></div>
+      <h3>${esc(familyDisplayName(r.v))}${gateBadge(r.v)}</h3><div class="by">${byline(r.v)}</div>${rulesList(r.v)}
+      <div class="btns"><a class="btn solid" href="${stratLink(r.v.id, r.tk, r.region)}">Full backtest</a><button class="btn" data-book="${r.v.book}">Book</button><button class="btn" data-guru="${r.v.guru}">Guru</button></div></article>`).join('')}</div>${listPager(shown, what)}`;
+}
+const pendingNote = rs => PAINT.waiting() ? `<p class="rnote" role="status" data-results-pending>${rs.length ? 'More results are still calculating. This ranking can change until they arrive.' : 'Backtests are calculating. Each result fills in here when it arrives; filters on results apply then.'}</p>` : '';
 function resultsHtml(rs, missing = []) {
   if (S.market !== 'india') return `<div class="empty"><b>${S.market === 'global' ? 'Global markets' : 'Single stocks'}: no data loaded yet</b>The same gurus, books and strategies appear here once that data is in the Rust backend.</div>`;
   const pv = S.book && !BOOK[S.book].live ? BOOK[S.book].title : S.guru && !GURU[S.guru].books.some(b => b.live) ? GURU[S.guru].name : '';
   if (pv && !rs.length) return `<div class="empty"><b>${esc(pv)}: not converted yet</b>Its strategies, stats and charts appear here once its rules are coded in Rust.</div>`;
+  if (PAINT.waiting() && !rs.length && !missing.length) return pendingCards();
   if (!rs.length && missing.length) return viewStrategies([],S.mode==='variants',missing);
   if (!rs.length && (S.mode === 'strategies' || S.mode === 'variants')) return `<div class="empty"><b>Nothing matches</b>Loosen a filter or press Clear all.</div>`;
   if (S.tab === 'awaiting') return S.book&&missing.length?`<div class="grid">${missing.map(unavailableBookCard).join('')}</div>`:awaiting(rs);
@@ -1616,7 +1652,7 @@ async function viewList() {
   if(R.name==='guru'&&S.book&&!BOOK[S.book]?.live)return readingBookPage(GURU[R.id],BOOK[S.book]);
   if (R.name === 'guru' && !S.book) return `${head}${summaryNoticeHTML(listSummaryIssues())}${R.id==='ross'?rossResearchNotice():R.id==='chande'?experimentNotice({guru:'chande'},null):''}${libraryFiltersHTML(true)}${await bookShelf(GURU[R.id])}`;
   const missing=await unavailableForSelectedBook();
-  return `${head}${await filterBar()}${summaryNoticeHTML(listSummaryIssues())}${resultsBar(rs)}<div id="results">${resultsHtml(rs,missing)}</div>`;
+  return `${head}${await filterBar()}${summaryNoticeHTML(listSummaryIssues())}${resultsBar(rs)}${pendingNote(rs)}<div id="results">${resultsHtml(rs,missing)}</div>`;
 }
 // A guru's books as covers; opening one shows its strategies.
 function rossResearchNotice() {
@@ -1659,8 +1695,8 @@ const ohlc = (tk, tf = 'D') => OHLC[tk + tf] || (OHLC[tk + tf] = fetch(`data/ohl
 let TF = 'D';
 const runData = (id, tk, from = '', to = '', cost = '0', p = '', api = API,execution=VaultUI.costState(S)) => { const k = [api, id, tk, from, to, cost, p,execution.slippage,execution.rollover,...(pristineMethod(id,PRISTINE_BOOK)?[execution.research_mode||'']:[])].join('|');
   return RUNS[k] || (RUNS[k] = (async () => { const t0 = performance.now();
-    try { const r = await fetch(enginePath(id,'run',api)+'?' + new URLSearchParams({ id, ticker: tk, from, to, cost, ...execution, ...Object.fromEntries(Object.entries(decodeP(p)).map(([k, v]) => ['p.' + k, v])) })); if (!r.ok) { delete RUNS[k]; return { error: await r.text() }; }
-      const j = await r.json(); if(!pristineMethod(id,PRISTINE_BOOK))j._ms = performance.now() - t0; return j; } catch (e) { delete RUNS[k]; return { error: e.message }; } })()); };
+    try { const answer = await ENGINE.run('run:' + k, async signal => { const r = await fetch(enginePath(id,'run',api)+'?' + new URLSearchParams({ id, ticker: tk, from, to, cost, ...execution, ...Object.fromEntries(Object.entries(decodeP(p)).map(([k, v]) => ['p.' + k, v])) }), { signal }); return r.ok ? { body: await r.json() } : { error: await r.text() }; }); if ('error' in answer) { delete RUNS[k]; return { error: answer.error }; }
+      const j = answer.body; if(!pristineMethod(id,PRISTINE_BOOK))j._ms = performance.now() - t0; return j; } catch (e) { delete RUNS[k]; return { error: e.message }; } })()); };
 // the period bar: dates, quick presets, cost, and a Run button (the Rust API recomputes the whole backtest for that window)
 let BASKETS=[],BASKETS_IN=[],BASKETS_US=[],TICK_ALL_IN=[];
 function basketChoices(){const past=S.membership==='past';return S.region==='us'?[['us_sp500','S&P 500'],['us_nasdaq100','Nasdaq 100'],['us_dow30','Dow Jones'],['us_russell2000','Russell 2000']].map(([id,name])=>[id+(past?'_past':''),name]):[['nse500','NSE 500'],['nifty50','Nifty 50'],['midcap100','Midcap100'],['allfo','All F&O']];}
@@ -1716,7 +1752,7 @@ async function viewBasket(v,tk,crumbs,switches,selection,api,generation){
   const query=new URLSearchParams({id:v.id,basket:selection.basket,from:selection.from,to:selection.to,cost:'0',...VaultUI.costState(selection),max_positions:selection.max_positions,membership:selection.membership,...Object.fromEntries(Object.entries(decodeP(selection.p)).map(([k,value])=>['p.'+k,value]))});
   const key=api+'|'+query.toString();let d=BASKET_RUNS.get(key);
   try{
-    if(!d){const response=await fetch(enginePath(v.id,'basket-run',api)+'?'+query,{signal:AbortSignal.timeout(95000)});if(!response.ok)throw Error(await response.text());d=await response.json();if(d.status==='ready'){BASKET_RUNS.set(key,d);while(BASKET_RUNS.size>4)BASKET_RUNS.delete(BASKET_RUNS.keys().next().value);}}
+    if(!d){d=await ENGINE.run('basket:'+key,async signal=>{const response=await fetch(enginePath(v.id,'basket-run',api)+'?'+query,{signal:AbortSignal.any([signal,AbortSignal.timeout(95000)])});if(!response.ok)throw Error(await response.text());return response.json();});if(d.status==='ready'){BASKET_RUNS.set(key,d);while(BASKET_RUNS.size>4)BASKET_RUNS.delete(BASKET_RUNS.keys().next().value);}}
   }catch(error){if(generation!==busy)return '';return withheldStrategy(v,tk,crumbs,switches,{status:'unavailable',note:error.name==='TimeoutError'?'Basket request reached its time limit. No partial result is displayed; retry with a shorter covered period.':error.message});}
   if(generation!==busy)return '';
   if(d?.status!=='ready'||!d.stats||!d.dates?.length)return withheldStrategy(v,tk,crumbs,switches,{status:d?.status||'unavailable',note:d?.blocked||d?.note||'No complete admitted basket result is available.'});
@@ -1736,7 +1772,7 @@ async function viewBasket(v,tk,crumbs,switches,selection,api,generation){
   <div data-react-slot="strategy-params"></div><section class="box"><div class="box-h">Rules <span data-react-slot="visual-rules"></span><small>Source stock rule with a declared equal-slot portfolio application</small></div>${rulesPanel(v)}</section>${coverage}
   <section class="box"><div class="box-h">Basket equity <span class="legend"><span><i class="sw-line" style="background:var(--blue)"></i>Portfolio</span><label class="dcheck"><input type="checkbox" id="cmp">Compare with ${esc(LABEL[benchmark]||benchmark)} buy &amp; hold</label><label class="dcheck"><input type="checkbox" id="logs" checked>Log scale</label></span></div><div class="chart-tools"><button class="dbtn sm" data-chart-snapshot="c-eq">Download PNG</button><button class="dbtn sm" data-report-export="equity">Download Excel</button></div><div class="lwc" id="c-eq"></div><div id="equity-navigator" class="range-brush" role="group" aria-label="Visible period of the equity chart"><svg class="rb-spark" viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true"><polyline></polyline></svg><div class="rb-win" tabindex="0" role="slider" aria-label="Visible period: drag to move, drag the edges to resize, double-click to show all"><span class="rb-h" data-h="l" aria-hidden="true"></span><span class="rb-h" data-h="r" aria-hidden="true"></span></div><output class="rb-out"></output></div><div class="cap">Cash plus actual simultaneous position marks · ${d.equity.at(-1).toFixed(2)}× final normalized equity, including open marks</div></section>
   <div class="two"><section class="box"><div class="box-h">Drawdown <small>worst ${pct(s.max_dd,1)}</small></div><div class="chart-tools"><button class="dbtn sm" data-chart-snapshot="c-dd">Download PNG</button></div><div class="bkc" id="c-dd"></div></section><section class="box"><div class="box-h">Calendar-year returns</div><div class="chart-tools"><button class="dbtn sm" data-chart-snapshot="c-yr">Download PNG</button></div><div class="bkc" id="c-yr"></div></section></div>
-  ${VaultUI.benchmarkHTML(d,benchmark,benchmarkPrices)}${VaultUI.detailHTML(d)}<section class="box"><div class="box-h">Monthly returns (%)</div><div class="chart-tools"><button class="dbtn sm" data-report-export="monthly">Download Excel</button></div><div id="heatbox">${heatTable(d)}</div><p class="rnote">Calendar returns use the basket equity including held-position marks. Avg/Total is the arithmetic mean of displayed calendar-year returns.</p></section>${VaultUI.tradeHTML(d,STRAT.tk)}`;
+  ${VaultUI.benchmarkHTML(d,benchmark,benchmarkPrices)}${VaultUI.detailHTML(d)}<section class="box"><div class="box-h">Monthly returns (%)</div><div class="chart-tools"><button class="dbtn sm" data-report-export="monthly">Download Excel</button></div><div id="heatbox">${heatTable(d)}</div><p class="rnote">Calendar returns use the basket equity including held-position marks. Avg/Total is the arithmetic mean of displayed calendar-year returns.</p></section>${VaultUI.tradeHTML(d)}`;
 }
 
 function rulesPanel(v) {
@@ -1823,7 +1859,7 @@ async function viewStrategy() {
       <section class="box"><div class="box-h">Calendar-year returns <span class="legend"><span><i class="sw-box" style="background:var(--blue)"></i>Strategy</span><span><i class="sw-box" style="background:var(--bh)"></i>Buy &amp; hold</span></span></div><div class="chart-tools"><button class="dbtn sm" data-chart-snapshot="c-yr">Download PNG</button></div><div class="bkc" id="c-yr"></div></section></div>
     ${VaultUI.benchmarkHTML(d,isUS()?'SPX':'NIFTY 50',await ohlc(isUS()?'SPX':'NIFTY 50'))}${VaultUI.detailHTML(d)}
     <section class="box"><div class="box-h">Monthly returns (%) <span class="legend"><small>${Object.keys(periods(d, 4))[0]} – ${Object.keys(periods(d, 4)).slice(-1)[0]} · follows the backtest period · darker = larger</small><span class="join sm"><button class="join-item ${HEAT_DESC ? '' : 'active'}" data-heat="asc">Oldest first</button><button class="join-item ${HEAT_DESC ? 'active' : ''}" data-heat="desc">Newest first</button></span></span></div><div class="chart-tools"><label class="dfield">Colors <select id="heat-palette"><option value="classic">Green / red</option><option value="ocean">Blue / orange</option><option value="violet">Teal / magenta</option><option value="mono">Single hue</option></select></label><button class="dbtn sm" data-report-export="monthly">Download Excel</button></div><div class="heat-scroll"><div id="heatbox">${heatTable(d)}</div></div><p class="rnote">Avg/Total is the arithmetic mean of displayed calendar-year returns, including partial years; it is not CAGR. Zero returns display 0.00; absent months stay empty. ${unit?esc(UNIT_VISUAL_BASIS):''}</p></section>
-    ${VaultUI.tradeHTML(d,tk)}
+    ${VaultUI.tradeHTML(d)}
 
     ${unit?'<section class="box"><div class="box-h">Reviewed parameter scope</div><p class="rnote">Fixed DEMA16/8 and one observed bar since raw Buy. Alternate parameters, instrument classes and execution conventions require separate review.</p></section>':account?'<section class="box"><div class="box-h">Reviewed parameter scope</div><p class="rnote">This protected account is limited to the fixed reviewed configuration. Changed indicator, stop or risk settings need separate source and ledger review; no optimization selection inherits this acceptance.</p></section>':await optimSection(v, tk, d, false)}`;
 }
@@ -1979,8 +2015,11 @@ function resizeVisibleReportCharts(){
   CHARTS.forEach(({ch,el})=>{if(reportVisible(el))ch.resize(el.clientWidth,el.clientHeight);});
   if(STRAT&&!R.optim)void drawVisibleReportCharts();
 }
+// PDF capture and print show every report panel, so they count as showing.
+const panelShowing=el=>!el.closest('[data-report-panel]')?.hidden||document.body.matches('.pdf-capture,.report-print');
 async function drawVisibleReportCharts(){
   if(!STRAT||STRAT.pristine||R.optim)return;const {d}=STRAT;
+  safe('tradesheet',()=>{const el=$('[data-tradesheet-table]');if(el&&!el.firstChild&&panelShowing(el))el.innerHTML=VaultUI.tradeTableHTML(d,STRAT.tk);});
   // Each widget is initialized only after its existing container is visible.
   // Keeping it mounted preserves range, series toggles and indicator choices.
   safe('equity', () => { const el = $('#c-eq'); if (el && window.LightweightCharts) {
@@ -2015,21 +2054,32 @@ addEventListener('afterprint',()=>{document.body.classList.remove('report-print'
 let busy = 0, lastName = '', LIST_HASH = ''; // the list (with its filters) the user last looked at
 function viewSaved() {
   const list = VaultUI.savedList(), I = VaultUI.ICON;
-  const rows = list.map(x => { const v = ALLCAT.find(c => c.id === x.id); return `<div class="saved-row">${I.saved}<div><a class="t" href="${esc(x.hash)}">${esc(x.name)}</a><small>${esc(v ? BOOK[v.book]?.title || '' : '')}${v ? ' · ' : ''}${esc(LABEL[x.tk] || x.tk)} · saved ${esc(x.at)}</small></div><button type="button" class="ibtn" data-unsave="${esc(x.key)}" title="Remove from Saved" aria-label="Remove from Saved">${I.save}</button></div>`; }).join('');
+  const rows = list.map(x => { const v = ALLCAT.find(c => c.id === x.id); return `<div class="saved-row">${I.saved}<div><a class="t" href="${esc(x.hash)}">${esc(x.name)}</a><small>${esc(v ? BOOK[v.book]?.title || '' : '')}${v ? ' · ' : ''}${esc(LABEL[x.tk] || x.tk.split(':').at(-1))} · saved ${esc(x.at)}</small></div><button type="button" class="ibtn" data-unsave="${esc(x.key)}" title="Remove from Saved" aria-label="Remove from Saved">${I.save}</button></div>`; }).join('');
   return `<section class="box"><div class="box-h">Saved strategies <small>${list.length} saved · stored in this browser</small></div>${list.length ? `<div class="saved-list">${rows}</div>` : '<p class="rnote">Nothing saved yet. Open a strategy and press Save to keep it here, with its index and settings.</p>'}</section>`;
 }
 function savedCount() { const n = VaultUI.savedList().length, el = $('#saved-count'); if (el) { el.textContent = n; el.hidden = !n; } }
 document.addEventListener('vault-saved', () => { savedCount(); if (R.name === 'saved') render(); });
 document.addEventListener('click', e => { const b = e.target.closest('[data-unsave]'); if (b) VaultUI.writeSaved(VaultUI.savedList().filter(x => x.key !== b.dataset.unsave)); });
+// Everything that decides which calculation a page asks for. A sort, a view or a theme change leaves calls running.
+let ENGINE_PAGE='';
+const enginePage=()=>[R.path,...['region','tk','tab','from','to','cost','slippage','rollover','p','basket','run_scope','research_mode','membership','max_positions'].map(key=>S[key])].join('|');
+// One draw of a page that shows first and fills in. Its calculations are all asked here, so anything else in flight is no longer wanted;
+// the next page keeps a calculation it also needs. The engine cannot stop a started run yet (see A2), the browser's share ends here.
+async function paintPass(){
+  const pass=await PAINT.run(()=>R.name==='home'?homeModel():viewList());
+  ENGINE.keepOnly(pass.wanted);
+  return pass;
+}
 async function render() {
-  const my=++busy,ticket=vaultStore.begin(R.path),route=resolveRoute(location.hash);
+  const my=++busy,ticket=vaultStore.begin(R.path),route=resolveRoute(location.hash),custom=customPages.find(page=>page.path===route.path),paints=!custom&&['home','guru','all'].includes(R.name);
+  if(paints)ENGINE_PAGE='';
+  else if(enginePage()!==ENGINE_PAGE){ENGINE.keepOnly(new Set());ENGINE_PAGE=enginePage();}
   if(R.name==='guru'||R.name==='all')LIST_HASH=location.hash||'#/';
   STRAT=null;RULE_VISUAL=null;if(R.name!=='strategy')bookCtx(S.book||'stc9');
   try {
-    const custom=customPages.find(page=>page.path===route.path);
-    let home=null,reading=null,html='';
+    let home=null,reading=null,html='',pending=null;
     if(!custom){
-      if(R.name==='home')home=await homeModel();
+      if(paints){const pass=await paintPass();pending=pass.pending;if(R.name==='home')home=pass.value;else html=pass.value;}
       else if(R.name==='source')reading=readingModel();
       else html=R.name==='saved'?viewSaved():R.name==='strategy'?await viewStrategy():await viewList();
     }
@@ -2040,9 +2090,15 @@ async function render() {
     pendingFocus={id:focus,pos};
     const status=custom?.label||(R.name==='strategy'?'Strategy':`${isUS()?'US':'India'} · ${S.tk==='ALL'?'all indices':LABEL[S.tk]||S.tk} · ${TABS[S.tab]?.name||'Research'}`);
     vaultStore.commit(ticket,{html,home,reading,route,state:{...S},status,strategyRules:route.name==='strategy'?RULE_VISUAL:null,strategyAccount:route.name==='strategy'||route.name==='optimization'?STRAT?.sourceView??null:null,strategyPristine:route.name==='strategy'||route.name==='optimization'?STRAT?.pristine??null:null,strategyUnit:route.name==='strategy'||route.name==='optimization'?STRAT?.unit??null:null,strategySettings:route.name==='strategy'?STRAT?.settings??null:null});
+    if(pending?.size)await PAINT.until(pending,()=>my!==busy,async()=>{
+      const pass=await paintPass();
+      if(my===busy){if(R.name==='home')HOME_STATS=pass.value.authorStats;vaultStore.fill(ticket,R.name==='home'?{home:pass.value}:{html:pass.value});}
+      return pass;
+    });
   }catch(error){if(my===busy)vaultStore.fail(ticket,error.message||'Research data is unavailable.');}
 }
-let pendingFocus=null;
+let pendingFocus=null,lastListPage='1';
+const LIST_TOP_GAP=140; // clears the sticky header and filter bar when a new page of results scrolls into view
 function cleanupCharts(){
   SIGNAL_REQUEST++;SIGNAL_PENDING=null;
   REPORT_OBSERVER?.disconnect();REPORT_OBSERVER=null;
@@ -2054,7 +2110,10 @@ function commitReactPage(){
   VaultUI.init();
   const focus=pendingFocus;pendingFocus=null;
   if(focus?.id){const element=document.getElementById(focus.id);if(element){element.focus();try{element.setSelectionRange(focus.pos,focus.pos);}catch{}}}
-  const key=R.name+(R.id||'')+(R.optim?'/optimization':'');if(key!==lastName)scrollTo(0,0);lastName=key;
+  const key=R.name+(R.id||'')+(R.optim?'/optimization':'');
+  if(key!==lastName)scrollTo(0,0);
+  else if(S.list_page!==lastListPage){const results=$('#results');if(results)scrollTo(0,Math.max(0,results.getBoundingClientRect().top+scrollY-LIST_TOP_GAP));}
+  lastName=key;lastListPage=S.list_page;
   drawStrategy();
 }
 // ---------------------------------------------------------------- events
@@ -2088,39 +2147,59 @@ document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.ma
 document.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('details.dd[open]').forEach(d => d.removeAttribute('open')); });
 document.addEventListener('change', e => {if(e.target.id==='strategy-stock'){if(!e.target.value)return;return setState({run_scope:'single',basket:'',tk:e.target.value,from:'',to:''});}if(e.target.id==='library-stock')return setState({tk:e.target.value,from:'',to:''});if(e.target.id==='library-instrument'){const value=e.target.value;if(value.startsWith('i:'))return setState({basket:'',tk:value.slice(2),from:'',to:''});const key=value.slice(2),basket=BASKETS.find(b=>b.id===key);if(basket?.symbols?.length)return setState({basket:key,tk:basket.symbols[0],from:'',to:''});return;}if(e.target.id==='library-sort')return setState({library_sort:e.target.value,library_limit:'24',library_page:'1',source_page:'1'}); if(e.target.id==='basket-universe'){const base=S.basket.replace(/_past$/,''),key=base+(e.target.value==='current_plus_past'?'_past':''),basket=BASKETS.find(b=>b.id===key),symbol=S.tk.split(':').at(-1),match=basket?.symbols?.find(x=>x.split(':').at(-1)===symbol);return setState({basket:key,tk:match||basket?.symbols?.[0]||S.tk,from:'',to:''});} if(e.target.id==='basket-symbol')return setState({tk:e.target.value});const k = e.target.dataset?.key; if (k) setState({ [k]: e.target.value }); });
 let qt; document.addEventListener('input', e => { if (e.target.id !== 'q') return; clearTimeout(qt); qt = setTimeout(() => setState({ q: e.target.value }), 300); });
-addEventListener('hashchange', () => { if(!GURUS_API.length||!ALLCAT.length)return;readRoute(); render(); });
+addEventListener('hashchange', () => { if(!GURUS_API.length||!ALLCAT.length)return;void showRoute(); });
 
 const THEMES = [['midnight','Midnight','linear-gradient(135deg,#0d1727 50%,#4eade8 50%)'],['forest','Forest','linear-gradient(135deg,#eef4ed 50%,#357552 50%)'],['sand','Sand','linear-gradient(135deg,#f6f0e5 50%,#bd6935 50%)'],['plum','Plum','linear-gradient(135deg,#f6edf3 50%,#8c477d 50%)'],['cobalt','Cobalt','linear-gradient(135deg,#edf2fc 50%,#315ad6 50%)'],['steel', 'Steel', 'linear-gradient(135deg,#f3f3f3 50%,#2f5a8f 50%)'], ['aqua', 'Aqua', 'linear-gradient(135deg,#ffffff 50%,#10adbc 50%)'], ['lagoon', 'Lagoon', 'linear-gradient(135deg,#e9f8fa 50%,#00798a 50%)'], ['glacier', 'Glacier', 'linear-gradient(135deg,#f8fcfd 50%,#3cc0c9 50%)']];
 function setTheme(t, redraw) { if (t === 'steel') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t; try { localStorage.setItem('vault-theme', t); } catch (e) {}
   document.querySelectorAll('#themes button').forEach(b => b.classList.toggle('on', b.dataset.theme === t)); if (redraw && ALLCAT.length) { lastName = ''; render(); } }
+const dataFile=async file=>{try{const response=await fetch('data/'+file);return response.ok?await response.json():null;}catch{return null;}};
+const applyBaskets=(data,region)=>{try{if(data){const pool=region==='us'?TICK_ALL_US:TICK_ALL_IN,keys=new Set(pool.map(t=>t.ticker)),items=(Array.isArray(data)?data:data.baskets||[]).map(b=>({...b,symbols:(b.symbols||[]).filter(key=>keys.has(key))}));if(region==='us')BASKETS_US=items;else BASKETS_IN=items;}}catch{}};
+// US tickers and the library are loaded once, by the first page that reads them (services/route-data).
+let US_DATA=null,US_FAILED=false,LIBRARY_DATA=null,DATA_READY=new Set();
+const usOffered=()=>!US_FAILED; // the region switch stays on until a US view has actually failed to load
+const usData=()=>US_DATA||(US_DATA=(async()=>{
+  const baskets=dataFile('baskets-us.json');
+  try { const u = await (await fetch(API_US + '/tickers')).json(); TICK_ALL_US=u;u.forEach(t=>{if(!LABEL[t.ticker])LABEL[t.ticker]=t.symbol||t.ticker.split(':').at(-1);}); TICK_US = US_INDICES.map(k => u.find(t => t.ticker === k)).filter(Boolean); if (!TICK_US.length) TICK_US = null; } catch (e) { TICK_US = null; }
+  US_FAILED=!TICK_US;applyBaskets(await baskets,'us');DATA_READY.add('us');
+})());
+const libraryData=()=>LIBRARY_DATA||(LIBRARY_DATA=(async()=>{
+  const metadataFiles=['book-coverage.json','pristine-reading-index.json','book-file-index.json','book-categories.json','research-share-library.json','tharp-source-review.json','library-progress.json','research-share-review.json'];
+  const metadata=await Promise.all(metadataFiles.map(dataFile));
+  if(metadata[0])BOOK_COVERAGE=metadata[0];
+  try{const data=metadata[1];if(data){const entries=(data.entries||[]).map(b=>({...b,author_metadata:b.source_author,years_reported:b.year?[String(b.year)]:[]}));BOOK_COVERAGE.authors.pristine={id:'pristine',name:'Pristine Trading',source_titles:entries,catalogue_books:GURU.pristine.books.map(b=>({id:b.id,title:b.title,summary:b.blurb})),counts:{catalogue_books:3,source_title_candidates:entries.length,local_pdf_files:(data.counts?.source_locations||0)},note:'Three curated reading entries, plus related Pristine manuals and articles with their recorded author credits. Source-title candidates, document versions and split materials are not independently verified distinct authored books. Original source bytes were preserved. Selected TPM1 daily branches have separate source review; other sources, execution modes and original performance are not thereby certified.'};}}catch{}
+  if(metadata[2])BOOK_FILE_INDEX=metadata[2];
+  if(metadata[3])BOOK_CATEGORIES=metadata[3];
+  try{if(metadata[4])mergeResearchLibrary(metadata[4]);}catch{}
+  try{if(metadata[5])applyReadingReviews(metadata[5]);}catch{}
+  if(metadata[6]){
+    LIBRARY_PROGRESS=metadata[6];
+    for(const link of LIBRARY_PROGRESS.approved_source_book_links||[]){const b=BOOK[link.book_id];if(b&&b.guru.id===link.author_id&&link.evidence&&typeof link.source_id==='string')b.sourceIds=[...new Set([...(b.sourceIds||[]),link.source_id])];}
+  }
+  try{if(metadata[7])applyShareReview(metadata[7]);}catch{}
+  finalizeReadingIndex();DATA_READY.add('library');
+})());
+async function showRoute(){
+  const at=location.hash,need=routeData(at,{isCustom:path=>customPages.some(page=>page.path===path),isUsOnly:id=>pristineMethod(id,PRISTINE_BOOK),isGuru:id=>!!GURU[id]});
+  if((need.us&&!DATA_READY.has('us'))||(need.library&&!DATA_READY.has('library'))){
+    vaultStore.begin(at);
+    await Promise.all([need.us?usData():null,need.library?libraryData():null]);
+    if(location.hash!==at)return; // the user moved on; that navigation draws its own page
+  }
+  readRoute();render();
+}
 async function initializeRuntime(account) {
   try {
     setTheme(account.settings.theme||'aqua', false);
     const get = async u => { const response = await fetch(API + u); if (!response.ok) throw new Error(await response.text()); return response.json(); };
-    const [connorsCat, rossCat, chandeCat, tk, gurus] = await Promise.all([get('/guru/connors/strategies'), get('/guru/ross/strategies'), get('/guru/chande/strategies'), get('/tickers'), get('/gurus')]);
+    const [connorsCat, rossCat, chandeCat, tk, gurus, baskets] = await Promise.all([get('/guru/connors/strategies'), get('/guru/ross/strategies'), get('/guru/chande/strategies'), get('/tickers'), get('/gurus'), dataFile('baskets.json')]);
     const pristineCat=gurus.some(owner=>owner.id==='pristine')?await get('/guru/pristine/strategies'):[];
     const cat=[...connorsCat.map(v=>({...v,api:'connors',guru:BOOK[v.book]?.guru.id||'connors'})),...rossCat.map(v=>({...v,api:'ross',guru:'ross'})),...chandeCat.map(v=>({...v,api:'chande',guru:'chande'})),...pristineCat.map(v=>({...v,api:'pristine',guru:'pristine'}))]; // guru = the book's author; api = the engine namespace that serves it
     TICK_ALL_IN=tk;tk.forEach(t=>{if(!LABEL[t.ticker])LABEL[t.ticker]=t.symbol||t.ticker.split(':').at(-1);});
     TICKERS = TICK_IN = tk.filter(t => IN_INDICES.includes(t.ticker)); GURUS_API = gurus;
-    try { const u = await (await fetch(API_US + '/tickers')).json(); TICK_ALL_US=u;u.forEach(t=>{if(!LABEL[t.ticker])LABEL[t.ticker]=t.symbol||t.ticker.split(':').at(-1);}); TICK_US = US_INDICES.map(k => u.find(t => t.ticker === k)).filter(Boolean); if (!TICK_US.length) TICK_US = null; } catch (e) { TICK_US = null; }
     ALLCAT = cat.map((v, i) => ({ ...v, ord: i, book: v.book || 'stc9', style: v.group.split(' · ')[0] })); CAT = marketCat();
     Object.values(BOOK).forEach(b => { if (CAT.some(v => v.book === b.id)) b.live = true; });
-    const metadataFiles=['baskets.json','baskets-us.json','book-coverage.json','pristine-reading-index.json','book-file-index.json','book-categories.json','research-share-library.json','tharp-source-review.json','library-progress.json','research-share-review.json'];
-    const metadata=await Promise.all(metadataFiles.map(async file=>{try{const response=await fetch('data/'+file);return response.ok?await response.json():null;}catch{return null;}}));
-    for(const [offset,region] of [[0,'in'],[1,'us']]){try{const data=metadata[offset];if(data){const pool=region==='us'?TICK_ALL_US:TICK_ALL_IN,keys=new Set(pool.map(t=>t.ticker)),items=(Array.isArray(data)?data:data.baskets||[]).map(b=>({...b,symbols:(b.symbols||[]).filter(key=>keys.has(key))}));if(region==='us')BASKETS_US=items;else BASKETS_IN=items;}}catch{}}
-    if(metadata[2])BOOK_COVERAGE=metadata[2];
-    try{const data=metadata[3];if(data){const entries=(data.entries||[]).map(b=>({...b,author_metadata:b.source_author,years_reported:b.year?[String(b.year)]:[]}));BOOK_COVERAGE.authors.pristine={id:'pristine',name:'Pristine Trading',source_titles:entries,catalogue_books:GURU.pristine.books.map(b=>({id:b.id,title:b.title,summary:b.blurb})),counts:{catalogue_books:3,source_title_candidates:entries.length,local_pdf_files:(data.counts?.source_locations||0)},note:'Three curated reading entries, plus related Pristine manuals and articles with their recorded author credits. Source-title candidates, document versions and split materials are not independently verified distinct authored books. Original source bytes were preserved. Selected TPM1 daily branches have separate source review; other sources, execution modes and original performance are not thereby certified.'};}}catch{}
-    if(metadata[4])BOOK_FILE_INDEX=metadata[4];
-    if(metadata[5])BOOK_CATEGORIES=metadata[5];
-    try{if(metadata[6])mergeResearchLibrary(metadata[6]);}catch{}
-    try{if(metadata[7])applyReadingReviews(metadata[7]);}catch{}
-    if(metadata[8]){
-      LIBRARY_PROGRESS=metadata[8];
-      for(const link of LIBRARY_PROGRESS.approved_source_book_links||[]){const b=BOOK[link.book_id];if(b&&b.guru.id===link.author_id&&link.evidence&&typeof link.source_id==='string')b.sourceIds=[...new Set([...(b.sourceIds||[]),link.source_id])];}
-    }
-    try{if(metadata[9])applyShareReview(metadata[9]);}catch{}
-    finalizeReadingIndex();
-    readRoute(); render();
+    applyBaskets(baskets,'in');
+    await showRoute();
   } catch (error) { vaultStore.fail(vaultStore.begin('/'),error.message||'Could not reach the calculation engine.'); }
 }
 
@@ -2131,7 +2210,7 @@ async function homeModel(){
  const [h,readiness]=await Promise.all([heroStats(),getReadiness(selectedTicker,S.from||'',S.to||'')]);
  const inventoryRecords=libraryRecords(),allRecords=inventoryRecords.filter(record=>inLibraryScope(libraryScope(record,CURATED_AUTHOR_IDS),S.library_scope)),scopeAuthorIds=new Set(allRecords.flatMap(recordAuthorIds)),scopeAuthors=LIB.filter(author=>scopeAuthorIds.has(author.id)),authors=VaultLibraryBrowser.matchingAuthors(scopeAuthors,allRecords,S.library_q,S.book_category),live=LIB.filter(g=>g.books.some(b=>b.live));
  const scoped=Object.fromEntries(await Promise.all(live.map(async g=>[g.id,await heroStats(g.id)])));
- const summary=await getSum(h.tk,S.from||'',S.to||''),states=Object.fromEntries(LIB.map(g=>[g.id,VaultLibraryDiscovery.authorAvailability(g.books.map(b=>b.id),CAT,summary,readiness)]));
+ const summary=await getSum(h.tk,S.from||'',S.to||''),states=Object.fromEntries(LIB.map(g=>[g.id,VaultLibraryDiscovery.authorAvailability(g.books.map(b=>b.id),g.books.length?CAT:[],summary,readiness)])); // reading-only authors (most of the library) have no definitions to scan
  pristineAuthorStatus(states.pristine);
  const scopedRecords=scopedLibraryRecords(allRecords),scopeCounts=new Map([...scopedRecords].map(([id,records])=>[id,{total:records.length,catalogue:records.filter(record=>record.kind==='catalogue').length,reading:records.filter(record=>record.kind==='source').length}]));
  const pool=S.region==='us'?TICK_ALL_US:TICK_ALL_IN,etfs=S.region==='us'?TICK_ALL_US.filter(t=>US_ETFS.includes(t.ticker)):[];
@@ -2139,7 +2218,7 @@ async function homeModel(){
  // Discover compatible measured results on at most one stock and one ETF.
  // This never runs an entire basket or treats admissions as backtest results.
  const references=[];
- if(S.library_view!=='books'&&authors.some(g=>!states[g.id].availableFamilies&&CAT.some(v=>v.guru===g.id&&v.status==='live'&&v.instrument_policy?.allowed_types?.some(type=>['individual_stock','etf'].includes(type))))) {
+ if(summary!==NOT_READY&&readiness!==NOT_READY&&S.library_view!=='books'&&authors.some(g=>!states[g.id].availableFamilies&&CAT.some(v=>v.guru===g.id&&v.status==='live'&&v.instrument_policy?.allowed_types?.some(type=>['individual_stock','etf'].includes(type))))) {
   for(const context of referenceBacktestContexts(S.region,BASKETS,pool,etfs)) {
    try {const sample=await getSum(context.tk,context.from,context.to),ready=await getReadiness(context.tk,context.from,context.to);references.push({context,summary:sample,readiness:ready});}
    catch { /* No successful measured summary: leave the selected context honest. */ }
@@ -2147,7 +2226,7 @@ async function homeModel(){
  }
  const contexts=Object.fromEntries(authors.map(g=>{
   const selectedResult={context:selected,availability:states[g.id],summary,readiness};
-  const alternatives=references.map(sample=>({...sample,availability:VaultLibraryDiscovery.authorAvailability(g.books.map(b=>b.id),CAT,sample.summary,sample.readiness)}));
+  const alternatives=references.map(sample=>({...sample,availability:VaultLibraryDiscovery.authorAvailability(g.books.map(b=>b.id),g.books.length?CAT:[],sample.summary,sample.readiness)}));
   return [g.id,chooseBacktestContext(selectedResult,alternatives)];
  }));
  const progress=currentLibraryProgress();
@@ -2167,14 +2246,14 @@ async function homeModel(){
  const searchAuthors=VaultLibraryBrowser.matchingAuthors(scopeAuthors,allRecords,'',S.book_category).map(g=>({id:g.id,curated:CURATED_AUTHOR_IDS.has(g.id),name:['?','unknown','anonymous'].includes(g.name?.trim().toLowerCase())?'Source credit awaiting review':g.name,photo:photoOf(g),initials:initials(g.name),href:guruLink(g.id)}));
  const indices=S.region==='us'?TICK_US:TICK_IN;
  const enabled=ALLCAT.filter(variant=>variant.status==='live');
- return {listedPeople:list.filter(g=>g.person).length,identifiedAuthors:identifiedAuthorCount,libraryTotals:libraryTotals(LIB.flatMap(g=>g.books.map(b=>b.id))),strategiesFound:progress.strategiesFound,backtestedStrategies:progress.backtestedStrategies,progressCurrent:progress.current,summaryIssues:summaryIssues(h.tk,S.from||'',S.to||''),authorStats:scoped,market:libraryMarket(S),implementedMethods:new Set(enabled.map(variant=>variant.book+':'+variant.family)).size,enabledVariants:enabled.length,implementedBooks:new Set(enabled.map(variant=>variant.book)).size,authors:scopeAuthorIds.size,curatedAuthors:CURATED_AUTHOR_IDS.size,scope:S.library_scope,inventoryGroups:LIB.length,inventoryEntries:inventoryRecords.length,entries:allRecords.length,families:h.tested,symbol:LABEL[h.tk]||h.tk,symbolCount:TICKERS.length,basket:!!S.basket,authorCards,searchAuthors,bookCards,page:{page,pages,total,key:'library_page',label:S.library_view==='books'?'books':'authors'},query:S.library_q,category:S.book_category,view:S.library_view,etfs:etfs.map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),indices:(indices||[]).map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),baskets:BASKETS.map(b=>({id:b.id,name:b.name,symbols:b.symbols||[]})),symbols:TICKERS.map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),usAvailable:!!TICK_US,guilloche:GUILL,connorsLink:guruLink('connors'),strategiesLink:href('/strategies',{tk:S.tk,basket:S.basket})};
+ return {listedPeople:list.filter(g=>g.person).length,identifiedAuthors:identifiedAuthorCount,libraryTotals:libraryTotals(LIB.flatMap(g=>g.books.map(b=>b.id))),strategiesFound:progress.strategiesFound,backtestedStrategies:progress.backtestedStrategies,progressCurrent:progress.current,summaryIssues:summaryIssues(h.tk,S.from||'',S.to||''),resultsPending:PAINT.waiting(),authorStats:scoped,market:libraryMarket(S),implementedMethods:new Set(enabled.map(variant=>variant.book+':'+variant.family)).size,enabledVariants:enabled.length,implementedBooks:new Set(enabled.map(variant=>variant.book)).size,authors:scopeAuthorIds.size,curatedAuthors:CURATED_AUTHOR_IDS.size,scope:S.library_scope,inventoryGroups:LIB.length,inventoryEntries:inventoryRecords.length,entries:allRecords.length,families:h.tested,symbol:LABEL[h.tk]||h.tk,symbolCount:TICKERS.length,basket:!!S.basket,authorCards,searchAuthors,bookCards,page:{page,pages,total,key:'library_page',label:S.library_view==='books'?'books':'authors'},query:S.library_q,category:S.book_category,view:S.library_view,etfs:etfs.map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),indices:(indices||[]).map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),baskets:BASKETS.map(b=>({id:b.id,name:b.name,symbols:b.symbols||[]})),symbols:TICKERS.map(t=>({ticker:t.ticker,name:LABEL[t.ticker]||t.ticker})),usAvailable:usOffered(),guilloche:GUILL,connorsLink:guruLink('connors'),strategiesLink:href('/strategies',{tk:S.tk,basket:S.basket})};
 }
 let startup;
 window.VaultRuntime={
  bootstrap:account=>startup||(startup=initializeRuntime(account)),commit:commitReactPage,cleanup:cleanupCharts,patch:setState,changeTheme:theme=>setTheme(theme,true),
  activateReportTab:resizeVisibleReportCharts,pristineCurrent,exportPristine:(data,view,kind)=>VaultUI.pristineExport(data,view,kind),
  openAuthor:(id,event)=>window.openGuru(id,event),closeAuthor:()=>window.closeGuru(),actions:()=>VaultUI.actions(),themes:THEMES,
- saved:()=>VaultUI.savedList().map(item=>({...item,book:BOOK[ALLCAT.find(v=>v.id===item.id)?.book]?.title||'',symbol:LABEL[item.tk]||item.tk})),removeSaved:key=>VaultUI.writeSaved(VaultUI.savedList().filter(item=>item.key!==key))
+ saved:()=>VaultUI.savedList().map(item=>({...item,book:BOOK[ALLCAT.find(v=>v.id===item.id)?.book]?.title||'',symbol:LABEL[item.tk]||item.tk.split(':').at(-1)})),removeSaved:key=>VaultUI.writeSaved(VaultUI.savedList().filter(item=>item.key!==key))
 };
 
 function readingModel(){
