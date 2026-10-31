@@ -13,8 +13,8 @@ pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 /// beyond it: levels are compared with a 1e-9 allowance so that rounding in the averages cannot decide a crossing.
 const EPS: f64 = 1e-9;
 
-const RSI_NOTE: &str = "[Declared readings] Wilder's RSI (the article's figures were made with MetaStock: averages of up and down closes smoothed Wilder's way) over nine days. 'Crosses above 30' = above 30 at today's close after being at or below 30 the day before; 'crosses below 70' mirrored. Long only, as the article counts round trips (option: also short, so that the cross below 70 reverses to short and the cross above 30 covers). Signals at the close, filled at the next open (option: at the signal close). No stop in the article, none added. Options from the same page: 14 days (Figure 1) and the 'strict' version (buy when the RSI falls below 30, sell when it rises above 70). Printed check: Microsoft, 30 Mar 1998 - 28 Mar 2000, 'five round-trip trades ... returned a 106.5% profit'. Indices, ETFs and India are a declared application.";
-const STO_NOTE: &str = "[Declared readings] Slow stochastic (5,3): fast %K = 100 x (close - 5-day lowest low) / (5-day highest high - 5-day lowest low), slow %K = its 3-day simple average, slow %D = the 3-day simple average of slow %K (the article's '(5,3)' and 'five-day stochastics (with three-day slowing)'). The signal line is %D ('most technicians consider the %D line to be more accurate'; %K is an option). Buy when %D rises back above 20 (above 20 today, at or below the day before); sell when it falls back below 80. Long only (option: also short, reversing at the same crossings). Signals at the close, filled at the next open (option: at the close). No stop given, none added. Option: the 'strictest rule' (buy when %D falls below 20, sell when it rises above 80). The %K/%D crossover inside the zones is another strategy on the same page, not coded. No printed results. Indices, ETFs and India are a declared application.";
+const RSI_NOTE: &str = "[Declared readings] Wilder's RSI (the article's figures were made with MetaStock: averages of up and down closes smoothed Wilder's way) over nine days. 'Crosses above 30' = above 30 at today's close after being at or below 30 the day before; 'crosses below 70' mirrored. Long only, as the article counts round trips (option: also short, so that the cross below 70 reverses to short and the cross above 30 covers). Signals and fills at the close (MetaStock's default; with close fills our MSFT run gives the article's five round trips and +106.45% compounded vs the printed +106.5%; next-open fills, an option, give +100.8%). No stop in the article, none added. Options from the same page: 14 days (Figure 1) and the 'strict' version (buy when the RSI falls below 30, sell when it rises above 70). Printed check: Microsoft, 30 Mar 1998 - 28 Mar 2000, 'five round-trip trades ... returned a 106.5% profit'. Indices, ETFs and India are a declared application.";
+const STO_NOTE: &str = "[Declared readings] Slow stochastic (5,3): fast %K = 100 x (close - 5-day lowest low) / (5-day highest high - 5-day lowest low), slow %K = its 3-day simple average, slow %D = the 3-day simple average of slow %K (the article's '(5,3)' and 'five-day stochastics (with three-day slowing)'). The signal line is %D ('most technicians consider the %D line to be more accurate'; %K is an option). Buy when %D rises back above 20 (above 20 today, at or below the day before); sell when it falls back below 80. Long only (option: also short, reversing at the same crossings). Signals and fills at the close, like the RSI article (same author, MetaStock figures); next-open fills are an option. No stop given, none added. Option: the 'strictest rule' (buy when %D falls below 20, sell when it rises above 80). The %K/%D crossover inside the zones is another strategy on the same page, not coded. No printed results. Indices, ETFs and India are a declared application.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![
@@ -45,7 +45,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     let common = || vec![p("mode", "1 = the 'strict' version (buy below the low line, sell above the high line); default 0", 0., 0., 1., 1.),
         p("short", "1 = also short (reverse at the same crossings); default 0 long only", 0., 0., 1., 1.),
-        p("close", "1 = fill at the signal close (default 0: next open)", 0., 0., 1., 1.)];
+        p("close", "1 = fill at the signal close (default, reproduces the printed MSFT result); 0 = next open", 1., 0., 1., 1.)];
     match id {
         "wtaaii_rsi9" => Some([p("n", "RSI days (9; Figure 1 uses 14)", 9., 2., 50., 1.)].into_iter().chain(common()).collect()),
         "wtaaii_stoch" => Some([p("line", "1 = trade slow %K instead of %D", 0., 0., 1., 1.)].into_iter().chain(common()).collect()),
@@ -86,9 +86,9 @@ mod tests {
         let t = run("wtaaii_rsi9", &x, 0, r.len() - 1, &Params::new()).unwrap();
         let v = rsi(&x.c, 9);
         assert_eq!(t.len(), 1);
-        let s = t[0].legs[0].i - 1;
-        assert!(v[s] > 30. && v[s - 1] <= 30. && t[0].dir == 1. && t[0].entry_kind == "open");
-        assert!(v[t[0].exit_i - 1] < 70.);
+        let s = t[0].legs[0].i; // close fills: the signal bar itself
+        assert!(v[s] > 30. && v[s - 1] <= 30. && t[0].dir == 1. && t[0].entry_kind == "close");
+        assert!(v[t[0].exit_i] < 70. && v[t[0].exit_i - 1] >= 70.);
     }
 }
 
