@@ -69,6 +69,11 @@ export interface AuthorCard {
   sharpe: string | null;
 }
 export interface HomeModel {
+  /** Per filter option, how many authors (or books in the Books view) choosing it would show. */
+  filterCounts?: Record<string, Record<string, number>>;
+  /** The unfiltered library scope, for "showing N of M". */
+  totals?: {people: number; collections: number; books: number};
+  marketChoices?: {in: {ticker: string; name: string}[]; us: {ticker: string; name: string}[]};
   identifiedAuthors?: number;
   listedPeople?: number;
   libraryTotals?: {books: number; otherSources: number; authors: number};

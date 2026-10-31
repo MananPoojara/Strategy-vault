@@ -1,238 +1,139 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { HomeModel } from "../state/store";
 import { matchingSearchAuthors, type SearchAuthor } from "../services/library-search";
-const categories = [
-  ["", "All books"],
-  ["rule-based", "Rule-based"],
-  ["psychology", "Psychology"],
-  ["money-management", "Money management"],
-];
-export function LibraryControls({
-  model,
-  state,
-}: {
-  model: HomeModel;
-  state: Record<string, string>;
+import {
+  activeFilters, BOOK_STATUS_LABELS, CLEAR_ALL, SCOPE_LABELS, STATUS_LABELS, TOPIC_LABELS, TYPE_LABELS,
+} from "../services/author-filters";
+
+type Item = [value: string, label: string] | { heading: string };
+const patch = (next: Record<string, string>) =>
+  window.VaultRuntime.patch({ ...next, library_limit: "24", library_page: "1", source_page: "1" });
+const entries = (labels: Record<string, string>): Item[] => Object.entries(labels);
+
+/** One pill of the filter bar: the same <details class="dd"> markup and CSS as the strategies page. */
+function Dropdown({ name, items, current, counts, all, shown, onPick }: {
+  name: string;
+  items: Item[];
+  current: string;
+  counts?: Record<string, number>;
+  /** Label of the reset option; a pill without it always has a value (Browse, Market, Sort). */
+  all?: string;
+  /** Text after the name; defaults to the chosen option. */
+  shown?: string;
+  onPick: (value: string) => void;
 }) {
-  const etfs = state.region === "us" ? model.etfs || [] : [];
-  const patch = (next: Record<string, string>) =>
-    window.VaultRuntime.patch({
-      ...next,
-      library_limit: "24",
-      library_page: "1",
-      source_page: "1",
-    });
+  const isSet = all !== undefined && current !== "";
+  const label = shown ?? (items.find((item) => Array.isArray(item) && item[0] === current) as [string, string] | undefined)?.[1];
+  const option = (value: string, text: string) => {
+    const count = counts?.[value], active = current === value;
+    return (
+      <li key={value}>
+        <button type="button" className={active ? "active" : ""} aria-pressed={active}
+          disabled={!active && count === 0} onClick={() => onPick(value)}>
+          <span>{text}</span>
+          {count != null && <span className="badge">{count.toLocaleString("en-IN")}</span>}
+        </button>
+      </li>
+    );
+  };
   return (
-    <section
-      className="library-controls library-controls-react"
-      aria-label="Library filters"
-    >
-      <div className="library-controls-main">
-        <label className="library-sort">
-          Library scope{" "}
-          <select
-            aria-label="Library scope"
-            value={state.library_scope || "trading"}
-            onChange={(event) => {
-              event.stopPropagation();
-              patch({ library_scope: event.target.value });
-            }}
-          >
-            <option value="trading">Trading library</option>
-            <option value="technical">Supporting technical material</option>
-            <option value="pending">Relevance review pending</option>
-            <option value="all">Full source inventory</option>
-          </select>
-        </label>
-        <div
-          className="join library-mode"
-          role="group"
-          aria-label="Browse library"
-        >
-          {[
-            ["authors", "Authors"],
-            ["books", "Books & reading"],
-          ].map(([key, label]) => (
-            <button
-              key={key}
-              className={`join-item ${model.view === key ? "active" : ""}`}
-              onClick={() =>
-                patch({ library_view: key, library_sort: "default" })
-              }
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <label className="library-sort">
-          Sort{" "}
-          <select
-            id="library-sort"
-            value={state.library_sort || "default"}
-            onChange={(event) => {
-              event.stopPropagation();
-              patch({ library_sort: event.target.value });
-            }}
-          >
-            <option value="default">
-              {model.view === "books" ? "Catalogue order" : "Backtests first"}
-            </option>
-            <option value="name">
-              {model.view === "books" ? "Title" : "Author"} A–Z
-            </option>
-            <option value="name-desc">
-              {model.view === "books" ? "Title" : "Author"} Z–A
-            </option>
-            {model.view === "books" ? (
-              <>
-                <option value="author">Author A–Z</option>
-                <option value="newest">Newest edition</option>
-              </>
-            ) : (
-              <>
-                <option value="books">Most library entries</option>
-                <option value="available">Available backtests</option>
-              </>
-            )}
-          </select>
-        </label>
+    <details className={`dd ${isSet ? "set" : ""}`}>
+      <summary className="dd-btn">
+        <span className="dd-l">{name}</span>
+        {(isSet || all === undefined) && label ? <b>{label}</b> : null}
+        <i className="chev" aria-hidden="true" />
+      </summary>
+      <ul className="menu" aria-label={name}>
+        {all !== undefined && option("", all)}
+        {items.map((item) => Array.isArray(item)
+          ? option(item[0], item[1])
+          : <li key={"h:" + item.heading} className="menu-h" aria-hidden="true">{item.heading}</li>)}
+      </ul>
+    </details>
+  );
+}
+
+function FilterSearch({ query }: { query: string }) {
+  const [value, setValue] = useState(query);
+  const timer = useRef(0);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  const send = (next: string) => { window.clearTimeout(timer.current); if (next !== query) patch({ library_q: next }); };
+  return (
+    <label className="dsearch">
+      <span className="sr-only">Search authors, books and strategies</span>
+      {/* The page remounts on each change; the runtime restores focus and caret by this id. */}
+      <input id="library-filter-q" type="search" value={value} autoComplete="off"
+        placeholder="Search author, book, strategy…"
+        onChange={(event) => {
+          const next = event.target.value;
+          setValue(next);
+          window.clearTimeout(timer.current);
+          timer.current = window.setTimeout(() => send(next), 300);
+        }}
+        onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); send(value); } }} />
+    </label>
+  );
+}
+
+const AUTHOR_SORTS: Item[] = [["default", "Backtests first"], ["strategies", "Most strategies"], ["books", "Most books"], ["name", "A–Z"]];
+const BOOK_SORTS: Item[] = [["default", "Catalogue order"], ["name", "Title A–Z"], ["name-desc", "Title Z–A"], ["author", "Author A–Z"], ["newest", "Newest edition"]];
+
+export function LibraryControls({ model, state }: { model: HomeModel; state: Record<string, string> }) {
+  const books = model.view === "books", counts = model.filterCounts || {};
+  const region = state.region === "us" ? "us" : "in";
+  const choices = model.marketChoices || { in: region === "in" ? model.indices : [], us: region === "us" ? model.indices : [] };
+  const baskets = model.baskets.filter((basket) => basket.symbols.length);
+  const instrument = (list: { ticker: string; name: string }[]): Item[] => list.map((item) => ["i:" + item.ticker, item.name]);
+  const basketItems: Item[] = baskets.length ? [{ heading: `${region === "us" ? "US" : "India"} stock baskets` }, ...baskets.map((basket): Item => ["b:" + basket.id, /stock/i.test(basket.name) ? basket.name : `${basket.name} · stocks`])] : [];
+  const marketItems: Item[] = [
+    ["all", "All markets"],
+    { heading: "India" }, ...instrument(choices.in), ...(region === "in" ? basketItems : []),
+    ...(choices.us.length ? [{ heading: "US" }, ...instrument(choices.us), ...(region === "us" ? instrument(model.etfs || []) : []), ...(region === "us" ? basketItems : [])] : []),
+  ];
+  const currentInstrument = state.basket ? "b:" + state.basket : "i:" + state.tk;
+  const instrumentName = (marketItems.find((item) => Array.isArray(item) && item[0] === currentInstrument) as [string, string] | undefined)?.[1] || model.symbol;
+  const pickMarket = (value: string) => {
+    if (value === "all") return patch({ library_market: "all" });
+    const ticker = value.slice(2), market = value.startsWith("b:") ? region : choices.in.some((item) => item.ticker === ticker) ? "in" : "us";
+    const basket = value.startsWith("b:") ? baskets.find((item) => item.id === ticker) : undefined;
+    patch({ library_market: market, region: market, basket: basket?.id || "", tk: basket ? basket.symbols[0] : ticker, from: "", to: "" });
+  };
+  const chips = activeFilters(state, model.view);
+  return (
+    <section className="fbar library-fbar" aria-label="Library filters">
+      <div className="fbar-in">
+        <Dropdown name="Browse" current={books ? "books" : "authors"} items={[["authors", "Authors"], ["books", "Books & reading"]]}
+          onPick={(value) => patch({ library_view: value, library_sort: "default" })} />
+        {!books && <Dropdown name="Market" items={marketItems} current={model.market === "all" ? "all" : currentInstrument}
+          shown={model.market === "all" ? `All · ${instrumentName}` : instrumentName} onPick={pickMarket} />}
+        {!books && state.basket && <Dropdown name="Stock" items={model.symbols.map((item): Item => [item.ticker, item.name])} current={state.tk}
+          onPick={(value) => patch({ tk: value, from: "", to: "" })} />}
+        {books
+          ? <Dropdown name="Status" all="All statuses" items={entries(BOOK_STATUS_LABELS)} current={state.book_progress || ""} counts={counts.book_progress}
+            onPick={(value) => patch({ book_progress: value })} />
+          : <Dropdown name="Status" all="All authors" items={entries(STATUS_LABELS)} current={state.author_status || ""} counts={counts.author_status}
+            onPick={(value) => patch({ author_status: value })} />}
+        <Dropdown name="Topic" all="All topics" items={entries(TOPIC_LABELS)} current={model.category} counts={counts.book_category}
+          onPick={(value) => patch({ book_category: value })} />
+        {!books && <Dropdown name="Type" all="People and collections" items={entries(TYPE_LABELS)} current={state.author_type || ""} counts={counts.author_type}
+          onPick={(value) => patch({ author_type: value })} />}
+        <Dropdown name="Sort" items={books ? BOOK_SORTS : AUTHOR_SORTS} current={state.library_sort || "default"}
+          onPick={(value) => patch({ library_sort: value })} />
+        <Dropdown name="Library" items={entries(SCOPE_LABELS)} current={state.library_scope || "trading"} counts={counts.library_scope}
+          onPick={(value) => patch({ library_scope: value })} />
+        <FilterSearch query={model.query} />
       </div>
-      <div className="library-controls-secondary">
-        {" "}
-        <div
-          className="library-categories"
-          role="group"
-          aria-label="Book category"
-        >
-          {categories.map(([key, label]) => (
-            <button
-              key={key}
-              className={`category-filter ${model.category === key ? "active" : ""}`}
-              aria-pressed={model.category === key}
-              onClick={() => patch({ book_category: key })}
-            >
-              {label}
-            </button>
+      {chips.length > 0 && (
+        <div className="chips">
+          {chips.map((chip) => (
+            <span className="chip" key={chip.key}>
+              {chip.label}
+              <button type="button" aria-label={`Remove ${chip.label}`} onClick={() => patch(chip.clear)}>×</button>
+            </span>
           ))}
+          <button type="button" className="link" onClick={() => patch(CLEAR_ALL)}>Clear all</button>
         </div>
-        {model.view === "books" && <label className="library-sort">
-          Status <select aria-label="Book status" value={state.book_progress || ""} onChange={event => patch({book_progress: event.target.value})}>
-            <option value="">All statuses</option><option value="backtested">Backtested</option><option value="in_progress">In progress</option><option value="not_backtested">Not Backtested</option>
-          </select>
-        </label>}
-        <div className="library-market">
-          <div className="join sm" aria-label="Market">
-            {[
-              ["all", "All"],
-              ["in", "India"],
-              ["us", "US"],
-            ].map(([key, label]) => (
-              <button
-                key={key}
-                className={`join-item ${model.market === key ? "active" : ""}`}
-                aria-pressed={model.market === key}
-                title={key === "all" ? "Browse both markets; results use the selected test data." : undefined}
-                disabled={key === "us" && !model.usAvailable}
-                onClick={() =>
-                  key === "all" ? patch({library_market: "all"}) : patch({
-                    library_market: key,
-                    region: key,
-                    basket: "",
-                    tk: key === "us" ? "SPX" : "NIFTY 50",
-                    from: "",
-                    to: "",
-                  })
-                }
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <label className="library-sort library-context">
-          {model.market === "all" ? `Test data (${state.region === "us" ? "US" : "India"})` : "Test data"}{" "}
-          <select
-            id="library-instrument"
-            aria-label="Backtest data"
-            value={state.basket ? `b:${state.basket}` : `i:${state.tk}`}
-            onChange={(event) => {
-              event.stopPropagation();
-              const value = event.target.value;
-              if (value.startsWith("i:"))
-                window.VaultRuntime.patch({
-                  basket: "",
-                  tk: value.slice(2),
-                  from: "",
-                  to: "",
-                });
-              else {
-                const basket = model.baskets.find(
-                  (item) => item.id === value.slice(2),
-                );
-                if (basket?.symbols.length)
-                  window.VaultRuntime.patch({
-                    basket: basket.id,
-                    tk: basket.symbols[0],
-                    from: "",
-                    to: "",
-                  });
-              }
-            }}
-          >
-            <optgroup label="Indices">
-              {model.indices.map((index) => (
-                <option key={index.ticker} value={`i:${index.ticker}`}>
-                  {index.name}
-                </option>
-              ))}
-            </optgroup>
-            {etfs.length > 0 && (
-              <optgroup label="ETFs">
-                {etfs.map((etf) => (
-                  <option key={etf.ticker} value={`i:${etf.ticker}`}>
-                    {etf.name}
-                  </option>
-                ))}
-              </optgroup>
-            )}
-            <optgroup label="Stock baskets — independent symbol">
-              {model.baskets.map((basket) => (
-                <option
-                  key={basket.id}
-                  value={`b:${basket.id}`}
-                  disabled={!basket.symbols.length}
-                >
-                  {basket.name}
-                </option>
-              ))}
-            </optgroup>
-          </select>
-        </label>
-        {state.basket && (
-          <label className="library-sort library-symbol">
-            Symbol{" "}
-            <select
-              id="library-stock"
-              aria-label="Backtest stock"
-              value={state.tk}
-              onChange={(event) => {
-                event.stopPropagation();
-                window.VaultRuntime.patch({
-                  tk: event.target.value,
-                  from: "",
-                  to: "",
-                });
-              }}
-            >
-              {model.symbols.map((symbol) => (
-                <option key={symbol.ticker} value={symbol.ticker}>
-                  {symbol.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-      </div>
+      )}
     </section>
   );
 }

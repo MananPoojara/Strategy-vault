@@ -22,6 +22,7 @@ it("preserves explicit alphabetical, reverse and library-entry preferences", () 
   expect(orderAuthors(authors, { sort: "name", availability }).map((a) => a.id)).toEqual(["a", "z"]);
   expect(orderAuthors(authors, { sort: "name-desc", availability }).map((a) => a.id)).toEqual(["z", "a"]);
   expect(orderAuthors(authors, { sort: "books", availability, counts: { z: 1, a: 20 } }).map((a) => a.id)).toEqual(["a", "z"]);
+  expect(orderAuthors(authors, { sort: "strategies", availability, strategies: { z: 3, a: 9 } }).map((a) => a.id)).toEqual(["a", "z"]);
 });
 
 it("rejects invalid measured counts and does not mutate frozen inputs", () => {

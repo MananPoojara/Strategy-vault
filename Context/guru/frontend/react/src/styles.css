@@ -662,25 +662,18 @@ body.pdf-capture .st-actions, body.pdf-capture #page-action-message, body.pdf-ca
 
 .account-tools{display:flex;gap:10px;align-items:center;font-size:12px;white-space:nowrap}.account-tools button{background:transparent;border:1px solid var(--steel);padding:4px 9px;cursor:pointer}.account-tools a{color:var(--blue)}.account-msg{position:fixed;bottom:18px;right:18px;z-index:100;background:var(--card);color:var(--ink);border:1px solid var(--steel);padding:12px 18px;max-width:360px;font-size:13px}.account-msg button{margin-left:12px}@media(max-width:850px){.account-tools .account-name{display:none}.topbar{gap:12px!important;padding:0 16px!important;flex-wrap:wrap;height:auto!important;min-height:58px}.account-tools{margin-left:auto}}
 
-/* Consistent filter rows, with source coverage separate from primary controls. */
-.library-controls.library-controls-react { display: grid; gap: 12px; align-items: stretch; }
-.library-controls-main { display: grid; grid-template-columns: auto 1fr auto; gap: 20px; align-items: center; width: 100%; }
-.library-controls-main .library-sort { margin: 0; }
-.library-controls-main .library-mode { justify-self: start; }
-.library-controls-secondary { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; width: 100%; }
-.library-controls-secondary .library-categories { flex: 1 1 auto; }
-.library-controls-secondary .library-sort { margin: 0; }
+/* Gurus page filter bar: the strategies page .fbar pills; its menu items are buttons, and Market has headed groups. */
+.library-fbar .fbar-in { flex-wrap: wrap; } .library-fbar .menu { min-width: 300px; }
+.menu button { width: 100%; border: 0; background: none; font: inherit; text-align: left; display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 8px 10px; border-radius: var(--r-field); font-size: 13.5px; color: var(--ink); cursor: pointer; }
+.menu button:hover { background: var(--hover); } .menu button.active { background: var(--ink); color: #fff; } .menu button.active .badge { background: rgb(255 255 255 / .2); color: #fff; }
+.menu button:disabled { color: var(--ink3); cursor: default; background: none; } .menu button:focus-visible { outline: none; box-shadow: var(--ring); }
+.menu .menu-h { padding: 10px 10px 4px; font: 600 11px var(--font); color: var(--ink3); text-transform: uppercase; letter-spacing: .05em; }
 .library-coverage-note { padding: 10px 0; color: var(--ink2); font-size: 12px; border-bottom: 1px solid var(--rule); }
 .library-coverage-note > summary { cursor: pointer; width: fit-content; }
 .library-coverage-note p { max-width: 1000px; margin: 10px 0; }
 .coverage-totals { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; max-width: 850px; }
 .coverage-totals dt { font-size: 11px; }.coverage-totals dd { font-size: 18px; font-weight: 700; margin: 2px 0; color: var(--ink); }
 @media(max-width:760px) {
- .library-controls-main { grid-template-columns: 1fr; gap: 10px; }
- .library-controls-main .library-mode { justify-self: stretch; width: fit-content; }
- .library-controls-main .library-sort { display: flex; justify-content: space-between; width: 100%; }
- .library-controls-main .library-sort select { max-width: 75%; }
- .library-controls-secondary { gap: 10px; }.library-controls-secondary .library-categories { flex-basis: 100%; }
  .coverage-totals { grid-template-columns: 1fr; gap: 8px; }
 }
 
@@ -775,7 +768,9 @@ body.pdf-capture .st-actions, body.pdf-capture #page-action-message, body.pdf-ca
 .share-files{margin:8px 0 28px}.share-files .section-h{margin:0 0 8px}.lstrip.share-files-strip{grid-template-columns:repeat(7,minmax(0,1fr))}.share-files-strip dd{font-size:26px}@media(max-width:760px){.lstrip.share-files-strip{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 /* Home hero figure (LivingBook, 30 Oct 2026): anatomy iso kit tones taken from the active site theme. */
-.living-book{position:absolute;right:max(8vw,calc(50vw - 560px));top:50%;transform:translateY(-50%);width:clamp(320px,30vw,500px)}
+/* Stand rim flush with the 32px page gutter: the SVG leaves .0832 of its width empty right of the drawn rim
+   (48.35 of 560 viewBox units to the rim's centre line, less its edge; measured at 1280-1920 px). */
+.living-book{--lb-w:clamp(320px,30vw,500px);position:absolute;right:calc(32px - .0832 * var(--lb-w));top:50%;transform:translateY(-50%);width:var(--lb-w)}
 .iso.living-book[data-theme]{--anatomy-page:transparent;--anatomy-card:transparent;--anatomy-paper:var(--card);--anatomy-face:var(--card);--anatomy-top:var(--card);
 --anatomy-shade-0:color-mix(in srgb,var(--steel) 95%,var(--ink3));--anatomy-shade-1:var(--steel);--anatomy-shade-2:color-mix(in srgb,var(--steel) 60%,var(--card));--anatomy-shade-3:color-mix(in srgb,var(--steel) 30%,var(--card));
 --anatomy-lit-top:var(--card);--anatomy-lit-shade:var(--blue-soft,var(--steel));
