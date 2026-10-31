@@ -667,7 +667,7 @@ fn fosback_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Opt
 fn itatw_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Option<Issue> {
     if !(crate::books::it5sf::ADMISSION.reviewed)(def) || !crate::books::itatw::US_ONLY.contains(&def.id) {return None;}
     if stock_us.unwrap_or(!ticker.starts_with("NIFTY")) {return None;}
-    Some(Issue{status:"needs_data",note:format!("This version uses the manual's dollar exits ($1.00 trailing stop, $1.00 target, $0.50 stop, set for General Electric at about $30). Dollar-amount rules run on US indices, ETFs and stocks only; {ticker} is outside that scope, so no result is published. The percentage version (itatw_macd_ma30_pct) runs here.")})
+    Some(Issue{status:"needs_data",note:format!("This version uses the manual's dollar exits ($1.00 trailing stop, $1.00 target, $0.50 stop, set for General Electric at about $30). Dollar-amount rules run on US indices, ETFs and stocks only; {ticker} is outside that scope, so no result is published.")})
 }
 // ---------------------------------------------------------------- Landry 2026-10-24
 // Admission only for the module REVIEWED lists (authors/landry/admission/SOURCE-CONTRACT.md); kept in one block to merge.
