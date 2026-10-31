@@ -15,12 +15,15 @@ pub fn reviewed_covel(id: &str) -> bool { REVIEWED_COVEL.contains(&id) }
 /// Admitted ids (authors/faith/admission/SOURCE-CONTRACT.md).
 pub const REVIEWED: &[&str] = &["cov_wott_atr_cbo", "cov_wott_bollinger_cbo", "cov_wott_donchian_trend", "cov_wott_donchian_time", "cov_wott_dual_ma", "cov_wott_triple_ma"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
+/// Blackstar all-time-high rule, read from Wilcox & Crittenden's paper (authors/titles-1030/K6w/k6_ref.py (header)).
+pub const REVIEWED_WILCOX: &[&str] = &["cov_tf_stocks_ath"];
+pub fn reviewed_wilcox(id: &str) -> bool { REVIEWED_WILCOX.contains(&id) }
 
 const TURTLE_NOTE: &str = "Futures rules run on the index (instrument swap). N = Turtle N: (19*PDN+TR)/20 seeded with the 20-day simple average of TR (OTR p.14). Unit = 1% of equity per N, so each unit's weight = 1% x fill / N (N of the day before the breakout, frozen for the trade's adds and stops, as in the book's worked examples). Stop/limit fills: at the level, or at the open when the market opens through it. Daily-bar order (book silent): on the entry bar entry -> adds -> stops/exit vs the bar's adverse extreme; on later bars open gaps -> stops/exit -> adds; no re-entry on an exit bar. 1 tick = 0.05 points (NSE). Not modelled (need several futures): correlated/direction unit limits, buy-strongest, rolls; contract truncation; the notional-account 20% cut after 10% loss (yearly reset is Rich's subjective call).";
 const WOTT_NOTE: &str = "Way of the Turtle ch.10 test system (27 US futures, Jan 1996-Jun 2006, Trading Blox). Run on one index (instrument swap). Size = 0.5% of equity per ATR (p.136), weight = 0.5% x fill / ATR of the signal day. ATR = the book's N (\"N is simply the 20-day exponential moving average of the True Range, which is now more commonly known as the ATR\", p.252). Table 10-1 is a portfolio result: not comparable to a single index.";
 const PORTFOLIO_GAP: &str = "Needs several correlated futures markets traded together: unit limits per closely correlated group (6), loosely correlated (10) and per direction (12), and buying the strongest / shorting the weakest market of a group. Only single indices exist in the vault.";
 const WHIPSAW_GAP: &str = "Book states the stop (1/2 N per unit) and that a stopped unit is re-entered at its original entry price, but not the re-entered unit's stop, whether re-entries count toward the 4-unit limit, or whether re-entry continues after the 10/20-day exit price was hit. Not coded rather than invent these.";
-const STOCKS_GAP: &str = "Needs the 24,000-stock US universe with delisted names and the price/liquidity filters (values not printed). Also the rule is incomplete in the book: the ATR lookback and what the 10 ATR trailing stop trails (highest close? highest high?) are not stated.";
+const ATH_NOTE: &str = "Rule source: Cole Wilcox & Eric Crittenden (Blackstar Funds), 'Does Trend Following Work on Stocks?' (Nov 2005), p.3-6 and Appendix 4 p.18; Covel's Trend Following quotes it (p.309-312). [Declared readings] 'Entire history' = every bar the vault holds for the instrument. The paper does not print the ATR length: Wilder ATR(14) is the labelled default (options). The stop trails the highest close since the entry day (option: the highest high): stop = that close - 10 x ATR, and it only rises; 'breached' = a close below the stop (option: the day's low), sold at the next open ('exit a stock on the open the day after the exit level was breached'). One position at a time; a new all-time-high close while flat buys at the next open. Not applied: the paper's $15 minimum price and $500,000 / $1,000,000 average daily dollar-volume filters (they need unadjusted prices, the stock's exchange and a CPI series, and the averaging period is not printed), and its 0.5% round-turn costs. The paper tested 24,000+ US stocks including delisted ones (1983-2004, dividend-adjusted); vault baskets are today's index members (survivorship) and vault US prices are not dividend-adjusted. Indices and ETFs are a declared application.";
 
 const TFM_NOTE: &str = "Trend Following Manifesto course, Alternative Trend Following Entries guide (stocks/futures/forex chart examples, no published results). Run on one index (instrument swap). Signal from the day's bar, executed at the next open (the course's Trade Walk Through p.2: \"The trading signal was given on 1/2/2013 ... The shares were bought on the open of the next trading day\"). Full position, one unit: the course's 2-ATR initial stop and pyramiding overlay is not coded (see cov_tfm_atr_pyramid). Moving averages are simple (the guide: \"simple moving average\").";
 const WEEKLY_BAR_GAP: &str = "The sheet gives no exact numbers for the rules it describes: channel = \"6-month\" (no day count), initial stop at \"various multiples (but no less than 4)\" of the daily range, ATR lookback not given, and the opposite-direction channel used as trailing stop has no length. Its \"More variations\" (100-day and four-week reversals) are already in the vault as cov_tc_100day_reversal / cov_tc_4week_reversal.";
@@ -96,10 +99,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|\"You buy when a market makes a new four-week high or sell when it makes a new four-week low. If you are long, you go short if it makes a new four-week low. If you are short, you go long if it makes a new four-week high.\" TC p.60-61",
             "X|Exit = the opposite four-week breakout (stop-and-reverse, \"closes one position by opening a new one in the opposite direction\") TC p.60",
         ], "Four weeks = 20 trading days (Covel, Complete TurtleTrader p.72: \"A two-week low was a ten-day breakout - counting trading days only\"). Stop-and-reverse at 1 tick beyond the 20-day extreme (open if gapped), full position."),
-        d("cov_tf_stocks_ath", "All-time-high entry with 10 ATR trailing stop (Blackstar)", "Trend Following · App. A", "Long", NotTestable(STOCKS_GAP), &[
-            "E|\"if today's close is greater than or equal to the highest close during the stock's entire history, then buy tomorrow on the open\" TF p.309",
-            "X|10 ATR trailing stop; \"exit a stock on the open the day after the exit level was breached\" p.312",
-        ], STOCKS_GAP),
+        d("cov_tf_stocks_ath", "All-time-high entry with 10 ATR trailing stop (Blackstar)", "Trend Following · App. A", "Long", Live, &[
+            "E|\"if today's close is greater than or equal to the highest close during the stock's entire history, then buy tomorrow on the open\" (Wilcox & Crittenden p.3; TF p.309)",
+            "X|10 ATR trailing stop; \"For the purposes of this project we chose to exit a stock on the open the day after the exit level was breached\" (Wilcox & Crittenden p.5-6; TF p.312)",
+            "F|\"We chose $15 as the minimum stock price\"; minimum average daily dollar volume $500,000 NYSE/AMEX, $1,000,000 NASDAQ, CPI-deflated (p.18): not applied, see note",
+        ], ATH_NOTE),
         d("cov_tfm_bollinger_75", "Bollinger Band entry & midpoint exit (75 days, 2 SD)", "TF Manifesto · Alternative Entries", "Long/Short", Live, &[
             "E|\"If the market closes above the upper Bollinger Band then you enter a long position. If the market closes below the lower Bollinger Band then you enter a short position.\" Alt. Entries p.18",
             "X|\"Typically traders use a move back to the Midpoint as an exit.\" p.18 (close back through the middle average)",
@@ -155,7 +159,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "cov_wott_dual_ma" => ("cov_wott", "Way of the Turtle systems", "Dual MA"),
         "cov_wott_triple_ma" => ("cov_wott", "Way of the Turtle systems", "Triple MA"),
         "cov_tf_mechanica_89_13" => ("cov_tf", "Trend Following examples", "Mechanica 89/13"),
-        "cov_tf_stocks_ath" => ("cov_tf", "Trend Following examples", "Stocks ATH · not testable"),
+        "cov_tf_stocks_ath" => ("cov_tf", "Trend Following examples", "Stocks ATH · 10 ATR(14) trail"),
         "cov_tc_100day_reversal" => ("cov_tc", "Trend Commandments reversals", "100-day"),
         "cov_tc_4week_reversal" => ("cov_tc", "Trend Commandments reversals", "Four-week rule"),
         "cov_tfm_bollinger_75" => ("cov_tfm", "Trend Following Manifesto entries", "Bollinger 75/2"),
@@ -199,6 +203,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "cov_tfm_ma_cross_50_75" => vec![p("fast", "Short-term MA days", 50.0, 10.0, 150.0, 5.0), p("slow", "Long-term MA days", 75.0, 20.0, 250.0, 5.0)],
         "cov_tfm_hh75_ll25" => vec![p("entry", "Entry: highest high / lowest low days", 75.0, 20.0, 200.0, 5.0), p("exit", "Exit: opposite extreme days", 25.0, 5.0, 100.0, 5.0),
             p("close", "Signal on the close beyond the level (1) instead of the day's high/low (0 = book example)", 0.0, 0.0, 1.0, 1.0)],
+        "cov_tf_stocks_ath" => vec![p("atr", "ATR days (not printed; reading 14)", 14.0, 5.0, 100.0, 1.0), p("mult", "Trailing stop, ATRs (paper 10; tested 8-12)", 10.0, 2.0, 20.0, 0.5),
+            p("trail", "Trail from: 0 = highest close since entry, 1 = highest high", 0.0, 0.0, 1.0, 1.0), p("breach", "Breach: 0 = a close below the stop, 1 = the day's low", 0.0, 0.0, 1.0, 1.0)],
         _ => return None,
     };
     Some(v)
@@ -358,6 +364,39 @@ fn reversal(x: &Ctx, from: usize, to: usize, n: usize, tick: f64) -> Vec<Trade> 
     out
 }
 
+/// Blackstar: buy at the next open after a close at or above every earlier close; trailing stop = highest close (or high)
+/// since entry - mult x ATR, never lowered; out at the next open after a close (or low) below it.
+fn ath_trail(x: &Ctx, from: usize, to: usize, n: usize, mult: f64, trail_high: bool, breach_low: bool) -> Vec<Trade> {
+    let a = atr(x.r, n);
+    let mut top = vec![f64::NEG_INFINITY; x.c.len()];
+    for i in 0..x.c.len() { top[i] = if i > 0 { top[i - 1].max(x.c[i]) } else { x.c[i] }; }
+    let mk = |e: usize, ep: f64, xi: usize, xp: f64, sig: usize, open: bool| Trade { dir: 1.0, legs: vec![Leg { i: e, px: ep, w: 1.0 }], exit_i: xi, exit_px: xp,
+        reason: if open { "open".into() } else { "10 ATR trailing stop".into() }, entry_kind: "open", signal_i: sig, open, exits: vec![] };
+    let (mut out, mut i) = (vec![], from);
+    let mut pos: Option<(usize, f64, f64, f64)> = None; // (entry bar, price, best, stop)
+    while i <= to {
+        match pos {
+            None => {
+                if i < to && x.c[i] >= top[i] { pos = Some((i + 1, x.o[i + 1], f64::NEG_INFINITY, f64::NAN)); }
+                i += 1;
+            }
+            Some((e, ep, best, stop)) => {
+                let best = best.max(if trail_high { x.h[i] } else { x.c[i] });
+                let lvl = best - mult * a[i];
+                let stop = if stop.is_nan() { lvl } else if lvl.is_nan() { stop } else { stop.max(lvl) };
+                pos = Some((e, ep, best, stop));
+                if (if breach_low { x.l[i] } else { x.c[i] }) < stop && i < to {
+                    out.push(mk(e, ep, i + 1, x.o[i + 1], i, false));
+                    pos = None;
+                }
+                i += 1;
+            }
+        }
+    }
+    if let Some((e, ep, ..)) = pos { out.push(mk(e, ep, to, x.c[to], to, true)); }
+    out
+}
+
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let schema = params(id)?;
     if validate(id, p).is_some() || from > to || to >= x.r.len() { return None; }
@@ -469,6 +508,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             on_close(x, from, to, &per_n(n(), g("risk")), &want, "MA crossover · next open")
         }
         "cov_tc_100day_reversal" | "cov_tc_4week_reversal" => reversal(x, from, to, u("n"), g("tick")),
+        "cov_tf_stocks_ath" => ath_trail(x, from, to, u("atr"), g("mult"), g("trail") >= 1.0, g("breach") >= 1.0),
         _ => return None,
     })
 }
@@ -555,7 +595,7 @@ mod tests {
     #[test]
     fn statuses() {
         let c = catalogue();
-        assert_eq!(c.iter().filter(|d| d.status == Status::Live).count(), 15);
+        assert_eq!(c.iter().filter(|d| d.status == Status::Live).count(), 16);
         for d in &c { assert!(family_of(d.id).is_some()); assert_eq!(d.status == Status::Live, params(d.id).is_some()); }
     }
 }
@@ -576,4 +616,13 @@ pub const ADMISSION_FAITH: crate::instrument_policy::Admission = crate::instrume
     reviewed: |def: &crate::connors::StrategyDef| def.book=="covel" && crate::books::covel::reviewed(def.id),
     label: "Curtis Faith tested these six systems on a 27-market US futures portfolio (Trading Blox, 1996-2006); runs on one index, ETF or stock at a time are a declared application.",
     basis: "Way of the Turtle (McGraw-Hill 2007) ch.10 p.131-142: ATR Channel Breakout, Bollinger Breakout, Donchian Trend, Donchian Trend with Time Exit, Dual and Triple Moving Average; 0.5% of equity per ATR (p.136). Book market: US futures portfolio. Index/ETF/stock runs are a declared application.",
+};
+
+// Instrument admission: Wilcox & Crittenden (Blackstar) all-time-high rule 2026-10-31 (titles lane K6).
+// Admission only for the module REVIEWED_WILCOX list (authors/titles-1030/K6w/k6_ref.py (header)).
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION_WILCOX: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="covel" && crate::books::covel::reviewed_wilcox(def.id),
+    label: "Wilcox and Crittenden tested this rule on 24,000+ US stocks including delisted ones (1983-2004) with price and liquidity filters; single US/India stocks here are today's index members, and indices and ETFs are a declared application.",
+    basis: "Cole Wilcox & Eric Crittenden, Does Trend Following Work on Stocks? (Blackstar Funds, Nov 2005) p.3-6, p.18; quoted in Covel, Trend Following p.309-312",
 };
