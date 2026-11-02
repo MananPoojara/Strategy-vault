@@ -338,7 +338,7 @@ export function reportSheets(report: LabReport, run: ReportRun | undefined, trad
   const head = cols.map(([k, label]) => (k === "bh" && run?.instrument ? `${label} (${run.instrument.ticker})` : label));
   const stats = reportBlocks(report, run).flatMap(({ key, head: h, rows }) => [[BLOCK_TITLES[key] ?? key], ["", ...head],
     ...(h ? [[h[0], ...cols.map(([c]) => h[1](c))]] : []), ...rows.map(([label, cell]) => [label, ...cols.map(([c]) => cell(c))]), []]);
-  return [{ name: "Statistics", rows: stats }, ...(tradeRows?.length ? [{ name: "Trades", rows: tradeRows }] : [])];
+  return [{ name: "Statistics", layout: "blocks" as const, rows: stats }, ...(tradeRows?.length ? [{ name: "Trades", rows: tradeRows }] : [])];
 }
 
 /** `tradeRows`: the trade list (header first) for the download's Trades sheet. */

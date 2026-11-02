@@ -15,7 +15,6 @@ import { ordered, TradesTab } from "./settings/TradesTab";
 import { StopsTab } from "./settings/StopsTab";
 import { ReportTab } from "./settings/ReportTab";
 import { PortfolioTab } from "./settings/PortfolioTab";
-import { WalkForwardTab } from "./settings/WalkForwardTab";
 import { SettingGroup } from "./settings/common";
 import { RuleList, type TreeCaps } from "./NodeEditor";
 import { budget, limits, newFilter, readsSessionDates, usesHigherTimeframes, type ListPath } from "./rule-tree";
@@ -213,7 +212,7 @@ function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market
     <section className="lab-more-settings lab-ami" data-lab-more-settings aria-label="AmiBroker settings">
       <h3 className="lab-ami-h">AmiBroker settings <span className="cap">{changed.length ? `· ${changed.length} changed: ${changed.join(", ")}` : "· all at their defaults"}</span></h3>
     {/* AmiBroker's Analysis settings window, tab by tab in its order; the lab's own position size and risk follow General's fields */}
-    <SettingsTabs rail labels={["General", "Trades", "Stops", "Report", "Portfolio", "Walk-Forward"]}>
+    <SettingsTabs rail labels={["General", "Trades", "Stops", "Report", "Portfolio"]}>
       <>
         <p className="cap lab-stab-intro">In AmiBroker's order: the data, the backtest options, commissions and rates, then the lab's position size and risk.</p>
         <GeneralTab spec={spec} catalogue={catalogue} instrument={instrument} onChange={onChange} />
@@ -223,7 +222,6 @@ function TreeRuleBuilder({ spec, catalogue, instrument = { kind: "index", market
       <StopsTab spec={spec} onChange={onChange} />
       <ReportTab spec={spec} instrument={instrument} onChange={onChange} />
       <PortfolioTab spec={spec} catalogue={catalogue} instrument={instrument} onChange={onChange} portfolio={portfolio} />
-      <WalkForwardTab spec={spec} />
     </SettingsTabs></section></>}
     </div>}
     {readsSessionDates(spec) && <p className="cap">{COPY.sessionDatesHint}</p>}

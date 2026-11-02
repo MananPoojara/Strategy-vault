@@ -90,13 +90,12 @@ describe("tradesheet in the research template layout", () => {
       const first = format === "2008" ? 23 : 21;
 
       it("has the template's sheets in order, with Rules filled", () => {
-        expect(wb.SheetNames).toEqual(["All Index Explore", "All Sheets Name", "Rules", "2008-2011 Summary", "YOY Summary", SHEET]);
+        expect(wb.SheetNames).toEqual(["All Index Explore", "Rules", "2008-2011 Summary", "YOY Summary", SHEET]); // no 'All Sheets Name' (team request)
         const rules = wb.Sheets.Rules, at = (r: string) => rules[r]?.v;
         expect([at("B2"), at("C2"), at("B3"), at("C3"), at("B4"), at("C4"), at("B5"), at("C5"), at("B6"), at("B7")])
           .toEqual(["Timeframe:", "Daily", "Index:", "NIFTY 50", "Period:", RULES.period, "AFL Path:", "", "Done By:", "Verified By:"]);
         expect([at("B9"), at("C9"), at("C10"), at("C11"), at("C12"), at("B13"), at("C13"), at("C14"), at("B15"), at("C15")])
           .toEqual(["Strategy:", "Fixture", "Long & Short", "Without Filter", "Test setup", "Entry:", "Entry A", "Entry B", "Exit:", "Exit A"]);
-        expect(wb.Sheets["All Sheets Name"].B5.v).toBe(SHEET);
         expect(wb.Sheets["All Index Explore"].A1.v).toBe("Ticker");
         expect(wb.Sheets["All Index Explore"][`B${OHLC.length + 1}`].v).toBe(ser(OHLC[OHLC.length - 1].date));
       });
@@ -131,9 +130,10 @@ describe("tradesheet in the research template layout", () => {
           : { J1: false, I3: true, I14: false, L17: true, Z4: true, G22: false, W22: true, AA22: false, B3: false };
         for (const [ref, isArray] of Object.entries(arrays)) expect(ts[ref].F, ref).toBe(isArray ? ref : undefined);
         const S = format === "2008"
-          ? { C4: `INDIRECT("'"&$C$3&"'!B"&ROW()+B4)`, E4: `IFERROR(IF($C4="","",INDIRECT("'" & $C4 & "'!E3")),"")`, Q5: `IFERROR(IF($C5="","",INDIRECT("'" & $C5 & "'!L14")),"")` }
-          : { C4: `INDIRECT("'"&$C$3&"'!B"&ROW()+B4)`, E4: `IF($C5="","",INDIRECT("'" & $C5 & "'!E3"))`, T4: `IF($C5="","",INDIRECT("'" & $C5 & "'!e17"))`, Q6: `IF($C4="","",INDIRECT("'" & $C4 & "'!S14"))` };
+          ? { E4: `IFERROR(IF($C4="","",INDIRECT("'" & $C4 & "'!E3")),"")`, Q5: `IFERROR(IF($C5="","",INDIRECT("'" & $C5 & "'!L14")),"")` }
+          : { E4: `IF($C5="","",INDIRECT("'" & $C5 & "'!E3"))`, T4: `IF($C5="","",INDIRECT("'" & $C5 & "'!e17"))`, Q6: `IF($C4="","",INDIRECT("'" & $C4 & "'!S14"))` };
         for (const [ref, f] of Object.entries(S)) expect(sum[ref]?.f, ref).toBe(f);
+        expect([sum.C4.f, sum.C4.v, yoy.C4.f]).toEqual([undefined, SHEET, undefined]); // the sheet name as text, not looked up in 'All Sheets Name'
         expect(yoy.C9.f).toBe(format === "2008" ? `IFERROR(INDIRECT("'"&C$4&"'!AE"&ROW()+17),"")` : `INDIRECT("'"&C$4&"'!aa"&ROW()+15)`);
       });
 
@@ -226,9 +226,8 @@ describe("tradesheet in the research template layout", () => {
     for (const format of ["2008", "2000"] as TsFormat[]) {
       it(`format ${format}: lists, summarises and YOYs every sheet`, () => {
         const wb = roundTrip(buildTsWorkbook(XLSX, { ...input(format), sheets: SHEETS }));
-        const sum = wb.Sheets["2008-2011 Summary"], yoy = wb.Sheets["YOY Summary"], names = wb.Sheets["All Sheets Name"];
-        expect(wb.SheetNames).toEqual(["All Index Explore", "All Sheets Name", "Rules", "2008-2011 Summary", "YOY Summary", ...NAMES]);
-        expect([names.B5.v, names.B6.v, names.B7.v, names.B8]).toEqual([...NAMES, undefined]);
+        const sum = wb.Sheets["2008-2011 Summary"], yoy = wb.Sheets["YOY Summary"];
+        expect(wb.SheetNames).toEqual(["All Index Explore", "Rules", "2008-2011 Summary", "YOY Summary", ...NAMES]);
         // Rules: one Exit line per sheet, "name: exit".
         const rules = wb.Sheets.Rules;
         expect([rules.B15.v, rules.C15.v, rules.C16.v, rules.C17.v]).toEqual(["Exit:", ...NAMES.map((n, i) => `${n}: ${SHEETS[i].exitLabel}`)]);
@@ -239,7 +238,7 @@ describe("tradesheet in the research template layout", () => {
           const row = 4 + size * i, ex = expected(TS_COSTS, SHEETS[i].trades), all = ex.block("0000");
           const tsRow = format === "2008" ? row : row + 1; // 2000's first block row reads the name from the row below
           expect(sum[`B${row}`].v).toBe(i + 1);
-          expect(sum[`C${row}`].f).toBe(`INDIRECT("'"&$C$3&"'!B"&ROW()+B${row}${i ? `-${size * i}` : ""})`);
+          expect(sum[`C${row}`].f).toBeUndefined(); // the name as text: no lookup into a dropped sheet
           expect(sum[`C${row}`].v).toBe(name);
           expect(sum[`E${row}`].f).toBe(format === "2008" ? `IFERROR(IF($C${tsRow}="","",INDIRECT("'" & $C${tsRow} & "'!E3")),"")` : `IF($C${tsRow}="","",INDIRECT("'" & $C${tsRow} & "'!E3"))`);
           expect(sum[`E${row}`].v, `E${row}`).toBeCloseTo(all.total, 12);
@@ -252,7 +251,7 @@ describe("tradesheet in the research template layout", () => {
           const col = String.fromCharCode(67 + i);
           expect(yoy[`${col}2`].v).toBe(i + 1);
           expect(yoy[`${col}4`].v).toBe(name);
-          expect(yoy[`${col}4`].f).toBe(format === "2008" ? `IFERROR(INDIRECT("'"&$C$3&"'!B"&ROW()+${col}2),"")` : `INDIRECT("'"&$C$3&"'!B"&ROW()+${col}2)`);
+          expect(yoy[`${col}4`].f).toBeUndefined();
           expect(yoy[`${col}9`].f).toBe(format === "2008" ? `IFERROR(INDIRECT("'"&${col}$4&"'!AE"&ROW()+17),"")` : `INDIRECT("'"&${col}$4&"'!aa"&ROW()+15)`);
           expect(yoy[`${col}9`].v, `${col}9`).toBeCloseTo(ex.yoy(2011), 12);
         });

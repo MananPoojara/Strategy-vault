@@ -81,9 +81,10 @@ it("the workbook: Rules rows as the team's, AmiBroker header order, row-relative
   // hidden as "Need this on Excel Download": No., RAR, Recovery Factor, RAR/MDD, Avg Profit/Loss, # of winners, W. Tot. Profit, W./L. Avg. Bars Held
   expect(opt.hidden!.map((i) => head[i])).toEqual(["No.", "RAR", "Recovery Factor", "RAR/MDD", "Avg Profit/Loss", "# of winners", "W. Tot. Profit", "W. Avg. Bars Held", "L. Avg. Bars Held"]);
   const text = new TextDecoder().decode(xlsx(book));
-  expect(text).toContain('<cols><col min="1" max="1" width="9" hidden="1" customWidth="1"/><col min="6" max="6"');
-  expect(text).toContain('<col min="37" max="37" width="9" hidden="1" customWidth="1"/></cols><sheetData>'); // AK = L. Avg. Bars Held
-  expect(text).toContain('<c r="AM2"><f>X2/(Y2-1)*21</f></c>');
+  // the Optimization sheet's hidden columns keep their fitted width, so unhiding shows them as they are
+  const hiddenCols = [...text.matchAll(/<col min="(\d+)" max="\d+" width="\d+" hidden="1"/g)].map((m) => Number(m[1]));
+  expect(hiddenCols).toEqual([1, 6, 11, 13, 23, 26, 28, 31, 37]); // A, F, K, M, W, Z, AB, AE, AK
+  expect(text).toContain('<c r="AM2" s="6"><f>X2/(Y2-1)*21</f></c>'); // a formula as a two-decimal number
   expect(text).toContain('<autoFilter ref="A1:AV5"/>');
   expect(text).toContain('<calcPr fullCalcOnLoad="1"/>');
   expect(sheetFileName(withSheet, { ranSpec: spec, label: String, group: () => undefined, instrumentLabel: "Nifty 50" })).toBe("Nifty 50 Short Daily Optims.xlsx");
@@ -107,16 +108,15 @@ it("the derived templates evaluate like Excel: arithmetic, ABS, blanks and divis
   expect(evalTemplate("{a}/({b}-6)", get)).toBeNull();
 });
 
-// "Need this on Software Screen": these stay off the page (the download keeps them)
-const SCREEN_HIDDEN = ["No.", "RAR", "Recovery Factor", "RAR/MDD", "Avg Profit/Loss", "# of winners", "W. Tot. Profit", "Monthly Thickness", "Final W Avg", "Total Profit", "Holding Days"];
-const SCREEN = [...COLS.filter((c) => !SCREEN_HIDDEN.includes(c)), "EMA Period", "Expectancy Ratio", "Final Avg % Profit/Loss", "Final L Avg", "Final M. Thk",
-  "Final Expectancy Ratio", "Total Net Profit"];
+// the team's screen list: the optimized settings first, then only these columns
+const SCREEN = ["EMA Period", "CAR", "Max. Sys % Drawdown", "CAR/MDD", "# Trades", "Avg % Profit/Loss", "Avg Bars Held", "% of Winners",
+  "Expectancy Ratio", "Final Avg % Profit/Loss", "Final M. Thk", "Final Expectancy Ratio", "Total Net Profit"];
 
 it("the sheet is on the page too: the team's screen columns, sorted on CAR/MDD, click to sort", async () => {
   const host = await runWith(withSheet);
   const list = host.querySelector("[data-lab-optimize-sheet-list]")!;
   const head = [...list.querySelectorAll("thead th")].map((th) => th.textContent);
-  expect(head.map((h) => h!.replace(/^Entry 1: /, ""))).toEqual(SCREEN); // the short side: no Final W Avg, no Total Profit on screen
+  expect(head.map((h) => h!.replace(/^Entry 1: /, ""))).toEqual(SCREEN); // settings first, then the team's screen list
   const settings = () => [...list.querySelectorAll("tbody tr")].map((tr) => tr.children[head.indexOf("Entry 1: EMA Period")].textContent);
   expect(settings()).toEqual(["20", "40", "10", "30"]); // CAR/MDD 0.9, 0.5, 0.2, blank
   const er = head.indexOf("Expectancy Ratio");

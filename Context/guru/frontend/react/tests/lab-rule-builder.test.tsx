@@ -203,8 +203,8 @@ const scenario = (host: HTMLElement) => host.querySelector<HTMLSelectElement>('s
 
 it("settings tabs follow AmiBroker and the ARIA tab pattern; hidden panels stay mounted", async () => {
   const { host } = await tree(defaultSpec(), { portfolio: <p data-portfolio-slot>portfolio controls</p> });
-  expect(tabs(host).map((t) => t.textContent)).toEqual(["General", "Trades", "Stops", "Report", "Portfolio", "Walk-Forward"]); // AmiBroker's window, tab by tab (Monte Carlo has no results screen in the lab yet)
-  expect(tabs(host).map((t) => t.tabIndex)).toEqual([0, -1, -1, -1, -1, -1]);
+  expect(tabs(host).map((t) => t.textContent)).toEqual(["General", "Trades", "Stops", "Report", "Portfolio"]); // AmiBroker's window, tab by tab (walk-forward removed from the lab)
+  expect(tabs(host).map((t) => t.tabIndex)).toEqual([0, -1, -1, -1, -1]);
   expect(panel(host, "Report").querySelector("[data-lab-report-settings]")).not.toBeNull(); // risk-free rates on their own tab, as in AmiBroker
   for (const t of tabs(host)) expect(panel(host, t.textContent!).getAttribute("aria-labelledby")).toBe(t.id);
   // the basics come first; Positions and From/To sit over the rule cards in Your idea; the AmiBroker settings are always open, named when something is changed
@@ -224,7 +224,6 @@ it("settings tabs follow AmiBroker and the ARIA tab pattern; hidden panels stay 
   expect(panel(host, "General").querySelector("input[type=checkbox]")!.getAttribute("aria-label")).toBe("Pad and align all data to reference symbol"); // pad & align first, as asked
   expect(panel(host, "General").querySelector('[data-lab-exec="options"]')).not.toBeNull(); // same-bar options and instrument data
   expect(panel(host, "Stops").querySelector("[data-lab-stops-tab]")).not.toBeNull();
-  expect(panel(host, "Walk-Forward").querySelector("[data-lab-wf-tab]")).not.toBeNull();
   // nothing appears twice inside the AmiBroker settings (Scenario is on Trades and Stops, as in AmiBroker)
   expect(host.querySelectorAll('[aria-label="Initial equity"]')).toHaveLength(1); // under Starting money only
   expect(host.querySelectorAll('[data-lab-more-settings] [aria-label="Positions"]')).toHaveLength(0); // Positions is on the Your idea row only
@@ -239,7 +238,7 @@ it("settings tabs follow AmiBroker and the ARIA tab pattern; hidden panels stay 
   expect(tabs(host)[1].getAttribute("aria-selected")).toBe("true");
   expect(document.activeElement).toBe(tabs(host)[1]);
   await act(async () => list.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true })));
-  expect(tabs(host)[5].tabIndex).toBe(0);
+  expect(tabs(host)[4].tabIndex).toBe(0);
   await act(async () => list.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
   expect(tabs(host)[0].getAttribute("aria-selected")).toBe("true"); // wraps
   await act(async () => tabs(host)[3].click());
@@ -257,7 +256,7 @@ it("the AmiBroker settings tabs are a vertical rail: Up / Down move as well as L
   expect(document.activeElement).toBe(tabs(host)[1]);
   await act(async () => list.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true })));
   await act(async () => list.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true })));
-  expect(tabs(host)[5].getAttribute("aria-selected")).toBe("true"); // wraps
+  expect(tabs(host)[4].getAttribute("aria-selected")).toBe("true"); // wraps
   await unmount();
   const plain = await mount(<SettingsTabs labels={["A", "B"]}>{[<p key="a">a</p>, <p key="b">b</p>]}</SettingsTabs>);
   const strip = plain.querySelector<HTMLElement>("[role=tablist]")!;

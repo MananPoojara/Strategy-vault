@@ -12,15 +12,6 @@
 .lab-page [data-lab-optimize] > .empty { margin-top: 10px; }
 .ocmp th, .ocmp td { white-space: nowrap; }
 .lab-page .lab-dims tr.lab-dim-group th { padding: 8px 10px 2px; text-align: left; font-size: 12px; color: var(--ink2); background: transparent; border-bottom: 0; }
-/* Walk-forward sub-section: compact form, IS rows muted, OOS rows plain; chart frame from report.css. */
-.lab-page .lab-wf { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--rule); display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; min-width: 0; }
-.lab-page .lab-wf .box-h { margin: 0; }
-.lab-page .lab-wf .cap { margin: 0; }
-.lab-page .lab-wf-form { flex-wrap: wrap; gap: 8px 12px; }
-.lab-page .lab-wf-form input[type=number] { width: 64px; }
-.lab-page .lab-wf-table tr[data-lab-wf-mode="is"] td { color: var(--ink3); }
-.lab-page .lab-wf-table tr[data-lab-wf-mode="oos"] td { border-bottom: 1px solid var(--rule); }
-.lab-page .lab-wf-chart polyline { fill: none; stroke: var(--blue); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 /* Result tables: compact rows; numbers right-aligned via .n, signs via .pos/.neg. */
 .lab-page .ocmp th, .lab-page .ocmp td { padding: 4px 8px; }
 .lab-page .ocmp td small { color: var(--ink3); }
@@ -29,8 +20,6 @@
 .lab-page .lab-opt-all .cap { margin: 0; }
 .lab-page .lab-sort { background: none; border: 0; padding: 0; font: inherit; color: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; }
 .lab-page .lab-sort:focus-visible { outline: none; box-shadow: var(--ring); }
-.lab-page .lab-wf-span { font-weight: 500; white-space: nowrap; }
-.lab-page .lab-wf-preview { max-height: 168px; overflow: auto; max-width: 360px; }
 /* Long setting names wrap in the results header instead of making the table ~1000 px wide on phones. */
 .lab-page .ocmp thead th { white-space: normal; min-width: 64px; max-width: 16ch; }
 @media (max-width: 600px) {
@@ -113,25 +102,14 @@
 .lab-page [data-lab-optimize-result] > .tblwrap > .ocmp tbody tr:first-child td:first-child { color: var(--ink2); }
 .lab-page [data-lab-optimize-result] > .tblwrap > .ocmp tbody tr:nth-child(2) td:first-child { color: var(--blue); box-shadow: inset 3px 0 var(--blue); }
 /* scrolling lists keep their header in view; overflow: clip (not hidden) so the outer box stays the scroller */
-.lab-page [data-lab-optimize] :is(.lab-opt-all, .lab-wf-preview) .tbl { overflow: clip; }
-.lab-page [data-lab-optimize] :is(.lab-opt-all, .lab-wf-preview) thead th { position: sticky; top: 0; z-index: 1; box-shadow: inset 0 -1px var(--steel); }
-.lab-page [data-lab-optimize] :is(.lab-opt-all .tblwrap, .lab-wf-preview) { border-radius: var(--r-box); }
-
-/* Walk-forward: its own sub-heading, the form grouped on one soft card, dates as quiet tabular figures. */
-.lab-page [data-lab-optimize] .lab-wf { margin-top: 20px; padding-top: 16px; gap: 10px; }
-.lab-page [data-lab-optimize] .lab-wf > .box-h { font-size: 15px; }
-.lab-page [data-lab-optimize] .lab-wf-form { padding: 10px 12px; gap: 10px 16px; border: 1px solid var(--rule); border-radius: var(--r-box); background: var(--card); box-shadow: 0 1px 2px rgb(0 0 0 / .04); }
-.lab-page [data-lab-optimize] .lab-wf-form .lab-wf-span { font: 500 12px 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; color: var(--ink3); }
-.lab-page [data-lab-optimize] .lab-wf .ocmp td:is(:nth-child(2), :nth-child(3)) { font-family: 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.lab-page [data-lab-optimize] .lab-wf tr[data-lab-wf-mode] td:first-child { font: 700 10.5px var(--font); letter-spacing: .08em; }
-.lab-page [data-lab-optimize] .lab-wf tr[data-lab-wf-mode] td:first-child small { font: 500 11.5px var(--font); letter-spacing: 0; color: var(--ink3); }
-.lab-page [data-lab-optimize] .lab-wf tr[data-lab-wf-mode="oos"] td { background: color-mix(in srgb, var(--blue) 4%, var(--card)); }
-.lab-page [data-lab-optimize] .lab-wf tr[data-lab-wf-mode="oos"] td:first-child { color: var(--blue); }
+.lab-page [data-lab-optimize] .lab-opt-all .tbl { overflow: clip; }
+.lab-page [data-lab-optimize] .lab-opt-all thead th { position: sticky; top: 0; z-index: 1; box-shadow: inset 0 -1px var(--steel); }
+.lab-page [data-lab-optimize] .lab-opt-all .tblwrap { border-radius: var(--r-box); }
 
 /* A fresh result fades in once (opacity only, under 200 ms). */
 @media (prefers-reduced-motion: no-preference) {
-  .lab-page :is([data-lab-optimize-result], [data-lab-wf-result]) { transition: opacity 180ms ease-out; }
-  @starting-style { .lab-page :is([data-lab-optimize-result], [data-lab-wf-result]) { opacity: 0; } }
+  .lab-page [data-lab-optimize-result] { transition: opacity 180ms ease-out; }
+  @starting-style { .lab-page [data-lab-optimize-result] { opacity: 0; } }
 }
 
 /* the settings table keeps its numbers beside their names: it takes only the width its columns need */

@@ -278,20 +278,3 @@ export interface IndividualOptimizeResult extends Provisional {
   dims: { path: string; values: number[] }[]; cols: string[]; table_cols?: string[]; results: IndividualSymbol[]; notes: string[]; info: LabInfo; adaptations?: string[];
 }
 
-// ---- Walk-forward (/lab/walkforward): one optimizer run per in-sample window, its best setting run out-of-sample
-export type WalkforwardTarget = "score" | "cagr" | "sharpe" | "monthly_thickness" | "expectancy_ratio" | "mar";
-export interface WalkforwardOptions { is: number; oos: number; step: number; unit: "years" | "months"; anchored: boolean; target: WalkforwardTarget }
-export type WalkforwardMetrics = Record<"total_return" | "cagr" | "sharpe" | "max_dd" | "mar" | "trades" | "win_rate" | "profit_factor", number | null>;
-export interface WalkforwardWindow {
-  is: { from: string; to: string }; oos: { from: string; to: string }; eligible: number;
-  /** null when no setting was eligible in-sample; the out-of-sample window is then held flat (`skipped`). */
-  params: Record<string, number> | null; is_metrics: WalkforwardMetrics | null; oos_metrics: WalkforwardMetrics | null; skipped?: string;
-  /** a position was still open at the window's last bar: marked at that close, not counted in trades. */
-  open_at_end?: boolean;
-}
-export interface WalkforwardResult extends Provisional {
-  label: string; kind: "lab_walkforward"; target: WalkforwardTarget; unit: "years" | "months"; is: number; oos: number; step: number; anchored: boolean;
-  combos: number; ms: number; windows: WalkforwardWindow[]; oos_equity: { dates: string[]; equity: number[] }; info?: LabInfo;
-  summary: { total_return: number | null; cagr: number | null; max_dd: number | null; trades: number; win_rate: number | null; windows: number; skipped: number; open_at_edge?: number; gaps?: boolean; from: string; to: string };
-  notes?: string[];
-}

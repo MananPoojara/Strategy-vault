@@ -7,9 +7,9 @@
 // written with the template's formula text AND a value computed here by a small evaluator of exactly that text, so the
 // file shows numbers before Excel recalculates. Excel recomputes everything on open; the evaluator only fills the cache.
 //
-// Sheets kept: 'All Index Explore' (the bars the MAE formula reads), 'All Sheets Name' (the list the summaries' INDIRECT
-// reads; this one trade sheet is its B5), 'Rules', '2008-2011 Summary', 'YOY Summary', then the trade sheet. Dropped:
-// 'Sheet_List' and 'Macro for sheet name' (a VBA listing and its output; no formula reads them), the empty
+// Sheets kept: 'All Index Explore' (the bars the MAE formula reads), 'Rules', '2008-2011 Summary', 'YOY Summary', then the
+// trade sheets. Dropped: 'All Sheets Name' (at the team's request; the summaries hold each sheet's name as text instead of
+// looking it up there), 'Sheet_List' and 'Macro for sheet name' (a VBA listing and its output; no formula reads them), the empty
 // "Template (n)" sheets and the sample-data sheets. The 2000 template has no Rules sheet; both formats use the 2008 one
 // (the filled example on the share has it in the same place). Not reproduced, because the vendored SheetJS writer has
 // no support for them: frozen panes, hidden gridlines, zoom, tab colours and the 2008 sheet's conditional formats.
@@ -33,14 +33,14 @@ export interface TsInput {
 /** The YOY Summary has 20 sheet columns. */
 export const TS_MAX_SHEETS = 20;
 
-const EXPLORE = "All Index Explore", NAMES = "All Sheets Name", RULES = "Rules", SUMMARY = "2008-2011 Summary", YOY = "YOY Summary";
+const EXPLORE = "All Index Explore", RULES = "Rules", SUMMARY = "2008-2011 Summary", YOY = "YOY Summary";
 /** Last trade column (X / W) and the column that holds the trade sheet's own Entry/Exit/Filter lines (rows 10-12). */
 const LAYOUT: Record<TsFormat, { lastCol: number; ruleCol: number }> = { "2008": { lastCol: 24, ruleCol: 16 }, "2000": { lastCol: 23, ruleCol: 25 } };
 
 /** Excel sheet name: ≤31 chars, none of []:*?/\ and no apostrophes at all — the summaries' INDIRECT("'"&name&"'!E3") cannot quote them. */
 export function tsSheetName(raw: string): string {
   let n = raw.replace(/[[\]:*?/\\']/g, " ").replace(/\s+/g, " ").trim().slice(0, 31).trim() || "Trades";
-  if ([EXPLORE, NAMES, RULES, SUMMARY, YOY].some((f) => f.toLowerCase() === n.toLowerCase())) n = `TS ${n}`.slice(0, 31);
+  if ([EXPLORE, RULES, SUMMARY, YOY].some((f) => f.toLowerCase() === n.toLowerCase())) n = `TS ${n}`.slice(0, 31);
   return n;
 }
 /** Sanitised names, made unique (case-insensitively) with a " (2)", " (3)" … suffix. */
@@ -90,8 +90,6 @@ export function buildTsWorkbook(XLSX: any, input: TsInput): any {
   const exStyles = ["A2", "B2", "C2", "D2", "E2", "F2"].map((ref) => styleAt(fmt.explore, ref));
   input.ohlc.forEach((b, i) => [input.symbol, serial(b.date), b.open, b.high, b.low, b.close].forEach((v, c) => ex.put(i + 2, c + 1, v, exStyles[c])));
 
-  book.add(NAMES, fmt.names).place([fmt.names.cells[0], ...names.map((n, i): SCell => [`B${5 + i}`, styleAt(fmt.names, "B5"), n])]);
-
   const rules = book.add(RULES, fmt.rules), label = styleAt(fmt.rules, "B2"), valueStyle = styleAt(fmt.rules, "C2"), r = input.rules;
   let row = 2;
   for (const [l, vals] of [["Timeframe:", [r.timeframe]], ["Index:", [r.index]], ["Period:", [r.period]], ["AFL Path:", []], ["Done By:", []], ["Verified By:", []],
@@ -103,23 +101,26 @@ export function buildTsWorkbook(XLSX: any, input: TsInput): any {
   }
 
   // Summary: one row block per sheet (2 rows in 2008, 3 in 2000). Block 1 is the template's; blocks 2..n repeat its block 2
-  // moved down, with the C formula's offset (-2, -4 … / -3, -6 …) following the template's pattern.
+  // moved down. Each block's sheet name (column C of its first row) is written as text: the template looked it up in
+  // 'All Sheets Name' with INDIRECT, a sheet the team asked to drop; the name is the same, so every result is unchanged.
   const summary = book.add(SUMMARY, fmt.summary), size = input.format === "2008" ? 2 : 3;
   summary.place(fmt.summary.cells.filter((c) => addr(c[0]).r < 4));
-  names.forEach((_, i) => {
+  names.forEach((name, i) => {
     const dr = i ? (i - 1) * size : 0, from = i ? 4 + size : 4;
     summary.place(fmt.summary.cells.filter((c) => addr(c[0]).r >= from && addr(c[0]).r < from + size).map(([ref, s, v, f, a]): SCell => {
       const { r: row, c } = addr(ref);
-      const ff = f === undefined ? f : row === from && c === 3 && i ? shiftRefs(f, dr, 0).replace(/-\d+\)$/, `-${size * i})`) : shiftRefs(f, dr, 0);
-      return [`${colName(c)}${row + dr}`, s, c === 2 && v !== undefined && v !== null ? i + 1 : v, ff, a];
+      if (row === from && c === 3) return [`C${row + dr}`, s, name];
+      return [`${colName(c)}${row + dr}`, s, c === 2 && v !== undefined && v !== null ? i + 1 : v, f === undefined ? f : shiftRefs(f, dr, 0), a];
     }));
   });
   // YOY: column C reads sheet 1; sheet k gets column C's formulas moved right, with the template's own column styles.
+  // Row 4 holds the sheet's name as text (the template's INDIRECT into 'All Sheets Name', dropped as above).
   const yoy = book.add(YOY, fmt.yoy), colStyles = fmt.yoy.colStyles!;
   yoy.place(fmt.yoy.cells.filter((c) => !c[0].startsWith("C")));
-  names.forEach((_, i) => {
+  names.forEach((name, i) => {
     for (const [ref, s0, v, f, a] of fmt.yoy.cells.filter((c) => /^C\d/.test(c[0]))) {
       const { r: row } = addr(ref), s = i ? colStyles[Math.min(i - 1, colStyles.length - 1)][row - 1] : s0;
+      if (row === 4) { yoy.put(row, 3 + i, name, s); continue; }
       yoy.put(row, 3 + i, row === 2 ? i + 1 : v ?? null, s, f === undefined ? f : shiftRefs(f, 0, i), a === 1);
     }
   });
@@ -403,7 +404,7 @@ type RowCell = [style: number, formula?: string, array?: 1];
 interface SSheet { cols: number[]; rows?: Record<string, number>; cells: SCell[]; colStyles?: number[][] }
 interface Fmt {
   trade: SSheet & { dataRow: number; first: Record<string, RowCell>; next: Record<string, RowCell> };
-  summary: SSheet; yoy: SSheet; names: SSheet; explore: SSheet; rules: SSheet;
+  summary: SSheet; yoy: SSheet; explore: SSheet; rules: SSheet;
 }
 
 // ---- Template data: extracted from the two research templates (see file header). Do not edit by hand. ----
@@ -703,13 +704,6 @@ const FORMATS: Record<TsFormat, Fmt> = {
         ["B39",79,"Avg MAE"],["C39",23,null,"IFERROR(INDIRECT(\"'\"&C$4&\"'!b\"&ROW()-19),\"\")"],
       ],
     },
-    names: {
-      cols: [],
-      cells: [
-        ["B4",12,"All Sheets Name"],
-        ["B5",-1,1],
-      ],
-    },
     explore: {
       cols: [16.29,10.43],
       cells: [
@@ -862,13 +856,6 @@ const FORMATS: Record<TsFormat, Fmt> = {
         ["B36",131,"CAR/MDD"],["C36",132,null,"INDIRECT(\"'\"&C$4&\"'!l\"&ROW()-20)"],
         ["B37",131,"Max MAE"],["C37",135,null,"INDIRECT(\"'\"&C$4&\"'!l\"&ROW()-20)"],
         ["B38",136,"Avg MAE"],["C38",137,null,"INDIRECT(\"'\"&C$4&\"'!l\"&ROW()-20)"],
-      ],
-    },
-    names: {
-      cols: [],
-      cells: [
-        ["B4",12,"All Sheets Name"],
-        ["B5",-1,1],
       ],
     },
     explore: {

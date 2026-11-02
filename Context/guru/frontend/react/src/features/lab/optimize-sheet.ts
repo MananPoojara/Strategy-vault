@@ -28,10 +28,12 @@ const derivedFor = (dir: "long" | "short" | "both"): [string, string][] => {
   ];
 };
 
-/** Columns the team hides ("NF_LongST entry_ST exit_ST 5,2 Filter_Bull.xlsx"): in the downloaded workbook, and on the page.
+/** Columns the team hides in the downloaded workbook ("NF_LongST entry_ST exit_ST 5,2 Filter_Bull.xlsx").
  *  Matched on the AmiBroker and derived names only, never on an optimized setting's label. */
 const EXCEL_HIDDEN = new Set(["No.", "RAR", "Recovery Factor", "RAR/MDD", "Avg Profit/Loss", "# of winners", "W. Tot. Profit", "W. Avg. Bars Held", "L. Avg. Bars Held"]);
-const SCREEN_HIDDEN = new Set(["No.", "RAR", "Recovery Factor", "RAR/MDD", "Avg Profit/Loss", "# of winners", "W. Tot. Profit", "Monthly Thickness", "Final W Avg", "Total Profit", "Holding Days"]);
+/** The page shows the optimized settings first, then only the team's screen columns, in sheet order; the download keeps every column. */
+const SCREEN_SHOWN = new Set(["CAR", "Max. Sys % Drawdown", "CAR/MDD", "# Trades", "Avg % Profit/Loss", "Avg Bars Held", "% of Winners",
+  "Expectancy Ratio", "Final Avg % Profit/Loss", "Final M. Thk", "Final Expectancy Ratio", "Total Net Profit"]);
 const hiddenAt = (head: string[], settingsAt: number, nd: number, hidden: Set<string>) =>
   head.flatMap((h, i) => ((i < settingsAt || i >= settingsAt + nd) && hidden.has(h) ? [i] : []));
 
@@ -76,8 +78,8 @@ export function optimizationList(r: OptimizeResult, ranSpec: Spec, label: (path:
   const key = (row: (number | null)[]) => (carMdd < 0 ? null : row[1 + carMdd]);
   rows.sort((a, b) => { const x = key(a), y = key(b); return x === y ? (a[0] as number) - (b[0] as number) : x === null ? 1 : y === null ? -1 : y - x; });
   const head = ["No.", ...names, ...r.dims.map((d) => label(d.path)), ...derived.map(([n]) => n)], settingsAt = 1 + names.length;
-  const hidden = new Set(hiddenAt(head, settingsAt, nd, SCREEN_HIDDEN));
-  return { head, rows, settingsAt, shown: head.map((_, i) => i).filter((i) => !hidden.has(i)) };
+  const isSetting = (i: number) => i >= settingsAt && i < settingsAt + nd, all = head.map((_, i) => i);
+  return { head, rows, settingsAt, shown: [...all.filter(isSetting), ...all.filter((i) => !isSetting(i) && SCREEN_SHOWN.has(head[i]))] };
 }
 
 /** Rules + Optimization sheets; null when the response carries no sheet (an engine without sheet=1). */
@@ -99,7 +101,7 @@ export function optimizationWorkbook(r: OptimizeResult, c: SheetContext): Sheet[
     : "fees_bps" in costs && costs.fees_bps ? `${costs.fees_bps} bps per side` : 0;
   const sizing = ex.sizing ? ("pct_equity" in ex.sizing ? ex.sizing.pct_equity : Object.entries(ex.sizing).map(([k, v]) => `${k.replace(/_/g, " ")} ${v}`).join(" ")) : "";
   const name = typeof c.ranSpec.name === "string" ? c.ranSpec.name : r.origin?.method.name ?? "";
-  const rules: Sheet = { name: "Rules", rows: [
+  const rules: Sheet = { name: "Rules", layout: "form", rows: [
     [],
     [null, "Timeframe:", "Daily"], [null, "Index:", instrumentName(r, c)],
     [null, "Period:", `${dayFirst(r.from)} to ${dayFirst(r.to)}${r.split ? ` (ranked on the window before ${dayFirst(r.split)})` : ""}`],

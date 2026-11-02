@@ -98,7 +98,21 @@ function shortRule(n: RuleNode | undefined, exit: boolean, i: number): string {
 export function tsTabName(ctx: RunContext, r: RunResult): string {
   const ticker = r.instrument?.ticker ?? "", code = INDEX_CODE[ticker.toUpperCase()] ?? ticker.replace(/\s+/g, "").slice(0, 6);
   const own = (ctx.spec.entry.all ?? []).filter((n) => (n as Obj).filter !== true && (n as Obj).off !== true), ex = (ctx.spec.exit.any ?? []).filter((n) => (n as Obj).off !== true);
-  return `${code}_En_${shortRule(own[0], false, 0)}_EX_${shortRule(ex[0], true, 0)}`;
+  return `${code}_En_${shortRule(own[0], false, 0)}_EX_${shortRule(ex[0], true, 0) || stopTab(ctx.spec.exit as Obj)}`;
+}
+/** With no exit rule, the stop that exits, named as Download all exits names its sheets: "ATR 5-2,4", "ST 5-1,2", "HSL5", "PB10". */
+function stopTab(x: Obj): string {
+  const TAB: Record<string, string> = { W: " W", M: " M" };
+  type Leg = { period?: number; mult?: number; p?: { atr_length?: number; factor?: number } };
+  const da = x.dual_atr as { initial?: Leg; favour?: Leg; tf?: string } | undefined;
+  if (da) {
+    const [i, f] = [da.initial ?? {}, da.favour ?? {}];
+    return `ATR ${i.period === f.period ? `${i.period}-${i.mult},${f.mult}` : `${i.period}-${i.mult},${f.period}-${f.mult}`}${TAB[da.tf ?? ""] ?? ""}`;
+  }
+  const dl = x.dual_line as { initial?: Leg & { s?: string; tf?: string }; favour?: Leg } | undefined;
+  if (dl?.initial?.s === "supertrend") return `ST ${dl.initial.p?.atr_length}-${dl.initial.p?.factor},${dl.favour?.p?.factor}${TAB[dl.initial.tf ?? ""] ?? ""}`;
+  const pct = (k: string) => (x[k] as { pct?: number } | undefined)?.pct;
+  return [["stop_loss", "HSL"], ["target", "PB"], ["trailing", "TSL"]].filter(([k]) => x[k] !== undefined).map(([k, t]) => `${t}${pct(k) ?? ""}`).join(" ");
 }
 /** The template's Rules sheet fields, worded as in the Excel Rules list. */
 export function tsRules(ctx: RunContext, r: RunResult) {

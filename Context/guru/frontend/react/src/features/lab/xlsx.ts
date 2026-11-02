@@ -53,29 +53,102 @@ export function sheetName(name: string, taken: Set<string>): string {
   return s;
 }
 
-/** A cell as Excel sees it: "1,234.50" → number, "12.5%" → 0.125 shown as a percent, anything else text. */
-function cell(v: CellValue | undefined, ref: string, header: boolean): string {
-  if (v === null || v === undefined || v === "") return "";
-  if (typeof v === "object") return `<c r="${ref}"><f>${esc(v.f)}</f></c>`;
-  if (typeof v === "number") return Number.isFinite(v) ? `<c r="${ref}"><v>${v}</v></c>` : "";
+// Look (the team's reference workbook, "NIFTY_M_S_FUT_BUY_MC100_…patchwise.xlsx"): Calibri 10; header white bold on slate,
+// centred and wrapped; titles white bold on navy; Rules labels bold on pale blue; thin light-blue borders; every other data
+// row shaded; columns sized to their content. Style ids (cellXfs below): 0 plain, 1 header, 2 title, 3 label,
+// 4 + band × 5 + kind for data (kind 0 text, 1 integer, 2 decimal, 3 percent, 4 integer of 10,000 or more with thousands
+// separators, so years and counts stay plain; band 1 = shaded row).
+const HEADER = 1, TITLE = 2, LABEL = 3;
+type Kind = 0 | 1 | 2 | 3 | 4;
+const dataStyle = (band: number, kind: Kind) => 4 + band * 5 + kind;
+const intKind = (n: number): Kind => (Math.abs(n) >= 10000 ? 4 : 1);
+/** A cell's Excel value and kind: "1,234.50" → number, "12.5%" → 0.125 as a percent, a formula → decimal, anything else text. */
+function parse(v: CellValue | undefined): { xml: (ref: string, s: number) => string; kind: Kind; shown: number } | null {
+  if (v === null || v === undefined || v === "") return null;
+  if (typeof v === "object") return { xml: (ref, s) => `<c r="${ref}" s="${s}"><f>${esc(v.f)}</f></c>`, kind: 2, shown: 10 };
+  const num = (n: number, kind: Kind) => ({ xml: (ref: string, s: number) => `<c r="${ref}" s="${s}"><v>${n}</v></c>`, kind,
+    shown: kind === 3 ? `${(n * 100).toFixed(2)}%`.length : kind === 1 ? String(n).length : kind === 4 ? n.toLocaleString("en-US").length : Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).length + 1 });
+  if (typeof v === "number") return Number.isFinite(v) ? num(v, Number.isInteger(v) ? intKind(v) : 2) : null;
   const t = v.trim().replace(/,/g, "");
-  if (!header && /^[-+]?\d+(\.\d+)?%$/.test(t)) return `<c r="${ref}" s="2"><v>${Number(t.slice(0, -1)) / 100}</v></c>`;
-  if (!header && /^[-+]?\d+(\.\d+)?([eE][-+]?\d+)?$/.test(t)) return `<c r="${ref}"><v>${Number(t)}</v></c>`;
-  return `<c r="${ref}" t="inlineStr"${header ? ' s="1"' : ""}><is><t xml:space="preserve">${esc(v)}</t></is></c>`;
+  if (/^[-+]?\d+(\.\d+)?%$/.test(t)) return num(Number(t.slice(0, -1)) / 100, 3);
+  if (/^[-+]?\d+(\.\d+)?([eE][-+]?\d+)?$/.test(t)) return num(Number(t), Number.isInteger(Number(t)) ? intKind(Number(t)) : 2);
+  return { xml: (ref, s) => `<c r="${ref}" s="${s}" t="inlineStr"><is><t xml:space="preserve">${esc(v)}</t></is></c>`, kind: 0, shown: v.length };
 }
+const text = (v: CellValue | undefined) => (v === null || v === undefined ? "" : typeof v === "object" ? "" : String(v));
 
 /** `{ f }`: an Excel formula without the leading "=", computed when the file opens. */
 export type CellValue = string | number | null | { f: string };
 export interface Sheet { name: string; rows: CellValue[][]; /** an AutoFilter over the header row and its data */ autoFilter?: boolean;
-  /** 0-based column indices hidden in Excel (still there, unhide to see them) */ hidden?: number[] }
-/** A workbook; the first row of each sheet is the bold, frozen header. */
+  /** 0-based column indices hidden in Excel (still there, unhide to see them) */ hidden?: number[];
+  /** "table" (default): row 1 is the frozen header; "form": label / value rows (a Rules sheet); "blocks": titled tables, each a
+   *  one-cell title row followed by its header row (a report). Only the look differs; every value is written as given. */
+  layout?: "table" | "form" | "blocks" }
+
+/** The style of each row: header / title / data (with its shading band) / form. */
+function roles(s: Sheet): ("header" | "title" | "form" | number)[] {
+  const layout = s.layout ?? "table";
+  let band = 0, afterTitle = false;
+  return s.rows.map((r, i) => {
+    const filled = r.filter((v) => text(v) !== "" || (v !== null && typeof v === "object"));
+    if (layout === "form") return "form";
+    if (layout === "table") return i === 0 ? "header" : (band++ % 2);
+    if (!filled.length) { band = 0; return 0; }
+    if (filled.length === 1 && typeof r[0] === "string" && r[0] !== "") { afterTitle = true; return "title"; }
+    if (afterTitle) { afterTitle = false; band = 0; return "header"; }
+    return band++ % 2;
+  });
+}
+
+function sheetXml(s: Sheet): string {
+  const kinds = roles(s), width = Math.max(1, ...s.rows.map((r) => r.length)), hidden = new Set(s.hidden ?? []);
+  // widths from content: a data cell's shown length, a header's longest word (headers wrap), within 8–48 characters
+  const widths = Array.from({ length: width }, (_, j) => {
+    let w = 8;
+    s.rows.forEach((r, i) => {
+      const v = r[j], p = parse(v);
+      if (!p) return;
+      if (kinds[i] === "header") w = Math.max(w, ...text(v).split(/\s+/).map((x) => x.length + 3));
+      else if (kinds[i] !== "title") w = Math.max(w, p.shown + 3);
+    });
+    return Math.min(w, kinds.includes("form") && j > 1 ? 70 : 48);
+  });
+  const lines = (i: number) => Math.max(1, ...s.rows[i].map((v, j) => Math.ceil(text(v).length / Math.max(1, widths[j] - 2))));
+  const rowXml = (r: CellValue[], i: number) => {
+    const role = kinds[i];
+    const ht = role === "header" ? ` ht="${Math.max(22, 14 * lines(i) + 6)}" customHeight="1"` : role === "title" ? ' ht="22" customHeight="1"' : "";
+    const cells = r.map((v, j) => {
+      const p = parse(v);
+      if (!p) return "";
+      const ref = `${col(j)}${i + 1}`;
+      if (role === "header") return p.xml(ref, HEADER);
+      if (role === "title") return p.xml(ref, TITLE);
+      if (role === "form") return p.xml(ref, p.kind === 0 && /:\s*$/.test(text(v)) ? LABEL : dataStyle(0, p.kind));
+      return p.xml(ref, dataStyle(role, p.kind));
+    }).join("");
+    return `<row r="${i + 1}"${ht}>${cells}</row>`;
+  };
+  const frozen = (s.layout ?? "table") === "table";
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"${frozen ? "" : ' showGridLines="0"'}>${
+    frozen ? '<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>' : ""}</sheetView></sheetViews><sheetFormatPr defaultRowHeight="18" customHeight="1"/><cols>${
+    widths.map((w, j) => `<col min="${j + 1}" max="${j + 1}" width="${w}"${hidden.has(j) ? ' hidden="1"' : ""} customWidth="1"/>`).join("")}</cols><sheetData>${
+    s.rows.map(rowXml).join("")}</sheetData>${
+    s.autoFilter && s.rows.length ? `<autoFilter ref="A1:${col(width - 1)}${s.rows.length}"/>` : ""}</worksheet>`;
+}
+
+const B = '<left style="thin"><color rgb="FFB0C4D8"/></left><right style="thin"><color rgb="FFB0C4D8"/></right><top style="thin"><color rgb="FFB0C4D8"/></top><bottom style="thin"><color rgb="FFB0C4D8"/></bottom><diagonal/>';
+const NUMFMT = [0, 1, 4, 10, 3]; // text General, integer 0, decimal #,##0.00, percent 0.00%, large integer #,##0
+const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="4"><font><sz val="10"/><color rgb="FF000000"/><name val="Calibri"/></font><font><b/><sz val="10"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font><font><b/><sz val="10"/><color rgb="FF2C3E50"/><name val="Calibri"/></font></fonts><fills count="6"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>${
+  ["FF34495E", "FF1F3864", "FFF2F6FA", "FFF9FBFD"].map((c) => `<fill><patternFill patternType="solid"><fgColor rgb="${c}"/><bgColor indexed="64"/></patternFill></fill>`).join("")
+}</fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border>${B}</border></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="14"><xf fontId="0"/><xf fontId="1" fillId="2" borderId="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf fontId="2" fillId="3" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center"/></xf><xf fontId="3" fillId="4" borderId="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>${
+  [0, 1].flatMap((band) => NUMFMT.map((fmt, k) => `<xf fontId="0" fillId="${band ? 5 : 0}" borderId="1" numFmtId="${fmt}" applyFont="1" applyFill="1" applyBorder="1" applyNumberFormat="1" applyAlignment="1"><alignment vertical="center"${k === 0 ? ' horizontal="left" indent="1" wrapText="1"' : ""}/></xf>`)).join("")
+}</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+
+/** A workbook: each sheet laid out as its `layout` says (by default a table with a frozen, filtered-ready header row). */
 export function xlsx(sheets: Sheet[]): Uint8Array {
   const taken = new Set<string>(), named = sheets.map((s) => ({ ...s, name: sheetName(s.name, taken) }));
-  const ws = (s: Sheet) => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>${
-    s.hidden?.length ? `<cols>${[...new Set(s.hidden)].sort((a, b) => a - b).map((i) => `<col min="${i + 1}" max="${i + 1}" width="9" hidden="1" customWidth="1"/>`).join("")}</cols>` : ""}<sheetData>${
-    s.rows.map((r, i) => `<row r="${i + 1}">${r.map((v, j) => cell(v, `${col(j)}${i + 1}`, i === 0)).join("")}</row>`).join("")}</sheetData>${
-    s.autoFilter && s.rows.length ? `<autoFilter ref="A1:${col(Math.max(1, ...s.rows.map((r) => r.length)) - 1)}${s.rows.length}"/>` : ""}</worksheet>`;
+  const ws = sheetXml;
   const formulas = sheets.some((s) => s.rows.some((r) => r.some((v) => v !== null && typeof v === "object")));
   const files: ZipFile[] = [
     { name: "[Content_Types].xml", data: utf8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -89,8 +162,7 @@ export function xlsx(sheets: Sheet[]): Uint8Array {
     { name: "xl/_rels/workbook.xml.rels", data: utf8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${
       named.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join("")}<Relationship Id="rId${named.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`) },
-    { name: "xl/styles.xml", data: utf8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="10"/><name val="Arial"/></font><font><b/><sz val="10"/><name val="Arial"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="3"><xf fontId="0"/><xf fontId="1" applyFont="1"/><xf fontId="0" numFmtId="10" applyNumberFormat="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`) },
+    { name: "xl/styles.xml", data: utf8(STYLES) },
     ...named.map((s, i) => ({ name: `xl/worksheets/sheet${i + 1}.xml`, data: utf8(ws(s)) })),
   ];
   return zip(files);

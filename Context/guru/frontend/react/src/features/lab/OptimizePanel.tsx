@@ -7,16 +7,31 @@ import { useFormulaScope } from "./formula";
 import {foreignDescription} from "./foreign-model";
 import { portfolioGridProblems } from "./portfolio-model";
 import { ErrorNotice, isProvisional, Loading, ProvisionalStrip, ServerLabel, tone } from "./ui";
-import { InfoLog, WalkForward } from "./WalkForward";
 import { OptimizeSurface } from "./OptimizeSurface";
 import { TradesheetButton, TradesheetDownloads } from "./TradesheetDownloads";
 import { optimizationList, optimizationWorkbook, sheetFileName } from "./optimize-sheet";
 import { saveBytes, xlsx, XLSX_TYPE } from "./xlsx";
-import type { Catalogue, IndividualOptimizeResult, OptimizeDim, LabOptimizeResult, LabRunResult, Role, SavedMarket, Spec, WalkforwardOptions, WalkforwardResult } from "./types";
+import type { Catalogue, IndividualOptimizeResult, OptimizeDim, LabOptimizeResult, LabInfo, LabRunResult, Role, SavedMarket, Spec } from "./types";
 import type { RunContext } from "./trade-explain";
 import "./optimize.css";
 
 type TsContext = Omit<RunContext, "spec" | "own" | "catalogue">;
+
+/** AmiBroker Analysis "Info" tab: elapsed time, combinations evaluated, threads and warnings; collapsed until asked for. */
+function InfoLog({ info }: { info?: LabInfo }) {
+  const [open, setOpen] = useState(false);
+  if (!info) return null;
+  const n = info.warnings.length;
+  return (
+    <div className="lab-info" data-lab-info>
+      <button type="button" className="dbtn sm" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? "▾" : "▸"} Info{n ? ` · ${n} warning${n === 1 ? "" : "s"}` : ""}</button>
+      {open && <ul className="lab-info-log">
+        <li>Elapsed: {(info.ms / 1000).toFixed(2)} s</li><li>Combinations evaluated: {int(info.combos)}</li><li>Threads: {int(info.threads)}</li>
+        {n ? info.warnings.map((w, i) => <li key={i} className="lab-info-warn">{w}</li>) : <li>No warnings.</li>}
+      </ul>}
+    </div>
+  );
+}
 
 const MAX_VALUES = 1000;
 const RANK_LABELS: Record<string, string> = { cagr: "CAGR", sharpe: "Sharpe", monthly_thickness: "Monthly thickness", expectancy_ratio: "Expectancy ratio", mar: "CAR/MDD" };
@@ -43,7 +58,6 @@ export function OptimizePanel(props: {
   spec: Spec; catalogue: Catalogue; market: SavedMarket; role: Role | null; dates: string[];
   onOptimize(spec: Spec, split: string | null): Promise<LabOptimizeResult>;
   onApply(spec: Spec): void; onTried(n: number): void; tried: number; instrumentLabel?: string;
-  onWalkforward?(spec: Spec, o: WalkforwardOptions): Promise<WalkforwardResult>;
   /** AmiBroker Individual Optimize (portfolio universe): each symbol optimized alone. */
   onIndividual?(spec: Spec): Promise<IndividualOptimizeResult>;
   /** One backtest of a spec on this instrument: the tradesheet downloads re-run each combination with it. */
@@ -51,7 +65,7 @@ export function OptimizePanel(props: {
   /** Timeframe and costs of the page's backtest: each row's Excel then saves the backtest's Download TS workbook. */
   ts?: TsContext;
 }) {
-  const { spec, catalogue, market, role, dates, onOptimize, onApply, onTried, tried, instrumentLabel, onWalkforward, onIndividual, onRun, ticker, ts } = props;
+  const { spec, catalogue, market, role, dates, onOptimize, onApply, onTried, tried, instrumentLabel, onIndividual, onRun, ticker, ts } = props;
   const [individual, setIndividual] = useState(false);
   const each = individual && !!spec.portfolio && !!onIndividual; // portfolio settings do not apply to a symbol run alone
   const { infos } = useFormulaScope();
@@ -63,7 +77,6 @@ export function OptimizePanel(props: {
   const [result, setResult] = useState<LabOptimizeResult | IndividualOptimizeResult | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [retryUntil, setRetryUntil] = useState(0); // 429 deadline; the main button waits for it too
-  const [walking, setWalking] = useState(false); // a walk-forward holds the shared optimizer slot
   const last = useRef<{ spec: Spec; go(): Promise<LabOptimizeResult | IndividualOptimizeResult> } | null>(null);
   const runId = useRef(0);
 
@@ -93,7 +106,7 @@ export function OptimizePanel(props: {
   const tooBig = dims.some((d) => valuesCount(d) > MAX_VALUES) || combos > comboCap || portfolioIssues.length>0;
   const split = !spec.portfolio && heldBack ? splitDate(dates, heldBack) : null;
   const tooLong = dims.length > 0 && specTooLong(withOptimize(spec, dims));
-  const disabled = tooLong || running !== null || walking || retryUntil > 0 || combos === 0 || tooBig || (!spec.portfolio && heldBack > 0 && split === null);
+  const disabled = tooLong || running !== null || retryUntil > 0 || combos === 0 || tooBig || (!spec.portfolio && heldBack > 0 && split === null);
 
   const toggle = (s: OptimizableSetting, on: boolean) => setSel((cur) => {
     const next = { ...cur };
@@ -179,9 +192,6 @@ export function OptimizePanel(props: {
       {result && (result.kind === "lab_individual_optimization" ? <IndividualResults result={result} label={(p) => settings.find((s) => s.path === p)?.label ?? p} />
         : <LabOptimizeResultView result={result} spec={spec} ranSpec={last.current?.spec ?? spec} catalogue={catalogue} settings={settings} market={market} instrumentLabel={instrumentLabel} onApply={onApply} onRun={onRun} ticker={ticker} ts={ts} />)}
       {!result && !error && running === null && <p className="empty">{spec.portfolio?"Portfolio optimization ranks the full period using shared cash.":COPY.emptyOptimize}</p>}
-      {onWalkforward && !spec.portfolio && <WalkForward dates={dates} spec={withOptimize(spec, dims)} blocked={tooLong || combos === 0 || tooBig || running !== null || retryUntil > 0}
-        onTried={onTried} onRunning={setWalking}
-        market={market} instrumentLabel={instrumentLabel} label={(p) => settings.find((s) => s.path === p)?.label ?? p} onRun={onWalkforward} />}
     </section>
   );
 }

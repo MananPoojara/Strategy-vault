@@ -447,9 +447,6 @@ function IndicatorsLab() {
             onOptimize={(spec, split) => { assertRunnable(spec); return lab.optimize(market, spec, {
               ticker, from: settings.from || undefined, to: settings.to || undefined, ...runQuery(spec, settings.fees, settings.slippage), split,
             }); }}
-            onWalkforward={(spec, o) => { assertRunnable(spec); return lab.walkforward(market, spec, {
-              ticker, from: settings.from || undefined, to: settings.to || undefined, ...runQuery(spec, settings.fees, settings.slippage), ...o,
-            }); }}
             onIndividual={(spec) => { assertRunnable(spec); return lab.optimizeIndividual(market, spec, { from: settings.from || undefined, to: settings.to || undefined }); }}
             onApply={(spec) => { setTab("strategy"); dispatch({ type: "spec", spec }); void run(spec); }}
             onTried={(n) => dispatch({ type: "tried", n })} tried={state.tried} instrumentLabel={option?.instrumentLabel}

@@ -58,4 +58,12 @@ it("the tradesheet tab is named like the team's (index code, entry, exit) and th
   const rules = tsRules({ spec: s, own: s, catalogue: cat }, r);
   expect(rules).toMatchObject({ timeframe: "Daily", index: "NIFTY 50 (03-01-2000 to 09-10-2026)", position: "Long", filter: "Without filter" });
   expect(rules.exit[0]).toMatch(/^N candle: /);
+  // no exit rule: the stop that exits names the exit (an optimizer row with only the Dual ATR left "…_EX_" blank)
+  const only = (exit: Record<string, unknown>) => tsTabName({ spec: { ...s, exit: { any: [], ...exit } as Spec["exit"] }, own: s, catalogue: cat }, r);
+  expect(only({ dual_atr: { initial: { period: 6, mult: 3 }, favour: { period: 7, mult: 4 } } })).toBe("NF_En_ST 5,1_EX_ATR 6-3,7-4");
+  expect(only({ dual_atr: { initial: { period: 5, mult: 2 }, favour: { period: 5, mult: 4 }, tf: "W" } })).toBe("NF_En_ST 5,1_EX_ATR 5-2,4 W");
+  expect(only({ dual_line: { initial: st({ atr_length: 5, factor: 1 }), favour: st({ atr_length: 5, factor: 2 }) } })).toBe("NF_En_ST 5,1_EX_ST 5-1,2");
+  expect(only({ stop_loss: { pct: 5 }, target: { pct: 10 } })).toBe("NF_En_ST 5,1_EX_HSL5 PB10");
+  // an exit rule switched off by the optimizer: the stop names it
+  expect(only({ any: [{ ...(s.exit.any[0] as object), off: true }], dual_atr: { initial: { period: 5, mult: 2 }, favour: { period: 5, mult: 4 } } })).toBe("NF_En_ST 5,1_EX_ATR 5-2,4");
 });
