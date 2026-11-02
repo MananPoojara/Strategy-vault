@@ -5,6 +5,7 @@ import { describeNode, nodeKind } from "./rule-tree";
 import { bandWords } from "./BandRule";
 import { isSupertrendExit, nCandleOf } from "./ExitChoice";
 import type { Catalogue, RuleNode, RunResult, Spec } from "./types";
+import { dateFilterName } from "./date-sets";
 
 /** The test behind a result: the spec that ran, the user's own rules, and the run settings. */
 export interface RunContext { spec: Spec; own: Spec; catalogue: Catalogue; tf?: string; fees?: string | number; slippage?: string | number }
@@ -57,7 +58,7 @@ export function rulesSheet(ctx: RunContext, r: RunResult): (string | number | nu
   if (changed.length) add("AmiBroker settings changed", changed.join(", "));
   // With / without filter, and which: the date periods and the indicator filter rows that were switched on
   const df = spec.date_filter, used = [
-    ...(df && !df.off && df.windows.length ? [`Dates: ${df.set?.name ?? "Own dates"} · ${df.windows.length} periods`] : []),
+    ...(df && !df.off && df.windows.length ? [`Dates: ${dateFilterName(df)} · ${df.windows.length} periods`] : []),
     ...sides(spec).flatMap(({ pre, side }) => side.entry.all.filter((n) => (n as Obj).filter === true && (n as Obj).off !== true)
       .map((n) => `${pre ? "Short " : ""}Indicator: ${words(n, cat)}${(n as Obj).filter_exit === true ? " (also exits when it turns false)" : ""}`)),
   ];
@@ -117,7 +118,7 @@ function stopTab(x: Obj): string {
 /** The template's Rules sheet fields, worded as in the Excel Rules list. */
 export function tsRules(ctx: RunContext, r: RunResult) {
   const rows = rulesSheet(ctx, r), get = (k: string) => rows.find((x) => x[0] === k)?.[1] as string | undefined;
-  const span = `${r.instrument?.ticker ?? ""} (${dmy(r.from)} to ${dmy(r.to)})`, dir = ctx.spec.direction ?? "long";
+  const dir = ctx.spec.direction ?? "long";
   const entry = sides(ctx.spec).flatMap(({ side }) => side.entry.all.filter((n) => (n as Obj).filter !== true && (n as Obj).off !== true).map((n) => words(n, ctx.catalogue)));
   const exit = sides(ctx.spec).flatMap(({ side }) => [...side.exit.any.filter((n) => (n as Obj).off !== true).map((n, i) => `${exitName(n, i)}: ${words(n, ctx.catalogue)}`),
     ...stopsOn(side.exit as Obj, undefined)]);
@@ -125,6 +126,6 @@ export function tsRules(ctx: RunContext, r: RunResult) {
   const open = r.trades?.find((t) => t.open);
   if (open) exit.push(`Last trade still open: valued at the close on ${dmy(open.exit || r.to)}`);
   const setup = sides(ctx.spec).flatMap(({ side }) => [...side.entry.all, ...side.exit.any]).filter((n) => nodeKind(bare(n)) === "setup").map((n) => words(n, ctx.catalogue));
-  return { timeframe: TF[ctx.tf ?? "D"] ?? String(ctx.tf), index: span, period: `${dmy(r.from)} to ${dmy(r.to)}`, strategy: tsTabName(ctx, r),
+  return { timeframe: TF[ctx.tf ?? "D"] ?? String(ctx.tf), index: r.instrument?.ticker ?? "", period: `${dmy(r.from)} to ${dmy(r.to)}`, strategy: tsTabName(ctx, r),
     position: dir === "short" ? "Short" : dir === "both" ? "Long & Short" : "Long", filter: get("Filter") ?? "Without filter", setup: setup.join("; ") || "—", entry, exit };
 }

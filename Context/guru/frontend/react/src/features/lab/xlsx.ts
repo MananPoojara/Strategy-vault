@@ -58,7 +58,7 @@ export function sheetName(name: string, taken: Set<string>): string {
 // row shaded; columns sized to their content. Style ids (cellXfs below): 0 plain, 1 header, 2 title, 3 label,
 // 4 + band × 5 + kind for data (kind 0 text, 1 integer, 2 decimal, 3 percent, 4 integer of 10,000 or more with thousands
 // separators, so years and counts stay plain; band 1 = shaded row).
-const HEADER = 1, TITLE = 2, LABEL = 3;
+const HEADER = 1, TITLE = 2, LABEL = 3, FORM_VALUE = 14; // data cells centre; a Rules value reads left, beside its label
 type Kind = 0 | 1 | 2 | 3 | 4;
 const dataStyle = (band: number, kind: Kind) => 4 + band * 5 + kind;
 const intKind = (n: number): Kind => (Math.abs(n) >= 10000 ? 4 : 1);
@@ -122,7 +122,7 @@ function sheetXml(s: Sheet): string {
       const ref = `${col(j)}${i + 1}`;
       if (role === "header") return p.xml(ref, HEADER);
       if (role === "title") return p.xml(ref, TITLE);
-      if (role === "form") return p.xml(ref, p.kind === 0 && /:\s*$/.test(text(v)) ? LABEL : dataStyle(0, p.kind));
+      if (role === "form") return p.xml(ref, p.kind === 0 && /:\s*$/.test(text(v)) ? LABEL : p.kind === 0 ? FORM_VALUE : dataStyle(0, p.kind));
       return p.xml(ref, dataStyle(role, p.kind));
     }).join("");
     return `<row r="${i + 1}"${ht}>${cells}</row>`;
@@ -141,9 +141,9 @@ const NUMFMT = [0, 1, 4, 10, 3]; // text General, integer 0, decimal #,##0.00, p
 const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="4"><font><sz val="10"/><color rgb="FF000000"/><name val="Calibri"/></font><font><b/><sz val="10"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font><font><b/><sz val="10"/><color rgb="FF2C3E50"/><name val="Calibri"/></font></fonts><fills count="6"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>${
   ["FF34495E", "FF1F3864", "FFF2F6FA", "FFF9FBFD"].map((c) => `<fill><patternFill patternType="solid"><fgColor rgb="${c}"/><bgColor indexed="64"/></patternFill></fill>`).join("")
-}</fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border>${B}</border></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="14"><xf fontId="0"/><xf fontId="1" fillId="2" borderId="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf fontId="2" fillId="3" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center"/></xf><xf fontId="3" fillId="4" borderId="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>${
-  [0, 1].flatMap((band) => NUMFMT.map((fmt, k) => `<xf fontId="0" fillId="${band ? 5 : 0}" borderId="1" numFmtId="${fmt}" applyFont="1" applyFill="1" applyBorder="1" applyNumberFormat="1" applyAlignment="1"><alignment vertical="center"${k === 0 ? ' horizontal="left" indent="1" wrapText="1"' : ""}/></xf>`)).join("")
-}</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+}</fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border>${B}</border></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="15"><xf fontId="0"/><xf fontId="1" fillId="2" borderId="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf fontId="2" fillId="3" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center"/></xf><xf fontId="3" fillId="4" borderId="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>${
+  [0, 1].flatMap((band) => NUMFMT.map((fmt, k) => `<xf fontId="0" fillId="${band ? 5 : 0}" borderId="1" numFmtId="${fmt}" applyFont="1" applyFill="1" applyBorder="1" applyNumberFormat="1" applyAlignment="1"><alignment horizontal="center" vertical="center"${k === 0 ? ' wrapText="1"' : ""}/></xf>`)).join("")
+}<xf fontId="0" borderId="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center" indent="1" wrapText="1"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
 
 /** A workbook: each sheet laid out as its `layout` says (by default a table with a frozen, filtered-ready header row). */
 export function xlsx(sheets: Sheet[]): Uint8Array {

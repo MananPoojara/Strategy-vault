@@ -115,3 +115,6 @@
 /* the settings table keeps its numbers beside their names: it takes only the width its columns need */
 .lab-page[data-lab-page] [data-lab-optimize] .tbl.lab-dims { width: auto; min-width: min(100%, 720px); max-width: 100%; }
 .lab-page[data-lab-page] [data-lab-optimize] .tbl.lab-dims td:nth-child(2) { min-width: 260px; }
+
+/* The team's sheet on the page (Now / #1-#3 and the result list): every heading and value centred, as in their Excel. */
+.lab-page [data-lab-optimize] :is([data-lab-optimize-top], [data-lab-optimize-sheet-list] table) :is(th, td) { text-align: center; }

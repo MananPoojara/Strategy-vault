@@ -26,6 +26,12 @@ it("an xlsx is a zip with one worksheet per sheet; numbers and percents become n
   expect(text).toContain('<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>');
   expect(text).toMatch(/<col min="1" max="1" width="1\d" customWidth="1"\/>/); // fitted to "2024-01-02"
   expect(text).toContain('<name val="Calibri"/>');
+  expect(text.match(/<alignment horizontal="center" vertical="center"/g)?.length).toBe(11); // header + all 10 data styles centred
+  // a Rules form: labels bold, a text value left beside its label (style 14), a number centred
+  const form = new TextDecoder().decode(xlsx([{ name: "Rules", layout: "form", rows: [[null, "Index:", "Nifty 50"], [null, "Open Position:", 1]] }]));
+  expect(form).toContain('<c r="B1" s="3" t="inlineStr">');
+  expect(form).toContain('<c r="C1" s="14" t="inlineStr">');
+  expect(form).toContain('<c r="C2" s="5"><v>1</v></c>');
   expect(text).toContain("&lt;b&gt;");
   const out = process.env.XLSX_SAMPLE_DIR;
   if (out) { const fs = require("node:fs") as typeof import("node:fs"); fs.writeFileSync(`${out}/sample.xlsx`, book); fs.writeFileSync(`${out}/sample.zip`, zip([{ name: "one.xlsx", data: book }, { name: "two.xlsx", data: book }])); }

@@ -2,6 +2,8 @@ import { expect, it } from "vitest";
 import { reasonLabeler, rulesSheet } from "../src/features/lab/trade-explain";
 import { withDefaultExit } from "../src/features/lab/defaults";
 import { starterSpec } from "../src/features/lab/spec-model";
+import { BUILT_IN } from "../src/features/lab/builtin-periods";
+import { dateFilterName, pairs, phaseWindows } from "../src/features/lab/date-sets";
 import type { RuleNode, Spec } from "../src/features/lab/types";
 import { catalogue7Fixture as cat, runFixture } from "./fixtures/lab";
 
@@ -41,9 +43,9 @@ it("the Rules sheet is a title, then Item | Value under Strategy, Entry and Exit
   expect(text.some((t) => /^(Buy and sell at|Slippage|Results in) \|/.test(t))).toBe(false);
   // with a date filter and an indicator filter: one Filter row names both; the filter row is not repeated under Entry
   const filtered: Spec = { ...spec, entry: { all: [...spec.entry.all, { ...rsi(">", 50), filter: true } as RuleNode] },
-    date_filter: { windows: [["2020-01-01", "2020-06-30"], ["2021-01-01", "2021-03-31"]], set: { name: "Base 1" } } };
+    date_filter: { windows: pairs(phaseWindows(BUILT_IN[0].windows, "Bear")).slice(0, 2), set: { name: "Base 1" } } };
   const withF = rulesSheet({ spec: filtered, own: filtered, catalogue: cat }, runFixture).map((r) => r.join(" | "));
-  expect(withF).toContain("Filter | With filter — Dates: Base 1 · 2 periods; Indicator: RSI(14) is above 50");
+  expect(withF).toContain("Filter | With filter — Dates: Base 1 Bear · 2 periods; Indicator: RSI(14) is above 50"); // the phase, not only the base
   expect(withF.filter((t) => t.startsWith("Entry "))).toEqual(["Entry 1 | RSI(14) crosses above 60"]);
   expect(text.some((t) => /How it works|What it is|Columns/.test(t))).toBe(false);
 });
@@ -56,7 +58,7 @@ it("the tradesheet tab is named like the team's (index code, entry, exit) and th
   const r = { ...runFixture, instrument: { ...runFixture.instrument, ticker: "NIFTY 50" }, from: "2000-01-03", to: "2026-10-09" };
   expect(tsTabName({ spec: s, own: s, catalogue: cat }, r)).toBe("NF_En_ST 5,1_EX_Ncandle-9");
   const rules = tsRules({ spec: s, own: s, catalogue: cat }, r);
-  expect(rules).toMatchObject({ timeframe: "Daily", index: "NIFTY 50 (03-01-2000 to 09-10-2026)", position: "Long", filter: "Without filter" });
+  expect(rules).toMatchObject({ timeframe: "Daily", index: "NIFTY 50", period: "03-01-2000 to 09-10-2026", position: "Long", filter: "Without filter" });
   expect(rules.exit[0]).toMatch(/^N candle: /);
   // no exit rule: the stop that exits names the exit (an optimizer row with only the Dual ATR left "…_EX_" blank)
   const only = (exit: Record<string, unknown>) => tsTabName({ spec: { ...s, exit: { any: [], ...exit } as Spec["exit"] }, own: s, catalogue: cat }, r);
@@ -66,4 +68,14 @@ it("the tradesheet tab is named like the team's (index code, entry, exit) and th
   expect(only({ stop_loss: { pct: 5 }, target: { pct: 10 } })).toBe("NF_En_ST 5,1_EX_HSL5 PB10");
   // an exit rule switched off by the optimizer: the stop names it
   expect(only({ any: [{ ...(s.exit.any[0] as object), off: true }], dual_atr: { initial: { period: 5, mult: 2 }, favour: { period: 5, mult: 4 } } })).toBe("NF_En_ST 5,1_EX_ATR 5-2,4");
+});
+
+it("names the date filter with its phase: the base's bull or bear periods, an uploaded set by its name, none when off", () => {
+  const df = (phase: "Bull" | "Bear", extra = {}) => ({ windows: pairs(phaseWindows(BUILT_IN[1].windows, phase)), set: { name: "Base 2" }, ...extra });
+  expect(dateFilterName(df("Bull"))).toBe("Base 2 Bull");
+  expect(dateFilterName(df("Bear"))).toBe("Base 2 Bear");
+  expect(dateFilterName({ windows: [["2020-01-01", "2020-06-30"]], set: { id: 7, name: "My Bear dates" } })).toBe("My Bear dates"); // no "Bear" twice
+  expect(dateFilterName({ windows: [["2020-01-01", "2020-06-30"]], set: { id: 7, name: "Team periods" } })).toBe("Team periods");
+  expect(dateFilterName({ windows: [["2020-01-01", "2020-06-30"]], mode: "outside", set: { name: "Base 1" } })).toBe("Base 1 Bear");
+  expect([dateFilterName(undefined), dateFilterName(df("Bull", { off: true })), dateFilterName({ windows: [] })]).toEqual([null, null, null]);
 });

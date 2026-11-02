@@ -29,6 +29,8 @@ export interface TsInput {
   rules: { timeframe: string; index: string; period: string; strategy: string; position: string; filter: string; setup: string; entry: string[]; exit: string[] };
   /** Several trade sheets in one book (same entry, one sheet per exit variant), in this order; replaces sheetName/trades. */
   sheets?: { sheetName: string; trades: TsInput["trades"]; exitLabel?: string }[];
+  /** The date filter traded in ("Base 2 Bull"), named in the file name; none without a date filter. */
+  dates?: string;
 }
 /** The YOY Summary has 20 sheet columns. */
 export const TS_MAX_SHEETS = 20;
@@ -53,7 +55,7 @@ export function tsSheetNames(raw: string[]): string[] {
     return n;
   });
 }
-export const tsFileName = (input: TsInput) => `TS_${tsSheetName(input.sheetName)}.xlsx`.replace(/[\\/:*?"<>|]+/g, " ");
+export const tsFileName = (input: TsInput) => `TS_${tsSheetName(input.sheetName)}${input.dates ? `_${input.dates}` : ""}.xlsx`.replace(/[\\/:*?"<>|]+/g, " ");
 
 let xlsxLoad: Promise<any> | undefined;
 /** The app's vendored SheetJS-with-styles, loaded once on demand (global XLSX). */

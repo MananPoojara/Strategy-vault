@@ -2,6 +2,7 @@
 import { directionOf } from "./execution-model";
 import { col, type CellValue, type Sheet } from "./xlsx";
 import type { OptimizeResult, Spec } from "./types";
+import { dateFilterName } from "./date-sets";
 
 const POSITIONS = { long: "Long", short: "Short", both: "Long and short" } as const;
 const dayFirst = (d: string) => d.split("-").reverse().join("-");
@@ -14,7 +15,8 @@ const derivedFor = (dir: "long" | "short" | "both"): [string, string][] => {
     ["Monthly Thickness", "{Avg % Profit/Loss}/({Avg Bars Held}-1)*21"],
     ["Expectancy Ratio", "(({W. Avg % Profit}/ABS({L. Avg % Loss}))*{% of Winners}-{% of Losers})/100"],
   ];
-  if (dir === "both") return [...common, ["Total Profit", "{# Trades}*{Avg % Profit/Loss}"]];
+  // long and short together: the result has no per-side stats, so no side's cost formula fits; only the side-free columns
+  if (dir === "both") return [...common, ["Total Profit", "{# Trades}*{Avg % Profit/Loss}"], ["Holding Days", "{# Trades}*({Avg Bars Held}-1)*7/5"]];
   const short = dir === "short";
   return [...common,
     ["Final Avg % Profit/Loss", final("Avg % Profit/Loss", "Avg Bars Held", short)],
@@ -28,20 +30,20 @@ const derivedFor = (dir: "long" | "short" | "both"): [string, string][] => {
   ];
 };
 
-/** Columns the team hides in the downloaded workbook ("NF_LongST entry_ST exit_ST 5,2 Filter_Bull.xlsx").
- *  Matched on the AmiBroker and derived names only, never on an optimized setting's label. */
-const EXCEL_HIDDEN = new Set(["No.", "RAR", "Recovery Factor", "RAR/MDD", "Avg Profit/Loss", "# of winners", "W. Tot. Profit", "W. Avg. Bars Held", "L. Avg. Bars Held"]);
-/** The page shows the optimized settings first, then only the team's screen columns, in sheet order; the download keeps every column. */
+/** The page shows the optimized settings first, then only the team's screen columns, in sheet order. */
 const SCREEN_SHOWN = new Set(["CAR", "Max. Sys % Drawdown", "CAR/MDD", "# Trades", "Avg % Profit/Loss", "Avg Bars Held", "% of Winners",
   "Expectancy Ratio", "Final Avg % Profit/Loss", "Final M. Thk", "Final Expectancy Ratio", "Total Net Profit"]);
-const hiddenAt = (head: string[], settingsAt: number, nd: number, hidden: Set<string>) =>
-  head.flatMap((h, i) => ((i < settingsAt || i >= settingsAt + nd) && hidden.has(h) ? [i] : []));
+/** The download keeps every column but opens showing only these and the optimized settings (the team's view); the rest are hidden, not removed.
+ *  Matched on the AmiBroker and derived names only, never on an optimized setting's label. */
+const EXCEL_SHOWN = new Set([...SCREEN_SHOWN, "W. Avg % Profit", "L. Avg % Loss", "Monthly Thickness", "Final W Avg", "Final L Avg", "Total Profit", "Holding Days"]);
+const hiddenAt = (head: string[], settingsAt: number, nd: number, shown: Set<string>) =>
+  head.flatMap((h, i) => ((i < settingsAt || i >= settingsAt + nd) && !shown.has(h) ? [i] : []));
 
 export interface SheetContext { ranSpec: Spec; label(path: string): string; group(path: string): string | undefined; instrumentLabel?: string }
 
 const instrumentName = (r: OptimizeResult, c: SheetContext) => c.instrumentLabel ?? r.instrument.label ?? r.instrument.name ?? r.instrument.ticker;
 export const sheetFileName = (r: OptimizeResult, c: SheetContext) =>
-  `${instrumentName(r, c).replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim()} ${{ long: "Long", short: "Short", both: "Long Short" }[directionOf(c.ranSpec)]} Daily Optims.xlsx`;
+  `${`${instrumentName(r, c)} ${dateFilterName(c.ranSpec.date_filter) ?? ""}`.replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim()} ${{ long: "Long", short: "Short", both: "Long Short" }[directionOf(c.ranSpec)]} Daily Optims.xlsx`;
 
 /** Evaluates one derived-column template (numbers, + - * /, parentheses, ABS) with the row's values; null when an input is
  *  blank or the result is not finite, as an empty Excel cell would show. Used for the on-page list; the workbook keeps formulas. */
@@ -93,7 +95,8 @@ export function optimizationWorkbook(r: OptimizeResult, c: SheetContext): Sheet[
   };
   // Entry / Exit / Filter rows: one per optimized setting of that group (a group "Filters", "Long exit", "Entry order", …)
   const byGroup = (re: RegExp) => r.dims.filter((d) => re.test(c.group(d.path) ?? "")).map((d) => range(d.path, d.values));
-  const filters = byGroup(/filter/i), exits = byGroup(/exit/i), entries = byGroup(/^(?!.*(filter|exit)).*entry/i);
+  const df = c.ranSpec.date_filter, dates = dateFilterName(df);
+  const filters = [...(dates ? [`Dates: ${dates} · ${df!.windows.length} periods`] : []), ...byGroup(/filter/i)], exits = byGroup(/exit/i), entries = byGroup(/^(?!.*(filter|exit)).*entry/i);
   const setup = r.dims.filter((d) => !/filter|exit|entry/i.test(c.group(d.path) ?? "")).map((d) => range(d.path, d.values));
   const list = (label: string, items: string[]): CellValue[][] => (items.length ? items : [""]).map((v, i) => [null, i ? null : label, v]);
   const costs = r.costs, fee = "fees_bps" in costs ? null : costs.commission;
@@ -130,6 +133,6 @@ export function optimizationWorkbook(r: OptimizeResult, c: SheetContext): Sheet[
       ...derived.map(([, f]) => ({ f: f.replace(/\{([^}]+)\}/g, (_m, c: string) => `${at.get(c)}${n}`) }))];
   });
   const head = ["No.", ...names, ...r.dims.map((d) => c.label(d.path)), ...derived.map(([n]) => n)];
-  const optimization: Sheet = { name: "Optimization", autoFilter: true, hidden: hiddenAt(head, 1 + names.length, nd, EXCEL_HIDDEN), rows: [head, ...rows] };
+  const optimization: Sheet = { name: "Optimization", autoFilter: true, hidden: hiddenAt(head, 1 + names.length, nd, EXCEL_SHOWN), rows: [head, ...rows] };
   return [rules, optimization];
 }

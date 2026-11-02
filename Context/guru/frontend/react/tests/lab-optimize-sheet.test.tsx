@@ -78,12 +78,14 @@ it("the workbook: Rules rows as the team's, AmiBroker header order, row-relative
   expect(opt.rows[1][40]).toEqual({ f: "X2+(((7/5*(Y2-1))*0.0166)-0.3)" });
   expect(opt.rows[1][44]).toEqual({ f: "((AP2*(AA2/100))-(ABS(AQ2)*(AG2/100)))/(ABS(AQ2))" }); // Final W = AP, Final L = AQ after one dim (AQ/AR after two, as the team file)
   expect(opt.rows[1].slice(45)).toEqual([{ f: "V2*X2" }, { f: "V2*AO2" }, { f: "V2*(Y2-1)*7/5" }]); // short Holding Days as the team's short file
-  // hidden as "Need this on Excel Download": No., RAR, Recovery Factor, RAR/MDD, Avg Profit/Loss, # of winners, W. Tot. Profit, W./L. Avg. Bars Held
-  expect(opt.hidden!.map((i) => head[i])).toEqual(["No.", "RAR", "Recovery Factor", "RAR/MDD", "Avg Profit/Loss", "# of winners", "W. Tot. Profit", "W. Avg. Bars Held", "L. Avg. Bars Held"]);
+  // opens as the team's view: every AmiBroker column hidden except these; the setting and the derived columns all shown
+  const shown = head.filter((_, i) => !opt.hidden!.includes(i));
+  expect(shown).toEqual(["CAR", "Max. Sys % Drawdown", "CAR/MDD", "# Trades", "Avg % Profit/Loss", "Avg Bars Held", "% of Winners", "W. Avg % Profit", "L. Avg % Loss", ...head.slice(37)]);
   const text = new TextDecoder().decode(xlsx(book));
   // the Optimization sheet's hidden columns keep their fitted width, so unhiding shows them as they are
   const hiddenCols = [...text.matchAll(/<col min="(\d+)" max="\d+" width="\d+" hidden="1"/g)].map((m) => Number(m[1]));
-  expect(hiddenCols).toEqual([1, 6, 11, 13, 23, 26, 28, 31, 37]); // A, F, K, M, W, Z, AB, AE, AK
+  const visible = [5, 10, 12, 22, 24, 25, 27, 30, 36]; // E, J, L, V, X, Y, AA, AD, AJ as the team's screenshot
+  expect(hiddenCols).toEqual(Array.from({ length: 37 }, (_, i) => i + 1).filter((n) => !visible.includes(n)));
   expect(text).toContain('<c r="AM2" s="6"><f>X2/(Y2-1)*21</f></c>'); // a formula as a two-decimal number
   expect(text).toContain('<autoFilter ref="A1:AV5"/>');
   expect(text).toContain('<calcPr fullCalcOnLoad="1"/>');
@@ -95,7 +97,10 @@ it("the cost-adjusted columns follow the side: long as in Long Daily.xlsx, long-
   const long = optimizationWorkbook(withSheet, ctx("long"))![1];
   expect(long.rows[1][40]).toEqual({ f: "X2-(((7/5*(Y2-1))*0.033)+0.3)" });
   expect(long.rows[1][47]).toEqual({ f: "V2*(Y2-1)*7/5" });
-  expect(optimizationWorkbook(withSheet, ctx("both"))![1].rows[0].slice(38)).toEqual(["Monthly Thickness", "Expectancy Ratio", "Total Profit"]);
+  expect(optimizationWorkbook(withSheet, ctx("both"))![1].rows[0].slice(38)).toEqual(["Monthly Thickness", "Expectancy Ratio", "Total Profit", "Holding Days"]);
+  // long and short open on the same team view: the same columns shown, the rest hidden
+  const view = (s: ReturnType<typeof optimizationWorkbook>) => s![1].rows[0].filter((_, i) => !s![1].hidden!.includes(i));
+  expect(view(optimizationWorkbook(withSheet, ctx("long")))).toEqual(view(optimizationWorkbook(withSheet, ctx("short"))));
 });
 
 it("the derived templates evaluate like Excel: arithmetic, ABS, blanks and division by zero stay empty", () => {
@@ -147,4 +152,16 @@ it("xlsx without formulas or a filter is unchanged: no calcPr, no autoFilter", (
   const text = new TextDecoder().decode(xlsx([{ name: "A", rows: [["x"], [1]] }]));
   expect(text).not.toContain("calcPr");
   expect(text).not.toContain("autoFilter");
+});
+
+it("a date filter is named with its phase in the Rules Filter line and the file name", async () => {
+  const { BUILT_IN } = await import("../src/features/lab/builtin-periods");
+  const { pairs, phaseWindows } = await import("../src/features/lab/date-sets");
+  const ranSpec = { ...spec, direction: "long", date_filter: { windows: pairs(phaseWindows(BUILT_IN[1].windows, "Bear")), set: { name: "Base 2" } } } as Spec;
+  const ctx = { ranSpec, label: () => "EMA length", group: () => "Entry", instrumentLabel: "Nifty 50" };
+  const rules = optimizationWorkbook(withSheet, ctx)![0];
+  expect(rules.layout).toBe("form");
+  expect(rules.rows.find((r) => r[1] === "Filter:")![2]).toMatch(/^Dates: Base 2 Bear · \d+ periods$/);
+  expect(sheetFileName(withSheet, ctx)).toBe("Nifty 50 Base 2 Bear Long Daily Optims.xlsx");
+  expect(sheetFileName(withSheet, { ...ctx, ranSpec: spec })).toBe("Nifty 50 Short Daily Optims.xlsx"); // no date filter: unchanged
 });

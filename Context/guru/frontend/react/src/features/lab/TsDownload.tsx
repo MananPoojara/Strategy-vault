@@ -6,6 +6,7 @@ import { isValue, runQuery } from "./spec-model";
 import { isIndicatorExit } from "./ExitChoice";
 import { NumField } from "./OperandEditor";
 import { tsRules, tsTabName, type RunContext } from "./trade-explain";
+import { dateFilterName } from "./date-sets";
 import { buildTsWorkbook, defaultTsFormat, loadXlsxStyle, TS_COSTS, tsFileName, type TsFormat, type TsInput } from "./ts-workbook";
 import { saveBytes, XLSX_TYPE } from "./xlsx";
 import { Segmented } from "./ui";
@@ -33,7 +34,7 @@ async function dailyBars(market: RunResult["instrument"]["market"], ticker: stri
 export async function saveTs(result: RunResult, explain: RunContext) {
   const ticker = result.instrument.ticker;
   await saveTsInput({ format: defaultTsFormat(result.from), symbol: ticker, ohlc: await dailyBars(result.instrument.market, ticker), rules: tsRules(explain, result),
-    costs: { ...TS_COSTS }, sheetName: tsTabName(explain, result), trades: tradesOf(result, result.to) });
+    costs: { ...TS_COSTS }, sheetName: tsTabName(explain, result), trades: tradesOf(result, result.to), dates: dateFilterName(explain.spec.date_filter) ?? undefined });
 }
 
 /** The research team's tradesheet (Ritik's templates): the From 2000 / From 2008 format picked by the test start, with the
@@ -51,7 +52,7 @@ export function TsDownload({ result, explain, buttonSlot }: { result: RunResult;
   const put = (k: keyof typeof costs) => (n: number | undefined) => n !== undefined && Number.isFinite(n) && setCosts({ ...costs, [k]: n });
   const market = result.instrument.market, ticker = result.instrument.ticker;
   const save = saveTsInput;
-  const base = async () => ({ format: fmt, symbol: ticker, ohlc: await dailyBars(market, ticker), rules: tsRules(explain, result),
+  const base = async () => ({ format: fmt, symbol: ticker, ohlc: await dailyBars(market, ticker), rules: tsRules(explain, result), dates: dateFilterName(explain.spec.date_filter) ?? undefined,
     costs: { impact: costs.impact / 100, rollLong: costs.rollLong / 100, rollShort: costs.rollShort / 100 } });
   const busyDo = async (job: () => Promise<void>) => { setBusy(true); setError(""); try { await job(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); setProgress(""); } };
   const download = () => busyDo(async () => save({ ...(await base()), sheetName: tsTabName(explain, result), trades: tradesOf(result, result.to) }));

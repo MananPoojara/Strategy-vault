@@ -1,5 +1,6 @@
 /** Custom date filters (Base 1 / Base 2 windows): parsing uploads and pastes, and keeping a strategy's windows current. */
 import type { DateSet, DateWindow, Spec } from "./types";
+import { BUILT_IN } from "./builtin-periods";
 
 /** rules.rs MAX_DATE_WINDOWS, auth validateLabDateSet. */
 export const MAX_WINDOWS = 200;
@@ -131,4 +132,14 @@ export function parseSheets(sheets: { name: string; rows: string[][] }[]): Parse
     .filter(({ p }) => p.windows.length || p.errors.some((e) => e !== NONE));
   const windows = parts.flatMap(({ p }) => p.windows).sort((x, y) => (x.from < y.from ? -1 : x.from > y.from ? 1 : 0)); // in date order, not sheet by sheet
   return check(windows, parts.flatMap(({ s, p }) => p.errors.filter((e) => e !== NONE).map((e) => `${s.name}: ${e}`)));
+}
+
+/** "Base 2 Bull" / "Base 2 Bear" / "My dates": the date filter a strategy trades in, for Rules sheets and file names; null when
+ *  no date filter is on. The phase is read as the Dates panel reads it: "outside" is the bear side, otherwise whichever of a
+ *  built-in set's periods the windows overlap most; an uploaded set (its periods not at hand here) by its name, else none. */
+export function dateFilterName(df: Spec["date_filter"]): string | null {
+  if (!df || df.off || !df.windows.length) return null;
+  const name = df.set?.name ?? "Own dates", base = BUILT_IN.find((b) => b.name === name && df.set?.id === undefined);
+  const phase = df.mode === "outside" ? "Bear" : base ? chosenPhase(df.windows, base.windows) : undefined;
+  return phase && !new RegExp(`\\b${phase}\\b`, "i").test(name) ? `${name} ${phase}` : name;
 }

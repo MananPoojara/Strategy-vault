@@ -77,6 +77,7 @@ describe("tradesheet in the research template layout", () => {
     expect(tsSheetName("'" + "x".repeat(40) + "'")).toHaveLength(31);
     expect(tsSheetName("Rules")).toBe("TS Rules");
     expect(tsFileName(input("2008"))).toBe(`TS_${SHEET}.xlsx`);
+    expect(tsFileName({ ...input("2008"), dates: "Base 2 Bull" })).toBe(`TS_${SHEET}_Base 2 Bull.xlsx`); // the date filter traded in
   });
 
   for (const format of ["2008", "2000"] as TsFormat[]) {
