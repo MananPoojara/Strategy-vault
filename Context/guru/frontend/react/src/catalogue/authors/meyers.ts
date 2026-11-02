@@ -2,7 +2,7 @@ import type {AuthorFile} from '../author-files';
 
 export default {
   order: 340,
-  author: { id: 'meyers', name: 'Dennis Meyers', tagline: 'Mathematical short-term systems · Parabolic, MultiBar, Kalman filters', books: [{ id: 'dmast', title: 'Advanced Short Term Systems & Indicators', year: 1999, blurb: 'Meyers · walk-forward-parameter systems; the 5-minute system needs intraday bars' }, { id: 'dmst2', title: 'Short Term Systems & Indicators 2.0', year: 1998, blurb: 'Meyers · Parabolic reproduces 102 vs 103 book trades' }, { id: 'dmtad', title: "Turbo A/D, NH, NL Market System (S&C)", year: 1997, blurb: "Meyers, 1997 · needs NYSE new highs and new lows" }] },
+  author: { id: 'meyers', name: 'Dennis Meyers', tagline: 'Mathematical short-term systems · Parabolic, MultiBar, Kalman filters', books: [{ id: 'dmast', title: 'Advanced Short Term Systems & Indicators', year: 1999, blurb: 'Meyers · walk-forward-parameter systems; the 5-minute system needs intraday bars' }, { id: 'dmst2', title: 'Short Term Systems & Indicators 2.0', year: 1998, blurb: 'Meyers · Parabolic reproduces 102 vs 103 book trades' }, { id: 'dmtad', title: "Turbo A/D, NH, NL Market System (S&C)", year: 1997, blurb: "Meyers, 1997 · needs NYSE new highs and new lows" }, { id: 'dmibm', title: "IBM Cubed", year: 1999, readerPaths: ["Trading Knowledge III/Dennis Meyers Publications/Dennis Meyers - Ibm Cubed.pdf"], blurb: "Meyers \u00b7 least-squares cubic forecast of (H+L)/2, always in, walk-forward IBM parameters; Figure 7 lists all 26 IBM trades 1993-98" }] },
   identities: ["Dennis Meyers"],
   profile: {
     "kind": "person",
@@ -28,5 +28,6 @@ export default {
     "dmast": {"type":"code_package","people":["Dennis Meyers"]},
     "dmst2": {"type":"code_package","people":["Dennis Meyers"]},
     "dmtad": {"type":"article","people":["Dennis Meyers"]},
+    "dmibm": {"type":"article","people":["Dennis Meyers"]},
   },
 } satisfies AuthorFile;
