@@ -2,7 +2,7 @@ import type {AuthorFile} from '../author-files';
 
 export default {
   order: 1516,
-  author: { id: 'tsvend', name: "Vendor and list system code (batch J3)", tagline: "TradeStation and MetaStock systems read from vendor archives and list posts", books: [{ id: 'tsconf', title: "Confluence system (Legan / Fritz, Omega list 1998)", year: 1998, blurb: "Legan's Confluence bull/bear mode stops · 5-point trigger held" }, { id: 'tszlb', title: "Smoothed %b system (ZeroLag.txt code collection)", year: null, blurb: "Two-pole smoothed %b(5) fade above / below a 200 smoother" }] },
+  author: { id: 'tsvend', name: "Vendor and list system code (batch J3)", tagline: "TradeStation and MetaStock systems read from vendor archives and list posts", books: [{ id: 'tsconf', title: "Confluence system (Legan / Fritz, Omega list 1998)", year: 1998, blurb: "Legan's Confluence bull/bear mode stops · 5-point trigger held" }, { id: 'tszlb', title: "Smoothed %b system (ZeroLag.txt code collection)", year: null, blurb: "Two-pole smoothed %b(5) fade above / below a 200 smoother" }, { id: 'tswtc', title: "William Tell Coffee Strategy (Market Analytics)", year: null, blurb: "Fourteen day-of-week patterns for coffee, exit at the first profitable open · no stop" }] },
   identities: [],
   profile: {
     "kind": "collection",
@@ -15,5 +15,6 @@ export default {
   sourceReview: {
     "tsconf": {"type":"code_package","people":["Dale Legan", "Gary Fritz"]},
     "tszlb": {"type":"code_package","people":[]},
+    "tswtc": {"type":"code_package","people":[]},
   },
 } satisfies AuthorFile;
