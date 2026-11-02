@@ -2102,6 +2102,7 @@ static GATE: &[G] = &[
     G { id: r##"scevmr_both"##, verdict: r##"unverified"##, reason: r##"Five-stock tests (Figure 6). Next-open fills."##, allowed: None, clamp_open: true, book: r##""##, ours: r##""## },
     G { id: r##"scevmr_mom"##, verdict: r##"unverified"##, reason: r##"Five-stock tests (Figure 6). Next-open fills."##, allowed: None, clamp_open: true, book: r##""##, ours: r##""## },
     G { id: r##"scevmr_rsi"##, verdict: r##"unverified"##, reason: r##"Five-stock tests (Figure 6). Next-open fills."##, allowed: None, clamp_open: true, book: r##""##, ours: r##""## },
+    G { id: r##"scevobv_nft"##, verdict: r##"unverified"##, reason: r##"Single-stock test (Merck). Next-open fills; needs volume."##, allowed: None, clamp_open: true, book: r##"Merck 1/1993-12/1998: 161 trades signalled"##, ours: r##""## },
     G { id: r##"scevst_1"##, verdict: r##"unverified"##, reason: r##"32-stock comparison by stock. Next-open fills."##, allowed: None, clamp_open: true, book: r##""##, ours: r##""## },
     G { id: r##"scevst_2"##, verdict: r##"unverified"##, reason: r##"32-stock comparison by stock. Next-open fills."##, allowed: None, clamp_open: true, book: r##""##, ours: r##""## },
     G { id: r##"scevst_3"##, verdict: r##"unverified"##, reason: r##"32-stock comparison by stock. Next-open fills."##, allowed: None, clamp_open: true, book: r##""##, ours: r##""## },
