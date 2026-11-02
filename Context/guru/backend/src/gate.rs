@@ -1774,6 +1774,7 @@ static GATE: &[G] = &[
     G { id: r##"msws_trix_entry_exit_w_stops_chg"##, verdict: r##"unverified"##, reason: r##"README: source prints no test result. Close fills. checker: confirmed."##, allowed: None, clamp_open: false, book: r##""##, ours: r##""## },
     G { id: r##"mtasc_trend"##, verdict: r##"unverified"##, reason: r##"MT4 forex EA, no published results. Next-open fills read the open."##, allowed: None, clamp_open: true, book: r##""##, ours: r##""## },
     G { id: r##"mtbbm_bands"##, verdict: r##"unverified"##, reason: r##"MT4 EA, no published results. Next-open fills read the open."##, allowed: None, clamp_open: true, book: r##""##, ours: r##""## },
+    G { id: r##"mtenl_dx2"##, verdict: r##"unverified"##, reason: r##"MT4 EA on D1 bars, no published results. Stop entries read the open."##, allowed: None, clamp_open: true, book: r##""##, ours: r##""## },
     G { id: r##"mtsvos_d1"##, verdict: r##"unverified"##, reason: r##"MT4 EA for EURJPY daily bars, no published results. Next-open fills read the open."##, allowed: None, clamp_open: true, book: r##""##, ours: r##""## },
     G { id: r##"mxswg_demo"##, verdict: r##"unverified"##, reason: r##"Vendor prints no results. Pattern P1 reads the day's OPEN; orders fill at the next open."##, allowed: None, clamp_open: true, book: r##""##, ours: r##""## },
     G { id: r##"mxswg_demo2"##, verdict: r##"unverified"##, reason: r##"Vendor prints no results. Pattern P1 reads the day's OPEN; orders fill at the next open."##, allowed: None, clamp_open: true, book: r##""##, ours: r##""## },
