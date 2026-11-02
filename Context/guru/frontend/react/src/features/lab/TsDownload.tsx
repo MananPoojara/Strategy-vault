@@ -13,6 +13,29 @@ import type { RunResult } from "./types";
 
 const pct = (x: number) => Math.round(x * 1e4) / 100;
 
+const tradesOf = (r: Pick<RunResult, "trades">, to: string) => r.trades.filter((t) => typeof t.entry_px === "number" && typeof t.exit_px === "number")
+  .map((t) => ({ dir: (t.dir === -1 ? -1 : 1) as 1 | -1, entry: t.entry, exit: t.exit || to, entry_px: t.entry_px!, exit_px: t.exit_px!, open: t.open }));
+async function saveTsInput(input: TsInput) {
+  const XLSX = await loadXlsxStyle();
+  const bytes = XLSX.write(buildTsWorkbook(XLSX, input), { bookType: "xlsx", type: "array", cellStyles: true, compression: true });
+  saveBytes(new Uint8Array(bytes), tsFileName(input), XLSX_TYPE);
+}
+/** The instrument's daily OHLC, for the template's MAE columns. */
+async function dailyBars(market: RunResult["instrument"]["market"], ticker: string) {
+  if (!market) throw new Error("This instrument has no market to read its daily bars from.");
+  const [o, h, l, c] = await Promise.all(["open", "high", "low", "close"].map((id) => series(market, { id, ticker })));
+  return c.dates.flatMap((date, i) => {
+    const v = [o.series.open[i], h.series.high[i], l.series.low[i], c.series.close[i]];
+    return v.every((x) => typeof x === "number") ? [{ date, open: v[0]!, high: v[1]!, low: v[2]!, close: v[3]! }] : [];
+  });
+}
+/** Download TS for one run at the template's defaults (format from the start date, template costs): the optimizer's per-row Excel. */
+export async function saveTs(result: RunResult, explain: RunContext) {
+  const ticker = result.instrument.ticker;
+  await saveTsInput({ format: defaultTsFormat(result.from), symbol: ticker, ohlc: await dailyBars(result.instrument.market, ticker), rules: tsRules(explain, result),
+    costs: { ...TS_COSTS }, sheetName: tsTabName(explain, result), trades: tradesOf(result, result.to) });
+}
+
 /** The research team's tradesheet (Ritik's templates): the From 2000 / From 2008 format picked by the test start, with the
  *  template's impact and rollover costs shown and editable; the workbook keeps the template's formulas, MAE from the bars. */
 /** `buttonSlot`: where Download TS sits (the Tradesheet heading, after Oldest / Newest first); the settings row stays below. */
@@ -27,25 +50,11 @@ export function TsDownload({ result, explain, buttonSlot }: { result: RunResult;
   const auto = defaultTsFormat(result.from), fmt = format ?? auto;
   const put = (k: keyof typeof costs) => (n: number | undefined) => n !== undefined && Number.isFinite(n) && setCosts({ ...costs, [k]: n });
   const market = result.instrument.market, ticker = result.instrument.ticker;
-  const tradesOf = (r: Pick<RunResult, "trades">) => r.trades.filter((t) => typeof t.entry_px === "number" && typeof t.exit_px === "number")
-    .map((t) => ({ dir: (t.dir === -1 ? -1 : 1) as 1 | -1, entry: t.entry, exit: t.exit || result.to, entry_px: t.entry_px!, exit_px: t.exit_px!, open: t.open }));
-  const save = async (input: TsInput) => {
-    const XLSX = await loadXlsxStyle();
-    const bytes = XLSX.write(buildTsWorkbook(XLSX, input), { bookType: "xlsx", type: "array", cellStyles: true, compression: true });
-    saveBytes(new Uint8Array(bytes), tsFileName(input), XLSX_TYPE);
-  };
-  const bars = async () => {
-      if (!market) throw new Error("This instrument has no market to read its daily bars from.");
-      const [o, h, l, c] = await Promise.all(["open", "high", "low", "close"].map((id) => series(market, { id, ticker })));
-      return c.dates.flatMap((date, i) => {
-        const v = [o.series.open[i], h.series.high[i], l.series.low[i], c.series.close[i]];
-        return v.every((x) => typeof x === "number") ? [{ date, open: v[0]!, high: v[1]!, low: v[2]!, close: v[3]! }] : [];
-      });
-  };
-  const base = async () => ({ format: fmt, symbol: ticker, ohlc: await bars(), rules: tsRules(explain, result),
+  const save = saveTsInput;
+  const base = async () => ({ format: fmt, symbol: ticker, ohlc: await dailyBars(market, ticker), rules: tsRules(explain, result),
     costs: { impact: costs.impact / 100, rollLong: costs.rollLong / 100, rollShort: costs.rollShort / 100 } });
   const busyDo = async (job: () => Promise<void>) => { setBusy(true); setError(""); try { await job(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); setProgress(""); } };
-  const download = () => busyDo(async () => save({ ...(await base()), sheetName: tsTabName(explain, result), trades: tradesOf(result) }));
+  const download = () => busyDo(async () => save({ ...(await base()), sheetName: tsTabName(explain, result), trades: tradesOf(result, result.to) }));
   /** One backtest per exit variant (same entry, same period and costs), each a trade sheet; runs one at a time to keep the engine free. */
   const downloadMany = () => busyDo(async () => {
     if (!market) throw new Error("This instrument has no market to run on.");
@@ -54,7 +63,7 @@ export function TsDownload({ result, explain, buttonSlot }: { result: RunResult;
     for (const [i, v] of variants.entries()) {
       setProgress(`Running ${i + 1} of ${variants.length}: ${v.label}`);
       const r = await run(market, v.spec, { ticker, from: result.from, to: result.to, ...runQuery(v.spec, String(explain.fees ?? ""), String(explain.slippage ?? "")) });
-      sheets.push({ sheetName: `${code}_EX_${v.tab}`, trades: tradesOf(r as RunResult), exitLabel: v.label });
+      sheets.push({ sheetName: `${code}_EX_${v.tab}`, trades: tradesOf(r as RunResult, result.to), exitLabel: v.label });
     }
     setProgress("Building the workbook…");
     const b = await base();

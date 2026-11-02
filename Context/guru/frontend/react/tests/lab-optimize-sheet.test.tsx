@@ -69,7 +69,7 @@ it("the workbook: Rules rows as the team's, AmiBroker header order, row-relative
   const head = opt.rows[0];
   expect(head.slice(0, 37)).toEqual(["No.", ...COLS]);
   expect(head.slice(37)).toEqual(["EMA length", "Monthly Thickness", "Expectancy Ratio", "Final Avg % Profit/Loss", "Final W Avg", "Final L Avg", "Final M. Thk",
-    "Final Expectancy Ratio", "Total Profit", "Total Net Profit", "HOLDING DAYS"]);
+    "Final Expectancy Ratio", "Total Profit", "Total Net Profit", "Holding Days"]);
   // AmiBroker's columns land where the team's files have them (X = Avg % Profit/Loss, Y = Avg Bars Held, V = # Trades), the dim at AL
   expect(opt.rows.slice(1).map((r) => [r[0], r[37]])).toEqual([[2, 20], [4, 40], [1, 10], [3, 30]]); // CAR/MDD 0.9, 0.5, 0.2, blank
   expect(opt.rows[1][1]).toBeNull(); // a value the lab did not compute stays blank
@@ -77,8 +77,12 @@ it("the workbook: Rules rows as the team's, AmiBroker header order, row-relative
   expect(opt.rows[2][39]).toEqual({ f: "((AD3/ABS(AJ3))*AA3-AG3)/100" });
   expect(opt.rows[1][40]).toEqual({ f: "X2+(((7/5*(Y2-1))*0.0166)-0.3)" });
   expect(opt.rows[1][44]).toEqual({ f: "((AP2*(AA2/100))-(ABS(AQ2)*(AG2/100)))/(ABS(AQ2))" }); // Final W = AP, Final L = AQ after one dim (AQ/AR after two, as the team file)
-  expect(opt.rows[1].slice(45)).toEqual([{ f: "V2*X2" }, { f: "V2*AO2" }, { f: "V2*Y2" }]);
+  expect(opt.rows[1].slice(45)).toEqual([{ f: "V2*X2" }, { f: "V2*AO2" }, { f: "V2*(Y2-1)*7/5" }]); // short Holding Days as the team's short file
+  // hidden as "Need this on Excel Download": No., RAR, Recovery Factor, RAR/MDD, Avg Profit/Loss, # of winners, W. Tot. Profit, W./L. Avg. Bars Held
+  expect(opt.hidden!.map((i) => head[i])).toEqual(["No.", "RAR", "Recovery Factor", "RAR/MDD", "Avg Profit/Loss", "# of winners", "W. Tot. Profit", "W. Avg. Bars Held", "L. Avg. Bars Held"]);
   const text = new TextDecoder().decode(xlsx(book));
+  expect(text).toContain('<cols><col min="1" max="1" width="9" hidden="1" customWidth="1"/><col min="6" max="6"');
+  expect(text).toContain('<col min="37" max="37" width="9" hidden="1" customWidth="1"/></cols><sheetData>'); // AK = L. Avg. Bars Held
   expect(text).toContain('<c r="AM2"><f>X2/(Y2-1)*21</f></c>');
   expect(text).toContain('<autoFilter ref="A1:AV5"/>');
   expect(text).toContain('<calcPr fullCalcOnLoad="1"/>');
@@ -103,19 +107,40 @@ it("the derived templates evaluate like Excel: arithmetic, ABS, blanks and divis
   expect(evalTemplate("{a}/({b}-6)", get)).toBeNull();
 });
 
-it("the sheet is on the page too: every combination, the team's columns with values, sorted on CAR/MDD, click to sort", async () => {
+// "Need this on Software Screen": these stay off the page (the download keeps them)
+const SCREEN_HIDDEN = ["No.", "RAR", "Recovery Factor", "RAR/MDD", "Avg Profit/Loss", "# of winners", "W. Tot. Profit", "Monthly Thickness", "Final W Avg", "Total Profit", "Holding Days"];
+const SCREEN = [...COLS.filter((c) => !SCREEN_HIDDEN.includes(c)), "EMA Period", "Expectancy Ratio", "Final Avg % Profit/Loss", "Final L Avg", "Final M. Thk",
+  "Final Expectancy Ratio", "Total Net Profit"];
+
+it("the sheet is on the page too: the team's screen columns, sorted on CAR/MDD, click to sort", async () => {
   const host = await runWith(withSheet);
   const list = host.querySelector("[data-lab-optimize-sheet-list]")!;
   const head = [...list.querySelectorAll("thead th")].map((th) => th.textContent);
-  expect(head.slice(0, 37)).toEqual(["No.", ...COLS]);
-  expect(head).toContain("Monthly Thickness");
-  const nos = () => [...list.querySelectorAll("tbody tr")].map((tr) => tr.children[0].textContent);
-  expect(nos()).toEqual(["2", "4", "1", "3"]); // CAR/MDD 0.9, 0.5, 0.2, blank
-  const thk = head.indexOf("Monthly Thickness");
-  expect(list.querySelector("tbody tr")!.children[thk].textContent).not.toBe(""); // a computed value, not a formula
-  await act(async () => list.querySelectorAll<HTMLButtonElement>("thead th button")[0].click()); // No. ascending
-  expect(nos()).toEqual(["1", "2", "3", "4"]);
+  expect(head.map((h) => h!.replace(/^Entry 1: /, ""))).toEqual(SCREEN); // the short side: no Final W Avg, no Total Profit on screen
+  const settings = () => [...list.querySelectorAll("tbody tr")].map((tr) => tr.children[head.indexOf("Entry 1: EMA Period")].textContent);
+  expect(settings()).toEqual(["20", "40", "10", "30"]); // CAR/MDD 0.9, 0.5, 0.2, blank
+  const er = head.indexOf("Expectancy Ratio");
+  expect(list.querySelector("tbody tr")!.children[er].textContent).not.toBe(""); // a computed value, not a formula
+  await act(async () => list.querySelectorAll<HTMLButtonElement>("thead th button")[head.indexOf("Entry 1: EMA Period")].click());
+  expect(settings()).toEqual(["40", "30", "20", "10"]); // a setting sorts high to low first
   expect(host.querySelector("[data-lab-optimize-all]")).toBeNull(); // replaces the short All results list
+});
+
+it("the top rows (Now, #1-#3) show the same screen columns, each the result-list row of its settings", async () => {
+  const fx: OptimizeResult = { ...withSheet, split: null, ranked_on: "full", sheet: [row(10, 0.2), row(20, 0.9), row(30, null), row(40, 0.5), row(50, 0.3)] };
+  let host = await runWith(withSheet);
+  expect(host.querySelector("[data-lab-optimize-top]")).toBeNull(); // a held-back split keeps its ranking / held-back columns
+  await unmount();
+  host = await runWith(fx);
+  const top = host.querySelector("[data-lab-optimize-top]")!;
+  const head = [...top.querySelectorAll("thead th")].map((th) => th.textContent);
+  expect(head.slice(1, -1).map((h) => h!.replace(/^Entry 1: /, ""))).toEqual(SCREEN);
+  const at = (name: string, col: string) => [...top.querySelectorAll("tbody tr")].find((tr) => tr.children[0].textContent === name)!.children[head.indexOf(col)].textContent;
+  // #1 is EMA 20 and #2 EMA 10: each carries its sheet row; "Now" (EMA 50 in the default spec) finds its own row
+  expect([at("#1", "Entry 1: EMA Period"), at("#1", "CAR/MDD")]).toEqual(["20", "0.90"]);
+  expect([at("#2", "Entry 1: EMA Period"), at("#2", "CAR/MDD")]).toEqual(["10", "0.20"]);
+  expect([at("Now", "Entry 1: EMA Period"), at("Now", "CAR/MDD")]).toEqual(["50", "0.30"]);
+  expect(top.querySelectorAll('button[aria-label^="Apply"]')).toHaveLength(2);
 });
 
 it("xlsx without formulas or a filter is unchanged: no calcPr, no autoFilter", () => {

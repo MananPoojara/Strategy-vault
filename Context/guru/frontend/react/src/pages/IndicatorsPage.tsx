@@ -455,7 +455,7 @@ function IndicatorsLab() {
             onTried={(n) => dispatch({ type: "tried", n })} tried={state.tried} instrumentLabel={option?.instrumentLabel}
             onRun={(spec) => { assertRunnable(spec); return lab.run(market, spec, {
               ticker, from: settings.from || undefined, to: settings.to || undefined, ...runQuery(spec, settings.fees, settings.slippage),
-            }); }} ticker={ticker} />
+            }); }} ticker={ticker} ts={{ tf: state.tf, fees: settings.fees, slippage: settings.slippage }} />
         </Part>
         </div>
         <div role="tabpanel" id="lab-panel-customize" aria-labelledby="lab-tab-customize" hidden={tab !== "customize"} className="lab-tab-panel">

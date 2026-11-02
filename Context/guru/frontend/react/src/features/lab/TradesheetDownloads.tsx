@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { withCombination } from "./spec-model";
 import { kpiItems, tradeTable } from "./RunResults";
 import { saveBytes, xlsx, zip, XLSX_TYPE, type Sheet } from "./xlsx";
+import { saveTs } from "./TsDownload";
+import type { RunContext } from "./trade-explain";
 import type { LabRunResult, RunResult, Spec } from "./types";
 /** A grid dimension: only its spec path matters here. */
 type Dim = { path: string };
@@ -69,9 +71,10 @@ export function TradesheetDownloads({ table, dims, ranSpec, label, onRun, ticker
   </div>;
 }
 
-/** One combination's tradesheet as its own Excel file. */
-export function TradesheetButton({ dims, values, ranSpec, label, onRun, ticker }: {
-  dims: Dim[]; values: number[]; ranSpec: Spec; label(path: string): string; onRun: Run; ticker: string;
+/** One combination's tradesheet as its own Excel file: with `ts` (catalogue, timeframe, costs), the backtest's Download TS
+ *  workbook (Ritik's template); without it, the plain trade list and summary. */
+export function TradesheetButton({ dims, values, ranSpec, label, onRun, ticker, ts }: {
+  dims: Dim[]; values: number[]; ranSpec: Spec; label(path: string): string; onRun: Run; ticker: string; ts?: Omit<RunContext, "spec" | "own">;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,8 +82,9 @@ export function TradesheetButton({ dims, values, ranSpec, label, onRun, ticker }
   const go = async () => {
     setBusy(true); setError(null);
     try {
-      const r = single(await onRun(comboSpec(ranSpec, dims, values)));
-      saveBytes(xlsx([sheetOf("Tradesheet", r), { name: "Summary", rows: [summaryHead(r), summaryRow(1, name, r)] }]), `tradesheet ${fileSafe(ticker)} ${fileSafe(name)}.xlsx`, XLSX_TYPE);
+      const spec = comboSpec(ranSpec, dims, values), r = single(await onRun(spec));
+      if (ts) await saveTs(r, { ...ts, spec, own: spec });
+      else saveBytes(xlsx([sheetOf("Tradesheet", r), { name: "Summary", rows: [summaryHead(r), summaryRow(1, name, r)] }]), `tradesheet ${fileSafe(ticker)} ${fileSafe(name)}.xlsx`, XLSX_TYPE);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally { setBusy(false); }

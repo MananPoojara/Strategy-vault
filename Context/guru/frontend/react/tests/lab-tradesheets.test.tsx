@@ -4,6 +4,8 @@ import type { Spec } from "../src/features/lab/types";
 
 const saved: { name: string; bytes: Uint8Array }[] = [];
 vi.mock("../src/features/lab/xlsx", async (orig) => ({ ...(await orig<typeof import("../src/features/lab/xlsx")>()), saveBytes: (bytes: Uint8Array, name: string) => saved.push({ name, bytes }) }));
+const { saveTs } = vi.hoisted(() => ({ saveTs: vi.fn(async (..._a: unknown[]) => {}) }));
+vi.mock("../src/features/lab/TsDownload", async (orig) => ({ ...(await orig<typeof import("../src/features/lab/TsDownload")>()), saveTs }));
 const { comboName, comboSpec, TradesheetButton, TradesheetDownloads } = await import("../src/features/lab/TradesheetDownloads");
 const { defaultSpec } = await import("../src/features/lab/spec-model");
 const { mount, runFixture, unmount } = await import("./fixtures/lab");
@@ -51,4 +53,19 @@ it("one combination's Excel button saves its own file; a portfolio result is ref
   const bad = await mount(<TradesheetButton dims={dims} values={[0, 0]} ranSpec={ran} label={label} onRun={async () => ({ ...runFixture, kind: "lab_portfolio_simulation" }) as never} ticker="X" />);
   await act(async () => bad.querySelector("button")!.click());
   expect(bad.querySelector('[role="alert"]')!.textContent).toContain("one instrument");
+});
+
+it("with the page's TS context, a row's Excel saves the backtest's Download TS workbook for that combination", async () => {
+  const { catalogueFixture } = await import("./fixtures/lab");
+  const onRun = vi.fn(async (_spec: Spec) => runFixture);
+  const host = await mount(<TradesheetButton dims={dims} values={[1, 0]} ranSpec={ran} label={label} onRun={onRun} ticker="NIFTY 50"
+    ts={{ catalogue: catalogueFixture, tf: "D", fees: "5", slippage: "" }} />);
+  await act(async () => host.querySelector("button")!.click());
+  expect(saved).toHaveLength(0); // not the plain trade list
+  expect(saveTs).toHaveBeenCalledTimes(1);
+  const [result, ctx] = saveTs.mock.calls[0] as [unknown, { spec: Spec; own: Spec; tf: string; fees: string }];
+  expect(result).toBe(runFixture);
+  expect(ctx.spec).toBe(onRun.mock.calls[0][0]); // the combination that was run
+  expect((ctx.spec.exit.any[0] as { off?: boolean }).off).toBe(true);
+  expect([ctx.tf, ctx.fees]).toEqual(["D", "5"]);
 });

@@ -13,7 +13,10 @@ import { TradesheetButton, TradesheetDownloads } from "./TradesheetDownloads";
 import { optimizationList, optimizationWorkbook, sheetFileName } from "./optimize-sheet";
 import { saveBytes, xlsx, XLSX_TYPE } from "./xlsx";
 import type { Catalogue, IndividualOptimizeResult, OptimizeDim, LabOptimizeResult, LabRunResult, Role, SavedMarket, Spec, WalkforwardOptions, WalkforwardResult } from "./types";
+import type { RunContext } from "./trade-explain";
 import "./optimize.css";
+
+type TsContext = Omit<RunContext, "spec" | "own" | "catalogue">;
 
 const MAX_VALUES = 1000;
 const RANK_LABELS: Record<string, string> = { cagr: "CAGR", sharpe: "Sharpe", monthly_thickness: "Monthly thickness", expectancy_ratio: "Expectancy ratio", mar: "CAR/MDD" };
@@ -45,8 +48,10 @@ export function OptimizePanel(props: {
   onIndividual?(spec: Spec): Promise<IndividualOptimizeResult>;
   /** One backtest of a spec on this instrument: the tradesheet downloads re-run each combination with it. */
   onRun?(spec: Spec): Promise<LabRunResult>; ticker?: string;
+  /** Timeframe and costs of the page's backtest: each row's Excel then saves the backtest's Download TS workbook. */
+  ts?: TsContext;
 }) {
-  const { spec, catalogue, market, role, dates, onOptimize, onApply, onTried, tried, instrumentLabel, onWalkforward, onIndividual, onRun, ticker } = props;
+  const { spec, catalogue, market, role, dates, onOptimize, onApply, onTried, tried, instrumentLabel, onWalkforward, onIndividual, onRun, ticker, ts } = props;
   const [individual, setIndividual] = useState(false);
   const each = individual && !!spec.portfolio && !!onIndividual; // portfolio settings do not apply to a symbol run alone
   const { infos } = useFormulaScope();
@@ -172,7 +177,7 @@ export function OptimizePanel(props: {
       {error !== null && <ErrorNotice error={error} market={market} instrumentLabel={instrumentLabel}
         onRetry={() => last.current && run(last.current)} />}
       {result && (result.kind === "lab_individual_optimization" ? <IndividualResults result={result} label={(p) => settings.find((s) => s.path === p)?.label ?? p} />
-        : <LabOptimizeResultView result={result} spec={spec} ranSpec={last.current?.spec ?? spec} catalogue={catalogue} settings={settings} market={market} instrumentLabel={instrumentLabel} onApply={onApply} onRun={onRun} ticker={ticker} />)}
+        : <LabOptimizeResultView result={result} spec={spec} ranSpec={last.current?.spec ?? spec} catalogue={catalogue} settings={settings} market={market} instrumentLabel={instrumentLabel} onApply={onApply} onRun={onRun} ticker={ticker} ts={ts} />)}
       {!result && !error && running === null && <p className="empty">{spec.portfolio?"Portfolio optimization ranks the full period using shared cash.":COPY.emptyOptimize}</p>}
       {onWalkforward && !spec.portfolio && <WalkForward dates={dates} spec={withOptimize(spec, dims)} blocked={tooLong || combos === 0 || tooBig || running !== null || retryUntil > 0}
         onTried={onTried} onRunning={setWalking}
@@ -181,9 +186,9 @@ export function OptimizePanel(props: {
   );
 }
 
-function LabOptimizeResultView({ result, spec, ranSpec, catalogue, settings, market, instrumentLabel, onApply, onRun, ticker = "" }: {
+function LabOptimizeResultView({ result, spec, ranSpec, catalogue, settings, market, instrumentLabel, onApply, onRun, ticker = "", ts }: {
   result: LabOptimizeResult; spec: Spec; ranSpec: Spec; catalogue: Catalogue; settings: OptimizableSetting[]; market: SavedMarket; instrumentLabel?: string; onApply(spec: Spec): void;
-  onRun?(spec: Spec): Promise<LabRunResult>; ticker?: string;
+  onRun?(spec: Spec): Promise<LabRunResult>; ticker?: string; ts?: TsContext;
 }) {
   const { rank, dims } = result;
   const stats = rank.stats ?? [];
@@ -194,7 +199,9 @@ function LabOptimizeResultView({ result, spec, ranSpec, catalogue, settings, mar
   const ranSettings = optimizablePaths(ranSpec, catalogue, useFormulaScope().infos); // "Now" = the spec that was optimized
   const label = (p: string) => setting(p)?.label ?? ranSettings.find((s) => s.path === p)?.label ?? p;
   // tradesheets: single-instrument runs of the optimized spec (a portfolio has no one tradesheet per combination)
-  const sheets = onRun && !ranSpec.portfolio ? { dims, ranSpec, label, onRun, ticker } : null;
+  const sheets = onRun && !ranSpec.portfolio ? { dims, ranSpec, label, onRun, ticker, ts: ts && { ...ts, catalogue } } : null;
+  // the team's sheet layout (screen columns); with a held-back split the top rows keep their ranking / held-back columns
+  const list = result.kind === "lab_optimization" && result.sheet ? optimizationList(result, ranSpec, label) : null;
   // With a split the backend ranks on the in-sample window and returns those values as is_*.
   const rankCol = (s: string) => (result.split && result.cols.includes(`is_${s}`) ? `is_${s}` : s);
   const rows = [
@@ -212,7 +219,14 @@ function LabOptimizeResultView({ result, spec, ranSpec, catalogue, settings, mar
       <p className="cap">
         {result.combos.toLocaleString("en-US")} settings tested · {rank.eligible.toLocaleString("en-US")} eligible (at least {rank.min_trades} trades) · {rank.distinct.toLocaleString("en-US")} distinct
       </p>
-      {rank.eligible === 0 ? <p className="rnote">{COPY.noEligible(rank.min_trades)}</p> : (<>
+      {rank.eligible === 0 ? <p className="rnote">{COPY.noEligible(rank.min_trades)}</p> : list && !result.split ? (
+        <TopSheetRows list={list} nd={dims.length}
+          rows={rows.map((r) => ({ name: r.name, best: !!r.pct, settings: dims.map((d, i) => (r.pct ? r.values[i] : ranSettings.find((s) => s.path === d.path)?.current) as number | null | undefined) }))}
+          action={(name) => { const r = rows.find((x) => x.name === name)!; return <>
+            {r.pct && r.values.length === result.cols.length && dims.every((d) => setting(d.path)) &&
+              <button type="button" className="dbtn sm" aria-label={`Apply ${r.name}`} onClick={() => apply(r.values)}>Apply</button>}
+            {sheets && r.pct && r.values.length === result.cols.length && <TradesheetButton {...sheets} values={r.values.slice(0, dims.length)} />}</>; }} />
+      ) : (<>
         <div className="tblwrap">
           <table className="tbl ocmp">
             <thead>
@@ -261,7 +275,7 @@ function LabOptimizeResultView({ result, spec, ranSpec, catalogue, settings, mar
           onClick={() => { const ctx = { ranSpec, label, group: (p: string) => setting(p)?.group ?? ranSettings.find((s) => s.path === p)?.group, instrumentLabel };
             const book = optimizationWorkbook(result, ctx); if (book) saveBytes(xlsx(book), sheetFileName(result, ctx), XLSX_TYPE); }}>Download optimization sheet</button>
       </div>}
-      {result.kind === "lab_optimization" && result.sheet ? <SheetList list={optimizationList(result, ranSpec, label)} nd={dims.length}
+      {list ? <SheetList list={list} nd={dims.length}
         excel={sheets ? (vals) => <TradesheetButton {...sheets} values={vals} /> : undefined} />
         : <AllResults result={result} label={(p) => setting(p)?.label ?? p}
           excel={sheets ? (row) => <TradesheetButton {...sheets} values={row.slice(0, dims.length) as number[]} /> : undefined} />}
@@ -309,30 +323,55 @@ function IndividualResults({ result, label }: { result: IndividualOptimizeResult
 const COUNT_COLS = new Set(["No.", "# Trades", "# of winners", "# of losers"]);
 /** The team's AmiBroker optimization sheet on the page: every combination with AmiBroker's columns, the settings and the team's
  *  derived columns (same as the download), sorted on CAR/MDD; a header click sorts, as in AmiBroker's result list. */
+type SheetListData = NonNullable<ReturnType<typeof optimizationList>>;
+/** A sheet cell on the page: counts as integers, settings as set, the rest with two decimals; class "n" or the sign tone. */
+const sheetCell = ({ head, settingsAt: s0 }: SheetListData, nd: number) => {
+  const plain = (k: number) => COUNT_COLS.has(head[k]) || (k >= s0 && k < s0 + nd); // settings sit after the AmiBroker columns
+  return { cls: (k: number, v: number | null) => (plain(k) ? "n" : tone(v)),
+    show: (k: number, v: number | null) => (v === null ? "" : COUNT_COLS.has(head[k]) ? int(v) : k >= s0 && k < s0 + nd ? dimFmt(v) : num(v)) };
+};
+/** Now / #1 / #2 / #3 with the sheet's screen columns: each row is the result-list row of its settings ("Now" off the grid: settings only). */
+function TopSheetRows({ list, nd, rows, action }: { list: SheetListData; nd: number; rows: { name: string; settings: (number | null | undefined)[]; best: boolean }[];
+  action(name: string): ReactNode }) {
+  const { head, shown, settingsAt: s0 } = list, { cls, show } = sheetCell(list, nd);
+  return (
+    <div className="tblwrap">
+      <table className="tbl ocmp" data-lab-optimize-top>
+        <thead><tr><th></th>{shown.map((k) => <th className="n" key={k}>{head[k]}</th>)}<th></th></tr></thead>
+        <tbody>{rows.map((r) => {
+          const hit = list.rows.find((lr) => r.settings.every((v, i) => lr[s0 + i] === v));
+          return <tr key={r.name}><td>{r.name}</td>
+            {shown.map((k) => { const v = k >= s0 && k < s0 + nd ? r.settings[k - s0] ?? null : hit?.[k] ?? null; return <td key={k} className={cls(k, v)}>{show(k, v)}</td>; })}
+            <td>{action(r.name)}</td></tr>;
+        })}</tbody>
+      </table>
+    </div>
+  );
+}
+
 function SheetList({ list, nd, excel }: { list: ReturnType<typeof optimizationList>; nd: number; excel?(values: number[]): ReactNode }) {
   const [sort, setSort] = useState<{ col: number; dir: 1 | -1 } | null>(null);
   const [all, setAll] = useState(false);
   if (!list) return null;
-  const { head, rows, settingsAt: s0 } = list, isSetting = (k: number) => k >= s0 && k < s0 + nd; // settings sit after the AmiBroker columns
+  const { head, rows, settingsAt: s0, shown: cols } = list, { cls, show } = sheetCell(list, nd);
   const order = sort === null ? rows : [...rows].sort((a, b) => {
     const x = a[sort.col], y = b[sort.col];
     return x === y ? 0 : x === null ? 1 : y === null ? -1 : (x - y) * sort.dir;
   });
   const shown = all ? order : order.slice(0, PAGE);
   const by = (i: number) => setSort((s) => (s?.col === i ? { col: i, dir: s.dir === 1 ? -1 : 1 } : { col: i, dir: i === 0 ? 1 : -1 }));
-  const show = (h: string, i: number, v: number | null) => (v === null ? "" : COUNT_COLS.has(h) ? int(v) : isSetting(i) ? dimFmt(v) : num(v));
   return (
     <div className="lab-opt-all" data-lab-optimize-sheet-list>
       <h4 className="lab-opt-sheet-h">Optimization result list <small>{rows.length.toLocaleString("en-US")} combinations · as in the AmiBroker sheet, sorted on CAR/MDD · click a column to sort</small></h4>
       <div className="tblwrap">
         <table className="tbl ocmp lab-opt-all-table">
-          <thead><tr>{head.map((h, i) => (
-            <th key={h + i} className={`n${sort?.col === i ? " on" : ""}`} aria-sort={sort?.col === i ? (sort.dir === 1 ? "ascending" : "descending") : "none"}>
-              <button type="button" className="lab-sort" onClick={() => by(i)}>{h}{sort?.col === i ? (sort.dir === 1 ? " ▲" : " ▼") : ""}</button>
+          <thead><tr>{cols.map((i) => (
+            <th key={i} className={`n${sort?.col === i ? " on" : ""}`} aria-sort={sort?.col === i ? (sort.dir === 1 ? "ascending" : "descending") : "none"}>
+              <button type="button" className="lab-sort" onClick={() => by(i)}>{head[i]}{sort?.col === i ? (sort.dir === 1 ? " ▲" : " ▼") : ""}</button>
             </th>
           ))}{excel && <th>Tradesheet</th>}</tr></thead>
           <tbody>{shown.map((r) => (
-            <tr key={r[0]}>{r.map((v, k) => <td key={k} className={COUNT_COLS.has(head[k]) || isSetting(k) ? "n" : tone(v)}>{show(head[k], k, v)}</td>)}
+            <tr key={r[0]}>{cols.map((k) => <td key={k} className={cls(k, r[k])}>{show(k, r[k])}</td>)}
               {excel && <td>{excel(r.slice(s0, s0 + nd) as number[])}</td>}</tr>
           ))}</tbody>
         </table>

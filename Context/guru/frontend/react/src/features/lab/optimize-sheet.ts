@@ -24,9 +24,16 @@ const derivedFor = (dir: "long" | "short" | "both"): [string, string][] => {
     ["Final Expectancy Ratio", "(({Final W Avg}*({% of Winners}/100))-(ABS({Final L Avg})*({% of Losers}/100)))/(ABS({Final L Avg}))"],
     ["Total Profit", "{# Trades}*{Avg % Profit/Loss}"],
     ["Total Net Profit", "{# Trades}*{Final Avg % Profit/Loss}"],
-    ["HOLDING DAYS", short ? "{# Trades}*{Avg Bars Held}" : "{# Trades}*({Avg Bars Held}-1)*7/5"],
+    ["Holding Days", "{# Trades}*({Avg Bars Held}-1)*7/5"],
   ];
 };
+
+/** Columns the team hides ("NF_LongST entry_ST exit_ST 5,2 Filter_Bull.xlsx"): in the downloaded workbook, and on the page.
+ *  Matched on the AmiBroker and derived names only, never on an optimized setting's label. */
+const EXCEL_HIDDEN = new Set(["No.", "RAR", "Recovery Factor", "RAR/MDD", "Avg Profit/Loss", "# of winners", "W. Tot. Profit", "W. Avg. Bars Held", "L. Avg. Bars Held"]);
+const SCREEN_HIDDEN = new Set(["No.", "RAR", "Recovery Factor", "RAR/MDD", "Avg Profit/Loss", "# of winners", "W. Tot. Profit", "Monthly Thickness", "Final W Avg", "Total Profit", "Holding Days"]);
+const hiddenAt = (head: string[], settingsAt: number, nd: number, hidden: Set<string>) =>
+  head.flatMap((h, i) => ((i < settingsAt || i >= settingsAt + nd) && hidden.has(h) ? [i] : []));
 
 export interface SheetContext { ranSpec: Spec; label(path: string): string; group(path: string): string | undefined; instrumentLabel?: string }
 
@@ -54,8 +61,9 @@ export function evalTemplate(f: string, get: (name: string) => number | null): n
   return Number.isFinite(v) ? v : null;
 }
 
-/** The workbook's Optimization sheet as values for the page: the same header, "No.", order (CAR/MDD, best first) and derived columns. */
-export function optimizationList(r: OptimizeResult, ranSpec: Spec, label: (path: string) => string): { head: string[]; rows: (number | null)[][]; settingsAt: number } | null {
+/** The workbook's Optimization sheet as values for the page: the same header, "No.", order (CAR/MDD, best first) and derived columns;
+ *  `shown`: the column indices the team's screen layout keeps (the rest are hidden on the page). */
+export function optimizationList(r: OptimizeResult, ranSpec: Spec, label: (path: string) => string): { head: string[]; rows: (number | null)[][]; settingsAt: number; shown: number[] } | null {
   const { sheet, sheet_cols: names } = r;
   if (!sheet || !names) return null;
   const nd = r.dims.length, derived = derivedFor(directionOf(ranSpec)), carMdd = names.indexOf("CAR/MDD");
@@ -67,7 +75,9 @@ export function optimizationList(r: OptimizeResult, ranSpec: Spec, label: (path:
   });
   const key = (row: (number | null)[]) => (carMdd < 0 ? null : row[1 + carMdd]);
   rows.sort((a, b) => { const x = key(a), y = key(b); return x === y ? (a[0] as number) - (b[0] as number) : x === null ? 1 : y === null ? -1 : y - x; });
-  return { head: ["No.", ...names, ...r.dims.map((d) => label(d.path)), ...derived.map(([n]) => n)], rows, settingsAt: 1 + names.length };
+  const head = ["No.", ...names, ...r.dims.map((d) => label(d.path)), ...derived.map(([n]) => n)], settingsAt = 1 + names.length;
+  const hidden = new Set(hiddenAt(head, settingsAt, nd, SCREEN_HIDDEN));
+  return { head, rows, settingsAt, shown: head.map((_, i) => i).filter((i) => !hidden.has(i)) };
 }
 
 /** Rules + Optimization sheets; null when the response carries no sheet (an engine without sheet=1). */
@@ -117,7 +127,7 @@ export function optimizationWorkbook(r: OptimizeResult, c: SheetContext): Sheet[
     return [i + 1, ...names.map((_, j) => row[nd + j] ?? null), ...row.slice(0, nd),
       ...derived.map(([, f]) => ({ f: f.replace(/\{([^}]+)\}/g, (_m, c: string) => `${at.get(c)}${n}`) }))];
   });
-  const optimization: Sheet = { name: "Optimization", autoFilter: true,
-    rows: [["No.", ...names, ...r.dims.map((d) => c.label(d.path)), ...derived.map(([n]) => n)], ...rows] };
+  const head = ["No.", ...names, ...r.dims.map((d) => c.label(d.path)), ...derived.map(([n]) => n)];
+  const optimization: Sheet = { name: "Optimization", autoFilter: true, hidden: hiddenAt(head, 1 + names.length, nd, EXCEL_HIDDEN), rows: [head, ...rows] };
   return [rules, optimization];
 }

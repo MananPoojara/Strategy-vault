@@ -66,12 +66,14 @@ function cell(v: CellValue | undefined, ref: string, header: boolean): string {
 
 /** `{ f }`: an Excel formula without the leading "=", computed when the file opens. */
 export type CellValue = string | number | null | { f: string };
-export interface Sheet { name: string; rows: CellValue[][]; /** an AutoFilter over the header row and its data */ autoFilter?: boolean }
+export interface Sheet { name: string; rows: CellValue[][]; /** an AutoFilter over the header row and its data */ autoFilter?: boolean;
+  /** 0-based column indices hidden in Excel (still there, unhide to see them) */ hidden?: number[] }
 /** A workbook; the first row of each sheet is the bold, frozen header. */
 export function xlsx(sheets: Sheet[]): Uint8Array {
   const taken = new Set<string>(), named = sheets.map((s) => ({ ...s, name: sheetName(s.name, taken) }));
   const ws = (s: Sheet) => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetData>${
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>${
+    s.hidden?.length ? `<cols>${[...new Set(s.hidden)].sort((a, b) => a - b).map((i) => `<col min="${i + 1}" max="${i + 1}" width="9" hidden="1" customWidth="1"/>`).join("")}</cols>` : ""}<sheetData>${
     s.rows.map((r, i) => `<row r="${i + 1}">${r.map((v, j) => cell(v, `${col(j)}${i + 1}`, i === 0)).join("")}</row>`).join("")}</sheetData>${
     s.autoFilter && s.rows.length ? `<autoFilter ref="A1:${col(Math.max(1, ...s.rows.map((r) => r.length)) - 1)}${s.rows.length}"/>` : ""}</worksheet>`;
   const formulas = sheets.some((s) => s.rows.some((r) => r.some((v) => v !== null && typeof v === "object")));
