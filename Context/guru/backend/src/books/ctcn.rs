@@ -186,7 +186,7 @@ fn phase_jde(k: f64, full: bool) -> f64 {
         - 0.00017 * om.sin()
 }
 /// +1 on the first bar dated on/after a full-moon (UTC) date, -1 for a new moon.
-fn moon_bars(x: &Ctx) -> Vec<i8> {
+pub(crate) fn moon_bars(x: &Ctx) -> Vec<i8> {
     let n = x.r.len();
     let mut out = vec![0i8; n];
     if n == 0 { return out; }

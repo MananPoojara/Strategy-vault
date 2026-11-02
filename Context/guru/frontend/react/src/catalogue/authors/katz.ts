@@ -2,7 +2,7 @@ import type {AuthorFile} from '../author-files';
 
 export default {
   order: 170,
-  author: { id: 'katz', name: 'Katz & McCormick', tagline: 'Systematic tests of entry and exit models with one standard exit', books: [{ id: 'kets', title: 'The Encyclopedia of Trading Strategies', year: 2000, blurb: 'Katz & McCormick, 2000 · breakouts, oscillators, seasonality, lunar and cycle entries with the book’s ATR stop/target exit' }] },
+  author: { id: 'katz', name: 'Katz & McCormick', tagline: 'Systematic tests of entry and exit models with one standard exit', books: [{ id: 'kets', title: 'The Encyclopedia of Trading Strategies', year: 2000, blurb: 'Katz & McCormick, 2000 · breakouts, oscillators, seasonality, lunar and cycle entries with the book’s ATR stop/target exit' }, { id: "sckzlun", sourceIds: [], readerPaths: ["Trading Knowledge I/Stocks & Commodities DVD 11.26 (1982 - 2008) (traders.com)/VOLUMES/V15/C06/LUNARCY.pdf"], title: "Lunar Cycles And Trading (Katz, S&C V.15:6)", year: 1997, blurb: "Katz & McCormick · buy 1 bar after a full moon, short 1 bar after a new moon" }] },
   identities: [],
   profile: {
     "kind": "person",
@@ -23,5 +23,6 @@ export default {
   },
   sourceReview: {
     "kets": {"type":"book","people":["Donna L. McCormick","Jeffrey Owen Katz"]},
+    "sckzlun": {"type":"article","people":["Jeffrey Owen Katz", "Donna L. McCormick"]},
   },
 } satisfies AuthorFile;
