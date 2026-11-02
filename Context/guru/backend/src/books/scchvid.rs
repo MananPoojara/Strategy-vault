@@ -1,11 +1,9 @@
 //! Tushar S. Chande, "Adapting Moving Averages To Market Volatility", Technical Analysis of Stocks & Commodities V.10:3 (March
 //! 1992) pp.108-114 (research share Trading Knowledge I/Stocks & Commodities DVD 11.26 (1982 - 2008) (traders.com)/VOLUMES/V10/C03/
-//! ADAPTIN.pdf). Book id `scchvid`: the RAVI and TurboMACD long trades on weekly VIDYAs. Lane K16 (titles loop, 2 Nov 2026),
+//! ADAPTIN.pdf). Book id `scchvid`: the RAVI and TurboMACD long trades on weekly VIDYAs, HELD (decision 115). Also holds `pstd`. Lane K16 (titles loop, 2 Nov 2026),
 //! to-code row 236; independent check authors/titles-1030/K16w/k16_ref.py.
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 use super::msws::sma;
-use super::sctraub::period_ends;
-use super::tselhs::Book;
 
 pub const REVIEWED: &[&str] = &["scchvid_ravi", "scchvid_tmacd"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
@@ -16,10 +14,11 @@ pub fn pstd(v: &[f64], n: usize) -> Vec<f64> {
     (0..v.len()).map(|i| if !m[i].is_finite() { f64::NAN } else { (v[i + 1 - n..=i].iter().map(|x| (x - m[i]).powi(2)).sum::<f64>() / n as f64).sqrt() }).collect()
 }
 
-const NOTE: &str = "[Declared readings] Weekly closes = each calendar week's last close. VIDYA_L = 0.078 x s13/ref13 x C + (1 - 0.078 x s13/ref13) x VIDYA_L[-1] and VIDYA_S = 0.15 x s10/ref10 x C + (1 - ...) x VIDYA_S[-1] (equations 4-5), s = the standard deviation of the last 13 (10) weekly closes (Lotus @STD, the population form). The article's reference deviations 6 and 4 'represent a 10-year average for weekly Standard & Poor's 500 data' (1980s S&P points); as a declared reading the reference on every instrument is the average of the same deviation over the trailing 520 weeks (10 years) including the current week, so signals start ten years into the data. The smoothing factor is capped at 1 ('as long as the factor (1-t) is positive'); each VIDYA starts at the close of its first week with a reference. RAVI = VIDYA_S - VIDYA_L: buy when it turns positive from a negative value, sell (exit) when it turns negative. TurboMACD = RAVI - trigger, the trigger being 'an exponential moving average with a smoothing constant of 0.2' of RAVI (the default); option lit = 1 uses the printed equation 7 literally, trigger = 0.2 RAVI + 0.8 RAVI[-1]. Long only (the article tests long trades); fills at the signal week's close. Article (weekly S&P 500, January 1980 - July 1991, long trades): RAVI 9 trades, about +207 points with one open trade; TurboMACD 25 trades, 16 profitable (64%), about +218 points. Runs on indices, ETFs and stocks, US and India, are a declared application.";
+const NOTE: &str = "HELD (lead decision 115). The VIDYA smoothing needs reference standard deviations: the article uses 6 and 4, 'a 10-year average for weekly Standard & Poor's 500 data' in early-1980s S&P index points. Those point values do not carry over to other instruments or to today's S&P level, and any normalisation (for example a trailing average of the instrument's own deviation) would be a value we chose, not the author's (decisions 19, 36), so no results are published. Rules as printed: VIDYA_L = 0.078 x s13/6 x C + (1 - 0.078 x s13/6) x VIDYA_L[-1], VIDYA_S = 0.15 x s10/4 x C + (1 - ...) x VIDYA_S[-1] on weekly closes; RAVI = VIDYA_S - VIDYA_L, long when it turns positive, out when it turns negative; TurboMACD = RAVI minus 'an exponential moving average with a smoothing constant of 0.2' (equation 7 prints 0.2 RAVI + 0.8 RAVI[-1]). Article (weekly S&P 500, January 1980 - July 1991, long trades): RAVI 9 trades, about +207 points with one open trade; TurboMACD 25 trades, 16 profitable (64%), about +218 points.";
+const WHY: &str = "Held (decision 115): the article's reference deviations (6 and 4) are S&P 500 index points of the 1980s; a substitute would be our own value.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
-    let d = |id, name, rules| StrategyDef { id, name, group: "S&C: Adapting Moving Averages To Market Volatility (Chande, V.10:3)", session: 0, dir: "Long", status: Status::Live,
+    let d = |id, name, rules| StrategyDef { id, name, group: "S&C: Adapting Moving Averages To Market Volatility (Chande, V.10:3)", session: 0, dir: "Long", status: Status::NotTestable(WHY),
         needs_volume: false, needs_vix: false, needs_series: &[], book: "scchvid", rules, notes: NOTE, claim: None };
     vec![
         d("scchvid_ravi", "Chande RAVI: weekly short VIDYA (0.15, 10-week sigma) crosses above the long VIDYA (0.078, 13-week sigma), long only", &[
@@ -38,48 +37,10 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
     Some(("scchvid", "Chande VIDYA weekly long trades (S&C)", v))
 }
 
-pub fn params(id: &str) -> Option<Vec<ParamDef>> {
-    let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
-    let mut v = vec![p("refw", "Reference window, weeks (10 years)", 520., 52., 1040., 52.)];
-    if id == "scchvid_tmacd" { v.push(p("lit", "1 = trigger as printed (0.2 RAVI + 0.8 RAVI[-1])", 0., 0., 1., 1.)); }
-    reviewed(id).then_some(v)
-}
+pub fn params(id: &str) -> Option<Vec<ParamDef>> { reviewed(id).then(Vec::new) }
 
-fn vidya(c: &[f64], k: f64, n: usize, refw: usize) -> Vec<f64> {
-    let s = pstd(c, n);
-    let mut out = vec![f64::NAN; c.len()];
-    let mut prev = f64::NAN;
-    for i in 0..c.len() {
-        if i + 1 < refw || !s[i + 1 - refw].is_finite() { continue; }
-        let r = s[i + 1 - refw..=i].iter().sum::<f64>() / refw as f64;
-        let a = if r > 0.0 { (k * s[i] / r).min(1.0) } else { 0.0 };
-        prev = if prev.is_finite() { a * c[i] + (1.0 - a) * prev } else { c[i] };
-        out[i] = prev;
-    }
-    out
-}
-
-pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
-    if !reviewed(id) || from >= to || to >= x.r.len() { return None; }
-    let refw = p.get("refw").copied().unwrap_or(520.).round().max(1.) as usize;
-    let we = period_ends(x, false);
-    let w: Vec<f64> = we.iter().map(|&i| x.c[i]).collect();
-    let (vl, vs) = (vidya(&w, 0.078, 13, refw), vidya(&w, 0.15, 10, refw));
-    let ravi: Vec<f64> = (0..w.len()).map(|k| vs[k] - vl[k]).collect();
-    let sig: Vec<f64> = if id == "scchvid_ravi" { ravi.clone() } else if p.get("lit").copied().unwrap_or(0.) > 0.5 {
-        (0..w.len()).map(|k| if k == 0 { f64::NAN } else { ravi[k] - (0.2 * ravi[k] + 0.8 * ravi[k - 1]) }).collect()
-    } else {
-        let mut e = f64::NAN;
-        ravi.iter().map(|&r| { if r.is_finite() { e = if e.is_finite() { 0.2 * r + 0.8 * e } else { r }; r - e } else { f64::NAN } }).collect()
-    };
-    let mut pos = Book::new();
-    for (k, &i) in we.iter().enumerate() {
-        if i < from || i > to || k == 0 || !sig[k - 1].is_finite() { continue; }
-        if pos.side() == 0.0 && sig[k] > 0.0 && sig[k - 1] < 0.0 { pos.enter(1.0, i, x.c[i], "close"); }
-        else if pos.side() > 0.0 && sig[k] < 0.0 && sig[k - 1] > 0.0 { pos.exit(i, x.c[i], "turned negative"); }
-    }
-    Some(pos.done(to, x.c[to]))
-}
+/// Held cards: no run (decision 115).
+pub fn run(_id: &str, _x: &Ctx, _from: usize, _to: usize, _p: &Params) -> Option<Vec<Trade>> { None }
 
 #[cfg(test)]
 mod tests {
@@ -87,15 +48,11 @@ mod tests {
     #[test]
     fn population_sd() { assert!((pstd(&[1., 2., 3., 4.], 4)[3] - 1.118033988749895).abs() < 1e-12); }
     #[test]
-    fn vidya_weekly() {
-        let r = super::super::sctraub::tests::bars(6000);
+    fn vidya_cards_are_held() {
+        let r = super::super::sctraub::tests::bars(300);
         let x = Ctx::new(&r, &r, &[]);
-        let mut p = Params::new();
-        p.insert("refw".into(), 104.0);
-        for id in REVIEWED {
-            let t = run(id, &x, 0, r.len() - 1, &p).unwrap();
-            assert!(!t.is_empty() && t.iter().all(|z| z.dir > 0.0), "{id}");
-        }
+        for id in REVIEWED { assert!(run(id, &x, 0, r.len() - 1, &Params::new()).is_none() && family_of(id).is_some()); }
+        assert!(catalogue().iter().all(|d| d.status != Status::Live));
     }
 }
 
