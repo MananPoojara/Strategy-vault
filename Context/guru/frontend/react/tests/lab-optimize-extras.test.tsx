@@ -18,7 +18,7 @@ const twoDims: OptimizeResult = { ...optimizeFixture, split: null, ranked_on: "f
   table: [[10, 1, 0.1, 0.01, 5], [10, 2, 0.2, 0.02, 6], [20, 1, 0.3, 0.03, 7], [20, 2, 0.4, 0.04, 8], [30, 1, 0.5, 0.05, 9], [30, 2, null, null, 0]],
   info: { ms: 1234, combos: 6, threads: 4, warnings: ["the window starts 2020-01-02: stale opens"] } };
 
-it("two optimized settings draw a 3D surface of the chosen metric with a heatmap toggle, axes and a legend", async () => {
+it("two optimized settings draw a 3D surface of the chosen metric (no heatmap, as in AmiBroker), axes and a legend", async () => {
   const host = await mount(<OptimizePanel {...base} onOptimize={vi.fn().mockResolvedValue(twoDims)} />);
   await tick(host, P); await go(host);
   const surface = host.querySelector("[data-lab-optimize-surface]")!;
@@ -28,13 +28,21 @@ it("two optimized settings draw a 3D surface of the chosen metric with a heatmap
   expect([...svg.querySelectorAll(".lab-surface-name")].map((t) => t.textContent)).toEqual(["Entry 1: EMA Period", "Exit 1: Days held"]); // the card's names
   expect(surface.querySelector(".lab-surface-legend")!.textContent).toContain(pct(0.01, 2));
   expect(surface.querySelector(".lab-surface-legend")!.textContent).toContain(pct(0.05, 2)); // range of every value, the missing one excluded
-  await act(async () => surface.querySelector<HTMLButtonElement>('[aria-label="Chart"] button:last-child')!.click());
-  const heat = surface.querySelector('[data-lab-surface="heat"]')!;
-  expect(heat.querySelectorAll("rect")).toHaveLength(6);
-  expect(heat.querySelector("rect title")!.textContent).toContain("CAR");
+  expect(surface.querySelector('[aria-label="Chart"]')).toBeNull();
+  expect(surface.querySelector('[data-lab-surface="heat"]')).toBeNull();
   const metric = surface.querySelector<HTMLSelectElement>('select[aria-label="Metric"]')!;
   await act(async () => { metric.value = "trades"; metric.dispatchEvent(new Event("change", { bubbles: true })); });
   expect(surface.querySelector(".lab-surface-legend")!.textContent).toContain("# Trades");
+});
+
+it("two settings where one has a single value: no chart, a note that the 3D chart needs two values on each", async () => {
+  const oneValue: OptimizeResult = { ...twoDims, dims: [twoDims.dims[0], { path: Q, values: [1] }], table: twoDims.table!.filter((r) => r[1] === 1) };
+  const host = await mount(<OptimizePanel {...base} onOptimize={vi.fn().mockResolvedValue(oneValue)} />);
+  await tick(host, P); await go(host);
+  const surface = host.querySelector("[data-lab-optimize-surface]")!;
+  expect(surface.querySelector("svg")).toBeNull();
+  expect(surface.querySelector(".lab-surface-legend")).toBeNull();
+  expect(surface.textContent).toContain("The 3D chart needs two optimized settings, each with at least two values.");
 });
 
 it("no surface with one optimized setting; the Info log lists elapsed time, combinations, threads and warnings", async () => {
