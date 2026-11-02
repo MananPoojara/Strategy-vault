@@ -2687,6 +2687,7 @@ static GATE: &[G] = &[
     G { id: r##"tselhs_mom_cross"##, verdict: r##"unverified"##, reason: r##"Course exercise with no results. Limit entries, close exits."##, allowed: None, clamp_open: true, book: r##""##, ours: r##""## },
     G { id: r##"tselhs_rb_avg"##, verdict: r##"unverified"##, reason: r##"Course exercise with no results. Reads the open; next-open fills."##, allowed: None, clamp_open: true, book: r##""##, ours: r##""## },
     G { id: r##"tsx_dma"##, verdict: r##"unverified"##, reason: r##"Market orders at next open: SPX/NDX/DJI stale."##, allowed: None, clamp_open: true, book: r##"TS Express Sep/Oct 1997 p.5: 17 futures, 10 years (no index result)"##, ours: r##""## },
+    G { id: r##"tszlb_pctb"##, verdict: r##"unverified"##, reason: r##"Code collection for the US cash indices, no results printed. Next-open entries read the open."##, allowed: None, clamp_open: true, book: r##""##, ours: r##""## },
     G { id: r##"ttelru_keyrev"##, verdict: r##"unverified"##, reason: r##"Course practice task with no results. Close fills."##, allowed: None, clamp_open: false, book: r##""##, ours: r##""## },
     G { id: r##"ttelru_momentum"##, verdict: r##"unverified"##, reason: r##"Course example with no results. Limit entries, close exits."##, allowed: None, clamp_open: true, book: r##""##, ours: r##""## },
     G { id: r##"ttelru_xbar_hl"##, verdict: r##"unverified"##, reason: r##"Course example with no results. Next-open entries, stop exits."##, allowed: None, clamp_open: true, book: r##""##, ours: r##""## },
