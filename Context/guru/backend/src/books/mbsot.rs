@@ -327,7 +327,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         p("sd_lo", "SD:5 oversold level", lo, 10.0, 40.0, 1.0),
     ];
     Some(match id {
-        "mbsot_zweig4" => vec![p("pct", "Reversal % from the weekly trough / peak close", 4.0, 1.0, 10.0, 0.5), p("short", "Also sell short on sell signals (1 = yes; not the book)", 0.0, 0.0, 1.0, 1.0)],
+        "mbsot_zweig4" => vec![p("pct", "Reversal % from the weekly trough / peak close", 4.0, 1.0, 10.0, 0.5), p("short", "Also sell short on sell signals (1 = yes; not the book)", 0.0, 0.0, 1.0, 1.0),
+            p("prev", "1 = 4% from the previous week's close (S&C 2010 bonus issue, 'The 4% Indicator Revisited', IWM long/short); 0 = from the trough/peak weekly close (book)", 0.0, 0.0, 1.0, 1.0)],
         "mbsot_renshaw_thrust" | "mbsot_renshaw_thrust_nse" => vec![
             p("rise", "Index one-day rise, %", 2.75, 1.0, 5.0, 0.25), p("adv", "Advancing issues % of issues traded", 70.0, 55.0, 85.0, 1.0),
             p("stop", "Open protective stop and trailing stop, %", 10.0, 3.0, 20.0, 1.0), p("trail_hi", "Trail from highs instead of closes (1 = yes; book silent)", 0.0, 0.0, 1.0, 1.0)],
@@ -672,14 +673,18 @@ fn week_ends(x: &Ctx) -> Vec<usize> {
     (0..wk.len()).filter(|&i| i + 1 == wk.len() || wk[i + 1] != wk[i]).collect()
 }
 
-fn zweig4(x: &Ctx, from: usize, to: usize, pct: f64, short: bool) -> Vec<Trade> {
+fn zweig4(x: &Ctx, from: usize, to: usize, pct: f64, short: bool, prev: bool) -> Vec<Trade> {
     let c = &x.c;
     let k = pct / 100.0;
     let w: Vec<usize> = week_ends(x).into_iter().filter(|&i| i >= from && i <= to).collect();
     let (mut out, mut cur): (Vec<Trade>, Option<Trade>) = (vec![], None);
     let Some(&w0) = w.first() else { return out };
     let (mut state, mut ext) = (0i8, c[w0]); // 0 flat-after-sell (tracking trough), 1 long (tracking peak)
+    let mut last = w0;
     for &i in &w[1..] {
+        // option prev = 1 (S&C 2010 bonus issue, "The 4% Indicator Revisited"): measure from the previous week's close
+        if prev { ext = c[last]; }
+        last = i;
         if state == 1 {
             if c[i] <= ext * (1.0 - k) {
                 let mut t = cur.take().unwrap();
@@ -800,7 +805,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).unwrap().def);
     let nse = id.ends_with("_nse");
     Some(match id {
-        "mbsot_zweig4" => zweig4(x, from, to, g("pct"), g("short") >= 0.5),
+        "mbsot_zweig4" => zweig4(x, from, to, g("pct"), g("short") >= 0.5, g("prev") >= 0.5),
         "mbsot_renshaw_thrust" | "mbsot_renshaw_thrust_nse" => renshaw(x, nse, from, to, g("rise"), g("adv"), g("stop"), g("trail_hi") >= 0.5),
         "mbsot_mcclellan" | "mbsot_mcclellan_nse" => breadth(x, nse, 0, from, to, &g),
         "mbsot_appel_impulse" | "mbsot_appel_impulse_nse" => breadth(x, nse, 1, from, to, &g),
