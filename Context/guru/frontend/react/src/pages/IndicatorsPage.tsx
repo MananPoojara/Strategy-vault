@@ -78,6 +78,7 @@ function IndicatorsLab() {
   // Simple / Advanced is a Settings choice (its switch is in the Settings heading); the rules and the chart always show everything
   const setMode = (m: LabMode) => { setModeState(m); storeMode(m); };
   const [step, setStep] = useState<Step>("idea");
+  const [fromOptimize, setFromOptimize] = useState(false); // Stats on an optimizer row: Results offers the way back
   const stepIndex = STEPS.findIndex((s) => s.id === step);
   const showStrategy = (selector = ".lab-rules") => {
     setTab("strategy");
@@ -402,6 +403,7 @@ function IndicatorsLab() {
         </Part>
         </div>
         <div className="lab-step" hidden={step !== "results"} data-lab-step-results>
+        {fromOptimize && <div className="lab-step-nav lab-opt-back"><button type="button" className="dbtn" data-lab-back-optimize onClick={() => setTab("optimization")}>‹ Back to optimization</button></div>}
         {/* WealthLab/AmiBroker style: one Results box, every view a tab instead of a long scroll */}
         {backtestShown ? <Part>
           {runError ? <ErrorNotice error={runError} market={savedMarketValue} instrumentLabel={option?.instrumentLabel} />
@@ -437,18 +439,22 @@ function IndicatorsLab() {
         <div className="lab-step-nav">
           {stepIndex > 0 && <button type="button" className="dbtn" onClick={() => setStep(STEPS[stepIndex - 1].id)}>‹ Back: {STEPS[stepIndex - 1].label}</button>}
           {stepIndex < STEPS.length - 1 && <button type="button" className="dbtn primary" data-lab-next onClick={() => setStep(STEPS[stepIndex + 1].id)}>Next: {STEPS[stepIndex + 1].label} ›</button>}
+          {/* the optimizer is reachable from every step, not only from Your idea */}
+          <button type="button" className="dbtn" data-lab-step-optimize disabled={problems.length > 0} title={problems[0]} onClick={() => setTab("optimization")}>Optimize ›</button>
         </div>
         </div>
         <div role="tabpanel" id="lab-panel-optimization" aria-labelledby="lab-tab-optimization" hidden={tab !== "optimization"} className="lab-tab-panel">
         <div className="lab-step-nav lab-opt-back"><button type="button" className="dbtn" data-lab-back-strategy onClick={() => { setTab("strategy"); setStep("idea"); }}>‹ Back to your strategy</button></div>
-        <p className="lab-tab-intro">Compare settings for <b>{state.spec.portfolio?"the selected portfolio":ticker}</b>. Your strategy rules stay the same until you apply a result.</p>
         <Part key={JSON.stringify([market, ticker, settings.from, settings.to, settings.fees, settings.slippage])}>{/* Results and exports belong to the same instrument, dates and costs. */}
           <OptimizePanel spec={runSpec} catalogue={cat} market={savedMarketValue} role={role} dates={result?.dates ?? []}
             onOptimize={(spec, split) => { assertRunnable(spec); return lab.optimize(market, spec, {
               ticker, from: settings.from || undefined, to: settings.to || undefined, ...runQuery(spec, settings.fees, settings.slippage), split,
             }); }}
+            onWalkforward={(spec, o) => { assertRunnable(spec); return lab.walkforward(market, spec, {
+              ticker, from: settings.from || undefined, to: settings.to || undefined, ...runQuery(spec, settings.fees, settings.slippage), ...o,
+            }); }}
             onIndividual={(spec) => { assertRunnable(spec); return lab.optimizeIndividual(market, spec, { from: settings.from || undefined, to: settings.to || undefined }); }}
-            onApply={(spec) => { setTab("strategy"); dispatch({ type: "spec", spec }); void run(spec); }}
+            onApply={(spec) => { setFromOptimize(true); setTab("strategy"); dispatch({ type: "spec", spec }); void run(spec); }}
             onTried={(n) => dispatch({ type: "tried", n })} tried={state.tried} instrumentLabel={option?.instrumentLabel}
             onRun={(spec) => { assertRunnable(spec); return lab.run(market, spec, {
               ticker, from: settings.from || undefined, to: settings.to || undefined, ...runQuery(spec, settings.fees, settings.slippage),

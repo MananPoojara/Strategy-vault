@@ -21,6 +21,11 @@ type Query = BTreeMap<String, String>;
 /// Wall-clock bound for one lab optimization (the gateway allows 600 s).
 pub(super) const OPT_SECONDS: u64 = 300;
 const STOPPED: &str = "optimization stopped after another combination failed";
+/// The team's rule for the lab optimizer: a combination counts for the best settings only with at least 10% of the most
+/// trades any combination made (rounded up, at least 1). The book optimizer keeps its own trade-rate floor.
+pub(super) fn lab_min_trades(trades: impl Iterator<Item = f64>) -> f64 {
+    (trades.filter(|t| t.is_finite()).fold(0.0, f64::max) * 0.10).ceil().max(1.0)
+}
 /// `,"info":{…}` — AmiBroker Analysis "Info" tab: elapsed ms, combinations evaluated, worker threads and warnings.
 pub(super) fn info_json(ms: u128, combos: usize, threads: usize, warnings: &[String]) -> String {
     format!(",\"info\":{{\"ms\":{ms},\"combos\":{combos},\"threads\":{threads},\"warnings\":{}}}", quoted(warnings.iter().map(String::as_str)))
@@ -28,6 +33,12 @@ pub(super) fn info_json(ms: u128, combos: usize, threads: usize, warnings: &[Str
 /// A moved window start (stale opens) as an info warning; `start` is the response's `start` JSON.
 fn start_warning(start: &str) -> Vec<String> {
     super::json::parse(start).ok().and_then(|j| Some(format!("the window starts {}: {}", j.get("date")?.as_str()?, j.get("reason")?.as_str()?))).into_iter().collect()
+}
+#[cfg(test)]
+#[test] fn lab_min_trades_is_ten_percent_of_the_most_trades() {
+    assert_eq!(lab_min_trades([62.0, 300.0, f64::NAN, 5.0].into_iter()), 30.0);
+    assert_eq!(lab_min_trades([61.0, 12.0].into_iter()), 7.0); // 6.1 rounds up
+    assert_eq!(lab_min_trades([3.0].into_iter()), 1.0);
 }
 #[cfg(test)]
 thread_local! { static LAST_DONE: std::cell::RefCell<Option<Arc<AtomicUsize>>> = const { std::cell::RefCell::new(None) }; }
@@ -611,6 +622,8 @@ fn optimize_spec(st: &State, q: &Query, spec: Spec, t0: std::time::Instant) -> R
     let width = base.len();
     base.truncate(width - sheet_n);
     let threads = std::thread::available_parallelism().map_or(4, |n| n.get()).min(combos);
+    // optimizing a Dual ATR multiple: combinations with initial > favour are not run and never ranked (the team's rule)
+    let atr_order = dims.iter().any(|d| d.path.contains("dual_atr.") && d.path.ends_with(".mult"));
     // Rows in mixed-radix order (last dimension fastest), as the book optimizer (main.rs optimize()).
     let (stop, done) = (AtomicBool::new(false), Arc::new(AtomicUsize::new(0)));
     #[cfg(test)]
@@ -633,7 +646,7 @@ fn optimize_spec(st: &State, q: &Query, spec: Spec, t0: std::time::Instant) -> R
                     #[cfg(test)]
                     if vals[0] == 77. { stop.store(true, Ordering::Relaxed); return Err(LabError::Invalid("test hook: combination failed".into())); }
                     // every rule switched off: an unranked row (NaN trades never pass the floor), not a failed grid
-                    if rules::switched_all_off(&s) { vals.extend(vec![f64::NAN; width]); } else {
+                    if rules::switched_all_off(&s) || (atr_order && rules::dual_atr_out_of_order(&s)) { vals.extend(vec![f64::NAN; width]); } else {
                         vals.extend(metrics(&mut cache, &s).inspect_err(|_| stop.store(true, Ordering::Relaxed))?);
                     }
                     done.fetch_add(1, Ordering::Relaxed);
@@ -664,11 +677,9 @@ fn optimize_spec(st: &State, q: &Query, spec: Spec, t0: std::time::Instant) -> R
     let ti = crate::FULL_COLS.iter().position(|c| *c == "trades").unwrap();
     // With a split the ranking reads the in-sample window only; oos_ columns are display-only.
     let rank_rows: Vec<Vec<f64>> = rows_v.iter().map(|r| rank_basis(r, nd, ndisp, split.is_some())).collect();
-    let base_rank = rank_basis(&[vec![0.0; nd], base.clone()].concat(), nd, ndisp, split.is_some());
     let yrs = crate::years(ctx, from, split.map_or(to, |s| s - 1));
-    let base_tpy = base_rank[nd + ti] / yrs;
-    let per_year = (base_tpy * 0.5).clamp(crate::MIN_PER_YEAR.0, crate::MIN_PER_YEAR.1);
-    let min_trades = (per_year * yrs).ceil().max(crate::MIN_TRADES);
+    let min_trades = lab_min_trades(rank_rows.iter().map(|r| r[nd + ti]));
+    let per_year = min_trades / yrs;
     let defs: Vec<f64> = dims.iter().map(|d| rules::current(&spec, &d.target)).collect();
     let outcome_cols = outcome_cols(nd, ndisp, split.is_some());
     let col = |name: &str| nd + crate::FULL_COLS.iter().position(|c| *c == name).unwrap();
@@ -855,7 +866,7 @@ fn portfolio_optimize_json(st:&State,q:&Query,spec:&Spec,gl:bool,t0:std::time::I
         if let Some(error)=errors.lock().unwrap_or_else(|p|p.into_inner()).take(){return Err(error);}if rows.len()!=combos{return Err(LabError::Invalid("portfolio optimization cancelled; no partial ranking is published".into()));}rows.sort_by_key(|r|r.0);Ok(rows.into_iter().map(|r|r.1).collect())
     })?;
     portfolio_deadline(deadline).map_err(timeout)?;
-    let nd=dims.len();let col=|name:&str|nd+PCOLS.iter().position(|k|*k==name).unwrap();let years=crate::years(ctx,prepared.from,prepared.to);let per_year=(base_stats["trades"]/years*0.5).clamp(crate::MIN_PER_YEAR.0,crate::MIN_PER_YEAR.1);let min_trades=(per_year*years).ceil().max(crate::MIN_TRADES);let defs:Vec<_>=dims.iter().map(|d|rules::current(spec,&d.target)).collect();let (rank,pool)=crate::conclude_rank_with_outcomes(&rows,col("trades"),&crate::RANK_STATS.map(|(k,_)|col(k)),min_trades,per_year,&defs,None);
+    let nd=dims.len();let col=|name:&str|nd+PCOLS.iter().position(|k|*k==name).unwrap();let years=crate::years(ctx,prepared.from,prepared.to);let min_trades=lab_min_trades(rows.iter().map(|r|r[col("trades")]));let per_year=min_trades/years;let defs:Vec<_>=dims.iter().map(|d|rules::current(spec,&d.target)).collect();let (rank,pool)=crate::conclude_rank_with_outcomes(&rows,col("trades"),&crate::RANK_STATS.map(|(k,_)|col(k)),min_trades,per_year,&defs,None);
     let slim=q.get("slim").is_some_and(|v|v=="1");let row=|r:&Vec<f64>|arr(r.iter().map(|v|full(*v)));let picked=if slim{pool.iter().map(|i|format!("\"{i}\":{}",row(&rows[*i]))).collect::<Vec<_>>().join(",")}else{String::new()};let shown=if slim{String::new()}else{rows.iter().map(row).collect::<Vec<_>>().join(",")};let cols=dims.iter().map(|d|d.path.as_str()).chain(PCOLS.iter().copied());
     let costs=portfolio_costs_json(spec);let table=table_json(q,&rows,nd,PCOLS,full);
     let body=format!("{{\"label\":\"{LABEL}\",\"kind\":\"lab_portfolio_optimization\",\"origin\":null,\"portfolio\":{},\"membership\":{},\"reference\":{{\"ticker\":\"{}\",\"type\":\"index\"}}{},\"execution_model\":{},\"money\":{{\"capital\":{}}},\"from\":\"{}\",\"to\":\"{}\",\"split\":null,\"combos\":{combos},\"threads\":{threads},\"ms\":{},\"dims\":{},\"cols\":{},\"base\":{},\"ranked_on\":\"full\",\"rank\":{rank},\"picked\":{{{picked}}},\"rows\":[{shown}]{table}{},\"costs\":{costs},\"provenance\":{provenance}{}}}",portfolio_meta(spec,&prepared,cohort.len(),&refused),membership_json(&prepared.loaded),esc(&prepared.loaded.reference),prepared.foreign_json,portfolio_model(None),full(base_book.capital),prepared.loaded.dates[prepared.from],prepared.loaded.dates[prepared.to],t0.elapsed().as_millis(),arr(dims.iter().map(|d|format!("{{\"path\":\"{}\",\"values\":{}}}",esc(&d.path),arr(d.values.iter().map(|v|full(*v)))))),quoted(cols),arr(base.iter().map(|v|full(*v))),info_json(t0.elapsed().as_millis(),combos,threads,&refused.iter().map(|(t,r)|format!("{t} skipped: {r}")).chain(pool.is_empty().then(||format!("no combination is eligible: each needs at least {min_trades} trades"))).collect::<Vec<_>>()),adaptations(rules::series_ids(spec).iter().map(String::as_str)));

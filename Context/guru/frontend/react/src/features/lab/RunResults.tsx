@@ -200,7 +200,7 @@ export function RunResults({ result, market, chartsOnly = false }: { result: Run
       {!chartsOnly && <>
       <MetricTiles items={[...(result.money ? [{ label: "Final equity", value: num(result.money.final_equity) }, { label: "Costs paid", value: num(result.money.costs_total) }] : []), ...kpiItems(stats)]} />
       <p className="cap">Exposure {pct(stats.exposure)} · before costs: {pct(stats.gross_total_return)}</p>
-      {result.money ? <><p className="cap">{result.money.basis}</p>{result.money.skipped > 0 && <p className="cap">{result.money.skipped} trade{result.money.skipped === 1 ? "" : "s"} skipped ({result.money.limits
+      {result.money ? <>{result.money.skipped > 0 && <p className="cap">{result.money.skipped} trade{result.money.skipped === 1 ? "" : "s"} skipped ({result.money.limits
         ? Object.entries(result.money.limits.skip_reasons).map(([k, n]) => `${k.replaceAll("_", " ")}: ${n}`).join(" · ") : "size rounded to 0"})</p>}
         {result.money.limits && <p className="cap" data-lab-limits-basis>Interest on idle cash: {result.money.limits.interest.toLocaleString("en-US", { maximumFractionDigits: 2 })}.{result.money.limits.margin_interest !== undefined && <> Margin loan interest paid: <span data-lab-margin-interest>{result.money.limits.margin_interest.toLocaleString("en-US", { maximumFractionDigits: 2 })}</span>.</>} {result.money.limits.basis}</p>}</> : <p className="cap">Fees {costs.fees_bps} bps + slippage {costs.slippage_bps} bps per side · taxes not modelled</p>}
       </>}

@@ -3,6 +3,7 @@ import { directionOf } from "./execution-model";
 import { col, type CellValue, type Sheet } from "./xlsx";
 import type { OptimizeResult, Spec } from "./types";
 import { dateFilterName } from "./date-sets";
+import { getAt } from "./spec-model";
 
 const POSITIONS = { long: "Long", short: "Short", both: "Long and short" } as const;
 const dayFirst = (d: string) => d.split("-").reverse().join("-");
@@ -39,7 +40,27 @@ const EXCEL_SHOWN = new Set([...SCREEN_SHOWN, "W. Avg % Profit", "L. Avg % Loss"
 const hiddenAt = (head: string[], settingsAt: number, nd: number, shown: Set<string>) =>
   head.flatMap((h, i) => ((i < settingsAt || i >= settingsAt + nd) && !shown.has(h) ? [i] : []));
 
-export interface SheetContext { ranSpec: Spec; label(path: string): string; group(path: string): string | undefined; instrumentLabel?: string }
+/** The team's Dual ATR rule: Initial ATR × must be at most Favour ATR ×. When a multiple is optimized the engine leaves the other
+ *  combinations unranked (never #1-#3); this drops them from the lists, the sheet and the tradesheet downloads too. */
+export function withoutAtrOutOfOrder<R extends Pick<OptimizeResult, "dims" | "rows" | "table" | "sheet">>(r: R, ranSpec: Spec): R & { skipped: number } {
+  const at = (p: string) => r.dims.findIndex((d) => d.path === p);
+  const checks = ["", "short_side."].flatMap((pre) => {
+    const [i, f] = [at(`${pre}exit.dual_atr.initial.mult`), at(`${pre}exit.dual_atr.favour.mult`)];
+    if (i < 0 && f < 0) return [];
+    const now = (k: string) => Number(getAt(ranSpec, `${pre}exit.dual_atr.${k}.mult`));
+    return [(row: readonly (number | null)[]) => (i < 0 ? now("initial") : row[i]!) <= (f < 0 ? now("favour") : row[f]!)];
+  });
+  if (!checks.length) return { ...r, skipped: 0 };
+  const ok = (row: readonly (number | null)[]) => checks.every((c) => c(row));
+  const table = r.table?.filter(ok);
+  return { ...r, rows: r.rows.filter(ok), table, sheet: r.sheet?.filter(ok), skipped: r.table && table ? r.table.length - table.length : 0 };
+}
+
+export interface SheetContext { ranSpec: Spec; label(path: string): string; group(path: string): string | undefined; instrumentLabel?: string;
+  /** The rule a setting belongs to, worded as on its card ("RSI(14) crosses above 30"); its settings share one Rules line. */
+  rule?(path: string): { key: string; text: string } | undefined;
+  /** Every rule switched on, worded as on its card: all are listed, optimized or not. */
+  rules?: Record<"entry" | "exit" | "filter", { key: string; text: string }[]> }
 
 const instrumentName = (r: OptimizeResult, c: SheetContext) => c.instrumentLabel ?? r.instrument.label ?? r.instrument.name ?? r.instrument.ticker;
 export const sheetFileName = (r: OptimizeResult, c: SheetContext) =>
@@ -94,9 +115,16 @@ export function optimizationWorkbook(r: OptimizeResult, c: SheetContext): Sheet[
     return `${c.label(path)} - ${d ? [d.from, d.to, d.step] : [values[0], values.at(-1), values.length > 1 ? values[1] - values[0] : 0]}`;
   };
   // Entry / Exit / Filter rows: one per optimized setting of that group (a group "Filters", "Long exit", "Entry order", …)
-  const byGroup = (re: RegExp) => r.dims.filter((d) => re.test(c.group(d.path) ?? "")).map((d) => range(d.path, d.values));
+  const byGroup = (re: RegExp, seed: { key: string; text: string }[] = []) => {
+    const lines = new Map<string, string[]>(seed.map((x) => [x.key, [x.text]]));
+    for (const d of r.dims.filter((x) => re.test(c.group(x.path) ?? ""))) {
+      const rule = c.rule?.(d.path), key = rule?.key ?? d.path;
+      lines.set(key, [...(lines.get(key) ?? (rule ? [rule.text] : [])), range(d.path, d.values)]);
+    }
+    return [...lines.values()].map((parts) => parts.join(" · "));
+  };
   const df = c.ranSpec.date_filter, dates = dateFilterName(df);
-  const filters = [...(dates ? [`Dates: ${dates} · ${df!.windows.length} periods`] : []), ...byGroup(/filter/i)], exits = byGroup(/exit/i), entries = byGroup(/^(?!.*(filter|exit)).*entry/i);
+  const filters = [...(dates ? [`Dates: ${dates} · ${df!.windows.length} periods`] : []), ...byGroup(/filter/i, c.rules?.filter)], exits = byGroup(/exit/i, c.rules?.exit), entries = byGroup(/^(?!.*(filter|exit)).*entry/i, c.rules?.entry);
   const setup = r.dims.filter((d) => !/filter|exit|entry/i.test(c.group(d.path) ?? "")).map((d) => range(d.path, d.values));
   const list = (label: string, items: string[]): CellValue[][] => (items.length ? items : [""]).map((v, i) => [null, i ? null : label, v]);
   const costs = r.costs, fee = "fees_bps" in costs ? null : costs.commission;

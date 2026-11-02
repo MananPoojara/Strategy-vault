@@ -1538,6 +1538,12 @@ pub fn switched_all_off(s: &Spec) -> bool {
     let short = s.short_side.as_ref().map(|x| x.entry.iter().chain(&x.exit));
     active_rules(s).is_err() || s.entry.iter().chain(&s.exit).chain(short.into_iter().flatten()).any(group_off)
 }
+/// The team's Dual ATR rule for the optimizer: the initial multiple must be at most the favour multiple (either side).
+/// A combination that breaks it is left unranked, as one with every rule switched off; only used when a multiple is optimized.
+pub fn dual_atr_out_of_order(s: &Spec) -> bool {
+    let bad = |x: &Exec| x.dual_atr.as_ref().is_some_and(|d| d.initial.mult > d.favour.mult);
+    bad(&s.exec) || s.short_side.as_ref().is_some_and(|x| bad(&x.exec))
+}
 /// Node invariants the parser checks, re-checked after an optimize value is applied (at_least <= of, then spans, constant range bounds).
 fn consistent(n: &Node) -> Result<(), String> {
     match n {
@@ -2632,6 +2638,12 @@ mod off_tests {
         let g = spec(&format!(r#"{{"any":[{C},{OFF}]}}"#), EXIT).unwrap();
         let mut g_off = g.clone(); if let Node::Any(v) = &mut g_off.entry[0] { v[0] = Node::Off(Box::new(v[0].clone())); }
         assert!(!switched_all_off(&g) && switched_all_off(&g_off));
+    }
+    #[test] fn dual_atr_initial_must_be_at_most_favour() {
+        let at = |i: f64, f: f64| { let mut s = spec(C, EXIT).unwrap();
+            s.exec.dual_atr = Some(DualAtr { initial: AtrBand { period: 5, mult: i, price: "close".into() }, favour: AtrBand { period: 5, mult: f, price: "close".into() }, tf: Tf::D, period_end_only: false }); s };
+        assert!(!dual_atr_out_of_order(&at(2.25, 4.25)) && !dual_atr_out_of_order(&at(3., 3.)) && dual_atr_out_of_order(&at(4.25, 2.25)));
+        assert!(!dual_atr_out_of_order(&spec(C, EXIT).unwrap())); // no Dual ATR exit: nothing to check
     }
     #[test] fn switched_off_rules_keep_their_optimize_paths() {
         let s = spec(&format!("{C},{OFF}"), EXIT).unwrap();

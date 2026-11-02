@@ -115,7 +115,6 @@ function Best({ result, lines, spec, onApply }: { result: LabOptimizeResult; lin
   return <div className="lab-sopt-results" data-lab-sopt-result>
     <ServerLabel text={result.label} />
     <ExecutionStrip model={result.execution_model} money={result.money} adaptations={result.adaptations} />
-    {result.money?.basis && <p className="cap">{result.money.basis}</p>}
     {result.provisional && <ProvisionalStrip note={result.provisional_note} />}
     {"membership" in result && <p className="rnote">{result.reference.ticker} reference · {result.membership.note}</p>}
     {result.foreign?.map((f) => <p className="cap" key={f.ticker}>{foreignDescription(f)}</p>)}

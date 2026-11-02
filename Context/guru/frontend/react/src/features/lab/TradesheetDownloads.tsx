@@ -10,8 +10,6 @@ import type { LabRunResult, RunResult, Spec } from "./types";
 /** A grid dimension: only its spec path matters here. */
 type Dim = { path: string };
 
-/** At most this many backtests per download, so a large grid does not flood the engine. */
-export const MAX_SHEETS = 50;
 type Run = (spec: Spec) => Promise<LabRunResult>;
 
 /** "Exit 2 off · RSI length 10": a rule switch reads on/off, any other setting label = value. */
@@ -36,7 +34,7 @@ export function TradesheetDownloads({ table, dims, ranSpec, label, onRun, ticker
   const [error, setError] = useState<string | null>(null);
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
-  const combos = table.slice(0, MAX_SHEETS).map((r) => r.slice(0, dims.length) as number[]);
+  const combos = table.map((r) => r.slice(0, dims.length) as number[]);
   const all = async () => {
     setError(null);
     try {
@@ -61,12 +59,11 @@ export function TradesheetDownloads({ table, dims, ranSpec, label, onRun, ticker
   return <div className="lab-row" data-lab-tradesheets>
     <span className="dfield">Tradesheets</span>
     <select aria-label="Tradesheet format" value={format} onChange={(e) => setFormat(e.target.value === "book" ? "book" : "files")}>
-      <option value="files">A separate Excel file for each combination (ZIP)</option>
-      <option value="book">One Excel file, a sheet for each combination</option>
+      <option value="files">Separate files (ZIP)</option>
+      <option value="book">One file</option>
     </select>
-    <button type="button" className="dbtn sm" disabled={!!busy || !combos.length} onClick={() => void all()}>Download all {combos.length}</button>
+    <button type="button" className="dbtn sm" disabled={!!busy || !combos.length} onClick={() => void all()}>Download all tradesheets</button>
     {busy && <span className="cap" role="status">{busy}</span>}
-    {table.length > MAX_SHEETS && <span className="cap">The first {MAX_SHEETS} of {table.length} combinations (in the table's order); narrow the ranges for the rest.</span>}
     {error && <span className="rnote" role="alert">{error}</span>}
   </div>;
 }
@@ -89,6 +86,6 @@ export function TradesheetButton({ dims, values, ranSpec, label, onRun, ticker, 
       setError(e instanceof Error ? e.message : String(e));
     } finally { setBusy(false); }
   };
-  return <><button type="button" className="dbtn sm ghost" aria-label={`Excel tradesheet: ${name}`} title={`Download the tradesheet of ${name} as an Excel file`} disabled={busy} onClick={() => void go()}>{busy ? "…" : "Excel"}</button>
+  return <><button type="button" className="dbtn sm ghost" aria-label={`Tradesheet: ${name}`} title={`Download the tradesheet of ${name} as an Excel file`} disabled={busy} onClick={() => void go()}>{busy ? "…" : "Tradesheet"}</button>
     {error && <span className="rnote" role="alert">{error}</span>}</>;
 }

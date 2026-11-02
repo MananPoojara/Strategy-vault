@@ -65,7 +65,7 @@ it("money mode on a US ETF: capital, sizing in shares, costs, taxes, borrow for 
   const { host, last } = await risk(withMode(setExecution(defaultSpec(), { cost_bps: 10 }), "money"), usEtf);
   expect(withMode(defaultSpec(), "money").execution).toEqual({ capital: 1_000_000 });
   expect(host.querySelector<HTMLInputElement>('input[aria-label="Initial equity"]')!.value).toBe("1000000");
-  expect(host.textContent).toContain(MONEY_BASIS_HINT);
+  expect(host.textContent).not.toContain(MONEY_BASIS_HINT); // the cost disclaimer is not shown
   await choose(host.querySelector('select[aria-label="Position size per"]')!, "units");
   expect(last().execution?.sizing).toEqual({ units: 100 });
   await type(host.querySelector('input[aria-label="Slippage (bps)"]')!, "20");

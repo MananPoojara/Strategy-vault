@@ -14,6 +14,8 @@ type Obj = Record<string, unknown>;
 type Side = { entry: { all: RuleNode[] }; exit: { any: RuleNode[] } & Obj };
 const TF: Record<string, string> = { D: "Daily", W: "Weekly", M: "Monthly", Q: "Quarterly", Y: "Yearly" };
 const bare = (n: RuleNode) => { const { off: _o, filter: _f, filter_exit: _e, ...x } = n as Obj; return x as RuleNode; };
+/** A rule in the words the rule cards use ("RSI(14) crosses above 30"). */
+export const ruleText = (n: RuleNode | undefined, cat: Catalogue) => words(n, cat);
 const words = (n: RuleNode | undefined, cat: Catalogue) => (n ? bandWords(bare(n), cat) ?? ruleWords(bare(n), cat)?.text ?? describeNode(bare(n), cat) : "");
 const sides = (s: Spec): { pre: string; side: Side; short: boolean }[] =>
   [{ pre: "", side: s as unknown as Side, short: s.direction === "short" },
@@ -114,6 +116,18 @@ function stopTab(x: Obj): string {
   if (dl?.initial?.s === "supertrend") return `ST ${dl.initial.p?.atr_length}-${dl.initial.p?.factor},${dl.favour?.p?.factor}${TAB[dl.initial.tf ?? ""] ?? ""}`;
   const pct = (k: string) => (x[k] as { pct?: number } | undefined)?.pct;
   return [["stop_loss", "HSL"], ["target", "PB"], ["trailing", "TSL"]].filter(([k]) => x[k] !== undefined).map(([k, t]) => `${t}${pct(k) ?? ""}`).join(" ");
+}
+/** Every rule switched on, worded as on its card, keyed by its spec path ("entry.all[0]"): the optimization sheet's Rules lines. */
+export function ruleLines(spec: Spec, cat: Catalogue) {
+  const out = { entry: [] as { key: string; text: string }[], exit: [] as { key: string; text: string }[], filter: [] as { key: string; text: string }[] };
+  for (const { pre, side } of sides(spec)) {
+    const tag = pre ? "Short " : "";
+    side.entry.all.forEach((n, i) => { if ((n as Obj).off === true) return;
+      ((n as Obj).filter === true ? out.filter : out.entry).push({ key: `${pre}entry.all[${i}]`, text: `${tag}${words(n, cat)}` }); });
+    side.exit.any.forEach((n, i) => { if ((n as Obj).off !== true) out.exit.push({ key: `${pre}exit.any[${i}]`, text: `${tag}${exitName(n, i)}: ${words(n, cat)}` }); });
+    for (const s of stopsOn(side.exit as Obj, undefined)) out.exit.push({ key: `${pre}stop ${s}`, text: `${tag}${s}` });
+  }
+  return out;
 }
 /** The template's Rules sheet fields, worded as in the Excel Rules list. */
 export function tsRules(ctx: RunContext, r: RunResult) {

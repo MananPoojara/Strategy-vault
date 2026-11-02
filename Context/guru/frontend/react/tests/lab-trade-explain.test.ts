@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { reasonLabeler, rulesSheet } from "../src/features/lab/trade-explain";
+import { reasonLabeler, ruleLines, rulesSheet } from "../src/features/lab/trade-explain";
 import { withDefaultExit } from "../src/features/lab/defaults";
 import { starterSpec } from "../src/features/lab/spec-model";
 import { BUILT_IN } from "../src/features/lab/builtin-periods";
@@ -78,4 +78,14 @@ it("names the date filter with its phase: the base's bull or bear periods, an up
   expect(dateFilterName({ windows: [["2020-01-01", "2020-06-30"]], set: { id: 7, name: "Team periods" } })).toBe("Team periods");
   expect(dateFilterName({ windows: [["2020-01-01", "2020-06-30"]], mode: "outside", set: { name: "Base 1" } })).toBe("Base 1 Bear");
   expect([dateFilterName(undefined), dateFilterName(df("Bull", { off: true })), dateFilterName({ windows: [] })]).toEqual([null, null, null]);
+});
+
+it("ruleLines: every rule switched on, keyed by its path, worded with the condition chosen (crosses above / below, is above)", () => {
+  const s: Spec = { ...own, entry: { all: [rsi("crosses_above", 60), { ...rsi(">", 50), filter: true } as RuleNode, rsi("crosses_below", 20, true)] },
+    exit: { any: [rsi("crosses_below", 70)] } };
+  const l = ruleLines(s, cat);
+  expect(l.entry).toEqual([{ key: "entry.all[0]", text: "RSI(14) crosses above 60" }]); // the switched-off row is left out
+  expect(l.filter.map((x) => x.key)).toEqual(["entry.all[1]"]);
+  expect(l.filter[0].text).toMatch(/^RSI\(14\) is above 50/);
+  expect(l.exit).toEqual([{ key: "exit.any[0]", text: "Exit rule 1: RSI(14) crosses below 70" }]);
 });

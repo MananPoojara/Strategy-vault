@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { act } from "react";
 import * as lab from "../src/features/lab/client";
 import { OptimizePanel } from "../src/features/lab/OptimizePanel";
-import { evalTemplate, optimizationWorkbook, sheetFileName } from "../src/features/lab/optimize-sheet";
+import { evalTemplate, optimizationWorkbook, sheetFileName, withoutAtrOutOfOrder } from "../src/features/lab/optimize-sheet";
 import { xlsx } from "../src/features/lab/xlsx";
 import { defaultSpec } from "../src/features/lab/spec-model";
 import type { OptimizeResult, Spec } from "../src/features/lab/types";
@@ -145,7 +145,7 @@ it("the top rows (Now, #1-#3) show the same screen columns, each the result-list
   expect([at("#1", "Entry 1: EMA Period"), at("#1", "CAR/MDD")]).toEqual(["20", "0.90"]);
   expect([at("#2", "Entry 1: EMA Period"), at("#2", "CAR/MDD")]).toEqual(["10", "0.20"]);
   expect([at("Now", "Entry 1: EMA Period"), at("Now", "CAR/MDD")]).toEqual(["50", "0.30"]);
-  expect(top.querySelectorAll('button[aria-label^="Apply"]')).toHaveLength(2);
+  expect([...top.querySelectorAll('button[aria-label^="Stats"]')].map((b) => b.textContent)).toEqual(["Stats", "Stats"]);
 });
 
 it("xlsx without formulas or a filter is unchanged: no calcPr, no autoFilter", () => {
@@ -164,4 +164,42 @@ it("a date filter is named with its phase in the Rules Filter line and the file 
   expect(rules.rows.find((r) => r[1] === "Filter:")![2]).toMatch(/^Dates: Base 2 Bear · \d+ periods$/);
   expect(sheetFileName(withSheet, ctx)).toBe("Nifty 50 Base 2 Bear Long Daily Optims.xlsx");
   expect(sheetFileName(withSheet, { ...ctx, ranSpec: spec })).toBe("Nifty 50 Short Daily Optims.xlsx"); // no date filter: unchanged
+});
+
+it("Dual ATR: combinations with Initial ATR × above Favour ATR × are left out of the lists, the sheet and the downloads", () => {
+  const dims = [{ path: "exit.dual_atr.initial.mult", values: [2, 4] }, { path: "exit.dual_atr.favour.mult", values: [2, 3] }];
+  const grid = [[2, 2, 1], [2, 3, 2], [4, 2, 3], [4, 3, 4]];
+  const r = withoutAtrOutOfOrder({ dims, rows: grid, table: grid, sheet: grid }, spec);
+  expect([r.rows, r.table, r.sheet]).toEqual([[[2, 2, 1], [2, 3, 2]], [[2, 2, 1], [2, 3, 2]], [[2, 2, 1], [2, 3, 2]]]); // 2 ≤ 2 and 2 ≤ 3 stay
+  expect(r.skipped).toBe(2);
+  // only the favour multiple optimized: the initial one is the spec's own
+  const one = { ...spec, exit: { ...spec.exit, dual_atr: { initial: { period: 5, mult: 3 }, favour: { period: 5, mult: 4 } } } } as Spec;
+  expect(withoutAtrOutOfOrder({ dims: [dims[1]], rows: [[2, 1], [3, 2], [4, 3]] }, one).rows).toEqual([[3, 2], [4, 3]]); // initial 3 ≤ favour 3, 4
+  // no Dual ATR multiple optimized: nothing is dropped
+  expect(withoutAtrOutOfOrder({ dims: [{ path: "entry.all[0].rhs.p.length", values: [1] }], rows: [[1, 1]] }, spec).skipped).toBe(0);
+});
+
+it("Dual ATR: when every combination breaks the rule, the page says so instead of 'not enough trades'", async () => {
+  const dims = [{ path: "exit.dual_atr.initial.mult", values: [5] }, { path: "exit.dual_atr.favour.mult", values: [4] }];
+  const r = { ...optimizeFixture, dims, table: [[5, 4, 0]], rank: { ...optimizeFixture.rank, eligible: 0, top3: [] } } as OptimizeResult;
+  const ranSpec = { ...defaultSpec(), exit: { any: [], dual_atr: { initial: { period: 5, mult: 2 }, favour: { period: 5, mult: 4 } } } } as Spec;
+  expect(withoutAtrOutOfOrder(r, ranSpec)).toMatchObject({ skipped: 1, table: [] });
+});
+
+it("Rules sheet: an optimized setting is listed under its rule, worded as on the card (crosses above / below kept)", () => {
+  const rule = (p: string) => (p.startsWith("entry.all[0]") ? { key: "entry.all[0]", text: "RSI(14) crosses above 30" } : undefined);
+  const book = optimizationWorkbook(withSheet, { ranSpec: spec, label: () => "Threshold", group: () => "Entry", rule })!;
+  expect(book[0].rows.find((r) => r[1] === "Entry:")![2]).toBe(`RSI(14) crosses above 30 · Threshold - 10,40,10`);
+});
+
+it("Rules sheet: every rule is listed, optimized or not; an optimized setting joins its rule's line", () => {
+  const rule = (p: string) => (p.startsWith("entry.all[0]") ? { key: "entry.all[0]", text: "RSI(14) crosses above 30" } : undefined);
+  const rules = { entry: [{ key: "entry.all[0]", text: "RSI(14) crosses above 30" }, { key: "entry.all[1]", text: "Close is above EMA(200)" }],
+    exit: [{ key: "exit.any[0]", text: "Exit rule 1: RSI(14) crosses below 70" }], filter: [{ key: "entry.all[2]", text: "RSI(14) is above 50" }] };
+  const book = optimizationWorkbook(withSheet, { ranSpec: spec, label: () => "Threshold", group: () => "Entry", rule, rules })!;
+  const at = (k: string) => { const i = book[0].rows.findIndex((r) => r[1] === k); const out = [book[0].rows[i][2]];
+    for (let j = i + 1; j < book[0].rows.length && book[0].rows[j][1] == null && book[0].rows[j][2] != null; j++) out.push(book[0].rows[j][2]); return out; };
+  expect(at("Entry:")).toEqual(["RSI(14) crosses above 30 · Threshold - 10,40,10", "Close is above EMA(200)"]);
+  expect(at("Exit:")).toEqual(["Exit rule 1: RSI(14) crosses below 70"]);
+  expect(at("Filter:")).toEqual(["RSI(14) is above 50"]);
 });

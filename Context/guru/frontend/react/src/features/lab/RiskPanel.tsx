@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { NumField } from "./OperandEditor";
-import { COPY, FUTURES_NOTE, MONEY_BASIS_HINT } from "./labels";
+import { COPY, FUTURES_NOTE } from "./labels";
 import { hasShorts, instrumentNotes, modeOf, moneyBlocked, sizingKind, supportsMoney, withMode, type InstrumentContext } from "./execution-model";
 import { getAt, putAt, removeAt, setExecution } from "./spec-model";
 import { Segmented } from "./ui";
@@ -134,7 +134,6 @@ export function RiskPanel({ spec, catalogue, instrument, onChange }: { spec: Spe
           </div>)}
           {editableTaxes && taxes.length < 6 && <button type="button" className="dbtn sm" aria-label="Add tax" onClick={() => change("costs.taxes", [...taxes, { name: "Tax", pct: 0.1, side: "both" }])}>+ Tax</button>}
         </div>
-        <p className="cap">{MONEY_BASIS_HINT}</p>
       </>}
       <div className="lab-row">
         {/* pairs wrap together, so a field never sits alone on a line apart from its partner */}

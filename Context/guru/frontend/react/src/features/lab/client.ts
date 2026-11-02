@@ -3,7 +3,7 @@ import { parseFormulaInfo } from "./formula";
 import type {
   Catalogue, DateSet, DateWindow, EngineStatus, FormulaInfo, IndicatorDraft, SavedIndicator, ForeignDisclosure, IndividualOptimizeResult, Provisional, FidelityResult, InstrumentsResponse, LabErrorFields, LabStrategy, OptimizeResult,
   PublishedStrategy, PortfolioSpec, PortfolioRunResult, PortfolioOptimizeResult, LabRunResult, LabOptimizeResult, RunResult, SavedMarket, SeriesResponse, Spec, StrategyDraft, StrategyStatus, TemplateResponse,
-  TemplatesResponse, TickerRow,
+  TemplatesResponse, TickerRow, WalkforwardOptions, WalkforwardResult,
 } from "./types";
 
 export class LabError extends ApiError implements LabErrorFields {
@@ -91,6 +91,9 @@ export function run(m:SavedMarket,spec:Spec,q:RunQuery|PortfolioRunQuery):Promis
 export function optimize(m:SavedMarket,spec:Spec&{portfolio:PortfolioSpec},q:PortfolioRunQuery):Promise<PortfolioOptimizeResult>;
 export function optimize(m:SavedMarket,spec:Spec,q:RunQuery&{split?:string|null}):Promise<LabOptimizeResult>;
 export function optimize(m:SavedMarket,spec:Spec,q:(RunQuery|PortfolioRunQuery)&{split?:string|null}):Promise<LabOptimizeResult>{return labRequest<LabOptimizeResult>(`${engineBase(m)}/lab/optimize?${qs({spec:JSON.stringify(spec),...executionQuery(spec,q),slim:"1",table:"1",sheet:spec.portfolio?undefined:"1"})}`);}
+/** One optimizer run per window, so it shares the optimization slot and role check; slim on the server side. */
+export const walkforward = (m: SavedMarket, spec: Spec, q: RunQuery & WalkforwardOptions) =>
+  labRequest<WalkforwardResult>(`${engineBase(m)}/lab/walkforward?${qs({ spec: JSON.stringify(spec), ...q, anchored: q.anchored ? "1" : "0" })}`);
 /** AmiBroker Individual Optimize: each symbol of the portfolio universe optimized alone (same /lab/optimize route, mode=individual). */
 export const optimizeIndividual = (m: SavedMarket, spec: Spec, q: PortfolioRunQuery) =>
   labRequest<IndividualOptimizeResult>(`${engineBase(m)}/lab/optimize?${qs({ spec: JSON.stringify(spec), from: q.from, to: q.to, mode: "individual", table: "1" })}`);

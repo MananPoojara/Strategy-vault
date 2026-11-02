@@ -160,7 +160,7 @@ it("shows declared money costs without claiming taxes were omitted", async () =>
   expect(host.querySelector("[data-lab-money]")!.textContent).toContain("Money · USD 100,000");
   expect(host.textContent).toContain("Final equity");
   expect(host.textContent).toContain("Costs paid");
-  expect(host.textContent).toContain(money7Fixture.money!.basis);
+  expect(host.textContent).not.toContain(money7Fixture.money!.basis); // the long cost / quantity disclaimer is not shown
   expect(host.textContent).not.toContain("taxes not modelled");
   expect(host.textContent).not.toContain("bps + slippage");
 });

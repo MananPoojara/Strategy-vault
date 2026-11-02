@@ -154,7 +154,7 @@
 .lab-stops-tab .lab-stops { grid-template-columns: repeat(auto-fit, minmax(min(100%, 640px), 1fr)); gap: 10px 14px; }
 .lab-stops-tab > .cap, .lab-stops-tab [data-lab-stop-modes] { max-width: 110ch; }
 /* Settings › Walk-Forward and Monte Carlo: room for AmiBroker's values (1000 runs, 10000 value) */
-.lab-page .lab-mc-tab .dfield input[type=number] { width: 84px; }
+.lab-page :is(.lab-mc-tab, .lab-wf-tab) .dfield input[type=number] { width: 84px; }
 .lab-orders-box .lab-fieldset { padding: 4px 8px 6px; }
 .lab-orders-box .lab-exits > select { width: auto; }
 .lab-rules .lab-words { padding: 8px 12px; gap: 2px; }

@@ -66,7 +66,6 @@ export function OptimizeSurface({ dims, table, cols, metricLabel, show, label }:
         <span className="lab-surface-ramp">{Array.from({ length: 10 }, (_, i) => <i key={i} style={{ background: shade(i / 9) }} />)}</span>
         <span>{show(metric, hi)}</span><span className="cap">{metricLabel(metric)}</span>
       </div>}
-      {!flat && <p className="cap">Values from the all-results list (fixed isometric view, not rotatable as in AmiBroker; each facet coloured by its four corners' mean; facets with a missing corner are left open).</p>}
     </div>
   );
 }

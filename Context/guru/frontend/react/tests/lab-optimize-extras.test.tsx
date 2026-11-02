@@ -45,14 +45,11 @@ it("two settings where one has a single value: no chart, a note that the 3D char
   expect(surface.textContent).toContain("The 3D chart needs two optimized settings, each with at least two values.");
 });
 
-it("no surface with one optimized setting; the Info log lists elapsed time, combinations, threads and warnings", async () => {
+it("no surface with one optimized setting and no Info box", async () => {
   const host = await mount(<OptimizePanel {...base} onOptimize={vi.fn().mockResolvedValue({ ...optimizeFixture, info: twoDims.info })} />);
   await tick(host, P); await go(host);
   expect(host.querySelector("[data-lab-optimize-surface]")).toBeNull();
-  const info = host.querySelector("[data-lab-info]")!;
-  expect(info.textContent).toBe("▸ Info · 1 warning");
-  await act(async () => info.querySelector("button")!.click());
-  expect([...info.querySelectorAll("li")].map((l) => l.textContent)).toEqual(["Elapsed: 1.23 s", "Combinations evaluated: 6", "Threads: 4", "the window starts 2020-01-02: stale opens"]);
+  expect(host.querySelector("[data-lab-info]")).toBeNull(); // no Info box (elapsed, combinations, threads)
 });
 
 const individual: IndividualOptimizeResult = {
@@ -65,7 +62,7 @@ const individual: IndividualOptimizeResult = {
   ],
   notes: ["Each symbol is optimized alone."], info: { ms: 50, combos: 4, threads: 2, warnings: ["C skipped: C: no data in the window"] },
 };
-it("Individual optimize: portfolio settings drop out, each symbol's best row, skipped symbols, per-symbol tables and the Info log", async () => {
+it("Individual optimize: portfolio settings drop out, each symbol's best row, skipped symbols, per-symbol tables, no Info box", async () => {
   const { portfolioCatalogueFixture } = await import("./fixtures/portfolio");
   const spec: Spec = { ...defaultSpec(), execution: { capital: 1000 }, portfolio: { universe: { basket: "nifty50" }, mode: "signals", max_open: 2 } };
   const onIndividual = vi.fn().mockResolvedValue(individual), onOptimize = vi.fn(), onTried = vi.fn();
@@ -74,7 +71,7 @@ it("Individual optimize: portfolio settings drop out, each symbol's best row, sk
   const box = [...host.querySelectorAll<HTMLLabelElement>("label.lab-check")].find((l) => l.textContent === "Individual optimize")!;
   await act(async () => box.querySelector("input")!.click());
   expect(host.querySelector('[data-lab-dim="portfolio.max_open"]')).toBeNull();
-  expect(host.querySelector("[data-lab-individual-note]")!.textContent).toContain("12,000");
+  expect(host.querySelector("[data-lab-individual-note]")).toBeNull(); // no description
   await tick(host, P); await go(host);
   expect(onOptimize).not.toHaveBeenCalled();
   expect((onIndividual.mock.calls[0][0] as Spec).optimize).toEqual([{ path: P, from: 50, to: 54, step: 1 }]);
@@ -86,7 +83,7 @@ it("Individual optimize: portfolio settings drop out, each symbol's best row, sk
   const tables = [...host.querySelectorAll("[data-lab-optimize-all] > button")].map((b) => b.textContent);
   expect(tables).toEqual(["▸ A · all results · 2 combinations", "▸ B · all results · 2 combinations"]);
   expect(host.querySelector("[data-lab-individual]")!.textContent).toContain("Each symbol is optimized alone.");
-  expect(host.querySelector("[data-lab-info]")!.textContent).toBe("▸ Info · 1 warning");
+  expect(host.querySelector("[data-lab-info]")).toBeNull();
 });
 
 it("optimizeIndividual calls /lab/optimize with mode=individual and the table", async () => {

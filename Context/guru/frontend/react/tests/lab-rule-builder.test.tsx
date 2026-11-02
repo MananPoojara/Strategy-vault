@@ -203,7 +203,7 @@ const scenario = (host: HTMLElement) => host.querySelector<HTMLSelectElement>('s
 
 it("settings tabs follow AmiBroker and the ARIA tab pattern; hidden panels stay mounted", async () => {
   const { host } = await tree(defaultSpec(), { portfolio: <p data-portfolio-slot>portfolio controls</p> });
-  expect(tabs(host).map((t) => t.textContent)).toEqual(["General", "Trades", "Stops", "Report", "Portfolio"]); // AmiBroker's window, tab by tab (walk-forward removed from the lab)
+  expect(tabs(host).map((t) => t.textContent)).toEqual(["General", "Trades", "Stops", "Report", "Portfolio"]); // AmiBroker's window, tab by tab (walk-forward is in Optimize, collapsed)
   expect(tabs(host).map((t) => t.tabIndex)).toEqual([0, -1, -1, -1, -1]);
   expect(panel(host, "Report").querySelector("[data-lab-report-settings]")).not.toBeNull(); // risk-free rates on their own tab, as in AmiBroker
   for (const t of tabs(host)) expect(panel(host, t.textContent!).getAttribute("aria-labelledby")).toBe(t.id);

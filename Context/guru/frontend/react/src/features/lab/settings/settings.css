@@ -10,7 +10,7 @@
 }
 
 /* every tab body stacks on the 12px gap; rows inside keep 8/12 */
-.lab-ami :is(.lab-trades-tab, .lab-stops-tab) { display: grid; gap: 12px; min-width: 0; }
+.lab-ami :is(.lab-trades-tab, .lab-stops-tab), .lab-wf-fold .lab-wf-tab { display: grid; gap: 12px; min-width: 0; }
 .lab-ami .lab-stab-panel > p.cap.lab-stab-intro, .lab-ami .lab-stab-panel > * > p.cap.lab-stab-intro { max-width: none; }
 
 /* the reason greyed fields are off: once per group, as its first line */
@@ -51,6 +51,9 @@
 .lab-ami .lab-stops-tab .lab-stops { grid-template-columns: repeat(auto-fit, minmax(min(100%, max(480px, calc(50% - 8px))), 1fr)); gap: 12px 16px; }
 
 /* Walk-forward: in-sample and out-of-sample side by side; everything else full width */
+.lab-wf-fold .lab-wf-tab { grid-template-columns: repeat(auto-fit, minmax(min(100%, max(520px, calc(50% - 8px))), 1fr)); gap: 12px 16px; align-items: start; }
+.lab-wf-fold .lab-wf-tab > :not(.lab-fieldset) { grid-column: 1 / -1; margin: 0; }
+.lab-wf-fold .lab-wf-tab > .lab-fieldset { align-self: stretch; }
 /* UC / LC: their own line, under a small label, so the AFL circuit rules are easy to find */
 .lab-circuits { flex-basis: 100%; align-items: center; gap: 6px 14px; }
 .lab-circuits-h { font: 600 12px var(--font); color: var(--ink2); margin-right: 2px; }

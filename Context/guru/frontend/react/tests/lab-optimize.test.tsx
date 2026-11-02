@@ -17,18 +17,17 @@ it("viewers see the researcher notice and no controls", async () => {
   expect(host.querySelector('[data-lab-action="optimize"]')).toBeNull();
 });
 
-it("ticking a setting fills a small range; split sends a date; optimize carries the dims", async () => {
+it("ticking a setting fills a small range; no Held back, so no split date; optimize carries the dims", async () => {
   const onOptimize = vi.fn().mockResolvedValue(optimizeFixture);
   const host = await mount(<OptimizePanel {...base} onOptimize={onOptimize} />);
   await tick(host, "entry.all[0].rhs.p.length");
   expect(host.textContent).toContain("5 combinations");
-  const split = host.querySelector<HTMLSelectElement>('select[aria-label="Held back"]')!;
-  await act(async () => { split.value = "30"; split.dispatchEvent(new Event("change", { bubbles: true })); });
+  expect(host.querySelector('[aria-label="Held back"]')).toBeNull();
   await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-action="optimize"]')!.click());
   await flush();
-  const [spec, splitDate] = onOptimize.mock.calls[0] as [Spec, string];
+  const [spec, splitDate] = onOptimize.mock.calls[0] as [Spec, string | null];
   expect(spec.optimize).toEqual([{ path: "entry.all[0].rhs.p.length", from: 50, to: 54, step: 1 }]);
-  expect(splitDate).toBe(dates[210]);
+  expect(splitDate).toBeNull();
   expect(base.onTried).toHaveBeenCalledWith(3);
 });
 
@@ -40,7 +39,7 @@ it("the Values column is never empty: fixed when unticked, the value count when 
   expect(values()).toBe("5");
   const row = host.querySelector(".lab-optimize-run")!;
   expect(row.contains(host.querySelector('[data-lab-action="optimize"]'))).toBe(true);
-  expect(row.textContent).toContain("Held back");
+  expect(row.textContent).not.toContain("Held back");
   expect(row.textContent).toContain("Variants tried this session: 0");
 });
 
@@ -61,9 +60,9 @@ it("result: ranked-on text, Now and top 3, held-back columns, Apply writes the s
   await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-action="optimize"]')!.click());
   await flush();
   const result = host.querySelector("[data-lab-optimize-result]")!;
-  expect(result.textContent).toContain("Ranked on: in-sample only");
+  expect(result.textContent).not.toContain("Ranked on"); // no descriptions
   expect(result.textContent).toContain("Held back · display only");
-  expect(result.textContent).toContain("trades that cross the split date are cut at the boundary");
+  expect(result.textContent).not.toContain("trades that cross the split date");
   expect([...result.querySelectorAll("tbody tr")].map((r) => r.firstElementChild!.textContent)).toEqual(["Now", "#1", "#2"]);
   await act(async () => result.querySelector<HTMLButtonElement>("tbody tr:nth-child(2) button")!.click());
   expect((onApply.mock.calls[0][0] as Spec).entry.all[0].rhs).toEqual({ s: "ema", p: { length: 20 } });
@@ -138,7 +137,6 @@ it("with a split the ranking columns show the in-sample values", async () => {
 
 it("without a split the ranking columns show the full-period values", async () => {
   const host = await runWith({ ...splitFx, split: null, ranked_on: "full" });
-  expect(host.textContent).toContain("Ranked on: full period");
   expect(rowCells(host, 1)[2]).toBe(pct(0.07));
   expect(host.textContent).not.toContain("Held back · display only");
 });
@@ -149,7 +147,7 @@ it("dim values are formatted; a top row without picked values gets no Apply; App
   expect(rowCells(host, 1)[1]).toBe("0.30");
   expect(rowCells(host, 0)[1]).toBe("50");
   const buttons = [...host.querySelectorAll<HTMLButtonElement>("table.ocmp tbody button")];
-  expect(buttons.map((b) => b.getAttribute("aria-label"))).toEqual(["Apply #1"]);
+  expect(buttons.map((b) => b.getAttribute("aria-label"))).toEqual(["Stats #1"]); // the button reads Stats: it puts the setting into the rules and shows its backtest
 });
 
 it("gl results carry the provisional strip and the instrument label", async () => {
@@ -220,16 +218,12 @@ it("the Now row shows the settings that were optimized, not later edits", async 
   expect(rowCells(host, 0)[1]).toBe("50");
 });
 
-it("blocks Optimize when the spec with dims is too long, and explains a hold-back without a run", async () => {
+it("blocks Optimize when the spec with dims is too long", async () => {
   const long = { ...defaultSpec(), name: "x".repeat(7600) } as Spec;
   const host = await mount(<OptimizePanel {...base} spec={long} dates={[]} onOptimize={vi.fn()} />);
   await tick(host, "entry.all[0].rhs.p.length");
   expect(host.textContent).toContain("These rules are too long to send.");
   expect(host.querySelector<HTMLButtonElement>('[data-lab-action="optimize"]')!.disabled).toBe(true);
-  const split = host.querySelector<HTMLSelectElement>('select[aria-label="Held back"]')!;
-  await act(async () => { split.value = "30"; split.dispatchEvent(new Event("change", { bubbles: true })); });
-  expect(host.textContent).toContain("Run a backtest first to set the hold-back date.");
-  expect(host.textContent).not.toContain("Not enough history");
 });
 
 it("offers nested settings under group captions and sends their exact path", async () => {
@@ -241,7 +235,7 @@ it("offers nested settings under group captions and sends their exact path", asy
   await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-action="optimize"]')!.click());
   expect(onOptimize.mock.calls[0][0].optimize[0].path).toBe("entry.all[1].any[0].rhs.p.length");
 });
-it("the optimization result drops the label and execution strip (the page title carries them) but keeps the money basis", async () => {
+it("the optimization result drops the label, the execution strip and the money basis text (the page title carries them)", async () => {
   const result: OptimizeResult = { ...optimizeFixture, money: { capital: 100000, basis: "Declared costs" }, adaptations: ["Server adaptation"],
     execution_model: { kind: "index", mode: "unit", executable: false, notes: ["An index cannot be traded; returns are a study of index levels."], events: null } };
   const host = await mount(<OptimizePanel {...base} onOptimize={async () => result} />);
@@ -250,7 +244,7 @@ it("the optimization result drops the label and execution strip (the page title 
   const view = host.querySelector("[data-lab-optimize-result]")!;
   for (const gone of ["[data-server-label]", ".lab-exec-strip", "[data-lab-execution-notes]", "[data-lab-adaptations]", "[data-lab-money]"]) expect(view.querySelector(gone)).toBeNull();
   for (const text of ["not a book method", "Unit study", "Study only", "An index cannot be traded", "Server adaptation"]) expect(view.textContent).not.toContain(text);
-  expect(view.textContent).toContain("Declared costs");
+  expect(view.textContent).not.toContain("Declared costs"); // the long cost / quantity disclaimer is not shown
 });
 it("a changed portfolio cohort invalidates pending results and their Apply actions",async()=>{
  const {portfolioCatalogueFixture}=await import("./fixtures/portfolio");let release!:(r:OptimizeResult)=>void;const onOptimize=vi.fn(()=>new Promise<OptimizeResult>(resolve=>{release=resolve;}));
@@ -259,9 +253,9 @@ it("a changed portfolio cohort invalidates pending results and their Apply actio
  const host=await mount(<Harness/>);await tick(host,"portfolio.max_open");
  await act(async()=>host.querySelector<HTMLButtonElement>('[data-lab-action="optimize"]')!.click());expect(onOptimize).toHaveBeenCalledTimes(1);
  await act(async()=>[...host.querySelectorAll<HTMLButtonElement>("button")].find(b=>b.textContent==="Change cohort")!.click());
- await act(async()=>release(optimizeFixture));await flush();expect(host.querySelector('[data-lab-optimize-result]')).toBeNull();expect(host.querySelector('[aria-label="Apply #1"]')).toBeNull();
+ await act(async()=>release(optimizeFixture));await flush();expect(host.querySelector('[data-lab-optimize-result]')).toBeNull();expect(host.querySelector('[aria-label="Stats #1"]')).toBeNull();
  expect(host.querySelector<HTMLSelectElement>('[aria-label="Held back"]')).toBeNull();
- expect(host.querySelector(".empty")?.textContent).toBe("Portfolio optimization ranks the full period using shared cash.");
+ expect(host.querySelector(".empty")).toBeNull(); // no description
 });
 
 it("All results: collapsed list of every combination with AmiBroker names, click-to-sort and Show all", async () => {
