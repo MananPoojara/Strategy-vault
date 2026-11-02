@@ -4,7 +4,7 @@ export default {
   order: 810,
   author: { id: "downs", name: "Walter T. Downs", tagline: "Pattern researcher and forex system seller · the Forex Gambit pullback and 37 Trading for Tigers bar patterns run here; open-interest patterns held", books: [
     { id: "wtdfg", sourceIds: ["title-32a9f443563ba84c"], title: "The Forex Gambit", year: null, blurb: "Downs, e-book · inside-down bar above the 30-day Bollinger middle line, buy at the close, stop at the bar low, out after a 2 SD close and a lower close, breakeven after 4 days, 16-day time exit" },
-    { id: "wtdtt", sourceIds: ["title-40f478385458a965"], title: "Trading for Tigers", year: null, blurb: "Downs · 14 monthly and 8 weekly breakout patterns (out at the end of the month/week), 9 market-on-close weekly/monthly patterns (out at the next open) and 6 MIST daily patterns (US only); open-interest versions and code-only patterns held" }] },
+    { id: "wtdtt", sourceIds: ["title-40f478385458a965"], title: "Trading for Tigers", year: null, blurb: "Downs · 14 monthly and 8 weekly breakout patterns (out at the end of the month/week), 9 market-on-close weekly/monthly patterns (out at the next open) and 6 MIST daily patterns (US only); open-interest versions and code-only patterns held" }, { id: "scdgamb", sourceIds: [], readerPaths: ["Trading Knowledge I/Stocks & Commodities 2010 -2011 (traders.com)/SC2010-06.pdf"], title: "The Forex Gambit (Downs, S&C Jun 2010)", year: 2010, blurb: "Downs · two lower lows closing above the bar midpoint and the 30-day SMA, stop at the entry bar, 16-day limit" }] },
   identities: ["Walter T. Downs"],
   profile: {
     "kind": "person",
@@ -23,5 +23,6 @@ export default {
   sourceReview: {
     "wtdfg": {"type":"book","people":["Walter T. Downs"]},
     "wtdtt": {"type":"book","people":["Walter T. Downs"]},
+    "scdgamb": {"type":"article","people":["Walter T. Downs"]},
   },
 } satisfies AuthorFile;

@@ -32,7 +32,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> { reviewed(id).then(Vec::new) }
 
 /// VIX closes by date from the volatility directory the server was started with (argument 3), as hfm.rs does.
 /// ponytail: re-reads the file once per process because `VixAligned` keeps its closes private.
-fn vix_rows() -> &'static Vec<(String, f64)> {
+pub(crate) fn vix_rows() -> &'static Vec<(String, f64)> {
     static V: OnceLock<Vec<(String, f64)>> = OnceLock::new();
     V.get_or_init(|| match std::env::args().nth(3) { Some(dir) => crate::load_vix_dir(&dir).into_iter().map(|r| (r.date, r.close)).collect(), None => vec![] })
 }
