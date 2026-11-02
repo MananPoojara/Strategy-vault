@@ -2,7 +2,7 @@ import type {AuthorFile} from '../author-files';
 
 export default {
   order: 310,
-  author: { id: 'katsanos', name: 'Markos Katsanos', tagline: 'Intermarket systems · most need gold, currency or foreign-index data', books: [{ id: 'mkits', title: 'Intermarket Trading Strategies', year: 2008, blurb: 'Katsanos, 2008 · DAX and euro MA systems, relative strength vs the S&P 500' }, { id: 'mkfve', title: 'Detecting Breakouts (S&C article)', year: 2003, blurb: 'Finite Volume Elements divergence, long only' }] },
+  author: { id: 'katsanos', name: 'Markos Katsanos', tagline: 'Intermarket systems · most need gold, currency or foreign-index data', books: [{ id: 'mkits', title: 'Intermarket Trading Strategies', year: 2008, blurb: 'Katsanos, 2008 · DAX and euro MA systems, relative strength vs the S&P 500' }, { id: 'mkfve', title: 'Detecting Breakouts (S&C article)', year: 2003, blurb: 'Finite Volume Elements divergence, long only' }, { id: "sckvfi", sourceIds: [], readerPaths: ["Trading Knowledge I/Stocks & Commodities DVD 11.26 (1982 - 2008) (traders.com)/VOLUMES/V22/C07/146KATS.pdf"], title: "Volume Flow Indicator Performance (S&C V.22:7)", year: 2004, blurb: "Katsanos · VFI Test 1 weekly > 0 and Test 2 daily divergence (needs volume)" }] },
   identities: ["Markos Katsanos"],
   profile: {
     "kind": "person",
@@ -28,5 +28,6 @@ export default {
   sourceReview: {
     "mkits": {"type":"book","people":["Markos Katsanos"]},
     "mkfve": {"type":"article","people":["Markos Katsanos"]},
+    "sckvfi": {"type":"article","people":["Markos Katsanos"]},
   },
 } satisfies AuthorFile;
