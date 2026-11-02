@@ -2074,6 +2074,7 @@ static GATE: &[G] = &[
     G { id: r##"sbma_x_15e30e"##, verdict: r##"unverified"##, reason: r##"Close fills; no blocks."##, allowed: None, clamp_open: false, book: r##"Burns, Moving Averages 101: no statistics printed"##, ours: r##""## },
     G { id: r##"sbma_x_50s200s"##, verdict: r##"unverified"##, reason: r##"Close fills; no blocks."##, allowed: None, clamp_open: false, book: r##"Burns, Moving Averages 101: no statistics printed"##, ours: r##""## },
     G { id: r##"sbma_x_5e50s"##, verdict: r##"unverified"##, reason: r##"Close fills; no blocks."##, allowed: None, clamp_open: false, book: r##"Burns, Moving Averages 101: no statistics printed"##, ours: r##""## },
+    G { id: r##"scaancb_8"##, verdict: r##"unverified"##, reason: r##"Futures tests shown as a chart only. Stops read the open."##, allowed: None, clamp_open: true, book: r##""##, ours: r##""## },
     G { id: r##"scaandc_8_20"##, verdict: r##"unverified"##, reason: r##"Futures tests with no printed table. Stop entries read the open."##, allowed: None, clamp_open: true, book: r##""##, ours: r##""## },
     G { id: r##"scaankr_a"##, verdict: r##"unverified"##, reason: r##"Futures test results only as a chart table; next-open entries and stops read the open."##, allowed: None, clamp_open: true, book: r##""##, ours: r##""## },
     G { id: r##"scaanrsi_back"##, verdict: r##"unverified"##, reason: r##"Futures tests shown as a chart only. Next-open entries; the channel stop reads the open."##, allowed: None, clamp_open: true, book: r##""##, ours: r##""## },
