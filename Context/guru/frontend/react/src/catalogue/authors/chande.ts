@@ -2,7 +2,7 @@ import type {AuthorFile} from '../author-files';
 
 export default {
   order: 20,
-  author: { id: 'chande', name: 'Tushar Chande', books: [{ id: 'ch_bta', title: 'Beyond Technical Analysis', year: 1997, blurb: 'Supplied partial edition · 65sma-3cc and CB-PB OHLC market adaptations. Contract dollar-stop variants remain Data missing; original futures studies are not reproduced.' }, { id: 'chbta2', title: 'Beyond Technical Analysis (complete edition)', year: 1997, blurb: 'Chande, 1997 · the rest of the book: RAVI-filtered 65sma-3cc, S&P 10/11 crossovers, bottom-fishing, channel breakouts, ADX systems, long bomb · two-market and contract-stop systems need data' }, { id: 'chntt', title: 'The New Technical Trader (with Stanley Kroll)', year: 1994, blurb: 'Chande & Kroll, 1994 · CMO-driven VIDYA system and the thrust-oscillator buy signal; the other indicators come without a complete rule' }, { id: 'chpbs', title: "Developing & Implementing Pattern-Based Trading Systems (workshop)", year: 1996, blurb: "Chande, TAG 1996 · channel-breakout pullback with the 3-day-low trail; no initial stop by default" }] },
+  author: { id: 'chande', name: 'Tushar Chande', books: [{ id: 'ch_bta', title: 'Beyond Technical Analysis', year: 1997, blurb: 'Supplied partial edition · 65sma-3cc and CB-PB OHLC market adaptations. Contract dollar-stop variants remain Data missing; original futures studies are not reproduced.' }, { id: 'chbta2', title: 'Beyond Technical Analysis (complete edition)', year: 1997, blurb: 'Chande, 1997 · the rest of the book: RAVI-filtered 65sma-3cc, S&P 10/11 crossovers, bottom-fishing, channel breakouts, ADX systems, long bomb · two-market and contract-stop systems need data' }, { id: 'chntt', title: 'The New Technical Trader (with Stanley Kroll)', year: 1994, blurb: 'Chande & Kroll, 1994 · CMO-driven VIDYA system and the thrust-oscillator buy signal; the other indicators come without a complete rule' }, { id: 'chpbs', title: "Developing & Implementing Pattern-Based Trading Systems (workshop)", year: 1996, blurb: "Chande, TAG 1996 · channel-breakout pullback with the 3-day-low trail; no initial stop by default" }, { id: "scchvid", sourceIds: [], readerPaths: ["Trading Knowledge I/Stocks & Commodities DVD 11.26 (1982 - 2008) (traders.com)/VOLUMES/V10/C03/ADAPTIN.pdf"], title: "Adapting Moving Averages To Market Volatility (Chande, S&C V.10:3)", year: 1992, blurb: "Chande · weekly VIDYA RAVI and TurboMACD long trades; 10-year trailing reference deviation" }] },
   identities: ["Tushar Chande"],
   profile: {
     "kind": "person",
@@ -30,5 +30,6 @@ export default {
     "chbta2": {"type":"book","people":["Tushar S. Chande"]},
     "chntt": {"type":"book","people":["Stanley Kroll","Tushar S. Chande"]},
     "chpbs": {"type":"course_manual","people":["Tushar S. Chande"]},
+    "scchvid": {"type":"article","people":["Tushar S. Chande"]},
   },
 } satisfies AuthorFile;
