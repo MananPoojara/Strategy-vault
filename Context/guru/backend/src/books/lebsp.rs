@@ -71,8 +71,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "F|Short: average(H,6) > average(L,20) + 2 * ATR(12)",
               "E|Short: sell stop at highest(H,3) - 3.5 * ATR(7)",
               "X|Short: buy stop at the highest high of 16 days; after a close < entry - 1.5 ATR: 12 days; trade's lowest low <= entry - 2.5 ATR: buy stop at entry - 1 ATR; close < entry - 3 ATR: exit at the next open",
-              "X|\"We will exit on a stop when our loss reaches $2500\" = 5.00 NYFE points at $500/point. An opposite entry reverses."],
-            "Manual 'Mack the NYFE Trading System v1.0' (Mack.doc) + TradeStation code; code wins where the prose differs (the two noted above). NYSE Composite futures, run here on SPX / NIFTY 50 (instrument swap). Reproduces all 45 printed trades on the manual's own YX.LNG (10/17/88-12/31/98, MaxBarsBack 50). Dollar amounts are converted to the manual's own index points (dollars / point value) and used unchanged on whichever index is selected (instrument swap only, no rescaling), so on NIFTY 50 or a 2020s SPX these fixed-point stops are far tighter in percent than in the 1990s.",
+              "X|\"We will exit on a stop when our loss reaches $2500\" (= 5 NYFE points at $500/point): HELD, a dollar amount for a contract the vault does not hold (lead decisions 19 and 138). An opposite entry reverses."],
+            "Manual 'Mack the NYFE Trading System v1.0' (Mack.doc) + TradeStation code; code wins where the prose differs (the two noted above). Written for NYSE Composite futures (NYFE), which the vault does not hold; runs on daily indices, ETFs and stocks, US and India, as a declared application. MONEY STOP HELD: the $2,500 money-management stop is a dollar amount per NYFE contract and is not converted (lead decisions 19 and 138), so the default card has no money stop; every other exit is in ATRs and is applied as printed. p.mm = 5 restores the manual's 5 NYFE-point stop, which only makes sense on NYFE data: with it the code reproduces all 45 printed trades on the manual's own YX.LNG (10/17/88-12/31/98, MaxBarsBack 50). Order prices are exact (p.tick rounds them; the manual's data used 0.05). Trading starts at the 51st bar of the data (MaxBarsBack 50).",
             Some(Claim { trades: "45 (36 long, 9 short)", win: "69%", avg: "$3,855 (net of $150)", hold: "16 bars winners / 4 bars losers", period: "10/17/88-12/31/98, NYFE futures, $500/pt" })),
     ]
 }
@@ -141,7 +141,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("prof_k", "Tighter channel after a close this many ATRs in profit", 1.5, 0.25, 5., 0.25),
             p("rally_k", "Short: 6-day avg high at least x ATR above the 20-day avg low", 2., 0.5, 5., 0.25), p("s_entry_k", "Short entry: ATRs below the 3-day high", 3.5, 0.5, 8., 0.25),
             p("s_exit_k", "Short: exit next open after a close this many ATRs in profit", 3., 0.5, 8., 0.25), p("s_be_at", "Short lock when the trade's low is x ATRs below entry", 2.5, 0.5, 8., 0.25),
-            p("s_be", "Short lock: ATRs below entry", 1., 0., 5., 0.25), p("mm", "Money stop in points ($2,500 = 5 NYFE points)", 5., 1., 100., 1.),
+            p("s_be", "Short lock: ATRs below entry", 1., 0., 5., 0.25), p("mm", "Money stop in index points (0 = held, the default; 5 = the manual's $2,500 on NYFE data only)", 0., 0., 100., 1.),
         ],
         _ => return None,
     };
@@ -464,7 +464,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let (dk, ck, ek, ch, ch2, pk, rk, sek, sxk, sba, sb) =
                 (g("dip_k"), g("crash_k"), g("entry_k"), u("ch"), u("ch2"), g("prof_k"), g("rally_k"), g("s_entry_k"), g("s_exit_k"), g("s_be_at"), g("s_be"));
             let mut e = Ext::new();
-            sim(x, from.max(50), to, Some(g("mm")), tick, |k, pos| {
+            sim(x, from.max(50), to, Some(g("mm")).filter(|m| *m > 0.), tick, |k, pos| {
                 e = e.step(pos.mp, h[k], l[k], c[k]);
                 let mut v = vec![];
                 let at = a[k];
@@ -542,7 +542,11 @@ mod tests {
 
     #[test]
     fn mack_reproduces_manual() {
-        let Some((r, ts)) = go("lebsp_mack", "yx_mack.csv", "1988-10-17", "1998-12-31", 0.05, None) else { return };
+        // the manual's 5-point money stop (held on the card, p.mm = 5) on the manual's own NYFE data
+        let Some(raw) = load("yx_mack.csv") else { return };
+        let r = window(&raw, "1988-10-17", "1998-12-31");
+        let x = Ctx::new(&r, &r, &[]);
+        let ts = run("lebsp_mack", &x, 0, r.len() - 1, &Params::from([("tick".into(), 0.05), ("mm".into(), 5.)])).unwrap();
         let (n, net, w) = usd(&ts, 500.);
         assert_eq!((n, w), (45, 31)); // Table 1: 45 trades, 31 winners, $173,475
         assert!((net - 173475.).abs() < 1e-6, "{net}");
@@ -579,6 +583,17 @@ mod tests {
     }
 
     #[test]
+    fn mack_default_has_no_money_stop() {
+        // default card: the $2,500 money stop is held, so no exit is a money-management stop
+        let r = super::super::sctraub::tests::bars(2500);
+        let x = Ctx::new(&r, &r, &[]);
+        let ts = run("lebsp_mack", &x, 0, r.len() - 1, &Params::new()).unwrap();
+        assert!(!ts.is_empty() && ts.iter().all(|t| t.reason != "Money management stop"));
+        let ts5 = run("lebsp_mack", &x, 0, r.len() - 1, &Params::from([("mm".into(), 0.5)])).unwrap();
+        assert!(ts5.iter().any(|t| t.reason == "Money management stop"));
+    }
+
+    #[test]
     fn money_stop_fires_on_entry_bar() {
         // bar 1: buy stop 101 fills, then the bar falls 6+ points: the $1,500 (6 pt) money stop exits the same bar
         let rows: Vec<Row> = [(100., 100.5, 99.5, 100.), (100.5, 101.5, 94., 95.)].iter().enumerate()
@@ -588,3 +603,11 @@ mod tests {
         assert_eq!((ts[0].legs[0].px, ts[0].exit_i, ts[0].exit_px), (101., 1, 95.));
     }
 }
+
+// Instrument admission: Mack the NYFE re-opened 2026-11-02 (titles lane K20, lead decision 138).
+pub fn reviewed(id: &str) -> bool { id == "lebsp_mack" }
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == "lebsp" && reviewed(def.id),
+    label: "LeBeau & Elden's NYSE Composite futures system ($2,500 money stop held); runs on indices, ETFs and stocks, US and India, are a declared application, not the authors' test.",
+    basis: "Mack the NYFE Trading System v1.0 manual + TradeStation code (USB HDD 1/TradeStation Systems & Indicators/_Misc/_196/.../Mack.txt); independent check authors/titles-1030/K20w/k20_ref.py",
+};
