@@ -2,7 +2,7 @@ import type {AuthorFile} from '../author-files';
 
 export default {
   order: 240,
-  author: { id: 'krutsinger', name: 'Joe Krutsinger', tagline: 'Packaged mechanical systems · Buy Monday, RainMaker and the Secrets of the Masters', books: [{ id: 'jkbwts', title: 'Building Winning Trading Systems (seminar manual)', year: 1997, blurb: 'Krutsinger, 1997 · Dinapoli5, Gettess30, Buy Monday-1400, Saidenberg30, RainMaker' }, { id: 'jk36k', title: '$36,000 Worth of Trading Systems?', year: 1997, blurb: 'Krutsinger, 1997 · JK1 Buy Monday; JK20–31 code is not readable' }, { id: 'jkbk', title: 'Product pack (Boredom Killer, Dealer’s Choice)', year: 2008, blurb: 'Buy Monday 2008 code, SAFE worksheet, JK-Call Buyer' }, { id: 'jkzap', title: 'ZAP seminar slides', year: 2002, blurb: 'Ideas only, no complete rule' }, { id: 'jkppnt', title: "Position Point 2003 (code)", year: 2003, blurb: "Pullback stop entries around the 40-bar average with 10-bar walk exits · $740 stop held" }] },
+  author: { id: 'krutsinger', name: 'Joe Krutsinger', tagline: 'Packaged mechanical systems · Buy Monday, RainMaker and the Secrets of the Masters', books: [{ id: 'jkbwts', title: 'Building Winning Trading Systems (seminar manual)', year: 1997, blurb: 'Krutsinger, 1997 · Dinapoli5, Gettess30, Buy Monday-1400, Saidenberg30, RainMaker' }, { id: 'jk36k', title: '$36,000 Worth of Trading Systems?', year: 1997, blurb: 'Krutsinger, 1997 · JK1 Buy Monday; JK20–31 code is not readable' }, { id: 'jkbk', title: 'Product pack (Boredom Killer, Dealer’s Choice)', year: 2008, blurb: 'Buy Monday 2008 code, SAFE worksheet, JK-Call Buyer' }, { id: 'jkzap', title: 'ZAP seminar slides', year: 2002, blurb: 'Ideas only, no complete rule' }, { id: 'jkppnt', title: "Position Point 2003 (code)", year: 2003, blurb: "Pullback stop entries around the 40-bar average with 10-bar walk exits · $740 stop held" }, { id: "jkqtd", sourceIds: [], readerPaths: ["USB HDD 1/TradeStation Systems & Indicators/Joe Krutsinger - Queen for TS (joekrut.com)/Open Code.rar", "USB HDD 1/TradeStation Systems & Indicators/Joe Krutsinger - Traders Delight for TS  (joekrut.com)/Open Code.rar"], title: "Queen and Traders Delight (open TradeStation code)", year: null, blurb: "Two day-trade stop systems: Queen buys a stop at yesterday's close after a down close; Traders Delight buys the high after a close below two days ago; the $300 stop is held" }] },
   identities: ["Joe Krutsinger"],
   profile: {
     "kind": "person",
@@ -29,5 +29,6 @@ export default {
     "jkbk": {"type":"code_package","people":["Joe Krutsinger"]},
     "jkzap": {"type":"course_manual","people":["Joe Krutsinger"]},
     "jkppnt": {"type":"code_package","people":["Joe Krutsinger"]},
+    "jkqtd": {"type":"code_package","people":["Joe Krutsinger"]},
   },
 } satisfies AuthorFile;
