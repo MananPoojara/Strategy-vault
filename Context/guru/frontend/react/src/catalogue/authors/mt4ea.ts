@@ -2,7 +2,7 @@ import type {AuthorFile} from '../author-files';
 
 export default {
   order: 1514,
-  author: { id: 'mt4ea', name: "MetaTrader 4 expert advisors", tagline: "Forex EAs read from their MQL4 code, run on daily bars as declared applications", books: [{ id: 'mtasc', title: "ASC Trend EA (Forexmentor Metatrader Toolkit)", year: 2006, blurb: "ASCTrend arrows, always in · pip stops, targets and hour filter held" }, { id: 'mtsvos', title: "SVOS EURJPY D1 (Belkhayate course CD)", year: 2009, blurb: "VHF-switched OsMA / Stochastic EA · pip exits and the 0.3 StdDev filter held" }] },
+  author: { id: 'mt4ea', name: "MetaTrader 4 expert advisors", tagline: "Forex EAs read from their MQL4 code, run on daily bars as declared applications", books: [{ id: 'mtasc', title: "ASC Trend EA (Forexmentor Metatrader Toolkit)", year: 2006, blurb: "ASCTrend arrows, always in · pip stops, targets and hour filter held" }, { id: 'mtsvos', title: "SVOS EURJPY D1 (Belkhayate course CD)", year: 2009, blurb: "VHF-switched OsMA / Stochastic EA · pip exits and the 0.3 StdDev filter held" }, { id: 'mtbbm', title: "Bollinger Master (TamFx, 2008 MQL Championship)", year: 2008, blurb: "Band fade with band-width stop and target · point clamps held" }] },
   identities: [],
   profile: {
     "kind": "collection",
@@ -15,5 +15,6 @@ export default {
   sourceReview: {
     "mtasc": {"type":"code_package","people":[]},
     "mtsvos": {"type":"code_package","people":["Brian Dee"]},
+    "mtbbm": {"type":"code_package","people":[]},
   },
 } satisfies AuthorFile;
