@@ -651,7 +651,9 @@ fn gregoriou_policy(def:&StrategyDef)->Option<Policy> {
 // ---------------------------------------------------------------- end Gregoriou
 // Kaeppel US-holiday rules: US instruments only (stock_us None = not a stock).
 fn kaeppel_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Option<Issue> {
-    if !(crate::books::kpss::ADMISSION.reviewed)(def) || !crate::books::kpss::US_ONLY.contains(&def.id) {return None;}
+    // K15 (2 Nov 2026): Kaeppel's S&C V.20:12 seasonal index (book sckcal) counts the same US-holiday days as kpss_hol_d2.
+    let sc=(crate::books::sckcal::ADMISSION.reviewed)(def) && crate::books::sckcal::US_ONLY.contains(&def.id);
+    if !sc && (!(crate::books::kpss::ADMISSION.reviewed)(def) || !crate::books::kpss::US_ONLY.contains(&def.id)) {return None;}
     let us=stock_us.unwrap_or(!ticker.starts_with("NIFTY"));
     if us {return None;}
     Some(Issue{status:"needs_data",note:format!("This rule's days are set by US stock-market holidays (the trading days before and after a US exchange closure, or the Thanksgiving-to-January Santa Claus window). Indian exchanges keep a different holiday calendar, so the rule runs on US indices, ETFs and stocks only. {ticker} is outside that scope; no result is published.")})
@@ -1568,7 +1570,7 @@ mod tests {
                 for (t,stock) in [("SPY",false),("QQQ",false),("SPX",false),("NDX",false),("DJI",false),("NIFTY 50",false),("NIFTYBANK",false),("AAPL",true),("RELIANCE",true)] {
                     // Kaeppel's US-only rules keep their own symbol check (kaeppel_symbol_issue; kaeppel_review_... test).
                     // Fosback's Seasonality Indicator likewise (fosback_symbol_issue; fosback_seasonality_runs_on_us_instruments_only test).
-                    if check(d,t,stock).is_some() && !crate::books::kpss::US_ONLY.contains(&d.id) && !crate::books::nfsml::US_ONLY.contains(&d.id) && !crate::books::itatw::US_ONLY.contains(&d.id) {refused.push((d.id,t));}
+                    if check(d,t,stock).is_some() && !crate::books::kpss::US_ONLY.contains(&d.id) && !crate::books::nfsml::US_ONLY.contains(&d.id) && !crate::books::itatw::US_ONLY.contains(&d.id) && !crate::books::sckcal::US_ONLY.contains(&d.id) {refused.push((d.id,t));}
                 }
             }
         }
