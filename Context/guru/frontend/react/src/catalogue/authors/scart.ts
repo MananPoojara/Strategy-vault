@@ -2,7 +2,7 @@ import type {AuthorFile} from '../author-files';
 
 export default {
   order: 1450,
-  author: { id: 'scart', name: "Stocks & Commodities authors", tagline: "Single-article systems", books: [{ id: 'ddrvi', title: "Refining the RVI (Dorsey)", year: null, blurb: "Dorsey · inertia system; S&P win rate 52% vs the article’s 53%" }, { id: 'aatt', title: "Trading the Trend (Abraham)", year: 1998, blurb: "Abraham, S&C 1998 · ATR trailing trend system" }, { id: 'rhlss', title: "LSS 3-day cycle (Angell)", year: null, blurb: "Level formulas missing; day type is judgement" }, { id: 'cmeod', title: "End of Day Trading System (Mathews)", year: null, blurb: "Judgement terms throughout" }, { id: 'mjzz', title: "Zigzag Signpost (M.S. Johnson)", year: null, blurb: "Exits left to the trader" }, { id: "sctraub", sourceIds: [], readerPaths: ["Trading Knowledge I/Stocks & Commodities DVD 11.26 (1982 - 2008) (traders.com)/VOLUMES/V12/C12/THREE.PDF"], title: "Three Market Timing Strategies (Traub, S&C V.12:12)", year: 1994, blurb: "Traub · weekly trend timing; the prime-rate and point-oscillator strategies are held" }] },
+  author: { id: 'scart', name: "Stocks & Commodities authors", tagline: "Single-article systems", books: [{ id: 'ddrvi', title: "Refining the RVI (Dorsey)", year: null, blurb: "Dorsey · inertia system; S&P win rate 52% vs the article’s 53%" }, { id: 'aatt', title: "Trading the Trend (Abraham)", year: 1998, blurb: "Abraham, S&C 1998 · ATR trailing trend system" }, { id: 'rhlss', title: "LSS 3-day cycle (Angell)", year: null, blurb: "Level formulas missing; day type is judgement" }, { id: 'cmeod', title: "End of Day Trading System (Mathews)", year: null, blurb: "Judgement terms throughout" }, { id: 'mjzz', title: "Zigzag Signpost (M.S. Johnson)", year: null, blurb: "Exits left to the trader" }, { id: "sctraub", sourceIds: [], readerPaths: ["Trading Knowledge I/Stocks & Commodities DVD 11.26 (1982 - 2008) (traders.com)/VOLUMES/V12/C12/THREE.PDF"], title: "Three Market Timing Strategies (Traub, S&C V.12:12)", year: 1994, blurb: "Traub · weekly trend timing; the prime-rate and point-oscillator strategies are held" }, { id: "sctoombs", sourceIds: [], readerPaths: ["Trading Knowledge I/Stocks & Commodities DVD 11.26 (1982 - 2008) (traders.com)/VOLUMES/V08/C07/SHORT.pdf"], title: "A Short-Term Buy Signal For The DJIA (Toombs, S&C V.8:7)", year: 1990, blurb: "Toombs · slow 20-day stochastic dip buy on the DJIA; 20 DJI trades 1984-1990 against the article's 20" }] },
   identities: [],
   profile: {
     "kind": "collection",
@@ -27,5 +27,6 @@ export default {
     "cmeod": {"type":"book","people":["Chris Mathews"]},
     "mjzz": {"type":"book","people":["Michael S Johnson"]},
     "sctraub": {"type":"article","people":["Daniel J. Traub"]},
+    "sctoombs": {"type":"article","people":["John Toombs"]},
   },
 } satisfies AuthorFile;
