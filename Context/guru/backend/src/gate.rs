@@ -2687,6 +2687,7 @@ static GATE: &[G] = &[
     G { id: r##"tselhs_ma_cross"##, verdict: r##"unverified"##, reason: r##"Course exercise with no results; the $150 stale-trade exit runs on US instruments only. Next-open fills."##, allowed: None, clamp_open: true, book: r##""##, ours: r##""## },
     G { id: r##"tselhs_mom_cross"##, verdict: r##"unverified"##, reason: r##"Course exercise with no results. Limit entries, close exits."##, allowed: None, clamp_open: true, book: r##""##, ours: r##""## },
     G { id: r##"tselhs_rb_avg"##, verdict: r##"unverified"##, reason: r##"Course exercise with no results. Reads the open; next-open fills."##, allowed: None, clamp_open: true, book: r##""##, ours: r##""## },
+    G { id: r##"tsgear_macd"##, verdict: r##"unverified"##, reason: r##"Futures system code, no named market, no results. Limit entries read the open."##, allowed: None, clamp_open: true, book: r##""##, ours: r##""## },
     G { id: r##"tsltc_swing"##, verdict: r##"unverified"##, reason: r##"S&P 500 swing code, no results printed. Close fills; ECO reads the open."##, allowed: None, clamp_open: true, book: r##""##, ours: r##""## },
     G { id: r##"tsprosc_slowd"##, verdict: r##"unverified"##, reason: r##"Intraday S&P scalping code, no results printed. Close fills only."##, allowed: None, clamp_open: false, book: r##""##, ours: r##""## },
     G { id: r##"tstango_adx"##, verdict: r##"unverified"##, reason: r##"Vendor code with no named market and no results. Stop entries and exits read the open."##, allowed: None, clamp_open: true, book: r##""##, ours: r##""## },
