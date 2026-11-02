@@ -2353,6 +2353,7 @@ mod tests {
         use crate::books::{jkbwts, jkbk, upg18};
         let all:Vec<StrategyDef>=jkbwts::catalogue().into_iter().chain(jkbk::catalogue()).chain(upg18::catalogue()).collect();
         let mut want:Vec<&str>=jkbwts::REVIEWED.iter().chain(jkbk::REVIEWED.iter()).chain(upg18::REVIEWED.iter()).copied().collect();
+        want.push("upg18_gearshift"); // re-opened 2 Nov 2026 (lane K20): its own entry upg18::ADMISSION_GEARSHIFT, same checks
         let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)&&!intraday_p1(d)).map(|d|d.id).collect(); // intraday wave 2b: minute-path ids have their own test
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {

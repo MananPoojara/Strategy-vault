@@ -65,13 +65,18 @@ The SAR runs from the first bar of the data. GearShift.pdf prints a Parrot BBE v
             "X|\"Inputs:MovetoBE(100),PT(24); If marketposition = 1 then begin If maxcontractprofit > MovetoBE then Sell(\\\"joekrut belx\\\") Next Bar entryprice + pt points stop;\" (mirror for shorts)",
         ], "Source: T:/Joe Krutsinger - GearShift 2004 for TS2000i (joekrut.com)/GearShift.pdf p.6-7. The operation sheet lists 'Move to BE 500, PT 24' (joe_krut.pdf)."),
         sdef(BOOK, "upg18_gearshift", "GearShift 2004 (code)", "Krutsinger GearShift", "Long/Short",
-            NeedsData("60-minute bars of the index (GearShift-Stock Indexes sheet: '60 min bars'; 'Turning Point comes into play each hour'); the daily-bar option is only on the Forex sheet (GBPUSD, no forex data); also SetStopLoss(Amount 500) is $ per contract of an unstated contract"), &[
+            Live, &[
             "F|\"Condition1 = RATEOFCHANGE(CLOSE, LenRate) > 0; Condition2 = RATEOFCHANGE(CLOSE, LenRate) < 0; Condition3 = TradesToday(DATE) <= 1;\" LenRate 8, LenAvg 10, LenBol1 9, LenBol2 3, LenBol3 2",
             "E|\"IF Condition2 AND Condition3 AND LOW <= AVERAGE(LOW, LenAvg) THEN BUY (\\\"TPLE\\\") TOMORROW BOLLINGERBAND(LOW, LenBol1, LenBol3) STOP\"",
             "E|\"IF Condition1 AND Condition3 AND HIGH >= AVERAGE(HIGH, LenAvg) THEN SELLSHORT (\\\"TPSE\\\") TOMORROW BOLLINGERBAND(HIGH, LenBol1, -LenBol3) STOP\"",
             "E|\"IF Condition3 THEN BUY (\\\"BOLE\\\") TOMORROW BOLLINGERBAND(HIGH, LenBol1, LenBol2) STOP; IF Condition3 THEN SELLSHORT (\\\"BOSE\\\") TOMORROW BOLLINGERBAND(LOW, LenBol1, -LenBol2) STOP\"",
-            "X|\"Use $500 as a stop loss\": Inputs PositionBasis(False), Amount(500); SetStopContract; SetStopLoss(Amount) (GearShift.pdf p.1-2)",
-        ], "Source: T:/Joe Krutsinger - GearShift 2004 for TS2000i (joekrut.com)/Open Code.rar -> Open Code.txt (A0592) and GearShift.pdf p.1-2; sheets joe_krut.pdf (GearShift-Stock Indexes, GearShift-Forex)."),
+            "X|HELD: \"Use $500 as a stop loss\": Inputs PositionBasis(False), Amount(500); SetStopContract; SetStopLoss(Amount) (GearShift.pdf p.1-2), a dollar amount per contract of an unstated contract, not converted (decisions 19, 138). No other exit: the position changes only at the opposite entry stops",
+        ], "Source: T:/Joe Krutsinger - GearShift 2004 for TS2000i (joekrut.com)/Open Code.rar -> Open Code.txt (A0592) and GearShift.pdf p.1-2; sheets joe_krut.pdf (GearShift-Stock Indexes, GearShift-Forex). \
+The stock-index sheet runs it on 60-minute bars; re-opened 2 Nov 2026 (lead decisions 72 and 138) as a DAILY declared application on indices, ETFs and stocks, US and India. \
+[Declared readings] RateOfChange(Close,8) = (Close / Close 8 bars ago - 1) x 100; Average = simple average; BollingerBand(Price,9,k) = Average(Price,9) + k x population standard deviation of the 9 values (TradeStation StdDev). \
+Every close places the four next-bar stops the code prints (TPLE buy at the +2 band of the Lows after a down 8-day change with Low <= the 10-day average Low; TPSE short at the -2 band of the Highs after an up change with High >= the 10-day average High; BOLE buy at the +3 band of the Highs; BOSE short at the -3 band of the Lows); \
+a buy is ignored while long and a short while short, an opposite fill reverses (stop and reverse, always in after the first fill); two stops on one bar fill in the bar's path (open, nearer extreme, other extreme). \
+Condition3 = TradesToday(Date) <= 1 is read as always true on daily bars (labelled reading; on an intraday chart it stops orders after two entries in a day). MONEY STOP HELD: the $500 SetStopLoss is not converted. Independent check authors/titles-1030/K20w/k20_ref.py."),
         sdef(BOOK, "upg18_dealers_choice_pro", "Dealer's Choice Pro (code)", "Krutsinger Dealer's Choice Pro", "Long/Short",
             NeedsData("7-minute bars ('Dealer Choice Pro - 7min time frame'), session times (LastEntry 1200, Sess1EndTime-100), and $ amounts per contract (StpAmt 2300 SetStopLoss and the maxpositionprofit trail) of an unstated contract"), &[
             "E|\"IF Time < LastEntry and Time > Sess1StartTime and TradesToday(date) < NumTrds and Time < (Sess1EndTime-100) then begin IF c < c[2] and MarketPosition <> 1 Then Buy (\\\"LEDCP\\\") at open of tomorrow + (Range*0.01*BkOutPct) Stop; IF c >= c[2] and MarketPosition <>-1 Then Sell Short(\\\"SEDCP\\\") at open of tomorrow - (Range*0.01*BkOutPct) Stop; end;\" Numtrds 4, BkOutPct 10, LastEntry 1200",
@@ -121,6 +126,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "upg18_traders_dream" => vec![pd("stop_pts", "Stop loss in points ($300 / $250 per @SP point)", 1.2, 0.2, 20., 0.2), pd("lag", "Close compared with the close N bars ago", 2., 1., 10., 1.), pd("path", "1 = real 1-minute bars (default; SPX only; days without minute data make no trade), 0 = [Not from the book] daily bar path", 1., 0., 1., 1.) /* intraday wave 2b */],
         "upg18_safer2005" => vec![pd("buy_pct", "JKBuyer: % of today's range above the close", 38.2, 5., 100., 0.1), pd("sell_pct", "JKSeller: % of today's range below the close", 61.8, 5., 100., 0.1)],
         "upg18_trend_walker" => vec![pd("buybo", "BuyBo (tenths of the range)", 2., 0., 20., 1.), pd("sellbo", "SellBo (tenths of the range)", 7., 0., 20., 1.), pd("walk", "Walk: exit after N bars in the trade", 6., 1., 30., 1.), pd("trn", "Trn: average length", 10., 2., 100., 1.)],
+        "upg18_gearshift" => vec![pd("lenrate", "LenRate: rate-of-change length", 8., 1., 50., 1.), pd("lenavg", "LenAvg: average of Highs / Lows", 10., 2., 50., 1.),
+            pd("lenbol1", "LenBol1: Bollinger length", 9., 2., 50., 1.), pd("lenbol2", "LenBol2: outer band deviations (breakout stops)", 3., 0.5, 5., 0.5), pd("lenbol3", "LenBol3: inner band deviations (turning-point stops)", 2., 0.5, 5., 0.5)],
         "upg18_parrot" => vec![pd("afstep", "AfStep (acceleration increment)", 0.01, 0.0005, 0.05, 0.0005), pd("aflimit", "AfLimit (maximum acceleration)", 0.1, 0.05, 0.5, 0.01)],
         _ => return None,
     })
@@ -238,6 +245,26 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 if st.pos == -1 && st.bse(i) >= walk { next.push(o(A::Xs, P::Mkt, "SX")); }
             }))
         }
+        "upg18_gearshift" => {
+            let (nr, na, nb) = (g(p, "lenrate", 8.).max(1.) as usize, g(p, "lenavg", 10.).max(1.) as usize, g(p, "lenbol1", 9.).max(1.) as usize);
+            let (k2, k3) = (g(p, "lenbol2", 3.), g(p, "lenbol3", 2.));
+            let (v1, v2) = (crate::books::rrsim::sma(h, na), crate::books::rrsim::sma(l, na));
+            let band = |v: &[f64], k: f64| -> Vec<f64> { (0..v.len()).map(|i| {
+                if i + 1 < nb { return f64::NAN; }
+                let w = &v[i + 1 - nb..=i];
+                let m = w.iter().sum::<f64>() / nb as f64;
+                m + k * (w.iter().map(|y| (y - m) * (y - m)).sum::<f64>() / nb as f64).sqrt()
+            }).collect() };
+            let (v3, v4, v5, v6) = (band(h, k2), band(h, -k3), band(l, k3), band(l, -k2));
+            Some(run_ts(x, from, to, |i, _st, _now, next| {
+                if i < nr || v3[i].is_nan() || v1[i].is_nan() { return; }
+                let roc = (c[i] / c[i - nr] - 1.) * 100.;
+                if roc < 0. && l[i] <= v2[i] { next.push(o(A::Buy, P::Stop(v5[i]), "TPLE")); }
+                if roc > 0. && h[i] >= v1[i] { next.push(o(A::Sell, P::Stop(v4[i]), "TPSE")); }
+                next.push(o(A::Buy, P::Stop(v3[i]), "BOLE"));
+                next.push(o(A::Sell, P::Stop(v6[i]), "BOSE"));
+            }))
+        }
         "upg18_parrot" => {
             let (sar, ps) = parabolic_sar(h, l, g(p, "afstep", 0.01), g(p, "aflimit", 0.1));
             Some(run_ts(x, from, to, |i, _st, _now, next| {
@@ -249,9 +276,26 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     }
 }
 
+// Instrument admission: GearShift re-opened 2026-11-02 (titles lane K20, lead decisions 72 and 138); a second entry so the
+// REVIEWED ids keep their Krutsinger block label.
+pub const ADMISSION_GEARSHIFT: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && def.id == "upg18_gearshift",
+    label: "Krutsinger's GearShift TradeStation code, sold for 60-minute index bars ($500 stop held); daily runs on indices, ETFs and stocks, US and India, are a declared application.",
+    basis: "Joe Krutsinger - GearShift 2004 for TS2000i (joekrut.com)/Open Code.rar -> Open Code.txt and GearShift.pdf p.1-2; independent check authors/titles-1030/K20w/k20_ref.py",
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn gearshift_stop_and_reverse() {
+        let r = super::super::sctraub::tests::bars(2500);
+        let x = Ctx::new(&r, &r, &[]);
+        let t = run("upg18_gearshift", &x, 0, r.len() - 1, &Params::new()).unwrap();
+        assert!(t.len() > 10 && t.iter().any(|z| z.dir > 0.) && t.iter().any(|z| z.dir < 0.));
+        // always in after the first fill: each trade ends where the next begins
+        for w in t.windows(2) { assert_eq!((w[0].exit_i, w[0].exit_px), (w[1].legs[0].i, w[1].legs[0].px)); }
+    }
     #[test]
     fn sar_reverses_on_low_through_stop() {
         // bar0 long, SAR = low 9 capped; bar1 makes a new high; bar2 low 8 < SAR -> short, SAR = highest high 13
