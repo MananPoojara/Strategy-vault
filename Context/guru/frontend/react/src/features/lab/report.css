@@ -45,12 +45,23 @@
 .lab-report [data-lab-report-stats] tbody tr:hover > * { background: var(--hover); }
 
 /* statistics cards: titled blocks flowing in two columns (masonry), each a compact table, labels on one line */
-.lab-report .lab-report-cards { columns: 2 600px; column-gap: 18px; max-width: none; }
+/* two blocks side by side from a laptop up, one below that; a narrow screen scrolls the blocks sideways inside this box, never the page */
+.lab-report .lab-report-cards { columns: 2 580px; column-gap: 24px; max-width: none; overflow-x: auto; }
 .lab-report .lab-report-card { break-inside: avoid; display: table; width: 100%; margin: 0 0 18px; border: 1px solid var(--rule); border-radius: var(--r-box, 8px); background: var(--card); border-collapse: separate; border-spacing: 0; overflow: hidden; }
 .lab-report .lab-report-card caption { caption-side: top; text-align: left; padding: 0 2px 6px; background: none; font: 700 13px var(--font); letter-spacing: 0; text-transform: none; color: var(--ink); }
 .lab-report .lab-report-card thead th { font-size: 11.5px; font-weight: 600; color: var(--ink2); background: var(--panel); white-space: nowrap; }
 .lab-report .lab-report-card td:first-child { white-space: nowrap; color: var(--ink2); }
-.lab-report .lab-report-card td.n { width: 1%; white-space: nowrap; padding-left: 18px; }
+/* four equal figure columns, the label column takes the rest: a full-width card (one per row on a laptop) reads evenly, no gap after the labels */
+.lab-report .lab-report-card :is(td, th).n { width: 15%; white-space: nowrap; padding-left: 18px; }
 .lab-report .lab-report-card tbody tr:last-child > * { border-bottom: 0; }
 .lab-report-how > summary { cursor: pointer; font-weight: 600; font-size: 13px; color: var(--ink2); }
 .lab-report-how[open] > summary { margin-bottom: 6px; }
+.lab-report > .box-h .lab-report-download { margin-left: auto; }
+
+/* Results tab: chart titles at section size like the equity charts above; column heads may wrap so a block fits its column. */
+.lab-page[data-lab-page] [data-lab-results-tabs] .lab-report-chart figcaption { font-size: var(--lab-type-section); }
+.lab-page[data-lab-page] [data-lab-results-tabs] .lab-report-chart figcaption small { font-size: var(--lab-type-label); }
+.lab-report .lab-report-card thead th.n { white-space: normal; }
+.lab-report > .lab-report-charts { margin-top: 4px; }
+/* a long label ("Max. system drawdown (× initial equity)") takes a second line rather than pushing the block past its column */
+.lab-report .lab-report-card td:first-child { white-space: normal; min-width: 10em; }

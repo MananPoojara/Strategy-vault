@@ -246,6 +246,8 @@ pub struct Compiled {
     pub dline: Option<(Vec<f64>, Vec<f64>)>,
     /// execution.shadow: the settings, whether every filter row holds on each daily bar, and whether a filter row also exits.
     pub shadow: Option<(super::rules::Shadow, Vec<bool>, bool)>,
+    /// exit.stop_loss.candle: each daily bar's low (a short side's high); empty when unused.
+    pub candle: Vec<f64>,
 }
 /// Daily levels of exit.dual_atr for this side: the initial and favour stops, the switch band and the close they are
 /// compared with (on W/M: completed periods' values and the period close, held until the next period's last bar, as the
@@ -253,7 +255,7 @@ pub struct Compiled {
 pub struct DualBands { pub init: Vec<f64>, pub fav: Vec<f64>, pub up: Vec<f64>, pub close: Vec<f64>, pub end: Vec<bool>, pub end_only: bool }
 impl Compiled {
     /// Long, market orders at the next open, no price exits (the v1 defaults).
-    pub fn new(entry: Vec<RCond>, exit: Vec<RCond>) -> Compiled { Compiled { entry, exit, exec: Exec::default(), atr: BTreeMap::new(), other: None, cost: 0., limit_at: None, stop_at: None, grid: vec![], expiry_bar: vec![], dual: None, dline: None, shadow: None } }
+    pub fn new(entry: Vec<RCond>, exit: Vec<RCond>) -> Compiled { Compiled { entry, exit, exec: Exec::default(), atr: BTreeMap::new(), other: None, cost: 0., limit_at: None, stop_at: None, grid: vec![], expiry_bar: vec![], dual: None, dline: None, shadow: None, candle: vec![] } }
     pub fn has_order(&self) -> bool { self.exec.has_order() }
     /// Setup nodes start disarmed: a Compiled is run again per window (walk-forward, optimize).
     pub fn reset_setups(&self) { for s in self.setups() { s.armed.iter().for_each(|a| a.set(false)); } }
@@ -269,7 +271,8 @@ impl Compiled {
     pub fn dist_at(&self, d: Dist, px: f64, source: usize, at: usize) -> f64 {
         let (_,off,factor)=self.grid.get(at).copied().unwrap_or((0.,0.,1.));
         match d { Dist::Pct(p) => (px-off)*p/100., Dist::Atr { mult,length } => self.atr.get(&length).map_or(f64::NAN,|a|mult*a[source]), Dist::Points(p) => p*factor,
-            Dist::Ticks(t) => self.grid.get(at).map_or(f64::NAN,|g|t*g.0*g.2), Dist::ProfitPct(_) => f64::NAN } // a trailing level, not a distance (simulate.rs)
+            Dist::Ticks(t) => self.grid.get(at).map_or(f64::NAN,|g|t*g.0*g.2), Dist::ProfitPct(_) => f64::NAN, // a trailing level, not a distance (simulate.rs)
+            Dist::Candle => self.candle.get(source).map_or(f64::NAN, |&l| if self.exec.short { l - px } else { px - l }) }
 
     }
     pub fn round_at(&self, i: usize, px: f64) -> f64 {
@@ -533,7 +536,33 @@ pub fn compile_with(spec: &Spec, fr: &Frames, others: &Others, cache: &mut Cache
         date_gate(&mut c, d, &fr.d.date);
         if let Some(o) = c.other.as_deref_mut() { date_gate(o, d, &fr.d.date); }
     }
+    entry_gates(&mut c, &spec.exec, &fr.d)?;
+    if let Some(o) = c.other.as_deref_mut() { entry_gates(o, &spec.exec, &fr.d)?; }
     Ok(c)
+}
+/// The AFL's turnover floor (`Volsig`, RSI_Setup_Entry_Verification_Exploration.afl) for the year of a "YYYY-MM-DD" date.
+pub(super) fn turnover_floor(date: &str) -> f64 {
+    match date.get(0..4).and_then(|y| y.parse::<i32>().ok()).unwrap_or(0) {
+        ..=1999 => 30_000., 2000..=2003 => 50_000., 2004 => 200_000., 2005 => 400_000., 2006 => 600_000., 2007..=2009 => 800_000.,
+        2010 => 1_000_000., 2011 => 2_000_000., 2012 => 2_500_000., 2013 => 3_000_000., 2014 => 3_500_000., 2015..=2016 => 4_000_000.,
+        2017 => 5_000_000., 2018 => 6_000_000., 2019 => 7_000_000., 2020 => 8_000_000., 2021 => 9_000_000., _ => 10_000_000.,
+    }
+}
+/// The AFL "BACKTEST PARAMETER" buy gates on the signal bar (execution.penny_price, turnover_filter, aux1, aux2): Close >
+/// Penny Stock Price, V × C > the year's floor, Aux == 1. A missing value (NaN) fails its gate. DEAD STOCK's last-bar buy
+/// block needs no gate: the trade loop takes no new signal on the window's last bar (simulate.rs `if last { break; }`).
+fn entry_gates(c: &mut Compiled, x: &Exec, d: &Bars) -> Result<(), LabError> {
+    let mut gate = |ok: Vec<bool>, label: String| c.entry.push(RCond { lhs: Val::Arr(ok.into_iter().map(|o| if o { 1. } else { 0. }).collect()), op: Op::Gt, rhs: Val::Const(0.5), label });
+    if x.penny_price > 0. { gate(d.close.iter().map(|c| *c > x.penny_price).collect(), format!("execution.penny_price: close above {}", x.penny_price)); }
+    if x.turnover_filter {
+        let v = d.volume_or_late().ok_or_else(|| LabError::NeedsData("execution.turnover_filter needs volume, which this instrument's data does not carry".into()))?;
+        gate((0..d.len()).map(|i| v[i] * d.close[i] > turnover_floor(&d.date[i])).collect(), "execution.turnover_filter: volume × close above the year's turnover floor".into());
+    }
+    for k in (0..2).filter(|&k| x.aux[k]) {
+        let col = d.aux[k].as_ref().ok_or_else(|| LabError::NeedsData(format!("execution.aux{0} needs the instrument's Aux{0} column, which its data does not carry", k + 1)))?;
+        gate(col.iter().map(|v| *v == 1.).collect(), format!("execution.aux{0}: Aux{0} = 1", k + 1));
+    }
+    Ok(())
 }
 /// spec.date_filter on one side: the window test joins the entry rules (inside or outside the windows) and, with
 /// exit_at_change, being on the wrong side joins the exits: inside, any bar out of the windows (first: date >= to); outside,
@@ -570,6 +599,15 @@ fn side(entry: &[Node], exit: &[Node], x: &Exec, pre: &str, fr: &Frames, others:
         let not: Vec<f64> = mask_in(&entry[k], fr, others, cache)?.into_iter().map(|v| if v.is_nan() { v } else { 1. - v }).collect();
         c.exit.push(RCond { lhs: Val::Arr(not), op: Op::Gt, rhs: Val::Const(0.5), label: format!("{pre}entry.all[{k}]: filter turned false: {}", describe_node(&entry[k])) });
     }
+    if x.skip_entry_on_circuit {
+        // the AFL's `IIf(UC[i] == 1, 0, 1)` in the buy condition: an entry signal on a circuit-locked bar is ignored
+        let (d, n) = (&fr.d, fr.d.len());
+        let ok: Vec<f64> = (0..n).map(|i| {
+            let locked = i > 0 && if x.short { d.low[i] == d.close[i] && d.close[i] < d.close[i - 1] } else { d.high[i] == d.close[i] && d.close[i] > d.close[i - 1] };
+            if locked { 0. } else { 1. }
+        }).collect();
+        c.entry.push(RCond { lhs: Val::Arr(ok), op: Op::Gt, rhs: Val::Const(0.5), label: format!("{pre}execution.skip_entry_on_circuit: not a circuit close") });
+    }
     c.exec = x.clone();
     c.limit_at = x.limit_at.as_ref().map(|o| arr_in(o, fr, others, cache)).transpose()?;
     c.stop_at = x.stop_at.as_ref().map(|o| arr_in(o, fr, others, cache)).transpose()?;
@@ -581,6 +619,7 @@ fn side(entry: &[Node], exit: &[Node], x: &Exec, pre: &str, fr: &Frames, others:
             c.atr.insert(length, series(fr, cache, &r)?);
         }
     }
+    if x.stop_loss == Some(Dist::Candle) { c.candle = if x.short { fr.d.high.clone() } else { fr.d.low.clone() }; }
     c.dual = x.dual_atr.as_ref().map(|d| dual_bands(d, x.short, fr, cache)).transpose()?;
     c.dline = x.dual_line.as_ref().map(|(a, f)| Ok::<_, LabError>((arr_in(a, fr, others, cache)?, arr_in(f, fr, others, cache)?))).transpose()?;
     Ok(c)
@@ -722,8 +761,8 @@ mod tests {
     }
     #[test] fn listed_entries_refuse_with_their_note() {
         for (id, status) in [("vwap", "needs_data"), ("cvd", "needs_data"), ("dividend_yield", "needs_data"),
-            ("open_interest", "needs_data"), ("onchain_hash_rate", "needs_data"), ("zigzag", "unsupported"), ("peak", "unsupported"),
-            ("rob_booker_reversal", "unsupported"), ("fir", "unsupported"), ("seasonality", "unsupported")] {
+            ("open_interest", "needs_data"), ("onchain_hash_rate", "needs_data"), ("auto_trendlines", "unsupported"), ("peak", "unsupported"),
+            ("rob_booker_knoxville", "unsupported"), ("fir", "unsupported"), ("visible_avg_price", "unsupported")] {
             let d = catalogue::get(id).unwrap();
             let e = crate::lab::testdata::compiles(id, d.outputs[0]).unwrap_err();
             assert_eq!(e.status(), status, "{id}");

@@ -147,7 +147,7 @@ fn ichimoku(b: &Bars, prm: &Params) -> Output {
     let (t, k) = (mid(b, n(prm, "conversion")), mid(b, n(prm, "base")));
     let a = t.iter().zip(&k).map(|(x, y)| (x + y) / 2.).collect();
     let sb = mid(b, n(prm, "span_b"));
-    let sh = n(prm, "displacement").saturating_sub(1); // spans as plotted: calculated displacement-1 bars earlier (causal)
+    let sh = n(prm, "displacement"); // spans as plotted, AmiBroker's count: calculated `displacement` bars earlier (causal); 0 = unshifted
     let shift = |v: Vec<f64>| -> Vec<f64> { (0..v.len()).map(|i| if i < sh { NA } else { v[i - sh] }).collect() };
     Ok(vec![t, k, shift(a), shift(sb)])
 }
@@ -187,9 +187,9 @@ pub const DEFS: &[IndicatorDef] = &[
     def("aroon", "Aroon", LEN14, &["up", "down"], Placement::Pane,
         "100*(length - bars since highest high in length+1 bars)/length (ties -> oldest); down uses lows", &[14, 14], aroon),
     def("aroon_osc", "Aroon Oscillator", LEN14, &["osc"], Placement::Pane, "aroon up - aroon down", &[14], aroon_osc),
-    def("ichimoku", "Ichimoku Cloud", &[len("conversion", "Conversion line", 9.), len("base", "Base line", 26.), len("span_b", "Leading span B", 52.), len("displacement", "Displacement", 26.)],
+    def("ichimoku", "Ichimoku Cloud", &[len("conversion", "Conversion line", 3.), len("base", "Base line", 13.), len("span_b", "Leading span B", 16.), int("displacement", "Displacement (bars ahead)", 12., 0., 500.)],
         &["tenkan", "kijun", "span_a", "span_b"], Placement::Price,
-        "mid(n)=(highest(high,n)+lowest(low,n))/2; span_a=(tenkan+kijun)/2; spans shown as plotted: calculated displacement-1 bars earlier", &[8, 25, 50, 76], ichimoku),
+        "mid(n)=(highest(high,n)+lowest(low,n))/2; span_a=(tenkan+kijun)/2; spans shown as plotted, counted as AmiBroker's Delayed Line Periods: calculated displacement bars earlier (TradingView's displacement 26 = 25 here; 0 = the unshifted spans an AFL rule reads, Sp1 and Sp2). Defaults as the team's AmiBroker Ichimoku AFL (Turning 3, Standard 13, Spans 16, Delayed 12); AmiBroker's built-in is 9/26/52/26", &[2, 12, 24, 27], ichimoku),
     def("vortex", "Vortex Indicator", LEN14, &["vi_plus", "vi_minus"], Placement::Pane,
         "sum|high-low[1]|/sum(tr(true)); sum|low-high[1]|/sum(tr(true)) over n; zero denominator -> NaN", &[14, 14], vortex),
     def("chop", "Choppiness Index", LEN14, &["chop"], Placement::Pane,
@@ -208,13 +208,17 @@ mod tests {
         let b = from_ohlc(&[(420., 465.8, 391., 456.), (473.15, 489.4, 418.6, 430.7), (416.1, 438.7, 410.4, 420.1), (424., 430.9, 408.85, 412.45)]);
         assert_series(&run(&get("sar").unwrap(), &b, &Params::new()).unwrap()[0], &[f64::NAN, 391., 391., 392.968]);
     }
-    #[test] fn ichimoku_spans_shifted_displacement_minus_one() {
+    #[test] fn ichimoku_spans_shifted_by_displacement_as_amibroker() {
         let b = from_ohlc(&[(1., 1., 1., 1.), (2., 2., 2., 2.), (4., 4., 4., 4.), (8., 8., 8., 8.)]);
-        let o = go("ichimoku", &b, &many(&[("conversion", 2.), ("base", 2.), ("span_b", 2.), ("displacement", 2.)]));
+        // AmiBroker's Delayed Line Periods: displacement 1 = one bar
+        let o = go("ichimoku", &b, &many(&[("conversion", 2.), ("base", 2.), ("span_b", 2.), ("displacement", 1.)]));
         assert_series(&o[0], &[N, 1.5, 3., 6.]);
         assert_series(&o[1], &[N, 1.5, 3., 6.]);
         assert_series(&o[2], &[N, N, 1.5, 3.]);
         assert_series(&o[3], &[N, N, 1.5, 3.]);
+        // 0: the unshifted spans an AFL rule reads (Sp1, Sp2)
+        let z = go("ichimoku", &b, &many(&[("conversion", 2.), ("base", 2.), ("span_b", 2.), ("displacement", 0.)]));
+        assert_series(&z[2], &[N, 1.5, 3., 6.]);
     }
     #[test] fn aroon_with_tie() {
         // highs tie at bars 1,2 (oldest wins); window is length+1 bars

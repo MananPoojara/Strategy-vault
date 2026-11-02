@@ -88,7 +88,7 @@ pub fn catalogue_json() -> String {
             d.compute.is_some(), quoted(d.outputs.iter().copied()), arr(d.first.iter().map(|&f| if f == usize::MAX { "null".into() } else { f.to_string() })), d.sparse, esc(d.definition), esc(d.note), esc(tv), esc(ab))
     });
     let mut body = format!(
-        "{{\"label\":\"{LABEL}\",\"price_sources\":{},\"operators\":{},\"timeframes\":[\"D\",\"W\",\"M\",\"Q\",\"Y\"],\"custom_days\":[2,{}],\"expand_modes\":[\"last\",\"first\",\"point\"],\"max_conditions\":{},\"max_leaves\":{},\"max_nodes\":{},\"node_kinds\":{},\"expressions\":{},\"max_spec_bytes\":{},\"max_query_bytes\":16384,\"execution\":{{\"direction\":[\"long\",\"short\",\"both\"],\"fill\":[\"next_open\",\"close\"],\"opposite\":[\"reverse\",\"exit\",\"ignore\"],\"entry_on\":[\"level\",\"edge\"],\"intrabar\":[\"stop_first\",\"ohlc_path\"],\"sizing\":[\"pct_equity\",\"risk_pct\",\"units\",\"value\"],\"distances\":[\"pct\",\"atr\",\"points\",\"at\"],\"max_take_profits\":{},\"max_legs\":{},\"max_valid_bars\":{},\"max_delay_bars\":{},\"cooldown_after\":[\"any\",\"loss\",\"win\"],\"max_cooldown_bars\":{},\"max_trades_per\":[\"W\",\"M\",\"Q\",\"Y\"],\"max_trades_count\":{},\"max_consecutive_losses\":{},\"max_pause_bars\":{},\"max_drawdown_pct_below\":100}},\"max_combos\":{},\"indicators\":{}}}",
+        "{{\"label\":\"{LABEL}\",\"price_sources\":{},\"operators\":{},\"timeframes\":[\"D\",\"W\",\"M\",\"Q\",\"Y\"],\"custom_days\":[2,{}],\"expand_modes\":[\"last\",\"first\",\"point\"],\"max_conditions\":{},\"max_leaves\":{},\"max_nodes\":{},\"node_kinds\":{},\"expressions\":{},\"max_spec_bytes\":{},\"max_query_bytes\":16384,\"execution\":{{\"direction\":[\"long\",\"short\",\"both\"],\"fill\":[\"next_open\",\"close\"],\"opposite\":[\"reverse\",\"exit\",\"ignore\"],\"entry_on\":[\"level\",\"edge\"],\"intrabar\":[\"stop_first\",\"ohlc_path\"],\"sizing\":[\"pct_equity\",\"risk_pct\",\"units\",\"value\"],\"distances\":[\"pct\",\"atr\",\"points\",\"at\"],\"max_take_profits\":{},\"max_legs\":{},\"max_valid_bars\":{},\"max_delay_bars\":{},\"cooldown_after\":[\"any\",\"loss\",\"win\"],\"max_cooldown_bars\":{},\"max_trades_per\":[\"W\",\"M\",\"Q\",\"Y\"],\"max_trades_count\":{},\"max_consecutive_losses\":{},\"max_pause_bars\":{},\"max_drawdown_pct_below\":100,\"entry_gates\":[\"dead_stock\",\"penny_price\",\"turnover_filter\",\"aux1\",\"aux2\"]}},\"max_combos\":{},\"indicators\":{}}}",
         quoted(rules::PRICE_SOURCES.iter().copied()), quoted(rules::OPERATORS.iter().copied()), super::resample::MAX_DAYS, rules::MAX_CONDITIONS, rules::MAX_LEAVES, rules::MAX_NODES,
         quoted(rules::NODE_KINDS.iter().copied()), quoted(rules::EXPRESSIONS.iter().copied()), rules::MAX_SPEC_BYTES, rules::MAX_TAKE_PROFITS, rules::MAX_LEGS, rules::MAX_VALID_BARS, rules::MAX_DELAY,
         rules::MAX_OFFSET, rules::MAX_OFFSET, rules::MAX_OFFSET, rules::MAX_PAUSE, crate::MAX_COMBOS, arr(defs));
@@ -332,7 +332,7 @@ fn gross_stats(ctx: &Ctx, run: &crate::Run) -> BTreeMap<&'static str, f64> {
 /// effective-price trades the run then holds (cost 0: costs are inside the prices).
 fn backtest(ctx: &Ctx, c: &Compiled, d: &Bars, from: usize, to: usize, cost: f64, money: Option<&ledger::Money>) -> Result<(crate::Run, Vec<String>, Option<ledger::Booked>), LabError> {
     let (real, events) = simulate_events(c, d, from, to);
-    let real = if c.exec.tick_size > 0. { ledger::snap_ticks(real, c.exec.tick_size) } else { real }; // AmiBroker Tick size
+    let real = if c.exec.tick_size > 0. { ledger::snap_ticks(real, c.exec.tick_size, |i| (d.low[i], d.high[i])) } else { real }; // AmiBroker Tick size
     trade_validation::check(&real, from, to, cost)?;
     let dates: Vec<String> = ctx.r.iter().map(|r| r.date.clone()).collect();
     if money.is_some_and(|m| m.limits.max_volume_pct.is_some()) && d.volume.is_none() {
@@ -377,8 +377,12 @@ fn market_of(selected: &crate::SelectedContext, ticker: &str) -> Option<&'static
 /// calendar (series::pad_align), each bar's source row, and the disclosure for execution_model.events. None when off.
 pub(super) fn padded(st: &State, spec: &Spec, selected: &crate::SelectedContext, ctx: &Ctx) -> Result<Option<(Vec<crate::Row>, Vec<Option<usize>>, String)>, LabError> {
     if !spec.exec.pad_align { return Ok(None); }
-    let reference = match market_of(selected, &ctx.r[0].ticker) { Some("in") => crate::BENCHMARK, Some("us") => "SPX",
-        _ => return Err(LabError::Unsupported("execution.pad_align needs the market's reference index (NIFTY 50 or SPX); this market has none".into())) };
+    // a chosen reference symbol must be one this engine has loaded (its own market); otherwise the market benchmark
+    let reference = match spec.exec.pad_ref.as_deref() {
+        Some(r) => r,
+        None => match market_of(selected, &ctx.r[0].ticker) { Some("in") => crate::BENCHMARK, Some("us") => "SPX",
+            _ => return Err(LabError::Unsupported("execution.pad_align needs a reference symbol on this market (pick one)".into())) },
+    };
     let calendar = st.ctxs.get(reference).map(|c| c.r).filter(|r| !r.is_empty()).ok_or_else(|| LabError::NeedsData(format!("execution.pad_align: the reference {reference} is not loaded")))?;
     let (rows, src, n_pad, n_drop) = series::pad_align(ctx.r, calendar);
     if rows.is_empty() { return Err(LabError::NeedsData(format!("execution.pad_align: no {reference} date falls inside this instrument's data"))); }
@@ -488,15 +492,7 @@ pub(super) fn run_spec(st: &State, q: &Query, spec: Spec) -> Result<String, LabE
     let pieces = |key: &str, v: Vec<(usize, f64, f64)>| if v.len() < 2 { String::new() } else {
         format!(",\"{key}\":{}", arr(v.iter().map(|(k, p, w)| format!("[\"{}\",{},{}]", ctx.r[*k].date, crate::num(*p), crate::num(*w)))))
     };
-    // AmiBroker report inputs: one row per shown trade (fill prices, effective return, money profit × initial equity: the
-    // ledger P&L in money mode, otherwise the compounded equity before the trade × its return).
-    let mut before = 1.;
-    let report_trades: Vec<report::ReportTrade> = shown.iter().zip(&run.trades).enumerate().map(|(k, (t, effective))| {
-        let ret = effective.ret(cost);
-        let profit = match (&booked, &money) { (Some(b), Some(m)) => b.rows[k].pnl / m.capital, _ => before * ret };
-        before += profit;
-        report::ReportTrade { dir: t.dir, entry_i: t.legs[0].i, exit_i: t.exit_i, entry_px: t.legs[0].px, ret, profit }
-    }).collect();
+    let (report_trades, years, exposure) = report_inputs(ctx, &run, &shown, booked.as_ref(), money.as_ref(), cost, compiled.exec.stops_immediately, from, to);
     let trades = arr(shown.iter().zip(&run.trades).zip(&report_trades).map(|((t, effective), rt)| { let (mae, mfe) = report::excursion(&ctx.r, rt); format!(
         "{{\"entry\":\"{}\",\"exit\":\"{}\",\"entry_i\":{},\"exit_i\":{},\"entry_px\":{},\"exit_px\":{},\"ret\":{},\"bars\":{},\"open\":{},\"signal\":\"{}\",\"reason\":\"{}\",\"dir\":{},\"entry_kind\":\"{}\",\"mae\":{},\"mfe\":{}{}{}{}}}",
         ctx.r[t.legs[0].i].date, ctx.r[t.exit_i].date, t.legs[0].i - from, t.exit_i - from, crate::num(t.legs[0].px), crate::num(t.exit_px),
@@ -509,9 +505,7 @@ pub(super) fn run_spec(st: &State, q: &Query, spec: Spec) -> Result<String, LabE
         _ => String::new(),
     };
     let stats = result_stats(ctx, &run, costs, booked.as_ref(), money.as_ref());
-    // AmiBroker's calendar (365-day years, actual bars per year) and exposure for the report only: `stats` keeps the shared definitions
-    let years = report::years(&ctx.r, from, to);
-    let report = report::report_json(&ctx.r, &run.equity, &report_trades, report::car(&run.equity, years), report::exposure(&report_trades, from, to),
+    let report = report::report_json(&ctx.r, &run.equity, &report_trades, report::car(&run.equity, years), exposure,
         run.equity.len() as f64 / years, &run.bh, report::car(&run.bh, years), spec.report.unwrap_or(report::DEFAULT_RATES));
     let cost_json = money.as_ref().map_or_else(|| costs.json(), declared_costs_json);
     Ok(format!(
@@ -519,6 +513,27 @@ pub(super) fn run_spec(st: &State, q: &Query, spec: Spec) -> Result<String, LabE
         esc(&label), model.json(Some(&events)), ctx.r[from].date, ctx.r[to].date, quoted((from..=to).map(|k| ctx.r[k].date.as_str())), arr((from..=to).map(|k| crate::num(ctx.c[k]))),
         arr(run.equity.iter().map(|v| crate::num(*v))), arr(gross.equity.iter().map(|v| crate::num(*v))), arr(run.bh.iter().map(|v| crate::num(*v))),
         crate::stats_json(&stats), crate::stats_json(&gross_stats(ctx, &gross)), cost_json, crate::source_provenance(st, q), adaptations(rules::series_ids(&spec).iter().map(String::as_str))))
+}
+/// AmiBroker report inputs of one run (the run report and the optimizer's `sheet=1`): one row per shown trade (fill prices,
+/// effective return, money profit × initial equity: the ledger P&L in money mode, otherwise the compounded equity before the
+/// trade × its return), the run's years and its exposure.
+fn report_inputs(ctx: &Ctx, run: &crate::Run, shown: &[crate::connors::Trade], booked: Option<&ledger::Booked>, money: Option<&ledger::Money>, cost: f64,
+    stops_immediately: bool, from: usize, to: usize) -> (Vec<report::ReportTrade>, f64, f64) {
+    let mut before = 1.;
+    let report_trades: Vec<report::ReportTrade> = shown.iter().zip(&run.trades).enumerate().map(|(k, (t, effective))| {
+        let ret = effective.ret(cost);
+        let profit = match (booked, money) { (Some(b), Some(m)) => b.rows[k].pnl / m.capital, _ => before * ret };
+        before += profit;
+        report::ReportTrade { dir: t.dir, entry_i: t.legs[0].i, exit_i: t.exit_i, entry_px: t.legs[0].px, exit_px: t.exit_px, ret, profit }
+    }).collect();
+    // AmiBroker's calendar (365-day years, actual bars per year) and exposure for the report only: `stats` keeps the shared definitions
+    let years = report::years(&ctx.r, from, to);
+    // AmiBroker with Activate stops immediately tests the built-in stops after the bar's signals, so a stop exit's bar still
+    // counts as held (NIFTY 50 stop_open_asi_on: exposure = held bars + its 35 stop exits; with it off the bar does not count)
+    let stop_bar = |t: &crate::connors::Trade| stops_immediately && !t.open && ["exit.stop_loss", "exit.target", "exit.trailing"].iter().any(|k| t.reason.starts_with(k));
+    let exposed: Vec<report::ReportTrade> = report_trades.iter().zip(shown).map(|(r, t)| report::ReportTrade { exit_i: r.exit_i + stop_bar(t) as usize, ..*r }).collect();
+    let exposure = report::exposure(&exposed, from, to);
+    (report_trades, years, exposure)
 }
 pub fn optimize_json(st: &State, q: &Query) -> Result<String, LabError> { optimize_since(st, q, std::time::Instant::now()) }
 /// The optimizer with its OPT_SECONDS clock started at `t0` (walk-forward shares one clock across all its windows).
@@ -564,6 +579,8 @@ fn optimize_spec(st: &State, q: &Query, spec: Spec, t0: std::time::Instant) -> R
     let fr = Frames::new(Bars::from_ctx(ctx));
     let dims = &spec.optimize;
     let combos: usize = dims.iter().map(|d| d.values.len()).product();
+    let sheet = q.get("sheet").is_some_and(|v| v == "1");
+    let sheet_n = if sheet { report::SHEET_COLS.len() } else { 0 };
     let metrics = |cache: &mut Cache, s: &Spec| -> Result<Vec<f64>, LabError> {
         rules::validate_applied(s)?;
         let mut c = series::compile_with(s, &fr, &others, cache)?;
@@ -572,6 +589,12 @@ fn optimize_spec(st: &State, q: &Query, spec: Spec, t0: std::time::Instant) -> R
         let (run, _, booked) = backtest(ctx, &c, &fr.d, from, to, cost, money.as_ref())?;
         let stats = result_stats(ctx, &run, costs, booked.as_ref(), money.as_ref());
         let mut out: Vec<f64> = crate::FULL_COLS.iter().map(|k| stats[k]).collect();
+        // sheet=1: the AmiBroker result-list values of this same run, as the Report tab; split off again after the grid
+        let sheet_vals = if sheet {
+            let shown = booked.as_ref().map_or_else(|| run.trades.clone(), ledger::Booked::fills);
+            let (rt, years, exposure) = report_inputs(ctx, &run, &shown, booked.as_ref(), money.as_ref(), cost, c.exec.stops_immediately, from, to);
+            report::sheet_row(&ctx.r, &run.equity, &rt, report::car(&run.equity, years), exposure, run.equity.len() as f64 / years, s.report.unwrap_or(report::DEFAULT_RATES), money.as_ref().map(|m| m.capital))
+        } else { Vec::new() };
         let mut ins = Vec::new();
         for (n, (a, b)) in split.map(|s| [(from, s - 1), (s, to)]).into_iter().flatten().enumerate() {
             let (run, _, booked) = backtest(ctx, &c, &fr.d, a, b, cost, money.as_ref())?;
@@ -581,10 +604,12 @@ fn optimize_spec(st: &State, q: &Query, spec: Spec, t0: std::time::Instant) -> R
         }
         if split.is_some() { out.extend(extra_rank_cols().iter().map(|k| ins[crate::FULL_COLS.iter().position(|c| c == k).unwrap()])); } // visible is_ ranked values
         out.extend(ins); // trailing in-sample copy of FULL_COLS: ranking basis only, never displayed
+        out.extend(sheet_vals);
         Ok(out)
     };
-    let base = metrics(&mut Cache::new(), &spec)?;
+    let mut base = metrics(&mut Cache::new(), &spec)?;
     let width = base.len();
+    base.truncate(width - sheet_n);
     let threads = std::thread::available_parallelism().map_or(4, |n| n.get()).min(combos);
     // Rows in mixed-radix order (last dimension fastest), as the book optimizer (main.rs optimize()).
     let (stop, done) = (AtomicBool::new(false), Arc::new(AtomicUsize::new(0)));
@@ -630,6 +655,9 @@ fn optimize_spec(st: &State, q: &Query, spec: Spec, t0: std::time::Instant) -> R
         all.sort_by_key(|r| r.0);
         Ok(all.into_iter().map(|r| r.1).collect())
     })?;
+    let mut rows_v = rows_v;
+    let sheet_v: Vec<Vec<f64>> = rows_v.iter_mut().map(|r| { let tail = r.split_off(r.len() - sheet_n); [&r[..dims.len()], &tail[..]].concat() }).collect();
+    let sheet_json = if sheet { format!(",\"sheet_cols\":{},\"sheet\":[{}]", quoted(report::SHEET_COLS.iter().copied()), sheet_v.iter().map(|r| arr(r.iter().map(|v| crate::num(*v)))).collect::<Vec<_>>().join(",")) } else { String::new() };
     // Ranking exactly as the book optimizer (main.rs optimize(): trade-rate floor, outcome columns, conclude_rank).
     let nd = dims.len();
     let ndisp = crate::FULL_COLS.len() + split.map_or(0, |_| 2 * crate::PART_COLS.len() + extra_rank_cols().len());
@@ -663,7 +691,7 @@ fn optimize_spec(st: &State, q: &Query, spec: Spec, t0: std::time::Instant) -> R
     if pool.is_empty() { warnings.push(format!("no combination is eligible: each needs at least {min_trades} trades")); }
     let info = info_json(t0.elapsed().as_millis(), combos, threads, &warnings);
     Ok(format!(
-        "{{\"label\":\"{}\",\"kind\":\"lab_optimization\",\"origin\":{origin}{money_block},\"instrument\":{instrument}{foreign_json},\"execution_model\":{},\"from\":\"{}\",\"to\":\"{}\",\"start\":{start},\"split\":{},\"combos\":{combos},\"threads\":{threads},\"ms\":{},\"dims\":{dims_json},\"cols\":{},\"base\":{},\"ranked_on\":\"{}\",\"rank\":{rank_json},\"picked\":{{{picked}}},\"rows\":[{rows}]{table}{info},\"costs\":{},\"provenance\":{}{}}}",
+        "{{\"label\":\"{}\",\"kind\":\"lab_optimization\",\"origin\":{origin}{money_block},\"instrument\":{instrument}{foreign_json},\"execution_model\":{},\"from\":\"{}\",\"to\":\"{}\",\"start\":{start},\"split\":{},\"combos\":{combos},\"threads\":{threads},\"ms\":{},\"dims\":{dims_json},\"cols\":{},\"base\":{},\"ranked_on\":\"{}\",\"rank\":{rank_json},\"picked\":{{{picked}}},\"rows\":[{rows}]{table}{sheet_json}{info},\"costs\":{},\"provenance\":{}{}}}",
         esc(&label), model.json(None), dates[from], dates[to], split.map_or("null".into(), |s| format!("\"{}\"", dates[s])), t0.elapsed().as_millis(),
         quoted(cols.iter().map(String::as_str)), arr(base.iter().map(|v| crate::num(*v))), if split.is_some() { "in_sample" } else { "full" }, cost_json, crate::source_provenance(st, q), adaptations(rules::series_ids(&spec).iter().map(String::as_str))))
 }
@@ -871,7 +899,7 @@ fn individual_optimize_json(st: &State, q: &Query, spec: Spec, t0: std::time::In
     for t in &tickers {
         if t0.elapsed().as_secs() >= OPT_SECONDS { return Err(LabError::Invalid(format!("individual optimization stopped after {OPT_SECONDS} s; use fewer symbols or a smaller grid. No partial result is published."))); }
         let mut qi = q.clone();
-        qi.remove("mode"); qi.insert("ticker".into(), t.clone()); qi.insert("slim".into(), "1".into());
+        qi.remove("mode"); qi.remove("sheet"); qi.insert("ticker".into(), t.clone()); qi.insert("slim".into(), "1".into());
         let body = match optimize_spec(st, &qi, single.clone(), t0) {
             Ok(b) => b,
             Err(LabError::NeedsData(why)) => { warnings.push(format!("{t} skipped: {why}")); results.push(format!("{{\"ticker\":\"{}\",\"skipped\":\"{}\"}}", esc(t), esc(&why))); continue; }
@@ -1403,6 +1431,59 @@ mod tests {
             for (i, k) in TABLE_KEYS.iter().enumerate() { assert_eq!(t[2 + i], f[at(k)], "{k}"); }
         }
     }
+    #[test] fn optimize_sheet_is_the_amibroker_result_list_of_the_report() {
+        use crate::lab::json::{parse, Json};
+        let st = state(700, "SPX", false);
+        let num = |v: &Json| v.as_f64();
+        for extra in [&[][..], &[("table", "1")][..], &[("sheet", "0")][..]] {
+            let body = optimize_json(&st, &q(extra)).unwrap();
+            assert!(!body.contains("\"sheet_cols\"") && !body.contains("\"sheet\""), "no sheet without sheet=1");
+        }
+        let (plain, with) = (parse(&optimize_json(&st, &q(&[])).unwrap()).unwrap(), parse(&optimize_json(&st, &q(&[("sheet", "1")])).unwrap()).unwrap());
+        for k in ["cols", "base", "rank", "rows", "picked", "dims"] { assert_eq!(plain.get(k), with.get(k), "{k} unchanged by sheet=1"); }
+        let Json::Arr(names) = with.get("sheet_cols").unwrap() else { panic!() };
+        assert_eq!(names.iter().filter_map(Json::as_str).collect::<Vec<_>>(), report::SHEET_COLS);
+        let Json::Arr(rows) = with.get("sheet").unwrap() else { panic!() };
+        assert_eq!(rows.len(), 9);
+        assert!(rows.iter().all(|r| matches!(r, Json::Arr(r) if r.len() == 2 + report::SHEET_COLS.len())));
+        // combination 4 (mixed radix, last dimension fastest) is length 5, 3 bars: the spec's own values, so run_json reports it
+        let Json::Arr(r4) = &rows[4] else { panic!() };
+        assert_eq!((num(&r4[0]), num(&r4[1])), (Some(5.), Some(3.)));
+        let at = |name: &str| num(&r4[2 + report::SHEET_COLS.iter().position(|c| *c == name).unwrap()]);
+        let run = parse(&run_json(&st, &q(&[])).unwrap()).unwrap();
+        let rep = run.get("report").unwrap();
+        let sys = |k: &str| rep.get("system").and_then(|s| s.get(k)).and_then(Json::as_f64).unwrap();
+        let all = |k: &str| rep.get("all").and_then(|s| s.get(k)).and_then(Json::as_f64).unwrap_or(f64::NAN);
+        let win = |k: &str| rep.get("all").and_then(|s| s.get("winners")).and_then(|s| s.get(k)).and_then(Json::as_f64).unwrap();
+        let close = |a: Option<f64>, b: f64, what: &str| assert!(a.map_or(b.is_nan(), |a| (a - b).abs() < 1e-4), "{what}: sheet {a:?} vs report {b}");
+        close(at("Net % Profit"), 100. * sys("net_profit"), "Net % Profit");
+        close(at("CAR"), 100. * sys("cagr"), "CAR");
+        close(at("Max. Sys % Drawdown"), 100. * sys("max_sys_dd"), "Max. Sys % Drawdown");
+        close(at("Exposure %"), 100. * sys("exposure"), "Exposure %");
+        close(at("Ulcer Index"), sys("ulcer_index"), "Ulcer Index");
+        close(at("# Trades"), all("trades"), "# Trades");
+        close(at("Profit Factor"), all("profit_factor"), "Profit Factor");
+        close(at("% of Winners"), 100. * win("pct"), "% of Winners");
+        close(at("W. Avg % Profit"), 100. * win("avg"), "W. Avg % Profit");
+        assert!(at("Net % Profit").is_some() && at("# Trades").unwrap() > 0. && at("CAR").is_some() && at("% of Winners").is_some());
+        // % mode has no money basis: the money columns are null, as is Max. Trade Drawdown (the report has it in % only)
+        for name in ["Net Profit", "Max. Trade Drawdown", "Max. Sys Drawdown", "Standard Error", "Avg Profit/Loss", "W. Tot. Profit", "W. Avg. Profit", "L. Tot. Loss", "L. Avg. Loss"] {
+            assert_eq!(at(name), None, "{name}");
+        }
+        // money mode: Net Profit is the ledger's final equity − capital
+        let money = SPEC.replace("\"v\":1", "\"v\":1,\"execution\":{\"capital\":100000,\"sizing\":{\"pct_equity\":50},\"costs\":{\"commission\":{\"per_order\":1}}}");
+        let spy = state(400, "SPY", false);
+        let qm = |extra: &[(&str, &str)]| { let mut m = q(&[("spec", &money), ("ticker", "SPY")]); m.remove("cost"); for (k, v) in extra { m.insert(k.to_string(), v.to_string()); } m };
+        let o = parse(&optimize_json(&spy, &qm(&[("sheet", "1")])).unwrap()).unwrap();
+        let Json::Arr(rows) = o.get("sheet").unwrap() else { panic!() };
+        let Json::Arr(r4) = &rows[4] else { panic!() };
+        let at = |name: &str| num(&r4[2 + report::SHEET_COLS.iter().position(|c| *c == name).unwrap()]);
+        let r = parse(&run_json(&spy, &qm(&[])).unwrap()).unwrap();
+        let fin = r.get("money").and_then(|m| m.get("final_equity")).and_then(Json::as_f64).unwrap();
+        close(at("Net Profit"), fin - 100000., "money Net Profit");
+        assert!(at("Max. Sys Drawdown").unwrap() <= 0. && at("Standard Error").is_some() && at("W. Tot. Profit").is_some());
+        assert_eq!(at("Max. Trade Drawdown"), None);
+    }
     #[test] fn split_ranks_on_the_in_sample_columns_only() {
         let n = crate::FULL_COLS.len();
         let row: Vec<f64> = [vec![1.], (0..n).map(|i| i as f64).collect(), vec![9.; 14], (0..n).map(|i| 100. + i as f64).collect()].concat();
@@ -1608,6 +1689,31 @@ mod tests {
         }
     }
 
+    #[test] fn an_index_runs_in_money_mode_like_an_amibroker_symbol() {
+        use crate::lab::json::{parse, Json};
+        let st = state(400, "SPX", false);
+        let money = SPEC.replace("\"v\":1", "\"v\":1,\"execution\":{\"capital\":1000000,\"sizing\":{\"pct_equity\":100}}");
+        let mut qm = q(&[("spec", &money)]);
+        qm.remove("cost");
+        let m = parse(&run_json(&st, &qm).unwrap()).unwrap();
+        let u = parse(&run_json(&st, &q(&[("cost", "0")])).unwrap()).unwrap();
+        let ex = m.get("execution_model").unwrap();
+        assert_eq!((ex.get("kind").and_then(Json::as_str), ex.get("mode").and_then(Json::as_str), ex.get("executable")), (Some("index"), Some("money"), Some(&Json::Bool(false))));
+        let Some(Json::Arr(notes)) = ex.get("notes") else { panic!() };
+        assert_eq!(notes.iter().filter_map(Json::as_str).collect::<Vec<_>>(), vec![crate::lab::model::INDEX, crate::lab::model::INDEX_MONEY]);
+        let f = |j: &Json, a: &str, b: &str| j.get(a).and_then(|v| v.get(b)).and_then(Json::as_f64).unwrap();
+        // net profit in money = capital × the net % return
+        let (fin, tr) = (f(&m, "money", "final_equity"), f(&m, "stats", "total_return"));
+        assert!((fin - 1e6 - 1e6 * tr).abs() < 1., "net profit {fin} vs total_return {tr}"); // stats print 6 decimals
+        // the % stats match the unit run at 100 % of equity, up to whole-unit rounding of the index level
+        for k in ["total_return", "win_rate", "max_dd"] { assert!((f(&m, "stats", k) - f(&u, "stats", k)).abs() < 1e-3, "{k}"); }
+        assert_eq!(f(&m, "stats", "trades"), f(&u, "stats", "trades"));
+        assert!(optimize_json(&st, &qm).unwrap().contains("\"money\":{\"capital\":1000000,"));
+        // the catalogue lists the AFL entry gates the engine supports
+        let c = parse(&catalogue_json()).unwrap();
+        let Some(Json::Arr(g)) = c.get("execution").and_then(|e| e.get("entry_gates")) else { panic!() };
+        assert_eq!(g.iter().filter_map(Json::as_str).collect::<Vec<_>>(), vec!["dead_stock", "penny_price", "turnover_filter", "aux1", "aux2"]);
+    }
     // ---- Phase 7: execution model, legs and fills, catalogue limits (spec §7, §9)
     #[test] fn runs_carry_the_execution_model_and_scale_out_fills() {
         let st = state(400, "SPX", false);
@@ -1699,7 +1805,7 @@ mod tests {
         let safer=spec.replace("\"capital\":10000", "\"capital\":10000,\"opposite\":\"exit\"");
         query.insert("spec".into(),safer); assert!(run_json(&st,&query).is_ok());
     }
-    #[test] fn money_mode_books_whole_shares_on_an_etf_and_refuses_an_index() {
+    #[test] fn money_mode_books_whole_shares_on_an_etf_and_an_index() {
         let st = state(400, "SPY", false);
         let money = r#"{"v":1,"entry":{"all":[{"lhs":{"s":"close"},"op":"crosses_above","rhs":{"s":"sma","p":{"length":5}}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":3}}]},
             "execution":{"capital":100000,"sizing":{"units":10},"costs":{"commission":{"per_order":1}}}}"#;
@@ -1715,8 +1821,9 @@ mod tests {
         assert!(run_json(&st, &q(&[("spec", money), ("ticker", "SPY")])).unwrap_err().message().contains("remove the cost and slippage query"));
         let short = money.replace(r#"{"v":1,"#, r#"{"v":1,"direction":"short","#);
         assert!(run_json(&st, &qm(&short, "SPY")).unwrap_err().message().contains("borrow_pct_year"));
+        // an index books whole units at its level (AmiBroker treats the index symbol like a stock), labelled a study
         let idx = state(400, "SPX", false);
-        assert_eq!(run_json(&idx, &qm(money, "SPX")).unwrap_err().status(), "needs_data");
+        assert!(run_json(&idx, &qm(money, "SPX")).unwrap().contains("\"execution_model\":{\"kind\":\"index\",\"mode\":\"money\",\"executable\":false"));
     }
     #[test] fn execution_limits_leave_todays_ledger_alone_until_set() {
         use crate::lab::json::{parse, Json};
@@ -1972,6 +2079,27 @@ mod money_settings_tests {
         let money = r#"{"capital":100000,"sizing":{"pct_equity":100},"limits":{"shrink":true}}"#;
         assert_eq!(run(&st, money).unwrap(), run(&st, &money.replace(r#""shrink":true"#, r#""shrink":true,"margin_pct":100"#)).unwrap());
     }
+    #[test] fn exposure_counts_a_stop_exit_bar_only_when_stops_are_active_immediately() {
+        let st = st();
+        let rules = format!("{},\"stop_loss\":{{\"pct\":0.5}}}}", RULES.strip_suffix('}').unwrap());
+        for asi in [true, false] {
+            let q: Query = [("ticker", "SPY"), ("spec", &format!(r#"{{"v":1,{rules},"execution":{{"fill":"next_open","activate_stops_immediately":{asi}}}}}"#) as &str)]
+                .iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+            let j = parse(&run_json(&st, &q).unwrap()).unwrap();
+            let (Some(Json::Arr(ts)), Some(Json::Arr(dates))) = (j.get("trades"), j.get("dates")) else { panic!() };
+            let (mut held, mut stops) = (vec![false; dates.len()], 0);
+            for t in ts {
+                let at = |k: &str| t.get(k).unwrap().as_f64().unwrap() as usize;
+                let stop = asi && t.get("open") != Some(&Json::Bool(true)) && t.get("reason").unwrap().as_str().unwrap().starts_with("exit.stop_loss");
+                stops += stop as usize;
+                for i in at("entry_i")..(at("exit_i") + stop as usize).min(dates.len()) { held[i] = true; }
+            }
+            let want = held.iter().filter(|h| **h).count() as f64 / dates.len() as f64;
+            let got = j.get("report").and_then(|r| r.get("system")).and_then(|s| s.get("exposure")).unwrap().as_f64().unwrap();
+            assert!((got - want).abs() < 1e-6, "activate_stops_immediately {asi}: {got} vs {want}");
+            if asi { assert!(stops > 0, "the fixture needs stop exits"); }
+        }
+    }
     #[test] fn tick_size_rounds_only_stop_exits_against_the_trader() {
         let st = st();
         // AmiBroker: the tick size affects only trades exited by the built-in stops; entries and rule exits keep their prices
@@ -2009,6 +2137,12 @@ mod money_settings_tests {
         let spec = format!(r#"{{"v":1,{RULES},"execution":{{"fill":"next_open","pad_align":true}}}}"#);
         let q: Query = [("ticker", "SPY"), ("mode", "explore"), ("spec", spec.as_str())].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
         assert_eq!(parse(&super::super::scan::scan_json(&st, &q).unwrap()).unwrap().get("dates"), v.get("dates"));
+        // a named reference symbol is used as given: the same calendar when it is the benchmark, refused when not loaded
+        let named = parse(&run(&st, r#"{"fill":"next_open","pad_align":"SPX"}"#).unwrap()).unwrap();
+        assert_eq!(named.get("dates"), v.get("dates"));
+        let err = run(&st, r#"{"fill":"next_open","pad_align":"NOPE"}"#).unwrap_err();
+        assert_eq!(err.status(), "needs_data");
+        assert!(err.message().contains("the reference NOPE is not loaded"), "{}", err.message());
         let spx = State { ctxs: BTreeMap::from([("SPY".into(), Ctx::new(rows("SPY", 50, |_| true), rows("SPY", 50, |_| true), &[]))]), ..st };
         assert_eq!(run(&spx, r#"{"fill":"next_open","pad_align":true}"#).unwrap_err().status(), "needs_data", "no reference loaded");
     }

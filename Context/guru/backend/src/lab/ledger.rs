@@ -76,8 +76,11 @@ pub(super) fn fill(c: &MoneyCosts, k: &Contract, i: usize, px: f64, qty: f64, bu
 /// rounds toward its limit side (sells up, covers down), so it never fills through it. Entries and other exits are not
 /// rounded. Levels are tested unrounded; with bars on the tick grid a stop then triggers exactly as at its adverse-rounded
 /// level. An open position's mark is not a fill and is left as is.
-pub fn snap_ticks(trades: Vec<Trade>, tick: f64) -> Vec<Trade> {
-    let snap = |px: f64, up: bool| { let n = px / tick; if (n - n.round()).abs() < 1e-9 { px } else if up { n.ceil() * tick } else { n.floor() * tick } };
+/// `range(bar)`: that bar's (low, high); a snapped price stays inside it (AmiBroker NIFTY 50, tick 5: a 3 % stop at 2704.36
+/// on 05-12-2008 sold at the low 2701.35, not at 2700).
+pub fn snap_ticks(trades: Vec<Trade>, tick: f64, range: impl Fn(usize) -> (f64, f64)) -> Vec<Trade> {
+    let snap = |px: f64, up: bool, bar: usize| { let n = px / tick; let (lo, hi) = range(bar);
+        (if (n - n.round()).abs() < 1e-9 { px } else if up { n.ceil() * tick } else { n.floor() * tick }).clamp(lo, hi) };
     trades.into_iter().map(|mut t| {
         let buy = t.dir > 0.;
         let stop = ["exit.stop_loss", "exit.target", "exit.trailing", "exit.breakeven"].iter().any(|k| t.reason.starts_with(k));
@@ -86,9 +89,9 @@ pub fn snap_ticks(trades: Vec<Trade>, tick: f64) -> Vec<Trade> {
         for (n, e) in t.exits.iter_mut().enumerate() {
             let last = n + 1 == pieces;
             // pieces before the last are take-profits; the last is the closing exit
-            if !last || (stop && !t.open) { e.1 = snap(e.1, !buy != (!last || target)); }
+            if !last || (stop && !t.open) { e.1 = snap(e.1, !buy != (!last || target), e.0); }
         }
-        if pieces > 0 { t.exit_px = t.exits.iter().map(|e| e.1 * e.2).sum(); } else if stop && !t.open { t.exit_px = snap(t.exit_px, !buy != target); }
+        if pieces > 0 { t.exit_px = t.exits.iter().map(|e| e.1 * e.2).sum(); } else if stop && !t.open { t.exit_px = snap(t.exit_px, !buy != target, t.exit_i); }
         t
     }).collect()
 }
@@ -441,7 +444,10 @@ mod tests {
         assert_eq!(cash.margin_interest, 0., "no account margin: nothing is borrowed");
     }
     #[test] fn tick_size_rounds_fills_against_the_trader_and_limits_toward_their_limit() {
-        let snap = |t: Trade| snap_ticks(vec![t], 0.05).remove(0);
+        let snap = |t: Trade| snap_ticks(vec![t], 0.05, |_| (f64::MIN, f64::MAX)).remove(0);
+        // a snapped stop stays inside its bar: the low when rounding down passes it
+        let mut low = trade(1., &[(1, 100., 1.)], (3, 98.03), "next_open"); low.reason = "exit.stop_loss".into();
+        assert_eq!(snap_ticks(vec![low], 0.05, |_| (98.01, 99.)).remove(0).exit_px, 98.01);
         // AmiBroker: tick size affects only exits by the built-in stops; entries and rule exits keep their prices
         let mut stop = trade(1., &[(1, 100.03, 0.5), (2, 99.97, 0.5)], (3, 98.03), "next_open"); stop.reason = "exit.stop_loss".into();
         let s = snap(stop);

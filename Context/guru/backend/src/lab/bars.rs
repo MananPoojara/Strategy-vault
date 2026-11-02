@@ -24,6 +24,9 @@ pub struct Bars {
     pub footprint: Option<super::footprint::Footprint>,
     /// The footprint file this ticker would read (named in needs_data notes); empty outside daily ticker bars.
     pub footprint_file: String,
+    /// AmiBroker Aux1 / Aux2 of a ticker (extra_data `<TICKER>__Aux1.csv` / `__Aux2.csv`, aligned daily, NaN = no value);
+    /// None when the data has no such column (execution.aux1 / aux2 then answer needs_data).
+    pub aux: [Option<Vec<f64>>; 2],
 }
 
 /// Market breadth of the instrument's market, aligned to its daily bars (NaN = no value that day).
@@ -55,7 +58,7 @@ impl Bars {
             close: rows.iter().map(|r| r.close).collect(),
             volume,
             end: (0..rows.len()).collect(),
-            breadth: None, second: None, expiry: None, expiry_sessions: None, late_volume, footprint: None, footprint_file: String::new(),
+            breadth: None, second: None, expiry: None, expiry_sessions: None, late_volume, footprint: None, footprint_file: String::new(), aux: [None, None],
         }
     }
     /// Volume on every bar, or the late volume with the bars before it empty (NaN).
@@ -78,6 +81,7 @@ impl Bars {
             b.footprint_file = super::footprint::file_name(t);
             b.footprint = super::footprint::load(t, &b.date);
         }
+        b.aux = ["Aux1", "Aux2"].map(|k| ctx.extra.get(k).filter(|v| v.iter().any(|x| x.is_finite())).cloned());
         let key = |c: &str| ctx.extra.keys().find(|k| k.ends_with(&format!("_ADV_DEC.{c}"))).cloned();
         let col = |c: &str| key(c).map(|k| ctx.extra[&k].clone());
         // gl/crypto ids are "EXCHANGE:SYMBOL"; a wildcard extra file must not hand them an India/US market's breadth.

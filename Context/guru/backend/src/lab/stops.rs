@@ -83,7 +83,7 @@ fn wilder_vi(b: &Bars, prm: &Params) -> Output {
         sar = if long { sic - m * a[i] } else { sic + m * a[i] };
         s[i] = sar; dir[i] = if long { 1. } else { -1. };
     }
-    Ok(vec![s, dir])
+    Ok(vec![s, dir, a])
 }
 fn chop_zone(b: &Bars, prm: &Params) -> Output {
     let k = n(prm, "length");
@@ -143,7 +143,7 @@ pub const DEFS: &[IndicatorDef] = &[
     def("chande_kroll", "Chande Kroll Stop", CK, &["stop_long", "stop_short"], PR, NO, "fhs = highest(high, p) − x·atr(p); fls = lowest(low, p) + x·atr(p); stop_short = highest(fhs, q); stop_long = lowest(fls, q) (window restarts after NaN, as ta.highest)", &[9, 9], false, chande_kroll),
     def("chandelier", "Chandelier Exit", CH, &["long_stop", "short_stop", "direction"], PR, NO, "long = highest(close or high, n) − mult·atr(n), ratcheted up while close[1] > long[1]; short = lowest(close or low, n) + mult·atr(n), ratcheted down while close[1] < short[1]; direction +1 when close > short[1], −1 when close < long[1], else unchanged (starts +1)", &[21, 21, 21], false, chandelier),
     def("vstop", "Volatility Stop", VS, &["stop", "direction"], PR, NO, "TradingView pine_vstop on close: atrM = atr(n)·factor (tr before the ATR exists); trailing max/min of close since the last flip; stop = max(stop, max − atrM) in an uptrend, min(stop, min + atrM) in a downtrend; flip when close crosses the stop", &[0, 0], false, vstop),
-    def("wilder_vi", "Volatility Index (Wilder)", WV, &["sar", "direction"], PR, NO, "Wilder Volatility System (declared): ARC = mult·atr(length); SIC = extreme close since the trend began; sar = SIC − ARC (long) / SIC + ARC (short); reverse when close crosses the previous sar; starts long (declared defaults length 7, mult 3)", &[6, 6], false, wilder_vi),
+    def("wilder_vi", "Volatility Index (Wilder)", WV, &["sar", "direction", "vi"], PR, NO, "Wilder Volatility System (declared): vi = Wilder's Volatility Index = atr(length) with Wilder smoothing (AmiBroker ATR(length)); ARC = mult·vi; SIC = extreme close since the trend began; sar = SIC − ARC (long) / SIC + ARC (short); reverse when close crosses the previous sar; starts long (declared defaults length 7, mult 3)", &[6, 6, 6], false, wilder_vi),
     def("chop_zone", "Chop Zone", CZ, &["angle", "zone"], PN, NO, "span = 25/(highest(high, length) − lowest(low, length))·lowest(low, length); y = (ema[1] − ema)/hlc3·span; angle = ±round(degrees(acos(1/√(1 + y²)))), negative when y > 0; zone 4…−4 by thresholds 5, 3.57, 2.14, 0.71 (else 0) (declared defaults length 30, ema_length 34)", &[34, 34], false, chop_zone),
     def("rwi", "Random Walk Index", RW, &["hi", "lo", "rwi"], PN, NO, "for n in min..=max: (high − low[n])/(sma(tr, n)·√n) and (high[n] − low)/(sma(tr, n)·√n); hi/lo = max over n (NaN terms skipped); rwi = hi − lo; min_length > max_length → invalid (AmiBroker RWIHi/RWILo/RWI)", &[40, 40, 40], false, rwi),
     def("asi", "Accumulative Swing Index", AS, &["asi"], PN, NO, "Wilder: K = max(|h − c1|, |l − c1|); R from the largest of |h − c1|, |l − c1|, h − l (with 0.25·|c1 − o1|); SI = 50·(c − c1 + 0.5(c − o) + 0.25(c1 − o1))/R·K/limit (R = 0 → 0); asi = cumulative SI from bar 1 (declared default limit 10)", &[1], false, asi),
@@ -174,6 +174,8 @@ mod tests {
         let o = go("wilder_vi", &d1(), &[("length", 2.), ("mult", 1.)]);
         assert_series(&o[0], &[N, 9.5, 10.25, 10.425, 11.7375, 11.71875, 10.390625, 11.0953125]);
         assert_series(&o[1], &[N, 1., 1., 1., -1., -1., 1., 1.]);
+        // vi is Wilder's Volatility Index itself: the ATR the stop is built from, no multiplier
+        assert_series(&o[2], &go("atr", &d1(), &[("length", 2.)])[0]);
     }
     #[test] fn chop_zone_angles() {
         let o = go("chop_zone", &d1(), &[("length", 2.), ("ema_length", 2.)]);

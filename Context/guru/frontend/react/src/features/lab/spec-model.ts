@@ -26,8 +26,7 @@ export const defaultSpec = (): Spec => ({
   entry: { all: [{ lhs: { s: "close" }, op: ">", rhs: { s: "ema", p: { length: 50 } } }] },
   exit: { any: [{ lhs: { s: "bars_held" }, op: ">=", rhs: { value: 5 } }] },
 });
-/** A new strategy on the page: one indicator buy rule shown in the Entry card, ready to change (RSI 14 crosses above 30),
- *  no sell rule (the test uses the default exit, defaults.ts), trades at the signal bar's close. */
+/** The blank base: one indicator buy rule (RSI 14 crosses above 30), no sell rule, trades at the signal bar's close. */
 export const starterSpec = (): Spec => ({ v: 1, entry: { all: [{ lhs: { s: "rsi", p: { length: 14 } }, op: "crosses_above", rhs: { value: 30 } }] }, exit: { any: [] }, execution: { fill: "close" } });
 
 export const isValue = (o: unknown): o is ValueOperand =>
@@ -391,3 +390,14 @@ export function specSummary(spec: Spec, cat: Catalogue): string {
   const exitParts = [...(d.exitWhen.length ? [`when ${joinList(d.exitWhen.map(phraseText), "or")}`] : []), ...d.exitOther.map(phraseText)];
   return `${entry}${d.entryOrder ? `, ${phraseText(d.entryOrder)}` : ""}. ${exitParts.length ? `${d.sell} ${exitParts.join(" or ")}.` : "No exit rule yet."}`;
 }
+
+/** A new strategy on the page, ready to change: the starter buy rule, no filter (Filters › Indicator adds close above EMA 200)
+ *  and the ATR exit at the Exit card's own defaults (AmiBroker dual ATR, initial 5 × 2, favour 5 × 4
+ *  on (H+L)/2). */
+export const newStrategySpec = (): Spec => {
+  const s = starterSpec();
+  return { ...s,
+    exit: { ...s.exit, dual_atr: { initial: { period: 5, mult: 2, price: "hl2" }, favour: { period: 5, mult: 4, price: "hl2" } } } as Spec["exit"],
+    // the team's AFLs: no entry on an upper-circuit close (UC), and an exit on a lower-circuit close waits (LC)
+    execution: { ...s.execution, defer_exit_on_circuit: true, skip_entry_on_circuit: true } };
+};

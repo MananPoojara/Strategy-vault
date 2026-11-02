@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { editorState, initialLabState, labReducer, runKey } from "../src/features/lab/lab-state";
-import { defaultSpec, setAt, starterSpec } from "../src/features/lab/spec-model";
+import { defaultSpec, newStrategySpec, setAt, starterSpec } from "../src/features/lab/spec-model";
 import { catalogueFixture as cat, strategyFixture } from "./fixtures/lab";
 import { readLabQuery } from "../src/features/lab/url-state";
 
@@ -47,7 +47,10 @@ it("submit readiness: unchanged row, same instrument, fresh successful run", () 
   const reordered = labReducer(s, { type: "row", row: { ...row, version: 4, spec: JSON.parse(JSON.stringify(row.spec, ["v", "exit", "any", "lhs", "s", "op", "rhs", "value", "entry", "all", "p", "length"])) } });
   expect(editorState(reordered, "in").unchanged).toBe(true);
   expect(labReducer(s, { type: "tried", n: 3 }).tried).toBe(4);
-  expect(initialLabState(readLabQuery("#/indicators")).spec).toEqual(starterSpec()); // one RSI buy rule to change, no sell rule (the default exit applies), the signal bar's close
+  // a new strategy: the RSI buy rule and the ATR exit; Filters start off
+  expect(initialLabState(readLabQuery("#/indicators")).spec).toEqual(newStrategySpec());
+  expect(newStrategySpec().entry.all).toEqual(starterSpec().entry.all); // no filter row
+  expect(newStrategySpec().exit.dual_atr).toEqual({ initial: { period: 5, mult: 2, price: "hl2" }, favour: { period: 5, mult: 4, price: "hl2" } });
   expect(starterSpec()).toEqual({ v: 1, entry: { all: [{ lhs: { s: "rsi", p: { length: 14 } }, op: "crosses_above", rhs: { value: 30 } }] }, exit: { any: [] }, execution: { fill: "close" } });
 });
 it("uses a portfolio save/run identity independently of the chart ticker",()=>{

@@ -439,16 +439,24 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
     const measure = () => {
       const el = priceRef.current, fs = !!workspaceRef.current?.closest(".lab-maximized");
       setFull(fs);
-      if (!el) return;
-      const top = el.getBoundingClientRect().top + (fs ? 0 : window.scrollY);
-      setFit(Math.max(360, Math.round(window.innerHeight - top - panesHeight - (fs ? 48 : 72))));
+      if (!el || el.closest("[hidden]")) return; // another tab is showing: nothing to measure
+      const box = el.getBoundingClientRect(), top = box.top + (fs ? 0 : window.scrollY);
+      // in the page, everything under the price chart (panes, range row, notes, the next-step strip) stays on screen too;
+      // that height does not depend on the chart's own height, so this settles in one pass
+      const page = workspaceRef.current?.closest<HTMLElement>(".lab-page") ?? workspaceRef.current;
+      const below = page ? page.getBoundingClientRect().bottom - box.bottom : panesHeight + 72;
+      setFit(Math.max(360, Math.round(window.innerHeight - top - (fs ? panesHeight + 48 : below + 8))));
     };
     measure();
+    // notes and the strip under the chart change after the data loads (trades, provisional notes): measure again
+    const page = workspaceRef.current?.closest<HTMLElement>(".lab-page");
+    const observer = typeof ResizeObserver === "undefined" || !page ? null : new ResizeObserver(() => measure());
+    observer?.observe(page!);
     // leaving the browser's full screen (Esc) also leaves the window-filling view
     const left = () => { if (!document.fullscreenElement) maximize(false); else measure(); };
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape" && !document.fullscreenElement) maximize(false); };
     window.addEventListener("resize", measure); document.addEventListener("fullscreenchange", left); window.addEventListener("keydown", esc);
-    return () => { window.removeEventListener("resize", measure); document.removeEventListener("fullscreenchange", left); window.removeEventListener("keydown", esc); };
+    return () => { observer?.disconnect(); window.removeEventListener("resize", measure); document.removeEventListener("fullscreenchange", left); window.removeEventListener("keydown", esc); };
   }, [panesHeight, chips.length, ohlcError]); // eslint-disable-line react-hooks/exhaustive-deps
   // The chart tab fills the window, and the screen when the browser allows it (it needs the user's own click).
   const maximize = (on: boolean) => {
@@ -509,12 +517,14 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
     aria-label={full ? "Exit full screen" : "Full screen"} onClick={toggleFull}><svg viewBox="0 0 24 24" aria-hidden="true">
       <path d={full ? "M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" : "M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"} /></svg></button>;
   const controls = <div className="lab-chart-actions" role="toolbar" aria-label="Chart workspace">
-    <label className="lab-chart-type-control"><span className="lab-control-name">Chart type</span><select aria-label="Chart type" value={chartType} onChange={(event) => { closePanel(); setChartType(event.target.value as ChartType); setTypeOpen(false); setOpenKey(null); setTool(null); }}>
-      {CHART_TYPES.map(([value, label]) => <option key={value} value={value} disabled={value !== "candles" && !find(value)?.computed}>{label}</option>)}
-    </select></label>
-    {typeInd && <button type="button" className="dbtn sm" data-lab-type-params aria-expanded={typeOpen} onClick={() => { setLibraryOpen(false); setTypeOpen(true); }}>{typeName} settings</button>}
-    {library && <button type="button" className="dbtn sm lab-add-indicator" aria-expanded={libraryOpen} onClick={() => { if (!libraryOpen) { closePanel(); setOpenKey(null); setTypeOpen(false); } setLibraryOpen(!libraryOpen); }}><svg width="19" height="19" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><path d="M2 17h16M4 15V9m5 6V5m5 10v-4M2 7l5-5 5 4 6-5" /></svg>Indicators</button>}
-    {fullButton}
+    <div className="lab-tool-group" role="group" aria-label="Chart type and indicators">
+      <label className="lab-chart-type-control"><span className="lab-control-name">Chart type</span><select aria-label="Chart type" value={chartType} onChange={(event) => { closePanel(); setChartType(event.target.value as ChartType); setTypeOpen(false); setOpenKey(null); setTool(null); }}>
+        {CHART_TYPES.map(([value, label]) => <option key={value} value={value} disabled={value !== "candles" && !find(value)?.computed}>{label}</option>)}
+      </select></label>
+      {typeInd && <button type="button" className="dbtn sm" data-lab-type-params aria-expanded={typeOpen} onClick={() => { setLibraryOpen(false); setTypeOpen(true); }}>{typeName} settings</button>}
+      {library && <button type="button" className="dbtn sm lab-add-indicator" title="Add or edit indicators" aria-expanded={libraryOpen} onClick={() => { if (!libraryOpen) { closePanel(); setOpenKey(null); setTypeOpen(false); } setLibraryOpen(!libraryOpen); }}><svg width="19" height="19" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><path d="M2 17h16M4 15V9m5 6V5m5 10v-4M2 7l5-5 5 4 6-5" /></svg>Indicators</button>}
+    </div>
+    <div className="lab-tool-group lab-tool-group-view" role="group" aria-label="View">{fullButton}</div>
   </div>;
   return (
     <section ref={workspaceRef} className="box lab-workbench" data-indicator-display={timeless ? "chips" : "on-chart"}>
@@ -548,6 +558,7 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
               onChange={saveDrawings} onDone={() => setTool(null)} />}
             <div className="lab-legend-tv" ref={legendRef} aria-hidden="true" />
             {!timeless && <div className="lab-chart-indicators">{chips.map((chip, index) => find(chip.id)?.placement !== "pane" ? labelFor(chip, index) : null)}</div>}
+            {tool && <p className="cap lab-drawing-hint" data-lab-draw-hint>{tool === "t" ? "Press on the chart and drag to the end of the line (or click the start, then the end)" : "Move to a price and click"} · Esc cancels</p>}
             {behind && <button type="button" className="lab-latest" data-lab-latest title="Scroll to the latest bar" aria-label="Scroll to the latest bar" onClick={() => toLatest.current?.()}>»</button>}
           </div>
           <ChartPaneDivider label="Price pane height" height={paneHeights.price ?? fit} defaultHeight={fit} onChange={(height) => setPaneHeights((all) => ({ ...all, price: height }))} />
@@ -567,20 +578,19 @@ export function Workbench({ market, ticker, tf, range, catalogue, chips, trades,
         </div>
 
       </div>
-      {tool && <p className="cap lab-drawing-hint" data-lab-draw-hint>{tool === "t" ? "Press on the chart and drag to the end of the line (or click the start, then the end)" : "Move to a price and click"} · Esc cancels</p>}
-      {onRange && <div className="lab-chart-footer" role="group" aria-label="Chart range">{(["1Y", "3Y", "All"] as ChartRange[]).map((value) => <button key={value} type="button" aria-pressed={range === value} onClick={() => onRange(value)}>{value}</button>)}<span>{TF_NAMES[tf] ?? tf} · {ticker}</span></div>}
+      {onRange && <div className="lab-chart-footer" role="group" aria-label="Chart range">{(["1Y", "3Y", "All"] as ChartRange[]).map((value) => <button key={value} type="button" aria-pressed={range === value} onClick={() => onRange(value)}>{value}</button>)}{!timeless && <span>{COPY.chartNote}</span>}</div>}
       {panelOpen && <ChartPopup key={libraryOpen ? "library" : openKey ?? chartType} wide={libraryOpen} title={libraryOpen ? "Indicators" : "Indicator settings"} onClose={closePanel}>{panel}</ChartPopup>}
       {timeless ? <p className="cap" data-lab-timeless-note>
-        {`${typeName} is drawn without a date axis from the engine's ${typeName} outputs on daily bars (the same values the rules use); hover a ${nounOf(chartType)} for its dates. The last ${nounOf(chartType)} can still change until the next one forms. Indicator chips, drawings and the candle size apply to Candles only.`}
+        {`${typeName} from the engine's outputs on daily bars (the values the rules use), without a date axis: hover a ${nounOf(chartType)} for its dates; the last ${nounOf(chartType)} can still change. Indicator chips, drawings and candle size apply to Candles only.`}
         {shown && shown.total > shown.slots && ` Showing the latest ${MAX_SLOTS.toLocaleString("en-US")} of ${shown.total.toLocaleString("en-US")} ${nounOf(chartType, true)}; a larger box shows more history.`}
-      </p> : <p className="cap">{COPY.chartNote}</p>}
+      </p> : !onRange && <p className="cap">{COPY.chartNote}</p>}
       {foreignNotes.map(note=><p className="cap" role="note" key={note}>{note}</p>)}
       {adaptations.map((note) => <p className="rnote" role="note" data-lab-adaptations key={note}>{note}</p>)}
       {tf !== "D" && !timeless && <p className="cap">{COPY.inProgress(tf)}</p>}
       {!!trades?.length && timeless && <p className="cap"><span style={{ color: "var(--green)" }}>▲ Buy</span> · <span style={{ color: "var(--red)" }}>▼ Sell</span>. Triangles point at the real fill price, on the {nounOf(chartType)} that holds the fill date.</p>}
       {!!trades?.length && !timeless && (
         <p className="cap">
-          <span style={{ color: "var(--green)" }}>↑ Buy</span> · <span style={{ color: "var(--red)" }}>↓ Sell</span>. Arrows show backtest actions; smaller arrows show added legs. Shaded spans are trades: green won, red lost, grey still open.{tf !== "D" && " Trades run on daily bars and are mapped onto this timeframe."}
+          <span style={{ color: "var(--green)" }}>↑ Buy</span> · <span style={{ color: "var(--red)" }}>↓ Sell</span>. Small arrows: added legs. Shaded trades: green won, red lost, grey open.{tf !== "D" && " Trades run on daily bars and are mapped onto this timeframe."}
         </p>
       )}
     </section>

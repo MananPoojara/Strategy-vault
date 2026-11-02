@@ -12,7 +12,7 @@ fn tech_ratings(b: &Bars, _: &Params) -> Output {
     for k in [10., 20., 30., 50., 100., 200.] { mas.push(r("sma", &[("length", k)])?.remove(0)); mas.push(r("ema", &[("length", k)])?.remove(0)); }
     mas.push(r("hma", &[("length", 9.)])?.remove(0));
     if b.volume.is_some() { mas.push(r("vwma", &[("length", 20.)])?.remove(0)); }
-    let ich = r("ichimoku", &[])?;
+    let ich = r("ichimoku", &[("conversion", 9.), ("base", 26.), ("span_b", 52.), ("displacement", 25.)])?; // TradingView rating: classic 9/26/52/26 (its 26 is 25 bars in the lab's AmiBroker count)
     let trend = r("sma", &[("length", 50.)])?.remove(0);
     let rsi = r("rsi", &[("length", 14.)])?.remove(0);
     let st = r("stoch", &[("k", 14.), ("smooth_k", 3.), ("d", 3.)])?;

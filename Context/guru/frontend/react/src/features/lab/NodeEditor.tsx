@@ -1,4 +1,4 @@
-import { Fragment, useRef, useState, type ReactNode } from "react";
+import { createContext, Fragment, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { COPY } from "./labels";
 import { NumField, OperandEditor } from "./OperandEditor";
 import { CANDLES, OPERATOR_LABELS, candleCount, candleCountNode, isSeries, isValue, ordinal, rulePhrase, setAt, type CandleKind, type Side } from "./spec-model";
@@ -16,6 +16,8 @@ type Obj = Record<string, unknown>;
 type AddKind = Parameters<typeof newNode>[0];
 const ADD_KINDS = Object.keys(COPY.addOptions) as AddKind[];
 const GROUP_TITLES: Record<string, string> = { all: "All of", any: "Any of", not: "Not", at_least: "At least", then: "Sequence" };
+/** A list's "Expand all / Collapse all": every group under it opens or shuts when `n` changes (UI only, never in the spec). */
+const FoldAll = createContext<{ open: boolean; n: number } | null>(null);
 
 export function RuleList({ list, onChange, listPath, title, tag, catalogue, caps, short = listPath.startsWith("short_side."), filters = false, notice, footer }: {
   list: RuleNode[]; onChange(list: RuleNode[]): void; listPath: ListPath; title: string; tag: string; catalogue: Catalogue; caps: TreeCaps;
@@ -31,8 +33,12 @@ export function RuleList({ list, onChange, listPath, title, tag, catalogue, caps
   const side: Side = listPath.endsWith("exit.any") ? "exit" : "entry";
   const put = (i: number, n: RuleNode) => onChange(list.map((v, j) => j === i ? n : v));
   const simple = useSimple(), params = useParamList(), [fresh, setFresh] = useState(-1); // Simple: a row added by hand opens in its editor
+  const [fold, setFold] = useState({ open: true, n: 0 }), grouped = !simple && list.some((n) => GROUP_TITLES[nodeKind(n)]);
   return <div className="lab-list" data-lab-list={filters ? `${listPath}.filters` : listPath}>
     <h3>{title}</h3>
+    {grouped && <button type="button" className="dbtn sm ghost lab-fold-all" data-lab-fold-all aria-expanded={fold.open}
+      onClick={() => setFold({ open: !fold.open, n: fold.n + 1 })}>{fold.open ? "Collapse all groups" : "Expand all groups"}</button>}
+    <FoldAll.Provider value={fold}>
     {!simple && !params && <p className="cap lab-list-help">{filters ? COPY.filterListHelp : side === "exit" ? COPY.exitListHelp : COPY.entryListHelp}</p>}
     {notice}
     {list.map((node, i) => {
@@ -50,6 +56,7 @@ export function RuleList({ list, onChange, listPath, title, tag, catalogue, caps
           <input type="checkbox" aria-label={`${tag} ${i + 1}: ${COPY.filterExit}`} checked={x.filter_exit === true} onChange={(e) => put(i, mark(bare as RuleNode, e.target.checked))} />{COPY.filterExit}</label>}
       </Fragment>;
     })}
+    </FoldAll.Provider>
     <div className="lab-list-actions">
     <AddMenu title={title} caps={caps} top onAdd={(n) => { setFresh(list.length); onChange([...list, filters ? newFilter() : n]); }} />
     {side === "exit" && <select data-lab-exit-presets aria-label={`Add a ready-made exit to ${title}`} value=""
@@ -114,7 +121,8 @@ export function NodeEditor({ node, onChange, onRemove, onMove, canUp = false, ca
   /** An on/off switch (rules.rs `off`): top-level rules and the conditions of an all/any group. */
   switchable?: boolean;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(true), fold = useContext(FoldAll), folded = useRef(fold?.n);
+  useEffect(() => { if (fold && fold.n !== folded.current) { folded.current = fold.n; setOpen(fold.open); } }, [fold]); // a group added later starts open
   const compact = useCompact(), simple = useSimple(), params = useParamList();
   const [more, setMore] = useState(!compact); // the page keeps a row's timing, source and group/move behind "More"
   const [parts, setParts] = useState(false); // an "Nth up close after entry" exit opened as its full condition
@@ -193,17 +201,23 @@ export function NodeEditor({ node, onChange, onRemove, onMove, canUp = false, ca
   const kids = kind === "not" || kind === "at_least" ? [x[key] as RuleNode] : x[key] as RuleNode[];
   const single = kind === "not" || kind === "at_least";
   const setKids = (next: RuleNode[]) => set({ [key]: single ? next[0] : next });
-  const title = GROUP_TITLES[kind];
+  const title = GROUP_TITLES[kind], pick = kind === "all" || kind === "any";
+  // the header reads as one phrase: "[All of ▾] 3 conditions", "Sequence of 2 steps", "Not"
+  const count = `${kids.length} ${kind === "then" ? "step" : "condition"}${kids.length === 1 ? "" : "s"}`;
+  const summary = pick ? count : kind === "then" ? `${title} of ${count}` : title;
+  const toggle = <button type="button" className="dbtn sm ghost lab-group-toggle" data-lab-group-toggle aria-expanded={open}
+    aria-label={`${label}: ${pick ? `${title} ${count}` : summary}`} onClick={() => setOpen(!open)}>{summary}</button>;
   return <div className={`lab-group lab-node${offClass}`} data-lab-node data-lab-kind={kind} data-lab-off={off || undefined}>
     <div className="lab-group-h">
       {onOff}
-      <button type="button" className="dbtn sm ghost" aria-expanded={open} onClick={() => setOpen(!open)}>{title}</button>
-      {(kind === "all" || kind === "any") && <select aria-label="Group type" value={kind} onChange={(e) => {
+      {!pick && toggle}
+      {pick && <select aria-label="Group type" value={kind} onChange={(e) => {
         const next = e.target.value;
         if ((next === "all" || next === "any") && next !== kind) {
           const rest = { ...x }; delete rest[kind]; onChange({ ...rest, [next]: kids } as RuleNode);
         }
       }}><option value="all">All of</option><option value="any">Any of</option></select>}
+      {pick && toggle}
       {kind === "at_least" && <>{number("at_least", "at least")}<span className="lab-word">of the last</span>{number("of", "of (bars)")}<span className="lab-word">bars</span></>}
       {kind === "then" && <><span className="lab-word">within</span>{number("within", "within (bars)")}<span className="lab-word">bars</span></>}
       {menu}{remove}

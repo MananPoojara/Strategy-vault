@@ -2,7 +2,7 @@ import { XLSX_TYPE } from "../src/features/lab/xlsx";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { act } from "react";
-import { RunResults, RunTables, drawdown, kpiItems, tradeTable } from "../src/features/lab/RunResults";
+import { RunResults, RunTables, yoyRows, monthPivot, drawdown, kpiItems, tradeTable } from "../src/features/lab/RunResults";
 import { PROVISIONAL_NOTE } from "../src/features/lab/labels";
 import { mount, runFixture, run7Fixture, money7Fixture, unmount } from "./fixtures/lab";
 
@@ -80,7 +80,8 @@ it("monthly table from VaultReport; table and CSV button absent without it", asy
   expect(cells[1]).toBe("2.0%");
   expect(cells).toHaveLength(14); // Year, 12 months, Total (no Yr% column)
   expect(cells.slice(1, 13).filter((c) => c === "0.0%" || c === "—")).toEqual([]); // a month with no return is blank
-  expect(host.querySelector(".lab-monthly caption")!.textContent).toBe("YOY-Monthly");
+  expect(host.querySelector(".lab-monthly caption")!.firstChild!.textContent).toBe("YOY-Monthly ");
+  expect(host.querySelector("[data-lab-yoy-download]")!.textContent).toBe("Download Excel");
   expect(host.querySelector("[data-lab-pivot-total] td")!.textContent).toBe("Total");
   expect(host.querySelector(".lab-monthly thead th:last-child")!.textContent).toBe("Total");
   await unmount();
@@ -214,7 +215,9 @@ it("Underwater Equity: equity ÷ running peak − 1 on the lab chart engine, sha
   expect(area.kind).toBe("area"); expect(area.opts).toMatchObject({ invertFilledArea: true });
   expect(area.data).toEqual(runFixture.dates.map((time, i) => ({ time, value: values[i] })));
   const worst = values.reduce((k, v, i) => (v < values[k] ? i : k), 0);
-  expect(area.markers).toEqual([expect.objectContaining({ time: runFixture.dates[worst], text: `Worst ${(values[worst] * 100).toFixed(2)}% · ${runFixture.dates[worst].split("-").reverse().join("-")}` })]);
+  expect(area.markers).toEqual([expect.objectContaining({ time: runFixture.dates[worst], shape: "circle" })]); // the point is marked on the chart
+  // its label sits above the chart, so it never clips at the chart's left edge
+  expect(host.querySelector("[data-lab-drawdown-worst]")?.textContent).toBe(`Worst ${(values[worst] * 100).toFixed(2)}% · ${runFixture.dates[worst].split("-").reverse().join("-")}`);
   const loc = dd.options.localization as { timeFormatter(t: unknown): string; priceFormatter(v: number): string };
   expect(loc.timeFormatter("2020-03-25")).toBe("25-03-2020"); expect(loc.timeFormatter({ year: 2020, month: 3, day: 5 })).toBe("05-03-2020");
   expect(loc.priceFormatter(-0.1234)).toBe("-12.3%");
@@ -263,4 +266,21 @@ it("Download TS sits under the tradesheet: the format picked from the start date
   expect(many.textContent).toContain("5 sheets");
   const later = await mount(<TsDownload result={{ ...runFixture, from: "2010-01-04" }} explain={ctx} />);
   expect(later.querySelector('[aria-label="Tradesheet format"] [aria-pressed="true"], [aria-label="Tradesheet format"] [aria-checked="true"]')!.textContent).toBe("From 2008");
+});
+
+it("YOY-Monthly download rows: Year, months, Total; returns in % with 2 decimals; Total and Avg rows; blanks stay blank", () => {
+  const m = { years: ["2024", "2025"], months: { "2024-01": 0.0123, "2024-03": -0.05, "2025-02": 0.1 } as Record<string, number>, averages: [0.0123, 0.1, -0.05, ...Array(9).fill(null)] };
+  const rows = yoyRows(m, monthPivot(m.years, m.months));
+  expect(rows[0]).toEqual(["Year", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Total"]);
+  expect(rows[1].slice(0, 4)).toEqual(["2024", 1.23, null, -5]); expect(rows[1][13]).toBe(-3.77);
+  expect(rows[3][0]).toBe("Total"); expect(rows[3][13]).toBe(6.23); expect(rows[4][0]).toBe("Avg");
+});
+
+it("Stats tab headline row: net profit, annual return, drawdown, CAR/MDD, winners, trades, exposure, with the report's labels and rounding", async () => {
+  const side = { trades: 4, avg: 0.01, avg_bars: 3, profit_factor: 2, payoff: 1, winners: { count: 3, pct: 0.75, total: 0, avg: 0, avg_bars: 0, largest: 0, bars_in_largest: 0, max_consecutive: 0 }, losers: null };
+  const report = { all: side, long: side, short: side, system: { net_profit: 0.1234, cagr: 0.0567, max_sys_dd: -0.0812, car_mdd: 0.7, exposure: 0.4321 }, notes: [] } as never;
+  const host = await mount(<RunResults result={{ ...runFixture, report }} market="in" chartsOnly />);
+  const tiles = [...host.querySelectorAll("[data-lab-result] .metric")].map((m) => [m.querySelector("span")!.firstChild!.textContent, m.querySelector("b")!.textContent]);
+  expect(tiles).toEqual([["Net Profit %", "12.34%"], ["Annual return %", "5.67%"], ["Max. system % drawdown", "-8.12%"], ["CAR/MDD", "0.70"],
+    ["Winners %", "75.00%"], ["# Trades", "4"], ["Exposure %", "43.21%"]]);
 });

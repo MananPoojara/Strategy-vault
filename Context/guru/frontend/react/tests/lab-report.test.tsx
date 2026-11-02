@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import { act } from "react";
-import { distribution, formulaText, parameterLines, ReportPanel, settingsLines, symbolRows } from "../src/features/lab/Report";
+import { distribution, formulaText, parameterLines, ReportPanel, reportSheets, settingsLines, symbolRows } from "../src/features/lab/Report";
 import { defaultSpec } from "../src/features/lab/spec-model";
 import type { LabReport, ReportSide, Trade } from "../src/features/lab/types";
 import { mount } from "./fixtures/lab";
@@ -178,4 +178,17 @@ it("Stats colours profit and drawdown figures by sign, as AmiBroker's report doe
   expect(cell("Exposure %").className).toBe("n");
   expect(cell("Recovery Factor").className).toBe("n"); // "—"
   expect([...host.querySelectorAll("[data-lab-report-stats] caption")].map((c) => c.textContent)).toEqual(["Returns", "Trades", "Winners", "Losers", "Risk & ratios"]);
+});
+
+it("Download report: a Statistics sheet with every card as on screen, then the trade list", async () => {
+  const sheets = reportSheets(report, { from: "2020-01-01", to: "2021-01-01", instrument: { ticker: "NIFTY 50" } }, [["Symbol", "Trade type"], ["NIFTY 50", "Long"]]);
+  expect(sheets.map((s) => s.name)).toEqual(["Statistics", "Trades"]);
+  const rows = sheets[0].rows;
+  expect(rows[0]).toEqual(["Returns"]); expect(rows[1]).toEqual(["", "All trades", "Long trades", "Short trades"]); // no Buy&Hold figures: no column
+  expect(rows.find((r) => r[0] === "All trades")).toEqual(["All trades", "2", "2", "0"]);
+  expect(rows.some((r) => r[0] === "Risk & ratios")).toBe(true);
+  expect(sheets[1].rows[1]).toEqual(["NIFTY 50", "Long"]);
+  expect(reportSheets(report, undefined).map((s) => s.name)).toEqual(["Statistics"]); // no trades: one sheet
+  const host = await mount(<ReportPanel report={report} trades={[]} tradeRows={[["Symbol"]]} />);
+  expect(host.querySelector("[data-lab-download-report]")!.textContent).toBe("Download report");
 });

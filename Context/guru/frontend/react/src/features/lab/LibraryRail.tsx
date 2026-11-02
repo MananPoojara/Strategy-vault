@@ -9,6 +9,16 @@ import "./library.css";
 const MINE = "My indicators", POPULAR_GROUP = "Popular";
 /** "My indicators" group: the user's saved formulas; absent `onEdit` hides the group (no account storage). */
 export interface MineProps { list: SavedIndicator[]; error?: unknown; canEdit: boolean; onAdd(row: SavedIndicator): void; onEdit(row: SavedIndicator | null): void }
+/** Why an entry cannot be added, from the catalogue's own metadata (needs flags and the engine's note); null when it can. */
+export function statusTag(ind: Indicator, ok: boolean, hasVolume: boolean): { label: string; warn?: boolean } | null {
+  if (ok) return null;
+  if (ind.computed) return ind.needs.volume && !hasVolume ? { label: "no volume", warn: true } : { label: "not on this chart" };
+  const note = (ind.note ?? "").toLowerCase();
+  if (note.includes("looks ahead") || note.includes("drawing/display")) return { label: "display only" };
+  if (note.includes("formula not published")) return { label: "formula unpublished" };
+  if (Object.values(ind.needs ?? {}).some(Boolean)) return { label: "needs data" };
+  return { label: "not computed" };
+}
 const narrow = () => typeof window !== "undefined" && !!window.matchMedia?.("(max-width: 900px)").matches;
 
 export function LibraryRail({ catalogue, market, hasVolume, tf, onAdd, onRead, mine, docked = false }: {
@@ -45,7 +55,7 @@ export function LibraryRail({ catalogue, market, hasVolume, tf, onAdd, onRead, m
         <b title={ind.name}>{fullName ? ind.name : shortName(ind)}</b>
         <small>{reason || (fullName ? ind.category : (simple && plainOf(ind)) || ind.definition)}</small>
       </button>
-      {!ok && <span className={`tag${ind.needs.volume && !hasVolume ? " warn" : ""}`}>{ind.needs.volume && !hasVolume ? "volume" : "needs data"}</span>}
+      {(() => { const tag = statusTag(ind, ok, hasVolume); return tag && <span className={`tag${tag.warn ? " warn" : ""}`} data-lab-status={tag.label}>{tag.label}</span>; })()}
       <button type="button" className="dbtn ghost sm" aria-label={`About ${ind.name}`} onClick={() => onRead(ind)}>i</button>
     </li>;
   };
@@ -59,8 +69,8 @@ export function LibraryRail({ catalogue, market, hasVolume, tf, onAdd, onRead, m
       <div className="lab-picker-body">
         <nav className="lab-picker-categories" aria-label="Indicator categories">
           <span>Built-in</span>
-          {["All indicators", ...categories.map(([name]) => name)].map((name) => <button key={name} type="button" aria-pressed={category === name && !searching}
-            title={name} onClick={() => { setQuery(""); setCategory(name); }}>{name}</button>)}
+          {[["All indicators", catalogue.indicators] as [string, Indicator[]], ...categories].map(([name, list]) => <button key={name} type="button" aria-pressed={category === name && !searching}
+            onClick={() => { setQuery(""); setCategory(name); }}>{name}<small aria-label={`${list.length} indicators`}>{list.length}</small></button>)}
           {mine && <><span>Personal</span><button type="button" aria-pressed={category === MINE && !searching} onClick={() => { setQuery(""); setCategory(MINE); }}>{MINE}</button></>}
         </nav>
         <div className="lab-picker-results">
@@ -78,7 +88,7 @@ export function LibraryRail({ catalogue, market, hasVolume, tf, onAdd, onRead, m
           {!visible.length && !showMine && <p className="empty">No indicator matches "{query}".</p>}
         </div>
       </div>
-      <p className="lab-lib-foot">Click a name to add it to the chart · <span className="tag">needs data</span> listed, not available yet · <b>i</b> formula and sources</p>
+      <p className="lab-lib-foot">Click a name to add it to the chart · greyed entries say why: <span className="tag">needs data</span> <span className="tag">formula unpublished</span> <span className="tag">display only</span> · <b>i</b> formula and sources</p>
     </aside>;
   }
   const body = (
@@ -118,7 +128,7 @@ export function LibraryRail({ catalogue, market, hasVolume, tf, onAdd, onRead, m
       ))}
       {popular && <button type="button" className="dbtn sm lab-popular-more" data-lab-show-all onClick={() => setAll(true)}>Show all {catalogue.indicators.length} indicators by category</button>}
       {simple && all && !searching && <button type="button" className="dbtn sm ghost lab-popular-more" onClick={() => setAll(false)}>Show popular only</button>}
-      <p className="lab-lib-foot">Click a name to add it to the chart · <span className="tag">needs data</span> listed, not available yet · <b>i</b> formula and sources</p>
+      <p className="lab-lib-foot">Click a name to add it to the chart · greyed entries say why: <span className="tag">needs data</span> <span className="tag">formula unpublished</span> <span className="tag">display only</span> · <b>i</b> formula and sources</p>
     </>
   );
   return (

@@ -8,6 +8,8 @@
 .lab-toolbar-chart { position:relative; min-width:0; background:var(--card); border-bottom:1px solid var(--rule); }
 .lab-chart-topbar { display:flex; align-items:center; gap:0; min-height:44px; padding:3px 8px; min-width:0; }
 .lab-chart-topbar > :not(.lab-chart-popup) { flex-shrink:0; }
+/* The Workbench bar wraps this one: one padding and one bottom rule, not two. */
+.lab-chart-topbar .lab-chart-topbar { flex-wrap:wrap; row-gap:4px; min-height:0; padding:0; border-bottom:0; }
 .lab-symbol-button { display:inline-flex; align-items:center; gap:8px; max-width:240px; min-height:34px; padding:5px 12px; border:0; border-radius:4px; background:none; color:var(--ink); font:600 13px var(--font); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; }
 .lab-symbol-button:hover, .lab-intervals-flat button:hover, .lab-interval-menu summary:hover { background:var(--panel); }
 .lab-intervals-flat { align-items:center; flex-wrap:nowrap; padding:0 7px; margin:0 7px; border-left:1px solid var(--rule); border-right:1px solid var(--rule); }
@@ -49,7 +51,7 @@
 .lab-toolbar-chart :is(.lab-symbol-button, .lab-intervals-flat > button, .lab-interval-menu summary):hover { background: var(--hover); color: var(--ink); }
 .lab-toolbar-chart :is(.lab-symbol-button, .lab-intervals-flat > button, .lab-interval-menu summary):active { transform: scale(.97); }
 .lab-toolbar-chart .lab-interval-menu[open] > summary { background: var(--hover); color: var(--ink); }
-.lab-toolbar-chart .lab-intervals-flat > button[aria-pressed=true] { color: var(--blue); background: color-mix(in srgb, var(--blue) 12%, var(--card)); }
+.lab-toolbar-chart :is(.lab-intervals-flat > button[aria-pressed=true], .lab-interval-menu > summary.lab-interval-active) { color: var(--blue); background: color-mix(in srgb, var(--blue) 12%, var(--card)); }
 .lab-toolbar-chart :is(button, summary):focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent), inset 0 0 0 1px var(--blue); }
 /* the interval menu: a card with a tracked section label */
 .lab-toolbar-chart .lab-interval-list { border-color: var(--rule); border-radius: var(--r-box); box-shadow: 0 2px 6px rgb(0 0 0 / .06), 0 14px 32px -12px rgb(0 0 0 / .28); }

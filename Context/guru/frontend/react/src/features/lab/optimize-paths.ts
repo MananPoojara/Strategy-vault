@@ -1,7 +1,8 @@
-import { isSeries, getAt } from "./spec-model";
+import { isChoice, isSeries, getAt } from "./spec-model";
 import { walkSpec, pathLabel } from "./rule-tree";
 import { LEVEL_SLOTS, LEVELS, TP_BOUNDS, levelAt, levelForm, takeProfits, type LevelBounds } from "./execution-model";
-import { shortName } from "./catalogue";
+import { PARAM_NAMES, shortName } from "./catalogue";
+import { paramLabel } from "./labels";
 import { infoOf, isFormulaOperand, wholeParam, type FormulaCheck } from "./formula";
 import type { Spec, Catalogue, EntryLevel } from "./types";
 export interface OptimizableSetting { path: string; label: string; group: string; current: number; min: number; max: number; step: number; integer: boolean }
@@ -9,38 +10,56 @@ export interface OptimizableSetting { path: string; label: string; group: string
 /** `formulas`: check results per formula text (the page's FormulaContext); a formula operand's Params are listed once its check is known. */
 export function optimizablePaths(spec: Spec, cat: Catalogue, formulas: Record<string, FormulaCheck> = {}): OptimizableSetting[] {
   const out: OptimizableSetting[] = [], both = spec.direction === "both";
-  const groupOf = (root: string) => {
+  // a filter row lives in entry.all with `filter: true`; it is grouped as a filter, as the rule cards show it
+  const isFilter = (path: string) => { const m = /^((?:short_side\.)?entry\.all)\[(\d+)\]/.exec(path); return !!m && ((getAt(spec, m[1]) as { filter?: boolean }[] | undefined) ?? [])[Number(m[2])]?.filter === true; };
+  const groupOf = (root: string, path = "") => {
     const short = root.startsWith("short_side."), prefix = short ? "Short " : both ? "Long " : "", base = root.replace(/^short_side\./, "");
-    const text = base === "portfolio.score" ? "rank score" : base === "entry.all" ? "entry" : base === "exit.any" ? "exit" : "entry order";
+    const text = base === "portfolio.score" ? "rank score" : base === "entry.all" ? (isFilter(path) ? "filters" : "entry") : base === "exit.any" ? "exit" : "entry order";
     return prefix ? prefix + text : text[0].toUpperCase() + text.slice(1);
   };
   const full = new Map<string, string>(); // path -> long label, used only where the short one would be ambiguous
   // "Entry 1 › right · Exponential Moving Average Length" -> "Entry 1: EMA Length" (sides dropped, AmiBroker-style name: value)
-  const named = (path: string, at: string, tail?: string) => {
-    const [head, ...rest] = pathLabel(at, both).split(" › ").filter((p) => p !== "left" && p !== "right");
+  // the Filters card's rows are entry.all items marked `filter`: "Filter 1", as the card names them, not "Entry 2"
+  const asFilter = (label: string, at: string) => {
+    const m = /^((?:short_side\.)?entry\.all)\[(\d+)\]/.exec(at);
+    const all = m ? (getAt(spec, m[1]) as { filter?: boolean }[] | undefined) ?? [] : [];
+    if (!m || !all[Number(m[2])]?.filter) return label;
+    const n = all.slice(0, Number(m[2]) + 1).filter((x) => x.filter).length;
+    return label.replace(/(^|Long |Short )?Entry \d+/, (_x, side = "") => `${side}Filter ${n}`);
+  };
+  const named = (path: string, at: string, tail?: string) => asFilter(namedRaw(path, at, tail), at);
+  const namedRaw = (path: string, at: string, tail?: string) => {
+    // "number" is the path's generic name for a compared value: the tail names it ("RSI threshold", "Days held")
+    const [head, ...rest] = pathLabel(at, both).split(" › ").filter((p) => p !== "left" && p !== "right" && !(tail && p === "number"));
     const name = tail ?? rest.pop() ?? "value";
     full.set(path, tail ? `${pathLabel(at, both)} · ${tail}` : pathLabel(at, both));
     return `${[head, ...rest].join(" › ")}: ${name}`;
   };
+  // the number a rule compares with, named as its card names it: "RSI threshold", "Candles", "Days held"
+  const knobName = (path: string): string | undefined => {
+    if (!path.endsWith(".rhs.value")) return undefined;
+    const lhs = (getAt(spec, path.slice(0, -".rhs.value".length)) as { lhs?: { s?: string; since_entry?: string } } | undefined)?.lhs;
+    if (lhs?.since_entry) return "Candles";
+    if (lhs?.s === "bars_held") return "Days held";
+    const ind = lhs?.s ? cat.indicators.find((d) => d.id === lhs.s) : undefined;
+    return ind ? `${shortName(ind)} threshold` : "Threshold";
+  };
   walkSpec(spec, (item) => {
-    // a rule's on/off switch (rules.rs `….off`): top-level rules and the conditions of an all/any group
-    if (item.t === "node" && (item.top || /\.(all|any)\[\d+\]$/.test(item.path))) {
-      out.push({ path: `${item.path}.off`, label: `${pathLabel(item.path, both)}: switched off (0 on, 1 off)`, group: groupOf(item.root),
-        current: (item.node as { off?: unknown }).off === true ? 1 : 0, min: 0, max: 1, step: 1, integer: true });
-      return;
-    }
+    // rules switch on and off in the cards, not as a number to sweep: no "switched off (0 on, 1 off)" rows
+    if (item.t === "node") return;
     if (item.t === "knob") {
       const span = Math.max(Math.abs(item.value) * 0.5, 1);
-      out.push({ path: item.path, label: named(item.path, item.path), group: groupOf(item.root), current: item.value,
+      out.push({ path: item.path, label: named(item.path, item.path, knobName(item.path)), group: groupOf(item.root, item.path), current: item.value,
         min: item.whole ? item.min : item.value - span, max: item.whole ? item.max : item.value + span, step: 1, integer: item.whole || Number.isInteger(item.value) });
     } else if (item.t === "operand" && isSeries(item.operand)) {
       const o = item.operand, ind = cat.indicators.find((d) => d.id === o.s);
-      for (const p of ind?.params ?? []) out.push({ path: `${item.path}.p.${p.key}`, label: named(`${item.path}.p.${p.key}`, item.path, `${shortName(ind!)} ${p.label}`),
-        group: groupOf(item.root), current: o.p?.[p.key] ?? p.default, min: p.min, max: p.max, step: p.step ?? (p.integer ? 1 : (p.max - p.min) / 100), integer: p.integer });
+      // the calculation choice (AmiBroker / Wilder …) is a setting the card keeps, not a number to sweep; numbers use the card's names
+      for (const p of (ind?.params ?? []).filter((q) => !isChoice(q))) out.push({ path: `${item.path}.p.${p.key}`, label: named(`${item.path}.p.${p.key}`, item.path, `${shortName(ind!)} ${PARAM_NAMES[ind!.id]?.[p.key] ?? paramLabel(p.label)}`),
+        group: groupOf(item.root, item.path), current: o.p?.[p.key] ?? p.default, min: p.min, max: p.max, step: p.step ?? (p.integer ? 1 : (p.max - p.min) / 100), integer: p.integer });
     } else if (item.t === "operand" && isFormulaOperand(item.operand)) {
       const o = item.operand;
       for (const p of infoOf(formulas[o.formula])?.params ?? []) out.push({ path: `${item.path}.p.${p.key}`, label: named(`${item.path}.p.${p.key}`, item.path, `${o.name} › ${p.key}`),
-        group: groupOf(item.root), current: o.p?.[p.key] ?? p.default, min: p.min, max: p.max, step: p.step > 0 ? p.step : (p.max - p.min) / 100, integer: wholeParam(p) });
+        group: groupOf(item.root, item.path), current: o.p?.[p.key] ?? p.default, min: p.min, max: p.max, step: p.step > 0 ? p.step : (p.max - p.min) / 100, integer: wholeParam(p) });
     }
   });
   const distance = (path: string, label: string, group: string, level: EntryLevel | undefined, bounds: LevelBounds) => {

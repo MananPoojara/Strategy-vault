@@ -6,11 +6,12 @@ import { optimizablePaths, type OptimizableSetting } from "./optimize-paths";
 import { useFormulaScope } from "./formula";
 import {foreignDescription} from "./foreign-model";
 import { portfolioGridProblems } from "./portfolio-model";
-import { ExecutionStrip } from "./RunResults";
 import { ErrorNotice, isProvisional, Loading, ProvisionalStrip, ServerLabel, tone } from "./ui";
 import { InfoLog, WalkForward } from "./WalkForward";
 import { OptimizeSurface } from "./OptimizeSurface";
 import { TradesheetButton, TradesheetDownloads } from "./TradesheetDownloads";
+import { optimizationList, optimizationWorkbook, sheetFileName } from "./optimize-sheet";
+import { saveBytes, xlsx, XLSX_TYPE } from "./xlsx";
 import type { Catalogue, IndividualOptimizeResult, OptimizeDim, LabOptimizeResult, LabRunResult, Role, SavedMarket, Spec, WalkforwardOptions, WalkforwardResult } from "./types";
 import "./optimize.css";
 
@@ -202,8 +203,7 @@ function LabOptimizeResultView({ result, spec, ranSpec, catalogue, settings, mar
   ];
   return (
     <div data-lab-optimize-result>
-      <ServerLabel text={result.label} />
-      <ExecutionStrip model={result.execution_model} money={result.money} adaptations={result.adaptations} />
+      {/* the page title carries the simulated / not-a-book-method notice; the Results tab keeps the label and execution strip */}
       {result.money && <p className="cap">{result.money.basis}</p>}
       {isProvisional(market) && <ProvisionalStrip note={result.provisional_note} instrumentLabel={("instrument" in result ? result.instrument.label : undefined) ?? instrumentLabel} />}
       {"membership" in result && <p className="rnote">{result.reference.ticker} reference · {result.membership.note}</p>}
@@ -212,7 +212,7 @@ function LabOptimizeResultView({ result, spec, ranSpec, catalogue, settings, mar
       <p className="cap">
         {result.combos.toLocaleString("en-US")} settings tested · {rank.eligible.toLocaleString("en-US")} eligible (at least {rank.min_trades} trades) · {rank.distinct.toLocaleString("en-US")} distinct
       </p>
-      {rank.eligible === 0 ? <p className="rnote">{COPY.noEligible(rank.min_trades)}</p> : (
+      {rank.eligible === 0 ? <p className="rnote">{COPY.noEligible(rank.min_trades)}</p> : (<>
         <div className="tblwrap">
           <table className="tbl ocmp">
             <thead>
@@ -237,9 +237,9 @@ function LabOptimizeResultView({ result, spec, ranSpec, catalogue, settings, mar
                 <tr key={r.name}>
                   <td>{r.name}</td>
                   {dims.map((d, i) => <td className="n" key={d.path}>{dimFmt(r.pct ? r.values[i] : ranSettings.find((s) => s.path === d.path)?.current)}</td>)}
-                  {stats.map((s, k) => {
-                    const x = colValue(result, r.values, rankCol(s)), v = fmt(s, x);
-                    return <td className={tone(x)} key={s}>{r.pct && typeof r.pct[k] === "number" ? `${v} · p${Math.round(r.pct[k])}` : v}</td>;
+                  {stats.map((s) => {
+                    const x = colValue(result, r.values, rankCol(s));
+                    return <td className={tone(x)} key={s}>{fmt(s, x)}</td>;
                   })}
                   {phases.map((ph) => SPLIT_STATS.map(([k]) => { const x = colValue(result, r.values, `${ph}_${k}`); return <td className={k === "trades" ? "n" : tone(x)} key={`${ph}_${k}`}>{fmt(k, x)}</td>; }))}
                   <td>{r.pct && r.values.length === result.cols.length && dims.every((d) => setting(d.path)) &&
@@ -250,14 +250,21 @@ function LabOptimizeResultView({ result, spec, ranSpec, catalogue, settings, mar
             </tbody>
           </table>
         </div>
-      )}
+      </>)}
       {result.split && <p className="rnote">{COPY.splitNote}</p>}
       {dims.length === 2 && result.table && result.table_cols && <OptimizeSurface dims={dims} table={result.table} cols={result.table_cols}
         metricLabel={(k) => TABLE_LABELS[k] ?? k} show={tableShow} label={(p) => setting(p)?.label ?? p} />}
       {dims.length === 2 && result.table && result.split && <p className="cap">Chart: in-sample (ranking period) values.</p>}
       {sheets && result.table && <TradesheetDownloads {...sheets} table={result.table} />}
-      <AllResults result={result} label={(p) => setting(p)?.label ?? p}
-        excel={sheets ? (row) => <TradesheetButton {...sheets} values={row.slice(0, dims.length) as number[]} /> : undefined} />
+      {result.kind === "lab_optimization" && result.sheet && result.sheet_cols && <div className="lab-row">
+        <button type="button" className="dbtn sm" data-lab-action="optimize-sheet" title="AmiBroker-style optimization workbook: Rules and every combination, sorted on CAR/MDD"
+          onClick={() => { const ctx = { ranSpec, label, group: (p: string) => setting(p)?.group ?? ranSettings.find((s) => s.path === p)?.group, instrumentLabel };
+            const book = optimizationWorkbook(result, ctx); if (book) saveBytes(xlsx(book), sheetFileName(result, ctx), XLSX_TYPE); }}>Download optimization sheet</button>
+      </div>}
+      {result.kind === "lab_optimization" && result.sheet ? <SheetList list={optimizationList(result, ranSpec, label)} nd={dims.length}
+        excel={sheets ? (vals) => <TradesheetButton {...sheets} values={vals} /> : undefined} />
+        : <AllResults result={result} label={(p) => setting(p)?.label ?? p}
+          excel={sheets ? (row) => <TradesheetButton {...sheets} values={row.slice(0, dims.length) as number[]} /> : undefined} />}
       <InfoLog info={result.info} />
     </div>
   );
@@ -299,6 +306,42 @@ function IndividualResults({ result, label }: { result: IndividualOptimizeResult
 }
 
 /** AmiBroker's optimization result list: every combination, click a header to sort. Collapsed until asked for. */
+const COUNT_COLS = new Set(["No.", "# Trades", "# of winners", "# of losers"]);
+/** The team's AmiBroker optimization sheet on the page: every combination with AmiBroker's columns, the settings and the team's
+ *  derived columns (same as the download), sorted on CAR/MDD; a header click sorts, as in AmiBroker's result list. */
+function SheetList({ list, nd, excel }: { list: ReturnType<typeof optimizationList>; nd: number; excel?(values: number[]): ReactNode }) {
+  const [sort, setSort] = useState<{ col: number; dir: 1 | -1 } | null>(null);
+  const [all, setAll] = useState(false);
+  if (!list) return null;
+  const { head, rows, settingsAt: s0 } = list, isSetting = (k: number) => k >= s0 && k < s0 + nd; // settings sit after the AmiBroker columns
+  const order = sort === null ? rows : [...rows].sort((a, b) => {
+    const x = a[sort.col], y = b[sort.col];
+    return x === y ? 0 : x === null ? 1 : y === null ? -1 : (x - y) * sort.dir;
+  });
+  const shown = all ? order : order.slice(0, PAGE);
+  const by = (i: number) => setSort((s) => (s?.col === i ? { col: i, dir: s.dir === 1 ? -1 : 1 } : { col: i, dir: i === 0 ? 1 : -1 }));
+  const show = (h: string, i: number, v: number | null) => (v === null ? "" : COUNT_COLS.has(h) ? int(v) : isSetting(i) ? dimFmt(v) : num(v));
+  return (
+    <div className="lab-opt-all" data-lab-optimize-sheet-list>
+      <h4 className="lab-opt-sheet-h">Optimization result list <small>{rows.length.toLocaleString("en-US")} combinations · as in the AmiBroker sheet, sorted on CAR/MDD · click a column to sort</small></h4>
+      <div className="tblwrap">
+        <table className="tbl ocmp lab-opt-all-table">
+          <thead><tr>{head.map((h, i) => (
+            <th key={h + i} className={`n${sort?.col === i ? " on" : ""}`} aria-sort={sort?.col === i ? (sort.dir === 1 ? "ascending" : "descending") : "none"}>
+              <button type="button" className="lab-sort" onClick={() => by(i)}>{h}{sort?.col === i ? (sort.dir === 1 ? " ▲" : " ▼") : ""}</button>
+            </th>
+          ))}{excel && <th>Tradesheet</th>}</tr></thead>
+          <tbody>{shown.map((r) => (
+            <tr key={r[0]}>{r.map((v, k) => <td key={k} className={COUNT_COLS.has(head[k]) || isSetting(k) ? "n" : tone(v)}>{show(head[k], k, v)}</td>)}
+              {excel && <td>{excel(r.slice(s0, s0 + nd) as number[])}</td>}</tr>
+          ))}</tbody>
+        </table>
+      </div>
+      {!all && rows.length > PAGE && <button type="button" className="dbtn sm" onClick={() => setAll(true)}>Show all {rows.length.toLocaleString("en-US")}</button>}
+    </div>
+  );
+}
+
 function AllResults({ result, label, title = "All results", total, excel }: {
   result: Pick<LabOptimizeResult, "dims" | "table" | "table_cols" | "split"> & { money?: { capital: number } }; label(path: string): string; title?: string;
   /** Rows the server had before capping the list (Individual optimize). */

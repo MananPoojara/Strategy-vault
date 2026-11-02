@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { dayFirst } from "./DateField";
+import { saveBytes, xlsx, XLSX_TYPE } from "./xlsx";
 import { linePoints } from "./bars";
 import { createLabChart, themeColors, useThemeKey } from "./charts";
 import { DASH, int, num, pct } from "./format";
@@ -7,9 +8,9 @@ import { COPY } from "./labels";
 import { friendlyReason } from "./spec-model";
 import { reasonLabeler, type RunContext } from "./trade-explain";
 import { TsDownload } from "./TsDownload";
-import type { Catalogue, RunResult, SavedMarket, Spec, Stats, Piece, ExecutionModel, MoneySummary, Instrument } from "./types";
+import type { Catalogue, RunResult, SavedMarket, Spec, Stats, Piece, ExecutionModel, MoneySummary, Instrument, LabReport } from "./types";
 import { neverMeets } from "./scale-check";
-import { MetricTiles, ProvisionalStrip, Segmented, ServerLabel, isProvisional } from "./ui";
+import { HelpTip, MetricTiles, ProvisionalStrip, Segmented, ServerLabel, isProvisional } from "./ui";
 import "./results.css";
 
 const PAGE = 100;
@@ -29,6 +30,29 @@ export const kpiItems = (s: Stats) => {
     { label: "Avg. profit/loss %", value: pct(s.avg_trade, 2) }, { label: "Sharpe", value: num(s.sharpe) }, { label: "Buy & hold CAGR", value: pct(s.bh_cagr) },
   ];
 };
+
+/** The Stats tab's headline tiles, from the report so they match its cards (a trade still open included). */
+/** What each tile means, as the engine works it out (backend lab/report.rs). */
+export const STAT_HELP = {
+  net: "Gain or loss of the account over the whole test, in % of the starting capital.",
+  trades: "Number of trades taken, including one still open on the last day.",
+  winners: "Share of trades that closed with a profit.",
+  carMdd: "Annual return % divided by max. system % drawdown. Higher is better.",
+  dd: "Deepest fall of the account from a peak, in %.",
+  car: "Average yearly growth of the account, compounded, from the first to the last bar.",
+  equity: "Growth of 1 unit of money: the strategy against simply holding the instrument.",
+  underwater: "How far the account is below its last peak on each day: 0% is the peak, losses below zero.",
+};
+// read left to right: result, growth, risk, then the trades behind it; labels and rounding as in the report rows
+export const statsTiles = (r: LabReport) => [
+  { label: "Net Profit %", value: pct(r.system.net_profit, 2), help: STAT_HELP.net },
+  { label: "Annual return %", value: pct(r.system.cagr, 2), help: STAT_HELP.car },
+  { label: "Max. system % drawdown", value: pct(r.system.max_sys_dd, 2), help: STAT_HELP.dd },
+  { label: "CAR/MDD", value: num(r.system.car_mdd), help: STAT_HELP.carMdd },
+  { label: "Winners %", value: pct(r.all.winners?.pct, 2), help: STAT_HELP.winners },
+  { label: "# Trades", value: int(r.all.trades), help: STAT_HELP.trades },
+  { label: "Exposure %", value: pct(r.system.exposure, 2) },
+];
 
 /** Rows and CSV in trade order (oldest first, as AmiBroker); `cls` holds each cell's class. */
 export interface TradeTable { header: string[]; rows: (string | ReactNode)[][]; csv: string[][]; cls: (string | undefined)[][] }
@@ -104,6 +128,9 @@ export function RunResults({ result, market, chartsOnly = false }: { result: Run
   const equityValueRef = useRef<HTMLOutputElement>(null);
   const ddValueRef = useRef<HTMLOutputElement>(null);
   const ddValues = drawdown(result.equity);
+  // the deepest point, named above the chart (a marker's text clips at the chart's left edge)
+  const ddDrawn = ddValues.length > 1 && ddValues.length === result.dates.length && ddValues.every(Number.isFinite);
+  const worst = ddValues.reduce((k, v, i) => (v < ddValues[k] ? i : k), 0);
   const themeKey = useThemeKey();
 
   useEffect(() => {
@@ -140,14 +167,14 @@ export function RunResults({ result, market, chartsOnly = false }: { result: Run
     } else if (values.length === 1) {
       ddEl.classList.add("lab-chart-empty"); ddEl.textContent = `Drawdown ${pct(values[0], 2)} · ${dayFirst(result.dates[0])}`;
     } else {
-      dd = createLabChart(ddEl, 300, { timeScale: { minBarSpacing: 0.01, borderColor: themeColors(ddEl).steel }, rightPriceScale: { borderColor: themeColors(ddEl).steel, scaleMargins: { top: 0, bottom: 0.1 } }, // 0 % (the peak) is the top edge
+      dd = createLabChart(ddEl, 300, { timeScale: { minBarSpacing: 0.01, borderColor: themeColors(ddEl).steel }, rightPriceScale: { borderColor: themeColors(ddEl).steel, scaleMargins: { top: 0.05, bottom: 0.1 } }, // 0 % (the peak) near the top edge, its axis label unclipped
         localization: { timeFormatter: day, priceFormatter: (v: number) => pct(v, 1) } });
       if (dd) {
         const { chart, colors } = dd;
         const area = chart.addAreaSeries({ lineColor: colors.red, topColor: colors.red + "22", bottomColor: colors.red + "66", invertFilledArea: true, lineWidth: 1, priceLineVisible: false });
         area.setData(linePoints(result.dates, values));
         const worst = values.reduce((k, v, i) => (v < values[k] ? i : k), 0);
-        area.setMarkers?.([{ time: result.dates[worst], position: "belowBar", shape: "circle", color: colors.red, text: `Worst ${pct(values[worst], 2)} · ${dayFirst(result.dates[worst])}` }]);
+        area.setMarkers?.([{ time: result.dates[worst], position: "belowBar", shape: "circle", color: colors.red }]);
         chart.timeScale().fitContent();
         const at = new Map(result.dates.map((date, i) => [date, i]));
         const onDd = ({ time }: { time?: string }) => {
@@ -169,7 +196,7 @@ export function RunResults({ result, market, chartsOnly = false }: { result: Run
 
       {/* the Stats tab drops the run's labels (the page header keeps "simulated · not a book method"); elsewhere they stay */}
       {!chartsOnly && <><ServerLabel text={result.label} /><ExecutionStrip model={result.execution_model} money={result.money} adaptations={result.adaptations} /></>}
-      {chartsOnly && <MetricTiles items={kpiItems(stats).filter((k) => !/#|Avg\./.test(k.label))} />}
+      {chartsOnly && <MetricTiles items={result.report ? statsTiles(result.report) : kpiItems(stats).filter((k) => !/#|Avg\./.test(k.label))} />}
       {!chartsOnly && <>
       <MetricTiles items={[...(result.money ? [{ label: "Final equity", value: num(result.money.final_equity) }, { label: "Costs paid", value: num(result.money.costs_total) }] : []), ...kpiItems(stats)]} />
       <p className="cap">Exposure {pct(stats.exposure)} · before costs: {pct(stats.gross_total_return)}</p>
@@ -180,7 +207,7 @@ export function RunResults({ result, market, chartsOnly = false }: { result: Run
 
       <div className="lab-result-charts">
         <figure className="lab-result-chart" data-lab-chart="equity">
-          <figcaption className="lab-chart-h"><h3>Portfolio Equity</h3><output ref={equityValueRef} data-lab-equity-value>Latest {num(result.equity.at(-1))}×</output></figcaption>
+          <figcaption className="lab-chart-h"><span className="lab-chart-title"><h3>Portfolio Equity</h3><HelpTip name="Portfolio Equity" text={STAT_HELP.equity} /></span><output ref={equityValueRef} data-lab-equity-value>Latest {num(result.equity.at(-1))}×</output></figcaption>
           <div className="legend lab-legend lab-chart-sub">
             <span><i className="sw-line" style={{ background: "var(--chart)" }} />Strategy</span>
             <span><i className="sw-line" style={{ background: "var(--bh)" }} />Buy &amp; hold</span>
@@ -189,13 +216,23 @@ export function RunResults({ result, market, chartsOnly = false }: { result: Run
           <div className="lwc" data-lab-equity aria-label="Portfolio Equity chart" ref={equityRef} />
         </figure>
         <figure className="lab-result-chart" data-lab-chart="drawdown">
-          <figcaption className="lab-chart-h"><h3>Underwater Equity</h3><output ref={ddValueRef} data-lab-drawdown-value>Latest {pct(ddValues.at(-1))}</output></figcaption>
-          <p className="cap lab-chart-sub">0% is the previous peak · losses appear below zero</p>
+          <figcaption className="lab-chart-h"><span className="lab-chart-title"><h3>Underwater Equity</h3><HelpTip name="Underwater Equity" text={STAT_HELP.underwater} /></span><output ref={ddValueRef} data-lab-drawdown-value>Latest {pct(ddValues.at(-1))}</output></figcaption>
+          <p className="cap lab-chart-sub" data-lab-drawdown-worst>{ddDrawn && `Worst ${pct(ddValues[worst], 2)} · ${dayFirst(result.dates[worst])}`}</p>
           <div className="lwc bkc" data-lab-drawdown aria-label="Underwater Equity chart" ref={ddRef} />
         </figure>
       </div>
     </section>
   );
+}
+
+/** The YOY-Monthly table as workbook rows: returns in % (2 decimals), blanks where the strategy had no return. */
+export function yoyRows(m: { years: string[]; months: Record<string, number | null | undefined>; averages?: (number | null)[] }, pivot: ReturnType<typeof monthPivot>) {
+  const p = (v: number | null | undefined) => (typeof v === "number" && Number.isFinite(v) && Math.abs(v) > 1e-12 ? Math.round(v * 1e4) / 100 : null);
+  const avg = (vs: (number | undefined)[]) => { const n = vs.filter((v): v is number => typeof v === "number"); return n.length ? n.reduce((a, b) => a + b, 0) / n.length : null; };
+  return [["Year", ...MONTHS, "Total"].map(String),
+    ...m.years.map((y) => [y, ...MONTHS.map((_, i) => p(m.months[`${y}-${String(i + 1).padStart(2, "0")}`])), p(pivot.rows[y])]),
+    ["Total", ...pivot.cols.map(p), p(pivot.all)],
+    ...(m.averages?.length ? [["Avg", ...m.averages.map(p), p(avg(m.years.map((y) => pivot.rows[y])))]] : [])];
 }
 
 /** YOY-Monthly pivot totals, Excel-style sums: each year across its months, each month across the years, and all of them.
@@ -232,7 +269,8 @@ export function RunTables({ result, part, explain }: { result: RunResult; part?:
       {part !== "trades" && monthly && (
         <div className="tblwrap lab-monthly">
           <table className="tbl">
-            <caption>YOY-Monthly</caption>
+            <caption>YOY-Monthly <button type="button" className="dbtn sm" data-lab-yoy-download onClick={() => saveBytes(xlsx([{ name: "YOY-Monthly", rows: yoyRows(monthly, pivot) }]),
+              `${instrument?.ticker ?? "backtest"} YOY-Monthly.xlsx`, XLSX_TYPE)}>Download Excel</button></caption>
             <thead><tr><th>Year</th>{MONTHS.map((m) => <th className="n" key={m}>{m}</th>)}<th className="n" title="Sum of the year's monthly returns">Total</th></tr></thead>
             <tbody>
               {monthly.years.map((y) => (

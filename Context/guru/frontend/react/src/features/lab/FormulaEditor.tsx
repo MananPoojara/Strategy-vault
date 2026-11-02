@@ -37,9 +37,32 @@ export function FormulaEditor({ row, functions, canEdit, check, api, onSaved, on
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);
   const area = useRef<HTMLTextAreaElement>(null), box = useRef<HTMLElement>(null), seq = useRef(0), tabMoves = useRef(false);
   const idBase = `lab-formula-${row?.id ?? "new"}`;
+  const [focus, setFocus] = useState(false); // focus mode: the same section, fixed over the page as a modal dialog
+  const expand = useRef<HTMLButtonElement>(null);
 
   useEffect(() => { box.current?.scrollIntoView?.({ block: "nearest" }); }, []);
   useEffect(() => { if (row) void runCheck(row.formula); }, []); // eslint-disable-line react-hooks/exhaustive-deps -- an opened indicator shows its Params at once
+
+  useEffect(() => {
+    if (!focus) return;
+    const body = document.body.style, was = body.overflow;
+    body.overflow = "hidden";
+    return () => { body.overflow = was; };
+  }, [focus]);
+  const toggleFocus = () => {
+    tabMoves.current = false;
+    if (!focus && mode === "formula") area.current?.focus(); else expand.current?.focus();
+    setFocus(!focus);
+  };
+  const onDialogKey = (e: KeyboardEvent<HTMLElement>) => {
+    if (!focus) return;
+    if (e.key === "Escape") { e.stopPropagation(); toggleFocus(); return; } // stop it here so the window around the editor stays open
+    if (e.key !== "Tab" || e.defaultPrevented || !box.current) return; // the formula field's own Tab indents
+    const all = [...box.current.querySelectorAll<HTMLElement>("button, input, select, textarea, summary, [href], [tabindex]")]
+      .filter((el) => el.tabIndex >= 0 && !el.matches(":disabled") && !el.closest("[hidden], details:not([open]) > :not(summary)"));
+    const edge = e.shiftKey ? all[0] : all[all.length - 1];
+    if (document.activeElement === edge || !box.current.contains(document.activeElement)) { e.preventDefault(); (e.shiftKey ? all[all.length - 1] : all[0])?.focus(); }
+  };
 
   // Any formula change makes the last check stale; typed text detaches the block layout (the text is the authority).
   const setFormula = (formula: string, blocks: unknown | null) => { seq.current++; setD((s) => ({ ...s, formula, blocks, check: { status: "idle" } })); setNotice(null); };
@@ -102,16 +125,21 @@ export function FormulaEditor({ row, functions, canEdit, check, api, onSaved, on
     <button type="button" role="tab" id={`${idBase}-tab-${id}`} aria-selected={mode === id} aria-controls={`${idBase}-${id}`} tabIndex={mode === id ? 0 : -1}
       onClick={() => setMode(id)} onKeyDown={(e) => { if (e.key === "ArrowLeft" || e.key === "ArrowRight") { const next = mode === "blocks" ? "formula" : "blocks"; setMode(next); document.getElementById(`${idBase}-tab-${next}`)?.focus(); } }}>{label}</button>
   );
-  return (
-    <section className="box lab-detail lab-formula" ref={box} aria-labelledby={`${idBase}-h`} data-lab-formula-editor>
-      <h2 className="box-h" id={`${idBase}-h`}>{saved ? `Edit indicator · ${saved.name}` : "New indicator"} <small>Formula editor · AmiBroker-style</small>
+  return (<>
+    {focus && <div className="lab-formula-scrim" aria-hidden="true" onClick={toggleFocus} />}
+    <section className="box lab-detail lab-formula" ref={box} aria-labelledby={`${idBase}-t`} data-lab-formula-editor data-focus={focus || undefined}
+      role={focus ? "dialog" : undefined} aria-modal={focus || undefined} onKeyDown={onDialogKey}>
+      <h2 className="box-h" id={`${idBase}-h`}><span id={`${idBase}-t`}>{saved ? `Edit indicator · ${saved.name}` : "New indicator"}</span> <small>Formula editor · AmiBroker-style</small>
         <span className="box-tools"><button type="button" className="dbtn ghost sm" aria-label="Close formula editor" onClick={onClose}>×</button></span>
       </h2>
       <label className="dfield lab-formula-name">Name
         <input type="text" value={d.name} maxLength={MAX_NAME} placeholder="My Momentum" readOnly={!canEdit}
           onChange={(e) => { setD((s) => ({ ...s, name: e.target.value })); setNotice(null); }} />
       </label>
-      <div className="lab-formula-tabs" role="tablist" aria-label="Edit the indicator as">{tab("blocks", "Blocks")}{tab("formula", "Formula")}</div>
+      <div className="lab-formula-bar">
+        <div className="lab-formula-tabs" role="tablist" aria-label="Edit the indicator as">{tab("blocks", "Blocks")}{tab("formula", "Formula")}</div>
+        <button type="button" ref={expand} className={focus ? "dbtn sm primary" : "dbtn sm"} data-lab-formula-focus onClick={toggleFocus}>{focus ? "Done" : "Expand editor"}</button>
+      </div>
       <div role="tabpanel" id={`${idBase}-blocks`} aria-labelledby={`${idBase}-tab-blocks`} hidden={mode !== "blocks"}>
         {blocksEditor ? blocksEditor({ formula: d.formula, blocks: d.blocks, onChange: (formula, blocks) => setFormula(formula, blocks), showFormula: () => setMode("formula") })
           : <p className="cap">The block builder is not available yet. Write the indicator on the Formula tab.</p>}
@@ -120,7 +148,6 @@ export function FormulaEditor({ row, functions, canEdit, check, api, onSaved, on
         <textarea ref={area} className="lab-formula-text" aria-label="Formula" value={d.formula} maxLength={MAX_FORMULA} rows={10} spellCheck={false}
           autoCapitalize="off" autoComplete="off" readOnly={!canEdit} aria-invalid={c.status === "error"} aria-describedby={`${idBase}-hint ${idBase}-result`}
           onChange={(e) => setFormula(e.target.value, null)} onKeyDown={onKey} />
-        <p className="cap" id={`${idBase}-hint`}>{d.formula.length} / {MAX_FORMULA} characters · Tab indents; press Esc then Tab to leave the field.{d.blocks != null && " Typing here replaces the block layout."}</p>
       </div>
       <div id={`${idBase}-result`} className="lab-formula-result" aria-live="polite">
         {c.status === "checking" && <p className="cap">Checking…</p>}
@@ -134,6 +161,7 @@ export function FormulaEditor({ row, functions, canEdit, check, api, onSaved, on
           {errorLine !== undefined && c.pos && <pre aria-label={`Line ${c.pos.line}`}>{errorLine.slice(0, c.pos.col - 1)}<mark>{errorLine.slice(c.pos.col - 1, c.pos.col) || " "}</mark>{errorLine.slice(c.pos.col)}</pre>}
         </div>}
       </div>
+      <p className="cap lab-formula-hint" id={`${idBase}-hint`} hidden={mode !== "formula"}>{d.formula.length} / {MAX_FORMULA} characters · Tab indents; {focus ? "Esc closes the expanded editor." : "press Esc then Tab to leave the field."}{d.blocks != null && " Typing here replaces the block layout."}</p>
       <div className="lab-formula-actions">
         <button type="button" className="dbtn sm" disabled={busy || c.status === "checking"} onClick={() => void runCheck()}>Check</button>
         {canEdit && <>
@@ -160,5 +188,5 @@ export function FormulaEditor({ row, functions, canEdit, check, api, onSaved, on
         ))}
       </details>
     </section>
-  );
+  </>);
 }

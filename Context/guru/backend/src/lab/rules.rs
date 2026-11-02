@@ -147,7 +147,8 @@ pub const MAX_TRADE_DELAY: usize = 20;
 /// A price distance: percent of a reference price, or a multiple of ATR(length) read at a bar already closed.
 #[derive(Clone, Copy, Debug, PartialEq)]
 /// `ProfitPct` (trailing only): the stop sits x % of the open profit below the peak (AmiBroker trailing in % of profit).
-pub enum Dist { Pct(f64), Atr { mult: f64, length: usize }, Points(f64), Ticks(f64), ProfitPct(f64) }
+/// `Candle` (stop_loss only): the stop sits at the signal candle's low (a short's at its high), the AFLs' HSL = Low[i].
+pub enum Dist { Pct(f64), Atr { mult: f64, length: usize }, Points(f64), Ticks(f64), ProfitPct(f64), Candle }
 /// The price-order settings an optimize path can address (`entry.limit.pct`, `exit.stop_loss.atr`, ...).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Slot { Limit, StopLoss, Target, Trailing, Stop, Activate, BreakevenAfter, TakeProfit(usize) }
@@ -237,6 +238,8 @@ pub struct Exec {
     /// AmiBroker General › "Tick size" of a cash instrument (0: no rounding; ledger::snap_ticks) and "Pad and align all data to
     /// reference symbol" (the market benchmark's calendar). Run-level: read from the main side only.
     pub tick_size: f64, pub pad_align: bool,
+    /// execution.pad_align as a symbol: the reference whose calendar the bars follow (None: the market benchmark).
+    pub pad_ref: Option<String>,
     /// `execution.bars_held_from` "signal": bars_held counts from the entry signal bar, not the fill bar (AmiBroker AFL
     /// BarsSince(Buy) with a next-open fill). Same as the fill bar for close fills.
     pub held_from_signal: bool,
@@ -255,6 +258,14 @@ pub struct Exec {
     /// the previous close, a lower circuit; short: high = close above it) waits for the next close that is not locked
     /// (rust_test main.rs MultiTF Supertrend `lc_exit`).
     pub defer_exit_on_circuit: bool,
+    /// `execution.skip_entry_on_circuit`: no entry signal on a bar locked at the entry-side extreme (long: high = close above the
+    /// previous close, an upper circuit; short: low = close below it), the team's AFLs' `UC` (Hero Candle Follow-up).
+    pub skip_entry_on_circuit: bool,
+    /// AmiBroker AFL "BACKTEST PARAMETER" panel (RSI_Setup_Entry_Verification_Exploration.afl), all off by default:
+    /// `dead_stock` (DEAD STOCK BACKTEST YES): a position still open on the symbol's last bar sells at its close;
+    /// `penny_price` (> 0): an entry signal needs close > it; `turnover_filter`: volume × close above the AFL's year floor;
+    /// `aux` [Aux1, Aux2] ON: the signal bar's Aux column == 1. Run-level: read from the main side, gating both sides.
+    pub dead_stock: bool, pub penny_price: f64, pub turnover_filter: bool, pub aux: [bool; 2],
     /// execution.shadow (None: off).
     pub shadow: Option<Shadow>,
     /// Indices of entry.all rules marked `"filter": true` (with execution.shadow they gate only the real trades).
@@ -267,7 +278,8 @@ impl Default for Exec {
                trail_activate: None, breakeven: None, take_profits: vec![], min_bars: 0, ohlc_path: false, scale_in: None, sizing: Sizing::Full,
                cooldown: None, max_trades: None, risk: Risk::default(), capital: None, costs: MoneyCosts::default(), futures: None, limits: None, market: None, reentry: None,
                exit_at_stop: [1; 4], stops_immediately: true, nbar_first: false, same_bar: true,
-               tick_size: 0., pad_align: false, held_from_signal: false, dual_atr: None, dual_line: None, filter_exits: vec![], reenter_on_exit_bar: false, defer_exit_on_circuit: false, shadow: None, filter_rows: vec![] }
+               tick_size: 0., pad_align: false, pad_ref: None, held_from_signal: false, dual_atr: None, dual_line: None, filter_exits: vec![], reenter_on_exit_bar: false, defer_exit_on_circuit: false, skip_entry_on_circuit: false,
+               dead_stock: false, penny_price: 0., turnover_filter: false, aux: [false; 2], shadow: None, filter_rows: vec![] }
     }
 }
 impl Exec {
@@ -349,7 +361,7 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
     };
     let mut cost_bps = None;
     if let Some(ex) = root.get("execution") {
-        fields(ex, "execution", &["fill", "exit_fill", "cost_bps", "opposite", "delay_bars", "entry_on", "intrabar", "sizing", "cooldown", "max_trades", "risk", "capital", "costs", "instrument", "prices", "delays", "reentry", "limits", "exit_at_stop", "activate_stops_immediately", "nbar_has_priority", "allow_same_bar_exit", "report", "tick_size", "pad_align", "bars_held_from", "reenter_on_exit_bar", "defer_exit_on_circuit", "shadow"], &["limit", "stop"])?;
+        fields(ex, "execution", &["fill", "exit_fill", "cost_bps", "opposite", "delay_bars", "entry_on", "intrabar", "sizing", "cooldown", "max_trades", "risk", "capital", "costs", "instrument", "prices", "delays", "reentry", "limits", "exit_at_stop", "activate_stops_immediately", "nbar_has_priority", "allow_same_bar_exit", "report", "tick_size", "pad_align", "bars_held_from", "reenter_on_exit_bar", "defer_exit_on_circuit", "skip_entry_on_circuit", "shadow", "dead_stock", "penny_price", "turnover_filter", "aux1", "aux2"], &["limit", "stop"])?;
         if let Some(v) = ex.get("instrument") { exec.futures = instrument(v)?; }
         if let Some(c) = ex.get("capital") {
             exec.capital = Some(c.as_f64().filter(|c| c.is_finite() && *c > 0. && *c <= MAX_CAPITAL).ok_or_else(|| inv(format!("execution.capital must be a number above 0 and at most {MAX_CAPITAL}")))?);
@@ -367,7 +379,14 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
             exec.tick_size = v.as_f64().filter(|t| t.is_finite() && (0. ..=1e6).contains(t)).ok_or_else(|| inv("execution.tick_size must be a number from 0 (no rounding) to 1e6"))?;
             if exec.tick_size > 0. && exec.futures.is_some() { return Err(inv("futures round to the contract's tick; remove execution.tick_size")); }
         }
-        if let Some(v) = ex.get("pad_align") { exec.pad_align = match v { Json::Bool(b) => *b, _ => return Err(inv("execution.pad_align must be true or false")) }; }
+        if let Some(v) = ex.get("pad_align") {
+            // true: the market benchmark; a symbol: AmiBroker's "reference symbol" box
+            (exec.pad_align, exec.pad_ref) = match v {
+                Json::Bool(b) => (*b, None),
+                Json::Str(s) if !s.trim().is_empty() && s.len() <= 64 => (true, Some(s.trim().to_string())),
+                _ => return Err(inv("execution.pad_align must be true, false or a reference symbol")),
+            };
+        }
         if let Some(v) = ex.get("cooldown") {
             fields(v, "execution.cooldown", &["bars", "after"], &[])?;
             let after = match v.get("after").map(Json::as_str) {
@@ -454,6 +473,11 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
         (exec.stops_immediately, exec.nbar_first, exec.same_bar) = (flag("activate_stops_immediately", true)?, flag("nbar_has_priority", false)?, flag("allow_same_bar_exit", true)?);
         exec.reenter_on_exit_bar = flag("reenter_on_exit_bar", false)?;
         exec.defer_exit_on_circuit = flag("defer_exit_on_circuit", false)?;
+        exec.skip_entry_on_circuit = flag("skip_entry_on_circuit", false)?;
+        (exec.dead_stock, exec.turnover_filter, exec.aux) = (flag("dead_stock", false)?, flag("turnover_filter", false)?, [flag("aux1", false)?, flag("aux2", false)?]);
+        if let Some(v) = ex.get("penny_price") {
+            exec.penny_price = v.as_f64().filter(|p| (0. ..=1e6).contains(p)).ok_or_else(|| inv("execution.penny_price must be a number from 0 (off) to 1e6"))?;
+        }
         exec.held_from_signal = match ex.get("bars_held_from").map(Json::as_str) {
             None | Some(Some("fill")) => false,
             Some(Some("signal")) => true,
@@ -484,6 +508,7 @@ pub fn parse_spec(text: &str) -> Result<Spec, LabError> {
         (s.exec.fill, s.exec.exit_fill, s.exec.opposite, s.exec.delay, s.exec.edge, s.exec.ohlc_path) = (exec.fill, exec.exit_fill, exec.opposite, exec.delay, exec.edge, exec.ohlc_path);
         (s.exec.exit_at_stop, s.exec.stops_immediately, s.exec.nbar_first, s.exec.same_bar, s.exec.reenter_on_exit_bar) = (exec.exit_at_stop, exec.stops_immediately, exec.nbar_first, exec.same_bar, exec.reenter_on_exit_bar);
         s.exec.defer_exit_on_circuit = exec.defer_exit_on_circuit;
+        s.exec.skip_entry_on_circuit = exec.skip_entry_on_circuit;
     }
     // An exitless side relies on the opposite entry to reverse its position.
     let exitless = |x: &Exec, e: &[Node]| e.is_empty() && x.stop_loss.is_none() && x.target.is_none() && x.trailing.is_none() && x.breakeven.is_none() && x.dual_atr.is_none() && x.dual_line.is_none() && !dated;
@@ -789,6 +814,8 @@ fn portfolio_rules(s:&Spec)->Result<(),LabError>{
     if x.pad_align{return unsupported("execution.pad_align");}
     if x.held_from_signal{return unsupported("execution.bars_held_from");}
     if x.defer_exit_on_circuit{return unsupported("execution.defer_exit_on_circuit");}
+    if x.skip_entry_on_circuit{return unsupported("execution.skip_entry_on_circuit");}
+    if x.dead_stock||x.penny_price>0.||x.turnover_filter||x.aux.contains(&true){return unsupported("execution.dead_stock, penny_price, turnover_filter, aux1 or aux2");}
     if x.shadow.is_some(){return unsupported("execution.shadow");}
     if x.dual_atr.is_some(){return unsupported("exit.dual_atr");}
     if x.dual_line.is_some(){return unsupported("exit.dual_line");}
@@ -980,7 +1007,12 @@ fn fill(v: &Json, at: &str) -> Result<Fill, LabError> {
 }
 /// `{"pct": p}` or `{"atr": m, "atr_length": n}` (n defaults to 14).
 fn dist(v: &Json, at: &str, hi: f64) -> Result<Dist, LabError> {
-    fields(v, at, &["pct", "atr", "atr_length", "points", "ticks"], &[])?;
+    fields(v, at, &["pct", "atr", "atr_length", "points", "ticks", "candle"], &[])?;
+    if let Some(c) = v.get("candle") {
+        if !at.ends_with("exit.stop_loss") { return Err(inv(format!("{at}.candle is only for exit.stop_loss"))); }
+        if ["pct", "atr", "atr_length", "points", "ticks"].iter().any(|k| v.get(k).is_some()) || c.as_str() != Some("low") { return Err(inv(format!("{at}.candle must be \"low\" on its own"))); }
+        return Ok(Dist::Candle);
+    }
     // an entry order may sit at the signal close (0); exits need a positive distance
     let order = at.ends_with("entry.limit") || at.ends_with("entry.stop");
     let min = if order { "from 0" } else { "above 0" };
@@ -1363,7 +1395,7 @@ fn target(spec: &Spec, path: &str) -> Result<Target, String> {
         return match (exec.slot(slot), field.as_str()) {
             (Some(Dist::Pct(_)), "pct") | (Some(Dist::Atr { .. }), "atr") | (Some(Dist::Points(_)), "points") | (Some(Dist::Ticks(_)), "ticks") | (Some(Dist::ProfitPct(_)), "profit_pct") => Ok(Target { path: path.into(), slot: Some(slot) }),
             (None, _) => Err(format!("the spec has no {at}")),
-            (Some(d), _) => Err(format!("{at} is set by {}; optimize that field", match d { Dist::Pct(_) => "pct", Dist::Atr { .. } => "atr", Dist::Points(_) => "points", Dist::Ticks(_) => "ticks", Dist::ProfitPct(_) => "profit_pct" })),
+            (Some(d), _) => Err(format!("{at} is set by {}; optimize that field", match d { Dist::Pct(_) => "pct", Dist::Atr { .. } => "atr", Dist::Points(_) => "points", Dist::Ticks(_) => "ticks", Dist::ProfitPct(_) => "profit_pct", Dist::Candle => "candle (no number)" })),
         };
     }
     if !["entry.all[", "exit.any[", "entry.limit.at.", "entry.stop.at.", "entry.scale_in.", "exit.dual_atr.", "execution.sizing.", "portfolio.score."].iter().any(|p| rest.starts_with(p)) {
@@ -1551,7 +1583,7 @@ fn set(s: &mut Spec, t: &Target, x: f64) {
         return;
     }
     if let Some(slot) = t.slot {
-        match exec_mut(s, &t.path).and_then(|e| e.slot_mut(slot)) { Some(Dist::Pct(p) | Dist::Points(p) | Dist::Ticks(p) | Dist::ProfitPct(p)) => *p = x, Some(Dist::Atr { mult, .. }) => *mult = x, None => {} }
+        match exec_mut(s, &t.path).and_then(|e| e.slot_mut(slot)) { Some(Dist::Pct(p) | Dist::Points(p) | Dist::Ticks(p) | Dist::ProfitPct(p)) => *p = x, Some(Dist::Atr { mult, .. }) => *mult = x, Some(Dist::Candle) | None => {} }
         return;
     }
     walk(s, &mut |p, k| if p == t.path {
@@ -1641,7 +1673,7 @@ pub fn current(spec: &Spec, t: &Target) -> f64 {
     if matches!(t.path.as_str(),"portfolio.max_open"|"portfolio.worst_rank_held") {
         return spec.portfolio.as_ref().map_or(f64::NAN,|p|if t.path.ends_with("max_open"){p.max_open as f64}else{p.worst_rank_held() as f64});
     }
-    if let Some(slot) = t.slot { return match exec_of(spec, &t.path).and_then(|e| e.slot(slot)) { Some(Dist::Pct(p) | Dist::Points(p) | Dist::Ticks(p) | Dist::ProfitPct(p)) => p, Some(Dist::Atr { mult, .. }) => mult, None => f64::NAN }; }
+    if let Some(slot) = t.slot { return match exec_of(spec, &t.path).and_then(|e| e.slot(slot)) { Some(Dist::Pct(p) | Dist::Points(p) | Dist::Ticks(p) | Dist::ProfitPct(p)) => p, Some(Dist::Atr { mult, .. }) => mult, Some(Dist::Candle) | None => f64::NAN }; }
     let mut v = f64::NAN;
     walk(&mut spec.clone(), &mut |p, k| if p == t.path {
         match k {
@@ -2246,8 +2278,10 @@ mod tests {
         let exec = |extra: &str| with(r#""cost_bps": 12"#, &format!(r#""cost_bps": 12, {extra}"#));
         let s = parse_spec(&exec(r#""tick_size": 0.05, "pad_align": true"#)).unwrap();
         assert_eq!((s.exec.tick_size, s.exec.pad_align), (0.05, true));
+        let named = parse_spec(&exec(r#""pad_align": "NIFTYBANK""#)).unwrap();
+        assert_eq!((named.exec.pad_align, named.exec.pad_ref.as_deref()), (true, Some("NIFTYBANK")));
         assert_eq!(parse_spec(&exec(r#""tick_size": 0"#)).unwrap().exec.tick_size, 0., "AmiBroker: 0 means no rounding");
-        for (extra, msg) in [(r#""tick_size": -1"#, "tick_size must be a number"), (r#""pad_align": 1"#, "pad_align must be true or false")] { assert!(err(&exec(extra)).message().contains(msg), "{extra}"); }
+        for (extra, msg) in [(r#""tick_size": -1"#, "tick_size must be a number"), (r#""pad_align": 1"#, "pad_align must be true, false or a reference symbol")] { assert!(err(&exec(extra)).message().contains(msg), "{extra}"); }
         let fut = r#"{"v":1,"entry":{"all":[{"lhs":{"s":"close"},"op":">","rhs":{"value":0}}]},"exit":{"any":[],"stop_loss":{"ticks":20}},"execution":{"tick_size":0.05,"instrument":{"kind":"futures","roll":{"days_before_expiry":2},"adjust":"ratio"}}}"#;
         assert!(err(fut).message().contains("contract's tick"), "{}", err(fut).message());
         let port = r#"{"v":1,"entry":{"all":[{"lhs":{"s":"rsi","p":{"length":2}},"op":"<","rhs":{"value":10}}]},"exit":{"any":[{"lhs":{"s":"bars_held"},"op":">=","rhs":{"value":5}}]},"execution":{"capital":1000000,"pad_align":true},"portfolio":{"universe":{"basket":"nifty50"},"max_open":5}}"#;
@@ -2413,6 +2447,14 @@ mod amibroker_trades_tests {
         assert!(parse_spec(&limit).unwrap_err().message().contains("execution.prices.buy / execution.delays.buy apply to market entries"));
         let limit_exit = limit.replace(r#""prices":{"buy":"close"},"delays":{"buy":1}"#, r#""prices":{"sell":"close"},"delays":{"sell":0}"#);
         assert_eq!(parse_spec(&limit_exit).unwrap().exec.market, Some([(Px::Open, 1), (Px::Close, 0)]));
+    }
+    #[test] fn stop_loss_at_the_entry_candle_low() {
+        let x = |exit: &str| parse_spec(&BASE.replace(r#""exit":{"any":["#, &format!(r#""exit":{{{exit},"any":["#)));
+        assert_eq!(x(r#""stop_loss":{"candle":"low"}"#).unwrap().exec.stop_loss, Some(Dist::Candle));
+        for (bad, needle) in [(r#""target":{"candle":"low"}"#, "exit.target.candle is only for exit.stop_loss"), (r#""stop_loss":{"candle":"high"}"#, "must be \"low\" on its own"),
+                              (r#""stop_loss":{"candle":"low","pct":2}"#, "must be \"low\" on its own")] {
+            assert!(x(bad).unwrap_err().message().contains(needle), "{needle}");
+        }
     }
     #[test] fn trailing_profit_pct_parses_and_optimizes() {
         let t = |trailing: &str| parse_spec(&BASE.replace(r#""exit":{"any":["#, &format!(r#""exit":{{"trailing":{trailing},"any":["#)));

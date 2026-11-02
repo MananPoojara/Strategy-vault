@@ -112,6 +112,7 @@ pub fn walkforward_json(st: &State, q: &Query) -> Result<String, LabError> {
         if t0.elapsed().as_secs() >= OPT_SECONDS { return Err(inv(format!("walk-forward stopped after {OPT_SECONDS} s; use fewer windows or a smaller grid. No partial result is published."))); }
         let mut qi = ranged(w.is);
         qi.insert("slim".into(), "1".into());
+        qi.remove("sheet"); // the result-list sheet is a single-optimize output only
         let opt = parse(&api::optimize_since(st, &qi, t0)?)?; // in-sample bars only: the chosen setting cannot see the OOS window
         label = opt.get("label").and_then(Json::as_str).filter(|l| !l.is_empty()).unwrap_or(rules::LABEL).to_string();
         threads = threads.max(opt.get("threads").and_then(Json::as_f64).unwrap_or(1.) as usize);
@@ -218,6 +219,13 @@ mod tests {
     }
     fn get<'a>(v: &'a Json, path: &[&str]) -> &'a Json { path.iter().fold(v, |v, k| v.get(k).unwrap_or_else(|| panic!("{path:?}"))) }
 
+    #[test] fn an_index_walks_forward_in_money_mode() {
+        let money = SPEC.replace("\"v\":1", "\"v\":1,\"execution\":{\"capital\":1000000}");
+        let mut x = q(&[("spec", &money)]);
+        x.remove("cost");
+        let v = json::parse(&walkforward_json(&state(1400, wave), &x).unwrap()).unwrap();
+        assert!(get(&v, &["summary", "total_return"]).as_f64().is_some_and(f64::is_finite) && list(v.get("windows")).len() == 4);
+    }
     #[test] fn walkforward_stitches_out_of_sample_windows() {
         let st = state(1400, wave);
         let j = walkforward_json(&st, &q(&[])).unwrap();

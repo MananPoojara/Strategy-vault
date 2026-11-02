@@ -53,3 +53,9 @@
   .lab-page .lab-sopt-results { transition: opacity 180ms ease-out; }
   @starting-style { .lab-page .lab-sopt-results { opacity: 0; } }
 }
+/* Inside "Try ranges" (Your idea): the fold's summary names it, so no second heading; numbers sit side by side */
+.lab-page .lab-try-ranges .lab-sopt { gap: 8px; }
+.lab-page .lab-try-ranges .lab-sopt > .box-h { display: none; }
+.lab-page .lab-try-ranges .lab-sopt-list { grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 8px; align-items: start; }
+.lab-page .lab-try-ranges .lab-sopt-line { padding: 8px 12px; }
+.lab-page .lab-try-ranges .lab-sopt-run .dbtn.primary { min-height: 32px; }

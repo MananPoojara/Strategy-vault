@@ -149,14 +149,26 @@
 .lab-orders-box > summary .cap { font-weight: 400; color: var(--ink2); }
 .lab-orders-box[open] > summary { margin-bottom: 6px; }
 .lab-orders-box .lab-stops { grid-template-columns: repeat(auto-fill, minmax(180px, max-content)); gap: 6px; }
+/* Settings › Stops: one box under another, as in AmiBroker, so each kind choice stays on one line */
+/* two stop boxes per row on a wide screen (the trailing stop's five choices need ~640px); one per row on a narrow one */
+.lab-stops-tab .lab-stops { grid-template-columns: repeat(auto-fit, minmax(min(100%, 640px), 1fr)); gap: 10px 14px; }
+.lab-stops-tab > .cap, .lab-stops-tab [data-lab-stop-modes] { max-width: 110ch; }
+/* Settings › Walk-Forward and Monte Carlo: room for AmiBroker's values (1000 runs, 10000 value) */
+.lab-page :is(.lab-mc-tab, .lab-wf-tab) .dfield input[type=number] { width: 84px; }
 .lab-orders-box .lab-fieldset { padding: 4px 8px 6px; }
 .lab-orders-box .lab-exits > select { width: auto; }
 .lab-rules .lab-words { padding: 8px 12px; gap: 2px; }
 .lab-rules .lab-default-exit { padding: 8px 10px; gap: 4px; margin-bottom: 6px; }
 
 /* Entry, Filters and Exit side by side (AmiBroker's Parameters sections); one column when the box is narrow */
-.lab-rule-cards { display: grid; gap: 14px; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; }
-@container (max-width: 980px) { .lab-rule-cards { grid-template-columns: minmax(0, 1fr); } }
+.lab-rule-cards { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+.lab-rule-card { scroll-margin-top: 96px; }
+/* section navigator: where each rule section is and how many rules it holds */
+.lab-rule-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; }
+.lab-rule-nav button { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 6px 14px; border: 1px solid var(--rule); border-radius: 999px; background: var(--card); color: var(--ink); font: 600 14px var(--font); cursor: pointer; }
+.lab-rule-nav button:hover { border-color: var(--ink2); }
+.lab-rule-nav button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.lab-rule-nav b { min-width: 1.6em; padding: 1px 7px; border-radius: 999px; background: var(--panel); font: 600 13px var(--font); font-variant-numeric: tabular-nums; text-align: center; }
 .lab-rule-card { min-width: 0; padding: 12px 14px 14px; background: var(--card); border: 1px solid var(--rule); border-radius: var(--r-box); }
 .lab-rule-card .lab-list { display: grid; gap: 8px; }
 .lab-rule-card h3 { font-size: 14px; }
@@ -205,6 +217,11 @@
 .lab-exit-part { display: grid; gap: 6px; padding: 8px 10px 10px; border: 1px solid var(--rule); border-radius: var(--r-field); background: var(--panel); }
 .lab-exit-part > header { display: flex; align-items: center; justify-content: space-between; min-height: 26px; }
 .lab-exit-part > header b { font-size: 13px; }
+/* the engine's same-bar order of the chosen exits: a quiet numbered note under them */
+.lab-exit-order { display: grid; gap: 4px; padding: 8px 10px; border-top: 1px solid var(--rule); color: var(--ink2); }
+.lab-exit-order > b { font-size: var(--fs-sm, 14px); font-weight: 600; color: var(--ink); }
+.lab-exit-order > ol { margin: 0; padding-left: 20px; display: grid; gap: 2px; }
+.lab-page[data-lab-page] .lab-exit-order li { font-size: var(--fs-sm); line-height: 1.4; overflow-wrap: anywhere; }
 /* Entry / Filters / Exit: a short centred title over each card, its toggles centred under it */
 .lab-rule-card > h3, .lab-rule-card > .lab-list > h3 { text-align: center; font-size: 15px; letter-spacing: .01em; margin: 0 0 8px; }
 .lab-rule-card .lab-filter-choice { justify-content: center; }
@@ -255,13 +272,18 @@
 /* Run backtest at the top right of the page heading; Positions and the test dates in one row over the Entry/Filters/Exit cards */
 .lab-rules :is(.box-h, .lab-idea-basics) .lab-run-top { margin-left: auto; display: inline-flex; align-items: center; gap: 10px; font-size: 13px; }
 .lab-rules :is(.box-h, .lab-idea-basics) .lab-run-top .cap { font-weight: 500; }
-.lab-rules :is(.box-h, .lab-idea-basics) .lab-run-top .dbtn.primary { height: 36px; padding: 0 18px; font-size: 13.5px; }
+.lab-rules :is(.box-h, .lab-idea-basics) .lab-run-top .dbtn.primary { height: 34px; padding: 0 18px; font-size: 13.5px; }
 .lab-rules :is(.box-h, .lab-idea-basics) .lab-run-top .dbtn.primary:disabled { opacity: .55; cursor: not-allowed; }
 .lab-idea-basics { align-items: center; gap: 10px 22px; padding: 10px 14px; background: var(--card); border: 1px solid var(--rule); border-radius: var(--r-box); }
 .lab-idea-basics > * { margin: 0; }
 /* AmiBroker settings: always open, a heading over its tabs */
 .lab-ami-h { margin: 0; padding: 12px 14px 8px; font: 700 14px var(--font); color: var(--ink); }
 .lab-ami-h .cap { margin-left: 6px; font-size: 12px; font-weight: 500; }
-.lab-rules .lab-idea-basics .lab-run-top .dbtn { height: 36px; }
+.lab-rules .lab-idea-basics .lab-run-top .dbtn { height: 34px; }
 .lab-rules .lab-idea-basics .lab-run-top > .cap { white-space: nowrap; max-width: none; }
 .lab-rules > .box-h .lab-settings-aside { margin-left: auto; display: inline-flex; align-items: center; font-weight: 400; gap: 14px; }
+/* AmiBroker settings: a disabled box must look disabled, and number boxes fit their values (1,000,000,000 equity, 100 % margin) */
+.lab-page[data-lab-page] .lab-design-studio .lab-ami :is(input, select):disabled { background: color-mix(in srgb, var(--ink2) 12%, var(--card)); border-style: dashed; color: var(--ink2); opacity: .75; cursor: not-allowed; }
+.lab-ami button:disabled { opacity: .5; cursor: not-allowed; }
+.lab-ami input[type="number"] { min-width: 84px; }
+.lab-basics :is(input[aria-label="Initial equity"], input[aria-label="Equity allocation"]), .lab-ami input[aria-label="Initial equity"] { min-width: 140px; }

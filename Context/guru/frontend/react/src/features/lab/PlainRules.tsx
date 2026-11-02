@@ -70,7 +70,7 @@ export function StrategyInWords({ spec, catalogue, period, onChange }: {
     })}
     {off.length > 0 && <p className="cap" data-lab-words-off>Switched off, not used: {off.map((n) => words(n, catalogue).text).join("; ")}.</p>}
     {blockers.length > 0 && <div className="lab-words-blockers" data-lab-words-blockers>
-      <p className="cap">Also switched on. Each of these can stop a trade from opening:</p>
+      <p className="cap">Also on (each can stop a trade opening):</p>
       <ul>{blockers.map((b) => <li key={b.id}>{b.text}{b.off && <button type="button" className="dbtn sm ghost" onClick={() => onChange(b.off!(spec))}>Turn off</button>}</li>)}</ul>
     </div>}
   </section>;

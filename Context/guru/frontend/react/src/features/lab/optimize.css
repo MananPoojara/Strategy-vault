@@ -134,3 +134,7 @@
   .lab-page :is([data-lab-optimize-result], [data-lab-wf-result]) { transition: opacity 180ms ease-out; }
   @starting-style { .lab-page :is([data-lab-optimize-result], [data-lab-wf-result]) { opacity: 0; } }
 }
+
+/* the settings table keeps its numbers beside their names: it takes only the width its columns need */
+.lab-page[data-lab-page] [data-lab-optimize] .tbl.lab-dims { width: auto; min-width: min(100%, 720px); max-width: 100%; }
+.lab-page[data-lab-page] [data-lab-optimize] .tbl.lab-dims td:nth-child(2) { min-width: 260px; }

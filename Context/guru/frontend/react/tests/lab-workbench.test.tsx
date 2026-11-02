@@ -676,3 +676,14 @@ it("shows default input choices in the chart legend and opens their full setting
   await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-chart-label="c1"] .lab-indicator-name')!.click());
   expect(host.querySelector('.lab-params select[aria-label="' + ema.name + ' Source (0 close, 1 open)"]')).not.toBeNull();
 });
+
+it("groups the chart controls by purpose: what is drawn, then the view", async () => {
+  const host = await mount(<Workbench {...props} library={<p>Indicator library</p>} />);
+  await flush();
+  const bar = host.querySelector('[role="toolbar"][aria-label="Chart workspace"]')!;
+  const groups = [...bar.querySelectorAll(':scope > [role="group"]')];
+  expect(groups.map((g) => g.getAttribute("aria-label"))).toEqual(["Chart type and indicators", "View"]);
+  expect(groups[0].querySelector('select[aria-label="Chart type"]')).not.toBeNull();
+  expect([...groups[0].querySelectorAll("button")].some((b) => b.textContent === "Indicators")).toBe(true);
+  expect(groups[1].querySelector("[data-lab-fullscreen]")!.getAttribute("title")).toBe("Full screen");
+});

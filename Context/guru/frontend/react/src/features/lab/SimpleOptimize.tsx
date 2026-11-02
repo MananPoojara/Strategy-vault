@@ -90,8 +90,9 @@ export function SimpleOptimize({ spec, catalogue, onOptimize, onApply }: {
       {dims.length > 0 && <span className="lab-sopt-count" aria-live="polite">{plural(combos, "combination")}</span>}
       <button type="button" className="dbtn primary" data-lab-action="simple-optimize" disabled={running !== null || combos === 0 || combos > cap || tooLong}
         onClick={() => void run()}>{combos ? `Test all ${plural(combos, "combination")}` : "Test all combinations"}</button>
+      {!dims.length && <span className="cap">Turn on “Try a range” for at least one number.</span>}
     </div>
-    {!dims.length ? <p className="cap">Turn on “Try a range” for at least one number.</p>
+    {!dims.length ? null
       : !combos ? <p className="rnote">Check each range: From must not be above To, and Step must be above 0.</p>
       : combos > cap && <p className="rnote">{count(combos)} combinations is more than the {count(cap)} one test can run. Make a range shorter or its step bigger.</p>}
     {tooLong && <p className="rnote">{COPY.tooLong}</p>}

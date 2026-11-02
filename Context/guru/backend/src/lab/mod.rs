@@ -69,6 +69,10 @@ pub mod x_census2_d;
 pub mod footprint;
 pub mod x_orderflow;
 pub mod x_smc;
+pub mod x_tv_auto;
+pub mod x_tv_misc;
+pub mod x_tv_booker;
+pub mod x_tv_listed;
 #[cfg(test)]
 pub mod testdata;
 #[cfg(test)]

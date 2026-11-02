@@ -1,18 +1,19 @@
 import { useEffect, useState } from "react";
 import { NumField } from "./OperandEditor";
 import { COPY, FUTURES_NOTE, MONEY_BASIS_HINT } from "./labels";
-import { hasShorts, instrumentNotes, modeOf, moneyBlocked, sizingKind, supportsMoney, withMode, withSizingKind, type InstrumentContext, type SizingKind } from "./execution-model";
+import { hasShorts, instrumentNotes, modeOf, moneyBlocked, sizingKind, supportsMoney, withMode, type InstrumentContext } from "./execution-model";
 import { getAt, putAt, removeAt, setExecution } from "./spec-model";
 import { Segmented } from "./ui";
+import { labInstruments, tickers } from "./client";
+import { optionsFromGl, optionsFromTickers, type InstrumentOption } from "./instruments";
 import type { Catalogue, Spec } from "./types";
+import { Note, Why } from "./settings/common";
 import "./risk.css";
 
 const PERIODS: Record<string, string> = { W: "week", M: "month", Q: "quarter", Y: "year" };
-const SIZE: Record<Exclude<SizingKind, "full">, string> = { pct_equity: "% of equity", risk_pct: "Risk %", units: "Shares", value: "Value" };
-const sizeOptions = [{ value: "full", label: "All equity (default)" }, { value: "pct_equity", label: "% of equity" }, { value: "risk_pct", label: "Risk % per trade" }, { value: "units", label: "Shares" }, { value: "value", label: "Position value" }] as const;
 
 /** Sets `execution.<path>` and removes objects the change leaves empty. */
-function changeExecution(spec: Spec, path: string, value: unknown): Spec {
+export function changeExecution(spec: Spec, path: string, value: unknown): Spec {
   let next = putAt(spec, `execution.${path}`, value);
   const parts = `execution.${path}`.split(".");
   for (let i = parts.length - 1; i >= 1; i--) {
@@ -21,61 +22,62 @@ function changeExecution(spec: Spec, path: string, value: unknown): Spec {
   }
   return next;
 }
-const limitInput = (spec: Spec, onChange: (spec: Spec) => void, label: string, key: string, min: number, max: number, step: number | null = null, placeholder = "none") =>
-  <NumField label={label} value={getAt(spec.execution?.limits, key) as number | undefined} min={min} max={max} step={step} placeholder={placeholder} onChange={(n) => onChange(changeExecution(spec, `limits.${key}`, n))} />;
-const limitBox = (spec: Spec, onChange: (spec: Spec) => void, label: string, key: "shrink" | "prev_bar_equity") => <label className="lab-check"><input type="checkbox" aria-label={label}
-  checked={spec.execution?.limits?.[key] === true} onChange={(e) => onChange(changeExecution(spec, `limits.${key}`, e.target.checked ? true : undefined))} /> {label}</label>;
-
-/** AmiBroker Analysis settings › Portfolio: the volume limit and previous-bar equity (money mode on one instrument). */
-export function PortfolioLimits({ spec, onChange }: { spec: Spec; onChange(spec: Spec): void }) {
-  if (modeOf(spec) !== "money" || spec.portfolio) return <p className="cap">In Money mode on one instrument: volume limit and previous-bar equity.</p>;
-  return <fieldset className="lab-fieldset lab-risk-limits" data-lab-portfolio-limits>
-    <legend>Portfolio limits (AmiBroker)</legend>
-    <div className="lab-row">
-      {limitInput(spec, onChange, "Limit trade size as % of entry bar volume", "max_volume_pct", 0, 100)}
-      {limitBox(spec, onChange, "Use previous bar equity for position sizing", "prev_bar_equity")}
-    </div>
-    <p className="cap">The volume limit reads the last complete bar when the order fills: the fill bar for a close fill, otherwise the bar before it, so it never looks ahead.</p>
-  </fieldset>;
-}
-
 const REFERENCE: Record<string, string> = { in: "NIFTY 50", us: "SPX" };
 export const TICK_NOTE = "Tick size: as in AmiBroker, only exits by the built-in stops round to the tick; max loss, trailing and breakeven against you (sells down, covers up), profit targets and take-profits toward their level. Entries and other exits keep their price; stop levels are tested unrounded. Futures use the contract tick.";
 export const PAD_NOTE = "Pad and align: bars follow the reference's trading days within this instrument's own dates. A missing day repeats the previous close (O=H=L=C, volume 0) and is an ordinary bar to rules and fills, as in AmiBroker; days the reference lacks are dropped.";
 export const MARGIN_NOTE = "Account margin: buying power = equity × 100 / margin %. The part of a long position above the account's cash is a loan: Margin rate [%] is charged on it per year, by calendar day (0 = no charge). Shorts borrow no cash. There is no margin call; idle-cash interest is earned only on cash not in positions.";
 
-/** AmiBroker General › Tick size and Pad and align all data to reference symbol (one instrument, unit or money mode). */
-export function GeneralData({ spec, instrument, onChange }: { spec: Spec; instrument: InstrumentContext; onChange(spec: Spec): void }) {
-  const ex = spec.execution ?? {}, reference = REFERENCE[instrument.market];
-  const futures = (ex.instrument as { kind?: string } | undefined)?.kind === "futures";
+/** The symbols this market's engine has loaded, indices first: the choices for AmiBroker's reference symbol. */
+export function useReferenceSymbols(market: string): InstrumentOption[] | null {
+  const [list, setList] = useState<InstrumentOption[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    const load = market === "gl" ? labInstruments().then((r) => optionsFromGl(r)) : market === "in" || market === "us" ? tickers(market).then((r) => optionsFromTickers(r)) : Promise.resolve([]);
+    load.then((o) => { if (live) setList(o.filter((x) => !x.disabled)); }, () => { if (live) setList([]); });
+    return () => { live = false; };
+  }, [market]);
+  return list;
+}
+export const isIndex = (o: InstrumentOption) => !o.type || o.type === "index";
+
+/** AmiBroker General › Pad and align all data to reference symbol (first in the tab) and Tick size (one instrument, unit or money mode); `tick={false}` leaves Tick size to the caller. */
+export function GeneralData({ spec, instrument, onChange, tick = true }: { spec: Spec; instrument: InstrumentContext; onChange(spec: Spec): void; tick?: boolean }) {
+  const ex = spec.execution ?? {}, symbols = useReferenceSymbols(instrument.market);
+  const indices = (symbols ?? []).filter(isIndex), others = (symbols ?? []).filter((o) => !isIndex(o));
+  // the box shows the chosen symbol; `true` (from older strategies) means the market benchmark, which is the first index listed
+  const fallback = REFERENCE[instrument.market] && symbols?.some((o) => o.ticker === REFERENCE[instrument.market]) ? REFERENCE[instrument.market] : indices[0]?.ticker ?? symbols?.[0]?.ticker;
+  const on = ex.pad_align === true || typeof ex.pad_align === "string";
+  const [pick, setPick] = useState<string | undefined>(undefined); // the choice while the box is unticked
+  const chosen = typeof ex.pad_align === "string" ? ex.pad_align : pick ?? fallback ?? "";
   return <>
     <div className="lab-row" data-lab-general-data>
-      <NumField label="Tick size" value={futures ? undefined : ex.tick_size} min={0} max={1e6} placeholder={futures ? "contract" : "0"} disabled={futures}
-        onChange={(n) => onChange(changeExecution(spec, "tick_size", n || undefined))} />
-      <label className="lab-check" title={reference ? undefined : "No reference index on this market"}><input type="checkbox" aria-label="Pad and align all data to reference symbol" disabled={!reference && !ex.pad_align}
-        checked={ex.pad_align === true} onChange={(e) => onChange(changeExecution(spec, "pad_align", e.target.checked ? true : undefined))} /> Pad and align all data to reference symbol</label>
-      <span className="cap" data-lab-reference>Reference symbol: {reference ?? "none on this market"}</span>
+      <label className="lab-check"><input type="checkbox" aria-label="Pad and align all data to reference symbol" disabled={!on && !chosen}
+        checked={on} onChange={(e) => onChange(changeExecution(spec, "pad_align", e.target.checked ? chosen || true : undefined))} /> Pad and align all data to reference symbol</label>
+      <label className="dfield">Reference symbol<select aria-label="Reference symbol" value={chosen} disabled={!symbols?.length}
+        onChange={(e) => { setPick(e.target.value); if (on) onChange(changeExecution(spec, "pad_align", e.target.value)); }}>
+        {!symbols && <option value={chosen}>{chosen || "Loading…"}</option>}
+        {symbols && !symbols.some((o) => o.ticker === chosen) && chosen && <option value={chosen}>{chosen}</option>}
+        {indices.length > 0 && <optgroup label="Indices">{indices.map((o) => <option key={o.ticker} value={o.ticker}>{o.ticker}</option>)}</optgroup>}
+        {others.length > 0 && <optgroup label="Other symbols">{others.map((o) => <option key={o.ticker} value={o.ticker}>{o.label}</option>)}</optgroup>}
+      </select></label>
     </div>
-    {!!ex.tick_size && <p className="cap" data-lab-tick-note>{TICK_NOTE}</p>}
-    {ex.pad_align === true && <p className="cap" data-lab-pad-note>{PAD_NOTE}</p>}
+    <p className="cap">Turning this on may slightly change indicators where data has holes.</p>
+    {on && <p className="cap" data-lab-pad-note>{PAD_NOTE}</p>}
+    {tick && <TickSize spec={spec} onChange={onChange} />}
   </>;
 }
 
-/** AmiBroker General › Initial equity, first in the tab: editable in money mode, otherwise disabled with the reason. */
-/** `instrumentData={false}` leaves out tick size and pad & align (shown under Trading, or not at all in the Simple view). */
-export function InitialEquity({ spec, catalogue, instrument, onChange, instrumentData = true }: { spec: Spec; catalogue: Catalogue; instrument: InstrumentContext; onChange(spec: Spec): void; instrumentData?: boolean }) {
-  if (!catalogue.execution) return null;
-  const money = modeOf(spec) === "money";
-  const blocked = moneyBlocked(instrument, spec) ?? (!supportsMoney(catalogue) ? "Money mode is not supported by this engine yet." : null);
+/** AmiBroker General › Tick size (0 = no rounding, so the field is removed); futures use the contract tick. `why` disables it with that reason;
+ *  `quiet` leaves the reason to the caller's group. */
+export function TickSize({ spec, onChange, why, quiet = false }: { spec: Spec; onChange(spec: Spec): void; why?: string | null; quiet?: boolean }) {
+  const ex = spec.execution ?? {}, futures = (ex.instrument as { kind?: string } | undefined)?.kind === "futures";
   return <>
-    <div className="lab-row" data-lab-equity>
-      <NumField label="Initial equity" value={money ? spec.execution?.capital : undefined} min={0} max={1e12} disabled={!money} placeholder={money ? undefined : "off"}
-        onChange={(n) => n !== undefined && onChange(changeExecution(spec, "capital", n))} />
-      <Segmented label="Results in" value={modeOf(spec)} options={[{ value: "unit", label: "% returns", title: "Results as percentage returns on a unit position" }, { value: "money", label: "Cash amounts", disabled: !!blocked, title: blocked ?? "Results in cash: starting equity, position sizes, costs" }]}
-        onChange={(m) => onChange(withMode(spec, m))} />
+    <div className="lab-row" data-lab-tick>
+      <NumField label="Tick size" value={futures || why ? undefined : ex.tick_size} min={0} max={1e6} placeholder={futures ? "contract" : "0"} disabled={futures || !!why}
+        onChange={(n) => onChange(changeExecution(spec, "tick_size", n || undefined))} />
+      {!quiet && <Why text={why} />}
     </div>
-    {blocked && <p className="cap" data-lab-money-blocked>{blocked}</p>}
-    {!spec.portfolio && instrumentData && <GeneralData spec={spec} instrument={instrument} onChange={onChange} />}
+    {!why && !!ex.tick_size && <p className="cap" data-lab-tick-note>{TICK_NOTE}</p>}
   </>;
 }
 
@@ -108,26 +110,14 @@ export function RiskPanel({ spec, catalogue, instrument, onChange }: { spec: Spe
     for (const k of Object.keys(risk)) if (risk[k] === undefined) delete risk[k];
     change("risk", Object.keys(risk).length ? risk : undefined);
   };
-  const limitField = (label: string, key: string, min: number, max: number, step: number | null = null, placeholder?: string) => limitInput(spec, onChange, label, key, min, max, step, placeholder);
   const costField = (label: string, path: string, max: number) => <NumField label={label} value={getAt(ex.costs, path) as number | undefined} min={0} max={max} placeholder="0"
     onChange={(n) => change(`costs.${path}`, n)} />;
   return <details className="lab-risk" data-lab-risk open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
     <summary>Position size, re-entry and risk <small>{summary.join(" · ") || "off"}</small></summary>
     <div className="lab-risk-body">
-      <div className="lab-row">
-        <label className="dfield">Size<select aria-label="Size" value={kind} onChange={(e) => onChange(withSizingKind(spec, e.target.value as SizingKind))}>
-          {sizeOptions.map((o) => <option key={o.value} value={o.value} disabled={(o.value === "units" || o.value === "value") && (!money || !cap.sizing.includes(o.value))}>{spec.portfolio&&o.value==="full"?"Equal allocation (1 / Max positions)":o.label}</option>)}
-        </select></label>
-        {kind !== "full" && <NumField label={SIZE[kind]} value={getAt(ex.sizing, kind) as number | undefined} min={kind === "units" ? 1 : 0}
-          max={kind === "units" ? 1e9 : kind === "value" ? 1e12 : 100} step={kind === "units" ? 1 : null}
-          onChange={(n) => n !== undefined && change(`sizing.${kind}`, n)} />}
-      </div>
       {money && <>
         <div className="lab-row">
-          {costField("Commission per order", "commission.per_order", 1e9)}
-          {costField("Commission per share", "commission.per_unit", 1e6)}
-          {costField("Commission %", "commission.pct", 10)}
-          {costField("Slippage (bps)", "slippage.bps", 1000)}
+          {/* position size, brokerage and slippage are in Backtest parameters; borrow and taxes are the lab's own */}
           {hasShorts(spec) && instrument.market === "us" && costField("Borrow % per year", "borrow_pct_year", 100)}
         </div>
         <div className="lab-risk-taxes">
@@ -145,37 +135,21 @@ export function RiskPanel({ spec, catalogue, instrument, onChange }: { spec: Spe
           {editableTaxes && taxes.length < 6 && <button type="button" className="dbtn sm" aria-label="Add tax" onClick={() => change("costs.taxes", [...taxes, { name: "Tax", pct: 0.1, side: "both" }])}>+ Tax</button>}
         </div>
         <p className="cap">{MONEY_BASIS_HINT}</p>
-        {!spec.portfolio && <fieldset className="lab-fieldset lab-risk-limits" data-lab-limits>
-          <legend>Position limits (AmiBroker)</legend>
-          <div className="lab-row">
-            {limitField("Min. shares", "min_shares", 0, 1e9)}
-            {limitField("Round lot size", "round_lot", 1, 1e9, 1)}
-            {limitField("Min. pos. value", "min_value", 0, 1e12)}
-            {limitField("Max. pos. value", "max_value", 0, 1e12)}
-            {limitField("Fixed annual interest [%]", "interest_pct", 0, 100, null, "0")}
-            {limitField("Margin rate [%]", "margin_rate_pct", 0, 100, null, "0")}
-            {limitField("Account margin [%]", "margin_pct", 1, 100, null, "100")}
-          </div>
-          <div className="lab-row">
-            {limitBox(spec, onChange, "Allow position size shrinking", "shrink")}
-          </div>
-          {ex.limits?.margin_pct !== undefined && ex.limits.margin_pct < 100 && <p className="cap" data-lab-margin-note>{MARGIN_NOTE}</p>}
-          <p className="cap">Volume limit and previous-bar equity are on the Portfolio tab.</p>
-        </fieldset>}
       </>}
       <div className="lab-row">
-        <NumField label="Cooldown (bars)" value={ex.cooldown?.bars} placeholder="off" min={1} max={cap.max_cooldown_bars ?? 1000} step={1}
+        {/* pairs wrap together, so a field never sits alone on a line apart from its partner */}
+        <span className="lab-row"><NumField label="Cooldown (bars)" value={ex.cooldown?.bars} placeholder="off" min={1} max={cap.max_cooldown_bars ?? 1000} step={1}
           onChange={(n) => change("cooldown", n === undefined ? undefined : { ...ex.cooldown, bars: n })} />
         <label className="dfield">Cooldown after<select aria-label="Cooldown after" value={ex.cooldown?.after ?? "any"} disabled={!ex.cooldown}
           onChange={(e) => change("cooldown.after", e.target.value === "any" ? undefined : e.target.value)}>
           <option value="any">Any trade</option><option value="loss">A loss</option><option value="win">A win</option>
-        </select></label>
-        <NumField label="Max entries" value={ex.max_trades?.count} placeholder="off" min={1} max={cap.max_trades_count ?? 1000} step={1}
+        </select></label></span>
+        <span className="lab-row"><NumField label="Max entries" value={ex.max_trades?.count} placeholder="off" min={1} max={cap.max_trades_count ?? 1000} step={1}
           onChange={(n) => change("max_trades", n === undefined ? undefined : { ...ex.max_trades, count: n, per: ex.max_trades?.per ?? "M" })} />
         <label className="dfield">Per<select aria-label="Max entries per" value={ex.max_trades?.per ?? "M"} disabled={!ex.max_trades}
           onChange={(e) => change("max_trades.per", e.target.value)}>
           {Object.entries(PERIODS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-        </select></label>
+        </select></label></span>
       </div>
       <div className="lab-row">
         <NumField label="Losses in a row" value={ex.risk?.max_consecutive_losses} placeholder="off" min={1} max={cap.max_consecutive_losses ?? 1000} step={1}
@@ -185,7 +159,7 @@ export function RiskPanel({ spec, catalogue, instrument, onChange }: { spec: Spe
       </div>
       <ShadowFields spec={spec} onChange={onChange} />
       {notes.length > 0 && <p className="cap">{notes.join(" ")}</p>}
-      <p className="cap">{FUTURES_NOTE}</p>
+      <Note gist="Futures: no contract data is admitted yet.">{FUTURES_NOTE}</Note>
     </div>
   </details>;
 }

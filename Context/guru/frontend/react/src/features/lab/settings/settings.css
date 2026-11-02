@@ -1,0 +1,65 @@
+/* Settings › AmiBroker tabs: use the width (side-by-side boxes, two-column General on wide screens), one gap scale (8/12/16), short notes.
+   Scoped to .lab-ami so the Exit card and the basics keep their own layout; selectors are one class above rules.css on purpose. */
+
+/* one width for every number box in the tabs (they were 64px, 84px or 11ch by label); Initial equity keeps its wider minimum (rules.css) */
+.lab-page[data-lab-page] .lab-ami .dfield input[type=number] { width: 11ch; }
+/* a group's label goes above its fields while the rail or a narrow card leaves the fields too little room beside it */
+@container lab-ami (max-width: 979px) {
+  .lab-page[data-lab-page] .lab-ami .lab-stab-panel > .lab-sgroup { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .lab-page[data-lab-page] .lab-ami .lab-stab-panel > .lab-sgroup > h4 { margin: 0; line-height: 1.4; }
+}
+
+/* every tab body stacks on the 12px gap; rows inside keep 8/12 */
+.lab-ami :is(.lab-trades-tab, .lab-stops-tab, .lab-wf-tab) { display: grid; gap: 12px; min-width: 0; }
+.lab-ami .lab-stab-panel > p.cap.lab-stab-intro, .lab-ami .lab-stab-panel > * > p.cap.lab-stab-intro { max-width: none; }
+
+/* the reason greyed fields are off: once per group, as its first line */
+.lab-ami .lab-sgroup-why { margin: 0; color: var(--ink2); }
+.lab-ami .lab-sgroup-why [data-lab-why] + [data-lab-why]::before { content: " · "; }
+
+/* a long note folded behind its gist */
+.lab-ami .lab-note > summary { width: fit-content; cursor: pointer; color: var(--ink2); }
+.lab-ami .lab-note > summary:hover { color: var(--ink); }
+.lab-ami .lab-note > summary:focus-visible { outline: 2px solid color-mix(in srgb, var(--blue) 45%, transparent); outline-offset: 2px; border-radius: 2px; }
+.lab-ami .lab-note > p { margin: 4px 0 0 16px; }
+
+/* General: the tick size field and shrink box join the limits row; a tick note set below still takes its own line */
+.lab-ami [data-lab-general-limits] > .lab-row { margin: 0; }
+.lab-ami [data-lab-general-limits] > p { flex-basis: 100%; }
+
+/* General on a wide screen: two columns, AmiBroker's order read down each one (Data, Backtest | Commissions, Position size) */
+@media (min-width: 1600px) {
+  .lab-ami .lab-stab-panel:has(> .lab-sgroup[aria-label="Data"]) { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: auto auto auto 1fr; column-gap: 24px; align-items: start; }
+  /* the last row is the flexible one, so the tall Backtest group grows it and Position size stays right under Commissions */
+  .lab-ami .lab-stab-panel:has(> .lab-sgroup[aria-label="Data"]) > .lab-stab-intro { grid-column: 1 / -1; }
+  .lab-ami .lab-stab-panel > .lab-sgroup[aria-label="Data"] { grid-area: 2 / 1; }
+  .lab-ami .lab-stab-panel > .lab-sgroup[aria-label="Backtest"] { grid-area: 3 / 1 / span 2; }
+  .lab-ami .lab-stab-panel > .lab-sgroup[aria-label="Commissions & rates"] { grid-area: 2 / 2 / span 2; }
+  .lab-ami .lab-stab-panel > .lab-sgroup[aria-label="Position size & risk"] { grid-area: 4 / 2; }
+}
+
+/* Trades: long and short side by side at their own width; problems run full width below */
+.lab-ami .lab-trades-tab .lab-trade-prices { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: stretch; }
+.lab-ami .lab-trades-tab .lab-trade-prices > fieldset { flex: 0 1 auto; min-width: min(100%, 320px); }
+.lab-ami .lab-trades-tab .lab-trade-prices > :not(fieldset) { flex-basis: 100%; margin: 0; }
+/* the short delay note sits beside the boxes where there is room */
+.lab-ami .lab-trades-tab .lab-trade-prices > p.cap { flex: 1 1 240px; align-self: center; }
+
+/* Stops: scenario and stop activation on one line; two stop boxes per row down to a laptop (never three), one on a narrow screen */
+.lab-ami .lab-stops-top { gap: 8px 24px; }
+.lab-ami .lab-stops-top > .lab-row { margin: 0; }
+.lab-ami .lab-stops-tab .lab-stops { grid-template-columns: repeat(auto-fit, minmax(min(100%, max(480px, calc(50% - 8px))), 1fr)); gap: 12px 16px; }
+
+/* Walk-forward: in-sample and out-of-sample side by side; everything else full width */
+.lab-ami .lab-wf-tab { grid-template-columns: repeat(auto-fit, minmax(min(100%, max(520px, calc(50% - 8px))), 1fr)); gap: 12px 16px; align-items: start; }
+.lab-ami .lab-wf-tab > :not(.lab-fieldset) { grid-column: 1 / -1; margin: 0; }
+.lab-ami .lab-wf-tab > .lab-fieldset { align-self: stretch; }
+/* UC / LC: their own line, under a small label, so the AFL circuit rules are easy to find */
+.lab-circuits { flex-basis: 100%; align-items: center; gap: 6px 14px; }
+.lab-circuits-h { font: 600 12px var(--font); color: var(--ink2); margin-right: 2px; }
+
+/* fixed report behaviour: a plain list of what the report always contains, not a bank of disabled controls */
+.lab-fixed-h { margin: 12px 0 6px; font: 600 13.5px var(--font); color: var(--ink); }
+.lab-fixed-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 6px 20px; margin: 0; padding: 0; list-style: none; font-size: 14px; color: var(--ink2); }
+.lab-fixed-list li { display: flex; gap: 8px; align-items: baseline; }
+.lab-fixed-list li[data-on] span { color: var(--green); font-weight: 700; }

@@ -40,6 +40,8 @@ export interface CatalogueExecution {
   max_take_profits: number; max_legs: number; max_valid_bars: number; max_delay_bars: number;
   cooldown_after?: string[]; max_cooldown_bars?: number; max_trades_per?: string[]; max_trades_count?: number;
   max_consecutive_losses?: number; max_pause_bars?: number; max_drawdown_pct_below?: number;
+  /** The AFL entry gates this engine applies (execution.dead_stock, penny_price, turnover_filter, aux1, aux2). */
+  entry_gates?: string[];
 }
 export interface Instrument {
   ticker: string; type: string; native: boolean; market: SavedMarket | null; currency: string | null;
@@ -114,6 +116,8 @@ export interface Execution {
   exit_at_stop?: Partial<Record<StopKey, ExitAtStop>>; activate_stops_immediately?: boolean; nbar_has_priority?: boolean; allow_same_bar_exit?: boolean; reenter_on_exit_bar?: boolean;
   /** rules.rs execution.defer_exit_on_circuit: a close exit on a lower-circuit bar (short: upper) waits for the next unlocked close. */
   defer_exit_on_circuit?: boolean;
+  /** rules.rs execution.skip_entry_on_circuit: no entry signal on an upper-circuit close (short: lower), the AFLs' UC. */
+  skip_entry_on_circuit?: boolean;
   /** "signal": bars_held counts from the entry signal bar (AmiBroker AFL BarsSince(Buy)); default the fill bar. */
   bars_held_from?: "fill" | "signal";
   risk?: { max_consecutive_losses?: number; pause_bars?: number; max_drawdown_pct?: number };
@@ -122,9 +126,12 @@ export interface Execution {
   /** AmiBroker position limits (money mode only): every field optional; absent = no limit. */
   limits?: PositionLimits;
   /** AmiBroker General › Tick size of a cash instrument (0 / absent: no rounding) and Pad and align all data to reference symbol. */
-  tick_size?: number; pad_align?: boolean;
+  tick_size?: number; /** true: the market benchmark; a symbol: AmiBroker's reference symbol. */ pad_align?: boolean | string;
   /** AmiBroker Settings › Report risk-free rates in % (absent: 5 / 5.4); single-instrument runs only. */
   report?: { rf_sharpe?: number; rf_upi?: number };
+  /** AFL entry gates (absent = off): no buy on the last bar and an exit at its close; a buy needs Close > penny_price,
+   *  Volume x Close above the AFL's year table, and the data's Aux1 / Aux2 column = 1 on the signal bar. */
+  dead_stock?: true; penny_price?: number; turnover_filter?: true; aux1?: true; aux2?: true;
   [extra: string]: unknown;
 }
 export interface PositionLimits {
@@ -213,6 +220,9 @@ export interface OptimizeResult extends Provisional {
   table_cols?: string[]; table?: (number | null)[][];
   /** AmiBroker Analysis "Info" tab: elapsed ms, combinations evaluated, threads, warnings. */
   info?: LabInfo;
+  /** Requested with sheet=1 (single instrument): AmiBroker's optimization result columns, in AmiBroker units (percent numbers,
+   *  drawdowns negative); `sheet` rows are dim values then one value per `sheet_cols`, in `table` order; null = not computed. */
+  sheet_cols?: string[]; sheet?: (number | null)[][];
 }
 
 // ---- Customize

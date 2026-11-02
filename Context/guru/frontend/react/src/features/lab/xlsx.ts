@@ -43,7 +43,7 @@ export function zip(files: ZipFile[]): Uint8Array {
 }
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "");
-const col = (i: number): string => (i < 26 ? "" : col(Math.floor(i / 26) - 1)) + String.fromCharCode(65 + (i % 26));
+export const col = (i: number): string => (i < 26 ? "" : col(Math.floor(i / 26) - 1)) + String.fromCharCode(65 + (i % 26));
 /** Excel sheet names: at most 31 characters, none of []:*?/\ , unique in the workbook. */
 export function sheetName(name: string, taken: Set<string>): string {
   const base = name.replace(/[[\]:*?/\\]/g, " ").trim().slice(0, 31) || "Sheet";
@@ -54,8 +54,9 @@ export function sheetName(name: string, taken: Set<string>): string {
 }
 
 /** A cell as Excel sees it: "1,234.50" → number, "12.5%" → 0.125 shown as a percent, anything else text. */
-function cell(v: string | number | null | undefined, ref: string, header: boolean): string {
+function cell(v: CellValue | undefined, ref: string, header: boolean): string {
   if (v === null || v === undefined || v === "") return "";
+  if (typeof v === "object") return `<c r="${ref}"><f>${esc(v.f)}</f></c>`;
   if (typeof v === "number") return Number.isFinite(v) ? `<c r="${ref}"><v>${v}</v></c>` : "";
   const t = v.trim().replace(/,/g, "");
   if (!header && /^[-+]?\d+(\.\d+)?%$/.test(t)) return `<c r="${ref}" s="2"><v>${Number(t.slice(0, -1)) / 100}</v></c>`;
@@ -63,13 +64,17 @@ function cell(v: string | number | null | undefined, ref: string, header: boolea
   return `<c r="${ref}" t="inlineStr"${header ? ' s="1"' : ""}><is><t xml:space="preserve">${esc(v)}</t></is></c>`;
 }
 
-export interface Sheet { name: string; rows: (string | number | null)[][] }
+/** `{ f }`: an Excel formula without the leading "=", computed when the file opens. */
+export type CellValue = string | number | null | { f: string };
+export interface Sheet { name: string; rows: CellValue[][]; /** an AutoFilter over the header row and its data */ autoFilter?: boolean }
 /** A workbook; the first row of each sheet is the bold, frozen header. */
 export function xlsx(sheets: Sheet[]): Uint8Array {
   const taken = new Set<string>(), named = sheets.map((s) => ({ ...s, name: sheetName(s.name, taken) }));
   const ws = (s: Sheet) => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetData>${
-    s.rows.map((r, i) => `<row r="${i + 1}">${r.map((v, j) => cell(v, `${col(j)}${i + 1}`, i === 0)).join("")}</row>`).join("")}</sheetData></worksheet>`;
+    s.rows.map((r, i) => `<row r="${i + 1}">${r.map((v, j) => cell(v, `${col(j)}${i + 1}`, i === 0)).join("")}</row>`).join("")}</sheetData>${
+    s.autoFilter && s.rows.length ? `<autoFilter ref="A1:${col(Math.max(1, ...s.rows.map((r) => r.length)) - 1)}${s.rows.length}"/>` : ""}</worksheet>`;
+  const formulas = sheets.some((s) => s.rows.some((r) => r.some((v) => v !== null && typeof v === "object")));
   const files: ZipFile[] = [
     { name: "[Content_Types].xml", data: utf8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${
@@ -78,7 +83,7 @@ export function xlsx(sheets: Sheet[]): Uint8Array {
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`) },
     { name: "xl/workbook.xml", data: utf8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${
-      named.map((s, i) => `<sheet name="${esc(s.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join("")}</sheets></workbook>`) },
+      named.map((s, i) => `<sheet name="${esc(s.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join("")}</sheets>${formulas ? '<calcPr fullCalcOnLoad="1"/>' : ""}</workbook>`) },
     { name: "xl/_rels/workbook.xml.rels", data: utf8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${
       named.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join("")}<Relationship Id="rId${named.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`) },

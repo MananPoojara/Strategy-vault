@@ -9,6 +9,7 @@ import { useForeignScope } from "./ForeignFields";
 import { PARAM_NAMES, PICK_DEFAULTS } from "./catalogue";
 import { BAND_NAMES, isBand } from "./BandRule";
 import { foreignEnabled, foreignOptions, withForeignField } from "./foreign-model";
+import { notPriceLine } from "./price-lines";
 import type { Catalogue, Operand, RuleNode, SeriesOperand } from "./types";
 
 type Obj = Record<string, unknown>;
@@ -52,7 +53,8 @@ export function multiCompare(node: RuleNode): { kids: Obj[]; must: boolean[] } |
  *  price-chart lines (moving averages, bands) and indicators with a signal line keep Compare with. */
 const thresholdOnly = (lhs: Operand, rhs: Operand, cat: Catalogue) => {
   const ind = isSeries(lhs) ? cat.indicators.find((i) => i.id === lhs.s) : undefined;
-  return isValue(rhs) && !!ind && ind.placement !== "price" && !ind.outputs.some((o) => o === "signal" || o === "trigger");
+  // a price-chart line that is not a price (a ±1 trend state, a 0/1 signal, ATR points) reads against a number too
+  return isValue(rhs) && !!ind && ((ind.placement !== "price" && !ind.outputs.some((o) => o === "signal" || o === "trigger")) || (ind.placement === "price" && notPriceLine(lhs, cat)));
 };
 
 /** One condition as AmiBroker's Parameters window shows it: one setting per line (Indicator, Period, Timeframe, Condition,
@@ -89,11 +91,12 @@ export function ParamRule({ node, catalogue: cat, label, onChange, onLhs, onOff,
   const side = (o: Operand, put: (o: Operand) => void, who: string, threshold: boolean, fixed = false, isLhs = false, title = who): ReactNode[] => {
     const kind = operandKind(o, cat), s = isSeries(o) ? o : undefined, ind = s && cat.indicators.find((i) => i.id === s.s);
     const named = (n: string) => `${label} ${who.toLowerCase()} ${n}`;
+    const leftOffPrice = notPriceLine(lhs, cat), pickable = isLhs ? computed : computed.filter((i) => (i.placement === "price") !== leftOffPrice || i.id === ind?.id);
     return [
       !fixed && row(title, <select aria-label={named("type")} value={kind} onChange={(e) => put(convertOperand(o, e.target.value as "price", cat))}>
         {threshold && <option value="number">{OPERAND_KIND_LABELS.number}</option>}
         <option value="indicator">{OPERAND_KIND_LABELS.indicator}</option>
-        <option value="price">{OPERAND_KIND_LABELS.price}</option>
+        {(isLhs || !leftOffPrice || kind === "price") && <option value="price">{OPERAND_KIND_LABELS.price}</option>}
       </select>, `${who}-kind`),
       kind === "number" && isValue(o) && row("Threshold",
         <NumField hideLabel label={named("threshold")} value={o.value} onChange={(n) => n !== undefined && put({ ...o, value: n })} />, `${who}-value`),
@@ -101,7 +104,7 @@ export function ParamRule({ node, catalogue: cat, label, onChange, onLhs, onOff,
         {cat.price_sources.map((p) => <option key={p} value={p}>{p}</option>)}
       </select>, `${who}-price`),
       ...(kind === "indicator" && s && ind ? [
-        row("Indicator", <IndicatorSearch ind={ind} computed={computed} groups={groups} onPick={(id) => {
+        row("Indicator", <IndicatorSearch ind={ind} computed={pickable} groups={isLhs ? groups : [...new Set(pickable.map((i) => i.category))]} onPick={(id) => {
           const { p: _p, out: _out, ...rest } = s;
           // a new indicator starts on AmiBroker's calculation (its choice settings from AB_DEFAULTS) and the team's AFL numbers where set
           const picked = computed.find((i) => i.id === id);
@@ -119,8 +122,14 @@ export function ParamRule({ node, catalogue: cat, label, onChange, onLhs, onOff,
           </select>, `${who}-${p.key}`) : row(PARAM_NAMES[ind.id]?.[p.key] ?? paramLabel(p.label),
           <NumField hideLabel label={named(paramLabel(p.label))} value={s.p?.[p.key] ?? p.default} min={p.min} max={p.max} step={p.step}
             onChange={(n) => n !== undefined && n >= p.min && n <= p.max && put({ ...s, p: { ...s.p, [p.key]: n } })} />, `${who}-${p.key}`)),
-        ind.outputs.length > 1 && row(isBand(ind) ? "Band" : "Line", <select aria-label={named("line")} value={s.out ?? ind.outputs[0]} onChange={(e) => put({ ...s, out: e.target.value })}>
-          {ind.outputs.map((v) => <option key={v} value={v}>{(isBand(ind) && BAND_NAMES[v]) || v}</option>)}
+        ind.outputs.length > 1 && row(isBand(ind) ? "Band" : "Line", <select aria-label={named("line")} value={s.out ?? ind.outputs[0]} onChange={(e) => {
+          const next = { ...s, out: e.target.value };
+          // a line that is not a price cannot be read against the close: switch Compare with to Threshold 0
+          if (isLhs && !many && notPriceLine(next, cat) && operandKind(rhss[0], cat) === "price") onChange({ ...x, lhs: next, rhs: { value: 0 } } as RuleNode);
+          else put(next);
+        }}>
+          {ind.outputs.filter((v) => isLhs || v === (s.out ?? ind.outputs[0]) || notPriceLine({ ...s, out: v }, cat) === leftOffPrice)
+            .map((v) => <option key={v} value={v}>{(isBand(ind) && BAND_NAMES[v]) || v}</option>)}
         </select>, `${who}-out`),
       ] : []),
       s && row("Timeframe", <TimeframeField operand={o} catalogue={cat} onChange={put} />, `${who}-tf`),

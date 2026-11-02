@@ -96,8 +96,8 @@ export function amiProblems(spec: Spec): string[] {
   const ex = spec.execution ?? {}, out = tradePriceProblems(spec);
   for (const [k, v] of Object.entries(ex.reentry ?? {})) if (!bounded(v, 0, 1000, true)) out.push(`Re-entry delay (${k.replace("_", "-")}) must be a whole number of bars from 0 to 1000.`);
   // rules.rs refuses the AmiBroker stop settings in a portfolio (its engine keeps today's stops)
-  if (spec.portfolio && [ex.exit_at_stop, ex.activate_stops_immediately, ex.nbar_has_priority, ex.allow_same_bar_exit, ex.bars_held_from, ex.reenter_on_exit_bar, ex.defer_exit_on_circuit].some((x) => x !== undefined))
-    out.push("Exit at stop?, Activate stops immediately, N-bar Has priority, Allow same bar exit / entry signal, Re-enter on the exit bar, Hold the exit on a circuit close and Count bars held from the signal bar apply to one instrument only; remove them on the Trades tab.");
+  if (spec.portfolio && [ex.exit_at_stop, ex.activate_stops_immediately, ex.nbar_has_priority, ex.allow_same_bar_exit, ex.bars_held_from, ex.reenter_on_exit_bar, ex.defer_exit_on_circuit, ex.skip_entry_on_circuit].some((x) => x !== undefined))
+    out.push("Exit at stop?, Activate stops immediately, N-bar Has priority, Allow same bar exit / entry signal, Re-enter on the exit bar, the UC/LC circuit rules and Count bars held from the signal bar apply to one instrument only; remove them on the Trades tab.");
   // rules.rs tick_size / report::rates bounds; execution.report is refused in a portfolio
   if (ex.tick_size !== undefined && !bounded(ex.tick_size, 0, 1e6)) out.push("Tick size must be from 0 (no rounding) to 1,000,000.");
   for (const [k, what] of [["rf_sharpe", "Sharpe ratio"], ["rf_upi", "UPI"]] as const) { const v = ex.report?.[k]; if (v !== undefined && !bounded(v, 0, 100)) out.push(`Risk-free rate for ${what} must be from 0% to 100%.`); }
@@ -162,7 +162,7 @@ export const takeProfits = (s: Spec, pre: SidePre): TakeProfit[] => {
 export const withTakeProfits = (s: Spec, pre: SidePre, list: TakeProfit[]) => putAt(s, `${pre}exit.take_profits`, list.length ? list : undefined);
 export type ResultMode = "unit" | "money";
 export const modeOf = (s: Spec): ResultMode => (s.execution?.capital !== undefined ? "money" : "unit");
-export const DEFAULT_CAPITAL = 1_000_000;
+export const DEFAULT_CAPITAL = 1_000_000; // the team AFLs' Backtest parameter "Initial Equity"
 export function withMode(s: Spec, mode: ResultMode): Spec {
   if (mode === "money") return setExecution(s, { capital: s.execution?.capital ?? DEFAULT_CAPITAL, cost_bps: undefined });
   const z = s.execution?.sizing;
@@ -174,15 +174,15 @@ const SIZING_DEFAULT: Record<Exclude<SizingKind, "full">, Sizing> = { pct_equity
 export const withSizingKind = (s: Spec, k: SizingKind) => setExecution(s, { sizing: k === "full" ? undefined : {
   ...omit(s.execution?.sizing ?? {}, "pct_equity", "risk_pct", "units", "value"), ...SIZING_DEFAULT[k],
 } });
-export interface InstrumentContext { kind: string; market: Market }
+export interface InstrumentContext { kind: string; market: Market; hasVolume?: boolean }
 /** in/us rows without a native asset type are indices (instruments.ts); gl rows carry their kind (index | cfd | crypto). */
-export const instrumentContext = (market: Market, option?: InstrumentOption): InstrumentContext => ({ market, kind: option?.type ?? (market === "gl" ? "unknown" : "index") });
+export const instrumentContext = (market: Market, option?: InstrumentOption): InstrumentContext => ({ market, kind: option?.type ?? (market === "gl" ? "unknown" : "index"), hasVolume: option?.hasVolume });
 export function moneyBlocked(ctx: InstrumentContext, spec: Spec): string | null {
   if(ctx.kind==="portfolio")return ctx.market==="gl"?"Portfolios require admitted India or US stocks and ETFs.":hasShorts(spec)?"Portfolios are long-only.":null;
-  if (ctx.kind === "index") return MONEY_BLOCKED.index;
   if (ctx.kind === "crypto") return MONEY_BLOCKED.crypto;
   if (ctx.kind === "cfd") return MONEY_BLOCKED.cfd;
-  if (!["individual_stock", "etf"].includes(ctx.kind)) return "Money mode needs an admitted stock or ETF.";
+  // an index runs in money at its index level, as AmiBroker trades it; its runs stay labelled a study (MODEL_NOTE.index)
+  if (!["individual_stock", "etf", "index"].includes(ctx.kind)) return "Money mode needs an admitted stock, ETF or index.";
   return ctx.market === "in" && hasShorts(spec) ? MONEY_BLOCKED.indiaShort : null;
 }
 /** Pre-run mirror of lab/model.rs model(); the response's execution_model replaces it after a run. */
@@ -197,8 +197,9 @@ export function instrumentNotes(ctx: InstrumentContext, spec: Spec): string[] {
   return notes;
 }
 
-export const supportsMoney = (cat: Catalogue): boolean =>
-  !!cat.execution?.sizing?.includes("units") && !!cat.execution.sizing?.includes("value");
+/** An index runs in money only on an engine that admits it (it arrived with the AFL entry gates); an older engine refuses it. */
+export const supportsMoney = (cat: Catalogue, kind?: string): boolean =>
+  !!cat.execution?.sizing?.includes("units") && !!cat.execution.sizing?.includes("value") && (kind !== "index" || !!cat.execution.entry_gates);
 
 const finite = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n);
 const bounded = (n: unknown, lo: number, hi: number, whole = false) => finite(n) && n >= lo && n <= hi && (!whole || Number.isInteger(n));

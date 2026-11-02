@@ -25,7 +25,7 @@ it("two optimized settings draw a 3D surface of the chosen metric with a heatmap
   const svg = surface.querySelector('[data-lab-surface="3d"]')!;
   expect(svg.getAttribute("aria-label")).toContain("CAR");
   expect(svg.querySelectorAll(".lab-surface-quad")).toHaveLength(1); // 2 × 1 facets, the one touching the missing corner is open
-  expect([...svg.querySelectorAll(".lab-surface-name")].map((t) => t.textContent)).toEqual(["Entry 1: EMA Length", "Exit 1: number"]);
+  expect([...svg.querySelectorAll(".lab-surface-name")].map((t) => t.textContent)).toEqual(["Entry 1: EMA Period", "Exit 1: Days held"]); // the card's names
   expect(surface.querySelector(".lab-surface-legend")!.textContent).toContain(pct(0.01, 2));
   expect(surface.querySelector(".lab-surface-legend")!.textContent).toContain(pct(0.05, 2)); // range of every value, the missing one excluded
   await act(async () => surface.querySelector<HTMLButtonElement>('[aria-label="Chart"] button:last-child')!.click());

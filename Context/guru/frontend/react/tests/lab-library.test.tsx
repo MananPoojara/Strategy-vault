@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { act } from "react";
 import { availability, groupByCategory, searchIndicators } from "../src/features/lab/catalogue";
 import { defaultTicker, optionsFromGl, optionsFromTickers, savedMarket } from "../src/features/lab/instruments";
-import { LibraryRail } from "../src/features/lab/LibraryRail";
+import { LibraryRail, statusTag } from "../src/features/lab/LibraryRail";
 import { IndicatorDetail } from "../src/features/lab/IndicatorDetail";
 import { Toolbar } from "../src/features/lab/Toolbar";
 import { catalogueFixture as cat, glInstrumentsFixture, mount, tickersFixture, unmount } from "./fixtures/lab";
@@ -150,7 +150,9 @@ it("popup picker shows full names, filters categories and searches the full cata
   expect(host.querySelector('.lab-group-h')).toBeNull();
   expect(host.querySelector('[data-lab-item="rsi"] b')!.textContent).toBe("Relative Strength Index");
   const categories = host.querySelector('[aria-label="Indicator categories"]')!;
-  const category = [...categories.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent === 'Oscillators')!;
+  // each category names itself and its size (the count is part of the button)
+  const category = [...categories.querySelectorAll<HTMLButtonElement>('button')].find(b => b.firstChild?.textContent === 'Oscillators')!;
+  expect(category.querySelector('small')!.textContent).toBe(String(cat.indicators.filter((i) => i.category === 'Oscillators').length));
   await act(async () => category.click());
   expect(host.querySelector('[data-lab-item="ema"]')).toBeNull();
   expect(host.querySelector('[data-lab-item="rsi"]')).not.toBeNull();
@@ -183,4 +185,16 @@ it("popup picker retains admission reasons and custom indicator actions", async 
   expect(onEdit).toHaveBeenCalledWith(row);
   await act(async () => host.querySelector<HTMLButtonElement>('.lab-mine-new')!.click());
   expect(onEdit).toHaveBeenLastCalledWith(null);
+});
+
+it("tags an unavailable entry by its real reason, from the catalogue's needs flags and note", () => {
+  const base = byId("ema");
+  const off = (note: string, needs: Partial<typeof base.needs> = {}) => ({ ...base, computed: false, note, needs: { ...base.needs, ...needs } });
+  expect(statusTag(base, true, true)).toBeNull();
+  expect(statusTag(off("looks ahead — chart display only, not usable in rules"), false, true)?.label).toBe("display only");
+  expect(statusTag(off("chart drawing/display — not a bar-by-bar series"), false, true)?.label).toBe("display only");
+  expect(statusTag(off("not available yet — formula not published (Barchart)"), false, true)?.label).toBe("formula unpublished");
+  expect(statusTag(off("Needs intraday (minute) bars; not available yet.", { intraday: true }), false, true)?.label).toBe("needs data");
+  expect(statusTag(off("needs a user-supplied coefficient list"), false, true)?.label).toBe("not computed");
+  expect(statusTag({ ...base, needs: { ...base.needs, volume: true } }, false, false)).toEqual({ label: "no volume", warn: true });
 });

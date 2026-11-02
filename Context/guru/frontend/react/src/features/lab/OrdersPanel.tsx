@@ -185,7 +185,7 @@ const STOPS = [
   { key: "trailing", legend: "Trailing stop", label: "Trailing stop" },
 ] as const;
 /** One-line disclosures of how the AmiBroker stop options run in this engine. */
-const STOP_NOTES = {
+export const STOP_NOTES = {
   modes: "Exit at trade price only (0): the stop is tested only on each bar's Sell/Cover price (its open or close) and exits there, on that bar. Exit next bar at trade price (2): High-Low triggers it and it exits on the next bar at the Sell/Cover price (the next bar's open when trading on the open). Stops ignore trade delays. Breakeven and take-profits always exit intraday.",
   nbar: "The N-bar stop has no stop price and exits at the regular trade price. Has priority: on the bar the N-bar stop exits, the other stops are not checked.",
   portfolio: "Portfolio runs exit stops intraday at the stop level; exit modes, N-bar priority and re-entry delays are single-instrument settings.",

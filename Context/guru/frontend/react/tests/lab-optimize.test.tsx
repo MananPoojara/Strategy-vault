@@ -125,21 +125,21 @@ const runWith = async (fx: OptimizeResult, extra: Partial<ComponentProps<typeof 
 };
 const rowCells = (host: HTMLElement, n: number) => [...host.querySelectorAll("table.ocmp tbody tr")[n].children].map((c) => c.textContent);
 
-it("with a split the ranking columns show the in-sample values with their percentiles", async () => {
+it("with a split the ranking columns show the in-sample values", async () => {
   const host = await runWith(splitFx);
   const one = rowCells(host, 1);
   const pick = splitFx.picked["1"];
-  expect(one[2]).toBe(`${pct(pick[splitFx.cols.indexOf("is_cagr")])} · p90`);
+  expect(one[2]).toBe(`${pct(pick[splitFx.cols.indexOf("is_cagr")])}`);
   expect(one[2]).not.toContain(pct(pick[splitFx.cols.indexOf("cagr")]));
-  expect(one[3]).toBe(`${num(pick[splitFx.cols.indexOf("is_sharpe")])} · p85`);
-  expect(one[6]).toBe(`${num(pick[splitFx.cols.indexOf("is_mar")])} · p88`);
+  expect(one[3]).toBe(`${num(pick[splitFx.cols.indexOf("is_sharpe")])}`);
+  expect(one[6]).toBe(`${num(pick[splitFx.cols.indexOf("is_mar")])}`);
   expect(rowCells(host, 0)[2]).toBe(pct(splitFx.base[splitFx.cols.indexOf("is_cagr") - 1]));
 });
 
 it("without a split the ranking columns show the full-period values", async () => {
   const host = await runWith({ ...splitFx, split: null, ranked_on: "full" });
   expect(host.textContent).toContain("Ranked on: full period");
-  expect(rowCells(host, 1)[2]).toBe(`${pct(0.07)} · p90`);
+  expect(rowCells(host, 1)[2]).toBe(pct(0.07));
   expect(host.textContent).not.toContain("Held back · display only");
 });
 
@@ -241,22 +241,16 @@ it("offers nested settings under group captions and sends their exact path", asy
   await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-action="optimize"]')!.click());
   expect(onOptimize.mock.calls[0][0].optimize[0].path).toBe("entry.all[1].any[0].rhs.p.length");
 });
-it("optimization shows server execution notes and adaptations without inventing risk events", async () => {
-  const result: OptimizeResult = { ...optimizeFixture, execution_model: { kind: "index", mode: "unit", executable: false, notes: ["Server note"], events: null }, adaptations: ["Server adaptation"] };
+it("the optimization result drops the label and execution strip (the page title carries them) but keeps the money basis", async () => {
+  const result: OptimizeResult = { ...optimizeFixture, money: { capital: 100000, basis: "Declared costs" }, adaptations: ["Server adaptation"],
+    execution_model: { kind: "index", mode: "unit", executable: false, notes: ["An index cannot be traded; returns are a study of index levels."], events: null } };
   const host = await mount(<OptimizePanel {...base} onOptimize={async () => result} />);
   await tick(host, "entry.all[0].rhs.p.length");
   await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-action="optimize"]')!.click());
-  expect(host.querySelector("[data-lab-optimize-result] [data-lab-execution-notes]")?.textContent).toBe("Server note");
-  expect(host.querySelector("[data-lab-optimize-result] [data-lab-adaptations]")?.textContent).toBe("Server adaptation");
-  expect(host.querySelector("[data-lab-events]")).toBeNull();
-});
-it("money optimization is labelled Money even without run-only ledger totals", async () => {
-  const result: OptimizeResult = { ...optimizeFixture, money: { capital: 100000, basis: "Declared costs" }, execution_model: { kind: "etf", mode: "money", executable: true, notes: [], events: null } };
-  const host = await mount(<OptimizePanel {...base} onOptimize={async () => result} />);
-  await tick(host, "entry.all[0].rhs.p.length");
-  await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-action="optimize"]')!.click());
-  expect(host.querySelector("[data-lab-optimize-result] [data-lab-money]")?.textContent).toContain("Money");
-  expect(host.querySelector("[data-lab-optimize-result]")?.textContent).not.toContain("Unit study");
+  const view = host.querySelector("[data-lab-optimize-result]")!;
+  for (const gone of ["[data-server-label]", ".lab-exec-strip", "[data-lab-execution-notes]", "[data-lab-adaptations]", "[data-lab-money]"]) expect(view.querySelector(gone)).toBeNull();
+  for (const text of ["not a book method", "Unit study", "Study only", "An index cannot be traded", "Server adaptation"]) expect(view.textContent).not.toContain(text);
+  expect(view.textContent).toContain("Declared costs");
 });
 it("a changed portfolio cohort invalidates pending results and their Apply actions",async()=>{
  const {portfolioCatalogueFixture}=await import("./fixtures/portfolio");let release!:(r:OptimizeResult)=>void;const onOptimize=vi.fn(()=>new Promise<OptimizeResult>(resolve=>{release=resolve;}));

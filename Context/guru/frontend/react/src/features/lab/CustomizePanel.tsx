@@ -36,6 +36,9 @@ export function CustomizePanel(props: {
   const [query, setQuery] = useState("");
   const [fidelity, setFidelity] = useState<Fidelity | null>(null);
   const [summaries, setSummaries] = useState<Record<string, string>>({});
+  // the method shown in the detail pane; it replaces the strategy's rules only through "Load into my strategy"
+  const [preview, setPreview] = useState(selected);
+  useEffect(() => { setPreview(selected); }, [selected]);
   const requested = useRef(new Set<string>());
   const seq = useRef(0);
   // A new method or ticker invalidates both the shown result and any request still in flight.
@@ -76,16 +79,17 @@ export function CustomizePanel(props: {
   return (
     <section className="box lab-customize" data-lab-customize>
       {head}
+      <div className="lab-cz-body">
       {props.templatesError ? <ErrorNotice error={props.templatesError} market={market} />
         : !templates ? <Loading text="Loading book templates…" />
         : (
-          <div>
-            <ServerLabel text={templates.label} />
+          <div className="lab-cz-list">
             <div className="lab-row lab-cz-tools">
               <label className="dfield">
                 <input type="search" aria-label="Search book methods" placeholder="Search methods or books" value={query} onChange={(e) => setQuery(e.target.value)} />
               </label>
               <span className="cap">{templates.templates.length} templates · {templates.admitted} admitted methods · {templates.methods} catalogued</span>
+              <ServerLabel text={templates.label} />
             </div>
             <div className="lab-books">
               {[...groups].map(([book, items]) => (
@@ -93,7 +97,8 @@ export function CustomizePanel(props: {
                   <summary><b>{bookLabel(book)}</b> <span>{items.length} method{items.length === 1 ? "" : "s"}</span></summary>
                   <ul className="lab-methods">
                     {items.map((t) => (
-                      <MethodCard key={`${market}:${t.method.id}`} item={t} selected={t.method.id === selected} onSelect={props.onSelect}
+                      <MethodCard key={`${market}:${t.method.id}`} item={t} selected={t.method.id === preview} loaded={t.method.id === selected}
+                        onSelect={(id) => { setPreview(id); requestAnimationFrame(() => document.getElementById("lab-cz-detail")?.scrollIntoView?.({ block: "nearest" })); }}
                         reason={notAdmittedReason(t.requirement, t.allowed_types, props.instrumentType)}
                         summary={summaries[`${market}:${t.method.id}`]} onWant={() => want(t.method.id)} />
                     ))}
@@ -104,7 +109,12 @@ export function CustomizePanel(props: {
             </div>
           </div>
         )}
-      {selected && (props.templateError ? <ErrorNotice error={props.templateError} market={market} />
+      <div className="lab-cz-detail" id="lab-cz-detail" aria-live="polite">
+      {preview && preview !== selected ? <MethodPreview key={preview} id={preview} item={templates?.templates.find((t) => t.method.id === preview)} market={market}
+          catalogue={catalogue} spec={props.spec} loadTemplate={props.loadTemplate} onLoad={props.onSelect} onClose={() => setPreview(selected)}
+          reason={(() => { const t = templates?.templates.find((x) => x.method.id === preview); return t && notAdmittedReason(t.requirement, t.allowed_types, props.instrumentType); })()} />
+      : !selected ? <p className="lab-cz-empty">Pick a method in the list to read its rules here, then load it into your strategy.</p>
+      : (props.templateError ? <ErrorNotice error={props.templateError} market={market} />
         : !template ? <Loading text="Loading template…" />
         : template.status === "unavailable" ? <div className="lab-row"><p className="rnote">{unavailableText(template.reason)}</p>{clear}</div>
         : (() => {
@@ -115,7 +125,7 @@ export function CustomizePanel(props: {
           const fill = original.entry.limit ? "a limit order" : original.execution?.fill === "close" ? "the signal close" : "the next open";
           return (
             <div className="lab-template" data-lab-template>
-              <ServerLabel text={template.label} />
+              {template.label !== templates?.label && <ServerLabel text={template.label} />}{/* the same notice is already on the list */}
               <div className="lab-cz-head">
                 <h3>Customize this method: {m.name}</h3>
                 <button type="button" className="dbtn sm ghost" data-lab-action="jump-rules" onClick={() => props.onShowRules ? props.onShowRules() : jumpTo(".lab-rules")}>Edit indicators & rules</button>
@@ -167,12 +177,47 @@ export function CustomizePanel(props: {
             </div>
           );
         })())}
+      </div>
+      </div>
     </section>
   );
 }
 
-function MethodCard({ item, selected, reason, summary, onSelect, onWant }: {
-  item: TemplateListItem; selected: boolean; reason?: string; summary?: string; onSelect(id: string): void; onWant(): void;
+/** A method read in the detail pane before it is loaded: its rules in words, the instrument rule and notes. Loading replaces
+ *  the strategy's rules (the same replacement as before), after a second click when the strategy already has rules. */
+function MethodPreview({ id, item, market, catalogue, spec, reason, loadTemplate, onLoad, onClose }: {
+  id: string; item?: TemplateListItem; market: SavedMarket; catalogue: Catalogue; spec: Spec; reason?: string;
+  loadTemplate(methodId: string): Promise<TemplateResponse>; onLoad(methodId: string): void; onClose(): void;
+}) {
+  const [t, setT] = useState<TemplateResponse | null>(null), [error, setError] = useState<unknown>(null), [confirm, setConfirm] = useState(false);
+  useEffect(() => { let live = true; loadTemplate(id).then((x) => live && setT(x), (e: unknown) => live && setError(e)); return () => { live = false; }; }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const m = item?.method, hasRules = (((spec.entry as { all?: unknown[] } | undefined)?.all) ?? []).length > 0;
+  const blocked = reason ?? (t?.status === "unavailable" ? unavailableText(t.reason) : undefined);
+  return <div className="lab-template lab-cz-preview" data-lab-preview={id}>
+    <div className="lab-cz-head">
+      <h3>{m?.name ?? id}</h3>
+      <button type="button" className="dbtn sm ghost" onClick={onClose}>Close</button>
+    </div>
+    {m && <p className="cap">{bookLabel(m.book)} · {m.group} · {m.dir.toLowerCase() === "short" ? "Short" : "Long"}{item && ` · ${requirementText(item.requirement)}`}</p>}
+    {error ? <ErrorNotice error={error} market={market} /> : !t ? <Loading text="Loading the method…" /> : t.status === "available" && <>
+      <h4>What it does</h4>
+      <p data-lab-preview-summary>{specSummary(t.template.spec, catalogue)}</p>
+      {t.template.notes.length > 0 && <ul className="lab-cz-notes">{t.template.notes.map((n) => <li key={n}>{n}</li>)}</ul>}
+    </>}
+    {blocked ? <p className="rnote" data-lab-preview-blocked>{blocked}</p>
+      : confirm ? <div className="rnote lab-cz-confirm" role="alert">
+          <p>Loading replaces the entry, filter and exit rules in Strategy &amp; backtest with this method's rules. Save your current strategy first if you want to keep it.</p>
+          <div className="lab-row"><button type="button" className="dbtn sm primary" data-lab-action="customize-replace" onClick={() => onLoad(id)}>Replace my rules</button>
+            <button type="button" className="dbtn sm ghost" onClick={() => setConfirm(false)}>Cancel</button></div>
+        </div>
+      : <div className="lab-row"><button type="button" className="dbtn sm primary" data-lab-action="customize-load" disabled={!t || t.status !== "available"}
+          onClick={() => (hasRules ? setConfirm(true) : onLoad(id))}>Load into my strategy</button>
+          <span className="cap">Then change its numbers, run it and save your variant.</span></div>}
+  </div>;
+}
+
+function MethodCard({ item, selected, loaded: inStrategy = false, reason, summary, onSelect, onWant }: {
+  item: TemplateListItem; selected: boolean; loaded?: boolean; reason?: string; summary?: string; onSelect(id: string): void; onWant(): void;
 }) {
   const ref = useRef<HTMLLIElement>(null);
   const loaded = summary !== undefined;
@@ -187,7 +232,7 @@ function MethodCard({ item, selected, reason, summary, onSelect, onWant }: {
   return (
     <li ref={ref} onMouseEnter={onWant} onFocus={onWant}>
       <button type="button" data-lab-method={m.id} aria-pressed={selected} disabled={!!reason} onClick={() => onSelect(m.id)}>
-        <span className="lab-m-name">{m.name}</span>
+        <span className="lab-m-name">{m.name}{inStrategy && <em className="lab-m-loaded"> · in your strategy</em>}</span>
         <span className="lab-m-sum" title={summary}>{summary ?? " "}</span>
         <small>{m.dir.toLowerCase() === "short" ? "Short" : "Long"} · {requirementText(item.requirement)}</small>
         {reason && <small className="lab-m-why">{reason}</small>}

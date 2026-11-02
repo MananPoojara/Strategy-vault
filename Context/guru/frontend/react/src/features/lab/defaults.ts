@@ -126,8 +126,9 @@ export function changedSettings(spec: Spec): string[] {
   const ex = (spec.execution ?? {}) as Record<string, unknown>, out: string[] = [];
   const named: [string, unknown][] = [["position size", ex.sizing], ["cooldown", ex.cooldown], ["trades per period", ex.max_trades], ["loss-streak pause or drawdown stop", ex.risk],
     ["trade after a losing streak", ex.shadow], ["trade prices", ex.prices], ["delays", ex.delays ?? ex.delay_bars], ["re-entry delays", ex.reentry], ["position limits", ex.limits],
-    ["stop exit modes", ex.exit_at_stop], ["stops from the next bar", ex.activate_stops_immediately === false || undefined], ["no same-bar exit and entry", ex.allow_same_bar_exit === false || undefined],
-    ["re-enter on the exit bar", ex.reenter_on_exit_bar], ["hold the exit on a circuit close", ex.defer_exit_on_circuit], ["tick size", ex.tick_size || undefined],
+    ["stop exit modes", ex.exit_at_stop], ["stops from the next bar", ex.activate_stops_immediately === false || undefined], ["N-bar has priority", ex.nbar_has_priority],
+    ["opposite signal", ex.opposite], ["no same-bar exit and entry", ex.allow_same_bar_exit === false || undefined],
+    ["re-enter on the exit bar", ex.reenter_on_exit_bar], ["no circuit exit hold", ex.defer_exit_on_circuit === false || undefined], ["entry on an upper-circuit close", ex.skip_entry_on_circuit === false || undefined], ["tick size", ex.tick_size || undefined],
     ["pad and align", ex.pad_align], ["report rates", ex.report], ["entry on", ex.entry_on], ["same-bar order", ex.intrabar], ["costs (cash)", ex.costs],
     ["portfolio", spec.portfolio], ["date filter", spec.date_filter && !spec.date_filter.off ? spec.date_filter : undefined]];
   for (const [name, v] of named) if (v !== undefined && v !== false) out.push(name);

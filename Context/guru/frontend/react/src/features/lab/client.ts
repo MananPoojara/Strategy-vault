@@ -86,10 +86,11 @@ const executionQuery = (spec: Spec, q: (RunQuery | PortfolioRunQuery) & {split?:
 export function run(m:SavedMarket,spec:Spec&{portfolio:PortfolioSpec},q:PortfolioRunQuery):Promise<PortfolioRunResult>;
 export function run(m:SavedMarket,spec:Spec,q:RunQuery):Promise<LabRunResult>;
 export function run(m:SavedMarket,spec:Spec,q:RunQuery|PortfolioRunQuery):Promise<LabRunResult>{return engine<LabRunResult>(m,"lab/run",{spec:JSON.stringify(spec),...executionQuery(spec,q)});}
-/** slim=1 always: the page reads `picked`, never `rows` (full rows can reach the 64 MB gateway cap); table=1 adds the compact all-results list. Not slot-limited: it has its own server slot. */
+/** slim=1 always: the page reads `picked`, never `rows` (full rows can reach the 64 MB gateway cap); table=1 adds the compact all-results list;
+ *  sheet=1 (single instrument only) adds AmiBroker's optimization columns for the workbook download. Not slot-limited: it has its own server slot. */
 export function optimize(m:SavedMarket,spec:Spec&{portfolio:PortfolioSpec},q:PortfolioRunQuery):Promise<PortfolioOptimizeResult>;
 export function optimize(m:SavedMarket,spec:Spec,q:RunQuery&{split?:string|null}):Promise<LabOptimizeResult>;
-export function optimize(m:SavedMarket,spec:Spec,q:(RunQuery|PortfolioRunQuery)&{split?:string|null}):Promise<LabOptimizeResult>{return labRequest<LabOptimizeResult>(`${engineBase(m)}/lab/optimize?${qs({spec:JSON.stringify(spec),...executionQuery(spec,q),slim:"1",table:"1"})}`);}
+export function optimize(m:SavedMarket,spec:Spec,q:(RunQuery|PortfolioRunQuery)&{split?:string|null}):Promise<LabOptimizeResult>{return labRequest<LabOptimizeResult>(`${engineBase(m)}/lab/optimize?${qs({spec:JSON.stringify(spec),...executionQuery(spec,q),slim:"1",table:"1",sheet:spec.portfolio?undefined:"1"})}`);}
 /** One optimizer run per window, so it shares the optimization slot and role check; slim on the server side. */
 export const walkforward = (m: SavedMarket, spec: Spec, q: RunQuery & WalkforwardOptions) =>
   labRequest<WalkforwardResult>(`${engineBase(m)}/lab/walkforward?${qs({ spec: JSON.stringify(spec), ...q, anchored: q.anchored ? "1" : "0" })}`);

@@ -35,7 +35,7 @@ it("offers daily, weekly and monthly quick intervals with the selected state and
   await act(async () => buttons[0].click());
   expect(onTf).toHaveBeenLastCalledWith("D");
   const more = group.querySelector<HTMLSelectElement>('[aria-label="More timeframes"]')!;
-  expect([...more.options].map(o => [o.value,o.textContent])).toEqual([["","More intervals"],["Q","3M"],["Y","1Y"]]);
+  expect([...more.options].map(o => [o.value,o.textContent])).toEqual([["","More"],["Q","3M"],["Y","1Y"]]);
   await act(async () => { more.value = "Q"; more.dispatchEvent(new Event("change", {bubbles:true})); });
   expect(onTf).toHaveBeenLastCalledWith("Q");
 });
@@ -88,4 +88,14 @@ it("chart interval menu lists every advertised timeframe and closes after a sele
   expect(onTf).toHaveBeenCalledWith("Q");
   expect(menu.open).toBe(false);
   expect(host.querySelector('[role="menuitemradio"]:last-child')?.textContent).not.toContain("Yearly");
+});
+
+it("the interval menu shows and marks an extra interval when one is chosen", async () => {
+  const host = await mount(<Toolbar {...props} chartWorkspace options={[]} timeframes={["D","W","M","Q"]} tf="Q" />);
+  const summary = host.querySelector('summary[aria-label="More timeframes"]')!;
+  expect(summary.textContent).toBe("3M");
+  expect(summary.classList.contains("lab-interval-active")).toBe(true);
+  await unmount();
+  const daily = await mount(<Toolbar {...props} chartWorkspace options={[]} timeframes={["D","W","M","Q"]} tf="D" />);
+  expect(daily.querySelector('summary[aria-label="More timeframes"]')!.classList.contains("lab-interval-active")).toBe(false);
 });

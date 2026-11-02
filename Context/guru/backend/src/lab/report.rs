@@ -20,9 +20,9 @@ pub fn rates(v: &crate::lab::json::Json) -> Result<(f64, f64), super::rules::Lab
 pub const NOTES: &[&str] = &[
     "Returns are per unit of initial equity (1.0); money mode reports the same ratios on its cash equity.",
     "MAE and MFE use the highs and lows of every bar from the entry bar to the exit bar, as fractions of the entry price.",
-    "Max. trade drawdown is the deepest close-to-close peak-to-valley fall inside one trade.",
+    "Max. trade drawdown is the deepest peak-to-valley fall inside one trade, as AmiBroker: from the entry fill through the closes of the entry bar to the bar before the exit, then the exit fill.",
     "Years and bars per year as AmiBroker: calendar days from the first to the last bar / 365, and bars / years. CAR = final equity^(1/years) − 1; CAR/MaxDD and the UPI follow it.",
-    "Exposure as AmiBroker: bars in a position from the entry bar to the bar before the exit, over all bars of the run. Net RAR, RAR and RAR/MaxDD follow it.",
+    "Exposure as AmiBroker: bars in a position from the entry bar to the bar before the exit, over all bars of the run; with Activate stops immediately the bar a max loss, profit target or trailing stop exits also counts (AmiBroker tests those stops after the bar's signals). Net RAR, RAR and RAR/MaxDD follow it.",
     "Sharpe ratio of trades: average trade % return × (bars per year / average bars held), minus {sharpe} % risk-free (Settings › Report; AmiBroker default 5 %), divided by the population standard deviation of trade % returns × √(bars per year / average bars held). Risk-reward ratio: slope × bars per year / standard error.",
     "Ulcer performance index uses a {upi} % risk-free rate (Settings › Report; AmiBroker default 5.4 %). K-ratio as AmiBroker prints it: slope / (standard error of the slope × bars), on the linear equity line.",
     "Trade statistics count every trade of the trade list, the last one still open included, valued at the last close as in the tradesheet; the run's headline stats count closed trades only.",
@@ -34,7 +34,7 @@ pub const NOTES: &[&str] = &[
 /// One trade as the report needs it: bar indices into `rows`, entry price, return on the position, direction and money
 /// profit as a fraction of initial equity.
 #[derive(Clone, Copy)]
-pub struct ReportTrade { pub dir: f64, pub entry_i: usize, pub exit_i: usize, pub entry_px: f64, pub ret: f64, pub profit: f64 }
+pub struct ReportTrade { pub dir: f64, pub entry_i: usize, pub exit_i: usize, pub entry_px: f64, pub exit_px: f64, pub ret: f64, pub profit: f64 }
 
 /// Maximum adverse and favourable excursion (fractions of the entry price; MAE ≤ 0 ≤ MFE).
 pub fn excursion(rows: &[Row], t: &ReportTrade) -> (f64, f64) {
@@ -44,13 +44,15 @@ pub fn excursion(rows: &[Row], t: &ReportTrade) -> (f64, f64) {
     if t.dir > 0. { (down.min(0.), up.max(0.)) } else { ((-up).min(0.), (-down).max(0.)) }
 }
 
-/// Deepest close-to-close peak-to-valley fall of the open position, as a fraction (≤ 0).
+/// Deepest peak-to-valley fall of the open position, as a fraction (≤ 0), on AmiBroker's path: the entry fill, the closes of
+/// the entry bar to the bar before the exit, then the exit fill, not the exit bar's close (NIFTY 50, 3 % stop: the 2012-10-05
+/// stop fill 5181.84 from the 5787.60 peak gives AmiBroker's −10.4666 %; that bar's 5746.95 close would give −0.70 %).
 fn trade_drawdown(rows: &[Row], t: &ReportTrade) -> f64 {
+    let mark = |px: f64| if t.dir > 0. { px / t.entry_px } else { 2. - px / t.entry_px };
     let (mut peak, mut worst) = (1.0_f64, 0.0_f64);
-    for r in &rows[t.entry_i..=t.exit_i] {
-        let mark = if t.dir > 0. { r.close / t.entry_px } else { 2. - r.close / t.entry_px };
-        peak = peak.max(mark);
-        worst = worst.min(mark / peak - 1.);
+    for px in rows[t.entry_i..t.exit_i].iter().map(|r| r.close).chain([t.exit_px]) {
+        peak = peak.max(mark(px));
+        worst = worst.min(mark(px) / peak - 1.);
     }
     worst
 }
@@ -84,16 +86,46 @@ fn obj(pairs: &[(&str, f64)]) -> String {
 /// One column of the AmiBroker statistics table (All trades, Long trades or Short trades).
 fn side_json(ts: &[&ReportTrade]) -> String {
     let n = ts.len();
-    let winners: Vec<&ReportTrade> = ts.iter().copied().filter(|t| t.ret > 0.).collect();
-    let losers: Vec<&ReportTrade> = ts.iter().copied().filter(|t| t.ret <= 0.).collect();
+    let (winners, losers) = wins_losses(ts);
     let mut w = group(&winners, n); w.push(("max_consecutive", max_consecutive(ts, true)));
     let mut l = group(&losers, n); l.push(("max_consecutive", max_consecutive(ts, false)));
-    let (gain, loss): (f64, f64) = (winners.iter().map(|t| t.profit).sum(), losers.iter().map(|t| t.profit).sum());
     let all = group(ts, n);
+    let (pf, payoff) = pf_payoff(&winners, &losers);
     format!("{{\"trades\":{},\"avg\":{},\"avg_bars\":{},\"profit_factor\":{},\"payoff\":{},\"winners\":{},\"losers\":{}}}",
-        n, crate::num(field(&all, "avg")), crate::num(field(&all, "avg_bars")), crate::num(if loss == 0. { f64::NAN } else { gain / -loss }),
-        crate::num(if losers.is_empty() || winners.is_empty() { f64::NAN } else { (gain / winners.len() as f64) / (-loss / losers.len() as f64) }),
-        obj(&w), obj(&l))
+        n, crate::num(field(&all, "avg")), crate::num(field(&all, "avg_bars")), crate::num(pf), crate::num(payoff), obj(&w), obj(&l))
+}
+/// Winners (return > 0) and losers (the rest), as AmiBroker splits them.
+fn wins_losses<'a>(ts: &[&'a ReportTrade]) -> (Vec<&'a ReportTrade>, Vec<&'a ReportTrade>) { ts.iter().copied().partition(|t| t.ret > 0.) }
+/// Profit factor and payoff ratio from the trades' money profit.
+fn pf_payoff(winners: &[&ReportTrade], losers: &[&ReportTrade]) -> (f64, f64) {
+    let (gain, loss): (f64, f64) = (winners.iter().map(|t| t.profit).sum(), losers.iter().map(|t| t.profit).sum());
+    (if loss == 0. { f64::NAN } else { gain / -loss },
+     if losers.is_empty() || winners.is_empty() { f64::NAN } else { (gain / winners.len() as f64) / (-loss / losers.len() as f64) })
+}
+
+/// AmiBroker's optimization result-list columns, in its order (Long Daily.xlsx / Short Daily Optims.xlsx).
+pub const SHEET_COLS: [&str; 36] = ["Net Profit", "Net % Profit", "Exposure %", "CAR", "RAR", "Max. Trade Drawdown", "Max. Trade % Drawdown",
+    "Max. Sys Drawdown", "Max. Sys % Drawdown", "Recovery Factor", "CAR/MDD", "RAR/MDD", "Profit Factor", "Payoff Ratio", "Standard Error", "RRR",
+    "Ulcer Index", "Ulcer Perf. Index", "Sharpe Ratio", "K-Ratio", "# Trades", "Avg Profit/Loss", "Avg % Profit/Loss", "Avg Bars Held",
+    "# of winners", "% of Winners", "W. Tot. Profit", "W. Avg. Profit", "W. Avg % Profit", "W. Avg. Bars Held",
+    "# of losers", "% of Losers", "L. Tot. Loss", "L. Avg. Loss", "L. Avg % Loss", "L. Avg. Bars Held"];
+/// One result-list row (SHEET_COLS) in AmiBroker units from the values `report_json` shows for All trades: percentages as
+/// percent numbers, money as the report's × initial equity value × `capital`. NaN (null) where there is no basis: every
+/// money column without a money run (`capital` None), and Max. Trade Drawdown always (the report has it in % only).
+pub fn sheet_row(rows: &[Row], equity: &[f64], trades: &[ReportTrade], cagr: f64, exposure: f64, bars_per_year: f64, rates: (f64, f64), capital: Option<f64>) -> Vec<f64> {
+    let sys = system(rows, equity, trades, cagr, exposure, bars_per_year, rates);
+    let s = |k: &str| field(&sys, k);
+    let all: Vec<&ReportTrade> = trades.iter().collect();
+    let (winners, losers) = wins_losses(&all);
+    let (pf, payoff) = pf_payoff(&winners, &losers);
+    let (a, w, l) = (group(&all, all.len()), group(&winners, all.len()), group(&losers, all.len()));
+    let m = capital.unwrap_or(f64::NAN);
+    let per = |g: &[(&'static str, f64)]| [field(g, "count"), 100. * field(g, "pct"), m * field(g, "profit"), m * field(g, "profit") / field(g, "count"), 100. * field(g, "avg"), field(g, "avg_bars")];
+    let mut out = vec![m * s("net_profit"), 100. * s("net_profit"), 100. * s("exposure"), 100. * s("cagr"), 100. * s("rar"), f64::NAN, 100. * s("max_trade_dd"),
+        m * s("max_sys_dd_abs"), 100. * s("max_sys_dd"), s("recovery_factor"), s("car_mdd"), s("rar_mdd"), pf, payoff, m * s("std_error"), s("rrr"),
+        s("ulcer_index"), s("upi"), s("sharpe_trades"), s("k_ratio"), all.len() as f64, m * field(&a, "profit") / all.len() as f64, 100. * field(&a, "avg"), field(&a, "avg_bars")];
+    out.extend(per(&w)); out.extend(per(&l));
+    out
 }
 
 /// Least-squares fit of `y` on the bar number: (slope per bar, standard error of the fit, Σ(x - x̄)²).
@@ -165,7 +197,7 @@ pub fn report_json(rows: &[Row], equity: &[f64], trades: &[ReportTrade], cagr: f
     let short: Vec<&ReportTrade> = trades.iter().filter(|t| t.dir < 0.).collect();
     // bh starts at 1.0 on the first bar; only ret, profit and the bar count reach side_json
     let ret = bh.last().map_or(f64::NAN, |v| v - 1.);
-    let hold = ReportTrade { dir: 1., entry_i: 0, exit_i: bh.len().saturating_sub(1), entry_px: 1., ret, profit: ret };
+    let hold = ReportTrade { dir: 1., entry_i: 0, exit_i: bh.len().saturating_sub(1), entry_px: 1., exit_px: 1. + ret, ret, profit: ret };
     let held: Vec<&ReportTrade> = if bh.is_empty() { vec![] } else { vec![&hold] };
     format!("{{\"all\":{},\"long\":{},\"short\":{},\"buyhold\":{},\"system\":{},\"buy_hold\":{},\"rates\":{{\"sharpe\":{},\"upi\":{}}},\"notes\":[{}]}}",
         side_json(&all), side_json(&long), side_json(&short), side_json(&held), obj(&system(rows, equity, trades, cagr, exposure, bars_per_year, rates)),
@@ -180,7 +212,7 @@ mod tests {
 
     #[test] fn excursions_follow_direction() {
         let rows = vec![row(100., 104., 98., 101.), row(101., 110., 95., 105.)];
-        let long = ReportTrade { dir: 1., entry_i: 0, exit_i: 1, entry_px: 100., ret: 0.05, profit: 0.05 };
+        let long = ReportTrade { dir: 1., entry_i: 0, exit_i: 1, entry_px: 100., exit_px: 100., ret: 0.05, profit: 0.05 };
         let (mae, mfe) = excursion(&rows, &long);
         assert!((mae + 0.05).abs() < 1e-12 && (mfe - 0.10).abs() < 1e-12);
         let short = ReportTrade { dir: -1., ..long };
@@ -189,7 +221,7 @@ mod tests {
     }
 
     #[test] fn blocks_split_winners_losers_and_streaks() {
-        let t = |ret: f64, dir: f64, bars: usize| ReportTrade { dir, entry_i: 0, exit_i: bars, entry_px: 1., ret, profit: ret };
+        let t = |ret: f64, dir: f64, bars: usize| ReportTrade { dir, entry_i: 0, exit_i: bars, entry_px: 1., exit_px: 1., ret, profit: ret };
         let ts = [t(0.1, 1., 2), t(0.2, 1., 4), t(-0.05, -1., 1), t(-0.1, 1., 3), t(0.3, -1., 5)];
         let all: Vec<&ReportTrade> = ts.iter().collect();
         let j = side_json(&all);
@@ -218,7 +250,7 @@ mod tests {
     #[test] fn sharpe_of_trades_annualises_mean_linearly_and_deviation_by_square_root() {
         // two trades of +2 % and 0 % over 10 bars each (entry and exit bar included), 250 bars a year: f = 25, mean 1 % → 25 %, population sd 1 % → 5 %
         let rows: Vec<Row> = (0..21).map(|_| row(1., 1., 1., 1.)).collect();
-        let t = |ret: f64, a: usize| ReportTrade { dir: 1., entry_i: a, exit_i: a + 9, entry_px: 1., ret, profit: ret };
+        let t = |ret: f64, a: usize| ReportTrade { dir: 1., entry_i: a, exit_i: a + 9, entry_px: 1., exit_px: 1., ret, profit: ret };
         let m: std::collections::BTreeMap<_, _> = system(&rows, &[1.0, 1.02, 1.02], &[t(0.02, 0), t(0.0, 10)], 0.1, 1.0, 250., DEFAULT_RATES).into_iter().collect();
         assert!((m["sharpe_trades"] - (25. - 5.) / 5.).abs() < 1e-9, "{}", m["sharpe_trades"]);
     }
@@ -228,7 +260,7 @@ mod tests {
         assert!((years(&rows, 0, 2) - 366. / 365.).abs() < 1e-12);
         assert!((car(&[1., 1.21], 2.) - 0.1).abs() < 1e-12);
         // entry bar 1 to exit bar 3 holds bars 1 and 2 (exit bar not counted); bars 0..=3 → 2/4
-        let t = ReportTrade { dir: 1., entry_i: 1, exit_i: 3, entry_px: 1., ret: 0., profit: 0. };
+        let t = ReportTrade { dir: 1., entry_i: 1, exit_i: 3, entry_px: 1., exit_px: 1., ret: 0., profit: 0. };
         assert_eq!(exposure(&[t, t], 0, 3), 0.5);
         // K-ratio = slope / (SE of the slope × bars), SE of the slope = SE / √Σ(x − x̄)²
         let eq = [1., 1.2, 1.1, 1.4, 1.3];
@@ -237,19 +269,26 @@ mod tests {
         assert!((m["k_ratio"] - slope / (se / sxx.sqrt()) / 5.).abs() < 1e-12);
     }
 
-    #[test] fn trade_drawdown_is_close_to_close_inside_the_trade() {
-        let rows = vec![row(100., 100., 100., 100.), row(0., 0., 0., 120.), row(0., 0., 0., 90.), row(0., 0., 0., 110.)];
-        let t = ReportTrade { dir: 1., entry_i: 0, exit_i: 3, entry_px: 100., ret: 0.1, profit: 0.1 };
+    #[test] fn trade_drawdown_runs_from_the_entry_fill_through_the_closes_to_the_exit_fill() {
+        // AmiBroker: entry 100, closes 120 and 90 (bars before the exit), exit fill 110: the exit bar's close is not used
+        let rows = vec![row(100., 100., 100., 100.), row(0., 0., 0., 120.), row(0., 0., 0., 90.), row(0., 0., 0., 115.)];
+        let t = ReportTrade { dir: 1., entry_i: 0, exit_i: 3, entry_px: 100., exit_px: 110., ret: 0.1, profit: 0.1 };
         assert!((trade_drawdown(&rows, &t) - (0.9 / 1.2 - 1.)).abs() < 1e-12);
-        // a short marks 2 − close/entry: closes 100, 80, 95 → 1, 1.2, 1.05
-        let rows = vec![row(0., 0., 0., 100.), row(0., 0., 0., 80.), row(0., 0., 0., 95.)];
-        let t = ReportTrade { dir: -1., entry_i: 0, exit_i: 2, entry_px: 100., ret: 0.05, profit: 0.05 };
+        // a stop filled below the exit bar's close sets the valley (the close 115 would leave −25 %)
+        let t = ReportTrade { exit_px: 84., ..t };
+        assert!((trade_drawdown(&rows, &t) - (0.84 / 1.2 - 1.)).abs() < 1e-12);
+        // a short marks 2 − price/entry: closes 100, 80, then the exit fill 95 → 1, 1.2, 1.05
+        let rows = vec![row(0., 0., 0., 100.), row(0., 0., 0., 80.), row(0., 0., 0., 70.)];
+        let t = ReportTrade { dir: -1., entry_i: 0, exit_i: 2, entry_px: 100., exit_px: 95., ret: 0.05, profit: 0.05 };
         assert!((trade_drawdown(&rows, &t) - (1.05 / 1.2 - 1.)).abs() < 1e-12);
+        // a same-bar trade is entry fill then exit fill
+        let t = ReportTrade { dir: 1., entry_i: 1, exit_i: 1, entry_px: 100., exit_px: 97., ret: -0.03, profit: -0.03 };
+        assert!((trade_drawdown(&rows, &t) + 0.03).abs() < 1e-12);
     }
 
     #[test] fn profit_factor_weights_trades_by_money_and_sides_split_by_direction() {
         // a 10 % loss on 1.0 of equity, then a 10 % win on 2.0: the % sum says 1, the money says 2 (AmiBroker)
-        let t = |ret: f64, profit: f64, dir: f64| ReportTrade { dir, entry_i: 0, exit_i: 1, entry_px: 1., ret, profit };
+        let t = |ret: f64, profit: f64, dir: f64| ReportTrade { dir, entry_i: 0, exit_i: 1, entry_px: 1., exit_px: 1., ret, profit };
         let ts = [t(-0.1, -0.1, 1.), t(0.1, 0.2, -1.)];
         let rows: Vec<Row> = (0..2).map(|_| row(1., 1., 1., 1.)).collect();
         let j = report_json(&rows, &[1., 1.1], &ts, 0.1, 1., 252., &[1., 1.], 0., DEFAULT_RATES);
@@ -262,7 +301,7 @@ mod tests {
     }
 
     #[test] fn buyhold_column_has_the_all_keys_as_one_trade() {
-        let t = ReportTrade { dir: 1., entry_i: 0, exit_i: 1, entry_px: 1., ret: 0.1, profit: 0.1 };
+        let t = ReportTrade { dir: 1., entry_i: 0, exit_i: 1, entry_px: 1., exit_px: 1., ret: 0.1, profit: 0.1 };
         let rows: Vec<Row> = (0..4).map(|_| row(1., 1., 1., 1.)).collect();
         let v = crate::lab::json::parse(&report_json(&rows, &[1., 1.1], &[t], 0.1, 1., 252., &[1., 0.9, 1.2, 1.25], 0.2, DEFAULT_RATES)).unwrap();
         let keys = |o: &crate::lab::json::Json| match o { crate::lab::json::Json::Obj(kv) => kv.iter().map(|(k, v)| (k.clone(), matches!(v, crate::lab::json::Json::Obj(_)))).collect::<Vec<_>>(), _ => panic!() };
@@ -283,7 +322,7 @@ mod tests {
         for bad in [r#"{"rf_sharpe":-1}"#, r#"{"rf_upi":101}"#, r#"{"rf_upi":"5"}"#, r#"{"rf":5}"#, "5"] { assert!(rates(&parse(bad).unwrap()).is_err(), "{bad}"); }
         // the Sharpe of trades and UPI move by exactly the rate change
         let rows: Vec<Row> = (0..21).map(|_| row(1., 1., 1., 1.)).collect();
-        let t = |ret: f64, a: usize| ReportTrade { dir: 1., entry_i: a, exit_i: a + 9, entry_px: 1., ret, profit: ret };
+        let t = |ret: f64, a: usize| ReportTrade { dir: 1., entry_i: a, exit_i: a + 9, entry_px: 1., exit_px: 1., ret, profit: ret };
         let sys = |r| -> std::collections::BTreeMap<_, _> { system(&rows, &[1.0, 1.02, 0.9, 1.02], &[t(0.02, 0), t(0.0, 10)], 0.1, 1.0, 250., r).into_iter().collect() };
         let (a, b) = (sys(DEFAULT_RATES), sys((0., 0.)));
         assert!((b["sharpe_trades"] - a["sharpe_trades"] - 5. / 5.).abs() < 1e-9);

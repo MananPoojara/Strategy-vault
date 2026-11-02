@@ -7,6 +7,7 @@ import { exprKey, nodeKind } from "./rule-tree";
 import { ENTRY_KIND_LABELS } from "./labels";
 import type { LabReport, MoneySummary, ReportGroup, ReportSide, RunResult, Spec, StopKey, Trade } from "./types";
 import { Segmented } from "./ui";
+import { saveBytes, xlsx, XLSX_TYPE } from "./xlsx";
 import "./report.css";
 
 /** What the report needs from the run beyond the report itself (optional: the report still renders without it). */
@@ -71,7 +72,7 @@ export function reportBlocks(report: LabReport, run?: ReportRun): Block[] {
 const dist = (d: unknown): string => {
   if (!d || typeof d !== "object") return String(d);
   const v = d as Record<string, unknown>;
-  const base = "profit_pct" in v ? `${v.profit_pct}% of profit` : "pct" in v ? `${v.pct}%` : "atr" in v ? `${v.atr} × ATR(${v.atr_length ?? 14})` : "points" in v ? `${v.points} points` : "at" in v ? "at a level" : JSON.stringify(v);
+  const base = "candle" in v ? "at the entry candle's low" : "profit_pct" in v ? `${v.profit_pct}% of profit` : "pct" in v ? `${v.pct}%` : "atr" in v ? `${v.atr} × ATR(${v.atr_length ?? 14})` : "points" in v ? `${v.points} points` : "at" in v ? "at a level" : JSON.stringify(v);
   return "activate" in v ? `${base}, from ${dist(v.activate)}` : base;
 };
 const POSITIONS = { long: "Long", short: "Short", both: "Long and short" } as const;
@@ -331,7 +332,17 @@ function Excursions({ trades, field, title }: { trades: Trade[]; field: "mae" | 
 }
 
 /** AmiBroker backtest report: one statistics table, distributions and the declared conventions. */
-export function ReportPanel({ report, trades, spec, run }: { report: LabReport; trades: Trade[]; spec?: Spec; run?: ReportRun }) {
+/** The report as a workbook: a Statistics sheet with every card (same columns as on screen) and the trade list. */
+export function reportSheets(report: LabReport, run: ReportRun | undefined, tradeRows?: string[][]) {
+  const cols = report.buy_hold || report.buyhold ? COLS : COLS.filter(([c]) => c !== "bh");
+  const head = cols.map(([k, label]) => (k === "bh" && run?.instrument ? `${label} (${run.instrument.ticker})` : label));
+  const stats = reportBlocks(report, run).flatMap(({ key, head: h, rows }) => [[BLOCK_TITLES[key] ?? key], ["", ...head],
+    ...(h ? [[h[0], ...cols.map(([c]) => h[1](c))]] : []), ...rows.map(([label, cell]) => [label, ...cols.map(([c]) => cell(c))]), []]);
+  return [{ name: "Statistics", rows: stats }, ...(tradeRows?.length ? [{ name: "Trades", rows: tradeRows }] : [])];
+}
+
+/** `tradeRows`: the trade list (header first) for the download's Trades sheet. */
+export function ReportPanel({ report, trades, spec, run, tradeRows }: { report: LabReport; trades: Trade[]; spec?: Spec; run?: ReportRun; tradeRows?: string[][] }) {
   const [mode, setMode] = useState<"scatter" | "histogram">("scatter");
   const excursion = (field: "mae" | "mfe", title: string) => mode === "scatter" ? <Excursions trades={trades} field={field} title={title} />
     : <Histogram values={trades.flatMap((t) => (typeof t[field] === "number" ? [t[field] as number] : []))} caption={`${title} distribution`} axis={`${field.toUpperCase()} %`} data={{ "data-lab-excursion": field }} />;
@@ -340,7 +351,9 @@ export function ReportPanel({ report, trades, spec, run }: { report: LabReport; 
   const cols = report.buy_hold || report.buyhold ? COLS : COLS.filter(([c]) => c !== "bh");
   return (
     <section className="box lab-report" data-lab-report>
-      <h3 className="box-h">Report <small>AmiBroker-style statistics · simulated · not a book method</small></h3>
+      <h3 className="box-h">Report <small>AmiBroker-style statistics · simulated · not a book method</small>
+        <button type="button" className="dbtn sm primary lab-report-download" data-lab-download-report onClick={() => saveBytes(xlsx(reportSheets(report, run, tradeRows)),
+          `${run?.instrument?.ticker ?? "backtest"} report ${run ? `${dayFirst(run.from)} to ${dayFirst(run.to)}` : ""}.xlsx`.replace(/\s+\.xlsx$/, ".xlsx"), XLSX_TYPE)}>Download report</button></h3>
       {/* one titled card per AmiBroker block, flowing in columns across the width (no tall table beside an empty half page) */}
       <div className="lab-report-cards" data-lab-report-stats>
         {reportBlocks(report, run).map(({ key, head, rows }) => (

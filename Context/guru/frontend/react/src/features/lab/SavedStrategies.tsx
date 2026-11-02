@@ -117,9 +117,10 @@ export function SavedStrategies({ role, api = strategies, editor, methodNames = 
     const publishable = row.publishable && !row.spec.portfolio && !isProvisional(row.market);
     const canSubmit = publishable && open && editor.unchanged && editor.ranFresh;
     // Visible (not only a tooltip) so keyboard and screen-reader users get the reason too.
-    const reason = row.spec.portfolio ? "Portfolio strategies are research-only and cannot be submitted." : !publishable ? COPY.provisionalSubmit : canSubmit ? undefined : COPY.runFirst;
+    const reason = row.spec.portfolio ? "Portfolio strategies are research-only and cannot be submitted." : !publishable ? COPY.provisionalSubmit : canSubmit ? undefined
+      : open ? COPY.runFirst : "Open this strategy and run a backtest before submitting it.";
     const reasonId = `lab-submit-why-${row.id}`;
-    const showReason = reason !== undefined && canEdit && editable(row.status) && (open || !publishable);
+    const showReason = reason !== undefined && canEdit && editable(row.status); // every disabled Submit says why
     return (
       <li key={row.id} className="lab-saved-item">
         <div className="lab-saved-row">
@@ -132,16 +133,13 @@ export function SavedStrategies({ role, api = strategies, editor, methodNames = 
           <span className="lab-saved-actions">
             <button type="button" className="dbtn sm" onClick={() => onOpen(row)}>Open</button>
             {canEdit && <button type="button" className="dbtn sm ghost" disabled={busy} onClick={() => duplicate(row)}>Duplicate</button>}
-            {canEdit && editable(row.status) && (
-              <>
-                <button type="button" className="dbtn sm ghost" disabled={busy} onClick={() => remove(row)}>Delete</button>
-                <button type="button" className="dbtn sm" disabled={busy || !canSubmit} onClick={() => transition(row, "submit")}
-                  title={reason} aria-describedby={showReason ? reasonId : undefined}>Submit</button>
-              </>
-            )}
+            {canEdit && editable(row.status) && <button type="button" className="dbtn sm" disabled={busy || !canSubmit} onClick={() => transition(row, "submit")}
+              title={reason} aria-describedby={showReason ? reasonId : undefined}>Submit</button>}
             {canEdit && row.status === "submitted" && (
               <button type="button" className="dbtn sm ghost" disabled={busy} onClick={() => transition(row, "withdraw")}>Withdraw</button>
             )}
+            {/* the destructive action stands apart from the routine ones */}
+            {canEdit && editable(row.status) && <button type="button" className="dbtn sm ghost lab-saved-delete" disabled={busy} onClick={() => remove(row)}>Delete</button>}
           </span>
         </div>
         {showReason && <p className="lab-saved-note" id={reasonId}>{reason}</p>}
@@ -159,10 +157,11 @@ export function SavedStrategies({ role, api = strategies, editor, methodNames = 
           <div className="lab-saved-row lab-saved-save">
             <input ref={nameInput} className="lab-saved-name" type="text" aria-label="Strategy name" placeholder="Strategy name" maxLength={120}
               value={name} onChange={(e) => setName(e.target.value)} />
-            <button type="button" className="dbtn sm primary" data-lab-action="save-new" disabled={busy || !trimmed} onClick={saveNew}>Save as new</button>
+            <button type="button" className="dbtn sm primary" data-lab-action="save-new" disabled={busy || !trimmed} onClick={saveNew} aria-describedby={trimmed ? undefined : "lab-save-why"}>Save as new</button>
             {own && editable(own.status) && (
-              <button type="button" className="dbtn sm" data-lab-action="save" disabled={busy || !trimmed} onClick={() => saveChanges(own)}>Save changes</button>
+              <button type="button" className="dbtn sm" data-lab-action="save" disabled={busy || !trimmed} onClick={() => saveChanges(own)} aria-describedby={trimmed ? undefined : "lab-save-why"}>Save changes</button>
             )}
+            {!trimmed && <span className="cap lab-saved-why" id="lab-save-why">Type a name to save the current strategy.</span>}
           </div>
           {feedback(SAVE, editor.market, editor.ticker, editor.row?.id)}
         </>

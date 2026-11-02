@@ -25,7 +25,7 @@ export function Toolbar({ market, onMarket, options, ticker, onTicker, tf, timef
   const more = timeframes.filter((t) => !QUICK_TF.includes(t));
   if (chartWorkspace) return <div className="lab-toolbar lab-toolbar-chart">
     <div className="lab-chart-topbar" role="toolbar" aria-label="Chart controls">
-      <button type="button" className="lab-symbol-button" aria-label="Symbol search" aria-haspopup="dialog" aria-expanded={symbolsOpen}
+      <button type="button" className="lab-symbol-button" aria-label="Symbol search" title="Search symbols" aria-haspopup="dialog" aria-expanded={symbolsOpen}
         onClick={() => { setSearch(""); setSymbolsOpen(true); }}>
         <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m13 13 4 4"/></svg>
         {selected?.label ?? (ticker || "Symbol")}
@@ -35,7 +35,7 @@ export function Toolbar({ market, onMarket, options, ticker, onTicker, tf, timef
         <details className="lab-interval-menu" onKeyDown={(event) => {
           if (event.key === "Escape") { event.currentTarget.removeAttribute("open"); event.currentTarget.querySelector('summary')?.focus(); }
         }}>
-          <summary aria-label="More timeframes" title="Chart interval">{quick.includes(tf) ? "⌄" : TF_SHORT[tf] ?? tf}</summary>
+          <summary aria-label="More timeframes" title="Chart interval" className={quick.includes(tf) ? undefined : "lab-interval-active"}>{quick.includes(tf) ? "⌄" : TF_SHORT[tf] ?? tf}</summary>
           <div className="lab-interval-list" role="menu" aria-label="Chart intervals">
             <span>INTERVALS</span>
             {timeframes.map((t) => <button key={t} type="button" role="menuitemradio" aria-checked={tf === t} onClick={(event) => {
@@ -82,7 +82,7 @@ export function Toolbar({ market, onMarket, options, ticker, onTicker, tf, timef
           <div className="lab-chart-timeframes join sm" role="group" aria-label="Chart">
             {quick.map((t) => <button key={t} type="button" className={`join-item${tf === t ? " active" : ""}`} aria-label={TF_LABEL[t]} title={TF_LABEL[t]} aria-pressed={tf === t} onClick={() => onTf(t)}>{TF_SHORT[t]}</button>)}
             {more.length > 0 && <select aria-label="More timeframes" value={more.includes(tf) ? tf : ""} onChange={(e) => { if (e.target.value) onTf(e.target.value); }}>
-              <option value="" disabled>More intervals</option>
+              <option value="" disabled>More</option>
               {more.map((t) => <option key={t} value={t} title={TF_LABEL[t] ?? t}>{TF_SHORT[t] ?? t}</option>)}
             </select>}
             {!timeframes.length && <span className="cap">No intervals available</span>}

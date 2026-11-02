@@ -41,8 +41,26 @@ it("a trailing stop in % of profit optimizes inside the engine's 0 < x < 100 on 
 it("labels read like AmiBroker parameters: rule, then short indicator name and parameter; ambiguous ones keep the side", () => {
   const ema = (length: number) => ({ s: "ema", p: { length } });
   const one: Spec = { ...defaultSpec(), entry: { all: [{ lhs: { s: "close" }, op: ">", rhs: ema(20) }] } };
-  expect(optimizablePaths(one, cat).find((p) => p.path === "entry.all[0].rhs.p.length")!.label).toBe("Entry 1: EMA Length");
+  expect(optimizablePaths(one, cat).find((p) => p.path === "entry.all[0].rhs.p.length")!.label).toBe("Entry 1: EMA Period");
   const two: Spec = { ...defaultSpec(), entry: { all: [{ lhs: ema(10), op: ">", rhs: ema(20) }] } };
   const labels = optimizablePaths(two, cat).filter((p) => p.path.startsWith("entry.all[0]")).map((p) => p.label);
-  expect(labels).toEqual(["Entry 1: switched off (0 on, 1 off)", "Entry 1 › left · EMA Length", "Entry 1 › right · EMA Length"]);
+  expect(labels).toEqual(["Entry 1 › left · EMA Period", "Entry 1 › right · EMA Period"]); // no on/off row
+});
+
+it("the Filters card's rows are named Filter N, as on the card", async () => {
+  const { newStrategySpec } = await import("../src/features/lab/spec-model");
+  const { newFilter } = await import("../src/features/lab/rule-tree");
+  const s = newStrategySpec(); // filters start off; Filters › Indicator adds this row
+  const labels = optimizablePaths({ ...s, entry: { all: [...s.entry.all, newFilter()] } }, cat).map((p) => p.label);
+  expect(labels).toContain("Filter 1: EMA Period");
+  expect(labels.some((l) => l.startsWith("Entry 2"))).toBe(false);
+});
+it("groups a filter row's numbers under Filters, as the rule cards do, and keeps buy rows under Entry", () => {
+  const s: Spec = { ...defaultSpec(), entry: { all: [
+    { lhs: { s: "rsi", p: { length: 14 } }, op: "<", rhs: { value: 30 } },
+    { lhs: { s: "close" }, op: ">", rhs: { s: "ema", p: { length: 200 } }, filter: true } as never,
+  ] } };
+  const paths = optimizablePaths(s, cat);
+  expect(paths.find((p) => p.path === "entry.all[0].lhs.p.length")?.group).toBe("Entry");
+  expect(paths.find((p) => p.path === "entry.all[1].rhs.p.length")?.group).toBe("Filters");
 });

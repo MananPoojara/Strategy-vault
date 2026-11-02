@@ -3,10 +3,11 @@ import { act } from "react";
 import { OptimizePanel } from "../src/features/lab/OptimizePanel";
 import { WF_LABEL, wfWindows } from "../src/features/lab/WalkForward";
 import { defaultSpec } from "../src/features/lab/spec-model";
+import { resetRunPrefs, setWf } from "../src/features/lab/settings/run-prefs";
 import type { Spec, WalkforwardOptions, WalkforwardResult } from "../src/features/lab/types";
 import { catalogueFixture as cat, flush, mount, unmount } from "./fixtures/lab";
 
-afterEach(async () => { await unmount(); });
+afterEach(async () => { await unmount(); act(resetRunPrefs); }); // the walk-forward options are a shared store (Settings › Walk-Forward)
 const base = { spec: defaultSpec(), catalogue: cat, market: "in" as const, role: "researcher" as const, dates: [], onApply: vi.fn(), onTried: vi.fn(), tried: 0, onOptimize: vi.fn() };
 const PATH = "entry.all[0].rhs.p.length";
 const m = (r: number) => ({ total_return: r, cagr: r, sharpe: 1, max_dd: -0.05, mar: 2, trades: 12, win_rate: 0.5, profit_factor: 1.4 });
@@ -20,13 +21,8 @@ const fixture: WalkforwardResult = {
   summary: { total_return: 0.1, cagr: 0.05, max_dd: -0.05, trades: 12, win_rate: 0.5, windows: 2, skipped: 1, from: "2017-01-02", to: "2018-12-31" },
 };
 const tick = async (host: HTMLElement) => act(async () => host.querySelector<HTMLInputElement>(`[data-lab-dim="${PATH}"] input[type=checkbox]`)!.click());
-const change = async (el: HTMLInputElement | HTMLSelectElement, value: string) => act(async () => {
-  const proto = el instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
-  Object.getOwnPropertyDescriptor(proto, "value")!.set!.call(el, value);
-  el.dispatchEvent(new Event(el instanceof HTMLSelectElement ? "change" : "input", { bubbles: true }));
-});
 
-it("walk-forward form: needs a ticked setting, sends the grid and the window options", async () => {
+it("walk-forward under Optimize: a summary of Settings › Walk-Forward and the run button; needs a ticked setting, sends the grid and the options", async () => {
   const onWalkforward = vi.fn().mockResolvedValue(fixture);
   const host = await mount(<OptimizePanel {...base} onWalkforward={onWalkforward} />);
   const wf = host.querySelector("[data-lab-walkforward]")!;
@@ -35,20 +31,17 @@ it("walk-forward form: needs a ticked setting, sends the grid and the window opt
   expect(button().disabled).toBe(true);
   await tick(host);
   expect(button().disabled).toBe(false);
-  const target = wf.querySelector<HTMLSelectElement>('select[aria-label="Walk-forward target"]')!;
-  expect([target.value, target.selectedOptions[0].textContent]).toEqual(["mar", "CAR/MDD"]); // AmiBroker's default target
-  await change(wf.querySelector<HTMLSelectElement>('select[aria-label="Walk-forward unit"]')!, "months");
-  await change(wf.querySelector<HTMLSelectElement>('select[aria-label="Walk-forward target"]')!, "sharpe");
-  await change(wf.querySelector<HTMLInputElement>('input[aria-label="Walk-forward Step"]')!, "3");
-  await act(async () => wf.querySelector<HTMLInputElement>('input[aria-label="Anchored"]')!.click());
+  expect(wf.querySelectorAll("input, select")).toHaveLength(0); // one place to edit: Settings › Walk-Forward
+  const setup = () => wf.querySelector("[data-lab-wf-setup]")!.textContent;
+  expect(setup()).toContain("In-sample 4 · out-of-sample 1 · step 1 years · target CAR/MDD"); // AmiBroker's default target
+  expect(setup()).toContain("Settings › AmiBroker settings › Walk-Forward");
+  await act(async () => setWf({ unit: "months", target: "sharpe", step: 3, anchored: true }));
+  expect(setup()).toMatch(/^Anchored · In-sample 4 · out-of-sample 1 · step 3 months/);
   await act(async () => button().click());
   await flush();
   const [spec, o] = onWalkforward.mock.calls[0] as [Spec, WalkforwardOptions];
   expect(spec.optimize).toEqual([{ path: PATH, from: 50, to: 54, step: 1 }]);
-  expect(o).toEqual({ is: 2, oos: 1, step: 3, unit: "months", anchored: true, target: "sharpe" });
-  // a step shorter than the out-of-sample length would overlap windows
-  await change(wf.querySelector<HTMLInputElement>('input[aria-label="Walk-forward Out-of-sample"]')!, "4");
-  expect(button().disabled).toBe(true);
+  expect(o).toEqual({ is: 4, oos: 1, step: 3, unit: "months", anchored: true, target: "sharpe" });
 });
 
 it("walk-forward result: IS/OOS rows per window, held-flat window, summary and stitched equity", async () => {
@@ -116,22 +109,22 @@ it("wfWindows mirrors the server windows: rolling, anchored, the 21-bar floor an
 });
 
 it("walk-forward preview: Optimization target, window table and dates beside the lengths before running; settings get their own column", async () => {
-  const days = Array.from({ length: 1500 }, (_, i) => new Date(Date.UTC(2015, 0, 1 + i)).toISOString().slice(0, 10));
+  const days = Array.from({ length: 2200 }, (_, i) => new Date(Date.UTC(2015, 0, 1 + i)).toISOString().slice(0, 10)); // room for the 4-year in-sample default
   const host = await mount(<OptimizePanel {...base} dates={days} onWalkforward={vi.fn().mockResolvedValue(fixture)} />);
   const wf = host.querySelector("[data-lab-walkforward]")!;
-  expect(wf.textContent).toContain("Optimization target");
+  expect(wf.textContent).toContain("target CAR/MDD");
   expect(wf.textContent).not.toContain("Pick by");
   expect(wf.querySelector('[data-lab-action="walkforward"]')!.className).toContain("primary");
   const preview = wf.querySelector("[data-lab-wf-preview]")!;
   expect([...preview.querySelectorAll("tbody tr")].slice(0, 2).map((r) => [...r.children].map((c) => c.textContent))).toEqual([
-    ["IS", "01-01-2015", "31-12-2016"], ["OOS", "01-01-2017", "31-12-2017"]]);
-  expect(wf.querySelector(".lab-wf-form")!.textContent).toContain("01-01-2015 – 31-12-2016");
+    ["IS", "01-01-2015", "31-12-2018"], ["OOS", "01-01-2019", "31-12-2019"]]);
+  expect(wf.querySelector(".lab-wf-form")!.textContent).toContain("first window 01-01-2015 – 31-12-2019");
   await tick(host);
   await act(async () => wf.querySelector<HTMLButtonElement>('[data-lab-action="walkforward"]')!.click());
   await flush();
   expect(wf.querySelector("[data-lab-wf-preview]")).toBeNull();
   const heads = [...wf.querySelectorAll("[data-lab-wf-result] thead th")].map((th) => th.textContent);
-  expect(heads[3]).toBe("Entry 1: EMA Length");
+  expect(heads[3]).toBe("Entry 1: EMA Period");
   expect(wf.querySelector("[data-lab-wf-result] .metrics")!.textContent).toContain("Windows");
   // the optimization empty state sits above the walk-forward section, not under its controls
   const empty = host.querySelector("[data-lab-optimize] > .empty");

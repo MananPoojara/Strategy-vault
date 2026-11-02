@@ -99,3 +99,38 @@
   .lab-customize .lab-steps > li::before { left: 12px; top: 11px; }
   .lab-customize .lab-cz-tools .dfield { max-width: none; }
 }
+/* The card summary is secondary text: the shared button type (600 weight, typography.css) would make it as loud as the name. */
+.lab-page[data-lab-page] .lab-customize .lab-m-sum { font-size: var(--lab-type-label, 14px) !important; font-weight: 400 !important; }
+/* The method list uses the height the window has instead of a fixed 420px box above an empty page. */
+.lab-customize .lab-books { max-height: max(420px, calc(100vh - 340px)); }
+/* the source notice shares the search row (right side) instead of a line of its own */
+.lab-customize .lab-cz-tools > .lab-label { margin: 0 0 0 auto; }
+/* Wide screens: a chosen method opens beside the list (list | detail) instead of below a 400px+ scroll box. */
+@media (min-width: 1200px) {
+  .lab-page .lab-customize:has(> [data-lab-template]) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 24px; align-items: start; }
+  .lab-page .lab-customize:has(> [data-lab-template]) > .box-h { grid-column: 1 / -1; }
+  .lab-page .lab-customize > [data-lab-template] { margin-top: 0; padding-top: 0; border-top: 0; }
+  .lab-page .lab-customize > [data-lab-template] .lab-steps { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* list and detail: methods on the left, the chosen method beside them (stacked when the box is narrow) */
+.lab-cz-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; align-items: start; }
+@container (min-width: 1000px) {
+  .lab-cz-body { grid-template-columns: minmax(340px, 440px) minmax(0, 1fr); }
+  .lab-cz-list .lab-books { max-height: min(72vh, 900px); }
+  .lab-cz-detail { position: sticky; top: 12px; }
+}
+.lab-cz-list .lab-methods { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.lab-cz-list .lab-methods button { padding: 10px 12px; gap: 4px; }
+.lab-cz-list .lab-m-name { font-size: 14px; }
+.lab-cz-list .lab-m-sum { font-size: 13px; line-height: 1.45; min-height: 0; }
+.lab-cz-list .lab-methods small { font-size: 12.5px; }
+.lab-m-loaded { font-style: normal; font-weight: 500; color: var(--blue); }
+.lab-cz-detail { min-width: 0; }
+.lab-cz-detail > .lab-template { margin-top: 0; padding: 20px 24px; border: 1px solid var(--rule); border-radius: var(--r-box); background: var(--card); }
+.lab-cz-detail h4 { margin: 14px 0 4px; font-size: 14px; }
+.lab-cz-preview > p[data-lab-preview-summary] { font-size: 15px; line-height: 1.55; }
+.lab-cz-notes { margin: 8px 0 12px; padding-left: 18px; font-size: 13.5px; line-height: 1.5; color: var(--ink2); }
+.lab-cz-confirm { display: grid; gap: 10px; }
+.lab-cz-confirm p { margin: 0; }
+.lab-cz-empty { margin: 0; padding: 32px 24px; border: 1px dashed var(--rule); border-radius: var(--r-box); color: var(--ink2); text-align: center; }

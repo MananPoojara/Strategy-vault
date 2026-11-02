@@ -199,6 +199,10 @@ export function FormulaBlocks({ formula, blocks, onChange, showFormula, indicato
 
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
     const t = e.target as HTMLElement, k = e.key.toLowerCase();
+    if (e.key === "Escape" && drawer) { // close the palette drawer first, not the window or expanded editor around it
+      e.stopPropagation(); setDrawer(false); root.current?.querySelector<HTMLElement>(".fb-drawer-open")?.focus();
+      return;
+    }
     if ((e.ctrlKey || e.metaKey) && (k === "z" || k === "y") && !t.matches("input, textarea, select")) {
       e.preventDefault();
       if (k === "y" || e.shiftKey) redo(); else undo();

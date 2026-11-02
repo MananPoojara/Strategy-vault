@@ -38,7 +38,8 @@
 .lab-page[data-lab-page] .lab-design-studio .lab-idea-basics { background:none; border:0; border-radius:0; border-bottom:1px solid var(--studio-line); gap:14px 22px; padding:4px 0 18px; }
 .lab-page[data-lab-page] .lab-design-studio .lab-idea-basics .dfield { display:flex; align-items:center; flex-direction:row; gap:10px; color:var(--studio-muted); }
 .lab-page[data-lab-page] .lab-design-studio .lab-idea-basics .join { height:auto; }
-.lab-page[data-lab-page] .lab-design-studio .lab-rule-cards { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); grid-template-rows:none; align-items:start; gap:20px; }
+/* Entry, Filters and Exit as full-width sections in order: each condition gets the whole row instead of a third of it */
+.lab-page[data-lab-page] .lab-design-studio .lab-rule-cards { display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:none; align-items:start; gap:20px; }
 .lab-page[data-lab-page] .lab-design-studio .lab-rule-card { display:grid; grid-column:auto; grid-row:auto; grid-template-columns:minmax(0,1fr); align-content:start; gap:16px; padding:22px; border:1px solid var(--studio-line); border-radius:12px; background:var(--card); box-shadow:none; overflow:visible; }
 .lab-page[data-lab-page] .lab-design-studio .lab-rule-card::before { content:""; border-radius:12px 12px 0 0; }
 .lab-page[data-lab-page] .lab-design-studio .lab-rule-section-h { padding-bottom:12px; border-bottom:1px solid var(--studio-line); }
@@ -152,3 +153,52 @@
 .lab-page[data-lab-page] .lab-design-studio .lab-ind-btn { white-space:normal; overflow:visible; text-overflow:clip; overflow-wrap:anywhere; line-height:1.4; }
 .lab-page[data-lab-page] .lab-design-studio .lab-param-comparisons .lab-param-row:has(.lab-ind-search) { grid-column:1/-1; }
 @media(max-width:640px) { .lab-page[data-lab-page] .lab-design-studio .lab-param-row:has(.lab-ind-search) { grid-column:1/-1; } }
+
+/* Your idea, dense pass: one scale (spacing 4/8/12/16/24; labels 13, body 14, card titles 16), controls 34px, cards of even
+   height, rule fields flowing into as many columns as the card holds. Scoped to the rules step (.lab-idea) and Try ranges. */
+.lab-page[data-lab-page] :is(.lab-idea,.lab-try-ranges) { --lab-type-body:14px; --lab-type-label:13px; --lab-type-section:16px; --lab-type-title:18px; }
+.lab-page[data-lab-page] .lab-rules.lab-idea { padding:24px; gap:16px; border-radius:12px; }
+.lab-page[data-lab-page] .lab-idea > .box-h { margin:0; font-size:18px; }
+.lab-page[data-lab-page] .lab-idea :is(select,input:not([type=checkbox],[type=radio],[type=range]),textarea,.lab-ind-btn) { min-height:34px; padding:6px 10px; border-radius:6px; font-size:14px; }
+.lab-page[data-lab-page] .lab-idea .dbtn:not(.primary) { min-height:32px; padding:4px 12px; border-radius:6px; font-size:14px; }
+.lab-page[data-lab-page] .lab-idea .dbtn.sm:not(.primary) { min-height:28px; padding:2px 8px; }
+:root[data-theme] body .lab-page[data-lab-page] .lab-idea .dbtn.primary { min-height:34px; padding:6px 16px; gap:8px; border-radius:6px; font-size:14px; }
+.lab-page[data-lab-page] .lab-idea :is(.join,.join-item) { min-height:34px; }
+.lab-page[data-lab-page] .lab-idea .join-item { padding:6px 12px; font-size:14px; }
+.lab-page[data-lab-page] .lab-idea .lab-filter-choice { gap:8px; }
+.lab-page[data-lab-page] .lab-idea .lab-filter-chip { min-height:32px; padding:4px 12px; border-radius:6px; font-size:14px; }
+/* plain words and the chart check: a compact band, not a hero */
+.lab-page[data-lab-page] .lab-idea .lab-words { gap:4px; padding:12px 16px; border-radius:8px; }
+.lab-page[data-lab-page] .lab-idea .lab-words [data-lab-words-buy] > b:first-child,
+.lab-page[data-lab-page] .lab-idea .lab-words [data-lab-words-sell] > b:first-child { margin-right:8px; padding:1px 6px; font-size:11px; }
+.lab-page[data-lab-page] .lab-idea .lab-chart-match { gap:4px 12px; }
+/* Positions · From · To … Optimize · Run: one row, actions at the right */
+.lab-page[data-lab-page] .lab-idea .lab-idea-basics { gap:8px 16px; padding:0 0 16px; }
+.lab-page[data-lab-page] .lab-idea .lab-idea-basics .dfield { gap:8px; }
+.lab-page[data-lab-page] .lab-idea .lab-run-top { gap:8px; }
+.lab-page[data-lab-page] .lab-idea .lab-rule-cards { align-items:start; gap:16px; }
+.lab-page[data-lab-page] .lab-idea .lab-rule-card { gap:12px; padding:16px; border-radius:10px; }
+.lab-page[data-lab-page] .lab-idea .lab-rule-section-h { padding-bottom:8px; }
+.lab-page[data-lab-page] .lab-idea .lab-rule-section-h h3 { font-size:16px; }
+.lab-page[data-lab-page] .lab-idea :is(.lab-list,.lab-exit-choice,.lab-rule-section-body) { gap:12px; }
+/* a rule: its fields fill the card's width (four across on a wide card, two on a laptop) */
+.lab-page[data-lab-page] .lab-idea :is(.lab-param,.lab-param:has(.lab-param-comparisons),.lab-param-comparisons,.lab-param-line,.lab-exit-part) { grid-template-columns:repeat(auto-fill,minmax(min(128px,100%),1fr)); gap:8px 12px; }
+.lab-page[data-lab-page] .lab-idea .lab-param { padding:0 0 12px; }
+.lab-page[data-lab-page] .lab-idea :is(.lab-param-comparisons,.lab-param-line,.lab-exit-part) { padding-top:12px; }
+.lab-page[data-lab-page] .lab-idea .lab-param-h { min-height:28px; margin:0; }
+.lab-page[data-lab-page] .lab-idea :is(.lab-param-h b,.lab-exit-part > header b) { font-size:14px; }
+.lab-page[data-lab-page] .lab-idea .lab-param-row { gap:4px; }
+.lab-page[data-lab-page] .lab-idea .lab-param-k { font-size:13px; line-height:1.3; }
+.lab-page[data-lab-page] .lab-idea .lab-param-tools .dbtn { min-height:28px; padding:2px 8px; font-size:13px; }
+.lab-page[data-lab-page] .lab-idea .lab-exit-part > header { display:flex; align-items:center; gap:8px; }
+.lab-page[data-lab-page] .lab-idea .lab-exit-part > header > .dbtn { margin-left:auto; }
+.lab-page[data-lab-page] .lab-idea .lab-exit-part .help-tip { right:auto; left:-6px; max-width:280px; font-size:13px; }
+.lab-page[data-lab-page] .lab-idea .lab-add-row > select { width:auto; min-width:0; max-width:100%; }
+/* the indicator name takes two columns once the card holds four; on a laptop card it sits beside Check */
+.lab-page[data-lab-page] .lab-idea .lab-rule-card { container-type:inline-size; }
+.lab-page[data-lab-page] .lab-idea :is(.lab-param,.lab-param-comparisons) > .lab-param-row:has(.lab-ind-search) { grid-column:auto; }
+@container (min-width:520px) { .lab-page[data-lab-page] .lab-idea :is(.lab-param,.lab-param-comparisons) > .lab-param-row:has(.lab-ind-search) { grid-column:span 2; } }
+/* Try ranges: a slim fold; open, its numbers sit side by side */
+.lab-page[data-lab-page] .lab-try-ranges { margin-top:0; padding:12px 24px; border-radius:12px; }
+.lab-page[data-lab-page] .lab-try-ranges > summary { font-size:14px; }
+.lab-page[data-lab-page] .lab-try-ranges[open] > summary { margin-bottom:8px; }

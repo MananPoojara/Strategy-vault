@@ -18,6 +18,10 @@
 /* group label: small uppercase, centred on the first 32px control row */
 .lab-rules :is(.lab-basics, .lab-stab-panel) > .lab-sgroup > h4 { margin: 0; font: 700 11.5px/var(--lab-ctl) var(--font); letter-spacing: .1em; color: var(--ink2); }
 .lab-rules :is(.lab-basics, .lab-stab-panel) > .lab-sgroup > div { gap: 12px; }
+/* Backtest parameters: the short field rows flow side by side across the card; the index note, circuits and orders take a whole line. */
+.lab-rules .lab-basics > .lab-sgroup > div { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 32px; }
+.lab-rules .lab-basics > .lab-sgroup > div > :is(:not(.lab-row), .lab-circuits) { flex-basis: 100%; max-width: none; order: 1; }
+.lab-rules .lab-basics > .lab-sgroup > div > [data-lab-money-blocked] { order: 2; margin: 0; }
 /* row captions (Positions, Buy and sell at) share one width so the choices line up */
 .lab-rules .lab-basics .lab-row > span.dfield:first-child { min-width: 104px; }
 
@@ -60,13 +64,23 @@
 @media (prefers-reduced-motion: no-preference) {
   .lab-rules > .lab-more-settings > summary::before { transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1); }
 }
-/* the tabs sit flush inside the card: underline tabs instead of folder tabs */
-.lab-rules > .lab-more-settings .lab-settings-tabs { border: 0; border-radius: 0; }
-.lab-rules > .lab-more-settings .lab-stabs { gap: 4px; padding: 0 12px; background: color-mix(in srgb, var(--thead) 70%, var(--card)); }
-.lab-rules > .lab-more-settings .lab-stabs [role=tab] { padding: 10px 12px; border: 0; border-radius: 0; background: none; font: 600 13px var(--font); color: var(--ink2); transition: color 150ms ease, box-shadow 150ms ease; }
-.lab-rules > .lab-more-settings .lab-stabs [role=tab]:hover { color: var(--ink); box-shadow: inset 0 -2px var(--steel); }
-.lab-rules > .lab-more-settings .lab-stabs [role=tab][aria-selected=true] { color: var(--ink); box-shadow: inset 0 -2px 0 var(--blue); }
-.lab-rules > .lab-more-settings .lab-stabs [role=tab]:focus-visible { outline: 2px solid color-mix(in srgb, var(--blue) 45%, transparent); outline-offset: -2px; }
+/* AmiBroker settings tabs (SettingsTabs `rail`): an underline strip that scrolls sideways on a narrow card,
+   a category rail on the left of the open tab once the card is 760px wide. The results tabs keep their own strip (results.css). */
+.lab-page[data-lab-page] .lab-ami { container: lab-ami / inline-size; }
+.lab-page[data-lab-page] .lab-ami .lab-settings-rail > .lab-stabs { gap: 4px; padding: 0 8px; background: color-mix(in srgb, var(--thead) 70%, var(--card)); scroll-padding-inline: 8px; }
+.lab-page[data-lab-page] .lab-ami .lab-settings-rail > .lab-stabs [role=tab] { margin: 0; padding: 10px 12px; border: 0; border-radius: 0; background: none; color: var(--ink2); white-space: nowrap; box-shadow: inset 0 -2px transparent; transition: color 150ms ease, box-shadow 150ms ease, background-color 150ms ease; }
+.lab-page[data-lab-page] .lab-ami .lab-settings-rail > .lab-stabs [role=tab]:hover { color: var(--ink); box-shadow: inset 0 -2px var(--steel); }
+.lab-page[data-lab-page] .lab-ami .lab-settings-rail > .lab-stabs [role=tab][aria-selected=true] { color: var(--ink); box-shadow: inset 0 -2px var(--blue); }
+.lab-page[data-lab-page] .lab-ami .lab-settings-rail > .lab-stabs [role=tab]:focus-visible { outline: 2px solid color-mix(in srgb, var(--blue) 45%, transparent); outline-offset: -2px; }
+@container lab-ami (min-width: 760px) {
+  .lab-page[data-lab-page] .lab-ami .lab-settings-rail { display: grid; grid-template-columns: 184px minmax(0, 1fr); align-items: start; }
+  .lab-page[data-lab-page] .lab-ami .lab-settings-rail > .lab-stabs { grid-area: 1 / 1; align-self: stretch; flex-direction: column; gap: 2px; padding: 8px; border-bottom: 0; border-right: 1px solid var(--rule); border-radius: var(--r-field) 0 0 var(--r-field); overflow: visible; }
+  .lab-page[data-lab-page] .lab-ami .lab-settings-rail > .lab-stabs [role=tab] { padding: 8px 12px; border-radius: var(--r-field); text-align: left; white-space: normal; box-shadow: none; }
+  .lab-page[data-lab-page] .lab-ami .lab-settings-rail > .lab-stabs [role=tab]:hover { background: color-mix(in srgb, var(--ink) 5%, transparent); box-shadow: none; }
+  .lab-page[data-lab-page] .lab-ami .lab-settings-rail > .lab-stabs [role=tab][aria-selected=true] { background: var(--card); font-weight: 600; box-shadow: 0 0 0 1px var(--rule); }
+  .lab-page[data-lab-page] .lab-ami .lab-settings-rail > .lab-stab-panel { grid-area: 1 / 2; }
+}
+@media (prefers-reduced-motion: reduce) { .lab-page[data-lab-page] .lab-ami .lab-settings-rail > .lab-stabs [role=tab] { transition: none; } }
 .lab-rules > .lab-more-settings .lab-stab-panel { gap: 14px; padding: 14px 16px 16px; }
 .lab-rules > .lab-more-settings .lab-stab-panel > .lab-stab-intro { color: var(--ink2); }
 .lab-rules > .lab-more-settings .lab-stab-panel > .lab-sgroup { padding: 14px 0 0; }
@@ -84,8 +98,6 @@
 @media (max-width: 600px) {
   .lab-rules > .lab-basics { padding: 0 12px; }
   .lab-rules > .lab-more-settings > summary { padding: 12px; }
-  .lab-rules > .lab-more-settings .lab-stabs { padding: 0 4px; }
-  .lab-rules > .lab-more-settings .lab-stabs [role=tab] { padding: 10px 8px; }
   .lab-rules > .lab-more-settings .lab-stab-panel { padding: 12px; }
   .lab-rules .lab-basics .lab-row > span.dfield:first-child { min-width: 0; flex-basis: 100%; }
 }

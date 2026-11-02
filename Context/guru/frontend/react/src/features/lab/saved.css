@@ -47,3 +47,10 @@
   [data-lab-saved] .lab-saved-item { padding: 10px 12px; }
   [data-lab-saved] .lab-saved-actions { flex-basis: 100%; }
 }
+
+/* Delete sits apart from Open / Duplicate / Submit, and reads as destructive on hover and focus */
+[data-lab-saved] .lab-saved-delete { margin-left: 12px; }
+[data-lab-saved] .lab-saved-delete:is(:hover, :focus-visible):not(:disabled) { color: var(--red); border-color: color-mix(in srgb, var(--red) 45%, var(--card)); }
+[data-lab-saved] .lab-saved-why { margin: 0; font-size: 13px; }
+[data-lab-saved] .lab-saved-note { font-size: 13px; }
+[data-lab-saved] .lab-saved-meta { font-size: 13px; }

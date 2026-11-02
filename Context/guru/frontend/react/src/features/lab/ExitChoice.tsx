@@ -8,7 +8,7 @@ import { NumField } from "./OperandEditor";
 import { DUAL_PRICES } from "./OrdersPanel";
 import { withExitAtStop } from "./AmiSettings";
 import { candleCount, candleCountNode, getAt, setAt } from "./spec-model";
-import { Segmented } from "./ui";
+import { HelpTip, Segmented } from "./ui";
 import type { SidePre } from "./execution-model";
 import type { RuleNode, Spec } from "./types";
 
@@ -56,9 +56,47 @@ const isNBarRow = (n: RuleNode) => (n as { lhs?: Obj }).lhs?.s === "bars_held" |
 /** The rows the Indicator choice shows: every sell row that is not the N-candle or the Supertrend exit. */
 export const isIndicatorExit = (n: RuleNode) => !isNBarRow(n) && !isSupertrendExit(n);
 
+/** What the engine does when several of this side's exits trigger on one bar, one line per step, in its order (empty for
+ *  fewer than two exits). Display only, read from backend src/lab/simulate.rs: the bar loop in `signal_events` (an
+ *  ExitAtStop 0 stop on an Open trade price first, then `Pos::price_exit`, then `Pos::trade_price_stop` on any other trade
+ *  price, then the rule exits in list order, then exit.dual_atr, then exit.dual_line); inside `Pos::price_exit` a level the
+ *  open gaps through fills first, then `intrabar` stop_first takes the tightest protective level before take-profits and
+ *  the target, ohlc_path the bar's path order; `nbar_due` skips every price stop on the bar a priority N-bar stop is due. */
+export function exitOrder(spec: Spec, pre: SidePre): string[] {
+  const exit = ((getAt(spec, `${pre}exit`) as Obj) ?? {}) as { any?: RuleNode[]; stop_loss?: unknown; target?: unknown; trailing?: { atr?: number };
+    breakeven?: unknown; take_profits?: unknown[]; dual_atr?: unknown; dual_line?: { initial?: { s?: string } } };
+  const ex = spec.execution ?? {}, mode = (k: "stop_loss" | "target" | "trailing") => ex.exit_at_stop?.[k] ?? 1;
+  const short = pre === "short_side." || spec.direction === "short";
+  // simulate.rs `market`: execution.prices / delays (each side defaults to the open), else the shared exit fill
+  const sellAtOpen = ex.prices || ex.delays ? (ex.prices?.[short ? "cover" : "sell"] ?? "open") === "open" : (ex.exit_fill ?? ex.fill ?? "next_open") === "next_open";
+  const stops: [string, "stop_loss" | "target" | "trailing", boolean][] = [["HSL", "stop_loss", exit.stop_loss !== undefined],
+    ["Profit booking", "target", exit.target !== undefined], [exit.trailing?.atr !== undefined ? "Trailing ATR stop" : "Trailing stop", "trailing", exit.trailing !== undefined]];
+  const atPrice = stops.filter(([, k, set]) => set && mode(k) === 0).map(([n]) => n); // trade_price_stop order: stop-loss, target, trailing
+  const live = (k: "stop_loss" | "target" | "trailing") => stops.find((s) => s[1] === k && s[2] && mode(k) !== 0)?.[0];
+  const guard = [live("stop_loss"), live("trailing"), exit.breakeven !== undefined ? "Breakeven stop" : undefined].filter((n): n is string => !!n);
+  const favour = [exit.take_profits?.length ? "Partial targets" : undefined, live("target")].filter((n): n is string => !!n);
+  const rows = (exit.any ?? []).filter((r) => (r as Obj).off !== true);
+  const rules = [...new Set(rows.map((r) => (nCandleOf(r) ? "N candle" : isSupertrendExit(r) ? "Supertrend" : "Indicator")))];
+  const close = [...rules, ...(exit.dual_atr ? ["ATR stop (Dual ATR)"] : []), ...(exit.dual_line ? [exit.dual_line.initial?.s === "supertrend" ? "Supertrend (two lines)" : "Two-line exit"] : [])];
+  if (atPrice.length + guard.length + favour.length + close.length < 2) return [];
+  const list = (n: string[]) => n.length < 2 ? n.join("") : `${n.slice(0, -1).join(", ")} and ${n.at(-1)}`;
+  const priced = list(atPrice), out: string[] = [];
+  const priority = ex.nbar_has_priority && rows.some((r) => (r as { lhs?: Obj }).lhs?.s === "bars_held" && typeof (r as { rhs?: { value?: unknown } }).rhs?.value === "number");
+  if (priority && atPrice.length + guard.length + favour.length) out.push("N candle has priority: on the bar it is due, the stops and targets are not checked");
+  if (priced && sellAtOpen) out.push(`${priced} at the open (checked on the trade price)`);
+  if (guard.length + favour.length) {
+    const g = guard.length > 1 ? `the tightest of ${list(guard)}` : list(guard);
+    out.push(ex.intrabar === "ohlc_path" ? `Inside the bar: ${list([...guard, ...favour])}, whichever price the bar reaches first (open, then the nearer of high and low)`
+      : guard.length && favour.length ? `Inside the bar: ${g} before ${list(favour)}; a level the open gaps through fills first, at the open` : `Inside the bar: ${g || list(favour)}`);
+  }
+  if (priced && !sellAtOpen) out.push(`${priced} at the sell price (checked on the trade price)`);
+  if (close.length) out.push(`At the close: ${list(rules)}${rules.length > 1 ? " (in list order)" : ""}${rules.length && close.length > rules.length ? ", then " : ""}${close.slice(rules.length).join(", then ")}`);
+  return out;
+}
+
 export function ExitChoice({ spec, pre, onChange, indicatorList }: { spec: Spec; pre: SidePre; onChange(spec: Spec): void; indicatorList: ReactNode }) {
   const path = `${pre}exit.any` as const, rows = (getAt(spec, path) as RuleNode[]) ?? [];
-  const exit = ((getAt(spec, `${pre}exit`) as Obj) ?? {}) as { trailing?: { atr?: number; atr_length?: number }; stop_loss?: { pct?: number }; target?: { pct?: number }; dual_atr?: DualAtr };
+  const exit = ((getAt(spec, `${pre}exit`) as Obj) ?? {}) as { trailing?: { atr?: number; atr_length?: number }; stop_loss?: { pct?: number; candle?: string }; target?: { pct?: number }; dual_atr?: DualAtr };
   const dual = exit.dual_atr, hslOnClose = (spec.execution?.exit_at_stop?.stop_loss ?? 1) === 0;
   const setDual = (patch: Partial<DualAtr>) => dual && setExit("dual_atr", { ...dual, ...patch });
   const setExit = (key: string, value: unknown) => {
@@ -94,7 +132,7 @@ export function ExitChoice({ spec, pre, onChange, indicatorList }: { spec: Spec;
   const setNc = (kind: Count, n: number, tf: CandleTf = nc?.tf ?? "D") => onChange(setAt(spec, path, ncRow ? rows.map((r) => (r === ncRow ? nCandleRow(kind, n, tf) : r)) : [...rows, nCandleRow(kind, n, tf)]));
   const on = {
     ncandle: !!nc, atr: !!dual || exit.trailing?.atr !== undefined, supertrend: !!st || !!stDual,
-    hsl: exit.stop_loss?.pct !== undefined, target: exit.target?.pct !== undefined, indicator: indicators.length > 0,
+    hsl: exit.stop_loss?.pct !== undefined || exit.stop_loss?.candle !== undefined, target: exit.target?.pct !== undefined, indicator: indicators.length > 0,
   };
   const toggle: Record<keyof typeof on, () => void> = {
     ncandle: () => (on.ncandle ? onChange(setAt(spec, path, rows.filter((r) => r !== ncRow))) : setNc("any", 10)),
@@ -108,9 +146,9 @@ export function ExitChoice({ spec, pre, onChange, indicatorList }: { spec: Spec;
   };
   const CHOICES: [keyof typeof on, string][] = [["ncandle", "N candle"], ["atr", "ATR"], ["supertrend", "Supertrend"], ["hsl", "HSL"], ["target", "Profit booking"], ["indicator", "Indicator"]];
   const row = (name: string, el: ReactNode) => <div className="lab-param-row" key={name}><span className="lab-param-k">{name}</span><span className="lab-param-v">{el}</span></div>;
-  /** One chosen exit: its title, a × that turns it off, and its settings. */
-  const part = (k: keyof typeof on, title: string, body: ReactNode) => <section className="lab-exit-part" data-lab-exit-part={k} aria-label={title}>
-    <header><b>{title}</b><button type="button" className="dbtn sm ghost" aria-label={`Remove ${title}`} onClick={toggle[k]}>×</button></header>{body}</section>;
+  /** One chosen exit: its title (with how it sells behind a "?"), a × that turns it off, and its settings. */
+  const part = (k: keyof typeof on, title: string, body: ReactNode, help?: string) => <section className="lab-exit-part" data-lab-exit-part={k} aria-label={title}>
+    <header><b>{title}</b>{help && <HelpTip name={title} text={help} />}<button type="button" className="dbtn sm ghost" aria-label={`Remove ${title}`} onClick={toggle[k]}>×</button></header>{body}</section>;
   /** AmiBroker (the AFLs' Dual ATR, the default) or a plain trailing ATR stop (close − multiplier × Wilder ATR). */
   const atrCalc = <Segmented label="ATR: calculation" value={dual ? "ami" : "trail"} options={[{ value: "ami", label: "AmiBroker (Dual ATR)" }, { value: "trail", label: "Trailing ATR" }]}
     onChange={(v) => { const next = { ...((getAt(spec, `${pre}exit`) as Obj) ?? {}) }; delete next.trailing; delete next.dual_atr;
@@ -119,6 +157,7 @@ export function ExitChoice({ spec, pre, onChange, indicatorList }: { spec: Spec;
     <select aria-label={label} value={value} onChange={(e) => put(e.target.value)}>{options.map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select>;
   const num = (label: string, value: number | undefined, min: number, max: number, step: number, put: (n: number) => void) =>
     <NumField hideLabel label={label} value={value} min={min} max={max} step={step} onChange={(n) => n !== undefined && n >= min && n <= max && put(n)} />;
+  const order = exitOrder(spec, pre);
   return <div className="lab-exit-choice" data-lab-exit-choice>
     <div className="lab-filter-choice" role="group" aria-label="Exits">
       {CHOICES.map(([k, label]) => <button key={k} type="button" className="lab-filter-chip" aria-pressed={on[k]} data-lab-exit={k} onClick={toggle[k]}>{label}</button>)}
@@ -136,7 +175,7 @@ export function ExitChoice({ spec, pre, onChange, indicatorList }: { spec: Spec;
       {row("Initial multiplier", num("ATR: initial multiplier", dual.initial.mult, 0.1, 20, 0.5, (n) => setDual({ initial: { ...dual.initial, mult: n } })))}
       {row("Favour period", num("ATR: favour period", dual.favour.period, 1, 100, 1, (n) => setDual({ favour: { ...dual.favour, period: n } })))}
       {row("Favour multiplier", num("ATR: favour multiplier", dual.favour.mult, 0.1, 20, 0.5, (n) => setDual({ favour: { ...dual.favour, mult: n } })))}
-      <p className="cap">Sells when the close falls below Avg Val − Initial × ATR (the line only rises). Once the close is above Avg Val + Favour × ATR, the wider Avg Val − Favour × ATR line is used. ATR is the simple average of the true range, as in the AFLs.</p></>)}
+</>, "Sells when the close falls below Avg Val − Initial × ATR (the line only rises). Once the close is above Avg Val + Favour × ATR, the wider Avg Val − Favour × ATR line is used. ATR is the simple average of the true range, as in the AFLs.")}
     {on.atr && !dual && exit.trailing && part("atr", "ATR stop", <>
       {row("Calculation", atrCalc)}
       {row("ATR period", num("ATR: period", exit.trailing.atr_length ?? 14, 1, 500, 1, (n) => setExit("trailing", { ...exit.trailing, atr_length: n })))}
@@ -153,7 +192,6 @@ export function ExitChoice({ spec, pre, onChange, indicatorList }: { spec: Spec;
             onChange={(v) => putDual({ ...a, mode: Number(v) }, { ...b, mode: Number(v) })} />)}
           {row("Avg Val", sel("Supertrend: avg val", String(a.price ?? 0), ST_PRICES.map(([v, t]) => [String(v), t]), (v) => putDual({ ...a, price: Number(v) }, { ...b, price: Number(v) })))}
           {row("Timeframe", sel("Supertrend: timeframe", stDual.initial.tf ?? "D", TFS, (v) => putDual(a, b, v)))}
-          <p className="cap">Sells when the close falls below the Initial Supertrend. Once a close is above the wider Favour Supertrend, it sells when the close falls below the Favour line instead (the AFLs' ST Factor Initial / Favour).</p>
         </>; })()}
       {!stDual && sts.map((x, i) => { const p = { ...SUPERTREND.p, ...x.lhs.p }, name = sts.length > 1 ? `Supertrend ${i + 1}: ` : "Supertrend: ";
         return <div className={sts.length > 1 ? "lab-param-line" : undefined} key={i}>
@@ -164,12 +202,17 @@ export function ExitChoice({ spec, pre, onChange, indicatorList }: { spec: Spec;
             onChange={(v) => putSt(i, { ...p, mode: Number(v) })} />)}
           {row("Avg Val", sel(`${name}avg val`, String(p.price ?? 0), ST_PRICES.map(([v, t]) => [String(v), t]), (v) => putSt(i, { ...p, price: Number(v) })))}
           {row("Timeframe", sel(`${name}timeframe`, (x.lhs as { tf?: string }).tf ?? "D", TFS, (v) => putStTf(i, v)))}</div>; })}
-      {!stDual && sts.length < 4 && <button type="button" className="dbtn sm ghost lab-param-addline" data-lab-add-supertrend onClick={() => addSt({ ...SUPERTREND.p, ...st?.lhs.p })}>+ Another Supertrend</button>}</>)}
+      {!stDual && sts.length < 4 && <button type="button" className="dbtn sm ghost lab-param-addline" data-lab-add-supertrend onClick={() => addSt({ ...SUPERTREND.p, ...st?.lhs.p })}>+ Another Supertrend</button>}</>,
+      stDual ? "Sells when the close falls below the Initial Supertrend. Once a close is above the wider Favour Supertrend, it sells when the close falls below the Favour line instead (the AFLs' ST Factor Initial / Favour)." : undefined)}
     {on.hsl && part("hsl", "Hard stop-loss (HSL)", <>
-      {row("% below buy price", num("HSL: stop-loss %", exit.stop_loss?.pct, 0.1, 99, 0.5, (n) => setExit("stop_loss", { pct: n })))}
+      {row("Stop at", <Segmented label="HSL: stop at" value={exit.stop_loss?.candle ? "candle" : "pct"} options={[{ value: "pct", label: "% below buy price" }, { value: "candle", label: "Entry candle low" }]}
+        onChange={(v) => setExit("stop_loss", v === "candle" ? { candle: "low" } : { pct: 5 })} />)}
+      {!exit.stop_loss?.candle && row("% below buy price", num("HSL: stop-loss %", exit.stop_loss?.pct, 0.1, 99, 0.5, (n) => setExit("stop_loss", { pct: n })))}
       {row("Checked on", <Segmented label="HSL: checked on" value={hslOnClose ? "close" : "live"} options={[{ value: "close", label: "Close" }, { value: "live", label: "Live (intraday low)" }]}
         onChange={(v) => onChange(withExitAtStop(spec, "stop_loss", v === "close" ? 0 : 1))} />)}</>)}
     {on.target && part("target", "Profit booking", row("Target %", num("Profit booking: target %", exit.target?.pct, 0.1, 1000, 0.5, (n) => setExit("target", { pct: n }))))}
     {on.indicator && indicatorList}
+    {order.length > 0 && <section className="lab-exit-order" data-lab-exit-order aria-label="If several exits trigger on the same bar">
+      <b>If several exits trigger on the same bar</b><ol>{order.map((o) => <li key={o}>{o}</li>)}</ol></section>}
   </div>;
 }

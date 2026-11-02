@@ -7,6 +7,8 @@ use super::rules::LabError;
 pub struct Model { pub kind: String, pub mode: &'static str, pub executable: bool, pub notes: Vec<String> }
 
 pub const INDEX: &str = "An index cannot be traded; returns are a study of index levels, not of an ETF or futures contract.";
+/// Money mode on an index: AmiBroker trades an index symbol like a stock at its index level (the team's AFL backtests).
+pub const INDEX_MONEY: &str = "Money mode prices units at the index level, as AmiBroker backtests an index symbol; simulated study only, not an executable order.";
 pub const INDIA_SHORT: &str = "Hypothetical — overnight short positions are not executable in the Indian cash segment (they need F&O or SLB borrowing).";
 pub const US_SHORT_UNIT: &str = "Short positions: borrow cost is not modelled in unit mode.";
 pub const CRYPTO: &str = "CRYPTO:* is a TradingView index composite, not an exchange order book.";
@@ -22,8 +24,9 @@ pub fn model(kind: &str, market: Option<&str>, shorts: bool, money: bool) -> Res
     let refuse = |why: &str| Err(LabError::NeedsData(format!("{why}; no money result is published")));
     match kind {
         "index" => {
-            if money { return refuse("an index has no tradable quantity: money sizing needs an ETF or a futures contract with its own data (the index is never priced as a stand-in)"); }
+            if money && shorts && market == Some("in") { return refuse("India cash shorts held overnight need an F&O contract or an SLB borrow model, and neither is admitted"); }
             (m.executable, m.notes) = (false, vec![INDEX.into()]);
+            if money { m.notes.push(INDEX_MONEY.into()); }
         }
         "crypto" => {
             if money { return refuse("the crypto series is a TradingView index composite, not an exchange order book"); }
@@ -62,7 +65,9 @@ mod tests {
     #[test] fn each_kind_says_what_its_result_means() {
         let m = model("index", Some("in"), false, false).unwrap();
         assert_eq!((m.executable, m.notes[0].as_str()), (false, INDEX));
-        assert_eq!(model("index", Some("us"), false, true).unwrap_err().status(), "needs_data");
+        let m = model("index", Some("us"), false, true).unwrap();
+        assert_eq!((m.mode, m.executable, m.notes.clone()), ("money", false, vec![INDEX.to_string(), INDEX_MONEY.to_string()]));
+        assert!(model("index", Some("in"), true, true).unwrap_err().message().contains("F&O contract or an SLB"));
         let m = model("individual_stock", Some("in"), true, false).unwrap();
         assert_eq!((m.executable, m.notes[0].as_str()), (false, INDIA_SHORT));
         assert!(model("individual_stock", Some("in"), true, true).unwrap_err().message().contains("F&O contract or an SLB"));

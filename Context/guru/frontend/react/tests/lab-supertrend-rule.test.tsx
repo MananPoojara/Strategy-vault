@@ -36,3 +36,30 @@ it("a Supertrend picked in a rule starts at the AFL's 5 × 1 AmiBroker (H+L)/2, 
   expect(labels).toEqual(expect.arrayContaining(["Period", "Multiplier", "Calculation", "Avg Val"]));
   expect(labels).not.toContain("ATR length");
 });
+
+it("a non-price line (direction) is read against a Threshold: picking it sets 0 and Price is not offered", async () => {
+  const onChange = vi.fn();
+  const start: Spec = { ...defaultSpec(), entry: { all: [{ lhs: { s: "supertrend", p: { atr_length: 5, factor: 1, mode: 1, price: 0 } }, op: "crosses_above", rhs: { s: "close" } } as unknown as RuleNode] } };
+  function Host() {
+    const [spec, setSpec] = useState(start);
+    return <RuleBuilder spec={spec} catalogue={{ ...cat, indicators: cat.indicators.map((i) => (i.id === "supertrend" ? { ...i, placement: "price" } : i)) }}
+      onChange={(s) => { onChange(s); setSpec(s); }} settings={{ from: "", to: "", fees: "", slippage: "" }} onSettings={() => {}} problems={[]} running={false} onRun={() => {}} />;
+  }
+  const host = await mount(<Host />), last = () => onChange.mock.calls.at(-1)![0] as Spec;
+  const card = () => host.querySelector<HTMLElement>("[data-lab-card=entry]")!;
+  const line = card().querySelector<HTMLSelectElement>('select[aria-label="Entry 1 check line"]')!;
+  await act(async () => { line.value = "direction"; line.dispatchEvent(new Event("change", { bubbles: true })); });
+  expect(last().entry.all[0]).toMatchObject({ lhs: { s: "supertrend", out: "direction" }, rhs: { value: 0 } });
+  expect(card().querySelector('select[aria-label="Entry 1 compare with type"] option[value="price"]')).toBeNull();
+  expect(card().querySelector('input[aria-label="Entry 1 compare with threshold"]')).not.toBeNull();
+});
+
+it("against the close only price lines are offered: Supertrend's direction is not in the Compare with line list", async () => {
+  const start: Spec = { ...defaultSpec(), entry: { all: [{ lhs: { s: "close" }, op: "crosses_above", rhs: { s: "supertrend", p: { atr_length: 5, factor: 1, mode: 1, price: 0 } } } as unknown as RuleNode] } };
+  const priceCat = { ...cat, indicators: cat.indicators.map((i) => (i.id === "supertrend" ? { ...i, placement: "price" } : i)) } as Catalogue;
+  const host = await mount(<RuleBuilder spec={start} catalogue={priceCat} onChange={() => {}} settings={{ from: "", to: "", fees: "", slippage: "" }} onSettings={() => {}} problems={[]} running={false} onRun={() => {}} />);
+  const card = host.querySelector<HTMLElement>("[data-lab-card=entry]")!;
+  const line = card.querySelector<HTMLSelectElement>('select[aria-label="Entry 1 compare with line"]');
+  // one price line left, so the Line box is either gone or offers only "supertrend"
+  expect(line ? [...line.options].map((o) => o.value) : ["supertrend"]).toEqual(["supertrend"]);
+});

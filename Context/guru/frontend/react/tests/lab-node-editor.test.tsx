@@ -202,3 +202,23 @@ it("rules and all/any conditions switch off and on without being deleted", async
   const nested = await setup([{ not: C }]);
   expect(nested.host.querySelectorAll('input[aria-label$=" on"]')).toHaveLength(1);
 });
+
+it("group headers summarise their size; Collapse all / Expand all folds every group, UI only", async () => {
+  const { host, onChange } = await setup([{ all: [C, { any: [C, C] }, C] }, { then: [C, C], within: 5 }, C]);
+  const toggles = () => [...host.querySelectorAll<HTMLButtonElement>("button[data-lab-group-toggle]")];
+  expect(toggles().map((b) => b.textContent)).toEqual(["3 conditions", "2 conditions", "Sequence of 2 steps"]);
+  expect(toggles()[0].getAttribute("aria-label")).toBe("Entry 1: All of 3 conditions");
+  const all = host.querySelector<HTMLButtonElement>("button[data-lab-fold-all]")!;
+  expect([all.textContent, all.getAttribute("aria-expanded")]).toEqual(["Collapse all groups", "true"]);
+  await click(all);
+  expect(host.querySelectorAll(".lab-group-body")).toHaveLength(0);
+  expect(toggles().every((b) => b.getAttribute("aria-expanded") === "false")).toBe(true);
+  expect(all.textContent).toBe("Expand all groups");
+  await click(toggles()[0]); // one group reopens by itself; its nested group was mounted after the fold, so it opens too
+  expect(host.querySelectorAll(".lab-group-body")).toHaveLength(2);
+  await click(all);
+  expect(host.querySelectorAll(".lab-group-body")).toHaveLength(3);
+  expect(onChange).not.toHaveBeenCalled(); // folding never touches the spec
+  const flat = await setup([C]);
+  expect(flat.host.querySelector("[data-lab-fold-all]")).toBeNull(); // no groups: no control
+});

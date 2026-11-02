@@ -134,6 +134,35 @@ it("editor: the Blocks tab drives the same draft through the blocksEditor slot",
   expect(p.api.update).toHaveBeenCalledWith(7, 2, { name: "My Momentum", formula: 'Plot(C, "C");', blocks: { root: 2 } });
 });
 
+it("editor: Expand editor opens the same editor as a modal; edits there save, Esc closes and returns focus", async () => {
+  const p = editor();
+  const host = await mount(<FormulaEditor {...p} />);
+  const section = host.querySelector<HTMLElement>("[data-lab-formula-editor]")!, toggle = host.querySelector<HTMLButtonElement>("[data-lab-formula-focus]")!;
+  expect(toggle.textContent).toBe("Expand editor");
+  expect(section.getAttribute("role")).toBeNull();
+  await click(toggle);
+  expect(section.getAttribute("role")).toBe("dialog");
+  expect(section.getAttribute("aria-modal")).toBe("true");
+  expect(document.getElementById(section.getAttribute("aria-labelledby")!)!.textContent).toBe("New indicator");
+  expect(document.body.style.overflow).toBe("hidden");
+  expect(toggle.textContent).toBe("Done");
+  const area = host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Formula"]')!;
+  await typeText(area, FORMULA);
+  // Tab from the last control wraps to the first one inside the dialog
+  const last = [...section.querySelectorAll<HTMLElement>("summary")].at(-1)!;
+  last.focus();
+  await act(async () => { last.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true })); });
+  expect(section.contains(document.activeElement)).toBe(true);
+  expect(document.activeElement).not.toBe(last);
+  await act(async () => { area.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+  expect(section.getAttribute("role")).toBeNull();
+  expect(document.body.style.overflow).toBe("");
+  expect(document.activeElement).toBe(toggle);
+  await typeText(host.querySelector<HTMLInputElement>(".lab-formula-name input")!, "My Momentum");
+  await click([...host.querySelectorAll("button")].find((b) => b.textContent === "Save")!);
+  expect(p.api.create).toHaveBeenCalledWith({ name: "My Momentum", formula: FORMULA, blocks: null });
+});
+
 it("chart: a custom indicator chip loads its series by formula", async () => {
   window.LightweightCharts = { createChart: vi.fn(() => ({ addCandlestickSeries: () => ({ setData: vi.fn(), setMarkers: vi.fn() }), addLineSeries: () => ({ setData: vi.fn(), applyOptions: vi.fn() }),
     remove: vi.fn(), resize: vi.fn(), applyOptions: vi.fn(), timeScale: () => ({ fitContent: vi.fn(), setVisibleRange: vi.fn() }) })), CrosshairMode: { Normal: 0 } } as never;

@@ -1,7 +1,9 @@
 /* Custom indicator (formula) editor: same card as the indicator reference, full width under the chart. Theme tokens only, so light and dark follow. */
-.lab-formula .lab-formula-name { display: flex; flex-direction: column; gap: 4px; max-width: 420px; margin-bottom: 10px; }
+.lab-formula .lab-formula-name { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; max-width: 420px; margin-bottom: var(--sp-3, 12px); }
 .lab-formula .lab-formula-name input { width: 100%; box-sizing: border-box; }
-.lab-formula-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--rule); margin-bottom: 8px; }
+.lab-formula-bar { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--sp-2, 8px); border-bottom: 1px solid var(--rule); margin-bottom: var(--sp-3, 12px); }
+.lab-formula-bar > .dbtn { margin-bottom: var(--sp-1, 4px); }
+.lab-formula-tabs { display: flex; gap: 2px; }
 .lab-formula-tabs [role=tab] { font: 600 13px var(--font); color: var(--ink2); background: transparent; border: 0; border-bottom: 3px solid transparent; padding: 8px 14px; cursor: pointer; }
 .lab-formula-tabs [role=tab][aria-selected=true] { color: var(--ink); border-bottom-color: var(--accent, var(--ink)); }
 .lab-formula-tabs [role=tab]:focus-visible { outline: 2px solid var(--ink2); outline-offset: -4px; }
@@ -36,23 +38,22 @@
 .lab-formula :is(.lab-formula-name input, .lab-formula-text):hover { border-color: var(--ink3); }
 .lab-formula :is(.lab-formula-name input, .lab-formula-text):focus-visible { outline: none; border-color: var(--blue); box-shadow: var(--fx-focus); }
 .lab-formula .lab-formula-text[aria-invalid=true] { border-color: var(--red); }
-.lab-formula-tabs { gap: 2px; margin-bottom: 12px; }
 .lab-formula-tabs [role=tab] { margin-bottom: -1px; padding: 8px 16px; border-radius: var(--r-field) var(--r-field) 0 0; }
 .lab-formula-tabs [role=tab]:hover { color: var(--ink); background: var(--hover, var(--panel)); }
 .lab-formula-tabs [role=tab][aria-selected=true] { color: var(--blue); border-bottom-color: var(--blue); }
 .lab-formula-tabs [role=tab]:focus-visible { outline: none; box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--blue) 40%, transparent); }
 .lab-formula .lab-formula-text { padding: 10px 12px; line-height: 1.6; }
-.lab-formula .lab-formula-text + .cap { margin: 6px 0 0; font-variant-numeric: tabular-nums; color: var(--ink3); }
-.lab-formula-result dl { gap: 6px 14px; padding: 10px 12px; border: 1px solid var(--rule); border-radius: var(--r-field); background: var(--card); }
+.lab-formula .lab-formula-hint { margin: var(--sp-2, 8px) 0 0; font-variant-numeric: tabular-nums; color: var(--ink3); }
+.lab-formula-result dl { margin: var(--sp-2, 8px) 0 0; gap: 6px 14px; padding: 10px 12px; border: 1px solid var(--rule); border-radius: var(--r-field); background: var(--card); }
 .lab-formula-result dt { font: 700 11px/1.6 var(--font); letter-spacing: .08em; text-transform: uppercase; color: var(--ink2); }
 .lab-formula-result dd { margin: 0; font-family: 'Inter Numbers', var(--font); font-variant-numeric: tabular-nums; }
 .lab-formula-err pre { margin-top: 6px; padding: 8px 10px; border-radius: var(--r-field); background: color-mix(in srgb, var(--red) 5%, var(--card)); font: 400 12.5px/1.5 "IBM Plex Mono", ui-monospace, monospace; color: var(--ink); }
 .lab-formula-err mark { border-radius: 2px; padding: 0 1px; }
-.lab-formula-actions { gap: 8px; margin: 14px 0 10px; }
+.lab-formula-actions { gap: var(--sp-2, 8px); margin: var(--sp-4, 16px) 0 var(--sp-3, 12px); }
 .lab-formula-actions .dbtn:disabled { opacity: .5; cursor: not-allowed; }
 .lab-formula .dbtn { transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease, box-shadow 150ms ease, transform 160ms cubic-bezier(0.23, 1, 0.32, 1); }
 .lab-formula-note { font-weight: 500; }
-.lab-formula-help { margin-top: 12px; padding-top: 8px; }
+.lab-formula-help { margin-top: var(--sp-3, 12px); padding-top: var(--sp-2, 8px); }
 .lab-formula-help summary { width: fit-content; font-size: 13px; }
 .lab-formula-help summary:hover { color: var(--blue); }
 .lab-formula-help summary:focus-visible { outline: none; box-shadow: var(--fx-focus); border-radius: var(--r-field); }
@@ -66,3 +67,18 @@
 .lab-formula-example:first-of-type { border-top: 0; }
 .lab-formula-example h3 { margin: 0 0 6px; font-weight: 600; color: var(--ink); }
 .lab-formula-example pre { margin: 0 0 8px; padding: 10px 12px; border: 1px solid var(--rule); border-radius: var(--r-field); background: var(--panel); font: 400 12.5px/1.55 "IBM Plex Mono", ui-monospace, monospace; color: var(--ink); }
+
+/* Code field and its error at a readable size. typography.css sets lab code to the 13px label size with !important, so this needs it too. */
+.lab-page[data-lab-page] .lab-formula textarea.lab-formula-text { font-size: var(--lab-type-body) !important; line-height: 1.6 !important; }
+.lab-formula .lab-formula-err { margin-top: var(--sp-2, 8px); }
+
+/* Focus mode: the same editor section fixed over the page as a modal dialog (FormulaEditor sets data-focus and role=dialog).
+   Overrides the chart window's borderless, title-less treatment of .lab-detail. */
+.lab-formula-scrim { position: fixed; inset: 0; z-index: 3; background: rgb(0 0 0 / .4); }
+.lab-detail.lab-formula[data-focus] { position: fixed; inset: var(--sp-5, 24px); z-index: 4; box-sizing: border-box; max-width: none; margin: 0; overflow: auto; overscroll-behavior: contain;
+  padding: var(--sp-4, 16px) var(--sp-5, 24px); background: var(--card); border: 1px solid var(--rule); border-radius: var(--r-box); box-shadow: 0 18px 44px -12px rgb(0 0 0 / .3); }
+.lab-chart-popup .lab-detail.lab-formula[data-focus] > .box-h { display: flex; }
+.lab-chart-popup:has(> .lab-formula[data-focus]) { resize: none; overflow: hidden; } /* the shrunken window behind would otherwise paint its resize grip over the dialog */
+.lab-formula[data-focus] .lab-formula-text { min-height: max(240px, 55vh); }
+.lab-formula[data-focus] .fb-palette { max-height: max(320px, calc(100vh - 260px)); }
+@media (max-width: 600px) { .lab-detail.lab-formula[data-focus] { inset: var(--sp-2, 8px); padding: var(--sp-3, 12px); } }

@@ -114,7 +114,7 @@
 .lab-draw-layer .lab-draw-hit { stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: move; }
 .lab-draw-layer .lab-draw-end { pointer-events: all; cursor: grab; }
 .lab-draw-layer.on .lab-draw-hit, .lab-draw-layer.on .lab-draw-end { pointer-events: none; }
-.lab-workbench .lab-fullscreen { margin-left:auto; display:grid; place-items:center; width:32px; height:32px; padding:5px; }
+.lab-workbench .lab-fullscreen { display:grid; place-items:center; width:32px; height:32px; padding:5px; }
 .lab-workbench .lab-fullscreen svg { width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.6; }
 .lab-chart-actions:has(.lab-fullscreen) { flex:1; }
 .lab-maximized { position:fixed; inset:0; z-index:1000; overflow:auto; padding:6px; background:var(--bg, #fff); }
@@ -134,10 +134,15 @@
 .lab-page .lab-maximized section.lab-workbench { border-radius: 0; box-shadow: none; }
 .lab-page .lab-workbench > .lab-chart-topbar { background: var(--card); border-radius: var(--r-box) var(--r-box) 0 0; }
 .lab-page .lab-maximized .lab-workbench > .lab-chart-topbar { border-radius: 0; }
-/* top-bar actions: Chart type · (type settings) · Indicators · full screen, borderless until hovered, tinted while open */
-.lab-page[data-lab-page] .lab-chart-topbar .lab-chart-actions { gap: 4px; }
-.lab-page[data-lab-page] .lab-chart-type-control { display: inline-flex; align-items: center; padding-right: 6px; border-right: 1px solid var(--rule); }
-.lab-page[data-lab-page] .lab-chart-type-control select { border: 0; border-radius: var(--r-field); padding: 0 6px 0 9px; font: 600 12.5px var(--font); color: var(--ink); cursor: pointer; transition: background-color 120ms ease; }
+/* top-bar actions in two groups: what is drawn (Chart type · type settings · Indicators) and the view (full screen, at the right end);
+   borderless until hovered, tinted while open or on */
+.lab-page[data-lab-page] .lab-chart-topbar .lab-chart-actions { flex: 1 1 auto; gap: 4px 8px; min-width: 0; }
+.lab-tool-group { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 2px; min-width: 0; max-width: 100%; }
+.lab-tool-group-view { margin-left: auto; }
+/* phones: the drawn-chart controls wrap item by item, so full screen can share their last row */
+@media (max-width: 600px) { .lab-tool-group:not(.lab-tool-group-view) { display: contents; } }
+.lab-page[data-lab-page] .lab-chart-type-control { display: inline-flex; align-items: center; min-width: 0; max-width: 100%; }
+.lab-page[data-lab-page] .lab-chart-type-control select { max-width: 100%; border: 0; border-radius: var(--r-field); padding: 0 6px 0 9px; font: 600 12.5px var(--font); color: var(--ink); cursor: pointer; transition: background-color 120ms ease; }
 .lab-page[data-lab-page] .lab-chart-type-control select:hover { background: var(--hover); }
 .lab-page[data-lab-page] .lab-chart-type-control select:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent), inset 0 0 0 1px var(--blue); }
 .lab-page[data-lab-page] .lab-chart-topbar .lab-chart-actions .dbtn { border: 0; border-radius: var(--r-field); background: transparent; box-shadow: none; padding: 7px 11px; font: 600 13px var(--font); color: var(--ink); transition: background-color 120ms ease, color 120ms ease, transform 160ms cubic-bezier(0.23, 1, 0.32, 1); }
@@ -154,7 +159,9 @@
 .lab-page .lab-workbench .lab-draw-rail button:hover { background: var(--hover); color: var(--ink); }
 .lab-page .lab-workbench .lab-draw-rail button[aria-pressed=true] { color: var(--blue); background: color-mix(in srgb, var(--blue) 12%, var(--card)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--blue) 30%, transparent); }
 .lab-page .lab-workbench .lab-draw-rail button:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent), inset 0 0 0 1px var(--blue); }
-.lab-page .lab-workbench .lab-draw-rail button[data-lab-draw-undo] { margin-top: 6px; }
+/* undo and clear edit what is drawn: set apart from the tools by a short rule */
+.lab-page .lab-workbench .lab-draw-rail button[data-lab-draw-undo] { position: relative; margin-top: 9px; }
+.lab-page .lab-workbench .lab-draw-rail button[data-lab-draw-undo]::before { content: ""; position: absolute; top: -7px; left: 8px; right: 8px; height: 1px; background: var(--rule); }
 /* legend readout and pane settings: figures in Inter Numbers, field radius */
 .lab-workbench .lab-legend-tv { font-family: 'Inter Numbers', var(--font); }
 .lab-workbench .lab-legend-tv > div { border-radius: 3px; }
@@ -177,3 +184,18 @@
 .lab-page[data-lab-page] .lab-chart-next > .dbtn.primary { margin-left: auto; min-height: 36px; padding: 0 18px; font-size: 13.5px; box-shadow: 0 1px 2px rgb(0 0 0 / .08), 0 4px 12px -6px color-mix(in srgb, var(--blue) 60%, transparent); transition: background-color 150ms ease, transform 160ms cubic-bezier(0.23, 1, 0.32, 1); }
 .lab-page[data-lab-page] .lab-chart-next > .dbtn.primary:focus-visible { box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 30%, transparent); }
 @media (max-width: 600px) { .lab-page[data-lab-page] .lab-step-nav.lab-chart-next { padding: 10px 12px; } .lab-page[data-lab-page] .lab-chart-next > .dbtn.primary { width: 100%; } }
+
+/* ---- Chart as the hero: the card starts at the toolbar (no band above it), the range row carries the one chart note,
+   the drawing hint floats on the chart instead of pushing it, and the next-step strip is one compact row. */
+.lab-page[data-lab-page] section.lab-workbench { padding: 0; }
+.lab-workbench .lab-chart-footer { gap: 4px; padding: 4px 12px 4px 52px; margin: 0; }
+.lab-workbench .lab-chart-footer button { min-height: 28px; padding: 4px 12px; }
+.lab-workbench .lab-chart-footer > span { min-width: 0; margin-left: auto; padding-left: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.lab-workbench > p.cap:not(.lab-drawing-hint) { margin: 0; padding: 4px 12px; border-top: 1px solid var(--rule); font-size: 12px; line-height: 1.5; }
+.lab-workbench > .lab-chips { margin: 0; padding: 8px 12px; border-bottom: 1px solid var(--rule); }
+.lab-price > .lab-drawing-hint { position: absolute; z-index: 5; left: 50%; bottom: 36px; transform: translateX(-50%); max-width: calc(100% - 120px); margin: 0; padding: 4px 12px; border: 1px solid var(--rule); border-radius: var(--r-field); background: var(--card); color: var(--ink2); font: 500 12px var(--font); pointer-events: none; box-shadow: 0 2px 8px rgb(0 0 0 / .12); }
+.lab-page[data-lab-page] .lab-step-nav.lab-chart-next { gap: 8px 16px; padding: 6px 8px 6px 16px; }
+.lab-page[data-lab-page] .lab-chart-next > .dbtn.primary { min-height: 32px; padding: 0 16px; font-size: 13px; }
+@media (max-width: 700px) { .lab-workbench .lab-chart-footer { flex-wrap: wrap; padding-left: 40px; } .lab-workbench .lab-chart-footer > span { flex-basis: 100%; margin: 0; padding: 0 0 2px; white-space: normal; } }
+/* no drawing rail (Renko, Kagi…): the range row lines up with the chart's left edge */
+.lab-workbench .lab-chart-body:has(> .lab-draw-rail[hidden]) ~ .lab-chart-footer { padding-left: 12px; }

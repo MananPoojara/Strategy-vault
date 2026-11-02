@@ -96,7 +96,6 @@ export const MODEL_NOTE = {
   cfd: "Provisional CFD quotes; CFD contract terms (size, financing) are not admitted.",
 } as const;
 export const MONEY_BLOCKED = {
-  index: "Money mode needs a tradable quantity: an index is never priced as a stand-in for an ETF or futures contract.",
   crypto: "Money mode is not available: the crypto series is a TradingView index composite, not an exchange order book.",
   cfd: "Money mode is not available: CFD contract terms are not admitted.",
   indiaShort: "Money mode is not available for short positions on India cash instruments: overnight shorts need an F&O contract or an SLB borrow model, and neither is admitted.",

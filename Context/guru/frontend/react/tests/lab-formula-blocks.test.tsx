@@ -206,3 +206,16 @@ it("editor: a new indicator opens on Blocks and saves the formula with its block
   await click(q(host, '[role="tab"]:not([aria-selected="true"])'));
   expect(host.textContent).toContain("This indicator was written on the Formula tab.");
 });
+
+it("Esc closes the palette drawer, stays inside the builder and returns focus to the Blocks button", async () => {
+  const outer = vi.fn();
+  const h = harness(fromModel(emptyBlocks()));
+  const host = await mount(<div onKeyDown={outer}>{h.node}</div>);
+  const open = q<HTMLButtonElement>(host, ".fb-drawer-open");
+  await click(open);
+  expect(q(host, "[data-lab-blocks]").getAttribute("data-drawer")).toBe("open");
+  await key(pal(host, "price:C"), "Escape");
+  expect(q(host, "[data-lab-blocks]").getAttribute("data-drawer")).toBe("closed");
+  expect(document.activeElement).toBe(open);
+  expect(outer).not.toHaveBeenCalled();
+});

@@ -30,8 +30,22 @@ it("lists templates with counts and searches by book", async () => {
   });
   const buttons = [...host.querySelectorAll<HTMLButtonElement>("[data-lab-method]")];
   expect(buttons.map((b) => b.dataset.labMethod)).toEqual(["hpetf_rsi"]);
-  await act(async () => buttons[0].click());
-  expect(base.onSelect).toHaveBeenCalledWith("hpetf_rsi");
+});
+
+it("picking a method only previews it; loading it replaces the rules after a second, named click", async () => {
+  const onSelect = vi.fn();
+  const host = await mount(<CustomizePanel {...base} onSelect={onSelect} />);
+  await click(host, '[data-lab-method="hpetf_rsi"]');
+  await act(async () => { await Promise.resolve(); });
+  expect(onSelect).not.toHaveBeenCalled(); // reading a method never replaces the strategy
+  expect(host.querySelector('[data-lab-preview="hpetf_rsi"]')).not.toBeNull();
+  expect(host.querySelector('[data-lab-method="hpetf_rsi"]')!.getAttribute("aria-pressed")).toBe("true");
+  // the open strategy has rules, so the first click asks before replacing them
+  await click(host, '[data-lab-action="customize-load"]');
+  expect(onSelect).not.toHaveBeenCalled();
+  expect(host.querySelector('[role="alert"]')!.textContent).toContain("replaces the entry, filter and exit rules");
+  await click(host, '[data-lab-action="customize-replace"]');
+  expect(onSelect).toHaveBeenCalledWith("hpetf_rsi");
 });
 
 it("unavailable methods get the prefix once", async () => {

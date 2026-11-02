@@ -8,7 +8,7 @@ export const portfolioEnabled=(cat:Catalogue)=>!!cat.portfolio?.modes?.length;
 export function withPortfolioMode(s:Spec,mode:"off"|"signals"|"rotation"):Spec {
  if(mode==="off")return removeAt(s,"portfolio");
  // single-instrument AmiBroker settings the portfolio engine refuses (rules.rs portfolio_rules); their controls are hidden there
- const single=s.portfolio?s:setExecution(s,{prices:undefined,delays:undefined,reentry:undefined,limits:undefined,tick_size:undefined,pad_align:undefined});
+ const single=s.portfolio?s:setExecution(s,{prices:undefined,delays:undefined,reentry:undefined,limits:undefined,tick_size:undefined,pad_align:undefined,defer_exit_on_circuit:undefined,skip_entry_on_circuit:undefined});
  return {...single,portfolio:{...s.portfolio,universe:s.portfolio?.universe??{tickers:[]},mode}};
 }
 export const portfolioIdentity=(s:Spec)=>portfolioShape(s.portfolio)&&s.portfolio.universe.basket?`portfolio:${s.portfolio.universe.basket}`:"portfolio:list";

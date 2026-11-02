@@ -1,6 +1,7 @@
 /* Simple view: the analyst's path (idea → test → compare with buy & hold) without the AmiBroker power-user controls. */
-.lab-tabs-row { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
-.lab-tabs-row > .lab-tabs { flex: 1 1 auto; min-width: 0; }
+/* workspace navigation on its own row; the market / instrument / timeframe context sits in its own group below it */
+.lab-tabs-row { display: flex; flex-direction: column; align-items: stretch; gap: 16px; }
+.lab-tabs-row > .lab-tabs { min-width: 0; }
 .lab-mode { margin-left: auto; padding-bottom: 6px; }
 .lab-examples { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; }
 .lab-examples .cap { margin: 0; }

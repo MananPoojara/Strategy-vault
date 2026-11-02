@@ -82,10 +82,16 @@ export const ProvisionalStrip = ({ note, instrumentLabel }: { note?: string; ins
   </div>
 );
 
-export const MetricTiles = ({ items }: { items: { label: string; value: string; note?: string }[] }) => (
+/** A "?" that shows how a number is worked out on hover or keyboard focus. */
+export const HelpTip = ({ name, text }: { name: string; text: string }) => (
+  <button type="button" className="help-q" aria-label={`How ${name} is calculated: ${text}`}>?<em className="help-tip" role="tooltip">{text}</em></button>
+);
+/** `help`: how the number is worked out, behind the "?" in the tile's corner. */
+export const MetricTiles = ({ items }: { items: { label: string; value: string; note?: string; help?: string }[] }) => (
   <div className="metrics">
     {items.map((item) => (
-      <div className="metric" key={item.label}><span>{item.label}</span><b>{item.value}</b>{item.note && <i>{item.note}</i>}</div>
+      <div className="metric" key={item.label}><span className={item.help ? "metric-h" : undefined}>{item.label}{item.help && <HelpTip name={item.label} text={item.help} />}</span>
+        <b>{item.value}</b>{item.note && <i>{item.note}</i>}</div>
     ))}
   </div>
 );

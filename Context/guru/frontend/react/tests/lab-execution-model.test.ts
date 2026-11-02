@@ -77,10 +77,11 @@ it("money mode: capital default, removes cost_bps; unit mode drops money-only si
 
 it("instrument context, money gating and pre-run notes mirror model.rs", () => {
   expect(x.instrumentContext("in", undefined)).toEqual({ kind: "index", market: "in" });
-  expect(x.instrumentContext("us", { ticker: "SPY", label: "SPY", disabled: false, type: "etf", hasVolume: true })).toEqual({ kind: "etf", market: "us" });
-  expect(x.instrumentContext("gl", { ticker: "IG:DAX", label: "DAX", disabled: false, type: "cfd", hasVolume: false })).toEqual({ kind: "cfd", market: "gl" });
+  expect(x.instrumentContext("us", { ticker: "SPY", label: "SPY", disabled: false, type: "etf", hasVolume: true })).toEqual({ kind: "etf", market: "us", hasVolume: true });
+  expect(x.instrumentContext("gl", { ticker: "IG:DAX", label: "DAX", disabled: false, type: "cfd", hasVolume: false })).toEqual({ kind: "cfd", market: "gl", hasVolume: false });
   const short = x.withDirection(defaultSpec(), "short");
-  expect(x.moneyBlocked(idx, defaultSpec())).toBe(MONEY_BLOCKED.index);
+  expect(x.moneyBlocked(idx, defaultSpec())).toBeNull(); // an index runs in money at its index level, as AmiBroker trades it
+  expect(x.moneyBlocked(idx, short)).toBe(MONEY_BLOCKED.indiaShort);
   expect(x.moneyBlocked({ kind: "crypto", market: "gl" }, defaultSpec())).toBe(MONEY_BLOCKED.crypto);
   expect(x.moneyBlocked({ kind: "cfd", market: "gl" }, defaultSpec())).toBe(MONEY_BLOCKED.cfd);
   expect(x.moneyBlocked(inStock, short)).toBe(MONEY_BLOCKED.indiaShort);
@@ -122,7 +123,7 @@ it("execution problems: distances, take-profits, breakeven, orders, scale-in, si
   expect(p(setExecution(s, { sizing: { units: 10 } }))).toContain(COPY.needsMoney);
   expect(p(setExecution(s, { sizing: { pct_equity: 150 } }))).toContain("% of equity must be above 0 and at most 100.");
   const money = x.withMode(s, "money");
-  expect(p(money, idx)).toContain(MONEY_BLOCKED.index);
+  expect(p(money, idx)).toEqual([]); // money mode is admitted on an index
   expect(p(x.withDirection(money, "short"))).toContain(COPY.borrowRequired);
   expect(p(setAt(x.withDirection(money, "short"), "execution.costs.borrow_pct_year", 0))).toEqual([]);
   expect(p(setExecution(money, { cost_bps: 5 }))).toContain("Money mode takes its costs from the money settings; remove the spec's fee (cost_bps).");
@@ -154,6 +155,10 @@ it("money capability requires explicit quantity sizing support", () => {
   expect(x.supportsMoney(unitCat)).toBe(false);
   expect(x.supportsMoney({ ...unitCat, execution: undefined })).toBe(false);
   expect(x.supportsMoney(cat)).toBe(true);
+  // an index needs an engine that admits index money (it lists the AFL entry gates); an older engine stays in %
+  expect(x.supportsMoney({ ...cat, execution: { ...cat.execution!, entry_gates: undefined } }, "index")).toBe(false);
+  expect(x.supportsMoney({ ...cat, execution: { ...cat.execution!, entry_gates: ["penny_price"] } }, "index")).toBe(true);
+  expect(x.supportsMoney({ ...cat, execution: { ...cat.execution!, entry_gates: undefined } }, "individual_stock")).toBe(true);
   expect(x.executionProblems(money, unitCat, usEtf)).toContain("Money mode is not supported by this engine yet.");
 });
 

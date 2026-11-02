@@ -12,10 +12,10 @@ body:has(.lab-page[data-lab-page]) .topbar .status { font-size: 14px; }
 .lab-page[data-lab-page], .fb-ghost {
   --lab-font: "IBM Plex Sans", system-ui, sans-serif;
   --lab-type-page: 30px;
-  --lab-type-title: 26px;
-  --lab-type-section: 19px;
-  --lab-type-body: 16px;
-  --lab-type-label: 14px;
+  --lab-type-title: 18px;
+  --lab-type-section: 16px;
+  --lab-type-body: 14px;
+  --lab-type-label: 13px;
   --font: var(--lab-font);
   --fs-xs: var(--lab-type-label);
   --fs-sm: var(--lab-type-label);

@@ -3,6 +3,7 @@ import { dayFirst } from "./DateField";
 import { int, num, pct } from "./format";
 import { ErrorNotice, Loading, MetricTiles, ServerLabel, tone } from "./ui";
 import type { LabInfo, SavedMarket, Spec, WalkforwardMetrics, WalkforwardOptions, WalkforwardResult, WalkforwardTarget } from "./types";
+import { useRunPrefs, wfBad } from "./settings/run-prefs";
 import "./report.css";
 
 export const WF_LABEL = "out-of-sample results only · simulated";
@@ -29,7 +30,7 @@ export function wfWindows(dates: string[], o: Pick<WalkforwardOptions, "is" | "o
   return out.length ? { windows: out } : { windows: out, error: "The range is shorter than one in-sample window plus one out-of-sample bar." };
 }
 // CAR/MDD first: AmiBroker's walk-forward and optimizer default target
-const TARGETS: [WalkforwardTarget, string][] = [["mar", "CAR/MDD"], ["score", "Optimizer score"], ["cagr", "CAGR"], ["sharpe", "Sharpe"], ["monthly_thickness", "Monthly thickness"], ["expectancy_ratio", "Expectancy ratio"]];
+export const WF_TARGETS: [WalkforwardTarget, string][] = [["mar", "CAR/MDD"], ["score", "Optimizer score"], ["cagr", "CAGR"], ["sharpe", "Sharpe"], ["monthly_thickness", "Monthly thickness"], ["expectancy_ratio", "Expectancy ratio"]];
 const POINTS = 200; // shortcut: the curve samples at most 200 points; fine at panel width.
 
 function Equity({ dates, equity }: { dates: string[]; equity: number[] }) {
@@ -68,6 +69,24 @@ export function InfoLog({ info }: { info?: LabInfo }) {
   );
 }
 
+/** AmiBroker's Mode / Start / End list of the windows before a run, over the last backtest's bars. */
+export function WfPreview({ dates, preview }: { dates: string[]; preview: { windows: WfWindow[]; error?: string } }) {
+  if (dates.length === 0) return <p className="cap">Run a backtest first to preview the windows.</p>;
+  return <>
+    {preview.error && <p className="rnote">{preview.error}</p>}
+    {preview.windows.length > 0 && <div className="tblwrap lab-wf-preview" data-lab-wf-preview>
+      <table className="tbl ocmp">
+        <thead><tr><th>Mode</th><th>Start</th><th>End</th></tr></thead>
+        <tbody>{preview.windows.map((w) => <Fragment key={w.is[0] + w.oos[0]}>
+          <tr data-lab-wf-mode="is"><td>IS</td><td>{dayFirst(w.is[0])}</td><td>{dayFirst(w.is[1])}</td></tr>
+          <tr data-lab-wf-mode="oos"><td>OOS</td><td>{dayFirst(w.oos[0])}</td><td>{dayFirst(w.oos[1])}</td></tr>
+        </Fragment>)}</tbody>
+      </table>
+    </div>}
+    {preview.windows.length > 0 && <p className="cap">{preview.windows.length} windows over the last backtest's range.</p>}
+  </>;
+}
+
 // The server's declared notes name a response field; say it in words.
 const noteText = (n: string) => n.replace(/counted in open_at_edge/g, "counted as open at end");
 
@@ -82,13 +101,12 @@ export function WalkForward({ spec, dates = [], blocked, market, instrumentLabel
   /** The optimizer and walk-forward share one engine slot: the panel holds its own button while this runs. */
   onRunning?(running: boolean): void;
 }) {
-  const [o, setO] = useState<WalkforwardOptions>({ is: 2, oos: 1, step: 1, unit: "years", anchored: false, target: "mar" });
+  const o = useRunPrefs().wf; // set in Settings › Walk-Forward (AmiBroker's Analysis settings); run from here, as AmiBroker's Optimize menu
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<WalkforwardResult | null>(null);
   const [error, setError] = useState<unknown>(null);
   const runId = useRef(0);
-  const set = <K extends keyof WalkforwardOptions>(k: K, v: WalkforwardOptions[K]) => setO((cur) => ({ ...cur, [k]: v }));
-  const bad = [o.is, o.oos, o.step].some((n) => !Number.isInteger(n) || n < 1) || o.step < o.oos;
+  const bad = wfBad(o);
   const run = async () => {
     const id = ++runId.current;
     setResult(null); setError(null); setRunning(true); onRunning?.(true);
@@ -98,12 +116,6 @@ export function WalkForward({ spec, dates = [], blocked, market, instrumentLabel
   };
   const preview = bad ? { windows: [] } : wfWindows(dates, o);
   const [first, lastW] = [preview.windows[0], preview.windows[preview.windows.length - 1]];
-  const lengthField = (k: "is" | "oos" | "step", text: string, span?: string) => (
-    <label className="dfield">{text}
-      <input type="number" min={1} step={1} aria-label={`Walk-forward ${text}`} value={o[k]} onChange={(e) => set(k, Number(e.target.value))} />
-      {span && <span className="cap lab-wf-span">{span}</span>}
-    </label>
-  );
   const paths = (spec.optimize ?? []).map((d) => d.path);
   const value = (v: number | undefined) => (v === undefined ? "—" : num(v, Number.isInteger(v) ? 0 : 2));
   const params = (p: Record<string, number> | null) => paths.map((k) => <td className="n" key={k}>{p ? value(p[k]) : "—"}</td>);
@@ -112,36 +124,15 @@ export function WalkForward({ spec, dates = [], blocked, market, instrumentLabel
     <div className="lab-wf" data-lab-walkforward>
       <h3 className="box-h">Walk-forward <small>{WF_LABEL}</small></h3>
       <div className="lab-row lab-wf-form">
-        {lengthField("is", "In-sample", first && `${dayFirst(first.is[0])} – ${dayFirst(first.is[1])}`)}
-        {lengthField("oos", "Out-of-sample", first && `${dayFirst(first.oos[0])} – ${dayFirst(first.oos[1])}`)}
-        {lengthField("step", "Step", lastW && `last ends ${dayFirst(lastW.oos[1])}`)}
-        <label className="dfield">Unit
-          <select aria-label="Walk-forward unit" value={o.unit} onChange={(e) => set("unit", e.target.value as WalkforwardOptions["unit"])}>
-            <option value="years">years</option><option value="months">months</option>
-          </select>
-        </label>
-        <label className="dfield"><input type="checkbox" aria-label="Anchored" checked={o.anchored} onChange={(e) => set("anchored", e.target.checked)} /> Anchored</label>
-        <label className="dfield">Optimization target
-          <select aria-label="Walk-forward target" value={o.target} onChange={(e) => set("target", e.target.value as WalkforwardTarget)}>
-            {TARGETS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-          </select>
-        </label>
+        <p className="cap" data-lab-wf-setup>
+          {o.anchored ? "Anchored · " : ""}In-sample {o.is} · out-of-sample {o.oos} · step {o.step} {o.unit} · target {WF_TARGETS.find(([v]) => v === o.target)?.[1] ?? o.target}
+          {first && ` · first window ${dayFirst(first.is[0])} – ${dayFirst(first.oos[1])}`}{lastW && `, last ends ${dayFirst(lastW.oos[1])}`}.
+          {" "}Change these in Settings › AmiBroker settings › Walk-Forward.
+        </p>
         <button type="button" className="dbtn primary" data-lab-action="walkforward" disabled={blocked || bad || running} onClick={() => void run()}>Run walk-forward</button>
       </div>
       <p className="cap">Each window optimizes the ticked settings on its in-sample period only, then runs the best setting on the next out-of-sample period. At most 60 windows; the step must be at least the out-of-sample length.</p>
-      {!result && !running && (dates.length === 0 ? <p className="cap">Run a backtest first to preview the windows.</p> : <>
-        {preview.error && <p className="rnote">{preview.error}</p>}
-        {preview.windows.length > 0 && <div className="tblwrap lab-wf-preview" data-lab-wf-preview>
-          <table className="tbl ocmp">
-            <thead><tr><th>Mode</th><th>Start</th><th>End</th></tr></thead>
-            <tbody>{preview.windows.map((w) => <Fragment key={w.is[0] + w.oos[0]}>
-              <tr data-lab-wf-mode="is"><td>IS</td><td>{dayFirst(w.is[0])}</td><td>{dayFirst(w.is[1])}</td></tr>
-              <tr data-lab-wf-mode="oos"><td>OOS</td><td>{dayFirst(w.oos[0])}</td><td>{dayFirst(w.oos[1])}</td></tr>
-            </Fragment>)}</tbody>
-          </table>
-        </div>}
-        {preview.windows.length > 0 && <p className="cap">{preview.windows.length} windows over the last backtest's range.</p>}
-      </>)}
+      {!result && !running && <WfPreview dates={dates} preview={preview} />}
       {running && <Loading text="Running walk-forward…" />}
       {error !== null && <ErrorNotice error={error} market={market} instrumentLabel={instrumentLabel} onRetry={() => void run()} />}
       {result && (

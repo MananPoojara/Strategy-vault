@@ -65,6 +65,8 @@ const pick = async (host: HTMLElement, tk: string) => {
 };
 /** A portfolio cannot read since-entry values: its exit is an indicator row (Exit card › Indicator). */
 const exitRow = async (host: HTMLElement) => act(async () => host.querySelector<HTMLButtonElement>('[data-lab-exit="indicator"]')!.click());
+/** A portfolio cannot run the dual ATR exit a new strategy starts with: switch it off as a portfolio user does. */
+const atrOff = async (host: HTMLElement) => act(async () => { const b = host.querySelector<HTMLButtonElement>('[data-lab-exit="atr"]'); if (b?.getAttribute("aria-pressed") !== "false") b?.click(); });
 /** There is no hidden default exit: a run without one first picks N candle in the Exit card. */
 const run = async (host: HTMLElement) => {
   if (host.textContent?.includes("Pick an exit in the Exit card.")) await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-exit="ncandle"]')!.click());
@@ -109,7 +111,7 @@ it("the chart is its own tab; Strategy & backtest opens on Your idea, with Your 
   expect(panel(1).querySelector('[aria-label="Analysis settings"]')).not.toBeNull(); // settings live in step 2
   expect(panel(0).querySelector('[aria-label="Analysis settings"]')).toBeNull();
   // Entry, Filters and Exit side by side; a plain condition is a parameter list with its timeframe; More options opens every control
-  expect([...panel(0).querySelectorAll("[data-lab-card]")].map((c) => c.getAttribute("data-lab-card"))).toEqual(["entry", "filters", "exit"]);
+  expect([...panel(0).querySelectorAll("[data-lab-card]")].map((c) => c.getAttribute("data-lab-card"))).toEqual(["entry", "exit", "filters"]);
   const param = panel(0).querySelector<HTMLElement>("[data-lab-param]")!;
   expect(param.querySelector<HTMLSelectElement>('select[aria-label="Timeframe"]')!.value).toBe("D");
   expect(param.querySelector("[data-lab-node-menu]")).toBeNull();
@@ -138,7 +140,8 @@ it("a failed run clears the previous result", async () => {
   expect(tables).not.toBeNull();
   expect(tables.closest("[data-lab-results-tabs]")).not.toBeNull(); // every result view is a tab of the Results box under Run backtest
   const tabs = [...host.querySelectorAll<HTMLElement>('[data-lab-results-tabs] [role=tab]')].map((t) => t.textContent);
-  expect(tabs).toEqual(["Trades", "Stats & equity drawdown", "YOY-Monthly", "Scan / Explore"]); // no Monte Carlo; stats and charts are one tab
+  expect(tabs).toEqual(["Stats & equity drawdown", "Trades", "YOY-Monthly", "Explore"]); // charts first, then tables; no Monte Carlo; stats and charts are one tab
+  expect(host.querySelector('[data-lab-results-tabs] [role=tab][aria-selected=true]')?.textContent).toBe("Stats & equity drawdown"); // the default view
   expect(host.querySelector("[data-lab-step-results] [data-lab-result]")).not.toBeNull();
   runAnswer = () => jsonResponse({ status: "needs_data", error: "NIFTY 50: invalid OHLC bar on 2001-03-02", label: catalogueFixture.label }, 400);
   await run(host);
@@ -241,7 +244,7 @@ it("changing the instrument clears the optimization result", async () => {
   expect(host.querySelector("[data-lab-optimize-result]")).toBeNull();
 });
 
-it.each([["From", "01-01-2010"], ["To", "01-01-2020"], ["Fees (bps / side)", "4"], ["Slippage (bps / side)", "2"]])("changing %s clears optimization results and their downloads", async (label, value) => {
+it.each([["From", "01-01-2010"], ["To", "01-01-2020"], ["Brokerage (bps / side)", "4"], ["Slippage (bps / side)", "2"]])("changing %s clears optimization results and their downloads", async (label, value) => {
   const { host } = await go("#/indicators?tk=NIFTY%2050");
   await act(async () => host.querySelector<HTMLInputElement>("[data-lab-dim] input[type=checkbox]")!.click());
   await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-action="optimize"]')!.click());
@@ -260,30 +263,46 @@ it("an unavailable template leaves the open snapshot named in the URL", async ()
   templateAnswer = unavailableTemplateFixture;
   usTickers = [...tickersFixture, spy];
   const { host } = await go("#/indicators?published=12");
+  // picking a method previews it: the unavailable reason shows and the open snapshot stays open (nothing was loaded)
   await act(async () => host.querySelector<HTMLButtonElement>('[data-lab-method="rsi2_4"]')!.click());
   await flush();
   expect(host.textContent).toContain(unavailableTemplateFixture.status === "unavailable" ? unavailableTemplateFixture.reason : "");
   expect(location.hash).toContain("published=12");
-  expect(location.hash).toContain("customize=rsi2_4");
+  expect(location.hash).not.toContain("customize=rsi2_4");
+  expect(host.querySelector<HTMLButtonElement>('[data-lab-action="customize-load"]')).toBeNull(); // nothing to load
 });
 
 
-it("Phase7 blocks money on an index before any calculation request", async () => {
+it("an index runs in money from the AFL's Initial Equity by default, at 100 % of equity (an engine that admits index money)", async () => {
+  catalogueAnswer = { ...catalogue7Fixture, execution: { ...catalogue7Fixture.execution!, sizing: [...catalogue7Fixture.execution!.sizing, "units", "value"], entry_gates: ["dead_stock", "penny_price", "turnover_filter", "aux1", "aux2"] } };
+  const { host, f } = await go("#/indicators?tk=NIFTY%2050");
+  await flush();
+  const equity = host.querySelector<HTMLInputElement>('input[aria-label="Initial equity"]')!;
+  expect(equity.disabled).toBe(false);
+  expect(equity.value).toBe("1000000");
+  expect(host.querySelector("[data-lab-money-blocked]")).toBeNull();
+  await run(host);
+  const url = new URL(f.calls.find((c) => c.url.includes("/lab/run"))!.url, "http://x");
+  const ex = JSON.parse(url.searchParams.get("spec")!).execution;
+  expect(ex.capital).toBe(1_000_000);
+  expect(ex).not.toHaveProperty("sizing"); // 100 % of equity
+});
+it("an index stays in % when the engine has no money sizing", async () => {
   catalogueAnswer = catalogue7Fixture;
   const { host, f } = await go("#/indicators?tk=NIFTY%2050");
-  const money = [...host.querySelectorAll<HTMLButtonElement>('[aria-label="Results in"] button')].find((b) => b.textContent === "Cash amounts")!;
-  expect(money.disabled).toBe(true);
-  expect(host.querySelector("[data-lab-money-blocked]")!.textContent).toContain("index");
+  expect(host.querySelector<HTMLInputElement>('input[aria-label="Initial equity"]')!.disabled).toBe(true);
+  expect(host.querySelector("[data-lab-money-blocked]")!.textContent).toBe("Money mode is not supported by this engine yet.");
   expect(f.calls.some((c) => c.url.includes("/lab/run"))).toBe(false);
 });
 it("Phase7 money requests omit legacy cost and slippage transport", async () => {
   catalogueAnswer = { ...catalogue7Fixture, execution: { ...catalogue7Fixture.execution!, sizing: [...catalogue7Fixture.execution!.sizing, "units", "value"] } };
   usTickers = [...tickersFixture, { ticker: "SPY", native: true, asset_type: "etf", has_volume: true } as typeof tickersFixture[number]];
+  // an ETF runs in money from the AFLs' Initial Equity without any toggle
   const { host, f } = await go("#/indicators?region=us&tk=SPY");
-  const money = [...host.querySelectorAll<HTMLButtonElement>('[aria-label="Results in"] button')].find((b) => b.textContent === "Cash amounts")!;
-  await act(async () => money.click());
   await flush();
-  expect(host.querySelector('input[aria-label="Fees (bps / side)"]')).toBeNull();
+  expect(host.querySelector('[aria-label="Results in"]')).toBeNull();
+  expect(host.querySelector('input[aria-label="Brokerage (bps / side)"]')).toBeNull(); // money charges General › Commissions instead
+  expect(host.querySelector<HTMLInputElement>('input[aria-label="Initial equity"]')!.value).toBe("1000000");
   await run(host);
   const url = new URL(f.calls.find((c) => c.url.includes("/lab/run"))!.url, "http://x");
   expect(url.searchParams.has("cost")).toBe(false);
@@ -391,9 +410,8 @@ it("runs a shared-money portfolio while leaving the chart instrument as referenc
  catalogueAnswer=portfolioCatalogueFixture;runAnswer=()=>jsonResponse(portfolioResultFixture);
  const {host,f}=await go("#/indicators?tk=NIFTY%2050");
  const choose=async(label:string,value:string)=>act(async()=>{const el=host.querySelector<HTMLSelectElement>(`[aria-label="${label}"]`)!;el.value=value;el.dispatchEvent(new Event("change",{bubbles:true}));});
- await choose("Strategy mode","signals");await choose("Portfolio universe","nifty50");await exitRow(host);
- const money=[...host.querySelectorAll<HTMLButtonElement>('[aria-label="Results in"] button')].find(b=>b.textContent==="Cash amounts")!;
- expect(money.disabled).toBe(false);await act(async()=>money.click());
+ await choose("Strategy mode","signals");await choose("Portfolio universe","nifty50");await atrOff(host);await exitRow(host);
+ await flush();expect(host.querySelector<HTMLInputElement>('input[aria-label="Initial equity"]')!.disabled).toBe(false); // a portfolio runs in money, no toggle
  expect(host.querySelector<HTMLButtonElement>('[data-lab-action="run"]')!.disabled).toBe(false);await run(host);
  const call=f.calls.find(c=>c.url.includes("/lab/run"))!;const q=new URL(call.url,"http://x").searchParams;expect(q.has("ticker")).toBe(false);expect(q.has("cost")).toBe(false);
  expect(host.querySelector('[data-lab-portfolio-result]')).not.toBeNull();expect(host.querySelector('[data-lab-result]')).toBeNull();expect(host.textContent).toContain("ACTUAL");
@@ -401,7 +419,7 @@ it("runs a shared-money portfolio while leaving the chart instrument as referenc
 it("an old portfolio run cannot land after its universe changes",async()=>{
  catalogueAnswer=portfolioCatalogueFixture;let release!:(r:Response)=>void;runAnswer=()=>new Promise<Response>(resolve=>{release=resolve;});
  const {host}=await go("#/indicators?tk=NIFTY%2050");const choose=async(label:string,value:string)=>act(async()=>{const el=host.querySelector<HTMLSelectElement>(`[aria-label="${label}"]`)!;el.value=value;el.dispatchEvent(new Event("change",{bubbles:true}));});
- await choose("Strategy mode","signals");await choose("Portfolio universe","nifty50");await exitRow(host);await act(async()=>[...host.querySelectorAll<HTMLButtonElement>('[aria-label="Results in"] button')].find(b=>b.textContent==="Cash amounts")!.click());await run(host);
+ await choose("Strategy mode","signals");await choose("Portfolio universe","nifty50");await atrOff(host);await exitRow(host);await flush();await run(host);
  await choose("Portfolio universe","list");await act(async()=>release(jsonResponse(portfolioResultFixture)));await flush();
  expect(host.querySelector('[data-lab-portfolio-result]')).toBeNull();expect(host.querySelector('[data-lab-no-result]')).not.toBeNull();
 });

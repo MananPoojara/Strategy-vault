@@ -154,26 +154,17 @@ pub const SOURCES: &[(&str, &str, &str)] = &[
     ("onchain_transfer_rate", "Transfer rate", ""),
     ("onchain_us_spot_crypto_etf_balances", "US spot crypto ETF balances", ""),
     ("onchain_us_spot_crypto_etf_flows", "US spot crypto ETF flows", ""),
-    ("auto_fib_retracement", "Auto Fib Retracement", ""),
-    ("auto_fib_extension", "Auto fib extension", ""),
     ("auto_key_levels", "Auto key levels", ""),
-    ("auto_pitchfork", "Auto Pitchfork", ""),
     ("auto_trendlines", "Auto trendlines", ""),
     ("bollinger_bars", "Bollinger Bars", ""),
     ("linreg_channel", "Linear Regression (channel)", ""),
-    ("seasonality", "Seasonality; Learn using seasonals", ""),
     ("visible_avg_price", "Visible Average Price", ""),
     ("fft", "", "FFT"),
-    ("zigzag", "Zigzag indicator; Zig Zag", "Zig"),
     ("peak", "", "Peak"),
     ("trough", "", "Trough"),
     ("peak_bars", "", "PeakBars"),
     ("trough_bars", "", "TroughBars"),
-    ("vwap_auto_anchored", "VWAP Auto Anchored", ""),
-    ("rob_booker_adx_breakout", "Rob Booker - ADX Breakout", ""),
     ("rob_booker_knoxville", "Rob Booker - Knoxville Divergence", ""),
-    ("rob_booker_reversal", "Rob Booker Reversal", ""),
-    ("rob_booker_ziv_ghost", "Rob Booker Ziv Ghost Pivots", ""),
     ("rob_booker_missed_pivots", "Rob Booker Missed Pivot Points", ""),
     ("fir", "", "FIR"),
     ("iir", "", "IIR"),
@@ -283,6 +274,6 @@ pub const SOURCES: &[(&str, &str, &str)] = &[
 ];
 /// (TradingView names, AmiBroker names) of an id; empty strings when the id has no row.
 /// Rows of the 2026-10-19 cross-platform families (the middle column names the platforms that ship the indicator).
-const EXTRA: &[&[(&str, &str, &str)]] = &[super::x_ma::SOURCES, super::x_momentum::SOURCES, super::x_momentum2::SOURCES, super::x_trend::SOURCES, super::x_volatility::SOURCES, super::x_volume::SOURCES, super::x_candles::SOURCES, super::x_cycles::SOURCES, super::x_derived::SOURCES, super::x_atlas::SOURCES, super::x_timeless::SOURCES, super::x_census_trend::SOURCES, super::x_census_momentum::SOURCES, super::x_census_candles::SOURCES, super::x_census_stats::SOURCES, super::x_census_misc::SOURCES, super::x_census_patterns::SOURCES, super::x_census_harmonic::SOURCES, super::x_census2_a::SOURCES, super::x_census2_b::SOURCES, super::x_census2_c::SOURCES, super::x_census2_d::SOURCES, super::x_orderflow::SOURCES, super::x_smc::SOURCES];
+const EXTRA: &[&[(&str, &str, &str)]] = &[super::x_ma::SOURCES, super::x_momentum::SOURCES, super::x_momentum2::SOURCES, super::x_trend::SOURCES, super::x_volatility::SOURCES, super::x_volume::SOURCES, super::x_candles::SOURCES, super::x_cycles::SOURCES, super::x_derived::SOURCES, super::x_atlas::SOURCES, super::x_timeless::SOURCES, super::x_census_trend::SOURCES, super::x_census_momentum::SOURCES, super::x_census_candles::SOURCES, super::x_census_stats::SOURCES, super::x_census_misc::SOURCES, super::x_census_patterns::SOURCES, super::x_census_harmonic::SOURCES, super::x_census2_a::SOURCES, super::x_census2_b::SOURCES, super::x_census2_c::SOURCES, super::x_census2_d::SOURCES, super::x_orderflow::SOURCES, super::x_smc::SOURCES, super::x_tv_auto::SOURCES, super::x_tv_misc::SOURCES, super::x_tv_booker::SOURCES, super::x_tv_listed::SOURCES];
 pub fn rows() -> impl Iterator<Item = &'static (&'static str, &'static str, &'static str)> { SOURCES.iter().chain(EXTRA.iter().flat_map(|s| s.iter())) }
 pub fn names(id: &str) -> (&'static str, &'static str) { rows().find(|r| r.0 == id).map_or(("", ""), |r| (r.1, r.2)) }

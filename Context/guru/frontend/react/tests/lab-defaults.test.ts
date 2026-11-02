@@ -115,5 +115,7 @@ it("More settings names every setting that differs from its default", () => {
   expect(changedSettings(spec())).toEqual([]); // fill at the close is a basic, not a More setting
   expect(changedSettings(spec({ exit: { any: [], stop_loss: { pct: 5 } }, execution: { fill: "close", cooldown: { bars: 3 }, allow_same_bar_exit: false } })))
     .toEqual(["cooldown", "no same-bar exit and entry"]); // stops and targets are set under the sell rules
+  // the Stops and General tabs' N-bar Has priority and Reverse entry signal forces exit
+  expect(changedSettings(spec({ execution: { nbar_has_priority: true, opposite: "ignore" } }))).toEqual(["N-bar has priority", "opposite signal"]);
   expect(stopsOn({ stop_loss: { pct: 5 }, trailing: { atr: 2, atr_length: 14 }, take_profits: [] }, 10)).toEqual(["stop-loss 5%", "trailing stop 2 × ATR", "N-bar stop 10 bars"]);
 });

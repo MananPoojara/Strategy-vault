@@ -12,7 +12,7 @@ import { treeProblems, walkSpec } from "../features/lab/rule-tree";
 import { FormulaContext, formulaIndicator, isFormulaOperand, myId, type FormulaCheck } from "../features/lab/formula";
 import { FormulaEditor } from "../features/lab/FormulaEditor";
 import { FormulaBlocks } from "../features/lab/FormulaBlocks";
-import { executionProblems, instrumentContext } from "../features/lab/execution-model";
+import { executionProblems, instrumentContext, modeOf, moneyBlocked, supportsMoney, withMode } from "../features/lab/execution-model";
 import { PortfolioPanel } from "../features/lab/PortfolioPanel";
 import { PortfolioResults } from "../features/lab/PortfolioResults";
 import { portfolioProblems, portfolioGridProblems } from "../features/lab/portfolio-model";
@@ -29,7 +29,7 @@ import { Workbench } from "../features/lab/Workbench";
 import { RuleBuilder, SettingsTabs, type RunSettings } from "../features/lab/RuleBuilder";
 import { DateFilterPanel } from "../features/lab/DateFilterPanel";
 import { withCurrentDateSet } from "../features/lab/date-sets";
-import { RunResults, RunTables } from "../features/lab/RunResults";
+import { RunResults, RunTables, tradeTable } from "../features/lab/RunResults";
 import { NoTradesHelp } from "../features/lab/NoTrades";
 import { SimpleOptimize } from "../features/lab/SimpleOptimize";
 import { DEFAULT_FROM, firstRule } from "../features/lab/defaults";
@@ -169,6 +169,13 @@ function IndicatorsLab() {
   const runSettings = useMemo(() => ({ ...settings, latest }), [settings, latest]);
   const savedMarketValue = savedMarket(market, option);
   const instrument = useMemo(() => state.spec.portfolio?{kind:"portfolio",market}:instrumentContext(market, option), [market, option, state.spec.portfolio]);
+  // money follows the instrument (no % / cash toggle): a stock, ETF, index, futures contract or portfolio runs from the initial equity (AFL Initial Equity);
+  // waits for the instrument row, so a saved strategy's own equity is kept while the list loads
+  useEffect(() => {
+    if (!cat || (!option && !state.spec.portfolio)) return;
+    const want = !moneyBlocked(instrument, state.spec) && supportsMoney(cat, instrument.kind) ? "money" : "unit";
+    if (modeOf(state.spec) !== want) dispatch({ type: "spec", spec: withMode(state.spec, want) });
+  }, [cat, option, instrument, state.spec]);
 
   useEffect(() => {
     if (!options || options.some((o) => o.ticker === ticker && !o.disabled)) return;
@@ -405,24 +412,25 @@ function IndicatorsLab() {
                 const tabs: [string, ReactNode][] = result.kind === "lab_portfolio_simulation"
                   ? [["Portfolio results", <PortfolioResults result={result} />]]
                   : [
-                    ["Trades", <RunTables result={result} part="trades" explain={ranSpec && ranOwn && cat ? { spec: ranSpec, own: ranOwn, catalogue: cat, tf: state.tf, fees: settings.fees, slippage: settings.slippage } : undefined} />],
-                    // the equity and underwater charts above the AmiBroker statistics, one tab
+                    // charts first (the default tab): tiles, equity and underwater, then the AmiBroker statistics
                     ["Stats & equity drawdown", <><RunResults result={result} market={savedMarketValue} chartsOnly={!!result.report} />
-                      {result.report && <ReportPanel report={result.report} trades={result.trades} spec={ranSpec ?? undefined} run={result} />}</>],
+                      {result.report && <ReportPanel report={result.report} trades={result.trades} spec={ranSpec ?? undefined} run={result} tradeRows={tradeTable(result).csv} />}</>],
+                    ["Trades", <RunTables result={result} part="trades" explain={ranSpec && ranOwn && cat ? { spec: ranSpec, own: ranOwn, catalogue: cat, tf: state.tf, fees: settings.fees, slippage: settings.slippage } : undefined} />],
                     ["YOY-Monthly", <RunTables result={result} part="monthly" />],
                   ];
-                if (ticker) tabs.push(["Scan / Explore", <ExplorePanel spec={runSpec} catalogue={chartCat!} chips={state.chips} portfolio={!!state.spec.portfolio} market={savedMarketValue} loadSeries={loadSeries}
+                if (ticker) tabs.push(["Explore", <ExplorePanel ticker={ticker} spec={runSpec} catalogue={chartCat!} chips={state.chips} portfolio={!!state.spec.portfolio} market={savedMarketValue} loadSeries={loadSeries}
           onScan={(apply) => { assertRunnable(runSpec); return lab.scan(market, runSpec, { ticker, apply, from: settings.from || undefined, to: settings.to || undefined }); }}
           onExplore={() => { assertRunnable(runSpec); return lab.explore(market, runSpec, { ticker, from: settings.from || undefined, to: settings.to || undefined }); }} />])
                 return <SettingsTabs ariaLabel="Backtest results" labels={tabs.map(([l]) => l)}>{tabs.map(([, el]) => el)}</SettingsTabs>;
               })()}
             </section>}
-        </Part> : <div className="box empty" data-lab-no-result>No test yet. Set up your idea in step 2, then press <b>▶ Run backtest</b>.</div>}
+        </Part> : <div className="box empty lab-row" data-lab-no-result><span>No test yet. Set up your idea and settings, then run it.</span>
+          <button type="button" className="dbtn sm primary" disabled={running || (!ticker && !state.spec.portfolio)} onClick={() => void run()}>▶ Run backtest</button></div>}
         {result?.kind === "lab_simulation" && !result.trades.length && !runError && ranSpec && cat && ticker
           ? <NoTradesHelp spec={ranSpec} catalogue={cat} market={savedMarketValue} ticker={ticker} period={runSettings} scan={scanSignals} onFix={fixAndRun} /> : null}
         {result?.kind === "lab_simulation" && !runError && result.trades.length > 0 && <button type="button" className="dbtn sm" data-lab-see-chart onClick={() => setTab("chart")}>See the trades on the chart ›</button>}
         {result?.foreign?.length && !runError ? <div className="rnote" role="note" data-lab-foreign-disclosure>{result.foreign.map((source) => <p key={source.ticker}>{foreignDescription(source)}</p>)}</div> : null}
-        {!backtestShown && ticker && <Part key={`explore|${market}|${ticker}`}><ExplorePanel spec={runSpec} catalogue={chartCat!} chips={state.chips} portfolio={!!state.spec.portfolio} market={savedMarketValue} loadSeries={loadSeries}
+        {!backtestShown && ticker && <Part key={`explore|${market}|${ticker}`}><ExplorePanel ticker={ticker} spec={runSpec} catalogue={chartCat!} chips={state.chips} portfolio={!!state.spec.portfolio} market={savedMarketValue} loadSeries={loadSeries}
           onScan={(apply) => { assertRunnable(runSpec); return lab.scan(market, runSpec, { ticker, apply, from: settings.from || undefined, to: settings.to || undefined }); }}
           onExplore={() => { assertRunnable(runSpec); return lab.explore(market, runSpec, { ticker, from: settings.from || undefined, to: settings.to || undefined }); }} /></Part>}
         </div>
@@ -482,7 +490,6 @@ function IndicatorsLab() {
         <p>{COPY.lead}</p>
         {cat && <ServerLabel text={cat.label} />}
       </header>
-      {tab !== "chart" && chartToolbar(null)}
       <div className="lab-tabs-row">
       <div className="lab-tabs" role="tablist" aria-label="Indicators workspace">
         {tabs.map((item, i) => <button key={item.id} id={`lab-tab-${item.id}`} type="button" role="tab" aria-selected={tab === item.id} aria-controls={`lab-panel-${item.id}`} tabIndex={tab === item.id ? 0 : -1}
@@ -491,6 +498,8 @@ function IndicatorsLab() {
             if (next !== undefined) { event.preventDefault(); setTab(tabs[next].id); document.getElementById(`lab-tab-${tabs[next].id}`)?.focus(); }
           }}>{item.label}</button>)}
       </div>
+      {/* the market bar sits beside the tabs (wraps under them on a laptop), so the tabs never move between workspaces */}
+      {tab !== "chart" && chartToolbar(null)}
       </div>
       {swapNote && <p className="rnote" data-lab-swap>{swapNote}</p>}
       {work}
