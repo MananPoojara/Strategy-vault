@@ -575,7 +575,8 @@ const PINBALL: &[&str] = &[
     "F|\"Day one is determined by an LBR/RSI value of less than 30.\" (sells: greater than 70)",
     "E|\"On day two, place a buy stop above the HIGH of the first hour's trading range.\" (series OPEN60_HIGH + 1 tick; sells: below OPEN60_LOW)",
     "X|\"Upon being filled, place a resting sell stop at the low of the first hour's range to protect your trade.\" (a low under OPEN60_LOW later in the day counts as hit)",
-    "X|\"If the trade closes with a profit, carry it overnight.\" Otherwise out on the day-two close",
+    "X|\"If the trade closes with a profit, carry it overnight.\" [Not from the book] otherwise out on the day-two close (inferred from the book's general rule \"Don't carry losing positions overnight\", pp.12, 185)",
+    "X|Sells: \"A protective stop should always be placed AT the extreme of the bar of entry and then trailed\" (printed p.53) [Not from the book] read as the first-hour HIGH, the mirror of the buy rule; the book does not define 'the bar of entry'",
     "X|\"Exit on morning follow-through the next day (day three). Be sure to exit this trade by the close of the next day. Taylor would look to exit a long trade 'just above the high of the previous day.'\" Day 3: sell limit 1 tick above the day-two high, else out on the close",
 ];
 const ROC2: &[&str] = &[
@@ -610,10 +611,10 @@ const ANTITRIG: &[&str] = &[
     "X|\"look to exit on a buying or selling climax within three to four bars.\" Out on the close of day 4",
 ];
 const GRAIL: &[&str] = &[
-    "F|\"A 14-period ADX must initially be greater than 30 and rising. This will identify a strongly trending market.\" (ADX > 30 on the touch bar; trend side from +DI vs -DI; \"rising\" = ADX > 30 and above the prior bar on some bar of the 10 bars up to the touch, [Not from the book] the 10-bar window, param adx_rising, 0 = ADX > 30 only)",
+    "F|\"A 14-period ADX must initially be greater than 30 and rising. This will identify a strongly trending market.\" (ADX > 30 on the touch bar; [Not from the book] trend side from +DI vs -DI; \"rising\" = ADX > 30 and above the prior bar on some bar of the 10 bars up to the touch, [Not from the book] the 10-bar window, param adx_rising, 0 = ADX > 30 only)",
     "F|\"Look for a retracement in price to the 20-period exponential moving average.\" (yesterday's close above the EMA)",
     "E|\"When the price touches the 20-period exponential moving average, put a buy stop above the high of the previous bar.\" (1 tick above the touch bar's high, next bar only; each new touch re-arms)",
-    "X|\"Once filled, enter a protective sell stop at the newly formed swing low.\" (1 tick under the touch bar's low)",
+    "X|\"Once filled, enter a protective sell stop at the newly formed swing low.\" ([Not from the book] the swing low = the touch bar's low; stop 1 tick under it)",
     "X|\"Trail the stop as profits accrue and look to exit at the most recent swing high.\" Target = highest high of the 20 bars before the touch ([Not from the book]: the 20-bar window)",
     TRAIL2,
     "F|\"After a successful trade, the ADX must once again turn up above 30 before another retracement to the moving average can be traded.\"",
@@ -673,7 +674,7 @@ const HVC: &[&str] = &[
 ];
 const NEWS: &[&str] = &[
     "F|\"Wait for an economic news event to be released at 8:30 EST.\" (series NEWS_DAY = 1 on release days)",
-    "F|\"If the report immediately lifts the bond market at least four ticks above the previous day's high,\" (the open, which comes after the 8:30 release for index ETFs)",
+    "F|\"If the report immediately lifts the bond market at least four ticks above the previous day's high,\" ([Not from the book] on daily bars the day's open stands in for the price right after the 8:30 release; the book reads the intraday print)",
     "E|\"place a sell-stop one to three ticks underneath the previous day's high.\" (2 ticks; buys reversed at the previous day's low)",
     "X|\"If filled, place an initial protective stop one tick above today's high (or for buys, one tick below today's low).\"",
     "X|\"As the position becomes profitable, immediately move the stop to breakeven.\" (cannot be sequenced on daily bars) [Not from the book] out on the close",

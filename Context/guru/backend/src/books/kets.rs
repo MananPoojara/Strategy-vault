@@ -78,7 +78,7 @@ const MKT: PDef = ("mkt", "Market index in the seed, iseed = -(ranseed + 10 x ma
 static TESTS: &[T] = &[
     // ---------------------------------------------------------------- Chapter 5
     t!("kets_cb_open", "Close-only channel breakout · entry next open (Tests 1-2)", G5, M::Chan { hl: false }, Open, "Long/Short", "pp.86-90 (PDF 102-106)",
-        [("n", "Channel look-back (closes)", 80., 5., 100., 5.)], Some(("", "43% (T1, no costs)", "T2 with costs: IS $-80 / OOS $-871 per trade", "~7 bars", "36-futures portfolio IS 8/1985-12/1994; T1 (no costs) ~76% annual return vs max DD; T2 (costs) ROA IS -1.1% / OOS -13.5% (Table 5-3)"))),
+        [("n", "Channel look-back (closes)", 80., 5., 100., 5.)], Some(("", "43% (T1, no costs)", "T2 with costs: IS $-80 / OOS $-871 per trade", "~7 bars", "36-futures portfolio IS 8/1985-12/1994; T1 (no costs) ~76% annual return vs max DD; T2 (costs) ROA IS -1.1% / OOS -13.5% (Table 5-3). Default n = 80 is the Test 1 optimum (p.89); the book does not print the optimum n of Test 2, whose with-costs figures are quoted here"))),
     t!("kets_cb_limit", "Close-only channel breakout · limit at signal-bar midpoint (Test 3)", G5, M::Chan { hl: false }, Limit, "Long/Short", "pp.90-92 (PDF 106-108)",
         [("n", "Channel look-back (closes)", 80., 5., 100., 5.)], Some(("", "42%", "IS $1,066 / OOS $-299", "~7 bars", "36-futures portfolio; ROA IS 32.6% / OOS -10.0% (Table 5-3)"))),
     t!("kets_hhll_open", "HHLL breakout (close beyond highest high / lowest low) · next open (Test 4)", G5, M::Chan { hl: true }, Open, "Long/Short", "pp.92-94 (PDF 108-110)",
@@ -190,7 +190,7 @@ static TESTS: &[T] = &[
         [("width", "Filter bandwidth", 0.1, 0.05, 0.2, 0.05), ("pdisp", "Phase displacement, degrees", 20., -20., 20., 10.)], Some(("IS 957 / OOS 403", "IS 40% / OOS 41%", "IS $-1,245 / OOS $-944", "7 bars", "36-futures portfolio; ROA IS -8.3% / OOS -15.0% (Table 10-1)"))),
     // ---------------------------------------------------------------- Chapters 13-14 (exits, random entries)
     t!("kets_rand_ses_open", "Random entries (2.5% each side) + standard exit · open (Ch.13 Test 1)", G13, M::RandSes, Open, "Long/Short", "pp.295-300 (PDF 305-310)",
-        [SEED, MKT], Some(("", "", "IS avg of 10 sequences $-2,243 (sd $304)", "", "36-futures portfolio, 10 random sequences (Table 13-1, p.332)"))),
+        [SEED, MKT], Some(("", "", "IS avg of 10 sequences $-2,243 (sd $304)", "", "36-futures portfolio, 10 random sequences (Table 13-1, p.298)"))),
     t!("kets_rand_ses_limit", "Random entries + standard exit · limit (Ch.13 Test 2)", G13, M::RandSes, Limit, "Long/Short", "pp.295-300 (PDF 305-310)", [SEED, MKT], None),
     t!("kets_rand_ses_stop", "Random entries + standard exit · stop (Ch.13 Test 3)", G13, M::RandSes, Stop, "Long/Short", "pp.295-300 (PDF 305-310)", [SEED, MKT], None),
     tr!("kets_rand_mses", "Random entries at open + modified standard exit (intraday stop/target) (Ch.13 Test 4)", G13, M::RandMses(0), Open, "pp.301-305 (PDF 311-315)",
@@ -207,7 +207,7 @@ static TESTS: &[T] = &[
     tr!("kets_rand_mema_stop", "Random entries + MEMA dynamic stop (Ch.14, Table 14-4)", G13, M::RandMses(3), Open, "pp.316-326 (PDF 326-336)",
         [("pt", "Profit-target limit, ATR(50) units", 4.5, 0.5, 8., 0.5), ("sl", "Initial stop, ATR(50) units", 2.5, 0.5, 3.5, 0.5), ("later", "ATR offset (ATRO)", 1., 0., 3., 0.5),
          ("coeff", "Adaptation rate coefficient (COEFF)", 0.3, 0.1, 0.5, 0.1), ("hold", "Exit at the close after this many bars", 10., 2., 30., 1.), SEED, MKT],
-        Some(("", "37%", "$-1,407", "", "36-futures portfolio IS; ARRR -1.36 (p.325)"))),
+        Some(("", "37%", "$-1,407", "", "36-futures portfolio IS; ARRR -1.36 (p.324)"))),
     tr!("kets_rand_mema_shrink", "Random entries + MEMA stop + shrinking profit target (Ch.14, Table 14-5)", G13, M::RandMses(4), Open, "pp.326-329 (PDF 336-341)",
         [("pt", "Initial profit target, ATR(50) units (INIT)", 5.5, 2., 7., 0.5), ("ptga", "Target shrinkage coefficient (COEFF)", 0.1, 0.05, 0.5, 0.05), ("sl", "Initial stop, ATR(50) units", 2.5, 0.5, 3.5, 0.5),
          ("later", "ATR offset", 1., 0., 3., 0.5), ("coeff", "Stop adaptation rate", 0.3, 0.1, 0.5, 0.1), ("hold", "Exit at the close after this many bars", 10., 2., 30., 1.), SEED, MKT],
@@ -291,7 +291,7 @@ const SES_RULES: [&str; 2] = [
 fn notes_for(t: &T) -> &'static str {
     match t.m {
         M::Seas(_) => "Defaults = the book's printed best in-sample parameters. Seasonal averages use only earlier years (the book's out-of-sample method, p.158); the book's in-sample jackknife also used LATER years and is not reproduced. Like the book, the signal reads the seasonal value of a future bar (today+disp), which is built from prior-year prices only; no orders in the last 30 bars of the loaded data (x12mod01.c). Book: 36-futures portfolio with dollar-volatility sizing; here the selected index (instrument swap only).",
-        M::Lunar(_) => "Defaults = the book's printed best parameters. Lunar averages use up to 60 earlier cycles only; the CD code fills from LATER cycles when fewer than 60 earlier ones exist, which contradicts the book text ('determined only by events about 27 or more days ago', p.184) and is not reproduced. Moon phases: Numerical Recipes flmoon, US Eastern time as in the code. No orders in the last 30 bars of the loaded data. Momentum smoothing: the CD script uses type 5 (centered simple); the prose calls it centered triangular (type 7, labelled option).",
+        M::Lunar(_) => "Defaults = the book's printed best parameters. Lunar averages use up to 60 earlier cycles only; the CD code fills from LATER cycles when fewer than 60 earlier ones exist, which contradicts the book text ('determined only by events about 27 or more days ago', p.180-181) and is not reproduced. Moon phases: Numerical Recipes flmoon, US Eastern time as in the code. No orders in the last 30 bars of the loaded data. Momentum smoothing: the CD script uses type 5 (centered simple); the prose calls it centered triangular (type 7, labelled option).",
         M::Cycle => "Defaults = Table 10-1 best in-sample parameters. Causal wavelet filters on closing prices (WAVFILT.C). No orders in the last 30 bars of the loaded data (x14mod01.c). Book: futures portfolio; here the selected index.",
         M::RandSes | M::RandMses(_) => "Exit study: entries are random by design (Numerical Recipes ran2 exactly as on the CD; the sequence depends on the seed and the bars, so it cannot match the book's sequence on its futures). Market index 1 = the book's S&P 500 seed slot. Portfolio results in the book are averages over futures markets; here one index.",
         _ => "Defaults = the book's printed best in-sample parameters (optimised on the 36-futures portfolio, 8/1985-12/1994). Book: dollar-volatility sizing of futures, 3 ticks slippage + $15 commission; here one unit of the selected index (instrument swap only); costs come from the vault's cost settings.",
@@ -348,11 +348,11 @@ fn off_list() -> Vec<StrategyDef> {
             &["E|Sell when the fast MA crosses above the slow MA; buy when it crosses below (x10mod01.c model 3)", "E|Fast 1-7, slow 5-50 optimised (p.126)", "X|Standard exit"], "Table 6-6 prints ROA%/$TRD only."),
         off!("kets_ma_sr", "MA support/resistance bounce, 4 MA types x 3 orders (Ch.6 Tests 37-48)", "Ch.6 Moving-average models", "Long/Short", NotTestable(NT_MA),
             &["E|Buy when the slow MA is rising and the fast MA crosses below it; sell when the slow MA is falling and the fast MA crosses above it (x10mod01.c model 4)", "E|Fast 1-5, slow 5-50 optimised (p.126)", "X|Standard exit"],
-            "Text: SMA support/resistance with stop entry made $227/trade IS (ROA 4.2%) and $482 OOS (ROA 14.8%) (p.127); lengths not printed."),
+            "Text: SMA support/resistance with stop entry made $227/trade IS (ROA 4.2%) and $482 OOS (ROA 14.8%) (p.126); lengths not printed."),
         off!("kets_macd_sig", "MACD / 9-bar signal-line cross · open/limit/stop (Ch.7 Tests 10-12)", G7, "Long/Short", NotTestable(NT_OSC),
             &["E|Classic MACD (EMA fast - EMA slow) crosses its 9-bar EMA signal line (x11mod01.c model 2, osctype 4)", "E|Fast 3-15 step 2, slow 10-40 step 5 optimised (p.148)", "X|Standard exit"], "Table 7-3: IS $-1,808/$-1,210/$-1,476 per trade."),
         off!("kets_rsi_div", "RSI / price divergence · open/limit/stop (Ch.7 Tests 16-18)", G7, "Long/Short", NotTestable(NT_OSC),
-            &["E|Divergence rule as in the Stochastic divergence tests, on the classic RSI (x11mod01.c model 3, osctype 3)", "E|RSI 5-25 and look-back 15-25 optimised (p.150)", "X|Standard exit"], "Table 7-3: IS $-2,278/$-1,529/$-1,309."),
+            &["E|Divergence rule as in the Stochastic divergence tests, on the classic RSI (x11mod01.c model 3, osctype 3)", "E|RSI 5-25 and look-back 15-25 optimised (p.149)", "X|Standard exit"], "Table 7-3: IS $-2,278/$-1,529/$-1,309."),
         off!("kets_macd_div", "MACD / price divergence · open/limit/stop (Ch.7 Tests 19-21)", G7, "Long/Short", NotTestable(NT_OSC),
             &["E|Divergence rule on the classic MACD (x11mod01.c model 3, osctype 4)", "E|Fast 3-15, slow 10-40, look-back 15-25 optimised (p.150)", "X|Standard exit"],
             "The chapter's only profitable model: IS $1,393/$1,250/$2,062, OOS $140/$985/$-589 per trade, ROA IS 26.3/12.5/27.2% (Table 7-3); its parameters are not printed."),
@@ -366,7 +366,7 @@ fn off_list() -> Vec<StrategyDef> {
         off!("kets_ga_long", "Genetically evolved long entry (open-interest rules) · open/limit/stop (Ch.12 Tests 1-3)", "Ch.12 Genetic algorithms", "Long",
             NeedsData("futures open interest: two of the three evolved rules test the open interest (decline >= 4.2% over 34 bars, rise >= 5.6% over 44 bars); index data has no open interest"),
             &["E|Buy when all three hold: open interest 34 bars ago - open interest 1 bar ago > 4.2% of the former; close 3 bars ago > close 14 bars ago + 3.46 x ATR; open interest risen >= 5.6% over 44 bars (p.278)", "X|Standard exit"],
-            "Book: IS 43 trades at the open, >60% wins, > $14,000/trade; OOS 17 trades (p.274)."),
+            "Book: IS 43 trades at the open, >60% wins, > $14,000/trade; OOS 17 trades (p.273)."),
         off!("kets_ga_short", "Genetically evolved short entry (open-interest + MACD rules) · open/limit/stop (Ch.12 Tests 4-6)", "Ch.12 Genetic algorithms", "Short",
             NeedsData("futures open interest: two of the three evolved rules test the open interest; index data has no open interest"),
             &["E|Sell when open interest 1 bar ago >= 1.38 x that 38 bars ago, >= 1.75 x that 25 bars ago, and the MACD(2,50) slope is down (p.278)", "X|Standard exit"], "Book: profitable IS, lost OOS (p.274)."),

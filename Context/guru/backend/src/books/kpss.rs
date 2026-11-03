@@ -462,7 +462,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             note!(), claim("", "", "$1,000 -> $113 (1942-2007: $1,912)", "years", "Dow 1900-2007")),
         d("kpss_middecade", "Mid-decade cycle (Sep 30 year 4 - Mar 31 year 6)", "Ch 5 · Intradecade trend 1 (p.123-126)", "Long", Live,
             &["E|\"Starting at the close of trading on September 30 of year 4\" (p.131): buy at the last close on or before Sep 30 of years ending in 4", "X|\"through the close of trading on March 31 of year 6\" (p.131)"],
-            note!(), claim("11", "10 up / 1 down", "+41.7% avg (Table 5.8)", "18 months", "Dow 1904-2006 ($1,000 -> $40,948)")),
+            note!(), claim("11", "11 up / 0 down", "+41.7% avg (Table 5.8)", "18 months", "Dow 1904-2006 ($1,000 -> $40,948)")),
         d("kpss_latedecade", "Late-decade cycle (Feb year 8 - Sep 30 year 9)", "Ch 5 · Intradecade trend 2 (p.127-128)", "Long", Live,
             &["E|\"Starting at the close of trading on February 28 of year 8\" (p.131): buy at the last February close of years ending in 8", "X|\"through the close of trading on September 30 of year 9\" (p.131)"],
             note!(), claim("10", "9 up / 1 down", "+31.6% avg (Table 5.9)", "19 months", "Dow 1908-1999 ($1,000 -> $13,338)")),

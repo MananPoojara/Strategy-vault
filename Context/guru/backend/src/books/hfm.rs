@@ -113,7 +113,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
     const G6: &str = "Ch. 6 · New Markets, New Indicators";
     const NEWS_NOTE: &str = "Book: futures and stocks, Oct-Nov 1994 examples; run here on the indices/ETFs (vault convention). The news filter is discretionary, so every gap beyond the prior high/low is taken (the book's \"aggressive trader\"). [Not from the book] Entry offset = one instrument tick (tick = 0: 0.05 for NSE indices, 0.01 otherwise; off > 0 switches back to the old % of price). [Not from the book] The opening-price stop needs intraday data; default stop_mode 2 = TradeStation bar path. Checked on real NIFTY 50 1-minute bars 2008-2024 (706 day trades): true 439 stop-outs, win% 29.7 / avg +4.0 pts; bar path 271 stop-outs, 47.7% / +16.9 (agrees on 72% of trades); close-only 234, 50.6% / +17.9. So even the bar path stays optimistic on NIFTY (it misses about 4 in 10 real stop-outs); read the result as an upper bound. stop_mode 0 = close beyond the open (old default, optimistic upper bound); 1 = conservative variant (stopped when the extreme went more than one tick beyond the open and the close is no better than the fill: 347 stop-outs, +14.5 pts; not a strict bound). Plain any-touch is not offered: the open is always inside the bar, so every trade would be stopped.";
     const UND_NOTE: &str = "Book trades sector-index options (sells OTM puts on buy signals, calls on sell signals) on XOI/XAU-type indices; here the underlying signal is traded on the index/ETF. The book's 72% counts option-selling wins, so it is not comparable with the underlying win rate shown here; the comparable number is the \"not stopped within 4 weeks\" rate (trades not closed by the stop): SPY 1993-2026 57.6% (106 of 184), NIFTY 50 55.2% (91 of 165) (verify_hfm.py). .25 points ≈ 0.10% of the 1990-94 XOI (≈240); one tick = 0.01 point ≈ 0.004%. If the stop and the entry fall in the same daily bar, the stop counts as hit (conservative). Long & Short reverses on an opposite signal (book, Feb 1992) and allows re-entry after a stop.";
-    const CH_NOTE: &str = "NYSE_ADV / NYSE_DECL = NYSE advancing / declining issues per day. Indicator checked against Unicorn NYSE breadth: Feb 2 1994 +400.6, Oct 10 1990 -403.6, Jan 2 1990 +405.8, Sep 23 1994 -608.6 match the book exactly. .10 S&P point ≈ 0.03% (S&P 300-480 in 1988-94). One position at a time. The book traded S&P futures; run here on SPY / the index. Coverage: the Unicorn NYSE file ends 2020-02-10 (the site stopped), so trades end there but the stats (years, CAGR) still span the whole run; pick to = 2020-02-10 for comparable CAGR.";
+    const CH_NOTE: &str = "NYSE_ADV / NYSE_DECL = NYSE advancing / declining issues per day. Indicator checked against Unicorn NYSE breadth: Feb 2 1994 +400.6, Oct 10 1990 -403.6, Jan 2 1990 +405.8, Sep 23 1994 -608.6 match the book exactly. .10 S&P point ≈ 0.03% (S&P 300-480 in 1988-94): a point offset turned into % of price, as the user's 7 Oct rule allows for offsets (never for stops, targets or $ amounts); decision #186. Labelled option pts = 0.10: the book's literal .10 S&P points, applied on SPX only (on SPY and elsewhere the % stays). One position at a time. The book traded S&P futures; run here on SPY / the index. Coverage: the Unicorn NYSE file ends 2020-02-10 (the site stopped), so trades end there but the stats (years, CAGR) still span the whole run; pick to = 2020-02-10 for comparable CAGR.";
     const VIX_NOTE: &str = "The book's VIX is the old OEX VIX (VXO; 1993-94 mostly 11-12.5). Coded on the vault's VIX (CBOE VIX for US data, India VIX for India); the thresholds are parameters and need recalibrating for the modern VIX / India VIX. use_vxo = 1 reads series VXO (book reproduction). .50 point ≈ 0.11% and 2.00 points ≈ 0.43% of the S&P at 465. [Not from the book] The 2-point stop on the fill day follows the TradeStation bar path by default (stop_mode 2). On real NIFTY 1-minute bars 2015-2024 (192 trades): true win% 45.3 / avg +3.4 pts, bar path 45.3% / +6.9, close-only 49.0% / +10.5; stop_mode 0 (close beyond the stop, the old default) is an optimistic upper bound, 1 (any touch) a pessimistic bound. Day trade, out on the close; the trailing stop is not modelled. An inside-day carry re-references the stop to the inside day's high/low and repeats the gap check.";
     let news_claim = || claim("-", "≈70%", "-", "day trade", "futures research summary (no count given)");
     vec![
@@ -169,14 +169,21 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("tick", "Stop: % beyond reversal week low/high (1 tick)", 0.004, 0.0, 0.5, 0.01),
             p("hold_w", "Hold N weeks incl. the entry week", 4.0, 1.0, 8.0, 1.0),
         ],
-        "hfm_chadtp" | "hfm_chadtp_nse" => vec![
-            p("thr", "CHADTP threshold (±)", 400.0, 200.0, 800.0, 50.0),
-            p("n", "Days summed", 5.0, 3.0, 10.0, 1.0),
-            p("off", "Trigger: % beyond prior low/high (.10 pt)", 0.03, 0.0, 0.2, 0.01),
-            p("hold", "Exit on the close of day N (entry = day 1)", 6.0, 3.0, 10.0, 1.0),
-            p("scale", "Threshold: 0 = fixed issues (book), 1 = scaled to issues traded (thr/base × adv+dec) [Not from the book]", 0.0, 0.0, 1.0, 1.0),
-            p("base", "Issues traded the book's thr refers to (NYSE 1988-94 ≈ 1,900)", 1900.0, 1000.0, 4000.0, 100.0),
-        ],
+        "hfm_chadtp" | "hfm_chadtp_nse" => {
+            let mut v = vec![
+                p("thr", "CHADTP threshold (±)", 400.0, 200.0, 800.0, 50.0),
+                p("n", "Days summed", 5.0, 3.0, 10.0, 1.0),
+                p("off", "Trigger: % beyond prior low/high (.10 pt)", 0.03, 0.0, 0.2, 0.01),
+                p("hold", "Exit on the close of day N (entry = day 1)", 6.0, 3.0, 10.0, 1.0),
+                p("scale", "Threshold: 0 = fixed issues (book), 1 = scaled to issues traded (thr/base × adv+dec) [Not from the book]", 0.0, 0.0, 1.0, 1.0),
+                p("base", "Issues traded the book's thr refers to (NYSE 1988-94 ≈ 1,900)", 1900.0, 1000.0, 4000.0, 100.0),
+            ];
+            if id == "hfm_chadtp" {
+                // decision #186 (D1 HFM-01/CUD-07): the book's literal S&P points, SPX only; off by default
+                v.push(p("pts", "Trigger in S&P points on SPX instead of the % (book: .10; 0 = use the %) [labelled option]", 0.0, 0.0, 1.0, 0.05));
+            }
+            v
+        }
         "hfm_ndxspx" => vec![p("pct", "Compare: 0 = point change (book), 1 = % change [Not from the book]", 0.0, 0.0, 1.0, 1.0)],
         "hfm_vix" => vec![
             p("hi", "VIX close at or above (buy setup)", 15.0, 10.0, 40.0, 1.0),
@@ -452,6 +459,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let (a, dc) = if id == "hfm_chadtp" { ("NYSE_ADV", "NYSE_DECL") } else { ("NSE_ADV", "NSE_DECL") };
             let (Some(adv), Some(dec)) = (x.series(a), x.series(dc)) else { return Some(out) };
             let (thr, n, off, hold) = (g("thr"), u("n"), pct("off"), u("hold"));
+            // [labelled option] pts > 0 on SPX: the book's literal point offset instead of the % (decision #186)
+            let pts = if id == "hfm_chadtp" && x.r.first().map_or(false, |r| r.ticker == "SPX") { g("pts") } else { 0.0 };
             // (sum of n days' advances - sum of n days' declines) / n; NaN if any day in the window is missing
             let ch: Vec<f64> = (0..c.len()).map(|i| if i + 1 < n { f64::NAN } else { (i + 1 - n..=i).map(|k| adv[k] - dec[k]).sum::<f64>() / n as f64 }).collect();
             // [Not from the book] scale = 1: threshold as a share of issues traded, thr/base × mean(adv + dec) of the window
@@ -462,7 +471,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             while i <= to {
                 let t = thr_at(i - 1);
                 let side = if ch[i - 1] >= t { -1.0 } else if ch[i - 1] <= -t { 1.0 } else { 0.0 };
-                let lvl = if side > 0.0 { h[i - 1] * (1.0 + off) } else { l[i - 1] * (1.0 - off) };
+                let lvl = match (side > 0.0, pts > 0.0) {
+                    (true, true) => h[i - 1] + pts,
+                    (false, true) => l[i - 1] - pts,
+                    (true, false) => h[i - 1] * (1.0 + off),
+                    (false, false) => l[i - 1] * (1.0 - off),
+                };
                 let Some(px) = (side != 0.0).then(|| stop_fill(x, i, side, lvl)).flatten() else {
                     i += 1;
                     continue;
@@ -689,5 +703,14 @@ mod tests {
         assert_eq!(t.len(), 1);
         assert!(t[0].dir < 0.0 && t[0].legs[0].i == 6 && (t[0].legs[0].px - 479.55).abs() < 1e-9);
         assert_eq!(t[0].exit_i, 11);
+        // pts option: literal .10 points only when the ticker is SPX; the % default is untouched
+        let mut rs = r.clone();
+        rs.iter_mut().for_each(|w| w.ticker = "SPX".into());
+        let mut xs = Ctx::new(&rs, &rs, &[]);
+        xs.extra = x.extra.clone();
+        let t = run("hfm_chadtp", &xs, 0, 11, &ps(&[("off", 0.0), ("pts", 0.10)])).unwrap();
+        assert!((t[0].legs[0].px - 479.55).abs() < 1e-9);
+        let t = run("hfm_chadtp", &x, 0, 11, &ps(&[("off", 0.0), ("pts", 0.10)])).unwrap(); // ticker "T": pts ignored
+        assert!((t[0].legs[0].px - 479.65).abs() < 1e-9);
     }
 }
