@@ -2,7 +2,9 @@
 //! Reading: claude-continuation-20261020/authors/goodwin (admission/goodwin_ref.py). Every rule is the book's own TradeStation
 //! code (S&P 500 futures, daily bars, Prophet continuous contract 1982-1997): basic 8-day RSI (Ch.1 p.11-19), options-expiration
 //! volatility disturbance (Ch.4 p.39-47), daily patterns #5, #6, #8, #10, #12 (Ch.5 p.53-63) and the 6-day reversal (Ch.6 p.85-91).
-//! Held (not coded): breadth and interest-rate filtered RSI (NYSE breadth / T-note and T-bill futures), VIX model (the VIX is not
+//! Breadth-filtered 8-day RSI (Ch.1 p.11-12, code "Chapter1 A/D Filter" p.22): coded by K25 (3 Nov 2026) on the vault's NYSE
+//! breadth (US) and NSE breadth (India twin), admitted by ADMISSION_BREADTH below.
+//! Held (not coded): interest-rate filtered RSI (T-note and T-bill futures), VIX model (the VIX is not
 //! traded), crash filter (note and dollar futures), patterns with fixed S&P point amounts (#1, #3, #4, #7, #9, #11, #13, #14),
 //! pattern #2 (no code, trend test undefined), silver symmetry (silver futures), range-expansion search (a search, not a rule),
 //! Value Line earnings method (news data).
@@ -12,6 +14,18 @@ use crate::connors::{Leg, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 /// Admitted ids (authors/goodwin/admission/goodwin_ref.py (header)).
 pub const REVIEWED: &[&str] = &["agtsic_rsi8", "agtsic_expiry", "agtsic_p5", "agtsic_p6", "agtsic_p8", "agtsic_p10", "agtsic_p12", "agtsic_rev6"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
+/// K25: breadth-filtered RSI on NYSE breadth (US instruments) and NSE breadth (Indian instruments); own admission entry.
+pub const REVIEWED_BREADTH: &[&str] = &["agtsic_rsi8_breadth", "agtsic_rsi8_breadth_nse"];
+pub fn reviewed_breadth(id: &str) -> bool { REVIEWED_BREADTH.contains(&id) }
+const NYSE_AD: &[&str] = &["NYSE_ADV_DEC.Advances", "NYSE_ADV_DEC.Declines"];
+const NSE_AD: &[&str] = &["NSE_ADV_DEC.Advances", "NSE_ADV_DEC.Declines"];
+const BREADTH_RULES: &[&str] = &[
+    "F|\"Calculate the 10 day simple moving average of the number of advancing issues on the NYSE\" and of the declining issues; \"Divide the 10 day average of advances by the 10 day average of declines\" (p.11-12); code: \"adv=average(close,10) of data2; dec=average(close,10) of data3; quotient=adv/dec;\" (Chapter1 A/D Filter, p.22)",
+    "F|\"If the value of the division is greater than .75 or 75% then our market breadth filter is considered positive. If the value of the division is less than .50 then our market breadth filter is considered negative\" (p.12); code: \"if quotient>.75 then condition1=true; if quotient<.50 then condition1=false;\" - between the two levels the filter keeps its last state (starts negative, TradeStation's initial false)",
+    "E|\"If the breadth filter is positive then buy the S&P 500 contracts on the close of the day when the 8 day RSI crosses from below to above 30\" (p.12); code: \"if condition1=true and rsi(close,8) crosses above 30 then buy on close;\"",
+    "X|\"Exit your long position if the 8 day RSI crosses from above to below 65\" and \"if the market breadth filter changes from positive to negative\" (p.12); code: \"if rsi(close,8) crosses below 65 then exitlong on close; if condition1=false then exitlong on close;\"",
+];
+const BREADTH_NOTE: &str = "Book: S&P 500 futures 4/82-4/97 with NYSE breadth; profit factor 4.55 (basic system 3.29), W/L ratio .71, net profit $28,000 above the basic system, maximum drawdown nearly 65% smaller (p.12); the full record is an image page. RSI(8), crossings, fills at the close and one position at a time exactly as agtsic_rsi8. A day without a breadth figure leaves the filter unchanged for the ten days its averages need [convention]. NYSE breadth in the vault runs 1965-03-01 to 2020-02-10, so US results end on 2020-02-10 at the latest; it is missing on a few days (for example 1999-11-26, 2002-06-20, 2019-08-20), so a full-history run uses the longest stretch without a gap (2002-06-21 to 2019-08-19 on SPX, SPY and the other ETFs). Costs are not modelled.";
 
 const NOTE_DAY: &str = "[Declared readings] TradeStation conventions: range = high - low of the bar; 'tomorrow at X stop' is a one-day buy stop: it fills at X, or at the open when the open is already above X; 'Set TradeStation to close trade at end of day' = the trade exits at the close of the entry day. Day of week: TradeStation 1 = Monday ... 5 = Friday, on the signal bar; 'tomorrow' is the next trading day. One trade at a time. Costs ($75 per trade in the book) are not modelled.";
 
@@ -26,8 +40,14 @@ pub fn catalogue() -> Vec<StrategyDef> {
             rules: &["E|\"If rsi(close,8) crosses above 30 then buy on close;\" (Chapter1 Basic 8 day, p.18)",
                 "X|\"if rsi(close,8) crosses below 65 then exitlong on close;\" (p.18)",
 ],
-            notes: "The book shows this basic system only to improve it with breadth and interest-rate filters (p.11-14); the filtered versions need NYSE breadth or Treasury futures and are held. [Declared readings] RSI(8) = TradeStation RSI: Wilder averages of the up and down close-to-close changes, seeded with the 8-change simple average (the text's 'average of the last 8 up days', p.11, read as this). 'Crosses above 30' = RSI above 30 today and at or below 30 yesterday; 'crosses below 65' = below 65 today and at or above 65 yesterday. Entry and exit at the close; one position at a time; no stop (the book has none). Costs are not modelled.",
+            notes: "The book shows this basic system only to improve it with breadth and interest-rate filters (p.11-14); the breadth-filtered version is agtsic_rsi8_breadth (NYSE) / agtsic_rsi8_breadth_nse (NSE); the Treasury version needs T-note and T-bill futures and is held. [Declared readings] RSI(8) = TradeStation RSI: Wilder averages of the up and down close-to-close changes, seeded with the 8-change simple average (the text's 'average of the last 8 up days', p.11, read as this). 'Crosses above 30' = RSI above 30 today and at or below 30 yesterday; 'crosses below 65' = below 65 today and at or above 65 yesterday. Entry and exit at the close; one position at a time; no stop (the book has none). Costs are not modelled.",
             claim: None },
+        StrategyDef { id: "agtsic_rsi8_breadth", name: "Breadth-filtered 8-day RSI · NYSE breadth (advances/declines 10-day ratio above .75 / below .50)", group: "Ch.1 Market Wizard Filter (p.11-19)",
+            session: 0, dir: "Long", status: Status::Live, needs_volume: false, needs_vix: false, needs_series: NYSE_AD, book: "agtsic",
+            rules: BREADTH_RULES, notes: BREADTH_NOTE, claim: None },
+        StrategyDef { id: "agtsic_rsi8_breadth_nse", name: "Breadth-filtered 8-day RSI · NSE breadth (India)", group: "Ch.1 Market Wizard Filter (p.11-19)",
+            session: 0, dir: "Long", status: Status::Live, needs_volume: false, needs_vix: false, needs_series: NSE_AD, book: "agtsic",
+            rules: BREADTH_RULES, notes: "India mapping (declared application): NSE advances and declines (extra_data/india NSE_ADV_DEC, 1999-01-01 to 2026-10-06) instead of NYSE breadth, on Indian indices, ETFs and stocks; the book's .75 / .50 levels unchanged (set for NYSE breadth). Otherwise identical to agtsic_rsi8_breadth.", claim: None },
         StrategyDef { id: "agtsic_expiry", name: "Options expiration: unusual range five days before expiration, hold to expiration", group: "Ch.4 Trading the Options Expiration Method (p.39-47)",
             session: 0, dir: "Long", status: Status::Live, needs_volume: false, needs_vix: false, needs_series: &[], book: "agtsic",
             rules: &["E|\"If the range of the day five trading days before expiration day is less than 70% of the average range of the previous three days or is greater than 140% of the average range of the previous three days then an unusual volatility disturbance has taken place.\" (p.40-41)",
@@ -62,6 +82,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
 
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
     let f = match id {
+        "agtsic_rsi8_breadth" => return Some(("agtsic_rsi8_breadth", "Goodwin Inner Circle", "Breadth-filtered RSI(8) · NYSE")),
+        "agtsic_rsi8_breadth_nse" => return Some(("agtsic_rsi8_breadth", "Goodwin Inner Circle", "Breadth-filtered RSI(8) · NSE")),
         "agtsic_rsi8" => "RSI(8) 30/65", "agtsic_expiry" => "Expiration range", "agtsic_p5" => "Pattern #5", "agtsic_p6" => "Pattern #6",
         "agtsic_p8" => "Pattern #8", "agtsic_p10" => "Pattern #10", "agtsic_p12" => "Pattern #12", "agtsic_rev6" => "6-day reversal",
         _ => return None,
@@ -75,7 +97,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     match id {
         "agtsic_p12" => Some(vec![p("text", "Text reading: high above the previous close (0 = printed code, book)", 0., 0., 1., 1.)]),
         "agtsic_rev6" => Some(vec![p("text", "Text reading: stop counts the signal day's close (0 = printed code, book)", 0., 0., 1., 1.)]),
-        _ if reviewed(id) => Some(vec![]),
+        _ if reviewed(id) || reviewed_breadth(id) => Some(vec![]),
         _ => None,
     }
 }
@@ -90,6 +112,26 @@ fn dow(d: &str) -> i64 {
 
 fn mk(d: f64, ei: usize, ep: f64, kind: &'static str, xi: usize, xp: f64, why: &str, open: bool) -> Trade {
     Trade { dir: d, legs: vec![Leg { i: ei, px: ep, w: 1. }], exit_i: xi, exit_px: xp, reason: why.into(), entry_kind: kind, signal_i: xi, open, exits: vec![] }
+}
+
+/// K25: the 8-day RSI system with the A/D filter (Chapter1 A/D Filter, p.22). `ad` = (advances, declines) series names.
+fn rsi8_breadth(x: &Ctx, from: usize, to: usize, ad: &[&str]) -> Vec<Trade> {
+    let (Some(a), Some(d)) = (x.series(ad[0]), x.series(ad[1])) else { return vec![] };
+    let sma10 = |v: &[f64], i: usize| if i >= 9 { v[i - 9..=i].iter().sum::<f64>() / 10. } else { f64::NAN };
+    let r = crate::connors::rsi(&x.c, 8);
+    let (mut out, mut ent, mut pos_filter) = (vec![], None::<usize>, false);
+    for i in 0..=to {
+        let q = sma10(a, i) / sma10(d, i); // NaN (a missing day in the window) leaves the filter unchanged
+        if q > 0.75 { pos_filter = true; } else if q < 0.5 { pos_filter = false; }
+        if i < from.max(1) || r[i].is_nan() || r[i - 1].is_nan() { continue; }
+        match ent {
+            Some(e) => if r[i] < 65. && r[i - 1] >= 65. { out.push(mk(1., e, x.c[e], "close", i, x.c[i], "RSI(8) crossed below 65", false)); ent = None; }
+                else if !pos_filter { out.push(mk(1., e, x.c[e], "close", i, x.c[i], "breadth filter negative", false)); ent = None; },
+            None => if i < to && pos_filter && r[i] > 30. && r[i - 1] <= 30. { ent = Some(i); },
+        }
+    }
+    if let Some(e) = ent { out.push(mk(1., e, x.c[e], "close", to, x.c[to], "open", true)); }
+    out
 }
 
 fn rsi8(x: &Ctx, from: usize, to: usize) -> Vec<Trade> {
@@ -172,7 +214,7 @@ fn rev6(x: &Ctx, from: usize, to: usize, text: bool) -> Vec<Trade> {
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
-    if !reviewed(id) || from >= to || to >= x.r.len() { return None; }
+    if !(reviewed(id) || reviewed_breadth(id)) || from >= to || to >= x.r.len() { return None; }
     let schema = params(id)?;
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
@@ -180,6 +222,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let wd = |i: usize| dow(&x.r[i].date);
     Some(match id {
         "agtsic_rsi8" => rsi8(x, from, to),
+        "agtsic_rsi8_breadth" => rsi8_breadth(x, from, to, NYSE_AD), // K25
+        "agtsic_rsi8_breadth_nse" => rsi8_breadth(x, from, to, NSE_AD), // K25
         "agtsic_expiry" => expiry(x, from, to),
         "agtsic_p5" => pattern(x, from, to, 5, &|i| h[i - 2] < l[i - 5] && h[i] > h[i - 1].max(h[i - 2]) && c[i] < o[i],
             &|i, ok| Some(ok + rg(i).min(rg(i - 1)) * 0.45), "close of the entry day"),
@@ -197,8 +241,35 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     })
 }
 
+/// K25: the breadth-filtered RSI ids, NYSE breadth on US instruments, NSE breadth on Indian ones (the other market's engine
+/// has no such series, so readiness refuses it with "Required series ... missing").
+pub const ADMISSION_BREADTH: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == "agtsic" && crate::books::agtsic::reviewed_breadth(def.id),
+    label: "Andrew Goodwin tested this rule on S&P 500 futures (continuous contract, 1982-1997) with NYSE breadth; runs on US indices, ETFs and stocks use the vault's NYSE advances/declines (to 2020-02-10), runs on Indian instruments use NSE advances/declines (the _nse twin); both are a declared application, one unit per trade, no costs.",
+    basis: "Andrew Goodwin, Trading Secrets of the Inner Circle (1997), Ch.1 Market Breadth Filtered 8 day RSI (p.11-12) and its printed TradeStation code 'Chapter1 A/D Filter' (p.22); independent reference titles-1030/K25w/agtsic_breadth_ref.py, 0 mismatches US and India.",
+};
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn breadth_filter_latches_and_exits() {
+        use crate::connors::{Ctx, Params};
+        // closes 100 -> 81 (RSI near 0), then +4 a day to 93 (RSI 36 on bar 20: the cross above 30), then flat (RSI stays ~66,
+        // so the RSI exit never fires); advances 100 to bar 29, then 40, declines 100: the 10-day ratio is .70 on bar 34
+        // (between the levels: the filter stays positive) and first falls under .50 on bar 38 (.46) -> exit at that close
+        let c: Vec<f64> = (0..40).map(|i| if i < 20 { 100. - i as f64 } else if i < 23 { 81. + 4. * (i - 19) as f64 } else { 93. }).collect();
+        let r: Vec<crate::Row> = c.iter().enumerate().map(|(i, &v)| crate::Row { ticker: "T".into(), date: format!("2020-{:02}-{:02}", 1 + i / 28, 1 + i % 28), open: v, high: v, low: v, close: v, volume: None }).collect();
+        let mut x = Ctx::new(&r, &r, &[]);
+        x.extra.insert("NYSE_ADV_DEC.Advances".into(), (0..40).map(|i| if i < 30 { 100. } else { 40. }).collect());
+        x.extra.insert("NYSE_ADV_DEC.Declines".into(), vec![100.; 40]);
+        let t = super::run("agtsic_rsi8_breadth", &x, 10, 39, &Params::new()).unwrap();
+        assert_eq!(t.len(), 1, "{t:?}");
+        assert!(t[0].legs[0].i == 20 && t[0].exit_i == 38 && t[0].reason == "breadth filter negative" && !t[0].open, "{:?}", t[0]);
+        // the filter starts negative: with advances at 60 (ratio .60, never above .75) there is no trade
+        x.extra.insert("NYSE_ADV_DEC.Advances".into(), vec![60.; 40]);
+        assert!(super::run("agtsic_rsi8_breadth", &x, 10, 39, &Params::new()).unwrap().is_empty());
+        assert!(super::run("agtsic_rsi8_breadth_nse", &x, 10, 39, &Params::new()).unwrap().is_empty()); // no NSE series here
+    }
     #[test]
     fn dow_check() { assert_eq!(super::dow("2026-10-23"), 5); assert_eq!(super::dow("2026-10-19"), 1); assert_eq!(super::dow("1997-03-21"), 5); }
 }
