@@ -224,7 +224,7 @@ fn pinball_minutes(x: &Ctx, from: usize, to: usize, lb: &[f64], bl: f64, sl: f64
 /// the fill (earlier minutes and the fill minute's open); out on the close. Sells mirrored. Day trade only.
 fn e8020_minutes(x: &Ctx, from: usize, to: usize, op: f64, cp: f64, pen: f64, lo_ok: bool, sh_ok: bool, tick: &dyn Fn(usize) -> f64) -> Vec<Trade> {
     use crate::intraday::{first_touch, touched, Level, Touch};
-    let Some(mm) = x.minutes else { return vec![] };
+    if x.minutes.is_none() { return vec![]; }
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let mut out = vec![];
     for j in from.max(1)..=to {
@@ -233,7 +233,7 @@ fn e8020_minutes(x: &Ctx, from: usize, to: usize, op: f64, cp: f64, pen: f64, lo
         if r <= 0.0 { continue; }
         let (ol, cl) = ((o[d] - l[d]) / r, (c[d] - l[d]) / r);
         let dir = if lo_ok && ol >= 1.0 - op && cl <= cp { 1.0 } else if sh_ok && ol <= op && cl >= 1.0 - cp { -1.0 } else { 0.0 };
-        let Some(b) = (dir != 0.0).then(|| mm.day(&x.r[j].date)).flatten() else { continue };
+        let Some(b) = (dir != 0.0).then(|| crate::intraday_w2b::day(x, j)).flatten() else { continue }; // intraday wave 3: rejected NIFTY 50 minute days (from 2026-08-11) make no trade
         let lv = if dir > 0.0 { l[d] } else { h[d] };
         let brk = Level { up: dir < 0.0, px: lv - dir * pen * tick(d) };
         let Touch::Hit { bar: kb, .. } = first_touch(&b, 0, &[brk]) else { continue };
