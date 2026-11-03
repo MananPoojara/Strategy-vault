@@ -46,7 +46,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|Short: \"AL CIERRE en un día 'B' si B1 ... no ha sido alcanzado\"; reverse \"En B1 en un día 'B'\" or \"En el HBOP cualquier día\"; no exit on the entry day except HBOP (p.77-78)",
             "E|MODO DE TENDENCIA: \"Al Alza en el HBOP en cualquier día\"; \"A la Baja en el LBOP en cualquier día\"; \"Cambiar al MODO DE TENDENCIA cualquier día en que la cotización cruce un punto de ruptura HBOP o LBOP\" (p.77-78)",
             "X|Trend mode exit: trailing stop = lowest low of the two previous days (long) / highest high of the two previous days (short), \"stop solamente, no es de cambio\"; then adjust the phases and restart in reaction mode (p.77-78)",
-        ], "Start-up: the book's first phase is either a judged 'significant low' (not testable) or Regla (3); only Regla (3) is used, so the system trades breakouts only until the first trend-mode trade ends and fixes the phases. Intraday order sequence (book silent): TradeStation's bar path (open, then the nearer of high/low, then the other, then the close); stops before limits when both are already through at the open. Trailing stop starts the day after entry; after a trailing-stop exit no new order the same day. Ties for the highest/lowest day take the latest. The book's 'add a few cents to HBOP/LBOP/trailing stop' (p.82) is a live-trading allowance, not modelled (p.margin, default 0). Worksheet p.80-81 checked in the unit test."),
+        ], "Start-up: the book's first phase is either a judged 'significant low' (not testable) or Regla (3); only Regla (3) is used, so the system trades breakouts only until the first trend-mode trade ends and fixes the phases. Intraday order sequence (book silent): TradeStation's bar path (open, then the nearer of high/low, then the other, then the close); stops before limits when both are already through at the open. Trailing stop is in force from the breakout day itself, at the extreme of the two days before it (p.75: 'Una vez en él [el modo de tendencia] el stop se convierte en la cotización más distante de los dos días anteriores'; p.78: 'El día de la ruptura utilizamos como \"trailing stop\" el máximo más alto de los dos días anteriores' and 'Nuestro \"trailing stop\" del Día 11 sería el mínimo del Día 10', Day 11 being the HBOP day; corrected 4 Nov 2026 after the OCR re-read, lane R2); p.trail_day0=0 keeps the earlier reading (stop only from the day after entry). After a trailing-stop exit no new order the same day (p.78: a reaction trade cannot start the day a trend trade ends). Ties for the highest/lowest day take the latest. The book's 'add a few cents to HBOP/LBOP/trailing stop' (p.82) is a live-trading allowance, not modelled (p.margin, default 0). Worksheet p.80-81 checked in the unit test."),
         d("wwnc_rsi", "Relative Strength Index (interpretation)", "Sec VI · RSI", NotTestable("The book defines RSI(14) and five chart-reading uses (tops/bottoms beyond 70/30, chart formations, failure swings, support/resistance, divergence) but gives no exit rule, so no mechanical system exists (p.63-70)."), &[
             "F|RSI = 100 - 100/(1+RS), RS = average up close / average down close over 14 days, Wilder smoothing (p.66-68)",
             "E|\"Oscilaciones de fallo ('Failure Swings'): Cuando rebasan 70 o caen por debajo de 30 son fuertes indicaciones del final de la reacción\" (p.69): no exit given",
@@ -86,7 +86,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "wwnc_dmi" => vec![p("n", "DI days", 14., 5., 40., 1.), p("int_di", "Drop DI decimals as the book (1) or not (0)", 1., 0., 1., 1.)],
         "wwnc_tbp" => vec![p("mf_lag", "Momentum factor: close minus close N days ago", 2., 1., 10., 1.)],
         "wwnc_rt" => vec![p("trail_n", "Trend-mode trailing stop: extreme of the previous N days", 2., 1., 10., 1.),
-            p("margin", "Points added beyond HBOP/LBOP and the trailing stop (book p.82: 'varias centésimas'; 0 = exact)", 0., 0., 5., 0.05)],
+            p("margin", "Points added beyond HBOP/LBOP and the trailing stop (book p.82: 'varias centésimas'; 0 = exact)", 0., 0., 5., 0.05),
+            p("trail_day0", "Trailing stop on the breakout day itself (1, book p.75/p.78) or only from the next day (0, earlier reading)", 1., 0., 1., 1.)],
         _ => return None,
     })
 }
@@ -100,7 +101,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "wwnc_vol" => vol_system(x, from, to, u("atr_n"), g("c"), if g("init") > 0. { 1. } else { -1. }),
         "wwnc_dmi" => dmi_system(x, from, to, u("n"), g("int_di") >= 0.5),
         "wwnc_tbp" => tbp_system(x, from, to, u("mf_lag")),
-        "wwnc_rt" => rt_system(x, from, to, u("trail_n"), g("margin"), None),
+        "wwnc_rt" => rt_system(x, from, to, u("trail_n"), g("margin"), g("trail_day0") >= 0.5, None),
         _ => return None,
     })
 }
@@ -241,7 +242,7 @@ struct Rt { pos: f64, mode: Mode, entry: usize, anchor: (usize, usize), ext: usi
 /// B=0, O=1, S=2.
 fn phase(a: (usize, usize), i: usize) -> usize { (a.1 + i - a.0) % 3 }
 
-fn rt_system(x: &Ctx, from: usize, to: usize, trail_n: usize, margin: f64, anchor: Option<(usize, usize)>) -> Vec<Trade> {
+fn rt_system(x: &Ctx, from: usize, to: usize, trail_n: usize, margin: f64, day0: bool, anchor: Option<(usize, usize)>) -> Vec<Trade> {
     let (mut out, mut cur): (Vec<Trade>, Option<Trade>) = (vec![], None);
     let mut s = Rt { pos: 0., mode: if anchor.is_some() { Mode::React } else { Mode::Wait }, entry: 0, anchor: anchor.unwrap_or((0, 0)), ext: 0 };
     for i in 1..=to {
@@ -258,7 +259,7 @@ fn rt_system(x: &Ctx, from: usize, to: usize, trail_n: usize, margin: f64, ancho
             let mut v = vec![];
             if done { return v; }
             match s.mode {
-                Mode::Trend => if i > s.entry { v.push(if s.pos > 0. { (trail_l, false, true, Act::Trail) } else { (trail_s, true, true, Act::Trail) }); },
+                Mode::Trend => if i > s.entry || day0 { v.push(if s.pos > 0. { (trail_l, false, true, Act::Trail) } else { (trail_s, true, true, Act::Trail) }); },
                 Mode::Wait => { v.push((hbop, true, true, Act::TrendLong)); v.push((lbop, false, true, Act::TrendShort)); }
                 Mode::React => {
                     v.push((hbop, true, true, Act::TrendLong));
@@ -400,13 +401,26 @@ mod tests {
             [47.20, 48.20, 47.00, 48.20], [48.50, 49.50, 47.70, 49.50], [49.80, 50.60, 49.00, 49.20],
         ]);
         let x = Ctx::new(&r, &r, &[]);
-        let ts = rt_system(&x, 0, 10, 2, 0., Some((0, 2))); // Día 1 = "S" as on the worksheet
+        let ts = rt_system(&x, 0, 10, 2, 0., true, Some((0, 2))); // Día 1 = "S" as on the worksheet
         let near = |a: f64, b: f64| (a - b).abs() < 0.011;
         assert!(ts[0].dir > 0. && ts[0].legs[0].i == 1 && near(ts[0].legs[0].px, 50.16)); // L 50.16
         assert!(ts[0].exit_i == 3 && near(ts[0].exit_px, 51.30)); // S 51.30 (reverse)
         assert!(ts[1].dir < 0. && ts[1].exit_i == 4 && near(ts[1].exit_px, 50.17)); // B1 day 5 (book 50.16)
         assert!(ts[2].dir > 0. && ts[2].exit_i == 5 && near(ts[2].exit_px, 49.50)); // LBOP 49.50 (S 49.50)
         assert!(ts[3].dir < 0. && ts[3].legs[0].i == 5 && ts[3].exit_i == 9 && near(ts[3].exit_px, 48.50)); // trailing stop (book 'Salida 48.55')
+    }
+    #[test]
+    fn rt_trailing_stop_is_live_on_the_breakout_day() {
+        // p.78: on the breakout day the trailing stop is the extreme of the two days before it. Day 3 opens, rallies through
+        // HBOP (long, trend mode) and then falls under the low of days 1-2: stopped out the same day (book); the earlier
+        // reading (trail_day0 = 0) holds the long until a later day.
+        let r = rows(&[[50., 51., 49., 50.], [50., 51., 49., 50.], [50., 51., 49., 50.], [50.2, 56., 48., 49.], [49., 49.5, 48.5, 49.]]);
+        let x = Ctx::new(&r, &r, &[]);
+        let (hbop, trail) = (2. * 50. - 2. * 49. + 51., 49.);
+        let a = rt_system(&x, 0, 4, 2, 0., true, None);
+        assert!(a[0].dir > 0. && a[0].legs[0].i == 3 && a[0].legs[0].px == hbop && a[0].exit_i == 3 && a[0].exit_px == trail && !a[0].open);
+        let b = rt_system(&x, 0, 4, 2, 0., false, None);
+        assert!(b[0].dir > 0. && b[0].legs[0].i == 3 && b[0].exit_i == 4);
     }
     #[test]
     fn dmi_stop_waits_for_the_cross_day_extreme() {
