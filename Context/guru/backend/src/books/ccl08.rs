@@ -152,9 +152,13 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|\"8. Possible Stops-2x the premium you took in. Or once the ETF goes ITM. Or roll to a higher strike price.\" (\"possible\": not coded)"],
           "Options phase 2: real option prices, no pricing model. Expiry is not on the slide: the closest monthly expiry more than one week away is sold [convention, as Connors' OISS]. A weekly bar = Mon-Sun calendar week; the signal is read on the week's last trading day close (weekly RSI(2), Wilder, of weekly closes). Fill only if the call traded that day: US SPY/QQQ/IWM at the 16:00 mid (bid+ask)/2 with volume > 0 [labelled: no bid/ask edge]; India NIFTY 50 / NIFTY BANK at the traded close. An untraded exit day exits on the next traded close; a call held to its last trading day settles at intrinsic value. One position at a time. The open call is valued daily at its own price (traded close / mid; India settlement price on untraded days, labelled). Return = call points / underlying close at entry. Ratio and vertical spreads (rules 5-6) are not coded: their strike menus are examples only. Book: ETFs (SPY/QQQ/IWM = ETFs with option prices in the vault, 2008/2011-2025); NIFTY 50 / NIFTY BANK index options are a declared application.",
           None),
-        d("ccl08_quick_scalp", "Monthly Options Income II · ETF Quick Scalp", "Session 2 · Options", "Short",
-          NotTestable("sells calls / call spreads; P&L needs option chains"),
-          &["E|\"1. No 200 day. 2. The 2 (two) period RSI of the ETF is above 97 3. Sell the higher strike price calls\" (S2 s42)", "X|\"5. Exit on the first down close in price.\""], "", None),
+        d("ccl08_quick_scalp", "Monthly Options Income II · ETF Quick Scalp", "Session 2 · Options", "Short", Live,
+          &["F|\"1. No 200 day. 2. The 2 (two) period RSI of the ETF is above 97\" (S2 s42): daily RSI(2) closes above 97",
+            "E|\"3. Sell the higher strike price calls\" (S2 s42). Coded: sell, at the signal day's close, the first listed strike above the close (p.otm = 2 the second) [reading: 'higher strike' = above the price, the nearest such strike]",
+            "X|\"5. Exit on the first down close in price.\" (S2 s42): buy back at the close of the first day the ETF closes below the previous close",
+            "F|\"4. More Conservative: Sell the higher strike price spreads or ratio spreads.\" (S2 s42): not coded (no strikes for the long leg or the ratio)"],
+          "Options phase 2: real option prices, no pricing model. Expiry is not on the slide: the closest monthly expiry more than one week away is sold [convention, as ccl08_weekly_rsi_options and Connors' OISS]. Fill only if the call traded that day: US SPY/QQQ/IWM at the 16:00 mid (bid+ask)/2 with volume > 0 [labelled: no bid/ask edge]; India NIFTY 50 / NIFTY BANK at the traded close. The strike must be listed and traded that day, otherwise no trade. An untraded exit day exits on the next traded close; a call held to its last trading day settles at intrinsic value. One position at a time; a new signal is looked for from the day after the exit. The open call is valued daily at its own price (traded close / mid; India settlement price on untraded days, labelled). Return = call points / underlying close at entry. The slides show the IYR, IWM, SPY, EWH, FXI and XLI charts of June-July 2008 with no trade list (S2 s44-49). Book: ETFs (SPY/QQQ/IWM = ETFs with option prices in the vault, 2008/2011-2025); NIFTY 50 / NIFTY BANK index options are a declared application.",
+          None),
         d("ccl08_adx_quiet", "Monthly Options Income III · ADX Quiet Money (iron condors)", "Session 2 · Options", "Long/Short",
           NotTestable("iron condors on SPX; P&L needs option chains"),
           &["E|\"1. The 10 period ADX of a security drops under 20 ... selling spreads on each side of the stock with Iron Condors.\" (S2 s51)", "X|\"3. The exit is when the ADX rises 10 points from its low or 15 trading days, whichever comes first.\" (s56)"], "", None),
@@ -181,7 +185,8 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "ccl08_tps_short" => ("ccl08_tps", "TPS preview (Chairman's Club 2008)", "Short 1-2-3-4"),
         "ccl08_tps_research" => ("ccl08_tps", "TPS preview (Chairman's Club 2008)", "Research start 2-4-6-8"),
         "ccl08_weekly_rsi_options" => ("ccl08_options", "Chairman's Club 2008 · options income", "Weekly RSI program (short ATM call)"),
-        "ccl08_quick_scalp" | "ccl08_adx_quiet" | "ccl08_busted_options" =>
+        "ccl08_quick_scalp" => ("ccl08_options", "Chairman's Club 2008 · options income", "ETF Quick Scalp (short OTM call)"),
+        "ccl08_adx_quiet" | "ccl08_busted_options" =>
             ("ccl08_options", "Chairman's Club 2008 · options income", "Options (not testable)"),
         _ => return None,
     })
@@ -214,6 +219,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "ccl08_weekly_rsi_options" => vec![p("wrsi_gt", "Weekly RSI(2) closes above", 85., 70., 95., 5.),
             p("exit_rsi", "Exit: daily RSI(2) under (book menu 80/70/60, 60 preferred)", 60., 50., 80., 10.),
             p("otm", "Call strike: 0 = ATM, N = N-th listed strike above the close (book menu)", 0., 0., 2., 1.),
+            p("min_dte", "Closest month more than N calendar days from expiry [convention]", 7., 0., 21., 1.)],
+        "ccl08_quick_scalp" => vec![p("rsi_gt", "Daily RSI(2) closes above", 97., 90., 99., 1.),
+            p("otm", "Call strike: N-th listed strike above the close ('the higher strike')", 1., 1., 3., 1.),
             p("min_dte", "Closest month more than N calendar days from expiry [convention]", 7., 0., 21., 1.)],
         "ccl08_tps_research" => vec![tr(), p("rsi_prev_lt", "Yesterday's RSI(2) below", 75., 10., 95., 5.), p("rsi_exit", "Sell when RSI(2) above", 75., 50., 95., 5.)],
         _ => return None,
@@ -281,6 +289,7 @@ fn scale_sim(x: &Ctx, from: usize, to: usize, dir: f64, entry: &dyn Fn(usize) ->
 /// Options phase 2: Weekly RSI Program (S2 s32-33) with real option prices; see the card note.
 pub fn option_positions(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Result<Vec<crate::options::Pos>, String>> {
     use crate::options::{self as opt, Contract, Exit};
+    if id == "ccl08_quick_scalp" { return Some(quick_scalp(x, from, to, p)); }
     if id != "ccl08_weekly_rsi_options" { return None; }
     let schema = params(id)?;
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
@@ -320,6 +329,37 @@ pub fn option_positions(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -
         i = j + 1;
     }
     Some(Ok(out))
+}
+
+/// ETF Quick Scalp (S2 s42): sell the first listed call strike above the close when daily RSI(2) > 97; buy it back at the
+/// close of the first down close. Lane K29 (3 Nov 2026); independent check authors/titles-1030/K29w/k29_ref.py.
+fn quick_scalp(x: &Ctx, from: usize, to: usize, p: &Params) -> Result<Vec<crate::options::Pos>, String> {
+    use crate::options::{self as opt, Contract, Exit};
+    let schema = params("ccl08_quick_scalp").unwrap_or_default();
+    let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
+    let Some(chain) = x.options else { return Err(crate::books::oiss::NO_CHAIN.into()) };
+    let (gt, otm, min_dte) = (g("rsi_gt"), g("otm").round().max(1.0) as usize, g("min_dte"));
+    let (c, r2) = (&x.c, &x.rsi2);
+    let mut w = opt::Window::new(chain, x, 8);
+    let mut out = Vec::new();
+    let mut i = from;
+    while i <= to {
+        if !(r2[i] > gt) { i += 1; continue; }
+        let today = opt::ymd(&x.r[i].date);
+        let day = w.at(i);
+        let pick = opt::expiries(day).into_iter().find(|&e| (opt::day_no(opt::ltd(x, e)) - opt::day_no(today)) as f64 > min_dte).and_then(|e| {
+            opt::strikes(day, e, false).into_iter().filter(|s| *s > c[i]).nth(otm - 1).map(|strike| Contract { expiry: e, put: false, strike })
+        });
+        let Some((k, px0)) = pick.and_then(|k| w.quote(i, k).and_then(|q| q.fill_close()).map(|v| (k, v))) else { i += 1; continue };
+        let (j, pnl, why, open, marks) = opt::follow(&mut w, x, k, -1.0, i, px0, to, &mut |b| {
+            (c[b] < c[b - 1]).then(|| (Exit::Close, "first down close: bought back at the close".to_string()))
+        });
+        out.push(opt::Pos { dir: -1.0, s0: c[i], entry_i: i, exit_i: j, pnl, open,
+            reason: format!("{why} · RSI(2) {:.1} · sold {} call exp {} on {} at {px0:.2} · {}", r2[i], k.strike, k.expiry, x.r[i].date, marks.text()) });
+        if open { break; }
+        i = j + 1;
+    }
+    Ok(out)
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {

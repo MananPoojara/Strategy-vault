@@ -304,12 +304,14 @@ fn intraday_p1_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Opt
 /// Option rules run on the real monthly-option chain of the underlying (src/options.rs): NSE index options from the
 /// F&O bhavcopy (NIFTY 2001-2026, BANKNIFTY 2005-2026) and SPY/QQQ/IWM options (2008/2011-2025). Each id runs only where
 /// its rule can be priced. Evidence: data-survey/PHASE2-REPORT.md.
-pub fn options_p2(def:&StrategyDef)->bool {crate::options::is_option_rule(def.id) && matches!(def.book,"oiss"|"otvt"|"ccl08"|"mahrs"|"spmt")}
+pub fn options_p2(def:&StrategyDef)->bool {crate::options::is_option_rule(def.id) && matches!(def.book,"oiss"|"otvt"|"ccl08"|"mahrs"|"spmt"|"fotol")}
 pub fn options_tickers(id:&str)->&'static [&'static str] {
     match id {
         "otvt_cvr1_sell_puts"=>&["SPY"],
-        "ccl08_weekly_rsi_options"|"mahrs_covered_calls"=>&["SPY","QQQ","IWM","NIFTY 50","NIFTYBANK"],
-        _=>&["NIFTY 50","NIFTYBANK"], // OISS, spmt_eom_puts: need the option's own open/high (India only)
+        "ccl08_weekly_rsi_options"|"mahrs_covered_calls"|"ccl08_quick_scalp"|"fotol_covered_call"|"fotol_monthend_call"=>&["SPY","QQQ","IWM","NIFTY 50","NIFTYBANK"],
+        "fotol_bb_breakout"=>&["SPY","QQQ","IWM"], // needs the underlying's volume (NSE index files have none); lane K29
+        "fotol_adjusted_cc"=>&["QQQ"], // $0.20 / $0.40 time-premium amounts on the book's own QQQ options; lane K29
+        _=>&["NIFTY 50","NIFTYBANK"], // OISS, spmt_eom_puts, fotol_pullback_calls: need the option's own open/high (India only)
     }
 }
 const OPTIONS_P2_BASIS:&str="Options phase 2 (2026-10-24): the rule trades real option contracts. Prices come from the NSE F&O end-of-day bhavcopy (NIFTY and BANKNIFTY monthly index options) and the SPY/QQQ/IWM 16:00 ET option snapshot (2008-2025; QQQ from 2011), built by library/options/build_{india,us}.py; monthly expiries only. A fill needs a contract that traded that day (India Contracts > 0 at its close or open; US volume > 0 at the 16:00 mid (bid+ask)/2, labelled, no bid/ask edge). Open positions are valued every day at the held contract's own price (India settlement price / US two-sided mid on untraded days, labelled). The books traded OEX, S&P, QQQ, SPY or stock options in 1997-2009, so these runs are a declared application on our market and period. Independent Python ledgers matched the engine with zero mismatches. No book performance is reproduced.";
@@ -3036,7 +3038,7 @@ mod tests {
     }
     #[test]
     fn options_p2_admits_option_tickers_only() {
-        let book=|id:&str|match &id[..4] {"oiss"=>"oiss","otvt"=>"otvt","ccl0"=>"ccl08","mahr"=>"mahrs",_=>"spmt"};
+        let book=|id:&str|match &id[..4] {"oiss"=>"oiss","otvt"=>"otvt","ccl0"=>"ccl08","mahr"=>"mahrs","foto"=>"fotol",_=>"spmt"};
         for &id in crate::options::RULES {
             let d=def(id,book(id));
             assert!(options_p2(&d)&&reviewed_cash_rule(&d)&&held_reason(id).is_none(),"{id}");
@@ -3241,7 +3243,7 @@ mod tests {
             assert_eq!(policy(&def(id,"ccl08")).requirement,if open {"index_etf_or_stock"} else {"index_or_etf"});
             assert_eq!(metadata_json(&def(id,"ccl08")).contains("\"declared_application\":\"Book shows these day trades on US stocks"),dt);
         }
-        for id in ["ccl08_crdt_emini",/* ccl08_weekly_rsi_options: options phase 2 */"ccl08_quick_scalp","ccl08_adx_quiet","ccl08_busted_options"] {
+        for id in ["ccl08_crdt_emini",/* ccl08_weekly_rsi_options, ccl08_quick_scalp: options phase 2 */"ccl08_adx_quiet","ccl08_busted_options"] {
             assert!(!reviewed_cash_rule(&def(id,"ccl08")),"{id}");
         }
     }
