@@ -245,12 +245,14 @@ pub fn positions(id: &str, x: &Ctx, from: usize, to: usize, p: &crate::connors::
         .or_else(|| mahrs::option_positions(id, x, from, to, p))
         .or_else(|| spmt::option_positions(id, x, from, to, p))
         .or_else(|| fotol::option_positions(id, x, from, to, p))
+        .or_else(|| hfm::option_positions(id, x, from, to, p))
 }
 pub fn is_option_rule(id: &str) -> bool { RULES.contains(&id) }
 /// Every rule that runs on real option prices (instrument_policy admits each on its own instruments).
 pub const RULES: &[&str] = &["oiss_short_put", "oiss_short_call", "oiss_plus_three_put", "oiss_plus_three_call", "otvt_cvr1_sell_puts",
     "ccl08_weekly_rsi_options", "mahrs_covered_calls", "spmt_eom_puts",
-    "ccl08_quick_scalp", "fotol_adjusted_cc", "fotol_bb_breakout", "fotol_covered_call", "fotol_monthend_call", "fotol_pullback_calls"]; // + lane K29
+    "ccl08_quick_scalp", "fotol_adjusted_cc", "fotol_bb_breakout", "fotol_covered_call", "fotol_monthend_call", "fotol_pullback_calls", // + lane K29
+    "hfm_und", "hfm_und_long", "hfm_und_short"]; // + lane K34 (decision 186)
 
 /// Overlapping positions on one account. Each position is sized at the account equity on its entry close (one option
 /// per unit of the underlying, notional = that equity); its value moves with its own daily P&L / s0. Costs: `cost`

@@ -19,7 +19,8 @@ pub const BOOK: &str = "hfm";
 
 /// Daily rules admitted after the 2026-10-21 source review (connors/hfm-admission/SOURCE-CONTRACT.md) and an independent
 /// chronological Python ledger check. Declared application: the book traded S&P 500 futures on NYSE breadth.
-/// NDX-SPX (connors-leftovers, 2026-10-22): the NASDAQ 100 vs S&P 500 cash-index signal of Ch.6, traded on SPX, SPY and DJI.
+/// NDX-SPX (connors-leftovers, 2026-10-22): the NASDAQ 100 vs S&P 500 cash-index signal of Ch.6, traded on SPX, SPY and DJI
+/// (and, D1 CUD-06 / decision 186, on QQQ, IWM, MDY and US stocks).
 /// Held (not listed): HV signal (no direction, entry or exit), Undeniables (an index-option selling method),
 /// News Reversals and the VIX program (same-day stop path), Globex and Bond (data).
 pub const REVIEWED_DAILY: &[&str] = &["hfm_chadtp", "hfm_chadtp_nse", "hfm_ndxspx"];
@@ -29,8 +30,10 @@ pub fn admitted_symbol(id: &str, ticker: &str) -> bool {
     match id {
         "hfm_chadtp" => matches!(ticker, "SPX" | "SPY"),
         "hfm_chadtp_nse" => ticker == "NIFTY 50",
-        // the book's signal is NASDAQ 100 vs S&P 500 cash; it traded S&P futures and showed the same signal on the DJIA
-        "hfm_ndxspx" => matches!(ticker, "SPX" | "SPY" | "DJI"),
+        // the book's signal is NASDAQ 100 vs S&P 500 cash; it traded S&P futures and showed the same signal on the DJIA.
+        // D1 CUD-06 (decision 186): the same NDX-vs-SPX signal also trades QQQ, IWM, MDY and US stocks (declared application;
+        // US stocks are admitted in instrument_policy::hfm_otvt_symbol_issue). India would need a different signal: not run.
+        "hfm_ndxspx" => matches!(ticker, "SPX" | "SPY" | "DJI" | "QQQ" | "IWM" | "MDY"),
         _ => false,
     }
 }
@@ -53,6 +56,8 @@ const UND_RULES: &[&str] = &[
     "E|9./10. If the following week does not trade beyond the reversal week's high (low), there is no signal",
     "X|7. Stops on buys are one tick below the reversal week low; 8. stops on sells are one tick above the reversal week high",
     "X|Hold for the signal week and three additional weeks (exit on the close of the 4th week), unless stopped out",
+    "E|\"we will take the high price of the reversal bar, round it off to its nearest strike price, and sell the calls\"; \"If we have a buy reversal, we will take the low price of the reversal bar, round it off to its nearest strike price, and sell the puts\" (the next month's / following month's options)",
+    "X|\"We will cover our puts if the index trades below 232.30 at any time over the next four weeks. Unless we are stopped out of the position, we will hold our puts for the week and three additional weeks.\"",
 ];
 
 const CHADTP_RULES: &[&str] = &[
@@ -112,7 +117,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
     const G5: &str = "Ch. 5 · CHADTP";
     const G6: &str = "Ch. 6 · New Markets, New Indicators";
     const NEWS_NOTE: &str = "Book: futures and stocks, Oct-Nov 1994 examples; run here on the indices/ETFs (vault convention). The news filter is discretionary, so every gap beyond the prior high/low is taken (the book's \"aggressive trader\"). [Not from the book] Entry offset = one instrument tick (tick = 0: 0.05 for NSE indices, 0.01 otherwise; off > 0 switches back to the old % of price). [Not from the book] The opening-price stop needs intraday data; default stop_mode 2 = TradeStation bar path. Checked on real NIFTY 50 1-minute bars 2008-2024 (706 day trades): true 439 stop-outs, win% 29.7 / avg +4.0 pts; bar path 271 stop-outs, 47.7% / +16.9 (agrees on 72% of trades); close-only 234, 50.6% / +17.9. So even the bar path stays optimistic on NIFTY (it misses about 4 in 10 real stop-outs); read the result as an upper bound. stop_mode 0 = close beyond the open (old default, optimistic upper bound); 1 = conservative variant (stopped when the extreme went more than one tick beyond the open and the close is no better than the fill: 347 stop-outs, +14.5 pts; not a strict bound). Plain any-touch is not offered: the open is always inside the bar, so every trade would be stopped.";
-    const UND_NOTE: &str = "Book trades sector-index options (sells OTM puts on buy signals, calls on sell signals) on XOI/XAU-type indices; here the underlying signal is traded on the index/ETF. The book's 72% counts option-selling wins, so it is not comparable with the underlying win rate shown here; the comparable number is the \"not stopped within 4 weeks\" rate (trades not closed by the stop): SPY 1993-2026 57.6% (106 of 184), NIFTY 50 55.2% (91 of 165) (verify_hfm.py). .25 points ≈ 0.10% of the 1990-94 XOI (≈240); one tick = 0.01 point ≈ 0.004%. If the stop and the entry fall in the same daily bar, the stop counts as hit (conservative). Long & Short reverses on an opposite signal (book, Feb 1992) and allows re-entry after a stop.";
+    const UND_NOTE: &str = "[Declared readings] Options phase 2 (D1 HFM-01 / decision 186, lane K34): the signal is read on the underlying's weekly bars (Monday-Friday) and the book's option sale is made on real option prices: on a buy signal the put, on a sell signal the call, of the expiry in the calendar month after the signal day's month (the book's 'next month'/'following month's': May 1990 signal -> June puts, Jan 1992 -> February/March, Aug 1992 -> September calls), at the listed strike nearest the reversal week's low (puts) or high (calls) ('round it off to its nearest strike price', tie: the lower strike). The option is sold at the close of the day the trigger trades (end-of-day prices: the book sold during that day) and bought back at the close of the day the underlying trades through the stop, of the last day of the signal week + 3 weeks, or of an opposite signal's day (Long & Short: the book covered its calls and sold puts, Feb 1992); a contract held to its last trading day settles at intrinsic value. Trigger: the book's .25 sector-index points are a small entry OFFSET, converted to % of price under the user's 7 Oct rule (decision 186): 0.10% = .25 / the 1990-94 XOI level (about 240), labelled; the stop stays one tick of the traded instrument (NSE 0.05, US 0.01), never a %. When the trigger day also trades through the stop, the sale and the cover would fall on the same close, so no option is sold that day (no position). A contract that is not listed, or did not trade, on the signal day means no trade. Book: XOI options, 11/24/89 - 11/4/94: 18 trades, 13 profitable (72%); our option prices start in 2008 (SPY/IWM; QQQ 2011) and 2011 (NIFTY/BANKNIFTY), so the book's trades cannot be replayed; declared application on index-ETF and index options.";
     const CH_NOTE: &str = "NYSE_ADV / NYSE_DECL = NYSE advancing / declining issues per day. Indicator checked against Unicorn NYSE breadth: Feb 2 1994 +400.6, Oct 10 1990 -403.6, Jan 2 1990 +405.8, Sep 23 1994 -608.6 match the book exactly. .10 S&P point ≈ 0.03% (S&P 300-480 in 1988-94): a point offset turned into % of price, as the user's 7 Oct rule allows for offsets (never for stops, targets or $ amounts); decision #186. Labelled option pts = 0.10: the book's literal .10 S&P points, applied on SPX only (on SPY and elsewhere the % stays). One position at a time. The book traded S&P futures; run here on SPY / the index. Coverage: the Unicorn NYSE file ends 2020-02-10 (the site stopped), so trades end there but the stats (years, CAGR) still span the whole run; pick to = 2020-02-10 for comparable CAGR.";
     const VIX_NOTE: &str = "The book's VIX is the old OEX VIX (VXO; 1993-94 mostly 11-12.5). Coded on the vault's VIX (CBOE VIX for US data, India VIX for India); the thresholds are parameters and need recalibrating for the modern VIX / India VIX. use_vxo = 1 reads series VXO (book reproduction). .50 point ≈ 0.11% and 2.00 points ≈ 0.43% of the S&P at 465. [Not from the book] The 2-point stop on the fill day follows the TradeStation bar path by default (stop_mode 2). On real NIFTY 1-minute bars 2015-2024 (192 trades): true win% 45.3 / avg +3.4 pts, bar path 45.3% / +6.9, close-only 49.0% / +10.5; stop_mode 0 (close beyond the stop, the old default) is an optimistic upper bound, 1 (any touch) a pessimistic bound. Day trade, out on the close; the trailing stop is not modelled. An inside-day carry re-references the stop to the inside day's high/low and repeats the gap check.";
     let news_claim = || claim("-", "≈70%", "-", "day trade", "futures research summary (no count given)");
@@ -132,7 +137,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
           "India mapping: NSE_ADV / NSE_DECL = NSE advancing / declining issues per day (NSE market-activity report; the stock universe of the file is under review). NSE issues traded (adv + dec) rose from about 1,500 a day in 2012 to about 3,500 in 2026, so a fixed ±400 changes meaning over time. Default scale = 0: fixed ±400 issues, as the book writes it (the NYSE version). [Not from the book] scale = 1: the threshold is a share of the issues traded, |CHADTP| ≥ thr / base × average (adv + dec) over the same window, with base = 1,900 (the NYSE's average adv + dec in the book's 1988-94 period), so the book's ±400 = ±21% of issues traded.",
           None) },
         StrategyDef { needs_series: &["LEADER_CLOSE", "FOLLOWER_CLOSE"], ..d("hfm_ndxspx", "NDX-SPX stop and reverse", G6, "Long/Short", Live, NDX_RULES,
-          "Signal: LEADER_CLOSE = NASDAQ 100 (NDX) close and FOLLOWER_CLOSE = S&P 500 (SPX) close, both from the vault's US index file, for every US ticker. The book compares point changes (\"if the NASDAQ is up 3.61 points today, and the S&P 500 cash market is up 2.41, you will buy\"); default pct = 0 is that book reading. [Not from the book] pct = 1 compares % changes. The book traded S&P futures at the open and showed the same signal on the DJIA; here it trades SPX, SPY or DJI at the open (declared application). Before 2014 (SPX) / 2016 (DJI) the index opens in the file are stale, so results start where opens are real; SPY opens are real. Book check (SPX cash 1991-94, pct 0): 442 trades vs the book's 440 and the 9/26/94 trade sheet match. India is not run: the book's pair is NASDAQ 100 vs S&P 500 and there is no reviewed Indian pair.",
+          "Signal: LEADER_CLOSE = NASDAQ 100 (NDX) close and FOLLOWER_CLOSE = S&P 500 (SPX) close, both from the vault's US index file, for every US ticker. The book compares point changes (\"if the NASDAQ is up 3.61 points today, and the S&P 500 cash market is up 2.41, you will buy\"); default pct = 0 is that book reading. [Not from the book] pct = 1 compares % changes. The book traded S&P futures at the open and showed the same signal on the DJIA; here it trades SPX, SPY or DJI at the open, and (D1 CUD-06, decision 186) QQQ, IWM, MDY and US stocks with the same NDX-vs-SPX signal (declared application). Before 2014 (SPX) / 2016 (DJI) the index opens in the file are stale, so results start where opens are real; SPY opens are real. Book check (SPX cash 1991-94, pct 0): 442 trades vs the book's 440 and the 9/26/94 trade sheet match. India is not run: the book's pair is NASDAQ 100 vs S&P 500 and there is no reviewed Indian pair.",
           claim("440", "56%", "$303.92", "2 bars", "S&P futures 1/2/91 - 11/30/94")) },
         StrategyDef { needs_vix: true, ..d("hfm_vix", "VIX day-trading program", G6, "Long/Short", Live, VIX_RULES, VIX_NOTE,
           claim("24", "58.3% (14/10)", "$453 ($10,875 total, after $50 costs)", "day trade", "S&P futures 1993 - 11/20/94")) },
@@ -165,8 +170,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         ],
         "hfm_und" | "hfm_und_long" | "hfm_und_short" => vec![
             p("weeks", "N-week high/low (incl. the reversal week)", 6.0, 4.0, 12.0, 1.0),
-            p("off", "Trigger: % beyond reversal week high/low (.25 pt)", 0.10, 0.0, 0.5, 0.05),
-            p("tick", "Stop: % beyond reversal week low/high (1 tick)", 0.004, 0.0, 0.5, 0.01),
+            p("off", "Trigger: % beyond reversal week high/low (book .25 point offset = 0.10% of the 1990-94 XOI, labelled)", 0.10, 0.0, 0.5, 0.05),
+            p("stop_ticks", "Stop: ticks of the traded instrument beyond the reversal week low/high (book: one tick)", 1.0, 0.0, 10.0, 1.0),
             p("hold_w", "Hold N weeks incl. the entry week", 4.0, 1.0, 8.0, 1.0),
         ],
         "hfm_chadtp" | "hfm_chadtp_nse" => {
@@ -279,6 +284,117 @@ fn dirs_of(id: &str) -> &'static [f64] {
     }
 }
 
+
+/// Undeniables (Ch. 4) on the underlying's weekly bars: each trade with the reversal week's extreme (low for buys, high
+/// for sells), which the option version rounds to the nearest strike.
+fn und_trades(id: &str, x: &Ctx, from: usize, to: usize, g: &dyn Fn(&str) -> f64) -> Vec<(Trade, f64)> {
+    let u = |k: &str| g(k).round().max(1.0) as usize;
+    let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
+    let mut out: Vec<(Trade, f64)> = Vec::new();
+    let (n, off, tick, hold_w) = (u("weeks"), g("off") / 100.0, g("stop_ticks").max(0.0) * x.market_tick(), u("hold_w"));
+    let dirs = dirs_of(id);
+    // weekly bars (Monday-Friday) over all data, so the N-week extremes have history
+    let mut wk: Vec<[usize; 2]> = Vec::new(); // [first bar, last bar]
+    let mut widx = vec![0usize; c.len()];
+    let mut prev = i64::MIN;
+    for (i, r) in x.r.iter().enumerate() {
+        let w = (crate::day_number(&r.date) + 3).div_euclid(7); // 1970-01-01 was a Thursday
+        if w != prev {
+            wk.push([i, i]);
+            prev = w;
+        }
+        wk.last_mut().unwrap()[1] = i;
+        widx[i] = wk.len() - 1;
+    }
+    let wh: Vec<f64> = wk.iter().map(|w| h[w[0]..=w[1]].iter().cloned().fold(f64::MIN, f64::max)).collect();
+    let wl: Vec<f64> = wk.iter().map(|w| l[w[0]..=w[1]].iter().cloned().fold(f64::MAX, f64::min)).collect();
+    // +1 buy reversal (N-week low, close > open), -1 sell reversal (N-week high, close < open)
+    let setup: Vec<f64> = (0..wk.len())
+        .map(|w| {
+            if w + 1 < n {
+                return 0.0;
+            }
+            let (wo, wc) = (o[wk[w][0]], c[wk[w][1]]);
+            if (w + 1 - n..=w).all(|k| wl[w] <= wl[k]) && wc > wo {
+                1.0
+            } else if (w + 1 - n..=w).all(|k| wh[w] >= wh[k]) && wc < wo {
+                -1.0
+            } else {
+                0.0
+            }
+        })
+        .collect();
+    let trig = |w: usize, d: f64| if d > 0.0 { wh[w] * (1.0 + off) } else { wl[w] * (1.0 - off) };
+    let stop_of = |w: usize, d: f64| if d > 0.0 { wl[w] - tick } else { wh[w] + tick };
+    let mut cur: Option<(Trade, f64, usize, f64)> = None; // trade, stop, last bar, reversal week extreme
+    let mut used = usize::MAX; // reversal week already traded
+    for i in from..=to {
+        let w = widx[i];
+        let (pw, sig) = if w > 0 { (w - 1, setup[w - 1]) } else { (usize::MAX, 0.0) };
+        let fill = (sig != 0.0 && pw != used && dirs.contains(&sig)).then(|| stop_fill(x, i, sig, trig(pw, sig))).flatten();
+        if let Some((t, stop, last, ext)) = cur.take() {
+            let dir = t.dir;
+            if let Some(sp) = stop_hit(x, i, dir, stop) {
+                out.push((shut(t, i, sp, "Stopped beyond the reversal week".into()), ext));
+            } else if let (Some(px), true) = (fill, sig == -dir) {
+                out.push((shut(t, i, px, "Opposite signal: reverse".into()), ext));
+            } else {
+                if i == last {
+                    out.push((shut(t, i, c[i], format!("Close of week {hold_w}")), ext));
+                } else {
+                    cur = Some((t, stop, last, ext));
+                }
+                continue;
+            }
+        }
+        let Some(px) = fill else { continue };
+        used = pw;
+        let (t, stop, ext) = (mk(sig, i, px, "stop"), stop_of(pw, sig), if sig > 0.0 { wl[pw] } else { wh[pw] });
+        let last = wk.get(w + hold_w - 1).map_or(usize::MAX, |b| b[1]);
+        if entry_bar_stop(x, i, sig, stop, true) {
+            out.push((shut(t, i, stop, "Stopped on the entry day".into()), ext));
+        } else if last == i {
+            out.push((shut(t, i, c[i], format!("Close of week {hold_w}")), ext));
+        } else {
+            cur = Some((t, stop, last, ext));
+        }
+    }
+    if let Some((t, _, _, ext)) = cur {
+        out.push((mark_open(t, x, to), ext));
+    }
+    out
+}
+
+/// Undeniables as the book trades them (Ch. 4, decision 186): sell the next calendar month's put (buy signal) or call (sell signal)
+/// at the listed strike nearest the reversal week's low / high, at the close of the trigger day; buy it back at the close of the
+/// underlying's exit day (stop, week 4, opposite signal). Lane K34; independent check authors/titles-1030/K34w/k34_ref.py.
+pub fn option_positions(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Result<Vec<crate::options::Pos>, String>> {
+    use crate::options::{self as opt, Contract, Exit};
+    if !matches!(id, "hfm_und" | "hfm_und_long" | "hfm_und_short") { return None; }
+    let schema = params(id)?;
+    let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
+    let Some(chain) = x.options else { return Some(Err(crate::books::oiss::NO_CHAIN.into())) };
+    let mut w = opt::Window::new(chain, x, 40);
+    let mut out = Vec::new();
+    for (t, ext) in und_trades(id, x, from.max(1), to, &g) {
+        let (i, k) = (t.legs[0].i, t.exit_i);
+        if k == i { continue; } // stopped on the trigger day: sale and cover on one close, no position
+        let today = opt::ymd(&x.r[i].date);
+        let next = if today / 100 % 100 == 12 { (today / 10000 + 1) * 100 + 1 } else { today / 100 + 1 }; // YYYYMM of the next month
+        let put = t.dir > 0.0;
+        let day = w.at(i);
+        let pick = opt::expiries(day).into_iter().find(|&e| e / 100 == next)
+            .and_then(|e| opt::nearest(&opt::strikes(day, e, put), ext).map(|strike| Contract { expiry: e, put, strike }));
+        let Some(c) = pick else { continue };
+        let Some(px0) = w.quote(i, c).and_then(|q| q.fill_close()) else { continue };
+        let why_u = t.reason.clone();
+        let (j, pnl, why, open, marks) = opt::follow(&mut w, x, c, -1.0, i, px0, to, &mut |b| (b == k && !t.open).then(|| (Exit::Close, why_u.clone())));
+        out.push(opt::Pos { dir: t.dir, s0: x.c[i], entry_i: i, exit_i: j, pnl, open,
+            reason: format!("{why} · sold {} {} exp {} on {} at {px0:.2} (reversal week {} {ext:.2}) · {}", c.strike, if put { "put" } else { "call" }, c.expiry, x.r[i].date, if put { "low" } else { "high" }, marks.text()) });
+    }
+    Some(Ok(out))
+}
+
 // ---------------------------------------------------------------- strategies
 
 /// None = not a strategy of this book.
@@ -382,79 +498,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 out.push(done);
             }
         }
-        "hfm_und" | "hfm_und_long" | "hfm_und_short" => {
-            let (n, off, tick, hold_w) = (u("weeks"), pct("off"), pct("tick"), u("hold_w"));
-            let dirs = dirs_of(id);
-            // weekly bars (Monday-Friday) over all data, so the N-week extremes have history
-            let mut wk: Vec<[usize; 2]> = Vec::new(); // [first bar, last bar]
-            let mut widx = vec![0usize; c.len()];
-            let mut prev = i64::MIN;
-            for (i, r) in x.r.iter().enumerate() {
-                let w = (crate::day_number(&r.date) + 3).div_euclid(7); // 1970-01-01 was a Thursday
-                if w != prev {
-                    wk.push([i, i]);
-                    prev = w;
-                }
-                wk.last_mut().unwrap()[1] = i;
-                widx[i] = wk.len() - 1;
-            }
-            let wh: Vec<f64> = wk.iter().map(|w| h[w[0]..=w[1]].iter().cloned().fold(f64::MIN, f64::max)).collect();
-            let wl: Vec<f64> = wk.iter().map(|w| l[w[0]..=w[1]].iter().cloned().fold(f64::MAX, f64::min)).collect();
-            // +1 buy reversal (N-week low, close > open), -1 sell reversal (N-week high, close < open)
-            let setup: Vec<f64> = (0..wk.len())
-                .map(|w| {
-                    if w + 1 < n {
-                        return 0.0;
-                    }
-                    let (wo, wc) = (o[wk[w][0]], c[wk[w][1]]);
-                    if (w + 1 - n..=w).all(|k| wl[w] <= wl[k]) && wc > wo {
-                        1.0
-                    } else if (w + 1 - n..=w).all(|k| wh[w] >= wh[k]) && wc < wo {
-                        -1.0
-                    } else {
-                        0.0
-                    }
-                })
-                .collect();
-            let trig = |w: usize, d: f64| if d > 0.0 { wh[w] * (1.0 + off) } else { wl[w] * (1.0 - off) };
-            let stop_of = |w: usize, d: f64| if d > 0.0 { wl[w] * (1.0 - tick) } else { wh[w] * (1.0 + tick) };
-            let mut cur: Option<(Trade, f64, usize)> = None; // trade, stop, last bar
-            let mut used = usize::MAX; // reversal week already traded
-            for i in from..=to {
-                let w = widx[i];
-                let (pw, sig) = if w > 0 { (w - 1, setup[w - 1]) } else { (usize::MAX, 0.0) };
-                let fill = (sig != 0.0 && pw != used && dirs.contains(&sig)).then(|| stop_fill(x, i, sig, trig(pw, sig))).flatten();
-                if let Some((t, stop, last)) = cur.take() {
-                    let dir = t.dir;
-                    if let Some(sp) = stop_hit(x, i, dir, stop) {
-                        out.push(shut(t, i, sp, "Stopped beyond the reversal week".into()));
-                    } else if let (Some(px), true) = (fill, sig == -dir) {
-                        out.push(shut(t, i, px, "Opposite signal: reverse".into()));
-                    } else {
-                        if i == last {
-                            out.push(shut(t, i, c[i], format!("Close of week {hold_w}")));
-                        } else {
-                            cur = Some((t, stop, last));
-                        }
-                        continue;
-                    }
-                }
-                let Some(px) = fill else { continue };
-                used = pw;
-                let (t, stop) = (mk(sig, i, px, "stop"), stop_of(pw, sig));
-                let last = wk.get(w + hold_w - 1).map_or(usize::MAX, |b| b[1]);
-                if entry_bar_stop(x, i, sig, stop, true) {
-                    out.push(shut(t, i, stop, "Stopped on the entry day".into()));
-                } else if last == i {
-                    out.push(shut(t, i, c[i], format!("Close of week {hold_w}")));
-                } else {
-                    cur = Some((t, stop, last));
-                }
-            }
-            if let Some((t, _, _)) = cur {
-                out.push(mark_open(t, x, to));
-            }
-        }
+        "hfm_und" | "hfm_und_long" | "hfm_und_short" => out = und_trades(id, x, from, to, &g).into_iter().map(|z| z.0).collect(),
         "hfm_chadtp" | "hfm_chadtp_nse" => {
             let (a, dc) = if id == "hfm_chadtp" { ("NYSE_ADV", "NYSE_DECL") } else { ("NSE_ADV", "NSE_DECL") };
             let (Some(adv), Some(dec)) = (x.series(a), x.series(dc)) else { return Some(out) };

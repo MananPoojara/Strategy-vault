@@ -711,6 +711,15 @@ impl SelectedContext<'_>{
                     if is_vix_series(key)&&self.volatility_source(st).is_none(){continue;}
                     if symbol=="*"||rows.first().is_some_and(|r|symbol==&r.ticker){ctx.extra.insert(key.clone(),rows.iter().map(|r|values.get(&r.date).copied().unwrap_or(f64::NAN)).collect());}
                 }
+                // NDX-SPX (hfm Ch.6) on US stocks (D1 CUD-06): the same NASDAQ 100 / S&P 500 cash closes as the preloaded US tickers
+                if evidence.market()==baskets::Market::UnitedStates {
+                    for (key,src) in [("LEADER_CLOSE","NDX"),("FOLLOWER_CLOSE","SPX")] {
+                        if ctx.extra.contains_key(key) {continue;}
+                        let Some(src)=st.ctxs.get(src) else {continue};
+                        let m:BTreeMap<&str,f64>=src.r.iter().map(|r|(r.date.as_str(),r.close)).collect();
+                        ctx.extra.insert(key.into(),rows.iter().map(|r|m.get(r.date.as_str()).copied().unwrap_or(f64::NAN)).collect());
+                    }
+                }
                 ContextRef::Native(ctx)
             }
         }
