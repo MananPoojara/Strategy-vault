@@ -107,7 +107,7 @@ fn consts_of(s: &Sys) -> Vec<f64> {
     let srcs: Vec<&str> = e.iter().flatten().map(|x| x.as_str()).collect();
     msws::constants(&srcs)
 }
-const CONV: &str = "Fills: trade price close, trade delay 1 (the source's own test setting, p.66: a signal on bar t fills at bar t+1's close; parameter delay = 0 gives MetaStock's same-bar close). One position at a time; a position closes only by its own Close formula; an exit plus an opposite entry reverse; no same-direction re-entry on the exit signal bar; parameter side = 1/-1 runs one side alone. MP(), GapUp(), GapDown(), Mo(), BBandTop/Bot() and the legacy When() are the MetaStock manual definitions (module doc). India: runs on NIFTY 50 / indices instead of the Spanish stocks it was written for (instrument swap only); price-point constants (.125, 0.25) are applied literally.";
+const CONV: &str = "Fills: trade price close, trade delay 1 (the source's own test setting, p.66: a signal on bar t fills at bar t+1's close; parameter delay = 0 gives MetaStock's same-bar close). One position at a time; MetaStock System Tester reverses on an opposite entry (7.2 manual, Order of Evaluation; Pro 8.0 p.332 Portfolio Bias Single): an opposite Enter closes the open position and opens the other side at the same fill (with trade delay 1, on the next bar's close), checked before the Close formula (from the bar after a close-filled entry); p.reverse = 0 = the earlier reading (the opposite Enter is ignored while a position is open); no same-direction re-entry on the exit signal bar; parameter side = 1/-1 runs one side alone. MP(), GapUp(), GapDown(), Mo(), BBandTop/Bot() and the legacy When() are the MetaStock manual definitions (module doc). India: runs on NIFTY 50 / indices instead of the Spanish stocks it was written for (instrument swap only); price-point constants (.125, 0.25) are applied literally.";
 
 static CAT: OnceLock<Vec<(&'static [&'static str], &'static str, bool)>> = OnceLock::new();
 pub fn catalogue() -> Vec<StrategyDef> {
@@ -139,6 +139,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         let (min, max, step) = if int && c >= 5.0 { ((c * 0.5).round().max(1.0), (c * 2.0).round(), 1.0) } else { (c * 0.5, c * 2.0, (c / 10.0 * 1000.0).round() / 1000.0) };
         v.push(ParamDef { key: leak(msws::const_key(c)), label: leak(format!("Book constant {c} (every use of {c} in this system's printed formulas; Ref offsets excluded)")), def: c, min, max, step: if step > 0.0 { step } else { 0.001 } });
     }
+    if s.f[0].is_some() && s.f[2].is_some() { v.push(msws::REVERSE_PARAM); }
     Some(v)
 }
 /// Delay the four signal series by `d` bars; a signal before `from` never fills.
@@ -158,8 +159,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let mut eng = Eng::new(x, fl);
     let mut sig = msws::signals(&mut eng, srcs, &map, side).ok()?;
     if d > 0 { for v in [&mut sig.el, &mut sig.xl, &mut sig.es, &mut sig.xs] { delay_sig(v, d, from); } }
-    let mut t = msws::simulate(x, from, to, &sig, EXEC_DEFAULT);
-    if d > 0 { for tr in t.iter_mut().filter(|t| !t.open) { tr.signal_i -= d; tr.reason = "Close formula · next bar's close (trade delay 1)".into(); } }
+    let mut t = msws::simulate_conv(x, from, to, &sig, EXEC_DEFAULT, msws::reverse_on(p));
+    if d > 0 { for tr in t.iter_mut().filter(|t| !t.open) { tr.signal_i -= d; tr.reason = if tr.reason.starts_with("reversed") { "reversed by the opposite Enter · next bar's close (trade delay 1)" } else { "Close formula · next bar's close (trade delay 1)" }.into(); } }
     Some(t)
 }
 

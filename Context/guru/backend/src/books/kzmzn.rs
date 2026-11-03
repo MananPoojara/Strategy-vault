@@ -7,7 +7,7 @@
 use crate::connors::{rsi, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 use super::mkits::{ema, hhv, llv};
 use super::rbtie::{mk, target_trades};
-use super::msws::{simulate, sma, stoch, Exec, Sig};
+use super::msws::{sma, stoch, Exec, Sig};
 
 /// Admitted ids (authors/titles-1030/K8w/k8_ref.py (header)).
 pub const REVIEWED: &[&str] = &["kzmzn_key_rev", "kzmzn_stochrsi", "kzmzn_storsi", "kzmzn_binary_wave"];
@@ -128,7 +128,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 // authors/titles-1030/K9w/k9_ref.py (header). They run through the MetaStock System Tester simulator of module msws.
 pub const K9: &[&str] = &["kzmzn_psych", "kzmzn_coppock", "kzmzn_wig20", "kzmzn_simianer", "kzmzn_seq_setup", "kzmzn_momentum_time", "kzmzn_123_reversal"];
 
-macro_rules! common9 { () => { " Fills at the signal day's close (the MetaStock System Tester default, trade delay 0). One position at a time; a position closes only by its close rule, checked from the day after a close-filled entry; a close and an opposite entry on the same day reverse the position. MetaStock built-ins as documented: Mov(..,E) = exponential average (alpha 2/(n+1), started from the simple average of its first n values), Mov(..,S) = simple average, Stoch(k,s) = 100 x Sum(C - LLV(L,k), s) / Sum(HHV(H,k) - LLV(L,k), s), Cross(a,b) = a above b today and at or below it yesterday. A mailing-list sample with no printed test unless noted; indices, ETFs and US/India stocks are a declared application." } }
+macro_rules! common9 { () => { " Fills at the signal day's close (the MetaStock System Tester default, trade delay 0). One position at a time; MetaStock System Tester reverses on an opposite entry (7.2 manual, Order of Evaluation; Pro 8.0 p.332 Portfolio Bias Single): an opposite entry closes the open position and opens the other side at that close, checked before the close rule (from the day after a close-filled entry); p.reverse = 0 = the earlier reading (the opposite entry is ignored while a position is open). MetaStock built-ins as documented: Mov(..,E) = exponential average (alpha 2/(n+1), started from the simple average of its first n values), Mov(..,S) = simple average, Stoch(k,s) = 100 x Sum(C - LLV(L,k), s) / Sum(HHV(H,k) - LLV(L,k), s), Cross(a,b) = a above b today and at or below it yesterday. A mailing-list sample with no printed test unless noted; indices, ETFs and US/India stocks are a declared application." } }
 
 const K9_PSY: &str = concat!("[Declared readings] Glen Wallace's code for the Futures (June 2000, p.48) Psychological Index: PsychIndex = 100 x (number of up closes in the last LookBack days) / LookBack. Enter long (and close a short) when it is at or below the lower threshold, enter short (and close a long) when it is at or above the upper one: always in after the first signal. LookBack 12, upper 75, lower 25 are 'the standard' settings the article describes (his Input() defaults); the System Tester version uses opt1-opt3, whose printed ranges (1-15) cannot hold 75/25, so the indicator defaults are used. The poster warns it 'will give poor results in a strongly trending market'.", common9!());
 const K9_COP: &str = concat!("[Declared readings] SectorBets' Coppock curve CCT = (10 x (ROC14 + ROC11) of today + 9 x (ROC14 + ROC11) of yesterday + ... + 1 x those 9 days back) / 2, ROC in percent. Enter long (close short) when CCT rises and either today's close is above yesterday's open after a black candle yesterday (close below open) or today's close is above yesterday's close after a white candle (close above open); enter short (close long) on the printed mirror with a falling CCT. The printed Enter Short / Close Long and Enter Long / Close Short pairs are the same conditions, so the system is stop and reverse. Black() = close below open, White() = close above open (MetaStock built-ins). Daily bars (the author: 'monthly, weekly, daily, hourly').", common9!());
@@ -187,6 +187,7 @@ fn k9_params(id: &str) -> Option<Vec<ParamDef>> {
             p("lo", "Lower threshold % (standard 25)", 25., 0., 50., 1.)],
         "kzmzn_simianer" => vec![p("alert", "Alert window days (printed 10)", 10., 1., 30., 1.)],
         "kzmzn_seq_setup" => vec![p("vday", "Validation day: 1 = on (printed), 0 = off", 1., 0., 1., 1.)],
+        "kzmzn_wig20" => vec![super::msws::REVERSE_PARAM],
         _ => vec![],
     })
 }
@@ -262,7 +263,7 @@ fn signals(id: &str, x: &Ctx, g: &dyn Fn(&str, f64) -> f64) -> Option<Sig> {
 fn k9_run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let g = |k: &str, d: f64| p.get(k).copied().unwrap_or(d);
     let sig = signals(id, x, &g)?;
-    Some(simulate(x, from, to, &sig, Exec::default()))
+    Some(super::msws::simulate_conv(x, from, to, &sig, Exec::default(), super::msws::reverse_on(p)))
 }
 
 #[cfg(test)]

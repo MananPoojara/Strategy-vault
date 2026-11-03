@@ -8,7 +8,7 @@ use crate::connors::{true_range, wilder, Ctx, Leg, ParamDef, Params, Status, Str
 
 pub const BOOK: &str = "dgmf";
 /// Admitted ids (authors/guppyf/laneb/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["dgmf_bb7", "dgmf_brow_dmi", "dgmf_cci_spike", "dgmf_ccifp", "dgmf_disp_ema", "dgmf_ema_5_21", "dgmf_evans_ema", "dgmf_fosc_alt", "dgmf_fosc_sys", "dgmf_gapup_5d", "dgmf_gap1", "dgmf_gap2", "dgmf_gap3", "dgmf_karnish_bbh", "dgmf_maas_rsi5", "dgmf_stoch_cross", "dgmf_tezel_ma", "dgmf_tezel_reg", "dgmf_triple_ma", "dgmf_williams_exp", "dgmf_vbo_taylor" /* intraday wave 2b: daily bars decide every trade */];
+pub const REVIEWED: &[&str] = &["dgmf_21d_rev_di", "dgmf_katz_cyclical", "dgmf_roc_ma", "dgmf_stoch_ma", "dgmf_bb7", "dgmf_brow_dmi", "dgmf_cci_spike", "dgmf_ccifp", "dgmf_disp_ema", "dgmf_ema_5_21", "dgmf_evans_ema", "dgmf_fosc_alt", "dgmf_fosc_sys", "dgmf_gapup_5d", "dgmf_gap1", "dgmf_gap2", "dgmf_gap3", "dgmf_karnish_bbh", "dgmf_maas_rsi5", "dgmf_stoch_cross", "dgmf_tezel_ma", "dgmf_tezel_reg", "dgmf_triple_ma", "dgmf_williams_exp", "dgmf_vbo_taylor" /* intraday wave 2b: daily bars decide every trade */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 const NAN: f64 = f64::NAN;
 
@@ -138,7 +138,7 @@ fn roc_pct(v: &[f64], n: usize) -> Vec<f64> { let b = back(v, n); zip(v, &b, |a,
 // ------------------------------------------------------------------ catalogue
 struct S { id: &'static str, name: &'static str, group: &'static str, dir: &'static str, status: Status, vol: bool, rules: &'static [&'static str], notes: &'static str }
 
-const MS: &str = " MetaStock System Tester defaults (trade price = close, trade delay = 0) unless the formula states otherwise; one position at a time; an exit and an opposite entry on the same bar reverse; after an exit no same-direction re-entry on that bar; final position left open and marked to the last close. Indices replace the stocks/futures of the source.";
+const MS: &str = " MetaStock System Tester defaults (trade price = close, trade delay = 0) unless the formula states otherwise; one position at a time; MetaStock System Tester reverses on an opposite entry (7.2 manual, Order of Evaluation; Pro 8.0 p.332 Portfolio Bias Single): an opposite Enter closes the open position and opens the other side at the same fill, checked before the close rule (p.reverse = 0 = the earlier reading: the opposite Enter is ignored while a position is open); after an exit no same-direction re-entry on that bar; final position left open and marked to the last close. Indices replace the stocks/futures of the source.";
 
 fn defs() -> Vec<S> {
     use Status::*;
@@ -227,7 +227,7 @@ fn defs() -> Vec<S> {
             rules: &["F|thresh:=4; k:=3; m:=63; hld:=10; Value1:=Stdev(Mov(C,m,S)-Mov(C,m+k,S),20); Value2:=Mov(C,m,S)-Mov(C,m+k,S); tv1:=thresh*Value1",
                      "E|{Enter Long} Value2>tv1", "X|{Close Long} Ref(Cross(Value2,tv1),-hld)", "E|{Enter Short} Value2<tv1", "X|{Close Short} Ref(Cross(tv1,Value2),-hld)",
                      "F|Trade Delay zero, Positions both"],
-            notes: "guppymsformulas.pdf p. 160-161. Coded literally, including 'Enter Short Value2<tv1' (not < -tv1), so the system is short most of the time. A position is closed only by its own close rule." },
+            notes: "guppymsformulas.pdf p. 160-161. Coded literally, including 'Enter Short Value2<tv1' (not < -tv1), so the system is short most of the time." },
         S { id: "dgmf_maas_rsi5", name: "Example of a trading system (RSI 5, Ton Maas)", group: "Formula 17", dir: "Long", status: Live, vol: false,
             rules: &["E|Enter Long if 1) today's five-day RSI is greater than yesterday's five-day RSI; and 2) today's close is below the close of five days ago; and 3) today's close is less then or equal to the average of the last five day's closes.",
                      "X|Exit tomorrow at the market if: 1) today's close is higher than the average of the last five days' closes; or 2) you have been in the trade 10 days."],
@@ -308,7 +308,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
-    Some(match id {
+    let mut v = match id {
         "dgmf_200dma_1pt" => vec![p("ma", "MA length", 200., 100., 300., 20.), p("pts", "Points beyond MA", 1., 0., 10., 1.), p("llv", "Exit LLV length", 15., 5., 30., 5.), p("off", "Exit offset (points)", 0.5, 0., 5., 0.5), p("hhv", "Exit HHV length", 10., 5., 30., 5.), p("frac", "Give-back fraction of HHV", 0.75, 0.5, 0.95, 0.05)],
         "dgmf_200dma_3pt" => vec![p("ma", "MA length", 200., 100., 300., 20.), p("pts", "Points beyond MA", 3., 0., 10., 1.), p("llv", "Exit LLV/HHV length", 15., 5., 30., 5.), p("off", "Exit offset (points)", 0.5, 0., 5., 0.5)],
         "dgmf_21d_rev_di" => vec![p("n", "Breakout length", 21., 10., 40., 1.)],
@@ -336,7 +336,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "dgmf_vbo_taylor" => vec![p("mult", "Range fraction", 0.7, 0.3, 1., 0.1)],
         "dgmf_gap1" => vec![],
         _ => return None,
-    })
+    };
+    if defs().iter().any(|s| s.id == id && s.dir == "Long/Short") { v.push(crate::books::msws::REVERSE_PARAM); }
+    Some(v)
 }
 
 // ------------------------------------------------------------------ simulator
@@ -348,16 +350,20 @@ fn new_trade(dir: f64, i: usize, px: f64, sig: usize, kind: &'static str) -> Tra
     Trade { dir, legs: vec![Leg { i, px, w: 1. }], exit_i: i, exit_px: px, reason: String::new(), entry_kind: kind, signal_i: sig, open: false, exits: vec![] }
 }
 
-fn simulate(x: &Ctx, from: usize, to: usize, s: &Sig, e: Exec) -> Vec<Trade> {
+/// MetaStock System Tester, 7.2 manual "Order of Evaluation": while in a position an opposite Enter (when `reverse`)
+/// closes it and the entry step below opens the other side on the same bar; then the Close rule. The max-loss stop is an
+/// intraday price and is checked first (the systems that use it are long only).
+fn simulate(x: &Ctx, from: usize, to: usize, s: &Sig, e: Exec, reverse: bool) -> Vec<Trade> {
     let mut out = vec![];
     let mut cur: Option<Trade> = None;
     let mut entry_sig = 0usize; // bar of the entry signal
     let mut pend_exit = false;
+    let mut pend_why = "Close rule";
     let mut pend_entry: Option<(f64, usize)> = None;
     for i in from..=to {
         // 1. orders at the open
         if pend_exit {
-            if let Some(mut t) = cur.take() { t.exit_i = i; t.exit_px = x.o[i]; t.signal_i = i - 1; t.reason = "Close rule · next open".into(); out.push(t); }
+            if let Some(mut t) = cur.take() { t.exit_i = i; t.exit_px = x.o[i]; t.signal_i = i - 1; t.reason = format!("{pend_why} · next open"); out.push(t); }
             pend_exit = false;
         }
         if let Some((d, sg)) = pend_entry.take() { cur = Some(new_trade(d, i, x.o[i], sg, "open")); entry_sig = sg; }
@@ -375,11 +381,12 @@ fn simulate(x: &Ctx, from: usize, to: usize, s: &Sig, e: Exec) -> Vec<Trade> {
         if let Some(t) = cur.as_ref() {
             let live = if t.entry_kind == "close" { i > t.legs[0].i } else { i >= t.legs[0].i };
             let rule = if t.dir > 0. { s.xl[i] } else { s.xs[i] };
+            let opp = reverse && if t.dir > 0. { s.es[i] } else { s.el[i] };
             let timed = e.hold.is_some_and(|h| i >= entry_sig + h);
-            if live && (rule || timed) {
-                let why = if rule { "Close rule" } else { "Bars in trade" };
+            if live && (rule || opp || timed) {
+                let why = if rule { "Close rule" } else if opp { "reversed by the opposite Enter" } else { "Bars in trade" };
                 if e.exit_open {
-                    if i < to { pend_exit = true; exited_dir = t.dir; }
+                    if i < to { pend_exit = true; pend_why = why; exited_dir = t.dir; }
                 } else {
                     let mut t = cur.take().unwrap();
                     t.exit_i = i; t.exit_px = x.c[i]; t.signal_i = i; t.reason = format!("{why} · close"); exited_dir = t.dir; out.push(t);
@@ -594,7 +601,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         }
         _ => return None,
     };
-    Some(simulate(x, from, to, &sig, ex))
+    Some(simulate(x, from, to, &sig, ex, crate::books::msws::reverse_on(p)))
 }
 
 #[cfg(test)]
@@ -622,11 +629,11 @@ mod tests {
     fn next_open_reversal_and_stop() {
         let r = rows(&[100., 100., 100., 100.]); let x = Ctx::new(&r, &r, &[]);
         let s = Sig { el: vec![true, false, false, false], xl: vec![false, true, false, false], es: vec![false, true, false, false], xs: vec![false; 4] };
-        let t = simulate(&x, 0, 3, &s, Exec { entry_open: true, exit_open: true, ..Default::default() });
+        let t = simulate(&x, 0, 3, &s, Exec { entry_open: true, exit_open: true, ..Default::default() }, true);
         assert_eq!(t.len(), 2); assert_eq!((t[0].legs[0].i, t[0].exit_i), (1, 2)); assert_eq!((t[1].dir, t[1].legs[0].i), (-1., 2)); assert!(t[1].open);
         let mut r = rows(&[100., 100., 100., 100.]); r[2].low = 80.; r[2].open = 95.; let x = Ctx::new(&r, &r, &[]);
         let s = Sig { el: vec![true, false, false, false], xl: vec![false; 4], es: vec![false; 4], xs: vec![false; 4] };
-        let t = simulate(&x, 0, 3, &s, Exec { entry_open: true, exit_open: true, max_loss: Some(0.1), hold: None });
+        let t = simulate(&x, 0, 3, &s, Exec { entry_open: true, exit_open: true, max_loss: Some(0.1), hold: None }, true);
         assert_eq!((t[0].exit_i, t[0].exit_px), (2, 90.));
     }
     #[test]

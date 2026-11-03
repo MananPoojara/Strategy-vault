@@ -1388,11 +1388,10 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // ---- end Lane A vendor2 held
         // ---- Lane A elmtrader block (26 Oct 2026, lane B): held Live rules
         "elmts4_first_day"=>"Held: the rule's only protection is a fixed 150-point stop set for the Dow (Dow TS4 guide p.15), placed by a spread-bet firm that guarantees the exit level even on a gap. On every other instrument 150 points means something different, and on the Dow itself our daily bars cannot reproduce a guaranteed fill, so the vault's accuracy gate keeps it off every market; publishing needs your decision on how to scale the 150 points.",
-        "mstt_kaeppel_ma_9_50_80"=>"Held: the Kaeppel 9/50/80 system (Trading Tech. Systems and Indicators for MetaStock, p.25, Equis Traders' Tips) prints Close Long as the 9/50 down-cross with the close still above the 80-day average, so when the short entry fires below the 80-day average the long is not closed by its own rule. Whether MetaStock's System Tester then closes and reverses the long is not printed on the page, and the two readings give different trades (559 US / 165 India trade rows change). The engine trades the literal reading, which also wipes out the account on several runs (QQQ 2000, NDX 2007, AAPL 1987, NIFTY 50 2000).",
+        "mstt_kaeppel_ma_9_50_80"=>"Held: not yet re-checked. The Kaeppel 9/50/80 system (Trading Tech. Systems and Indicators for MetaStock, p.25, Equis Traders' Tips) prints Close Long as the 9/50 down-cross with the close still above the 80-day average, so a short entry below the 80-day average comes while the long is open. MetaStock System Tester reverses on an opposite entry (7.2 manual, Order of Evaluation; Pro 8.0 p.332 Portfolio Bias Single), and the engine now does that, but this card is not in the reviewed list of its book and has no independent check under that rule yet.",
         "bcsts_a2"|"bcsts_a4"|"bcsts_a11"=>"Held: every buy and sell in the course (Aula 2 p.6-7, Aula 4 p.17-18, Aula 11 p.42-43) comes from ExtFml(\"ForumDll.Latch\",LE,LX,SE,SX), a free add-in whose behaviour is not printed. When a buy condition and a sell condition fall on the same bar, the trades depend on which one the add-in obeys, and the readings give different trades on both US and India data (Aula 11 in every window, Aula 2 and 4 in a few windows). The engine's reading (sell wins when long, buy wins when flat) matches the reference exactly, but the source cannot confirm it.",
         // ---- end Lane A elmtrader held
         // ---- Guppy MetaStock Formula Index block (26 Oct 2026, lane B): held Live rules
-        "dgmf_21d_rev_di"|"dgmf_katz_cyclical"|"dgmf_roc_ma"|"dgmf_stoch_ma"=>"Held: rules not fully defined for the tester. The result depends on what MetaStock's System Tester does with an opposite Enter signal while a position is open and its own Close formula is false (close and reverse, or ignore it); the collection does not print the tester setting, the MetaStock 7 manual does not say, and in MetaStock 8 it is a user setting (Portfolio Bias), so the behaviour is not specified and either reading would be a guess.",
         // ---- end Guppy MetaStock Formula Index held
         // ---- Jason Perl block (26 Oct 2026, lane B): held Live rules
         "tdperl_setup_long"|"tdperl_setup_short"=>"Held: rules not fully defined. Perl trades a completed TD Setup only when three conditions hold, and the third, that the close of setup bar nine is 'in close proximity to' TDST support (resistance for sells) (p.13, 16), is not quantified; leaving it out or picking a distance would not be his rule.",
@@ -1893,9 +1892,10 @@ mod tests {
     fn guppyf_held_rules_have_plain_card_reasons() {
         use crate::books::{dgmf};
         let all:Vec<StrategyDef>=dgmf::catalogue().into_iter().collect();
+        // decision 184 (3 Nov 2026): MetaStock reverses on an opposite entry, so these four are complete and admitted
         for id in ["dgmf_21d_rev_di", "dgmf_katz_cyclical", "dgmf_roc_ma", "dgmf_stoch_ma"] {
             let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
-            assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
+            assert!(d.status==crate::connors::Status::Live && reviewed_cash_rule(d) && held_reason(id).is_none(),"{id}");
         }
     }
     // ---- end Guppy MetaStock Formula Index held ----

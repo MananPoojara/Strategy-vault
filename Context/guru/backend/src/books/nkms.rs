@@ -240,7 +240,7 @@ fn is_native(id: &str) -> bool {
 fn leak(s: String) -> &'static str { Box::leak(s.into_boxed_str()) }
 fn expanded(s: &Sys) -> [Option<String>; 4] { [0, 1, 2, 3].map(|k| s.f[k].map(expand)) }
 fn consts_of(s: &Sys) -> Vec<f64> { if is_native(s.id) { vec![] } else { let srcs: Vec<&str> = s.f.iter().flatten().copied().collect(); msws::constants(&srcs) } }
-const CONV: &str = "Fills: MetaStock System Tester defaults (trade price close, trade delay 0; the record has no fill field). Stops: none (the record's stop block is the all-zero block that module msadd reads as no stops). One position at a time; a position closes only by its own Close formula (checked from the bar after entry); an exit plus an opposite entry on one bar reverse; no same-direction re-entry on the exit bar; the last position stays open, marked to the last close. PREV = the formula's own previous value (0 before its first value). Indicators: MetaStock definitions of the shared engine (module msws). Source markets not stated (Equis sample systems): indices, ETFs and stocks are a declared application.";
+const CONV: &str = "Fills: MetaStock System Tester defaults (trade price close, trade delay 0; the record has no fill field). Stops: none (the record's stop block is the all-zero block that module msadd reads as no stops). One position at a time; MetaStock System Tester reverses on an opposite entry (7.2 manual, Order of Evaluation; Pro 8.0 p.332 Portfolio Bias Single): an opposite Enter closes the open position and opens the other side at the same fill, checked before the Close formula (from the bar after a close-filled entry); p.reverse = 0 = the earlier reading (the opposite Enter is ignored while a position is open); no same-direction re-entry on the exit bar; the last position stays open, marked to the last close. PREV = the formula's own previous value (0 before its first value). Indicators: MetaStock definitions of the shared engine (module msws). Source markets not stated (Equis sample systems): indices, ETFs and stocks are a declared application.";
 
 static CAT: OnceLock<Vec<(&'static [&'static str], &'static str, bool)>> = OnceLock::new();
 pub fn catalogue() -> Vec<StrategyDef> {
@@ -273,6 +273,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         let (min, max, step) = if int && c >= 5.0 { ((c * 0.5).round().max(1.0), (c * 2.0).round(), 1.0) } else { (c * 0.5, c * 2.0, (c / 10.0 * 1000.0).round() / 1000.0) };
         v.push(ParamDef { key: leak(msws::const_key(c)), label: leak(format!("Stored constant {c} (every use of {c} in this system's own formulas; Ref offsets excluded)")), def: c, min, max, step: if step > 0.0 { step } else { 0.001 } });
     }
+    if s.f[0].is_some() && s.f[2].is_some() { v.push(msws::REVERSE_PARAM); }
     Some(v)
 }
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
@@ -292,7 +293,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let n = x.c.len();
     if side > 0 { sg.es = vec![false; n]; sg.xs = vec![false; n]; }
     if side < 0 { sg.el = vec![false; n]; sg.xl = vec![false; n]; }
-    Some(msws::simulate(x, from, to, &sg, s.exec))
+    Some(msws::simulate_conv(x, from, to, &sg, s.exec, msws::reverse_on(p)))
 }
 
 #[cfg(test)]
