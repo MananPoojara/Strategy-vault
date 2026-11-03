@@ -296,6 +296,8 @@ fn backtest(ctx: &Ctx, id: &str, from: usize, to: usize, cost: f64, p: &Params) 
     if books::hbqts::reviewed::is_dema_index(id) {return Err("QTS DEMA canonical unit reporting requires separate fee/slippage components through backtest_costs".into());}
     // options phase 2: option rules run on their own account (overlapping positions valued at the held contracts' prices)
     if let Some(pos)=options::positions(id,ctx,from,to,p) {return option_run(ctx,pos?,from,to,cost);}
+    // lane K28: rotation rules hold several ETFs on one account (books::rotation), valued at each ETF's own close
+    if let Some(a)=books::rotation::account(id,ctx,from,to,cost,p,books::rotation::PRELOADED.get().copied()) {let a=a?;return Ok(Run{trades:a.trades.clone(),from,to,equity:a.equity.clone(),bh:(from..=to).map(|k|ctx.c[k]/ctx.c[from]).collect(),source_account:None,bandy_account:None,unit_exposure_report:None,option_account:Some(a)});}
 
     if books::hbiab_reviewed::reviewed(id) {
         let account=books::hbiab_reviewed::run(id,ctx,from,to,cost,p)?;
@@ -1575,8 +1577,8 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     let gross_equity=if let Some(a)=&run.option_account {a.gross[..run.equity.len()].to_vec()} else {run.source_account.as_ref().map_or_else(||equity_curve(&ctx.c,&run.trades,from,to,0.),|a|a.days.iter().map(|d|d.gross).collect())};
     o.push_str(",\"gross_equity\":");arr(&mut o,&mut gross_equity.iter().copied().map(num));
     let gross=Run{trades:run.trades.clone(),from,to,equity:gross_equity,bh:run.bh.clone(),source_account:None,bandy_account:None,unit_exposure_report:None,option_account:None};
-    if run.option_account.is_some() {
-        let _=write!(o,",\"option_account\":{{\"model\":\"options_phase2_held_contract_marks_v1\",\"basis\":\"{}\"}},\"model_initial_equity\":1,\"stats\":{},\"gross_stats\":{},\"benchmark_symbol\":\"{}\",\"benchmark_stats\":{},\"costs\":{},\"accounting_basis\":\"{}\"}}",esc(options::BASIS),stats_json(&financial_stats(ctx,&run,costs)),stats_json(&stats(ctx,&gross,0.)),esc(&ctx.r[from].ticker),stats_json(&benchmark_stats(ctx,&run)),costs.json(),esc(options::BASIS));
+    if let Some(a)=&run.option_account {
+        let _=write!(o,",\"option_account\":{{\"model\":\"{}\",\"basis\":\"{}\"}},\"model_initial_equity\":1,\"stats\":{},\"gross_stats\":{},\"benchmark_symbol\":\"{}\",\"benchmark_stats\":{},\"costs\":{},\"accounting_basis\":\"{}\"}}",a.model,esc(a.basis),stats_json(&financial_stats(ctx,&run,costs)),stats_json(&stats(ctx,&gross,0.)),esc(&ctx.r[from].ticker),stats_json(&benchmark_stats(ctx,&run)),costs.json(),esc(a.basis));
         return Ok(o);
     }
     if let Some(account)=&run.source_account {
@@ -2142,6 +2144,7 @@ fn main() {
     let data = load_csv(&csv).unwrap_or_else(|e| panic!("load data: {e}"));
     // ponytail: rows leaked for a 'static borrow — data is loaded once for the server's lifetime.
     let data: &'static BTreeMap<String, Vec<Row>> = Box::leak(Box::new(data));
+    let _=books::rotation::PRELOADED.set(data); // lane K28: rotation rules read the other ETFs of this file
     let extra_dir = args.get(4).cloned().unwrap_or_else(|| concat!(env!("CARGO_MANIFEST_DIR"), "/../../../extra_data").into());
     let extra = load_extra(&extra_dir);
     println!("extra data: {} series from {extra_dir}", extra.len());
@@ -2713,6 +2716,12 @@ mod tests {
             if options::is_option_rule(d.id) {
                 // options phase 2: own account (overlapping positions, held-contract marks; options::tests); no chain here
                 assert!(backtest(&ctx,d.id,0,rows.len()-1,0.,&Params::new()).unwrap_err().starts_with("needs_data"));
+                other_path += 1;
+                continue;
+            }
+            if books::rotation::is_rotation(d.id) {
+                // lane K28: several ETFs on one account (books::rotation tests, k28_ref.py); refused off the SPY calendar
+                assert!(backtest(&ctx,d.id,0,rows.len()-1,0.,&Params::new()).unwrap_err().starts_with("not_testable"),"{}",d.id);
                 other_path += 1;
                 continue;
             }

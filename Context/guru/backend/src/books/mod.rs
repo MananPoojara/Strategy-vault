@@ -5,6 +5,7 @@ pub mod elcim_account;
 pub mod hbiab_reviewed;
 pub mod lw_admit; // Larry Williams block
 pub mod lc3; // lane C 29 Oct helpers
+pub mod rotation; // lane K28: multi-ETF rotation account
 
 macro_rules! books {
     ($($m:ident),*) => {

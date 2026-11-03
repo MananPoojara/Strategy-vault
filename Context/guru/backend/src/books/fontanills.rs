@@ -66,8 +66,13 @@ pub fn catalogue() -> Vec<StrategyDef> {
             NeedsData("needs DIA prices (not in the vault) and is a classroom exercise 'created for this exercise (but not implemented)' from one week of data"), &["E|Short DIA at the close before expiration Friday after a down close"]),
         held("fgsmc_vix", "VIX above 30 buy, below 20 out", "p.292-294", "fgsmc",
             NeedsData("the book's VIX is the old S&P 100 (OEX) volatility index, now VXO; the vault holds the newer VIX, a different index"), &["E|\"When the VIX is high (>30), it's time to buy\" (p.293)"]),
-        held("fgtofd_sector_tilt", "Select Sector SPDR tilt (weekly 3-month rank, SPY 50/200 filter)", "Ch.13 (p.230-234)", "fgtofd",
-            NeedsData("needs the nine Select Sector SPDR ETFs (XLB ... XLY), not in the vault"), &["E|Hold the top-ranked sector ETF"]),
+        StrategyDef { claim: crate::connors::claim("20", "70%", "n/a", "weeks to months", "Select Sector SPDRs, 3 Jan 2000 - 21 Sep 2007, two bullish periods: 4 trades (3 gains) $5,000 -> $5,135, and 16 trades (11 gains) $5,000 -> $14,080 (Table 13-5, p.233-234)"),
+            ..live("fgtofd_sector_tilt", "Select Sector SPDR tilt: hold the top 3-month ETF while SPY's 50-day SMA is above its 200-day", "Ch.13 · Tilting your portfolio with sector ETFs (p.230-234)", "fgtofd", "Long", false,
+            &["F|\"Using SPY and the nine major Select Sector SPDR ETFs\" (Table 13-4: XLB XLE XLF XLI XLK XLP XLU XLV XLY) (p.231-232)",
+              "E|\"1. On a weekly basis rank the ETFs using three-month returns. The top ranked ETF is the one with the best returns over a three-month period 2. Invest in the top ranked ETF.\" (p.232)",
+              "X|\"3. Maintain investment in ETF until it drops below the third rank (ranks 4 - 9) for two consecutive weeks. 4. Identify new ETF for investment by repeating steps 1 through 3.\" (p.232)",
+              "F|\"bullish periods are identified as those periods when the 50-day SMA is above the 200-day SMA ... as the 50-day SMA crosses below the 200-day SMA, a bearish period is identified ... the sector ETF position is exited\" (SPY daily chart, p.233); \"no sector investment is made during bearish periods\" (p.232)"],
+            "Readings [book silent]: three-month return = close / close 63 trading days earlier - 1; the weekly ranking is taken at each week's last close and a switch fills there; the two weeks are counted from the purchase (two weekly rankings in a row at rank 4-9 while held); SMAs are simple averages of SPY's daily closes, checked every day: a close with the 50-day below the 200-day sells at that close, and a close with the 50-day above the 200-day while flat buys the top-ranked ETF at that close (the book's tilt starts on its first data day, 3 Jan 2000, already bullish); ties by ticker. Price-only ETF closes; the book's $5,000 tilt sits next to a protected SPY core that is not part of this card. Runs on the SPY calendar (SPY is also the bullish/bearish filter); the holdings are the ETFs named in each trade. US only (no NIFTY sector index series, decision #11).") },
         held("fgitsm_elliott", "ProfitSource Elliott-wave trades", "Seminar manual", "fgitsm", NotTestable("depends on proprietary Elliott-wave counts"), &["E|Proprietary"]),
         held("fg_options", "Option strategies (straddles, spreads, covered calls ...)", "Options Course, Trading Options For Dummies, seminar manuals", "fgtofd",
             NeedsData("needs option prices (none in the vault)"), &["E|Option positions"]),
@@ -84,6 +89,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "fgitsm_volspike" => ("fgitsm_volspike", "Volume spike", "3x 30-day"),
         "fgsmc_ma50_200" => ("fgsmc_ma50_200", "Fontanills 50/200", "50/200"),
         "fgtofd_ema20_50" => ("fgtofd_ema20_50", "Fontanills 20/50 EMA", "20/50"),
+        "fgtofd_sector_tilt" => ("fgtofd_sector_tilt", "Fontanills sector SPDR tilt", "3-month rank, SPY 50/200"),
         _ if id.starts_with("fgitc_") || id.starts_with("fgitcwb_") || id.starts_with("fgitsm_") || id.starts_with("fgsmc_") || id.starts_with("fgtofd_") || id.starts_with("fg_") => ("fg_nt", "Fontanills (held)", "-"),
         _ => return None,
     })
@@ -99,6 +105,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "fgitsm_volspike" => vec![p("mult", "Spike = volume above x times average (book: 3)", 3., 1.5, 10., 0.5), p("n", "Average volume days (book: 30)", 30., 5., 200., 1.)],
         "fgsmc_ma50_200" => vec![p("s", "Short average (book: 50)", 50., 2., 200., 1.), p("l", "Long average (book: 200)", 200., 3., 400., 1.)],
         "fgtofd_ema20_50" => vec![p("s", "Short EMA (book: 20)", 20., 2., 100., 1.), p("l", "Long EMA (book: 50)", 50., 3., 250., 1.)],
+        "fgtofd_sector_tilt" => vec![], // lane K28: runs in books::rotation
         _ => return None,
     })
 }
@@ -254,7 +261,7 @@ mod tests {
     use super::*;
     #[test]
     fn catalogue_admits_exactly_the_reviewed_ids() {
-        let live: Vec<_> = catalogue().into_iter().filter(|d| d.status == Status::Live).map(|d| d.id).collect();
+        let live: Vec<_> = catalogue().into_iter().filter(|d| d.status == Status::Live && !crate::books::rotation::is_rotation(d.id)).map(|d| d.id).collect();
         assert_eq!(live, REVIEWED);
     }
 }

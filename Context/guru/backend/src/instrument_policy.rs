@@ -943,6 +943,8 @@ fn joe_ross_policy(def:&StrategyDef)->Option<Policy> {
     Some(p)
 }
 // ---- end Joe Ross block ----
+/// Lane K28 (3 Nov 2026): rotation rules rank or weight several actual US ETFs on one account (books::rotation).
+const ROTATION_BASIS:&str="Rotation across several actual US ETFs (books::rotation, lane K28): the rule's own universe is read from the vault's US price file, SPY supplies the calendar and the benchmark, and each holding is the ETF named in its trade. It runs only on SPY; an index, another ETF or a stock cannot stand in for the universe, and India has no sector or multi-asset series in the vault (decision #11).";
 fn base_policy(def:&StrategyDef)->Policy {
     if intraday_p1(def) && intraday_w1_spx_id(def.id) {let mut p=requirement("declared_index_timing", &["index"], INTRADAY_W1_SPX_BASIS);p.market_adaptation=true;return p;} // intraday wave 1
     if intraday_p1(def) {let mut p=requirement("declared_index_timing", &["index","etf"], INTRADAY_P1_BASIS);p.market_adaptation=true;return p;} // intraday phase 1
@@ -953,6 +955,7 @@ fn base_policy(def:&StrategyDef)->Policy {
     if let Some(p)=schwager_policy(def) {return p;}
     if let Some(p)=elder_policy(def) {return p;} // Elder block
     if let Some(p)=pring_policy(def) {return p;} // Pring block
+    if crate::books::rotation::is_rotation(def.id) {let mut p=etf(ROTATION_BASIS);p.market_adaptation=def.book=="fbrs";return p;} // lane K28 rotation block
     if let Some(a)=admission(def) {let mut p=requirement("index_etf_or_stock",&["index","etf","individual_stock"],a.basis);p.preferred_basket=Some("nifty50");p.market_adaptation=true;return p;} // per-book ADMISSION table
     if let Some(p)=schaap_policy(def) {return p;} // Schaap block
     if let Some(p)=dgagne_policy(def) {return p;} // Dave Gagné block
@@ -1196,7 +1199,7 @@ fn base_policy(def:&StrategyDef)->Policy {
         "radge" if member(id,&["radge_oc_long_stop","radge_oc_short_stop"]) => review(),
         "lwdg2" if member(id,&["lwdg2_updown_daytrade","lwdg2_0105","lwdg2_vol_up_up","lwdg2_vol_dn_up","lwdg2_vol_up_dn","lwdg2_vol_dn_dn","lwdg2_weekly_entry"]) => future("Definitive Guide to Futures Trading Volume II Chapters 3/8, printed pp.34-39 and pp.124-152, trades S&P/Value Line futures. Cash OHLC does not supply the actual futures basis, fixed stops/ticks, contracts or roll history."),
         "hmrw" if id=="hmrw_sp500_rotation" => portfolio("How Markets Really Work Chapter 13 pp.159-162 requires all historical S&P500 members including removed/delisted names, a separate index regime, candidate ranking and up to ten simultaneous slots. A current snapshot and one-symbol runner cannot reproduce this portfolio."),
-        "alpha" if member(id,&["alpha_rising_assets","alpha_weekly_mr","alpha_dyn_treasuries","alpha_etf_avalanches","alpha_formula_portfolio"]) => portfolio("The Alpha Formula Chapters 5-9 require specific stock/ETF universes, cross-sectional selection and simultaneous portfolio allocations. Current Indian cash snapshots do not establish these source universes or portfolio accounting."),
+        "alpha" if member(id,&["alpha_weekly_mr","alpha_etf_avalanches","alpha_formula_portfolio"]) => portfolio("The Alpha Formula Chapters 5-9 require specific stock/ETF universes, cross-sectional selection and simultaneous portfolio allocations. Current Indian cash snapshots do not establish these source universes or portfolio accounting."),
         "alpha" if member(id,&["alpha_spy_rsi4_mr","alpha_dyn_treasuries_sleeve","alpha_etf_avalanches_single"]) => {
             // A Treasury sleeve is not interchangeable with an equity ETF. No
             // required Treasury instrument is currently on the admitted whitelist.
@@ -3726,10 +3729,21 @@ mod connors_index_routing_tests {
         }
     }
     #[test]
+    fn rotation_rules_run_on_spy_only() {
+        for id in crate::books::rotation::IDS {
+            let d=find(id);let p=policy(&d);
+            assert_eq!((p.requirement,p.allowed_types),("etf",&["etf"][..]),"{id}");
+            assert!(check(&d,"SPY",false).is_none(),"{id}");
+            for tk in ["NIFTY 50","SPX"] {assert!(check(&d,tk,false).is_some(),"{id} {tk}");}
+            assert_eq!(crate::gate::get(id).and_then(|g|g.allowed),Some(&["SPY"][..]),"{id}");
+        }
+    }
+    #[test]
     fn ranking_and_portfolio_methods_stay_stock_or_portfolio_only() {
         // connors-final 26 Oct 2026: ats_cbp now runs on US stocks, indices and ETFs ($20 kept, US only), see cbp_us
         assert!(policy(&find("ats_cbp")).allowed_types.contains(&"individual_stock") && check(&find("ats_cbp"),"NIFTY 50",false).is_some() && check(&find("ats_cbp"),"SPY",false).is_none());
-        for id in ["alpha_rising_assets","alpha_weekly_mr","alpha_etf_avalanches","alpha_dyn_treasuries","alpha_formula_portfolio","hmrw_sp500_rotation","afactor_portfolio"] {
+        // alpha_rising_assets / alpha_dyn_treasuries run as ETF rotations on the SPY calendar since lane K28 (rotation_rules_run_on_spy_only)
+        for id in ["alpha_weekly_mr","alpha_etf_avalanches","alpha_formula_portfolio","hmrw_sp500_rotation","afactor_portfolio"] {
             let d=find(id);let p=policy(&d);
             assert!(!p.allowed_types.contains(&"index")&&!p.allowed_types.contains(&"etf"),"{id}");
             assert!(!CONNORS_INDEX_IDS.contains(&id));
