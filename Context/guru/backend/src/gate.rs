@@ -2513,6 +2513,7 @@ static GATE: &[G] = &[
     G { id: r##"stwds_obv2"##, verdict: r##"unverified"##, reason: r##"Best rule 1939-86 only."##, allowed: None, clamp_open: false, book: r##""##, ours: r##""## },
     G { id: r##"stwds_obv30_75"##, verdict: r##"unverified"##, reason: r##"API refuses SPX 1984-1996 (volume missing); SPY does not cover 1984. checker: confirmed API needs_data."##, allowed: None, clamp_open: false, book: r##"Table VI S&P 500 futures 1984-1996: 43 trades, 22/43 win, 3.00%/trade, 9.4%/yr"##, ours: r##""## },
     G { id: r##"stwds_sr5_b005_c5"##, verdict: r##"unverified"##, reason: r##"Best rule 1897-1914 only."##, allowed: None, clamp_open: false, book: r##""##, ours: r##""## },
+    G { id: r##"svlock_zlcl_zlha"##, verdict: r##"unverified"##, reason: r##"Vervoort's LOCKIT system test with no test printed; long only (slot 6 '100' in the Sell Short field not applied). Close fills; the Heikin-Ashi average reads the open."##, allowed: None, clamp_open: false, book: r##""##, ours: r##""## },
     G { id: r##"svmws_10w30w_long"##, verdict: r##"unverified"##, reason: r##"No statistics."##, allowed: None, clamp_open: false, book: r##""##, ours: r##""## },
     G { id: r##"svmws_10w30w_short"##, verdict: r##"unverified"##, reason: r##"No statistics."##, allowed: None, clamp_open: false, book: r##""##, ours: r##""## },
     G { id: r##"svtvc_lsm7"##, verdict: r##"unverified"##, reason: r##"No comparable result."##, allowed: None, clamp_open: false, book: r##"Tables 6.1/6.2: futures baskets (S&P DTI) only; no S&P 500 result"##, ours: r##""## },
