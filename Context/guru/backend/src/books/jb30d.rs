@@ -227,13 +227,13 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         // ---- intraday wave 1: real 1-minute path for the stock (percent) rule (default path = 1)
         "jb30d_gap_pct" | "jb30d_gap_tick" if g("path") >= 0.5 => {
             use crate::intraday::{day_trade, stop_entry_day, Level};
-            let Some(mm) = x.minutes else { return Some(out) };
+            if x.minutes.is_none() { return Some(out); }
             let sf = g("stop_frac");
             for i in from.max(1)..=to {
                 let rng = x.h[i - 1] - x.l[i - 1];
                 let (gs, pa) = if id == "jb30d_gap_tick" { (g("gs") * g("tick"), g("pa") * g("tick")) } else { (g("gs_pct") / 100.0 * rng, g("pa_pct") / 100.0 * rng) };
                 let d = if x.o[i] <= x.l[i - 1] - gs && x.o[i] < x.l[i - 1] { 1.0 } else if x.o[i] >= x.h[i - 1] + gs && x.o[i] > x.h[i - 1] { -1.0 } else { continue };
-                let Some(b) = mm.day(&x.r[i].date) else { continue };
+                let Some(b) = crate::intraday_w2b::day(x, i) else { continue }; // intraday wave 3: rejected NIFTY 50 minute days (from 2026-08-11) make no trade
                 let lvl = if d > 0.0 { x.l[i - 1] + pa } else { x.h[i - 1] - pa };
                 let Some((_, px, xs)) = stop_entry_day(&b, 0, &[Level { up: d > 0.0, px: lvl }], &|_, px| Some(Level { up: d < 0.0, px: px - d * sf * rng })) else { continue };
                 out.push(match xs {

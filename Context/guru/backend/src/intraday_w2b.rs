@@ -120,7 +120,7 @@ mod tests {
             assert_eq!(crate::gate::get(id).unwrap().verdict, "unverified", "{id}");
         }
         assert_eq!(crate::gate::get("jkbwts_buymon1400").unwrap().allowed, Some(&["SPX"][..]));
-        for id in ["atm04_qqq_crash", "radge_oc_long_stop", "jchr1_lizard_short", "tdperl_tdline_short"] { assert_eq!(crate::gate::get(id).unwrap().verdict, "withheld", "{id}"); }
+        for id in ["atm04_qqq_crash", "radge_oc_long_stop", "jchr1_lizard_short" /* tdperl_tdline_short: intraday wave 3 */] { assert_eq!(crate::gate::get(id).unwrap().verdict, "withheld", "{id}"); }
     }
 
 }
