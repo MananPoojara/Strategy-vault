@@ -3,7 +3,7 @@
 //! itself lives in the book module (books/tdperl.rs run_lines_minutes).
 
 /// Rules converted in this wave that run on all four minute tickers (SPY, SPX, NIFTY 50, NIFTYBANK): no fixed amount.
-pub const IDS: &[&str] = &["tdperl_tdline_short"];
+pub const IDS: &[&str] = &["tdperl_tdline_short", "tdperl_rebo" /* K25 */];
 pub fn id(id: &str) -> bool { IDS.contains(&id) }
 pub fn book(b: &str) -> bool { b == "tdperl" }
 /// Minute-path rules of waves 1/phase 1 where more than 5% of the trades fall in a minute that reaches two levels without
@@ -67,6 +67,27 @@ mod tests {
         assert!(run(&x, 1.0).is_empty());
         // no minutes on the entry day: no trade (no daily substitute)
         x.minutes = Some(minutes("tdl4", &[("2020-01-08", &["09:30,92,92.5,89,90"])]));
+        assert!(run(&x, 1.0).is_empty());
+    }
+    #[test]
+    fn rebo_minutes_reverse_in_time_order() {
+        // K25. Bar 2: open 100, yesterday's true range 10 -> buy stop 103.82, sell stop 96.18; the daily bar reaches both.
+        let b = [(100., 105., 95., 100.), (100., 105., 95., 100.), (100., 110., 90., 100.), (100., 101., 99., 100.)];
+        let r: Vec<crate::Row> = b.iter().enumerate().map(|(k, &(o, h, l, c))| crate::Row { ticker: "T".into(), date: format!("2020-01-{:02}", k + 1), open: o, high: h, low: l, close: c, volume: None }).collect();
+        let mut x = Ctx::new(&r, &r, &[]);
+        let run = |x: &Ctx, path: f64| crate::books::tdperl::run("tdperl_rebo", x, 0, 3, &Params::from([("path".to_string(), path)])).unwrap();
+        assert!(run(&x, 0.0).is_empty()); // daily path: both levels on a flat day -> no entry
+        x.minutes = Some(minutes("rebo", &[("2020-01-03", &["09:30,100,104,99,103", "09:31,103,103.5,96,97", "09:32,97,98,97,98"]), ("2020-01-04", &["09:30,100,101,99,100"])]));
+        let t = run(&x, 1.0);
+        assert_eq!(t.len(), 2, "{t:?}");
+        assert!(t[0].dir > 0. && (t[0].legs[0].px - 103.82).abs() < 1e-9 && t[0].exit_i == 2 && (t[0].exit_px - 96.18).abs() < 1e-9, "{:?}", t[0]);
+        assert!(t[1].dir < 0. && (t[1].legs[0].px - 96.18).abs() < 1e-9 && t[1].open && t[1].exit_px == 100., "{:?}", t[1]);
+        // one minute reaching both, opened nearer the sell stop: short first [convention, flagged], then reversed long at 103.82
+        x.minutes = Some(minutes("rebo2", &[("2020-01-03", &["09:30,97,105,95,100"])]));
+        let t = run(&x, 1.0);
+        assert!(t.len() == 2 && t[0].dir < 0. && (t[0].legs[0].px - 96.18).abs() < 1e-9 && t[0].reason.contains("ambiguous") && t[1].dir > 0. && t[1].open, "{t:?}");
+        // no minutes on bar 2: no position opened
+        x.minutes = Some(minutes("rebo3", &[("2020-01-04", &["09:30,100,101,99,100"])]));
         assert!(run(&x, 1.0).is_empty());
     }
     #[test]

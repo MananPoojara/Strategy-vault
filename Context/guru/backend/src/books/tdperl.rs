@@ -114,9 +114,10 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("tdperl_rebo", "TD Range Expansion Breakout (REBO), daily, open base", "Ch 9 · TD REBO", "Long/Short", Live,
           &["F|p.158: \"My preference is to apply TD REBO to daily price bars and use the current price bar's open as the base. First, multiply the previous day's true range separately by 0.382 and by 0.618. Then to calculate upside levels, add those values to the current day's opening price. To determine downside levels, subtract them from the current day's opening price.\"",
             "E|p.157: TD REBO \"attempts to identify that initial price break, to enable traders to participate in the move, until a signal occurs in the opposite direction\": buy stop at open + 0.382 x prior true range, sell stop at open - 0.382 x prior true range; stop-and-reverse.",
-            "X|Reverse on the opposite break. [Book silent] a bar touching both levels: flat -> no entry; in a position -> reverse at the adverse level only.",
+            "X|Reverse on the opposite break. p.path=0 [Not from the book] the old daily path: a bar touching both levels: flat -> no entry; in a position -> reverse at the adverse level only.",
+            "X|[K25, minute path] Default p.path=1: each day is walked on real 1-minute bars. The two levels are standing stop orders for the whole day, so every touch of the level opposite to the position reverses it (several reversals in one day are possible) [reading of \"until a signal occurs in the opposite direction\"]. A level fills at the level, or at the minute's open when the minute opened through it. One minute reaching both levels: the one it opened through came first, else the level nearer the minute's open [convention, flagged ambiguous]; then the other; then the first again only if the minute closed beyond it (the shortest path through the minute). No new position on the last bar of the run. A day without minute data opens no position; a held position is closed at the adverse level if that day's daily bar reaches it (that exit happens whatever the order).",
             "F|Not coded: the qualified/fade intraday versions (0.618 objective, \"on an intraday basis\") have no exit."],
-          "Book prints no statistics. Always in the market after the first break. India: instrument swap only."),
+          "Book prints no statistics. Always in the market after the first break. Runs on SPY, SPX (from 2014, real daily opens), NIFTY 50 (to 2026-08-10; later minutes rejected) and NIFTYBANK, the only instruments with cleaned 1-minute bars; a declared application (no fixed amounts; the book's examples are the Nikkei 225 cash index). Base = the daily file's open (NIFTY 50 opens before the October 2010 opening auction sit close to the previous close in the source; the full history is kept). Cash-index shorts are hypothetical exposure."),
         d("tdperl_diff_up", "TD Differential up arrow · next-bar test", "Ch 10 · TD Differential", "Long", Live,
           &["F|Buying pressure = close - true low; selling pressure = true high - close (p.165).",
             "E|Up arrow (p.165): \"1. There must be two consecutive closes, each one less than the one prior, 2. Buying pressure for the current price bar must exceed buying pressure from the previous price bar, and 3. Selling pressure for the current price bar must be less than selling pressure from the previous price bar.\" Buy at the close.",
@@ -217,7 +218,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "tdperl_tdline_long" => vec![p("level", "TD Point level", 1., 1., 5., 1.)],
         "tdperl_tdline_short" => vec![p("level", "TD Point level", 1., 1., 5., 1.), // + intraday wave 3: path
             p("path", "1 = real 1-minute bars (default; days without minute data make no trade), 0 = [Not from the book] daily bar path (adverse break first)", 1., 0., 1., 1.)],
-        "tdperl_rebo" => vec![p("k", "Breakout fraction of prior true range", 0.382, 0.236, 0.618, 0.118)],
+        "tdperl_rebo" => vec![p("k", "Breakout fraction of prior true range", 0.382, 0.236, 0.618, 0.118), // + K25: path
+            p("path", "1 = real 1-minute bars (default; days without minute data open no position), 0 = [Not from the book] daily bar path", 1., 0., 1., 1.)],
         _ if id.starts_with("tdperl_") && catalogue().iter().any(|s| s.id == id) => vec![],
         _ => return None,
     })
@@ -625,6 +627,58 @@ fn run_rebo(x: &Ctx, b: &Bars, k: f64, from: usize, to: usize) -> Vec<Trade> {
     out
 }
 
+/// The REBO level touches inside one minute, in order: (direction, fill), and whether the order is a convention.
+/// One level: filled at it, or at the minute's open when it opened through it. Both: the one it opened through first, else
+/// the one nearer the open [convention, ambiguous]; then the other at its level; then the first again if the minute closed
+/// beyond it (the shortest path through open, both levels and close).
+fn rebo_touches(z: &crate::intraday::Bar1, up: f64, dn: f64) -> (Vec<(f64, f64)>, bool) {
+    let (hu, hd) = (z.h >= up, z.l <= dn);
+    match (hu, hd) {
+        (false, false) => (vec![], false),
+        (true, false) => (vec![(1., z.o.max(up))], false),
+        (false, true) => (vec![(-1., z.o.min(dn))], false),
+        (true, true) => {
+            let (tu, td) = (z.o >= up, z.o <= dn);
+            let (up_first, amb) = if tu != td { (tu, false) } else { ((up - z.o).abs() <= (z.o - dn).abs(), true) };
+            let mut v = if up_first { vec![(1., z.o.max(up)), (-1., dn)] } else { vec![(-1., z.o.min(dn)), (1., up)] };
+            if up_first && z.c >= up { v.push((1., up)); }
+            if !up_first && z.c <= dn { v.push((-1., dn)); }
+            (v, amb)
+        }
+    }
+}
+
+/// K25: TD REBO stop-and-reverse walked on real 1-minute bars (see the catalogue's minute-path rule).
+fn run_rebo_minutes(x: &Ctx, b: &Bars, k: f64, from: usize, to: usize) -> Vec<Trade> {
+    const AMB: &str = " [ambiguous minute: the level nearer its open taken first]";
+    let mut out = vec![];
+    let mut cur: Option<Trade> = None;
+    'days: for i in from.max(2)..=to {
+        let r = b.th[i - 1] - b.tl[i - 1];
+        let (up, dn) = (b.o[i] + k * r, b.o[i] - k * r);
+        let Some(bars) = crate::intraday_w2b::day(x, i) else {
+            // no minutes (none loaded, excluded day, rejected NIFTY 50 day): no new position; the adverse exit is certain
+            if let Some(t) = cur.take() {
+                if t.dir > 0. && b.l[i] <= dn { out.push(close(t, b, i, b.o[i].min(dn), "Opposite REBO break")); }
+                else if t.dir < 0. && b.h[i] >= up { out.push(close(t, b, i, b.o[i].max(up), "Opposite REBO break")); }
+                else { cur = Some(t); }
+            }
+            continue;
+        };
+        for z in &bars {
+            let (seq, amb) = rebo_touches(z, up, dn);
+            for (dir, px) in seq {
+                if cur.as_ref().is_some_and(|t| t.dir == dir) { continue; }
+                if let Some(t) = cur.take() { out.push(close(t, b, i, px, &format!("Opposite REBO break{}", if amb { AMB } else { "" }))); }
+                if i == to { break 'days; } // no new position on the last bar
+                cur = Some(Trade { dir, legs: vec![Leg { i, px, w: 1. }], exit_i: i, exit_px: px, reason: String::new(), entry_kind: "stop", signal_i: i, open: false, exits: vec![] });
+            }
+        }
+    }
+    finish(cur, x, to, &mut out);
+    out
+}
+
 /// One-bar forecast tests: entry by `sig(i)` -> (price, kind), exit at close of bar i + hold.
 fn run_pattern(x: &Ctx, b: &Bars, hold: usize, from: usize, to: usize, sig: &dyn Fn(usize) -> Option<(f64, &'static str)>) -> Vec<Trade> {
     let mut out = vec![];
@@ -670,6 +724,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             "tdperl_setup" => run_setup(x, &b, u("look").max(1), u("setup_n") as u32, g("rr"), g("c9_lt_c8") >= 0.5, from, to),
             "tdperl_tdline" if id == "tdperl_tdline_short" && g("path") >= 0.5 => run_lines_minutes(x, &b, &m, u("level").max(1), from, to), // intraday wave 3
             "tdperl_tdline" => run_lines(x, &b, &m, u("level").max(1), from, to),
+            _ if id == "tdperl_rebo" && g("path") >= 0.5 => run_rebo_minutes(x, &b, g("k"), from, to), // K25: minute path
             _ if id == "tdperl_rebo" => run_rebo(x, &b, g("k"), from, to),
             "tdperl_diff" => run_pattern(x, &b, 1, from, to, &|i| {
                 let (bp, sp) = (|j: usize| b.c[j] - b.tl[j], |j: usize| b.th[j] - b.c[j]);

@@ -1336,7 +1336,7 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // ---- Jason Perl block (26 Oct 2026, lane B): held Live rules
         "tdperl_setup_long"|"tdperl_setup_short"=>"Held: rules not fully defined. Perl trades a completed TD Setup only when three conditions hold, and the third, that the close of setup bar nine is 'in close proximity to' TDST support (resistance for sells) (p.13, 16), is not quantified; leaving it out or picking a distance would not be his rule.",
         "tdperl_diff_up"|"tdperl_diff_down"|"tdperl_clopwin_long"|"tdperl_clopwin_short"=>"Held: not a trade rule. Perl presents TD Differential and TD Clopwin as forecasts of the next price bar (p.26, 165-166) with no stop or exit; the vault's next-close measurement tests the forecast, not a trading strategy from the book.",
-        "tdperl_rebo"=>"Held: needs intraday data. TD REBO buys on a stop above the open and sells on a stop below it, reversing on the opposite break (p.157-159); on days that reach both levels daily bars cannot show which came first, so the reversal sequence is not known from the book or the data.",
+        // tdperl_rebo: runs on 1-minute bars (K25, 3 Nov 2026), admitted by the intraday block
         // ---- end Jason Perl held
         // ---- STAD leftovers block (26 Oct 2026, lane B): held Live rules
         "stad1_volex"=>"Held: fixed dollar amount set for the S&P futures contract. The VolEx code closes any trade older than four bars that shows less than $500 profit on one S&P contract (Vol 1 p.76-82); a fixed point amount has no equivalent on other indices, ETFs or stocks.",
@@ -1841,7 +1841,7 @@ mod tests {
     fn perl_held_rules_have_plain_card_reasons() {
         use crate::books::{tdperl};
         let all:Vec<StrategyDef>=tdperl::catalogue().into_iter().collect();
-        for id in ["tdperl_rebo", "tdperl_setup_long", "tdperl_setup_short", "tdperl_diff_up", "tdperl_diff_down", "tdperl_clopwin_long", "tdperl_clopwin_short"] {
+        for id in [/* tdperl_rebo: intraday block (K25) */ "tdperl_setup_long", "tdperl_setup_short", "tdperl_diff_up", "tdperl_diff_down", "tdperl_clopwin_long", "tdperl_clopwin_short"] {
             let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
             assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
         }
