@@ -125,7 +125,8 @@ export function ruleLines(spec: Spec, cat: Catalogue) {
     side.entry.all.forEach((n, i) => { if ((n as Obj).off === true) return;
       ((n as Obj).filter === true ? out.filter : out.entry).push({ key: `${pre}entry.all[${i}]`, text: `${tag}${words(n, cat)}` }); });
     side.exit.any.forEach((n, i) => { if ((n as Obj).off !== true) out.exit.push({ key: `${pre}exit.any[${i}]`, text: `${tag}${exitName(n, i)}: ${words(n, cat)}` }); });
-    for (const s of stopsOn(side.exit as Obj, undefined)) out.exit.push({ key: `${pre}stop ${s}`, text: `${tag}${s}` });
+    // the Dual ATR stop's line is keyed by its path, so its optimized multiples and periods join it
+    for (const s of stopsOn(side.exit as Obj, undefined)) out.exit.push({ key: side.exit.dual_atr && /^ATR \(/.test(s) ? `${pre}exit.dual_atr` : `${pre}stop ${s}`, text: `${tag}${s}` });
   }
   return out;
 }

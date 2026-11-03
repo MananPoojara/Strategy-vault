@@ -190,6 +190,10 @@ it("Rules sheet: an optimized setting is listed under its rule, worded as on the
   const rule = (p: string) => (p.startsWith("entry.all[0]") ? { key: "entry.all[0]", text: "RSI(14) crosses above 30" } : undefined);
   const book = optimizationWorkbook(withSheet, { ranSpec: spec, label: () => "Threshold", group: () => "Entry", rule })!;
   expect(book[0].rows.find((r) => r[1] === "Entry:")![2]).toBe(`RSI(14) crosses above 30 · Threshold - 10,40,10`);
+  // the rule's own name is not repeated, and a Dual ATR multiple joins the ATR stop's line
+  const named = optimizationWorkbook({ ...withSheet, dims: [{ path: P, values: [10, 20, 30, 40] }] },
+    { ranSpec: spec, label: () => "Entry 1: RSI threshold", group: () => "Entry", rule })!;
+  expect(named[0].rows.find((r) => r[1] === "Entry:")![2]).toBe(`RSI(14) crosses above 30 · RSI threshold - 10,40,10`);
 });
 
 it("Rules sheet: every rule is listed, optimized or not; an optimized setting joins its rule's line", () => {

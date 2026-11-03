@@ -119,7 +119,9 @@ export function optimizationWorkbook(r: OptimizeResult, c: SheetContext): Sheet[
     const lines = new Map<string, string[]>(seed.map((x) => [x.key, [x.text]]));
     for (const d of r.dims.filter((x) => re.test(c.group(x.path) ?? ""))) {
       const rule = c.rule?.(d.path), key = rule?.key ?? d.path;
-      lines.set(key, [...(lines.get(key) ?? (rule ? [rule.text] : [])), range(d.path, d.values)]);
+      // on its rule's line the setting drops the rule's own name ("Entry 1: ", "Dual ATR · "): the line already says it
+      const own = rule ? range(d.path, d.values).replace(/^(Short )?(Entry|Exit rule|Filter) \d+: |^(Short )?Dual ATR · /, "") : range(d.path, d.values);
+      lines.set(key, [...(lines.get(key) ?? (rule ? [rule.text] : [])), own]);
     }
     return [...lines.values()].map((parts) => parts.join(" · "));
   };

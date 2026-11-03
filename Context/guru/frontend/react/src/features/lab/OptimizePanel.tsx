@@ -6,7 +6,7 @@ import { optimizablePaths, type OptimizableSetting } from "./optimize-paths";
 import { useFormulaScope } from "./formula";
 import {foreignDescription} from "./foreign-model";
 import { portfolioGridProblems } from "./portfolio-model";
-import { ErrorNotice, isProvisional, Loading, ProvisionalStrip, ServerLabel, tone } from "./ui";
+import { ErrorNotice, HelpTip, isProvisional, Loading, ProvisionalStrip, ServerLabel, tone } from "./ui";
 import { WalkForward } from "./WalkForward";
 import { WalkForwardTab } from "./settings/WalkForwardTab";
 import { OptimizeSurface } from "./OptimizeSurface";
@@ -21,10 +21,17 @@ type TsContext = Omit<RunContext, "spec" | "own" | "catalogue">;
 
 /** The entry / exit rule an optimized setting sits in, worded as on its card, for the optimization sheet's Rules lines. */
 const ruleOf = (spec: Spec, cat: Catalogue) => (path: string) => {
+  const atr = /^(?:short_side\.)?exit\.dual_atr(?=\.)/.exec(path)?.[0];
+  if (atr) return { key: atr, text: "Dual ATR" }; // joins the ATR stop's line from ruleLines
   const key = /^(?:short_side\.)?(?:entry\.all|exit\.any)\[\d+\]/.exec(path)?.[0], node = key ? getAt(spec, key) : undefined;
   return key && node ? { key, text: ruleText(node as RuleNode, cat) } : undefined;
 };
 
+/** Walk-forward in plain words, behind the "?" on its row. */
+export const WF_HELP = "Checks whether the best setting keeps working on data it was not picked on. The test period is cut into windows: "
+  + "the optimizer picks the best setting on the in-sample part (for example 4 years), then that setting is traded on the next out-of-sample part "
+  + "(for example 1 year); the window then moves on by the step and repeats. Only the out-of-sample results are joined, so the result shows how "
+  + "optimizing would have done in real time. Example: pick on 2010-2013, trade 2014; pick on 2011-2014, trade 2015; and so on.";
 const MAX_VALUES = 1000;
 const RANK_LABELS: Record<string, string> = { cagr: "CAGR", sharpe: "Sharpe", monthly_thickness: "Monthly thickness", expectancy_ratio: "Expectancy ratio", mar: "CAR/MDD" };
 const SPLIT_STATS: [string, string][] = [["total_return", "Total return"], ["cagr", "CAGR"], ["sharpe", "Sharpe"], ["trades", "Trades"]];
@@ -177,7 +184,9 @@ export function OptimizePanel(props: {
       {result && (result.kind === "lab_individual_optimization" ? <IndividualResults result={result} label={(p) => settings.find((s) => s.path === p)?.label ?? p} />
         : <LabOptimizeResultView result={result} spec={spec} ranSpec={last.current?.spec ?? spec} catalogue={catalogue} settings={settings} market={market} instrumentLabel={instrumentLabel} onApply={onApply} onRun={onRun} ticker={ticker} ts={ts} />)}
       {/* kept but out of the way: closed until opened, with its options inside */}
-      {onWalkforward && !spec.portfolio && <details className="lab-wf-fold" data-lab-wf-fold><summary>Walk-forward</summary>
+      {onWalkforward && !spec.portfolio && <details className="lab-wf-fold" data-lab-wf-fold><summary>Walk-forward{" "}
+        {/* hover / focus shows the help; a click on it does not open or close the section */}
+        <span data-lab-wf-help onClick={(e) => e.preventDefault()}><HelpTip name="Walk-forward" text={WF_HELP} /></span></summary>
         <WalkForwardTab spec={spec} dates={dates} />
         <WalkForward dates={dates} spec={withOptimize(spec, dims)} blocked={tooLong || combos === 0 || tooBig || running !== null || retryUntil > 0}
         onTried={onTried} onRunning={setWalking}
@@ -215,10 +224,6 @@ function LabOptimizeResultView({ result: raw, spec, ranSpec, catalogue, settings
       {isProvisional(market) && <ProvisionalStrip note={result.provisional_note} instrumentLabel={("instrument" in result ? result.instrument.label : undefined) ?? instrumentLabel} />}
       {"membership" in result && <p className="rnote">{result.reference.ticker} reference · {result.membership.note}</p>}
       {result.foreign?.map(f=><p className="cap" key={f.ticker}>{foreignDescription(f)}</p>)}
-      <p className="cap">
-        {result.combos.toLocaleString("en-US")} settings tested · {rank.eligible.toLocaleString("en-US")} eligible (at least {rank.min_trades} trades) · {rank.distinct.toLocaleString("en-US")} distinct
-        {result.skipped > 0 && ` · ${result.skipped.toLocaleString("en-US")} skipped: Initial ATR × above Favour ATR ×`}
-      </p>
       {rank.eligible === 0 ? <p className="rnote" data-lab-no-eligible>{result.skipped > 0 && !result.table?.length
         ? "Every combination has Initial ATR × above Favour ATR ×. Keep the Initial ATR × range at or below the Favour ATR × range." : COPY.noEligible(rank.min_trades)}</p> : list && !result.split ? (
         <TopSheetRows list={list} nd={dims.length}

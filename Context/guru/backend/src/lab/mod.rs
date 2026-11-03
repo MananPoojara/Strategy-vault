@@ -73,6 +73,12 @@ pub mod x_tv_auto;
 pub mod x_tv_misc;
 pub mod x_tv_booker;
 pub mod x_tv_listed;
+pub mod x_gap_f;
+pub mod x_gap_c;
+pub mod x_gap_e;
+pub mod x_gap_b;
+pub mod x_gap_a;
+pub mod x_gap_d;
 #[cfg(test)]
 pub mod testdata;
 #[cfg(test)]

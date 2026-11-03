@@ -114,7 +114,12 @@ it("walk-forward preview: Optimization target, window table and dates beside the
   // hidden until asked for: a closed section under the optimizer, with its options inside
   const fold = host.querySelector<HTMLDetailsElement>("details[data-lab-wf-fold]")!;
   expect(fold.open).toBe(false);
-  expect(fold.querySelector("summary")!.textContent).toBe("Walk-forward");
+  expect(fold.querySelector("summary")!.textContent).toMatch(/^Walk-forward \?/);
+  // the "?" explains walk-forward on hover / focus; clicking it leaves the section closed
+  const help = fold.querySelector<HTMLElement>("[data-lab-wf-help] .help-q")!;
+  expect(help.getAttribute("aria-label")).toContain("in-sample");
+  await act(async () => help.click());
+  expect(fold.open).toBe(false);
   const wf = fold.querySelector("[data-lab-walkforward]")!;
   expect(wf.textContent).toContain("target CAR/MDD");
   expect(wf.textContent).not.toContain("Pick by");

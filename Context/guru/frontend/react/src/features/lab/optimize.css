@@ -141,3 +141,5 @@
 .lab-page [data-lab-optimize] .lab-wf-fold { margin-top: 16px; border-top: 1px solid var(--rule); padding-top: 10px; }
 .lab-page [data-lab-optimize] .lab-wf-fold > summary { cursor: pointer; font: 600 13px var(--font); color: var(--ink2); }
 .lab-page [data-lab-optimize] .lab-wf-fold[open] > summary { margin-bottom: 10px; }
+/* Walk-forward "?": opens to the right of the row, wide enough to read as a short paragraph */
+.lab-page [data-lab-wf-help] .help-tip { right: auto; left: -6px; max-width: 420px; font-weight: 400; text-align: left; white-space: normal; }

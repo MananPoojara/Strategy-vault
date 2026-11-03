@@ -89,3 +89,8 @@ it("ruleLines: every rule switched on, keyed by its path, worded with the condit
   expect(l.filter[0].text).toMatch(/^RSI\(14\) is above 50/);
   expect(l.exit).toEqual([{ key: "exit.any[0]", text: "Exit rule 1: RSI(14) crosses below 70" }]);
 });
+
+it("ruleLines: the Dual ATR stop is keyed by its path, so the optimization sheet joins its ranges to that line", () => {
+  const s = { ...own, exit: { any: [], dual_atr: { initial: { period: 5, mult: 2 }, favour: { period: 5, mult: 4 } } } } as Spec;
+  expect(ruleLines(s, cat).exit).toEqual([{ key: "exit.dual_atr", text: "ATR (5, 2) (5, 4)" }]);
+});
