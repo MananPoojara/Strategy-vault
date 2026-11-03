@@ -8,7 +8,7 @@ use Status::*;
 
 pub const BOOK: &str = "atm04";
 /// Admitted ids (authors/activetrader/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["atm04_glitch", "atm04_monthly_bo", "atm04_cci_weekly", "atm04_wma", "atm04_55_trail", "atm04_55_simple", "atm04_four_pct", "atm04_rsi_agita"];
+pub const REVIEWED: &[&str] = &["atm04_blues", "atm04_glitch", "atm04_monthly_bo", "atm04_cci_weekly", "atm04_wma", "atm04_55_trail", "atm04_55_simple", "atm04_four_pct", "atm04_rsi_agita"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub fn catalogue() -> Vec<StrategyDef> {

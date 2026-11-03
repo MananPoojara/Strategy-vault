@@ -5,7 +5,7 @@
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 /// Admitted 2026-10-24 (authors/kaufman/admission/SOURCE-CONTRACT.md): independent ledgers, US and India, 0 mismatches.
-pub const REVIEWED: &[&str] = &["kfst_exp_pt", "kfst_exp_stop"]; // kfst_ama held: its Box 8-5 filter is in price points (engine guard)
+pub const REVIEWED: &[&str] = &["kfst_exp_pt", "kfst_exp_stop", "kfst_ama"]; // kfst_ama admitted 4 Nov 2026 (D1-05, decision 186): default = the text's self-adjusting filter
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 pub const BOOK: &str = "kfst";
@@ -32,7 +32,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "F|\"if(AMA > AMA[1] and AMA[1] < AMA[2]) then extlow = AMA[1]; if(AMA < AMA[1] and AMA[1] > AMA[2]) then exthigh = AMA[1]\" (Box 8-5)",
             "E|\"if(currentbar > period + 5) then begin if(AMA > AMA[1] and AMA - extlow > filter) then buy on close; if(AMA < AMA[1] and exthigh - AMA > filter) then sell on close\" filter(.1) (Box 8-5); \"Buy when AMA - @lowest(AMA,n) > filter; Sell when @highest(AMA,n) - AMA > filter\" (p.145)",
             "X|Always in: \"enter and hold a long position when the trendline moves up, and reverse to a short position when the trendline turns down\" (p.143)",
-        ], "Default = the Box 8-5 system code: filter .1 in price points (on an index this is almost no filter). The text defines the filter as a percentage of one standard deviation of the AMA changes ('filter = percentage x @std_dev(AMA - AMA[1],n)', p.144, n normally 20, .10 in the Box 8-3 spreadsheet): p.fmode=1 uses .1 x population std dev of the last 20 one-day AMA changes. Differs from kftsm_kama (TSM4 CD driver: one-day change against the filter)."),
+        ], "[Declared readings] Default = the text's self-adjusting filter (p.144: 'filter = percentage x @std_dev(AMA - AMA[1],n)', 'Normally, the filter is calculated over a period of 20 days'): .1 x the population standard deviation of the last 20 one-day AMA changes (percentage .1 = the Box 8-5 input value; the text gives .01 to 1.0 as the usable range, p.144). The Box 8-5 code's filter(.1) is in price points of the markets Kaufman tested and has no meaning on an index, ETF or stock, so it is only the labelled option p.fmode=0 (D1-05, decision 186). Orders on the close, always in once the first signal fires (p.143). Differs from kftsm_kama (TSM4 CD driver: one-day change against the filter)."),
         d("kfst_multi_pt", "Several profit objectives", "Ch 5 · Profit-taking", "Long/Short", NotTestable("illustrative arithmetic only; no entry rule or target levels for a system (p.83-88)"), &[
             "X|\"exit at $53, $55, and $57\" style multiple objectives (p.83-86)",
         ], ""),
@@ -64,7 +64,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     Some(match id {
         "kfst_exp_pt" => vec![p("speed", "Exponential trend speed (days)", 40., 2., 200., 1.), p("ptlevel", "Profit-taking level (% of close)", 3., 0.5, 100., 0.5)],
         "kfst_exp_stop" => vec![p("speed", "Exponential trend speed (days)", 40., 2., 300., 1.), p("stop", "Stop-loss (% loss at the close)", 0.5, 0.02, 10., 0.01)],
-        "kfst_ama" => vec![p("period", "Efficiency ratio period", 10., 2., 50., 1.), p("filter", "Filter (points, or x std dev when fmode=1)", 0.1, 0., 5., 0.01), p("fmode", "0 = code (points), 1 = text (x std dev of AMA changes)", 0., 0., 1., 1.), p("sdays", "Std-dev days (fmode=1)", 20., 5., 60., 1.)],
+        "kfst_ama" => vec![p("period", "Efficiency ratio period", 10., 2., 50., 1.), p("filter", "Filter (x std dev; points when fmode=0)", 0.1, 0., 5., 0.01), p("fmode", "1 = text p.144 (x std dev of AMA changes, default), 0 = [Box 8-5 code] price points", 1., 0., 1., 1.), p("sdays", "Std-dev days (fmode=1)", 20., 5., 60., 1.)],
         "kfst_multi_pt" | "kfst_er_profit" | "kfst_filters" | "kfst_reverse_opt" | "kfst_step_forward" => vec![],
         _ => return None,
     })

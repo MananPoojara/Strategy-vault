@@ -2,8 +2,8 @@ import type {AuthorFile} from '../author-files';
 
 export default {
   order: 1000,
-  author: { id: "schutzman", name: "Fred G. Schutzman", tagline: "CMT, system developer and money manager · two printed TradeStation systems run here", books: [
-    { id: "fsdps", sourceIds: [], title: "Developing Profitable Trading Systems: from Discretionary to Mechanical", year: 1997, blurb: "Schutzman (TAG seminar workbook) · Zweig-style reversal on a 2% rise from the lowest close or a 6% fall from the highest close; MACD rising with a close under the 5-day Bollinger band buys, MACD falling with a close over the upper band sells (stop and reverse). The counter-trend stochastic system is held (TradeStation's SlowD smoothing not printed)" }] },
+  author: { id: "schutzman", name: "Fred G. Schutzman", tagline: "CMT, system developer and money manager · three printed TradeStation systems run here", books: [
+    { id: "fsdps", sourceIds: [], title: "Developing Profitable Trading Systems: from Discretionary to Mechanical", year: 1997, blurb: "Schutzman (TAG seminar workbook) · Zweig-style reversal on a 2% rise from the lowest close or a 6% fall from the highest close; MACD rising with a close under the 5-day Bollinger band buys, MACD falling with a close over the upper band sells (stop and reverse). The counter-trend system fades ten days overbought or oversold on SlowD(10) when it returns to neutral, with a 20-day low/high stop (legacy TradeStation SlowD smoothing)" }] },
   identities: ["Fred G. Schutzman"],
   profile: {
     "kind": "person",

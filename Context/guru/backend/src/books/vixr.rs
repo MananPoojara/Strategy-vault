@@ -177,8 +177,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("vixr_all", "All CVR signals together (Section Four)", NotTestable("multi-contract portfolio: one contract per signal, positions overlap; the engine runs one position per ticker"),
           &[], "\"one S&P ($250/point) for each signal (multiple signals trade multiple contracts equal to the number of signals) with no stops ... and exited in three days (two days for the CVR 2, 6 and 7)\": over $1.8 million 1/1/93-8/6/01, nearly 3 of 4 months profitable. Each CVR is coded on its own above.",
           claim("~1300 signals", "~65%", "-", "2-3 days", "1/1/93 - 8/6/01")),
-        d("vixr_stocks", "Trading CVR signals with stocks", NotTestable("discretionary"),
-          &[], "On a CVR buy, buy SPY or the strongest heavy-weight stocks by relative strength (sell the weakest on sells). No relative-strength formula or universe is given.", None),
+        d("vixr_stocks", "Trading CVR signals with stocks", NotTestable("covered by the CVR rules on SPY; the stock half has no relative-strength formula or universe"),
+          &[], "On a CVR buy, buy SPY or the strongest heavy-weight stocks by relative strength (sell the weakest on sells). The SPY half is covered by the CVR 1-11 cards above, which run on SPY. The stock half stays held: no relative-strength formula or stock universe is given (D1 CUD-11, decision 186).", None),
         d("vixr_options", "Trading CVR signals with options", NotTestable("needs option chains"),
           &[], "Buy signals: sell OEX puts / put spreads; no mechanical rules.", None),
     ]
