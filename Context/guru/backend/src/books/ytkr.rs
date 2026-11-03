@@ -48,149 +48,203 @@ fn def(id: &'static str, name: &'static str, dir: &'static str, rules: &'static 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![
         def(INSIDE, "Inside Day", "Short", &[
-            "F|Yesterday was an inside day (high below and low above the day before) and an NR4 day (its range narrower than each of the 3 days before)",
-            "E|Today opens with a gap down (open below yesterday's low); short at the open less the open % once the low reaches it",
-            "X|Cover at today's close",
+            "F|Yesterday's High < High 2 days ago and Yesterday's Low > Low 2 days ago (inside day)",
+            "F|Yesterday's range < the range of each of the 3 days before (NR4)",
+            "F|Today's Open < Yesterday's Low (gap down)",
+            "E|Short at Open − Open % once the Low reaches it",
+            "X|Cover at today's Close",
         ], "Inside Day (Kora Reddy AFL): short, intraday. Open % default 0.25 (team NIFTY setting). Note: the AFL fills at open - % when the day's low reaches it."),
         def(OUTSIDE, "Outside Day", "Long", &[
-            "F|Yesterday was an outside day (high above and low below the day before) and was not a WS7 day (its range was not wider than each of the 6 days before)",
-            "E|Today opens with a gap up (open above yesterday's high); buy at the open plus the open % once the high reaches it",
-            "X|Sell at today's close",
+            "F|Yesterday's High > High 2 days ago and Yesterday's Low < Low 2 days ago (outside day)",
+            "F|Yesterday's range is not > the range of each of the 6 days before (not WS7)",
+            "F|Today's Open > Yesterday's High (gap up)",
+            "E|Buy at Open + Open % once the High reaches it",
+            "X|Sell at today's Close",
         ], "Outside Day (Kora Reddy AFL): long, intraday. Open % default 0.75 (team NIFTY setting)."),
         def(TURTLE, "Turtle Short", "Short", &[
-            "F|Today is the chosen weekday (default Monday) and yesterday's close was the lowest close of the last N days including yesterday (default 14)",
-            "E|Today opens with a gap down; short at the open less the open % (default 0.5) once the low reaches it",
-            "X|Cover at today's close",
+            "F|Today = Entry weekday (default Monday)",
+            "F|Yesterday's Close = lowest Close of the last N days, including yesterday (default 14)",
+            "F|Today's Open < Yesterday's Low (gap down)",
+            "E|Short at Open − Open % (default 0.5) once the Low reaches it",
+            "X|Cover at today's Close",
         ], "Turtle Short (Kora Reddy AFL): short, intraday. The AFL text says Friday or Monday; its code tests one chosen weekday, kept here as a setting. Defaults (Monday, 0.5%, 14) are the team NIFTY setting."),
         def(TURTLE_GAPUP, "Turtle Short on GapUp", "Short", &[
-            "F|Today is the chosen weekday (default Friday) and yesterday's close was the lowest close of the last N days including yesterday (default 4)",
-            "E|Today opens with a gap up; short at the open less the open % (default 1) once the low reaches it",
-            "X|Cover at today's close",
+            "F|Today = Entry weekday (default Friday)",
+            "F|Yesterday's Close = lowest Close of the last N days, including yesterday (default 4)",
+            "F|Today's Open > Yesterday's High (gap up)",
+            "E|Short at Open − Open % (default 1) once the Low reaches it",
+            "X|Cover at today's Close",
         ], "Turtle Short on GapUp (Kora Reddy AFL): short, intraday. Defaults (Friday, 1%, 4) are the team NIFTY setting; the AFL offers Monday or Friday."),
         def(MAMM, "Momentum Aided Manic Monday", "Short", &[
-            "F|Today is the entry weekday (default Friday), today's close is below the lowest close of the previous N days (default 14)",
-            "F|Today's high is below R1 and today's close is below S1 (pivots from yesterday: PP = (H+L+C)/3, R1 = 2PP - L, S1 = 2PP - H)",
-            "E|Short at today's close",
-            "X|Cover at the close of the next exit weekday (default Monday)",
+            "F|Today = Entry weekday (default Friday)",
+            "F|Today's Close < lowest Close of the previous N days (default 14)",
+            "F|Today's High < R1",
+            "F|Today's Close < S1",
+            "F|Pivots from yesterday: PP = (H+L+C)/3, R1 = 2PP − L, S1 = 2PP − H",
+            "E|Short at today's Close",
+            "X|Cover at the Close of the next Exit weekday (default Monday)",
         ], "Momentum Aided Manic Monday (Kora Reddy AFL): short at the close, held to the exit weekday's close; if that weekday is a holiday the trade waits for the next one, as in the AFL. Defaults (Friday, Monday, 14) are the team NIFTY setting."),
         def(GAP, "Gap Open to Close", "Long/Short", &[
-            "F|Today is the chosen weekday (default Monday) and opens with the chosen gap: 1 gap up, 2 gap down, 3 lap up, 4 lap down",
-            "E|Side 1 long: buy at the open plus the open % once the high reaches it; side 2 short: sell at the open less the open % once the low reaches it",
-            "X|Exit at today's close",
+            "F|Today = Entry weekday (default Monday)",
+            "F|Today's Open has the chosen gap: 1 gap up, 2 gap down, 3 lap up, 4 lap down",
+            "E|Side 1, long: Buy at Open + Open % once the High reaches it",
+            "E|Side 2, short: Short at Open − Open % once the Low reaches it",
+            "X|Exit at today's Close",
         ], "Buy at GapUp or GapDown & Sell at Close (Kora Reddy AFL): intraday, long or short. Defaults (Monday, 0.25%) are the team NIFTY setting; gap type and side default to gap up, long."),
         def(BLOOD, "Buy when there is blood on street", "Long", &[
-            "F|Today is the entry weekday (default Tuesday) and today's close is below the lowest close of the previous N days (default 10)",
-            "F|Today, yesterday and the day before are red candles (open above close); version 3 also needs today's close below yesterday's low",
-            "E|Buy at today's close",
-            "X|Sell at the next bar's close",
+            "F|Today = Entry weekday (default Tuesday)",
+            "F|Today's Close < lowest Close of the previous N days (default 10)",
+            "F|Today, Yesterday and 2 days ago: Open > Close (red candles)",
+            "F|Version 3 only: Today's Close < Yesterday's Low",
+            "E|Buy at today's Close",
+            "X|Sell at the next day's Close",
         ], "Buy when there is blood on street (Kora Reddy AFL), coded as the AFL is written. Team checklist: Incorrect, remark \"down day\" (the AFL reads a down day as a red candle, open above close). Versions 1 and 2 are the same code in the AFL. Defaults (version 1, Tuesday, 10) are the team NIFTY setting; the team ran it at 0.04% commission a side."),
         def(THURSDAY, "Buying Thursday", "Long", &[
-            "F|Today is the entry weekday (default Thursday) and today opens above yesterday's close",
-            "F|Today's close is above today's open and above R1, and today's low stays above S1 (pivots from yesterday: PP = (H+L+C)/3, R1 = 2PP - L, S1 = 2PP - H)",
-            "E|Buy at today's close",
-            "X|Sell at the next bar's close",
+            "F|Today = Entry weekday (default Thursday)",
+            "F|Today's Open > Yesterday's Close",
+            "F|Today's Close > Today's Open",
+            "F|Today's Close > R1",
+            "F|Today's Low > S1",
+            "F|Pivots from yesterday: PP = (H+L+C)/3, R1 = 2PP − L, S1 = 2PP − H",
+            "E|Buy at today's Close",
+            "X|Sell at the next day's Close",
         ], "Buying Thursday (Kora Reddy AFL), coded as the AFL is written. Team checklist: Incorrect, remark \"Today's close was up and above R1\" (the AFL tests close above today's open, not above yesterday's close). The team's workbook says 06-09-2021 but its results match a run to 26-10-2021; 0.04% commission a side."),
         def(THURSDAY_MOD, "Buying Thursday (Modified)", "Long", &[
-            "F|All the Buying Thursday conditions on the entry weekday (default Thursday)",
-            "F|Two bars back is a Tuesday with a red candle; or, through the AFL's state flag, three bars back is a Monday with a red candle two bars back",
-            "E|Buy at today's close",
-            "X|Sell at the next bar's close",
+            "F|All the Buying Thursday conditions, on the Entry weekday (default Thursday)",
+            "F|2 days ago is a Tuesday with a red candle (Open > Close)",
+            "F|Or, through the AFL's state flag: 3 days ago is a Monday and 2 days ago is a red candle",
+            "E|Buy at today's Close",
+            "X|Sell at the next day's Close",
         ], "Buying Thursday (Modified) (Kora Reddy AFL), coded as the AFL is written, including its abc state flag. Team checklist: Incorrect, remark \"Tuesday's (or Monday's if Tuesday happens to be a holiday) close was down\" (the AFL checks a red candle by bar position). 0.04% commission a side in the team's run."),
         def(MANIC, "Manic Monday", "Short", &[
-            "F|Today is the entry weekday (default Friday); today and yesterday are red candles (open above close)",
-            "F|Today's high is below R1 (pivot from yesterday: PP = (H+L+C)/3, R1 = 2PP - L)",
-            "E|Short at today's close",
-            "X|Cover at the close of the next exit weekday (default Monday); the same bar when entry and exit weekday are equal",
+            "F|Today = Entry weekday (default Friday)",
+            "F|Today and Yesterday: Open > Close (red candles)",
+            "F|Today's High < R1 (pivot from yesterday: PP = (H+L+C)/3, R1 = 2PP − L)",
+            "E|Short at today's Close",
+            "X|Cover at the Close of the next Exit weekday (default Monday)",
+            "X|If Entry and Exit weekday are the same: Cover at the same day's Close",
         ], "Manic Monday (Kora Reddy AFL), coded as the AFL is written. Team checklist: Incorrect, remark \"Today's open is down\" (the AFL has no test of today's open against yesterday's close). Defaults (Friday, Monday) are the team setting; the team's run used 0.04% commission a side."),
         def(TUMBLES, "Three tumbles and a jump", "Long", &[
-            "F|Today is any weekday except Monday (the AFL's weekday setting is not used by its code)",
-            "F|The last three bars are red candles (open above close) and today opens with a gap up (open above yesterday's high)",
-            "E|Buy at the open plus the open % once the high reaches it",
-            "X|Sell at today's close",
+            "F|Today ≠ Monday (the AFL's weekday setting is not used by its code)",
+            "F|Today, Yesterday and 2 days ago: Open > Close (red candles)",
+            "F|Today's Open > Yesterday's High (gap up)",
+            "E|Buy at Open + Open % once the High reaches it",
+            "X|Sell at today's Close",
         ], "Three tumbles and a jump (Kora Reddy AFL), coded as the AFL is written. Team checklist: Incorrect, remark \"Last three trading days were down closes\" (the AFL tests red candles), and \"Weekdays are not in param\". Default open % 0.25 is the team NIFTY setting."),
         def(TUMBLES_MOD, "Modified Three tumbles and a jump", "Long", &[
-            "F|Today is the chosen weekday (default Wednesday) and yesterday's close was the lowest close of the last N days including yesterday (default 6)",
-            "F|The last three bars are red candles (open above close); no gap condition",
-            "E|Buy at the open plus the open % (default 0.25) once the high reaches it",
-            "X|Sell at today's close",
+            "F|Today = Entry weekday (default Wednesday)",
+            "F|Yesterday's Close = lowest Close of the last N days, including yesterday (default 6)",
+            "F|Today, Yesterday and 2 days ago: Open > Close (red candles)",
+            "F|No gap condition",
+            "E|Buy at Open + Open % (default 0.25) once the High reaches it",
+            "X|Sell at today's Close",
         ], "Modified Three tumbles and a jump (Kora Reddy AFL), coded as the AFL is written. Team checklist: Incorrect, remark \"Previous 3 days were down closes\" (the AFL tests red candles). Defaults (Wednesday, 0.25%, 6) are the team NIFTY setting."),
         def(TWO_TUMBLE, "Two Tumble & Another Tumble", "Short", &[
-            "F|Today is the chosen weekday (default Monday) and the last two bars are red candles (close below open)",
-            "E|Short at the open less the open % (default 0.25) once the low reaches it",
-            "X|Cover at today's close",
+            "F|Today = Entry weekday (default Monday)",
+            "F|Yesterday and 2 days ago: Close < Open (red candles)",
+            "E|Short at Open − Open % (default 0.25) once the Low reaches it",
+            "X|Cover at today's Close",
         ], "Two Tumble & Another Tumble for Short Intraday FO (Kora Reddy AFL), coded as the AFL is written. Team checklist: Incorrect, remark \"Yesterday and day before yesterday were down closes\" (the AFL tests red candles). The workbook's Info says 01-01-2007, but its results match a run from the start of the data; 0.02% commission a side."),
         def(STEPS, "Three steps and a stumble", "Short", &[
-            "F|Today is the chosen weekday (default Tuesday); yesterday's close is above the highest close of the N bars before it (default 16)",
-            "F|The last three bars are green candles (close above open) and today opens with a gap up",
-            "E|Short at the open plus the open % (default 0.25) once the high reaches it",
-            "X|Cover at today's close",
+            "F|Today = Entry weekday (default Tuesday)",
+            "F|Yesterday's Close > highest Close of the N days before it (default 16)",
+            "F|Today, Yesterday and 2 days ago: Close > Open (green candles)",
+            "F|Today's Open > Yesterday's High (gap up)",
+            "E|Short at Open + Open % (default 0.25) once the High reaches it",
+            "X|Cover at today's Close",
         ], "Three steps and a stumble (Kora Reddy AFL), coded as the AFL is written. Team checklist: Incorrect, remark \"close up\" (the AFL tests green candles). The AFL shorts above the open. Defaults (Tuesday, 0.25%, 16) are the team NIFTY setting."),
         def(DUDD[0], "DUDD Version 1", "Short", &[
-            "F|Today is a WS7 day (today's range wider than each of the 6 days before); today red, yesterday green, the day before green, 3 days ago red",
-            "E|Short at today's close",
-            "X|Cover at the next bar's close",
+            "F|Today's range > the range of each of the 6 days before (WS7)",
+            "F|Today red, Yesterday green, 2 days ago green, 3 days ago red",
+            "E|Short at today's Close",
+            "X|Cover at the next day's Close",
         ], "DUDD Version 1 (Kora Reddy AFL), coded as the AFL is written. Team checklist: Incorrect, remark \"Today's open is down\" (the AFL tests candle colours). The workbook's Info says 1-1-2007, but its trade lists match a run from the start of the data; 0.04% commission a side."),
         def(DUDD[1], "DUDD Version 2", "Short", &[
-            "F|Yesterday was an NR4 day (its range narrower than each of the 3 days before); today opens with a gap down",
-            "F|Yesterday red, the day before green, 3 days ago red (candle colours)",
-            "E|Short at the open less the open % (default 0.25); the AFL does not check the low reaches it, so the fill is held within the day's range",
-            "X|Cover at today's close",
+            "F|Yesterday's range < the range of each of the 3 days before (NR4)",
+            "F|Today's Open < Yesterday's Low (gap down)",
+            "F|Yesterday red, 2 days ago green, 3 days ago red",
+            "E|Short at Open − Open % (default 0.25)",
+            "E|No check that the Low reaches it; the fill is held within the day's range",
+            "X|Cover at today's Close",
         ], "DUDD Version 2 (Kora Reddy AFL), coded as the AFL is written. Team checklist: Incorrect, remark \"down close\". The AFL sets the short price without checking the day's low; AmiBroker then fills at the low, kept here. Trade lists match a run from the start of the data; 0.02% commission a side."),
         def(DUDD[2], "DUDD Version 3", "Short", &[
-            "F|Yesterday was a WS4 day (its range wider than each of the 3 days before); today opens with a gap down",
-            "F|Yesterday red, the day before green, 3 days ago red (candle colours)",
-            "E|Short at the open less the open % (default 0.25), held within the day's range",
-            "X|Cover at today's close",
+            "F|Yesterday's range > the range of each of the 3 days before (WS4)",
+            "F|Today's Open < Yesterday's Low (gap down)",
+            "F|Yesterday red, 2 days ago green, 3 days ago red",
+            "E|Short at Open − Open % (default 0.25)",
+            "E|The fill is held within the day's range",
+            "X|Cover at today's Close",
         ], "DUDD Version 3 (Kora Reddy AFL), coded as the AFL is written. Team checklist: Incorrect, remark \"Today's open is down\". Same fill as Version 2; 0.02% commission a side."),
         def(DUDD[3], "DUDD Version 4", "Short", &[
-            "F|Yesterday was an NR7 day (its range narrower than each of the 6 days before); today opens with a gap down",
-            "F|Yesterday, the day before and 3 days ago were red candles",
-            "E|Short at the open less the open % (default 0.25), held within the day's range",
-            "X|Cover at today's close",
+            "F|Yesterday's range < the range of each of the 6 days before (NR7)",
+            "F|Today's Open < Yesterday's Low (gap down)",
+            "F|Yesterday, 2 days ago and 3 days ago: red candles",
+            "E|Short at Open − Open % (default 0.25)",
+            "E|The fill is held within the day's range",
+            "X|Cover at today's Close",
         ], "DUDD Version 4 (Kora Reddy AFL), coded as the AFL is written. Team checklist: Incorrect, remark \"Today's open is down\". Same fill as Version 2; 0.02% commission a side."),
         def(DUDD[4], "DUDD Version 5", "Short", &[
-            "F|Yesterday was an NR7 day; today opens with a gap down",
-            "F|Yesterday red, the day before green, 3 days ago red (candle colours)",
-            "E|Short at the open less the open % (default 0.25), held within the day's range",
-            "X|Cover at today's close",
+            "F|Yesterday was an NR7 day",
+            "F|Today's Open < Yesterday's Low (gap down)",
+            "F|Yesterday red, 2 days ago green, 3 days ago red",
+            "E|Short at Open − Open % (default 0.25)",
+            "E|The fill is held within the day's range",
+            "X|Cover at today's Close",
         ], "DUDD Version 5 (Kora Reddy AFL), coded as the AFL is written. Team checklist: Incorrect, remark \"Today's open is down\". Same fill as Version 2; 0.02% commission a side."),
         def(DUDD[5], "DUDD Version 6", "Short", &[
-            "F|Yesterday was an NR7 day; today opens with a gap down",
-            "F|Yesterday green, the day before green, 3 days ago red (candle colours)",
-            "E|Short at the open less the open % (default 0.25), held within the day's range",
-            "X|Cover at today's close",
+            "F|Yesterday was an NR7 day",
+            "F|Today's Open < Yesterday's Low (gap down)",
+            "F|Yesterday green, 2 days ago green, 3 days ago red",
+            "E|Short at Open − Open % (default 0.25)",
+            "E|The fill is held within the day's range",
+            "X|Cover at today's Close",
         ], "DUDD Version 6 (Kora Reddy AFL), coded as the AFL is written. Team checklist: Incorrect, remark \"Today's open is down\". Same fill as Version 2; 0.02% commission a side."),
         def(DUDD[6], "DUDD Version 7", "Short", &[
-            "F|Yesterday was a WS7 day (its range wider than each of the 6 days before); today opens with a gap down",
-            "F|Yesterday red, the day before green, 3 days ago red (candle colours)",
-            "E|Short at the open less the open % (default 0.25), held within the day's range",
-            "X|Cover at today's close",
+            "F|Yesterday's range > the range of each of the 6 days before (WS7)",
+            "F|Today's Open < Yesterday's Low (gap down)",
+            "F|Yesterday red, 2 days ago green, 3 days ago red",
+            "E|Short at Open − Open % (default 0.25)",
+            "E|The fill is held within the day's range",
+            "X|Cover at today's Close",
         ], "DUDD Version 7 (Kora Reddy AFL), coded as the AFL is written. Team checklist: Incorrect, remark \"Today's open is down\". Same fill as Version 2; 0.02% commission a side."),
         def(OPEN_CLOSE, "Buy at Open or Close", "Long", &[
-            "F|Today is the chosen weekday (default Thursday); no other condition",
-            "E|Mode 1: buy at the open plus the open %, with no check that the high reaches it (the fill is held within the day's range); mode 2 (default): buy at the close",
-            "X|Mode 1: sell at today's close; mode 2: sell at the next bar's close",
+            "F|Today = Entry weekday (default Thursday)",
+            "F|No other condition",
+            "E|Mode 1: Buy at Open + Open %, with no check that the High reaches it (the fill is held within the day's range)",
+            "E|Mode 2 (default): Buy at today's Close",
+            "X|Mode 1: Sell at today's Close",
+            "X|Mode 2: Sell at the next day's Close",
         ], "Buy at Open or Close and Sell at same day Close Or Next day Close (Kora Reddy AFL), coded as the AFL is written; the team's checklist gives no verdict. The team ran mode 1 at 0.02% and mode 2 at 0.04% commission a side over all quotes. Their mode-1 runs lose about 99%, after which AmiBroker skips trades the account cannot buy one unit of; this vault's normalized returns take every trade."),
         def(OPEN_CLOSE_LS, "BuyShort at Open or Close", "Long/Short", &[
-            "F|Today is the chosen weekday (default Monday); no other condition",
-            "E|Mode 1 (default): enter at the open plus the open % (default 0, the team's setting) for long and short alike, with no check that the bar reaches it (held within the day's range); mode 2: enter at the close",
-            "X|Mode 1: exit at today's close; mode 2: exit at the next bar's close",
+            "F|Today = Entry weekday (default Monday)",
+            "F|No other condition",
+            "E|Mode 1 (default): Enter at Open + Open % (default 0, the team's setting), long and short alike, with no check that the bar reaches it (held within the day's range)",
+            "E|Mode 2: Enter at today's Close",
+            "X|Mode 1: Exit at today's Close",
+            "X|Mode 2: Exit at the next day's Close",
         ], "BuyShort at Open or Close and SellCover at same day Close Or Next day Close (Kora Reddy AFL), coded as the AFL is written; the team's checklist gives no verdict. Unlike the other Kora strategies, the team ran it on the NSE spot indices, not futures: on NIFTY 50 (03-01-2000 to 31-03-2022) and NIFTY BANK (09-06-2005 to 31-03-2022), open % 0 and no commission, it reproduces all 40 rows of the team's 2022 optimization workbooks. The AFL prices a short at open PLUS the %."),
         def(MON_FRI, "Buying Mondays & Fridays", "Long", &[
-            "F|Today is the chosen weekday (default Monday); today opens above yesterday's close and yesterday opened above the close of the day before",
-            "F|Yesterday was a green candle (close above open)",
-            "E|Buy at the open plus the open % (default 0.25) once the high reaches it",
-            "X|Sell at today's close",
+            "F|Today = Entry weekday (default Monday)",
+            "F|Today's Open > Yesterday's Close",
+            "F|Yesterday's Open > Close 2 days ago",
+            "F|Yesterday's Close > Yesterday's Open (green candle)",
+            "E|Buy at Open + Open % (default 0.25) once the High reaches it",
+            "X|Sell at today's Close",
         ], "Buying Mondays & Fridays for Intraday FO (Kora Reddy AFL), coded as the AFL is written; the team's checklist gives no verdict. Defaults (Monday, 0.25%) are the team setting; 0.02% commission a side."),
         def(CANDLE, "Entry Based on Candle Color", "Long/Short", &[
-            "F|Today's candle has the chosen colour: 1 green (close above open, default), 2 red (open above close)",
-            "E|Side 1 long (default) or 2 short at today's close",
-            "X|Exit at the next bar's close",
+            "F|Today's candle has the chosen colour",
+            "F|Colour 1 (default): Close > Open (green)",
+            "F|Colour 2: Open > Close (red)",
+            "E|Side 1 (default): Buy at today's Close",
+            "E|Side 2: Short at today's Close",
+            "X|Exit at the next day's Close",
         ], "Entry Based on Candle Color (Kora Reddy AFL), coded as the AFL is written; the team's checklist gives no verdict. The team's trade lists (all four colour and side combinations) match a run from the start of the data, not the 2007 in its info sheet; 0.04% commission a side."),
         def(UUDDD, "UUDDD", "Short", &[
-            "F|The last four bars are red candles (open above close) and today opens with a gap down",
-            "E|Short at the open less the open % (default 0.25), with no check that the low reaches it (held within the day's range)",
-            "X|Cover at today's close",
+            "F|Today, Yesterday, 2 days ago and 3 days ago: Open > Close (red candles)",
+            "F|Today's Open < Yesterday's Low (gap down)",
+            "E|Short at Open − Open % (default 0.25)",
+            "E|No check that the Low reaches it; the fill is held within the day's range",
+            "X|Cover at today's Close",
         ], "UUDDD (Kora Reddy AFL), coded as the AFL is written; the team's checklist gives no verdict. The AFL tests four red candles, not the up/up/down/down closes its name and info sheet describe. Trade lists match a run from the start of the data; 0.04% commission a side."),
     ]
 }
@@ -307,12 +361,20 @@ fn intraday(x: &Ctx, from: usize, to: usize, long: bool, pct: f64, setup: impl F
     out
 }
 
+/// The AFLs keep their position in a loop over every bar of the data (`for(i = 1; i < BarCount; i++)`), so a run
+/// that starts later still carries the position held on the day before it; AmiBroker then takes only the entries on
+/// or after the start date. The loops here run from the start of the data and keep the trades entered from `from`.
+fn from_start(mut out: Vec<Trade>, from: usize) -> Vec<Trade> {
+    out.retain(|t| t.legs[0].i >= from);
+    out
+}
+
 /// Enter at the close of a setup bar and exit at the next bar's close (the AFL's `else if(Position ...)` exit, so no
 /// new entry on the exit bar). An entry on the last bar stays open.
 fn close_next(x: &Ctx, from: usize, to: usize, dir: f64, start: usize, setup: impl Fn(usize) -> bool) -> Vec<Trade> {
     let mut out = Vec::new();
     let mut cur: Option<usize> = None;
-    for i in from.max(start)..=to {
+    for i in start..=to {
         match cur {
             None if setup(i) => cur = Some(i),
             None => {}
@@ -327,7 +389,7 @@ fn close_next(x: &Ctx, from: usize, to: usize, dir: f64, start: usize, setup: im
         t.open = true;
         out.push(t);
     }
-    out
+    from_start(out, from)
 }
 
 /// AFL Buying Thursday (Modified): its `abc` flag, set on the entry weekday from the bar two (or three) back, then the
@@ -335,7 +397,7 @@ fn close_next(x: &Ctx, from: usize, to: usize, dir: f64, start: usize, setup: im
 fn thursday_modified(x: &Ctx, from: usize, to: usize, day: i64) -> Vec<Trade> {
     let mut out = Vec::new();
     let (mut abc, mut cur) = (0, None::<usize>);
-    for i in from.max(3)..=to {
+    for i in 3..=to {
         let e = dow(x, i) == day;
         if e && dow(x, i - 2) == 2 && red(x, i - 2) && abc == 0 {
             abc = 1;
@@ -362,7 +424,7 @@ fn thursday_modified(x: &Ctx, from: usize, to: usize, day: i64) -> Vec<Trade> {
         t.open = true;
         out.push(t);
     }
-    out
+    from_start(out, from)
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
@@ -405,7 +467,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let (entry_day, exit_day, len) = (g("entry_day").round() as i64, g("exit_day").round() as i64, n("low_n"));
             let mut out = Vec::new();
             let mut cur: Option<(usize, f64)> = None;
-            for i in from.max(1)..=to {
+            for i in 1..=to {
                 if cur.is_none() {
                     let pp = (x.h[i - 1] + x.l[i - 1] + x.c[i - 1]) / 3.0;
                     let (r1, s1) = (2.0 * pp - x.l[i - 1], 2.0 * pp - x.h[i - 1]);
@@ -430,7 +492,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 }
                 out.push(t);
             }
-            out
+            from_start(out, from)
         }
         BLOOD => {
             let (ver, day, len) = (g("version").round() as i64, g("entry_day").round() as i64, n("low_n"));
@@ -452,7 +514,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let (entry_day, exit_day) = (g("entry_day").round() as i64, g("exit_day").round() as i64);
             let mut out = Vec::new();
             let mut cur: Option<usize> = None;
-            for i in from.max(1)..=to {
+            for i in 1..=to {
                 // AFL: EntryDay AND Open > Close AND Open[i-1] > Close[i-1] AND H < R1; the cover test follows on the same bar
                 if cur.is_none() && dow(x, i) == entry_day && red(x, i) && red(x, i - 1) && x.h[i] < pivots(x, i).0 {
                     cur = Some(i);
@@ -472,7 +534,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 }
                 out.push(t);
             }
-            out
+            from_start(out, from)
         }
         TUMBLES => intraday(x, from.max(3), to, true, pct, |i| dow(x, i) != 1 && red(x, i - 1) && red(x, i - 2) && red(x, i - 3) && gap_up(x, i)),
         TUMBLES_MOD => {
@@ -623,6 +685,24 @@ mod tests {
         run(id, &x, 0, r.len() - 1, &ps(kv)).unwrap().into_iter().map(|t| (t.legs[0].i, t.legs[0].px, t.exit_i, t.exit_px, t.dir)).collect()
     }
     const W: (f64, f64, f64, f64) = (100.0, 110.0, 90.0, 100.0); // wide bar, range 20
+
+    #[test]
+    fn candle_colour_carries_the_afl_position_into_a_later_start() {
+        // all green: the AFL loop buys bar 1, sells bar 2, buys bar 3, ... A run from bar 2 (an exit day) first buys bar 3,
+        // as AmiBroker did for Entry Based on Candle Color from 01-01-2015 (no trade on 01-01, first buy 02-01).
+        let g = (100.0, 102.0, 99.0, 101.0);
+        let r = bars(&[g, g, g, g, g, g]);
+        let x = Ctx::new(&r, &r, &[]);
+        let t: Vec<usize> = run(CANDLE, &x, 2, 5, &ps(&[])).unwrap().iter().map(|t| t.legs[0].i).collect();
+        assert_eq!(t, vec![3, 5]);
+        // through the books dispatcher a position held at the end is closed there; an entry on the last bar is left out
+        let t = crate::books::run(CANDLE, &x, 2, 4, &ps(&[])).unwrap();
+        assert_eq!(t.iter().map(|t| (t.legs[0].i, t.exit_i, t.open)).collect::<Vec<_>>(), vec![(3, 4, false)]);
+        let t = crate::books::run(CANDLE, &x, 1, 4, &ps(&[])).unwrap();
+        assert_eq!(t.iter().map(|t| (t.legs[0].i, t.exit_i, t.open)).collect::<Vec<_>>(), vec![(1, 2, false), (3, 4, false)]);
+        let t = crate::books::run(THURSDAY, &x, 0, 5, &ps(&[])).unwrap();
+        assert!(t.iter().all(|t| !t.open));
+    }
 
     #[test]
     fn inside_day_nr4_gap_down_short() {

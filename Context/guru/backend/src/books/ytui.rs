@@ -27,26 +27,42 @@ fn def(id: &'static str, name: &'static str, rules: &'static [&'static str], not
     StrategyDef { id, name, group: "YT Strategies · Ulcer Performance Index", session: 0, dir: "Long/Short", status: Status::Live, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim: None }
 }
 
-const EXITS: &str = "X|Also: hard SL %, profit booking %, trailing SL % (on the previous bar's level), the close crossing the trailing ATR line (longs only), the low / high beyond the lowest low / highest high of the Xth candles before entry; live mode fills HSL / PB at the level or at the open +/- the buffer % when the open is through it";
+const EXITS: &str = "X|Also: hard SL %, profit booking %, trailing SL % (on the previous bar's level)";
+const EXITS_2: &str = "X|Also: the Close crossing the trailing ATR line (longs only)";
+const EXITS_3: &str = "X|Also: the Low / High beyond the lowest Low / highest High of the Xth candles before entry";
+const EXITS_4: &str = "X|Live mode fills HSL / PB at the level, or at Open ± buffer % when the Open is through it";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![
         def(FINAL, "Ulcer Index Crossover", &[
             "F|Ulcer Index of the close (HHV 14, smoothing 14) against its 52-bar SMA signal",
-            "E|Long at the close on the Nth candle (default 0: the same bar) after the Ulcer line falls through its signal; short after it rises through it; trade type long (default), short or any",
-            "X|Sell when the Ulcer line rises through its signal; cover when it falls through it",
-            EXITS,
+            "E|Long at the Close on the Nth candle (default 0: the same bar) after the Ulcer line falls through its signal",
+            "E|Short at the Close on the Nth candle after the Ulcer line rises through its signal",
+            "F|Trade type: long (default), short or any",
+            "X|Sell when the Ulcer line rises through its signal",
+            "X|Cover when the Ulcer line falls through its signal",
+            EXITS, EXITS_2, EXITS_3, EXITS_4,
         ], "Futures_UlcerIndex_Final.afl (Ulcer Performance Index/AFLs), coded as the AFL is written, with its ExRem lines. ATR exit average default Open (the ParamList has no default, so its first item). CalculateAvg comes from an include that is not in the folder; it is taken to be the inline version of the sibling AFLs."),
         def(EXIT_ULCER, "ST or Ulcer Entry, Exit Only on Ulcer", &[
-            "E|Long as in the Ulcer crossover, or (ST entry on) when the close crosses above the entry Supertrend; optional RSI level and bull / bear ST filters on the long entry",
-            "E|Short, as the AFL's operator precedence reads it: (flat, Nth candle after the Ulcer rise through the signal) OR (ST condition AND trade type short / any AND not the last bar), so Ulcer shorts are taken even with trade type Long",
-            "X|Sell when the Ulcer line rises through its signal; cover when it falls through it (the Supertrend is not an exit)",
-            EXITS,
+            "E|Long as in the Ulcer crossover, or (ST entry on) when the Close crosses above the entry Supertrend",
+            "F|Optional RSI level and bull / bear ST filters on the long entry",
+            "E|Short, as the AFL's operator precedence reads it: (flat, Nth candle after the Ulcer rise through the signal) OR (ST condition AND trade type short / any AND not the last bar)",
+            "E|So Ulcer shorts are taken even with trade type Long",
+            "X|Sell when the Ulcer line rises through its signal",
+            "X|Cover when the Ulcer line falls through its signal",
+            "X|The Supertrend is not an exit",
+            EXITS, EXITS_2, EXITS_3, EXITS_4,
         ], "ST or Ulcer WEE_Exit only Ulcer_UlcerIndex_ST_Final.afl, coded as the AFL is written. Known quirk kept: the short-entry condition lacks brackets (AND binds before OR), so with the default trade type Long the AFL still writes Short signals on Ulcer rises and they trade (long and short backtest); with trade type Short / Any and the ST entry off, the second branch is true on every bar. Its ExRem lines are commented out. The bias ST filter and ATR average use GetTimeframe / CalculateAvg from a missing include, taken to match the inline versions."),
         def(EXIT_OWN, "ST or Ulcer Entry, Exit on Own or Fresh Opposite Signal", &[
-            "E|Long on the Ulcer crossover (Nth candle or later) or on the close crossing above the entry Supertrend, whichever comes first; short the mirror; optional RSI and bull / bear ST filters",
-            "X|A trade exits on the opposite signal of either kind; when the opposite signal of the other kind came first it waits for the next one, and an ST sell on a bar with a fresh Ulcer long cross prolongs the trade; shorts also cover on any Ulcer long cross; the bull / bear filter turning against the trade exits",
-            EXITS,
+            "E|Long on the Ulcer crossover (Nth candle or later) or on the Close crossing above the entry Supertrend, whichever comes first",
+            "E|Short: the mirror",
+            "F|Optional RSI and bull / bear ST filters",
+            "X|A trade exits on the opposite signal of either kind",
+            "X|When the opposite signal of the other kind came first, it waits for the next one",
+            "X|An ST sell on a bar with a fresh Ulcer long cross prolongs the trade",
+            "X|Shorts also cover on any Ulcer long cross",
+            "X|The bull / bear filter turning against the trade exits",
+            EXITS, EXITS_2, EXITS_3, EXITS_4,
         ], "ST or Ulcer WEE_Exit Own or Fresh of Opp_UlcerIndex_ST_Final.afl, coded as the AFL is written, including its second exit pass after the entries on every bar. The AFL default 'Period for Highest Src' is 0, below its Param minimum 6; it is kept, and HHV over 0 bars is taken as empty, so the Ulcer line and every Ulcer signal are Null and the defaults trade only through the ST entry (off by default): no trades at the defaults. The team's workbooks optimised it over 6-42. On a cover the AFL resets 'currentStatus' (a typo), so the short side's wait state carries into later shorts. No ExRem."),
     ]
 }

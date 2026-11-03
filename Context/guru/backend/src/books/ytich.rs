@@ -11,9 +11,11 @@
 //! - "current cloud" AFLs add Cloud = Ref(Max(span A, span B), -26): the upper cloud plotted under today's bar
 //!   (again past bars only).
 //!
-//! AmiBroker behaviour followed: the AFL loops run from bar 1 over the full history; a Null array element read in a
-//! loop is -1e10 (so in the first ~52 bars of the whole history a line that is still Null compares as -1e10, as in
-//! AmiBroker); Null propagates through arithmetic and Max/Min; fills at the close unless the AFL sets the sell or
+//! AmiBroker behaviour followed: the AFL loops run only over the bars AmiBroker loads, the run's range plus the longest
+//! line period before its start (QuickAFL), so the loop's state starts there: with Profit Booking % 0 the first trade
+//! of the loop keeps the AFL's starting target PT = 0 and exits on the next bar. While a line the loop reads is still
+//! Null (warm-up at the start of the history) no setup, entry or exit is taken. Null propagates through arithmetic and
+//! Max/Min. Both match the team's NIFTY trade lists; fills at the close unless the AFL sets the sell or
 //! cover price; the backtester exits first and then enters on the same bar; trade prices are kept inside the bar's
 //! low-high range (AmiBroker's default price bound check), which matters for the AFLs' gap prices.
 #![allow(dead_code)]
@@ -37,8 +39,18 @@ fn def(id: &'static str, name: &'static str, rules: &'static [&'static str], not
     StrategyDef { id, name, group: "YT Strategies · Ichimoku", session: 0, dir: "Long/Short", status: Status::Live, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim: None }
 }
 
-const LINES: &str = "F|Lines: turning line = mid of the 9-bar high-low, base line = mid of the 26-bar high-low, span A = (turning + base) / 2, span B = mid of the 52-bar high-low, both spans unshifted (today's values, the cloud the chart plots 26 bars ahead); delayed line = the close 26 bars back";
-const SETUP: &str = "F|Setup (checked every bar, also in a trade): long setup 1 on a turning-line cross above the base line with the close above the cloud; setup 2 on such a cross with the close inside the cloud, becoming setup 3 once the close is above the cloud with turning > base; a close below the cloud clears them (short side mirrored)";
+const LINES: &str = "F|Turning line = mid point of the 9-bar High-Low range";
+const LINES_2: &str = "F|Base line = mid point of the 26-bar High-Low range";
+const LINES_3: &str = "F|Span A = (turning line + base line) / 2";
+const LINES_4: &str = "F|Span B = mid point of the 52-bar High-Low range";
+const LINES_5: &str = "F|Both spans unshifted: today's values (the cloud the chart plots 26 bars ahead)";
+const LINES_6: &str = "F|Delayed line = the Close 26 bars back";
+const SETUP: &str = "F|Setups are checked on every bar, also while in a trade";
+const SETUP_2: &str = "F|Long setup 1: turning line crosses above the base line with Close > cloud";
+const SETUP_3: &str = "F|Long setup 2: the same cross with Close inside the cloud";
+const SETUP_4: &str = "F|Setup 2 becomes setup 3 once Close > cloud and turning line > base line";
+const SETUP_5: &str = "F|Close < cloud clears the long setups";
+const SETUP_6: &str = "F|Short side mirrored";
 macro_rules! side_note {
     () => {
         " Version 0 runs the AFL's Long Only side, 1 its Short Only side. Template guards as written: no long entry on a bar whose high equals its close, no short entry when the low equals the close; a long exit on a bar whose low equals its close (a cover when the high equals the close) waits for the first later bar without it and then fills at that close."
@@ -48,60 +60,114 @@ macro_rules! side_note {
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![
         def(VER1, "Ichimoku TK Cross with Cloud Setups (Ver 1)", &[
-            LINES, SETUP,
-            "E|Long: flat, setup 1 or 3 on, turning > base and close > delayed line, at the close; setups cleared. Short: setup 1 or 3, turning < base, close < delayed line",
-            "X|Sell on a turning-line cross below the base line; cover on a cross above, at the close; setups cleared",
+            LINES, LINES_2, LINES_3, LINES_4, LINES_5, LINES_6, SETUP, SETUP_2, SETUP_3, SETUP_4, SETUP_5, SETUP_6,
+            "E|Long: flat, with setup 1 or 3 on",
+            "E|Long: Turning line > Base line",
+            "E|Long: Close > Delayed line",
+            "E|Long: buy at the Close; setups cleared",
+            "E|Short: setup 1 or 3 on",
+            "E|Short: Turning line < Base line",
+            "E|Short: Close < Delayed line",
+            "X|Sell: turning line crosses below the base line, at the Close",
+            "X|Cover: turning line crosses above the base line, at the Close",
+            "X|Setups cleared on exit",
         ], concat!("ICHIMOKU Conversion Line Base Line Based Entry Exit_Ver 1 (Basic version), coded as the AFL is written.", side_note!())),
         def(VER2, "Ichimoku TK Cross, Simple Setup (Ver 2)", &[
-            LINES,
-            "F|Setup: any turning-line cross above the base line (short: below) arms the setup; it stays armed until an entry or exit",
-            "E|Long: flat, setup armed, close above the cloud (above both spans), turning > base and close > delayed line. Short: close below the cloud, turning < base, close < delayed line",
-            "X|Sell on a turning-line cross below the base line; cover on a cross above, at the close",
+            LINES, LINES_2, LINES_3, LINES_4, LINES_5, LINES_6,
+            "F|Setup: any turning-line cross above the base line (short: below) arms it",
+            "F|The setup stays armed until an entry or exit",
+            "E|Long: flat, setup armed",
+            "E|Long: Close > cloud (above both spans)",
+            "E|Long: Turning line > Base line",
+            "E|Long: Close > Delayed line",
+            "E|Short: Close < cloud",
+            "E|Short: Turning line < Base line",
+            "E|Short: Close < Delayed line",
+            "X|Sell: turning line crosses below the base line, at the Close",
+            "X|Cover: turning line crosses above the base line, at the Close",
         ], concat!("ICHIMOKU Conversion Line Base Line Based Entry Exit_Ver 2 (Basic version), coded as the AFL is written: unlike Ver 1, a close back inside or below the cloud after the cross does not cancel the setup.", side_note!())),
         def(VER3, "Ichimoku Cloud Breakout, Base-Line Exit (Ver 3)", &[
-            "F|Lines: base line = mid of the 26-bar high-low; cloud top = the larger of span A ((9-bar mid + base) / 2) and span B (52-bar mid), unshifted",
-            "E|Long: the close crosses above the cloud top and is above the base line. Short: the close crosses below the cloud TOP (as the AFL is written) and is below the base line",
-            "X|Sell when the close is below the base line; cover when it is above, at the close",
+            "F|Base line = mid point of the 26-bar High-Low range",
+            "F|Cloud top = the larger of Span A ((9-bar mid + base) / 2) and Span B (52-bar mid), unshifted",
+            "E|Long: Close crosses above the cloud top",
+            "E|Long: Close > Base line",
+            "E|Short: Close crosses below the cloud TOP (as the AFL is written)",
+            "E|Short: Close < Base line",
+            "X|Sell: Close < Base line, at the Close",
+            "X|Cover: Close > Base line, at the Close",
         ], concat!("ICHIMOKU Clouds Based Entry and BaseLine Based Exit_Ver 3 (Basic version), coded as the AFL is written. Quirk: the AFL's description says shorts enter below the lower cloud line, but its code uses the upper one (Max span); coded as the code reads.", side_note!())),
         def(HSLPT, "Ichimoku Ver 1 + Hard SL / Profit Target (Long Side)", &[
-            LINES, SETUP,
-            "E|As Ver 1. Long entry sets a hard stop at the entry close less the Hard SL % (default 1) and a target at the entry close plus the Profit Booking % (default 3)",
-            "X|Long: the day's low reaches the hard stop (fill at the stop, or at the open less the buffer % (0.25) when the open is already below it), the day's high reaches the target (fill at the target, or at the open LESS the buffer % on a gap above it, as written), or a turning-line cross below the base line at the close",
+            LINES, LINES_2, LINES_3, LINES_4, LINES_5, LINES_6, SETUP, SETUP_2, SETUP_3, SETUP_4, SETUP_5, SETUP_6,
+            "E|As Ver 1",
+            "E|Long hard stop = entry Close − Hard SL % (default 1)",
+            "E|Long target = entry Close + Profit Booking % (default 3)",
+            "X|Long: Low reaches the hard stop: fill at the stop",
+            "X|Long: Open already below the stop: fill at Open − buffer % (0.25)",
+            "X|Long: High reaches the target: fill at the target",
+            "X|Long: Open gaps above the target: fill at Open − buffer % (LESS, as written)",
+            "X|Long: turning line crosses below the base line: sell at the Close",
             "X|Short side: as Ver 1, no stops",
         ], concat!("ICHIMOKU Conversion Line Base Line Based Entry Exit + HSL+PT(Long Only), coded as the AFL is written. Fill prices are kept inside the day's range (AmiBroker's price bound check). With Profit Booking % 0 the AFL's target stays 0 on the first trade, so it exits on the next bar (as written; not the default).", side_note!())),
         def(FWD_LIVE, "Ichimoku Ver 1 + HSL / PT, Forward Cloud, HSL Live (v1)", &[
-            LINES, SETUP,
-            "E|As Ver 1 plus close above the cloud (long) / below the cloud (short). Long stop = entry close less Hard SL % (1), target = plus Profit Booking % (3); short stop = entry close plus Hard SL %, target = less Profit Booking %",
-            "X|Long: low reaches the stop (fill at the stop, or open less buffer % 0.25 on a gap below), high reaches the target (target, or open less buffer % on a gap above), or a TK cross down at the close",
-            "X|Short: high reaches the stop (stop, or open plus buffer % on a gap above), low reaches the target (target, or open plus buffer % on a gap below; when both are hit the target price is used, as written), or a TK cross up at the close",
+            LINES, LINES_2, LINES_3, LINES_4, LINES_5, LINES_6, SETUP, SETUP_2, SETUP_3, SETUP_4, SETUP_5, SETUP_6,
+            "E|As Ver 1",
+            "E|Long also: Close > cloud",
+            "E|Short also: Close < cloud",
+            "E|Long stop = entry Close − Hard SL % (1); target = entry Close + Profit Booking % (3)",
+            "E|Short stop = entry Close + Hard SL %; target = entry Close − Profit Booking %",
+            "X|Long: Low reaches the stop: fill at the stop, or at Open − buffer % (0.25) on a gap below",
+            "X|Long: High reaches the target: fill at the target, or at Open − buffer % on a gap above",
+            "X|Long: TK cross down: sell at the Close",
+            "X|Short: High reaches the stop: fill at the stop, or at Open + buffer % on a gap above",
+            "X|Short: Low reaches the target: fill at the target, or at Open + buffer % on a gap below",
+            "X|Short: when both are hit, the target price is used (as written)",
+            "X|Short: TK cross up: cover at the Close",
         ], concat!("ICHIMOKU Conversion Line Base Line Based Entry Exit + HSL+PT_long and short - HSL@LIVE - v1 (Basic Version + Forward looking cloud), coded as the AFL is written. 'Forward cloud' = today's unshifted spans; no future bar is read. Fill prices are kept inside the day's range.", side_note!())),
         def(FWD_CLOSE, "Ichimoku Ver 1 + HSL at Close / PT, Forward Cloud (v2)", &[
-            LINES, SETUP,
-            "E|As the forward-cloud v1 (close above / below the cloud, stop and target from the entry close)",
-            "X|Long: the close at or below the stop (fill at that close), the high reaching the target (target, or open less buffer % 0.25 on a gap above), or a TK cross down at the close",
-            "X|Short: the close at or above the stop (at that close), the low reaching the target (target, or open plus buffer % on a gap below), or a TK cross up",
+            LINES, LINES_2, LINES_3, LINES_4, LINES_5, LINES_6, SETUP, SETUP_2, SETUP_3, SETUP_4, SETUP_5, SETUP_6,
+            "E|As the forward-cloud v1 (Close above / below the cloud; stop and target from the entry Close)",
+            "X|Long: Close ≤ stop: sell at that Close",
+            "X|Long: High reaches the target: fill at the target, or at Open − buffer % (0.25) on a gap above",
+            "X|Long: TK cross down: sell at the Close",
+            "X|Short: Close ≥ stop: cover at that Close",
+            "X|Short: Low reaches the target: fill at the target, or at Open + buffer % on a gap below",
+            "X|Short: TK cross up",
         ], concat!("ICHIMOKU Conversion Line Base Line Based Entry Exit + HSL+PT_long and short - HSL@Close - v2 (Basic Version + Forward looking cloud), coded as the AFL is written. Fill prices are kept inside the day's range.", side_note!())),
         def(FWD_RE, "Ichimoku HSL at Close + Re-entry, Forward Cloud (v3)", &[
-            LINES, SETUP,
-            "E|As the forward-cloud v2. Re-entry: after a hard-stop exit, within the re-entry period (3 bars), buy when the close is above the high of the original entry bar (short: below its low), with no other condition",
-            "X|As the forward-cloud v2. A re-entered trade carries no stop or target (the AFL does not set them again), so it exits on the TK cross only",
+            LINES, LINES_2, LINES_3, LINES_4, LINES_5, LINES_6, SETUP, SETUP_2, SETUP_3, SETUP_4, SETUP_5, SETUP_6,
+            "E|As the forward-cloud v2",
+            "E|Re-entry: after a hard-stop exit, within the re-entry period (3 bars)",
+            "E|Re-entry long: Close > High of the original entry bar",
+            "E|Re-entry short: Close < Low of the original entry bar",
+            "E|Re-entry needs no other condition",
+            "X|As the forward-cloud v2",
+            "X|A re-entered trade has no stop or target (the AFL does not set them again)",
+            "X|A re-entered trade exits on the TK cross only",
         ], concat!("ICHIMOKU Conversion Line Base Line Based Entry Exit + HSL+PT_long and short HSL@close and reentry-v3 (Basic Version + Forward looking cloud), coded as the AFL is written. Quirk: the re-entry is a separate `if`, so a TK-cross exit can fire on the re-entry bar itself; AmiBroker then keeps the position until the AFL's next exit signal. Fill prices are kept inside the day's range.", side_note!())),
         def(CUR_LIVE, "Ichimoku HSL Live + Current-Cloud Filter (v1)", &[
-            LINES, SETUP,
+            LINES, LINES_2, LINES_3, LINES_4, LINES_5, LINES_6, SETUP, SETUP_2, SETUP_3, SETUP_4, SETUP_5, SETUP_6,
             "F|Current cloud = the cloud top 26 bars back (the cloud plotted under today's bar)",
-            "E|As the forward-cloud v1; longs also need the close above the current cloud (shorts have no current-cloud condition, as written)",
-            "X|Long: as the forward-cloud v1. Short: triggered when the high reaches the stop, the low reaches the target or a TK cross up; the stop price is used only when the close is also at or above the stop, otherwise the fill is the close (as written)",
+            "E|As the forward-cloud v1",
+            "E|Long also: Close > current cloud",
+            "E|Short: no current-cloud condition (as written)",
+            "X|Long: as the forward-cloud v1",
+            "X|Short: triggered when the High reaches the stop, the Low reaches the target, or a TK cross up",
+            "X|Short: the stop price is used only when the Close is also ≥ the stop; otherwise the fill is the Close (as written)",
         ], concat!("ICHIMOKU Conversion Line Base Line Based Entry Exit + HSL+PT_long and short_ CURRENT CLOUD- HSL@Live- v1 (Basic Version + Current Cloud), coded as the AFL is written. Fill prices are kept inside the day's range.", side_note!())),
         def(CUR_CLOSE, "Ichimoku HSL at Close + Current-Cloud Filter (v2)", &[
-            LINES, SETUP,
+            LINES, LINES_2, LINES_3, LINES_4, LINES_5, LINES_6, SETUP, SETUP_2, SETUP_3, SETUP_4, SETUP_5, SETUP_6,
             "F|Current cloud = the cloud top 26 bars back",
-            "E|As the forward-cloud v2; longs also need the close above the current cloud",
-            "X|As the forward-cloud v2 (stop on the close, target intraday, TK cross)",
+            "E|As the forward-cloud v2",
+            "E|Long also: Close > current cloud",
+            "X|As the forward-cloud v2: stop on the Close, target intraday, TK cross",
         ], concat!("ICHIMOKU Conversion Line Base Line Based Entry Exit + HSL+PT_long and short_CURRENT CLOUD-HSL@close- v2 (Basic Version + Current Cloud), coded as the AFL is written. Fill prices are kept inside the day's range.", side_note!())),
         def(CUR_RE, "Ichimoku HSL at Close + Re-entry, Current Cloud (v3)", &[
-            LINES, SETUP,
+            LINES, LINES_2, LINES_3, LINES_4, LINES_5, LINES_6, SETUP, SETUP_2, SETUP_3, SETUP_4, SETUP_5, SETUP_6,
             "F|Current cloud = the cloud top 26 bars back",
-            "E|As the current-cloud v2. Long re-entry after a hard-stop exit, within the re-entry period (3 bars): close above the original entry bar's high, turning > base; it sets a new stop and target. Short re-entry: close below the original entry bar's low, no stop or target",
+            "E|As the current-cloud v2",
+            "E|Re-entry: after a hard-stop exit, within the re-entry period (3 bars)",
+            "E|Long re-entry: Close > the original entry bar's High and turning line > base line; sets a new stop and target",
+            "E|Short re-entry: Close < the original entry bar's Low; no stop or target",
             "X|As the current-cloud v2",
         ], concat!("ICHIMOKU Conversion Line Base Line Based Entry Exit + HSL+PT_long and short_ CURRENT CLOUD-HSL@close  Reentry - v3 (Basic Version + Current Cloud), coded as the AFL is written. The AFL's delayed-line slider range is 8-18 but its default is 26; the default is kept and the range here is 8-26. Fill prices are kept inside the day's range.", side_note!())),
     ]
@@ -301,7 +367,7 @@ struct Cfg {
     reentry: f64,
 }
 
-fn ich_long(x: &Ctx, ln: &Lines, k: &Cfg) -> Sigs {
+fn ich_long(x: &Ctx, ln: &Lines, k: &Cfg, from: usize) -> Sigs {
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let Lines { tl, bl, maxs, mins, delayed, cloud } = ln;
     let v = k.v;
@@ -314,8 +380,14 @@ fn ich_long(x: &Ctx, ln: &Lines, k: &Cfg) -> Sigs {
     let tlup = |i: usize| tl[i] > bl[i] && tl[i - 1] <= bl[i - 1];
     let tldn = |i: usize| tl[i] < bl[i] && tl[i - 1] >= bl[i - 1];
     let bf = |i: usize| h[i] != c[i] && c[i] > 0.0;
-    for i in 1..n {
+    // no setup, entry or exit while a line the loop reads is still Null (warm-up bars)
+    let ready = |i: usize| [tl[i], bl[i], maxs[i], mins[i]].iter().all(|&v| v != NULL) && (v == Ver3 || delayed[i] != NULL) && (!v.cur() || cloud[i] != NULL);
+    // the loop starts at `from` (see run), so its state, including the first trade's target PT = 0, starts there
+    for i in from.max(1)..n {
         dsl = if chk { dsl + 1 } else { 0 };
+        if !(ready(i) && ready(i - 1)) {
+            continue;
+        }
         match v {
             Ver3 => {}
             Ver2 => {
@@ -448,7 +520,7 @@ fn ich_long(x: &Ctx, ln: &Lines, k: &Cfg) -> Sigs {
     s
 }
 
-fn ich_short(x: &Ctx, ln: &Lines, k: &Cfg) -> Sigs {
+fn ich_short(x: &Ctx, ln: &Lines, k: &Cfg, from: usize) -> Sigs {
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let Lines { tl, bl, maxs, mins, delayed, .. } = ln;
     let v = k.v;
@@ -461,8 +533,14 @@ fn ich_short(x: &Ctx, ln: &Lines, k: &Cfg) -> Sigs {
     let tlup = |i: usize| tl[i] > bl[i] && tl[i - 1] <= bl[i - 1];
     let tldn = |i: usize| tl[i] < bl[i] && tl[i - 1] >= bl[i - 1];
     let sf = |i: usize| l[i] != c[i] && c[i] > 0.0;
-    for i in 1..n {
+    // no setup, entry or exit while a line the loop reads is still Null (warm-up bars)
+    let ready = |i: usize| [tl[i], bl[i], maxs[i], mins[i]].iter().all(|&v| v != NULL) && (v == Ver3 || delayed[i] != NULL);
+    // the loop starts at `from` (see run), so its state, including the first trade's target PT = 0, starts there
+    for i in from.max(1)..n {
         dsl = if chk { dsl + 1 } else { 0 };
+        if !(ready(i) && ready(i - 1)) {
+            continue;
+        }
         match v {
             Ver3 => {}
             Ver2 => {
@@ -619,7 +697,11 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let dl = if v == Ver3 { 26 } else { g("dl_prds").round().max(0.0) as usize };
     let ln = lines(&x.h, &x.l, &x.c, gu("tl_prds"), gu("bl_prds"), gu("slb_prds"), dl);
     let k = Cfg { v, buf: g("buffer_pct"), profit: g("profit_pct"), hsl_pct: g("hard_sl_pct"), reentry: g("reentry_days") };
-    let s = if g("side_version").round() as i64 == 1 { ich_short(x, &ln, &k) } else { ich_long(x, &ln, &k) };
+    // AmiBroker (QuickAFL) runs the loop only over the bars it loads: the range plus the formula's look-back before
+    // From. The team's NIFTY sheets match with the loop starting the longest line period before the run start
+    let lead = gu("tl_prds").max(gu("bl_prds")).max(gu("slb_prds")).max(dl);
+    let start = from.saturating_sub(lead);
+    let s = if g("side_version").round() as i64 == 1 { ich_short(x, &ln, &k, start) } else { ich_long(x, &ln, &k, start) };
     Some(backtest(x, &s, from, to))
 }
 
@@ -712,6 +794,13 @@ mod tests {
         r[4].low = 99.0;
         r[4].close = 99.5;
         assert_eq!(go(FWD_LIVE, &r, &[]), vec![(3, 102.0, 4, 99.0, 1.0)]);
+    }
+
+    #[test]
+    fn zero_profit_booking_exits_the_loops_first_trade_next_bar() {
+        // Profit Booking 0 leaves PT = 0 on the loop's first trade: bar 4's high >= 0 and its open 104 is above 0 ->
+        // open less 0.25% = 103.74
+        assert_eq!(go(FWD_LIVE, &rows(&UP), &[("profit_pct", 0.0)]), vec![(3, 102.0, 4, 103.74, 1.0)]);
     }
 
     #[test]

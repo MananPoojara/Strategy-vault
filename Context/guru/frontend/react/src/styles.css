@@ -77,6 +77,7 @@ a { color: inherit; }
 .btns { display: flex; gap: 8px; margin-top: auto; } .btn { flex: 1; text-align: center; border: 1px solid var(--blue); color: var(--blue); background: #fff; padding: 7px 10px; cursor: pointer; text-decoration: none; font-weight: 600; font-size: 13px; }
 .btn.solid { background: var(--blue); color: #fff; } .btn:hover { filter: brightness(.95); }
 details.rules { font-size: 12.5px; } details.rules summary { cursor: pointer; color: var(--ink2); } details.rules ul { margin: 6px 0 0; padding-left: 18px; } details.rules li { margin: 2px 0; }
+details.rules ol { margin: 2px 0 6px; padding-left: 22px; } details.rules .rh { margin: 8px 0 0; font-weight: 600; color: var(--ink2); }
 details.rules .t { font: 700 10px "IBM Plex Mono", monospace; color: var(--ink3); margin-right: 4px; }
 .cover { display: flex; gap: 14px; align-items: center; }
 .cover .bk { width: 64px; height: 88px; flex: none; background: var(--c); color: #e8d39a; padding: 8px 6px; font: 600 9.5px/1.15 "Newsreader", serif; display: flex; flex-direction: column; justify-content: space-between; box-shadow: inset 4px 0 6px -3px #0006, 2px 3px 6px #0002; border-radius: 1px 3px 3px 1px; }

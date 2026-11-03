@@ -51,31 +51,53 @@ fn def(id: &'static str, name: &'static str, rules: &'static [&'static str], not
     }
 }
 
-const ST_NIFTY: &str = "F|NIFTY ST: the team's daily Supertrend of NIFTY 50 (period 5, factor 1, on (H+L)/2, ATR = simple average of ATR(1), bands ratchet without a reset on a flip)";
-const ROC: &str = "F|Rise from the lowest low: in each NIFTY down leg (NIFTY close below its ST until it closes above again) find NIFTY's lowest low; the stock's low on the day NIFTY made that low is the base; on NIFTY ST buy days the rise = (stock close / base - 1) x 100";
-const EXIT_LOOP: &str = "X|Optional exits (all off by default): the stock's own ST (5, 1, (H+L)/2) with the close below it, hard SL %, profit booking %, trailing SL % (from the closes), live (at the level, or the open less the buffer % on a gap, not below the low) or at the close; with the defaults only the end of the data closes a trade";
+const ST_NIFTY: &str = "F|NIFTY ST: the team's daily Supertrend of NIFTY 50 (period 5, factor 1, on (H+L)/2)";
+const ST_NIFTY_2: &str = "F|NIFTY ST: ATR = simple average of ATR(1); bands ratchet without a reset on a flip";
+const ROC: &str = "F|NIFTY down leg: NIFTY Close < its ST, until it closes above again";
+const ROC_2: &str = "F|Base = the stock's Low on the day NIFTY made the lowest Low of that down leg";
+const ROC_3: &str = "F|Rise from the lowest Low, on NIFTY ST buy days = (stock Close / base − 1) × 100";
+const EXIT_LOOP: &str = "X|Optional exits (all off by default): the stock's own ST (5, 1, (H+L)/2) with Close < ST, hard SL %, profit booking %, trailing SL % (from the Closes)";
+const EXIT_LOOP_2: &str = "X|Exit fills live (at the level, or at Open − buffer % on a gap, not below the Low) or at the Close";
+const EXIT_LOOP_3: &str = "X|With the defaults only the end of the data closes a trade";
 const NOTE: &str = " Runs on one stock at a time; the team ran it over F&O stocks (For FO) and NIFTY 50 stocks (For Nifty50 Stocks_Aux AFL); the ranking (PositionScore = 100 + the rise) and the one-position limit are not modelled. NIFTY 50 (the market benchmark) stands for the AFL's NSENIFTY / NIFTY; only the daily timeframe of the AFL's ST timeframe choice is offered (the default).";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![
         def(THRESHOLD, "NIFTY ST Buy, Stock Rise From Lowest Low Above Threshold", &[
-            ST_NIFTY, ROC,
-            "F|NIFTY filter: NIFTY close above its ST (Bullish, default; also Bearish or Any)",
-            "E|Buy the stock at the close on the bar NIFTY's close crosses above its ST, when the filter holds, the rise is above the threshold (5%) and the stock's open differs from its high, low and close; only when flat",
-            EXIT_LOOP,
-            "X|Dead-stock rule as written: if the stock's close equals each of the next 4 closes, the bar takes no entry and an open position is sold at that close (the rule reads up to 4 bars ahead)",
+            ST_NIFTY, ST_NIFTY_2, ROC, ROC_2, ROC_3,
+            "F|NIFTY filter: NIFTY Close > its ST (Bullish, default; also Bearish or Any)",
+            "F|NIFTY's Close crosses above its ST",
+            "F|The NIFTY filter holds",
+            "F|Rise > threshold (5%)",
+            "F|Stock's Open ≠ its High, Low and Close",
+            "F|Only when flat",
+            "E|Buy the stock at the Close",
+            EXIT_LOOP, EXIT_LOOP_2, EXIT_LOOP_3,
+            "X|Dead-stock rule as written: if the stock's Close = each of the next 4 Closes, the bar takes no entry and an open position is sold at that Close",
+            "X|The dead-stock rule reads up to 4 bars ahead",
         ], concat!("RankingFromLowestLowSuperTrendSell_Final (Threshold).afl (For FO) and RankingFromLowestLowSuperTrendSell for AUX (Threshold).afl (same logic), coded as the AFL is written. The AFL's Penny Stock Price and Turnover parameters are declared but unused.", " Runs on one stock at a time; the team ran it over F&O stocks (For FO) and NIFTY 50 stocks (For Nifty50 Stocks_Aux AFL); the ranking (PositionScore = 100 + the rise) and the one-position limit are not modelled. NIFTY 50 (the market benchmark) stands for the AFL's NSENIFTY / NIFTY; only the daily timeframe of the AFL's ST timeframe choice is offered (the default).", " The loop runs over the whole history, so a position bought before the test window holds until its exit and blocks entries meanwhile (with the default exits, until the end of the data).")),
         def(FINAL, "NIFTY ST Buy, Stocks Ranked by Rise From Lowest Low", &[
-            ST_NIFTY, ROC,
-            "F|NIFTY filter: NIFTY close above its ST (Bullish, default; also Bearish or Any)",
-            "E|Buy the stock at the close on the bar NIFTY's close crosses above its ST, when the filter holds and the stock's open differs from its high, low and close; only when flat (no threshold; the rise only ranks)",
-            EXIT_LOOP,
-            "X|Dead-stock rule as written: if the stock's close equals each of the next 4 closes, the bar takes no entry and an open position is sold at that close (reads up to 4 bars ahead)",
+            ST_NIFTY, ST_NIFTY_2, ROC, ROC_2, ROC_3,
+            "F|NIFTY filter: NIFTY Close > its ST (Bullish, default; also Bearish or Any)",
+            "F|NIFTY's Close crosses above its ST",
+            "F|The NIFTY filter holds",
+            "F|Stock's Open ≠ its High, Low and Close",
+            "F|Only when flat",
+            "F|No threshold; the rise only ranks",
+            "E|Buy the stock at the Close",
+            EXIT_LOOP, EXIT_LOOP_2, EXIT_LOOP_3,
+            "X|Dead-stock rule as written: if the stock's Close = each of the next 4 Closes, the bar takes no entry and an open position is sold at that Close",
+            "X|The dead-stock rule reads up to 4 bars ahead",
         ], concat!("RankingFromLowestLowSuperTrendSell_Final.afl (For FO) and RankingFromLowestLowSuperTrendSell for AUX.afl (same logic), coded as the AFL is written.", " Runs on one stock at a time; the team ran it over F&O stocks (For FO) and NIFTY 50 stocks (For Nifty50 Stocks_Aux AFL); the ranking (PositionScore = 100 + the rise) and the one-position limit are not modelled. NIFTY 50 (the market benchmark) stands for the AFL's NSENIFTY / NIFTY; only the daily timeframe of the AFL's ST timeframe choice is offered (the default).", " The loop runs over the whole history, so a position bought before the test window holds until its exit and blocks entries meanwhile.")),
         def(BASIC, "NIFTY ST Buy, Stocks Ranked by Rise From Lowest Low (Basic)", &[
-            ST_NIFTY,
-            "E|Buy the stock at the close on the bar NIFTY's close crosses above its ST, when the stock's close differs from its open, high and low; only when flat and inside the test window (no NIFTY filter)",
-            "X|Optional exits (all off by default): the stock's own ST with the close below it, hard SL %, profit booking %, trailing SL %; with the defaults only the end of the test window / data closes a trade",
+            ST_NIFTY, ST_NIFTY_2,
+            "F|NIFTY's Close crosses above its ST",
+            "F|Stock's Close ≠ its Open, High and Low",
+            "F|Only when flat and inside the test window",
+            "F|No NIFTY filter",
+            "E|Buy the stock at the Close",
+            "X|Optional exits (all off by default): the stock's own ST with Close < ST, hard SL %, profit booking %, trailing SL %",
+            "X|With the defaults only the end of the test window / data closes a trade",
         ], concat!("RankingFromLowestLowSuperTrendSell (Basic).afl (For FO), coded as the AFL is written; the rise from the lowest low only ranks here. Quirks as written: the stock ST takes its ATR period and price point from the NIFTY ST settings; the trailing-SL gap fill compares the open with the hard-SL level. Buy / Sell pass through ExRem, so a re-entry on an exit bar is dropped.", " Runs on one stock at a time; the team ran it over F&O stocks; the ranking (PositionScore = 100 + the rise) and the one-position limit are not modelled. NIFTY 50 (the market benchmark) stands for the AFL's NIFTY; only the daily timeframe of the AFL's ST timeframe choice is offered (the default).")),
     ]
 }

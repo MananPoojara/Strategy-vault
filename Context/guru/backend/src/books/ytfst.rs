@@ -21,11 +21,19 @@ fn def(id: &'static str, name: &'static str, rules: &'static [&'static str], not
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![def(BASIC, "Fresh ST Buy, Next-Day Close Above Setup High (Basic)", &[
-        "F|Supertrend of the series (default daily, period 5, factor 4, on the mid point (H+L)/2)",
-        "F|A fresh up phase: on the first up-trend bar while flat, its high becomes the setup high and the bar count starts at 1; each further up-trend bar adds 1; a down-trend bar cancels the setup",
-        "E|Buy at the close when the setup is armed, the count is at most the entry count (default 2) and the close is above the setup high (and the bar's high is not its close)",
-        "X|Trailing stop: the highest high since entry less the trail % (default 3); the low reaching the stop sells at the stop, or at the open less the selling buffer % (0.25) when the open is already below it; no exit on a bar whose open, low and close are equal (lower circuit)",
-        "F|After an exit no new trade until the Supertrend has turned down and a new up phase starts",
+        "F|Supertrend of the series (default daily, period 5, factor 4, mid point (H+L)/2)",
+        "F|Fresh up phase: on the first up-trend bar while flat, its High becomes the setup High and the count starts at 1",
+        "F|Each further up-trend bar adds 1",
+        "F|A down-trend bar cancels the setup",
+        "F|Setup is armed",
+        "F|Count ≤ entry count (default 2)",
+        "F|Today's Close > setup High",
+        "F|Today's High ≠ Today's Close",
+        "E|Buy at today's Close",
+        "X|Trailing stop: highest High since entry − trail % (default 3)",
+        "X|Low reaches the stop: sell at the stop, or at Open − selling buffer % (0.25) when the Open is already below it",
+        "X|No exit on a lower-circuit bar (Open, Low and Close equal)",
+        "F|After an exit: no new trade until the Supertrend turns down and a new up phase starts",
     ], "Fresh ST Buy Next Day Close_Basic Version (Trash/Basic Version (Same as Close)), coded as the AFL is written. The stop tested on a bar uses the highest high up to the previous bar (the AFL updates the stop after the test). With trail % 0 the AFL never sets a stop, so a trade never exits (as written; not the default). The volume-filter versions of this family are not coded (index data has no volume).")]
 }
 

@@ -43,56 +43,83 @@ fn def(id: &'static str, name: &'static str, dir: &'static str, rules: &'static 
     StrategyDef { id, name, group: "YT Strategies · Nick Radge", session: 0, dir, status: Status::Live, needs_volume: true, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim: None }
 }
 
-const FLT: &str = "F|Setup-bar filters: close between 10 and 5,000 (short AFLs 60,000); 50-bar EMA of volume above 500,000; no lower-circuit bar closing less than 6% down (short: upper circuit, open = high = close to 2 decimals, less than 6% up); optional NIFTY 50 above its 100-day average (off) and turnover filter (off)";
-const LONG_E: &str = "E|Next bar, not a lower-circuit bar: buy limit at the setup low less 0.75 x ATR(5), rounded to the tick (0.01; 0.005 below 2; 0.001 below 0.10); filled only if the bar's low reaches it, at the open + 0.25% when the open is below the limit, else at the limit";
+const FLT: &str = "F|Setup bar: Close between 10 and 5,000 (short AFLs: 60,000)";
+const FLT_2: &str = "F|Setup bar: 50-bar EMA of volume > 500,000";
+const FLT_3: &str = "F|Setup bar: not a lower-circuit bar closing less than 6% down (short: not an upper-circuit bar, Open = High = Close to 2 decimals, less than 6% up)";
+const FLT_4: &str = "F|Optional: NIFTY 50 above its 100-day average (off)";
+const FLT_5: &str = "F|Optional: turnover filter (off)";
+const LONG_E: &str = "E|Next bar, not a lower-circuit bar";
+const LONG_E_2: &str = "E|Buy limit = setup Low − 0.75 × ATR(5), rounded to the tick (0.01; 0.005 below 2; 0.001 below 0.10)";
+const LONG_E_3: &str = "E|Filled only if the bar's Low reaches it";
+const LONG_E_4: &str = "E|Fill at Open + 0.25% when the Open is below the limit, else at the limit";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![
         def(LONG_BASIC, "Nick Radge Stretch Long, Exit at Close", "Long", &[
-            "F|Setup bar: close in the lower half of the day's range, ADX(5) above 40, close above its 200-day average", FLT, LONG_E,
-            "X|Sell at the entry bar's close",
+            "F|Setup bar: Close in the lower half of the day's range", "F|Setup bar: ADX(5) > 40", "F|Setup bar: Close > its 200-day average", FLT, FLT_2, FLT_3, FLT_4, FLT_5, LONG_E, LONG_E_2, LONG_E_3, LONG_E_4,
+            "X|Sell at the entry bar's Close",
         ], concat!("INTRADAY LONG SYSTEM FOR INDIAN MKT with circuit flt 5pct.afl (Nick radge analysis/LONG_ with Circuit filter), coded as the AFL is written. Same per-stock rules: NICK RADGE_LONG ONLY_Without ROC (only the ranking is removed) and the 'trash' copy.",
             " Runs on one stock at a time; the team ran it over NSE 500 constituents (cash) and F&O stocks; the PositionScore ranking (100 - 3-day ROC of the setup bar), Maximum Open Positions (10) and the custom backtester's daily order cap are not modelled. The index filter (off by default) uses NIFTY 50 (the market benchmark) for the AFL's NSENIFTY. The turnover filter (off) is close x volume against the AFL's year table.")),
         def(LONG_NO_ADX, "Nick Radge Stretch Long, No ADX, Exit at Close", "Long", &[
-            "F|Setup bar: close in the lower half of the day's range, close above its 200-day average (no ADX condition)", FLT, LONG_E,
-            "X|Sell at the entry bar's close",
+            "F|Setup bar: Close in the lower half of the day's range", "F|Setup bar: Close > its 200-day average", "F|No ADX condition", FLT, FLT_2, FLT_3, FLT_4, FLT_5, LONG_E, LONG_E_2, LONG_E_3, LONG_E_4,
+            "X|Sell at the entry bar's Close",
         ], concat!("NICK RADGE_LONG ONLY_Without ADX & ROC/INTRADAY LONG SYSTEM FOR INDIAN MKT with circuit flt 5pct without adx n roc.afl, coded as the AFL is written.",
             " Runs on one stock at a time; the team ran it over NSE 500 constituents (cash) and F&O stocks; ranking and portfolio limits not modelled (it has no PositionScore; Maximum Open Positions 10). The index filter (off by default) uses NIFTY 50 (the market benchmark) for the AFL's NSENIFTY. The turnover filter (off) is close x volume against the AFL's year table.")),
         def(LONG_BUFFER, "Nick Radge Stretch Long, Exit Buffer + Hard SL", "Long", &[
-            "F|Setup bar: close in the lower half of the day's range, ADX(5) above 40, close above its 200-day average", FLT, LONG_E,
-            "X|Sell at the entry bar's close less the exit buffer % (0.4); on a bar closing at its low, at the close + 1% (kept within the bar's high); optional hard stop % (default 0 = off), live on the entry bar",
+            "F|Setup bar: Close in the lower half of the day's range", "F|Setup bar: ADX(5) > 40", "F|Setup bar: Close > its 200-day average", FLT, FLT_2, FLT_3, FLT_4, FLT_5, LONG_E, LONG_E_2, LONG_E_3, LONG_E_4,
+            "X|Sell at the entry bar's Close − exit buffer % (0.4)",
+            "X|On a bar closing at its Low: sell at Close + 1% (kept within the bar's High)",
+            "X|Optional hard stop % (default 0 = off), live on the entry bar",
         ], concat!("NICK RADGE LONG only_With Hard SL & exit buffer/INTRADAY LONG SYSTEM FOR INDIAN MKT with circuit flt 5pct n hard sl N EXIT BUFFER.afl, coded as the AFL is written. Same per-stock rules: the copy at the folder root and the three copies under Nick radge analysis (fo / NSE 500C&P; one sets the hard SL with Optimize, default 0).", " Runs on one stock at a time; the team ran it over NSE 500 constituents (cash) and F&O stocks; the PositionScore ranking (100 - 3-day ROC of the setup bar), Maximum Open Positions (10) and the custom backtester's daily order cap are not modelled. The index filter (off by default) uses NIFTY 50 (the market benchmark) for the AFL's NSENIFTY. The turnover filter (off) is close x volume against the AFL's year table. A hard stop and the close exit on the same bar: the stop is taken first.")),
         def(LONG_NO_ADX_BUFFER, "Nick Radge Stretch Long, No ADX, Exit Buffer + Hard SL", "Long", &[
-            "F|Setup bar: close in the lower half of the day's range, close above its 200-day average (no ADX condition)", FLT, LONG_E,
-            "X|As the exit-buffer version: close less 0.4%, close + 1% on a bar closing at its low, optional hard stop % (off)",
+            "F|Setup bar: Close in the lower half of the day's range", "F|Setup bar: Close > its 200-day average", "F|No ADX condition", FLT, FLT_2, FLT_3, FLT_4, FLT_5, LONG_E, LONG_E_2, LONG_E_3, LONG_E_4,
+            "X|As the exit-buffer version: Close − 0.4%",
+            "X|On a bar closing at its Low: Close + 1%",
+            "X|Optional hard stop % (off)",
         ], concat!("NICK RADGE_LONG only_Without ADX & with ROC/INTRADAY LONG SYSTEM FOR INDIAN MKT with circuit flt 5pct without ADX.afl, coded as the AFL is written.", " Runs on one stock at a time; the team ran it over NSE 500 constituents (cash) and F&O stocks; the PositionScore ranking (100 - 3-day ROC of the setup bar), Maximum Open Positions (10) and the custom backtester's daily order cap are not modelled. The index filter (off by default) uses NIFTY 50 (the market benchmark) for the AFL's NSENIFTY. The turnover filter (off) is close x volume against the AFL's year table.")),
         def(LONG_SPS, "Nick Radge Stretch Long, Low-Close Exit + Hard SL (SPS)", "Long", &[
-            "F|Setup bar: close in the lower half of the day's range, ADX(5) above 40, close above its 200-day average", FLT, LONG_E,
-            "X|Sell at the entry bar's close; on a bar closing at its low, at the close + 1% (kept within the bar's high); optional hard stop % (default 0 = off), live on the entry bar",
+            "F|Setup bar: Close in the lower half of the day's range", "F|Setup bar: ADX(5) > 40", "F|Setup bar: Close > its 200-day average", FLT, FLT_2, FLT_3, FLT_4, FLT_5, LONG_E, LONG_E_2, LONG_E_3, LONG_E_4,
+            "X|Sell at the entry bar's Close",
+            "X|On a bar closing at its Low: sell at Close + 1% (kept within the bar's High)",
+            "X|Optional hard stop % (default 0 = off), live on the entry bar",
         ], concat!("Nick radge analysis/LONG_ with Circuit filter/INTRADAY LONG SYSTEM FOR INDIAN MKT with circuit flt 5pct n hard sl (With SPS).afl, coded as the AFL is written (same per-stock rules: its '- Copy' and the NSE 500C&P/WITHOUT EXIT BUFFER copy). This AFL does not set AllowSameBarExit itself (it is commented out); the same-bar exit is taken as enabled in the team's settings, as in every other AFL of the family.", " Runs on one stock at a time; the team ran it over NSE 500 constituents (cash) and F&O stocks; the PositionScore ranking (100 - 3-day ROC of the setup bar), Maximum Open Positions (10) and the custom backtester's daily order cap are not modelled. The index filter (off by default) uses NIFTY 50 (the market benchmark) for the AFL's NSENIFTY. The turnover filter (off) is close x volume against the AFL's year table.")),
         def(LONG_BEAR, "Nick Radge Stretch Long for Bear Market, Exit at Close", "Long", &[
-            "F|Setup bar: close in the lower half of the day's range, ADX(5) above 40, close BELOW its 200-day average", FLT, LONG_E,
-            "X|Sell at the entry bar's close",
+            "F|Setup bar: Close in the lower half of the day's range", "F|Setup bar: ADX(5) > 40", "F|Setup bar: Close < its 200-day average (BELOW)", FLT, FLT_2, FLT_3, FLT_4, FLT_5, LONG_E, LONG_E_2, LONG_E_3, LONG_E_4,
+            "X|Sell at the entry bar's Close",
         ], concat!("NICK RADGE LONG only_For BEAR mkt_With Hard SL & exit buffer/INTRADAY LONG SYSTEM FOR INDIAN MKT with circuit flt 5pct for bear mkt.afl, coded as the AFL is written: despite the folder name the AFL has no hard stop or exit buffer (both commented out) and sells at the close.", " Runs on one stock at a time; the team ran it over NSE 500 constituents (cash) and F&O stocks; the PositionScore ranking (100 - 3-day ROC of the setup bar), Maximum Open Positions (10) and the custom backtester's daily order cap are not modelled. The index filter (off by default) uses NIFTY 50 (the market benchmark) for the AFL's NSENIFTY. The turnover filter (off) is close x volume against the AFL's year table.")),
         def(LONG_ATHC, "Nick Radge Stretch Long on All-Time-High Stocks", "Long", &[
-            "F|ATHC regime: on from a close above every earlier close until the 10% close swing turns down; the setup bar's regime must be on",
-            "F|Setup bar: close in the lower half of the day's range, ADX(5) above 40, close above its 200-day average", FLT, LONG_E,
-            "X|As the exit-buffer version: close less 0.4%, close + 1% on a bar closing at its low, optional hard stop % (off)",
+            "F|ATHC regime: on from a Close above every earlier Close",
+            "F|ATHC regime ends when the 10% Close swing turns down",
+            "F|The setup bar's regime must be on",
+            "F|Setup bar: Close in the lower half of the day's range", "F|Setup bar: ADX(5) > 40", "F|Setup bar: Close > its 200-day average", FLT, FLT_2, FLT_3, FLT_4, FLT_5, LONG_E, LONG_E_2, LONG_E_3, LONG_E_4,
+            "X|As the exit-buffer version: Close − 0.4%",
+            "X|On a bar closing at its Low: Close + 1%",
+            "X|Optional hard stop % (off)",
         ], concat!("NICK RADGE on ATH stocks_LONG only/INTRADAY LONG SYSTEM FOR INDIAN MKT with circuit flt 5pct FOR ATHC STOCK (With Hrd SL & Exit buffer)..afl, coded as the AFL is written (same rules: FO ATH AFL Check/..._v1 and the NSE 500C&P ATH-basket copy).", " Runs on one stock at a time; the team ran it over NSE 500 constituents (cash) and F&O stocks; the PositionScore ranking (100 - 3-day ROC of the setup bar), Maximum Open Positions (10) and the custom backtester's daily order cap are not modelled. The index filter (off by default) uses NIFTY 50 (the market benchmark) for the AFL's NSENIFTY. The turnover filter (off) is close x volume against the AFL's year table.")),
         def(LONG_ATHC_OLD, "Nick Radge Stretch Long on All-Time-High Stocks (Old Version)", "Long", &[
             "F|ATHC regime as in the ATH AFL, but read one bar before the setup bar",
-            "F|Setup bar: close in the lower half of the day's range, ADX(5) above 40, close above its 200-day average", FLT, LONG_E,
-            "X|As the exit-buffer version: close less 0.4%, close + 1% on a bar closing at its low, optional hard stop % (off)",
+            "F|Setup bar: Close in the lower half of the day's range", "F|Setup bar: ADX(5) > 40", "F|Setup bar: Close > its 200-day average", FLT, FLT_2, FLT_3, FLT_4, FLT_5, LONG_E, LONG_E_2, LONG_E_3, LONG_E_4,
+            "X|As the exit-buffer version: Close − 0.4%",
+            "X|On a bar closing at its Low: Close + 1%",
+            "X|Optional hard stop % (off)",
         ], concat!("FO ATH AFL Check/INTRADAY LONG SYSTEM FOR INDIAN MKT with circuit flt 5pct FOR ATHC STOCK (With Hrd SL & Exit buffer)_Old Version..afl, coded as the AFL is written; it differs from v1 only in `Ref(ATHCBUYSIG, -1)`.", " Runs on one stock at a time; the team ran it over NSE 500 constituents (cash) and F&O stocks; the PositionScore ranking (100 - 3-day ROC of the setup bar), Maximum Open Positions (10) and the custom backtester's daily order cap are not modelled. The index filter (off by default) uses NIFTY 50 (the market benchmark) for the AFL's NSENIFTY. The turnover filter (off) is close x volume against the AFL's year table.")),
         def(SHORT_BASIC, "Nick Radge Stretch Short, Cover at Close", "Short", &[
-            "F|Setup bar: close in the UPPER half of the day's range, ADX(5) above 40, close above its 200-day average (as written)", FLT,
-            "E|Next bar, not an upper-circuit bar: sell-short limit at the setup high plus 0.75 x ATR(5), rounded to 0.01; filled only if the bar's high reaches it, at the open less 0.25% when the open is above the limit, else at the limit",
-            "X|Cover at the entry bar's close",
+            "F|Setup bar: Close in the UPPER half of the day's range (as written)", "F|Setup bar: ADX(5) > 40", "F|Setup bar: Close > its 200-day average (as written)", FLT, FLT_2, FLT_3, FLT_4, FLT_5,
+            "E|Next bar, not an upper-circuit bar",
+            "E|Sell-short limit = setup High + 0.75 × ATR(5), rounded to 0.01",
+            "E|Filled only if the bar's High reaches it",
+            "E|Fill at Open − 0.25% when the Open is above the limit, else at the limit",
+            "X|Cover at the entry bar's Close",
         ], concat!("Nick radge analysis/SHORT_With circuit filter/INTRADAY SHORT SYSTEM FOR INDIAN MKT with circuit  flt 5 pct.afl, coded as the AFL is written.", " Runs on one stock at a time; the team ran it over NSE 500 constituents (cash) and F&O stocks; the PositionScore ranking (100 + 3-day ROC of the setup bar), Maximum Open Positions (10) and the custom backtester's daily order cap are not modelled. The index filter (off by default; long-side condition index above its average, as written) uses NIFTY 50 for the AFL's NSENIFTY. The turnover filter (off) is close x volume against the AFL's year table.")),
         def(SHORT_BUFFER, "Nick Radge Stretch Short, Exit Buffer + Hard SL", "Short", &[
-            "F|Setup bar: close in the UPPER half of the day's range, ADX(5) above 40, close above its 200-day average (as written)", FLT,
-            "E|Next bar, not an upper-circuit bar: sell-short limit at the setup high plus 0.75 x ATR(5), rounded to 0.01; filled only if the bar's high reaches it, at the open less the open sell buffer % (0.25) when the open is above the limit, else at the limit",
-            "X|Cover at the entry bar's close plus the exit buffer % (0.4); on a bar closing at its high, at the close - 1% (kept within the bar's low); optional hard stop % (off), live on the entry bar",
+            "F|Setup bar: Close in the UPPER half of the day's range (as written)", "F|Setup bar: ADX(5) > 40", "F|Setup bar: Close > its 200-day average (as written)", FLT, FLT_2, FLT_3, FLT_4, FLT_5,
+            "E|Next bar, not an upper-circuit bar",
+            "E|Sell-short limit = setup High + 0.75 × ATR(5), rounded to 0.01",
+            "E|Filled only if the bar's High reaches it",
+            "E|Fill at Open − open sell buffer % (0.25) when the Open is above the limit, else at the limit",
+            "X|Cover at the entry bar's Close + exit buffer % (0.4)",
+            "X|On a bar closing at its High: cover at Close − 1% (kept within the bar's Low)",
+            "X|Optional hard stop % (off), live on the entry bar",
         ], concat!("NICK RADGE_SHORT only_With Hard SL & exit buffer/INTRADAY SHORT SYSTEM FOR INDIAN MKT with circuit  flt 5 pct n hard sl n EXIT BUFFER.afl, coded as the AFL is written.", " Runs on one stock at a time; the team ran it over NSE 500 constituents (cash) and F&O stocks; the PositionScore ranking (100 + 3-day ROC of the setup bar), Maximum Open Positions (10) and the custom backtester's daily order cap are not modelled. The index filter (off by default; index above its average, as written) uses NIFTY 50 for the AFL's NSENIFTY. The turnover filter (off) is close x volume against the AFL's year table. A hard stop and the close exit on the same bar: the stop is taken first.")),
     ]
 }

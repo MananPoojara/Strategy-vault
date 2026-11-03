@@ -31,39 +31,67 @@ fn def(id: &'static str, name: &'static str, rules: &'static [&'static str], not
     StrategyDef { id, name, group: "YT Strategies · Van Tharp (stocks)", session: 0, dir: "Long", status: Status::Live, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim: None }
 }
 
-const X_HSL: &str = "X|Hard stop for the first HSL days (2): the low reaching the setup low sells there (at the open less the 0.25% buffer if it gapped below)";
-const X_TRAIL: &str = "X|After that: an ATR trailing stop (highest high since entry less ATR multiple x ATR(5) of the previous bar, taken on the bar of each new high; it only rises) and a low below the lowest low of the previous 2 bars; each sells at its level, or the open less the buffer on a gap";
-const X_CIRC: &str = "X|A stop on a lower-circuit bar (open, low and close equal at 2 decimals) is deferred: sold at the next non-circuit bar's open less the buffer";
-const F_FLT: &str = "F|Filter (default off): ST filter (the stock's own Supertrend, monthly, period 5, factor 1, mid point) up to buy and down to sell at the close; or the ATHC regime (close above all earlier closes, off when the 10% close swing turns down) on to buy and off to sell";
-const F_GUARD: &str = "F|Template guards: no entry on a bar whose high equals its close, close above the penny price (0), turnover filter off, dead-stock backtest off";
+const X_HSL: &str = "X|For the first HSL days (2): Sell at the setup Low when the Low reaches it";
+const X_HSL_2: &str = "X|If the Open gapped below the setup Low: Sell at Open − the 0.25% buffer";
+const X_TRAIL: &str = "X|After that: ATR trailing stop = highest High since entry − ATR multiple × ATR(5) of the previous bar, taken on the bar of each new High; it only rises";
+const X_TRAIL_2: &str = "X|After that: Low < the lowest Low of the previous 2 bars";
+const X_TRAIL_3: &str = "X|Each stop sells at its level, or at Open − the buffer on a gap";
+const X_CIRC: &str = "X|A stop on a lower-circuit bar (Open = Low = Close at 2 decimals) is deferred";
+const X_CIRC_2: &str = "X|A deferred stop sells at the next non-circuit bar's Open − the buffer";
+const F_FLT: &str = "F|Filter (default off), option 1: ST filter (the stock's own Supertrend, monthly, period 5, factor 1, mid point): up to buy, down to sell at the Close";
+const F_FLT_2: &str = "F|Filter option 2: ATHC regime (Close > all earlier Closes; off when the 10% Close swing turns down): on to buy, off to sell";
+const F_GUARD: &str = "F|Template guard: no entry on a bar whose High = Close";
+const F_GUARD_2: &str = "F|Template guard: Close > penny price (0)";
+const F_GUARD_3: &str = "F|Template guards: turnover filter off, dead-stock backtest off";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![
         def(FIVE_DOWN, "Five Days Down Swing", &[
-            "F|Setup: 5 consecutive lower closes ending on the previous bar",
-            "E|Buy at the close on the next bar when the close is above the setup bar's high less 10% of its range; the setup bar's low is the hard stop",
-            X_HSL, X_TRAIL, X_CIRC, F_FLT, F_GUARD,
+            "F|Setup: 5 consecutive lower Closes ending on the previous bar",
+            "F|Next bar: Close > setup bar's High − 10% of its range",
+            "E|Buy at the Close on the next bar",
+            "X|Hard stop = the setup bar's Low",
+            X_HSL, X_HSL_2, X_TRAIL, X_TRAIL_2, X_TRAIL_3, X_CIRC, X_CIRC_2, F_FLT, F_FLT_2, F_GUARD, F_GUARD_2, F_GUARD_3,
         ], "Five Days Down Swing trading Strategy with and without filter(Long Only).afl, coded as the AFL is written; the plain 'Five Days Down Swing trading Strategy.afl' has the same rules and defaults as its 'Without Filter' setting (its loop starts at the lowest-low-period bar instead of bar 2) and is not coded twice. Runs on one stock at a time; the team ran it over NSE cash stock universes; portfolio limits (MaxOpenPositions 20, position sizing, brokerage) not modelled. The lower-close count keeps running while a trade is open; a new entry needs the count to equal 5 + 1 exactly. The filter-off default is the AFL's."),
         def(FIVE_FIVE_ONE, "Five Five One W Swing", &[
-            "F|Setup bar: close above the close 25 bars back, previous close below the close 5 bars back, an up close and a white candle, Williams %R(10) below -50",
-            "E|Buy at the close on the bar after the setup when the close is above the setup bar's high less 10% of its range; the setup bar's low is the hard stop",
-            X_HSL, "X|After that: ATR trailing stop (1 x ATR(5), from each new high, only rising) and a low below the lowest low of the previous 2 bars", X_CIRC, F_FLT, F_GUARD,
+            "F|Setup bar: Close > Close 25 bars back",
+            "F|Setup bar: previous Close < Close 5 bars back",
+            "F|Setup bar: an up Close and a white candle",
+            "F|Setup bar: Williams %R(10) < -50",
+            "F|Bar after the setup: Close > setup bar's High − 10% of its range",
+            "E|Buy at the Close on the bar after the setup",
+            "X|Hard stop = the setup bar's Low",
+            X_HSL, X_HSL_2, "X|After that: ATR trailing stop (1 × ATR(5), from each new High, only rising)", "X|After that: Low < the lowest Low of the previous 2 bars", X_CIRC, X_CIRC_2, F_FLT, F_FLT_2, F_GUARD, F_GUARD_2, F_GUARD_3,
         ], "Five Five One W Swing Trading System with and without filter(Long Only).afl, coded as the AFL is written; the plain 'Five Five One W Swing Trading System.afl' has the same rules and defaults as the 'Without Filter' setting and is not coded twice. Runs on one stock at a time; the team ran it over NSE cash stock universes; portfolio limits (MaxOpenPositions 20, position sizing, brokerage) not modelled."),
         def(TWO_MA, "Two MAs with Gap (no filter)", &[
-            "E|Buy at the close when the close is above the 200-day average, the high is below the 10-day average and the close is below the 10-day average less 1% (gap version 'Simple %')",
-            "X|Sell at the close when the previous close was above the 10-day average or the close is below the 200-day average, on a bar whose low is not its close",
-            F_GUARD,
+            "F|Close > 200-day average",
+            "F|High < 10-day average",
+            "F|Close < 10-day average − 1% (gap version 'Simple %')",
+            "E|Buy at the Close",
+            "X|Sell at the Close when the previous Close > 10-day average, or Close < 200-day average",
+            "X|Only on a bar whose Low ≠ Close",
+            F_GUARD, F_GUARD_2, F_GUARD_3,
         ], "Two Ma's with gap value EntryExit_Without filter.afl, coded as the AFL is written. Runs on one stock at a time; the team ran it over NSE cash stock universes; portfolio limits (MaxOpenPositions 20, position sizing, brokerage) not modelled. Gap versions: 1 Simple % (MA x gap %), 2 Simple ATR (MA - ATR(5) of the previous bar), 3 ATR % (MA - multiplier x ATR). While the 200-day average is still Null the AFL's loop treats it as -1e10, so the 'above the 200-day average' test passes on a stock's first 199 bars (as written)."),
         def(TWO_MA_FLT, "Two MAs with Gap (with filter option)", &[
-            "E|Buy at the close when the close is above the 200-day average, the high is below the 10-day average and the close is below the 10-day average less 1%",
-            "X|Sell at the close when the previous close was above the 10-day average or the close is below the 200-day average (or the filter turns off); on a bar whose low equals its close the sale waits for the first later bar where it does not",
-            F_FLT, F_GUARD,
+            "F|Close > 200-day average",
+            "F|High < 10-day average",
+            "F|Close < 10-day average − 1%",
+            "E|Buy at the Close",
+            "X|Sell at the Close when the previous Close > 10-day average, or Close < 200-day average, or the filter turns off",
+            "X|On a bar whose Low = Close, the sale waits for the first later bar where it does not",
+            F_FLT, F_FLT_2, F_GUARD, F_GUARD_2, F_GUARD_3,
         ], "Two Ma's with gap value EntryExit with and without filter(Long Only).afl, coded as the AFL is written (default 'Without Filter'). Runs on one stock at a time; the team ran it over NSE cash stock universes; portfolio limits (MaxOpenPositions 20, position sizing, brokerage) not modelled. Differs from the no-filter AFL in how a low = close bar defers the exit."),
         def(WASHOUT, "Washout Swing", &[
-            "F|Setup bar (the previous bar): higher low, white candle, close above the high before it; Williams %R(260) and %R(100) of the bar before the setup below -80",
-            "E|Buy stop at the setup bar's high + 0.05% (at the open + 0.25% buffer when the open is already above it), only when the high is outside a band of 2% around the 200-day average; the bar before the setup gives the hard stop (its low)",
-            X_HSL, X_TRAIL, X_CIRC,
-            "F|Template guards: no entry on an upper-circuit bar (open, close and high equal at 2 decimals), previous close above the penny price (0), turnover filter off, dead-stock backtest off",
+            "F|Setup bar (the previous bar): higher Low, white candle, Close > the High before it",
+            "F|Williams %R(260) and %R(100) of the bar before the setup < -80",
+            "F|High is outside a band of 2% around the 200-day average",
+            "E|Buy stop at the setup bar's High + 0.05%",
+            "E|If the Open is already above it: buy at Open + 0.25% buffer",
+            "X|Hard stop = the Low of the bar before the setup",
+            X_HSL, X_HSL_2, X_TRAIL, X_TRAIL_2, X_TRAIL_3, X_CIRC, X_CIRC_2,
+            "F|Template guard: no entry on an upper-circuit bar (Open = Close = High at 2 decimals)",
+            "F|Template guard: previous Close > penny price (0)",
+            "F|Template guards: turnover filter off, dead-stock backtest off",
         ], "WASHOUT Swing trading Strategy.afl, coded as the AFL is written. Runs on one stock at a time; the team ran it over NSE cash stock universes; portfolio limits (MaxOpenPositions 20, position sizing, brokerage) not modelled. The entry is intraday at the stop level (a buy stop), not at the close. While the 200-day average is Null the AFL's loop treats the band as -1e10, so the band test passes on a stock's first 199 bars (as written)."),
     ]
 }

@@ -33,50 +33,76 @@ fn def(id: &'static str, name: &'static str, rules: &'static [&'static str], not
     StrategyDef { id, name, group: "YT Strategies · Negative Expiry", session: 0, dir: "Long", status: Status::Live, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim: None }
 }
 
-const ST_E: &str = "E|Buy at the close while that condition holds and the entry Supertrend (period 5, factor 2, on the mid point) is up";
-const ST_X: &str = "X|Sell at the close when the entry Supertrend and the exit Supertrend (period 5, factor 4) are both down";
-const EXP_V1: &str = "F|Expiry day from the calendar: a Thursday in the month's last 7 days, or a Wednesday in its last 8 days (not the 30th) when the next bar is a Friday";
-const EXP_V2: &str = "F|Expiry day from the calendar: 29 Apr 2009 and 28 Mar 2018 (hard-coded), a Thursday in the month's last 7 days, or a Wednesday in its last 8 days when the next bar is a Friday or Monday of the same month";
-const EOM: &str = "F|Month end: the last trading day of the month (read from the next bar's date)";
-const FLT: &str = "F|Optional market filter (off by default): Supertrend (5, 1, mid point) or SMA (200) of the traded index on monthly (default), weekly or daily bars; entries only while it is up";
+const ST_E: &str = "E|The condition above holds";
+const ST_E_2: &str = "E|Entry Supertrend (period 5, factor 2, on the mid point) is up";
+const ST_E_3: &str = "E|Buy at the Close while both hold";
+const ST_X: &str = "X|Entry Supertrend is down";
+const ST_X_2: &str = "X|Exit Supertrend (period 5, factor 4) is down";
+const ST_X_3: &str = "X|Sell at the Close when both are down";
+const EXP_V1: &str = "F|Expiry day (from the calendar): a Thursday in the month's last 7 days";
+const EXP_V1_2: &str = "F|Or a Wednesday in its last 8 days (not the 30th) when the next bar is a Friday";
+const EXP_V2: &str = "F|Expiry day (from the calendar): 29 Apr 2009 and 28 Mar 2018 (hard-coded)";
+const EXP_V2_2: &str = "F|Or a Thursday in the month's last 7 days";
+const EXP_V2_3: &str = "F|Or a Wednesday in its last 8 days when the next bar is a Friday or Monday of the same month";
+const EOM: &str = "F|Month end = the last trading day of the month (read from the next bar's date)";
+const FLT: &str = "F|Optional market filter (off by default): Supertrend (5, 1, mid point) or SMA (200) of the traded index";
+const FLT_2: &str = "F|Filter bars: monthly (default), weekly or daily";
+const FLT_3: &str = "F|Entries only while the filter is up";
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![
         def(EXPIRY, "Negative Expiry ST 5/2-5/4", &[
-            EXP_V1,
-            "F|The latest expiry close is more than 1% below the previous expiry's close (holds until the next expiry)",
-            ST_E, ST_X,
+            EXP_V1, EXP_V1_2,
+            "F|Latest expiry Close < previous expiry Close by more than 1%",
+            "F|This holds until the next expiry",
+            ST_E, ST_E_2, ST_E_3, ST_X, ST_X_2, ST_X_3,
         ], "st 52 54 long only with expiry day close (Negative Expiry / Without filter / ST 52 54 long only when EXPIRY day close is negative), coded as the AFL is written. This AFL's Wednesday fallback needs the next bar to be a Friday and skips the 30th; no hard-coded dates. Before the second expiry both reference closes are the first bar's close, so no signal. Expiry days come from the AFL's calendar rule (no NSE expiry list), with its February rule (Feb 2000 counted as 28 days); the Wednesday fallback reads the next bar (one bar of look-ahead). Supertrend: the team's loop (band ATR = mean of the last 5 ATR(1) values); the '3DAYS MA' calculation point falls back to the mid point (the AFL compares it against the misspelt '3DYAS MA')."),
         def(MONTH_END, "Negative Month-End ST 5/2-5/4", &[
             EOM,
-            "F|The latest month-end close is more than 1% below the previous month-end close (holds until the next month end)",
-            ST_E, ST_X,
+            "F|Latest month-end Close < previous month-end Close by more than 1%",
+            "F|This holds until the next month end",
+            ST_E, ST_E_2, ST_E_3, ST_X, ST_X_2, ST_X_3,
         ], "st 52 54 long only with monthly close (Negative Expiry / Without filter / ST 52 54 long only when MONTHLY day close is negative), coded as the AFL is written. The month end is found from the next bar's day number (one bar of look-ahead; the last bar of the data is never a month end). The % difference Param is declared twice; the second (default 1, minimum 0.05) is the one AmiBroker uses. Supertrend: the team's loop; the '3DAYS MA' calculation point falls back to the mid point (misspelt comparison in the AFL)."),
         def(EXPIRY_FLT, "Negative Expiry ST 5/2-5/4 with Index Filter", &[
-            EXP_V2,
-            "F|The latest expiry close is more than 1% below the previous expiry's close, and the previous expiry close is no longer the first bar's close",
-            FLT, ST_E,
-            "X|Sell at the close when the entry and exit Supertrends are both down, or when the market filter is down",
+            EXP_V2, EXP_V2_2, EXP_V2_3,
+            "F|Latest expiry Close < previous expiry Close by more than 1%",
+            "F|The previous expiry Close is no longer the first bar's Close",
+            FLT, FLT_2, FLT_3, ST_E, ST_E_2, ST_E_3,
+            "X|Sell at the Close when the entry and exit Supertrends are both down",
+            "X|Or when the market filter is down",
         ], "st 52 54 long only with expiry day close WITH INDEX FLT - Copy (3) (Negative Expiry / Index Filter), coded as the AFL is written. Expiry days come from the AFL's calendar rule, including its hard-coded dates (29 Apr 2009, 28 Mar 2018) and February rule (Feb 2000 counted as 28 days); the Wednesday fallback reads the next bar (one bar of look-ahead). The AFL's index filter is NONE by default; its NSENIFTY / NSE500 / BANKNIFTY choice reads another symbol, which the engine does not load, so when turned on the filter uses the traded index's own bars. The filter ST calculation point gives the pivot only when the DAILY point is the pivot (the AFL tests the wrong variable). No buy on an upper-circuit bar (open = high = close at two decimals) and no sell on a lower-circuit bar. Ranking, R-multiple and expectancy code does not change the signals of a single index."),
         def(MONTH_END_FLT, "Negative Month-End ST 5/2-5/4 with Index Filter", &[
             EOM,
-            "F|The latest month-end close is more than 1% below the previous month-end close",
-            FLT,
-            "E|Buy at the close while that holds, the entry Supertrend (5, 2) is up and the filter is up, from the 32nd bar of the data",
-            "X|Sell at the close when the entry and exit Supertrends are both down (the filter does not force a sell in this AFL)",
+            "F|Latest month-end Close < previous month-end Close by more than 1%",
+            FLT, FLT_2, FLT_3,
+            "E|The condition above holds",
+            "E|Entry Supertrend (5, 2) is up and the filter is up",
+            "E|Buy at the Close",
+            "E|Only from the 32nd bar of the data",
+            "X|Sell at the Close when the entry and exit Supertrends are both down",
+            "X|The filter does not force a sell in this AFL",
         ], "st 52 54 long only with monthly close WITH INDEX FLT (Negative Expiry / Index Filter), coded as the AFL is written: unlike the expiry and 5-day versions, its Sell does not include the filter, and it has no first-close guard but needs BarIndex() > 30. The month end is found from the next bar's day number (one bar of look-ahead). The AFL's index filter is NONE by default; its NSENIFTY / NSE500 / BANKNIFTY choice reads another symbol, which the engine does not load, so when turned on the filter uses the traded index's own bars (filter ST point quirk as in the AFL). No buy on an upper-circuit bar, no sell on a lower-circuit bar."),
         def(FIVE_DAY_FLT, "5 Days Before Month-End ST 5/2-5/4 with Index Filter", &[
-            "F|Reference day: the bar 5 trading days before the month's last trading day (entry day 5)",
-            "F|The latest reference-day close is more than 1% below the previous month's reference-day close",
-            FLT,
-            "E|Buy at the close while that holds, the entry Supertrend (5, 2) is up and the filter is up, from the 32nd bar of the data",
-            "X|Sell at the close when the entry and exit Supertrends are both down, or when the market filter is down",
+            "F|Reference day = the bar 5 trading days before the month's last trading day (entry day 5)",
+            "F|Latest reference-day Close < previous month's reference-day Close by more than 1%",
+            FLT, FLT_2, FLT_3,
+            "E|The condition above holds",
+            "E|Entry Supertrend (5, 2) is up and the filter is up",
+            "E|Buy at the Close",
+            "E|Only from the 32nd bar of the data",
+            "X|Sell at the Close when the entry and exit Supertrends are both down",
+            "X|Or when the market filter is down",
         ], "st 52 54 long only with 5 day phenomena WITH INDEX FLT (Negative Expiry / Index Filter), coded as the AFL is written. The reference day is Ref(eom, entryday): it is known only from the month end entryday bars later, and the month end itself from the bar after that, so the AFL looks ahead entryday + 1 bars (coded the same way, look-ahead included). The AFL's index filter is NONE by default; its NSENIFTY / NSE500 / BANKNIFTY choice reads another symbol, which the engine does not load, so when turned on the filter uses the traded index's own bars (filter ST point quirk as in the AFL). No buy on an upper-circuit bar, no sell on a lower-circuit bar."),
         def(REENTRY, "Negative Expiry ST 5/2-5/4, Re-entry until Minimum Profit", &[
-            EXP_V2,
-            "F|The latest expiry close is more than 1% below the previous expiry's close, and the previous expiry close is no longer the first bar's close",
-            "F|Optional filter on the index's own bars (off by default): Supertrend (5, 1, mid point) or SMA (200), monthly, weekly or daily",
-            "E|Buy at the close when the entry Supertrend (5, 2) is up and the filter is up, and either the expiry condition holds or the last trade of the AFL's own trade loop made less than the minimum profit (5%)",
-            "X|Sell at the close when the entry and exit Supertrends are both down, or when the filter is down",
+            EXP_V2, EXP_V2_2, EXP_V2_3,
+            "F|Latest expiry Close < previous expiry Close by more than 1%",
+            "F|The previous expiry Close is no longer the first bar's Close",
+            "F|Optional filter on the index's own bars (off by default): Supertrend (5, 1, mid point) or SMA (200)",
+            "F|Filter bars: monthly, weekly or daily",
+            "E|Entry Supertrend (5, 2) is up and the filter is up",
+            "E|And either the expiry condition holds, or the last trade of the AFL's own trade loop made less than the minimum profit (5%)",
+            "E|Buy at the Close",
+            "X|Sell at the Close when the entry and exit Supertrends are both down",
+            "X|Or when the filter is down",
         ], "st 52 54 long only with expiry day close WITH stock FLT with probability (Negative Expiry / Stock Filter), coded as the AFL is written; the team ran it on the spot indices. The AFL first runs its own trade loop: after a loop trade closes below the minimum profit (net of its BROKERAGE %, default 0.65, which the AFL charges at the exit price on both legs), it may re-buy whenever the entry ST is up and the filter is up, without the expiry condition, until a trade reaches the minimum profit; the loop's re-entry does not check the upper circuit. The actual Buy then uses the loop's flag from the previous bar. Expiry days come from the AFL's calendar rule, including its hard-coded dates (29 Apr 2009, 28 Mar 2018) and February rule (Feb 2000 counted as 28 days); the Wednesday fallback reads the next bar (one bar of look-ahead). The filter here is the AFL's STOCK filter on the traded series itself (default NONE). No buy on an upper-circuit bar, no sell on a lower-circuit bar."),
     ]
 }

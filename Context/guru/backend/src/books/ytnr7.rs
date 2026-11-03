@@ -43,41 +43,54 @@ fn def(id: &'static str, name: &'static str, rules: &'static [&'static str], not
     StrategyDef { id, name, group: "YT Strategies · NR7", session: 0, dir: "Long", status: Status::Live, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim: None }
 }
 
-const F_NR7: &str = "F|NR7: the previous bar's range (H-L) is below each of the 6 ranges before it, and none of the 7 ranges is 0";
-const F_ATHC: &str = "F|ATHC regime: on when the close is above the highest earlier close; off when the 10% close swing turns down; NR7 setups count only while it is on, and it going off cancels a waiting setup";
-const F_INSIDE: &str = "F|The previous bar is also an inside bar (high below and low above the bar before it)";
-const F_GUARD: &str = "F|Template guards: no entry on an upper-circuit bar, close above the penny price (0), turnover filter off, dead-stock backtest off; a setup whose breakout bar fails a guard is dropped (wait for a new NR7)";
-const E_NR7H: &str = "E|Buy at the close when the close is above the NR7 bar's high (the setup bar, kept until used or cancelled)";
-const E_INSH: &str = "E|Buy at the close when the close is above the inside (NR7) bar's high";
-const E_MOTH: &str = "E|Buy at the close when the close is above the mother bar's high (the bar before the inside NR7 bar)";
-const X_ST: &str = "X|Entered with the daily Supertrend (5, 1, mid point) up: sell at the close when it turns down. Entered with it down: sell at the close below entry close - 1 x ATR(14); if the ST turns up first, switch to the ST exit";
-const X_LOW2: &str = "X|Sell at the close on a bar whose low is below the lower of the previous 2 lows (from the bar after entry)";
-const X_ST_LOW2: &str = "X|Supertrend / ATR exit as in the ST version, or (whichever is earlier) a low below the lower of the previous 2 lows; at the close";
-const X_CIRC: &str = "X|No exit on a lower-circuit bar (open, low and close equal)";
+const F_NR7: &str = "F|NR7: the previous bar's range (H − L) < each of the 6 ranges before it";
+const F_NR7_2: &str = "F|None of the 7 ranges is 0";
+const F_ATHC: &str = "F|ATHC regime on: Close > the highest earlier Close";
+const F_ATHC_2: &str = "F|ATHC regime off: the 10% Close swing turns down";
+const F_ATHC_3: &str = "F|NR7 setups count only while the regime is on; it going off cancels a waiting setup";
+const F_INSIDE: &str = "F|The previous bar is also an inside bar: its High < and Low > the bar before it";
+const F_GUARD: &str = "F|Template guard: no entry on an upper-circuit bar";
+const F_GUARD_2: &str = "F|Template guard: Close > penny price (0)";
+const F_GUARD_3: &str = "F|Turnover filter off; dead-stock backtest off";
+const F_GUARD_4: &str = "F|A setup whose breakout bar fails a guard is dropped (wait for a new NR7)";
+const E_NR7H: &str = "E|Close > the NR7 bar's High (the setup bar, kept until used or cancelled)";
+const E_NR7H_2: &str = "E|Buy at the Close";
+const E_INSH: &str = "E|Close > the inside (NR7) bar's High";
+const E_INSH_2: &str = "E|Buy at the Close";
+const E_MOTH: &str = "E|Close > the mother bar's High (the bar before the inside NR7 bar)";
+const E_MOTH_2: &str = "E|Buy at the Close";
+const X_ST: &str = "X|Entered with the daily Supertrend (5, 1, mid point) up: sell at the Close when it turns down";
+const X_ST_2: &str = "X|Entered with it down: sell at the Close when Close < entry Close − 1 × ATR(14)";
+const X_ST_3: &str = "X|If the ST turns up first, switch to the ST exit";
+const X_LOW2: &str = "X|Low < the lower of the previous 2 Lows (from the bar after entry): sell at the Close";
+const X_ST_LOW2: &str = "X|Supertrend / ATR exit as in the ST version";
+const X_ST_LOW2_2: &str = "X|Or, whichever is earlier, Low < the lower of the previous 2 Lows";
+const X_ST_LOW2_3: &str = "X|Exit at the Close";
+const X_CIRC: &str = "X|No exit on a lower-circuit bar (Open = Low = Close)";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![
-        def(NR7_ST, "NR7 Breakout, Supertrend / ATR Exit", &[F_NR7, "F|No ATHC regime; a waiting setup is cleared on bars when a position is open", E_NR7H, X_ST, X_CIRC, "F|Template guards: no entry on an upper-circuit bar, close above the penny price (0), turnover filter off, dead-stock backtest off"],
+        def(NR7_ST, "NR7 Breakout, Supertrend / ATR Exit", &[F_NR7, F_NR7_2, "F|No ATHC regime", "F|A waiting setup is cleared on bars when a position is open", E_NR7H, E_NR7H_2, X_ST, X_ST_2, X_ST_3, X_CIRC, "F|Template guard: no entry on an upper-circuit bar", "F|Template guard: Close > penny price (0)", "F|Turnover filter off; dead-stock backtest off"],
             concat!("Entry with NR7 & exit with ST as SL.afl (NR7/Entry with NR7 & exit with ST), coded as the AFL is written.", " Runs on one stock at a time; the team ran it over F&O and NSE cash stock universes; portfolio limits (MaxOpenPositions 20, position sizing, brokerage) not modelled.", " The AFL's 'Buffer %' parameter is not used by its rules. The ATR stop is fixed at entry. Which of the two exits applies is decided by the ST direction on the entry bar.")),
-        def(ATHC_ST, "NR7 + ATHC Breakout, Supertrend / ATR Exit", &[F_NR7, F_ATHC, E_NR7H, X_ST, X_CIRC, F_GUARD],
+        def(ATHC_ST, "NR7 + ATHC Breakout, Supertrend / ATR Exit", &[F_NR7, F_NR7_2, F_ATHC, F_ATHC_2, F_ATHC_3, E_NR7H, E_NR7H_2, X_ST, X_ST_2, X_ST_3, X_CIRC, F_GUARD, F_GUARD_2, F_GUARD_3, F_GUARD_4],
             concat!("Narrow Range 7 With ATHC and exit with ST.afl, coded as the AFL is written.", " Runs on one stock at a time; the team ran it over F&O and NSE cash stock universes (header: stock selection Close > ATHC); portfolio limits (MaxOpenPositions 20, position sizing, brokerage) not modelled.", " The ATHC regime gates entries only; an open trade is not closed when it goes off.")),
-        def(ATHC_LOW2, "NR7 + ATHC Breakout, 2-Day Low Exit", &[F_NR7, F_ATHC, E_NR7H, X_LOW2, X_CIRC, F_GUARD],
+        def(ATHC_LOW2, "NR7 + ATHC Breakout, 2-Day Low Exit", &[F_NR7, F_NR7_2, F_ATHC, F_ATHC_2, F_ATHC_3, E_NR7H, E_NR7H_2, X_LOW2, X_CIRC, F_GUARD, F_GUARD_2, F_GUARD_3, F_GUARD_4],
             concat!("Narrow Range 7 With ATHC and exit with Prev. 2 Days Lowest Low - New.afl, coded as the AFL is written.", " Runs on one stock at a time; the team ran it over F&O and NSE cash stock universes (header: stock selection Close > ATHC); portfolio limits (MaxOpenPositions 20, position sizing, brokerage) not modelled.", " The exit fires on the low but fills at the close (SellPrice = Close).")),
-        def(ATHC_ST_LOW2, "NR7 + ATHC Breakout, ST or 2-Day Low Exit", &[F_NR7, F_ATHC, E_NR7H, X_ST_LOW2, X_CIRC, F_GUARD],
+        def(ATHC_ST_LOW2, "NR7 + ATHC Breakout, ST or 2-Day Low Exit", &[F_NR7, F_NR7_2, F_ATHC, F_ATHC_2, F_ATHC_3, E_NR7H, E_NR7H_2, X_ST_LOW2, X_ST_LOW2_2, X_ST_LOW2_3, X_CIRC, F_GUARD, F_GUARD_2, F_GUARD_3, F_GUARD_4],
             concat!("Narrow Range 7 With ATHC and exit with ST OR Prev. 2 Days Lowest Low (Whichever is earlier) - New.afl, coded as the AFL is written.", " Runs on one stock at a time; the team ran it over F&O and NSE cash stock universes (header: stock selection Close > ATHC); portfolio limits (MaxOpenPositions 20, position sizing, brokerage) not modelled.", " The 2-day-low exit fills at the close. Kept quirk: when a trade entered in an ST down trend leaves on the 2-day low, the AFL does not clear its ATR-stop flag, which only matters through the ST switch of the next trade (as written).")),
-        def(ATHC_LLV, "NR7 + ATHC Breakout, Close Below N-Day Low Exit", &[F_NR7, F_ATHC, E_NR7H, "X|Sell at the close when the close is below the lowest low of the previous N bars (N 2)", X_CIRC, F_GUARD],
+        def(ATHC_LLV, "NR7 + ATHC Breakout, Close Below N-Day Low Exit", &[F_NR7, F_NR7_2, F_ATHC, F_ATHC_2, F_ATHC_3, E_NR7H, E_NR7H_2, "X|Close < lowest Low of the previous N bars (N 2): sell at the Close", X_CIRC, F_GUARD, F_GUARD_2, F_GUARD_3, F_GUARD_4],
             concat!("NR7 With ATHC Filter and exit with Prev. N-Days Lowest Low.afl, coded as the AFL is written.", " Runs on one stock at a time; the team ran it over F&O and NSE cash stock universes (header: stock selection Close > ATHC); portfolio limits (MaxOpenPositions 20, position sizing, brokerage) not modelled.", " Unlike the 2-day-low versions this exit tests the close, not the low.")),
-        def(INSIDE_ST, "NR7 Inside Bar + ATHC, Supertrend / ATR Exit", &[F_NR7, F_INSIDE, F_ATHC, E_INSH, X_ST, X_CIRC, F_GUARD],
+        def(INSIDE_ST, "NR7 Inside Bar + ATHC, Supertrend / ATR Exit", &[F_NR7, F_NR7_2, F_INSIDE, F_ATHC, F_ATHC_2, F_ATHC_3, E_INSH, E_INSH_2, X_ST, X_ST_2, X_ST_3, X_CIRC, F_GUARD, F_GUARD_2, F_GUARD_3, F_GUARD_4],
             concat!("Narrow Range 7 With Inside Bar and exit with SuperTrend.afl, coded as the AFL is written (the ' - Copy' file has the same rules and defaults and is not coded twice).", " Runs on one stock at a time; the team ran it over F&O and NSE cash stock universes (header: stock selection Close > ATHC); portfolio limits (MaxOpenPositions 20, position sizing, brokerage) not modelled.")),
-        def(INSIDE_LOW2, "NR7 Inside Bar + ATHC, 2-Day Low Exit", &[F_NR7, F_INSIDE, F_ATHC, E_INSH, X_LOW2, X_CIRC, F_GUARD],
+        def(INSIDE_LOW2, "NR7 Inside Bar + ATHC, 2-Day Low Exit", &[F_NR7, F_NR7_2, F_INSIDE, F_ATHC, F_ATHC_2, F_ATHC_3, E_INSH, E_INSH_2, X_LOW2, X_CIRC, F_GUARD, F_GUARD_2, F_GUARD_3, F_GUARD_4],
             concat!("Narrow Range 7 With Inside Bar and exit with Prev. 2 Days Lowest Low.afl, coded as the AFL is written.", " Runs on one stock at a time; the team ran it over F&O and NSE cash stock universes (header: stock selection Close > ATHC); portfolio limits (MaxOpenPositions 20, position sizing, brokerage) not modelled.", " The exit fills at the close.")),
-        def(INSIDE_ST_LOW2, "NR7 Inside Bar + ATHC, ST or 2-Day Low Exit", &[F_NR7, F_INSIDE, F_ATHC, E_INSH, X_ST_LOW2, X_CIRC, F_GUARD],
+        def(INSIDE_ST_LOW2, "NR7 Inside Bar + ATHC, ST or 2-Day Low Exit", &[F_NR7, F_NR7_2, F_INSIDE, F_ATHC, F_ATHC_2, F_ATHC_3, E_INSH, E_INSH_2, X_ST_LOW2, X_ST_LOW2_2, X_ST_LOW2_3, X_CIRC, F_GUARD, F_GUARD_2, F_GUARD_3, F_GUARD_4],
             concat!("Narrow Range 7 With Inside Bar and exit with SuperTrend OR Prev. 2 Days Lowest Low (Whichever is earlier).afl, coded as the AFL is written.", " Runs on one stock at a time; the team ran it over F&O and NSE cash stock universes (header: stock selection Close > ATHC); portfolio limits (MaxOpenPositions 20, position sizing, brokerage) not modelled.")),
-        def(MOTHER_ST, "NR7 Mother Bar + ATHC, Supertrend / ATR Exit", &[F_NR7, F_INSIDE, F_ATHC, E_MOTH, X_ST, X_CIRC, F_GUARD],
+        def(MOTHER_ST, "NR7 Mother Bar + ATHC, Supertrend / ATR Exit", &[F_NR7, F_NR7_2, F_INSIDE, F_ATHC, F_ATHC_2, F_ATHC_3, E_MOTH, E_MOTH_2, X_ST, X_ST_2, X_ST_3, X_CIRC, F_GUARD, F_GUARD_2, F_GUARD_3, F_GUARD_4],
             concat!("Narrow Range 7 With Mother Bar and exit with SuperTrend.afl, coded as the AFL is written.", " Runs on one stock at a time; the team ran it over F&O and NSE cash stock universes (header: stock selection Close > ATHC); portfolio limits (MaxOpenPositions 20, position sizing, brokerage) not modelled.")),
-        def(MOTHER_LOW2, "NR7 Mother Bar + ATHC, 2-Day Low Exit", &[F_NR7, F_INSIDE, F_ATHC, E_MOTH, X_LOW2, X_CIRC, F_GUARD],
+        def(MOTHER_LOW2, "NR7 Mother Bar + ATHC, 2-Day Low Exit", &[F_NR7, F_NR7_2, F_INSIDE, F_ATHC, F_ATHC_2, F_ATHC_3, E_MOTH, E_MOTH_2, X_LOW2, X_CIRC, F_GUARD, F_GUARD_2, F_GUARD_3, F_GUARD_4],
             concat!("Narrow Range 7 With Mother Bar and exit with Prev. 2 Days Lowest Low.afl, coded as the AFL is written.", " Runs on one stock at a time; the team ran it over F&O and NSE cash stock universes (header: stock selection Close > ATHC); portfolio limits (MaxOpenPositions 20, position sizing, brokerage) not modelled.", " The exit fills at the close.")),
-        def(MOTHER_ST_LOW2, "NR7 Mother Bar + ATHC, ST or 2-Day Low Exit", &[F_NR7, F_INSIDE, F_ATHC, E_MOTH, X_ST_LOW2, X_CIRC, F_GUARD],
+        def(MOTHER_ST_LOW2, "NR7 Mother Bar + ATHC, ST or 2-Day Low Exit", &[F_NR7, F_NR7_2, F_INSIDE, F_ATHC, F_ATHC_2, F_ATHC_3, E_MOTH, E_MOTH_2, X_ST_LOW2, X_ST_LOW2_2, X_ST_LOW2_3, X_CIRC, F_GUARD, F_GUARD_2, F_GUARD_3, F_GUARD_4],
             concat!("Narrow Range 7 With Mother Bar and exit with SuperTrend OR Prev. 2 Days Lowest Low (Whichever is earlier).afl, coded as the AFL is written.", " Runs on one stock at a time; the team ran it over F&O and NSE cash stock universes (header: stock selection Close > ATHC); portfolio limits (MaxOpenPositions 20, position sizing, brokerage) not modelled.")),
     ]
 }

@@ -40,13 +40,25 @@ fn def(id: &'static str, name: &'static str, rules: &'static [&'static str], not
     StrategyDef { id, name, group: GROUP, session: 0, dir: "Long", status: Status::Live, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim: None }
 }
 
-const EXP: &str = "F|Expiry day from the calendar: 29 Apr 2009 and 28 Mar 2018 (hard-coded), a Thursday in the month's last 7 days, or a Wednesday in its last 8 days when the next bar is a Friday or Monday of the same month";
-const EXP_DROP: &str = "F|The latest expiry close is more than 1% below the previous expiry's close, and the previous expiry close is no longer the stock's first close";
-const FLT: &str = "F|Optional filter on the stock's own bars (off by default): Supertrend (5, 1, mid point) or SMA (200) on monthly (default), weekly or daily bars; buys only while it is up";
-const ST_E: &str = "E|Buy at the close while that holds and the entry Supertrend (period 5, factor 2, on the mid point) is up; no buy on the first bar or on an upper-circuit bar (open = high = close at two decimals)";
-const ST_X: &str = "X|Sell at the close when the entry and exit (period 5, factor 4) Supertrends are both down, or when the filter is down; no sell on a lower-circuit bar (open = low = close)";
-const ATH8: &str = "F|The close is within 8% of the all-time highest close (HHV(C, BarCount), the bars so far)";
-const BREAK: &str = "F|Breakout flag: on when the close exceeds the previous bar's highest close; off when a Supertrend on the close (period 10, upper band factor 1, lower band factor 4) is down; otherwise it carries";
+const EXP: &str = "F|Expiry day (from the calendar): 29 Apr 2009 and 28 Mar 2018 (hard-coded)";
+const EXP_2: &str = "F|Or a Thursday in the month's last 7 days";
+const EXP_3: &str = "F|Or a Wednesday in its last 8 days when the next bar is a Friday or Monday of the same month";
+const EXP_DROP: &str = "F|Latest expiry Close < previous expiry Close by more than 1%";
+const EXP_DROP_2: &str = "F|The previous expiry Close is no longer the stock's first Close";
+const FLT: &str = "F|Optional filter on the stock's own bars (off by default): Supertrend (5, 1, mid point) or SMA (200)";
+const FLT_2: &str = "F|Filter bars: monthly (default), weekly or daily";
+const FLT_3: &str = "F|Buys only while the filter is up";
+const ST_E: &str = "E|The conditions above hold";
+const ST_E_2: &str = "E|Entry Supertrend (period 5, factor 2, on the mid point) is up";
+const ST_E_3: &str = "E|Buy at the Close while they hold";
+const ST_E_4: &str = "E|No buy on the first bar or on an upper-circuit bar (Open = High = Close at two decimals)";
+const ST_X: &str = "X|Sell at the Close when the entry and exit (period 5, factor 4) Supertrends are both down";
+const ST_X_2: &str = "X|Or when the filter is down";
+const ST_X_3: &str = "X|No sell on a lower-circuit bar (Open = Low = Close)";
+const ATH8: &str = "F|Close within 8% of the all-time highest Close (HHV(C, BarCount), the bars so far)";
+const BREAK: &str = "F|Breakout flag on: Close > the previous bar's highest Close";
+const BREAK_2: &str = "F|Breakout flag off: a Supertrend on the Close (period 10, upper band factor 1, lower band factor 4) is down";
+const BREAK_3: &str = "F|Otherwise the breakout flag carries";
 macro_rules! common {
     () => {
         " Runs on one stock at a time; the team ran it over stock universes (NSE500 cash-and-positional and F&O stocks); ranking and portfolio limits (MaxOpenPositions 20, sizing) are not modelled. Supertrend: the team's loop (band ATR = mean of the last 5 ATR(1) values); the '3DAYS MA' calculation point falls back to the mid point (the AFL compares it against the misspelt '3DYAS MA'). The filter's ST point gives the pivot only when the DAILY point is the pivot (the AFL tests the wrong variable). Turnover (V x C), penny and hard-stop settings are declared but not used in Buy or Sell."
@@ -56,59 +68,81 @@ macro_rules! common {
 pub fn catalogue() -> Vec<StrategyDef> {
     let n = |s: &'static str| s;
     vec![
-        def(EXPIRY, "Negative Expiry ST 5/2-5/4 (stock)", &[EXP, EXP_DROP, FLT, ST_E, ST_X], n(concat!(
+        def(EXPIRY, "Negative Expiry ST 5/2-5/4 (stock)", &[EXP, EXP_2, EXP_3, EXP_DROP, EXP_DROP_2, FLT, FLT_2, FLT_3, ST_E, ST_E_2, ST_E_3, ST_E_4, ST_X, ST_X_2, ST_X_3], n(concat!(
             "st 52 54 long only with expiry day close WITH stock FLT - Copy (4).afl (Negative Expiry / Stock Filter), coded as the AFL is written. Same rules as the index version (ytne_expiry_index_filter) with the AFL's filter on the stock itself.",
             " Runs on one stock at a time; the team ran it over stock universes (NSE500 cash-and-positional and F&O stocks; workbooks 'FIRST TRADE AS PER EXPIRY'); ranking (PositionScore modes ROC, RSI, STD, ROC/STD, positive closes, swing; default NONE) and portfolio limits (MaxOpenPositions 20, sizing) are not modelled. Supertrend: the team's loop (band ATR = mean of the last 5 ATR(1) values); the '3DAYS MA' calculation point falls back to the mid point (misspelt comparison in the AFL). The filter's ST point gives the pivot only when the DAILY point is the pivot (the AFL tests the wrong variable). Turnover (V x C), penny and hard-stop settings are declared but not used in Buy or Sell."))),
-        def(ATH_DIST, "Negative Expiry ST 5/2-5/4, near All-Time High (stock)", &[EXP, EXP_DROP, ATH8, FLT, ST_E, ST_X], n(concat!(
+        def(ATH_DIST, "Negative Expiry ST 5/2-5/4, near All-Time High (stock)", &[EXP, EXP_2, EXP_3, EXP_DROP, EXP_DROP_2, ATH8, FLT, FLT_2, FLT_3, ST_E, ST_E_2, ST_E_3, ST_E_4, ST_X, ST_X_2, ST_X_3], n(concat!(
             "st 52 54 long only with expiry day close WITH stock FLT AND ATHC 30 PCTl - Copy (2).afl, and the same per-stock rules in st 52 54 long only with expiry day close WITH stock ATHC -30 PCT WITH DUAL RANKING.afl (Negative Expiry / Stock Filter), coded as the AFLs are written. Despite the '30 PCT' names, the '% DIFF FROM ATHC' default is 8. The DUAL RANKING AFL's watch-list loops (positive-close counts and swing distance ranked with StaticVarGenerateRanks) feed no Buy or Sell; its loop even overwrites the '% Difference' variable, but only after the buy condition was computed.",
             " Runs on one stock at a time; the team ran it over stock universes (NSE500 cash-and-positional and F&O stocks); ranking and portfolio limits (MaxOpenPositions 20, sizing) are not modelled. Supertrend: the team's loop; the '3DAYS MA' calculation point falls back to the mid point (misspelt comparison in the AFL). The filter's ST point gives the pivot only when the DAILY point is the pivot. Turnover, penny and hard-stop settings are declared but not used in Buy or Sell."))),
-        def(ATH_DIST_NEW, "Negative Expiry, Fresh ST Buy near All-Time High (stock)", &[EXP, EXP_DROP, ATH8, FLT,
-            "E|Buy at the close when the close crosses above the previous bar's entry Supertrend down line (5, 2, mid point) while those hold; no buy on the first bar or an upper-circuit bar",
-            ST_X,
+        def(ATH_DIST_NEW, "Negative Expiry, Fresh ST Buy near All-Time High (stock)", &[EXP, EXP_2, EXP_3, EXP_DROP, EXP_DROP_2, ATH8, FLT, FLT_2, FLT_3,
+            "E|The conditions above hold",
+            "E|Close crosses above the previous bar's entry Supertrend down line (5, 2, mid point)",
+            "E|Buy at the Close",
+            "E|No buy on the first bar or an upper-circuit bar",
+            ST_X, ST_X_2, ST_X_3,
         ], n(concat!(
             "st 52 54 long only with expiry day close WITH stock FLT AND ATHC 30 PCT NEW BUY ONLYl.afl (Negative Expiry / Stock Filter), coded as the AFL is written: Buy needs Cross(C, Ref(down line, -1)) instead of an up trend. The down line is the ST loop's upper band on down-trend bars, with the bar before a flip down taking that bar's up-trend line; elsewhere it is Null, so the cross also fires when the line ends (AmiBroker Null handling). '% DIFF FROM ATHC' default 8.",
             common!()))),
-        def(Y365_DIST, "Negative Expiry ST 5/2-5/4, near 365-Day High (stock)", &[EXP, EXP_DROP,
-            "F|The close is within 8% of the highest close of the last 365 bars",
-            FLT, ST_E, ST_X,
+        def(Y365_DIST, "Negative Expiry ST 5/2-5/4, near 365-Day High (stock)", &[EXP, EXP_2, EXP_3, EXP_DROP, EXP_DROP_2,
+            "F|Close within 8% of the highest Close of the last 365 bars",
+            FLT, FLT_2, FLT_3, ST_E, ST_E_2, ST_E_3, ST_E_4, ST_X, ST_X_2, ST_X_3,
         ], n(concat!("st 52 54 long only with expiry day close WITH stock FLT AND 365 days -30 PCT.afl (Negative Expiry / Stock Filter), coded as the AFL is written. '% DIFF FROM ATHC' default 8; HHV(C, 365) near the start uses the bars available.", common!()))),
-        def(ATH_BREAK, "Negative Expiry ST 5/2-5/4 after All-Time-High Breakout (stock)", &[EXP, EXP_DROP, BREAK, FLT,
-            "E|Buy at the close while the expiry condition holds, the breakout flag is on and the entry Supertrend (5, 2, mid point) is up; no buy on the first bar or an upper-circuit bar",
-            ST_X,
+        def(ATH_BREAK, "Negative Expiry ST 5/2-5/4 after All-Time-High Breakout (stock)", &[EXP, EXP_2, EXP_3, EXP_DROP, EXP_DROP_2, BREAK, BREAK_2, BREAK_3, FLT, FLT_2, FLT_3,
+            "E|The expiry condition holds",
+            "E|The breakout flag is on",
+            "E|Entry Supertrend (5, 2, mid point) is up",
+            "E|Buy at the Close",
+            "E|No buy on the first bar or an upper-circuit bar",
+            ST_X, ST_X_2, ST_X_3,
         ], n(concat!(
             "st 52 54 long only with expiry day close WITH stock FLT AND ATHC FLT - Copy (2).afl (Negative Expiry / Stock Filter), coded as the AFL is written. The breakout flag's off branch is written `ATHbuysig[i]==0;` (a comparison, not an assignment); the bar is then left at the array's initial 0, so the flag does go off as intended. The flag's ST (ST2) uses the close, MA(ATR(1), 10), factor 1 for the upper band and 4 for the lower band.",
             common!()))),
-        def(Y365_BREAK, "Negative Expiry ST 5/2-5/4 after 365-Day-High Breakout (stock)", &[EXP, EXP_DROP,
-            "F|Breakout flag: on when the close exceeds the previous bar's 365-bar highest close; off when the ST on the close (10, factors 1 / 4) is down; otherwise it carries",
-            FLT,
-            "E|Buy at the close while the expiry condition holds, the breakout flag is on and the entry Supertrend (5, 2, mid point) is up; no buy on the first bar or an upper-circuit bar",
-            ST_X,
+        def(Y365_BREAK, "Negative Expiry ST 5/2-5/4 after 365-Day-High Breakout (stock)", &[EXP, EXP_2, EXP_3, EXP_DROP, EXP_DROP_2,
+            "F|Breakout flag on: Close > the previous bar's 365-bar highest Close",
+            "F|Breakout flag off: the ST on the Close (10, factors 1 / 4) is down",
+            "F|Otherwise the breakout flag carries",
+            FLT, FLT_2, FLT_3,
+            "E|The expiry condition holds",
+            "E|The breakout flag is on",
+            "E|Entry Supertrend (5, 2, mid point) is up",
+            "E|Buy at the Close",
+            "E|No buy on the first bar or an upper-circuit bar",
+            ST_X, ST_X_2, ST_X_3,
         ], n(concat!("st 52 54 long only with expiry day close WITH stock FLT AND 365 days FLT.afl (Negative Expiry / Stock Filter), coded as the AFL is written; the breakout flag as in the all-time-high version but on HHV(C, 365) (bars available near the start).", common!()))),
-        def(REENTRY_ATH, "Negative Expiry ST 5/2-5/4, Re-entry until Minimum Profit, near ATH (stock)", &[EXP, EXP_DROP, ATH8, FLT,
-            "E|Buy at the close when the entry Supertrend (5, 2) is up, the filter is up and the close is within 8% of the all-time highest close, and either the expiry condition holds or the last trade of the AFL's own trade loop made less than the minimum profit (5%)",
-            ST_X,
+        def(REENTRY_ATH, "Negative Expiry ST 5/2-5/4, Re-entry until Minimum Profit, near ATH (stock)", &[EXP, EXP_2, EXP_3, EXP_DROP, EXP_DROP_2, ATH8, FLT, FLT_2, FLT_3,
+            "E|Entry Supertrend (5, 2) is up and the filter is up",
+            "E|Close within 8% of the all-time highest Close",
+            "E|And either the expiry condition holds, or the last trade of the AFL's own trade loop made less than the minimum profit (5%)",
+            "E|Buy at the Close",
+            ST_X, ST_X_2, ST_X_3,
         ], n(concat!(
             "st 52 54 long only with expiry day close WITH stock FLT with probability and athc -8pct ver2 - Copy.afl (Negative Expiry / Stock Filter), coded as the AFL is written: the re-entry AFL of ytne_expiry_reentry_min_profit with the within-8%-of-ATH condition added to the loop's re-entry and to Buy. The AFL's own trade loop charges its BROKERAGE % (default 0.65) at the exit price on both legs; after a loop trade below the minimum profit it may re-buy without the expiry condition until a trade reaches it; Buy uses the loop's flag from the previous bar.",
             common!()))),
         def(MONTH_END, "Negative Month-End ST 5/2-5/4 (stock)", &[
-            "F|Month end: the last trading day of the month (read from the next bar's date)",
-            "F|The latest month-end close is more than 1% below the previous month-end close, and the previous month-end close is no longer the stock's first close",
-            FLT, ST_E, ST_X,
+            "F|Month end = the last trading day of the month (read from the next bar's date)",
+            "F|Latest month-end Close < previous month-end Close by more than 1%",
+            "F|The previous month-end Close is no longer the stock's first Close",
+            FLT, FLT_2, FLT_3, ST_E, ST_E_2, ST_E_3, ST_E_4, ST_X, ST_X_2, ST_X_3,
         ], n(concat!("st 52 54 long only with monthly close with stock flt.afl (Negative Expiry / Stock Filter), coded as the AFL is written: unlike the index month-end AFL it has the first-close guard, no 30-bar start, and the filter also forces a sell. The month end is found from the next bar's day number (one bar of look-ahead; the data's last bar is never a month end).", common!()))),
         def(FIVE_DAY, "5 Days Before Month-End ST 5/2-5/4 (stock)", &[
-            "F|Reference day: the bar 5 trading days before the month's last trading day (entry day 5)",
-            "F|The latest reference-day close is more than 1% below the previous month's reference-day close, and that previous close is no longer the stock's first close",
-            FLT, ST_E, ST_X,
+            "F|Reference day = the bar 5 trading days before the month's last trading day (entry day 5)",
+            "F|Latest reference-day Close < previous month's reference-day Close by more than 1%",
+            "F|That previous Close is no longer the stock's first Close",
+            FLT, FLT_2, FLT_3, ST_E, ST_E_2, ST_E_3, ST_E_4, ST_X, ST_X_2, ST_X_3,
         ], n(concat!("st 52 54 long only with 5 day phenomena with stock flt.afl (Negative Expiry / Stock Filter), coded as the AFL is written. The reference day is Ref(eom, entryday): it is known only from the month end entryday bars later, and the month end from the bar after that, so the AFL looks ahead entryday + 1 bars (coded the same way, look-ahead included). Its ROC ranking period is an Optimize (ranking not modelled).", common!()))),
         def(FIVE_END_START, "Month-Start Close vs 5 Days Before Month-End ST 5/2-5/4 (stock)", &[
-            "F|Start day: 5 trading days before the month's last trading day; end day: 2 trading days after a month end",
-            "F|The start-day close is more than 1% below the latest end-day close (the close 2 days into the month), and that end-day close is no longer the stock's first close",
-            FLT, ST_E, ST_X,
+            "F|Start day = 5 trading days before the month's last trading day",
+            "F|End day = 2 trading days after a month end",
+            "F|Start-day Close < latest end-day Close (the Close 2 days into the month) by more than 1%",
+            "F|That end-day Close is no longer the stock's first Close",
+            FLT, FLT_2, FLT_3, ST_E, ST_E_2, ST_E_3, ST_E_4, ST_X, ST_X_2, ST_X_3,
         ], n(concat!("st 52 54 long only with 5 day phenomena end to start.afl (Negative Expiry / Stock Filter), coded as the AFL is written: lastclose = the start-day close, lastclose1 = the end-day close held on the bar before the start day. The start day looks ahead entryday + 1 bars as in the 5-day AFL; the end day is Ref(eom, -2). Before the first end day the comparison close is the close of bar entryday - 1.", common!()))),
         def(EXPIRY_FIVE, "5 Days Before Month-End vs Expiry Close ST 5/2-5/4 (stock)", &[
-            "F|Start day: 5 trading days before the month's last trading day; expiry day as in the expiry AFLs",
-            "F|The start-day close is more than 1% below the latest expiry close (held on the bar before the start day), and that expiry close is no longer the stock's first close",
-            FLT, ST_E, ST_X,
+            "F|Start day = 5 trading days before the month's last trading day",
+            "F|Expiry day as in the expiry AFLs",
+            "F|Start-day Close < latest expiry Close (held on the bar before the start day) by more than 1%",
+            "F|That expiry Close is no longer the stock's first Close",
+            FLT, FLT_2, FLT_3, ST_E, ST_E_2, ST_E_3, ST_E_4, ST_X, ST_X_2, ST_X_3,
         ], n(concat!("st 52 54 long only with exipry to 5 day phenomenal.afl (Negative Expiry / Stock Filter), coded as the AFL is written; when a bar is both the start day and an expiry, the start day wins (the AFL's if / else). The start day looks ahead entryday + 1 bars; expiry days come from the AFL's calendar rule (one bar of look-ahead for the Wednesday fallback).", common!()))),
     ]
 }

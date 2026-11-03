@@ -39,32 +39,82 @@ fn def(id: &'static str, name: &'static str, dir: &'static str, rules: &'static 
     StrategyDef { id, name, group: "YT Strategies · Ichimoku (stocks)", session: 0, dir, status: Status::Live, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim: None }
 }
 
-const LINES: &str = "F|Lines: turning line = mid of the 9-bar high-low, base line = mid of the 26-bar high-low, span A = (turning + base) / 2, span B = mid of the 52-bar high-low, both unshifted; delayed line = the close 26 bars back";
-const SETUP: &str = "F|Setups as the index AFLs: setup 1 on a turning-line cross above the base line with the close above the cloud; setup 2 on such a cross inside the cloud, becoming setup 3 once the close is above the cloud with turning > base; a close below the cloud clears them (short mirrored)";
-const STOCK_F: &str = "F|Stock filters: no long entry on a bar closing at its high (short: at its low); close above the penny price (0); optional RSI(14) > 30, ADX(8) > 20, ROC(1) above / below a threshold (all off); turnover filter (off)";
-const ATHC_F: &str = "F|ATHC regime (choice 'swing', default OFF): on from a close above every earlier close until the 21% close swing turns down";
+const LINES: &str = "F|Turning line = mid point of the 9-bar High-Low range";
+const LINES_2: &str = "F|Base line = mid point of the 26-bar High-Low range";
+const LINES_3: &str = "F|Span A = (turning line + base line) / 2";
+const LINES_4: &str = "F|Span B = mid point of the 52-bar High-Low range";
+const LINES_5: &str = "F|Both spans unshifted";
+const LINES_6: &str = "F|Delayed line = the Close 26 bars back";
+const SETUP: &str = "F|Setups as in the index AFLs";
+const SETUP_2: &str = "F|Setup 1: turning line crosses above the base line with Close > cloud";
+const SETUP_3: &str = "F|Setup 2: the same cross with Close inside the cloud";
+const SETUP_4: &str = "F|Setup 2 becomes setup 3 once Close > cloud and turning line > base line";
+const SETUP_5: &str = "F|Close < cloud clears the setups";
+const SETUP_6: &str = "F|Short side mirrored";
+const STOCK_F: &str = "F|Stock filter: no long entry on a bar closing at its High (short: at its Low)";
+const STOCK_F_2: &str = "F|Stock filter: Close > penny price (0)";
+const STOCK_F_3: &str = "F|Optional stock filters (all off): RSI(14) > 30, ADX(8) > 20, ROC(1) above / below a threshold";
+const STOCK_F_4: &str = "F|Turnover filter (off)";
+const ATHC_F: &str = "F|ATHC regime (choice 'swing', default OFF): on from a Close above every earlier Close";
+const ATHC_F_2: &str = "F|ATHC regime ends when the 21% Close swing turns down";
 const UNIVERSE: &str = " Runs on one stock at a time; the team ran it over stock universes (NSE cash / F&O stocks); the ROC ranking (PositionScore, Rank type off by default) and MAXIMUM POSITION (20) are not modelled.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![
         def(ROOT, "Ichimoku TK + HSL / PT with Index, ATHC, RSI, ADX Filters", "Long/Short", &[
-            LINES, SETUP, STOCK_F, ATHC_F,
-            "F|Index filter (default NONE): NIFTY 50 ST (monthly, period 20, factor 1, mid point), SMA (200, close vs the previous period's average) or Swing% (bull 44 / bear 23, daily only); Bull market: longs need the index up and exit when it turns down (Bear: the reverse)",
-            "E|Long: flat, setup 1 or 3, turning > base, close above the delayed line and the cloud, the filters and the ATHC regime on, not a dead-stock bar; at the close. Stop = entry less Hard SL % (1), target = entry plus Profit % (3). Short (version 1): setup mirrored, close below the delayed line and the cloud, not closing at its low, not a dead-stock bar; stop / target mirrored",
-            "X|Long: low reaches the stop (stop, or open less buffer % 0.25 on a gap), high reaches the target (target, or open less buffer % on a gap), the 21% close swing down (always, as written), a TK cross down, the index filter turning, or a dead-stock bar; a bar closing at its low defers the exit to the next bar that does not",
-            "X|Short: high reaches the stop, low reaches the target (target price wins when both), a TK cross up or a dead-stock bar; a bar closing at its high defers the cover",
+            LINES, LINES_2, LINES_3, LINES_4, LINES_5, LINES_6, SETUP, SETUP_2, SETUP_3, SETUP_4, SETUP_5, SETUP_6, STOCK_F, STOCK_F_2, STOCK_F_3, STOCK_F_4, ATHC_F, ATHC_F_2,
+            "F|Index filter (default NONE): NIFTY 50 ST (monthly, period 20, factor 1, mid point), SMA (200, Close vs the previous period's average) or Swing% (bull 44 / bear 23, daily only)",
+            "F|Bull market: longs need the index up and exit when it turns down (Bear: the reverse)",
+            "E|Long: flat, setup 1 or 3",
+            "E|Long: Turning line > Base line",
+            "E|Long: Close > Delayed line and Close > cloud",
+            "E|Long: the filters and the ATHC regime on; not a dead-stock bar",
+            "E|Long: buy at the Close",
+            "E|Long stop = entry − Hard SL % (1); target = entry + Profit % (3)",
+            "E|Short (version 1): setup mirrored",
+            "E|Short: Close < Delayed line and Close < cloud",
+            "E|Short: not closing at its Low; not a dead-stock bar",
+            "E|Short stop / target mirrored",
+            "X|Long: Low reaches the stop: fill at the stop, or Open − buffer % (0.25) on a gap",
+            "X|Long: High reaches the target: fill at the target, or Open − buffer % on a gap",
+            "X|Long: the 21% Close swing turns down (always, as written)",
+            "X|Long: TK cross down",
+            "X|Long: the index filter turns",
+            "X|Long: a dead-stock bar",
+            "X|Long: a bar closing at its Low defers the exit to the next bar that does not",
+            "X|Short: High reaches the stop, or Low reaches the target (the target price wins when both)",
+            "X|Short: TK cross up, or a dead-stock bar",
+            "X|Short: a bar closing at its High defers the cover",
         ], concat!("ICHIMOKU Conversion Line Base Line Based Entry Exit + HSL+PT_long and short_INDEX ATHC RSI ADX.afl (folder root), coded as the AFL is written. With the defaults (Long Only, ATHC OFF) it takes no trade: the ATHC array stays 0 (see module notes); set ATHC on for longs or version 1 for shorts.", " Runs on one stock at a time; the team ran it over stock universes (NSE cash / F&O stocks); the ROC ranking (PositionScore, Rank type off by default) and MAXIMUM POSITION (20) are not modelled.", " The index filter uses NIFTY 50 (the market benchmark) in place of the AFL's NSENIFTY / NSE500 choices; the turnover filter uses close x volume (the AFL reads OpenInt). The dead-stock rule reads 30 bars ahead.")),
         def(FWD, "Ichimoku HSL Live / PT, Forward Cloud, with ATHC, RSI, ADX Filters", "Long/Short", &[
-            LINES, SETUP, STOCK_F, ATHC_F,
-            "E|Long: as the root AFL without the index filter (needs the ATHC regime). Short (version 1): flat, setup 1 or 3, turning < base, close below the delayed line and the cloud, not closing at its low, not a dead-stock bar; stop = entry plus Hard SL % (1), target = entry less Profit % (3)",
+            LINES, LINES_2, LINES_3, LINES_4, LINES_5, LINES_6, SETUP, SETUP_2, SETUP_3, SETUP_4, SETUP_5, SETUP_6, STOCK_F, STOCK_F_2, STOCK_F_3, STOCK_F_4, ATHC_F, ATHC_F_2,
+            "E|Long: as the root AFL without the index filter (needs the ATHC regime)",
+            "E|Short (version 1): flat, setup 1 or 3",
+            "E|Short: Turning line < Base line",
+            "E|Short: Close < Delayed line and Close < cloud",
+            "E|Short: not closing at its Low; not a dead-stock bar",
+            "E|Short stop = entry + Hard SL % (1); target = entry − Profit % (3)",
             "X|Long: the AFL's long exit reads an undefined array (FLTbuy), an AmiBroker error: no long result",
-            "X|Short: high reaches the stop (stop, or open plus buffer % 0.25 on a gap), low reaches the target (target, or open plus buffer % on a gap; target price wins when both), a TK cross up, or a dead-stock bar; a bar closing at its high defers the cover",
+            "X|Short: High reaches the stop: fill at the stop, or Open + buffer % (0.25) on a gap",
+            "X|Short: Low reaches the target: fill at the target, or Open + buffer % on a gap (the target price wins when both)",
+            "X|Short: TK cross up, or a dead-stock bar",
+            "X|Short: a bar closing at its High defers the cover",
         ], concat!("ICHIMOKU Conversion Line Base Line Based Entry Exit + HSL+PT_long and short - HSL@LIVE - v1_INDEX ATHC RSI ADX.afl (Basic Version + Forward looking cloud), coded as the AFL is written. With the defaults (Long Only) it takes no trade; only its Short Only version runs.", " Runs on one stock at a time; the team ran it over stock universes (NSE cash / F&O stocks); the ROC ranking (PositionScore, Rank type off by default) and MAXIMUM POSITION (20) are not modelled.", " The turnover filter uses close x volume (the AFL reads OpenInt). The dead-stock rule reads 30 bars ahead.")),
         def(CUR, "Ichimoku HSL Live / PT, Current Cloud, with Index, ATHC, RSI, ADX Filters", "Long", &[
-            LINES, SETUP, STOCK_F, ATHC_F,
-            "F|Current cloud = the cloud top 26 bars back; index filter as the root AFL (default NONE)",
-            "E|Long: flat, setup 1 or 3, turning > base, close above the delayed line, the cloud and the current cloud, the filters on (and the ATHC regime when chosen); at the close. Stop = entry less Hard SL % (1), target = entry plus Profit % (3)",
-            "X|Long: low reaches the stop (stop, or open less buffer % 0.25 on a gap), high reaches the target (target, or open less buffer % on a gap), a TK cross down, the index filter turning, and with ATHC chosen the 21% close swing down or the regime ending; a bar closing at its low defers the exit",
+            LINES, LINES_2, LINES_3, LINES_4, LINES_5, LINES_6, SETUP, SETUP_2, SETUP_3, SETUP_4, SETUP_5, SETUP_6, STOCK_F, STOCK_F_2, STOCK_F_3, STOCK_F_4, ATHC_F, ATHC_F_2,
+            "F|Current cloud = the cloud top 26 bars back",
+            "F|Index filter as the root AFL (default NONE)",
+            "E|Long: flat, setup 1 or 3",
+            "E|Long: Turning line > Base line",
+            "E|Long: Close > Delayed line, Close > cloud and Close > current cloud",
+            "E|Long: the filters on (and the ATHC regime when chosen)",
+            "E|Long: buy at the Close",
+            "E|Stop = entry − Hard SL % (1); target = entry + Profit % (3)",
+            "X|Long: Low reaches the stop: fill at the stop, or Open − buffer % (0.25) on a gap",
+            "X|Long: High reaches the target: fill at the target, or Open − buffer % on a gap",
+            "X|Long: TK cross down, or the index filter turns",
+            "X|With ATHC chosen: the 21% Close swing turns down, or the regime ends",
+            "X|A bar closing at its Low defers the exit",
         ], concat!("ICHIMOKU Conversion Line Base Line Based Entry Exit + HSL+PT_long and short_CURRENT CLOUD_INDEX ATHC RSI ADX.afl (Basic Version + Current Cloud), coded as the AFL is written. Its Short Only version reads an undefined array (Deadstock1), an AmiBroker error, and is not offered. The AFL's delayed-line slider range is 8-18 with default 26; the default is kept.", " Runs on one stock at a time; the team ran it over stock universes (NSE cash / F&O stocks); the ROC ranking (PositionScore, Rank type off by default) and MAXIMUM POSITION (20) are not modelled.", " The index filter uses NIFTY 50 (the market benchmark) in place of the AFL's NSENIFTY / NSE500 choices; the turnover filter uses close x volume (the AFL reads OpenInt).")),
     ]
 }

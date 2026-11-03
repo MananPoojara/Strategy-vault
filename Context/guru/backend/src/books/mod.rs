@@ -4,6 +4,18 @@ pub mod joe_ross_math;
 pub mod elcim_account;
 pub mod hbiab_reviewed;
 
+/// YT strategies: a position still held on the last bar is closed at that bar's close and counted in the statistics,
+/// as AmiBroker does at the end of a backtest, instead of being reported as an open position. An entry on the last
+/// bar itself is left out, as in the team's AmiBroker trade lists (e.g. Entry Based on Candle Color to 31-12-2015).
+fn close_at_end(mut trades: Vec<Trade>) -> Vec<Trade> {
+    trades.retain(|t| !t.open || t.legs[0].i < t.exit_i);
+    for t in trades.iter_mut().filter(|t| t.open) {
+        t.open = false;
+        t.reason = "End of backtest (closed at the last bar's close)".into();
+    }
+    trades
+}
+
 macro_rules! books {
     ($($m:ident),*) => {
         $(pub mod $m;)*
@@ -16,7 +28,7 @@ macro_rules! books {
             None$(.or_else(|| $m::params(id)))*
         }
         pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
-            None$(.or_else(|| $m::run(id, x, from, to, p)))*
+            None$(.or_else(|| $m::run(id, x, from, to, p).map(|t| if stringify!($m).starts_with("yt") { close_at_end(t) } else { t })))*
         }
         pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
             None$(.or_else(|| $m::family_of(id)))*

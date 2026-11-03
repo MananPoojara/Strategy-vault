@@ -15,6 +15,9 @@
 //! `ATR(1)` is Null on the first bar; a Null compared in the AFL loops counts as -1e10; the AFL's last-bar exit
 //! (deadstocksellsig) is the open position marked at `to`, and no buy is taken on the run's last bar (`to`) or the
 //! series' last bar: AmiBroker loads bars only up to the run's end, so the team's trade lists have no buy there.
+//! The AFL loop runs over the whole history, before the run's start too: a trade the loop buys before From is dropped
+//! by the backtester (entry outside the range), but the loop stays in it, so no buy is taken until its own exit (the
+//! team's From_2011 NIFTY lists: a 2010 trade held into 2012 blocks the March 2011 entry).
 //! The AFL's Supertrend (`CalculateAvg` from the team's include, assumed as in the team's other AFLs): the average
 //! of the last `period` ATR(1) values around the chosen price (default Open), the loop from bar `period`, the lower
 //! band only rising in an up trend and the upper only falling in a down trend, with no reset on a flip.
@@ -39,79 +42,103 @@ fn def(id: &'static str, name: &'static str, rules: &'static [&'static str], not
     StrategyDef { id, name, group: "YT Strategies · Close above PMH", session: 0, dir: "Long", status: Status::Live, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim: None }
 }
 
-const ST_F: &str = "F|Supertrend filter on the same bars (default on; period 5, factor 2, on the Open; running: close above the ST line); Bearish filter type swaps the buy and sell sides";
-const RISK_X: &str = "X|Optional hard stop, profit booking and trailing stop % (all 0 = off by default), at the close or live; ST sell signal (close below the ST line) when the filter is on";
-const ATR_X: &str = "X|Optional ATR exit (off by default): close below a trailing line of price (Open) minus 1 x the 5-bar ATR(1) average";
-const NOBUY: &str = "F|No buy on a bar whose high equals its close; a sell on a bar whose open, low and close are equal waits for the next bar";
+const ST_F: &str = "F|Supertrend filter on the same bars (default on): period 5, factor 2, on the Open";
+const ST_F_2: &str = "F|Running Supertrend filter: Close > ST line";
+const ST_F_3: &str = "F|Bearish filter type swaps the buy and sell sides";
+const RISK_X: &str = "X|Optional hard stop %, profit booking % and trailing stop % (all 0 = off by default), at the Close or live";
+const RISK_X_2: &str = "X|ST sell signal when the filter is on: Close < ST line";
+const ATR_X: &str = "X|Optional ATR exit (off by default): Close < trailing line of price (Open) − 1 × the 5-bar ATR(1) average";
+const NOBUY: &str = "F|No buy on a bar whose High = Close";
+const NOBUY_2: &str = "F|A sell on a bar whose Open = Low = Close waits for the next bar";
 const MODE: &str = "Bars are calendar months built from the daily bars (weekly as an option), as the AFL's monthly run; fills at the month's last close.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![
         def(V1, "Close above PMH V1 (Version 1)", &[
-            "E|Buy at the month's close when it is at least the buffer % (default 0.5) above the previous month's high",
-            ST_F, NOBUY,
-            "X|Optional counter exits (all 0 = off): n months held, n green months, n up closes; when the count is reached on a month that meets the entry rule, the counts restart",
-            RISK_X,
+            "F|Month's Close ≥ previous month's High + buffer % (default 0.5)",
+            "E|Buy at the month's Close",
+            ST_F, ST_F_2, ST_F_3, NOBUY, NOBUY_2,
+            "X|Optional counter exits (all 0 = off): n months held, n green months, n up closes",
+            "X|When a count is reached on a month that meets the entry rule, the counts restart",
+            RISK_X, RISK_X_2,
         ], "Close above PMH/Version 1/FuturesOrStocks_Long_UpTrending_V1.afl, coded as the AFL is written. Entry is tested before exits, so no sell and buy on the same month. This copy has no ATR exit. With live exits a trailing-stop hit still fills at the close, and a profit booking that gaps above the level fills at the open less the exit buffer (both as written)."),
         def(V1_ATR, "Close above PMH V1 (exit first, ATR exit)", &[
-            "E|Buy at the month's close when it is at least the buffer % (default 0.5) above the previous month's high",
-            ST_F, NOBUY,
-            "X|Optional counter exits as Version 1 (counts restart on a month that meets the entry rule)",
-            RISK_X, ATR_X,
+            "F|Month's Close ≥ previous month's High + buffer % (default 0.5)",
+            "E|Buy at the month's Close",
+            ST_F, ST_F_2, ST_F_3, NOBUY, NOBUY_2,
+            "X|Optional counter exits as Version 1",
+            "X|Counts restart on a month that meets the entry rule",
+            RISK_X, RISK_X_2, ATR_X,
         ], "Close above PMH/All AFLs/FuturesOrStocks_Long_UpTrending_V1.afl (From_2011 copy is the same rules), coded as the AFL is written. Exits are tested before entries, so a month can sell and buy again. Live trailing-stop hits fill at the close, as written."),
         def(V1_BEAR, "Close above PMH V1 (Bear Continue)", &[
-            "E|Buy at the month's close when it is at or above the previous month's high (buffer default 0)",
-            ST_F, NOBUY,
+            "F|Month's Close ≥ previous month's High (buffer default 0)",
+            "E|Buy at the month's Close",
+            ST_F, ST_F_2, ST_F_3, NOBUY, NOBUY_2,
             "X|Optional counter exits as Version 1",
-            RISK_X, ATR_X,
+            RISK_X, RISK_X_2, ATR_X,
         ], "Close above PMH/All AFLs/Continue Bearish Trade in Bull Phase AFLs/FuturesOrStocks_Long_UpTrending_V1_Bear Continue.afl, coded as the AFL is written: Version 1 (entry tested first) with the ATR exit and buffer 0. Nothing in the code continues a trade across a filter flip; the name refers to how the team set it."),
         def(V2, "Close above PMH V2 (exit first)", &[
-            "E|Buy at the month's close when it is at least the buffer % (default 0.5) above the previous month's high",
-            ST_F, NOBUY,
-            "X|Optional counter exits: when a count is reached on a month that meets the entry rule, wait for a month closing below the previous month's high",
-            RISK_X, ATR_X,
+            "F|Month's Close ≥ previous month's High + buffer % (default 0.5)",
+            "E|Buy at the month's Close",
+            ST_F, ST_F_2, ST_F_3, NOBUY, NOBUY_2,
+            "X|Optional counter exits",
+            "X|When a count is reached on a month that meets the entry rule: wait for a month with Close < previous month's High",
+            RISK_X, RISK_X_2, ATR_X,
         ], "Close above PMH/All AFLs/FuturesOrStocks_Long_UpTrending_V2.afl (From_2011 copy the same), coded as the AFL is written. Exits before entries. As written, the wait only holds while each later month still meets the entry rule: the counts stay reached, so the next month that does not meet it exits whether or not it closes below the previous high."),
         def(V2_BEAR, "Close above PMH V2 (entry first)", &[
-            "E|Buy at the month's close when it is at least the buffer % (default 0.5) above the previous month's high",
-            ST_F, NOBUY,
-            "X|Optional counter exits with the wait as in V2",
-            RISK_X, ATR_X,
+            "F|Month's Close ≥ previous month's High + buffer % (default 0.5)",
+            "E|Buy at the month's Close",
+            ST_F, ST_F_2, ST_F_3, NOBUY, NOBUY_2,
+            "X|Optional counter exits, with the wait as in V2",
+            RISK_X, RISK_X_2, ATR_X,
         ], "Close above PMH/All AFLs/Continue Bearish Trade in Bull Phase AFLs/FuturesOrStocks_Long_UpTrending_V2_Bear Continue.afl (Version 2 copy the same rules), coded as the AFL is written: V2 with the entry tested before exits."),
         def(V3, "Close above PMH V3 (exit first)", &[
-            "E|Buy at the month's close when it is at least the buffer % (default 0.5) above the previous month's high",
-            ST_F, NOBUY,
-            "X|Sell when the month closes below the previous month's high (toggle, default on)",
-            RISK_X, ATR_X,
+            "F|Month's Close ≥ previous month's High + buffer % (default 0.5)",
+            "E|Buy at the month's Close",
+            ST_F, ST_F_2, ST_F_3, NOBUY, NOBUY_2,
+            "X|Sell when the month's Close < previous month's High (toggle, default on)",
+            RISK_X, RISK_X_2, ATR_X,
         ], "Close above PMH/All AFLs/FuturesOrStocks_Long_UpTrending_V3.afl, coded as the AFL is written. Exits before entries."),
         def(V3_BEAR, "Close above PMH V3 (entry first)", &[
-            "E|Buy at the month's close when it is at least the buffer % (default 0.5) above the previous month's high",
-            ST_F, NOBUY,
-            "X|Sell when the month closes below the previous month's high (toggle, default on)",
-            RISK_X, ATR_X,
+            "F|Month's Close ≥ previous month's High + buffer % (default 0.5)",
+            "E|Buy at the month's Close",
+            ST_F, ST_F_2, ST_F_3, NOBUY, NOBUY_2,
+            "X|Sell when the month's Close < previous month's High (toggle, default on)",
+            RISK_X, RISK_X_2, ATR_X,
         ], "Close above PMH/All AFLs/Continue Bearish Trade in Bull Phase AFLs/FuturesOrStocks_Long_UpTrending_V3_Bear Continue.afl (Version 3 copy the same rules), coded as the AFL is written: V3 with the entry tested before exits."),
         def(V4, "Buy above PMH V4 (daily)", &[
-            "E|Buy at the daily close when it is at least the buffer % (default 0.5) above the previous month's high; not on a month's last trading day, not in the first month",
-            "F|Optional Supertrend filter (default off) on daily, weekly or monthly bars (period 5, factor 2, on the Open, running)",
-            NOBUY,
-            "X|Optional monthly counter exits (all 0 = off), counted on month-end bars after the entry month: n months, n green months, n up closes; counts restart on a month closing at least the buffer % above its previous month's high",
-            "X|Optional (default off): sell at the entry month's last bar if that month closes below the previous month's high",
-            RISK_X, ATR_X,
+            "F|Daily Close ≥ previous month's High + buffer % (default 0.5)",
+            "F|Not on a month's last trading day",
+            "F|Not in the first month",
+            "E|Buy at the daily Close",
+            "F|Optional Supertrend filter (default off) on daily, weekly or monthly bars: period 5, factor 2, on the Open, running",
+            NOBUY, NOBUY_2,
+            "X|Optional monthly counter exits (all 0 = off): n months, n green months, n up closes",
+            "X|Counted on month-end bars after the entry month",
+            "X|Counts restart on a month whose Close ≥ its previous month's High + buffer %",
+            "X|Optional (default off): Sell at the entry month's last bar if that month's Close < previous month's High",
+            RISK_X, RISK_X_2, ATR_X,
         ], "Close above PMH/All AFLs/FuturesOrStocks_Long_UpTrending_V4.afl, coded as the AFL is written. With the AFL defaults nothing but the end of the data closes a trade. The month-close exit is only checked in the entry month (as written). Higher-timeframe ST signals reach a day on the period's last bar (the AFL's Ref/expandFirst/Ref steps); the AFL's intraday ST choices do not apply to daily data and 'Default' is the daily chart."),
         def(V5, "Buy above PMH V5 (daily, wait)", &[
-            "E|Buy at the daily close when it is at least the buffer % (default 0.5) above the previous month's high; not on a month's last trading day",
-            "F|Supertrend filter (default on; daily, period 5, factor 2, on the Open, running)",
-            NOBUY,
-            "X|Optional monthly counter exits as V4, but a count reached on a month meeting the entry rule waits for a month-end close below the previous month's high",
-            "X|Optional (default off): sell at the entry month's last bar if that month closes below the previous month's high",
-            RISK_X, ATR_X,
+            "F|Daily Close ≥ previous month's High + buffer % (default 0.5)",
+            "F|Not on a month's last trading day",
+            "E|Buy at the daily Close",
+            "F|Supertrend filter (default on): daily, period 5, factor 2, on the Open, running",
+            NOBUY, NOBUY_2,
+            "X|Optional monthly counter exits as V4",
+            "X|A count reached on a month meeting the entry rule waits for a month-end Close < previous month's High",
+            "X|Optional (default off): Sell at the entry month's last bar if that month's Close < previous month's High",
+            RISK_X, RISK_X_2, ATR_X,
         ], "Close above PMH/All AFLs/FuturesOrStocks_Long_UpTrending_V5.afl, coded as the AFL is written. As in V2 the wait ends on the next month-end that does not meet the entry rule, since the counts stay reached."),
         def(V6, "Buy above PMH V6 (daily, month close exit)", &[
-            "E|Buy at the daily close when it is at least the buffer % (default 0.5) above the previous month's high; not on a month's last trading day",
-            "F|Supertrend filter (default on; daily, period 5, factor 2, on the Open, running)",
-            NOBUY,
-            "X|Sell at a month's last bar when that month closes below the previous month's high, except in the entry month",
+            "F|Daily Close ≥ previous month's High + buffer % (default 0.5)",
+            "F|Not on a month's last trading day",
+            "E|Buy at the daily Close",
+            "F|Supertrend filter (default on): daily, period 5, factor 2, on the Open, running",
+            NOBUY, NOBUY_2,
+            "X|Sell at a month's last bar when that month's Close < previous month's High, except in the entry month",
             "X|Optional (default off): the same exit also in the entry month",
-            RISK_X, ATR_X,
+            RISK_X, RISK_X_2, ATR_X,
         ], "Close above PMH/All AFLs/FuturesOrStocks_Long_UpTrending_V6.afl, coded as the AFL is written. Its 'Exit when current close < previous high' toggle is declared but never used, so the month-close exit is always on (not offered as a setting)."),
     ]
 }
@@ -420,6 +447,11 @@ struct Loop<'a> {
 /// (entry bar, entry price, exit bar, exit price, reason); the open position at the end, if any.
 type Done = (usize, f64, usize, f64, &'static str);
 
+/// The loop's trades the backtester takes: those entered inside the run (`ok` on the entry bar).
+fn in_range(done: Vec<Done>, open: Option<(usize, f64)>, ok: &dyn Fn(usize) -> bool) -> (Vec<Done>, Option<(usize, f64)>) {
+    (done.into_iter().filter(|d| ok(d.0)).collect(), open.filter(|o| ok(o.0)))
+}
+
 #[derive(Default)]
 struct State {
     pos: Option<(usize, f64)>,
@@ -567,8 +599,10 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let (st_buy, st_sell) = st_signals(&b, &st);
             let atr = atr_on.then(|| atr_line(&b, gu("atr_period"), g("atr_mult"), gi("atr_avg")));
             // the AFL's deadstock rule (no buy on BarIndex() == LastValue(BarIndex())): AmiBroker loads bars only up to
-            // the run's end, so its last bar is the run's last bar (the team's trade lists have no buy there)
-            let can_buy: Vec<bool> = (0..nb).map(|k| bars.last[k] >= from && bars.last[k] != n - 1 && bars.last[k] != to).collect();
+            // the run's end, so its last bar is the run's last bar (the team's trade lists have no buy there). The AFL
+            // loop runs over all loaded bars, so it can be in a trade bought before From; AmiBroker's backtester then
+            // drops that trade (entry before the range) and takes no buy until the loop's own exit
+            let can_buy: Vec<bool> = (0..nb).map(|k| bars.last[k] != n - 1 && bars.last[k] != to).collect();
             let end = bars.last.iter().take_while(|&&d| d <= to).count();
             let lp = Loop {
                 b: &b,
@@ -600,6 +634,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 },
             };
             let (done, open) = lp.run(&mut rule);
+            let (done, open) = in_range(done, open, &|k| bars.last[k] >= from);
             to_trades(done, open, &|k| bars.last[k])
         }
         V4 | V5 | V6 => {
@@ -641,7 +676,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             };
             let atr = atr_on.then(|| atr_line(&d, gu("atr_period"), g("atr_mult"), gi("atr_avg")));
             // deadstock rule: no buy on the run's last bar (AmiBroker's LastValue(BarIndex()) is the run end)
-            let can_buy: Vec<bool> = (0..n).map(|i| i >= from && i != n - 1 && i != to).collect();
+            // as above: the loop may buy before From; those trades are dropped below
+            let can_buy: Vec<bool> = (0..n).map(|i| i != n - 1 && i != to).collect();
             let lp = Loop {
                 b: &d,
                 entry: &entry,
@@ -674,6 +710,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 }
             };
             let (done, open) = lp.run(&mut rule);
+            let (done, open) = in_range(done, open, &|i| i >= from);
             to_trades(done, open, &|i| i)
         }
         _ => return None,
@@ -723,6 +760,24 @@ mod tests {
         assert_eq!(go(V1_ATR, &r, &kv), vec![(1, 5, false), (6, 7, true)]);
         // buffer 2.5%: month 1 (1.98%) is no entry
         assert_eq!(go(V1, &r, &[("st_on", 0.0), ("buffer_pct", 2.5)]), vec![]);
+    }
+
+    #[test]
+    fn a_loop_trade_bought_before_the_run_blocks_entries_until_its_exit() {
+        let r = months(&[
+            (100.0, 101.0, 99.0, 100.0),
+            (101.0, 103.5, 100.0, 103.0), // buy, before the run: dropped
+            (103.0, 104.0, 101.0, 102.0), // the run starts here
+            (102.0, 107.0, 101.0, 106.0), // entry rule met, but the loop is still in the month-1 trade
+            (106.0, 106.0, 104.0, 105.0),
+            (105.0, 105.5, 103.0, 104.0), // the loop sells
+            (104.0, 107.5, 103.0, 107.0), // first buy the backtester takes
+            (107.0, 108.0, 106.0, 107.2),
+        ]);
+        let x = Ctx::new(&r, &r, &[]);
+        let p: Params = [("st_on", 0.0), ("n_candles", 2.0)].iter().map(|(k, v)| (k.to_string(), *v)).collect();
+        let t: Vec<(usize, usize)> = run(V1, &x, 2, r.len() - 1, &p).unwrap().iter().map(|t| (t.legs[0].i, t.exit_i)).collect();
+        assert_eq!(t, vec![(6, 7)]);
     }
 
     #[test]

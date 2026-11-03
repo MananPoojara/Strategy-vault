@@ -33,15 +33,32 @@ fn def(id: &'static str, name: &'static str, dir: &'static str, rules: &'static 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![
         def(WH_SWING_PB, "52-Week High with % Swing Exit and Profit Booking (stock)", "Long", &[
-            "F|10% swing on closes (bands at close x 1.10 and x 0.90, ratcheting, reset on each flip); re-arm flag set when the swing flips from down to up, cleared on a buy, and cleared while the swing is down unless already set",
-            "E|Buy at the close when flat, the re-armed flag is on and the close is above the previous bar's highest close of the last 260 bars; never on the data's last bar",
-            "X|Sell when the swing is down (at the close), or when the high exceeds the profit level (entry + 25%; at that level, or at the open less 0.25% when the open is above it)",
+            "F|10% swing on Closes: bands at Close × 1.10 and × 0.90, ratcheting, reset on each flip",
+            "F|Re-arm flag: set when the swing flips from down to up",
+            "F|Re-arm flag: cleared on a buy, and cleared while the swing is down unless already set",
+            "F|Flat",
+            "F|Re-arm flag is on",
+            "F|Close > the previous bar's highest Close of the last 260 bars",
+            "F|Never on the data's last bar",
+            "E|Buy at the Close",
+            "X|Sell at the Close when the swing is down",
+            "X|Sell when the High > profit level (entry + 25%): at that level, or at Open − 0.25% when the Open is above it",
         ], "52-WEEEK HIGH + % SWING AND PROFIT BOOKING.afl (52 Week High / Optimization on 52 Week high strategy), coded as the AFL is written with its Optimize defaults (exit swing 10%, profit 25%). Runs on one stock at a time; the team ran it over a cash-stock universe (workbook 'Cash Stock 20 open', 20 positions); ranking and portfolio limits (MaxOpenPositions 20, sizing) are not modelled. The penny, turnover (V x C, close x volume here) and circuit filters are ParamList options defaulting to OFF; the market-filter block is commented out in the AFL. Like ytwh_st_profit_booking, the re-arm flag means a new buy needs a swing flip up after the previous buy.")
         ,
         def(ROC_SHORT, "Trend Intensity Short with Hard, % and ATR Trailing Stops (stock)", "Short", &[
-            "F|Trend intensity = MA(C, 7) / MA(C, 65); up move = C / previous C",
-            "E|Short at the close when flat, trend intensity <= 0.95 and up move <= 0.96, the bar does not close at its low, and the stock is not frozen (same OHLC for the next 30 bars); not on the first bar",
-            "X|Cover when the high reaches the hard SL (entry + 2%; at it, or at the open plus 0.25% if the open is at or above it), the close reaches the % trailing SL (lowest close since entry + 5%, as of the previous bar), or the close reaches the ATR trailing SL (lowest close + 5 x ATR(5) taken on the bar of that low, only falling; previous bar's value); not on a bar closing at its high, except a frozen stock",
+            "F|Trend intensity = MA(C, 7) / MA(C, 65)",
+            "F|Up move = C / previous C",
+            "F|Flat",
+            "F|Trend intensity ≤ 0.95",
+            "F|Up move ≤ 0.96",
+            "F|The bar does not close at its Low",
+            "F|The stock is not frozen (same OHLC for the next 30 bars)",
+            "F|Not on the first bar",
+            "E|Short at the Close",
+            "X|Cover when the High reaches the hard SL (entry + 2%): at it, or at Open + 0.25% if the Open is at or above it",
+            "X|Cover when the Close reaches the % trailing SL (lowest Close since entry + 5%, as of the previous bar)",
+            "X|Cover when the Close reaches the ATR trailing SL (lowest Close + 5 × ATR(5) taken on the bar of that low, only falling; previous bar's value)",
+            "X|No cover on a bar closing at its High, except a frozen stock",
         ], "Short Entry based on ROC stocks Ranking and Trend Intensity and Exit with Differnt SL's (Without Filter)..afl (ROC), coded as the AFL is written with its Optimize defaults (MA 7 / 65, trend intensity 0.95, up move 0.96, % trailing SL 5). Runs on one stock at a time; the team ran it over a stock watch list; the AFL's ROC(30) cross-sectional rank only sets PositionScore, so ranking and portfolio limits (MaxOpenPositions 20, sizing) are not modelled. The ATR multiplier's default 5 lies above its own Param maximum 2; the default is used as written. The frozen-stock test (deadstock1) reads the next 30 bars (look-ahead as written; never true in the data's last 30 bars). While MA(C, 65) does not exist yet, the loop reads the Null trend intensity as -1e10, so the first 64 bars need only the up-move condition. ATR is AmiBroker's Wilder ATR(5); while it is Null the ATR stop is far below the close and covers on the next bar not closing at its high. Penny price 0 and turnover (V x C, default off) as in the AFL; dead-stock default NO."),
     ]
 }

@@ -35,38 +35,60 @@ fn def(id: &'static str, name: &'static str, rules: &'static [&'static str], not
     StrategyDef { id, name, group: "YT Strategies · Fresh ST Buy (volume)", session: 0, dir: "Long", status: Status::Live, needs_volume: true, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim: None }
 }
 
-const F_FRESH: &str = "F|Fresh ST: on the bar the stock's Supertrend (period 5, factor 4, mid point) turns up while flat, that bar's high becomes the setup high (count 0); each further up bar adds 1; a down bar (after at least one count) cancels the setup";
-const F_FRESH_H: &str = "F|Fresh ST: on the bar the stock's Supertrend (period 5, factor 4, mid point) turns up while flat, that bar's high becomes the setup high (count 0); each further up bar adds 1; a down bar cancels the setup";
-const E_CLOSE: &str = "E|Buy at the close when the close is above the setup high, the count is at most 2, volume is above its average and RSI(14) is above 50";
-const X_STOPS: &str = "X|Trailing stop (highest high since entry less 3%, the stop of the previous bar) at its level or the open less the 0.25% buffer on a gap; profit target 3% above the entry at its level (the open less the buffer when the open is already above it); no exit of these on a bar whose low equals its close";
-const X_ST: &str = "X|Otherwise sell at the close when the Supertrend is down, unless the low equals the close";
-const F_AGAIN: &str = "F|After an exit a new setup needs the ST to turn down and up again";
-const F_FLT: &str = "F|Filter (default off): ATHC (close above all earlier closes, off when the 20% close swing turns down), ST (monthly ST 5 / 4 of the stock: buy above its up line), or a 44% / 23% % swing; while on it also gates entries and, where the AFL has it, sells when the close falls below the filter's down line";
-const RSI_TRAIL: &str = "X|Also sell at the close when RSI falls more than 5 below its highest value since entry";
-const F_GUARD: &str = "F|Template guards: no entry on a bar whose high equals its close, close above the penny price (0), turnover filter off, dead-stock backtest off";
+const F_FRESH_1: &str = "F|Fresh ST: the stock's Supertrend (period 5, factor 4, mid point) turns up while flat";
+const F_FRESH_2: &str = "F|That bar's High becomes the setup High (count 0)";
+const F_FRESH_3: &str = "F|Each further up bar adds 1";
+const F_FRESH_4: &str = "F|A down bar (after at least one count) cancels the setup";
+const F_FRESH_H_1: &str = "F|Fresh ST: the stock's Supertrend (period 5, factor 4, mid point) turns up while flat";
+const F_FRESH_H_2: &str = "F|That bar's High becomes the setup High (count 0)";
+const F_FRESH_H_3: &str = "F|Each further up bar adds 1";
+const F_FRESH_H_4: &str = "F|A down bar cancels the setup";
+const E_CLOSE_1: &str = "F|Today's Close > setup High";
+const E_CLOSE_2: &str = "F|Count ≤ 2";
+const E_CLOSE_3: &str = "F|Volume > its average";
+const E_CLOSE_4: &str = "F|RSI(14) > 50";
+const E_CLOSE_5: &str = "E|Buy at today's Close";
+const X_STOPS_1: &str = "X|Trailing stop: highest High since entry − 3% (the previous bar's stop), at its level or at Open − 0.25% buffer on a gap";
+const X_STOPS_2: &str = "X|Profit target: entry + 3%, at its level (Open − buffer when the Open is already above it)";
+const X_STOPS_3: &str = "X|Neither exits on a bar whose Low = Close";
+const X_ST_1: &str = "X|Otherwise Sell at the Close when the Supertrend is down, unless Low = Close";
+const F_AGAIN_1: &str = "F|After an exit, a new setup needs the ST to turn down and up again";
+const F_FLT_1: &str = "F|Filter (default off): ATHC, ST or % swing";
+const F_FLT_2: &str = "F|ATHC: Close > all earlier Closes, off when the 20% Close swing turns down";
+const F_FLT_3: &str = "F|ST: monthly ST 5 / 4 of the stock, buy above its up line";
+const F_FLT_4: &str = "F|% swing: 44% / 23%";
+const F_FLT_5: &str = "F|While on, the filter gates entries and, where the AFL has it, sells when the Close falls below the filter's down line";
+const RSI_TRAIL_1: &str = "X|Also Sell at the Close when RSI falls more than 5 below its highest value since entry";
+const F_GUARD_1: &str = "F|Template guards: no entry on a bar whose High = Close";
+const F_GUARD_2: &str = "F|Close > penny price (0)";
+const F_GUARD_3: &str = "F|Turnover filter off; dead-stock backtest off";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![
-        def(CLOSE, "Fresh ST Buy, Next-Day Close (volume, no filters)", &[F_FRESH, "E|Buy at the close when the close is above the setup high, the count is at most 2, volume is above its 5-day average and RSI(14) is above 50",
-            "X|Profit target 3% above the entry (trailing stop off by default: 'High - n%' 0); on a gap above the target the AFL sells at the open less the 0.25% buffer; the low-equals-close and Prec lower-circuit bars do not exit", X_ST, F_AGAIN, F_GUARD],
+        def(CLOSE, "Fresh ST Buy, Next-Day Close (volume, no filters)", &[F_FRESH_1, F_FRESH_2, F_FRESH_3, F_FRESH_4, "F|Today's Close > setup High", "F|Count ≤ 2", "F|Volume > its 5-day average", "F|RSI(14) > 50", "E|Buy at today's Close",
+            "X|Profit target: entry + 3%", "X|Trailing stop off by default ('High - n%' 0)", "X|On a gap above the target: sell at Open − 0.25% buffer", "X|Low = Close and Prec lower-circuit bars do not exit", X_ST_1, F_AGAIN_1, F_GUARD_1, F_GUARD_2, F_GUARD_3],
             "Fresh ST Buy Next Day Close_Original Without Filters.afl (Close folder), coded as the AFL is written. Runs on one stock at a time; the team ran it over NSE cash stock universes (and Nifty spot); portfolio limits (MaxOpenPositions 20, position sizing, brokerage) not modelled. Daily ST by default. Kept quirk: a setup cancelled only after a count, so a down bar right after the flip bar leaves the setup armed."),
-        def(HIGH, "Fresh ST Buy, Next-Day High Breakout (volume, no filters)", &[F_FRESH_H,
-            "E|Buy stop at the setup high when the high trades above it (at the open + 0.25% when the open is already above), the count at most 2, volume above its 30-day average and RSI(14) above 50",
-            X_STOPS, X_ST, F_AGAIN, F_GUARD],
+        def(HIGH, "Fresh ST Buy, Next-Day High Breakout (volume, no filters)", &[F_FRESH_H_1, F_FRESH_H_2, F_FRESH_H_3, F_FRESH_H_4,
+            "F|Count ≤ 2",
+            "F|Volume > its 30-day average",
+            "F|RSI(14) > 50",
+            "E|Buy stop at the setup High once the High trades above it",
+            "E|At Open + 0.25% when the Open is already above",
+            X_STOPS_1, X_STOPS_2, X_STOPS_3, X_ST_1, F_AGAIN_1, F_GUARD_1, F_GUARD_2, F_GUARD_3],
             "Fresh ST Buy Next Day High_Original Without Filters.afl (High folder), coded as the AFL is written. Runs on one stock at a time; the team ran it over NSE cash stock universes (and Nifty spot); portfolio limits (MaxOpenPositions 20, position sizing, brokerage) not modelled. The entry is intraday at the stop level; the profit target is measured from that price. The lower-circuit test is Prec-based."),
-        def(CLOSE_FLT, "Fresh ST Buy, Next-Day Close (volume, filters, RSI trail)", &[F_FRESH, E_CLOSE, X_STOPS, RSI_TRAIL, X_ST, F_AGAIN, F_FLT, F_GUARD],
+        def(CLOSE_FLT, "Fresh ST Buy, Next-Day Close (volume, filters, RSI trail)", &[F_FRESH_1, F_FRESH_2, F_FRESH_3, F_FRESH_4, E_CLOSE_1, E_CLOSE_2, E_CLOSE_3, E_CLOSE_4, E_CLOSE_5, X_STOPS_1, X_STOPS_2, X_STOPS_3, RSI_TRAIL_1, X_ST_1, F_AGAIN_1, F_FLT_1, F_FLT_2, F_FLT_3, F_FLT_4, F_FLT_5, F_GUARD_1, F_GUARD_2, F_GUARD_3],
             "Fresh ST Buy Next Day Close - Original With Filters.afl (Close folder), coded as the AFL is written; the two Trash copies ('Original With Filters', 'Original_With Filter_(ST overlap issue)') have the same rules and are not coded twice (they default the entry ST to daily, this one to monthly). Runs on one stock at a time; the team ran it over NSE cash stock universes (and Nifty spot); portfolio limits (MaxOpenPositions 20, position sizing, brokerage) not modelled. Entry ST timeframe default monthly (the AFL's list starts with MONTHLY); its intraday timeframes are not offered."),
-        def(RSI_CROSS, "Fresh ST Buy + RSI/MA Cross (volume, filters)", &[F_FRESH, "F|The ST flip bar must also have RSI(14) crossing above its 10-day average", E_CLOSE, X_STOPS, RSI_TRAIL, X_ST, F_AGAIN, F_FLT, F_GUARD],
+        def(RSI_CROSS, "Fresh ST Buy + RSI/MA Cross (volume, filters)", &[F_FRESH_1, F_FRESH_2, F_FRESH_3, F_FRESH_4, "F|On the ST flip bar: RSI(14) crosses above its 10-day average", E_CLOSE_1, E_CLOSE_2, E_CLOSE_3, E_CLOSE_4, E_CLOSE_5, X_STOPS_1, X_STOPS_2, X_STOPS_3, RSI_TRAIL_1, X_ST_1, F_AGAIN_1, F_FLT_1, F_FLT_2, F_FLT_3, F_FLT_4, F_FLT_5, F_GUARD_1, F_GUARD_2, F_GUARD_3],
             "Fresh ST Buy Next Day Close - With filters & MA RSI Crossover_Final.afl (Close folder), coded as the AFL is written. Runs on one stock at a time; the team ran it over NSE cash stock universes (and Nifty spot); portfolio limits (MaxOpenPositions 20, position sizing, brokerage) not modelled. Its 'RSI_exit' hold line never fires (RSI is never below itself less 5), so the RSI exit is the RSI trail."),
-        def(RSI_RUNNING, "Fresh ST Buy + RSI above its MA (volume, filters)", &[F_FRESH, "F|The ST flip bar must also have RSI(14) above its 10-day average", E_CLOSE, X_STOPS, RSI_TRAIL, X_ST, F_AGAIN, F_FLT, F_GUARD],
+        def(RSI_RUNNING, "Fresh ST Buy + RSI above its MA (volume, filters)", &[F_FRESH_1, F_FRESH_2, F_FRESH_3, F_FRESH_4, "F|On the ST flip bar: RSI(14) > its 10-day average", E_CLOSE_1, E_CLOSE_2, E_CLOSE_3, E_CLOSE_4, E_CLOSE_5, X_STOPS_1, X_STOPS_2, X_STOPS_3, RSI_TRAIL_1, X_ST_1, F_AGAIN_1, F_FLT_1, F_FLT_2, F_FLT_3, F_FLT_4, F_FLT_5, F_GUARD_1, F_GUARD_2, F_GUARD_3],
             "Fresh ST Buy Next Day Close - With filters & MA RSI Crossover_Final(Running Crossover).afl (Close folder), coded as the AFL is written. Runs on one stock at a time; the team ran it over NSE cash stock universes (and Nifty spot); portfolio limits (MaxOpenPositions 20, position sizing, brokerage) not modelled."),
-        def(RSI_CROSS_D1, "Fresh ST Buy + RSI/MA(100) Cross, draft (volume)", &[F_FRESH, "F|The ST flip bar must also have RSI(14) crossing above its 100-day average", E_CLOSE, X_STOPS, "X|Also sell at the close when RSI is below its highest value since entry less the RSI exit buffer (0: any dip)", X_ST, F_AGAIN, F_FLT, F_GUARD],
+        def(RSI_CROSS_D1, "Fresh ST Buy + RSI/MA(100) Cross, draft (volume)", &[F_FRESH_1, F_FRESH_2, F_FRESH_3, F_FRESH_4, "F|On the ST flip bar: RSI(14) crosses above its 100-day average", E_CLOSE_1, E_CLOSE_2, E_CLOSE_3, E_CLOSE_4, E_CLOSE_5, X_STOPS_1, X_STOPS_2, X_STOPS_3, "X|Also Sell at the Close when RSI < highest RSI since entry − RSI exit buffer (0: any dip)", X_ST_1, F_AGAIN_1, F_FLT_1, F_FLT_2, F_FLT_3, F_FLT_4, F_FLT_5, F_GUARD_1, F_GUARD_2, F_GUARD_3],
             "Fresh ST Buy Next Day Close - with filters & MA RSI Crossover.afl (Trash), coded as the AFL is written. Runs on one stock at a time; the team ran it over NSE cash stock universes (and Nifty spot); portfolio limits (MaxOpenPositions 20, position sizing, brokerage) not modelled. The AFL fixes the RSI average at 100 days (its 'Set Up RSI Moving Average Days' parameter is unused); its circuit tests are Prec-based; its filters gate entries only (no filter-line exit)."),
-        def(RSI_CROSS_V2, "Fresh ST Buy + RSI/MA(100) Cross, v2 (volume)", &[F_FRESH, "F|The ST flip bar must also have RSI(14) crossing above its 100-day average", E_CLOSE, X_STOPS, "X|Also sell at the close when RSI is below its highest value since entry less the RSI exit buffer (0: any dip)", X_ST, F_AGAIN, F_FLT, F_GUARD],
+        def(RSI_CROSS_V2, "Fresh ST Buy + RSI/MA(100) Cross, v2 (volume)", &[F_FRESH_1, F_FRESH_2, F_FRESH_3, F_FRESH_4, "F|On the ST flip bar: RSI(14) crosses above its 100-day average", E_CLOSE_1, E_CLOSE_2, E_CLOSE_3, E_CLOSE_4, E_CLOSE_5, X_STOPS_1, X_STOPS_2, X_STOPS_3, "X|Also Sell at the Close when RSI < highest RSI since entry − RSI exit buffer (0: any dip)", X_ST_1, F_AGAIN_1, F_FLT_1, F_FLT_2, F_FLT_3, F_FLT_4, F_FLT_5, F_GUARD_1, F_GUARD_2, F_GUARD_3],
             "Fresh ST Buy Next Day Close - with filters & MA RSI Crossover v2.afl (Trash), coded as the AFL is written. Runs on one stock at a time; the team ran it over NSE cash stock universes (and Nifty spot); portfolio limits (MaxOpenPositions 20, position sizing, brokerage) not modelled. RSI average fixed at 100 days as in the AFL; its filters gate entries only (the filter-line array is computed but not used in the exit)."),
-        def(RSI_CROSS_V3, "Fresh ST Buy + RSI/MA Cross, v3 (volume)", &[F_FRESH, "F|The ST flip bar must also have RSI(14) crossing above its 10-day average", E_CLOSE, X_STOPS, "X|RSI trail (default 0 means 100, i.e. off)", X_ST, F_AGAIN, F_FLT, F_GUARD],
+        def(RSI_CROSS_V3, "Fresh ST Buy + RSI/MA Cross, v3 (volume)", &[F_FRESH_1, F_FRESH_2, F_FRESH_3, F_FRESH_4, "F|On the ST flip bar: RSI(14) crosses above its 10-day average", E_CLOSE_1, E_CLOSE_2, E_CLOSE_3, E_CLOSE_4, E_CLOSE_5, X_STOPS_1, X_STOPS_2, X_STOPS_3, "X|RSI trail (default 0 means 100, i.e. off)", X_ST_1, F_AGAIN_1, F_FLT_1, F_FLT_2, F_FLT_3, F_FLT_4, F_FLT_5, F_GUARD_1, F_GUARD_2, F_GUARD_3],
             "Fresh ST Buy Next Day Close - with filters & MA RSI Crossover v3.afl (Trash), coded as the AFL is written. Runs on one stock at a time; the team ran it over NSE cash stock universes (and Nifty spot); portfolio limits (MaxOpenPositions 20, position sizing, brokerage) not modelled. Trail RSI default 0, which the AFL turns into 100 (no RSI exit); its filters gate entries only."),
-        def(RSI_CROSS_V3N, "Fresh ST Buy + RSI/MA Cross, v3 new (volume)", &[F_FRESH, "F|The ST flip bar must also have RSI(14) crossing above its 10-day average", E_CLOSE, X_STOPS, "X|Also sell at the close when the lowest RSI since entry is more than 5 below the highest RSI since entry", X_ST, F_AGAIN, F_FLT, F_GUARD],
+        def(RSI_CROSS_V3N, "Fresh ST Buy + RSI/MA Cross, v3 new (volume)", &[F_FRESH_1, F_FRESH_2, F_FRESH_3, F_FRESH_4, "F|On the ST flip bar: RSI(14) crosses above its 10-day average", E_CLOSE_1, E_CLOSE_2, E_CLOSE_3, E_CLOSE_4, E_CLOSE_5, X_STOPS_1, X_STOPS_2, X_STOPS_3, "X|Also Sell at the Close when lowest RSI since entry < highest RSI since entry − 5", X_ST_1, F_AGAIN_1, F_FLT_1, F_FLT_2, F_FLT_3, F_FLT_4, F_FLT_5, F_GUARD_1, F_GUARD_2, F_GUARD_3],
             "Fresh ST Buy Next Day Close - with filters & MA RSI Crossover v3_NEW.afl (Trash), coded as the AFL is written. Runs on one stock at a time; the team ran it over NSE cash stock universes (and Nifty spot); portfolio limits (MaxOpenPositions 20, position sizing, brokerage) not modelled. The AFL's `if (...);` ends the if, so its RSI_exit line runs on every bar in a trade and keeps the lowest RSI since entry (as written)."),
     ]
 }

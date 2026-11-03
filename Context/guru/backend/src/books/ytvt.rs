@@ -16,10 +16,19 @@ fn def(id: &'static str, name: &'static str, dir: &'static str, rules: &'static 
     StrategyDef { id, name, group: "YT Strategies · Van Tharp", session: 0, dir, status: Status::Live, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim: None }
 }
 
-const EXITS: [&str; 3] = [
-    "X|Checked from the bar after entry, the first of: (a) low <= hard SL (buy - 2%), high >= profit target (buy + 10%) or low <= trailing SL (5% below the highest high since entry, as of the previous bar): filled at the level, or at the open less the 0.25% buffer when the open is beyond it (also on a gap above the target); (b) close below the 200-day MA: at the close; (c) the previous bar's Williams %R(10) above -30: at today's open less the buffer; (d) the 8th bar in the trade: at the close",
-    "X|An exit blocked by a circuit bar ((a), (c): open = low = close to 2 decimals; (b), (d): low = close) is taken at the next bar's open less the buffer (when that bar is not a lower circuit)",
-    "F|No entry on a bar whose high equals its close, and none on the first bar; no exit on the entry bar and no entry on an exit bar",
+const EXITS: [&str; 12] = [
+    "X|Checked from the bar after entry; the first of (a) to (d)",
+    "X|(a) Low ≤ hard SL (buy − 2%), High ≥ profit target (buy + 10%), or Low ≤ trailing SL (5% below the highest High since entry, as of the previous bar)",
+    "X|(a) fills at the level, or at Open − the 0.25% buffer when the Open is beyond it (also on a gap above the target)",
+    "X|(b) Close < 200-day MA: at the Close",
+    "X|(c) previous bar's Williams %R(10) > -30: at today's Open − the buffer",
+    "X|(d) the 8th bar in the trade: at the Close",
+    "X|An exit blocked by a circuit bar is taken at the next bar's Open − the buffer (when that bar is not a lower circuit)",
+    "X|Circuit bar for (a), (c): Open = Low = Close to 2 decimals; for (b), (d): Low = Close",
+    "F|No entry on a bar whose High = Close",
+    "F|No entry on the first bar",
+    "F|No exit on the entry bar",
+    "F|No entry on an exit bar",
 ];
 
 const COMMON: &str = "The trailing SL % default 5 lies above its declared maximum 4 and is used as written. Inside the AFL loop the 200-day MA is Null (-1e10) for the first 199 bars, so 'close above the MA' holds and 'close below the MA' never does there (AmiBroker loop behaviour). Fills are kept within the bar's range (price bound checking). Dead-stock, penny and turnover options are stock-template settings left at their defaults (off).";
@@ -28,12 +37,16 @@ pub fn catalogue() -> Vec<StrategyDef> {
     let _ = COMMON; // repeated in the notes below (they must be &'static str literals)
     vec![
         def(COOL_OFF, "Index Channeling (Williams %R Cool-off)", "Long", &[
-            "E|Buy at the close when the close is above its 200-day MA and Williams %R(10) crosses below -80 (below today, above yesterday)",
-            EXITS[0], EXITS[1], EXITS[2],
+            "F|Close > its 200-day MA",
+            "F|Williams %R(10) crosses below -80 (below today, above yesterday)",
+            "E|Buy at the Close",
+            EXITS[0], EXITS[1], EXITS[2], EXITS[3], EXITS[4], EXITS[5], EXITS[6], EXITS[7], EXITS[8], EXITS[9], EXITS[10], EXITS[11],
         ], "Index \u{201c}Channeling\u{201d} system Strategy with William %R cool off.afl (Without filter folder), coded as the AFL is written. The trailing SL % default 5 lies above its declared maximum 4 and is used as written. Inside the AFL loop the 200-day MA is Null (-1e10) for the first 199 bars, so 'close above the MA' holds and 'close below the MA' never does there (AmiBroker loop behaviour). Fills are kept within the bar's range (price bound checking). Dead-stock, penny and turnover options are stock-template settings left at their defaults (off)."),
         def(OVERSOLD, "Index Channeling (Williams %R Oversold)", "Long", &[
-            "E|Buy at the close when the close is above its 200-day MA and Williams %R(10) is below -80",
-            EXITS[0], EXITS[1], EXITS[2],
+            "F|Close > its 200-day MA",
+            "F|Williams %R(10) < -80",
+            "E|Buy at the Close",
+            EXITS[0], EXITS[1], EXITS[2], EXITS[3], EXITS[4], EXITS[5], EXITS[6], EXITS[7], EXITS[8], EXITS[9], EXITS[10], EXITS[11],
         ], "Index \u{201c}Channeling\u{201d} system Strategy without William %R cool off.afl (Without filter folder), coded as the AFL is written; its exit days, profit and SL % are Optimize() with the same defaults. The trailing SL % default 5 lies above its declared maximum 4 and is used as written. Inside the AFL loop the 200-day MA is Null (-1e10) for the first 199 bars, so 'close above the MA' holds and 'close below the MA' never does there (AmiBroker loop behaviour). Fills are kept within the bar's range (price bound checking). Dead-stock, penny and turnover options are stock-template settings left at their defaults (off)."),
     ]
 }

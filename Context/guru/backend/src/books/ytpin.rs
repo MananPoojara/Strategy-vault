@@ -16,10 +16,20 @@ fn def(id: &'static str, name: &'static str, dir: &'static str, rules: &'static 
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![def(PIN_SHORT, "Inverted Pin Bar Short", "Short", &[
-        "F|Inverted pin bar: the top of the body (open on a red bar, close otherwise) is below high - 80% of the range",
-        "E|Short at the close on a pin bar when yesterday's close is more than 5% above the lowest low of the last 20 bars (including today), today's true range is at least 1.5 x ATR(5), and the low is not the close; not on the first bar",
-        "X|Stop: after a bar whose high exceeds the previous bar's high (1 such bar by default) the stop moves to that high; a lower high keeps it; an equal high resets it to 999999 (no stop). The stop is updated on every bar, flat or short",
-        "X|Cover when the high exceeds the previous bar's stop: at the stop, or at the open + 0.25% when the open is above it. No target, no time exit",
+        "F|Inverted pin bar: top of the body (Open on a red bar, Close otherwise) < High − 80% of the range",
+        "F|Today is a pin bar",
+        "F|Yesterday's Close is more than 5% above the lowest Low of the last 20 bars (including today)",
+        "F|Today's true range ≥ 1.5 × ATR(5)",
+        "F|Low ≠ Close",
+        "F|Not on the first bar",
+        "E|Short at the Close",
+        "X|Stop: after a bar whose High > the previous bar's High (1 such bar by default), the stop moves to that High",
+        "X|A lower High keeps the stop",
+        "X|An equal High resets it to 999999 (no stop)",
+        "X|The stop is updated on every bar, flat or short",
+        "X|Cover when the High > the previous bar's stop",
+        "X|Fill at the stop, or at Open + 0.25% when the Open is above it",
+        "X|No target, no time exit",
     ], "pinbar short strategy.afl, coded as the AFL is written. Inside the loop ATR(5) is Null (-1e10) for its first bars, so the range test passes there (AmiBroker loop behaviour). Cover fills are kept within the bar's range (price bound checking). Dead-stock, penny and turnover options are stock-template settings left at their defaults (off). The AFL names no universe; the team's workbook is an optimisation only.")]
 }
 

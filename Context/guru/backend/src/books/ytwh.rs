@@ -29,16 +29,29 @@ fn def(id: &'static str, name: &'static str, dir: &'static str, rules: &'static 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![
         def(SWING_EXIT, "52-Week High Close Breakout, % Swing Exit", "Long", &[
-            "F|Weekly bars: HWC = highest weekly close of the last 52 weeks; the level is the previous week's HWC, expanded to daily bars (on a week's last day the level includes the week just before, on earlier days it lags one more week)",
-            "E|Buy at the close when the daily close is above that level; not on the first bar and not on an upper-circuit bar (open = high = close to 2 decimals)",
-            "X|Sell at the close when the daily close % swing (default 10%) turns down, unless open = low = close (lower circuit)",
+            "F|Weekly bars: HWC = highest weekly Close of the last 52 weeks",
+            "F|Level = the previous week's HWC, expanded to daily bars",
+            "F|On a week's last day the level includes the week just before; on earlier days it lags one more week",
+            "F|Daily Close > that level",
+            "F|Not on the first bar",
+            "F|Not on an upper-circuit bar (Open = High = Close to 2 decimals)",
+            "E|Buy at the Close",
+            "X|Sell at the Close when the daily Close % swing (default 10%) turns down",
+            "X|No sell when Open = Low = Close (lower circuit)",
             "X|Optional AmiBroker stops (off by default): hard stop-loss % and profit booking %",
         ], "52 week high with %swing exit_FINAL.afl (52 Week High and % Swing Exit Final), coded as the AFL is written. The header comment says SuperTrend 5/2 but the code exits on a 10% close swing (the code is followed). Buy is not gated by the swing, so a buy and a sell can fall on the same bar; ExRem and the backtester then sell and buy again as AmiBroker does. Dead-stock, penny and turnover options are stock-template settings left at their defaults (off). The R-multiple / SQN reporting part of the AFL has no trading effect."),
         def(ST_PB, "52-Week High, ST Re-arm and Profit Booking", "Long", &[
             "F|Supertrend of the series on the filter timeframe (default daily, period 20, factor 1, mid point; ATR = simple average of ATR(1)), expanded to daily bars",
-            "F|Re-arm flag: set on a bar where the ST turns up after being down the previous bar; stays set until an entry uses it",
-            "E|Buy at the close when flat, the flag is set and the close is above the highest close of the previous 260 bars; never on the last bar of the data",
-            "X|Sell when the ST is down (at the close), when the high exceeds the profit level (buy price + 1%: at that level, or at the open less 0.25% if the open is above it), or on the last bar of the data",
+            "F|Re-arm flag: set on a bar where the ST turns up after being down the previous bar",
+            "F|Re-arm flag stays set until an entry uses it",
+            "F|Flat",
+            "F|Re-arm flag is set",
+            "F|Close > the highest Close of the previous 260 bars",
+            "F|Never on the last bar of the data",
+            "E|Buy at the Close",
+            "X|Sell at the Close when the ST is down",
+            "X|Sell when the High > profit level (buy price + 1%): at that level, or at Open − 0.25% if the Open is above it",
+            "X|Sell on the last bar of the data",
         ], "52-WEEEK HIGH + ST AND PROFIT BOOKING.afl, coded as the AFL is written (its loop; no ExRem). The default profit % of 1 is the AFL's. Penny, turnover and circuit filters are ParamList options defaulting to OFF and are not offered. The AFL's comment calls the exit a % swing; the code uses the Supertrend."),
     ]
 }
