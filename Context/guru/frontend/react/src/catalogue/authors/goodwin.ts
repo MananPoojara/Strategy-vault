@@ -2,8 +2,8 @@ import type {AuthorFile} from '../author-files';
 
 export default {
   order: 820,
-  author: { id: "goodwin", name: "Andrew Goodwin", tagline: "Hedge-fund S&P trader · eight of his printed TradeStation rules run here; breadth, Treasury, VIX and fixed-point patterns held", books: [
-    { id: "agtsic", sourceIds: ["title-8c40d4a149da20e6"], title: "Trading Secrets of the Inner Circle", year: 1997, blurb: "Goodwin, 1997 · basic 8-day RSI, options-expiration range rule, daily patterns #5, #6, #8, #10, #12 and the 6-day reversal, all from the printed S&P futures code" }] },
+  author: { id: "goodwin", name: "Andrew Goodwin", tagline: "Hedge-fund S&P trader · nine of his printed TradeStation rules run here, one on NYSE / NSE breadth; Treasury, VIX and fixed-point patterns held", books: [
+    { id: "agtsic", sourceIds: ["title-8c40d4a149da20e6"], title: "Trading Secrets of the Inner Circle", year: 1997, blurb: "Goodwin, 1997 · basic and breadth-filtered 8-day RSI, options-expiration range rule, daily patterns #5, #6, #8, #10, #12 and the 6-day reversal, all from the printed S&P futures code" }] },
   identities: ["Andrew Goodwin"],
   profile: {
     "kind": "person",
