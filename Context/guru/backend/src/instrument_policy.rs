@@ -718,6 +718,12 @@ fn itatw_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Optio
     if stock_us.unwrap_or(!ticker.starts_with("NIFTY")) {return None;}
     Some(Issue{status:"needs_data",note:format!("This version uses the manual's dollar exits ($1.00 trailing stop, $1.00 target, $0.50 stop, set for General Electric at about $30). Dollar-amount rules run on US indices, ETFs and stocks only; {ticker} is outside that scope, so no result is published.")})
 }
+// BTTK 2.0 shipped records (K30, 3 Nov 2026): OptionExp() = the US monthly equity option expiry (lead decision 181) -> US only.
+fn phbttk_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Option<Issue> {
+    if !(crate::books::phbttk::ADMISSION_K30.reviewed)(def) || !crate::books::phbttk::US_ONLY.contains(&def.id) {return None;}
+    if stock_us.unwrap_or(!ticker.starts_with("NIFTY")) {return None;}
+    Some(Issue{status:"needs_data",note:format!("This system test exits on the day after the monthly option expiration (MetaStock OptionExp(), read as the US equity option expiry: the third Friday of the month). Indian options expire on a different calendar, which is not substituted, so the rule runs on US indices, ETFs and stocks only. {ticker} is outside that scope; no result is published.")})
+}
 // ---------------------------------------------------------------- Landry 2026-10-24
 // Admission only for the module REVIEWED lists (authors/landry/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 pub fn landry_reviewed(def:&StrategyDef)->bool {matches!(def.book,"dlost"|"dl10b") && (crate::books::dlost::reviewed(def.id) || crate::books::dl10b::reviewed(def.id))}
@@ -1251,6 +1257,7 @@ pub fn check(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     if let Some(issue)=kaeppel_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Kaeppel block
     if let Some(issue)=fosback_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Fosback (K5)
     if let Some(issue)=itatw_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // INVESTools (K7)
+    if let Some(issue)=phbttk_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // BTTK option expiry (K30)
     if let Some(issue)=downs_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Walter T. Downs block
     if let Some(issue)=schaap_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Schaap block
     if let Some(issue)=landry_symbol_issue(def,ticker,native_stock.then_some(false)){return Some(issue);} // Landry block
@@ -1293,6 +1300,7 @@ pub fn check_native(def:&StrategyDef,ticker:&str,evidence:&NativeEvidence)->Opti
     if let Some(issue)=kaeppel_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Kaeppel block
     if let Some(issue)=fosback_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Fosback (K5)
     if let Some(issue)=itatw_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // INVESTools (K7)
+    if let Some(issue)=phbttk_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // BTTK option expiry (K30)
     if let Some(issue)=downs_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Walter T. Downs block
     if let Some(issue)=schaap_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Schaap block
     if let Some(issue)=landry_symbol_issue(def,ticker,Some(evidence.market()==Market::UnitedStates)){return Some(issue);} // Landry block
@@ -1614,7 +1622,8 @@ mod tests {
             // ccl07, jcsis: a second entry (ADMISSION_K5, 31 Oct 2026) admits the K5 ids with their own label, so the K3 ids keep theirs.
             // tdperl: tdperl_tdline_short is admitted by the intraday block on 1-minute bars (intraday wave 3, 3 Nov 2026).
             // agtsic: the lane C2 special block admits the eight daily rules; ADMISSION_BREADTH admits the K25 breadth-filtered RSI ids.
-            const SHARED:&[&str]=&["agtsic","bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","putg","tcdt","tdnmtt","tdperl"];
+            // phbttk: phbt's Headley entry admits the Percent R ids; ADMISSION_K30 admits the shipped System Tester records (K30, 3 Nov 2026).
+            const SHARED:&[&str]=&["agtsic","bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","phbttk","putg","tcdt","tdnmtt","tdperl"];
             for d in all.iter().filter(|d|books.contains(&d.book) && !SHARED.contains(&d.book) && reviewed_cash_rule(d)!=(a.reviewed)(d)) {other.push((d.book,d.id));}
             for d in admitted {
                 assert_eq!(admission(d).map(|x|x.label),Some(a.label),"{}",d.id);
@@ -1623,7 +1632,7 @@ mod tests {
                 for (t,stock) in [("SPY",false),("QQQ",false),("SPX",false),("NDX",false),("DJI",false),("NIFTY 50",false),("NIFTYBANK",false),("AAPL",true),("RELIANCE",true)] {
                     // Kaeppel's US-only rules keep their own symbol check (kaeppel_symbol_issue; kaeppel_review_... test).
                     // Fosback's Seasonality Indicator likewise (fosback_symbol_issue; fosback_seasonality_runs_on_us_instruments_only test).
-                    if check(d,t,stock).is_some() && !m3_withdrawn(d.id,t) && !crate::books::kpss::US_ONLY.contains(&d.id) && !crate::books::nfsml::US_ONLY.contains(&d.id) && !crate::books::itatw::US_ONLY.contains(&d.id) && !crate::books::sckcal::US_ONLY.contains(&d.id) {refused.push((d.id,t));}
+                    if check(d,t,stock).is_some() && !m3_withdrawn(d.id,t) && !crate::books::kpss::US_ONLY.contains(&d.id) && !crate::books::nfsml::US_ONLY.contains(&d.id) && !crate::books::itatw::US_ONLY.contains(&d.id) && !crate::books::sckcal::US_ONLY.contains(&d.id) && !crate::books::phbttk::US_ONLY.contains(&d.id) {refused.push((d.id,t));}
                 }
             }
         }
@@ -2342,7 +2351,7 @@ mod tests {
         use crate::books::{phbt, phbttk};
         let all:Vec<StrategyDef>=phbt::catalogue().into_iter().chain(phbttk::catalogue()).collect();
         let mut want:Vec<&str>=phbt::REVIEWED.iter().chain(phbttk::REVIEWED.iter()).copied().collect();
-        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d) && !crate::books::phbttk::reviewed_k30(d.id)).map(|d|d.id).collect();
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
