@@ -151,7 +151,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
     if reviewed_k30(id) {
-        return Some(if LONG_ONLY.contains(&id) { vec![] } else { vec![p("side", "Sides traded: 0 = both as shipped, 1 = long side only, -1 = short side only", 0., -1., 1., 1.)] });
+        return Some(if LONG_ONLY.contains(&id) { vec![] } else { vec![p("side", "Sides traded: 0 = both as shipped, 1 = long side only, -1 = short side only", 0., -1., 1., 1.), msws::REVERSE_PARAM] });
     }
     let long = match id { "phbttk_pctr_long" => true, "phbttk_pctr_short" => false, _ => return None };
     Some(vec![
@@ -212,7 +212,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 // Lane K30 (titles loop, 3 Nov 2026), to-code rows 372-384 (lane X1, lead decision 181). The add-on installer's MS10PRFT.DTA
 // holds the systems as MetaStock formula text (slot 0 Buy, 3 Sell, 5 Sell Short, 8 Buy to Cover; read by batch X into
 // authors/batch-x/keep/2617/PRFT_slots.txt). They use ValueWhen, PREV, Alert and OptionExp, which the shared msws interpreter
-// lacks, so each record is written out below; the fills are the msws engine's (msws is shared and not edited).
+// lacks, so each record is written out below; the fills are the msws engine's (msws::simulate_conv, reverse by default since K32).
 // Independent check authors/titles-1030/K30w/k30_ref.py.
 use crate::books::msws;
 
@@ -223,7 +223,7 @@ pub fn reviewed_k30(id: &str) -> bool { REVIEWED_K30.contains(&id) }
 pub const US_ONLY: &[&str] = &["phbttk_options_shark", "phbttk_pct_above_ma400"];
 const LONG_ONLY: &[&str] = &["phbttk_pct_above_ma", "phbttk_pct_above_ma400"];
 
-macro_rules! conv { () => { " [Declared readings] The record's formulas run as stored (MS10PRFT.DTA, Bigtrendv2setup.exe). Fills: the vault's MetaStock System Tester convention (msws engine): signal and fill at the close; a position closes only by its own Sell / Buy to Cover formula, from the bar after entry; an opposite entry while a position is open is ignored; an exit and an opposite entry on one bar reverse; no same-direction re-entry on the exit bar; one position, one unit; parameter side = 1 / -1 runs one side. A value that is not yet defined is never true and makes what uses it undefined (Cross needs both bars; ValueWhen and BarsSince are undefined before their condition first holds); PREV starts at 0 on the first bar where the rest of its formula is defined. Indicators as the msws engine: Mov S/E (the EMA seeded with its first value, shown from bar n), PDI/MDI/ADX Wilder 14, BBandTop/Bot(C,n,S,2) = SMA n +/- 2 population SD, MACD() = EMA(alpha .15) - EMA(alpha .075) of the close seeded on the first close (undefined for 25 bars), Stoch(k,s) = 100 Sum_s(C - LLV(L,k))/Sum_s(HHV(H,k) - LLV(L,k)), WillR(30) = -100 (HHV(H,30) - C)/(HHV(H,30) - LLV(L,30)). The manual prints no statistics for these systems; runs on daily indices, ETFs and stocks, US and India, are a declared application." } }
+macro_rules! conv { () => { " [Declared readings] The record's formulas run as stored (MS10PRFT.DTA, Bigtrendv2setup.exe). Fills: the vault's MetaStock System Tester convention (msws engine): signal and fill at the close; a position closes by its own Sell / Buy to Cover formula, from the bar after entry; MetaStock System Tester reverses on an opposite entry (7.2 Order of Evaluation; Pro 8.0 p.332): an opposite entry while a position is open closes it and opens the other side at that close, checked before the close formula; BTTK 2.0 is a MetaStock 10 file and versions 9-11 are not documented in the share; p.reverse = 0 = the earlier reading (an opposite entry is ignored while a position is open; an exit and an opposite entry on one bar reverse); no same-direction re-entry on the exit bar; one position, one unit; parameter side = 1 / -1 runs one side. A value that is not yet defined is never true and makes what uses it undefined (Cross needs both bars; ValueWhen and BarsSince are undefined before their condition first holds); PREV starts at 0 on the first bar where the rest of its formula is defined. Indicators as the msws engine: Mov S/E (the EMA seeded with its first value, shown from bar n), PDI/MDI/ADX Wilder 14, BBandTop/Bot(C,n,S,2) = SMA n +/- 2 population SD, MACD() = EMA(alpha .15) - EMA(alpha .075) of the close seeded on the first close (undefined for 25 bars), Stoch(k,s) = 100 Sum_s(C - LLV(L,k))/Sum_s(HHV(H,k) - LLV(L,k)), WillR(30) = -100 (HHV(H,30) - C)/(HHV(H,30) - LLV(L,30)). The manual prints no statistics for these systems; runs on daily indices, ETFs and stocks, US and India, are a declared application." } }
 const BB80: &str = concat!("Buy when a close crosses above the high of the bar on which the close last crossed above the 80-bar 2-SD upper band (while still above the band); out when the close crosses under the low of the bar of the last -DI cross above +DI. Short: close crosses under the low of the last cross under the lower band; cover on a close above the high of the last +DI cross above -DI.", conv!());
 const ACCEL: &str = concat!("Two closes above the upper 20-bar Acceleration Band buy (the state flips at the first such bar); a close under the 10-day EMA sells. Mirror short on two closes under the lower band, covered on a close above the 10-day EMA. Band = 20-bar SMA of H x (1 + 2 x (H-L)/((H+L)/2)), the formula of phbt_accel_daily.", conv!());
 const ACCELBB: &str = concat!("Buy when two closes are above both the 20- and 80-bar upper Acceleration Bands and the close is above the 20-bar 2-SD upper Bollinger band, which is above the 20-bar Acceleration Band; out when, within 20 bars of the 20-bar Acceleration Band crossing back above the Bollinger band, the close crosses under that bar's low. Short mirrored on the lower bands.", conv!());
@@ -480,9 +480,8 @@ fn run_k30(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let [el, xl, es, xs] = k30_formulas(id, x)?;
     let b = |v: &S, on: bool| -> Vec<bool> { v.iter().map(|q| on && tru(*q)).collect() };
     let sig = msws::Sig { el: b(&el, side >= 0), xl: b(&xl, side >= 0), es: b(&es, side <= 0), xs: b(&xs, side <= 0) };
-    // K31 (decision 184): kept on the earlier reading. BTTK 2.0 (MS10PRFT.DTA, MetaStock 10, 2008) is outside the modules lane K31
-    // may change; switching it to reverse is a lead decision (5 two-sided cards would change).
-    Some(msws::simulate_conv(x, from, to, &sig, msws::EXEC_DEFAULT, false))
+    // Decisions 184/185 (lane K32): MetaStock System Tester reverses on an opposite entry; p.reverse = 0 = the earlier reading.
+    Some(msws::simulate_conv(x, from, to, &sig, msws::EXEC_DEFAULT, msws::reverse_on(p)))
 }
 
 // Instrument admission: the BTTK 2.0 shipped System Tester records 2026-11-03 (titles lane K30). The two records that read
@@ -549,6 +548,12 @@ mod tests {
             }
             assert!(run(id, &x, 5, 5, &Params::new()).is_none());
         }
+        // decisions 184/185: two-sided records reverse on an opposite entry by default; p.reverse = 0 never does
+        let rev = |id: &&str, r: f64| { let mut p = Params::new(); p.insert("reverse".into(), r);
+            run(id, &x, 0, x.c.len() - 1, &p).unwrap().iter().filter(|z| z.reason.starts_with("reversed by the opposite Enter")).count() };
+        let two: Vec<&&str> = REVIEWED_K30.iter().filter(|id| !LONG_ONLY.contains(*id)).collect();
+        assert!(two.iter().any(|id| rev(id, 1.) > 0));
+        assert!(two.iter().all(|id| rev(id, 0.) == 0 && params(id).unwrap().iter().any(|d| d.key == "reverse" && d.def == 1.)));
     }
     #[test]
     fn k30_admission_us_only_for_option_expiry() {
