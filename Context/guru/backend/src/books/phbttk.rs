@@ -480,7 +480,9 @@ fn run_k30(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let [el, xl, es, xs] = k30_formulas(id, x)?;
     let b = |v: &S, on: bool| -> Vec<bool> { v.iter().map(|q| on && tru(*q)).collect() };
     let sig = msws::Sig { el: b(&el, side >= 0), xl: b(&xl, side >= 0), es: b(&es, side <= 0), xs: b(&xs, side <= 0) };
-    Some(msws::simulate(x, from, to, &sig, msws::EXEC_DEFAULT))
+    // K31 (decision 184): kept on the earlier reading. BTTK 2.0 (MS10PRFT.DTA, MetaStock 10, 2008) is outside the modules lane K31
+    // may change; switching it to reverse is a lead decision (5 two-sided cards would change).
+    Some(msws::simulate_conv(x, from, to, &sig, msws::EXEC_DEFAULT, false))
 }
 
 // Instrument admission: the BTTK 2.0 shipped System Tester records 2026-11-03 (titles lane K30). The two records that read
