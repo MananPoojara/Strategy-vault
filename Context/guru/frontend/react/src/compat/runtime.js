@@ -28,7 +28,7 @@ import {libraryMarket,libraryMarketVariants} from '../services/library-market';
 import {orderAuthors} from '../services/author-order';
 import {authorStatus,facetAuthors,passes,CLEAR_ALL} from '../services/author-filters';
 import {chooseBacktestContext,referenceBacktestContexts} from '../services/library-backtest-context';
-import {instrumentControls,instrumentTickers} from '../services/instrument-controls';
+import {defaultTicker,instrumentControls,instrumentTickers} from '../services/instrument-controls';
 import {catalogueMethodLabel,kestnerSourceAssessment} from '../services/kestner-presentation';
 import {makeRuleVisualModel} from '../services/rule-evidence';
 import {buildStrategyIndicators} from '../services/strategy-indicators';
@@ -1452,7 +1452,7 @@ function readRoute() {
   const explicitUnitSelection=isDetail&&unitExposureMethod(chosen?.id,chosen?.book)&&explicit.get('tk')?pool.find(t=>t.ticker===S.tk):null;
   if(explicitUnitSelection&&!TICKERS.some(t=>t.ticker===S.tk))TICKERS.push(explicitUnitSelection); // Preserve actual incompatible URLs for an honest admission hold.
   const explicitPristine=isDetail&&pristineMethod(chosen?.id,chosen?.book)&&explicit.has('tk');
-  if(S.tk!=='ALL'&&!TICKERS.some(t=>t.ticker===S.tk)&&!explicitPristine)S.tk=TICKERS[0]?.ticker||S.tk;
+  if(S.tk!=='ALL'&&!TICKERS.some(t=>t.ticker===S.tk)&&!explicitPristine)S.tk=defaultTicker(TICKERS,chosen?.gate?.allowed)||S.tk; // a gate-limited rule opens where it publishes (SPY for a rotation rule)
   // Preserve explicit basket URLs: the readiness gate explains incompatible instruments.
   // Silent substitution back to an index made basket clicks appear stuck.
   CAT = marketCat();

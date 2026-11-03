@@ -468,6 +468,10 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
                 if def.book=="radge" && def.id=="radge_oc_long" {
                     return issue("not_testable",format!("This independently checked plain open-to-close research application is limited to NIFTY 50 and policy-qualified SPX prices. {} is outside that reviewed symbol scope; no result is published.",row.ticker));
                 }
+                // lane F3: a rotation rule has no fixed amounts; its `allowed` list only names the SPY calendar (books::rotation)
+                if books::rotation::is_rotation(def.id) {
+                    return issue("not_testable", format!("Not published on {}. Multi-ETF rotation: runs only in the SPY context (SPY is the calendar and benchmark; the rule holds the ETFs named in its trades). Open it on SPY for the results.", row.ticker));
+                }
                 return issue("not_testable", format!("Not published on {}: this rule uses fixed point or dollar amounts set for {}; on this instrument they would not mean what the book meant. {}", row.ticker, if allowed.is_empty() { "an instrument this vault does not hold".to_string() } else { allowed.join(", ") }, g.reason));
             }
         }
@@ -551,6 +555,20 @@ mod tests {
         (1..=5).map(|i| Row{ticker:"TEST".into(),date:format!("2020-01-0{i}"),open:100.0,high:101.0,low:99.0,close:100.0,volume:Some(1000.0)}).collect()
     }
     fn definition(id: &str) -> StrategyDef { crate::connors::catalogue().into_iter().find(|d| d.id==id).unwrap() }
+    #[test]
+    fn rotation_off_spy_says_multi_etf_rotation_not_fixed_amounts() {
+        for &id in books::rotation::IDS {
+            for t in ["AGG","NIFTY 50","XLK"] {
+                let mut r=rows();for x in r.iter_mut(){x.ticker=t.into();}
+                let i=check(&Ctx::new(&r,&r,&r),&definition(id),0,4,&Params::new()).expect(id);
+                assert_eq!(i.status,"not_testable","{id} {t}");
+                assert!(i.note.contains("Multi-ETF rotation: runs only in the SPY context") && !i.note.contains("fixed point"),"{id} {t}: {}",i.note);
+            }
+        }
+        // other `allowed` rules keep the fixed-amount message
+        let mut r=rows();for x in r.iter_mut(){x.ticker="SPY".into();}
+        assert!(check(&Ctx::new(&r,&r,&r),&definition("kftsm_pf"),0,4,&Params::new()).unwrap().note.contains("fixed point or dollar"));
+    }
     #[test]
     fn reviewed_burns_only_accepts_default_long_cash_lengths_and_exact_fill_modes() {
         let r=rows();let ctx=Ctx::new(&r,&r,&[]);
