@@ -10,6 +10,20 @@ pub fn book(b: &str) -> bool { b == "tdperl" }
 /// opening through exactly one of them (order decided by a convention, not by the data): withheld (gate row says how many).
 pub const HELD: &[&str] = &["ats_wide_range_gap", "btp2_wide_range_exhaustion_gap_short", "hfm_vix", "ss_80_20"];
 pub fn held(id: &str) -> bool { HELD.contains(&id) }
+/// Decision #177a (lane M1, 3 Nov 2026): on the SPY/SPX overlap these minute rules lose on the tradable SPY and win on the
+/// cash index (stale component prints). The minute result is published on SPY only, the mirror image of intraday_w2b::SPX.
+pub const SPY: &[&str] = &["ats_15min_adx_breakout", "ptjdt_adx15_breakout", "hfm_news", "hfm_news_long", "hfm_news_short",
+    "jb30d_gap_pct", "tdnmtt_trap_short", "tdperl_tdline_short", "putg_inside_day", "mhp_ftse_3_20040804"];
+pub fn spy_id(id: &str) -> bool { SPY.contains(&id) }
+/// Decision #177b: SPX-point minute rules that fail the tradable check on SPY with the points scaled by SPX/SPY (sign flip:
+/// 23; SPX average trade >3x and >0.10 pt, or SPX compounded >10x: 13). SPX is their only ticker, so nothing is published.
+pub const SPX_HELD: &[&str] = &["baboops_oops", "jb30d_gap_tick", "tcdt_2bnr_m160_h0", "tcdt_2bnr_m80_h0", "tcdt_3bnr_m160_h0",
+    "tcdt_3bnr_m80_h0", "tcdt_bearhook_p160", "tcdt_bearhook_p80", "tcdt_bullhook_m80", "tcdt_ctl_m160", "tcdt_ctl_m300",
+    "tcdt_ctl_m600", "tcdt_ctl_m80", "tcdt_doji_p80", "tcdt_dojinr4_p160", "tcdt_id_p160", "tcdt_id_p80", "tcdt_nr7_p160",
+    "tcdt_nr7_p80", "tcdt_ws4_m160", "tcdt_ws4_m80", "tcdt_ws7_m160", "tcdt_ws7_m80",
+    "jkbwts_saidenberg30", "tcdt_ctl_p160", "tcdt_ctl_p80", "tcdt_doji_m160", "tcdt_doji_m80", "tcdt_gap_orb", "tcdt_id_m80",
+    "tcdt_idnr4_p160", "tcdt_idnr4_p80", "tcdt_nr4_m160", "tcdt_nr4_m80", "tcdt_nr4_p80", "tcdt_quad_orb"];
+pub fn spx_held(id: &str) -> bool { SPX_HELD.contains(&id) }
 
 #[cfg(test)]
 mod tests {
@@ -77,7 +91,7 @@ mod tests {
             let d = cat.iter().find(|d| d.id == *id).unwrap_or_else(|| panic!("{id}"));
             assert!(ip::intraday_p1(d) && ip::reviewed_cash_rule(d) && ip::held_reason(id).is_none(), "{id}");
             assert_eq!(ip::policy(d).requirement, "declared_index_timing", "{id}");
-            for t in ip::INTRADAY_P1_TICKERS { assert!(ip::check(d, t, false).is_none(), "{id} {t}"); }
+            for t in ip::INTRADAY_P1_TICKERS { assert_eq!(ip::check(d, t, false).is_none(), *t == "SPY", "{id} {t}"); } // #177a: SPY only
             assert!(ip::check(d, "QQQ", false).is_some() && ip::check(d, "AAPL", true).is_some(), "{id}");
             assert_eq!(crate::gate::get(id).unwrap().verdict, "unverified", "{id}");
             assert!(crate::books::params(id).unwrap().iter().any(|p| p.key == "path" && p.def == 1.0), "{id}");
@@ -95,7 +109,42 @@ mod tests {
         assert!(!ip::intraday_p1(long) && ip::reviewed_cash_rule(long));
         for id in ["ats_10pct_oops", "baboops_oops", "btp2_10pct_oops", "btp2_10pct_oops_long", "btp2_10pct_oops_short",
             "jb30d_gap_pct", "jb30d_gap_tick", "tdnmtt_trap_long", "tdnmtt_trap_short"] {
-            assert_eq!(crate::gate::get(id).unwrap().verdict, "unverified", "{id}");
+            assert_eq!(crate::gate::get(id).unwrap().verdict, if spx_held(id) { "withheld" } else { "unverified" }, "{id}"); // #177b
         }
+    }
+    #[test]
+    fn decision_177_tradable_check_limits_minute_tickers() {
+        use crate::instrument_policy as ip;
+        let cat = crate::connors::catalogue();
+        fn find<'a>(cat: &'a [crate::connors::StrategyDef], id: &str) -> &'a crate::connors::StrategyDef { cat.iter().find(|d| d.id == id).unwrap_or_else(|| panic!("{id}")) }
+        assert_eq!((SPY.len(), SPX_HELD.len()), (10, 36));
+        for id in SPY { // #177a: SPY only; the cash-index minute results are withdrawn with the card reason
+            let d = find(&cat, id);
+            assert!(ip::intraday_p1(d) && !ip::intraday_w1_spx_id(id), "{id}");
+            assert_eq!(ip::intraday_tickers(id), &["SPY"][..]);
+            assert!(ip::check(d, "SPY", false).is_none(), "{id}");
+            assert!(ip::check(d, "SPX", false).unwrap().note.contains("cash-index minutes are stale; on the tradable SPY this rule loses"), "{id}");
+            for t in ["NIFTY 50", "NIFTYBANK"] { assert!(ip::check(d, t, false).unwrap().note.contains("no tradable India minute series, and the US tradable check failed"), "{id} {t}"); }
+            let g = crate::gate::get(id).unwrap();
+            assert!(g.verdict == "unverified" && g.reason.contains("#177a") && g.ours.contains("SPX (withdrawn)"), "{id}");
+        }
+        for id in SPX_HELD { // #177b: the SPX-point rule's only ticker is withheld
+            let d = find(&cat, id);
+            assert!(ip::intraday_p1(d) && ip::intraday_w1_spx_id(id) && ip::intraday_tickers(id).is_empty(), "{id}");
+            assert!(ip::check(d, "SPX", false).unwrap().note.contains("on tradable SPY with the points scaled, the result fails"), "{id}");
+            for t in ip::INTRADAY_P1_TICKERS { assert!(ip::check(d, t, false).is_some(), "{id} {t}"); }
+            let g = crate::gate::get(id).unwrap();
+            assert!(g.verdict == "withheld" && g.reason.contains("#177b") && g.ours.starts_with("scaled-SPY check"), "{id}");
+        }
+        // #177c: unflagged rules keep every minute ticker, India with the note; the near misses carry both numbers (#177d)
+        for id in ["ats_10pct_oops", "ss_momentum_pinball", "btp2_10pct_oops", "btp2_10pct_oops_long", "btp2_10pct_oops_short",
+            "lwdg2_0105", "mhp_ftse_12_20041015", "tdnmtt_trap_long", "lgvp_volpat"] {
+            let d = find(&cat, id);
+            for t in ip::INTRADAY_P1_TICKERS { assert!(ip::check(d, t, false).is_none(), "{id} {t}"); }
+            assert!(crate::gate::get(id).unwrap().reason.contains("NIFTY cash-index minutes; the same rule passed the tradable-vs-cash check on SPY/SPX"), "{id}");
+        }
+        for id in ["lwdg2_0105", "lgvp_volpat", "tdnmtt_trap_long"] { assert!(crate::gate::get(id).unwrap().ours.contains("#177d near miss"), "{id}"); }
+        // unflagged SPX-point rules keep SPX
+        for id in ["tcdt_ctl_p300", "bab80_daytrade", "upg18_traders_dream", "lwlts_mon_vb"] { assert!(ip::check(find(&cat, id), "SPX", false).is_none(), "{id}"); }
     }
 }

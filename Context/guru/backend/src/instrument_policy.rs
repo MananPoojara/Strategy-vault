@@ -241,12 +241,20 @@ pub const INTRADAY_W1:&[&str]=&["ats_10pct_oops","ats_wide_range_gap","btp2_10pc
 pub const INTRADAY_W1_SPX:&[&str]=&["hfm_vix","baboops_oops","lwlts_mon_vb","jb30d_gap_tick"];
 pub fn intraday_w1_id(id:&str)->bool {INTRADAY_W1.contains(&id) || intraday_w1_spx_id(id)}
 pub fn intraday_w1_spx_id(id:&str)->bool {INTRADAY_W1_SPX.contains(&id) || crate::books::tcdt::same_day_orb(id) || crate::intraday_w2b::spx_id(id)} // + intraday wave 2b
-pub fn intraday_tickers(id:&str)->&'static [&'static str] {if intraday_w1_spx_id(id) {&["SPX"]} else {INTRADAY_P1_TICKERS}}
+pub fn intraday_tickers(id:&str)->&'static [&'static str] {if crate::intraday_w3::spx_held(id) {&[]} else if crate::intraday_w3::spy_id(id) {&["SPY"]} else if intraday_w1_spx_id(id) {&["SPX"]} else {INTRADAY_P1_TICKERS}} // #177: SPY-only / SPX withheld
 const INTRADAY_W1_SPX_BASIS:&str="Intraday wave 1 (2026-10-24): the book's same-day rule is run on real SPX 1-minute bars (cash index, 2008-01..2026-08; rules that read the open start 2014-01, where the daily SPX open is real), cleaned by library/intraday/m1_normalise.py: padded, no-open and stale-open minutes are removed and never fill; excluded days make no trade. The book's levels are fixed S&P 500 points, so the rule runs only on SPX, at those printed points; on today's index levels they are much smaller relative to price than in the book's years. The book traded S&P 500 futures, so SPX runs are a declared application; cash-index shorts are hypothetical exposure. Stops and entries fill at the level, or at the minute's open when the minute opens through it; conventions for a minute that reaches two levels are stated in the notes. Independent Python ledgers matched the engine with zero mismatches. No book performance is reproduced.";
 // ---- end intraday wave 1
 const INTRADAY_P1_BASIS:&str="Intraday phase 1 (2026-10-24): the book's same-day rule is run on real 1-minute bars (SPY 2000-01..2025-10, SPX cash index 2008-01..2026-08, NIFTY 50 2008-01..2026-10, NIFTYBANK 2010-03..2026-04), cleaned by library/intraday/m1_normalise.py: padded, no-open and stale-open minutes are removed and never fill; outage, late-start and truncated days are excluded and make no trade. Stops fill at the level, or at the minute's open when the minute opens through it. The book traded S&P and other futures (and stocks for some setups), so SPY, SPX, NIFTY 50 and NIFTYBANK runs are a declared application, not the author's test; cash-index shorts are hypothetical exposure. Conventions for a minute that reaches two levels are stated in the notes. Licence: the SPY 1-minute and NIFTY 2008-2014 sources state no licence (internal research). Independent Python ledgers matched the engine with zero mismatches. No book performance is reproduced.";
 fn intraday_p1_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
     if !intraday_p1(def) || (!native_stock && intraday_tickers(def.id).contains(&ticker)) {return None;}
+    if !native_stock && ticker!="SPY" && INTRADAY_P1_TICKERS.contains(&ticker) { // decision #177 (lane M1): tradable-vs-cash minute check
+        if crate::intraday_w3::spx_held(def.id) && ticker=="SPX" {
+            return Some(Issue{status:"not_testable",note:"The SPX minute result is withheld (decision #177b, 3 Nov 2026): on tradable SPY with the points scaled, the result fails. The book's fixed S&P points have no SPY version, so no result is published.".into()});
+        }
+        if crate::intraday_w3::spy_id(def.id) {
+            return Some(Issue{status:"not_testable",note:if ticker=="SPX" {"The SPX minute result is withdrawn (decision #177a, 3 Nov 2026): cash-index minutes are stale; on the tradable SPY this rule loses. The minute result is published on SPY only.".into()} else {format!("The {ticker} minute result is withdrawn (decision #177a, 3 Nov 2026): no tradable India minute series, and the US tradable check failed. The minute result is published on SPY only.")}});
+        }
+    }
     if intraday_w1_spx_id(def.id) && (native_stock || INTRADAY_P1_TICKERS.contains(&ticker)) { // intraday wave 1
         return Some(Issue{status:"needs_data",note:format!("This day-trade rule uses the book's fixed S&P 500 point levels, which only mean what the book meant on the S&P 500 itself, and it needs real 1-minute bars. It runs on SPX only; {ticker} would need an invented conversion, so no result is published.")});
     }
@@ -3005,7 +3013,7 @@ mod tests {
             let d=cats.iter().find(|d|d.id==*id).unwrap_or_else(||panic!("{id}"));
             assert!(reviewed_cash_rule(d)&&held_reason(id).is_none(),"{id}");
             assert_eq!(policy(d).requirement,"declared_index_timing");
-            for t in INTRADAY_P1_TICKERS {assert!(check(d,t,false).is_none(),"{id} {t}");}
+            for t in INTRADAY_P1_TICKERS {assert_eq!(check(d,t,false).is_none(),intraday_tickers(id).contains(t),"{id} {t}");} // #177a: SPY-only ids
             for t in ["NDX","DJI","QQQ"] {assert_eq!(check(d,t,false).unwrap().status,"needs_data","{id} {t}");}
             assert!(check(d,"AAPL",true).is_some());
         }
@@ -3026,7 +3034,7 @@ mod tests {
             assert!(intraday_p1(d)&&reviewed_cash_rule(d)&&held_reason(d.id).is_none(),"{}",d.id);
             assert_eq!(policy(d).requirement,"declared_index_timing");
             let spx=intraday_w1_spx_id(d.id);
-            for t in INTRADAY_P1_TICKERS {assert_eq!(check(d,t,false).is_none(),!spx||*t=="SPX","{} {t}",d.id);}
+            for t in INTRADAY_P1_TICKERS {assert_eq!(check(d,t,false).is_none(),(!spx||*t=="SPX")&&intraday_tickers(d.id).contains(t),"{} {t}",d.id);} // #177: SPY-only / SPX withheld ids
             for t in ["NDX","QQQ"] {assert_eq!(check(d,t,false).unwrap().status,"needs_data","{} {t}",d.id);}
             assert!(check(d,"AAPL",true).is_some());
         }
