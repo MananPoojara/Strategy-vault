@@ -74,7 +74,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|\"buy signals at points at which the moving average reversed to the upside by at least 10 ticks and sell signals at points at which the moving average turned down by the same minimum amount\" p.79; \"Buy (B) = 10-tick rise in moving average off its low. Sell (S) = 10-tick decline in moving average off its high.\" Figure 6.37 p.80",
             "X|Exit = the opposite turn (stop-and-reverse; \"buying on upturns in the moving average and selling on downturns\" p.80)",
             "F|40-day simple average of closes (Figures 6.35-6.38, Canadian dollar and oat continuous futures, p.79-80)",
-            "F|10 ticks = 10 x the traded instrument's tick (NSE 0.05, US 0.01), a tick count kept as a tick count (decision 186, D1-36); p.turn = 0.1 gives the older 0.1%-of-price reading [option]. The low/high is measured from the last signal (from the start date before the first one).",
+            "F|10 ticks = p.turn = 0.1% of the average's low/high: the economic equivalent of 10 S&P-futures ticks (about 0.05-0.1% of price), a point offset stated as a percent under the user's 7 Oct rule (decision 187); 10 ticks of the traded instrument (p.turn = 0, p.ticks = 10; NSE 0.05, US 0.01) is a labelled option. The low/high is measured from the last signal (from the start date before the first one).",
         ]),
         c("jscgf_ma6", "Six-day moving-average direction system (the magazine system of Ch.19)", &[
             "E|\"1. If the six-day moving average is higher than the previous day's corresponding value, cover short and go long. 2. If the six-day moving average is lower than the previous day's corresponding value, cover long and go short.\" p.290",
@@ -121,8 +121,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("confirm", "Confirmation: 0 none, 1 penetration, 2 time delay, 3 thrust days (p.247-249)", 0.0, 0.0, 3.0, 1.0),
             p("pct", "Penetration percent (confirm 1)", 3.0, 0.5, 10.0, 0.5), p("delay", "Delay days (confirm 2)", 6.0, 1.0, 20.0, 1.0),
             p("thrusts", "Thrust days (confirm 3)", 3.0, 1.0, 5.0, 1.0), fill],
-        "jscgf_ma_turn" => vec![p("n", "Moving average days", 40.0, 5.0, 100.0, 1.0), p("ticks", "Turn threshold, ticks of the traded instrument (book: 10)", 10.0, 1.0, 100.0, 1.0),
-            p("turn", "Option: turn threshold as percent of the average's low/high instead (0 = use the ticks)", 0.0, 0.0, 2.0, 0.01), fill],
+        "jscgf_ma_turn" => vec![p("n", "Moving average days", 40.0, 5.0, 100.0, 1.0), p("turn", "Turn threshold, percent of the average's low/high (0.1 = the futures' 10 ticks as a percent; 0 = use p.ticks)", 0.1, 0.0, 2.0, 0.01),
+            p("ticks", "Option (p.turn = 0): turn threshold in ticks of the traded instrument (the book's 10)", 10.0, 1.0, 100.0, 1.0), fill],
         "jscgf_ma6" => vec![p("n", "Moving average days", 6.0, 2.0, 50.0, 1.0), fill],
         "jscgf_wk4" => vec![p("weeks", "Prior weeks", 4.0, 2.0, 26.0, 1.0), fill],
         "jscgf_fade" => vec![p("pct", "Minimum move percent", 7.5, 2.0, 20.0, 0.5), p("confirm", "One-thrust-day confirmation: 0 off, 1 on (p.255)", 0.0, 0.0, 1.0, 1.0), fill],
@@ -258,7 +258,7 @@ pub(crate) fn sim(kind: &str, x: &Ctx, from: usize, to: usize, g: &dyn Fn(&str) 
         "jscgf_ma_turn" => {
             // p.79-80: buy when the average has risen at least the threshold off its low, sell when it has fallen that much
             // off its high; the low/high run from the last signal (from the start date before the first one)
-            // the threshold is 10 ticks of the traded instrument (Ctx::market_tick), or p.turn percent when set (decision 186, D1-36)
+            // the threshold is p.turn percent (default 0.1, decision 187), or p.ticks ticks of the traded instrument when p.turn = 0
             let (ma, turn, step) = (wsma(&x.c, u("n")), g("turn") / 100.0, g("ticks") * x.market_tick());
             let (mut hi, mut lo) = (f64::NAN, f64::NAN);
             for i in from..=to {

@@ -51,7 +51,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("jsgsta_ma_turn", "Moving-average turn system (40-day, 10-tick turn)", "Ch 3 · Trends", &[
             "E|\"buy signals at points at which the moving average reversed to the upside by at least 10 ticks and sell signals at points at which the moving average turned down by the same minimum amount\" p.48; \"Buy = 10-tick rise in moving average off its low. Sell = 10-tick decline in moving average off its high.\" Figures 3.20-3.21",
             "X|Exit = the opposite turn (stop-and-reverse)",
-            "F|40-day simple average (natural gas and cocoa figures, p.47-49); 10 ticks = 10 x the traded instrument's tick (NSE 0.05, US 0.01; decision 186, D1-36); p.turn = 0.1 gives the older 0.1%-of-price reading [option]",
+            "F|40-day simple average (natural gas and cocoa figures, p.47-49); 10 ticks = p.turn = 0.1% of price, the economic equivalent of the futures' 10 ticks (user's 7 Oct rule, decision 187); 10 ticks of the traded instrument (p.turn = 0, p.ticks = 10) is a labelled option",
         ]),
         d("jsgsta_ma6", "Six-day moving-average direction system (the magazine system of Ch.15)", "Ch 15 · Testing and optimizing", &[
             "E|\"1. If the six-day moving average is higher than the previous day's corresponding value, cover short and go long. 2. If the six-day moving average is lower than the previous day's corresponding value, cover long and go short.\" p.254",
@@ -91,8 +91,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("pct", "Penetration percent (confirm 1)", 2.0, 0.5, 10.0, 0.5), p("delay", "Delay days (confirm 2)", 6.0, 1.0, 20.0, 1.0),
             p("thrusts", "Thrust days (confirm 3)", 3.0, 1.0, 5.0, 1.0), fill],
         "jsgsta_fade" => vec![p("pct", "Minimum move percent", 4.0, 2.0, 20.0, 0.5), p("confirm", "One-thrust-day confirmation: 0 off, 1 on", 0.0, 0.0, 1.0, 1.0), fill],
-        "jsgsta_ma_turn" => vec![p("n", "Moving average days", 40.0, 5.0, 100.0, 1.0), p("ticks", "Turn threshold, ticks of the traded instrument (book: 10)", 10.0, 1.0, 100.0, 1.0),
-            p("turn", "Option: turn threshold as percent of the average's low/high instead (0 = use the ticks)", 0.0, 0.0, 2.0, 0.01), fill],
+        "jsgsta_ma_turn" => vec![p("n", "Moving average days", 40.0, 5.0, 100.0, 1.0), p("turn", "Turn threshold, percent of the average's low/high (0.1 = the futures' 10 ticks as a percent; 0 = use p.ticks)", 0.1, 0.0, 2.0, 0.01),
+            p("ticks", "Option (p.turn = 0): turn threshold in ticks of the traded instrument (the book's 10)", 10.0, 1.0, 100.0, 1.0), fill],
         "jsgsta_ma6" => vec![p("n", "Moving average days", 6.0, 2.0, 50.0, 1.0), fill],
         "jsgsta_macd" => vec![p("fast", "Fast EMA days", 12.0, 2.0, 50.0, 1.0), p("slow", "Slow EMA days", 26.0, 5.0, 100.0, 1.0),
             p("signal", "Signal-line days", 9.0, 2.0, 30.0, 1.0), p("sig_ema", "Signal line: 0 simple (book), 1 exponential [Not from the book]", 0.0, 0.0, 1.0, 1.0), fill],
