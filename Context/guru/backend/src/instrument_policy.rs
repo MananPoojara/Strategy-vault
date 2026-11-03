@@ -248,6 +248,8 @@ const INTRADAY_P1_BASIS:&str="Intraday phase 1 (2026-10-24): the book's same-day
 /// Decision #179 (lane M3, 3 Nov 2026; authors/titles-1030/M3.tsv): daily rules that read the open/high/low and fail the exact
 /// tradable-vs-cash check in BOTH windows with the cash index better (stale component prints). The cash-index daily result is
 /// withdrawn and the ETF result (SPY/QQQ/DIA) stays; for the SPX list the NIFTY 50/NIFTYBANK daily results are held too.
+/// Lane K32 (4 Nov 2026) re-ran the same check for the cards K31/K32 changed or admitted and the K28-K30 cards that read the
+/// open/high/low (authors/titles-1030/K32w/M3-k32.tsv, K32.tsv); new flags are added here the same way.
 pub const M3_SPX:&[&str]=&["acbff_eight_stop33", "acbff_eight_stop66", "acbff_rx4day", "acbff_six_q66", "acbff_six_q66_v2", "acbff_six_stop66",
     "atm01_deep_pockets", "atm03_twobar", "atm04_four_pct", "bfmm_esl", "bfmm_mm2_es", "bfmm_mm2_nq", "bfmm_nql", "bllstr_fma_1_50_1",
     "dbnotp_abc_index", "dgmf_gap3", "djcs_pct_reversal", "fgosc_crossover", "hbqts_cgo", "hbqts_parabolic_stop", "jbssf_mom_ma",
@@ -260,15 +262,15 @@ pub const M3_SPX:&[&str]=&["acbff_eight_stop33", "acbff_eight_stop66", "acbff_rx
     "stad9_redrover", "stkch_k39", "tbabc_powertool", "tcdt_idp1", "tcdt_idp2", "tdperl_clop_long", "tdperl_clop_short",
     "tttt1_tradetimer", "upg18_safer2005", "vrsdd_double_doji", "wtdtt_mist4", "wtdtt_mist5", "wwnc_dmi"];
 pub const M3_NDX:&[&str]=&["acbff_rx15", "adrsi5_rsi5", "ajmisc_vol_rev", "jt_example_20d_breakout", "kets_seas_conf_limit", "kets_seas_inv_stop",
-    "kets_stoch_div_stop", "lwnl_engulf_bull_1", "msws_harami_rsi", "nkms_3_day_range_switch", "stad9_obvrev", "wtdtt_mist1",
-    "wtdtt_mist2", "wtdtt_mist3"];
+    "kets_stoch_div_stop", "lwnl_engulf_bull_1", "msws_all_mfi", "msws_harami_mfi", "msws_harami_rsi", "nkms_3_day_range_switch",
+    "stad9_obvrev", "wtdtt_mist1", "wtdtt_mist2", "wtdtt_mist3"];
 pub const M3_DJI:&[&str]=&["acbff_rx15", "agtsic_p10", "atm01_bad_compromise", "atm01_td_carrie", "atmrc_swing_stop", "atmrc_swing_trail", "bfmm_mm2_es",
     "bfmm_nql", "djcs_pct_reversal", "elcim_ts_fi", "epfpp_fxed_trend", "fot07_kama_range", "ftm_kf_sd", "jbid_inside_day",
     "jcurt_jk31_pattern", "kets_seas_mom_limit", "lebtcb_adavol", "lg3k_tr_day", "lkcpt_wdmi", "lkqts_tiar", "lwmdc_open_up_oc",
-    "msws_dark_cloud_piercing_line_mfi", "msws_engulfing_mfi", "nkms_bull_power_bear_power_2", "rgc_runaway_gap", "scraj_red",
-    "sprfs_hvr_nr4ib", "sprfs_nr4ib", "ss_anti_3_10", "stad11_gapper", "stad9_redrover", "strmm_expert", "strtw_gd_bj",
-    "tcdt_oc_nr_re", "tselhs_rb_avg", "wbmdd_erg_tsi_s2", "wtdtt_mist1", "wtdtt_mist3", "wtdtt_mist4", "wtdtt_moc_contraction",
-    "wtdtt_moc_manip"];
+    "mqma_moving_average", "msws_dark_cloud_piercing_line_mfi", "msws_engulfing_mfi", "nkms_bull_power_bear_power_2",
+    "rgc_runaway_gap", "scraj_red", "sprfs_hvr_nr4ib", "sprfs_nr4ib", "ss_anti_3_10", "stad11_gapper", "stad9_redrover",
+    "strmm_expert", "strtw_gd_bj", "tcdt_oc_nr_re", "tselhs_rb_avg", "wbmdd_erg_tsi_s2", "wtdtt_mist1", "wtdtt_mist3", "wtdtt_mist4",
+    "wtdtt_moc_contraction", "wtdtt_moc_manip"];
 /// The tradable-vs-cash refusals (#177 minutes, #179 daily). check() and readiness::check() decide this first, before any
 /// data-coverage check, so a withdrawn (rule, ticker) pair always shows this reason. Ticker routing only; no calculation.
 pub fn tradable_check_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Option<Issue> {
@@ -3852,7 +3854,7 @@ mod decision_179_tests {
     fn tradable_check_withdraws_flagged_cash_index_daily_results_and_is_decided_first() {
         let cat=crate::connors::catalogue();
         let find=|id:&str|cat.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id}"));
-        assert_eq!((M3_SPX.len(),M3_NDX.len(),M3_DJI.len()),(75,14,41));
+        assert_eq!((M3_SPX.len(),M3_NDX.len(),M3_DJI.len()),(75,16,42)); // K32 re-check after the reverse change
         for (list,x,y) in [(M3_SPX,"SPX","SPY"),(M3_NDX,"NDX","QQQ"),(M3_DJI,"DJI","DIA")] {
             for id in list {
                 let d=find(id);
