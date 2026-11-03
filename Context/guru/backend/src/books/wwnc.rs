@@ -46,7 +46,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|Short: \"AL CIERRE en un día 'B' si B1 ... no ha sido alcanzado\"; reverse \"En B1 en un día 'B'\" or \"En el HBOP cualquier día\"; no exit on the entry day except HBOP (p.77-78)",
             "E|MODO DE TENDENCIA: \"Al Alza en el HBOP en cualquier día\"; \"A la Baja en el LBOP en cualquier día\"; \"Cambiar al MODO DE TENDENCIA cualquier día en que la cotización cruce un punto de ruptura HBOP o LBOP\" (p.77-78)",
             "X|Trend mode exit: trailing stop = lowest low of the two previous days (long) / highest high of the two previous days (short), \"stop solamente, no es de cambio\"; then adjust the phases and restart in reaction mode (p.77-78)",
-        ], "Start-up: the book's first phase is either a judged 'significant low' (not testable) or Regla (3); only Regla (3) is used, so the system trades breakouts only until the first trend-mode trade ends and fixes the phases. Intraday order sequence (book silent): TradeStation's bar path (open, then the nearer of high/low, then the other, then the close); stops before limits when both are already through at the open. Trailing stop is in force from the breakout day itself, at the extreme of the two days before it (p.73: 'Una vez en él [el modo de tendencia] el stop se convierte en la cotización más distante de los dos días anteriores'; p.76: 'El día de la ruptura utilizamos como \"trailing stop\" el máximo más alto de los dos días anteriores' and 'Nuestro \"trailing stop\" del Día 11 sería el mínimo del Día 10', Day 11 being the HBOP day; corrected 4 Nov 2026 after the OCR re-read, lane R2); p.trail_day0=0 keeps the earlier reading (stop only from the day after entry). After a trailing-stop exit no new order the same day (p.76: a reaction trade cannot start the day a trend trade ends). Ties for the highest/lowest day take the latest. The book's 'add a few cents to HBOP/LBOP/trailing stop' (p.82) is a live-trading allowance, not modelled (p.margin, default 0). Worksheet p.80-81 checked in the unit test."),
+            "X|Trend mode reversal: trend short -> \"pasamos a la posición Al Alza en el HBOP\"; \"es posible pasar A la Baja en el Modo de Tendencia Al Alza, y viceversa, sin iniciar una operación en el Modo de Reacción\" (p.76)",
+        ], "Start-up: the book's first phase is either a judged 'significant low' (not testable) or Regla (3); only Regla (3) is used, so the system trades breakouts only until the first trend-mode trade ends and fixes the phases. Intraday order sequence (book silent): TradeStation's bar path (open, then the nearer of high/low, then the other, then the close); stops before limits when both are already through at the open. Trailing stop is in force from the breakout day itself, at the extreme of the two days before it (p.73: 'Una vez en él [el modo de tendencia] el stop se convierte en la cotización más distante de los dos días anteriores'; p.76: 'El día de la ruptura utilizamos como \"trailing stop\" el máximo más alto de los dos días anteriores' and 'Nuestro \"trailing stop\" del Día 11 sería el mínimo del Día 10', Day 11 being the HBOP day; corrected 4 Nov 2026 after the OCR re-read, lane R2); p.trail_day0=0 keeps the earlier reading (stop only from the day after entry). Trend-mode reversal (corrected 4 Nov 2026, lane K35): the opposite breakout point stays in force in trend mode, so a trend short that runs through the HBOP goes long in trend mode that day at the HBOP, and a trend long through the LBOP goes short (p.82 'Al Alza en el HBOP en cualquier día'; p.76 'pasamos a la posición Al Alza en el HBOP ... es posible pasar A la Baja en el Modo de Tendencia Al Alza, y viceversa, sin iniciar una operación en el Modo de Reacción'); before, only the trailing stop was active and the system stayed flat. The trailing stop is still a stop only, not a reversal (p.82). After a trailing-stop exit no reaction-mode trade the same day (p.76: 'NO', the phase rhythm is only known the next day), but the HBOP/LBOP still apply. When one daily bar reaches both the trailing stop and the opposite breakout point, the order inside the bar is not known: the module's bar path decides (both levels lie on the same side, so the nearer one is reached first: trailing stop nearer = out at the stop, then long/short at the breakout point; breakout point nearer = stop-and-reverse there); a later move the other way in the same bar follows the open, nearer extreme, farther extreme, close path. Ties for the highest/lowest day take the latest. The book's 'add a few cents to HBOP/LBOP/trailing stop' (p.82) is a live-trading allowance, not modelled (p.margin, default 0). Worksheet p.80-81 checked in the unit test."),
         d("wwnc_rsi", "Relative Strength Index (interpretation)", "Sec VI · RSI", NotTestable("The book defines RSI(14) and five chart-reading uses (tops/bottoms beyond 70/30, chart formations, failure swings, support/resistance, divergence) but gives no exit rule, so no mechanical system exists (p.63-70)."), &[
             "F|RSI = 100 - 100/(1+RS), RS = average up close / average down close over 14 days, Wilder smoothing (p.66-68)",
             "E|\"Oscilaciones de fallo ('Failure Swings'): Cuando rebasan 70 o caen por debajo de 30 son fuertes indicaciones del final de la reacción\" (p.69): no exit given",
@@ -253,17 +254,21 @@ fn rt_system(x: &Ctx, from: usize, to: usize, trail_n: usize, margin: f64, day0:
         let tn = trail_n.min(i);
         let trail_l = x.l[i - tn..i].iter().copied().fold(f64::INFINITY, f64::min) - margin;
         let trail_s = x.h[i - tn..i].iter().copied().fold(f64::NEG_INFINITY, f64::max) + margin;
-        let mut done = false; // a trailing-stop exit ends the day
+        let mut done = false; // a trailing-stop exit ended a trend trade today: no reaction-mode trade until tomorrow (p.76)
         // orders: (level, buy?, stop?, action)
         let orders = |s: &Rt, done: bool| -> Vec<(f64, bool, bool, Act)> {
             let mut v = vec![];
-            if done { return v; }
             match s.mode {
-                Mode::Trend => if i > s.entry || day0 { v.push(if s.pos > 0. { (trail_l, false, true, Act::Trail) } else { (trail_s, true, true, Act::Trail) }); },
+                Mode::Trend => {
+                    if i > s.entry || day0 { v.push(if s.pos > 0. { (trail_l, false, true, Act::Trail) } else { (trail_s, true, true, Act::Trail) }); }
+                    // p.82 "Al Alza en el HBOP en cualquier día" / "A la Baja en el LBOP"; p.76 trend short -> trend long at the HBOP
+                    v.push(if s.pos > 0. { (lbop, false, true, Act::TrendShort) } else { (hbop, true, true, Act::TrendLong) });
+                }
                 Mode::Wait => { v.push((hbop, true, true, Act::TrendLong)); v.push((lbop, false, true, Act::TrendShort)); }
                 Mode::React => {
                     v.push((hbop, true, true, Act::TrendLong));
                     v.push((lbop, false, true, Act::TrendShort));
+                    if done { return v; }
                     let ph = phase(s.anchor, i);
                     if s.pos == 0. {
                         if ph == 0 { v.push((b1, true, false, Act::ReactLong)); }
@@ -421,6 +426,25 @@ mod tests {
         assert!(a[0].dir > 0. && a[0].legs[0].i == 3 && a[0].legs[0].px == hbop && a[0].exit_i == 3 && a[0].exit_px == trail && !a[0].open);
         let b = rt_system(&x, 0, 4, 2, 0., false, None);
         assert!(b[0].dir > 0. && b[0].legs[0].i == 3 && b[0].exit_i == 4);
+    }
+    #[test]
+    fn rt_trend_short_reverses_at_the_hbop() {
+        // p.76/p.82: in trend mode short a move through the HBOP goes long in trend mode that day. Day 3 breaks the LBOP (47).
+        let base = [[50., 51., 49., 50.], [50., 51., 49., 50.], [50., 51., 49., 50.], [50., 50.5, 45., 46.]];
+        // (a) day 4 runs through the trailing stop (51) and on to the HBOP (2*47.1667 - 90 + 50.5): out at 51, long at the HBOP
+        let mut v = base.to_vec(); v.push([46., 56., 45.8, 55.]);
+        let r = rows(&v); let x = Ctx::new(&r, &r, &[]);
+        let a = rt_system(&x, 0, 4, 2, 0., true, None);
+        let hbop = 2. * ((50.5 + 45. + 46.) / 3.) - 2. * 45. + 50.5;
+        assert!(a.len() == 2 && a[0].dir < 0. && a[0].legs[0].px == 47. && a[0].exit_i == 4 && a[0].exit_px == 51.);
+        assert!(a[1].dir > 0. && a[1].legs[0].i == 4 && a[1].legs[0].px == hbop && a[1].open);
+        // (b) the HBOP (46.4) lies under the trailing stop (50.5): stop-and-reverse at the HBOP on day 5
+        let mut v = base.to_vec(); v.push([45.5, 45.8, 45.2, 45.5]); v.push([45.6, 47., 45.5, 46.8]);
+        let r = rows(&v); let x = Ctx::new(&r, &r, &[]);
+        let b = rt_system(&x, 0, 5, 2, 0., true, None);
+        let hbop = 2. * ((45.8 + 45.2 + 45.5) / 3.) - 2. * 45.2 + 45.8;
+        assert!(b.len() == 2 && b[0].dir < 0. && b[0].exit_i == 5 && b[0].exit_px == hbop);
+        assert!(b[1].dir > 0. && b[1].legs[0].i == 5 && b[1].legs[0].px == hbop && b[1].open);
     }
     #[test]
     fn dmi_stop_waits_for_the_cross_day_extreme() {

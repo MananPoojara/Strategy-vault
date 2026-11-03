@@ -192,7 +192,7 @@ fn defs() -> Vec<S> {
             rules: &["E|ENTER LONG: ROC(Mov(C,12,E),1,%)>0 AND ROC(Mov(C,60,E),1,%)>0",
                      "X|EXIT LONG: (ROC(Mov(C,12,E),1,%)<0 AND ROC(Mov(C,60,E),1,%)>0) OR (ROC(Mov(C,12,E),1,%)>0 AND ROC(Mov(C,60,E),1,%)<0)",
                      "E|SHORT: ROC(Mov(C,12,E),1,%)<0 AND ROC(Mov(C,60,E),1,%)<0", "X|EXIT SHORT: same as EXIT LONG"],
-            notes: "guppymsformulas.pdf p. 131. Onno Goedknegt. Literal: a long is not closed when both slopes turn negative at once (neither mixed case) - it waits for a mixed-slope bar." },
+            notes: "guppymsformulas.pdf p. 131. Onno Goedknegt. Default (p.reverse = 1): when both slopes turn negative at once, the Enter Short reverses the long on that bar (and the mirror). Only with p.reverse = 0 is the opposite Enter ignored, so a long then waits for a mixed-slope bar (neither mixed case closes it)." },
         S { id: "dgmf_brow_dmi", name: "Working with DMI (Dick Brow)", group: "Formula 7", dir: "Long", status: Live, vol: false,
             rules: &["E|OPEN LONG: close>hhv(low,21)", "X|CLOSE LONG: close<llv(high,21)"],
             notes: "guppymsformulas.pdf p. 112. Printed below the 'Smoothed DMI Index' formula, which the system does not use." },
