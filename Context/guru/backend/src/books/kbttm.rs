@@ -107,3 +107,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         _ => return None,
     })
 }
+
+// Instrument admission: Kedrick F. Brown 2026-10-29 (lane B) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/kbrown/admission/tt_ref.py (header)); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="kbttm" && crate::books::kbttm::reviewed(def.id),
+    label: "Kedrick Brown tests the 32-day close Donchian rule on the NASDAQ Composite, XOI and UTY indices and writes the all-time-high breakout for US stocks; runs on other indices, ETFs and US/India stocks are a declared application, not the author's test.",
+    basis: "Kedrick F. Brown, Trend Trading: Timing Market Tides (2006), Ch.4 p.78-81, Ch.6 p.167-168, Ch.7 p.184-193",
+};

@@ -216,3 +216,12 @@ mod tests {
         assert_eq!((ts[0].legs[0].i, ts[0].exit_i, ts[0].open), (2, 4, false));
     }
 }
+
+// Instrument admission: NDavis 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/ndavis/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"ndbrm") && (crate::books::ndbrm::reviewed(def.id)),
+    label: "Ned Davis Research tested these indicators on the S&P 500, the Dow and NASDAQ breadth; runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test. NYSE breadth rules need NYSE breadth data (US, to Feb 2020); NSE breadth rules run on Indian instruments.",
+    basis: "Ned Davis, Being Right or Making Money (2nd ed. 2000): S&P 500 8.4%/7.2% weekly reversals and the 40-day TRIN (ch.4 p.87-88), A/D line vs its 25-day average (ch.2 p.47; NSE breadth mapping). Long or cash, signals and fills on the close. Reviewed in authors/ndavis/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
+};

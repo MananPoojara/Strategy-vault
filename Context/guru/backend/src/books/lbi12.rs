@@ -611,3 +611,12 @@ mod tests {
         assert!(ts[0].legs[0].i >= 32 && ts[0].legs[0].px == x.o[ts[0].legs[0].i]);
     }
 }
+
+// Instrument admission: Lukac, Brorsen and Irwin 2026-10-26 (lane B) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/lukac/laneb/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="lbi12" && crate::books::lbi12::reviewed(def.id),
+    label: "Lukac, Brorsen and Irwin tested these twelve systems on 12 futures markets (1978-84), choosing each year's parameters by the best profit of the three years before; runs on one index, ETF or stock (US and India) use the same yearly re-optimisation over the book's grids and are a declared application, one unit per trade, shorts included.",
+    basis: "Lukac, Brorsen and Irwin, A Comparison of Twelve Technical Trading Systems (1985; Traders Press 2004), Appendix A p.33-45 and Tables A.1-A.12",
+};

@@ -123,3 +123,12 @@ mod tests {
         assert_eq!(f[41], -1);
     }
 }
+
+// Instrument admission: Andrew Abraham (aatt, lane A) 2026-10-26 (lane B) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/lanea/singles/decisions.json); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="aatt" && crate::books::aatt::reviewed_lanea(def.id),
+    label: "Abraham's volatility stop-and-reverse was written for futures and stocks (corn, Swiss franc, Chase Manhattan); Runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade.",
+    basis: "Andrew Abraham / Trading the Trend, Technical Analysis of Stocks & Commodities V16:9 (1998)",
+};

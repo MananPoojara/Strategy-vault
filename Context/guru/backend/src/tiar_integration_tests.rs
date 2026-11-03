@@ -24,7 +24,7 @@ fn exact_tiar_dispatch_leaves_sob_prior_lists_and_macs_admission_unchanged(){
     let metadata=instrument_policy::metadata_json(&d);assert!(metadata.contains(books::lkqts::TIAR_SOURCE_PROFILE));assert!(metadata.contains("comparison"));assert!(metadata.contains("separate acceptance gates"));assert!(metadata.contains("other runs need their own source/data/account checks"));assert!(metadata.contains("Data readiness alone does not prove a financially supported account"));assert!(metadata.contains("\"source_performance_reproduced\":false"));
     assert!(instrument_policy::check_native(&d,"AAPL",&baskets::NativeEvidence::us_test_fixture()).is_none());
     for ticker in ["NIFTY 50","SPX","SPY","QQQ"]{assert!(instrument_policy::check(&d,ticker,false).is_none());}assert!(instrument_policy::check(&d,"AAPL",false).is_some());
-    let mut wrong=d;wrong.book="other";assert!(!instrument_policy::reviewed_kestner_stock(&wrong));assert_eq!(instrument_policy::policy(&wrong).requirement,"source_review_required");assert_eq!(gate::get(ID).unwrap().verdict,"unverified");assert_eq!(gate::get(ID).unwrap().ours,"");
+    let mut wrong=d;wrong.book="other";assert!(!instrument_policy::reviewed_kestner_stock(&wrong));assert_eq!(instrument_policy::policy(&wrong).requirement,"source_review_required");assert_eq!(gate::get(ID).unwrap().verdict,"unverified");assert!(gate::get(ID).unwrap().ours.starts_with("M3 tradable-vs-cash daily check (#179, flagged)")); // K27 label only
 }
 #[test]
 fn all_four_tiar_handlers_reject_raw_changed_duplicate_or_forged_settings(){

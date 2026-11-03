@@ -943,3 +943,12 @@ mod tests {
         assert_eq!((t[1].legs[0].i, t[1].exit_i, t[1].open), (3, 4, false)); // Feb 1 close -> Feb 2 close
     }
 }
+
+// Instrument admission: Kaeppel 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/kaeppel/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"kpss") && (crate::books::kpss::reviewed(def.id)),
+    label: "Jay Kaeppel tested every rule on the Dow Jones Industrial Average (the Nasdaq rule on the Nasdaq Composite/NASDAQ 100); runs on other indices, ETFs and stocks are a declared application, not the author's test. Rules defined by US market holidays (day before a holiday, Santa Claus rally, the holiday-based models) run on US instruments only. 2:1 positions and shorts are hypothetical exposure; the book's 1% cash interest is not modelled.",
+    basis: "Jay Kaeppel, Seasonal Stock Market Trends (Wiley 2009): calendar, holiday, monthly-day, decennial, time-cycle, election-cycle, season and Known Trends Index rules (Ch.2-9, p.22-284), each a daily position earning close-to-close. Reviewed in authors/kaeppel/admission/SOURCE-CONTRACT.md with independent chronological ledgers; book rules transcribed in audits/kpss/book_rules.md.",
+};

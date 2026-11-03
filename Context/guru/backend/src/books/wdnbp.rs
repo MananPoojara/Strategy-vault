@@ -185,3 +185,12 @@ mod tests {
         assert!(ndb(&c, &c, 0, 9, 0.04, 0.02, None, false).is_empty());
     }
 }
+
+// Instrument admission: Dunnigan 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/dunnigan/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| (def.book=="wdnbp" && crate::books::wdnbp::reviewed(def.id)) || (def.book=="wdgig" && crate::books::wdgig::reviewed(def.id)),
+    label: "Dunnigan applied the New Dow Barometer to the Dow-Jones industrial average (1921-1956) and the 2 1/2%-3-day swings to wheat futures (1930-1942); runs on other indices, ETFs and single stocks are a declared application.",
+    basis: "New Blueprints for Gains in Stocks and Grains (1956): New Dow Barometer Rules 1-2 on 4% closing-price swings (Part III p.62-64); 2 1/2%-3-day swing penetration of 1% (Gains in Grains p.113-115, Fig 4.3). All thresholds are percentages. Index/ETF/stock runs are a declared application.",
+};

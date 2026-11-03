@@ -994,7 +994,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         // ---- intraday wave 1: real 1-minute path (default path = 1); the daily-bar readings below stay as path = 0
         "ats_10pct_oops" if g("path") >= 0.5 => {
             use crate::intraday::{day_trade, stop_entry_day, Level};
-            let Some(mm) = x.minutes else { return Some(vec![]) };
+            if x.minutes.is_none() { return Some(vec![]); }
             let (loc, gap_low, stop_on) = (g("loc") / 100.0, g("gap") > 0.5, g("stop") > 0.5);
             let mut out = vec![];
             for i in from.max(1)..=to {
@@ -1002,7 +1002,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 let cl = x.close_loc(k);
                 let (dir, lv) = if ok(1.0) && cl <= loc && o[i] < if gap_low { l[k] } else { c[k] } { (1.0, l[k]) }
                     else if ok(-1.0) && cl >= 1.0 - loc && o[i] > if gap_low { h[k] } else { c[k] } { (-1.0, h[k]) } else { continue };
-                let Some(b) = mm.day(&x.r[i].date) else { continue };
+                let Some(b) = crate::intraday_w2b::day(x, i) else { continue }; // intraday wave 3: rejected NIFTY 50 minute days (from 2026-08-11) make no trade
                 let st = |_: usize, _: f64| stop_on.then(|| Level { up: dir < 0.0, px: o[i] });
                 let Some((_, px, xs)) = stop_entry_day(&b, 0, &[Level { up: dir > 0.0, px: lv }], &st) else { continue };
                 out.push(day_trade(dir, i, px, i, xs.unwrap_or(c[i]), if xs.is_some() { "protective stop near the day-two open" } else { "MOC" }, "stop", false));
@@ -1011,7 +1011,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         }
         "ats_wide_range_gap" if g("path") >= 0.5 => {
             use crate::intraday::{day_trade, stop_entry_day, Level};
-            let Some(mm) = x.minutes else { return Some(vec![]) };
+            if x.minutes.is_none() { return Some(vec![]); }
             let hv = book_hv(c, u("hv_n"), hvr());
             let (k_sd, div, gap_low, carry) = (g("sd"), g("sd_days").sqrt(), g("gap") > 0.5, g("carry") / 100.0);
             let mut out = vec![];
@@ -1020,7 +1020,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 let (sd, mv) = (c[k - 1] * hv[k - 1] / 100.0 / div, c[k] - c[k - 1]);
                 let (dir, lv, sp) = if ok(1.0) && mv <= -k_sd * sd && o[i] < if gap_low { l[k] } else { c[k] } { (1.0, c[k], l[k]) }
                     else if ok(-1.0) && mv >= k_sd * sd && o[i] > if gap_low { h[k] } else { c[k] } { (-1.0, c[k], h[k]) } else { continue };
-                let Some(b) = mm.day(&x.r[i].date) else { continue };
+                let Some(b) = crate::intraday_w2b::day(x, i) else { continue }; // intraday wave 3: rejected NIFTY 50 minute days (from 2026-08-11) make no trade
                 let Some((_, px, xs)) = stop_entry_day(&b, 0, &[Level { up: dir > 0.0, px: lv }], &|_, _| Some(Level { up: dir < 0.0, px: sp })) else { continue };
                 let strong = if dir > 0.0 { x.close_loc(i) >= 1.0 - carry } else { x.close_loc(i) <= carry };
                 out.push(match xs {

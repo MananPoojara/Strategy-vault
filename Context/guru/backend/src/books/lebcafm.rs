@@ -471,3 +471,12 @@ mod tests {
         assert!(sar[59] > x.h[58].min(x.h[59]) - 1e-9);
     }
 }
+
+// Instrument admission: LeBeau 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/lebeau/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"lebcafm"|"lebtc"|"lebtcb"|"lebws") && (crate::books::lebcafm::reviewed(def.id) || crate::books::lebtc::reviewed(def.id) || crate::books::lebtcb::reviewed(def.id) || crate::books::lebws::reviewed(def.id)),
+    label: "Charles LeBeau and his System Traders Club tested these rules on futures (Computer Analysis of the Futures Markets: D-mark, gold, soybeans, T-bonds and crude; the club bulletins and forum: interest-rate and other futures) or on US stocks (High Beta workbook, ABC handout); index, ETF and stock runs (US and India) are a declared application, not the author's test. Cash-index shorts are hypothetical exposure.",
+    basis: "Charles LeBeau (& David W. Lucas): Computer Analysis of the Futures Markets Ch.2 ADX + Parabolic, volatility breakout, Babcock DMI and Lambert CCI rules (p.39, 61-63, 113-114, 139-146) and the Ch.3 entry, exit and stop test protocols (p.170-188); System Traders Club High Beta Stock system, Ronco adaptive channel and volatility breakouts, TBond Attack, Johnson's Pretty Good Oscillator (Bulletin #4, Traderclub Forum) and the ABC ATR handout. Reviewed in authors/lebeau/admission/SOURCE-CONTRACT.md with independent chronological ledgers. Orders follow the book or printed code; no costs; the futures results are not reproduced.",
+};

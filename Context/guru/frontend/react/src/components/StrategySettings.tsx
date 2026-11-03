@@ -16,13 +16,63 @@ export interface StrategySettingsModel {
 }
 const valid = (p: StrategyParameter, raw: string) => raw.trim() !== "" && Number.isFinite(+raw)
   && (p.min === undefined || +raw >= p.min) && (p.max === undefined || +raw <= p.max);
+/** One arrow click: the schema's step, else the precision of the book default (0.02 steps by 0.01), kept inside the limits. */
+export function stepValue(p: StrategyParameter, raw: string, direction: 1 | -1) {
+  const places = (n: number) => (String(n).split(".")[1] || "").length;
+  const step = p.step || 10 ** -places(p.def);
+  const base = raw.trim() !== "" && Number.isFinite(+raw) ? +raw : p.def;
+  let next = +(base + direction * step).toFixed(Math.max(places(step), places(base)));
+  if (p.min !== undefined) next = Math.max(p.min, next);
+  if (p.max !== undefined) next = Math.min(p.max, next);
+  return String(next);
+}
+const ARROW = {width: 9, height: 9, viewBox: "0 0 10 10", fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true} as const;
 /** Same encoding as the optimizer's Apply: every key when any differs from the book, empty for the book rule. */
 export function encodeSettings(params: StrategyParameter[], values: Record<string, number>) {
   return params.some(p => values[p.key] !== p.def) ? params.map(p => `${p.key}:${values[p.key]}`).join(",") : "";
 }
 
-export function StrategySettings({mode = "fixed", onApply, disabledReason, sourceAccount = false, unitExposure = false, pristine = false, settings}: {
+/** The strategy's parameters as a small strip on the page (user request 30 Oct 2026); Net Profit mode and assumptions stay in the settings popup. */
+export function StrategyParameters({settings, onApply}: {settings?: StrategySettingsModel | null; onApply: (params: string) => void}) {
+  const params = settings?.params || [];
+  const id = useId();
+  const current = () => Object.fromEntries(params.map(p => [p.key, String(p.value)]));
+  const [values, setValues] = useState<Record<string, string>>(current);
+  const applied = params.map(p => `${p.key}:${p.value}`).join(",");
+  useEffect(() => setValues(current()), [applied]);
+  if (!params.length) return null;
+  const editable = !settings?.fixedNote;
+  const invalid = params.some(p => !valid(p, values[p.key] ?? ""));
+  const encoded = invalid ? null : encodeSettings(params, Object.fromEntries(params.map(p => [p.key, +values[p.key]])));
+  const changed = encoded !== null && encoded !== encodeSettings(params, Object.fromEntries(params.map(p => [p.key, p.value])));
+  const notDefault = params.some(p => values[p.key] !== String(p.def));
+  return <section className="box strategy-params" data-strategy-params aria-label="Strategy parameters" title={settings?.fixedNote}>
+    <strong className="strategy-params-title">Parameters</strong>
+    <div className="strategy-params-list">{params.map(p => {
+      const raw = values[p.key] ?? "", ok = valid(p, raw);
+      return <div key={p.key} data-param={p.key} className={`strategy-param${ok && +raw !== p.def ? " changed" : ""}`}>
+        <label htmlFor={`${id}-${p.key}`}>{p.label}</label>
+        <span className="strategy-settings-stepper"><input id={`${id}-${p.key}`} type="number" value={raw} readOnly={!editable}
+          min={p.min} max={p.max} step={p.step || "any"} aria-invalid={!ok || undefined} title={`Book default ${p.def}`}
+          onChange={event => setValues(v => ({...v, [p.key]: event.target.value}))} />
+          {editable && <span className="strategy-settings-arrows">
+            <button type="button" tabIndex={-1} aria-label={`Increase ${p.label}`} onClick={() => setValues(v => ({...v, [p.key]: stepValue(p, v[p.key] ?? "", 1)}))}><svg {...ARROW}><path d="M2 6.5 5 3.5l3 3" /></svg></button>
+            <button type="button" tabIndex={-1} aria-label={`Decrease ${p.label}`} onClick={() => setValues(v => ({...v, [p.key]: stepValue(p, v[p.key] ?? "", -1)}))}><svg {...ARROW}><path d="M2 3.5 5 6.5l3-3" /></svg></button>
+          </span>}</span>
+        {!ok && <span className="strategy-settings-marker invalid" role="alert">{p.min !== undefined && p.max !== undefined ? `${p.min} to ${p.max}` : "Enter a number"}</span>}
+      </div>;
+    })}</div>
+    {editable && <div className="strategy-params-actions">
+      <button type="button" disabled={!notDefault} onClick={() => setValues(Object.fromEntries(params.map(p => [p.key, String(p.def)])))}>Book defaults</button>
+      <button type="button" className="strategy-settings-apply" disabled={!changed} onClick={() => onApply(encoded!)}>Apply</button>
+    </div>}
+  </section>;
+}
+
+export function StrategySettings({mode = "fixed", onApply, disabledReason, sourceAccount = false, unitExposure = false, pristine = false, settings: fullSettings, hideParameters = false}: {
   mode?: ReturnDisplayMode;
+  /** The parameters are on the page in StrategyParameters; this popup keeps the Net Profit mode and the assumptions. */
+  hideParameters?: boolean;
   /** `params` is passed only when the strategy settings changed (the encoded S.p). */
   onApply: (mode: ReturnDisplayMode, params?: string) => void;
   settings?: StrategySettingsModel | null;
@@ -34,6 +84,7 @@ export function StrategySettings({mode = "fixed", onApply, disabledReason, sourc
   /** Pristine reads its own audited closed fields, not the index adapter. */
   pristine?: boolean;
 }) {
+  const settings = fullSettings && hideParameters ? {...fullSettings, params: []} : fullSettings;
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<ReturnDisplayMode>(mode);
   const params = settings?.params || [];
@@ -100,8 +151,8 @@ export function StrategySettings({mode = "fixed", onApply, disabledReason, sourc
                 strokeWidth="1.75" strokeLinecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
             </button>
           </header>
-          <p id={`${id}-description`} className="strategy-settings-intro">{settings ? "The settings and assumptions this backtest used. Change a setting and Apply to re-run it on the same instrument and period." : "Choose how closed-trade returns are displayed."}</p>
-          {settings && <section className="strategy-settings-group" data-settings-group="parameters" aria-labelledby={`${id}-params`}>
+          <p id={`${id}-description`} className="strategy-settings-intro">{settings && !hideParameters ? "The settings and assumptions this backtest used. Change a setting and Apply to re-run it on the same instrument and period." : settings ? "How this backtest calculates Net Profit, and the assumptions it used." : "Choose how closed-trade returns are displayed."}</p>
+          {settings && !hideParameters && <section className="strategy-settings-group" data-settings-group="parameters" aria-labelledby={`${id}-params`}>
             <h3 id={`${id}-params`} className="strategy-settings-legend">Strategy settings used in this backtest</h3>
             {params.length ? <>
               <table className="strategy-settings-params">

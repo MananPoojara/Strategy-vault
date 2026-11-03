@@ -90,3 +90,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     if id != BW || from >= to || to >= x.r.len() { return None; }
     Some(run_bw(x, from, to, p))
 }
+
+// Instrument admission: Lane A vendor2 2026-10-26 (lane B) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/lanea/vendor2/decisions.json); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| (def.book=="sktbw" && crate::books::sktbw::reviewed_lanea(def.id)) || (def.book=="dtwxp" && crate::books::dtwxp::reviewed_lanea(def.id)) || (def.book=="tchnl" && crate::books::tchnl::reviewed_lanea(def.id)) || (def.book=="jhsto" && crate::books::jhsto::reviewed_lanea(def.id)) || (def.book=="bfmmx" && crate::books::bfmmx::reviewed_lanea(def.id)) || (def.book=="tcsyn" && crate::books::tcsyn::reviewed_lanea(def.id)) || (def.book=="tttt1" && crate::books::tttt1::reviewed_lanea(def.id)) || (def.book=="msmom" && crate::books::msmom::reviewed_lanea(def.id)) || (def.book=="mxswg" && crate::books::mxswg::reviewed_lanea(def.id)) || (def.book=="tltdr" && crate::books::tltdr::reviewed_lanea(def.id)),
+    label: "Vendor TradeStation / MetaStock code with no per-market test the vault can compare; runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade.",
+    basis: "Vendor system code (TradeStation EasyLanguage / MetaStock): VISTA Research (S.K. Tennis), dream-trading.com, TrendChannel (J. Tolan), Jack Hershey stochastics, Breakout Futures MiniMax I/II (M.R. Bryant), traderstech.net Synergy, TradeTimer TT1, MACD Momentum (after T. Aspray), MX Capital SwingTrader, TrendLine Trader",
+};

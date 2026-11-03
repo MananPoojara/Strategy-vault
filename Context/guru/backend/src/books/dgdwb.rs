@@ -181,3 +181,12 @@ mod tests {
     #[test]
     fn minus_months_clamps() { assert_eq!(minus_months("2004-03-31", 1), "2004-02-29"); assert_eq!(minus_months("2005-01-15", 12), "2004-01-15"); }
 }
+
+// Instrument admission: Guppy 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/guppy/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="dgdwb" && crate::books::dgdwb::reviewed(def.id),
+    label: "Daryl Guppy's Darvas workbook applies the Modern Darvas box to shares (ASX/US stocks); runs on indices, ETFs and single stocks (US and India) are a declared application.",
+    basis: "Darvas Trading WorkBook (darvasbook.pdf slides 3-6, 14-19) + Modern Darvas Trading (mdarvas.pdf slides 10-19): 6-month new high, 3 lower highs set the top, a low and 3 higher lows set the bottom, buy the first trade above the box, exit the day after a close below the D_Box, ghost boxes for the stop. Index/ETF/stock runs are a declared application.",
+};

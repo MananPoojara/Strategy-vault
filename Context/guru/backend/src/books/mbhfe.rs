@@ -287,3 +287,12 @@ mod tests {
         assert!((avg(&[1.0, 2.0, 3.0, 4.0, 5.0], 5)[4] - 3.0).abs() < 1e-12);
     }
 }
+
+// Instrument admission: Boucher 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/boucher/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| (def.book=="mbhfe" && crate::books::mbhfe::reviewed(def.id)) || (def.book=="mbsot" && crate::books::mbsot::reviewed(def.id)),
+    label: "Mark Boucher tested these timing models on the S&P 500 (breadth thrusts, Renshaw, Appel) and the Value Line Composite (Zweig 4%) with NYSE breadth; the _nse versions read NSE breadth for India. Runs on other indices, ETFs and single stocks are a declared application.",
+    basis: "The Hedge Fund Edge (1999) Ch.4 p.136-139, System Spreadsheets 4.2 (up volume > 77%) and 4.3 (11-day A/D > 1.9); The Science of Trading workbook, Timing Models pp.19-22 (Zweig 4% weekly, Renshaw thrust, Appel Impulse, Appel McClellan, Appel Combo). Index/ETF/stock runs are a declared application.",
+};

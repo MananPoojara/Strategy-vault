@@ -841,3 +841,12 @@ mod tests {
         for d in c.iter().filter(|d| d.status == Status::Live) { assert!(params(d.id).is_some(), "{}", d.id); }
     }
 }
+
+// Instrument admission: Bandy 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/bandy/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"hbqts"|"hbiab") && (crate::books::hbqts::reviewed(def.id) || crate::books::hbiab::reviewed(def.id)),
+    label: "Howard Bandy showed these AmiBroker examples on US stocks, sector ETFs and T-bond futures; runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test. Cash-index shorts are hypothetical exposure.",
+    basis: "Howard B. Bandy: Quantitative Trading Systems (2007) AFL examples (entries and exits ch.5-7, trend and mean-reversion ch.9-10, seasonality and patterns ch.11-13, multi-time-frame filters ch.17, stops and allocation ch.22, App. A); Introduction to AmiBroker (2008) TrendFollowing.afl and MeanReversion.afl (p.542-543). Reviewed in authors/bandy/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs; one position at a time.",
+};

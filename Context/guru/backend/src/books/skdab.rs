@@ -86,3 +86,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, _p: &Params) -> Option<Vec
     if let Some(mut tr) = cur { tr.exit_i = to; tr.exit_px = c[to]; tr.signal_i = to; tr.reason = "open".into(); tr.open = true; out.push(tr); }
     Some(out)
 }
+
+// Instrument admission: Kroll 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/kroll/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"skdab") && (crate::books::skdab::reviewed(def.id)),
+    label: "Stanley Kroll illustrated this strategy on the NIKKEI and futures; runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test. Cash-index shorts are hypothetical exposure.",
+    basis: "Stanley Kroll, Dragons and Bulls (Addison-Wesley 1994), Ch.11 Long-term versus Short-term Trading (p.59-61): 50-day average trend filter, 10/20/50-day entries, 4/9/18-day stop-outs and re-entries. Reviewed in authors/kroll/admission/SOURCE-CONTRACT.md with independent chronological ledgers; fills at the close; no costs.",
+};

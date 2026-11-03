@@ -2,7 +2,7 @@ FROM rust:1.97.1-slim-bookworm AS build
 WORKDIR /build
 ENV CARGO_BUILD_JOBS=2
 ENV RUSTFLAGS="-C codegen-units=2"
-COPY backend/Cargo.toml backend/Cargo.lock ./
+COPY backend/Cargo.toml backend/Cargo.lock backend/build.rs ./
 COPY backend/src ./src
 RUN cargo build --release --locked
 FROM debian:bookworm-slim

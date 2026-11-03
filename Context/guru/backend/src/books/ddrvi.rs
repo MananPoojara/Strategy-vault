@@ -149,3 +149,12 @@ mod tests {
         assert!(ine[ts[0].exit_i - 1] < 50.);
     }
 }
+
+// Instrument admission: Dorsey 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/dorsey/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="ddrvi" && crate::books::ddrvi::reviewed(def.id),
+    label: "Donald Dorsey tested the inertia system on 13 futures markets (10-20 years of daily data to about 1994); runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test.",
+    basis: "Donald Dorsey, Refining the Relative Volatility Index (Stocks & Commodities V13, 1995, p.388-391): new RVI = (RVIH + RVIL)/2 from the Fig.4 TradeStation code, inertia = 20-bar average; buy when inertia is above 50, sell when below 50 (Fig.5 text). Reviewed in authors/dorsey/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
+};

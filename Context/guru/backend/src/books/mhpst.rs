@@ -398,3 +398,12 @@ mod tests {
         }
     }
 }
+
+// Instrument admission: Harris 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/harris/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"mhpst"|"mhart") && (crate::books::mhpst::reviewed(def.id) || crate::books::mhart::reviewed(def.id)),
+    label: "Michael Harris tested these price patterns on QQQQ, SPY, the DAX and the FTSE (Profitability and Systematic Trading appendix) and on Intel and Dell (Active Trader, Sep 2001); runs on other indices, ETFs and stocks, US and India, are a declared application, not the author's test. Short patterns on a cash index are hypothetical exposure.",
+    basis: "Michael Harris: Profitability and Systematic Trading (Wiley 2008) appendix price patterns with percentage targets and stops (p.137-178, EasyLanguage listings) and the 3L-R and GAP-2H patterns (Active Trader, Sep 2001, Tables 2-3). Reviewed in authors/harris/admission/SOURCE-CONTRACT.md with independent chronological ledgers. Entry at the next open, exits at the printed limit and stop; same-bar target and stop take the stop first (book silent); no costs.",
+};

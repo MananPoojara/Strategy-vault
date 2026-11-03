@@ -87,3 +87,12 @@ mod tests {
         assert_eq!(week("1970-01-05") - week("1970-01-04"), 1);
     }
 }
+
+// Instrument admission: Aan 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/aan/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="aanwr" && crate::books::aanwr::reviewed(def.id),
+    label: "Peter W. Aan tested the Weekly Rule on 18 futures markets (S&P 500 among them); runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test.",
+    basis: "Peter W. Aan, The Weekly Rule System (Mystery System, 1993): always in, reverse one tick beyond the highest high / lowest low of the last 4 completed Monday-Friday calendar weeks (MS1 rules 1-2 and worksheet; first trade = first fresh breakout, MS2 option a). Reviewed in authors/aan/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
+};

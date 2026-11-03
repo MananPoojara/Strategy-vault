@@ -108,3 +108,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     if from >= to || to >= x.r.len() { return None; }
     match id { MAG => Some(run_mag(x, from, to, p)), ONX => Some(run_onyx(x, from, to)), _ => None }
 }
+
+// Instrument admission: Alfaranda Magnet and Onyx 2026-10-26 (lane B) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/vendor/laneb/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="alfrd" && crate::books::alfrd::reviewed(def.id),
+    label: "Vendor and newsletter code with no per-market test the vault can compare; runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade.",
+    basis: "Alfaranda Magnet and Onyx TradeStation code",
+};

@@ -212,3 +212,12 @@ mod tests {
         assert!(ts.iter().any(|t| t.dir < 0.));
     }
 }
+
+// Instrument admission: Toghraie 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/toghraie/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"rgtsec") && (crate::books::rgtsec::reviewed(def.id)),
+    label: "Murray Ruggiero tested these TradeStation rules in Traders' Secrets on futures (coffee, Japanese yen, crude oil, currencies); runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test. '1 point' is 0.01 in the instrument's price. Cash-index shorts are hypothetical exposure.",
+    basis: "Murray A. Ruggiero, Jr. & Adrienne Laris Toghraie, Traders' Secrets (On Target Press 1999): Ruggiero's analytical-model rules - volatility-adjusted and standard channel breakouts (p.118, p.319), the 14/18 channel breakout (p.205-206) and the 10/15/25 three moving average crossover (p.269-270). Reviewed in authors/toghraie/admission/SOURCE-CONTRACT.md with independent chronological ledgers. Stops act on the next bar; no costs.",
+};

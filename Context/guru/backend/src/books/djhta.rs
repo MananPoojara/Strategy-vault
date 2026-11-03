@@ -146,3 +146,12 @@ mod tests {
         assert_eq!(t[0].dir, 1.); assert_eq!(t[0].legs[0].i, wk[8]); assert!(t[0].open);
     }
 }
+
+// Instrument admission: Jobman 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/jobman/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"djhta") && (crate::books::djhta::reviewed(def.id)),
+    label: "Dennis Dunn's technique is quoted for futures (no market named, no results); runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test.",
+    basis: "Darrell R. Jobman (ed.), The Handbook of Technical Analysis (1995), ch.8 p.125-126: Dunn's seven-week moving average, Thursday closes over/under the average plotted two weeks ahead, always in the market. Signals and fills on the Thursday close. Reviewed in authors/jobman/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
+};

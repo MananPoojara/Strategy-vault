@@ -542,3 +542,12 @@ mod tests {
         for d in c.iter().filter(|d| d.status == Status::Live) { assert!(params(d.id).is_some(), "{}", d.id); assert!(family_of(d.id).is_some()); }
     }
 }
+
+// Instrument admission: Futures Magazine 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/futuresmag/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| (def.book=="ftm" && crate::books::ftm::reviewed(def.id)) || (def.book=="ftm2" && crate::books::ftm2::reviewed(def.id)),
+    label: "Futures Magazine authors tested these systems on futures portfolios or US stocks; runs on indices, ETFs and single stocks (US and India; US calendar and VIX rules use the market's own index and volatility index) are a declared application, one unit per trade.",
+    basis: "Futures Magazine 2001-2005 articles (PDF copies in Books/Futures Magazine)",
+};

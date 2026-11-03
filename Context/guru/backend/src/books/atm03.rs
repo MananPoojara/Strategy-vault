@@ -638,3 +638,12 @@ mod tests {
         assert_eq!((t[0].legs[0].i, t[0].legs[0].px, t[0].exit_i, t[0].exit_px), (1, 94., 2, 96.));
     }
 }
+
+// Instrument admission: Active Trader Magazine 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/activetrader/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| (def.book=="atm03" && crate::books::atm03::reviewed(def.id)) || (def.book=="atm04" && crate::books::atm04::reviewed(def.id)) || (def.book=="atmmisc" && crate::books::atmmisc::reviewed(def.id)) || (def.book=="atmrc" && crate::books::atmrc::reviewed(def.id)) || (def.book=="atmcsa" && crate::books::atmcsa::reviewed(def.id)),
+    label: "Active Trader tested these columns on an 18-stock portfolio, Nasdaq-100 stocks, QQQ/SPY or futures portfolios with their own position sizing; runs on one index, ETF or single stock (US and India) are a declared application, one unit per position (scale-in legs at the column's equity fraction).",
+    basis: "Active Trader Magazine 2003-2006 Trading System Lab and strategy columns (DjVu/PDF copies in Books/Active Trader Magazine)",
+};

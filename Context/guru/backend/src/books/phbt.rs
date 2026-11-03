@@ -356,3 +356,12 @@ mod tests {
         assert!(u[2].is_nan());
     }
 }
+
+// Instrument admission: Headley 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/headley/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| (def.book=="phbt" && crate::books::phbt::reviewed(def.id)) || (def.book=="phbttk" && crate::books::phbttk::reviewed(def.id)),
+    label: "Price Headley tested the VIX systems on the S&P 100 (OEX) with the CBOE VIX and applied Acceleration Bands and Percent R to US stocks; runs on other indices, ETFs and single stocks (US and India, India VIX in India) are a declared application.",
+    basis: "Big Trends in Trading (Wiley 2002): VIX Bollinger system p.38-40 (TradeStation code), weekly VIX > 45 buy p.44-46, Acceleration Bands p.91-95 (TradeStation formula); Big Trends Toolkit 2.0 for MetaStock manual p.36-38 (Percent R confirmation). Index/ETF/stock runs are a declared application.",
+};

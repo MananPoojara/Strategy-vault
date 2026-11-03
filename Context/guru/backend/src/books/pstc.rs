@@ -404,3 +404,12 @@ mod tests {
         assert!(run("pstc_r3_long", &x, 0, r.len() - 1, &p).unwrap().iter().all(|t| t.legs[0].i != 231));
     }
 }
+
+// Instrument admission: Primo 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/primo/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| (def.book=="pstc" && crate::books::pstc::reviewed(def.id)) || (def.book=="pstc08" && crate::books::pstc08::reviewed(def.id)) || (def.book=="prap2" && crate::books::prap2::reviewed(def.id)),
+    label: "Steve Primo's courses tested these rules on $SPX/$NDX/$SOX, SPY and US stocks (S&P 100 / Nasdaq 100 / the whole US stock universe); runs on other indices, ETFs and single stocks (US and India) are a declared application.",
+    basis: "Professional Swing Trading College 2005 (Week 2-7 notes, Other version Session 1: RS2, R3, RSI 20, R4, 4/10/60); Swing Trading College 2008 (Session 3 slides 8-18 R4/R5, Session 4 slides 7-13 RS Meteors, Session 7 slides 16-21 RSI 25 scale-in 20); Raptor-II Strategy Guidebook (April 2006) p.5 rules 1-9 + Raptor2_ClassScan.afl. Index/ETF/stock runs are a declared application.",
+};

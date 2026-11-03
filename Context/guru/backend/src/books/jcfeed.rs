@@ -151,3 +151,12 @@ mod tests {
         assert_eq!(pos, 1);
     }
 }
+
+// Instrument admission: Clayburg 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/clayburg/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="jcfeed" && crate::books::jcfeed::reviewed(def.id),
+    label: "John Clayburg built and reported Feeder Trader on Feeder Cattle futures; runs on indices, ETFs and single stocks (US and India) are a declared application (range-fraction stops, no dollar or tick constants).",
+    basis: "Feeder Trader (c) 1999, clayburg.com: Code.txt (Code.rar), Feeder_Trader_setup.txt (defaults B 3, S 1, B1 6, S1 7; end-of-day, orders at tomorrow's open). Index/ETF/stock runs are a declared application.",
+};

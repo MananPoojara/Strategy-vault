@@ -1065,3 +1065,12 @@ mod tests {
         format!("{:04}-{:02}-{:02}", if m <= 2 { y + 1 } else { y }, m, d)
     }
 }
+
+// Instrument admission: Art Collins 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/collins/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="acbff" && crate::books::acbff::reviewed(def.id),
+    label: "Art Collins tested these TradeStation systems on S&P, NASDAQ and Russell futures (and bonds/currencies); runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade, 1 tick = 0.10 point US / 0.05 point India.",
+    basis: "Art Collins, Beating the Financial Futures Market (Wiley 2006), printed TradeStation code pp.205-238",
+};

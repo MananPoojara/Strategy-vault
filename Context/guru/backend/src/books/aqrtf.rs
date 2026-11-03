@@ -154,3 +154,12 @@ mod tests {
         assert!(ts[1].open);
     }
 }
+
+// Instrument admission: AQR (Hurst, Ooi and Pedersen) 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/aqr/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="aqrtf" && crate::books::aqrtf::reviewed(def.id),
+    label: "AQR tested time-series momentum on a 59-market futures portfolio (1903-2012); the sign rule on one index, ETF or single stock (US and India) is a declared application, one unit per trade, no volatility sizing, fills at the month-end close.",
+    basis: "Hurst, Ooi and Pedersen, A Century of Evidence on Trend-Following Investing (AQR, Fall 2012), p.2",
+};

@@ -154,3 +154,12 @@ mod tests {
         assert_eq!((t[0].legs[0].i, t[0].exit_i), (1, 3));
     }
 }
+
+// Instrument admission: Satchell 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/satchell/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"acatr") && (crate::books::acatr::reviewed(def.id)),
+    label: "The chapter authors of Advanced Trading Rules (Acar and Satchell, eds.) studied these rules on currencies, Swiss franc futures and the FT100; runs on indices, ETFs and stocks, US and India, are a declared application, not the authors' test.",
+    basis: "E. Acar and S. Satchell (eds.), Advanced Trading Rules, 2nd ed. (2002): Kuo's geometric moving-average (2,1) rule, Eq. 5.3-5.4 p.156-160; Gasser's 45-bar close breakout, TradeStation code p.430; Chang and Osler's filter rules 0.5/1/2 per cent, p.265-269. Signals and fills on the close. Reviewed in authors/satchell/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
+};

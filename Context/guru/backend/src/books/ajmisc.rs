@@ -314,3 +314,12 @@ mod tests {
         assert_eq!((s.out[1].exit_px, s.pos, s.ep()), (8., -1, 7.2));
     }
 }
+
+// Instrument admission: Angus Jackson systems 2026-10-26 (lane B) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/vendor/laneb/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="ajmisc" && crate::books::ajmisc::reviewed(def.id),
+    label: "Vendor and newsletter code with no per-market test the vault can compare; runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade.",
+    basis: "Angus Jackson, Omega-list TradeStation 2000i code",
+};

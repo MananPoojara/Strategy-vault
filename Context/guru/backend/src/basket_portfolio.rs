@@ -781,7 +781,12 @@ fn member_trades(
     Ok(trades)
 }
 
+#[cfg(test)]
 pub fn run(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
+    run_until(st, q, &AtomicBool::new(false))
+}
+/// `stop` is set by the job table when no client is left. A stopped run is an Err nobody reads.
+pub fn run_until(st: &State, q: &BTreeMap<String, String>, stop: &AtomicBool) -> Result<String, String> {
     let req = Request::parse(q)?;
     let costs = Costs::parse(q)?;
     costs.ensure_rollover()?;
@@ -906,6 +911,9 @@ pub fn run(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
     // Complete every data decision before generating any member's candidates.
     let mut admitted = Vec::new();
     for member in &members {
+        if stop.load(Ordering::Relaxed) {
+            return Err("cancelled".into());
+        }
         if started.elapsed() > TIME_LIMIT {
             complete_held_report(&members, &mut report);
             return Ok(hold(&req,"unavailable","Basket admission reached its checked 90-second resource budget; no partial result is published.",&report));
@@ -1049,6 +1057,9 @@ pub fn run(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         ));
     }
     for (key, mut single, used_from, used_to) in admitted {
+        if stop.load(Ordering::Relaxed) {
+            return Err("cancelled".into());
+        }
         if started.elapsed() > TIME_LIMIT {
             return Ok(hold(&req,"unavailable","Basket request reached its checked 90-second resource budget; no partial result is published.",&report));
         }

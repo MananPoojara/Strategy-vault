@@ -69,6 +69,11 @@ export interface AuthorCard {
   sharpe: string | null;
 }
 export interface HomeModel {
+  /** Per filter option, how many authors (or books in the Books view) choosing it would show. */
+  filterCounts?: Record<string, Record<string, number>>;
+  /** The unfiltered library scope, for "showing N of M". */
+  totals?: {people: number; collections: number; books: number};
+  marketChoices?: {in: {ticker: string; name: string}[]; us: {ticker: string; name: string}[]};
   identifiedAuthors?: number;
   listedPeople?: number;
   libraryTotals?: {books: number; otherSources: number; authors: number};
@@ -76,6 +81,8 @@ export interface HomeModel {
   backtestedStrategies?: number;
   progressCurrent?: boolean;
   summaryIssues?: SummaryIssue[];
+  /** Backtests are still on their way; library counts come from static files and are already final. */
+  resultsPending?: boolean;
   market: LibraryMarket;
   implementedMethods: number;
   enabledVariants: number;
@@ -144,6 +151,13 @@ export function createStore() {
         loading: false,
         error: null,
       };
+      notify();
+      return true;
+    },
+    /** Update the page in place (a backtest arrived): no remount, no loader, nothing lost on screen. */
+    fill: (ticket: number, patch: Partial<ViewSnapshot>) => {
+      if (ticket !== generation) return false;
+      snapshot = { ...snapshot, ...patch };
       notify();
       return true;
     },

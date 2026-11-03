@@ -18,10 +18,15 @@ export interface OwnerRowsResult {
   rows: OwnerRow[];
   issue?: OwnerIssue;
   retryableFailure: boolean;
+  /** The page left before an answer came. Not a result: never cache or show it. */
+  aborted?: boolean;
+  /** Do not ask the engine for this result again before this much time has passed. */
+  retryAfterMs?: number;
 }
 interface ResponseLike {
   ok: boolean;
   status: number;
+  headers?: {get(name: string): string | null};
   text(): Promise<string>;
   json(): Promise<unknown>;
 }
@@ -34,6 +39,31 @@ export interface OwnerRowsOptions {
   fetcher: (url: string, init?: RequestInit) => Promise<ResponseLike>;
   wait?: (milliseconds: number) => Promise<unknown>;
   retries?: number;
+  /** Aborted when the user leaves the page. */
+  signal?: AbortSignal;
+}
+/** The gateway gives up after 120 s and answers 504. A shorter browser limit abandons work the engine keeps doing. */
+const ANSWER_BUDGET_MS = 125_000;
+/** After a timeout the engine may still be calculating: leave it alone this long before asking again. */
+const COOL_DOWN_MS = 30_000;
+const DEFAULT_BUSY_WAIT_MS = 5_000, LONGEST_BUSY_WAIT_MS = 60_000;
+
+/** Retry-After as seconds or an HTTP date; undefined when absent or unreadable. */
+export function retryAfterMs(header: string | null | undefined, now = Date.now()): number | undefined {
+  const value = header?.trim();
+  if (!value) return undefined;
+  if (/^\d+$/.test(value)) return Number(value) * 1000;
+  const date = Date.parse(value);
+  return Number.isFinite(date) ? Math.max(0, date - now) : undefined;
+}
+export interface FailureRecord {generation: number; notBefore: number}
+/** Failures are shared within a render; a later navigation may ask again once any cool-down has passed. */
+export function failureRecord(outcomes: readonly OwnerRowsResult[], generation: number, now = Date.now()): FailureRecord | undefined {
+  const failed = outcomes.filter(outcome => outcome.issue);
+  return failed.length ? {generation, notBefore: now + Math.max(0, ...failed.map(outcome => outcome.retryAfterMs || 0))} : undefined;
+}
+export function retryDue(record: FailureRecord | undefined, generation: number, now = Date.now()): boolean {
+  return !!record && record.generation !== generation && now >= record.notBefore;
 }
 
 function clean(value: unknown): string {
@@ -129,44 +159,61 @@ export async function loadOwnerRows(options: OwnerRowsOptions): Promise<OwnerRow
   const context = {...options.context}, url = options.url;
   const ids = [...new Set(options.definitions.map(def => def.id))];
   const owned = new Set(ids);
-  const blocked = (issue: OwnerIssue, retryableFailure = false): OwnerRowsResult => ({
+  const blocked = (issue: OwnerIssue, retryableFailure = false, retryAfter?: number): OwnerRowsResult => ({
     rows: ids.map(id => kind === 'summary'
       ? {id, blocked: issue.note, readiness: issue.status}
       : {id, status: issue.status, note: issue.note}),
-    issue, retryableFailure,
+    issue, retryableFailure, ...(retryAfter === undefined ? {} : {retryAfterMs: retryAfter}),
   });
+  const aborted: OwnerRowsResult = {rows: [], retryableFailure: true, aborted: true};
   if (!ids.length) return {rows: [], retryableFailure: false};
   const preflight = dateCoverageIssue(context);
   if (preflight) return blocked({owner, ...preflight});
   const attempts = Number.isFinite(options.retries)
     ? Math.min(3, Math.max(1, Math.trunc(options.retries!))) : 3;
-  const wait = options.wait || (milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds)));
+  const {signal} = options;
+  const wait = options.wait || (milliseconds => new Promise(resolve => {
+    const timer = setTimeout(resolve, milliseconds);
+    signal?.addEventListener('abort', () => {clearTimeout(timer); resolve(undefined);}, {once: true});
+  }));
+  const budget = AbortSignal.timeout(ANSWER_BUDGET_MS);
   for (let attempt = 1; attempt <= attempts; attempt++) {
     let response: ResponseLike;
-    try {response = await fetcher(url, {signal: AbortSignal.timeout(20_000)});}
+    try {response = await fetcher(url, {signal: signal ? AbortSignal.any([signal, budget]) : budget});}
     catch (error) {
-      if (attempt < attempts) {await wait(300); continue;}
-      return blocked(requestIssue(owner, context, error instanceof Error ? clean(error.message) : ''), true);
+      if (signal?.aborted) return aborted;
+      // No retry: the engine may still be calculating this, and a second call would run beside it.
+      const late = error instanceof Error && error.name === 'TimeoutError';
+      return blocked(requestIssue(owner, context, late ? 'The calculation engine did not answer in time.' : error instanceof Error ? clean(error.message) : ''), true, COOL_DOWN_MS);
     }
     if (!response.ok) {
       const detail = await responseMessage(response);
+      if (signal?.aborted) return aborted;
       if (response.status === 400 && /empty\s+(?:date\s+)?range/i.test(detail)) return blocked({owner, ...emptyRange(context)});
       if (response.status === 400 && /invalid[^.]*date|date[^.]*invalid|from[^.]*before[^.]*to|reversed|valid YYYY-MM-DD/i.test(detail)) {
         return blocked({owner, status: 'needs_data', kind: 'invalid_range', note:
           `${detail || 'The selected date range is invalid.'} No date is repaired.${coverageText(context)}`});
       }
-      const transient = response.status === 429 || response.status >= 500 && response.status <= 599;
-      if (transient && attempt < attempts) {await wait(300); continue;}
-      return blocked(requestIssue(owner, context, detail || `HTTP ${response.status}.`), transient);
+      // Only "busy" is safe to repeat, and only after the wait the gateway asks for. 500/502/504 may have work behind them.
+      const busy = response.status === 429 || response.status === 503;
+      const asked = retryAfterMs(response.headers?.get?.('Retry-After'));
+      const delay = asked ?? DEFAULT_BUSY_WAIT_MS;
+      if (busy && attempt < attempts && delay <= LONGEST_BUSY_WAIT_MS) {
+        await wait(delay);
+        if (signal?.aborted) return aborted;
+        continue;
+      }
+      const transient = busy || response.status >= 500 && response.status <= 599;
+      return blocked(requestIssue(owner, context, detail || `HTTP ${response.status}.`), transient, transient ? asked ?? COOL_DOWN_MS : undefined);
     }
     try {
       const rows = rowsFrom(await response.json(), kind, owned);
       if (!rows) return blocked(requestIssue(owner, context, 'The response did not contain valid owned strategy records.'));
       return {rows, retryableFailure: false};
     } catch (error) {
+      if (signal?.aborted) return aborted;
       const transient = error instanceof TypeError || error instanceof Error && /AbortError|TimeoutError/.test(error.name);
-      if (transient && attempt < attempts) {await wait(300); continue;}
-      return blocked(requestIssue(owner, context, 'The response could not be read as valid strategy JSON.'), transient);
+      return blocked(requestIssue(owner, context, 'The response could not be read as valid strategy JSON.'), transient, transient ? COOL_DOWN_MS : undefined);
     }
   }
   return blocked(requestIssue(owner, context, 'The request could not be completed.'), true);

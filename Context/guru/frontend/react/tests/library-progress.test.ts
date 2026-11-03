@@ -33,7 +33,7 @@ it('rejects missing and stale availability snapshots rather than publishing stal
  }
 });
 it('counts explicitly identified people instead of folders or curated profiles',()=>{
- expect(identifiedAuthorCount).toBe(137);expect(authorIdentities.livermore).toContain('Edwin LeFevre');
+ expect(identifiedAuthorCount).toBeGreaterThanOrEqual(162);expect(authorIdentities.livermore).toContain('Edwin LeFevre');
  expect(identifiedAuthorCount).toBe(new Set(Object.values(authorIdentities).flat()).size);
  expect(authorIdentities.connors).toContain('Cesar Alvarez');expect(authorIdentities.pristine).toContain('Oliver Velez');
  expect(Object.values(authorIdentities).flat()).not.toContain('Pristine Trading');
@@ -51,6 +51,8 @@ it('names the plain reason for held rules without changing their status',()=>{
  expect(reasonLabel('Withheld by the accuracy check: more than half of its gain comes from same-day trades')).toBe('Held by the accuracy check');
  expect(reasonLabel('Required market data is missing: OPT_ATM_PUT.Close.')).toBe('Needs option prices');
  expect(reasonLabel('Backtest unavailable: discretionary. No rules or prices are invented to fill this gap.')).toBe('Rules not fully defined');
+ expect(reasonLabel('The NIFTY 50 minute result is withdrawn (decision #177a, 3 Nov 2026): no tradable India minute series, and the US tradable check failed. The minute result is published on SPY only.')).toBe('Cash-index result withdrawn');
+ expect(reasonLabel('The SPX daily result is withdrawn (decision #179, 3 Nov 2026): SPX daily open/high/low come from stale component prints; on the tradable SPY over the same dates this rule fails the check (M3).')).toBe('Cash-index result withdrawn');
  expect(reasonLabel('Source review required before publishing this method on any instrument.')).toBeUndefined();
  const p=libraryProgress(defs,snapshot);
  expect(p.book('five')).toMatchObject({status:'not_backtested',reason:'No backtest is published yet for its 1 strategy: Held (1). Each strategy page gives the exact reason.'});

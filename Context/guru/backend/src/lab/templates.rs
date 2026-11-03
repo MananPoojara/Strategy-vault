@@ -38,7 +38,7 @@ pub fn unavailable(d: &StrategyDef) -> Option<String> {
     if status != "live" { return Some(format!("the book method is not admitted for backtesting ({status}): {why}")); } // checked first: a demoted method never keeps its template
     if template(d.id).is_some() { return None; }
     let named = NO_TEMPLATE.iter().find(|(id, _)| *id == d.id).map(|(_, r)| *r).or(NEW_ADMISSIONS_OCT25.contains(&d.id).then_some(NEW_ADMISSION_OCT25))
-        .or(NEW_ADMISSIONS_OCT29.contains(&d.id).then_some(NEW_ADMISSION_OCT29));
+        .or(NEW_ADMISSIONS_OCT29.contains(&d.id).then_some(NEW_ADMISSION_OCT29)).or(NEW_ADMISSIONS_NOV03.contains(&d.id).then_some(NEW_ADMISSION_NOV03));
     let two_sided = (d.dir != "Long" && d.dir != "Short").then_some(TWO_SIDED);
     Some(named.or(two_sided).unwrap_or(NOT_YET).to_string())
 }
@@ -68,6 +68,23 @@ pub const NEW_ADMISSION: &str = "admitted to the book engine in the 2026-10-21/2
 pub const NEW_ADMISSION_OCT25: &str = "admitted to the book engine in the 2026-10-22/25 book work; no lab template has been written or compared with the book engine yet";
 pub const NEW_ADMISSION_OCT29: &str = "admitted to the book engine on Manan's branch up to 2026-10-29 (merged into Nandini); no lab template has been written or compared with the book engine yet";
 /// The methods Manan's branch admitted after the 25 Oct batch, as of the 29 Oct merge (every_live_method_has_a_template_or_a_named_reason).
+pub const NEW_ADMISSION_NOV03: &str = "admitted to the book engine on Manan's branch up to 2026-11-03 (merged into Nandini); no lab template has been written or compared with the book engine yet";
+pub const NEW_ADMISSIONS_NOV03: &[&str] = &[
+    "cov_tf_stocks_ath", "tdperl_tdline_short", "lebfut_bigdipper", "agtsic_rsi8_breadth", "agtsic_rsi8_breadth_nse", "sbcig_janbar_12m", "sbcig_mid_8_11", "sbcig_pres18",
+    "lcws_impulse", "thrdi_roc30_bracket", "dwsr_stock_rocket", "djcs_buy_trigger", "djcs_dead_cat", "djcs_cmo_cumdown", "djcs_marketspace", "djcs_marketspace_weekly",
+    "essw5_rsi5", "bmwsm_5wk_turn", "dbnotp_abc_trail", "nkms_day_pattern_system", "nkms_fractal_trading_system_2", "tlsuc_success", "nkms2_pattern_trading_system_1", "nfce5_allen",
+    "nfce5_traub", "hsta25_thanks_santa", "hcta12_sp_jan_short", "ccl07_rsi10_scale", "ccl07_worst10", "ccl07_class_project", "ccl07_carlson_bo", "rlpsf_fractal",
+    "abathc_ath_st", "agmev_media_movil", "agmev_comparacion", "agmev_cruce", "agmev_consecutivos", "agmev_permanencia", "agmev_fornext", "agmev_alcista",
+    "bkttb_ttb_dbs", "ctm_outside", "cvan2_macd_vts", "fgosc_1010", "fgosc_four_alarm", "fgosc_volume_spike", "fot08_nerves", "it5sf_three_arrows",
+    "jdmtd_seasonal", "jdmtd_january_effect", "jsursc_breakout", "jsursc_contrarian", "kzmsf_no_name_1", "kzmzn_key_rev", "kzmzn_stochrsi", "kzmzn_momentum_time",
+    "lspack_atr_rev", "ms7ru_ma39", "msbml_30_50w", "msitg_trendrsi", "msnib_ma40w", "msnib_ma40w_brk12", "nfsml_seasonality", "omelgs_keyrev5",
+    "pptca_band40w", "pptca_rsi_adx", "rbsak_spsto", "rchsc_ema12m", "rchsc_band12m", "rchsc_stoch10", "rdhcb_channel", "rdhcb_hilbert",
+    "scboot_adx", "scbulrsi_16", "scbulrsi_delay", "sccdrsi2_below2", "scgusper_4_5_8", "sckcal_si2", "sckdjroc_djroc", "sckim_trix_d",
+    "sckim_trix_w", "sckim_trix_m", "sckonner_riviera", "sckvfi_t1", "sckvfi_t2", "sclafep_200", "scpalmap_maps", "scpend_ema1040",
+    "scpenmfi_55", "scstam_hyst", "sctilsm_smars", "sctoombs_stoch20", "sctraub_trend", "sctrcrs_fxi", "sctrtma_qqq", "scvkmacd_wk",
+    "scvks_ex_sep", "scvks_nov_apr", "scvkvs_volstop", "scwhite_weekly", "thcop_guide", "tsbond_adx", "wbctp_rsi3m3", "wtaaii_rsi9",
+    "wtaaii_stoch",
+];
 pub const NEW_ADMISSIONS_OCT29: &[&str] = &[
     "ats_cbp", "hfm_news_long", "hfm_news_short", "btp_cbp_short", "alpha_dyn_treasuries_sleeve", "ststw_intraday", "ststw_intraday_drops_highs",
     "ststw_intraday_drops_lows", "ststw_stops_hurt", "ststw_exit_study", "tcdt_idp3", "tcdt_idp4", "mhp_ftse_12_20041015", "mhp_ftse_3_20040804",

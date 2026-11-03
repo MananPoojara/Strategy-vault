@@ -192,3 +192,12 @@ mod tests {
         assert_eq!((t.dir, t.legs[0].px, t.exit_i, t.exit_px), (1.0, 151.0, 63, 163.0));
     }
 }
+
+// Instrument admission: RJones 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/rjones/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="rjmil" && crate::books::rjmil::reviewed(def.id),
+    label: "Ryan Jones tested these systems on futures (crude oil, T-bonds, wheat, soybeans, 10-year notes); runs on indices, ETFs and single stocks (US and India) are a declared application.",
+    basis: "The Secret to Making $1 Million in 5 Years or Less, Advanced Course workbook (Futures Learning Center 1998), Session 8: MA-MA Divergence (code p.55), FutureVideo (code p.60). Index/ETF/stock runs are a declared application.",
+};

@@ -784,7 +784,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         // ---- intraday wave 1: real 1-minute path (default for the OOPS ids and the WREG sells); daily readings stay as path = 0
         "btp2_10pct_oops_long" | "btp2_10pct_oops_short" | "btp2_10pct_oops" | "btp2_wide_range_exhaustion_gap_short" if g("path") >= 0.5 => {
             use crate::intraday::{day_trade, stop_entry_day, Level};
-            let Some(mm) = x.minutes else { return Some(vec![]) };
+            if x.minutes.is_none() { return Some(vec![]); }
             let wreg = id.contains("wide_range");
             let hvv = if wreg { hv(c, u("hv_len")) } else { vec![] };
             let mut out = vec![];
@@ -800,7 +800,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                     if !short_only && loc <= cp && o[j] < l[i] { (1.0, l[i], f64::NAN) }
                     else if !long_only && loc >= 1.0 - cp && o[j] > h[i] { (-1.0, h[i], f64::NAN) } else { continue }
                 };
-                let Some(b) = mm.day(&x.r[j].date) else { continue };
+                let Some(b) = crate::intraday_w2b::day(x, j) else { continue }; // intraday wave 3: rejected NIFTY 50 minute days (from 2026-08-11) make no trade
                 let st = |_: usize, _: f64| sp.is_finite().then(|| Level { up: dir < 0.0, px: sp });
                 let Some((_, px, xs)) = stop_entry_day(&b, 0, &[Level { up: dir > 0.0, px: lv }], &st) else { continue };
                 let loc = x.close_loc(j);

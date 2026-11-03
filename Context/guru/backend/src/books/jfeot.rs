@@ -141,3 +141,12 @@ mod tests {
         assert!(!up(&n, &b, 1) && dn(&n, &b, 2));
     }
 }
+
+// Instrument admission: John Forman 2026-10-29 (lane B) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/forman/admission/eot_ref.py (header)); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="jfeot" && crate::books::jfeot::reviewed(def.id),
+    label: "John Forman tests these systems on daily USD/JPY (Ch.7) and GBP/USD (Ch.8) spot currency prices; runs on indices, ETFs and US/India stocks are a declared application, not the author's test. Cash-index shorts are hypothetical.",
+    basis: "John Forman, The Essentials of Trading (2006), Ch.7 System Design and Testing p.162-202 and Ch.8 p.203-235",
+};

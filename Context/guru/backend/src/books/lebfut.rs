@@ -6,7 +6,9 @@
 //!
 //! All of them are futures systems whose stops and offsets are in the contract's own dollars / ticks, so they
 //! stay NeedsData here (the vault has no futures). The code is complete and, on the data files shipped with
-//! the manuals, reproduces the printed trade lists (tests below).
+//! the manuals, reproduces the printed trade lists (tests below). Exception: Big Dipper (re-opened 2 Nov 2026,
+//! lead decisions 127 and 138): its offsets are ticks, read as ticks of the traded instrument, and its $2,000
+//! money stop is held, so it runs on daily indices, ETFs and stocks as a declared application.
 //!
 //! Engine: TradeStation 4 daily backtest, as in lebsp (the code runs at each bar's close and places orders
 //! for the next bar; a stop fills at its price or at the open if the open is through it; several orders on
@@ -77,12 +79,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|$2,500 money-management stop (= 2.5 points)."],
             "Manual 'Sidewinder Bond Trading System' (SWread.txt) + code. Test 1/4/88-4/22/98, MaxBarsBack 50, $100 per trade. Reproduces all 96 printed trades on the shipped Us.txt (needs TradeStation's own ADX start at CurrentBar 1).",
             Some(Claim { trades: "96 (47 long, 49 short)", win: "78%", avg: "$996.68 (net of $100)", hold: "15 bars winners / 7 bars losers", period: "1/4/88-4/22/98, T-bond futures, $1,000/pt" })),
-        make("lebfut_bigdipper", "Big Dipper Bond System", "Big Dipper T-Bond manual (LeBeau & Tan, 1998)", "Long", Status::NeedsData(US),
+        make("lebfut_bigdipper", "Big Dipper Bond System", "Big Dipper T-Bond manual (LeBeau & Tan, 1998)", "Long", Status::Live,
             &["F|\"The close must be above the 200-day simple moving average.\" \"above the 35-day simple moving average.\" \"The 9-day RSI must have declined more than 5 points from 4 days ago.\"",
-              "E|\"buy tomorrow only if and when prices rise 8 ticks (8/32) above the opening price tomorrow\" (code: buy Open Tomorrow + 8 points stop; flat only)",
-              "X|\"A stop order at $2,000 below the entry price.\" (= 2.0 points)",
+              "E|\"buy tomorrow only if and when prices rise 8 ticks (8/32) above the opening price tomorrow\" (code: buy Open Tomorrow + 8 points stop; flat only). 8 ticks of the traded instrument (decision 127)",
+              "X|\"A stop order at $2,000 below the entry price.\" HELD: a dollar amount per bond contract, not converted (decisions 19 and 138)",
               "X|\"If the most recent close is profitable by more than 10 ticks, place a stop order tomorrow to exit at the lowest low of the last 10 days.\" \"profitable by more than 30 ticks, place a stop order to exit the trade at 5 ticks above the entry price.\""],
-            "Manual 'Big Dipper Bond Trading System' (BReadme.txt inside BReadme.rar) + code. Test 1/2/87-1/27/98, MaxBarsBack 200, $100 per trade. Reproduces all 43 printed trades on the shipped Us.txt.",
+            "Manual 'Big Dipper Bond Trading System' (BReadme.txt inside BReadme.rar) + code. Written for T-bond futures, which the vault does not hold; runs on daily indices, ETFs and stocks, US and India, as a declared application. [Declared readings] The code's 'points' and the manual's ticks (8/32, 10/32, 30/32, 5/32 of a bond point) are read as ticks of the traded instrument (lead decisions 57 and 127): 0.01 on US indices, ETFs and stocks, 0.05 on NSE indices and stocks, so the entry is 8 ticks above the next open, the 10-day-low stop arms after a close more than 10 ticks above the entry and the breakeven stop (entry + 5 ticks) after a close more than 30 ticks above it. On an index these tick offsets are tiny next to the bond contract's. MONEY STOP HELD: the $2,000 stop is a dollar amount per bond contract and is not converted (decisions 19 and 138); the default card has no money stop. Order prices are exact (p.tick rounds them). Trading starts at the 201st bar of the data (MaxBarsBack 200). Options: p.tsz sets the tick size in price units (0 = the instrument's tick; 0.03125 = the bond's 1/32), p.mm a money stop in price points (0 = held). With p.tsz = p.tick = 0.03125 and p.mm = 2 the code reproduces all 43 printed trades on the shipped Us.txt (test 1/2/87-1/27/98, $100 per trade).",
             Some(Claim { trades: "43", win: "88%", avg: "$1,712.50 (net of $100)", hold: "28 bars winners / 14 bars losers", period: "1/1/87-1/27/98, T-bond futures, $1,000/pt" })),
         make("lebfut_firstsword", "First Sword Yen System v2.0", "First Sword Yen manual (LeBeau & Elden, 1998)", "Long/Short", Status::NeedsData(JY),
             &["F|Long: \"the close is greater than the 40 day simple moving average\", \"below the 5 day simple moving average\", \"at least half of an average true range below the highest close of the last two days\" (ATR 4)",
@@ -178,10 +180,11 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "lebfut_bigdipper" => vec![
             p("ma_l", "Long-term SMA", 200., 50., 300., 5.), p("ma_m", "Intermediate SMA", 35., 10., 100., 1.), p("rsi_n", "RSI length", 9., 2., 30., 1.),
             p("rsi_lb", "RSI decline lookback (days)", 4., 1., 10., 1.), p("rsi_drop", "RSI decline more than", 5., 0., 30., 1.),
-            p("off", "Entry: points above tomorrow's open (8/32)", 0.25, 0., 2., 0.03125), p("p1", "Channel stop after a close more than x points up (10/32)", 0.3125, 0., 3., 0.03125),
-            p("ch", "Channel stop (days)", 10., 2., 40., 1.), p("p2", "Breakeven after a close more than x points up (30/32)", 0.9375, 0., 5., 0.03125),
-            p("be", "Breakeven stop above entry (5/32)", 0.15625, 0., 2., 0.03125),
-            p("mm", "Money stop in points ($2,000 at $1,000/pt)", 2., 0.25, 10., 0.25), tick(0.03125), p("mbb", "MaxBarsBack (bars before trading starts)", 200., 0., 300., 1.),
+            p("off", "Entry: ticks above tomorrow's open (8)", 8., 0., 100., 1.), p("p1", "Channel stop after a close more than x ticks up (10)", 10., 0., 300., 1.),
+            p("ch", "Channel stop (days)", 10., 2., 40., 1.), p("p2", "Breakeven after a close more than x ticks up (30)", 30., 0., 500., 1.),
+            p("be", "Breakeven stop: ticks above entry (5)", 5., 0., 100., 1.),
+            p("tsz", "Tick size in price units (0 = the instrument's tick: 0.01 US, 0.05 NSE; 0.03125 = the bond's 1/32)", 0., 0., 1., 0.00125),
+            p("mm", "Money stop in price points (0 = held, the default; 2 = the manual's $2,000 on bond data only)", 0., 0., 10., 0.25), tick(0.), p("mbb", "MaxBarsBack (bars before trading starts)", 200., 0., 300., 1.),
         ],
         "lebfut_firstsword" => vec![
             p("ma_l", "Trend SMA", 40., 10., 100., 1.), p("ma_s", "Pullback SMA", 5., 2., 20., 1.), p("atr_n", "ATR length", 4., 2., 30., 1.), p("dip", "Dip: x ATR from the 2-day extreme close", 0.5, 0., 3., 0.05),
@@ -413,7 +416,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).unwrap().def);
     let u = |k: &str| g(k).round().max(1.) as usize;
     let (tick, start) = (g("tick"), from.max(g("mbb").round().max(0.) as usize));
-    let mm = schema.iter().any(|d| d.key == "mm").then(|| g("mm"));
+    let mm = schema.iter().any(|d| d.key == "mm").then(|| g("mm")).filter(|m| *m > 0.); // 0 = no money stop (Big Dipper default)
     let (h, l, c, op) = (&x.h, &x.l, &x.c, &x.o);
     if start > to { return Some(vec![]); }
     Some(match id {
@@ -565,7 +568,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         }
         "lebfut_bigdipper" => {
             let (ml, mm_, r) = (sma(c, u("ma_l")), sma(c, u("ma_m")), rsi(c, u("rsi_n")));
-            let (lb, drop, off, p1, ch, p2, be) = (u("rsi_lb"), g("rsi_drop"), g("off"), g("p1"), u("ch"), g("p2"), g("be"));
+            let tz = if g("tsz") > 0. { g("tsz") } else { x.market_tick() };
+            let (lb, drop, off, p1, ch, p2, be) = (u("rsi_lb"), g("rsi_drop"), g("off") * tz, g("p1") * tz, u("ch"), g("p2") * tz, g("be") * tz);
             sim(x, start, to, mm, tick, |k, pos| {
                 let mut v = vec![];
                 if k < lb { return v; }
@@ -693,7 +697,9 @@ mod tests {
             ("lebfut_sidewinder", "us.csv", "1988-01-04", "1998-04-22", 1000., (96, 95681.25, 75)),
             ("lebfut_bigdipper", "us.csv", "1987-01-02", "1998-01-27", 1000., (43, 73637.5, 38)),
         ] {
-            let Some(got) = book(id, f, a, b, pv, &[]) else { return };
+            // Big Dipper's card default reads ticks of the traded instrument and holds the $2,000 stop; the manual's own values here
+            let ex: &[(&str, f64)] = if id == "lebfut_bigdipper" { &[("tsz", 0.03125), ("tick", 0.03125), ("mm", 2.)] } else { &[] };
+            let Some(got) = book(id, f, a, b, pv, ex) else { return };
             assert_eq!(got, want, "{id}");
         }
     }
@@ -725,9 +731,30 @@ mod tests {
         ] {
             let r = load(f, a, b).unwrap();
             let x = Ctx::new(&r, &r, &[]);
-            let ts = run(id, &x, 0, r.len() - 1, &Params::new()).unwrap();
+            let p: Params = if id == "lebfut_bigdipper" { Params::from([("tsz".into(), 0.03125), ("tick".into(), 0.03125), ("mm".into(), 2.)]) } else { Params::new() };
+            let ts = run(id, &x, 0, r.len() - 1, &p).unwrap();
             let s: String = ts.iter().map(|t| format!("{},{},{},{},{},{},{}\n", t.dir, r[t.legs[0].i].date, t.legs[0].px, r[t.exit_i].date, t.exit_px, t.reason, t.open)).collect();
             std::fs::write(format!("{dir}/{id}.csv"), s).unwrap();
+        }
+    }
+
+    #[test]
+    fn bigdipper_ticks_follow_the_instrument() {
+        // default: offsets in ticks of the traded instrument (0.01 US, 0.05 NSE), no money stop
+        let mk = |t: &str| -> Vec<Row> { (0..700).map(|i| {
+            let m = 100. + 0.05 * i as f64 + 3. * ((i as f64) / 9.).sin();
+            Row { ticker: t.into(), date: format!("{i:05}"), open: m, high: m + 0.8, low: m - 0.8, close: m + 0.3 * ((i as f64) / 2.).cos(), volume: None }
+        }).collect() };
+        for (t, tz) in [("SPX", 0.01), ("NIFTY 50", 0.05)] {
+            let r = mk(t);
+            let x = Ctx::new(&r, &r, &[]);
+            let ts = run("lebfut_bigdipper", &x, 0, r.len() - 1, &Params::new()).unwrap();
+            assert!(!ts.is_empty(), "{t}");
+            for z in &ts {
+                let e = z.legs[0].i;
+                assert!(z.legs[0].px >= r[e].open + 8. * tz - 1e-9 || z.legs[0].px == r[e].open, "{t}");
+                assert!(z.reason != "Money management stop");
+            }
         }
     }
 
@@ -741,3 +768,11 @@ mod tests {
         assert_eq!((ts[0].legs[0].i, ts[0].legs[0].px, ts[0].exit_i, ts[0].exit_px), (1, 101.25, 2, 101.));
     }
 }
+
+// Instrument admission: Big Dipper re-opened 2026-11-02 (titles lane K20, lead decisions 127 and 138).
+pub fn reviewed(id: &str) -> bool { id == "lebfut_bigdipper" }
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == "lebfut" && reviewed(def.id),
+    label: "LeBeau & Tan's T-bond futures system (ticks read as the instrument's ticks, $2,000 money stop held); runs on indices, ETFs and stocks, US and India, are a declared application, not the authors' test.",
+    basis: "Big Dipper Bond Trading System manual + TradeStation code (USB HDD 1/TradeStation Systems & Indicators/Charles LeBeau - Big Dipper Bond Trading System for TS (traderclub.com)/BReadme.rar -> BReadme.txt); independent check authors/titles-1030/K20w/k20_ref.py",
+};

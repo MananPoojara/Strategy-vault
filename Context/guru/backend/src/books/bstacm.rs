@@ -179,3 +179,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         _ => return None,
     })
 }
+
+// Instrument admission: Boris Schlossberg 2026-10-26 (lane B) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/schlossberg/admission/bs_ref.py (header)); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="bstacm" && crate::books::bstacm::reviewed(def.id),
+    label: "Boris Schlossberg wrote these setups for currency pairs; runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test. Cash-index shorts are hypothetical.",
+    basis: "Boris Schlossberg, Technical Analysis of the Currency Market (Wiley 2006), Ch.10: trading pure trend with Bollinger band bands (p.169-171) and the Tao of RSI with its three printed exits (p.176-178)",
+};

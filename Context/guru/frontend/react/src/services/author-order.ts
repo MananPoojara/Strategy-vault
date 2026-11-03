@@ -10,6 +10,7 @@ export interface AuthorOrderingOptions {
     Record<string, { availableFamilies?: number } | undefined>
   >;
   positions?: Readonly<Record<string, number | undefined>>;
+  strategies?: Readonly<Record<string, number | undefined>>;
 }
 
 function measuredCount(value: number | undefined): number {
@@ -41,6 +42,7 @@ export function orderAuthors<T extends AuthorIdentity>(
       options.availability?.[author.id]?.availableFamilies,
     ),
     entries: measuredCount(options.counts?.[author.id]),
+    strategies: measuredCount(options.strategies?.[author.id]),
     position: cataloguePosition(options.positions?.[author.id]),
   }));
 
@@ -55,6 +57,9 @@ export function orderAuthors<T extends AuthorIdentity>(
         break;
       case "books":
         comparison = right.entries - left.entries;
+        break;
+      case "strategies":
+        comparison = right.strategies - left.strategies;
         break;
       default:
         comparison = right.available - left.available;

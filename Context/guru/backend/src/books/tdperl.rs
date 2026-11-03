@@ -108,8 +108,9 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "F|Breakout bar X = first bar whose low is below the line. Qualified (p.94-96): Q1 close of X-1 > close of X-2; Q2 open below the line; Q3 close(X-1) - (max(high(X-1), close(X-2)) - close(X-1)) > line at X.",
             "E|\"sell on the break of the TD Demand Line\" (intrabar sell stop; gap fills at the open).",
             "X|Failure exits (p.97): open of next bar above the breakout level -> exit at the open; open above the line and close above the breakout level -> exit at the close; low of the next bar not below the breakout bar's low -> exit at the close.",
-            "X|Objective (p.96): breakout level minus the distance from the highest true high above the line to the line. Exit at a qualified TD Supply Line upside break."],
-          "Book prints no statistics. India: instrument swap only."),
+            "X|Objective (p.96): breakout level minus the distance from the highest true high above the line to the line. Exit at a qualified TD Supply Line upside break.",
+            "X|[intraday wave 3] Default p.path=1: the days are walked on real 1-minute bars. Entry day: the sell stop at the line fills on the first minute that reaches it (at the line, or the minute's open when it opened through it), then the objective (buy limit) counts only from that minute on. Later days: the open failure and an objective gap are decided at the daily open as before; then the minutes decide which came first, the objective or the qualified TD Supply Line break (buy stop at that line); a minute reaching both without opening through exactly one [convention]: the level nearer the minute's open came first (counted as ambiguous); neither: the close failures at the daily close. A later day without minute data is decided by its daily bar when it reaches only one exit level; when it reaches both, the trade is not taken (order unknown). p.path=0 = the old daily path, where the adverse break is taken first [Not from the book]."],
+          "Book prints no statistics. Runs on SPY, SPX (from 2014, real daily opens), NIFTY 50 (to 2026-08-10; later minutes rejected) and NIFTYBANK, the only instruments with cleaned 1-minute bars; a declared application (no fixed amounts). Cash-index shorts are hypothetical exposure."),
         d("tdperl_rebo", "TD Range Expansion Breakout (REBO), daily, open base", "Ch 9 · TD REBO", "Long/Short", Live,
           &["F|p.158: \"My preference is to apply TD REBO to daily price bars and use the current price bar's open as the base. First, multiply the previous day's true range separately by 0.382 and by 0.618. Then to calculate upside levels, add those values to the current day's opening price. To determine downside levels, subtract them from the current day's opening price.\"",
             "E|p.157: TD REBO \"attempts to identify that initial price break, to enable traders to participate in the move, until a signal occurs in the opposite direction\": buy stop at open + 0.382 x prior true range, sell stop at open - 0.382 x prior true range; stop-and-reverse.",
@@ -213,7 +214,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             v.extend([p("rr", "Reward/risk to TDST must exceed (0 off)", 1.5, 0., 3., 0.5), p("c9_lt_c8", "Optional: bar 9 close beyond bar 8 close", 0., 0., 1., 1.)]);
             v
         }
-        "tdperl_tdline_long" | "tdperl_tdline_short" => vec![p("level", "TD Point level", 1., 1., 5., 1.)],
+        "tdperl_tdline_long" => vec![p("level", "TD Point level", 1., 1., 5., 1.)],
+        "tdperl_tdline_short" => vec![p("level", "TD Point level", 1., 1., 5., 1.), // + intraday wave 3: path
+            p("path", "1 = real 1-minute bars (default; days without minute data make no trade), 0 = [Not from the book] daily bar path (adverse break first)", 1., 0., 1., 1.)],
         "tdperl_rebo" => vec![p("k", "Breakout fraction of prior true range", 0.382, 0.236, 0.618, 0.118)],
         _ if id.starts_with("tdperl_") && catalogue().iter().any(|s| s.id == id) => vec![],
         _ => return None,
@@ -533,6 +536,68 @@ fn run_lines(x: &Ctx, b: &Bars, m: &Bars, lvl: usize, from: usize, to: usize) ->
     out
 }
 
+// ---- intraday wave 3 (claude/titles-k24-1103): TD Demand Line downside break on real 1-minute bars
+/// `run_lines` with the minutes deciding what the daily bar cannot (b = mirrored bars, so the short is a long here).
+/// Entry day: the line stop fills on the first minute reaching it, the objective is live from the fill minute on (it lies
+/// beyond the fill, so in that minute it can only come after it). Later days: open failure / objective gap at the daily
+/// open, then first of objective (limit) and qualified opposite break (stop) on the minutes (`first_exit`: nearer the
+/// open on a two-level minute = ambiguous), else the close failures. Day without minutes: daily bar if it reaches at most
+/// one exit level, otherwise the trade is dropped (order unknown).
+fn run_lines_minutes(x: &Ctx, b: &Bars, m: &Bars, lvl: usize, from: usize, to: usize) -> Vec<Trade> {
+    use crate::intraday::{first_touch, Bar1, Level, Touch};
+    let ups = line_breaks(b, lvl);
+    let downs: Vec<Brk> = line_breaks(m, lvl);
+    let mir = |v: Vec<Bar1>| -> Vec<Bar1> { if b.s > 0. { v } else { v.into_iter().map(|z| Bar1 { m: z.m, o: -z.o, h: -z.l, l: -z.h, c: -z.c }).collect() } };
+    const AMB: &str = " [ambiguous minute: the level nearer its open taken first]";
+    let mut out = vec![];
+    let mut cur: Option<(Trade, Brk)> = None;
+    let (mut ui, mut di) = (0, 0);
+    for i in 0..b.n() {
+        let adverse = { while di < downs.len() && downs[di].i < i { di += 1 } downs.get(di).filter(|d| d.i == i).map(|d| (-d.level, -d.fill)) };
+        let up = { while ui < ups.len() && ups[ui].i < i { ui += 1 } ups.get(ui).filter(|u| u.i == i).copied() };
+        if let Some((t, k)) = cur.take() {
+            let tgt = k.target;
+            let after = i == k.i + 1;
+            let line_here = { let (p1, p2) = (k.p1, k.p2); b.h[p1] + (b.h[p1] - b.h[p2]) / (p1 - p2) as f64 * (i as f64 - p1 as f64) };
+            if after && b.o[i] < k.level { out.push(close(t, b, i, b.o[i], "Open failure (p.100)")); continue; }
+            if b.o[i] >= tgt { out.push(close(t, b, i, b.o[i], "TD Line objective (gap)")); continue; }
+            if let Some((_, fill)) = adverse.filter(|a| b.o[i] <= a.0) { out.push(close(t, b, i, fill, "Qualified opposite TD Line break (p.100), at the open")); continue; }
+            let mut lv = vec![Level { up: true, px: tgt }];
+            if let Some((a, _)) = adverse { lv.push(Level { up: false, px: a }); }
+            match crate::intraday_w2b::day(x, i).map(mir) {
+                Some(bars) => {
+                    if let Some((kk, _, px, amb)) = crate::intraday_w2b::first_exit(&bars, 0, &lv) {
+                        let why = if kk == 0 { "TD Line objective" } else { "Qualified opposite TD Line break (p.100)" };
+                        out.push(close(t, b, i, px, &format!("{why}{}", if amb { AMB } else { "" })));
+                        continue;
+                    }
+                }
+                None => {
+                    let (hit_t, hit_a) = (b.h[i] >= tgt, adverse.is_some_and(|a| b.l[i] <= a.0));
+                    if hit_t && hit_a { continue; } // both exits inside one daily bar and no minutes: order unknown, trade not taken
+                    if hit_a { out.push(close(t, b, i, adverse.unwrap().1, "Qualified opposite TD Line break (p.100), daily bar (no minutes)")); continue; }
+                    if hit_t { out.push(close(t, b, i, tgt, "TD Line objective, daily bar (no minutes)")); continue; }
+                }
+            }
+            if after && b.o[i] < line_here && b.c[i] < k.level { out.push(close(t, b, i, b.c[i], "Close failure (p.101)")); }
+            else if after && b.h[i] <= b.h[k.i] { out.push(close(t, b, i, b.c[i], "High failure (p.101)")); }
+            else { cur = Some((t, k)); }
+            continue;
+        }
+        let Some(k) = up.filter(|_| i >= from && i < to) else { continue };
+        let Some(bars) = crate::intraday_w2b::day(x, i).map(mir) else { continue };
+        let Touch::Hit { bar: kf, px, .. } = first_touch(&bars, 0, &[Level { up: true, px: k.level }]) else { continue };
+        let t = trade(b, i, px, if kf == 0 && px == bars[0].o { "open" } else { "stop" });
+        match first_touch(&bars, kf, &[Level { up: true, px: k.target }]) {
+            Touch::Hit { px: xp, .. } => out.push(close(t, b, i, xp, "TD Line objective (entry bar)")),
+            _ => cur = Some((t, k)),
+        }
+    }
+    finish(cur.map(|c| c.0), x, to, &mut out);
+    out
+}
+// ---- end intraday wave 3
+
 // ---------------------------------------------------------------- REBO and short-term patterns
 
 fn run_rebo(x: &Ctx, b: &Bars, k: f64, from: usize, to: usize) -> Vec<Trade> {
@@ -603,6 +668,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     } else {
         match base {
             "tdperl_setup" => run_setup(x, &b, u("look").max(1), u("setup_n") as u32, g("rr"), g("c9_lt_c8") >= 0.5, from, to),
+            "tdperl_tdline" if id == "tdperl_tdline_short" && g("path") >= 0.5 => run_lines_minutes(x, &b, &m, u("level").max(1), from, to), // intraday wave 3
             "tdperl_tdline" => run_lines(x, &b, &m, u("level").max(1), from, to),
             _ if id == "tdperl_rebo" => run_rebo(x, &b, g("k"), from, to),
             "tdperl_diff" => run_pattern(x, &b, 1, from, to, &|i| {
@@ -667,3 +733,12 @@ mod tests {
         assert!((s[0].risk - (c[27] - 1. - 3.)).abs() < 1e-9);
     }
 }
+
+// Instrument admission: Jason Perl 2026-10-26 (lane B) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/perl/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="tdperl" && crate::books::tdperl::reviewed(def.id),
+    label: "Perl prints no test of these rules; runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade.",
+    basis: "Jason Perl, DeMark Indicators (Bloomberg Press 2008), Ch 4",
+};

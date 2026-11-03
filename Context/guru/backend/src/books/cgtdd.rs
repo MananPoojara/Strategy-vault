@@ -154,3 +154,12 @@ mod tests {
         assert_eq!(b[n], 1);
     }
 }
+
+// Instrument admission: Goslin 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/goslin/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"cgtdd") && (crate::books::cgtdd::reviewed(def.id)),
+    label: "Chick Goslin traded the Status on futures (stock index, currency, metals, grains); runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test. The author warns the Status alone is not a straight mechanical system; this tests it exactly as defined, without his judgement overrides.",
+    basis: "F. H. Chick Goslin, Trading Day by Day (2002): three-point Status p.60-62 (50-day trend, 3-10 short line, 16-day middle line, confirming half point), get out when the Status returns to Neutral (p.114), orders at the next open (p.109). Reviewed in authors/goslin/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
+};

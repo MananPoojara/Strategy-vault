@@ -107,3 +107,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         _ => return None,
     })
 }
+
+// Instrument admission: Ed Ponsi 2026-10-26 (lane B) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/ponsi/admission/ponsi_ref.py (header)); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="epfpp" && crate::books::epfpp::reviewed(def.id),
+    label: "Ed Ponsi wrote the FX-Ed Trend Technique for currency pairs; runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test. Cash-index shorts are hypothetical.",
+    basis: "Ed Ponsi, Forex Patterns & Probabilities (Wiley 2007), Ch.9 The FX-Ed Trend Technique (p.99-130)",
+};

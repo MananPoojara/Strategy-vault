@@ -622,3 +622,12 @@ mod tests {
         assert_eq!(ts[0].legs[0].i, 17); assert_eq!(ts[0].exit_i, 22); assert_eq!(ts[0].exit_px, 122.);
     }
 }
+
+// Instrument admission: Ruggiero 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/ruggiero/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"rgcts") && (crate::books::rgcts::reviewed(def.id)),
+    label: "Murray Ruggiero tested these rules on futures (S&P 500, T-Bonds, D-Mark, Yen and others); runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test.",
+    basis: "Murray A. Ruggiero Jr., Cybernetic Trading Strategies (1997): conditional day of week p.50, trading day of month p.51 (Table 2.5), channel and volatility breakouts p.77-78, 17/10 breakout p.79, momentum precedes price Table 4.13 p.84, Elliott Wave counter Tables 13.2-13.5 p.189-192, GA rule generation 1723 Table 20.6 p.305. TradeStation order model. Reviewed in authors/ruggiero/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
+};

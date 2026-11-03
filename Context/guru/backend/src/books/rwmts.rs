@@ -743,3 +743,12 @@ mod tests {
         for d in c.iter().filter(|d| d.status == Status::Live) { assert!(params(d.id).is_some(), "{}", d.id); assert!(family_of(d.id).is_some()); }
     }
 }
+
+// Instrument admission: Weissman 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/weissman/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"rwmts"|"rwtlc") && (crate::books::rwmts::reviewed(def.id) || crate::books::rwtlc::reviewed(def.id)),
+    label: "Richard Weissman tested these systems on futures, spot currencies and the cash S&P 500; runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test. Cash-index shorts are hypothetical exposure.",
+    basis: "Richard L. Weissman: Mechanical Trading Systems (2004) indicator, trend-following and mean-reversion systems with printed CQG code (p.4-84); Trade Like a Casino (2011) volatility, RSI Trend and Ichimoku systems (p.57-154). Signals on the close, orders at the next open. Reviewed in authors/weissman/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
+};

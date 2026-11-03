@@ -159,3 +159,12 @@ mod tests {
         assert_eq!((t[1].dir, t[1].legs[0].i, t[1].open), (-1.0, 9, true));
     }
 }
+
+// Instrument admission: F. E. James 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/fejames/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="fejmma" && crate::books::fejmma::reviewed(def.id),
+    label: "James tested these monthly moving-average rules on NYSE stocks (1926-1960); runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade, fills at the month-end close.",
+    basis: "F. E. James Jr., Monthly Moving Averages - An Effective Investment Tool?, JFQA 3(3) 1968, pp.315-326",
+};

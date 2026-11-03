@@ -124,3 +124,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         _ => return None,
     })
 }
+
+// Instrument admission: Arms 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/arms/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"ravcs"|"rasmm"|"rateq") && (crate::books::rwarms::reviewed(def.id)),
+    label: "Richard Arms tested Ease of Movement on NYSE stocks (IBM, K mart, Ford); runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test. Cash-index shorts are hypothetical exposure.",
+    basis: "Richard W. Arms Jr., Volume Cycles in the Stock Market (1983/1994) Part Three: Ch.15 Calculating Ease of Movement, Ch.16 13-day EMV on daily charts, Ch.17 four-week reversal of the 13-week EMV. Reviewed in authors/arms/admission/SOURCE-CONTRACT.md with independent chronological ledgers; fills at the close; needs volume; no costs.",
+};

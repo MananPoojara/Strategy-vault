@@ -246,3 +246,12 @@ mod tests {
         assert_eq!((ts[0].legs[0].i, ts[0].exit_i), (5, 10));
     }
 }
+
+// Instrument admission: Sullivan 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/sullivan/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="stwds" && crate::books::stwds::reviewed(def.id),
+    label: "Sullivan, Timmermann and White tested these rules on the Dow Jones Industrial Average closes 1897-1996 and S&P 500 futures 1984-1996; runs on other indices, ETFs and stocks, US and India, are a declared application, not the authors' test.",
+    basis: "Sullivan, Timmermann and White, Data-Snooping, Technical Trading Rule Performance, and the Bootstrap (UCSD 97-31, 1997; J. Finance 1999): the best rules named in Tables I-II and VI from the filter, moving-average, support and resistance, channel break-out and on-balance volume families (Sec. III p.10-13, Appendix 1 p.25-27), signal-day close. Reviewed in authors/sullivan/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
+};

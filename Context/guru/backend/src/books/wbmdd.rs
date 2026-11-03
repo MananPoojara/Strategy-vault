@@ -220,3 +220,12 @@ mod tests {
         assert!(run("wbmdd_erg_ema_s1", &x, 0, 119, &Params::from([("r".into(), 1000.0)])).is_none());
     }
 }
+
+// Instrument admission: Blau 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/blau/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="wbmdd" && crate::books::wbmdd::reviewed(def.id),
+    label: "Blau's Ergodic systems were shown on daily Deutsche mark futures charts (no printed results); runs on indices, ETFs and stocks are a declared application.",
+    basis: "Momentum, Direction, and Divergence (Wiley 1995) Ch.2 p.18-24: Ergodic = TSI(close,r,5) with a 5-day EMA Signal Line, trend = 32-day EMA of the close or slow TSI(close,64,64); Systems 1-3. Book market: Deutsche mark futures. Index/ETF/stock runs are a declared application.",
+};

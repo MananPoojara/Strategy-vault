@@ -143,3 +143,12 @@ mod tests {
         assert!((lo[2] - 100.0).abs() < 1e-9); // zero deviation
     }
 }
+
+// Instrument admission: Leung and Chong 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/leungchong/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="mjlbb" && crate::books::mjlbb::reviewed(def.id),
+    label: "Leung and Chong tested these bands on eleven stock indices (1985-2000); runs on other indices, ETFs and single stocks (US and India) are a declared application, long only, one unit per trade, fills at the daily close.",
+    basis: "Leung and Chong, An empirical comparison of moving average envelopes and Bollinger Bands, Applied Economics Letters 10 (2003) 339-341",
+};

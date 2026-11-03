@@ -42,7 +42,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
           &["F|\"the smoothing is a 10-month weighted average of 11- and 14-month rates of change of DJIA monthly closing prices\" (p.116)",
             "E|\"this index has been found useful for market bottoms rather than tops, so the momentum curve takes on significance only when it falls below the 0 reference line and then rises\" (p.116): buy at the month-end close when the curve turns up from below zero",
             "X|[Not from the book] the book gives no exit; the user's standard exits: p.exit 0 = close after p.hold daily bars (10 default; 3 / 5), 1 = trailing stop 2 x ATR(5) behind the best price since entry, 2 = first up close"],
-          "Curve = linearly weighted 10-month average of (11-month ROC + 14-month ROC), ROC = 100 (close / close n months ago - 1) [the sum has the same zero line and turns as the average]. Turn up = this month higher than last month after last month was lower than the month before, last month below zero [declared]. Month-end entries at the close; exits on daily bars. ATR trail: from the bar after entry, stop = best of the entry close and the highs since, minus 2 x Wilder ATR(5) of the previous bar; filled at the stop or a lower open. Long only. Declared application on US and Indian indices, ETFs and stocks (the book: DJIA)."),
+          "Option exit 3 (Elliott Middleton, 'The Coppock Curve', S&C V.12:11, 1994, PDF p.1-3): the same curve and turn-up buy, held for N months ('this allocation should be maintained for about two years'; he measured returns 6, 12, 18 and 24 months after each buy) and sold at that month-end close; his test used monthly average S&P 500 data (1960-1993), so with this exit the curve is computed on each month's average daily close by default (month-end closes are the option); a buy while holding does not add or extend [declared]; he notes it fails on the Japanese market. Curve = linearly weighted 10-month average of (11-month ROC + 14-month ROC), ROC = 100 (close / close n months ago - 1) [the sum has the same zero line and turns as the average]. Turn up = this month higher than last month after last month was lower than the month before, last month below zero [declared]. Month-end entries at the close; exits on daily bars. ATR trail: from the bar after entry, stop = best of the entry close and the highs since, minus 2 x Wilder ATR(5) of the previous bar; filled at the stop or a lower open. Long only. Declared application on US and Indian indices, ETFs and stocks (the book: DJIA)."),
         nt("mptae_ema14m", "DJIA 14-month EMA with the 14-month EMA of the 12-month ROC", "Ch.12 (p.159-160)",
            "the text says a price crossover of the EMA confirmed by a change in direction of the smoothed ROC (p.159), the chart caption says a reversal of the EMA itself confirmed by the ROC average (p.160), and neither says what a mixed state means",
            &["E|\"a 14-month exponential moving average for the DJIA and a 14-month exponential moving average for a 12-month rate-of-change index\" (p.159)"]),
@@ -75,8 +75,10 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "mptae_1030w" => vec![p("fast", "Fast MA (weeks)", 10., 2., 26., 1.), p("slow", "Slow MA (weeks)", 30., 5., 60., 1.), short],
         "mptae_russell" => vec![p("fast", "Fast MA (weeks)", 13., 2., 26., 1.), p("slow", "Slow MA (weeks)", 50., 10., 80., 1.), short],
         "mptae_tw9m" => vec![p("ma", "MA (months)", 9., 2., 24., 1.), p("roc", "ROC (months)", 12., 3., 24., 1.), short],
-        "mptae_coppock" => vec![p("exit", "[Not from the book] exit: 0 = after hold bars, 1 = 2 x ATR(5) trail, 2 = first up close", 0., 0., 2., 1.),
-                                p("hold", "[Not from the book] bars held (3 / 5 / 10)", 10., 3., 10., 1.)],
+        "mptae_coppock" => vec![p("exit", "Exit: 0 = after hold bars, 1 = 2 x ATR(5) trail, 2 = first up close [0-2 not from the book]; 3 = Middleton: hold N months (S&C V.12:11, 1994)", 0., 0., 3., 1.),
+                                p("hold", "[Not from the book] bars held (3 / 5 / 10)", 10., 3., 10., 1.),
+                                p("months", "Exit 3: months held (Middleton 'about two years' = 24; he also measured 6 / 12 / 18)", 24., 1., 36., 1.),
+                                p("avg", "Exit 3: curve on 1 = monthly average closes (Middleton's test, default), 0 = month-end closes", 1., 0., 1., 1.)],
         _ => return None,
     })
 }
@@ -157,7 +159,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let st: Vec<Option<i8>> = (0..n).map(|i| match (sign(c[i], m[i]), sign(r[i], rm[i])) { (Some(a), Some(b)) if a == b => Some(a), _ => None }).collect();
             states(x, from, to, &st, long_only, ["price and ROC above their 9-month averages", "price and ROC below their 9-month averages"])
         }
-        "mptae_coppock" => coppock(x, from, to, &mo, g("exit").round() as i64, u("hold")),
+        "mptae_coppock" => coppock(x, from, to, &mo, g("exit").round() as i64, u("hold"), u("months"), g("avg") >= 0.5),
         _ => return None,
     })
 }
@@ -173,9 +175,18 @@ pub fn coppock_curve(m: &[f64]) -> Vec<f64> {
     wma(&(0..m.len()).map(|i| a[i] + b[i]).collect::<Vec<_>>(), 10)
 }
 
-fn coppock(x: &Ctx, from: usize, to: usize, mo: &[bool], exit: i64, hold: usize) -> Vec<Trade> {
+/// Exit 3 is lane K9's Middleton option (to-code row 161, R4 decision 42; independent check authors/titles-1030/K9w/k9_ref.py):
+/// with avg the curve uses each month's average daily close; entry still at the signal month's last close; out at the close of
+/// the month-end `months` months later; signals while holding are ignored.
+fn coppock(x: &Ctx, from: usize, to: usize, mo: &[bool], exit: i64, hold: usize, months: usize, avg: bool) -> Vec<Trade> {
     let idx: Vec<usize> = (0..x.c.len()).filter(|&i| mo[i]).collect();
-    let cv = coppock_curve(&idx.iter().map(|&i| x.c[i]).collect::<Vec<_>>());
+    let mv: Vec<f64> = if exit == 3 && avg {
+        idx.iter().enumerate().map(|(k, &e)| { let s = if k == 0 { 0 } else { idx[k - 1] + 1 }; x.c[s..=e].iter().sum::<f64>() / (e + 1 - s) as f64 }).collect()
+    } else { idx.iter().map(|&i| x.c[i]).collect() };
+    let cv = coppock_curve(&mv);
+    let mut mnum = vec![0usize; x.c.len()];
+    let mut k = 0;
+    for i in 0..x.c.len() { mnum[i] = k; if mo[i] { k += 1; } }
     let mut buy = vec![false; x.c.len()];
     for k in 2..idx.len() {
         if [cv[k], cv[k - 1], cv[k - 2]].iter().all(|v| v.is_finite()) && cv[k - 1] < 0. && cv[k - 1] < cv[k - 2] && cv[k] > cv[k - 1] { buy[idx[k]] = true; }
@@ -193,6 +204,7 @@ fn coppock(x: &Ctx, from: usize, to: usize, mo: &[bool], exit: i64, hold: usize)
                 }
                 2 if i > e => (x.c[i] > x.c[i - 1]).then(|| (x.c[i], "first up close")),
                 0 if i >= e + hold => Some((x.c[i], "bars held")),
+                3 if mo[i] && mnum[i] >= mnum[e] + months => Some((x.c[i], "Middleton: months held")),
                 _ => None,
             };
             if let Some((px, why)) = done {

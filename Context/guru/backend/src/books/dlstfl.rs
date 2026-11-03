@@ -158,3 +158,12 @@ mod tests {
         assert_eq!((t[0].exit_i, t[0].exit_px), (7, 97.0)); // bar 6 close 96.0 not profitable, bar 7 is
     }
 }
+
+// Instrument admission: Dave Landry 2002 workbook 2026-10-26 (lane B) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/landry/laneb/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="dlstfl" && crate::books::dlstfl::reviewed(def.id),
+    label: "Landry tested these market-timing rules on S&P 500 futures (1990-2002) and calls them 'not intended to be a stand alone system'; runs on indices, ETFs and stocks (US with the CBOE VIX, India with India VIX) are a declared application, one unit per trade; cash-index shorts are hypothetical.",
+    basis: "Dave Landry, Swing Trading For A Living (TradingMarkets workbook 2002), p.41 and p.54",
+};

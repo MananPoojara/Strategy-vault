@@ -210,3 +210,12 @@ mod tests {
         assert!((ii[2] - 100. * a / 350.).abs() < 1e-9);
     }
 }
+
+// Instrument admission: John Bollinger 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/bollinger/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="bobb" && crate::books::bobb::reviewed(def.id),
+    label: "Bollinger states these methods for stocks with volume indicators and prints no test; runs on indices, ETFs and single stocks with volume (US and India) are a declared application, one unit per trade, entry at the next open.",
+    basis: "John Bollinger, Bollinger on Bollinger Bands (McGraw-Hill 2002), Ch 19-20",
+};

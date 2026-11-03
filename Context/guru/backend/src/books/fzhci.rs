@@ -148,3 +148,12 @@ mod tests {
         assert_eq!(live, REVIEWED);
     }
 }
+
+// Instrument admission: Fabozzi 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/fabozzi/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"fzhci") && (crate::books::fzhci::reviewed(def.id)),
+    label: "The Handbook of Commodity Investing describes these rules on commodity futures (gold, crude oil, grains, the GSCI); index, ETF and stock runs (US and India) are a declared application, not the authors' test.",
+    basis: "Fabozzi, Füss and Kaiser (eds.), The Handbook of Commodity Investing (2008): Lhabitant's price/15-day average cross (Ch.16 p.395-398), the Erb-Harvey 12-month momentum rule (Ch.8 p.221), Park and Irwin's dual moving-average (next-open), outside-channel and Alexander filter definitions (Ch.40 p.914-921), reviewed in authors/fabozzi/admission/SOURCE-CONTRACT.md with independent chronological ledgers. Close fills where the book is silent; defaults are book-printed study settings. No excess-return (T-bill) component or costs. Cash-index shorts are hypothetical exposure.",
+};

@@ -162,3 +162,12 @@ mod tests {
         assert!((t[0].legs[0].px - 102.).abs() < 1e-9 && t[0].exit_px == 101. && t[0].dir == -1.);
     }
 }
+
+// Instrument admission: DeMark 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/demark/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"tdwb"|"tdnsta"|"tdnmtt") && (crate::books::tdwb::reviewed(def.id) || crate::books::tdnsta::reviewed(def.id) || crate::books::tdnmtt::reviewed(def.id)),
+    label: "Tom DeMark showed TD Sequential, TD Combo and TD Lines on futures, stocks and indices without printed statistics; index, ETF and stock runs (US and India) are a declared application, not the author's test. The TD Line fade is a one-day trade (entry at the line, exit at that day's close). Cash-index shorts are hypothetical exposure.",
+    basis: "Tom DeMark: TD Sequential with his 1994 entry, exit and stop (The New Science of Technical Analysis Ch.7, p.140-178), TD Sequential and TD Combo versions 1 and 2 with his 1997 profit level and stop (New Market Timing Techniques Ch.2-3), and the disqualified TD Line fade (Trading Indicators for the 21st Century, workbook 5 p.1-14). Reviewed in authors/demark/admission/SOURCE-CONTRACT.md with independent chronological ledgers; first-listed defaults where the book gives options or ranges; no costs.",
+};

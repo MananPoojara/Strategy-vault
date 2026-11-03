@@ -379,3 +379,12 @@ mod tests {
         assert!((dp[3] - 25.).abs() < 1e-9 && (dm[3] - 50.).abs() < 1e-9);
     }
 }
+
+// Instrument admission: Bryant 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/bryant/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="bfmm" && crate::books::bfmm::reviewed(def.id),
+    label: "Michael R. Bryant built and tested the MiniMax systems on daily E-mini S&P 500 and E-mini Nasdaq 100 futures; runs on indices, ETFs and single stocks (US and India) are a declared application.",
+    basis: "User's Guide: MiniMax Trading Systems (Breakout Futures 2001) ch.2 p.10-11 and Appendix p.37-38 (ESL, NQL, S); User's Guide: MiniMax II System v2 (2002) ch.1 p.4 and ch.2 p.10-11. Index/ETF/stock runs are a declared application.",
+};

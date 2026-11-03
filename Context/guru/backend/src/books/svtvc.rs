@@ -232,3 +232,12 @@ mod tests {
         assert_eq!(t[0].exit_i, 24); assert_eq!(t[1].dir, -1.);
     }
 }
+
+// Instrument admission: Sperandeo 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/sperandeo/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"svtvc"|"svmws") && (crate::books::svtvc::reviewed(def.id) || crate::books::svmws::reviewed(def.id)),
+    label: "Victor Sperandeo tested the moving-average rules on the S&P 500 cash index, the 7-month 1.6-weighted rule on futures sectors and the 10/30-week rule on stocks, indexes and commodities; runs on ETFs, indices and stocks, US and India, are a declared application, not the author's test. Shorts on a cash index are hypothetical exposure.",
+    basis: "Victor Sperandeo, Trader Vic on Commodities (Wiley 2008) Ch.6 Tables 6.3-6.5 notes (p.52-64) and App. A (p.155, 173-174); Methods of a Wall Street Master (Wiley 1991) Ch.8 (p.90-93). Reviewed in authors/sperandeo/admission/SOURCE-CONTRACT.md with independent chronological ledgers; fills at the close; no costs.",
+};

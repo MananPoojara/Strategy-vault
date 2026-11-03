@@ -9,6 +9,17 @@ describe("view transitions", () => {
     expect(store.commit(second, { html: "current" })).toBe(true);
     expect(store.getSnapshot().html).toBe("current");
   });
+  it("fills a page in place without a new revision, and ignores a fill for a page already left", () => {
+    const store = createStore();
+    const ticket = store.begin("/");
+    store.commit(ticket, { html: "shell" });
+    const revision = store.getSnapshot().revision;
+    expect(store.fill(ticket, { html: "filled" })).toBe(true);
+    expect(store.getSnapshot()).toMatchObject({ html: "filled", revision, loading: false });
+    store.begin("/strategies");
+    expect(store.fill(ticket, { html: "late" })).toBe(false);
+    expect(store.getSnapshot().html).toBe("filled");
+  });
   it("publishes stable snapshots and cleans subscriptions", () => {
     const store = createStore();
     let calls = 0;

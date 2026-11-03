@@ -251,3 +251,12 @@ mod tests {
         assert_eq!((t[0].exit_px, t[0].exit_i), (823.75, 13)); // "a loss on the trade of March 7th" (p.6)
     }
 }
+
+// Instrument admission: Bruce Babcock 2026-10-26 (lane B) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/babcock/laneb/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="bab80" && crate::books::bab80::reviewed(def.id),
+    label: "Babcock tested the November-April calendar rule on S&P 500 futures (weekly bars, Nov 1982-Apr 1997); runs on indices, ETFs and stocks (US and India) are a declared application, one unit per trade, entry at the open and exit at the close as the book's weekly test implies.",
+    basis: "Bruce Babcock, The 80% Solution: S&P Systems (1997), p.16-19",
+};

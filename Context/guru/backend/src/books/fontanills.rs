@@ -258,3 +258,12 @@ mod tests {
         assert_eq!(live, REVIEWED);
     }
 }
+
+// Instrument admission: Fontanills 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/fontanills/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"fgitc"|"fgitsm"|"fgsmc"|"fgtofd") && (crate::books::fontanills::reviewed(def.id)),
+    label: "Fontanills and Gentile show these rules on SPY, the S&P 500, QQQQ, DIA, XLF and US stocks; other index, ETF and stock runs (US and India) are a declared application, not the authors' test.",
+    basis: "George A. Fontanills and Tom Gentile: The Index Trading Course (2006) Volex bands, ROC/ADX momentum, QQQQ volume and 10/20 EMA systems (p.162-188, 321-323); Interactive Technical Trading Seminar manual Reverse VolEx and volume-spike systems (Ch.10, 12); The Stock Market Course 50/200 crossover (p.257); Trading Options For Dummies 20/50 EMA crossover (p.100-101); reviewed in authors/fontanills/admission/SOURCE-CONTRACT.md with independent chronological ledgers. Band-day, fill, ADX length and EMA start are declared readings; one unit, no pyramiding. Cash-index shorts are hypothetical exposure.",
+};

@@ -658,3 +658,12 @@ mod tests {
         }
     }
 }
+
+// Instrument admission: Pruitt 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/pruitt/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"pbwts"|"putg") && (crate::books::pbwts::reviewed(def.id) || crate::books::putg::reviewed(def.id)),
+    label: "George Pruitt and John Hill tested these systems on futures (17-29 markets, one contract) and a few US stocks; runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test. The soybean seasonal dates come from soybeans. Cash-index shorts are hypothetical exposure.",
+    basis: "George Pruitt & John R. Hill: Building Winning Trading Systems with TradeStation (2002) King Keltner, Bollinger Bandit, Thermostat, Dynamic Break Out II and its fade, seasonal, Ghost Trader, Money Manager, 40-day channel, ADX/MA, MA channel, %R and day-of-week studies (printed EasyLanguage ch.1-8, App. B); The Ultimate Trading Guide (2000) ch.9 turnkey systems (App. code p.285-291) and ch.3 bar-chart studies. Reviewed in authors/pruitt/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
+};

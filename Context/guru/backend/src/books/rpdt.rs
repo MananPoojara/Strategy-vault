@@ -208,3 +208,12 @@ mod tests {
         assert_eq!(t.len(), 1); assert_eq!(t[0].legs[0].px, 104.); assert_eq!(t[0].legs[0].i, 2);
     }
 }
+
+// Instrument admission: Pardo 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/pardo/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| (def.book=="rpdt" && crate::books::rpdt::reviewed(def.id)) || (def.book=="rpeo" && crate::books::rpeo::reviewed(def.id)),
+    label: "Robert Pardo gives these example systems for futures (S&P 500, Swiss franc, T-bonds and others); runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test.",
+    basis: "Robert Pardo, Design, Testing and Optimization of Trading Systems (1992): 5/20 moving-average crossover (p.13-16), 125% of yesterday's range breakout (p.9), 3-day MA vs 12-day midpoint MA with a 2-day time filter (p.85-87); The Evaluation and Optimization of Trading Strategies (2008): EOTS-MA 10/30 code (p.151-153), 125%/145% range breakout (p.146). Reviewed in authors/pardo/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
+};

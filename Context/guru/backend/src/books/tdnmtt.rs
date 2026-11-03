@@ -146,13 +146,13 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 /// downside ones. Days without minute data make no trade.
 fn trap_minutes(x: &Ctx, from: usize, to: usize, short: bool, tick: f64, true_ref: bool) -> Vec<Trade> {
     use crate::intraday::{day_trade, stop_entry_day, Level};
-    let Some(mm) = x.minutes else { return vec![] };
+    if x.minutes.is_none() { return vec![]; }
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let mut out = vec![];
     for i in from.max(2)..=to {
         let (hi, lo) = if true_ref { (h[i - 1].max(c[i - 2]), l[i - 1].min(c[i - 2])) } else { (h[i - 1], l[i - 1]) };
         if !(o[i] <= hi && o[i] >= lo) { continue; }
-        let Some(b) = mm.day(&x.r[i].date) else { continue };
+        let Some(b) = crate::intraday_w2b::day(x, i) else { continue }; // intraday wave 3: rejected NIFTY 50 minute days (from 2026-08-11) make no trade
         let lv = [Level { up: true, px: hi + tick }, Level { up: false, px: lo - tick }];
         let Some((k, px, _)) = stop_entry_day(&b, 0, &lv, &|_, _| None) else { continue };
         if (k == 1) != short { continue; }

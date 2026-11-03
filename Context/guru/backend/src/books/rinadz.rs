@@ -203,3 +203,12 @@ mod tests {
         assert_eq!(bz[79], 6.0); // 1 + 3 + 7 >= 8 from the bottom
     }
 }
+
+// Instrument admission: Stendahl 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/stendahl/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| (def.book=="rinadz" && crate::books::rinadz::reviewed(def.id)) || (def.book=="hwdti" && crate::books::hwdti::reviewed(def.id)),
+    label: "Zamansky & Stendahl tested the Dynamic Zone systems on the S&P 500 (cash index and futures); Helweg & Stendahl tested the moving-average system on Treasury bond futures; runs on other indices, ETFs and single stocks (US and India) are a declared application.",
+    basis: "Zamansky & Stendahl, Dynamic Zones, S&C V15:7 (1997) p.306-310 and the RINA Dynamic Zone User's Guide pp.10-21 (DZ RSI(9), fixed RSI 30/70, smoothed RSI(14), %R, Extreme MACD); Helweg & Stendahl, Dynamic Trading Indicators (2002) Figure 6.4 p.130 (WMA20 x SMA56 stop-and-reverse). Index/ETF/stock runs are a declared application.",
+};

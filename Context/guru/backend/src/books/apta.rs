@@ -599,3 +599,12 @@ mod tests {
         assert_eq!(bars(&x, 2), Vec::<usize>::new());
     }
 }
+
+// Instrument admission: Appel 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/appel/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"apta"|"apmacd"|"apwms"|"apsmts"|"apoi") && (crate::books::apta::reviewed(def.id) || crate::books::apmacd::reviewed(def.id) || crate::books::apwms::reviewed(def.id) || crate::books::apsmts::reviewed(def.id) || crate::books::apoi::reviewed(def.id)),
+    label: "Gerald Appel tested these models on the Dow, the NYSE Index, the Nasdaq Composite or the S&P 500 with NYSE breadth; index, ETF and stock runs (US and India, India with NSE breadth and India VIX) are a declared application, not the author's test. Cash-index shorts are hypothetical exposure.",
+    basis: "Gerald Appel: Technical Analysis - Power Tools (2005) 200/100-day Dow crossings, Triple Momentum, 15-day ROC, best/worst six months, Daily Breadth Impulse (with the MACD filter), VIX 35/18, MACD 12-26/19-39; the 1996 MACD booklet rule sets and A-D super stay-in; Winning Market Systems TRIN, up/down volume, Shadow Line, 10-day A-D total and Haurlan indices; Stock Market Trading Systems (with Hitschler) penetration, confirming, shifting, MMACDTS, lead-time, chord, A-D overbought/oversold and 25-day channel systems; Opportunity Investing presidential strategies. Reviewed in authors/appel/admission/SOURCE-CONTRACT.md with independent chronological ledgers. Close fills; no costs; the book's statistics are not reproduced.",
+};

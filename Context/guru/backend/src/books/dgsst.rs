@@ -113,3 +113,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         _ => return None,
     })
 }
+
+// Instrument admission: David Graeme-Smith 2026-10-26 (lane B) block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/dsmith/admission/sst_ref.py (header)); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book=="dgsst" && crate::books::dgsst::reviewed(def.id),
+    label: "David Graeme-Smith wrote Short Swing Trading for UK shares (FTSE 250 type); runs on indices, ETFs and US/India stocks are a declared application, not the author's test, and he warns indices may need more stop space. Cash-index shorts are hypothetical.",
+    basis: "David Graeme-Smith, Short Swing Trading v6.0 (e-book, 2004), Ch.7-9 the six SST rules (PDF 46-70)",
+};

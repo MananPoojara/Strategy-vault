@@ -176,3 +176,12 @@ mod tests {
         assert!(catalogue().iter().all(|d| d.id.starts_with("capttm_") && family_of(d.id).is_some() && params(d.id).is_some()));
     }
 }
+
+// Instrument admission: CArnold 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/carnold/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"capttm") && (crate::books::capttm::reviewed(def.id)),
+    label: "Curtis Arnold's moving-average examples come from gold futures (Merrill Lynch study) and general futures/stock charting; runs on indices, ETFs and stocks, US and India, are a declared application, not the author's test. Cash-index shorts are hypothetical exposure.",
+    basis: "Curtis M. Arnold, Timing the Market (1993), ch.13 Moving averages (p.82): the 14/50-day two-crossover model and its modified version (close above/below both averages, exit when the close crosses either). Signals and fills on the close. Reviewed in authors/carnold/admission/SOURCE-CONTRACT.md with independent chronological ledgers; no costs.",
+};

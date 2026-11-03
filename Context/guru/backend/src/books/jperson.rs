@@ -97,3 +97,12 @@ mod tests {
         assert_eq!(live, REVIEWED);
     }
 }
+
+// Instrument admission: Person 2026-10-24 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/person/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| matches!(def.book,"jpcppt"|"hcta") && (crate::books::jperson::reviewed(def.id) || crate::books::hcta::reviewed(def.id)),
+    label: "John L. Person shows the pivot rules on forex, futures and stock charts, and the Commodity Trader's Almanac trades S&P 500 futures; index, ETF and stock runs (US and India) on daily bars are a declared application, not the author's test. Cash-index shorts are hypothetical exposure.",
+    basis: "John L. Person, Candlestick and Pivot Point Trading Triggers (2007) p.161-174: close or pivot crossing the three-day pivot average, stop and reverse; Hirsch & Person, Commodity Trader's Almanac 2010 p.126-127: the four S&P 500 calendar trades (Nth trading day, fixed hold). Reviewed in authors/person/admission/SOURCE-CONTRACT.md with independent chronological ledgers. Close fills; no costs; the book's futures results are not reproduced.",
+};

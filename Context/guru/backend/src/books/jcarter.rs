@@ -251,3 +251,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         _ => propulsion(x, from, to, &g),
     })
 }
+
+// Instrument admission: Carter 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
+// Admission only for the module REVIEWED lists (authors/jcarter/admission/SOURCE-CONTRACT.md); kept in one block to merge.
+// Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book==crate::books::jcarter::BOOK && crate::books::jcarter::reviewed(def.id),
+    label: "John Carter traded the Squeeze, HOLP/LOHP and Propulsion plays on stock-index futures, forex and US stocks; runs on indices, ETFs and single stocks (US and India) are a declared application.",
+    basis: "Mastering the Trade, 3rd ed. (McGraw-Hill 2018): The Squeeze Ch.11 p.248-254, HOLP and LOHP Ch.17 p.349-358, Propulsion Plays Ch.18 p.373-378. Index/ETF/stock runs are a declared application.",
+};
