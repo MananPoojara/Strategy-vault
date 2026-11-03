@@ -168,6 +168,8 @@ mod short_course_readiness_tests {
 pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -> Option<Issue> {
     // user-held NSE breadth / TRIN mappings: the hold note wins over any data-coverage message
     if let Some(i)=ctx.r.first().and_then(|r|crate::instrument_policy::nse_breadth_held(def,&r.ticker)) {return Some(i);}
+    // decisions #177/#179: a withdrawn (rule, ticker) pair shows its tradable-vs-cash reason, never a coverage message
+    if let Some(i)=ctx.r.first().and_then(|r|crate::instrument_policy::tradable_check_issue(def,&r.ticker,ctx.native_market.is_some())) {return Some(i);}
     // connors-final: the optional p.43 universe filter has a $5 price test; on Indian prices it is not the book's filter
     if def.book==books::ststw::BOOK && books::ststw::stock_study(def.id) && p.get("universe").is_some_and(|v|*v>=0.5) && india(ctx) {
         return issue("not_testable","The p.43 universe filter keeps stocks priced above $5; on Indian (INR) prices that is not the book's filter. Use universe 0 (the test's own rules name no filter) on Indian instruments.");
@@ -623,7 +625,7 @@ mod tests {
         for (t,y,refused) in [("SPX","2013",true),("SPX","2014",false),("NDX","2000",true),("DJI","2015",true),("NIFTY 50","1995",false),("SPY","1994",false)] {
             for id in books::joe_ross_rules::REVIEWED {
                 let r=at(t,y);let ctx=Ctx::new(&r,&r,&r);
-                assert_eq!(check(&ctx,&definition(id),0,4,&Params::new()).is_some(),refused,"{id} {t} {y}");
+                assert_eq!(check(&ctx,&definition(id),0,4,&Params::new()).is_some(),refused||crate::instrument_policy::m3_withdrawn(id,t),"{id} {t} {y}"); // #179
             }
         }
     }
@@ -986,7 +988,7 @@ mod auto_start_tests {
     #[test]
     fn real_open_start() {
         let r=bars("SPX",1000);let ctx=Ctx::new(&r,&r,&[]);
-        shifted(&ctx,&def("jr_zulu"),999,&Params::new(),600,"real only from 2014-01-01");
+        shifted(&ctx,&def("jr_ambush"),999,&Params::new(),600,"real only from 2014-01-01"); // jr_zulu on SPX is withdrawn by #179
     }
     #[test]
     fn warmup_start() {
