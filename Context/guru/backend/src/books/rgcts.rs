@@ -69,7 +69,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "Table 2.6 (p.54): 3/24/71-6/28/96, 270.39 points, 69% win."),
         mk("rgc_rb_seasonal", "Ruggiero/Barna Seasonal Index systems", "Ch. 2 · Ruggiero/Barna index", "Long",
             Status::NotTestable("Table 2.2 step 3 \"Multiply this 5-day return by the proper percentage\" and the scaling window are not defined; the index is part of a commercial add-in"),
-            &["E|S&P500: 5-day hold, trigger -.20, S&P below 10-day MA (Table 2.7); T-Bonds: 8-year window, 6-day hold, trigger > -.20, 6-period momentum < 0 (Table 2.8)"],
+            &["E|S&P500: 5-day hold, trigger -.20, S&P below 10-day MA (Table 2.7); T-Bonds: 8-year window, 6-day hold, trigger > -.20, 6-period momentum < 0 (Table 2.8)", "F|T-Bonds: \"We collected 2,000 days' seasonal data before generating our first trade\" (p.55)"],
             "Table 2.7: 761.75 points, 60% win; Table 2.8: $57,593.75, 71% win."),
         mk("rgc_corn_counterseasonal", "Corn seasonal short and counterseasonal long", "Ch. 2 · Counterseasonal", "Long/Short", Status::NeedsData("needs cash/futures corn prices"),
             &["E|Sell corn on the first trading day after June 20; exit November 1 (p.57)", "E|If the short is not profitable after July 21, go long the first trading day after July 21 until the first trading day of the next year (p.57)"],
@@ -109,7 +109,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "F|k: code input Breakout(.3); tested \"a breakout equal to .40\" (p.74) = default"],
             "Table 4.3 (p.75): S&P500 4/21/82-5/31/96, $50 costs: $80,150, long $17,650, short $62,500, 384 trades, avg $208.72, 55% win. Day trade on the cash index."),
         mk("rgc_runaway_gap_f5", "Runaway gaps with close-lower-than-5-days-ago filter", "Ch. 4 · Gap analysis", "Long/Short", live,
-            &["F|\"We will require the S&P500 to close lower than 5 days ago\" (p.74), for both up and down gaps: yesterday's close < close 5 bars before it",
+            &["F|\"We will require the S&P500 to close lower than 5 days ago\" (p.74): yesterday's close < close 5 bars before it. Default: on the long (up-gap) side only, the behaviour that reproduces Table 4.4 (its short profit, $62,500, equals Table 4.3's without the filter while 147 trades disappear); p.f5both = 1 applies it to both sides as the text says (\"for both up and down gaps\") [option] (decision 186, D1-17)",
               "E|Runaway gap entries as in Table 4.2 (k = .40; literal '+' on the short side; p.sign = -1 option)", "X|Exit on the close"],
             "Table 4.4 (p.75): $86,150, long $23,650, short $62,500, 237 trades, avg $363.50, 59% win."),
         mk("rgc_oops_600", "OOPS gap fill with $600 money-management stop", "Ch. 4 · Gap analysis", "Long/Short", Status::NeedsData(DOLLAR_STOP),
@@ -174,6 +174,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         mk("rgc_ga1723", "GA-evolved T-Bond rule, generation 1723", "Ch. 20 · Genetic algorithms", "Long", live,
             &["E|\"If FastD(14)<61.9 and FastD(14)>31.9 and XAverage(C,7)>XAverage(C,15) then buy at open\" (Table 20.6, p.305)",
               "X|\"If BarsSinceEntry>4 then exitlong at Low-.5*Average(TrueRange,3) stop\" (Table 20.6): from the 5th bar after entry, a stop at that bar's low - .5 x 3-bar ATR for the next bar",
+              "F|\"we used 210 for maxbars back, so that the first 10 months of data did not generate any trades\" (p.302): no signal before bar 210 of the data (p.mbb; decision 186, FR-01)",
               "F|FastD(14): TradeStation built-in, not defined in the book. Default p.fastd=0 = 3-bar SMA of FastK(14); 1 = Lane's 3-bar sum ratio; 2 = exponential (alpha .5). XAverage = EMA alpha 2/(n+1) seeded on the first close [platform definitions, documented]"],
             "Table 20.5 (p.304): T-Bonds dev 1/1/86-12/31/94: $32,175, 74 trades, 66% win, avg $434.80, DD -$6,400, PF 1.90; test 1/1/95-10/4/96: $11,900, 17 trades, 65%. Only gen 1723 uses T-Bond data alone; 1197/1909/2329 need Eurodollars/XAU (rgc_im_tbond)."),
     ]
@@ -215,8 +216,12 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "rgc_dowm_thu_jul_long" | "rgc_dowm_mon_dec_long" | "rgc_dowm_thu_dec_short" | "rgc_cdow_mon_long" | "rgc_cdow_fri_short" => vec![],
         "rgc_tdom17_long" => vec![p("tdom", "Trading day of month (signal)", 17., 1., 23., 1.), p("hold", "Bars held (open to open)", 5., 1., 10., 1.)],
         "rgc_tdom2_short" => vec![p("tdom", "Trading day of month (signal)", 2., 1., 23., 1.), p("hold", "Bars held (open to open)", 2., 1., 10., 1.)],
-        "rgc_runaway_gap" | "rgc_runaway_gap_f5" => vec![p("k", "Breakout x 3-day ATR (tested .40; code input .3)", 0.4, 0.1, 1.0, 0.05),
-            p("sign", "Short stop sign: 1 = printed '+', -1 = open - k x ATR [labelled option]", 1., -1., 1., 2.)],
+        "rgc_runaway_gap" | "rgc_runaway_gap_f5" => {
+            let mut v = vec![p("k", "Breakout x 3-day ATR (tested .40; code input .3)", 0.4, 0.1, 1.0, 0.05),
+                p("sign", "Short stop sign: 1 = printed '+', -1 = open - k x ATR [labelled option]", 1., -1., 1., 2.)];
+            if id == "rgc_runaway_gap_f5" { v.push(p("f5both", "5-day filter: 0 = long side only (Table 4.4), 1 = both sides (text p.74)", 0., 0., 1., 1.)); }
+            v
+        }
         "rgc_cbo20" => vec![p("n", "Channel bars", 20., 5., 60., 1.), p("pt", "One point (price units)", 0.01, 0., 1., 0.01)],
         "rgc_volbo" => vec![p("k", "x 3-day average true range", 0.6, 0.2, 1.5, 0.05), p("atr", "ATR bars", 3., 1., 10., 1.)],
         "rgc_cbo17_10" => vec![p("entry", "Entry breakout bars", 17., 5., 60., 1.), p("exit", "Exit breakout bars", 10., 3., 40., 1.)],
@@ -225,7 +230,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "rgc_elliott" => vec![p("len", "Len (tested 20; code input 80)", 20., 20., 180., 10.), p("trig", "Trigger (tested .66; code input .7)", 0.66, 0.5, 1.0, 0.02)],
         "rgc_ga1723" => vec![p("dlo", "FastD lower bound", 31.9, 0., 100., 0.1), p("dhi", "FastD upper bound", 61.9, 0., 100., 0.1),
             p("ef", "Fast EMA", 7., 2., 30., 1.), p("es", "Slow EMA", 15., 5., 60., 1.), p("hold", "BarsSinceEntry before the stop", 4., 0., 20., 1.),
-            p("m", "Stop = low - m x 3-bar ATR", 0.5, 0., 2., 0.05), p("fastd", "FastD: 0 SMA3 of FastK, 1 Lane sums, 2 EMA(.5) [platform]", 0., 0., 2., 1.)],
+            p("m", "Stop = low - m x 3-bar ATR", 0.5, 0., 2., 0.05), p("fastd", "FastD: 0 SMA3 of FastK, 1 Lane sums, 2 EMA(.5) [platform]", 0., 0., 2., 1.),
+            p("mbb", "MaxBarsBack: first signal bar of the data (book 210, p.302; 15 = as soon as the indicators exist)", 210., 15., 400., 1.)],
         _ => return None,
     })
 }
@@ -416,11 +422,12 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         }
         "rgc_runaway_gap" | "rgc_runaway_gap_f5" => {
             let (k, sign) = (g("k"), if g("sign") < 0. { -1. } else { 1. });
+            let both = id == "rgc_runaway_gap_f5" && g("f5both") >= 0.5;
             let atr3 = sma(&true_range(x.r), 3);
             for i in from.max(7)..=to {
                 let a = atr3[i - 1];
                 if !a.is_finite() { continue; }
-                if id == "rgc_runaway_gap_f5" && !(x.c[i - 1] < x.c[i - 6]) { continue; }
+                if id == "rgc_runaway_gap_f5" && !(x.c[i - 1] < x.c[i - 6]) && (both || x.o[i] > x.h[i - 1]) { continue; }
                 if x.o[i] > x.h[i - 1] {
                     if let Some(px) = buy_fill(x, i, x.o[i] + k * a) {
                         close(new_trade(1., i, px, "stop", i - 1), i, x.c[i], "exit on close", &mut out);
@@ -498,7 +505,8 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let atr3 = sma(&true_range(x.r), 3);
             let (dlo, dhi, hold, m) = (g("dlo"), g("dhi"), g("hold").round().max(0.) as usize, g("m"));
             let mut cur: Option<Trade> = None;
-            for i in from.max(16)..=to {
+            // TradeStation evaluates the strategy from bar MaxBarsBack (0-based) of the data; earlier bars only warm up (p.302)
+            for i in from.max(u("mbb") + 1).max(16)..=to {
                 let s = i - 1;
                 if let Some(t) = cur.as_ref() {
                     let e = t.legs[0].i;

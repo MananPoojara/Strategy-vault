@@ -46,13 +46,13 @@ macro_rules! off {
     };
 }
 
-const MON_F: &str = "E|\"buy on the open every Monday if that open is lower than Friday's close\" (p.52; Monday = the bar's weekday, a Monday holiday means no trade)";
+const MON_F: &str = "E|\"buy on the open every Monday if that open is lower than Friday's close\" (p.51; Monday = the bar's weekday, a Monday holiday means no trade)";
 const STOP3000: &str = "X|$3,000 stop (Fig. 3.7-3.11 headers; largest loss $3,050 = stop + $50 commission) = 12 S&P points, armed on the entry day";
 const TDM_R: &[&str] = &["E|\"buying ... on the opening of the trading day of the month shown\"; TDM = count of trading days so far this month (p.88)",
     "X|\"exited with either a $2,500 stop in the S&P 500 ... or on the close the third day after entry\" (p.88-89)",
-    "X|\"The S&P results reflect no stop on entry day, but a $2,000 stop after entry day\" (p.89): default $2,000 = 8 points from the day after entry (p.stop_usd=2500 is the p.88 figure)"];
+    "X|\"The S&P results reflect no stop on entry day, but a $2,000 stop after entry day\" (p.88): default $2,000 = 8 points from the day after entry (p.stop_usd=2500 is the p.88 figure)"];
 const TDM_N: &str = "Table 6.6 (p.89), S&P 1982-1998, each TDM tested on its own; the table's 'Number of Trades' column prints trades/winners. Long only (the table lists rally days).";
-const STUDY_X: &str = "X|\"buy ... and exit on the next close with a $3,250 stop\" (p.95); Read: entry on the next open, exit at the close of the day after entry (2-bar hold: fits 2,064 trades in Jul-1982..Feb-1998; 'buy on the open tomorrow and exit on the next day's close' p.96)";
+const STUDY_X: &str = "X|\"buy ... and exit on the next close with a $3,250 stop\" (p.94); Read: entry on the next open, exit at the close of the day after entry (2-bar hold: fits 2,064 trades in Jul-1982..Feb-1998; 'buy on the open tomorrow and exit on the next day's close' p.95)";
 const STOP2000: &str = "X|$2,000 stop (Fig. headers: losers exactly -$2,000) = 8 points, armed on the entry day";
 const BAIL: &str = "X|Bailout: exit on the first profitable opening after entry (Ch. 11, p.157)";
 const OOPS_B: &str = "E|\"an opening that is below the previous day's low ... The entry comes when ... price then rallies back to the previous day's low\" (p.114): buy stop at yesterday's low, only on a day that opened below it";
@@ -65,26 +65,26 @@ const HH_N: &str = "Fig. 15.4 (p.239), S&P 500; test window not printed. Read: T
 pub fn catalogue() -> Vec<StrategyDef> {
     use Status::{NeedsData, NotTestable};
     vec![
-        // ---- Chapter 3: Monday gap-down buy (p.52-55)
+        // ---- Chapter 3: Monday gap-down buy (p.51-54)
         live!("lwlts_mon_gap_t500", "Monday gap-down buy · $500 target", "Ch 3 · Hold to the close", "Long",
-            &[MON_F, "X|\"$3,000 ... and an automatic $500 profit\" (p.52): $500 = 2 points limit, else exit on the close", STOP3000],
+            &[MON_F, "X|\"$3,000 ... and an automatic $500 profit\" (p.51): $500 = 2 points limit, else exit on the close", STOP3000],
             SP, claim("389", "59%", "$-20.95 (after $50 comm.)", "same day", "07/02/82-08/24/98")),
         live!("lwlts_mon_gap_t1000", "Monday gap-down buy · $1,000 target", "Ch 3 · Hold to the close", "Long",
-            &[MON_F, "X|\"all the same rules except a $1,000 target\" (p.52): 4 points, else exit on the close", STOP3000],
+            &[MON_F, "X|\"all the same rules except a $1,000 target\" (p.51): 4 points, else exit on the close", STOP3000],
             SP, claim("389", "55%", "$35.31", "same day", "07/02/82-08/24/98")),
         live!("lwlts_mon_gap_close", "Monday gap-down buy · exit on the close", "Ch 3 · Hold to the close", "Long",
-            &[MON_F, "X|\"holding until the close and then exiting the position\" (p.53)", STOP3000],
+            &[MON_F, "X|\"holding until the close and then exiting the position\" (p.52)", STOP3000],
             SP, claim("389", "53%", "$100.45", "same day", "07/02/82-08/24/98")),
         live!("lwlts_mon_gap_next_close", "Monday gap-down buy · exit next close", "Ch 3 · Hold to the close", "Long",
-            &[MON_F, "X|\"hold the position ... until the next close; that is, the first close after our entry day or until we are stopped out\" (p.54)", STOP3000],
+            &[MON_F, "X|\"hold the position ... until the next close; that is, the first close after our entry day or until we are stopped out\" (p.53)", STOP3000],
             SP, claim("397", "55%", "$172.07", "1 day", "07/02/82-08/24/98")),
         live!("lwlts_mon_gap_6close", "Monday gap-down buy · close 6 days after entry", "Ch 3 · Hold to the close", "Long",
-            &[MON_F, "X|\"holding for the close 6 days after entry or being stopped out\" (p.54)", STOP3000],
+            &[MON_F, "X|\"holding for the close 6 days after entry or being stopped out\" (p.53)", STOP3000],
             SP, claim("285", "52%", "$251.23", "6 days", "07/02/82-08/24/98")),
         // ---- Chapter 4: volatility breakouts (p.57-73)
         live!("lwlts_vb_sp_tdw", "S&P volatility breakout · 50% of yesterday's range, TDW", "Ch 4 · Volatility breakouts", "Long/Short",
             &["E|Buy at the open + 50% of the previous day's range, sell at the open - 50% (\"a 50 percent volatility expansion\", p.66; \"add our breakout value to tomorrow's opening\", p.61)",
-              "F|\"The best days to be a buyer were all days except Thursday and Friday, while the best sell day was Thursday, with Friday a push, but it is used\" (p.68)",
+              "F|\"The best days to be a buyer were all days except Thursday and Friday, while the best sell day was Thursday, with Friday a push, but it is used\" (p.67)",
               "X|\"The exit is the same as with the bonds\" (p.67): the bailout, first profitable opening (p.61)",
               "X|Read: protective stop = 50% of the previous day's range from the entry (the bond model's stop, p.61; the book gives no S&P dollar stop)",
               "X|Ch. 11 rule 3: an opposite signal exits and reverses"],
@@ -104,11 +104,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["E|\"purchased on the open and exited on the close each TDW\" (p.85): Mondays", "X|Exit on the close, no stop"],
             SP, claim("", "57%", "$109", "same day", "S&P since 1982 (p.86)")),
         live!("lwlts_mon_3day", "Monday buy, 3-day hold (Table 6.5)", "Ch 6 · TDW / TDM", "Long",
-            &["E|\"buying on the opening and exiting 3 days later\" (p.86): Mondays", "X|Read: exit on the close of the 3rd trading day after entry, no stop"],
+            &["E|\"buying on the opening and exiting 3 days later\" (p.85): Mondays", "X|Read: exit on the close of the 3rd trading day after entry, no stop"],
             SP, claim("", "57%", "$212", "3 days", "S&P since 1982 (p.86)")),
         live!("lwlts_mon_vb", "Monday open + 5% of Friday's range, exit close", "Ch 6 · TDW / TDM", "Long",
-            &["E|\"buying the opening Monday +.05 percent of Friday's range\" (p.87): Read: buy stop at the open + 0.05 x the previous bar's range",
-              "X|\"we hold the trade to the close\" (p.87)",
+            &["E|\"buying the opening Monday +.05 percent of Friday's range\" (p.86): Read: buy stop at the open + 0.05 x the previous bar's range",
+              "X|\"we hold the trade to the close\" (p.86)",
               "X|Read: $3,000 stop (12 points); not in the text, Fig. 6.2's largest loss is exactly $3,000 with $0 commission",
               "X|[intraday wave 1] Intraday wave 1: run on real 1-minute bars by default (p.path=1): the buy stop fills on the first minute that reaches the level, at the level or at that minute's open when it opened through it; out on the official daily close. Instrument: SPX only, because the levels are the book's fixed S&P points (no conversion to SPY or NSE prices is invented); from 2014, where SPX daily opens are real, to 2026-08. Days without minute data make no trade. p.path=0 = the old daily-bar reading [Not from the book]. A minute that fills and also reaches the protective stop counts as filled then stopped, unless it opened beyond the stop: then only if it closed beyond it [convention]."],
             SP, claim("758", "57%", "$125.53", "same day", "07/02/82-08/26/98")),
@@ -121,25 +121,25 @@ pub fn catalogue() -> Vec<StrategyDef> {
         live!("lwlts_tdm22_sp", "S&P buy TDM 22", "Ch 6 · TDW / TDM", "Long", TDM_R, TDM_N, claim("61", "65%", "$694", "3 days", "1982-1998")),
         // ---- Chapter 7: patterns (p.93-120)
         live!("lwlts_study_all", "Pattern study · buy every day", "Ch 7 · Patterns", "Long",
-            &["E|\"buy the S&P 500 every day\" (p.95), one position at a time", STUDY_X],
+            &["E|\"buy the S&P 500 every day\" (p.94), one position at a time", STUDY_X],
             SP, claim("2,064", "52%", "$134", "2 days", "07/1982-02/1998")),
         live!("lwlts_study_down1", "Pattern study · after a down close", "Ch 7 · Patterns", "Long",
-            &["F|\"only buy tomorrow if today closed down\" (p.95)", "E|Buy on the next open", STUDY_X, "X|Same $3,250 stop as the baseline (\"Now we add our first pattern\")"],
+            &["F|\"only buy tomorrow if today closed down\" (p.94)", "E|Buy on the next open", STUDY_X, "X|Same $3,250 stop as the baseline (\"Now we add our first pattern\")"],
             SP, claim("1,334", "52%", "$212", "2 days", "07/1982-02/1998")),
         live!("lwlts_study_down3", "Pattern study · after three down closes", "Ch 7 · Patterns", "Long",
-            &["F|\"three consecutive down closes\" (p.95)", "E|Buy on the next open", STUDY_X],
+            &["F|\"three consecutive down closes\" (p.94)", "E|Buy on the next open", STUDY_X],
             SP, claim("248", "58%", "$353", "2 days", "07/1982-02/1998")),
         live!("lwlts_study_trend", "Pattern study · up 30 days, down 9 days", "Ch 7 · Patterns", "Long",
-            &["F|\"today's price to be greater than the close 30 days ago ... today's close lower than the close 9 days ago\" (p.96)",
-              "E|\"we will buy on the open tomorrow and exit on the next day's close\" (p.96)", "X|$3,250 stop as the baseline study (Read)"],
+            &["F|\"today's price to be greater than the close 30 days ago ... today's close lower than the close 9 days ago\" (p.95)",
+              "E|\"we will buy on the open tomorrow and exit on the next day's close\" (p.95)", "X|$3,250 stop as the baseline study (Read)"],
             SP, claim("354", "57%", "$421", "2 days", "07/1982-02/1998")),
         live!("lwlts_study_trend_mon", "Pattern study · up 30 / down 9, Mondays", "Ch 7 · Patterns", "Long",
-            &["F|Same pattern, \"take these pattern trades on just Monday\" (p.96): the entry day is a Monday",
+            &["F|Same pattern, \"take these pattern trades on just Monday\" (p.95): the entry day is a Monday",
               "E|Buy on the open, exit on the next day's close", "X|$3,250 stop (Read)"],
             SP, claim("", "59%", "$672", "2 days", "07/1982-02/1998")),
         live!("lwlts_outside_down", "Outside day down close, lower open", "Ch 7 · Patterns", "Long",
-            &["F|\"The day's high is greater than the previous day's high and the low is lower than the previous day's low and the close is below the previous day's low\" (p.96)",
-              "E|\"tomorrow opens lower than the outside day's down close and we buy on the next day's opening\" (p.96)", STOP2000, BAIL],
+            &["F|\"The day's high is greater than the previous day's high and the low is lower than the previous day's low and the close is below the previous day's low\" (p.95)",
+              "E|\"tomorrow opens lower than the outside day's down close and we buy on the next day's opening\" (p.95)", STOP2000, BAIL],
             SP, claim("109", "85%", "$477.64", "2 days", "07/02/82-08/27/98")),
         live!("lwlts_outside_down_xthu", "Outside day down close · not Thursday", "Ch 7 · Patterns", "Long",
             &["F|Same outside-day pattern", "F|\"If we buy on any day but Thursday\" (p.97)", "E|Buy on the next day's opening if it opens below the outside day's close",
@@ -172,7 +172,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|\"exit on the first profitable opening\" (p.148)",
               "X|\"The stop I chose was only $1,500, but was not used on the day of entry\" (p.148): 6 points from the day after entry",
               "F|Option p.skip_jfo=1: skip January, February and October (\"the worst months\", p.148) [non-default]"],
-            SP, claim("129", "85%", "$569.26", "1 day", "09/18/87-08/31/98")),
+            SP, claim("129", "85%", "$569.28", "1 day", "09/18/87-08/31/98")),
         // ---- Chapter 15 (p.233-243)
         live!("lwlts_hh1", "Buy a new 1-day high, exit 13 days later", "Ch 15 · Buy new highs", "Long", HH_R, HH_N, claim("209", "58%", "$511", "13 days", "S&P (window not printed)")),
         live!("lwlts_hh5", "Buy a new 5-day high, exit 13 days later", "Ch 15 · Buy new highs", "Long", HH_R, HH_N, claim("187", "51%", "$359", "13 days", "S&P (window not printed)")),
@@ -191,7 +191,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         off!("lwlts_bond_patterns", "Bond outside-day, 3-up-day and Oops! patterns (Fig. 7.4, 7.5, 7.29, 7.30, 7.32, 7.33)", "Ch 7 · Patterns", "Long/Short", NeedsData(BONDS),
             &["E|Outside day down close + lower open, $1,500 stop, bailout (p.97)", "E|Oops! buys except Wednesday, $1,800 stop, bailout; Oops! sells Wednesday, $1,000 stop, 4-day bailout (p.116)", "E|Oops! with 9-day MA; exit \"the close on the first profitable opening after 3 days\" (p.118)"], "Bond futures results only."),
         off!("lwlts_gsv_bonds", "Greatest Swing Value · bonds (Fig. 8.2)", "Ch 8 · Greatest swing value", "Long/Short", NeedsData(BONDS),
-            &["F|Buy: close < close 5 days ago, Tue/Wed/Fri; sell: close > close 6 days ago and Gold < Gold 20 days ago (p.123-124)", "E|Open +/- 180% of the 4-day average swing", "X|$1,600 stop, first profitable opening after 2 days"], "Needs T-Bond and Gold futures."),
+            &["F|Buy: close < close 5 days ago, Tue/Wed/Fri; sell: close > close 6 days ago (p.123-124)", "F|Option, not the base rule: \"for even better performance, I would also like to see the price of Gold lower than the price of Gold 20 days ago\" (p.124)", "E|Open +/- 180% of the 4-day average swing", "X|$1,600 stop, first profitable opening after 2 days"], "Needs T-Bond and Gold futures."),
         off!("lwlts_gsv_sp", "Greatest Swing Value · S&P with bond filter (Fig. 8.3)", "Ch 8 · Greatest swing value", "Long/Short", NeedsData(BONDS),
             &["E|180% of the 4-day average buy swing (highs minus opens) / sell swing (p.124)", "F|\"demanding Bonds close higher than 15 days ago for a buy and lower than 15 days ago for a sell\"; buys Mon/Tue/Wed, sells not Monday; close below (above) 6 days ago", "X|$2,500 stop and bailout"], "247 trades 67% $427.83 (Fig. 8.3). The bond filter is part of the printed result, so the system cannot run without bond data."),
         off!("lwlts_gsv_sp_monday", "GSV Monday buy after a down Friday (Fig. 8.4)", "Ch 8 · Greatest swing value", "Long", NeedsData(BONDS),
@@ -203,7 +203,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         off!("lwlts_bonds_channel", "S&P buys on bond channel breakouts (Fig. 15.1, 15.2)", "Ch 15 · Data A and data B", "Long", NeedsData(BONDS),
             &["E|Buy the S&P market on close when Bonds close above the highest high of the last 14 days (p.235)", "X|Lowest low of the last 17 days in Bonds, or a $3,000 stop; Fig. 15.2: lowest low of the last 12 days in the S&P"], "$141,792.50, avg $1,750."),
         off!("lwlts_bonds_8day", "Bond system: close above 8 days ago (Ch. 14, Aug 1997 letter)", "Ch 14 · Letters", "Long", NeedsData(BONDS),
-            &["E|\"buy today's close if it was greater than the close 8 days ago\" (p.213)", "X|$850 stop; $3,500 profit target"], "$36,500, $160/trade."),
+            &["E|\"buy today's close if it was greater than the close 8 days ago\" (p.212)", "X|$850 stop; $3,500 profit target"], "$36,500, $160/trade."),
         off!("lwlts_ma_cross_futures", "Moving-average crossover studies (Ch. 2)", "Ch 2 · Price and time", "Long/Short", NeedsData("Soybean and British Pound futures data"),
             &["E|Best-fit crossovers (5/25, 25/30 soybeans; 5/45, 20/40 pound), shown only to prove that time-based optimisation fails (p.24-27)"], "An illustration, not a recommended system."),
         // ---- Not testable
@@ -332,11 +332,17 @@ pub fn dow(date: &str) -> u32 {
     (days + 4).rem_euclid(7) as u32
 }
 
-/// Trading day of the month (1-based) for every bar.
+/// Trading day of the month (1-based) for every bar; 0 = unknown. A series that starts mid-month cannot count that
+/// month's trading days, so its first month is 0 unless every earlier day of that month is a weekend day or 1 January
+/// (decision 186, FR-08).
 fn tdm(x: &Ctx) -> Vec<usize> {
     let mut out = vec![0; x.r.len()];
+    let Some(first) = x.r.first() else { return out };
+    let d0: u32 = first.date[8..10].parse().unwrap_or(1);
+    let whole = (1..d0).all(|d| { let s = format!("{}-{:02}", &first.date[..7], d); matches!(dow(&s), 0 | 6) || s[5..] == *"01-01" });
     for i in 0..x.r.len() {
-        out[i] = if i > 0 && x.r[i - 1].date[..7] == x.r[i].date[..7] { out[i - 1] + 1 } else { 1 };
+        out[i] = if i > 0 && x.r[i - 1].date[..7] == x.r[i].date[..7] { if out[i - 1] == 0 { 0 } else { out[i - 1] + 1 } }
+            else if i == 0 && !whole { 0 } else { 1 };
     }
     out
 }
@@ -582,6 +588,16 @@ mod tests {
     use crate::Row;
     fn bar(d: &str, o: f64, h: f64, l: f64, c: f64) -> Row {
         Row { ticker: "T".into(), date: d.into(), open: o, high: h, low: l, close: c, volume: None }
+    }
+    #[test]
+    fn tdm_unknown_in_a_partial_first_month() {
+        let x = |d: &[&str]| { let r: Vec<Row> = d.iter().map(|d| bar(d, 1., 1., 1., 1.)).collect(); tdm(&Ctx::new(&r, &r, &[])) };
+        // mid-month start: the first month is unknown (0), the next month counts from 1
+        assert_eq!(x(&["1993-01-29", "1993-02-01", "1993-02-02"]), vec![0, 1, 2]);
+        // 1983-01-03 is the first weekday of January (1-2 Jan are a weekend): the month counts
+        assert_eq!(x(&["1983-01-03", "1983-01-04"]), vec![1, 2]);
+        // 1970-01-02: only New Year's Day before it
+        assert_eq!(x(&["1970-01-02", "1970-01-05"]), vec![1, 2]);
     }
     #[test]
     fn weekdays() {

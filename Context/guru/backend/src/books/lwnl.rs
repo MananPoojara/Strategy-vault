@@ -66,9 +66,10 @@ const SEA: &[Sea] = &[
     ("lwnl_nov97_td18_buy_7d", 11, 18, 1.0, 0.07, 2000.0, Some(7), None, false),
     ("lwnl_nov97_td6_buy_30d", 11, 6, 1.0, 0.07, 2000.0, Some(30), None, false),
     ("lwnl_nov97_td15_buy_30d", 11, 15, 1.0, 0.07, 2000.0, Some(30), None, false),
-    ("lwnl_dec97_td2_buy_1d", 12, 2, 1.0, 0.07, 3500.0, Some(1), None, false),
-    ("lwnl_dec97_td14_buy_1d", 12, 14, 1.0, 0.07, 3500.0, Some(1), None, false),
-    ("lwnl_dec97_td9_sell_1d", 12, 9, -1.0, 0.07, 3500.0, Some(1), None, false),
+    // Dec 1997 p.2 "we bought on the opening" (decision 186, D1-40); entry_pct = 0.07 (Nov 1997's rule, "as before") is an option
+    ("lwnl_dec97_td2_buy_1d", 12, 2, 1.0, 0.0, 3500.0, Some(1), None, false),
+    ("lwnl_dec97_td14_buy_1d", 12, 14, 1.0, 0.0, 3500.0, Some(1), None, false),
+    ("lwnl_dec97_td9_sell_1d", 12, 9, -1.0, 0.0, 3500.0, Some(1), None, false),
 ];
 
 // ------------------------------------------------------------------ holiday table
@@ -170,14 +171,14 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["E|November TD15, open + 7% of the previous range (Nov 1997 p.3)", "X|close 30 trading days after entry or the $2,000 stop (Nov 1997 p.2-3)"],
             SP, claim("13", "46%", "$1,680 ($21,825)", "30 days", "S&P (letter Nov 1997)")),
         sd!("lwnl_dec97_td2_buy_1d", "S&P December TD2 buy, 1-day hold, $3,500 stop", "Seasonals · 1997 monthly lists", "Long", Live,
-            &["E|\"same entry and exit rules as before, which means we bought on the opening of the trading day of the month shown\" (Dec 1997 p.2): open + 7% of the previous range (the rule 'as before', Nov 1997 p.2)",
+            &["E|\"same entry and exit rules as before, which means we bought on the opening of the trading day of the month shown\" (Dec 1997 p.2): buy on the opening (decision 186); p.entry_pct = 0.07 = open + 7% of the previous range, Nov 1997's rule that the letter calls 'as before' [option]",
               "X|\"exit on the close the number of days shown later\" (Dec 1997 p.2): 1 day; \"For the S&P 500 the best buys are day 2 and 14, the sells on day 9 with a $3,500 stop\" (Dec 1997 p.4)"],
             "The letter prints two different result tables for the same trades (p.3 and p.4).", claim("15", "80% / 93%", "$568 ($8,525) / $11,175", "1 day", "S&P (letter Dec 1997, p.3 / p.4)")),
         sd!("lwnl_dec97_td14_buy_1d", "S&P December TD14 buy, 1-day hold, $3,500 stop", "Seasonals · 1997 monthly lists", "Long", Live,
-            &["E|December TD14, open + 7% of the previous range (Dec 1997 p.2-4)", "X|close 1 day after entry or the $3,500 stop (Dec 1997 p.2, p.4)"],
+            &["E|December TD14, on the opening (Dec 1997 p.2); p.entry_pct = 0.07 = Nov 1997's open + 7% [option]", "X|close 1 day after entry or the $3,500 stop (Dec 1997 p.2, p.4)"],
             "Two tables: p.3 $11,300 11/14; p.4 $14,250 13/14.", claim("14", "78% / 92%", "$807 ($11,300) / $14,250", "1 day", "S&P (letter Dec 1997, p.3 / p.4)")),
         sd!("lwnl_dec97_td9_sell_1d", "S&P December TD9 sell, 1-day hold, $3,500 stop", "Seasonals · 1997 monthly lists", "Short", Live,
-            &["E|December TD9, sell stop at open - 7% of the previous range (Dec 1997 p.2-4)", "X|close 1 day after entry or the $3,500 stop (Dec 1997 p.4)"],
+            &["E|December TD9, sell on the opening (Dec 1997 p.2); p.entry_pct = 0.07 = Nov 1997's open - 7% sell stop [option]", "X|close 1 day after entry or the $3,500 stop (Dec 1997 p.4)"],
             SP, claim("14", "64%", "$444 ($6,225)", "1 day", "S&P (letter Dec 1997)")),
         sd!("lwnl_yearend_sell", "S&P year-end short: open after December TD20, first profitable close or 3 days", "Seasonals · trading day of month", "Short", Live,
             &["E|\"sold the S&P 500 on the opening following the 20th trading day\" [of December] (Dec 1995 p.3)",

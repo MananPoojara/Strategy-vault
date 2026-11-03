@@ -20,7 +20,7 @@ macro_rules! sd {
 
 const SP: &str = "Book market: S&P 500 futures (RAD contract), run on the index (instrument swap). Fills: stop/limit at the level or at the open when the bar gaps through it; a stop and a target inside one bar -> stop first. Full equity per trade (the book reports percent per trade).";
 const FUT: &str = "Book markets: 14-16 futures (point-based or ratio-adjusted continuous contracts), run on the index (instrument swap). Stop-and-reverse: entry stops are live while in a position, so a reversal exits and re-enters at the same price; at most one exit and one entry per bar; no exit on the entry bar. Full equity per trade.";
-const BJX: &str = "Black Jack exits (ch.11 p.205-216): research code p.206-207 (\"If BarsSinceEntry >= 1 Then\" gate on the stops, so the first full bar after a close entry has no stop - the book's own TradeStation workaround) with the final values p.216: stop loss 1.1%, minimum profit 0.6% (once a close is 0.6% in profit, a stop at entry +0.6%), profit target 2.8% (limit), exit at the close once BarsSinceEntry >= 8.";
+const BJX: &str = "Black Jack exits (ch.11 p.205-216): the final rules p.216 and the printed exit code p.288 have no BarsSinceEntry gate, so the stops work from the first bar after the entry (default); the research code p.206-207 gates them with \"If BarsSinceEntry >= 1 Then\" (option p.bse_gate = 1). Final values p.216: stop loss 1.1%, minimum profit 0.6% (once a close is 0.6% in profit, a stop at entry +0.6%), profit target 2.8% (limit), exit at the close once BarsSinceEntry >= 8.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     use Status::*;
@@ -189,11 +189,11 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
-    // stops gated by BarsSinceEntry >= 1 in the research code (p.206); the printed Meander code (p.287-288) has no gate
-    let gate = if id.starts_with("strtw_meander") { 0. } else { 1. };
-    let bj_exits = move || vec![p("sl", "Stop loss %", 1.1, 0.5, 3., 0.1), p("mp", "Minimum profit %", 0.6, 0., 2., 0.1),
+    // final rules p.216 and the printed code p.288 have no gate (default, decision 186 FR-16); the research code p.206-207 gates the
+    // stops by BarsSinceEntry >= 1 (option 1)
+    let bj_exits = || vec![p("sl", "Stop loss %", 1.1, 0.5, 3., 0.1), p("mp", "Minimum profit %", 0.6, 0., 2., 0.1),
         p("pt", "Profit target %", 2.8, 1., 6., 0.2), p("days", "Exit at close when BarsSinceEntry >=", 8., 2., 15., 1.),
-        p("bse_gate", "Stops only once BarsSinceEntry >= (1 = p.206 code, 0 = p.287 code)", gate, 0., 1., 1.)];
+        p("bse_gate", "Stops only once BarsSinceEntry >= (0 = final rules p.216 / code p.288, 1 = research code p.206)", 0., 0., 1., 1.)];
     let meander = |std: f64| vec![p("vs_std", "VSStd (standard deviations)", std, 0.5, 3., 0.5)];
     let cat = |mut a: Vec<ParamDef>, b: Vec<ParamDef>| { a.extend(b); a };
     Some(match id {

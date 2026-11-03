@@ -13,7 +13,8 @@
 //! * an entry while flat opens, an opposite entry reverses, an entry in the held direction is ignored;
 //! * "setexitonclose" exits at that bar's close; "this bar on close" orders fill at the signal bar's close;
 //! * EasyLanguage variables keep their last value when no "if" assigns them (code literal).
-//! 1 tick (minmove/pricescale) = 0.10 index points (full S&P futures) on US data, 0.05 (NSE) on Indian data.
+//! 1 tick (minmove/pricescale) = one tick of the traded instrument (Ctx::market_tick: NSE 0.05, US 0.01; decision 186, D1-01);
+//! p.tick = 0.10 gives the book market's tick (full S&P futures) as an option.
 use crate::connors::{Claim, Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "acbff";
@@ -342,7 +343,7 @@ fn cl(t: &'static str, w: &'static str, a: &'static str, h: &'static str, p: &'s
 }
 const SP: &str = "S&P full futures 01-02-01 to 11-19-05";
 const MAP: &str = "Book tested full-size S&P/NASDAQ/Russell futures (and bonds/currencies); run on the index instead (instrument swap). Day trade: in at the next open, out at that day's close (setexitonclose). Claim = book's S&P row; book P&L is in dollars per contract ($250 per S&P point).";
-const SNOTE: &str = "Instrument swap only (index for the S&P futures contract). Order fills per the module's TradeStation bar model; 1 tick = 0.10 pt US / 0.05 pt NSE.";
+const SNOTE: &str = "Instrument swap only (index for the S&P futures contract). Order fills per the module's TradeStation bar model; 1 tick = the traded instrument's tick (NSE 0.05, US 0.01; the printed minmove/pricescale); p.tick = 0.10 = the S&P futures tick of the book's market [option].";
 const IDN: &str = "Needs intraday bars (5/10/30/60-minute or 1-minute day-session bars) that the vault does not have; the rules read intraday time stamps and intraday highs/lows.";
 const DS: &str = "Needs intraday (5-minute) day-session bars of the index AND of the Dow futures as data2 (the 'Dow-Spoo' net-change comparison runs bar by bar intraday). Not in the vault.";
 
@@ -583,7 +584,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
 
 pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     let p = |key, label, def, min, max, step| ParamDef { key, label, def, min, max, step };
-    let tick = || p("tick", "Tick (0 = auto: 0.10 US / 0.05 NSE)", 0.0, 0.0, 5.0, 0.05);
+    let tick = || p("tick", "Tick (0 = the traded instrument's tick: NSE 0.05, US 0.01; 0.10 = S&P futures tick, the book's market)", 0.0, 0.0, 5.0, 0.01);
     let prec = || p("prec", "dd and/or: 0 AND-first (text), 1 left-to-right", 0.0, 0.0, 1.0, 1.0);
     if !id.starts_with("acbff_") { return None; }
     let v = match id {
@@ -631,8 +632,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let schema = params(id).unwrap_or_default();
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map(|d| d.def).unwrap_or(0.0));
     let u = |k: &str| g(k).round().max(1.0) as usize;
-    let india = x.r.first().is_some_and(|r| { let t = r.ticker.to_uppercase(); t.starts_with("NIFTY") || t.starts_with("BASKET") || t.contains("INDIA") || t.contains("SENSEX") });
-    let tick = if g("tick") > 0.0 { g("tick") } else if india { 0.05 } else { 0.10 };
+    let tick = if g("tick") > 0.0 { g("tick") } else { x.market_tick() };
     let lr = g("prec") >= 0.5;
     let (c, op, h, l) = (&x.c, &x.o, &x.h, &x.l);
     let n = c.len();
