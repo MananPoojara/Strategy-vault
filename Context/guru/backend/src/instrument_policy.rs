@@ -230,8 +230,8 @@ fn bernstein_g1_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Op
 /// No stock or other ETF has minute data, so those stay held. Evidence: data-survey/PHASE1-REPORT.md.
 pub const INTRADAY_P1:&[&str]=&["ss_momentum_pinball","ss_80_20","ats_15min_adx_breakout","ptjdt_adx15_breakout"];
 pub const INTRADAY_P1_TICKERS:&[&str]=&["SPY","SPX","NIFTY 50","NIFTYBANK"];
-pub fn intraday_p1_id(id:&str)->bool {INTRADAY_P1.contains(&id) || intraday_w1_id(id) || crate::intraday_w2b::id(id)} // + intraday wave 2b
-pub fn intraday_p1(def:&StrategyDef)->bool {intraday_p1_id(def.id) && (matches!(def.book,"ss"|"ats"|"ptjdt"|"btp"|"hfm"|"tdnmtt"|"baboops"|"tcdt"|"lwdg2"|"lwlts"|"jb30d") || crate::intraday_w2b::book(def.book))} // + intraday wave 2b
+pub fn intraday_p1_id(id:&str)->bool {INTRADAY_P1.contains(&id) || intraday_w1_id(id) || crate::intraday_w2b::id(id) || crate::intraday_w3::id(id)} // + intraday wave 2b, wave 3
+pub fn intraday_p1(def:&StrategyDef)->bool {intraday_p1_id(def.id) && !crate::intraday_w3::held(def.id) && (matches!(def.book,"ss"|"ats"|"ptjdt"|"btp"|"hfm"|"tdnmtt"|"baboops"|"tcdt"|"lwdg2"|"lwlts"|"jb30d") || crate::intraday_w2b::book(def.book) || crate::intraday_w3::book(def.book))} // + intraday wave 2b, wave 3
 // ---- intraday wave 1 (claude/intraday-w1, 2026-10-24): same block, more day-trade rules on the minute path
 /// No fixed amount: run on all four minute tickers (declared application).
 pub const INTRADAY_W1:&[&str]=&["ats_10pct_oops","ats_wide_range_gap","btp2_10pct_oops","btp2_10pct_oops_long","btp2_10pct_oops_short",
@@ -1561,7 +1561,8 @@ mod tests {
             // Books where another rule or a second entry also admits strategies (31 Oct 2026); in every other book the
             // entry must be the only route, so nothing else in the book is admitted by accident.
             // ccl07, jcsis: a second entry (ADMISSION_K5, 31 Oct 2026) admits the K5 ids with their own label, so the K3 ids keep theirs.
-            const SHARED:&[&str]=&["bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","putg","tcdt","tdnmtt"];
+            // tdperl: tdperl_tdline_short is admitted by the intraday block on 1-minute bars (intraday wave 3, 3 Nov 2026).
+            const SHARED:&[&str]=&["bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","putg","tcdt","tdnmtt","tdperl"];
             for d in all.iter().filter(|d|books.contains(&d.book) && !SHARED.contains(&d.book) && reviewed_cash_rule(d)!=(a.reviewed)(d)) {other.push((d.book,d.id));}
             for d in admitted {
                 assert_eq!(admission(d).map(|x|x.label),Some(a.label),"{}",d.id);
@@ -2999,7 +3000,7 @@ mod tests {
     #[test]
     fn intraday_p1_admits_minute_tickers_only() {
         let cats:Vec<StrategyDef>=crate::books::ss::catalogue().into_iter().chain(crate::books::ats::catalogue()).chain(crate::books::ptjdt::catalogue()).collect();
-        for id in INTRADAY_P1 {
+        for id in INTRADAY_P1.iter().filter(|id|!crate::intraday_w3::held(id)) { // intraday wave 3: ss_80_20 withheld (ambiguous minutes)
             let d=cats.iter().find(|d|d.id==*id).unwrap_or_else(||panic!("{id}"));
             assert!(reviewed_cash_rule(d)&&held_reason(id).is_none(),"{id}");
             assert_eq!(policy(d).requirement,"declared_index_timing");
@@ -3020,7 +3021,7 @@ mod tests {
             b::tcdt::catalogue(),b::lwdg2::catalogue(),b::lwlts::catalogue(),b::jb30d::catalogue()].into_iter().flatten().collect();
         let w1:Vec<&StrategyDef>=cats.iter().filter(|d|intraday_w1_id(d.id)).collect();
         assert_eq!(w1.len(),INTRADAY_W1.len()+INTRADAY_W1_SPX.len()+68);
-        for d in &w1 {
+        for d in w1.iter().filter(|d|!crate::intraday_w3::held(d.id)) { // intraday wave 3: >5% ambiguous minutes withheld (own test)
             assert!(intraday_p1(d)&&reviewed_cash_rule(d)&&held_reason(d.id).is_none(),"{}",d.id);
             assert_eq!(policy(d).requirement,"declared_index_timing");
             let spx=intraday_w1_spx_id(d.id);
