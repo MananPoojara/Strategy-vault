@@ -780,3 +780,4 @@ body.pdf-capture .st-actions, body.pdf-capture #page-action-message, body.pdf-ca
 .living-book .lb-cover>.iso-top{fill:var(--blue)}
 .living-book .lb-cover>.iso-shade,.living-book .lb-cover>.iso-fill{fill:color-mix(in srgb,var(--blue) 75%,var(--ink))}
 @media (max-width:900px){.living-book{display:none}}
+.lstrip dd.count-asof { font-size: 12px; font-weight: 400; font-stretch: normal; line-height: 1.4; color: var(--ink3); margin-top: 2px; }

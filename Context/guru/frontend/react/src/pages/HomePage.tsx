@@ -8,6 +8,7 @@ import { LivingBook } from "../components/LivingBook";
 import { shareReview as share, shareFiles as files } from "../services/source-review-data";
 import { CLEAR_ALL } from "../services/author-filters";
 const n = (v: number) => v.toLocaleString("en-IN");
+const shareAsOf = new Date(share.asOf).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 export function HomePage({ snapshot }: { snapshot: ViewSnapshot }) {
   const model = snapshot.home;
   if (!model) return null;
@@ -40,11 +41,12 @@ export function HomePage({ snapshot }: { snapshot: ViewSnapshot }) {
           <div key={label}>
             <dt>{label}</dt>
             <dd data-count={value}>{value}</dd>
+            {label === "Total Authors" || label === "Total Books" ? <dd className="count-asof">as of {shareAsOf}</dd> : null}
           </div>
         ))}
       </dl>
       <p className="library-count-note">
-        Authors and Books cover every trading source in the research share, each checked from its first pages: authors are distinct credited people, and a copy, edition or translation counts once.
+        Authors and Books cover every trading source in the research share: sources reviewed on 22 Oct 2026 were checked from their first pages, and those found later by the title census and the full share scan were classified from their folder names and review notes. Authors are distinct credited people, and a copy, edition or translation counts once.
         The share also holds {share.articles} articles, {share.courseManuals} course manuals, {share.codePackages} system code packages, {share.magazinesAndNewsletters} magazines and newsletters, {share.videoCourses} video courses and {share.otherSources} other sources.
         {model.libraryTotals ? ` Strategies so far come from ${model.libraryTotals.books} of these books and ${model.libraryTotals.otherSources} other sources.` : ""}{" "}
         Total Strategies includes catalogued entries awaiting review or conversion, grouping parameter versions within each book.
