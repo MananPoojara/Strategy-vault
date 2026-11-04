@@ -538,10 +538,15 @@ fn defs() -> Vec<Def> {
         "E|RSI crosses over BotBand: buy this bar on close; crosses under TopBand: sell this bar on close",
         "X|StopPrice trail (1/3)"],
       "Vol 3 ch.3 p.58-65. Book examples: 5-minute S&P and daily Intel.", ("stad_varzones", "Variable Zones", "Vol 3")),
-    d("stad3_idbf", "Inside Day Breakout Failure", "Vol 3 · Volatility", "Long/Short",
-      NeedsData("30-minute S&P bars with a daily Data2 (inside day on the daily chart, entries intraday)."),
-      &["F|Inside day on the daily chart", "E|Intraday: fade the first penetration of the inside day's high/low", "X|Trailing stop at the opposite extreme +/- half the 3-day average range; exit at end of day"],
-      "Vol 3 ch.4 p.66-72.", ("stad_idbf", "Inside Day Breakout Failure", "Vol 3")),
+    d("stad3_idbf", "Inside Day Breakout Failure", "Vol 3 · Volatility", "Long/Short", Live,
+      &["F|InsideDay = High of Data2 < High[1] of Data2 AND Low of Data2 > Low[1] of Data2; DayRangeAvg = Average(TrueRange of Data2, RngAvg = 3) (code p.68)",
+        "E|On the 30-minute bars, once a day (PlacedOrder): Low < Low of Data2 first -> buy next bar at High of Data2 stop; else High > High of Data2 -> sell next bar at Low of Data2 stop (code p.68-69); multiple entries in the same direction not allowed",
+        "X|ExitLong at Low of Data2 - DayRangeAvg / 2 stop; ExitShort at High of Data2 + DayRangeAvg / 2 stop (code p.69); 'Close all trades at end of day session' (p.69 note)"],
+      concat!("Vol 3 ch.4 p.66-70 (re-read lane K42, 4 Nov 2026: the printed code wins over the prose's 'one tick' offsets, which the code does not have). ",
+        "[intraday EP, K42] Session-aligned 30-minute bars built from real 1-minute bars, reset daily (EP1); Data2 = the vault's daily bars of the same ticker, so 'of Data2' is the last completed day (yesterday): the inside day is yesterday's bar, the range average ends yesterday. ",
+        "Orders placed at a bar's close work in the next bar, walked minute by minute (fill at the level, or the minute's open when it opened through it); one fill per bar and exits from the bar after the entry [TradeStation without intrabar order generation]; a long and a short level are never live together, so no minute is ambiguous. ",
+        "Out at the day's last close. After a stop-out the same day's entry stop is placed again (the code keeps PlacedOrder and the price). The book used 30-minute S&P futures bars (6 trades in 6 months, p.70); SPY, SPX, NIFTY 50 and NIFTYBANK are a declared application, cash-index shorts are hypothetical. No costs."),
+      ("stad_idbf", "Inside Day Breakout Failure", "Vol 3")),
     d("stad3_sdv", "Standard Deviation - Volatility", "Vol 3 · Volatility", "Long/Short", Live,
       &["F|BandRange = 2*2*StdDev(Close,9) (top - bottom band of Average(Close,9) ± 2 StdDev) (code p.74)",
         "E|Buy next bar at Close*(1 + BandRange/Average(Close,4)) stop; sell next bar at Close*(1 - BandRange/Average(Close,4)) stop",
@@ -690,11 +695,16 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "stad7_vix" => vec![p("lowl", "Bull key reversal lookback (VIX lows)", 12., 1., 30., 1.), p("highh", "Bear key reversal lookback (VIX highs)", 1., 1., 30., 1.)],
         "stad10_mwt" => vec![p("len", "Average length", 2., 1., 10., 1.), p("stop_usd", "Stop loss $ per position (0 = none)", 1500., 0., 5000., 250.), p("pt_usd", "$ per index point (S&P 500 futures, 1995-99)", 500., 1., 1000., 50.)],
         "stad4_pricedist" => vec![p("klen", "Kurtosis length", 40., 10., 80., 5.), p("slen", "Skew length", 15., 5., 40., 1.)],
+        "stad3_idbf" => vec![p("rng", "RngAvg: days in the true-range average (code default 3)", 3., 1., 10., 1.)], // intraday EP block (K42)
         _ => return None,
     })
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+    if id == "stad3_idbf" { // intraday EP block (K42)
+        let n = p.get("rng").copied().unwrap_or(3.0).max(1.0).round() as usize;
+        return (from <= to && to < x.r.len()).then(|| idbf(x, from, to, n));
+    }
     let schema = params(id)?;
     if from > to || to >= x.c.len() { return None; }
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
@@ -1447,6 +1457,45 @@ mod tests {
 // Instrument admission: STAD 2026-10-25 block, moved from instrument_policy.rs on 31 Oct 2026 (lane ST).
 // Admission only for the module REVIEWED lists (authors/stad/admission/SOURCE-CONTRACT.md); kept in one block to merge.
 // Runs on actual indices, ETFs and stocks, US and India (index_etf_or_stock, nifty50 basket, declared application).
+// ---- intraday EP block (lane K42, 4 Nov 2026, decision #211): Inside Day Breakout Failure (Vol 3 p.66-70) on session-aligned
+// 30-minute bars (intraday_ep::day_bars), state reset daily (EP1); Data2 = the daily rows, "of Data2" = the last completed day.
+fn idbf(x: &Ctx, from: usize, to: usize, rng: usize) -> Vec<Trade> {
+    use crate::intraday::{first_touch, Level, Touch};
+    let r = &x.r;
+    let tr = |j: usize| r[j].high.max(r[j - 1].close) - r[j].low.min(r[j - 1].close); // TrueRange of day j
+    let mut out = vec![];
+    for i in from.max(rng + 1)..=to {
+        let Some((_, _, m, b)) = crate::intraday_ep::day_bars(x, i, 30) else { continue };
+        let (hd, ld) = (r[i - 1].high, r[i - 1].low);
+        if !(hd < r[i - 2].high && ld > r[i - 2].low) { continue; } // InsideDay: the code places no order on other days
+        let avg = (1..=rng).map(|k| tr(i - k)).sum::<f64>() / rng as f64;
+        let mut pos: Option<(f64, f64)> = None; // (dir, entry px)
+        let (mut placed, mut lep, mut sep) = (false, None, None);
+        let mut live: Option<(Level, bool)> = None; // the order working in this bar: (level, is exit)
+        for (j, z) in b.iter().enumerate() {
+            if let Some((lv, exit)) = live.take() {
+                if let Touch::Hit { px, .. } = first_touch(&m[z.a..z.b], 0, &[lv]) {
+                    if exit { let (d, ep) = pos.take().unwrap(); out.push(crate::intraday::day_trade(d, i, ep, i, px, "stop", "stop", false)); }
+                    else { pos = Some((if lv.up { 1.0 } else { -1.0 }, px)); }
+                }
+            }
+            if !placed && z.l < ld { lep = Some(hd); placed = true; }
+            if !placed && z.h > hd { sep = Some(ld); placed = true; }
+            if j + 1 == b.len() {
+                if let Some((d, ep)) = pos.take() { out.push(crate::intraday::day_trade(d, i, ep, i, z.c, "end of day", "stop", false)); }
+            } else {
+                live = match pos {
+                    Some((d, _)) if d > 0.0 => Some((Level { up: false, px: ld - avg / 2.0 }, true)),
+                    Some(_) => Some((Level { up: true, px: hd + avg / 2.0 }, true)),
+                    None => lep.map(|v| (Level { up: true, px: v }, false)).or(sep.map(|v| (Level { up: false, px: v }, false))),
+                };
+            }
+        }
+    }
+    out
+}
+// ---- end intraday EP block
+
 pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| (def.book=="stad" && crate::books::stad::reviewed(def.id)) || (def.book=="stad2" && crate::books::stad2::reviewed(def.id)),
     label: "Omega Research printed these TradeStation systems with examples on stocks, indices and futures (1997-2000); runs on indices, ETFs and single stocks (US and India) are a declared application, one unit per trade.",

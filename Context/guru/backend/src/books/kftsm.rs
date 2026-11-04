@@ -178,10 +178,13 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|\"and sold on the last day of April, holding the position for six months.\" (p.375)",
         ], "Fills on the close of the first/last trading day [time of day not given]."),
         // ------------------------------------------------ Needs data
-        d("kftsm_first_hour", "First-hour breakout", "Ch 16/19 · Day trading", "Long/Short", NeedsData("10-minute and 60-minute intraday bars (opening-hour high/low)"), &[
-            "E|\"if close[1] < Sess1FirstBarHigh then buy at Sess1FirstBarHigh + 20 point stop\" (TSM 1stHour Breakout, CD Ch16)",
-            "X|exit long when high >= first-hour low + 10-day average range (CD)",
-        ], "Intraday."),
+        d("kftsm_first_hour", "First-hour breakout", "Ch 16/19 · Day trading", "Long/Short", Live, &[
+            "F|First hour = the first 60-minute bar (DATA2) of the session; avedayrange = average(high - low of DATA3 daily, 10) (TSM 1stHour Breakout, CD Ch16/19)",
+            "E|After the first hour, while time of data2 < Sess1EndTime: \"if close[1] < Sess1FirstBarHigh then buy at Sess1FirstBarHigh + 20 point stop; if close[1] > Sess1FirstBarLow then sell at Sess1FirstBarLow - 20 point stop\" on 10-minute bars (CD); do not allow multiple entries in the same direction (stop and reverse)",
+            "X|\"if low <= Sess1FirstBarHigh - avedayrange then exitshort at market; if high >= Sess1FirstBarLow[1] + avedayrange then exitlong at market\" (CD); positions are held from day to day (McNutt, S&C V.12:7 p.282)",
+        ], concat!("[Declared reading] '20 point' = 0.20 S&P index points: McNutt's source article (Technical Analysis of Stocks & Commodities V.12:7, July 1994, p.282, the code's cited origin) prints \"20 points ($100 for the Standard & Poor's index)\" on the $500-a-point contract; run on SPX only (decision 196(2)), NOT the futures contract. ",
+            "[intraday EP, K42] Session-aligned 10-minute bars and the first 60-minute bar built from real 1-minute bars (09:30-16:00 ET), one continuous series across days (positions and the first-hour levels carry overnight); DATA3 = the vault's daily bars (the last completed day). Orders placed at a 10-minute close work in the next bar: market exits at its open, then the stops walked minute by minute (fill at the stop, or the minute's open when it opened through it), one entry per bar; a minute reaching both stops while flat: the one nearer its open first [convention, counted]. ",
+            "Kaufman's CD code is a simplified version of McNutt's rules (his anticipated-range reversals, 300/140-point stops and profit trail are not in the code); the code is run as printed. The book traded S&P futures; cash-index shorts are hypothetical. No costs.")),
         d("kftsm_zones", "Jackson trading zones", "Ch 18 · Zones", "Long/Short", NeedsData("10-minute intraday bars"), &[
             "E|\"if low <= low1 and low[1] > low1 then buy at close; exitlong at low2 stop; exitlong at midpt limit\" zones from yesterday's daily bar (TSM Zones, CD Ch18)",
         ], "DATA1 is 10-minute data."),
@@ -297,6 +300,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "kftsm_multi_tf" => vec![p("fast", "Daily slow-K period", 5., 3., 30., 1.), p("slow", "Weekly regression period", 50., 5., 100., 1.), p("overbot", "Overbought", 80., 50., 95., 1.), p("oversold", "Oversold", 20., 5., 50., 1.)],
         "kftsm_month_end" => vec![p("day", "Entry: 0 last trading day, 1 second-to-last", 0., 0., 1., 1.), p("exit_day", "Exit on trading day N of the new month", 4., 1., 10., 1.)],
         "kftsm_hirsch" => vec![p("in_month", "Entry month", 11., 1., 12., 1.), p("out_month", "Exit month", 4., 1., 12., 1.)],
+        "kftsm_first_hour" => vec![p("length", "Days in the average daily range (code input 10)", 10., 2., 50., 1.), p("off", "Stop offset beyond the first-hour high/low (S&P points; '20 point' = 0.20)", 0.2, 0., 5., 0.05)], // intraday EP block (K42)
         _ => return None,
     })
 }
@@ -494,6 +498,10 @@ pub fn validate(id: &str, p: &Params) -> Option<String> {
 }
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
+    if id == "kftsm_first_hour" { // intraday EP block (K42)
+        let g = |k: &str, d: f64| p.get(k).copied().unwrap_or(d);
+        return (from <= to && to < x.r.len()).then(|| first_hour(x, from, to, g("length", 10.).max(1.).round() as usize, g("off", 0.2)));
+    }
     let schema = params(id)?;
     if from > to || to >= x.r.len() || validate(id, p).is_some() { return None; }
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(0., |d| d.def));
@@ -1064,6 +1072,40 @@ fn hirsch(x: &Ctx, from: usize, to: usize, inm: i64, outm: i64) -> Vec<Trade> {
     }
     b.done()
 }
+
+// ---- intraday EP block (lane K42, 4 Nov 2026, decision #211): TSM 1stHour Breakout (CD Ch16/19) on session-aligned 10-minute
+// bars (DATA1) with the first 60-minute bar (DATA2) and daily bars (DATA3), one continuous series across days (EP2).
+fn first_hour(x: &Ctx, from: usize, to: usize, len: usize, off: f64) -> Vec<Trade> {
+    use crate::intraday::Level;
+    let mut bk = crate::intraday_ep::Book::default();
+    let (mut fbh, mut fbl, mut fbl1, mut fbd) = (f64::NAN, f64::NAN, f64::NAN, usize::MAX);
+    let (mut c1, mut last) = (f64::NAN, None);
+    let mut pend: ([bool; 2], Vec<Level>) = ([false; 2], vec![]); // (market exit of a [long, short] at the next open, entry stops)
+    for i in from.max(len)..=to {
+        let Some((open, close, m, b)) = crate::intraday_ep::day_bars(x, i, 10) else { continue };
+        let fb = crate::intraday_ep::nbars(&m, open, 60, close)[0];
+        let adr = (1..=len).map(|k| x.r[i - k].high - x.r[i - k].low).sum::<f64>() / len as f64; // DATA3: the last completed days
+        for z in &b {
+            let (ex, lv) = std::mem::take(&mut pend);
+            if (ex[0] && bk.dir() > 0.0) || (ex[1] && bk.dir() < 0.0) { bk.exit(i, z.o, "market exit"); }
+            let lv: Vec<Level> = lv.into_iter().filter(|l| bk.dir() != if l.up { 1.0 } else { -1.0 }).collect();
+            if let Some((k, _, px, _)) = crate::intraday_w2b::first_exit(&m[z.a..z.b], 0, &lv) {
+                bk.enter(if lv[k].up { 1.0 } else { -1.0 }, i, px, "stop", "reverse");
+            }
+            fbl1 = fbl;
+            if z.e >= fb.e && fbd != i { fbd = i; fbh = fb.h; fbl = fb.l; } // DATA2's first bar of the day has completed
+            if fbd == i && z.e < close {
+                if c1 < fbh { pend.1.push(Level { up: true, px: fbh + off }); }
+                if c1 > fbl { pend.1.push(Level { up: false, px: fbl - off }); }
+            }
+            pend.0 = [z.h >= fbl1 + adr, z.l <= fbh - adr];
+            c1 = z.c;
+        }
+        if let Some(z) = b.last() { last = Some((i, z.c)); }
+    }
+    match last { Some((i, c)) => bk.finish(i, c), None => vec![] }
+}
+// ---- end intraday EP block
 
 #[cfg(test)]
 mod tests {

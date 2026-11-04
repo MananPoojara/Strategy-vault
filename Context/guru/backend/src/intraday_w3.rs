@@ -27,7 +27,8 @@ pub fn held(id: &str) -> bool { HELD.contains(&id) }
 /// cash index (stale component prints). The minute result is published on SPY only, the mirror image of intraday_w2b::SPX.
 pub const SPY: &[&str] = &["ats_15min_adx_breakout", "ptjdt_adx15_breakout", "hfm_news", "hfm_news_long", "hfm_news_short",
     "jb30d_gap_pct", "tdnmtt_trap_short", "tdperl_tdline_short", "putg_inside_day", "mhp_ftse_3_20040804",
-    "jmls_bar_breakout" /* lane K39 (EP2 15-minute bars): SPX compounded > 10x SPY's (test c) */];
+    "jmls_bar_breakout" /* lane K39 (EP2 15-minute bars): SPX compounded > 10x SPY's (test c) */,
+    "gfstsb_ema_cross" /* lane K42 (EP2 60-minute bars): average trade SPY +0.0122% vs SPX -0.0215% (test a) */];
 pub fn spy_id(id: &str) -> bool { SPY.contains(&id) }
 /// Decision #177b: SPX-point minute rules that fail the tradable check on SPY with the points scaled by SPX/SPY (sign flip:
 /// 23; SPX average trade >3x and >0.10 pt, or SPX compounded >10x: 13). SPX is their only ticker, so nothing is published.
@@ -36,7 +37,8 @@ pub const SPX_HELD: &[&str] = &["baboops_oops", "jb30d_gap_tick", "tcdt_2bnr_m16
     "tcdt_ctl_m600", "tcdt_ctl_m80", "tcdt_doji_p80", "tcdt_dojinr4_p160", "tcdt_id_p160", "tcdt_id_p80", "tcdt_nr7_p160",
     "tcdt_nr7_p80", "tcdt_ws4_m160", "tcdt_ws4_m80", "tcdt_ws7_m160", "tcdt_ws7_m80",
     "jkbwts_saidenberg30", "tcdt_ctl_p160", "tcdt_ctl_p80", "tcdt_doji_m160", "tcdt_doji_m80", "tcdt_gap_orb", "tcdt_id_m80",
-    "tcdt_idnr4_p160", "tcdt_idnr4_p80", "tcdt_nr4_m160", "tcdt_nr4_m80", "tcdt_nr4_p80", "tcdt_quad_orb"];
+    "tcdt_idnr4_p160", "tcdt_idnr4_p80", "tcdt_nr4_m160", "tcdt_nr4_m80", "tcdt_nr4_p80", "tcdt_quad_orb",
+    "kftsm_first_hour" /* lane K42 (EP2 10-minute bars, 0.20 S&P points): scaled SPY avg -0.0074% vs SPX +0.0285% (test a) */];
 pub fn spx_held(id: &str) -> bool { SPX_HELD.contains(&id) || K38_SPX_HELD.contains(&id) } // + lane K38
 
 #[cfg(test)]
@@ -131,7 +133,7 @@ mod tests {
         use crate::instrument_policy as ip;
         let cat = crate::connors::catalogue();
         fn find<'a>(cat: &'a [crate::connors::StrategyDef], id: &str) -> &'a crate::connors::StrategyDef { cat.iter().find(|d| d.id == id).unwrap_or_else(|| panic!("{id}")) }
-        assert_eq!((SPY.len(), SPX_HELD.len()), (11, 36)); // + jmls_bar_breakout (K39)
+        assert_eq!((SPY.len(), SPX_HELD.len()), (12, 37)); // + jmls_bar_breakout (K39); + gfstsb_ema_cross, kftsm_first_hour (K42)
         for id in SPY { // #177a: SPY only; the cash-index minute results are withdrawn with the card reason
             let d = find(&cat, id);
             assert!(ip::intraday_p1(d) && !ip::intraday_w1_spx_id(id), "{id}");

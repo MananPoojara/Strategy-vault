@@ -90,9 +90,19 @@ pub const IDS: &[&str] = &["acbff_open_rel", "acbff_2bar_open", "acbff_final_thi
     "acbff_rsi_5min", "atm04_60min", "jmls_bar_breakout", "jmls_ma_cross_30m"];
 /// Rules whose time filter is a US Eastern clock time the book gives no NSE equivalent for: SPY and SPX only.
 pub const US: &[&str] = &["jmls_ls_model"];
-pub fn id(id: &str) -> bool { IDS.contains(&id) || US.contains(&id) }
+pub fn id(id: &str) -> bool { IDS.contains(&id) || US.contains(&id) || K42.contains(&id) || K42_SPX.contains(&id) }
 pub fn us_id(id: &str) -> bool { US.contains(&id) }
-pub fn book(b: &str) -> bool { matches!(b, "acbff" | "atm04" | "jmls") }
+pub fn book(b: &str) -> bool { matches!(b, "acbff" | "atm04" | "jmls" | "gfstsb" | "stad" | "kftsm") }
+// ---- lane K42 block (4 Nov 2026, decision #211; authors/titles-1030/K42.tsv)
+/// No fixed amount: all four minute tickers. Ford's three NinjaTrader systems on 60-minute bars (EP2) and the STAD Vol 3
+/// inside-day breakout failure on 30-minute bars with a daily Data2 (EP1).
+pub const K42: &[&str] = &["gfstsb_ema_cross", "gfstsb_channel", "gfstsb_perfect_order", "stad3_idbf"];
+/// Book amounts in S&P points ('20 point' = 0.20 S&P points, McNutt): SPX only (instrument_policy::intraday_w1_spx_id).
+pub const K42_SPX: &[&str] = &["kftsm_first_hour"];
+pub fn spx_id(id: &str) -> bool { K42_SPX.contains(&id) }
+// jbcdt2_or30 (30-Minute Breakout, S&P points) is coded in books/jbcdt2.rs but held: 29.3% of its SPX trades depend on the
+// order inside one minute (decision #175 limit 5%); the #177b scaled-SPY check passed (K42w/check177b.out).
+// ---- end lane K42 block
 // Decision #177a for these rules (flagged on the SPY/SPX overlap: SPY only) goes into intraday_w3::SPY, the one #177a list.
 
 #[cfg(test)]
@@ -193,15 +203,15 @@ mod tests {
     fn ep_admission_and_tickers() {
         use crate::instrument_policy as ip;
         let cat = crate::connors::catalogue();
-        for id in IDS.iter().chain(US) {
+        for id in IDS.iter().chain(US).chain(K42).chain(K42_SPX) {
             let d = cat.iter().find(|d| d.id == *id).unwrap_or_else(|| panic!("{id}"));
             assert!(d.status == crate::connors::Status::Live && ip::intraday_p1(d) && ip::reviewed_cash_rule(d) && ip::held_reason(id).is_none(), "{id}");
             assert_eq!(ip::policy(d).requirement, "declared_index_timing", "{id}");
-            let want: &[&str] = if crate::intraday_w3::spy_id(id) { &["SPY"] } else if us_id(id) { &["SPY", "SPX"] } else { ip::INTRADAY_P1_TICKERS };
+            let want: &[&str] = if crate::intraday_w3::spx_held(id) { &[] } else if crate::intraday_w3::spy_id(id) { &["SPY"] } else if spx_id(id) { &["SPX"] } else if us_id(id) { &["SPY", "SPX"] } else { ip::INTRADAY_P1_TICKERS };
             for t in ip::INTRADAY_P1_TICKERS { assert_eq!(ip::check(d, t, false).is_none(), want.contains(t), "{id} {t}"); }
             assert!(ip::check(d, "QQQ", false).is_some() && ip::check(d, "AAPL", true).is_some(), "{id}");
             let g = crate::gate::get(id).unwrap_or_else(|| panic!("gate {id}"));
-            assert!(matches!(g.verdict, "unverified" | "verified") && g.reason.contains("K39") && g.reason.contains("p."), "{id}");
+            assert!((matches!(g.verdict, "unverified" | "verified") || (crate::intraday_w3::spx_held(id) && g.verdict == "withheld")) && (g.reason.contains("K39") || g.reason.contains("K42")) && g.reason.contains("p."), "{id}");
         }
         assert!(ip::check(cat.iter().find(|d| d.id == "jmls_ls_model").unwrap(), "NIFTY 50", false).unwrap().note.contains("US Eastern clock time"));
     }
