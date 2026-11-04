@@ -9,7 +9,7 @@ use crate::connors::{rsi, sma, true_range, Ctx, Leg, ParamDef, Params, Status, S
 
 pub const BOOK: &str = "ftm";
 /// Admitted ids (authors/futuresmag/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["ftm_km_co_open", "ftm_km_co_limit", "ftm_km_hh_open", "ftm_km_hh_limit", "ftm_rg_dip", "ftm_cvr9", "ftm_zg_weak2r", "ftm_kf_sd", "ftm_kf_sd_full", "ftm_mt_macd", "ftm_mt_macd_rsi", "ftm_mt_macd_stoch", "ftm_rg_feedback"];
+pub const REVIEWED: &[&str] = &["ftm_km_co_open", "ftm_km_co_limit", "ftm_km_hh_open", "ftm_km_hh_limit", "ftm_rg_dip", "ftm_cvr9", "ftm_zg_weak2r", "ftm_kf_sd", "ftm_kf_sd_full", "ftm_mt_macd", "ftm_mt_macd_rsi", "ftm_mt_macd_stoch", "ftm_rg_feedback", "ftm_carr_osc" /* lane K47, decision 217 */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 // ------------------------------------------------------------------ helpers
@@ -62,6 +62,7 @@ const G_ZG: &str = "Feb 2002 · Zamansky & Goldcamp · Success is relative";
 const G_KF: &str = "Jan 2002 · Fitschen sidebar 'Logical exclusions' (in Ruggiero, Debunking the drawdown myth)";
 const G_MT: &str = "Jan 2001 · Matoba · A MACD combo to counter risk";
 const G_ND: &str = "Other articles (data or rules missing)";
+const G_CR: &str = "Jun 2005 · Carr · Getting mechanical with oscillators";
 
 const SES: &str = "X|SES: \"The profit target was set to the entry price plus some multiple of the 50-day ATR\" - \"profit target at 10 ATR units above the entry price\" (limit order); \"stop loss at four ATR units below the entry price\"; \"If neither the profit target nor stop loss closes out the trade prior to the 20th bar, the trade is closed out by a market order at the open of the 21st bar\" (200102 PDF 16-17, pp.39-40)";
 const KMNOTE: &str = "Long only, as in the article. Book: all optionable Nasdaq stocks, $5,000 per trade, $10-$100 price filter, $15 commission; here one index (instrument swap; price filter and sizing not applicable). Readings (book silent): ATR = simple mean of 50 true ranges at the signal bar; stop and target orders are first active on the bar after entry; stop gaps fill at the open; if stop and target both touch on one bar the stop is taken first; 'at least two days have passed' = entry bar >= exit bar + 2. Prices not rounded to ticks.";
@@ -163,9 +164,17 @@ fn defs() -> Vec<S> {
         S { id: "ftm_an_system_e", name: "Anthonisz System E (range expansion) / System I (hot level)", group: G_ND, dir: "Long/Short",
             status: NotTestable("intraday order of the first range-expansion print cannot be known from daily bars, the equity-index percentage Rp is not given, and System I needs tick data (most-traded price)"), vix: false,
             rules: &["E|\"IF (Yesterday was an Up-Day and Percentage Range > Rp and current price = the low) Then Sell; Stop loss: Buy on stop at today's High + 1 tick; Close: Buy Market on Close\" (200405 PDF 37, p.37)"], notes: "", claim: None },
-        S { id: "ftm_carr_osc", name: "Carr oscillator systems (MACD/momentum/RSI/ROC/stochastics)", group: G_ND, dir: "Long/Short",
-            status: NotTestable("indicator parameters are those of a separate Jan 2005 'Oscillators explained' article not on the drive; the 2.5% stop is a percentage of capital, not price"), vix: false,
-            rules: &["E|\"RSI: When the reading of the indicator rises above 30 from below, a buy signal is taken. Sells are signaled when the indicator crosses below 70\" (FM June 2005 PDF 44, p.44)"], notes: "", claim: None },
+        S { id: "ftm_carr_osc", name: "Carr oscillator systems (MACD/momentum/RSI/ROC/stochastics), always in", group: G_CR, dir: "Long/Short", status: Live, vix: false,
+            rules: &["F|\"Initial testing parameters were obtained by applying the default parameters of each indicator, as defined in 'Oscillators explained'\" (FM June 2005 p.44); p.sys picks the system, 1 = MACD (the first one printed)",
+                     "E|1 MACD: MACD = EMA(12) - EMA(26) of closes, signal = \"the MACD line smoothed by a nine-day EMA\" (FM Jan 2005 p.56); \"Buy signals are generated when the MACD histogram crosses above the zero line from below. Sell signals occur when the histogram crosses below the zero-line from above\" (p.44)",
+                     "E|2 Momentum: \"M = Pc - Pn\", \"The most common value is 10 periods\" (Jan p.57); \"Buy signals occur when the momentum oscillator rises above zero, sells are taken on crosses below zero\" (June p.44)",
+                     "E|3 RSI: \"A 14-day interval is typically used\" (Jan p.57); \"When the reading of the indicator rises above 30 from below, a buy signal is taken. Sells are signaled when the indicator crosses below 70 from above that level\" (June p.44)",
+                     "E|4 ROC: \"The normal time frame for ROC measurement is 10 days\" (Jan p.58); \"signals are generated when the indicator crosses the zero line\" (June p.45)",
+                     "E|5 Stochastics: \"buy signals occur when the fast stochastic crosses above the slow stochastic and both lines are rising while still below 30%. Sell signals are generated when the fast stochastics falls below the slow stochastic, both lines are declining and both lines are above 70%\" (June p.45); %K = (C - Ln) / (Hn - Ln) x 100 and %D = 100 x the n-period sum of (C - Ln) / the sum of (Hn - Ln) (Jan p.58), chart label 'Stochastic(14[1],3)' (Jan p.59)",
+                     "X|\"These simple systems are always in the markets\" (June p.45): each signal reverses the position; same-side signals while in that position are ignored",
+                     "X|HELD (not this card): the 2.5%-of-capital stop with the first-profitable-open exit ('Keep the money', p.45) and the RSI 80/10 and per-market levels ('Leveling the field', p.46)"],
+            notes: "[Readings, the articles do not say] signal on the close, trade at the next open; EMA alpha 2/(n+1) seeded with the first close, MACD signals from the bar where the 26-bar EMA and the 9-bar signal EMA are both complete; RSI = Wilder's RSI (p.rsi_simple=1: plain 14-day averages of up and down closes, the printed wording); ROC = 100 x (C / C[10] - 1) crossing 0, the same crossing as the printed ratio 100 x (Y/Yn) crossing 100, so on positive prices it trades exactly as Momentum (the book's results differ by 0.5%: 4,315 vs 4,336 trades); stochastic %K 14 with %D the 3-bar ratio of sums as printed (p.dsma=1: the 3-bar average of %K); 'crosses' = today beyond the level and yesterday at or on the other side; 'rising' = above yesterday's value. Book (Snapshot performance p.45: natural gas, soybeans, copper, yen and 10-year T-note futures 1968-2004, $45 per round turn): MACD $216,883, 37.8% wins, 2,426 trades, PF 1.14; Momentum $20,996, 34.4%, 4,315; RSI $309,873, 42.2%, 393, PF 1.53; ROC $8,563, 35.2%, 4,336; Stochastics -$3,475, 62.5%, 16 trades. Runs on indices, ETFs and stocks are a declared application. Independent check authors/titles-1030/K47w/k47_ref.py.",
+            claim: crate::connors::claim("2426 (MACD)", "37.8%", "$89", "", "5-futures basket 1968-2004, $45/rt (Snapshot performance, FM June 2005 p.45)") },
     ]
 }
 
@@ -197,7 +206,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "ftm_rg_cot" => ("ftm_rg_cot", "COT model", ""),
         "ftm_rg_intermarket" => ("ftm_rg_im", "Intermarket models", ""),
         "ftm_an_system_e" => ("ftm_an", "Anthonisz Systems E/I", ""),
-        "ftm_carr_osc" => ("ftm_carr", "Carr oscillators", ""),
+        "ftm_carr_osc" => ("ftm_carr", "Carr oscillators", "always in"),
         _ => return None,
     })
 }
@@ -223,6 +232,11 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
                                  p("stop", "Close-only stop, SD units", 1.5, 0.5, 4., 0.25), p("skipwed", "Skip Wednesday signals (1 = book's tweak)", 0., 0., 1., 1.)],
         "ftm_mt_macd" | "ftm_mt_macd_rsi" | "ftm_mt_macd_stoch" => vec![p("s1", "Higher smoothing factor", 0.95, 0.05, 1., 0.05), p("s2", "Lower smoothing factor", 0.90, 0.05, 1., 0.05),
                                  p("osc", "Oscillator length (sized variants)", 10., 2., 30., 1.)],
+        "ftm_carr_osc" => vec![p("sys", "System: 1 MACD, 2 Momentum, 3 RSI, 4 ROC, 5 Stochastics", 1., 1., 5., 1.),
+                                p("fast", "MACD fast EMA", 12., 2., 50., 1.), p("slow", "MACD slow EMA", 26., 5., 100., 1.), p("signal", "MACD signal EMA", 9., 2., 30., 1.),
+                                p("n", "Momentum / ROC length", 10., 1., 50., 1.), p("rsi", "RSI length", 14., 2., 50., 1.), p("lo", "RSI / stochastic oversold level", 30., 5., 50., 1.),
+                                p("hi", "RSI / stochastic overbought level", 70., 50., 95., 1.), p("k", "Stochastic %K length", 14., 3., 50., 1.), p("d", "Stochastic %D length", 3., 1., 10., 1.),
+                                p("dsma", "%D: 0 = printed ratio of sums, 1 = average of %K", 0., 0., 1., 1.), p("rsi_simple", "RSI: 0 = Wilder, 1 = plain averages", 0., 0., 1., 1.)],
         _ => return None,
     })
 }
@@ -249,8 +263,70 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "ftm_mt_macd" => matoba(x, from, to, g("s1"), g("s2"), 0, u("osc").max(2)),
         "ftm_mt_macd_rsi" => matoba(x, from, to, g("s1"), g("s2"), 1, u("osc").max(2)),
         "ftm_mt_macd_stoch" => matoba(x, from, to, g("s1"), g("s2"), 2, u("osc").max(2)),
+        "ftm_carr_osc" => carr(x, from, to, &|k| g(k), &|k| u(k).max(1)),
         _ => return None,
     })
+}
+
+/// Carr (FM June 2005) always-in oscillator systems with the Jan 2005 defaults: a signal at bar i reverses at the open of i+1.
+fn carr(x: &Ctx, from: usize, to: usize, g: &dyn Fn(&str) -> f64, u: &dyn Fn(&str) -> usize) -> Vec<Trade> {
+    let (c, n, nan) = (&x.c, x.c.len(), f64::NAN);
+    let ema = |v: &[f64], k: usize| { let a = 2.0 / (k as f64 + 1.0); let mut o = v.to_vec(); for i in 1..v.len() { o[i] = o[i - 1] + a * (v[i] - o[i - 1]); } o };
+    let up = |v: &[f64], i: usize, lv: f64| i > 0 && v[i] > lv && v[i - 1] <= lv;
+    let dn = |v: &[f64], i: usize, lv: f64| i > 0 && v[i] < lv && v[i - 1] >= lv;
+    let (os, ob) = (g("lo"), g("hi"));
+    let sig: Vec<i8> = match g("sys").round() as i64 {
+        1 => {
+            let (sl, sg) = (u("slow"), u("signal"));
+            let (f, s) = (ema(c, u("fast")), ema(c, sl));
+            let m: Vec<f64> = (0..n).map(|i| f[i] - s[i]).collect();
+            let sm = ema(&m, sg);
+            let h: Vec<f64> = (0..n).map(|i| if i + 2 < sl + sg { nan } else { m[i] - sm[i] }).collect();
+            (0..n).map(|i| if up(&h, i, 0.) { 1 } else if dn(&h, i, 0.) { -1 } else { 0 }).collect()
+        }
+        3 => {
+            let r = if g("rsi_simple") >= 0.5 {
+                let k = u("rsi");
+                (0..n).map(|i| if i < k { nan } else {
+                    let (mut a, mut b) = (0., 0.);
+                    for j in i + 1 - k..=i { let d = c[j] - c[j - 1]; if d > 0. { a += d } else { b -= d } }
+                    if a + b == 0. { 50. } else { 100. * a / (a + b) }
+                }).collect()
+            } else { rsi(c, u("rsi")) };
+            (0..n).map(|i| if up(&r, i, os) { 1 } else if dn(&r, i, ob) { -1 } else { 0 }).collect()
+        }
+        5 => {
+            let (k, d) = (u("k"), u("d"));
+            let ll: Vec<f64> = (0..n).map(|i| if i + 1 < k { nan } else { lo(&x.l[i + 1 - k..=i]) }).collect();
+            let hh: Vec<f64> = (0..n).map(|i| if i + 1 < k { nan } else { hi(&x.h[i + 1 - k..=i]) }).collect();
+            let rk = |i: usize| if hh[i] > ll[i] { 100. * (c[i] - ll[i]) / (hh[i] - ll[i]) } else { nan };
+            let fk: Vec<f64> = (0..n).map(rk).collect();
+            let sd: Vec<f64> = (0..n).map(|i| if i + 2 < k + d { nan } else if g("dsma") >= 0.5 { mean(&fk[i + 1 - d..=i]) } else {
+                let (a, b): (f64, f64) = (i + 1 - d..=i).fold((0., 0.), |(a, b), j| (a + (c[j] - ll[j]), b + (hh[j] - ll[j])));
+                if b > 0. { 100. * a / b } else { nan }
+            }).collect();
+            (0..n).map(|i| {
+                if i == 0 { return 0; }
+                let (k0, k1, d0, d1) = (fk[i], fk[i - 1], sd[i], sd[i - 1]);
+                if k0 > d0 && k1 <= d1 && k0 > k1 && d0 > d1 && k0 < os && d0 < os { 1 }
+                else if k0 < d0 && k1 >= d1 && k0 < k1 && d0 < d1 && k0 > ob && d0 > ob { -1 } else { 0 }
+            }).collect()
+        }
+        sys => {
+            let k = u("n");
+            let v: Vec<f64> = (0..n).map(|i| if i < k { nan } else if sys == 4 { 100. * (c[i] / c[i - k] - 1.) } else { c[i] - c[i - k] }).collect();
+            (0..n).map(|i| if up(&v, i, 0.) { 1 } else if dn(&v, i, 0.) { -1 } else { 0 }).collect()
+        }
+    };
+    let (mut out, mut cur): (Vec<Trade>, Option<Trade>) = (vec![], None);
+    for i in from..to {
+        let d = sig[i] as f64;
+        if d == 0. || cur.as_ref().is_some_and(|t| t.dir == d) { continue; }
+        if let Some(t) = cur.take() { out.push(fin(t, i + 1, x.o[i + 1], i, "Reversed by the opposite signal")); }
+        cur = Some(mk(d, i + 1, x.o[i + 1], i, "open"));
+    }
+    mark_open(&mut out, cur, x, to);
+    out
 }
 
 /// Katz & McCormick breakout + standard exit strategy (long only).
@@ -533,6 +609,19 @@ mod tests {
         let t = &ts[0];
         assert_eq!(t.dir, -1.); assert_eq!(t.legs[0].i, 21); assert!((t.legs[0].px - (r[20].close - 2.)).abs() < 1e-9);
         assert_eq!(t.exit_i, 25); assert_eq!(t.exit_px, r[25].open);
+    }
+    #[test]
+    fn carr_systems_are_always_in_and_reverse_at_the_next_open() {
+        let mut r = rows(400);
+        for (i, row) in r.iter_mut().enumerate() { let v = 100. + (i as f64 / 9.).sin() * 8.; row.close = v; row.open = v - 0.3; row.high = v + 1.; row.low = v - 1.; }
+        let x = Ctx::new(&r, &r, &[]);
+        for sys in 1..=5 {
+            let mut p = Params::new(); p.insert("sys".into(), sys as f64);
+            let t = run("ftm_carr_osc", &x, 0, 399, &p).unwrap();
+            assert!(!t.is_empty() || sys == 5, "sys {sys}");
+            for w in t.windows(2) { assert_eq!((w[0].exit_i, w[0].exit_px, -w[0].dir), (w[1].legs[0].i, w[1].legs[0].px, w[1].dir)); }
+            for z in &t { assert_eq!(z.legs[0].px, r[z.legs[0].i].open); if !z.open { assert_eq!(z.signal_i + 1, z.exit_i); } }
+        }
     }
     #[test]
     fn catalogue_ids_unique_and_live_have_params() {

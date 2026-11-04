@@ -1,0 +1,11 @@
+Trained neural networks of Katz & McCormick, The Encyclopedia of Trading Strategies (McGraw-Hill, 2000), ch.11 and ch.15,
+copied byte for byte (read-only) from the authors' C-Trader Toolkit CD on the research share:
+  USB HDD 2/tRADING KNO-2/Jeffrey Owen Katz - C-Trader Toolkit Cd (44 MB)/SCICON/TRMODS/CHAP15.ZIP -> X15NETS.ZIP
+Plain-text NT1LIB net definitions (format: NT1LIB/NT1LOAD.C; forward pass: NT1LIB/NT1FIRE.C, NT1SET.C nt1set_inputv,
+NT1GET.C nt1get_output). Embedded by books/kets.rs (include_str!). md5:
+  40ce98de34c4fc2a304b5be7bbf5dab7  NN2.NET     18-6-1     reverse Slow %K (Tests 1-3)
+  1a1c48012af0a92eaa41d944fa1c32df  NN8.NET     18-14-4-1  reverse Slow %K (Tests 4-6; ch.15 neural exit)
+  633510c29b808ef4327ba048d047e20a  NN4_02.NET  18-10-1    bottom turning points (Tests 7-9)
+  5f093495aead966a67d1db84ad805bb6  NN9_02.NET  18-20-6-1  bottom turning points (Tests 10-12)
+  de39f718dc1ffbe31654ddd46e4dc2c0  NN4_03.NET  18-10-1    top turning points (Tests 13-15)
+  753ec3d8ed9189e6e19e02fa47b83f07  NN9_03.NET  18-20-6-1  top turning points (Tests 16-18)
