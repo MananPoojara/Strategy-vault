@@ -181,7 +181,8 @@ impl Pos {
         let exit_i = outs.iter().map(|o| o.0).max().unwrap();
         let pieces: Vec<(usize, f64, f64)> = outs.iter().zip(&q).map(|(o, q)| (o.0, o.1, q / qs)).collect();
         let exit_px = pieces.iter().map(|e| e.1 * e.2).sum();
-        let exits = if outs.iter().all(|o| o.0 == exit_i) { vec![] } else { pieces };
+        // one piece per unit, in unit order, whenever the units leave at different bars or prices (books::units reads them)
+        let exits = if outs.iter().all(|o| o.0 == exit_i && o.1 == outs[0].1) { vec![] } else { pieces };
         let mut why: Vec<&str> = outs.iter().map(|o| o.2).collect();
         why.dedup();
         Trade { dir: self.dir, legs: self.legs, exit_i, exit_px, reason: if open { "open".into() } else { why.join(" + ") },

@@ -74,11 +74,12 @@ pub const VIX_INDIA_RULES:&[(&str,&str)]=&[("stc9","vix200"),("stc9","vix2"),("s
     ("ws5","ws5_momentum_windows_any"),("ws5","ws5_single_window"),("ws5","ws5_double_window"),("ws5","ws5_hanging_window"),("ws5","ws5_gap_window_eod"),("ws5","ws5_gap_window_intraday"),("ws5","ws5_outside_window"),("ws5","ws5_vix_iii_reversal"),
     ("ats","ats_cvr1"),("ats","ats_cvr2"),("ats","ats_cvr3"),("ats","ats_cvr_equities"),("otvt","otvt_cvr1_long"),("otvt","otvt_cvr1_short"),("rsi25","r25_rsi25_vix"),("rsi25","r25_rsi25_15_vix"),
     ("ptjmt","ptjmt_cvr1"),("ptjmt","ptjmt_cvr2"),("ptjmt","ptjmt_cvr3"),("ptjmt","ptjmt_cvr5"),("ststw","ststw_vix_stretch"),("ststw","ststw_vix_rsi"),
-    ("vixr","vixr_cvr1"),("vixr","vixr_cvr2"),("vixr","vixr_cvr3"),("vixr","vixr_cvr5_1d"),("vixr","vixr_cvr5_3d"),("vixr","vixr_cvr6"),("vixr","vixr_cvr7"),("vixr","vixr_cvr8"),("vixr","vixr_cvr9"),("vixr","vixr_cvr10"),("vixr","vixr_cvr11")];
+    ("vixr","vixr_cvr1"),("vixr","vixr_cvr2"),("vixr","vixr_cvr3"),("vixr","vixr_cvr5_1d"),("vixr","vixr_cvr5_3d"),("vixr","vixr_cvr6"),("vixr","vixr_cvr7"),("vixr","vixr_cvr8"),("vixr","vixr_cvr9"),("vixr","vixr_cvr10"),("vixr","vixr_cvr11"),("vixr","vixr_all")];
 pub const VIX_INDIA_LABEL:&str="The book used another instrument (futures, a cash index or an ETF); runs on actual indices, ETFs and stocks, US and India, are a declared application (user decision 23 Oct 2026; VIX India 24 Oct 2026), not the author's test. US instruments read the CBOE VIX. Indian instruments (NIFTY 50, NIFTYBANK, Indian stocks): declared application: India VIX in place of the CBOE VIX. VIX levels and VIX-point thresholds printed for the US VIX are kept as printed; India VIX runs on a different scale, so on Indian instruments they mark different market conditions. Rules that read the VIX open use the real India VIX open from 1-minute data (the first minute after NSE's 09:15 opening print), available from 2015; NSE's daily India VIX open repeats the previous close and is never used.";
 pub fn vix_india(def:&StrategyDef)->bool {VIX_INDIA_RULES.contains(&(def.book,def.id))}
 /// Held on Indian instruments (user decision): the independent reference and the engine differ on an exact tie.
 pub fn vix_india_held(def:&StrategyDef,ticker:&str,india:bool)->Option<Issue> {
+    if india && def.id=="vixr_all" {return Some(Issue{status:"not_testable",note:format!("Held on Indian instruments ({ticker}): the all-signals portfolio includes CVR 11, which is held on Indian instruments (an exact India VIX tie the engine and the independent reference read differently), so the printed portfolio cannot be formed. It runs on US instruments with the CBOE VIX.")});} // lane K43
     (india && def.id=="vixr_cvr11").then(||Issue{status:"not_testable",note:format!("Held on Indian instruments ({ticker}): CVR 11 compares yesterday's VIX 3/10-day oscillator with -1 VIX point. On India VIX the oscillator is exactly -1.00 on 2012-04-03; the book's rule (at or below -1) sells, but the engine's floating-point average gives -0.99999... and does not, so the engine and the independent check differ from that trade on. Not published until the tie handling is decided. US runs (CBOE VIX) match the check.")})
 }
 // ---------------------------------------------------------------- end VIX India
@@ -250,6 +251,7 @@ const INTRADAY_P1_BASIS:&str="Intraday phase 1 (2026-10-24): the book's same-day
 /// withdrawn and the ETF result (SPY/QQQ/DIA) stays; for the SPX list the NIFTY 50/NIFTYBANK daily results are held too.
 /// Lane K32 (4 Nov 2026) re-ran the same check for the cards K31/K32 changed or admitted and the K28-K30 cards that read the
 /// open/high/low (authors/titles-1030/K32w/M3-k32.tsv, K32.tsv); new flags are added here the same way.
+/// Lane K43 (4 Nov 2026): the same exact check for the 15 multi-unit ids (K43w/M3-k43.tsv) flags stad9_luxor and stad13_luxor on SPX.
 pub const M3_SPX:&[&str]=&["acbff_eight_stop33", "acbff_eight_stop66", "acbff_rx4day", "acbff_six_q66", "acbff_six_q66_v2", "acbff_six_stop66",
     "atm01_deep_pockets", "atm03_twobar", "atm04_four_pct", "bfmm_esl", "bfmm_mm2_es", "bfmm_mm2_nq", "bfmm_nql", "bllstr_fma_1_50_1",
     "dbnotp_abc_index", "dgmf_gap3", "djcs_pct_reversal", "fgosc_crossover", "hbqts_cgo", "hbqts_parabolic_stop", "jbssf_mom_ma",
@@ -257,8 +259,8 @@ pub const M3_SPX:&[&str]=&["acbff_eight_stop33", "acbff_eight_stop66", "acbff_rx
     "lgtt30_tt30", "lkcpt_rsimild", "ltcoat_coat_tails", "lwdtfo_vb_open", "lwmdc_open_up_oc", "msadd_n_can_ha", "msadd_n_can_pl",
     "msws_hanging_man_hammer_mfi", "nkms2_small_triangle_breakout", "putg_pattern_vbo", "qsfund_trendline", "rarsys_trend_weaver",
     "rgc_runaway_gap", "rgc_runaway_gap_f5", "rinadz_rsi9", "rpdt_range_bo", "scdshark_32", "scjleq_vol", "scluisi_nr", "sdtcp_donchian", "sdtcp_nr7id",
-    "slct_ct_formula", "sprfs_nr4ib", "ss_hist_vol_crabel", "ss_three_day_unfilled_gap", "stad12_ntw", "stad1_maco", "stad2_adxdiff",
-    "stad2_ccibb", "stad3_bdsr", "stad5_dsdb", "stad6_adxmac", "stad7_masr", "stad9_dyf", "stad9_nohurry", "stad9_redrover",
+    "slct_ct_formula", "sprfs_nr4ib", "ss_hist_vol_crabel", "ss_three_day_unfilled_gap", "stad12_ntw", "stad13_luxor", "stad1_maco", "stad2_adxdiff",
+    "stad2_ccibb", "stad3_bdsr", "stad5_dsdb", "stad6_adxmac", "stad7_masr", "stad9_dyf", "stad9_luxor", "stad9_nohurry", "stad9_redrover",
     "stkch_k39", "tbabc_powertool", "tcdt_idp1", "tcdt_idp2", "tdperl_clop_long", "tdperl_clop_short", "tttt1_tradetimer",
     "upg18_safer2005", "vrsdd_double_doji", "wtdtt_mist4", "wtdtt_mist5", "wwnc_dmi"];
 pub const M3_NDX:&[&str]=&["acbff_rx15", "adrsi5_rsi5", "ajmisc_vol_rev", "jt_example_20d_breakout", "kets_seas_conf_limit", "kets_seas_inv_stop",
@@ -1376,12 +1378,8 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // ---- Active Trader block (26 Oct 2026): held Live rules
         // ---- end Active Trader block
         // ---- Crabel block (26 Oct 2026): held Live rules
-        "tcdt_ut1"|"tcdt_ut2"|"tcdt_ut3"|"tcdt_ut4"|"tcdt_ut5"=>"Held: the book counts every upthrust, even when a new one comes while the last three-day short is still open, so its trades overlap; one account cannot hold overlapping trades of the same rule, and on several markets the vault therefore refuses the run. A version that skips signals while a trade is open would be a change to the book's test.",
         // ---- end Crabel block
         // ---- STAD block (26 Oct 2026): held Live rules
-        "stad2_obv"=>"Held: the printed code buys 100 shares on a new OBV high and 200 shares on a new OBV low, so the second entry is twice the opening size; the vault trades one unit and refuses the larger position on every market tested, so no result can be published.",
-        "stad2_stoch"=>"Held: the printed code opens with 200 shares and reverses with 400 shares, so every reversal is twice the opening size; the vault trades one unit and refuses the larger position on every market tested, so no result can be published.",
-        "stad8_stampede"|"stad9_luxor"|"stad13_luxor"=>"Held: the strategy adds to a winning position (pyramiding up to several entries in the same direction); the vault carries one unit per strategy and refuses the added entries, so no result can be published.",
         // ---- end STAD block
         // ---- Lane A singles block (26 Oct 2026, lane B): held Live rules
         "elcim_fi2"=>"Held: the Force Index section of Come Into My Trading Room (p.109-114) gives no entry order and no protective stop, and the book says a stop must be placed with every trade (p.169). The same signal with a stop is admitted as the Triple Screen version (elcim_ts_fi) and as Trading for a Living's Force Index rule (eltfl_fi2).",
@@ -1394,7 +1392,6 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         "wmny_nhnl_ratio"|"wmny_nhnl_cci"=>"Held: needs data the vault does not have. Both Working Money systems (WM2002 p.71-81) are built on the daily count of Nasdaq new 52-week highs and new lows; no such series is in the vault, so there is nothing to test.",
         "wmny_pct_nh"=>"Held: needs data the vault does not have. The rule (WM2003 p.147-156) uses the daily count of NYSE new 52-week highs and new lows; the vault's US breadth has advances, declines and TRIN only, so there is nothing to test.",
         "wmny_bond_band"=>"Held: needs data the vault does not have. The switch (WM2004 p.61-63) is driven by Treasury-bond futures high/low/close prices; the vault holds no bond futures history, and a stock index cannot stand in for bond prices.",
-        "rcmm_20"|"rcmm_55"=>"Held: the system adds up to four units to a winning position at fixed ATR steps from the first entry (Market Millions p.40-49, the pyramid matrix); the vault carries one unit per strategy and refuses the added units, so no result can be published.",
         // ---- end Lane A newsletters held
         // ---- Lane A vendor1 block (26 Oct 2026, lane B): held Live rules
         "gunsl_gunslinger"=>"Held: the entry stops are tomorrow's open plus or minus 0.81 x (range plus or minus 'thrustTax' 0.6), and thrustTax is a fixed price amount in the vendor code (Gunslinger Code.txt) with no market named. On indices, ETFs and stocks a fixed 0.6 means something different on each instrument, so the vault's accuracy gate blocks it everywhere; publishing needs your decision on how to scale it.",
@@ -1639,7 +1636,7 @@ mod tests {
             // agtsic: the lane C2 special block admits the eight daily rules; ADMISSION_BREADTH admits the K25 breadth-filtered RSI ids.
             // phbttk: phbt's Headley entry admits the Percent R ids; ADMISSION_K30 admits the shipped System Tester records (K30, 3 Nov 2026).
             // acbff, atm04: the intraday block admits their N-minute-bar ids (intraday_ep, lane K39, 4 Nov 2026); stad: stad3_idbf (lane K42).
-            const SHARED:&[&str]=&["acbff","agtsic","atm04","stad","bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","phbttk","putg","tcdt","tdnmtt","tdperl"];
+            const SHARED:&[&str]=&["acbff","agtsic","atm04","bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","phbttk","putg","stad","stad2","tcdt","tdnmtt","tdperl"]; // stad, stad2, tcdt: books::units::ADMISSION admits their multi-unit ids (lane K43)
             for d in all.iter().filter(|d|books.contains(&d.book) && !SHARED.contains(&d.book) && reviewed_cash_rule(d)!=(a.reviewed)(d)) {other.push((d.book,d.id));}
             for d in admitted {
                 assert_eq!(admission(d).map(|x|x.label),Some(a.label),"{}",d.id);
@@ -1880,7 +1877,8 @@ mod tests {
     fn stad_review_admits_exact_ids_on_indices_etfs_and_stocks() {
         use crate::books::{stad, stad2};
         let all:Vec<StrategyDef>=stad::catalogue().into_iter().chain(stad2::catalogue()).collect();
-        let mut want:Vec<&str>=stad::REVIEWED.iter().chain(stad2::REVIEWED.iter()).copied().collect();
+        // + the multi-unit ids admitted by books::units::ADMISSION (lane K43)
+        let mut want:Vec<&str>=stad::REVIEWED.iter().chain(stad2::REVIEWED.iter()).chain(["stad2_obv","stad2_stoch","stad8_stampede","stad9_luxor","stad13_luxor"].iter()).copied().collect();
         let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d) && !intraday_p1(d)).map(|d|d.id).collect(); // stad3_idbf: the intraday block (K42)
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {
@@ -2260,7 +2258,7 @@ mod tests {
     fn la_newsletters_held_rules_have_plain_card_reasons() {
         use crate::books::{rcmm, wmny};
         let all:Vec<StrategyDef>=rcmm::catalogue().into_iter().chain(wmny::catalogue()).collect();
-        for id in ["wmny_nhnl_ratio", "wmny_nhnl_cci", "wmny_pct_nh", "wmny_bond_band", "rcmm_20", "rcmm_55"] {
+        for id in ["wmny_nhnl_ratio", "wmny_nhnl_cci", "wmny_pct_nh", "wmny_bond_band"] { // rcmm_20/55: multi-unit account since lane K43
             let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
             assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
         }
@@ -3143,10 +3141,10 @@ mod tests {
     fn vixr_review_admits_exact_ids_on_reviewed_symbols_only() {
         let cat=crate::books::vixr::catalogue();
         let admitted:Vec<&str>=cat.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
-        assert_eq!(admitted,["vixr_cvr1","vixr_cvr2","vixr_cvr3","vixr_cvr5_1d","vixr_cvr5_3d","vixr_cvr6","vixr_cvr7","vixr_cvr8","vixr_cvr9","vixr_cvr10","vixr_cvr11"]);
+        assert_eq!(admitted,["vixr_cvr1","vixr_cvr2","vixr_cvr3","vixr_cvr5_1d","vixr_cvr5_3d","vixr_cvr6","vixr_cvr7","vixr_cvr8","vixr_cvr9","vixr_cvr10","vixr_cvr11","vixr_all"]);
         for d in cat.iter().filter(|d|reviewed_cash_rule(d)) {
             let open=open_all(d) || vix_india(d); // open-all 23 Oct 2026 + VIX India 24 Oct 2026
-            let india=d.id!="vixr_cvr11"; // VIX India: CVR 11 held on Indian instruments (exact-tie difference)
+            let india=!matches!(d.id,"vixr_cvr11"|"vixr_all"); // VIX India: CVR 11 held on Indian instruments (exact-tie difference); vixr_all contains it (lane K43)
             assert_eq!(policy(d).requirement,if open {"index_etf_or_stock"} else {"declared_index_timing"});
             assert!(check(d,"SPY",false).is_none() && check(d,"SPX",false).is_none(),"{}",d.id);
             assert_eq!(check(d,"NIFTY 50",false).is_none(),india,"{}",d.id);
@@ -3156,7 +3154,7 @@ mod tests {
             assert_eq!(check_native(d,"RELIANCE",&NativeEvidence::india_test_fixture()).is_none(),open && india,"{}",d.id);
             assert!(!reviewed_cash_rule(&def(d.id,"spmt")));
         }
-        for id in ["vixr_all","vixr_stocks","vixr_options","vixr_cvr4"] {
+        for id in ["vixr_stocks","vixr_options","vixr_cvr4"] { // vixr_all: admitted with the CVRs since lane K43
             let d=def(id,"vixr");
             assert!(!reviewed_cash_rule(&d));
             assert_eq!(policy(&d).requirement,"source_review_required");
@@ -3869,7 +3867,7 @@ mod decision_179_tests {
     fn tradable_check_withdraws_flagged_cash_index_daily_results_and_is_decided_first() {
         let cat=crate::connors::catalogue();
         let find=|id:&str|cat.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id}"));
-        assert_eq!((M3_SPX.len(),M3_NDX.len(),M3_DJI.len()),(76,16,43)); // M4 re-check (#200); K40 scluisi_nr (#207) and K41 scjleq_vol (SPX, DJI)
+        assert_eq!((M3_SPX.len(),M3_NDX.len(),M3_DJI.len()),(78,16,43)); // + K43 stad9_luxor, stad13_luxor (SPX) // M4 re-check (#200); K40 scluisi_nr (#207) and K41 scjleq_vol (SPX, DJI)
         for (list,x,y) in [(M3_SPX,"SPX","SPY"),(M3_NDX,"NDX","QQQ"),(M3_DJI,"DJI","DIA")] {
             for id in list {
                 let d=find(id);
