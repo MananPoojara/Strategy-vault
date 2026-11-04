@@ -2,7 +2,7 @@ import type {AuthorFile} from '../author-files';
 
 export default {
   order: 520,
-  author: { id: 'blau', name: "William Blau & Tom Bierovic", tagline: "Ergodic momentum systems and pattern setups", books: [{ id: 'wbmdd', title: "Momentum, Direction and Divergence (Blau)", year: 1995, blurb: "Blau, 1995 · Ergodic systems 1–3 with EMA or slow-TSI trend; the other indicators come without complete rules" }, { id: 'tbpk', title: "Playing for Keeps in Stocks & Futures (Bierovic)", year: null, blurb: "Bierovic · every setup ends in an undefined trailing stop, nothing testable" }, { id: 'tbabc', title: "The ABCs of Trading and Technical Analysis (Bierovic)", year: 2000, blurb: "Bierovic, 2000 · Micro-M/W, Six-Shooter, STAMPEDE long and POWERTOOL from the handout’s code" }, { id: 'tbsyn', title: "Synergetic Trading (Bierovic)", year: null, blurb: "Bierovic · setups without complete exits" }] },
+  author: { id: 'blau', name: "William Blau & Tom Bierovic", tagline: "Ergodic momentum systems and pattern setups", books: [{ id: 'wbmdd', title: "Momentum, Direction and Divergence (Blau)", year: 1995, blurb: "Blau, 1995 · Ergodic systems 1–3 with EMA or slow-TSI trend; the other indicators come without complete rules" }, { id: 'tbpk', title: "Playing for Keeps in Stocks & Futures (Bierovic)", year: null, blurb: "Bierovic · every setup ends in an undefined trailing stop, nothing testable" }, { id: 'tbabc', title: "The ABCs of Trading and Technical Analysis (Bierovic)", year: 2000, blurb: "Bierovic, 2000 · Micro-M/W, Six-Shooter, STAMPEDE long and POWERTOOL from the handout’s code" }, { id: 'tbsyn', title: "Synergetic Trading (Bierovic)", year: null, blurb: "Bierovic · setups without complete exits" }, { id: "scbds", sourceIds: [], readerPaths: ["Trading Knowledge I/Stocks & Commodities DVD 11.26 (1982 - 2008) (traders.com)/VOLUMES/V09/C01/DOUBLES.PDF"], title: "Double Smoothed-Stochastics (Blau, S&C V.9:1)", year: 1991, blurb: "Blau · DS(2,3,15) crossing its 3-day average, close fills" }] },
   identities: ["Tom Bierovic","William Blau"],
   profile: {
     "kind": "person",
@@ -24,6 +24,7 @@ export default {
     "confidence": "high"
   },
   sourceReview: {
+    "scbds": {"type":"article","people":["William Blau"]},
     "wbmdd": {"type":"book","people":["William Blau"]},
     "tbpk": {"type":"book","people":["Tom Bierovic"]},
     "tbabc": {"type":"course_manual","people":["Tom Bierovic"]},
