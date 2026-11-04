@@ -147,7 +147,7 @@ pub fn param_series(id: &str, p: &crate::connors::Params, required: &mut Vec<&'s
     const X: [&str; 4] = ["XMKT.C2", "XMKT.C3", "XMKT.C4", "XMKT.C5"];
     match id {
         "nftm_accutrack" => { *required = vec![X[(p.get("xcol").copied().unwrap_or(2.).round().clamp(2., 5.) as usize) - 2]]; }
-        "strmm_rsbands" | "strmm_rotation" if p.get("markets").is_some_and(|v| (v.max(0.) as usize).clamp(4, 5) == 4) => required.retain(|n| *n != X[3]),
+        "strmm_rsbands" | "strmm_rotation" if p.get("markets").is_some_and(|v| (v.round().max(1.) as usize).clamp(4, 5) == 4) => required.retain(|n| *n != X[3]), // as strmm.rs u(): round
         _ => {}
     }
 }
@@ -227,6 +227,15 @@ mod tests {
         assert_eq!(s.own(chg)[2], 2.);
         let al = s.carried(Field::C);
         assert_eq!(al[2] - al[1], 4.);
+    }
+    #[test]
+    fn param_series_follow_the_modules_parameter_reading() {
+        let req = |id: &str, k: &str, v: f64| { let mut r = vec!["XMKT.C2", "XMKT.C3", "XMKT.C4", "XMKT.C5"]; param_series(id, &crate::connors::Params::from([(k.to_string(), v)]), &mut r); r };
+        assert_eq!(req("strmm_rsbands", "markets", 4.), ["XMKT.C2", "XMKT.C3", "XMKT.C4"]);
+        assert_eq!(req("strmm_rotation", "markets", 4.5).len(), 4); // strmm.rs rounds 4.5 to 5
+        assert_eq!(req("strmm_rsbands", "markets", 4.4).len(), 3);
+        assert_eq!(req("nftm_accutrack", "xcol", 3.), ["XMKT.C3"]);
+        assert_eq!(req("nftm_accutrack", "xcol", 9.), ["XMKT.C5"]);
     }
     #[test]
     fn legacy_names_follow_the_e4_map() {
