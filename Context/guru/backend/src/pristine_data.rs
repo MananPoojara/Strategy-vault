@@ -118,15 +118,25 @@ impl Series {
         &self,
         signal_i: usize,
     ) -> Result<[f64; 21], VolumeFailure> {
-        if signal_i < 20 || signal_i >= self.rows.len() {
+        let mut values = [0.; 21];
+        values.copy_from_slice(&self.volume_window(signal_i, 20)?);
+        Ok(values)
+    }
+    /// The signal row and the `back` rows before it (BGS: 20; CBS "Increase in Volume", lead decision 197: 1).
+    pub(crate) fn volume_window(
+        &self,
+        signal_i: usize,
+        back: usize,
+    ) -> Result<Vec<f64>, VolumeFailure> {
+        if signal_i < back || signal_i >= self.rows.len() {
             return Err(VolumeFailure {
                 signal_i,
                 source_i: None,
                 issue: VolumeIssue::WindowUnavailable,
             });
         }
-        let mut values = [0.; 21];
-        for (offset, row) in self.rows[signal_i - 20..=signal_i].iter().enumerate() {
+        let mut values = vec![0.; back + 1];
+        for (offset, row) in self.rows[signal_i - back..=signal_i].iter().enumerate() {
             let issue = match &row.volume {
                 Volume::Value(value) if value.is_finite() && *value >= 0. => {
                     values[offset] = *value;
@@ -140,7 +150,7 @@ impl Series {
             };
             return Err(VolumeFailure {
                 signal_i,
-                source_i: Some(signal_i - 20 + offset),
+                source_i: Some(signal_i - back + offset),
                 issue,
             });
         }

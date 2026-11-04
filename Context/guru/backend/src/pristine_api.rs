@@ -98,7 +98,8 @@ fn note(f: &Failure) -> &'static str {
 }
 
 const CBS_RULES: &[&str] = &[
-    "Signal: the selected daily branch requires a maximal run of exactly five red candles followed by a green candle. The signal close is at least 8% below its inclusive 20-session SMA.",
+    "Signal: five or more red candles ('5 or more lower highs or Red Bars') followed by a green candle (the +COG branch). The signal close is at least 8% below its inclusive 20-session SMA.",
+    "Volume: 'Increase in Volume' (TPM1 p.173-174, not defined there) is read as signal volume above the prior session's volume [declared reading, lead decision 197]; both observations must be usable.",
     "Entry: only the next session may buy at the signal high + 0.05 supplied-series units; a gap above that trigger fills at the actual open.",
     "Protection: signal low - 0.05. The target is the fixed signal-day SMA. From the third held session, prior-session low - 0.05 replaces the old stop only when it raises that stop.",
     "Exit: protective stop, fixed target, or the mature full-gap opening exit. Declared daily-OHLC ordering resolves intrabar ambiguity adversely.",
@@ -114,14 +115,14 @@ const SOURCE_BASIS: &str = "Trading the Pristine Method, Book 1, printed pp. 173
 pub(crate) fn catalogue_json() -> String {
     let rows = IDS.iter().enumerate().map(|(i,id)| {
         let (name,rules,variant) = if i == 0 {
-            ("Pristine · Daily CBS / COG", CBS_RULES, "Exactly five red candles")
+            ("Pristine · Daily CBS / COG", CBS_RULES, "Five or more red candles, rising volume")
         } else { ("Pristine · Bullish Gap Surprise", BGS_RULES, "Immediate open entry") };
         obj([
             ("id",q(id)), ("owner",q(OWNER)), ("name",q(name)), ("group",q("Pristine · Daily stock patterns")),
             ("session","0".into()), ("dir",q("Long")), ("status",q("live")),
             ("status_note",q("Source-reviewed daily research adaptation. Choose an actual supplied US stock and explicit research mode.")),
-            ("needs_volume",(i == 1).to_string()), ("needs_vix","false".into()), ("needs_series","[]".into()),
-            ("volume_requirement",q(if i == 1 {"candidate_signal_and_prior_20_sessions"} else {"none"})),
+            ("needs_volume","true".into()), ("needs_vix","false".into()), ("needs_series","[]".into()),
+            ("volume_requirement",q(if i == 1 {"candidate_signal_and_prior_20_sessions"} else {"candidate_signal_and_prior_session"})),
             ("book",q(BOOK)), ("family",q(id)), ("family_name",q(name)), ("variant",q(variant)),
             ("rules",strings(rules)), ("notes",q(SOURCE_BASIS)), ("claim","null".into()), ("gate","null".into()),
             ("instrument_policy",obj([

@@ -15,7 +15,8 @@ use crate::connors::{claim, rsi, sma, Ctx, Leg, ParamDef, Params, Status, Strate
 
 pub const BOOK: &str = "rinadz";
 /// Admitted ids (authors/stendahl/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["rinadz_rsi9", "rinadz_rsi9_fixed", "rinadz_rsi14s", "rinadz_pctr", "rinadz_xmacd"];
+pub const REVIEWED: &[&str] = &["rinadz_rsi9", "rinadz_rsi9_fixed", "rinadz_rsi14s", "rinadz_xmacd"]; // rinadz_pctr: held, lead decision 199 (PCTR_HELD)
+const PCTR_HELD: &str = "incomplete rule: the printed system (article p.309) builds its zones with \"SellZone=DZSell(Par1,Par2,Par3,Par4,Par5,StartPrS,N); BuyZone=DZBuy(Par1,Par2,Par3,Par4,Par5,StartPrB,N)\" with Par3(3), Par4(4), Par5(5), whose roles are never stated (the DZ functions are protected), so the series the zones are built on is not known (lead decision 199)";
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const ZONE: &str = "F|Dynamic zones (S&C V15:7 p.306-307): \"For dynamic zone buy: P{X <= V}=P1. For dynamic zone sell: P{X >= V}=P2\" over the lookback of N bars; \"If we multiply 0.1 times 80, which equals 8, and then look for the price that represents the point that the frequency equals 8, adding the last three frequencies (4, 3 and 1) will give us 8 ... x=19 will be the zone with the probability of 0.1\" (k-th largest / smallest of the last N values, k = P x N rounded up)";
@@ -41,7 +42,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "E|\"Input: Ind(Average(RSI(C,14),3)), N(70), StartPrB(0.15), StartPrS(0.10); ... IF CurrentBar > 1 and Ind crosses above BuyZone then Buy at market;\" (DZ User's Guide p.10)",
             "X|\"IF CurrentBar > 1 and Ind crosses below SellZone then ExitLong at market;\" (p.10)",
         ], None),
-        d("rinadz_pctr", "DZ %R system (WAverage(%R(9),3), 70 bars, 12%/12%)", "Long", Status::Live, &[
+        d("rinadz_pctr", "DZ %R system (WAverage(%R(9),3), 70 bars, 12%/12%)", "Long", Status::NotTestable(PCTR_HELD), &[
             ZONE,
             "E|\"Par1(9),Par2(3) ... N(70),StartPrS(0.12),StartPrB(0.12); ... Indicator = WAverage(PercentR(Par1), Par2); IF CurrentBar > 1 and Indicator crosses above BuyZone then Buy at market;\" (article p.309; the manual p.13 uses Jurik AMAfunc2(PercentR(9),3) instead, which is not published; the article's weighted average is the default)",
             "X|\"IF CurrentBar > 1 and Indicator crosses below SellZone then ExitLong at market;\" (article p.309)",

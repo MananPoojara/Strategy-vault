@@ -653,7 +653,7 @@ mod tests {
         let at=|t:&str,y:&str|{let mut r=rows();for (i,x) in r.iter_mut().enumerate(){x.ticker=t.into();x.date=format!("{y}-01-0{}",i+2);}r};
         let fill:Params=[("fill".to_string(),1.0)].into_iter().collect();
         for (t,y,id,p,refused) in [("SPX","2013","jsats_bo",Params::new(),true),("SPX","2014","jsats_bo",Params::new(),false),("NIFTY 50","1996","jsats_gap",Params::new(),false),
-            ("SPX","1990","jscgf_wrd",Params::new(),false),("SPX","1990","jscgf_wrd",fill.clone(),true),("DJI","2015","sofmt_mlm",fill.clone(),true),("SPY","2000","nmwbk_penny",fill,false)] {
+            ("SPX","1990","jscgf_wrd",Params::new(),false),("SPX","1990","jscgf_wrd",fill.clone(),true),("DJI","2015","sofmt_mlm",fill.clone(),true)] { // nmwbk_penny: held (K37, lead decision 197)
             let r=at(t,y);let ctx=Ctx::new(&r,&r,&r);
             assert_eq!(check(&ctx,&definition(id),0,4,&p).is_some(),refused,"{id} {t} {y}");
         }
@@ -788,10 +788,9 @@ mod tests {
     fn hfm_otvt_admitted_rules_refuse_close_only_vix_and_stale_index_opens() {
         let mk=|t:&str,y:&str|{let mut r=rows();for (i,x) in r.iter_mut().enumerate(){x.ticker=t.into();x.date=format!("{y}-06-0{}",i+1);}r};
         let refused=|r:&Vec<Row>,id:&str,p:&Params|check(&Ctx::new(r,r,r),&definition(id),0,4,p).is_some_and(|i|i.note.contains("close-only")||i.note.contains("opening price"));
-        let none=Params::new();let atr=Params::from([("exit".into(),1.0)]);
+        let none=Params::new();
         for (t,y,id,p,want) in [("SPX","1991","otvt_cvr1_long",&none,true),("SPY","1991","otvt_cvr1_short",&none,true),("SPX","1993","otvt_cvr1_long",&none,false),
-            ("SPX","2013","hfm_chadtp",&none,true),("SPX","2014","hfm_chadtp",&none,false),("SPY","1995","hfm_chadtp",&none,false),("NIFTY 50","2005","hfm_chadtp_nse",&none,false),
-            ("NDX","2000","otvt_hv_thrust",&none,false),("NDX","2000","otvt_hv_thrust",&atr,true),("NDX","2001","otvt_hv_thrust",&atr,false),("NIFTY 50","2005","otvt_hv_thrust",&atr,false)] {
+            ("SPX","2013","hfm_chadtp",&none,true),("SPX","2014","hfm_chadtp",&none,false),("SPY","1995","hfm_chadtp",&none,false),("NIFTY 50","2005","hfm_chadtp_nse",&none,false)] { // otvt_hv_thrust: held (K37, lead decision 197)
             assert_eq!(refused(&mk(t,y),id,p),want,"{id} {t} {y}");
         }
     }

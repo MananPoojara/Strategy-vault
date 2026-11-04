@@ -99,11 +99,11 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "E|\"have a buy order three ticks above the high of the bar with a sell order three ticks below the low of the bar\" (p.49-50)",
               "X|Day trade: liquidate on the close (Table 3.6 header 'Buy/sell breakout from inside bar - day trade')",
               "F|\"Trading in the direction of the close of the bar immediately preceding the inside bar\" (item 3, p.50): buy only if that bar closed above its open, sell only if it closed below; \"Tables 3.5 and 3.6 show that it is statistically significant ... if the preceding bar showed evidence of demand by closing above the opening (item 3 above)\" (p.50). Option dir_filter = 0: both stops every inside day",
-              "X|[intraday wave 2b] Default p.path=1: the breakout day is walked on real 1-minute bars in time order, so the minutes show which stop came first; each stop fills at most once (at its level, or the minute's open when it opened through it) and a second fill reverses the first; inside one minute the module's TradeStation path is used (open, nearer extreme, other extreme) [convention]. Runs on SPY, SPX, NIFTY 50, NIFTYBANK with the book's 3 x 0.05 offset on every instrument (no daily open is read). NIFTY 50 days from 2026-08-11 skipped (bad closing minutes). p.path=0 = the old daily bar path [Not from the book]."],
-            "Fitted reading (C): the text ties the tables to item 3, and SPX 1984-1999 gives 15 trades/yr with it vs 33 without (book 17). Tick: 0.05 index points (S&P 500 futures minimum tick 1984-1997, also the NSE tick); 3 ticks = 0.15. Table 3.6 (p.51): 22 futures 1/1/84-6/30/99, no costs; S&P 500 row: 17 trades/yr, 49.6%, $5,245.",
+              "X|[intraday wave 2b] Default p.path=1: the breakout day is walked on real 1-minute bars in time order, so the minutes show which stop came first; each stop fills at most once (at its level, or the minute's open when it opened through it) and a second fill reverses the first; inside one minute the module's TradeStation path is used (open, nearer extreme, other extreme) [convention]. Runs on SPY, SPX, NIFTY 50, NIFTYBANK with an offset of 3 ticks of the traded instrument (US 0.01, NSE 0.05; lead decision 199, decision 57; no daily open is read). NIFTY 50 days from 2026-08-11 skipped (bad closing minutes). p.path=0 = the old daily bar path [Not from the book]."],
+            "Fitted reading (C): the text ties the tables to item 3, and SPX 1984-1999 gives 15 trades/yr with it vs 33 without (book 17). Tick: the traded instrument's own tick (US 0.01, NSE 0.05; lead decisions 57, 199), so 3 ticks = 0.03 on SPY/SPX and 0.15 on NSE; p.tick = 0.05 keeps the old S&P-futures-tick reading [labelled option]. Table 3.6 (p.51): 22 futures 1/1/84-6/30/99, no costs; S&P 500 row: 17 trades/yr, 49.6%, $5,245.",
             claim("17/yr (S&P 500 futures)", "49.6%", "$5,245 total", "day trade", "1/1/84-6/30/99")),
         live!("putg_reversal_day", "Reversal day (trend filtered)", CH3, "Long/Short",
-            &["F|\"A reversal day is one where the price trades below (above) the previous day's range and then closes above (below) the previous day's low/high and opening\" (p.52): Low < Low[1], Close > Low[1] and Close > Open (sells mirrored)",
+            &["F|\"A reversal day is one where the price trades below (above) the previous day's range and then closes above (below) the previous day's low/high and opening\" (p.52): Low < Low[1], Close > Low[1] and Close > Open (sells mirrored). [Declared reading, lead decision 199] \"opening\" = today's open; p.open_ref = 1 reads it as the previous day's open [labelled option]",
               "F|\"A buy entry is made only if the close of the prior day was greater than the close 50 days ago\" (p.55)",
               "E|\"Buy/sell on close of day of basic reversal day pattern setup\" (p.55)",
               "X|\"exit is made on any day that the market had a 60% opening range breakout of the previous day's range\" (p.55); Read: an adverse breakout = sell stop at Open - 0.60*(High[1]-Low[1]) on each day after entry (the book's stop method 3, p.70). Table 3.8 header says 0.5: param orb"],
@@ -185,10 +185,11 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "putg_four_close" => vec![p("closes", "Closes in pattern", 4., 2., 10., 1.), p("rng_len", "Average range days", 30., 10., 60., 5.),
             p("trend", "Trend: close N days ago", 50., 10., 100., 5.), p("pct", "Opening range fraction", 0.62, 0.3, 1.5, 0.02), longs()],
         "putg_daily_range" | "putg_hook" => vec![longs()],
-        "putg_inside_day" => vec![p("ticks", "Ticks beyond the inside bar", 3., 0., 10., 1.), p("tick", "Tick size (index points)", 0.05, 0.01, 1., 0.01),
+        "putg_inside_day" => vec![p("ticks", "Ticks beyond the inside bar", 3., 0., 10., 1.), p("tick", "Tick size (0 = the traded instrument's tick: US 0.01, NSE 0.05, decisions 57 / 199; 0.05 = the old S&P-tick reading)", 0., 0., 1., 0.01),
             p("dir_filter", "Trade in the direction of the preceding bar (item 3)", 1., 0., 1., 1.),
             p("path", "1 = real 1-minute bars (default; days without minute data make no trade), 0 = [Not from the book] daily bar path", 1., 0., 1., 1.)], // intraday wave 2b
-        "putg_reversal_day" => vec![p("trend", "Trend: close N days ago", 50., 10., 100., 5.), p("orb", "Exit opening range breakout (0.6 text, 0.5 table)", 0.6, 0.3, 1., 0.05)],
+        "putg_reversal_day" => vec![p("trend", "Trend: close N days ago", 50., 10., 100., 5.), p("orb", "Exit opening range breakout (0.6 text, 0.5 table)", 0.6, 0.3, 1., 0.05),
+            p("open_ref", "'opening' (p.52): 0 = today's open (declared reading), 1 = the previous day's open [labelled option]", 0., 0., 1., 1.)],
         "putg_narrow_range" => vec![p("lookback", "Narrower than N prior days", 5., 2., 10., 1.), p("trend", "Trend: close N days ago", 50., 10., 100., 5.),
             p("pct", "Opening range fraction", 0.5, 0.2, 1., 0.05)],
         "putg_gap" => vec![],
@@ -322,9 +323,10 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             if c[i] > o[i] && c[i] > mid && !longs_only { v.push(entry(S, Open, f64::NAN, "sell up close")); v.push(exit(B, Close, f64::NAN, "close")); }
             v
         }),
-        "putg_inside_day" if g("path") >= 0.5 => inside_minutes(x, from, to, g("ticks") * g("tick"), g("dir_filter") >= 0.5), // intraday wave 2b
+        // lead decision 199: "three ticks" = 3 ticks of the traded instrument (decision 57 / D1-01); p.tick > 0 sets the tick
+        "putg_inside_day" if g("path") >= 0.5 => inside_minutes(x, from, to, g("ticks") * if g("tick") > 0. { g("tick") } else { x.market_tick() }, g("dir_filter") >= 0.5), // intraday wave 2b
         "putg_inside_day" => {
-            let off = g("ticks") * g("tick");
+            let off = g("ticks") * if g("tick") > 0. { g("tick") } else { x.market_tick() };
             let prior_up = g("dir_filter") >= 0.5;
             sim(x, from, to, |i, _| {
                 if i < 2 || !(h[i] < h[i - 1] && l[i] > l[i - 1]) { return vec![]; }
@@ -352,7 +354,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 v
             })
         }
-        "putg_reversal_day" => reversal_day(x, from, to, u("trend"), g("orb"), &rng),
+        "putg_reversal_day" => reversal_day(x, from, to, u("trend"), g("orb"), &rng, g("open_ref") >= 0.5),
         "putg_hook" => sim(x, from, to, |i, _| {
             if i < 3 { return vec![]; }
             let up2 = c[i - 2] > c[i - 3] && c[i - 1] > c[i - 2];
@@ -417,7 +419,7 @@ fn inside_minutes(x: &Ctx, from: usize, to: usize, off: f64, prior_up: bool) -> 
 
 /// Reversal day: entry on the close of the pattern day, then the adverse opening-range-breakout stop on each later
 /// day (fills at the stop, or at the open if the day opens through it). An opposite reversal day reverses at its close.
-fn reversal_day(x: &Ctx, from: usize, to: usize, tb: usize, orb: f64, rng: &[f64]) -> Vec<Trade> {
+fn reversal_day(x: &Ctx, from: usize, to: usize, tb: usize, orb: f64, rng: &[f64], prev_open: bool) -> Vec<Trade> {
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let mut out = Vec::new();
     let mut cur: Option<(f64, usize, f64)> = None; // dir, entry bar, entry price
@@ -434,8 +436,9 @@ fn reversal_day(x: &Ctx, from: usize, to: usize, tb: usize, orb: f64, rng: &[f64
             }
         }
         if i < tb { continue; }
-        let up = l[i] < l[i - 1] && c[i] > l[i - 1] && c[i] > o[i] && c[i - 1] > c[i - tb];
-        let dn = h[i] > h[i - 1] && c[i] < h[i - 1] && c[i] < o[i] && c[i - 1] < c[i - tb];
+        let op = if prev_open { o[i - 1] } else { o[i] }; // "closes above ... the previous day's low/high and opening" (p.52)
+        let up = l[i] < l[i - 1] && c[i] > l[i - 1] && c[i] > op && c[i - 1] > c[i - tb];
+        let dn = h[i] > h[i - 1] && c[i] < h[i - 1] && c[i] < op && c[i - 1] < c[i - tb];
         let d = if up { 1.0 } else if dn { -1.0 } else { 0.0 };
         if d == 0.0 || cur.is_some_and(|t| t.0 == d) { continue; }
         if let Some(t) = cur.take() { push(&mut out, t, i, c[i], "reversed by the opposite reversal day", i, false); }

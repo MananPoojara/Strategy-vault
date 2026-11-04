@@ -206,12 +206,25 @@ pub(crate) fn setup(
     let red = |k: usize| bars[k].c < bars[k].o;
     match method {
         Method::CbsCog => {
-            if i < 19 || b.c <= b.o || !(i - 5..i).all(red) || i > 5 && red(i - 6) {
+            // TPM1 p.173: "1. 5 or more lower highs or Red Bars" - five or more red candles (lead decision 197)
+            if i < 19 || b.c <= b.o || !(i - 5..i).all(red) {
                 return Ok(None);
             }
             let closes = bars[i - 19..=i].iter().map(|bar| bar.c).collect::<Vec<_>>();
             let mean = arithmetic(i, ExactValue::mean20(&closes))?;
             if mean.sub(&close).scale(100).signed_cmp(&mean.scale(8)) == Ordering::Less {
+                return Ok(None);
+            }
+            // "3. Increase in Volume" (p.173-174; the manual does not define it): signal volume above the prior
+            // session's volume [declared reading, lead decision 197]. Only a completed price candidate reads volume.
+            let usable = |k: usize| match bars[k].v {
+                None => Err(Failure { at: i, code: "source_volume_missing" }),
+                Some(v) if !v.is_finite() => Err(Failure { at: i, code: "source_volume_nonfinite" }),
+                Some(v) if v < 0. => Err(Failure { at: i, code: "source_volume_negative" }),
+                Some(v) => Ok(v),
+            };
+            let (prior, now) = (usable(i - 1)?, usable(i)?);
+            if exact(i, now)?.signed_cmp(&exact(i, prior)?) != Ordering::Greater {
                 return Ok(None);
             }
             let trigger = exact(i, b.h)?.add(&offset);

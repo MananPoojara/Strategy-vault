@@ -21,7 +21,8 @@ use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "stad";
 /// Admitted ids (authors/stad/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["stad1_maco", "stad1_macdbo", "stad1_tf", "stad1_sr", "stad1_pivot", "stad1_chbo", "stad2_adxdiff", "stad2_hs", "stad2_addiv", "stad2_ccibb", "stad2_pctchan", "stad2_stats3", "stad3_bdsr", "stad3_engulf", "stad3_ochist", "stad3_bb", "stad3_varzones", "stad3_sdv", "stad3_volclus", "stad4_dmiadx", "stad4_keltner", "stad4_linreg", "stad4_cc", "stad4_3xa", "stad4_dmacv", "stad4_pricedist", "stad4_momret", "stad7_vix", "stad3_mmmw", "stad10_mwt", "stad2_stats2" /* intraday wave 2b: daily bars decide every trade */];
+pub const REVIEWED: &[&str] = &["stad1_maco", "stad1_macdbo", "stad1_tf", "stad1_sr", "stad1_pivot", "stad1_chbo", "stad2_adxdiff", "stad2_hs", "stad2_addiv", "stad2_ccibb", "stad2_pctchan", "stad2_stats3", "stad3_bdsr", "stad3_engulf", "stad3_ochist", "stad3_bb", "stad3_varzones", "stad3_sdv", "stad3_volclus", "stad4_dmiadx", "stad4_keltner", "stad4_linreg", "stad4_cc", "stad4_3xa", "stad4_dmacv", "stad4_pricedist", "stad4_momret", "stad7_vix", "stad3_mmmw", "stad2_stats2" /* intraday wave 2b: daily bars decide every trade */]; // stad10_mwt: held, lead decision 199 (MWT_HELD)
+const MWT_HELD: &str = "the system's StopLoss_Amount 1500 (Vol 10 p.13) is an S&P-futures dollar stop; turned into points on a cash index it is not the book's rule, and a cash index cannot substitute for futures prices (lead decisions 167, 199). Held until continuous futures data exist";
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 // ------------------------------------------------------------------ TradeStation functions
@@ -583,7 +584,8 @@ fn defs() -> Vec<Def> {
         "X|ExitLong next bar at Lowest(Low,10) stop; ExitShort at Highest(High,10) stop"],
       "Vol 4 ch.2 p.38-46. Book: daily Coca-Cola 1970-1998 (65% winners) and CRB futures.", ("stad_cc", "Consecutive Close", "Vol 4")),
     d("stad4_momret", "Momentum-Retracement (long side)", "Vol 4 · Trending", "Long", Live,
-      &["F|PriceXMA = XAverage(C,5); HighXMA/LowXMA = XAverage(H/L,15); MACDSigLine = XAverage(MACD(C,3,10),15); MACDDiff = MACD - signal; DMISpread = DMI+(15) - DMI-(15) (code p.51)",
+      &["F|Main system (p.50-51, decoded listing): \"Input: XMALen(5), Len2(10); IncludeSystem: \"STAD 4 S Mom-Retrcmnt\",XMALEN,LEN2; IncludeSystem: \"STAD 4 L Mom-Retrcmnt\",XMALEN,LEN2;\" (\"the final main system is the two together\"): the long component runs with Len2 = 10 (lead decision 199); its own input and the inputs table say Len2(15) = p.len2 15 [labelled option]",
+        "F|PriceXMA = XAverage(C,5); HighXMA/LowXMA = XAverage(H/L,Len2); MACDSigLine = XAverage(MACD(C,3,10),15); MACDDiff = MACD - signal; DMISpread = DMI+(15) - DMI-(15) (code p.51)",
         "F|TrendUp and Momentum (PriceXMA > HighXMA, signal > 0, RSI(5) >= 70, DMISpread > 15): phase 1, track HighestHi and HighestRSI",
         "F|Retracement: phase 1 and PriceXMA < HighXMA and MACDDiff < 0 and (RSI(5) <= 50 or RSI(5) < HighestRSI - 30): phase 2, track LowestLo",
         "E|In phase 2 and not long: buy next bar at LowestLo + (HighestHi - LowestLo)/3 stop",
@@ -625,7 +627,7 @@ fn defs() -> Vec<Def> {
       "Vol 7 ch.4 p.70-74. Book: daily S&P 500 futures, 1 contract, 2/8/1994-1/8/1999, no costs: avg win $6,225, avg loss -$2,521 (ratio 2.5), largest win $47,362, largest loss -$18,050. The book's VIX was the original S&P 100-based index (now VXO); the vault has today's CBOE VIX for US tickers and India VIX (from 2015) for NSE indices (instrument swap). VIX bars are aligned by date; a day without a VIX bar gives no signal.",
       ("stad_vix", "S&P 500 Implied Volatility", "Vol 7")) },
     // ================= Volume 10 (1999)
-    d("stad10_mwt", "JK Monday We Trade (Joe Krutsinger)", "Vol 10 · Stock indices", "Long/Short", Live,
+    d("stad10_mwt", "JK Monday We Trade (Joe Krutsinger)", "Vol 10 · Stock indices", "Long/Short", NotTestable(MWT_HELD),
       &["E|If DayOfWeek(Date) = Friday and Close > Average(Close,2): buy next bar at market (Monday's open, or Tuesday's if Monday is closed) (Vol 10 p.13 code; strategy input Length 2)",
         "E|If Friday and Close <= Average(Close,2): sell short next bar at market",
         "X|SetExitOnClose: exit at the close of the entry day",
@@ -682,7 +684,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "stad4_keltner" => vec![p("len", "Length", 10., 5., 30., 1.), p("k", "ATR multiple", 1.2, 0.5, 3., 0.1), p("pct", "Channel % added", 0.5, 0.1, 1., 0.1), p("life", "Order life bars", 5., 2., 10., 1.)],
         "stad4_linreg" => vec![p("lrlen", "Regression length", 20., 10., 40., 1.), p("avglen", "XAverage of regression", 15., 1., 30., 1.), p("momlen", "Momentum length", 10., 5., 20., 1.), p("pct", "Percent", 0.5, 0.1, 1., 0.1)],
         "stad4_cc" => vec![p("nup", "Up closes", 3., 2., 6., 1.), p("ndn", "Down closes", 3., 2., 6., 1.), p("atrlen", "ATR length", 8., 4., 20., 1.), p("pct", "ATR fraction", 0.25, 0.1, 1., 0.05)],
-        "stad4_momret" => vec![p("xma", "Price XAverage", 5., 3., 10., 1.), p("len2", "High/Low XAverage", 15., 5., 30., 1.)],
+        "stad4_momret" => vec![p("xma", "Price XAverage", 5., 3., 10., 1.), p("len2", "High/Low XAverage (10 = the main system's input, decision 199; 15 = the long component and inputs table)", 10., 5., 30., 1.)],
         "stad4_3xa" => vec![p("a1", "Fast", 6., 3., 15., 1.), p("a2", "Medium", 12., 6., 30., 1.), p("a3", "Slow", 28., 15., 60., 1.)],
         "stad4_dmacv" => vec![p("plen", "Price MA", 7., 3., 20., 1.), p("pdisp", "Price displacement", 5., 0., 10., 1.), p("vlen", "Volume MA", 7., 3., 20., 1.), p("vdisp", "Volume displacement", 5., 0., 10., 1.), p("atrpct", "ATR fraction", 0.2, 0.05, 1., 0.05)],
         "stad7_vix" => vec![p("lowl", "Bull key reversal lookback (VIX lows)", 12., 1., 30., 1.), p("highh", "Bear key reversal lookback (VIX highs)", 1., 1., 30., 1.)],

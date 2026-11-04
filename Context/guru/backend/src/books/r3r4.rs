@@ -91,6 +91,9 @@ India mapping: run on an NSE stock (basket tickers); the benchmark is NIFTY 50 c
 Entry: buy limit at the setup close x (1 - 5%), live the next day only, filled at min(open, limit). Exit: first close above the 5-day SMA (the fill day's close included), sold at the next open. One position per ticker. \
 Book test: 6,000+ US stocks, open-to-open, 1/1/1995-12/31/2006, 1 cent commissions, 3-month T-bill on cash, 10 or 20 slots, highest HV(100) first when signals exceed slots - portfolio results only (see r3r4_portfolio). On a broad index HV(100) > 30 is rare: zero trades is an honest answer.";
 
+/// Lead decision 199 (K37, 4 Nov 2026), decision 166: the Low Priced band is a fixed-$ price filter.
+const LOWPRICE_HELD: &str = "the $1-$15 band (Guide p.7: \"The closing price of the stock should be greater than $1 and less than $15\") is a fixed-dollar price filter; on the split-adjusted US closes the vault holds it looks ahead, and in rupees it is not the book's band. Held until unadjusted closes exist (lead decisions 166, 199)";
+
 pub fn catalogue() -> Vec<StrategyDef> {
     // Aggressive versions = the same rules + the scale-in line (built once).
     const ALL: [&[&str]; 5] = [BASE, BIG, BIG_DECK, MID, LOW];
@@ -112,8 +115,8 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("r3r4_bigcap_deck_scale", "R3/R4 Big Cap Rules (class deck) · Aggressive", scaled(2), None),
         d("r3r4_midcap", "R3/R4 Mid Cap Rules (class deck)", MID, None),
         d("r3r4_midcap_scale", "R3/R4 Mid Cap Rules (class deck) · Aggressive", scaled(3), None),
-        d("r3r4_lowprice", "R3/R4 Low Priced Rules", LOW, None),
-        d("r3r4_lowprice_scale", "R3/R4 Low Priced Rules · Aggressive", scaled(4), None),
+        StrategyDef { status: Status::NotTestable(LOWPRICE_HELD), ..d("r3r4_lowprice", "R3/R4 Low Priced Rules", LOW, None) },
+        StrategyDef { status: Status::NotTestable(LOWPRICE_HELD), ..d("r3r4_lowprice_scale", "R3/R4 Low Priced Rules · Aggressive", scaled(4), None) },
         StrategyDef {
             notes: "Portfolio-level results only (Tables 1-12, Guide p.10-21; deck slides 21-68): they need every US stock 1995-2006.",
             status: Status::NeedsData("a US stock universe (6,000+ NYSE/NASDAQ/AMEX stocks 1995-2006) on one equity curve: the engine backtests one ticker per run"),
