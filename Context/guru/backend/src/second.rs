@@ -3,7 +3,7 @@
 //! Data2 bar carries Data2's last real bar (TradeStation/MultiCharts Data2, MetaStock Security(), AmiBroker Foreign():
 //! E4-DESIGN.md section 2). Nothing before Data2's first bar or after its last; a gap longer than CAP Data1 bars is missing
 //! data, not a fill; more than 5% carried bars in a run's window withholds the result (`carried_issue`).
-#![allow(dead_code)] // exact / padded_ab / sym: the EP4 API the K52 cards call (decision #223 plan)
+#![allow(dead_code)] // exact / padded_ab / sym: EP4 API kept for later cards
 use crate::{connors::Ctx, readiness::Issue, Row};
 use std::collections::BTreeMap;
 
@@ -120,7 +120,7 @@ pub fn xmkt(ticker: &str) -> Option<Vec<&'static str>> {
     Some(v)
 }
 
-enum Kind { Exact, Close, Hv100 }
+enum Kind { Exact, Close, Hv100, Field(Field) }
 /// The series names the already-coded modules read (E4.tsv), with the Data2 symbol each one is built from.
 fn legacy(x: &Ctx) -> Vec<(String, &'static str, Kind)> {
     let Some(t) = x.r.first().map(|r| r.ticker.as_str()) else { return vec![] };
@@ -131,6 +131,12 @@ fn legacy(x: &Ctx) -> Vec<(String, &'static str, Kind)> {
     if us && (x.native_market.is_some() || !is_benchmark("SPX", t)) { v.push(("SPX_CLOSE".into(), "SPX", Kind::Close)); } // mkits_rs (Ch.16); India: cross-market, later (#223 (6))
     if let Some(p) = parent(x) { v.push(("STR_DATA2".into(), p, Kind::Close)); }
     if let Some(b) = benchmark(x) { v.push(("BENCH_HV100".into(), b, Kind::Hv100)); } // prap1: HV of the S&P 500 symbol's own bars (AFL)
+    if let Some(b) = benchmark(x) { // K52 cards (#223): the benchmark's own fields, carried (TradeStation Data2 / MetaStock Security())
+        for (n, f) in BENCH { v.push((n.into(), b, Kind::Field(f))); }
+    }
+    if us && x.native_market.is_none() && t == "QQQ" { // Trongone (V22:2): QQQ traded with SPY as Data2, the article's pair only (#223 (5))
+        for (n, f) in PAIR { v.push((n.into(), "SPY", Kind::Field(f))); }
+    }
     if x.native_market.is_none() {
         for (k, s) in xmkt(t).unwrap_or_default().into_iter().enumerate() { v.push((format!("XMKT.C{}", k + 2), s, Kind::Close)); }
     }
@@ -139,7 +145,10 @@ fn legacy(x: &Ctx) -> Vec<(String, &'static str, Kind)> {
 
 /// Names only EP4 builds: always from the engine's price file, so a same-named extra_data file cannot bypass the
 /// benchmark-against-itself rule or the 5% count (hfm's LEADER/FOLLOWER keep their old extra_data precedence).
-const OWN: [&str; 7] = ["SPX_CLOSE", "STR_DATA2", "BENCH_HV100", "XMKT.C2", "XMKT.C3", "XMKT.C4", "XMKT.C5"];
+const OWN: [&str; 12] = ["SPX_CLOSE", "STR_DATA2", "BENCH_HV100", "XMKT.C2", "XMKT.C3", "XMKT.C4", "XMKT.C5", "BENCH.H", "BENCH.L", "BENCH.C", "SPY.C", "SPY.V"];
+/// K52: benchmark (SPX / NIFTY 50) high, low and close on the traded instrument's dates; SPY close and volume beside QQQ.
+const BENCH: [(&str, Field); 3] = [("BENCH.H", Field::H), ("BENCH.L", Field::L), ("BENCH.C", Field::C)];
+const PAIR: [(&str, Field); 2] = [("SPY.C", Field::C), ("SPY.V", Field::V)];
 /// Adds the legacy series to a context built from `data` (the engine's own price file). A Data2 symbol the file does not
 /// hold adds nothing (the rule reports needs_data).
 pub fn inject(ctx: &mut Ctx, data: &BTreeMap<String, Vec<Row>>) {
@@ -151,6 +160,7 @@ pub fn inject(ctx: &mut Ctx, data: &BTreeMap<String, Vec<Row>>) {
         let v = match kind {
             Kind::Exact => s.exact(Field::C),
             Kind::Close => s.carried(Field::C),
+            Kind::Field(f) => s.carried(f),
             Kind::Hv100 => s.own(|r| crate::connors::hv_ddof(&r.iter().map(|b| b.close).collect::<Vec<_>>(), 100, 0.)),
         };
         ctx.extra.insert(name, v);
@@ -179,13 +189,23 @@ pub fn pair_issue(x: &Ctx, id: &str, required: &[&str], p: &crate::connors::Para
             "AccuTrack's pair is small-cap vs S&P 500 (Freeburg Fig. 20/22: Vanguard Small-Cap Index vs Index 500). The vault runs only its labelled stand-ins IWM <-> SPX and NIFTYMIDCAP100 <-> NIFTY 50, each with the other as the default partner (XMKT.C2); {t}{} is not that pair, so no result is published (decision #225).",
             if small_large(t).is_some() { " with another partner column" } else { "" }) });
     }
+    let reads = |n: &str| required.contains(&n);
+    if reads("SPY.C") && (x.native_market.is_some() || t != "QQQ") {
+        return Some(Issue { status: "needs_data", note: format!(
+            "Trongone's restrictive pair rule trades QQQ with SPY as the second series (S&C V.22:2 pp.36-38). The vault runs only the article's pair; {t} with SPY would be an invented pair, so no result is published (decision #223 (5)).") });
+    }
     if x.native_market.is_some() { return None; }
     let b = market_benchmark(x)?;
-    let reads = |n: &str| required.contains(&n);
-    let selfish = (reads("SPX_CLOSE") && is_benchmark("SPX", t)) || ((reads("STR_DATA2") || reads("BENCH_HV100")) && is_benchmark(b, t));
+    let selfish = (reads("SPX_CLOSE") && is_benchmark("SPX", t)) || ((reads("STR_DATA2") || reads("BENCH_HV100") || reads("BENCH.C") || reads("BENCH.H")) && is_benchmark(b, t));
     selfish.then(|| Issue { status: "needs_data", note: format!(
         "This rule compares the instrument with its benchmark index; {t} {} {b}, so it would be compared with itself (decision #225: the only signal left is dividends and tracking error). No result is published.",
         if t == b { "is" } else { "tracks" }) })
+}
+
+/// K52: first bar of the run of bars, ending at `from`, on which every given series has a value. A rule computes its indicators from
+/// there (the bars where TradeStation / MetaStock would have both series loaded); readiness already guarantees from..=to.
+pub fn run_start(series: &[&[f64]], from: usize) -> usize {
+    (0..=from).rev().find(|&i| series.iter().any(|s| !s.get(i).is_some_and(|v| v.is_finite()))).map_or(0, |i| i + 1)
 }
 
 /// #223 (1): withheld when more than 5% of the window's bars carry a Data2 value the rule reads.
@@ -283,6 +303,9 @@ mod tests {
         }
         let c3 = crate::connors::Params::from([("xcol".to_string(), 3.)]);
         assert!(issue("IWM", "nftm_accutrack", &["XMKT.C3"], &c3).is_some_and(|n| n.contains("another partner column")));
+        for t in ["SPY", "SPX"] { assert!(issue(t, "tslrvs_spread", &["BENCH.H", "BENCH.L"], &no).is_some_and(|n| n.contains("compared with itself")), "{t}"); }
+        assert!(issue("QQQ", "sctrrst_qqq", &["SPY.C", "SPY.V"], &no).is_none());
+        for t in ["SPY", "DIA", "NDX"] { assert!(issue(t, "sctrrst_qqq", &["SPY.C", "SPY.V"], &no).is_some_and(|n| n.contains("invented pair")), "{t}"); }
         let mut x = { let r = Box::leak(Box::new(rows("AAPL", &days))); Ctx::new(r, &[], &[]) };
         x.native_market = Some(crate::baskets::Market::UnitedStates);
         assert!(pair_issue(&x, "strmm_rs1", &["STR_DATA2"], &no).is_none()); // a stock vs SPX is a real comparison
@@ -306,17 +329,17 @@ mod tests {
         let spy = mk("SPY"); // #225 (1): a fund tracking SPX is SPX for the benchmark rules
         assert_eq!(names(&spy), ["LEADER_CLOSE=NDX", "FOLLOWER_CLOSE=SPX"]);
         let qqq = mk("QQQ");
-        assert_eq!(names(&qqq), ["LEADER_CLOSE=NDX", "FOLLOWER_CLOSE=SPX", "SPX_CLOSE=SPX", "STR_DATA2=SPX", "BENCH_HV100=SPX"]);
-        assert_eq!(names(&iwm), ["LEADER_CLOSE=NDX", "FOLLOWER_CLOSE=SPX", "SPX_CLOSE=SPX", "STR_DATA2=SPX", "BENCH_HV100=SPX", "XMKT.C2=SPX", "XMKT.C3=NDX", "XMKT.C4=DJI", "XMKT.C5=MDY"]);
+        assert_eq!(names(&qqq), ["LEADER_CLOSE=NDX", "FOLLOWER_CLOSE=SPX", "SPX_CLOSE=SPX", "STR_DATA2=SPX", "BENCH_HV100=SPX", "BENCH.H=SPX", "BENCH.L=SPX", "BENCH.C=SPX", "SPY.C=SPY", "SPY.V=SPY"]);
+        assert_eq!(names(&iwm), ["LEADER_CLOSE=NDX", "FOLLOWER_CLOSE=SPX", "SPX_CLOSE=SPX", "STR_DATA2=SPX", "BENCH_HV100=SPX", "BENCH.H=SPX", "BENCH.L=SPX", "BENCH.C=SPX", "XMKT.C2=SPX", "XMKT.C3=NDX", "XMKT.C4=DJI", "XMKT.C5=MDY"]);
         assert_eq!(names(&n50), ["XMKT.C2=NIFTYMIDCAP100", "XMKT.C3=NIFTYBANK", "XMKT.C4=NIFTYIT", "XMKT.C5=NIFTYMIDCAPSELECT"]);
-        assert_eq!(names(&bank), ["STR_DATA2=NIFTY 50", "BENCH_HV100=NIFTY 50", "XMKT.C2=NIFTY 50", "XMKT.C3=NIFTYIT", "XMKT.C4=NIFTYMIDCAP100", "XMKT.C5=NIFTYMIDCAPSELECT"]);
+        assert_eq!(names(&bank), ["STR_DATA2=NIFTY 50", "BENCH_HV100=NIFTY 50", "BENCH.H=NIFTY 50", "BENCH.L=NIFTY 50", "BENCH.C=NIFTY 50", "XMKT.C2=NIFTY 50", "XMKT.C3=NIFTYIT", "XMKT.C4=NIFTYMIDCAP100", "XMKT.C5=NIFTYMIDCAPSELECT"]);
         let aapl = mk("AAPL");
         let mut x = Ctx::new(&aapl, &[], &[]);
         x.native_market = Some(crate::baskets::Market::UnitedStates);
         assert_eq!(legacy(&x).into_iter().map(|(n, s, _)| format!("{n}={s}")).collect::<Vec<_>>(),
-            ["LEADER_CLOSE=NDX", "FOLLOWER_CLOSE=SPX", "SPX_CLOSE=SPX", "STR_DATA2=SPX", "BENCH_HV100=SPX"]);
+            ["LEADER_CLOSE=NDX", "FOLLOWER_CLOSE=SPX", "SPX_CLOSE=SPX", "STR_DATA2=SPX", "BENCH_HV100=SPX", "BENCH.H=SPX", "BENCH.L=SPX", "BENCH.C=SPX"]);
         x.native_market = Some(crate::baskets::Market::India);
-        assert_eq!(legacy(&x).into_iter().map(|(n, s, _)| format!("{n}={s}")).collect::<Vec<_>>(), ["STR_DATA2=NIFTY 50", "BENCH_HV100=NIFTY 50"]);
+        assert_eq!(legacy(&x).into_iter().map(|(n, s, _)| format!("{n}={s}")).collect::<Vec<_>>(), ["STR_DATA2=NIFTY 50", "BENCH_HV100=NIFTY 50", "BENCH.H=NIFTY 50", "BENCH.L=NIFTY 50", "BENCH.C=NIFTY 50"]);
     }
     #[test]
     fn inject_keeps_an_extra_data_file_and_uses_own_bar_hv() {
