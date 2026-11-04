@@ -258,9 +258,9 @@ pub const M3_SPX:&[&str]=&["acbff_eight_stop33", "acbff_eight_stop66", "acbff_rx
     "msws_hanging_man_hammer_mfi", "nkms2_small_triangle_breakout", "putg_pattern_vbo", "qsfund_trendline", "rarsys_trend_weaver",
     "rgc_runaway_gap", "rgc_runaway_gap_f5", "rinadz_rsi9", "rpdt_range_bo", "scdshark_32", "sdtcp_donchian", "sdtcp_nr7id",
     "slct_ct_formula", "sprfs_nr4ib", "ss_hist_vol_crabel", "ss_three_day_unfilled_gap", "stad12_ntw", "stad1_maco", "stad2_adxdiff",
-    "stad2_ccibb", "stad3_bdsr", "stad4_momret", "stad5_dsdb", "stad6_adxmac", "stad7_masr", "stad9_dyf", "stad9_nohurry",
-    "stad9_redrover", "stkch_k39", "tbabc_powertool", "tcdt_idp1", "tcdt_idp2", "tdperl_clop_long", "tdperl_clop_short",
-    "tttt1_tradetimer", "upg18_safer2005", "vrsdd_double_doji", "wtdtt_mist4", "wtdtt_mist5", "wwnc_dmi"];
+    "stad2_ccibb", "stad3_bdsr", "stad5_dsdb", "stad6_adxmac", "stad7_masr", "stad9_dyf", "stad9_nohurry", "stad9_redrover",
+    "stkch_k39", "tbabc_powertool", "tcdt_idp1", "tcdt_idp2", "tdperl_clop_long", "tdperl_clop_short", "tttt1_tradetimer",
+    "upg18_safer2005", "vrsdd_double_doji", "wtdtt_mist4", "wtdtt_mist5", "wwnc_dmi"];
 pub const M3_NDX:&[&str]=&["acbff_rx15", "adrsi5_rsi5", "ajmisc_vol_rev", "jt_example_20d_breakout", "kets_seas_conf_limit", "kets_seas_inv_stop",
     "kets_stoch_div_stop", "lwnl_engulf_bull_1", "msws_all_mfi", "msws_harami_mfi", "msws_harami_rsi", "nkms_3_day_range_switch",
     "stad9_obvrev", "wtdtt_mist1", "wtdtt_mist2", "wtdtt_mist3"];
@@ -3858,7 +3858,7 @@ mod decision_179_tests {
     fn tradable_check_withdraws_flagged_cash_index_daily_results_and_is_decided_first() {
         let cat=crate::connors::catalogue();
         let find=|id:&str|cat.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id}"));
-        assert_eq!((M3_SPX.len(),M3_NDX.len(),M3_DJI.len()),(75,16,42)); // K32 re-check after the reverse change
+        assert_eq!((M3_SPX.len(),M3_NDX.len(),M3_DJI.len()),(74,16,42)); // M4 re-check after the K36/K37 audit fixes (#200)
         for (list,x,y) in [(M3_SPX,"SPX","SPY"),(M3_NDX,"NDX","QQQ"),(M3_DJI,"DJI","DIA")] {
             for id in list {
                 let d=find(id);
