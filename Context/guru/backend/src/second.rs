@@ -36,12 +36,13 @@ pub fn align<'a>(sym: &'a str, d1: &[Row], rows: &'a [Row]) -> Second<'a> {
         fresh[i] = at[i].is_some_and(|k| rows[k].date == r.date);
         more[i] = j < rows.len(); // Data2 still has a later bar: a hole, not its end
     }
+    // a gap = consecutive non-fresh Data1 bars showing the same Data2 bar (a Data2-only date starts a new gap)
     let mut i = 0;
     while i < n {
         if fresh[i] { i += 1; continue; }
         let s = i;
-        while i < n && !fresh[i] { i += 1; }
-        if i - s > CAP || at[s].is_none() || !more[i - 1] { at[s..i].iter_mut().for_each(|a| *a = None); }
+        while i < n && !fresh[i] && at[i] == at[s] { i += 1; }
+        if i - s > CAP || !more[i - 1] { at[s..i].iter_mut().for_each(|a| *a = None); }
     }
     Second { sym, rows, at, fresh }
 }
@@ -71,7 +72,7 @@ impl Second<'_> {
     }
     /// Data1 bars in from..=to that show a carried (not fresh) Data2 value.
     pub fn carried_bars(&self, from: usize, to: usize) -> usize {
-        (from..=to.min(self.at.len().saturating_sub(1))).filter(|&i| self.at[i].is_some() && !self.fresh[i]).count()
+        (from..=to).filter(|&i| self.at.get(i).is_some_and(|a| a.is_some()) && !self.fresh[i]).count()
     }
 }
 
@@ -120,9 +121,13 @@ fn legacy(x: &Ctx) -> Vec<(String, &'static str, Kind)> {
     v
 }
 
-/// Adds the legacy series to a context built from `data` (the engine's own price file). An extra_data file of the same
-/// name keeps precedence, as before. A Data2 symbol the file does not hold adds nothing (the rule reports needs_data).
+/// Names only EP4 builds: always from the engine's price file, so a same-named extra_data file cannot bypass the
+/// benchmark-against-itself rule or the 5% count (hfm's LEADER/FOLLOWER keep their old extra_data precedence).
+const OWN: [&str; 7] = ["SPX_CLOSE", "STR_DATA2", "BENCH_HV100", "XMKT.C2", "XMKT.C3", "XMKT.C4", "XMKT.C5"];
+/// Adds the legacy series to a context built from `data` (the engine's own price file). A Data2 symbol the file does not
+/// hold adds nothing (the rule reports needs_data).
 pub fn inject(ctx: &mut Ctx, data: &BTreeMap<String, Vec<Row>>) {
+    for name in OWN { ctx.extra.remove(name); }
     for (name, sym, kind) in legacy(ctx) {
         if ctx.extra.contains_key(&name) { continue; }
         let Some(rows) = data.get(sym) else { continue };
@@ -133,6 +138,17 @@ pub fn inject(ctx: &mut Ctx, data: &BTreeMap<String, Vec<Row>>) {
             Kind::Hv100 => s.own(|r| crate::connors::hv_ddof(&r.iter().map(|b| b.close).collect::<Vec<_>>(), 100, 0.)),
         };
         ctx.extra.insert(name, v);
+    }
+}
+
+/// The second series a run reads when a parameter picks it (readiness checks exactly these): nftm_accutrack p.xcol picks
+/// XMKT.C2..C5; Stridsman's p.markets = 4 drops XMKT.C5.
+pub fn param_series(id: &str, p: &crate::connors::Params, required: &mut Vec<&'static str>) {
+    const X: [&str; 4] = ["XMKT.C2", "XMKT.C3", "XMKT.C4", "XMKT.C5"];
+    match id {
+        "nftm_accutrack" => { *required = vec![X[(p.get("xcol").copied().unwrap_or(2.).round().clamp(2., 5.) as usize) - 2]]; }
+        "strmm_rsbands" | "strmm_rotation" if p.get("markets").is_some_and(|v| (v.max(0.) as usize).clamp(4, 5) == 4) => required.retain(|n| *n != X[3]),
+        _ => {}
     }
 }
 
@@ -191,6 +207,15 @@ mod tests {
         assert!(c[0].is_nan() && c[3].is_nan() && c[4].is_nan(), "{c:?}");
         assert_eq!(c[1..3], [3., 4.]);
         assert!(align("B", &d1, &[]).carried(Field::C).iter().all(|v| v.is_nan()));
+        assert_eq!(align("B", &[], &[]).carried_bars(0, 0), 0);
+        // Data2 starts on a date Data1 lacks (4): Data1's 5 carries it; a Data2-only date (9) inside a Data1 run starts a new gap
+        let d1 = rows("A", &[2, 3, 5, 8, 10, 11, 12, 15, 16, 17, 18, 19]);
+        let b9 = rows("B", &[4, 8, 9, 19]);
+        let c = align("B", &d1, &b9).carried(Field::C);
+        assert!(c[0].is_nan() && c[1].is_nan(), "{c:?}");
+        assert_eq!(c[2..4], [4., 8.]);
+        assert!(c[4..11].iter().all(|v| v.is_nan()), "{c:?}"); // 10..18 show bar 9 for 7 bars > CAP
+        assert_eq!(c[11], 19.);
     }
     #[test]
     fn own_bars_indicator_differs_from_one_on_the_aligned_series() {
@@ -229,8 +254,10 @@ mod tests {
         let data = BTreeMap::from([("SPX".to_string(), b.clone())]);
         let mut x = Ctx::new(&a, &[], &[]);
         x.extra.insert("STR_DATA2".into(), vec![7.; a.len()]);
+        x.extra.insert("FOLLOWER_CLOSE".into(), vec![7.; a.len()]);
         inject(&mut x, &data);
-        assert_eq!(x.extra["STR_DATA2"][0], 7.);
+        assert_eq!(x.extra["STR_DATA2"][0], b[0].close); // EP4 names: always the engine's own series
+        assert_eq!(x.extra["FOLLOWER_CLOSE"][0], 7.); // hfm keeps its extra_data precedence
         assert_eq!(x.extra["SPX_CLOSE"], b.iter().map(|r| r.close).collect::<Vec<_>>());
         assert!(x.extra["BENCH_HV100"].iter().all(|v| v.is_nan())); // 28 bars < 100: no HV yet, nothing invented
         assert!(!x.extra.contains_key("LEADER_CLOSE")); // NDX not in this file
