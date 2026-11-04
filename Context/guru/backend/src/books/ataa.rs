@@ -7,6 +7,11 @@
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "ataa";
+/// Admitted ids (lane K38, decision #202; reference authors/titles-1030/K38w/ataa_ref.py). ataa_moon is NOT admitted: the
+/// source's stop-and-reverse is its AUD futures test, and the same page says "The Full Moon has been found to be Bullish for
+/// the Stockmarket" (Dec 1990 p.11), so the coded direction contradicts the source on an index.
+pub const REVIEWED: &[&str] = &["ataa_coppock", "ataa_ma3_5_15_30"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 fn mk(dir: f64, i: usize, px: f64, kind: &'static str) -> Trade {
     Trade { dir, legs: vec![Leg { i, px, w: 1. }], exit_i: i, exit_px: px, reason: String::new(), entry_kind: kind, signal_i: i, open: false, exits: vec![] }
@@ -205,6 +210,13 @@ fn coppock_monthly(x: &Ctx, r1: usize, r2: usize, w: usize) -> (Vec<f64>, Vec<us
         (0..w).map(|j| s[m + 1 - w + j] * (j + 1) as f64).sum::<f64>() / wsum }).collect();
     (cop, first)
 }
+
+// Instrument admission (lane K38, 4 Nov 2026, decision #202).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == "ataa" && crate::books::ataa::reviewed(def.id),
+    label: "Colin Nicholson tested the Coppock Indicator on the DJIA and the All Ordinaries (monthly); Vic Nevill's 5/15/30 example is a weekly NAB chart with no statistics; runs on indices, ETFs and stocks, US and India, are a declared application, not the authors' test.",
+    basis: "ATAA Newsletter Mar 1995 p.4 and May 1995 p.6 (Coppock), ATAA Journal Nov 1998 pp.5-8 (moving averages); OCR re-read by lane H1 (4 Nov 2026); independent check authors/titles-1030/K38w/ataa_ref.py",
+};
 
 #[cfg(test)]
 mod tests {
