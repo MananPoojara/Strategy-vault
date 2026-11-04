@@ -9,7 +9,7 @@ use crate::connors::{rsi, sma, true_range, Ctx, Leg, ParamDef, Params, Status, S
 
 pub const BOOK: &str = "ftm";
 /// Admitted ids (authors/futuresmag/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["ftm_km_co_open", "ftm_km_co_limit", "ftm_km_hh_open", "ftm_km_hh_limit", "ftm_rg_dip", "ftm_cvr9", "ftm_zg_weak2r", "ftm_kf_sd", "ftm_kf_sd_full", "ftm_mt_macd", "ftm_mt_macd_rsi", "ftm_mt_macd_stoch", "ftm_rg_feedback", "ftm_carr_osc" /* lane K47, decision 217 */];
+pub const REVIEWED: &[&str] = &["ftm_km_co_open", "ftm_km_co_limit", "ftm_km_hh_open", "ftm_km_hh_limit", "ftm_rg_dip", "ftm_cvr9", "ftm_zg_weak2r", "ftm_kf_sd", "ftm_kf_sd_full", "ftm_mt_macd", "ftm_mt_macd_rsi", "ftm_mt_macd_stoch", "ftm_rg_feedback", "ftm_carr_macd", "ftm_carr_mom", "ftm_carr_rsi", "ftm_carr_roc", "ftm_carr_stoch" /* lanes K47/K49, decisions 217/219 */];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 // ------------------------------------------------------------------ helpers
@@ -63,6 +63,9 @@ const G_KF: &str = "Jan 2002 · Fitschen sidebar 'Logical exclusions' (in Ruggie
 const G_MT: &str = "Jan 2001 · Matoba · A MACD combo to counter risk";
 const G_ND: &str = "Other articles (data or rules missing)";
 const G_CR: &str = "Jun 2005 · Carr · Getting mechanical with oscillators";
+const CARR_F: &str = "F|\"Initial testing parameters were obtained by applying the default parameters of each indicator, as defined in 'Oscillators explained'\" (FM June 2005 p.44; the indicator article is FM Jan 2005 pp.56-59). One of the five oscillator systems tested in the article; each is its own card";
+const CARR_X: &str = "X|\"These simple systems are always in the markets\" (June p.45): each signal reverses the position; same-side signals while in that position are ignored";
+const CARR_HELD: &str = "X|HELD (not this card): the 2.5%-of-capital stop with the first-profitable-open exit ('Keep the money', p.45) and the RSI 80/10 and per-market levels ('Leveling the field', p.46)";
 
 const SES: &str = "X|SES: \"The profit target was set to the entry price plus some multiple of the 50-day ATR\" - \"profit target at 10 ATR units above the entry price\" (limit order); \"stop loss at four ATR units below the entry price\"; \"If neither the profit target nor stop loss closes out the trade prior to the 20th bar, the trade is closed out by a market order at the open of the 21st bar\" (200102 PDF 16-17, pp.39-40)";
 const KMNOTE: &str = "Long only, as in the article. Book: all optionable Nasdaq stocks, $5,000 per trade, $10-$100 price filter, $15 commission; here one index (instrument swap; price filter and sizing not applicable). Readings (book silent): ATR = simple mean of 50 true ranges at the signal bar; stop and target orders are first active on the bar after entry; stop gaps fill at the open; if stop and target both touch on one bar the stop is taken first; 'at least two days have passed' = entry bar >= exit bar + 2. Prices not rounded to ticks.";
@@ -164,17 +167,26 @@ fn defs() -> Vec<S> {
         S { id: "ftm_an_system_e", name: "Anthonisz System E (range expansion) / System I (hot level)", group: G_ND, dir: "Long/Short",
             status: NotTestable("intraday order of the first range-expansion print cannot be known from daily bars, the equity-index percentage Rp is not given, and System I needs tick data (most-traded price)"), vix: false,
             rules: &["E|\"IF (Yesterday was an Up-Day and Percentage Range > Rp and current price = the low) Then Sell; Stop loss: Buy on stop at today's High + 1 tick; Close: Buy Market on Close\" (200405 PDF 37, p.37)"], notes: "", claim: None },
-        S { id: "ftm_carr_osc", name: "Carr oscillator systems (MACD/momentum/RSI/ROC/stochastics), always in", group: G_CR, dir: "Long/Short", status: Live, vix: false,
-            rules: &["F|\"Initial testing parameters were obtained by applying the default parameters of each indicator, as defined in 'Oscillators explained'\" (FM June 2005 p.44); p.sys picks the system, 1 = MACD (the first one printed)",
-                     "E|1 MACD: MACD = EMA(12) - EMA(26) of closes, signal = \"the MACD line smoothed by a nine-day EMA\" (FM Jan 2005 p.56); \"Buy signals are generated when the MACD histogram crosses above the zero line from below. Sell signals occur when the histogram crosses below the zero-line from above\" (p.44)",
-                     "E|2 Momentum: \"M = Pc - Pn\", \"The most common value is 10 periods\" (Jan p.57); \"Buy signals occur when the momentum oscillator rises above zero, sells are taken on crosses below zero\" (June p.44)",
-                     "E|3 RSI: \"A 14-day interval is typically used\" (Jan p.57); \"When the reading of the indicator rises above 30 from below, a buy signal is taken. Sells are signaled when the indicator crosses below 70 from above that level\" (June p.44)",
-                     "E|4 ROC: \"The normal time frame for ROC measurement is 10 days\" (Jan p.58); \"signals are generated when the indicator crosses the zero line\" (June p.45)",
-                     "E|5 Stochastics: \"buy signals occur when the fast stochastic crosses above the slow stochastic and both lines are rising while still below 30%. Sell signals are generated when the fast stochastics falls below the slow stochastic, both lines are declining and both lines are above 70%\" (June p.45); %K = (C - Ln) / (Hn - Ln) x 100 and %D = 100 x the n-period sum of (C - Ln) / the sum of (Hn - Ln) (Jan p.58), chart label 'Stochastic(14[1],3)' (Jan p.59)",
-                     "X|\"These simple systems are always in the markets\" (June p.45): each signal reverses the position; same-side signals while in that position are ignored",
-                     "X|HELD (not this card): the 2.5%-of-capital stop with the first-profitable-open exit ('Keep the money', p.45) and the RSI 80/10 and per-market levels ('Leveling the field', p.46)"],
-            notes: "[Readings, the articles do not say] signal on the close, trade at the next open; EMA alpha 2/(n+1) seeded with the first close, MACD signals from the bar where the 26-bar EMA and the 9-bar signal EMA are both complete; RSI = Wilder's RSI (p.rsi_simple=1: plain 14-day averages of up and down closes, the printed wording); ROC = 100 x (C / C[10] - 1) crossing 0, the same crossing as the printed ratio 100 x (Y/Yn) crossing 100, so on positive prices it trades exactly as Momentum (the book's results differ by 0.5%: 4,315 vs 4,336 trades); stochastic %K 14 with %D the 3-bar ratio of sums as printed (p.dsma=1: the 3-bar average of %K); 'crosses' = today beyond the level and yesterday at or on the other side; 'rising' = above yesterday's value. Book (Snapshot performance p.45: natural gas, soybeans, copper, yen and 10-year T-note futures 1968-2004, $45 per round turn): MACD $216,883, 37.8% wins, 2,426 trades, PF 1.14; Momentum $20,996, 34.4%, 4,315; RSI $309,873, 42.2%, 393, PF 1.53; ROC $8,563, 35.2%, 4,336; Stochastics -$3,475, 62.5%, 16 trades. Runs on indices, ETFs and stocks are a declared application. Independent check authors/titles-1030/K47w/k47_ref.py.",
-            claim: crate::connors::claim("2426 (MACD)", "37.8%", "$89", "", "5-futures basket 1968-2004, $45/rt (Snapshot performance, FM June 2005 p.45)") },
+        S { id: "ftm_carr_macd", name: "Carr MACD(12,26,9) histogram zero cross, always in", group: G_CR, dir: "Long/Short", status: Live, vix: false,
+            rules: &[CARR_F, "E|MACD = EMA(12) - EMA(26) of closes, signal = \"the MACD line smoothed by a nine-day EMA\" (FM Jan 2005 p.56); \"Buy signals are generated when the MACD histogram crosses above the zero line from below. Sell signals occur when the histogram crosses below the zero-line from above\" (June p.44)", CARR_X, CARR_HELD],
+            notes: "[Readings, the articles do not say] signal on the close, trade at the next open; EMA alpha 2/(n+1) seeded with the first close; signals from the bar where the 26-bar EMA and the 9-bar signal EMA are both complete; 'crosses' = today beyond zero and yesterday at or on the other side. Book (Snapshot performance p.45, 5-futures basket 1968-2004, $45 per round turn): $216,883, 37.8% wins, 2,426 trades, avg $89, PF 1.14, max DD -$44,824. Runs on indices, ETFs and stocks are a declared application. Same code as the other four Carr cards (one shared function); independent check authors/titles-1030/K47w/k47_ref.py.",
+            claim: crate::connors::claim("2426", "37.8%", "$89", "", "5-futures basket 1968-2004, $45/rt (Snapshot performance, FM June 2005 p.45)") },
+        S { id: "ftm_carr_mom", name: "Carr Momentum(10) zero cross, always in", group: G_CR, dir: "Long/Short", status: Live, vix: false,
+            rules: &[CARR_F, "E|Momentum: \"M = Pc - Pn\", \"The most common value is 10 periods\" (Jan p.57); \"Buy signals occur when the momentum oscillator rises above zero, sells are taken on crosses below zero\" (June p.44)", CARR_X, CARR_HELD],
+            notes: "[Readings, the articles do not say] signal on the close, trade at the next open; M = C - C[10]; 'crosses' = today beyond zero and yesterday at or on the other side. Book (Snapshot performance p.45, 5-futures basket 1968-2004, $45 per round turn): $20,996, 34.4% wins, 4,315 trades, avg $5, PF 1.01, max DD -$103,185. Runs on indices, ETFs and stocks are a declared application. Same code as the other four Carr cards (one shared function); independent check authors/titles-1030/K47w/k47_ref.py.",
+            claim: crate::connors::claim("4315", "34.4%", "$5", "", "5-futures basket 1968-2004, $45/rt (Snapshot performance, FM June 2005 p.45)") },
+        S { id: "ftm_carr_rsi", name: "Carr RSI(14) 30/70 crosses, always in", group: G_CR, dir: "Long/Short", status: Live, vix: false,
+            rules: &[CARR_F, "E|RSI: \"A 14-day interval is typically used\" (Jan p.57); \"When the reading of the indicator rises above 30 from below, a buy signal is taken. Sells are signaled when the indicator crosses below 70 from above that level\" (June p.44)", CARR_X, CARR_HELD],
+            notes: "[Readings, the articles do not say] signal on the close, trade at the next open; RSI = Wilder's RSI (p.rsi_simple=1: plain 14-day averages of up and down closes, the printed wording); 'crosses' = today beyond the level and yesterday at or on the other side. Book (Snapshot performance p.45, 5-futures basket 1968-2004, $45 per round turn): $309,873, 42.2% wins, 393 trades, avg $788, PF 1.53, max DD -$60,076. Runs on indices, ETFs and stocks are a declared application. Same code as the other four Carr cards (one shared function); independent check authors/titles-1030/K47w/k47_ref.py.",
+            claim: crate::connors::claim("393", "42.2%", "$788", "", "5-futures basket 1968-2004, $45/rt (Snapshot performance, FM June 2005 p.45)") },
+        S { id: "ftm_carr_roc", name: "Carr ROC(10) zero cross, always in", group: G_CR, dir: "Long/Short", status: Live, vix: false,
+            rules: &[CARR_F, "E|ROC: \"The normal time frame for ROC measurement is 10 days\" (Jan p.58); \"signals are generated when the indicator crosses the zero line\" (June p.45)", CARR_X, CARR_HELD],
+            notes: "[Readings, the articles do not say] signal on the close, trade at the next open; ROC = 100 x (C / C[10] - 1) crossing 0, the same crossing as the printed ratio 100 x (Y/Yn) crossing 100. On positive prices it therefore trades exactly like Momentum (card ftm_carr_mom) with the same length: at the default 10 on both cards, the same trades on every instrument here. The book's figures differ slightly (4,336 vs 4,315 trades), and the article says the two show \"strikingly similar results, as should be expected because both are derived from a simple 10-day difference in price\" (June p.45). Book (Snapshot performance p.45, 5-futures basket 1968-2004, $45 per round turn): $8,563, 35.2% wins, 4,336 trades, avg $2, PF 1, max DD -$103,185. Runs on indices, ETFs and stocks are a declared application. Same code as the other four Carr cards (one shared function); independent check authors/titles-1030/K47w/k47_ref.py.",
+            claim: crate::connors::claim("4336", "35.2%", "$2", "", "5-futures basket 1968-2004, $45/rt (Snapshot performance, FM June 2005 p.45)") },
+        S { id: "ftm_carr_stoch", name: "Carr Stochastics(14,3) 30/70 crossovers, always in", group: G_CR, dir: "Long/Short", status: Live, vix: false,
+            rules: &[CARR_F, "E|Stochastics: \"buy signals occur when the fast stochastic crosses above the slow stochastic and both lines are rising while still below 30%. Sell signals are generated when the fast stochastics falls below the slow stochastic, both lines are declining and both lines are above 70%\" (June p.45); %K = (C - Ln) / (Hn - Ln) x 100 and %D = 100 x the n-period sum of (C - Ln) / the sum of (Hn - Ln) (Jan p.58), chart label 'Stochastic(14[1],3)' (Jan p.59)", CARR_X, CARR_HELD],
+            notes: "[Readings, the articles do not say] signal on the close, trade at the next open; %K 14 with %D the 3-bar ratio of sums as printed (p.dsma=1: the 3-bar average of %K); 'crosses' = today beyond and yesterday at or on the other side; 'rising' = above yesterday's value. The article notes \"the low number of trades for the stochastics strategy is due to the restrictiveness of the rules\" (June p.45): few or no trades on some instruments. Book (Snapshot performance p.45, 5-futures basket 1968-2004, $45 per round turn): -$3,475, 62.5% wins, 16 trades, avg -$217, PF 0.97, max DD -$109,665. Runs on indices, ETFs and stocks are a declared application. Same code as the other four Carr cards (one shared function); independent check authors/titles-1030/K47w/k47_ref.py.",
+            claim: crate::connors::claim("16", "62.5%", "-$217", "", "5-futures basket 1968-2004, $45/rt (Snapshot performance, FM June 2005 p.45)") },
     ]
 }
 
@@ -206,7 +218,11 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "ftm_rg_cot" => ("ftm_rg_cot", "COT model", ""),
         "ftm_rg_intermarket" => ("ftm_rg_im", "Intermarket models", ""),
         "ftm_an_system_e" => ("ftm_an", "Anthonisz Systems E/I", ""),
-        "ftm_carr_osc" => ("ftm_carr", "Carr oscillators", "always in"),
+        "ftm_carr_macd" => ("ftm_carr_macd", "Carr MACD system", "always in"),
+        "ftm_carr_mom" => ("ftm_carr_mom", "Carr Momentum system", "always in"),
+        "ftm_carr_rsi" => ("ftm_carr_rsi", "Carr RSI system", "always in"),
+        "ftm_carr_roc" => ("ftm_carr_roc", "Carr ROC system", "always in"),
+        "ftm_carr_stoch" => ("ftm_carr_stoch", "Carr Stochastics system", "always in"),
         _ => return None,
     })
 }
@@ -232,11 +248,12 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
                                  p("stop", "Close-only stop, SD units", 1.5, 0.5, 4., 0.25), p("skipwed", "Skip Wednesday signals (1 = book's tweak)", 0., 0., 1., 1.)],
         "ftm_mt_macd" | "ftm_mt_macd_rsi" | "ftm_mt_macd_stoch" => vec![p("s1", "Higher smoothing factor", 0.95, 0.05, 1., 0.05), p("s2", "Lower smoothing factor", 0.90, 0.05, 1., 0.05),
                                  p("osc", "Oscillator length (sized variants)", 10., 2., 30., 1.)],
-        "ftm_carr_osc" => vec![p("sys", "System: 1 MACD, 2 Momentum, 3 RSI, 4 ROC, 5 Stochastics", 1., 1., 5., 1.),
-                                p("fast", "MACD fast EMA", 12., 2., 50., 1.), p("slow", "MACD slow EMA", 26., 5., 100., 1.), p("signal", "MACD signal EMA", 9., 2., 30., 1.),
-                                p("n", "Momentum / ROC length", 10., 1., 50., 1.), p("rsi", "RSI length", 14., 2., 50., 1.), p("lo", "RSI / stochastic oversold level", 30., 5., 50., 1.),
-                                p("hi", "RSI / stochastic overbought level", 70., 50., 95., 1.), p("k", "Stochastic %K length", 14., 3., 50., 1.), p("d", "Stochastic %D length", 3., 1., 10., 1.),
-                                p("dsma", "%D: 0 = printed ratio of sums, 1 = average of %K", 0., 0., 1., 1.), p("rsi_simple", "RSI: 0 = Wilder, 1 = plain averages", 0., 0., 1., 1.)],
+        "ftm_carr_macd" => vec![p("fast", "MACD fast EMA", 12., 2., 50., 1.), p("slow", "MACD slow EMA", 26., 5., 100., 1.), p("signal", "MACD signal EMA", 9., 2., 30., 1.)],
+        "ftm_carr_mom" | "ftm_carr_roc" => vec![p("n", if id == "ftm_carr_mom" { "Momentum length" } else { "ROC length" }, 10., 1., 50., 1.)],
+        "ftm_carr_rsi" => vec![p("rsi", "RSI length", 14., 2., 50., 1.), p("lo", "RSI buy level (cross above)", 30., 5., 50., 1.), p("hi", "RSI sell level (cross below)", 70., 50., 95., 1.),
+                               p("rsi_simple", "RSI: 0 = Wilder, 1 = plain averages", 0., 0., 1., 1.)],
+        "ftm_carr_stoch" => vec![p("k", "Stochastic %K length", 14., 3., 50., 1.), p("d", "Stochastic %D length", 3., 1., 10., 1.), p("lo", "Oversold level (buys below)", 30., 5., 50., 1.),
+                                 p("hi", "Overbought level (sells above)", 70., 50., 95., 1.), p("dsma", "%D: 0 = printed ratio of sums, 1 = average of %K", 0., 0., 1., 1.)],
         _ => return None,
     })
 }
@@ -263,19 +280,24 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         "ftm_mt_macd" => matoba(x, from, to, g("s1"), g("s2"), 0, u("osc").max(2)),
         "ftm_mt_macd_rsi" => matoba(x, from, to, g("s1"), g("s2"), 1, u("osc").max(2)),
         "ftm_mt_macd_stoch" => matoba(x, from, to, g("s1"), g("s2"), 2, u("osc").max(2)),
-        "ftm_carr_osc" => carr(x, from, to, &|k| g(k), &|k| u(k).max(1)),
+        "ftm_carr_macd" => carr(x, from, to, 1, &|k| g(k), &|k| u(k).max(1)),
+        "ftm_carr_mom" => carr(x, from, to, 2, &|k| g(k), &|k| u(k).max(1)),
+        "ftm_carr_rsi" => carr(x, from, to, 3, &|k| g(k), &|k| u(k).max(1)),
+        "ftm_carr_roc" => carr(x, from, to, 4, &|k| g(k), &|k| u(k).max(1)),
+        "ftm_carr_stoch" => carr(x, from, to, 5, &|k| g(k), &|k| u(k).max(1)),
         _ => return None,
     })
 }
 
 /// Carr (FM June 2005) always-in oscillator systems with the Jan 2005 defaults: a signal at bar i reverses at the open of i+1.
-fn carr(x: &Ctx, from: usize, to: usize, g: &dyn Fn(&str) -> f64, u: &dyn Fn(&str) -> usize) -> Vec<Trade> {
+/// sys: 1 MACD, 2 Momentum, 3 RSI, 4 ROC, 5 Stochastics (one card each, decision 219).
+fn carr(x: &Ctx, from: usize, to: usize, sys: i64, g: &dyn Fn(&str) -> f64, u: &dyn Fn(&str) -> usize) -> Vec<Trade> {
     let (c, n, nan) = (&x.c, x.c.len(), f64::NAN);
     let ema = |v: &[f64], k: usize| { let a = 2.0 / (k as f64 + 1.0); let mut o = v.to_vec(); for i in 1..v.len() { o[i] = o[i - 1] + a * (v[i] - o[i - 1]); } o };
     let up = |v: &[f64], i: usize, lv: f64| i > 0 && v[i] > lv && v[i - 1] <= lv;
     let dn = |v: &[f64], i: usize, lv: f64| i > 0 && v[i] < lv && v[i - 1] >= lv;
     let (os, ob) = (g("lo"), g("hi"));
-    let sig: Vec<i8> = match g("sys").round() as i64 {
+    let sig: Vec<i8> = match sys {
         1 => {
             let (sl, sg) = (u("slow"), u("signal"));
             let (f, s) = (ema(c, u("fast")), ema(c, sl));
@@ -615,10 +637,9 @@ mod tests {
         let mut r = rows(400);
         for (i, row) in r.iter_mut().enumerate() { let v = 100. + (i as f64 / 9.).sin() * 8.; row.close = v; row.open = v - 0.3; row.high = v + 1.; row.low = v - 1.; }
         let x = Ctx::new(&r, &r, &[]);
-        for sys in 1..=5 {
-            let mut p = Params::new(); p.insert("sys".into(), sys as f64);
-            let t = run("ftm_carr_osc", &x, 0, 399, &p).unwrap();
-            assert!(!t.is_empty() || sys == 5, "sys {sys}");
+        for (sys, id) in ["ftm_carr_macd", "ftm_carr_mom", "ftm_carr_rsi", "ftm_carr_roc", "ftm_carr_stoch"].iter().enumerate() {
+            let t = run(id, &x, 0, 399, &Params::new()).unwrap();
+            assert!(!t.is_empty() || sys == 4, "{id}");
             for w in t.windows(2) { assert_eq!((w[0].exit_i, w[0].exit_px, -w[0].dir), (w[1].legs[0].i, w[1].legs[0].px, w[1].dir)); }
             for z in &t { assert_eq!(z.legs[0].px, r[z.legs[0].i].open); if !z.open { assert_eq!(z.signal_i + 1, z.exit_i); } }
         }
