@@ -1,7 +1,9 @@
 //! Anthony W. Warren, alpha-beta trend following, Technical Analysis of Stocks & Commodities:
 //! V3:3 "A Trend Following Method for All Seasons, Part 1" (CONC.PDF), V3:8 "Part II. Implementation
 //! Using Alpha-Beta Filtering" with the BASIC listing (IMPL.PDF), V4:9 "revisited" (ALPA.PDF),
-//! V7:4 "Version II, tuning for performance" (ALPHABE.PDF, its code listing is not in our copy).
+//! V7:4 "Version II, tuning for performance" (ALPHABE.PDF) with its QuickBASIC listing "Alpha-beta, Version II" (SIDEBA.pdf in the
+//! same V07/C04 folder of the S&C DVD; read and coded by lane K41, 4 Nov 2026, decision 205; independent check
+//! authors/titles-1030/K41w/k41_ref.py).
 //! Source copies: Books/Anthony W. Warren/. Notes: library/awab/README.md.
 //!
 //! The 1985 BASIC routine is run at every decision point on the data up to that point (as the author
@@ -11,7 +13,7 @@ use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 const BOOK: &str = "awab";
 /// Admitted ids (authors/lanea/singles/decisions.json).
-pub const REVIEWED_LANEA: &[&str] = &["awab_ls", "awab_long"];
+pub const REVIEWED_LANEA: &[&str] = &["awab_ls", "awab_long", "awab_v2"];
 pub fn reviewed_lanea(id: &str) -> bool { REVIEWED_LANEA.contains(&id) }
 
 pub fn catalogue() -> Vec<StrategyDef> {
@@ -33,11 +35,14 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "Author's cases: weekly Fidelity funds, Tandy, S&P 400 (no performance statistics printed; signal dates only, see README). Run on the index instead of the fund/S&P 400. Short side is in every statement of the rules; V7:4 says shorts may need shorter filters (no values given), so the same filters are used. Non-default: p.daily=1 samples daily closes (\"daily or weekly closing price\", V7:4 p.1)."),
         make("awab_long", "Alpha-beta trend channel, long only (1985 routine)", "Long", Status::Live, &R,
             "Same rules with the short recommendations ignored, as the author did for mutual funds (\"because mutual funds cannot be traded short, the short recommendations are ignored here\", V7:4 p.1)."),
-        make("awab_v2", "Alpha-beta Version II (1989 revised code)", "Long/Short",
-            Status::NotTestable("the V7:4 revised listing (\"listed at the end of this article\") is not in our copy, and the text does not say how the revised channel centre and width are computed from past data; defaults MS=6, ML=15, YS=2.5 can be tried on awab_ls as parameters"),
-            &["F|MS=6, ML=15, YS=2.5 defaults for weekly stock data (V7:4 p.2)", "F|Revised trend channel from data up to each trading date only (V7:4 p.1) [method not given]",
-              "F|\"separate alpha-beta filters should be used for buy/sell decisions and for short/cover decisions\" (V7:4 p.2) [no values given]"],
-            "S&P 400 weekly Jun 1986-Dec 1988: ML=15 buy 16 Jan 1987, sell 9 Oct 1987 (V7:4 p.2)."),
+        make("awab_v2", "Alpha-beta Version II (1989 revised code), long/short", "Long/Short", Status::Live,
+            &["F|Weekly closing prices; defaults \"XMS = 6!: XML = 15!: YS = 2.5\" (SIDEBA.pdf p.2, line 145; \"A good default for weekly stock data is MS=6 ... ML=15 ... YS=2.5\", ALPHABE.PDF p.5). Week close = close of the week's last trading day.",
+              "F|Lines 200-220: least-squares line over the first ML points; lines 270-290: alpha-beta filter over the first MS+ML points (AL = 2/(MS+1.5), BE = AL/(MS+.5)), Y(I-MS) = XF - MS*DF; line 310: VAR = mean of (X-Y)^2 over the first ML points; line 330: AP = 1/ML, Y(T1) = XF - J*DF for the next MS points, VAR = VAR + AP*((X-Y)^2 - VAR) (SIDEBA.pdf p.2-3)",
+              "F|Line 334: over the remaining points RE = X - XF: XF = XF + AL*RE: DF = DF + BE*RE: Y(I) = XF: XF = XF + DF; VAR = VAR + AP*((X(I) - Y(I))^2 - VAR): SIG = YS*SQR(VAR); upper/lower trend line = Y +/- SIG (SIDEBA.pdf p.3)",
+              "F|Lines 340-350: trading filter = ML-lag alpha-beta filter, X(IT,I) = XF - ML*DF with AL = 2/(ML+1.5), BE = AL/(ML+.5) (SIDEBA.pdf p.3)",
+              "E|\"If the trading filter lies below the lower trend channel, then an uptrend is in progress and you should buy or remain long ... If the trading filter lies above the upper trend channel a downtrend is in progress and you should sell or remain short.\" (ALPHABE.PDF p.2)",
+              "X|\"If the trading filter lies between the trend channels, then no trend is evident and you should be out.\" (ALPHABE.PDF p.2); \"you should exclude the first MS and ML data points from a profitability analysis\" (p.5); the order fills at the next trading day's open [book silent on fill]"],
+            "Version II computes the channel from the data up to each point only (\"The revised alpha-beta method gives realistic trading signals based on data up to the time of decision\", ALPHABE.PDF p.5), so one pass over the file is free of future data after the first MS+ML points. Line 180 floors YS at 1. One set of filters for both sides: the article advises separate (shorter) filters for short/cover decisions but gives no values. Author's case: S&P 400 weekly, June 1986 - December 1988, ML = 15: buy 16 January 1987, sell 9 October 1987, no further signals (ALPHABE.PDF p.5). Non-default: p.daily = 1 samples daily closes."),
     ]
 }
 
@@ -45,7 +50,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
     let v = match id {
         "awab_ls" => "1985 routine · long/short",
         "awab_long" => "1985 routine · long only",
-        "awab_v2" => "Version II · code missing",
+        "awab_v2" => "Version II · 1989 listing",
         _ => return None,
     };
     Some(("awab_alphabeta", "Warren alpha-beta trend channel", v))
@@ -58,6 +63,12 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("ms", "MS: lags for trend channels", 4., 2., 12., 1.),
             p("ml", "ML: lags for trading filter (>= MS)", 12., 2., 30., 1.),
             p("ys", "YS: channel width in sigma (>= 2)", 2., 2., 4., 0.25),
+            p("daily", "Sample daily closes instead of weekly (0 = weekly, book default)", 0., 0., 1., 1.),
+        ]),
+        "awab_v2" => Some(vec![
+            p("ms", "MS: lags for trend channels", 6., 2., 12., 1.),
+            p("ml", "ML: lags for trading filter (>= MS)", 15., 2., 30., 1.),
+            p("ys", "YS: channel width in sigma (>= 1)", 2.5, 1., 4., 0.25),
             p("daily", "Sample daily closes instead of weekly (0 = weekly, book default)", 0., 0., 1., 1.),
         ]),
         _ => None,
@@ -126,21 +137,69 @@ pub fn routine(z: &[f64], ms: usize, ml: usize, ys: f64) -> (f64, f64, f64) {
     (y[n - 1] - sig, y[n - 1] + sig, tf)
 }
 
+/// The 1989 Version II routine (SIDEBA.pdf) over z[0..N]: (TL, TU, trading filter) at every point; NaN before point ML+MS.
+pub fn routine2(z: &[f64], ms: usize, ml: usize, ys: f64) -> Vec<(f64, f64, f64)> {
+    let n = z.len();
+    let mut out = vec![(f64::NAN, f64::NAN, f64::NAN); n];
+    if n < ml + ms || ml < 2 { return out; }
+    let c = (ml as f64 + 1.) / 2.;
+    let (mut xb, mut dx) = (0., 0.);
+    for i in 1..=ml { xb += z[i - 1]; dx += z[i - 1] * (i as f64 - c); }
+    dx /= ml as f64 * (ml as f64 * ml as f64 - 1.) / 12.;
+    xb = xb / ml as f64 + (1. - c) * dx;
+    let (al, be) = (2. / (ms as f64 + 1.5), 2. / (ms as f64 + 1.5) / (ms as f64 + 0.5));
+    let (mut xf, mut df) = (xb, dx);
+    let mut y = vec![0.; n + 1]; // 1-based
+    for i in 1..=ml + ms {
+        let re = z[i - 1] - xf; xf += al * re; df += be * re;
+        if i > ms { y[i - ms] = xf - ms as f64 * df; }
+        xf += df;
+    }
+    let mut var = (1..=ml).map(|i| (z[i - 1] - y[i]).powi(2)).sum::<f64>() / ml as f64;
+    let t = ml + ms;
+    let ap = 1. / ml as f64;
+    let mut sig = vec![f64::NAN; n + 1];
+    for i in 1..=ms {
+        let t1 = t + i - ms;
+        y[t1] = xf - (ms - i + 1) as f64 * df;
+        var += ap * ((z[t1 - 1] - y[t1]).powi(2) - var);
+        sig[t1] = ys * var.sqrt();
+    }
+    for i in t + 1..=n {
+        let re = z[i - 1] - xf; xf += al * re; df += be * re;
+        y[i] = xf; xf += df;
+        var += ap * ((z[i - 1] - y[i]).powi(2) - var);
+        sig[i] = ys * var.sqrt();
+    }
+    let (al, be) = (2. / (ml as f64 + 1.5), 2. / (ml as f64 + 1.5) / (ml as f64 + 0.5));
+    let (mut xf, mut df) = (xb, dx);
+    for i in 1..=n {
+        let re = z[i - 1] - xf; xf += al * re; df += be * re;
+        let tf = xf - ml as f64 * df;
+        xf += df;
+        if i >= t { out[i - 1] = (y[i] - sig[i], y[i] + sig[i], tf); }
+    }
+    out
+}
+
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let schema = params(id)?;
     if from > to || to >= x.r.len() { return None; }
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).unwrap().def);
-    let (ms, ml, ys) = (g("ms").round().max(2.) as usize, g("ml").round().max(2.) as usize, g("ys").max(2.));
+    let v2 = id == "awab_v2";
+    let (ms, ml, ys) = (g("ms").round().max(2.) as usize, g("ml").round().max(2.) as usize, if v2 { g("ys").max(1.) } else { g("ys").max(2.) });
     if ms > ml { return None; } // listing line 170
     let (daily, long_only) = (g("daily") >= 0.5, id == "awab_long");
+    let pts: Vec<usize> = (from..=to).filter(|&i| daily || week_end(x, i)).collect();
+    let all: Vec<f64> = pts.iter().map(|&i| x.c[i]).collect();
+    let bands = if v2 { routine2(&all, ms, ml, ys) } else { vec![] };
     let mut z: Vec<f64> = vec![];
     let mut out = vec![];
     let mut cur: Option<Trade> = None;
-    for i in from..=to {
-        if !(daily || week_end(x, i)) { continue; }
+    for (k, &i) in pts.iter().enumerate() {
         z.push(x.c[i]);
         if z.len() < ml + ms || i >= to { continue; }
-        let (tl, tu, tf) = routine(&z, ms, ml, ys);
+        let (tl, tu, tf) = if v2 { bands[k] } else { routine(&z, ms, ml, ys) };
         let want = if tf < tl { 1. } else if tf > tu && !long_only { -1. } else { 0. };
         let have = cur.as_ref().map_or(0., |t| t.dir);
         if want == have { continue; }
@@ -172,6 +231,13 @@ mod tests {
         let (tl, tu, tf) = routine(&z, 4, 12, 2.);
         assert!((tl - 88.).abs() < 1e-9 && (tu - 88.).abs() < 1e-9);
         assert!((tf - (88. - 24.)).abs() < 1e-9);
+    }
+    #[test]
+    fn version2_tracks_a_straight_line_exactly() {
+        let z: Vec<f64> = (0..60).map(|i| 10. + 2. * i as f64).collect();
+        let b = routine2(&z, 6, 15, 2.5);
+        assert!(b[19].0.is_nan() && !b[20].0.is_nan());
+        for k in 20..60 { let (tl, tu, tf) = b[k]; assert!((tl - z[k]).abs() < 1e-9 && (tu - z[k]).abs() < 1e-9 && (tf - (z[k] - 30.)).abs() < 1e-9); }
     }
     #[test]
     fn first_step_matches_hand_calculation() {
