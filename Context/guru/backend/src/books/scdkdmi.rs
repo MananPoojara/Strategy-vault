@@ -32,12 +32,12 @@ pub fn ols_end(v: &[f64], n: usize) -> Vec<f64> {
         (sy - m * sx) / nf + m * nf
     }).collect()
 }
-/// a > b beyond floating-point noise (|a - b| > 1e-9 x max(|a|, |b|)): exact ties computed two ways never decide a signal.
+/// a > b beyond floating-point noise (|a - b| > 1e-12 x max(|a|, |b|), decision 210): exact ties computed two ways never decide a signal.
 /// Bound (decision 209): on a price tick grid the smallest real difference this decides in lane K41 (scjlme) is 3 x tick/110
-/// (TSMA - SMA of 10 lows) or tick/273 (13-day least-squares oscillator, with the same 1e-9 x price band there); both stay above
-/// 1e-9 x price below about 272,700 / 36,600 on a 0.01 tick, while float noise on an exact tie is about 1e-16 x price.
+/// (TSMA - SMA of 10 lows) or tick/273 (13-day least-squares oscillator, with the same 1e-12 x price band there); both stay above
+/// 1e-12 x price below about 272.7 million / 36.6 million on a 0.01 tick (1e-9 capped out near 36,600, under the DJI; decision 210), while float noise on an exact tie is about 1e-16 x price.
 /// The derivation and the tests are in scjlme.rs (smallest_real_tick_signals_are_detected_and_exact_zeros_are_not).
-pub fn gt(a: f64, b: f64) -> bool { a - b > 1e-9 * a.abs().max(b.abs()) }
+pub fn gt(a: f64, b: f64) -> bool { a - b > 1e-12 * a.abs().max(b.abs()) }
 /// Equity in price points of a position path (+1/-1/0 per bar, changes at closes), marked to each close.
 pub fn close_equity(c: &[f64], pos: &[f64]) -> Vec<f64> {
     let mut e = vec![0.0; c.len()];

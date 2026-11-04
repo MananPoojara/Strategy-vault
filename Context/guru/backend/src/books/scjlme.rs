@@ -39,17 +39,17 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 // Deadband bound (decision 209). Prices on a tick grid make every real value a multiple of a fixed quantum: the 13-day
 // least-squares end value is sum (3k-11)/91 x C, so the oscillator (3-day mean of close minus that value) and its day-to-day
 // change are multiples of tick/273 (gcd of the integer coefficients is 1); the 10-day TSMA minus the 10-day SMA of the lows is
-// sum 3(2k-9)/110 x L, a multiple of 3 x tick/110. The deadband is 1e-9 x price (relative, as gt() in scdkdmi.rs), so a real
+// sum 3(2k-9)/110 x L, a multiple of 3 x tick/110. The deadband is 1e-12 x price (decision 210; 1e-9 capped out near 36,600 on a 0.01 tick, under the DJI) (relative, as gt() in scdkdmi.rs), so a real
 // one-quantum turn, zero-line move or cross is detected while price < tick / 273e-9: about 36,600 on a 0.01 tick and 183,000 on
 // a 0.05 tick for the oscillator (272,700 / 1.36 million for the trend cross). Floating-point noise on an exact mathematical tie
 // is about 1e-16 x price per operation (NIFTY 50 2004-08-02: -1.5e-13 at 1,639), far inside the band. Above those levels (DJI on
 // a 0.01 grid has traded above 36,600 since 2021) a one-quantum oscillator turn could fall inside the band; with 1e-12 instead of
 // 1e-9 the two systems give the same trades on every index and ETF the vault holds (checked 4 Nov 2026, K41w/eps.py). Split-
-// adjusted stock prices are not on a tick grid, so there the band only removes ties at the 1e-9 level.
+// adjusted stock prices are not on a tick grid, so there the band only removes ties at the 1e-12 level.
 /// Oscillator signal at the close of t: -1 = it was above the zero line and turned down, +1 = below and turned up, 0 = none.
 pub fn osc_turn(o: &[f64], c: &[f64], t: usize) -> f64 {
     if t < 2 || !o[t - 2].is_finite() { return 0.0; }
-    let z = 1e-9 * c[t - 1]; // price-level noise: the zero line and the turns ignore changes within it
+    let z = 1e-12 * c[t - 1]; // price-level noise: the zero line and the turns ignore changes within it
     if o[t - 1] > z && o[t - 1] - o[t] > z && !(o[t - 2] - o[t - 1] > z) { -1.0 }
     else if o[t - 1] < -z && o[t] - o[t - 1] > z && !(o[t - 1] - o[t - 2] > z) { 1.0 } else { 0.0 }
 }
