@@ -79,10 +79,18 @@ impl Second<'_> {
 fn market(x: &Ctx) -> Option<crate::baskets::Market> {
     x.native_market.or_else(|| x.r.first().and_then(|r| crate::preloaded_market(&r.ticker)))
 }
-/// SPX for US instruments, NIFTY 50 for Indian ones; None on the benchmark itself (#223 (7): never run against itself).
+/// Funds that track the benchmark index ARE the benchmark for a relative-strength or benchmark rule (decision #225 (1)):
+/// what is left of the comparison is dividends and tracking error. India's NIFTY 50 ETFs are listed in case they are held.
+const TRACKS: [(&str, &[&str]); 2] = [("SPX", &["SPY", "IVV", "VOO"]), ("NIFTY 50", &["NIFTYBEES", "SETFNIF50"])];
+fn market_benchmark(x: &Ctx) -> Option<&'static str> {
+    Some(match market(x)? { crate::baskets::Market::UnitedStates => "SPX", crate::baskets::Market::India => "NIFTY 50" })
+}
+/// The benchmark itself or a fund that tracks it (only for index/ETF series; a native stock is never its benchmark).
+fn is_benchmark(b: &str, t: &str) -> bool { t == b || TRACKS.iter().any(|(k, f)| *k == b && f.contains(&t)) }
+/// SPX for US instruments, NIFTY 50 for Indian ones; None on the benchmark itself or a fund tracking it (#223 (7), #225 (1)).
 pub fn benchmark(x: &Ctx) -> Option<&'static str> {
-    let b = match market(x)? { crate::baskets::Market::UnitedStates => "SPX", crate::baskets::Market::India => "NIFTY 50" };
-    (x.r.first()?.ticker != b).then_some(b)
+    let b = market_benchmark(x)?;
+    (x.native_market.is_some() || !is_benchmark(b, &x.r.first()?.ticker)).then_some(b)
 }
 /// STR_DATA2 = the index a market is compared with (E4.tsv strmm_rs1 / mpts_rs rows): NSE sector and mid-cap indices -> NIFTY 50;
 /// the US equity index family and its ETFs -> SPX; a stock -> its market's benchmark. Other ETFs (country, bond, gold) have none.
@@ -90,7 +98,7 @@ pub fn parent(x: &Ctx) -> Option<&'static str> {
     if x.native_market.is_some() { return benchmark(x); }
     match x.r.first()?.ticker.as_str() {
         "NIFTYBANK" | "NIFTY BANK" | "NIFTYIT" | "NIFTY IT" | "NIFTYMIDCAP100" | "NIFTY MIDCAP 100" | "NIFTYMIDCAPSELECT" => Some("NIFTY 50"),
-        "NDX" | "DJI" | "MDY" | "IWM" | "QQQ" | "SPY" | "DIA" | "SMH" | "XLB" | "XLE" | "XLF" | "XLI" | "XLK" | "XLP" | "XLU" | "XLV" | "XLY" => Some("SPX"),
+        "NDX" | "DJI" | "MDY" | "IWM" | "QQQ" | "DIA" | "SMH" | "XLB" | "XLE" | "XLF" | "XLI" | "XLK" | "XLP" | "XLU" | "XLV" | "XLY" => Some("SPX"),
         _ => None,
     }
 }
@@ -98,10 +106,18 @@ pub fn parent(x: &Ctx) -> Option<&'static str> {
 /// MDY / IWM as labelled signal stand-ins (#223 (2)); India: the five NSE indices (labelled instrument swap).
 const US5: [&str; 5] = ["SPX", "NDX", "DJI", "MDY", "IWM"];
 const IN5: [&str; 5] = ["NIFTY 50", "NIFTYBANK", "NIFTYIT", "NIFTYMIDCAP100", "NIFTYMIDCAPSELECT"];
-/// XMKT.C2..C5 of a five-market member: the other four, in the order above.
+/// AccuTrack's labelled stand-ins for the book's Vanguard Small-Cap vs Index 500 pair (Fig. 20/22; decision #225 (2)).
+pub const SMALL_LARGE: [(&str, &str); 2] = [("IWM", "SPX"), ("NIFTYMIDCAP100", "NIFTY 50")];
+fn small_large(t: &str) -> Option<&'static str> {
+    SMALL_LARGE.iter().find_map(|&(a, b)| if a == t { Some(b) } else if b == t { Some(a) } else { None })
+}
+/// XMKT.C2..C5 of a five-market member: the other four in the order above, except that C2 is the small-cap/large-cap partner
+/// where one exists (SPX: IWM, NIFTY 50: NIFTYMIDCAP100), so AccuTrack's default column is the book's pair.
 pub fn xmkt(ticker: &str) -> Option<Vec<&'static str>> {
     let set = [US5, IN5].into_iter().find(|s| s.contains(&ticker))?;
-    Some(set.into_iter().filter(|s| *s != ticker).collect())
+    let mut v: Vec<&'static str> = set.into_iter().filter(|s| *s != ticker).collect();
+    if let Some(k) = small_large(ticker).and_then(|p| v.iter().position(|s| *s == p)) { let p = v.remove(k); v.insert(0, p); }
+    Some(v)
 }
 
 enum Kind { Exact, Close, Hv100 }
@@ -112,7 +128,7 @@ fn legacy(x: &Ctx) -> Vec<(String, &'static str, Kind)> {
     let mut v = vec![];
     // hfm Ch.6 NDX-SPX (unchanged since K34): exact same-date closes, NaN holes, also on NDX/SPX themselves
     if us { v.push(("LEADER_CLOSE".into(), "NDX", Kind::Exact)); v.push(("FOLLOWER_CLOSE".into(), "SPX", Kind::Exact)); }
-    if us && t != "SPX" { v.push(("SPX_CLOSE".into(), "SPX", Kind::Close)); } // mkits_rs (Ch.16); India: cross-market, later (#223 (6))
+    if us && (x.native_market.is_some() || !is_benchmark("SPX", t)) { v.push(("SPX_CLOSE".into(), "SPX", Kind::Close)); } // mkits_rs (Ch.16); India: cross-market, later (#223 (6))
     if let Some(p) = parent(x) { v.push(("STR_DATA2".into(), p, Kind::Close)); }
     if let Some(b) = benchmark(x) { v.push(("BENCH_HV100".into(), b, Kind::Hv100)); } // prap1: HV of the S&P 500 symbol's own bars (AFL)
     if x.native_market.is_none() {
@@ -150,6 +166,26 @@ pub fn param_series(id: &str, p: &crate::connors::Params, required: &mut Vec<&'s
         "strmm_rsbands" | "strmm_rotation" if p.get("markets").is_some_and(|v| (v.round().max(1.) as usize).clamp(4, 5) == 4) => required.retain(|n| *n != X[3]), // as strmm.rs u(): round
         _ => {}
     }
+}
+
+/// Refusals with their own wording (before the generic missing-series message): a benchmark rule on the benchmark or a fund
+/// tracking it (#223 (7), #225 (1)); AccuTrack outside the book's small-cap vs S&P 500 pair or off its default partner (#225 (2)).
+pub fn pair_issue(x: &Ctx, id: &str, required: &[&str], p: &crate::connors::Params) -> Option<Issue> {
+    let t = x.r.first()?.ticker.as_str();
+    if id == "nftm_accutrack" {
+        let col = p.get("xcol").copied().unwrap_or(2.).round().clamp(2., 5.);
+        let partner = small_large(t).filter(|_| x.native_market.is_none() && col == 2.);
+        return partner.is_none().then(|| Issue { status: "needs_data", note: format!(
+            "AccuTrack's pair is small-cap vs S&P 500 (Freeburg Fig. 20/22: Vanguard Small-Cap Index vs Index 500). The vault runs only its labelled stand-ins IWM <-> SPX and NIFTYMIDCAP100 <-> NIFTY 50, each with the other as the default partner (XMKT.C2); {t}{} is not that pair, so no result is published (decision #225).",
+            if small_large(t).is_some() { " with another partner column" } else { "" }) });
+    }
+    if x.native_market.is_some() { return None; }
+    let b = market_benchmark(x)?;
+    let reads = |n: &str| required.contains(&n);
+    let selfish = (reads("SPX_CLOSE") && is_benchmark("SPX", t)) || ((reads("STR_DATA2") || reads("BENCH_HV100")) && is_benchmark(b, t));
+    selfish.then(|| Issue { status: "needs_data", note: format!(
+        "This rule compares the instrument with its benchmark index; {t} {} {b}, so it would be compared with itself (decision #225: the only signal left is dividends and tracking error). No result is published.",
+        if t == b { "is" } else { "tracks" }) })
 }
 
 /// #223 (1): withheld when more than 5% of the window's bars carry a Data2 value the rule reads.
@@ -229,6 +265,29 @@ mod tests {
         assert_eq!(al[2] - al[1], 4.);
     }
     #[test]
+    fn self_comparison_and_accutrack_pair_refuse_with_their_reason() {
+        let days: Vec<u32> = (1..=28).collect();
+        let no = crate::connors::Params::new();
+        let issue = |t: &str, id: &str, req: &[&str], p: &crate::connors::Params| { let r = rows(t, &days); pair_issue(&Ctx::new(&r, &[], &[]), id, req, p).map(|i| i.note) };
+        for t in ["SPX", "SPY"] {
+            for (id, s) in [("mkits_rs_fut", "SPX_CLOSE"), ("strmm_rs1", "STR_DATA2"), ("mpts_rs_10_26", "STR_DATA2"), ("prap1_raptor10", "BENCH_HV100")] {
+                assert!(issue(t, id, &[s], &no).is_some_and(|n| n.contains("compared with itself")), "{t} {id}");
+            }
+        }
+        assert!(issue("NIFTY 50", "strmm_rs1", &["STR_DATA2"], &no).is_some_and(|n| n.contains("NIFTY 50 is NIFTY 50")));
+        for t in ["QQQ", "DIA", "IWM", "NIFTYBANK"] { assert!(issue(t, "strmm_rs1", &["STR_DATA2"], &no).is_none(), "{t}"); }
+        assert!(issue("NIFTY 50", "mkits_rs_fut", &["SPX_CLOSE"], &no).is_none()); // cross-market (#223 (6)): the missing-series message
+        for t in ["IWM", "SPX", "NIFTYMIDCAP100", "NIFTY 50"] { assert!(issue(t, "nftm_accutrack", &["XMKT.C2"], &no).is_none(), "{t}"); }
+        for t in ["NDX", "DJI", "MDY", "NIFTYBANK", "SPY", "AAPL"] {
+            assert!(issue(t, "nftm_accutrack", &["XMKT.C2"], &no).is_some_and(|n| n.contains("small-cap vs S&P 500")), "{t}");
+        }
+        let c3 = crate::connors::Params::from([("xcol".to_string(), 3.)]);
+        assert!(issue("IWM", "nftm_accutrack", &["XMKT.C3"], &c3).is_some_and(|n| n.contains("another partner column")));
+        let mut x = { let r = Box::leak(Box::new(rows("AAPL", &days))); Ctx::new(r, &[], &[]) };
+        x.native_market = Some(crate::baskets::Market::UnitedStates);
+        assert!(pair_issue(&x, "strmm_rs1", &["STR_DATA2"], &no).is_none()); // a stock vs SPX is a real comparison
+    }
+    #[test]
     fn param_series_follow_the_modules_parameter_reading() {
         let req = |id: &str, k: &str, v: f64| { let mut r = vec!["XMKT.C2", "XMKT.C3", "XMKT.C4", "XMKT.C5"]; param_series(id, &crate::connors::Params::from([(k.to_string(), v)]), &mut r); r };
         assert_eq!(req("strmm_rsbands", "markets", 4.), ["XMKT.C2", "XMKT.C3", "XMKT.C4"]);
@@ -243,9 +302,13 @@ mod tests {
         let mk = |t: &str| rows(t, &days);
         let (spx, iwm, n50, bank) = (mk("SPX"), mk("IWM"), mk("NIFTY 50"), mk("NIFTYBANK"));
         let names = |r: &Vec<Row>| legacy(&Ctx::new(r, &[], &[])).into_iter().map(|(n, s, _)| format!("{n}={s}")).collect::<Vec<_>>();
-        assert_eq!(names(&spx), ["LEADER_CLOSE=NDX", "FOLLOWER_CLOSE=SPX", "XMKT.C2=NDX", "XMKT.C3=DJI", "XMKT.C4=MDY", "XMKT.C5=IWM"]);
+        assert_eq!(names(&spx), ["LEADER_CLOSE=NDX", "FOLLOWER_CLOSE=SPX", "XMKT.C2=IWM", "XMKT.C3=NDX", "XMKT.C4=DJI", "XMKT.C5=MDY"]);
+        let spy = mk("SPY"); // #225 (1): a fund tracking SPX is SPX for the benchmark rules
+        assert_eq!(names(&spy), ["LEADER_CLOSE=NDX", "FOLLOWER_CLOSE=SPX"]);
+        let qqq = mk("QQQ");
+        assert_eq!(names(&qqq), ["LEADER_CLOSE=NDX", "FOLLOWER_CLOSE=SPX", "SPX_CLOSE=SPX", "STR_DATA2=SPX", "BENCH_HV100=SPX"]);
         assert_eq!(names(&iwm), ["LEADER_CLOSE=NDX", "FOLLOWER_CLOSE=SPX", "SPX_CLOSE=SPX", "STR_DATA2=SPX", "BENCH_HV100=SPX", "XMKT.C2=SPX", "XMKT.C3=NDX", "XMKT.C4=DJI", "XMKT.C5=MDY"]);
-        assert_eq!(names(&n50), ["XMKT.C2=NIFTYBANK", "XMKT.C3=NIFTYIT", "XMKT.C4=NIFTYMIDCAP100", "XMKT.C5=NIFTYMIDCAPSELECT"]);
+        assert_eq!(names(&n50), ["XMKT.C2=NIFTYMIDCAP100", "XMKT.C3=NIFTYBANK", "XMKT.C4=NIFTYIT", "XMKT.C5=NIFTYMIDCAPSELECT"]);
         assert_eq!(names(&bank), ["STR_DATA2=NIFTY 50", "BENCH_HV100=NIFTY 50", "XMKT.C2=NIFTY 50", "XMKT.C3=NIFTYIT", "XMKT.C4=NIFTYMIDCAP100", "XMKT.C5=NIFTYMIDCAPSELECT"]);
         let aapl = mk("AAPL");
         let mut x = Ctx::new(&aapl, &[], &[]);

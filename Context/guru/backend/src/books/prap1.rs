@@ -28,7 +28,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("prap1_raptor10", "Raptor-10 (5 closes under SMA2, ADX > 35, HV >= 2x S&P 500)",
           Live,
           &["BENCH_HV100"], RULES,
-          concat!("Coded against BENCH_HV100 = HV(100) of the benchmark index (population st.dev of 100 ln returns x sqrt(252) x 100, as the AFL), computed on the benchmark's own bars and aligned to the instrument's dates by the engine (EP4, decision #223; at most 5 bars carried): the S&P 500 (SPX) for US instruments, [labelled benchmark swap] the NIFTY 50 for Indian ones; not run on SPX / NIFTY 50 themselves. ",
+          concat!("Coded against BENCH_HV100 = HV(100) of the benchmark index (population st.dev of 100 ln returns x sqrt(252) x 100, as the AFL), computed on the benchmark's own bars and aligned to the instrument's dates by the engine (EP4, decision #223; at most 5 bars carried): the S&P 500 (SPX) for US instruments, [labelled benchmark swap] the NIFTY 50 for Indian ones; not run on SPX / NIFTY 50 themselves or on a fund tracking them such as SPY (decision #225). ",
                   "Liquidity Filter = 1,000,000 x MA20(close x volume) / MA65(benchmark close x volume), so the book's x .0003 is 'greater than 300'. ",
                   "Entry/add/exit all at the next open (AFL SetTradeDelays(1), BuyPrice = O). Two units max (0.5 + 0.5). ",
                   "Book results: a 10-slot portfolio of all US stocks; one stock at a time is not comparable with them."),

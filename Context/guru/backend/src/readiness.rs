@@ -501,6 +501,7 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
         if ctx.r[to].date.as_str()>ch.last() { return issue("needs_data",format!("Option prices for this instrument end on {}. The selected period runs past them; choose a period that ends by then (no later prices are estimated).",ch.last())); }
     }
     let required=required_series(def,p,minute_path);
+    if let Some(i)=crate::second::pair_issue(ctx,def.id,&required,p) {return Some(i);} // EP4 (#223 (7), #225): self-comparison, AccuTrack pair
     let missing=ctx.missing(&required);
     if !missing.is_empty() {
         return issue("needs_data",format!("Required market data is missing: {}. No chart, statistics, trades or optimization are available for this instrument.",missing.join(", ")));
