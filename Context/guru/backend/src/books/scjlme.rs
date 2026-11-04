@@ -47,8 +47,9 @@ fn shadow(id: &str, x: &Ctx) -> Vec<f64> {
         let o = sma(&d, 3);
         for t in 2..n {
             if o[t - 2].is_finite() {
-                if o[t - 1] > 0.0 && gt(o[t - 1], o[t]) && !gt(o[t - 2], o[t - 1]) { side = -1.0; }
-                else if o[t - 1] < 0.0 && gt(o[t], o[t - 1]) && !gt(o[t - 1], o[t - 2]) { side = 1.0; }
+                let z = 1e-9 * x.c[t - 1]; // price-level noise: the zero line and the turns ignore changes within it
+                if o[t - 1] > z && o[t - 1] - o[t] > z && !(o[t - 2] - o[t - 1] > z) { side = -1.0; }
+                else if o[t - 1] < -z && o[t] - o[t - 1] > z && !(o[t - 1] - o[t - 2] > z) { side = 1.0; }
             }
             pos[t] = side;
         }
