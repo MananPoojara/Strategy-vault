@@ -36,31 +36,44 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         ParamDef { key: "filter", label: "1 = trade only while the equity is above its average; 0 = the shadow system", def: 1., min: 0., max: 1., step: 1. }])
 }
 
+// Deadband bound (decision 209). Prices on a tick grid make every real value a multiple of a fixed quantum: the 13-day
+// least-squares end value is sum (3k-11)/91 x C, so the oscillator (3-day mean of close minus that value) and its day-to-day
+// change are multiples of tick/273 (gcd of the integer coefficients is 1); the 10-day TSMA minus the 10-day SMA of the lows is
+// sum 3(2k-9)/110 x L, a multiple of 3 x tick/110. The deadband is 1e-9 x price (relative, as gt() in scdkdmi.rs), so a real
+// one-quantum turn, zero-line move or cross is detected while price < tick / 273e-9: about 36,600 on a 0.01 tick and 183,000 on
+// a 0.05 tick for the oscillator (272,700 / 1.36 million for the trend cross). Floating-point noise on an exact mathematical tie
+// is about 1e-16 x price per operation (NIFTY 50 2004-08-02: -1.5e-13 at 1,639), far inside the band. Above those levels (DJI on
+// a 0.01 grid has traded above 36,600 since 2021) a one-quantum oscillator turn could fall inside the band; with 1e-12 instead of
+// 1e-9 the two systems give the same trades on every index and ETF the vault holds (checked 4 Nov 2026, K41w/eps.py). Split-
+// adjusted stock prices are not on a tick grid, so there the band only removes ties at the 1e-9 level.
+/// Oscillator signal at the close of t: -1 = it was above the zero line and turned down, +1 = below and turned up, 0 = none.
+pub fn osc_turn(o: &[f64], c: &[f64], t: usize) -> f64 {
+    if t < 2 || !o[t - 2].is_finite() { return 0.0; }
+    let z = 1e-9 * c[t - 1]; // price-level noise: the zero line and the turns ignore changes within it
+    if o[t - 1] > z && o[t - 1] - o[t] > z && !(o[t - 2] - o[t - 1] > z) { -1.0 }
+    else if o[t - 1] < -z && o[t] - o[t - 1] > z && !(o[t - 1] - o[t - 2] > z) { 1.0 } else { 0.0 }
+}
+/// Trend signal at the close of t: +1 = the time-series MA crossed above the SMA, -1 = below, 0 = none.
+pub fn trend_cross(ts: &[f64], s: &[f64], t: usize) -> f64 {
+    if t < 1 || !s[t - 1].is_finite() { return 0.0; }
+    if gt(ts[t], s[t]) && !gt(ts[t - 1], s[t - 1]) { 1.0 } else if gt(s[t], ts[t]) && !gt(s[t - 1], ts[t - 1]) { -1.0 } else { 0.0 }
+}
+/// The oscillator of the oscillator system: 3-day SMA of (close - 13-day least-squares end value).
+pub fn oscillator(c: &[f64]) -> Vec<f64> {
+    let ls = ols_end(c, 13);
+    sma(&(0..c.len()).map(|i| c[i] - ls[i]).collect::<Vec<f64>>(), 3)
+}
+
 /// Shadow position (+1/-1/0) after each close.
 fn shadow(id: &str, x: &Ctx) -> Vec<f64> {
     let n = x.c.len();
     let mut pos = vec![0.0; n];
     let mut side = 0.0;
-    if id == "scjlme_osc" {
-        let ls = ols_end(&x.c, 13);
-        let d: Vec<f64> = (0..n).map(|i| x.c[i] - ls[i]).collect();
-        let o = sma(&d, 3);
-        for t in 2..n {
-            if o[t - 2].is_finite() {
-                let z = 1e-9 * x.c[t - 1]; // price-level noise: the zero line and the turns ignore changes within it
-                if o[t - 1] > z && o[t - 1] - o[t] > z && !(o[t - 2] - o[t - 1] > z) { side = -1.0; }
-                else if o[t - 1] < -z && o[t] - o[t - 1] > z && !(o[t - 1] - o[t - 2] > z) { side = 1.0; }
-            }
-            pos[t] = side;
-        }
-    } else {
-        let (ts, s) = (ols_end(&x.l, 10), sma(&x.l, 10));
-        for t in 1..n {
-            if s[t - 1].is_finite() {
-                if gt(ts[t], s[t]) && !gt(ts[t - 1], s[t - 1]) { side = 1.0; } else if gt(s[t], ts[t]) && !gt(s[t - 1], ts[t - 1]) { side = -1.0; }
-            }
-            pos[t] = side;
-        }
+    let (o, ts, s) = if id == "scjlme_osc" { (oscillator(&x.c), vec![], vec![]) } else { (vec![], ols_end(&x.l, 10), sma(&x.l, 10)) };
+    for t in 1..n {
+        let sig = if id == "scjlme_osc" { osc_turn(&o, &x.c, t) } else { trend_cross(&ts, &s, t) };
+        if sig != 0.0 { side = sig; }
+        pos[t] = side;
     }
     pos
 }
@@ -78,6 +91,55 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Decision 209: integer tick offsets (found by an exact integer solve, K41w/solve.py; quanta from K41w/gcd.py) that give the smallest real
+    // signals on top of a flat price: oscillator values (0, +1, 0) and (0, -1, 0) quanta of tick/273 at bars 34-36, a zero-line
+    // cross (0, +1, -1), and TSMA - SMA differences (0, +-3) of tick/110 at bars 35-36. Offsets start at bar 16.
+    const OSC_DOWN: [i64; 21] = [0, 0, 0, 0, 5, 3, 1, -3, 1, 0, 1, 1, -2, 1, -2, -2, -3, -2, -2, -3, -3];
+    const OSC_CROSS: [i64; 21] = [0, 0, 0, 0, 3, 1, 1, -3, 2, 0, 2, 2, -1, 2, -1, -2, -1, 0, -1, -1, -1];
+    const TREND_UP: [i64; 8] = [-2, 6, 0, 0, 0, 0, 0, 1]; // bars 29-36
+    /// NIFTY 50 closes 2004-07-09 .. 2004-08-03 (vault idx_data.csv).
+    const NIFTY_2004: [f64; 18] = [1553.2, 1556.95, 1539.3, 1522.75, 1539.4, 1558.8, 1571.6, 1566.1, 1581.4, 1598.1, 1601.6, 1618.0, 1600.75, 1594.15, 1618.7, 1632.3, 1639.05, 1630.6];
+    fn series(level: f64, tick: f64, offs: &[i64], start: usize) -> Vec<f64> {
+        let base = (level / tick).round() as i64;
+        (0..40).map(|i| (base + if i >= start && i < start + offs.len() { offs[i - start] } else { 0 }) as f64 * tick).collect()
+    }
+    #[test]
+    fn smallest_real_tick_signals_are_detected_and_exact_zeros_are_not() {
+        for tick in [0.01, 0.05] {
+            for level in [10., 100., 1_000., 25_000.] {
+                let neg = |v: &[i64]| v.iter().map(|x| -x).collect::<Vec<i64>>();
+                for (offs, want) in [(OSC_DOWN.to_vec(), -1.0), (neg(&OSC_DOWN), 1.0), (OSC_CROSS.to_vec(), -1.0), (neg(&OSC_CROSS), 1.0)] {
+                    let c = series(level, tick, &offs, 16);
+                    let o = oscillator(&c);
+                    let q = tick / 273.0;
+                    assert!((o[35].abs() - q).abs() < q * 1e-3 && o[34].abs() < q * 1e-3, "quantum {level} {tick}: {} {}", o[34], o[35]);
+                    assert_eq!(osc_turn(&o, &c, 36), want, "oscillator turn {level} {tick}");
+                }
+                for (offs, want) in [(TREND_UP.to_vec(), 1.0), (TREND_UP.iter().map(|x| -x).collect::<Vec<i64>>(), -1.0)] {
+                    let l = series(level, tick, &offs, 29);
+                    let (ts, s) = (ols_end(&l, 10), sma(&l, 10));
+                    assert!(((ts[36] - s[36]).abs() - 3.0 * tick / 110.0).abs() < tick * 1e-6, "trend quantum {level} {tick}");
+                    assert_eq!(trend_cross(&ts, &s, 36), want, "trend cross {level} {tick}");
+                }
+                // exact mathematical zeros: flat and straight-line prices give an oscillator of exactly 0 (any computed value is
+                // noise) and TSMA = SMA + 4.5 x slope with no cross; 'rises above the zero line and then turns down' needs a value
+                // off the line, so no bar signals
+                for slope in [0i64, 1, -1, 7] {
+                    let c: Vec<f64> = (0..60).map(|i| ((level / tick).round() as i64 + slope * i) as f64 * tick).collect();
+                    let o = oscillator(&c);
+                    let (ts, s) = (ols_end(&c, 10), sma(&c, 10));
+                    assert!((2..60).all(|t| osc_turn(&o, &c, t) == 0.0), "flat/linear oscillator {level} {tick} {slope}");
+                    assert!((1..60).all(|t| trend_cross(&ts, &s, t) == 0.0), "flat/linear trend {level} {tick} {slope}");
+                }
+            }
+        }
+        // NIFTY 50 2004-07-09 .. 2004-08-03: the oscillator of 2 Aug 2004 is exactly 0 (computed
+        // -1.5e-13); it never rose above the zero line, so 3 Aug 2004 is no sell
+        let c = NIFTY_2004.to_vec();
+        let o = oscillator(&c);
+        assert!(o[c.len() - 2].abs() < 1e-9);
+        assert_eq!(osc_turn(&o, &c, c.len() - 1), 0.0);
+    }
     #[test]
     fn shadow_and_filter() {
         let r = super::super::sctraub::tests::bars(1500);
