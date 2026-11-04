@@ -11,10 +11,11 @@ use crate::connors::{sma, Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "tscom";
 /// Admitted ids (authors/lanea/vendor1/decisions.json).
-pub const REVIEWED_LANEA: &[&str] = &["tscom_aberration_plus"];
+pub const REVIEWED_LANEA: &[&str] = &["tscom_aberration_plus", "tscom_imaster" /* lane K47, decision 217 */];
 pub fn reviewed_lanea(id: &str) -> bool { REVIEWED_LANEA.contains(&id) }
 const ABP: &str = "tscom_aberration_plus";
 const AZT: &str = "tscom_aztec";
+const IMS: &str = "tscom_imaster";
 
 fn def(id: &'static str, name: &'static str, group: &'static str, status: Status, rules: &'static [&'static str], notes: &'static str) -> StrategyDef {
     StrategyDef { id, name, group, session: 0, dir: "Long/Short", status, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK, rules, notes, claim: None }
@@ -41,10 +42,17 @@ Run on daily cash indices (instrument swap). No published results in the RAR. In
             "Keith Fitschen code; Mode input default 2 ('Daily Bar Chart, Trend Filter'); p.mode=1 runs the code's Mode 1 block. Dollar floors (300 / 300.1) use p.bpv = 1 (TradeStation BigPointValue of a cash index), so on index points the floors are 300 points: \
 on SPX/NIFTY the 1.5-sigma levels are usually replaced by close +/- 300 and the stops are 300 points away - this is what the code does on a cash-index chart; p.bpv sets a futures point value instead (e.g. 250 for S&P). \
 Abb.stddev = sample stdev with the previous value kept when the sum of squares <= 0.0001. 'CurrentBar = 1' initialisation = the first bar after the 70-bar warm-up. BuyPointP starts at 0 (code). Daily cash indices (instrument swap); India: instrument swap; index shorts hypothetical."),
-        def("tscom_imaster", "I-Master (New Profit Center: open-relative stops, MarketEnergy filter)", "I-Master (Open Code.txt)",
-            Status::NotTestable("the counter-trend entries need MarketEnergy(20), a function whose code is not in the source (and NextOpen20 comes from the bundled Nxtopn20.dll)"), &[
-            "E|\"if marketposition<>1 and Close < Open and Close < Close[29] and Range < 1.618*Average(Range,80) and MarketStrength > -.50 then Buy Next Bar at NxOpen + 2*(close-low) + .05 stop\" (MarketStrength = marketenergy(20))",
-            "X|\"Stopp = 3*Average(Range,80)[2]; ProfitTarget = 4*Average(Range,80)[2]\"; exit next bar at market when the close is beyond EntryPrice -/+ Stopp or +/- ProfitTarget"], ""),
+        def(IMS, "I-Master (New Profit Center: open-relative stops, MarketEnergy filter)", "I-Master (Open Code.txt)", Status::Live, &[
+            "F|R = Range = High - Low; AR = Average(Range,80); \"MarketStrength=marketenergy(20)\"; NxOpen = NextOpen20 = the next bar's open (fed by the bundled Nxtopn20.dll)",
+            "F|[Labelled reading] MarketEnergy body from the vendor's MetaStock translation in the I-Master for MS package (MS70FORM.DTA, 'TS code translated for MS by SR. Needed by I-Master'): Eff = (C - C[1]) / Sum(|C - C[1]|, 20); MarketEnergy = 2-bar simple average of 2 x (Eff - LLV(Eff,50)) / (HHV(Eff,50) - LLV(Eff,50)) - 1",
+            "E|BearBuy: \"if marketposition<>1 and Close < Open and Close < close[29] and Range < 1.618 * Average(Range,80) and MarketStrength>-.50 then Buy Next Bar at NxOpen + 2 * (close-low) + .05 stop\"",
+            "E|BullBuy: \"if marketposition<>1 and Close < Open and Close > Close[29] and Range < 1.618 * Average(Range,80) then Buy Next Bar at NxOpen + (close-low) + .05 stop\"",
+            "E|BearSell: \"if marketposition<>-1 and Close > Open and Close < Close[29] and Range < 1.618 * Average(Range,80) then Sell Short Next Bar at NxOpen - (h-c) - .05 stop\"; BullSell: \"... Close > Close[29] ... and marketstrength<.50 then Sell Short Next Bar at NxOpen - 2 * (h-c) - .05 stop\"",
+            "X|\"if MarketPosition = 1 and MP[1] <> 1 then Stopp = 3* Average(Range,80)[2]; ProfitTarget = 4 * Average(Range,80)[2]\"; the short block as printed tests \"MarketPosition = -1 and MP[1] <> 1\", so a short's levels refresh every bar (kept literal)",
+            "X|\"If MarketPosition = 1 and Close < Entryprice - Stopp then Sell Next Bar at market\"; \"If MarketPosition = 1 and Close > Entryprice + ProfitTarget then Sell Next Bar Market\" (shorts mirrored); an opposite stop entry reverses"],
+            "Source: research USB HDD 1/TradeStation Systems & Indicators/I-Master for TS (trade-system.com)/Open Code.rar -> Open Code.txt (whole file) and USB HDD 1/MetaStock/@Systems & Indicators/I-Master for MS/I-Master/MS70FORM.DTA (formula MarketEnergy; the MS entry formulas match Open Code.txt line for line); copies in authors/batch-x/keep/h2-imaster/. \
+Readme: 'a system for DAILY data only', 'worked on SPX, NDX and INDU cash indexes'; runs on ETFs and stocks are a declared application. The .05 is an entry offset in price units, as printed (cash-index points). \
+The stop entries sit relative to the next bar's own open, so they become live after that open and fill at their level. A division by zero in MarketEnergy (flat closes) gives no value and no MarketEnergy-filtered entry. No published results. Independent check authors/titles-1030/K47w/k47_ref.py."),
         def("tscom_double_play", "Double Play (ZProbability of data2 highs/lows, close limit)", "Double Play (Open Code.txt)",
             Status::NeedsData("intraday bars of the traded market plus a data2 series: entries only after 'Sess1StartTime + 100', day-trade exit 15 minutes before the session end"), &[
             "E|\"if ProbHigh < HighTrigger and Time > (Sess1StartTime + 100) ... then Buy Next Bar at close limit\" (ProbHigh = ZProbability(High of Data2, 52), HighTrigger .02)",
@@ -56,7 +64,7 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
     Some(match id {
         ABP => ("tscom_aberration_plus", "Aberration Plus (Fitschen)", "code"),
         AZT => ("tscom_aztec", "Aztec (Fitschen)", "code"),
-        "tscom_imaster" => ("tscom_imaster", "I-Master (trade-system.com)", "code"),
+        IMS => ("tscom_imaster", "I-Master (trade-system.com)", "code"),
         "tscom_double_play" => ("tscom_double_play", "Double Play (trade-system.com)", "code"),
         _ => return None,
     })
@@ -69,6 +77,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         AZT => vec![p("mode", "Mode (2 trend filter, 1 reversal)", 2., 1., 2., 1.), p("numbars2", "NumBars2", 20., 5., 60., 1.), p("sstop2", "SStop2", 2., 0.5, 5., 0.1),
             p("numbarl2", "NumbarL2", 70., 20., 200., 5.), p("pct2", "Pct2", 2.4, 0.5, 5., 0.1), p("numbars1", "NumBars1 (mode 1)", 8., 3., 40., 1.), p("sstop1", "SStop1 (mode 1)", 1.9, 0.5, 5., 0.1),
             p("bpv", "BigPointValue (1 = cash index)", 1., 1., 500., 1.)],
+        IMS => vec![p("off", "Entry offset beyond the open-relative level (price units, printed .05)", 0.05, 0., 5., 0.05), p("stop", "Stopp: Average(Range,80)[2] multiple", 3., 0.5, 10., 0.5),
+            p("target", "ProfitTarget: Average(Range,80)[2] multiple", 4., 0.5, 10., 0.5)],
         _ => return None,
     })
 }
@@ -197,9 +207,57 @@ fn aztec(x: &Ctx, from: usize, to: usize, p: &Params) -> Vec<Trade> {
     s.done(x, to)
 }
 
+/// MarketEnergy(period) as the vendor's MetaStock translation (MS70FORM.DTA): Eff = (C-C[1]) / Sum(|C-C[1]|, period);
+/// 2-bar simple average of 2*(Eff - LLV(Eff,50)) / (HHV(Eff,50) - LLV(Eff,50)) - 1. NaN while a window is short or a divisor is 0.
+pub fn market_energy(c: &[f64], period: usize) -> Vec<f64> {
+    let n = c.len();
+    let d: Vec<f64> = (0..n).map(|i| if i == 0 { f64::NAN } else { c[i] - c[i - 1] }).collect();
+    let eff: Vec<f64> = (0..n).map(|i| if i < period { f64::NAN } else {
+        let s: f64 = d[i + 1 - period..=i].iter().map(|v| v.abs()).sum();
+        if s > 0.0 { d[i] / s } else { f64::NAN }
+    }).collect();
+    let v: Vec<f64> = (0..n).map(|i| if i + 1 < 50 { f64::NAN } else {
+        let w = &eff[i + 1 - 50..=i];
+        if w.iter().any(|x| x.is_nan()) { return f64::NAN; }
+        let (lo, hi) = (w.iter().copied().fold(f64::INFINITY, f64::min), w.iter().copied().fold(f64::NEG_INFINITY, f64::max));
+        if hi > lo { 2.0 * (eff[i] - lo) / (hi - lo) - 1.0 } else { f64::NAN }
+    }).collect();
+    (0..n).map(|i| if i == 0 { f64::NAN } else { (v[i] + v[i - 1]) / 2.0 }).collect()
+}
+
+fn imaster(x: &Ctx, from: usize, to: usize, p: &Params) -> Vec<Trade> {
+    let g = |k: &str, d: f64| p.get(k).copied().unwrap_or(d);
+    let (off, ks, kt) = (g("off", 0.05), g("stop", 3.), g("target", 4.));
+    let n = x.c.len();
+    let rg: Vec<f64> = (0..n).map(|i| x.h[i] - x.l[i]).collect();
+    let ar = crate::books::rrsim::sma(&rg, 80); // exact window sums (TradeStation Average)
+    let me = market_energy(&x.c, 20);
+    let st = first_ok(n, from.max(29), &[&ar, &crate::books::ajmisc::back(&ar, 2)]); // MarketEnergy NaN only blocks its own filtered entries (Codex review)
+    let mut s = Sim::new();
+    let (mut stopp, mut pt, mut mp1) = (0f64, 0f64, 0i8);
+    for i in st..to {
+        let (o, h, l, c, mp) = (x.o[i], x.h[i], x.l[i], x.c[i], s.pos);
+        if mp == 1 && mp1 != 1 { stopp = ks * ar[i - 2]; pt = kt * ar[i - 2]; }
+        if mp == -1 && mp1 != 1 { stopp = ks * ar[i - 2]; pt = kt * ar[i - 2]; } // printed: MP[1] <> 1 (not <> -1)
+        let (nx, quiet, c29) = (x.o[i + 1], rg[i] < 1.618 * ar[i], x.c[i - 29]);
+        let mut q = vec![];
+        if mp != 1 && c < o && c < c29 && quiet && me[i] > -0.5 { q.push(ord(K::Buy, Ty::Stop(nx + 2. * (c - l) + off), "BearBuy")); }
+        if mp != 1 && c < o && c > c29 && quiet { q.push(ord(K::Buy, Ty::Stop(nx + (c - l) + off), "BullBuy")); }
+        if mp != -1 && c > o && c < c29 && quiet { q.push(ord(K::Short, Ty::Stop(nx - (h - c) - off), "BearSell")); }
+        if mp != -1 && c > o && c > c29 && quiet && me[i] < 0.5 { q.push(ord(K::Short, Ty::Stop(nx - 2. * (h - c) - off), "BullSell")); }
+        if mp == 1 && c < s.ep() - stopp { q.push(ord(K::XL, Ty::Mkt, "Long Out")); }
+        if mp == -1 && c > s.ep() + stopp { q.push(ord(K::XS, Ty::Mkt, "Short Out")); }
+        if mp == 1 && c > s.ep() + pt { q.push(ord(K::XL, Ty::Mkt, "Profit target")); }
+        if mp == -1 && c < s.ep() - pt { q.push(ord(K::XS, Ty::Mkt, "Profit target")); }
+        mp1 = mp;
+        s.bar(x, i + 1, &q);
+    }
+    s.done(x, to)
+}
+
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     if from >= to || to >= x.r.len() { return None; }
-    match id { ABP => Some(aberration_plus(x, from, to, p)), AZT => Some(aztec(x, from, to, p)), _ => None }
+    match id { ABP => Some(aberration_plus(x, from, to, p)), AZT => Some(aztec(x, from, to, p)), IMS => Some(imaster(x, from, to, p)), _ => None }
 }
 
 #[cfg(test)]

@@ -25,7 +25,7 @@ use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "stad2";
 /// Admitted ids (authors/stad/admission/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["stad5_stochob", "stad5_dsdb", "stad6_adxmac", "stad6_mapairs", "stad6_mrtr", "stad6_fps", "stad6_parvol", "stad6_vwm", "stad7_dma", "stad7_stsr", "stad7_masr", "stad7_trbo", "stad8_escalator", "stad8_jib", "stad8_ryanshope", "stad9_dyf", "stad9_nohurry", "stad9_obvrev", "stad9_redrover", "stad9_skinny", "stad9_swinger", "stad9_trafficjam", "stad10_serendipity", "stad10_eightball", "stad10_goinstyle", "stad10_wmts", "stad10_refdev", "stad11_highfive", "stad11_bullseye", "stad11_nighttrain", "stad11_trendscore", "stad11_gapper", "stad12_firstprize", "stad12_inthezone", "stad12_jailbreak", "stad12_lrcross", "stad13_ochist", "stad13_lrm", "stad12_mist2", "stad12_musketeers", "stad12_springs", "stad12_ntw", "stad13_mrts", "stad11_symtri"];
+pub const REVIEWED: &[&str] = &["stad6_tenbar" /* lane K47, decision 217 */, "stad5_stochob", "stad5_dsdb", "stad6_adxmac", "stad6_mapairs", "stad6_mrtr", "stad6_fps", "stad6_parvol", "stad6_vwm", "stad7_dma", "stad7_stsr", "stad7_masr", "stad7_trbo", "stad8_escalator", "stad8_jib", "stad8_ryanshope", "stad9_dyf", "stad9_nohurry", "stad9_obvrev", "stad9_redrover", "stad9_skinny", "stad9_swinger", "stad9_trafficjam", "stad10_serendipity", "stad10_eightball", "stad10_goinstyle", "stad10_wmts", "stad10_refdev", "stad11_highfive", "stad11_bullseye", "stad11_nighttrain", "stad11_trendscore", "stad11_gapper", "stad12_firstprize", "stad12_inthezone", "stad12_jailbreak", "stad12_lrcross", "stad13_ochist", "stad13_lrm", "stad12_mist2", "stad12_musketeers", "stad12_springs", "stad12_ntw", "stad13_mrts", "stad11_symtri"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 // ------------------------------------------------------------------ TradeStation functions
@@ -533,10 +533,13 @@ fn defs_a() -> Vec<Def> {
       "Vol 5 ch.4 p.85-91. Only the average is displaced; the deviation is current (code). Book: J&J daily 1/88-9/98: 63 trades, 60% profitable, win/loss 1.38, PF 2.10.",
       ("stad5_dsdb", "Displaced Std Dev Bands", "Vol 5")),
     // ================= Volume 6 (1998)
-    d("stad6_tenbar", "Ten-Bar Channel Breakout (ch.1 example)", "Vol 6 · Concepts", "Long/Short",
-      NotTestable("The system's EasyLanguage is printed only as a screen image (Chart 2, p.12); the text gives no rules beyond 'simple stop-and-reverse ten-bar channel breakout' plus optimised Format stops."),
-      &["E|Stop-and-reverse ten-bar channel breakout (Vol 6 p.12-16, Chart 2 image)", "X|Chart 14: $500 money-management stop, $900 $ risk trailing, $500 breakeven floor (D-Mark)"],
-      "Vol 6 ch.1 p.12-16 (D-Mark: SAR $72,762 on 148 trades; with all stops $85,150 on 312 trades, 57% wins).", ("stad6_tenbar", "Ten-Bar Channel Breakout", "Vol 6")),
+    d("stad6_tenbar", "Ten-Bar Channel Breakout (ch.1 example)", "Vol 6 · Concepts", "Long/Short", Live,
+      &["F|\"System: Channel Brk IntraBar / Input: Length(10);\" (Vol 6 p.12, Chart 2: the PowerEditor screen image, read by OCR)",
+        "E|\"Buy Highest(High,Length) + 1 point Stop;\" and \"Sell Lowest(Low,Length) - 1 point Stop;\" for the next bar, from the 10 bars up to and including today ('Sell' = sell short in TradeStation 4)",
+        "X|Stop and reverse: a position ends only when the opposite stop reverses it ('simple stop-and-reverse ten-bar channel breakout system', p.12)",
+        "F|[Reading, decision 217 / #57] '1 point' = one tick of the traded instrument (0.01 US, 0.05 NSE)",
+        "X|HELD: the Chart 14 variants with a $500 money-management stop, $900 $ risk trailing stop and $500 breakeven floor are dollar amounts on D-Mark futures and are not run"],
+      "Vol 6 ch.1 p.12-16. Book (Chart 14, p.16, D-Mark futures daily): stop and reverse $72,762 on 148 trades, 45% profitable, profit factor 1.88, average trade $491; with all the dollar stops $85,150 on 312 trades, 57% (not run). The book's test is on D-Mark futures; runs on indices, ETFs and stocks are a declared application. Independent check authors/titles-1030/K47w/k47_ref.py.", ("stad6_tenbar", "Ten-Bar Channel Breakout", "Vol 6")),
     d("stad6_asi", "Accumulation Swing Index", "Vol 6 · Trending", "Long/Short",
       NotTestable("AccumSwingIndex is weighted by the symbol's DailyLimit (the futures limit move; TradeStation help, AccumSwingIndex/SwingIndex). Indices and stocks have no daily limit, so the indicator's value is undefined here, and the book does not give the formula."),
       &["F|ASI = AccumSwingIndex; SH = SwingHighBar(1,High,2,3); SHAgo = SwingHighBar(2,High,2,40) (Vol 6 p.19-20 code)",
@@ -1006,6 +1009,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "stad5_chbopb" => [vec![p("channel", "Channel bars", 10., 3., 30., 1.), p("retrbars", "Retracement window bars", 10., 3., 30., 1.), p("newlohi", "New low/high bars", 4., 2., 10., 1.), p("trailstp", "Exit bars", 8., 3., 20., 1.),
             usd("mm_usd", "Money-management stop ($)", 1000.), usd("be_usd", "Breakeven floor ($)", 200.)], bpv(1000., 1.)].into_iter().flatten().collect::<Vec<_>>(),
         "stad5_dsdb" => vec![p("avglen", "Average length", 3., 1., 10., 1.), p("disp", "Displacement", 16., 0., 30., 1.), p("sdlen", "StdDev length", 12., 5., 30., 1.), p("sdev", "StdDevs", 2., 0.5, 4., 0.25)],
+        "stad6_tenbar" => vec![p("length", "Channel length (bars, including today)", 10., 2., 60., 1.), p("tick", "Offset beyond the channel, ticks of the traded instrument", 1., 0., 10., 1.)],
         "stad6_adxmac" => vec![p("avglen", "Channel XAverage length", 30., 5., 60., 1.), p("adxlen", "ADX length", 12., 5., 30., 1.), p("entrybar", "Entry window bars", 2., 1., 10., 1.)],
         "stad6_dmachan" => [vec![p("avglen", "Average length", 20., 5., 50., 1.), p("disp", "Displacement", 5., 0., 15., 1.), p("exitbar", "ExitAvg stop bars", 5., 1., 20., 1.),
             usd("mm_usd", "Money-management stop ($)", 200.), usd("be_usd", "Breakeven floor ($)", 100.), usd("dtr_usd", "$ Risk trailing ($)", 600.)], bpv(1., 100.)].into_iter().flatten().collect::<Vec<_>>(),
@@ -1099,7 +1103,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             p("delay", "Good open delay bars", 0., 0., 10., 1.)], bpv(1., 100.)].into_iter().flatten().collect::<Vec<_>>(),
         _ => return None,
     };
-    v.push(p("point", "One point (minimum price move)", 0.01, 0.0001, 1., 0.0001));
+    if id != "stad6_tenbar" { v.push(p("point", "One point (minimum price move)", 0.01, 0.0001, 1., 0.0001)); } // tenbar: 1 tick of the traded instrument (decision 217)
     Some(v)
 }
 
@@ -1247,6 +1251,13 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             })
         }
         // ============================================================ Volume 6
+        "stad6_tenbar" => {
+            let (len, off) = (u("length"), g("tick").max(0.0) * x.market_tick());
+            run_ts(x, from, to, len, cfg(), |i, _st, _now, nx| {
+                nx.push(o(A::Buy, P::Stop(highest(h, len, i) + off), "Channel Brk LE"));
+                nx.push(o(A::Sell, P::Stop(lowest(l, len, i) - off), "Channel Brk SE"));
+            })
+        }
         "stad6_adxmac" => {
             let (al, eb) = (u("avglen"), u("entrybar"));
             let (xh, xl) = (xavg(h, al), xavg(l, al));
@@ -2362,6 +2373,6 @@ mod tests {
             assert!(family_of(d.id).is_some());
             assert!(params(d.id).is_some());
         }
-        assert_eq!(live, 62);
+        assert_eq!(live, 63); // + stad6_tenbar (lane K47)
     }
 }

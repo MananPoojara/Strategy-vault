@@ -252,23 +252,24 @@ const INTRADAY_P1_BASIS:&str="Intraday phase 1 (2026-10-24): the book's same-day
 /// Lane K32 (4 Nov 2026) re-ran the same check for the cards K31/K32 changed or admitted and the K28-K30 cards that read the
 /// open/high/low (authors/titles-1030/K32w/M3-k32.tsv, K32.tsv); new flags are added here the same way.
 /// Lane K43 (4 Nov 2026): the same exact check for the 15 multi-unit ids (K43w/M3-k43.tsv) flags stad9_luxor and stad13_luxor on SPX.
+/// Lane K47 (5 Nov 2026, K47w/M3-k47.tsv): jkbk_starting_point (SPX, DJI) and tscom_imaster (SPX) flagged.
 pub const M3_SPX:&[&str]=&["acbff_eight_stop33", "acbff_eight_stop66", "acbff_rx4day", "acbff_six_q66", "acbff_six_q66_v2", "acbff_six_stop66",
     "atm01_deep_pockets", "atm03_twobar", "atm04_four_pct", "bfmm_esl", "bfmm_mm2_es", "bfmm_mm2_nq", "bfmm_nql", "bllstr_fma_1_50_1",
     "dbnotp_abc_index", "dgmf_gap3", "djcs_pct_reversal", "fgosc_crossover", "hbqts_cgo", "hbqts_parabolic_stop", "jbssf_mom_ma",
-    "jkbk_safe", "jr_zulu", "jrfsp_weekly_breakout", "kets_stoch_sig_stop", "kftsm_parabolic", "krftj_pro", "lg3k_tr_day",
+    "jkbk_safe", "jkbk_starting_point", "jr_zulu", "jrfsp_weekly_breakout", "kets_stoch_sig_stop", "kftsm_parabolic", "krftj_pro", "lg3k_tr_day",
     "lgtt30_tt30", "lkcpt_rsimild", "ltcoat_coat_tails", "lwdtfo_vb_open", "lwmdc_open_up_oc", "msadd_n_can_ha", "msadd_n_can_pl",
     "msws_hanging_man_hammer_mfi", "nkms2_small_triangle_breakout", "putg_pattern_vbo", "qsfund_trendline", "rarsys_trend_weaver",
     "rgc_runaway_gap", "rgc_runaway_gap_f5", "rinadz_rsi9", "rpdt_range_bo", "scdshark_32", "scjleq_vol", "scluisi_nr", "sdtcp_donchian", "sdtcp_nr7id",
     "slct_ct_formula", "sprfs_nr4ib", "ss_hist_vol_crabel", "ss_three_day_unfilled_gap", "stad12_ntw", "stad13_luxor", "stad1_maco", "stad2_adxdiff",
     "stad2_ccibb", "stad3_bdsr", "stad5_dsdb", "stad6_adxmac", "stad7_masr", "stad9_dyf", "stad9_luxor", "stad9_nohurry", "stad9_redrover",
     "stkch_k39", "tbabc_powertool", "tcdt_idp1", "tcdt_idp2", "tdperl_clop_long", "tdperl_clop_short", "tttt1_tradetimer",
-    "upg18_safer2005", "vrsdd_double_doji", "wtdtt_mist4", "wtdtt_mist5", "wwnc_dmi"];
+    "tscom_imaster", "upg18_safer2005", "vrsdd_double_doji", "wtdtt_mist4", "wtdtt_mist5", "wwnc_dmi"];
 pub const M3_NDX:&[&str]=&["acbff_rx15", "adrsi5_rsi5", "ajmisc_vol_rev", "jt_example_20d_breakout", "kets_seas_conf_limit", "kets_seas_inv_stop",
     "kets_stoch_div_stop", "lwnl_engulf_bull_1", "msws_all_mfi", "msws_harami_mfi", "msws_harami_rsi", "nkms_3_day_range_switch",
     "stad9_obvrev", "wtdtt_mist1", "wtdtt_mist2", "wtdtt_mist3"];
 pub const M3_DJI:&[&str]=&["acbff_rx15", "agtsic_p10", "atm01_bad_compromise", "atm01_td_carrie", "atmrc_swing_stop", "atmrc_swing_trail", "bfmm_mm2_es",
     "bfmm_nql", "djcs_pct_reversal", "elcim_ts_fi", "epfpp_fxed_trend", "fot07_kama_range", "ftm_kf_sd", "jbid_inside_day",
-    "jcurt_jk31_pattern", "kets_seas_mom_limit", "lebtcb_adavol", "lg3k_tr_day", "lkcpt_wdmi", "lkqts_tiar", "lwmdc_open_up_oc",
+    "jcurt_jk31_pattern", "jkbk_starting_point", "kets_seas_mom_limit", "lebtcb_adavol", "lg3k_tr_day", "lkcpt_wdmi", "lkqts_tiar", "lwmdc_open_up_oc",
     "mqma_moving_average", "msws_dark_cloud_piercing_line_mfi", "msws_engulfing_mfi", "nkms_bull_power_bear_power_2",
     "rgc_runaway_gap", "scjleq_vol", "scraj_red", "sprfs_hvr_nr4ib", "sprfs_nr4ib", "ss_anti_3_10", "stad11_gapper", "stad9_redrover",
     "strmm_expert", "strtw_gd_bj", "tcdt_oc_nr_re", "tselhs_rb_avg", "wbmdd_erg_tsi_s2", "wtdtt_mist1", "wtdtt_mist3", "wtdtt_mist4",
@@ -3868,7 +3869,7 @@ mod decision_179_tests {
     fn tradable_check_withdraws_flagged_cash_index_daily_results_and_is_decided_first() {
         let cat=crate::connors::catalogue();
         let find=|id:&str|cat.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id}"));
-        assert_eq!((M3_SPX.len(),M3_NDX.len(),M3_DJI.len()),(78,16,43)); // + K43 stad9_luxor, stad13_luxor (SPX) // M4 re-check (#200); K40 scluisi_nr (#207) and K41 scjleq_vol (SPX, DJI)
+        assert_eq!((M3_SPX.len(),M3_NDX.len(),M3_DJI.len()),(80,16,44)); // + K47 jkbk_starting_point (SPX, DJI), tscom_imaster (SPX) // + K43 stad9_luxor, stad13_luxor (SPX) // M4 re-check (#200); K40 scluisi_nr (#207) and K41 scjleq_vol (SPX, DJI)
         for (list,x,y) in [(M3_SPX,"SPX","SPY"),(M3_NDX,"NDX","QQQ"),(M3_DJI,"DJI","DIA")] {
             for id in list {
                 let d=find(id);
