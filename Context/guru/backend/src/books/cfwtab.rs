@@ -28,7 +28,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
         d("cfwtab_stoch", "Stochastic crossover: SlowK crosses SlowD below 35 (buy) / above 65 (sell)", "Ch.3 Markets, Strategies & Time Frames (p.49-50)", "Long/Short",
           &["E|\"IF CurrentBar > 1 and SlowD(Length) < 35 and SlowK(Length) crosses above SlowD(Length) then Buy on Close;\" Input: Length(10) (Chart 7, p.49)",
             "X|\"IF CurrentBar > 1 and Slowd(Length) > 65 and SlowK(Length) crosses below SlowD(Length) then Sell on Close;\" (p.49) - reversal only"],
-          "Book: Caterpillar daily 1/2/91-4/11/97, 68% profitable (PS 2, p.50). [Declared reading, not printed] SlowK = 3-bar simple average of the raw 10-bar %K ((close - lowest low) / (highest high - lowest low) x 100, 0 when the range is 0, as the book's own PercentR function p.81); SlowD = 3-bar simple average of SlowK."),
+          "Book: Caterpillar daily 1/2/91-4/11/97, 68% profitable (PS 2, p.50). [Declared reading, not printed] The code calls TradeStation's built-in SlowK/SlowD without printing them; for TradeStation-era code the vault uses the legacy TradeStation smoothing (lead decision 191): raw 10-bar %K = (close - lowest low) / (highest high - lowest low) x 100 (0 when the range is 0), SlowK = (2 x previous SlowK + %K) / 3, SlowD = (2 x previous SlowD + SlowK) / 3, each seeded with its first value. Option p.smooth = 1: 3-bar simple averages (SlowK = average of %K, SlowD = average of SlowK)."),
         d("cfwtab_gap", "Gap open volatility breakout: stop at yesterday's close +/- yesterday's range, out next open", "Ch.3 Markets, Strategies & Time Frames (p.52-53)", "Long/Short",
           &["E|\"IF Open of next bar > High of this bar or Open of next bar < Low of this bar then Buy next bar at Close of this bar + Range of this bar Stop;\" (Chart 9, p.53)",
             "E|\"IF Open of next bar < Low of this bar or Open of next bar > High of this bar then Sell next bar at Close of this bar - Range of this bar Stop;\" (p.53)",
@@ -78,6 +78,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "cfwtab_chan" => Some(vec![p("len", "Channel bars (SPF 4: 50; weekly test: 10)", 50., 2., 200., 1.), p("weekly", "Weekly bars (1) - the book's second test", 0., 0., 1., 1.)]),
         "cfwtab_se4" => Some(vec![p("weekly", "Weekly bars (1 = book) / daily (0)", 1., 0., 1., 1.)]),
         "cfwtab_ukr" => Some(vec![p("bsi", "Bars held after entry (book optimum 8)", 8., 1., 30., 1.), p("ll", "Low look-back (book 10)", 10., 1., 50., 1.)]),
+        "cfwtab_stoch" => Some(vec![p("smooth", "0 = legacy TradeStation SlowK/SlowD (default, decision 191), 1 = 3-bar simple averages", 0., 0., 1., 1.)]),
         "cfwtab_hhll" => Some(vec![p("hh", "Buy-stop channel weeks HH (author's choice 20; SPF 1: 50)", 20., 2., 100., 1.), p("ll", "Sell-stop channel weeks LL (book 50)", 50., 2., 100., 1.),
             p("long", "Long only (1): the 50-week low only exits (p.142)", 0., 0., 1., 1.), p("close", "Close-confirmed entries (1): the week's close beyond the channel, filled at that close (p.142)", 0., 0., 1., 1.)]),
         _ if reviewed(id) || id == "cfwtab_rangeleader" => Some(vec![]),
@@ -211,7 +212,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     Some(match id {
         "cfwtab_ma918" => { let (f, s) = (sma(c, 9), sma(c, 18)); close_sar(x, from, to, &|i| if cross_up(&f, &s, i) { 1. } else if cross_dn(&f, &s, i) { -1. } else { 0. }) }
         "cfwtab_stoch" => {
-            let k = sma(&pct_r(&x.h, &x.l, c, 10), 3); let dd = sma(&k, 3);
+            let (k, dd) = if g("smooth") > 0.5 { let k = sma(&pct_r(&x.h, &x.l, c, 10), 3); let dd = sma(&k, 3); (k, dd) } else { super::kfbpm::slow_kd(x, 10, false) };
             close_sar(x, from, to, &|i| if dd[i] < 35. && cross_up(&k, &dd, i) { 1. } else if dd[i] > 65. && cross_dn(&k, &dd, i) { -1. } else { 0. })
         }
         "cfwtab_gap" => gap(x, from, to),

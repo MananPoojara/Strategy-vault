@@ -194,7 +194,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
           NotTestable("the column says the lookback 'can range from 20 to 60 days and will change daily depending on the level of volatility (30-day standard deviation of the close)' but never gives the formula mapping volatility to the lookback"), false,
           &["E|\"1. Go long on the open if yesterday's close is higher than the highest high of the lookback period. 2. Exit by reversing the position.\" (TSL Feb 2003)"],
           "Volatility-to-lookback rule missing in both the stock and the futures columns; not completed (Chande's DBS formula is in the vault as strtw DBS from another book).", None),
-        d("atm03_pullback6", "Basic pullback buyer · limit 6% below the close, exit next open", "TSL Mar 2003 (p.50)", "Long", Live, false,
+        d("atm03_pullback6", "Basic pullback buyer · limit 6% below the close, exit next open", "TSL Mar 2003 (pp.66-67)", "Long", Live, false,
           &["E|\"1. Go long on the next bar at a limit price 6 percent below the current bar's close.\" (TSL Mar 2003)",
             "X|\"2. Exit the next bar on the open (at the market).\"",
             "F|\"3. The system can open a new long position on a bar for which a previous trade was closed.\""],

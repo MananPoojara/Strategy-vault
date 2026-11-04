@@ -13,10 +13,10 @@ pub const BOOK: &str = "jbhpp";
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef { id: "jbhpp_dj_1026", name: "Dow key date · long Oct 26 to Jan 10, 9% stop", group: "Seasonals · Key Date Trades", session: 0, dir: "Long",
         status: Status::Live, needs_volume: false, needs_vix: false, needs_series: &[], book: BOOK,
-        rules: &["F|Slide p.101: \"DJ Industrial Avg $DJIA L Entry 10/26 Exit 1/10 Stop % 9\"; the trade list beside it enters 10/26 (next trading day when closed) and exits 1/10 of the next year",
+        rules: &["F|Slide PDF p.100: \"DJ Industrial Avg $DJIA L Entry 10/26 Exit 1/10 Stop % 9\"; the trade list on PDF p.101 enters 10/26 (next trading day when closed) and exits 1/10 of the next year",
             "E|Key-date seasonals are entered on the close of the entry date (the slide's table: Price In = that day's close)",
             "X|Exit on the close of the exit date, or earlier on a close 9% below the entry price (\"Stop %\" column)"],
-        notes: "Book record (p.101): 93.0% winners, P/L ratio 41.2, average profit 186.66 Dow points, average loss -60.00, entries from 1950. Exit on the first close on or after Jan 10; a close below entry x 0.91 before then exits on that close. Compared on our DJI series (from 1971). Other indices, ETFs and stocks (US and India, same dates) are a declared application.",
+        notes: "Book record (slide PDF p.100; trade list p.101): 93.0% winners, P/L ratio 41.2, average profit 186.66 Dow points, average loss -60.00, entries from 1950. Exit on the first close on or after Jan 10; a close below entry x 0.91 before then exits on that close. Compared on our DJI series (from 1971). Other indices, ETFs and stocks (US and India, same dates) are a declared application.",
         claim: c("", "93.0%", "186.66 Dow points", "1950-2008 (entry years)", "DJIA; P/L ratio 41.2, average loss -60.00") }]
 }
 

@@ -460,8 +460,8 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
             return issue("not_testable", format!("Withheld by the accuracy check: {} No results are published.", plain_gate_reason(g.reason)));
         }
         // bernstein-g3: the reviewed S&P day-of-week rules are limited to SPX by instrument_policy instead of the gate list.
-        if let (Some(allowed), Some(row)) = (g.allowed.filter(|_|!(def.book==books::jbeft::BOOK && books::jbeft::reviewed_daily(def.id)) && !crate::instrument_policy::open_all(def) && !crate::instrument_policy::vix_india(def) && !crate::instrument_policy::lwilliams_reviewed(def)
-            && !(crate::instrument_policy::intraday_p1(def) && p.get("path").map_or(true,|v| *v>=0.5))), ctx.r.get(from)) { // intraday phase 1: the minute path uses the market's own tick
+        if let (Some(allowed), Some(row)) = (g.allowed.filter(|_|crate::gate::home_only(def.id) || (!(def.book==books::jbeft::BOOK && books::jbeft::reviewed_daily(def.id)) && !crate::instrument_policy::open_all(def) && !crate::instrument_policy::vix_india(def) && !crate::instrument_policy::lwilliams_reviewed(def)
+            && !(crate::instrument_policy::intraday_p1(def) && p.get("path").map_or(true,|v| *v>=0.5)))), ctx.r.get(from)) { // intraday phase 1: the minute path uses the market's own tick
             // Bernstein g1: the reviewed Friday-Monday system keeps its S&P points on SPX (instrument_policy limits it to SPX).
             let jb_spx=def.id=="jb624_fri_mon" && row.ticker=="SPX" && crate::instrument_policy::bernstein_g1_reviewed(def);
             if !allowed.contains(&row.ticker.as_str()) && !jb_spx {
@@ -758,7 +758,8 @@ mod tests {
             assert_eq!(note(&old).is_some_and(|n|n.contains("opens in this file are real only from 2014")),guarded,"{id}");
             assert!(!note(&new).is_some_and(|n|n.contains("opening price")||n.contains("close-only")),"{id}");
             assert_eq!(note(&spy).is_some_and(|n|n.contains("close-only")),id=="ws5_vix_iii_reversal","{id}");
-            if id!="ws5_vix_iii_reversal" {assert!(note(&new).is_none(),"{id}");}
+            if books::ws5::TIMING.contains(&id) {assert!(note(&new).is_some_and(|n|n.contains("Not published on SPX")),"{id}");} // K36 #196: $3 per SPY share, SPY only
+            else {assert!(note(&new).is_none(),"{id}");}
         }
     }
     #[test]
