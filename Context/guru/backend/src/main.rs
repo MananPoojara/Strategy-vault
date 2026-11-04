@@ -2156,7 +2156,10 @@ fn main() {
     let data: &'static BTreeMap<String, Vec<Row>> = Box::leak(Box::new(data));
     let _=books::rotation::PRELOADED.set(data); // lane K28: rotation rules read the other ETFs of this file
     let extra_dir = args.get(4).cloned().unwrap_or_else(|| concat!(env!("CARGO_MANIFEST_DIR"), "/../../../extra_data").into());
-    let extra = load_extra(&extra_dir);
+    let mut extra = load_extra(&extra_dir);
+    let baskets=std::env::var("VAULT_BASKET_DATA_DIR").ok().map_or_else(baskets::Catalogue::default,|directory|baskets::Catalogue::load(std::path::Path::new(&directory)).unwrap_or_else(|error|{eprintln!("warning: basket admission unavailable: {error}");baskets::Catalogue::default()}));
+    // lane K40 (scaim): Chan & Lin's Advance Issues Momentum, counted once from the US Dow basket's own closes; absent elsewhere
+    if let Some(m)=books::scaim::aim_series(&baskets) {extra.entry(("*".into(),books::scaim::SERIES.into())).or_insert(m);}
     println!("extra data: {} series from {extra_dir}", extra.len());
     // intraday phase 1: optional arg 5 = folder of <TICKER>.m1.csv / .m1idx.csv; missing = no minute data (results unchanged)
     let intraday_dir = args.get(5).cloned();
@@ -2201,7 +2204,6 @@ fn main() {
             (t.clone(), c)
         })
         .collect();
-    let baskets=std::env::var("VAULT_BASKET_DATA_DIR").ok().map_or_else(baskets::Catalogue::default,|directory|baskets::Catalogue::load(std::path::Path::new(&directory)).unwrap_or_else(|error|{eprintln!("warning: basket admission unavailable: {error}");baskets::Catalogue::default()}));
     let st = Arc::new(State { ctxs,baskets,vix,market_extra:extra });
     let _=DATA_FILES.set(collect_data_files(Some(&csv),&[Some(&vix_dir),Some(&extra_dir),intraday_dir.as_deref(),options_dir.as_deref()],std::env::var("VAULT_BASKET_DATA_DIR").ok().map(|d|std::path::Path::new(&d).join("index.csv"))));
     let listener = TcpListener::bind(format!("0.0.0.0:{port}")).expect("bind");
