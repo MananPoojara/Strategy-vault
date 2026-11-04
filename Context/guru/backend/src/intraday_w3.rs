@@ -175,12 +175,13 @@ mod tests {
             for t in ip::INTRADAY_P1_TICKERS { assert_eq!(ip::check(d, t, false).is_none(), want.contains(t), "{id} {t}"); }
             assert!(ip::check(d, "QQQ", false).is_some() && ip::check(d, "AAPL", true).is_some(), "{id}");
             let g = crate::gate::get(id).unwrap();
-            assert_eq!(g.verdict, if spx_held(id) { "withheld" } else { "unverified" }, "{id}");
+            assert_eq!(g.verdict, if spx_held(id) || k38_us(id) { "withheld" } else { "unverified" }, "{id}"); // #208: mega withheld
             assert!(g.reason.contains("#202") && (!spx_held(id) || g.reason.contains("#177b")), "{id}");
         }
         for id in K38_SPX_HELD { assert!(ip::check(cat.iter().find(|d| d.id == *id).unwrap(), "SPX", false).unwrap().note.contains("#177b"), "{id}"); }
         let mega = cat.iter().find(|d| d.id == "acbff_mega_1min").unwrap();
         assert!(ip::check(mega, "NIFTY 50", false).unwrap().note.contains("US e-mini S&P session"));
+        assert!(matches!(mega.status, crate::connors::Status::NotTestable(_))); // #208
         assert!(cat.iter().find(|d| d.id == "cpgap_gap_fill_rank").is_some_and(|d| !ip::intraday_p1(d)));
     }
     #[test]
@@ -195,7 +196,8 @@ mod tests {
         let r = vec![crate::Row { ticker: "T".into(), date: "2020-01-02".into(), open: 100., high: 100.6, low: 99.4, close: 100., volume: None }];
         let mut x = Ctx::new(&r, &r, &[]);
         x.minutes = Some(minutes("mega", &[("2020-01-02", &lines)]));
-        let t = crate::books::acbff::run("acbff_mega_1min", &x, 0, 0, &Params::new()).unwrap();
+        assert!(crate::books::acbff::run("acbff_mega_1min", &x, 0, 0, &Params::new()).is_none()); // #208: held, publishes nothing
+        let t = crate::books::acbff::mega_minutes(&x, 0, 0);
         let got: Vec<(f64, f64, f64)> = t.iter().map(|t| (t.dir, t.legs[0].px, t.exit_px)).collect();
         assert_eq!(got.len(), 2, "{got:?}");
         assert!(got[0].0 == 1. && (got[0].1 - 99.5).abs() < 1e-9 && (got[0].2 - 100.44).abs() < 1e-9, "{got:?}");

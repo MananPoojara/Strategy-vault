@@ -841,6 +841,9 @@ fn k2_policy(def:&StrategyDef)->Option<Policy> {
 // Stock Rocket: $10 close and 500,000 shares are US amounts -> US instruments only (stock_us None = not a stock).
 fn k2_symbol_issue(def:&StrategyDef,ticker:&str,stock_us:Option<bool>)->Option<Issue> {
     if !k2_reviewed(def) || def.book!="dwsr" {return None;}
+    if stock_us==Some(true) { // lead decision #208 (#166): withheld on US stocks
+        return Some(Issue{status:"not_testable",note:format!("Withheld on US stocks (decisions #166, #208): the Stock Rocket's $10 close and 500,000-share filters would run on split-adjusted prices and volumes (every US stock file the vault holds is split-adjusted), which is not the book's amount before a split and looks ahead. It comes back when unadjusted closes exist. {ticker}: no result is published; US ETFs keep the rule.")});
+    }
     if stock_us.unwrap_or(!ticker.starts_with("NIFTY")) {return None;}
     Some(Issue{status:"needs_data",note:format!("The Stock Rocket needs a close above $10 and volume above 500,000 shares, US-dollar and US-share amounts. Dollar-amount rules run on US ETFs and stocks only; {ticker} is outside that scope, so no result is published.")})
 }
@@ -2140,6 +2143,7 @@ mod tests {
                 for t in ["SPY","QQQ"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
                 for t in ["SPX","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_some(),"{} {t}",d.id);}
                 assert!(check(d,"RELIANCE",true).is_some(),"{}",d.id);
+                assert!(check_native(d,"AAPL",&NativeEvidence::us_test_fixture()).is_some_and(|i|i.note.contains("#208")),"{}",d.id); // #166/#208: withheld on US stocks
             } else {
                 assert_eq!(policy(d).requirement,"index_etf_or_stock");
                 for t in ["SPY","QQQ","SPX","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert!(check(d,t,false).is_none()||m3_withdrawn(d.id,t),"{} {t}",d.id);}
