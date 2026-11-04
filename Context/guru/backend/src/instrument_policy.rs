@@ -1370,7 +1370,7 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         "lwdg2_0105"=>"Held: needs intraday data. The day trade enters on whichever of two stops (the close plus or minus 1.05%) is hit first and exits on the close; when a day reaches both, daily bars cannot show which came first, and the accuracy check found its whole gain comes from such same-day trades.",
         // ---- end Larry Williams block
         // ---- Active Trader 2000-2002 block (26 Oct 2026): held Live rules
-        "atm00_fourplay"=>"Held: the column adds the initial share count again at +1%, +2%, +4% ... (pyramiding), so the position grows past one unit; the vault carries at most one unit per strategy and refuses the added entries, so no result can be published.",
+        // atm00_fourplay: on the multi-unit account since lane K44 (books::units)
         // ---- end Active Trader 2000-2002 block
         // ---- Futures Magazine block (26 Oct 2026): held Live rules
         "ftm_rg_oops"=>"Held: the coded entry stop is the close minus / plus a fixed 2 S&P 500 points; a fixed point amount has no equivalent on other indices, ETFs or stocks, and the gap rule needs real opens that the S&P cash index only has from SPY (1993), so no reviewed result can be published.",
@@ -1636,7 +1636,7 @@ mod tests {
             // agtsic: the lane C2 special block admits the eight daily rules; ADMISSION_BREADTH admits the K25 breadth-filtered RSI ids.
             // phbttk: phbt's Headley entry admits the Percent R ids; ADMISSION_K30 admits the shipped System Tester records (K30, 3 Nov 2026).
             // acbff, atm04: the intraday block admits their N-minute-bar ids (intraday_ep, lane K39, 4 Nov 2026); stad: stad3_idbf (lane K42).
-            const SHARED:&[&str]=&["acbff","agtsic","atm04","bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","phbttk","putg","stad","stad2","tcdt","tdnmtt","tdperl"]; // stad, stad2, tcdt: books::units::ADMISSION admits their multi-unit ids (lane K43)
+            const SHARED:&[&str]=&["acbff","agtsic","atm04","bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","phbttk","putg","stad","stad2","tcdt","tdnmtt","tdperl","atm00","pbwts"]; // stad, stad2, tcdt: books::units::ADMISSION admits their multi-unit ids (lane K43); atm00: atm00_fourplay (lane K44); pbwts: pbwts_super_combo on 5-minute bars (intraday block, lane K44)
             for d in all.iter().filter(|d|books.contains(&d.book) && !SHARED.contains(&d.book) && reviewed_cash_rule(d)!=(a.reviewed)(d)) {other.push((d.book,d.id));}
             for d in admitted {
                 assert_eq!(admission(d).map(|x|x.label),Some(a.label),"{}",d.id);
@@ -1793,8 +1793,9 @@ mod tests {
     fn activetrader2_review_admits_exact_ids_on_indices_etfs_and_stocks() {
         use crate::books::{atm00, atm01, atm02, atm10};
         let all:Vec<StrategyDef>=atm00::catalogue().into_iter().chain(atm01::catalogue()).chain(atm02::catalogue()).chain(atm10::catalogue()).collect();
-        let mut want:Vec<&str>=atm00::REVIEWED.iter().chain(atm01::REVIEWED.iter()).chain(atm02::REVIEWED.iter()).chain(atm10::REVIEWED.iter()).copied().collect();
-        assert!(!want.contains(&"atm00_fourplay") && held_reason("atm00_fourplay").is_some_and(|r|r.starts_with("Held: ")));
+        // + atm00_fourplay, admitted by books::units::ADMISSION (multi-unit account, lane K44)
+        let mut want:Vec<&str>=atm00::REVIEWED.iter().chain(atm01::REVIEWED.iter()).chain(atm02::REVIEWED.iter()).chain(atm10::REVIEWED.iter()).chain(["atm00_fourplay"].iter()).copied().collect();
+        assert!(!atm00::REVIEWED.contains(&"atm00_fourplay") && held_reason("atm00_fourplay").is_none());
         let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {

@@ -252,13 +252,18 @@ pub fn catalogue() -> Vec<StrategyDef> {
               "X|No other exit: each entry reverses the other (always in the market once started)"],
             "Dates \"were derived from cyclical analysis of historical data on soybeans\" (p.132). Table 6.6 (p.132): soybeans 4/26/96-4/12/02: 11 trades, 36.36% winners, net -$4,362.50, avg trade -$396.59. Feb 29 is in neither window (no order that day).",
             claim("11 (soybeans)", "36.36%", "-$396.59", "winners 145 / losers 120 bars", "4/26/96-4/12/02")),
-        off!("pbwts_super_combo", "Super Combo Day Trading", "Ch 6 · Trading strategies that work", "Long/Short",
-            NeedsData("5-minute intraday S&P bars (data1) with daily bars (data2): entries after the first 30 minutes, before 14:30 CT, liquidation-reversal before 12:00, 3-bar trailing stop after 14:30, exit on the close"),
-            &["F|averageRange = Average(Range,10) of Data2; canTrade if AbsValue(Open-Close of Data2) < 0.85*Average(AbsValue(Open-Close),10) (p.143)",
-              "E|buyEasierDay (Close of Data2 <= Close[1]): Buy(\"LBreakOut\") at Open + 0.30*averageRange stop, SellShort at Open - 0.60*averageRange stop; sellEasierDay: 0.60 / 0.30 (p.143-145)",
-              "E|Failed breakouts: if intraHigh > High of Data2 + 0.25*averageRange then SellShort(\"SfailedBO\") at High of Data2 - 0.25*averageRange stop; mirror for buys (p.145)",
-              "X|Protective stop EntryPrice -/+ MaxList(0.25*averageRange, 3.00 points) (0.15 after a liquidation reversal); break-even after 0.50*averageRange; after 14:30 trail Lowest(Low,3)/Highest(High,3) of 5-min bars; SetExitOnClose (p.145-146)"],
-            "Tables 6.7/6.8 (p.147-148): S&P 5-min 2/12/2001-4/18/2002: 155 trades, 38.06%, avg $175.32; 1986-2/28/2002 (Excalibur): 2,129 trades, 42.40%, avg $89. Appendix B (p.318) prints a variant with 0.80 and barCount >= 6."),
+        live!("pbwts_super_combo", "Super Combo Day Trading", "Ch 6 · Trading strategies that work", "Long/Short",
+            &["F|Data2 (daily, the last completed day): averageRange = Average(Range,10); canTrade = 1 if AbsValue(Open-Close) < 0.85*Average(AbsValue(Open-Close),10); buyEasierDay if Close <= Close[1], sellEasierDay if Close > Close[1] (p.143)",
+              "E|buyEasierDay: Buy(\"LBreakOut\") next bar at Open of data1 + 0.30*averageRange stop, SellShort(\"SBreakout\") at Open - 0.60*averageRange stop; sellEasierDay: 0.60 / 0.30 (p.143-145); Open of data1 = the day's first 5-minute open",
+              "E|Failed breakouts: if intraHigh > High of Data2 + 0.25*averageRange then SellShort(\"SfailedBO\") at High of Data2 - 0.25*averageRange stop; if intraLow < Low of Data2 - 0.25*averageRange then Buy(\"BfailedBO\") at Low of Data2 + 0.25*averageRange stop (p.145)",
+              "F|Orders only once barCount > waitPeriodMins/BarInterval (30/5 = 6 bars) and canTrade = 1; new entries only while Time < 1430 and buysToday / sellsToday = 0 (one long and one short a day) (p.144-145)",
+              "X|Long: longLiqPoint = MinList(EntryPrice - 0.25*averageRange, EntryPrice - 3.00); 0.15 instead of 0.25 after a reversal from a short liquidation (MarketPosition(1) = -1, BarsSinceEntry = 1, High[1] >= shortLiqPoint, shortLiqPoint < shortFBOPoint); EntryPrice once intraTradeHigh >= EntryPrice + 0.50*averageRange; from Time >= 1430 MaxList(longLiqPoint, Lowest(Low,3)) (p.145); short mirrored (p.145-146)",
+              "X|Before Time 1200, with sellsToday = 0, longLiqPoint <> EntryPrice and BarsSinceEntry >= 4: SellShort(\"LongLiqRev\") at longLiqPoint stop (reverse), else Sell(\"LongLiq\") at longLiqPoint stop; short mirrored; SetExitOnClose (p.145-146)",
+              "A|Read: 5-minute bars built from the 1-minute file (session-aligned, TradeStation end stamps); the book's Central Time clock as printed: 1430 CT = 15:30 ET, 1200 CT = 13:00 ET (the cash session opens 8:30 CT like the S&P pit; it closes 15:00 CT, the pit 15:15). Data2 = the vault's daily bars of the same index (its daily open is the first minute's open)",
+              "A|Read: \"next bar\" stop orders placed at a 5-minute close work through the next bar's minutes; each fills at its level, or at the minute's open when the minute opens through it; several orders in one bar fill in the order the minutes reach them, and an exit order only applies to the position it was placed for; levels on both sides of one minute's open: the one nearer the open first [convention, counted as ambiguous]. TradeStation variables persist across days (MarketPosition(1) is the last position, even yesterday's)",
+              "A|Read: 3.00 = S&P index points (the book's @SP futures), so SPX only; option app_b = 1 is the Appendix B TradeStation 2000i listing (p.318-320: 0.80 instead of 0.85, barCount >= 6, BarsSinceEntry > 4)"],
+            "Tables 6.7/6.8 (p.147-148): @SP 5-min 2/12/2001-4/18/2002 ($100 slippage and commission): 155 trades, 38.06% winners, avg $175.32; Excalibur 1986-2/28/2002: 2,129 trades, 42.40%, avg $89. Both windows are before the vault's SPX minute history (2008-), so neither table can be re-run.",
+            claim("155", "38.06%", "$175.32 (1 S&P contract)", "winners 48 / losers 20 bars", "@SP 5-min 2/12/2001-4/18/2002")),
         live!("pbwts_ghost_trader", "Ghost Trader", "Ch 6 · Trading strategies that work", "Long/Short",
             &["F|Ghost system (every bar, all signals tracked): if myPosition = 0 and Xaverage(Close[1],9) > Xaverage(High[1],19) and RSI(Close[1],9) crosses below 70 and High >= High[1] then myEntryPrice = MaxList(Open,High[1]), myPosition = 1 (p.150)",
               "F|if myPosition = 1 and Low < Lowest(Low[1],20) then myProfit = MinList(Lowest(Low[1],20),Open) - myEntryPrice, myPosition = 0; shorts mirrored with Xaverage(Low[1],19), RSI crosses above 30, Low <= Low[1] (p.150)",
@@ -389,6 +394,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "pbwts_ma_channel" => vec![p("ma", "movAvgLength1", 9., 3., 30., 1.), p("chan", "channelLength", 20., 5., 60., 5.)],
         "pbwts_percent_r" => vec![p("len", "percentR length", 14., 5., 30., 1.), p("lo", "Buy cross level", 20., 5., 40., 5.), p("hi", "Sell cross level", 80., 60., 95., 5.),
             p("chan", "Entry channel", 3., 1., 10., 1.), p("mult", "Range multiple stop", 1.5, 0.5, 3., 0.25)],
+        "pbwts_super_combo" => vec![p("stop_amt", "protStopAmt: protective stop floor (S&P points)", 3.0, 0., 20., 0.25), p("app_b", "Appendix B 2000i listing (1 = 0.80, barCount >= 6, BarsSinceEntry > 4)", 0., 0., 1., 1.)], // intraday EP block (K44)
         "pbwts_dow_oc" | "pbwts_dow_oo" => vec![p("buy_or_sell", "buyOrSell (1 buy, 2 sell)", 1., 1., 2., 1.), p("which_day", "whichDay (1 Mon .. 5 Fri)", 1., 1., 5., 1.)],
         _ => return None,
     })
@@ -397,6 +403,10 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let schema = params(id)?;
     if from > to || to >= x.r.len() { return None; }
+    if id == "pbwts_super_combo" { // intraday EP block (K44)
+        let g = |k: &str, d: f64| p.get(k).copied().unwrap_or(d);
+        return Some(super_combo(x, from, to, g("stop_amt", 3.0), g("app_b", 0.0) >= 0.5));
+    }
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map_or(f64::NAN, |d| d.def));
     let u = |k: &str| { let v = g(k).round(); if v.is_finite() && v >= 1.0 { v as usize } else { 1 } };
     let n = x.r.len();
@@ -606,10 +616,152 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     Some(t)
 }
 
+// ---- intraday EP block (lane K44, 4 Nov 2026, decision #213): Super Combo (p.139-146) on session-aligned 5-minute bars built
+// from the 1-minute file (intraday_ep::day_bars), daily Data2 = the vault's daily rows. Amounts in S&P points (SPX only).
+struct ScOrd { side: f64, px: f64, exit: bool, name: &'static str, for_pos: usize }
+
+/// The printed EasyLanguage (Chapter 6; `app_b` = the Appendix B 2000i listing), bar by bar, with TradeStation "next bar"
+/// stop orders worked through the next bar's minutes.
+fn super_combo(x: &Ctx, from: usize, to: usize, amt: f64, app_b: bool) -> Vec<Trade> {
+    use crate::intraday::{day_trade, fill_px, touched, Level};
+    let r = &x.r;
+    let (oc_k, wait_ge, bse_gt) = (if app_b { 0.80 } else { 0.85 }, app_b, app_b);
+    let mut out = vec![];
+    // (dir, entry px, entry bar number, entry name), the position counter, MarketPosition(1)
+    let mut pos: Option<(f64, f64, usize, &'static str)> = None;
+    let (mut npos, mut prev_dir) = (0usize, 0.0);
+    let (mut long_liq, mut short_liq) = (0.0f64, 0.0f64);
+    let (mut ith, mut itl) = (0.0f64, 999999.0f64);
+    let mut gbar = 0usize; // bar number across days (BarsSinceEntry)
+    for i in from.max(11)..=to {
+        let Some((_, _, m, b)) = crate::intraday_ep::day_bars(x, i, 5) else { continue };
+        // first bar of the day: Data2 = the completed daily bars up to yesterday (i-1)
+        let avg_r = (1..=10).map(|k| r[i - k].high - r[i - k].low).sum::<f64>() / 10.0;
+        let avg_oc = (1..=10).map(|k| (r[i - k].open - r[i - k].close).abs()).sum::<f64>() / 10.0;
+        let can = (r[i - 1].open - r[i - 1].close).abs() < oc_k * avg_oc;
+        let buy_easier = r[i - 1].close <= r[i - 2].close;
+        let o1 = b[0].o;
+        let (buy_bo, sell_bo) = if buy_easier { (o1 + 0.30 * avg_r, o1 - 0.60 * avg_r) } else { (o1 + 0.60 * avg_r, o1 - 0.30 * avg_r) };
+        let (long_bp, short_bp) = (r[i - 1].high + 0.25 * avg_r, r[i - 1].low - 0.25 * avg_r);
+        let (short_fbo, long_fbo) = (r[i - 1].high - 0.25 * avg_r, r[i - 1].low + 0.25 * avg_r);
+        let (mut bar_count, mut ih, mut il, mut buys, mut sells) = (0usize, 0.0f64, 999999.0f64, false, false);
+        let mut ctt = 0i8; // currTrdType, reset on the first bar of the day
+        let mut orders: Vec<ScOrd> = vec![];
+        for (j, z) in b.iter().enumerate() {
+            // 1. the orders placed at the last close work through this bar's minutes
+            let mut done = vec![false; orders.len()];
+            for q in &m[z.a..z.b] {
+                let valid = |k: usize, pos: &Option<(f64, f64, usize, &'static str)>, npos: usize| {
+                    let d = pos.map_or(0.0, |p| p.0);
+                    if orders[k].exit { d == -orders[k].side && orders[k].for_pos == npos } else { d != orders[k].side }
+                };
+                let lv = |k: usize| Level { up: orders[k].side > 0.0, px: orders[k].px };
+                // every working order this minute reaches; validity is decided at its turn (a reversal earlier in the minute can
+                // make an entry in the old direction valid again: Codex review)
+                let hit: Vec<usize> = (0..orders.len()).filter(|&k| !done[k] && touched(q, lv(k))).collect();
+                let through = |k: usize| if orders[k].side > 0.0 { q.o >= orders[k].px } else { q.o <= orders[k].px };
+                let mut seq = hit.clone();
+                seq.sort_by(|&a, &c| (!through(a)).cmp(&!through(c)).then((orders[a].px - q.o).abs().total_cmp(&(orders[c].px - q.o).abs())).then(a.cmp(&c)));
+                for k in seq {
+                    if !valid(k, &pos, npos) { continue; }
+                    done[k] = true;
+                    let px = fill_px(q, lv(k));
+                    if let Some((d, ep, _, en)) = pos.take() {
+                        out.push(day_trade(d, i, ep, i, px, &format!("{en} · {}", orders[k].name), "stop", false));
+                        prev_dir = d;
+                    }
+                    if !orders[k].exit { pos = Some((orders[k].side, px, gbar, orders[k].name)); npos += 1; }
+                }
+            }
+            // 2. the code at this bar's close (TradeStation Time = the bar's end stamp, Central Time = ET - 60 minutes)
+            let t = z.e as i32 - 60;
+            let (hh, ll) = (z.h, z.l);
+            ih = ih.max(hh); il = il.min(ll);
+            bar_count += 1;
+            orders.clear();
+            let last = j + 1 == b.len();
+            if last { // SetExitOnClose
+                if let Some((d, ep, _, en)) = pos.take() { out.push(day_trade(d, i, ep, i, z.c, &format!("{en} · exit on close"), "stop", false)); prev_dir = d; }
+            }
+            let waited = if wait_ge { bar_count >= 6 } else { bar_count > 6 };
+            if !last && waited && can {
+                let mp = pos.map_or(0.0, |p| p.0);
+                if mp == 0.0 { ith = 0.0; itl = 999999.0; }
+                if mp > 0.0 { ith = ith.max(hh); buys = true; }
+                if mp < 0.0 { itl = itl.min(ll); sells = true; }
+                let mut put = |side: f64, px: f64, exit: bool, name: &'static str| orders.push(ScOrd { side, px, exit, name, for_pos: npos });
+                if !buys && t < 14 * 60 + 30 { put(1.0, buy_bo, false, "LBreakOut"); }
+                if !sells && t < 14 * 60 + 30 { put(-1.0, sell_bo, false, "SBreakout"); }
+                if ih > long_bp && !sells && t < 14 * 60 + 30 { put(-1.0, short_fbo, false, "SfailedBO"); }
+                if il < short_bp && !buys && t < 14 * 60 + 30 { put(1.0, long_fbo, false, "BfailedBO"); }
+                if let Some((d, ep, eb, _)) = pos {
+                    let bse = gbar - eb;
+                    let rev_ok = if bse_gt { bse > 4 } else { bse >= 4 };
+                    let low3 = b[j.saturating_sub(2)..=j].iter().map(|v| v.l).fold(f64::MAX, f64::min);
+                    let high3 = b[j.saturating_sub(2)..=j].iter().map(|v| v.h).fold(f64::MIN, f64::max);
+                    let h1 = if j >= 1 { b[j - 1].h } else { f64::NAN };
+                    let l1 = if j >= 1 { b[j - 1].l } else { f64::NAN };
+                    if d > 0.0 {
+                        long_liq = (ep - 0.25 * avg_r).min(ep - amt);
+                        if prev_dir < 0.0 && bse == 1 && h1 >= short_liq && short_liq < short_fbo { ctt = -2; }
+                        if ctt == -2 { long_liq = (ep - 0.15 * avg_r).min(ep - amt); }
+                        if ith >= ep + 0.50 * avg_r { long_liq = ep; }
+                        if t >= 14 * 60 + 30 { long_liq = long_liq.max(low3); }
+                        if t < 12 * 60 && !sells && long_liq != ep && rev_ok { put(-1.0, long_liq, false, "LongLiqRev"); } else { put(-1.0, long_liq, true, "LongLiq"); }
+                    } else {
+                        short_liq = (ep + 0.25 * avg_r).max(ep + amt);
+                        if prev_dir > 0.0 && bse == 1 && l1 <= long_liq && long_liq > long_fbo { ctt = 2; }
+                        if ctt == 2 { short_liq = (ep + 0.15 * avg_r).max(ep + amt); }
+                        if itl <= ep - 0.50 * avg_r { short_liq = ep; }
+                        if t >= 14 * 60 + 30 { short_liq = short_liq.min(high3); }
+                        if t < 12 * 60 && !buys && short_liq != ep && rev_ok { put(1.0, short_liq, false, "ShortLiqRev"); } else { put(1.0, short_liq, true, "ShortLiq"); }
+                    }
+                }
+            }
+            gbar += 1;
+        }
+    }
+    out
+}
+// ---- end intraday EP block
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::Row;
+    /// Super Combo (lane K44) on hand-built minutes: yesterday's open = close (a small range bar), a buy-easier day; the
+    /// 10:15 minute gaps to 100.5 and trades up through LBreakOut (open 100 + 0.30 x 2.9 = 100.87), then rises to the close:
+    /// one long at the buy stop, out on the close (SetExitOnClose).
+    #[test]
+    fn super_combo_breakout_buy_and_exit_on_close() {
+        let mk = |d: &str, o: f64, h: f64, l: f64, c: f64| Row { ticker: "T".into(), date: d.into(), open: o, high: h, low: l, close: c, volume: None };
+        let mut r: Vec<Row> = (0..10).map(|k| mk(&format!("2020-01-{:02}", k + 1), 100., 102., 99., 101.)).collect();
+        r.push(mk("2020-01-11", 100., 101., 99., 100.));
+        r.push(mk("2020-01-12", 100., 105., 100., 104.44));
+        let mut r2 = r.clone();
+        r2[10].close = 102.5;
+        let mut x = Ctx::new(&r, &r, &[]);
+        let dir = std::env::temp_dir().join(format!("pbwtssc{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut body = String::from("Date,Time,Open,High,Low,Close\n");
+        let start = body.len();
+        for m in 570..960u16 {
+            let (o, h, l, c) = if m < 615 { (100., 100., 100., 100.) } else if m == 615 { (100.5, 101.2, 100.5, 101.) } else {
+                let p = 101. + (m - 615) as f64 * 0.01; (p, p + 0.005, p - 0.005, p) };
+            body.push_str(&format!("2020-01-12,{:02}:{:02},{o},{h},{l},{c}\n", m / 60, m % 60));
+        }
+        std::fs::write(dir.join("T.m1.csv"), &body).unwrap();
+        std::fs::write(dir.join("T.m1idx.csv"), format!("Date,offset,bytes\n2020-01-12,{start},{}\n", body.len() - start)).unwrap();
+        x.minutes = Some(Box::leak(Box::new(crate::intraday::Minutes::load(dir.to_str().unwrap(), "T").unwrap())));
+        let t = run("pbwts_super_combo", &x, 0, 11, &Params::new()).unwrap();
+        assert_eq!(t.len(), 1, "{t:?}");
+        assert_eq!((t[0].dir, t[0].legs[0].i, t[0].exit_i, t[0].reason.as_str()), (1., 11, 11, "LBreakOut · exit on close"));
+        assert!((t[0].legs[0].px - 100.87).abs() < 1e-9 && (t[0].exit_px - 104.44).abs() < 1e-9, "{t:?}");
+        // a large-range yesterday (|O-C| above 0.85 x the 10-day average) is not a small range bar: no trade
+        let mut y = Ctx::new(&r2, &r2, &[]);
+        y.minutes = x.minutes;
+        assert!(run("pbwts_super_combo", &y, 0, 11, &Params::new()).unwrap().is_empty());
+    }
     fn rows(v: &[(f64, f64, f64, f64)]) -> Vec<Row> {
         v.iter().enumerate().map(|(i, &(o, h, l, c))| Row { ticker: "T".into(), date: format!("2001-01-{:02}", i + 1), open: o, high: h, low: l, close: c, volume: None }).collect()
     }

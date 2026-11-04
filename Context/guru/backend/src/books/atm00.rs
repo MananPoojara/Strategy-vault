@@ -191,7 +191,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
             &["E|\"Enter on the close (long side only) if: today's close crosses above its 50-day moving average.\" (TSL p.49)",
               "A|\"Add the same number of shares/contracts as in the initial entry ... as soon as the market moves 1 percent in your favor. Continue to add the same number ... as soon as the market moves twice the distance of the last add-on (i.e., as soon as the market has moved 2 percent, 4 percent, 8 percent, 16 percent and so on from the initial entry).\" (TSL p.49)",
               "X|\"Exit on the close on a cross below the 50-day moving average.\" (TSL p.49)",
-              "A|Read: each add is a buy stop at entry x (1 + 1%, 2%, 4%, ...) from the bar after entry (gap = open); every add has the initial share count, so leg weight = add price / entry price (initial leg = 1, i.e. adds lever the position)"],
+              "A|Read: each add is a buy stop at entry x (1 + 1%, 2%, 4%, ...) from the bar after entry (gap = open); every add is the initial share count again (\"Add the same number of shares/contracts as in the initial entry (in this case 100 shares)\", TSL p.49), so each add is its own unit on the multi-unit account (books::units, lane K44): the position is sized from the account value at the first fill and every add levers it by the same quantity; all units leave together at the exit close"],
             "Book: all Dow stocks, Jan 1990-Feb 2000, 100 shares per entry/add, no costs: 7,962 entries incl. adds / 2,904 initial entries (TSL p.49). India: NIFTY 50 / basket stocks.",
             cl("2,904 initial (7,962 incl. adds)", "n/a", "$60 per initial entry", "n/a", "30 Dow stocks 1/1990-2/2000")),
         def!("atm00_bear_claw", "Bear claw (Jul 2000 TSL)", "Trading System Lab · Jul 2000", "Short", Live, false,
@@ -283,7 +283,10 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             })
         }
         "atm00_fourplay" => {
-            let m = sma(c, u("ma"));
+            // the 50-day mean summed over its own window (not a running sum): an exact cent tie (SPY 2004-04-01 close 113.78 =
+            // MA 113.78) stays "not above", as the column's "crosses above" reads (lane K44 reference check)
+            let n = u("ma");
+            let m: Vec<f64> = (0..c.len()).map(|i| if i + 1 >= n { c[i + 1 - n..=i].iter().sum::<f64>() / n as f64 } else { f64::NAN }).collect();
             let a1 = g("add_pct") / 100.;
             let cross_up = |s: usize| s >= 1 && c[s] > m[s] && c[s - 1] <= m[s - 1];
             let cross_dn = |s: usize| s >= 1 && c[s] < m[s] && c[s - 1] >= m[s - 1];
@@ -297,7 +300,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                             let lvl = epx * (1.0 + nxt);
                             if h[t] < lvl { break; }
                             let px = o[t].max(lvl);
-                            legs.push(Leg { i: t, px, w: px / epx });
+                            legs.push(Leg { i: t, px, w: 1.0 }); // the same share count again (units::W::Qty)
                             nxt *= 2.0;
                         }
                     }
@@ -355,6 +358,26 @@ mod tests {
     fn rows(v: &[(f64, f64, f64, f64)]) -> Vec<Row> {
         v.iter().enumerate().map(|(i, &(o, h, l, c))| Row { ticker: "T".into(), date: format!("2000-01-{:02}", i + 1),
             open: o, high: h, low: l, close: c, volume: Some(1.0) }).collect()
+    }
+    /// Fourplay (lane K44): adds of the initial share count at entry x 1.01, 1.02, 1.04 (buy stops, gap = open), all out at
+    /// the cross below the MA; each add is one unit (weight 1, units::W::Qty sizes it by quantity).
+    #[test]
+    fn fourplay_adds_one_unit_at_each_doubling_level() {
+        let mut v: Vec<(f64, f64, f64, f64)> = (0..50).map(|_| (100., 100., 100., 100.)).collect();
+        v.push((100., 101., 100., 101.)); // close 101 crosses above the MA (100): entry 101
+        v.push((101.5, 102.2, 101.4, 102.)); // 1% add at 102.01
+        v.push((103.5, 104., 103., 103.9)); // opens through the 2% level 103.02: add at the open 103.5
+        v.push((104., 105.1, 103.9, 105.)); // 4% level 105.04: add
+        v.push((100., 100.5, 95., 95.)); // close 95 below the MA: all out at the close
+        let r = rows(&v);
+        let x = Ctx::new(&r, &r, &[]);
+        let p = Params::from([("ma".to_string(), 50.)]);
+        let t = run("atm00_fourplay", &x, 0, r.len() - 1, &p).unwrap();
+        assert_eq!(t.len(), 1);
+        let legs: Vec<(usize, f64, f64)> = t[0].legs.iter().map(|l| (l.i, (l.px * 1e6).round() / 1e6, l.w)).collect();
+        assert_eq!(legs, vec![(50, 101., 1.), (51, 102.01, 1.), (52, 103.5, 1.), (53, 105.04, 1.)]);
+        assert_eq!((t[0].exit_i, t[0].exit_px), (54, 95.));
+        assert!(crate::books::units::is_units("atm00_fourplay"));
     }
     #[test]
     fn pullback1_enters_next_open_and_exits_open_after_first_profitable_close() {

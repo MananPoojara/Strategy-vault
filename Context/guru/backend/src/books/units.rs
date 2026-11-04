@@ -40,6 +40,8 @@ const RULES: &[(&str, W, bool, bool)] = &[
     ("tcdt_ut1", W::Qty, false, false), ("tcdt_ut2", W::Qty, false, false), ("tcdt_ut3", W::Qty, false, false), ("tcdt_ut4", W::Qty, false, false), ("tcdt_ut5", W::Qty, false, false),
     // Section Four p.82: "one S&P ... for each signal" and "using no further leverage or increased account size"
     ("vixr_all", W::Qty, false, true),
+    // lane K44: Active Trader TSL Jun 2000 p.49, "Add the same number of shares/contracts as in the initial entry"
+    ("atm00_fourplay", W::Qty, false, false),
 ];
 pub fn is_units(id: &str) -> bool { RULES.iter().any(|r| r.0 == id) }
 
@@ -135,9 +137,9 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, cost: f64, p: &Params) -> 
 /// The ids are listed with their books' own reviews (stad, stad2, tcdt, rcmm); bwntd/bwtc2 and vixr keep their own entries.
 pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
     reviewed: |def: &crate::connors::StrategyDef| matches!((def.book, def.id), ("stad", "stad2_obv" | "stad2_stoch") | ("stad2", "stad8_stampede" | "stad9_luxor" | "stad13_luxor")
-        | ("tcdt", "tcdt_ut1" | "tcdt_ut2" | "tcdt_ut3" | "tcdt_ut4" | "tcdt_ut5") | ("rcmm", "rcmm_20" | "rcmm_55")),
-    label: "The books tested these systems on futures or stocks (Omega Research STAD 1998-2000, Crabel T-Bond upthrusts 1978-87, Market Millions); runs on indices, ETFs and single stocks (US and India) are a declared application. Positions hold more than one unit, sized as printed (multi-unit account).",
-    basis: "Lane K43 (decision 211): the printed rules of STAD Vol 2 pp.29-48 (OBV, Stochastics: 100/200 and 200/400 shares, OBV Properties tab 'Allow multiple entries', 4 entries), Vol 8 pp.89-99 (Stampede, MaximumEntries 10), Vol 9 pp.29-38 and Vol 13 pp.75-86 (LUXOR, 3 entries); Crabel pp.261-265 (every upthrust counted, overlapping three-day shorts); Market Millions pp.36-49 (1% risk units, 4-unit 1/2 ATR matrix). Run on the multi-unit account (books::units); independent check authors/titles-1030/K43w/k43_ref.py.",
+        | ("tcdt", "tcdt_ut1" | "tcdt_ut2" | "tcdt_ut3" | "tcdt_ut4" | "tcdt_ut5") | ("rcmm", "rcmm_20" | "rcmm_55") | ("atm00", "atm00_fourplay")),
+    label: "The books tested these systems on futures or stocks (Omega Research STAD 1998-2000, Crabel T-Bond upthrusts 1978-87, Market Millions, Active Trader's Fourplay on the Dow stocks 1990-2000); runs on indices, ETFs and single stocks (US and India) are a declared application. Positions hold more than one unit, sized as printed (multi-unit account).",
+    basis: "Lane K43 (decision 211): the printed rules of STAD Vol 2 pp.29-48 (OBV, Stochastics: 100/200 and 200/400 shares, OBV Properties tab 'Allow multiple entries', 4 entries), Vol 8 pp.89-99 (Stampede, MaximumEntries 10), Vol 9 pp.29-38 and Vol 13 pp.75-86 (LUXOR, 3 entries); Crabel pp.261-265 (every upthrust counted, overlapping three-day shorts); Market Millions pp.36-49 (1% risk units, 4-unit 1/2 ATR matrix); Active Trader Trading System Lab Jun 2000 p.49 (Fourplay: 100 shares at the 50-day cross, 100 more at +1%, +2%, +4% ... from the entry; lane K44, check K44w/k44_ref.py). Run on the multi-unit account (books::units); independent check authors/titles-1030/K43w/k43_ref.py.",
 };
 
 #[cfg(test)]
