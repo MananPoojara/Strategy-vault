@@ -525,6 +525,10 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
         }
     }
     if let Some(i)=vix_open_gap(ctx,def,from,to) {return Some(i);} // VIX India block
+    // lane K40 (decision #207): Luisi's literal-points option is SPX only; Blackman's gold season is GLD only
+    if let Some(note)=ctx.r.first().and_then(|r|books::scluisi::home(def.id,&r.ticker,p).or_else(||books::scblack::home(def.id,&r.ticker))) {
+        return issue("not_testable",note);
+    }
     if let Some(note)=books::otvt::gap(def.id,ctx,from,to,p) {
         return issue("needs_data",note);
     }
