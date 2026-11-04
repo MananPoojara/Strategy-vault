@@ -49,7 +49,7 @@ pub fn close_equity(c: &[f64], pos: &[f64]) -> Vec<f64> {
 pub const REVIEWED: &[&str] = &["scdkdmi_adx"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
-const NOTE: &str = "[Declared readings] '+DM14 = a 14-day sum of +DM', TR14 and DX14 are Wilder's own accumulations (the article restates Wilder's definitions and changes only the period and the ADX test): the default uses Wilder smoothing (the vault's DMI); option sum = 1 uses plain rolling N-day sums of +DM, -DM and TR and ADX = the N-day average of DX as printed ('ADX where DX14/14'). +DM/-DM follow Wilder (only the larger outside move counts). The signal is the state, not a cross: on each close with ADX >= the threshold the position goes long if +DI > -DI and short if -DI > +DI; while ADX is below the threshold no trade is made and the position is held. 'Trades were executed at the opening price on the business day following a trading signal.' Default N = 12, ADX = 30, the best average net profit of the article's grid (N 4-50 step 2, ADX 5-80 step 5; six S&P 500 futures contracts 1983-1984; -$13,416 at N = 6/ADX 15 up to +$3,774 at N = 12/ADX 30). Runs on indices, ETFs and stocks, US and India, are a declared application.";
+const NOTE: &str = "[Declared readings] The article prints the indicator ('+DM14 = a 14-day sum of +DM ... TR14 = a 14-day sum of TR'; 'ADX where DX14/14 ... DX14 = a 14-day sum of DX'), so the default (decision 222, book-literal) uses plain rolling N-day sums of +DM, -DM and TR and ADX = the N-day sum of DX / N; option sum = 0 uses Wilder smoothing (the vault's DMI) [labelled option]. +DM/-DM follow Wilder (only the larger outside move counts). The signal is the state, not a cross: on each close with ADX >= the threshold the position goes long if +DI > -DI and short if -DI > +DI; while ADX is below the threshold no trade is made and the position is held. 'Trades were executed at the opening price on the business day following a trading signal.' Default N = 12, ADX = 30, the best average net profit of the article's grid (N 4-50 step 2, ADX 5-80 step 5; six S&P 500 futures contracts 1983-1984; -$13,416 at N = 6/ADX 15 up to +$3,774 at N = 12/ADX 30). Runs on indices, ETFs and stocks, US and India, are a declared application.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     vec![StrategyDef { id: "scdkdmi_adx", name: "Modified Wilder DMI: long when +DI > -DI, short when -DI > +DI, only while ADX(12) >= 30, next open", group: "S&C: modified directional movement (Drinka & Kille, V.3:6)", session: 0, dir: "Long/Short", status: Status::Live,
@@ -66,10 +66,10 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
     reviewed(id).then(|| vec![
         ParamDef { key: "n", label: "Directional movement period (article grid 4-50)", def: 12., min: 4., max: 50., step: 2. },
         ParamDef { key: "adx", label: "Trade only when ADX >= (article grid 5-80)", def: 30., min: 5., max: 80., step: 5. },
-        ParamDef { key: "sum", label: "1 = plain rolling N-day sums and average DX as printed; 0 = Wilder smoothing", def: 0., min: 0., max: 1., step: 1. }])
+        ParamDef { key: "sum", label: "1 = plain rolling N-day sums and DX sum / N as printed (default); 0 = Wilder smoothing", def: 1., min: 0., max: 1., step: 1. }])
 }
 
-/// +DI, -DI, ADX from plain rolling n-day sums (option sum = 1).
+/// +DI, -DI, ADX from plain rolling n-day sums (the printed indicator, default sum = 1).
 fn dmi_sum(x: &Ctx, n: usize) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
     let len = x.c.len();
     let (mut tr, mut pm, mut mm) = (vec![NAN; len], vec![NAN; len], vec![NAN; len]);
@@ -96,7 +96,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     if !reviewed(id) || from >= to || to >= x.r.len() { return None; }
     let g = |k: &str, d: f64| p.get(k).copied().unwrap_or(d);
     let (n, thr) = (g("n", 12.).round().max(2.) as usize, g("adx", 30.));
-    let (pd, md, adx) = if g("sum", 0.) > 0.5 { dmi_sum(x, n) } else { dmi(x, n) };
+    let (pd, md, adx) = if g("sum", 1.) > 0.5 { dmi_sum(x, n) } else { dmi(x, n) };
     Some(next_open(x, from, to, "DI reversal", |t, side| {
         if !(adx[t] >= thr) || !pd[t].is_finite() { return side; }
         if pd[t] > md[t] { 1.0 } else if md[t] > pd[t] { -1.0 } else { side }
@@ -115,6 +115,9 @@ mod tests {
             let t = run("scdkdmi_adx", &x, 0, r.len() - 1, &p).unwrap();
             assert!(t.len() > 3 && t.iter().any(|z| z.dir < 0.0) && t.windows(2).all(|w| w[0].dir != w[1].dir && w[0].exit_i == w[1].legs[0].i));
         }
+        assert_eq!(params("scdkdmi_adx").unwrap()[2].def, 1.0); // decision 222: the printed sums are the default
+        let dflt = run("scdkdmi_adx", &x, 0, r.len() - 1, &Params::from([("adx".into(), 15.)])).unwrap();
+        assert_eq!(dflt, run("scdkdmi_adx", &x, 0, r.len() - 1, &Params::from([("adx".into(), 15.), ("sum".into(), 1.)])).unwrap());
         let mut p = Params::new(); p.insert("adx".into(), 101.);
         assert!(run("scdkdmi_adx", &x, 0, r.len() - 1, &p).unwrap().is_empty());
         assert_eq!(ols_end(&[1., 3., 5., 7.], 3)[3], 7.0);

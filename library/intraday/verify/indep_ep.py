@@ -127,10 +127,14 @@ def collins(id_, dates, M, a, b):
                     go_long = z["c"] > dayopen and prevc > dayopen
                     go_short = z["c"] < dayopen and prevc < dayopen
             elif id_ == "acbff_1230":
+                # K50 (decision 222): the printed Table 34.1 (Collins App. p.227) reads "if time=930 then hh=highd(0); if time=930
+                # then ll=lowd(0); if time=1130 then hhh=highd(0); if time=1130 then lll=lowd(0)": highd(0)/lowd(0) = the day's
+                # high/low so far, including this bar (prose p.152: "The high must be higher than it was at 11:30. The 11:30 high
+                # must be higher than the 9:30 high").
                 if tm == ct(930):
-                    hh, ll = z["h"], z["l"]
+                    hh, ll = hi, lo
                 if tm == ct(1130):
-                    hhh, lll = z["h"], z["l"]
+                    hhh, lll = hi, lo
                 if tm == ct(1230):
                     rng = hi - lo
                     go_long = dayopen - lo <= 0.25 * rng and hi > hhh and hhh > hh

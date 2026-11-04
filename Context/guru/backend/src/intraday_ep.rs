@@ -225,6 +225,23 @@ mod tests {
         assert!(crate::books::jmls::run("acbff_open_rel", &x, 0, 1, &Params::new()).is_none()); // module prefix guard
     }
     #[test]
+    fn acbff_1230_uses_the_running_day_high_at_930_and_1130() {
+        // decision 222 (Table 34.1 p.227: hh = highd(0) at 9:30 CT, hhh = highd(0) at 11:30 CT). Day 1 spikes to 102 in the first
+        // minutes, then trades below it: the 9:30/11:30 BAR highs (100.54 < 100.96 < day high 102) would buy, the running day
+        // high (102 at both times) does not. Day 2 rises all day: hh < hhh < day high -> long at the 13:30 ET minute's open.
+        use crate::connors::{Ctx, Params};
+        let row = |d: &str| crate::Row { ticker: "T".into(), date: d.into(), open: 1., high: 1., low: 1., close: 1., volume: None };
+        let r = vec![row("2020-01-02"), row("2020-01-03")];
+        let mut x = Ctx::new(&r, &r, &[]);
+        let px1 = |m: u16| -> f64 { let m = m as f64; if m <= 575. { 100. + (m - 570.) * 0.4 } else if m <= 620. { 102. - (m - 575.) * 1.5 / 45. } else if m <= 900. { 100.5 + (m - 620.) / 280. } else { 101.5 } };
+        let d1: Vec<String> = (570..960u16).map(|m| { let p = px1(m); format!("{},{p},{},{},{p}", hm(m), p + 0.005, p - 0.005) }).collect();
+        let d2: Vec<String> = (570..960u16).map(|m| { let p = 100. + (m - 570) as f64 * 0.01; format!("{},{p},{},{},{p}", hm(m), p + 0.005, p - 0.005) }).collect();
+        x.minutes = Some(minutes("a1230", &[("2020-01-02", d1), ("2020-01-03", d2)]));
+        let t = crate::books::acbff::run("acbff_1230", &x, 0, 1, &Params::new()).unwrap();
+        let v: Vec<(f64, usize, f64, usize, f64)> = t.iter().map(|z| (z.dir, z.legs[0].i, (z.legs[0].px * 100.).round() / 100., z.exit_i, (z.exit_px * 100.).round() / 100.)).collect();
+        assert_eq!(v, vec![(1., 1, 102.4, 1, 103.89)]);
+    }
+    #[test]
     fn ep_admission_and_tickers() {
         use crate::instrument_policy as ip;
         let cat = crate::connors::catalogue();
