@@ -176,7 +176,7 @@ mod tests {
             assert!(ip::check(d, "QQQ", false).is_some() && ip::check(d, "AAPL", true).is_some(), "{id}");
             let g = crate::gate::get(id).unwrap();
             assert_eq!(g.verdict, if spx_held(id) || k38_us(id) { "withheld" } else { "unverified" }, "{id}"); // #208: mega withheld
-            assert!(g.reason.contains("#202") && (!spx_held(id) || g.reason.contains("#177b")), "{id}");
+            assert!((g.reason.contains("#202") || g.reason.contains("#208")) && (!spx_held(id) || g.reason.contains("#177b")), "{id}");
         }
         for id in K38_SPX_HELD { assert!(ip::check(cat.iter().find(|d| d.id == *id).unwrap(), "SPX", false).unwrap().note.contains("#177b"), "{id}"); }
         let mega = cat.iter().find(|d| d.id == "acbff_mega_1min").unwrap();
