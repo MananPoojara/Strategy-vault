@@ -676,7 +676,7 @@ fn pring_label(def:&StrategyDef)->Option<&'static str> {
 fn pring_policy(def:&StrategyDef)->Option<Policy> {
     if !pring_reviewed(def) {return None;}
     let basis=match def.book {
-        "mpts"=>"Pring, Trading Systems Explained (2003): MA crossovers (Ch.11-12, 15), MA + CMO partial profits (Ch.13 neutral version), MA + price oscillator (Ch.14), Triple Indicator and its ROC parts (Ch.15), reviewed in authors/pring/admission/SOURCE-CONTRACT.md with independent chronological ledgers. Signal-close fills are a declared convention (MetaStock default; the book does not state fills). Cash-index shorts are hypothetical exposure. No commissions, cash interest or book results are claimed.",
+        "mpts"=>"Pring, Trading Systems Explained (2003): relative-strength systems vs the market index (Ch.20 p.188-194; benchmark aligned by the engine, EP4 lane K51, decision #223), MA crossovers (Ch.11-12, 15), MA + CMO partial profits (Ch.13 neutral version), MA + price oscillator (Ch.14), Triple Indicator and its ROC parts (Ch.15), reviewed in authors/pring/admission/SOURCE-CONTRACT.md with independent chronological ledgers. Signal-close fills are a declared convention (MetaStock default; the book does not state fills). Cash-index shorts are hypothetical exposure. No commissions, cash interest or book results are claimed.",
         "mpmm"=>"Pring, Martin Pring on Market Momentum (1993): Colby & Meyers RSI, moving-average, 15/36-week and 39-week %K tests, Gartley's advanced average, the 26/40-week deviation systems, (the monthly and weekly KST crossovers are held, decision 186), the 12-month ROC average turns and the McClellan Summation 35-day crossover, reviewed in authors/pring/admission/SOURCE-CONTRACT.md with independent chronological ledgers. Long or cash by default where the book says only buy and sell. Signal-close fills. No book results are claimed.",
         "mptae"=>"Pring, Technical Analysis Explained (2nd ed. 1985): 40-week MA crossover (p.89-92), 10/30-week averages with the slope condition (p.95-97), Russell 13/50-week signals (p.158), 9-month MA with 12-month ROC confirmation (p.354) and Coppock's buy indicator (p.116-117) with the user's standard exits (the book gives none), reviewed in authors/pring/admission/SOURCE-CONTRACT.md with independent chronological ledgers. Long or cash by default; signal-close fills are a declared convention.",
         "mpasi"=>"Pring, The All-Season Investor (1992): the S&P Composite 12-month moving-average crossover, at or above = bullish (p.101-105, 185-190), long or cash, reviewed in authors/pring/admission/SOURCE-CONTRACT.md with independent chronological ledgers. Month-end close fills are a declared convention. The stage allocation model needs bond, commodity and yield data and is not run.",
@@ -1384,7 +1384,7 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         // ---- end STAD block
         // ---- Lane A singles block (26 Oct 2026, lane B): held Live rules
         "elcim_fi2"=>"Held: the Force Index section of Come Into My Trading Room (p.109-114) gives no entry order and no protective stop, and the book says a stop must be placed with every trade (p.169). The same signal with a stop is admitted as the Triple Screen version (elcim_ts_fi) and as Trading for a Living's Force Index rule (eltfl_fi2).",
-        "nftm_accutrack"=>"Held: needs data the vault does not have. AccuTrack (Timing Models p.E-16, Fig. 20-22) switches between two mutual funds (Vanguard Small-Cap Index and Index 500) by comparing their returns; the partner price series it needs is not in the vault's data, so there is nothing to test.",
+        // "nftm_accutrack": admitted by lane K51 (EP4 second series, decision #223)
         "nfhp_quadram_ct"|"nfhp_quadram_ct_nse"|"nfhp_quadram_tf"|"nfhp_quadram_tf_nse"=>"Held: the exits are a $500 initial stop and a $500 trailing stop on S&P 500 futures (Building High-Performance Trading Systems Fig. 46, p.21), fixed dollar amounts for a contract the vault does not hold; on indices, ETFs and stocks they would not mean what the book meant, and the book's printed result is the two modes traded together. The vault's accuracy gate blocks it; publishing needs your decision on how to scale the stops.",
         "jhs35_spike35"=>"Held: the trend-change rule needs a fixed 'variance' in price points set per market (Spike 35 manual p.1 and p.3: S&P 500 40 points); the manual gives no value for the NIFTY 50, ETFs or stocks, so the rule can only run on the S&P 500 index and cannot be checked on Indian markets.",
         "pstc_20_40_75"=>"Held: the course trades this signal by buying long-dated call contracts (LEAPS) on S&P 100 / Nasdaq 100 stocks (Professional Swing Trading College, Week 8 notes); the vault holds no history of those contract prices, and a stock or index price cannot stand in for them. The course's own table also reports the move in the underlying stock, and our independent check of that signal on the underlying matched with 0 differences, so it can be published as the underlying-stock signal if you accept that measure.",
@@ -1440,7 +1440,7 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         "dmtad_turbo"=>"Held: needs NYSE 52-week new highs and new lows. The Turbo A/D system buys and sells on NYSE advance/decline ratios together with smoothed counts of NYSE new highs and new lows (S&C 1997, p.339-341); the vault has the NYSE advance/decline series but no new-high/new-low history, and India has neither.",
         // ---- end Dennis Meyers held
         // ---- Thomas Stridsman block (26 Oct 2026, lane B): held Live rules
-        "strmm_rs1"|"strmm_rsbands"|"strmm_rotation"=>"Held: needs comparison-market data. Stridsman's relative-strength systems compare each market day by day with its index (RS System No. 1) or with four other indices (RS Bands, Rotation) (Trading Systems and Money Management p.105-152); those comparison close series are not in the vault data, so the engine would find no comparison and trade nothing.",
+        // "strmm_rs1"|"strmm_rsbands"|"strmm_rotation": admitted by lane K51 (EP4 second series, decision #223)
         // ---- end Thomas Stridsman held
         // ---- Perry Kaufman block (26 Oct 2026, lane B): held Live rules
         "kftsm_pf"=>"Held: fixed amounts set for another market. The point-and-figure box is 5 index points, a fixed point value from Kaufman's 2003 table for the S&P and Nasdaq e-mini futures (New Trading Systems and Methods, Table 5.2, p.160); the book gives no box for other indices, ETFs, stocks or NIFTY, and a 5-point box is a different system on each. Running it on SPX/NDX only is a decision for the user.",
@@ -1479,7 +1479,7 @@ pub fn held_reason(id:&str)->Option<&'static str> {
         "wdowf_reversal"=>"Held: not the book's plan. Reversal signals with no stop are Plan #1, which Dunnigan tested and rejected (\"It is not good practice to buy and then sit back and do nothing until a sell signal appears\", p.224); the recommended Operating Plan is held for its four lots and dollar table.",
         // ---- end Dunnigan block
         // ---- Katsanos block (25 Oct 2026): held Live rules
-        "mkits_rs_fut"|"mkits_rs_etf"=>"Held: needs the S&P 500 benchmark series. The relative-strength systems compare each market with the S&P 500 close day by day (Appendix A.7); that benchmark series is not installed with the vault's market data, so the engine would find no benchmark and trade nothing.",
+        // "mkits_rs_fut"|"mkits_rs_etf": admitted by lane K51 (EP4 second series, decision #223)
         // ---- end Katsanos block
         "ss_adx_gapper_no_gap"=>"Held: rules not fully defined. Street Smarts (p.93) presents this as Larry's discussion and calls it \"more subjective\"; it gives no objective entry, so any coded entry would be the vault's, not the book's.",
         "hfm_hv"=>"Held: rules not fully defined. The book (Ch. 3) gives a volatility warning with no direction, entry, exit or stop (\"a personal choice\"); the coded breakout entry and 20-day exit would be vault choices.",
@@ -1637,7 +1637,7 @@ mod tests {
             // agtsic: the lane C2 special block admits the eight daily rules; ADMISSION_BREADTH admits the K25 breadth-filtered RSI ids.
             // phbttk: phbt's Headley entry admits the Percent R ids; ADMISSION_K30 admits the shipped System Tester records (K30, 3 Nov 2026).
             // acbff, atm04: the intraday block admits their N-minute-bar ids (intraday_ep, lane K39, 4 Nov 2026); stad: stad3_idbf (lane K42).
-            const SHARED:&[&str]=&["acbff","agtsic","atm04","bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","phbttk","putg","stad","stad2","tcdt","tdnmtt","tdperl","atm00","pbwts","jbeft","fot08"]; // fot08: fot08_fib_pivots on 5-minute bars (intraday_ep, lane K48, 5 Nov 2026); stad, stad2, tcdt: books::units::ADMISSION admits their multi-unit ids (lane K43); atm00: atm00_fourplay (lane K44); pbwts: pbwts_super_combo on 5-minute bars (intraday block, lane K44); jbeft: jbeft_oc_osc on 15-minute bars (intraday block, lane K45)
+            const SHARED:&[&str]=&["acbff","agtsic","atm04","bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","phbttk","putg","stad","stad2","tcdt","tdnmtt","tdperl","atm00","pbwts","jbeft","fot08","mkits","strmm"]; // fot08: fot08_fib_pivots on 5-minute bars (intraday_ep, lane K48, 5 Nov 2026); mkits, strmm: a second entry ADMISSION_RS admits the relative-strength ids fed by EP4 (lane K51, decision #223); stad, stad2, tcdt: books::units::ADMISSION admits their multi-unit ids (lane K43); atm00: atm00_fourplay (lane K44); pbwts: pbwts_super_combo on 5-minute bars (intraday block, lane K44); jbeft: jbeft_oc_osc on 15-minute bars (intraday block, lane K45)
             for d in all.iter().filter(|d|books.contains(&d.book) && !SHARED.contains(&d.book) && reviewed_cash_rule(d)!=(a.reviewed)(d)) {other.push((d.book,d.id));}
             for d in admitted {
                 assert_eq!(admission(d).map(|x|x.label),Some(a.label),"{}",d.id);
@@ -1896,7 +1896,7 @@ mod tests {
     fn la_singles_held_rules_have_plain_card_reasons() {
         use crate::books::{elcim, jhs35, nfhp, nftm, pstc};
         let all:Vec<StrategyDef>=elcim::catalogue().into_iter().chain(jhs35::catalogue()).chain(nfhp::catalogue()).chain(nftm::catalogue()).chain(pstc::catalogue()).collect();
-        for id in ["elcim_fi2", "nftm_accutrack", "nfhp_quadram_ct", "nfhp_quadram_ct_nse", "nfhp_quadram_tf", "nfhp_quadram_tf_nse", "jhs35_spike35", "pstc_20_40_75"] {
+        for id in ["elcim_fi2", /* nftm_accutrack: admitted (K51, #223) */ "nfhp_quadram_ct", "nfhp_quadram_ct_nse", "nfhp_quadram_tf", "nfhp_quadram_tf_nse", "jhs35_spike35", "pstc_20_40_75"] {
             let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
             assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
         }
@@ -1987,9 +1987,9 @@ mod tests {
     fn stridsman_held_rules_have_plain_card_reasons() {
         use crate::books::{strmm};
         let all:Vec<StrategyDef>=strmm::catalogue().into_iter().collect();
-        for id in ["strmm_rs1", "strmm_rsbands", "strmm_rotation"] {
+        for id in ["strmm_rs1", "strmm_rsbands", "strmm_rotation"] { // admitted by lane K51 (EP4, decision #223)
             let d=all.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id} missing"));
-            assert!(d.status==crate::connors::Status::Live && !reviewed_cash_rule(d) && held_reason(id).is_some_and(|r|r.starts_with("Held: ")),"{id}");
+            assert!(d.status==crate::connors::Status::Live && reviewed_cash_rule(d) && held_reason(id).is_none(),"{id}");
         }
     }
     // ---- end Thomas Stridsman held ----
@@ -2497,7 +2497,7 @@ mod tests {
     fn katsanos_review_admits_exact_ids_on_indices_etfs_and_stocks() {
         use crate::books::{mkits, mkfve};
         let all:Vec<StrategyDef>=mkits::catalogue().into_iter().chain(mkfve::catalogue()).collect();
-        let mut want:Vec<&str>=mkits::REVIEWED.iter().chain(mkfve::REVIEWED.iter()).copied().collect();
+        let mut want:Vec<&str>=mkits::REVIEWED.iter().chain(mkits::REVIEWED_RS).chain(mkfve::REVIEWED.iter()).copied().collect();
         let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {
@@ -2561,7 +2561,7 @@ mod tests {
     fn stridsman_review_admits_exact_ids_on_indices_etfs_and_stocks() {
         use crate::books::{strtw,strmm};
         let all:Vec<StrategyDef>=strtw::catalogue().into_iter().chain(strmm::catalogue()).collect();
-        let mut want:Vec<&str>=strtw::REVIEWED.iter().chain(strmm::REVIEWED).copied().collect();
+        let mut want:Vec<&str>=strtw::REVIEWED.iter().chain(strmm::REVIEWED).chain(strmm::REVIEWED_RS).copied().collect();
         let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {

@@ -26,12 +26,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
     };
     vec![
         d("prap1_raptor10", "Raptor-10 (5 closes under SMA2, ADX > 35, HV >= 2x S&P 500)",
-          NeedsData("the 100-day HV of the S&P 500 cash index aligned to each stock (NIFTY 50 for NSE stocks), series BENCH_HV100: the engine passes the benchmark only into the Liquidity Filter, and no extra_data file holds it"),
+          Live,
           &["BENCH_HV100"], RULES,
-          concat!("Coded against BENCH_HV100 = HV(100) of the benchmark index on the same date (population st.dev of 100 ln returns x sqrt(252) x 100, as the AFL). ",
+          concat!("Coded against BENCH_HV100 = HV(100) of the benchmark index (population st.dev of 100 ln returns x sqrt(252) x 100, as the AFL), computed on the benchmark's own bars and aligned to the instrument's dates by the engine (EP4, decision #223; at most 5 bars carried): the S&P 500 (SPX) for US instruments, [labelled benchmark swap] the NIFTY 50 for Indian ones; not run on SPX / NIFTY 50 themselves. ",
                   "Liquidity Filter = 1,000,000 x MA20(close x volume) / MA65(benchmark close x volume), so the book's x .0003 is 'greater than 300'. ",
                   "Entry/add/exit all at the next open (AFL SetTradeDelays(1), BuyPrice = O). Two units max (0.5 + 0.5). ",
-                  "Book results: portfolio of all US stocks; not checkable (no US stock data)."),
+                  "Book results: a 10-slot portfolio of all US stocks; one stock at a time is not comparable with them."),
           claim("2,047 (Raptor-10 portfolio)", "78.02%", "3.72%", "6.75 bars", "1/1995-8/2005 US stocks, 10 slots: CAR 111.06%, max system DD -35.3% (Raptor Update Aug-05.xls); deck: 'averaged yearly gains of 111.1%', 85% of months profitable")),
         d("prap1_portfolio", "Raptor-10 / -20 / -50 portfolios", NeedsData("all US stocks 1995-2005 on one equity curve with highest-HV(100) tie-break; the engine backtests one ticker per run and holds no US stocks"), &[],
           &["F|\"Divide your account into 10 slots ... If a second entry trade occurs, then those additional shares occupy 1 slot ... the tie-breaker will be to trade the stocks with the highest Historical Volatility.\" (deck; Raptor-20: 20 slots; Raptor-50 named in intro)",
@@ -43,7 +43,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
 pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
     let f = |v| Some(("prap1", "Raptor-10 Momentum Method", v));
     match id {
-        "prap1_raptor10" => f("Single stock · needs S&P 500 HV"),
+        "prap1_raptor10" => f("Single stock vs S&P 500 HV"),
         "prap1_portfolio" => f("Portfolio · needs a universe"),
         _ => None,
     }
@@ -123,6 +123,13 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     Some(out)
 }
 
+/// Lane K51 (decision #223): admitted once the engine feeds BENCH_HV100 (EP4).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && def.id == "prap1_raptor10",
+    label: "The Raptor-10 course tested this rule on all US stocks 1995-2005 as a 10-slot portfolio; single US stocks, Indian stocks (against the NIFTY 50's HV and volume, a labelled benchmark swap), indices and ETFs are a declared application, not the course's test.",
+    basis: "Steve Primo / Connors Research, The Raptor-10 Momentum Methodology (2005): deck 'RAPTOR-10 METHOD RULES' A-F, intro.pdf rules #2-#10, AFL in Raptor Update Aug-05.xls (sheet AFL). Benchmark HV(100) on the benchmark's own bars, aligned by the engine (EP4, lane K51, decision #223); independent check authors/titles-1030/K51w/k51_ref.py.",
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -131,6 +138,6 @@ mod tests {
         let r: Vec<crate::Row> = (0..300).map(|i| crate::Row { ticker: "T".into(), date: format!("d{:04}", i), open: 10., high: 10., low: 10., close: 10., volume: Some(1.) }).collect();
         let x = Ctx::new(&r, &r, &[]);
         assert!(run("prap1_raptor10", &x, 0, 299, &Params::new()).is_none(), "no BENCH_HV100 -> not run");
-        assert!(catalogue().iter().all(|d| d.status != Status::Live));
+        assert!(catalogue().iter().all(|d| (d.status == Status::Live) == (d.id == "prap1_raptor10")));
     }
 }

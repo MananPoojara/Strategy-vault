@@ -28,6 +28,7 @@ mod intraday; // intraday phase 1: real 1-minute bars (one day at a time)
 mod intraday_w2b; // ---- intraday wave 2b block: more same-day rules on 1-minute bars ---- end intraday wave 2b block ----
 mod intraday_w3; // intraday wave 3 (K24): TD Demand Line break on 1-minute bars
 mod intraday_ep; // intraday EP1/EP2 (K39): N-minute bars from the 1-minute file
+mod second; // EP4 (K51, decision #223): a second instrument aligned to the traded one
 mod options; // options phase 2: real EOD option chains (one day at a time) + held-contract mark-to-market account
 
 // Source-prefix loading and exact account work are serialized for this owner.
@@ -714,15 +715,8 @@ impl SelectedContext<'_>{
                     if is_vix_series(key)&&self.volatility_source(st).is_none(){continue;}
                     if symbol=="*"||rows.first().is_some_and(|r|symbol==&r.ticker){ctx.extra.insert(key.clone(),rows.iter().map(|r|values.get(&r.date).copied().unwrap_or(f64::NAN)).collect());}
                 }
-                // NDX-SPX (hfm Ch.6) on US stocks (D1 CUD-06): the same NASDAQ 100 / S&P 500 cash closes as the preloaded US tickers
-                if evidence.market()==baskets::Market::UnitedStates {
-                    for (key,src) in [("LEADER_CLOSE","NDX"),("FOLLOWER_CLOSE","SPX")] {
-                        if ctx.extra.contains_key(key) {continue;}
-                        let Some(src)=st.ctxs.get(src) else {continue};
-                        let m:BTreeMap<&str,f64>=src.r.iter().map(|r|(r.date.as_str(),r.close)).collect();
-                        ctx.extra.insert(key.into(),rows.iter().map(|r|m.get(r.date.as_str()).copied().unwrap_or(f64::NAN)).collect());
-                    }
-                }
+                // EP4 (K51, #223): second series from the engine's own price file (NDX-SPX for hfm Ch.6 on US stocks, D1 CUD-06, unchanged)
+                if let Some(data)=books::rotation::PRELOADED.get() {second::inject(&mut ctx,data);}
                 ContextRef::Native(ctx)
             }
         }
@@ -2193,16 +2187,9 @@ fn main() {
                     c.extra.insert(key.clone(), rows.iter().map(|r| m.get(&r.date).copied().unwrap_or(f64::NAN)).collect());
                 }
             }
-            // NDX-SPX (hfm Ch.6): NASDAQ 100 and S&P 500 cash closes from the loaded US index rows, aligned by date
-            // (a missing date stays NaN). An extra_data file of the same name takes precedence.
-            if market==Some(baskets::Market::UnitedStates) {
-                for (key,src) in [("LEADER_CLOSE","NDX"),("FOLLOWER_CLOSE","SPX")] {
-                    if c.extra.contains_key(key) {continue;}
-                    let Some(src)=data.get(src) else {continue};
-                    let m:BTreeMap<&str,f64>=src.iter().map(|r|(r.date.as_str(),r.close)).collect();
-                    c.extra.insert(key.into(), rows.iter().map(|r| m.get(r.date.as_str()).copied().unwrap_or(f64::NAN)).collect());
-                }
-            }
+            // EP4 (K51, #223): second series aligned by date from this file (hfm NDX-SPX unchanged: exact, NaN holes).
+            // An extra_data file of the same name takes precedence.
+            second::inject(&mut c, data);
             (t.clone(), c)
         })
         .collect();
@@ -2724,6 +2711,12 @@ mod tests {
                 // conservation; a Nifty/from-zero corpus shortcut cannot do so.
                 // Elder Impulse is opened to indices as a declared application (22 Oct 2026); the hbiab accounts stay stock-only.
                 assert_eq!(instrument_policy::check(d,"NIFTY 50",false).is_none(),d.id==books::elcim_account::ID);
+                other_path += 1;
+                continue;
+            }
+            if d.id=="prap1_raptor10" {
+                // lane K51: reads BENCH_HV100 (EP4); NIFTY 50 is its own benchmark, so there is no series and no run (books::prap1 tests)
+                assert!(connors::run(d.id,&ctx,0,rows.len()-1,&Params::new()).is_none());
                 other_path += 1;
                 continue;
             }

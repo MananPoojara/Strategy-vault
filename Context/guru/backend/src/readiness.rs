@@ -514,6 +514,7 @@ pub fn check(ctx: &Ctx, def: &StrategyDef, from: usize, to: usize, p: &Params) -
             return issue("needs_data",format!("Required series {name} is missing on {} trading day(s) in this period, first on {}. Loaded coverage: {} to {}. Choose a fully covered period; no missing prices are estimated.",gaps.len(),ctx.r[first].date,dates.first().unwrap_or(&"unknown"),dates.last().unwrap_or(&"unknown")));
         }
     }
+    if let Some(i)=crate::second::carried_issue(ctx,&required,from,to) {return Some(i);} // EP4 (#223): >5% carried bars
     // VIX India block: say why a rule is held on Indian instruments before any VIX-coverage message
     if let Some(i)=ctx.r.first().and_then(|r|crate::instrument_policy::vix_india_held(def,&r.ticker,india(ctx))) {return Some(i);}
     if def.needs_vix {

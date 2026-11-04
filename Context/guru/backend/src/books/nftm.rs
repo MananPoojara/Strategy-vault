@@ -20,7 +20,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
           &["F|\"A. Calculate Daily Percent Change of Fund I and Fund II. B. Smooth Each Series with 48-Day EMA. C. Subtract Treated Data for Fund II from Fund I Data. D. Smooth with 12-Day EMA\" (Fig. 22, p.E-17)",
             "E|\"E. If Result Positive Fund I Is Favored\": hold the selected ticker (Fund I) while the result is positive",
             "X|\"If Result Negative Fund II is favored\": switch out of Fund I when the result turns negative (Fund II's side is the same strategy run on the partner, whose result is the exact negative)",
-            "F|Partner (Fund II) = column C2 of the ticker's XMKT series (p.xcol picks C2..C5): on IWM C2 = SPX (small-cap vs S&P 500, the book's Vanguard Small-Cap Index vs Index 500 pair, Fig. 20); on NIFTYMIDCAP100 C2 = NIFTY 50"],
+            "F|Partner (Fund II) = column C2 of the ticker's XMKT series (p.xcol picks C2..C5; the engine aligns the other four of SPX/NDX/DJI/MDY/IWM or of the five NSE indices, EP4 decision #223): on IWM C2 = SPX (small-cap vs S&P 500, the book's Vanguard Small-Cap Index vs Index 500 pair, Fig. 20); on NIFTYMIDCAP100 C2 = NIFTY 50; on SPX C2 = NDX and on NIFTY 50 C2 = NIFTYBANK [declared application: the Fund II side of those pairs]"],
           "Book results (Fig. 20, p.E-16): Vanguard Small-Cap Index CAR 11.21%, Index 500 12.99%, switch strategy 15.55%; Small-Cap Value 8.40% / Growth 4.12% / switch 12.87% (test period not printed). Same formula as 'AccuTrack Relative Strength Index' (Building High-Performance Trading Systems Fig. 30). EMA = TradeStation XAverage (alpha 2/(n+1), seeded with the first value); percent change = close/close[1]-1; signals start after 60 valid days. Fill: book silent; default = the signal day's close (Freeburg's own 'Action on Day of Signal' fund convention, Pankin workbook Fig. 33), p.fill=1 = next open. Zero result = no change. Long/cash on this ticker; prices are the vault's index/ETF closes (no dividends on indices).",
           None),
         d("nftm_heine_bond", "Heine Bond Market Timing Model", "Heine Bond Market Timing Model", "Long", NeedsData(HEINE), &[],
@@ -113,6 +113,14 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     if let Some(mut t) = cur { t.exit_i = to; t.exit_px = x.c[to]; t.signal_i = to; t.reason = "open".into(); t.open = true; out.push(t); }
     Some(out)
 }
+
+/// Lane K51 (decision #223): admitted once the engine feeds XMKT.C2 (EP4).
+pub const REVIEWED: &[&str] = &["nftm_accutrack"];
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == BOOK && REVIEWED.contains(&def.id),
+    label: "Freeburg showed AccuTrack switching between two mutual funds (Vanguard Small-Cap Index vs Index 500, Fig. 20); here the selected index or ETF of the five-market set (SPX, NDX, DJI, MDY, IWM; the five NSE indices) is Fund I and the XMKT column is Fund II (default C2: SPX, or NDX on SPX; NIFTY 50, or NIFTYBANK on NIFTY 50). A declared application, not the author's funds; instruments outside the set have no partner series.",
+    basis: "Nelson Freeburg, Timing Models and Classic Indicators (Formula Research seminar, 2002): AccuTrack formula Fig. 22 p.E-17, results Fig. 20 p.E-16. Partner series aligned by the engine (EP4, lane K51, decision #223); independent check authors/titles-1030/K51w/k51_ref.py.",
+};
 
 #[cfg(test)]
 mod tests {

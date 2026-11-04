@@ -19,15 +19,14 @@ pub fn sma(v: &[f64], n: usize) -> Vec<f64> {
 pub const BOOK: &str = "mpts";
 
 /// Admitted after the 2026-10-23 full reading and independent ledgers (authors/pring/admission/SOURCE-CONTRACT.md).
-/// The RS systems wait for a per-ticker benchmark series (STR_DATA2) the engine does not load; Ch.17-19 need data.
+/// The RS systems (Ch.20) read the per-ticker benchmark STR_DATA2 the engine aligns from its price file (lane K51, EP4, decision #223); Ch.17-19 need data.
 pub const REVIEWED: &[&str] = &["mpts_ma2d_long", "mpts_ma10m_ls", "mpts_ma10m_long", "mpts_ma_cmo", "mpts_posc_28_5", "mpts_posc_10_10",
-    "mpts_triple", "mpts_ma10w", "mpts_roc13w", "mpts_roc6w"];
+    "mpts_triple", "mpts_ma10w", "mpts_roc13w", "mpts_roc6w", "mpts_rs_10_26", "mpts_rs_3_10"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 const FILL: &str = "Fill at the close of the signal bar [Not from the book: the book never states fills; it used the MetaStock System Tester, whose default is the signal close, and its tables read 'Close MONTHLY' / weekly closes]. A close equal to the average gives no signal [declared]. No commission or cash interest in the vault default (book: none, except where a table says 1% / 4%).";
 const CP: &str = "3-month commercial paper yield (monthly) is not in the vault; the S&P side is available (SPX from 1983)";
 const CRB: &str = "CRB Composite and spot gold (monthly / weekly) are not in the vault";
-const RS: &str = "the relative-strength line needs each ticker's benchmark index as a second series (the book: DJ All Banks vs DJ Composite, funds vs the S&P Composite); the engine does not load a per-ticker benchmark yet, so no result is published";
 const BONDS: &str = "long-term US government bond prices and the CRB Spot Raw Industrials index are not in the vault";
 
 pub fn catalogue() -> Vec<StrategyDef> {
@@ -35,7 +34,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
     let d = |id, name, group, dir, status, needs_series: &'static [&'static str], rules, notes, claim| StrategyDef {
         id, name, group, session: 0, dir, status, needs_volume: false, needs_vix: false, needs_series, book: BOOK, rules, notes, claim,
     };
-    let rs_note = "Book instruments: DJ All Banks index vs DJ Composite (10/26, 1983-1998, Charts 20-2..20-5); funds vs S&P Composite. Vault: RS line = ticker close / STR_DATA2 close (NIFTYBANK/NIFTYIT/NIFTYMIDCAP100 vs NIFTY 50; NDX/DJI/MDY/IWM/QQQ/SMH vs SPX). NIFTY 50 and SPX have no parent index -> data gap. Weekly bars = last trading day of each week. Long only (Appendix p.200: 'This one only trades from the long side'); the book's 4% cash interest variant (Charts 20-5 ff.) is not modelled.";
+    let rs_note = "Book instruments: DJ All Banks index vs DJ Composite (10/26, 1983-1998, Charts 20-2..20-5); funds vs S&P Composite. Vault: RS line = ticker close / STR_DATA2 close, aligned by the engine from its own price file (EP4, decision #223; at most 5 bars carried): NIFTYBANK/NIFTYIT/NIFTYMIDCAP100/NIFTYMIDCAPSELECT vs NIFTY 50; NDX/DJI/MDY/IWM/QQQ/SPY/DIA/SMH and the XL sector ETFs vs SPX; US stocks vs SPX, NSE stocks vs NIFTY 50 [labelled benchmark swap]. NIFTY 50, SPX and the other ETFs have no parent index -> data gap. Weekly bars = last trading day of each week. Long only (Appendix p.200: 'This one only trades from the long side'); the book's 4% cash interest variant (Charts 20-5 ff.) is not modelled.";
     vec![
         // ---- Ch.11 The (Almost) Perfect System
         d("mpts_ma2d_long", "2-day MA crossover, long only (Nikkei example)", "Ch.11 · The (Almost) Perfect System", "Long", Live, &[],
@@ -107,12 +106,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
           &["E|\"The system is bullish when the trend of bond prices is up and commodities are down ... a 9-month MA crossover for bonds and a 12-month moving average for commodities. Sell signals are triggered when either series goes negative. Short signals develop when both are negative and covered when either goes positive\" (p.182-184)"],
           "Table 19-1: 9/12 59 trades 30/29 (1940s-1998).", None),
         // ---- Ch.20 relative strength
-        d("mpts_rs_10_26", "RS system: 10/26-week MA crossover of price and RS line", "Ch.20 · Systems Using Relative Strength", "Long", NeedsData(RS), &["STR_DATA2"],
+        d("mpts_rs_10_26", "RS system: 10/26-week MA crossover of price and RS line", "Ch.20 · Systems Using Relative Strength", "Long", Live, &["STR_DATA2"],
           &["F|\"A relative strength line is calculated by dividing a stock or an industry group by a market average such as the S&P Composite\" (p.188)",
             "E|\"Buy signals are generated when the 10-week moving average of the Banks Index crosses above the 26-week simple MA. This is confirmed by a similar signal by the RS line\" (p.190)",
             "X|\"Sell signals are triggered when either of the 26-week averages is recrossed by their 10-week counterparts\" (p.190)"],
           rs_note, None),
-        d("mpts_rs_3_10", "More sensitive RS system: 3/10-week MA crossover", "Ch.20 · Systems Using Relative Strength", "Long", NeedsData(RS), &["STR_DATA2"],
+        d("mpts_rs_3_10", "More sensitive RS system: 3/10-week MA crossover", "Ch.20 · Systems Using Relative Strength", "Long", Live, &["STR_DATA2"],
           &["E|\"Buy signals are generated when the 3-week moving average of the price and RS crosses above their respective 10-week MAs\" (p.194)",
             "X|\"sell signals occur when either cross below their 10-week MA\" (p.194)"],
           rs_note, None),
