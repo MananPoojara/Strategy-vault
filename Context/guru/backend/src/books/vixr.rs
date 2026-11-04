@@ -27,6 +27,7 @@ pub const BOOK: &str = "vixr";
 pub const REVIEWED_DAILY: &[&str] = &[
     "vixr_cvr1", "vixr_cvr2", "vixr_cvr3", "vixr_cvr5_1d", "vixr_cvr5_3d", "vixr_cvr6",
     "vixr_cvr7", "vixr_cvr8", "vixr_cvr9", "vixr_cvr10", "vixr_cvr11",
+    "vixr_all", // lane K43: every CVR signal as its own unit (books::units)
 ];
 pub fn reviewed_daily(id: &str) -> bool { REVIEWED_DAILY.contains(&id) }
 /// Rules that read only India VIX close/high/low with scale-free thresholds. Rules reading the VIX open
@@ -174,8 +175,12 @@ pub fn catalogue() -> Vec<StrategyDef> {
             "X|An opposite CVR 11 signal stops and reverses"],
           note!("Simple MAs of VIX closes; 10-period high/low = VIX intraday high/low incl. today. The examples check the oscillator on the signal day; the rule (yesterday's) is coded and reproduces the report better. ±1 is in VIX points. "),
           claim("120 (58 L / 62 S)", "66.7%", "$2,127.65", "3 bars", PERIOD)),
-        d("vixr_all", "All CVR signals together (Section Four)", NotTestable("multi-contract portfolio: one contract per signal, positions overlap; the engine runs one position per ticker"),
-          &[], "\"one S&P ($250/point) for each signal (multiple signals trade multiple contracts equal to the number of signals) with no stops ... and exited in three days (two days for the CVR 2, 6 and 7)\": over $1.8 million 1/1/93-8/6/01, nearly 3 of 4 months profitable. Each CVR is coded on its own above.",
+        d("vixr_all", "All CVR signals together (Section Four)", Live,
+          &["E|\"If you mechanically traded (not recommended) one S&P ($250/point) for each signal (multiple signals trade multiple contracts equal to the number of signals)\" (p.82): every signal day of CVR 1, 2, 3, 5, 6, 7, 8, 9, 10 and 11 (each with its own printed rule and defaults; CVR 5's signal once) opens one unit on that day's close",
+            "X|\"with no stops (again, not recommended!) and exited in three days (two days for the CVR 2, 6 and 7)\" (p.82): each unit closes on the close 3 days after entry (2 for CVR 2, 6, 7); CVR 3's MA exit is not used here",
+            "F|Units are independent: same-day or overlapping signals add units, opposite signals are held at the same time (they offset); nothing stops or reverses",
+            "F|Sizing: \"one S&P ... for each signal\" and \"A $100,000 account would have grown more than 18 times using no further leverage or increased account size\" (p.82): every signal is the same fixed quantity, never resized; the first signal's unit is the starting account (multi-unit account, books::units, lane K43). The book's $250/point contract and its dollar result (over $1.8 million, 1/1/93-8/6/01) are futures amounts and are not reproduced (lead decision 167)"],
+          note!("Each CVR is also coded on its own above (one position, stop and reverse). ", open),
           claim("~1300 signals", "~65%", "-", "2-3 days", "1/1/93 - 8/6/01")),
         d("vixr_stocks", "Trading CVR signals with stocks", NotTestable("covered by the CVR rules on SPY; the stock half has no relative-strength formula or universe"),
           &[], "On a CVR buy, buy SPY or the strongest heavy-weight stocks by relative strength (sell the weakest on sells). The SPY half is covered by the CVR 1-11 cards above, which run on SPY. The stock half stays held: no relative-strength formula or stock universe is given (D1 CUD-11, decision 186).", None),
@@ -208,7 +213,9 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "vixr_cvr10" => vec![p("hl_n", "VIX high/low of N days", 8.0, 5.0, 20.0, 1.0), hold(3.0)],
         "vixr_cvr11" => vec![p("fast", "Fast MA", 3.0, 2.0, 5.0, 1.0), p("slow", "Slow MA", 10.0, 6.0, 20.0, 1.0), p("thr", "Yesterday's oscillator beyond ± (VIX points)", 1.0, 0.25, 3.0, 0.25),
             p("hl_n", "VIX high/low of N days", 10.0, 5.0, 20.0, 1.0), hold(3.0)],
-        "vixr_all" | "vixr_stocks" | "vixr_options" => return Some(vec![]),
+        "vixr_all" => vec![p("hold", "Exit on the close N days after entry (CVR 1, 3, 5, 8, 9, 10, 11)", 3.0, 1.0, 10.0, 1.0),
+            p("hold2", "Exit on the close N days after entry (CVR 2, 6, 7)", 2.0, 1.0, 10.0, 1.0)],
+        "vixr_stocks" | "vixr_options" => return Some(vec![]),
         _ => return None,
     };
     v.push(p("vix_cal", "VIX calendar: 0 = the VIX bars on the traded instrument's days only (holiday VIX bars dropped, as ATS / PTJ / S&P MT), 1 = [Not from the book] previous reading: the VIX's own calendar", 0.0, 0.0, 1.0, 1.0));
@@ -352,43 +359,81 @@ fn run_with(id: &str, x: &Ctx, v: &Vx, from: usize, to: usize, p: &Params) -> Ve
     let schema = params(id).unwrap_or_default();
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).unwrap_or_else(|| panic!("{id} has no param {k}")).def);
     let u = |k: &str| g(k).round().max(1.0) as usize;
-    let (vo, vh, vl, vc) = (&v.o, &v.h, &v.l, &v.c);
-    let sign = |b: bool, s: bool| if b { 1i8 } else if s { -1 } else { 0 };
-    // signal computed on the VIX's own bar k, mapped to the instrument's bar i (0 where the VIX has no bar)
-    let on_vix = |f: &dyn Fn(usize) -> i8| -> Vec<i8> { v.at.iter().map(|k| k.map_or(0, |k| f(k))).collect() };
     let restart = p.get("exit_restart").copied().unwrap_or(1.0) >= 0.5; // NotTestable ids have no schema
-    let simple = |sig: Vec<i8>, hold: usize| sar(&x.c, from, to, &|i| sig[i], hold, restart, None);
     match id {
-        "vixr_cvr1" => {
-            let len = u("len");
-            simple(on_vix(&|k| sign(v.hh(k, len) && vc[k] < vo[k], v.ll(k, len) && vc[k] > vo[k])), u("hold"))
-        }
-        "vixr_cvr2" => {
-            let (r, ob, os) = (rsi(vc, u("rsi_n")), g("ob"), g("os"));
-            simple(on_vix(&|k| sign(k > 0 && r[k - 1] >= ob && r[k] < r[k - 1], k > 0 && r[k - 1] <= os && r[k] > r[k - 1])), u("hold"))
-        }
         "vixr_cvr3" => {
-            let (ma, pct) = (sma_exact(vc, u("ma")), g("pct") / 100.0);
-            let (lag, cap) = (g("ma_lag").round().max(0.0) as usize, g("max_hold").round().max(0.0) as usize);
-            let m = |k: usize| if k >= lag { ma[k - lag] } else { f64::NAN };
-            let sig = on_vix(&|k| sign(vl[k] > m(k) && vc[k] >= m(k) * (1.0 + pct), vh[k] < m(k) && vc[k] <= m(k) * (1.0 - pct)));
+            let sig = signals(id, x, v, p).unwrap();
+            let (vl, vh, ma) = (&v.l, &v.h, sma_exact(&v.c, u("ma")));
+            let cap = g("max_hold").round().max(0.0) as usize;
             let touch = g("exit_touch") >= 0.5;
             let back = |i: usize, dir: f64| v.at[i].map_or(false, |k| k > 0 && if dir > 0.0 { vl[k] < ma[k - 1] || touch && vl[k] == ma[k - 1] } else { vh[k] > ma[k - 1] || touch && vh[k] == ma[k - 1] });
             sar(&x.c, from, to, &|i| sig[i], cap, restart, Some((&back, "VIX traded back through yesterday's MA")))
         }
+        "vixr_all" => all_signals(x, v, from, to, u("hold"), u("hold2")),
+        _ => match signals(id, x, v, p) { Some(sig) => sar(&x.c, from, to, &|i| sig[i], u("hold"), restart, None), None => Vec::new() },
+    }
+}
+
+/// Section Four (p.82): "one S&P ... for each signal (multiple signals trade multiple contracts equal to the number of
+/// signals) with no stops ... and exited in three days (two days for the CVR 2, 6 and 7)". Every signal day of every CVR
+/// (each with its own default rule, CVR 5 once) opens one independent unit on that close, held to the close `hold` days
+/// later; nothing reverses or nets (lane K43, run on books::units).
+pub const ALL_CVRS: &[&str] = &["vixr_cvr1", "vixr_cvr2", "vixr_cvr3", "vixr_cvr5_3d", "vixr_cvr6", "vixr_cvr7", "vixr_cvr8", "vixr_cvr9", "vixr_cvr10", "vixr_cvr11"];
+fn all_signals(x: &Ctx, v: &Vx, from: usize, to: usize, hold: usize, hold2: usize) -> Vec<Trade> {
+    let mut out = Vec::new();
+    for &id in ALL_CVRS {
+        let sig = signals(id, x, v, &Params::new()).unwrap();
+        let n = if matches!(id, "vixr_cvr2" | "vixr_cvr6" | "vixr_cvr7") { hold2 } else { hold };
+        let name = &id[5..];
+        for i in from..to {
+            if sig[i] == 0 { continue; }
+            let e = i + n;
+            let (exit_i, open) = if e > to { (to, true) } else { (e, false) };
+            out.push(Trade { dir: sig[i] as f64, legs: vec![Leg { i, px: x.c[i], w: 1.0 }], exit_i, exit_px: x.c[exit_i],
+                reason: if open { "open".into() } else { format!("{} signal · {n} days held", name.to_uppercase()) }, entry_kind: "close", signal_i: exit_i, open, exits: Vec::new() });
+        }
+    }
+    out.sort_by_key(|t| (t.legs[0].i, t.exit_i));
+    out
+}
+
+/// The CVR's signal on each instrument bar (+1 buy / -1 sell / 0), with the strategy's parameters (None = no signal rule).
+fn signals(id: &str, x: &Ctx, v: &Vx, p: &Params) -> Option<Vec<i8>> {
+    let schema = params(id).unwrap_or_default();
+    let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).unwrap_or_else(|| panic!("{id} has no param {k}")).def);
+    let u = |k: &str| g(k).round().max(1.0) as usize;
+    let (vo, vh, vl, vc) = (&v.o, &v.h, &v.l, &v.c);
+    let sign = |b: bool, s: bool| if b { 1i8 } else if s { -1 } else { 0 };
+    // signal computed on the VIX's own bar k, mapped to the instrument's bar i (0 where the VIX has no bar)
+    let on_vix = |f: &dyn Fn(usize) -> i8| -> Vec<i8> { v.at.iter().map(|k| k.map_or(0, |k| f(k))).collect() };
+    Some(match id {
+        "vixr_cvr1" => {
+            let len = u("len");
+            on_vix(&|k| sign(v.hh(k, len) && vc[k] < vo[k], v.ll(k, len) && vc[k] > vo[k]))
+        }
+        "vixr_cvr2" => {
+            let (r, ob, os) = (rsi(vc, u("rsi_n")), g("ob"), g("os"));
+            on_vix(&|k| sign(k > 0 && r[k - 1] >= ob && r[k] < r[k - 1], k > 0 && r[k - 1] <= os && r[k] > r[k - 1]))
+        }
+        "vixr_cvr3" => {
+            let (ma, pct) = (sma_exact(vc, u("ma")), g("pct") / 100.0);
+            let lag = g("ma_lag").round().max(0.0) as usize;
+            let m = |k: usize| if k >= lag { ma[k - lag] } else { f64::NAN };
+            on_vix(&|k| sign(vl[k] > m(k) && vc[k] >= m(k) * (1.0 + pct), vh[k] < m(k) && vc[k] <= m(k) * (1.0 - pct)))
+        }
         "vixr_cvr5_1d" | "vixr_cvr5_3d" => {
             let (ma, z) = (sma(vc, u("ma")), g("zone") / 100.0);
-            simple(on_vix(&|k| {
+            on_vix(&|k| {
                 let r = vh[k] - vl[k];
                 let (bot, top) = (vl[k] + r * z, vh[k] - r * z);
                 sign(r > 0.0 && vo[k] <= bot && vc[k] <= bot && vc[k] > ma[k], r > 0.0 && vo[k] >= top && vc[k] >= top && vc[k] < ma[k])
-            }), u("hold"))
+            })
         }
         "vixr_cvr6" => {
             // "new 20-period high" = above the highest high of the 20 days BEFORE the 3-day window (reference fixed
             // for the window, TradeStation Highest(High, 20)[3]); counted on `need` of the last `look` days
             let (hl, need, look, fixed) = (u("hilo"), u("need"), u("look"), g("ref") >= 0.5);
-            simple(on_vix(&|k| {
+            on_vix(&|k| {
                 if !fixed {
                     let w = (k + 1).saturating_sub(look)..=k;
                     return sign(w.clone().filter(|&j| v.hh(j, hl)).count() >= need, w.filter(|&j| v.ll(j, hl)).count() >= need);
@@ -399,11 +444,11 @@ fn run_with(id: &str, x: &Ctx, v: &Vx, from: usize, to: usize, p: &Params) -> Ve
                 let (w, refw) = (k + 1 - look..=k, k + 1 - look - hl..k + 1 - look);
                 let (top, bot) = (vh[refw.clone()].iter().fold(f64::MIN, |a, &b| a.max(b)), vl[refw].iter().fold(f64::MAX, |a, &b| a.min(b)));
                 sign(w.clone().filter(|&j| vh[j] > top).count() >= need, w.filter(|&j| vl[j] < bot).count() >= need)
-            }), u("hold"))
+            })
         }
         "vixr_cvr7" => {
             let m = sma(vc, u("ma"));
-            simple(on_vix(&|k| {
+            on_vix(&|k| {
                 if k < 3 {
                     return 0;
                 }
@@ -412,27 +457,27 @@ fn run_with(id: &str, x: &Ctx, v: &Vx, from: usize, to: usize, p: &Params) -> Ve
                 let sell = vc[k - 2] < m[k - 3] && vc[k - 1] < m[k - 2] && vc[k] < m[k - 1] && vc[k - 2] > vo[k - 2] && vc[k - 1] < vo[k - 1]
                     && (vl[k - 1] < vl[k - 2] || vl[k - 1] < vl[k - 3]) && vc[k] > vo[k];
                 sign(buy, sell)
-            }), u("hold"))
+            })
         }
         "vixr_cvr8" => {
             let (f, s, look, thr) = (xaverage(vc, u("fast")), xaverage(vc, u("slow")), u("look"), g("thr"));
             let osc: Vec<f64> = (0..vc.len()).map(|k| if k == 0 { f64::NAN } else { (f[k] - f[k - 1]) - (s[k] - s[k - 1]) }).collect();
             let warm = u("slow").max(look); // let the slow EMA settle before trading
-            simple(on_vix(&|k| {
+            on_vix(&|k| {
                 if k < warm {
                     return 0;
                 }
                 let w = &osc[k + 1 - look..=k];
                 sign(osc[k] > thr && w.iter().all(|&o| osc[k] >= o), osc[k] < -thr && w.iter().all(|&o| osc[k] <= o))
-            }), u("hold"))
+            })
         }
         "vixr_cvr9" => {
             let (rn, hl) = (u("rng_n"), u("hl_n"));
             let big = |k: usize| k + 1 >= rn && (k + 1 - rn..k).all(|j| vh[k] - vl[k] > vh[j] - vl[j]);
-            simple(on_vix(&|k| sign(
+            on_vix(&|k| sign(
                 k > 0 && big(k) && v.hh(k, hl) && vc[k - 1] > vo[k - 1] && vc[k] < vo[k],
                 k > 0 && big(k) && v.ll(k, hl) && vc[k - 1] < vo[k - 1] && vc[k] > vo[k],
-            )), u("hold"))
+            ))
         }
         "vixr_cvr10" => {
             let hl = u("hl_n");
@@ -445,14 +490,14 @@ fn run_with(id: &str, x: &Ctx, v: &Vx, from: usize, to: usize, p: &Params) -> Ve
                     _ => 0,
                 })
                 .collect();
-            simple(sig, u("hold"))
+            sig
         }
         "vixr_cvr11" => {
             let (f, s, thr, hl) = (sma(vc, u("fast")), sma(vc, u("slow")), g("thr"), u("hl_n"));
-            simple(on_vix(&|k| sign(k > 0 && f[k - 1] - s[k - 1] >= thr && v.hh(k, hl), k > 0 && f[k - 1] - s[k - 1] <= -thr && v.ll(k, hl))), u("hold"))
+            on_vix(&|k| sign(k > 0 && f[k - 1] - s[k - 1] >= thr && v.hh(k, hl), k > 0 && f[k - 1] - s[k - 1] <= -thr && v.ll(k, hl)))
         }
-        _ => Vec::new(), // listed, not testable
-    }
+        _ => return None, // listed, not testable
+    })
 }
 
 /// (family id, family name, variant label) for the strategy list.

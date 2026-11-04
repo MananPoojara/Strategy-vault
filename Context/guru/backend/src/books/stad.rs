@@ -225,7 +225,9 @@ impl St {
     fn profit_pts(&self, c: f64) -> f64 { if self.pos == 0 { 0.0 } else { self.pos as f64 * (c - self.entry_px) } }
 }
 
-struct Eng<'a> { x: &'a Ctx<'a>, pos: i8, pid: u64, cur: Option<Trade>, prev_pos: i8, out: Vec<Trade>, tag: &'static str, prot: f64 }
+struct Eng<'a> { x: &'a Ctx<'a>, pos: i8, pid: u64, cur: Option<Trade>, prev_pos: i8, out: Vec<Trade>, tag: &'static str, prot: f64,
+    /// TradeStation "Maximum number of entries per position" (1 = "Do not allow multiple entries in same direction")
+    max_ent: usize, nent: usize }
 
 impl<'a> Eng<'a> {
     fn close_pos(&mut self, i: usize, px: f64, why: &str, sig: usize) {
@@ -238,8 +240,13 @@ impl<'a> Eng<'a> {
         match od.a {
             A::Buy | A::Sell => {
                 let d: i8 = if od.a == A::Buy { 1 } else { -1 };
+                if self.pos == d { // same-direction entry: only reachable with max_ent > 1 (lane K43, stad2_obv)
+                    if let Some(t) = self.cur.as_mut() { t.legs.push(Leg { i, px, w: od.w }); }
+                    self.nent += 1;
+                    return;
+                }
                 if self.pos == -d { self.close_pos(i, px, od.tag, sig); }
-                self.pos = d; self.pid += 1; self.tag = od.tag; self.prot = od.prot;
+                self.pos = d; self.pid += 1; self.tag = od.tag; self.prot = od.prot; self.nent = 1;
                 self.cur = Some(Trade { dir: d as f64, legs: vec![Leg { i, px, w: od.w }], exit_i: i, exit_px: px,
                     reason: String::new(), entry_kind: kind, signal_i: sig, open: false, exits: vec![] });
             }
@@ -252,8 +259,8 @@ impl<'a> Eng<'a> {
     fn valid(&self, od: &O, _pid0: u64, _pos0: i8) -> bool {
         let tag_ok = od.from.is_empty() || od.from == self.tag;
         match od.a {
-            A::Buy => self.pos != 1,
-            A::Sell => self.pos != -1,
+            A::Buy => self.pos != 1 || self.nent < self.max_ent,
+            A::Sell => self.pos != -1 || self.nent < self.max_ent,
             A::Xl => self.pos == 1 && tag_ok,
             A::Xs => self.pos == -1 && tag_ok,
         }
@@ -331,8 +338,12 @@ fn kind_of(od: &O) -> &'static str { match od.p { P::Mkt => "open", P::Stop(_) =
 
 /// Run TradeStation-style strategy code `f(i, state, close_orders, next_bar_orders)` over bars 0..=to.
 /// Indicators and the code's own variables run from MaxBarsBack (`mbb`); orders are only taken from `from` on.
-fn run_ts(x: &Ctx, from: usize, to: usize, mbb: usize, mut f: impl FnMut(usize, &St, &mut Vec<O>, &mut Vec<O>)) -> Vec<Trade> {
-    let mut e = Eng { x, pos: 0, pid: 0, cur: None, prev_pos: 0, out: vec![], tag: "", prot: f64::NAN };
+fn run_ts(x: &Ctx, from: usize, to: usize, mbb: usize, f: impl FnMut(usize, &St, &mut Vec<O>, &mut Vec<O>)) -> Vec<Trade> {
+    run_ts_n(x, from, to, mbb, 1, f)
+}
+/// run_ts with TradeStation's "Allow multiple entries in the same direction", at most `max_ent` entries per position.
+fn run_ts_n(x: &Ctx, from: usize, to: usize, mbb: usize, max_ent: usize, mut f: impl FnMut(usize, &St, &mut Vec<O>, &mut Vec<O>)) -> Vec<Trade> {
+    let mut e = Eng { x, pos: 0, pid: 0, cur: None, prev_pos: 0, out: vec![], tag: "", prot: f64::NAN, max_ent: max_ent.max(1), nent: 0 };
     let mut pending: Vec<O> = vec![];
     for i in 0..=to {
         if i > from { e.fill_bar(i, &pending); }
@@ -450,8 +461,9 @@ fn defs() -> Vec<Def> {
     Def { needs_volume: true, ..d("stad2_obv", "On Balance Volume New Highs/New Lows", "Vol 2 · Trending", "Long", Live,
       &["F|OBVNewHigh = OBV >= Highest(OBV,15); OBVNewLow = OBV <= Lowest(OBV,15) (code p.31)",
         "E|5 OBV new highs within the last 6 bars: buy 100 shares next bar at market; 3 new lows within 6 bars: buy 200 shares next bar at market",
+        "A|\"In the Properties tab, we selected the option Allow Multiple Entries in the same direction by same and different entry orders. This is because this system is designed to scale into a position\"; \"we typed the number 4 in the option Maximum number of entries per position\" (Vol 2 p.33): every bar a condition holds adds its entry (100 or 200 shares) until 4 entries are held (param maxent)",
         "X|First bar long: StopPrice = Low - Average(Range,4); each bar ExitLong at StopPrice stop, then StopPrice += (Low - StopPrice)/3"],
-      "Vol 2 ch.2 p.29-35. Needs volume (SPX/DJI yes; NSE index files have none). The 200-share entry weighs 2x.", ("stad_obv", "OBV New Highs/Lows", "Vol 2")) },
+      "Vol 2 ch.2 p.29-35. Needs volume (SPX/DJI yes; NSE index files have none). The 200-share entry weighs 2x; each entry is a unit of the multi-unit account (lane K43).", ("stad_obv", "OBV New Highs/Lows", "Vol 2")) },
     Def { needs_volume: true, ..d("stad2_addiv", "Advance Decline Divergence (volume move)", "Vol 2 · Support/Resistance", "Long/Short", Live,
       &["F|VolumeMove = XAverage((Close - Open)/(High - Low) * Volume, 9) (code p.39; 0 when High = Low)",
         "E|Low < Lowest(Low,30)[1] and VolumeMove made no new 30-bar low in the last 5 bars: buy 100 next bar at market; Low < Lowest(Low,30)[1] and VolumeMove > Highest(VolumeMove,30)[1]: buy 200",
@@ -666,7 +678,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "stad1_pivot" => vec![p("trail", "Trailing stop bars", 4., 2., 10., 1.)],
         "stad2_adxdiff" => vec![p("adx", "ADX length", 14., 5., 30., 1.), p("avg", "WAverage length", 4., 2., 10., 1.), p("ch", "Order life bars", 8., 3., 15., 1.), p("prot", "Entry-bar stop bars", 6., 3., 12., 1.)],
         "stad2_hs" => vec![p("top", "Top strength", 5., 2., 10., 1.), p("bot", "Bottom strength", 5., 2., 10., 1.)],
-        "stad2_obv" => vec![p("len", "New high/low lookback", 15., 5., 30., 1.), p("back", "Window bars", 6., 3., 12., 1.), p("nh", "New highs needed", 5., 1., 6., 1.), p("nl", "New lows needed", 3., 1., 6., 1.)],
+        "stad2_obv" => vec![p("len", "New high/low lookback", 15., 5., 30., 1.), p("back", "Window bars", 6., 3., 12., 1.), p("nh", "New highs needed", 5., 1., 6., 1.), p("nl", "New lows needed", 3., 1., 6., 1.),
+            p("maxent", "Maximum entries per position (Properties tab, Vol 2 p.33: 4; 1 = one entry, the earlier reading)", 4., 1., 4., 1.)],
         "stad2_addiv" => vec![p("len", "XAverage length", 9., 3., 20., 1.), p("look", "New high/low lookback", 30., 10., 60., 5.)],
         "stad2_stoch" => vec![p("len", "Stochastic length", 14., 5., 30., 1.), p("ob", "Overbought", 75., 60., 90., 5.), p("os", "Oversold", 25., 10., 40., 5.)],
         "stad2_ccibb" => vec![p("bblen", "Bollinger length", 9., 5., 20., 1.), p("bbsd", "Std devs", 2., 1., 3., 0.5), p("ccilen", "CCI length", 14., 5., 30., 1.), p("cciavg", "CCI XAverage", 2., 1., 5., 1.)],
@@ -938,7 +951,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             let newl: Vec<bool> = (0..n).map(|i| ob[i] <= lowest(&ob, len, i)).collect();
             let ar4 = sma(&(0..n).map(|i| h[i] - l[i]).collect::<Vec<_>>(), 4);
             let mut pa = Para::default();
-            run_ts(x, from, to, len.max(back).max(4), |i, st, _now, nx| {
+            run_ts_n(x, from, to, len.max(back).max(4), u("maxent"), |i, st, _now, nx| {
                 if mro(&newh, i, back, nh) > -1 { nx.push(o(A::Buy, P::Mkt, "New High")); }
                 if mro(&newl, i, back, nl) > -1 { nx.push(ow(A::Buy, P::Mkt, 2.0, "New Low")); }
                 pa.step(x, i, st.pos, ar4[i], 1.0, 1.0 / 3.0, 1.0 / 3.0, nx, "ExitTrade");

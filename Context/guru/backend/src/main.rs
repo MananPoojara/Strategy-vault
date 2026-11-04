@@ -299,6 +299,8 @@ fn backtest(ctx: &Ctx, id: &str, from: usize, to: usize, cost: f64, p: &Params) 
     if let Some(pos)=options::positions(id,ctx,from,to,p) {return option_run(ctx,pos?,from,to,cost);}
     // lane K28: rotation rules hold several ETFs on one account (books::rotation), valued at each ETF's own close
     if let Some(a)=books::rotation::account(id,ctx,from,to,cost,p,books::rotation::PRELOADED.get().copied()) {let a=a?;return Ok(Run{trades:a.trades.clone(),from,to,equity:a.equity.clone(),bh:(from..=to).map(|k|ctx.c[k]/ctx.c[from]).collect(),source_account:None,bandy_account:None,unit_exposure_report:None,option_account:Some(a)});}
+    // lane K43: pyramids, unequal lots and overlapping positions of one rule on one account (books::units)
+    if let Some(a)=books::units::run(id,ctx,from,to,cost,p) {let a=a?;let to=a.ruin.unwrap_or(to);let equity=a.equity[..=to-from].to_vec();return Ok(Run{trades:a.trades.clone(),from,to,equity,bh:(from..=to).map(|k|ctx.c[k]/ctx.c[from]).collect(),source_account:None,bandy_account:None,unit_exposure_report:None,option_account:Some(a)});}
 
     if books::hbiab_reviewed::reviewed(id) {
         let account=books::hbiab_reviewed::run(id,ctx,from,to,cost,p)?;
@@ -1507,7 +1509,7 @@ fn detail(st: &State, q: &BTreeMap<String, String>) -> Result<String, String> {
         if let Some(a)=&run.option_account {allocation=a.alloc[i];}
         let mut ledger=if run.source_account.is_some(){accounting::TradeLedger::source_account(ctx,t,allocation,costs)}else{accounting::TradeLedger::new(ctx,t,allocation,costs)};
         // options phase 2: the underlying's daily range says nothing about the option's excursion
-        if run.option_account.is_some() {ledger.observed_mae=None;ledger.observed_mfe=None;ledger.excursion_bars=0;}
+        if run.option_account.as_ref().is_some_and(|a|a.model!=books::units::MODEL) {ledger.observed_mae=None;ledger.observed_mfe=None;ledger.excursion_bars=0;} // a multi-unit trade is on the underlying itself (lane K43)
         allocation*=1.+ledger.net_ret;
         let legs: Vec<String> = t.legs.iter().map(|l| format!("[{},{},{}]", l.i - from, fill_number(l.px), num(l.w))).collect();
         let mut row=format!(
@@ -2728,6 +2730,16 @@ mod tests {
             if options::is_option_rule(d.id) {
                 // options phase 2: own account (overlapping positions, held-contract marks; options::tests); no chain here
                 assert!(backtest(&ctx,d.id,0,rows.len()-1,0.,&Params::new()).unwrap_err().starts_with("needs_data"));
+                other_path += 1;
+                continue;
+            }
+            if books::units::is_units(d.id) {
+                // lane K43: several units on one account (books::units tests, K43w/k43_ref.py); the trades are the units
+                for cost in [0.0, 0.0005] {
+                    let run=backtest(&ctx,d.id,0,rows.len()-1,cost,&Params::new()).unwrap_or_else(|e|panic!("{}: {e}",d.id));
+                    let a=run.option_account.as_ref().unwrap();
+                    assert!(a.model==books::units::MODEL && run.trades.len()==a.alloc.len() && run.equity.iter().all(|v|v.is_finite()),"{}",d.id);
+                }
                 other_path += 1;
                 continue;
             }

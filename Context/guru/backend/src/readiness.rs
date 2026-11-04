@@ -24,7 +24,7 @@ fn issue(status: &'static str, note: impl Into<String>) -> Option<Issue> {
 /// Rules that read the VIX open (today's, or up to two VIX bars back). India VIX opens are real only where 1-minute
 /// India VIX exists (from 2015-01-09; staged file india-vix-ohlc-20261024); other days carry NaN, never the close.
 pub fn reads_vix_open(def:&crate::connors::StrategyDef)->bool {
-    matches!(def.id,"vix2"|"vix7"|"spmt_vix2"|"spmt_vix7"|"ststw_vix_rsi"|"vixr_cvr1"|"vixr_cvr5_1d"|"vixr_cvr5_3d"|"vixr_cvr7"|"vixr_cvr9"|"vixr_cvr10"
+    matches!(def.id,"vix2"|"vix7"|"spmt_vix2"|"spmt_vix7"|"ststw_vix_rsi"|"vixr_cvr1"|"vixr_cvr5_1d"|"vixr_cvr5_3d"|"vixr_cvr7"|"vixr_cvr9"|"vixr_cvr10"|"vixr_all"
         |"ptjmt_cvr1"|"ptjmt_cvr5"|"ats_cvr1"|"ats_cvr_equities")
         || def.needs_series.iter().any(|s|matches!(*s,"VIX.Open"|"VIX_OHLC.Open"))
 }
@@ -1066,8 +1066,9 @@ mod vix_india_tests { // VIX India block (24 Oct 2026)
         for (book,id) in VIX_INDIA_RULES {
             let d=all.iter().find(|d|d.id==*id&&d.book==*book).unwrap_or_else(||panic!("{book}:{id}"));
             assert!(vix_india(d) && (d.needs_vix || !d.needs_series.is_empty()));
-            for t in ["NIFTY 50","NIFTYBANK","SPX","SPY"] {assert_eq!(pol(d,t,false).is_none(),!(*id=="vixr_cvr11"&&t.starts_with("NIFTY")),"{id} {t}");}
-            assert_eq!(check_native(d,"RELIANCE",&crate::baskets::NativeEvidence::india_test_fixture()).is_none(),*id!="vixr_cvr11","{id}");
+            let held_in=matches!(*id,"vixr_cvr11"|"vixr_all"); // vixr_all contains CVR 11 (lane K43)
+            for t in ["NIFTY 50","NIFTYBANK","SPX","SPY"] {assert_eq!(pol(d,t,false).is_none(),!(held_in&&t.starts_with("NIFTY")),"{id} {t}");}
+            assert_eq!(check_native(d,"RELIANCE",&crate::baskets::NativeEvidence::india_test_fixture()).is_none(),!held_in,"{id}");
             assert!(check_native(d,"AAPL",&crate::baskets::NativeEvidence::us_test_fixture()).is_none(),"{id}");
             assert_eq!(crate::instrument_policy::open_instrument_label(d),Some(crate::instrument_policy::VIX_INDIA_LABEL));
         }
