@@ -736,7 +736,7 @@ fn defs_b() -> Vec<Def> {
       &["E|Close below both EMAs and above the previous bar's high: sell 1 point below the low of the naked-close bar (prose p.71)"],
       "Vol 9 ch.6 p.71-80.", ("stad9_skinny", "Skinny Dipper", "Vol 9 short")),
     d("stad9_djnikkei", "DJ vs. Nikkei (intermarket example)", "Vol 9 · Strategies", "Long/Short",
-      NeedsData("Needs the Dow Jones Industrials as an aligned second data stream for the traded index (Data2). For NIFTY that means DJI aligned to NSE dates; no such cross-market alignment in the engine."),
+      NeedsData("The traded market is the Nikkei 225 ('Insert in Data1 the Nikkei Index since 1/1/98 and in Data2 the Dow Jones', Vol 9 p.82), which the vault does not hold. The DJI second series exists (EP4), but no other market stands in for the traded leg (lane K52; EWJ tracks the MSCI Japan index, not the Nikkei)."),
       &["E|Close[1] of Data2 < Close of Data2: Buy next bar at Open; else Sell next bar at Open (Vol 9 p.82)"],
       "Vol 9 ch.7 p.82-84 (Hans Stimming). Book: Nikkei since 1/1/98: 61% profitable.", ("stad9_iic", "International Index Composite", "DJ vs Nikkei")),
     d("stad9_iic", "International Index Composite", "Vol 9 · Strategies", "Long/Short",
