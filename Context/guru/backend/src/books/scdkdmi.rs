@@ -32,6 +32,8 @@ pub fn ols_end(v: &[f64], n: usize) -> Vec<f64> {
         (sy - m * sx) / nf + m * nf
     }).collect()
 }
+/// a > b beyond floating-point noise (|a - b| > 1e-9 x max(|a|, |b|)): exact ties computed two ways never decide a signal.
+pub fn gt(a: f64, b: f64) -> bool { a - b > 1e-9 * a.abs().max(b.abs()) }
 /// Equity in price points of a position path (+1/-1/0 per bar, changes at closes), marked to each close.
 pub fn close_equity(c: &[f64], pos: &[f64]) -> Vec<f64> {
     let mut e = vec![0.0; c.len()];

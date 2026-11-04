@@ -8,7 +8,7 @@ use super::tselhs::Book;
 pub const REVIEWED: &[&str] = &["atbig_bailout", "atbig_stop"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
-const NOTE: &str = "[Declared readings] Entry: if today's open is below yesterday's close, a buy stop at yesterday's close for today; if the open is above it, a sell stop there (an open equal to yesterday's close gives no setup). Bail-out exit: a long is sold at the first later open above its entry price (a short is covered at the first later open below it); a setup in the opposite direction reverses the position at its stop ('stop and reverse'); a setup in the same direction is ignored. Each day the open is checked first (bail-out), then the stops; after a bail-out at the open, that day's setup may enter again. The test traded 100 SPY shares for two years (dates not printed), no costs. Bigfoot 4-6 (the 'dynamic profit target') are not coded: the target formula is not printed. Runs on indices, ETFs and stocks, US and India, are a declared application.";
+const NOTE: &str = "[Declared readings] Entry: if today's open is below yesterday's close, a buy stop at yesterday's close for today; if the open is above it, a sell stop there (an open equal to yesterday's close gives no setup). Bail-out exit: a long is sold at the first later open above its entry price (a short is covered at the first later open below it); a setup in the opposite direction reverses the position at its stop ('stop and reverse'); a setup in the same direction is ignored. Each day the open is checked first (bail-out), then the stops; the bail-out 'exits the market' for that day, so no new entry is taken on the day of a bail-out (this reading gives 65% of days in the market on SPY 1998-1999 against the article's 67.41%; re-entering on the same day gives 87%). The test traded 100 SPY shares for two years (dates not printed), no costs. Bigfoot 4-6 (the 'dynamic profit target') are not coded: the target formula is not printed. Runs on indices, ETFs and stocks, US and India, are a declared application.";
 const NOTE_STOP: &str = "[Declared readings] Bigfoot 2 and 3: the same entry and bail-out exit plus a fixed-dollar stop, $1,000 (default) or $2,000 (option usd) on 100 SPY shares = $10 or $20 a share below the entry (above it for a short), active from the day after entry, filled at the stop or at an open beyond it. When the stop and an opposite setup's stop are both hit on one day, the long exits at the higher of the two levels (the first reached) and the short is entered at yesterday's close. SPY has never split, so the dollar amount is the article's own on the vault's SPY prices; this card runs on SPY only (a fixed amount means nothing else on another instrument, decision 166 and 205). Article (SPY, two years, 100 shares, no costs): Bigfoot 2 ($1,000 stop) 146 trades, 78.77% winners, +$1,368.70, drawdown $1,000; Bigfoot 3 ($2,000 stop) 149 trades, 77.85%, +$1,060.00.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
@@ -48,7 +48,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         let side = pos.side();
         let e = pos.entry_bar().unwrap_or(t);
         // bail-out at a profitable open
-        if side != 0.0 && e < t && side * (o - pos.entry_px()) > 0.0 { pos.exit(t, o, "Profitable open"); }
+        if side != 0.0 && e < t && side * (o - pos.entry_px()) > 0.0 { pos.exit(t, o, "Profitable open"); continue; }
         let side = pos.side();
         let ep = pos.entry_px();
         if side > 0.0 && e < t && l <= ep - st {

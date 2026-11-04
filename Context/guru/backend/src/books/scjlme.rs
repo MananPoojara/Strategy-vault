@@ -5,12 +5,12 @@
 //! Lane K41 (batch T7a, 4 Nov 2026); independent check authors/titles-1030/K41w/k41_ref.py.
 use crate::connors::{Ctx, ParamDef, Params, Status, StrategyDef, Trade};
 use super::msws::sma;
-use super::scdkdmi::{at_close, close_equity, ols_end};
+use super::scdkdmi::{at_close, close_equity, gt, ols_end};
 
 pub const REVIEWED: &[&str] = &["scjlme_osc", "scjlme_trend"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
-const NOTE: &str = "[Declared readings] Least-squares value = Excel TREND over the last n closes evaluated at the last point (=TREND(D2:D14,,13)). Oscillator system: osc = 3-day simple average of (close - 13-day least-squares value); 'Sell signals are taken when the oscillator rises above the zero line and then turns down' = the previous value is above zero and the oscillator falls after rising (osc[t-1] > 0, osc[t] < osc[t-1], osc[t-1] >= osc[t-2]); buys mirrored. Trend system: 10-day time-series MA (least-squares value) of the lows crossing the 10-day simple average of the lows. Each system is a stop-and-reverse shadow system from the first bar of the data, positions at the signal close ('Signals are taken on the close of the day of the signal'); its equity = the sum of its price-point changes marked at each close (the $10,000 start does not move the crossings; the $16 round-turn commission is left out: a dollar amount on currency contracts has no meaning on the vault's instruments (decision 166), and a per-trade cost would step the equity down at each trade, which can move some crossings). The published position = the shadow position while the equity closes above its 25-day simple average, else flat ('A trader can enter when the equity rises above the moving average in the direction of the latest signal ... and exited when the equity fell below'); changes at the close. Option filter = 0 publishes the shadow system. The article runs both systems together and takes no signals when both equities are below their averages; each card here is one system with its own filter. Article tests: Canadian dollar and Swiss franc, March-August 1992 (charts only). Runs on indices, ETFs and stocks, US and India, are a declared application.";
+const NOTE: &str = "[Declared readings] Least-squares value = Excel TREND over the last n closes evaluated at the last point (=TREND(D2:D14,,13)); comparisons ignore floating-point noise (an exact tie is no cross and no turn). Oscillator system: osc = 3-day simple average of (close - 13-day least-squares value); 'Sell signals are taken when the oscillator rises above the zero line and then turns down' = the previous value is above zero and the oscillator falls after rising (osc[t-1] > 0, osc[t] < osc[t-1], osc[t-1] >= osc[t-2]); buys mirrored. Trend system: 10-day time-series MA (least-squares value) of the lows crossing the 10-day simple average of the lows. Each system is a stop-and-reverse shadow system from the first bar of the data, positions at the signal close ('Signals are taken on the close of the day of the signal'); its equity = the sum of its price-point changes marked at each close (the $10,000 start does not move the crossings; the $16 round-turn commission is left out: a dollar amount on currency contracts has no meaning on the vault's instruments (decision 166), and a per-trade cost would step the equity down at each trade, which can move some crossings). The published position = the shadow position while the equity closes above its 25-day simple average, else flat ('A trader can enter when the equity rises above the moving average in the direction of the latest signal ... and exited when the equity fell below'); changes at the close. Option filter = 0 publishes the shadow system. The article runs both systems together and takes no signals when both equities are below their averages; each card here is one system with its own filter. Article tests: Canadian dollar and Swiss franc, March-August 1992 (charts only). Runs on indices, ETFs and stocks, US and India, are a declared application.";
 
 pub fn catalogue() -> Vec<StrategyDef> {
     let d = |id, name, rules| StrategyDef { id, name, group: "S&C: monitoring equity (Luisi, V.11:4)", session: 0, dir: "Long/Short", status: Status::Live,
@@ -47,8 +47,8 @@ fn shadow(id: &str, x: &Ctx) -> Vec<f64> {
         let o = sma(&d, 3);
         for t in 2..n {
             if o[t - 2].is_finite() {
-                if o[t - 1] > 0.0 && o[t] < o[t - 1] && o[t - 1] >= o[t - 2] { side = -1.0; }
-                else if o[t - 1] < 0.0 && o[t] > o[t - 1] && o[t - 1] <= o[t - 2] { side = 1.0; }
+                if o[t - 1] > 0.0 && gt(o[t - 1], o[t]) && !gt(o[t - 2], o[t - 1]) { side = -1.0; }
+                else if o[t - 1] < 0.0 && gt(o[t], o[t - 1]) && !gt(o[t - 1], o[t - 2]) { side = 1.0; }
             }
             pos[t] = side;
         }
@@ -56,7 +56,7 @@ fn shadow(id: &str, x: &Ctx) -> Vec<f64> {
         let (ts, s) = (ols_end(&x.l, 10), sma(&x.l, 10));
         for t in 1..n {
             if s[t - 1].is_finite() {
-                if ts[t] > s[t] && ts[t - 1] <= s[t - 1] { side = 1.0; } else if ts[t] < s[t] && ts[t - 1] >= s[t - 1] { side = -1.0; }
+                if gt(ts[t], s[t]) && !gt(ts[t - 1], s[t - 1]) { side = 1.0; } else if gt(s[t], ts[t]) && !gt(s[t - 1], ts[t - 1]) { side = -1.0; }
             }
             pos[t] = side;
         }
