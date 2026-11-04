@@ -1636,7 +1636,7 @@ mod tests {
             // agtsic: the lane C2 special block admits the eight daily rules; ADMISSION_BREADTH admits the K25 breadth-filtered RSI ids.
             // phbttk: phbt's Headley entry admits the Percent R ids; ADMISSION_K30 admits the shipped System Tester records (K30, 3 Nov 2026).
             // acbff, atm04: the intraday block admits their N-minute-bar ids (intraday_ep, lane K39, 4 Nov 2026); stad: stad3_idbf (lane K42).
-            const SHARED:&[&str]=&["acbff","agtsic","atm04","bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","phbttk","putg","stad","stad2","tcdt","tdnmtt","tdperl","atm00","pbwts"]; // stad, stad2, tcdt: books::units::ADMISSION admits their multi-unit ids (lane K43); atm00: atm00_fourplay (lane K44); pbwts: pbwts_super_combo on 5-minute bars (intraday block, lane K44)
+            const SHARED:&[&str]=&["acbff","agtsic","atm04","bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","phbttk","putg","stad","stad2","tcdt","tdnmtt","tdperl","atm00","pbwts","jbeft"]; // stad, stad2, tcdt: books::units::ADMISSION admits their multi-unit ids (lane K43); atm00: atm00_fourplay (lane K44); pbwts: pbwts_super_combo on 5-minute bars (intraday block, lane K44); jbeft: jbeft_oc_osc on 15-minute bars (intraday block, lane K45)
             for d in all.iter().filter(|d|books.contains(&d.book) && !SHARED.contains(&d.book) && reviewed_cash_rule(d)!=(a.reviewed)(d)) {other.push((d.book,d.id));}
             for d in admitted {
                 assert_eq!(admission(d).map(|x|x.label),Some(a.label),"{}",d.id);
@@ -3041,10 +3041,10 @@ mod tests {
         use crate::books::{jbeft,jbhsms,jbsmsw,jbtifm,jbtywr};
         let cat:Vec<StrategyDef>=jbsmsw::catalogue().into_iter().chain(jbhsms::catalogue()).chain(jbeft::catalogue()).chain(jbtywr::catalogue()).chain(jbtifm::catalogue()).chain(crate::books::jbhpp::catalogue()).collect();
         let admitted:Vec<&str>=cat.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
-        assert_eq!(admitted.len(),2+21+3+2+3+2+1,"{admitted:?}");
+        assert_eq!(admitted.len(),2+21+3+2+3+2+1+1,"{admitted:?}"); // + jbeft_oc_osc, admitted by the intraday EP block (lane K45)
         assert!(cat.iter().filter(|d|reviewed_cash_rule(d)).all(|d|d.status==Status::Live));
         let us=NativeEvidence::us_test_fixture();let ind=NativeEvidence::india_test_fixture();
-        for d in cat.iter().filter(|d|reviewed_cash_rule(d)) {
+        for d in cat.iter().filter(|d|reviewed_cash_rule(d) && !intraday_p1(d)) { // the EP minute rule: intraday_ep::ep_admission_and_tickers
             let any=!jb_g3_gap(d) && d.book!=jbeft::BOOK;
             for t in ["SPY","QQQ","NDX","DJI","NIFTY 50","NIFTYBANK"] {assert_eq!(check(d,t,false).is_none(),any,"{} {t}",d.id);}
             assert_eq!(check(d,"SPX",false).is_none(),!jb_g3_gap(d),"{} SPX",d.id);
@@ -3055,7 +3055,7 @@ mod tests {
         }
         // Held: not a complete rule, needs data we do not have, or a duplicate of another module.
         for id in ["jbsmsw_add","jbsmsw_3610_parabolic","jbsmsw_dca_mom42","jbsmsw_dca_biq","jbhsms_sp_1027","jbhsms_stk_sunw","jbhsms_stk_nem","jbhsms_fri_mon","jbhsms_mac","jbhsms_ma200",
-            "jbtywr_wheat_0901","jbtywr_tbond_0418","jbtywr_hogs_1030","jbtywr_lumber","jbtifm_jb_gap","jbtifm_dual_orbit","jbtifm_add","jbeft_dow_fm82","jbeft_gold_kd","jbeft_parabolic","jbeft_mom_ma","jbeft_mom_rise_fall","jbeft_oc_osc","jbeft_channel_break","jbeft_range_breakout","jbeft_3_3_channel","jbeft_dsi","jbeft_add"] {
+            "jbtywr_wheat_0901","jbtywr_tbond_0418","jbtywr_hogs_1030","jbtywr_lumber","jbtifm_jb_gap","jbtifm_dual_orbit","jbtifm_add","jbeft_dow_fm82","jbeft_gold_kd","jbeft_parabolic","jbeft_mom_ma","jbeft_mom_rise_fall","jbeft_channel_break","jbeft_range_breakout","jbeft_3_3_channel","jbeft_dsi","jbeft_add"] {
             let d=cat.iter().find(|d|d.id==id).unwrap_or_else(||panic!("{id}"));
             assert!(!reviewed_cash_rule(d),"{id}");assert!(d.status!=Status::Live,"{id}");
         }
