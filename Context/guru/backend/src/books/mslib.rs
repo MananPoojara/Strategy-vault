@@ -22,7 +22,10 @@ use std::sync::OnceLock;
 
 pub const BOOK: &str = "mslib";
 /// Admitted ids (authors/vendor/laneb/SOURCE-CONTRACT.md).
-pub const REVIEWED: &[&str] = &["mslib_alligator_charlis", "mslib_alligator_eiv", "mslib_manda_carayo", "mslib_1234", "mslib_180", "mslib_boomer", "mslib_expansion", "mslib_gilligan", "mslib_lizard", "mslib_pivot"];
+pub const REVIEWED: &[&str] = &["mslib_alligator_charlis", "mslib_alligator_eiv", "mslib_manda_carayo", "mslib_1234", "mslib_180", "mslib_boomer", "mslib_expansion", "mslib_gilligan", "mslib_lizard", "mslib_pivot",
+    // lane K38 (4 Nov 2026, decision #202): the systems lane B held only on the opposite-signal question, settled by #184 (MetaStock
+    // reverses); formulas re-read against the source text, independent check authors/titles-1030/K38w/mslib_ref.py.
+    "mslib_fierro", "mslib_fierrando", "mslib_bb_rsi", "mslib_combi", "mslib_presario", "mslib_cml", "mslib_cruce_dorado", "mslib_forman", "mslib_demark_seq"];
 pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 #[allow(dead_code)]
 fn _exec_type_check(e: Exec) -> Exec { e }

@@ -7,6 +7,11 @@
 use crate::connors::{Ctx, Leg, ParamDef, Params, Status, StrategyDef, Trade};
 
 pub const BOOK: &str = "ataa";
+/// Admitted ids (lane K38, decision #202; reference authors/titles-1030/K38w/ataa_ref.py). ataa_moon is NOT admitted: the
+/// source's stop-and-reverse is its AUD futures test, and the same page says "The Full Moon has been found to be Bullish for
+/// the Stockmarket" (Dec 1990 p.11), so the coded direction contradicts the source on an index.
+pub const REVIEWED: &[&str] = &["ataa_coppock", "ataa_ma3_5_15_30"];
+pub fn reviewed(id: &str) -> bool { REVIEWED.contains(&id) }
 
 fn mk(dir: f64, i: usize, px: f64, kind: &'static str) -> Trade {
     Trade { dir, legs: vec![Leg { i, px, w: 1. }], exit_i: i, exit_px: px, reason: String::new(), entry_kind: kind, signal_i: i, open: false, exits: vec![] }
@@ -69,7 +74,7 @@ pub fn catalogue() -> Vec<StrategyDef> {
           "Book test: AUD/USD futures (IMM), chart Feb-Aug 1990; 'hypothetical ... slippage, margin calls and brokerage have not been factored'. Comparison in the same article: best 7-day EMA price-penetration system 13 wins / 24 losses, net -0.42 points. No AUD futures data in the vault: run on the indices (instrument swap). Related but different: ctcn_moon (Pugh: buy full, sell new, at the open).",
           crate::connors::claim("16 (8 win / 8 loss)", "50%", "+0.32 pts (gain/loss ratio 1.61)", "", "AUD/USD IMM futures, 1990 (chart Feb-Aug)")),
         d("ataa_ma3_5_15_30", "Three moving averages 5/15/30: long after the 5 then the 15 cross above the 30, out when the 5 crosses the 15 (Vic Nevill)", "Nov 1998 · Moving Averages (p.5-8)", "Long/Short", Live,
-          &["E|\"probably the most popular is the 5, 15, 30 period moving average. Using this you would go long after firstly, the 5 line and secondly, the 15 line, have crossed from below to above the 30 line. You would go short when the reverse occurred.\" (Nov 1998 p.8): long when the 15 crosses above the 30 while the 5 is already above it; short mirrored",
+          &["E|\"probably the most popular is the 5, 15, 30 period moving average. Using this you would go long after firstly, the 5 line and secondly, the 15 line, have crossed from below to above the 30 line. You would go short when the reverse occurred.\" (Nov 1998 p.8): long when the 15 crosses above the 30 while the 5 is already above it (above it on the period before as well: the 5 crossed first; both crossing in the same period is not the stated order); short mirrored; averages equal up to rounding are a tie, not a cross",
             "X|\"you would close a long position at the first cross down, that is, when the 5 crosses below the 15 and close a short position at the first cross up, that is, when the 5 crosses above the 15\" (p.8)",
             "F|Simple moving averages of the close (the article's MOVAVS chart, p.7) on weekly bars (the article's only example uses 5 and 30 week averages, p.6-7); p.daily=1 (labelled option) = daily bars",
             "F|Signals on the week's close are filled at the next week's first open [book silent]; a new entry needs a new 15/30 cross (\"don't go long until all moving averages are telling you to go long\")"],
@@ -143,6 +148,10 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             };
             let sma = |n: usize| crate::connors::sma(&pc, n.max(1));
             let (a, b, c) = (sma(g("a").round() as usize), sma(g("b").round() as usize), sma(g("c").round() as usize));
+            // lane K38: averages equal up to float noise (1e-12 relative) are equal. On tick-priced series two averages tie exactly
+            // in exact arithmetic, and the running sums put a rounding-error sign on the tie; a tie is no cross. NaN compares false.
+            let eq = |p: f64, q: f64| p.is_finite() && q.is_finite() && (p - q).abs() <= 1e-12 * p.abs().max(q.abs());
+            let (lt, le) = (move |p: f64, q: f64| p < q && !eq(p, q), move |p: f64, q: f64| p <= q || eq(p, q));
             let mut out = vec![];
             let mut cur: Option<Trade> = None;
             for k in 1..pc.len() {
@@ -151,7 +160,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 if t < from { continue; }
                 let px = x.o[t];
                 if let Some(tr) = cur.as_ref() {
-                    let out_sig = if tr.dir > 0. { a[k] < b[k] && a[k - 1] >= b[k - 1] } else { a[k] > b[k] && a[k - 1] <= b[k - 1] };
+                    let out_sig = if tr.dir > 0. { lt(a[k], b[k]) && le(b[k - 1], a[k - 1]) } else { lt(b[k], a[k]) && le(a[k - 1], b[k - 1]) };
                     if out_sig {
                         let mut tr = cur.take().unwrap();
                         tr.exit_i = t; tr.exit_px = px; tr.signal_i = t - 1;
@@ -160,8 +169,9 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                     }
                 }
                 if cur.is_none() {
-                    let up = b[k] > c[k] && b[k - 1] <= c[k - 1] && a[k] > c[k];
-                    let dn = b[k] < c[k] && b[k - 1] >= c[k - 1] && a[k] < c[k];
+                    // "firstly, the 5 line and secondly, the 15 line": the 5 is beyond the 30 already on the period before the 15 crosses
+                    let up = lt(c[k], b[k]) && le(b[k - 1], c[k - 1]) && lt(c[k], a[k]) && lt(c[k - 1], a[k - 1]);
+                    let dn = lt(b[k], c[k]) && le(c[k - 1], b[k - 1]) && lt(a[k], c[k]) && lt(a[k - 1], c[k - 1]);
                     if up || dn { let mut tr = mk(if up { 1. } else { -1. }, t, px, "open"); tr.signal_i = t - 1; cur = Some(tr); }
                 }
             }
@@ -205,6 +215,13 @@ fn coppock_monthly(x: &Ctx, r1: usize, r2: usize, w: usize) -> (Vec<f64>, Vec<us
         (0..w).map(|j| s[m + 1 - w + j] * (j + 1) as f64).sum::<f64>() / wsum }).collect();
     (cop, first)
 }
+
+// Instrument admission (lane K38, 4 Nov 2026, decision #202).
+pub const ADMISSION: crate::instrument_policy::Admission = crate::instrument_policy::Admission {
+    reviewed: |def: &crate::connors::StrategyDef| def.book == "ataa" && crate::books::ataa::reviewed(def.id),
+    label: "Colin Nicholson tested the Coppock Indicator on the DJIA and the All Ordinaries (monthly); Vic Nevill's 5/15/30 example is a weekly NAB chart with no statistics; runs on indices, ETFs and stocks, US and India, are a declared application, not the authors' test.",
+    basis: "ATAA Newsletter Mar 1995 p.4 and May 1995 p.6 (Coppock), ATAA Journal Nov 1998 pp.5-8 (moving averages); OCR re-read by lane H1 (4 Nov 2026); independent check authors/titles-1030/K38w/ataa_ref.py",
+};
 
 #[cfg(test)]
 mod tests {
