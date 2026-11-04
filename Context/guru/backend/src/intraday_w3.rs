@@ -13,7 +13,8 @@ pub fn held(id: &str) -> bool { HELD.contains(&id) }
 /// Decision #177a (lane M1, 3 Nov 2026): on the SPY/SPX overlap these minute rules lose on the tradable SPY and win on the
 /// cash index (stale component prints). The minute result is published on SPY only, the mirror image of intraday_w2b::SPX.
 pub const SPY: &[&str] = &["ats_15min_adx_breakout", "ptjdt_adx15_breakout", "hfm_news", "hfm_news_long", "hfm_news_short",
-    "jb30d_gap_pct", "tdnmtt_trap_short", "tdperl_tdline_short", "putg_inside_day", "mhp_ftse_3_20040804"];
+    "jb30d_gap_pct", "tdnmtt_trap_short", "tdperl_tdline_short", "putg_inside_day", "mhp_ftse_3_20040804",
+    "jmls_bar_breakout" /* lane K39 (EP2 15-minute bars): SPX compounded > 10x SPY's (test c) */];
 pub fn spy_id(id: &str) -> bool { SPY.contains(&id) }
 /// Decision #177b: SPX-point minute rules that fail the tradable check on SPY with the points scaled by SPX/SPY (sign flip:
 /// 23; SPX average trade >3x and >0.10 pt, or SPX compounded >10x: 13). SPX is their only ticker, so nothing is published.
@@ -117,7 +118,7 @@ mod tests {
         use crate::instrument_policy as ip;
         let cat = crate::connors::catalogue();
         fn find<'a>(cat: &'a [crate::connors::StrategyDef], id: &str) -> &'a crate::connors::StrategyDef { cat.iter().find(|d| d.id == id).unwrap_or_else(|| panic!("{id}")) }
-        assert_eq!((SPY.len(), SPX_HELD.len()), (10, 36));
+        assert_eq!((SPY.len(), SPX_HELD.len()), (11, 36)); // + jmls_bar_breakout (K39)
         for id in SPY { // #177a: SPY only; the cash-index minute results are withdrawn with the card reason
             let d = find(&cat, id);
             assert!(ip::intraday_p1(d) && !ip::intraday_w1_spx_id(id), "{id}");

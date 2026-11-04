@@ -230,8 +230,8 @@ fn bernstein_g1_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Op
 /// No stock or other ETF has minute data, so those stay held. Evidence: data-survey/PHASE1-REPORT.md.
 pub const INTRADAY_P1:&[&str]=&["ss_momentum_pinball","ss_80_20","ats_15min_adx_breakout","ptjdt_adx15_breakout"];
 pub const INTRADAY_P1_TICKERS:&[&str]=&["SPY","SPX","NIFTY 50","NIFTYBANK"];
-pub fn intraday_p1_id(id:&str)->bool {INTRADAY_P1.contains(&id) || intraday_w1_id(id) || crate::intraday_w2b::id(id) || crate::intraday_w3::id(id)} // + intraday wave 2b, wave 3
-pub fn intraday_p1(def:&StrategyDef)->bool {intraday_p1_id(def.id) && !crate::intraday_w3::held(def.id) && (matches!(def.book,"ss"|"ats"|"ptjdt"|"btp"|"hfm"|"tdnmtt"|"baboops"|"tcdt"|"lwdg2"|"lwlts"|"jb30d") || crate::intraday_w2b::book(def.book) || crate::intraday_w3::book(def.book))} // + intraday wave 2b, wave 3
+pub fn intraday_p1_id(id:&str)->bool {INTRADAY_P1.contains(&id) || intraday_w1_id(id) || crate::intraday_w2b::id(id) || crate::intraday_w3::id(id) || crate::intraday_ep::id(id)} // + intraday wave 2b, wave 3, EP (K39)
+pub fn intraday_p1(def:&StrategyDef)->bool {intraday_p1_id(def.id) && !crate::intraday_w3::held(def.id) && (matches!(def.book,"ss"|"ats"|"ptjdt"|"btp"|"hfm"|"tdnmtt"|"baboops"|"tcdt"|"lwdg2"|"lwlts"|"jb30d") || crate::intraday_w2b::book(def.book) || crate::intraday_w3::book(def.book) || crate::intraday_ep::book(def.book))} // + intraday wave 2b, wave 3, EP (K39)
 // ---- intraday wave 1 (claude/intraday-w1, 2026-10-24): same block, more day-trade rules on the minute path
 /// No fixed amount: run on all four minute tickers (declared application).
 pub const INTRADAY_W1:&[&str]=&["ats_10pct_oops","ats_wide_range_gap","btp2_10pct_oops","btp2_10pct_oops_long","btp2_10pct_oops_short",
@@ -241,7 +241,7 @@ pub const INTRADAY_W1:&[&str]=&["ats_10pct_oops","ats_wide_range_gap","btp2_10pc
 pub const INTRADAY_W1_SPX:&[&str]=&["hfm_vix","baboops_oops","lwlts_mon_vb","jb30d_gap_tick"];
 pub fn intraday_w1_id(id:&str)->bool {INTRADAY_W1.contains(&id) || intraday_w1_spx_id(id)}
 pub fn intraday_w1_spx_id(id:&str)->bool {INTRADAY_W1_SPX.contains(&id) || crate::books::tcdt::same_day_orb(id) || crate::intraday_w2b::spx_id(id)} // + intraday wave 2b
-pub fn intraday_tickers(id:&str)->&'static [&'static str] {if crate::intraday_w3::spx_held(id) {&[]} else if crate::intraday_w3::spy_id(id) {&["SPY"]} else if intraday_w1_spx_id(id) {&["SPX"]} else {INTRADAY_P1_TICKERS}} // #177: SPY-only / SPX withheld
+pub fn intraday_tickers(id:&str)->&'static [&'static str] {if crate::intraday_w3::spx_held(id) {&[]} else if crate::intraday_w3::spy_id(id) {&["SPY"]} else if intraday_w1_spx_id(id) {&["SPX"]} else if crate::intraday_ep::us_id(id) {&["SPY","SPX"]} else {INTRADAY_P1_TICKERS}} // #177: SPY-only / SPX withheld; EP US-clock rules
 const INTRADAY_W1_SPX_BASIS:&str="Intraday wave 1 (2026-10-24): the book's same-day rule is run on real SPX 1-minute bars (cash index, 2008-01..2026-08; rules that read the open start 2014-01, where the daily SPX open is real), cleaned by library/intraday/m1_normalise.py: padded, no-open and stale-open minutes are removed and never fill; excluded days make no trade. The book's levels are fixed S&P 500 points, so the rule runs only on SPX, at those printed points; on today's index levels they are much smaller relative to price than in the book's years. The book traded S&P 500 futures, so SPX runs are a declared application; cash-index shorts are hypothetical exposure. Stops and entries fill at the level, or at the minute's open when the minute opens through it; conventions for a minute that reaches two levels are stated in the notes. Independent Python ledgers matched the engine with zero mismatches. No book performance is reproduced.";
 // ---- end intraday wave 1
 const INTRADAY_P1_BASIS:&str="Intraday phase 1 (2026-10-24): the book's same-day rule is run on real 1-minute bars (SPY 2000-01..2025-10, SPX cash index 2008-01..2026-08, NIFTY 50 2008-01..2026-10, NIFTYBANK 2010-03..2026-04), cleaned by library/intraday/m1_normalise.py: padded, no-open and stale-open minutes are removed and never fill; outage, late-start and truncated days are excluded and make no trade. Stops fill at the level, or at the minute's open when the minute opens through it. The book traded S&P and other futures (and stocks for some setups), so SPY, SPX, NIFTY 50 and NIFTYBANK runs are a declared application, not the author's test; cash-index shorts are hypothetical exposure. Conventions for a minute that reaches two levels are stated in the notes. Licence: the SPY 1-minute and NIFTY 2008-2014 sources state no licence (internal research). Independent Python ledgers matched the engine with zero mismatches. No book performance is reproduced.";
@@ -298,6 +298,9 @@ fn intraday_p1_symbol_issue(def:&StrategyDef,ticker:&str,native_stock:bool)->Opt
     if !intraday_p1(def) || (!native_stock && intraday_tickers(def.id).contains(&ticker)) {return None;}
     if intraday_w1_spx_id(def.id) && (native_stock || INTRADAY_P1_TICKERS.contains(&ticker)) { // intraday wave 1
         return Some(Issue{status:"needs_data",note:format!("This day-trade rule uses the book's fixed S&P 500 point levels, which only mean what the book meant on the S&P 500 itself, and it needs real 1-minute bars. It runs on SPX only; {ticker} would need an invented conversion, so no result is published.")});
+    }
+    if crate::intraday_ep::us_id(def.id) && !native_stock && INTRADAY_P1_TICKERS.contains(&ticker) { // EP (K39)
+        return Some(Issue{status:"needs_data",note:format!("This rule's time filter is a US Eastern clock time and the book gives no NSE equivalent, so it runs on the US minute series only (SPY, SPX); {ticker} would need an invented time mapping, so no result is published.")});
     }
     Some(Issue{status:"needs_data",note:format!("This day-trade rule needs real 1-minute bars to know which price came first during the day. The vault holds cleaned 1-minute bars only for SPY, SPX, NIFTY 50 and NIFTYBANK; {ticker} has none, so no result is published.")})
 }
@@ -1629,7 +1632,8 @@ mod tests {
             // tdperl: tdperl_tdline_short is admitted by the intraday block on 1-minute bars (intraday wave 3, 3 Nov 2026).
             // agtsic: the lane C2 special block admits the eight daily rules; ADMISSION_BREADTH admits the K25 breadth-filtered RSI ids.
             // phbttk: phbt's Headley entry admits the Percent R ids; ADMISSION_K30 admits the shipped System Tester records (K30, 3 Nov 2026).
-            const SHARED:&[&str]=&["agtsic","bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","phbttk","putg","tcdt","tdnmtt","tdperl"];
+            // acbff, atm04: the intraday block admits their N-minute-bar ids (intraday_ep, lane K39, 4 Nov 2026).
+            const SHARED:&[&str]=&["acbff","agtsic","atm04","bab80","bllstr","ccl07","covel","hbqts","hbiab","jcsis","jkbwts","upg18","kftsm","lkqts","mhpst","phbttk","putg","tcdt","tdnmtt","tdperl"];
             for d in all.iter().filter(|d|books.contains(&d.book) && !SHARED.contains(&d.book) && reviewed_cash_rule(d)!=(a.reviewed)(d)) {other.push((d.book,d.id));}
             for d in admitted {
                 assert_eq!(admission(d).map(|x|x.label),Some(a.label),"{}",d.id);
@@ -1838,7 +1842,7 @@ mod tests {
         let all:Vec<StrategyDef>=atm03::catalogue().into_iter().chain(atm04::catalogue()).chain(atmmisc::catalogue()).chain(atmrc::catalogue()).chain(atmcsa::catalogue()).collect();
         let mut want:Vec<&str>=atm03::REVIEWED.iter().chain(atm04::REVIEWED.iter()).chain(atmmisc::REVIEWED.iter()).chain(atmrc::REVIEWED.iter()).chain(atmcsa::REVIEWED.iter()).copied().collect();
         for id in ["atm03_gap_closer","atm04_blues"] {assert!(want.contains(&id) && held_reason(id).is_none(),"{id}");} // D1-03 fold fix (decision 186)
-        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)&&!intraday_p1(d)).map(|d|d.id).collect(); // atm04_60min: intraday EP (K39), own test
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);
@@ -2073,7 +2077,7 @@ mod tests {
         let all:Vec<StrategyDef>=acbff::catalogue().into_iter().collect();
         let mut want:Vec<&str>=acbff::REVIEWED.iter().copied().collect();
         assert!(!want.contains(&"acbff_forever_long") && held_reason("acbff_forever_long").is_some_and(|r|r.starts_with("Held: ")));
-        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)).map(|d|d.id).collect();
+        let mut admitted:Vec<&str>=all.iter().filter(|d|reviewed_cash_rule(d)&&!intraday_p1(d)).map(|d|d.id).collect(); // Ch 31-39 minute ids: intraday EP (K39), own test
         admitted.sort();want.sort();assert_eq!(admitted,want);
         for d in all.iter().filter(|d|want.contains(&d.id)) {
             assert_eq!(policy(d).requirement,"index_etf_or_stock","{}",d.id);assert!(policy(d).market_adaptation);

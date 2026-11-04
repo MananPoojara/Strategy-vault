@@ -73,9 +73,10 @@ pub fn catalogue() -> Vec<StrategyDef> {
           "AIQ 'esa' = exponential average, 21 days per the text [B]. Entry at the close of the signal day [B: the article does not name the entry order]. One position at a time. Book: S&P 500 index +0.55% per trade (no count given); stocks 2,014 trades +2.33%.",
           c("n/a", "n/a", "+0.55% (S&P 500 index)", "5 days", "1/1/1999-7/15/2003")),
         d("atm04_60min", "60-minute breakout (first-hour range, third 30-minute bar)", "TSL Jan 2004 (stocks + SPY/QQQ)", "Long/Short",
-          NeedsData("30-minute bars (first-hour high/low and the close of the third 30-minute bar)"), false,
-          &["E|\"Buy if the closing price of the third 30-minute bar is above the high of the first 60 minutes of the day\"; short below the low", "X|\"Exit all positions on signals in the opposite direction or at the end of the day.\""],
-          "Intraday data not in the vault. Book: SPY+QQQ 10/2001-10/2003, 892 trades, +19.88%.", None),
+          Live, false,
+          &["E|\"Buy if the closing price of the third 30-minute bar is above the high of the first 60 minutes of the day\"; short below the low (p.70); stock column p.50: \"After the first 60 minutes have ended, if the closing price of the current 30-minute bar is above the high of the range, we will go long on the next open ... There will be only one trade per day.\"",
+            "X|\"Exit all positions on signals in the opposite direction or at the end of the day.\" (p.70); \"A signal in the opposite direction is used to exit the current position. All open positions are exited at the close of the day.\" (p.50)"],
+          "[intraday EP, K39] 30-minute bars built from real 1-minute bars (SPY, SPX, NIFTY 50, NIFTYBANK; NIFTY 50 days from 2026-08-11 skipped); first hour = 9:30-10:30 ET (9:15-10:15 on NSE). Default p.third=0: the first 30-minute close outside the range from the third bar on enters at the next bar's open (the stock column's rule, which the futures column refers to); p.third=1: only the third bar's close. One trade a day; an opposite close exits at the next bar's open, else out on the day's last close (the book used 4:15 pm SPY closes; the vault's minutes end at 4:00 pm). No costs (book: $0.01 per share). Book: SPY+QQQ 10/2001-10/2003 30-minute bars, 892 trades, 54.60% winners, +0.05% per trade, 102 trades exited by the opposite signal; SPY only here (no QQQ minutes).", None),
         d("atm04_mtpg", "Monthly top percent gainers (MTPG) / losers (MTPL) rotation", "TSL Jul-Aug 2004", "Long",
           NeedsData("the 18-stock Active Trader portfolio (cross-sectional monthly ranking); the engine runs one instrument at a time"), false,
           &["E|\"Buy the top-five percent-gaining stocks at the opening of the second trading day of each month\" (MTPL: the five worst)", "X|\"Sell those stocks ... that are no long among the top-five\""],
@@ -101,7 +102,8 @@ pub fn family_of(id: &str) -> Option<(&'static str, &'static str, &'static str)>
         "atm04_glitch" | "atm04_rsi_agita" | "atm04_blues" | "atm04_wma" | "atm04_vomund" => ("atm04_counter", "Active Trader 2004 · countertrend", v),
         "atm04_monthly_bo" | "atm04_cci_weekly" | "atm04_55_trail" | "atm04_55_simple" | "atm04_oddball" => ("atm04_trend", "Active Trader 2004 · trend", v),
         "atm04_qqq_crash" | "atm04_four_pct" => ("atm04_altucher", "Altucher (Trade Like a Hedge Fund)", v),
-        "atm04_60min" | "atm04_mtpg" | "atm04_lazy_gainer" | "atm04_other" => ("atm04_other", "Active Trader 2004 · not testable / needs data", v),
+        "atm04_60min" => ("atm04_intraday", "Active Trader 2004 · intraday (1-minute bars)", v), // intraday EP block (K39)
+        "atm04_mtpg" | "atm04_lazy_gainer" | "atm04_other" => ("atm04_other", "Active Trader 2004 · not testable / needs data", v),
         _ => return None,
     })
 }
@@ -120,7 +122,8 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "atm04_rsi_agita" => vec![p("n", "RSI length", 20., 5., 50., 1.), p("exit", "Exit when RSI crosses above", 55., 40., 70., 1.), p("w", "Leg weight (fraction of equity)", 0.08, 0.01, 1., 0.01)],
         "atm04_blues" => vec![p("n", "Lowest close lookback", 125., 10., 250., 5.), p("add", "Add when close is this % below the previous entry", 50., 10., 80., 5.), p("tgt", "Profit target % per position", 80., 10., 200., 5.), p("w", "Position weight (fraction of equity)", 0.09, 0.01, 1., 0.01)],
         "atm04_vomund" => vec![p("vn", "Volume average length", 21., 5., 50., 1.), p("vk", "Volume multiple", 2., 1., 5., 0.25), p("rn", "RSI length", 14., 2., 30., 1.), p("rl", "RSI below", 30., 10., 50., 1.), p("hold", "Days held after entry", 5., 1., 20., 1.)],
-        "atm04_60min" | "atm04_mtpg" | "atm04_lazy_gainer" | "atm04_oddball" | "atm04_other" => vec![],
+        "atm04_60min" => vec![p("third", "Entry bar: 0 = any 30-minute close after the first hour (the stock column's rule, p.50), 1 = the third 30-minute bar only (the entry-rule line)", 0., 0., 1., 1.)], // intraday EP block (K39)
+        "atm04_mtpg" | "atm04_lazy_gainer" | "atm04_oddball" | "atm04_other" => vec![],
         _ => return None,
     })
 }
@@ -307,10 +310,38 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
             }
             out
         }
-        "atm04_60min" | "atm04_mtpg" | "atm04_lazy_gainer" | "atm04_oddball" | "atm04_other" => vec![],
+        "atm04_60min" => min60(x, from, to, g("third") >= 0.5), // intraday EP block (K39)
+        "atm04_mtpg" | "atm04_lazy_gainer" | "atm04_oddball" | "atm04_other" => vec![],
         _ => return None,
     })
 }
+
+// ---- intraday EP block (lane K39, 4 Nov 2026, decision #202)
+/// 60-minute breakout (TSL Jan 2004, futures column p.70 with the stock column p.50 it refers to) on 30-minute bars built
+/// from the 1-minute file (intraday_ep::nbars, session-aligned). First-hour range = the first two bars. From the third bar
+/// on (only the third with `third`), the first close above the range high buys, below the low sells short, at the next
+/// bar's open ("we will go long on the next open"); one trade a day. A close on the other side of the range exits at the
+/// next bar's open ("A signal in the opposite direction is used to exit the current position"); else out at the day's close.
+fn min60(x: &Ctx, from: usize, to: usize, third: bool) -> Vec<Trade> {
+    let mut bk = crate::intraday_ep::Book::default();
+    for i in from..=to {
+        let Some((open, _, _, b)) = crate::intraday_ep::day_bars(x, i, 30) else { continue };
+        if b.len() < 3 || b[1].e != open + 60 { continue; } // the first hour must be there
+        let (h60, l60) = (b[0].h.max(b[1].h), b[0].l.min(b[1].l));
+        let (mut traded, mut pend) = (false, 0.0);
+        for (j, z) in b.iter().enumerate().skip(2) {
+            match pend { 2.0 => bk.exit(i, z.o, "opposite signal"), 0.0 => {} d => { bk.enter(d, i, z.o, "open", ""); traded = true; } }
+            pend = 0.0;
+            let nx = j + 1 < b.len();
+            let d = bk.dir();
+            if d > 0.0 && z.c < l60 || d < 0.0 && z.c > h60 { pend = 2.0; }
+            else if d == 0.0 && !traded && (!third || j == 2) { pend = if z.c > h60 { 1.0 } else if z.c < l60 { -1.0 } else { 0.0 }; }
+            if !nx { bk.exit(i, z.c, "end of day"); }
+        }
+    }
+    bk.out
+}
+// ---- end intraday EP block
 
 #[cfg(test)]
 mod tests {
