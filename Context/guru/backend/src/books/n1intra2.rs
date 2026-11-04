@@ -69,7 +69,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
             pd("f1", "f1", 0.45, 0., 2., 0.05), pd("f2", "f2", 0.1, 0., 1., 0.05), pd("xdiv", "xdiv", 3., 1., 10., 1.)],
         "vkdcs_daycare" => vec![pd("flags", "Flag lines: 0 = TradeStation literal (one assignment), 1 = two assignments (intent)", 0., 0., 1., 1.),
             pd("thru", "Fake-through beyond the trigger (S&P points; 105 points)", 1.05, 0.05, 20., 0.05), pd("stop", "Stop from entry (S&P points; 160 points)", 1.6, 0.05, 50., 0.05)],
-        "kftsm_zones" => vec![pd("lag", "Zones from: 0 = yesterday's daily bar (the text), 1 = the previous session's zones (TradeStation's avg[1] on a daily Data2)", 0., 0., 1., 1.)],
+        "kftsm_zones" => vec![pd("lag", "Zones from: 1 = the previous session's zones (the printed code's avg[1] on a daily Data2, as TradeStation runs it; default, decision 221), 0 = yesterday's daily bar (the CD text)", 1., 0., 1., 1.)],
         "vdso_supreme_order" => vec![pd("neutral", "Inside (neutral) bars: 1 = leave stops and the reference bar unchanged (p.7), 0 = advance every bar", 1., 0., 1., 1.)],
         _ => return None,
     })
@@ -415,6 +415,11 @@ mod tests {
         assert_eq!(s.n, 2);
     }
     #[test]
+    fn kftsm_zones_default_is_the_printed_code_lag() {
+        // decision 221: avg[1]/top[1]/bot[1] on the 10-minute series = the previous session's zones (lag=1) by default
+        assert_eq!(params("kftsm_zones").unwrap()[0].def, 1.0);
+    }
+    #[test]
     fn supreme_order_stop_flips_twice_inside_one_minute_path() {
         // long with the sell stop at 9.99 (reference bar 10..11, tick 0.01): a minute 10.5 -> 9.5 -> 11.5 -> 11 reverses short at
         // 9.99 and back long at 11.01 (the new buy stop one tick above the reference high)
@@ -440,7 +445,7 @@ mod tests {
             let mut x = Ctx::new(&rows, &rows, &[]);
             x.minutes = Some(Box::leak(Box::new(crate::intraday::Minutes::load(&std::env::var("VAULT_M1_DIR").unwrap(), t).unwrap())));
             let from = rows.partition_point(|r| r.date.as_str() < x.minutes.unwrap().first());
-            let opts: &[(&str, &[(&str, f64)])] = &[("fot08_fib_pivots", &[]), ("sgbic_breakout", &[]), ("kftsm_zones", &[]), ("kftsm_zones", &[("lag", 1.)]),
+            let opts: &[(&str, &[(&str, f64)])] = &[("fot08_fib_pivots", &[]), ("sgbic_breakout", &[]), ("kftsm_zones", &[]), ("kftsm_zones", &[("lag", 0.)]),
                 ("vdso_supreme_order", &[]), ("vdso_supreme_order", &[("neutral", 0.)]), ("rsrl_rlevels", &[]), ("vkdcs_daycare", &[]), ("vkdcs_daycare", &[("flags", 1.)])];
             for (id, kv) in opts {
                 if ["rsrl_rlevels", "vkdcs_daycare"].contains(id) && t != "SPX" { continue; }

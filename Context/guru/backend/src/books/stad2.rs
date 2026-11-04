@@ -927,7 +927,7 @@ fn defs_c() -> Vec<Def> {
         "E|Fast > Slow and flat: Buy('Long') next bar at BuyStop stop; long: High < Fast and Trending -> Buy('Longer') next bar at Fast + 1 point stop (pyramid) (short mirror)",
         "X|Long: ExitLong next bar at Slow - 1 point stop; short: ExitShort next bar at Slow + 1 point stop",
         "F|Maximum 3 entries per position (prose p.76; Vol 9 code CurrentContracts < 3) - param maxent"],
-      "Vol 13 ch.7 p.75-86. Book (optimised): NXTL 47 trades 51%, PF 2.87; bonds 229 trades 46%.", ("stad_luxor", "LUXOR", "Vol 13")),
+      "Vol 13 ch.7 p.75-86. Book (optimised): NXTL 47 trades 51%, PF 2.87; bonds 229 trades 46%. ADX length: the signal listing's own input line prints ADXLength(12); the Strategy Inputs table (p.78) sets 15, which is the value TradeStation applies (strategy inputs override the signal's defaults) and the testing protocol's default ('ADXLength = 15, testing from 7 to 21', p.81), so the default is 15; p.adxlen=12 gives the listing's default (decision 221).", ("stad_luxor", "LUXOR", "Vol 13")),
     d("stad13_cbi", "Currency/Bonds/Dollar Index (revisited)", "Vol 13 · Revisited", "Long/Short",
       NeedsData("Needs bond futures (Data2) and the US Dollar Index (Data3) aligned to a currency future; none in the vault."),
       &["E|Fast rising, Medium > Slow, bonds' XAverage(50) rising and the Dollar Index's XAverage(50) falling: buy stop High + ATR/2 for 5 bars (Vol 13 p.90 code)", "X|Medium crosses below Slow: ExitLong next bar at market"],
