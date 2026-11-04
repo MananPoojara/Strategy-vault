@@ -4,8 +4,21 @@
 
 /// Rules converted in this wave that run on all four minute tickers (SPY, SPX, NIFTY 50, NIFTYBANK): no fixed amount.
 pub const IDS: &[&str] = &["tdperl_tdline_short"];
-pub fn id(id: &str) -> bool { IDS.contains(&id) }
-pub fn book(b: &str) -> bool { b == "tdperl" }
+pub fn id(id: &str) -> bool { IDS.contains(&id) || K38_SPX.contains(&id) || K38_US.contains(&id) }
+pub fn book(b: &str) -> bool { matches!(b, "tdperl" | "cpgap" | "acbff") }
+// ---- lane K38 block (4 Nov 2026, decision #202; authors/titles-1030/K38.tsv, K38w/check177.out)
+/// Capstone gap systems at the book's E-mini S&P points: SPX only (intraday_w1_spx_id), like intraday_w2b::SPX.
+pub const K38_SPX: &[&str] = &["cpgap_gap_fill_1", "cpgap_gap_fill_2", "cpgap_gap_fill_combo", "cpgap_gap_continue_1",
+    "cpgap_gap_continue_2", "cpgap_gap_continue_2b"];
+pub fn k38_spx(id: &str) -> bool { K38_SPX.contains(&id) }
+/// #177b on tradable SPY with the points scaled by the trailing 250-day SPX/SPY ratio (2014-01-02..2025-10-21): the average
+/// trade changes sign, so the SPX minute result is withheld (nothing is published).
+pub const K38_SPX_HELD: &[&str] = &["cpgap_gap_fill_1", "cpgap_gap_fill_2", "cpgap_gap_continue_2", "cpgap_gap_continue_2b"];
+/// The e-mini S&P 1-minute rule with no fixed amount: the US minute series only (its clock window is the US session); SPY and SPX
+/// passed the #177 tests (same sign, no 3x / 10x gap).
+pub const K38_US: &[&str] = &["acbff_mega_1min"];
+pub fn k38_us(id: &str) -> bool { K38_US.contains(&id) }
+// ---- end lane K38 block
 /// Minute-path rules of waves 1/phase 1 where more than 5% of the trades fall in a minute that reaches two levels without
 /// opening through exactly one of them (order decided by a convention, not by the data): withheld (gate row says how many).
 pub const HELD: &[&str] = &["ats_wide_range_gap", "btp2_wide_range_exhaustion_gap_short", "hfm_vix", "ss_80_20"];
@@ -24,7 +37,7 @@ pub const SPX_HELD: &[&str] = &["baboops_oops", "jb30d_gap_tick", "tcdt_2bnr_m16
     "tcdt_nr7_p80", "tcdt_ws4_m160", "tcdt_ws4_m80", "tcdt_ws7_m160", "tcdt_ws7_m80",
     "jkbwts_saidenberg30", "tcdt_ctl_p160", "tcdt_ctl_p80", "tcdt_doji_m160", "tcdt_doji_m80", "tcdt_gap_orb", "tcdt_id_m80",
     "tcdt_idnr4_p160", "tcdt_idnr4_p80", "tcdt_nr4_m160", "tcdt_nr4_m80", "tcdt_nr4_p80", "tcdt_quad_orb"];
-pub fn spx_held(id: &str) -> bool { SPX_HELD.contains(&id) }
+pub fn spx_held(id: &str) -> bool { SPX_HELD.contains(&id) || K38_SPX_HELD.contains(&id) } // + lane K38
 
 #[cfg(test)]
 mod tests {
@@ -148,4 +161,47 @@ mod tests {
         // unflagged SPX-point rules keep SPX
         for id in ["tcdt_ctl_p300", "bab80_daytrade", "upg18_traders_dream", "lwlts_mon_vb"] { assert!(ip::check(find(&cat, id), "SPX", false).is_none(), "{id}"); }
     }
+    // ---- lane K38 tests
+    #[test]
+    fn k38_minute_rules_admission_tickers_and_gate() {
+        use crate::instrument_policy as ip;
+        let cat = crate::connors::catalogue();
+        for id in K38_SPX.iter().chain(K38_US) {
+            let d = cat.iter().find(|d| d.id == *id).unwrap_or_else(|| panic!("{id}"));
+            assert!(ip::intraday_p1(d) && ip::reviewed_cash_rule(d) && ip::held_reason(id).is_none(), "{id}");
+            assert_eq!(ip::policy(d).requirement, "declared_index_timing", "{id}");
+            let want: &[&str] = if spx_held(id) { &[] } else if k38_us(id) { &["SPY", "SPX"] } else { &["SPX"] };
+            assert_eq!(ip::intraday_tickers(id), want, "{id}");
+            for t in ip::INTRADAY_P1_TICKERS { assert_eq!(ip::check(d, t, false).is_none(), want.contains(t), "{id} {t}"); }
+            assert!(ip::check(d, "QQQ", false).is_some() && ip::check(d, "AAPL", true).is_some(), "{id}");
+            let g = crate::gate::get(id).unwrap();
+            assert_eq!(g.verdict, if spx_held(id) { "withheld" } else { "unverified" }, "{id}");
+            assert!(g.reason.contains("#202") && (!spx_held(id) || g.reason.contains("#177b")), "{id}");
+        }
+        for id in K38_SPX_HELD { assert!(ip::check(cat.iter().find(|d| d.id == *id).unwrap(), "SPX", false).unwrap().note.contains("#177b"), "{id}"); }
+        let mega = cat.iter().find(|d| d.id == "acbff_mega_1min").unwrap();
+        assert!(ip::check(mega, "NIFTY 50", false).unwrap().note.contains("US e-mini S&P session"));
+        assert!(cat.iter().find(|d| d.id == "cpgap_gap_fill_rank").is_some_and(|d| !ip::intraday_p1(d)));
+    }
+    #[test]
+    fn k38_mega_system_reverses_on_the_limits() {
+        // minutes 09:30-09:51; wicks 0.5 until 09:44 -> limits +-0.5 at 09:45; long at 99.5, reversed short at the 09:46 open
+        // + g (0.44), out at the day's last close
+        let mut v: Vec<String> = (570..585).map(|m| format!("{:02}:{:02},100,100.5,99.5,100", m / 60, m % 60)).collect();
+        v.push("09:45,100,100.2,99.4,100".into());
+        v.push("09:46,100,100.6,99.9,100".into());
+        for m in 587..592 { v.push(format!("{:02}:{:02},100,100,100,100", m / 60, m % 60)); }
+        let lines: Vec<&str> = v.iter().map(|s| s.as_str()).collect();
+        let r = vec![crate::Row { ticker: "T".into(), date: "2020-01-02".into(), open: 100., high: 100.6, low: 99.4, close: 100., volume: None }];
+        let mut x = Ctx::new(&r, &r, &[]);
+        x.minutes = Some(minutes("mega", &[("2020-01-02", &lines)]));
+        let t = crate::books::acbff::run("acbff_mega_1min", &x, 0, 0, &Params::new()).unwrap();
+        let got: Vec<(f64, f64, f64)> = t.iter().map(|t| (t.dir, t.legs[0].px, t.exit_px)).collect();
+        assert_eq!(got.len(), 2, "{got:?}");
+        assert!(got[0].0 == 1. && (got[0].1 - 99.5).abs() < 1e-9 && (got[0].2 - 100.44).abs() < 1e-9, "{got:?}");
+        assert!(got[1].0 == -1. && (got[1].1 - 100.44).abs() < 1e-9 && got[1].2 == 100., "{got:?}");
+        assert!(!t[0].reason.contains("ambiguous"));
+    }
+    // ---- end lane K38 tests
+
 }

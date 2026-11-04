@@ -534,7 +534,13 @@ pub fn catalogue() -> Vec<StrategyDef> {
         sd!("acbff_six_q66_v2", "Filter indicator · 66% stop · version 2 (Table 44.3)", g42, "Long/Short", Live,
             &["E|\"(six > 0 and five >= 0) or (six = 0 and five > 0) then buy next bar at market\"; mirror (App. p.237)", "X|66% stop; setexitonclose"], SNOTE, cl("897", "54.07%", "$338.39 (net $303,538)", "day", SP)),
         // ---- needs data
-        sd!("acbff_mega_1min", "One-minute 'Mega System' (Table 24.1)", g30, "Long/Short", NeedsData(IDN), &["E|1-minute e-mini S&P bars 8:45-14:55: buy at open-average(o-l,5) limit, sell short at open+average(h-o,5) limit; exit 15:00 (App. p.219)"], "", None),
+        sd!("acbff_mega_1min", "One-minute 'Mega System' (Table 24.1)", g30, "Long/Short", Live,
+            &["F|\"e=(h-o); f=(o-l); g=average(e,5); j=average(f,5);\" on 1-minute bars (Table 24.1, App. p.219)",
+              "E|\"if time >=845 and time < 1455 then buy next bar at o of tomorrow-j limit; ... sell short next bar at o of tomorrow+g limit\": every minute, limits at the next minute's open -/+ the 5-minute averages; an opposite fill reverses (\"Do it all day long\", p.98)",
+              "X|\"if time=1500 then sell next bar at market; ... buy to cover next bar at market\": out at 15:00 CT = the SPX close (the 15:59 ET minute's close; a day's last minute on early-close days) [declared reading: SPX has no later minute]",
+              "F|[Declared application, lane K38, decision #202] Real 1-minute bars of SPY (2000-2025) and SPX (2008-2026) for the book's 1-minute e-mini S&P; no fixed amount. TradeStation bar times are end times: 8:45-14:55 CT = minutes starting 9:44-15:53 ET place the orders. A limit fills when the minute's low (buy) or high (sell) reaches it, at the level. Flat with both limits reached in one minute (only at the day's first fill): both fill in the order of the module's bar path (high first when h-o <= o-l), marked ambiguous minute (decision #175 limit 5%)"],
+            "Book result (Table 24.1, Jan 2002 - 19 Nov 2005, e-mini S&P 1-minute, $5 commission): 222,926 trades, 69.42% profitable, avg $8.26 a trade. The author calls it a 'blueprint for theoretical perfection': 'The problem lies with our recurring touched-but-not-filled issue' (p.100). The vault fills a limit when the minute touches it, as TradeStation does, so the same caveat applies. About 155 trades a day.",
+            cl("222,926", "69.42%", "$8.26 (net of $5)", "2.60 bars", "e-mini S&P 1-minute, Jan 2002 - 19 Nov 2005")),
         sd!("acbff_dowspoo_perp", "Dow-Spoo perpetual (Table 30.1)", g30, "Long/Short", NeedsData(DS), &["E|5-min bars: long if the S&P's net change % since yesterday's close beats the Dow's, else short (App. p.224)"], "", None),
         sd!("acbff_dowspoo_day", "Dow-Spoo basic day trade (Table 30.2)", g30, "Long/Short", NeedsData(DS), &["E|5-min bars 8:45-14:45 in the Dow-Spoo direction; exit 15:00 (App. p.224)"], "", None),
         sd!("acbff_dowspoo_3bar", "Dow-Spoo with 3-bar requirement (Table 30.5)", g30, "Long/Short", NeedsData(DS), &["E|9:30-14:45, last 3 five-minute bars agree; exit 15:00 (App. p.224)"], "", None),
@@ -626,11 +632,56 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 
 // ---------------------------------------------------------------- run
 
+// ---- lane K38 block (4 Nov 2026, decision #202): Table 24.1 "Mega System" on real 1-minute bars
+/// Each minute k-1 with TradeStation time 8:45 <= t < 14:55 CT (start 9:44..15:53 ET) puts a buy limit at minute k's open - j and
+/// a short limit at its open + g (5-minute averages of o-l and h-o ending at k-1). Long: only the short order acts (reverses);
+/// short: only the buy. Flat and both reached in one minute: the module's bar path (high first when h-o <= o-l) fills both,
+/// marked ambiguous. Out at the close of the 15:59 ET minute (time = 1500 CT) or the day's last minute.
+fn mega_minutes(x: &Ctx, from: usize, to: usize) -> Vec<Trade> {
+    use crate::intraday::day_trade;
+    let mut out = vec![];
+    let tag = |why: &str, amb: bool| if amb { format!("{why} · ambiguous minute") } else { why.to_string() };
+    for i in from..=to {
+        let Some(b) = crate::intraday_w2b::day(x, i) else { continue };
+        let mut pos: Option<(f64, f64, bool)> = None; // (dir, entry, ambiguous)
+        for k in 0..b.len() {
+            let z = b[k];
+            if k >= 5 && (584..954).contains(&b[k - 1].m) {
+                let w = &b[k - 5..k];
+                let g = w.iter().map(|y| y.h - y.o).sum::<f64>() / 5.;
+                let j = w.iter().map(|y| y.o - y.l).sum::<f64>() / 5.;
+                let (bl, sl) = (z.o - j, z.o + g);
+                let (hb, hs) = (z.l <= bl, z.h >= sl);
+                let (fills, amb): (&[f64], bool) = match pos {
+                    None if hb && hs => (if z.h - z.o <= z.o - z.l { &[-1., 1.] } else { &[1., -1.] }, true),
+                    None if hb => (&[1.], false),
+                    None if hs => (&[-1.], false),
+                    Some((d, ..)) if d > 0. && hs => (&[-1.], false),
+                    Some((d, ..)) if d < 0. && hb => (&[1.], false),
+                    _ => (&[], false),
+                };
+                for &d in fills {
+                    let px = if d > 0. { bl } else { sl };
+                    if let Some((pd, pp, pa)) = pos { out.push(day_trade(pd, i, pp, i, px, &tag("reversed at the limit", pa), "limit", false)); }
+                    pos = Some((d, px, amb));
+                }
+            }
+            if z.m == 959 || k + 1 == b.len() {
+                if let Some((pd, pp, pa)) = pos.take() { out.push(day_trade(pd, i, pp, i, z.c, &tag("15:00 CT exit · close", pa), "limit", false)); }
+                break;
+            }
+        }
+    }
+    out
+}
+// ---- end lane K38 block
+
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     if !id.starts_with("acbff_") { return None; }
     let defs = catalogue();
     let d = defs.iter().find(|d| d.id == id)?;
     if d.status != Status::Live || from > to || to >= x.r.len() { return None; }
+    if id == "acbff_mega_1min" { return Some(mega_minutes(x, from, to)); } // lane K38: real 1-minute bars
     let schema = params(id).unwrap_or_default();
     let g = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).map(|d| d.def).unwrap_or(0.0));
     let u = |k: &str| g(k).round().max(1.0) as usize;
