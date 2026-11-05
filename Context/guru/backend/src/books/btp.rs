@@ -129,8 +129,10 @@ struct Ord {
     from: usize,
     last: usize,
     stop: f64, // initial protective stop, NaN = none
+    arm: f64,  // EP6: on its setup bar the order is live only after the path passes this level (8-Day condition 3); NaN = none
 }
 
+#[derive(Clone)]
 struct Pos {
     dir: f64,
     i: usize,
@@ -140,6 +142,7 @@ struct Pos {
     half: Option<(usize, f64)>, // (bar, price) of the half taken off
     why_half: String,
     kind: &'static str,
+    od: crate::intraday_ep6::Day, // EP6: the worst same-day-order mark of the days that decided this position
 }
 
 enum Act {
@@ -159,20 +162,35 @@ struct Ex<'a> {
     half_at_pct: Option<f64>, // CBP: half off at this fractional profit
     target_pct: Option<f64>,  // Gipsons (b): whole position off at this fractional profit
     rule: Option<Rule<'a>>,   // close-of-bar rule
+    order: bool,              // EP6 (#243): order-dependent bars on the real 1-minute path
+}
+
+/// One bar's simulator state (EP6 lane K59: the old loop body works on it unchanged; the flags are the minute walk's).
+#[derive(Clone, Default)]
+struct Bst {
+    pos: Option<Pos>,
+    exit_open: Option<String>,
+    first: usize,
+    today: Vec<Trade>,       // trades closed on this bar
+    started: bool,           // the walk did the bar's open
+    done_bar: bool,          // an exit on this bar: nothing more happens on it
+    held: bool,              // a position was held at the bar's open (no new entry on this bar)
+    entered: bool,           // a position was opened on this bar
+    setup_bar: bool,         // ... by its order's setup bar
+    armed: bool,             // the bar has passed the arming level of its setup-bar orders (8-Day condition 3)
 }
 
 fn sim(x: &Ctx, mut orders: Vec<Ord>, ex: &Ex, from: usize, to: usize) -> Vec<Trade> {
     orders.sort_by_key(|o| (o.from, o.setup));
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
     let mut out = Vec::new();
-    let mut pos: Option<Pos> = None;
-    let mut exit_open: Option<String> = None;
-    let mut first = 0;
     let done = |p: Pos, j: usize, sig: usize, px: f64, why: String, out: &mut Vec<Trade>, open: bool| {
         let exit_px = p.half.map_or(px, |(_, hp)| 0.5 * hp + 0.5 * px);
         let exits = p.half.map_or(Vec::new(), |(hi, hp)| vec![(hi, hp, 0.5), (j, px, 0.5)]);
         let reason = if p.half.is_some() { format!("{}; rest: {why}", p.why_half) } else { why };
-        out.push(Trade { dir: p.dir, legs: vec![Leg { i: p.i, px: p.px, w: 1.0 }], exit_i: j, exit_px, reason, entry_kind: p.kind, signal_i: sig, open, exits });
+        let mut t = Trade { dir: p.dir, legs: vec![Leg { i: p.i, px: p.px, w: 1.0 }], exit_i: j, exit_px, reason, entry_kind: p.kind, signal_i: sig, open, exits };
+        crate::intraday_ep6::mark(&mut t, p.od);
+        out.push(t);
     };
     // Manage an open position on bar j; Some((price, reason)) = closed on this bar.
     let manage = |j: usize, p: &mut Pos, entry_bar: bool, setup_bar: bool, exit_open: &mut Option<String>| -> Option<(f64, String)> {
@@ -237,21 +255,21 @@ fn sim(x: &Ctx, mut orders: Vec<Ord>, ex: &Ex, from: usize, to: usize) -> Vec<Tr
         }
         None
     };
-    for j in from..=to {
-        if let Some(mut p) = pos.take() {
-            if let Some(w) = exit_open.take() {
-                done(p, j, j - 1, o[j], w, &mut out, false);
-            } else if let Some((px, w)) = manage(j, &mut p, false, false, &mut exit_open) {
-                done(p, j, j, px, w, &mut out, false);
+    let bar_old = |j: usize, st: &mut Bst| {
+        if let Some(mut p) = st.pos.take() {
+            if let Some(w) = st.exit_open.take() {
+                done(p, j, j - 1, o[j], w, &mut st.today, false);
+            } else if let Some((px, w)) = manage(j, &mut p, false, false, &mut st.exit_open) {
+                done(p, j, j, px, w, &mut st.today, false);
             } else {
-                pos = Some(p);
+                st.pos = Some(p);
             }
-            continue;
+            return;
         }
-        while first < orders.len() && orders[first].from + 64 < j {
-            first += 1;
+        while st.first < orders.len() && orders[st.first].from + 64 < j {
+            st.first += 1;
         }
-        for od in &orders[first..] {
+        for od in &orders[st.first..] {
             if od.from > j {
                 break;
             }
@@ -278,17 +296,139 @@ fn sim(x: &Ctx, mut orders: Vec<Ord>, ex: &Ex, from: usize, to: usize) -> Vec<Tr
             let Some(px) = px else { continue };
             let kind = match od.fill { Fill::Close => "close", Fill::Open => "open", Fill::Stop(_) => "stop" };
             let risk = if od.stop.is_finite() { (px - od.stop).abs() } else { 0.0 };
-            let mut p = Pos { dir: od.dir, i: j, px, stop: od.stop, risk, half: None, why_half: String::new(), kind };
+            let mut p = Pos { dir: od.dir, i: j, px, stop: od.stop, risk, half: None, why_half: String::new(), kind, od: crate::intraday_ep6::Day::Plain };
             if matches!(od.fill, Fill::Close) {
-                pos = Some(p);
-            } else if let Some((xp, w)) = manage(j, &mut p, true, j == od.setup, &mut exit_open) {
-                done(p, j, j, xp, w, &mut out, false);
+                st.pos = Some(p);
+            } else if let Some((xp, w)) = manage(j, &mut p, true, j == od.setup, &mut st.exit_open) {
+                done(p, j, j, xp, w, &mut st.today, false);
             } else {
-                pos = Some(p);
+                st.pos = Some(p);
             }
             break;
         }
+        };
+    // ---- EP6 (lane K59, #243): the minute walk of one bar. Open: an exit-on-open, the trailing stop, gaps through the stop /
+    // target / half level, entries at the open; then the stop orders, the protective stop, the target and the half level in
+    // the order the path reaches them (a gap fills at its end); the close: hold and close-of-bar rules, close entries.
+    let active = |j: usize| orders.iter().filter(move |od| od.from <= j && j <= od.last && od.from + 64 >= j);
+    let enter = |st: &mut Bst, od: &Ord, j: usize, px: f64| {
+        let kind = match od.fill { Fill::Close => "close", Fill::Open => "open", Fill::Stop(_) => "stop" };
+        let risk = if od.stop.is_finite() { (px - od.stop).abs() } else { 0.0 };
+        st.pos = Some(Pos { dir: od.dir, i: j, px, stop: od.stop, risk, half: None, why_half: String::new(), kind, od: crate::intraday_ep6::Day::Plain });
+        st.entered = true;
+        st.setup_bar = j == od.setup;
+    };
+    let half_level = |p: &Pos| -> Option<(f64, String)> {
+        if p.half.is_some() { return None; }
+        if ex.half_at_r && p.risk > 0.0 { Some((p.px + p.dir * p.risk, "half off at +1R (2-for-1)".to_string())) }
+        else { ex.half_at_pct.map(|f| (p.px * (1.0 + p.dir * f), format!("half covered at {:.0}% profit", f * 100.0))) }
+    };
+    // the path passed from `a` to `b`: a setup-bar order's arming level (8-Day condition 3: trade below day two's low for a buy)
+    let arm = |j: usize, st: &mut Bst, a: f64, b: f64| {
+        if !st.armed && active(j).any(|od| j == od.setup && od.arm.is_finite() && if od.dir > 0.0 { a.min(b) < od.arm } else { a.max(b) > od.arm }) { st.armed = true; }
+    };
+    let open_phase = |j: usize, st: &mut Bst, ev: &mut Vec<crate::intraday_ep6::Ev>| {
+        st.started = true;
+        if let Some(mut p) = st.pos.take() {
+            st.held = true;
+            if let Some(w) = st.exit_open.take() { done(p, j, j - 1, o[j], w, &mut st.today, false); st.done_bar = true; ev.push(crate::intraday_ep6::Ev { k: 9, px: o[j], up: false }); return; }
+            let long = p.dir > 0.0;
+            if let Some(n) = ex.trail.filter(|&n| n > 0 && j >= n && (!ex.trail_after_half || p.half.is_some())) {
+                let lv = if long { l[j - n..j].iter().cloned().fold(f64::INFINITY, f64::min) } else { h[j - n..j].iter().cloned().fold(f64::NEG_INFINITY, f64::max) };
+                p.stop = if long { p.stop.max(lv) } else { p.stop.min(lv) };
+            }
+            let beyond = |lv: f64, with: bool| lv.is_finite() && if long == with { o[j] >= lv } else { o[j] <= lv };
+            if beyond(p.stop, false) { done(p, j, j, o[j], "stop".into(), &mut st.today, false); st.done_bar = true; ev.push(crate::intraday_ep6::Ev { k: 2, px: o[j], up: false }); return; }
+            if let Some(t) = ex.target_pct {
+                if beyond(p.px * (1.0 + p.dir * t), true) { done(p, j, j, o[j], format!("{:.0}% profit target", t * 100.0), &mut st.today, false); st.done_bar = true; ev.push(crate::intraday_ep6::Ev { k: 3, px: o[j], up: false }); return; }
+            }
+            if let Some((tg, why)) = half_level(&p) { if beyond(tg, true) { p.half = Some((j, o[j])); p.why_half = why; ev.push(crate::intraday_ep6::Ev { k: 4, px: o[j], up: false }); } }
+            st.pos = Some(p);
+            return;
+        }
+        arm(j, st, o[j], o[j]);
+        let pick = active(j).find(|od| match od.fill {
+            Fill::Open => j == od.from,
+            Fill::Stop(lv) => j != od.setup && if od.dir > 0.0 { o[j] >= lv } else { o[j] <= lv },
+            Fill::Close => false,
+        });
+        if let Some(od) = pick { enter(st, od, j, o[j]); ev.push(crate::intraday_ep6::Ev { k: 0, px: o[j], up: false }); }
+    };
+    let walk = |j: usize, st: &mut Bst, segs: &[crate::intraday_ep6::Seg]| -> Vec<crate::intraday_ep6::Ev> {
+        let mut ev = vec![];
+        if !st.started { open_phase(j, st, &mut ev); }
+        if st.done_bar { return ev; }
+        for g in segs {
+            let (mut cur, end) = (g.a, g.b);
+            let up = end > cur;
+            loop {
+                let inside = |lv: f64| lv.is_finite() && if up { lv > cur && lv <= end } else { lv < cur && lv >= end };
+                let mut best: Option<(f64, u8, Option<Ord>)> = None;
+                let mut take = |lv: f64, k: u8, od: Option<Ord>| if inside(lv) && best.as_ref().map_or(true, |b| if up { lv < b.0 } else { lv > b.0 }) { best = Some((lv, k, od)); };
+                if let Some(p) = &st.pos {
+                    if (p.dir > 0.0) != up { take(p.stop, 2, None); } else {
+                        if let Some(t) = ex.target_pct { take(p.px * (1.0 + p.dir * t), 3, None); }
+                        if let Some((tg, _)) = half_level(p) { take(tg, 4, None); }
+                    }
+                } else if !st.held && !st.entered {
+                    for od in active(j) {
+                        let unarmed = j == od.setup && od.arm.is_finite() && !st.armed;
+                        if let Fill::Stop(lv) = od.fill { if (od.dir > 0.0) == up && !unarmed && !(j == od.setup && if od.dir > 0.0 { o[j] >= lv } else { o[j] <= lv }) { take(lv, 0, Some(*od)); } }
+                    }
+                }
+                let Some((lv, k, od)) = best else { arm(j, st, cur, end); break };
+                let px = g.fill(lv);
+                match k {
+                    0 => enter(st, &od.unwrap(), j, px),
+                    4 => { let p = st.pos.as_mut().unwrap(); if let Some((_, why)) = half_level(p) { p.half = Some((j, px)); p.why_half = why; } }
+                    _ => {
+                        let p = st.pos.take().unwrap();
+                        let why = if k == 2 { "stop".to_string() } else { format!("{:.0}% profit target", ex.target_pct.unwrap_or(0.0) * 100.0) };
+                        done(p, j, j, px, why, &mut st.today, false);
+                        st.done_bar = true;
+                    }
+                }
+                ev.push(crate::intraday_ep6::Ev { k, px, up });
+                if st.done_bar { return ev; }
+                cur = lv;
+            }
+        }
+        ev
+    };
+    let close_phase = |j: usize, st: &mut Bst| {
+        if st.done_bar { return; }
+        if let Some(mut p) = st.pos.take() {
+            if let Some(n) = ex.hold { if j - p.i >= n { done(p, j, j, c[j], format!("{n} bars held, out on the close"), &mut st.today, false); return; } }
+            if let Some(rule) = ex.rule {
+                match rule(j, &p) {
+                    Some(Act::Close(w)) => { done(p, j, j, c[j], w, &mut st.today, false); return; }
+                    Some(Act::NextOpen(w)) if j < to => st.exit_open = Some(w),
+                    Some(Act::HalfClose(w)) if p.half.is_none() => { p.half = Some((j, c[j])); p.why_half = w; }
+                    _ => {}
+                }
+            }
+            st.pos = Some(p);
+        } else if !st.held && !st.entered {
+            if let Some(od) = active(j).find(|od| matches!(od.fill, Fill::Close) && j == od.from) { enter(st, od, j, c[j]); }
+        }
+    };
+    let mut st = Bst::default();
+    for j in from..=to {
+        let day = if ex.order {
+            let mut ep = Bst { pos: st.pos.take(), exit_open: st.exit_open.take(), first: st.first, ..Default::default() };
+            let day = crate::intraday_ep6::resolve_conv(x, j, true, &mut ep, |s| bar_old(j, s),
+                |s, hf| walk(j, s, &crate::intraday_ep6::bar_segs(o[j], h[j], l[j], c[j], hf)), |s, segs| walk(j, s, segs));
+            if matches!(day, crate::intraday_ep6::Day::Minutes | crate::intraday_ep6::Day::Ambiguous) { close_phase(j, &mut ep); }
+            st = ep;
+            day
+        } else {
+            bar_old(j, &mut st);
+            crate::intraday_ep6::Day::Plain
+        };
+        for mut t in st.today.drain(..) { crate::intraday_ep6::remark(&mut t, day); out.push(t); }
+        if let Some(p) = st.pos.as_mut() { p.od = p.od.worst(day); }
     }
+    let pos = st.pos.take();
     if let Some(p) = pos {
         done(p, to, to, c[to], "open".into(), &mut out, true);
     }
@@ -605,6 +745,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
         "btp_bottom_reversal_long" => v.extend(kit(0.0, 5.0)),
         _ => {}
     }
+    crate::intraday_ep6::add_param(id, &mut v); // EP6 (#243)
     Some(v)
 }
 
@@ -612,6 +753,7 @@ pub fn params(id: &str) -> Option<Vec<ParamDef>> {
 
 pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<Trade>> {
     let schema = params(id)?;
+    let Some((from, to)) = crate::intraday_ep6::window(id, x, from, to, p) else { return Some(vec![]) }; // EP6 #243 (c)
     let g0 = |k: &str| p.get(k).copied().unwrap_or_else(|| schema.iter().find(|d| d.key == k).unwrap_or_else(|| panic!("{id} has no param {k}")).def);
     // tick < 0 = one real tick of the market: 0.05 NSE (the vault's Indian tickers all start "NIFTY"), 0.01 US decimals.
     // A native stock uses its trusted market's tick (NSE 0.05 INR, US 0.01 USD; adaptation: the book used 1/8-dollar ticks).
@@ -622,7 +764,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
         return Some(vec![]);
     }
     let (o, h, l, c) = (&x.o, &x.h, &x.l, &x.c);
-    let ord = |dir: f64, fill: Fill, setup: usize, from: usize, last: usize, stop: f64| Ord { dir, fill, setup, from, last: last.min(n - 1), stop };
+    let ord = |dir: f64, fill: Fill, setup: usize, from: usize, last: usize, stop: f64| Ord { dir, fill, setup, from, last: last.min(n - 1), stop, arm: f64::NAN };
     let kit = || Ex {
         half_at_r: g("mm") >= 0.5,
         trail: Some(g("trail_n").round() as usize).filter(|&t| t > 0),
@@ -633,6 +775,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
     let short_only = id.ends_with("_short");
     let mut orders: Vec<Ord> = Vec::new();
 
+    let ep6 = crate::intraday_ep6::on(id, p); // EP6 (#243): same-day order on 1-minute bars
     let trades = match id {
         "btp_cbp_short" => {
             let (wk, last) = weekly(x.r);
@@ -761,7 +904,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                     }
                 }
             }
-            sim(x, orders, &kit(), from, to)
+            sim(x, orders, &Ex { order: ep6, ..kit() }, from, to)
         }
         "btp2_8day_hl_reversal_long" | "btp2_8day_hl_reversal_short" => {
             let (lb, cw, ew, tk, long) = (u("lookback"), u("cond3_window"), u("entry_window"), g("tick"), long_only);
@@ -772,14 +915,16 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                     continue;
                 }
                 if let Some(k) = (d2 + 1..(d2 + 1 + cw).min(n)).find(|&k| if long { l[k] < l[d2] } else { h[k] > h[d2] }) {
+                    // EP6: on a minute-resolved condition-3 bar the breakout counts only after the bar has traded through day two's
+                    // low (high): condition 3 first, as the book orders it
                     if long {
-                        orders.push(ord(1.0, Fill::Stop(h[d2] + tk), k, k, k + ew, l[d2] - tk));
+                        orders.push(Ord { arm: l[d2], ..ord(1.0, Fill::Stop(h[d2] + tk), k, k, k + ew, l[d2] - tk) });
                     } else {
-                        orders.push(ord(-1.0, Fill::Stop(l[d2] - tk), k, k, k + ew, h[d2] + tk));
+                        orders.push(Ord { arm: h[d2], ..ord(-1.0, Fill::Stop(l[d2] - tk), k, k, k + ew, h[d2] + tk) });
                     }
                 }
             }
-            sim(x, orders, &kit(), from, to)
+            sim(x, orders, &Ex { order: ep6, ..kit() }, from, to)
         }
         // ---- intraday wave 1: real 1-minute path (default for the OOPS ids and the WREG sells); daily readings stay as path = 0
         "btp2_10pct_oops_long" | "btp2_10pct_oops_short" | "btp2_10pct_oops" | "btp2_wide_range_exhaustion_gap_short" if g("path") >= 0.5 => {
@@ -848,7 +993,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 }
                 i = end.max(i + 1);
             }
-            sim(x, orders, &kit(), from, to)
+            sim(x, orders, &Ex { order: ep6, ..kit() }, from, to)
         }
         "btp2_gipsons_long" | "btp2_gipsons_short" => {
             let (pd, md, adx) = dmi3(x.r, u("adx_len"));
@@ -872,7 +1017,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 3 => Ex { trail: Some(tn), ..Default::default() },
                 _ => Ex { rule: Some(hvx), trail: Some(tn), trail_after_half: true, ..Default::default() },
             };
-            sim(x, orders, &ex, from, to)
+            sim(x, orders, &Ex { order: ep6, ..ex }, from, to)
         }
         "btp2_wide_range_exhaustion_gap_long" | "btp2_wide_range_exhaustion_gap_short" => {
             let hvv = hv(c, u("hv_len"));
@@ -892,7 +1037,7 @@ pub fn run(id: &str, x: &Ctx, from: usize, to: usize, p: &Params) -> Option<Vec<
                 let strong = if p.dir > 0.0 { loc >= 1.0 - carry } else { loc <= carry };
                 Some(if strong { Act::NextOpen("closed at the extreme: carried, out on the next open".into()) } else { Act::Close("locked in near the close".into()) })
             };
-            sim(x, orders, &Ex { rule: Some(rule), ..Default::default() }, from, to)
+            sim(x, orders, &Ex { rule: Some(rule), order: ep6, ..Default::default() }, from, to)
         }
         _ => return None,
     };
@@ -961,7 +1106,7 @@ mod tests {
         // buy stop 101, stop 99 (R = 2): bar 2 reaches 103 (half off), bar 3 gaps under the stop and fills at its 98 open
         let r = rows(&[(100.0, 100.0, 100.0, 100.0), (100.5, 101.5, 100.2, 101.2), (101.5, 103.5, 101.0, 103.0), (98.0, 98.5, 97.0, 97.5)]);
         let x = Ctx::new(&r, &r, &[]);
-        let o = vec![Ord { dir: 1.0, fill: Fill::Stop(101.0), setup: 0, from: 1, last: 1, stop: 99.0 }];
+        let o = vec![Ord { dir: 1.0, fill: Fill::Stop(101.0), setup: 0, from: 1, last: 1, stop: 99.0, arm: f64::NAN }];
         let t = sim(&x, o, &Ex { half_at_r: true, ..Default::default() }, 0, 3);
         assert_eq!(t.len(), 1);
         assert_eq!((t[0].legs[0].px, t[0].exit_i, t[0].exit_px), (101.0, 3, 100.5));
@@ -970,7 +1115,7 @@ mod tests {
     #[test]
     fn exempt_entry_bar_closing_beyond_stop_exits_at_stop() {
         // WREG-style: day 1 low 99, close 100; day 2 opens 97 (under the stop 99), fills the buy stop at 100
-        let o = || vec![Ord { dir: 1.0, fill: Fill::Stop(100.0), setup: 0, from: 1, last: 1, stop: 99.0 }];
+        let o = || vec![Ord { dir: 1.0, fill: Fill::Stop(100.0), setup: 0, from: 1, last: 1, stop: 99.0, arm: f64::NAN }];
         let ex = Ex { hold: Some(1), ..Default::default() };
         // closes 98.5 below the stop: certainly crossed after the fill -> out at 99 on the entry bar
         let r = rows(&[(101.0, 102.0, 99.0, 100.0), (97.0, 100.5, 96.0, 98.5), (98.0, 99.0, 97.0, 98.0)]);

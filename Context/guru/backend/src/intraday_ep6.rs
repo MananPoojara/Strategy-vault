@@ -122,11 +122,15 @@ pub const IDS: &[&str] = &[
     "lwlts_vb_sp_40_200", "lwlts_talon_sp", "lwlts_hh1", "lwlts_hh5", "lwlts_hh10", "lwlts_hh15", "lwlts_hh20", "lwdtfo_vb_open",
     "lwnl_jul97_td4_buy", "lwnl_jan_rally", "lwnl_jul97_td16_buy_30d", "lwnl_nov97_td15_buy_30d", "lwnl_mar_short", "lwnl_proj_contra",
     "lwnl_jul97_td17_buy", "lwnl_aug97_td2_sell_7d", "lwnl_pullback", "lwnl_aug97_td7_sell_bail", "lwnl_nov97_td17_buy_7d",
-    "lwnl_nov97_td6_buy_30d", "lwnl_nov97_td18_buy_7d", "lwicw_oops_tdom_buy", "lwicw_oops_tdom_sell"];
+    "lwnl_nov97_td6_buy_30d", "lwnl_nov97_td18_buy_7d", "lwicw_oops_tdom_buy", "lwicw_oops_tdom_sell",
+    // wave 2: btp2 (books/btp.rs sim; its daily convention is 'the stop first', not a bar-path order: resolve_conv)
+    "btp2_wide_range_exhaustion_gap_long", "btp2_momentum_ma_long", "btp2_momentum_ma_short", "btp2_gipsons_long",
+    "btp2_8day_hl_reversal_short", "btp2_8day_hl_reversal_long", "btp2_1234_long", "btp2_1234_short"];
 
 /// #243 (c): ids whose convention result fails the pre-set #177 tests against the resolved result on the minute window:
 /// only the minute window is published (resolved), the earlier years are withdrawn.
-pub const WINDOW_ONLY: &[&str] = &["lwicw_oops_tdom_buy", "lwlts_oops_buy", "lwlts_oops_buy_ma9", "lwlts_vb_sp_40_200", "lwnl_aug97_td7_sell_bail", "lwnl_mar_short",
+pub const WINDOW_ONLY: &[&str] = &["btp2_8day_hl_reversal_long", "btp2_8day_hl_reversal_short", "btp2_wide_range_exhaustion_gap_long",
+    "lwicw_oops_tdom_buy", "lwlts_oops_buy", "lwlts_oops_buy_ma9", "lwlts_vb_sp_40_200", "lwnl_aug97_td7_sell_bail", "lwnl_mar_short",
     "lwnl_proj_contra", "lwnl_pullback"];
 
 /// #243: ids HELD. The five thin ids (M6: over 5% order-dependent, fewer than 10 trades inside the minute window), and EP6 ids
